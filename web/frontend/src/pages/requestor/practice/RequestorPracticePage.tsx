@@ -320,6 +320,10 @@ import { toKstYmd, toKstYmdLoose, kstYmdWeekday } from "@/shared/date/kst";
 import { normalizeLabReceiveCalendarDateKey } from "@/shared/practice/labReceiveCalendarDateKey";
 import { normalizeLabReceiveCalendarHiddenWeekdays } from "@/shared/practice/labReceiveCalendarHiddenWeekdays";
 import {
+  practiceTransferPanelDockSideForVisibleColumn,
+  type PracticeTransferPanelDockSide,
+} from "@/shared/practice/labReceiveCalendarWeekGrid";
+import {
   buildLabReceiveCalendarYmdRange,
   buildPracticeTransferCalendarApiQuery,
 } from "@/shared/practice/labReceiveCalendarYmdRange";
@@ -754,6 +758,9 @@ export function RequestorPracticeReceivePage({
   );
 
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [panelPreferredDockSide, setPanelPreferredDockSide] =
+    useState<PracticeTransferPanelDockSide | null>(null);
+  const [panelPreferredDockNonce, setPanelPreferredDockNonce] = useState(0);
   const [abutmentRequestDetail, setAbutmentRequestDetail] = useState<any | null>(
     null,
   );
@@ -5090,10 +5097,21 @@ export function RequestorPracticeReceivePage({
   const openTransferDialog = useCallback(
     async (
       transfer: ReceivedPracticeTransfer,
-      options?: { panel?: "chat" | "detail" },
+      options?: {
+        panel?: "chat" | "detail";
+        preferredDockSide?: PracticeTransferPanelDockSide | null;
+      },
     ) => {
       if (!token && !isGuideTourDemoTransfer(transfer)) return;
       const resolveSeq = ++chatRoomResolveSeqRef.current;
+
+      if (options && "preferredDockSide" in options) {
+        const side = options.preferredDockSide ?? null;
+        setPanelPreferredDockSide(side);
+        if (side) setPanelPreferredDockNonce((n) => n + 1);
+      } else {
+        setPanelPreferredDockSide(null);
+      }
 
       if (isGuideTourDemoTransfer(transfer)) {
         setDialogInitialPanelTab("detail");
@@ -5351,12 +5369,17 @@ export function RequestorPracticeReceivePage({
 
   /** lab_calendar — 데모 칩 클릭 시 상세 오픈(다음 스텝) */
   const selectTransferFromCalendar = useCallback(
-    (transfer: ReceivedPracticeTransfer) => {
+    (
+      transfer: ReceivedPracticeTransfer,
+      options?: { preferredDockSide?: PracticeTransferPanelDockSide },
+    ) => {
       if (guideTourLabCalendarStep && isGuideTourDemoTransfer(transfer)) {
         platformGuideTour.advance();
         return;
       }
-      void openTransferDialog(transfer);
+      void openTransferDialog(transfer, {
+        preferredDockSide: options?.preferredDockSide ?? null,
+      });
     },
     [guideTourLabCalendarStep, openTransferDialog, platformGuideTour],
   );
@@ -5599,9 +5622,16 @@ export function RequestorPracticeReceivePage({
               cursorYmd={cursorYmd}
               onCursorChange={setCursorYmd}
               onDateKeyChange={handleCalendarDateKeyChange}
-              onSelectItem={(item) => {
+              onSelectItem={(item, ctx) => {
                 const transfer = calendarTransferById.get(item.id);
-                if (transfer) selectTransferFromCalendar(transfer);
+                if (transfer) {
+                  selectTransferFromCalendar(transfer, {
+                    preferredDockSide: practiceTransferPanelDockSideForVisibleColumn(
+                      ctx.visibleColumnIndex,
+                      ctx.visibleColumnCount,
+                    ),
+                  });
+                }
               }}
               search={search}
               onSearchChange={setSearch}
@@ -5876,8 +5906,11 @@ export function RequestorPracticeReceivePage({
             chatUploads.clear();
             setChatError("");
             resetDownloads();
+            setPanelPreferredDockSide(null);
           }
         }}
+        preferredDockSide={panelPreferredDockSide}
+        preferredDockNonce={panelPreferredDockNonce}
         title="의뢰 상세 · 치과 채팅"
         conversationTitle="치과와의 소통"
         authToken={token}

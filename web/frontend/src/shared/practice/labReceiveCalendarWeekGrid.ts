@@ -1,7 +1,9 @@
 // change-log:
+// - 2026-09-08: practiceTransferPanelDockSideForVisibleColumn — 캘린더 칩 클릭 시 패널 좌/우
 // - 2026-08-23: 캘린더·숨길 요일 토글 공통 열 순서 일~토(통상 달력). 저장 dow는 0=일…6=토
 // related files:
 // - web/frontend/src/pages/practice/components/PracticeRecentTransfersCalendar.tsx
+// - web/frontend/src/shared/components/practice/usePracticeTransferPanelLayout.ts
 // - web/frontend/src/shared/practice/labReceiveCalendarHiddenWeekdays.ts
 
 /** JS Date.getDay() / kstYmdWeekday 기준: 0=일 … 6=토 */
@@ -37,3 +39,17 @@ export const labReceiveCalendarWeekGridTemplate = () =>
 
 export const weekdayLabel = (dow: number): string =>
   WEEKDAY_LABEL_BY_DOW[dow] ?? "?";
+
+export type PracticeTransferPanelDockSide = "left" | "right";
+
+/**
+ * 보이는 열 기준 — 왼쪽 절반 칩 → 패널 오른쪽, 오른쪽 절반 → 왼쪽.
+ * (일~수 / 목~토, 또는 토·일 숨김 시 월~수 / 목~금)
+ */
+export function practiceTransferPanelDockSideForVisibleColumn(
+  visibleColumnIndex: number,
+  visibleColumnCount: number,
+): PracticeTransferPanelDockSide {
+  if (visibleColumnCount <= 1) return "right";
+  return visibleColumnIndex < visibleColumnCount / 2 ? "right" : "left";
+}

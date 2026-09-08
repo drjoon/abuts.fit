@@ -16,6 +16,7 @@
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
 // - 2026-09-08: DialogDescription sr-only — Radix DescriptionWarning 제거.
 // - 2026-09-08: 탭 라벨 의뢰/진행. 식별=이름, 진행 헤더=도착일+다음 도착일. 알림=전체 토글.
+// - 2026-09-08: preferredDockSide — 캘린더 칩 열 위치에 맞춰 좌/우 도킹.
 // - 2026-09-08: 헤더 < > — 패널을 화면 왼쪽/오른쪽 끝에 도킹.
 // - 2026-09-08: 담당자·작업+배송기간 → 상세 정보(접기)로 이동.
 // - 2026-09-07: UX — 의뢰상세 핵심만·상세 접기, 진행상황 다음공정 칩·크롬 압축.
@@ -545,6 +546,12 @@ type PracticeTransferDetailChatDialogProps = {
   cancelRequestDisabled?: boolean;
   /** 가이드투어 — Dialog z-[410](블러 아래) */
   guideTourElevate?: boolean;
+  /**
+   * 캘린더 칩 등에서 열 때 아이템을 가리지 않도록 좌/우 도킹.
+   * 미지정 시 직전 저장 레이아웃 유지. preferredDockNonce가 바뀌면 재도킹.
+   */
+  preferredDockSide?: "left" | "right" | null;
+  preferredDockNonce?: number;
 };
 
 export function PracticeTransferDetailChatDialog({
@@ -653,6 +660,8 @@ export function PracticeTransferDetailChatDialog({
   onCancelRequest,
   cancelRequestDisabled = false,
   guideTourElevate = false,
+  preferredDockSide = null,
+  preferredDockNonce = 0,
 }: PracticeTransferDetailChatDialogProps) {
   const { toast } = useToast();
   const isMobile = useIsMobile();
@@ -688,6 +697,13 @@ export function PracticeTransferDetailChatDialog({
   useEffect(() => {
     if (open) setPanelTab(resolvedInitialPanelTab);
   }, [open, resolvedInitialPanelTab]);
+
+  useEffect(() => {
+    if (!open || isMobile) return;
+    if (preferredDockSide !== "left" && preferredDockSide !== "right") return;
+    if (preferredDockSide === "left") dockLeft();
+    else dockRight();
+  }, [open, isMobile, preferredDockSide, preferredDockNonce, dockLeft, dockRight]);
 
   const handlePanelTabChange = useCallback((value: string) => {
     setPanelTab(value === "detail" ? "detail" : "chat");

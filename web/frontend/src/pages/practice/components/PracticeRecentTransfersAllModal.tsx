@@ -39,6 +39,7 @@
  * - 2026-09-07: 다단계 다음 도착일 미지정(+1일~) 헤더 alert(기공소 미확인 바와 동일 패턴).
  * - 2026-08-31: calendarRefreshNonce — 전송 직후 소켓 없이도 캘린더 구간 재조회.
  * - 2026-09-02: 휴지통 `거부`(삭제+labRejected)도 달력·상단뱃지에서 제외 — 삭제 후 재등장 방지.
+ * - 2026-09-08: 캘린더 칩 → preferredDockSide(보이는 열 좌/우)로 상세 패널 도킹.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronRight, Search, Trash2, X } from "lucide-react";
@@ -67,6 +68,10 @@ import { useIsMobile } from "@/shared/hooks/use-mobile";
 import { toKstYmd, toKstYmdLoose } from "@/shared/date/kst";
 import { normalizeLabReceiveCalendarDateKey } from "@/shared/practice/labReceiveCalendarDateKey";
 import { normalizeLabReceiveCalendarHiddenWeekdays } from "@/shared/practice/labReceiveCalendarHiddenWeekdays";
+import {
+  practiceTransferPanelDockSideForVisibleColumn,
+  type PracticeTransferPanelDockSide,
+} from "@/shared/practice/labReceiveCalendarWeekGrid";
 import {
   buildLabReceiveCalendarYmdRange,
   buildPracticeTransferCalendarApiQuery,
@@ -170,7 +175,10 @@ type PracticeRecentTransfersAllModalProps = {
   onSelectFutureDay?: (ymd: string) => void;
   /** 값이 바뀌면 캘린더 구간 API를 다시 친다(전송 직후 등). */
   calendarRefreshNonce?: number;
-  onSelectTransfer: (transfer: PracticeRecentTransferItem) => void;
+  onSelectTransfer: (
+    transfer: PracticeRecentTransferItem,
+    options?: { preferredDockSide?: PracticeTransferPanelDockSide },
+  ) => void;
   onDeleteTransfer: (transfer: PracticeRecentTransferItem) => void;
   onEditTransfer?: (transfer: PracticeRecentTransferItem) => void;
 };
@@ -906,9 +914,17 @@ export function PracticeRecentTransfersAllModal({
                 cursorYmd={cursorYmd}
                 onCursorChange={setCursorYmd}
                 onDateKeyChange={handleCalendarDateKeyChange}
-                onSelectItem={(item) => {
+                onSelectItem={(item, ctx) => {
                   const transfer = calendarItemById.get(item.id);
-                  if (transfer) onSelectTransfer(transfer);
+                  if (transfer) {
+                    onSelectTransfer(transfer, {
+                      preferredDockSide:
+                        practiceTransferPanelDockSideForVisibleColumn(
+                          ctx.visibleColumnIndex,
+                          ctx.visibleColumnCount,
+                        ),
+                    });
+                  }
                 }}
                 onDeleteItem={(item) => {
                   const transfer = calendarItemById.get(item.id);

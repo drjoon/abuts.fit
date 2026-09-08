@@ -29,6 +29,7 @@
  * - 2026-09-05: guideTourItemId — 특정 칩에 data-guide-tour(수신 투어 오늘 의뢰).
  * - 2026-09-05: 완료=amber·어벗=emerald — 수락(sky)과 청록 계열이 겹치지 않게.
  * - 2026-09-02: 완료 뱃지=finished. 어벗=completed(녹색). 칩도 동일 분리.
+ * - 2026-09-08: onSelectItem에 보이는 열 인덱스 전달 — 상세 패널 좌/우 도킹.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Search, Trash2 } from "lucide-react";
@@ -289,13 +290,24 @@ const shiftMonth = (cursorYmd: string, direction: -1 | 1): string => {
   return kstStartOfMonth(kstAddCivilDays(monthStart, 32)) || cursorYmd;
 };
 
+export type PracticeCalendarSelectContext = {
+  ymd: string;
+  dow: number;
+  /** 현재 보이는 열 중 0-based 인덱스 */
+  visibleColumnIndex: number;
+  visibleColumnCount: number;
+};
+
 type PracticeRecentTransfersCalendarProps = {
   items: PracticeCalendarChipItem[];
   dateKey: PracticeCalendarDateKey;
   cursorYmd: string;
   onCursorChange: (ymd: string) => void;
   onDateKeyChange: (key: PracticeCalendarDateKey) => void;
-  onSelectItem: (item: PracticeCalendarChipItem) => void;
+  onSelectItem: (
+    item: PracticeCalendarChipItem,
+    ctx: PracticeCalendarSelectContext,
+  ) => void;
   onDeleteItem?: (item: PracticeCalendarChipItem) => void;
   /** 오늘(KST) 포함·이후 날짜 셀 빈 영역 클릭. 과거는 호출하지 않음. */
   onSelectFutureDay?: (ymd: string) => void;
@@ -631,7 +643,7 @@ export function PracticeRecentTransfersCalendar({
                   minHeight: minRowH,
                 }}
               >
-                {visibleCells.map((day) => {
+                {visibleCells.map((day, visibleColumnIndex) => {
                   const dayItems = byDay.get(day.ymd) || [];
                   const isToday = day.ymd === todayYmd;
                   const isFutureDay = Boolean(
@@ -763,7 +775,12 @@ export function PracticeRecentTransfersCalendar({
                                 }
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  onSelectItem(item);
+                                  onSelectItem(item, {
+                                    ymd: day.ymd,
+                                    dow: day.dow,
+                                    visibleColumnIndex,
+                                    visibleColumnCount: colCount,
+                                  });
                                 }}
                               >
                                 <span className="min-w-0 flex-1 line-clamp-2 break-all">

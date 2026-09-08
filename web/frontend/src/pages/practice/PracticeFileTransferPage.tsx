@@ -256,6 +256,9 @@ import {
 } from "@/shared/guideTour/guideTourOralPrefill";
 import { PracticeRecentTransfersAllModal } from "@/pages/practice/components/PracticeRecentTransfersAllModal";
 import {
+  type PracticeTransferPanelDockSide,
+} from "@/shared/practice/labReceiveCalendarWeekGrid";
+import {
   PRACTICE_MY_TRANSFERS_PAGE_SIZE,
   canDeletePracticeTransferByStatus,
   canEditPracticeTransferByStatus,
@@ -1287,6 +1290,9 @@ export const PracticeFileTransferPage = ({
     useState<RecentTransferItem | null>(null);
   const [labRejectedRetargetBusy, setLabRejectedRetargetBusy] = useState(false);
   const [transferDialogOpen, setTransferDialogOpen] = useState(false);
+  const [panelPreferredDockSide, setPanelPreferredDockSide] =
+    useState<PracticeTransferPanelDockSide | null>(null);
+  const [panelPreferredDockNonce, setPanelPreferredDockNonce] = useState(0);
   const [productionConfirmBusy, setProductionConfirmBusy] = useState(false);
   const [activeChatRoom, setActiveChatRoom] = useState<ChatRoom | null>(null);
   const [chatLoading, setChatLoading] = useState(false);
@@ -5222,7 +5228,11 @@ export const PracticeFileTransferPage = ({
 
   const handleOpenTransferDialog = async (
     transfer: RecentTransferItem,
-    options?: { fromTrash?: boolean; returnToAllModal?: boolean },
+    options?: {
+      fromTrash?: boolean;
+      returnToAllModal?: boolean;
+      preferredDockSide?: PracticeTransferPanelDockSide | null;
+    },
   ) => {
     const fromTrash = Boolean(options?.fromTrash);
     const returnToAllModal = Boolean(options?.returnToAllModal);
@@ -5231,6 +5241,14 @@ export const PracticeFileTransferPage = ({
     const isDraftTransfer =
       transfer.status === "임시저장" ||
       transfer.transferId === PRACTICE_DRAFT_TRANSFER_ID;
+
+    if (options && "preferredDockSide" in options) {
+      const side = options.preferredDockSide ?? null;
+      setPanelPreferredDockSide(side);
+      if (side) setPanelPreferredDockNonce((n) => n + 1);
+    } else {
+      setPanelPreferredDockSide(null);
+    }
 
     if (isDraftTransfer && !fromTrash) {
       handleAdoptDraftTransfer(transfer);
@@ -5445,6 +5463,7 @@ export const PracticeFileTransferPage = ({
     chatUploads.clear();
     setChatError("");
     resetDownloads();
+    setPanelPreferredDockSide(null);
   };
 
   const handleSendChatMessage = async () => {
@@ -8610,9 +8629,10 @@ export const PracticeFileTransferPage = ({
           headerActions={calendarHeaderActions}
           onSelectFutureDay={openComposeForArrival}
           calendarRefreshNonce={calendarRefreshNonce}
-          onSelectTransfer={(transfer) => {
+          onSelectTransfer={(transfer, options) => {
             void handleOpenTransferDialog(transfer, {
               returnToAllModal: true,
+              preferredDockSide: options?.preferredDockSide ?? null,
             });
           }}
           onDeleteTransfer={(transfer) => {
@@ -9523,6 +9543,8 @@ export const PracticeFileTransferPage = ({
             }
             handleCloseTransferDialog();
           }}
+          preferredDockSide={panelPreferredDockSide}
+          preferredDockNonce={panelPreferredDockNonce}
           title="의뢰 상세 · 기공소 채팅"
           conversationTitle="기공소와의 소통"
           authToken={authToken}
