@@ -586,6 +586,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
         //
         // 지정 C축 후보(현재 최대 6곳: T4848 1 + T0909/T0606 5). 개수·공구는 추후 변경될 수 있으므로
         // matchedWithinTarget 상한·공구 화이트리스트만 이 함수에서 함께 고친다.
+        // Finish(T0707) 등 비화이트리스트 근접 C0/C30은 스킵(예외 금지) — Connection 후보를 계속 탐색.
         //
         // 모드별 목표각:
         // - T4848: 전 모드 항상 C0.0 (addDeg 미적용)
@@ -635,9 +636,11 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 var targetRegex = new Regex(axisPattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
                 // HEX_C_AXIS_MAX_MATCHES: 현재 1(T4848)+5(T0909/T0606)=6. 공정/PRC 변경 시 이 상수만 조정.
+                // matchedWithinTarget 는 화이트리스트 공구에 실제 치환한 횟수만 센다 (Finish T0707 등 스킵은 제외).
                 const int HexCAxisMaxMatches = 6;
                 int matchedWithinTarget = 0;
                 int replacedWithinTarget = 0;
+                int skippedNonWhitelist = 0;
                 // Serial 과 동일 SSOT: ResolveHexToolCAxisDeg (= modeBase 또는 modeBase+addDeg)
                 // 헥스면 Serial은 위에서 PRC C0.0으로 들어왔다가 여기서 T0606과 같이 치환된다.
                 double tool0906TargetDeg = ResolveHexToolCAxisDeg(manufacturerHexRotation, hexRotationAppliedDeg);
@@ -672,7 +675,16 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                         }
                         else
                         {
-                            throw new InvalidOperationException($"헥스 회전 NC 후처리 실패: C축 후보 #{ordinal} (line {currentLineIndex + 1}) 근접 공구번호 '{toolCode}'는 지원하지 않습니다. 허용 공구: T4848, T0909, T0606");
+                            // Finish(T0707)·그 외 비대상 공구의 C0/C30은 헥스 후처리 대상이 아님.
+                            // 예외로 끊지 않고 스킵 → 이후 Connection T0606/T0909 후보를 계속 찾는다.
+                            // (과거: 미지원 공구면 throw → Composite Finish C0에서 CAM 전체가 실패했음)
+                            skippedNonWhitelist++;
+                            if (skippedNonWhitelist <= 5)
+                            {
+                                AppLogger.Log(
+                                    $"NcFileGenerator: 헥스 회전 NC 후처리 스킵 - line {currentLineIndex + 1} tool={toolCode} (허용: T4848/T0909/T0606)");
+                            }
+                            return m.Value;
                         }
 
                         matchedWithinTarget++;
@@ -691,7 +703,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 File.WriteAllLines(ncFilePath, lines);
                 AppLogger.Log(
                     $"NcFileGenerator: 헥스 회전 NC 후처리 완료 - mode={modeLabel}, modeBase={FormatRotationNumber(modeBaseDeg)}, addDeg={FormatRotationNumber(addDeg)}, plus={isPlusMode}, " +
-                    $"T4848=C0.000(always), T0909/T0606=C{FormatRotationNumber(tool0906TargetDeg)}, replaced={replacedWithinTarget}");
+                    $"T4848=C0.000(always), T0909/T0606=C{FormatRotationNumber(tool0906TargetDeg)}, replaced={replacedWithinTarget}, skippedNonWhitelist={skippedNonWhitelist}");
 
                 if (matchedWithinTarget < HexCAxisMaxMatches)
                 {

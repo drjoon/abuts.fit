@@ -302,7 +302,9 @@
     - **hex(기본)**: 기존 PRC Serial 그대로 (`C0.0` + `G1 V-0.35`). 이후 `ApplyManufacturerHexRotationToNc`가 T0606·T0909 C를 같은 헥스모드로 치환 → 헥스면 수직 유지.
     - **post**: Serial이 사이트 C + `H=-pitchC`로 재작성. Apply는 `C0`/`C30`만 치환하므로 포스트 C는 유지되고 T0606만 헥스모드.
   - 처리 순서: `UpdateSerialBlocks` → `ApplyManufacturerHexRotationToNc` (헥스면 C 동반 회전 SSOT)
-  - 공구번호 미검출/미지원은 즉시 예외 발생(백엔드 실패 콜백 경유 → 프론트 토스트)
+  - 공구번호 미검출(상방 10줄 내 Txxxx 없음)만 즉시 예외(백엔드 실패 콜백 → 프론트 토스트).
+  - 미지원 공구(예: Finish `T0707`) 근접 `C0`/`C30`은 **스킵**(치환·카운트 안 함). Connection 화이트리스트 후보를 계속 탐색.
+    - 2026-09-08: 미지원 throw가 Composite Finish C0에서 CAM 전체를 실패시키던 회귀 수정.
 - 재제작(시작 공정=가공)으로 복사된 NC는 원본 헥스 모드 기준이다. 준비 단계에서 mode를 바꾸면 `updateRndHexRotation`이 `caseInfos.ncFile`을 비워 다음 승인 때 Esprit가 재생성한다.
 - NC 축 워드 소수점 강제 (CNC 인식):
   - 금지: `C30`, `C0`, `X10`, `Z0` 처럼 소수점 없는 정수 워드.
