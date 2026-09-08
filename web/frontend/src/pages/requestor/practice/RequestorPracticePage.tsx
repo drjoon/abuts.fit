@@ -656,6 +656,8 @@ export function RequestorPracticeReceivePage({
     retentionGrooveDefault,
     saveRetentionGroove,
     modalOpen: requestSettingsModalOpen,
+    usesExoCad,
+    setUsesExoCad,
     exoCadVersion,
     setExoCadVersion,
     forceRequired: requestSettingsForceRequired,
@@ -5660,6 +5662,8 @@ export function RequestorPracticeReceivePage({
       <DesignSoftwareSettingsDialog
         open={requestSettingsModalOpen}
         onOpenChange={handleRequestSettingsModalOpenChange}
+        usesExoCad={usesExoCad}
+        onUsesExoCadChange={setUsesExoCad}
         exoCadVersion={exoCadVersion}
         onExoCadVersionChange={setExoCadVersion}
         saving={designSoftwareSaving}

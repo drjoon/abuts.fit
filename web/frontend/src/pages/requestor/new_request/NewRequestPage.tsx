@@ -283,6 +283,8 @@ const NewRequestPageContent = () => {
     designSoftwareSaving,
     settingsComplete,
     modalOpen: designSoftwareModalOpen,
+    usesExoCad,
+    setUsesExoCad,
     exoCadVersion,
     setExoCadVersion,
     forceRequired: designSoftwareForceRequired,
@@ -1737,6 +1739,8 @@ const NewRequestPageContent = () => {
         <DesignSoftwareSettingsDialog
           open={designSoftwareModalOpen}
           onOpenChange={handleDesignSoftwareModalOpenChange}
+          usesExoCad={usesExoCad}
+          onUsesExoCadChange={setUsesExoCad}
           exoCadVersion={exoCadVersion}
           onExoCadVersionChange={setExoCadVersion}
           saving={designSoftwareSaving}

@@ -5,6 +5,7 @@
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // change-log:
+// - 2026-09-08: ExoCAD 사용 여부 먼저 → 예일 때만 버전 필수. 아니오=비ExoCAD(기존값 유지·없으면 3Shape).
 // - 2026-09-03: ExoCAD 모달에서 아노다이징 분리(툴바 토글 전용).
 // - 2026-09-03: 설정 모달 ExoCAD 전용 — SW 선택 제거, 저장 시 ExoCAD 고정.
 // - 2026-09-03: requestor·internalLab 모두 개인(User) SSOT. BA는 owner 템플릿·가입 시드만.
@@ -100,6 +101,8 @@ export function useRequestorRequestSettings(
   const canUseRequestSettings = isPersonalRequestor;
 
   const [designSoftwareValue, setDesignSoftwareValue] = useState("");
+  /** 모달 초안: null=미선택, true=ExoCAD, false=비ExoCAD */
+  const [usesExoCad, setUsesExoCad] = useState<boolean | null>(null);
   const [exoCadVersion, setExoCadVersion] = useState<ExoCadVersion | null>(null);
   const [anodizingEnabled, setAnodizingEnabled] = useState(true);
   const [retentionGrooveDefault, setRetentionGrooveDefault] = useState<
@@ -156,31 +159,47 @@ export function useRequestorRequestSettings(
     draftRetentionGrooveRef.current = draftRetentionGroove;
   }, [draftRetentionGroove]);
 
+  const deriveUsesExoCad = useCallback((designSoftware: string) => {
+    const sw = String(designSoftware || "").trim();
+    if (!sw) return null;
+    return sw === "ExoCAD";
+  }, []);
+
   const isIncomplete = useCallback(
-    (_designSoftware: string, version: ExoCadVersion | null = null) => {
-      // 모달이 ExoCAD 전용 — 버전 미선택이면 미완료
-      return !version;
+    (designSoftware: string, version: ExoCadVersion | null = null) => {
+      const sw = String(designSoftware || "").trim();
+      if (!sw) return true;
+      if (sw === "ExoCAD") return !version;
+      return false;
     },
     [],
   );
 
   const openModalForValue = useCallback(
     (
-      _value: string,
+      value: string,
       opts?: {
         force?: boolean;
         exoCadVersion?: ExoCadVersion | null;
+        usesExoCad?: boolean | null;
       },
     ) => {
+      const nextUses =
+        opts?.usesExoCad !== undefined
+          ? opts.usesExoCad
+          : deriveUsesExoCad(value);
+      setUsesExoCad(nextUses);
       setExoCadVersion(
         opts?.exoCadVersion !== undefined
           ? opts.exoCadVersion
-          : exoCadVersion,
+          : nextUses === true
+            ? exoCadVersion
+            : null,
       );
       setForceRequired(Boolean(opts?.force));
       setModalOpen(true);
     },
-    [exoCadVersion],
+    [deriveUsesExoCad, exoCadVersion],
   );
 
   const openModalForValueRef = useRef(openModalForValue);
@@ -346,6 +365,7 @@ export function useRequestorRequestSettings(
 
         if (effectiveDesign) {
           setDesignSoftwareValue(effectiveDesign);
+          setUsesExoCad(effectiveDesign === "ExoCAD");
           setExoCadVersion(effectiveExo);
           onDefaultsChangeRef.current?.({
             designSoftware: effectiveDesign,
@@ -353,6 +373,7 @@ export function useRequestorRequestSettings(
             ...defaultsPatch,
           });
         } else {
+          setUsesExoCad(null);
           setExoCadVersion(null);
           onDefaultsChangeRef.current?.(defaultsPatch);
         }
@@ -440,8 +461,22 @@ export function useRequestorRequestSettings(
     [canEditBusinessAnodizing, canUseRequestSettings, isPersonalRequestor, token],
   );
 
+  const handleUsesExoCadChange = useCallback((uses: boolean) => {
+    setUsesExoCad(uses);
+    if (!uses) setExoCadVersion(null);
+  }, []);
+
   const handleSaveDesignSoftware = useCallback(async () => {
-    if (!exoCadVersion) {
+    if (usesExoCad === null) {
+      toast({
+        title: "선택이 필요합니다",
+        description: "ExoCAD 사용 여부를 선택해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (usesExoCad && !exoCadVersion) {
       toast({
         title: "ExoCAD 버전이 필요합니다",
         description: "3.0 이하 여부를 선택해주세요.",
@@ -459,7 +494,16 @@ export function useRequestorRequestSettings(
       return;
     }
 
-    const designSoftware = "ExoCAD";
+    const current = String(
+      designSoftwareValue || draftDesignSoftware || "",
+    ).trim();
+    // 비ExoCAD: 기존 비ExoCAD 값 유지, ExoCAD/미설정이면 3Shape
+    const designSoftware = usesExoCad
+      ? "ExoCAD"
+      : current && current !== "ExoCAD"
+        ? current
+        : "3Shape";
+    const nextExoVersion = usesExoCad ? exoCadVersion : null;
 
     setDesignSoftwareSaving(true);
     try {
@@ -467,11 +511,11 @@ export function useRequestorRequestSettings(
       // 아노다이징은 툴바 토글에서 별도 저장.
       const savePayload: Record<string, string | null> = {
         requestorDesignSoftware: designSoftware,
-        requestorExoCadVersion: exoCadVersion,
+        requestorExoCadVersion: nextExoVersion,
       };
       if (canEditBusinessDesignSoftware) {
         savePayload.designSoftware = designSoftware;
-        savePayload.exoCadVersion = exoCadVersion;
+        savePayload.exoCadVersion = nextExoVersion;
       }
 
       const res = await apiFetch<{
@@ -489,7 +533,7 @@ export function useRequestorRequestSettings(
         toast({
           title: "저장 실패",
           description: String(
-            body?.message || "ExoCAD 버전 저장에 실패했습니다.",
+            body?.message || "디자인 소프트웨어 설정 저장에 실패했습니다.",
           ),
           variant: "destructive",
         });
@@ -497,13 +541,14 @@ export function useRequestorRequestSettings(
       }
 
       setDesignSoftwareValue(designSoftware);
-      setExoCadVersion(exoCadVersion);
+      setUsesExoCad(usesExoCad);
+      setExoCadVersion(nextExoVersion);
       setNeedsBusinessDesignSoftwareBootstrap(false);
       setForceRequired(false);
       setModalOpen(false);
       onDefaultsChangeRef.current?.({
         designSoftware,
-        exoCadVersion,
+        exoCadVersion: nextExoVersion,
       });
 
       const pending = gatePendingRef.current;
@@ -514,7 +559,11 @@ export function useRequestorRequestSettings(
 
       toast({
         title: "저장 완료",
-        description: "ExoCAD 버전이 저장되었습니다.",
+        description: usesExoCad
+          ? nextExoVersion === "le_3_0"
+            ? "ExoCAD 3.0 이하로 저장되었습니다."
+            : "ExoCAD 3.2 이상으로 저장되었습니다."
+          : "ExoCAD가 아닌 다른 소프트웨어로 저장되었습니다.",
       });
     } finally {
       setDesignSoftwareSaving(false);
@@ -522,9 +571,12 @@ export function useRequestorRequestSettings(
   }, [
     canEditBusinessDesignSoftware,
     clearGatePending,
+    designSoftwareValue,
+    draftDesignSoftware,
     exoCadVersion,
     toast,
     token,
+    usesExoCad,
   ]);
 
   const handleToggleAnodizing = useCallback(() => {
@@ -636,12 +688,14 @@ export function useRequestorRequestSettings(
     [clearGatePending],
   );
 
-  const settingsComplete = Boolean(exoCadVersion);
+  const settingsComplete = !isIncomplete(designSoftwareValue, exoCadVersion);
 
   return {
     loaded,
     designSoftwareValue,
     setDesignSoftwareValue,
+    usesExoCad,
+    setUsesExoCad: handleUsesExoCadChange,
     exoCadVersion,
     setExoCadVersion,
     anodizingEnabled,
