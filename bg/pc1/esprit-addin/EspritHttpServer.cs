@@ -723,7 +723,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 req.TiltAxisVector?.x,
                 req.TiltAxisVector?.y,
                 req.TiltAxisVector?.z,
-                req.TotalLength,
                 hexRotationMode,
                 hexAppliedDeg);
             AppLogger.Log($"[NC Processing] CAM processing completed successfully: {req.RequestId}");
