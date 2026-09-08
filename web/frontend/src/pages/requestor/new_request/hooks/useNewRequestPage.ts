@@ -5,6 +5,7 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/backend/controllers/requests/creation.from-draft.controller.js
+// - 2026-09-08: 가이드투어 abutment/abutment_order — 로컬 draft 복원·UI 잔류 억제.
 // - 2026-08-19: 제출 시작 시 초안 PATCH debounce를 멈춰 from-draft와 겹치지 않게.
 // - 2026-08-19: 치과 제출 성공 시 로컬 초안 복원 억제·입력 중 중복 체크 generation. 성공 토스트와 중복 모달이 동시에 뜨지 않게.
 // - 2026-08-19: 첨부 직후 preUploadFiles를 바로 호출(기공의뢰와 동일). 제출 잠금·헤더 건수 무효화.
@@ -31,6 +32,8 @@ import { useFilePreUpload } from "@/shared/hooks/useFilePreUpload";
 import type { TempUploadedFile } from "@/shared/hooks/useS3TempUpload";
 import { apiFetch, request } from "@/shared/api/apiClient";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
+import { useGuideTour } from "@/shared/guideTour/GuideTourProvider";
+import { isNewRequestAbutmentGuideTourStepId } from "@/shared/guideTour/guideTourSteps";
 import {
   getFileKey,
   getLocalDraft,
@@ -71,6 +74,14 @@ export const useNewRequestPage = (
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { kind: requestorKind } = useRequestorBusinessAccess();
+  const guideTour = useGuideTour();
+  const suppressLocalDraftForGuideTour =
+    guideTour.active &&
+    isNewRequestAbutmentGuideTourStepId(guideTour.stepId);
+  const suppressLocalDraftForGuideTourRef = useRef(
+    suppressLocalDraftForGuideTour,
+  );
+  suppressLocalDraftForGuideTourRef.current = suppressLocalDraftForGuideTour;
   const enableOralScanGrouping = options?.enableOralScanGrouping !== false;
   // 사이드바 goSidebarHref와 동일: /dashboard 허브가 lastDashboardPath(신규의뢰 등)로
   // 다시 bounce 하지 않도록 이동 전에 last path를 pin 한다.
@@ -129,6 +140,8 @@ export const useNewRequestPage = (
   const filesRef = useRef(files);
   filesRef.current = files;
   const skipLocalDraftRestoreRef = useRef(false);
+  /** DetailsSection: 복원 완료 전 knownFileKeys bootstrap 보류(복원→신규첨부 오인 방지) */
+  const [localDraftRestoreDone, setLocalDraftRestoreDone] = useState(false);
   const duplicateCheckGenRef = useRef(0);
   const [draftFiles, setDraftFiles] = useState<DraftCaseInfo[]>([]);
   const [selectedPreviewIndex, setSelectedPreviewIndex] = useState<
@@ -326,87 +339,112 @@ export const useNewRequestPage = (
 
   // --- 로컬 SSOT 복원 (페이지 새로고침 시 파일/정보 유지) ---
   useEffect(() => {
+    if (suppressLocalDraftForGuideTour) {
+      setLocalDraftRestoreDone(true);
+      return;
+    }
     // 이미 UI에 파일이 있으면 복원 스킵
-    if (files.length > 0) return;
+    if (files.length > 0) {
+      setLocalDraftRestoreDone(true);
+      return;
+    }
     // 방금 제출 성공: 같은 페이지에 잔류해도 초안 STL을 다시 올리지 않음
-    if (skipLocalDraftRestoreRef.current) return;
+    if (skipLocalDraftRestoreRef.current) {
+      setLocalDraftRestoreDone(true);
+      return;
+    }
 
+    let cancelled = false;
     const restoreLocal = async () => {
-      if (skipLocalDraftRestoreRef.current) return;
-      const draft = getLocalDraft() || initLocalDraft();
-      if (!draft.files || draft.files.length === 0) return;
-
-      const restored: File[] = [];
-      for (const meta of draft.files) {
-        try {
-          const fileFromIdb = await getFile(meta.fileKey);
-          if (fileFromIdb) {
-            const fileId = String(meta.fileId || "").trim();
-            const s3Key = String(meta.s3Key || "").trim();
-            if (fileId && s3Key) {
-              rememberUploadedFile(fileFromIdb, {
-                _id: fileId,
-                originalName: meta.name || fileFromIdb.name,
-                mimetype:
-                  meta.mimetype || meta.type || fileFromIdb.type || "application/octet-stream",
-                size: Number(meta.size || fileFromIdb.size),
-                key: s3Key,
-              });
-            }
-            restored.push(fileFromIdb);
-          }
-        } catch {
-          continue;
-        }
-      }
-
-      if (restored.length > 0) {
+      try {
         if (skipLocalDraftRestoreRef.current) return;
-        setFiles(restored);
-        setSelectedPreviewIndex(0);
+        if (suppressLocalDraftForGuideTourRef.current) return;
+        const draft = getLocalDraft() || initLocalDraft();
+        if (!draft.files || draft.files.length === 0) return;
 
-        // caseInfosMap 복원 (shippingMode 타입 정규화)
-        if (draft.caseInfosMap && Object.keys(draft.caseInfosMap).length > 0) {
-          setCaseInfosMap((prev) => {
-            const next: Record<string, CaseInfos> = { ...prev };
-            Object.entries(draft.caseInfosMap).forEach(([k, v]) => {
-              const shippingMode =
-                v.shippingMode === "express"
-                  ? "express"
-                  : v.shippingMode === "normal"
-                    ? "normal"
-                    : undefined;
-              next[k] = {
-                ...v,
-                shippingMode,
-                requestorHexRotation: normalizeRequestorHexRotation(
-                  (v as any)?.requestorHexRotation,
-                ),
-                finalHexRotation: normalizeRequestorHexRotation(
-                  (v as any)?.finalHexRotation,
-                ),
-              } as CaseInfos;
+        const restored: File[] = [];
+        for (const meta of draft.files) {
+          try {
+            const fileFromIdb = await getFile(meta.fileKey);
+            if (fileFromIdb) {
+              const fileId = String(meta.fileId || "").trim();
+              const s3Key = String(meta.s3Key || "").trim();
+              if (fileId && s3Key) {
+                rememberUploadedFile(fileFromIdb, {
+                  _id: fileId,
+                  originalName: meta.name || fileFromIdb.name,
+                  mimetype:
+                    meta.mimetype ||
+                    meta.type ||
+                    fileFromIdb.type ||
+                    "application/octet-stream",
+                  size: Number(meta.size || fileFromIdb.size),
+                  key: s3Key,
+                });
+              }
+              restored.push(fileFromIdb);
+            }
+          } catch {
+            continue;
+          }
+        }
+
+        if (restored.length > 0) {
+          if (cancelled) return;
+          if (skipLocalDraftRestoreRef.current) return;
+          if (suppressLocalDraftForGuideTourRef.current) return;
+          setFiles(restored);
+          setSelectedPreviewIndex(0);
+
+          // caseInfosMap 복원 (shippingMode 타입 정규화)
+          if (draft.caseInfosMap && Object.keys(draft.caseInfosMap).length > 0) {
+            setCaseInfosMap((prev) => {
+              const next: Record<string, CaseInfos> = { ...prev };
+              Object.entries(draft.caseInfosMap).forEach(([k, v]) => {
+                const shippingMode =
+                  v.shippingMode === "express"
+                    ? "express"
+                    : v.shippingMode === "normal"
+                      ? "normal"
+                      : undefined;
+                next[k] = {
+                  ...v,
+                  shippingMode,
+                  requestorHexRotation: normalizeRequestorHexRotation(
+                    (v as any)?.requestorHexRotation,
+                  ),
+                  finalHexRotation: normalizeRequestorHexRotation(
+                    (v as any)?.finalHexRotation,
+                  ),
+                } as CaseInfos;
+              });
+              return next;
             });
-            return next;
-          });
-        }
+          }
 
-        // V3 모드: Draft ID 제거하여 서버 Draft 복원 방지
-        try {
-          localStorage.removeItem("abutsfit:new-request-draft-id:v1");
-        } catch {
-          return;
+          // V3 모드: Draft ID 제거하여 서버 Draft 복원 방지
+          try {
+            localStorage.removeItem("abutsfit:new-request-draft-id:v1");
+          } catch {
+            return;
+          }
         }
+      } finally {
+        if (!cancelled) setLocalDraftRestoreDone(true);
       }
     };
 
     void restoreLocal();
+    return () => {
+      cancelled = true;
+    };
   }, [
     files.length,
     rememberUploadedFile,
     setCaseInfosMap,
     setFiles,
     setSelectedPreviewIndex,
+    suppressLocalDraftForGuideTour,
   ]);
 
   // Draft 최초 로딩 시 서버의 draft.caseInfos를 로컬 draftFiles 상태에 주입
@@ -822,6 +860,23 @@ export const useNewRequestPage = (
     updateCaseInfos,
     enableOralScanGrouping,
   });
+
+  // 가이드투어 커스텀어벗 CNC — UI에 복원된 draft가 남지 않게(로컬 SSOT는 유지)
+  useEffect(() => {
+    if (!suppressLocalDraftForGuideTour) return;
+    setLocalDraftRestoreDone(true);
+    clearPreUploadCache();
+    setFiles((prev) => (prev.length === 0 ? prev : []));
+    setDraftFiles((prev) => (prev.length === 0 ? prev : []));
+    setSelectedPreviewIndex(null);
+    patientFileGroupsApi.clearGroups();
+  }, [
+    clearPreUploadCache,
+    patientFileGroupsApi.clearGroups,
+    setFiles,
+    setSelectedPreviewIndex,
+    suppressLocalDraftForGuideTour,
+  ]);
 
   // V3 래퍼: 로컬 저장 + 첨부 직후 S3 사전 업로드(onFilesAdded → preUploadFiles)
   const { handleUpload: handleLocalUpload } = useNewRequestLocalFiles({
@@ -1306,6 +1361,8 @@ export const useNewRequestPage = (
     caseInfosMap,
     updateCaseInfos,
     patchDraftImmediately,
+    localDraftRestoreDone,
+    suppressLocalDraftForGuideTour,
 
     // 파일 업로드 핸들러
     isDragOver: isReady ? isDragOver : false,

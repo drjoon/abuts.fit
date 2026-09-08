@@ -15,6 +15,7 @@ import {
 } from "../utils/patientGroups";
 
 // change-log:
+// - 2026-09-08: 가이드투어 abutment — 확인 모달 자동 오픈 억제·draft 복원 bootstrap 대기.
 // - 2026-08-16: 신규 첨부 시 3D 확인 모달 자동 오픈. 생산모드 유지홈 필수.
 // related files:
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
@@ -109,6 +110,10 @@ type Props = {
   onRemoveFileFromPatientGroup?: (fileKey: string) => void;
   /** true: 기공소 — 항상 커스텀어벗 생산, 구강스캔 묶음·디자인+생산 탭 없음 */
   productionOnly?: boolean;
+  /** 로컬 draft 복원 완료 전 known keys bootstrap 보류 */
+  localDraftRestoreDone?: boolean;
+  /** 가이드투어 중 3D 확인 모달 자동 오픈·유지 금지 */
+  suppressDetailAutoOpen?: boolean;
 };
 
 export function NewRequestDetailsSection({
@@ -175,6 +180,8 @@ export function NewRequestDetailsSection({
   onUngroupPatientFiles,
   onRemoveFileFromPatientGroup,
   productionOnly = false,
+  localDraftRestoreDone = true,
+  suppressDetailAutoOpen = false,
 }: Props) {
   const { token } = useAuthStore();
   const listContainerRef = useRef<HTMLDivElement | null>(null);
@@ -440,6 +447,14 @@ export function NewRequestDetailsSection({
   const knownFileKeysRef = useRef<Set<string>>(new Set());
   const fileKeysBootstrappedRef = useRef(false);
   useEffect(() => {
+    if (suppressDetailAutoOpen && isDetailOpen) {
+      setIsDetailOpen(false);
+    }
+  }, [isDetailOpen, suppressDetailAutoOpen]);
+
+  useEffect(() => {
+    if (!localDraftRestoreDone) return;
+
     const currentKeys = files.map((file) => toNormalizedFileKey(file));
     const currentKeySet = new Set(currentKeys);
 
@@ -461,6 +476,7 @@ export function NewRequestDetailsSection({
       }
     });
 
+    if (suppressDetailAutoOpen) return;
     if (!newIndices.length || isDetailOpen || duplicatePromptOpen) return;
 
     const openIndex =
@@ -477,7 +493,9 @@ export function NewRequestDetailsSection({
     fileVerificationStatus,
     files,
     isDetailOpen,
+    localDraftRestoreDone,
     openDetailModal,
+    suppressDetailAutoOpen,
     toNormalizedFileKey,
   ]);
 

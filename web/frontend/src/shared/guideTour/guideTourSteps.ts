@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/practice/PracticeToothWorkGuideTourBanner.tsx
 // - web/frontend/src/shared/guideTour/GuideTourProvider.tsx
 // change-log:
+// - 2026-09-08: isNewRequestAbutmentGuideTourStepId — new-request draft/모달 격리용.
 // - 2026-09-07: remake·lab_remake — 치과 리메이크 버튼·기공소 리메이크 수신 안내.
 // - 2026-09-07: partner_chat — FAB로 의뢰건 없이 기공소↔치과 채팅(치과·기공소).
 // - 2026-09-05: intro 힌트 — 구강스캔·석고 모델 / 기공의뢰서는 어벗츠 플랫폼으로(치과·기공소 공통).
@@ -413,6 +414,11 @@ export const getGuideTourStepIndex = (
 
 export const isOralGuideTourStepId = (stepId: string | null | undefined): boolean =>
   Boolean(stepId && stepId.startsWith("oral_"));
+
+/** 어벗생산의뢰(/dashboard/new-request) 챕터 — 로컬 draft·확인 모달과 격리 */
+export const isNewRequestAbutmentGuideTourStepId = (
+  stepId: string | null | undefined,
+): boolean => stepId === "abutment" || stepId === "abutment_order";
 
 /** 챕터1에서 작성 패널을 열어야 하는 세부 */
 export const shouldOpenComposeForGuideTourStep = (

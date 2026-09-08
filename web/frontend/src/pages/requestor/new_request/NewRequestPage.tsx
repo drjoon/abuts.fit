@@ -74,6 +74,7 @@ import {
   isLikelyOralScanSize,
   resolveFileSizeBytes,
 } from "./utils/patientGroups";
+import { useGuideTour } from "@/shared/guideTour/GuideTourProvider";
 
 
 // related files:
@@ -91,6 +92,8 @@ import {
 // - web/backend/models/user.model.js
 // - .cursor/rules/oral-scan-file-size.mdc
 // Rhino의 align 기능이 구성정보를 대체하므로, 개별 구성정보 파일 업로드/매칭은 사용하지 않는다.
+// change-log:
+// - 2026-09-08: 가이드투어 중 practice intro·draft 확인 모달 격리.
 
 const PRACTICE_NEW_REQUEST_INTRO_SEEN_PREFIX =
   "abutsfit:practice-new-request-intro-seen:v1:";
@@ -118,6 +121,7 @@ const NewRequestPageContent = () => {
   const { toast } = useToast();
   const { token, user: authUser } = useAuthStore();
   const { kind: requestorKind } = useRequestorBusinessAccess();
+  const guideTour = useGuideTour();
   const isLabRequestor = requestorKind === "lab";
   const isPracticeRequestor = requestorKind === "practice";
   /** 사이드바 SSOT: 치과=구강스캔으로, 기공소=치과로부터 수신 */
@@ -207,6 +211,8 @@ const NewRequestPageContent = () => {
     ungroupPatientFiles,
     removeFileFromPatientGroup,
     clearPatientGroups,
+    localDraftRestoreDone,
+    suppressLocalDraftForGuideTour,
   } = useNewRequestPage(existingRequestId, {
     enableOralScanGrouping: !isLabRequestor,
   });
@@ -1109,6 +1115,7 @@ const NewRequestPageContent = () => {
     if (!isPracticeRequestor) return;
     if (draftStatus === "loading") return;
     if (!practiceAuthUserId) return;
+    if (guideTour.active) return;
 
     try {
       if (
@@ -1123,7 +1130,12 @@ const NewRequestPageContent = () => {
     }
 
     setPracticeIntroOpen(true);
-  }, [isPracticeRequestor, draftStatus, practiceAuthUserId]);
+  }, [isPracticeRequestor, draftStatus, practiceAuthUserId, guideTour.active]);
+
+  useEffect(() => {
+    if (!guideTour.active) return;
+    setPracticeIntroOpen(false);
+  }, [guideTour.active]);
 
   const [focusUnverifiedTick, setFocusUnverifiedTick] = useState(0);
 
@@ -1828,6 +1840,8 @@ const NewRequestPageContent = () => {
               attachmentListItems={attachmentListItems}
               patientGroups={patientGroups}
               productionOnly={isLabRequestor}
+              localDraftRestoreDone={localDraftRestoreDone}
+              suppressDetailAutoOpen={suppressLocalDraftForGuideTour}
               onGroupSelectedFiles={groupSelectedFiles}
               onUngroupPatientFiles={handleUngroupPatientFiles}
               onRemoveFileFromPatientGroup={handleRemoveFileFromPatientGroup}
