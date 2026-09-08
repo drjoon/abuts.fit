@@ -4358,16 +4358,34 @@ export async function appendPracticeTransferProsthesis(req, res) {
       practiceAnchorId,
       labAnchorId: targetLabAnchorId,
       toothWorks: followUpRows,
+      sourceToothWorks,
       transferDoc: doc,
     });
     const deltaFees = feeQuote?.fees || {};
-    const deltaTotal = Math.max(0, Math.round(Number(deltaFees.total || 0)));
+    const billingDelta = feeQuote?.billingDelta || {
+      labFeeTotal: Math.max(0, Math.round(Number(deltaFees.labFeeTotal || 0))),
+      total: Math.max(0, Math.round(Number(deltaFees.total || 0))),
+      finalLabFeeTotal: Math.max(0, Math.round(Number(deltaFees.labFeeTotal || 0))),
+      finalTotal: Math.max(0, Math.round(Number(deltaFees.total || 0))),
+      tempCreditLabFeeTotal: 0,
+    };
+    const deltaTotal = Math.max(0, Math.round(Number(billingDelta.total || 0)));
     const deltaLabFee = Math.max(
       0,
-      Math.round(Number(deltaFees.labFeeTotal || 0)),
+      Math.round(Number(billingDelta.labFeeTotal || 0)),
+    );
+    const finalLabFee = Math.max(
+      0,
+      Math.round(
+        Number(
+          billingDelta.finalLabFeeTotal != null
+            ? billingDelta.finalLabFeeTotal
+            : deltaFees.labFeeTotal || 0,
+        ),
+      ),
     );
 
-    if (deltaTotal <= 0) {
+    if (finalLabFee <= 0) {
       return res.status(409).json({
         success: false,
         message: "기공소 수가가 설정되지 않아 후속 보철을 추가할 수 없습니다.",
@@ -4405,7 +4423,11 @@ export async function appendPracticeTransferProsthesis(req, res) {
       deltaFees,
       actorUserId: req.user?._id,
     });
-    if (!holdResult.held && holdResult.reason !== "already_held") {
+    if (
+      !holdResult.held &&
+      holdResult.reason !== "already_held" &&
+      holdResult.reason !== "zero_fee"
+    ) {
       return res.status(402).json({
         success: false,
         message: "크레딧 보류에 실패했습니다.",
@@ -4447,6 +4469,24 @@ export async function appendPracticeTransferProsthesis(req, res) {
       billingDelta: {
         labFeeTotal: deltaLabFee,
         total: deltaTotal,
+        finalLabFeeTotal: Math.max(
+          0,
+          Math.round(Number(billingDelta.finalLabFeeTotal || finalLabFee)),
+        ),
+        finalTotal: Math.max(
+          0,
+          Math.round(
+            Number(
+              billingDelta.finalTotal != null
+                ? billingDelta.finalTotal
+                : billingDelta.finalLabFeeTotal || finalLabFee,
+            ),
+          ),
+        ),
+        tempCreditLabFeeTotal: Math.max(
+          0,
+          Math.round(Number(billingDelta.tempCreditLabFeeTotal || 0)),
+        ),
       },
       followUpIndex,
       previousArrivalYmd: String(appended.previousYmd || "").trim(),

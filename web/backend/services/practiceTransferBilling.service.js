@@ -135,6 +135,10 @@ import {
   resolveRushFeeMultiplier,
 } from "../utils/practiceTransferRush.js";
 import {
+  applyProsthesisFollowUpTempCredit,
+  pickSourceTempRowsForFollowUpCredit,
+} from "../utils/practiceTransferProsthesisFollowUp.js";
+import {
   loadCreditSettingsDefaults,
 } from "../utils/creditSettingsDefaults.js";
 import {
@@ -4470,9 +4474,10 @@ export async function quoteProsthesisFollowUpFees({
   practiceAnchorId,
   labAnchorId,
   toothWorks,
+  sourceToothWorks = null,
   transferDoc = null,
 }) {
-  return buildPracticeTransferQuote({
+  const quote = await buildPracticeTransferQuote({
     practiceAnchorId,
     labAnchorId,
     toothWorks,
@@ -4481,6 +4486,62 @@ export async function quoteProsthesisFollowUpFees({
     matchingMode: "direct",
     rushFeeMultiplier: rushFeeMultiplierFromTransfer(transferDoc),
   });
+
+  const tempRows = pickSourceTempRowsForFollowUpCredit(
+    sourceToothWorks != null
+      ? sourceToothWorks
+      : Array.isArray(transferDoc?.toothWorks)
+        ? transferDoc.toothWorks
+        : [],
+    toothWorks,
+  );
+
+  let tempCreditLabFeeTotal = 0;
+  if (tempRows.length > 0) {
+    const tempQuote = await buildPracticeTransferQuote({
+      practiceAnchorId,
+      labAnchorId,
+      toothWorks: tempRows,
+      skipAbutmentFees: true,
+      remake: false,
+      matchingMode: "direct",
+      rushFeeMultiplier: rushFeeMultiplierFromTransfer(transferDoc),
+    });
+    tempCreditLabFeeTotal = Math.max(
+      0,
+      Math.round(Number(tempQuote?.fees?.labFeeTotal || 0)),
+    );
+  }
+
+  const grossFees = quote?.fees || {};
+  const credited = applyProsthesisFollowUpTempCredit({
+    finalLabFeeTotal: grossFees.labFeeTotal,
+    finalTotal: grossFees.total,
+    tempCreditLabFeeTotal,
+  });
+
+  const netFees = {
+    ...grossFees,
+    labFeeTotal: credited.labFeeTotal,
+    total: credited.total,
+  };
+
+  return {
+    ...quote,
+    fees: netFees,
+    grossFees,
+    tempCredit: {
+      labFeeTotal: credited.tempCreditLabFeeTotal,
+      toothWorks: tempRows,
+    },
+    billingDelta: {
+      labFeeTotal: credited.labFeeTotal,
+      total: credited.total,
+      finalLabFeeTotal: credited.finalLabFeeTotal,
+      finalTotal: credited.finalTotal,
+      tempCreditLabFeeTotal: credited.tempCreditLabFeeTotal,
+    },
+  };
 }
 
 export async function loadPracticeTransferQuoteContext({

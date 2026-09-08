@@ -1320,6 +1320,13 @@ export const PracticeFileTransferPage = ({
   const [followUpDialogOpen, setFollowUpDialogOpen] = useState(false);
   const [followUpDialogMode, setFollowUpDialogMode] = useState<"create" | "edit">("create");
   const [appendProsthesisBusy, setAppendProsthesisBusy] = useState(false);
+  /** 재도착 적용 직전 — 지르 최종 보철 전환 제안 */
+  const [followUpOfferOpen, setFollowUpOfferOpen] = useState(false);
+  const [followUpOfferArrivalYmd, setFollowUpOfferArrivalYmd] = useState("");
+  /** 제안·CTA에서 연 후속 모달의 기본 도착일 */
+  const [followUpPreferredArrivalYmd, setFollowUpPreferredArrivalYmd] = useState<
+    string | null
+  >(null);
   const [cancelProsthesisFollowUpBusy, setCancelProsthesisFollowUpBusy] = useState(false);
   const [updateProsthesisFollowUpBusy, setUpdateProsthesisFollowUpBusy] = useState(false);
   const [restoreConfirmOpen, setRestoreConfirmOpen] = useState(false);
@@ -4875,12 +4882,15 @@ export const PracticeFileTransferPage = ({
     );
     const pendingArrival = String(pendingProsthesisFollowUp?.arrivalYmd || "").trim();
     const pendingOrder = String(pendingProsthesisFollowUp?.orderYmd || "").trim();
+    const preferredArrival = String(followUpPreferredArrivalYmd || "").trim();
     const arrivalYmd =
       followUpDialogMode === "edit" && pendingArrival
         ? pendingArrival
-        : orderYmd
-          ? addDaysToDateInput(orderYmd, offsetDays)
-          : addDaysToDateInput(todayDate, offsetDays);
+        : preferredArrival && /^\d{4}-\d{2}-\d{2}$/.test(preferredArrival)
+          ? preferredArrival
+          : orderYmd
+            ? addDaysToDateInput(orderYmd, offsetDays)
+            : addDaysToDateInput(todayDate, offsetDays);
     return {
       orderDate:
         followUpDialogMode === "edit" && pendingOrder
@@ -4894,6 +4904,7 @@ export const PracticeFileTransferPage = ({
   }, [
     accountArrivalDefaultDays,
     followUpDialogMode,
+    followUpPreferredArrivalYmd,
     labArrivalDefaults,
     pendingProsthesisFollowUp?.arrivalYmd,
     pendingProsthesisFollowUp?.orderYmd,
@@ -9561,7 +9572,14 @@ export const PracticeFileTransferPage = ({
             selectedTransfer.transferId !== "-" &&
             selectedTransfer.status !== "취소" &&
             selectedTransfer.status !== "작업취소"
-              ? (arrivalYmd) => void handleAppendArrival(arrivalYmd)
+              ? (arrivalYmd) => {
+                  if (prosthesisFollowUpEligibility.ok) {
+                    setFollowUpOfferArrivalYmd(arrivalYmd);
+                    setFollowUpOfferOpen(true);
+                    return;
+                  }
+                  void handleAppendArrival(arrivalYmd);
+                }
               : undefined
           }
           appendArrivalBusy={appendArrivalBusy}
@@ -9587,6 +9605,7 @@ export const PracticeFileTransferPage = ({
                     });
                     return;
                   }
+                  setFollowUpPreferredArrivalYmd(null);
                   setFollowUpDialogMode("create");
                   setFollowUpDialogOpen(true);
                 }
@@ -9603,6 +9622,7 @@ export const PracticeFileTransferPage = ({
           onModifyProsthesisFollowUp={
             showProsthesisFollowUpManage
               ? () => {
+                  setFollowUpPreferredArrivalYmd(null);
                   setFollowUpDialogMode("edit");
                   setFollowUpDialogOpen(true);
                 }
@@ -9823,7 +9843,10 @@ export const PracticeFileTransferPage = ({
         <PracticeProsthesisFollowUpDialog
           open={followUpDialogOpen}
           onOpenChange={(open) => {
-            if (!open) setFollowUpDialogMode("create");
+            if (!open) {
+              setFollowUpDialogMode("create");
+              setFollowUpPreferredArrivalYmd(null);
+            }
             setFollowUpDialogOpen(open);
           }}
           mode={followUpDialogMode}
@@ -9844,6 +9867,38 @@ export const PracticeFileTransferPage = ({
             });
           }}
           onConfirm={handleFollowUpDialogConfirm}
+        />
+
+        <ConfirmDialog
+          open={followUpOfferOpen}
+          title="지르 브리지(크라운)으로 변경할까요?"
+          description={
+            <>
+              예: 임시치아 기공비는 차감되고 브리지·크라운 기공비만 추가됩니다.
+              <br />
+              아니오: 임시치아로 계속 진행합니다(다음 도착일만 반영, 추가 과금
+              없음). 임시치아를 한 번 더 만든 뒤에도, 다음 도착일을 지정할 때
+              다시 물어볼 수 있습니다.
+              <br />
+              지르로 바꾸지 않으면 견적은 임시치아 비용으로 유지됩니다.
+            </>
+          }
+          confirmLabel="지르로 변경"
+          cancelLabel="임시치아로 계속"
+          confirmTone="primary"
+          onConfirm={() => {
+            const ymd = String(followUpOfferArrivalYmd || "").trim();
+            setFollowUpOfferOpen(false);
+            setFollowUpPreferredArrivalYmd(ymd || null);
+            setFollowUpDialogMode("create");
+            setFollowUpDialogOpen(true);
+          }}
+          onCancel={() => {
+            const ymd = String(followUpOfferArrivalYmd || "").trim();
+            setFollowUpOfferOpen(false);
+            setFollowUpOfferArrivalYmd("");
+            if (ymd) void handleAppendArrival(ymd);
+          }}
         />
 
         <Dialog

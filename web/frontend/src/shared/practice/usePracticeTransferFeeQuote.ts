@@ -125,6 +125,8 @@ export const usePracticeTransferFeeQuote = (params: {
   rushFeeMultiplier?: number;
   skipAbutmentFees?: boolean;
   remake?: boolean;
+  /** 후속 제작: 원 임시치아 행 — 기공비 차감 */
+  creditToothWorks?: ToothWorkSelection[] | null;
 }): {
   quote: PracticeTransferFeeQuote;
   contextReady: boolean;
@@ -133,6 +135,7 @@ export const usePracticeTransferFeeQuote = (params: {
   const { token } = useAuthStore();
   const { data: systemSettings } = useSystemSettings();
   const toothWorks = params.toothWorks;
+  const creditToothWorks = params.creditToothWorks;
   const storedQuote = params.storedQuote;
   const remake = Boolean(params.remake);
   const rawLabId = String(params.labAnchorId || "").trim();
@@ -201,6 +204,7 @@ export const usePracticeTransferFeeQuote = (params: {
       rushFeeMultiplier,
       skipAbutmentFees: params.skipAbutmentFees,
       remake,
+      creditToothWorks: creditToothWorks || undefined,
       context: {
         ...context,
         abutmentPricingTier:
@@ -212,6 +216,7 @@ export const usePracticeTransferFeeQuote = (params: {
     });
   }, [
     context,
+    creditToothWorks,
     params.abutmentPrices,
     params.abutmentPricingTier,
     params.autoMatchBudget,
@@ -223,7 +228,13 @@ export const usePracticeTransferFeeQuote = (params: {
     toothWorks,
   ]);
 
-  const quote = storedQuote && storedQuote.total > 0 ? storedQuote : liveQuote;
+  const quote =
+    storedQuote &&
+    (storedQuote.total > 0 ||
+      Math.max(0, Number(storedQuote.tempCreditLabFeeTotal || 0)) > 0 ||
+      Math.max(0, Number(storedQuote.finalLabFeeTotal || 0)) > 0)
+      ? storedQuote
+      : liveQuote;
 
   return { quote, contextReady };
 };

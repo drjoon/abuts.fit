@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/practice/transferMemo.ts
 // - web/frontend/src/shared/components/practice/PracticeProsthesisFollowUpDialog.tsx
 // - 2026-09-01: 임시치아 배송 후 동일 건 크라운/브리지 후속 추가(프론트 SSOT).
+// - 2026-09-08: 후속 제작 견적에 원 임시치아 기공비 차감.
 import {
   type ToothWorkSelection,
   isCustomAbutmentProsthesisType,
@@ -251,7 +252,76 @@ export type ProsthesisFollowUpRecord = {
   previousOrderYmd?: string | null;
   labAcceptedAt?: string | null;
   canceledAt?: string | null;
-  billingDelta?: { labFeeTotal?: number; total?: number } | null;
+  billingDelta?: {
+    labFeeTotal?: number;
+    total?: number;
+    finalLabFeeTotal?: number;
+    finalTotal?: number;
+    tempCreditLabFeeTotal?: number;
+  } | null;
+};
+
+/** 후속 선택 스팬에 대응하는 원 임시치아 행(견적 차감용) */
+export const pickSourceTempRowsForFollowUpCredit = (
+  sourceToothWorks: Partial<ToothWorkSelection>[] | null | undefined,
+  followUpRows: Partial<ToothWorkSelection>[] | null | undefined,
+): Partial<ToothWorkSelection>[] => {
+  const source = Array.isArray(sourceToothWorks) ? sourceToothWorks : [];
+  const followUps = Array.isArray(followUpRows) ? followUpRows : [];
+  if (source.length === 0 || followUps.length === 0) return [];
+
+  const followKeys = new Set(
+    followUps
+      .filter(
+        (row) =>
+          isFollowUpProsthesisPhase(row) &&
+          isFinalProsthesisType(String(row.prosthesisType || "")),
+      )
+      .map((row) => followUpRowSpanKey(row))
+      .filter(Boolean),
+  );
+  if (followKeys.size === 0) return [];
+
+  const out: Partial<ToothWorkSelection>[] = [];
+  const seen = new Set<string>();
+  for (const row of source) {
+    if (!isTemporaryToothProsthesisType(String(row.prosthesisType || ""))) continue;
+    if (isFollowUpProsthesisPhase(row)) continue;
+    const teeth = linkedTeethOf(row);
+    const key = teeth.join("-");
+    if (!key || !followKeys.has(key)) continue;
+    const dedupe = `${String(row.toothNumber || "").trim()}:${key}`;
+    if (seen.has(dedupe)) continue;
+    seen.add(dedupe);
+    out.push(row);
+  }
+  return out;
+};
+
+/** 후속 최종 보철 견적 − 임시치아 기공비 = 순증분 */
+export const applyProsthesisFollowUpTempCredit = (input: {
+  finalLabFeeTotal?: number;
+  finalTotal?: number;
+  tempCreditLabFeeTotal?: number;
+}) => {
+  const finalLab = Math.max(0, Math.round(Number(input.finalLabFeeTotal || 0)));
+  const finalTot = Math.max(
+    0,
+    Math.round(
+      Number(
+        input.finalTotal != null ? input.finalTotal : input.finalLabFeeTotal || 0,
+      ),
+    ),
+  );
+  const credit = Math.max(0, Math.round(Number(input.tempCreditLabFeeTotal || 0)));
+  const appliedCredit = Math.min(credit, finalLab);
+  return {
+    finalLabFeeTotal: finalLab,
+    finalTotal: finalTot,
+    tempCreditLabFeeTotal: appliedCredit,
+    labFeeTotal: Math.max(0, finalLab - appliedCredit),
+    total: Math.max(0, finalTot - appliedCredit),
+  };
 };
 
 export const isPendingProsthesisFollowUpRecord = (

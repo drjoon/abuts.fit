@@ -177,6 +177,8 @@ type PracticeToothWorkChartReadOnlyProps = {
   skipJig?: boolean;
   /** 후속 제작 등 — 어벗·디자인비 견적 제외 */
   skipAbutmentFees?: boolean;
+  /** 후속 제작 — 원 임시치아 기공비 차감 */
+  creditToothWorks?: ToothWorkSelection[] | null;
   /** 상단「보철물 (N개)」헤더 */
   showHeader?: boolean;
   /** 모달 등 좁은 영역 — 카드 클립·이중 테두리 완화 */
@@ -204,6 +206,7 @@ export const PracticeToothWorkChartReadOnly = ({
   labAnchorId = null,
   skipJig = false,
   skipAbutmentFees = false,
+  creditToothWorks = null,
   showHeader = true,
   embedded = false,
   enlargeOverlayClassName,
@@ -333,6 +336,7 @@ export const PracticeToothWorkChartReadOnly = ({
     toothWorks: quoteToothWorks,
     storedQuote: storedFeeQuote,
     skipAbutmentFees,
+    creditToothWorks,
   });
 
   const enlargeOverlayClass =

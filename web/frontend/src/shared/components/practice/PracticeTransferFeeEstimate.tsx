@@ -462,6 +462,7 @@ function FeeBreakdownTable({
   labSettlementHint = null,
   labShareHoldPending = null,
   abutmentShareHoldPending = null,
+  tempCreditLabFeeTotal = 0,
 }: {
   lines: FeeBreakdownLine[];
   labFacing?: boolean;
@@ -470,6 +471,8 @@ function FeeBreakdownTable({
   labSettlementHint?: ReactNode;
   labShareHoldPending?: boolean | null;
   abutmentShareHoldPending?: boolean | null;
+  /** 후속 제작 — 원 임시치아 기공비 차감 */
+  tempCreditLabFeeTotal?: number;
 }) {
   // 같은 치아 = 한 줄. 열: 보철기공비 | 커스텀어벗 | (있으면) 어벗 디자인+생산비.
   // 상·하악 전체 동일 보철은 상악/하악으로 축약.
@@ -502,7 +505,9 @@ function FeeBreakdownTable({
   );
   const labAbutmentPending = lines.some((line) => line.labAbutmentPending);
   const labShareTotal = prosthesisSubtotal + labAbutmentSubtotal;
-  const workTotal = labShareTotal + abutmentSubtotal;
+  const tempCredit = Math.max(0, Math.round(Number(tempCreditLabFeeTotal || 0)));
+  const workTotalGross = labShareTotal + abutmentSubtotal;
+  const workTotal = Math.max(0, workTotalGross - tempCredit);
   const prosthesisMin = lines.reduce((sum, line) => {
     const min =
       line.labFeeMin != null && Number.isFinite(line.labFeeMin)
@@ -549,8 +554,8 @@ function FeeBreakdownTable({
         labTotalMinOverride !== labTotalMaxOverride));
   const workTotalDisplay = hasPracticeLabFeeSpread
     ? formatWonRange(
-        labShareRangeMin + abutmentSubtotal,
-        labShareRangeMax + abutmentSubtotal,
+        Math.max(0, labShareRangeMin + abutmentSubtotal - tempCredit),
+        Math.max(0, labShareRangeMax + abutmentSubtotal - tempCredit),
       )
     : formatManWon(workTotal);
   const amountColCount =
@@ -580,8 +585,9 @@ function FeeBreakdownTable({
         : "col-span-1";
   const showWorkTotal =
     Boolean(labSettlementHint) ||
+    tempCredit > 0 ||
     (amountColCount >= 2 &&
-      (workTotal > 0 || abutmentQuotePending || labAbutmentPending));
+      (workTotalGross > 0 || abutmentQuotePending || labAbutmentPending));
 
   return (
     <div className={cn("grid gap-x-3 gap-y-0.5 tabular-nums", gridClass)}>
@@ -670,13 +676,34 @@ function FeeBreakdownTable({
       ) : null}
       {showWorkTotal ? (
         <>
-          <span className="mt-0.5 border-t border-foreground/15 pt-1.5 font-semibold">
+          {tempCredit > 0 ? (
+            <>
+              <span className="mt-0.5 border-t border-foreground/15 pt-1.5 text-muted-foreground">
+                임시치아 차감
+              </span>
+              <span
+                className={cn(
+                  "mt-0.5 border-t border-foreground/15 pt-1.5 text-center text-muted-foreground",
+                  amountSpanClass,
+                )}
+              >
+                −{formatManWon(tempCredit)}
+              </span>
+            </>
+          ) : null}
+          <span
+            className={cn(
+              "mt-0.5 font-semibold",
+              tempCredit > 0 ? "pt-0.5" : "border-t border-foreground/15 pt-1.5",
+            )}
+          >
             기공비 총액
           </span>
           <span
             className={cn(
-              "mt-0.5 border-t border-foreground/15 pt-1.5 text-center font-semibold",
+              "mt-0.5 text-center font-semibold",
               amountSpanClass,
+              tempCredit > 0 ? "pt-0.5" : "border-t border-foreground/15 pt-1.5",
             )}
           >
             <span className="block whitespace-nowrap">{workTotalDisplay}</span>
@@ -846,12 +873,16 @@ export function PracticeTransferFeeEstimate({
     0,
   );
   const workTotalFromBreakdown = prosthesisFromBreakdown + abutmentFromBreakdown;
+  const tempCreditLabFeeTotal = Math.max(
+    0,
+    Math.round(Number(quote.tempCreditLabFeeTotal || 0)),
+  );
   const abutmentRetailTotal = Math.max(
     0,
     Math.round(Number(quote.abutmentRetailTotal || 0)),
   );
   // 확정(billed)도 툴팁 라인 합을 우선 — 스냅샷 total과 라인 불일치(레거시 retail) 방지.
-  const amount = isLab
+  const amountGross = isLab
     ? workTotalFromBreakdown > 0
       ? workTotalFromBreakdown
       : labFeeTotalForLab + abutmentRetailTotal
@@ -859,7 +890,8 @@ export function PracticeTransferFeeEstimate({
       ? workTotalFromBreakdown
       : hasBudgetRange
         ? budgetLabFeeMax + abutmentRetailTotal
-        : quote.total;
+        : quote.total + tempCreditLabFeeTotal;
+  const amount = Math.max(0, amountGross - tempCreditLabFeeTotal);
   const creditMin = hasBudgetRange
     ? budgetLabFeeMin + abutmentRetailTotal
     : quote.total;
@@ -1006,6 +1038,7 @@ export function PracticeTransferFeeEstimate({
             abutmentShareHoldPending={
               showCreditShareSettlement ? creditAbutmentHoldPending : null
             }
+            tempCreditLabFeeTotal={tempCreditLabFeeTotal}
           />
           {hasBudgetRange && !isLab ? (
             <p className="text-[11px] text-muted-foreground">

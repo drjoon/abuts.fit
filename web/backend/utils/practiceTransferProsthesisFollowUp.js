@@ -3,6 +3,7 @@
 // - web/backend/utils/practiceTransferStage.js
 // - web/frontend/src/shared/practice/prosthesisFollowUp.ts
 // - 2026-09-08: 진행 탭 채팅 payload에 임플란트·어벗 스펙 포함(serializeFollowUpToothWorksForChatPayload).
+// - 2026-09-08: 후속 제작 시 원 임시치아 기공비 차감(브리지/크라운 순증분만 홀드).
 // - 2026-09-01: 임시치아 배송 후 동일 건에 크라운/브리지 후속 추가(어벗 재청구 없음).
 import { isPracticeTransferDeletedStatus } from "./practiceTransferStage.js";
 
@@ -355,4 +356,72 @@ export const validateFollowUpToothWorksAgainstSource = (
     seenKeys.add(key);
   }
   return { ok: true, rows };
+};
+
+/**
+ * 후속 선택 스팬에 대응하는 원 임시치아 행(어벗 제외 기공비 차감용).
+ * 스팬 단위로 매칭 — 부분 선택 시 해당 스팬만.
+ */
+export const pickSourceTempRowsForFollowUpCredit = (
+  sourceToothWorks,
+  followUpRows,
+) => {
+  const source = Array.isArray(sourceToothWorks) ? sourceToothWorks : [];
+  const followUps = Array.isArray(followUpRows) ? followUpRows : [];
+  if (source.length === 0 || followUps.length === 0) return [];
+
+  const followKeys = new Set(
+    followUps
+      .filter(
+        (row) =>
+          isFollowUpProsthesisPhase(row) &&
+          isFinalProsthesisType(row?.prosthesisType),
+      )
+      .map((row) => followUpRowSpanKey(row))
+      .filter(Boolean),
+  );
+  if (followKeys.size === 0) return [];
+
+  const out = [];
+  const seen = new Set();
+  for (const row of source) {
+    if (!isTemporaryToothProsthesisType(row?.prosthesisType)) continue;
+    if (isFollowUpProsthesisPhase(row)) continue;
+    const teeth = linkedTeethOf(row);
+    const key = spanKey(teeth);
+    if (!key || !followKeys.has(key)) continue;
+    const dedupe = `${String(row?.toothNumber || "").trim()}:${key}`;
+    if (seen.has(dedupe)) continue;
+    seen.add(dedupe);
+    out.push(row);
+  }
+  return out;
+};
+
+/**
+ * 후속 최종 보철 견적에서 원 임시치아 기공비를 차감한 순증분.
+ * 원 홀드(임시치아)는 유지하고 follow-up 홀드만 (final − temp)로 잡으면
+ * 합계가 브리지/크라운 기공비가 된다.
+ */
+export const applyProsthesisFollowUpTempCredit = ({
+  finalLabFeeTotal = 0,
+  finalTotal = 0,
+  tempCreditLabFeeTotal = 0,
+} = {}) => {
+  const finalLab = Math.max(0, Math.round(Number(finalLabFeeTotal || 0)));
+  const finalTot = Math.max(
+    0,
+    Math.round(Number(finalTotal != null ? finalTotal : finalLabFeeTotal) || 0),
+  );
+  const credit = Math.max(0, Math.round(Number(tempCreditLabFeeTotal || 0)));
+  const appliedCredit = Math.min(credit, finalLab);
+  const netLab = Math.max(0, finalLab - appliedCredit);
+  const netTotal = Math.max(0, finalTot - appliedCredit);
+  return {
+    finalLabFeeTotal: finalLab,
+    finalTotal: finalTot,
+    tempCreditLabFeeTotal: appliedCredit,
+    labFeeTotal: netLab,
+    total: netTotal,
+  };
 };

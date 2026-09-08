@@ -67,6 +67,10 @@ export type PracticeTransferFeeQuote = PracticeTransferRetailFees & {
   remakeFeeQuote?: PracticeTransferFeeQuote | null;
   /** 자동매칭 기공비(v4 고정수가). min≈max면 단일가 표시 */
   autoMatchBudget?: PracticeTransferAutoMatchBudget | null;
+  /** 후속 보철: 차감 전 최종 보철 기공비 */
+  finalLabFeeTotal?: number;
+  /** 후속 보철: 원 임시치아 기공비 차감액 */
+  tempCreditLabFeeTotal?: number;
 };
 
 export type PracticeTransferFeeQuoteViewer = "practice" | "lab";
@@ -299,6 +303,10 @@ export const buildFeeQuoteFromContext = (params: {
   rushFeeMultiplier?: number;
   skipAbutmentFees?: boolean;
   remake?: boolean;
+  /** 후속 제작: 원 임시치아 행 — 기공비 차감 */
+  creditToothWorks?: Parameters<
+    typeof computePracticeTransferRetailFees
+  >[0]["toothWorks"];
 }): PracticeTransferFeeQuote => {
   const context = params.context || DEFAULT_QUOTE_CONTEXT;
   const zeroed = Boolean(context.usedDefaultSchedule);
@@ -308,12 +316,14 @@ export const buildFeeQuoteFromContext = (params: {
     : normalizeLabFeeMultiplier(context.labFeeMultiplier);
   const rushFeeMultiplier = normalizeRushFeeMultiplier(params.rushFeeMultiplier);
 
+  const scheduleArg = zeroed
+    ? LAB_FEE_SCHEDULE_ZEROS
+    : { ...context.schedule, remake: context.remakeSchedule, items: context.items };
+
   const fees = computePracticeTransferRetailFees({
     toothWorks: params.toothWorks,
     implantFavorites: params.implantFavorites,
-    labFeeSchedule: zeroed
-      ? LAB_FEE_SCHEDULE_ZEROS
-      : { ...context.schedule, remake: context.remakeSchedule, items: context.items },
+    labFeeSchedule: scheduleArg,
     abutmentPricingTier: context.abutmentPricingTier,
     abutmentPrices: context.abutmentPrices,
     labFeeMultiplier: zeroed ? 1 : labFeeMultiplier,
@@ -321,9 +331,44 @@ export const buildFeeQuoteFromContext = (params: {
     remake: useRemake,
     skipAbutmentFees: useRemake || Boolean(params.skipAbutmentFees),
   });
+
+  let tempCreditLabFeeTotal = 0;
+  const creditRows = Array.isArray(params.creditToothWorks)
+    ? params.creditToothWorks
+    : [];
+  if (creditRows.length > 0 && !zeroed) {
+    const creditFees = computePracticeTransferRetailFees({
+      toothWorks: creditRows,
+      implantFavorites: params.implantFavorites,
+      labFeeSchedule: scheduleArg,
+      abutmentPricingTier: context.abutmentPricingTier,
+      abutmentPrices: context.abutmentPrices,
+      labFeeMultiplier,
+      rushFeeMultiplier,
+      remake: false,
+      skipAbutmentFees: true,
+    });
+    tempCreditLabFeeTotal = Math.max(
+      0,
+      Math.round(Number(creditFees.labFeeTotal || 0)),
+    );
+  }
+  const appliedCredit = Math.min(
+    tempCreditLabFeeTotal,
+    Math.max(0, Math.round(Number(fees.labFeeTotal || 0))),
+  );
+  const netLabFeeTotal = Math.max(
+    0,
+    Math.round(Number(fees.labFeeTotal || 0)) - appliedCredit,
+  );
+  const netTotal = Math.max(
+    0,
+    Math.round(Number(fees.total || 0)) - appliedCredit,
+  );
+
   const feeRateApplied = Number(context.feeRateApplied || 0);
   const settlement = splitPracticeTransferSettlement({
-    labFeeTotal: fees.labFeeTotal,
+    labFeeTotal: netLabFeeTotal,
     abutmentRetailTotal: fees.abutmentRetailTotal,
     feeRateApplied,
   });
@@ -339,6 +384,8 @@ export const buildFeeQuoteFromContext = (params: {
     : missingLabFeeItemNames(scheduleForMissing, params.toothWorks);
   return {
     ...fees,
+    labFeeTotal: netLabFeeTotal,
+    total: netTotal,
     lines: fees.lines,
     relationshipKind: context.relationshipKind,
     feeRateApplied,
@@ -352,6 +399,8 @@ export const buildFeeQuoteFromContext = (params: {
     missingFeeNames,
     isRemake: useRemake,
     autoMatchBudget: null,
+    finalLabFeeTotal: Math.max(0, Math.round(Number(fees.labFeeTotal || 0))),
+    tempCreditLabFeeTotal: appliedCredit,
   };
 };
 

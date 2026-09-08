@@ -1,15 +1,21 @@
 // related files:
 // - web/backend/utils/practiceTransferProsthesisFollowUp.js
 import {
+  applyProsthesisFollowUpTempCredit,
   buildFollowUpToothWorksDraft,
   canAppendProsthesisFollowUp,
   canManagePendingProsthesisFollowUp,
   isPendingProsthesisFollowUpRecord,
   listPendingFollowUpTempSpans,
+  pickSourceTempRowsForFollowUpCredit,
   serializeFollowUpToothWorksForChatPayload,
   stripFollowUpToothWorksForRecord,
   validateFollowUpToothWorksAgainstSource,
 } from "../../utils/practiceTransferProsthesisFollowUp.js";
+import {
+  computePracticeTransferRetailFees,
+  LAB_FEE_SCHEDULE_SAMPLE,
+} from "../../utils/labFeeSchedule.js";
 
 describe("practiceTransferProsthesisFollowUp", () => {
   test("buildFollowUpToothWorksDraft converts linked temp span to bridge", () => {
@@ -205,5 +211,76 @@ describe("practiceTransferProsthesisFollowUp", () => {
       },
     ]);
     expect(partialTooth.ok).toBe(false);
+  });
+
+  test("후속 선택 스팬의 원 임시치아만 차감 대상으로 고른다", () => {
+    const source = [
+      {
+        toothNumber: "34",
+        prosthesisType: "임시치아",
+        bridgeLinkedTeeth: ["34", "33"],
+      },
+      {
+        toothNumber: "33",
+        prosthesisType: "임시치아",
+        bridgeLinkedTeeth: ["34", "33"],
+      },
+      {
+        toothNumber: "46",
+        prosthesisType: "임시치아",
+        bridgeLinkedTeeth: ["46"],
+      },
+    ];
+    const draft = buildFollowUpToothWorksDraft(source);
+    const leftOnly = draft.filter((row) =>
+      String(row.toothNumber || "") === "34" ||
+      (Array.isArray(row.bridgeLinkedTeeth) &&
+        row.bridgeLinkedTeeth.includes("34")),
+    );
+    const creditRows = pickSourceTempRowsForFollowUpCredit(source, leftOnly);
+    expect(creditRows).toHaveLength(2);
+    expect(creditRows.every((row) => row.prosthesisType === "임시치아")).toBe(
+      true,
+    );
+    expect(
+      creditRows.map((row) => row.toothNumber).sort(),
+    ).toEqual(["33", "34"]);
+  });
+
+  test("후속 견적은 임시치아 기공비를 차감한 순증분만 남긴다", () => {
+    const source = [
+      {
+        toothNumber: "34",
+        prosthesisType: "임시치아",
+        bridgeLinkedTeeth: ["34", "33"],
+      },
+      {
+        toothNumber: "33",
+        prosthesisType: "임시치아",
+        bridgeLinkedTeeth: ["34", "33"],
+      },
+    ];
+    const followUp = buildFollowUpToothWorksDraft(source);
+    const tempFees = computePracticeTransferRetailFees({
+      toothWorks: source,
+      labFeeSchedule: LAB_FEE_SCHEDULE_SAMPLE,
+      skipAbutmentFees: true,
+    });
+    const finalFees = computePracticeTransferRetailFees({
+      toothWorks: followUp,
+      labFeeSchedule: LAB_FEE_SCHEDULE_SAMPLE,
+      skipAbutmentFees: true,
+    });
+    // 2치 임시치아 3만, 브리지 2×6만=12만 → 순증분 9만
+    expect(tempFees.labFeeTotal).toBe(30000);
+    expect(finalFees.labFeeTotal).toBe(120000);
+    const credited = applyProsthesisFollowUpTempCredit({
+      finalLabFeeTotal: finalFees.labFeeTotal,
+      finalTotal: finalFees.total,
+      tempCreditLabFeeTotal: tempFees.labFeeTotal,
+    });
+    expect(credited.tempCreditLabFeeTotal).toBe(30000);
+    expect(credited.labFeeTotal).toBe(90000);
+    expect(credited.total).toBe(90000);
   });
 });

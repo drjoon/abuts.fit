@@ -44,12 +44,26 @@ const buildFollowUpChatFeeQuote = (
 ): PracticeTransferFeeQuote | null => {
   const delta =
     billingDelta && typeof billingDelta === "object"
-      ? (billingDelta as { labFeeTotal?: number; total?: number })
+      ? (billingDelta as {
+          labFeeTotal?: number;
+          total?: number;
+          finalLabFeeTotal?: number;
+          finalTotal?: number;
+          tempCreditLabFeeTotal?: number;
+        })
       : null;
   const labFeeTotal = Math.max(0, Math.round(Number(delta?.labFeeTotal || 0)));
   const total = Math.max(0, Math.round(Number(delta?.total || 0)));
+  const finalLabFeeTotal = Math.max(
+    0,
+    Math.round(Number(delta?.finalLabFeeTotal || labFeeTotal)),
+  );
+  const tempCreditLabFeeTotal = Math.max(
+    0,
+    Math.round(Number(delta?.tempCreditLabFeeTotal || 0)),
+  );
   const amount = total > 0 ? total : labFeeTotal;
-  if (amount <= 0) return null;
+  if (amount <= 0 && finalLabFeeTotal <= 0) return null;
   return {
     labFeeTotal: labFeeTotal || amount,
     labAbutmentTotal: 0,
@@ -65,6 +79,8 @@ const buildFollowUpChatFeeQuote = (
     abutsRevenueAmount: 0,
     labFeeConfigured: true,
     billed: true,
+    finalLabFeeTotal,
+    tempCreditLabFeeTotal,
   };
 };
 

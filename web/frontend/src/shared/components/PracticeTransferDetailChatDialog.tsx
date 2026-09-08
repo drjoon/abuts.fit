@@ -886,6 +886,13 @@ export function PracticeTransferDetailChatDialog({
         >
           <div className="border-b px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
             선택일=다음 도착일, 오늘=재주문일로 반영됩니다.
+            {onAppendProsthesis && !prosthesisFollowUpPending ? (
+              <>
+                <br />
+                적용 시 지르 브리지·크라운으로 바꿀지 묻고, 아니면 임시치아로
+                계속합니다(추가 과금 없음).
+              </>
+            ) : null}
             {nextStageSegments.length > 0 ? (
               <>
                 <br />
@@ -2867,7 +2874,7 @@ export function PracticeTransferDetailChatDialog({
                             title={appendProsthesisHint || undefined}
                             onClick={() => onAppendProsthesis()}
                           >
-                            {appendProsthesisBusy ? "처리 중…" : "최종 보철 제작"}
+                            {appendProsthesisBusy ? "처리 중…" : "지르 브리지·크라운"}
                           </Button>
                           {appendProsthesisHint && appendProsthesisDisabled ? (
                             <p className="max-w-full text-center text-xs leading-snug text-muted-foreground">
