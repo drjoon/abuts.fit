@@ -163,7 +163,7 @@ export const PRACTICE_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   {
     id: "remake",
     title: "리메이크 의뢰",
-    hint: "「리메이크」에서 이전 의뢰를 환자명으로 찾아 도착일을 정한 뒤 보냅니다. 기공소 리메이크 수가가 있으면 확인 후 전송합니다. 플랫폼 가입 전 건도 모달에서 작성할 수 있습니다.",
+    hint: "이전 의뢰를 찾아 리메이크 주문합니다. 플랫폼 가입 전 건도 주문할 수 있습니다.",
     path: PRACTICE_ORAL_PATH,
     target: "practice_remake",
     advance: "next",
@@ -173,7 +173,7 @@ export const PRACTICE_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   {
     id: "partner_chat",
     title: "기공소와 채팅",
-    hint: "오른쪽 아래 채팅 아이콘으로 거래 기공소와 의뢰 없이도 대화할 수 있습니다. 고객지원도 여기 있습니다.",
+    hint: "거래 기공소와 대화할 수 있습니다. 고객지원도 여기 있습니다.",
     path: PRACTICE_ORAL_PATH,
     target: "partner_chat_fab",
     advance: "next",
