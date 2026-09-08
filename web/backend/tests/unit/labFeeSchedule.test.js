@@ -599,7 +599,85 @@ describe("labFeeSchedule", () => {
       "46",
     ]);
     expect(bridgeLines.every((line) => line.labFee === 60000)).toBe(true);
-    expect(fees.labFeeTotal).toBe(560000);
+    // 후속 브리지가 있으면 임시치아 기공비는 제외. 브리지 5×6만 + CA 5×4만 = 50만.
+    expect(fees.labFeeTotal).toBe(500000);
+    expect(fees.labAbutmentTotal).toBe(200000);
+    expect(
+      fees.lines.some((line) => /임시치아/.test(String(line.prosthesisType || ""))),
+    ).toBe(false);
+  });
+
+  test("후속 브리지+원 임시치아(CA 4개·연결치 1개 무CA)는 브리지·커스텀어벗만 합산한다", () => {
+    const fees = computePracticeTransferRetailFees({
+      toothWorks: [
+        {
+          toothNumber: "33",
+          prosthesisType: "임시치아",
+          customAbutment: true,
+          abutmentProductMode: "design_custom_abutment",
+          bridgeLinkedTeeth: ["34"],
+        },
+        {
+          toothNumber: "34",
+          prosthesisType: "임시치아",
+          customAbutment: true,
+          abutmentProductMode: "design_custom_abutment",
+          bridgeLinkedTeeth: ["33"],
+        },
+        {
+          toothNumber: "46",
+          prosthesisType: "임시치아",
+          customAbutment: true,
+          abutmentProductMode: "design_custom_abutment",
+          bridgeLinkedTeeth: ["45", "44"],
+        },
+        {
+          // 사용자가 CA 없음으로 입력한 연결치
+          toothNumber: "45",
+          prosthesisType: "임시치아",
+          customAbutment: false,
+          bridgeLinkedTeeth: ["46", "44"],
+        },
+        {
+          toothNumber: "44",
+          prosthesisType: "임시치아",
+          customAbutment: true,
+          abutmentProductMode: "design_custom_abutment",
+          bridgeLinkedTeeth: ["46", "45"],
+        },
+        {
+          toothNumber: "34",
+          prosthesisType: "브리지",
+          prosthesisPhase: "followUp",
+          bridgeLinkedTeeth: ["33", "34"],
+        },
+        {
+          // 후속 스팬 행이 sourceRow CA를 들고 있어도 원 45 무CA가 과금·표시 SSOT
+          toothNumber: "46",
+          prosthesisType: "브리지",
+          prosthesisPhase: "followUp",
+          customAbutment: true,
+          bridgeLinkedTeeth: ["46", "45", "44"],
+        },
+      ],
+      labFeeSchedule: LAB_FEE_SCHEDULE_SAMPLE,
+    });
+    // 브리지 6만×5 + 커스텀어벗 4만×4(#45 제외) = 46만 (임시치아 기공비 제외)
+    expect(fees.labFeeTotal).toBe(460000);
+    expect(fees.labAbutmentTotal).toBe(160000);
+    expect(
+      fees.lines.filter((line) => line.prosthesisType === "브리지"),
+    ).toHaveLength(5);
+    const caTeeth = fees.lines
+      .filter((line) =>
+        String(line.prosthesisType || "").includes("커스텀어벗"),
+      )
+      .map((line) => line.toothNumber)
+      .sort();
+    expect(caTeeth).toEqual(["33", "34", "44", "46"]);
+    expect(
+      fees.lines.some((line) => /임시치아/.test(String(line.prosthesisType || ""))),
+    ).toBe(false);
   });
 
   test("커스텀어벗(지그포함)이 perSet로 저장돼도 치아당 단가로 과금한다", () => {

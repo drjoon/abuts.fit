@@ -3,6 +3,7 @@
 import {
   applyProsthesisFollowUpTempCredit,
   buildFollowUpToothWorksDraft,
+  buildToothWorkDisplayByTooth,
   canAppendProsthesisFollowUp,
   canManagePendingProsthesisFollowUp,
   isPendingProsthesisFollowUpRecord,
@@ -282,5 +283,60 @@ describe("practiceTransferProsthesisFollowUp", () => {
     expect(credited.tempCreditLabFeeTotal).toBe(30000);
     expect(credited.labFeeTotal).toBe(90000);
     expect(credited.total).toBe(90000);
+  });
+
+  test("차트 표시는 후속 보철 형태를 쓰되 CA는 원 임시치아 입력을 유지한다", () => {
+    const toothWorks = [
+      {
+        toothNumber: "46",
+        prosthesisType: "임시치아",
+        customAbutment: true,
+        abutmentManufacturer: "NEO",
+        bridgeLinkedTeeth: ["45", "44"],
+      },
+      {
+        toothNumber: "45",
+        prosthesisType: "임시치아",
+        customAbutment: false,
+        bridgeLinkedTeeth: ["46", "44"],
+      },
+      {
+        toothNumber: "44",
+        prosthesisType: "임시치아",
+        customAbutment: true,
+        abutmentManufacturer: "NEO",
+        bridgeLinkedTeeth: ["46", "45"],
+      },
+      // 후속 스팬 행이 CA=true로 덮어도 원 45 무CA가 남아야 함
+      {
+        toothNumber: "46",
+        prosthesisType: "브리지",
+        prosthesisPhase: "followUp",
+        customAbutment: true,
+        bridgeLinkedTeeth: ["46", "45", "44"],
+      },
+      {
+        toothNumber: "45",
+        prosthesisType: "브리지",
+        prosthesisPhase: "followUp",
+        customAbutment: true,
+        bridgeLinkedTeeth: ["45", "46"],
+      },
+      {
+        toothNumber: "44",
+        prosthesisType: "브리지",
+        prosthesisPhase: "followUp",
+        customAbutment: false,
+        bridgeLinkedTeeth: ["44", "45", "46"],
+      },
+    ];
+    const byTooth = buildToothWorkDisplayByTooth(toothWorks);
+    expect(byTooth.get("46")?.prosthesisType).toBe("브리지");
+    expect(byTooth.get("45")?.prosthesisType).toBe("브리지");
+    expect(byTooth.get("44")?.prosthesisType).toBe("브리지");
+    expect(byTooth.get("46")?.customAbutment).toBe(true);
+    expect(byTooth.get("45")?.customAbutment).toBe(false);
+    expect(byTooth.get("44")?.customAbutment).toBe(true);
+    expect(byTooth.get("46")?.abutmentManufacturer).toBe("NEO");
   });
 });

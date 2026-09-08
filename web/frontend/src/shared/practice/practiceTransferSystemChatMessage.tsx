@@ -1,17 +1,15 @@
 // related files:
 // - web/frontend/src/features/chat/components/ChatMessageBubble.tsx
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
+// - 2026-09-08: 후속 채팅 견적 = 의뢰건 최종 기공비(지르+CA). billingDelta 증분·skipAbutmentFees 제거.
 // - 2026-09-08: 후속 보철 채팅 — 임플란트·어벗 스펙 유지 + transfer toothWorks로 레거시 payload 보강.
+// - 2026-09-08: 후속 채팅 차트 — 스팬을 치아별로 펼치고 원 임시치아 CA·스펙을 치아단위로 복원.
 // - 2026-09-02: 후속 보철 차트 — 버블 밖 전폭(의뢰상세와 동일 레이아웃), embedded 제거.
 import { cn } from "@/shared/ui/cn";
 import { PracticeToothWorkChartReadOnly } from "@/shared/components/practice/PracticeToothWorkChartReadOnly";
 import type { ChatMessage } from "@/shared/hooks/useChatRooms";
 import type { PracticeTransferFeeQuote } from "@/shared/practice/practiceTransferFeeQuote";
-import {
-  followUpRowSpanKey,
-  isFollowUpProsthesisPhase,
-  type ProsthesisFollowUpRecord,
-} from "@/shared/practice/prosthesisFollowUp";
+import { isFollowUpProsthesisPhase } from "@/shared/practice/prosthesisFollowUp";
 import {
   pickToothWorkAbutmentProductMode,
   pickToothWorkCustomSpecs,
@@ -21,67 +19,16 @@ import {
 export type ProsthesisFollowUpChatPayload = {
   arrivalYmd: string;
   toothWorks: ToothWorkSelection[];
-  billingDelta?: { labFeeTotal?: number; total?: number } | null;
 };
 
-const hasToothWorkCustomSpecs = (
-  row: Partial<ToothWorkSelection> | null | undefined,
-) => {
-  const specs = pickToothWorkCustomSpecs(row, true);
-  return Boolean(
-    specs.implantManufacturer ||
-      specs.implantBrand ||
-      specs.implantFamily ||
-      specs.implantType ||
-      specs.abutmentManufacturer ||
-      specs.abutmentDiameter ||
-      specs.abutmentHeight,
+const linkedTeethOfRow = (row: Partial<ToothWorkSelection>) => {
+  const self = String(row?.toothNumber || "").trim();
+  const linked = Array.isArray(row?.bridgeLinkedTeeth)
+    ? row.bridgeLinkedTeeth.map((t) => String(t || "").trim()).filter(Boolean)
+    : [];
+  return Array.from(
+    new Set([self, ...linked].filter((t) => /^[1-4][1-8]$/.test(t))),
   );
-};
-
-const buildFollowUpChatFeeQuote = (
-  billingDelta: unknown,
-): PracticeTransferFeeQuote | null => {
-  const delta =
-    billingDelta && typeof billingDelta === "object"
-      ? (billingDelta as {
-          labFeeTotal?: number;
-          total?: number;
-          finalLabFeeTotal?: number;
-          finalTotal?: number;
-          tempCreditLabFeeTotal?: number;
-        })
-      : null;
-  const labFeeTotal = Math.max(0, Math.round(Number(delta?.labFeeTotal || 0)));
-  const total = Math.max(0, Math.round(Number(delta?.total || 0)));
-  const finalLabFeeTotal = Math.max(
-    0,
-    Math.round(Number(delta?.finalLabFeeTotal || labFeeTotal)),
-  );
-  const tempCreditLabFeeTotal = Math.max(
-    0,
-    Math.round(Number(delta?.tempCreditLabFeeTotal || 0)),
-  );
-  const amount = total > 0 ? total : labFeeTotal;
-  if (amount <= 0 && finalLabFeeTotal <= 0) return null;
-  return {
-    labFeeTotal: labFeeTotal || amount,
-    labAbutmentTotal: 0,
-    labAbutmentPending: false,
-    abutmentRetailTotal: 0,
-    abutmentQuotePending: false,
-    abutmentQty: 0,
-    total: amount,
-    lines: [],
-    relationshipKind: "none",
-    feeRateApplied: 0,
-    labSettlementAmount: 0,
-    abutsRevenueAmount: 0,
-    labFeeConfigured: true,
-    billed: true,
-    finalLabFeeTotal,
-    tempCreditLabFeeTotal,
-  };
 };
 
 const normalizeToothWorkRow = (
@@ -130,8 +77,8 @@ const parseLegacyFollowUpToothWorks = (label: string): ToothWorkSelection[] => {
 };
 
 /**
- * 예전 채팅 payload는 스펙을 빼 저장했음 → transfer.toothWorks(followUp)로 보강.
- * 신규 payload는 스펙이 있으므로 그대로 둠.
+ * 후속 채팅 차트용 — transfer 원 임시치아의 치아별 CA·스펙으로 스팬을 펼친다.
+ * (채팅 payload 단독 행이 스팬 sourceRow CA를 전체에 심어 #45↔#44가 뒤집히던 문제)
  */
 export const enrichFollowUpChatToothWorksFromTransfer = (
   chatRows: ToothWorkSelection[],
@@ -141,26 +88,67 @@ export const enrichFollowUpChatToothWorksFromTransfer = (
   const transferRows = Array.isArray(transferToothWorks) ? transferToothWorks : [];
   if (transferRows.length === 0) return chatRows;
 
-  const followUpBySpan = new Map<string, Partial<ToothWorkSelection>>();
+  const baseByTooth = new Map<string, Partial<ToothWorkSelection>>();
   for (const row of transferRows) {
-    if (!isFollowUpProsthesisPhase(row)) continue;
-    const key = followUpRowSpanKey(row);
-    if (!key || followUpBySpan.has(key)) continue;
-    followUpBySpan.set(key, row);
+    if (isFollowUpProsthesisPhase(row)) continue;
+    const tooth = String(row?.toothNumber || "").trim();
+    if (!/^[1-4][1-8]$/.test(tooth)) continue;
+    if (!baseByTooth.has(tooth)) baseByTooth.set(tooth, row);
   }
-  if (followUpBySpan.size === 0) return chatRows;
 
-  return chatRows.map((row) => {
-    if (!row.customAbutment) return row;
-    if (hasToothWorkCustomSpecs(row)) return row;
-    const source = followUpBySpan.get(followUpRowSpanKey(row));
-    if (!source) return row;
-    return {
-      ...row,
-      ...pickToothWorkCustomSpecs(source, true),
-      ...pickToothWorkAbutmentProductMode(source, true),
-    };
-  });
+  const buildPerToothFollowUp = (
+    followRow: Partial<ToothWorkSelection>,
+    tooth: string,
+    spanTeeth: string[],
+  ): ToothWorkSelection | null => {
+    const base = baseByTooth.get(tooth);
+    const hasCa = base
+      ? Boolean(base.customAbutment)
+      : Boolean(followRow.customAbutment);
+    const specSource = hasCa ? base || followRow : null;
+    const prosthesisType =
+      String(followRow.prosthesisType || "").trim() || "브리지";
+    return normalizeToothWorkRow({
+      ...followRow,
+      toothNumber: tooth,
+      prosthesisType,
+      prosthesisPhase: "followUp",
+      bridgeLinkedTeeth: spanTeeth,
+      customAbutment: hasCa,
+      ...(specSource
+        ? {
+            ...pickToothWorkCustomSpecs(specSource, true),
+            ...pickToothWorkAbutmentProductMode(specSource, true),
+          }
+        : {
+            abutmentProductMode: undefined,
+            implantManufacturer: "",
+            implantBrand: "",
+            implantFamily: "",
+            implantType: "",
+            abutmentManufacturer: "",
+            abutmentDiameter: "",
+            abutmentHeight: "",
+          }),
+    });
+  };
+
+  const out: ToothWorkSelection[] = [];
+  const seen = new Set<string>();
+
+  for (const row of chatRows) {
+    const spanTeeth = linkedTeethOfRow(row);
+    if (spanTeeth.length === 0) continue;
+    for (const tooth of spanTeeth) {
+      if (seen.has(tooth)) continue;
+      const next = buildPerToothFollowUp(row, tooth, spanTeeth);
+      if (!next) continue;
+      seen.add(tooth);
+      out.push(next);
+    }
+  }
+
+  return out.length > 0 ? out : chatRows;
 };
 
 export const resolveProsthesisFollowUpChatPayload = (
@@ -199,31 +187,7 @@ export const resolveProsthesisFollowUpChatPayload = (
   );
 
   if (!arrivalYmd && toothWorks.length === 0) return null;
-  const billingDelta =
-    payload?.billingDelta && typeof payload.billingDelta === "object"
-      ? (payload.billingDelta as { labFeeTotal?: number; total?: number })
-      : null;
-  return { arrivalYmd, toothWorks, billingDelta };
-};
-
-const resolveFollowUpBillingDelta = (
-  payload: ProsthesisFollowUpChatPayload,
-  prosthesisFollowUps?: ProsthesisFollowUpRecord[] | null,
-) => {
-  const fromPayload = payload.billingDelta;
-  if (
-    fromPayload &&
-    (Math.max(0, Number(fromPayload.total || 0)) > 0 ||
-      Math.max(0, Number(fromPayload.labFeeTotal || 0)) > 0)
-  ) {
-    return fromPayload;
-  }
-  const arrivalYmd = String(payload.arrivalYmd || "").trim();
-  if (!arrivalYmd) return null;
-  const matched = (Array.isArray(prosthesisFollowUps) ? prosthesisFollowUps : []).find(
-    (row) => String(row?.arrivalYmd || "").trim() === arrivalYmd && !row?.canceledAt,
-  );
-  return matched?.billingDelta || null;
+  return { arrivalYmd, toothWorks };
 };
 
 /** 레거시 한 줄 재도착 텍스트 → 줄바꿈 본문 */
@@ -250,9 +214,10 @@ type PracticeTransferSystemChatBodyProps = {
   formatTime: (createdAt: string) => string;
   messageDomId: string;
   labAnchorId?: string | null;
-  prosthesisFollowUps?: ProsthesisFollowUpRecord[] | null;
   /** 레거시 스펙 미포함 채팅 payload 보강용 */
   transferToothWorks?: Partial<ToothWorkSelection>[] | null;
+  /** 의뢰건 기공비 SSOT — 후속 증분이 아니라 최종(지르+CA) 견적 */
+  transferFeeQuote?: PracticeTransferFeeQuote | null;
 };
 
 export function PracticeTransferSystemChatBody({
@@ -261,8 +226,8 @@ export function PracticeTransferSystemChatBody({
   formatTime,
   messageDomId,
   labAnchorId = null,
-  prosthesisFollowUps = null,
   transferToothWorks = null,
+  transferFeeQuote = null,
 }: PracticeTransferSystemChatBodyProps): JSX.Element | null {
   const systemEvent = String(message.systemEvent || "").trim();
   const followUpPayload =
@@ -272,9 +237,16 @@ export function PracticeTransferSystemChatBody({
 
   if (followUpPayload) {
     const { arrivalYmd, toothWorks } = followUpPayload;
-    const storedFeeQuote = buildFollowUpChatFeeQuote(
-      resolveFollowUpBillingDelta(followUpPayload, prosthesisFollowUps),
-    );
+    // 한 의뢰건 기공비는 1가지(최종 지르+CA). 후속 billingDelta(증분)로 대체하지 않는다.
+    const caseFeeQuote =
+      transferFeeQuote &&
+      (transferFeeQuote.total > 0 ||
+        (Array.isArray(transferFeeQuote.lines) && transferFeeQuote.lines.length > 0))
+        ? transferFeeQuote
+        : null;
+    const feeToothWorks = Array.isArray(transferToothWorks)
+      ? (transferToothWorks as ToothWorkSelection[])
+      : toothWorks;
     return (
       <div
         id={messageDomId}
@@ -297,10 +269,10 @@ export function PracticeTransferSystemChatBody({
           <div className="mt-2 w-full min-w-0 max-w-full text-left text-foreground">
             <PracticeToothWorkChartReadOnly
               toothWorks={toothWorks}
+              feeToothWorks={feeToothWorks}
               showHeader={false}
-              skipAbutmentFees
               labAnchorId={labAnchorId}
-              feeQuote={storedFeeQuote}
+              feeQuote={caseFeeQuote}
               enlargeOverlayClassName="z-[350]"
               enlargeDialogClassName="z-[360]"
               className="border-0 bg-transparent p-0 shadow-none"

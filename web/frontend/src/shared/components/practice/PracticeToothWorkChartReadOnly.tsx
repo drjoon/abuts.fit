@@ -48,6 +48,7 @@ import {
   NO_WORK_PROSTHESIS_TYPE,
   NO_WORK_PROSTHESIS_TOOLTIP,
 } from "@/shared/practice/usePracticeToothWorkEditor";
+import { buildToothWorkDisplayByTooth } from "@/shared/practice/prosthesisFollowUp";
 import { PracticeTransferFeeEstimate } from "@/shared/components/practice/PracticeTransferFeeEstimate";
 import { PracticeToothChartHorizontalScroll } from "@/shared/components/practice/PracticeToothChartHorizontalScroll";
 import { useIsMobile } from "@/shared/hooks/use-mobile";
@@ -235,24 +236,10 @@ export const PracticeToothWorkChartReadOnly = ({
     if (!selectable) return toothWorks;
     return toothWorks.filter((row) => isSpanSelected(row));
   }, [feeToothWorks, selectable, toothWorks, selectedSpanKeys, spanKeyOf]);
-  const byTooth = useMemo(() => {
-    const map = new Map<string, ToothWorkSelection>();
-    // 1) 각 치아 번호의 본인 행이 우선 (연결치에 첫 행을 덮어쓰면 13-12-11에서 12·11 스펙·연결이 깨짐)
-    for (const row of toothWorks) {
-      const anchor = String(row.toothNumber || "").trim();
-      if (/^[1-4][1-8]$/.test(anchor)) map.set(anchor, row);
-    }
-    // 2) 본인 행이 없는 연결치만 표시용으로 스팬 행을 빌려 씀
-    for (const row of toothWorks) {
-      const linked = Array.isArray(row.bridgeLinkedTeeth)
-        ? row.bridgeLinkedTeeth.map((t) => String(t || "").trim()).filter(Boolean)
-        : [];
-      for (const tooth of linked) {
-        if (/^[1-4][1-8]$/.test(tooth) && !map.has(tooth)) map.set(tooth, row);
-      }
-    }
-    return map;
-  }, [toothWorks]);
+  const byTooth = useMemo(
+    () => buildToothWorkDisplayByTooth(toothWorks),
+    [toothWorks],
+  );
 
   const allDisplayTeeth = useMemo(() => new Set(byTooth.keys()), [byTooth]);
 
@@ -327,11 +314,15 @@ export const PracticeToothWorkChartReadOnly = ({
       : treatedChartRows.some((row) => row.teeth.length > 6);
   const enlargeButtonLabel = embedded ? "보철물 크게 보기" : "크게 보기";
 
+  const storedLinesEmpty =
+    !Array.isArray(storedFeeQuote?.lines) || storedFeeQuote.lines.length === 0;
   const { quote: feeQuote } = usePracticeTransferFeeQuote({
     enabled:
       !storedFeeQuote ||
       storedFeeQuote.labFeeConfigured === false ||
-      storedFeeQuote.total <= 0,
+      storedFeeQuote.total <= 0 ||
+      // 확정 금액만 있고 내역 lines가 비면 live 재계산으로 툴팁을 채운다.
+      (storedFeeQuote.total > 0 && storedLinesEmpty),
     labAnchorId,
     toothWorks: quoteToothWorks,
     storedQuote: storedFeeQuote,

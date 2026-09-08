@@ -2800,6 +2800,7 @@ export function PracticeTransferDetailChatDialog({
                             practiceTransferLabAnchorId={labAnchorId}
                             practiceTransferProsthesisFollowUps={prosthesisFollowUps}
                             practiceTransferToothWorks={toothWorks}
+                            practiceTransferFeeQuote={feeQuote}
                             downloadingFileKeys={downloadingFileKeys}
                             downloadProgressByKey={downloadProgressByKey}
                             onReply={onReplyToMessage}

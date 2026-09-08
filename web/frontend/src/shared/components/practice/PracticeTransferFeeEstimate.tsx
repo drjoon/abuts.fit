@@ -1077,7 +1077,14 @@ export function PracticeTransferFeeEstimate({
             기공소 수가에 이 치과 할증이 있으면 함께 반영됩니다.
           </p>
         </div>
-      ) : labFeeUnset ? null : (
+      ) : labFeeUnset ? null : amount > 0 ? (
+        <p className="text-muted-foreground">
+          기공비 {formatManWon(amount)}
+          {tempCreditLabFeeTotal > 0
+            ? ` (임시치아 차감 ${formatManWon(tempCreditLabFeeTotal)})`
+            : ""}
+        </p>
+      ) : (
         <p className="text-muted-foreground">선택된 보철물이 없습니다.</p>
       )}
       {surchargeLabel ? (
@@ -1161,7 +1168,7 @@ export function PracticeTransferFeeEstimate({
           className,
         )}
         role="note"
-        title={
+        aria-label={
           !isLab && !labFeeUnset && !hasMissingFees && !revealAmounts
             ? "마우스를 올리면 금액이 보입니다"
             : undefined

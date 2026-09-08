@@ -4,6 +4,7 @@
 // - web/frontend/src/shared/components/practice/PracticeProsthesisFollowUpDialog.tsx
 // - 2026-09-01: 임시치아 배송 후 동일 건 크라운/브리지 후속 추가(프론트 SSOT).
 // - 2026-09-08: 후속 제작 견적에 원 임시치아 기공비 차감.
+// - 2026-09-08: 치식 표시 — 후속 보철+원 임시치아 병존 시 형태는 후속, CA·어벗 스펙은 원치아 행.
 import {
   type ToothWorkSelection,
   isCustomAbutmentProsthesisType,
@@ -80,6 +81,101 @@ export const hasFollowUpProsthesisForTooth = (
     const linked = linkedTeethOf(row);
     return linked.includes(tooth) || String(row?.toothNumber || "").trim() === tooth;
   });
+};
+
+/** 어벗·임플란트 표시 필드 — 후속 행이 덮어도 원치아(임시치아) 입력을 유지 */
+const DISPLAY_ABUTMENT_SPEC_KEYS = [
+  "customAbutment",
+  "abutmentProductMode",
+  "implantManufacturer",
+  "implantBrand",
+  "implantFamily",
+  "implantType",
+  "implantAddRequest",
+  "abutmentManufacturer",
+  "abutmentDiameter",
+  "abutmentHeight",
+] as const;
+
+/**
+ * 같은 치아에 원 행+후속 행이 있으면:
+ * - 보철 형태·연결·phase → 후속 최종 보철
+ * - CA 여부·어벗/임플란트 스펙 → 원 행(사용자가 입력한 임시치아 등)
+ */
+export const mergeToothWorkRowsForChartDisplay = (
+  rows: ReadonlyArray<Partial<ToothWorkSelection>>,
+): ToothWorkSelection | null => {
+  const list = (Array.isArray(rows) ? rows : []).filter((row) => {
+    const tooth = String(row?.toothNumber || "").trim();
+    return Boolean(row) && /^[1-4][1-8]$/.test(tooth);
+  });
+  if (list.length === 0) return null;
+  if (list.length === 1) return { ...(list[0] as ToothWorkSelection) };
+
+  const followUps = list.filter(
+    (row) =>
+      isFollowUpProsthesisPhase(row) &&
+      isFinalProsthesisType(String(row.prosthesisType || "")),
+  );
+  const bases = list.filter((row) => !isFollowUpProsthesisPhase(row));
+  const followUp = followUps.length > 0 ? followUps[followUps.length - 1] : null;
+  const base = bases.length > 0 ? bases[bases.length - 1] : null;
+
+  if (followUp && base) {
+    const merged: ToothWorkSelection = {
+      ...(followUp as ToothWorkSelection),
+      toothNumber: String(base.toothNumber || followUp.toothNumber || "").trim(),
+    };
+    for (const key of DISPLAY_ABUTMENT_SPEC_KEYS) {
+      if (key === "customAbutment") {
+        merged.customAbutment = Boolean(base.customAbutment);
+        continue;
+      }
+      const value = base[key as keyof ToothWorkSelection];
+      if (value != null && String(value).trim() !== "") {
+        (merged as Record<string, unknown>)[key] = value;
+      }
+    }
+    return merged;
+  }
+  if (followUp) return { ...(followUp as ToothWorkSelection) };
+  if (base) return { ...(base as ToothWorkSelection) };
+  return { ...(list[list.length - 1] as ToothWorkSelection) };
+};
+
+/** 치식별 차트 표시용 맵. 후속이 원 CA를 덮어쓰지 않는다. */
+export const buildToothWorkDisplayByTooth = (
+  toothWorks: ReadonlyArray<Partial<ToothWorkSelection>> | null | undefined,
+): Map<string, ToothWorkSelection> => {
+  const ownByTooth = new Map<string, Partial<ToothWorkSelection>[]>();
+  for (const row of Array.isArray(toothWorks) ? toothWorks : []) {
+    const anchor = String(row?.toothNumber || "").trim();
+    if (!/^[1-4][1-8]$/.test(anchor)) continue;
+    const bucket = ownByTooth.get(anchor) || [];
+    bucket.push(row);
+    ownByTooth.set(anchor, bucket);
+  }
+
+  const map = new Map<string, ToothWorkSelection>();
+  for (const [tooth, rows] of ownByTooth) {
+    const merged = mergeToothWorkRowsForChartDisplay(rows);
+    if (merged) map.set(tooth, { ...merged, toothNumber: tooth });
+  }
+
+  // 본인 행이 없는 연결치만 스팬 행을 빌려 쓰되, 이후에도 원 행이 있으면 위에서 이김
+  for (const row of Array.isArray(toothWorks) ? toothWorks : []) {
+    const linked = Array.isArray(row?.bridgeLinkedTeeth)
+      ? row.bridgeLinkedTeeth.map((t) => String(t || "").trim()).filter(Boolean)
+      : [];
+    for (const tooth of linked) {
+      if (!/^[1-4][1-8]$/.test(tooth) || map.has(tooth)) continue;
+      const borrowed = mergeToothWorkRowsForChartDisplay([
+        { ...row, toothNumber: tooth },
+      ]);
+      if (borrowed) map.set(tooth, { ...borrowed, toothNumber: tooth });
+    }
+  }
+  return map;
 };
 
 export const listPendingFollowUpTempSpans = (

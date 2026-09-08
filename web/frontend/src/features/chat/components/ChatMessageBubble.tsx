@@ -96,6 +96,8 @@ type ChatMessageBubbleProps = {
   practiceTransferProsthesisFollowUps?: import("@/shared/practice/prosthesisFollowUp").ProsthesisFollowUpRecord[] | null;
   /** 레거시 후속 보철 채팅 — 임플란트·어벗 스펙 보강 */
   practiceTransferToothWorks?: import("@/shared/practice/transferMemo").ToothWorkSelection[] | null;
+  /** 의뢰건 최종 기공비(지르+CA). 후속 증분 billingDelta와 별개 */
+  practiceTransferFeeQuote?: import("@/shared/practice/practiceTransferFeeQuote").PracticeTransferFeeQuote | null;
 };
 
 export function chatAttachmentBusyKey(file: {
@@ -332,6 +334,7 @@ export function ChatMessageBubble({
   practiceTransferLabAnchorId = null,
   practiceTransferProsthesisFollowUps = null,
   practiceTransferToothWorks = null,
+  practiceTransferFeeQuote = null,
 }: ChatMessageBubbleProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const senderName = String(message.sender?.name || "알 수 없음").trim();
@@ -687,8 +690,8 @@ export function ChatMessageBubble({
       formatTime,
       messageDomId: chatMessageDomId(String(message._id || "")),
       labAnchorId: practiceTransferLabAnchorId,
-      prosthesisFollowUps: practiceTransferProsthesisFollowUps,
       transferToothWorks: practiceTransferToothWorks,
+      transferFeeQuote: practiceTransferFeeQuote,
     });
     if (customBody) return customBody;
 

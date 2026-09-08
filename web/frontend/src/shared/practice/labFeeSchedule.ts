@@ -45,7 +45,7 @@ import {
   IMPLANT_ADD_REQUEST_OPTION,
   MANUFACTURER_ADD_REQUEST_BRAND,
 } from "@/shared/practice/roundBarAbutment";
-import { isFollowUpProsthesisPhase, isFinalProsthesisType } from "@/shared/practice/prosthesisFollowUp";
+import { isFollowUpProsthesisPhase, isFinalProsthesisType, hasFollowUpProsthesisForTooth } from "@/shared/practice/prosthesisFollowUp";
 
 /** FDI 상악 16치. transferMemo UPPER_ARCH_TEETH 와 동일(순환 import 방지용 로컬). */
 const UPPER_ARCH_TEETH_FOR_FEE = [
@@ -1734,23 +1734,13 @@ export const computePracticeTransferRetailFees = (params: {
       ? listTempBridgeFeeGroups(rows)
       : groupRowsForSetFee(groupedRows);
     for (const group of spanGroups) {
-      const labFee =
-        item.unit === "perSet"
-          ? Math.max(0, Math.round(Number(useRemake ? item.remake : item.price) || 0))
-          : nTeethFeeForCount(group.teeth.length, item.tiers, useRemake);
-      labFeeTotal += labFee;
-      const sortedTeeth = sortToothNumbersForFee(group.teeth);
-      const toothNumberLabel = formatToothNumbersForFeeLine(sortedTeeth);
       const splitTempAbutment = isRemovableTempFeeName(item.name);
       if (splitTempAbutment) {
-        lines.push({
-          toothNumber: toothNumberLabel,
-          prosthesisType: `${item.name}${group.suffix} ${group.teeth.length}치`,
-          labFee,
-          labAbutmentFee: 0,
-          labAbutmentPending: false,
-          abutmentRetail: 0,
-        });
+        // 후속 최종 보철이 있는 치아의 임시치아 기공비는 제외(원 홀드+후속 순증분 = 브리지/크라운).
+        // 커스텀어벗은 원 임시치아 행 기준으로 유지.
+        const teethForTempLabFee = group.teeth.filter(
+          (tooth) => !hasFollowUpProsthesisForTooth(rows, tooth),
+        );
         for (const row of rows) {
           const tooth = String(row?.toothNumber || row?.tooth || "").trim();
           if (!group.teeth.includes(tooth)) continue;
@@ -1774,8 +1764,38 @@ export const computePracticeTransferRetailFees = (params: {
             abutmentRetailNote: retailNote(split),
           });
         }
+        if (teethForTempLabFee.length === 0) {
+          continue;
+        }
+        const labFee = nTeethFeeForCount(
+          teethForTempLabFee.length,
+          item.tiers,
+          useRemake,
+        );
+        labFeeTotal += labFee;
+        const sortedTeeth = sortToothNumbersForFee(teethForTempLabFee);
+        const toothNumberLabel = formatToothNumbersForFeeLine(sortedTeeth);
+        const arch = toothArchFromNumber(sortedTeeth[0] || "");
+        const suffix =
+          group.suffix ||
+          (arch === "upper" ? "(상악)" : arch === "lower" ? "(하악)" : "");
+        lines.push({
+          toothNumber: toothNumberLabel,
+          prosthesisType: `${item.name}${suffix} ${teethForTempLabFee.length}치`,
+          labFee,
+          labAbutmentFee: 0,
+          labAbutmentPending: false,
+          abutmentRetail: 0,
+        });
         continue;
       }
+      const labFee =
+        item.unit === "perSet"
+          ? Math.max(0, Math.round(Number(useRemake ? item.remake : item.price) || 0))
+          : nTeethFeeForCount(group.teeth.length, item.tiers, useRemake);
+      labFeeTotal += labFee;
+      const sortedTeeth = sortToothNumbersForFee(group.teeth);
+      const toothNumberLabel = formatToothNumbersForFeeLine(sortedTeeth);
       let groupAbutment = 0;
       let groupLabAbutment = 0;
       let groupPending = false;

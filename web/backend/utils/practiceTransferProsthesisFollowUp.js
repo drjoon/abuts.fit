@@ -4,6 +4,7 @@
 // - web/frontend/src/shared/practice/prosthesisFollowUp.ts
 // - 2026-09-08: 진행 탭 채팅 payload에 임플란트·어벗 스펙 포함(serializeFollowUpToothWorksForChatPayload).
 // - 2026-09-08: 후속 제작 시 원 임시치아 기공비 차감(브리지/크라운 순증분만 홀드).
+// - 2026-09-08: 차트 표시 맵 — 후속+원 병존 시 형태는 후속, CA·스펙은 원 임시치아 행.
 // - 2026-09-01: 임시치아 배송 후 동일 건에 크라운/브리지 후속 추가(어벗 재청구 없음).
 import { isPracticeTransferDeletedStatus } from "./practiceTransferStage.js";
 
@@ -196,6 +197,94 @@ export const mergeFollowUpToothWorks = (existing, followUpRows) => {
   const base = Array.isArray(existing) ? [...existing] : [];
   const add = Array.isArray(followUpRows) ? followUpRows : [];
   return [...base, ...add];
+};
+
+/** 어벗·임플란트 표시 필드 — 후속 행이 덮어도 원치아(임시치아) 입력을 유지 */
+const DISPLAY_ABUTMENT_SPEC_KEYS = [
+  "customAbutment",
+  "abutmentProductMode",
+  "implantManufacturer",
+  "implantBrand",
+  "implantFamily",
+  "implantType",
+  "implantAddRequest",
+  "abutmentManufacturer",
+  "abutmentDiameter",
+  "abutmentHeight",
+];
+
+/**
+ * 같은 치아에 원 행+후속 행이 있으면 형태는 후속, CA·스펙은 원 행.
+ * (FE `mergeToothWorkRowsForChartDisplay` SSOT 미러)
+ */
+export const mergeToothWorkRowsForChartDisplay = (rows) => {
+  const list = (Array.isArray(rows) ? rows : []).filter((row) => {
+    const tooth = String(row?.toothNumber || "").trim();
+    return Boolean(row) && /^[1-4][1-8]$/.test(tooth);
+  });
+  if (list.length === 0) return null;
+  if (list.length === 1) return { ...list[0] };
+
+  const followUps = list.filter(
+    (row) =>
+      isFollowUpProsthesisPhase(row) &&
+      isFinalProsthesisType(row?.prosthesisType),
+  );
+  const bases = list.filter((row) => !isFollowUpProsthesisPhase(row));
+  const followUp = followUps.length > 0 ? followUps[followUps.length - 1] : null;
+  const base = bases.length > 0 ? bases[bases.length - 1] : null;
+
+  if (followUp && base) {
+    const merged = {
+      ...followUp,
+      toothNumber: String(base.toothNumber || followUp.toothNumber || "").trim(),
+    };
+    for (const key of DISPLAY_ABUTMENT_SPEC_KEYS) {
+      if (key === "customAbutment") {
+        merged.customAbutment = Boolean(base.customAbutment);
+        continue;
+      }
+      const value = base[key];
+      if (value != null && String(value).trim() !== "") {
+        merged[key] = value;
+      }
+    }
+    return merged;
+  }
+  if (followUp) return { ...followUp };
+  if (base) return { ...base };
+  return { ...list[list.length - 1] };
+};
+
+export const buildToothWorkDisplayByTooth = (toothWorks) => {
+  const ownByTooth = new Map();
+  for (const row of Array.isArray(toothWorks) ? toothWorks : []) {
+    const anchor = String(row?.toothNumber || "").trim();
+    if (!/^[1-4][1-8]$/.test(anchor)) continue;
+    const bucket = ownByTooth.get(anchor) || [];
+    bucket.push(row);
+    ownByTooth.set(anchor, bucket);
+  }
+
+  const map = new Map();
+  for (const [tooth, rows] of ownByTooth) {
+    const merged = mergeToothWorkRowsForChartDisplay(rows);
+    if (merged) map.set(tooth, { ...merged, toothNumber: tooth });
+  }
+
+  for (const row of Array.isArray(toothWorks) ? toothWorks : []) {
+    const linked = Array.isArray(row?.bridgeLinkedTeeth)
+      ? row.bridgeLinkedTeeth.map((t) => String(t || "").trim()).filter(Boolean)
+      : [];
+    for (const tooth of linked) {
+      if (!/^[1-4][1-8]$/.test(tooth) || map.has(tooth)) continue;
+      const borrowed = mergeToothWorkRowsForChartDisplay([
+        { ...row, toothNumber: tooth },
+      ]);
+      if (borrowed) map.set(tooth, { ...borrowed, toothNumber: tooth });
+    }
+  }
+  return map;
 };
 
 export const isPendingProsthesisFollowUpRecord = (
