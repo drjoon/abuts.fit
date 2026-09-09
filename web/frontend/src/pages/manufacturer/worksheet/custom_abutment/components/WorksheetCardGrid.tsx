@@ -1,5 +1,6 @@
 // change-log:
 // - 2026-09-04: 세척.패킹 카드에 각인 이미지(또는 pending) 드롭 매칭 지원.
+// - 2026-09-09: 라이노 블러 — GENERATING만(idle filled 미수신 해제). 오버레이 약하게(내용 가독).
 // - 2026-09-03: 준비 탭「라이노 작업중」오버레이에 중단 버튼(뱃지 아래).
 // - 2026-09-03: 세척.패킹 → 승인은 각인 이미지가 있을 때만 가능(AI 인식 실패 시 카드/프리뷰 수동 승인).
 // - 2026-08-29: 세척.패킹「출력 완료」뱃지를 하단 → 오른쪽 로트/스크류 스택 아래로 이동.
@@ -807,7 +808,7 @@ export const WorksheetCardGrid = ({
           >
             {rhinoWorkPending ? (
               <div
-                className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-2 rounded-[inherit] bg-white/55 backdrop-blur-[6px] cursor-not-allowed"
+                className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-2 rounded-[inherit] bg-white/25 backdrop-blur-[1.5px] cursor-not-allowed"
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-09: filled STL 재생성 시작 시 filled-stl-regeneration-started 이벤트(준비 탭 블러).
 // - 2026-09-04: 헥스 draft — requestorHexRotation/finalHexRotation 레거시 폴백 제거. 없으면 에러 토스트.
 // - 2026-09-04: ExoCAD≤3.0 · implantManufacturer 없으면 헥스 확인 에러 토스트.
 // - 2026-09-04: 포스트면 각인 Z — FL+1.5mm 라벨.
@@ -1544,6 +1545,14 @@ export const PreviewModal = ({
 
       // STL 재생성 성공 시 캐시 무효화 (filled.stl 재생성 시 NC도 재생성되므로 NC 캐시도 무효화)
       markFilledStlRegenerationPending(activeReq?.requestId);
+      window.dispatchEvent(
+        new CustomEvent("filled-stl-regeneration-started", {
+          detail: {
+            requestId: String(activeReq?.requestId || "").trim(),
+            requestMongoId: String(activeReq?._id || "").trim(),
+          },
+        }),
+      );
       await invalidateRequestPreviewCaches({
         camS3Key: resolveFilledStlFile(activeReq?.caseInfos)?.s3Key,
         ncS3Key: activeReq?.caseInfos?.ncFile?.s3Key,

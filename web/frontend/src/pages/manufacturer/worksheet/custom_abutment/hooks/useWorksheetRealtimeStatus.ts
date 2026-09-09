@@ -12,6 +12,7 @@
 // - web/backend/controllers/bg/bg.controller.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/regenerationPending.ts
 // change-log:
+// - 2026-09-09: Rhino 완료 소켓이 다른 BACKEND_BASE로만 올 때 「라이노 작업중」고스트 — GENERATING/pending 폴링 refetch.
 // - 2026-09-03: 취소 시 목록에서 본건 강제 제거 + manufacturerStage 보정(라이노 고스트 방지).
 // - 2026-08-29: NC-only 재생성 시 STL IndexedDB를 지우지 않음. 캐시 무효화 후 열린 프리뷰를 갱신.
 // - 2026-08-29: NC 재생성 시작(cam-processing-started) 시 목록/카드에서 ncFile을 즉시 제거.
@@ -39,6 +40,8 @@ import { invalidateRequestPreviewCaches } from "@/shared/files/fileBlobCache";
 import {
   consumeFilledStlRegenerationPending,
   consumeNcRegenerationPending,
+  hasFilledStlRegenerationPending,
+  reconcileFilledStlRegenerationPending,
 } from "../utils/regenerationPending";
 import {
   deriveStageForFilter,
@@ -48,9 +51,14 @@ import {
 } from "../utils/request";
 import { filterOutHexVerificationCancelCompanions } from "../utils/hexRotation";
 
+const RHINO_PENDING_POLL_MS = 4000;
+
 type UseWorksheetRealtimeStatusParams = {
   enabled?: boolean;
   token?: string | null;
+  /** 준비 탭 등 — GENERATING 고스트 폴링 범위 */
+  tabStage?: string;
+  requests?: ManufacturerRequest[];
   setRequests: Dispatch<SetStateAction<ManufacturerRequest[]>>;
   fetchRequests?: (silent?: boolean) => Promise<any>;
   fetchRequestsCore?: (silent?: boolean, append?: boolean) => Promise<any>;
@@ -81,6 +89,8 @@ type UseWorksheetRealtimeStatusParams = {
 export function useWorksheetRealtimeStatus({
   enabled = true,
   token,
+  tabStage,
+  requests,
   setRequests,
   fetchRequests,
   fetchRequestsCore,
@@ -93,12 +103,17 @@ export function useWorksheetRealtimeStatus({
 }: UseWorksheetRealtimeStatusParams) {
   const realtimeBaseRef = useRef<Record<string, number>>({});
   const startedToastShownRef = useRef<Record<string, number>>({});
+  const requestsRef = useRef<ManufacturerRequest[]>(requests || []);
+  const fetchRequestsRef = useRef(fetchRequests);
+  const rhinoPollInFlightRef = useRef(false);
   const latestRef = useRef({
     previewOpen,
     previewFiles,
     fetchRequestsCore,
     handleOpenPreview,
   });
+  requestsRef.current = requests || [];
+  fetchRequestsRef.current = fetchRequests;
   latestRef.current = {
     previewOpen,
     previewFiles,
@@ -690,6 +705,17 @@ export function useWorksheetRealtimeStatus({
             } as any;
           }),
         );
+
+        // runtime-status alone does not carry stlFile — refetch so「라이노 작업중」can clear
+        if (
+          fetchRequests &&
+          (shouldClearRealtime ||
+            status === "completed" ||
+            status === "failed" ||
+            status === "error")
+        ) {
+          void fetchRequests(true);
+        }
         return;
       }
       default:
@@ -784,6 +810,40 @@ export function useWorksheetRealtimeStatus({
     }, 1000);
     return () => window.clearInterval(id);
   }, [enabled, setRequests]);
+
+  // Rhino가 운영 BACKEND_BASE로만 register/socket 하면 로컬 FE 소켓을 못 받는다.
+  // GENERATING·재생성 pending 동안 silent refetch로「라이노 작업중」고스트를 푼다.
+  useEffect(() => {
+    if (!enabled || !token) return;
+    if (String(tabStage || "").trim() && String(tabStage).trim() !== "request") {
+      return;
+    }
+    const id = window.setInterval(() => {
+      if (rhinoPollInFlightRef.current) return;
+      const list = requestsRef.current || [];
+      const hasGenerating = list.some((r) => {
+        const status = String(r?.productionSchedule?.stlPreload?.status || "")
+          .trim()
+          .toUpperCase();
+        return status === "GENERATING";
+      });
+      if (!hasGenerating && !hasFilledStlRegenerationPending()) return;
+      const fetchFn = fetchRequestsRef.current;
+      if (!fetchFn) return;
+      rhinoPollInFlightRef.current = true;
+      void Promise.resolve(fetchFn(true))
+        .then((result) => {
+          const list = Array.isArray(result)
+            ? result
+            : requestsRef.current || [];
+          reconcileFilledStlRegenerationPending(list);
+        })
+        .finally(() => {
+          rhinoPollInFlightRef.current = false;
+        });
+    }, RHINO_PENDING_POLL_MS);
+    return () => window.clearInterval(id);
+  }, [enabled, token, tabStage]);
 
   useEffect(() => {
     if (!enabled || !token) return;

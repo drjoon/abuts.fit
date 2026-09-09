@@ -3,6 +3,7 @@
 // - web/backend/app.js
 // - web/backend/server.js
 // change-log:
+// - 2026-09-09: process-file — stlPreload GENERATING을 응답 전 await(FE 블러/reload 레이스 방지).
 // - 2026-09-04: triggerRhino — stlPreload GENERATING 선반영 + BRIDGE_SHARED_SECRET 폴백.
 // - 2026-09-03: 취소된 의뢰 process-file 거부(409) — GENERATING 고스트 방지.
 import axios from "axios";
@@ -134,22 +135,25 @@ export const processFileByName = asyncHandler(async (req, res) => {
           );
         }
         // CANCELLED 후 재생성 시 준비 탭「라이노 작업중」블러를 다시 켠다
-        void Request.updateOne(
-          { _id: request._id },
-          {
-            $set: {
-              "productionSchedule.stlPreload": {
-                status: "GENERATING",
-                updatedAt: new Date(),
+        // (응답 전 반영 — FE reload가 GENERATING을 놓치지 않도록 await)
+        try {
+          await Request.updateOne(
+            { _id: request._id },
+            {
+              $set: {
+                "productionSchedule.stlPreload": {
+                  status: "GENERATING",
+                  updatedAt: new Date(),
+                },
               },
             },
-          },
-        ).catch((err) => {
+          );
+        } catch (err) {
           console.warn(
             `[rhino-process-file] stlPreload GENERATING update failed requestId=${requestId}:`,
             err?.message || err,
           );
-        });
+        }
       }
     } catch (err) {
       if (err instanceof ApiError) throw err;

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-09: isRhinoWorkPending — GENERATING 또는 filled 재생성 pending(프리뷰 재생성 블러). idle filled 미수신은 제외.
 // - 2026-09-04: isRhinoWorkPending — 원본이 .stl일 때만(구강스캔 .ply 고스트 블러 방지).
 // - 2026-09-03: isRhinoWorkPending — 취소·원본 STL 없음 고스트 블러 방지. CANCELLED/FAILED면 해제.
 // - 2026-08-22: isAnySampleRequest는 UI/크레딧 표시용 — 직경 요약·공정 탭 차단에 쓰지 않음.
@@ -18,6 +19,7 @@
 // - web/backend/controllers/bg/bg.controller.js
 import type { RequestBase } from "@/types/request";
 import { getDeadlineSemanticClasses } from "@/shared/ui/semanticStatus";
+import { hasFilledStlRegenerationPending } from "./regenerationPending";
 
 export type ManufacturerRequest = RequestBase & {
   referenceIds?: string[];
@@ -285,9 +287,11 @@ export const patchFilledStlFile = (
 };
 
 /**
- * 제조사 생산 준비 카드: filled STL 수신 전.
- * 디자인+생산 큐는 DesignRequestTransferView를 쓰므로 WorksheetCardGrid 준비 탭에서만 판정한다.
- * CANCELLED/FAILED(생성 중단)·취소 단계·원본 어벗 STL 없음(고스트/구강스캔)이면 블러를 띄우지 않는다.
+ * 제조사 생산 준비 카드: Rhino Filled STL을 **생성 중**일 때만 블러.
+ * - DB/로컬 `stlPreload=GENERATING`
+ * - 또는 재생성 직후 in-memory pending(`markFilledStlRegenerationPending`)
+ * filled 미수신 idle 의뢰는 블러하지 않는다. 기존 filled가 있어도 재생성 중이면 블러한다.
+ * WorksheetCardGrid 준비 탭 전용.
  */
 export const isRhinoWorkPending = (
   req?: ManufacturerRequest | null,
@@ -295,11 +299,17 @@ export const isRhinoWorkPending = (
 ) => {
   if (String(tabStage || "").trim() !== "request") return false;
   if (String(req?.manufacturerStage || "").trim() === "취소") return false;
-  if (hasFilledStl(req)) return false;
+
   const status = String(req?.productionSchedule?.stlPreload?.status || "")
     .trim()
     .toUpperCase();
   if (status === "CANCELLED" || status === "FAILED") return false;
+
+  const regenerating =
+    status === "GENERATING" ||
+    hasFilledStlRegenerationPending(req?.requestId);
+  if (!regenerating) return false;
+
   // 어벗 STL만 Rhino 대상. 구강스캔(.ply 등)이 primary에 남은 레거시는 고스트 블러 금지.
   const file = req?.caseInfos?.file;
   const name = String(

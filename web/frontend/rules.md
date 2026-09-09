@@ -394,11 +394,15 @@ Notes:
   - request 탭 API 조회는 `manufacturerStageIn=준비` 단일값만 전달합니다.
   - `manufacturerStage` request 단계 레거시 값(`의뢰`, `request`) 사용/비교는 금지합니다.
   - 상단 카운터/카드 목록 불일치 방지를 위해 탭별 API stage 필터와 클라이언트 stage 비교 문자열을 동일하게 유지합니다.
-  - 라이노 작업 전 카드: 의뢰 생성 직후 준비 탭에 즉시 표시하되, `caseInfos.stlFile.s3Key`(2-filled; legacy `camFile` 폴백)가 없으면
-    카드 본문을 블러하고 「라이노 작업중」 오버레이로 클릭을 막는다.
-    라이노 완료 웹소켓(`request:stage-changed` source=`bg-file-processed`,
+  - 라이노 작업 중 카드: `productionSchedule.stlPreload.status=GENERATING`
+    또는 filled 재생성 pending(`markFilledStlRegenerationPending` /
+    `filled-stl-regeneration-started`)일 때만
+    카드 본문을 약하게 블러하고 「라이노 작업중」 오버레이로 클릭을 막는다.
+    filled STL(`caseInfos.stlFile.s3Key`, legacy `camFile` 폴백) 미수신 idle 카드는 블러하지 않는다.
+    생성 완료 웹소켓(`request:stage-changed` source=`bg-file-processed`,
     `request:stl-metadata-updated` source=`bg-file-processed:2-filled`,
-    notification `bg-file-processed` step=`2-filled`)으로 stlFile(+camFile 미러)이 패치되면 블러를 해제한다.
+    notification `bg-file-processed` step=`2-filled`)으로 stlFile(+camFile 미러)이 패치되고
+    stlPreload가 GENERATING이 아니면 블러를 해제한다.
     Filled STL/NC 재생성 완료 시 IndexedDB 캐시(s3Key·버전 키)를 삭제한다.
     디자인+생산 큐(`DesignRequestTransferView`)에는 적용하지 않는다.
   - 준비 탭 의뢰카드 오른쪽에는 로트번호 3글자(영문) 뱃지를 표시합니다.

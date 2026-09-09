@@ -2,6 +2,8 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useWorksheetRealtimeStatus.ts
+// change-log:
+// - 2026-09-09: reconcileFilledStlRegenerationPending — Rhino 타 서버 완료 후 폴링 정지.
 const pendingFilled = new Set<string>();
 const pendingNc = new Set<string>();
 
@@ -18,9 +20,51 @@ export function markNcRegenerationPending(requestId: unknown) {
   if (id) pendingNc.add(id);
 }
 
+export function hasFilledStlRegenerationPending(requestId?: unknown) {
+  if (requestId != null) {
+    const id = normalizeRequestId(requestId);
+    return Boolean(id && pendingFilled.has(id));
+  }
+  return pendingFilled.size > 0;
+}
+
 export function isNcRegenerationPending(requestId: unknown) {
   const id = normalizeRequestId(requestId);
   return Boolean(id && pendingNc.has(id));
+}
+
+/**
+ * 목록 refetch 후: filled 수신·단계 이탈 건은 pending에서 제거.
+ * (Rhino가 다른 BACKEND_BASE로 완료 통지해도 폴링이 멈추도록)
+ */
+export function reconcileFilledStlRegenerationPending(
+  requests: Array<{
+    requestId?: unknown;
+    manufacturerStage?: unknown;
+    caseInfos?: { stlFile?: { s3Key?: unknown }; camFile?: { s3Key?: unknown } };
+  }>,
+) {
+  if (pendingFilled.size === 0) return;
+  const byId = new Map<string, (typeof requests)[number]>();
+  for (const req of requests || []) {
+    const id = normalizeRequestId(req?.requestId);
+    if (id) byId.set(id, req);
+  }
+  for (const id of [...pendingFilled]) {
+    const req = byId.get(id);
+    if (!req) {
+      pendingFilled.delete(id);
+      continue;
+    }
+    if (String(req?.manufacturerStage || "").trim() === "취소") {
+      pendingFilled.delete(id);
+      continue;
+    }
+    const filledKey = String(
+      req?.caseInfos?.stlFile?.s3Key || req?.caseInfos?.camFile?.s3Key || "",
+    ).trim();
+    if (filledKey) pendingFilled.delete(id);
+  }
 }
 
 /** Next Up / 예약 관리 「CAM 생성 중」블러 SSOT */

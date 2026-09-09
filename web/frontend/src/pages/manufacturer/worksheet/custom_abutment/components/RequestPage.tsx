@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-09-09: filled-stl-regeneration-started → stlPreload GENERATING 낙관 패치(재생성 블러).
+// - 2026-09-09: 준비 탭 Rhino GENERATING 고스트 — realtime hook에 requests/tabStage 전달(폴링 refetch).
 // - 2026-09-03: 라이노 중단 시 취소/원본STL 없는 고스트 카드 목록 제거.
 // - 2026-09-03: 준비 탭「라이노 작업중」중단 — 샘플 삭제 / 일반 의뢰 stl cancel-regeneration.
 // - 2026-08-23: 워크시트 스크롤바 — 작업영역 카드 오른쪽 끝에 붙이도록 nested scroll breakout.
@@ -93,6 +95,7 @@ import { useRequestCardHandlers } from "@/pages/manufacturer/worksheet/custom_ab
 import { useCardActions } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useCardActions";
 import { useRequestFiltering } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFiltering";
 import {
+  hasFilledStlRegenerationPending,
   markFilledStlRegenerationPending,
   markNcRegenerationPending,
 } from "@/pages/manufacturer/worksheet/custom_abutment/utils/regenerationPending";
@@ -1070,6 +1073,8 @@ export const RequestPage = ({
   const { realtimeBaseRef } = useWorksheetRealtimeStatus({
     enabled: true,
     token,
+    tabStage,
+    requests: pageState.requests,
     setRequests: pageState.setRequests,
     fetchRequests,
     fetchRequestsCore,
@@ -2619,6 +2624,53 @@ export const RequestPage = ({
   );
 
   const setPreviewOpen = pageState.setPreviewOpen;
+  const setRequests = pageState.setRequests;
+
+  const patchFilledStlGenerating = useCallback(
+    (requestIdRaw: unknown) => {
+      const requestId = String(requestIdRaw || "").trim();
+      if (!requestId) return;
+      markFilledStlRegenerationPending(requestId);
+      setRequests((prev) =>
+        prev.map((item) => {
+          if (String(item?.requestId || "").trim() !== requestId) {
+            return item;
+          }
+          return {
+            ...item,
+            productionSchedule: {
+              ...(item.productionSchedule || {}),
+              stlPreload: {
+                status: "GENERATING",
+                updatedAt: new Date().toISOString(),
+              },
+            },
+          };
+        }),
+      );
+    },
+    [setRequests],
+  );
+
+  useEffect(() => {
+    const onFilledStarted = (evt: Event) => {
+      const detail =
+        evt instanceof CustomEvent
+          ? ((evt as CustomEvent).detail as Record<string, unknown> | null)
+          : null;
+      patchFilledStlGenerating(detail?.requestId);
+    };
+    window.addEventListener(
+      "filled-stl-regeneration-started",
+      onFilledStarted as EventListener,
+    );
+    return () => {
+      window.removeEventListener(
+        "filled-stl-regeneration-started",
+        onFilledStarted as EventListener,
+      );
+    };
+  }, [patchFilledStlGenerating]);
 
   useEffect(() => {
     resetPagination();
@@ -2729,25 +2781,7 @@ export const RequestPage = ({
             continue;
           }
           if (tabStage === "request") {
-            markFilledStlRegenerationPending(requestId);
-            // CANCELLED 후 재생성 — 블러 재개
-            pageState.setRequests((prev) =>
-              prev.map((item) => {
-                if (String(item?.requestId || "").trim() !== requestId) {
-                  return item;
-                }
-                return {
-                  ...item,
-                  productionSchedule: {
-                    ...(item.productionSchedule || {}),
-                    stlPreload: {
-                      status: "GENERATING",
-                      updatedAt: new Date().toISOString(),
-                    },
-                  },
-                };
-              }),
-            );
+            patchFilledStlGenerating(requestId);
           } else {
             markNcRegenerationPending(requestId);
           }
@@ -2766,14 +2800,35 @@ export const RequestPage = ({
         variant: failCount > 0 ? "destructive" : undefined,
       });
 
-      void reloadRequests();
+      // reload가 fire-and-forget GENERATING을 덮어쓸 수 있어, pending 건은 다시 GENERATING 유지
+      await reloadRequests();
+      if (tabStage === "request") {
+        setRequests((prev) =>
+          prev.map((item) => {
+            const rid = String(item?.requestId || "").trim();
+            if (!rid || !hasFilledStlRegenerationPending(rid)) return item;
+            return {
+              ...item,
+              productionSchedule: {
+                ...(item.productionSchedule || {}),
+                stlPreload: {
+                  status: "GENERATING",
+                  updatedAt: new Date().toISOString(),
+                },
+              },
+            };
+          }),
+        );
+      }
     } finally {
       setBulkCamRegenerating(false);
     }
   }, [
     bulkCamRegenerating,
     filteredAndSorted,
+    patchFilledStlGenerating,
     reloadRequests,
+    setRequests,
     tabStage,
     toast,
     token,
