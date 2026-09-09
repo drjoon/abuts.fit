@@ -157,6 +157,7 @@ import { ChatMessageBubble } from "@/features/chat/components/ChatMessageBubble"
 import { buildChatReactionUserNameById } from "@/features/chat/components/chatReactions";
 import { type ReplyToMessage } from "@/features/chat/components/MessageReply";
 import { PracticeToothWorkChartReadOnly } from "@/shared/components/practice/PracticeToothWorkChartReadOnly";
+import { PracticeRemakeChargesStrip } from "@/shared/components/practice/PracticeRemakeChargesStrip";
 import { usePracticeTransferPanelLayout } from "@/shared/components/practice/usePracticeTransferPanelLayout";
 import { useIsMobile } from "@/shared/hooks/use-mobile";
 import {
@@ -397,6 +398,8 @@ type PracticeTransferDetailChatDialogProps = {
   toothWorks?: ToothWorkSelection[];
   toothWorksKey?: string;
   feeQuote?: PracticeTransferFeeQuote | null;
+  /** 동일 PTX 리메이크 청구 이력(치과·기공소 인지) */
+  remakeCharges?: import("@/shared/practice/practiceTransferLabReceive").PracticeTransferRemakeCharge[] | null;
   skipJig?: boolean;
   feeViewer?: PracticeTransferFeeQuoteViewer;
   /**
@@ -571,6 +574,7 @@ export function PracticeTransferDetailChatDialog({
   toothWorks,
   toothWorksKey,
   feeQuote = null,
+  remakeCharges = null,
   skipJig = false,
   feeViewer = "practice",
   initialPanelTab,
@@ -2240,6 +2244,11 @@ export function PracticeTransferDetailChatDialog({
                     skipJig={skipJig}
                     labEffectiveStars={labEffectiveStars}
                   />
+                  <PracticeRemakeChargesStrip remakeCharges={remakeCharges} />
+                </section>
+              ) : remakeCharges && remakeCharges.length > 0 ? (
+                <section className="border-t border-border/70 pt-4">
+                  <PracticeRemakeChargesStrip remakeCharges={remakeCharges} />
                 </section>
               ) : null}
 

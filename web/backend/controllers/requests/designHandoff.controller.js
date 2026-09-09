@@ -1169,6 +1169,9 @@ export async function handoffDesignToProduction(req, res) {
                   tooth: bumpTooth,
                   actorUserId: userId,
                 });
+                if (charged.skipped) {
+                  return;
+                }
                 if (!charged.ok) {
                   console.warn(
                     "[DESIGN_HANDOFF] CA remake charge skipped",
@@ -1191,8 +1194,8 @@ export async function handoffDesignToProduction(req, res) {
                   senderUserId: userId,
                   content:
                     feeTotal > 0
-                      ? `커스텀어벗 리메이크\n#${bumpTooth}\n리메이크비 ${feeTotal.toLocaleString("ko-KR")}원`
-                      : `커스텀어벗 리메이크\n#${bumpTooth}`,
+                      ? `CA 재업로드\n#${bumpTooth} · 커스텀어벗\n리메이크비 ${feeTotal.toLocaleString("ko-KR")}원`
+                      : `CA 재업로드\n#${bumpTooth} · 커스텀어벗`,
                   systemEvent: "practice_transfer_remake_charge",
                   systemPayload: {
                     source: "ca_reupload",

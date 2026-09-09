@@ -413,6 +413,7 @@ import { PracticeAbutmentUploadOverdueAlert } from "@/shared/components/practice
 import {
   PRE_PLATFORM_REMAKE_LABEL,
   PRE_PLATFORM_REMAKE_PRACTICE_SEND_HINT,
+  parsePracticeTransferRemakeCharges,
 } from "@/shared/practice/practiceTransferLabReceive";
 
 type RecentRequestItem = PracticeRecentRequestItem;
@@ -7020,22 +7021,31 @@ export const PracticeFileTransferPage = ({
           0,
           Math.round(Number(billingDelta?.total || payload.remakeFeeTotal || 0)),
         );
-        if (deltaLab > 0 || deltaTotal > 0) {
+        const nextCharges = Array.isArray(payload.remakeCharges)
+          ? parsePracticeTransferRemakeCharges(payload.remakeCharges)
+          : null;
+        if (deltaLab > 0 || deltaTotal > 0 || nextCharges) {
           const patchFee = <T extends {
             transferId?: string;
             feeQuote?: ReturnType<typeof parsePracticeTransferFeeQuote> | null;
+            remakeCharges?: ReturnType<typeof parsePracticeTransferRemakeCharges>;
           }>(row: T): T => {
             if (String(row.transferId || "").trim() !== eventTransferId) return row;
-            if (!row.feeQuote) return row;
+            const nextFee =
+              row.feeQuote && (deltaLab > 0 || deltaTotal > 0)
+                ? {
+                    ...row.feeQuote,
+                    labFeeTotal:
+                      Math.max(0, Number(row.feeQuote.labFeeTotal || 0)) +
+                      deltaLab,
+                    total:
+                      Math.max(0, Number(row.feeQuote.total || 0)) + deltaTotal,
+                  }
+                : row.feeQuote;
             return {
               ...row,
-              feeQuote: {
-                ...row.feeQuote,
-                labFeeTotal:
-                  Math.max(0, Number(row.feeQuote.labFeeTotal || 0)) + deltaLab,
-                total:
-                  Math.max(0, Number(row.feeQuote.total || 0)) + deltaTotal,
-              },
+              ...(nextFee ? { feeQuote: nextFee } : {}),
+              ...(nextCharges ? { remakeCharges: nextCharges } : {}),
             };
           };
           setRecentRequests((prev) => prev.map(patchFee));
@@ -9845,6 +9855,7 @@ export const PracticeFileTransferPage = ({
             selectedTransferDetailModel?.toothWorksKey || "practice-transfer"
           }
           feeQuote={selectedTransfer?.feeQuote || null}
+          remakeCharges={selectedTransfer?.remakeCharges || null}
           skipJig={Boolean(selectedTransferDetailModel?.skipJig)}
           feeViewer="practice"
           labAnchorId={selectedTransferDetailModel?.labAnchorId || null}

@@ -163,3 +163,44 @@ export function summarizeRemakeSelection(
     .map((opt) => opt.label);
   return labels.join(", ");
 }
+
+/** remakeCharges.selectedParts → charged part keys (`index:prosthesis` | `index:ca`) */
+export function collectChargedRemakePartKeys(
+  remakeCharges:
+    | Array<{ selectedParts?: unknown } | null | undefined>
+    | null
+    | undefined,
+): Set<string> {
+  const out = new Set<string>();
+  const rows = Array.isArray(remakeCharges) ? remakeCharges : [];
+  for (const row of rows) {
+    const parts = Array.isArray(row?.selectedParts) ? row.selectedParts : [];
+    for (const raw of parts) {
+      if (!raw || typeof raw !== "object") continue;
+      const part = raw as {
+        index?: unknown;
+        prosthesis?: unknown;
+        customAbutment?: unknown;
+        includeCustomAbutment?: unknown;
+        ca?: unknown;
+      };
+      const index = Math.trunc(Number(part.index));
+      if (!Number.isFinite(index) || index < 0) continue;
+      if (part.prosthesis === true) out.add(remakePartKey(index, "prosthesis"));
+      const wantCa = Boolean(
+        part.customAbutment === true ||
+          part.includeCustomAbutment === true ||
+          part.ca === true,
+      );
+      if (wantCa) out.add(remakePartKey(index, "ca"));
+    }
+  }
+  return out;
+}
+
+export function remakeChargeSourceLabel(source?: string | null): string {
+  const s = String(source || "").trim();
+  if (s === "ca_reupload") return "CA 재업로드";
+  if (s === "lab_charge") return "기공소";
+  return s || "리메이크";
+}

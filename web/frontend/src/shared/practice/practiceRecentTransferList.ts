@@ -35,6 +35,10 @@ import {
   formatPracticeTargetLabLabel,
   type PracticeLabRatingPublic,
 } from "@/shared/practice/practiceLabRating";
+import {
+  parsePracticeTransferRemakeCharges,
+  type PracticeTransferRemakeCharge,
+} from "@/shared/practice/practiceTransferLabReceive";
 
 /** GET /api/practice/transfers/my 기본 페이지 크기. 사이드바·전체보기 모달 공유. */
 export const PRACTICE_MY_TRANSFERS_PAGE_SIZE = 30;
@@ -108,6 +112,7 @@ export type PracticeRecentRequestItem = {
   feeQuote?: PracticeTransferFeeQuote | null;
   remakeFeeQuote?: PracticeTransferFeeQuote | null;
   remakeFeeQuoteWithCustomAbutment?: PracticeTransferFeeQuote | null;
+  remakeCharges?: PracticeTransferRemakeCharge[];
   isRemake?: boolean;
   remakeSourceTransferId?: string;
   canRateLab?: boolean;
@@ -188,6 +193,7 @@ export type PracticeRecentTransferItem = {
   feeQuote?: PracticeTransferFeeQuote | null;
   remakeFeeQuote?: PracticeTransferFeeQuote | null;
   remakeFeeQuoteWithCustomAbutment?: PracticeTransferFeeQuote | null;
+  remakeCharges?: PracticeTransferRemakeCharge[];
   isRemake?: boolean;
   remakeSourceTransferId?: string;
   canRateLab?: boolean;
@@ -893,6 +899,7 @@ export const mapMyPracticeTransferApiRows = (
                 .remakeFeeQuoteWithCustomAbutment
             : null) ?? r.remakeFeeQuoteWithCustomAbutment,
         ),
+        remakeCharges: parsePracticeTransferRemakeCharges(r.remakeCharges),
         isRemake: Boolean(
           r.isRemake ||
             (r.remake &&
@@ -1184,6 +1191,9 @@ export const mergeOpenPracticeTransferFromRequestRows = (
             openRow.remakeFeeQuoteWithCustomAbutment,
         }
       : {}),
+    ...(Array.isArray(openRow.remakeCharges) && openRow.remakeCharges.length > 0
+      ? { remakeCharges: openRow.remakeCharges }
+      : {}),
   };
 };
 
@@ -1375,6 +1385,9 @@ export const groupPracticeRecentRequests = (
           req.remakeFeeQuoteWithCustomAbutment ||
           req.feeQuote?.remakeFeeQuoteWithCustomAbutment ||
           null,
+        remakeCharges: Array.isArray(req.remakeCharges)
+          ? [...req.remakeCharges]
+          : [],
         isRemake: Boolean(req.isRemake),
         remakeSourceTransferId: req.remakeSourceTransferId || "",
         canRateLab: Boolean(req.canRateLab),
@@ -1524,6 +1537,13 @@ export const groupPracticeRecentRequests = (
     ) {
       existing.remakeFeeQuoteWithCustomAbutment =
         req.remakeFeeQuoteWithCustomAbutment;
+    }
+    if (
+      Array.isArray(req.remakeCharges) &&
+      req.remakeCharges.length >
+        (Array.isArray(existing.remakeCharges) ? existing.remakeCharges.length : 0)
+    ) {
+      existing.remakeCharges = [...req.remakeCharges];
     }
     if (req.isRemake) existing.isRemake = true;
     if (!existing.remakeSourceTransferId && req.remakeSourceTransferId) {

@@ -326,6 +326,28 @@ export function PracticeTransferSystemChatBody({
     const feeTotal = Math.max(0, Math.round(Number(payload.remakeFeeTotal || 0)));
     const arrivalYmd = String(payload.arrivalYmd || "").trim();
     const summaryLabel = String(payload.summaryLabel || "").trim();
+    const source = String(payload.source || "").trim();
+    const headerLabel =
+      systemEvent === "practice_transfer_remake_charge"
+        ? source === "ca_reupload"
+          ? "CA 재업로드"
+          : "리메이크 청구"
+        : "리메이크";
+    const contentLines = String(message.content || "")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+    // 첫 줄이 헤더와 같으면 중복 제거
+    const bodyLines =
+      contentLines[0] === headerLabel ||
+      contentLines[0] === "커스텀어벗 리메이크" ||
+      contentLines[0] === "리메이크 청구" ||
+      contentLines[0] === "CA 재업로드"
+        ? contentLines.slice(1)
+        : contentLines;
+    const bodyWithoutFee = bodyLines.filter(
+      (line) => !/^리메이크비\s/.test(line),
+    );
     return (
       <div
         id={messageDomId}
@@ -337,10 +359,19 @@ export function PracticeTransferSystemChatBody({
             compact ? "text-[11px] sm:text-xs" : "text-xs sm:text-sm",
           )}
         >
-          <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] font-medium leading-snug">
-            {message.content}
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-800/80">
+            {headerLabel}
           </p>
-          {summaryLabel && !String(message.content || "").includes(summaryLabel) ? (
+          {bodyWithoutFee.length > 0 ? (
+            <p className="mt-1 whitespace-pre-wrap break-words [overflow-wrap:anywhere] font-medium leading-snug">
+              {bodyWithoutFee.join("\n")}
+            </p>
+          ) : summaryLabel ? (
+            <p className="mt-1 font-medium leading-snug">{summaryLabel}</p>
+          ) : null}
+          {summaryLabel &&
+          bodyWithoutFee.length > 0 &&
+          !bodyWithoutFee.some((line) => line.includes(summaryLabel)) ? (
             <p className="mt-1 text-[11px] opacity-80">{summaryLabel}</p>
           ) : null}
           {feeTotal > 0 || arrivalYmd ? (

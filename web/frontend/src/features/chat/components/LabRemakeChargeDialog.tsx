@@ -3,17 +3,27 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/practice/usePracticeTransferFeeQuote.ts
 // - web/backend/services/practiceTransferRemakeCharge.service.js
+// - 2026-09-09: 청구됨 잠금·미청구 기본선택·접힘 이력·합계 바.
+// - 2026-09-09: 수동 청구=보철만. CA는 STL 재업로드 자동청구 SSOT.
 
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Repeat } from "lucide-react";
+import { ChevronDown, Repeat } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { LAB_FEE_SETTINGS_PATH } from "@/features/settings/LabFeeSetupPrompt";
 import {
   listRemakePartOptions,
   selectedKeysToRemakeParts,
   buildToothWorksFromRemakeSelection,
+  collectChargedRemakePartKeys,
+  remakeChargeSourceLabel,
+  type RemakePartOption,
   type RemakeSelectedPart,
 } from "@/features/chat/components/chatRemakeParts";
 import {
@@ -21,7 +31,6 @@ import {
   formatWon,
 } from "@/shared/practice/practiceTransferFeeQuote";
 import type { PracticeTransferFeeQuote } from "@/shared/practice/practiceTransferFeeQuote";
-import { LAB_FEE_CUSTOM_ABUTMENT_REMAKE_DEFAULT_PRICE } from "@/shared/practice/labFeeSchedule";
 import type { ToothWorkSelection } from "@/shared/practice/transferMemo";
 import { usePracticeTransferFeeQuote } from "@/shared/practice/usePracticeTransferFeeQuote";
 import { cn } from "@/shared/ui/cn";
@@ -37,6 +46,7 @@ type RemakeChargeHistoryRow = {
   source?: string;
   summaryLabel?: string;
   toothNumbers?: string[];
+  selectedParts?: unknown;
   billingDelta?: { total?: number; labFeeTotal?: number } | null;
 };
 
@@ -65,6 +75,58 @@ const formatChargeAt = (raw?: string | Date | null) => {
   });
 };
 
+function PartTile({
+  opt,
+  selected,
+  charged,
+  busy,
+  onToggle,
+}: {
+  opt: RemakePartOption;
+  selected: boolean;
+  charged: boolean;
+  busy: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <label
+      className={cn(
+        "relative flex items-start gap-2 rounded-xl border px-2.5 py-2 transition-colors",
+        charged
+          ? "cursor-not-allowed border-slate-200/80 bg-slate-50/90 opacity-70"
+          : selected
+            ? "cursor-pointer border-amber-300 bg-amber-50/70 shadow-[inset_0_0_0_1px_rgba(251,191,36,0.35)]"
+            : "cursor-pointer border-slate-200 bg-white hover:border-slate-300",
+      )}
+    >
+      <Checkbox
+        checked={charged || selected}
+        onCheckedChange={() => {
+          if (charged || busy) return;
+          onToggle();
+        }}
+        className="mt-0.5"
+        disabled={busy || charged}
+      />
+      <span className="min-w-0 flex-1 text-[12px] leading-snug">
+        <span className="flex items-center gap-1.5">
+          <span className="font-semibold tabular-nums text-slate-900">
+            #{opt.toothNumber}
+          </span>
+          {charged ? (
+            <span className="rounded-md bg-slate-200/80 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+              청구됨
+            </span>
+          ) : null}
+        </span>
+        <span className="mt-0.5 block text-muted-foreground">
+          {opt.prosthesisType}
+        </span>
+      </span>
+    </label>
+  );
+}
+
 export function LabRemakeChargeDialog({
   open,
   toothWorks = null,
@@ -76,29 +138,47 @@ export function LabRemakeChargeDialog({
   onCancel,
 }: LabRemakeChargeDialogProps) {
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(() => new Set());
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const partOptions = useMemo(
-    () => listRemakePartOptions(toothWorks),
+    () => listRemakePartOptions(toothWorks).filter((o) => o.kind === "prosthesis"),
     [toothWorks],
   );
-  const prosthesisOptions = useMemo(
-    () => partOptions.filter((o) => o.kind === "prosthesis"),
-    [partOptions],
+  const chargedKeys = useMemo(
+    () => collectChargedRemakePartKeys(remakeCharges),
+    [remakeCharges],
   );
-  const caOptions = useMemo(
-    () => partOptions.filter((o) => o.kind === "ca"),
-    [partOptions],
+  const hasCaOnCase = useMemo(
+    () => listRemakePartOptions(toothWorks).some((o) => o.kind === "ca"),
+    [toothWorks],
+  );
+  const selectableProsthesis = useMemo(
+    () => partOptions.filter((o) => !chargedKeys.has(o.key)),
+    [partOptions, chargedKeys],
   );
 
   useEffect(() => {
     if (!open) return;
-    setSelectedKeys(new Set(partOptions.map((o) => o.key)));
-  }, [open, partOptions]);
+    setHistoryOpen(false);
+    setSelectedKeys(
+      new Set(partOptions.filter((o) => !chargedKeys.has(o.key)).map((o) => o.key)),
+    );
+  }, [open, partOptions, chargedKeys]);
+
+  const activeSelectedKeys = useMemo(() => {
+    const next = new Set<string>();
+    for (const key of selectedKeys) {
+      if (!chargedKeys.has(key) && partOptions.some((o) => o.key === key)) {
+        next.add(key);
+      }
+    }
+    return next;
+  }, [selectedKeys, chargedKeys, partOptions]);
 
   const selectedToothWorks = useMemo(() => {
     const rows = Array.isArray(toothWorks) ? toothWorks : [];
-    return buildToothWorksFromRemakeSelection(rows, selectedKeys);
-  }, [toothWorks, selectedKeys]);
+    return buildToothWorksFromRemakeSelection(rows, activeSelectedKeys);
+  }, [toothWorks, activeSelectedKeys]);
 
   const liveQuote = usePracticeTransferFeeQuote({
     enabled: open && Boolean(labAnchorId),
@@ -119,11 +199,6 @@ export function LabRemakeChargeDialog({
     ),
   );
 
-  const hasSelectedCa = useMemo(
-    () => partOptions.some((o) => o.kind === "ca" && selectedKeys.has(o.key)),
-    [partOptions, selectedKeys],
-  );
-
   const billedTotal = Math.max(
     0,
     Math.round(
@@ -138,11 +213,13 @@ export function LabRemakeChargeDialog({
   );
 
   const history = Array.isArray(remakeCharges) ? remakeCharges : [];
+  const selectedCount = activeSelectedKeys.size;
 
   const canSubmit =
     selectedToothWorks.length > 0 && remakeFeeTotal > 0 && !busy;
 
   const toggleKey = (key: string) => {
+    if (chargedKeys.has(key)) return;
     setSelectedKeys((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
@@ -151,185 +228,193 @@ export function LabRemakeChargeDialog({
     });
   };
 
+  const toggleSelectableGroup = (
+    group: RemakePartOption[],
+    currentlyAllOn: boolean,
+  ) => {
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      for (const o of group) {
+        if (currentlyAllOn) next.delete(o.key);
+        else next.add(o.key);
+      }
+      return next;
+    });
+  };
+
+  const confirmLabel = busy
+    ? "청구 중..."
+    : canSubmit
+      ? `${selectedCount}부위 · ${remakeFeeTotal.toLocaleString("ko-KR")}원 청구`
+      : "리메이크 청구";
+
   if (!open) return null;
 
   return (
     <ConfirmDialog
       open
-      title="리메이크 비용 청구"
+      title="보철 리메이크 청구"
       description={
-        <div className="space-y-3 text-left">
+        <div className="space-y-3.5 text-left">
           <p className="text-[13px] leading-snug text-muted-foreground">
-            이 의뢰건의 청구 내역을 확인한 뒤, 리메이크할 보철·커스텀어벗을 선택하세요.
-            설정 → 기공비의 리메이크 단가로 치과에 청구됩니다.
+            유료 보철 리메이크만 선택해 청구합니다. 커스텀어벗은 CA 디자인
+            재업로드 때 자동 청구됩니다.
           </p>
 
           <section className="rounded-xl border border-slate-200/80 bg-slate-50/70 px-3.5 py-3">
-            <p className="text-[12px] font-medium text-slate-700">현재 의뢰 청구</p>
-            <p className="mt-1 text-[15px] font-semibold tabular-nums text-slate-900">
+            <p className="text-[11px] font-medium text-slate-500">현재 의뢰 합계</p>
+            <p className="mt-0.5 text-[17px] font-semibold tabular-nums tracking-tight text-slate-900">
               {billedTotal > 0 ? formatWon(billedTotal) : "—"}
             </p>
             {history.length > 0 ? (
-              <ul className="mt-2 space-y-1 border-t border-slate-200/80 pt-2">
-                {history.map((row, idx) => {
-                  const fee = Math.max(
-                    0,
-                    Math.round(
-                      Number(row?.billingDelta?.total ?? row?.billingDelta?.labFeeTotal ?? 0),
-                    ),
-                  );
-                  const label =
-                    String(row?.summaryLabel || "").trim() ||
-                    (Array.isArray(row?.toothNumbers) && row.toothNumbers.length
-                      ? row.toothNumbers.map((t) => `#${t}`).join(", ")
-                      : "리메이크");
-                  return (
-                    <li
-                      key={`${row?.chargedAt || idx}-${label}`}
-                      className="flex items-start justify-between gap-2 text-[11px] text-slate-600"
-                    >
-                      <span className="min-w-0">
-                        <span className="font-medium text-slate-800">{label}</span>
-                        {formatChargeAt(row?.chargedAt) ? (
-                          <span className="ml-1 opacity-70">
-                            · {formatChargeAt(row?.chargedAt)}
+              <Collapsible open={historyOpen} onOpenChange={setHistoryOpen}>
+                <CollapsibleTrigger asChild>
+                  <button
+                    type="button"
+                    className="mt-2 flex w-full items-center justify-between gap-2 border-t border-slate-200/80 pt-2 text-[11px] font-medium text-slate-600 hover:text-slate-900"
+                  >
+                    <span>이전 리메이크 {history.length}건</span>
+                    <ChevronDown
+                      className={cn(
+                        "h-3.5 w-3.5 shrink-0 transition-transform",
+                        historyOpen && "rotate-180",
+                      )}
+                    />
+                  </button>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <ul className="mt-2 space-y-1.5">
+                    {history.map((row, idx) => {
+                      const fee = Math.max(
+                        0,
+                        Math.round(
+                          Number(
+                            row?.billingDelta?.total ??
+                              row?.billingDelta?.labFeeTotal ??
+                              0,
+                          ),
+                        ),
+                      );
+                      const label =
+                        String(row?.summaryLabel || "").trim() ||
+                        (Array.isArray(row?.toothNumbers) &&
+                        row.toothNumbers.length
+                          ? row.toothNumbers.map((t) => `#${t}`).join(", ")
+                          : "리메이크");
+                      const sourceLabel = remakeChargeSourceLabel(row?.source);
+                      return (
+                        <li
+                          key={`${row?.chargedAt || idx}-${label}`}
+                          className="flex items-start justify-between gap-2 text-[11px] text-slate-600"
+                        >
+                          <span className="min-w-0">
+                            <span className="inline-flex items-center gap-1">
+                              <span className="rounded bg-slate-200/70 px-1 py-px text-[10px] text-slate-600">
+                                {sourceLabel}
+                              </span>
+                              <span className="font-medium text-slate-800">
+                                {label}
+                              </span>
+                            </span>
+                            {formatChargeAt(row?.chargedAt) ? (
+                              <span className="mt-0.5 block opacity-70">
+                                {formatChargeAt(row?.chargedAt)}
+                              </span>
+                            ) : null}
                           </span>
-                        ) : null}
-                      </span>
-                      <span className="shrink-0 tabular-nums">
-                        {fee > 0 ? `+${fee.toLocaleString("ko-KR")}원` : "—"}
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
+                          <span className="shrink-0 tabular-nums font-medium text-slate-800">
+                            {fee > 0 ? `+${fee.toLocaleString("ko-KR")}원` : "—"}
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </CollapsibleContent>
+              </Collapsible>
             ) : (
-              <p className="mt-1 text-[11px] text-muted-foreground">
+              <p className="mt-1.5 text-[11px] text-muted-foreground">
                 아직 리메이크 청구 이력이 없습니다.
               </p>
             )}
           </section>
 
-          {prosthesisOptions.length > 0 ? (
+          {partOptions.length > 0 ? (
             <section className="space-y-2">
               <div className="flex items-center justify-between">
                 <p className="text-[12px] font-medium text-slate-800">보철</p>
-                <button
-                  type="button"
-                  className="text-[11px] text-primary"
-                  disabled={busy}
-                  onClick={() =>
-                    setSelectedKeys((prev) => {
-                      const next = new Set(prev);
-                      const allOn = prosthesisOptions.every((o) => next.has(o.key));
-                      for (const o of prosthesisOptions) {
-                        if (allOn) next.delete(o.key);
-                        else next.add(o.key);
-                      }
-                      return next;
-                    })
-                  }
-                >
-                  {prosthesisOptions.every((o) => selectedKeys.has(o.key))
-                    ? "보철 해제"
-                    : "보철 전체"}
-                </button>
+                {selectableProsthesis.length > 0 ? (
+                  <button
+                    type="button"
+                    className="text-[11px] text-primary"
+                    disabled={busy}
+                    onClick={() =>
+                      toggleSelectableGroup(
+                        selectableProsthesis,
+                        selectableProsthesis.every((o) =>
+                          activeSelectedKeys.has(o.key),
+                        ),
+                      )
+                    }
+                  >
+                    {selectableProsthesis.every((o) =>
+                      activeSelectedKeys.has(o.key),
+                    )
+                      ? "보철 해제"
+                      : "보철 전체"}
+                  </button>
+                ) : null}
               </div>
               <div className="grid gap-1.5 sm:grid-cols-2">
-                {prosthesisOptions.map((opt) => (
-                  <label
+                {partOptions.map((opt) => (
+                  <PartTile
                     key={opt.key}
-                    className={cn(
-                      "flex cursor-pointer items-start gap-2 rounded-lg border px-2.5 py-2",
-                      selectedKeys.has(opt.key)
-                        ? "border-amber-300 bg-amber-50/60"
-                        : "border-slate-200 bg-white",
-                    )}
-                  >
-                    <Checkbox
-                      checked={selectedKeys.has(opt.key)}
-                      onCheckedChange={() => toggleKey(opt.key)}
-                      className="mt-0.5"
-                      disabled={busy}
-                    />
-                    <span className="min-w-0 text-[12px] leading-snug">
-                      <span className="font-semibold tabular-nums">#{opt.toothNumber}</span>
-                      <span className="mt-0.5 block text-muted-foreground">
-                        {opt.prosthesisType}
-                      </span>
-                    </span>
-                  </label>
+                    opt={opt}
+                    selected={activeSelectedKeys.has(opt.key)}
+                    charged={chargedKeys.has(opt.key)}
+                    busy={busy}
+                    onToggle={() => toggleKey(opt.key)}
+                  />
                 ))}
               </div>
-            </section>
-          ) : null}
-
-          {caOptions.length > 0 ? (
-            <section className="space-y-2">
-              <div className="flex items-center justify-between">
-                <p className="text-[12px] font-medium text-slate-800">커스텀어벗</p>
-                <button
-                  type="button"
-                  className="text-[11px] text-primary"
-                  disabled={busy}
-                  onClick={() =>
-                    setSelectedKeys((prev) => {
-                      const next = new Set(prev);
-                      const allOn = caOptions.every((o) => next.has(o.key));
-                      for (const o of caOptions) {
-                        if (allOn) next.delete(o.key);
-                        else next.add(o.key);
-                      }
-                      return next;
-                    })
-                  }
-                >
-                  {caOptions.every((o) => selectedKeys.has(o.key))
-                    ? "CA 해제"
-                    : "CA 전체"}
-                </button>
-              </div>
-              <div className="grid gap-1.5 sm:grid-cols-2">
-                {caOptions.map((opt) => (
-                  <label
-                    key={opt.key}
-                    className={cn(
-                      "flex cursor-pointer items-start gap-2 rounded-lg border px-2.5 py-2",
-                      selectedKeys.has(opt.key)
-                        ? "border-amber-300 bg-amber-50/60"
-                        : "border-slate-200 bg-white",
-                    )}
+              {selectedCount > 0 &&
+              liveQuote.contextReady &&
+              remakeFeeTotal === 0 ? (
+                <p className="text-[11px] text-muted-foreground">
+                  선택한 보철 리메이크 수가가 0원(무료)입니다.{" "}
+                  <Link
+                    to={LAB_FEE_SETTINGS_PATH}
+                    className="font-medium text-primary underline underline-offset-2"
                   >
-                    <Checkbox
-                      checked={selectedKeys.has(opt.key)}
-                      onCheckedChange={() => toggleKey(opt.key)}
-                      className="mt-0.5"
-                      disabled={busy}
-                    />
-                    <span className="min-w-0 text-[12px] leading-snug">
-                      <span className="font-semibold tabular-nums">#{opt.toothNumber}</span>
-                      <span className="mt-0.5 block text-muted-foreground">커스텀어벗</span>
-                    </span>
-                  </label>
-                ))}
-              </div>
+                    기공비
+                  </Link>
+                  에서 단가를 설정하세요.
+                </p>
+              ) : null}
             </section>
-          ) : null}
-
-          {partOptions.length === 0 ? (
+          ) : (
             <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-[12px] text-muted-foreground">
-              청구할 보철·커스텀어벗이 없습니다.
+              청구할 보철이 없습니다.
+              {hasCaOnCase
+                ? " 커스텀어벗은 CA 디자인을 다시 올리면 자동 청구됩니다."
+                : ""}
+            </p>
+          )}
+
+          {hasCaOnCase ? (
+            <p className="rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2 text-[11px] leading-snug text-slate-600">
+              커스텀어벗 리메이크비는 여기서 청구하지 않습니다. 디자인 STL을
+              재업로드하면 제조 재주문과 함께 치과에 자동 청구됩니다.
             </p>
           ) : null}
 
           <div className="flex items-center justify-between gap-3 rounded-xl border border-amber-200/80 bg-gradient-to-r from-amber-50 to-orange-50/60 px-3.5 py-3">
             <div className="flex items-center gap-2 text-[13px] font-medium text-amber-950">
               <Repeat className="h-4 w-4 text-amber-700" />
-              이번 청구액
+              이번 청구
             </div>
             <div className="text-right">
-              <div className="text-[15px] font-semibold tabular-nums text-amber-950">
-                {selectedToothWorks.length === 0
+              <div className="text-[16px] font-semibold tabular-nums text-amber-950">
+                {selectedCount === 0
                   ? "선택 없음"
                   : liveQuote.contextReady
                     ? formatWon(remakeFeeTotal)
@@ -339,35 +424,30 @@ export function LabRemakeChargeDialog({
                 <div className="text-[11px] text-amber-800/80">
                   ≈ {formatManWon(remakeFeeTotal)}
                 </div>
+              ) : selectedCount > 0 &&
+                liveQuote.contextReady &&
+                remakeFeeTotal === 0 ? (
+                <div className="text-[11px] text-amber-800/80">
+                  유료 부위가 없습니다
+                </div>
               ) : null}
             </div>
           </div>
-
-          {hasSelectedCa ? (
-            <p className="rounded-lg border border-amber-100 bg-amber-50/50 px-3 py-2 text-[11px] leading-snug text-amber-950/90">
-              커스텀어벗 리메이크 수가가 미설정이면 개당{" "}
-              {LAB_FEE_CUSTOM_ABUTMENT_REMAKE_DEFAULT_PRICE.toLocaleString("ko-KR")}
-              원이 적용됩니다.{" "}
-              <Link
-                to={LAB_FEE_SETTINGS_PATH}
-                className="font-medium text-amber-900 underline underline-offset-2"
-              >
-                설정 → 기공비
-              </Link>
-              에서 변경할 수 있습니다.
-            </p>
-          ) : null}
         </div>
       }
-      confirmLabel={busy ? "청구 중..." : "리메이크 청구"}
+      confirmLabel={confirmLabel}
       cancelLabel="취소"
       confirmTone="primary"
       busy={busy}
+      confirmDisabled={!canSubmit && !busy}
       onConfirm={() => {
         if (!canSubmit) return;
-        const parts = selectedKeysToRemakeParts(partOptions, selectedKeys);
+        const parts = selectedKeysToRemakeParts(
+          partOptions,
+          activeSelectedKeys,
+        ).map((p) => ({ ...p, customAbutment: false, prosthesis: true }));
         const labels = partOptions
-          .filter((o) => selectedKeys.has(o.key))
+          .filter((o) => activeSelectedKeys.has(o.key))
           .map((o) => o.label);
         void onConfirm({
           selectedParts: parts,

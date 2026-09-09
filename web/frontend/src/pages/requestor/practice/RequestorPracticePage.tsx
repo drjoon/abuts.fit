@@ -6225,7 +6225,7 @@ export function RequestorPracticeReceivePage({
               onClick={() => setRemakeChargeOpen(true)}
             >
               <Repeat className="h-3.5 w-3.5" />
-              리메이크 청구
+              보철 리메이크
             </Button>
           ) : null
         }
@@ -6408,6 +6408,7 @@ export function RequestorPracticeReceivePage({
         toothWorksKey={selectedTransfer?.transferId || "requestor-transfer"}
         labRequestStagePlans={selectedTransfer?.labRequestStagePlans || null}
         feeQuote={selectedTransfer?.feeQuote || null}
+        remakeCharges={selectedTransfer?.remakeCharges || null}
         skipJig={Boolean(selectedTransfer?.production?.skipJig)}
         feeViewer="lab"
         labEffectiveStars={

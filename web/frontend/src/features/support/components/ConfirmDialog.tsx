@@ -24,6 +24,8 @@ interface ConfirmDialogProps {
   confirmTone?: "danger" | "primary";
   /** true면 확인/닫기 버튼을 잠근다 */
   busy?: boolean;
+  /** busy와 별도로 확인만 비활성(라벨은 유지) */
+  confirmDisabled?: boolean;
   onConfirm: () => void | Promise<void>;
   onCancel: () => void;
 }
@@ -37,6 +39,7 @@ export const ConfirmDialog = ({
   panelClassName,
   confirmTone = "danger",
   busy = false,
+  confirmDisabled = false,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) => {
@@ -49,6 +52,8 @@ export const ConfirmDialog = ({
   }, [open]);
 
   if (!open) return null;
+
+  const confirmLocked = busy || confirmDisabled;
 
   const confirmButtonClass =
     confirmTone === "primary"
@@ -93,10 +98,10 @@ export const ConfirmDialog = ({
           <button
             type="button"
             ref={confirmRef}
-            disabled={busy}
+            disabled={confirmLocked}
             onClick={(e) => {
               e.stopPropagation();
-              if (busy) return;
+              if (confirmLocked) return;
               void onConfirm();
             }}
             className={`${confirmButtonClass} disabled:cursor-not-allowed disabled:opacity-60`}

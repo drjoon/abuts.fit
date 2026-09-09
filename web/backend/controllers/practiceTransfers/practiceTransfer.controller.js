@@ -5078,6 +5078,13 @@ export async function chargeReceivedPracticeTransferRemake(req, res) {
       actorUserId: req.user?._id || null,
       displayLabel: "리메이크 청구",
     });
+    if (result.ok && result.skipped) {
+      return res.status(409).json({
+        success: false,
+        message: "이미 청구된 부위입니다.",
+        reason: "already_charged",
+      });
+    }
     if (!result.ok) {
       const status = Number(result.statusCode || 500);
       return res.status(status >= 400 && status < 600 ? status : 500).json({
@@ -5094,8 +5101,14 @@ export async function chargeReceivedPracticeTransferRemake(req, res) {
       0,
       Math.round(Number(chargeRecord?.billingDelta?.total || fees?.total || 0)),
     );
+    const chargedParts = Array.isArray(result.selectedParts)
+      ? result.selectedParts
+      : Array.isArray(chargeRecord?.selectedParts)
+        ? chargeRecord.selectedParts
+        : selectedParts;
     const partsLabel =
       summaryLabel ||
+      chargeRecord?.summaryLabel ||
       (Array.isArray(chargeRecord?.toothNumbers) && chargeRecord.toothNumbers.length
         ? chargeRecord.toothNumbers.map((t) => `#${t}`).join(", ")
         : "리메이크");
@@ -5117,9 +5130,9 @@ export async function chargeReceivedPracticeTransferRemake(req, res) {
         systemEvent: "practice_transfer_remake_charge",
         systemPayload: {
           source: "lab_charge",
-          summaryLabel: partsLabel,
+          summaryLabel: chargeRecord?.summaryLabel || partsLabel,
           toothNumbers: chargeRecord?.toothNumbers || [],
-          selectedParts,
+          selectedParts: chargedParts,
           billingDelta: chargeRecord?.billingDelta || null,
           remakeFeeTotal: feeTotal,
         },
