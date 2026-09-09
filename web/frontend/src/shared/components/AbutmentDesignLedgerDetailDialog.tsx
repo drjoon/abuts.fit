@@ -179,7 +179,7 @@ export function AbutmentDesignLedgerDetailDialog({
       <DialogContent className="max-h-[85vh] w-[min(92vw,40rem)] overflow-y-auto rounded-2xl sm:max-w-[min(92vw,40rem)] sm:rounded-2xl">
         <DialogHeader>
           <DialogTitle className="flex flex-wrap items-center gap-2 text-base font-semibold tracking-tight text-slate-900">
-            <span>{detail?.title || "기공의뢰-어벗디자인으로"}</span>
+            <span>{detail?.title || "기공의뢰-어벗츠에"}</span>
             {(detail?.shippingModes || []).map((mode) => (
               <ShippingModeBadge key={mode} mode={mode} size="sm" />
             ))}

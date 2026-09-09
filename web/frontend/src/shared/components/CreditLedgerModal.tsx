@@ -455,12 +455,12 @@ type LedgerDisplayRow = {
   item: CreditLedgerItem;
 };
 
-/** 사이드바 SSOT: 치과 구강스캔으로 ↔ 기공소 치과로부터 수신 */
-const PRACTICE_TRANSFER_TYPE_LABEL = "기공의뢰-구강스캔으로";
-const LAB_RECEIVE_TYPE_LABEL = "기공의뢰-치과로부터 수신";
-/** 사이드바 SSOT: 치과 어벗디자인으로 ↔ 기공소 어벗츠로 의뢰 */
-const ABUTMENT_DESIGN_TYPE_LABEL = "기공의뢰-어벗디자인으로";
-const LAB_ABUTS_REQUEST_TYPE_LABEL = "기공의뢰-어벗츠로 의뢰";
+/** 사이드바 SSOT: 치과 기공소에 ↔ 기공소 치과로부터 */
+const PRACTICE_TRANSFER_TYPE_LABEL = "기공의뢰-기공소에";
+const LAB_RECEIVE_TYPE_LABEL = "기공의뢰-치과로부터";
+/** 사이드바 SSOT: 치과 어벗츠에 ↔ 기공소 어벗츠로 */
+const ABUTMENT_DESIGN_TYPE_LABEL = "기공의뢰-어벗츠에";
+const LAB_ABUTS_REQUEST_TYPE_LABEL = "기공의뢰-어벗츠로";
 
 const resolvePracticeTransferTypeLabel = (isLabViewer: boolean) =>
   isLabViewer ? LAB_RECEIVE_TYPE_LABEL : PRACTICE_TRANSFER_TYPE_LABEL;
@@ -3167,7 +3167,7 @@ export const CreditLedgerModal = ({
         >
           <DialogHeader>
             <DialogTitle className="text-base font-semibold tracking-tight text-slate-900">
-              {feeQuoteDetail?.title || "기공의뢰-구강스캔으로 상세 내역"}
+              {feeQuoteDetail?.title || "기공의뢰-기공소에 상세 내역"}
             </DialogTitle>
           </DialogHeader>
           {feeQuoteDetail ? (

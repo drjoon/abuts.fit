@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/guideTour/GuideTourProvider.tsx
 // - web/frontend/src/shared/guideTour/guideTourSteps.ts
 // change-log:
+// - 2026-09-09: memo_files 힌트 — 구강 스캔 전제 제거(메모·파일 첨부).
 // - 2026-09-05: estimate 힌트 — 견적 금액 호버(툴팁) 안내.
 // - 2026-09-05: custom_abut_scanbody·simple 삭제. 커스텀어벗 설정 1장(custom_abut)만.
 // - 2026-09-05: prosthesis 제거·card_ops로 통합(직접 체험). 안내 문구 2줄.
@@ -28,7 +29,7 @@ export const PRACTICE_TOOTH_WORK_GUIDE_TOUR_STEPS = [
   {
     id: "memo_files",
     title: "메모 · 파일",
-    hint: "메모 입력과 구강 스캔 파일 업로드는 필요한 경우만 하세요.",
+    hint: "메모·파일 첨부는 필요한 경우만 하세요.",
   },
   {
     id: "phone",

@@ -15,6 +15,7 @@ import {
 } from "@/shared/layout/sidebarOpen";
 import { cn } from "@/shared/ui/cn";
 
+// - 2026-09-09: 기공소에 툴팁 — 구강스캔 전제 제거(「어벗·임시치아·지르 보철 의뢰」).
 // - 2026-09-09: 기공의뢰 서브 — 치과 기공소에/어벗츠에, 기공소 치과로부터/어벗츠로.
 // - 2026-09-08: 구강스캔으로 툴팁 — 「어벗·임시치아·지르 보철 의뢰」로 짧게.
 // - 2026-09-08: 기본 기공수가 검토 대기 시 사이드바 설정 → platformTab=abutsFees 딥링크.
@@ -219,11 +220,11 @@ const LAB_RECEIVE_HREF = "/dashboard/practice-transfers?mode=receive";
 const INTERNAL_LAB_RECEIVE_HREF = "/dashboard/lab-work";
 const LAB_ABUTMENT_PRODUCTION_HREF = "/dashboard/new-request";
 const PRACTICE_ORAL_SCAN_REQUEST_TOOLTIP =
-  "구강스캔으로 어벗·임시치아·지르 보철 의뢰";
+  "어벗·임시치아·지르 보철 의뢰";
 const PRACTICE_ABUTMENT_DESIGN_REQUEST_TOOLTIP =
   "완성된 어벗 디자인(STL)으로 CNC 생산 의뢰";
 const LAB_RECEIVE_TOOLTIP =
-  "구강스캔 파일을 받아서 인레이, 크라운, 브리지, 커스텀어벗 디자인 등 보철 기공 처리";
+  "인레이, 크라운, 브리지, 커스텀어벗 디자인 등 보철 기공 처리";
 
 const buildLabGigongRequestSidebarGroup = (
   receiveHref: string,
@@ -275,7 +276,7 @@ const buildRequestorSidebarItems = (
       icon: Building2,
       label: "기공의뢰",
       href: PRACTICE_ORAL_SCAN_HREF,
-      tooltip: "구강스캔 또는 완성 디자인으로 기공 의뢰",
+      tooltip: "기공소 보철 의뢰와 어벗츠 CNC 생산 의뢰",
       guideTourSatellite: ["oral_calendar", "new_request_workspace"],
       children: [
         {

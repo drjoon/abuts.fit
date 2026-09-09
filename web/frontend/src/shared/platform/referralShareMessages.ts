@@ -20,7 +20,7 @@ export const buildPracticeIntroMessage = (
   const url = String(link || "").trim();
   if (!url) return "";
 
-  return `안녕하세요 🙂 어벗츠에 가입해 주시면 기공의뢰서·구강스캔 전달과 내역 관리가 훨씬 편해집니다.\n아래 링크로 가볍게 가입해 주세요.\n${url}`;
+  return `안녕하세요 🙂 어벗츠에 가입해 주시면 기공의뢰서·파일 전달과 내역 관리가 훨씬 편해집니다.\n아래 링크로 가볍게 가입해 주세요.\n${url}`;
 };
 
 export const buildLabIntroMessage = (link: string) => {

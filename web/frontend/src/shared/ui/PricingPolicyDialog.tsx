@@ -203,7 +203,7 @@ export const PricingPolicyDialog = ({
         ? '소개 수수료 지급 기준과 정산 주기를 확인하세요.'
         : isLab
           ? ''
-          : '구강스캔 · 어벗디자인 단가와 출고 기준을 확인하세요.';
+          : '기공소에 · 어벗츠에 단가와 출고 기준을 확인하세요.';
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

@@ -2000,7 +2000,7 @@ export const RequestorDashboardPage = () => {
 
   const requestorStatRows: RequestorDashboardStatRow[] = [
     {
-      rowLabel: requestorKind === "lab" ? "기공" : "구강스캔",
+      rowLabel: "기공",
       accent: "기공",
       stats: practiceTransferStats,
     },

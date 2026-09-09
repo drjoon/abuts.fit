@@ -60,7 +60,7 @@ const LAB_BENEFITS: PlatformBenefitsConfig = {
       icon: MailX,
       title: "이제 이메일 쓰지 마세요",
       points: [
-        "기공의뢰서·구강스캔 전달과 지난 내역 관리가 한곳에서 끝납니다.",
+        "기공의뢰서·파일 전달과 지난 내역 관리가 한곳에서 끝납니다.",
         "의뢰건별 채팅으로 치과와 바로 소통합니다.",
       ],
     },
@@ -102,7 +102,7 @@ const PRACTICE_BENEFITS: PlatformBenefitsConfig = {
       icon: MailX,
       title: "이제 이메일 쓰지 마세요",
       points: [
-        "기공의뢰서·구강스캔 전달과 지난 내역 관리가 한곳에서 끝납니다.",
+        "기공의뢰서·파일 전달과 지난 내역 관리가 한곳에서 끝납니다.",
         "의뢰건별 채팅으로 기공소와 바로 소통합니다.",
       ],
     },
