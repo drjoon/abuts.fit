@@ -19,7 +19,6 @@ import {
   FileText,
   Package,
   Boxes,
-  RotateCcw,
   Send,
   Download,
 } from "lucide-react";
@@ -63,10 +62,7 @@ import {
 } from "@/shared/files/modelPreviewFile";
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
-import {
-  RequestorPolicyRemakeHeader,
-  useRequestorMonthlyRemakeFreeRemaining,
-} from "./components/RequestorPolicyRemakeHeader";
+import { RequestorPolicyRemakeHeader } from "./components/RequestorPolicyRemakeHeader";
 
 const isDashDebugEnabled = () => {
   if (typeof window === "undefined") return false;
@@ -84,6 +80,7 @@ const dashDebug = (label: string, payload?: unknown) => {
 };
 
 // change-log:
+// - 2026-09-09: 어벗 요약카드「무료 재제작 잔여」제거(리메이크 건당 1만원).
 // - 2026-08-19: 의뢰비 부족 경고 단가 fallback을 플랫폼 멤버십 생산가(15,000)로.
 // - 2026-08-19: 치과·기공소 모두 대시보드를 쓰지 않음. 생산 현황은 어벗생산의뢰 헤더.
 // - 2026-08-18: 치과 요약 행 라벨 기공/어벗 → 구강스캔/어벗디자인.
@@ -150,10 +147,6 @@ export const RequestorDashboardPage = () => {
     settlementCredit,
   } = useOutletContext<DashboardOutletContext>();
   const { data: systemSettings } = useSystemSettings();
-  const {
-    monthlyRemakeFreeRemaining,
-    isLoading: isRemakeRemainingLoading,
-  } = useRequestorMonthlyRemakeFreeRemaining();
 
   const [period, setPeriod] = useState<PeriodFilterValue>("30d");
   const [editingRequest, setEditingRequest] =
@@ -1909,15 +1902,6 @@ export const RequestorDashboardPage = () => {
     }
   }, [cardsSummaryResponse, summaryResponse]);
 
-  const remakeRemainingStat: RequestorDashboardStat = {
-    label: "무료 재제작 잔여",
-    value: isRemakeRemainingLoading
-      ? "…"
-      : `${monthlyRemakeFreeRemaining.toLocaleString()}건`,
-    icon: RotateCcw,
-    interactive: false,
-  };
-
   const abutmentStats: RequestorDashboardStat[] = (() => {
     if (!dashboardStatsSource?.success) {
       return [
@@ -1926,7 +1910,6 @@ export const RequestorDashboardPage = () => {
         { label: "세척.패킹", value: "0", icon: Boxes },
         { label: "포장.발송", value: "0건/0박스", icon: Package },
         { label: "추적관리", value: "0건/0박스", icon: CheckCircle },
-        remakeRemainingStat,
       ];
     }
 
@@ -1961,7 +1944,6 @@ export const RequestorDashboardPage = () => {
         value: `${trackingProductCount}건/${trackingBoxCount}박스`,
         icon: CheckCircle,
       },
-      remakeRemainingStat,
     ];
   })();
 

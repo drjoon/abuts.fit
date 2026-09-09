@@ -6,7 +6,7 @@
 // - web/backend/utils/practiceTransferStage.js
 // - web/backend/utils/creditSettingsDefaults.js
 // change-log:
-// - 2026-09-03: cards-summary 진행중 단계 건수는 GET /my와 동일 가드로 실시간 보정(스냅샷 stale 3≠2 방지).
+// - 2026-09-09: pricing-referral-stats — 월 무료 리메이크 집계 제거, remakeUnitPrice=10000.
 // - 2026-08-21: cards/summary GET은 in-flight 대시보드 refresh를 기다리지 않음.
 // - 2026-08-19: 적용 단가=플랫폼 설정. 90일 1만원·주문량할인 폐지.
 import Request from "../../models/request.model.js";
@@ -1860,44 +1860,6 @@ export async function getMyPricingReferralStats(req, res) {
         const baseUnitPrice = resolveCustomAbutmentRequestUnitPrice(
           creditSettings,
         );
-        const monthlyRemakeFreeLimit = 3;
-        const [todayYear, todayMonth] = String(todayYmd)
-          .split("-")
-          .map((v) => Number(v || 0));
-        const monthStartYmd = `${String(todayYear)}-${String(todayMonth).padStart(2, "0")}-01`;
-        const monthStartKst = new Date(`${monthStartYmd}T00:00:00+09:00`);
-        const nextMonthYear = todayMonth === 12 ? todayYear + 1 : todayYear;
-        const nextMonth = todayMonth === 12 ? 1 : todayMonth + 1;
-        const nextMonthYmd = `${String(nextMonthYear)}-${String(nextMonth).padStart(2, "0")}-01`;
-        const nextMonthStartKst = new Date(`${nextMonthYmd}T00:00:00+09:00`);
-
-        const selfScopeFilter =
-          me?.businessAnchorId &&
-          Types.ObjectId.isValid(String(me.businessAnchorId || ""))
-            ? {
-                businessAnchorId: new Types.ObjectId(
-                  String(me.businessAnchorId),
-                ),
-              }
-            : { requestor: requestorId };
-
-        const monthlyRemakeUsed = await Request.countDocuments({
-          ...selfScopeFilter,
-          manufacturerStage: { $ne: "취소" },
-          createdAt: { $gte: monthStartKst, $lt: nextMonthStartKst },
-          "price.rule": {
-            $in: [
-              "remake_monthly_free_3",
-              "remake_general_pricing",
-              "remake_fixed_10000",
-            ],
-          },
-        });
-        const monthlyRemakeFreeRemaining = Math.max(
-          0,
-          monthlyRemakeFreeLimit - monthlyRemakeUsed,
-        );
-
         const rule = "base_price";
         const effectiveUnitPrice = baseUnitPrice;
         const discountPerOrder = 0;
@@ -1922,11 +1884,7 @@ export async function getMyPricingReferralStats(req, res) {
           referralDiscountAmount,
           effectiveUnitPrice,
           rule,
-          monthlyRemakeFreeLimit,
-          monthlyRemakeUsed,
-          monthlyRemakeFreeRemaining,
-          currentMonthStartYmd: monthStartYmd,
-          currentMonthEndExclusiveYmd: nextMonthYmd,
+          remakeUnitPrice: 10000,
           groupMemberCount,
           snapshotMissing,
           ...(debug

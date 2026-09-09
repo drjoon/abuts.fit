@@ -8,6 +8,7 @@
 // - web/backend/controllers/requests/creation.from-draft.controller.js
 // - web/backend/controllers/requests/designHandoff.controller.js
 // change-log:
+// - 2026-09-09: 커스텀어벗 리메이크 — 월 3건 무료 폐지, 건당 고정 10,000원(remake_fixed_10000).
 // - 2026-08-23: normalizeRequestForResponse business.requestSettings에 hexVerificationResultHex 포함.
 // - 2026-08-19: 90일 1만원·주문량할인 폐지. 단가=플랫폼 설정(+신속 expressFee).
 // - 2026-08-19: computePriceForRequest skipExistingLookup — from-draft 중복조회 재사용.
@@ -1257,7 +1258,7 @@ export async function computePriceForRequest({
       ? { businessAnchorId: new Types.ObjectId(String(requestorOrgId)) }
       : { requestor: requestorId };
 
-  const MONTHLY_REMAKE_FREE_LIMIT = 3;
+  const REMAKE_FIXED_AMOUNT = 10000;
 
   const selfExclusionFilter =
     currentRequestId && Types.ObjectId.isValid(String(currentRequestId))
@@ -1295,59 +1296,17 @@ export async function computePriceForRequest({
   // SSOT: 관리자 플랫폼 설정 단가(+신속 expressFee). 90일 1만원·주문량할인 없음.
   const BASE_UNIT_PRICE = resolveCustomAbutmentRequestUnitPrice(creditSettings);
 
-  let isRemake = false;
-  let monthlyRemakeUsed = 0;
-  let monthlyRemakeFreeRemaining = 0;
-
+  // 리메이크: 월 무료 쿼터 없음. 건당 고정 10,000원(배송비는 별도).
   if (existing && !forceNewOrderPricing) {
-    isRemake = true;
-    // 리메이크 무료 쿼터(월 3건): 사업자 단위, KST 월 경계
-    const [year, month] = String(nowYmd)
-      .split("-")
-      .map((v) => Number(v || 0));
-    const currentMonthStartYmd = `${year}-${String(month).padStart(2, "0")}-01`;
-    const currentMonthStart = new Date(
-      `${currentMonthStartYmd}T00:00:00+09:00`,
-    );
-    const nextMonthYear = month === 12 ? year + 1 : year;
-    const nextMonth = month === 12 ? 1 : month + 1;
-    const nextMonthStartYmd = `${nextMonthYear}-${String(nextMonth).padStart(2, "0")}-01`;
-    const nextMonthStart = new Date(`${nextMonthStartYmd}T00:00:00+09:00`);
-
-    monthlyRemakeUsed = await Request.countDocuments({
-      ...scopeFilter,
-      ...selfExclusionFilter,
-      manufacturerStage: { $ne: "취소" },
-      createdAt: { $gte: currentMonthStart, $lt: nextMonthStart },
-      "price.rule": {
-        $in: [
-          "remake_monthly_free_3",
-          "remake_general_pricing",
-          "remake_fixed_10000",
-        ],
-      },
-    });
-
-    monthlyRemakeFreeRemaining = Math.max(
-      0,
-      MONTHLY_REMAKE_FREE_LIMIT - monthlyRemakeUsed,
-    );
-
-    if (monthlyRemakeUsed < MONTHLY_REMAKE_FREE_LIMIT) {
-      return {
-        baseAmount: BASE_UNIT_PRICE,
-        discountAmount: BASE_UNIT_PRICE,
-        amount: 0,
-        currency: "KRW",
-        rule: "remake_monthly_free_3",
-        discountMeta: {
-          monthlyRemakeFreeLimit: MONTHLY_REMAKE_FREE_LIMIT,
-          monthlyRemakeUsed,
-          monthlyRemakeFreeRemaining,
-        },
-        quotedAt: now,
-      };
-    }
+    return {
+      baseAmount: BASE_UNIT_PRICE,
+      discountAmount: Math.max(0, BASE_UNIT_PRICE - REMAKE_FIXED_AMOUNT),
+      amount: REMAKE_FIXED_AMOUNT,
+      currency: "KRW",
+      rule: "remake_fixed_10000",
+      discountMeta: {},
+      quotedAt: now,
+    };
   }
 
   return {
@@ -1355,16 +1314,8 @@ export async function computePriceForRequest({
     discountAmount: 0,
     amount: BASE_UNIT_PRICE,
     currency: "KRW",
-    rule: isRemake ? "remake_general_pricing" : "base_price",
-    discountMeta: {
-      ...(isRemake
-        ? {
-            monthlyRemakeFreeLimit: MONTHLY_REMAKE_FREE_LIMIT,
-            monthlyRemakeUsed,
-            monthlyRemakeFreeRemaining,
-          }
-        : {}),
-    },
+    rule: "base_price",
+    discountMeta: {},
     quotedAt: now,
   };
 }

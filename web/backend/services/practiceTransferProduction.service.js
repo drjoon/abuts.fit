@@ -839,7 +839,7 @@ export async function createAbutmentRequestsFromPracticeTransfer({
     );
     let quotedPrice;
     if (isPtxRemake) {
-      // 기공소→어벗츠: 리메이크 과금(월 3건 무료 후 유료). PTX 정가 생산 경로 금지.
+      // 기공소→어벗츠: 리메이크 과금(건당 10,000원). PTX 정가 생산 경로 금지.
       quotedPrice = await computePriceForRequest({
         requestorId: labUserId,
         requestorOrgId: labAnchorId,

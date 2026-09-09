@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-09: 어벗 요약 스켈레톤 6→5카드(무료 재제작 잔여 제거).
 // - 2026-08-12: 헤더 무료 재제작 잔여 스켈레톤 제거. 어벗 행 6카드(+재제작 잔여).
 // - 2026-08-11: 기공/어벗 라벨 열 10rem — 요약카드 폭 소폭 축소.
 // - 2026-08-11: 대시보드 스켈레톤 max-w-7xl·요약카드 여백 완화.
@@ -65,9 +66,9 @@ export const DashboardShellSkeleton = ({
             <Skeleton className="h-8 w-20" />
           </div>
 
-          {/* stats: 기공(라벨+5) / 어벗(라벨+6, 무료 재제작 잔여) — 라벨 고정폭, 카드 flex */}
+          {/* stats: 기공(라벨+5) / 어벗(라벨+5) — 라벨 고정폭, 카드 flex */}
           <div className="space-y-2">
-            {[5, 6].map((cardCount, rowIdx) => (
+            {[5, 5].map((cardCount, rowIdx) => (
               <div key={`stat-row-${rowIdx}`} className="relative">
                 <div
                   aria-hidden

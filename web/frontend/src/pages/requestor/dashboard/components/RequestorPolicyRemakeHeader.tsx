@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-09: 월 무료 재제작 잔여 훅 제거(리메이크 건당 1만원 정책).
 // - 2026-09-03: 기공소 [정책 안내]는 사이드바. 이 헤더는 치과 어벗디자인 등만.
 // - 2026-08-18: 치과 헤더 [구독] 제거. 정책 안내는 서비스 3종 단일가 모달만.
 // - 2026-08-15: [구독] 라벨. 미구독 시 빨간 하이라이트 → 설정 `?tab=subscription`.
@@ -18,70 +19,9 @@
 // - web/frontend/src/shared/components/RequestorWorkspaceHeader.tsx
 // - web/frontend/src/shared/ui/PricingPolicyDialog.tsx
 // - web/frontend/src/shared/pricing/abutsAbutmentService.ts
-import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { apiFetch } from "@/shared/api/apiClient";
-import { useAuthStore } from "@/store/useAuthStore";
 import { PricingPolicyDialog } from "@/shared/ui/PricingPolicyDialog";
 import { useState } from "react";
-
-type PricingReferralStats = {
-  monthlyRemakeFreeLimit?: number;
-  monthlyRemakeUsed?: number;
-  monthlyRemakeFreeRemaining?: number;
-};
-
-type ApiEnvelope<T> = {
-  success?: boolean;
-  data?: T;
-  message?: string;
-  error?: string;
-};
-
-/** 무료 재제작 잔여 — 어벗 라인 요약카드용 */
-export const useRequestorMonthlyRemakeFreeRemaining = () => {
-  const { user, token } = useAuthStore();
-
-  const { data, isLoading, isFetching } = useQuery({
-    queryKey: ["requestor-pricing-referral-stats", "v8"],
-    queryFn: async () => {
-      const res = await apiFetch<ApiEnvelope<PricingReferralStats>>({
-        path: "/api/requests/my/pricing-referral-stats",
-        method: "GET",
-        token,
-      });
-      if (!res.ok || !res.data?.success) {
-        throw new Error(
-          res.data?.message ||
-            res.data?.error ||
-            "가격/소개 통계 조회에 실패했습니다.",
-        );
-      }
-      return res.data.data;
-    },
-    enabled: Boolean(token && user && user.role === "requestor"),
-    retry: false,
-    staleTime: 5 * 60 * 1000,
-    refetchOnMount: false,
-    refetchOnReconnect: false,
-    refetchOnWindowFocus: false,
-  });
-
-  const monthlyRemakeFreeLimit = Number(data?.monthlyRemakeFreeLimit ?? 3);
-  const monthlyRemakeUsed = Number(data?.monthlyRemakeUsed ?? 0);
-  const monthlyRemakeFreeRemaining = Math.max(
-    0,
-    Number(
-      data?.monthlyRemakeFreeRemaining ??
-        monthlyRemakeFreeLimit - monthlyRemakeUsed,
-    ),
-  );
-
-  return {
-    monthlyRemakeFreeRemaining,
-    isLoading: !data && (isLoading || isFetching),
-  };
-};
 
 export const RequestorPolicyRemakeHeader = () => {
   const [policyOpen, setPolicyOpen] = useState(false);

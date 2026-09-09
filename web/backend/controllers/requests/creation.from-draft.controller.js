@@ -8,6 +8,7 @@
 // - web/frontend/src/pages/requestor/new_request/hooks/useNewRequestSubmitV2.ts
 // - web/backend/rules.md
 // change-log:
+// - 2026-09-09: 리메이크 월 무료 쿼터 응답(remakeQuota) 제거. 과금은 computePriceForRequest 고정 1만원.
 // - 2026-08-21: 잔액 사전검사 후 insert만 txn. credit hold·stage-changed는 201 finish·스냅샷 이후.
 // - 2026-08-21: 헥스 확인 샘플 생성·대시보드 refresh를 201 finish 이후로 미룸(제출 응답 단축).
 // - 2026-08-21: 제출 지연 단축. 대시보드 refresh는 201 전송 이후, 응답 data는 requestIds lean.
@@ -212,41 +213,6 @@ const generateRequestIdBatch = (count) => {
     requestIds.push(candidate);
   }
   return requestIds;
-};
-
-const MONTHLY_REMAKE_FREE_LIMIT = 3;
-const REMAKE_PRICE_RULES = [
-  "remake_monthly_free_3",
-  "remake_general_pricing",
-  "remake_fixed_10000",
-];
-
-const getMonthlyRemakeQuota = async ({ scopeFilter }) => {
-  const todayYmd = getTodayYmdInKst();
-  const [year, month] = String(todayYmd)
-    .split("-")
-    .map((v) => Number(v || 0));
-  const monthStartYmd = `${year}-${String(month).padStart(2, "0")}-01`;
-  const monthStartKst = new Date(`${monthStartYmd}T00:00:00+09:00`);
-  const nextMonthYear = month === 12 ? year + 1 : year;
-  const nextMonth = month === 12 ? 1 : month + 1;
-  const nextMonthYmd = `${nextMonthYear}-${String(nextMonth).padStart(2, "0")}-01`;
-  const nextMonthStartKst = new Date(`${nextMonthYmd}T00:00:00+09:00`);
-
-  const used = await Request.countDocuments({
-    ...scopeFilter,
-    manufacturerStage: { $ne: "취소" },
-    createdAt: { $gte: monthStartKst, $lt: nextMonthStartKst },
-    "price.rule": { $in: REMAKE_PRICE_RULES },
-  });
-
-  return {
-    limit: MONTHLY_REMAKE_FREE_LIMIT,
-    used,
-    remaining: Math.max(0, MONTHLY_REMAKE_FREE_LIMIT - used),
-    currentMonthStartYmd: monthStartYmd,
-    currentMonthEndExclusiveYmd: nextMonthYmd,
-  };
 };
 
 /**
@@ -742,7 +708,6 @@ export async function createRequestsFromDraft(req, res) {
     const skipCaseIds = new Set();
     const autoSkippedDuplicateCaseIds = new Set();
     const existingByCombo = new Map();
-    let remakeQuota = null;
 
     const isPracticeRoutingPayload =
       req.user?.role === "practice" &&
@@ -891,9 +856,6 @@ export async function createRequestsFromDraft(req, res) {
             autoSkippedDuplicateCaseIds.add(caseId);
           });
         } else {
-          remakeQuota = await getMonthlyRemakeQuota({
-            scopeFilter: requestFilter,
-          });
           const first = duplicates[0];
           const st = String(first?.existingRequest?.manufacturerStage || "");
           const mode = st === "추적관리" ? "tracking" : "active";
@@ -907,7 +869,6 @@ export async function createRequestsFromDraft(req, res) {
             data: {
               mode,
               duplicates,
-              remakeQuota,
             },
           });
         }
@@ -971,12 +932,6 @@ export async function createRequestsFromDraft(req, res) {
           );
         });
 
-        remakeQuota =
-          remakeQuota ||
-          (await getMonthlyRemakeQuota({
-            scopeFilter: requestFilter,
-          }));
-
         const firstUnresolved = unresolved[0];
         const st = String(
           firstUnresolved?.existingRequest?.manufacturerStage || "",
@@ -992,7 +947,6 @@ export async function createRequestsFromDraft(req, res) {
           data: {
             mode,
             duplicates: unresolved,
-            remakeQuota,
           },
         });
       }
@@ -1061,8 +1015,8 @@ export async function createRequestsFromDraft(req, res) {
       });
     }
 
-    // 정책: 기존 의뢰 취소 후 재의뢰(replace)는 리메이크 무료 카운트에 포함하지 않는다.
-    // 따라서 replace 건은 일반 신규 의뢰 가격 규칙(forceNewOrderPricing)으로 재산정한다.
+    // 정책: 기존 의뢰 취소 후 재의뢰(replace)는 리메이크가 아니라 신규로 본다.
+    // replace 건은 일반 신규 의뢰 가격 규칙(forceNewOrderPricing)으로 재산정한다.
     if (resolutionsByCaseId.size > 0) {
       const replaceCaseIds = new Set(
         Array.from(resolutionsByCaseId.entries())

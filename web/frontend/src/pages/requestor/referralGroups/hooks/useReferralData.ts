@@ -22,9 +22,7 @@ export type RequestorReferralStats = {
   rule?: string;
   maxDiscountPerUnit?: number;
   discountPerOrder?: number;
-  monthlyRemakeFreeLimit?: number;
-  monthlyRemakeUsed?: number;
-  monthlyRemakeFreeRemaining?: number;
+  /** 커스텀어벗 리메이크 단가(원). SSOT 고정 10,000 */
   remakeUnitPrice?: number;
 };
 

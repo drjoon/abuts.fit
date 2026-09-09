@@ -1654,11 +1654,9 @@ const NewRequestPageContent = () => {
                   ? "동일한 치과/환자/치아 정보로 이미 의뢰가 존재합니다. 항목별로 선택해주세요."
                   : "제출하려는 파일들끼리 동일한 치과/환자/치아 조합이 중복되었습니다. 항목별로 제외 여부를 선택해주세요."}
               </div>
-              {duplicatePrompt?.remakeQuota && (
+              {duplicatePrompt?.mode === "tracking" && (
                 <div className="rounded border border-primary-muted bg-primary-soft px-2.5 py-2 text-[11px] text-primary-strong">
-                  이번 달 무료 재의뢰: {duplicatePrompt.remakeQuota.limit}건 중{" "}
-                  {duplicatePrompt.remakeQuota.used}건 사용, 잔여{" "}
-                  {duplicatePrompt.remakeQuota.remaining}건
+                  리메이크로 접수 시 건당 10,000원(배송비 별도)
                 </div>
               )}
               {duplicateList.map((dup, idx) => {
