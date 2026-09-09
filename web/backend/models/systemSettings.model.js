@@ -94,6 +94,8 @@ const systemSettingsSchema = new mongoose.Schema(
       shippingFee: { type: Number, default: 3500 },
       // 제조사(일반과세) 하청 매입가(부가세 포함 기본 8,800). 장부·미정산=포함가.
       manufacturerRequestUnitPrice: { type: Number, default: 8800 },
+      // 리메이크 생산 매입가(부가세 포함 기본 6,600).
+      manufacturerRemakeUnitPrice: { type: Number, default: 6600 },
       // 개발운영사 어벗 생산 외주 공급가(1어벗당). 장부=포함가(지급 재가산 없음).
       devopsRequestUnitPrice: { type: Number, default: 775 },
       // 딜러사(salesman BA) 어벗 생산 수수료(1어벗당). 장부=포함가. 없으면 어벗츠 귀속.

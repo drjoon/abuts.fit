@@ -1,6 +1,7 @@
 // related files:
 // - web/backend/services/creditRevenuePolicy.service.js
 // change-log:
+// - 2026-09-09: 리메이크 제조사 지급 6,600원(포함가) 회귀.
 // - 2026-09-06: 미정산 net = 공급가 합 회귀 테스트.
 // - 2026-08-23: 제조사=일반과세. 매입가(부가세 포함)→공급가 분해.
 // - 2026-08-18: (철회) 제조사 면세.
@@ -25,6 +26,7 @@ describe("manufacturer fixed unit + residual allocation", () => {
   const creditSettings = {
     // 부가세 포함 매입가
     manufacturerRequestUnitPrice: 8800,
+    manufacturerRemakeUnitPrice: 6600,
     manufacturerShippingUnitPrice: 3500,
     affiliateVatRate: 0.1,
     salesmanSharePercent: 30,
@@ -279,7 +281,7 @@ describe("manufacturer fixed unit + residual allocation", () => {
     expect(alloc.admin).toBe(318);
   });
 
-  test("remake: manufacturer unit not applied", () => {
+  test("remake: manufacturer unit applied at remake price", () => {
     expect(
       resolveManufacturerUnitApply({
         source: "abutment_retail",
@@ -287,13 +289,26 @@ describe("manufacturer fixed unit + residual allocation", () => {
         abutmentQty: 1,
         isRemake: true,
       }),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       resolveManufacturerUnitApply({
         isShippingSpend: true,
         isRemake: true,
       }),
     ).toBe(true);
+    const earn = resolveManufacturerUnitEarn({
+      isShippingSpend: false,
+      creditSettings,
+      qty: 1,
+      isRemake: true,
+    });
+    expect(earn).toEqual({
+      supply: 6000,
+      vat: 600,
+      total: 6600,
+      vatRate: 0.1,
+      qty: 1,
+    });
   });
 
   test("signup free test: manufacturer production and shipping unit not applied", () => {
@@ -328,19 +343,21 @@ describe("manufacturer fixed unit + residual allocation", () => {
     ).toBe(20000);
   });
 
-  test("remake via applyManufacturerUnit=false: manufacturer 0", () => {
+  test("remake: manufacturer gets remake unit (6600 inclusive)", () => {
     const alloc = resolveRevenueOwnerBaseAllocation({
-      spendAmount: 20000,
+      spendAmount: 10000,
       hasSalesmanReferrer: true,
       configuredRates: {},
       owners,
       isShippingSpend: false,
       creditSettings,
-      applyManufacturerUnit: false,
+      isRemake: true,
     });
-    expect(alloc.manufacturer).toBe(0);
-    expect(alloc.manufacturerVat).toBe(0);
-    expect(alloc.salesman + alloc.devops + alloc.admin).toBe(20000);
+    expect(alloc.manufacturer).toBe(6000);
+    expect(alloc.manufacturerVat).toBe(600);
+    expect(
+      alloc.manufacturer + alloc.devops + alloc.salesman + alloc.admin,
+    ).toBe(10000);
   });
 });
 

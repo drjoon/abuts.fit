@@ -485,6 +485,7 @@ function pushRevenueLines({
     applyManufacturerUnit,
     creditSettings,
     qty: manufacturerQty,
+    isRemake: Boolean(isRemake) || Boolean(meta?.isRemake),
   });
   const revenueKindSplit = splitRevenueByCreditKindProRata({
     ownerBaseByRole: revenueBaseByOwner,

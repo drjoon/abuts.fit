@@ -12,6 +12,7 @@
 // - 2026-08-23: 제조사=일반과세. 공급가 장부·지급 시 VAT·세금계산서.
 // - 2026-08-23: 정산규칙 모달 단가 — 설정 매입가(기본 8,800 부가세 포함)·배송 3,500.
 // - 2026-08-20: 같은 날 조정을 1행으로 묶고 클릭 시 의뢰 상세.
+// - 2026-09-09: 리메이크 제조사 지급 6,600원(부가세 포함). 무료 생산(0) 폐지.
 // - 2026-08-23: 리메이크만 제조사 무료 생산(지급 0). 무료크레딧은 약정 단가 전액 지급.
 // - 2026-08-20: 유료/무료 구분 제거. 약정 단가 전액이 미정산으로 쌓이고 말일 일괄 지급. 요약 2칸·높이 축소.
 // - 2026-08-20: PeriodFilter 달력 좌·우 chevron 커스텀 기간을 조회에 반영.
@@ -404,6 +405,10 @@ export const ManufacturerPaymentPage = () => {
   const manufacturerRequestUnitPrice = Number(
     systemSettings?.creditSettings?.manufacturerRequestUnitPrice ??
       CREDIT_SETTINGS_DEFAULTS.manufacturerRequestUnitPrice,
+  );
+  const manufacturerRemakeUnitPrice = Number(
+    systemSettings?.creditSettings?.manufacturerRemakeUnitPrice ??
+      CREDIT_SETTINGS_DEFAULTS.manufacturerRemakeUnitPrice,
   );
   const manufacturerShippingUnitPrice = Number(
     systemSettings?.creditSettings?.manufacturerShippingUnitPrice ??
@@ -924,8 +929,14 @@ export const ManufacturerPaymentPage = () => {
                       {formatWonWithUnit(
                         splitInclusiveVat(manufacturerRequestUnitPrice).supply,
                       )}
-                      ). 리메이크 건은 제조사 무료 생산(지급 0)이며,
-                      무료 크레딧 결제건을 포함해 유료·무료 구분 없이 약정 단가를 지급합니다.
+                      ). 리메이크는 어벗 1개당{" "}
+                      {formatWonWithUnit(manufacturerRemakeUnitPrice)}
+                      (부가세 포함, 공급가{" "}
+                      {formatWonWithUnit(
+                        splitInclusiveVat(manufacturerRemakeUnitPrice).supply,
+                      )}
+                      ). 무료 크레딧 결제건을 포함해 유료·무료 구분 없이 약정
+                      단가를 지급합니다.
                     </p>
                   </div>
                 </SettlementPolicySection>
@@ -939,7 +950,8 @@ export const ManufacturerPaymentPage = () => {
                       {formatWonWithUnit(
                         splitInclusiveVat(manufacturerShippingUnitPrice).supply,
                       )}
-                      ). 리메이크 건은 제외하고, 무료 크레딧 결제건을 포함해 약정 단가를 지급합니다.
+                      ). 리메이크·무료 크레딧 결제건을 포함해 약정 단가를
+                      지급합니다.
                       고객(치과·기공소)→어벗츠 배송비는 면세 수취 후, 제조사에는
                       배송비(어벗츠→제조사)로 지급합니다.
                     </p>

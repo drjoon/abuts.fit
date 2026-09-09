@@ -75,6 +75,7 @@ const REGULAR_RESIDUAL_SHARE_PERCENTS = {
 };
 
 const DEFAULT_MANUFACTURER_REQUEST_UNIT_PRICE = 8800;
+const DEFAULT_MANUFACTURER_REMAKE_UNIT_PRICE = 6600;
 
 function readResidualSharePercents(
   creditSettings = {},
@@ -250,6 +251,9 @@ const SCHEMA_DEFAULTS = (() => {
     shippingFee: pickDefault("creditSettings.shippingFee"),
     manufacturerRequestUnitPrice: pickDefault(
       "creditSettings.manufacturerRequestUnitPrice",
+    ),
+    manufacturerRemakeUnitPrice: pickDefault(
+      "creditSettings.manufacturerRemakeUnitPrice",
     ),
     devopsRequestUnitPrice: pickDefault("creditSettings.devopsRequestUnitPrice"),
     salesmanRequestUnitPrice: pickDefault("creditSettings.salesmanRequestUnitPrice"),
@@ -577,6 +581,11 @@ export function normalizeLoadedCreditSettings(creditSettings = {}) {
     manufacturerRequestUnitPrice: Number(
       withRoundBar.membershipProductionManufacturerUnitPrice ??
         SCHEMA_DEFAULTS.manufacturerRequestUnitPrice,
+    ),
+    manufacturerRemakeUnitPrice: Number(
+      creditSettings.manufacturerRemakeUnitPrice ??
+        SCHEMA_DEFAULTS.manufacturerRemakeUnitPrice ??
+        DEFAULT_MANUFACTURER_REMAKE_UNIT_PRICE,
     ),
     devopsRequestUnitPrice: Number(
       withRoundBar.membershipProductionDevopsUnitPrice ??

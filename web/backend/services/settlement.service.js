@@ -5,6 +5,7 @@
 // - web/backend/services/creditRevenuePolicy.service.js
 // - web/backend/utils/creditSettingsDefaults.js
 // change-log:
+// - 2026-09-09: 리메이크 제조사 지급(기본 6,600 포함가). 무료 생산(0) 폐지.
 // - 2026-09-06: 과세 관계사 잔액=포함가, 지급 시 VAT 재가산 없음(÷1.1 분해만). 기공은 면세 공급가.
 // - 2026-08-23: 제조사=일반과세 — TAXABLE_SETTLEMENT_ROLES·지급 VAT·세금계산서.
 // - 2026-08-23: 리메이크만 제조사 적립 0. 무료크레딧은 약정 단가 전액 지급.

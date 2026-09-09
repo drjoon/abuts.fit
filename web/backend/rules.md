@@ -878,7 +878,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - 정산/지급 정책:
   - 관리자 3사업 축 집계: `GET /api/admin/credits/settlement-business-overview` (`adminGetSettlementBusinessOverview`). 기간은 `period` 또는 `startDate`/`endDate`.
   - 유료/무료 모두 `REV_*` 수익 라인은 기록해 확인 가능해야 합니다.
-  - **제조사(하청)**: 고정 매입가(부가세 포함) — `creditSettings.manufacturerRequestUnitPrice`(기본 8,800, **어벗 1개당**)·`manufacturerShippingUnitPrice`(기본 3,500, 박스당). 장부·미정산·지급=포함가(재가산 없음)·세금계산서(÷1.1). 리메이크는 제조사 무료 생산(지급 0). 그 외(무료 크레딧 결제 포함)는 약정 단가 전액 지급. 매달 말일 일괄 지급 전까지 미정산 잔액. 제조사=일반과세사업자.
+  - **제조사(하청)**: 고정 매입가(부가세 포함) — `creditSettings.manufacturerRequestUnitPrice`(기본 8,800, **어벗 1개당**)·`manufacturerRemakeUnitPrice`(기본 6,600, 리메이크)·`manufacturerShippingUnitPrice`(기본 3,500, 박스당). 장부·미정산·지급=포함가(재가산 없음)·세금계산서(÷1.1). 리메이크도 제조사 지급(6,600). 그 외(무료 크레딧 결제 포함)는 약정 단가 전액 지급. 매달 말일 일괄 지급 전까지 미정산 잔액. 제조사=일반과세사업자.
   - **딜러사·개발운영사**: 장부 적립·미정산=포함가(`affiliateVatRate`로 earn 시 VAT 기록). 지급=잔액 그대로·세금계산서(÷1.1). 구현: `services/settlement.service.js`(`TAXABLE_SETTLEMENT_ROLES` / `resolveSettlementPayoutAmounts` / `postSettlementPayoutJournal`). 배치 항목 `amount`=입금=잔액, `supplyAmount`/`vatAmount`=포함가 분해.
   - **어벗츠·기공소**: 정산 지급(PAYOUT)은 유료 수익만(면세 계산서). `EARN/ADJUST`는 `creditKind=PAID|null`만 포함.
   - **제조사**: 정산 지급(PAYOUT)은 유료·무료 수익 전액(과세·세금계산서). `computeAffiliateSettlementBalance`가 manufacturer는 creditKind를 가리지 않음.

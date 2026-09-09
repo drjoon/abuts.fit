@@ -11,6 +11,7 @@
 // - web/frontend/src/pages/admin/system/AdminPlatformSettingsPage.tsx
 // - web/backend/services/practiceTransferBilling.service.js
 // - 2026-08-18: 기공소 공급 어벗 전역 단가 PATCH.
+// - 2026-09-09: manufacturerRemakeUnitPrice(리메이크 매입가, 기본 6,600) 저장 허용.
 import SystemSettings from "../../models/systemSettings.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { Types } from "mongoose";
@@ -351,6 +352,9 @@ export async function updateCreditSettings(req, res) {
     const manufacturerRequestUnitPrice = Number(
       payload.manufacturerRequestUnitPrice,
     );
+    const manufacturerRemakeUnitPrice = Number(
+      payload.manufacturerRemakeUnitPrice,
+    );
     const devopsRequestUnitPrice = Number(payload.devopsRequestUnitPrice);
     const salesmanRequestUnitPrice = Number(payload.salesmanRequestUnitPrice);
     const manufacturerShippingUnitPrice = Number(
@@ -509,6 +513,12 @@ export async function updateCreditSettings(req, res) {
       manufacturerRequestUnitPrice >= 0
     ) {
       sanitized.manufacturerRequestUnitPrice = manufacturerRequestUnitPrice;
+    }
+    if (
+      !Number.isNaN(manufacturerRemakeUnitPrice) &&
+      manufacturerRemakeUnitPrice >= 0
+    ) {
+      sanitized.manufacturerRemakeUnitPrice = manufacturerRemakeUnitPrice;
     }
     if (!Number.isNaN(devopsRequestUnitPrice) && devopsRequestUnitPrice >= 0) {
       sanitized.devopsRequestUnitPrice = devopsRequestUnitPrice;

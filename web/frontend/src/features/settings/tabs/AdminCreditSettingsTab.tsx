@@ -98,6 +98,7 @@ interface CreditSettings {
   specialRequestorPrices: SpecialRequestorPrice[];
   shippingFee: number;
   manufacturerRequestUnitPrice: number;
+  manufacturerRemakeUnitPrice: number;
   devopsRequestUnitPrice: number;
   salesmanRequestUnitPrice: number;
   manufacturerShippingUnitPrice: number;
@@ -207,6 +208,7 @@ const REGULAR_RESIDUAL_SHARE_PERCENTS = {
 };
 
 const DEFAULT_MANUFACTURER_REQUEST_UNIT_PRICE = 8800;
+const DEFAULT_MANUFACTURER_REMAKE_UNIT_PRICE = 6600;
 
 function clampSharePercent(value: number, fallback = 0): number {
   const n = Number(value);
@@ -522,6 +524,7 @@ function buildSharePercentSavePayload(
     regularAbutsSharePercent: synced.regularAbutsSharePercent,
     ...buildNormalizedTierPartyFields(synced, synced),
     manufacturerRequestUnitPrice: synced.manufacturerRequestUnitPrice,
+    manufacturerRemakeUnitPrice: synced.manufacturerRemakeUnitPrice,
     manufacturerShippingUnitPrice: synced.manufacturerShippingUnitPrice,
     salesmanRequestUnitPrice: synced.salesmanRequestUnitPrice,
     devopsRequestUnitPrice: synced.devopsRequestUnitPrice,
@@ -790,6 +793,11 @@ function normalizeCreditSettings(
       (raw as CreditSettings).manufacturerRequestUnitPrice ??
         (fallback as CreditSettings).manufacturerRequestUnitPrice ??
         9000,
+    ),
+    manufacturerRemakeUnitPrice: Number(
+      (raw as CreditSettings).manufacturerRemakeUnitPrice ??
+        (fallback as CreditSettings).manufacturerRemakeUnitPrice ??
+        DEFAULT_MANUFACTURER_REMAKE_UNIT_PRICE,
     ),
     devopsRequestUnitPrice: Number(
       (raw as CreditSettings).devopsRequestUnitPrice ??
@@ -1325,6 +1333,7 @@ export const AdminCreditSettingsTab = ({
         Pick<
           CreditSettings,
           | "manufacturerRequestUnitPrice"
+          | "manufacturerRemakeUnitPrice"
           | "manufacturerShippingUnitPrice"
           | "manufacturerSharePercent"
           | "salesmanSharePercent"
@@ -1386,6 +1395,15 @@ export const AdminCreditSettingsTab = ({
     (next: number) => {
       updateSharePercent({
         manufacturerRequestUnitPrice: Math.max(0, Math.round(Number(next) || 0)),
+      });
+    },
+    [updateSharePercent],
+  );
+
+  const updateRemakePurchasePrice = useCallback(
+    (next: number) => {
+      updateSharePercent({
+        manufacturerRemakeUnitPrice: Math.max(0, Math.round(Number(next) || 0)),
       });
     },
     [updateSharePercent],
@@ -1612,6 +1630,15 @@ export const AdminCreditSettingsTab = ({
                     step={PURCHASE_AMOUNT_STEP}
                     onChange={updatePurchasePrice}
                     help="부가세 포함 제조사 고정단가. 장부·미정산은 포함가이며, 지급 시 재가산 없이 세금계산서만 ÷1.1로 분해합니다."
+                  />
+                  <SalesAmountCard
+                    id="customAbutRemakePurchasePrice"
+                    title="리메이크 매입가(부가세 포함)"
+                    value={settings.manufacturerRemakeUnitPrice}
+                    disabled={loading}
+                    step={PURCHASE_AMOUNT_STEP}
+                    onChange={updateRemakePurchasePrice}
+                    help="리메이크 생산 시 제조사 지급 단가(부가세 포함). 기본 6,600원."
                   />
                   <SalesAmountCard
                     id="customAbutShippingPurchasePrice"

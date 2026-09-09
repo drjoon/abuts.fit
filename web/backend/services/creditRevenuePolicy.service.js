@@ -5,6 +5,7 @@
 // - web/backend/scripts/db/migrate-legacy-creditledger-to-gl.js
 // - web/backend/scripts/db/rebalance-manufacturer-unit-price.js
 // change-log:
+// - 2026-09-09: 리메이크 제조사 지급 — 무료(0) → 건당 부가세 포함 6,600원(manufacturerRemakeUnitPrice).
 // - 2026-09-06: allocateAffiliateVatAcrossSupplyParts — 분할 라인 VAT 합=전체 VAT(반올림 드리프트 방지).
 // - 2026-09-06: 과세 미정산 net = 포함가 합 − |지급|. computeManufacturerDailyNetPayout.
 // - 2026-09-06: 미정산 net = 공급가 합(VAT 제외). computeManufacturerDailyNetPayout.
@@ -34,6 +35,8 @@ export const WITHOUT_SALESMAN_RESIDUAL_RATES = {
 
 /** 제조사 하청 공급가·부가세 SSOT 기본값 (creditSettings와 동기). */
 export const DEFAULT_MANUFACTURER_REQUEST_UNIT_PRICE = 8800;
+/** 리메이크 생산 매입가(부가세 포함). */
+export const DEFAULT_MANUFACTURER_REMAKE_UNIT_PRICE = 6600;
 export const DEFAULT_MANUFACTURER_SHIPPING_UNIT_PRICE = 3500;
 export const DEFAULT_AFFILIATE_VAT_RATE = 0.1;
 export const MANUFACTURER_PRODUCTION_LEDGER_LABEL = "커스텀어벗 생산";
@@ -304,15 +307,21 @@ export function isShippingSpendRevenueContext({ refType, freeAccountCode }) {
   );
 }
 
-export function resolveManufacturerUnitSettings(creditSettings = {}) {
+export function resolveManufacturerUnitSettings(
+  creditSettings = {},
+  { isRemake = false } = {},
+) {
   // 제조사=일반과세. 설정 단가(manufacturer*UnitPrice)는 부가세 포함 매입가.
   const vatRate = normalizeAffiliateVatRate(creditSettings?.affiliateVatRate);
   const requestInclusive = Math.max(
     0,
     Math.round(
       Number(
-        creditSettings?.manufacturerRequestUnitPrice ??
-          DEFAULT_MANUFACTURER_REQUEST_UNIT_PRICE,
+        isRemake
+          ? (creditSettings?.manufacturerRemakeUnitPrice ??
+            DEFAULT_MANUFACTURER_REMAKE_UNIT_PRICE)
+          : (creditSettings?.manufacturerRequestUnitPrice ??
+            DEFAULT_MANUFACTURER_REQUEST_UNIT_PRICE),
       ) || 0,
     ),
   );
@@ -351,6 +360,7 @@ export function resolveManufacturerUnitQty({
 /**
  * 제조사 하청 단가를 적립할지.
  * 플랫폼 수수료·기공소 배송·신속추가는 제외. 생산(어벗 개당)·어벗츠→제조사 배송만.
+ * 리메이크 생산은 적용(단가=manufacturerRemakeUnitPrice). 가입 무료 테스트만 제조사 0.
  */
 export function resolveManufacturerUnitApply({
   usageKind = "",
@@ -362,15 +372,16 @@ export function resolveManufacturerUnitApply({
   isRemake = false,
   isSignupFreeTest = false,
 } = {}) {
+  void isRemake;
   const usage = String(usageKind || "").trim();
   const src = String(source || "").trim();
   const kind = String(displayKind || "").trim();
   if (usage === "express_surcharge") return false;
   if (usage === "practice_transfer_lab_shipping") return false;
   if (kind === "platform_fee" || src === "lab_platform_fee") return false;
-  // 리메이크·가입 무료 테스트 생산은 제조사 무료. 가입 테스트는 배송 단가도 0.
+  // 가입 무료 테스트 생산·배송은 제조사 무료.
   if (
-    (isRemake || isSignupFreeTest) &&
+    isSignupFreeTest &&
     !isShippingSpend &&
     usage !== "practice_transfer_abuts_shipping"
   ) {
@@ -395,13 +406,14 @@ export function resolveManufacturerUnitApply({
 /**
  * 제조사 하청 단가(공급가·VAT·합계).
  * applyManufacturerUnit=false(express_surcharge 등)이면 0.
- * 의뢰는 어벗 `qty`개당, 배송은 박스 1건.
+ * 의뢰는 어벗 `qty`개당(리메이크=remake 단가), 배송은 박스 1건.
  */
 export function resolveManufacturerUnitEarn({
   isShippingSpend,
   creditSettings,
   applyManufacturerUnit = true,
   qty = 1,
+  isRemake = false,
 } = {}) {
   if (!applyManufacturerUnit) {
     return { supply: 0, vat: 0, total: 0, vatRate: 0, qty: 0 };
@@ -411,7 +423,9 @@ export function resolveManufacturerUnitEarn({
     isShippingSpend,
   });
   const { requestSupply, shippingSupply, vatRate } =
-    resolveManufacturerUnitSettings(creditSettings);
+    resolveManufacturerUnitSettings(creditSettings, {
+      isRemake: Boolean(isRemake) && !isShippingSpend,
+    });
   const unitSupply = isShippingSpend ? shippingSupply : requestSupply;
   const supply = unitSupply * units;
   const vat = Math.round(supply * vatRate);
@@ -536,8 +550,8 @@ export function resolveResidualRatesFromCreditSettings(
 
 /**
  * 제조사 = 하청 고정 공급가. 잔여 = spend − 제조사 공급가 → salesman/devops/admin.
- * express·리메이크 등 applyManufacturerUnit=false 이면 제조사 0·전액 잔여 분배.
- * 무료크레딧도 제조사 약정 단가 전액(리메이크만 0).
+ * express 등 applyManufacturerUnit=false 이면 제조사 0·전액 잔여 분배.
+ * 리메이크 생산은 remake 단가(기본 6,600 포함가). 무료크레딧도 제조사 약정 단가 전액.
  * 배송: 제조사 배송 공급가, 잔여 → admin(및 잔여 비율이 있으면 동일 로직).
  * residual rates: creditSettings 잔여 비중 우선, 없으면 BA payoutRates.
  */
@@ -550,6 +564,7 @@ export function resolveRevenueOwnerBaseAllocation({
   creditSettings,
   applyManufacturerUnit = true,
   qty = 1,
+  isRemake = false,
 }) {
   const spend = Math.max(0, Math.round(Number(spendAmount || 0)));
   const unitEarn = resolveManufacturerUnitEarn({
@@ -557,10 +572,11 @@ export function resolveRevenueOwnerBaseAllocation({
     creditSettings,
     applyManufacturerUnit,
     qty,
+    isRemake,
   });
 
   // 저널 균형(의뢰자 소비 공급가 = REV 공급가 합): 단가는 소비액으로 캡.
-  // 무료크레딧도 제조사 약정 단가 전액 지급. 리메이크만 applyManufacturerUnit=false로 0.
+  // 무료크레딧·리메이크도 제조사 약정(리메이크) 단가 전액 지급.
   // VAT는 캡된 공급가×요율(어벗츠 추가 지급, 보존식 밖).
   const manufacturer =
     owners?.manufacturerAnchorId && applyManufacturerUnit

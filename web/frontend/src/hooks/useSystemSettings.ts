@@ -28,6 +28,8 @@ export interface CreditSettings {
   minCreditForRequest: number;
   shippingFee: number;
   manufacturerRequestUnitPrice: number;
+  /** 리메이크 생산 매입가(부가세 포함). 기본 6,600 */
+  manufacturerRemakeUnitPrice: number;
   devopsRequestUnitPrice: number;
   salesmanRequestUnitPrice: number;
   manufacturerShippingUnitPrice: number;
@@ -59,6 +61,7 @@ export const CREDIT_SETTINGS_DEFAULTS: CreditSettings = {
   minCreditForRequest: ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
   shippingFee: 3500,
   manufacturerRequestUnitPrice: 8800,
+  manufacturerRemakeUnitPrice: 6600,
   devopsRequestUnitPrice: 775,
   salesmanRequestUnitPrice: 2325,
   manufacturerShippingUnitPrice: 3500,
@@ -117,6 +120,10 @@ export const useSystemSettings = () => {
         manufacturerRequestUnitPrice: Number(
           raw.manufacturerRequestUnitPrice ??
             CREDIT_SETTINGS_DEFAULTS.manufacturerRequestUnitPrice,
+        ),
+        manufacturerRemakeUnitPrice: Number(
+          raw.manufacturerRemakeUnitPrice ??
+            CREDIT_SETTINGS_DEFAULTS.manufacturerRemakeUnitPrice,
         ),
         devopsRequestUnitPrice: Number(
           raw.devopsRequestUnitPrice ??

@@ -10,6 +10,7 @@
 // - web/backend/controllers/requests/shipping.controller.js
 // - web/backend/controllers/requests/shipping.Tracking.helpers.js
 // change-log:
+// - 2026-09-09: 리메이크 제조사 지급 6,600원(포함가). applyManufacturerUnit + remake 단가.
 // - 2026-09-06: 딜러·개발운영 earn에 affiliateVatRate VAT(포함가 장부). REV_ADMIN은 면세.
 // - 2026-08-23: 리메이크·무료크레딧 결제는 제조사 무료 생산.
 // - 2026-08-21: 가공→준비 롤백 후 의뢰비 hold 복원. hold 전환 시 convertedAt 표시.
@@ -544,6 +545,7 @@ async function postSpendCommitGeneralLedger({
     creditSettings,
     applyManufacturerUnit,
     qty: manufacturerQty,
+    isRemake: isRemakeRequest,
   });
 
   const assignManufacturer = revenueBaseByOwner.manufacturer;
