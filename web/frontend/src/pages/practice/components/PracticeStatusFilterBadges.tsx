@@ -5,6 +5,7 @@
  * 2026-08-21: 배타 필터 → 다중 표시 on/off. ON/OFF 대비·기본 리셋.
  * 2026-08-21: 「표시」 라벨 제거.
  * 2026-08-27: 발송 뒤 리메이크·미확인 간격. 미확인 전용 뱃지용 nested unread 숨김.
+ * 2026-09-09: 빨간 unread 카운터 있으면 클릭=표시토글 대신 안읽음 순회(onUnreadNavigate).
  *
  * related files:
  * - web/frontend/src/pages/practice/components/PracticeRecentTransfersAllModal.tsx
@@ -40,6 +41,11 @@ type PracticeStatusFilterBadgesProps = {
   items: readonly PracticeStatusFilterBadgeItem[];
   activeKeys: ReadonlySet<string>;
   onToggle: (key: string) => void;
+  /**
+   * 빨간 unread 카운터가 있을 때 클릭. 없으면 unread여도 onToggle.
+   * 호출측에서 해당 상태 안읽음 건을 하나씩 찾아간다.
+   */
+  onUnreadNavigate?: (key: string) => void;
   onResetToDefault: () => void;
   isDefault: boolean;
   /** 건수 뒤 접미사. 치과 모달="", 기공의뢰수신="건" */
@@ -58,6 +64,7 @@ export function PracticeStatusFilterBadges({
   items,
   activeKeys,
   onToggle,
+  onUnreadNavigate,
   onResetToDefault,
   isDefault,
   countSuffix = "",
@@ -82,10 +89,13 @@ export function PracticeStatusFilterBadges({
         const unread = hideNestedUnread
           ? 0
           : Math.max(0, Number(item.unreadCount || 0));
+        const navigateUnread = unread > 0 && Boolean(onUnreadNavigate);
         const countLabel = `${item.count}${countSuffix}`;
-        const actionHint = active
-          ? "캘린더에서 숨기기"
-          : "캘린더에 표시하기";
+        const actionHint = navigateUnread
+          ? `안읽음 ${unread}건 찾아가기`
+          : active
+            ? "캘린더에서 숨기기"
+            : "캘린더에 표시하기";
         const tooltipBody = item.tooltip
           ? `${actionHint}. ${item.tooltip}`
           : actionHint;
@@ -100,13 +110,15 @@ export function PracticeStatusFilterBadges({
                   "relative shrink-0 rounded-full",
                   withGap && "ml-3",
                 )}
-                onClick={() => onToggle(item.key)}
-                aria-pressed={active}
-                aria-label={
-                  unread > 0
-                    ? `${item.label} ${countLabel}, 안읽음 ${unread}건, ${actionHint}`
-                    : `${item.label} ${countLabel}, ${actionHint}`
-                }
+                onClick={() => {
+                  if (navigateUnread) {
+                    onUnreadNavigate?.(item.key);
+                    return;
+                  }
+                  onToggle(item.key);
+                }}
+                aria-pressed={navigateUnread ? undefined : active}
+                aria-label={`${item.label} ${countLabel}, ${actionHint}`}
               >
                 <Badge
                   variant="outline"

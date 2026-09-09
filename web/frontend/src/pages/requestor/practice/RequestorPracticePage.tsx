@@ -63,6 +63,7 @@
 // - 2026-08-21: 어벗 분할 업로드 모달 — 문구 단문화·취소/확인. 헥스 샘플 related 제외.
 // - 2026-08-25: status deleted=치과 의뢰 삭제. 수신 목록·취소 뱃지에서 제외. canceled=레거시 휴지통. 작업취소=workCanceledAt.
 // - 2026-08-21: 수신 상단 상태 뱃지에 채팅·미확인 unread.
+// - 2026-09-09: 상태 뱃지 unread 카운터 클릭 시 안읽음 건 순회(표시 토글은 카운터 없을 때만).
 // - 2026-08-21: 상단 상태 뱃지 다중 표시 on/off(표시 라벨·기본 리셋·ON/OFF 대비).
 // - 2026-08-21: 어벗 디자인 업로드 후 skipDesignConfirm 강제 true 제거(구강스캔으로 치과 설정 존중).
 // - 2026-08-21: 하청 전환 버튼 — 어벗츠기공소(internalLab)만 노출.
@@ -219,6 +220,7 @@ import {
   computeGroupedStatusCounts,
   computeGroupedStatusUnreadCounts,
   createPracticeRecentStatusFilterSet,
+  listUnreadTransfersForStatusFilter,
   practiceTransferMatchesStatusFilters,
   togglePracticeRecentStatusFilter,
   toStatusBadgeLabel,
@@ -5576,7 +5578,9 @@ export function RequestorPracticeReceivePage({
           ? transfer.arrivalDate || transfer.orderDate || transfer.createdAt
           : transfer.orderDate || transfer.createdAt;
       const ymd = toKstYmdLoose(raw) || toKstYmd(raw);
-      if (ymd) setCursorYmd(ymd);
+      if (!ymd) return;
+      setCursorYmd(ymd);
+      setAlignEpoch((n) => n + 1);
     },
     [calendarDateKey],
   );
@@ -5596,6 +5600,55 @@ export function RequestorPracticeReceivePage({
       });
     },
     [guideTourLabCalendarStep, openTransferDialog, platformGuideTour],
+  );
+
+  const unreadNavigateIndexRef = useRef<Record<string, number>>({});
+
+  const navigateNextUnreadForStatus = useCallback(
+    (key: string) => {
+      const filterKey = key as LabReceiveStatusFilterKey;
+      const withMeta = baseFilteredTransfers.map((transfer) => ({
+        transfer,
+        status: getTransferDisplayStatus(transfer),
+        designFileCount: transfer.production?.designFileCount,
+        designFiles: transfer.production?.designFiles,
+        designReadyAt: transfer.production?.designReadyAt,
+        unreadCount: transferUnreadBadgeCount(transfer),
+        orderDate: transfer.orderDate,
+        arrivalDate: transfer.arrivalDate,
+        createdAt: transfer.createdAt,
+      }));
+      const unreadRows = listUnreadTransfersForStatusFilter(
+        withMeta,
+        filterKey,
+        calendarDateKey,
+      );
+      if (unreadRows.length === 0) return;
+
+      setStatusFilters((prev) => {
+        if (prev.has(filterKey)) return prev;
+        const next = new Set(prev);
+        next.add(filterKey);
+        return next;
+      });
+
+      const prevIdx = unreadNavigateIndexRef.current[filterKey] ?? 0;
+      const idx = prevIdx % unreadRows.length;
+      unreadNavigateIndexRef.current[filterKey] =
+        (idx + 1) % unreadRows.length;
+      const transfer = unreadRows[idx]?.transfer;
+      if (!transfer) return;
+      if (!isMobile) jumpCalendarToTransferDate(transfer);
+      selectTransferFromCalendar(transfer);
+    },
+    [
+      baseFilteredTransfers,
+      calendarDateKey,
+      isMobile,
+      jumpCalendarToTransferDate,
+      selectTransferFromCalendar,
+      transferUnreadBadgeCount,
+    ],
   );
 
   const resetLabStatusFiltersToDefault = useCallback(() => {
@@ -5621,6 +5674,7 @@ export function RequestorPracticeReceivePage({
             toggleLabReceiveStatusFilter(prev, key as LabReceiveStatusFilterKey),
           )
         }
+        onUnreadNavigate={navigateNextUnreadForStatus}
         onResetToDefault={resetLabStatusFiltersToDefault}
         isDefault={isLabReceiveStatusFilterDefault(statusFilters)}
         countSuffix="건"

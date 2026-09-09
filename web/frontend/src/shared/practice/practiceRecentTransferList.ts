@@ -5,6 +5,7 @@
  * 수락=의뢰수락. 완료=치과도착일 경과 자동 작업완료(어벗 미업로드). 채팅 unread는 상태 뱃지별 합산.
  * 자동매칭(공개 풀)은 공정상 의뢰 — 뱃지 집계·「의뢰」필터에 포함.
  * 기공소 수신은 거절·작업취소가 목록에서 빠져 취소/거절 뱃지 불필요 → 치과만 취소 포함 4뱃지.
+ * 2026-09-09: listUnreadTransfersForStatusFilter — 상태 뱃지 unread 순회용.
  * 2026-09-02: 거절 뱃지 제거·기공소 거절은 취소 집계. 어벗=CA designFiles.
  * 2026-09-02: 기공소 수신 상단은 의뢰·수락·완료·어벗 4뱃지(취소 제외).
  * 2026-09-02: 완료 뱃지 — 치과도착일 경과 자동 작업완료(어벗 STL 없음). 수락=의뢰수락만.
@@ -1708,4 +1709,51 @@ export const filterGroupedTransfersByStatus = (
       createPracticeRecentStatusFilterSet([statusFilter]),
     ),
   );
+};
+
+/** 상단 상태 뱃지 unread 순회 — 해당 필터 키에 속하고 unread>0인 건을 날짜 오름차순. */
+export const listUnreadTransfersForStatusFilter = <
+  T extends {
+    status?: unknown;
+    designFileCount?: unknown;
+    designFiles?: unknown;
+    designReadyAt?: unknown;
+    unreadCount?: unknown;
+    orderDate?: unknown;
+    arrivalDate?: unknown;
+    createdAtTs?: unknown;
+    createdAt?: unknown;
+  },
+>(
+  transfers: readonly T[],
+  filterKey: PracticeRecentStatusFilterKey,
+  dateKey: "orderDate" | "arrivalDate" = "arrivalDate",
+): T[] => {
+  const selected = createPracticeRecentStatusFilterSet([filterKey]);
+  const unread = transfers.filter(
+    (transfer) =>
+      Math.max(0, Number(transfer.unreadCount || 0)) > 0 &&
+      practiceTransferMatchesStatusFilters(transfer, selected),
+  );
+  const ymdOf = (transfer: T) => {
+    const raw =
+      dateKey === "arrivalDate"
+        ? transfer.arrivalDate || transfer.orderDate
+        : transfer.orderDate || transfer.arrivalDate;
+    return toKstYmdLoose(raw) || toKstYmd(raw) || "";
+  };
+  return [...unread].sort((a, b) => {
+    const ya = ymdOf(a);
+    const yb = ymdOf(b);
+    if (ya !== yb) return ya < yb ? -1 : 1;
+    const ta =
+      Number(a.createdAtTs) ||
+      new Date(String(a.createdAt || "")).getTime() ||
+      0;
+    const tb =
+      Number(b.createdAtTs) ||
+      new Date(String(b.createdAt || "")).getTime() ||
+      0;
+    return ta - tb;
+  });
 };

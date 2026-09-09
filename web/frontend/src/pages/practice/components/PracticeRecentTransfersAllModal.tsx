@@ -41,6 +41,7 @@
  * - 2026-09-02: 휴지통 `거부`(삭제+labRejected)도 달력·상단뱃지에서 제외 — 삭제 후 재등장 방지.
  * - 2026-09-08: 캘린더 칩 → preferredDockSide(보이는 열 좌/우)로 상세 패널 도킹.
  * - 2026-09-08: 데스크톱 캘린더/목록(일정) 보기 — 목록은 커서 월 전체 조회.
+ * - 2026-09-09: 상태 뱃지 unread 카운터 클릭 시 안읽음 건 순회(표시 토글은 카운터 없을 때만).
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronRight, Search, Trash2, X } from "lucide-react";
@@ -98,6 +99,7 @@ import {
   groupPracticeRecentRequests,
   isPracticeRecentStatusFilterDefault,
   isPracticeTransferTrashStatus,
+  listUnreadTransfersForStatusFilter,
   mapMyPracticeTransferApiRows,
   patchPracticeRecentRequestProsthesisFollowUp,
   prosthesisFollowUpPatchFromRealtimePayload,
@@ -642,9 +644,42 @@ export function PracticeRecentTransfersAllModal({
           ? transfer.arrivalDate || transfer.orderDate
           : transfer.orderDate || transfer.arrivalDate;
       const ymd = toKstYmdLoose(raw) || toKstYmd(raw);
-      if (ymd) setCursorYmd(ymd);
+      if (!ymd) return;
+      setCursorYmd(ymd);
+      setAlignEpoch((n) => n + 1);
     },
     [dateKey],
+  );
+
+  const unreadNavigateIndexRef = useRef<Record<string, number>>({});
+
+  const navigateNextUnreadForStatus = useCallback(
+    (key: string) => {
+      const filterKey = key as PracticeRecentStatusFilterKey;
+      const unreadTransfers = listUnreadTransfersForStatusFilter(
+        visibleGroupedTransfers,
+        filterKey,
+        dateKey,
+      );
+      if (unreadTransfers.length === 0) return;
+
+      setStatusFilters((prev) => {
+        if (prev.has(filterKey)) return prev;
+        const next = new Set(prev);
+        next.add(filterKey);
+        return next;
+      });
+
+      const prevIdx = unreadNavigateIndexRef.current[filterKey] ?? 0;
+      const idx = prevIdx % unreadTransfers.length;
+      unreadNavigateIndexRef.current[filterKey] =
+        (idx + 1) % unreadTransfers.length;
+      const transfer = unreadTransfers[idx];
+      if (!transfer) return;
+      jumpCalendarToTransferDate(transfer);
+      onSelectTransfer(transfer);
+    },
+    [dateKey, jumpCalendarToTransferDate, onSelectTransfer, visibleGroupedTransfers],
   );
 
   const statusFilterBadgeItems = useMemo((): PracticeStatusFilterBadgeItem[] => {
@@ -674,6 +709,7 @@ export function PracticeRecentTransfersAllModal({
           ),
         )
       }
+      onUnreadNavigate={navigateNextUnreadForStatus}
       onResetToDefault={resetStatusFiltersToDefault}
       isDefault={isPracticeRecentStatusFilterDefault(statusFilters)}
       compact={isMobile}
