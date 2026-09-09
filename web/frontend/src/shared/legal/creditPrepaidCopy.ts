@@ -14,6 +14,9 @@
 // - web/frontend/src/pages/public/TermsPage.tsx
 // - web/frontend/src/pages/public/ServicePage.tsx
 // - web/frontend/src/features/support/InquiriesPage.tsx
+// - web/frontend/src/shared/demo/demoModeCopy.ts
+
+import { DEMO_MODE_FREE_CREDIT_FAQ_ANSWER } from "@/shared/demo/demoModeCopy";
 
 /** 화면 제목·탭 주변. 선불전자지급수단이 아닌 B2B 거래 선수금임을 명시. */
 export const CREDIT_CHARGE_NOTICE_TITLE = "크레딧(거래 선수금) 충전";
@@ -46,7 +49,7 @@ export type CreditPrepaidFaq = { q: string; a: string };
 export const CREDIT_PREPAID_FAQS: CreditPrepaidFaq[] = [
   {
     q: "가입 시 무료 크레딧이 지급되나요?",
-    a: "아니요. 신규 자동 무료 크레딧 지급은 없습니다. 치과·기공소는 가입 후 30일 데모 모드로 가상 잔고(마이너스 허용)를 이용할 수 있으며, 필요 시 관리자가 무료 크레딧을 수동 지급할 수 있습니다. 유료 크레딧(선수금) 입금이 확인되면 실사용으로 전환됩니다.",
+    a: DEMO_MODE_FREE_CREDIT_FAQ_ANSWER,
   },
   {
     q: "어벗츠 크레딧은 네이버페이나 카카오페이 같은 선불 충전금인가요?",

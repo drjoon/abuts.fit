@@ -3,6 +3,7 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 import { request } from "@/shared/api/apiClient";
+import { DEMO_MODE_ONBOARDING_HINT } from "@/shared/demo/demoModeCopy";
 import {
   normalizeBusinessNumber,
   normalizePhoneNumber,
@@ -432,8 +433,7 @@ export const handleSave = async (
     ) {
       toast({
         title: "신규 사업자 등록 완료",
-        description:
-          "가입 후 30일 데모 모드로 가상 잔고(마이너스 허용)를 이용할 수 있어요. 유료 크레딧 입금이 확인되면 실사용으로 전환됩니다.",
+        description: DEMO_MODE_ONBOARDING_HINT,
       });
     }
 

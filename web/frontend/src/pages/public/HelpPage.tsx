@@ -26,6 +26,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { SUPPORT_EMAIL } from "@/shared/lib/contactInfo";
+import { DEMO_MODE_FREE_CREDIT_FAQ_ANSWER } from "@/shared/demo/demoModeCopy";
 import { CREDIT_PREPAID_FAQS } from "@/shared/legal/creditPrepaidCopy";
 
 type FaqItem = { q: string; a: string };
@@ -53,7 +54,7 @@ const FAQ_SECTIONS: {
       },
       {
         q: "가입 시 무료 크레딧이 생기나요?",
-        a: "신규 자동 무료 크레딧 지급은 없습니다. 치과·기공소는 가입 후 30일 데모 모드로 가상 잔고(마이너스 허용)를 이용할 수 있으며, 필요 시 관리자가 무료 크레딧을 수동 지급할 수 있습니다. 유료 크레딧(선수금) 입금이 확인되면 실사용으로 전환됩니다.",
+        a: DEMO_MODE_FREE_CREDIT_FAQ_ANSWER,
       },
       {
         q: "계정 해지 시 남은 크레딧은 어떻게 되나요?",

@@ -30,7 +30,7 @@ import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
 import { periodToRange } from "@/store/usePeriodStore";
-import { ChevronDown, ChevronUp, Copy } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronUp, Copy, Wallet } from "lucide-react";
 import {
   CREDIT_CHARGE_NOTICE_BODY,
   CREDIT_CHARGE_NOTICE_TITLE,
@@ -40,7 +40,8 @@ import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import {
   DEMO_MODE_CHARGE_EXIT_CONFIRM_LABEL,
   DEMO_MODE_CHARGE_EXIT_TITLE,
-  resolveDemoModeChargeExitDescriptionLines,
+  DEMO_MODE_CHARGE_EXIT_WARNING,
+  resolveDemoModeChargeExitBody,
 } from "@/shared/demo/demoModeCopy";
 import { useDemoMode } from "@/shared/demo/useDemoMode";
 
@@ -718,7 +719,7 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
       toast({
         title: "거래 선수금 충전 요청이 생성되었습니다",
         description: demoMode
-          ? "입금이 반영되면 데모가 종료되고 유료 크레딧이 충전됩니다."
+          ? "입금이 확인되면 데모가 종료되고 실사용으로 전환됩니다."
           : "입금 완료 후 거래 선수금(크레딧)이 자동 반영됩니다.",
       });
       return true;
@@ -1079,33 +1080,59 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
       <ConfirmDialog
         open={demoChargeConfirmOpen}
         title={DEMO_MODE_CHARGE_EXIT_TITLE}
-        panelClassName="max-w-xl"
+        panelClassName="max-w-sm"
         description={
-          <div className="space-y-1.5 leading-relaxed">
-            {resolveDemoModeChargeExitDescriptionLines(requestorKind).map(
-              (line) => (
-                <p key={line || "blank"}>{line}</p>
-              ),
-            )}
+          <div className="space-y-3">
+            <div className="flex gap-3 rounded-xl border border-slate-200/90 bg-slate-50 px-3.5 py-3.5">
+              <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary-strong">
+                <Wallet className="h-4 w-4" aria-hidden />
+              </div>
+              <p className="min-w-0 text-sm leading-relaxed text-slate-700">
+                {resolveDemoModeChargeExitBody(requestorKind)}
+              </p>
+            </div>
             {conversionQuoteLines && conversionMinTotal != null ? (
-              <div className="mt-3 space-y-1 rounded-md border border-border/60 bg-muted/40 px-3 py-2 text-sm">
-                <p>
-                  이용분 정산:{" "}
-                  {conversionQuoteLines.demoDebt.toLocaleString("ko-KR")}원
-                  {requestorKind === "practice" &&
-                  conversionQuoteLines.practiceToLabTotal > 0
-                    ? ` (기공비 ${conversionQuoteLines.practiceToLabTotal.toLocaleString("ko-KR")} · 어벗츠 ${conversionQuoteLines.abutsUsage.toLocaleString("ko-KR")})`
-                    : ""}
-                </p>
-                <p>
-                  선수금 하한:{" "}
-                  {conversionQuoteLines.prepaidMin.toLocaleString("ko-KR")}원
-                </p>
-                <p className="font-medium">
-                  최소 입금: {conversionMinTotal.toLocaleString("ko-KR")}원
-                </p>
+              <div className="space-y-1.5 rounded-xl border border-slate-200/90 bg-white px-3.5 py-3 text-sm">
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="text-slate-500">이용분 정산</span>
+                  <span className="font-medium tabular-nums text-slate-800">
+                    {conversionQuoteLines.demoDebt.toLocaleString("ko-KR")}원
+                  </span>
+                </div>
+                {requestorKind === "practice" &&
+                conversionQuoteLines.practiceToLabTotal > 0 ? (
+                  <p className="text-xs text-slate-500">
+                    기공비{" "}
+                    {conversionQuoteLines.practiceToLabTotal.toLocaleString(
+                      "ko-KR",
+                    )}
+                    원 · 어벗츠{" "}
+                    {conversionQuoteLines.abutsUsage.toLocaleString("ko-KR")}원
+                  </p>
+                ) : null}
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="text-slate-500">선수금 하한</span>
+                  <span className="tabular-nums text-slate-700">
+                    {conversionQuoteLines.prepaidMin.toLocaleString("ko-KR")}원
+                  </span>
+                </div>
+                <div className="flex items-baseline justify-between gap-3 border-t border-slate-100 pt-1.5">
+                  <span className="font-medium text-slate-800">최소 입금</span>
+                  <span className="font-semibold tabular-nums text-primary-strong">
+                    {conversionMinTotal.toLocaleString("ko-KR")}원
+                  </span>
+                </div>
               </div>
             ) : null}
+            <div className="flex gap-2.5 rounded-xl border border-amber-200/90 bg-amber-50 px-3.5 py-3">
+              <AlertTriangle
+                className="mt-0.5 h-4 w-4 shrink-0 text-amber-600"
+                aria-hidden
+              />
+              <p className="min-w-0 text-sm leading-relaxed text-amber-950/85">
+                {DEMO_MODE_CHARGE_EXIT_WARNING}
+              </p>
+            </div>
           </div>
         }
         confirmLabel={DEMO_MODE_CHARGE_EXIT_CONFIRM_LABEL}

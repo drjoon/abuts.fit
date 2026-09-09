@@ -56,23 +56,32 @@ export function formatDemoModeBadgeLabel(daysRemaining: number | null): string {
   return `데모 ${daysRemaining}일 남음`;
 }
 
-export const DEMO_MODE_EXIT_TITLE = "실사용 전환을 시작할까요?";
+export const DEMO_MODE_EXIT_TITLE = "실사용 전환할까요?";
 
+const DEMO_MODE_EXIT_BODY_PRACTICE =
+  "데모 기간 이용료를 넉넉히 입금하시면 어벗츠·기공소 정산 후 남는 금액은 선수금(유료 크레딧)이 됩니다.";
+
+const DEMO_MODE_EXIT_BODY_LAB =
+  "데모 기간 이용료를 넉넉히 입금하시면 어벗츠 정산 후 남는 금액은 선수금(유료 크레딧)이 됩니다.";
+
+export const DEMO_MODE_EXIT_WARNING =
+  "전환 후 데모로 되돌릴 수 없으며, 입금 확인 후 실사용 전환됩니다.";
+
+export function resolveDemoModeExitBody(kind?: DemoRequestorKind): string {
+  return kind === "lab" ? DEMO_MODE_EXIT_BODY_LAB : DEMO_MODE_EXIT_BODY_PRACTICE;
+}
+
+/** @deprecated Prefer resolveDemoModeExitBody + DEMO_MODE_EXIT_WARNING. */
 const DEMO_MODE_EXIT_DESCRIPTION_LINES_PRACTICE = [
-  "전환 입금 1건으로 데모 이용분(어벗츠·기공비)을 정산하고, 남은 금액이 선수금(유료 크레딧)이 됩니다.",
-  "기공비는 어벗츠가 받아 기공소→어벗츠 이용분을 상계한 뒤 기공소 정산크레딧으로 지급합니다.",
-  "최소 입금 = 이용분 정산 + 선수금 1유닛(100만원, 유닛 올림).",
+  DEMO_MODE_EXIT_BODY_PRACTICE,
   "",
-  "확인 후에는 전환 입금 대기로 잠기며, 입금이 확인되어야 실사용됩니다.",
-  "전환 후에는 데모 모드로 되돌릴 수 없습니다.",
+  DEMO_MODE_EXIT_WARNING,
 ] as const;
 
 const DEMO_MODE_EXIT_DESCRIPTION_LINES_LAB = [
-  "전환 입금 1건으로 데모 기간 어벗츠 이용분을 정산하고, 남은 금액이 선수금(유료 크레딧)이 됩니다.",
-  "최소 입금 = 이용분 정산 + 선수금 1유닛(50만원, 유닛 올림).",
+  DEMO_MODE_EXIT_BODY_LAB,
   "",
-  "확인 후에는 전환 입금 대기로 잠기며, 입금이 확인되어야 실사용됩니다.",
-  "전환 후에는 데모 모드로 되돌릴 수 없습니다.",
+  DEMO_MODE_EXIT_WARNING,
 ] as const;
 
 /** @deprecated Prefer resolveDemoModeExitDescriptionLines(kind). */
@@ -90,25 +99,30 @@ export function resolveDemoModeExitDescriptionLines(
 export const DEMO_MODE_EXIT_DESCRIPTION =
   DEMO_MODE_EXIT_DESCRIPTION_LINES.join("\n");
 
-export const DEMO_MODE_EXIT_CONFIRM_LABEL = "전환 입금 대기로";
+export const DEMO_MODE_EXIT_CONFIRM_LABEL = "전환하기";
 
-/** 충전 탭 — 데모 중 유료 충전 요청 전 확인. */
-export const DEMO_MODE_CHARGE_EXIT_TITLE =
-  "전환 입금이 확인되면 실사용으로 전환됩니다";
+/** 충전 탭 — 데모 중 유료 충전 요청 전 확인(전환 모달과 동일 본문). */
+export const DEMO_MODE_CHARGE_EXIT_TITLE = "전환 입금할까요?";
 
+export function resolveDemoModeChargeExitBody(
+  kind?: DemoRequestorKind,
+): string {
+  return resolveDemoModeExitBody(kind);
+}
+
+export const DEMO_MODE_CHARGE_EXIT_WARNING = DEMO_MODE_EXIT_WARNING;
+
+/** @deprecated Prefer resolveDemoModeChargeExitBody + DEMO_MODE_CHARGE_EXIT_WARNING. */
 const DEMO_MODE_CHARGE_EXIT_DESCRIPTION_LINES_PRACTICE = [
-  "이번 입금은 전환 패키지입니다. 이용분 정산 후 잔액만 선수금(유료 크레딧)으로 남습니다.",
-  "기공비는 어벗츠 경유로 기공소에 정산크레딧 지급(Lab→Abuts 상계 포함)됩니다.",
-  "하한 미달 입금은 접수되지 않습니다.",
+  DEMO_MODE_EXIT_BODY_PRACTICE,
   "",
-  "입금 확인 후 데모가 종료되며, 되돌릴 수 없습니다.",
+  DEMO_MODE_EXIT_WARNING,
 ] as const;
 
 const DEMO_MODE_CHARGE_EXIT_DESCRIPTION_LINES_LAB = [
-  "이번 입금은 전환 패키지입니다. 어벗츠 이용분 정산 후 잔액만 선수금(유료 크레딧)으로 남습니다.",
-  "하한 미달 입금은 접수되지 않습니다.",
+  DEMO_MODE_EXIT_BODY_LAB,
   "",
-  "입금 확인 후 데모가 종료되며, 되돌릴 수 없습니다.",
+  DEMO_MODE_EXIT_WARNING,
 ] as const;
 
 /** @deprecated Prefer resolveDemoModeChargeExitDescriptionLines(kind). */
@@ -123,13 +137,13 @@ export function resolveDemoModeChargeExitDescriptionLines(
     : DEMO_MODE_CHARGE_EXIT_DESCRIPTION_LINES_PRACTICE;
 }
 
-export const DEMO_MODE_CHARGE_EXIT_CONFIRM_LABEL = "확인하고 전환 입금하기";
+export const DEMO_MODE_CHARGE_EXIT_CONFIRM_LABEL = "입금 요청하기";
 
 const CREDIT_LEDGER_DEMO_NOTICE_BODY_PRACTICE =
-  "데모 모드는 가상 잔고로 운영됩니다. 구강스캔·커스텀어벗 기공비는 잔고가 부족해도 마이너스로 진행할 수 있습니다. 실사용 전환 시 전환 입금 1건으로 이용분(어벗츠·기공비)을 정산하고 잔액을 선수금으로 충전합니다. 기공비는 어벗츠가 받아 기공소에 정산합니다. 입금 확인 전에는 부채가 리셋되지 않습니다.";
+  "데모는 가상 잔고로 운영됩니다. 이용료를 넉넉히 입금하면 어벗츠·기공소 정산 후 남는 금액이 선수금이 되고 실사용으로 전환됩니다.";
 
 const CREDIT_LEDGER_DEMO_NOTICE_BODY_LAB =
-  "데모 모드는 가상 잔고로 운영됩니다. 기공소→어벗츠 생산·배송비는 잔고가 부족해도 마이너스로 진행할 수 있습니다. 실사용 전환 시 전환 입금 1건으로 이용분을 정산하고 잔액을 선수금으로 충전합니다. 데모·전환 대기 중 기공크레딧 인출은 동결됩니다. 입금 확인 전에는 부채가 리셋되지 않습니다.";
+  "데모는 가상 잔고로 운영됩니다. 이용료를 넉넉히 입금하면 정산 후 남는 금액이 선수금이 되고 실사용으로 전환됩니다. 데모·전환 대기 중 기공크레딧 인출은 동결됩니다.";
 
 /** @deprecated Prefer resolveCreditLedgerDemoNoticeBody(kind). */
 export const CREDIT_LEDGER_DEMO_NOTICE_BODY =
@@ -144,10 +158,10 @@ export function resolveCreditLedgerDemoNoticeBody(
 }
 
 const CREDIT_LEDGER_DEMO_BALANCE_HINT_PRACTICE =
-  "데모 모드입니다. 장부 잔고는 가상입니다. 전환 입금이 확인되면 이용분 정산 후 잔액이 선수금이 되고 실사용으로 전환됩니다.";
+  "데모 모드 · 가상 잔고입니다. 입금 확인 후 정산 잔액이 선수금이 됩니다.";
 
 const CREDIT_LEDGER_DEMO_BALANCE_HINT_LAB =
-  "데모 모드입니다. 장부 잔고는 가상입니다. 전환 입금이 확인되면 이용분 정산 후 잔액이 선수금이 되고 실사용으로 전환됩니다. 데모·전환 대기 중 기공크레딧 인출은 동결됩니다.";
+  "데모 모드 · 가상 잔고입니다. 입금 확인 후 정산 잔액이 선수금이 됩니다. 기공크레딧 인출은 동결됩니다.";
 
 /** @deprecated Prefer resolveCreditLedgerDemoBalanceHint(kind). */
 export const CREDIT_LEDGER_DEMO_BALANCE_HINT =
@@ -168,10 +182,10 @@ export const CREDIT_DEMO_BUCKET_LABEL = "무료 충전";
 
 /** 정산 기간 소비 카드 — 데모 모드 툴팁. */
 export const CREDIT_LEDGER_DEMO_PERIOD_SPEND_HINT =
-  "데모 모드에서 기공의뢰·커스텀어벗·스토어 등 기간 지출 합계입니다(가상 잔고).";
+  "데모 기간 기공의뢰·커스텀어벗·스토어 지출 합계입니다.";
 
 export const CREDIT_LEDGER_DEMO_PERIOD_SPEND_HINT_LAB =
-  "데모 모드에서 어벗 생산·배송·스토어 등 기간 지출 합계입니다(가상 잔고·후결제).";
+  "데모 기간 어벗 생산·배송·스토어 지출 합계입니다.";
 
 export function resolveCreditLedgerDemoPeriodSpendHint(
   kind?: DemoRequestorKind,
@@ -188,7 +202,7 @@ export const CREDIT_LEDGER_CHARGE_DETAIL_TITLE = "충전 내역";
 
 /** 정산 충전 카드 — 데모 모드 툴팁(유료/선수금 아님). */
 export const CREDIT_LEDGER_DEMO_CHARGE_HINT =
-  "데모 모드의 가상 잔고 충전 합계입니다. 어벗츠 선수금(유료 크레딧) 입금이 확인되면 자동으로 실사용 전환됩니다.";
+  "데모 중 가상 잔고 충전 합계입니다. 전환 입금이 확인되면 실사용으로 전환됩니다.";
 
 /** @deprecated Prefer CREDIT_LEDGER_CHARGE_LABEL. */
 export const CREDIT_LEDGER_DEMO_CHARGE_LABEL = CREDIT_LEDGER_CHARGE_LABEL;
@@ -202,9 +216,16 @@ export const PTX_CA_INSUFFICIENT_CREDIT_TITLE = "크레딧이 부족합니다";
 
 export const PTX_CA_INSUFFICIENT_CREDIT_DESCRIPTION_LINES = [
   "어벗 디자인을 올리고 생산을 시작할 때 크레딧으로 결제됩니다.",
-  "데모 모드에서는 가상 잔고(마이너스 허용)로 진행됩니다. 데모가 끝났다면 충전 후 다시 업로드해 주세요.",
+  "데모 중에는 가상 잔고(마이너스 허용)로 진행됩니다. 데모가 끝났다면 충전 후 다시 업로드해 주세요.",
 ] as const;
 
 export const PTX_CA_INSUFFICIENT_CREDIT_CONFIRM_LABEL = "충전하기";
 
 export const PTX_CA_INSUFFICIENT_CREDIT_REASON = "insufficient_credit_for_ptx_ca";
+
+/** FAQ·도움말 공통 — 데모/무료 크레딧 안내. */
+export const DEMO_MODE_FREE_CREDIT_FAQ_ANSWER =
+  "아니요. 가입 환영 무료 크레딧은 없습니다. 30일 데모(가상 잔고·마이너스 허용)로 체험할 수 있고, 이용료를 입금해 정산하면 남는 금액이 선수금이 되며 실사용으로 전환됩니다.";
+
+export const DEMO_MODE_ONBOARDING_HINT =
+  "가입 후 30일 데모(가상 잔고)로 체험할 수 있어요. 이용료 입금·정산 후 남는 금액이 선수금이 되고 실사용으로 전환됩니다.";

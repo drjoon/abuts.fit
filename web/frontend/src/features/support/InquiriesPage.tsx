@@ -60,6 +60,9 @@ import {
   MessageSquarePlus,
   Phone,
 } from "lucide-react";
+import {
+  DEMO_MODE_FREE_CREDIT_FAQ_ANSWER,
+} from "@/shared/demo/demoModeCopy";
 
 type RequestorFaqItem = {
   q: string;
@@ -82,12 +85,12 @@ const REQUESTOR_FAQS: RequestorFaqItem[] = [
   },
   {
     q: "기공소가 어벗츠를 쓰는 이유는?",
-    a: "의뢰 접수·채팅으로 이메일 없이 소통하고, 정산·계산서·커스텀어벗 생산 의뢰까지 한곳에서 이어갑니다. 가입 후 30일 데모 모드로 가상 잔고(마이너스 허용)를 체험할 수 있습니다.",
+    a: "의뢰 접수·채팅으로 이메일 없이 소통하고, 정산·계산서·커스텀어벗 생산 의뢰까지 한곳에서 이어갑니다. 가입 후 30일 데모(가상 잔고)로 체험할 수 있습니다.",
     audience: "lab",
   },
   {
     q: "가입 시 무료 크레딧이 지급되나요?",
-    a: "아니요. 신규 자동 무료 크레딧 지급은 없습니다. 치과·기공소는 가입 후 30일 데모 모드로 가상 잔고(마이너스 허용)를 이용할 수 있으며, 필요 시 관리자가 무료 크레딧을 수동 지급할 수 있습니다. 유료 크레딧(선수금) 입금이 확인되면 실사용으로 전환됩니다.",
+    a: DEMO_MODE_FREE_CREDIT_FAQ_ANSWER,
     audience: "lab",
   },
   {

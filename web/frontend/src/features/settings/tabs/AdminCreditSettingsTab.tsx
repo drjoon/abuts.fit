@@ -1517,7 +1517,7 @@ export const AdminCreditSettingsTab = ({
                 <SectionHeader
                   icon={Gift}
                   title="수동 무료크레딧 (관리자)"
-                  description="가입 환영 크레딧 자동 지급은 폐지되었습니다. 치과·기공소는 가입 후 30일 데모 모드(가상 잔고·마이너스 허용)로 운영되며, 유료 크레딧 입금 확정 시 자동 실사용 전환됩니다. 아래 금액은 관리자 수동 무료크레딧 지급 기본값으로만 쓰입니다."
+                  description="가입 환영 크레딧 자동 지급은 폐지되었습니다. 치과·기공소는 30일 데모(가상 잔고)로 운영되며, 전환 입금 확인 시 실사용으로 전환됩니다. 아래 금액은 관리자 수동 무료크레딧 지급 기본값입니다."
                 />
                 <div className="grid gap-3 sm:grid-cols-2">
                   <AmountField

@@ -5,6 +5,7 @@
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/pages/requestor/credits/RequestorCreditsPage.tsx
 import { useState } from "react";
+import { AlertTriangle, ArrowRightLeft } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   Tooltip,
@@ -18,9 +19,10 @@ import { toast } from "sonner";
 import {
   DEMO_MODE_EXIT_CONFIRM_LABEL,
   DEMO_MODE_EXIT_TITLE,
+  DEMO_MODE_EXIT_WARNING,
   formatDemoModeBadgeLabel,
   resolveCreditLedgerDemoNoticeBody,
-  resolveDemoModeExitDescriptionLines,
+  resolveDemoModeExitBody,
 } from "./demoModeCopy";
 import { useDemoMode } from "./useDemoMode";
 
@@ -40,7 +42,7 @@ export function DemoModeBadge({ className, onExited }: Props) {
 
   const badgeLabel = formatDemoModeBadgeLabel(daysRemaining);
   const noticeBody = resolveCreditLedgerDemoNoticeBody(kind);
-  const exitLines = resolveDemoModeExitDescriptionLines(kind);
+  const exitBody = resolveDemoModeExitBody(kind);
 
   return (
     <>
@@ -74,14 +76,26 @@ export function DemoModeBadge({ className, onExited }: Props) {
       <ConfirmDialog
         open={confirmOpen}
         title={DEMO_MODE_EXIT_TITLE}
-        panelClassName="max-w-xl"
+        panelClassName="max-w-sm"
         description={
-          <div className="space-y-1.5 leading-relaxed">
-            {exitLines.map((line) => (
-              <p key={line || "blank"} className="whitespace-nowrap">
-                {line}
+          <div className="space-y-3">
+            <div className="flex gap-3 rounded-xl border border-slate-200/90 bg-slate-50 px-3.5 py-3.5">
+              <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary-strong">
+                <ArrowRightLeft className="h-4 w-4" aria-hidden />
+              </div>
+              <p className="min-w-0 text-sm leading-relaxed text-slate-700">
+                {exitBody}
               </p>
-            ))}
+            </div>
+            <div className="flex gap-2.5 rounded-xl border border-amber-200/90 bg-amber-50 px-3.5 py-3">
+              <AlertTriangle
+                className="mt-0.5 h-4 w-4 shrink-0 text-amber-600"
+                aria-hidden
+              />
+              <p className="min-w-0 text-sm leading-relaxed text-amber-950/85">
+                {DEMO_MODE_EXIT_WARNING}
+              </p>
+            </div>
           </div>
         }
         confirmLabel={DEMO_MODE_EXIT_CONFIRM_LABEL}
@@ -96,7 +110,7 @@ export function DemoModeBadge({ className, onExited }: Props) {
           if (ok) {
             setConfirmOpen(false);
             toast.success(
-              "전환 입금 대기로 설정되었습니다. 충전 탭에서 최소 금액을 입금해 주세요.",
+              "전환 입금 대기로 설정되었습니다. 충전 탭에서 입금해 주세요.",
             );
             onExited?.();
           } else {
