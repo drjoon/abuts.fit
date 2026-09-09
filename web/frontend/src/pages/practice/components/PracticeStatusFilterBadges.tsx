@@ -1,7 +1,8 @@
 /**
- * 치과 전체보기·기공의뢰수신 공통 — 상단 상태 뱃지 행(건수·unread).
- * 클릭=해당 상태 안읽음 의뢰 채팅을 하나씩 연다(표시 on/off 없음).
- * 2026-09-10: 표시 on/off·「기본」리셋 제거. 클릭=unread 순회만.
+ * 치과 전체보기·기공의뢰수신 공통 — 상단 상태 뱃지 행.
+ * 숫자=해당 상태 건수, 빨간 점=실제 채팅/미확인 unread.
+ * 클릭=해당 상태 의뢰를 하나씩 연다(안읽음 우선).
+ * 2026-09-10: 표시 on/off·「기본」리셋 제거. 가짜「미확인 큐」unread 제거.
  * 2026-09-03: trailing — 어벗츠 생산중 등. 정책 안내는 사이드바.
  * 2026-08-27: 발송 뒤 리메이크·미확인 간격. 미확인 전용 뱃지용 nested unread 숨김.
  *
@@ -9,7 +10,6 @@
  * - web/frontend/src/pages/practice/components/PracticeRecentTransfersAllModal.tsx
  * - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
  * - web/frontend/src/pages/practice/components/PracticeRecentTransfersCalendar.tsx
- * - web/frontend/src/pages/requestor/new_request/components/RequestorAbutmentPageHeader.tsx
  */
 import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
@@ -28,7 +28,9 @@ export type PracticeStatusFilterBadgeItem = {
   key: string;
   label: string;
   tone: PracticeCalendarStatusTone;
+  /** 뱃지 본문 숫자 — 아직 상세를 안 연 건수(열면 감소) */
   count: number;
+  /** 빨간 카운터 — 채팅 안읽음 */
   unreadCount?: number;
   /** 상태 의미 설명(클릭 안내 문구는 컴포넌트가 앞에 붙임) */
   tooltip?: string;
@@ -36,7 +38,7 @@ export type PracticeStatusFilterBadgeItem = {
 
 type PracticeStatusFilterBadgesProps = {
   items: readonly PracticeStatusFilterBadgeItem[];
-  /** 해당 상태 안읽음 건을 하나씩 열어 카운터를 줄인다. */
+  /** 해당 상태 의뢰를 하나씩 연다(안읽음 우선). */
   onUnreadNavigate: (key: string) => void;
   /** 건수 뒤 접미사. 치과 모달="", 기공의뢰수신="건" */
   countSuffix?: string;
@@ -71,14 +73,17 @@ export function PracticeStatusFilterBadges({
       aria-label="상태별 의뢰 건수"
     >
       {items.map((item) => {
+        const count = Math.max(0, Number(item.count || 0));
         const unread = hideNestedUnread
           ? 0
           : Math.max(0, Number(item.unreadCount || 0));
-        const canNavigate = unread > 0;
-        const countLabel = `${item.count}${countSuffix}`;
-        const actionHint = canNavigate
-          ? `안읽음 ${unread}건 찾아가기`
-          : "안읽은 의뢰 없음";
+        const canNavigate = count > 0;
+        const countLabel = `${count}${countSuffix}`;
+        const actionHint = !canNavigate
+          ? "확인할 의뢰 없음"
+          : unread > 0
+            ? `안읽음 ${unread}건 찾아가기`
+            : `${item.label} ${countLabel} 찾아가기`;
         const tooltipBody = item.tooltip
           ? `${actionHint}. ${item.tooltip}`
           : actionHint;
@@ -105,7 +110,7 @@ export function PracticeStatusFilterBadges({
                   variant="outline"
                   className={cn(
                     "whitespace-nowrap",
-                    canNavigate ? "cursor-pointer" : "cursor-default",
+                    canNavigate ? "cursor-pointer" : "cursor-default opacity-50",
                     compact && "h-8 px-2.5 text-xs",
                     PRACTICE_STATUS_FILTER_BADGE_CLASS[item.tone].active,
                   )}

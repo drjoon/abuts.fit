@@ -1755,6 +1755,74 @@ export const listUnreadTransfersForStatusFilter = <
       Math.max(0, Number(transfer.unreadCount || 0)) > 0 &&
       practiceTransferMatchesStatusFilters(transfer, selected),
   );
+  return sortTransfersByStatusBadgeDate(unread, dateKey);
+};
+
+/** 상단 상태 뱃지 순회 — 해당 필터 키에 속하는 전 건(날짜 오름차순). */
+export const listTransfersForStatusFilter = <
+  T extends {
+    status?: unknown;
+    designFileCount?: unknown;
+    designFiles?: unknown;
+    designReadyAt?: unknown;
+    orderDate?: unknown;
+    arrivalDate?: unknown;
+    createdAtTs?: unknown;
+    createdAt?: unknown;
+  },
+>(
+  transfers: readonly T[],
+  filterKey: PracticeRecentStatusFilterKey,
+  dateKey: "orderDate" | "arrivalDate" = "arrivalDate",
+): T[] => {
+  const selected = createPracticeRecentStatusFilterSet([filterKey]);
+  const matched = transfers.filter((transfer) =>
+    practiceTransferMatchesStatusFilters(transfer, selected),
+  );
+  return sortTransfersByStatusBadgeDate(matched, dateKey);
+};
+
+/**
+ * 뱃지 클릭 순회 대상 — 안읽음 우선, 없으면 해당 상태 전 건.
+ * (상태 건수만 있어도 배지가 죽어 보이지 않게)
+ */
+export const listBadgeNavigateTransfersForStatusFilter = <
+  T extends {
+    status?: unknown;
+    designFileCount?: unknown;
+    designFiles?: unknown;
+    designReadyAt?: unknown;
+    unreadCount?: unknown;
+    orderDate?: unknown;
+    arrivalDate?: unknown;
+    createdAtTs?: unknown;
+    createdAt?: unknown;
+  },
+>(
+  transfers: readonly T[],
+  filterKey: PracticeRecentStatusFilterKey,
+  dateKey: "orderDate" | "arrivalDate" = "arrivalDate",
+): T[] => {
+  const unread = listUnreadTransfersForStatusFilter(
+    transfers,
+    filterKey,
+    dateKey,
+  );
+  if (unread.length > 0) return unread;
+  return listTransfersForStatusFilter(transfers, filterKey, dateKey);
+};
+
+const sortTransfersByStatusBadgeDate = <
+  T extends {
+    orderDate?: unknown;
+    arrivalDate?: unknown;
+    createdAtTs?: unknown;
+    createdAt?: unknown;
+  },
+>(
+  transfers: readonly T[],
+  dateKey: "orderDate" | "arrivalDate",
+): T[] => {
   const ymdOf = (transfer: T) => {
     const raw =
       dateKey === "arrivalDate"
@@ -1762,7 +1830,7 @@ export const listUnreadTransfersForStatusFilter = <
         : transfer.orderDate || transfer.arrivalDate;
     return toKstYmdLoose(raw) || toKstYmd(raw) || "";
   };
-  return [...unread].sort((a, b) => {
+  return [...transfers].sort((a, b) => {
     const ya = ymdOf(a);
     const yb = ymdOf(b);
     if (ya !== yb) return ya < yb ? -1 : 1;

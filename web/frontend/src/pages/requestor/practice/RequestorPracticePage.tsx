@@ -64,7 +64,7 @@
 // - 2026-08-25: status deleted=치과 의뢰 삭제. 수신 목록·취소 뱃지에서 제외. canceled=레거시 휴지통. 작업취소=workCanceledAt.
 // - 2026-08-21: 수신 상단 상태 뱃지에 채팅·미확인 unread.
 // - 2026-09-09: 상태 뱃지 unread 카운터 클릭 시 안읽음 건 순회(표시 토글은 카운터 없을 때만).
-// - 2026-09-10: 상태 표시 on/off 제거. 뱃지 클릭=안읽음 채팅만 순회.
+// - 2026-09-10: 상태 표시 on/off 제거. 뱃지=미확인 큐(상세 열면 감소)+안읽음 빨간 점.
 // - 2026-08-21: 상단 상태 뱃지 다중 표시 on/off(표시 라벨·기본 리셋·ON/OFF 대비).
 // - 2026-08-21: 어벗 디자인 업로드 후 skipDesignConfirm 강제 true 제거(구강스캔으로 치과 설정 존중).
 // - 2026-08-21: 하청 전환 버튼 — 어벗츠기공소(internalLab)만 노출.
@@ -204,7 +204,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { useIsMobile } from "@/shared/hooks/use-mobile";
 import { apiFetch, request } from "@/shared/api/apiClient";
 import { useChatMessages } from "@/shared/hooks/useChatMessages";
-import { useChatRooms, type ChatRoom } from "@/shared/hooks/useChatRooms";
+import { useChatRooms, requestChatRoomsClearUnread, type ChatRoom } from "@/shared/hooks/useChatRooms";
 import { anonymizeAutoMatchChatSenderName } from "@/shared/practice/autoMatchIdentity";
 import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
 import { useFilePreUpload, toTempUploadFileKey } from "@/shared/hooks/useFilePreUpload";
@@ -219,7 +219,7 @@ import {
   LAB_RECEIVE_STATUS_BADGES,
   computeGroupedStatusCounts,
   computeGroupedStatusUnreadCounts,
-  listUnreadTransfersForStatusFilter,
+  listBadgeNavigateTransfersForStatusFilter,
   toStatusBadgeLabel,
   type PracticeRecentStatusFilterKey,
   type PracticeRecentTransferItem,
@@ -682,7 +682,7 @@ export function RequestorPracticeReceivePage({
     enabled: true,
     forceOnEntry: true,
   });
-  const { rooms } = useChatRooms();
+  const { rooms, clearUnreadForTransferIds } = useChatRooms();
   const {
     ensureFilesUploaded,
     peekCachedUploadedFiles,
@@ -715,6 +715,9 @@ export function RequestorPracticeReceivePage({
     readStoredLabReceiveCalendarViewMode(),
   );
   const [alignEpoch, setAlignEpoch] = useState(0);
+  const [badgeFocusItemId, setBadgeFocusItemId] = useState<string | null>(null);
+  const [badgeFocusItemYmd, setBadgeFocusItemYmd] = useState<string | null>(null);
+  const [badgeFocusEpoch, setBadgeFocusEpoch] = useState(0);
   const calendarYmdRange = useMemo(
     () =>
       buildLabReceiveCalendarFetchYmdRange(
@@ -2070,15 +2073,24 @@ export function RequestorPracticeReceivePage({
 
   const statusCounts = useMemo(() => {
     const asItems = baseFilteredTransfers.map(
-      (transfer): Pick<
+      (
+        transfer,
+      ): Pick<
         PracticeRecentTransferItem,
-        "status" | "designFileCount" | "designFiles" | "designReadyAt" | "unreadCount"
+        | "status"
+        | "designFileCount"
+        | "designFiles"
+        | "designReadyAt"
+        | "unreadCount"
+        | "transferId"
       > => ({
         status: getTransferDisplayStatus(transfer),
         designFileCount: transfer.production?.designFileCount,
-        designFiles: transfer.production?.designFiles as PracticeRecentTransferItem["designFiles"],
+        designFiles: transfer.production
+          ?.designFiles as PracticeRecentTransferItem["designFiles"],
         designReadyAt: transfer.production?.designReadyAt,
         unreadCount: 0,
+        transferId: transfer.transferId || transfer._id,
       }),
     );
     return computeGroupedStatusCounts(asItems as PracticeRecentTransferItem[]);
@@ -2181,7 +2193,12 @@ export function RequestorPracticeReceivePage({
       };
     });
     return expandPracticeCalendarChipsByArrivalDates(base, calendarDateKey);
-  }, [calendarDateKey, implantCatalog, sortedFilteredTransfers, transferUnreadBadgeCount]);
+  }, [
+    calendarDateKey,
+    implantCatalog,
+    sortedFilteredTransfers,
+    transferUnreadBadgeCount,
+  ]);
 
   const calendarTransferById = useMemo(() => {
     const map = new Map<string, ReceivedPracticeTransfer>();
@@ -5296,10 +5313,43 @@ export function RequestorPracticeReceivePage({
       chatUploads.clear();
       setActiveChatRoom(null);
       setChatMessages([]);
+      // 채팅 unread·미확인 의뢰 — 열자마자 카운터 감소.
+      const openedTransferId = String(transfer.transferId || "").trim();
+      if (openedTransferId) {
+        if (!transfer.isRead) {
+          setTransfers((prev) =>
+            prev.map((row) =>
+              row._id === transfer._id || row.transferId === transfer.transferId
+                ? {
+                    ...row,
+                    isRead: true,
+                    requestorReadAt:
+                      row.requestorReadAt || new Date().toISOString(),
+                  }
+                : row,
+            ),
+          );
+          setReceivedTransferUnreadCount((prev) => {
+            const next = Math.max(0, prev - 1);
+            emitUnreadBadgeRefresh(next);
+            return next;
+          });
+        }
+        clearUnreadForTransferIds([openedTransferId]);
+        requestChatRoomsClearUnread({ transferIds: [openedTransferId] });
+      }
       void markTransferRead(transfer);
       await resolveTransferChatRoom(transfer, resolveSeq);
     },
-    [chatUploads, markTransferRead, resolveTransferChatRoom, setChatMessages, token],
+    [
+      chatUploads,
+      clearUnreadForTransferIds,
+      emitUnreadBadgeRefresh,
+      markTransferRead,
+      resolveTransferChatRoom,
+      setChatMessages,
+      token,
+    ],
   );
 
   const openTransferWorkStatusById = useCallback(
@@ -5524,11 +5574,23 @@ export function RequestorPracticeReceivePage({
           ? transfer.arrivalDate || transfer.orderDate || transfer.createdAt
           : transfer.orderDate || transfer.createdAt;
       const ymd = toKstYmdLoose(raw) || toKstYmd(raw);
-      if (!ymd) return;
+      if (!ymd) return "";
       setCursorYmd(ymd);
       setAlignEpoch((n) => n + 1);
+      return ymd;
     },
     [calendarDateKey],
+  );
+
+  const focusCalendarTransfer = useCallback(
+    (transfer: ReceivedPracticeTransfer) => {
+      const ymd = jumpCalendarToTransferDate(transfer);
+      const itemId = String(transfer.transferId || transfer._id || "").trim();
+      setBadgeFocusItemId(itemId || null);
+      setBadgeFocusItemYmd(ymd || null);
+      setBadgeFocusEpoch((n) => n + 1);
+    },
+    [jumpCalendarToTransferDate],
   );
 
   /** lab_calendar — 데모 칩 클릭 시 상세 오픈(다음 스텝) */
@@ -5564,19 +5626,19 @@ export function RequestorPracticeReceivePage({
         arrivalDate: transfer.arrivalDate,
         createdAt: transfer.createdAt,
       }));
-      const unreadRows = listUnreadTransfersForStatusFilter(
+      const queue = listBadgeNavigateTransfersForStatusFilter(
         withMeta,
         filterKey,
         calendarDateKey,
       );
-      if (unreadRows.length === 0) return;
+      if (queue.length === 0) return;
 
-      const transferIdOf = (row: (typeof unreadRows)[number]) =>
+      const transferIdOf = (row: (typeof queue)[number]) =>
         String(row.transfer.transferId || row.transfer._id || "").trim();
       const lastId = unreadNavigateLastIdRef.current[filterKey] || "";
-      let candidates = unreadRows;
+      let candidates = queue;
       if (lastId) {
-        const withoutLast = unreadRows.filter(
+        const withoutLast = queue.filter(
           (row) => transferIdOf(row) !== lastId,
         );
         if (withoutLast.length > 0) candidates = withoutLast;
@@ -5584,14 +5646,14 @@ export function RequestorPracticeReceivePage({
       const transfer = candidates[0]?.transfer;
       if (!transfer) return;
       unreadNavigateLastIdRef.current[filterKey] = transferIdOf(candidates[0]!);
-      if (!isMobile) jumpCalendarToTransferDate(transfer);
+      if (!isMobile) focusCalendarTransfer(transfer);
       selectTransferFromCalendar(transfer);
     },
     [
       baseFilteredTransfers,
       calendarDateKey,
+      focusCalendarTransfer,
       isMobile,
-      jumpCalendarToTransferDate,
       selectTransferFromCalendar,
       transferUnreadBadgeCount,
     ],
@@ -5848,6 +5910,9 @@ export function RequestorPracticeReceivePage({
               hiddenWeekdays={calendarHiddenWeekdays}
               onHiddenWeekdaysChange={handleHiddenWeekdaysChange}
               alignEpoch={alignEpoch}
+              focusItemId={badgeFocusItemId}
+              focusItemYmd={badgeFocusItemYmd}
+              focusEpoch={badgeFocusEpoch}
               guideTourTarget={null}
               guideTourItemTarget={
                 guideTourLabCalendarStep ? "lab_calendar_item" : null

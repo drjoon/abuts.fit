@@ -21,7 +21,7 @@
  * 2026-08-21: 커스텀어벗 한진 배송현황을 캘린더 칩·모바일 카드에 표시.(칩 표시는 2026-09-01 제거)
  * 2026-08-21: 휴지통 취소·거부를 목록·취소 뱃지에 포함. 상단 뱃지별 unread.
  * 2026-08-21: 상단 상태 뱃지 다중 표시 on/off(표시 라벨·기본 리셋·ON/OFF 대비).
- * 2026-09-10: 상태 표시 on/off 제거. 뱃지 클릭=안읽음 채팅만 순회.
+ * 2026-09-10: 상태 표시 on/off 제거. 뱃지=상태 총건수+안읽음(빨간)·클릭 시 안읽음 우선 순회.
  * 2026-08-22: 숨길 요일을 계정 preferences에 저장.
  * 2026-08-20: 모바일 — 가로 스크롤 상태칩·터치 카드·풀높이 시트.
  * 2026-08-25: 데스크톱도 풀스크린. 닫기 아이콘·히트영역 확대.
@@ -43,7 +43,7 @@
  * - 2026-09-08: 캘린더 칩 → preferredDockSide(보이는 열 좌/우)로 상세 패널 도킹.
  * - 2026-09-08: 데스크톱 캘린더/목록(일정) 보기 — 목록은 커서 월 전체 조회.
  * - 2026-09-09: 상태 뱃지 unread 카운터 클릭 시 안읽음 건 순회(표시 토글은 카운터 없을 때만).
- * - 2026-09-10: 상태 표시 on/off 제거. 뱃지 클릭=안읽음 채팅만 순회.
+ * - 2026-09-10: 상태 표시 on/off·가짜 미확인 큐 제거. 뱃지=상태 총건수+실제 채팅 unread.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronRight, Search, Trash2, X } from "lucide-react";
@@ -97,18 +97,16 @@ import {
   filterRequestsByPeriodAndSearch,
   groupPracticeRecentRequests,
   isPracticeTransferTrashStatus,
-  listUnreadTransfersForStatusFilter,
+  listBadgeNavigateTransfersForStatusFilter,
   mapMyPracticeTransferApiRows,
   patchPracticeRecentRequestProsthesisFollowUp,
   prosthesisFollowUpPatchFromRealtimePayload,
   toStatusBadgeLabel,
 } from "@/shared/practice/practiceRecentTransferList";
-import { resolvePracticeRecentTransferAbutmentUploadOverdue } from "@/shared/practice/practiceAbutmentUploadOverdue";
 import {
   isPracticeNextArrivalOverdue,
   resolvePracticeNextArrivalReminder,
 } from "@/shared/practice/practiceNextArrivalReminder";
-import { PracticeAbutmentUploadOverdueAlert } from "@/shared/components/practice/PracticeAbutmentUploadOverdueAlert";
 import { PracticeNextArrivalOverdueNotice } from "@/pages/practice/components/PracticeNextArrivalOverdueNotice";
 import {
   PracticeRecentTransfersCalendar,
@@ -236,6 +234,9 @@ export function PracticeRecentTransfersAllModal({
     readStoredLabReceiveCalendarViewMode(),
   );
   const [alignEpoch, setAlignEpoch] = useState(0);
+  const [badgeFocusItemId, setBadgeFocusItemId] = useState<string | null>(null);
+  const [badgeFocusItemYmd, setBadgeFocusItemYmd] = useState<string | null>(null);
+  const [badgeFocusEpoch, setBadgeFocusEpoch] = useState(0);
   const [calendarRequests, setCalendarRequests] = useState<PracticeRecentRequestItem[]>([]);
   const [calendarLoading, setCalendarLoading] = useState(false);
   const [calendarError, setCalendarError] = useState("");
@@ -532,18 +533,11 @@ export function PracticeRecentTransfersAllModal({
           designFiles: transfer.designFiles,
           designReadyAt: transfer.designReadyAt,
         }),
-        abutmentUploadOverdue: resolvePracticeRecentTransferAbutmentUploadOverdue({
-          status: transfer.status,
-          hasCustomAbutment: transfer.hasCustomAbutment,
-          designFileCount: transfer.designFileCount,
-          designFiles: transfer.designFiles,
-          designReadyAt: transfer.designReadyAt,
-          requestorDownloadedAt: transfer.requestorDownloadedAt,
-          requestorAcceptedAt: transfer.requestorAcceptedAt,
-          arrivalDeadlineExpiredAt: transfer.arrivalDeadlineExpiredAt,
-        }),
+        // 치과 화면: 어벗 업로드 지연 테두리/알림은 기공소 책임 — 표시하지 않음.
+        abutmentUploadOverdue: null,
         sortLabel: lab,
         line: [lab, patientLine].filter(Boolean).join(" / "),
+        // 실제 채팅 안읽음만 표시(메시지 없는 건 unread 아님).
         unreadCount: Math.max(0, Number(transfer.unreadCount || 0)),
         canDelete: canDeletePracticeTransferByStatus(transfer.status),
       };
@@ -623,11 +617,23 @@ export function PracticeRecentTransfersAllModal({
           ? transfer.arrivalDate || transfer.orderDate
           : transfer.orderDate || transfer.arrivalDate;
       const ymd = toKstYmdLoose(raw) || toKstYmd(raw);
-      if (!ymd) return;
+      if (!ymd) return "";
       setCursorYmd(ymd);
       setAlignEpoch((n) => n + 1);
+      return ymd;
     },
     [dateKey],
+  );
+
+  const focusCalendarTransfer = useCallback(
+    (transfer: PracticeRecentTransferItem) => {
+      const ymd = jumpCalendarToTransferDate(transfer);
+      const itemId = `${transfer.id}:${transfer.transferId}`;
+      setBadgeFocusItemId(itemId);
+      setBadgeFocusItemYmd(ymd || null);
+      setBadgeFocusEpoch((n) => n + 1);
+    },
+    [jumpCalendarToTransferDate],
   );
 
   const unreadNavigateLastIdRef = useRef<Record<string, string>>({});
@@ -635,30 +641,33 @@ export function PracticeRecentTransfersAllModal({
   const navigateNextUnreadForStatus = useCallback(
     (key: string) => {
       const filterKey = key as PracticeRecentStatusFilterKey;
-      const unreadTransfers = listUnreadTransfersForStatusFilter(
+      const queue = listBadgeNavigateTransfersForStatusFilter(
         visibleGroupedTransfers,
         filterKey,
         dateKey,
       );
-      if (unreadTransfers.length === 0) return;
+      if (queue.length === 0) return;
 
       const lastId = unreadNavigateLastIdRef.current[filterKey] || "";
       const transferIdOf = (t: PracticeRecentTransferItem) =>
         String(t.transferId || t.id || "").trim();
-      let candidates = unreadTransfers;
+      let candidates = queue;
       if (lastId) {
-        const withoutLast = unreadTransfers.filter(
-          (t) => transferIdOf(t) !== lastId,
-        );
+        const withoutLast = queue.filter((t) => transferIdOf(t) !== lastId);
         if (withoutLast.length > 0) candidates = withoutLast;
       }
       const transfer = candidates[0];
       if (!transfer) return;
       unreadNavigateLastIdRef.current[filterKey] = transferIdOf(transfer);
-      jumpCalendarToTransferDate(transfer);
+      focusCalendarTransfer(transfer);
       onSelectTransfer(transfer);
     },
-    [dateKey, jumpCalendarToTransferDate, onSelectTransfer, visibleGroupedTransfers],
+    [
+      dateKey,
+      focusCalendarTransfer,
+      onSelectTransfer,
+      visibleGroupedTransfers,
+    ],
   );
 
   const statusFilterBadgeItems = useMemo((): PracticeStatusFilterBadgeItem[] => {
@@ -823,16 +832,6 @@ export function PracticeRecentTransfersAllModal({
                     hasCustomAbutment: Boolean(transfer.hasCustomAbutment),
                     abutmentDeliveryInfo: transfer.abutmentDeliveryInfo || null,
                   });
-                  const uploadOverdue = resolvePracticeRecentTransferAbutmentUploadOverdue({
-                    status: transfer.status,
-                    hasCustomAbutment: transfer.hasCustomAbutment,
-                    designFileCount: transfer.designFileCount,
-                    designFiles: transfer.designFiles,
-                    designReadyAt: transfer.designReadyAt,
-                    requestorDownloadedAt: transfer.requestorDownloadedAt,
-                    requestorAcceptedAt: transfer.requestorAcceptedAt,
-                    arrivalDeadlineExpiredAt: transfer.arrivalDeadlineExpiredAt,
-                  });
 
                   return (
                     <div
@@ -877,15 +876,6 @@ export function PracticeRecentTransfersAllModal({
                           {transfer.createdAt}
                         </span>
                       </div>
-                      {uploadOverdue ? (
-                        <div className="mt-2">
-                          <PracticeAbutmentUploadOverdueAlert
-                            level={uploadOverdue}
-                            viewer="practice"
-                            compact
-                          />
-                        </div>
-                      ) : null}
                       <div className="mt-2 flex min-w-0 items-center gap-1">
                         <p className="min-w-0 flex-1 truncate text-[15px] font-semibold leading-snug text-slate-900">
                           {lab}
@@ -963,6 +953,9 @@ export function PracticeRecentTransfersAllModal({
                 hiddenWeekdays={hiddenWeekdays}
                 onHiddenWeekdaysChange={handleHiddenWeekdaysChange}
                 alignEpoch={alignEpoch}
+                focusItemId={badgeFocusItemId}
+                focusItemYmd={badgeFocusItemYmd}
+                focusEpoch={badgeFocusEpoch}
                 abutmentUploadOverdueViewer="practice"
               />
             </>

@@ -27,6 +27,7 @@
  * - 2026-08-20: 안읽음(수신 미확인·채팅) 빨간 배지를 칩에 표시.
  * - 2026-08-21: 상단 필터 뱃지 ON=진한 상태색 / OFF=흐린 무채색(표시 on/off 대비).
  * - 2026-09-10: 상단 뱃지 표시 on/off 제거 — active 톤만 사용(unread 순회).
+ * - 2026-09-10: focusItemId/focusEpoch — 뱃지 순회 시 해당 칩·목록 행으로 스크롤.
  * - 2026-09-05: guideTourItemId — 특정 칩에 data-guide-tour(수신 투어 오늘 의뢰).
  * - 2026-09-05: 완료=amber·어벗=emerald — 수락(sky)과 청록 계열이 겹치지 않게.
  * - 2026-09-02: 완료 뱃지=finished. 어벗=completed(녹색). 칩도 동일 분리.
@@ -165,9 +166,9 @@ export function expandPracticeCalendarChipsByArrivalDates(
           ? { orderDate: ymd, linkedOrderDates: dates }
           : { arrivalDate: ymd, linkedArrivalDates: dates }),
         isPriorArrival: isPrior,
-        // 이전 일자 칩은 삭제 버튼 숨김(최종만)
+        // 이전 일자 칩은 삭제 버튼 숨김(최종만). unread는 모든 연결 칩에 표시.
         canDelete: isPrior ? false : item.canDelete,
-        unreadCount: isPrior ? 0 : item.unreadCount,
+        unreadCount: item.unreadCount,
       });
     });
   }
@@ -367,6 +368,12 @@ type PracticeRecentTransfersCalendarProps = {
   guideTourItemTarget?: string | null;
   /** guideTourItemTarget을 붙일 칩 id(확장 id `…:ord:ymd` 포함 접두 매칭) */
   guideTourItemId?: string | null;
+  /** 뱃지 순회 등 — 해당 칩/행으로 스크롤(기본 id `${reqId}:${transferId}`) */
+  focusItemId?: string | null;
+  /** focusItemId와 함께 쓸 날짜(KST YMD). 있으면 먼저 해당일로 맞춤 */
+  focusItemYmd?: string | null;
+  /** focusItemId 변경 시마다 증가해 같은 id 재스크롤 */
+  focusEpoch?: number;
 };
 
 const agendaDateLabel = (ymd: string) => {
@@ -516,6 +523,9 @@ export function PracticeRecentTransfersCalendar({
   guideTourTarget = null,
   guideTourItemTarget = null,
   guideTourItemId = null,
+  focusItemId = null,
+  focusItemYmd = null,
+  focusEpoch = 0,
 }: PracticeRecentTransfersCalendarProps) {
   const isGuideTourChip = (itemId: string) => {
     const want = String(guideTourItemId || "").trim();
@@ -743,6 +753,55 @@ export function PracticeRecentTransfersCalendar({
       captureCalendarAnchor();
     }, 480);
   };
+
+  const scrollItemIntoScroller = (
+    itemId: string,
+    behavior: ScrollBehavior = "smooth",
+  ) => {
+    const el =
+      viewMode === "list" ? listScrollRef.current : scrollRef.current;
+    if (!el) return;
+    const want = String(itemId || "").trim();
+    if (!want) return;
+    const matches = Array.from(
+      el.querySelectorAll("[data-practice-cal-item]"),
+    ).filter((node) => {
+      const id = String(node.getAttribute("data-practice-cal-item") || "").trim();
+      return id === want || id.startsWith(`${want}:`);
+    });
+    if (matches.length === 0) return;
+    const target = matches[matches.length - 1];
+    if (!(target instanceof HTMLElement)) return;
+    skipScrollSyncRef.current = true;
+    const nextTop =
+      el.scrollTop +
+      (target.getBoundingClientRect().top - el.getBoundingClientRect().top) -
+      20;
+    el.scrollTo({ top: Math.max(0, nextTop), behavior });
+    window.setTimeout(() => {
+      skipScrollSyncRef.current = false;
+    }, 200);
+  };
+
+  useEffect(() => {
+    if (!focusEpoch) return;
+    const want = String(focusItemId || "").trim();
+    if (!want) return;
+    const ymd = String(focusItemYmd || "").trim();
+    const run = () => {
+      if (ymd) scrollToYmd(ymd, "smooth");
+      window.requestAnimationFrame(() => {
+        scrollItemIntoScroller(want, "smooth");
+      });
+    };
+    const raf = window.requestAnimationFrame(run);
+    const timer = window.setTimeout(run, 140);
+    return () => {
+      window.cancelAnimationFrame(raf);
+      window.clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- epoch drives intentional scroll
+  }, [focusEpoch, focusItemId, focusItemYmd, viewMode]);
 
   useEffect(() => {
     if (viewMode === "list") {
@@ -1142,7 +1201,10 @@ export function PracticeRecentTransfersCalendar({
                           0,
                           Number(item.unreadCount || 0),
                         );
-                        const uploadOverdue = item.abutmentUploadOverdue;
+                        const uploadOverdue =
+                          abutmentUploadOverdueViewer === "practice"
+                            ? null
+                            : item.abutmentUploadOverdue;
                         const unreadLabel =
                           unreadCount > 99 ? "99+" : String(unreadCount);
                         const hasLinkedChain =
@@ -1166,6 +1228,7 @@ export function PracticeRecentTransfersCalendar({
                         return (
                           <div
                             key={`${item.id}:${ymd}`}
+                            data-practice-cal-item={item.id}
                             className={cn(
                               "grid grid-cols-[7.75rem_minmax(0,1fr)] items-start gap-2 px-3 py-2.5 hover:bg-slate-50/80",
                               item.isPriorArrival && "opacity-60",
@@ -1400,7 +1463,10 @@ export function PracticeRecentTransfersCalendar({
                           const showDelete = Boolean(item.canDelete && onDeleteItem);
                           const chipStyle = calendarChipStyleForItem(item);
                           const unreadCount = Math.max(0, Number(item.unreadCount || 0));
-                          const uploadOverdue = item.abutmentUploadOverdue;
+                          const uploadOverdue =
+                          abutmentUploadOverdueViewer === "practice"
+                            ? null
+                            : item.abutmentUploadOverdue;
                           const unreadLabel =
                             unreadCount > 99 ? "99+" : String(unreadCount);
                           const hasLinkedChain =
@@ -1424,6 +1490,7 @@ export function PracticeRecentTransfersCalendar({
                           return (
                             <div
                               key={`${item.id}:${day.ymd}`}
+                              data-practice-cal-item={item.id}
                               className={cn(
                                 "flex items-start gap-0.5 rounded pr-0.5 hover:brightness-95",
                                 item.isPriorArrival && "opacity-55",

@@ -207,6 +207,7 @@ import {
 import {
   useChatRooms,
   requestChatRoomsRefresh,
+  requestChatRoomsClearUnread,
   type ChatRoom,
 } from "@/shared/hooks/useChatRooms";
 import { useChatMessages } from "@/shared/hooks/useChatMessages";
@@ -408,8 +409,6 @@ import {
   resolvePracticeTransferListPatientName,
   resolvePracticeTransferListToothNumbers,
 } from "@/shared/components/practice/PracticeRecentTransferListCardDetail";
-import { resolvePracticeRecentTransferAbutmentUploadOverdue } from "@/shared/practice/practiceAbutmentUploadOverdue";
-import { PracticeAbutmentUploadOverdueAlert } from "@/shared/components/practice/PracticeAbutmentUploadOverdueAlert";
 import {
   PRE_PLATFORM_REMAKE_LABEL,
   PRE_PLATFORM_REMAKE_PRACTICE_SEND_HINT,
@@ -1833,7 +1832,7 @@ export const PracticeFileTransferPage = ({
     clearPreUploadCache,
     uploadProgress,
   } = useFilePreUpload({ token: authToken });
-  const { rooms: chatRooms, fetchRooms } = useChatRooms();
+  const { rooms: chatRooms, fetchRooms, clearUnreadForTransferIds } = useChatRooms();
 
   // 삭제된 의뢰 채팅 잔상(유령 unread) 정리 — 캘린더 메인 진입 시 rooms 재조회.
   useEffect(() => {
@@ -4810,20 +4809,6 @@ export const PracticeFileTransferPage = ({
     };
   }, [selectedTransfer, selectedTransferDetailModel]);
 
-  const selectedTransferUploadOverdue = useMemo(() => {
-    if (!selectedTransfer) return null;
-    return resolvePracticeRecentTransferAbutmentUploadOverdue({
-      status: selectedTransfer.status,
-      hasCustomAbutment: selectedTransfer.hasCustomAbutment,
-      designFileCount: selectedTransfer.designFileCount,
-      designFiles: selectedTransfer.designFiles,
-      designReadyAt: selectedTransfer.designReadyAt,
-      requestorDownloadedAt: selectedTransfer.requestorDownloadedAt,
-      requestorAcceptedAt: selectedTransfer.requestorAcceptedAt,
-      arrivalDeadlineExpiredAt: selectedTransfer.arrivalDeadlineExpiredAt,
-    });
-  }, [selectedTransfer]);
-
   const prosthesisFollowUpEligibility = useMemo(() => {
     if (!selectedTransfer) {
       return { ok: false as const, reason: "none", message: "" };
@@ -5316,6 +5301,13 @@ export const PracticeFileTransferPage = ({
     if (isDraftTransfer) {
       setChatError("휴지통 임시저장은 채팅방이 없습니다. 복구 후 이어서 작성할 수 있습니다.");
       return;
+    }
+
+    // 채팅 unread — 열자마자 카운터 감소.
+    const openedTransferId = String(transfer.transferId || "").trim();
+    if (openedTransferId && openedTransferId !== "-") {
+      clearUnreadForTransferIds([openedTransferId]);
+      requestChatRoomsClearUnread({ transferIds: [openedTransferId] });
     }
 
     // 어벗 디자인·컨펌 CTA는 목록 production 메타 기준. 열 때 최신으로 맞춤.
@@ -9840,14 +9832,7 @@ export const PracticeFileTransferPage = ({
             ) : null
           }
           summaryItems={selectedTransferDetailModel?.summaryItems || []}
-          summaryBanner={
-            selectedTransferUploadOverdue ? (
-              <PracticeAbutmentUploadOverdueAlert
-                level={selectedTransferUploadOverdue}
-                viewer="practice"
-              />
-            ) : null
-          }
+          summaryBanner={null}
           memo={selectedTransferDetailModel?.memo || "-"}
           toothWorks={selectedTransferDetailModel?.toothWorks || []}
           toothWorksKey={

@@ -73,6 +73,7 @@ export interface ChatMessage {
 // - 2026-08-26: 휴지통 이동 시 전 인스턴스 공유 refresh(skipCache) — 사이드·최근의뢰 배지 즉시 동기화.
 // - 2026-08-26: 휴지통 이동/복구/비우기 시 rooms 재조회로 최근의뢰·사이드 unread 즉시 반영.
 // - 2026-08-20: 기공소 변경(lab-retargeted*) 시 방 목록 재조회로 이전 기공소 유령 unread 제거.
+// - 2026-09-10: clearUnreadForTransferIds + 공유 이벤트 — 뱃지/상세 오픈 시 unread 즉시 0.
 export interface ChatRoom {
   _id: string;
   participants: ChatRoomParticipant[];
@@ -121,6 +122,26 @@ export function requestChatRoomsRefresh(detail: ChatRoomsRefreshDetail = {}) {
         skipCache: true,
         ...detail,
       },
+    }),
+  );
+}
+
+/** 의뢰 상세/뱃지 오픈 시 로컬 unread를 즉시 0으로(메시지 mark-read 소켓보다 먼저). */
+export const CHAT_ROOMS_CLEAR_UNREAD_EVENT = "abuts:chat-rooms:clear-unread";
+
+export type ChatRoomsClearUnreadDetail = {
+  transferIds?: string[];
+};
+
+export function requestChatRoomsClearUnread(detail: ChatRoomsClearUnreadDetail) {
+  if (typeof window === "undefined") return;
+  const transferIds = (detail.transferIds || [])
+    .map((id) => String(id || "").trim())
+    .filter(Boolean);
+  if (transferIds.length === 0) return;
+  window.dispatchEvent(
+    new CustomEvent<ChatRoomsClearUnreadDetail>(CHAT_ROOMS_CLEAR_UNREAD_EVENT, {
+      detail: { transferIds },
     }),
   );
 }
@@ -325,6 +346,38 @@ export const useChatRooms = () => {
     };
   }, [scheduleFallbackReload]);
 
+  const clearUnreadForTransferIds = useCallback((transferIdsRaw: string[]) => {
+    const transferIds = new Set(
+      (transferIdsRaw || []).map((id) => String(id || "").trim()).filter(Boolean),
+    );
+    if (transferIds.size === 0) return;
+    setRooms((prev) => {
+      let changed = false;
+      const next = prev.map((room) => {
+        const tid = String(room.relatedPracticeTransferId?.transferId || "").trim();
+        if (!tid || !transferIds.has(tid)) return room;
+        if (Math.max(0, Number(room.unreadCount || 0)) <= 0) return room;
+        changed = true;
+        return { ...room, unreadCount: 0 };
+      });
+      return changed ? next : prev;
+    });
+  }, []);
+
+  useEffect(() => {
+    const onClearUnread = (evt: Event) => {
+      const detail =
+        evt instanceof CustomEvent && evt.detail && typeof evt.detail === "object"
+          ? (evt.detail as ChatRoomsClearUnreadDetail)
+          : {};
+      clearUnreadForTransferIds(detail.transferIds || []);
+    };
+    window.addEventListener(CHAT_ROOMS_CLEAR_UNREAD_EVENT, onClearUnread);
+    return () => {
+      window.removeEventListener(CHAT_ROOMS_CLEAR_UNREAD_EVENT, onClearUnread);
+    };
+  }, [clearUnreadForTransferIds]);
+
   useAppEventListener({
     enabled: Boolean(token),
     eventTypes: [
@@ -442,5 +495,6 @@ export const useChatRooms = () => {
     error,
     fetchRooms,
     createOrGetChatRoom,
+    clearUnreadForTransferIds,
   };
 };
