@@ -370,12 +370,34 @@ export function PracticeTransferSystemChatBody({
       message.systemPayload && typeof message.systemPayload === "object"
         ? (message.systemPayload as Record<string, unknown>)
         : {};
-    const feeTotal = Math.max(0, Math.round(Number(payload.remakeFeeTotal || 0)));
+    const feeTotal = Math.max(
+      0,
+      Math.round(
+        Number(
+          payload.remakeFeeTotal ??
+            (payload.billingDelta &&
+            typeof payload.billingDelta === "object"
+              ? (payload.billingDelta as { labFeeTotal?: unknown; total?: unknown })
+                  .labFeeTotal ??
+                (payload.billingDelta as { total?: unknown }).total
+              : 0) ??
+            0,
+        ),
+      ),
+    );
     const arrivalYmd = String(payload.arrivalYmd || "").trim();
     const summaryLabel = String(payload.summaryLabel || "").trim();
     const source = String(payload.source || "").trim();
     const rawChargeIndex = Math.trunc(Number(payload.chargeIndex));
-    const chargeIndex = Number.isFinite(rawChargeIndex) ? rawChargeIndex : null;
+    let chargeIndex = Number.isFinite(rawChargeIndex) ? rawChargeIndex : null;
+    // 레거시 채팅(payload에 chargeIndex 없음) — 활성 청구가 1건이면 그 인덱스 사용
+    if (
+      chargeIndex == null &&
+      activeRemakeChargeIndexes &&
+      activeRemakeChargeIndexes.size === 1
+    ) {
+      chargeIndex = [...activeRemakeChargeIndexes][0] ?? null;
+    }
     const headerLabel =
       systemEvent === "practice_transfer_remake_charge"
         ? source === "ca_reupload"
@@ -397,14 +419,24 @@ export function PracticeTransferSystemChatBody({
     const bodyWithoutFee = bodyLines.filter(
       (line) => !/^리메이크비\s/.test(line),
     );
+    const feeFromContent = (() => {
+      const feeLine = bodyLines.find((line) => /^리메이크비\s/.test(line));
+      if (!feeLine) return 0;
+      const n = Number(String(feeLine).replace(/[^\d]/g, ""));
+      return Number.isFinite(n) ? Math.max(0, Math.round(n)) : 0;
+    })();
+    const displayFeeTotal = feeTotal > 0 ? feeTotal : feeFromContent;
+    // remakeCharges SSOT — 활성 청구가 있을 때만 「청구 취소」표시
+    const chargeStillActive =
+      chargeIndex != null
+        ? Boolean(activeRemakeChargeIndexes?.has(chargeIndex))
+        : Boolean(activeRemakeChargeIndexes && activeRemakeChargeIndexes.size > 0);
     const canCancel =
       systemEvent === "practice_transfer_remake_charge" &&
       source !== "ca_reupload" &&
       typeof onCancelRemakeCharge === "function" &&
-      feeTotal > 0 &&
-      (chargeIndex == null
-        ? Boolean(activeRemakeChargeIndexes && activeRemakeChargeIndexes.size > 0)
-        : Boolean(activeRemakeChargeIndexes?.has(chargeIndex)));
+      displayFeeTotal > 0 &&
+      chargeStillActive;
 
     return (
       <div
@@ -432,12 +464,12 @@ export function PracticeTransferSystemChatBody({
           !bodyWithoutFee.some((line) => line.includes(summaryLabel)) ? (
             <p className="mt-1 text-[11px] opacity-80">{summaryLabel}</p>
           ) : null}
-          {feeTotal > 0 || arrivalYmd ? (
+          {displayFeeTotal > 0 || arrivalYmd ? (
             <p className="mt-1 text-[11px] opacity-80">
               {arrivalYmd ? `도착 ${arrivalYmd}` : null}
-              {arrivalYmd && feeTotal > 0 ? " · " : null}
-              {feeTotal > 0
-                ? `리메이크비 ${feeTotal.toLocaleString("ko-KR")}원`
+              {arrivalYmd && displayFeeTotal > 0 ? " · " : null}
+              {displayFeeTotal > 0
+                ? `리메이크비 ${displayFeeTotal.toLocaleString("ko-KR")}원`
                 : null}
             </p>
           ) : null}

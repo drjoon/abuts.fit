@@ -171,6 +171,7 @@ export const PRACTICE_TRANSFER_CALENDAR_LIST_SELECT = {
   production: 1,
   billing: 1,
   remake: 1,
+  remakeCharges: 1,
   remakeSourceTransferId: 1,
   isRemake: 1,
   requestorReadAt: 1,

@@ -6604,6 +6604,7 @@ export async function getReceivedPracticeTransfers(req, res) {
           s3Key: String(item?.file?.s3Key || "").trim(),
         })),
         feeQuote,
+        remakeCharges: serializeRemakeChargesForApi(doc?.remakeCharges),
         labRatingSummary,
         practicePartnerMemo: practiceAnchorIdForSurcharge
           ? toLabPracticePartnerMemoPublicApi(
