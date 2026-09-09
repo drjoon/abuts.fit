@@ -124,10 +124,10 @@ const NewRequestPageContent = () => {
   const guideTour = useGuideTour();
   const isLabRequestor = requestorKind === "lab";
   const isPracticeRequestor = requestorKind === "practice";
-  /** 사이드바 SSOT: 치과=구강스캔으로, 기공소=치과로부터 수신 */
+  /** 사이드바 SSOT: 치과=기공소에, 기공소=치과로부터 */
   const oralScanPageLabel = isLabRequestor
-    ? "치과로부터 수신"
-    : "구강스캔으로";
+    ? "치과로부터"
+    : "기공소에";
   const oralScanPageHref = isLabRequestor
     ? authUser?.role === "internalLab"
       ? "/dashboard/lab-work"

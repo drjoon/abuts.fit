@@ -293,7 +293,7 @@ export const PricingPolicyDialog = ({
                     label={
                       isLab
                         ? '어벗 생산'
-                        : '어벗디자인으로 · 어벗 생산'
+                        : '어벗츠에 · 어벗 생산'
                     }
                     value={formatAbutsManwon(productionPrice)}
                     unitLabel='1개당'

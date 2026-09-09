@@ -235,7 +235,7 @@ export const PRACTICE_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   {
     id: "complete",
     title: "가이드투어 완료",
-    hint: "투어를 모두 마쳤습니다. 확인하면 기공의뢰·구강스캔으로 이동합니다.",
+    hint: "투어를 모두 마쳤습니다. 확인하면 「기공소에」로 이동합니다.",
     target: null,
     advance: "next",
   },
@@ -259,7 +259,7 @@ export const LAB_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   // —— 챕터1: 수신 캘린더(상세 전) ——
   {
     id: "lab_calendar",
-    title: "기공의뢰 · 치과로부터 수신",
+    title: "기공의뢰 · 치과로부터",
     hint: "오늘 날짜에 있는 치과 의뢰를 눌러 상세·수락·채팅을 이어갑니다.",
     path: LAB_RECEIVE_PATH,
     target: "lab_calendar_item",
@@ -359,7 +359,7 @@ export const LAB_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   {
     id: "abutment_order",
     title: "커스텀어벗 CNC",
-    hint: '어벗츠 플랫폼 미가입 치과에서 보내온 의뢰건의 CNC 커스텀 어벗 생산은 "어벗츠로 의뢰" 메뉴에서 진행합니다.',
+    hint: '어벗츠 플랫폼 미가입 치과에서 보내온 의뢰건의 CNC 커스텀 어벗 생산은 "어벗츠로" 메뉴에서 진행합니다.',
     path: NEW_REQUEST_PATH,
     target: "new_request_workspace",
     advance: "next",
@@ -369,7 +369,7 @@ export const LAB_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   {
     id: "complete",
     title: "가이드투어 완료",
-    hint: "투어를 모두 마쳤습니다. 확인하면 치과로부터 수신으로 이동합니다.",
+    hint: "투어를 모두 마쳤습니다. 확인하면 「치과로부터」로 이동합니다.",
     target: null,
     advance: "next",
   },

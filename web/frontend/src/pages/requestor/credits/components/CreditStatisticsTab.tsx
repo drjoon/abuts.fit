@@ -823,7 +823,7 @@ export function CreditStatisticsTab() {
         hintTooltip="치과로부터 수신한 기공의뢰(정산 적립·보류) 건수입니다."
         onClick={() =>
           openDrillDown({
-            title: "치과로부터 수신 내역",
+            title: "치과로부터 내역",
             filters: {
               ...filterBase,
               statsCategory: "settlement_earn",
@@ -839,7 +839,7 @@ export function CreditStatisticsTab() {
       {filterBar}
 
       <StatsFlowSection
-        title="치과로부터 수신"
+        title="치과로부터"
         subtitle="치과 → 기공소 · 정산 적립"
         accent="기공"
         icon={Building2}
@@ -951,7 +951,7 @@ export function CreditStatisticsTab() {
       </StatsFlowSection>
 
       <StatsFlowSection
-        title="어벗츠로 의뢰"
+        title="어벗츠로"
         subtitle="기공소 → 어벗츠 · 충전·소비"
         accent="어벗"
         icon={FileText}

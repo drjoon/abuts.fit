@@ -52,7 +52,7 @@ export function RequestCaseMetaBadges({
             "border-sky-300 bg-sky-50 text-sky-900 font-semibold",
           )}
         >
-          치과로부터 수신
+          치과로부터
         </span>
       ) : null}
       {isHexSample ? (

@@ -15,6 +15,7 @@ import {
 } from "@/shared/layout/sidebarOpen";
 import { cn } from "@/shared/ui/cn";
 
+// - 2026-09-09: 기공의뢰 서브 — 치과 기공소에/어벗츠에, 기공소 치과로부터/어벗츠로.
 // - 2026-09-08: 구강스캔으로 툴팁 — 「어벗·임시치아·지르 보철 의뢰」로 짧게.
 // - 2026-09-08: 기본 기공수가 검토 대기 시 사이드바 설정 → platformTab=abutsFees 딥링크.
 // - 2026-09-06: 모바일/태블릿 상단 헤더 — lucide Menu·로고 절대 중앙 정렬.
@@ -236,7 +237,7 @@ const buildLabGigongRequestSidebarGroup = (
   children: [
     {
       icon: Building2,
-      label: "치과로부터 수신",
+      label: "치과로부터",
       href: receiveHref,
       tooltip: receiveTooltip,
       accent: "기공",
@@ -244,7 +245,7 @@ const buildLabGigongRequestSidebarGroup = (
     },
     {
       icon: FileText,
-      label: "어벗츠로 의뢰",
+      label: "어벗츠로",
       href: LAB_ABUTMENT_PRODUCTION_HREF,
       tooltip: ABUTMENT_REQUEST_TOOLTIP,
       accent: "어벗",
@@ -279,7 +280,7 @@ const buildRequestorSidebarItems = (
       children: [
         {
           icon: ScanLine,
-          label: "구강스캔으로",
+          label: "기공소에",
           href: PRACTICE_ORAL_SCAN_HREF,
           tooltip: PRACTICE_ORAL_SCAN_REQUEST_TOOLTIP,
           accent: "기공",
@@ -287,7 +288,7 @@ const buildRequestorSidebarItems = (
         },
         {
           icon: PenTool,
-          label: "어벗디자인으로",
+          label: "어벗츠에",
           href: PRACTICE_ABUTMENT_DESIGN_HREF,
           tooltip: PRACTICE_ABUTMENT_DESIGN_REQUEST_TOOLTIP,
           accent: "어벗",

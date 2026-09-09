@@ -102,8 +102,8 @@ export function NewRequestDesignAbutmentFields({
   const { kind: requestorKind } = useRequestorBusinessAccess();
   const isLabRequestor = requestorKind === "lab";
   const oralScanPageLabel = isLabRequestor
-    ? "치과로부터 수신"
-    : "구강스캔으로";
+    ? "치과로부터"
+    : "기공소에";
   const oralScanPageHref = isLabRequestor
     ? authUser?.role === "internalLab"
       ? "/dashboard/lab-work"
