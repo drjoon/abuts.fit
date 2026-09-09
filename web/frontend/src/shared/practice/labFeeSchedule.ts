@@ -224,6 +224,8 @@ export const LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME = "커스텀어벗(지그포�
 export const LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_NAME = "커스텀어벗(지그제외)";
 export const LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_DEFAULT_PRICE = 40000;
 export const LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_DEFAULT_PRICE = 30000;
+/** 기공소 CA 리메이크 수가 미설정 시 치과→기공소 기본 단가(원). */
+export const LAB_FEE_CUSTOM_ABUTMENT_REMAKE_DEFAULT_PRICE = 20000;
 
 export const isCustomAbutmentWithJigFeeName = (name: string) => {
   const compact = String(name || "")
@@ -328,7 +330,7 @@ export const resolveLabFeeScheduleSource = <
   schedule?: T | null,
 ) => (isLabFeeScheduleConfigured(schedule) ? schedule : buildUnsetLabFeeSchedule());
 
-/** 리메이크 수가. 미설정 시 0원 */
+/** 리메이크 수가. 미설정 시 0원(커스텀어벗 리메이크는 resolve 시 기본 2만원) */
 export const LAB_FEE_REMAKE_SCHEDULE_DEFAULTS: LabFeeSchedule = {
   ...LAB_FEE_SCHEDULE_ZEROS,
 };
@@ -560,8 +562,15 @@ const resolveLabAbutmentUnitPrice = (
     : LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_NAME;
   const item = findLabFeeItemForProsthesisType(items, feeName);
   // unit은 normalize가 perTooth로 고정. 레거시 perSet 등도 단가만 쓴다.
-  if (!item) return 0;
-  return Math.max(0, Math.round(Number(useRemake ? item.remake : item.price) || 0));
+  if (!item) {
+    return useRemake ? LAB_FEE_CUSTOM_ABUTMENT_REMAKE_DEFAULT_PRICE : 0;
+  }
+  const unit = Math.max(
+    0,
+    Math.round(Number(useRemake ? item.remake : item.price) || 0),
+  );
+  if (useRemake && unit <= 0) return LAB_FEE_CUSTOM_ABUTMENT_REMAKE_DEFAULT_PRICE;
+  return unit;
 };
 
 /** 보철+어벗 → 지그포함, 단독 커스텀어벗 → 지그제외 */

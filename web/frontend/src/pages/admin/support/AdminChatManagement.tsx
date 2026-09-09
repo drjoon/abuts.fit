@@ -151,6 +151,7 @@ export const AdminChatManagement = ({
     error: messagesError,
     sendMessage,
     toggleReaction,
+    deleteMessage,
   } = useChatMessages({ roomId: selectedChatId || undefined, autoFetch: true });
 
   useRegisterChatSoundViewing(selectedChatId, Boolean(selectedChatId));
@@ -689,6 +690,9 @@ export const AdminChatManagement = ({
                               }}
                               onToggleReaction={(messageId, emoji) =>
                                 void toggleReaction(messageId, emoji)
+                              }
+                              onDeleteMessage={(messageId) =>
+                                void deleteMessage(messageId)
                               }
                               downloadingFileKeys={downloadingKeys}
                               downloadProgressByKey={downloadProgressByKey}

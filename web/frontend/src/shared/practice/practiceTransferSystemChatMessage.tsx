@@ -315,5 +315,43 @@ export function PracticeTransferSystemChatBody({
     );
   }
 
+  if (systemEvent === "practice_transfer_remake") {
+    const payload =
+      message.systemPayload && typeof message.systemPayload === "object"
+        ? (message.systemPayload as Record<string, unknown>)
+        : {};
+    const feeTotal = Math.max(0, Math.round(Number(payload.remakeFeeTotal || 0)));
+    const arrivalYmd = String(payload.arrivalYmd || "").trim();
+    return (
+      <div
+        id={messageDomId}
+        className="flex w-full justify-center scroll-mt-4 py-1.5"
+      >
+        <div
+          className={cn(
+            "max-w-[min(92%,28rem)] rounded-xl border border-amber-200/80 bg-amber-50/80 px-4 py-2.5 text-center text-amber-950",
+            compact ? "text-[11px] sm:text-xs" : "text-xs sm:text-sm",
+          )}
+        >
+          <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] font-medium leading-snug">
+            {message.content}
+          </p>
+          {feeTotal > 0 || arrivalYmd ? (
+            <p className="mt-1 text-[11px] opacity-80">
+              {arrivalYmd ? `도착 ${arrivalYmd}` : null}
+              {arrivalYmd && feeTotal > 0 ? " · " : null}
+              {feeTotal > 0
+                ? `리메이크비 ${feeTotal.toLocaleString("ko-KR")}원`
+                : null}
+            </p>
+          ) : null}
+          <p className={cn("mt-0.5 opacity-60", compact ? "text-[10px]" : "text-[11px]")}>
+            {formatTime(message.createdAt)}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return null;
 }

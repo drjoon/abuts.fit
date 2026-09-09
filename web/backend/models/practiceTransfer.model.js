@@ -288,6 +288,8 @@ const practiceTransferSchema = new mongoose.Schema(
       },
       /** true면 커스텀어벗도 리메이크 범위(기본 false=보철만) */
       includeCustomAbutment: { type: Boolean, default: false },
+      /** 기공소가 채팅에서 리메이크를 기록한 경우 */
+      initiatedByLab: { type: Boolean, default: false },
     },
     /**
      * 다단계 기공의뢰(틀니 등) 단계 계획 스냅샷.

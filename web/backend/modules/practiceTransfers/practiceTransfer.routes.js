@@ -139,6 +139,12 @@ router.post(
 router.post("/trash/empty", authenticate, sendAuth, emptyPracticeTransferTrash);
 
 router.post("/remake", authenticate, sendAuth, remakePracticeTransfers);
+router.post(
+  "/received/remake",
+  authenticate,
+  receiveAuth,
+  remakePracticeTransfers,
+);
 
 router.post(
   "/:transferId/update-content",

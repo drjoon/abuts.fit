@@ -75,6 +75,12 @@ router.post(
   chatController.toggleChatMessageReaction,
 );
 
+// 메시지 삭제 (본인 · admin soft-delete)
+router.delete(
+  "/rooms/:roomId/messages/:messageId",
+  chatController.deleteChatMessage,
+);
+
 // 채팅방 상태 변경 (Admin 전용)
 router.patch(
   "/rooms/:roomId/status",

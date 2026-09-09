@@ -47,10 +47,12 @@ import {
   LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME,
   LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_DEFAULT_PRICE,
   LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_NAME,
+  LAB_FEE_CUSTOM_ABUTMENT_REMAKE_DEFAULT_PRICE,
   MAX_LAB_FEE_ITEMS,
   normalizeLabFeeItem,
   normalizeLabFeeItems,
   labFeeItemMatchesNeedName,
+  isCustomAbutmentLabFeeLineType,
   type LabFeeItem,
   type LabFeeItemUnit,
   type LabFeeSchedule,
@@ -671,6 +673,11 @@ export const LabFeeScheduleTab = () => {
             제공할 항목을 켜야 의뢰를 수락할 수 있습니다.
           </p>
         ) : null}
+        <p className="mt-2 text-[12px] leading-snug text-slate-500">
+          커스텀어벗 리메이크 비용을 설정하세요. 미입력 시 개당{" "}
+          {LAB_FEE_CUSTOM_ABUTMENT_REMAKE_DEFAULT_PRICE.toLocaleString("ko-KR")}
+          원(치과→기공소)이 적용됩니다.
+        </p>
         {pendingChange?.effectiveFromYmd ? (
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200/90 bg-amber-50/90 px-3 py-2 text-[13px] text-amber-950">
             <p className="min-w-0 font-medium leading-snug">
@@ -843,6 +850,24 @@ export const LabFeeScheduleTab = () => {
                     }
                   />
                 </div>
+                {isCustomAbutmentLabFeeLineType(item.name) &&
+                Math.max(
+                  0,
+                  Math.round(
+                    Number(
+                      (item.unit === "perNTeeth" ? tier.remake : item.remake) ||
+                        0,
+                    ),
+                  ),
+                ) <= 0 ? (
+                  <p className="text-[11px] leading-snug text-amber-800/90">
+                    리메이크 미입력 시 개당{" "}
+                    {LAB_FEE_CUSTOM_ABUTMENT_REMAKE_DEFAULT_PRICE.toLocaleString(
+                      "ko-KR",
+                    )}
+                    원이 적용됩니다. 치과→기공소 커스텀어벗 리메이크 비용입니다.
+                  </p>
+                ) : null}
               </div>
             );
             return (

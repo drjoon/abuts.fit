@@ -531,6 +531,7 @@ export const NewChatWidget = () => {
     error: messagesError,
     sendMessage,
     toggleReaction,
+    deleteMessage,
   } = useChatMessages({
     roomId: inboxView === "thread" ? roomId : undefined,
     autoFetch: inboxView === "thread",
@@ -1207,6 +1208,9 @@ export const NewChatWidget = () => {
                                 }}
                                 onToggleReaction={(messageId, emoji) =>
                                   void toggleReaction(messageId, emoji)
+                                }
+                                onDeleteMessage={(messageId) =>
+                                  void deleteMessage(messageId)
                                 }
                                 downloadingFileKeys={downloadingKeys}
                                 downloadProgressByKey={downloadProgressByKey}

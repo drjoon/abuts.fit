@@ -281,6 +281,8 @@ export const LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME = "커스텀어벗(지그포�
 export const LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_NAME = "커스텀어벗(지그제외)";
 export const LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_DEFAULT_PRICE = 40000;
 export const LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_DEFAULT_PRICE = 30000;
+/** 기공소 CA 리메이크 수가 미설정 시 치과→기공소 기본 단가(원). */
+export const LAB_FEE_CUSTOM_ABUTMENT_REMAKE_DEFAULT_PRICE = 20000;
 
 /** 기공비 기본 수가(원). 마스터 스위치가 꺼져 있으면 청구하지 않는다. */
 export const LAB_FEE_SCHEDULE_DEFAULTS = {
@@ -1209,18 +1211,101 @@ export function stripCustomAbutmentFromToothWorks(toothWorks) {
   return out;
 }
 
+const stripCaFlagsFromRow = (row) => {
+  const next = { ...row };
+  next.customAbutment = false;
+  next.hasCustomAbutment = false;
+  if ("abutmentProductMode" in next) next.abutmentProductMode = undefined;
+  if (
+    "productMode" in next &&
+    String(next.productMode || "").includes("abutment")
+  ) {
+    next.productMode = undefined;
+  }
+  return next;
+};
+
+/**
+ * 채팅 리메이크 범위 선택 → toothWorks.
+ * selectedParts: [{ index, prosthesis?, customAbutment? }]
+ * 비어 있으면 null (호출측이 레거시 includeCustomAbutment 경로 사용).
+ */
+export function buildRemakeToothWorksFromSelectedParts(
+  toothWorks,
+  selectedParts,
+) {
+  const rows = Array.isArray(toothWorks) ? toothWorks : [];
+  const parts = Array.isArray(selectedParts) ? selectedParts : [];
+  if (parts.length === 0) return null;
+
+  const out = [];
+  for (const part of parts) {
+    const index = Math.trunc(Number(part?.index));
+    if (!Number.isFinite(index) || index < 0 || index >= rows.length) continue;
+    const row = rows[index];
+    if (!row || typeof row !== "object") continue;
+
+    const wantProsthesis = Boolean(part?.prosthesis);
+    const wantCa = Boolean(
+      part?.customAbutment === true ||
+        part?.includeCustomAbutment === true ||
+        part?.ca === true,
+    );
+    if (!wantProsthesis && !wantCa) continue;
+
+    const prosthesisType = String(row?.prosthesisType || row?.type || "").trim();
+    const standaloneCa = isCustomAbutmentProsthesisType(prosthesisType);
+    const hasCa = isCustomAbutmentWork(row);
+
+    if (wantProsthesis && wantCa) {
+      if (standaloneCa) {
+        out.push({ ...row });
+      } else if (hasCa) {
+        out.push({ ...row, customAbutment: true, hasCustomAbutment: true });
+      } else {
+        out.push(stripCaFlagsFromRow(row));
+      }
+      continue;
+    }
+
+    if (wantProsthesis) {
+      if (standaloneCa) continue;
+      out.push(hasCa ? stripCaFlagsFromRow(row) : { ...row });
+      continue;
+    }
+
+    // CA only
+    if (standaloneCa) {
+      out.push({ ...row });
+      continue;
+    }
+    if (!hasCa) continue;
+    out.push({
+      ...row,
+      prosthesisType: "커스텀어벗",
+      type: "커스텀어벗",
+      customAbutment: true,
+      hasCustomAbutment: true,
+      bridgeLinkedTeeth: [],
+    });
+  }
+  return out;
+}
+
 export function countCustomAbutmentWorks(toothWorks) {
   return (Array.isArray(toothWorks) ? toothWorks : []).filter((row) =>
     isCustomAbutmentWork(row),
   ).length;
 }
 
-/** 리메이크 수가(>0)가 필요한데 비어 있는 항목명 */
+/** 리메이크 수가(>0)가 필요한데 비어 있는 항목명.
+ * 커스텀어벗은 미설정 시 `LAB_FEE_CUSTOM_ABUTMENT_REMAKE_DEFAULT_PRICE` 적용 → 미설정으로 보지 않음. */
 export function missingLabRemakeFeeItemNames(schedule, toothWorks) {
   const needed = labFeeItemNamesNeededForToothWorks(toothWorks);
   if (needed.length === 0) return [];
   const items = normalizeLabFeeItems(schedule);
   return needed.filter((needName) => {
+    if (isCustomAbutmentLabFeeLineType(needName)) return false;
     const item = items.find((candidate) =>
       labFeeItemMatchesNeedName(candidate, needName),
     );
@@ -1359,11 +1444,15 @@ function resolveLabAbutmentUnitPrice(items, useRemake, withJig = true) {
     : LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_NAME;
   const item = findLabFeeItemForProsthesisType(items, feeName);
   // unit은 normalize가 perTooth로 고정. 레거시 perSet 등도 단가만 쓴다.
-  if (!item) return 0;
-  return Math.max(
+  if (!item) {
+    return useRemake ? LAB_FEE_CUSTOM_ABUTMENT_REMAKE_DEFAULT_PRICE : 0;
+  }
+  const unit = Math.max(
     0,
     Math.round(Number(useRemake ? item.remake : item.price) || 0),
   );
+  if (useRemake && unit <= 0) return LAB_FEE_CUSTOM_ABUTMENT_REMAKE_DEFAULT_PRICE;
+  return unit;
 }
 
 /** 보철+어벗 → 지그포함, 단독 커스텀어벗 → 지그제외 */

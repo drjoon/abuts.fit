@@ -171,8 +171,16 @@ const emitChatRoomRead = ({ participantIds, roomId, readerUserId, readAt }) => {
   });
 };
 
-/** 카톡형 간단 리액션 허용 목록 */
-export const ALLOWED_CHAT_REACTION_EMOJIS = ["❤️", "👍", "👌", "😄", "😮", "😢"];
+/** 카톡형 간단 리액션 허용 목록 (🔁 = 채팅 리메이크 태그) */
+export const ALLOWED_CHAT_REACTION_EMOJIS = [
+  "❤️",
+  "👍",
+  "👌",
+  "😄",
+  "😮",
+  "😢",
+  "🔁",
+];
 
 const CHAT_MESSAGE_LIST_SELECT = {
   _id: 1,
@@ -220,6 +228,29 @@ const emitChatReactionUpdated = ({
 
   ids.forEach((participantId) => {
     emitAppEventToUser(participantId, "chat:reaction-updated", payload);
+  });
+};
+
+const emitChatMessageDeleted = ({
+  participantIds,
+  roomId,
+  messageId,
+  actorUserId,
+}) => {
+  const ids = (Array.isArray(participantIds) ? participantIds : [])
+    .map((id) => String(id || "").trim())
+    .filter(Boolean);
+  if (!ids.length) return;
+
+  const payload = {
+    roomId: String(roomId || "").trim(),
+    messageId: String(messageId || "").trim(),
+    actorUserId: String(actorUserId || "").trim() || null,
+    timestamp: new Date().toISOString(),
+  };
+
+  ids.forEach((participantId) => {
+    emitAppEventToUser(participantId, "chat:message-deleted", payload);
   });
 };
 
@@ -2054,6 +2085,121 @@ export async function toggleChatMessageReaction(req, res) {
 }
 
 /**
+ * 내 메시지 soft-delete (시스템 메시지 제외)
+ * @route DELETE /api/chats/rooms/:roomId/messages/:messageId
+ */
+export async function deleteChatMessage(req, res) {
+  try {
+    const { roomId, messageId } = req.params;
+    const userId = req.user._id;
+    const role = String(req.user?.role || "").trim();
+
+    if (!Types.ObjectId.isValid(roomId) || !Types.ObjectId.isValid(messageId)) {
+      return res.status(400).json({
+        success: false,
+        message: "유효하지 않은 채팅방/메시지 ID입니다.",
+      });
+    }
+
+    const room = await ChatRoom.findById(roomId)
+      .select(ROOM_ACCESS_SELECT)
+      .lean();
+    if (!room) {
+      return res.status(404).json({
+        success: false,
+        message: "채팅방을 찾을 수 없습니다.",
+      });
+    }
+
+    const access = await resolvePracticeTransferRoomAccess(req, room);
+    if (!access.ok) {
+      return res.status(403).json({
+        success: false,
+        message: "이 채팅방에 접근할 권한이 없습니다.",
+      });
+    }
+
+    const message = await Chat.findOne({
+      _id: new Types.ObjectId(messageId),
+      roomId: new Types.ObjectId(roomId),
+      isDeleted: false,
+    });
+    if (!message) {
+      return res.status(404).json({
+        success: false,
+        message: "메시지를 찾을 수 없습니다.",
+      });
+    }
+
+    if (String(message.messageKind || "").trim() === "system") {
+      return res.status(400).json({
+        success: false,
+        message: "시스템 메시지는 삭제할 수 없습니다.",
+      });
+    }
+
+    const isOwner = String(message.sender || "") === String(userId);
+    const isAdmin = role === "admin";
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: "본인 메시지만 삭제할 수 있습니다.",
+      });
+    }
+
+    message.isDeleted = true;
+    message.content = "삭제된 메시지입니다.";
+    message.attachments = [];
+    message.reactions = [];
+    await message.save();
+
+    let participantIds = Array.isArray(room.participants)
+      ? room.participants.map((id) => String(id || "").trim()).filter(Boolean)
+      : [];
+    if (access.added) {
+      const refreshed = await ChatRoom.findById(roomId)
+        .select({ participants: 1 })
+        .lean();
+      participantIds = Array.isArray(refreshed?.participants)
+        ? refreshed.participants
+            .map((id) => String(id || "").trim())
+            .filter(Boolean)
+        : participantIds;
+    }
+
+    const recipientIds = await resolveChatEventRecipientUserIds(
+      roomRecipientArgs(room, participantIds),
+    );
+
+    invalidateChatPerfForUsers(recipientIds);
+    invalidateChatPerfCacheByPrefix(`room-messages:${String(roomId)}:`);
+
+    emitChatMessageDeleted({
+      participantIds: recipientIds,
+      roomId,
+      messageId,
+      actorUserId: userId,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "메시지를 삭제했습니다.",
+      data: {
+        messageId: String(message._id),
+        roomId: String(roomId),
+      },
+    });
+  } catch (error) {
+    console.error("Error deleting chat message:", error);
+    return res.status(500).json({
+      success: false,
+      message: "메시지 삭제 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
  * 채팅방 상태 변경 (Admin 전용)
  * @route PATCH /api/chats/rooms/:roomId/status
  */
@@ -2627,6 +2773,7 @@ export default {
   getChatMessages,
   sendChatMessage,
   toggleChatMessageReaction,
+  deleteChatMessage,
   updateChatRoomStatus,
   getAllChatRooms,
   searchUsers,

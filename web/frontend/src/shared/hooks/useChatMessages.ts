@@ -342,6 +342,54 @@ export const useChatMessages = (options: UseChatMessagesOptions = {}) => {
     [pagination, roomId, toast, token, userCacheId],
   );
 
+  const deleteMessage = useCallback(
+    async (messageId: string) => {
+      const mid = String(messageId || "").trim();
+      if (!token || !roomId || !mid) return false;
+
+      try {
+        const res = await apiFetch<{
+          success: boolean;
+          message?: string;
+          data?: { messageId?: string; roomId?: string };
+        }>({
+          path: `/api/chats/rooms/${roomId}/messages/${mid}`,
+          method: "DELETE",
+          token,
+        });
+
+        if (!res.ok || !res.data?.success) {
+          throw new Error(res.data?.message || "메시지 삭제에 실패했습니다.");
+        }
+
+        setMessages((prev) => {
+          const next = prev.filter((m) => String(m._id) !== mid);
+          writeCachedMessages(
+            String(roomId || "").trim(),
+            userCacheId,
+            next,
+            pagination,
+          );
+          return next;
+        });
+        setPagination((prev) => ({
+          ...prev,
+          total: Math.max(0, Number(prev.total || 0) - 1),
+        }));
+        return true;
+      } catch (e: unknown) {
+        toast({
+          title: "삭제 실패",
+          description:
+            e instanceof Error ? e.message : "메시지 삭제 중 오류가 발생했습니다.",
+          variant: "destructive",
+        });
+        return false;
+      }
+    },
+    [pagination, roomId, toast, token, userCacheId],
+  );
+
   useEffect(() => {
     const normalizedRoomId = String(roomId || "").trim();
 
@@ -376,7 +424,11 @@ export const useChatMessages = (options: UseChatMessagesOptions = {}) => {
 
   useAppEventListener({
     enabled: Boolean(roomId),
-    eventTypes: ["chat:message-created", "chat:reaction-updated"],
+    eventTypes: [
+      "chat:message-created",
+      "chat:reaction-updated",
+      "chat:message-deleted",
+    ],
     deferWhenEditing: false,
     requireVisible: false,
     onMatch: (evt) => {
@@ -387,6 +439,27 @@ export const useChatMessages = (options: UseChatMessagesOptions = {}) => {
           : {};
       const eventRoomId = String(payload.roomId || "").trim();
       if (!eventRoomId || eventRoomId !== String(roomId || "").trim()) return;
+
+      if (type === "chat:message-deleted") {
+        const messageId = String(payload.messageId || "").trim();
+        if (!messageId) return;
+        setMessages((prev) => {
+          if (!prev.some((m) => String(m._id) === messageId)) return prev;
+          const next = prev.filter((m) => String(m._id) !== messageId);
+          writeCachedMessages(
+            String(roomId || "").trim(),
+            userCacheId,
+            next,
+            pagination,
+          );
+          return next;
+        });
+        setPagination((prev) => ({
+          ...prev,
+          total: Math.max(0, Number(prev.total || 0) - 1),
+        }));
+        return;
+      }
 
       if (type === "chat:reaction-updated") {
         const messageId = String(payload.messageId || "").trim();
@@ -443,6 +516,7 @@ export const useChatMessages = (options: UseChatMessagesOptions = {}) => {
     prefetchMessages,
     sendMessage,
     toggleReaction,
+    deleteMessage,
     setMessages,
   };
 };

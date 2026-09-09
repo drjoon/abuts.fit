@@ -17,7 +17,7 @@
 // - 2026-08-28: STL/PLY/OBJ도 의뢰상세와 동일 썸네일·ModelPreviewDialog.
 // - 2026-08-28: 모델 확장자 우선 분류(잘못된 image MIME 오인 방지).
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Box, Reply, SmilePlus } from "lucide-react";
+import { Box, Reply, Repeat, SmilePlus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -41,6 +41,8 @@ import {
   CHAT_REACTION_EMOJIS,
   formatReactionUserNames,
 } from "@/features/chat/components/chatReactions";
+import { CHAT_REMAKE_REACTION_EMOJI } from "@/features/chat/components/chatRemake";
+import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { StlPreviewThumbnail } from "@/features/requests/components/StlPreviewThumbnail";
 import {
   ModelPreviewDialog,
@@ -83,6 +85,10 @@ type ChatMessageBubbleProps = {
   authToken?: string | null;
   onReply?: (message: ChatMessage) => void;
   onToggleReaction?: (messageId: string, emoji: string) => void | Promise<void>;
+  /** 본인 메시지 soft-delete */
+  onDeleteMessage?: (messageId: string) => void | Promise<void>;
+  /** 첨부 메시지 → 리메이크 범위 선택 (치과·기공소) */
+  onRemakeFromMessage?: (message: ChatMessage) => void;
   /** 리액션 툴팁용 userId → 표시 이름 */
   reactionUserNameById?: Record<string, string>;
   onOpenAttachment?: (file: ChatBubbleAttachment) => void | Promise<void>;
@@ -325,6 +331,8 @@ export function ChatMessageBubble({
   authToken,
   onReply,
   onToggleReaction,
+  onDeleteMessage,
+  onRemakeFromMessage,
   reactionUserNameById = {},
   onOpenAttachment,
   onOpenRequestId,
@@ -337,6 +345,8 @@ export function ChatMessageBubble({
   practiceTransferFeeQuote = null,
 }: ChatMessageBubbleProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const senderName = String(message.sender?.name || "알 수 없음").trim();
   const myId = String(currentUserId || "").trim();
   const isSystem = String(message.messageKind || "").trim() === "system";
@@ -346,9 +356,20 @@ export function ChatMessageBubble({
     [message.reactions, myId],
   );
 
+  const canDelete =
+    isMine && !isSystem && typeof onDeleteMessage === "function";
+  const hasAttachments =
+    Array.isArray(message.attachments) && message.attachments.length > 0;
+  const canRemakeFromMessage =
+    !isSystem &&
+    hasAttachments &&
+    typeof onRemakeFromMessage === "function";
   const canInteract =
     !isSystem &&
-    (typeof onReply === "function" || typeof onToggleReaction === "function");
+    (typeof onReply === "function" ||
+      typeof onToggleReaction === "function" ||
+      canDelete ||
+      canRemakeFromMessage);
   const replyTargetId = String(replyPreview?._id || "").trim();
   const canJumpToReply =
     Boolean(replyTargetId) && replyPreview?.content !== "삭제된 메시지입니다.";
@@ -1061,7 +1082,16 @@ export function ChatMessageBubble({
                           type="button"
                           className="h-8 w-8 rounded-md text-base hover:bg-muted"
                           onClick={() => handleToggle(emoji)}
-                          aria-label={`${emoji} 리액션`}
+                          aria-label={
+                            emoji === CHAT_REMAKE_REACTION_EMOJI
+                              ? "리메이크"
+                              : `${emoji} 리액션`
+                          }
+                          title={
+                            emoji === CHAT_REMAKE_REACTION_EMOJI
+                              ? "리메이크"
+                              : undefined
+                          }
                         >
                           {emoji}
                         </button>
@@ -1070,10 +1100,66 @@ export function ChatMessageBubble({
                   </PopoverContent>
                 </Popover>
               ) : null}
+
+              {canRemakeFromMessage ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="h-7 w-7 border-amber-300/80 bg-amber-50 text-amber-900 hover:bg-amber-100 hover:text-amber-950"
+                      onClick={() => onRemakeFromMessage?.(message)}
+                      aria-label="리메이크"
+                    >
+                      <Repeat className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>리메이크</TooltipContent>
+                </Tooltip>
+              ) : null}
+
+              {canDelete ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                  onClick={() => setDeleteConfirmOpen(true)}
+                  aria-label="메시지 삭제"
+                  title="메시지 삭제"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              ) : null}
             </div>
           ) : null}
         </div>
       </div>
+
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        title="메시지를 삭제할까요?"
+        description="삭제하면 상대방 채팅에서도 사라집니다."
+        confirmLabel={deleteBusy ? "삭제 중..." : "삭제"}
+        cancelLabel="취소"
+        confirmTone="danger"
+        busy={deleteBusy}
+        onConfirm={() => {
+          if (deleteBusy || !onDeleteMessage) return;
+          setDeleteBusy(true);
+          void Promise.resolve(onDeleteMessage(String(message._id)))
+            .catch(() => undefined)
+            .finally(() => {
+              setDeleteBusy(false);
+              setDeleteConfirmOpen(false);
+            });
+        }}
+        onCancel={() => {
+          if (deleteBusy) return;
+          setDeleteConfirmOpen(false);
+        }}
+      />
 
       <ModelPreviewDialog
         open={previewOpen}

@@ -75,7 +75,7 @@ import {
 import {
   loadAutoMatchBudgetCatalog,
 } from "../../utils/practiceTransferAutoMatchBudget.js";
-import { resolveLabPracticeFeeMultiplier, isLabFeeScheduleConfigured, isLabFeeScheduleReadyToCharge, missingLabFeeItemNames, missingLabRemakeFeeItemNames, labFeeItemNamesNeededForToothWorks, toothWorksNeedLabFee, isLabPracticeSpecialSupplySnapshotCaptured, stripCustomAbutmentFromToothWorks, countCustomAbutmentWorks } from "../../utils/labFeeSchedule.js";
+import { resolveLabPracticeFeeMultiplier, isLabFeeScheduleConfigured, isLabFeeScheduleReadyToCharge, missingLabFeeItemNames, labFeeItemNamesNeededForToothWorks, toothWorksNeedLabFee, isLabPracticeSpecialSupplySnapshotCaptured, stripCustomAbutmentFromToothWorks, buildRemakeToothWorksFromSelectedParts, countCustomAbutmentWorks } from "../../utils/labFeeSchedule.js";
 import {
   normalizeRushFeeMultiplier,
   parseOrderYmdFromMemo,
@@ -302,25 +302,6 @@ async function assertReceiverLabFeeConfigured(labAnchorId, toothWorks) {
     missing.length > 0
       ? missing
       : labFeeItemNamesNeededForToothWorks(toothWorks);
-  throw err;
-}
-
-const LAB_REMAKE_FEE_UNCONFIGURED_MESSAGE =
-  "기공소에 커스텀어벗 리메이크 수가가 설정되어 있지 않습니다. 기공소 설정 후 다시 의뢰해 주세요.";
-const LAB_REMAKE_FEE_UNCONFIGURED_REASON = "lab_remake_fee_unconfigured";
-
-async function assertReceiverLabRemakeFeeConfigured(labAnchorId, toothWorks) {
-  const lab = await BusinessAnchor.findById(labAnchorId)
-    .select({ labFeeSchedule: 1 })
-    .lean();
-  const missing = missingLabRemakeFeeItemNames(lab?.labFeeSchedule, toothWorks);
-  if (missing.length === 0) return;
-  const err = new Error(
-    `${LAB_REMAKE_FEE_UNCONFIGURED_MESSAGE} (미설정: ${missing.join(", ")})`,
-  );
-  err.statusCode = 409;
-  err.code = LAB_REMAKE_FEE_UNCONFIGURED_REASON;
-  err.missingFeeNames = missing;
   throw err;
 }
 
@@ -2959,29 +2940,8 @@ export async function createPracticeTransfer(req, res) {
       }
       toothWorksRaw.length = 0;
       for (const row of stripped) toothWorksRaw.push(row);
-    } else if (
-      isRemakeRequest &&
-      includeCustomAbutmentRemake &&
-      countCustomAbutmentWorks(toothWorksRaw) > 0 &&
-      targetLabAnchorId
-    ) {
-      try {
-        await assertReceiverLabRemakeFeeConfigured(
-          targetLabAnchorId,
-          toothWorksRaw,
-        );
-      } catch (feeErr) {
-        const status = Number(feeErr?.statusCode || 409);
-        return res.status(status >= 400 && status < 600 ? status : 409).json({
-          success: false,
-          message:
-            feeErr?.message ||
-            "기공소 커스텀어벗 리메이크 수가가 설정되지 않았습니다.",
-          reason: feeErr?.code || LAB_REMAKE_FEE_UNCONFIGURED_REASON,
-          missingFeeNames: feeErr?.missingFeeNames || [],
-        });
-      }
     }
+    // CA 리메이크 수가 미설정 시 labFeeSchedule.resolve 기본 2만원 — 생성 차단하지 않음.
 
     try {
       assertAbutmentPresetsComplete(toothWorksRaw);
@@ -5027,16 +4987,10 @@ export async function updatePracticeTransferProsthesisFollowUp(req, res) {
 export async function remakePracticeTransfers(req, res) {
   try {
     const role = String(req.user?.role || "").trim();
-    if (!isPracticeTransferSenderRole(role)) {
+    const canSend = isPracticeTransferSenderRole(role);
+    const canReceive = isPracticeTransferLabReceiverRole(role);
+    if (!canSend && !canReceive && role !== "admin") {
       return res.status(403).json({ success: false, message: "권한이 없습니다." });
-    }
-
-    const practiceAnchorId = req.user?.businessAnchorId || null;
-    if (!practiceAnchorId) {
-      return res.status(400).json({
-        success: false,
-        message: "치과 사업자 정보가 필요합니다. 사업자 등록 후 다시 시도해주세요.",
-      });
     }
 
     const rawIds = Array.isArray(req.body?.transferMongoIds)
@@ -5055,18 +5009,72 @@ export async function remakePracticeTransfers(req, res) {
       });
     }
 
-    const { scope } = await buildPracticeOwnedScope(req);
-    const sources = await PracticeTransfer.find({
-      ...scope,
-      _id: { $in: objectIds },
-      status: { $nin: ["deleted", "canceled"] },
-    });
+    let sources = [];
+    let initiatedByLab = false;
+
+    if (canSend || role === "admin") {
+      const { scope } = await buildPracticeOwnedScope(req);
+      sources = await PracticeTransfer.find({
+        ...scope,
+        _id: { $in: objectIds },
+        status: { $nin: ["deleted", "canceled"] },
+      });
+    }
+
+    if (sources.length === 0 && (canReceive || role === "admin")) {
+      const received = await buildReceivedScope(req);
+      if (received.scope) {
+        sources = await PracticeTransfer.find({
+          ...received.scope,
+          _id: { $in: objectIds },
+          status: { $nin: ["deleted", "canceled"] },
+        });
+        if (sources.length > 0) initiatedByLab = true;
+      }
+    }
+
+    if (sources.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "리메이크할 의뢰를 찾지 못했습니다.",
+      });
+    }
 
     const includeCustomAbutment = Boolean(
       req.body?.includeCustomAbutment === true ||
         req.body?.includeCa === true ||
         req.body?.includeCustomAbutmentRemake === true,
     );
+    const selectedPartsRaw = Array.isArray(req.body?.selectedParts)
+      ? req.body.selectedParts
+      : Array.isArray(req.body?.remakeParts)
+        ? req.body.remakeParts
+        : null;
+
+    const extraFilesRaw = Array.isArray(req.body?.extraFiles)
+      ? req.body.extraFiles
+      : [];
+    const extraFilesNormalized = extraFilesRaw
+      .map((item) => {
+        const row = item && typeof item === "object" ? item : {};
+        const nested =
+          row.file && typeof row.file === "object" ? row.file : null;
+        return {
+          patientName: String(row.patientName || "").trim(),
+          tooth: String(row.tooth || "").trim(),
+          file: {
+            originalName: String(
+              row.originalName || nested?.originalName || "",
+            ).trim(),
+            mimetype: String(
+              row.mimetype || nested?.mimetype || "application/octet-stream",
+            ).trim(),
+            size: Number(row.size ?? nested?.size ?? 0),
+            s3Key: String(row.s3Key || nested?.s3Key || "").trim(),
+          },
+        };
+      })
+      .filter((item) => item.file.originalName && item.file.s3Key);
 
     const created = [];
     const failed = [];
@@ -5094,41 +5102,43 @@ export async function remakePracticeTransfers(req, res) {
         continue;
       }
 
+      const practiceAnchorId =
+        source.practiceBusinessAnchorId ||
+        (!initiatedByLab ? req.user?.businessAnchorId : null) ||
+        null;
+      if (!practiceAnchorId) {
+        failed.push({
+          transferId: sourceTransferId || sourceMongoId,
+          message: "치과 사업자 정보가 필요합니다.",
+        });
+        continue;
+      }
+
       const sourceToothWorks = Array.isArray(source.toothWorks)
         ? source.toothWorks
         : [];
       const sourceCaCount = countCustomAbutmentWorks(sourceToothWorks);
-      // 기본: 커스텀어벗 제외(보철만). 포함 시에만 CA 유지.
-      let toothWorks = includeCustomAbutment
-        ? sourceToothWorks
-        : stripCustomAbutmentFromToothWorks(sourceToothWorks);
+      let toothWorks = buildRemakeToothWorksFromSelectedParts(
+        sourceToothWorks,
+        selectedPartsRaw,
+      );
+      if (!toothWorks) {
+        // 레거시: 전체 복제. 기본은 커스텀어벗 제외(보철만).
+        toothWorks = includeCustomAbutment
+          ? sourceToothWorks
+          : stripCustomAbutmentFromToothWorks(sourceToothWorks);
+      }
+      const remakeCaCount = countCustomAbutmentWorks(toothWorks);
 
       if (toothWorks.length === 0) {
         failed.push({
           transferId: sourceTransferId || sourceMongoId,
           message:
             sourceCaCount > 0
-              ? "커스텀어벗만 있는 의뢰입니다. 커스텀어벗 리메이크를 선택한 뒤 다시 전송해 주세요."
+              ? "리메이크할 보철·커스텀어벗을 선택해 주세요."
               : "리메이크할 보철 치식이 없습니다.",
         });
         continue;
-      }
-
-      if (includeCustomAbutment && sourceCaCount > 0) {
-        try {
-          await assertReceiverLabRemakeFeeConfigured(
-            targetLabAnchorId,
-            toothWorks,
-          );
-        } catch (feeErr) {
-          failed.push({
-            transferId: sourceTransferId || sourceMongoId,
-            message:
-              feeErr?.message ||
-              "기공소 커스텀어벗 리메이크 수가가 설정되지 않았습니다.",
-          });
-          continue;
-        }
       }
 
       const files = Array.isArray(source.files)
@@ -5147,6 +5157,25 @@ export async function remakePracticeTransfers(req, res) {
             }))
             .filter((item) => item.file.originalName && item.file.s3Key)
         : [];
+
+      if (extraFilesNormalized.length > 0) {
+        const seenKeys = new Set(
+          files.map((item) => String(item.file.s3Key || "").trim()).filter(Boolean),
+        );
+        const defaultPatientName =
+          String(files[0]?.patientName || "").trim() ||
+          String(extraFilesNormalized[0]?.patientName || "").trim();
+        for (const extra of extraFilesNormalized) {
+          const key = String(extra.file.s3Key || "").trim();
+          if (!key || seenKeys.has(key)) continue;
+          seenKeys.add(key);
+          files.push({
+            patientName: String(extra.patientName || defaultPatientName).trim(),
+            tooth: String(extra.tooth || "").trim(),
+            file: extra.file,
+          });
+        }
+      }
 
       try {
         await assertPracticeTransferPaidCreditSufficient({
@@ -5212,7 +5241,7 @@ export async function remakePracticeTransfers(req, res) {
 
       const transferDoc = await PracticeTransfer.create({
         transferId,
-        practiceUserId: req.user?._id,
+        practiceUserId: source.practiceUserId || req.user?._id,
         practiceBusinessAnchorId: practiceAnchorId,
         targetLabAnchorId,
         targetLabName: String(source.targetLabName || "").trim(),
@@ -5230,8 +5259,8 @@ export async function remakePracticeTransfers(req, res) {
           sourceTransferMongoId: source._id,
           requestedAt: new Date(),
           requestedBy: req.user?._id || null,
-          includeCustomAbutment:
-            includeCustomAbutment && sourceCaCount > 0,
+          includeCustomAbutment: remakeCaCount > 0,
+          initiatedByLab: Boolean(initiatedByLab),
         },
         production: {
           skipDesignConfirm: production?.skipDesignConfirm !== false,
@@ -5267,7 +5296,7 @@ export async function remakePracticeTransfers(req, res) {
         transferMongoId: String(transferDoc?._id || ""),
         targetLabAnchorId: targetLabAnchorIdText || null,
         matchingMode: "direct",
-        practiceUserId: String(req.user?._id || ""),
+        practiceUserId: String(source.practiceUserId || req.user?._id || ""),
         status: "active",
         count: files.length,
         unreadCount: unreadCountForRequestor,
@@ -5276,14 +5305,15 @@ export async function remakePracticeTransfers(req, res) {
         remake: {
           sourceTransferId,
           sourceTransferMongoId: sourceMongoId,
+          initiatedByLab: Boolean(initiatedByLab),
         },
       };
 
       await emitPracticeTransferEventToPracticeUsers({
-        practiceBusinessAnchorId: req.user?.businessAnchorId,
+        practiceBusinessAnchorId: practiceAnchorId,
         type: "practice:transfer-created",
         payload: realtimePayload,
-        extraUserIds: [req.user?._id],
+        extraUserIds: [req.user?._id, source.practiceUserId].filter(Boolean),
       });
       await emitPracticeTransferEventToRequestorUsers({
         targetLabAnchorId,
@@ -5291,12 +5321,53 @@ export async function remakePracticeTransfers(req, res) {
         payload: realtimePayload,
       });
 
+      const feeTotal = Math.max(
+        0,
+        Math.round(Number(feeQuote?.total || feeQuote?.labFeeTotal || 0)),
+      );
+      const remakeArrivalLabel =
+        /^\d{4}-\d{2}-\d{2}$/.test(String(req.body?.arrivalYmd || "").trim())
+          ? String(req.body.arrivalYmd).trim()
+          : remakeArrivalDates[0] || "";
+      const remakeCaIncluded = remakeCaCount > 0;
+      const feeLabel =
+        feeTotal > 0
+          ? ` · 리메이크비 ${feeTotal.toLocaleString("ko-KR")}원`
+          : "";
+      const who =
+        initiatedByLab ? "기공소에서 리메이크를 기록했습니다" : "리메이크 의뢰가 전달되었습니다";
+
       created.push({
         _id: String(transferDoc?._id || ""),
         transferId,
         sourceTransferId,
         sourceTransferMongoId: sourceMongoId,
         billing: transferDoc?.billing || null,
+        remakeFeeTotal: feeTotal,
+      });
+
+      void postPracticeTransferSystemChatMessage({
+        transferMongoId: source._id,
+        senderUserId: req.user?._id,
+        content: `${who}${
+          remakeArrivalLabel ? ` (도착일 ${remakeArrivalLabel}` : ""
+        }${
+          remakeCaIncluded
+            ? `${remakeArrivalLabel ? ", " : " ("}커스텀어벗 포함`
+            : ""
+        }${remakeArrivalLabel || remakeCaIncluded ? ")" : ""}${feeLabel}.`,
+        systemEvent: "practice_transfer_remake",
+        systemPayload: {
+          remakeTransferId: transferId,
+          remakeTransferMongoId: String(transferDoc?._id || ""),
+          arrivalYmd: remakeArrivalLabel || null,
+          includeCustomAbutment: remakeCaIncluded,
+          remakeFeeTotal: feeTotal,
+          initiatedByLab: Boolean(initiatedByLab),
+          selectedParts: Array.isArray(selectedPartsRaw)
+            ? selectedPartsRaw
+            : null,
+        },
       });
     }
 
@@ -5791,19 +5862,56 @@ export async function upsertPracticeTransferLabRating(req, res) {
 export async function getPracticeTransferQuoteContext(req, res) {
   try {
     const role = String(req.user?.role || "").trim();
-    if (!isPracticeTransferSenderRole(role)) {
+    const canSend = isPracticeTransferSenderRole(role);
+    const canReceive = isPracticeTransferLabReceiverRole(role);
+    if (!canSend && !canReceive && role !== "admin") {
       return res.status(403).json({ success: false, message: "권한이 없습니다." });
     }
 
     const rawLabId = String(req.query?.labAnchorId || "").trim();
-    const labAnchorId =
+    let labAnchorId =
       !rawLabId ||
       rawLabId === AUTO_MATCH_LAB_SENTINEL ||
       !Types.ObjectId.isValid(rawLabId)
         ? null
         : rawLabId;
-    const practiceAnchorId =
-      String(req.user?.businessAnchorId || "").trim() || null;
+
+    const selfAnchor = String(req.user?.businessAnchorId || "").trim();
+    const selfIsLab =
+      canReceive &&
+      selfAnchor &&
+      Types.ObjectId.isValid(selfAnchor) &&
+      (!labAnchorId || labAnchorId === selfAnchor);
+
+    // 기공소 본인 견적(채팅 리메이크 범위): labAnchor=self, practice는 query 선택
+    if (selfIsLab && !canSend) {
+      labAnchorId = selfAnchor;
+    } else if (selfIsLab && canSend && labAnchorId === selfAnchor) {
+      // requestor role이 송신·수신 모두 가능 — labAnchor가 본인이면 기공소 견적으로 취급
+      labAnchorId = selfAnchor;
+    }
+
+    const practiceAnchorId = selfIsLab
+      ? String(req.query?.practiceAnchorId || "").trim() || null
+      : canSend
+        ? selfAnchor || null
+        : String(req.query?.practiceAnchorId || "").trim() || null;
+
+    if (selfIsLab && canReceive) {
+      if (!selfAnchor) {
+        return res.status(400).json({
+          success: false,
+          message: "기공소 사업자 정보가 필요합니다.",
+        });
+      }
+      if (labAnchorId && labAnchorId !== selfAnchor) {
+        return res.status(403).json({
+          success: false,
+          message: "다른 기공소 견적은 조회할 수 없습니다.",
+        });
+      }
+      labAnchorId = selfAnchor;
+    }
 
     const context = await loadPracticeTransferQuoteContext({
       labAnchorId,

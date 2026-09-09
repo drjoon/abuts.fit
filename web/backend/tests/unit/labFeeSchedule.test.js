@@ -29,6 +29,7 @@ import {
   stripCustomAbutmentFromToothWorks,
   LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME,
   LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_NAME,
+  LAB_FEE_CUSTOM_ABUTMENT_REMAKE_DEFAULT_PRICE,
   LAB_FEE_SCHEDULE_SAMPLE,
   LAB_FEE_SCHEDULE_ZEROS,
   normalizeLabFeeItems,
@@ -822,6 +823,43 @@ describe("labFeeSchedule", () => {
     expect(fees.labFeeTotal).toBe(25000);
     expect(fees.abutmentRetailTotal).toBe(0);
     expect(fees.total).toBe(25000);
+  });
+
+  test("리메이크에서 CA 리메이크 수가 미설정이면 개당 2만원을 쓴다", () => {
+    const fees = computePracticeTransferRetailFees({
+      toothWorks: [
+        {
+          toothNumber: "16",
+          prosthesisType: "크라운",
+          customAbutment: true,
+          abutmentProductMode: "design_custom_abutment",
+        },
+        {
+          toothNumber: "26",
+          prosthesisType: "커스텀어벗",
+          customAbutment: true,
+          abutmentProductMode: "custom_abutment",
+        },
+      ],
+      labFeeSchedule: {
+        ...LAB_FEE_SCHEDULE_SAMPLE,
+        remake: {
+          crown: 10000,
+          bridge: 0,
+          inlay: 0,
+          customAbutmentDesign: 0,
+          customAbutmentDesignAndProduction: 0,
+          customAbutmentWithoutJig: 0,
+        },
+      },
+      remake: true,
+    });
+    // 크라운 리메이크 1만 + 지그포함·지그제외 CA 기본 리메이크 각 2만
+    expect(fees.labFeeTotal).toBe(
+      10000 + LAB_FEE_CUSTOM_ABUTMENT_REMAKE_DEFAULT_PRICE * 2,
+    );
+    expect(fees.abutmentRetailTotal).toBe(0);
+    expect(fees.total).toBe(50000);
   });
 
   test("리메이크에서 CA를 제외하면 크라운 리메이크 수가만 쓴다", () => {

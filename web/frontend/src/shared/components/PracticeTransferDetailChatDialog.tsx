@@ -507,6 +507,8 @@ type PracticeTransferDetailChatDialogProps = {
   onReplyToMessage?: (message: ChatMessage) => void;
   onCancelReply?: () => void;
   onToggleReaction?: (messageId: string, emoji: string) => void | Promise<void>;
+  onDeleteMessage?: (messageId: string) => void | Promise<void>;
+  onRemakeFromMessage?: (message: ChatMessage) => void;
   composerPlaceholder: string;
   inputDisabled: boolean;
   /** # 로 삽입할 의뢰건 목록 */
@@ -517,6 +519,12 @@ type PracticeTransferDetailChatDialogProps = {
   onOpenRequestId?: (requestId: string) => void;
   /** 전송 중(ChatComposer isSending). 빈 draft 차단은 Composer가 처리 */
   sendDisabled?: boolean;
+  /**
+   * 치과: 스캔은 3Shape Communicate, 플랫폼에는 리메이크 메타만 전달.
+   * 작업시작 이후 의뢰에서만 노출.
+   */
+  onDeliverRemakeMeta?: () => void;
+  remakeMetaDisabled?: boolean;
   /** 치과: 수락 전 의뢰 내용을 작성 폼으로 불러와 수정 */
   onEditRequest?: () => void;
   editRequestDisabled?: boolean;
@@ -634,6 +642,8 @@ export function PracticeTransferDetailChatDialog({
   onReplyToMessage,
   onCancelReply,
   onToggleReaction,
+  onDeleteMessage,
+  onRemakeFromMessage,
   composerPlaceholder,
   inputDisabled,
   requestPicks,
@@ -641,6 +651,8 @@ export function PracticeTransferDetailChatDialog({
   onRequestPicksNeeded,
   onOpenRequestId,
   sendDisabled = false,
+  onDeliverRemakeMeta,
+  remakeMetaDisabled = false,
   onEditRequest,
   editRequestDisabled = false,
   onAppendArrival,
@@ -2805,6 +2817,8 @@ export function PracticeTransferDetailChatDialog({
                             downloadProgressByKey={downloadProgressByKey}
                             onReply={onReplyToMessage}
                             onToggleReaction={onToggleReaction}
+                            onDeleteMessage={onDeleteMessage}
+                            onRemakeFromMessage={onRemakeFromMessage}
                             onOpenRequestId={onOpenRequestId}
                             onOpenAttachment={(file) =>
                               void onDownloadChatAttachment({
@@ -2910,6 +2924,8 @@ export function PracticeTransferDetailChatDialog({
                     }
                     replyTo={replyTo}
                     onCancelReply={onCancelReply}
+                    onDeliverRemakeMeta={onDeliverRemakeMeta}
+                    remakeMetaDisabled={remakeMetaDisabled}
                     compact
                   />
                 </div>
