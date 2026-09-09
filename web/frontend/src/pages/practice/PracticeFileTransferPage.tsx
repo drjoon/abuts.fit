@@ -8725,7 +8725,6 @@ export const PracticeFileTransferPage = ({
           floatingDetailOpen={transferDialogOpen}
           initialPeriod={period}
           initialSearch=""
-          initialStatusFilter="all"
           initialRequests={recentRequests}
           initialHasMore={recentRequestsHasMore}
           initialLoading={recentRequestsLoading}

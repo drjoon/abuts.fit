@@ -21,6 +21,7 @@
  * 2026-08-21: 커스텀어벗 한진 배송현황을 캘린더 칩·모바일 카드에 표시.(칩 표시는 2026-09-01 제거)
  * 2026-08-21: 휴지통 취소·거부를 목록·취소 뱃지에 포함. 상단 뱃지별 unread.
  * 2026-08-21: 상단 상태 뱃지 다중 표시 on/off(표시 라벨·기본 리셋·ON/OFF 대비).
+ * 2026-09-10: 상태 표시 on/off 제거. 뱃지 클릭=안읽음 채팅만 순회.
  * 2026-08-22: 숨길 요일을 계정 preferences에 저장.
  * 2026-08-20: 모바일 — 가로 스크롤 상태칩·터치 카드·풀높이 시트.
  * 2026-08-25: 데스크톱도 풀스크린. 닫기 아이콘·히트영역 확대.
@@ -42,6 +43,7 @@
  * - 2026-09-08: 캘린더 칩 → preferredDockSide(보이는 열 좌/우)로 상세 패널 도킹.
  * - 2026-09-08: 데스크톱 캘린더/목록(일정) 보기 — 목록은 커서 월 전체 조회.
  * - 2026-09-09: 상태 뱃지 unread 카운터 클릭 시 안읽음 건 순회(표시 토글은 카운터 없을 때만).
+ * - 2026-09-10: 상태 표시 on/off 제거. 뱃지 클릭=안읽음 채팅만 순회.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronRight, Search, Trash2, X } from "lucide-react";
@@ -87,23 +89,18 @@ import { useAuthStore } from "@/store/useAuthStore";
 import {
   type PracticeRecentTransferItem,
   type PracticeRecentRequestItem,
-  type PracticeRecentStatusFilter,
   type PracticeRecentStatusFilterKey,
   PRACTICE_RECENT_STATUS_BADGES,
   computeGroupedStatusCounts,
   computeGroupedStatusUnreadCounts,
   canDeletePracticeTransferByStatus,
-  createPracticeRecentStatusFilterSet,
-  filterGroupedTransfersByStatus,
   filterRequestsByPeriodAndSearch,
   groupPracticeRecentRequests,
-  isPracticeRecentStatusFilterDefault,
   isPracticeTransferTrashStatus,
   listUnreadTransfersForStatusFilter,
   mapMyPracticeTransferApiRows,
   patchPracticeRecentRequestProsthesisFollowUp,
   prosthesisFollowUpPatchFromRealtimePayload,
-  togglePracticeRecentStatusFilter,
   toStatusBadgeLabel,
 } from "@/shared/practice/practiceRecentTransferList";
 import { resolvePracticeRecentTransferAbutmentUploadOverdue } from "@/shared/practice/practiceAbutmentUploadOverdue";
@@ -123,7 +120,6 @@ import {
 } from "@/pages/practice/components/PracticeRecentTransfersCalendar";
 import {
   PracticeStatusFilterBadges,
-  PracticeStatusFilterEmptyHint,
   type PracticeStatusFilterBadgeItem,
 } from "@/pages/practice/components/PracticeStatusFilterBadges";
 import {
@@ -166,7 +162,6 @@ type PracticeRecentTransfersAllModalProps = {
   chatRooms: ChatRoom[];
   initialPeriod: PeriodFilterValue;
   initialSearch?: string;
-  initialStatusFilter?: PracticeRecentStatusFilter;
   /** 사이드바가 이미 불러온 1페이지. 있으면 page=1 GET을 생략한다. */
   initialRequests?: PracticeRecentRequestItem[];
   initialHasMore?: boolean;
@@ -198,7 +193,6 @@ export function PracticeRecentTransfersAllModal({
   token,
   chatRooms,
   initialSearch = "",
-  initialStatusFilter = "all",
   initialRequests = [],
   initialHasMore = false,
   initialLoading = false,
@@ -231,12 +225,6 @@ export function PracticeRecentTransfersAllModal({
       ? String(initialSearch || "")
       : readStoredRecentTransfersAllSearch(""),
   );
-  const [statusFilters, setStatusFilters] = useState<Set<PracticeRecentStatusFilterKey>>(() => {
-    if (initialStatusFilter && initialStatusFilter !== "all") {
-      return createPracticeRecentStatusFilterSet([initialStatusFilter]);
-    }
-    return createPracticeRecentStatusFilterSet();
-  });
   const [dateKey, setDateKey] = useState<PracticeCalendarDateKey>(() =>
     normalizeLabReceiveCalendarDateKey(storedCalendarDateKey),
   );
@@ -281,11 +269,6 @@ export function PracticeRecentTransfersAllModal({
     // 의뢰상세 → 전체보기 재오픈 시에도 검색창이 비지 않게 한다.
     const seeded = String(initialSearch || "").trim();
     setSearch(seeded ? seeded : readStoredRecentTransfersAllSearch(""));
-    if (initialStatusFilter && initialStatusFilter !== "all") {
-      setStatusFilters(createPracticeRecentStatusFilterSet([initialStatusFilter]));
-    } else {
-      setStatusFilters(createPracticeRecentStatusFilterSet());
-    }
     setCursorYmd(toKstYmd(new Date()) || "");
     setDateKey(normalizeLabReceiveCalendarDateKey(storedCalendarDateKey));
     setHiddenWeekdays(
@@ -295,7 +278,6 @@ export function PracticeRecentTransfersAllModal({
   }, [
     open,
     initialSearch,
-    initialStatusFilter,
     storedCalendarDateKey,
     storedHiddenWeekdays,
   ]);
@@ -514,10 +496,7 @@ export function PracticeRecentTransfersAllModal({
     [visibleGroupedTransfers],
   );
 
-  const filteredTransfers = useMemo(
-    () => filterGroupedTransfersByStatus(visibleGroupedTransfers, statusFilters),
-    [visibleGroupedTransfers, statusFilters],
-  );
+  const filteredTransfers = visibleGroupedTransfers;
 
   const calendarItems = useMemo((): PracticeCalendarChipItem[] => {
     const base = filteredTransfers.map((transfer) => {
@@ -651,7 +630,7 @@ export function PracticeRecentTransfersAllModal({
     [dateKey],
   );
 
-  const unreadNavigateIndexRef = useRef<Record<string, number>>({});
+  const unreadNavigateLastIdRef = useRef<Record<string, string>>({});
 
   const navigateNextUnreadForStatus = useCallback(
     (key: string) => {
@@ -663,19 +642,19 @@ export function PracticeRecentTransfersAllModal({
       );
       if (unreadTransfers.length === 0) return;
 
-      setStatusFilters((prev) => {
-        if (prev.has(filterKey)) return prev;
-        const next = new Set(prev);
-        next.add(filterKey);
-        return next;
-      });
-
-      const prevIdx = unreadNavigateIndexRef.current[filterKey] ?? 0;
-      const idx = prevIdx % unreadTransfers.length;
-      unreadNavigateIndexRef.current[filterKey] =
-        (idx + 1) % unreadTransfers.length;
-      const transfer = unreadTransfers[idx];
+      const lastId = unreadNavigateLastIdRef.current[filterKey] || "";
+      const transferIdOf = (t: PracticeRecentTransferItem) =>
+        String(t.transferId || t.id || "").trim();
+      let candidates = unreadTransfers;
+      if (lastId) {
+        const withoutLast = unreadTransfers.filter(
+          (t) => transferIdOf(t) !== lastId,
+        );
+        if (withoutLast.length > 0) candidates = withoutLast;
+      }
+      const transfer = candidates[0];
       if (!transfer) return;
+      unreadNavigateLastIdRef.current[filterKey] = transferIdOf(transfer);
       jumpCalendarToTransferDate(transfer);
       onSelectTransfer(transfer);
     },
@@ -693,37 +672,14 @@ export function PracticeRecentTransfersAllModal({
     }));
   }, [statusCounts, statusUnreadCounts]);
 
-  const resetStatusFiltersToDefault = useCallback(() => {
-    setStatusFilters(createPracticeRecentStatusFilterSet());
-  }, []);
-
   const statusBadges = (
     <PracticeStatusFilterBadges
       items={statusFilterBadgeItems}
-      activeKeys={statusFilters}
-      onToggle={(key) =>
-        setStatusFilters((prev) =>
-          togglePracticeRecentStatusFilter(
-            prev,
-            key as PracticeRecentStatusFilterKey,
-          ),
-        )
-      }
       onUnreadNavigate={navigateNextUnreadForStatus}
-      onResetToDefault={resetStatusFiltersToDefault}
-      isDefault={isPracticeRecentStatusFilterDefault(statusFilters)}
       compact={isMobile}
       className={isMobile ? "contents" : undefined}
     />
   );
-
-  const statusFilterEmptyHint =
-    statusFilters.size === 0 ? (
-      <PracticeStatusFilterEmptyHint
-        onResetToDefault={resetStatusFiltersToDefault}
-        className="mb-2 shrink-0"
-      />
-    ) : null;
 
   const headerTitle = isPage ? "기공의뢰" : "전송 내역 전체 보기";
   const mobileTitle = isPage ? "기공의뢰" : "최근 의뢰";
@@ -975,7 +931,6 @@ export function PracticeRecentTransfersAllModal({
                 }}
                 className="mb-2"
               />
-              {statusFilterEmptyHint}
               <PracticeRecentTransfersCalendar
                 items={calendarItems}
                 dateKey={dateKey}

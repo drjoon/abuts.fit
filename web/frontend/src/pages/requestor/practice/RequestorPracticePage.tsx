@@ -64,6 +64,7 @@
 // - 2026-08-25: status deleted=치과 의뢰 삭제. 수신 목록·취소 뱃지에서 제외. canceled=레거시 휴지통. 작업취소=workCanceledAt.
 // - 2026-08-21: 수신 상단 상태 뱃지에 채팅·미확인 unread.
 // - 2026-09-09: 상태 뱃지 unread 카운터 클릭 시 안읽음 건 순회(표시 토글은 카운터 없을 때만).
+// - 2026-09-10: 상태 표시 on/off 제거. 뱃지 클릭=안읽음 채팅만 순회.
 // - 2026-08-21: 상단 상태 뱃지 다중 표시 on/off(표시 라벨·기본 리셋·ON/OFF 대비).
 // - 2026-08-21: 어벗 디자인 업로드 후 skipDesignConfirm 강제 true 제거(구강스캔으로 치과 설정 존중).
 // - 2026-08-21: 하청 전환 버튼 — 어벗츠기공소(internalLab)만 노출.
@@ -215,14 +216,10 @@ import {
 import { useS3FileDownload } from "@/shared/files/useS3FileDownload";
 import { cn } from "@/shared/ui/cn";
 import {
-  LAB_RECEIVE_DEFAULT_ON_STATUS_FILTERS,
   LAB_RECEIVE_STATUS_BADGES,
   computeGroupedStatusCounts,
   computeGroupedStatusUnreadCounts,
-  createPracticeRecentStatusFilterSet,
   listUnreadTransfersForStatusFilter,
-  practiceTransferMatchesStatusFilters,
-  togglePracticeRecentStatusFilter,
   toStatusBadgeLabel,
   type PracticeRecentStatusFilterKey,
   type PracticeRecentTransferItem,
@@ -360,7 +357,6 @@ import {
 } from "@/pages/practice/components/PracticeRecentTransfersCalendar";
 import {
   PracticeStatusFilterBadges,
-  PracticeStatusFilterEmptyHint,
   type PracticeStatusFilterBadgeItem,
 } from "@/pages/practice/components/PracticeStatusFilterBadges";
 import { RequestorAbutmentPageHeader } from "@/pages/requestor/new_request/components/RequestorAbutmentPageHeader";
@@ -537,43 +533,6 @@ const formatLabReceiveMobileCreatedAt = (value: unknown) => {
 
 type LabReceiveStatusFilterKey = PracticeRecentStatusFilterKey;
 
-const createLabReceiveStatusFilterSet = (
-  keys: readonly LabReceiveStatusFilterKey[] = LAB_RECEIVE_DEFAULT_ON_STATUS_FILTERS,
-) => createPracticeRecentStatusFilterSet(keys);
-
-/** 독립 다중 on/off: 키를 Set에 추가/제거. 전부 off(빈 Set) 허용. */
-const toggleLabReceiveStatusFilter = (
-  prev: ReadonlySet<LabReceiveStatusFilterKey>,
-  key: LabReceiveStatusFilterKey,
-) => togglePracticeRecentStatusFilter(prev, key);
-
-const isLabReceiveStatusFilterDefault = (
-  selected: ReadonlySet<LabReceiveStatusFilterKey>,
-) => {
-  if (selected.size !== LAB_RECEIVE_DEFAULT_ON_STATUS_FILTERS.length) return false;
-  return LAB_RECEIVE_DEFAULT_ON_STATUS_FILTERS.every((k) => selected.has(k));
-};
-
-const labTransferMatchesStatusFilters = (
-  transfer: ReceivedPracticeTransfer,
-  selected: ReadonlySet<LabReceiveStatusFilterKey>,
-  unreadCount = 0,
-) => {
-  // 미확인은 상태 필터 on/off·전부 off와 무관하게 항상 캘린더 표시.
-  if (Math.max(0, Number(unreadCount || 0)) > 0) return true;
-
-  const status = getTransferDisplayStatus(transfer);
-  return practiceTransferMatchesStatusFilters(
-    {
-      status,
-      designFileCount: transfer.production?.designFileCount,
-      designFiles: transfer.production?.designFiles,
-      designReadyAt: transfer.production?.designReadyAt,
-    },
-    selected,
-  );
-};
-
 export default function RequestorPracticePage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -745,9 +704,6 @@ export function RequestorPracticeReceivePage({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
-  const [statusFilters, setStatusFilters] = useState<Set<LabReceiveStatusFilterKey>>(() =>
-    createLabReceiveStatusFilterSet(),
-  );
   const [dateKey, setDateKey] = useState<PracticeCalendarDateKey>(() =>
     normalizeLabReceiveCalendarDateKey(storedCalendarDateKey),
   );
@@ -2144,17 +2100,7 @@ export function RequestorPracticeReceivePage({
     return computeGroupedStatusUnreadCounts(asItems as PracticeRecentTransferItem[]);
   }, [baseFilteredTransfers, transferUnreadBadgeCount]);
 
-  const filteredTransfers = useMemo(
-    () =>
-      baseFilteredTransfers.filter((transfer) =>
-        labTransferMatchesStatusFilters(
-          transfer,
-          statusFilters,
-          transferUnreadBadgeCount(transfer),
-        ),
-      ),
-    [baseFilteredTransfers, statusFilters, transferUnreadBadgeCount],
-  );
+  const filteredTransfers = baseFilteredTransfers;
 
   const sortedFilteredTransfers = useMemo(() => {
     const latestChatTsByTransferId = new Map<string, number>();
@@ -5602,7 +5548,7 @@ export function RequestorPracticeReceivePage({
     [guideTourLabCalendarStep, openTransferDialog, platformGuideTour],
   );
 
-  const unreadNavigateIndexRef = useRef<Record<string, number>>({});
+  const unreadNavigateLastIdRef = useRef<Record<string, string>>({});
 
   const navigateNextUnreadForStatus = useCallback(
     (key: string) => {
@@ -5625,19 +5571,19 @@ export function RequestorPracticeReceivePage({
       );
       if (unreadRows.length === 0) return;
 
-      setStatusFilters((prev) => {
-        if (prev.has(filterKey)) return prev;
-        const next = new Set(prev);
-        next.add(filterKey);
-        return next;
-      });
-
-      const prevIdx = unreadNavigateIndexRef.current[filterKey] ?? 0;
-      const idx = prevIdx % unreadRows.length;
-      unreadNavigateIndexRef.current[filterKey] =
-        (idx + 1) % unreadRows.length;
-      const transfer = unreadRows[idx]?.transfer;
+      const transferIdOf = (row: (typeof unreadRows)[number]) =>
+        String(row.transfer.transferId || row.transfer._id || "").trim();
+      const lastId = unreadNavigateLastIdRef.current[filterKey] || "";
+      let candidates = unreadRows;
+      if (lastId) {
+        const withoutLast = unreadRows.filter(
+          (row) => transferIdOf(row) !== lastId,
+        );
+        if (withoutLast.length > 0) candidates = withoutLast;
+      }
+      const transfer = candidates[0]?.transfer;
       if (!transfer) return;
+      unreadNavigateLastIdRef.current[filterKey] = transferIdOf(candidates[0]!);
       if (!isMobile) jumpCalendarToTransferDate(transfer);
       selectTransferFromCalendar(transfer);
     },
@@ -5650,10 +5596,6 @@ export function RequestorPracticeReceivePage({
       transferUnreadBadgeCount,
     ],
   );
-
-  const resetLabStatusFiltersToDefault = useCallback(() => {
-    setStatusFilters(createLabReceiveStatusFilterSet());
-  }, []);
 
   const transferSearchAndBadges = (
     <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
@@ -5668,15 +5610,7 @@ export function RequestorPracticeReceivePage({
       <PracticeStatusFilterBadges
         className="min-w-0 flex-1 sm:justify-center"
         items={labStatusFilterBadgeItems}
-        activeKeys={statusFilters}
-        onToggle={(key) =>
-          setStatusFilters((prev) =>
-            toggleLabReceiveStatusFilter(prev, key as LabReceiveStatusFilterKey),
-          )
-        }
         onUnreadNavigate={navigateNextUnreadForStatus}
-        onResetToDefault={resetLabStatusFiltersToDefault}
-        isDefault={isLabReceiveStatusFilterDefault(statusFilters)}
         countSuffix="건"
         trailing={
           <RequestorAbutmentPageHeader variant="policyInProgress" />
@@ -5726,12 +5660,6 @@ export function RequestorPracticeReceivePage({
             }}
             className="shrink-0"
           />
-          {statusFilters.size === 0 ? (
-            <PracticeStatusFilterEmptyHint
-              onResetToDefault={resetLabStatusFiltersToDefault}
-              className="shrink-0"
-            />
-          ) : null}
           {isMobile ? (
             <div
               className="flex min-h-0 flex-1 flex-col"

@@ -1,11 +1,9 @@
 /**
- * 치과 전체보기·기공의뢰수신 공통 — 상단 상태 표시 on/off 뱃지 행.
- * 뱃지 + 기본값과 다를 때 「기본」 리셋.
- * 2026-09-03: trailing — 어벗츠 생산중 등(리셋 버튼 앞). 정책 안내는 사이드바.
- * 2026-08-21: 배타 필터 → 다중 표시 on/off. ON/OFF 대비·기본 리셋.
- * 2026-08-21: 「표시」 라벨 제거.
+ * 치과 전체보기·기공의뢰수신 공통 — 상단 상태 뱃지 행(건수·unread).
+ * 클릭=해당 상태 안읽음 의뢰 채팅을 하나씩 연다(표시 on/off 없음).
+ * 2026-09-10: 표시 on/off·「기본」리셋 제거. 클릭=unread 순회만.
+ * 2026-09-03: trailing — 어벗츠 생산중 등. 정책 안내는 사이드바.
  * 2026-08-27: 발송 뒤 리메이크·미확인 간격. 미확인 전용 뱃지용 nested unread 숨김.
- * 2026-09-09: 빨간 unread 카운터 있으면 클릭=표시토글 대신 안읽음 순회(onUnreadNavigate).
  *
  * related files:
  * - web/frontend/src/pages/practice/components/PracticeRecentTransfersAllModal.tsx
@@ -15,7 +13,6 @@
  */
 import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
   Tooltip,
   TooltipContent,
@@ -33,26 +30,19 @@ export type PracticeStatusFilterBadgeItem = {
   tone: PracticeCalendarStatusTone;
   count: number;
   unreadCount?: number;
-  /** 상태 의미 설명(표시/숨김 문구는 컴포넌트가 앞에 붙임) */
+  /** 상태 의미 설명(클릭 안내 문구는 컴포넌트가 앞에 붙임) */
   tooltip?: string;
 };
 
 type PracticeStatusFilterBadgesProps = {
   items: readonly PracticeStatusFilterBadgeItem[];
-  activeKeys: ReadonlySet<string>;
-  onToggle: (key: string) => void;
-  /**
-   * 빨간 unread 카운터가 있을 때 클릭. 없으면 unread여도 onToggle.
-   * 호출측에서 해당 상태 안읽음 건을 하나씩 찾아간다.
-   */
-  onUnreadNavigate?: (key: string) => void;
-  onResetToDefault: () => void;
-  isDefault: boolean;
+  /** 해당 상태 안읽음 건을 하나씩 열어 카운터를 줄인다. */
+  onUnreadNavigate: (key: string) => void;
   /** 건수 뒤 접미사. 치과 모달="", 기공의뢰수신="건" */
   countSuffix?: string;
   /** 이 키들 앞에 간격(발송 | 리메이크·미확인 / 완료 | 어벗) */
   gapBeforeKeys?: readonly string[];
-  /** 뱃지 행 끝·「기본」 앞에 붙는 액션(정책 안내·진행중 등) */
+  /** 뱃지 행 끝 액션(정책 안내·진행중 등) */
   trailing?: ReactNode;
   /** true면 뱃지 안 빨간 unread 점 숨김(전용 미확인 뱃지 쓸 때) */
   hideNestedUnread?: boolean;
@@ -62,11 +52,7 @@ type PracticeStatusFilterBadgesProps = {
 
 export function PracticeStatusFilterBadges({
   items,
-  activeKeys,
-  onToggle,
   onUnreadNavigate,
-  onResetToDefault,
-  isDefault,
   countSuffix = "",
   gapBeforeKeys,
   trailing,
@@ -82,20 +68,17 @@ export function PracticeStatusFilterBadges({
         className,
       )}
       role="group"
-      aria-label="캘린더 표시 상태"
+      aria-label="상태별 의뢰 건수"
     >
       {items.map((item) => {
-        const active = activeKeys.has(item.key);
         const unread = hideNestedUnread
           ? 0
           : Math.max(0, Number(item.unreadCount || 0));
-        const navigateUnread = unread > 0 && Boolean(onUnreadNavigate);
+        const canNavigate = unread > 0;
         const countLabel = `${item.count}${countSuffix}`;
-        const actionHint = navigateUnread
+        const actionHint = canNavigate
           ? `안읽음 ${unread}건 찾아가기`
-          : active
-            ? "캘린더에서 숨기기"
-            : "캘린더에 표시하기";
+          : "안읽은 의뢰 없음";
         const tooltipBody = item.tooltip
           ? `${actionHint}. ${item.tooltip}`
           : actionHint;
@@ -109,25 +92,22 @@ export function PracticeStatusFilterBadges({
                 className={cn(
                   "relative shrink-0 rounded-full",
                   withGap && "ml-3",
+                  !canNavigate && "cursor-default",
                 )}
                 onClick={() => {
-                  if (navigateUnread) {
-                    onUnreadNavigate?.(item.key);
-                    return;
-                  }
-                  onToggle(item.key);
+                  if (!canNavigate) return;
+                  onUnreadNavigate(item.key);
                 }}
-                aria-pressed={navigateUnread ? undefined : active}
+                aria-disabled={!canNavigate}
                 aria-label={`${item.label} ${countLabel}, ${actionHint}`}
               >
                 <Badge
                   variant="outline"
                   className={cn(
-                    "cursor-pointer whitespace-nowrap",
+                    "whitespace-nowrap",
+                    canNavigate ? "cursor-pointer" : "cursor-default",
                     compact && "h-8 px-2.5 text-xs",
-                    PRACTICE_STATUS_FILTER_BADGE_CLASS[item.tone][
-                      active ? "active" : "idle"
-                    ],
+                    PRACTICE_STATUS_FILTER_BADGE_CLASS[item.tone].active,
                   )}
                 >
                   <span className="inline-flex items-center gap-1">
@@ -151,47 +131,6 @@ export function PracticeStatusFilterBadges({
         );
       })}
       {trailing}
-      {!isDefault ? (
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className={cn(
-            "h-7 shrink-0 px-2 text-xs text-muted-foreground hover:text-foreground",
-            compact && "h-8",
-          )}
-          onClick={onResetToDefault}
-        >
-          기본
-        </Button>
-      ) : null}
-    </div>
-  );
-}
-
-/** 전부 off일 때 캘린더/목록 위 안내. */
-export function PracticeStatusFilterEmptyHint({
-  onResetToDefault,
-  className,
-}: {
-  onResetToDefault: () => void;
-  className?: string;
-}) {
-  return (
-    <div
-      className={cn(
-        "flex flex-wrap items-center justify-center gap-2 rounded-lg border border-dashed border-slate-200 bg-slate-50/80 px-3 py-2 text-sm text-muted-foreground",
-        className,
-      )}
-    >
-      <span>표시할 상태를 선택하세요</span>
-      <button
-        type="button"
-        className="font-medium text-sky-700 underline-offset-2 hover:underline"
-        onClick={onResetToDefault}
-      >
-        기본
-      </button>
     </div>
   );
 }
