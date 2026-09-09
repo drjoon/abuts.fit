@@ -59,6 +59,12 @@ async function createDraftForPreviousMonth() {
       .select({ payoutAccount: 1 })
       .lean();
     for (const anchor of anchors) {
+      if (definition.role === "lab") {
+        const { shouldFreezeLabSettlementPayout } = await import(
+          "../services/demoConversion.service.js"
+        );
+        if (await shouldFreezeLabSettlementPayout(anchor._id)) continue;
+      }
       const breakdown = await computeSettlementPayoutBreakdown({
         role: definition.role,
         businessAnchorId: anchor._id,

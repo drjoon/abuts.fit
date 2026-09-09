@@ -4530,7 +4530,8 @@ export async function adminGetAdminLedger(req, res) {
 }
 
 /**
- * 관리자 — 의뢰자 데모 모드 실사용 전환(잔여 데모 크레딧 회수).
+ * 관리자 — 의뢰자 데모 모드 전환 입금 대기로 잠금(부채 유지).
+ * 실사용 종료는 전환 입금(CHARGE_PAID 워터폴) 확정 시에만.
  * @route POST /api/admin/credits/businesses/:id/exit-demo
  */
 export async function adminExitBusinessDemoMode(req, res) {
@@ -4543,25 +4544,29 @@ export async function adminExitBusinessDemoMode(req, res) {
       });
     }
 
-    const { exitDemoMode } = await import(
+    const { beginDemoConversionPending } = await import(
       "../businesses/business.demoMode.util.js"
     );
     const { invalidateMyBusinessCache } = await import(
       "../businesses/business.controller.js"
     );
 
-    const result = await exitDemoMode({
+    const result = await beginDemoConversionPending({
       businessAnchorId: orgId,
       userId: req.user?._id,
+      reason: "관리자 실사용 전환 대기",
     });
     invalidateMyBusinessCache(orgId);
 
     return res.json({
       success: true,
       data: {
-        demoMode: Boolean(result?.demoMode),
-        clawedBack: Number(result?.clawedBack || 0),
+        demoMode: true,
+        conversionPending: Boolean(result?.conversionPending),
         alreadyExited: Boolean(result?.alreadyExited),
+        alreadyPending: Boolean(result?.alreadyPending),
+        minTotal: result?.minTotal ?? null,
+        quote: result?.quote || null,
       },
     });
   } catch (error) {
@@ -4569,7 +4574,7 @@ export async function adminExitBusinessDemoMode(req, res) {
     console.error("adminExitBusinessDemoMode error:", error);
     return res.status(status).json({
       success: false,
-      message: error?.message || "실사용 전환에 실패했습니다.",
+      message: error?.message || "실사용 전환 대기 설정에 실패했습니다.",
     });
   }
 }

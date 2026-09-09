@@ -115,6 +115,39 @@ export async function createChargeOrder(req, res) {
     return res.status(400).json({ success: false, message: validated.message });
   }
 
+  let conversionQuote = null;
+  try {
+    const { getDemoModeState } = await import(
+      "../businesses/business.demoMode.util.js"
+    );
+    const demoState = await getDemoModeState(businessAnchorId);
+    if (demoState?.demoMode && !demoState?.demoModeExitedAt) {
+      const {
+        computeDemoConversionQuote,
+        assertChargeMeetsConversionMinimum,
+      } = await import("../../services/demoConversion.service.js");
+      conversionQuote = await computeDemoConversionQuote(businessAnchorId);
+      assertChargeMeetsConversionMinimum(
+        validated.supplyAmount,
+        conversionQuote,
+      );
+    }
+  } catch (convErr) {
+    if (convErr?.code === "CONVERSION_MIN_NOT_MET" || convErr?.statusCode === 400) {
+      return res.status(400).json({
+        success: false,
+        message: convErr.message,
+        code: convErr.code || "CONVERSION_MIN_NOT_MET",
+        minTotal: convErr.minTotal,
+        conversionQuote: convErr.quote || conversionQuote,
+      });
+    }
+    console.warn(
+      "[createChargeOrder] conversion min check failed",
+      convErr?.message || convErr,
+    );
+  }
+
   const supplyAmount = validated.supplyAmount;
   // 크레딧 충전은 부가세 없이 공급가 전액 입금
   const vatAmount = 0;
@@ -131,6 +164,47 @@ export async function createChargeOrder(req, res) {
     .lean();
 
   if (existing) {
+    // 데모 전환 하한: 대기 주문이 하한 미만이면 새 요청 금액으로 상향(입금코드 유지)
+    if (
+      conversionQuote &&
+      Number(existing.supplyAmount || 0) < Number(conversionQuote.minTotal || 0) &&
+      supplyAmount >= Number(conversionQuote.minTotal || 0)
+    ) {
+      const bumped = await ChargeOrder.findOneAndUpdate(
+        {
+          _id: existing._id,
+          status: "PENDING",
+          bankTransactionId: null,
+          expiresAt: { $gt: now },
+        },
+        {
+          $set: {
+            supplyAmount,
+            vatAmount: 0,
+            amountTotal: supplyAmount,
+          },
+        },
+        { new: true },
+      ).lean();
+      if (bumped) {
+        return res.status(200).json({
+          success: true,
+          data: {
+            id: bumped._id,
+            status: bumped.status,
+            depositCode: bumped.depositCode,
+            depositorName: bumped.depositorName,
+            supplyAmount: bumped.supplyAmount,
+            vatAmount: 0,
+            amountTotal: bumped.supplyAmount,
+            expiresAt: bumped.expiresAt,
+            depositAccount: await getDepositAccountInfo(),
+            conversionQuote,
+          },
+        });
+      }
+    }
+
     // 면세 전환: 대기 중 주문에 남아 있는 VAT 가산분을 공급가 기준으로 정규화
     const existingVat = Number(existing.vatAmount || 0);
     const existingTotal = Number(existing.amountTotal || 0);

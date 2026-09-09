@@ -233,7 +233,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 멀티 인스턴스 백엔드에서는 워커 중복 실행 방지를 위해 Mongo 기반 분산락 SSOT를 사용합니다.
     - 공통 락 유틸: `utils/distributedJobLock.js`
     - 적용 워커: `services/reviewApprovalQueue.service.js`, `controllers/requests/shipping.TrackingPoller.js`, `jobs/dummyCncWorker.js`, `jobs/dailyReferralSnapshotWorker.js`
-  - 의뢰자(치과) 데모 모드: 가입 시 `demoMode`만 ON·크레딧 **0원**(데모 크레딧 미지급). **가상 잔고** — 구강스캔·커스텀어벗 기공비는 `allowFreeRequestOverdraft`로 마이너스 허용. 실거래는 치과→기공소 직접 입금. **`CHARGE_PAID` 지급 직후 `exitDemoModeAfterPaidCreditGrant`**로 자동 실사용 전환(승인·자동매칭·수동매칭). 스토어는 유료 크레딧(전환 후). 30일 만료(`/me`·`jobs/demoModeExpiryWorker.js`)·사용자/관리자 전환 시 `exitDemoMode`로 레거시 잔여 회수+부채 0 리셋. 잔고 0 소진 자동종료 없음. SSOT: `controllers/businesses/business.demoMode.util.js`. 기존 grant 회수: `scripts/db/clawback-legacy-demo-credit.js`.
+  - 의뢰자 데모 모드: 가입 시 `demoMode`만 ON·크레딧 **0원**. **가상 잔고** — `allowFreeRequestOverdraft`(전환 대기 `conversionPendingAt`이면 잠금). **`CHARGE_PAID` 직후 `applyDemoConversionWaterfallAfterPaidCharge`**(이용분 청산·기공소 Lab→Abuts 상계·잔액 선수금) → `exitDemoModeAfterConversionPaid`. 만료/수동/관리자 `exit-demo`는 `beginDemoConversionPending`(부채 유지). 무료 `DEMO_DEBT_RESET` 종료 폐기. 데모·전환 대기 기공소 `LAB_SETTLEMENT` 인출/월배치 동결. SSOT: `services/demoConversion.service.js`, `business.demoMode.util.js`, `GET /api/credits/conversion-quote`.
 
 - 가격/리퍼럴 rolling 스냅샷:
   - 일일 재계산 워커: `jobs/dailyReferralSnapshotWorker.js`
@@ -732,8 +732,10 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - 대체: 치과·기공소 데모 모드(`allowFreeRequestOverdraft`) + 관리자 수동 무료크레딧
   - 데모 모드(치과·기공소, 강제):
     - 가입 시 0원·가상 잔고 마이너스 허용(치과=기공비, 기공소=어벗츠 생산·배송)
-    - 30일/`CHARGE_PAID` 입금/수동 전환 시 실사용. 부채 0 리셋. 기공소는 이용분 후결제 + 선수금
-    - SSOT: `business.demoMode.util.js`
+    - **전환 입금 워터폴**: CHARGE_PAID → 이용분 청산(+치과면 기공소 상계/정산크레딧) → 잔액 선수금 → 데모 OFF
+    - 30일 만료/수동/관리자: `conversionPending`(부채 유지·overdraft 잠금). 무료 부채 리셋 종료 금지
+    - 하한 = 이용분 + 1유닛(유닛 올림). `GET /api/credits/conversion-quote`
+    - SSOT: `demoConversion.service.js` · `business.demoMode.util.js`
 ### 웹소켓 업데이트 표준 (무플리커 + 부하완화)
 
   - 웹소켓 실시간 업데이트 발행/수신 SSOT:

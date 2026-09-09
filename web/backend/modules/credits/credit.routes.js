@@ -22,6 +22,7 @@ import {
   listMyTaxInvoices,
   getMyTaxInvoice,
 } from "../../controllers/credits/creditBPlan.controller.js";
+import { getMyConversionQuote } from "../../controllers/credits/conversionInvoice.controller.js";
 import {
   sendVerificationCode,
   verifyCode,
@@ -34,6 +35,7 @@ router.get("/settings", getPublicCreditSettings);
 router.use(authenticate);
 
 router.get("/balance", getMyCreditBalance);
+router.get("/conversion-quote", authorize(["requestor"]), getMyConversionQuote);
 router.get("/insights/spend", getMyCreditSpendInsights);
 router.get("/settlement/daily-summary", getLabSettlementDailySummary);
 router.get("/settlement/payouts", listMyLabSettlementBatchItems);

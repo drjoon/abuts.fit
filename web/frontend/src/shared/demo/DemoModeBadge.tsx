@@ -95,10 +95,12 @@ export function DemoModeBadge({ className, onExited }: Props) {
           const ok = await exitDemoMode();
           if (ok) {
             setConfirmOpen(false);
-            toast.success("실사용으로 전환되었습니다.");
+            toast.success(
+              "전환 입금 대기로 설정되었습니다. 충전 탭에서 최소 금액을 입금해 주세요.",
+            );
             onExited?.();
           } else {
-            toast.error("실사용 전환에 실패했습니다. 잠시 후 다시 시도해 주세요.");
+            toast.error("전환 대기 설정에 실패했습니다. 잠시 후 다시 시도해 주세요.");
           }
         }}
       />

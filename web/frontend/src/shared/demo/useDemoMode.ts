@@ -160,16 +160,28 @@ export function useDemoMode(): DemoModeState {
     try {
       const res = await request<{
         success?: boolean;
-        data?: { demoMode?: boolean };
+        data?: {
+          demoMode?: boolean;
+          conversionPending?: boolean;
+          alreadyExited?: boolean;
+        };
       }>({
         path: "/api/businesses/me/exit-demo",
         method: "POST",
       });
       if (!res.ok || !res.data?.success) return false;
-      setDemoMode(false);
-      setDaysRemaining(null);
-      cachedDemoMode = false;
-      cachedDaysRemaining = null;
+      const payload = res.data.data || {};
+      // 전환 입금 대기: 데모 유지. 입금 확정 시에만 demoMode OFF.
+      if (payload.alreadyExited || payload.demoMode === false) {
+        setDemoMode(false);
+        setDaysRemaining(null);
+        cachedDemoMode = false;
+        cachedDaysRemaining = null;
+      } else {
+        setDemoMode(true);
+        cachedDemoMode = true;
+        void refresh();
+      }
       cachedAnchorId = businessAnchorId ? String(businessAnchorId) : null;
       return true;
     } catch {
@@ -177,7 +189,7 @@ export function useDemoMode(): DemoModeState {
     } finally {
       setExiting(false);
     }
-  }, [businessAnchorId]);
+  }, [businessAnchorId, refresh]);
 
   return { demoMode, daysRemaining, loading, exiting, refresh, exitDemoMode };
 }

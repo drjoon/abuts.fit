@@ -4,7 +4,10 @@
 // - web/backend/controllers/businesses/business.freeCredit.util.js
 // - web/backend/services/generalLedger.service.js
 // - web/backend/services/creditBalance.service.js
+// - web/backend/services/demoConversion.service.js
 // - web/frontend/src/shared/demo/DemoModeBadge.tsx
+// change-log:
+// - 2026-09-09: 전환 입금 워터폴. 만료/수동은 conversionPending(부채 유지). 무료 부채 리셋 종료 폐기.
 import FreeCreditGrant from "../../models/freeCreditGrant.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.js";
@@ -17,7 +20,7 @@ import { getBusinessCreditBalanceSnapshot } from "../../services/creditBalance.s
  */
 export const DEMO_CREDIT_AMOUNT = 1_000_000;
 
-/** 데모 모드 유효기간(일). startedAt 기준 경과 시 자동 실사용 전환. */
+/** 데모 모드 유효기간(일). startedAt 기준 경과 시 전환 입금 대기로 잠금. */
 export const DEMO_MODE_DURATION_DAYS = 30;
 
 const DEMO_GRANT_TYPE = "DEMO_CREDIT";
@@ -52,11 +55,7 @@ function resolveDemoGrantBusinessNumber(anchor) {
 
 /**
  * 의뢰자 사업자 신규 생성 시 데모 모드만 시작(크레딧 미지급, 0원).
- * 치과(practice)·기공소(lab) 모두 적용(첫 30일).
- * - 치과: 구강스캔·커스텀어벗 기공비 가상 잔고(마이너스 허용). 실거래는 치과→기공소 직접 입금.
- * - 기공소: 기공소→어벗츠 생산·배송비 가상 잔고(마이너스 허용). 데모 종료 시 이용분 후결제 + 실사용 선수금.
- * 유료 크레딧(CHARGE_PAID) 입금 확정·기간 만료·수동 전환 시 실사용. 이미 실사용(demoModeExitedAt)한
- * 사업자는 재진입하지 않는다.
+ * 유료 전환 입금(CHARGE_PAID 워터폴) 확정 시에만 실사용. 만료·수동은 전환 대기.
  */
 export async function enableDemoModeAndGrantCreditIfEligible({
   businessAnchorId,
@@ -99,8 +98,6 @@ export async function enableDemoModeAndGrantCreditIfEligible({
 
 /**
  * 레거시 DEMO_CREDIT grant 잔여(양수 freeRequest ∩ grant) 회수.
- * exit / 마이그레이션 공용. demoMode 플래그는 건드리지 않는다.
- * @returns {Promise<{ clawedBack: number, clawJournalId: string|null, grant: object|null }>}
  */
 export async function clawBackLegacyDemoCreditGrant({
   businessAnchorId,
@@ -200,8 +197,7 @@ export async function clawBackLegacyDemoCreditGrant({
 }
 
 /**
- * 데모 부채(음수 freeRequest)를 0으로 리셋.
- * @returns {Promise<{ resetAmount: number, journalId: string|null }>}
+ * @deprecated 전환 워터폴 도입 후 무료 부채 리셋 종료 금지. 레거시/관리자 복구용만.
  */
 export async function resetDemoFreeRequestDebtToZero({
   businessAnchorId,
@@ -239,7 +235,7 @@ export async function resetDemoFreeRequestDebtToZero({
     refId: businessAnchorId,
     createdBy: userId || null,
     meta: {
-      memo: `${exitReason} — 데모 부채 리셋`,
+      memo: `${exitReason} — 데모 부채 리셋(레거시)`,
       source: "demo_debt_reset",
       demoCredit: true,
       resetAmount,
@@ -276,11 +272,10 @@ export async function resetDemoFreeRequestDebtToZero({
 }
 
 /**
- * 실사용 전환: 데모 모드 OFF + 레거시 잔여 회수 + 마이너스 부채 0 리셋.
- * @param {{ businessAnchorId: any, userId?: any, reason?: string }} args
- *   reason: 사용자 요청·기간 만료 구분 (기본 "실사용 전환")
+ * 만료·수동 전환: 실사용 종료가 아니라 전환 입금 대기.
+ * 부채 유지, overdraft 잠금, ConversionInvoice PENDING.
  */
-export async function exitDemoMode({
+export async function beginDemoConversionPending({
   businessAnchorId,
   userId,
   reason,
@@ -291,8 +286,127 @@ export async function exitDemoMode({
     throw err;
   }
 
-  const exitReason = String(reason || "").trim() || "실사용 전환";
+  const pendingReason = String(reason || "").trim() || "실사용 전환 대기";
+  const anchor = await BusinessAnchor.findById(businessAnchorId)
+    .select({
+      businessType: 1,
+      demoMode: 1,
+      demoModeExitedAt: 1,
+      conversionPendingAt: 1,
+    })
+    .lean();
+  if (!anchor) {
+    const err = new Error("사업자를 찾을 수 없습니다.");
+    err.statusCode = 404;
+    throw err;
+  }
+  if (String(anchor.businessType || "") !== "requestor") {
+    const err = new Error("의뢰자 사업자만 실사용 전환할 수 있습니다.");
+    err.statusCode = 400;
+    throw err;
+  }
+  if (anchor.demoModeExitedAt || !anchor.demoMode) {
+    return {
+      demoMode: false,
+      conversionPending: false,
+      alreadyExited: true,
+      reason: pendingReason,
+    };
+  }
 
+  const now = new Date();
+  const alreadyPending = Boolean(anchor.conversionPendingAt);
+  if (!alreadyPending) {
+    await BusinessAnchor.updateOne(
+      { _id: businessAnchorId, demoModeExitedAt: null },
+      {
+        $set: {
+          conversionPendingAt: now,
+          conversionPendingReason: pendingReason,
+        },
+      },
+    );
+  } else {
+    await BusinessAnchor.updateOne(
+      { _id: businessAnchorId },
+      { $set: { conversionPendingReason: pendingReason } },
+    );
+  }
+
+  let quote = null;
+  let invoice = null;
+  try {
+    const {
+      computeDemoConversionQuote,
+      ensureConversionInvoicePending,
+    } = await import("../../services/demoConversion.service.js");
+    quote = await computeDemoConversionQuote(businessAnchorId);
+    invoice = await ensureConversionInvoicePending({
+      businessAnchorId,
+      reason: pendingReason,
+      quote,
+    });
+  } catch (e) {
+    console.error(
+      "[demoMode] conversion invoice on pending failed",
+      String(businessAnchorId),
+      e?.message || e,
+    );
+  }
+
+  void emitCreditBalanceUpdatedToBusiness({
+    businessAnchorId,
+    balanceDelta: 0,
+    reason: "demo_conversion_pending",
+    refId: businessAnchorId,
+    forceEmit: true,
+  }).catch(() => {});
+
+  void userId;
+  return {
+    demoMode: true,
+    conversionPending: true,
+    alreadyExited: false,
+    alreadyPending,
+    reason: pendingReason,
+    minTotal: quote?.minTotal ?? null,
+    quote,
+    invoiceId: invoice?._id || null,
+  };
+}
+
+/**
+ * @deprecated 무료 종료 금지. beginDemoConversionPending 사용.
+ * 호환: 호출부 → 전환 대기로 위임.
+ */
+export async function exitDemoMode({
+  businessAnchorId,
+  userId,
+  reason,
+} = {}) {
+  return beginDemoConversionPending({
+    businessAnchorId,
+    userId,
+    reason: reason || "실사용 전환 대기",
+  });
+}
+
+/**
+ * 전환 입금 워터폴 완료 후 데모 OFF (부채는 이미 유료로 청산됨 — 리셋 없음).
+ */
+export async function exitDemoModeAfterConversionPaid({
+  businessAnchorId,
+  userId,
+  reason = "유료 전환 입금",
+  chargeOrderId,
+} = {}) {
+  if (!businessAnchorId) {
+    const err = new Error("사업자 정보가 없습니다.");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const exitReason = String(reason || "").trim() || "유료 전환 입금";
   const anchor = await BusinessAnchor.findById(businessAnchorId)
     .select({
       businessType: 1,
@@ -337,16 +451,6 @@ export async function exitDemoMode({
       freeRequestCredit: freeRequestBefore,
     });
 
-  const freeRequestAfterClaw = freeRequestBefore - clawedBack;
-  const { resetAmount: debtReset, journalId: debtJournalId } =
-    await resetDemoFreeRequestDebtToZero({
-      businessAnchorId,
-      userId,
-      reason: exitReason,
-      freeRequestCredit: freeRequestAfterClaw,
-      idempotencySuffix: `${String(grant?._id || businessAnchorId)}:exit`,
-    });
-
   const now = new Date();
   await BusinessAnchor.updateOne(
     { _id: businessAnchorId },
@@ -354,6 +458,8 @@ export async function exitDemoMode({
       $set: {
         demoMode: false,
         demoModeExitedAt: now,
+        conversionPendingAt: null,
+        conversionPendingReason: "",
       },
     },
   );
@@ -366,44 +472,63 @@ export async function exitDemoMode({
           canceledAt: now,
           canceledByUserId: userId || null,
           cancelReason: exitReason,
-          cancelJournalId: clawJournalId
-            ? String(clawJournalId)
-            : debtJournalId
-              ? String(debtJournalId)
-              : null,
+          cancelJournalId: clawJournalId ? String(clawJournalId) : null,
         },
       },
     );
   }
 
+  void chargeOrderId;
   return {
     demoMode: false,
     clawedBack,
-    debtReset,
+    debtReset: 0,
     alreadyExited: false,
     reason: exitReason,
   };
 }
 
 /**
- * 유료 크레딧(CHARGE_PAID) 지급 직후 호출.
- * 데모 중이면 실사용 전환(부채 리셋·레거시 잔여 회수). 이미 실사용이면 no-op.
- * 충전 트랜잭션 커밋 뒤에 호출할 것(선수금은 유지, freeRequest 부채만 정리).
+ * 유료 크레딧(CHARGE_PAID) 지급 직후 — 전환 워터폴 적용.
  */
 export async function exitDemoModeAfterPaidCreditGrant({
   businessAnchorId,
   userId,
   reason = "유료 크레딧 입금",
+  chargeOrderId = null,
+  chargeAmount = null,
 } = {}) {
   if (!businessAnchorId) return null;
   try {
     const state = await getDemoModeState(businessAnchorId);
     if (!state.demoMode || state.demoModeExitedAt) return null;
-    const result = await exitDemoMode({
+
+    const { applyDemoConversionWaterfallAfterPaidCharge } = await import(
+      "../../services/demoConversion.service.js"
+    );
+
+    let amount = Number(chargeAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      if (chargeOrderId) {
+        const ChargeOrder = (await import("../../models/chargeOrder.model.js"))
+          .default;
+        const order = await ChargeOrder.findById(chargeOrderId)
+          .select({ supplyAmount: 1, amountTotal: 1 })
+          .lean();
+        amount = Math.round(
+          Number(order?.supplyAmount || order?.amountTotal || 0),
+        );
+      }
+    }
+
+    const result = await applyDemoConversionWaterfallAfterPaidCharge({
       businessAnchorId,
+      chargeOrderId,
+      chargeAmount: amount,
       userId,
       reason,
     });
+
     try {
       const { invalidateMyBusinessCache } = await import(
         "./business.controller.js"
@@ -416,12 +541,12 @@ export async function exitDemoModeAfterPaidCreditGrant({
         cacheErr?.message || cacheErr,
       );
     }
-    // 뱃지·정산 UI가 데모 OFF를 즉시 반영하도록 강제 emit
+
     void emitCreditBalanceUpdatedToBusiness({
       businessAnchorId,
       balanceDelta: 0,
       reason: "demo_exit_on_paid_charge",
-      refId: businessAnchorId,
+      refId: chargeOrderId || businessAnchorId,
       forceEmit: true,
     }).catch((e) => {
       console.warn(
@@ -442,29 +567,44 @@ export async function exitDemoModeAfterPaidCreditGrant({
 
 export async function getDemoModeState(businessAnchorId) {
   if (!businessAnchorId) {
-    return { demoMode: false, demoModeExitedAt: null };
+    return {
+      demoMode: false,
+      demoModeExitedAt: null,
+      conversionPendingAt: null,
+    };
   }
   const anchor = await BusinessAnchor.findById(businessAnchorId)
-    .select({ demoMode: 1, demoModeExitedAt: 1, demoModeStartedAt: 1 })
+    .select({
+      demoMode: 1,
+      demoModeExitedAt: 1,
+      demoModeStartedAt: 1,
+      conversionPendingAt: 1,
+      conversionPendingReason: 1,
+    })
     .lean();
   return {
     demoMode: Boolean(anchor?.demoMode),
     demoModeExitedAt: anchor?.demoModeExitedAt || null,
     demoModeStartedAt: anchor?.demoModeStartedAt || null,
+    conversionPendingAt: anchor?.conversionPendingAt || null,
+    conversionPendingReason: anchor?.conversionPendingReason || "",
   };
 }
 
-/** 데모 중 가상 잔고: freeRequest 마이너스(치과 기공비·기공소→어벗츠 생산/배송) 허용 */
+/**
+ * 데모 중 가상 잔고 overdraft 허용.
+ * 전환 입금 대기(conversionPending)면 잠금.
+ */
 export async function allowsDemoFreeRequestOverdraft(businessAnchorId) {
   const state = await getDemoModeState(businessAnchorId);
-  return Boolean(state?.demoMode) && !state?.demoModeExitedAt;
+  if (!state?.demoMode || state?.demoModeExitedAt) return false;
+  if (state?.conversionPendingAt) return false;
+  return true;
 }
 
 /**
  * 데모 모드에서 무료의뢰 버킷 중 "데모 예약분" 상한(원).
- * 신규는 데모 크레딧 미지급이라 보통 0. 레거시 grant가 남아 있으면 그 amount.
- * 유효기간이 지났으면 즉시 실사용 전환 후 0.
- * 데모 overdraft 경로에서는 예약분 제외를 건너뛴다(가상 잔고 SSOT).
+ * 유효기간이 지났으면 전환 대기로 잠금 후 0.
  */
 export async function resolveDemoFreeRequestReserveCap(businessAnchorId) {
   if (!businessAnchorId) return 0;
@@ -473,19 +613,21 @@ export async function resolveDemoFreeRequestReserveCap(businessAnchorId) {
 
   if (isDemoModeExpired(state.demoModeStartedAt)) {
     try {
-      await exitDemoMode({
+      await beginDemoConversionPending({
         businessAnchorId,
         reason: "데모 기간 만료",
       });
     } catch (e) {
       console.error(
-        "[demoMode] expiry exit in reserveCap failed",
+        "[demoMode] expiry pending in reserveCap failed",
         String(businessAnchorId),
         e?.message || e,
       );
     }
     return 0;
   }
+
+  if (state.conversionPendingAt) return 0;
 
   const anchor = await BusinessAnchor.findById(businessAnchorId)
     .select({ businessNumberNormalized: 1, metadata: 1 })
@@ -504,11 +646,6 @@ export async function resolveDemoFreeRequestReserveCap(businessAnchorId) {
   return Math.max(0, Math.round(Number(grant.amount || DEMO_CREDIT_AMOUNT)));
 }
 
-/**
- * 잔액 스냅샷에서 데모 예약 무료의뢰분을 제외(스토어 등 실사용 차감용).
- * 데모 overdraft(가상 잔고) 경로에서는 호출하지 않는다.
- * 음수 freeRequest는 이미 spendable 0으로 취급한다.
- */
 export function excludeDemoFreeRequestFromBalance(balance, demoReserveCap) {
   const cap = Math.max(0, Math.round(Number(demoReserveCap || 0)));
   if (!cap || !balance) return balance;
@@ -523,9 +660,7 @@ export function excludeDemoFreeRequestFromBalance(balance, demoReserveCap) {
 }
 
 /**
- * 데모 모드 자동 종료(실사용 전환).
- * 유효기간(DEMO_MODE_DURATION_DAYS) 경과만 — 잔고 0 소진 종료는 하지 않는다
- * (0원 시작·마이너스 허용과 충돌).
+ * 데모 기간 만료 → 전환 입금 대기(부채 유지).
  */
 export async function maybeAutoExitDemoModeIfExhausted({
   businessAnchorId,
@@ -537,7 +672,7 @@ export async function maybeAutoExitDemoModeIfExhausted({
   if (!state.demoMode || state.demoModeExitedAt) return null;
 
   if (isDemoModeExpired(state.demoModeStartedAt)) {
-    return exitDemoMode({
+    return beginDemoConversionPending({
       businessAnchorId,
       userId,
       reason: "데모 기간 만료",
@@ -548,18 +683,21 @@ export async function maybeAutoExitDemoModeIfExhausted({
 }
 
 /**
- * 만료된 데모 모드 사업자를 일괄 실사용 전환(워커용).
- * @returns {Promise<{ scanned: number, exited: number, errors: number }>}
+ * 만료된 데모 모드 → 전환 입금 대기 일괄.
  */
 export async function exitExpiredDemoModesBatch({ limit = 200 } = {}) {
   const cutoff = new Date(
     Date.now() - DEMO_MODE_DURATION_DAYS * MS_PER_DAY,
   );
-  const batchLimit = Math.max(1, Math.min(1000, Math.round(Number(limit) || 200)));
+  const batchLimit = Math.max(
+    1,
+    Math.min(1000, Math.round(Number(limit) || 200)),
+  );
   const anchors = await BusinessAnchor.find({
     businessType: "requestor",
     demoMode: true,
     demoModeExitedAt: null,
+    conversionPendingAt: null,
     demoModeStartedAt: { $ne: null, $lte: cutoff },
   })
     .select({ _id: 1 })
@@ -570,15 +708,15 @@ export async function exitExpiredDemoModesBatch({ limit = 200 } = {}) {
   let errors = 0;
   for (const row of anchors) {
     try {
-      const result = await exitDemoMode({
+      const result = await beginDemoConversionPending({
         businessAnchorId: row._id,
         reason: "데모 기간 만료",
       });
-      if (result && !result.alreadyExited) exited += 1;
+      if (result && !result.alreadyExited && !result.alreadyPending) exited += 1;
     } catch (e) {
       errors += 1;
       console.error(
-        "[demoMode] expiry exit failed",
+        "[demoMode] expiry pending failed",
         String(row?._id || ""),
         e?.message || e,
       );

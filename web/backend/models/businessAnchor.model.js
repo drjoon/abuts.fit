@@ -119,6 +119,19 @@ const businessAnchorSchema = new mongoose.Schema(
       default: null,
       index: true,
     },
+    /**
+     * 전환 입금 대기(만료·수동). 부채 유지·overdraft 잠금. 입금 워터폴 후에만 exited.
+     * related: web/backend/services/demoConversion.service.js
+     */
+    conversionPendingAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+    conversionPendingReason: {
+      type: String,
+      default: "",
+    },
     // 개발운영사 지정: 의뢰자 사업자에 디자인 큐(사이드바·API) 접근 허용
     // related files:
     // - web/backend/utils/designAccess.js

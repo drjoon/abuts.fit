@@ -502,6 +502,8 @@ async function matchTxWithOrder({ tx, order }) {
         businessAnchorId: order.businessAnchorId,
         userId: order.userId || null,
         reason: "유료 크레딧 입금",
+        chargeOrderId: order._id,
+        chargeAmount: Number(order.supplyAmount || order.amountTotal || 0),
       });
       notifyChargePrepaidApplied({
         userId: order.userId,

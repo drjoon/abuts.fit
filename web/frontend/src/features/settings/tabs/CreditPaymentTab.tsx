@@ -193,6 +193,15 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
   const { kind: accessKind } = useRequestorBusinessAccess();
   const { demoMode } = useDemoMode();
   const [demoChargeConfirmOpen, setDemoChargeConfirmOpen] = useState(false);
+  const [conversionMinTotal, setConversionMinTotal] = useState<number | null>(
+    null,
+  );
+  const [conversionQuoteLines, setConversionQuoteLines] = useState<{
+    demoDebt: number;
+    prepaidMin: number;
+    practiceToLabTotal: number;
+    abutsUsage: number;
+  } | null>(null);
 
   const requestorKind =
     accessKind ||
@@ -208,6 +217,60 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
     () => maxChargeUnitsFor(chargeUnit),
     [chargeUnit],
   );
+  const conversionMinUnits = useMemo(() => {
+    if (!demoMode || conversionMinTotal == null || chargeUnit <= 0) {
+      return MIN_CHARGE_UNITS;
+    }
+    return Math.max(
+      MIN_CHARGE_UNITS,
+      Math.ceil(Number(conversionMinTotal) / chargeUnit),
+    );
+  }, [chargeUnit, conversionMinTotal, demoMode]);
+
+  useEffect(() => {
+    if (!demoMode || !token) {
+      setConversionMinTotal(null);
+      setConversionQuoteLines(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await request<{
+          success?: boolean;
+          data?: {
+            minTotal?: number;
+            demoDebt?: number;
+            prepaidMin?: number;
+            practiceToLabTotal?: number;
+            abutsUsage?: number;
+          };
+        }>({
+          path: "/api/credits/conversion-quote",
+          method: "GET",
+          token,
+        });
+        if (cancelled || !res.ok) return;
+        const data = (res.data as any)?.data || res.data || {};
+        const minTotal = Math.round(Number(data.minTotal || 0));
+        if (minTotal > 0) setConversionMinTotal(minTotal);
+        setConversionQuoteLines({
+          demoDebt: Math.round(Number(data.demoDebt || 0)),
+          prepaidMin: Math.round(Number(data.prepaidMin || 0)),
+          practiceToLabTotal: Math.round(Number(data.practiceToLabTotal || 0)),
+          abutsUsage: Math.round(Number(data.abutsUsage || 0)),
+        });
+      } catch {
+        if (!cancelled) {
+          setConversionMinTotal(null);
+          setConversionQuoteLines(null);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [demoMode, token]);
 
   const [pendingOrder, setPendingOrder] = useState<
     CreditOrderResponse["data"] | null
@@ -563,10 +626,12 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
     if (hasChargedBefore && loadingInsights) return;
     if (pendingOrder) return;
     if (didApplyRecommendedUnits) return;
-    applyChargeUnits(hasChargedBefore ? recommendedUnits : MIN_CHARGE_UNITS);
+    const base = hasChargedBefore ? recommendedUnits : MIN_CHARGE_UNITS;
+    applyChargeUnits(Math.max(base, conversionMinUnits));
     setDidApplyRecommendedUnits(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
+    conversionMinUnits,
     didApplyRecommendedUnits,
     hasChargedBefore,
     loadingInsights,
@@ -574,6 +639,14 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
     pendingOrder,
     recommendedUnits,
   ]);
+
+  useEffect(() => {
+    if (!demoMode || pendingOrder) return;
+    if (chargeUnits < conversionMinUnits) {
+      applyChargeUnits(conversionMinUnits);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversionMinUnits, demoMode, pendingOrder]);
 
   const handleCharge = async (): Promise<boolean> => {
     if (!token) {
@@ -1014,6 +1087,25 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
                 <p key={line || "blank"}>{line}</p>
               ),
             )}
+            {conversionQuoteLines && conversionMinTotal != null ? (
+              <div className="mt-3 space-y-1 rounded-md border border-border/60 bg-muted/40 px-3 py-2 text-sm">
+                <p>
+                  이용분 정산:{" "}
+                  {conversionQuoteLines.demoDebt.toLocaleString("ko-KR")}원
+                  {requestorKind === "practice" &&
+                  conversionQuoteLines.practiceToLabTotal > 0
+                    ? ` (기공비 ${conversionQuoteLines.practiceToLabTotal.toLocaleString("ko-KR")} · 어벗츠 ${conversionQuoteLines.abutsUsage.toLocaleString("ko-KR")})`
+                    : ""}
+                </p>
+                <p>
+                  선수금 하한:{" "}
+                  {conversionQuoteLines.prepaidMin.toLocaleString("ko-KR")}원
+                </p>
+                <p className="font-medium">
+                  최소 입금: {conversionMinTotal.toLocaleString("ko-KR")}원
+                </p>
+              </div>
+            ) : null}
           </div>
         }
         confirmLabel={DEMO_MODE_CHARGE_EXIT_CONFIRM_LABEL}

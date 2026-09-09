@@ -404,6 +404,8 @@ async function approveChargeOrder(req, res, { mock = false } = {}) {
       businessAnchorId: order.businessAnchorId,
       userId: order.userId || actorUserId,
       reason: "유료 크레딧 입금",
+      chargeOrderId: order._id,
+      chargeAmount: Number(order.supplyAmount || order.amountTotal || 0),
     });
   }
 
@@ -865,6 +867,8 @@ export async function adminManualMatch(req, res) {
     businessAnchorId: order.businessAnchorId,
     userId: order.userId || req.user?._id || null,
     reason: "유료 크레딧 입금",
+    chargeOrderId: order._id,
+    chargeAmount: Number(order.supplyAmount || order.amountTotal || 0),
   });
 
   notifyChargePrepaidApplied({

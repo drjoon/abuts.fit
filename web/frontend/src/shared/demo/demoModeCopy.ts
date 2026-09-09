@@ -56,21 +56,22 @@ export function formatDemoModeBadgeLabel(daysRemaining: number | null): string {
   return `데모 ${daysRemaining}일 남음`;
 }
 
-export const DEMO_MODE_EXIT_TITLE = "실사용으로 전환할까요?";
+export const DEMO_MODE_EXIT_TITLE = "실사용 전환을 시작할까요?";
 
 const DEMO_MODE_EXIT_DESCRIPTION_LINES_PRACTICE = [
-  "데모 기간 중 쌓인 마이너스 잔고는 0원으로 리셋됩니다.",
-  "데모 기간의 기공료는 기공소와 별도 정산하신 뒤 실사용해주세요.",
+  "전환 입금 1건으로 데모 이용분(어벗츠·기공비)을 정산하고, 남은 금액이 선수금(유료 크레딧)이 됩니다.",
+  "기공비는 어벗츠가 받아 기공소→어벗츠 이용분을 상계한 뒤 기공소 정산크레딧으로 지급합니다.",
+  "최소 입금 = 이용분 정산 + 선수금 1유닛(100만원, 유닛 올림).",
   "",
-  "어벗츠 선수금(유료 크레딧)을 충전하셔야 주문, 의뢰할 수 있습니다.",
+  "확인 후에는 전환 입금 대기로 잠기며, 입금이 확인되어야 실사용됩니다.",
   "전환 후에는 데모 모드로 되돌릴 수 없습니다.",
 ] as const;
 
 const DEMO_MODE_EXIT_DESCRIPTION_LINES_LAB = [
-  "데모 기간 중 쌓인 마이너스 잔고는 0원으로 리셋됩니다.",
-  "데모 기간의 어벗츠 이용료는 후결제로 정산하신 뒤 실사용해주세요.",
+  "전환 입금 1건으로 데모 기간 어벗츠 이용분을 정산하고, 남은 금액이 선수금(유료 크레딧)이 됩니다.",
+  "최소 입금 = 이용분 정산 + 선수금 1유닛(50만원, 유닛 올림).",
   "",
-  "실사용을 위해 어벗츠 선수금(유료 크레딧)을 충전해 주세요.",
+  "확인 후에는 전환 입금 대기로 잠기며, 입금이 확인되어야 실사용됩니다.",
   "전환 후에는 데모 모드로 되돌릴 수 없습니다.",
 ] as const;
 
@@ -89,28 +90,25 @@ export function resolveDemoModeExitDescriptionLines(
 export const DEMO_MODE_EXIT_DESCRIPTION =
   DEMO_MODE_EXIT_DESCRIPTION_LINES.join("\n");
 
-export const DEMO_MODE_EXIT_CONFIRM_LABEL = "실사용으로 전환";
+export const DEMO_MODE_EXIT_CONFIRM_LABEL = "전환 입금 대기로";
 
 /** 충전 탭 — 데모 중 유료 충전 요청 전 확인. */
 export const DEMO_MODE_CHARGE_EXIT_TITLE =
-  "충전하면 실사용으로 전환됩니다";
+  "전환 입금이 확인되면 실사용으로 전환됩니다";
 
 const DEMO_MODE_CHARGE_EXIT_DESCRIPTION_LINES_PRACTICE = [
-  "어벗츠 선수금(유료 크레딧) 입금이 확인되면 데모 모드가 종료됩니다.",
-  "데모 기간 중 쌓인 마이너스 잔고는 0원으로 리셋됩니다.",
-  "데모 기간의 기공료는 기공소와 별도 정산하신 뒤 실사용해주세요.",
+  "이번 입금은 전환 패키지입니다. 이용분 정산 후 잔액만 선수금(유료 크레딧)으로 남습니다.",
+  "기공비는 어벗츠 경유로 기공소에 정산크레딧 지급(Lab→Abuts 상계 포함)됩니다.",
+  "하한 미달 입금은 접수되지 않습니다.",
   "",
-  "입금 확인 후에는 어벗츠 선수금(유료 크레딧)으로 주문·의뢰할 수 있습니다.",
-  "전환 후에는 데모 모드로 되돌릴 수 없습니다.",
+  "입금 확인 후 데모가 종료되며, 되돌릴 수 없습니다.",
 ] as const;
 
 const DEMO_MODE_CHARGE_EXIT_DESCRIPTION_LINES_LAB = [
-  "어벗츠 선수금(유료 크레딧) 입금이 확인되면 데모 모드가 종료됩니다.",
-  "데모 기간 중 쌓인 마이너스 잔고는 0원으로 리셋됩니다.",
-  "데모 기간의 어벗츠 이용료는 후결제로 정산해 주세요.",
+  "이번 입금은 전환 패키지입니다. 어벗츠 이용분 정산 후 잔액만 선수금(유료 크레딧)으로 남습니다.",
+  "하한 미달 입금은 접수되지 않습니다.",
   "",
-  "입금 확인 후에는 선수금(유료 크레딧)으로 어벗 생산·배송을 결제합니다.",
-  "전환 후에는 데모 모드로 되돌릴 수 없습니다.",
+  "입금 확인 후 데모가 종료되며, 되돌릴 수 없습니다.",
 ] as const;
 
 /** @deprecated Prefer resolveDemoModeChargeExitDescriptionLines(kind). */
@@ -125,13 +123,13 @@ export function resolveDemoModeChargeExitDescriptionLines(
     : DEMO_MODE_CHARGE_EXIT_DESCRIPTION_LINES_PRACTICE;
 }
 
-export const DEMO_MODE_CHARGE_EXIT_CONFIRM_LABEL = "확인하고 충전하기";
+export const DEMO_MODE_CHARGE_EXIT_CONFIRM_LABEL = "확인하고 전환 입금하기";
 
 const CREDIT_LEDGER_DEMO_NOTICE_BODY_PRACTICE =
-  "데모 모드는 가상 잔고로 운영됩니다. 구강스캔·커스텀어벗 기공비는 잔고가 부족해도 마이너스로 진행할 수 있습니다. 실거래 금액은 기존처럼 치과→기공소로 직접 입금하세요. 스토어 이용·유료 크레딧(선수금) 입금이 확인되면 자동으로 실사용 전환됩니다. 가입 후 30일 또는 수동 전환 시에도 마이너스 잔고는 0으로 리셋됩니다.";
+  "데모 모드는 가상 잔고로 운영됩니다. 구강스캔·커스텀어벗 기공비는 잔고가 부족해도 마이너스로 진행할 수 있습니다. 실사용 전환 시 전환 입금 1건으로 이용분(어벗츠·기공비)을 정산하고 잔액을 선수금으로 충전합니다. 기공비는 어벗츠가 받아 기공소에 정산합니다. 입금 확인 전에는 부채가 리셋되지 않습니다.";
 
 const CREDIT_LEDGER_DEMO_NOTICE_BODY_LAB =
-  "데모 모드는 가상 잔고로 운영됩니다. 기공소→어벗츠 생산·배송비는 잔고가 부족해도 마이너스로 진행할 수 있습니다(첫 30일 후결제). 데모 종료 시 이용분은 후결제로 정산하고, 실사용을 위한 선수금(유료 크레딧)을 충전해 주세요. 유료 크레딧 입금·30일 만료·수동 전환 시 마이너스 잔고는 0으로 리셋됩니다.";
+  "데모 모드는 가상 잔고로 운영됩니다. 기공소→어벗츠 생산·배송비는 잔고가 부족해도 마이너스로 진행할 수 있습니다. 실사용 전환 시 전환 입금 1건으로 이용분을 정산하고 잔액을 선수금으로 충전합니다. 데모·전환 대기 중 기공크레딧 인출은 동결됩니다. 입금 확인 전에는 부채가 리셋되지 않습니다.";
 
 /** @deprecated Prefer resolveCreditLedgerDemoNoticeBody(kind). */
 export const CREDIT_LEDGER_DEMO_NOTICE_BODY =
@@ -146,10 +144,10 @@ export function resolveCreditLedgerDemoNoticeBody(
 }
 
 const CREDIT_LEDGER_DEMO_BALANCE_HINT_PRACTICE =
-  "데모 모드입니다. 장부 잔고는 가상입니다. 구강스캔·커스텀어벗 기공비는 마이너스 잔고가 허용되고, 실거래는 치과→기공소 직접 입금입니다. 유료 크레딧 입금이 확인되면 자동으로 실사용 전환되며, 가입 후 30일 또는 수동 전환 시에도 잔고가 리셋됩니다.";
+  "데모 모드입니다. 장부 잔고는 가상입니다. 전환 입금이 확인되면 이용분 정산 후 잔액이 선수금이 되고 실사용으로 전환됩니다.";
 
 const CREDIT_LEDGER_DEMO_BALANCE_HINT_LAB =
-  "데모 모드입니다. 장부 잔고는 가상입니다. 기공소→어벗츠 생산·배송비는 마이너스 잔고가 허용됩니다(후결제). 유료 크레딧 입금·30일 만료·수동 전환 시 잔고가 리셋되며, 이용분 후결제와 실사용 선수금이 필요합니다.";
+  "데모 모드입니다. 장부 잔고는 가상입니다. 전환 입금이 확인되면 이용분 정산 후 잔액이 선수금이 되고 실사용으로 전환됩니다. 데모·전환 대기 중 기공크레딧 인출은 동결됩니다.";
 
 /** @deprecated Prefer resolveCreditLedgerDemoBalanceHint(kind). */
 export const CREDIT_LEDGER_DEMO_BALANCE_HINT =

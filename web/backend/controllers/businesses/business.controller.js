@@ -28,7 +28,7 @@ import {
   setMyAutoMatchParticipation,
 } from "./business.update.controller.js";
 import {
-  exitDemoMode as exitDemoModeUtil,
+  beginDemoConversionPending,
   enableDemoModeAndGrantCreditIfEligible,
   maybeAutoExitDemoModeIfExhausted,
   resolveDemoModeExpiresAt,
@@ -551,6 +551,20 @@ export async function getMyBusiness(req, res) {
             : null,
         demoModeExitedAt:
           businessType === "requestor" ? anchor?.demoModeExitedAt || null : null,
+        conversionPendingAt:
+          businessType === "requestor"
+            ? anchor?.conversionPendingAt || null
+            : null,
+        conversionPending:
+          businessType === "requestor"
+            ? Boolean(anchor?.conversionPendingAt) &&
+              Boolean(anchor?.demoMode) &&
+              !anchor?.demoModeExitedAt
+            : false,
+        conversionPendingReason:
+          businessType === "requestor"
+            ? anchor?.conversionPendingReason || ""
+            : "",
         requestSettings: {
           anodizingEnabled:
             typeof anchor?.requestSettings?.anodizingEnabled === "boolean"
@@ -564,7 +578,7 @@ export async function getMyBusiness(req, res) {
       },
     };
 
-    // 의뢰자(치과·기공소): 실사용 전환 이력이 없으면 데모 시작/힐. 만료 시 자동 실사용.
+    // 의뢰자(치과·기공소): 실사용 전환 이력이 없으면 데모 시작/힐. 만료 시 전환 입금 대기.
     if (businessType === "requestor" && !anchor?.demoModeExitedAt) {
       try {
         const demoResult = await enableDemoModeAndGrantCreditIfEligible({
@@ -585,17 +599,30 @@ export async function getMyBusiness(req, res) {
       }
       if (responseData.data.demoMode) {
         try {
-          const autoExit = await maybeAutoExitDemoModeIfExhausted({
+          const autoPending = await maybeAutoExitDemoModeIfExhausted({
             businessAnchorId: anchor._id,
             userId: req.user._id,
           });
-          if (autoExit && !autoExit.alreadyExited) {
+          if (
+            autoPending &&
+            !autoPending.alreadyExited &&
+            autoPending.conversionPending
+          ) {
             invalidateMyBusinessCache(anchor._id);
-            responseData.data.demoMode = false;
-            responseData.data.demoModeExitedAt = new Date();
+            responseData.data.conversionPending = true;
+            responseData.data.conversionPendingAt =
+              responseData.data.conversionPendingAt || new Date();
+            responseData.data.conversionPendingReason =
+              autoPending.reason || "데모 기간 만료";
+            if (autoPending.minTotal != null) {
+              responseData.data.conversionMinTotal = autoPending.minTotal;
+            }
+            if (autoPending.quote) {
+              responseData.data.conversionQuote = autoPending.quote;
+            }
           }
         } catch (e) {
-          console.error("[BusinessAnchor] demo auto-exit failed", e);
+          console.error("[BusinessAnchor] demo conversion pending failed", e);
         }
       }
     }
@@ -1824,18 +1851,24 @@ export async function exitMyDemoMode(req, res) {
       });
     }
 
-    const result = await exitDemoModeUtil({
+    const result = await beginDemoConversionPending({
       businessAnchorId,
       userId: req.user._id,
+      reason: "사용자 실사용 전환 요청",
     });
     invalidateMyBusinessCache(businessAnchorId);
 
     return res.json({
       success: true,
       data: {
-        demoMode: Boolean(result?.demoMode),
-        clawedBack: Number(result?.clawedBack || 0),
+        demoMode: true,
+        conversionPending: true,
         alreadyExited: Boolean(result?.alreadyExited),
+        alreadyPending: Boolean(result?.alreadyPending),
+        minTotal: result?.minTotal ?? null,
+        quote: result?.quote || null,
+        message:
+          "전환 입금이 확인되면 실사용으로 전환됩니다. 충전 탭에서 최소 금액을 입금해 주세요.",
       },
     });
   } catch (error) {

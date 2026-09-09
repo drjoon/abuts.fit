@@ -410,6 +410,17 @@ export async function createLabSettlementPayout(req, res) {
 
     const { anchorId, anchor } = scope;
 
+    const { shouldFreezeLabSettlementPayout } = await import(
+      "../../services/demoConversion.service.js"
+    );
+    if (await shouldFreezeLabSettlementPayout(anchorId)) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "데모·전환 입금 대기 중에는 기공크레딧을 인출할 수 없습니다. 실사용 전환 후 월정산을 이용해 주세요.",
+      });
+    }
+
     const amount = Math.round(Number(req.body?.amount || 0));
     if (!Number.isFinite(amount) || amount <= 0) {
       return res.status(400).json({

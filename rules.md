@@ -230,9 +230,12 @@
   - `grantWelcomeFreeCreditIfEligible`는 no-op. **관리자 수동 무료크레딧 override는 유지**(관리자→크레딧→무료 크레딧)
   - 정산 요약 UI: 「무료 충전」카드 제거. 치과 `현재 잔액 = 충전 − 소비`, 기공소 `= 충전 + 정산 적립 − 소비`. 기존 `REQ_FREE_*` 잔액·`CHARGE_FREE_*` 내역·list/cancel은 유지
   - 데모 모드(치과 practice·기공소 lab): 가입 시 0원 시작·**가상 잔고**(마이너스 허용).
-    - 치과: 구강스캔·커스텀어벗 기공비. 실거래는 치과→기공소 직접 입금.
-    - 기공소: 기공소→어벗츠 생산·배송비(첫 30일 후결제). 데모 종료 시 이용분 후결제 + 실사용 선수금.
-    - **유료 크레딧(CHARGE_PAID) 입금 확정 시 자동 실사용 전환**. 수동/30일 만료 전환도 동일. UI 충전 카드 라벨은 치과·기공소 공통「충전」. 뱃지 「데모 N일 남음」(`demoModeStartedAt`+30일). 스토어는 유료 크레딧(입금=실사용 전환 후) 필요.
+    - 치과: 구강스캔·커스텀어벗 기공비. 전환 입금 시 기공비도 어벗츠 경유(Lab→Abuts 상계 후 기공소 정산크레딧).
+    - 기공소: 기공소→어벗츠 생산·배송비(첫 30일 가상 후결제). 데모·전환 대기 중 기공크레딧 인출 동결.
+    - **전환 입금 워터폴**(CHARGE_PAID): 이용분 청산 → (치과) 기공소 상계/순지급 → 잔액 선수금. 하한=이용분+1유닛(유닛 올림). 무료 부채 리셋 금지.
+    - 만료·수동·관리자 exit-demo → `conversionPending`(overdraft 잠금·ConversionInvoice). 입금 확정 시에만 `demoMode=false`.
+    - UI 충전 카드 라벨은 치과·기공소 공통「충전」. 뱃지 「데모 N일 남음」. 스토어는 유료 크레딧(전환 후) 필요.
+    - SSOT: `demoConversion.service.js` · `business.demoMode.util.js` · `conversionInvoice.model.js`
 - CA 가입 무료 테스트(첫 2건) — **폐지**:
   - 신규 `signup_free_test_2` 가격 배정 중단. 기존 의뢰의 0원 hold/commit·「가입 테스트」라벨만 레거시 유지
   - 대체: 데모 모드 + **관리자 수동 무료크레딧**(`adminOverrideRequestFreeCredit`)
