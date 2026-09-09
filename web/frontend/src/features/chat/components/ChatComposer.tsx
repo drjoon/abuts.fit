@@ -27,7 +27,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Camera, Hash, Paperclip, Repeat, Send } from "lucide-react";
+import { Camera, Hash, Paperclip, Send } from "lucide-react";
 import type { BackgroundUploadItem } from "@/shared/hooks/useBackgroundTempUpload";
 import { BackgroundUploadList } from "@/shared/components/upload/BackgroundUploadList";
 import {
@@ -88,13 +88,6 @@ type Props = {
   replyTo?: ReplyToMessage | null;
   onCancelReply?: () => void;
 
-  /**
-   * 스캔은 3Shape 등 외부 전송, 플랫폼에는 리메이크 메타만 전달.
-   * 있으면 컴포저에 「리메이크」 퀵 액션 표시.
-   */
-  onDeliverRemakeMeta?: () => void;
-  remakeMetaDisabled?: boolean;
-
   /** 모달 등 — 하단 여백을 줄인 컴팩트 패딩 */
   compact?: boolean;
   className?: string;
@@ -118,8 +111,6 @@ export const ChatComposer = (props: Props) => {
     onInsertRequestId,
     replyTo,
     onCancelReply,
-    onDeliverRemakeMeta,
-    remakeMetaDisabled = false,
     compact = false,
     className,
   } = props;
@@ -554,30 +545,6 @@ export const ChatComposer = (props: Props) => {
                 {renderPickList(insertCaseToken)}
               </PopoverContent>
             </Popover>
-          ) : null}
-
-          {typeof onDeliverRemakeMeta === "function" ? (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    className={cn(
-                      iconBtnClass,
-                      "border-amber-300/80 bg-amber-50 text-amber-900 hover:bg-amber-100 hover:text-amber-950",
-                    )}
-                    disabled={controlsDisabled || remakeMetaDisabled}
-                    aria-label="리메이크"
-                    onClick={() => onDeliverRemakeMeta()}
-                  >
-                    <Repeat className={isMobile ? "h-5 w-5" : "h-4 w-4"} />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>리메이크</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
           ) : null}
         </div>
 

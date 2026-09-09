@@ -35,6 +35,7 @@ import {
   confirmPracticeTransferAbutmentDesign,
   confirmPracticeTransferProduction,
   remakePracticeTransfers,
+  chargeReceivedPracticeTransferRemake,
   searchRemakePracticeTransfers,
   restorePracticeTransfersBatch,
   retargetPracticeTransferLab,
@@ -144,6 +145,13 @@ router.post(
   authenticate,
   receiveAuth,
   remakePracticeTransfers,
+);
+
+router.post(
+  "/received/:transferId/remake-charges",
+  authenticate,
+  receiveAuth,
+  chargeReceivedPracticeTransferRemake,
 );
 
 router.post(

@@ -29,6 +29,7 @@
 // - web/backend/utils/labReceiveCalendarHiddenWeekdays.util.js
 // - web/frontend/src/shared/practice/labReceiveCalendarViewMode.ts
 // - web/backend/controllers/users/user.controller.js
+// - 2026-09-09: 기공소 「리메이크 청구」— LabRemakeChargeDialog + received remake-charges.
 // - 2026-09-07: 가이드투어 lab_remake — 데모 리메이크 뱃지·상세 탭·수가.
 // - 2026-09-07: 상세 헤더 식별 — 전송ID 제거, `치과/환자 치식 · 도착` 한 줄.
 // - 2026-09-07: 분할 업로드 AlertDialog z-320 — 플로팅 의뢰상세(z-300)에 가리지 않게.
@@ -160,7 +161,7 @@ import {
   useState,
   type MouseEvent,
 } from "react";
-import { ChevronRight, Search } from "lucide-react";
+import { ChevronRight, Repeat, Search } from "lucide-react";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
 import { DesignSoftwareSettingsDialog } from "@/features/requestSettings/DesignSoftwareSettingsDialog";
@@ -209,22 +210,12 @@ import type { PreUploadFileProgress } from "@/shared/hooks/useFilePreUpload";
 import {
   toChatMessageAttachments,
   useBackgroundTempUpload,
-  type ChatMessageAttachment,
 } from "@/shared/hooks/useBackgroundTempUpload";
-import { ChatRemakePromptDialog } from "@/features/chat/components/ChatRemakePromptDialog";
-import {
-  CHAT_REMAKE_REACTION_EMOJI,
-  buildChatRemakeMetaNotice,
-  chatAttachmentsHave3dModel,
-  chatUploadItemsHave3dModel,
-} from "@/features/chat/components/chatRemake";
-import { isChatModelAttachment } from "@/features/chat/components/ChatMessageBubble";
 import { useS3FileDownload } from "@/shared/files/useS3FileDownload";
 import { cn } from "@/shared/ui/cn";
 import {
   LAB_RECEIVE_DEFAULT_ON_STATUS_FILTERS,
   LAB_RECEIVE_STATUS_BADGES,
-  canRemakePracticeTransferByStatus,
   computeGroupedStatusCounts,
   computeGroupedStatusUnreadCounts,
   createPracticeRecentStatusFilterSet,
@@ -247,7 +238,6 @@ import { RequestDetailDialog } from "@/features/requests/components/RequestDetai
 import { LabPracticeFeeSurchargeControl } from "@/shared/components/practice/LabPracticeFeeSurchargeControl";
 import { CounterpartyMemoStrip } from "@/shared/components/practice/CounterpartyMemoStrip";
 import {
-  formatManWon,
   parsePracticeTransferFeeQuote,
 } from "@/shared/practice/practiceTransferFeeQuote";
 import { normalizeLabFeeMultiplier, formatLabFeeMultiplierLabel, missingLabFeeItemNames, labFeeItemNamesNeededForToothWorks } from "@/shared/practice/labFeeSchedule";
@@ -305,11 +295,16 @@ import {
   resolvePracticeTransferAbutmentUploadOverdue,
   resolvePracticeTransferToothWorks,
   isPrePlatformPracticeRemake,
+  parsePracticeTransferRemakeCharges,
   PRE_PLATFORM_REMAKE_LABEL,
   PRE_PLATFORM_REMAKE_LAB_ACCEPT_HINT,
   type PracticeTransferLabReceiveFile as ReceivedPracticeFile,
   type PracticeTransferLabReceiveItem as ReceivedPracticeTransfer,
 } from "@/shared/practice/practiceTransferLabReceive";
+import {
+  LabRemakeChargeDialog,
+  type LabRemakeChargeResult,
+} from "@/features/chat/components/LabRemakeChargeDialog";
 import {
   filterPracticeTransferFiles,
   getPracticeTransferFileExtension,
@@ -411,6 +406,44 @@ const provisionalAbutmentRequestId = (tooth: string) =>
 
 const isProvisionalAbutmentRequestId = (requestId: string) =>
   String(requestId || "").trim().startsWith("tooth:");
+
+const applyRemakeChargeLocalPatch = (
+  row: ReceivedPracticeTransfer,
+  data: {
+    remakeCharges?: unknown;
+    billingDelta?: { total?: number; labFeeTotal?: number } | null;
+    billing?: { total?: number; labFeeTotal?: number } | null;
+  },
+): ReceivedPracticeTransfer => {
+  const nextCharges = Array.isArray(data.remakeCharges)
+    ? parsePracticeTransferRemakeCharges(data.remakeCharges)
+    : row.remakeCharges;
+  let feeQuote = row.feeQuote || null;
+  const deltaLab = Math.max(0, Math.round(Number(data.billingDelta?.labFeeTotal || 0)));
+  const deltaTotal = Math.max(0, Math.round(Number(data.billingDelta?.total || 0)));
+  if (feeQuote && (deltaLab > 0 || deltaTotal > 0)) {
+    feeQuote = {
+      ...feeQuote,
+      labFeeTotal: Math.max(0, Number(feeQuote.labFeeTotal || 0)) + deltaLab,
+      total: Math.max(0, Number(feeQuote.total || 0)) + deltaTotal,
+    };
+  } else if (feeQuote && data.billing) {
+    const billedLab = Math.max(0, Math.round(Number(data.billing.labFeeTotal || 0)));
+    const billedTotal = Math.max(0, Math.round(Number(data.billing.total || 0)));
+    if (billedLab > 0 || billedTotal > 0) {
+      feeQuote = {
+        ...feeQuote,
+        ...(billedLab > 0 ? { labFeeTotal: billedLab } : {}),
+        ...(billedTotal > 0 ? { total: billedTotal } : {}),
+      };
+    }
+  }
+  return {
+    ...row,
+    ...(nextCharges ? { remakeCharges: nextCharges } : {}),
+    ...(feeQuote ? { feeQuote } : {}),
+  };
+};
 
 type LabReceiveSplitAskState = {
   mode: "abutment" | "prosthetic";
@@ -900,15 +933,8 @@ export function RequestorPracticeReceivePage({
     content: string;
   } | null>(null);
   const [chatSending, setChatSending] = useState(false);
-  /** 채팅 3D 첨부 → 리메이크 확인 (전송 시 / 사후 🔁 태그 / 3Shape 메타만) */
-  const [chatRemakePrompt, setChatRemakePrompt] = useState<null | {
-    mode: "on_send" | "tag_message" | "meta_only";
-    messageId?: string;
-    attachments: ChatMessageAttachment[];
-    draftContent: string;
-    replyToId: string | null;
-  }>(null);
-  const [chatRemakeBusy, setChatRemakeBusy] = useState(false);
+  const [remakeChargeOpen, setRemakeChargeOpen] = useState(false);
+  const [remakeChargeBusy, setRemakeChargeBusy] = useState(false);
   const chatBottomRef = useRef<HTMLDivElement | null>(null);
   const realtimeReloadTimerRef = useRef<number | null>(null);
   const chatRoomResolveSeqRef = useRef(0);
@@ -1253,6 +1279,7 @@ export function RequestorPracticeReceivePage({
           resultFileCount: Number(r.resultFileCount || resultFiles.length || 0),
           resultFiles,
           feeQuote: parsePracticeTransferFeeQuote(r.feeQuote),
+          remakeCharges: parsePracticeTransferRemakeCharges(r.remakeCharges),
           starDowngrade: parseStarDowngrade(r.starDowngrade),
           labRatingSummary: parseLabRatingSummary(r.labRatingSummary),
           practicePartnerMemo: parseLabPracticePartnerMemoPublic(
@@ -1732,6 +1759,44 @@ export function RequestorPracticeReceivePage({
             chatUploads.clear();
             setChatError("");
             resetDownloads();
+          }
+          if (hasUnreadCount) {
+            emitUnreadBadgeRefresh(unreadCount);
+          }
+          return;
+        }
+        if (action === "remake-charge") {
+          const billingDelta =
+            payload.billingDelta && typeof payload.billingDelta === "object"
+              ? (payload.billingDelta as {
+                  total?: number;
+                  labFeeTotal?: number;
+                })
+              : null;
+          const billing =
+            payload.billing && typeof payload.billing === "object"
+              ? (payload.billing as { total?: number; labFeeTotal?: number })
+              : null;
+          const patchRemake = (row: ReceivedPracticeTransfer) =>
+            applyRemakeChargeLocalPatch(row, {
+              remakeCharges: payload.remakeCharges,
+              billingDelta,
+              billing,
+            });
+          setTransfers((prev) =>
+            prev.map((row) =>
+              row.transferId === transferId ? patchRemake(row) : row,
+            ),
+          );
+          setSelectedTransfer((prev) =>
+            prev && prev.transferId === transferId ? patchRemake(prev) : prev,
+          );
+          if (
+            dialogOpen &&
+            String(selectedTransfer?.transferId || "").trim() === transferId &&
+            activeChatRoom?._id
+          ) {
+            void prefetchMessages();
           }
           if (hasUnreadCount) {
             emitUnreadBadgeRefresh(unreadCount);
@@ -3886,6 +3951,103 @@ export function RequestorPracticeReceivePage({
     toast,
   ]);
 
+  const handleConfirmRemakeCharge = useCallback(
+    async (result: LabRemakeChargeResult) => {
+      if (!token || !selectedTransfer || remakeChargeBusy) return;
+      if (isGuideTourDemoTransfer(selectedTransfer)) {
+        toast({
+          title: "가이드투어",
+          description: "데모 의뢰에서는 리메이크 청구를 실행하지 않습니다.",
+        });
+        setRemakeChargeOpen(false);
+        return;
+      }
+      const transferId = String(selectedTransfer.transferId || "").trim();
+      if (!transferId) return;
+      setRemakeChargeBusy(true);
+      try {
+        const res = await apiFetch<{
+          message?: string;
+          data?: {
+            billing?: { total?: number; labFeeTotal?: number };
+            remakeCharges?: unknown;
+            billingDelta?: { total?: number; labFeeTotal?: number } | null;
+            remakeFeeTotal?: number;
+          };
+        }>({
+          path: `/api/practice/transfers/received/${encodeURIComponent(transferId)}/remake-charges`,
+          method: "POST",
+          token,
+          jsonBody: {
+            selectedParts: result.selectedParts,
+            summaryLabel: result.summaryLabel,
+          },
+        });
+        if (!res.ok) {
+          const body =
+            res.data && typeof res.data === "object"
+              ? (res.data as Record<string, unknown>)
+              : {};
+          toast({
+            title: "리메이크 청구 실패",
+            description:
+              String(body.message || "").trim() || "다시 시도해주세요.",
+            variant: "destructive",
+          });
+          return;
+        }
+        const data = res.data?.data || {};
+        const patch = (row: ReceivedPracticeTransfer) =>
+          applyRemakeChargeLocalPatch(row, {
+            remakeCharges: data.remakeCharges,
+            billingDelta: data.billingDelta || null,
+            billing: data.billing || null,
+          });
+        setTransfers((prev) =>
+          prev.map((row) =>
+            row.transferId === transferId ? patch(row) : row,
+          ),
+        );
+        setSelectedTransfer((prev) =>
+          prev && prev.transferId === transferId ? patch(prev) : prev,
+        );
+        setRemakeChargeOpen(false);
+        const fee = Math.max(
+          0,
+          Math.round(Number(data.remakeFeeTotal || result.remakeFeeTotal || 0)),
+        );
+        toast({
+          title: "리메이크 청구 완료",
+          description:
+            res.data?.message ||
+            (fee > 0
+              ? `리메이크비 ${fee.toLocaleString("ko-KR")}원을 청구했습니다.`
+              : "리메이크 비용을 청구했습니다."),
+        });
+        if (activeChatRoom?._id) {
+          void prefetchMessages();
+        }
+      } catch (error) {
+        toast({
+          title: "리메이크 청구 실패",
+          description:
+            error instanceof Error ? error.message : "네트워크 오류",
+          variant: "destructive",
+        });
+      } finally {
+        setRemakeChargeBusy(false);
+      }
+    },
+    [
+      activeChatRoom?._id,
+      prefetchMessages,
+      remakeChargeBusy,
+      selectedTransfer,
+      toast,
+      token,
+    ],
+  );
+
   const handleOpenSubcontract = useCallback(async () => {
     if (
       !selectedTransfer ||
@@ -5304,14 +5466,12 @@ export function RequestorPracticeReceivePage({
     if (
       (!text && chatUploads.items.length === 0) ||
       !activeChatRoom?._id ||
-      chatSending ||
-      chatRemakeBusy
+      chatSending
     ) {
       return;
     }
 
     setChatSending(true);
-    let keepSendingLock = false;
     try {
       let attachments = toChatMessageAttachments([]);
       if (chatUploads.items.length > 0) {
@@ -5320,26 +5480,6 @@ export function RequestorPracticeReceivePage({
         if (!attachments.length) {
           throw new Error("파일 업로드에 실패했습니다.");
         }
-      }
-
-      const remakeStatus = selectedTransfer
-        ? getPracticeTransferLabReceiveDisplayStatus(selectedTransfer)
-        : "";
-      const shouldAskRemake =
-        Boolean(selectedTransfer) &&
-        canRemakePracticeTransferByStatus(remakeStatus) &&
-        (chatAttachmentsHave3dModel(attachments) ||
-          chatUploadItemsHave3dModel(chatUploads.items));
-
-      if (shouldAskRemake) {
-        setChatRemakePrompt({
-          mode: "on_send",
-          attachments,
-          draftContent: text || (attachments.length ? "파일 첨부" : ""),
-          replyToId: chatReplyTo?._id || null,
-        });
-        keepSendingLock = true;
-        return;
       }
 
       const sent = await sendMessage(text, attachments, {
@@ -5360,372 +5500,17 @@ export function RequestorPracticeReceivePage({
         variant: "destructive",
       });
     } finally {
-      if (!keepSendingLock) {
-        setChatSending(false);
-      }
+      setChatSending(false);
     }
   }, [
     activeChatRoom?._id,
     chatDraft,
-    chatRemakeBusy,
     chatReplyTo?._id,
     chatSending,
     chatUploads,
-    selectedTransfer,
     sendMessage,
     toast,
   ]);
-
-  const submitChatRemakeForSelectedTransfer = useCallback(
-    async (opts: {
-      arrivalYmd: string;
-      includeCustomAbutment: boolean;
-      attachments: ChatMessageAttachment[];
-      selectedParts?: Array<{
-        index: number;
-        prosthesis: boolean;
-        customAbutment: boolean;
-      }>;
-      remakeFeeTotal?: number;
-      summaryLabel?: string;
-    }) => {
-      if (!token || !selectedTransfer) {
-        throw new Error("원본 의뢰를 확인할 수 없습니다.");
-      }
-      const mongoId = String(selectedTransfer._id || "").trim();
-      if (!mongoId) {
-        throw new Error("원본 의뢰를 확인할 수 없습니다.");
-      }
-      if (
-        !canRemakePracticeTransferByStatus(
-          getPracticeTransferLabReceiveDisplayStatus(selectedTransfer),
-        )
-      ) {
-        throw new Error("작업시작 이후 의뢰만 리메이크할 수 있습니다.");
-      }
-
-      const patientName =
-        resolvePracticeTransferListPatientName(selectedTransfer) ||
-        selectedTransferPatientName ||
-        "";
-      const extraFiles = opts.attachments
-        .filter((file) => isChatModelAttachment(file))
-        .map((file) => ({
-          originalName: String(file.fileName || "").trim(),
-          mimetype: String(file.fileType || "application/octet-stream").trim(),
-          size: Number(file.fileSize || 0),
-          s3Key: String(file.s3Key || "").trim(),
-          patientName,
-        }))
-        .filter((file) => file.originalName && file.s3Key);
-
-      const includeCa = Boolean(opts.includeCustomAbutment);
-      const selectedParts = Array.isArray(opts.selectedParts)
-        ? opts.selectedParts
-        : [];
-
-      const res = await apiFetch<{
-        message?: string;
-        data?: {
-          created?: Array<{ remakeFeeTotal?: number }>;
-          failed?: Array<{ message?: string }>;
-        };
-      }>({
-        path: "/api/practice/transfers/received/remake",
-        method: "POST",
-        token,
-        jsonBody: {
-          transferMongoIds: [mongoId],
-          arrivalYmd: opts.arrivalYmd,
-          includeCustomAbutment: includeCa,
-          ...(selectedParts.length ? { selectedParts } : {}),
-          ...(extraFiles.length ? { extraFiles } : {}),
-        },
-      });
-      if (!res.ok) {
-        const body = res.data && typeof res.data === "object" ? res.data : {};
-        throw new Error(
-          String((body as { message?: string }).message || "다시 시도해주세요."),
-        );
-      }
-
-      const createdFee = Number(
-        res.data?.data?.created?.[0]?.remakeFeeTotal ?? opts.remakeFeeTotal ?? 0,
-      );
-      const feeBit =
-        createdFee > 0
-          ? ` · 리메이크비 ${createdFee.toLocaleString("ko-KR")}원`
-          : "";
-      toast({
-        title: "리메이크 의뢰를 전송했습니다",
-        description: `${opts.summaryLabel ? `${opts.summaryLabel} · ` : ""}도착일 ${opts.arrivalYmd}${feeBit}`,
-      });
-      void loadCalendarTransfers({ silent: true });
-      return { includeCa, remakeFeeTotal: createdFee };
-    },
-    [
-      loadCalendarTransfers,
-      selectedTransfer,
-      selectedTransferPatientName,
-      toast,
-      token,
-    ],
-  );
-
-  const handleChatRemakePromptResolve = useCallback(
-    async (result: {
-      kind: "skip" | "remake";
-      arrivalYmd?: string;
-      includeCustomAbutment?: boolean;
-      selectedParts?: Array<{
-        index: number;
-        prosthesis: boolean;
-        customAbutment: boolean;
-      }>;
-      remakeFeeTotal?: number;
-      summaryLabel?: string;
-    }) => {
-      const pending = chatRemakePrompt;
-      if (!pending) return;
-
-      if (result.kind === "skip") {
-        setChatRemakeBusy(true);
-        try {
-          if (pending.mode === "on_send") {
-            const sent = await sendMessage(
-              pending.draftContent,
-              pending.attachments,
-              { replyTo: pending.replyToId },
-            );
-            if (sent) {
-              setChatDraft("");
-              setChatReplyTo(null);
-              chatUploads.clear();
-            }
-          }
-          setChatRemakePrompt(null);
-        } finally {
-          setChatRemakeBusy(false);
-          setChatSending(false);
-        }
-        return;
-      }
-
-      const arrivalYmd = String(result.arrivalYmd || "").trim();
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(arrivalYmd)) return;
-
-      setChatRemakeBusy(true);
-      try {
-        const remakeResult = await submitChatRemakeForSelectedTransfer({
-          arrivalYmd,
-          includeCustomAbutment: Boolean(result.includeCustomAbutment),
-          attachments: pending.attachments,
-          selectedParts: result.selectedParts,
-          remakeFeeTotal: result.remakeFeeTotal,
-          summaryLabel: result.summaryLabel,
-        });
-
-        if (pending.mode === "on_send") {
-          const sent = await sendMessage(
-            pending.draftContent,
-            pending.attachments,
-            { replyTo: pending.replyToId },
-          );
-          if (sent?._id) {
-            setChatDraft("");
-            setChatReplyTo(null);
-            chatUploads.clear();
-            void toggleReaction(String(sent._id), CHAT_REMAKE_REACTION_EMOJI);
-          }
-        } else if (
-          pending.mode === "meta_only" ||
-          pending.mode === "tag_message"
-        ) {
-          const notice = buildChatRemakeMetaNotice({
-            arrivalYmd,
-            includeCustomAbutment: Boolean(result.includeCustomAbutment),
-            summaryLabel: result.summaryLabel,
-            remakeFeeTotal: remakeResult.remakeFeeTotal,
-          });
-          const sent = await sendMessage(notice, pending.attachments);
-          if (sent?._id) {
-            void toggleReaction(String(sent._id), CHAT_REMAKE_REACTION_EMOJI);
-          }
-        }
-
-        setChatRemakePrompt(null);
-      } catch (error) {
-        toast({
-          title: "리메이크 의뢰 실패",
-          description:
-            error instanceof Error ? error.message : "다시 시도해주세요.",
-          variant: "destructive",
-        });
-      } finally {
-        setChatRemakeBusy(false);
-        setChatSending(false);
-      }
-    },
-    [
-      chatRemakePrompt,
-      chatUploads,
-      sendMessage,
-      submitChatRemakeForSelectedTransfer,
-      toast,
-      toggleReaction,
-    ],
-  );
-
-  const handleToggleChatReaction = useCallback(
-    (messageId: string, emoji: string) => {
-      const mid = String(messageId || "").trim();
-      const normalizedEmoji = String(emoji || "").trim();
-      if (!mid || !normalizedEmoji) return;
-
-      if (normalizedEmoji !== CHAT_REMAKE_REACTION_EMOJI) {
-        void toggleReaction(mid, normalizedEmoji);
-        return;
-      }
-
-      const msg = messages.find((m) => String(m._id) === mid);
-      if (!msg) {
-        void toggleReaction(mid, normalizedEmoji);
-        return;
-      }
-
-      const myId = String(user?.id || "").trim();
-      const alreadyMine =
-        Array.isArray(msg.reactions) &&
-        msg.reactions.some(
-          (row) =>
-            String(row.emoji || "").trim() === CHAT_REMAKE_REACTION_EMOJI &&
-            String(row.userId || "").trim() === myId,
-        );
-
-      if (alreadyMine) {
-        void toggleReaction(mid, normalizedEmoji);
-        return;
-      }
-
-      const hasFiles =
-        Array.isArray(msg.attachments) && msg.attachments.length > 0;
-      const canRemake =
-        Boolean(selectedTransfer) &&
-        canRemakePracticeTransferByStatus(
-          getPracticeTransferLabReceiveDisplayStatus(selectedTransfer!),
-        );
-
-      if (!hasFiles || !canRemake) {
-        void toggleReaction(mid, normalizedEmoji);
-        return;
-      }
-
-      const attachments = (Array.isArray(msg.attachments) ? msg.attachments : [])
-        .map((file) => ({
-          fileId: file.fileId ? String(file.fileId) : undefined,
-          fileName: String(file.fileName || "").trim(),
-          fileType: String(file.fileType || "").trim(),
-          fileSize: Number(file.fileSize || 0),
-          s3Key: String(file.s3Key || "").trim(),
-          s3Url: String(file.s3Url || "").trim(),
-        }))
-        .filter((file) => file.fileName && file.s3Key);
-
-      setChatRemakePrompt({
-        mode: "tag_message",
-        messageId: mid,
-        attachments,
-        draftContent: "",
-        replyToId: null,
-      });
-    },
-    [messages, selectedTransfer, toggleReaction, user?.id],
-  );
-
-  const canDeliverRemakeMeta = Boolean(
-    selectedTransfer &&
-      canRemakePracticeTransferByStatus(
-        getPracticeTransferLabReceiveDisplayStatus(selectedTransfer),
-      ),
-  );
-
-  const handleOpenChatRemakeMeta = useCallback(() => {
-    if (!canDeliverRemakeMeta || chatRemakeBusy || chatRemakePrompt) return;
-    setChatRemakePrompt({
-      mode: "meta_only",
-      attachments: [],
-      draftContent: "",
-      replyToId: null,
-    });
-  }, [canDeliverRemakeMeta, chatRemakeBusy, chatRemakePrompt]);
-
-  const handleRemakeFromChatMessage = useCallback(
-    (message: {
-      _id?: string;
-      attachments?:
-        | ChatMessageAttachment[]
-        | Array<{
-            fileId?: string;
-            fileName?: string;
-            fileType?: string;
-            fileSize?: number;
-            s3Key?: string;
-            s3Url?: string;
-          }>;
-    }) => {
-      if (!canDeliverRemakeMeta || chatRemakeBusy || chatRemakePrompt) return;
-      const attachments = (
-        Array.isArray(message.attachments) ? message.attachments : []
-      )
-        .map((file) => ({
-          fileId: file.fileId ? String(file.fileId) : undefined,
-          fileName: String(file.fileName || "").trim(),
-          fileType: String(file.fileType || "").trim(),
-          fileSize: Number(file.fileSize || 0),
-          s3Key: String(file.s3Key || "").trim(),
-          s3Url: String(file.s3Url || "").trim(),
-        }))
-        .filter((file) => file.fileName && file.s3Key);
-      setChatRemakePrompt({
-        mode: "tag_message",
-        messageId: String(message._id || "").trim() || undefined,
-        attachments,
-        draftContent: "",
-        replyToId: null,
-      });
-    },
-    [canDeliverRemakeMeta, chatRemakeBusy, chatRemakePrompt],
-  );
-
-  const remakeFeeAmountForSelectedTransfer = useCallback(
-    (includeCustomAbutment: boolean) => {
-      if (!selectedTransfer?.feeQuote) return 0;
-      const withCa =
-        includeCustomAbutment &&
-        selectedTransfer.hasCustomAbutment &&
-        selectedTransfer.feeQuote.remakeFeeQuoteWithCustomAbutment
-          ? selectedTransfer.feeQuote.remakeFeeQuoteWithCustomAbutment
-          : null;
-      const q = withCa || selectedTransfer.feeQuote.remakeFeeQuote || null;
-      if (!q) return 0;
-      return Math.max(0, Math.round(Number(q.total || q.labFeeTotal || 0)));
-    },
-    [selectedTransfer],
-  );
-
-  const chatRemakeLabAnchorId = useMemo(() => {
-    const fromUser = String(user?.businessAnchorId || "").trim();
-    if (fromUser) return fromUser;
-    const transfer = selectedTransfer as {
-      performingLabAnchorId?: string | null;
-      targetLabAnchorId?: string | null;
-    } | null;
-    return (
-      String(transfer?.performingLabAnchorId || "").trim() ||
-      String(transfer?.targetLabAnchorId || "").trim() ||
-      null
-    );
-  }, [selectedTransfer, user?.businessAnchorId]);
 
   const labStatusFilterBadgeItems = useMemo((): PracticeStatusFilterBadgeItem[] => {
     return LAB_RECEIVE_STATUS_BADGES.map((item) => ({
@@ -6338,13 +6123,13 @@ export function RequestorPracticeReceivePage({
             setChatMessages([]);
             setChatDraft("");
             setChatReplyTo(null);
-            setChatRemakePrompt(null);
-            setChatRemakeBusy(false);
             setChatSending(false);
             chatUploads.clear();
             setChatError("");
             resetDownloads();
             setPanelPreferredDockSide(null);
+            setRemakeChargeOpen(false);
+            setRemakeChargeBusy(false);
           }
         }}
         preferredDockSide={panelPreferredDockSide}
@@ -6354,7 +6139,32 @@ export function RequestorPracticeReceivePage({
         authToken={token}
         initialPanelTab={dialogInitialPanelTab}
         guideTourElevate={guideTourWantsReceiveDetail}
-        chatHeaderAction={null}
+        chatHeaderAction={
+          selectedTransfer &&
+          !isGuideTourDemoTransfer(selectedTransfer) &&
+          Boolean(
+            selectedTransfer.isAccepted ||
+              selectedTransfer.isDownloaded ||
+              selectedTransfer.requestorDownloadedAt ||
+              selectedTransfer.autoMatch?.completed ||
+              selectedTransfer.production?.confirmedAt,
+          ) &&
+          !String(selectedTransfer.workCanceledAt || "").trim() &&
+          selectedTransfer.manufacturerStage !== "작업취소" ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 gap-1 border-amber-300 bg-amber-50 px-2.5 text-xs text-amber-950 hover:bg-amber-100"
+              disabled={remakeChargeBusy}
+              title="동일 의뢰건에 리메이크 기공비를 청구합니다"
+              onClick={() => setRemakeChargeOpen(true)}
+            >
+              <Repeat className="h-3.5 w-3.5" />
+              리메이크 청구
+            </Button>
+          ) : null
+        }
         caseIdentity={selectedTransferCaseIdentity}
         counterpartyMemoStrip={
           selectedTransfer?.practiceBusinessAnchorId ? (
@@ -6718,16 +6528,9 @@ export function RequestorPracticeReceivePage({
         }}
         onCancelReply={() => setChatReplyTo(null)}
         onToggleReaction={(messageId, emoji) =>
-          handleToggleChatReaction(messageId, emoji)
+          void toggleReaction(messageId, emoji)
         }
         onDeleteMessage={(messageId) => void deleteMessage(messageId)}
-        onRemakeFromMessage={
-          canDeliverRemakeMeta ? handleRemakeFromChatMessage : undefined
-        }
-        onDeliverRemakeMeta={
-          canDeliverRemakeMeta ? handleOpenChatRemakeMeta : undefined
-        }
-        remakeMetaDisabled={chatRemakeBusy || Boolean(chatRemakePrompt)}
         composerPlaceholder="치과에 전달할 내용을 입력하세요 (# 로 의뢰건 불러오기)"
         requestPicks={transfers
           .map((row) => ({
@@ -6743,39 +6546,21 @@ export function RequestorPracticeReceivePage({
         inputDisabled={
           chatLoading ||
           chatSending ||
-          chatRemakeBusy ||
-          Boolean(chatRemakePrompt) ||
           !activeChatRoom?._id
         }
-        sendDisabled={chatSending || chatRemakeBusy || Boolean(chatRemakePrompt)}
+        sendDisabled={chatSending}
       />
-      <ChatRemakePromptDialog
-        open={Boolean(chatRemakePrompt)}
+      <LabRemakeChargeDialog
+        open={remakeChargeOpen && Boolean(selectedTransfer)}
         toothWorks={selectedTransferToothWorks}
-        labAnchorId={chatRemakeLabAnchorId}
-        remakeFeeLabel={
-          selectedTransfer
-            ? formatManWon(remakeFeeAmountForSelectedTransfer(false))
-            : undefined
-        }
-        remakeFeeWithCaLabel={
-          selectedTransfer?.hasCustomAbutment
-            ? formatManWon(remakeFeeAmountForSelectedTransfer(true))
-            : undefined
-        }
-        busy={chatRemakeBusy}
-        actor="lab"
-        initialStep={
-          chatRemakePrompt?.mode === "on_send" ? "ask" : "configure"
-        }
-        variant={
-          chatRemakePrompt?.mode === "meta_only" ? "meta_only" : "from_3d"
-        }
-        onResolve={(result) => void handleChatRemakePromptResolve(result)}
+        labAnchorId={String(user?.businessAnchorId || "").trim() || null}
+        feeQuote={selectedTransfer?.feeQuote || null}
+        remakeCharges={selectedTransfer?.remakeCharges || null}
+        busy={remakeChargeBusy}
+        onConfirm={(result) => void handleConfirmRemakeCharge(result)}
         onCancel={() => {
-          if (chatRemakeBusy) return;
-          setChatRemakePrompt(null);
-          setChatSending(false);
+          if (remakeChargeBusy) return;
+          setRemakeChargeOpen(false);
         }}
       />
       <RequestDetailDialog

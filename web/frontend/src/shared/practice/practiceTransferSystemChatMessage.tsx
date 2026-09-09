@@ -315,13 +315,17 @@ export function PracticeTransferSystemChatBody({
     );
   }
 
-  if (systemEvent === "practice_transfer_remake") {
+  if (
+    systemEvent === "practice_transfer_remake" ||
+    systemEvent === "practice_transfer_remake_charge"
+  ) {
     const payload =
       message.systemPayload && typeof message.systemPayload === "object"
         ? (message.systemPayload as Record<string, unknown>)
         : {};
     const feeTotal = Math.max(0, Math.round(Number(payload.remakeFeeTotal || 0)));
     const arrivalYmd = String(payload.arrivalYmd || "").trim();
+    const summaryLabel = String(payload.summaryLabel || "").trim();
     return (
       <div
         id={messageDomId}
@@ -336,6 +340,9 @@ export function PracticeTransferSystemChatBody({
           <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] font-medium leading-snug">
             {message.content}
           </p>
+          {summaryLabel && !String(message.content || "").includes(summaryLabel) ? (
+            <p className="mt-1 text-[11px] opacity-80">{summaryLabel}</p>
+          ) : null}
           {feeTotal > 0 || arrivalYmd ? (
             <p className="mt-1 text-[11px] opacity-80">
               {arrivalYmd ? `도착 ${arrivalYmd}` : null}

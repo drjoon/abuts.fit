@@ -188,6 +188,15 @@ const practiceTransferSchema = new mongoose.Schema(
         type: [practiceTransferFileSchema],
         default: [],
       },
+      /**
+       * 치아별 CA STL 업로드 횟수. cancel로 designFiles를 비워도 유지.
+       * 2회차부터 리메이크(치과 CA 리메이크비 + 기공소→어벗츠 1만) 적용.
+       */
+      caDesignUploadCountByTooth: {
+        type: Map,
+        of: Number,
+        default: undefined,
+      },
       designReadyAt: { type: Date, default: null },
       labDesignConfirmedAt: { type: Date, default: null },
       labDesignConfirmedBy: {
@@ -350,6 +359,32 @@ const practiceTransferSchema = new mongoose.Schema(
             ref: "User",
             default: null,
           },
+        },
+      ],
+      default: undefined,
+    },
+    /**
+     * 기공소 리메이크 청구(동일 PTX). 새 리메이크 전송을 만들지 않고 리메이크 수가만 hold.
+     * source: lab_charge | ca_reupload
+     */
+    remakeCharges: {
+      type: [
+        {
+          chargedAt: { type: Date, default: null },
+          chargedBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "User",
+            default: null,
+          },
+          source: { type: String, default: "lab_charge", trim: true },
+          toothNumbers: { type: [String], default: [] },
+          summaryLabel: { type: String, default: "", trim: true },
+          selectedParts: { type: Array, default: [] },
+          billingDelta: {
+            labFeeTotal: { type: Number, default: 0 },
+            total: { type: Number, default: 0 },
+          },
+          chargeIndex: { type: Number, default: 0 },
         },
       ],
       default: undefined,

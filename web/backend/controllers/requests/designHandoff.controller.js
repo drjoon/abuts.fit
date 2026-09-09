@@ -1,3 +1,4 @@
+// - 2026-09-09: CA STL 재업로드 remake — remake-charge realtime(billingDelta) fan-out.
 // - 2026-09-04: PTX handoff — 치식(toothWorks) 임플란트 스펙을 SSOT로 유지(FE 확인 모달 TS3→US 오염 방지).
 // - 2026-09-04: PTX handoff — Rhino trigger를 응답 후 최우선. save 시 stlPreload GENERATING.
 // - 2026-09-03: PTX abutment-design-handoff — 구강스캔(files) 없어도 어벗 STL만으로 CA Request 생성.
@@ -85,6 +86,11 @@ import {
   grantAbutmentDesignLabFee,
   revokeAbutmentDesignLabFee,
 } from "../../services/practiceTransferBilling.service.js";
+import {
+  applyCaReuploadRemakeCharge,
+  bumpCaDesignUploadCount,
+  isCaDesignRemakeReupload,
+} from "../../services/practiceTransferRemakeCharge.service.js";
 import {
   holdRequestCreditsOnSubmit,
   releaseRequestCreditHoldsOnCancel,
@@ -877,6 +883,11 @@ export async function handoffDesignToProduction(req, res) {
       // (WorksheetPage productModeNe=design_custom_abutment / 디자인 파트너 큐는 PTX 제외)
       if (!request.caseInfos) request.caseInfos = {};
       request.caseInfos.productMode = PRODUCT_MODE_PRODUCTION;
+      const handoffTooth = String(request.caseInfos?.tooth || "").trim();
+      const caRemakeReupload =
+        Boolean(transferDoc) &&
+        isAcceptingLab &&
+        isCaDesignRemakeReupload(transferDoc, handoffTooth);
       // 헥스/파일명 시드(동기) + hold용 빠른 재견적(리드타임 스케줄 생략).
       const rhinoRepriceT0 = Date.now();
       const [rhinoFileName] = await Promise.all([
@@ -887,6 +898,7 @@ export async function handoffDesignToProduction(req, res) {
               transferDoc,
               requestedAt: now,
               scheduleMode: "holdFast",
+              forceRemake: caRemakeReupload,
             })
           : Promise.resolve(null),
       ]);
@@ -1064,6 +1076,7 @@ export async function handoffDesignToProduction(req, res) {
                   requestedAt: now,
                   labOrg: labMeta.labOrg,
                   scheduleMode: "full",
+                  forceRemake: caRemakeReupload,
                 });
                 // hold에 쓴 출고일을 덮어쓰지 않음(배송 hold 박스 키 정합)
                 if (heldEstimatedShipYmd) {
@@ -1130,6 +1143,111 @@ export async function handoffDesignToProduction(req, res) {
                 grantErr,
               );
             });
+          }
+
+          const bumpTooth = String(request?.caseInfos?.tooth || "").trim();
+          if (bumpTooth) {
+            void bumpCaDesignUploadCount({
+              transferId: relatedTransferId,
+              tooth: bumpTooth,
+            }).catch((bumpErr) => {
+              console.warn(
+                "[DESIGN_HANDOFF] caDesignUploadCount bump failed",
+                bumpErr?.message || bumpErr,
+              );
+            });
+          }
+
+          if (caRemakeReupload && transferDoc && isAcceptingLab && bumpTooth) {
+            void (async () => {
+              try {
+                // 최신 remakeCharges 인덱스용으로 재조회
+                const fresh = await PracticeTransfer.findById(relatedTransferId);
+                if (!fresh) return;
+                const charged = await applyCaReuploadRemakeCharge({
+                  transferDoc: fresh,
+                  tooth: bumpTooth,
+                  actorUserId: userId,
+                });
+                if (!charged.ok) {
+                  console.warn(
+                    "[DESIGN_HANDOFF] CA remake charge skipped",
+                    charged.message || charged.reason,
+                  );
+                  return;
+                }
+                const feeTotal = Math.max(
+                  0,
+                  Math.round(
+                    Number(
+                      charged.chargeRecord?.billingDelta?.total ||
+                        charged.fees?.total ||
+                        0,
+                    ),
+                  ),
+                );
+                await postPracticeTransferSystemChatMessage({
+                  transferMongoId: fresh._id,
+                  senderUserId: userId,
+                  content:
+                    feeTotal > 0
+                      ? `커스텀어벗 리메이크\n#${bumpTooth}\n리메이크비 ${feeTotal.toLocaleString("ko-KR")}원`
+                      : `커스텀어벗 리메이크\n#${bumpTooth}`,
+                  systemEvent: "practice_transfer_remake_charge",
+                  systemPayload: {
+                    source: "ca_reupload",
+                    summaryLabel: `#${bumpTooth} · 커스텀어벗`,
+                    toothNumbers: [bumpTooth],
+                    billingDelta: charged.chargeRecord?.billingDelta || null,
+                    remakeFeeTotal: feeTotal,
+                  },
+                });
+                const remakeRealtime = {
+                  source: "applyCaReuploadRemakeCharge",
+                  action: "remake-charge",
+                  transferId: String(
+                    charged.updated?.transferId || fresh.transferId || "",
+                  ).trim(),
+                  transferMongoId: String(fresh._id || ""),
+                  billing: charged.updated?.billing || null,
+                  billingDelta: charged.chargeRecord?.billingDelta || null,
+                  remakeCharges: charged.updated?.remakeCharges || [],
+                  remakeFeeTotal: feeTotal,
+                };
+                const practiceUserId = String(fresh.practiceUserId || "").trim();
+                if (practiceUserId) {
+                  emitAppEventToUser(
+                    practiceUserId,
+                    "practice:transfer-updated",
+                    remakeRealtime,
+                  );
+                }
+                const actorId = String(userId || "").trim();
+                if (actorId && actorId !== practiceUserId) {
+                  emitAppEventToUser(
+                    actorId,
+                    "practice:transfer-updated",
+                    remakeRealtime,
+                  );
+                }
+                const practiceAnchorId = String(
+                  fresh.practiceBusinessAnchorId || "",
+                ).trim();
+                if (practiceAnchorId) {
+                  const { emitCreditBalanceUpdatedToBusiness } = await import(
+                    "../../utils/creditRealtime.js"
+                  );
+                  void emitCreditBalanceUpdatedToBusiness(practiceAnchorId).catch(
+                    () => {},
+                  );
+                }
+              } catch (chargeErr) {
+                console.error(
+                  "[DESIGN_HANDOFF] CA remake practice charge failed",
+                  chargeErr?.message || chargeErr,
+                );
+              }
+            })();
           }
 
           // 디자인컨펌생략 OFF + 첫 디자인 미러 성공 → 치과 「어벗 디자인 컨펌」 채팅·목록 갱신

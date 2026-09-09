@@ -1403,6 +1403,12 @@ function practiceTransferFollowUpHoldKey(transferId, followUpIndex) {
     Math.floor(Number(followUpIndex) || 0),
   )}`;
 }
+function practiceTransferRemakeChargeHoldKey(transferId, chargeIndex) {
+  return `practice_transfer:${String(transferId)}:remake_charge_hold:${Math.max(
+    0,
+    Math.floor(Number(chargeIndex) || 0),
+  )}`;
+}
 function practiceTransferEscrowReleaseKey(transferId) {
   return `practice_transfer:${String(transferId)}:escrow_release`;
 }
@@ -4364,6 +4370,133 @@ export async function holdPracticeTransferProsthesisFollowUpCredits({
         ...(prepared.entry.meta || {}),
         followUpIndex,
         displayLabel: "후속 보철 추가",
+      },
+    });
+
+    if (ownSession) await session.commitTransaction();
+
+    return {
+      held: true,
+      journalId: journal?.journalId || null,
+      heldTotal: holdLabAmount,
+      heldLabTotal: holdLabAmount,
+      heldAbutmentTotal: 0,
+      fromPaid: prepared.fromPaid,
+      fromFreeRequest: prepared.fromFreeRequest,
+      fromFreeShipping: prepared.fromFreeShipping,
+      idempotencyKey,
+    };
+  } catch (error) {
+    if (ownSession) {
+      try {
+        await session.abortTransaction();
+      } catch {
+        // ignore
+      }
+    }
+    throw error;
+  } finally {
+    if (ownSession) session.endSession();
+  }
+}
+
+/**
+ * 기공소 리메이크 청구 — 동일 PTX에 리메이크 수가 증분 hold.
+ * (후속 보철 hold와 동일 패턴, 멱등키만 remake_charge_hold)
+ */
+export async function holdPracticeTransferRemakeChargeCredits({
+  transfer,
+  chargeIndex = 0,
+  deltaFees,
+  actorUserId = null,
+  session: outerSession = null,
+  displayLabel = "리메이크 청구",
+}) {
+  const transferId = transfer?._id;
+  const practiceAnchorId = transfer?.practiceBusinessAnchorId;
+  if (!transferId || !practiceAnchorId) {
+    return { held: false, reason: "missing_anchors" };
+  }
+
+  const holdLabAmount = Math.max(
+    0,
+    Math.round(Number(deltaFees?.labFeeTotal ?? deltaFees?.total ?? 0) || 0),
+  );
+  if (holdLabAmount <= 0) {
+    return {
+      held: false,
+      reason: "zero_fee",
+      heldTotal: 0,
+      heldLabTotal: 0,
+      heldAbutmentTotal: 0,
+    };
+  }
+
+  const baseKey = practiceTransferRemakeChargeHoldKey(transferId, chargeIndex);
+  const { key: idempotencyKey, existing } = await resolveLiveIdempotencyKey(
+    baseKey,
+    outerSession,
+  );
+  if (existing?.journalId) {
+    return {
+      held: false,
+      reason: "already_held",
+      journalId: existing.journalId,
+      heldTotal: holdLabAmount,
+      heldLabTotal: holdLabAmount,
+      heldAbutmentTotal: 0,
+    };
+  }
+
+  const ownSession = !outerSession;
+  const session = outerSession || (await mongoose.startSession());
+  if (ownSession) session.startTransaction();
+
+  try {
+    await lockGuard(practiceAnchorId, session);
+    const devopsAnchorId = await resolveDevopsEscrowOwnerId(session);
+    if (!devopsAnchorId) {
+      const err = new Error("에스크로(devops) 사업자를 찾을 수 없습니다.");
+      err.statusCode = 500;
+      throw err;
+    }
+
+    const balance = await computeBusinessCreditBalanceFromLedger({
+      businessAnchorId: practiceAnchorId,
+      session,
+    });
+    const allowOverdraft =
+      await practiceAllowsFreeRequestOverdraft(practiceAnchorId);
+    const prepared = prepareHoldSliceEntry({
+      transferId,
+      practiceAnchorId,
+      devopsAnchorId,
+      amount: holdLabAmount,
+      shareKind: "lab",
+      displayLabel,
+      actorUserId,
+      split: {
+        remainingPaid: Number(balance?.paidCredit || 0),
+        remainingFreeRequest: Number(balance?.freeRequestCredit || 0),
+        remainingFreeShipping: Number(balance?.freeShippingCredit || 0),
+      },
+      allowFreeRequestOverdraft: allowOverdraft,
+    });
+    if (!prepared.prepared) {
+      const err = new Error("크레딧이 부족합니다.");
+      err.statusCode = 402;
+      throw err;
+    }
+
+    const journal = await postGeneralLedgerJournal({
+      ...prepared.entry,
+      idempotencyKey,
+      session,
+      skipIdempotencyLookup: true,
+      meta: {
+        ...(prepared.entry.meta || {}),
+        remakeChargeIndex: chargeIndex,
+        displayLabel,
       },
     });
 

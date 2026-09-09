@@ -33,6 +33,9 @@ import {
   toFeeQuoteApi,
   toRemakeApiFields,
 } from "../../services/practiceTransferBilling.service.js";
+import {
+  applyPracticeTransferRemakeCharge,
+} from "../../services/practiceTransferRemakeCharge.service.js";
 import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.js";
 import {
   ABUTS_LAB_DISPLAY_NAME,
@@ -913,6 +916,22 @@ const serializeProsthesisFollowUpsForApi = (followUps) =>
     canceledAt: row?.canceledAt || null,
   }));
 
+const serializeRemakeChargesForApi = (charges) =>
+  (Array.isArray(charges) ? charges : []).map((row) => ({
+    chargedAt: row?.chargedAt || null,
+    source: String(row?.source || "").trim(),
+    toothNumbers: Array.isArray(row?.toothNumbers)
+      ? row.toothNumbers.map((t) => String(t || "").trim()).filter(Boolean)
+      : [],
+    summaryLabel: String(row?.summaryLabel || "").trim(),
+    selectedParts: Array.isArray(row?.selectedParts) ? row.selectedParts : [],
+    billingDelta: row?.billingDelta || null,
+    chargeIndex:
+      row?.chargeIndex != null
+        ? Math.max(0, Math.floor(Number(row.chargeIndex)))
+        : 0,
+  }));
+
 const toVirtualRequestRows = (transferDoc) => {
   const transferId = String(transferDoc?.transferId || "").trim();
   const matchingMode = isAutoMatchMode(transferDoc) ? "auto" : "direct";
@@ -973,6 +992,7 @@ const toVirtualRequestRows = (transferDoc) => {
     prosthesisFollowUps: serializeProsthesisFollowUpsForApi(
       transferDoc?.prosthesisFollowUps,
     ),
+    remakeCharges: serializeRemakeChargesForApi(transferDoc?.remakeCharges),
     labRequestStagePlans: normalizeLabRequestStagePlans(
       transferDoc?.labRequestStagePlans,
     ),
@@ -4979,6 +4999,162 @@ export async function updatePracticeTransferProsthesisFollowUp(req, res) {
     return res.status(status >= 400 && status < 600 ? status : 500).json({
       success: false,
       message: error?.message || "후속 제작 변경 중 오류가 발생했습니다.",
+      ...(error?.payload || {}),
+    });
+  }
+}
+
+/**
+ * POST /api/practice/transfers/received/:transferId/remake-charges
+ * 기공소 — 동일 의뢰건에 리메이크 수가 청구(새 PTX 생성 없음).
+ */
+export async function chargeReceivedPracticeTransferRemake(req, res) {
+  try {
+    const role = String(req.user?.role || "").trim();
+    if (!isPracticeTransferLabReceiverRole(role) && role !== "admin") {
+      return res.status(403).json({ success: false, message: "권한이 없습니다." });
+    }
+
+    const transferIdFilter = buildTransferIdFilter(req.params?.transferId);
+    if (!transferIdFilter) {
+      return res.status(400).json({
+        success: false,
+        message: "transferId가 필요합니다.",
+      });
+    }
+
+    const { scope } = await buildReceivedScope(req);
+    if (!scope) {
+      return res.status(403).json({
+        success: false,
+        message: "수신 기공소 권한이 없습니다.",
+      });
+    }
+
+    const doc = await PracticeTransfer.findOne({
+      ...scope,
+      ...transferIdFilter,
+      ...practiceTransferNotDeletedMongoFilter(),
+    });
+    if (!doc) {
+      return res.status(404).json({
+        success: false,
+        message: "전송 내역을 찾을 수 없습니다.",
+      });
+    }
+
+    if (!doc.requestorDownloadedAt) {
+      return res.status(409).json({
+        success: false,
+        message: "작업시작 이후 의뢰만 리메이크 비용을 청구할 수 있습니다.",
+        reason: "remake_charge_before_accept",
+      });
+    }
+
+    const sourceToothWorks = Array.isArray(doc.toothWorks) ? doc.toothWorks : [];
+    const selectedParts = Array.isArray(req.body?.selectedParts)
+      ? req.body.selectedParts
+      : Array.isArray(req.body?.remakeParts)
+        ? req.body.remakeParts
+        : [];
+    const remakeToothWorks = buildRemakeToothWorksFromSelectedParts(
+      sourceToothWorks,
+      selectedParts,
+    );
+    if (!remakeToothWorks?.length) {
+      return res.status(400).json({
+        success: false,
+        message: "리메이크할 보철·커스텀어벗을 선택해 주세요.",
+      });
+    }
+
+    const summaryLabel = String(req.body?.summaryLabel || "").trim();
+    const result = await applyPracticeTransferRemakeCharge({
+      transferDoc: doc,
+      remakeToothWorks,
+      selectedParts,
+      summaryLabel,
+      source: "lab_charge",
+      actorUserId: req.user?._id || null,
+      displayLabel: "리메이크 청구",
+    });
+    if (!result.ok) {
+      const status = Number(result.statusCode || 500);
+      return res.status(status >= 400 && status < 600 ? status : 500).json({
+        success: false,
+        message: result.message || "리메이크 청구에 실패했습니다.",
+        reason: result.reason,
+        ...(result.payload || {}),
+        ...(result.missingFeeNames ? { missingFeeNames: result.missingFeeNames } : {}),
+      });
+    }
+
+    const { updated, chargeRecord, fees } = result;
+    const feeTotal = Math.max(
+      0,
+      Math.round(Number(chargeRecord?.billingDelta?.total || fees?.total || 0)),
+    );
+    const partsLabel =
+      summaryLabel ||
+      (Array.isArray(chargeRecord?.toothNumbers) && chargeRecord.toothNumbers.length
+        ? chargeRecord.toothNumbers.map((t) => `#${t}`).join(", ")
+        : "리메이크");
+
+    const targetLabAnchorIdText = String(updated.targetLabAnchorId || "").trim();
+    runProsthesisFollowUpSideEffectsInBackground({
+      practiceBusinessAnchorId: updated.practiceBusinessAnchorId,
+      practiceUserId: updated.practiceUserId,
+      targetLabAnchorIdText,
+      transferMongoId: String(updated._id),
+      emitCreditBalance: true,
+      fetchUnreadCount: Boolean(targetLabAnchorIdText),
+      chat: {
+        senderUserId: req.user?._id,
+        content:
+          feeTotal > 0
+            ? `리메이크 청구\n${partsLabel}\n리메이크비 ${feeTotal.toLocaleString("ko-KR")}원`
+            : `리메이크 청구\n${partsLabel}`,
+        systemEvent: "practice_transfer_remake_charge",
+        systemPayload: {
+          source: "lab_charge",
+          summaryLabel: partsLabel,
+          toothNumbers: chargeRecord?.toothNumbers || [],
+          selectedParts,
+          billingDelta: chargeRecord?.billingDelta || null,
+          remakeFeeTotal: feeTotal,
+        },
+      },
+      realtimePayload: {
+        source: "chargeReceivedPracticeTransferRemake",
+        action: "remake-charge",
+        transferId: String(updated.transferId || "").trim(),
+        transferMongoId: String(updated._id || ""),
+        targetLabAnchorId: targetLabAnchorIdText || null,
+        practiceUserId: String(updated.practiceUserId || ""),
+        billing: updated.billing,
+        billingDelta: chargeRecord?.billingDelta || null,
+        remakeCharges: serializeRemakeChargesForApi(updated.remakeCharges),
+        remakeFeeTotal: feeTotal,
+      },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "리메이크 비용을 청구했습니다.",
+      data: {
+        _id: String(updated._id || ""),
+        transferId: String(updated.transferId || "").trim(),
+        billing: updated.billing,
+        remakeCharges: serializeRemakeChargesForApi(updated.remakeCharges),
+        billingDelta: chargeRecord?.billingDelta || null,
+        remakeFeeTotal: feeTotal,
+      },
+    });
+  } catch (error) {
+    const status = Number(error?.statusCode || 500);
+    return res.status(status >= 400 && status < 600 ? status : 500).json({
+      success: false,
+      message: error?.message || "리메이크 청구 중 오류가 발생했습니다.",
       ...(error?.payload || {}),
     });
   }

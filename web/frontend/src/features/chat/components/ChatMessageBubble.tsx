@@ -17,7 +17,7 @@
 // - 2026-08-28: STL/PLY/OBJ도 의뢰상세와 동일 썸네일·ModelPreviewDialog.
 // - 2026-08-28: 모델 확장자 우선 분류(잘못된 image MIME 오인 방지).
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Box, Reply, Repeat, SmilePlus, Trash2 } from "lucide-react";
+import { Box, Reply, SmilePlus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -87,8 +87,6 @@ type ChatMessageBubbleProps = {
   onToggleReaction?: (messageId: string, emoji: string) => void | Promise<void>;
   /** 본인 메시지 soft-delete */
   onDeleteMessage?: (messageId: string) => void | Promise<void>;
-  /** 첨부 메시지 → 리메이크 범위 선택 (치과·기공소) */
-  onRemakeFromMessage?: (message: ChatMessage) => void;
   /** 리액션 툴팁용 userId → 표시 이름 */
   reactionUserNameById?: Record<string, string>;
   onOpenAttachment?: (file: ChatBubbleAttachment) => void | Promise<void>;
@@ -332,7 +330,6 @@ export function ChatMessageBubble({
   onReply,
   onToggleReaction,
   onDeleteMessage,
-  onRemakeFromMessage,
   reactionUserNameById = {},
   onOpenAttachment,
   onOpenRequestId,
@@ -358,18 +355,11 @@ export function ChatMessageBubble({
 
   const canDelete =
     isMine && !isSystem && typeof onDeleteMessage === "function";
-  const hasAttachments =
-    Array.isArray(message.attachments) && message.attachments.length > 0;
-  const canRemakeFromMessage =
-    !isSystem &&
-    hasAttachments &&
-    typeof onRemakeFromMessage === "function";
   const canInteract =
     !isSystem &&
     (typeof onReply === "function" ||
       typeof onToggleReaction === "function" ||
-      canDelete ||
-      canRemakeFromMessage);
+      canDelete);
   const replyTargetId = String(replyPreview?._id || "").trim();
   const canJumpToReply =
     Boolean(replyTargetId) && replyPreview?.content !== "삭제된 메시지입니다.";
@@ -1099,24 +1089,6 @@ export function ChatMessageBubble({
                     </div>
                   </PopoverContent>
                 </Popover>
-              ) : null}
-
-              {canRemakeFromMessage ? (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      className="h-7 w-7 border-amber-300/80 bg-amber-50 text-amber-900 hover:bg-amber-100 hover:text-amber-950"
-                      onClick={() => onRemakeFromMessage?.(message)}
-                      aria-label="리메이크"
-                    >
-                      <Repeat className="h-3.5 w-3.5" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>리메이크</TooltipContent>
-                </Tooltip>
               ) : null}
 
               {canDelete ? (

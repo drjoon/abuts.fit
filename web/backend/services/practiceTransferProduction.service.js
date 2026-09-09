@@ -1948,6 +1948,7 @@ export async function repriceAndReschedulePtxAbutmentRequest({
   requestedAt = new Date(),
   labOrg: labOrgArg = null,
   scheduleMode = "full",
+  forceRemake = false,
 }) {
   if (!requestDoc || !transferDoc) return requestDoc;
 
@@ -2011,13 +2012,38 @@ export async function repriceAndReschedulePtxAbutmentRequest({
     1,
     countDesignAbutmentQty(requestDoc.caseInfos) || 1,
   );
-  let quotedPrice = buildPtxAbutsProductionQuote({
-    creditSettings: creditSettingsForQuote,
-    shippingMode,
-    abutmentQty,
-    expressFeePerRequest,
-    quotedAt: requestedAt,
-  });
+  const isPtxRemake = Boolean(
+    forceRemake ||
+      transferDoc?.remake?.sourceTransferMongoId ||
+      String(transferDoc?.remake?.sourceTransferId || "").trim() ||
+      transferDoc?.billing?.isRemake ||
+      transferDoc?.remake?.includeCustomAbutment === true,
+  );
+  let quotedPrice;
+  if (isPtxRemake) {
+    quotedPrice = await computePriceForRequest({
+      requestorId: requestDoc.requestor || null,
+      requestorOrgId: labAnchorId,
+      clinicName: String(requestDoc?.caseInfos?.clinicName || "").trim(),
+      patientName: String(requestDoc?.caseInfos?.patientName || "").trim(),
+      tooth: String(requestDoc?.caseInfos?.tooth || "").trim(),
+      creditSettings: creditSettingsForQuote,
+    });
+    quotedPrice = resolveQuotedPriceWithExpressFee({
+      price: quotedPrice,
+      shippingMode,
+      expressFee: expressFeePerRequest,
+      expressQty: abutmentQty,
+    });
+  } else {
+    quotedPrice = buildPtxAbutsProductionQuote({
+      creditSettings: creditSettingsForQuote,
+      shippingMode,
+      abutmentQty,
+      expressFeePerRequest,
+      quotedAt: requestedAt,
+    });
+  }
   if (rush) {
     quotedPrice = applyRushMultiplierToPtxQuote(
       quotedPrice,

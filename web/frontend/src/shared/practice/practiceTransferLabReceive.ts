@@ -74,6 +74,16 @@ export type PracticeTransferLabReceiveFile = {
   s3Key: string;
 };
 
+export type PracticeTransferRemakeCharge = {
+  chargedAt?: string | null;
+  source?: string;
+  toothNumbers?: string[];
+  summaryLabel?: string;
+  selectedParts?: unknown[];
+  billingDelta?: { total?: number; labFeeTotal?: number } | null;
+  chargeIndex?: number;
+};
+
 export type PracticeTransferLabReceiveItem = {
   _id: string;
   transferId: string;
@@ -156,6 +166,8 @@ export type PracticeTransferLabReceiveItem = {
   resultFileCount?: number;
   resultFiles?: PracticeTransferLabReceiveFile[];
   feeQuote?: PracticeTransferFeeQuote | null;
+  /** 기공소 동일 PTX 리메이크 청구 이력 */
+  remakeCharges?: PracticeTransferRemakeCharge[];
   /** 자동매칭 — 우리 별점(수가)보다 의뢰 별점(수가)이 낮을 때 */
   starDowngrade?: StarDowngradeInfo | null;
   /** 수신 기공소 본인 별점 요약 */
@@ -164,6 +176,38 @@ export type PracticeTransferLabReceiveItem = {
   practicePartnerMemo?: { memo: string; updatedAt?: string | null } | null;
   isRemake?: boolean;
   remakeSourceTransferId?: string;
+};
+
+export const parsePracticeTransferRemakeCharges = (
+  raw: unknown,
+): PracticeTransferRemakeCharge[] => {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((row, index) => {
+    const r = row && typeof row === "object" ? (row as Record<string, unknown>) : {};
+    const delta =
+      r.billingDelta && typeof r.billingDelta === "object"
+        ? (r.billingDelta as Record<string, unknown>)
+        : null;
+    return {
+      chargedAt: r.chargedAt ? String(r.chargedAt) : null,
+      source: String(r.source || "").trim(),
+      toothNumbers: Array.isArray(r.toothNumbers)
+        ? r.toothNumbers.map((t) => String(t || "").trim()).filter(Boolean)
+        : [],
+      summaryLabel: String(r.summaryLabel || "").trim(),
+      selectedParts: Array.isArray(r.selectedParts) ? r.selectedParts : [],
+      billingDelta: delta
+        ? {
+            total: Math.max(0, Math.round(Number(delta.total || 0))),
+            labFeeTotal: Math.max(0, Math.round(Number(delta.labFeeTotal || 0))),
+          }
+        : null,
+      chargeIndex:
+        r.chargeIndex != null
+          ? Math.max(0, Math.floor(Number(r.chargeIndex)))
+          : index,
+    };
+  });
 };
 
 /** 플랫폼에 원본 의뢰가 없는 리메이크(치과가 수동 작성) */
