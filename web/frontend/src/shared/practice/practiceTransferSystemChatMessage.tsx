@@ -218,6 +218,11 @@ type PracticeTransferSystemChatBodyProps = {
   transferToothWorks?: Partial<ToothWorkSelection>[] | null;
   /** 의뢰건 기공비 SSOT — 후속 증분이 아니라 최종(지르+CA) 견적 */
   transferFeeQuote?: PracticeTransferFeeQuote | null;
+  /** 기공소 — 리메이크 청구 취소 */
+  onCancelRemakeCharge?: (chargeIndex: number | null) => void;
+  remakeChargeCancelBusy?: boolean;
+  /** 아직 유효한 remakeCharges chargeIndex 목록(취소 버튼 노출) */
+  activeRemakeChargeIndexes?: ReadonlySet<number> | null;
 };
 
 export function PracticeTransferSystemChatBody({
@@ -228,6 +233,9 @@ export function PracticeTransferSystemChatBody({
   labAnchorId = null,
   transferToothWorks = null,
   transferFeeQuote = null,
+  onCancelRemakeCharge = undefined,
+  remakeChargeCancelBusy = false,
+  activeRemakeChargeIndexes = null,
 }: PracticeTransferSystemChatBodyProps): JSX.Element | null {
   const systemEvent = String(message.systemEvent || "").trim();
   const followUpPayload =
@@ -315,6 +323,45 @@ export function PracticeTransferSystemChatBody({
     );
   }
 
+  if (systemEvent === "practice_transfer_remake_charge_cancel") {
+    const payload =
+      message.systemPayload && typeof message.systemPayload === "object"
+        ? (message.systemPayload as Record<string, unknown>)
+        : {};
+    const feeTotal = Math.max(0, Math.round(Number(payload.remakeFeeTotal || 0)));
+    const summaryLabel = String(payload.summaryLabel || "").trim();
+    return (
+      <div
+        id={messageDomId}
+        className="flex w-full justify-center scroll-mt-4 py-1.5"
+      >
+        <div
+          className={cn(
+            "max-w-[min(92%,28rem)] rounded-md border border-slate-200 bg-slate-50 px-4 py-2 text-center text-slate-600",
+            compact ? "text-[11px] sm:text-xs" : "text-xs sm:text-sm",
+          )}
+        >
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+            리메이크 청구 취소
+          </p>
+          {summaryLabel ? (
+            <p className="mt-1 font-medium leading-snug text-slate-800">
+              {summaryLabel}
+            </p>
+          ) : null}
+          {feeTotal > 0 ? (
+            <p className="mt-1 text-[11px] opacity-80">
+              리메이크비 {feeTotal.toLocaleString("ko-KR")}원
+            </p>
+          ) : null}
+          <p className={cn("mt-0.5 opacity-60", compact ? "text-[10px]" : "text-[11px]")}>
+            {formatTime(message.createdAt)}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   if (
     systemEvent === "practice_transfer_remake" ||
     systemEvent === "practice_transfer_remake_charge"
@@ -327,6 +374,8 @@ export function PracticeTransferSystemChatBody({
     const arrivalYmd = String(payload.arrivalYmd || "").trim();
     const summaryLabel = String(payload.summaryLabel || "").trim();
     const source = String(payload.source || "").trim();
+    const rawChargeIndex = Math.trunc(Number(payload.chargeIndex));
+    const chargeIndex = Number.isFinite(rawChargeIndex) ? rawChargeIndex : null;
     const headerLabel =
       systemEvent === "practice_transfer_remake_charge"
         ? source === "ca_reupload"
@@ -348,6 +397,15 @@ export function PracticeTransferSystemChatBody({
     const bodyWithoutFee = bodyLines.filter(
       (line) => !/^리메이크비\s/.test(line),
     );
+    const canCancel =
+      systemEvent === "practice_transfer_remake_charge" &&
+      source !== "ca_reupload" &&
+      typeof onCancelRemakeCharge === "function" &&
+      feeTotal > 0 &&
+      (chargeIndex == null
+        ? Boolean(activeRemakeChargeIndexes && activeRemakeChargeIndexes.size > 0)
+        : Boolean(activeRemakeChargeIndexes?.has(chargeIndex)));
+
     return (
       <div
         id={messageDomId}
@@ -382,6 +440,16 @@ export function PracticeTransferSystemChatBody({
                 ? `리메이크비 ${feeTotal.toLocaleString("ko-KR")}원`
                 : null}
             </p>
+          ) : null}
+          {canCancel ? (
+            <button
+              type="button"
+              className="mt-2 inline-flex h-7 items-center justify-center rounded-md border border-destructive/35 bg-white px-2.5 text-[11px] font-medium text-destructive hover:bg-destructive/5 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={remakeChargeCancelBusy}
+              onClick={() => onCancelRemakeCharge?.(chargeIndex)}
+            >
+              {remakeChargeCancelBusy ? "취소 중…" : "청구 취소"}
+            </button>
           ) : null}
           <p className={cn("mt-0.5 opacity-60", compact ? "text-[10px]" : "text-[11px]")}>
             {formatTime(message.createdAt)}

@@ -9,6 +9,8 @@
 // - 2026-09-01: PTX 결제보류 — hold/adjust가 여러 저널로 흩어져도 목록·호버 금액을 견적(heldTotal)과 맞춤.
 // - 2026-08-31: 요약 소비 카드 라벨「소비」(구「기공, 스토어」). 치과·기공소 공통.
 // - 2026-08-31: 기공소 내역 요약 — 치과와 동일 +/− 수식(유료·무료·정산 적립·기공/스토어). 기간 필터는 카드만.
+// - 2026-09-10: 리메이크 청구 행 클릭 — 이번 청구·원청구 세부 내역.
+// - 2026-09-10: 리메이크 청구 적립을 원본 기공의뢰 행과 분리 표시.
 // - 2026-08-31: 기공소 — PTX 적립 보류 라벨·labShareOnly.
 // - 2026-08-31: 유형 라벨 — 치과(구강스캔/어벗디자인)·기공소(치과로부터 수신/어벗츠로 의뢰).
 // - 2026-08-26: 치과 요약 — 유료/무료 충전·소비는 기간 합계(잔여 버킷 아님). HOLD 소비 반영.
@@ -286,6 +288,17 @@ type CreditLedgerItem = {
   holdShare?: string | null;
   /** 기공의뢰 견적(행 클릭 상세 모달) */
   feeQuote?: PracticeTransferFeeQuote | null;
+  /** 리메이크 청구 이력(리메이크 행 상세) */
+  remakeCharges?: Array<{
+    chargedAt?: string | null;
+    source?: string;
+    toothNumbers?: string[];
+    summaryLabel?: string;
+    selectedParts?: unknown[];
+    billingDelta?: { total?: number; labFeeTotal?: number } | null;
+    chargeIndex?: number;
+  }> | null;
+  remakeChargeIndex?: number | null;
   skipJig?: boolean;
   rushProcessing?: boolean;
   tooth?: string;
@@ -458,6 +471,7 @@ type LedgerDisplayRow = {
 /** 사이드바 SSOT: 치과 기공소에 ↔ 기공소 치과로부터 */
 const PRACTICE_TRANSFER_TYPE_LABEL = "기공의뢰-기공소에";
 const LAB_RECEIVE_TYPE_LABEL = "기공의뢰-치과로부터";
+const LAB_REMAKE_CHARGE_TYPE_LABEL = "리메이크 청구";
 /** 사이드바 SSOT: 치과 어벗츠에 ↔ 기공소 어벗츠로 */
 const ABUTMENT_DESIGN_TYPE_LABEL = "기공의뢰-어벗츠에";
 const LAB_ABUTS_REQUEST_TYPE_LABEL = "기공의뢰-어벗츠로";
@@ -630,6 +644,9 @@ const resolvePracticeTransferDisplayLabel = (
   isLabViewer = false,
 ) => {
   if (isStoreOrderLedgerItem(item)) return STORE_ORDER_TYPE_LABEL;
+  if (isPracticeTransferRemakeChargeLedgerItem(item)) {
+    return LAB_REMAKE_CHARGE_TYPE_LABEL;
+  }
   if (String(item.refType || "") === "PRACTICE_TRANSFER") {
     return resolvePracticeTransferTypeLabel(isLabViewer);
   }
@@ -1213,11 +1230,129 @@ const isLabToAbutsShippingLedgerItem = (item: CreditLedgerItem) => {
   return false;
 };
 
+const isPracticeTransferRemakeChargeLedgerItem = (item: CreditLedgerItem) => {
+  const source = String(item.ledgerSource || "").trim();
+  if (
+    source === "practice_transfer_remake_charge_lab_share" ||
+    source === "practice_transfer_remake_charge_release" ||
+    source === "practice_transfer_remake_charge_lab_platform_fee"
+  ) {
+    return true;
+  }
+  const key = String(item.uniqueKey || "");
+  return (
+    key.includes("remake_charge_release") ||
+    key.includes("remake_charge_hold") ||
+    key.includes("remake_charge_lab_platform_fee")
+  );
+};
+
+const remakeChargeIndexFromLedgerItem = (
+  item: CreditLedgerItem,
+): number | null => {
+  const fromField = Math.trunc(Number(item.remakeChargeIndex));
+  if (Number.isFinite(fromField) && fromField >= 0) return fromField;
+  const m = String(item.uniqueKey || "").match(
+    /remake_charge_(?:release|hold):(\d+)/,
+  );
+  if (m) return Math.max(0, Math.trunc(Number(m[1])));
+  return null;
+};
+
+const resolveRemakeChargeForLedgerItem = (item: CreditLedgerItem) => {
+  const rows = Array.isArray(item.remakeCharges) ? item.remakeCharges : [];
+  if (!rows.length) return null;
+  const idx = remakeChargeIndexFromLedgerItem(item);
+  if (idx != null) {
+    const found = rows.find((row) => {
+      const rowIdx = Math.trunc(Number(row?.chargeIndex));
+      return Number.isFinite(rowIdx) && rowIdx === idx;
+    });
+    if (found) return found;
+  }
+  return rows[rows.length - 1] || null;
+};
+
+/** 리메이크 청구 1건 → 정산 상세용 견적(원청구 feeQuote와 분리) */
+const buildRemakeChargeFeeQuote = (
+  charge: NonNullable<ReturnType<typeof resolveRemakeChargeForLedgerItem>>,
+  amountFallback = 0,
+): PracticeTransferFeeQuote => {
+  const fee = Math.max(
+    0,
+    Math.round(
+      Number(
+        charge?.billingDelta?.labFeeTotal ??
+          charge?.billingDelta?.total ??
+          amountFallback,
+      ),
+    ),
+  );
+  const summaryLabel =
+    String(charge?.summaryLabel || "").trim() || "리메이크";
+  const parts = summaryLabel
+    .split(/,\s*/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const lines =
+    parts.length > 0
+      ? parts.map((part) => {
+          const m = part.match(/^(.+?)\s*[·.]\s*(.+)$/);
+          const toothNumber = m ? String(m[1] || "").trim() : "";
+          const prosthesisType = m
+            ? String(m[2] || "").trim() || "리메이크"
+            : part;
+          return {
+            toothNumber,
+            prosthesisType,
+            labFee: 0,
+            labAbutmentFee: 0,
+            abutmentRetail: 0,
+          };
+        })
+      : [
+          {
+            toothNumber: "",
+            prosthesisType: "리메이크",
+            labFee: fee,
+            labAbutmentFee: 0,
+            abutmentRetail: 0,
+          },
+        ];
+  // 부위 라벨만 있고 단가가 없을 때 — 합계 행으로 리메이크비 표시
+  if (lines.length > 0 && lines.every((l) => l.labFee <= 0 && l.labAbutmentFee <= 0)) {
+    lines.push({
+      toothNumber: "",
+      prosthesisType: "리메이크비",
+      labFee: fee,
+      labAbutmentFee: 0,
+      abutmentRetail: 0,
+    });
+  }
+  return {
+    labFeeTotal: fee,
+    labAbutmentTotal: 0,
+    labAbutmentPending: false,
+    abutmentRetailTotal: 0,
+    abutmentQty: 0,
+    total: fee,
+    lines,
+    relationshipKind: "none",
+    feeRateApplied: 0,
+    labSettlementAmount: fee,
+    abutsRevenueAmount: 0,
+    billed: true,
+    isRemake: true,
+  };
+};
+
 const practiceTransferGroupKey = (
   item: CreditLedgerItem,
   opts: { isLabViewer?: boolean } = {},
 ) => {
   const isLabViewer = Boolean(opts.isLabViewer);
+  // 리메이크 청구 적립은 원본 기공의뢰 행과 분리(+8만원 등 별도 내역).
+  if (isPracticeTransferRemakeChargeLedgerItem(item)) return "";
   // 기공소→어벗츠 배송은 박스 행으로(기공의뢰 정산과 분리).
   if (isLabToAbutsShippingLedgerItem(item)) return "";
   // 기공소 장부: PTX CA 생산도 박스키로 — 배송과 한 행.
@@ -1890,6 +2025,10 @@ export const CreditLedgerModal = ({
     useState<RequestDetailDialogRequest | null>(null);
   const [feeQuoteDetail, setFeeQuoteDetail] = useState<{
     quote: PracticeTransferFeeQuote;
+    /** 리메이크 행 — 원청구 견적(아래 섹션) */
+    originalQuote?: PracticeTransferFeeQuote | null;
+    remakeSummaryLabel?: string | null;
+    remakeChargedAt?: string | null;
     skipJig: boolean;
     rushProcessing: boolean;
     title: string;
@@ -2877,9 +3016,16 @@ export const CreditLedgerModal = ({
                     if (refType === "SHIPPING_PACKAGE") return "무료(배송)";
                     return "무료";
                   })();
+                  const isRemakeChargeRow = isPracticeTransferRemakeChargeLedgerItem(
+                    r.item,
+                  );
                   const canOpenFeeQuote = Boolean(
                     r.isPracticeTransfer &&
-                      parsePracticeTransferFeeQuote(r.item.feeQuote),
+                      (isRemakeChargeRow
+                        ? parsePracticeTransferFeeQuote(r.item.feeQuote) ||
+                          resolveRemakeChargeForLedgerItem(r.item) ||
+                          Number(r.amount || 0) > 0
+                        : parsePracticeTransferFeeQuote(r.item.feeQuote)),
                   );
                   const canOpenAbutmentDetail = Boolean(r.isAbutmentDesign);
                   const payoutStatus = r.practiceTransferPayoutStatus;
@@ -2897,10 +3043,6 @@ export const CreditLedgerModal = ({
                           return;
                         }
                         if (!canOpenFeeQuote) return;
-                        const quote = parsePracticeTransferFeeQuote(
-                          r.item.feeQuote,
-                        );
-                        if (!quote) return;
                         const memoMeta = parsePracticeTransferMemoMeta(
                           String(r.item.transferMemo || ""),
                         );
@@ -2908,6 +3050,62 @@ export const CreditLedgerModal = ({
                           resolvePracticeTransferPending(r.item, "lab");
                         const creditAbutmentHoldPending =
                           resolvePracticeTransferPending(r.item, "abuts");
+
+                        if (isRemakeChargeRow) {
+                          const charge = resolveRemakeChargeForLedgerItem(r.item);
+                          const remakeQuote = charge
+                            ? buildRemakeChargeFeeQuote(
+                                charge,
+                                Number(r.amount || 0),
+                              )
+                            : buildRemakeChargeFeeQuote(
+                                {
+                                  summaryLabel: "리메이크",
+                                  billingDelta: {
+                                    labFeeTotal: Math.max(
+                                      0,
+                                      Math.round(Number(r.amount || 0)),
+                                    ),
+                                    total: Math.max(
+                                      0,
+                                      Math.round(Number(r.amount || 0)),
+                                    ),
+                                  },
+                                },
+                                Number(r.amount || 0),
+                              );
+                          const originalQuote = parsePracticeTransferFeeQuote(
+                            r.item.feeQuote,
+                          );
+                          setFeeQuoteDetail({
+                            quote: remakeQuote,
+                            originalQuote,
+                            remakeSummaryLabel:
+                              String(charge?.summaryLabel || "").trim() || null,
+                            remakeChargedAt:
+                              String(charge?.chargedAt || r.createdAt || "").trim() ||
+                              null,
+                            skipJig: r.item.skipJig !== false,
+                            rushProcessing: Boolean(r.item.rushProcessing),
+                            title: LAB_REMAKE_CHARGE_TYPE_LABEL,
+                            creditLabHoldPending: false,
+                            creditAbutmentHoldPending: false,
+                            patientName:
+                              String(r.item.patientName || "").trim() ||
+                              String(memoMeta.patientName || "").trim(),
+                            labName: String(r.item.labName || "").trim(),
+                            orderDate: String(memoMeta.orderDate || "").trim(),
+                            arrivalDate: String(memoMeta.arrivalDate || "").trim(),
+                            memo: String(memoMeta.memo || "").trim(),
+                            settlementShippingLines: [],
+                          });
+                          return;
+                        }
+
+                        const quote = parsePracticeTransferFeeQuote(
+                          r.item.feeQuote,
+                        );
+                        if (!quote) return;
                         const parts =
                           r.parts && r.parts.length > 0
                             ? r.parts
@@ -2924,6 +3122,9 @@ export const CreditLedgerModal = ({
                             quote,
                             settlementShippingLines,
                           ),
+                          originalQuote: null,
+                          remakeSummaryLabel: null,
+                          remakeChargedAt: null,
                           skipJig: r.item.skipJig !== false,
                           rushProcessing: Boolean(r.item.rushProcessing),
                           title:
@@ -3008,7 +3209,15 @@ export const CreditLedgerModal = ({
                               )}
                             </>
                           ) : (
-                            <span>{`${amount.toLocaleString()}원`}</span>
+                            <span className="inline-flex items-center justify-center gap-1">
+                              <span>{formatSignedWon(amount)}</span>
+                              {canOpenFeeQuote ? (
+                                <CircleHelp
+                                  className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                                  aria-hidden
+                                />
+                              ) : null}
+                            </span>
                           )}
                         </div>
                       </TableCell>
@@ -3201,6 +3410,14 @@ export const CreditLedgerModal = ({
                       : "—"}
                   </span>
                 </p>
+                {feeQuoteDetail.remakeChargedAt ? (
+                  <p className="min-w-0 sm:col-span-2">
+                    <span className="text-muted-foreground">리메이크 청구일</span>{" "}
+                    <span className="font-medium tabular-nums text-slate-900">
+                      {formatDate(String(feeQuoteDetail.remakeChargedAt))}
+                    </span>
+                  </p>
+                ) : null}
                 <p className="min-w-0 sm:col-span-2 whitespace-pre-wrap break-words">
                   <span className="text-muted-foreground">메모</span>{" "}
                   <span className="font-medium text-slate-900">
@@ -3208,20 +3425,61 @@ export const CreditLedgerModal = ({
                   </span>
                 </p>
               </div>
-              <PracticeTransferFeeEstimate
-                quote={feeQuoteDetail.quote}
-                viewer="practice"
-                density="detail"
-                skipJig={feeQuoteDetail.skipJig}
-                rushProcessing={feeQuoteDetail.rushProcessing}
-                creditLabHoldPending={feeQuoteDetail.creditLabHoldPending}
-                creditAbutmentHoldPending={
-                  feeQuoteDetail.creditAbutmentHoldPending
-                }
-                settlementShippingLines={
-                  feeQuoteDetail.settlementShippingLines
-                }
-              />
+
+              {feeQuoteDetail.originalQuote ? (
+                <div className="space-y-2">
+                  <div className="rounded-xl border border-amber-200/80 bg-amber-50/60 px-3 py-2.5">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-800/80">
+                      이번 리메이크 청구
+                    </p>
+                    {feeQuoteDetail.remakeSummaryLabel ? (
+                      <p className="mt-1 whitespace-pre-wrap break-words text-xs font-medium leading-snug text-amber-950">
+                        {feeQuoteDetail.remakeSummaryLabel}
+                      </p>
+                    ) : null}
+                    <p className="mt-1 text-sm font-semibold tabular-nums text-amber-950">
+                      리메이크비{" "}
+                      {Math.max(
+                        0,
+                        Math.round(Number(feeQuoteDetail.quote.total || 0)),
+                      ).toLocaleString("ko-KR")}
+                      원
+                    </p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <p className="text-[11px] font-semibold text-slate-700">
+                      원청구 내역
+                    </p>
+                    <PracticeTransferFeeEstimate
+                      quote={feeQuoteDetail.originalQuote}
+                      viewer="practice"
+                      density="detail"
+                      skipJig={feeQuoteDetail.skipJig}
+                      rushProcessing={feeQuoteDetail.rushProcessing}
+                      creditLabHoldPending={feeQuoteDetail.creditLabHoldPending}
+                      creditAbutmentHoldPending={
+                        feeQuoteDetail.creditAbutmentHoldPending
+                      }
+                      settlementShippingLines={[]}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <PracticeTransferFeeEstimate
+                  quote={feeQuoteDetail.quote}
+                  viewer="practice"
+                  density="detail"
+                  skipJig={feeQuoteDetail.skipJig}
+                  rushProcessing={feeQuoteDetail.rushProcessing}
+                  creditLabHoldPending={feeQuoteDetail.creditLabHoldPending}
+                  creditAbutmentHoldPending={
+                    feeQuoteDetail.creditAbutmentHoldPending
+                  }
+                  settlementShippingLines={
+                    feeQuoteDetail.settlementShippingLines
+                  }
+                />
+              )}
             </div>
           ) : null}
         </DialogContent>

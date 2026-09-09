@@ -36,6 +36,7 @@ import {
   confirmPracticeTransferProduction,
   remakePracticeTransfers,
   chargeReceivedPracticeTransferRemake,
+  cancelReceivedPracticeTransferRemakeCharge,
   searchRemakePracticeTransfers,
   restorePracticeTransfersBatch,
   retargetPracticeTransferLab,
@@ -152,6 +153,13 @@ router.post(
   authenticate,
   receiveAuth,
   chargeReceivedPracticeTransferRemake,
+);
+
+router.post(
+  "/received/:transferId/remake-charges/cancel",
+  authenticate,
+  receiveAuth,
+  cancelReceivedPracticeTransferRemakeCharge,
 );
 
 router.post(

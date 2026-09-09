@@ -14,6 +14,9 @@
 // - web/frontend/src/shared/files/downloadWithProgress.ts
 // - web/frontend/src/shared/files/s3BlobCache.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-10: chatHeaderAction — 탭 행 → 환자/도착일 식별 스트립 오른쪽.
+// - 2026-09-10: 드롭존 활성 시 채팅 opacity 45→80(가독성).
+// - 2026-09-10: 리메이크 청구 채팅 카드 「청구 취소」.
 // - 2026-09-08: DialogDescription sr-only — Radix DescriptionWarning 제거.
 // - 2026-09-08: 탭 라벨 의뢰/진행. 식별=이름, 진행 헤더=도착일+다음 도착일. 알림=전체 토글.
 // - 2026-09-08: preferredDockSide — 캘린더 칩 열 위치에 맞춰 좌/우 도킹.
@@ -376,7 +379,7 @@ type PracticeTransferDetailChatDialogProps = {
   conversationTitle: string;
   /** S3 프록시 미리보기용 JWT */
   authToken?: string | null;
-  /** 치과 채팅 헤더 오른쪽(예: 치과 평가 → 기공수가 할증) */
+  /** 환자/도착일 식별 스트립 오른쪽(예: 기공소 리메이크 청구) */
   chatHeaderAction?: ReactNode;
   /** 채팅 헤더 바로 아래 — 상대방 내부 메모 */
   counterpartyMemoStrip?: ReactNode;
@@ -545,6 +548,9 @@ type PracticeTransferDetailChatDialogProps = {
   cancelProsthesisFollowUpBusy?: boolean;
   modifyProsthesisFollowUpBusy?: boolean;
   prosthesisFollowUps?: import("@/shared/practice/prosthesisFollowUp").ProsthesisFollowUpRecord[] | null;
+  /** 기공소 — 리메이크 청구 채팅 카드 「청구 취소」 */
+  onCancelRemakeCharge?: (chargeIndex: number | null) => void;
+  remakeChargeCancelBusy?: boolean;
   /** 치과: 수락 전·작업취소 건을 휴지통으로 */
   onCancelRequest?: () => void;
   cancelRequestDisabled?: boolean;
@@ -663,6 +669,8 @@ export function PracticeTransferDetailChatDialog({
   cancelProsthesisFollowUpBusy = false,
   modifyProsthesisFollowUpBusy = false,
   prosthesisFollowUps = null,
+  onCancelRemakeCharge,
+  remakeChargeCancelBusy = false,
   onCancelRequest,
   cancelRequestDisabled = false,
   guideTourElevate = false,
@@ -714,6 +722,16 @@ export function PracticeTransferDetailChatDialog({
   const handlePanelTabChange = useCallback((value: string) => {
     setPanelTab(value === "detail" ? "detail" : "chat");
   }, []);
+
+  const activeRemakeChargeIndexes = useMemo(() => {
+    const set = new Set<number>();
+    const rows = Array.isArray(remakeCharges) ? remakeCharges : [];
+    rows.forEach((row, i) => {
+      const raw = Math.trunc(Number(row?.chargeIndex));
+      set.add(Number.isFinite(raw) ? raw : i);
+    });
+    return set;
+  }, [remakeCharges]);
 
   const handleChromePointerDown = useCallback(
     (e: ReactPointerEvent) => {
@@ -2101,7 +2119,6 @@ export function PracticeTransferDetailChatDialog({
               className="flex shrink-0 items-center justify-end gap-1"
               data-no-drag
             >
-              {!minimized ? chatHeaderAction : null}
               {!minimized ? (
                 <ChatSoundGlobalToggle />
               ) : null}
@@ -2146,15 +2163,26 @@ export function PracticeTransferDetailChatDialog({
             </div>
           </div>
 
-          {!minimized && caseIdentityStrip ? (
-            <div className="shrink-0 border-b bg-slate-50 px-5 py-2.5">
-              <p className="truncate text-sm font-semibold text-foreground">
-                {caseIdentityStrip.primary}
-              </p>
-              {identityDateLabel && !showArrivalInChatChrome ? (
-                <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                  {identityDateLabel}
-                </p>
+          {!minimized && (caseIdentityStrip || chatHeaderAction) ? (
+            <div className="flex shrink-0 items-center justify-between gap-3 border-b bg-slate-50 px-5 py-2.5">
+              <div className="min-w-0 flex-1">
+                {caseIdentityStrip ? (
+                  <>
+                    <p className="truncate text-sm font-semibold text-foreground">
+                      {caseIdentityStrip.primary}
+                    </p>
+                    {identityDateLabel && !showArrivalInChatChrome ? (
+                      <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                        {identityDateLabel}
+                      </p>
+                    ) : null}
+                  </>
+                ) : null}
+              </div>
+              {chatHeaderAction ? (
+                <div className="shrink-0" data-no-drag>
+                  {chatHeaderAction}
+                </div>
               ) : null}
             </div>
           ) : null}
@@ -2766,7 +2794,7 @@ export function PracticeTransferDetailChatDialog({
                       "custom-scrollbar relative z-[1] min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain transition-opacity",
                       workFileDropActive &&
                         !workFileDropUploading &&
-                        "opacity-45",
+                        "opacity-80",
                     )}
                   >
                     <div className="w-full min-w-0 max-w-full space-y-2 px-5 py-2">
@@ -2812,6 +2840,9 @@ export function PracticeTransferDetailChatDialog({
                             practiceTransferProsthesisFollowUps={prosthesisFollowUps}
                             practiceTransferToothWorks={toothWorks}
                             practiceTransferFeeQuote={feeQuote}
+                            onCancelRemakeCharge={onCancelRemakeCharge}
+                            remakeChargeCancelBusy={remakeChargeCancelBusy}
+                            activeRemakeChargeIndexes={activeRemakeChargeIndexes}
                             downloadingFileKeys={downloadingFileKeys}
                             downloadProgressByKey={downloadProgressByKey}
                             onReply={onReplyToMessage}

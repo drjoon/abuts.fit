@@ -3,20 +3,24 @@
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 // - web/backend/controllers/requests/designHandoff.controller.js
 // - web/backend/utils/labFeeSchedule.js
+// - 2026-09-10: 리메이크 hold 직후 기공소 ESCROW_RELEASE(정산 누락 수정).
+// - 2026-09-10: Mutation UX — assert 중복 GL 제거. quote slim. timing 로그.
+// - 2026-09-10: lab_charge=보철+CA 수동 청구. ca_reupload=CA만(이미 청구면 skip).
 // - 2026-09-09: 동일 PTX 리메이크 청구(기공소 버튼·CA STL 재업로드).
 // - 2026-09-09: remakeCharges 부위(index+prosthesis|CA) 중복 hold 금지.
-// - 2026-09-09: lab_charge=보철만 / ca_reupload=CA만(재업로드·제조 재주문 SSOT).
+// - 2026-09-09: (legacy) lab_charge=보철만 — 2026-09-10부터 CA 수동 청구 허용.
 
 import PracticeTransfer from "../models/practiceTransfer.model.js";
 import {
-  assertPracticeTransferPaidCreditSufficient,
   buildPracticeTransferQuote,
   holdPracticeTransferRemakeChargeCredits,
+  releasePracticeTransferRemakeChargeCredits,
+  settleUnreleasedRemakeChargesForTransfer,
+  cancelPracticeTransferRemakeChargeCredits,
 } from "./practiceTransferBilling.service.js";
 import {
   buildRemakeToothWorksFromSelectedParts,
   countCustomAbutmentWorks,
-  stripCustomAbutmentFromToothWorks,
 } from "../utils/labFeeSchedule.js";
 import { practiceTransferNotDeletedMongoFilter } from "../utils/practiceTransferStage.js";
 
@@ -127,7 +131,7 @@ export function filterUnchargedRemakeSelectedParts(
 }
 
 /**
- * 기공소 수동 청구(lab_charge)는 보철만 — CA는 STL 재업로드(ca_reupload) SSOT.
+ * @deprecated 2026-09-10 — lab_charge에 CA 포함. 테스트·호환용으로 유지.
  * @returns {{ parts: Array, strippedCa: boolean }}
  */
 export function stripCaFromLabChargeSelectedParts(selectedParts) {
@@ -152,7 +156,7 @@ export function stripCaFromLabChargeSelectedParts(selectedParts) {
 
 /**
  * 동일 PracticeTransfer에 리메이크 수가 hold + remakeCharges 기록.
- * lab_charge = 보철만 / ca_reupload = CA만(재업로드 SSOT).
+ * lab_charge = 보철+CA 수동 청구 / ca_reupload = CA만(재업로드, 이미 청구면 skip).
  * @returns {{ ok: true, updated, chargeRecord, fees, skipped? } | { ok: false, statusCode, message, reason?, payload? }}
  */
 export async function applyPracticeTransferRemakeCharge({
@@ -164,6 +168,13 @@ export async function applyPracticeTransferRemakeCharge({
   actorUserId = null,
   displayLabel = "리메이크 청구",
 }) {
+  const t0 = Date.now();
+  const mark = (label) => {
+    console.log(
+      `[remakeCharge] ${label}=${Date.now() - t0}ms total=${Date.now() - t0}ms`,
+    );
+  };
+
   const doc = transferDoc;
   if (!doc?._id) {
     return {
@@ -174,7 +185,7 @@ export async function applyPracticeTransferRemakeCharge({
   }
 
   const chargeSource = String(source || "lab_charge").trim() || "lab_charge";
-  const isLabManualCharge = chargeSource === "lab_charge";
+  const isCaReupload = chargeSource === "ca_reupload";
 
   const sourceToothWorks = Array.isArray(doc.toothWorks) ? doc.toothWorks : [];
   const existingCharges = Array.isArray(doc.remakeCharges)
@@ -184,24 +195,48 @@ export async function applyPracticeTransferRemakeCharge({
   let parts = Array.isArray(selectedParts) ? selectedParts : [];
   let works = Array.isArray(remakeToothWorks) ? remakeToothWorks : [];
 
-  if (isLabManualCharge && parts.length > 0) {
-    const stripped = stripCaFromLabChargeSelectedParts(parts);
-    parts = stripped.parts;
+  if (parts.length > 0) {
+    // ca_reupload는 CA만 유지(보철 플래그 제거)
+    if (isCaReupload) {
+      parts = parts
+        .map((part) => {
+          const index = Math.trunc(Number(part?.index));
+          if (!Number.isFinite(index) || index < 0) return null;
+          const customAbutment = Boolean(
+            part?.customAbutment === true ||
+              part?.includeCustomAbutment === true ||
+              part?.ca === true,
+          );
+          if (!customAbutment) return null;
+          return { index, prosthesis: false, customAbutment: true };
+        })
+        .filter(Boolean);
+    } else {
+      parts = parts
+        .map((part) => {
+          const index = Math.trunc(Number(part?.index));
+          if (!Number.isFinite(index) || index < 0) return null;
+          const prosthesis = Boolean(part?.prosthesis);
+          const customAbutment = Boolean(
+            part?.customAbutment === true ||
+              part?.includeCustomAbutment === true ||
+              part?.ca === true,
+          );
+          if (!prosthesis && !customAbutment) return null;
+          return { index, prosthesis, customAbutment };
+        })
+        .filter(Boolean);
+    }
+
     if (parts.length === 0) {
       return {
         ok: false,
         statusCode: 400,
-        message: stripped.strippedCa
-          ? "커스텀어벗 리메이크비는 CA 디자인 재업로드 시 자동 청구됩니다. 보철 리메이크만 선택해 주세요."
-          : "리메이크 청구할 보철을 선택해 주세요.",
-        reason: stripped.strippedCa
-          ? "ca_charge_via_reupload_only"
-          : "no_prosthesis_selected",
+        message: "리메이크 청구할 보철·커스텀어벗을 선택해 주세요.",
+        reason: "no_parts_selected",
       };
     }
-  }
 
-  if (parts.length > 0) {
     const filtered = filterUnchargedRemakeSelectedParts(parts, existingCharges);
     if (filtered.allSkipped) {
       return {
@@ -215,32 +250,18 @@ export async function applyPracticeTransferRemakeCharge({
       };
     }
     parts = filtered.remainingParts;
-    if (isLabManualCharge) {
-      parts = parts.map((p) => ({
-        index: p.index,
-        prosthesis: true,
-        customAbutment: false,
-      }));
-    }
     const rebuilt = buildRemakeToothWorksFromSelectedParts(
       sourceToothWorks,
       parts,
     );
     works = Array.isArray(rebuilt) ? rebuilt : [];
-  } else if (works.length > 0) {
-    if (isLabManualCharge) {
-      // selectedParts 없이 toothWorks만 온 경우에도 CA 제외
-      works = stripCustomAbutmentFromToothWorks(works) || [];
-    }
   }
 
   if (works.length === 0) {
     return {
       ok: false,
       statusCode: 400,
-      message: isLabManualCharge
-        ? "리메이크 청구할 보철을 선택해 주세요."
-        : "리메이크 청구할 보철·커스텀어벗을 선택해 주세요.",
+      message: "리메이크 청구할 보철·커스텀어벗을 선택해 주세요.",
     };
   }
 
@@ -254,12 +275,18 @@ export async function applyPracticeTransferRemakeCharge({
     };
   }
 
+  // 청구 금액만 필요 — partner/budget/catalog 조회 생략. hold가 잔액 SSOT.
   const quote = await buildPracticeTransferQuote({
     practiceAnchorId,
     labAnchorId,
     toothWorks: works,
     remake: true,
+    relationshipKind: "none",
+    labTradingPartnerId: null,
+    autoMatchBudget: null,
+    catalog: null,
   });
+  mark("quote");
   const fees = quote?.fees || {};
   const deltaLabFee = Math.max(0, Math.round(Number(fees.labFeeTotal || 0)));
   const deltaTotal = Math.max(
@@ -278,15 +305,20 @@ export async function applyPracticeTransferRemakeCharge({
     };
   }
 
+  const chargeIndex = existingCharges.length;
+
+  let holdResult;
   try {
-    await assertPracticeTransferPaidCreditSufficient({
-      practiceAnchorId,
-      labAnchorId,
-      toothWorks: works,
-      remake: true,
-      fees,
+    // assert(사전 GL) 생략 — hold 트랜잭션이 잔액·보류 SSOT (Mutation UX).
+    holdResult = await holdPracticeTransferRemakeChargeCredits({
+      transfer: doc,
+      chargeIndex,
+      deltaFees: { labFeeTotal: deltaLabFee, total: deltaTotal },
+      actorUserId,
+      displayLabel,
     });
   } catch (creditErr) {
+    mark("hold_fail");
     return {
       ok: false,
       statusCode: Number(creditErr?.statusCode || 402),
@@ -295,16 +327,7 @@ export async function applyPracticeTransferRemakeCharge({
       payload: creditErr?.payload || {},
     };
   }
-
-  const chargeIndex = existingCharges.length;
-
-  const holdResult = await holdPracticeTransferRemakeChargeCredits({
-    transfer: doc,
-    chargeIndex,
-    deltaFees: { labFeeTotal: deltaLabFee, total: deltaTotal },
-    actorUserId,
-    displayLabel,
-  });
+  mark("hold");
   if (
     !holdResult.held &&
     holdResult.reason !== "already_held" &&
@@ -317,6 +340,31 @@ export async function applyPracticeTransferRemakeCharge({
       reason: holdResult.reason || "hold_failed",
     };
   }
+
+  // 작업시작 후 청구 — hold만 두면 이미 labSettledAt 건은 정산 미러에서 빠짐 → 즉시 기공소 적립.
+  let releaseResult = null;
+  try {
+    releaseResult = await releasePracticeTransferRemakeChargeCredits({
+      transfer: doc,
+      chargeIndex,
+      deltaFees: { labFeeTotal: deltaLabFee, total: deltaTotal },
+      holdMeta: holdResult,
+      actorUserId,
+      displayLabel,
+    });
+  } catch (releaseErr) {
+    mark("release_fail");
+    console.error("[remakeCharge] release failed", releaseErr?.message || releaseErr);
+    return {
+      ok: false,
+      statusCode: Number(releaseErr?.statusCode || 500),
+      message:
+        releaseErr?.message ||
+        "리메이크 청구 보류 후 기공소 정산에 실패했습니다.",
+      payload: releaseErr?.payload || {},
+    };
+  }
+  mark("release");
 
   const toothNumbers = Array.from(
     new Set(
@@ -345,6 +393,10 @@ export async function applyPracticeTransferRemakeCharge({
 
   const prevBilling =
     doc.billing && typeof doc.billing === "object" ? doc.billing : {};
+  const releasedLabNet = Math.max(
+    0,
+    Math.round(Number(releaseResult?.labSettlementAmount || 0)),
+  );
   const nextBilling = {
     ...prevBilling,
     labFeeTotal:
@@ -367,6 +419,9 @@ export async function applyPracticeTransferRemakeCharge({
     holdFromFreeShipping:
       Math.max(0, Math.round(Number(prevBilling.holdFromFreeShipping || 0))) +
       Math.max(0, Math.round(Number(holdResult.fromFreeShipping || 0))),
+    labSettlementAmount:
+      Math.max(0, Math.round(Number(prevBilling.labSettlementAmount || 0))) +
+      releasedLabNet,
   };
 
   const updated = await PracticeTransfer.findOneAndUpdate(
@@ -375,8 +430,20 @@ export async function applyPracticeTransferRemakeCharge({
       $set: { billing: nextBilling },
       $push: { remakeCharges: chargeRecord },
     },
-    { new: true },
+    {
+      new: true,
+      projection: {
+        _id: 1,
+        transferId: 1,
+        billing: 1,
+        remakeCharges: 1,
+        practiceBusinessAnchorId: 1,
+        practiceUserId: 1,
+        targetLabAnchorId: 1,
+      },
+    },
   );
+  mark("save");
   if (!updated) {
     return {
       ok: false,
@@ -391,8 +458,146 @@ export async function applyPracticeTransferRemakeCharge({
     chargeRecord,
     fees,
     holdResult,
+    releaseResult,
     caCount: countCustomAbutmentWorks(works),
     selectedParts: parts,
+  };
+}
+
+export { settleUnreleasedRemakeChargesForTransfer };
+
+/**
+ * 기공소 리메이크 청구 취소 — GL 삭제 + remakeCharges 제거 + billing 되돌림.
+ */
+export async function cancelPracticeTransferRemakeCharge({
+  transferDoc,
+  chargeIndex,
+  actorUserId = null,
+}) {
+  const doc = transferDoc;
+  if (!doc?._id) {
+    return {
+      ok: false,
+      statusCode: 404,
+      message: "전송 내역을 찾을 수 없습니다.",
+    };
+  }
+
+  const idx = Math.trunc(Number(chargeIndex));
+  if (!Number.isFinite(idx) || idx < 0) {
+    return {
+      ok: false,
+      statusCode: 400,
+      message: "청구 인덱스가 필요합니다.",
+      reason: "invalid_charge_index",
+    };
+  }
+
+  const charges = Array.isArray(doc.remakeCharges) ? [...doc.remakeCharges] : [];
+  const foundAt = charges.findIndex((row) => {
+    const rowIdx = Number.isFinite(Math.trunc(Number(row?.chargeIndex)))
+      ? Math.trunc(Number(row.chargeIndex))
+      : -1;
+    return rowIdx === idx;
+  });
+  if (foundAt < 0) {
+    return {
+      ok: false,
+      statusCode: 404,
+      message: "해당 리메이크 청구를 찾을 수 없습니다.",
+      reason: "charge_not_found",
+    };
+  }
+
+  const charge = charges[foundAt];
+  const deltaLab = Math.max(
+    0,
+    Math.round(
+      Number(charge?.billingDelta?.labFeeTotal ?? charge?.billingDelta?.total ?? 0),
+    ),
+  );
+  const deltaTotal = Math.max(
+    0,
+    Math.round(Number(charge?.billingDelta?.total ?? deltaLab)),
+  );
+
+  const cancelGl = await cancelPracticeTransferRemakeChargeCredits({
+    transfer: doc,
+    chargeIndex: idx,
+  });
+  if (!cancelGl.canceled && cancelGl.reason !== "no_journals") {
+    return {
+      ok: false,
+      statusCode: 409,
+      message: "리메이크 청구 원장 취소에 실패했습니다.",
+      reason: cancelGl.reason || "cancel_gl_failed",
+    };
+  }
+
+  const nextCharges = charges.filter((_, i) => i !== foundAt);
+  const prevBilling =
+    doc.billing && typeof doc.billing === "object" ? doc.billing : {};
+  const releasedNetGuess = deltaLab; // 수수료 0 가정 복원; 실수수료는 GL 삭제로 잔액 SSOT
+  const nextBilling = {
+    ...prevBilling,
+    labFeeTotal: Math.max(
+      0,
+      Math.round(Number(prevBilling.labFeeTotal || 0)) - deltaLab,
+    ),
+    total: Math.max(
+      0,
+      Math.round(Number(prevBilling.total || 0)) - deltaTotal,
+    ),
+    heldTotal: Math.max(
+      0,
+      Math.round(Number(prevBilling.heldTotal || 0)) - deltaTotal,
+    ),
+    heldLabTotal: Math.max(
+      0,
+      Math.round(Number(prevBilling.heldLabTotal || 0)) - deltaLab,
+    ),
+    labSettlementAmount: Math.max(
+      0,
+      Math.round(Number(prevBilling.labSettlementAmount || 0)) - releasedNetGuess,
+    ),
+  };
+
+  const updated = await PracticeTransfer.findOneAndUpdate(
+    { _id: doc._id, ...practiceTransferNotDeletedMongoFilter() },
+    {
+      $set: {
+        remakeCharges: nextCharges,
+        billing: nextBilling,
+      },
+    },
+    {
+      new: true,
+      projection: {
+        _id: 1,
+        transferId: 1,
+        billing: 1,
+        remakeCharges: 1,
+        practiceBusinessAnchorId: 1,
+        practiceUserId: 1,
+        targetLabAnchorId: 1,
+      },
+    },
+  );
+  if (!updated) {
+    return {
+      ok: false,
+      statusCode: 409,
+      message: "리메이크 청구 취소를 반영하지 못했습니다.",
+    };
+  }
+
+  return {
+    ok: true,
+    updated,
+    canceledCharge: charge,
+    chargeIndex: idx,
+    billingDelta: { labFeeTotal: -deltaLab, total: -deltaTotal },
+    actorUserId,
   };
 }
 

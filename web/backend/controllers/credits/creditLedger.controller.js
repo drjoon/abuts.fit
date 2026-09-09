@@ -611,6 +611,13 @@ export async function listMyCreditLedger(req, res) {
           ? String(row.relatedPracticeTransferId)
           : null,
         ledgerSource: String(row?.ledgerSource || "").trim() || null,
+        remakeChargeIndex: (() => {
+          const fromMeta = Math.trunc(Number(row?.meta?.remakeChargeIndex));
+          if (Number.isFinite(fromMeta) && fromMeta >= 0) return fromMeta;
+          const m = uniqueKey.match(/remake_charge_(?:release|hold):(\d+)/);
+          if (m) return Math.max(0, Math.trunc(Number(m[1])));
+          return null;
+        })(),
         spendKind:
           row?.spendKind || parseSpendKindFromUniqueKey(uniqueKey) || null,
         includesExpressSurcharge: Boolean(row?.includesExpressSurcharge),
@@ -709,6 +716,7 @@ export async function listMyCreditLedger(req, res) {
               files: 1,
               toothWorks: 1,
               billing: 1,
+              remakeCharges: 1,
               workCanceledAt: 1,
               "production.skipJig": 1,
               "production.rushProcessing": 1,
@@ -881,6 +889,11 @@ export async function listMyCreditLedger(req, res) {
         !fullySettled &&
         !abutmentSettledAt,
       feeQuote: practiceTransferCanceled ? null : quotesById.get(id) || null,
+      remakeCharges: practiceTransferCanceled
+        ? []
+        : Array.isArray(doc?.remakeCharges)
+          ? doc.remakeCharges
+          : [],
       skipJig: !(
         skipJigRaw === false ||
         skipJigRaw === "false" ||
@@ -949,6 +962,9 @@ export async function listMyCreditLedger(req, res) {
           meta?.practiceTransferAbutmentPending,
         ),
         feeQuote: meta?.feeQuote || null,
+        remakeCharges: Array.isArray(meta?.remakeCharges)
+          ? meta.remakeCharges
+          : [],
         skipJig: meta?.skipJig !== false,
         rushProcessing: Boolean(meta?.rushProcessing),
         ...(isAbutsShippingHold

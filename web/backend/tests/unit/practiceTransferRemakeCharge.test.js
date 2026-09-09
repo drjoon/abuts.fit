@@ -84,7 +84,7 @@ describe("practiceTransferRemakeCharge part dedupe", () => {
     ]);
   });
 
-  test("stripCaFromLabChargeSelectedParts keeps prosthesis only", () => {
+  test("stripCaFromLabChargeSelectedParts keeps prosthesis only (legacy helper)", () => {
     const result = stripCaFromLabChargeSelectedParts([
       { index: 0, prosthesis: true, customAbutment: true },
       { index: 1, prosthesis: false, customAbutment: true },

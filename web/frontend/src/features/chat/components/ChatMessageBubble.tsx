@@ -102,6 +102,10 @@ type ChatMessageBubbleProps = {
   practiceTransferToothWorks?: import("@/shared/practice/transferMemo").ToothWorkSelection[] | null;
   /** 의뢰건 최종 기공비(지르+CA). 후속 증분 billingDelta와 별개 */
   practiceTransferFeeQuote?: import("@/shared/practice/practiceTransferFeeQuote").PracticeTransferFeeQuote | null;
+  /** 기공소 — 리메이크 청구 카드 「청구 취소」 */
+  onCancelRemakeCharge?: (chargeIndex: number | null) => void;
+  remakeChargeCancelBusy?: boolean;
+  activeRemakeChargeIndexes?: ReadonlySet<number> | null;
 };
 
 export function chatAttachmentBusyKey(file: {
@@ -340,6 +344,9 @@ export function ChatMessageBubble({
   practiceTransferProsthesisFollowUps = null,
   practiceTransferToothWorks = null,
   practiceTransferFeeQuote = null,
+  onCancelRemakeCharge,
+  remakeChargeCancelBusy = false,
+  activeRemakeChargeIndexes = null,
 }: ChatMessageBubbleProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -703,6 +710,9 @@ export function ChatMessageBubble({
       labAnchorId: practiceTransferLabAnchorId,
       transferToothWorks: practiceTransferToothWorks,
       transferFeeQuote: practiceTransferFeeQuote,
+      onCancelRemakeCharge,
+      remakeChargeCancelBusy,
+      activeRemakeChargeIndexes,
     });
     if (customBody) return customBody;
 

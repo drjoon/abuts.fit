@@ -29,6 +29,7 @@
 // - web/backend/utils/labReceiveCalendarHiddenWeekdays.util.js
 // - web/frontend/src/shared/practice/labReceiveCalendarViewMode.ts
 // - web/backend/controllers/users/user.controller.js
+// - 2026-09-10: 리메이크 청구 CTA — 식별 스트립(환자/도착일) 오른쪽, 라벨 「리메이크」.
 // - 2026-09-09: 기공소 「리메이크 청구」— LabRemakeChargeDialog + received remake-charges.
 // - 2026-09-07: 가이드투어 lab_remake — 데모 리메이크 뱃지·상세 탭·수가.
 // - 2026-09-07: 상세 헤더 식별 — 전송ID 제거, `치과/환자 치식 · 도착` 한 줄.
@@ -424,24 +425,26 @@ const applyRemakeChargeLocalPatch = (
     ? parsePracticeTransferRemakeCharges(data.remakeCharges)
     : row.remakeCharges;
   let feeQuote = row.feeQuote || null;
-  const deltaLab = Math.max(0, Math.round(Number(data.billingDelta?.labFeeTotal || 0)));
-  const deltaTotal = Math.max(0, Math.round(Number(data.billingDelta?.total || 0)));
-  if (feeQuote && (deltaLab > 0 || deltaTotal > 0)) {
-    feeQuote = {
-      ...feeQuote,
-      labFeeTotal: Math.max(0, Number(feeQuote.labFeeTotal || 0)) + deltaLab,
-      total: Math.max(0, Number(feeQuote.total || 0)) + deltaTotal,
-    };
+  const hasBillingDelta =
+    data.billingDelta != null && typeof data.billingDelta === "object";
+  if (feeQuote && hasBillingDelta) {
+    const deltaLab = Math.round(Number(data.billingDelta?.labFeeTotal || 0));
+    const deltaTotal = Math.round(Number(data.billingDelta?.total || 0));
+    if (deltaLab !== 0 || deltaTotal !== 0) {
+      feeQuote = {
+        ...feeQuote,
+        labFeeTotal: Math.max(0, Number(feeQuote.labFeeTotal || 0) + deltaLab),
+        total: Math.max(0, Number(feeQuote.total || 0) + deltaTotal),
+      };
+    }
   } else if (feeQuote && data.billing) {
     const billedLab = Math.max(0, Math.round(Number(data.billing.labFeeTotal || 0)));
     const billedTotal = Math.max(0, Math.round(Number(data.billing.total || 0)));
-    if (billedLab > 0 || billedTotal > 0) {
-      feeQuote = {
-        ...feeQuote,
-        ...(billedLab > 0 ? { labFeeTotal: billedLab } : {}),
-        ...(billedTotal > 0 ? { total: billedTotal } : {}),
-      };
-    }
+    feeQuote = {
+      ...feeQuote,
+      labFeeTotal: billedLab,
+      total: billedTotal,
+    };
   }
   return {
     ...row,
@@ -930,6 +933,10 @@ export function RequestorPracticeReceivePage({
   const [chatSending, setChatSending] = useState(false);
   const [remakeChargeOpen, setRemakeChargeOpen] = useState(false);
   const [remakeChargeBusy, setRemakeChargeBusy] = useState(false);
+  const [remakeChargeCancelBusy, setRemakeChargeCancelBusy] = useState(false);
+  const [remakeChargeCancelConfirm, setRemakeChargeCancelConfirm] = useState<{
+    chargeIndex: number | null;
+  } | null>(null);
   const chatBottomRef = useRef<HTMLDivElement | null>(null);
   const realtimeReloadTimerRef = useRef<number | null>(null);
   const chatRoomResolveSeqRef = useRef(0);
@@ -4066,6 +4073,95 @@ export function RequestorPracticeReceivePage({
     ],
   );
 
+  const handleCancelRemakeCharge = useCallback(
+    async (chargeIndex: number | null) => {
+      if (!token || !selectedTransfer || remakeChargeCancelBusy) return;
+      if (isGuideTourDemoTransfer(selectedTransfer)) {
+        toast({
+          title: "가이드투어",
+          description: "데모 의뢰에서는 청구 취소를 실행하지 않습니다.",
+        });
+        setRemakeChargeCancelConfirm(null);
+        return;
+      }
+      const transferId = String(selectedTransfer.transferId || "").trim();
+      if (!transferId) return;
+      setRemakeChargeCancelBusy(true);
+      try {
+        const res = await apiFetch<{
+          message?: string;
+          data?: {
+            billing?: { total?: number; labFeeTotal?: number };
+            remakeCharges?: unknown;
+            billingDelta?: { total?: number; labFeeTotal?: number } | null;
+            chargeIndex?: number;
+          };
+        }>({
+          path: `/api/practice/transfers/received/${encodeURIComponent(transferId)}/remake-charges/cancel`,
+          method: "POST",
+          token,
+          jsonBody: {
+            ...(chargeIndex != null ? { chargeIndex } : {}),
+          },
+        });
+        if (!res.ok) {
+          const body =
+            res.data && typeof res.data === "object"
+              ? (res.data as Record<string, unknown>)
+              : {};
+          toast({
+            title: "청구 취소 실패",
+            description:
+              String(body.message || "").trim() || "다시 시도해주세요.",
+            variant: "destructive",
+          });
+          return;
+        }
+        const data = res.data?.data || {};
+        const patch = (row: ReceivedPracticeTransfer) =>
+          applyRemakeChargeLocalPatch(row, {
+            remakeCharges: data.remakeCharges,
+            billingDelta: data.billingDelta || null,
+            billing: data.billing || null,
+          });
+        setTransfers((prev) =>
+          prev.map((row) =>
+            row.transferId === transferId ? patch(row) : row,
+          ),
+        );
+        setSelectedTransfer((prev) =>
+          prev && prev.transferId === transferId ? patch(prev) : prev,
+        );
+        setRemakeChargeCancelConfirm(null);
+        toast({
+          title: "청구 취소 완료",
+          description:
+            res.data?.message || "리메이크 청구를 취소했습니다.",
+        });
+        if (activeChatRoom?._id) {
+          void prefetchMessages();
+        }
+      } catch (error) {
+        toast({
+          title: "청구 취소 실패",
+          description:
+            error instanceof Error ? error.message : "네트워크 오류",
+          variant: "destructive",
+        });
+      } finally {
+        setRemakeChargeCancelBusy(false);
+      }
+    },
+    [
+      activeChatRoom?._id,
+      prefetchMessages,
+      remakeChargeCancelBusy,
+      selectedTransfer,
+      toast,
+      token,
+    ],
+  );
+
   const handleOpenSubcontract = useCallback(async () => {
     if (
       !selectedTransfer ||
@@ -6263,6 +6359,8 @@ export function RequestorPracticeReceivePage({
             setPanelPreferredDockSide(null);
             setRemakeChargeOpen(false);
             setRemakeChargeBusy(false);
+            setRemakeChargeCancelBusy(false);
+            setRemakeChargeCancelConfirm(null);
           }
         }}
         preferredDockSide={panelPreferredDockSide}
@@ -6288,13 +6386,13 @@ export function RequestorPracticeReceivePage({
               type="button"
               size="sm"
               variant="outline"
-              className="h-8 gap-1 border-amber-300 bg-amber-50 px-2.5 text-xs text-amber-950 hover:bg-amber-100"
+              className="h-8 gap-1 border-amber-300 bg-amber-50 px-2.5 text-xs text-amber-950 hover:bg-amber-100 hover:text-amber-950"
               disabled={remakeChargeBusy}
               title="동일 의뢰건에 리메이크 기공비를 청구합니다"
               onClick={() => setRemakeChargeOpen(true)}
             >
               <Repeat className="h-3.5 w-3.5" />
-              보철 리메이크
+              리메이크
             </Button>
           ) : null
         }
@@ -6478,6 +6576,10 @@ export function RequestorPracticeReceivePage({
         labRequestStagePlans={selectedTransfer?.labRequestStagePlans || null}
         feeQuote={selectedTransfer?.feeQuote || null}
         remakeCharges={selectedTransfer?.remakeCharges || null}
+        onCancelRemakeCharge={(chargeIndex) => {
+          setRemakeChargeCancelConfirm({ chargeIndex });
+        }}
+        remakeChargeCancelBusy={remakeChargeCancelBusy}
         skipJig={Boolean(selectedTransfer?.production?.skipJig)}
         feeViewer="lab"
         labEffectiveStars={
@@ -6695,6 +6797,23 @@ export function RequestorPracticeReceivePage({
         onCancel={() => {
           if (remakeChargeBusy) return;
           setRemakeChargeOpen(false);
+        }}
+      />
+      <ConfirmDialog
+        open={Boolean(remakeChargeCancelConfirm)}
+        title="리메이크 청구 취소"
+        description="이 리메이크 청구를 취소할까요? 청구된 리메이크비가 원장에서 삭제됩니다."
+        confirmLabel="청구 취소"
+        cancelLabel="닫기"
+        confirmTone="danger"
+        busy={remakeChargeCancelBusy}
+        onConfirm={() => {
+          if (!remakeChargeCancelConfirm) return;
+          void handleCancelRemakeCharge(remakeChargeCancelConfirm.chargeIndex);
+        }}
+        onCancel={() => {
+          if (remakeChargeCancelBusy) return;
+          setRemakeChargeCancelConfirm(null);
         }}
       />
       <RequestDetailDialog

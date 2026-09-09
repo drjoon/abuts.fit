@@ -35,6 +35,8 @@ import {
 } from "../../services/practiceTransferBilling.service.js";
 import {
   applyPracticeTransferRemakeCharge,
+  cancelPracticeTransferRemakeCharge,
+  settleUnreleasedRemakeChargesForTransfer,
 } from "../../services/practiceTransferRemakeCharge.service.js";
 import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.js";
 import {
@@ -5009,6 +5011,7 @@ export async function updatePracticeTransferProsthesisFollowUp(req, res) {
  * 기공소 — 동일 의뢰건에 리메이크 수가 청구(새 PTX 생성 없음).
  */
 export async function chargeReceivedPracticeTransferRemake(req, res) {
+  const t0 = Date.now();
   try {
     const role = String(req.user?.role || "").trim();
     if (!isPracticeTransferLabReceiverRole(role) && role !== "admin") {
@@ -5023,19 +5026,43 @@ export async function chargeReceivedPracticeTransferRemake(req, res) {
       });
     }
 
-    const { scope } = await buildReceivedScope(req);
-    if (!scope) {
-      return res.status(403).json({
-        success: false,
-        message: "수신 기공소 권한이 없습니다.",
-      });
+    // 작업시작 후 청구 — open-pool 자격 조회 없이 수신 기공소 매칭만 (Mutation UX).
+    let scope = {};
+    if (role !== "admin") {
+      const labAnchorId = String(req.user?.businessAnchorId || "").trim();
+      if (!labAnchorId || !Types.ObjectId.isValid(labAnchorId)) {
+        return res.status(403).json({
+          success: false,
+          message: "수신 기공소 권한이 없습니다.",
+        });
+      }
+      const labOid = new Types.ObjectId(labAnchorId);
+      scope = {
+        $or: [
+          { targetLabAnchorId: labOid },
+          { "autoMatch.assigneeLabAnchorId": labOid },
+        ],
+      };
     }
 
     const doc = await PracticeTransfer.findOne({
       ...scope,
       ...transferIdFilter,
       ...practiceTransferNotDeletedMongoFilter(),
+    }).select({
+      transferId: 1,
+      toothWorks: 1,
+      remakeCharges: 1,
+      billing: 1,
+      requestorDownloadedAt: 1,
+      practiceBusinessAnchorId: 1,
+      practiceUserId: 1,
+      targetLabAnchorId: 1,
+      status: 1,
     });
+    console.log(
+      `[remakeCharge] load=${Date.now() - t0}ms total=${Date.now() - t0}ms`,
+    );
     if (!doc) {
       return res.status(404).json({
         success: false,
@@ -5049,6 +5076,27 @@ export async function chargeReceivedPracticeTransferRemake(req, res) {
         message: "작업시작 이후 의뢰만 리메이크 비용을 청구할 수 있습니다.",
         reason: "remake_charge_before_accept",
       });
+    }
+
+    // 과거 hold-only 리메이크 청구 → 기공소 정산 누락 heal
+    if (Array.isArray(doc.remakeCharges) && doc.remakeCharges.length > 0) {
+      try {
+        const healed = await settleUnreleasedRemakeChargesForTransfer({
+          transfer: doc,
+          actorUserId: req.user?._id || null,
+        });
+        const releasedN = healed.filter((r) => r?.released).length;
+        if (releasedN > 0) {
+          console.log(
+            `[remakeCharge] healedUnreleased=${releasedN} transfer=${doc.transferId}`,
+          );
+        }
+      } catch (healErr) {
+        console.error(
+          "[remakeCharge] heal failed",
+          healErr?.message || healErr,
+        );
+      }
     }
 
     const sourceToothWorks = Array.isArray(doc.toothWorks) ? doc.toothWorks : [];
@@ -5078,6 +5126,9 @@ export async function chargeReceivedPracticeTransferRemake(req, res) {
       actorUserId: req.user?._id || null,
       displayLabel: "리메이크 청구",
     });
+    console.log(
+      `[remakeCharge] apply=${Date.now() - t0}ms total=${Date.now() - t0}ms`,
+    );
     if (result.ok && result.skipped) {
       return res.status(409).json({
         success: false,
@@ -5135,6 +5186,10 @@ export async function chargeReceivedPracticeTransferRemake(req, res) {
           selectedParts: chargedParts,
           billingDelta: chargeRecord?.billingDelta || null,
           remakeFeeTotal: feeTotal,
+          chargeIndex:
+            Number.isFinite(Math.trunc(Number(chargeRecord?.chargeIndex)))
+              ? Math.trunc(Number(chargeRecord.chargeIndex))
+              : null,
         },
       },
       realtimePayload: {
@@ -5151,6 +5206,9 @@ export async function chargeReceivedPracticeTransferRemake(req, res) {
       },
     });
 
+    console.log(
+      `[remakeCharge] respond=${Date.now() - t0}ms total=${Date.now() - t0}ms`,
+    );
     return res.status(200).json({
       success: true,
       message: "리메이크 비용을 청구했습니다.",
@@ -5168,6 +5226,174 @@ export async function chargeReceivedPracticeTransferRemake(req, res) {
     return res.status(status >= 400 && status < 600 ? status : 500).json({
       success: false,
       message: error?.message || "리메이크 청구 중 오류가 발생했습니다.",
+      ...(error?.payload || {}),
+    });
+  }
+}
+
+/**
+ * POST /api/practice/transfers/received/:transferId/remake-charges/cancel
+ * 기공소 — 리메이크 청구 취소(hold·정산 GL 삭제).
+ */
+export async function cancelReceivedPracticeTransferRemakeCharge(req, res) {
+  try {
+    const role = String(req.user?.role || "").trim();
+    if (!isPracticeTransferLabReceiverRole(role) && role !== "admin") {
+      return res.status(403).json({ success: false, message: "권한이 없습니다." });
+    }
+
+    const transferIdFilter = buildTransferIdFilter(req.params?.transferId);
+    if (!transferIdFilter) {
+      return res.status(400).json({
+        success: false,
+        message: "transferId가 필요합니다.",
+      });
+    }
+
+    let scope = {};
+    if (role !== "admin") {
+      const labAnchorId = String(req.user?.businessAnchorId || "").trim();
+      if (!labAnchorId || !Types.ObjectId.isValid(labAnchorId)) {
+        return res.status(403).json({
+          success: false,
+          message: "수신 기공소 권한이 없습니다.",
+        });
+      }
+      const labOid = new Types.ObjectId(labAnchorId);
+      scope = {
+        $or: [
+          { targetLabAnchorId: labOid },
+          { "autoMatch.assigneeLabAnchorId": labOid },
+        ],
+      };
+    }
+
+    const doc = await PracticeTransfer.findOne({
+      ...scope,
+      ...transferIdFilter,
+      ...practiceTransferNotDeletedMongoFilter(),
+    }).select({
+      transferId: 1,
+      remakeCharges: 1,
+      billing: 1,
+      practiceBusinessAnchorId: 1,
+      practiceUserId: 1,
+      targetLabAnchorId: 1,
+      matchingMode: 1,
+      autoMatch: 1,
+      status: 1,
+    });
+    if (!doc) {
+      return res.status(404).json({
+        success: false,
+        message: "전송 내역을 찾을 수 없습니다.",
+      });
+    }
+
+    let chargeIndex = Math.trunc(Number(req.body?.chargeIndex));
+    if (!Number.isFinite(chargeIndex) || chargeIndex < 0) {
+      // 레거시 채팅(payload에 chargeIndex 없음) — 마지막 청구
+      const charges = Array.isArray(doc.remakeCharges) ? doc.remakeCharges : [];
+      if (!charges.length) {
+        return res.status(400).json({
+          success: false,
+          message: "취소할 리메이크 청구가 없습니다.",
+        });
+      }
+      const last = charges[charges.length - 1];
+      chargeIndex = Number.isFinite(Math.trunc(Number(last?.chargeIndex)))
+        ? Math.trunc(Number(last.chargeIndex))
+        : charges.length - 1;
+    }
+
+    const result = await cancelPracticeTransferRemakeCharge({
+      transferDoc: doc,
+      chargeIndex,
+      actorUserId: req.user?._id || null,
+    });
+    if (!result.ok) {
+      const status = Number(result.statusCode || 500);
+      return res.status(status >= 400 && status < 600 ? status : 500).json({
+        success: false,
+        message: result.message || "리메이크 청구 취소에 실패했습니다.",
+        reason: result.reason,
+      });
+    }
+
+    const { updated, canceledCharge } = result;
+    const feeTotal = Math.max(
+      0,
+      Math.round(
+        Number(
+          canceledCharge?.billingDelta?.total ??
+            canceledCharge?.billingDelta?.labFeeTotal ??
+            0,
+        ),
+      ),
+    );
+    const partsLabel =
+      String(canceledCharge?.summaryLabel || "").trim() ||
+      (Array.isArray(canceledCharge?.toothNumbers) &&
+      canceledCharge.toothNumbers.length
+        ? canceledCharge.toothNumbers.map((t) => `#${t}`).join(", ")
+        : "리메이크");
+
+    const targetLabAnchorIdText = String(updated.targetLabAnchorId || "").trim();
+    runProsthesisFollowUpSideEffectsInBackground({
+      practiceBusinessAnchorId: updated.practiceBusinessAnchorId,
+      practiceUserId: updated.practiceUserId,
+      targetLabAnchorIdText,
+      transferMongoId: String(updated._id),
+      emitCreditBalance: true,
+      fetchUnreadCount: false,
+      chat: {
+        senderUserId: req.user?._id,
+        content:
+          feeTotal > 0
+            ? `리메이크 청구 취소\n${partsLabel}\n리메이크비 ${feeTotal.toLocaleString("ko-KR")}원`
+            : `리메이크 청구 취소\n${partsLabel}`,
+        systemEvent: "practice_transfer_remake_charge_cancel",
+        systemPayload: {
+          source: "lab_charge_cancel",
+          summaryLabel: partsLabel,
+          toothNumbers: canceledCharge?.toothNumbers || [],
+          selectedParts: canceledCharge?.selectedParts || [],
+          billingDelta: result.billingDelta || null,
+          remakeFeeTotal: feeTotal,
+          chargeIndex,
+        },
+      },
+      realtimePayload: {
+        source: "cancelReceivedPracticeTransferRemakeCharge",
+        action: "remake-charge-cancel",
+        transferId: String(updated.transferId || "").trim(),
+        transferMongoId: String(updated._id || ""),
+        targetLabAnchorId: targetLabAnchorIdText || null,
+        practiceUserId: String(updated.practiceUserId || ""),
+        billing: updated.billing,
+        billingDelta: result.billingDelta || null,
+        remakeCharges: serializeRemakeChargesForApi(updated.remakeCharges),
+        remakeFeeTotal: feeTotal,
+      },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "리메이크 청구를 취소했습니다.",
+      data: {
+        _id: String(updated._id || ""),
+        transferId: String(updated.transferId || "").trim(),
+        billing: updated.billing,
+        remakeCharges: serializeRemakeChargesForApi(updated.remakeCharges),
+        billingDelta: result.billingDelta || null,
+        chargeIndex,
+      },
+    });
+  } catch (error) {
+    const status = Number(error?.statusCode || 500);
+    return res.status(status >= 400 && status < 600 ? status : 500).json({
+      success: false,
+      message: error?.message || "리메이크 청구 취소 중 오류가 발생했습니다.",
       ...(error?.payload || {}),
     });
   }
