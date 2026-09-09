@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
 // - web/frontend/src/features/settings/tabs/LabFeeScheduleTab.tsx
 // - web/backend/tests/unit/labFeeSchedule.test.js
+// - 2026-09-09: PTX 리메이크 — CA가 toothWorks에 있으면 기공소 CA 리메이크 수가 합산(어벗츠 retail 제외).
 // - 2026-08-26: 미도입(요청중·도입중)도 기공소 커스텀어벗 수가를 합산(0원이면 미도입·수락 시 기공수가 포워드).
 // - 2026-08-25: 단독「커스텀어벗」은 심플이어도 지그제외 수가 대상. 크라운+심플만 수가 제외.
 // - 2026-08-25: 심플어벗(치과 재고)은 기공소 어벗 수가·견적에서 제외. 스캔바디 커스텀어벗만 과금.
@@ -1493,7 +1494,8 @@ export const computePracticeTransferRetailFees = (params: {
 }): PracticeTransferRetailFees => {
   const useRemake = Boolean(params.remake);
   const items = normalizeLabFeeItems(params.labFeeSchedule);
-  const waiveAbutment = Boolean(useRemake || params.skipAbutmentFees);
+  // remake: CA가 남아 있으면 기공소 CA 리메이크 수가 합산. skipAbutmentFees(비-remake)만 전체 스킵.
+  const skipAllAbutment = Boolean(params.skipAbutmentFees) && !useRemake;
   const rows = Array.isArray(params.toothWorks) ? params.toothWorks : [];
   const absorbedNonTemp = absorbedNonTempTeethInTempSpans(rows);
   const lines: PracticeTransferFeeLine[] = [];
@@ -1508,7 +1510,7 @@ export const computePracticeTransferRetailFees = (params: {
 
   const abutmentSplitForRow = (row: (typeof rows)[number]) => {
     if (
-      waiveAbutment ||
+      skipAllAbutment ||
       isFollowUpProsthesisPhase(row) ||
       !isCustomAbutmentWork(row) ||
       isSimpleAbutmentModeForFee(row)

@@ -286,6 +286,8 @@ const practiceTransferSchema = new mongoose.Schema(
         ref: "User",
         default: null,
       },
+      /** true면 커스텀어벗도 리메이크 범위(기본 false=보철만) */
+      includeCustomAbutment: { type: Boolean, default: false },
     },
     /**
      * 다단계 기공의뢰(틀니 등) 단계 계획 스냅샷.

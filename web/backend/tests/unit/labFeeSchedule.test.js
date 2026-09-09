@@ -26,6 +26,7 @@ import {
   missingLabFeeItemNames,
   isPendingRoundBarAbutment,
   isLabFeeShippingItem,
+  stripCustomAbutmentFromToothWorks,
   LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME,
   LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_NAME,
   LAB_FEE_SCHEDULE_SAMPLE,
@@ -795,7 +796,7 @@ describe("labFeeSchedule", () => {
     );
   });
 
-  test("리메이크 크라운+어벗은 크라운 리메이크 수가만 쓴다", () => {
+  test("리메이크 크라운+어벗은 크라운 리메이크+CA 리메이크 수가를 합산한다", () => {
     const fees = computePracticeTransferRetailFees({
       toothWorks: [
         {
@@ -817,8 +818,36 @@ describe("labFeeSchedule", () => {
       },
       remake: true,
     });
-    expect(fees.labFeeTotal).toBe(20000);
+    // 보철+어벗 → 지그포함(customAbutmentDesignAndProduction) 리메이크
+    expect(fees.labFeeTotal).toBe(25000);
     expect(fees.abutmentRetailTotal).toBe(0);
+    expect(fees.total).toBe(25000);
+  });
+
+  test("리메이크에서 CA를 제외하면 크라운 리메이크 수가만 쓴다", () => {
+    const stripped = stripCustomAbutmentFromToothWorks([
+      {
+        toothNumber: "16",
+        prosthesisType: "크라운",
+        customAbutment: true,
+        abutmentProductMode: "design_custom_abutment",
+      },
+    ]);
+    const fees = computePracticeTransferRetailFees({
+      toothWorks: stripped,
+      labFeeSchedule: {
+        ...LAB_FEE_SCHEDULE_SAMPLE,
+        remake: {
+          crown: 20000,
+          bridge: 0,
+          inlay: 0,
+          customAbutmentDesign: 0,
+          customAbutmentDesignAndProduction: 5000,
+        },
+      },
+      remake: true,
+    });
+    expect(fees.labFeeTotal).toBe(20000);
     expect(fees.total).toBe(20000);
   });
 

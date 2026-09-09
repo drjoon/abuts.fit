@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-09: ExoCAD≤3.0 헥스 미해석 시 준비 승인 비활성(designSoftware 30° 폴백 제거와 연동).
 // - 2026-09-09: filled STL 재생성 시작 시 filled-stl-regeneration-started 이벤트(준비 탭 블러).
 // - 2026-09-04: 헥스 draft — requestorHexRotation/finalHexRotation 레거시 폴백 제거. 없으면 에러 토스트.
 // - 2026-09-04: ExoCAD≤3.0 · implantManufacturer 없으면 헥스 확인 에러 토스트.
@@ -11,6 +12,7 @@
 // - 2026-08-29: NC 재생성 성공 시 큐 NC 즉시 제거 이벤트 발행(Next Up「CAM 생성 중」).
 // - 2026-08-29: 프리뷰 요약에 실제 출고일시(shippedAt) 전달(있으면 출고예정일보다 우선).
 // - 2026-08-25: 추적관리 프리뷰 오른쪽을 NC코드/각인이미지 탭 뷰어로 변경(앞에서 생성한 파일 확인).
+// - 2026-09-09: 확정 뱃지는 표시만. 제조사가 의뢰(준비) 단계에서 헥스 변경 가능(오시드 30°→0° 보정).
 // - 2026-08-25: 관리자 헥스 확정 시 PreviewModal 헥스 Select 비활성(제조사 변경 불가).
 // - 2026-08-23: Dialog 기본 닫기(X) 표시. 승인 처리 중에는 닫기·오버레이 닫기 차단.
 // - 2026-08-23: Dialog sm:max-w-lg 잔존으로 PC가 ~512px 모바일처럼 보이던 문제 수정. 세로 스택·가로 2열 STL UX.
@@ -883,8 +885,8 @@ export const PreviewModal = ({
 
     // 헥스 회전 SSOT: caseInfos.hexRotation.mode
     // 1) 저장된 mode / manufacturerHexRotation
-    // 2) 미저장: resolveDefaultPrepHexRotationMode(관리자 확정 → applyHex30 → designSoftware)
-    // requestorHexRotation/finalHexRotation 레거시 폴백 없음 — 없으면 에러 토스트.
+    // 2) 미저장: resolveDefaultPrepHexRotationMode(관리자 확정 → applyHex30)
+    // ExoCAD≤3.0 + implant 없음 → null (designSoftware 30° 폴백 없음) → 에러 토스트.
     const savedHexRotationMode = normalizeManufacturerHexRotationMode(
       (req as any)?.caseInfos?.hexRotation?.mode,
     );
@@ -1237,6 +1239,10 @@ export const PreviewModal = ({
       : currentReviewStageKey;
 
   const canApprove = (() => {
+    // 준비→가공: 헥스 미해석(ExoCAD≤3.0·implant 없음 등)이면 승인 불가.
+    if (isRequestStage && !manufacturerHexRotationDraft) {
+      return false;
+    }
     if (isStageFileStage) {
       const key = currentReviewStageKey as
         | "machining"
@@ -2103,8 +2109,7 @@ export const PreviewModal = ({
     if (
       !onSaveManufacturerHexRotation ||
       hexRotationSaving ||
-      approveBusy ||
-      resolveHexVerificationBadgeLabel(activeReq) === "확정"
+      approveBusy
     ) {
       return;
     }
@@ -2250,7 +2255,6 @@ export const PreviewModal = ({
     String((activeReq as any)?.caseInfos?.designSoftware || "").trim() || "-";
   const hexVerificationBadgeLabel =
     resolveHexVerificationBadgeLabel(activeReq);
-  const hexAdminLocked = hexVerificationBadgeLabel === "확정";
   const currentCaseAnodizing = (activeReq as any)?.caseInfos?.anodizingEnabled;
   const currentBusinessDefaultAnodizing =
     (activeReq as any)?.business?.requestSettings?.anodizingEnabled;
@@ -2622,8 +2626,7 @@ export const PreviewModal = ({
                     hexRotationSaving ||
                     approveBusy ||
                     !onSaveManufacturerHexRotation ||
-                    !isRequestStage ||
-                    hexAdminLocked
+                    !isRequestStage
                   }
                 >
                   <SelectTrigger className="h-7 min-w-[112px] rounded-md border border-slate-200 bg-slate-50 px-2 text-[12px] font-semibold text-slate-700 shadow-sm focus:ring-1 focus:ring-primary-muted disabled:opacity-60">

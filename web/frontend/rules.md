@@ -552,13 +552,14 @@ Notes:
   - legacy `헥스40도회전`/`헥스10도회전`/`헥스X도회전`은 `STL모델+`로 정규화합니다.
   - 디자인 소프트웨어 표시는 BusinessAnchor 전역값이 아니라 의뢰건 `caseInfos.designSoftware`를 우선 표시합니다.
   - ExoCAD는 버전(`exoCadVersion`: `le_3_0`=3.0 이하 / `ge_3_2`=3.2 이상)을 함께 설정한다.
-    - 3.0 이하: STL 내보내기 헥스 30° 틀어짐 가능 → 기본 헥스=`헥스30도회전`
+    - 3.0 이하: 임플란트 제조사별 verifiedHex/applyHex30으로만 시드. **implantManufacturer 없으면 designSoftware→30° 폴백 금지** → 에러 토스트 + 준비 승인 차단.
     - 3.2 이상: 수정됨 → 기본 헥스=`STL모델대로`
   - ExoCAD 첫 설정 후 첫 제조 의뢰는 반대 헥스 확인용 복사샘플(`caseInfos.hexVerificationSample`)을 함께 생성한다.
     준비 카드·세척.패킹 라벨 상단·진행중/출고예정에 **「헥스 확인용 무료 샘플」**을 표시한다.
     라이노(2-filled)는 원본만 실행하고 샘플에 stlFile(legacy camFile 미러)을 복사한다. Esprit NC(ncFile)는 샘플의 반대 헥스로 별도 생성.
   - 관리자 대시보드「헥스 회전 확인」모달은 진행중·확정 ExoCAD 계정을 모두 보여 주고, 확정값은 보기/수정할 수 있다.
-  - PreviewModal ExoCAD 「확정/미정」뱃지는 `requestor/business.requestSettings.hexVerificationResultHex` SSOT.
+  - PreviewModal ExoCAD 「확정/미정」뱃지는 제조사별 `hexByImplantManufacturer.verifiedHex` SSOT(표시용).
+    준비 단계에서 제조사가 의뢰 단위 헥스를 변경할 수 있다(확정 잠금 없음).
     가공 큐 스냅샷에 없으면 full request 보강(`usePreviewLoader`).
   - 라벨 매핑/정규화 함수는 fallback 기본값을 두지 않고 명시 분기 + default error를 사용합니다.
   - 관련 파일:
@@ -679,6 +680,7 @@ Notes:
   - 의뢰상세·채팅 우측 상단 평가: 치과=`PracticeLabRatingControl`(1~5점만, 수행 기공소·하청 포함, 기공비 할인/할증 없음). **1점=검색 가능·주문 불가**(지정·어벗츠 하청 수행 동일, 버튼 툴팁). 하청 시 치과 표시는 원청명 + 「인증 협력 기공소에서 처리」(실명 비공개·확정 후에도 동일). 기공소=`LabPracticeFeeSurchargeControl` variant=`evaluate`(별점 없음, 해당 치과 수가 할증·다음 지정 의뢰부터). 설정 탭 거래처 할증은 동일 컴포넌트 variant=`surcharge`.
   - 치과 작성 폼: 기공소 픽커 옆 **별점 하한·상한**(기본 3~4). 구간 밖 기공소(어벗츠 포함)는 픽커·생성·재지정에서 제외. 하청 풀도 동일 구간.
   - 기공소 수신(상태=의뢰수락/UI=작업시작): 상세 모달 상단 업로드 CTA. **커스텀어벗 배송선택 모달 없음.** CA면 작업시작 시 Request(`design_custom_abutment`) 조기 생성(생산·배송 크레딧 보류는 작업시작에서 잡지 않음). **작업시작 기공소가 디자인**해 STL 업로드(`design-handoff`) → 그때 생산·배송 크레딧 보류(부족 시 충전 안내)·제조 자동 주문·어벗디자인비 지급. **생산 후 주문 기공소 수취**(출고 목표=치과도착일−2영업일). 레거시 미컨펌 건만 「어벗 디자인 확인」 CTA.
+  - **PTX 리메이크**: 목록「리메이크」확인은 **커스텀어벗 기본 제외**(체크 옵트인). 포함 시 안내·리메이크비(`remakeFeeQuoteWithCustomAbutment`)·기공소 리메이크 수가·어벗츠 리메이크 과금 강제. 작성 폼 리메이크는 치식에 CA가 있으면 `includeCustomAbutment` 전송.
   - CA 연동 「어벗 진행상황」(`getPracticeAbutmentDeliveryLabel` / `PRACTICE_ABUTMENT_PROGRESS_FIELD_LABEL`): 한진 운송·배송완료 우선, 없으면 제조 `manufacturerStages`를 준비·가공·세척·패킹·포장·발송·추적관리로 표시(구「생산 중」합침 없음). SSOT=`src/shared/shipping/hanjinTrackingLabel.ts`.
 
 

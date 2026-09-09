@@ -106,6 +106,7 @@ export type PracticeRecentRequestItem = {
   labDesignConfirmedAt?: string | null;
   feeQuote?: PracticeTransferFeeQuote | null;
   remakeFeeQuote?: PracticeTransferFeeQuote | null;
+  remakeFeeQuoteWithCustomAbutment?: PracticeTransferFeeQuote | null;
   isRemake?: boolean;
   remakeSourceTransferId?: string;
   canRateLab?: boolean;
@@ -185,6 +186,7 @@ export type PracticeRecentTransferItem = {
   matchingMode?: "direct" | "auto";
   feeQuote?: PracticeTransferFeeQuote | null;
   remakeFeeQuote?: PracticeTransferFeeQuote | null;
+  remakeFeeQuoteWithCustomAbutment?: PracticeTransferFeeQuote | null;
   isRemake?: boolean;
   remakeSourceTransferId?: string;
   canRateLab?: boolean;
@@ -884,6 +886,12 @@ export const mapMyPracticeTransferApiRows = (
             ? (r.feeQuote as Record<string, unknown>).remakeFeeQuote
             : null) ?? r.remakeFeeQuote,
         ),
+        remakeFeeQuoteWithCustomAbutment: parsePracticeTransferFeeQuote(
+          (r.feeQuote && typeof r.feeQuote === "object"
+            ? (r.feeQuote as Record<string, unknown>)
+                .remakeFeeQuoteWithCustomAbutment
+            : null) ?? r.remakeFeeQuoteWithCustomAbutment,
+        ),
         isRemake: Boolean(
           r.isRemake ||
             (r.remake &&
@@ -1169,6 +1177,12 @@ export const mergeOpenPracticeTransferFromRequestRows = (
     matchingMode: openRow.matchingMode || prev.matchingMode,
     ...(keepBilled ? {} : nextFee ? { feeQuote: nextFee } : {}),
     ...(openRow.remakeFeeQuote ? { remakeFeeQuote: openRow.remakeFeeQuote } : {}),
+    ...(openRow.remakeFeeQuoteWithCustomAbutment
+      ? {
+          remakeFeeQuoteWithCustomAbutment:
+            openRow.remakeFeeQuoteWithCustomAbutment,
+        }
+      : {}),
   };
 };
 
@@ -1356,6 +1370,10 @@ export const groupPracticeRecentRequests = (
         matchingMode: req.matchingMode,
         feeQuote: req.feeQuote || null,
         remakeFeeQuote: req.remakeFeeQuote || req.feeQuote?.remakeFeeQuote || null,
+        remakeFeeQuoteWithCustomAbutment:
+          req.remakeFeeQuoteWithCustomAbutment ||
+          req.feeQuote?.remakeFeeQuoteWithCustomAbutment ||
+          null,
         isRemake: Boolean(req.isRemake),
         remakeSourceTransferId: req.remakeSourceTransferId || "",
         canRateLab: Boolean(req.canRateLab),
@@ -1498,6 +1516,13 @@ export const groupPracticeRecentRequests = (
     }
     if (!existing.remakeFeeQuote && req.remakeFeeQuote) {
       existing.remakeFeeQuote = req.remakeFeeQuote;
+    }
+    if (
+      !existing.remakeFeeQuoteWithCustomAbutment &&
+      req.remakeFeeQuoteWithCustomAbutment
+    ) {
+      existing.remakeFeeQuoteWithCustomAbutment =
+        req.remakeFeeQuoteWithCustomAbutment;
     }
     if (req.isRemake) existing.isRemake = true;
     if (!existing.remakeSourceTransferId && req.remakeSourceTransferId) {

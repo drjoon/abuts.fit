@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-09-09: PTX 리메이크+CA 포함 시 CA Request는 remake 과금(computePriceForRequest). 기본 리메이크는 CA 미시드.
 // - 2026-09-04: Request 생성 전 CNC 주문가능 스펙 검증(미도입 US 등 폴백·유입 금지).
 // - 2026-09-04: 헥스 샘플은 design-handoff/워크시트 백필만(ensure 시점 designCompletedAt 전 생성 금지).
 // - 2026-09-03: ensureAbutmentRequestsForHandoff — 수락이 아니라 STL handoff 직전 생성.
@@ -17,6 +18,7 @@
 //   mirror — labDesignConfirm를 같은 update에 합쳐 Transfer 왕복 1회 절약.
 // - 2026-09-03: 헥스 확인 샘플 생성 후 worksheet/stage 소켓 emit(준비 목록 즉시 반영).
 // - 2026-09-03: PTX 준비 등록 시에도 헥스 미확정 제조사면 확인용 복사샘플 생성(relatedRequestIds 제외).
+// - 2026-09-09: ExoCAD≤3.0 + implantManufacturer 없음 → 헥스 designSoftware 폴백 금지(미시드).
 // - 2026-09-03: PTX 헥스 시드도 from-draft와 동일 — case별 implantManufacturer로 hexByImplantManufacturer 해석.
 // - 2026-08-31: PTX CA 생산·배송 크레딧 hold는 수락이 아니라 design-handoff에서 잡음.
 // - 2026-08-31: 수락 취소 시 어벗디자인비도 revoke(design-handoff cancel과 동일).
@@ -79,6 +81,7 @@ import {
   getTodayYmdInKst,
   toKstYmd,
   normalizeKoreanBusinessDay,
+  computePriceForRequest,
 } from "../controllers/requests/utils.js";
 import { calculateInitialProductionSchedule } from "../controllers/requests/production.utils.js";
 import {
@@ -268,7 +271,8 @@ const normalizeManufacturerHexRotationOrNull = (value) => {
 
 /**
  * 제조사 헥스 기본값 SSOT (ExoCAD):
- * case별 implantManufacturer → verifiedHex / applyHex30 → manufacturerDefault → designSoftware.
+ * case별 implantManufacturer → verifiedHex / applyHex30.
+ * ExoCAD≤3.0 + implant 없음 → null (designSoftware 폴백 금지).
  * related: creation.from-draft.controller.js, common.requests.controller.js updateRndHexRotation
  */
 export function pickLabManufacturerHexRotation(
@@ -276,10 +280,7 @@ export function pickLabManufacturerHexRotation(
   labOrg,
   designSoftware,
   exoCadVersion = null,
-  {
-    hexVerificationPending = null,
-    implantManufacturer = null,
-  } = {},
+  { implantManufacturer = null } = {},
 ) {
   const manufacturerDefault =
     normalizeManufacturerHexRotationOrNull(
@@ -289,11 +290,6 @@ export function pickLabManufacturerHexRotation(
       labOrg?.requestSettings?.defaultManufacturerHexRotation,
     );
 
-  const pending =
-    hexVerificationPending == null
-      ? pickLabHexVerificationPending(labUser, labOrg, implantManufacturer)
-      : Boolean(hexVerificationPending);
-
   return resolveExoCadManufacturerHexRotation({
     designSoftware,
     exoCadVersion,
@@ -301,7 +297,6 @@ export function pickLabManufacturerHexRotation(
     userRequestSettings: labUser?.requestSettings,
     anchorRequestSettings: labOrg?.requestSettings,
     manufacturerDefault,
-    hexVerificationPending: pending,
   });
 }
 
@@ -836,14 +831,40 @@ export async function createAbutmentRequestsFromPracticeTransfer({
       1,
       countDesignAbutmentQty(normalizedCaseInfos) || 1,
     );
-    let quotedPrice = buildPtxAbutsProductionQuote({
-      creditSettings: creditSettingsForQuote,
-      // 신속처리 할증 없음(expressFee=0). shippingMode는 항상 묶음.
-      shippingMode,
-      abutmentQty,
-      expressFeePerRequest,
-      quotedAt: requestedAt,
-    });
+    const isPtxRemake = Boolean(
+      transferDoc?.remake?.sourceTransferMongoId ||
+        String(transferDoc?.remake?.sourceTransferId || "").trim() ||
+        transferDoc?.billing?.isRemake ||
+        transferDoc?.remake?.includeCustomAbutment === true,
+    );
+    let quotedPrice;
+    if (isPtxRemake) {
+      // 기공소→어벗츠: 리메이크 과금(월 3건 무료 후 유료). PTX 정가 생산 경로 금지.
+      quotedPrice = await computePriceForRequest({
+        requestorId: labUserId,
+        requestorOrgId: labAnchorId,
+        clinicName: String(normalizedCaseInfos?.clinicName || "").trim(),
+        patientName: String(normalizedCaseInfos?.patientName || "").trim(),
+        tooth: String(normalizedCaseInfos?.tooth || "").trim(),
+        creditSettings: creditSettingsForQuote,
+      });
+      // Express/묶음은 PTX CA와 동일하게 적용
+      quotedPrice = resolveQuotedPriceWithExpressFee({
+        price: quotedPrice,
+        shippingMode,
+        expressFee: expressFeePerRequest,
+        expressQty: abutmentQty,
+      });
+    } else {
+      quotedPrice = buildPtxAbutsProductionQuote({
+        creditSettings: creditSettingsForQuote,
+        // 신속처리 할증 없음(expressFee=0). shippingMode는 항상 묶음.
+        shippingMode,
+        abutmentQty,
+        expressFeePerRequest,
+        quotedAt: requestedAt,
+      });
+    }
     if (rush) {
       quotedPrice = applyRushMultiplierToPtxQuote(
         quotedPrice,
@@ -912,12 +933,24 @@ export async function createAbutmentRequestsFromPracticeTransfer({
     }
 
     // from-draft와 동일: 기공소 requestSettings + case implantManufacturer로 헥스 시드.
+    // ExoCAD≤3.0 + implant 없음 → null (designSoftware 30° 폴백 금지).
     const manufacturerHexRotation = resolveLabManufacturerHexForImplant(
       labMeta,
       implantManufacturer ||
         normalizedCaseInfos?.implantManufacturer ||
         null,
     );
+
+    const hexFields = manufacturerHexRotation
+      ? {
+          requestorHexRotation: manufacturerHexRotation,
+          manufacturerHexRotation,
+          finalHexRotation: manufacturerHexRotation,
+          hexRotation: {
+            mode: manufacturerHexRotation,
+          },
+        }
+      : {};
 
     const newRequest = new Request({
       caseInfos: {
@@ -927,12 +960,7 @@ export async function createAbutmentRequestsFromPracticeTransfer({
         exoCadVersion: exoCadVersion || undefined,
         anodizingEnabled,
         retentionGroove,
-        requestorHexRotation: manufacturerHexRotation,
-        manufacturerHexRotation,
-        finalHexRotation: manufacturerHexRotation,
-        hexRotation: {
-          mode: manufacturerHexRotation,
-        },
+        ...hexFields,
         faceHolePrcFileName: resolvedPrc.faceHolePrcFileName || undefined,
         connectionPrcFileName: resolvedPrc.connectionPrcFileName || undefined,
         reviewByStage: {
@@ -944,9 +972,11 @@ export async function createAbutmentRequestsFromPracticeTransfer({
           },
         },
       },
-      rnd: {
-        manufacturerHexRotation,
-      },
+      rnd: manufacturerHexRotation
+        ? {
+            manufacturerHexRotation,
+          }
+        : {},
       requestor: labUserId,
       businessAnchorId: labAnchorId,
       price: quotedPrice,

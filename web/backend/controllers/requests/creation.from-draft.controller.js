@@ -33,6 +33,7 @@ import User from "../../models/user.model.js";
 import {
   normalizeExoCadVersion,
   normalizeHexVerificationResultHex,
+  isExoCadLe30,
   isHexVerificationPending,
   resolveExoCadManufacturerHexRotation,
   resolveHexRotationByDesignSoftware,
@@ -1529,6 +1530,17 @@ export async function createRequestsFromDraft(req, res) {
           const userRs = requestorSettingsDoc?.requestSettings || null;
           const anchorRs = shippingOrg?.requestSettings || null;
 
+          if (
+            isExoCadLe30(resolvedDesignSoftware, resolvedExoCadVersion) &&
+            !implantManufacturer
+          ) {
+            const err = new Error(
+              "임플란트 제조사 정보가 없어 ExoCAD 3.0 이하 헥스 회전을 결정할 수 없습니다. 임플란트 제조사를 선택한 뒤 다시 의뢰해 주세요.",
+            );
+            err.statusCode = 400;
+            throw err;
+          }
+
           // 임플란트 제조사별 확정/applyHex30 시드 (ExoCAD 3.0 이하)
           const hexVerificationPending = isHexVerificationPending({
             designSoftware: resolvedDesignSoftware,
@@ -1547,9 +1559,18 @@ export async function createRequestsFromDraft(req, res) {
               userRequestSettings: userRs,
               anchorRequestSettings: anchorRs,
               manufacturerDefault: requestorDefaultManufacturerHexRotation,
-              adminVerifiedHex: requestorAdminVerifiedHex,
-              hexVerificationPending,
             });
+
+          if (
+            isExoCadLe30(resolvedDesignSoftware, resolvedExoCadVersion) &&
+            !resolvedManufacturerHexRotation
+          ) {
+            const err = new Error(
+              "ExoCAD 3.0 이하 헥스 회전값을 결정할 수 없습니다. 임플란트 제조사·헥스 확인 설정을 확인해 주세요.",
+            );
+            err.statusCode = 400;
+            throw err;
+          }
 
           const resolvedRequestorHexRotation =
             resolvedManufacturerHexRotation ||

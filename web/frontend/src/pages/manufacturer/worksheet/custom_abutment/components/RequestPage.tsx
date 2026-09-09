@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-09: 관리자 헥스 확정 후에도 제조사가 준비 단계에서 의뢰 단위 헥스 변경 가능.
 // - 2026-09-09: filled-stl-regeneration-started → stlPreload GENERATING 낙관 패치(재생성 블러).
 // - 2026-09-09: 준비 탭 Rhino GENERATING 고스트 — realtime hook에 requests/tabStage 전달(폴링 refetch).
 // - 2026-09-03: 라이노 중단 시 취소/원본STL 없는 고스트 카드 목록 제거.
@@ -99,7 +100,7 @@ import {
   markFilledStlRegenerationPending,
   markNcRegenerationPending,
 } from "@/pages/manufacturer/worksheet/custom_abutment/utils/regenerationPending";
-import { resolveAdminVerifiedHexFromRequest, normalizeManufacturerHexRotationMode } from "@/pages/manufacturer/worksheet/custom_abutment/utils/hexRotation";
+import { normalizeManufacturerHexRotationMode } from "@/pages/manufacturer/worksheet/custom_abutment/utils/hexRotation";
 import type { ManufacturerHexRotationMode } from "@/pages/manufacturer/worksheet/custom_abutment/utils/hexRotation";
 // related files:
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
@@ -1866,17 +1867,6 @@ export const RequestPage = ({
 
       const nextValue: HexRotationUiMode = value;
       const backendValue = toBackendManufacturerHexRotation(nextValue);
-
-      const adminVerifiedHex = resolveAdminVerifiedHexFromRequest(req as any);
-      if (adminVerifiedHex && backendValue !== adminVerifiedHex) {
-        toast({
-          title: "헥스 회전 변경 불가",
-          description:
-            "관리자가 헥스 회전을 확정한 계정입니다. 제조사가 변경할 수 없습니다.",
-          variant: "destructive",
-        });
-        return;
-      }
 
       const prevManufacturer =
         normalizeManufacturerHexMode((req as any)?.rnd?.manufacturerHexRotation) ||

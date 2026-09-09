@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-09: 관리자 헥스 확정 후에도 제조사 updateRndHexRotation 허용(의뢰 단위 보정). 신규 시드만 확정값 우선.
 // - 2026-09-03: 배치 취소 시 헥스 샘플 쌍은 원본 권한만으로 포함(제조사 isRequestor 가드로 누락 방지).
 // - 2026-09-03: 워크시트 준비 조회 시 미확정 제조사 헥스 확인 샘플 누락분을 fire-and-forget 보정.
 // - 2026-09-03: 워크시트 requestor.requestSettings도 getById와 동일하게 정규화(프리뷰 헥스 뱃지).
@@ -3559,55 +3560,15 @@ export const updateRndHexRotation = asyncHandler(async (req, res) => {
   // related files (hex rotation edit window):
   // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
   // - web/backend/controllers/requests/common.review.controller.js
-  // 정책: 헥스 회전 설정/재설정은 의뢰 단계에서만 가능.
+  // 정책: 헥스 회전 설정/재설정은 의뢰(준비) 단계에서만 가능.
   // CAM 이상 단계에서는 고정되어 변경할 수 없다.
-  // 관리자 hexVerificationResultHex 확정 후에는 제조사 변경 불가(확정값과 동일 저장만 허용).
+  // 관리자 제조사별 확정값은 신규 시드 우선. 의뢰 단위 제조사 변경은 허용(오시드 보정).
   const currentManufacturerStage = String(request?.manufacturerStage || "").trim();
   if (currentManufacturerStage && currentManufacturerStage !== "준비") {
     return res.status(409).json({
       success: false,
       message:
         "헥스 회전은 의뢰 단계에서만 설정/재설정할 수 있습니다. CAM 단계부터는 고정됩니다.",
-    });
-  }
-
-  const requestorBusinessAnchorId = String(request.businessAnchorId || "").trim();
-  const requestorUserId = String(
-    request?.requestor?._id || request?.requestor || "",
-  ).trim();
-  const [requestorUser, requestorAnchor] = await Promise.all([
-    Types.ObjectId.isValid(requestorUserId)
-      ? User.findById(requestorUserId)
-          .select({
-            "requestSettings.hexVerificationResultHex": 1,
-            "requestSettings.hexByImplantManufacturer": 1,
-            "requestSettings.designSoftware": 1,
-            "requestSettings.exoCadVersion": 1,
-          })
-          .lean()
-      : null,
-    Types.ObjectId.isValid(requestorBusinessAnchorId)
-      ? BusinessAnchor.findById(requestorBusinessAnchorId)
-          .select({
-            "requestSettings.hexVerificationResultHex": 1,
-            "requestSettings.hexByImplantManufacturer": 1,
-          })
-          .lean()
-      : null,
-  ]);
-  const implantManufacturer = String(
-    request?.caseInfos?.implantManufacturer || "",
-  ).trim();
-  const adminVerifiedHex = resolveAdminVerifiedHexFromSettings(
-    requestorUser?.requestSettings,
-    requestorAnchor?.requestSettings,
-    implantManufacturer,
-  );
-  if (adminVerifiedHex && manufacturerHexRotation !== adminVerifiedHex) {
-    return res.status(409).json({
-      success: false,
-      message:
-        "관리자가 해당 임플란트 제조사의 헥스 회전을 확정했습니다. 제조사가 변경할 수 없습니다.",
     });
   }
 
@@ -3627,6 +3588,11 @@ export const updateRndHexRotation = asyncHandler(async (req, res) => {
   const finalHexRotation = resolveFinalHexRotationValue({
     manufacturerHexRotation,
   });
+
+  const requestorBusinessAnchorId = String(request.businessAnchorId || "").trim();
+  const requestorUserId = String(
+    request?.requestor?._id || request?.requestor || "",
+  ).trim();
 
   // related files:
   // - bg/pc1/esprit-addin/Helpers/NcFileGenerator.cs
@@ -3677,8 +3643,8 @@ export const updateRndHexRotation = asyncHandler(async (req, res) => {
   // 의뢰자 헥스 기본값 저장 SSOT:
   // - 개인 계정(User.requestSettings.defaultManufacturerHexRotation) 우선
   // - 개인 계정이 없으면 BusinessAnchor.requestSettings.defaultManufacturerHexRotation
-  // 다음 신규 의뢰(ExoCAD 확정 후): 관리자 hexVerificationResultHex → 제조사 default → designSoftware
-  // (pending이면 designSoftware 시드. 확정 후에는 제조사 의뢰 단위 변경 불가)
+  // 신규 시드: 관리자 verifiedHex → applyHex30 → designSoftware(3.2+/비ExoCAD)
+  // 준비 단계 의뢰 단위 제조사 변경은 허용.
   const nowForDefault = new Date();
   let savedDefaultHexScope = null;
   if (Types.ObjectId.isValid(requestorUserId)) {

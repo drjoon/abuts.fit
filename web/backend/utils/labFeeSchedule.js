@@ -8,6 +8,7 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
 // - web/backend/utils/roundBarAbutment.js
 // - web/frontend/src/features/settings/tabs/LabFeeScheduleTab.tsx
+// - 2026-09-09: PTX 리메이크 — CA 기본 제외 헬퍼. remake+CA 포함 시 기공소 CA 리메이크 수가 합산(어벗츠 retail은 제외).
 // - 2026-08-26: 미도입(요청중·도입중)도 기공소 커스텀어벗 수가를 합산(0원이면 미도입·수락 시 기공수가 포워드).
 // - 2026-08-25: 단독「커스텀어벗」은 심플이어도 지그제외 수가 대상. 크라운+심플만 수가 제외.
 // - 2026-08-25: 심플어벗(치과 재고)은 기공소 어벗 수가·견적에서 제외. 스캔바디 커스텀어벗만 과금.
@@ -1178,6 +1179,63 @@ export function isCustomAbutmentWork(row) {
   return Boolean(row?.hasCustomAbutment) || Boolean(row?.customAbutment);
 }
 
+/**
+ * PTX 리메이크 기본: 커스텀어벗을 toothWorks에서 제거.
+ * - 단독「커스텀어벗」행 삭제
+ * - 크라운/브리지/임시치아+CA → CA 플래그·모드만 제거(보철 유지)
+ */
+export function stripCustomAbutmentFromToothWorks(toothWorks) {
+  const rows = Array.isArray(toothWorks) ? toothWorks : [];
+  const out = [];
+  for (const row of rows) {
+    if (!row || typeof row !== "object") continue;
+    const prosthesisType = String(row?.prosthesisType || row?.type || "").trim();
+    if (isCustomAbutmentProsthesisType(prosthesisType)) {
+      continue;
+    }
+    if (!isCustomAbutmentWork(row)) {
+      out.push(row);
+      continue;
+    }
+    const next = { ...row };
+    next.customAbutment = false;
+    next.hasCustomAbutment = false;
+    if ("abutmentProductMode" in next) next.abutmentProductMode = undefined;
+    if ("productMode" in next && String(next.productMode || "").includes("abutment")) {
+      next.productMode = undefined;
+    }
+    out.push(next);
+  }
+  return out;
+}
+
+export function countCustomAbutmentWorks(toothWorks) {
+  return (Array.isArray(toothWorks) ? toothWorks : []).filter((row) =>
+    isCustomAbutmentWork(row),
+  ).length;
+}
+
+/** 리메이크 수가(>0)가 필요한데 비어 있는 항목명 */
+export function missingLabRemakeFeeItemNames(schedule, toothWorks) {
+  const needed = labFeeItemNamesNeededForToothWorks(toothWorks);
+  if (needed.length === 0) return [];
+  const items = normalizeLabFeeItems(schedule);
+  return needed.filter((needName) => {
+    const item = items.find((candidate) =>
+      labFeeItemMatchesNeedName(candidate, needName),
+    );
+    if (!item || item.enabled === false) return true;
+    const remake = Math.max(0, Math.round(Number(item.remake || 0)));
+    if (item.unit === "perNTeeth" && Array.isArray(item.tiers)) {
+      const tierRemake = item.tiers.some(
+        (tier) => Math.max(0, Math.round(Number(tier?.remake || 0))) > 0,
+      );
+      return !tierRemake && remake <= 0;
+    }
+    return remake <= 0;
+  });
+}
+
 /** 심플어벗/심플밀링 — 치과 재고. 기공소 커스텀어벗 수가·견적 제외. */
 const SIMPLE_ABUTMENT_KINDS = new Set(["심플어벗", "심플밀링"]);
 
@@ -2234,7 +2292,9 @@ export function computePracticeTransferRetailFees({
   void _abutmentPrices;
   const useRemake = Boolean(remake);
   const items = normalizeLabFeeItems(labFeeSchedule);
-  const waiveAbutment = useRemake || Boolean(skipAbutmentFees);
+  // remake: CA가 toothWorks에 남아 있으면 기공소 CA 리메이크 수가 합산. 어벗츠 retail은 항상 0.
+  // skipAbutmentFees(비-remake)만 어벗 전체 스킵.
+  const skipAllAbutment = Boolean(skipAbutmentFees) && !useRemake;
   const rows = Array.isArray(toothWorks) ? toothWorks : [];
   const absorbedNonTemp = absorbedNonTempTeethInTempSpans(rows);
   const lines = [];
@@ -2249,7 +2309,7 @@ export function computePracticeTransferRetailFees({
 
   const abutmentSplitForRow = (row) => {
     if (
-      waiveAbutment ||
+      skipAllAbutment ||
       isFollowUpProsthesisPhase(row) ||
       !isCustomAbutmentWork(row) ||
       isSimpleAbutmentModeForFee(row)
@@ -2271,6 +2331,7 @@ export function computePracticeTransferRetailFees({
     }
     const kind = resolveAdoptedAbutmentKind(row, implantFavorites);
     // 치과→기공소 수가. abutmentRetail(어벗츠 몫)은 PTX에서 쓰지 않음.
+    // remake여도 lab remake 수가는 합산(어벗츠 retail만 0).
     return {
       abuts: 0,
       lab,

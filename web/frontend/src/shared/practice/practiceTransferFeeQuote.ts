@@ -65,6 +65,7 @@ export type PracticeTransferFeeQuote = PracticeTransferRetailFees & {
   missingFeeNames?: string[];
   isRemake?: boolean;
   remakeFeeQuote?: PracticeTransferFeeQuote | null;
+  remakeFeeQuoteWithCustomAbutment?: PracticeTransferFeeQuote | null;
   /** 자동매칭 기공비(v4 고정수가). min≈max면 단일가 표시 */
   autoMatchBudget?: PracticeTransferAutoMatchBudget | null;
   /** 후속 보철: 차감 전 최종 보철 기공비 */

@@ -75,7 +75,7 @@ import {
 import {
   loadAutoMatchBudgetCatalog,
 } from "../../utils/practiceTransferAutoMatchBudget.js";
-import { resolveLabPracticeFeeMultiplier, isLabFeeScheduleConfigured, isLabFeeScheduleReadyToCharge, missingLabFeeItemNames, labFeeItemNamesNeededForToothWorks, toothWorksNeedLabFee, isLabPracticeSpecialSupplySnapshotCaptured } from "../../utils/labFeeSchedule.js";
+import { resolveLabPracticeFeeMultiplier, isLabFeeScheduleConfigured, isLabFeeScheduleReadyToCharge, missingLabFeeItemNames, missingLabRemakeFeeItemNames, labFeeItemNamesNeededForToothWorks, toothWorksNeedLabFee, isLabPracticeSpecialSupplySnapshotCaptured, stripCustomAbutmentFromToothWorks, countCustomAbutmentWorks } from "../../utils/labFeeSchedule.js";
 import {
   normalizeRushFeeMultiplier,
   parseOrderYmdFromMemo,
@@ -302,6 +302,25 @@ async function assertReceiverLabFeeConfigured(labAnchorId, toothWorks) {
     missing.length > 0
       ? missing
       : labFeeItemNamesNeededForToothWorks(toothWorks);
+  throw err;
+}
+
+const LAB_REMAKE_FEE_UNCONFIGURED_MESSAGE =
+  "기공소에 커스텀어벗 리메이크 수가가 설정되어 있지 않습니다. 기공소 설정 후 다시 의뢰해 주세요.";
+const LAB_REMAKE_FEE_UNCONFIGURED_REASON = "lab_remake_fee_unconfigured";
+
+async function assertReceiverLabRemakeFeeConfigured(labAnchorId, toothWorks) {
+  const lab = await BusinessAnchor.findById(labAnchorId)
+    .select({ labFeeSchedule: 1 })
+    .lean();
+  const missing = missingLabRemakeFeeItemNames(lab?.labFeeSchedule, toothWorks);
+  if (missing.length === 0) return;
+  const err = new Error(
+    `${LAB_REMAKE_FEE_UNCONFIGURED_MESSAGE} (미설정: ${missing.join(", ")})`,
+  );
+  err.statusCode = 409;
+  err.code = LAB_REMAKE_FEE_UNCONFIGURED_REASON;
+  err.missingFeeNames = missing;
   throw err;
 }
 
@@ -2919,6 +2938,50 @@ export async function createPracticeTransfer(req, res) {
         String(req.body?.isRemake || "").trim() === "true" ||
         String(req.body?.remake || "").trim() === "true",
     );
+    const includeCustomAbutmentRemake = Boolean(
+      req.body?.includeCustomAbutment === true ||
+        req.body?.includeCa === true ||
+        req.body?.includeCustomAbutmentRemake === true,
+    );
+
+    // PTX 리메이크 기본: 커스텀어벗 제외. 포함 시에만 CA 유지·리메이크 수가 강제.
+    if (isRemakeRequest && !includeCustomAbutmentRemake) {
+      const stripped = stripCustomAbutmentFromToothWorks(toothWorksRaw);
+      if (
+        countCustomAbutmentWorks(toothWorksRaw) > 0 &&
+        stripped.length === 0
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "커스텀어벗만 있는 리메이크입니다. 커스텀어벗 리메이크를 선택한 뒤 다시 전송해 주세요.",
+        });
+      }
+      toothWorksRaw.length = 0;
+      for (const row of stripped) toothWorksRaw.push(row);
+    } else if (
+      isRemakeRequest &&
+      includeCustomAbutmentRemake &&
+      countCustomAbutmentWorks(toothWorksRaw) > 0 &&
+      targetLabAnchorId
+    ) {
+      try {
+        await assertReceiverLabRemakeFeeConfigured(
+          targetLabAnchorId,
+          toothWorksRaw,
+        );
+      } catch (feeErr) {
+        const status = Number(feeErr?.statusCode || 409);
+        return res.status(status >= 400 && status < 600 ? status : 409).json({
+          success: false,
+          message:
+            feeErr?.message ||
+            "기공소 커스텀어벗 리메이크 수가가 설정되지 않았습니다.",
+          reason: feeErr?.code || LAB_REMAKE_FEE_UNCONFIGURED_REASON,
+          missingFeeNames: feeErr?.missingFeeNames || [],
+        });
+      }
+    }
 
     try {
       assertAbutmentPresetsComplete(toothWorksRaw);
@@ -3134,6 +3197,9 @@ export async function createPracticeTransfer(req, res) {
               sourceTransferMongoId: null,
               requestedAt: new Date(),
               requestedBy: req.user?._id || null,
+              includeCustomAbutment:
+                includeCustomAbutmentRemake &&
+                countCustomAbutmentWorks(toothWorksRaw) > 0,
             },
           }
         : {}),
@@ -4996,6 +5062,12 @@ export async function remakePracticeTransfers(req, res) {
       status: { $nin: ["deleted", "canceled"] },
     });
 
+    const includeCustomAbutment = Boolean(
+      req.body?.includeCustomAbutment === true ||
+        req.body?.includeCa === true ||
+        req.body?.includeCustomAbutmentRemake === true,
+    );
+
     const created = [];
     const failed = [];
     const seen = new Set();
@@ -5022,7 +5094,43 @@ export async function remakePracticeTransfers(req, res) {
         continue;
       }
 
-      const toothWorks = Array.isArray(source.toothWorks) ? source.toothWorks : [];
+      const sourceToothWorks = Array.isArray(source.toothWorks)
+        ? source.toothWorks
+        : [];
+      const sourceCaCount = countCustomAbutmentWorks(sourceToothWorks);
+      // 기본: 커스텀어벗 제외(보철만). 포함 시에만 CA 유지.
+      let toothWorks = includeCustomAbutment
+        ? sourceToothWorks
+        : stripCustomAbutmentFromToothWorks(sourceToothWorks);
+
+      if (toothWorks.length === 0) {
+        failed.push({
+          transferId: sourceTransferId || sourceMongoId,
+          message:
+            sourceCaCount > 0
+              ? "커스텀어벗만 있는 의뢰입니다. 커스텀어벗 리메이크를 선택한 뒤 다시 전송해 주세요."
+              : "리메이크할 보철 치식이 없습니다.",
+        });
+        continue;
+      }
+
+      if (includeCustomAbutment && sourceCaCount > 0) {
+        try {
+          await assertReceiverLabRemakeFeeConfigured(
+            targetLabAnchorId,
+            toothWorks,
+          );
+        } catch (feeErr) {
+          failed.push({
+            transferId: sourceTransferId || sourceMongoId,
+            message:
+              feeErr?.message ||
+              "기공소 커스텀어벗 리메이크 수가가 설정되지 않았습니다.",
+          });
+          continue;
+        }
+      }
+
       const files = Array.isArray(source.files)
         ? source.files
             .map((item) => ({
@@ -5122,6 +5230,8 @@ export async function remakePracticeTransfers(req, res) {
           sourceTransferMongoId: source._id,
           requestedAt: new Date(),
           requestedBy: req.user?._id || null,
+          includeCustomAbutment:
+            includeCustomAbutment && sourceCaCount > 0,
         },
         production: {
           skipDesignConfirm: production?.skipDesignConfirm !== false,

@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-09-09: 관리자 확정 후에도 제조사 의뢰 단위 헥스 변경 허용(prep persist 스킵 제거).
+// - 2026-09-09: ExoCAD≤3.0은 designSoftware→30° 폴백 제거. implantManufacturer 없거나 미해석이면 null → 승인 차단.
 // - 2026-09-04: 레거시 hexVerificationResultHex·requestorHexRotation 폴백 전면 제거. 없으면 PreviewModal 에러 토스트.
 // - 2026-09-04: implantManufacturer 있을 때 맵 행 없음=미정. 레거시 hexVerificationResultHex 폴백 제거(Zahn-Art OSSTEM 확정 오표시).
 // - 2026-09-03: 제조사별 verifiedHex만 확정. 레거시 계정 확정 번짐 제거(초기값 30°·미정). 맵 행이 있으면 BA 레거시로 폴백하지 않음.
@@ -334,11 +336,18 @@ export const resolveDefaultPrepHexRotationMode = (
 
   const designSoftware = String(req?.caseInfos?.designSoftware || "").trim();
   const exoCadVersion = req?.caseInfos?.exoCadVersion;
+  const implantManufacturer = String(
+    req?.caseInfos?.implantManufacturer || "",
+  ).trim();
+
+  // ExoCAD≤3.0: 제조사별 맵만. implant 없거나 미해석 시 designSoftware→30° 폴백 금지.
   if (
     designSoftware === "ExoCAD" &&
     String(exoCadVersion || "").trim() !== "ge_3_2" &&
-    req?.caseInfos?.implantManufacturer
+    String(exoCadVersion || "").trim() !== "3.2" &&
+    String(exoCadVersion || "").trim() !== ">=3.2"
   ) {
+    if (!implantManufacturer) return null;
     const applyHex30 = resolveApplyHex30FromRequest(req);
     return applyHex30 === false ? "STL모델대로" : "헥스30도회전";
   }
@@ -351,7 +360,6 @@ export const resolveDefaultPrepHexRotationMode = (
     return toManufacturerHexRotationLabel(byDesignSoftware);
   }
 
-  // requestorHexRotation 레거시 폴백 없음 — 호출측에서 에러 토스트.
   return null;
 };
 
@@ -362,11 +370,7 @@ export const resolvePrepHexModeToPersist = (
   | { persist: false }
   | { persist: true; mode: ManufacturerHexRotationMode }
   | { persist: false; missing: true } => {
-  // 해당 임플란트 제조사 관리자 확정: 제조사 저장 API 호출 금지.
-  if (resolveAdminVerifiedHexFromRequest(req)) {
-    return { persist: false };
-  }
-
+  // 이미 저장된 mode가 있으면 승인 시 재저장하지 않음(Select 즉시 저장 SSOT).
   if (normalizeManufacturerHexRotationMode(req?.caseInfos?.hexRotation?.mode)) {
     return { persist: false };
   }
@@ -399,9 +403,9 @@ export const resolvePrepWideSplitToPersist = (
 export const PREP_HEX_SAVE_MISSING_HANDLER =
   "헥스 회전 저장 핸들러가 없어 승인할 수 없습니다.";
 export const PREP_HEX_MISSING_MODE =
-  "헥스 회전값이 비어 있습니다. 'STL모델대로', '헥스30도회전', 'STL모델+', '헥스30+' 중 하나를 선택해 주세요.";
+  "헥스 회전값이 비어 있습니다. 임플란트 제조사를 확인하거나 'STL모델대로'/'헥스30도회전'을 선택한 뒤 승인해 주세요.";
 export const HEX_ROTATION_MISSING_MODE_TOAST =
-  "헥스 회전값이 없습니다. 저장값·디자인 SW 정책으로도 해석되지 않았습니다.";
+  "헥스 회전값이 없습니다. ExoCAD 3.0 이하는 임플란트 제조사·헥스 확정이 필요합니다(디자인 SW 30° 폴백 없음).";
 
 export async function persistPrepApprovalSettings(opts: {
   req: HexRequestLike;
@@ -415,10 +419,14 @@ export async function persistPrepApprovalSettings(opts: {
 }): Promise<{ ok: true } | { ok: false; title: string; description: string }> {
   const hexPlan = resolvePrepHexModeToPersist(opts.req, opts.hexDraft);
   if ("missing" in hexPlan && hexPlan.missing) {
+    const missingImplant =
+      shouldToastHexVerificationMissingImplantManufacturer(opts.req);
     return {
       ok: false,
       title: "승인 불가",
-      description: PREP_HEX_MISSING_MODE,
+      description: missingImplant
+        ? HEX_VERIFICATION_MISSING_IMPLANT_MANUFACTURER
+        : PREP_HEX_MISSING_MODE,
     };
   }
   if (hexPlan.persist) {

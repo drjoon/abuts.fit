@@ -5,6 +5,7 @@
 // - web/frontend/src/features/requestSettings/DesignSoftwareSettingsDialog.tsx
 // - web/backend/controllers/admin/admin.hexVerification.controller.js
 // change-log:
+// - 2026-09-09: ExoCAD≤3.0 + implantManufacturer 없음 → designSoftware/계정 폴백 제거(null). 조용히 30° 시드 금지.
 // - 2026-09-03: 제조사별 확정 SSOT만 사용(레거시 계정 확정으로 전 제조사 확정 번짐 제거). User 맵 행(미정 포함)이 있으면 BA로 번지지 않음. 초기값 30°·미정.
 // - 2026-09-03: ExoCAD 3.0 이하 × 임플란트 제조사별 헥스 맵(applyHex30/verifiedHex). 계정 단일 확정은 레거시 fallback.
 // - 2026-08-25: 확정 후 우선순위 관리자 > 제조사. pending은 디자인SW 강제(제조사는 의뢰 단위 변경 가능).
@@ -210,7 +211,7 @@ export const hexModeFromApplyHex30 = (applyHex30) =>
 /**
  * 헥스 확인 pending SSOT.
  * ExoCAD 3.0 이하이고 해당 임플란트 제조사에 verifiedHex 가 없으면 true.
- * implantManufacturer 없으면 레거시(계정 단일) 판정.
+ * implantManufacturer 없으면 pending으로 보지 않음(시드 자체가 불가 — FE/의뢰 차단).
  */
 export const isHexVerificationPending = ({
   designSoftware = null,
@@ -232,18 +233,19 @@ export const isHexVerificationPending = ({
     return !verified;
   }
 
-  return !normalizeHexVerificationResultHex(adminVerifiedHex);
+  // implant 없음: 제조사별 확정 대상 아님(레거시 계정 단일 폴백 제거).
+  return false;
 };
 
 /**
  * ExoCAD 제조사 헥스 해석 SSOT.
  * ExoCAD 3.0 이하 + implantManufacturer:
  *   1) verifiedHex(제조사별) → 확정·잠금
- *   2) applyHex30 시드 (기본 true)
- *   3) designSoftware 폴백
+ *   2) applyHex30 시드 (기본 true) — 미확정 기간만
+ * ExoCAD 3.0 이하 + implantManufacturer 없음: null (designSoftware/계정 폴백 금지)
  * ExoCAD 3.2+ / 비-ExoCAD: manufacturerDefault || designSoftware
  *
- * @returns {string} canonical hex mode
+ * @returns {string|null} canonical hex mode (미결정이면 null)
  */
 export const resolveExoCadManufacturerHexRotation = ({
   designSoftware,
@@ -252,8 +254,6 @@ export const resolveExoCadManufacturerHexRotation = ({
   userRequestSettings = null,
   anchorRequestSettings = null,
   manufacturerDefault = null,
-  adminVerifiedHex = null,
-  hexVerificationPending = null,
 } = {}) => {
   const sw = String(designSoftware || "").trim();
   const designFallback = resolveHexRotationByDesignSoftware(sw, exoCadVersion);
@@ -270,43 +270,23 @@ export const resolveExoCadManufacturerHexRotation = ({
   const hasImplant =
     implantManufacturer != null && String(implantManufacturer).trim();
 
-  if (hasImplant) {
-    const verified = resolveVerifiedHexForImplantManufacturer(
-      userRequestSettings,
-      implantManufacturer,
-      anchorRequestSettings,
-    );
-    if (verified) return verified;
-
-    const applyHex30 = resolveApplyHex30ForImplantManufacturer(
-      userRequestSettings,
-      implantManufacturer,
-    );
-    return hexModeFromApplyHex30(applyHex30);
+  if (!hasImplant) {
+    // ExoCAD≤3.0은 제조사별 맵이 SSOT. implant 없으면 조용히 30° 시드하지 않음.
+    return null;
   }
 
-  // 레거시 경로 (implantManufacturer 미전달)
-  const admin =
-    normalizeHexVerificationResultHex(adminVerifiedHex) ||
-    resolveAdminVerifiedHexFromSettings(
-      userRequestSettings,
-      anchorRequestSettings,
-    );
-  const pending =
-    hexVerificationPending == null
-      ? isHexVerificationPending({
-          designSoftware: sw,
-          exoCadVersion,
-          adminVerifiedHex: admin,
-        })
-      : Boolean(hexVerificationPending);
+  const verified = resolveVerifiedHexForImplantManufacturer(
+    userRequestSettings,
+    implantManufacturer,
+    anchorRequestSettings,
+  );
+  if (verified) return verified;
 
-  if (pending) {
-    return designFallback;
-  }
-  if (admin) return admin;
-  if (mfg) return mfg;
-  return designFallback;
+  const applyHex30 = resolveApplyHex30ForImplantManufacturer(
+    userRequestSettings,
+    implantManufacturer,
+  );
+  return hexModeFromApplyHex30(applyHex30);
 };
 
 /** 원본 헥스의 반대(첫의뢰 확인용 복사샘플) */

@@ -276,6 +276,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 초대 링크 → 치과 가입 → 사업자 `verified` 시 `status=active|referred`(발급 시점의 `invitedAfterWindow`로 결정). API: `/api/lab-trading-partners`
   - 기공비: `BusinessAnchor.labFeeSchedule`(crown/bridge/inlay/pontic + items). **마스터 `active`(기본 off)가 켜져야 설정 완료.** 수가 디폴트는 기본값·항목 on. 꺼져 있으면 청구 0원(로그인 시 설정 탭 유도). **지정 의뢰 `mark-accepted`는 마스터 On + 해당 보철 제공 항목 수가 필수** — 항목 Off·0원이면 `409` `reason=lab_fee_unconfigured`(+`missingFeeNames`, 기공비 설정 탭에서 해당 카드 하이라이트). 치과 UI는 `견적 0만원` 대신 기공비 미설정. PTX CA는 기공소 수가이므로 해당 항목 Off·0원이면 수락 차단(`missingFeeNames`). 임시치아는 설정 카드 두 장(이름 모두 「임시치아」, 3치 이하·6치 이하)으로 분리하고, 의뢰서 「임시치아」 청구 시 치아 수 구간으로 합산. 유지장치는 연결 스팬당 1세트(같은 악궁이어도 `+`로 끊기면 별도 세트, 연결 정보 없는 레거시는 악궁당 1세트). **PTX 커스텀어벗 치과 청구:** 단독=기공소 `커스텀어벗(지그제외)`(기본 3만), 크라운·브리지·임시치아 등 보철+어벗=기공소 `커스텀어벗(지그포함)`(기본 4만). 레거시 항목명「커스텀어벗」은 지그포함으로 승격. 어벗츠 플랫폼 단가(생산 1.5만·디자인+생산 2.5만, `creditSettings.membership*`)는 **기공소→어벗츠 Request**. **크라운·브리지·임시치아에 어벗을 붙이면 기공수가 + 지그포함 수가.** 유지장치에 남은 커스텀 플래그는 어벗 과금하지 않는다. 브리지 스팬의 `작업X`는 보철이 아니므로 기공비·어벗 단가에서 제외. **기공소가 카탈로그에 없는 신규 항목을 저장하면** `SystemSettings.abutsLabFeeSchedule`에 **Off·`pendingReview`**로 동기화하고 `abuts-lab-fee:pending-items`로 관리자에게 알린다(관리자「어벗츠 수가」에서 검증 후 On=적용).
   - PracticeTransfer 에스크로 SSOT: **생성(`POST /api/practice/transfers`)** 시 잔액 검사(`assertPracticeTransferPaidCreditSufficient`) + `holdPracticeTransferCredits`로 기공비 보류(`billing.heldAt`, `PRACTICE_TRANSFER_SPEND_HOLD`) — 수락 전 정산 페이지에 치과「결제 보류」/기공소「적립 보류」. **수락(`mark-accepted`)** 시 `adjustPracticeTransferHold`(보류액 확정) 직후 `releasePracticeTransferLabShare`로 기공소 정산(치과→기공소). UI 견적: `GET /api/practice/transfers/quote-context`(지정 기공소 스케줄·수수료율·어벗 단가) + 치식별 합산(`labFeeSchedule.js`). **신규 의뢰는 지정 기공소(어벗츠기공소 포함)만** — 그 기공소 `labFeeSchedule` × 치과별 `labFeeMultiplier`(생성 시점 스냅샷, 이후 변경 소급 금지). 플랫폼 평균수가·별점 기공비 배수·평균수가 워커는 쓰지 않음. **치과 별점 하한·상한**(기본 3~4)은 지정 픽커·생성·하청 풀 수신 게이트(어벗츠 포함 유효 별점이 구간 안인 기공소만). 치과 평가 별점은 **수행 기공소**(하청 `assignee` 우선)에 남기며, 하청 시 치과에는 「인증 협력 기공소에서 처리」만 표시(실명 비공개·확정 후에도 동일). **우리 치과 1점**은 검색 가능·지정/하청 주문 불가. **어벗츠기공소 지정 의뢰**는 기공팀이 원하면 `open-subcontract`로 구간 안 인증 기공소 하청 풀을 연다. 치과 표시·과금은 원청(어벗츠) 수가+할증 유지. **수락(`mark-accepted`)** 시 보류 조정(`PRACTICE_TRANSFER_HOLD_ADJUST`)·`billing.billedAt` 확정. **기공소 발송=`mark-complete`** → 이미 수락 시 정산됐으면 release no-op(레거시 미정산만 lab share 해제), **제조사 발송=packing** → abutment share 해제. 목록 `feeQuote`: 치과=크레딧 소비(`total`), 기공소=설정 수가(`labFeeTotal`).
+  - **PTX 리메이크(`POST /api/practice/transfers/remake`)**: 기본은 **커스텀어벗 제외**(보철만, `stripCustomAbutmentFromToothWorks`). `includeCustomAbutment=true`일 때만 CA 유지. CA 포함 시 기공소 `labFeeSchedule` 리메이크 수가(>0) 필수(`missingLabRemakeFeeItemNames`), 치과→기공소 리메이크비에 CA 리메이크 합산, 이후 핸드오프 CA Request는 `computePriceForRequest` 리메이크 과금(정가 `ptx_abuts_production` 금지). `remake.includeCustomAbutment` 스냅샷. 목록 `remakeFeeQuote`=보철만, `remakeFeeQuoteWithCustomAbutment`=CA 포함.
     - **자동 매칭 성공**(`matchingMode=auto`): 수수료 `BusinessAnchor.payoutRates.platformFeeRate`(기본 **10%**, 레거시 `nonPartnerFeeRate` fallback). 등록/미등록 치과를 나누지 않는다.
     - **지정 기공소**(`matchingMode=direct`): `payoutRates.directPlatformFeeEnabled`가 true일 때만 `directPlatformFeeRate`(기본 **5%**) 적용. **기본 off = 별도 공지 시까지 무료(실효 0%)**.
     - 걷힌 수수료 금액의 잔여 분배: 제조사는 하청 고정단가 경로와 분리. 수수료 잔액은 딜러사·개발운영사·어벗츠 상대비율로 재분배(루트 `rules.md` §2.3).
@@ -386,8 +387,11 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 케이스 디자인 소프트웨어가 비어 있으면 요청을 실패(400) 처리합니다.
   - `ExoCAD` + `exoCadVersion=ge_3_2` / 비-ExoCAD => `STL모델대로` (제조사별 맵·샘플·잠금 해당 없음)
   - `ExoCAD` + `exoCadVersion=le_3_0`(또는 버전 미지정 레거시):
-    1) `User.requestSettings.hexByImplantManufacturer[M].verifiedHex` 있으면 확정값(잠금)
+    1) `User.requestSettings.hexByImplantManufacturer[M].verifiedHex` 있으면 확정값으로 **신규 시드**
     2) 없으면 `applyHex30`(기본 true) → 시드 (`true`=헥스30도회전 / `false`=STL모델대로)
+    3) **`implantManufacturer` 없음 → 시드 금지(null)**. designSoftware→30° 폴백 제거.
+       from-draft는 400. PTX/핸드오프는 헥스 필드 미기입. FE는 에러 토스트 + 준비 승인 차단.
+    4) 확정 뱃지는 표시용. **준비 단계에서 제조사 의뢰 단위 헥스 변경 허용**(오시드 보정).
   - ExoCAD 3.0 이하 + 해당 임플란트 제조사 미확정 시, **(사용자 × 임플란트 제조사)** 첫 의뢰에
     반대 헥스 복사샘플(`caseInfos.hexVerificationSample=true`,
     `hexVerificationSampleManufacturer`, 라벨 **헥스 확인용 무료 샘플**)을 생성한다.
@@ -397,7 +401,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     `POST .../users/:userId/manufacturers/:manufacturer/{apply-hex30|complete|revert}`.
     BA 단위 complete/revert는 410(폐기).
   - 의뢰 단건 `business/requestor.requestSettings`에 `hexByImplantManufacturer`를 포함해
-    PreviewModal 확정/미정 뱃지·잠금에 쓴다.
+    PreviewModal 확정/미정 뱃지에 쓴다(뱃지는 잠금이 아님).
   - 설정 소유: requestor·internalLab 모두 `User.requestSettings` SSOT. BA는 신규 가입 시드·대표자 템플릿만.
   - 마이그레이션: `scripts/db/migrate-hex-verification-to-implant-manufacturers.js`
   - 관련: `utils/designSoftwareHex.js`, `services/hexVerificationSample.service.js`,

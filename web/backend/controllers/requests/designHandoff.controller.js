@@ -7,6 +7,7 @@
 // - 2026-09-03: PTX handoff critical path — holdFast 재견적(리드타임 스케줄 생략) + labMeta/풀스케줄/미러는 응답 후.
 // - 2026-09-03: PTX handoff — hold+lot+save만 응답 전. Transfer 미러·lab confirm·Rhino·emit은 응답 후.
 //   labMeta.labOrg를 reprice에 재사용. phase timing 로그.
+// - 2026-09-09: ExoCAD≤3.0 헥스 — implant/맵 없이 designSoftware·DEFAULT 폴백으로 채우지 않음.
 // - 2026-09-03: PTX 핸드오프 헥스 스탬프 — case implantManufacturer로 기공소 hexByImplantManufacturer 시드(from-draft 동일).
 // - 2026-09-02: PTX handoff — Rhino 필드·재견적을 병렬(응답 전 대기 단축). S3 재업로드 없음.
 // - 2026-09-02: handoff/cancel — Transfer 1회 조회·형제 취소 병렬·디자인비 grant/revoke 응답 후 처리.
@@ -73,6 +74,7 @@ import {
   isAutoMatchMode,
   resolvePerformingLabAnchorId,
 } from "../../utils/practiceTransferAutoMatch.js";
+import { isExoCadLe30 } from "../../utils/designSoftwareHex.js";
 import {
   findActiveHexVerificationSampleObjectIdsForSources,
   maybeCreateHexVerificationSampleForFirstOrder,
@@ -263,7 +265,7 @@ const ensurePtxProductionRhinoReadyFields = async (
   if (!request.caseInfos) request.caseInfos = {};
   if (!request.rnd) request.rnd = {};
 
-  // 이미 case별 시드된 헥스를 우선. designSoftware 폴백으로 덮어쓰지 않음.
+  // 이미 case별 시드된 헥스를 우선. ExoCAD≤3.0은 designSoftware 폴백으로 채우지 않음.
   const existingHex =
     String(request.caseInfos?.hexRotation?.mode || "").trim() ||
     String(request.rnd.manufacturerHexRotation || "").trim() ||
@@ -272,28 +274,37 @@ const ensurePtxProductionRhinoReadyFields = async (
     String(request.caseInfos.requestorHexRotation || "").trim();
 
   const designSoftware = String(request.caseInfos.designSoftware || "").trim();
+  const exoCadVersion = request.caseInfos?.exoCadVersion;
   const designSoftwareHex = designSoftware
-    ? resolveHexRotationByDesignSoftware(
-        designSoftware,
-        request.caseInfos?.exoCadVersion,
-      )
+    ? resolveHexRotationByDesignSoftware(designSoftware, exoCadVersion)
     : "";
 
+  // ExoCAD≤3.0: implant/맵 없이 조용히 30°·DEFAULT로 채우지 않음(FE 토스트·승인 차단).
+  const allowDesignSoftwareFallback = !isExoCadLe30(
+    designSoftware,
+    exoCadVersion,
+  );
+
   const hex =
-    existingHex || designSoftwareHex || DEFAULT_HEX_ROTATION;
-  request.rnd.manufacturerHexRotation = hex;
-  request.caseInfos.manufacturerHexRotation = hex;
-  request.caseInfos.finalHexRotation = hex;
-  request.caseInfos.requestorHexRotation = hex;
-  const prevHexRotation =
-    request.caseInfos.hexRotation &&
-    typeof request.caseInfos.hexRotation === "object"
-      ? request.caseInfos.hexRotation
-      : {};
-  request.caseInfos.hexRotation = {
-    ...prevHexRotation,
-    mode: hex,
-  };
+    existingHex ||
+    (allowDesignSoftwareFallback
+      ? designSoftwareHex || DEFAULT_HEX_ROTATION
+      : "");
+  if (hex) {
+    request.rnd.manufacturerHexRotation = hex;
+    request.caseInfos.manufacturerHexRotation = hex;
+    request.caseInfos.finalHexRotation = hex;
+    request.caseInfos.requestorHexRotation = hex;
+    const prevHexRotation =
+      request.caseInfos.hexRotation &&
+      typeof request.caseInfos.hexRotation === "object"
+        ? request.caseInfos.hexRotation
+        : {};
+    request.caseInfos.hexRotation = {
+      ...prevHexRotation,
+      mode: hex,
+    };
+  }
 
   if (
     resolvePrc &&
@@ -1016,20 +1027,23 @@ export async function handoffDesignToProduction(req, res) {
                 if (labMeta.exoCadVersion) {
                   $set["caseInfos.exoCadVersion"] = labMeta.exoCadVersion;
                 }
-                $set["caseInfos.requestorHexRotation"] = manufacturerHexRotation;
-                $set["caseInfos.manufacturerHexRotation"] = manufacturerHexRotation;
-                $set["caseInfos.finalHexRotation"] = manufacturerHexRotation;
-                $set["caseInfos.hexRotation.mode"] = manufacturerHexRotation;
-                $set["rnd.manufacturerHexRotation"] = manufacturerHexRotation;
                 request.caseInfos.designSoftware = labMeta.designSoftware;
                 if (labMeta.exoCadVersion) {
                   request.caseInfos.exoCadVersion = labMeta.exoCadVersion;
                 }
-                request.caseInfos.requestorHexRotation = manufacturerHexRotation;
-                request.caseInfos.manufacturerHexRotation = manufacturerHexRotation;
-                request.caseInfos.finalHexRotation = manufacturerHexRotation;
-                if (!request.rnd) request.rnd = {};
-                request.rnd.manufacturerHexRotation = manufacturerHexRotation;
+                // ExoCAD≤3.0 + implant 없음 등 → null이면 헥스 필드를 30°로 채우지 않음.
+                if (manufacturerHexRotation) {
+                  $set["caseInfos.requestorHexRotation"] = manufacturerHexRotation;
+                  $set["caseInfos.manufacturerHexRotation"] = manufacturerHexRotation;
+                  $set["caseInfos.finalHexRotation"] = manufacturerHexRotation;
+                  $set["caseInfos.hexRotation.mode"] = manufacturerHexRotation;
+                  $set["rnd.manufacturerHexRotation"] = manufacturerHexRotation;
+                  request.caseInfos.requestorHexRotation = manufacturerHexRotation;
+                  request.caseInfos.manufacturerHexRotation = manufacturerHexRotation;
+                  request.caseInfos.finalHexRotation = manufacturerHexRotation;
+                  if (!request.rnd) request.rnd = {};
+                  request.rnd.manufacturerHexRotation = manufacturerHexRotation;
+                }
               }
               if (typeof labMeta.anodizingEnabled === "boolean") {
                 $set["caseInfos.anodizingEnabled"] = labMeta.anodizingEnabled;

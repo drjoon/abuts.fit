@@ -128,6 +128,8 @@ import {
   splitPracticeTransferSettlement,
   buildLabFeePendingPromotionSet,
   resolveEffectiveLabFeeLabDoc,
+  stripCustomAbutmentFromToothWorks,
+  countCustomAbutmentWorks,
 } from "../utils/labFeeSchedule.js";
 import {
   normalizeConfiguredRushFeeMultiplier,
@@ -364,6 +366,7 @@ export function toRemakeApiFields(doc) {
           sourceTransferId: sourceTransferId || null,
           sourceTransferMongoId: sourceTransferMongoId || null,
           requestedAt: remake.requestedAt || null,
+          includeCustomAbutment: Boolean(remake.includeCustomAbutment),
         }
       : null,
   };
@@ -4748,17 +4751,32 @@ export async function buildFeeQuotesForTransferDocs({
           labDocById.get(quoteLabId) || { labFeeSchedule: schedule },
           practiceId,
         );
+    // 기본 리메이크 견적=보철만(CA 제외). CA 포함 견적은 별도 필드.
+    const remakeToothWorksProsthesisOnly =
+      stripCustomAbutmentFromToothWorks(toothWorks);
     const remakeFees = computePracticeTransferRetailFees({
-      toothWorks,
+      toothWorks: remakeToothWorksProsthesisOnly,
       implantFavorites,
       labFeeSchedule: remakeFeeSchedule,
       abutmentPricingTier,
       abutmentPrices,
       remake: true,
-      skipAbutmentFees: true,
       labFeeMultiplier: remakeLabFeeMultiplier,
       rushFeeMultiplier: rushFeeMultiplierFromTransfer(doc),
     });
+    const remakeFeesWithCustomAbutment =
+      countCustomAbutmentWorks(toothWorks) > 0
+        ? computePracticeTransferRetailFees({
+            toothWorks,
+            implantFavorites,
+            labFeeSchedule: remakeFeeSchedule,
+            abutmentPricingTier,
+            abutmentPrices,
+            remake: true,
+            labFeeMultiplier: remakeLabFeeMultiplier,
+            rushFeeMultiplier: rushFeeMultiplierFromTransfer(doc),
+          })
+        : null;
     const fees = computePracticeTransferRetailFees({
       toothWorks,
       implantFavorites,
@@ -4827,13 +4845,43 @@ export async function buildFeeQuotesForTransferDocs({
       labFeeConfigured: resolveQuoteLabFeeConfigured({
         usedDefaultSchedule: !quoteLabId,
         schedule,
-        toothWorks,
+        toothWorks: remakeToothWorksProsthesisOnly,
         remake: true,
         labFeeTotal: remakeFees.labFeeTotal,
       }),
       isRemake: true,
       autoMatchBudget: autoMatchBudgetOut,
     });
+    const remakeFeeQuoteWithCustomAbutment = remakeFeesWithCustomAbutment
+      ? (() => {
+          const split = splitPracticeTransferSettlement({
+            labFeeTotal: remakeFeesWithCustomAbutment.labFeeTotal,
+            abutmentRetailTotal: remakeFeesWithCustomAbutment.abutmentRetailTotal,
+            feeRateApplied: remakeFeeRateApplied,
+          });
+          return toFeeQuoteApi({
+            fees: remakeFeesWithCustomAbutment,
+            relationshipKind: kind,
+            feeRateApplied: remakeFeeRateApplied,
+            labFeeMultiplier: remakeLabFeeMultiplier,
+            labSettlementAmount: split.labSettlementAmount,
+            abutsRevenueAmount: split.abutsRevenueAmount,
+            labTradingPartnerId: partner?._id ? String(partner._id) : null,
+            billed: false,
+            usedDefaultSchedule: !quoteLabId,
+            labFeeConfigured: resolveQuoteLabFeeConfigured({
+              usedDefaultSchedule: !quoteLabId,
+              schedule,
+              toothWorks,
+              remake: true,
+              labFeeTotal: remakeFeesWithCustomAbutment.labFeeTotal,
+            }),
+            isRemake: true,
+            includeCustomAbutment: true,
+            autoMatchBudget: autoMatchBudgetOut,
+          });
+        })()
+      : null;
 
     if (useStored) {
       const storedRetail = Math.max(
@@ -4874,6 +4922,7 @@ export async function buildFeeQuotesForTransferDocs({
           labSettlementAmount: split.labSettlementAmount,
           abutsRevenueAmount: split.abutsRevenueAmount,
           remakeFeeQuote,
+          remakeFeeQuoteWithCustomAbutment,
         });
         continue;
       }
@@ -4912,6 +4961,7 @@ export async function buildFeeQuotesForTransferDocs({
           autoMatchBudget: autoMatchBudgetOut,
         }),
         remakeFeeQuote,
+        remakeFeeQuoteWithCustomAbutment,
       },
     );
   }

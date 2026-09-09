@@ -159,6 +159,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { PageFileDropZone } from "@/features/requests/components/PageFileDropZone";
 import {
@@ -311,6 +312,7 @@ import {
   formatManWon,
 } from "@/shared/practice/practiceTransferFeeQuote";
 import { usePracticeTransferFeeQuote } from "@/shared/practice/usePracticeTransferFeeQuote";
+import { isCustomAbutmentWork } from "@/shared/practice/labFeeSchedule";
 import { restoreToothWorksFromDraft } from "@/shared/practice/toothWorkDraft";
 import { deleteFile as deleteFileFromIndexedDb } from "@/shared/storage/fileIndexedDB";
 import {
@@ -1598,6 +1600,9 @@ export const PracticeFileTransferPage = ({
     transfer: RecentTransferItem;
     arrivalYmd: string;
   } | null>(null);
+  /** PTX 리메이크: 커스텀어벗 포함(기본 false=보철만) */
+  const [remakeIncludeCustomAbutment, setRemakeIncludeCustomAbutment] =
+    useState(false);
   const [composeRemakeConfirmOpen, setComposeRemakeConfirmOpen] = useState(false);
   const [draftsOpen, setDraftsOpen] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
@@ -1631,6 +1636,12 @@ export const PracticeFileTransferPage = ({
     remake: true,
     rushFeeMultiplier: 1,
   });
+  const composeRemakeIncludesCustomAbutment = useMemo(
+    () =>
+      composeRemakeMode &&
+      syncToothWorks.some((row) => isCustomAbutmentWork(row)),
+    [composeRemakeMode, syncToothWorks],
+  );
   const effectiveSkipJig = useMemo(
     () => resolvePracticeTransferSkipJig(normalizedToothWorks, skipJig),
     [normalizedToothWorks, skipJig],
@@ -7226,7 +7237,14 @@ export const PracticeFileTransferPage = ({
           rushProcessing,
           autoMatchMinLabRating,
           autoMatchMaxLabRating,
-          ...(composeRemakeMode && !editing ? { isRemake: true } : {}),
+          ...(composeRemakeMode && !editing
+            ? {
+                isRemake: true,
+                ...(composeRemakeIncludesCustomAbutment
+                  ? { includeCustomAbutment: true }
+                  : {}),
+              }
+            : {}),
           caseInfos: caseInfosPayload,
         },
       });
@@ -7976,8 +7994,16 @@ export const PracticeFileTransferPage = ({
   /** PC — 툴바는 작성 DialogHeader. intake는 투어 레일만 예약 */
   const showComposeHeaderToolbar = !isMobile;
 
-  const remakeFeeAmountForTransfer = (transfer: RecentTransferItem) => {
-    const q = transfer.remakeFeeQuote || null;
+  const remakeFeeAmountForTransfer = (
+    transfer: RecentTransferItem,
+    includeCustomAbutment = false,
+  ) => {
+    const withCa =
+      includeCustomAbutment &&
+      transfer.remakeFeeQuoteWithCustomAbutment
+        ? transfer.remakeFeeQuoteWithCustomAbutment
+        : null;
+    const q = withCa || transfer.remakeFeeQuote || null;
     if (!q) return 0;
     return Math.max(0, Math.round(Number(q.total || q.labFeeTotal || 0)));
   };
@@ -8005,6 +8031,9 @@ export const PracticeFileTransferPage = ({
         });
         return;
       }
+      const includeCa =
+        remakeIncludeCustomAbutment &&
+        Boolean(target.transfer.hasCustomAbutment);
       setRemakeBusy(true);
       try {
         const res = await apiFetch<{
@@ -8017,6 +8046,7 @@ export const PracticeFileTransferPage = ({
           jsonBody: {
             transferMongoIds: [mongoId],
             arrivalYmd: target.arrivalYmd,
+            includeCustomAbutment: includeCa,
           },
         });
         if (!res.ok) {
@@ -8032,10 +8062,13 @@ export const PracticeFileTransferPage = ({
         }
         toast({
           title: "리메이크 의뢰를 전송했습니다",
-          description: `도착일 ${target.arrivalYmd}`,
+          description: includeCa
+            ? `도착일 ${target.arrivalYmd} · 커스텀어벗 리메이크 포함`
+            : `도착일 ${target.arrivalYmd}`,
         });
         setRemakePending(null);
         setRemakeConfirmOpen(false);
+        setRemakeIncludeCustomAbutment(false);
         setRemakeSearchOpen(false);
         void loadRecentRequests({ silent: true });
         setCalendarRefreshNonce((n) => n + 1);
@@ -8050,21 +8083,24 @@ export const PracticeFileTransferPage = ({
         setRemakeBusy(false);
       }
     },
-    [authToken, loadRecentRequests, remakePending, toast],
+    [
+      authToken,
+      loadRecentRequests,
+      remakeIncludeCustomAbutment,
+      remakePending,
+      toast,
+    ],
   );
 
   const askRemakeForTransfer = useCallback(
     (transfer: RecentTransferItem, arrivalYmd: string) => {
       const pending = { transfer, arrivalYmd };
       setRemakePending(pending);
-      const fee = remakeFeeAmountForTransfer(transfer);
-      if (fee > 0) {
-        setRemakeConfirmOpen(true);
-        return;
-      }
-      void handleConfirmRemake(pending);
+      setRemakeIncludeCustomAbutment(false);
+      // 리메이크비·CA 안내를 위해 항상 확인 모달
+      setRemakeConfirmOpen(true);
     },
-    [handleConfirmRemake],
+    [],
   );
 
   const practiceWorkspaceToolbar = (
@@ -10163,7 +10199,7 @@ export const PracticeFileTransferPage = ({
           title="리메이크 의뢰를 전송할까요?"
           description={
             remakePending ? (
-              <div className="space-y-1">
+              <div className="space-y-2 text-left">
                 <div>
                   환자{" "}
                   {resolvePracticeTransferListPatientName(remakePending.transfer) ||
@@ -10172,8 +10208,42 @@ export const PracticeFileTransferPage = ({
                 </div>
                 <div>
                   도착일 {remakePending.arrivalYmd} · 리메이크비{" "}
-                  {formatManWon(remakeFeeAmountForTransfer(remakePending.transfer))}
+                  {formatManWon(
+                    remakeFeeAmountForTransfer(
+                      remakePending.transfer,
+                      remakeIncludeCustomAbutment,
+                    ),
+                  )}
                 </div>
+                <div className="text-muted-foreground">
+                  기공소가 작업시작하면 리메이크 기공비로 처리됩니다.
+                </div>
+                {remakePending.transfer.hasCustomAbutment ? (
+                  <label className="flex cursor-pointer items-start gap-2 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2 text-[13px]">
+                    <Checkbox
+                      checked={remakeIncludeCustomAbutment}
+                      onCheckedChange={(checked) =>
+                        setRemakeIncludeCustomAbutment(Boolean(checked))
+                      }
+                      className="mt-0.5"
+                    />
+                    <span className="space-y-1">
+                      <span className="block font-medium text-slate-800">
+                        커스텀어벗도 리메이크
+                      </span>
+                      <span className="block text-[12px] text-muted-foreground">
+                        기본은 보철만 리메이크합니다. 포함 시 기공소 커스텀어벗
+                        리메이크 수가가 설정되어 있어야 하며, 치과→기공소
+                        리메이크비와 기공소→어벗츠 리메이크 과금이 발생합니다.
+                      </span>
+                    </span>
+                  </label>
+                ) : null}
+                {!remakePending.transfer.hasCustomAbutment ? (
+                  <div className="text-[12px] text-muted-foreground">
+                    리메이크 의뢰 시 기공소 리메이크 수가가 청구됩니다.
+                  </div>
+                ) : null}
               </div>
             ) : undefined
           }
@@ -10186,6 +10256,7 @@ export const PracticeFileTransferPage = ({
             if (remakeBusy) return;
             setRemakeConfirmOpen(false);
             setRemakePending(null);
+            setRemakeIncludeCustomAbutment(false);
           }}
         />
 
@@ -10217,8 +10288,17 @@ export const PracticeFileTransferPage = ({
                 {PRE_PLATFORM_REMAKE_PRACTICE_SEND_HINT}
               </div>
               <div className="text-muted-foreground">
-                기공소가 작업시작하면 리메이크 기공비로 처리됩니다.
+                기공소가 작업시작하면 리메이크 기공비로 처리됩니다. 커스텀어벗은
+                기본 제외이며, 작성 화면에서 커스텀어벗을 넣으면 리메이크
+                수가·어벗츠 과금이 함께 적용됩니다.
               </div>
+              {composeRemakeIncludesCustomAbutment ? (
+                <div className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-[12px] text-amber-950">
+                  커스텀어벗이 포함되어 있습니다. 기공소 커스텀어벗 리메이크
+                  수가가 설정되어 있어야 하며, 치과→기공소 리메이크비와
+                  기공소→어벗츠 리메이크 과금이 발생합니다.
+                </div>
+              ) : null}
             </div>
           }
           confirmLabel={requestSubmitting ? "전송 중..." : "리메이크 전송"}
