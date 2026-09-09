@@ -210,6 +210,7 @@ import {
   requestChatRoomsClearUnread,
   type ChatRoom,
 } from "@/shared/hooks/useChatRooms";
+import { markPracticeStatusBadgeTransfersCleared } from "@/shared/practice/practiceStatusBadgeReviewQueue";
 import { useChatMessages } from "@/shared/hooks/useChatMessages";
 import { anonymizeAutoMatchChatSenderName } from "@/shared/practice/autoMatchIdentity";
 import {
@@ -5303,9 +5304,13 @@ export const PracticeFileTransferPage = ({
       return;
     }
 
-    // 채팅 unread — 열자마자 카운터 감소.
+    // 헤더 확인 큐·채팅 unread — 열자마자 카운터 감소.
     const openedTransferId = String(transfer.transferId || "").trim();
     if (openedTransferId && openedTransferId !== "-") {
+      markPracticeStatusBadgeTransfersCleared(
+        authUser?.id || (authUser as { _id?: string } | null)?._id,
+        [openedTransferId],
+      );
       clearUnreadForTransferIds([openedTransferId]);
       requestChatRoomsClearUnread({ transferIds: [openedTransferId] });
     }
@@ -8727,7 +8732,9 @@ export const PracticeFileTransferPage = ({
           onSelectTransfer={(transfer, options) => {
             void handleOpenTransferDialog(transfer, {
               returnToAllModal: true,
-              preferredDockSide: options?.preferredDockSide ?? null,
+              ...(options && "preferredDockSide" in options
+                ? { preferredDockSide: options.preferredDockSide ?? null }
+                : {}),
             });
           }}
           onDeleteTransfer={(transfer) => {

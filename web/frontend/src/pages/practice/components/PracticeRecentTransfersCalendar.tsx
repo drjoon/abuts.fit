@@ -110,6 +110,11 @@ export type PracticeCalendarChipItem = {
   line: string;
   /** 사이드바와 동일 합산(수신 미확인 + 채팅). 있으면 칩에 빨간 숫자 */
   unreadCount?: number;
+  /**
+   * 상단 헤더 확인 큐(아직 안 연 건) — 빨간 테두리만.
+   * 숫자 배지는 unreadCount(실제 채팅 안읽음)만 사용.
+   */
+  reviewHighlight?: boolean;
   /** 수락 후 어벗 STL 미업로드 24h/48h 경고 */
   abutmentUploadOverdue?: "yellow" | "red" | "deadline" | null;
   /** 치과 발신: 수락 전·작업취소·기공소 거절(거부) 건 휴지통 이동 */
@@ -169,6 +174,7 @@ export function expandPracticeCalendarChipsByArrivalDates(
         // 이전 일자 칩은 삭제 버튼 숨김(최종만). unread는 모든 연결 칩에 표시.
         canDelete: isPrior ? false : item.canDelete,
         unreadCount: item.unreadCount,
+        reviewHighlight: item.reviewHighlight,
       });
     });
   }
@@ -1201,6 +1207,7 @@ export function PracticeRecentTransfersCalendar({
                           0,
                           Number(item.unreadCount || 0),
                         );
+                        const reviewHighlight = Boolean(item.reviewHighlight);
                         const uploadOverdue =
                           abutmentUploadOverdueViewer === "practice"
                             ? null
@@ -1271,7 +1278,8 @@ export function PracticeRecentTransfersCalendar({
                                 uploadOverdue === "deadline" &&
                                   "ring-2 ring-red-400/70",
                                 (uploadOverdue === "red" ||
-                                  (!uploadOverdue && unreadCount > 0)) &&
+                                  (!uploadOverdue &&
+                                    (unreadCount > 0 || reviewHighlight))) &&
                                   "ring-1 ring-red-500/80",
                                 uploadOverdue === "yellow" &&
                                   "ring-1 ring-amber-500/80",
@@ -1303,7 +1311,9 @@ export function PracticeRecentTransfersCalendar({
                                         }`
                                       : unreadCount > 0
                                         ? `${item.line} · 안읽음 ${unreadLabel}`
-                                        : item.line)
+                                        : reviewHighlight
+                                          ? `${item.line} · 미확인`
+                                          : item.line)
                                 }
                                 onClick={() => selectListItem(item, ymd)}
                               >
@@ -1463,6 +1473,7 @@ export function PracticeRecentTransfersCalendar({
                           const showDelete = Boolean(item.canDelete && onDeleteItem);
                           const chipStyle = calendarChipStyleForItem(item);
                           const unreadCount = Math.max(0, Number(item.unreadCount || 0));
+                          const reviewHighlight = Boolean(item.reviewHighlight);
                           const uploadOverdue =
                           abutmentUploadOverdueViewer === "practice"
                             ? null
@@ -1501,7 +1512,7 @@ export function PracticeRecentTransfersCalendar({
                                 uploadOverdue === "yellow" &&
                                   "border-[3px] border-double border-amber-500",
                                 !uploadOverdue &&
-                                  Number(item.unreadCount || 0) > 0 &&
+                                  (unreadCount > 0 || reviewHighlight) &&
                                   "border-[3px] border-double border-red-600",
                               )}
                               style={chipStyle}
@@ -1530,7 +1541,9 @@ export function PracticeRecentTransfersCalendar({
                                         }`
                                       : unreadCount > 0
                                         ? `${item.line} · 안읽음 ${unreadLabel}`
-                                        : item.line)
+                                        : reviewHighlight
+                                          ? `${item.line} · 미확인`
+                                          : item.line)
                                 }
                                 onClick={(e) => {
                                   e.stopPropagation();

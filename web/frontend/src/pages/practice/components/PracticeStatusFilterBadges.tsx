@@ -1,14 +1,16 @@
 /**
  * 치과 전체보기·기공의뢰수신 공통 — 상단 상태 뱃지 행.
- * 숫자=해당 상태 건수, 빨간 점=실제 채팅/미확인 unread.
- * 클릭=해당 상태 의뢰를 하나씩 연다(안읽음 우선).
- * 2026-09-10: 표시 on/off·「기본」리셋 제거. 가짜「미확인 큐」unread 제거.
+ * 숫자=확인할 건수(상세 열면 감소), 빨간 점=실제 채팅/미확인 unread.
+ * 클릭=해당 상태 의뢰를 하나씩 연다(안읽음·미확인 우선).
+ * 캘린더·목록 칩의 빨간 unread는 실제 채팅 unread만(빈 채팅에 가짜 1 없음).
+ * 2026-09-10: 표시 on/off·「기본」리셋 제거.
  * 2026-09-03: trailing — 어벗츠 생산중 등. 정책 안내는 사이드바.
  * 2026-08-27: 발송 뒤 리메이크·미확인 간격. 미확인 전용 뱃지용 nested unread 숨김.
  *
  * related files:
  * - web/frontend/src/pages/practice/components/PracticeRecentTransfersAllModal.tsx
  * - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
+ * - web/frontend/src/shared/practice/practiceStatusBadgeReviewQueue.ts
  * - web/frontend/src/pages/practice/components/PracticeRecentTransfersCalendar.tsx
  */
 import type { ReactNode } from "react";
@@ -83,7 +85,7 @@ export function PracticeStatusFilterBadges({
           ? "확인할 의뢰 없음"
           : unread > 0
             ? `안읽음 ${unread}건 찾아가기`
-            : `${item.label} ${countLabel} 찾아가기`;
+            : `${item.label} ${countLabel} 찾아가기(열면 감소)`;
         const tooltipBody = item.tooltip
           ? `${actionHint}. ${item.tooltip}`
           : actionHint;

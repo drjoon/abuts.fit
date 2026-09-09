@@ -43,7 +43,7 @@
  * - 2026-09-08: 캘린더 칩 → preferredDockSide(보이는 열 좌/우)로 상세 패널 도킹.
  * - 2026-09-08: 데스크톱 캘린더/목록(일정) 보기 — 목록은 커서 월 전체 조회.
  * - 2026-09-09: 상태 뱃지 unread 카운터 클릭 시 안읽음 건 순회(표시 토글은 카운터 없을 때만).
- * - 2026-09-10: 상태 표시 on/off·가짜 미확인 큐 제거. 뱃지=상태 총건수+실제 채팅 unread.
+ * - 2026-09-10: 상태 표시 on/off 제거. 헤더=확인 큐(열면 감소), 칩=실제 채팅 unread만.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronRight, Search, Trash2, X } from "lucide-react";
@@ -86,6 +86,12 @@ import {
   buildPracticeTransferCalendarApiQuery,
 } from "@/shared/practice/labReceiveCalendarYmdRange";
 import { useAuthStore } from "@/store/useAuthStore";
+import {
+  PRACTICE_STATUS_BADGE_CLEARED_EVENT,
+  isPracticeStatusBadgeQueueTransfer,
+  readPracticeStatusBadgeClearedIds,
+  type PracticeStatusBadgeClearedDetail,
+} from "@/shared/practice/practiceStatusBadgeReviewQueue";
 import {
   type PracticeRecentTransferItem,
   type PracticeRecentRequestItem,
@@ -218,10 +224,16 @@ export function PracticeRecentTransfersAllModal({
   const setStoredHiddenWeekdays = useAuthStore(
     (s) => s.setLabReceiveCalendarHiddenWeekdays,
   );
+  const badgeScopeKey = useAuthStore((s) =>
+    String(s.user?.id || (s.user as { _id?: string } | null | undefined)?._id || "").trim(),
+  );
   const [search, setSearch] = useState(() =>
     String(initialSearch || "").trim()
       ? String(initialSearch || "")
       : readStoredRecentTransfersAllSearch(""),
+  );
+  const [badgeClearedIds, setBadgeClearedIds] = useState<Set<string>>(
+    () => readPracticeStatusBadgeClearedIds(badgeScopeKey),
   );
   const [dateKey, setDateKey] = useState<PracticeCalendarDateKey>(() =>
     normalizeLabReceiveCalendarDateKey(storedCalendarDateKey),
@@ -249,6 +261,29 @@ export function PracticeRecentTransfersAllModal({
       ),
     [cursorYmd, viewMode],
   );
+
+  useEffect(() => {
+    setBadgeClearedIds(readPracticeStatusBadgeClearedIds(badgeScopeKey));
+  }, [badgeScopeKey]);
+
+  useEffect(() => {
+    const onCleared = (evt: Event) => {
+      const detail =
+        evt instanceof CustomEvent && evt.detail && typeof evt.detail === "object"
+          ? (evt.detail as PracticeStatusBadgeClearedDetail)
+          : null;
+      if (!detail) return;
+      if (String(detail.scopeKey || "").trim() !== badgeScopeKey) {
+        setBadgeClearedIds(readPracticeStatusBadgeClearedIds(badgeScopeKey));
+        return;
+      }
+      setBadgeClearedIds(new Set(detail.clearedIds || []));
+    };
+    window.addEventListener(PRACTICE_STATUS_BADGE_CLEARED_EVENT, onCleared);
+    return () => {
+      window.removeEventListener(PRACTICE_STATUS_BADGE_CLEARED_EVENT, onCleared);
+    };
+  }, [badgeScopeKey]);
 
   const handleViewModeChange = useCallback(
     (mode: LabReceiveCalendarViewMode) => {
@@ -487,9 +522,19 @@ export function PracticeRecentTransfersAllModal({
     [groupedTransfers],
   );
 
+  // 헤더 숫자=아직 안 연(또는 채팅 안읽음) 확인 큐.
+  // 캘린더·목록: 확인 큐=빨간 테두리, 숫자 배지=실제 채팅 unread만.
+  const badgeQueueTransfers = useMemo(
+    () =>
+      visibleGroupedTransfers.filter((transfer) =>
+        isPracticeStatusBadgeQueueTransfer(transfer, badgeClearedIds),
+      ),
+    [badgeClearedIds, visibleGroupedTransfers],
+  );
+
   const statusCounts = useMemo(
-    () => computeGroupedStatusCounts(visibleGroupedTransfers),
-    [visibleGroupedTransfers],
+    () => computeGroupedStatusCounts(badgeQueueTransfers),
+    [badgeQueueTransfers],
   );
 
   const statusUnreadCounts = useMemo(
@@ -521,6 +566,7 @@ export function PracticeRecentTransfersAllModal({
           : transfer.orderDate
             ? [transfer.orderDate]
             : [];
+      const chatUnread = Math.max(0, Number(transfer.unreadCount || 0));
       return {
         id: `${transfer.id}:${transfer.transferId}`,
         orderDate: transfer.orderDate,
@@ -537,13 +583,16 @@ export function PracticeRecentTransfersAllModal({
         abutmentUploadOverdue: null,
         sortLabel: lab,
         line: [lab, patientLine].filter(Boolean).join(" / "),
-        // 실제 채팅 안읽음만 표시(메시지 없는 건 unread 아님).
-        unreadCount: Math.max(0, Number(transfer.unreadCount || 0)),
+        unreadCount: chatUnread,
+        reviewHighlight: isPracticeStatusBadgeQueueTransfer(
+          transfer,
+          badgeClearedIds,
+        ),
         canDelete: canDeletePracticeTransferByStatus(transfer.status),
       };
     });
     return expandPracticeCalendarChipsByArrivalDates(base, dateKey);
-  }, [dateKey, filteredTransfers]);
+  }, [badgeClearedIds, dateKey, filteredTransfers]);
 
   const calendarItemById = useMemo(() => {
     const map = new Map<string, (typeof filteredTransfers)[number]>();
@@ -642,7 +691,7 @@ export function PracticeRecentTransfersAllModal({
     (key: string) => {
       const filterKey = key as PracticeRecentStatusFilterKey;
       const queue = listBadgeNavigateTransfersForStatusFilter(
-        visibleGroupedTransfers,
+        badgeQueueTransfers,
         filterKey,
         dateKey,
       );
@@ -660,13 +709,17 @@ export function PracticeRecentTransfersAllModal({
       if (!transfer) return;
       unreadNavigateLastIdRef.current[filterKey] = transferIdOf(transfer);
       focusCalendarTransfer(transfer);
-      onSelectTransfer(transfer);
+      onSelectTransfer(
+        transfer,
+        viewMode === "list" ? { preferredDockSide: "right" } : undefined,
+      );
     },
     [
+      badgeQueueTransfers,
       dateKey,
       focusCalendarTransfer,
       onSelectTransfer,
-      visibleGroupedTransfers,
+      viewMode,
     ],
   );
 
@@ -827,6 +880,10 @@ export function PracticeRecentTransfersAllModal({
                   });
                   const canDelete = canDeletePracticeTransferByStatus(transfer.status);
                   const unread = Math.max(0, Number(transfer.unreadCount || 0));
+                  const reviewHighlight = isPracticeStatusBadgeQueueTransfer(
+                    transfer,
+                    badgeClearedIds,
+                  );
                   const arrival = String(transfer.arrivalDate || "").trim();
                   const deliveryLabel = getPracticeAbutmentDeliveryLabel({
                     hasCustomAbutment: Boolean(transfer.hasCustomAbutment),
@@ -838,7 +895,12 @@ export function PracticeRecentTransfersAllModal({
                       key={`${transfer.id}:${transfer.transferId}`}
                       role="button"
                       tabIndex={0}
-                      className="group w-full cursor-pointer rounded-2xl border border-slate-200/80 bg-white p-3.5 text-left shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-[transform,box-shadow,border-color] active:scale-[0.985] active:bg-slate-50/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className={cn(
+                        "group w-full cursor-pointer rounded-2xl border bg-white p-3.5 text-left shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-[transform,box-shadow,border-color] active:scale-[0.985] active:bg-slate-50/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                        unread > 0 || reviewHighlight
+                          ? "border-red-500 ring-1 ring-red-500/40"
+                          : "border-slate-200/80",
+                      )}
                       onClick={() => onSelectTransfer(transfer)}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {
@@ -935,10 +997,12 @@ export function PracticeRecentTransfersAllModal({
                   if (transfer) {
                     onSelectTransfer(transfer, {
                       preferredDockSide:
-                        practiceTransferPanelDockSideForVisibleColumn(
-                          ctx.visibleColumnIndex,
-                          ctx.visibleColumnCount,
-                        ),
+                        viewMode === "list"
+                          ? "right"
+                          : practiceTransferPanelDockSideForVisibleColumn(
+                              ctx.visibleColumnIndex,
+                              ctx.visibleColumnCount,
+                            ),
                     });
                   }
                 }}

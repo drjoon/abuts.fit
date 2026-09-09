@@ -205,6 +205,13 @@ import { useIsMobile } from "@/shared/hooks/use-mobile";
 import { apiFetch, request } from "@/shared/api/apiClient";
 import { useChatMessages } from "@/shared/hooks/useChatMessages";
 import { useChatRooms, requestChatRoomsClearUnread, type ChatRoom } from "@/shared/hooks/useChatRooms";
+import {
+  PRACTICE_STATUS_BADGE_CLEARED_EVENT,
+  isPracticeStatusBadgeQueueTransfer,
+  markPracticeStatusBadgeTransfersCleared,
+  readPracticeStatusBadgeClearedIds,
+  type PracticeStatusBadgeClearedDetail,
+} from "@/shared/practice/practiceStatusBadgeReviewQueue";
 import { anonymizeAutoMatchChatSenderName } from "@/shared/practice/autoMatchIdentity";
 import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
 import { useFilePreUpload, toTempUploadFileKey } from "@/shared/hooks/useFilePreUpload";
@@ -704,6 +711,10 @@ export function RequestorPracticeReceivePage({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
+  const badgeScopeKey = String(user?._id || user?.id || "").trim();
+  const [badgeClearedIds, setBadgeClearedIds] = useState<Set<string>>(
+    () => readPracticeStatusBadgeClearedIds(badgeScopeKey),
+  );
   const [dateKey, setDateKey] = useState<PracticeCalendarDateKey>(() =>
     normalizeLabReceiveCalendarDateKey(storedCalendarDateKey),
   );
@@ -735,6 +746,29 @@ export function RequestorPracticeReceivePage({
     },
     [],
   );
+
+  useEffect(() => {
+    setBadgeClearedIds(readPracticeStatusBadgeClearedIds(badgeScopeKey));
+  }, [badgeScopeKey]);
+
+  useEffect(() => {
+    const onCleared = (evt: Event) => {
+      const detail =
+        evt instanceof CustomEvent && evt.detail && typeof evt.detail === "object"
+          ? (evt.detail as PracticeStatusBadgeClearedDetail)
+          : null;
+      if (!detail) return;
+      if (String(detail.scopeKey || "").trim() !== badgeScopeKey) {
+        setBadgeClearedIds(readPracticeStatusBadgeClearedIds(badgeScopeKey));
+        return;
+      }
+      setBadgeClearedIds(new Set(detail.clearedIds || []));
+    };
+    window.addEventListener(PRACTICE_STATUS_BADGE_CLEARED_EVENT, onCleared);
+    return () => {
+      window.removeEventListener(PRACTICE_STATUS_BADGE_CLEARED_EVENT, onCleared);
+    };
+  }, [badgeScopeKey]);
 
   useEffect(() => {
     if (
@@ -2072,29 +2106,39 @@ export function RequestorPracticeReceivePage({
   );
 
   const statusCounts = useMemo(() => {
-    const asItems = baseFilteredTransfers.map(
-      (
-        transfer,
-      ): Pick<
-        PracticeRecentTransferItem,
-        | "status"
-        | "designFileCount"
-        | "designFiles"
-        | "designReadyAt"
-        | "unreadCount"
-        | "transferId"
-      > => ({
-        status: getTransferDisplayStatus(transfer),
-        designFileCount: transfer.production?.designFileCount,
-        designFiles: transfer.production
-          ?.designFiles as PracticeRecentTransferItem["designFiles"],
-        designReadyAt: transfer.production?.designReadyAt,
-        unreadCount: 0,
-        transferId: transfer.transferId || transfer._id,
-      }),
-    );
+    const asItems = baseFilteredTransfers
+      .filter((transfer) =>
+        isPracticeStatusBadgeQueueTransfer(
+          {
+            transferId: transfer.transferId || transfer._id,
+            unreadCount: transferUnreadBadgeCount(transfer),
+          },
+          badgeClearedIds,
+        ),
+      )
+      .map(
+        (
+          transfer,
+        ): Pick<
+          PracticeRecentTransferItem,
+          | "status"
+          | "designFileCount"
+          | "designFiles"
+          | "designReadyAt"
+          | "unreadCount"
+          | "transferId"
+        > => ({
+          status: getTransferDisplayStatus(transfer),
+          designFileCount: transfer.production?.designFileCount,
+          designFiles: transfer.production
+            ?.designFiles as PracticeRecentTransferItem["designFiles"],
+          designReadyAt: transfer.production?.designReadyAt,
+          unreadCount: 0,
+          transferId: transfer.transferId || transfer._id,
+        }),
+      );
     return computeGroupedStatusCounts(asItems as PracticeRecentTransferItem[]);
-  }, [baseFilteredTransfers]);
+  }, [badgeClearedIds, baseFilteredTransfers, transferUnreadBadgeCount]);
 
   const statusUnreadCounts = useMemo(() => {
     const asItems = baseFilteredTransfers.map(
@@ -2190,10 +2234,18 @@ export function RequestorPracticeReceivePage({
         sortLabel: clinic,
         line: [clinic, patientLine, surchargeLabel].filter(Boolean).join(" / "),
         unreadCount: transferUnreadBadgeCount(transfer),
+        reviewHighlight: isPracticeStatusBadgeQueueTransfer(
+          {
+            transferId: transfer.transferId || transfer._id,
+            unreadCount: transferUnreadBadgeCount(transfer),
+          },
+          badgeClearedIds,
+        ),
       };
     });
     return expandPracticeCalendarChipsByArrivalDates(base, calendarDateKey);
   }, [
+    badgeClearedIds,
     calendarDateKey,
     implantCatalog,
     sortedFilteredTransfers,
@@ -5313,9 +5365,10 @@ export function RequestorPracticeReceivePage({
       chatUploads.clear();
       setActiveChatRoom(null);
       setChatMessages([]);
-      // 채팅 unread·미확인 의뢰 — 열자마자 카운터 감소.
+      // 헤더 확인 큐·채팅 unread·미확인 의뢰 — 열자마자 카운터 감소.
       const openedTransferId = String(transfer.transferId || "").trim();
       if (openedTransferId) {
+        markPracticeStatusBadgeTransfersCleared(badgeScopeKey, [openedTransferId]);
         if (!transfer.isRead) {
           setTransfers((prev) =>
             prev.map((row) =>
@@ -5342,6 +5395,7 @@ export function RequestorPracticeReceivePage({
       await resolveTransferChatRoom(transfer, resolveSeq);
     },
     [
+      badgeScopeKey,
       chatUploads,
       clearUnreadForTransferIds,
       emitUnreadBadgeRefresh,
@@ -5604,7 +5658,9 @@ export function RequestorPracticeReceivePage({
         return;
       }
       void openTransferDialog(transfer, {
-        preferredDockSide: options?.preferredDockSide ?? null,
+        ...(options && "preferredDockSide" in options
+          ? { preferredDockSide: options.preferredDockSide ?? null }
+          : {}),
       });
     },
     [guideTourLabCalendarStep, openTransferDialog, platformGuideTour],
@@ -5615,17 +5671,27 @@ export function RequestorPracticeReceivePage({
   const navigateNextUnreadForStatus = useCallback(
     (key: string) => {
       const filterKey = key as LabReceiveStatusFilterKey;
-      const withMeta = baseFilteredTransfers.map((transfer) => ({
-        transfer,
-        status: getTransferDisplayStatus(transfer),
-        designFileCount: transfer.production?.designFileCount,
-        designFiles: transfer.production?.designFiles,
-        designReadyAt: transfer.production?.designReadyAt,
-        unreadCount: transferUnreadBadgeCount(transfer),
-        orderDate: transfer.orderDate,
-        arrivalDate: transfer.arrivalDate,
-        createdAt: transfer.createdAt,
-      }));
+      const withMeta = baseFilteredTransfers
+        .filter((transfer) =>
+          isPracticeStatusBadgeQueueTransfer(
+            {
+              transferId: transfer.transferId || transfer._id,
+              unreadCount: transferUnreadBadgeCount(transfer),
+            },
+            badgeClearedIds,
+          ),
+        )
+        .map((transfer) => ({
+          transfer,
+          status: getTransferDisplayStatus(transfer),
+          designFileCount: transfer.production?.designFileCount,
+          designFiles: transfer.production?.designFiles,
+          designReadyAt: transfer.production?.designReadyAt,
+          unreadCount: transferUnreadBadgeCount(transfer),
+          orderDate: transfer.orderDate,
+          arrivalDate: transfer.arrivalDate,
+          createdAt: transfer.createdAt,
+        }));
       const queue = listBadgeNavigateTransfersForStatusFilter(
         withMeta,
         filterKey,
@@ -5647,15 +5713,20 @@ export function RequestorPracticeReceivePage({
       if (!transfer) return;
       unreadNavigateLastIdRef.current[filterKey] = transferIdOf(candidates[0]!);
       if (!isMobile) focusCalendarTransfer(transfer);
-      selectTransferFromCalendar(transfer);
+      selectTransferFromCalendar(
+        transfer,
+        viewMode === "list" ? { preferredDockSide: "right" } : undefined,
+      );
     },
     [
+      badgeClearedIds,
       baseFilteredTransfers,
       calendarDateKey,
       focusCalendarTransfer,
       isMobile,
       selectTransferFromCalendar,
       transferUnreadBadgeCount,
+      viewMode,
     ],
   );
 
@@ -5897,10 +5968,13 @@ export function RequestorPracticeReceivePage({
                 const transfer = calendarTransferById.get(item.id);
                 if (transfer) {
                   selectTransferFromCalendar(transfer, {
-                    preferredDockSide: practiceTransferPanelDockSideForVisibleColumn(
-                      ctx.visibleColumnIndex,
-                      ctx.visibleColumnCount,
-                    ),
+                    preferredDockSide:
+                      viewMode === "list"
+                        ? "right"
+                        : practiceTransferPanelDockSideForVisibleColumn(
+                            ctx.visibleColumnIndex,
+                            ctx.visibleColumnCount,
+                          ),
                   });
                 }
               }}
