@@ -28,6 +28,8 @@
  * - 2026-08-21: 상단 필터 뱃지 ON=진한 상태색 / OFF=흐린 무채색(표시 on/off 대비).
  * - 2026-09-10: 상단 뱃지 표시 on/off 제거 — active 톤만 사용(unread 순회).
  * - 2026-09-10: focusItemId/focusEpoch — 뱃지 순회 시 해당 칩·목록 행으로 스크롤.
+ * - 2026-09-10: 목록 — 날짜 아래 의뢰 배치·가로폭 확보. dot 옆 휴지통·커스텀어벗 아이콘.
+ * - 2026-09-10: 목록 — 상세 패널 열림 시 오른쪽 예약 폭으로 모달과 겹침 방지.
  * - 2026-09-05: guideTourItemId — 특정 칩에 data-guide-tour(수신 투어 오늘 의뢰).
  * - 2026-09-05: 완료=amber·어벗=emerald — 수락(sky)과 청록 계열이 겹치지 않게.
  * - 2026-09-02: 완료 뱃지=finished. 어벗=completed(녹색). 칩도 동일 분리.
@@ -45,6 +47,7 @@ import {
   CalendarDays,
   ChevronLeft,
   ChevronRight,
+  Hexagon,
   List,
   Search,
   Trash2,
@@ -119,7 +122,15 @@ export type PracticeCalendarChipItem = {
   abutmentUploadOverdue?: "yellow" | "red" | "deadline" | null;
   /** 치과 발신: 수락 전·작업취소·기공소 거절(거부) 건 휴지통 이동 */
   canDelete?: boolean;
+  /** 커스텀 어벗 포함 — 목록·칩에 어벗 아이콘 */
+  hasCustomAbutment?: boolean;
 };
+
+/**
+ * 오른쪽 도킹 상세 패널(MIN_W 400 + margin)과 목록이 겹치지 않게 예약하는 폭.
+ * usePracticeTransferPanelLayout dock 폭과 맞춤.
+ */
+export const PRACTICE_TRANSFER_LIST_DETAIL_RESERVE_CLASS = "pr-[26.5rem]";
 
 /** 누적 주문일·도착일 → 캘린더 칩 다중 배치(같은 건·크레딧 중복 없음). */
 export function expandPracticeCalendarChipsByArrivalDates(
@@ -175,6 +186,7 @@ export function expandPracticeCalendarChipsByArrivalDates(
         canDelete: isPrior ? false : item.canDelete,
         unreadCount: item.unreadCount,
         reviewHighlight: item.reviewHighlight,
+        hasCustomAbutment: item.hasCustomAbutment,
       });
     });
   }
@@ -380,6 +392,11 @@ type PracticeRecentTransfersCalendarProps = {
   focusItemYmd?: string | null;
   /** focusItemId 변경 시마다 증가해 같은 id 재스크롤 */
   focusEpoch?: number;
+  /**
+   * 의뢰 상세 플로팅 패널이 열려 있을 때 — 목록 오른쪽에 도킹 폭을 비워 겹침 방지.
+   * 치과·기공소 공통.
+   */
+  detailPanelOpen?: boolean;
 };
 
 const agendaDateLabel = (ymd: string) => {
@@ -532,6 +549,7 @@ export function PracticeRecentTransfersCalendar({
   focusItemId = null,
   focusItemYmd = null,
   focusEpoch = 0,
+  detailPanelOpen = false,
 }: PracticeRecentTransfersCalendarProps) {
   const isGuideTourChip = (itemId: string) => {
     const want = String(guideTourItemId || "").trim();
@@ -1185,7 +1203,12 @@ export function PracticeRecentTransfersCalendar({
                 </p>
               </div>
             ) : (
-              <div className="max-w-xl divide-y divide-slate-100">
+              <div
+                className={cn(
+                  "divide-y divide-slate-100",
+                  detailPanelOpen && PRACTICE_TRANSFER_LIST_DETAIL_RESERVE_CLASS,
+                )}
+              >
                 {agendaDays.map(({ ymd, items: dayItems }) => {
                   const isToday = ymd === todayYmd;
                   const { monthNum, dayNum, text: dateText } =
@@ -1197,84 +1220,77 @@ export function PracticeRecentTransfersCalendar({
                         if (node) dayElsRef.current.set(ymd, node);
                         else dayElsRef.current.delete(ymd);
                       }}
-                      className="relative"
+                      className="relative px-3 py-2.5"
                     >
-                      {dayItems.map((item, itemIdx) => {
-                        const showDelete = Boolean(
-                          item.canDelete && onDeleteItem,
-                        );
-                        const unreadCount = Math.max(
-                          0,
-                          Number(item.unreadCount || 0),
-                        );
-                        const reviewHighlight = Boolean(item.reviewHighlight);
-                        const uploadOverdue =
-                          abutmentUploadOverdueViewer === "practice"
-                            ? null
-                            : item.abutmentUploadOverdue;
-                        const unreadLabel =
-                          unreadCount > 99 ? "99+" : String(unreadCount);
-                        const hasLinkedChain =
-                          (Array.isArray(item.linkedOrderDates) &&
-                            item.linkedOrderDates.length > 1) ||
-                          (Array.isArray(item.linkedArrivalDates) &&
-                            item.linkedArrivalDates.length > 1);
-                        const linkPrefix = item.isPriorArrival
-                          ? "↗ "
-                          : hasLinkedChain
-                            ? "↙ "
+                      <div className="mb-1.5 flex min-h-7 items-center">
+                        <span
+                          className={cn(
+                            "text-[12px] leading-snug tabular-nums",
+                            isToday
+                              ? "font-semibold text-primary-strong"
+                              : "text-slate-600",
+                          )}
+                          title={dateText}
+                        >
+                          {isToday ? (
+                            <span className="inline-flex flex-wrap items-center gap-x-1 gap-y-0.5">
+                              <span>{monthNum}월</span>
+                              <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-sm text-primary-foreground">
+                                {dayNum}
+                              </span>
+                              <span>
+                                일 ({weekdayLabel(kstYmdWeekday(ymd) ?? 0)})
+                              </span>
+                            </span>
+                          ) : (
+                            dateText
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex flex-col gap-1 pl-5">
+                        {dayItems.map((item) => {
+                          const showDelete = Boolean(
+                            item.canDelete && onDeleteItem,
+                          );
+                          const unreadCount = Math.max(
+                            0,
+                            Number(item.unreadCount || 0),
+                          );
+                          const reviewHighlight = Boolean(item.reviewHighlight);
+                          const hasCustomAbutment = Boolean(
+                            item.hasCustomAbutment,
+                          );
+                          const uploadOverdue =
+                            abutmentUploadOverdueViewer === "practice"
+                              ? null
+                              : item.abutmentUploadOverdue;
+                          const unreadLabel =
+                            unreadCount > 99 ? "99+" : String(unreadCount);
+                          const hasLinkedChain =
+                            (Array.isArray(item.linkedOrderDates) &&
+                              item.linkedOrderDates.length > 1) ||
+                            (Array.isArray(item.linkedArrivalDates) &&
+                              item.linkedArrivalDates.length > 1);
+                          const linkPrefix = item.isPriorArrival
+                            ? "↗ "
+                            : hasLinkedChain
+                              ? "↙ "
+                              : "";
+                          const overdueTooltip = uploadOverdue
+                            ? getPracticeAbutmentUploadOverdueTooltip(
+                                uploadOverdue,
+                                abutmentUploadOverdueViewer,
+                              )
                             : "";
-                        const overdueTooltip = uploadOverdue
-                          ? getPracticeAbutmentUploadOverdueTooltip(
-                              uploadOverdue,
-                              abutmentUploadOverdueViewer,
-                            )
-                          : "";
-                        const guideTourChip = isGuideTourChip(item.id);
-                        const dotColor = calendarGroupDotColor(item.colorKey);
-                        return (
-                          <div
-                            key={`${item.id}:${ymd}`}
-                            data-practice-cal-item={item.id}
-                            className={cn(
-                              "grid grid-cols-[7.75rem_minmax(0,1fr)] items-start gap-2 px-3 py-2.5 hover:bg-slate-50/80",
-                              item.isPriorArrival && "opacity-60",
-                            )}
-                            {...(guideTourChip && guideTourItemTarget
-                              ? { "data-guide-tour": guideTourItemTarget }
-                              : {})}
-                          >
-                            <div className="flex min-h-7 items-center pt-0.5">
-                              {itemIdx === 0 ? (
-                                <span
-                                  className={cn(
-                                    "text-[12px] leading-snug tabular-nums",
-                                    isToday
-                                      ? "font-semibold text-primary-strong"
-                                      : "text-slate-600",
-                                  )}
-                                  title={dateText}
-                                >
-                                  {isToday ? (
-                                    <span className="inline-flex flex-wrap items-center gap-x-1 gap-y-0.5">
-                                      <span>{monthNum}월</span>
-                                      <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-sm text-primary-foreground">
-                                        {dayNum}
-                                      </span>
-                                      <span>
-                                        일 (
-                                        {weekdayLabel(kstYmdWeekday(ymd) ?? 0)})
-                                      </span>
-                                    </span>
-                                  ) : (
-                                    dateText
-                                  )}
-                                </span>
-                              ) : null}
-                            </div>
+                          const guideTourChip = isGuideTourChip(item.id);
+                          const dotColor = calendarGroupDotColor(item.colorKey);
+                          return (
                             <div
+                              key={`${item.id}:${ymd}`}
+                              data-practice-cal-item={item.id}
                               className={cn(
-                                "flex min-w-0 items-start gap-2 rounded-md px-1.5 py-0.5",
+                                "flex min-w-0 max-w-full items-start gap-1.5 rounded-md px-1.5 py-1 hover:bg-slate-50/80",
+                                item.isPriorArrival && "opacity-60",
                                 uploadOverdue === "deadline" &&
                                   "ring-2 ring-red-400/70",
                                 (uploadOverdue === "red" ||
@@ -1284,12 +1300,35 @@ export function PracticeRecentTransfersCalendar({
                                 uploadOverdue === "yellow" &&
                                   "ring-1 ring-amber-500/80",
                               )}
+                              {...(guideTourChip && guideTourItemTarget
+                                ? { "data-guide-tour": guideTourItemTarget }
+                                : {})}
                             >
                               <span
                                 className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-black/5"
                                 style={{ backgroundColor: dotColor }}
                                 aria-hidden
                               />
+                              {showDelete ? (
+                                <button
+                                  type="button"
+                                  className="mt-0.5 shrink-0 rounded p-0.5 text-slate-400 hover:bg-black/5 hover:text-destructive"
+                                  aria-label="의뢰 취소"
+                                  title="의뢰 취소(휴지통)"
+                                  onClick={() => onDeleteItem?.(item)}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              ) : null}
+                              {hasCustomAbutment ? (
+                                <span
+                                  className="mt-0.5 inline-flex shrink-0 items-center justify-center rounded p-0.5 text-emerald-700"
+                                  title="커스텀 어벗 포함"
+                                  aria-label="커스텀 어벗 포함"
+                                >
+                                  <Hexagon className="h-3.5 w-3.5" aria-hidden />
+                                </span>
+                              ) : null}
                               <button
                                 type="button"
                                 className="min-w-0 flex-1 text-left text-[13px] leading-snug text-slate-900"
@@ -1330,21 +1369,10 @@ export function PracticeRecentTransfersCalendar({
                                   {unreadLabel}
                                 </span>
                               ) : null}
-                              {showDelete ? (
-                                <button
-                                  type="button"
-                                  className="mt-0.5 shrink-0 rounded p-0.5 text-slate-400 hover:bg-black/5 hover:text-destructive"
-                                  aria-label="의뢰 취소"
-                                  title="의뢰 취소(휴지통)"
-                                  onClick={() => onDeleteItem?.(item)}
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </button>
-                              ) : null}
                             </div>
-                          </div>
-                        );
-                      })}
+                          );
+                        })}
+                      </div>
                       {isToday ? (
                         <div
                           className="pointer-events-none absolute inset-x-3 bottom-0 flex items-center"
@@ -1522,6 +1550,29 @@ export function PracticeRecentTransfersCalendar({
                               onClick={(e) => e.stopPropagation()}
                               onKeyDown={(e) => e.stopPropagation()}
                             >
+                              {showDelete ? (
+                                <button
+                                  type="button"
+                                  className="mt-0.5 shrink-0 rounded p-0.5 text-current/70 hover:bg-black/10 hover:text-destructive"
+                                  aria-label="의뢰 취소"
+                                  title="의뢰 취소(휴지통)"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onDeleteItem?.(item);
+                                  }}
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </button>
+                              ) : null}
+                              {item.hasCustomAbutment ? (
+                                <span
+                                  className="mt-0.5 inline-flex shrink-0 items-center justify-center rounded p-0.5 text-emerald-800/80"
+                                  title="커스텀 어벗 포함"
+                                  aria-label="커스텀 어벗 포함"
+                                >
+                                  <Hexagon className="h-3 w-3" aria-hidden />
+                                </span>
+                              ) : null}
                               <button
                                 type="button"
                                 className="flex min-w-0 flex-1 items-start gap-0.5 px-1 py-0.5 text-left text-[10px] leading-snug"
@@ -1568,20 +1619,6 @@ export function PracticeRecentTransfersCalendar({
                                   </span>
                                 ) : null}
                               </button>
-                              {showDelete ? (
-                                <button
-                                  type="button"
-                                  className="mt-0.5 shrink-0 rounded p-0.5 text-current/70 hover:bg-black/10 hover:text-destructive"
-                                  aria-label="의뢰 취소"
-                                  title="의뢰 취소(휴지통)"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    onDeleteItem?.(item);
-                                  }}
-                                >
-                                  <Trash2 className="h-3 w-3" />
-                                </button>
-                              ) : null}
                             </div>
                           );
                         })}

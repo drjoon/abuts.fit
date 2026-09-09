@@ -589,6 +589,7 @@ export function PracticeRecentTransfersAllModal({
           badgeClearedIds,
         ),
         canDelete: canDeletePracticeTransferByStatus(transfer.status),
+        hasCustomAbutment: Boolean(transfer.hasCustomAbutment),
       };
     });
     return expandPracticeCalendarChipsByArrivalDates(base, dateKey);
@@ -1020,6 +1021,7 @@ export function PracticeRecentTransfersAllModal({
                 focusItemId={badgeFocusItemId}
                 focusItemYmd={badgeFocusItemYmd}
                 focusEpoch={badgeFocusEpoch}
+                detailPanelOpen={floatingDetailOpen}
                 abutmentUploadOverdueViewer="practice"
               />
             </>

@@ -2241,6 +2241,7 @@ export function RequestorPracticeReceivePage({
           },
           badgeClearedIds,
         ),
+        hasCustomAbutment: Boolean(transfer.hasCustomAbutment),
       };
     });
     return expandPracticeCalendarChipsByArrivalDates(base, calendarDateKey);
@@ -5987,6 +5988,7 @@ export function RequestorPracticeReceivePage({
               focusItemId={badgeFocusItemId}
               focusItemYmd={badgeFocusItemYmd}
               focusEpoch={badgeFocusEpoch}
+              detailPanelOpen={dialogOpen}
               guideTourTarget={null}
               guideTourItemTarget={
                 guideTourLabCalendarStep ? "lab_calendar_item" : null
