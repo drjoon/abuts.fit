@@ -4806,16 +4806,31 @@ export const PracticeTransferRequestIntakePanel = ({
                       {extraRequestLabPickerOpen ? (
                         <div className="border-t border-slate-100">
                           <div className="p-2">
-                            <Input
-                              value={extraRequestLabQuery}
-                              onChange={(e) => {
-                                const next = e.target.value;
-                                setExtraRequestLabQuery(next);
-                                setLabSearch(next);
-                              }}
-                              placeholder="기공소 검색…"
-                              className="h-9 rounded-lg text-sm"
-                            />
+                            <div className="relative">
+                              <Input
+                                value={extraRequestLabQuery}
+                                onChange={(e) => {
+                                  const next = e.target.value;
+                                  setExtraRequestLabQuery(next);
+                                  setLabSearch(next);
+                                }}
+                                placeholder="기공소 검색…"
+                                className="h-9 rounded-lg pr-8 text-sm"
+                              />
+                              {extraRequestLabQuery.trim() ? (
+                                <button
+                                  type="button"
+                                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                                  onClick={() => {
+                                    setExtraRequestLabQuery("");
+                                    setLabSearch("");
+                                  }}
+                                  aria-label="검색어 지우기"
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                </button>
+                              ) : null}
+                            </div>
                           </div>
                           <div className="max-h-44 overflow-y-auto px-1 pb-2">
                             {labSearching && filteredOptions.length === 0 ? (

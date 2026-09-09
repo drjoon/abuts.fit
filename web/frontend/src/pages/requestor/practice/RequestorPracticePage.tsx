@@ -162,7 +162,7 @@ import {
   useState,
   type MouseEvent,
 } from "react";
-import { ChevronRight, Repeat, Search } from "lucide-react";
+import { ChevronRight, Repeat, Search, X } from "lucide-react";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
 import { DesignSoftwareSettingsDialog } from "@/features/requestSettings/DesignSoftwareSettingsDialog";
@@ -5744,9 +5744,19 @@ export function RequestorPracticeReceivePage({
                 <Input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  className="h-9 w-full rounded-full border-slate-200 bg-slate-50 pl-9 text-center text-sm"
+                  className="h-9 w-full rounded-full border-slate-200 bg-slate-50 pl-9 pr-9 text-center text-sm"
                   placeholder="전송ID, 치과명, 환자명"
                 />
+                {search.trim() ? (
+                  <button
+                    type="button"
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    onClick={() => setSearch("")}
+                    aria-label="검색어 지우기"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                ) : null}
               </div>
               <p className="shrink-0 px-0.5 text-xs font-medium text-slate-500">
                 치과에서 수신한 의뢰

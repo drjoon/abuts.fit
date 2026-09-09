@@ -163,6 +163,7 @@ import {
   Store,
   Headphones,
   Menu,
+  X,
 } from "lucide-react";
 import { AbutsLogo } from "@/components/branding/AbutsLogo";
 import {
@@ -1990,8 +1991,18 @@ export const DashboardLayout = () => {
                               onChange={(e) =>
                                 setWorksheetSearch(e.target.value)
                               }
-                              className="pl-10 h-9 text-xs"
+                              className="pl-10 pr-8 h-9 text-xs"
                             />
+                            {worksheetSearch.trim() ? (
+                              <button
+                                type="button"
+                                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                                onClick={() => setWorksheetSearch("")}
+                                aria-label="검색어 지우기"
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </button>
+                            ) : null}
                           </div>
                         </div>
                       </div>

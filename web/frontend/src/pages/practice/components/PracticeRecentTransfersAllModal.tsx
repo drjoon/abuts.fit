@@ -754,9 +754,19 @@ export function PracticeRecentTransfersAllModal({
             <Input
               value={search}
               onChange={(e) => handleSearchChange(e.target.value)}
-              className="h-9 w-full rounded-full border-slate-200 bg-slate-50 pl-9 text-center text-sm"
+              className="h-9 w-full rounded-full border-slate-200 bg-slate-50 pl-9 pr-9 text-center text-sm"
               placeholder="기공소, 환자명"
             />
+            {search.trim() ? (
+              <button
+                type="button"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                onClick={() => handleSearchChange("")}
+                aria-label="검색어 지우기"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            ) : null}
           </div>
         </div>
       ) : (

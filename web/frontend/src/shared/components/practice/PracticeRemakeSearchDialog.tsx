@@ -7,7 +7,7 @@
  * - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
  */
 import { useEffect, useMemo, useState } from "react";
-import { CalendarDays, Loader2, Repeat, Search } from "lucide-react";
+import { CalendarDays, Loader2, Repeat, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Calendar } from "@/components/ui/calendar";
@@ -227,6 +227,15 @@ export function PracticeRemakeSearchDialog({
             />
             {searching ? (
               <Loader2 className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+            ) : patientQuery.trim() ? (
+              <button
+                type="button"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                onClick={() => setPatientQuery("")}
+                aria-label="검색어 지우기"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
             ) : null}
           </div>
 

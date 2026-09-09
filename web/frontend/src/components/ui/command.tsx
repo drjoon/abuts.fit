@@ -5,7 +5,7 @@
 import * as React from "react"
 import { type DialogProps } from "@radix-ui/react-dialog"
 import { Command as CommandPrimitive } from "cmdk"
-import { Search } from "lucide-react"
+import { Search, X } from "lucide-react"
 
 import { cn } from "@/shared/ui/cn"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
@@ -42,19 +42,34 @@ const CommandDialog = ({ children, ...props }: CommandDialogProps) => {
 const CommandInput = React.forwardRef<
   React.ElementRef<typeof CommandPrimitive.Input>,
   React.ComponentPropsWithoutRef<typeof CommandPrimitive.Input>
->(({ className, ...props }, ref) => (
-  <div className="flex items-center border-b px-3" cmdk-input-wrapper="">
-    <Search className="mr-2 h-4 w-4 shrink-0 opacity-50" />
-    <CommandPrimitive.Input
-      ref={ref}
-      className={cn(
-        "flex h-11 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50",
-        className
-      )}
-      {...props}
-    />
-  </div>
-))
+>(({ className, value, onValueChange, ...props }, ref) => {
+  const hasValue = String(value ?? "").trim().length > 0
+  return (
+    <div className="flex items-center border-b px-3" cmdk-input-wrapper="">
+      <Search className="mr-2 h-4 w-4 shrink-0 opacity-50" />
+      <CommandPrimitive.Input
+        ref={ref}
+        value={value}
+        onValueChange={onValueChange}
+        className={cn(
+          "flex h-11 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50",
+          className
+        )}
+        {...props}
+      />
+      {hasValue && onValueChange ? (
+        <button
+          type="button"
+          className="ml-1 shrink-0 text-muted-foreground hover:text-foreground"
+          onClick={() => onValueChange("")}
+          aria-label="검색어 지우기"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      ) : null}
+    </div>
+  )
+})
 
 CommandInput.displayName = CommandPrimitive.Input.displayName
 
