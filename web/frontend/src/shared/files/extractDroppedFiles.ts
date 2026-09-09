@@ -2,6 +2,7 @@
 // - web/frontend/src/features/requests/components/PageFileDropZone.tsx
 // - web/frontend/src/shared/components/practice/PracticeTransferFileDropTarget.tsx
 // - web/frontend/src/shared/components/practice/PracticeTransferFilePane.tsx
+// - web/frontend/src/features/chat/components/ChatComposer.tsx (extractClipboardFiles)
 
 type WebkitFileSystemEntry = {
   isFile: boolean;
@@ -30,6 +31,23 @@ export const dedupeFiles = (input: File[]) => {
     if (!map.has(key)) map.set(key, file);
   }
   return [...map.values()];
+};
+
+/** Ctrl/Cmd+V 클립보드에서 파일(스크린샷·복사 파일) 추출. 텍스트만이면 []. */
+export const extractClipboardFiles = (
+  clipboardData: DataTransfer | null | undefined,
+): File[] => {
+  if (!clipboardData) return [];
+
+  const fromItems: File[] = [];
+  for (const item of Array.from(clipboardData.items || [])) {
+    if (item.kind !== "file") continue;
+    const file = item.getAsFile();
+    if (file) fromItems.push(file);
+  }
+  if (fromItems.length) return dedupeFiles(fromItems);
+
+  return dedupeFiles(Array.from(clipboardData.files || []));
 };
 
 const readAllEntries = async (reader: {

@@ -12,6 +12,7 @@
 // - 2026-09-07: # 입력으로 의뢰건 불러오기·placeholder 안내.
 // - 2026-08-21: textarea flex-1 제거·루트 shrink-0 — 채팅 레이아웃에서 입력칸이 내역 높이를 잠식하지 않게.
 // - 2026-08-27: 모바일 사진찍기(capture) — 채팅에서 바로 촬영·업로드.
+// - 2026-09-09: Ctrl/Cmd+V 클립보드 파일·스크린샷 붙여넣기 → onPickFiles.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -39,6 +40,7 @@ import {
 import { useIsMobile } from "@/shared/hooks/use-mobile";
 import { useToast } from "@/shared/hooks/use-toast";
 import { normalizeOralPhotoFiles } from "@/shared/components/practice/PracticeTransferMobileOralPhotoIntake";
+import { extractClipboardFiles } from "@/shared/files/extractDroppedFiles";
 import { cn } from "@/shared/ui/cn";
 
 export type RequestPickItem = {
@@ -261,6 +263,24 @@ export const ChatComposer = (props: Props) => {
     })();
   };
 
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    if (!canPickFiles || controlsDisabled || !onPickFiles) return;
+    const files = extractClipboardFiles(e.clipboardData);
+    if (!files.length) return;
+
+    // 파일·스크린샷이 있으면 텍스트 삽입을 막고 첨부 큐로 보낸다.
+    e.preventDefault();
+
+    const images: File[] = [];
+    const others: File[] = [];
+    for (const file of files) {
+      if (String(file.type || "").startsWith("image/")) images.push(file);
+      else others.push(file);
+    }
+    if (others.length) onPickFiles(others);
+    if (images.length) handleCameraFiles(images);
+  };
+
   const iconBtnClass = cn(
     "shrink-0",
     isMobile ? "h-11 w-11 touch-manipulation" : "h-9 w-9",
@@ -359,6 +379,7 @@ export const ChatComposer = (props: Props) => {
         onClick={syncCursor}
         onKeyUp={syncCursor}
         onSelect={syncCursor}
+        onPaste={handlePaste}
         placeholder={resolvedPlaceholder}
         className={cn(
           "resize-none",
