@@ -226,7 +226,6 @@ import { cn } from "@/shared/ui/cn";
 import {
   LAB_RECEIVE_STATUS_BADGES,
   computeGroupedStatusCounts,
-  computeGroupedStatusUnreadCounts,
   listBadgeNavigateTransfersForStatusFilter,
   toStatusBadgeLabel,
   type PracticeRecentStatusFilterKey,
@@ -2146,22 +2145,6 @@ export function RequestorPracticeReceivePage({
       );
     return computeGroupedStatusCounts(asItems as PracticeRecentTransferItem[]);
   }, [badgeClearedIds, baseFilteredTransfers, transferUnreadBadgeCount]);
-
-  const statusUnreadCounts = useMemo(() => {
-    const asItems = baseFilteredTransfers.map(
-      (transfer): Pick<
-        PracticeRecentTransferItem,
-        "status" | "designFileCount" | "designFiles" | "designReadyAt" | "unreadCount"
-      > => ({
-        status: getTransferDisplayStatus(transfer),
-        designFileCount: transfer.production?.designFileCount,
-        designFiles: transfer.production?.designFiles as PracticeRecentTransferItem["designFiles"],
-        designReadyAt: transfer.production?.designReadyAt,
-        unreadCount: transferUnreadBadgeCount(transfer),
-      }),
-    );
-    return computeGroupedStatusUnreadCounts(asItems as PracticeRecentTransferItem[]);
-  }, [baseFilteredTransfers, transferUnreadBadgeCount]);
 
   const filteredTransfers = baseFilteredTransfers;
 
@@ -5675,10 +5658,9 @@ export function RequestorPracticeReceivePage({
       label: item.label,
       tone: resolvePracticeStatusFilterBadgeTone(item.filter),
       count: statusCounts[item.countKey],
-      unreadCount: statusUnreadCounts[item.countKey],
       tooltip: item.tooltip,
     }));
-  }, [statusCounts, statusUnreadCounts]);
+  }, [statusCounts]);
 
   const loadedUnreadNoticeTotal = useMemo(() => {
     return baseFilteredTransfers.reduce(
@@ -6085,7 +6067,7 @@ export function RequestorPracticeReceivePage({
               }}
               search={search}
               onSearchChange={setSearch}
-              searchPlaceholder="전송ID, 치과명, 환자명 검색"
+              searchPlaceholder="환자명, 치과명, 치아번호"
               hiddenWeekdays={calendarHiddenWeekdays}
               onHiddenWeekdaysChange={handleHiddenWeekdaysChange}
               alignEpoch={alignEpoch}

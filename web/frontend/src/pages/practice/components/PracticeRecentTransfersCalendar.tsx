@@ -26,6 +26,7 @@
  * - 2026-08-20: 치과 전체보기 칩도 상단 뱃지 상태색(그룹색 대신).
  * - 2026-08-20: 안읽음(수신 미확인·채팅) 빨간 배지를 칩에 표시.
  * - 2026-08-21: 상단 필터 뱃지 ON=진한 상태색 / OFF=흐린 무채색(표시 on/off 대비).
+ * - 2026-09-11: 목록·칩 빨간 숫자 — 채팅 unread 또는 확인 큐(미열람) 합산 표시.
  * - 2026-09-10: 상단 뱃지 표시 on/off 제거 — active 톤만 사용(unread 순회).
  * - 2026-09-10: focusItemId/focusEpoch — 뱃지 순회 시 해당 칩·목록 행으로 스크롤.
  * - 2026-09-10: 목록 — 날짜 아래 의뢰 배치·가로폭 확보. dot 옆 휴지통·커스텀어벗 아이콘.
@@ -111,11 +112,10 @@ export type PracticeCalendarChipItem = {
   linkedOrderDates?: string[];
   sortLabel: string;
   line: string;
-  /** 사이드바와 동일 합산(수신 미확인 + 채팅). 있으면 칩에 빨간 숫자 */
+  /** 사이드바·상단과 동일 확인 큐(수신 미확인 + 채팅). 있으면 칩에 빨간 숫자 */
   unreadCount?: number;
   /**
-   * 상단 헤더 확인 큐(아직 안 연 건) — 빨간 테두리만.
-   * 숫자 배지는 unreadCount(실제 채팅 안읽음)만 사용.
+   * 상단·목록 확인 큐 표시용. unreadCount가 있으면 그 숫자, 없으면 1.
    */
   reviewHighlight?: boolean;
   /** 수락 후 어벗 STL 미업로드 24h/48h 경고 */
@@ -538,7 +538,7 @@ export function PracticeRecentTransfersCalendar({
   onSelectFutureDay,
   search,
   onSearchChange,
-  searchPlaceholder = "기공소, 환자명, 전송ID 검색",
+  searchPlaceholder = "환자명, 기공소명, 치아번호",
   hiddenWeekdays,
   onHiddenWeekdaysChange,
   alignEpoch = 0,
@@ -1079,13 +1079,14 @@ export function PracticeRecentTransfersCalendar({
         ) : null}
         <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
           {onSearchChange ? (
-            <div className="relative w-44 shrink-0">
+            <div className="relative w-64 max-w-full shrink-0 sm:w-72">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={search ?? ""}
                 onChange={(e) => onSearchChange(e.target.value)}
-                className="h-9 w-full pl-9 pr-8"
+                className="h-9 w-full truncate pl-9 pr-8"
                 placeholder={searchPlaceholder}
+                title={searchPlaceholder}
               />
               {(search ?? "").trim() ? (
                 <button
@@ -1257,6 +1258,10 @@ export function PracticeRecentTransfersCalendar({
                             Number(item.unreadCount || 0),
                           );
                           const reviewHighlight = Boolean(item.reviewHighlight);
+                          const attentionCount = Math.max(
+                            unreadCount,
+                            reviewHighlight ? 1 : 0,
+                          );
                           const hasCustomAbutment = Boolean(
                             item.hasCustomAbutment,
                           );
@@ -1264,8 +1269,10 @@ export function PracticeRecentTransfersCalendar({
                             abutmentUploadOverdueViewer === "practice"
                               ? null
                               : item.abutmentUploadOverdue;
-                          const unreadLabel =
-                            unreadCount > 99 ? "99+" : String(unreadCount);
+                          const attentionLabel =
+                            attentionCount > 99
+                              ? "99+"
+                              : String(attentionCount);
                           const hasLinkedChain =
                             (Array.isArray(item.linkedOrderDates) &&
                               item.linkedOrderDates.length > 1) ||
@@ -1294,8 +1301,7 @@ export function PracticeRecentTransfersCalendar({
                                 uploadOverdue === "deadline" &&
                                   "ring-2 ring-red-400/70",
                                 (uploadOverdue === "red" ||
-                                  (!uploadOverdue &&
-                                    (unreadCount > 0 || reviewHighlight))) &&
+                                  (!uploadOverdue && attentionCount > 0)) &&
                                   "ring-1 ring-red-500/80",
                                 uploadOverdue === "yellow" &&
                                   "ring-1 ring-amber-500/80",
@@ -1348,27 +1354,27 @@ export function PracticeRecentTransfersCalendar({
                                             ? " (이전·보냄)"
                                             : " (최종·받음)"
                                         }`
-                                      : unreadCount > 0
-                                        ? `${item.line} · 안읽음 ${unreadLabel}`
-                                        : reviewHighlight
-                                          ? `${item.line} · 미확인`
-                                          : item.line)
+                                      : attentionCount > 0
+                                        ? `${item.line} · 확인 ${attentionLabel}`
+                                        : item.line)
                                 }
                                 onClick={() => selectListItem(item, ymd)}
                               >
-                                <span className="line-clamp-2 break-all">
-                                  {linkPrefix}
-                                  {item.line}
+                                <span className="inline-flex max-w-full items-start gap-1">
+                                  <span className="min-w-0 line-clamp-2 break-all">
+                                    {linkPrefix}
+                                    {item.line}
+                                  </span>
+                                  {attentionCount > 0 ? (
+                                    <span
+                                      className="mt-0.5 inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-white"
+                                      aria-label={`확인 ${attentionLabel}`}
+                                    >
+                                      {attentionLabel}
+                                    </span>
+                                  ) : null}
                                 </span>
                               </button>
-                              {unreadCount > 0 ? (
-                                <span
-                                  className="mt-0.5 inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-white"
-                                  aria-label={`안읽음 ${unreadLabel}`}
-                                >
-                                  {unreadLabel}
-                                </span>
-                              ) : null}
                             </div>
                           );
                         })}
@@ -1502,12 +1508,18 @@ export function PracticeRecentTransfersCalendar({
                           const chipStyle = calendarChipStyleForItem(item);
                           const unreadCount = Math.max(0, Number(item.unreadCount || 0));
                           const reviewHighlight = Boolean(item.reviewHighlight);
+                          const attentionCount = Math.max(
+                            unreadCount,
+                            reviewHighlight ? 1 : 0,
+                          );
                           const uploadOverdue =
                           abutmentUploadOverdueViewer === "practice"
                             ? null
                             : item.abutmentUploadOverdue;
-                          const unreadLabel =
-                            unreadCount > 99 ? "99+" : String(unreadCount);
+                          const attentionLabel =
+                            attentionCount > 99
+                              ? "99+"
+                              : String(attentionCount);
                           const hasLinkedChain =
                             (Array.isArray(item.linkedOrderDates) &&
                               item.linkedOrderDates.length > 1) ||
@@ -1540,7 +1552,7 @@ export function PracticeRecentTransfersCalendar({
                                 uploadOverdue === "yellow" &&
                                   "border-[3px] border-double border-amber-500",
                                 !uploadOverdue &&
-                                  (unreadCount > 0 || reviewHighlight) &&
+                                  attentionCount > 0 &&
                                   "border-[3px] border-double border-red-600",
                               )}
                               style={chipStyle}
@@ -1575,7 +1587,7 @@ export function PracticeRecentTransfersCalendar({
                               ) : null}
                               <button
                                 type="button"
-                                className="flex min-w-0 flex-1 items-start gap-0.5 px-1 py-0.5 text-left text-[10px] leading-snug"
+                                className="min-w-0 flex-1 px-1 py-0.5 text-left text-[10px] leading-snug"
                                 title={
                                   overdueTooltip ||
                                   (item.linkedOrderDates &&
@@ -1590,11 +1602,9 @@ export function PracticeRecentTransfersCalendar({
                                             ? " (이전·보냄)"
                                             : " (최종·받음)"
                                         }`
-                                      : unreadCount > 0
-                                        ? `${item.line} · 안읽음 ${unreadLabel}`
-                                        : reviewHighlight
-                                          ? `${item.line} · 미확인`
-                                          : item.line)
+                                      : attentionCount > 0
+                                        ? `${item.line} · 확인 ${attentionLabel}`
+                                        : item.line)
                                 }
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -1606,18 +1616,20 @@ export function PracticeRecentTransfersCalendar({
                                   });
                                 }}
                               >
-                                <span className="min-w-0 flex-1 line-clamp-2 break-all">
-                                  {linkPrefix}
-                                  {item.line}
-                                </span>
-                                {unreadCount > 0 ? (
-                                  <span
-                                    className="mt-px inline-flex h-3.5 min-w-3.5 shrink-0 items-center justify-center rounded-full bg-destructive px-0.5 text-[9px] font-semibold leading-none text-white"
-                                    aria-label={`안읽음 ${unreadLabel}`}
-                                  >
-                                    {unreadLabel}
+                                <span className="inline-flex max-w-full items-start gap-0.5">
+                                  <span className="min-w-0 line-clamp-2 break-all">
+                                    {linkPrefix}
+                                    {item.line}
                                   </span>
-                                ) : null}
+                                  {attentionCount > 0 ? (
+                                    <span
+                                      className="mt-px inline-flex h-3.5 min-w-3.5 shrink-0 items-center justify-center rounded-full bg-destructive px-0.5 text-[9px] font-semibold leading-none text-white"
+                                      aria-label={`확인 ${attentionLabel}`}
+                                    >
+                                      {attentionLabel}
+                                    </span>
+                                  ) : null}
+                                </span>
                               </button>
                             </div>
                           );

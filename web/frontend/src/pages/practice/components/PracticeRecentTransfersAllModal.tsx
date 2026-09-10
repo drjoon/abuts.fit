@@ -98,7 +98,6 @@ import {
   type PracticeRecentStatusFilterKey,
   PRACTICE_RECENT_STATUS_BADGES,
   computeGroupedStatusCounts,
-  computeGroupedStatusUnreadCounts,
   canDeletePracticeTransferByStatus,
   filterRequestsByPeriodAndSearch,
   groupPracticeRecentRequests,
@@ -522,8 +521,7 @@ export function PracticeRecentTransfersAllModal({
     [groupedTransfers],
   );
 
-  // 헤더 숫자=아직 안 연(또는 채팅 안읽음) 확인 큐.
-  // 캘린더·목록: 확인 큐=빨간 테두리, 숫자 배지=실제 채팅 unread만.
+  // 헤더·목록 빨간 숫자=확인 큐(상세 열면 감소). 미열람/채팅 UI 구분 없음.
   const badgeQueueTransfers = useMemo(
     () =>
       visibleGroupedTransfers.filter((transfer) =>
@@ -535,11 +533,6 @@ export function PracticeRecentTransfersAllModal({
   const statusCounts = useMemo(
     () => computeGroupedStatusCounts(badgeQueueTransfers),
     [badgeQueueTransfers],
-  );
-
-  const statusUnreadCounts = useMemo(
-    () => computeGroupedStatusUnreadCounts(visibleGroupedTransfers),
-    [visibleGroupedTransfers],
   );
 
   const filteredTransfers = visibleGroupedTransfers;
@@ -730,10 +723,9 @@ export function PracticeRecentTransfersAllModal({
       label: item.label,
       tone: resolvePracticeStatusFilterBadgeTone(item.filter),
       count: statusCounts[item.countKey],
-      unreadCount: statusUnreadCounts[item.countKey],
       tooltip: item.tooltip,
     }));
-  }, [statusCounts, statusUnreadCounts]);
+  }, [statusCounts]);
 
   const statusBadges = (
     <PracticeStatusFilterBadges
@@ -774,7 +766,7 @@ export function PracticeRecentTransfersAllModal({
               value={search}
               onChange={(e) => handleSearchChange(e.target.value)}
               className="h-9 w-full rounded-full border-slate-200 bg-slate-50 pl-9 pr-9 text-center text-sm"
-              placeholder="기공소, 환자명"
+              placeholder="환자명, 기공소명, 치아번호"
             />
             {search.trim() ? (
               <button
@@ -885,6 +877,7 @@ export function PracticeRecentTransfersAllModal({
                     transfer,
                     badgeClearedIds,
                   );
+                  const attention = Math.max(unread, reviewHighlight ? 1 : 0);
                   const arrival = String(transfer.arrivalDate || "").trim();
                   const deliveryLabel = getPracticeAbutmentDeliveryLabel({
                     hasCustomAbutment: Boolean(transfer.hasCustomAbutment),
@@ -898,7 +891,7 @@ export function PracticeRecentTransfersAllModal({
                       tabIndex={0}
                       className={cn(
                         "group w-full cursor-pointer rounded-2xl border bg-white p-3.5 text-left shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-[transform,box-shadow,border-color] active:scale-[0.985] active:bg-slate-50/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                        unread > 0 || reviewHighlight
+                        attention > 0
                           ? "border-red-500 ring-1 ring-red-500/40"
                           : "border-slate-200/80",
                       )}
@@ -930,9 +923,9 @@ export function PracticeRecentTransfersAllModal({
                             {deliveryLabel}
                           </span>
                         ) : null}
-                        {unread > 0 ? (
+                        {attention > 0 ? (
                           <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[10px] font-semibold text-white">
-                            {unread > 99 ? "99+" : unread}
+                            {attention > 99 ? "99+" : attention}
                           </span>
                         ) : null}
                         <span className="ml-auto shrink-0 text-[11px] tabular-nums text-muted-foreground">
@@ -1014,7 +1007,7 @@ export function PracticeRecentTransfersAllModal({
                 onSelectFutureDay={onSelectFutureDay}
                 search={search}
                 onSearchChange={handleSearchChange}
-                searchPlaceholder="기공소, 환자명, 전송ID 검색"
+                searchPlaceholder="환자명, 기공소명, 치아번호"
                 hiddenWeekdays={hiddenWeekdays}
                 onHiddenWeekdaysChange={handleHiddenWeekdaysChange}
                 alignEpoch={alignEpoch}

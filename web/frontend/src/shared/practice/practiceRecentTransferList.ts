@@ -1251,21 +1251,11 @@ export const filterRequestsByPeriodAndSearch = (
   if (!query) return periodFiltered;
 
   return periodFiltered.filter((request) => {
+    // 환자명·상대 상호(치과/기공소)·치아번호만. 전송ID는 검색 대상에서 제외.
     const searchableText = [
-      request.id,
-      request.transferId,
-      request.createdAt,
-      request.requestDate,
       request.patientName,
       request.toothNumbers.join(" "),
       request.targetLab,
-      request.orderDate,
-      request.arrivalDate,
-      request.status,
-      request.fileName,
-      ...(Array.isArray(request.files)
-        ? request.files.map((f) => f.fileName)
-        : []),
       request.transferMemo,
     ]
       .join(" ")
