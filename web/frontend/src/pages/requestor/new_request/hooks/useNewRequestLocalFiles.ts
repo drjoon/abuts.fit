@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-10: 기공소 의뢰 시 clinicName 기본값=사업자명(파일명/AI 치과명보다 우선).
 // - 2026-08-29: 파일명 AI/룰은 치과·환자만 자동 채움. 치아번호는 의뢰자 수동 입력.
 // - 2026-08-09: 신규의뢰 V3 로컬 업로드에서도 파일명 AI로 치과/환자 보강.
 // related files:
@@ -36,6 +37,8 @@ export const useNewRequestLocalFiles = ({
   updateCaseInfos,
   caseInfosMap,
   onFilesAdded,
+  /** 기공소 등: 파일명 파싱 대신 쓸 clinicName 기본값(사업자명) */
+  defaultClinicName,
 }: {
   setFiles: React.Dispatch<React.SetStateAction<File[]>>;
   setSelectedPreviewIndex: React.Dispatch<React.SetStateAction<number | null>>;
@@ -45,11 +48,25 @@ export const useNewRequestLocalFiles = ({
     files: File[];
     parsed: LocalUploadParsedMeta[];
   }) => void;
+  defaultClinicName?: string;
 }) => {
   const { toast } = useToast();
   const aiQuotaExhaustedRef = useRef(false);
   const caseInfosMapRef = useRef(caseInfosMap);
   caseInfosMapRef.current = caseInfosMap;
+  const defaultClinicNameRef = useRef(String(defaultClinicName || "").trim());
+  defaultClinicNameRef.current = String(defaultClinicName || "").trim();
+
+  const resolveClinicName = useCallback(
+    (existingClinic: string | undefined, parsedClinic: string | undefined) => {
+      const existing = trimText(existingClinic);
+      if (existing) return existing;
+      const labDefault = defaultClinicNameRef.current;
+      if (labDefault) return labDefault;
+      return trimText(parsedClinic) || undefined;
+    },
+    [],
+  );
 
   const normalize = (s: string) => {
     try {
@@ -79,12 +96,15 @@ export const useNewRequestLocalFiles = ({
         const fileKey = getFileKey(file);
         const current = caseInfosMapRef.current?.[fileKey] || {};
         const fallback = params.parsedByRule.get(fileKey) || {};
-        const clinicName =
-          trimText(current?.clinicName) || trimText(fallback?.clinicName);
+        const clinicName = resolveClinicName(
+          current?.clinicName,
+          fallback?.clinicName,
+        );
         const patientName =
           trimText(current?.patientName) || trimText(fallback?.patientName);
 
         // 치과명·환자명 중 하나라도 비어 있으면 AI로 보강
+        // 기공소 기본 사업자명이 있으면 치과명은 이미 채워진 것으로 본다.
         if (clinicName && patientName) continue;
 
         const cacheKey = toFilenameAiCacheKey(file.name, file.size);
@@ -93,7 +113,7 @@ export const useNewRequestLocalFiles = ({
         const cachedPatient = trimText(cached?.patientName);
 
         if (cachedClinic || cachedPatient) {
-          const nextClinic = clinicName || cachedClinic || undefined;
+          const nextClinic = resolveClinicName(clinicName, cachedClinic);
           const nextPatient = patientName || cachedPatient || undefined;
           updateCaseInfos(fileKey, {
             ...(nextClinic ? { clinicName: nextClinic } : {}),
@@ -107,6 +127,7 @@ export const useNewRequestLocalFiles = ({
           continue;
         }
 
+        // 환자만 비고 기공소 기본명이 있으면 AI는 환자 보강용으로만 호출
         filenamesForAi.push(file.name);
         fileKeysForAi.push(fileKey);
         aiCacheKeyByFileKey.set(fileKey, cacheKey);
@@ -164,11 +185,10 @@ export const useNewRequestLocalFiles = ({
           const aiPatientName = trimText(item?.patientName);
           const aiTooth = trimText(item?.tooth);
 
-          const nextClinic =
-            trimText(current?.clinicName) ||
-            aiClinicName ||
-            trimText(fallback?.clinicName) ||
-            undefined;
+          const nextClinic = resolveClinicName(
+            current?.clinicName,
+            aiClinicName || trimText(fallback?.clinicName),
+          );
           const nextPatient =
             trimText(current?.patientName) ||
             aiPatientName ||
@@ -202,7 +222,7 @@ export const useNewRequestLocalFiles = ({
 
       return enriched;
     },
-    [toast, updateCaseInfos],
+    [resolveClinicName, toast, updateCaseInfos],
   );
 
   const handleUpload = useCallback(
@@ -269,16 +289,21 @@ export const useNewRequestLocalFiles = ({
           const normalizedName = normalize(file.name);
           const fileKey = getFileKey(file);
           const parsed = parseFilenameWithRules(normalizedName);
-          const clinicName = trimText(parsed.clinicName) || undefined;
+          const parsedClinic = trimText(parsed.clinicName) || undefined;
           const patientName = trimText(parsed.patientName) || undefined;
 
-          parsedByRule.set(fileKey, { clinicName, patientName });
+          const existing = caseInfosMapRef.current?.[fileKey] || null;
+          const clinicName = resolveClinicName(
+            existing?.clinicName,
+            parsedClinic,
+          );
+
+          parsedByRule.set(fileKey, { clinicName: parsedClinic, patientName });
           parsedMeta.push({ fileKey, clinicName, patientName });
 
           if (!updateCaseInfos) return;
           if (!clinicName && !patientName) return;
 
-          const existing = caseInfosMapRef.current?.[fileKey] || null;
           updateCaseInfos(fileKey, {
             clinicName: trimText(existing?.clinicName) || clinicName,
             patientName: trimText(existing?.patientName) || patientName,
@@ -317,6 +342,7 @@ export const useNewRequestLocalFiles = ({
       onFilesAdded,
       toast,
       enrichWithAi,
+      resolveClinicName,
     ],
   );
 

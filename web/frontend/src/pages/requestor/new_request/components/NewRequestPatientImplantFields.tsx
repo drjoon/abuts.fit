@@ -5,6 +5,7 @@
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/backend/controllers/requests/creation.from-draft.controller.js
 // change-log:
+// - 2026-09-10: Manufacturer 등 SelectValue children 제거 — 미선택 시 placeholder 빈칸 방지.
 // - 2026-09-04: 카탈로그 불일치 시 brand 폴백 금지 — 에러 콜백(의뢰 차단)·관리자 alert용.
 // - 2026-09-04: 카탈로그 불일치 시 brand를 제조사 첫 항목으로 덮어쓰지 않음(TS3→US 회귀).
 //   제조사/브랜드 대소문자·TS↔TS3 별칭 매칭. Select value를 카탈로그 토큰으로 정렬.
@@ -707,16 +708,8 @@ export function NewRequestPatientImplantFields({
                   }}
                 >
                   <SelectTrigger disabled={implantDisabled}>
-                    <SelectValue placeholder="Manufacturer">
-                      {currentManufacturer
-                        ? manufacturerLabelMap.get(
-                            resolveSelectValue(
-                              currentManufacturer,
-                              manufacturerOptions,
-                            ) || currentManufacturer,
-                          ) || currentManufacturer
-                        : undefined}
-                    </SelectValue>
+                    {/* SelectItem 라벨로 표시. children 넣으면 미선택 시 placeholder가 빈칸이 됨 */}
+                    <SelectValue placeholder="Manufacturer" />
                   </SelectTrigger>
                   <SelectContent>
                     {manufacturerOptions.map((m) => (
@@ -783,16 +776,7 @@ export function NewRequestPatientImplantFields({
                   <SelectTrigger
                     disabled={implantDisabled || !currentManufacturer}
                   >
-                    <SelectValue placeholder="Brand">
-                      {currentBrand
-                        ? brandLabelMap.get(
-                            resolveBrandSelectValue(
-                              currentBrand,
-                              brandOptions,
-                            ) || currentBrand,
-                          ) || currentBrand
-                        : undefined}
-                    </SelectValue>
+                    <SelectValue placeholder="Brand" />
                   </SelectTrigger>
                   <SelectContent>
                     {brandOptions.map((s) => (
@@ -858,16 +842,7 @@ export function NewRequestPatientImplantFields({
                   disabled={implantDisabled || !currentBrand}
                 >
                   <SelectTrigger disabled={implantDisabled || !currentBrand}>
-                    <SelectValue placeholder="Family">
-                      {currentFamily
-                        ? familyLabelMap.get(
-                            resolveSelectValue(
-                              currentFamily,
-                              currentFamilyOptions,
-                            ) || currentFamily,
-                          ) || currentFamily
-                        : undefined}
-                    </SelectValue>
+                    <SelectValue placeholder="Family" />
                   </SelectTrigger>
                   <SelectContent>
                     {currentFamilyOptions.map((family) => (
@@ -919,16 +894,7 @@ export function NewRequestPatientImplantFields({
                   disabled={implantDisabled || !currentFamily}
                 >
                   <SelectTrigger disabled={implantDisabled || !currentFamily}>
-                    <SelectValue placeholder="Type">
-                      {currentType
-                        ? typeLabelMap.get(
-                            resolveSelectValue(
-                              currentType,
-                              currentTypeOptions,
-                            ) || currentType,
-                          ) || currentType
-                        : undefined}
-                    </SelectValue>
+                    <SelectValue placeholder="Type" />
                   </SelectTrigger>
                   <SelectContent>
                     {currentTypeOptions.map((t) => (

@@ -5,6 +5,7 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/backend/controllers/requests/creation.from-draft.controller.js
+// - 2026-09-10: 기공소 신규의뢰 clinicName 기본값=사업자명.
 // - 2026-09-08: 가이드투어 abutment/abutment_order — 로컬 draft 복원·UI 잔류 억제.
 // - 2026-08-19: 제출 시작 시 초안 PATCH debounce를 멈춰 from-draft와 겹치지 않게.
 // - 2026-08-19: 치과 제출 성공 시 로컬 초안 복원 억제·입력 중 중복 체크 generation. 성공 토스트와 중복 모달이 동시에 뜨지 않게.
@@ -879,11 +880,14 @@ export const useNewRequestPage = (
   ]);
 
   // V3 래퍼: 로컬 저장 + 첨부 직후 S3 사전 업로드(onFilesAdded → preUploadFiles)
+  const labDefaultClinicName =
+    requestorKind === "lab" ? String(user?.companyName || "").trim() : "";
   const { handleUpload: handleLocalUpload } = useNewRequestLocalFiles({
     setFiles,
     setSelectedPreviewIndex,
     updateCaseInfos,
     caseInfosMap,
+    defaultClinicName: labDefaultClinicName || undefined,
     onFilesAdded: ({ files: addedFiles, parsed }) => {
       skipLocalDraftRestoreRef.current = false;
       preUploadFiles(addedFiles);
