@@ -6,6 +6,7 @@
 // - 2026-09-08: isNewRequestAbutmentGuideTourStepId — new-request draft/모달 격리용.
 // - 2026-09-07: remake·lab_remake — 치과 리메이크 버튼·기공소 리메이크 수신 안내.
 // - 2026-09-07: partner_chat — FAB로 의뢰건 없이 기공소↔치과 채팅(치과·기공소).
+// - 2026-09-11: intro — 구강스캔·석고모델도, / 기공의뢰서는 어벗츠 플랫폼으로.
 // - 2026-09-09: intro — 러버·석고 포함. oral_calendar 제목 「기공의뢰 · 기공소에」.
 // - 2026-09-05: intro 힌트 — 구강스캔·석고 모델 / 기공의뢰서는 어벗츠 플랫폼으로(치과·기공소 공통).
 // - 2026-09-05: lab_chat → partner_chat(FAB). lab_design 힌트 — STL·환자/임플란트 정보 안내.
@@ -136,7 +137,7 @@ const practiceOralMovieSteps: GuideTourStepDef[] =
 
 /** 시작(intro) — 치과·기공소 공통. Spotlight에서 1줄 작게·2줄 크게 */
 export const GUIDE_TOUR_INTRO_HINT =
-  "구강스캔·러버모델·석고도\n기공의뢰서는 어벗츠 플랫폼으로!";
+  "구강스캔·석고모델도,\n기공의뢰서는 어벗츠 플랫폼으로!";
 
 /** 치과 — 시작 + 첨1~4 페이지 기준 4챕터 */
 export const PRACTICE_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
