@@ -2,6 +2,7 @@
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
+// - 2026-09-11: 수신 미처리(작업시작 전) 전 기간 OR용 targetLab+status+downloadedAt.
 // - 2026-08-28: 캘린더 조회용 orderDates/arrivalDates compound index.
 // - 2026-08-14: /my 정렬용 compound index (anchor+createdAt+_id, legacy user).
 import mongoose from "mongoose";
@@ -474,6 +475,12 @@ practiceTransferSchema.index({
   targetLabAnchorId: 1,
   status: 1,
   requestorReadAt: 1,
+});
+// 수신 미처리(작업시작 전) 전 기간 OR
+practiceTransferSchema.index({
+  targetLabAnchorId: 1,
+  status: 1,
+  requestorDownloadedAt: 1,
 });
 // 자동매칭 공개 풀 조회
 practiceTransferSchema.index({

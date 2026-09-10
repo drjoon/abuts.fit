@@ -3,6 +3,7 @@ import { describe, expect, it } from "@jest/globals";
 import {
   buildPracticeTransferCalendarDateRangeFilter,
   filterTransferDocsToCalendarRange,
+  mergeCalendarRangeWithAttentionFilter,
   mergeCalendarRangeWithUnreadFilter,
   parsePracticeTransferCalendarRangeQuery,
   practiceTransferIntersectsCalendarRange,
@@ -128,5 +129,20 @@ describe("mergeCalendarRangeWithUnreadFilter", () => {
     expect(mergeCalendarRangeWithUnreadFilter(calendarFilter, unreadFilter)).toEqual({
       $or: [calendarFilter, unreadFilter],
     });
+  });
+});
+
+describe("mergeCalendarRangeWithAttentionFilter", () => {
+  it("ORs calendar with unread∪pending attention filter", () => {
+    const calendarFilter = { orderDates: { $elemMatch: { $gte: "a" } } };
+    const attention = {
+      $or: [
+        { $and: [{ requestorReadAt: null }] },
+        { $and: [{ requestorDownloadedAt: null }] },
+      ],
+    };
+    expect(
+      mergeCalendarRangeWithAttentionFilter(calendarFilter, attention),
+    ).toEqual({ $or: [calendarFilter, attention] });
   });
 });

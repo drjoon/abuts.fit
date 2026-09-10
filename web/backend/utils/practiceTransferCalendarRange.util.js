@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-11: 캘린더 창 ∪ 미확인·미처리(작업시작 전) 전 기간 OR.
 // - 2026-08-28: $expr/$regexFind 제거 — orderDates/arrivalDates elemMatch + 레거시 createdAt.
 // - 2026-08-28: 캘린더 응답 post-filter(해석된 일자·미확인 OR) 헬퍼.
 // - 2026-08-27: 주문일 누적(orderDates) — 구간 내 아무 날짜라도 매칭
@@ -53,15 +54,23 @@ export function parsePracticeTransferCalendarRangeQuery(query = {}) {
 }
 
 /**
- * 화면 3주 날짜 필터 ∪ 미확인(사이드바 배지와 동일 집합).
- * 창 밖 미확인이 캘린더 조회에서 빠지지 않게 한다.
+ * 화면 날짜 필터 ∪ 주의 건(미확인·미처리 등).
+ * 창 밖 건이 캘린더 조회에서 빠지지 않게 한다.
  * @param {Record<string, unknown>} calendarFilter
- * @param {Record<string, unknown>} unreadFilter
+ * @param {Record<string, unknown>} attentionFilter
  */
-export function mergeCalendarRangeWithUnreadFilter(calendarFilter, unreadFilter) {
+export function mergeCalendarRangeWithAttentionFilter(
+  calendarFilter,
+  attentionFilter,
+) {
   return {
-    $or: [calendarFilter, unreadFilter],
+    $or: [calendarFilter, attentionFilter],
   };
+}
+
+/** @deprecated mergeCalendarRangeWithAttentionFilter 사용 */
+export function mergeCalendarRangeWithUnreadFilter(calendarFilter, unreadFilter) {
+  return mergeCalendarRangeWithAttentionFilter(calendarFilter, unreadFilter);
 }
 
 /**
@@ -135,7 +144,7 @@ export function practiceTransferIntersectsCalendarRange(doc, range) {
 
 /**
  * Mongo 레거시 창을 넓게 잡은 뒤 정밀 필터.
- * keepExtra: 미확인 등 창 밖이어도 남겨야 하는 문서.
+ * keepExtra: 미확인·미처리 등 창 밖이어도 남겨야 하는 문서.
  * @param {object[]} docs
  * @param {{ fromYmd: string, toYmd: string, dateKey: "orderDate"|"arrivalDate" }} range
  * @param {{ keepExtra?: (doc: object) => boolean }} [options]

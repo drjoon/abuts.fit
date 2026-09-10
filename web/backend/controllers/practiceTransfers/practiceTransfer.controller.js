@@ -128,7 +128,7 @@ import {
 import {
   buildPracticeTransferCalendarDateRangeFilter,
   filterTransferDocsToCalendarRange,
-  mergeCalendarRangeWithUnreadFilter,
+  mergeCalendarRangeWithAttentionFilter,
   parsePracticeTransferCalendarRangeQuery,
   PRACTICE_TRANSFER_CALENDAR_LIST_SELECT,
   PRACTICE_TRANSFER_CALENDAR_RANGE_MAX,
@@ -360,7 +360,7 @@ const invalidateUnreadCountCache = (scopeOrLabId) => {
 
 /**
  * 사이드바 received-unread-count와 동일: 미확인(requestorReadAt null) + 거부/거절 제외.
- * 캘린더 3주 조회에도 OR로 합쳐 창 밖 미확인이 캘린더에서 빠지지 않게 한다.
+ * 캘린더 조회에도 OR로 합쳐 창 밖 미확인이 빠지지 않게 한다(전 기간·선택 필터).
  * @param {string|null|undefined} labAnchorId
  * @returns {Record<string, unknown>[]}
  */
@@ -381,6 +381,80 @@ const buildLabReceiveUnreadMatchParts = (labAnchorId) => {
   }
   return parts;
 };
+
+/** 작업시작·취소·완료 스테이지 — 미처리(작업큐)에서 제외 */
+const LAB_RECEIVE_PENDING_WORK_EXCLUDED_STAGES = [
+  "의뢰수락",
+  "작업완료",
+  "생산진행",
+  "포장.발송",
+  "작업취소",
+  "취소",
+  "거부",
+];
+
+/**
+ * 미처리(작업큐): 작업시작 전 의뢰. 전 기간·선택 필터(인덱스 친화).
+ * @param {string|null|undefined} labAnchorId
+ * @returns {Record<string, unknown>[]}
+ */
+const buildLabReceivePendingWorkMatchParts = (labAnchorId) => {
+  const parts = [
+    { status: { $nin: ["deleted", "canceled"] } },
+    {
+      $or: [
+        { requestorDownloadedAt: null },
+        { requestorDownloadedAt: { $exists: false } },
+      ],
+    },
+    {
+      $or: [
+        { requestorAcceptedAt: null },
+        { requestorAcceptedAt: { $exists: false } },
+      ],
+    },
+    {
+      $or: [
+        { workCanceledAt: null },
+        { workCanceledAt: { $exists: false } },
+      ],
+    },
+    {
+      $or: [
+        { manufacturerStage: null },
+        { manufacturerStage: { $exists: false } },
+        { manufacturerStage: "" },
+        {
+          manufacturerStage: {
+            $nin: LAB_RECEIVE_PENDING_WORK_EXCLUDED_STAGES,
+          },
+        },
+      ],
+    },
+  ];
+  if (labAnchorId && Types.ObjectId.isValid(labAnchorId)) {
+    parts.push({
+      $or: [{ labRejectedAt: null }, { labRejectedAt: { $exists: false } }],
+    });
+    parts.push({
+      "autoMatch.declinedLabAnchorIds": {
+        $nin: [new Types.ObjectId(labAnchorId)],
+      },
+    });
+  }
+  return parts;
+};
+
+/**
+ * 캘린더 창 밖에도 붙일 주의 건: 미확인 ∪ 미처리(전 기간).
+ * @param {string|null|undefined} labAnchorId
+ */
+const buildLabReceiveAttentionFilter = (labAnchorId) => ({
+  $or: [
+    { $and: buildLabReceiveUnreadMatchParts(labAnchorId) },
+    { $and: buildLabReceivePendingWorkMatchParts(labAnchorId) },
+  ],
+});
 
 /**
  * 기공소 의뢰수락 시 치과↔기공소 채팅방을 즉시 만든다.
@@ -1113,6 +1187,30 @@ const isLabReceiveUnreadDoc = (doc, labAnchorId) => {
   if (labAnchorId && declined.includes(String(labAnchorId))) return false;
   return true;
 };
+
+const isLabReceivePendingWorkDoc = (doc, labAnchorId) => {
+  const status = String(doc?.status || "").trim();
+  if (status === "deleted" || status === "canceled") return false;
+  if (doc?.requestorDownloadedAt || doc?.requestorAcceptedAt) return false;
+  if (doc?.workCanceledAt) return false;
+  const stage = String(doc?.manufacturerStage || "").trim();
+  if (LAB_RECEIVE_PENDING_WORK_EXCLUDED_STAGES.includes(stage)) return false;
+  if (doc?.labRejectedAt) {
+    const rejectedBy = String(doc?.labRejectedByLabAnchorId || "").trim();
+    if (!labAnchorId || !rejectedBy || rejectedBy === String(labAnchorId)) {
+      return false;
+    }
+  }
+  const declined = Array.isArray(doc?.autoMatch?.declinedLabAnchorIds)
+    ? doc.autoMatch.declinedLabAnchorIds.map((id) => String(id || "").trim())
+    : [];
+  if (labAnchorId && declined.includes(String(labAnchorId))) return false;
+  return true;
+};
+
+const isLabReceiveAttentionDoc = (doc, labAnchorId) =>
+  isLabReceiveUnreadDoc(doc, labAnchorId) ||
+  isLabReceivePendingWorkDoc(doc, labAnchorId);
 
 const buildReceivedScope = async (req) => {
   const role = String(req.user?.role || "").trim();
@@ -6375,19 +6473,20 @@ export async function getReceivedPracticeTransfers(req, res) {
     // 레거시: 3시간 deadline 만료 재공개는 폐기(수락은 작업완료/취소까지 유지).
     // 치과 의뢰 삭제(status=deleted|레거시 canceled)는 수신 목록·총건수에서 제외.
     // 기공소 작업취소(workCanceledAt, status=active)는 계속 「취소」로 노출.
-    // 캘린더 3주 창 + 미확인(전 기간) OR — 사이드바 배지와 캘린더 누락을 막는다.
+    // 캘린더 표시 창 + 미확인·미처리(전 기간) OR — 사이드바·작업큐 누락을 막는다.
     const calendarFilter = calendarRange
       ? buildPracticeTransferCalendarDateRangeFilter(calendarRange)
       : null;
-    const unreadMatchParts = buildLabReceiveUnreadMatchParts(labAnchorId);
+    const attentionFilter = buildLabReceiveAttentionFilter(labAnchorId);
     const listScope = calendarFilter
       ? {
           $and: [
             scope,
             practiceTransferNotDeletedMongoFilter(),
-            mergeCalendarRangeWithUnreadFilter(calendarFilter, {
-              $and: unreadMatchParts,
-            }),
+            mergeCalendarRangeWithAttentionFilter(
+              calendarFilter,
+              attentionFilter,
+            ),
           ],
         }
       : { $and: [scope, practiceTransferNotDeletedMongoFilter()] };
@@ -6416,13 +6515,13 @@ export async function getReceivedPracticeTransfers(req, res) {
         ? Promise.resolve(null)
         : PracticeTransfer.countDocuments(listScope),
       PracticeTransfer.countDocuments({
-        $and: [scope, ...unreadMatchParts],
+        $and: [scope, ...buildLabReceiveUnreadMatchParts(labAnchorId)],
       }),
     ]);
 
     const docs = calendarRange
       ? filterTransferDocsToCalendarRange(rawDocs, calendarRange, {
-          keepExtra: (doc) => isLabReceiveUnreadDoc(doc, labAnchorId),
+          keepExtra: (doc) => isLabReceiveAttentionDoc(doc, labAnchorId),
         })
       : rawDocs;
 
