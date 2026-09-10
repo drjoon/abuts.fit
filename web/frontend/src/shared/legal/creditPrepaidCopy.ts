@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-10: 충전 안내 문구 간단화. 기공크레딧 구분은 기공소만.
 // - 2026-08-23: B2B 거래 선수금. 충전 시 계산서 없음 → 사용분 월말 면세/과세 분리 발행.
 // - 2026-08-19: 치과 멤버십 폐지. 유료 크레딧 사용처를 기공물·어벗 주문 대금만으로 안내.
 // - 2026-08-15: 유료 크레딧 사용처에 치과 멤버십 월 구독 포함(면세).
@@ -21,8 +22,19 @@ import { DEMO_MODE_FREE_CREDIT_FAQ_ANSWER } from "@/shared/demo/demoModeCopy";
 /** 화면 제목·탭 주변. 선불전자지급수단이 아닌 B2B 거래 선수금임을 명시. */
 export const CREDIT_CHARGE_NOTICE_TITLE = "크레딧(거래 선수금) 충전";
 
-export const CREDIT_CHARGE_NOTICE_BODY =
-  "본 충전은 플랫폼 내 계약 물품·용역(기공·커스텀어벗·스토어 기성품) 대금용 B2B 거래 선수금(예치금)입니다. 선불페이가 아닙니다.\n입금 시에는 (세금)계산서를 발행하지 않으며, 사용분 기준으로 매월 말 면세(기공·어벗)와 과세(스토어)를 각각 합산 발행합니다.\n기공크레딧(치과 수취·정산) 적립 경로와는 별도로 관리됩니다.";
+/** 치과·기공소 공통 본문(정의 + 계산서). */
+const CREDIT_CHARGE_NOTICE_BODY_SHARED =
+  "기공·커스텀어벗·스토어 대금용 거래 선수금(예치금)입니다. 선불페이가 아닙니다.\n(세금)계산서는 충전 시가 아니라, 사용분을 매월 말 면세(기공·어벗)·과세(스토어)로 나눠 발행합니다.";
+
+/** 충전 탭 안내 — 기공크레딧 구분은 기공소만. */
+export function resolveCreditChargeNoticeBody(
+  requestorKind?: "practice" | "lab" | null,
+): string {
+  if (requestorKind === "lab") {
+    return `${CREDIT_CHARGE_NOTICE_BODY_SHARED}\n치과 의뢰로 쌓이는 기공크레딧(정산)과는 별도입니다.`;
+  }
+  return CREDIT_CHARGE_NOTICE_BODY_SHARED;
+}
 
 /** 내역 탭 — 유료 카드「거래 선수금」툴팁. */
 export const CREDIT_LEDGER_PREPAID_NOTICE_BODY =

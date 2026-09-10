@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-10: 충전 안내 — resolveCreditChargeNoticeBody(치과/기공소).
 // - 2026-09-05: 데모 중 충전하기 — 실사용 전환 ConfirmDialog.
 // - 2026-08-12: 충전 화면 제목·안내문에 기공료 선입금(선납) 명시. 선불페이와 구분.
 // - 2026-08-11: compact — 크레딧 충전 탭용. 잔액/충전내역 숨기고 입금 패널만 표시(스크롤·중앙 배치).
@@ -32,9 +33,9 @@ import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
 import { periodToRange } from "@/store/usePeriodStore";
 import { AlertTriangle, ChevronDown, ChevronUp, Copy, Wallet } from "lucide-react";
 import {
-  CREDIT_CHARGE_NOTICE_BODY,
   CREDIT_CHARGE_NOTICE_TITLE,
   CREDIT_PREPAID_BALANCE_LABEL,
+  resolveCreditChargeNoticeBody,
 } from "@/shared/legal/creditPrepaidCopy";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import {
@@ -833,7 +834,7 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
             {CREDIT_CHARGE_NOTICE_TITLE}
           </div>
           <p className="mt-2 whitespace-pre-line text-xs leading-relaxed text-muted-foreground">
-            {CREDIT_CHARGE_NOTICE_BODY}
+            {resolveCreditChargeNoticeBody(requestorKind)}
           </p>
         </div>
         <div className="grid md:grid-cols-2">
