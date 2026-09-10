@@ -242,13 +242,18 @@ export type PracticeTransferLabReceiveDisplayStatus =
   | "수신완료"
   | "발송완료";
 
-/** 사이드바「기공의뢰수신」과 동일: 미확인 의뢰(1) + 채팅 unread.
+/** 사이드바「기공의뢰수신」과 동일: 작업시작 전 의뢰(1) + 채팅 unread.
+ * 열람(isRead)만으로는 빠지지 않음 — 작업시작 전에 놓치는 것을 막는다.
  * 치과 삭제(status=deleted|레거시 canceled)는 수신 미확인 집계에서 빠지므로 채팅 unread만 센다.
  */
 export function practiceTransferLabReceiveUnreadBadgeCount(
   transfer: {
     isRead?: boolean | null;
     status?: string | null;
+    isAccepted?: boolean | null;
+    isDownloaded?: boolean | null;
+    requestorDownloadedAt?: string | null;
+    requestorAcceptedAt?: string | null;
   },
   chatUnreadCount = 0,
 ) {
@@ -258,8 +263,17 @@ export function practiceTransferLabReceiveUnreadBadgeCount(
     status === "canceled" ||
     status === "cancelled" ||
     status === "취소";
-  const unreadTransfer = isPracticeDeleted || transfer.isRead ? 0 : 1;
-  return unreadTransfer + Math.max(0, Number(chatUnreadCount) || 0);
+  if (isPracticeDeleted) {
+    return Math.max(0, Number(chatUnreadCount) || 0);
+  }
+  const started =
+    Boolean(transfer.isAccepted) ||
+    Boolean(transfer.isDownloaded) ||
+    Boolean(String(transfer.requestorDownloadedAt || "").trim()) ||
+    Boolean(String(transfer.requestorAcceptedAt || "").trim());
+  // 작업시작 전=항상 확인 필요. 시작 후에는 미열람(isRead)만.
+  const pendingAttention = started ? (transfer.isRead ? 0 : 1) : 1;
+  return pendingAttention + Math.max(0, Number(chatUnreadCount) || 0);
 }
 
 /** 기공소 수신 캘린더·목록에서 숨기는 종료 상태(거부·작업취소). 기한만료는 강조 표시. */

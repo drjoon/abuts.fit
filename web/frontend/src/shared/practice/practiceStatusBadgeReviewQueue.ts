@@ -1,7 +1,8 @@
 /**
- * 상단 상태 뱃지 「확인할 건수」큐 — 상세/채팅을 열면 transferId를 클리어해 헤더 숫자가 줄어든다.
- * 채팅 unread>0 이면 클리어해도 다시 카운트(새 메시지).
- * 캘린더·목록 칩의 빨간 unread 배지에는 쓰지 않는다(실제 채팅 unread만).
+ * 상단 상태 뱃지 「확인 큐」.
+ * - 미확인(채팅) unread>0 → 항상 큐(찾아가기용)
+ * - 미처리(작업큐): 작업시작 전 의뢰·조치 필요 취소 → 열람만으로 빠지지 않음
+ * - 그 외 → 상세/채팅을 열면 transferId 클리어로 감소
  *
  * related files:
  * - web/frontend/src/pages/practice/components/PracticeRecentTransfersAllModal.tsx
@@ -61,7 +62,7 @@ const writePracticeStatusBadgeClearedIds = (
   }
 };
 
-/** 상세·채팅 오픈 시 호출 — 헤더 뱃지 카운터에서 제외. */
+/** 상세·채팅 오픈 시 호출 — 헤더 뱃지 카운터에서 제외(조치 전 상태는 무시됨). */
 export const markPracticeStatusBadgeTransfersCleared = (
   scopeKey: unknown,
   transferIdsRaw: readonly unknown[],
@@ -95,15 +96,40 @@ export const markPracticeStatusBadgeTransfersCleared = (
   return next;
 };
 
+/** 작업시작 전 의뢰 — 열람만으로 확인 큐에서 제거하지 않음. */
+export const isPracticeStatusBadgePendingStartStatus = (status: unknown) => {
+  const s = String(status || "").trim();
+  return (
+    s === "발송완료" ||
+    s === "수신완료" ||
+    s === "자동매칭" ||
+    s === "하청대기"
+  );
+};
+
+/** 치과 조치 필요 취소 — 열람만으로 확인 큐에서 제거하지 않음. */
+export const isPracticeStatusBadgePendingActionStatus = (status: unknown) => {
+  const s = String(status || "").trim();
+  return s === "작업취소" || s === "거부";
+};
+
 /**
- * 헤더 뱃지 큐에 남을 건 — 아직 안 열었거나, 채팅 안읽음이 다시 생긴 건.
- * (캘린더 칩 unread 표시에는 사용하지 말 것)
+ * 헤더·목록 확인 큐에 남을 건.
+ * 미확인(채팅) unread, 또는 미처리(작업시작/조치 전), 또는 아직 안 연 건.
+ * 미처리만 셀 때는 unreadCount: 0 으로 호출.
  */
 export const isPracticeStatusBadgeQueueTransfer = (
-  transfer: { transferId?: unknown; unreadCount?: unknown },
+  transfer: {
+    transferId?: unknown;
+    unreadCount?: unknown;
+    status?: unknown;
+  },
   clearedIds: ReadonlySet<string>,
 ) => {
   if (Math.max(0, Number(transfer.unreadCount || 0)) > 0) return true;
+  const status = String(transfer.status || "").trim();
+  if (isPracticeStatusBadgePendingStartStatus(status)) return true;
+  if (isPracticeStatusBadgePendingActionStatus(status)) return true;
   const id = normalizeTransferId(transfer.transferId);
   if (!id || id === "-") return false;
   return !clearedIds.has(id);

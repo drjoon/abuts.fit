@@ -26,7 +26,7 @@
  * - 2026-08-20: 치과 전체보기 칩도 상단 뱃지 상태색(그룹색 대신).
  * - 2026-08-20: 안읽음(수신 미확인·채팅) 빨간 배지를 칩에 표시.
  * - 2026-08-21: 상단 필터 뱃지 ON=진한 상태색 / OFF=흐린 무채색(표시 on/off 대비).
- * - 2026-09-11: 목록·칩 빨간 숫자 — 채팅 unread 또는 확인 큐(미열람) 합산 표시.
+ * - 2026-09-11: 목록·칩 — 작업 큐=빨간 테두리, 채팅 unread=빨간 숫자(분리).
  * - 2026-09-10: 상단 뱃지 표시 on/off 제거 — active 톤만 사용(unread 순회).
  * - 2026-09-10: focusItemId/focusEpoch — 뱃지 순회 시 해당 칩·목록 행으로 스크롤.
  * - 2026-09-10: 목록 — 날짜 아래 의뢰 배치·가로폭 확보. dot 옆 휴지통·커스텀어벗 아이콘.
@@ -112,10 +112,11 @@ export type PracticeCalendarChipItem = {
   linkedOrderDates?: string[];
   sortLabel: string;
   line: string;
-  /** 사이드바·상단과 동일 확인 큐(수신 미확인 + 채팅). 있으면 칩에 빨간 숫자 */
+  /** 사이드바·상단과 동일 — 칩 빨간 숫자=채팅 unread만 */
   unreadCount?: number;
   /**
-   * 상단·목록 확인 큐 표시용. unreadCount가 있으면 그 숫자, 없으면 1.
+   * 작업 큐(미열람·작업시작/조치 전) — 빨간 테두리.
+   * 숫자 배지는 unreadCount(채팅)만 사용.
    */
   reviewHighlight?: boolean;
   /** 수락 후 어벗 STL 미업로드 24h/48h 경고 */
@@ -1258,10 +1259,6 @@ export function PracticeRecentTransfersCalendar({
                             Number(item.unreadCount || 0),
                           );
                           const reviewHighlight = Boolean(item.reviewHighlight);
-                          const attentionCount = Math.max(
-                            unreadCount,
-                            reviewHighlight ? 1 : 0,
-                          );
                           const hasCustomAbutment = Boolean(
                             item.hasCustomAbutment,
                           );
@@ -1269,10 +1266,8 @@ export function PracticeRecentTransfersCalendar({
                             abutmentUploadOverdueViewer === "practice"
                               ? null
                               : item.abutmentUploadOverdue;
-                          const attentionLabel =
-                            attentionCount > 99
-                              ? "99+"
-                              : String(attentionCount);
+                          const unreadLabel =
+                            unreadCount > 99 ? "99+" : String(unreadCount);
                           const hasLinkedChain =
                             (Array.isArray(item.linkedOrderDates) &&
                               item.linkedOrderDates.length > 1) ||
@@ -1301,7 +1296,7 @@ export function PracticeRecentTransfersCalendar({
                                 uploadOverdue === "deadline" &&
                                   "ring-2 ring-red-400/70",
                                 (uploadOverdue === "red" ||
-                                  (!uploadOverdue && attentionCount > 0)) &&
+                                  (!uploadOverdue && reviewHighlight)) &&
                                   "ring-1 ring-red-500/80",
                                 uploadOverdue === "yellow" &&
                                   "ring-1 ring-amber-500/80",
@@ -1354,9 +1349,11 @@ export function PracticeRecentTransfersCalendar({
                                             ? " (이전·보냄)"
                                             : " (최종·받음)"
                                         }`
-                                      : attentionCount > 0
-                                        ? `${item.line} · 확인 ${attentionLabel}`
-                                        : item.line)
+                                      : unreadCount > 0
+                                        ? `${item.line} · 미확인(채팅) ${unreadLabel}`
+                                        : reviewHighlight
+                                          ? `${item.line} · 미처리(작업큐)`
+                                          : item.line)
                                 }
                                 onClick={() => selectListItem(item, ymd)}
                               >
@@ -1365,12 +1362,12 @@ export function PracticeRecentTransfersCalendar({
                                     {linkPrefix}
                                     {item.line}
                                   </span>
-                                  {attentionCount > 0 ? (
+                                  {unreadCount > 0 ? (
                                     <span
                                       className="mt-0.5 inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-white"
-                                      aria-label={`확인 ${attentionLabel}`}
+                                      aria-label={`미확인(채팅) ${unreadLabel}`}
                                     >
-                                      {attentionLabel}
+                                      {unreadLabel}
                                     </span>
                                   ) : null}
                                 </span>
@@ -1508,18 +1505,12 @@ export function PracticeRecentTransfersCalendar({
                           const chipStyle = calendarChipStyleForItem(item);
                           const unreadCount = Math.max(0, Number(item.unreadCount || 0));
                           const reviewHighlight = Boolean(item.reviewHighlight);
-                          const attentionCount = Math.max(
-                            unreadCount,
-                            reviewHighlight ? 1 : 0,
-                          );
                           const uploadOverdue =
                           abutmentUploadOverdueViewer === "practice"
                             ? null
                             : item.abutmentUploadOverdue;
-                          const attentionLabel =
-                            attentionCount > 99
-                              ? "99+"
-                              : String(attentionCount);
+                          const unreadLabel =
+                            unreadCount > 99 ? "99+" : String(unreadCount);
                           const hasLinkedChain =
                             (Array.isArray(item.linkedOrderDates) &&
                               item.linkedOrderDates.length > 1) ||
@@ -1552,7 +1543,7 @@ export function PracticeRecentTransfersCalendar({
                                 uploadOverdue === "yellow" &&
                                   "border-[3px] border-double border-amber-500",
                                 !uploadOverdue &&
-                                  attentionCount > 0 &&
+                                  reviewHighlight &&
                                   "border-[3px] border-double border-red-600",
                               )}
                               style={chipStyle}
@@ -1602,9 +1593,11 @@ export function PracticeRecentTransfersCalendar({
                                             ? " (이전·보냄)"
                                             : " (최종·받음)"
                                         }`
-                                      : attentionCount > 0
-                                        ? `${item.line} · 확인 ${attentionLabel}`
-                                        : item.line)
+                                      : unreadCount > 0
+                                        ? `${item.line} · 미확인(채팅) ${unreadLabel}`
+                                        : reviewHighlight
+                                          ? `${item.line} · 미처리(작업큐)`
+                                          : item.line)
                                 }
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -1621,12 +1614,12 @@ export function PracticeRecentTransfersCalendar({
                                     {linkPrefix}
                                     {item.line}
                                   </span>
-                                  {attentionCount > 0 ? (
+                                  {unreadCount > 0 ? (
                                     <span
                                       className="mt-px inline-flex h-3.5 min-w-3.5 shrink-0 items-center justify-center rounded-full bg-destructive px-0.5 text-[9px] font-semibold leading-none text-white"
-                                      aria-label={`확인 ${attentionLabel}`}
+                                      aria-label={`미확인(채팅) ${unreadLabel}`}
                                     >
-                                      {attentionLabel}
+                                      {unreadLabel}
                                     </span>
                                   ) : null}
                                 </span>

@@ -98,6 +98,7 @@ import {
   type PracticeRecentStatusFilterKey,
   PRACTICE_RECENT_STATUS_BADGES,
   computeGroupedStatusCounts,
+  computeGroupedStatusUnreadCounts,
   canDeletePracticeTransferByStatus,
   filterRequestsByPeriodAndSearch,
   groupPracticeRecentRequests,
@@ -521,18 +522,31 @@ export function PracticeRecentTransfersAllModal({
     [groupedTransfers],
   );
 
-  // 헤더·목록 빨간 숫자=확인 큐(상세 열면 감소). 미열람/채팅 UI 구분 없음.
+  // 헤더 본문=상태별 전체 건수. 빨간 점=미확인(채팅).
+  // 목록·칩: 미처리=빨간 테두리, 미확인(채팅)=빨간 숫자만(테두리 없음).
   const badgeQueueTransfers = useMemo(
     () =>
       visibleGroupedTransfers.filter((transfer) =>
-        isPracticeStatusBadgeQueueTransfer(transfer, badgeClearedIds),
+        isPracticeStatusBadgeQueueTransfer(
+          {
+            transferId: transfer.transferId,
+            unreadCount: Math.max(0, Number(transfer.unreadCount || 0)),
+            status: transfer.status,
+          },
+          badgeClearedIds,
+        ),
       ),
     [badgeClearedIds, visibleGroupedTransfers],
   );
 
   const statusCounts = useMemo(
-    () => computeGroupedStatusCounts(badgeQueueTransfers),
-    [badgeQueueTransfers],
+    () => computeGroupedStatusCounts(visibleGroupedTransfers),
+    [visibleGroupedTransfers],
+  );
+
+  const statusUnreadCounts = useMemo(
+    () => computeGroupedStatusUnreadCounts(visibleGroupedTransfers),
+    [visibleGroupedTransfers],
   );
 
   const filteredTransfers = visibleGroupedTransfers;
@@ -578,7 +592,11 @@ export function PracticeRecentTransfersAllModal({
         line: [lab, patientLine].filter(Boolean).join(" / "),
         unreadCount: chatUnread,
         reviewHighlight: isPracticeStatusBadgeQueueTransfer(
-          transfer,
+          {
+            transferId: transfer.transferId,
+            unreadCount: 0,
+            status: transfer.status,
+          },
           badgeClearedIds,
         ),
         canDelete: canDeletePracticeTransferByStatus(transfer.status),
@@ -684,11 +702,18 @@ export function PracticeRecentTransfersAllModal({
   const navigateNextUnreadForStatus = useCallback(
     (key: string) => {
       const filterKey = key as PracticeRecentStatusFilterKey;
-      const queue = listBadgeNavigateTransfersForStatusFilter(
+      let queue = listBadgeNavigateTransfersForStatusFilter(
         badgeQueueTransfers,
         filterKey,
         dateKey,
       );
+      if (queue.length === 0) {
+        queue = listBadgeNavigateTransfersForStatusFilter(
+          visibleGroupedTransfers,
+          filterKey,
+          dateKey,
+        );
+      }
       if (queue.length === 0) return;
 
       const lastId = unreadNavigateLastIdRef.current[filterKey] || "";
@@ -714,6 +739,7 @@ export function PracticeRecentTransfersAllModal({
       focusCalendarTransfer,
       onSelectTransfer,
       viewMode,
+      visibleGroupedTransfers,
     ],
   );
 
@@ -723,9 +749,10 @@ export function PracticeRecentTransfersAllModal({
       label: item.label,
       tone: resolvePracticeStatusFilterBadgeTone(item.filter),
       count: statusCounts[item.countKey],
+      unreadCount: statusUnreadCounts[item.countKey],
       tooltip: item.tooltip,
     }));
-  }, [statusCounts]);
+  }, [statusCounts, statusUnreadCounts]);
 
   const statusBadges = (
     <PracticeStatusFilterBadges
@@ -874,10 +901,13 @@ export function PracticeRecentTransfersAllModal({
                   const canDelete = canDeletePracticeTransferByStatus(transfer.status);
                   const unread = Math.max(0, Number(transfer.unreadCount || 0));
                   const reviewHighlight = isPracticeStatusBadgeQueueTransfer(
-                    transfer,
+                    {
+                      transferId: transfer.transferId,
+                      unreadCount: 0,
+                      status: transfer.status,
+                    },
                     badgeClearedIds,
                   );
-                  const attention = Math.max(unread, reviewHighlight ? 1 : 0);
                   const arrival = String(transfer.arrivalDate || "").trim();
                   const deliveryLabel = getPracticeAbutmentDeliveryLabel({
                     hasCustomAbutment: Boolean(transfer.hasCustomAbutment),
@@ -891,7 +921,7 @@ export function PracticeRecentTransfersAllModal({
                       tabIndex={0}
                       className={cn(
                         "group w-full cursor-pointer rounded-2xl border bg-white p-3.5 text-left shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-[transform,box-shadow,border-color] active:scale-[0.985] active:bg-slate-50/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                        attention > 0
+                        reviewHighlight
                           ? "border-red-500 ring-1 ring-red-500/40"
                           : "border-slate-200/80",
                       )}
@@ -923,9 +953,12 @@ export function PracticeRecentTransfersAllModal({
                             {deliveryLabel}
                           </span>
                         ) : null}
-                        {attention > 0 ? (
-                          <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[10px] font-semibold text-white">
-                            {attention > 99 ? "99+" : attention}
+                        {unread > 0 ? (
+                          <span
+                            className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[10px] font-semibold text-white"
+                            aria-label={`미확인(채팅) ${unread > 99 ? "99+" : unread}`}
+                          >
+                            {unread > 99 ? "99+" : unread}
                           </span>
                         ) : null}
                         <span className="ml-auto shrink-0 text-[11px] tabular-nums text-muted-foreground">

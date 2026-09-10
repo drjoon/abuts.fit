@@ -226,6 +226,7 @@ import { cn } from "@/shared/ui/cn";
 import {
   LAB_RECEIVE_STATUS_BADGES,
   computeGroupedStatusCounts,
+  computeGroupedStatusUnreadCounts,
   listBadgeNavigateTransfersForStatusFilter,
   toStatusBadgeLabel,
   type PracticeRecentStatusFilterKey,
@@ -2111,40 +2112,63 @@ export function RequestorPracticeReceivePage({
     [chatUnreadByTransferId],
   );
 
+  const transferChatUnreadCount = useCallback(
+    (transfer: ReceivedPracticeTransfer) => {
+      const transferId = String(transfer.transferId || transfer._id || "").trim();
+      return Math.max(0, Number(chatUnreadByTransferId.get(transferId) || 0));
+    },
+    [chatUnreadByTransferId],
+  );
+
   const statusCounts = useMemo(() => {
-    const asItems = baseFilteredTransfers
-      .filter((transfer) =>
-        isPracticeStatusBadgeQueueTransfer(
-          {
-            transferId: transfer.transferId || transfer._id,
-            unreadCount: transferUnreadBadgeCount(transfer),
-          },
-          badgeClearedIds,
-        ),
-      )
-      .map(
-        (
-          transfer,
-        ): Pick<
-          PracticeRecentTransferItem,
-          | "status"
-          | "designFileCount"
-          | "designFiles"
-          | "designReadyAt"
-          | "unreadCount"
-          | "transferId"
-        > => ({
-          status: getTransferDisplayStatus(transfer),
-          designFileCount: transfer.production?.designFileCount,
-          designFiles: transfer.production
-            ?.designFiles as PracticeRecentTransferItem["designFiles"],
-          designReadyAt: transfer.production?.designReadyAt,
-          unreadCount: 0,
-          transferId: transfer.transferId || transfer._id,
-        }),
-      );
+    const asItems = baseFilteredTransfers.map(
+      (
+        transfer,
+      ): Pick<
+        PracticeRecentTransferItem,
+        | "status"
+        | "designFileCount"
+        | "designFiles"
+        | "designReadyAt"
+        | "unreadCount"
+        | "transferId"
+      > => ({
+        status: getTransferDisplayStatus(transfer),
+        designFileCount: transfer.production?.designFileCount,
+        designFiles: transfer.production
+          ?.designFiles as PracticeRecentTransferItem["designFiles"],
+        designReadyAt: transfer.production?.designReadyAt,
+        unreadCount: 0,
+        transferId: transfer.transferId || transfer._id,
+      }),
+    );
     return computeGroupedStatusCounts(asItems as PracticeRecentTransferItem[]);
-  }, [badgeClearedIds, baseFilteredTransfers, transferUnreadBadgeCount]);
+  }, [baseFilteredTransfers]);
+
+  const statusUnreadCounts = useMemo(() => {
+    const asItems = baseFilteredTransfers.map(
+      (
+        transfer,
+      ): Pick<
+        PracticeRecentTransferItem,
+        | "status"
+        | "designFileCount"
+        | "designFiles"
+        | "designReadyAt"
+        | "unreadCount"
+      > => ({
+        status: getTransferDisplayStatus(transfer),
+        designFileCount: transfer.production?.designFileCount,
+        designFiles: transfer.production
+          ?.designFiles as PracticeRecentTransferItem["designFiles"],
+        designReadyAt: transfer.production?.designReadyAt,
+        unreadCount: transferChatUnreadCount(transfer),
+      }),
+    );
+    return computeGroupedStatusUnreadCounts(
+      asItems as PracticeRecentTransferItem[],
+    );
+  }, [baseFilteredTransfers, transferChatUnreadCount]);
 
   const filteredTransfers = baseFilteredTransfers;
 
@@ -2223,11 +2247,12 @@ export function RequestorPracticeReceivePage({
         ),
         sortLabel: clinic,
         line: [clinic, patientLine, surchargeLabel].filter(Boolean).join(" / "),
-        unreadCount: transferUnreadBadgeCount(transfer),
+        unreadCount: transferChatUnreadCount(transfer),
         reviewHighlight: isPracticeStatusBadgeQueueTransfer(
           {
             transferId: transfer.transferId || transfer._id,
-            unreadCount: transferUnreadBadgeCount(transfer),
+            unreadCount: 0,
+            status: getTransferDisplayStatus(transfer),
           },
           badgeClearedIds,
         ),
@@ -2240,7 +2265,7 @@ export function RequestorPracticeReceivePage({
     calendarDateKey,
     implantCatalog,
     sortedFilteredTransfers,
-    transferUnreadBadgeCount,
+    transferChatUnreadCount,
   ]);
 
   const calendarTransferById = useMemo(() => {
@@ -5658,38 +5683,51 @@ export function RequestorPracticeReceivePage({
       label: item.label,
       tone: resolvePracticeStatusFilterBadgeTone(item.filter),
       count: statusCounts[item.countKey],
+      unreadCount: statusUnreadCounts[item.countKey],
       tooltip: item.tooltip,
     }));
-  }, [statusCounts]);
+  }, [statusCounts, statusUnreadCounts]);
 
-  const loadedUnreadNoticeTotal = useMemo(() => {
-    return baseFilteredTransfers.reduce(
-      (sum, transfer) => sum + transferUnreadBadgeCount(transfer),
-      0,
-    );
-  }, [baseFilteredTransfers, transferUnreadBadgeCount]);
+  const pendingWorkNoticeTotal = useMemo(() => {
+    return baseFilteredTransfers.reduce((sum, transfer) => {
+      const pending = isPracticeStatusBadgeQueueTransfer(
+        {
+          transferId: transfer.transferId || transfer._id,
+          unreadCount: 0,
+          status: getTransferDisplayStatus(transfer),
+        },
+        badgeClearedIds,
+      );
+      return sum + (pending ? 1 : 0);
+    }, 0);
+  }, [badgeClearedIds, baseFilteredTransfers]);
 
-  // 사이드바와 동일: 서버 미확인(전 기간) + 채팅 unread. 로드 합이 더 크면(창 안 채팅) 그쪽 사용.
-  const unreadNoticeTotal = useMemo(() => {
-    const chatUnreadTotal = Array.from(chatUnreadByTransferId.values()).reduce(
+  const chatUnreadNoticeTotal = useMemo(() => {
+    const fromRooms = Array.from(chatUnreadByTransferId.values()).reduce(
       (sum, n) => sum + Math.max(0, Number(n) || 0),
       0,
     );
-    const sidebarAligned =
-      Math.max(0, Number(receivedTransferUnreadCount || 0)) + chatUnreadTotal;
-    return Math.max(loadedUnreadNoticeTotal, sidebarAligned);
-  }, [
-    chatUnreadByTransferId,
-    loadedUnreadNoticeTotal,
-    receivedTransferUnreadCount,
-  ]);
+    const fromLoaded = baseFilteredTransfers.reduce(
+      (sum, transfer) => sum + transferChatUnreadCount(transfer),
+      0,
+    );
+    return Math.max(fromRooms, fromLoaded);
+  }, [baseFilteredTransfers, chatUnreadByTransferId, transferChatUnreadCount]);
 
   const unreadNoticeItems = useMemo(() => {
     return baseFilteredTransfers
       .map((transfer) => {
         const id = String(transfer.transferId || transfer._id || "").trim();
-        const unreadCount = transferUnreadBadgeCount(transfer);
-        if (!id || unreadCount <= 0) return null;
+        const pendingWork = isPracticeStatusBadgeQueueTransfer(
+          {
+            transferId: id,
+            unreadCount: 0,
+            status: getTransferDisplayStatus(transfer),
+          },
+          badgeClearedIds,
+        );
+        const chatUnread = transferChatUnreadCount(transfer);
+        if (!id || (!pendingWork && chatUnread <= 0)) return null;
         const clinic =
           transfer.matchingMode === "auto"
             ? "자동 매칭"
@@ -5698,7 +5736,8 @@ export function RequestorPracticeReceivePage({
         const teeth = resolvePracticeTransferListToothNumbers(transfer);
         return {
           id,
-          unreadCount,
+          pendingWork,
+          chatUnread,
           label: [
             clinic,
             formatPracticeTransferListPatientWithTeeth(patient, teeth) || "—",
@@ -5706,7 +5745,11 @@ export function RequestorPracticeReceivePage({
         };
       })
       .filter((row): row is NonNullable<typeof row> => Boolean(row));
-  }, [baseFilteredTransfers, transferUnreadBadgeCount]);
+  }, [
+    badgeClearedIds,
+    baseFilteredTransfers,
+    transferChatUnreadCount,
+  ]);
 
   const jumpCalendarToTransferDate = useCallback(
     (transfer: ReceivedPracticeTransfer) => {
@@ -5758,32 +5801,40 @@ export function RequestorPracticeReceivePage({
   const navigateNextUnreadForStatus = useCallback(
     (key: string) => {
       const filterKey = key as LabReceiveStatusFilterKey;
-      const withMeta = baseFilteredTransfers
-        .filter((transfer) =>
-          isPracticeStatusBadgeQueueTransfer(
-            {
-              transferId: transfer.transferId || transfer._id,
-              unreadCount: transferUnreadBadgeCount(transfer),
-            },
-            badgeClearedIds,
-          ),
-        )
-        .map((transfer) => ({
-          transfer,
-          status: getTransferDisplayStatus(transfer),
-          designFileCount: transfer.production?.designFileCount,
-          designFiles: transfer.production?.designFiles,
-          designReadyAt: transfer.production?.designReadyAt,
-          unreadCount: transferUnreadBadgeCount(transfer),
-          orderDate: transfer.orderDate,
-          arrivalDate: transfer.arrivalDate,
-          createdAt: transfer.createdAt,
-        }));
-      const queue = listBadgeNavigateTransfersForStatusFilter(
-        withMeta,
+      const toMeta = (transfer: (typeof baseFilteredTransfers)[number]) => ({
+        transfer,
+        status: getTransferDisplayStatus(transfer),
+        designFileCount: transfer.production?.designFileCount,
+        designFiles: transfer.production?.designFiles,
+        designReadyAt: transfer.production?.designReadyAt,
+        unreadCount: transferChatUnreadCount(transfer),
+        orderDate: transfer.orderDate,
+        arrivalDate: transfer.arrivalDate,
+        createdAt: transfer.createdAt,
+      });
+      // 미확인·미처리 우선. 해당 상태에 없으면 전체에서 같은 상태 순회.
+      const queueRows = baseFilteredTransfers.filter((transfer) =>
+        isPracticeStatusBadgeQueueTransfer(
+          {
+            transferId: transfer.transferId || transfer._id,
+            unreadCount: transferChatUnreadCount(transfer),
+            status: getTransferDisplayStatus(transfer),
+          },
+          badgeClearedIds,
+        ),
+      );
+      let queue = listBadgeNavigateTransfersForStatusFilter(
+        queueRows.map(toMeta),
         filterKey,
         calendarDateKey,
       );
+      if (queue.length === 0) {
+        queue = listBadgeNavigateTransfersForStatusFilter(
+          baseFilteredTransfers.map(toMeta),
+          filterKey,
+          calendarDateKey,
+        );
+      }
       if (queue.length === 0) return;
 
       const transferIdOf = (row: (typeof queue)[number]) =>
@@ -5812,7 +5863,7 @@ export function RequestorPracticeReceivePage({
       focusCalendarTransfer,
       isMobile,
       selectTransferFromCalendar,
-      transferUnreadBadgeCount,
+      transferChatUnreadCount,
       viewMode,
     ],
   );
@@ -5865,7 +5916,11 @@ export function RequestorPracticeReceivePage({
         <>
           <LabReceiveFeeScheduleNotice className="shrink-0" />
           <LabReceiveUnreadNotice
-            unreadTotal={unreadNoticeTotal}
+            pendingWorkTotal={Math.max(
+              pendingWorkNoticeTotal,
+              Math.max(0, Number(receivedTransferUnreadCount || 0)),
+            )}
+            chatUnreadTotal={chatUnreadNoticeTotal}
             items={unreadNoticeItems}
             onSelectItem={(id) => {
               const transfer =
@@ -5947,7 +6002,15 @@ export function RequestorPracticeReceivePage({
                         designReadyAt: transfer.production?.designReadyAt,
                       },
                     );
-                    const unread = transferUnreadBadgeCount(transfer);
+                    const unread = transferChatUnreadCount(transfer);
+                    const reviewHighlight = isPracticeStatusBadgeQueueTransfer(
+                      {
+                        transferId,
+                        unreadCount: 0,
+                        status: getTransferDisplayStatus(transfer),
+                      },
+                      badgeClearedIds,
+                    );
                     const arrival = String(transfer.arrivalDate || "").trim();
                     const deliveryLabel = getPracticeAbutmentDeliveryLabel({
                       hasCustomAbutment: Boolean(transfer.hasCustomAbutment),
@@ -5960,7 +6023,12 @@ export function RequestorPracticeReceivePage({
                         key={transferId || String(transfer._id || "")}
                         role="button"
                         tabIndex={0}
-                        className="group w-full cursor-pointer rounded-2xl border border-slate-200/80 bg-white p-3.5 text-left shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-[transform,box-shadow,border-color] active:scale-[0.985] active:bg-slate-50/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        className={cn(
+                          "group w-full cursor-pointer rounded-2xl border bg-white p-3.5 text-left shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-[transform,box-shadow,border-color] active:scale-[0.985] active:bg-slate-50/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                          reviewHighlight
+                            ? "border-red-500 ring-1 ring-red-500/40"
+                            : "border-slate-200/80",
+                        )}
                         {...(guideTourLabCalendarStep &&
                         isGuideTourDemoTransfer(transfer)
                           ? { "data-guide-tour": "lab_calendar_item" }
@@ -6014,7 +6082,10 @@ export function RequestorPracticeReceivePage({
                                 </span>
                               ) : null}
                               {unread > 0 ? (
-                                <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[10px] font-semibold text-white">
+                                <span
+                                  className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[10px] font-semibold text-white"
+                                  aria-label={`미확인(채팅) ${unread > 99 ? "99+" : unread}`}
+                                >
                                   {unread > 99 ? "99+" : unread}
                                 </span>
                               ) : null}
