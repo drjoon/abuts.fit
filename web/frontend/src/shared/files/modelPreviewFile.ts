@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-10: 3Shape/TRIOS HPS(.dcm) 메시 프리뷰 (parseHpsDcmGeometry).
 // - 2026-08-28: BiteScan 등 TextureFile·UV 대소문자·스캔토큰 매칭 강화. 스캔 칼라는 언릿(Basic)으로 밝게.
 // - 2026-08-28: PLY TextureFile·UV 텍스처 / 컬러 프로퍼티명 정규화 / OBJ MTL map_Kd 지원. 스캔 칼라는 언릿(Basic)으로 밝게.
 // - 2026-08-28: PLY/OBJ 버텍스 컬러가 있으면 MeshStandardMaterial.vertexColors로 표시.
@@ -10,14 +11,16 @@
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
 // - web/frontend/src/shared/components/ModelPreviewDialog.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
+// - web/frontend/src/shared/files/hpsDcmPreview.ts
 import * as THREE from "three";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { PLYLoader } from "three/examples/jsm/loaders/PLYLoader.js";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { MTLLoader } from "three/examples/jsm/loaders/MTLLoader.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { parseHpsDcmGeometry } from "./hpsDcmPreview";
 
-export const MODEL_PREVIEW_EXTENSIONS = [".stl", ".ply", ".obj"] as const;
+export const MODEL_PREVIEW_EXTENSIONS = [".stl", ".ply", ".obj", ".dcm"] as const;
 
 /** STL 기본(무색) 프리뷰 틴트. PLY/OBJ 칼라/텍스처가 있으면 쓰지 않는다. */
 const DEFAULT_PREVIEW_COLOR = 0x5b9dff;
@@ -41,6 +44,7 @@ export function mimeTypeForModelFileName(name: string): string {
   const ext = getModelExtLower(name);
   if (ext === ".ply") return "model/ply";
   if (ext === ".obj") return "model/obj";
+  if (ext === ".dcm") return "application/octet-stream";
   return "model/stl";
 }
 
@@ -434,7 +438,7 @@ export type ParsedModelPreview = {
 };
 
 /**
- * STL/PLY/OBJ → geometry (+ optional texture).
+ * STL/PLY/OBJ/DCM → geometry (+ optional texture).
  * 텍스처는 options.textureFile 또는 companionFiles에서 해석한다.
  */
 export async function parseModelPreview(
@@ -465,6 +469,18 @@ export async function parseModelPreview(
       companionByBase.get(modelFileBasename(matchedName).toLowerCase()) || null
     );
   };
+
+  if (ext === ".dcm") {
+    const geometry = await parseHpsDcmGeometry(buffer);
+    if (import.meta.env.DEV) {
+      console.info("[modelPreview][dcm]", {
+        file: file.name,
+        attrs: Object.keys(geometry.attributes),
+        index: Boolean(geometry.getIndex()),
+      });
+    }
+    return { geometry, texture: null, textureFileName: null };
+  }
 
   if (ext === ".ply") {
     const header = peekPlyHeaderInfo(buffer);
