@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-10: 추천 라벨「추천은 N유닛」(구「추천 N배」).
 // - 2026-09-10: 데모 모드 충전 기본·추천 = conversion-quote suggestedTotal(이용분+1/3).
 // - 2026-09-10: 충전 안내 — resolveCreditChargeNoticeBody(치과/기공소).
 // - 2026-09-05: 데모 중 충전하기 — 실사용 전환 ConfirmDialog.
@@ -1018,7 +1019,7 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
                       className="text-xs font-medium text-primary underline-offset-2 hover:underline"
                       onClick={() => applyChargeUnits(recommendedUnits)}
                     >
-                      추천 {recommendedUnits}배
+                      추천은 {recommendedUnits}유닛
                     </button>
                   ) : null}
                 </div>
