@@ -3,6 +3,7 @@
 // - web/backend/models/conversionInvoice.model.js
 // - web/backend/utils/creditChargeUnit.js
 // change-log:
+// - 2026-09-10: 전환 견적에 suggestedTotal(이용분+1/3·100만 반올림) 포함.
 // - 2026-09-09: 데모→실사용 전환 워터폴(이용분 청산·기공소 상계/순지급·잔액 선수금).
 import mongoose from "mongoose";
 import BusinessAnchor from "../models/businessAnchor.model.js";
@@ -20,10 +21,15 @@ import { normalizeRequestorKind } from "../utils/requestorCapabilities.js";
 import {
   assertChargeMeetsConversionMinimum,
   resolveConversionMinTotal,
+  resolveDemoChargeSuggestion,
   roundWon,
 } from "../utils/demoConversionMath.js";
 
-export { assertChargeMeetsConversionMinimum, resolveConversionMinTotal };
+export {
+  assertChargeMeetsConversionMinimum,
+  resolveConversionMinTotal,
+  resolveDemoChargeSuggestion,
+};
 
 function toObjectId(value) {
   const raw = String(value || "").trim();
@@ -212,7 +218,12 @@ export async function computeDemoConversionQuote(businessAnchorId) {
     businessAnchorId: anchorId,
   });
   const freeRequest = Math.round(Number(snapshot?.freeRequestCredit || 0));
-  const demoDebt = freeRequest < 0 ? -freeRequest : 0;
+  const balance = Math.round(Number(snapshot?.balance || 0));
+  // 무료 의뢰 부채 + 표시 잔액(음수) 중 큰 쪽 — UI 소비량과 제안이 어긋나지 않게.
+  const demoDebt = Math.max(
+    freeRequest < 0 ? -freeRequest : 0,
+    balance < 0 ? -balance : 0,
+  );
   const periodStart = anchor.demoModeStartedAt || null;
   const periodEnd = new Date();
 
@@ -223,6 +234,12 @@ export async function computeDemoConversionQuote(businessAnchorId) {
       prepaidMin,
       chargeUnit: unit,
     });
+    const { alpha: suggestedAlpha, suggestedTotal } =
+      resolveDemoChargeSuggestion({
+        demoDebt,
+        chargeUnit: unit,
+        minTotal,
+      });
     return {
       kind: "lab",
       demoMode: Boolean(anchor.demoMode) && !anchor.demoModeExitedAt,
@@ -234,6 +251,8 @@ export async function computeDemoConversionQuote(businessAnchorId) {
       practiceToLabTotal: 0,
       prepaidMin,
       minTotal,
+      suggestedAlpha,
+      suggestedTotal,
       chargeUnit: unit,
       labRemittances: [],
       freeRequestCredit: freeRequest,
@@ -258,6 +277,12 @@ export async function computeDemoConversionQuote(businessAnchorId) {
     prepaidMin,
     chargeUnit: unit,
   });
+  const { alpha: suggestedAlpha, suggestedTotal } =
+    resolveDemoChargeSuggestion({
+      demoDebt,
+      chargeUnit: unit,
+      minTotal,
+    });
 
   return {
     kind: "practice",
@@ -270,6 +295,8 @@ export async function computeDemoConversionQuote(businessAnchorId) {
     practiceToLabTotal,
     prepaidMin,
     minTotal,
+    suggestedAlpha,
+    suggestedTotal,
     chargeUnit: unit,
     labRemittances,
     freeRequestCredit: freeRequest,

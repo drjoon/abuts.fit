@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-10: 데모 모드 충전 기본·추천 = conversion-quote suggestedTotal(이용분+1/3).
 // - 2026-09-10: 충전 안내 — resolveCreditChargeNoticeBody(치과/기공소).
 // - 2026-09-05: 데모 중 충전하기 — 실사용 전환 ConfirmDialog.
 // - 2026-08-12: 충전 화면 제목·안내문에 기공료 선입금(선납) 명시. 선불페이와 구분.
@@ -198,6 +199,9 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
   const [conversionMinTotal, setConversionMinTotal] = useState<number | null>(
     null,
   );
+  const [conversionSuggestedTotal, setConversionSuggestedTotal] = useState<
+    number | null
+  >(null);
   const [conversionQuoteLines, setConversionQuoteLines] = useState<{
     demoDebt: number;
     prepaidMin: number;
@@ -232,6 +236,7 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
   useEffect(() => {
     if (!demoMode || !token) {
       setConversionMinTotal(null);
+      setConversionSuggestedTotal(null);
       setConversionQuoteLines(null);
       return;
     }
@@ -242,6 +247,7 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
           success?: boolean;
           data?: {
             minTotal?: number;
+            suggestedTotal?: number;
             demoDebt?: number;
             prepaidMin?: number;
             practiceToLabTotal?: number;
@@ -255,7 +261,9 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
         if (cancelled || !res.ok) return;
         const data = (res.data as any)?.data || res.data || {};
         const minTotal = Math.round(Number(data.minTotal || 0));
+        const suggestedTotal = Math.round(Number(data.suggestedTotal || 0));
         if (minTotal > 0) setConversionMinTotal(minTotal);
+        if (suggestedTotal > 0) setConversionSuggestedTotal(suggestedTotal);
         setConversionQuoteLines({
           demoDebt: Math.round(Number(data.demoDebt || 0)),
           prepaidMin: Math.round(Number(data.prepaidMin || 0)),
@@ -265,6 +273,7 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
       } catch {
         if (!cancelled) {
           setConversionMinTotal(null);
+          setConversionSuggestedTotal(null);
           setConversionQuoteLines(null);
         }
       }
@@ -382,7 +391,14 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
       : depositAccount;
 
   const recommendedUnits = useMemo(() => {
-    // 2회차 기본·추천 버튼 공통: 한 달 사용량(충전 단위 반올림).
+    // 데모: 이용분 + 이용분/3(100만 반올림). 실사용 2회차: 한 달 사용량.
+    if (demoMode && conversionSuggestedTotal != null) {
+      return unitsFromSupply(
+        conversionSuggestedTotal,
+        chargeUnit,
+        maxChargeUnits,
+      );
+    }
     const fromApi = Number(
       spendInsights?.recommended?.oneMonthFullSupply ??
         spendInsights?.avgMonthlySpendSupply ??
@@ -394,6 +410,8 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
     return MIN_CHARGE_UNITS;
   }, [
     chargeUnit,
+    conversionSuggestedTotal,
+    demoMode,
     maxChargeUnits,
     spendInsights?.avgMonthlySpendSupply,
     spendInsights?.recommended?.oneMonthFullSupply,
@@ -625,15 +643,26 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
 
   useEffect(() => {
     if (loadingOrders) return;
-    if (hasChargedBefore && loadingInsights) return;
     if (pendingOrder) return;
     if (didApplyRecommendedUnits) return;
-    const base = hasChargedBefore ? recommendedUnits : MIN_CHARGE_UNITS;
+    // 데모: 전환 견적(suggested/min) 도착 전 조기 확정 금지 — 실사용 insights 기본값에 고정되면 안 됨.
+    if (demoMode) {
+      if (conversionSuggestedTotal == null && conversionMinTotal == null) {
+        return;
+      }
+    } else if (hasChargedBefore && loadingInsights) {
+      return;
+    }
+    const base =
+      demoMode || hasChargedBefore ? recommendedUnits : MIN_CHARGE_UNITS;
     applyChargeUnits(Math.max(base, conversionMinUnits));
     setDidApplyRecommendedUnits(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
+    conversionMinTotal,
     conversionMinUnits,
+    conversionSuggestedTotal,
+    demoMode,
     didApplyRecommendedUnits,
     hasChargedBefore,
     loadingInsights,
@@ -980,10 +1009,10 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
 
               <div className="space-y-4">
                 <div className="min-h-5">
-                  {!isFirstCharge &&
-                  !pendingOrder &&
+                  {!pendingOrder &&
                   recommendedUnits &&
-                  recommendedUnits !== chargeUnits ? (
+                  recommendedUnits !== chargeUnits &&
+                  (demoMode || !isFirstCharge) ? (
                     <button
                       type="button"
                       className="text-xs font-medium text-primary underline-offset-2 hover:underline"
