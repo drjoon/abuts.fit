@@ -12,6 +12,7 @@
 // - 2026-08-19: 제출 잠금(ref). 방금 생성된 건을 중복으로 오인하면 성공 처리.
 // - 2026-08-19: 제출 시작 시 초안 PATCH debounce를 멈춰 from-draft와 겹치지 않게.
 // - 2026-08-13: 제출 시 사전업로드 캐시·from-draft caseInfos로 PATCH/credits GET 생략
+// - 2026-09-10: from-draft 403(타 계정 Draft) 시 로컬 draft 캐시 삭제 + 새로고침 안내
 /**
  * ===== 신규 의뢰 제출 표준 훅 (SSOT) =====
  * Draft 기반 워크플로우: POST /api/requests/from-draft 사용
@@ -698,6 +699,35 @@ export const useNewRequestSubmitV2 = ({
             description,
             variant: "destructive",
             duration: 10000, // 10초
+          });
+          return;
+        }
+
+        // 타 계정 Draft ID를 붙잡은 경우 — 캐시 비우고 새로고침 유도
+        if (
+          res.status === 403 &&
+          String(errData?.message || "").includes("Draft")
+        ) {
+          try {
+            if (typeof window !== "undefined") {
+              window.localStorage.removeItem(NEW_REQUEST_DRAFT_ID_STORAGE_KEY);
+              const prefix = "abutsfit:new-request-draft-meta:v1:";
+              for (let i = window.localStorage.length - 1; i >= 0; i -= 1) {
+                const key = window.localStorage.key(i);
+                if (key && key.startsWith(prefix)) {
+                  window.localStorage.removeItem(key);
+                }
+              }
+            }
+          } catch {
+            // noop
+          }
+          dismiss();
+          toast({
+            title: "임시 의뢰 권한이 없습니다",
+            description:
+              "다른 계정에서 만든 임시 의뢰입니다. 페이지를 새로고침한 뒤 다시 의뢰해주세요.",
+            variant: "destructive",
           });
           return;
         }

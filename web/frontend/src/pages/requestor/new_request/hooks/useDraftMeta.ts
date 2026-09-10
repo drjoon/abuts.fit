@@ -5,11 +5,13 @@
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/backend/controllers/requests/creation.from-draft.controller.js
 // - 2026-08-19: 제출 시작 시 초안 PATCH debounce를 멈춰 from-draft와 겹치지 않게.
+// - 2026-09-10: 계정 공용 draft-id 복원 제거 — 타 계정 Draft 403 방지, 캐시는 서버 소유권 확인 후만 재사용.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
 import type { DraftCaseInfo, CaseInfos, DraftRequest } from "./newRequestTypes";
 import { getLocalDraft as getLocalNewRequestDraft } from "../utils/localDraftStorage";
 
+/** @deprecated 계정 공용 키 — 읽지 않음. 레거시 잔여분만 삭제용 */
 const DRAFT_ID_STORAGE_KEY = "abutsfit:new-request-draft-id:v1";
 const DRAFT_META_KEY_PREFIX = "abutsfit:new-request-draft-meta:v1:";
 const DRAFT_META_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -96,7 +98,12 @@ export function useDraftMeta() {
       };
 
       localStorage.setItem(metaKey, JSON.stringify(meta));
-      localStorage.setItem(DRAFT_ID_STORAGE_KEY, id);
+      // 계정 공용 draft-id 키는 더 이상 쓰지 않는다(타 계정 403). 잔여분만 정리.
+      try {
+        localStorage.removeItem(DRAFT_ID_STORAGE_KEY);
+      } catch {
+        // ignore
+      }
     },
     [getDraftMetaKey],
   );
@@ -143,17 +150,59 @@ export function useDraftMeta() {
     }
   }, [getHeaders]);
 
+  const adoptDraft = useCallback(
+    (id: string, map: Record<string, CaseInfos>) => {
+      const nextMap: Record<string, CaseInfos> = {
+        ...(Object.keys(map).length > 0 ? map : emptyMap),
+      };
+      if (!nextMap.__default__) {
+        nextMap.__default__ = { workType: "abutment" };
+      }
+      setDraftId(id);
+      setCaseInfosMap(nextMap);
+      setInitialDraftFiles([]);
+      saveDraftMeta(id, nextMap);
+    },
+    [saveDraftMeta],
+  );
+
+  const ensureOwnedDraftId = useCallback(
+    async (candidateId: string | null | undefined): Promise<boolean> => {
+      const id = String(candidateId || "").trim();
+      if (!id || !token) return false;
+      try {
+        const res = await fetch(`${API_BASE_URL}/requests/drafts/${id}`, {
+          method: "GET",
+          headers: getHeaders(),
+        });
+        return res.ok;
+      } catch {
+        return false;
+      }
+    },
+    [token, getHeaders],
+  );
+
   useEffect(() => {
     if (!token || !user?.id) {
       setStatus("ready");
       return;
     }
 
+    let cancelled = false;
+
     void (async () => {
       setStatus("loading");
       setError(null);
 
       try {
+        // 레거시 계정 공용 draft-id는 복원하지 않고 제거만 한다.
+        try {
+          localStorage.removeItem(DRAFT_ID_STORAGE_KEY);
+        } catch {
+          // ignore
+        }
+
         const localDraft =
           getLocalNewRequestDraft() as LocalDraftSnapshot | null;
         const hasLocalFiles =
@@ -164,6 +213,7 @@ export function useDraftMeta() {
           if (!newDraft) {
             throw new Error("Failed to create new draft");
           }
+          if (cancelled) return;
 
           // updateCaseInfos는 saveDraftMeta만 호출하므로 cachedMeta가 최신 patient/implant 정보를 가짐
           // localDraft.caseInfosMap은 업데이트되지 않으므로 cachedMeta를 우선 사용
@@ -177,70 +227,56 @@ export function useDraftMeta() {
                 ? { ...localDraft.caseInfosMap }
                 : { ...emptyMap };
 
-          if (Object.keys(initialMap).length === 0) {
-            initialMap.__default__ = { workType: "abutment" };
-          }
-
           clearStoredDraftIdentity();
-          setDraftId(newDraft._id);
-          setCaseInfosMap(initialMap);
-          setInitialDraftFiles([]);
-          saveDraftMeta(newDraft._id, initialMap);
+          adoptDraft(newDraft._id, initialMap);
           setStatus("ready");
           return;
         }
 
         const cachedMeta = loadDraftMeta();
-        if (cachedMeta) {
-          const initialMap = cachedMeta.caseInfosMap || { ...emptyMap };
-          if (Object.keys(initialMap).length === 0) {
-            initialMap.__default__ = { workType: "abutment" };
+        if (cachedMeta?.draftId) {
+          const owned = await ensureOwnedDraftId(cachedMeta.draftId);
+          if (cancelled) return;
+          if (owned) {
+            adoptDraft(cachedMeta.draftId, cachedMeta.caseInfosMap || {
+              ...emptyMap,
+            });
+            setStatus("ready");
+            return;
           }
-
-          setDraftId(cachedMeta.draftId);
-          setCaseInfosMap(initialMap);
-          setInitialDraftFiles([]);
-          saveDraftMeta(cachedMeta.draftId, initialMap);
-          setStatus("ready");
-          return;
-        }
-
-        const storedDraftId = localStorage.getItem(DRAFT_ID_STORAGE_KEY);
-        if (storedDraftId) {
-          const initialMap: Record<string, CaseInfos> = {
-            __default__: { workType: "abutment" },
-          };
-
-          setDraftId(storedDraftId);
-          setCaseInfosMap(initialMap);
-          setInitialDraftFiles([]);
-          saveDraftMeta(storedDraftId, initialMap);
-          setStatus("ready");
-          return;
+          clearStoredDraftIdentity();
         }
 
         const newDraft = await createDraft();
         if (!newDraft) {
           throw new Error("Failed to create new draft");
         }
+        if (cancelled) return;
 
-        const initialMap: Record<string, CaseInfos> = {
-          __default__: { workType: "abutment" },
-        };
-
-        setDraftId(newDraft._id);
-        setCaseInfosMap(initialMap);
-        setInitialDraftFiles([]);
-        saveDraftMeta(newDraft._id, initialMap);
+        adoptDraft(newDraft._id, { ...emptyMap });
         setStatus("ready");
       } catch (err) {
+        if (cancelled) return;
         const errMsg =
           err instanceof Error ? err.message : "Unknown error occurred";
         setError(errMsg);
         setStatus("error");
       }
     })();
-  }, [token, user?.id, loadDraftMeta, createDraft, saveDraftMeta]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    token,
+    user?.id,
+    loadDraftMeta,
+    createDraft,
+    saveDraftMeta,
+    clearStoredDraftIdentity,
+    adoptDraft,
+    ensureOwnedDraftId,
+  ]);
 
   const createFreshDraftState = useCallback(async () => {
     if (patchTimeoutRef.current) {
@@ -294,8 +330,27 @@ export function useDraftMeta() {
         });
 
         if (!res.ok) {
-          if (res.status === 404) {
+          // 404: 만료/삭제 · 403: 타 계정 Draft 재사용 — 둘 다 버리고 새 Draft로 교체
+          if (res.status === 404 || res.status === 403) {
             clearStoredDraftIdentity();
+            const replacement = await createDraft();
+            if (replacement?._id) {
+              setDraftId(replacement._id);
+              saveDraftMeta(replacement._id, map);
+              // 교체된 Draft에 현재 caseInfos를 한 번 더 반영
+              try {
+                await fetch(
+                  `${API_BASE_URL}/requests/drafts/${replacement._id}`,
+                  {
+                    method: "PATCH",
+                    headers: getHeaders(),
+                    body: JSON.stringify({ caseInfos: caseInfosArray }),
+                  },
+                );
+              } catch {
+                // ignore
+              }
+            }
             return;
           }
           throw new Error(`Failed to update draft: ${res.status}`);
@@ -306,7 +361,14 @@ export function useDraftMeta() {
         return;
       }
     },
-    [draftId, token, getHeaders, saveDraftMeta, clearStoredDraftIdentity],
+    [
+      draftId,
+      token,
+      getHeaders,
+      saveDraftMeta,
+      clearStoredDraftIdentity,
+      createDraft,
+    ],
   );
 
   // Debounced patch: 500ms 동안 변경이 없으면 한 번만 API 호출

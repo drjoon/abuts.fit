@@ -423,8 +423,8 @@ export const useNewRequestFilesV2 = ({
               return res;
             }
 
-            // Draft 만료/삭제
-            if (res.status === 404) {
+            // Draft 만료/삭제 또는 타 계정 Draft
+            if (res.status === 404 || res.status === 403) {
               return res;
             }
 
@@ -483,8 +483,8 @@ export const useNewRequestFilesV2 = ({
               }
 
               if (!res.ok) {
-                if (res.status === 404) {
-                  // Draft가 삭제되었거나 만료된 경우
+                if (res.status === 404 || res.status === 403) {
+                  // Draft가 삭제되었거나 타 계정 Draft를 붙잡은 경우
                   try {
                     if (typeof window !== "undefined") {
                       window.localStorage.removeItem(
@@ -494,14 +494,17 @@ export const useNewRequestFilesV2 = ({
                   } catch {}
 
                   toast({
-                    title: "임시 의뢰가 만료되었습니다",
+                    title:
+                      res.status === 403
+                        ? "임시 의뢰 권한이 없습니다"
+                        : "임시 의뢰가 만료되었습니다",
                     description:
-                      "임시 의뢰가 더 이상 유효하지 않아 새로 시작해야 합니다. 페이지를 새로고침한 뒤 다시 시도해주세요.",
+                      "임시 의뢰를 새로 시작합니다. 페이지를 새로고침한 뒤 다시 시도해주세요.",
                     variant: "destructive",
                     duration: 4000,
                   });
 
-                  // 한 번 404가 발생하면 이후 파일들도 모두 실패할 것이므로 조기 종료
+                  // 한 번 권한/만료 오류면 이후 파일들도 모두 실패할 것이므로 조기 종료
                   return;
                 }
 
