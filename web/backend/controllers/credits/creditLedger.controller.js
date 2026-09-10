@@ -5,7 +5,8 @@
 // - 2026-08-31: 수락 취소(workCanceledAt)·미정산 PTX는 장부 enrich에서 숨김(「적립/결제 완료」 오인 방지).
 // - 2026-08-31: currentBalanceSnapshot — realBalance/demoBalance 분리. 장부 잔액 러닝도 이원.
 // - 2026-08-31: usageScope(real|demo|all) — 데모/실사용 필터. hasDemoUsage 응답.
-// - 2026-08-31: periodSpendSummary — 기공소도 반환(정산 적립·적립 보류 포함). 치과와 동일 수식 카드.
+// - 2026-09-11: periodSpendSummary — 기공소 정산 적립=확정만(적립 보류 제외). 잔액·수식과 일치.
+// - 2026-08-31: periodSpendSummary — 기공소도 반환(정산 적립). 치과와 동일 수식 카드.
 // - 2026-08-31: 기공소 내역 — 치과 PTX lab-share HOLD를 기공크레딧 적립 보류로 미러.
 // - 2026-08-23: 커스텀어벗 통계 드릴다운 — toothWorks 플래그·어벗생산 REQUEST 포함.
 // - 2026-08-21: PTX abuts_shipping enrich — BA+출고일 박스키(기공소 생산·배송 묶음).
@@ -551,7 +552,8 @@ export async function listMyCreditLedger(req, res) {
           ownerObjectId: anchorObjectId,
           occurredAt: periodOccurredAt,
           journalCollectionName: LedgerJournal.collection.name,
-          includePendingLabSettlement: requestorKind === "lab",
+          // 정산 적립 카드=확정만. 적립 보류는 잔액 미반영·취소 가능 → 합산에서 제외.
+          includePendingLabSettlement: false,
           usageScope,
           practiceDemoMode,
         })

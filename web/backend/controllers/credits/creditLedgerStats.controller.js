@@ -2,8 +2,9 @@
 // - 2026-09-05: 정산 적립 분류 — PRACTICE_TRANSFER_ESCROW_RELEASE 포함(기간 요약·내역과 동일).
 // - 2026-08-31: 기공소 통계 — 치과→기공(정산)·기공→어벗츠(충전/소비) 건수·파트너·보철 분리.
 // - 2026-08-31: usageScope(real|demo|all) — 데모/실사용 통계 필터. hasDemoUsage 응답.
-// - 2026-08-31: 요약 — 유료/무료 충전 분리. 기공소 정산 적립(보류 포함) 유지.
-// - 2026-08-31: 기공소 통계 — PTX lab-share 적립 보류를 정산 적립·파트너·보철유형에 포함.
+// - 2026-09-11: 기공소 정산 적립·파트너·보철·의뢰건수 — 확정만(적립 보류 제외).
+// - 2026-08-31: 요약 — 유료/무료 충전 분리. 기공소 정산 적립.
+// - 2026-08-31: 기공소 통계 — 정산 적립·파트너·보철유형(확정).
 // - 2026-08-26: 보철유형 — 견적 라인 공급가 그대로(장부 비례배분 제거·의뢰당 1회).
 // - 2026-08-26: 소비 집계에 HOLD(에스크로 REQ_* 차감) 포함.
 // - 2026-08-23: 보철유형 집계에 커스텀어벗 포함(견적 라인 정규화·toothWorks 플래그·어벗생산).
@@ -26,7 +27,6 @@ import { buildFeeQuotesForTransferDocs } from "../../services/practiceTransferBi
 import { parseKstQueryBoundDate } from "../../utils/kstQueryBounds.js";
 import {
   isLabSettlementEarnEvent,
-  listPendingLabSettlementLedgerRows,
   matchesCreditUsageScope,
   parseCreditUsageScope,
   resolvePracticeTransferDemoFundingByIds,
@@ -446,19 +446,6 @@ export async function getMyCreditLedgerStats(req, res) {
     }
   }
 
-  const pendingLabRowsAll = isLab
-    ? await listPendingLabSettlementLedgerRows({
-        labAnchorId: anchorObjectId,
-        occurredAt: { $gte: from, $lte: to },
-        limit: 500,
-      })
-    : [];
-  const pendingLabRows = pendingLabRowsAll;
-  for (const row of pendingLabRows) {
-    const refId = row?.refId ? String(row.refId) : "";
-    if (refId && mongoose.Types.ObjectId.isValid(refId)) ptxIds.add(refId);
-  }
-
   const [ptxDocs, requestDocs] = await Promise.all([
     ptxIds.size
       ? PracticeTransfer.find({ _id: { $in: [...ptxIds] } })
@@ -549,7 +536,7 @@ export async function getMyCreditLedgerStats(req, res) {
   let totalSettlementPayoutSupply = 0;
   let transactionCount = 0;
   let orderCount = 0;
-  /** 치과→기공소(정산 적립·보류) 의뢰 건수 */
+  /** 치과→기공소(정산 적립 확정) 의뢰 건수 */
   let settlementOrderCount = 0;
   /** 기공소→어벗츠(어벗생산·배송) 의뢰 건수 */
   let abutsOrderCount = 0;
@@ -715,50 +702,6 @@ export async function getMyCreditLedgerStats(req, res) {
         roundSupplyAmount(
           (requestSpendForProsthesis.get(refId) || 0) + prosthesisAmount,
         ),
-      );
-    }
-  }
-
-  // 기공소: 작업완료 전 lab-share HOLD → 정산 적립(보류)으로 통계에 포함.
-  for (const row of pendingLabRows) {
-    const amount = roundSupplyAmount(row?.amount || 0);
-    if (amount <= 0) continue;
-    const refId = row?.refId ? String(row.refId) : "";
-    const ymd = new Intl.DateTimeFormat("en-CA", {
-      timeZone: "Asia/Seoul",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).format(new Date(row?.occurredAt || Date.now()));
-
-    totalSettlementEarnSupply += amount;
-    transactionCount += 1;
-    settlementOrderCount += 1;
-
-    const periodPrev = byPeriodMap.get(ymd) || {
-      ymd,
-      chargeSupply: 0,
-      spendSupply: 0,
-      settlementEarnSupply: 0,
-      count: 0,
-    };
-    periodPrev.settlementEarnSupply += amount;
-    periodPrev.count += 1;
-    byPeriodMap.set(ymd, periodPrev);
-
-    bumpMap(byCategoryMap, "settlement_earn", { amount, count: 1 });
-    const catRow = byCategoryMap.get("settlement_earn");
-    if (catRow) catRow.label = CATEGORY_LABELS.settlement_earn || "정산 적립";
-
-    if (refId && ptxById.has(refId)) {
-      const ptx = ptxById.get(refId);
-      const practiceAnchorId = String(ptx?.practiceBusinessAnchorId || "");
-      const partnerLabel =
-        practiceNameByAnchorId.get(practiceAnchorId) || "치과";
-      bumpMap(byPartnerMap, partnerLabel, { amount, count: 1 });
-      ptxSpendForProsthesis.set(
-        refId,
-        roundSupplyAmount((ptxSpendForProsthesis.get(refId) || 0) + amount),
       );
     }
   }

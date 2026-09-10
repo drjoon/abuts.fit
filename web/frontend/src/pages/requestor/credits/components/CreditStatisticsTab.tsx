@@ -1,6 +1,7 @@
 // change-log:
 // - 2026-09-05: 요약 충전 카드 라벨「충전」(치과·기공소 공통, 유료 접두 제거).
 // - 2026-09-05: 데모 모드 충전 카드 라벨「충전」(유료/선수금 아님).
+// - 2026-09-11: 기공소 정산 적립·통계 — 확정만(적립 보류 제외). 치과 소비 툴팁=결제 보류 포함 명시.
 // - 2026-09-05: 요약 수식에서 무료 충전 카드 제거(유료 [+정산] − 소비).
 // - 2026-09-05: 데모/실사용 집계 필터·2줄 카드 값 제거. 무료 충전 단일 라벨.
 // - 2026-08-31: 기공소 통계 구역 — 기공/어벗 액센트 셸·좌측 레일로 클러스터 구분 강화.
@@ -699,7 +700,7 @@ export function CreditStatisticsTab() {
     : "선택한 기간에 지출한 어벗 생산·배송·스토어 결제 합계입니다.";
   const practiceSpendTooltip = demoMode
     ? resolveCreditLedgerDemoPeriodSpendHint(isLab ? "lab" : "practice")
-    : "선택한 기간에 지출한 기공료와 스토어 결제 합계입니다.";
+    : "선택한 기간에 지출한 기공료·스토어 결제 합계입니다. 결제 보류(잔액 차감분)를 포함합니다.";
   const chargeLabel = CREDIT_LEDGER_CHARGE_LABEL;
   const chargeDetailTitle = CREDIT_LEDGER_CHARGE_DETAIL_TITLE;
   const chargeTooltip = demoMode
@@ -804,7 +805,7 @@ export function CreditStatisticsTab() {
         label="정산 적립"
         value={settlementEarnTotal}
         hint="안내"
-        hintTooltip="선택한 기간에 적립된 기공 정산(작업완료 전 적립 보류 포함)입니다."
+        hintTooltip="선택한 기간에 확정 적립된 기공 정산 합계입니다. 적립 보류는 포함하지 않습니다."
         onClick={() =>
           openDrillDown({
             title: "정산 적립 내역",
@@ -820,7 +821,7 @@ export function CreditStatisticsTab() {
         label="의뢰건수"
         value={`${settlementOrderCount.toLocaleString("ko-KR")}건`}
         hint="안내"
-        hintTooltip="치과로부터 수신한 기공의뢰(정산 적립·보류) 건수입니다."
+        hintTooltip="치과로부터 수신·정산 적립이 확정된 기공의뢰 건수입니다."
         onClick={() =>
           openDrillDown({
             title: "치과로부터 내역",
@@ -890,7 +891,7 @@ export function CreditStatisticsTab() {
 
           <StatsPanel
             title="치과별 적립"
-            subtitle="치과별 정산 적립(보류 포함)"
+            subtitle="치과별 정산 적립"
             icon={Wallet}
             onOpenDetail={() =>
               openDrillDown({
@@ -934,7 +935,7 @@ export function CreditStatisticsTab() {
           >
             <HorizontalBarList
               rows={stats?.byProsthesisType || []}
-              emptyHint="정산 적립(보류 포함)이 있을 때 보철 유형별로 표시됩니다."
+              emptyHint="정산 적립이 있을 때 보철 유형별로 표시됩니다."
               onRowClick={(row) =>
                 openDrillDown({
                   title: `${row.label} 내역`,

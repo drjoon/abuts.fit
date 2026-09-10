@@ -12,10 +12,11 @@
 // - 2026-09-05: 정산 적립 집계 — PRACTICE_TRANSFER_ESCROW_RELEASE(+LAB_SETTLEMENT_CREDIT) 포함. 내역 행 타입과 동일.
 // - 2026-09-02: 적립 보류 미러 — deleted/canceled 제외 + HOLD 저널 없으면 스킵(치과 취소 후 heldAt 잔여 방어).
 // - 2026-08-31: 적립 보류 미러 — workCanceledAt 수락 취소 건 제외.
-// - 2026-08-31: 정산 적립(확정·보류) PTX 데모 결제 여부 반영. 유료는 단수, 무료·정산·소비·잔액만 2줄.
+// - 2026-08-31: 정산 적립(확정) PTX 데모 결제 여부 반영. 유료는 단수, 무료·정산·소비·잔액만 2줄.
 // - 2026-08-31: usageScope(real|demo|all) — 데모/실사용 장부·기간요약·적립보류 필터.
 // - 2026-08-31: 기공소 장부 — 치과 PTX lab-share HOLD를 기공크레딧 적립 보류 행으로 미러(잔액 미반영).
-// - 2026-08-31: 기간 요약 — 정산 적립(확정+적립 보류) 합계. 치과/기공소 수식 카드용.
+// - 2026-09-11: 기간 요약 — 정산 적립=확정만(적립 보류 미포함). 잔액·수식과 일치.
+// - 2026-08-31: 기간 요약 — 정산 적립 합계. 치과/기공소 수식 카드용.
 // - 2026-08-21: hold meta.convertedAt 있으면 SPEND_PAID(지급완료)로 표시.
 // - 2026-08-21: PTX CA Request도 abutmentBoxGroupKey(BA+출고일) 유지 — 기공소 배송·생산 박스 묶음.
 // - 2026-08-19: 어벗디자인·어벗생산 박스는 의뢰 사업자+예정출고일. 치과명으로 쪼개지 않음.
@@ -1408,8 +1409,8 @@ export function parseCreditLedgerFacetResult(facetRaw, { pageSize } = {}) {
 
 /**
  * 의뢰자 정산 내역 상단 카드 — 필터 기간 유료/무료 충전·소비·(기공소) 정산 적립 공급가.
- * 소비는 REQ_* 실차감(HOLD 포함). 통계 탭과 동일 이벤트 기준.
- * includePendingLabSettlement=true 이면 작업완료 전 lab-share HOLD 적립 보류도 합산.
+ * 소비는 REQ_* 실차감(HOLD 포함 — 잔액에서 이미 차감). 통계 탭과 동일 이벤트 기준.
+ * 정산 적립은 확정(ESCROW_RELEASE 등)만. includePendingLabSettlement는 레거시 플래그(기본 false).
  * usageScope=real|demo 이면 합계(total*)만 해당 범위. byUsage 는 항상 실사용/데모 분리.
  */
 export async function aggregateRequestorPeriodLedgerSummary({

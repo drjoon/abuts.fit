@@ -4,6 +4,7 @@
 // - 2026-09-05: 요약 충전 카드 라벨「충전」(치과·기공소 공통, 유료 접두 제거)·안내 툴팁 정리.
 // - 2026-09-05: 데모 모드 충전 카드 라벨「충전」(유료/선수금 아님)·가상 잔고 안내.
 // - 2026-09-05: 요약 수식에서 무료 충전 카드 제거(유료 [+정산] − 소비). 잔여 무료 버킷은 compact만.
+// - 2026-09-11: 기공소 정산 적립 카드·통계 — 확정만(적립 보류 제외). 잔액·수식과 일치.
 // - 2026-09-05: 기공소 현재 잔액 — spendableBalance(정산 적립 포함). balance(유료+무료)만 쓰던 버그 수정.
 // - 2026-09-05: 데모/실사용 집계 필터·2줄 잔액·행「데모」뱃지 제거. 잔액 음수 표시 허용.
 // - 2026-09-01: PTX 결제보류 — hold/adjust가 여러 저널로 흩어져도 목록·호버 금액을 견적(heldTotal)과 맞춤.
@@ -2651,20 +2652,20 @@ export const CreditLedgerModal = ({
   const balanceHintTooltip = isDemoMode
     ? resolveCreditLedgerDemoBalanceHint(demoKind)
     : showSettlementCredit
-      ? "충전과 기공 정산 적립에서 기공·스토어 소비를 뺀 잔여액입니다. 적립 보류분은 잔액에 아직 반영되지 않습니다."
-      : "충전에서 소비액을 뺀 선불금 잔여액입니다.";
+      ? "충전과 기공 정산 적립(확정)에서 기공·스토어 소비를 뺀 잔여액입니다."
+      : "충전에서 소비액(결제 보류·완료 포함)을 뺀 선불금 잔여액입니다.";
   const periodChargeLabel = CREDIT_LEDGER_CHARGE_LABEL;
   const periodChargeDetailTitle = CREDIT_LEDGER_CHARGE_DETAIL_TITLE;
   const periodPaidChargeTooltip = isDemoMode
     ? CREDIT_LEDGER_DEMO_CHARGE_HINT
     : "선택한 기간에 충전된 금액 합계입니다.";
   const periodSettlementEarnTooltip =
-    "선택한 기간에 적립된 기공 정산(작업완료 전 적립 보류 포함) 합계입니다.";
+    "선택한 기간에 확정 적립된 기공 정산 합계입니다. 적립 보류는 포함하지 않습니다.";
   const periodSpendTooltip = isDemoMode
     ? resolveCreditLedgerDemoPeriodSpendHint(demoKind)
     : showSettlementCredit
       ? "선택한 기간에 지출한 어벗 생산·배송·스토어 결제 합계입니다."
-      : "선택한 기간에 지출한 기공료와 스토어 결제 합계입니다.";
+      : "선택한 기간에 지출한 기공료·스토어 결제 합계입니다. 결제 보류(잔액 차감분)를 포함합니다.";
 
   const body = (
     <div
