@@ -242,8 +242,8 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - 이벤트 기반 스냅샷이 있어도 일일 배치(정산/warmup 포함)는 건너뛰지 않음
     - 멀티 인스턴스 중복 방지: `worker:daily-referral-snapshot` JobLock
     - 당일 완료 마커: `worker:daily-referral-snapshot:done:<ymd>` (TTL ~48h)
-  - 가격 SSOT 자동 점검(`runPricingSsotConsistencyCheck`)은 워커/관리자 대시보드 노출에서 제외
-  - 수동/CI 점검은 `scripts/db/check-pricing-ssot-consistency.js` / `npm run db:check-pricing-ssot` 유지
+  - 가격 SSOT 자동 점검(`runPricingSsotConsistencyCheck`)은 워커/관리자 대시보드/CI 스케줄에서 제외
+  - 수동 점검은 `scripts/db/check-pricing-ssot-consistency.js` / `npm run db:check-pricing-ssot` 유지
   - 이벤트 기반 재계산: `services/requestSnapshotTriggers.service.js`
     - 의뢰 취소/삭제 시 `triggerDashboardSummaryRefreshForAnchorId`가 카드 요약과
       출고예정(`bulkShippingSnapshot`)을 함께 재계산. `GET /api/requests/my/bulk-shipping`은

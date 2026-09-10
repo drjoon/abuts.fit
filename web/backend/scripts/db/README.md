@@ -77,16 +77,14 @@ npm run db:migrate-payout-rates -- --dry-run
 npm run db:migrate-payout-rates
 ```
 
-- **가격/리퍼럴 SSOT 일치성 점검 (수동/CI용)**
+- **가격/리퍼럴 SSOT 일치성 점검 (수동)**
 
-  > 일일 워커·관리자 대시보드 자동 점검은 제거됨. 스냅샷 재계산은 `jobs/dailyReferralSnapshotWorker.js`에서 계속 수행.
+  > 일일 워커·관리자 대시보드·GitHub Actions 스케줄 자동 점검은 제거됨.
+  > 스냅샷 재계산은 `jobs/dailyReferralSnapshotWorker.js`에서 계속 수행.
 
 ```bash
 # strict 모드(불일치가 1건 이상이면 실패 코드 반환)
 npm run db:check-pricing-ssot
-
-# CI 모드(local.env 로드 없이, 주입된 MONGODB_URI 사용)
-npm run db:check-pricing-ssot:ci
 
 # 필요 시 strict 없이 직접 실행 (기본값: 결과 write)
 ENV_FILE=local.env node scripts/db/check-pricing-ssot-consistency.js
