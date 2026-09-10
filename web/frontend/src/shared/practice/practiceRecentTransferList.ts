@@ -5,6 +5,7 @@
  * 수락=의뢰수락. 완료=치과도착일 경과 자동 작업완료(어벗 미업로드). 채팅 unread는 상태 뱃지별 합산.
  * 자동매칭(공개 풀)은 공정상 의뢰 — 뱃지 집계·「의뢰」필터에 포함.
  * 기공소 수신은 거절·작업취소가 목록에서 빠져 취소/거절 뱃지 불필요 → 치과만 취소 포함 4뱃지.
+ * 2026-09-11: listBadgeNavigate — 상태 전 건 순회(미확인 앞). 건수와 클릭 대상 일치.
  * 2026-09-09: listUnreadTransfersForStatusFilter — 상태 뱃지 unread 순회용.
  * 2026-09-02: 거절 뱃지 제거·기공소 거절은 취소 집계. 어벗=CA designFiles.
  * 2026-09-02: 기공소 수신 상단은 의뢰·수락·완료·어벗 4뱃지(취소 제외).
@@ -1773,8 +1774,9 @@ export const listTransfersForStatusFilter = <
 };
 
 /**
- * 뱃지 클릭 순회 대상 — 안읽음 우선, 없으면 해당 상태 전 건.
- * (상태 건수만 있어도 배지가 죽어 보이지 않게)
+ * 뱃지 클릭 순회 대상 — 해당 상태 **전 건**(배지 본문 건수와 동일).
+ * 미확인(채팅)을 앞에 두고, 날짜 오름차순은 유지(stable).
+ * (예전: unread만 반환 → 건수와 순회 대상이 어긋남)
  */
 export const listBadgeNavigateTransfersForStatusFilter = <
   T extends {
@@ -1793,13 +1795,13 @@ export const listBadgeNavigateTransfersForStatusFilter = <
   filterKey: PracticeRecentStatusFilterKey,
   dateKey: "orderDate" | "arrivalDate" = "arrivalDate",
 ): T[] => {
-  const unread = listUnreadTransfersForStatusFilter(
-    transfers,
-    filterKey,
-    dateKey,
-  );
-  if (unread.length > 0) return unread;
-  return listTransfersForStatusFilter(transfers, filterKey, dateKey);
+  const matched = listTransfersForStatusFilter(transfers, filterKey, dateKey);
+  if (matched.length <= 1) return matched;
+  return [...matched].sort((a, b) => {
+    const ua = Math.max(0, Number(a.unreadCount || 0)) > 0 ? 0 : 1;
+    const ub = Math.max(0, Number(b.unreadCount || 0)) > 0 ? 0 : 1;
+    return ua - ub;
+  });
 };
 
 const sortTransfersByStatusBadgeDate = <

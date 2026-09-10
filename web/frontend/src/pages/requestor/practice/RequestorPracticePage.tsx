@@ -5812,7 +5812,8 @@ export function RequestorPracticeReceivePage({
         arrivalDate: transfer.arrivalDate,
         createdAt: transfer.createdAt,
       });
-      // 미확인·미처리 우선. 해당 상태에 없으면 전체에서 같은 상태 순회.
+      // 배지 본문 건수와 동일하게 해당 상태 전 건 순회.
+      // 미확인·미처리를 앞에 두되, 큐에만 가두면 열람 후 빠진 건이 누락됨.
       const queueRows = baseFilteredTransfers.filter((transfer) =>
         isPracticeStatusBadgeQueueTransfer(
           {
@@ -5823,18 +5824,30 @@ export function RequestorPracticeReceivePage({
           badgeClearedIds,
         ),
       );
-      let queue = listBadgeNavigateTransfersForStatusFilter(
+      const queueMatched = listBadgeNavigateTransfersForStatusFilter(
         queueRows.map(toMeta),
         filterKey,
         calendarDateKey,
       );
-      if (queue.length === 0) {
-        queue = listBadgeNavigateTransfersForStatusFilter(
-          baseFilteredTransfers.map(toMeta),
-          filterKey,
-          calendarDateKey,
-        );
-      }
+      const allMatched = listBadgeNavigateTransfersForStatusFilter(
+        baseFilteredTransfers.map(toMeta),
+        filterKey,
+        calendarDateKey,
+      );
+      const queueIdSet = new Set(
+        queueMatched.map((row) =>
+          String(row.transfer.transferId || row.transfer._id || "").trim(),
+        ),
+      );
+      const queue = [
+        ...queueMatched,
+        ...allMatched.filter(
+          (row) =>
+            !queueIdSet.has(
+              String(row.transfer.transferId || row.transfer._id || "").trim(),
+            ),
+        ),
+      ];
       if (queue.length === 0) return;
 
       const transferIdOf = (row: (typeof queue)[number]) =>

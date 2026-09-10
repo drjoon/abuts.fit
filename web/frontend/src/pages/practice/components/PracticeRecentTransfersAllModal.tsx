@@ -702,23 +702,30 @@ export function PracticeRecentTransfersAllModal({
   const navigateNextUnreadForStatus = useCallback(
     (key: string) => {
       const filterKey = key as PracticeRecentStatusFilterKey;
-      let queue = listBadgeNavigateTransfersForStatusFilter(
+      // 배지 본문 건수와 동일하게 해당 상태 전 건 순회.
+      // 미확인·미처리를 앞에 두되, 큐에만 가두면 열람 후 빠진 건이 누락됨.
+      const queueMatched = listBadgeNavigateTransfersForStatusFilter(
         badgeQueueTransfers,
         filterKey,
         dateKey,
       );
-      if (queue.length === 0) {
-        queue = listBadgeNavigateTransfersForStatusFilter(
-          visibleGroupedTransfers,
-          filterKey,
-          dateKey,
-        );
-      }
+      const allMatched = listBadgeNavigateTransfersForStatusFilter(
+        visibleGroupedTransfers,
+        filterKey,
+        dateKey,
+      );
+      const queueIdSet = new Set(
+        queueMatched.map((t) => String(t.transferId || t.id || "").trim()),
+      );
+      const transferIdOf = (t: PracticeRecentTransferItem) =>
+        String(t.transferId || t.id || "").trim();
+      const queue = [
+        ...queueMatched,
+        ...allMatched.filter((t) => !queueIdSet.has(transferIdOf(t))),
+      ];
       if (queue.length === 0) return;
 
       const lastId = unreadNavigateLastIdRef.current[filterKey] || "";
-      const transferIdOf = (t: PracticeRecentTransferItem) =>
-        String(t.transferId || t.id || "").trim();
       let candidates = queue;
       if (lastId) {
         const withoutLast = queue.filter((t) => transferIdOf(t) !== lastId);
