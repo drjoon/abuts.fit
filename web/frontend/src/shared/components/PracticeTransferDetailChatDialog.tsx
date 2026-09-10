@@ -2330,14 +2330,14 @@ export function PracticeTransferDetailChatDialog({
                               void onDownloadAllFiles({ dcmFormat: "dcm" })
                             }
                           >
-                            DCM 원본 포함
+                            DCM 원본
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             onClick={() =>
                               void onDownloadAllFiles({ dcmFormat: "ply" })
                             }
                           >
-                            DCM→PLY(칼라) 변환
+                            PLY (칼라)
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
