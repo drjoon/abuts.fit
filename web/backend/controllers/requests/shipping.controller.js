@@ -3,6 +3,7 @@
 // - 2026-08-11: mailbox-requests 성능 — exact mailboxAddress, lean+batch hydrate, 15s 캐시, requestIds 단축 경로
 // - 2026-08-04: 수동 집하 pickedUpAt/deliveredAt을 당일 16:00 고정 → 실제 처리 시각(now)으로 기록
 // - 2026-08-04: 오늘 발송 체크 해제 시 originalEstimatedShipYmd로 발송일 복원 + mailbox-summary 캐시 무효화
+// - 2026-09-10: 우편함 shippingDayInfo 배지 = 가장 빠른 estimatedShipYmd 요일 (묶음 설정 요일 아님)
 // related files:
 // - web/backend/rules.md
 // - web/backend/app.js
@@ -289,6 +290,19 @@ function getNextShippingDayKey(days = [], todayKey = getKstDayKey()) {
   return best;
 }
 
+/** Civil YMD → weekday key (rules.md §1.4 — UTC noon, not server-local). */
+function dayKeyFromYmd(ymd) {
+  const parts = String(ymd || "")
+    .trim()
+    .split("-")
+    .map(Number);
+  if (parts.length !== 3 || parts.some((n) => !Number.isFinite(n) || n <= 0)) {
+    return null;
+  }
+  const [y, m, d] = parts;
+  return DAY_KEYS[new Date(Date.UTC(y, m - 1, d, 12)).getUTCDay()] || null;
+}
+
 function getTrackingStatusCode(requestDoc) {
   const fromWorkflow = String(
     requestDoc?.shippingWorkflow?.trackingStatusCode || "",
@@ -325,12 +339,30 @@ function isPrePickupTrackingRequest(requestDoc) {
   );
 }
 
+/**
+ * Mailbox "not today" badge: prefer earliest estimatedShipYmd weekday
+ * (matches modal 출고 MM/DD). Fall back to weeklyBatchDays only when YMD missing.
+ */
 function resolveMailboxShippingDayInfo({
   weeklyBatchDays = [],
   forceTodayShipment = false,
   hasExpress = false,
+  earliestEstimatedShipYmd = null,
 }) {
   if (forceTodayShipment || hasExpress) {
+    return { notToday: false, nextDayLabel: null };
+  }
+
+  const todayYmd = getTodayYmdInKst();
+  const earliest = String(earliestEstimatedShipYmd || "").trim();
+  if (earliest) {
+    if (earliest > todayYmd) {
+      const key = dayKeyFromYmd(earliest);
+      return {
+        notToday: true,
+        nextDayLabel: (key && DAY_LABELS[key]) || null,
+      };
+    }
     return { notToday: false, nextDayLabel: null };
   }
 
@@ -626,6 +658,7 @@ export async function getShippingMailboxSummary(req, res) {
           weeklyBatchDays: item.weeklyBatchDays,
           forceTodayShipment: item.forceTodayShipment,
           hasExpress: item.hasExpress,
+          earliestEstimatedShipYmd: item.earliestEstimatedShipYmd,
         }),
       }))
       .sort((a, b) => a.mailboxAddress.localeCompare(b.mailboxAddress));

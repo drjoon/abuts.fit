@@ -142,7 +142,7 @@
   - `getTodayYmdInKst(date?)`는 인자 날짜의 KST YMD를 반환(미지정 시 지금). 스케줄 재계산 시
     `toKstYmd(requestedAt)` / `getTodayYmdInKst(requestedAt)`를 써야 "오늘"로 밀리지 않음.
   - 우선순위: `sortByProductionPriority` 신속 부스트 (스케줄/ETA용). **장비 가공 큐 순서**는 아래 **가공 우선순위** SSOT.
-  - 우편함: 신속 건 포함 시 주간 묶음 요일 제한 무시 (`shipping.controller.js` / frontend `shippingDay.helpers.ts`)
+  - 우편함: 신속 건 포함 시 주간 묶음 요일 제한 무시. 미발송 배지 요일은 가장 빠른 `estimatedShipYmd`(모달 출고일과 동일). YMD 없을 때만 `weeklyBatchDays` 폴백 (`shipping.controller.js` / frontend `shippingDay.helpers.ts`)
   - 대시보드 토글: `PATCH /my/shipping-mode` → `shipping.Requestor.controller.js` `updateMyShippingMode`
 
 ### 디자인 파트너 클레임·마감

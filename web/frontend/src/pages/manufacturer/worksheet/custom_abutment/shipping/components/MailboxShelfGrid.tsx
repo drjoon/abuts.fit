@@ -8,6 +8,7 @@
 // change-log:
 // - 2026-08-23: 세로 스크롤은 RequestPage에 위임, 선반은 가로 스크롤만.
 // - 2026-08-23: 가로 스크롤바를 상단 sticky로 옮겨 마우스 환경에서도 바로 조작 가능.
+// - 2026-09-10: 배지 요일은 API shippingDayInfo(가장 빠른 출고일) 사용 — 묶음 설정일과 혼동 방지.
 import * as React from "react";
 
 import {

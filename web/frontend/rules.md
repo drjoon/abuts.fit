@@ -278,7 +278,7 @@ Notes:
     (`ShippingModeBadge`, `WorksheetCardGrid`, 대시보드 의뢰 리스트)
   - 워크시트 목록 API(`view=worksheet`) projection에 `shippingMode`/`finalShipping`/`originalShipping`을 포함해야 합니다.
   - 대시보드 묶음/신속 토글: `PATCH /api/requests/my/shipping-mode` (`RequestorBulkShippingBannerCard.tsx`)
-  - 우편함: 신속 건 포함 시 오늘 발송 가능으로 처리 (`shippingDay.helpers.ts`)
+  - 우편함: 신속 건 포함 시 오늘 발송 가능으로 처리. 미발송 배지 요일은 가장 빠른 `estimatedShipYmd`(모달 출고일과 동일). YMD 없을 때만 `weeklyBatchDays` 폴백 (`shippingDay.helpers.ts` / `shipping.controller.js`)
   - 관련 파일:
     - `src/pages/requestor/new_request/NewRequestPage.tsx`
     - `src/pages/requestor/new_request/components/NewRequestAttachmentsPanel.tsx`
