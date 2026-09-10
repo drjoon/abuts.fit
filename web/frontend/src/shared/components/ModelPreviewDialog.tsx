@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-10: DCM 다운로드 시 원본/PLY(칼라) 선택 메뉴.
 // - 2026-09-05: z-[450]/overlay z-[445] — 가이드투어 코치(z-440)·플로팅 상세 위.
 // - 2026-08-31: 이미지 줌/팬 — ZoomableImagePreview 공통 컴포넌트 사용(중앙 기준 줌).
 // - 2026-08-31: 이미지 프리뷰 확대/축소(휠·버튼) + 드래그 이동.
@@ -16,8 +17,9 @@
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // - web/frontend/src/features/chat/components/NewChatWidget.tsx
 // - web/frontend/src/shared/files/modelPreviewFile.ts
+// - web/frontend/src/shared/files/dcmDownloadFormat.ts
 import { useEffect, useState } from "react";
-import { ChevronLeft, ChevronRight, Download } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, Download } from "lucide-react";
 import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
 import { ZoomableImagePreview } from "@/shared/components/ZoomableImagePreview";
 import { Button } from "@/components/ui/button";
@@ -29,11 +31,25 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/shared/ui/cn";
 import { RESPONSIVE } from "@/shared/ui/responsive";
+import {
+  isDcmFileName,
+  type DcmDownloadFormat,
+} from "@/shared/files/dcmDownloadFormat";
 
 export type ModelPreviewKind = "model" | "image";
+
+export type ModelPreviewDownloadOptions = {
+  dcmFormat?: DcmDownloadFormat;
+};
 
 export type ModelPreviewDialogProps = {
   open: boolean;
@@ -46,7 +62,7 @@ export type ModelPreviewDialogProps = {
   companionFiles?: File[] | null;
   loading?: boolean;
   progress?: number;
-  onDownload?: () => void | Promise<void>;
+  onDownload?: (opts?: ModelPreviewDownloadOptions) => void | Promise<void>;
   downloadBusy?: boolean;
   /** 0-based. 없으면 네비 숨김 */
   previewIndex?: number;
@@ -82,6 +98,7 @@ export function ModelPreviewDialog({
   onConfirm,
 }: ModelPreviewDialogProps) {
   const isImage = kind === "image";
+  const isDcm = isDcmFileName(fileName);
   const title =
     String(fileName || "").trim() || (isImage ? "이미지 미리보기" : "3D 미리보기");
   const pct = Math.max(0, Math.min(100, Number(progress) || 0));
@@ -92,6 +109,63 @@ export function ModelPreviewDialog({
   const confirmCta = String(confirmLabel || "").trim();
   const showConfirm = Boolean(onConfirm && confirmCta);
   const showFooter = !isImage || showConfirm;
+
+  const renderDownloadControl = (opts?: {
+    className?: string;
+    variant?: "default" | "secondary" | "outline";
+  }) => {
+    if (!onDownload) return null;
+    const disabled = downloadBusy || loading || confirmBusy || !fileName;
+    const label = downloadBusy ? "다운로드 중..." : "다운로드";
+    const className = cn("h-9", opts?.className);
+    const variant = opts?.variant || "secondary";
+
+    if (!isDcm) {
+      return (
+        <Button
+          type="button"
+          size="sm"
+          variant={variant}
+          className={className}
+          onClick={() => void onDownload()}
+          disabled={disabled}
+        >
+          <Download className="mr-1.5 h-4 w-4" />
+          {label}
+        </Button>
+      );
+    }
+
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            size="sm"
+            variant={variant}
+            className={className}
+            disabled={disabled}
+          >
+            <Download className="mr-1.5 h-4 w-4" />
+            {label}
+            <ChevronDown className="ml-1 h-3.5 w-3.5 opacity-70" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="z-[460]">
+          <DropdownMenuItem
+            onClick={() => void onDownload({ dcmFormat: "dcm" })}
+          >
+            DCM 원본
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => void onDownload({ dcmFormat: "ply" })}
+          >
+            PLY (칼라)
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  };
 
   useEffect(() => {
     if (!isImage || !file) {
@@ -122,19 +196,12 @@ export function ModelPreviewDialog({
   }, [confirmBusy, loading, onNext, onPrev, open, showNav]);
 
   const downloadOverlay =
-    onDownload && !loading ? (
-      <Button
-        type="button"
-        size="sm"
-        variant="secondary"
-        className="absolute right-3 top-3 z-20 h-9 shadow-md"
-        onClick={() => void onDownload()}
-        disabled={downloadBusy || !fileName}
-      >
-        <Download className="mr-1.5 h-4 w-4" />
-        {downloadBusy ? "다운로드 중..." : "다운로드"}
-      </Button>
-    ) : null;
+    onDownload && !loading
+      ? renderDownloadControl({
+          className: "absolute right-3 top-3 z-20 shadow-md",
+          variant: "secondary",
+        })
+      : null;
 
   const navButtons = showNav ? (
     <>
@@ -254,18 +321,11 @@ export function ModelPreviewDialog({
               닫기
             </Button>
             <div className="flex flex-wrap items-center justify-end gap-2">
-              {onDownload ? (
-                <Button
-                  type="button"
-                  variant={showConfirm ? "outline" : "default"}
-                  className="h-9"
-                  onClick={() => void onDownload()}
-                  disabled={downloadBusy || loading || confirmBusy || !fileName}
-                >
-                  <Download className="mr-1.5 h-4 w-4" />
-                  {downloadBusy ? "다운로드 중..." : "다운로드"}
-                </Button>
-              ) : null}
+              {onDownload
+                ? renderDownloadControl({
+                    variant: showConfirm ? "outline" : "default",
+                  })
+                : null}
               {showConfirm ? (
                 <Button
                   type="button"

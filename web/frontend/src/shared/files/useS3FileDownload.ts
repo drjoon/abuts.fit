@@ -1,9 +1,12 @@
 // change-log:
+// - 2026-09-10: DCM 다운로드 시 PLY(칼라) 클라이언트 변환 옵션.
 // - 2026-08-16: IndexedDB(s3:key) 캐시 — 다운로드·프리뷰 공통.
 // - 2026-08-16: fetchS3Blob — 프리뷰용 blob fetch(저장 없음).
 // related files:
 // - web/frontend/src/shared/files/downloadWithProgress.ts
 // - web/frontend/src/shared/files/s3BlobCache.ts
+// - web/frontend/src/shared/files/hpsDcmToPly.ts
+// - web/frontend/src/shared/files/dcmDownloadFormat.ts
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // - web/frontend/src/features/chat/components/ChatMessageBubble.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
@@ -13,11 +16,23 @@ import { useCallback, useRef, useState } from "react";
 import { useToast } from "@/shared/hooks/use-toast";
 import { saveBlobAsDownload } from "@/shared/files/downloadWithProgress";
 import { fetchS3BlobCached } from "@/shared/files/s3BlobCache";
+import {
+  isDcmFileName,
+  readDcmDownloadFormat,
+  writeDcmDownloadFormat,
+  type DcmDownloadFormat,
+} from "@/shared/files/dcmDownloadFormat";
+import {
+  convertHpsDcmBufferToPlyBlob,
+  replaceExtWithPly,
+} from "@/shared/files/hpsDcmToPly";
 
 export type S3DownloadTarget = {
   s3Key?: string;
   fileName?: string;
   busyKey?: string;
+  /** DCM만: 원본 또는 PLY 변환. 생략 시 localStorage 선호. */
+  dcmFormat?: DcmDownloadFormat;
 };
 
 export function s3DownloadBusyKey(file: {
@@ -120,7 +135,21 @@ export function useS3FileDownload(token?: string | null) {
 
       try {
         const blob = await loadCachedBlob(file);
-        saveBlobAsDownload(blob, fileName);
+        const wantPly =
+          isDcmFileName(fileName) &&
+          (file.dcmFormat || readDcmDownloadFormat()) === "ply";
+        if (wantPly) {
+          writeDcmDownloadFormat("ply");
+          const plyBlob = await convertHpsDcmBufferToPlyBlob(
+            await blob.arrayBuffer(),
+          );
+          saveBlobAsDownload(plyBlob, replaceExtWithPly(fileName));
+        } else {
+          if (isDcmFileName(fileName) && file.dcmFormat === "dcm") {
+            writeDcmDownloadFormat("dcm");
+          }
+          saveBlobAsDownload(blob, fileName);
+        }
       } catch (err) {
         if ((err as { name?: string })?.name === "AbortError") return;
         toast({

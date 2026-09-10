@@ -5529,27 +5529,37 @@ export const PracticeFileTransferPage = ({
   };
 
   const handleDownloadTransferFile = useCallback(
-    async (file: TransferFileItem) => {
+    async (
+      file: TransferFileItem,
+      opts?: { dcmFormat?: import("@/shared/files/dcmDownloadFormat").DcmDownloadFormat },
+    ) => {
       const s3Key = String(file?.s3Key || "").trim();
       await downloadS3File({
         s3Key,
         fileName: String(file?.fileName || "첨부파일").trim() || "첨부파일",
         busyKey: s3Key,
+        dcmFormat: opts?.dcmFormat,
       });
     },
     [downloadS3File],
   );
 
-  const handleDownloadAllTransferFiles = useCallback(async () => {
-    const files = selectedTransferDetailModel?.downloadAllFiles || [];
-    await downloadAll(
-      files.map((file) => ({
-        s3Key: String(file.s3Key || "").trim(),
-        fileName: String(file.fileName || "첨부파일").trim() || "첨부파일",
-        busyKey: String(file.s3Key || "").trim(),
-      })),
-    );
-  }, [downloadAll, selectedTransferDetailModel]);
+  const handleDownloadAllTransferFiles = useCallback(
+    async (opts?: {
+      dcmFormat?: import("@/shared/files/dcmDownloadFormat").DcmDownloadFormat;
+    }) => {
+      const files = selectedTransferDetailModel?.downloadAllFiles || [];
+      await downloadAll(
+        files.map((file) => ({
+          s3Key: String(file.s3Key || "").trim(),
+          fileName: String(file.fileName || "첨부파일").trim() || "첨부파일",
+          busyKey: String(file.s3Key || "").trim(),
+          dcmFormat: opts?.dcmFormat,
+        })),
+      );
+    },
+    [downloadAll, selectedTransferDetailModel],
+  );
 
   const handleConfirmProduction = useCallback(async () => {
     if (!authToken || !selectedTransfer || productionConfirmBusy) return;
@@ -9871,13 +9881,16 @@ export const PracticeFileTransferPage = ({
           downloadingFileKeys={downloadingKeys}
           downloadProgressByKey={downloadProgressByKey}
           downloadAllBusy={downloadAllBusy}
-          onDownloadAllFiles={() => void handleDownloadAllTransferFiles()}
-          onDownloadTransferFile={(file) =>
-            void handleDownloadTransferFile({
-              fileName: file.fileName,
-              s3Key: file.s3Key,
-              size: file.size,
-            })
+          onDownloadAllFiles={(opts) => void handleDownloadAllTransferFiles(opts)}
+          onDownloadTransferFile={(file, opts) =>
+            void handleDownloadTransferFile(
+              {
+                fileName: file.fileName,
+                s3Key: file.s3Key,
+                size: file.size,
+              },
+              opts,
+            )
           }
           chatLoading={chatLoading || chatMessagesLoading}
           chatError={String(chatError || chatMessagesError || "")}

@@ -202,6 +202,10 @@ import {
   siblingTextureS3Key,
 } from "@/shared/files/modelPreviewFile";
 import {
+  isDcmFileName,
+  type DcmDownloadFormat,
+} from "@/shared/files/dcmDownloadFormat";
+import {
   buildS3ProxyDownloadUrl,
   s3DownloadBusyKey,
 } from "@/shared/files/useS3FileDownload";
@@ -442,8 +446,13 @@ type PracticeTransferDetailChatDialogProps = {
   /** 파일별 다운로드 진행률 0~100 */
   downloadProgressByKey?: Record<string, number>;
   downloadAllBusy?: boolean;
-  onDownloadAllFiles: () => void | Promise<void>;
-  onDownloadTransferFile: (file: PracticeTransferDialogFileItem) => void | Promise<void>;
+  onDownloadAllFiles: (opts?: {
+    dcmFormat?: DcmDownloadFormat;
+  }) => void | Promise<void>;
+  onDownloadTransferFile: (
+    file: PracticeTransferDialogFileItem,
+    opts?: { dcmFormat?: DcmDownloadFormat },
+  ) => void | Promise<void>;
   /** 기공소 의뢰수락 (수신 페이지에서만 전달). 미수락이면 채팅 상단 CTA */
   acceptBusy?: boolean;
   accepted?: boolean;
@@ -2300,17 +2309,51 @@ export function PracticeTransferDetailChatDialog({
                     </span>
                   </h3>
                   {files.length > 0 ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => void onDownloadAllFiles()}
-                      disabled={
-                        downloadAllBusy || requestFilesDownloadLocked
-                      }
-                    >
-                      {downloadAllBusy ? "다운로드 중..." : "전체 다운로드"}
-                    </Button>
+                    files.some((f) => isDcmFileName(f.fileName)) ? (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={
+                              downloadAllBusy || requestFilesDownloadLocked
+                            }
+                          >
+                            {downloadAllBusy ? "다운로드 중..." : "전체 다운로드"}
+                            <ChevronDown className="ml-1 h-3.5 w-3.5 opacity-70" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="z-[400]">
+                          <DropdownMenuItem
+                            onClick={() =>
+                              void onDownloadAllFiles({ dcmFormat: "dcm" })
+                            }
+                          >
+                            DCM 원본 포함
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() =>
+                              void onDownloadAllFiles({ dcmFormat: "ply" })
+                            }
+                          >
+                            DCM→PLY(칼라) 변환
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    ) : (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void onDownloadAllFiles()}
+                        disabled={
+                          downloadAllBusy || requestFilesDownloadLocked
+                        }
+                      >
+                        {downloadAllBusy ? "다운로드 중..." : "전체 다운로드"}
+                      </Button>
+                    )
                   ) : null}
                 </div>
                 {requestFilesDownloadLocked && files.length > 0 ? (
@@ -3074,7 +3117,10 @@ export function PracticeTransferDetailChatDialog({
       downloadBusy={previewDownloadBusy}
       onDownload={
         previewMeta
-          ? () => void onDownloadTransferFile(previewMeta)
+          ? (opts) =>
+              void onDownloadTransferFile(previewMeta, {
+                dcmFormat: opts?.dcmFormat,
+              })
           : undefined
       }
       previewIndex={previewIndex}

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-10: 3Shape/TRIOS HPS(.dcm) 메시 프리뷰 + 버텍스 칼라(텍스처 베이크).
 // - 2026-09-10: 3Shape/TRIOS HPS(.dcm) 메시 프리뷰 (parseHpsDcmGeometry).
 // - 2026-08-28: BiteScan 등 TextureFile·UV 대소문자·스캔토큰 매칭 강화. 스캔 칼라는 언릿(Basic)으로 밝게.
 // - 2026-08-28: PLY TextureFile·UV 텍스처 / 컬러 프로퍼티명 정규화 / OBJ MTL map_Kd 지원. 스캔 칼라는 언릿(Basic)으로 밝게.
@@ -477,6 +478,7 @@ export async function parseModelPreview(
         file: file.name,
         attrs: Object.keys(geometry.attributes),
         index: Boolean(geometry.getIndex()),
+        hasColor: Boolean(geometry.getAttribute("color")),
       });
     }
     return { geometry, texture: null, textureFileName: null };

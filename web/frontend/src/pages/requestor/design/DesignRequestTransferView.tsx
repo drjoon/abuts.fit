@@ -293,25 +293,35 @@ export function DesignRequestTransferView({
   );
 
   const handleDownloadFile = useCallback(
-    async (file: PracticeTransferDialogFileItem) => {
+    async (
+      file: PracticeTransferDialogFileItem,
+      opts?: { dcmFormat?: import("@/shared/files/dcmDownloadFormat").DcmDownloadFormat },
+    ) => {
       await downloadS3File({
         s3Key: file.s3Key,
         fileName: file.fileName,
         busyKey: String(file.s3Key || file.id || "").trim(),
+        dcmFormat: opts?.dcmFormat,
       });
     },
     [downloadS3File],
   );
 
-  const handleDownloadAllFiles = useCallback(async () => {
-    await downloadAll(
-      dialogFiles.map((file) => ({
-        s3Key: file.s3Key,
-        fileName: file.fileName,
-        busyKey: String(file.s3Key || file.id || "").trim(),
-      })),
-    );
-  }, [dialogFiles, downloadAll]);
+  const handleDownloadAllFiles = useCallback(
+    async (opts?: {
+      dcmFormat?: import("@/shared/files/dcmDownloadFormat").DcmDownloadFormat;
+    }) => {
+      await downloadAll(
+        dialogFiles.map((file) => ({
+          s3Key: file.s3Key,
+          fileName: file.fileName,
+          busyKey: String(file.s3Key || file.id || "").trim(),
+          dcmFormat: opts?.dcmFormat,
+        })),
+      );
+    },
+    [dialogFiles, downloadAll],
+  );
 
   const handleDownloadChatAttachment = useCallback(
     async (attachment: {
@@ -494,8 +504,8 @@ export function DesignRequestTransferView({
         downloadingFileKeys={downloadingKeys}
         downloadProgressByKey={downloadProgressByKey}
         downloadAllBusy={downloadAllBusy}
-        onDownloadAllFiles={() => void handleDownloadAllFiles()}
-        onDownloadTransferFile={(file) => void handleDownloadFile(file)}
+        onDownloadAllFiles={(opts) => void handleDownloadAllFiles(opts)}
+        onDownloadTransferFile={(file, opts) => void handleDownloadFile(file, opts)}
         chatLoading={chatLoading}
         chatError={String(chatError || "")}
         chatMessages={messages}

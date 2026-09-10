@@ -1,12 +1,14 @@
 // change-log:
+// - 2026-09-10: TextureData2·VertexColorSet·Facets tint → 버텍스 칼라(베이크). PLY export용 mesh 데이터.
 // - 2026-09-10: 3Shape/TRIOS HPS(.dcm) → Three.BufferGeometry 클라이언트 파서 (CA/CC/CE).
 // related files:
 // - web/frontend/src/shared/files/modelPreviewFile.ts
+// - web/frontend/src/shared/files/hpsDcmToPly.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
 // - web/frontend/src/shared/files/md5Lite.ts
 //
 // Portions adapted from:
-// - hpsdecode (MIT, Copyright (c) 2025 Lars Knol) — CC face command decode
+// - hpsdecode (MIT, Copyright (c) 2025 Lars Knol) — CC face command decode · UV/texture bake
 // - Open3SDCM (Boost Software License 1.0, Romain Nosenzo) — CE Blowfish key derive
 import * as THREE from "three";
 import { Blowfish } from "egoroof-blowfish";
@@ -439,13 +441,373 @@ async function extractHpsXmlText(buffer: ArrayBuffer): Promise<string> {
   return text;
 }
 
+const OUTSIDE_RANGE_BIT = 0x8000;
+const COORD_MASK = 0x7fff;
+const SCALE_INSIDE = 1 / 32767;
+const SCALE_OUTSIDE = 512 / 32767;
+const NO_UV_MARKER = 0xffffffff;
+
+/** Encrypted HPS blob (CE). Key attr → scramble. */
+type EncryptedBlob = {
+  data: Uint8Array;
+  originalSize: number;
+  scramble: boolean;
+};
+
+export type HpsDcmMeshData = {
+  positions: Float32Array;
+  indices: Uint32Array;
+  /** Per-vertex RGB 0..255. null이면 무색. */
+  colors: Uint8Array | null;
+};
+
+function attrIntOptional(el: Element | null, name: string): number | null {
+  if (!el) return null;
+  const raw = el.getAttribute(name);
+  if (raw == null || raw === "") return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+function packedRgb(color: number): [number, number, number] {
+  return [(color >> 16) & 0xff, (color >> 8) & 0xff, color & 0xff];
+}
+
+function fillUniformColors(
+  count: number,
+  rgb: [number, number, number],
+): Uint8Array {
+  const out = new Uint8Array(count * 3);
+  for (let i = 0; i < count; i += 1) {
+    out[i * 3] = rgb[0];
+    out[i * 3 + 1] = rgb[1];
+    out[i * 3 + 2] = rgb[2];
+  }
+  return out;
+}
+
+function readEncryptedOrPlain(
+  el: Element | null,
+  encrypted: boolean,
+): EncryptedBlob | Uint8Array | null {
+  if (!el) return null;
+  const data = decodeBase64(elementText(el));
+  if (!data.length) return null;
+  if (!encrypted) return data;
+  const sizeAttr =
+    el.getAttribute("Base64EncodedBytes") ||
+    el.getAttribute("base64_encoded_bytes");
+  const originalSize = sizeAttr != null ? Number(sizeAttr) : 0;
+  return {
+    data,
+    originalSize: Number.isFinite(originalSize) && originalSize > 0 ? originalSize : 0,
+    scramble: el.getAttribute("Key") != null,
+  };
+}
+
+function resolveCeBytes(
+  blob: EncryptedBlob | Uint8Array | null,
+  properties: Record<string, string>,
+): Uint8Array | null {
+  if (!blob) return null;
+  if (blob instanceof Uint8Array) return blob;
+  const key = buildCeKey(properties, blob.scramble);
+  return decryptCeBuffer(blob.data, key, blob.originalSize);
+}
+
+function decompressUvComponent(bits: number): number {
+  const value = bits & COORD_MASK;
+  if (bits & OUTSIDE_RANGE_BIT) return value * SCALE_OUTSIDE - 256;
+  return value * SCALE_INSIDE;
+}
+
+function decompressTextureCoord(compressed: number): [number, number] {
+  const u = decompressUvComponent(compressed & 0xffff);
+  const v = decompressUvComponent((compressed >>> 16) & 0xffff);
+  return [u, v];
+}
+
 /**
- * 3Shape/TRIOS HPS DCM → indexed BufferGeometry.
- * CE는 Blowfish(ECB) 복호화. 컬러/텍스처는 1차로 생략(STL 틴트).
+ * Per-vertex UV stream → per-corner UVs (faceCount*3, 2).
+ * Adapted from hpsdecode.parse_texture_coords (MIT).
  */
-export async function parseHpsDcmGeometry(
+function parseTextureCoords(
+  data: Uint8Array,
+  vertexCount: number,
+  indices: Uint32Array,
+): Float32Array {
+  const faceCount = indices.length / 3;
+  const vertexCorners: number[][] = Array.from({ length: vertexCount }, () => []);
+  for (let corner = 0; corner < indices.length; corner += 1) {
+    const v = indices[corner]!;
+    vertexCorners[v]!.push(corner);
+  }
+
+  const uvs = new Float32Array(faceCount * 3 * 2);
+  const reader = new BinaryReader(data);
+
+  for (let vertexIdx = 0; vertexIdx < vertexCount; vertexIdx += 1) {
+    if (reader.isEof()) {
+      throw new Error(
+        `Unexpected end of texture UV at vertex ${vertexIdx}/${vertexCount}`,
+      );
+    }
+    const flag = reader.readUint8();
+    const corners = vertexCorners[vertexIdx]!;
+
+    const writeUv = (cornerIdx: number, u: number, v: number) => {
+      const o = cornerIdx * 2;
+      uvs[o] = u;
+      uvs[o + 1] = v;
+    };
+
+    if (flag === 1) {
+      const compressed = reader.readUint32();
+      if (compressed !== NO_UV_MARKER) {
+        const [u, v] = decompressTextureCoord(compressed);
+        for (const cornerIdx of corners) writeUv(cornerIdx, u, v);
+      }
+    } else {
+      if (flag !== 0xff && flag !== corners.length) {
+        throw new Error(
+          `UV flag mismatch at vertex ${vertexIdx}: flag=${flag}, corners=${corners.length}`,
+        );
+      }
+      const sorted = [...corners].sort((a, b) => Math.floor(a / 3) - Math.floor(b / 3));
+      for (const cornerIdx of sorted) {
+        const compressed = reader.readUint32();
+        if (compressed !== NO_UV_MARKER) {
+          const [u, v] = decompressTextureCoord(compressed);
+          writeUv(cornerIdx, u, v);
+        }
+      }
+    }
+  }
+
+  return uvs;
+}
+
+function parseVertexColorBytes(
+  data: Uint8Array,
+  vertexCount: number,
+): Uint8Array | null {
+  if (vertexCount <= 0 || data.length < vertexCount * 3) return null;
+  const bpp = Math.floor(data.length / vertexCount);
+  if (bpp === 3) return data.subarray(0, vertexCount * 3);
+  if (bpp === 4) {
+    const out = new Uint8Array(vertexCount * 3);
+    for (let i = 0; i < vertexCount; i += 1) {
+      out[i * 3] = data[i * 4]!;
+      out[i * 3 + 1] = data[i * 4 + 1]!;
+      out[i * 3 + 2] = data[i * 4 + 2]!;
+    }
+    return out;
+  }
+  return null;
+}
+
+async function decodeJpegRgb(
+  jpegBytes: Uint8Array,
+): Promise<{ width: number; height: number; rgba: Uint8ClampedArray }> {
+  const copy = new Uint8Array(jpegBytes.byteLength);
+  copy.set(jpegBytes);
+  const blob = new Blob([copy.buffer], { type: "image/jpeg" });
+  const bitmap = await createImageBitmap(blob);
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) throw new Error("2D canvas unavailable for DCM texture");
+    ctx.drawImage(bitmap, 0, 0);
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    return {
+      width: canvas.width,
+      height: canvas.height,
+      rgba: imageData.data,
+    };
+  } finally {
+    bitmap.close();
+  }
+}
+
+/**
+ * Texture UV + JPEG → per-vertex RGB (corner samples averaged).
+ * Adapted from hpsdecode.texture_to_vertex_colors (MIT).
+ */
+async function bakeTextureToVertexColors(
+  indices: Uint32Array,
+  cornerUvs: Float32Array,
+  jpegBytes: Uint8Array,
+  vertexCount: number,
+): Promise<Uint8Array> {
+  const { width, height, rgba } = await decodeJpegRgb(jpegBytes);
+  const sums = new Float32Array(vertexCount * 3);
+  const counts = new Uint32Array(vertexCount);
+
+  for (let corner = 0; corner < indices.length; corner += 1) {
+    const vIdx = indices[corner]!;
+    const u = cornerUvs[corner * 2]!;
+    const v = cornerUvs[corner * 2 + 1]!;
+    const x = Math.min(width - 1, Math.max(0, Math.round(u * (width - 1))));
+    // HPS UV는 상단 원점 JPEG과 맞춤(hpsdecode와 동일, V flip 없음).
+    const y = Math.min(height - 1, Math.max(0, Math.round(v * (height - 1))));
+    const p = (y * width + x) * 4;
+    const o = vIdx * 3;
+    sums[o] += rgba[p]!;
+    sums[o + 1] += rgba[p + 1]!;
+    sums[o + 2] += rgba[p + 2]!;
+    counts[vIdx]! += 1;
+  }
+
+  const out = new Uint8Array(vertexCount * 3);
+  for (let i = 0; i < vertexCount; i += 1) {
+    const c = counts[i]!;
+    const o = i * 3;
+    if (c > 0) {
+      out[o] = Math.round(sums[o]! / c);
+      out[o + 1] = Math.round(sums[o + 1]! / c);
+      out[o + 2] = Math.round(sums[o + 2]! / c);
+    } else {
+      out[o] = 128;
+      out[o + 1] = 128;
+      out[o + 2] = 128;
+    }
+  }
+  return out;
+}
+
+function faceTintToVertexColors(
+  indices: Uint32Array,
+  faceRgb: [number, number, number],
+  vertexCount: number,
+): Uint8Array {
+  // Mesh-wide Facets/@color — same tint on every vertex.
+  void indices;
+  return fillUniformColors(vertexCount, faceRgb);
+}
+
+function collectTextureImages(
+  xml: Document,
+  schema: string,
+  properties: Record<string, string>,
+): Uint8Array[] {
+  const isCe = schema === "CE";
+  const out: Uint8Array[] = [];
+  const seen = new Set<Element>();
+
+  const pushResolved = (el: Element, encryptable: boolean) => {
+    if (seen.has(el)) return;
+    seen.add(el);
+    const raw = readEncryptedOrPlain(el, isCe && encryptable);
+    const resolved = resolveCeBytes(raw, properties);
+    if (resolved && resolved.length > 0) out.push(resolved);
+  };
+
+  // CE: AdditionalTextureImage / PartialTextureData는 암호화 가능.
+  for (const el of Array.from(
+    xml.querySelectorAll(
+      "TextureData2 > TextureImages > AdditionalTextureImage, TextureData > TextureImages > AdditionalTextureImage, PartialTextureData > TextureImages > TextureImage",
+    ),
+  )) {
+    pushResolved(el, true);
+  }
+  // TextureImages/TextureImage (TRIOS TextureData2)는 JPEG 평문.
+  for (const el of Array.from(xml.querySelectorAll("TextureImages > TextureImage"))) {
+    pushResolved(el, false);
+  }
+
+  return out;
+}
+
+async function resolveVertexColors(options: {
+  xml: Document;
+  schema: string;
+  properties: Record<string, string>;
+  indices: Uint32Array;
+  vertexCount: number;
+  verticesEl: Element;
+  facetsEl: Element;
+}): Promise<Uint8Array | null> {
+  const {
+    xml,
+    schema,
+    properties,
+    indices,
+    vertexCount,
+    verticesEl,
+    facetsEl,
+  } = options;
+  const isCe = schema === "CE";
+
+  const texCoordEl = xml.getElementsByTagName("PerVertexTextureCoord")[0] || null;
+  const texCoordRaw = readEncryptedOrPlain(texCoordEl, isCe);
+  const texCoordBytes = resolveCeBytes(texCoordRaw, properties);
+  const textureImages = collectTextureImages(xml, schema, properties);
+
+  if (texCoordBytes && textureImages.length > 0) {
+    try {
+      const cornerUvs = parseTextureCoords(texCoordBytes, vertexCount, indices);
+      return await bakeTextureToVertexColors(
+        indices,
+        cornerUvs,
+        textureImages[0]!,
+        vertexCount,
+      );
+    } catch (err) {
+      console.warn("[hpsDcm] texture bake failed; falling back", err);
+    }
+  }
+
+  const vColorEl =
+    xml.querySelector("VertexColorSets > VertexColorSet") ||
+    xml.getElementsByTagName("VertexColorSet")[0] ||
+    null;
+  const vColorRaw = readEncryptedOrPlain(vColorEl, isCe);
+  const vColorBytes = resolveCeBytes(vColorRaw, properties);
+  if (vColorBytes) {
+    const parsed = parseVertexColorBytes(vColorBytes, vertexCount);
+    if (parsed) return parsed;
+  }
+
+  const vertexTint = attrIntOptional(verticesEl, "color");
+  if (vertexTint != null) {
+    return fillUniformColors(vertexCount, packedRgb(vertexTint >>> 0));
+  }
+
+  const faceTint = attrIntOptional(facetsEl, "color");
+  if (faceTint != null) {
+    return faceTintToVertexColors(indices, packedRgb(faceTint >>> 0), vertexCount);
+  }
+
+  return null;
+}
+
+function colorsToThreeAttribute(colors: Uint8Array): THREE.BufferAttribute {
+  const count = colors.length / 3;
+  const arr = new Float32Array(count * 3);
+  const tmp = new THREE.Color();
+  for (let i = 0; i < count; i += 1) {
+    tmp.setRGB(
+      colors[i * 3]! / 255,
+      colors[i * 3 + 1]! / 255,
+      colors[i * 3 + 2]! / 255,
+      THREE.SRGBColorSpace,
+    );
+    arr[i * 3] = tmp.r;
+    arr[i * 3 + 1] = tmp.g;
+    arr[i * 3 + 2] = tmp.b;
+  }
+  return new THREE.BufferAttribute(arr, 3);
+}
+
+/**
+ * 3Shape/TRIOS HPS DCM → positions/indices/vertex colors.
+ * CE Blowfish. 칼라 우선순위: Texture bake → VertexColorSet → Vertices/@color → Facets/@color.
+ */
+export async function parseHpsDcmMeshData(
   buffer: ArrayBuffer,
-): Promise<THREE.BufferGeometry> {
+): Promise<HpsDcmMeshData> {
   const xmlText = await extractHpsXmlText(buffer);
   const xml = new DOMParser().parseFromString(xmlText, "application/xml");
   if (xml.querySelector("parsererror")) {
@@ -491,7 +853,6 @@ export async function parseHpsDcmGeometry(
     vertexBytes = vertexBytes.subarray(0, expectedVertexBytes);
   }
 
-  // Copy into a fresh ArrayBuffer so Float32Array is tightly sized.
   const positions = new Float32Array(vertexCount * 3);
   positions.set(
     new Float32Array(
@@ -501,10 +862,30 @@ export async function parseHpsDcmGeometry(
     ),
   );
   const indices = parseFaces(faceBytes, faceCount, vertexCount);
+  const colors = await resolveVertexColors({
+    xml,
+    schema,
+    properties,
+    indices,
+    vertexCount,
+    verticesEl,
+    facetsEl,
+  });
 
+  return { positions, indices, colors };
+}
+
+/** 3Shape/TRIOS HPS DCM → indexed BufferGeometry (+ vertex colors when present). */
+export async function parseHpsDcmGeometry(
+  buffer: ArrayBuffer,
+): Promise<THREE.BufferGeometry> {
+  const mesh = await parseHpsDcmMeshData(buffer);
   const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-  geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+  geometry.setAttribute("position", new THREE.BufferAttribute(mesh.positions, 3));
+  geometry.setIndex(new THREE.BufferAttribute(mesh.indices, 1));
+  if (mesh.colors) {
+    geometry.setAttribute("color", colorsToThreeAttribute(mesh.colors));
+  }
   geometry.computeVertexNormals();
   return geometry;
 }

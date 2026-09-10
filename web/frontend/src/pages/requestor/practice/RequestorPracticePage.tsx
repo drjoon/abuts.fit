@@ -5557,35 +5557,43 @@ export function RequestorPracticeReceivePage({
   }, [openTransferWorkStatusById, searchParams, setSearchParams, transfers]);
 
   const handleDownload = useCallback(
-    async (file: ReceivedPracticeFile) => {
+    async (
+      file: ReceivedPracticeFile,
+      opts?: { dcmFormat?: import("@/shared/files/dcmDownloadFormat").DcmDownloadFormat },
+    ) => {
       const s3Key = String(file.s3Key || "").trim();
       await downloadS3File({
         s3Key,
         fileName: String(file.originalName || "download").trim() || "download",
         busyKey: s3Key,
+        dcmFormat: opts?.dcmFormat,
       });
     },
     [downloadS3File],
   );
 
-  const handleDownloadAllFiles = useCallback(async () => {
-    const files = [
-      ...(Array.isArray(selectedTransfer?.files) ? selectedTransfer.files : []),
-      ...(Array.isArray(selectedTransfer?.production?.designFiles)
-        ? selectedTransfer.production.designFiles
-        : []),
-      ...(Array.isArray(selectedTransfer?.resultFiles)
-        ? selectedTransfer.resultFiles
-        : []),
-    ];
-    await downloadAll(
-      files.map((file) => ({
-        s3Key: String(file.s3Key || "").trim(),
-        fileName: String(file.originalName || "download").trim() || "download",
-        busyKey: String(file.s3Key || "").trim(),
-      })),
-    );
-  }, [downloadAll, selectedTransfer]);
+  const handleDownloadAllFiles = useCallback(
+    async (opts?: { dcmFormat?: import("@/shared/files/dcmDownloadFormat").DcmDownloadFormat }) => {
+      const files = [
+        ...(Array.isArray(selectedTransfer?.files) ? selectedTransfer.files : []),
+        ...(Array.isArray(selectedTransfer?.production?.designFiles)
+          ? selectedTransfer.production.designFiles
+          : []),
+        ...(Array.isArray(selectedTransfer?.resultFiles)
+          ? selectedTransfer.resultFiles
+          : []),
+      ];
+      await downloadAll(
+        files.map((file) => ({
+          s3Key: String(file.s3Key || "").trim(),
+          fileName: String(file.originalName || "download").trim() || "download",
+          busyKey: String(file.s3Key || "").trim(),
+          dcmFormat: opts?.dcmFormat,
+        })),
+      );
+    },
+    [downloadAll, selectedTransfer],
+  );
 
   const handleDownloadChatAttachment = useCallback(
     async (attachment: {
@@ -6618,17 +6626,20 @@ export function RequestorPracticeReceivePage({
         downloadingFileKeys={downloadingKeys}
         downloadProgressByKey={downloadProgressByKey}
         downloadAllBusy={downloadAllBusy}
-        onDownloadAllFiles={() => void handleDownloadAllFiles()}
-        onDownloadTransferFile={(file) =>
-          void handleDownload({
-            id: file.id,
-            patientName: "",
-            tooth: "",
-            originalName: file.fileName,
-            mimetype: "",
-            size: file.size,
-            s3Key: file.s3Key,
-          })
+        onDownloadAllFiles={(opts) => void handleDownloadAllFiles(opts)}
+        onDownloadTransferFile={(file, opts) =>
+          void handleDownload(
+            {
+              id: file.id,
+              patientName: "",
+              tooth: "",
+              originalName: file.fileName,
+              mimetype: "",
+              size: file.size,
+              s3Key: file.s3Key,
+            },
+            opts,
+          )
         }
         acceptBusy={acceptBusy}
         accepted={Boolean(
