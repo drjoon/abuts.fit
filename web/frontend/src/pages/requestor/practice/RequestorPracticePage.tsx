@@ -29,6 +29,8 @@
 // - web/backend/utils/labReceiveCalendarHiddenWeekdays.util.js
 // - web/frontend/src/shared/practice/labReceiveCalendarViewMode.ts
 // - web/backend/controllers/users/user.controller.js
+// - 2026-09-12: 가공(pastReady) 「리메이크」CTA 복구(무료 선택 리메이크) · 생성 후 새 PTX 선택.
+// - 2026-09-12: 다중 STL — 3D 확인 전 파일명↔치아 매핑 요약 다이얼로그.
 // - 2026-09-11: 상세 패널 — 어벗 STL 업로드 버튼을 작업 취소 옆. 페이지 전체 드롭.
 // - 2026-09-11: 상세 패널 — 리메이크 CTA·닫기(X) 제거. 업로드 대기=[업로드 대기] 생산의뢰 줄 오른쪽.
 // - 2026-09-11: 치과 UI 맞춤 — 목록 치과명 제거·색 범례·상세 헤더 점.
@@ -181,6 +183,11 @@ import {
   AbutmentDesignConfirmDialog,
   type AbutmentDesignConfirmCaseInfos,
 } from "@/shared/components/practice/AbutmentDesignConfirmDialog";
+import {
+  AbutmentDesignToothAssignDialog,
+  type AbutmentDesignToothAssignResult,
+  type AbutmentDesignToothAssignRow,
+} from "@/shared/components/practice/AbutmentDesignToothAssignDialog";
 import { isLikelyOralScanSize } from "@/pages/requestor/new_request/utils/patientGroups";
 import {
   LabReceiveWorkUploadDialog,
@@ -935,6 +942,15 @@ export function RequestorPracticeReceivePage({
   } | null>(null);
   const [labRemakeCreateOpen, setLabRemakeCreateOpen] = useState(false);
   const [labRemakeCreateBusy, setLabRemakeCreateBusy] = useState(false);
+  const [toothAssignOpen, setToothAssignOpen] = useState(false);
+  const [toothAssignTransfer, setToothAssignTransfer] =
+    useState<ReceivedPracticeTransfer | null>(null);
+  const [toothAssignPendingMetas, setToothAssignPendingMetas] = useState<
+    AbutmentPendingMeta[]
+  >([]);
+  const [toothAssignRows, setToothAssignRows] = useState<
+    AbutmentDesignToothAssignRow[]
+  >([]);
   const chatBottomRef = useRef<HTMLDivElement | null>(null);
   const realtimeReloadTimerRef = useRef<number | null>(null);
   const chatRoomResolveSeqRef = useRef(0);
@@ -1419,8 +1435,8 @@ export function RequestorPracticeReceivePage({
   );
 
   const fetchCalendarTransfers = useCallback(
-    async (options?: { silent?: boolean }) => {
-      if (!token) return;
+    async (options?: { silent?: boolean }): Promise<ReceivedPracticeTransfer[]> => {
+      if (!token) return [];
       const silent = options?.silent === true;
 
       if (!silent) setLoading(true);
@@ -1443,7 +1459,7 @@ export function RequestorPracticeReceivePage({
             setTransfers([]);
             setError(String(body.message || "치과 전송 내역 조회에 실패했습니다."));
           }
-          return;
+          return [];
         }
 
         const parsed = parseTransfersBody(res.data);
@@ -1465,11 +1481,13 @@ export function RequestorPracticeReceivePage({
         emitUnreadBadgeRefresh(parsed.unreadCount);
         setReceivedTransferUnreadCount(Math.max(0, Number(parsed.unreadCount || 0)));
         void reopenStuckTransfers(mapped);
+        return mapped;
       } catch {
         if (!silent) {
           setTransfers([]);
           setError("치과 전송 내역 조회 중 오류가 발생했습니다.");
         }
+        return [];
       } finally {
         if (!silent) setLoading(false);
       }
@@ -1487,7 +1505,7 @@ export function RequestorPracticeReceivePage({
 
   const loadCalendarTransfers = useCallback(
     async (options?: { silent?: boolean }) => {
-      await fetchCalendarTransfers(options);
+      return fetchCalendarTransfers(options);
     },
     [fetchCalendarTransfers],
   );
@@ -3322,8 +3340,8 @@ export function RequestorPracticeReceivePage({
   );
 
   const workUploadProgressSummary = useMemo(() => {
-    // 어벗 3D 확인 모달이 열려 있으면 모달 바가 SSOT — 드롭존과 이중 표시 금지.
-    if (designConfirmOpen) return null;
+    // 어벗 치아 매핑·3D 확인 모달이 열려 있으면 모달 바가 SSOT — 드롭존과 이중 표시 금지.
+    if (designConfirmOpen || toothAssignOpen) return null;
     const files =
       workUploadTrackedFiles.length > 0
         ? workUploadTrackedFiles
@@ -3357,6 +3375,7 @@ export function RequestorPracticeReceivePage({
     };
   }, [
     designConfirmOpen,
+    toothAssignOpen,
     uploadProgress,
     workUploadState?.files,
     workUploadTrackedFiles,
@@ -3365,7 +3384,7 @@ export function RequestorPracticeReceivePage({
   useEffect(() => {
     if (workUploadBusy) return;
     if (workUploadState) return;
-    if (designConfirmOpen) return;
+    if (designConfirmOpen || toothAssignOpen) return;
     if (!workUploadTrackedFiles.length) return;
     const allSettled = workUploadTrackedFiles.every((file) => {
       const progress = uploadProgress[toTempUploadFileKey(file)];
@@ -3378,6 +3397,7 @@ export function RequestorPracticeReceivePage({
     return () => window.clearTimeout(timer);
   }, [
     designConfirmOpen,
+    toothAssignOpen,
     uploadProgress,
     workUploadBusy,
     workUploadState,
@@ -4132,7 +4152,28 @@ export function RequestorPracticeReceivePage({
         if (activeChatRoom?._id) {
           void prefetchMessages();
         }
-        void loadCalendarTransfers({ silent: true });
+        const selectKey = String(
+          created?._id || created?.transferId || "",
+        ).trim();
+        const mapped = await loadCalendarTransfers({ silent: true });
+        if (selectKey) {
+          const found = mapped.find(
+            (row) =>
+              String(row._id || "").trim() === selectKey ||
+              String(row.transferId || "").trim() === selectKey,
+          );
+          if (found) {
+            const resolveSeq = ++chatRoomResolveSeqRef.current;
+            setDialogInitialPanelTab("detail");
+            setSelectedTransfer(found);
+            setDialogOpen(true);
+            setChatError("");
+            chatUploads.clear();
+            setActiveChatRoom(null);
+            setChatMessages([]);
+            void resolveTransferChatRoom(found, resolveSeq);
+          }
+        }
       } catch (error) {
         toast({
           title: "리메이크 의뢰 실패",
@@ -4146,10 +4187,13 @@ export function RequestorPracticeReceivePage({
     },
     [
       activeChatRoom?._id,
+      chatUploads,
       labRemakeCreateBusy,
       loadCalendarTransfers,
       prefetchMessages,
+      resolveTransferChatRoom,
       selectedTransfer,
+      setChatMessages,
       toast,
       token,
     ],
@@ -4598,16 +4642,53 @@ export function RequestorPracticeReceivePage({
     [token],
   );
 
+  const clearToothAssignState = useCallback(() => {
+    setToothAssignOpen(false);
+    setToothAssignTransfer(null);
+    setToothAssignPendingMetas([]);
+    setToothAssignRows([]);
+  }, []);
+
   /** 어벗: 지정 다이얼로그 없이 3D 확인 모달에서 치아·임플란트 확정 */
   const openAbutmentDesignConfirmQueue = useCallback(
     async (
       transfer: ReceivedPracticeTransfer,
       files: File[],
       pendingMetas: AbutmentPendingMeta[],
+      options?: { assignments?: AbutmentDesignToothAssignResult[] },
     ) => {
       if (!files.length || !pendingMetas.length) return;
       beginWorkFilePreUpload(files);
-      const fileTeeth = await resolveAbutmentDesignTeethFromFiles(files);
+
+      const assignments = options?.assignments;
+      if (files.length > 1 && !assignments) {
+        const fileTeeth = await resolveAbutmentDesignTeethFromFiles(files);
+        const usedRequestIds = new Set<string>();
+        const assignRows: AbutmentDesignToothAssignRow[] = files.map(
+          (file, i) => {
+            const parsedTooth = String(fileTeeth[i] || "").trim();
+            const byTooth = parsedTooth
+              ? pendingMetas.find(
+                  (meta) =>
+                    !usedRequestIds.has(meta.requestId) &&
+                    meta.tooth === parsedTooth,
+                )
+              : null;
+            if (byTooth) usedRequestIds.add(byTooth.requestId);
+            return {
+              file,
+              suggestedTooth: parsedTooth,
+              suggestedRequestId: byTooth?.requestId || "",
+            };
+          },
+        );
+        setToothAssignTransfer(transfer);
+        setToothAssignPendingMetas(pendingMetas);
+        setToothAssignRows(assignRows);
+        setToothAssignOpen(true);
+        return;
+      }
+
       const usedRequestIds = new Set<string>();
       const queue: Array<{
         file: File;
@@ -4615,33 +4696,54 @@ export function RequestorPracticeReceivePage({
         caseInfos: AbutmentDesignConfirmCaseInfos;
       }> = [];
 
-      for (let i = 0; i < files.length; i += 1) {
-        if (queue.length >= pendingMetas.length) break;
-        const file = files[i];
-        const parsedTooth = String(fileTeeth[i] || "").trim();
-        const byTooth = parsedTooth
-          ? pendingMetas.find(
-              (meta) =>
-                !usedRequestIds.has(meta.requestId) &&
-                meta.tooth === parsedTooth,
-            )
-          : null;
-        // 파일명 치아 없으면 남은 pending 중 첫 치아(이미 올린 치아는 beginDesign에서 제외됨)
-        const meta =
-          byTooth ||
-          pendingMetas.find((row) => !usedRequestIds.has(row.requestId));
-        if (!meta) continue;
-        usedRequestIds.add(meta.requestId);
-        queue.push({
-          file,
-          requestId: meta.requestId,
-          // 치식은 PTX(toothWorks/Request)만. 파일명 AI·룰 추출값은 매칭에만 쓰고 기본값에는 넣지 않음.
-          caseInfos: buildDesignConfirmDefaults(
-            transfer,
-            meta.caseInfos,
-            meta.tooth,
-          ),
-        });
+      if (assignments?.length) {
+        for (const row of assignments) {
+          const meta = pendingMetas.find(
+            (item) => item.requestId === row.requestId,
+          );
+          if (!meta) continue;
+          if (usedRequestIds.has(meta.requestId)) continue;
+          usedRequestIds.add(meta.requestId);
+          queue.push({
+            file: row.file,
+            requestId: meta.requestId,
+            caseInfos: buildDesignConfirmDefaults(
+              transfer,
+              meta.caseInfos,
+              row.tooth || meta.tooth,
+            ),
+          });
+        }
+      } else {
+        const fileTeeth = await resolveAbutmentDesignTeethFromFiles(files);
+        for (let i = 0; i < files.length; i += 1) {
+          if (queue.length >= pendingMetas.length) break;
+          const file = files[i];
+          const parsedTooth = String(fileTeeth[i] || "").trim();
+          const byTooth = parsedTooth
+            ? pendingMetas.find(
+                (meta) =>
+                  !usedRequestIds.has(meta.requestId) &&
+                  meta.tooth === parsedTooth,
+              )
+            : null;
+          // 파일명 치아 없으면 남은 pending 중 첫 치아(이미 올린 치아는 beginDesign에서 제외됨)
+          const meta =
+            byTooth ||
+            pendingMetas.find((row) => !usedRequestIds.has(row.requestId));
+          if (!meta) continue;
+          usedRequestIds.add(meta.requestId);
+          queue.push({
+            file,
+            requestId: meta.requestId,
+            // 치식은 PTX(toothWorks/Request)만. 파일명 AI·룰 추출값은 매칭에만 쓰고 기본값에는 넣지 않음.
+            caseInfos: buildDesignConfirmDefaults(
+              transfer,
+              meta.caseInfos,
+              meta.tooth,
+            ),
+          });
+        }
       }
 
       if (queue.length === 0) {
@@ -4664,6 +4766,24 @@ export function RequestorPracticeReceivePage({
       buildDesignConfirmDefaults,
       resolveAbutmentDesignTeethFromFiles,
       toast,
+    ],
+  );
+
+  const handleToothAssignConfirm = useCallback(
+    (assignments: AbutmentDesignToothAssignResult[]) => {
+      const transfer = toothAssignTransfer;
+      const pendingMetas = toothAssignPendingMetas;
+      clearToothAssignState();
+      if (!transfer || !pendingMetas.length || !assignments.length) return;
+      void openAbutmentDesignConfirmQueue(transfer, assignments.map((a) => a.file), pendingMetas, {
+        assignments,
+      });
+    },
+    [
+      clearToothAssignState,
+      openAbutmentDesignConfirmQueue,
+      toothAssignPendingMetas,
+      toothAssignTransfer,
     ],
   );
 
@@ -6392,6 +6512,17 @@ export function RequestorPracticeReceivePage({
         }}
         forceRequired={requestSettingsForceRequired}
       />
+      <AbutmentDesignToothAssignDialog
+        open={toothAssignOpen}
+        onOpenChange={(open) => {
+          if (!open) clearToothAssignState();
+          else setToothAssignOpen(true);
+        }}
+        rows={toothAssignRows}
+        pendingMetas={toothAssignPendingMetas}
+        onConfirm={handleToothAssignConfirm}
+        onCancel={clearToothAssignState}
+      />
       <AbutmentDesignConfirmDialog
         key={`${designConfirmRequestId}:${designConfirmQueueIndex}`}
         open={designConfirmOpen}
@@ -6954,6 +7085,17 @@ export function RequestorPracticeReceivePage({
                   event,
                 )
               }
+              onOpenAbutmentRemake={() => {
+                if (isGuideTourDemoTransfer(selectedTransfer)) {
+                  toast({
+                    title: "가이드투어",
+                    description:
+                      "데모 의뢰에서는 리메이크 의뢰를 실행하지 않습니다.",
+                  });
+                  return;
+                }
+                setLabRemakeCreateOpen(true);
+              }}
               onAbutmentStlUpload={() => {
                 void (async () => {
                   const files = await pickPracticeTransferFilesViaInput({
