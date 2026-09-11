@@ -6,14 +6,12 @@
 // - web/backend/utils/labFeeSchedule.js (buildRemakeToothWorksFromSelectedParts)
 // change-log:
 // - 2026-09-11: 리메이크 요약 — 술식별 묶음 + 연속 치아 구간(17-15 브리지, 17,15 어벗).
+// - 2026-09-11: 요약 정렬 — 보철(18→11→21→28→38→31→41→48) 먼저, 어벗 마지막.
 
 import { isCustomAbutmentWork } from "@/shared/practice/labFeeSchedule";
 import {
   isCustomAbutmentProsthesisType,
-  toToothMemoSortNumber,
   toothWorkHasLabProsthesis,
-  UPPER_ARCH_TEETH,
-  LOWER_ARCH_TEETH,
   type ToothWorkSelection,
 } from "@/shared/practice/transferMemo";
 
@@ -160,11 +158,48 @@ export function buildToothWorksFromRemakeSelection(
   return out;
 }
 
-/** FDI 악궁 순 — 인접 여부(구간 축약) 판별용 */
-const ARCH_TOOTH_ORDER = [...UPPER_ARCH_TEETH, ...LOWER_ARCH_TEETH] as const;
-const ARCH_TOOTH_INDEX = new Map(
-  ARCH_TOOTH_ORDER.map((tooth, index) => [tooth, index] as const),
+/** FDI 10→20→30→40 — 18→11→21→28→38→31→41→48 (labFeeSchedule.toToothDecadeSortNumber) */
+const REMAKE_ARCH_TOOTH_ORDER = [
+  "18",
+  "17",
+  "16",
+  "15",
+  "14",
+  "13",
+  "12",
+  "11",
+  "21",
+  "22",
+  "23",
+  "24",
+  "25",
+  "26",
+  "27",
+  "28",
+  "38",
+  "37",
+  "36",
+  "35",
+  "34",
+  "33",
+  "32",
+  "31",
+  "41",
+  "42",
+  "43",
+  "44",
+  "45",
+  "46",
+  "47",
+  "48",
+] as const;
+const REMAKE_ARCH_TOOTH_INDEX = new Map(
+  REMAKE_ARCH_TOOTH_ORDER.map((tooth, index) => [tooth, index] as const),
 );
+
+const remakeToothSortIndex = (tooth: string) =>
+  REMAKE_ARCH_TOOTH_INDEX.get(String(tooth || "").trim()) ??
+  Number.MAX_SAFE_INTEGER;
 
 /** 전체가 한 연속 구간이면 17-15, 아니면 17,15 (부분 구간 혼용 금지) */
 export function formatCompactToothNumbers(
@@ -176,15 +211,15 @@ export function formatCompactToothNumbers(
         .map((t) => String(t || "").trim())
         .filter((t) => /^[1-4][1-8]$/.test(t)),
     ),
-  ].sort((a, b) => toToothMemoSortNumber(a) - toToothMemoSortNumber(b));
+  ].sort((a, b) => remakeToothSortIndex(a) - remakeToothSortIndex(b));
   if (sorted.length === 0) return "";
 
   const runs: string[][] = [];
   for (const tooth of sorted) {
     const prevRun = runs[runs.length - 1];
     const prev = prevRun?.[prevRun.length - 1];
-    const prevIdx = prev != null ? ARCH_TOOTH_INDEX.get(prev) : undefined;
-    const curIdx = ARCH_TOOTH_INDEX.get(tooth);
+    const prevIdx = prev != null ? REMAKE_ARCH_TOOTH_INDEX.get(prev) : undefined;
+    const curIdx = REMAKE_ARCH_TOOTH_INDEX.get(tooth);
     if (
       prevRun &&
       prevIdx != null &&
@@ -212,26 +247,31 @@ const remakeSummaryTypeLabel = (opt: RemakePartOption): string => {
   return type || "보철";
 };
 
-/** 선택 요약 — 예: `17-15 브리지, 17,15 어벗` */
-export function summarizeRemakeSelection(
-  options: RemakePartOption[],
-  selectedKeys: ReadonlySet<string>,
+/** 보철(치식 순) 먼저, 어벗 마지막 */
+function formatRemakeSummaryFromGroups(
+  teethByType: Map<string, string[]>,
 ): string {
-  const typeOrder: string[] = [];
-  const teethByType = new Map<string, string[]>();
+  const types = Array.from(teethByType.keys());
+  const prosthesisTypes = types.filter((type) => type !== "어벗");
+  const hasAbutment = types.includes("어벗");
 
-  for (const opt of options) {
-    if (!selectedKeys.has(opt.key)) continue;
-    const typeLabel = remakeSummaryTypeLabel(opt);
-    if (!teethByType.has(typeLabel)) {
-      teethByType.set(typeLabel, []);
-      typeOrder.push(typeLabel);
-    }
-    const tooth = String(opt.toothNumber || "").trim();
-    if (tooth && tooth !== "—") teethByType.get(typeLabel)!.push(tooth);
-  }
+  const minToothIndex = (typeLabel: string) => {
+    const teeth = teethByType.get(typeLabel) || [];
+    if (teeth.length === 0) return Number.MAX_SAFE_INTEGER;
+    return Math.min(...teeth.map((tooth) => remakeToothSortIndex(tooth)));
+  };
 
-  return typeOrder
+  prosthesisTypes.sort((a, b) => {
+    const diff = minToothIndex(a) - minToothIndex(b);
+    if (diff !== 0) return diff;
+    return a.localeCompare(b, "ko");
+  });
+
+  const ordered = hasAbutment
+    ? [...prosthesisTypes, "어벗"]
+    : prosthesisTypes;
+
+  return ordered
     .map((typeLabel) => {
       const teethLabel = formatCompactToothNumbers(
         teethByType.get(typeLabel) || [],
@@ -242,9 +282,52 @@ export function summarizeRemakeSelection(
     .join(", ");
 }
 
+const expandRemakeToothToken = (raw: string): string[] => {
+  const token = String(raw || "").trim();
+  if (!token) return [];
+  const range = token.match(/^([1-4][1-8])-([1-4][1-8])$/);
+  if (range) {
+    const startIdx = REMAKE_ARCH_TOOTH_INDEX.get(range[1]);
+    const endIdx = REMAKE_ARCH_TOOTH_INDEX.get(range[2]);
+    if (
+      startIdx == null ||
+      endIdx == null ||
+      endIdx < startIdx
+    ) {
+      return [range[1], range[2]].filter(Boolean);
+    }
+    return REMAKE_ARCH_TOOTH_ORDER.slice(startIdx, endIdx + 1).map(String);
+  }
+  if (/^[1-4][1-8]$/.test(token)) return [token];
+  return [];
+};
+
+const parseRemakeToothList = (raw: string): string[] =>
+  String(raw || "")
+    .split(",")
+    .flatMap((part) => expandRemakeToothToken(part));
+
+/** 선택 요약 — 예: `17-15 브리지, 14 크라운, 17,15,14 어벗` */
+export function summarizeRemakeSelection(
+  options: RemakePartOption[],
+  selectedKeys: ReadonlySet<string>,
+): string {
+  const teethByType = new Map<string, string[]>();
+
+  for (const opt of options) {
+    if (!selectedKeys.has(opt.key)) continue;
+    const typeLabel = remakeSummaryTypeLabel(opt);
+    if (!teethByType.has(typeLabel)) teethByType.set(typeLabel, []);
+    const tooth = String(opt.toothNumber || "").trim();
+    if (tooth && tooth !== "—") teethByType.get(typeLabel)!.push(tooth);
+  }
+
+  return formatRemakeSummaryFromGroups(teethByType);
+}
+
 /**
- * 레거시 `17 · 브리지, 17 · 어벗, …` → 압축 표기.
- * 이미 압축된 라벨은 그대로 둔다.
+ * 레거시 `17 · 브리지, …` 및 압축 `14 크라운, 17-15 브리지, …` →
+ * 보철(치식 순) → 어벗 순으로 재정렬.
  */
 export function compactRemakeSummaryLabel(raw: string): string {
   const text = String(raw || "").trim();
@@ -263,32 +346,48 @@ export function compactRemakeSummaryLabel(raw: string): string {
     });
 
   if (
-    legacyTokens.length === 0 ||
-    legacyTokens.some((token) => token == null)
+    legacyTokens.length > 0 &&
+    legacyTokens.every((token) => token != null)
   ) {
-    return text;
-  }
-
-  const typeOrder: string[] = [];
-  const teethByType = new Map<string, string[]>();
-  for (const token of legacyTokens) {
-    if (!token) continue;
-    if (!teethByType.has(token.type)) {
-      teethByType.set(token.type, []);
-      typeOrder.push(token.type);
+    const teethByType = new Map<string, string[]>();
+    for (const token of legacyTokens) {
+      if (!token) continue;
+      if (!teethByType.has(token.type)) teethByType.set(token.type, []);
+      teethByType.get(token.type)!.push(token.tooth);
     }
-    teethByType.get(token.type)!.push(token.tooth);
+    return formatRemakeSummaryFromGroups(teethByType);
   }
 
-  return typeOrder
-    .map((typeLabel) => {
-      const teethLabel = formatCompactToothNumbers(
-        teethByType.get(typeLabel) || [],
-      );
-      return teethLabel ? `${teethLabel} ${typeLabel}` : typeLabel;
-    })
-    .filter(Boolean)
-    .join(", ");
+  const compactParts = text
+    .split(/,\s+/)
+    .map((part) => String(part || "").trim())
+    .filter(Boolean);
+  const compactTokens = compactParts.map((part) => {
+    const m =
+      part.match(/^([0-9][0-9,\-]*)\s+(.+)$/) ||
+      part.match(/^(.+?)\s*[·.]\s*(.+)$/);
+    if (!m) return null;
+    const teeth = parseRemakeToothList(String(m[1] || "").trim());
+    let type = String(m[2] || "").trim();
+    if (type === "커스텀어벗") type = "어벗";
+    if (teeth.length === 0 || !type) return null;
+    return { teeth, type };
+  });
+
+  if (
+    compactTokens.length > 0 &&
+    compactTokens.every((token) => token != null)
+  ) {
+    const teethByType = new Map<string, string[]>();
+    for (const token of compactTokens) {
+      if (!token) continue;
+      if (!teethByType.has(token.type)) teethByType.set(token.type, []);
+      teethByType.get(token.type)!.push(...token.teeth);
+    }
+    return formatRemakeSummaryFromGroups(teethByType);
+  }
+
+  return text;
 }
 
 /** remakeCharges.selectedParts → charged part keys (`index:prosthesis` | `index:ca`) */
