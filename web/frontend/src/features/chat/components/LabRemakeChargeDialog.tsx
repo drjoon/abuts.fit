@@ -3,6 +3,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/practice/usePracticeTransferFeeQuote.ts
 // - web/backend/services/practiceTransferRemakeCharge.service.js
+// - 2026-09-11: 기본 미선택 — 리메이크할 부위만 고르게(전부 선택 실수 방지).
 // - 2026-09-10: 표시 라벨 「어벗」·dense 레이아웃(세로 스크롤 최소화).
 // - 2026-09-10: X·바깥클릭 닫기. 가로 3.5칸+스크롤. 기공비 안내 상시.
 // - 2026-09-10: 보철+CA 선택·부위별 리메이크비. 수동 청구에 CA 포함.
@@ -264,9 +265,8 @@ export function LabRemakeChargeDialog({
   useEffect(() => {
     if (!open) return;
     setHistoryOpen(false);
-    setSelectedKeys(
-      new Set(partOptions.filter((o) => !chargedKeys.has(o.key)).map((o) => o.key)),
-    );
+    // 미청구 전부 자동선택 금지 — 박선자처럼 14 제외·15-17만 고르는 UX.
+    setSelectedKeys(new Set());
   }, [open, partOptions, chargedKeys]);
 
   const activeSelectedKeys = useMemo(() => {
@@ -433,7 +433,8 @@ export function LabRemakeChargeDialog({
       description={
         <div className="space-y-3 text-left">
           <p className="text-[12px] leading-snug text-muted-foreground">
-            청구할 보철·어벗을 선택하세요.
+            리메이크할 보철·어벗만 선택하세요. 선택하지 않은 치아는 청구되지
+            않습니다.
           </p>
 
           <section className="rounded-lg border border-slate-200/80 bg-slate-50/70 px-3 py-2">

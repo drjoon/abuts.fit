@@ -11,7 +11,7 @@
 // - 2026-09-02: 어벗 STL 업로드 CTA 제거(상세 드롭존만).
 // - 2026-09-02: 수동「작업 완료」CTA 제거(도착일 자동 완료).
 // - 2026-09-02: 어벗·보철 CTA → 디자인(STL) 업로드 통합.
-// - 2026-08-21: 의뢰 수락/작업 완료 취소 — 가공 중이어도 클릭·API 판정·토스트(고정 비활성 제거).
+// - 2026-08-21: 의뢰 수락/작업 완료 취소 — 가공(pastReady)이면 CTA 숨김·리메이크 유도.
 // - 2026-08-21: 업로드 CTA → PracticeLabReceiveWorkActionsBar(상세 모달과 공유).
 // - 2026-08-17: 미확인 의뢰(!isRead)도 채팅 unread와 합산해 헤더 빨간 배지 표시(사이드바 배지와 정합).
 // - 2026-08-16: 의뢰 수락 취소·작업 완료 취소 → 카드 헤더 우측.
@@ -196,7 +196,7 @@ export function PracticeTransferLabReceiveCard({
       </TooltipTrigger>
       <TooltipContent side="top" className="max-w-xs text-xs">
         발송(작업완료) 단계를 의뢰수락으로 되돌립니다. 제조사 준비 단계에서만
-        가능합니다.
+        가능합니다. 가공이 시작되면 리메이크로 선택 치아만 재제작하세요.
       </TooltipContent>
     </Tooltip>
   ) : null;

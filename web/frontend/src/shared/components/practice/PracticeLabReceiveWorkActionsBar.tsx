@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/practice/practiceTransferLabReceive.ts
 // change-log:
+// - 2026-09-11: 가공(pastReady) 후 어벗 취소 숨김 · 리메이크(선택 치아) 안내.
 // - 2026-09-03: 어벗츠 안내 — 업로드된 치아 번호 취소줄(designFiles).
 // - 2026-09-02: 어벗츠 제공 CA만 있어도 안내 표시(심플어벗 제외).
 // - 2026-09-02: 공개 카탈로그로 도입중 CA 안내 보강(플래그 저장 누락 보정).
@@ -14,7 +15,7 @@
 // - 2026-09-02: 보철/dual 제거. CA 어벗 업로드 + 파일 없는 작업 완료 CTA.
 // - 2026-09-02: 수락 후 24h/48h 어벗 STL 미업로드 경고 배너.
 import type { MouseEvent, ReactNode } from "react";
-import { X } from "lucide-react";
+import { Repeat, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -42,6 +43,8 @@ export type PracticeLabReceiveWorkActionsBarProps = {
   /** 수락 중「어벗 생산 취소」노출(상세는 true, 카드는 헤더와 역할 분담 시 true) */
   showProductionCancelInBar?: boolean;
   onAbutmentProductionCancel?: (event: MouseEvent) => void;
+  /** 가공 후 리메이크(선택 치아 재제작) — 취소 대신 */
+  onOpenAbutmentRemake?: (event: MouseEvent) => void;
   onDesignConfirm?: () => void;
   trailingActions?: ReactNode;
   className?: string;
@@ -65,6 +68,7 @@ export function PracticeLabReceiveWorkActionsBar({
   designConfirmBusy = false,
   showProductionCancelInBar = true,
   onAbutmentProductionCancel,
+  onOpenAbutmentRemake,
   onDesignConfirm,
   trailingActions = null,
   className,
@@ -80,6 +84,7 @@ export function PracticeLabReceiveWorkActionsBar({
   if (
     !state.showWorkActions &&
     !state.showCompletedStageHeaderCancel &&
+    !state.abutmentCancelBlockedPastReady &&
     !hasTrailing &&
     !hasAbutmentGuide &&
     !uploadOverdue
@@ -99,7 +104,9 @@ export function PracticeLabReceiveWorkActionsBar({
       )}
       mixedWithAbuts={state.hasAbutsCa}
       abutsProductionOrdered={
-        state.showAbutmentProductionCancel && !state.needsMoreAbutmentDesigns
+        (state.showAbutmentProductionCancel ||
+          state.abutmentCancelBlockedPastReady) &&
+        !state.needsMoreAbutmentDesigns
       }
       uploadedAbutmentTeeth={listPracticeTransferUploadedAbutmentTeeth(
         transfer,
@@ -127,15 +134,67 @@ export function PracticeLabReceiveWorkActionsBar({
           </Button>
         </TooltipTrigger>
         <TooltipContent side="top" className="max-w-xs text-xs">
-          제조사가 준비 단계일 때만 생산을 취소할 수 있습니다.
+          제조사가 준비 단계일 때만 생산을 취소할 수 있습니다. 가공이 시작되면
+          리메이크로 선택 치아만 재제작하세요.
+        </TooltipContent>
+      </Tooltip>
+    ) : null;
+
+  const pastReadyRemakeButton =
+    showProductionCancelInBar &&
+    state.abutmentCancelBlockedPastReady &&
+    onOpenAbutmentRemake ? (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            className="h-8 shrink-0 gap-1 border-amber-300 bg-amber-50 text-amber-950 hover:bg-amber-100 hover:text-amber-950 focus-visible:ring-0 focus-visible:ring-offset-0"
+            onClick={(event) => {
+              event.stopPropagation();
+              onOpenAbutmentRemake(event);
+            }}
+          >
+            <Repeat className="h-3.5 w-3.5" />
+            {busy ? "처리 중..." : "리메이크"}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-xs text-xs">
+          제조 가공이 시작되어 어벗 취소를 할 수 없습니다. 리메이크로 필요한
+          치아·어벗만 골라 재제작하세요.
+        </TooltipContent>
+      </Tooltip>
+    ) : showProductionCancelInBar &&
+      state.abutmentCancelBlockedPastReady ? (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="inline-flex">
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled
+              className="h-8 shrink-0 focus-visible:ring-0 focus-visible:ring-offset-0"
+            >
+              <X className="h-3.5 w-3.5" />
+              어벗 취소 불가
+            </Button>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-xs text-xs">
+          제조 가공이 시작되어 취소할 수 없습니다. 상단 「리메이크」에서 필요한
+          치아만 재제작하세요.
         </TooltipContent>
       </Tooltip>
     ) : null;
 
   const cancelCluster =
-    productionCancelButton || hasTrailing ? (
+    productionCancelButton || pastReadyRemakeButton || hasTrailing ? (
       <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1.5">
         {productionCancelButton}
+        {pastReadyRemakeButton}
         {trailingActions}
       </div>
     ) : null;
@@ -176,7 +235,7 @@ export function PracticeLabReceiveWorkActionsBar({
     );
   }
 
-  if (state.showCompletedStageHeaderCancel) {
+  if (state.showCompletedStageHeaderCancel || state.abutmentCancelBlockedPastReady) {
     return (
       <div className={cn("w-full min-w-0 space-y-1.5", className)}>
         {uploadOverdueAlert}

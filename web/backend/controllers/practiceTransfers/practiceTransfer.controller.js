@@ -201,6 +201,7 @@ import { completePracticeTransferWork } from "../../services/practiceTransferCom
 // - web/backend/utils/practiceTransferAbutmentPresets.js
 // - web/backend/utils/practiceLabRating.js
 // - web/backend/utils/practiceTransferStage.js
+// - 2026-09-11: remake — selectedParts 요약 채팅·기공소 「리메이크 의뢰」문구.
 // - 2026-09-02: cancel-batch — 저널 rollback 후 billing.heldAt/held* 도 초기화(기공소 적립 보류 미러 잔존 방지).
 // - 2026-08-31: createPracticeTransfer — 크레딧 hold 성공 후에만 201. 실패 시 전송 삭제·402(가짜 성공→임시저장만 남는 버그).
 // - 2026-08-28: 캘린더 /my — toCalendarOwnedRequestRows에 files[] 전부(상세 모달 1개→N개 지연 표시 방지).
@@ -5848,7 +5849,36 @@ export async function remakePracticeTransfers(req, res) {
           ? ` · 리메이크비 ${feeTotal.toLocaleString("ko-KR")}원`
           : "";
       const who =
-        initiatedByLab ? "기공소에서 리메이크를 기록했습니다" : "리메이크 의뢰가 전달되었습니다";
+        initiatedByLab
+          ? "기공소에서 리메이크 의뢰를 생성했습니다"
+          : "리메이크 의뢰가 전달되었습니다";
+      const selectedPartsLabel = Array.isArray(selectedPartsRaw)
+        ? selectedPartsRaw
+            .map((part) => {
+              const index = Math.trunc(Number(part?.index));
+              const tooth =
+                Number.isFinite(index) && index >= 0
+                  ? String(sourceToothWorks[index]?.toothNumber || "").trim()
+                  : "";
+              const bits = [];
+              if (part?.prosthesis) {
+                const type = String(
+                  sourceToothWorks[index]?.prosthesisType || "보철",
+                ).trim();
+                bits.push(tooth ? `${tooth} · ${type}` : type);
+              }
+              if (
+                part?.customAbutment === true ||
+                part?.includeCustomAbutment === true ||
+                part?.ca === true
+              ) {
+                bits.push(tooth ? `${tooth} · 어벗` : "어벗");
+              }
+              return bits.join(", ");
+            })
+            .filter(Boolean)
+            .join(", ")
+        : "";
 
       created.push({
         _id: String(transferDoc?._id || ""),
@@ -5866,9 +5896,11 @@ export async function remakePracticeTransfers(req, res) {
           remakeArrivalLabel ? ` (도착일 ${remakeArrivalLabel}` : ""
         }${
           remakeCaIncluded
-            ? `${remakeArrivalLabel ? ", " : " ("}커스텀어벗 포함`
+            ? `${remakeArrivalLabel ? ", " : " ("}어벗 포함`
             : ""
-        }${remakeArrivalLabel || remakeCaIncluded ? ")" : ""}${feeLabel}.`,
+        }${remakeArrivalLabel || remakeCaIncluded ? ")" : ""}${
+          selectedPartsLabel ? ` · ${selectedPartsLabel}` : ""
+        }${feeLabel}.`,
         systemEvent: "practice_transfer_remake",
         systemPayload: {
           remakeTransferId: transferId,
@@ -5880,6 +5912,7 @@ export async function remakePracticeTransfers(req, res) {
           selectedParts: Array.isArray(selectedPartsRaw)
             ? selectedPartsRaw
             : null,
+          summaryLabel: selectedPartsLabel || null,
         },
       });
     }

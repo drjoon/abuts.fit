@@ -29,6 +29,7 @@
 // - web/backend/utils/labReceiveCalendarHiddenWeekdays.util.js
 // - web/frontend/src/shared/practice/labReceiveCalendarViewMode.ts
 // - web/backend/controllers/users/user.controller.js
+// - 2026-09-11: 가공(pastReady) 후 「리메이크」=선택 치아 리메이크 의뢰(새 PTX). 청구는 가공 전만.
 // - 2026-09-10: 리메이크 청구 CTA — 식별 스트립(환자/도착일) 오른쪽, 라벨 「리메이크」.
 // - 2026-09-09: 기공소 「리메이크 청구」— LabRemakeChargeDialog + received remake-charges.
 // - 2026-09-07: 가이드투어 lab_remake — 데모 리메이크 뱃지·상세 탭·수가.
@@ -312,6 +313,10 @@ import {
   LabRemakeChargeDialog,
   type LabRemakeChargeResult,
 } from "@/features/chat/components/LabRemakeChargeDialog";
+import {
+  ChatRemakePromptDialog,
+  type ChatRemakePromptResult,
+} from "@/features/chat/components/ChatRemakePromptDialog";
 import {
   filterPracticeTransferFiles,
   getPracticeTransferFileExtension,
@@ -937,6 +942,8 @@ export function RequestorPracticeReceivePage({
   const [remakeChargeCancelConfirm, setRemakeChargeCancelConfirm] = useState<{
     chargeIndex: number | null;
   } | null>(null);
+  const [labRemakeCreateOpen, setLabRemakeCreateOpen] = useState(false);
+  const [labRemakeCreateBusy, setLabRemakeCreateBusy] = useState(false);
   const chatBottomRef = useRef<HTMLDivElement | null>(null);
   const realtimeReloadTimerRef = useRef<number | null>(null);
   const chatRoomResolveSeqRef = useRef(0);
@@ -3984,6 +3991,130 @@ export function RequestorPracticeReceivePage({
     toast,
   ]);
 
+  const openLabRemakeFlow = useCallback(() => {
+    if (!selectedTransfer || remakeChargeBusy || labRemakeCreateBusy) return;
+    if (practiceTransferAbutmentMachiningStarted(selectedTransfer)) {
+      setRemakeChargeOpen(false);
+      setLabRemakeCreateOpen(true);
+      return;
+    }
+    setLabRemakeCreateOpen(false);
+    setRemakeChargeOpen(true);
+  }, [labRemakeCreateBusy, remakeChargeBusy, selectedTransfer]);
+
+  const handleConfirmLabRemakeCreate = useCallback(
+    async (result: ChatRemakePromptResult) => {
+      if (result.kind !== "remake") {
+        setLabRemakeCreateOpen(false);
+        return;
+      }
+      if (!token || !selectedTransfer || labRemakeCreateBusy) return;
+      if (isGuideTourDemoTransfer(selectedTransfer)) {
+        toast({
+          title: "가이드투어",
+          description: "데모 의뢰에서는 리메이크 의뢰를 실행하지 않습니다.",
+        });
+        setLabRemakeCreateOpen(false);
+        return;
+      }
+      const mongoId = String(selectedTransfer._id || "").trim();
+      if (!mongoId) {
+        toast({
+          title: "리메이크 의뢰 실패",
+          description: "원본 의뢰를 확인할 수 없습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+      setLabRemakeCreateBusy(true);
+      try {
+        const res = await apiFetch<{
+          message?: string;
+          data?: {
+            created?: Array<{
+              _id?: string;
+              transferId?: string;
+              remakeFeeTotal?: number;
+            }>;
+            failed?: Array<{ message?: string }>;
+          };
+        }>({
+          path: "/api/practice/transfers/remake",
+          method: "POST",
+          token,
+          jsonBody: {
+            transferMongoIds: [mongoId],
+            arrivalYmd: result.arrivalYmd,
+            includeCustomAbutment: result.includeCustomAbutment,
+            selectedParts: result.selectedParts,
+          },
+        });
+        if (!res.ok) {
+          const body =
+            res.data && typeof res.data === "object"
+              ? (res.data as Record<string, unknown>)
+              : {};
+          toast({
+            title: "리메이크 의뢰 실패",
+            description:
+              String(body.message || "").trim() ||
+              String(res.data?.data?.failed?.[0]?.message || "").trim() ||
+              "다시 시도해주세요.",
+            variant: "destructive",
+          });
+          return;
+        }
+        const created = res.data?.data?.created?.[0];
+        const fee = Math.max(
+          0,
+          Math.round(
+            Number(created?.remakeFeeTotal || result.remakeFeeTotal || 0),
+          ),
+        );
+        setLabRemakeCreateOpen(false);
+        toast({
+          title: "리메이크 의뢰를 생성했습니다",
+          description:
+            res.data?.message ||
+            [
+              result.summaryLabel
+                ? `선택: ${result.summaryLabel}`
+                : null,
+              result.arrivalYmd ? `도착일 ${result.arrivalYmd}` : null,
+              fee > 0
+                ? `리메이크비 ${fee.toLocaleString("ko-KR")}원`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(" · ") ||
+            "새 리메이크 의뢰가 목록에 추가됩니다.",
+        });
+        if (activeChatRoom?._id) {
+          void prefetchMessages();
+        }
+        void loadCalendarTransfers({ silent: true });
+      } catch (error) {
+        toast({
+          title: "리메이크 의뢰 실패",
+          description:
+            error instanceof Error ? error.message : "네트워크 오류",
+          variant: "destructive",
+        });
+      } finally {
+        setLabRemakeCreateBusy(false);
+      }
+    },
+    [
+      activeChatRoom?._id,
+      labRemakeCreateBusy,
+      loadCalendarTransfers,
+      prefetchMessages,
+      selectedTransfer,
+      toast,
+      token,
+    ],
+  );
+
   const handleConfirmRemakeCharge = useCallback(
     async (result: LabRemakeChargeResult) => {
       if (!token || !selectedTransfer || remakeChargeBusy) return;
@@ -5298,7 +5429,7 @@ export function RequestorPracticeReceivePage({
           throw new Error(
             String(
               body.message ||
-                "제조사가 준비 단계일 때만 생산을 취소할 수 있습니다.",
+                "제조 가공이 시작되어 어벗을 취소할 수 없습니다. 리메이크로 선택 치아만 재제작해 주세요.",
             ),
           );
         }
@@ -6435,6 +6566,8 @@ export function RequestorPracticeReceivePage({
             setRemakeChargeBusy(false);
             setRemakeChargeCancelBusy(false);
             setRemakeChargeCancelConfirm(null);
+            setLabRemakeCreateOpen(false);
+            setLabRemakeCreateBusy(false);
           }
         }}
         preferredDockSide={panelPreferredDockSide}
@@ -6461,9 +6594,13 @@ export function RequestorPracticeReceivePage({
               size="sm"
               variant="outline"
               className="h-8 gap-1 border-amber-300 bg-amber-50 px-2.5 text-xs text-amber-950 hover:bg-amber-100 hover:text-amber-950"
-              disabled={remakeChargeBusy}
-              title="동일 의뢰건에 리메이크 기공비를 청구합니다"
-              onClick={() => setRemakeChargeOpen(true)}
+              disabled={remakeChargeBusy || labRemakeCreateBusy}
+              title={
+                practiceTransferAbutmentMachiningStarted(selectedTransfer)
+                  ? "가공 시작 후 어벗 취소 불가 · 선택 치아만 리메이크 의뢰"
+                  : "동일 의뢰건에 리메이크 기공비를 청구합니다"
+              }
+              onClick={() => openLabRemakeFlow()}
             >
               <Repeat className="h-3.5 w-3.5" />
               리메이크
@@ -6763,6 +6900,7 @@ export function RequestorPracticeReceivePage({
           if (
             !workState.showWorkActions &&
             !workState.showCompletedStageHeaderCancel &&
+            !workState.abutmentCancelBlockedPastReady &&
             !workState.hasPendingLabCa &&
             !workState.hasAbutsCa
           ) {
@@ -6771,7 +6909,10 @@ export function RequestorPracticeReceivePage({
           const transferKey = String(
             selectedTransfer.transferId || selectedTransfer._id || "",
           );
-          const rowBusy = cardActionBusyId === transferKey || workUploadBusy;
+          const rowBusy =
+            cardActionBusyId === transferKey ||
+            workUploadBusy ||
+            labRemakeCreateBusy;
           const completedCancelAction = workState.showCompletedStageHeaderCancel ? (
             <Button
               type="button"
@@ -6805,6 +6946,7 @@ export function RequestorPracticeReceivePage({
                   event,
                 )
               }
+              onOpenAbutmentRemake={() => openLabRemakeFlow()}
               onDesignConfirm={() => {
                 void confirmAbutmentDesign(selectedTransfer);
               }}
@@ -6874,6 +7016,20 @@ export function RequestorPracticeReceivePage({
         onCancel={() => {
           if (remakeChargeBusy) return;
           setRemakeChargeOpen(false);
+        }}
+      />
+      <ChatRemakePromptDialog
+        open={labRemakeCreateOpen && Boolean(selectedTransfer)}
+        toothWorks={selectedTransferToothWorks}
+        labAnchorId={String(user?.businessAnchorId || "").trim() || null}
+        busy={labRemakeCreateBusy}
+        initialStep="configure"
+        actor="lab"
+        intent="abutment_remake"
+        onResolve={(result) => void handleConfirmLabRemakeCreate(result)}
+        onCancel={() => {
+          if (labRemakeCreateBusy) return;
+          setLabRemakeCreateOpen(false);
         }}
       />
       <ConfirmDialog

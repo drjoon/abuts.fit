@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/components/practice/LabReceiveWorkUploadDialog.tsx
 // change-log:
+// - 2026-09-11: 가공(pastReady) 후 어벗 취소 CTA 숨김 — 리메이크(선택 치아 재제작)로 유도.
 // - 2026-09-07: 플랫폼 가입 이전 의뢰건 리메이크 — 라벨·안내 카피·판정 헬퍼.
 // - 2026-09-03: listPracticeTransferUploadedAbutmentTeeth — STL 업로드된 치아(취소줄 표시용).
 // - 2026-09-03: 모달 안내는 LabPendingAbutmentGuide에서 치아번호만 — formatPendingLabAbutmentDetailLine 제거.
@@ -869,8 +870,13 @@ export type PracticeLabReceiveWorkActionState = {
   productionStarted: boolean;
   /** 의뢰수락(또는 재오픈) — 업로드/작업완료 CTA 활성 */
   showWorkActions: boolean;
-  /** 연동 CA + (디자인 있음 | 스테이지 재오픈) */
+  /** 연동 CA + (디자인 있음 | 스테이지 재오픈) · 가공 전만 */
   showAbutmentProductionCancel: boolean;
+  /**
+   * 어벗 STL은 있으나 제조 가공(준비 이후)라 취소 불가.
+   * 리메이크로 선택 치아만 재제작하도록 안내.
+   */
+  abutmentCancelBlockedPastReady: boolean;
   /** 완료 후 — 헤더「작업 완료 취소」 */
   showCompletedStageHeaderCancel: boolean;
   /** 레거시: 디자인 업로드 후 기공소 확인 CTA */
@@ -900,6 +906,7 @@ export function resolvePracticeLabReceiveWorkActionState(
     productionStarted: false,
     showWorkActions: false,
     showAbutmentProductionCancel: false,
+    abutmentCancelBlockedPastReady: false,
     showCompletedStageHeaderCancel: false,
     showDesignConfirm: false,
     showMarkCompleteWithoutFiles: false,
@@ -966,11 +973,18 @@ export function resolvePracticeLabReceiveWorkActionState(
   // 보철 업로드 폐지 — CA 어벗만. 카드 드롭과 같이 수락 후에만 활성.
   const designStlUploadMode: PracticeLabReceiveDesignStlUploadMode =
     needsAbutmentDesigns && showWorkActions ? "abutment" : "none";
-  const showAbutmentProductionCancel =
-    hasAbutsCa &&
-    (designFileCount > 0 || needsStageReopen) &&
+  const hasLinkedAbutmentRequests =
     Array.isArray(transfer.production?.relatedRequestIds) &&
     transfer.production.relatedRequestIds.length > 0;
+  const hasCancelableAbutmentUpload =
+    hasAbutsCa &&
+    (designFileCount > 0 || needsStageReopen) &&
+    hasLinkedAbutmentRequests;
+  // 가공(준비 이후) 들어가면 STL 취소 불가 — 리메이크로 선택 치아 재제작.
+  const showAbutmentProductionCancel =
+    hasCancelableAbutmentUpload && !productionStarted;
+  const abutmentCancelBlockedPastReady =
+    hasCancelableAbutmentUpload && productionStarted;
   // 전부 업로드 중(남은 어벗 있음)에는 작업완료 취소 대신 업로드·어벗 취소 바 유지
   const showCompletedStageHeaderCancel =
     !showWorkActions && showAbutmentProductionCancel;
@@ -998,6 +1012,7 @@ export function resolvePracticeLabReceiveWorkActionState(
     productionStarted,
     showWorkActions,
     showAbutmentProductionCancel,
+    abutmentCancelBlockedPastReady,
     showCompletedStageHeaderCancel,
     showDesignConfirm,
     showMarkCompleteWithoutFiles,

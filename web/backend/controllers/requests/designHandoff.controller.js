@@ -1,3 +1,4 @@
+// - 2026-09-11: handoff/cancel — 연동 CA 중 하나라도 준비 이후(가공+)면 전체 취소 차단·리메이크 안내.
 // - 2026-09-09: CA STL 재업로드 remake — remake-charge realtime(billingDelta) fan-out.
 // - 2026-09-04: PTX handoff — 치식(toothWorks) 임플란트 스펙을 SSOT로 유지(FE 확인 모달 TS3→US 오염 방지).
 // - 2026-09-04: PTX handoff — Rhino trigger를 응답 후 최우선. save 시 stlPreload GENERATING.
@@ -64,6 +65,7 @@ import {
   hasCustomAbutmentToothWorks,
   isAbutmentRequestPastReadyForCancel,
   loadLabRequestMetaForProduction,
+  resolveRelatedAbutmentPastReady,
   mirrorDesignFileToPracticeTransfer,
   repriceAndReschedulePtxAbutmentRequest,
   resolveHexRotationByDesignSoftware,
@@ -1415,11 +1417,20 @@ export async function cancelDesignHandoff(req, res) {
     }
     healRequestOwnershipToAcceptingLab(request, transferTargetLabAnchorId);
 
-    if (isAbutmentRequestPastReadyForCancel(request)) {
+    // 연동 CA 중 하나라도 준비 이후(가공 포함)면 전부 취소 불가 — primary만 보면 형제가 가공중일 때 뚫림.
+    const relatedPastReady = transferDoc
+      ? Boolean(
+          (await resolveRelatedAbutmentPastReady(transferDoc)).pastReady,
+        )
+      : false;
+    if (
+      relatedPastReady ||
+      isAbutmentRequestPastReadyForCancel(request)
+    ) {
       return res.status(409).json({
         success: false,
         message:
-          "제조사가 준비 단계일 때만 어벗디자인을 취소·재업로드할 수 있습니다.",
+          "제조사가 가공(준비 이후)에 들어가면 어벗디자인을 취소할 수 없습니다. 리메이크로 선택 치아만 재제작해 주세요.",
         code: "manufacturer_not_ready",
       });
     }
