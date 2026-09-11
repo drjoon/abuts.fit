@@ -29,6 +29,7 @@
 // - web/backend/utils/labReceiveCalendarHiddenWeekdays.util.js
 // - web/frontend/src/shared/practice/labReceiveCalendarViewMode.ts
 // - web/backend/controllers/users/user.controller.js
+// - 2026-09-12: 채팅 없으면 상세 초기 스크롤=보철물(상단). 빈 목록 시 chatBottom 강제 스크롤 제거.
 // - 2026-09-12: 가공(pastReady) 「리메이크」CTA 복구(무료 선택 리메이크) · 생성 후 새 PTX 선택.
 // - 2026-09-12: 다중 STL — 3D 확인 전 파일명↔치아 매핑 요약 다이얼로그.
 // - 2026-09-11: 상세 패널 — 어벗 STL 업로드 버튼을 작업 취소 옆. 페이지 전체 드롭.
@@ -1940,7 +1941,7 @@ export function RequestorPracticeReceivePage({
   }, []);
 
   useEffect(() => {
-    if (!dialogOpen) return;
+    if (!dialogOpen || messages.length === 0) return;
     chatBottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [dialogOpen, messages]);
 

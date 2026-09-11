@@ -14,6 +14,7 @@
 // - web/frontend/src/shared/files/downloadWithProgress.ts
 // - web/frontend/src/shared/files/s3BlobCache.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-12: 채팅 없으면 초기 스크롤=보철물(상단). 전환·빈 목록 시 하단 고정 금지.
 // - 2026-09-11: 어벗 STL — 인라인 파란 배너 제거. 페이지 전체 드롭 + 작업취소 옆 업로드 버튼.
 // - 2026-09-11: inline 패널 — 닫기(X) 숨김. 주문/도착은 타이틀 아래 고정(작업시작 바에서 제거).
 // - 2026-09-11: 작업시작 바 — 작업+배송기간 제거, 주문/도착을 버튼 왼쪽에.
@@ -711,6 +712,8 @@ export function PracticeTransferDetailChatDialog({
   const scrollBodyRef = useRef<HTMLDivElement | null>(null);
   const didInitialScrollRef = useRef(false);
   const openedWithoutMessagesRef = useRef(false);
+  const scrollIdentityRef = useRef<string>("");
+  const scrollIdentity = String(toothWorksKey || caseIdentity?.primary || "").trim();
 
   useEffect(() => {
     if (!open || isMobile || isInline) return;
@@ -780,8 +783,15 @@ export function PracticeTransferDetailChatDialog({
     if (!open) {
       didInitialScrollRef.current = false;
       openedWithoutMessagesRef.current = false;
+      scrollIdentityRef.current = "";
       setScrollEdge("top");
       return;
+    }
+    // inline 등 open 유지한 채 의뢰 전환 시 초기 스크롤 다시 적용
+    if (scrollIdentity && scrollIdentity !== scrollIdentityRef.current) {
+      scrollIdentityRef.current = scrollIdentity;
+      didInitialScrollRef.current = false;
+      openedWithoutMessagesRef.current = false;
     }
     if (minimized || chatLoading) return;
 
@@ -816,12 +826,15 @@ export function PracticeTransferDetailChatDialog({
     chatLoading,
     chatMessages.length,
     resolvedInitialPanelTab,
+    scrollIdentity,
     applyScrollPosition,
   ]);
 
   useEffect(() => {
     if (!open || minimized || !didInitialScrollRef.current) return;
     if (scrollEdge !== "bottom") return;
+    // 메시지 없으면 하단 고정하지 않음(보철물·의뢰 상단 유지)
+    if (chatMessages.length === 0) return;
     const id = requestAnimationFrame(() => {
       const el = scrollBodyRef.current;
       if (!el) return;

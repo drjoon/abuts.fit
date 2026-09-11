@@ -6670,6 +6670,7 @@ export const PracticeFileTransferPage = ({
 
   useEffect(() => {
     if (!transferDialogOpen || !activeChatRoom?._id) return;
+    if (chatMessages.length === 0 || chatMessagesLoading) return;
     const raf = window.requestAnimationFrame(() => {
       chatBottomRef.current?.scrollIntoView({ block: "end" });
     });
