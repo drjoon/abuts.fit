@@ -3,6 +3,7 @@
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // change-log:
+// - 2026-09-11: variant=icon — 채팅 컴포저 # 옆 StickyNote 트리거.
 // - 2026-08-28: 라벨·내용 구분 — `라벨:` muted + 본문 foreground.
 // - 2026-08-28: [작성]/[편집] 제거 — 메모 줄 클릭으로 열기(연필 아이콘만).
 // - 2026-08-23: 라벨·메모를 `치과 메모: …` 한 줄로 표시.
@@ -21,6 +22,12 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/shared/ui/cn";
 
 export type CounterpartyMemoViewer = "practice" | "lab";
@@ -49,8 +56,10 @@ type CounterpartyMemoStripProps = {
   onSave: (memo: string) => Promise<boolean>;
   className?: string;
   stopPropagation?: boolean;
-  /** 예: 평가·별점 — 줄 오른쪽 끝 */
+  /** 예: 평가·별점 — 줄 오른쪽 끝 (strip만) */
   trailingAction?: ReactNode;
+  /** icon: 채팅 하단 # 옆 아이콘 트리거 */
+  variant?: "strip" | "icon";
 };
 
 export function CounterpartyMemoStrip({
@@ -62,6 +71,7 @@ export function CounterpartyMemoStrip({
   className,
   stopPropagation = true,
   trailingAction = null,
+  variant = "strip",
 }: CounterpartyMemoStripProps) {
   const privacy = PRIVACY_COPY[viewer];
   const [open, setOpen] = useState(false);
@@ -96,6 +106,78 @@ export function CounterpartyMemoStrip({
   };
 
   const hasMemo = Boolean(currentMemo);
+  const ariaLabel = hasMemo ? `${label} 편집` : `${label} 작성`;
+
+  const dialog = (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogContent
+        className="z-[320] sm:max-w-md"
+        overlayClassName="z-[310]"
+        onPointerDown={onTriggerPointerDown}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <DialogHeader>
+          <DialogTitle>{label}</DialogTitle>
+          <DialogDescription className="whitespace-pre-line">
+            {privacy.dialog}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2">
+          <Label htmlFor="counterparty-memo">메모</Label>
+          <Textarea
+            id="counterparty-memo"
+            value={draftMemo}
+            maxLength={maxLength}
+            rows={5}
+            placeholder={privacy.placeholder}
+            onChange={(event) => setDraftMemo(event.target.value)}
+          />
+          <p className="text-right text-[11px] text-muted-foreground">
+            {draftMemo.length}/{maxLength}
+          </p>
+        </div>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+            취소
+          </Button>
+          <Button type="button" disabled={saving} onClick={() => void save()}>
+            {saving ? "저장 중..." : "저장"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+
+  if (variant === "icon") {
+    return (
+      <>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className={cn(
+                  "h-9 w-9 shrink-0",
+                  hasMemo && "text-primary",
+                  className,
+                )}
+                aria-label={ariaLabel}
+                title={ariaLabel}
+                onPointerDown={onTriggerPointerDown}
+                onClick={() => setOpen(true)}
+              >
+                <StickyNote className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{ariaLabel}</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+        {dialog}
+      </>
+    );
+  }
 
   return (
     <>
@@ -113,7 +195,7 @@ export function CounterpartyMemoStrip({
             "hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
             "-mx-1 px-1 py-0.5",
           )}
-          aria-label={hasMemo ? `${label} 편집` : `${label} 작성`}
+          aria-label={ariaLabel}
           onClick={() => setOpen(true)}
         >
           <StickyNote className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -143,44 +225,7 @@ export function CounterpartyMemoStrip({
         </button>
         {trailingAction}
       </div>
-
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent
-          className="z-[320] sm:max-w-md"
-          overlayClassName="z-[310]"
-          onPointerDown={onTriggerPointerDown}
-          onClick={(event) => event.stopPropagation()}
-        >
-          <DialogHeader>
-            <DialogTitle>{label}</DialogTitle>
-            <DialogDescription className="whitespace-pre-line">
-              {privacy.dialog}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="counterparty-memo">메모</Label>
-            <Textarea
-              id="counterparty-memo"
-              value={draftMemo}
-              maxLength={maxLength}
-              rows={5}
-              placeholder={privacy.placeholder}
-              onChange={(event) => setDraftMemo(event.target.value)}
-            />
-            <p className="text-right text-[11px] text-muted-foreground">
-              {draftMemo.length}/{maxLength}
-            </p>
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-              취소
-            </Button>
-            <Button type="button" disabled={saving} onClick={() => void save()}>
-              {saving ? "저장 중..." : "저장"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {dialog}
     </>
   );
 }

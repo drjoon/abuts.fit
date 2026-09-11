@@ -2,6 +2,7 @@
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/shared/practice/practiceLabRating.ts
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
+// - 2026-09-11: variant=icon — 채팅 컴포저 # 옆 별 트리거.
 // - 2026-08-14: 치과→기공소 rating·메모. 채팅 헤더.
 // - 2026-08-16: 5점제. 안내 단순화. 별점은 기공소에 공개·치과정보는 비공개.
 // - 2026-08-16: 평가 모달 기본 별점 3.
@@ -24,6 +25,12 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useToast } from "@/shared/hooks/use-toast";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -50,6 +57,8 @@ type PracticeLabRatingControlProps = {
   className?: string;
   size?: "sm" | "xs";
   stopPropagation?: boolean;
+  /** icon: 채팅 하단 # 옆 별 아이콘 */
+  variant?: "button" | "icon";
 };
 
 function StarRow({
@@ -95,6 +104,7 @@ export function PracticeLabRatingControl({
   className,
   size = "sm",
   stopPropagation = true,
+  variant = "button",
 }: PracticeLabRatingControlProps) {
   const { token } = useAuthStore();
   const { toast } = useToast();
@@ -192,33 +202,9 @@ export function PracticeLabRatingControl({
     size === "xs" ? "h-6 px-2 text-[11px]" : "h-7 px-2.5 text-xs";
   const active = Boolean(current?.stars);
   const isOneStar = current?.stars === 1;
+  const ariaLabel = active ? `기공소 ${current?.stars}점` : "기공소 평가";
 
-  return (
-    <>
-      <span
-        className="inline-flex items-center gap-1.5"
-        onPointerDown={onTriggerPointerDown}
-      >
-        {isOneStar ? (
-          <span className="text-[11px] font-medium text-rose-600">
-            {ONE_STAR_INLINE_HINT}
-          </span>
-        ) : null}
-        <Button
-          type="button"
-          variant={active ? "default" : "outline"}
-          size="sm"
-          className={cn(buttonSizeClass, "gap-1", className)}
-          aria-label={
-            active ? `기공소 ${current?.stars}점` : "기공소 평가"
-          }
-          onClick={() => setOpen(true)}
-        >
-          <Star className="h-3.5 w-3.5 fill-current" />
-          {active ? `${current?.stars}점` : "평가"}
-        </Button>
-      </span>
-
+  const dialog = (
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent
           className="z-[320] max-h-[90vh] w-[calc(100%-1.5rem)] gap-5 overflow-y-auto p-0 sm:max-w-xl sm:rounded-2xl"
@@ -286,6 +272,67 @@ export function PracticeLabRatingControl({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+  );
+
+  if (variant === "icon") {
+    return (
+      <>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className={cn(
+                  "h-9 w-9 shrink-0",
+                  active && "text-amber-500",
+                  isOneStar && "text-rose-600",
+                  className,
+                )}
+                aria-label={ariaLabel}
+                title={ariaLabel}
+                onPointerDown={onTriggerPointerDown}
+                onClick={() => setOpen(true)}
+              >
+                <Star
+                  className={cn("h-4 w-4", active && "fill-current")}
+                  strokeWidth={1.75}
+                />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{ariaLabel}</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+        {dialog}
+      </>
+    );
+  }
+
+  return (
+    <>
+      <span
+        className="inline-flex items-center gap-1.5"
+        onPointerDown={onTriggerPointerDown}
+      >
+        {isOneStar ? (
+          <span className="text-[11px] font-medium text-rose-600">
+            {ONE_STAR_INLINE_HINT}
+          </span>
+        ) : null}
+        <Button
+          type="button"
+          variant={active ? "default" : "outline"}
+          size="sm"
+          className={cn(buttonSizeClass, "gap-1", className)}
+          aria-label={ariaLabel}
+          onClick={() => setOpen(true)}
+        >
+          <Star className="h-3.5 w-3.5 fill-current" />
+          {active ? `${current?.stars}점` : "평가"}
+        </Button>
+      </span>
+      {dialog}
     </>
   );
 }

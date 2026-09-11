@@ -14,6 +14,11 @@
 // - web/frontend/src/shared/files/downloadWithProgress.ts
 // - web/frontend/src/shared/files/s3BlobCache.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-11: 헤더「의뢰 · 진행」라벨 제거, 치식·보철물 카드 복원.
+// - 2026-09-11: 메모·평가 → 채팅 # 옆 아이콘(composerToolbarExtra).
+// - 2026-09-11: 채팅 min-height에 식별·기공소 메모/평가 크롬 높이 합산.
+// - 2026-09-11: 의뢰 라벨·치식 제거, 파일 내부 스크롤 폐지, 진행 영역 viewport 높이.
+// - 2026-09-11: 의뢰 핵심/상세 정보 제거 — 주문일은 상단 도착일 옆에 표시.
 // - 2026-09-11: 의뢰/진행 탭 제거 — 단일 스크롤(의뢰↑·진행↓), 점프 버튼, 채팅 유무로 초기 위치.
 // - 2026-09-11: 어벗 가공 시작 시 「작업 취소」CTA 숨김(카드와 동일). 클릭 판정만 의존하지 않음.
 // - 2026-09-10: chatHeaderAction — 탭 행 → 환자/도착일 식별 스트립 오른쪽.
@@ -106,6 +111,7 @@ import {
   type RefObject,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -119,7 +125,6 @@ import {
   ChevronLeft,
   ChevronRight,
   FileIcon,
-  MessageSquare,
   MoreHorizontal,
   Pencil,
   Printer,
@@ -129,11 +134,6 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
 import {
   Dialog,
   DialogContent,
@@ -164,6 +164,7 @@ import { buildChatReactionUserNameById } from "@/features/chat/components/chatRe
 import { type ReplyToMessage } from "@/features/chat/components/MessageReply";
 import { PracticeToothWorkChartReadOnly } from "@/shared/components/practice/PracticeToothWorkChartReadOnly";
 import { PracticeRemakeChargesStrip } from "@/shared/components/practice/PracticeRemakeChargesStrip";
+import { calendarGroupDotColor } from "@/pages/practice/components/PracticeRecentTransfersCalendar";
 import { usePracticeTransferPanelLayout } from "@/shared/components/practice/usePracticeTransferPanelLayout";
 import { useIsMobile } from "@/shared/hooks/use-mobile";
 import {
@@ -302,50 +303,19 @@ function summaryItemValue(
   return raw && raw !== "-" ? raw : "";
 }
 
-/** 헤더 식별 줄·파일 섹션과 겹치는 메타 → 상세 접기 */
-const SUMMARY_PRIMARY_LABELS = new Set([
-  "환자명",
-  "주문일",
-  "재주문일",
-  "도착일",
-  "치과도착일",
-  "다음 도착일",
-  "재도착일",
-  "기공의뢰 단계",
-  "어벗 진행상황",
-]);
-
-function isZeroCountSummaryValue(value: string): boolean {
-  return /^0\s*개$/.test(String(value || "").trim());
-}
-
-function partitionPracticeTransferSummaryItems(
-  items: PracticeTransferDialogSummaryItem[],
-): {
-  primary: PracticeTransferDialogSummaryItem[];
-  secondary: PracticeTransferDialogSummaryItem[];
-} {
-  const primary: PracticeTransferDialogSummaryItem[] = [];
-  const secondary: PracticeTransferDialogSummaryItem[] = [];
-  for (const row of items) {
-    const label = String(row.label || "").trim();
-    const value = String(row.value || "").trim();
-    // 0개 카운트는 아래 파일 섹션으로 충분 — 목록 노이즈만 줄임
-    if (
-      (label === "파일 수" ||
-        label === "어벗디자인" ||
-        label === "보철물") &&
-      isZeroCountSummaryValue(value)
-    ) {
-      continue;
-    }
-    if (SUMMARY_PRIMARY_LABELS.has(label)) {
-      primary.push(row);
-    } else {
-      secondary.push(row);
-    }
-  }
-  return { primary, secondary };
+function formatPracticeTransferIdentityDateLabel(opts: {
+  orderYmd?: string | null;
+  arrivalYmd?: string | null;
+  shipYmd?: string | null;
+}): string {
+  const order = String(opts.orderYmd || "").trim();
+  const arrival = String(opts.arrivalYmd || "").trim();
+  const ship = String(opts.shipYmd || "").trim();
+  const parts: string[] = [];
+  if (order) parts.push(`주문 ${order}`);
+  if (arrival) parts.push(`도착 ${arrival}`);
+  else if (ship) parts.push(`출고 ${ship}`);
+  return parts.join(" · ");
 }
 
 export type PracticeTransferDialogFileItem = {
@@ -373,10 +343,12 @@ export type PracticeTransferWorkFileDropConfig = {
 };
 
 export type PracticeTransferDialogCaseIdentity = {
-  /** 예: 테스트치과 / 테스트환자 15 */
+  /** 예: 테스트기공소 / 테스트환자 15 */
   primary: string;
-  /** 예: 도착 2026-09-13 — 진행 탭에서 다음 도착일과 한 줄 */
+  /** 예: 주문 2026-09-10 · 도착 2026-09-13 — 다음 도착일과 한 줄 */
   secondary?: string;
+  /** 캘린더 목록 점과 동일 — 기공소(또는 치과) 구분 색 */
+  colorKey?: string | null;
 };
 
 type PracticeTransferDetailChatDialogProps = {
@@ -388,8 +360,10 @@ type PracticeTransferDetailChatDialogProps = {
   authToken?: string | null;
   /** 환자/도착일 식별 스트립 오른쪽(예: 기공소 리메이크 청구) */
   chatHeaderAction?: ReactNode;
-  /** 채팅 헤더 바로 아래 — 상대방 내부 메모 */
+  /** 채팅 헤더 바로 아래 — 상대방 내부 메모 (레거시·미사용 권장) */
   counterpartyMemoStrip?: ReactNode;
+  /** 채팅 입력 # 옆 — 메모·평가 아이콘 */
+  composerToolbarExtra?: ReactNode;
   /**
    * 식별 줄(치과·환자 등). 있으면 summaryItems 파싱보다 우선.
    */
@@ -582,7 +556,8 @@ export function PracticeTransferDetailChatDialog({
   conversationTitle: _conversationTitle,
   authToken = null,
   chatHeaderAction = null,
-  counterpartyMemoStrip = null,
+  counterpartyMemoStrip: _counterpartyMemoStrip = null,
+  composerToolbarExtra = null,
   caseIdentity = null,
   summaryBanner = null,
   acceptBarHint = null,
@@ -711,14 +686,35 @@ export function PracticeTransferDetailChatDialog({
     initialPanelTab === "detail" || initialPanelTab === "chat"
       ? initialPanelTab
       : null;
-  const [detailMoreOpen, setDetailMoreOpen] = useState(false);
   const [rearrivalOpen, setRearrivalOpen] = useState(false);
   const [rearrivalDraft, setRearrivalDraft] = useState<Date | undefined>(undefined);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [scrollEdge, setScrollEdge] = useState<"top" | "bottom" | "middle">("top");
+  const [scrollViewportHeight, setScrollViewportHeight] = useState(0);
   const scrollBodyRef = useRef<HTMLDivElement | null>(null);
+  const panelChromeRef = useRef<HTMLDivElement | null>(null);
   const didInitialScrollRef = useRef(false);
   const openedWithoutMessagesRef = useRef(false);
+
+  useLayoutEffect(() => {
+    if (!open || minimized) {
+      setScrollViewportHeight(0);
+      return;
+    }
+    const scrollEl = scrollBodyRef.current;
+    if (!scrollEl) return;
+    const sync = () => {
+      // 식별·날짜 고정 크롬까지 채팅이 덮도록 합산
+      const chromeH = panelChromeRef.current?.offsetHeight || 0;
+      setScrollViewportHeight(scrollEl.clientHeight + chromeH);
+    };
+    sync();
+    const ro = new ResizeObserver(sync);
+    ro.observe(scrollEl);
+    const chromeEl = panelChromeRef.current;
+    if (chromeEl) ro.observe(chromeEl);
+    return () => ro.disconnect();
+  }, [open, minimized]);
 
   useEffect(() => {
     if (!open || isMobile) return;
@@ -948,10 +944,6 @@ export function PracticeTransferDetailChatDialog({
     }));
   }, [labRequestStagePlans, toothWorks]);
 
-  const partitionedSummary = useMemo(
-    () => partitionPracticeTransferSummaryItems(summaryItems),
-    [summaryItems],
-  );
   const nextArrivalReminder = useMemo(
     () =>
       onAppendArrival
@@ -1740,14 +1732,30 @@ export function PracticeTransferDetailChatDialog({
       previewMetaIsConfirmWorkFile,
   );
 
-  const hasToothWorks = Array.isArray(toothWorks) && toothWorks.length > 0;
   const caseIdentityStrip = useMemo(() => {
     const fromPropPrimary = String(caseIdentity?.primary || "").trim();
     const fromPropSecondary = String(caseIdentity?.secondary || "").trim();
+    const fromPropColorKey = String(caseIdentity?.colorKey || "").trim();
+    const orderYmd =
+      String(orderDate || "").trim() ||
+      summaryItemValue(summaryItems, "재주문일") ||
+      summaryItemValue(summaryItems, "주문일");
     if (fromPropPrimary) {
+      const secondary =
+        fromPropSecondary ||
+        formatPracticeTransferIdentityDateLabel({ orderYmd });
+      // 호출부가 도착만 넘긴 경우 주문일을 앞에 붙인다.
+      const enrichedSecondary =
+        orderYmd &&
+        secondary &&
+        !secondary.includes("주문") &&
+        (secondary.startsWith("도착") || secondary.startsWith("출고"))
+          ? `주문 ${orderYmd} · ${secondary}`
+          : secondary;
       return {
         primary: fromPropPrimary,
-        secondary: fromPropSecondary,
+        secondary: enrichedSecondary,
+        colorKey: fromPropColorKey || undefined,
       };
     }
     const practiceName = summaryItemValue(summaryItems, "치과");
@@ -1771,16 +1779,16 @@ export function PracticeTransferDetailChatDialog({
         : primaryParts.length === 2
           ? `${primaryParts[0]} / ${primaryParts[1]}${teeth ? ` ${teeth}` : ""}`
           : `${primaryParts[0]}${teeth ? ` ${teeth}` : ""}`;
-    const datePart = arrivalDate
-      ? `도착 ${arrivalDate}`
-      : shipDate
-        ? `출고 ${shipDate}`
-        : "";
     return {
       primary: identity,
-      secondary: datePart,
+      secondary: formatPracticeTransferIdentityDateLabel({
+        orderYmd,
+        arrivalYmd: arrivalDate,
+        shipYmd: shipDate,
+      }),
+      colorKey: undefined as string | undefined,
     };
-  }, [caseIdentity, summaryItems, toothWorks]);
+  }, [caseIdentity, orderDate, summaryItems, toothWorks]);
   const showArrivalInChatChrome = Boolean(
     onAppendArrival || nextStageSegments.length > 0,
   );
@@ -1794,90 +1802,8 @@ export function PracticeTransferDetailChatDialog({
     });
   }, [title, summaryItems, toothWorks, memo]);
 
-  useEffect(() => {
-    if (!open) return;
-    setDetailMoreOpen(false);
-  }, [open]);
-
   const hasMeaningfulMemo = Boolean(String(memo || "").trim() && memo !== "-");
 
-  const renderSummaryRows = (
-    rows: PracticeTransferDialogSummaryItem[],
-    opts?: { showArrivalAction?: boolean },
-  ) =>
-    rows.map((row, idx) => {
-      const isArrivalRow =
-        row.label === "치과도착일" ||
-        row.label === "다음 도착일" ||
-        row.label === "재도착일";
-      const valueNode = (
-        <p
-          className={cn(
-            "text-sm font-medium leading-snug break-words text-foreground",
-            row.valueClassName,
-          )}
-        >
-          {row.value || "-"}
-        </p>
-      );
-      const valueWithAction =
-        isArrivalRow &&
-        onAppendArrival &&
-        opts?.showArrivalAction !== false ? (
-          <div className="flex flex-wrap items-center gap-1.5">
-            {row.tooltip ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span className="inline-flex cursor-help">{valueNode}</span>
-                </TooltipTrigger>
-                <TooltipContent
-                  side="top"
-                  className="max-w-xs text-left text-xs leading-relaxed"
-                >
-                  {row.tooltip}
-                </TooltipContent>
-              </Tooltip>
-            ) : (
-              valueNode
-            )}
-            {renderRearrivalPopover()}
-          </div>
-        ) : row.tooltip ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="inline-flex cursor-help">{valueNode}</span>
-            </TooltipTrigger>
-            <TooltipContent
-              side="top"
-              className="max-w-xs text-left text-xs leading-relaxed"
-            >
-              {row.tooltip}
-            </TooltipContent>
-          </Tooltip>
-        ) : (
-          valueNode
-        );
-      return (
-        <div
-          key={`${row.label}:${idx}`}
-          className="grid grid-cols-[6.75rem_minmax(0,1fr)] items-start gap-x-3 py-2 sm:grid-cols-[7.5rem_minmax(0,1fr)]"
-        >
-          <dt className="pt-0.5 text-[13px] leading-snug text-muted-foreground">
-            {row.label}
-          </dt>
-          <dd className="min-w-0">
-            {row.action ? (
-              <div className="flex flex-wrap items-center gap-1.5">
-                {valueWithAction}
-                {row.action}
-              </div>
-            ) : (
-              valueWithAction
-            )}
-          </dd>
-        </div>
-      );
-    });
   const hasPendingLabCustomAbutment = Boolean(
     toothWorks?.some(
       (work) =>
@@ -2190,12 +2116,7 @@ export function PracticeTransferDetailChatDialog({
                 {caseIdentityStrip?.primary || title}
               </button>
             ) : (
-              <div className="flex min-w-0 items-center gap-2 justify-self-start px-1">
-                <FileIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                <span className="truncate text-sm font-semibold text-foreground">
-                  의뢰 · 진행
-                </span>
-              </div>
+              <div className="min-w-0 justify-self-start" />
             )}
             <div
               className="flex shrink-0 items-center justify-end gap-1"
@@ -2245,13 +2166,29 @@ export function PracticeTransferDetailChatDialog({
             </div>
           </div>
 
-          {!minimized && (caseIdentityStrip || chatHeaderAction) ? (
-            <div className="flex shrink-0 items-center justify-between gap-3 border-b bg-slate-50 px-5 py-2.5">
+          {!minimized ? (
+          <>
+          <div ref={panelChromeRef} className="shrink-0">
+          {(caseIdentityStrip || chatHeaderAction) ? (
+            <div className="flex items-center justify-between gap-3 border-b bg-slate-50 px-5 py-2.5">
               <div className="min-w-0 flex-1">
                 {caseIdentityStrip ? (
                   <>
-                    <p className="truncate text-sm font-semibold text-foreground">
-                      {caseIdentityStrip.primary}
+                    <p className="flex min-w-0 items-center gap-2 truncate text-sm font-semibold text-foreground">
+                      {caseIdentityStrip.colorKey ? (
+                        <span
+                          className="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-black/5"
+                          style={{
+                            backgroundColor: calendarGroupDotColor(
+                              caseIdentityStrip.colorKey,
+                            ),
+                          }}
+                          aria-hidden
+                        />
+                      ) : null}
+                      <span className="min-w-0 truncate">
+                        {caseIdentityStrip.primary}
+                      </span>
                     </p>
                     {identityDateLabel && !showArrivalInChatChrome ? (
                       <p className="mt-0.5 truncate text-xs text-muted-foreground">
@@ -2269,14 +2206,11 @@ export function PracticeTransferDetailChatDialog({
             </div>
           ) : null}
 
-          {!minimized ? (
-          <>
-              {(counterpartyMemoStrip ||
-                onEditRequest ||
+              {(onEditRequest ||
                 onCancelRequest ||
                 nextStageSegments.length > 0 ||
                 onAppendArrival) ? (
-                <div className="shrink-0 border-b bg-muted/25">
+                <div className="border-b bg-muted/25">
                   {nextStageSegments.length > 0 || onAppendArrival ? (
                     <div className="flex flex-wrap items-center gap-2 px-4 py-2 sm:px-5">
                       {nextStageSegments.length > 0 ? (
@@ -2386,24 +2320,9 @@ export function PracticeTransferDetailChatDialog({
                       </DropdownMenu>
                     </div>
                   ) : null}
-
-                  {counterpartyMemoStrip ? (
-                    <div
-                      className={cn(
-                        "[&>div]:border-b-0 [&>div]:bg-transparent",
-                        nextStageSegments.length > 0 ||
-                          onAppendArrival ||
-                          onEditRequest ||
-                          onCancelRequest
-                          ? "border-t border-border/60"
-                          : null,
-                      )}
-                    >
-                      {counterpartyMemoStrip}
-                    </div>
-                  ) : null}
                 </div>
               ) : null}
+          </div>
 
               {summaryBanner ? (
                 <div className="shrink-0 border-b px-5 py-2">{summaryBanner}</div>
@@ -2557,73 +2476,8 @@ export function PracticeTransferDetailChatDialog({
               )}
             >
               <div className="space-y-5 px-5 py-3 text-sm">
-                <div className="flex items-center gap-1.5 text-[13px] font-semibold text-foreground">
-                  <FileIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                  의뢰
-                </div>
-
-              <section className="space-y-1">
-                <div className="flex items-center justify-between gap-2">
-                  <h3 className="text-[13px] font-semibold text-foreground">
-                    핵심 정보
-                  </h3>
-                  {feeViewer === "lab" ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-7 shrink-0 gap-1.5 px-2.5 text-xs"
-                      title="의뢰 상세 인쇄 (A5)"
-                      onClick={handlePrintDetail}
-                    >
-                      <Printer className="h-3.5 w-3.5" />
-                      프린트
-                    </Button>
-                  ) : null}
-                </div>
-                <dl className="divide-y divide-border/70">
-                  {renderSummaryRows(
-                    partitionedSummary.primary.length > 0
-                      ? partitionedSummary.primary
-                      : partitionedSummary.secondary,
-                  )}
-                </dl>
-                {partitionedSummary.primary.length > 0 &&
-                partitionedSummary.secondary.length > 0 ? (
-                  <Collapsible
-                    open={detailMoreOpen}
-                    onOpenChange={setDetailMoreOpen}
-                    className="pt-1"
-                  >
-                    <CollapsibleTrigger asChild>
-                      <button
-                        type="button"
-                        className="flex w-full items-center gap-1.5 rounded-md py-1.5 text-left text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
-                      >
-                        <ChevronDown
-                          className={cn(
-                            "h-3.5 w-3.5 shrink-0 transition-transform",
-                            detailMoreOpen && "rotate-180",
-                          )}
-                        />
-                        {detailMoreOpen
-                          ? "상세 정보 접기"
-                          : `상세 정보 (${partitionedSummary.secondary.length})`}
-                      </button>
-                    </CollapsibleTrigger>
-                    <CollapsibleContent>
-                      <dl className="mt-1 divide-y divide-border/60 border-t border-border/60">
-                        {renderSummaryRows(partitionedSummary.secondary, {
-                          showArrivalAction: false,
-                        })}
-                      </dl>
-                    </CollapsibleContent>
-                  </Collapsible>
-                ) : null}
-              </section>
-
-              {hasToothWorks ? (
-                <section className="space-y-2.5 border-t border-border/70 pt-4">
+              {Array.isArray(toothWorks) && toothWorks.length > 0 ? (
+                <section className="space-y-2.5">
                   <h3 className="text-[13px] font-semibold text-foreground">
                     치식 · 보철물
                   </h3>
@@ -2639,13 +2493,13 @@ export function PracticeTransferDetailChatDialog({
                   <PracticeRemakeChargesStrip remakeCharges={remakeCharges} />
                 </section>
               ) : remakeCharges && remakeCharges.length > 0 ? (
-                <section className="border-t border-border/70 pt-4">
+                <section>
                   <PracticeRemakeChargesStrip remakeCharges={remakeCharges} />
                 </section>
               ) : null}
 
               {hasMeaningfulMemo ? (
-                <section className="space-y-2.5 border-t border-border/70 pt-4">
+                <section className="space-y-2.5">
                   <h3 className="text-[13px] font-semibold text-foreground">
                     의뢰 메모
                   </h3>
@@ -2655,7 +2509,7 @@ export function PracticeTransferDetailChatDialog({
                 </section>
               ) : null}
 
-              <section className="space-y-2.5 border-t border-border/70 pt-4">
+              <section className="space-y-2.5">
                 <div className="flex items-center justify-between gap-2">
                   <h3 className="text-[13px] font-semibold text-foreground">
                     {filesLabel}{" "}
@@ -2663,53 +2517,68 @@ export function PracticeTransferDetailChatDialog({
                       ({files.length}개)
                     </span>
                   </h3>
-                  {files.length > 0 ? (
-                    files.some((f) => isDcmFileName(f.fileName)) ? (
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            disabled={
-                              downloadAllBusy || requestFilesDownloadLocked
-                            }
-                          >
-                            {downloadAllBusy ? "다운로드 중..." : "전체 다운로드"}
-                            <ChevronDown className="ml-1 h-3.5 w-3.5 opacity-70" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="z-[400]">
-                          <DropdownMenuItem
-                            onClick={() =>
-                              void onDownloadAllFiles({ dcmFormat: "dcm" })
-                            }
-                          >
-                            DCM 원본
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() =>
-                              void onDownloadAllFiles({ dcmFormat: "ply" })
-                            }
-                          >
-                            PLY (칼라)
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    ) : (
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    {feeViewer === "lab" ? (
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
-                        onClick={() => void onDownloadAllFiles()}
-                        disabled={
-                          downloadAllBusy || requestFilesDownloadLocked
-                        }
+                        className="h-7 gap-1.5 px-2.5 text-xs"
+                        title="의뢰 상세 인쇄 (A5)"
+                        onClick={handlePrintDetail}
                       >
-                        {downloadAllBusy ? "다운로드 중..." : "전체 다운로드"}
+                        <Printer className="h-3.5 w-3.5" />
+                        프린트
                       </Button>
-                    )
-                  ) : null}
+                    ) : null}
+                    {files.length > 0 ? (
+                      files.some((f) => isDcmFileName(f.fileName)) ? (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled={
+                                downloadAllBusy || requestFilesDownloadLocked
+                              }
+                            >
+                              {downloadAllBusy ? "다운로드 중..." : "전체 다운로드"}
+                              <ChevronDown className="ml-1 h-3.5 w-3.5 opacity-70" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="z-[400]">
+                            <DropdownMenuItem
+                              onClick={() =>
+                                void onDownloadAllFiles({ dcmFormat: "dcm" })
+                              }
+                            >
+                              DCM 원본
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() =>
+                                void onDownloadAllFiles({ dcmFormat: "ply" })
+                              }
+                            >
+                              PLY (칼라)
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      ) : (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => void onDownloadAllFiles()}
+                          disabled={
+                            downloadAllBusy || requestFilesDownloadLocked
+                          }
+                        >
+                          {downloadAllBusy ? "다운로드 중..." : "전체 다운로드"}
+                        </Button>
+                      )
+                    ) : null}
+                  </div>
                 </div>
                 {requestFilesDownloadLocked && files.length > 0 ? (
                   <p className="text-xs leading-relaxed text-amber-800 dark:text-amber-200">
@@ -2717,17 +2586,15 @@ export function PracticeTransferDetailChatDialog({
                   </p>
                 ) : null}
                 {files.length ? (
-                  <div className="custom-scrollbar max-h-64 overflow-y-auto pr-1">
-                    <div className="grid grid-cols-4 gap-2">
-                      {files.map((file, idx) =>
-                        renderFileTile(
-                          file,
-                          idx,
-                          "request",
-                          requestFilesDownloadLocked,
-                        ),
-                      )}
-                    </div>
+                  <div className="grid grid-cols-4 gap-2">
+                    {files.map((file, idx) =>
+                      renderFileTile(
+                        file,
+                        idx,
+                        "request",
+                        requestFilesDownloadLocked,
+                      ),
+                    )}
                   </div>
                 ) : oralScanAttachMode === "practice_required" ? (
                   <p className="text-sm leading-relaxed text-destructive">
@@ -2749,12 +2616,10 @@ export function PracticeTransferDetailChatDialog({
                         {designFilesLabel}{" "}
                         <span>({designFileList.length}개)</span>
                       </p>
-                      <div className="custom-scrollbar max-h-64 overflow-y-auto pr-1">
-                        <div className="grid grid-cols-4 gap-2">
-                          {designFileList.map((file, idx) =>
-                            renderFileTile(file, idx, "design"),
-                          )}
-                        </div>
+                      <div className="grid grid-cols-4 gap-2">
+                        {designFileList.map((file, idx) =>
+                          renderFileTile(file, idx, "design"),
+                        )}
                       </div>
                     </div>
                   ) : null}
@@ -2764,12 +2629,10 @@ export function PracticeTransferDetailChatDialog({
                         {resultFilesLabel}{" "}
                         <span>({resultFileList.length}개)</span>
                       </p>
-                      <div className="custom-scrollbar max-h-64 overflow-y-auto pr-1">
-                        <div className="grid grid-cols-4 gap-2">
-                          {resultFileList.map((file, idx) =>
-                            renderFileTile(file, idx, "result"),
-                          )}
-                        </div>
+                      <div className="grid grid-cols-4 gap-2">
+                        {resultFileList.map((file, idx) =>
+                          renderFileTile(file, idx, "result"),
+                        )}
                       </div>
                     </div>
                   ) : null}
@@ -2799,18 +2662,19 @@ export function PracticeTransferDetailChatDialog({
 
               <div
                 className={cn(
-                  "border-t border-border/70",
+                  "flex flex-col border-t border-border/70",
                   workFileDropActive &&
                     "m-2 rounded-md border-2 border-dashed border-primary/45 bg-primary/[0.03]",
                 )}
+                style={
+                  scrollViewportHeight > 0
+                    ? { minHeight: scrollViewportHeight }
+                    : undefined
+                }
                 {...(workFileDropActive
                   ? { "data-guide-tour": "lab_design" }
                   : {})}
               >
-                <div className="flex items-center gap-1.5 px-5 pt-4 text-[13px] font-semibold text-foreground">
-                  <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
-                  진행
-                </div>
                   {workFileDropUploading ? (
                     <div
                       className="pointer-events-none z-[2] shrink-0 border-b border-primary/25 bg-primary px-5 py-2.5 text-primary-foreground"
@@ -2874,15 +2738,15 @@ export function PracticeTransferDetailChatDialog({
                     </button>
                   ) : null}
 
-                    <div className="w-full min-w-0 max-w-full space-y-2 px-5 py-2">
+                    <div className="flex w-full min-w-0 max-w-full flex-1 flex-col space-y-2 px-5 py-2">
                       {chatLoading ? (
-                        <div className="py-4 text-center text-xs text-muted-foreground">
+                        <div className="flex flex-1 items-center justify-center py-4 text-center text-xs text-muted-foreground">
                           채팅을 불러오는 중입니다...
                         </div>
                       ) : null}
 
                       {!chatLoading && visibleChatError ? (
-                        <div className="flex min-h-[12rem] items-center justify-center py-4">
+                        <div className="flex min-h-[12rem] flex-1 items-center justify-center py-4">
                           <p className="text-center text-xs text-muted-foreground">
                             {visibleChatError}
                           </p>
@@ -2892,7 +2756,7 @@ export function PracticeTransferDetailChatDialog({
                       {!chatLoading &&
                       !visibleChatError &&
                       chatMessages.length === 0 ? (
-                        <div className="py-4 text-center text-sm text-muted-foreground">
+                        <div className="flex flex-1 items-center justify-center py-4 text-center text-sm text-muted-foreground">
                           아직 메시지가 없습니다.
                         </div>
                       ) : null}
@@ -3023,18 +2887,17 @@ export function PracticeTransferDetailChatDialog({
                 type="button"
                 data-no-drag
                 className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full border border-border/80 bg-background/95 px-3.5 py-2 text-xs font-medium text-foreground shadow-md backdrop-blur-sm transition-transform duration-300",
+                  "inline-flex h-9 w-9 items-center justify-center rounded-full border border-border/80 bg-background/95 text-foreground shadow-md backdrop-blur-sm transition-transform duration-300",
                   scrollEdge === "top"
                     ? "pointer-events-auto scale-100"
                     : "pointer-events-none scale-95",
                 )}
                 onClick={scrollToProgressBottom}
-                aria-label="진행으로 이동"
-                title="진행으로 이동"
+                aria-label="아래로 이동"
+                title="아래로 이동"
                 tabIndex={scrollEdge === "top" ? 0 : -1}
               >
                 <ArrowDown className="h-3.5 w-3.5 animate-bounce" />
-                진행
               </button>
             </div>
             <div
@@ -3049,18 +2912,17 @@ export function PracticeTransferDetailChatDialog({
                 type="button"
                 data-no-drag
                 className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full border border-border/80 bg-background/95 px-3.5 py-2 text-xs font-medium text-foreground shadow-md backdrop-blur-sm transition-transform duration-300",
+                  "inline-flex h-9 w-9 items-center justify-center rounded-full border border-border/80 bg-background/95 text-foreground shadow-md backdrop-blur-sm transition-transform duration-300",
                   scrollEdge === "bottom"
                     ? "pointer-events-auto scale-100"
                     : "pointer-events-none scale-95",
                 )}
                 onClick={scrollToDetailTop}
-                aria-label="의뢰로 이동"
-                title="의뢰로 이동"
+                aria-label="위로 이동"
+                title="위로 이동"
                 tabIndex={scrollEdge === "bottom" ? 0 : -1}
               >
                 <ArrowUp className="h-3.5 w-3.5 animate-bounce" />
-                의뢰
               </button>
             </div>
 
@@ -3084,6 +2946,7 @@ export function PracticeTransferDetailChatDialog({
                     }
                     replyTo={replyTo}
                     onCancelReply={onCancelReply}
+                    toolbarExtra={composerToolbarExtra}
                     compact
                   />
                 </div>

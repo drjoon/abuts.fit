@@ -246,16 +246,13 @@ import {
 } from "@/shared/practice/openPracticeTransferChat";
 import { RequestDetailDialog } from "@/features/requests/components/RequestDetailDialog";
 import { LabPracticeFeeSurchargeControl } from "@/shared/components/practice/LabPracticeFeeSurchargeControl";
-import { CounterpartyMemoStrip } from "@/shared/components/practice/CounterpartyMemoStrip";
 import {
   parsePracticeTransferFeeQuote,
 } from "@/shared/practice/practiceTransferFeeQuote";
 import { normalizeLabFeeMultiplier, formatLabFeeMultiplierLabel, missingLabFeeItemNames, labFeeItemNamesNeededForToothWorks } from "@/shared/practice/labFeeSchedule";
 import { parseStarDowngrade, parseLabRatingSummary } from "@/shared/practice/practiceLabRating";
 import {
-  LAB_PRACTICE_PARTNER_MEMO_MAX,
   parseLabPracticePartnerMemoPublic,
-  type LabPracticePartnerMemoPublic,
 } from "@/shared/practice/labPracticePartnerMemo";
 import { buildPracticeWorkPeriodSummaryItem } from "@/shared/practice/practiceWorkPeriod";
 import { buildPracticeTransferDateSummaryItems } from "@/shared/practice/practiceSenderTransferDetailModel";
@@ -2413,15 +2410,22 @@ export function RequestorPracticeReceivePage({
       resolvePracticeTransferListPatientName(selectedTransfer);
     const teeth = resolvePracticeTransferListToothNumbers(selectedTransfer);
     const transferId = String(selectedTransfer.transferId || "").trim();
-    const arrival =
-      String(
-        (Array.isArray(selectedTransfer.arrivalDates) &&
-          selectedTransfer.arrivalDates[
-            selectedTransfer.arrivalDates.length - 1
-          ]) ||
-          selectedTransfer.arrivalDate ||
-          "",
-      ).trim();
+    const order = String(
+      (Array.isArray(selectedTransfer.orderDates) &&
+        selectedTransfer.orderDates[
+          selectedTransfer.orderDates.length - 1
+        ]) ||
+        selectedTransfer.orderDate ||
+        "",
+    ).trim();
+    const arrival = String(
+      (Array.isArray(selectedTransfer.arrivalDates) &&
+        selectedTransfer.arrivalDates[
+          selectedTransfer.arrivalDates.length - 1
+        ]) ||
+        selectedTransfer.arrivalDate ||
+        "",
+    ).trim();
     const primaryParts = [clinic, patient].filter(Boolean);
     if (!primaryParts.length && !transferId) return null;
     const identity =
@@ -2430,10 +2434,13 @@ export function RequestorPracticeReceivePage({
         : primaryParts.length === 2
           ? `${primaryParts[0]} / ${primaryParts[1]}${teeth ? ` ${teeth}` : ""}`
           : `${primaryParts[0]}${teeth ? ` ${teeth}` : ""}`;
-    const datePart = arrival ? `도착 ${arrival}` : "";
+    const dateParts = [
+      order ? `주문 ${order}` : "",
+      arrival ? `도착 ${arrival}` : "",
+    ].filter(Boolean);
     return {
       primary: identity,
-      secondary: datePart || undefined,
+      secondary: dateParts.length ? dateParts.join(" · ") : undefined,
     };
   }, [
     selectedTransfer,
@@ -6625,79 +6632,32 @@ export function RequestorPracticeReceivePage({
           ) : null
         }
         caseIdentity={selectedTransferCaseIdentity}
-        counterpartyMemoStrip={
+        composerToolbarExtra={
           selectedTransfer?.practiceBusinessAnchorId ? (
-            <CounterpartyMemoStrip
-              viewer="lab"
-              label="치과 메모"
-              memo={selectedTransfer.practicePartnerMemo?.memo || ""}
-              maxLength={LAB_PRACTICE_PARTNER_MEMO_MAX}
-              trailingAction={
-                <LabPracticeFeeSurchargeControl
-                  practiceAnchorId={selectedTransfer.practiceBusinessAnchorId}
-                  multiplier={selectedTransfer.labFeeMultiplier}
-                  size="sm"
-                  buttonLabel="평가"
-                  dialogTitle="치과 평가"
-                  variant="evaluate"
-                  onChanged={(next) => {
-                    // live 설정만 갱신. 해당 의뢰 feeQuote(스냅샷)는 바꾸지 않는다.
-                    const practiceAnchorId =
-                      selectedTransfer.practiceBusinessAnchorId;
-                    setTransfers((prev) =>
-                      prev.map((row) =>
-                        row.practiceBusinessAnchorId === practiceAnchorId
-                          ? { ...row, labFeeMultiplier: next }
-                          : row,
-                      ),
-                    );
-                    setSelectedTransfer((prev) =>
-                      prev && prev.practiceBusinessAnchorId === practiceAnchorId
-                        ? { ...prev, labFeeMultiplier: next }
-                        : prev,
-                    );
-                    void loadCalendarTransfers({ silent: true });
-                  }}
-                />
-              }
-              onSave={async (memo) => {
-                const practiceAnchorId = String(
-                  selectedTransfer?.practiceBusinessAnchorId || "",
-                ).trim();
-                if (!practiceAnchorId || !token) return false;
-                const res = await request<{
-                  data?: {
-                    practicePartnerMemo?: LabPracticePartnerMemoPublic | null;
-                  };
-                  message?: string;
-                }>({
-                  path: "/api/lab-trading-partners/practice-partner-memo",
-                  method: "PUT",
-                  token,
-                  jsonBody: { practiceAnchorId, memo },
-                });
-                if (!res.ok) {
-                  toast({
-                    title: "치과 메모 저장 실패",
-                    description: res.data?.message || "다시 시도해주세요.",
-                    variant: "destructive",
-                  });
-                  return false;
-                }
-                const saved = res.data?.data?.practicePartnerMemo || null;
-                setSelectedTransfer((prev) =>
-                  prev && prev.practiceBusinessAnchorId === practiceAnchorId
-                    ? { ...prev, practicePartnerMemo: saved }
-                    : prev,
-                );
+            <LabPracticeFeeSurchargeControl
+              triggerVariant="icon"
+              practiceAnchorId={selectedTransfer.practiceBusinessAnchorId}
+              multiplier={selectedTransfer.labFeeMultiplier}
+              buttonLabel="평가"
+              dialogTitle="치과 평가"
+              variant="evaluate"
+              onChanged={(next) => {
+                // live 설정만 갱신. 해당 의뢰 feeQuote(스냅샷)는 바꾸지 않는다.
+                const practiceAnchorId =
+                  selectedTransfer.practiceBusinessAnchorId;
                 setTransfers((prev) =>
                   prev.map((row) =>
                     row.practiceBusinessAnchorId === practiceAnchorId
-                      ? { ...row, practicePartnerMemo: saved }
+                      ? { ...row, labFeeMultiplier: next }
                       : row,
                   ),
                 );
-                return true;
+                setSelectedTransfer((prev) =>
+                  prev && prev.practiceBusinessAnchorId === practiceAnchorId
+                    ? { ...prev, labFeeMultiplier: next }
+                    : prev,
+                );
+                void loadCalendarTransfers({ silent: true });
               }}
             />
           ) : null

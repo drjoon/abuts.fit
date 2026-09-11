@@ -571,7 +571,7 @@ export function PracticeRecentTransfersAllModal({
         // 치과 화면: 어벗 업로드 지연 테두리/알림은 기공소 책임 — 표시하지 않음.
         abutmentUploadOverdue: null,
         sortLabel: lab,
-        line: [lab, patientLine].filter(Boolean).join(" / "),
+        line: patientLine,
         unreadCount: chatUnread,
         reviewHighlight: isPracticeStatusBadgeQueueTransfer(
           {
@@ -1046,6 +1046,7 @@ export function PracticeRecentTransfersAllModal({
                 focusEpoch={badgeFocusEpoch}
                 detailPanelOpen={floatingDetailOpen}
                 abutmentUploadOverdueViewer="practice"
+                showLabColorLegend
               />
             </>
           )}

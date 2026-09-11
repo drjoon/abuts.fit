@@ -287,14 +287,9 @@ import {
 import {
   DEFAULT_AUTO_MATCH_MAX_LAB_RATING,
   DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
-  DEFAULT_PRACTICE_LAB_RATING_STARS,
   normalizeAutoMatchMaxLabRating,
   normalizeAutoMatchMinLabRating,
-  normalizePracticeLabRatingMemo,
-  normalizePracticeLabStars,
-  PRACTICE_LAB_RATING_MEMO_MAX,
   resolveAutoMatchEligibleStarBand,
-  type PracticeLabRatingPublic,
 } from "@/shared/practice/practiceLabRating";
 import { PracticeLabRejectedReselectDialog } from "@/shared/components/practice/PracticeLabRejectedReselectDialog";
 import { PracticeRemakeSearchDialog } from "@/shared/components/practice/PracticeRemakeSearchDialog";
@@ -4793,6 +4788,14 @@ export const PracticeFileTransferPage = ({
     const transferId = String(
       selectedTransfer.transferId || selectedTransfer.id || "",
     ).trim();
+    const order = String(
+      (Array.isArray(selectedTransfer.orderDates) &&
+        selectedTransfer.orderDates[
+          selectedTransfer.orderDates.length - 1
+        ]) ||
+        selectedTransfer.orderDate ||
+        "",
+    ).trim();
     const arrival = String(selectedTransfer.arrivalDate || "").trim();
     const primaryParts = [lab, patient].filter(Boolean);
     if (!primaryParts.length && !transferId) return null;
@@ -4802,10 +4805,14 @@ export const PracticeFileTransferPage = ({
         : primaryParts.length === 2
           ? `${primaryParts[0]} / ${primaryParts[1]}${teeth ? ` ${teeth}` : ""}`
           : `${primaryParts[0]}${teeth ? ` ${teeth}` : ""}`;
-    const datePart = arrival ? `도착 ${arrival}` : "";
+    const dateParts = [
+      order ? `주문 ${order}` : "",
+      arrival ? `도착 ${arrival}` : "",
+    ].filter(Boolean);
     return {
       primary: identity,
-      secondary: datePart || undefined,
+      secondary: dateParts.length ? dateParts.join(" · ") : undefined,
+      colorKey: String(selectedTransfer.targetLabAnchorId || "").trim() || lab,
     };
   }, [selectedTransfer, selectedTransferDetailModel]);
 
@@ -9748,98 +9755,38 @@ export const PracticeFileTransferPage = ({
           }
           cancelRequestDisabled={deletingTransfer}
           chatHeaderAction={null}
-          counterpartyMemoStrip={
+          composerToolbarExtra={
             selectedTransfer &&
             selectedTransfer.canRateLab &&
             selectedTransfer.transferMongoIds?.[0] ? (
-              <CounterpartyMemoStrip
-                viewer="practice"
-                label="기공소 메모"
-                memo={selectedTransfer.labRating?.memo || ""}
-                maxLength={PRACTICE_LAB_RATING_MEMO_MAX}
-                trailingAction={
-                  <PracticeLabRatingControl
-                    transferMongoId={String(selectedTransfer.transferMongoIds[0])}
-                    rating={selectedTransfer.labRating || null}
-                    size="sm"
-                    onChanged={(next) => {
-                      setSelectedTransfer((prev) =>
-                        prev
-                          ? { ...prev, labRating: next, canRateLab: true }
-                          : prev,
-                      );
-                      setRecentRequests((prev) =>
-                        prev.map((row) =>
-                          row.requestMongoId ===
-                            String(selectedTransfer.transferMongoIds?.[0] || "")
-                            ? { ...row, labRating: next, canRateLab: true }
-                            : row,
-                        ),
-                      );
-                      const performingId = String(
-                        selectedTransfer.performingLabAnchorId || "",
-                      ).trim();
-                      if (performingId) {
-                        setOwnOneStarBlockedLabIds((prev) => {
-                          const without = prev.filter((id) => id !== performingId);
-                          if (next.stars === 1) return [...without, performingId];
-                          return without;
-                        });
-                      }
-                    }}
-                  />
-                }
-                onSave={async (memo) => {
-                  const transferId = String(
-                    selectedTransfer.transferMongoIds?.[0] || "",
+              <PracticeLabRatingControl
+                variant="icon"
+                transferMongoId={String(selectedTransfer.transferMongoIds[0])}
+                rating={selectedTransfer.labRating || null}
+                onChanged={(next) => {
+                  setSelectedTransfer((prev) =>
+                    prev
+                      ? { ...prev, labRating: next, canRateLab: true }
+                      : prev,
+                  );
+                  setRecentRequests((prev) =>
+                    prev.map((row) =>
+                      row.requestMongoId ===
+                        String(selectedTransfer.transferMongoIds?.[0] || "")
+                        ? { ...row, labRating: next, canRateLab: true }
+                        : row,
+                    ),
+                  );
+                  const performingId = String(
+                    selectedTransfer.performingLabAnchorId || "",
                   ).trim();
-                  if (!transferId || !authToken) return false;
-                  const stars =
-                    normalizePracticeLabStars(selectedTransfer.labRating?.stars) ??
-                    DEFAULT_PRACTICE_LAB_RATING_STARS;
-                  const res = await request<{
-                    data?: { labRating?: PracticeLabRatingPublic };
-                    message?: string;
-                  }>({
-                    path: `/api/practice/transfers/${encodeURIComponent(transferId)}/lab-rating`,
-                    method: "POST",
-                    token: authToken,
-                    jsonBody: {
-                      stars,
-                      memo: normalizePracticeLabRatingMemo(memo),
-                    },
-                  });
-                  if (!res.ok) {
-                    toast({
-                      title: "기공소 메모 저장 실패",
-                      description: res.data?.message || "다시 시도해주세요.",
-                      variant: "destructive",
+                  if (performingId) {
+                    setOwnOneStarBlockedLabIds((prev) => {
+                      const without = prev.filter((id) => id !== performingId);
+                      if (next.stars === 1) return [...without, performingId];
+                      return without;
                     });
-                    return false;
                   }
-                  const saved = res.data?.data?.labRating;
-                  if (saved && typeof saved === "object") {
-                    const next: PracticeLabRatingPublic = {
-                      stars:
-                        normalizePracticeLabStars(saved.stars) ?? stars,
-                      memo: normalizePracticeLabRatingMemo(saved.memo),
-                      ratingCount: 1,
-                      updatedAt: saved.updatedAt
-                        ? String(saved.updatedAt)
-                        : null,
-                    };
-                    setSelectedTransfer((prev) =>
-                      prev ? { ...prev, labRating: next, canRateLab: true } : prev,
-                    );
-                    setRecentRequests((prev) =>
-                      prev.map((row) =>
-                        row.requestMongoId === transferId
-                          ? { ...row, labRating: next, canRateLab: true }
-                          : row,
-                      ),
-                    );
-                  }
-                  return true;
                 }}
               />
             ) : null

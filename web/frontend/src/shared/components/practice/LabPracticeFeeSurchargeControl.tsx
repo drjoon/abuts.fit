@@ -2,6 +2,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/features/settings/tabs/LabTradingPartnersTab.tsx
 // - web/backend/controllers/labTradingPartners/labTradingPartner.controller.js
+// - 2026-09-11: triggerVariant=icon — 채팅 컴포저 # 옆 별 트리거.
 // - 2026-08-14: 치과별 기공수가 할증(1x·1.1x·1.2x·1.5x·직접). Dialog + 취소/저장.
 // - 2026-08-15: 버튼 툴팁·모달 강조. 저장은 다음 의뢰부터(현재 건 소급 금지).
 // - 2026-08-16: 의뢰상세 채팅 헤더는 트리거 라벨「치과 평가」(모달 동일).
@@ -10,6 +11,7 @@
 // - 2026-08-26: 할증 힌트 툴팁 — 포커스(모달 오픈)가 아닌 마우스 호버에서만 표시.
 // - 2026-08-28: evaluate — 별도「할증 없음」라벨 제거. 미설정=버튼라벨, 설정=배수만(1.2x).
 import { useEffect, useState, type MouseEvent } from "react";
+import { Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -75,6 +77,8 @@ type LabPracticeFeeSurchargeControlProps = {
   dialogTitle?: string;
   /** chat-evaluate: 의뢰상세「치과 평가」. 별점 없이 할증만. */
   variant?: "surcharge" | "evaluate";
+  /** icon: 채팅 하단 # 옆 별 아이콘 */
+  triggerVariant?: "button" | "icon";
 };
 
 export function LabPracticeFeeSurchargeControl({
@@ -87,6 +91,7 @@ export function LabPracticeFeeSurchargeControl({
   buttonLabel = "기공수가 할증",
   dialogTitle = "기공수가 할증",
   variant = "surcharge",
+  triggerVariant = "button",
 }: LabPracticeFeeSurchargeControlProps) {
   const descriptionLines =
     variant === "evaluate"
@@ -215,6 +220,50 @@ export function LabPracticeFeeSurchargeControl({
     : active
       ? multiplierLabel
       : buttonLabel;
+  const ariaLabel = isEvaluate
+    ? `${buttonLabel} 설정 · 현재 ${multiplierLabel}`
+    : active
+      ? `기공수가 ${multiplierLabel}`
+      : `${buttonLabel} 설정`;
+  const hintText = isEvaluate
+    ? `현재 할증 ${multiplierLabel}. ${SURCHARGE_NEXT_ORDER_HINT}`
+    : SURCHARGE_NEXT_ORDER_HINT;
+
+  const triggerButton =
+    triggerVariant === "icon" ? (
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className={cn(
+          "h-9 w-9 shrink-0",
+          active && "text-amber-500",
+          className,
+        )}
+        aria-label={ariaLabel}
+        title={buttonLabel}
+        onClick={() => setOpen(true)}
+      >
+        <Star
+          className={cn("h-4 w-4", active && "fill-current")}
+          strokeWidth={1.75}
+        />
+      </Button>
+    ) : (
+      <Button
+        type="button"
+        variant={active ? "default" : "outline"}
+        size="sm"
+        className={cn(
+          buttonSizeClass,
+          isEvaluate && active && "tabular-nums",
+        )}
+        aria-label={ariaLabel}
+        onClick={() => setOpen(true)}
+      >
+        {triggerLabel}
+      </Button>
+    );
 
   return (
     <>
@@ -226,36 +275,19 @@ export function LabPracticeFeeSurchargeControl({
       >
         <TooltipTrigger asChild>
           <span
-            className={cn("inline-flex items-center", className)}
+            className={cn(
+              "inline-flex items-center",
+              triggerVariant !== "icon" && className,
+            )}
             onPointerDown={onTriggerPointerDown}
             onPointerEnter={() => setHintOpen(true)}
             onPointerLeave={() => setHintOpen(false)}
           >
-            <Button
-              type="button"
-              variant={active ? "default" : "outline"}
-              size="sm"
-              className={cn(
-                buttonSizeClass,
-                isEvaluate && active && "tabular-nums",
-              )}
-              aria-label={
-                isEvaluate
-                  ? `${buttonLabel} 설정 · 현재 ${multiplierLabel}`
-                  : active
-                    ? `기공수가 ${multiplierLabel}`
-                    : `${buttonLabel} 설정`
-              }
-              onClick={() => setOpen(true)}
-            >
-              {triggerLabel}
-            </Button>
+            {triggerButton}
           </span>
         </TooltipTrigger>
         <TooltipContent side="bottom" className="max-w-xs text-xs">
-          {isEvaluate
-            ? `현재 할증 ${multiplierLabel}. ${SURCHARGE_NEXT_ORDER_HINT}`
-            : SURCHARGE_NEXT_ORDER_HINT}
+          {hintText}
         </TooltipContent>
       </Tooltip>
 

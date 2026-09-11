@@ -26,6 +26,7 @@
  * - 2026-08-20: 치과 전체보기 칩도 상단 뱃지 상태색(그룹색 대신).
  * - 2026-08-20: 안읽음(수신 미확인·채팅) 빨간 배지를 칩에 표시.
  * - 2026-08-21: 상단 필터 뱃지 ON=진한 상태색 / OFF=흐린 무채색(표시 on/off 대비).
+ * - 2026-09-11: 치과 목록 — 기공소명 제거, 캘린더 아래 색 도트 범례(어벗츠+거래 기공소).
  * - 2026-09-11: 목록·칩 — 작업 큐=빨간 테두리, 채팅 unread=빨간 숫자(분리).
  * - 2026-09-10: 상단 뱃지 표시 on/off 제거 — active 톤만 사용(unread 순회).
  * - 2026-09-10: focusItemId/focusEpoch — 뱃지 순회 시 해당 칩·목록 행으로 스크롤.
@@ -83,6 +84,7 @@ import {
   getPracticeAbutmentUploadOverdueTooltip,
   type PracticeAbutmentUploadOverdueViewer,
 } from "@/shared/practice/practiceAbutmentUploadOverdue";
+import { ABUTS_PINNED_LAB_NAME } from "@/pages/practice/hooks/usePracticeTransferStep1";
 
 export type PracticeCalendarDateKey = "orderDate" | "arrivalDate";
 
@@ -398,6 +400,11 @@ type PracticeRecentTransfersCalendarProps = {
    * 치과·기공소 공통.
    */
   detailPanelOpen?: boolean;
+  /**
+   * 치과 목록: 좌측 미니캘린더 아래 기공소 색 도트 범례(어벗츠 + 거래 기공소).
+   * 목록 줄에서는 기공소명을 빼고 점만으로 구분할 때 켠다.
+   */
+  showLabColorLegend?: boolean;
 };
 
 const agendaDateLabel = (ymd: string) => {
@@ -551,6 +558,7 @@ export function PracticeRecentTransfersCalendar({
   focusItemYmd = null,
   focusEpoch = 0,
   detailPanelOpen = false,
+  showLabColorLegend = false,
 }: PracticeRecentTransfersCalendarProps) {
   const isGuideTourChip = (itemId: string) => {
     const want = String(guideTourItemId || "").trim();
@@ -558,6 +566,35 @@ export function PracticeRecentTransfersCalendar({
     const id = String(itemId || "").trim();
     return id === want || id.startsWith(`${want}:`);
   };
+  const labColorLegend = useMemo(() => {
+    if (!showLabColorLegend) return [];
+    const byKey = new Map<string, string>();
+    for (const item of items) {
+      const key = String(item.colorKey || "").trim();
+      const name = String(item.sortLabel || "").trim();
+      if (!key || !name || name === "-") continue;
+      if (!byKey.has(key)) byKey.set(key, name);
+    }
+    const entries = Array.from(byKey.entries()).map(([colorKey, name]) => ({
+      colorKey,
+      name,
+    }));
+    const hasAbuts = entries.some(
+      (row) => row.name === ABUTS_PINNED_LAB_NAME,
+    );
+    if (!hasAbuts) {
+      entries.unshift({
+        colorKey: ABUTS_PINNED_LAB_NAME,
+        name: ABUTS_PINNED_LAB_NAME,
+      });
+    }
+    entries.sort((a, b) => {
+      if (a.name === ABUTS_PINNED_LAB_NAME) return -1;
+      if (b.name === ABUTS_PINNED_LAB_NAME) return 1;
+      return a.name.localeCompare(b.name, "ko");
+    });
+    return entries;
+  }, [items, showLabColorLegend]);
   const todayYmd = toKstYmd(new Date()) || "";
   const originYmd = todayYmd || cursorYmd;
   const weeks = useMemo(() => buildWeeksFromOrigin(originYmd), [originYmd]);
@@ -1189,6 +1226,32 @@ export function PracticeRecentTransfersCalendar({
               canComposeArrival={Boolean(onSelectFutureDay)}
               onSelectDay={handleSideDaySelect}
             />
+            {labColorLegend.length > 0 ? (
+              <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto rounded-md border border-slate-200/80 bg-white px-2 py-2 shadow-sm">
+                <p className="mb-1.5 px-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  기공소
+                </p>
+                <ul className="space-y-1">
+                  {labColorLegend.map((row) => (
+                    <li
+                      key={row.colorKey}
+                      className="flex min-w-0 items-center gap-1.5 px-0.5"
+                    >
+                      <span
+                        className="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-black/5"
+                        style={{
+                          backgroundColor: calendarGroupDotColor(row.colorKey),
+                        }}
+                        aria-hidden
+                      />
+                      <span className="min-w-0 truncate text-[11px] leading-snug text-slate-700">
+                        {row.name}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
           </aside>
           <div
             ref={listScrollRef}

@@ -7,13 +7,14 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferMobileOralPhotoIntake.tsx
 // - web/frontend/src/features/chat/components/NewChatWidget.tsx
 // change-log:
+// - 2026-09-11: toolbarExtra — # 옆 메모·평가 아이콘 슬롯.
 // - 2026-09-07: 의뢰건 불러오기 트리거 $ → # 통일(입력·placeholder·Hash 버튼).
 // - 2026-09-07: # 목록 화살표 선택·의뢰ID+환자이름 토큰 삽입.
 // - 2026-09-07: # 입력으로 의뢰건 불러오기·placeholder 안내.
 // - 2026-08-21: textarea flex-1 제거·루트 shrink-0 — 채팅 레이아웃에서 입력칸이 내역 높이를 잠식하지 않게.
 // - 2026-08-27: 모바일 사진찍기(capture) — 채팅에서 바로 촬영·업로드.
 // - 2026-09-09: Ctrl/Cmd+V 클립보드 파일·스크린샷 붙여넣기 → onPickFiles.
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -90,6 +91,8 @@ type Props = {
 
   /** 모달 등 — 하단 여백을 줄인 컴팩트 패딩 */
   compact?: boolean;
+  /** # 버튼 오른쪽(메모·평가 아이콘 등) */
+  toolbarExtra?: ReactNode;
   className?: string;
 };
 
@@ -112,6 +115,7 @@ export const ChatComposer = (props: Props) => {
     replyTo,
     onCancelReply,
     compact = false,
+    toolbarExtra = null,
     className,
   } = props;
 
@@ -546,6 +550,8 @@ export const ChatComposer = (props: Props) => {
               </PopoverContent>
             </Popover>
           ) : null}
+
+          {toolbarExtra}
         </div>
 
         <Button
