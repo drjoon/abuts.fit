@@ -26,6 +26,7 @@
  * - 2026-08-20: 치과 전체보기 칩도 상단 뱃지 상태색(그룹색 대신).
  * - 2026-08-20: 안읽음(수신 미확인·채팅) 빨간 배지를 칩에 표시.
  * - 2026-08-21: 상단 필터 뱃지 ON=진한 상태색 / OFF=흐린 무채색(표시 on/off 대비).
+ * - 2026-09-11: 캘린더 칩 — 기공소 색 점 왼쪽 여백(pl-1).
  * - 2026-09-11: 기공소 점 — 7원색 + 빈원(8–14) + 이중외곽(15+).
  * - 2026-09-11: 기공소 점 — 무지개 원색 순번 배정(초록 1칸, 해시 몰림 방지).
  * - 2026-09-11: 기공소 점 — 무지개 원색(초록 1칸만, 녹색 계열 혼동 방지).
@@ -1862,7 +1863,7 @@ export function PracticeRecentTransfersCalendar({
                               key={`${item.id}:${day.ymd}`}
                               data-practice-cal-item={item.id}
                               className={cn(
-                                "flex items-start gap-0.5 rounded pr-0.5 hover:brightness-95",
+                                "flex items-start gap-0.5 rounded pl-1 pr-0.5 hover:brightness-95",
                                 item.isPriorArrival && "opacity-55",
                                 uploadOverdue === "deadline" &&
                                   "border-[3px] border-double border-red-700 ring-2 ring-red-400/70",
