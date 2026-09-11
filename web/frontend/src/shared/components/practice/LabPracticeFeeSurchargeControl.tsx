@@ -2,6 +2,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/features/settings/tabs/LabTradingPartnersTab.tsx
 // - web/backend/controllers/labTradingPartners/labTradingPartner.controller.js
+// - 2026-09-12: triggerVariant=icon — 주문/도착 줄 오른쪽 별 트리거.
 // - 2026-09-11: triggerVariant=icon — 채팅 컴포저 # 옆 별 트리거.
 // - 2026-08-14: 치과별 기공수가 할증(1x·1.1x·1.2x·1.5x·직접). Dialog + 취소/저장.
 // - 2026-08-15: 버튼 툴팁·모달 강조. 저장은 다음 의뢰부터(현재 건 소급 금지).
@@ -77,7 +78,7 @@ type LabPracticeFeeSurchargeControlProps = {
   dialogTitle?: string;
   /** chat-evaluate: 의뢰상세「치과 평가」. 별점 없이 할증만. */
   variant?: "surcharge" | "evaluate";
-  /** icon: 채팅 하단 # 옆 별 아이콘 */
+  /** icon: 주문/도착 줄 오른쪽 별 아이콘 */
   triggerVariant?: "button" | "icon";
 };
 

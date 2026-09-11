@@ -14,6 +14,7 @@
 // - web/frontend/src/shared/files/downloadWithProgress.ts
 // - web/frontend/src/shared/files/s3BlobCache.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-12: 별·알림음 — 채팅 툴바 → 주문/도착 줄 오른쪽.
 // - 2026-09-12: 채팅 없으면 초기 스크롤=보철물(상단). 전환·빈 목록 시 하단 고정 금지.
 // - 2026-09-11: 어벗 STL — 인라인 파란 배너 제거. 페이지 전체 드롭 + 작업취소 옆 업로드 버튼.
 // - 2026-09-11: inline 패널 — 닫기(X) 숨김. 주문/도착은 타이틀 아래 고정(작업시작 바에서 제거).
@@ -374,7 +375,7 @@ type PracticeTransferDetailChatDialogProps = {
   chatHeaderAction?: ReactNode;
   /** 채팅 헤더 바로 아래 — 상대방 내부 메모 (레거시·미사용 권장) */
   counterpartyMemoStrip?: ReactNode;
-  /** 채팅 입력 # 옆 — 메모·평가 아이콘 */
+  /** 주문/도착 줄 오른쪽 — 메모·평가 아이콘 */
   composerToolbarExtra?: ReactNode;
   /**
    * 식별 줄(치과·환자 등). 있으면 summaryItems 파싱보다 우선.
@@ -1806,6 +1807,12 @@ export function PracticeTransferDetailChatDialog({
     onAppendArrival || nextStageSegments.length > 0,
   );
   const identityDateLabel = String(caseIdentityStrip?.secondary || "").trim();
+  const identityChromeActions = (
+    <div className="flex shrink-0 items-center gap-0.5" data-no-drag>
+      {composerToolbarExtra}
+      <ChatSoundGlobalToggle />
+    </div>
+  );
   const handlePrintDetail = useCallback(() => {
     printPracticeTransferDetail({
       title,
@@ -2185,16 +2192,30 @@ export function PracticeTransferDetailChatDialog({
                         {caseIdentityStrip.primary}
                       </span>
                     </p>
-                    {identityDateLabel && !showArrivalInChatChrome ? (
-                      <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                        {identityDateLabel}
-                      </p>
+                    {!showArrivalInChatChrome ? (
+                      <div className="mt-0.5 flex min-w-0 items-center gap-1">
+                        {identityDateLabel ? (
+                          <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                            {identityDateLabel}
+                          </p>
+                        ) : (
+                          <span className="min-w-0 flex-1" />
+                        )}
+                        {identityChromeActions}
+                      </div>
                     ) : null}
                   </>
                 ) : (
-                  <p className="truncate text-sm font-semibold text-foreground">
-                    {title}
-                  </p>
+                  <>
+                    <p className="truncate text-sm font-semibold text-foreground">
+                      {title}
+                    </p>
+                    {!showArrivalInChatChrome ? (
+                      <div className="mt-0.5 flex min-w-0 items-center justify-end gap-1">
+                        {identityChromeActions}
+                      </div>
+                    ) : null}
+                  </>
                 )}
               </div>
               {chatHeaderAction || !isInline ? (
@@ -2236,6 +2257,7 @@ export function PracticeTransferDetailChatDialog({
                               {identityDateLabel}
                             </span>
                           ) : null}
+                          {identityChromeActions}
                           <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                             다음 공정
                           </span>
@@ -2254,9 +2276,12 @@ export function PracticeTransferDetailChatDialog({
                           ))}
                         </div>
                       ) : (
-                        <span className="min-w-0 flex-1 truncate text-xs tabular-nums text-muted-foreground">
-                          {identityDateLabel || ""}
-                        </span>
+                        <div className="flex min-w-0 flex-1 items-center gap-1">
+                          <span className="min-w-0 flex-1 truncate text-xs tabular-nums text-muted-foreground">
+                            {identityDateLabel || ""}
+                          </span>
+                          {identityChromeActions}
+                        </div>
                       )}
                       {onAppendArrival ? renderRearrivalPopover() : null}
                       {onEditRequest || onCancelRequest ? (
@@ -2903,12 +2928,6 @@ export function PracticeTransferDetailChatDialog({
                     }
                     replyTo={replyTo}
                     onCancelReply={onCancelReply}
-                    toolbarExtra={
-                      <>
-                        {composerToolbarExtra}
-                        <ChatSoundGlobalToggle />
-                      </>
-                    }
                     compact
                   />
                 </div>
