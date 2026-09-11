@@ -287,6 +287,7 @@ import {
 // - 2026-08-18: full 치식에서는 R/M/L 스크롤 버튼을 숨긴다.
 // - 2026-08-19: 치아 옆 스크롤·R/M/L 제거. compact는 overflow-x + custom-scrollbar-x.
 // - 2026-08-20: Expert — 헤더 다음 메모|드롭존 2열, 보철물은 그 아래.
+// - 2026-09-11: 메모 — 클릭·빈 줄 Enter·스페이스 시 최근 입력 5개 제안.
 // - 2026-08-20: 메모 라벨·?툴팁 제거. 메모|드롭존 높이 stretch 맞춤.
 // - 2026-08-25: 보철물 가이드투어 — 선택·해제·브리지·형태·복사·어벗·프리셋·견적 체험.
 // - 2026-08-25: 전체 가이드투어 — 기공소·환자·날짜 선행 후 보철물. 상단 버튼으로 시작.
@@ -297,8 +298,8 @@ import {
 
 const PRACTICE_MEMO_SNIPPETS_LOCAL_KEY = "practice_transfer_memo_snippets_v1";
 const MAX_MEMO_SNIPPETS = 40;
-const MAX_MEMO_SUGGESTIONS = 8;
-const MEMO_SUGGEST_MIN_CHARS = 1;
+/** 최근 입력·자동완성 목록에 보여줄 최대 개수 */
+const MAX_MEMO_SUGGESTIONS = 5;
 /** 카드 높이: 번호+형태+어벗+임플란트/스캔바디 2줄+복사 기준(이보다 짧으면 형태 버튼이 flex-shrink로 가려짐) */
 const TOOTH_CARD_HEIGHT_CLASS = "h-[12rem]";
 /** full(16칸) — compact와 동일. 9rem은 어벗 상세 시 유형 스위치가 찌그러짐 */
@@ -741,7 +742,13 @@ export const normalizeMemoSnippets = (items: unknown): string[] => {
 
 const filterMemoSuggestions = (input: string, snippets: string[]): string[] => {
   const q = String(input || "").trim().toLowerCase();
-  if (q.length < MEMO_SUGGEST_MIN_CHARS) return [];
+  // 빈 줄·클릭 시: 최근 입력(MRU) 그대로
+  if (!q) {
+    return snippets
+      .map((snippet) => String(snippet || "").trim())
+      .filter(Boolean)
+      .slice(0, MAX_MEMO_SUGGESTIONS);
+  }
   const prefix: string[] = [];
   const contains: string[] = [];
   for (const snippet of snippets) {
@@ -3665,6 +3672,16 @@ export const PracticeTransferRequestIntakePanel = ({
                         }
                       }
 
+                      // 빈 줄 Enter → 최근 입력 목록(새 줄은 만들지 않음)
+                      if (e.key === "Enter" && !String(line || "").trim()) {
+                        const recent = filterMemoSuggestions("", memoSnippets);
+                        if (recent.length > 0) {
+                          e.preventDefault();
+                          openMemoSuggestions(index, "");
+                          return;
+                        }
+                      }
+
                       if (e.key === "Enter") {
                         e.preventDefault();
                         if (suppressMemoEnterRef.current) return;
@@ -3672,6 +3689,14 @@ export const PracticeTransferRequestIntakePanel = ({
                         insertMemoNewlineAfter(index, e.currentTarget.value);
                         closeMemoSuggestions();
                         return;
+                      }
+
+                      // 스페이스 → 최근/필터 목록 유지·오픈
+                      if (e.key === " " || e.code === "Space") {
+                        window.setTimeout(() => {
+                          const nextValue = memoInputRefs.current[index]?.value ?? line;
+                          openMemoSuggestions(index, nextValue);
+                        }, 0);
                       }
 
                       if (
