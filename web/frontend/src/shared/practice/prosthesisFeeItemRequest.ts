@@ -5,6 +5,7 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // change-log:
 // - 2026-09-07: 전체치열 좌측 목록(archBulkProsthesisTypes) 정규화·계정 설정 연동.
+// - 2026-09-11: 전체치열 기본 항목에서 랩어라운드 제거(전체틀니·부분틀니만).
 // - 2026-09-05: 치과 커스텀 보철 수가 요청 API 클라이언트.
 // - 2026-09-05: 추가요청 — 관리자 승인 전 대기, approve/dismiss 헬퍼.
 // - 2026-09-05: 대상 기공소 다중 선택(labs).
@@ -13,7 +14,6 @@ import { apiFetch } from "@/shared/api/apiClient";
 export const ARCH_BULK_PROSTHESIS_PRESETS = [
   "전체틀니",
   "부분틀니",
-  "랩어라운드",
 ] as const;
 
 export type ArchBulkProsthesisPreset =

@@ -11,6 +11,7 @@
 // - 2026-08-21: 기공의뢰 정산에서 기공소→어벗츠 배송 제외(기공소 박스 과금).
 // - 2026-08-21: 치과→기공소 배송 무료. 정산 상세는 →어벗츠(박스)만.
 // - 2026-08-25: 미설정 수가 — 바·툴팁에「미설정」행·경고. labFeeUnset여도 항목명 유지.
+// - 2026-09-11: 기공소 미설정 수가 — 설정·기공비(need)로 바로 이동.
 // - 2026-08-21: 치과 견적 — 커스텀어벗 등 기공소 수가 미설정(missingFeeNames) 안내.
 // - 2026-08-21: 같은 치아번호는 한 줄. 보철기공비|커스텀어벗 열로 수가 구분.
 // - 2026-08-20: 정산(density=detail)만 장부 배송비·크레딧 소비 총액. 견적 툴팁은 기공비 총액까지.
@@ -59,6 +60,7 @@
 // - 2026-08-16: v4 고정수가 — min=max면 구간(~) 없이 단일가 표시. 예산 구간 안내 제거.
 // - 2026-08-16: 수락·청구(billed) 후 치과 툴팁도 구간 제거·확정 단일가.
 import type { ReactNode } from "react";
+import { Link } from "react-router-dom";
 import { CircleHelp } from "lucide-react";
 import {
   Tooltip,
@@ -67,6 +69,10 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/shared/ui/cn";
+import {
+  labFeeSettingsFromAcceptPath,
+  LAB_FEE_SETTINGS_PATH,
+} from "@/features/settings/LabFeeSetupPrompt";
 import {
   formatFeeRatePct,
   formatManWon,
@@ -993,9 +999,21 @@ export function PracticeTransferFeeEstimate({
     <>
       {labFeeUnset && !hasMissingFees ? (
         <p className="text-muted-foreground">
-          {isLab
-            ? "기공비를 설정해야 작업을 시작할 수 있습니다."
-            : "기공소에서 아직 기공비를 설정하지 않았습니다. 기공소에 문의해주세요."}
+          {isLab ? (
+            <>
+              기공비를 설정해야 작업을 시작할 수 있습니다.{" "}
+              <Link
+                to={LAB_FEE_SETTINGS_PATH}
+                className="font-medium text-primary underline underline-offset-2"
+                onClick={(event) => event.stopPropagation()}
+              >
+                설정 · 기공비
+              </Link>
+              로 이동하세요.
+            </>
+          ) : (
+            "기공소에서 아직 기공비를 설정하지 않았습니다. 기공소에 문의해주세요."
+          )}
         </p>
       ) : null}
       {hasMissingFees ? (
@@ -1004,7 +1022,15 @@ export function PracticeTransferFeeEstimate({
             <>
               치과에서 의뢰가 들어왔습니다. 기공비를 정상적으로 받으려면
               <br />
-              「{missingFeeLabel}」 수가를 설정하세요.
+              「{missingFeeLabel}」 수가를{" "}
+              <Link
+                to={labFeeSettingsFromAcceptPath(missingFeeNames)}
+                className="text-primary underline underline-offset-2"
+                onClick={(event) => event.stopPropagation()}
+              >
+                설정 · 기공비
+              </Link>
+              에서 입력하세요.
             </>
           ) : (
             <>
@@ -1282,6 +1308,20 @@ export function PracticeTransferFeeEstimate({
             className="pointer-events-none h-3.5 w-3.5 shrink-0 text-muted-foreground/80"
             aria-hidden
           />
+          {isLab && (labFeeUnset || hasMissingFees) ? (
+            <Link
+              to={
+                hasMissingFees
+                  ? labFeeSettingsFromAcceptPath(missingFeeNames)
+                  : LAB_FEE_SETTINGS_PATH
+              }
+              className="shrink-0 text-[11px] font-semibold text-primary underline underline-offset-2"
+              onClick={(event) => event.stopPropagation()}
+              onPointerDown={(event) => event.stopPropagation()}
+            >
+              기공비 설정
+            </Link>
+          ) : null}
         </div>
         {hasTrailing ? (
           <div

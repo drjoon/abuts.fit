@@ -533,7 +533,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - practice 전송 설정 SSOT:
   - 저장 위치: `BusinessAnchor.practiceTransferSettings`
   - API: `GET/POST /api/practice/transfers/settings`
-  - 필드: `arrivalDefaultDays`(계정 전역 fallback), `labArrivalDefaults[{ labAnchorId, labName, arrivalDefaultDays, updatedAt }]`(기공소별 주문→치과도착 달력 일수), `prosthesisTypes`, `archBulkProsthesisTypes`(전체치열 모달 좌측 목록·순서, 기본 전체틀니·부분틀니·랩어라운드), `requestStagePresets[{ prosthesisType, stages[{ name, arrivalOffsetDays }] }]`(다단계 기공의뢰·기본 전체틀니·부분틀니), `memoSnippets`, `promoNoticeDismissedAt`, `skipDesignConfirm`, `skipJig`(레거시·미사용), `defaultAbutmentProductMode`, `implantFavorites`(환봉 요청 시 `roundBar`/`adopted`/`roundBarRequestId`)
+  - 필드: `arrivalDefaultDays`(계정 전역 fallback), `labArrivalDefaults[{ labAnchorId, labName, arrivalDefaultDays, updatedAt }]`(기공소별 주문→치과도착 달력 일수), `prosthesisTypes`, `archBulkProsthesisTypes`(전체치열 모달 좌측 목록·순서, 기본 전체틀니·부분틀니), `requestStagePresets[{ prosthesisType, stages[{ name, arrivalOffsetDays }] }]`(다단계 기공의뢰·기본 전체틀니·부분틀니), `memoSnippets`, `promoNoticeDismissedAt`, `skipDesignConfirm`, `skipJig`(레거시·미사용), `defaultAbutmentProductMode`, `implantFavorites`(환봉 요청 시 `roundBar`/`adopted`/`roundBarRequestId`)
   - `labArrivalDefaults`: 기공의뢰에서 기공소 선택 시 해당 일수로 주문-치과도착 적용. 날짜 변경 시 선택 기공소에 upsert(`labArrivalDefault` 단건 또는 `labArrivalDefaults` 전체). 미등록 기공소는 `arrivalDefaultDays`.
   - `requestStagePresets`: 전체틀니·부분틀니 등 다단계 보철의 단계 이름·단계별 도착 일수. null=기본 프리셋, `[]`=의도적 없음. 전송 스냅샷=`PracticeTransfer.labRequestStagePlans`(재도착 시 `currentIndex` 증가).
   - UI: 설정 `/dashboard/practice-settings?tab=transfer`, 기공의뢰 작성 화면에서 자동 저장.

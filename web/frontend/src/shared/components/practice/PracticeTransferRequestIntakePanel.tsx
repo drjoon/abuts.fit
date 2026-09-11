@@ -27,7 +27,6 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ImeSafeInput } from "@/shared/components/practice/ImeSafeInput";
 import { Label } from "@/components/ui/label";
@@ -188,12 +187,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/shared/hooks/use-toast";
 import {
   ARCH_BULK_PROSTHESIS_PRESETS,
-  createProsthesisFeeItemRequest,
-  isArchBulkProsthesisPreset,
   normalizeArchBulkProsthesisTypes,
 } from "@/shared/practice/prosthesisFeeItemRequest";
 
@@ -219,6 +215,8 @@ import {
 // - 2026-09-05: 플랫폼 Spotlight — stepId로 data-guide-tour 직접 마킹(로컬 스텝 sync 전에도 홀).
 // - 2026-09-05: 견적→뒤로 프리셋 — Spotlight 클릭 outside dismiss로 모달 즉시 닫힘 방지·다음 틱 재오픈.
 // - 2026-09-11: 보철 형태 드롭다운 「입력」→ prosthesisTypes 계정 저장. 커스텀·입력 X.
+// - 2026-09-11: 추가요청 버튼·모달 제거. 보철 드롭다운 「입력」으로 추가. 전체치열 삭제=X.
+// - 2026-09-11: 전체치열 기본 항목에서 랩어라운드 제거.
 // - 2026-09-11: 쉐이드 직접 입력 → 계정 shadeFavorites 저장. 배지·입력 X로 삭제.
 // - 2026-09-11: 치아 카드 — 쉐이드 배지(A2·A3·A1·A3.5·입력) + 보철 형태 드롭다운(클릭 순환 대체).
 // - 2026-09-05: 견적 투어 — 하이라이트에 금액이 보이게 blur 해제(툴팁 체험은 유지).
@@ -235,7 +233,7 @@ import {
 // - 2026-09-05: 기공소 드롭다운 폭=트리거와 동일(min-w 제거).
 // - 2026-09-05: 플랫폼 투어 — 기공소 팝오버 강제오픈 안 함(위치 고정). 수동 오픈 시 z-430.
 // - 2026-09-05: 가이드투어 — 환자명에서 뒤로 시 기공소 팝오버 강제오픈·즉시 3 재진입 방지.
-// - 2026-09-05: 전체 선택 — 상·하악·전체틀니/부분틀니/랩어라운드/커스텀 추가.
+// - 2026-09-05: 전체 선택 — 상·하악·전체틀니/부분틀니/커스텀 추가.
 // - 2026-09-07: 전체치열 모달에 기공의뢰 단계 요약·편집 내장. 적용 후 별도 단계 모달 제거.
 // - 2026-09-07: 전체치열 좌측 목록 — 호버 편집/삭제·드래그 정렬·계정 저장.
 // - 2026-09-07: 전체치열 편집/삭제 — group-focus-within 제거(모달 오픈 시 첫 항목 포커스로 아이콘 상시 노출 방지).
@@ -1305,71 +1303,6 @@ export const PracticeTransferRequestIntakePanel = ({
     commitArchBulkList(next);
   };
 
-  const openExtraRequestModal = () => {
-    setExtraRequestContent("");
-    setExtraRequestLabIds(
-      selectedLab && !isAutoMatchLab(selectedLab)
-        ? [String(selectedLab._id || "").trim()].filter(Boolean)
-        : [],
-    );
-    setExtraRequestLabPickerOpen(false);
-    setExtraRequestLabQuery("");
-    setExtraRequestSubmitting(false);
-    setExtraRequestModalOpen(true);
-  };
-
-  const submitExtraRequest = async () => {
-    const content = String(extraRequestContent || "").trim();
-    if (!content || extraRequestSubmitting) return;
-    if (isArchBulkProsthesisPreset(content)) return;
-
-    const labOptions = [
-      ...(Array.isArray(pinnedLabs) ? pinnedLabs : []),
-      ...(Array.isArray(recentLabs) ? recentLabs : []),
-      ...(Array.isArray(labSearchResults) ? labSearchResults : []),
-      ...(selectedLab ? [selectedLab] : []),
-    ];
-    const pickedLabs: SearchBusinessResult[] = [];
-    const seen = new Set<string>();
-    for (const id of extraRequestLabIds) {
-      const labId = String(id || "").trim();
-      if (!labId || seen.has(labId)) continue;
-      const lab =
-        labOptions.find((row) => String(row._id || "").trim() === labId) ||
-        null;
-      if (!lab) continue;
-      seen.add(labId);
-      pickedLabs.push(lab);
-    }
-
-    setExtraRequestSubmitting(true);
-    const ok = await createProsthesisFeeItemRequest({
-      name: content,
-      labs: pickedLabs.map((lab) => ({
-        labAnchorId: String(lab._id || "").trim(),
-        labName: getBusinessLabel(lab),
-      })),
-      source: "extra_request",
-    });
-    setExtraRequestSubmitting(false);
-    if (!ok) {
-      toast({
-        title: "추가요청 실패",
-        description: "잠시 후 다시 시도해주세요.",
-        variant: "destructive",
-      });
-      return;
-    }
-    onEnsureProsthesisTypesInCatalog?.([content]);
-    setExtraRequestModalOpen(false);
-    setExtraRequestContent("");
-    setExtraRequestLabIds([]);
-    toast({
-      title: "추가요청 접수",
-      description: "관리자 승인 후 기공소 기공비 설정에 반영됩니다.",
-    });
-  };
-
   const applyArchBulkProsthesisSelection = () => {
     const assignments: Array<{ key: "upper" | "lower"; typeName: string }> = [];
     const upperType = String(archDropUpperType || "").trim();
@@ -1579,13 +1512,6 @@ export const PracticeTransferRequestIntakePanel = ({
   const [archReorderHoverIndex, setArchReorderHoverIndex] = useState<
     number | null
   >(null);
-  const [extraRequestModalOpen, setExtraRequestModalOpen] = useState(false);
-  const [extraRequestContent, setExtraRequestContent] = useState("");
-  const [extraRequestLabIds, setExtraRequestLabIds] = useState<string[]>([]);
-  const [extraRequestLabPickerOpen, setExtraRequestLabPickerOpen] =
-    useState(false);
-  const [extraRequestLabQuery, setExtraRequestLabQuery] = useState("");
-  const [extraRequestSubmitting, setExtraRequestSubmitting] = useState(false);
   /** null = 투어 종료. 0..N-1 체험, N 완료 — 상위 제어 시 guideTourStep 사용 */
   const [toothWorkGuideTourStepUncontrolled, setToothWorkGuideTourStepUncontrolled] =
     useState<PracticeToothWorkGuideTourStep | null>(null);
@@ -4137,19 +4063,11 @@ export const PracticeTransferRequestIntakePanel = ({
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-8 px-2.5 text-xs"
-                onClick={openExtraRequestModal}
-              >
-                추가요청
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-8 px-2.5 text-xs"
+                className="h-8 gap-1 px-2.5 text-xs"
                 onClick={openArchSelectModal}
               >
                 전체치열
+                <X className="h-3 w-3 opacity-70" strokeWidth={2.5} />
               </Button>
               <Button
                 type="button"
@@ -5193,272 +5111,6 @@ export const PracticeTransferRequestIntakePanel = ({
       ) : null}
 
       <Dialog
-        open={extraRequestModalOpen}
-        onOpenChange={(open) => {
-          setExtraRequestModalOpen(open);
-          if (!open) {
-            setExtraRequestContent("");
-            setExtraRequestLabIds([]);
-            setExtraRequestLabPickerOpen(false);
-            setExtraRequestLabQuery("");
-            setExtraRequestSubmitting(false);
-          }
-        }}
-      >
-        <DialogContent
-          className={cn(
-            "w-[min(100vw-2rem,28rem)] max-w-[min(100vw-2rem,28rem)] gap-0 overflow-visible p-0 text-sm sm:w-[28rem] sm:max-w-[28rem] sm:rounded-2xl sm:p-0",
-            nestedDialogClassName,
-          )}
-          overlayClassName={nestedDialogOverlayClassName}
-          onKeyDown={(e) => {
-            if (e.key !== "Enter" || e.shiftKey) return;
-            if (extraRequestLabPickerOpen) return;
-            const target = e.target as HTMLElement | null;
-            if (target?.tagName === "TEXTAREA" || target?.tagName === "INPUT") {
-              return;
-            }
-            if (
-              !String(extraRequestContent || "").trim() ||
-              isArchBulkProsthesisPreset(String(extraRequestContent || "").trim()) ||
-              extraRequestSubmitting
-            ) {
-              return;
-            }
-            e.preventDefault();
-            void submitExtraRequest();
-          }}
-        >
-          <DialogHeader className="space-y-0 px-5 pb-3 pt-5 text-left">
-            <DialogTitle className="pr-8 text-sm font-semibold tracking-tight text-slate-900">
-              보철물 추가요청
-            </DialogTitle>
-            <DialogDescription className="px-0 pt-1.5 text-xs leading-relaxed text-slate-500">
-              관리자 승인 후 기공소 설정·기공비에 반영됩니다.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 px-5 pb-4 pt-1">
-            <div className="space-y-2">
-              <Label htmlFor="prosthesis-extra-request-content" className="text-xs">
-                내용 <span className="text-destructive">*</span>
-              </Label>
-              <Textarea
-                id="prosthesis-extra-request-content"
-                value={extraRequestContent}
-                onChange={(e) => setExtraRequestContent(e.target.value)}
-                placeholder="추가할 보철물 이름"
-                className="min-h-[5rem] resize-none rounded-xl text-sm"
-                autoFocus
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-xs">
-                대상 기공소{" "}
-                <span className="font-normal text-muted-foreground">(선택 · 여러 개)</span>
-              </Label>
-              {(() => {
-                const seen = new Set<string>();
-                const options: SearchBusinessResult[] = [];
-                for (const lab of [
-                  ...(selectedLab ? [selectedLab] : []),
-                  ...(Array.isArray(pinnedLabs) ? pinnedLabs : []),
-                  ...(Array.isArray(recentLabs) ? recentLabs : []),
-                  ...(Array.isArray(labSearchResults) ? labSearchResults : []),
-                ]) {
-                  if (isAutoMatchLab(lab)) continue;
-                  const id = String(lab._id || "").trim();
-                  if (!id || seen.has(id)) continue;
-                  seen.add(id);
-                  options.push(lab);
-                }
-                const query = String(extraRequestLabQuery || "").trim().toLowerCase();
-                const filteredOptions = query
-                  ? options.filter((lab) =>
-                      getBusinessLabel(lab).toLowerCase().includes(query),
-                    )
-                  : options;
-                const selectedOptions = options.filter((lab) =>
-                  extraRequestLabIds.includes(String(lab._id || "").trim()),
-                );
-                const toggleLab = (labId: string) => {
-                  const id = String(labId || "").trim();
-                  if (!id) return;
-                  setExtraRequestLabIds((prev) =>
-                    prev.includes(id)
-                      ? prev.filter((row) => row !== id)
-                      : [...prev, id],
-                  );
-                };
-                return (
-                  <div className="space-y-2">
-                    <div className="overflow-hidden rounded-xl border border-slate-200/90 bg-white">
-                      <button
-                        type="button"
-                        className="flex h-10 w-full items-center justify-between px-3 text-left transition-colors hover:bg-slate-50"
-                        aria-expanded={extraRequestLabPickerOpen}
-                        onClick={() =>
-                          setExtraRequestLabPickerOpen((prev) => !prev)
-                        }
-                      >
-                        <span
-                          className={cn(
-                            "truncate text-sm",
-                            selectedOptions.length === 0 && "text-muted-foreground",
-                          )}
-                        >
-                          {selectedOptions.length === 0
-                            ? "기공소 선택"
-                            : `${selectedOptions.length}곳 선택됨`}
-                        </span>
-                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                      </button>
-
-                      {extraRequestLabPickerOpen ? (
-                        <div className="border-t border-slate-100">
-                          <div className="p-2">
-                            <div className="relative">
-                              <Input
-                                value={extraRequestLabQuery}
-                                onChange={(e) => {
-                                  const next = e.target.value;
-                                  setExtraRequestLabQuery(next);
-                                  setLabSearch(next);
-                                }}
-                                placeholder="기공소 검색…"
-                                className="h-9 rounded-lg pr-8 text-sm"
-                              />
-                              {extraRequestLabQuery.trim() ? (
-                                <button
-                                  type="button"
-                                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                                  onClick={() => {
-                                    setExtraRequestLabQuery("");
-                                    setLabSearch("");
-                                  }}
-                                  aria-label="검색어 지우기"
-                                >
-                                  <X className="h-3.5 w-3.5" />
-                                </button>
-                              ) : null}
-                            </div>
-                          </div>
-                          <div className="max-h-44 overflow-y-auto px-1 pb-2">
-                            {labSearching && filteredOptions.length === 0 ? (
-                              <div className="px-3 py-4 text-center text-xs text-muted-foreground">
-                                검색 중…
-                              </div>
-                            ) : filteredOptions.length === 0 ? (
-                              <div className="px-3 py-4 text-center text-xs text-muted-foreground">
-                                기공소가 없습니다.
-                              </div>
-                            ) : (
-                              filteredOptions.map((lab) => {
-                                const id = String(lab._id || "").trim();
-                                const selected = extraRequestLabIds.includes(id);
-                                return (
-                                  <button
-                                    key={id}
-                                    type="button"
-                                    onClick={() => toggleLab(id)}
-                                    className={cn(
-                                      "flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition-colors",
-                                      selected
-                                        ? "bg-primary-soft/60 text-primary-strong"
-                                        : "text-slate-800 hover:bg-slate-50",
-                                    )}
-                                  >
-                                    <span
-                                      className={cn(
-                                        "flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border",
-                                        selected
-                                          ? "border-primary bg-primary text-primary-foreground"
-                                          : "border-slate-300 bg-white",
-                                      )}
-                                    >
-                                      {selected ? (
-                                        <Check className="h-3 w-3" />
-                                      ) : null}
-                                    </span>
-                                    <span className="min-w-0 truncate">
-                                      {getBusinessLabel(lab)}
-                                    </span>
-                                  </button>
-                                );
-                              })
-                            )}
-                          </div>
-                        </div>
-                      ) : null}
-                    </div>
-
-                    {selectedOptions.length > 0 ? (
-                      <div className="flex flex-wrap gap-1.5">
-                        {selectedOptions.map((lab) => {
-                          const id = String(lab._id || "").trim();
-                          return (
-                            <Badge
-                              key={id}
-                              variant="secondary"
-                              className="gap-1 rounded-lg px-2 py-1 text-xs font-medium"
-                            >
-                              <span className="max-w-[10rem] truncate">
-                                {getBusinessLabel(lab)}
-                              </span>
-                              <button
-                                type="button"
-                                className="rounded-sm text-slate-500 transition-colors hover:text-slate-800"
-                                onClick={() => toggleLab(id)}
-                                aria-label={`${getBusinessLabel(lab)} 제거`}
-                              >
-                                <X className="h-3 w-3" />
-                              </button>
-                            </Badge>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <p className="text-[11px] leading-relaxed text-slate-400">
-                        미지정 시 관리자가 모든 기공소로 승인할 수 있습니다.
-                      </p>
-                    )}
-                  </div>
-                );
-              })()}
-            </div>
-          </div>
-
-          <DialogFooter className="gap-2 border-t border-slate-100 bg-slate-50/60 px-5 py-3.5 sm:flex-row sm:justify-end sm:space-x-0">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="rounded-xl"
-              disabled={extraRequestSubmitting}
-              onClick={() => setExtraRequestModalOpen(false)}
-            >
-              취소
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              className="rounded-xl"
-              disabled={
-                extraRequestSubmitting ||
-                !String(extraRequestContent || "").trim() ||
-                isArchBulkProsthesisPreset(
-                  String(extraRequestContent || "").trim(),
-                )
-              }
-              onClick={() => void submitExtraRequest()}
-            >
-              {extraRequestSubmitting ? "제출 중…" : "요청"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
         open={archSelectModalOpen}
         onOpenChange={(open) => {
           setArchSelectModalOpen(open);
@@ -5657,7 +5309,7 @@ export const PracticeTransferRequestIntakePanel = ({
                         aria-label={`${preset} 삭제`}
                         title="삭제"
                       >
-                        <Trash2 className="h-3 w-3" />
+                        <X className="h-3 w-3" strokeWidth={2.5} />
                       </button>
                     </div>
                   </div>

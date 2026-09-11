@@ -484,7 +484,7 @@ export function PracticeTransferArrivalSettingsTab() {
               <Input
                 id="new-stage-prosthesis-type"
                 className="h-9"
-                placeholder="예: 랩어라운드"
+                placeholder="예: 전체틀니"
                 disabled={loading || saving}
                 value={newProsthesisType}
                 onChange={(e) => setNewProsthesisType(e.target.value)}

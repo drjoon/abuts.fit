@@ -133,6 +133,7 @@
  * - 2026-08-28: 모바일 목록 헤더에 신규의뢰 CTA(PC는 캘린더 날짜 클릭).
  * - 2026-08-28: 신규 의뢰 모달 — 새로작성·임시저장·휴지통·가이드투어를 DialogHeader로.
  * - 2026-08-28: 레거시 Express(단계 위저드) 모드 제거. 전폭 작성 UI만.
+ * - 2026-09-11: 신규 의뢰 작성 모달 작업영역 — max-w-7xl → max-w-[90rem].
  * - 2026-08-28: 메인=전송 캘린더, 미래일 클릭·신규 의뢰=전체화면 작성 모달(도착일 지정).
  * - 2026-08-28: 캘린더 「신규 의뢰」버튼 → 도착일 클릭 안내(닫으면 계정 설정에 저장).
  */
@@ -8896,7 +8897,7 @@ export const PracticeFileTransferPage = ({
           >
             <div
               className={cn(
-                "mx-auto w-full max-w-7xl",
+                "mx-auto w-full max-w-[90rem]",
                 isMobile
                   ? "box-border min-w-0 space-y-4 px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-4"
                   : "space-y-3 px-4 pt-4 pb-12",

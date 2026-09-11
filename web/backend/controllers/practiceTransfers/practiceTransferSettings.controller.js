@@ -47,7 +47,6 @@ const DEFAULT_PROSTHESIS_TYPES = [
 const DEFAULT_ARCH_BULK_PROSTHESIS_TYPES = [
   "전체틀니",
   "부분틀니",
-  "랩어라운드",
 ];
 const MAX_ARCH_BULK_PROSTHESIS_TYPES = 20;
 const MAX_MEMO_SNIPPETS = 40;

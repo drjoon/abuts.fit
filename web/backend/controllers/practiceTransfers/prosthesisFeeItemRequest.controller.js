@@ -25,7 +25,7 @@ import {
 import { requestorKindCapableAnchorFilter } from "../../utils/requestorCapabilities.js";
 import { emitAppEventToRoles } from "../../socket.js";
 
-const ARCH_BULK_PRESET_TYPES = new Set(["전체틀니", "부분틀니", "랩어라운드"]);
+const ARCH_BULK_PRESET_TYPES = new Set(["전체틀니", "부분틀니"]);
 
 const ALLOWED_SOURCES = new Set([
   "extra_request",
@@ -455,7 +455,7 @@ export async function createProsthesisFeeItemRequest(req, res) {
     if (!isCustomProsthesisFeeRequestName(rawName)) {
       return res.status(400).json({
         success: false,
-        message: "전체틀니·부분틀니·랩어라운드는 요청 대상이 아닙니다.",
+        message: "전체틀니·부분틀니는 요청 대상이 아닙니다.",
       });
     }
 
@@ -576,7 +576,7 @@ export async function renameProsthesisFeeItemRequest(req, res) {
     if (!isCustomProsthesisFeeRequestName(rawName)) {
       return res.status(400).json({
         success: false,
-        message: "전체틀니·부분틀니·랩어라운드는 사용할 수 없습니다.",
+        message: "전체틀니·부분틀니는 사용할 수 없습니다.",
       });
     }
 
@@ -660,7 +660,7 @@ export async function approveProsthesisFeeItemRequest(req, res) {
       if (!isCustomProsthesisFeeRequestName(renameRaw)) {
         return res.status(400).json({
           success: false,
-          message: "전체틀니·부분틀니·랩어라운드는 사용할 수 없습니다.",
+          message: "전체틀니·부분틀니는 사용할 수 없습니다.",
         });
       }
       requestDoc.name = renameRaw;
