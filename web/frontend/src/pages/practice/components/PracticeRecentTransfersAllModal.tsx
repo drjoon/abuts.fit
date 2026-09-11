@@ -176,6 +176,8 @@ type PracticeRecentTransfersAllModalProps = {
    * 플로팅·중첩 다이얼로그 focus로 전체보기가 닫히지 않게 한다.
    */
   floatingDetailOpen?: boolean;
+  /** 데스크톱 인라인 상세 — 캘린더가 마운트한 슬롯 DOM */
+  onDetailSlotEl?: (el: HTMLDivElement | null) => void;
   /** 헤더 우측 — 임시저장·휴지통 등 */
   headerActions?: ReactNode;
   /** 오늘 이후(오늘 포함) 날짜 셀 → 신규 의뢰(도착일) */
@@ -202,6 +204,7 @@ export function PracticeRecentTransfersAllModal({
   initialLoading = false,
   initialError = "",
   floatingDetailOpen = false,
+  onDetailSlotEl,
   headerActions,
   onSelectFutureDay,
   calendarRefreshNonce = 0,
@@ -1044,7 +1047,15 @@ export function PracticeRecentTransfersAllModal({
                 focusItemId={badgeFocusItemId}
                 focusItemYmd={badgeFocusItemYmd}
                 focusEpoch={badgeFocusEpoch}
-                detailPanelOpen={floatingDetailOpen}
+                detailPanelOpen={Boolean(onDetailSlotEl) || floatingDetailOpen}
+                detailPanel={
+                  onDetailSlotEl ? (
+                    <div
+                      ref={onDetailSlotEl}
+                      className="flex h-full min-h-0 w-full flex-col overflow-hidden"
+                    />
+                  ) : null
+                }
                 abutmentUploadOverdueViewer="practice"
                 showLabColorLegend
               />

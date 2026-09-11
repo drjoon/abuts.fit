@@ -49,7 +49,14 @@
  * - 2026-09-08: 목록 하단→다음달 자동 이동 제거. 캘린더 fetch 시 주 앵커로 스크롤 유지.
  * - 2026-09-08: 위로 스크롤 시 위쪽 패치 점프 — 조회창 밖 칩 캐시 + offsetTop 앵커 복원.
  */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   CalendarDays,
   ChevronLeft,
@@ -64,6 +71,11 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from "@/components/ui/hover-card";
 import { cn } from "@/shared/ui/cn";
 import {
   kstAddCivilDays,
@@ -139,6 +151,8 @@ export type PracticeCalendarChipItem = {
  * usePracticeTransferPanelLayout dock 폭과 맞춤.
  */
 export const PRACTICE_TRANSFER_LIST_DETAIL_RESERVE_CLASS = "pr-[26.5rem]";
+/** 인라인 상세 카드 폭 — 목록 reserve와 동일 */
+export const PRACTICE_TRANSFER_DETAIL_PANEL_WIDTH_CLASS = "w-[26.5rem]";
 
 /** 누적 주문일·도착일 → 캘린더 칩 다중 배치(같은 건·크레딧 중복 없음). */
 export function expandPracticeCalendarChipsByArrivalDates(
@@ -348,6 +362,109 @@ export function CalendarLabColorDot({
   );
 }
 
+const PRACTICE_CALENDAR_STATUS_TONE_LABEL: Record<
+  PracticeCalendarStatusTone,
+  string
+> = {
+  sent: "의뢰",
+  accepted: "작업시작",
+  finished: "완료",
+  completed: "어벗",
+  canceled: "취소",
+  unread: "미확인",
+};
+
+function PracticeCalendarChipHover({
+  item,
+  labDot,
+  overdueTooltip,
+  children,
+}: {
+  item: PracticeCalendarChipItem;
+  labDot: CalendarLabDotAssignment;
+  overdueTooltip?: string;
+  children: ReactNode;
+}) {
+  const groupName = String(item.sortLabel || "").trim();
+  const line = String(item.line || "").trim();
+  const orderDate = String(item.orderDate || "").trim();
+  const arrivalDate = String(item.arrivalDate || "").trim();
+  const statusLabel =
+    item.statusTone && item.statusTone !== "unread"
+      ? PRACTICE_CALENDAR_STATUS_TONE_LABEL[item.statusTone]
+      : "";
+  const unread = Math.max(0, Number(item.unreadCount || 0));
+  const linkedOrders =
+    Array.isArray(item.linkedOrderDates) && item.linkedOrderDates.length > 1
+      ? item.linkedOrderDates.join(" → ")
+      : "";
+  const linkedArrivals =
+    Array.isArray(item.linkedArrivalDates) && item.linkedArrivalDates.length > 1
+      ? item.linkedArrivalDates.join(" → ")
+      : "";
+
+  return (
+    <HoverCard openDelay={200} closeDelay={100}>
+      <HoverCardTrigger asChild>{children}</HoverCardTrigger>
+      <HoverCardContent
+        side="top"
+        align="start"
+        className="z-[400] w-72 space-y-1.5 p-3 text-xs"
+      >
+        {groupName ? (
+          <p className="flex min-w-0 items-center gap-1.5 font-semibold text-foreground">
+            <CalendarLabColorDot
+              color={labDot.color}
+              style={labDot.style}
+              className="mt-0.5"
+            />
+            <span className="min-w-0 truncate">{groupName}</span>
+          </p>
+        ) : null}
+        {line ? (
+          <p className="truncate text-[13px] text-slate-800">{line}</p>
+        ) : null}
+        {(orderDate || arrivalDate) && (
+          <p className="tabular-nums text-muted-foreground">
+            {[
+              orderDate ? `주문 ${orderDate}` : null,
+              arrivalDate ? `도착 ${arrivalDate}` : null,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          </p>
+        )}
+        {statusLabel ? (
+          <p className="text-muted-foreground">상태 · {statusLabel}</p>
+        ) : null}
+        {linkedOrders ? (
+          <p className="text-muted-foreground">연결 주문일 · {linkedOrders}</p>
+        ) : null}
+        {linkedArrivals ? (
+          <p className="text-muted-foreground">연결 도착일 · {linkedArrivals}</p>
+        ) : null}
+        {item.hasCustomAbutment ? (
+          <p className="text-emerald-800">커스텀 어벗 포함</p>
+        ) : null}
+        {unread > 0 ? (
+          <p className="font-medium text-destructive">
+            미확인(채팅) {unread > 99 ? "99+" : unread}
+          </p>
+        ) : null}
+        {item.reviewHighlight ? (
+          <p className="font-medium text-destructive">미처리(작업큐)</p>
+        ) : null}
+        {overdueTooltip ? (
+          <p className="font-medium text-amber-800">{overdueTooltip}</p>
+        ) : null}
+        {item.isPriorArrival ? (
+          <p className="text-muted-foreground">이전 일정(연결) · 클릭 시 같은 의뢰</p>
+        ) : null}
+      </HoverCardContent>
+    </HoverCard>
+  );
+}
+
 /**
  * 상단 뱃지(의뢰·작업시작·완료·취소·어벗)와 같은 칩 색.
  * 작업시작=sky · 완료=amber · 어벗=emerald — 한눈에 구분.
@@ -506,9 +623,11 @@ type PracticeRecentTransfersCalendarProps = {
   focusEpoch?: number;
   /**
    * 의뢰 상세 플로팅 패널이 열려 있을 때 — 목록 오른쪽에 도킹 폭을 비워 겹침 방지.
-   * 치과·기공소 공통.
+   * detailPanel(인라인 카드)이 있으면 패딩 대신 실제 컬럼을 쓴다.
    */
   detailPanelOpen?: boolean;
+  /** 데스크톱 — 검색 아래·달력/목록 오른쪽 고정 상세 카드 */
+  detailPanel?: ReactNode;
   /**
    * 치과 목록: 좌측 미니캘린더 아래 기공소 색 도트 범례(어벗츠 + 거래 기공소).
    * 목록 줄에서는 기공소명을 빼고 점만으로 구분할 때 켠다.
@@ -667,6 +786,7 @@ export function PracticeRecentTransfersCalendar({
   focusItemYmd = null,
   focusEpoch = 0,
   detailPanelOpen = false,
+  detailPanel = null,
   showLabColorLegend = false,
 }: PracticeRecentTransfersCalendarProps) {
   const isGuideTourChip = (itemId: string) => {
@@ -676,7 +796,6 @@ export function PracticeRecentTransfersCalendar({
     return id === want || id.startsWith(`${want}:`);
   };
   const labColorLegend = useMemo(() => {
-    if (!showLabColorLegend) return [];
     const byKey = new Map<string, string>();
     for (const item of items) {
       const key = String(item.colorKey || "").trim();
@@ -716,22 +835,21 @@ export function PracticeRecentTransfersCalendar({
         style: assigned.style,
       };
     });
-  }, [items, showLabColorLegend]);
+  }, [items]);
   const labDotByKey = useMemo(() => {
-    if (!showLabColorLegend) return null;
     const map = new Map<string, CalendarLabDotAssignment>();
     for (const row of labColorLegend) {
       map.set(row.colorKey, { color: row.color, style: row.style });
     }
     return map;
-  }, [labColorLegend, showLabColorLegend]);
+  }, [labColorLegend]);
   const resolveLabDot = (colorKey: string): CalendarLabDotAssignment => {
     const key = String(colorKey || "").trim();
     if (!key) {
       return { color: calendarGroupDotColor("-"), style: "filled" };
     }
     return (
-      labDotByKey?.get(key) || {
+      labDotByKey.get(key) || {
         color: calendarGroupDotColor(key),
         style: "filled",
       }
@@ -1360,6 +1478,7 @@ export function PracticeRecentTransfersCalendar({
 
       {isListMode ? (
         <div className="flex min-h-0 flex-1 gap-3 overflow-hidden">
+          <div className="flex min-h-0 min-w-0 flex-1 gap-3 overflow-hidden">
           <aside className="hidden w-[13.75rem] shrink-0 flex-col gap-2 md:flex">
             <ListSideMonthCalendar
               monthYmd={captionMonth}
@@ -1368,13 +1487,20 @@ export function PracticeRecentTransfersCalendar({
               canComposeArrival={Boolean(onSelectFutureDay)}
               onSelectDay={handleSideDaySelect}
             />
-            {labColorLegend.length > 0 ? (
+            {showLabColorLegend && labColorLegend.length > 0 ? (
               <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto rounded-md border border-slate-200/80 bg-white px-2 py-2 shadow-sm">
                 <p className="mb-1.5 px-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                   기공소
                 </p>
                 <ul className="space-y-1">
-                  {labColorLegend.map((row) => (
+                  {labColorLegend
+                    .filter((row) =>
+                      items.some(
+                        (item) =>
+                          String(item.colorKey || "").trim() === row.colorKey,
+                      ),
+                    )
+                    .map((row) => (
                     <li
                       key={row.colorKey}
                       className="flex min-w-0 items-center gap-1.5 px-0.5"
@@ -1411,7 +1537,9 @@ export function PracticeRecentTransfersCalendar({
               <div
                 className={cn(
                   "divide-y divide-slate-100",
-                  detailPanelOpen && PRACTICE_TRANSFER_LIST_DETAIL_RESERVE_CLASS,
+                  detailPanelOpen &&
+                    !detailPanel &&
+                    PRACTICE_TRANSFER_LIST_DETAIL_RESERVE_CLASS,
                 )}
               >
                 {agendaDays.map(({ ymd, items: dayItems }) => {
@@ -1533,48 +1661,32 @@ export function PracticeRecentTransfersCalendar({
                                   <Hexagon className="h-3.5 w-3.5" aria-hidden />
                                 </span>
                               ) : null}
-                              <button
-                                type="button"
-                                className="min-w-0 flex-1 text-left text-[13px] leading-snug text-slate-900"
-                                title={
-                                  overdueTooltip ||
-                                  (item.linkedOrderDates &&
-                                  item.linkedOrderDates.length > 1
-                                    ? `${item.line} · 연결 주문일 ${item.linkedOrderDates.join(" → ")}${
-                                        item.isPriorArrival
-                                          ? " (이전·보냄)"
-                                          : " (최종·받음)"
-                                      }`
-                                    : item.linkedArrivalDates &&
-                                        item.linkedArrivalDates.length > 1
-                                      ? `${item.line} · 연결 도착일 ${item.linkedArrivalDates.join(" → ")}${
-                                          item.isPriorArrival
-                                            ? " (이전·보냄)"
-                                            : " (최종·받음)"
-                                        }`
-                                      : unreadCount > 0
-                                        ? `${item.line} · 미확인(채팅) ${unreadLabel}`
-                                        : reviewHighlight
-                                          ? `${item.line} · 미처리(작업큐)`
-                                          : item.line)
-                                }
-                                onClick={() => selectListItem(item, ymd)}
+                              <PracticeCalendarChipHover
+                                item={item}
+                                labDot={labDot}
+                                overdueTooltip={overdueTooltip}
                               >
-                                <span className="inline-flex max-w-full items-start gap-1">
-                                  <span className="min-w-0 line-clamp-2 break-all">
-                                    {linkPrefix}
-                                    {item.line}
-                                  </span>
-                                  {unreadCount > 0 ? (
-                                    <span
-                                      className="mt-0.5 inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-white"
-                                      aria-label={`미확인(채팅) ${unreadLabel}`}
-                                    >
-                                      {unreadLabel}
+                                <button
+                                  type="button"
+                                  className="min-w-0 flex-1 text-left text-[13px] leading-snug text-slate-900"
+                                  onClick={() => selectListItem(item, ymd)}
+                                >
+                                  <span className="inline-flex max-w-full items-start gap-1">
+                                    <span className="min-w-0 line-clamp-2 break-all">
+                                      {linkPrefix}
+                                      {item.line}
                                     </span>
-                                  ) : null}
-                                </span>
-                              </button>
+                                    {unreadCount > 0 ? (
+                                      <span
+                                        className="mt-0.5 inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-white"
+                                        aria-label={`미확인(채팅) ${unreadLabel}`}
+                                      >
+                                        {unreadLabel}
+                                      </span>
+                                    ) : null}
+                                  </span>
+                                </button>
+                              </PracticeCalendarChipHover>
                             </div>
                           );
                         })}
@@ -1594,9 +1706,21 @@ export function PracticeRecentTransfersCalendar({
               </div>
             )}
           </div>
+          </div>
+          {detailPanel ? (
+            <aside
+              className={cn(
+                "flex min-h-0 shrink-0 flex-col overflow-hidden",
+                PRACTICE_TRANSFER_DETAIL_PANEL_WIDTH_CLASS,
+              )}
+            >
+              {detailPanel}
+            </aside>
+          ) : null}
         </div>
       ) : (
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="flex min-h-0 flex-1 gap-3 overflow-hidden">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <div
           className="grid shrink-0 border-l border-t"
           style={{
@@ -1732,6 +1856,7 @@ export function PracticeRecentTransfersCalendar({
                               )
                             : "";
                           const guideTourChip = isGuideTourChip(item.id);
+                          const labDot = resolveLabDot(item.colorKey);
                           return (
                             <div
                               key={`${item.id}:${day.ymd}`}
@@ -1756,6 +1881,11 @@ export function PracticeRecentTransfersCalendar({
                               onClick={(e) => e.stopPropagation()}
                               onKeyDown={(e) => e.stopPropagation()}
                             >
+                              <CalendarLabColorDot
+                                color={labDot.color}
+                                style={labDot.style}
+                                className="mt-1"
+                              />
                               {showDelete ? (
                                 <button
                                   type="button"
@@ -1779,54 +1909,40 @@ export function PracticeRecentTransfersCalendar({
                                   <Hexagon className="h-3 w-3" aria-hidden />
                                 </span>
                               ) : null}
-                              <button
-                                type="button"
-                                className="min-w-0 flex-1 px-1 py-0.5 text-left text-[10px] leading-snug"
-                                title={
-                                  overdueTooltip ||
-                                  (item.linkedOrderDates &&
-                                  item.linkedOrderDates.length > 1
-                                    ? `${item.line} · 연결 주문일 ${item.linkedOrderDates.join(" → ")}${
-                                        item.isPriorArrival ? " (이전·보냄)" : " (최종·받음)"
-                                      }`
-                                    : item.linkedArrivalDates &&
-                                        item.linkedArrivalDates.length > 1
-                                      ? `${item.line} · 연결 도착일 ${item.linkedArrivalDates.join(" → ")}${
-                                          item.isPriorArrival
-                                            ? " (이전·보냄)"
-                                            : " (최종·받음)"
-                                        }`
-                                      : unreadCount > 0
-                                        ? `${item.line} · 미확인(채팅) ${unreadLabel}`
-                                        : reviewHighlight
-                                          ? `${item.line} · 미처리(작업큐)`
-                                          : item.line)
-                                }
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onSelectItem(item, {
-                                    ymd: day.ymd,
-                                    dow: day.dow,
-                                    visibleColumnIndex,
-                                    visibleColumnCount: colCount,
-                                  });
-                                }}
+                              <PracticeCalendarChipHover
+                                item={item}
+                                labDot={labDot}
+                                overdueTooltip={overdueTooltip}
                               >
-                                <span className="inline-flex max-w-full items-start gap-0.5">
-                                  <span className="min-w-0 line-clamp-2 break-all">
-                                    {linkPrefix}
-                                    {item.line}
-                                  </span>
-                                  {unreadCount > 0 ? (
-                                    <span
-                                      className="mt-px inline-flex h-3.5 min-w-3.5 shrink-0 items-center justify-center rounded-full bg-destructive px-0.5 text-[9px] font-semibold leading-none text-white"
-                                      aria-label={`미확인(채팅) ${unreadLabel}`}
-                                    >
-                                      {unreadLabel}
+                                <button
+                                  type="button"
+                                  className="min-w-0 flex-1 px-1 py-0.5 text-left text-[10px] leading-snug"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onSelectItem(item, {
+                                      ymd: day.ymd,
+                                      dow: day.dow,
+                                      visibleColumnIndex,
+                                      visibleColumnCount: colCount,
+                                    });
+                                  }}
+                                >
+                                  <span className="inline-flex max-w-full items-start gap-0.5">
+                                    <span className="min-w-0 line-clamp-2 break-all">
+                                      {linkPrefix}
+                                      {item.line}
                                     </span>
-                                  ) : null}
-                                </span>
-                              </button>
+                                    {unreadCount > 0 ? (
+                                      <span
+                                        className="mt-px inline-flex h-3.5 min-w-3.5 shrink-0 items-center justify-center rounded-full bg-destructive px-0.5 text-[9px] font-semibold leading-none text-white"
+                                        aria-label={`미확인(채팅) ${unreadLabel}`}
+                                      >
+                                        {unreadLabel}
+                                      </span>
+                                    ) : null}
+                                  </span>
+                                </button>
+                              </PracticeCalendarChipHover>
                             </div>
                           );
                         })}
@@ -1838,6 +1954,17 @@ export function PracticeRecentTransfersCalendar({
             );
           })}
         </div>
+      </div>
+          {detailPanel ? (
+            <aside
+              className={cn(
+                "flex min-h-0 shrink-0 flex-col overflow-hidden",
+                PRACTICE_TRANSFER_DETAIL_PANEL_WIDTH_CLASS,
+              )}
+            >
+              {detailPanel}
+            </aside>
+          ) : null}
       </div>
       )}
     </div>

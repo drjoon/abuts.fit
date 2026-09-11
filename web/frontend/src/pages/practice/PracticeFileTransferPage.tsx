@@ -133,12 +133,14 @@
  * - 2026-08-28: 모바일 목록 헤더에 신규의뢰 CTA(PC는 캘린더 날짜 클릭).
  * - 2026-08-28: 신규 의뢰 모달 — 새로작성·임시저장·휴지통·가이드투어를 DialogHeader로.
  * - 2026-08-28: 레거시 Express(단계 위저드) 모드 제거. 전폭 작성 UI만.
+ * - 2026-09-11: 캘린더·신규 의뢰로 작성 모달 열 때 의뢰 상세 채팅 패널 닫기.
  * - 2026-09-11: 신규 의뢰 작성 모달 작업영역 — max-w-7xl → max-w-[90rem].
  * - 2026-08-28: 메인=전송 캘린더, 미래일 클릭·신규 의뢰=전체화면 작성 모달(도착일 지정).
  * - 2026-08-28: 캘린더 「신규 의뢰」버튼 → 도착일 클릭 안내(닫으면 계정 설정에 저장).
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate, useLocation, useSearchParams } from "react-router-dom";
 
 import {
@@ -352,6 +354,8 @@ import {
       normalizeAccountAbutmentProductMode,
       normalizeImplantFavorites,
       normalizeAbutmentFavorites,
+      normalizeToothShade,
+      normalizeShadeFavorites,
       resolvePracticeCaseToothFromToothWorks,
       resolveToothAbutmentProductMode,
       resolvePracticeTransferSkipJig,
@@ -695,6 +699,7 @@ type PracticeTransferSettingsPayload = {
   archBulkProsthesisTypes?: string[];
   requestStagePresets?: PracticeRequestStagePreset[];
   memoSnippets?: string[];
+  shadeFavorites?: string[];
   implantFavorites?: PracticeImplantFavorite[];
   abutmentFavorites?: PracticeAbutmentFavorite[];
   skipDesignConfirm?: boolean;
@@ -883,6 +888,9 @@ const normalizeToothWorks = (items: ToothWorkSelection[]) =>
         prosthesisType,
         customAbutment,
         bridgeLinkedTeeth,
+        ...(normalizeToothShade(row?.shade)
+          ? { shade: normalizeToothShade(row?.shade) }
+          : {}),
         ...pickToothWorkCustomSpecs(row, customAbutment),
       };
     })
@@ -1290,6 +1298,7 @@ export const PracticeFileTransferPage = ({
     useState<RecentTransferItem | null>(null);
   const [labRejectedRetargetBusy, setLabRejectedRetargetBusy] = useState(false);
   const [transferDialogOpen, setTransferDialogOpen] = useState(false);
+  const [detailSlotEl, setDetailSlotEl] = useState<HTMLDivElement | null>(null);
   const [panelPreferredDockSide, setPanelPreferredDockSide] =
     useState<PracticeTransferPanelDockSide | null>(null);
   const [panelPreferredDockNonce, setPanelPreferredDockNonce] = useState(0);
@@ -1570,6 +1579,7 @@ export const PracticeFileTransferPage = ({
   ]);
   const [savingProsthesisTypeSettings, setSavingProsthesisTypeSettings] = useState(false);
   const [memoSnippets, setMemoSnippets] = useState<string[]>([]);
+  const [shadeFavorites, setShadeFavorites] = useState<string[]>([]);
   const [archBulkProsthesisTypes, setArchBulkProsthesisTypes] = useState<string[]>([
     ...ARCH_BULK_PROSTHESIS_PRESETS,
   ]);
@@ -2113,6 +2123,7 @@ export const PracticeFileTransferPage = ({
       Array.isArray(payload.prosthesisTypes) ? payload.prosthesisTypes : [...PRESET_PROSTHESIS_TYPES],
     );
     const nextMemoSnippets = normalizeMemoSnippets(payload.memoSnippets);
+    const nextShadeFavorites = normalizeShadeFavorites(payload.shadeFavorites);
     const hasArchBulkProsthesisTypes = Object.prototype.hasOwnProperty.call(
       payload,
       "archBulkProsthesisTypes",
@@ -2196,6 +2207,7 @@ export const PracticeFileTransferPage = ({
     setProsthesisTypeCatalog(nextProsthesisTypes);
     setProsthesisTypeCatalogDraft(nextProsthesisTypes);
     setMemoSnippets(nextMemoSnippets);
+    setShadeFavorites(nextShadeFavorites);
     if (nextArchBulkProsthesisTypes) {
       setArchBulkProsthesisTypes(nextArchBulkProsthesisTypes);
     }
@@ -2258,6 +2270,7 @@ export const PracticeFileTransferPage = ({
       const hasArchBulkProsthesisTypes = Array.isArray(params.archBulkProsthesisTypes);
       const hasRequestStagePresets = Array.isArray(params.requestStagePresets);
       const hasMemoSnippets = Array.isArray(params.memoSnippets);
+      const hasShadeFavorites = Array.isArray(params.shadeFavorites);
       const hasImplantFavorites = Array.isArray(params.implantFavorites);
       const hasAbutmentFavorites = Array.isArray(params.abutmentFavorites);
       const hasSkipJig = Object.prototype.hasOwnProperty.call(params, "skipJig");
@@ -2309,6 +2322,9 @@ export const PracticeFileTransferPage = ({
       }
       if (hasMemoSnippets) {
         jsonBody.memoSnippets = normalizeMemoSnippets(params.memoSnippets || []);
+      }
+      if (hasShadeFavorites) {
+        jsonBody.shadeFavorites = normalizeShadeFavorites(params.shadeFavorites || []);
       }
       if (hasImplantFavorites) {
         jsonBody.implantFavorites = normalizeImplantFavorites(params.implantFavorites || []);
@@ -2410,6 +2426,9 @@ export const PracticeFileTransferPage = ({
         if (hasMemoSnippets) {
           setMemoSnippets(normalizeMemoSnippets(payload.memoSnippets));
         }
+        if (hasShadeFavorites) {
+          setShadeFavorites(normalizeShadeFavorites(payload.shadeFavorites));
+        }
         // 프리셋은 낙관적 로컬이 SSOT. 서버 echo로 덮으면 동시 GET/다른 저장이 삭제를 되살림.
         if (hasSkipJig) {
           setSkipJig(payload.skipJig !== false);
@@ -2482,6 +2501,13 @@ export const PracticeFileTransferPage = ({
               ? {
                   memoSnippets: normalizeMemoSnippets(
                     payload?.memoSnippets ?? params.memoSnippets,
+                  ),
+                }
+              : {}),
+            ...(hasShadeFavorites
+              ? {
+                  shadeFavorites: normalizeShadeFavorites(
+                    payload?.shadeFavorites ?? params.shadeFavorites,
                   ),
                 }
               : {}),
@@ -3098,6 +3124,7 @@ export const PracticeFileTransferPage = ({
       } else if (payload) {
         // 폼 로컬값이 있어도 계정 세팅(문장·프리셋·지그생략·커스텀어벗 기본모드·자동매칭 예산·최소 별)은 서버를 우선 반영
         setMemoSnippets(normalizeMemoSnippets(payload.memoSnippets));
+        setShadeFavorites(normalizeShadeFavorites(payload.shadeFavorites));
         setArchBulkProsthesisTypes(
           normalizeArchBulkProsthesisTypes(payload.archBulkProsthesisTypes),
         );
@@ -3187,6 +3214,9 @@ export const PracticeFileTransferPage = ({
             ),
             memoSnippets: normalizeMemoSnippets(
               Array.isArray(payload?.memoSnippets) ? payload?.memoSnippets : [],
+            ),
+            shadeFavorites: normalizeShadeFavorites(
+              Array.isArray(payload?.shadeFavorites) ? payload?.shadeFavorites : [],
             ),
             implantFavorites: normalizeImplantFavorites(
               Array.isArray(payload?.implantFavorites) ? payload?.implantFavorites : [],
@@ -7630,6 +7660,8 @@ export const PracticeFileTransferPage = ({
     if (options?.openCompose === false) {
       setComposeOpen(false);
     } else {
+      // 작성 모달과 의뢰 상세 채팅이 겹치지 않게 채팅 패널을 먼저 닫는다.
+      handleCloseTransferDialog();
       setComposeOpen(true);
     }
 
@@ -8500,6 +8532,55 @@ export const PracticeFileTransferPage = ({
                     ]);
                     setProsthesisTypeCatalog(merged);
                     setProsthesisTypeCatalogDraft(merged);
+                    try {
+                      const existingRaw = localStorage.getItem(
+                        PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY,
+                      );
+                      const existing =
+                        existingRaw && typeof existingRaw === "string"
+                          ? (JSON.parse(existingRaw) as Record<string, unknown>)
+                          : {};
+                      localStorage.setItem(
+                        PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY,
+                        JSON.stringify({
+                          ...existing,
+                          prosthesisTypes: merged,
+                          savedAt: Date.now(),
+                        }),
+                      );
+                    } catch {
+                      // ignore
+                    }
+                    void savePracticeTransferSettingsToServer({
+                      prosthesisTypes: merged,
+                    }).catch(() => {});
+                  },
+                  onProsthesisTypesCatalogChange: (next) => {
+                    const merged = ensurePresetProsthesisTypes(next);
+                    setProsthesisTypeCatalog(merged);
+                    setProsthesisTypeCatalogDraft(merged);
+                    try {
+                      const existingRaw = localStorage.getItem(
+                        PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY,
+                      );
+                      const existing =
+                        existingRaw && typeof existingRaw === "string"
+                          ? (JSON.parse(existingRaw) as Record<string, unknown>)
+                          : {};
+                      localStorage.setItem(
+                        PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY,
+                        JSON.stringify({
+                          ...existing,
+                          prosthesisTypes: merged,
+                          savedAt: Date.now(),
+                        }),
+                      );
+                    } catch {
+                      // ignore
+                    }
+                    void savePracticeTransferSettingsToServer({
+                      prosthesisTypes: merged,
+                    }).catch(() => {});
                   },
                   archBulkProsthesisTypes,
                   onArchBulkProsthesisTypesChange: (next) => {
@@ -8545,6 +8626,7 @@ export const PracticeFileTransferPage = ({
                   memoInputId: "practice-file-transfer-request-memo",
                   toothChartResetNonce,
                   memoSnippets,
+                  shadeFavorites,
                   autoMatchBudget,
                   abutsLabFeeCatalog,
                   autoMatchMinLabRating,
@@ -8614,6 +8696,28 @@ export const PracticeFileTransferPage = ({
                       // ignore
                     }
                     await savePracticeTransferSettingsToServer({ memoSnippets: normalized });
+                  },
+                  onShadeFavoritesChange: async (next) => {
+                    const normalized = normalizeShadeFavorites(next);
+                    setShadeFavorites(normalized);
+                    try {
+                      const existingRaw = localStorage.getItem(PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY);
+                      const existing =
+                        existingRaw && typeof existingRaw === "string"
+                          ? (JSON.parse(existingRaw) as Record<string, unknown>)
+                          : {};
+                      localStorage.setItem(
+                        PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY,
+                        JSON.stringify({
+                          ...existing,
+                          shadeFavorites: normalized,
+                          savedAt: Date.now(),
+                        }),
+                      );
+                    } catch {
+                      // ignore
+                    }
+                    await savePracticeTransferSettingsToServer({ shadeFavorites: normalized });
                   },
                   implantConnections,
                   defaultAbutmentProductMode,
@@ -8758,6 +8862,7 @@ export const PracticeFileTransferPage = ({
           token={authToken}
           chatRooms={chatRooms}
           floatingDetailOpen={transferDialogOpen}
+          onDetailSlotEl={isMobileViewport ? undefined : setDetailSlotEl}
           initialPeriod={period}
           initialSearch=""
           initialRequests={recentRequests}
@@ -9674,7 +9779,10 @@ export const PracticeFileTransferPage = ({
         </Dialog>
 
 
+        {(() => {
+          const detailDialog = (
         <PracticeTransferDetailChatDialog
+          variant={isMobileViewport ? "floating" : "inline"}
           open={transferDialogOpen}
           onOpenChange={(open) => {
             if (open) {
@@ -9908,6 +10016,10 @@ export const PracticeFileTransferPage = ({
           inputDisabled={chatLoading || chatMessagesLoading || chatSending || !activeChatRoom?._id}
           sendDisabled={chatSending}
         />
+          );
+          if (isMobileViewport) return detailDialog;
+          return detailSlotEl ? createPortal(detailDialog, detailSlotEl) : null;
+        })()}
 
         <PracticeProsthesisFollowUpDialog
           open={followUpDialogOpen}

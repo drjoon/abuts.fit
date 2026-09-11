@@ -14,6 +14,9 @@
 // - web/frontend/src/shared/files/downloadWithProgress.ts
 // - web/frontend/src/shared/files/s3BlobCache.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-11: inline 미선택 — 빈 안내 카드(패널은 항상 표시).
+// - 2026-09-11: variant=inline — 작업영역 오른쪽 고정 카드(검색 아래·달력/목록 옆).
+// - 2026-09-11: 진행(메시지) min-h-full 복원 — 주문/도착 아래 뷰포트를 채움.
 // - 2026-09-11: 오른쪽 사이드 패널(풀하이트). 상단 크롬 제거·알림음→채팅 툴바·닫기는 식별 줄.
 // - 2026-09-11: 헤더「의뢰 · 진행」라벨 제거, 치식·보철물 카드 복원.
 // - 2026-09-11: 메모·평가 → 채팅 # 옆 아이콘(composerToolbarExtra).
@@ -548,8 +551,14 @@ type PracticeTransferDetailChatDialogProps = {
   /** 가이드투어 — Dialog z-[410](블러 아래) */
   guideTourElevate?: boolean;
   /**
+   * floating — 플로팅 Dialog(모바일 기본).
+   * inline — 작업영역 오른쪽 컬럼 카드(데스크톱·달력/목록 옆).
+   */
+  variant?: "floating" | "inline";
+  /**
    * 캘린더 칩 등에서 열 때 아이템을 가리지 않도록 좌/우 도킹.
    * 미지정 시 직전 저장 레이아웃 유지. preferredDockNonce가 바뀌면 재도킹.
+   * variant=inline 에서는 무시.
    */
   preferredDockSide?: "left" | "right" | null;
   preferredDockNonce?: number;
@@ -666,11 +675,13 @@ export function PracticeTransferDetailChatDialog({
   onCancelRequest,
   cancelRequestDisabled = false,
   guideTourElevate = false,
+  variant = "floating",
   preferredDockSide = null,
   preferredDockNonce = 0,
 }: PracticeTransferDetailChatDialogProps) {
   const { toast } = useToast();
   const isMobile = useIsMobile();
+  const isInline = variant === "inline";
   const platformGuideTour = useGuideTour();
   /** 수신 투어 lab_accept — 작업시작 CTA 깜빡임(모달 전체 홀은 Spotlight lab_detail) */
   const guideTourPulseAcceptActions =
@@ -692,37 +703,15 @@ export function PracticeTransferDetailChatDialog({
   const [rearrivalDraft, setRearrivalDraft] = useState<Date | undefined>(undefined);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [scrollEdge, setScrollEdge] = useState<"top" | "bottom" | "middle">("top");
-  const [scrollViewportHeight, setScrollViewportHeight] = useState(0);
   const scrollBodyRef = useRef<HTMLDivElement | null>(null);
-  const panelChromeRef = useRef<HTMLDivElement | null>(null);
   const didInitialScrollRef = useRef(false);
   const openedWithoutMessagesRef = useRef(false);
 
-  useLayoutEffect(() => {
-    if (!open || minimized) {
-      setScrollViewportHeight(0);
-      return;
-    }
-    const scrollEl = scrollBodyRef.current;
-    if (!scrollEl) return;
-    const sync = () => {
-      // 식별·날짜 고정 크롬까지 채팅이 덮도록 합산
-      const chromeH = panelChromeRef.current?.offsetHeight || 0;
-      setScrollViewportHeight(scrollEl.clientHeight + chromeH);
-    };
-    sync();
-    const ro = new ResizeObserver(sync);
-    ro.observe(scrollEl);
-    const chromeEl = panelChromeRef.current;
-    if (chromeEl) ro.observe(chromeEl);
-    return () => ro.disconnect();
-  }, [open, minimized]);
-
   useEffect(() => {
-    if (!open || isMobile) return;
-    // 항상 오른쪽 사이드 패널(캘린더 preferredDockSide도 우측 고정)
+    if (!open || isMobile || isInline) return;
+    // floating — 오른쪽 사이드 패널
     dockRight();
-  }, [open, isMobile, preferredDockSide, preferredDockNonce, dockRight]);
+  }, [open, isMobile, isInline, preferredDockSide, preferredDockNonce, dockRight]);
 
   const updateScrollEdge = useCallback(() => {
     const el = scrollBodyRef.current;
@@ -739,6 +728,17 @@ export function PracticeTransferDetailChatDialog({
     else if (nearBottom) setScrollEdge("bottom");
     else setScrollEdge("middle");
   }, []);
+
+  useLayoutEffect(() => {
+    if (!open || minimized) return;
+    const scrollEl = scrollBodyRef.current;
+    if (!scrollEl) return;
+    const onResize = () => updateScrollEdge();
+    onResize();
+    const ro = new ResizeObserver(onResize);
+    ro.observe(scrollEl);
+    return () => ro.disconnect();
+  }, [open, minimized, updateScrollEdge]);
 
   const scrollToDetailTop = useCallback(() => {
     scrollBodyRef.current?.scrollTo({ top: 0, behavior: "smooth" });
@@ -2006,43 +2006,7 @@ export function PracticeTransferDetailChatDialog({
     );
   };
 
-  return (
-    <>
-    <Dialog open={open} onOpenChange={onOpenChange} modal={false}>
-      <DialogContent
-        hideOverlay
-        hideClose
-        onOpenAutoFocus={(e) => e.preventDefault()}
-        onPointerDownOutside={(e) => e.preventDefault()}
-        onInteractOutside={(e) => e.preventDefault()}
-        onFocusOutside={(e) => e.preventDefault()}
-        style={{
-          position: "fixed",
-          left: layout.x,
-          top: layout.y,
-          width: layout.w,
-          height: layout.h,
-          maxWidth: "none",
-          maxHeight: layout.h,
-          transform: "none",
-          pointerEvents: "auto",
-        }}
-        className={cn(
-          "pointer-events-auto relative flex flex-col gap-0 overflow-hidden border border-r-0 bg-background p-0 duration-0",
-          isMobile ? "rounded-lg" : "rounded-l-lg rounded-r-none",
-          guideTourElevate ? "z-[410]" : "z-[300]",
-          "shadow-[-12px_0_40px_-12px_rgba(15,23,42,0.28),-4px_0_16px_rgba(15,23,42,0.12)]",
-          "translate-x-0 translate-y-0",
-          "w-auto max-w-none sm:w-auto sm:max-w-none sm:p-0",
-          "data-[state=open]:animate-none data-[state=closed]:animate-none",
-        )}
-        data-guide-tour="lab_detail"
-      >
-        <DialogTitle className="sr-only">{title}</DialogTitle>
-        <DialogDescription className="sr-only">
-          기공의뢰 상세 및 채팅
-        </DialogDescription>
-
+  const panelBody = (
         <PracticeTransferFileDropTarget
           fileInputId={
             workFileDrop?.fileInputId || "practice-transfer-unified-drop"
@@ -2069,7 +2033,7 @@ export function PracticeTransferDetailChatDialog({
             <>
               {isDragActive && (workFileDropActive || chatFileDropActive) ? (
                 <div
-                  className="pointer-events-none absolute inset-0 z-[305] flex flex-col items-center justify-center gap-2 rounded-l-lg bg-primary/10 px-6 backdrop-blur-[2px]"
+                  className="pointer-events-none absolute inset-0 z-[305] flex flex-col items-center justify-center gap-2 rounded-md bg-primary/10 px-6 backdrop-blur-[2px]"
                   aria-hidden
                 >
                   <div className="rounded-full bg-primary-soft p-3 text-primary-strong shadow-sm">
@@ -2091,7 +2055,7 @@ export function PracticeTransferDetailChatDialog({
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           {!minimized ? (
           <>
-          <div ref={panelChromeRef} className="shrink-0">
+          <div className="shrink-0">
           <div className="flex items-center justify-between gap-3 border-b bg-slate-50 px-5 py-2.5">
               <div className="min-w-0 flex-1">
                 {caseIdentityStrip ? (
@@ -2138,7 +2102,7 @@ export function PracticeTransferDetailChatDialog({
                   onClick={() => onOpenChange(false)}
                 >
                   <X
-                    className={isMobile ? "h-5 w-5" : "h-5 w-5"}
+                    className="h-5 w-5"
                     strokeWidth={2.25}
                   />
                   <span className="sr-only">Close</span>
@@ -2409,13 +2373,13 @@ export function PracticeTransferDetailChatDialog({
               ref={scrollBodyRef}
               onScroll={updateScrollEdge}
               className={cn(
-                "custom-scrollbar relative z-[1] min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain transition-opacity",
+                "custom-scrollbar relative z-[1] flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto overscroll-contain transition-opacity",
                 workFileDropActive &&
                   !workFileDropUploading &&
                   "opacity-80",
               )}
             >
-              <div className="space-y-5 px-5 py-3 text-sm">
+              <div className="shrink-0 space-y-5 px-5 py-3 text-sm">
               {Array.isArray(toothWorks) && toothWorks.length > 0 ? (
                 <section className="space-y-2.5">
                   <h3 className="text-[13px] font-semibold text-foreground">
@@ -2602,15 +2566,10 @@ export function PracticeTransferDetailChatDialog({
 
               <div
                 className={cn(
-                  "flex flex-col border-t border-border/70",
+                  "flex min-h-full flex-1 flex-col border-t border-border/70",
                   workFileDropActive &&
                     "m-2 rounded-md border-2 border-dashed border-primary/45 bg-primary/[0.03]",
                 )}
-                style={
-                  scrollViewportHeight > 0
-                    ? { minHeight: scrollViewportHeight }
-                    : undefined
-                }
                 {...(workFileDropActive
                   ? { "data-guide-tour": "lab_design" }
                   : {})}
@@ -2902,7 +2861,7 @@ export function PracticeTransferDetailChatDialog({
         </div>
 
 
-        {!minimized && !maximized && !isMobile ? (
+        {!minimized && !maximized && !isMobile && !isInline ? (
           <div
             data-no-drag
             className="absolute bottom-0 left-0 top-0 z-30 w-1.5 cursor-ew-resize touch-none hover:bg-primary/15"
@@ -2917,8 +2876,9 @@ export function PracticeTransferDetailChatDialog({
             </>
           )}
         </PracticeTransferFileDropTarget>
-      </DialogContent>
-    </Dialog>
+  );
+
+  const modelPreview = (
     <ModelPreviewDialog
       open={previewOpen}
       onOpenChange={(next) => {
@@ -2966,6 +2926,81 @@ export function PracticeTransferDetailChatDialog({
           : undefined
       }
     />
+  );
+
+  if (isInline) {
+    if (!open) {
+      return (
+        <>
+          <div className="flex h-full min-h-0 w-full flex-col items-center justify-center gap-2 rounded-md border bg-background px-6 text-center shadow-sm">
+            <p className="text-sm font-medium text-slate-700">의뢰를 선택하세요</p>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              왼쪽 목록·캘린더에서 건을 누르면
+              <br />
+              여기에 상세와 채팅이 표시됩니다.
+            </p>
+          </div>
+          {modelPreview}
+        </>
+      );
+    }
+    return (
+      <>
+        <div
+          className={cn(
+            "relative flex h-full min-h-0 w-full flex-col gap-0 overflow-hidden rounded-md border bg-background shadow-sm",
+            guideTourElevate ? "z-[410]" : null,
+          )}
+          data-guide-tour="lab_detail"
+        >
+          <p className="sr-only">{title}</p>
+          {panelBody}
+        </div>
+        {modelPreview}
+      </>
+    );
+  }
+
+  return (
+    <>
+    <Dialog open={open} onOpenChange={onOpenChange} modal={false}>
+      <DialogContent
+        hideOverlay
+        hideClose
+        onOpenAutoFocus={(e) => e.preventDefault()}
+        onPointerDownOutside={(e) => e.preventDefault()}
+        onInteractOutside={(e) => e.preventDefault()}
+        onFocusOutside={(e) => e.preventDefault()}
+        style={{
+          position: "fixed",
+          left: layout.x,
+          top: layout.y,
+          width: layout.w,
+          height: layout.h,
+          maxWidth: "none",
+          maxHeight: layout.h,
+          transform: "none",
+          pointerEvents: "auto",
+        }}
+        className={cn(
+          "pointer-events-auto relative flex flex-col gap-0 overflow-hidden border border-r-0 bg-background p-0 duration-0",
+          isMobile ? "rounded-lg" : "rounded-l-lg rounded-r-none",
+          guideTourElevate ? "z-[410]" : "z-[300]",
+          "shadow-[-12px_0_40px_-12px_rgba(15,23,42,0.28),-4px_0_16px_rgba(15,23,42,0.12)]",
+          "translate-x-0 translate-y-0",
+          "w-auto max-w-none sm:w-auto sm:max-w-none sm:p-0",
+          "data-[state=open]:animate-none data-[state=closed]:animate-none",
+        )}
+        data-guide-tour="lab_detail"
+      >
+        <DialogTitle className="sr-only">{title}</DialogTitle>
+        <DialogDescription className="sr-only">
+          기공의뢰 상세 및 채팅
+        </DialogDescription>
+        {panelBody}
+      </DialogContent>
+    </Dialog>
+    {modelPreview}
     </>
   );
 }

@@ -166,6 +166,7 @@ import {
   useState,
   type MouseEvent,
 } from "react";
+import { createPortal } from "react-dom";
 import { ChevronRight, Repeat, Search, X } from "lucide-react";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
@@ -815,6 +816,7 @@ export function RequestorPracticeReceivePage({
   );
 
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [detailSlotEl, setDetailSlotEl] = useState<HTMLDivElement | null>(null);
   const [panelPreferredDockSide, setPanelPreferredDockSide] =
     useState<PracticeTransferPanelDockSide | null>(null);
   const [panelPreferredDockNonce, setPanelPreferredDockNonce] = useState(0);
@@ -6313,7 +6315,15 @@ export function RequestorPracticeReceivePage({
               focusItemId={badgeFocusItemId}
               focusItemYmd={badgeFocusItemYmd}
               focusEpoch={badgeFocusEpoch}
-              detailPanelOpen={dialogOpen}
+              detailPanelOpen={dialogOpen || !isMobile}
+              detailPanel={
+                !isMobile ? (
+                  <div
+                    ref={setDetailSlotEl}
+                    className="flex h-full min-h-0 w-full flex-col overflow-hidden"
+                  />
+                ) : null
+              }
               guideTourTarget={null}
               guideTourItemTarget={
                 guideTourLabCalendarStep ? "lab_calendar_item" : null
@@ -6569,7 +6579,10 @@ export function RequestorPracticeReceivePage({
 
       {showTransfers ? (
       <>
+      {(() => {
+        const detailDialog = (
       <PracticeTransferDetailChatDialog
+        variant={isMobile ? "floating" : "inline"}
         open={dialogOpen}
         onOpenChange={(open) => {
           if (!open && guideTourWantsReceiveDetail) return;
@@ -6987,6 +7000,10 @@ export function RequestorPracticeReceivePage({
         }
         sendDisabled={chatSending}
       />
+        );
+        if (isMobile) return detailDialog;
+        return detailSlotEl ? createPortal(detailDialog, detailSlotEl) : null;
+      })()}
       <LabRemakeChargeDialog
         open={remakeChargeOpen && Boolean(selectedTransfer)}
         toothWorks={selectedTransferToothWorks}

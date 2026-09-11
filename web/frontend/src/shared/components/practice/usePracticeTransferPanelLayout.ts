@@ -1,5 +1,6 @@
 // related files:
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
+// - 2026-09-11: 기본=오른쪽 풀하이트 도킹(v6). 플로팅 중앙 기본 폐기.
 // - 2026-08-28: 플로팅 패널 — 드래그·리사이즈·엣지 스냅·최소/최대화.
 // - 2026-09-08: dockLeft/dockRight — 헤더 버튼으로 좌·우 끝 부착.
 // - 2026-09-08: 도킹·기본 폭 확대(v4) 롤백 — DEFAULT_W 480·도킹 MIN_W.
@@ -17,9 +18,9 @@ export type PracticeTransferPanelLayout = {
   h: number;
 };
 
-/** v5 — v4 넓은 기본/도킹 폭 롤백(저장된 넓은 레이아웃 무시) */
-const STORAGE_KEY = "abuts.practiceTransferPanel.layout.v5";
-const MARGIN = 8;
+/** v6 — 기본 오른쪽 풀하이트 도킹(이전 플로팅 좌표 무시) */
+const STORAGE_KEY = "abuts.practiceTransferPanel.layout.v6";
+const MARGIN = 0;
 /** TabsList(의뢰/진행) + 닫기·액션이 한 줄에 겹치지 않는 최소 폭 */
 const MIN_W = 400;
 const MIN_H = 360;
@@ -44,20 +45,9 @@ function effectiveMinW(vw: number) {
 }
 
 function defaultLayout(): PracticeTransferPanelLayout {
-  const { vw, vh } = viewportSize();
+  const { vw } = viewportSize();
   if (vw < NARROW_VW) return fullscreenLayout();
-  const minW = effectiveMinW(vw);
-  const maxW = Math.max(1, vw - MARGIN * 2);
-  const w = Math.min(DEFAULT_W, Math.max(minW, maxW));
-  const maxH = Math.max(1, vh - MARGIN * 2);
-  const minH = Math.min(MIN_H, maxH);
-  const h = Math.min(Math.round(vh * 0.92), Math.max(minH, maxH));
-  return {
-    x: Math.max(MARGIN, Math.round((vw - w) / 2)),
-    y: Math.max(MARGIN, Math.round((vh - h) / 2)),
-    w,
-    h,
-  };
+  return dockLayout("right");
 }
 
 function clampLayout(
@@ -118,10 +108,17 @@ function writeStored(layout: PracticeTransferPanelLayout) {
   }
 }
 
-function dockLayout(side: "left" | "right"): PracticeTransferPanelLayout {
+function dockLayout(
+  side: "left" | "right",
+  width?: number,
+): PracticeTransferPanelLayout {
   const { vw, vh } = viewportSize();
   const fullH = Math.max(1, vh - MARGIN * 2);
-  const dockW = effectiveMinW(vw);
+  const maxW = Math.max(1, vw - MARGIN * 2);
+  const minW = effectiveMinW(vw);
+  const preferred =
+    typeof width === "number" && Number.isFinite(width) ? width : DEFAULT_W;
+  const dockW = Math.min(Math.max(minW, preferred), maxW);
   if (side === "left") {
     return clampLayout({
       x: MARGIN,
@@ -216,7 +213,8 @@ export function usePracticeTransferPanelLayout() {
         );
         return;
       }
-      setLayout((prev) => clampLayout(prev));
+      // 오른쪽 사이드 패널 — 폭 유지·우측·풀하이트 고정
+      setLayout((prev) => dockLayout("right", prev.w));
     };
     onResize();
     window.addEventListener("resize", onResize);
@@ -347,7 +345,8 @@ export function usePracticeTransferPanelLayout() {
         window.removeEventListener("pointerup", onUp);
         window.removeEventListener("pointercancel", onUp);
         document.body.style.userSelect = "";
-        setLayout(clampLayout(layoutRef.current));
+        // 오른쪽 사이드 패널 — 폭만 반영하고 우측·풀하이트로 재고정
+        setLayout((prev) => dockLayout("right", prev.w));
       };
 
       window.addEventListener("pointermove", onMove);
@@ -396,14 +395,14 @@ export function usePracticeTransferPanelLayout() {
     restoreLayoutRef.current = null;
     setMinimized(false);
     setMaximized(false);
-    setLayout(dockLayout("left"));
+    setLayout((prev) => dockLayout("left", prev.w));
   }, [setLayout]);
 
   const dockRight = useCallback(() => {
     restoreLayoutRef.current = null;
     setMinimized(false);
     setMaximized(false);
-    setLayout(dockLayout("right"));
+    setLayout((prev) => dockLayout("right", prev.w));
   }, [setLayout]);
 
   return {
