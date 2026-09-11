@@ -26,6 +26,7 @@
  * - 2026-08-20: 치과 전체보기 칩도 상단 뱃지 상태색(그룹색 대신).
  * - 2026-08-20: 안읽음(수신 미확인·채팅) 빨간 배지를 칩에 표시.
  * - 2026-08-21: 상단 필터 뱃지 ON=진한 상태색 / OFF=흐린 무채색(표시 on/off 대비).
+ * - 2026-09-11: 칩 호버 — 마우스 근처(top)·openDelay 400ms·pointer-events-none.
  * - 2026-09-11: 캘린더 칩 — 기공소 색 점 왼쪽 여백(pl-1).
  * - 2026-09-11: 칩 호버 — openDelay 400ms, side=right + pointer-events-none(클릭 가림 방지).
  * - 2026-09-11: 기공소 점 — 7원색 + 빈원(8–14) + 이중외곽(15+).
@@ -410,9 +411,9 @@ function PracticeCalendarChipHover({
     <HoverCard openDelay={400} closeDelay={100}>
       <HoverCardTrigger asChild>{children}</HoverCardTrigger>
       <HoverCardContent
-        side="right"
+        side="top"
         align="start"
-        sideOffset={8}
+        sideOffset={6}
         collisionPadding={12}
         className="pointer-events-none z-[400] w-72 space-y-1.5 p-3 text-xs"
       >

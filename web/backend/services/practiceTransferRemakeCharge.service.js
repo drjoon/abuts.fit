@@ -3,6 +3,7 @@
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 // - web/backend/controllers/requests/designHandoff.controller.js
 // - web/backend/utils/labFeeSchedule.js
+// - 2026-09-11: 치과↔기공소 리메이크비 무료(LAB_FEE_REMAKE_FREE). CA 리메이크 기본가 0.
 // - 2026-09-10: 리메이크 hold 직후 기공소 ESCROW_RELEASE(정산 누락 수정).
 // - 2026-09-10: Mutation UX — assert 중복 GL 제거. quote slim. timing 로그.
 // - 2026-09-10: lab_charge=보철+CA 수동 청구. ca_reupload=CA만(이미 청구면 skip).
@@ -447,11 +448,11 @@ export async function applyPracticeTransferRemakeCharge({
 
   if (deltaLabFee <= 0) {
     return {
-      ok: false,
-      statusCode: 409,
-      message:
-        "리메이크 수가가 0원입니다. 설정 → 기공비에서 리메이크 단가를 확인해 주세요.",
-      reason: "remake_fee_zero",
+      ok: true,
+      skipped: true,
+      reason: "remake_fee_free",
+      message: "리메이크비 무료 — 청구하지 않습니다.",
+      fees: quote?.fees || null,
       missingFeeNames: quote?.missingFeeNames || [],
     };
   }

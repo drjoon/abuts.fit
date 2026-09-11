@@ -1,6 +1,7 @@
 // related files:
 // - web/frontend/src/shared/practice/practiceAbutmentUploadOverdue.ts
 // - web/frontend/src/shared/components/practice/PracticeLabReceiveWorkActionsBar.tsx
+// - 2026-09-11: compact — 인라인 배지(어벗츠 생산의뢰 줄 오른쪽).
 // - 2026-09-11: 기공소 배너 — 라벨만(대기중). 상세는 툴팁.
 // - 2026-09-02: 수락 후 어벗 STL 미업로드 24h/48h 경고 배너.
 // - 2026-09-02: viewer=practice|lab — 치과는 대기/문의, 기공소는 업로드 독촉.
@@ -52,23 +53,25 @@ export function PracticeAbutmentUploadOverdueAlert({
         <div
           role="status"
           className={cn(
-            "flex w-fit max-w-full cursor-help items-start gap-1.5 rounded-md border px-2 py-1.5 text-xs leading-snug",
+            "flex w-fit max-w-full cursor-help items-center gap-1 rounded-md border text-xs leading-snug",
             LEVEL_CLASS[level],
-            compact && "px-1.5 py-1",
+            compact ? "px-1.5 py-0.5" : "items-start gap-1.5 px-2 py-1.5",
             className,
           )}
         >
           <AlertTriangle
             className={cn(
-              "mt-0.5 shrink-0",
-              compact ? "h-3.5 w-3.5" : "h-4 w-4",
+              "shrink-0",
+              compact ? "h-3 w-3" : "mt-0.5 h-4 w-4",
               level === "deadline" || level === "red"
                 ? "text-red-600"
                 : "text-amber-600",
             )}
             aria-hidden
           />
-          <span className="font-medium">{label}</span>
+          <span className={cn("font-medium", compact && "text-[11px]")}>
+            {label}
+          </span>
           {viewer === "practice" && !compact ? (
             <span className="text-[11px] opacity-90">— {detail}</span>
           ) : null}

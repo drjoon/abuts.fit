@@ -7,7 +7,6 @@
 // - web/frontend/src/shared/practice/usePracticeTransferFeeQuote.ts
 
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
 import { CalendarDays, Repeat } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -18,7 +17,6 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
-import { LAB_FEE_SETTINGS_PATH } from "@/features/settings/LabFeeSetupPrompt";
 import {
   listRemakePartOptions,
   selectedKeysToRemakeParts,
@@ -31,7 +29,10 @@ import {
   formatManWon,
   formatWon,
 } from "@/shared/practice/practiceTransferFeeQuote";
-import { LAB_FEE_CUSTOM_ABUTMENT_REMAKE_DEFAULT_PRICE } from "@/shared/practice/labFeeSchedule";
+import {
+  LAB_FEE_CUSTOM_ABUTMENT_REMAKE_DEFAULT_PRICE,
+  LAB_FEE_REMAKE_FREE,
+} from "@/shared/practice/labFeeSchedule";
 import type { ToothWorkSelection } from "@/shared/practice/transferMemo";
 import { usePracticeTransferFeeQuote } from "@/shared/practice/usePracticeTransferFeeQuote";
 import { cn } from "@/shared/ui/cn";
@@ -430,18 +431,8 @@ export function ChatRemakePromptDialog({
           </div>
           {hasSelectedCa ? (
             <p className="rounded-lg border border-amber-100 bg-amber-50/50 px-3 py-2 text-[11px] leading-snug text-amber-950/90">
-              {isLab || isAbutmentRemake ? (
-                <>
-                  어벗 리메이크 수가가 미설정이면 개당 {caRemakeDefaultLabel}이
-                  적용됩니다.{" "}
-                  <Link
-                    to={LAB_FEE_SETTINGS_PATH}
-                    className="font-medium text-amber-900 underline underline-offset-2"
-                  >
-                    설정 → 기공비
-                  </Link>
-                  에서 변경할 수 있습니다.
-                </>
+              {LAB_FEE_REMAKE_FREE || isLab || isAbutmentRemake ? (
+                <>치과↔기공소 리메이크비는 무료입니다.</>
               ) : (
                 <>
                   커스텀어벗 리메이크 수가가 기공소에 미설정이면 개당{" "}
@@ -449,6 +440,10 @@ export function ChatRemakePromptDialog({
                   변경할 수 있습니다.
                 </>
               )}
+            </p>
+          ) : LAB_FEE_REMAKE_FREE ? (
+            <p className="rounded-lg border border-emerald-100 bg-emerald-50/50 px-3 py-2 text-[11px] leading-snug text-emerald-950/90">
+              치과↔기공소 리메이크비는 무료입니다.
             </p>
           ) : null}
           <p className="text-[11px] leading-snug text-muted-foreground">

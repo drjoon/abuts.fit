@@ -5230,6 +5230,14 @@ export async function chargeReceivedPracticeTransferRemake(req, res) {
       `[remakeCharge] apply=${Date.now() - t0}ms total=${Date.now() - t0}ms`,
     );
     if (result.ok && result.skipped) {
+      if (result.reason === "remake_fee_free") {
+        return res.status(200).json({
+          success: true,
+          skipped: true,
+          reason: "remake_fee_free",
+          message: result.message || "리메이크비 무료 — 청구하지 않습니다.",
+        });
+      }
       return res.status(409).json({
         success: false,
         message: "이미 청구된 부위입니다.",

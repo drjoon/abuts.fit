@@ -14,6 +14,8 @@
 // - web/frontend/src/shared/files/downloadWithProgress.ts
 // - web/frontend/src/shared/files/s3BlobCache.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-11: 어벗 STL — 인라인 파란 배너 제거. 페이지 전체 드롭 + 작업취소 옆 업로드 버튼.
+// - 2026-09-11: inline 패널 — 닫기(X) 숨김. 주문/도착은 타이틀 아래 고정(작업시작 바에서 제거).
 // - 2026-09-11: 작업시작 바 — 작업+배송기간 제거, 주문/도착을 버튼 왼쪽에.
 // - 2026-09-11: inline 미선택 — 빈 안내 카드(패널은 항상 표시).
 // - 2026-09-11: variant=inline — 작업영역 오른쪽 고정 카드(검색 아래·달력/목록 옆).
@@ -120,6 +122,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import {
   Box,
   CalendarClock,
@@ -224,16 +227,19 @@ import {
   normalizeLabFeeMultiplier,
 } from "@/shared/practice/labFeeSchedule";
 import { LabPendingAbutmentGuide } from "@/shared/components/practice/LabPendingAbutmentGuide";
+import { LAB_RECEIVE_ABUTMENT_UPLOAD_HINT } from "@/shared/components/practice/PracticeLabReceiveWorkActionsBar";
 import {
   getPracticeTransferFileExtension,
-  PRACTICE_ACCEPTED_HINT,
   PRACTICE_TRANSFER_IMAGE_EXTENSIONS,
   PRACTICE_TRANSFER_STL_ACCEPT,
 } from "@/shared/practice/practiceTransferAccept";
 import {
-  pickPracticeTransferFilesViaInput,
   PracticeTransferFileDropTarget,
 } from "@/shared/components/practice/PracticeTransferFileDropTarget";
+import {
+  dataTransferHasFiles,
+  extractDroppedFiles,
+} from "@/shared/files/extractDroppedFiles";
 import { printPracticeTransferDetail } from "@/shared/practice/practiceTransferDetailPrint";
 import {
   nextStageOfPlan,
@@ -326,14 +332,14 @@ export type PracticeTransferDialogFileItem = {
   s3Key: string;
 };
 
-/** 기공의뢰수신 — 수락 후 창 전체 파일 드롭(카드와 동일 라우팅) */
+/** 기공의뢰수신 — 수락 후 페이지 전체 파일 드롭(카드와 동일 라우팅) */
 export type PracticeTransferWorkFileDropConfig = {
   fileInputId: string;
   onFiles: (files: File[]) => void;
   disabled?: boolean;
-  /** 채팅 드롭존 상단 안내 — 클릭(파일창)·드래그 공통 */
+  /** @deprecated 인라인 파란 배너 제거 — 호환용 유지 */
   guideText: string;
-  /** guideText 아래 한 줄(업로드 결과 안내 등) */
+  /** @deprecated 인라인 파란 배너 제거 — 호환용 유지 */
   guideDetail?: string;
   /** 드래그 오버레이 부제. 미지정 시 PRACTICE_ACCEPTED_HINT */
   dropHint?: string;
@@ -1827,6 +1833,72 @@ export function PracticeTransferDetailChatDialog({
     workFileDrop && !workFileDrop.disabled && !minimized,
   );
   const chatFileDropActive = !inputDisabled && !minimized;
+  const [pageWorkDropActive, setPageWorkDropActive] = useState(false);
+  const pageWorkDropDepthRef = useRef(0);
+  const workFileDropOnFilesRef = useRef(workFileDrop?.onFiles);
+  useEffect(() => {
+    workFileDropOnFilesRef.current = workFileDrop?.onFiles;
+  }, [workFileDrop?.onFiles]);
+
+  /** 어벗 STL — 페이지(window) 전체 드래그·드롭 */
+  useEffect(() => {
+    if (!open || !workFileDropActive || workFileDrop?.disabled) {
+      pageWorkDropDepthRef.current = 0;
+      setPageWorkDropActive(false);
+      return;
+    }
+
+    const handleDragEnter = (event: DragEvent) => {
+      if (!dataTransferHasFiles(event)) return;
+      event.preventDefault();
+      pageWorkDropDepthRef.current += 1;
+      setPageWorkDropActive(true);
+    };
+    const handleDragOver = (event: DragEvent) => {
+      if (!dataTransferHasFiles(event)) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+    };
+    const handleDragLeave = (event: DragEvent) => {
+      if (!dataTransferHasFiles(event)) return;
+      event.preventDefault();
+      pageWorkDropDepthRef.current = Math.max(
+        0,
+        pageWorkDropDepthRef.current - 1,
+      );
+      if (pageWorkDropDepthRef.current <= 0) {
+        pageWorkDropDepthRef.current = 0;
+        setPageWorkDropActive(false);
+      }
+    };
+    const handleDrop = (event: DragEvent) => {
+      if (!dataTransferHasFiles(event)) return;
+      if (event.defaultPrevented) return;
+      event.preventDefault();
+      pageWorkDropDepthRef.current = 0;
+      setPageWorkDropActive(false);
+      const items = Array.from(event.dataTransfer?.items || []);
+      const direct = Array.from(event.dataTransfer?.files || []);
+      void (async () => {
+        const files = await extractDroppedFiles(items, direct);
+        if (files.length) workFileDropOnFilesRef.current?.(files);
+      })();
+    };
+
+    window.addEventListener("dragenter", handleDragEnter);
+    window.addEventListener("dragover", handleDragOver);
+    window.addEventListener("dragleave", handleDragLeave);
+    window.addEventListener("drop", handleDrop);
+    return () => {
+      window.removeEventListener("dragenter", handleDragEnter);
+      window.removeEventListener("dragover", handleDragOver);
+      window.removeEventListener("dragleave", handleDragLeave);
+      window.removeEventListener("drop", handleDrop);
+      pageWorkDropDepthRef.current = 0;
+      setPageWorkDropActive(false);
+    };
+  }, [open, workFileDropActive, workFileDrop?.disabled]);
+
   const handleChatTabDropFiles = useCallback(
     (files: File[]) => {
       if (!files.length) return;
@@ -1839,7 +1911,6 @@ export function PracticeTransferDetailChatDialog({
     },
     [onAttachChatFiles, workFileDrop, workFileDropActive],
   );
-  const workFileDropGuideText = String(workFileDrop?.guideText || "").trim();
   const workFileDropGuideDetail = String(
     workFileDrop?.guideDetail || "",
   ).trim();
@@ -2006,7 +2077,11 @@ export function PracticeTransferDetailChatDialog({
             workFileDrop?.fileInputId || "practice-transfer-unified-drop"
           }
           onFiles={handleChatTabDropFiles}
-          disabled={!chatFileDropActive && !workFileDropActive}
+          disabled={
+            workFileDropActive
+              ? true
+              : !chatFileDropActive
+          }
           showDefaultUi={false}
           fillHeight
           accept={
@@ -2025,7 +2100,30 @@ export function PracticeTransferDetailChatDialog({
         >
           {({ isDragActive }) => (
             <>
-              {isDragActive && (workFileDropActive || chatFileDropActive) ? (
+              {pageWorkDropActive && workFileDropActive
+                ? createPortal(
+                    <div
+                      className="pointer-events-none fixed inset-0 z-[500] flex flex-col items-center justify-center gap-2 bg-primary/15 px-6 backdrop-blur-[2px]"
+                      aria-hidden
+                    >
+                      <div className="rounded-full bg-primary-soft p-4 text-primary-strong shadow-md">
+                        <UploadCloud className="h-10 w-10" />
+                      </div>
+                      <p className="text-base font-semibold text-primary-strong">
+                        어벗 STL을 놓아 업로드
+                      </p>
+                      <p className="max-w-sm text-center text-sm text-slate-700">
+                        {workFileDrop?.dropHint ||
+                          workFileDropGuideDetail ||
+                          LAB_RECEIVE_ABUTMENT_UPLOAD_HINT}
+                      </p>
+                    </div>,
+                    document.body,
+                  )
+                : null}
+              {!workFileDropActive &&
+              isDragActive &&
+              chatFileDropActive ? (
                 <div
                   className="pointer-events-none absolute inset-0 z-[305] flex flex-col items-center justify-center gap-2 rounded-md bg-primary/10 px-6 backdrop-blur-[2px]"
                   aria-hidden
@@ -2034,14 +2132,10 @@ export function PracticeTransferDetailChatDialog({
                     <UploadCloud className="h-8 w-8" />
                   </div>
                   <p className="text-sm font-semibold text-primary-strong">
-                    {workFileDropActive
-                      ? "파일을 놓아 업로드"
-                      : "사진·파일을 놓아 첨부"}
+                    사진·파일을 놓아 첨부
                   </p>
                   <p className="text-center text-xs text-muted-foreground">
-                    {workFileDropActive
-                      ? workFileDrop?.dropHint || PRACTICE_ACCEPTED_HINT
-                      : "채팅에 보낼 파일을 여기에 놓으세요"}
+                    채팅에 보낼 파일을 여기에 놓으세요
                   </p>
                 </div>
               ) : null}
@@ -2071,9 +2165,7 @@ export function PracticeTransferDetailChatDialog({
                         {caseIdentityStrip.primary}
                       </span>
                     </p>
-                    {identityDateLabel &&
-                    !showArrivalInChatChrome &&
-                    !showAcceptBar ? (
+                    {identityDateLabel && !showArrivalInChatChrome ? (
                       <p className="mt-0.5 truncate text-xs text-muted-foreground">
                         {identityDateLabel}
                       </p>
@@ -2085,25 +2177,29 @@ export function PracticeTransferDetailChatDialog({
                   </p>
                 )}
               </div>
-              <div className="flex shrink-0 items-center gap-1" data-no-drag>
-                {chatHeaderAction}
-                <button
-                  type="button"
-                  className={cn(
-                    "inline-flex items-center justify-center rounded-md opacity-70 ring-offset-background transition-opacity hover:bg-slate-100 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
-                    isMobile ? "h-10 w-10" : "h-9 w-9",
-                  )}
-                  aria-label="닫기"
-                  title="닫기"
-                  onClick={() => onOpenChange(false)}
-                >
-                  <X
-                    className="h-5 w-5"
-                    strokeWidth={2.25}
-                  />
-                  <span className="sr-only">Close</span>
-                </button>
-              </div>
+              {chatHeaderAction || !isInline ? (
+                <div className="flex shrink-0 items-center gap-1" data-no-drag>
+                  {chatHeaderAction}
+                  {!isInline ? (
+                    <button
+                      type="button"
+                      className={cn(
+                        "inline-flex items-center justify-center rounded-md opacity-70 ring-offset-background transition-opacity hover:bg-slate-100 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+                        isMobile ? "h-10 w-10" : "h-9 w-9",
+                      )}
+                      aria-label="닫기"
+                      title="닫기"
+                      onClick={() => onOpenChange(false)}
+                    >
+                      <X
+                        className="h-5 w-5"
+                        strokeWidth={2.25}
+                      />
+                      <span className="sr-only">Close</span>
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
 
               {(onEditRequest ||
@@ -2258,11 +2354,6 @@ export function PracticeTransferDetailChatDialog({
                     </div>
                   ) : null}
                   <div className="flex shrink-0 items-center gap-2 self-end sm:ml-auto sm:self-auto">
-                    {identityDateLabel ? (
-                      <span className="text-xs tabular-nums text-muted-foreground">
-                        {identityDateLabel}
-                      </span>
-                    ) : null}
                     {onOpenSubcontract ? (
                       <Button
                         type="button"
@@ -2556,11 +2647,7 @@ export function PracticeTransferDetailChatDialog({
               </div>
 
               <div
-                className={cn(
-                  "flex min-h-full flex-1 flex-col border-t border-border/70",
-                  workFileDropActive &&
-                    "m-2 rounded-md border-2 border-dashed border-primary/45 bg-primary/[0.03]",
-                )}
+                className="flex min-h-full flex-1 flex-col border-t border-border/70"
                 {...(workFileDropActive
                   ? { "data-guide-tour": "lab_design" }
                   : {})}
@@ -2586,46 +2673,6 @@ export function PracticeTransferDetailChatDialog({
                         />
                       </div>
                     </div>
-                  ) : workFileDropGuideText &&
-                    !chatLoading &&
-                    !visibleChatError ? (
-                    <button
-                      type="button"
-                      disabled={
-                        !workFileDropActive || Boolean(workFileDrop?.disabled)
-                      }
-                      onClick={() => {
-                        if (
-                          !workFileDropActive ||
-                          workFileDrop?.disabled ||
-                          !workFileDrop
-                        ) {
-                          return;
-                        }
-                        void (async () => {
-                          const files = await pickPracticeTransferFilesViaInput({
-                            accept: PRACTICE_TRANSFER_STL_ACCEPT,
-                            multiple: true,
-                          });
-                          if (files.length) workFileDrop.onFiles(files);
-                        })();
-                      }}
-                      className={cn(
-                        "z-[2] w-full shrink-0 bg-primary px-5 py-2.5 text-center text-primary-foreground transition-opacity",
-                        workFileDropActive && !workFileDrop?.disabled
-                          ? "cursor-pointer hover:opacity-95"
-                          : "pointer-events-none opacity-80",
-                      )}
-                    >
-                      <p className="text-sm font-semibold leading-snug">
-                        {workFileDropGuideText}
-                      </p>
-                      {workFileDropGuideDetail ? (
-                        <p className="mt-0.5 text-xs leading-snug text-primary-foreground/85">
-                          {workFileDropGuideDetail}
-                        </p>
-                      ) : null}
-                    </button>
                   ) : null}
 
                     <div className="flex w-full min-w-0 max-w-full flex-1 flex-col space-y-2 px-5 py-2">

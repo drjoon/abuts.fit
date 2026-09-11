@@ -29,6 +29,8 @@
 // - web/backend/utils/labReceiveCalendarHiddenWeekdays.util.js
 // - web/frontend/src/shared/practice/labReceiveCalendarViewMode.ts
 // - web/backend/controllers/users/user.controller.js
+// - 2026-09-11: 상세 패널 — 어벗 STL 업로드 버튼을 작업 취소 옆. 페이지 전체 드롭.
+// - 2026-09-11: 상세 패널 — 리메이크 CTA·닫기(X) 제거. 업로드 대기=[업로드 대기] 생산의뢰 줄 오른쪽.
 // - 2026-09-11: 치과 UI 맞춤 — 목록 치과명 제거·색 범례·상세 헤더 점.
 // - 2026-09-11: 리메이크 CTA — 헤더 → 작업 취소 옆(trailing).
 // - 2026-09-11: 어벗 가공 후 작업취소 — FE CTA 숨김 + API fail-closed(sticky/링크유실).
@@ -169,7 +171,7 @@ import {
   type MouseEvent,
 } from "react";
 import { createPortal } from "react-dom";
-import { ChevronRight, Repeat, Search, X } from "lucide-react";
+import { ChevronRight, Search, X } from "lucide-react";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
 import { DesignSoftwareSettingsDialog } from "@/features/requestSettings/DesignSoftwareSettingsDialog";
@@ -4027,17 +4029,6 @@ export function RequestorPracticeReceivePage({
     toast,
   ]);
 
-  const openLabRemakeFlow = useCallback(() => {
-    if (!selectedTransfer || remakeChargeBusy || labRemakeCreateBusy) return;
-    if (practiceTransferAbutmentMachiningStarted(selectedTransfer)) {
-      setRemakeChargeOpen(false);
-      setLabRemakeCreateOpen(true);
-      return;
-    }
-    setLabRemakeCreateOpen(false);
-    setRemakeChargeOpen(true);
-  }, [labRemakeCreateBusy, remakeChargeBusy, selectedTransfer]);
-
   const handleConfirmLabRemakeCreate = useCallback(
     async (result: ChatRemakePromptResult) => {
       if (result.kind !== "remake") {
@@ -6890,37 +6881,6 @@ export function RequestorPracticeReceivePage({
             selectedTransfer,
             implantCatalog,
           );
-          const showLabRemakeCta =
-            !isGuideTourDemoTransfer(selectedTransfer) &&
-            Boolean(
-              selectedTransfer.isAccepted ||
-                selectedTransfer.isDownloaded ||
-                selectedTransfer.requestorDownloadedAt ||
-                selectedTransfer.autoMatch?.completed ||
-                selectedTransfer.production?.confirmedAt,
-            ) &&
-            !String(selectedTransfer.workCanceledAt || "").trim() &&
-            selectedTransfer.manufacturerStage !== "작업취소";
-          // 가공 후는 바의 pastReadyRemakeButton이 담당 — 중복 방지
-          const remakeTrailing =
-            showLabRemakeCta && !workState.abutmentCancelBlockedPastReady ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="h-8 gap-1 border-amber-300 bg-amber-50 px-2.5 text-xs text-amber-950 hover:bg-amber-100 hover:text-amber-950"
-                disabled={remakeChargeBusy || labRemakeCreateBusy}
-                title={
-                  practiceTransferAbutmentMachiningStarted(selectedTransfer)
-                    ? "가공 시작 후 어벗 취소 불가 · 선택 치아만 리메이크 의뢰"
-                    : "동일 의뢰건에 리메이크 기공비를 청구합니다"
-                }
-                onClick={() => openLabRemakeFlow()}
-              >
-                <Repeat className="h-3.5 w-3.5" />
-                리메이크
-              </Button>
-            ) : null;
           if (
             !workState.showWorkActions &&
             !workState.showCompletedStageHeaderCancel &&
@@ -6928,10 +6888,9 @@ export function RequestorPracticeReceivePage({
             !workState.hasPendingLabCa &&
             !workState.hasAbutsCa
           ) {
-            if (!remakeTrailing && !releaseAction) return null;
+            if (!releaseAction) return null;
             return (
               <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1.5">
-                {remakeTrailing}
                 {releaseAction}
               </div>
             );
@@ -6974,19 +6933,24 @@ export function RequestorPracticeReceivePage({
               busy={rowBusy}
               designConfirmBusy={designConfirmBusyId === transferKey}
               showProductionCancelInBar
-              trailingActions={
-                <>
-                  {remakeTrailing}
-                  {completedCancelAction || releaseTrailing}
-                </>
-              }
+              trailingActions={completedCancelAction || releaseTrailing}
               onAbutmentProductionCancel={(event) =>
                 void handleCardAbutmentProductionCancel(
                   selectedTransfer,
                   event,
                 )
               }
-              onOpenAbutmentRemake={() => openLabRemakeFlow()}
+              onAbutmentStlUpload={() => {
+                void (async () => {
+                  const files = await pickPracticeTransferFilesViaInput({
+                    accept: PRACTICE_TRANSFER_STL_ACCEPT,
+                    multiple: true,
+                  });
+                  if (files.length) {
+                    handleCardDropFiles(selectedTransfer, files);
+                  }
+                })();
+              }}
               onDesignConfirm={() => {
                 void confirmAbutmentDesign(selectedTransfer);
               }}

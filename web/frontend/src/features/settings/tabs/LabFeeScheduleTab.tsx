@@ -47,7 +47,6 @@ import {
   LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME,
   LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_DEFAULT_PRICE,
   LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_NAME,
-  LAB_FEE_CUSTOM_ABUTMENT_REMAKE_DEFAULT_PRICE,
   MAX_LAB_FEE_ITEMS,
   normalizeLabFeeItem,
   normalizeLabFeeItems,
@@ -674,9 +673,8 @@ export const LabFeeScheduleTab = () => {
           </p>
         ) : null}
         <p className="mt-2 text-[12px] leading-snug text-slate-500">
-          커스텀어벗 리메이크 비용을 설정하세요. 미입력 시 개당{" "}
-          {LAB_FEE_CUSTOM_ABUTMENT_REMAKE_DEFAULT_PRICE.toLocaleString("ko-KR")}
-          원(치과→기공소)이 적용됩니다.
+          치과↔기공소 리메이크비는 무료입니다. 리메이크 단가 입력은 참고용이며
+          청구되지 않습니다.
         </p>
         {pendingChange?.effectiveFromYmd ? (
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200/90 bg-amber-50/90 px-3 py-2 text-[13px] text-amber-950">
@@ -860,12 +858,8 @@ export const LabFeeScheduleTab = () => {
                     ),
                   ),
                 ) <= 0 ? (
-                  <p className="text-[11px] leading-snug text-amber-800/90">
-                    리메이크 미입력 시 개당{" "}
-                    {LAB_FEE_CUSTOM_ABUTMENT_REMAKE_DEFAULT_PRICE.toLocaleString(
-                      "ko-KR",
-                    )}
-                    원이 적용됩니다. 치과→기공소 커스텀어벗 리메이크 비용입니다.
+                  <p className="text-[11px] leading-snug text-slate-500">
+                    리메이크비 무료 — 이 단가는 청구에 사용되지 않습니다.
                   </p>
                 ) : null}
               </div>

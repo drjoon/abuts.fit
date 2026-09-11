@@ -8,6 +8,7 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
 // - web/backend/utils/roundBarAbutment.js
 // - web/frontend/src/features/settings/tabs/LabFeeScheduleTab.tsx
+// - 2026-09-11: 치과↔기공소 리메이크비 무료(LAB_FEE_REMAKE_FREE). CA 리메이크 기본가 0.
 // - 2026-09-09: PTX 리메이크 — CA 기본 제외 헬퍼. remake+CA 포함 시 기공소 CA 리메이크 수가 합산(어벗츠 retail은 제외).
 // - 2026-08-26: 미도입(요청중·도입중)도 기공소 커스텀어벗 수가를 합산(0원이면 미도입·수락 시 기공수가 포워드).
 // - 2026-08-25: 단독「커스텀어벗」은 심플이어도 지그제외 수가 대상. 크라운+심플만 수가 제외.
@@ -281,8 +282,10 @@ export const LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME = "커스텀어벗(지그포�
 export const LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_NAME = "커스텀어벗(지그제외)";
 export const LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_DEFAULT_PRICE = 40000;
 export const LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_DEFAULT_PRICE = 30000;
-/** 기공소 CA 리메이크 수가 미설정 시 치과→기공소 기본 단가(원). */
-export const LAB_FEE_CUSTOM_ABUTMENT_REMAKE_DEFAULT_PRICE = 20000;
+/** 기공소 CA 리메이크 수가 미설정 시 치과→기공소 기본 단가(원). 리메이크비 무료 정책=0. */
+export const LAB_FEE_CUSTOM_ABUTMENT_REMAKE_DEFAULT_PRICE = 0;
+/** 치과↔기공소 리메이크 기공비 무료(견적·청구·수락 공통). */
+export const LAB_FEE_REMAKE_FREE = true;
 
 /** 기공비 기본 수가(원). 마스터 스위치가 꺼져 있으면 청구하지 않는다. */
 export const LAB_FEE_SCHEDULE_DEFAULTS = {
@@ -1439,6 +1442,7 @@ export function resolveAdoptedAbutmentKind(row, favorites) {
 }
 
 function resolveLabAbutmentUnitPrice(items, useRemake, withJig = true) {
+  if (useRemake && LAB_FEE_REMAKE_FREE) return 0;
   const feeName = withJig
     ? LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME
     : LAB_FEE_CUSTOM_ABUTMENT_WITHOUT_JIG_NAME;
@@ -1627,6 +1631,7 @@ export function removableTempFeeForCount(count, price3, price6) {
 }
 
 export function nTeethFeeForCount(count, tiers, remake = false) {
+  if (remake && LAB_FEE_REMAKE_FREE) return 0;
   const list = (Array.isArray(tiers) ? tiers : [])
     .map((tier) => ({
       n: Math.max(1, Math.round(Number(tier?.n || 1))),
@@ -2521,10 +2526,13 @@ export function computePracticeTransferRetailFees({
     const item = findLabFeeItemForProsthesisType(items, prosthesisType);
     if (!item) continue;
     if (item.unit === "perTooth") {
-      const unitLabFee = Math.max(
-        0,
-        Math.round(Number(useRemake ? item.remake : item.price) || 0),
-      );
+      const unitLabFee =
+        useRemake && LAB_FEE_REMAKE_FREE
+          ? 0
+          : Math.max(
+              0,
+              Math.round(Number(useRemake ? item.remake : item.price) || 0),
+            );
 
       if (prosthesisType === "브리지") {
         for (const tooth of followUpFinalProsthesisTeeth(row)) {
@@ -2676,12 +2684,14 @@ export function computePracticeTransferRetailFees({
         continue;
       }
       const labFee =
-        item.unit === "perSet"
-          ? Math.max(
-              0,
-              Math.round(Number(useRemake ? item.remake : item.price) || 0),
-            )
-          : nTeethFeeForCount(group.teeth.length, item.tiers, useRemake);
+        useRemake && LAB_FEE_REMAKE_FREE
+          ? 0
+          : item.unit === "perSet"
+            ? Math.max(
+                0,
+                Math.round(Number(useRemake ? item.remake : item.price) || 0),
+              )
+            : nTeethFeeForCount(group.teeth.length, item.tiers, useRemake);
       labFeeTotal += labFee;
       const sortedTeeth = sortToothNumbersForFee(group.teeth);
       const toothNumberLabel = formatToothNumbersForFeeLine(sortedTeeth);
@@ -2757,6 +2767,7 @@ function followUpFinalProsthesisTeeth(row) {
 
 /** 후속 보철은 크라운과 같이 1치=1기공비(perTooth 단가) */
 function resolveFollowUpPerToothLabFee(item, useRemake) {
+  if (useRemake && LAB_FEE_REMAKE_FREE) return 0;
   if (item.unit === "perTooth") {
     return Math.max(
       0,

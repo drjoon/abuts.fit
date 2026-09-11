@@ -4,6 +4,8 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/practice/practiceTransferLabReceive.ts
 // change-log:
+// - 2026-09-11: 어벗 STL 업로드 버튼 — 작업 취소 옆. 인라인 파란 배너 제거(페이지 전체 드롭).
+// - 2026-09-11: 업로드 대기 배지 — 어벗츠 생산의뢰 줄 오른쪽. 상세 패널 리메이크 CTA 제거.
 // - 2026-09-11: 가공(pastReady) 후 어벗 취소 숨김 · 리메이크(선택 치아) 안내.
 // - 2026-09-03: 어벗츠 안내 — 업로드된 치아 번호 취소줄(designFiles).
 // - 2026-09-02: 어벗츠 제공 CA만 있어도 안내 표시(심플어벗 제외).
@@ -15,7 +17,7 @@
 // - 2026-09-02: 보철/dual 제거. CA 어벗 업로드 + 파일 없는 작업 완료 CTA.
 // - 2026-09-02: 수락 후 24h/48h 어벗 STL 미업로드 경고 배너.
 import type { MouseEvent, ReactNode } from "react";
-import { Repeat, X } from "lucide-react";
+import { Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -43,8 +45,8 @@ export type PracticeLabReceiveWorkActionsBarProps = {
   /** 수락 중「어벗 생산 취소」노출(상세는 true, 카드는 헤더와 역할 분담 시 true) */
   showProductionCancelInBar?: boolean;
   onAbutmentProductionCancel?: (event: MouseEvent) => void;
-  /** 가공 후 리메이크(선택 치아 재제작) — 취소 대신 */
-  onOpenAbutmentRemake?: (event: MouseEvent) => void;
+  /** 어벗 STL 파일창 — 작업 취소 옆 */
+  onAbutmentStlUpload?: (event: MouseEvent) => void;
   onDesignConfirm?: () => void;
   trailingActions?: ReactNode;
   className?: string;
@@ -59,7 +61,7 @@ export const LAB_RECEIVE_ABUTMENT_UPLOAD_HINT =
 
 /**
  * 기공의뢰수신 — 수락 후 작업 취소·디자인 확인(카드·상세 모달 공통).
- * 어벗 STL 업로드는 상세 진행상황 드롭존(클릭/드래그)만 사용.
+ * 어벗 STL 업로드는 버튼(파일창) + 페이지 전체 드래그.
  */
 export function PracticeLabReceiveWorkActionsBar({
   transfer,
@@ -68,7 +70,7 @@ export function PracticeLabReceiveWorkActionsBar({
   designConfirmBusy = false,
   showProductionCancelInBar = true,
   onAbutmentProductionCancel,
-  onOpenAbutmentRemake,
+  onAbutmentStlUpload,
   onDesignConfirm,
   trailingActions = null,
   className,
@@ -81,20 +83,29 @@ export function PracticeLabReceiveWorkActionsBar({
   );
   const hasTrailing = Boolean(trailingActions);
   const hasAbutmentGuide = state.hasPendingLabCa || state.hasAbutsCa;
+  const showAbutmentUpload =
+    state.designStlUploadMode === "abutment" && Boolean(onAbutmentStlUpload);
   if (
     !state.showWorkActions &&
     !state.showCompletedStageHeaderCancel &&
     !state.abutmentCancelBlockedPastReady &&
     !hasTrailing &&
     !hasAbutmentGuide &&
-    !uploadOverdue
+    !uploadOverdue &&
+    !showAbutmentUpload
   ) {
     return null;
   }
 
   const uploadOverdueAlert = uploadOverdue ? (
-    <PracticeAbutmentUploadOverdueAlert level={uploadOverdue} />
+    <PracticeAbutmentUploadOverdueAlert level={uploadOverdue} compact />
   ) : null;
+
+  /** 어벗츠 생산의뢰 줄이 있을 때는 그 줄 오른쪽에 배지 */
+  const abutsInlineOverdue =
+    uploadOverdueAlert && state.hasAbutsCa ? uploadOverdueAlert : null;
+  const standaloneOverdue =
+    uploadOverdueAlert && !state.hasAbutsCa ? uploadOverdueAlert : null;
 
   const pendingLabGuide = hasAbutmentGuide ? (
     <LabPendingAbutmentGuide
@@ -112,7 +123,33 @@ export function PracticeLabReceiveWorkActionsBar({
         transfer,
         catalog,
       )}
+      abutsTrailing={abutsInlineOverdue}
     />
+  ) : null;
+
+  const abutmentUploadButton = showAbutmentUpload ? (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          size="sm"
+          variant="default"
+          disabled={busy}
+          className={cn(ctaButtonClass, "gap-1")}
+          onClick={(event) => {
+            event.stopPropagation();
+            onAbutmentStlUpload?.(event);
+          }}
+        >
+          <Upload className="h-3.5 w-3.5" />
+          {busy ? "처리 중..." : "어벗 STL 업로드"}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-xs text-xs">
+        {LAB_RECEIVE_ABUTMENT_UPLOAD_HINT}
+        {" 페이지 어디에나 파일을 놓아도 됩니다."}
+      </TooltipContent>
+    </Tooltip>
   ) : null;
 
   const productionCancelButton =
@@ -140,61 +177,11 @@ export function PracticeLabReceiveWorkActionsBar({
       </Tooltip>
     ) : null;
 
-  const pastReadyRemakeButton =
-    showProductionCancelInBar &&
-    state.abutmentCancelBlockedPastReady &&
-    onOpenAbutmentRemake ? (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={busy}
-            className="h-8 shrink-0 gap-1 border-amber-300 bg-amber-50 text-amber-950 hover:bg-amber-100 hover:text-amber-950 focus-visible:ring-0 focus-visible:ring-offset-0"
-            onClick={(event) => {
-              event.stopPropagation();
-              onOpenAbutmentRemake(event);
-            }}
-          >
-            <Repeat className="h-3.5 w-3.5" />
-            {busy ? "처리 중..." : "리메이크"}
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="top" className="max-w-xs text-xs">
-          제조 가공이 시작되어 어벗 취소를 할 수 없습니다. 리메이크로 필요한
-          치아·어벗만 골라 재제작하세요.
-        </TooltipContent>
-      </Tooltip>
-    ) : showProductionCancelInBar &&
-      state.abutmentCancelBlockedPastReady ? (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span className="inline-flex">
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              disabled
-              className="h-8 shrink-0 focus-visible:ring-0 focus-visible:ring-offset-0"
-            >
-              <X className="h-3.5 w-3.5" />
-              어벗 취소 불가
-            </Button>
-          </span>
-        </TooltipTrigger>
-        <TooltipContent side="top" className="max-w-xs text-xs">
-          제조 가공이 시작되어 취소할 수 없습니다. 「리메이크」에서 필요한
-          치아만 재제작하세요.
-        </TooltipContent>
-      </Tooltip>
-    ) : null;
-
   const cancelCluster =
-    productionCancelButton || pastReadyRemakeButton || hasTrailing ? (
+    abutmentUploadButton || productionCancelButton || hasTrailing ? (
       <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+        {abutmentUploadButton}
         {productionCancelButton}
-        {pastReadyRemakeButton}
         {trailingActions}
       </div>
     ) : null;
@@ -228,17 +215,21 @@ export function PracticeLabReceiveWorkActionsBar({
   if (state.showWorkActions || designConfirmButton) {
     return (
       <div className={cn("w-full min-w-0 space-y-1.5", className)}>
-        {uploadOverdueAlert}
+        {standaloneOverdue}
         {pendingLabGuide}
         {renderActionRow(designConfirmButton)}
       </div>
     );
   }
 
-  if (state.showCompletedStageHeaderCancel || state.abutmentCancelBlockedPastReady) {
+  if (
+    (state.showCompletedStageHeaderCancel ||
+      state.abutmentCancelBlockedPastReady) &&
+    cancelCluster
+  ) {
     return (
       <div className={cn("w-full min-w-0 space-y-1.5", className)}>
-        {uploadOverdueAlert}
+        {standaloneOverdue}
         {pendingLabGuide}
         {renderActionRow(null)}
       </div>
@@ -247,11 +238,14 @@ export function PracticeLabReceiveWorkActionsBar({
 
   return (
     <div className={cn("w-full min-w-0 space-y-1.5", className)}>
-      {uploadOverdueAlert}
+      {standaloneOverdue}
       {pendingLabGuide}
-      {cancelCluster ?? (
-        <div className="flex flex-wrap items-center gap-1.5">{trailingActions}</div>
-      )}
+      {cancelCluster ??
+        (trailingActions ? (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {trailingActions}
+          </div>
+        ) : null)}
     </div>
   );
 }

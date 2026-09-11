@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/practice/PracticeLabReceiveWorkActionsBar.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // change-log:
+// - 2026-09-11: 어벗츠 생산의뢰 줄 오른쪽 trailing(업로드 대기 배지).
 // - 2026-09-03: 업로드 치아 — 에메랄드 + 굵은 취소선(decoration-2.5px).
 // - 2026-09-03: 어벗 STL 업로드된 치아는 번호에 취소줄(line-through).
 // - 2026-09-03: 모달 안내 상세는 치아번호만(`11, 21`). 임플란트 스펙은 의뢰 상세 등 다른 UI 유지.
@@ -49,6 +50,8 @@ export type LabPendingAbutmentGuideProps = {
   abutsProductionOrdered?: boolean;
   /** 어벗 디자인 STL이 올라간 치아 — 해당 번호에 취소줄 */
   uploadedAbutmentTeeth?: Iterable<string> | null;
+  /** 어벗츠 생산의뢰 줄 맨 오른쪽(예: [업로드 대기] 배지) */
+  abutsTrailing?: ReactNode;
   className?: string;
 };
 
@@ -178,6 +181,7 @@ export function LabPendingAbutmentGuide({
   toothWorks,
   abutsProductionOrdered = false,
   uploadedAbutmentTeeth = null,
+  abutsTrailing = null,
   className,
 }: LabPendingAbutmentGuideProps) {
   const pendingRows = listPendingRows(toothWorks);
@@ -200,39 +204,60 @@ export function LabPendingAbutmentGuide({
     ordered,
   );
 
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <div
-          className={cn(
-            "w-fit max-w-full cursor-help space-y-0.5",
-            className,
-          )}
-        >
-          {pendingRows.length > 0 ? (
+  const abutsLine =
+    abutsRows.length > 0 ? (
+      <div className="flex w-full min-w-0 items-center gap-2">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="min-w-0 flex-1 cursor-help">
+              <GuideLine
+                label={abutsLabel}
+                detail={
+                  <ToothNumberDetail
+                    rows={abutsRows}
+                    struckTeeth={struckTeeth}
+                  />
+                }
+              />
+            </div>
+          </TooltipTrigger>
+          <TooltipContent
+            side="bottom"
+            className="max-w-xs text-xs leading-relaxed"
+          >
+            {tooltipBody}
+          </TooltipContent>
+        </Tooltip>
+        {abutsTrailing ? (
+          <div className="ml-auto shrink-0">{abutsTrailing}</div>
+        ) : null}
+      </div>
+    ) : null;
+
+  const pendingLine =
+    pendingRows.length > 0 ? (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className="w-fit max-w-full cursor-help">
             <GuideLine
               label={LAB_PENDING_ABUTMENT_SELF_PROCESS_LABEL}
-              detail={
-                <ToothNumberDetail rows={pendingRows} />
-              }
+              detail={<ToothNumberDetail rows={pendingRows} />}
             />
-          ) : null}
-          {abutsRows.length > 0 ? (
-            <GuideLine
-              label={abutsLabel}
-              detail={
-                <ToothNumberDetail
-                  rows={abutsRows}
-                  struckTeeth={struckTeeth}
-                />
-              }
-            />
-          ) : null}
-        </div>
-      </TooltipTrigger>
-      <TooltipContent side="bottom" className="max-w-xs text-xs leading-relaxed">
-        {tooltipBody}
-      </TooltipContent>
-    </Tooltip>
+          </div>
+        </TooltipTrigger>
+        <TooltipContent
+          side="bottom"
+          className="max-w-xs text-xs leading-relaxed"
+        >
+          {tooltipBody}
+        </TooltipContent>
+      </Tooltip>
+    ) : null;
+
+  return (
+    <div className={cn("w-full max-w-full space-y-0.5", className)}>
+      {pendingLine}
+      {abutsLine}
+    </div>
   );
 }

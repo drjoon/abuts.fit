@@ -274,12 +274,6 @@ export function PracticeTransferLabReceiveCard({
         }
       />
 
-      {uploadOverdue ? (
-        <div className="mt-3">
-          <PracticeAbutmentUploadOverdueAlert level={uploadOverdue} />
-        </div>
-      ) : null}
-
       {showWorkActions || showCompletedStageHeaderCancel ? (
         <div className="mt-3 border-t border-slate-100 pt-3">
           <PracticeLabReceiveWorkActionsBar
@@ -292,6 +286,10 @@ export function PracticeTransferLabReceiveCard({
             onAbutmentProductionCancel={onAbutmentProductionCancel}
             onDesignConfirm={onDesignConfirm}
           />
+        </div>
+      ) : uploadOverdue ? (
+        <div className="mt-3">
+          <PracticeAbutmentUploadOverdueAlert level={uploadOverdue} compact />
         </div>
       ) : null}
     </>
