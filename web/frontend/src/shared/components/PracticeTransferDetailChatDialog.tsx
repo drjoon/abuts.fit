@@ -14,6 +14,7 @@
 // - web/frontend/src/shared/files/downloadWithProgress.ts
 // - web/frontend/src/shared/files/s3BlobCache.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-12: 별·알림음 — 환자·치아번호 줄 오른쪽.
 // - 2026-09-12: 별·알림음 — 채팅 툴바 → 주문/도착 줄 오른쪽.
 // - 2026-09-12: 채팅 없으면 초기 스크롤=보철물(상단). 전환·빈 목록 시 하단 고정 금지.
 // - 2026-09-11: 어벗 STL — 인라인 파란 배너 제거. 페이지 전체 드롭 + 작업취소 옆 업로드 버튼.
@@ -375,7 +376,7 @@ type PracticeTransferDetailChatDialogProps = {
   chatHeaderAction?: ReactNode;
   /** 채팅 헤더 바로 아래 — 상대방 내부 메모 (레거시·미사용 권장) */
   counterpartyMemoStrip?: ReactNode;
-  /** 주문/도착 줄 오른쪽 — 메모·평가 아이콘 */
+  /** 환자·치아번호 줄 오른쪽 — 메모·평가 아이콘 */
   composerToolbarExtra?: ReactNode;
   /**
    * 식별 줄(치과·환자 등). 있으면 summaryItems 파싱보다 우선.
@@ -2175,47 +2176,39 @@ export function PracticeTransferDetailChatDialog({
               <div className="min-w-0 flex-1">
                 {caseIdentityStrip ? (
                   <>
-                    <p className="flex min-w-0 items-center gap-2 truncate text-sm font-semibold text-foreground">
-                      {caseIdentityStrip.dotColor ||
-                      caseIdentityStrip.colorKey ? (
-                        <CalendarLabColorDot
-                          color={
-                            caseIdentityStrip.dotColor ||
-                            calendarGroupDotColor(
-                              caseIdentityStrip.colorKey || "-",
-                            )
-                          }
-                          style={caseIdentityStrip.dotStyle || "filled"}
-                        />
-                      ) : null}
-                      <span className="min-w-0 truncate">
-                        {caseIdentityStrip.primary}
-                      </span>
-                    </p>
-                    {!showArrivalInChatChrome ? (
-                      <div className="mt-0.5 flex min-w-0 items-center gap-1">
-                        {identityDateLabel ? (
-                          <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-                            {identityDateLabel}
-                          </p>
-                        ) : (
-                          <span className="min-w-0 flex-1" />
-                        )}
-                        {identityChromeActions}
-                      </div>
+                    <div className="flex min-w-0 items-center gap-1">
+                      <p className="flex min-w-0 flex-1 items-center gap-2 truncate text-sm font-semibold text-foreground">
+                        {caseIdentityStrip.dotColor ||
+                        caseIdentityStrip.colorKey ? (
+                          <CalendarLabColorDot
+                            color={
+                              caseIdentityStrip.dotColor ||
+                              calendarGroupDotColor(
+                                caseIdentityStrip.colorKey || "-",
+                              )
+                            }
+                            style={caseIdentityStrip.dotStyle || "filled"}
+                          />
+                        ) : null}
+                        <span className="min-w-0 truncate">
+                          {caseIdentityStrip.primary}
+                        </span>
+                      </p>
+                      {identityChromeActions}
+                    </div>
+                    {identityDateLabel && !showArrivalInChatChrome ? (
+                      <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                        {identityDateLabel}
+                      </p>
                     ) : null}
                   </>
                 ) : (
-                  <>
-                    <p className="truncate text-sm font-semibold text-foreground">
+                  <div className="flex min-w-0 items-center gap-1">
+                    <p className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">
                       {title}
                     </p>
-                    {!showArrivalInChatChrome ? (
-                      <div className="mt-0.5 flex min-w-0 items-center justify-end gap-1">
-                        {identityChromeActions}
-                      </div>
-                    ) : null}
-                  </>
+                    {identityChromeActions}
+                  </div>
                 )}
               </div>
               {chatHeaderAction || !isInline ? (
@@ -2257,7 +2250,6 @@ export function PracticeTransferDetailChatDialog({
                               {identityDateLabel}
                             </span>
                           ) : null}
-                          {identityChromeActions}
                           <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                             다음 공정
                           </span>
@@ -2276,12 +2268,9 @@ export function PracticeTransferDetailChatDialog({
                           ))}
                         </div>
                       ) : (
-                        <div className="flex min-w-0 flex-1 items-center gap-1">
-                          <span className="min-w-0 flex-1 truncate text-xs tabular-nums text-muted-foreground">
-                            {identityDateLabel || ""}
-                          </span>
-                          {identityChromeActions}
-                        </div>
+                        <span className="min-w-0 flex-1 truncate text-xs tabular-nums text-muted-foreground">
+                          {identityDateLabel || ""}
+                        </span>
                       )}
                       {onAppendArrival ? renderRearrivalPopover() : null}
                       {onEditRequest || onCancelRequest ? (

@@ -57,7 +57,7 @@ type PracticeLabRatingControlProps = {
   className?: string;
   size?: "sm" | "xs";
   stopPropagation?: boolean;
-  /** icon: 주문/도착 줄 오른쪽 별 아이콘 */
+  /** icon: 환자·치아번호 줄 오른쪽 별 아이콘 */
   variant?: "button" | "icon";
 };
 
