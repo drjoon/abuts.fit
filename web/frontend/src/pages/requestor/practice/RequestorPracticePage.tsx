@@ -29,6 +29,7 @@
 // - web/backend/utils/labReceiveCalendarHiddenWeekdays.util.js
 // - web/frontend/src/shared/practice/labReceiveCalendarViewMode.ts
 // - web/backend/controllers/users/user.controller.js
+// - 2026-09-11: 어벗 가공 후 작업취소 — FE CTA 숨김 + API fail-closed(sticky/링크유실).
 // - 2026-09-11: 가공(pastReady) 후 「리메이크」=선택 치아 리메이크 의뢰(새 PTX). 청구는 가공 전만.
 // - 2026-09-10: 리메이크 청구 CTA — 식별 스트립(환자/도착일) 오른쪽, 라벨 「리메이크」.
 // - 2026-09-09: 기공소 「리메이크 청구」— LabRemakeChargeDialog + received remake-charges.
@@ -3648,6 +3649,15 @@ export function RequestorPracticeReceivePage({
     async (transfer: ReceivedPracticeTransfer) => {
       if (!token) return false;
       if (transfer.autoMatch?.completed) return false;
+      if (practiceTransferAbutmentMachiningStarted(transfer)) {
+        toast({
+          title: "작업시작 취소 불가",
+          description:
+            "어벗 가공이 시작된 의뢰는 작업시작을 취소할 수 없습니다. 리메이크로 필요한 치아만 재제작해 주세요.",
+          variant: "destructive",
+        });
+        return false;
+      }
 
       const isAuto = String(transfer.matchingMode || "") === "auto";
       const canceledAt = new Date().toISOString();
@@ -3753,7 +3763,7 @@ export function RequestorPracticeReceivePage({
                 description: String(
                   body.message ||
                     (code === "abutment_machining_started"
-                      ? "어벗 가공이 시작된 의뢰는 작업시작을 취소할 수 없습니다. 제조사가 준비 단계일 때만 가능합니다."
+                      ? "어벗 가공이 시작된 의뢰는 작업시작을 취소할 수 없습니다. 리메이크로 필요한 치아만 재제작해 주세요."
                       : "작업 취소 요청 중 오류가 발생했습니다."),
                 ),
                 variant: "destructive",
@@ -6932,6 +6942,11 @@ export function RequestorPracticeReceivePage({
                 : "작업 완료 취소"}
             </Button>
           ) : null;
+          // 어벗 가공 시작 후면 작업취소 trailing 숨김(카드·상세 CTA와 동일)
+          const releaseTrailing =
+            workState.productionStarted || workState.abutmentCancelBlockedPastReady
+              ? null
+              : releaseAction;
           return (
             <PracticeLabReceiveWorkActionsBar
               transfer={selectedTransfer}
@@ -6939,7 +6954,7 @@ export function RequestorPracticeReceivePage({
               busy={rowBusy}
               designConfirmBusy={designConfirmBusyId === transferKey}
               showProductionCancelInBar
-              trailingActions={completedCancelAction || releaseAction}
+              trailingActions={completedCancelAction || releaseTrailing}
               onAbutmentProductionCancel={(event) =>
                 void handleCardAbutmentProductionCancel(
                   selectedTransfer,

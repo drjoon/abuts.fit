@@ -14,6 +14,7 @@
 // - web/frontend/src/shared/files/downloadWithProgress.ts
 // - web/frontend/src/shared/files/s3BlobCache.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-11: 어벗 가공 시작 시 「작업 취소」CTA 숨김(카드와 동일). 클릭 판정만 의존하지 않음.
 // - 2026-09-10: chatHeaderAction — 탭 행 → 환자/도착일 식별 스트립 오른쪽.
 // - 2026-09-10: 드롭존 활성 시 채팅 opacity 45→80(가독성).
 // - 2026-09-10: 리메이크 청구 채팅 카드 「청구 취소」.
@@ -619,7 +620,7 @@ export function PracticeTransferDetailChatDialog({
   accepted = false,
   workCanceled = false,
   workCompleted = false,
-  abutmentMachiningStarted: _abutmentMachiningStarted = false,
+  abutmentMachiningStarted = false,
   onAccept,
   rejectBusy: _rejectBusy = false,
   onReject: _onReject,
@@ -1814,12 +1815,13 @@ export function PracticeTransferDetailChatDialog({
   /** 작업취소 후 수락이 풀렸지만 채팅은 이어갈 때 */
   const showReacceptBar =
     Boolean(onAccept) && !accepted && workCanceled;
-  /** 수락 직후: 수락 버튼 자리에 작업취소(가공 여부는 클릭 시 API 판정) */
+  /** 수락 직후: 수락 버튼 자리에 작업취소(어벗 가공 시작 후면 숨김) */
   const showReleaseBar =
     Boolean(onRelease) &&
     accepted &&
     !workCanceled &&
-    !workCompleted;
+    !workCompleted &&
+    !abutmentMachiningStarted;
   const workFileDropActive = Boolean(
     workFileDrop && !workFileDrop.disabled && !minimized,
   );

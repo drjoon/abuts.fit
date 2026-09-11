@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/components/practice/LabReceiveWorkUploadDialog.tsx
 // change-log:
+// - 2026-09-11: pastReady 작업취소 차단 — 디자인 미러가 비어도 sticky/pastReady면 유지.
 // - 2026-09-11: 가공(pastReady) 후 어벗 취소 CTA 숨김 — 리메이크(선택 치아 재제작)로 유도.
 // - 2026-09-07: 플랫폼 가입 이전 의뢰건 리메이크 — 라벨·안내 카피·판정 헬퍼.
 // - 2026-09-03: listPracticeTransferUploadedAbutmentTeeth — STL 업로드된 치아(취소줄 표시용).
@@ -983,8 +984,14 @@ export function resolvePracticeLabReceiveWorkActionState(
   // 가공(준비 이후) 들어가면 STL 취소 불가 — 리메이크로 선택 치아 재제작.
   const showAbutmentProductionCancel =
     hasCancelableAbutmentUpload && !productionStarted;
+  // 어벗 CNC 대상 + 가공 시작이면 작업취소/어벗취소 차단(디자인 미러가 비어도 sticky·pastReady 유지)
   const abutmentCancelBlockedPastReady =
-    hasCancelableAbutmentUpload && productionStarted;
+    hasAbutsCa &&
+    productionStarted &&
+    (hasCancelableAbutmentUpload ||
+      hasLinkedAbutmentRequests ||
+      Boolean(transfer.production?.abutmentProductionStartedAt) ||
+      Boolean(transfer.production?.abutmentPastReady));
   // 전부 업로드 중(남은 어벗 있음)에는 작업완료 취소 대신 업로드·어벗 취소 바 유지
   const showCompletedStageHeaderCancel =
     !showWorkActions && showAbutmentProductionCancel;

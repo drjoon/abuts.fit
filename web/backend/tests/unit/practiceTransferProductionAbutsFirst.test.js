@@ -321,3 +321,64 @@ describe("oral scan requirement for CA accept/create", () => {
     expect(resolved.files).toHaveLength(0);
   });
 });
+
+describe("abutment pastReady work-cancel guard", () => {
+  test("isAbutmentRequestPastReadyForCancel — stage and cam start", async () => {
+    const {
+      isAbutmentRequestPastReadyForCancel,
+    } = await import("../../services/practiceTransferProduction.service.js");
+    expect(isAbutmentRequestPastReadyForCancel({ manufacturerStage: "준비" })).toBe(
+      false,
+    );
+    expect(isAbutmentRequestPastReadyForCancel({ manufacturerStage: "취소" })).toBe(
+      false,
+    );
+    expect(isAbutmentRequestPastReadyForCancel({ manufacturerStage: "가공" })).toBe(
+      true,
+    );
+    expect(
+      isAbutmentRequestPastReadyForCancel({
+        manufacturerStage: "준비",
+        productionSchedule: { actualCamStart: new Date() },
+      }),
+    ).toBe(true);
+  });
+
+  test("resolveAbutmentPastReadyFromRows — sticky fail-closed + 준비 복귀", async () => {
+    const {
+      resolveAbutmentPastReadyFromRows,
+    } = await import("../../services/practiceTransferProduction.service.js");
+
+    expect(
+      resolveAbutmentPastReadyFromRows({ stickyStarted: true, rows: [] }),
+    ).toEqual({ pastReady: true, shouldClearSticky: false });
+
+    expect(
+      resolveAbutmentPastReadyFromRows({
+        stickyStarted: true,
+        rows: [{ manufacturerStage: "취소" }],
+      }),
+    ).toEqual({ pastReady: true, shouldClearSticky: false });
+
+    expect(
+      resolveAbutmentPastReadyFromRows({
+        stickyStarted: true,
+        rows: [{ manufacturerStage: "준비" }],
+      }),
+    ).toEqual({ pastReady: false, shouldClearSticky: true });
+
+    expect(
+      resolveAbutmentPastReadyFromRows({
+        stickyStarted: false,
+        rows: [{ manufacturerStage: "준비" }],
+      }),
+    ).toEqual({ pastReady: false, shouldClearSticky: false });
+
+    expect(
+      resolveAbutmentPastReadyFromRows({
+        stickyStarted: false,
+        rows: [{ manufacturerStage: "가공" }],
+      }),
+    ).toEqual({ pastReady: true, shouldClearSticky: false });
+  });
+});

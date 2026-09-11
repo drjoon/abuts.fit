@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-09-11: 작업취소 pastReady — sticky+링크없음/전부취소는 fail-closed(환불 차단). 준비 복귀만 sticky heal.
 // - 2026-09-09: PTX 리메이크+CA 포함 시 CA Request는 remake 과금(computePriceForRequest). 기본 리메이크는 CA 미시드.
 // - 2026-09-04: Request 생성 전 CNC 주문가능 스펙 검증(미도입 US 등 폴백·유입 금지).
 // - 2026-09-04: 헥스 샘플은 design-handoff/워크시트 백필만(ensure 시점 designCompletedAt 전 생성 금지).
@@ -1166,6 +1167,35 @@ export function isAbutmentRequestPastReadyForCancel(requestDoc) {
   return false;
 }
 
+/**
+ * sticky + 연동 Request 행으로 작업취소 차단 여부 판정(순수).
+ * @returns {{ pastReady: boolean, shouldClearSticky: boolean }}
+ */
+export function resolveAbutmentPastReadyFromRows({
+  stickyStarted = false,
+  rows = [],
+} = {}) {
+  const list = Array.isArray(rows) ? rows : [];
+  if (list.some((row) => isAbutmentRequestPastReadyForCancel(row))) {
+    return { pastReady: true, shouldClearSticky: false };
+  }
+  if (!stickyStarted) {
+    return { pastReady: false, shouldClearSticky: false };
+  }
+  // 링크 유실 또는 전부 취소 — 가공 이력(sticky)만으로 fail-closed
+  if (list.length === 0) {
+    return { pastReady: true, shouldClearSticky: false };
+  }
+  const allCanceled = list.every(
+    (row) => String(row?.manufacturerStage || "").trim() === "취소",
+  );
+  if (allCanceled) {
+    return { pastReady: true, shouldClearSticky: false };
+  }
+  // 전부 준비 = 제조사 준비 복귀 → sticky heal 후 취소 허용
+  return { pastReady: false, shouldClearSticky: true };
+}
+
 const collectRelatedRequestObjectIds = (transferDoc) => {
   const raw = Array.isArray(transferDoc?.production?.relatedRequestIds)
     ? transferDoc.production.relatedRequestIds
@@ -1209,33 +1239,32 @@ export async function collectLinkedAbutmentRequestObjectIds(transferDoc) {
 /**
  * 연동 CA Request 중 하나라도 준비 단계를 지났는지.
  * relatedRequestIds가 비거나 stale여도 partnerBilling 링크로 판정한다.
- * 라이브 stage가 SSOT — sticky abutmentProductionStartedAt만으로 true 고정하지 않는다
- * (가공→준비 복귀 후 취소 재개).
+ * 라이브 stage가 SSOT — 가공→준비 복귀(연동 Request가 모두 준비)면 sticky를 지우고 취소 재개.
+ * sticky만 있고 링크가 비었거나 전부 취소면 fail-closed(작업취소·기공/어벗비 환불 차단).
  * linkedRequestIds를 함께 돌려 작업취소 핫패스에서 재조회를 피한다.
  */
 export async function resolveRelatedAbutmentPastReady(transferDoc) {
   const linkedRequestIds =
     await collectLinkedAbutmentRequestObjectIds(transferDoc);
-  if (linkedRequestIds.length === 0) {
-    if (transferDoc?.production?.abutmentProductionStartedAt && transferDoc?._id) {
-      await clearPracticeTransferAbutmentMachiningStartedByTransferId(
-        transferDoc._id,
-      );
-    }
-    return { pastReady: false, linkedRequestIds };
+  const stickyStarted = Boolean(
+    transferDoc?.production?.abutmentProductionStartedAt,
+  );
+
+  let rows = [];
+  if (linkedRequestIds.length > 0) {
+    rows = await Request.find({ _id: { $in: linkedRequestIds } })
+      .select({
+        manufacturerStage: 1,
+        "productionSchedule.actualCamStart": 1,
+      })
+      .lean();
   }
-  const rows = await Request.find({ _id: { $in: linkedRequestIds } })
-    .select({
-      manufacturerStage: 1,
-      "productionSchedule.actualCamStart": 1,
-    })
-    .lean();
-  const pastReady = rows.some((row) => isAbutmentRequestPastReadyForCancel(row));
-  if (
-    !pastReady &&
-    transferDoc?.production?.abutmentProductionStartedAt &&
-    transferDoc?._id
-  ) {
+
+  const { pastReady, shouldClearSticky } = resolveAbutmentPastReadyFromRows({
+    stickyStarted,
+    rows,
+  });
+  if (shouldClearSticky && transferDoc?._id) {
     await clearPracticeTransferAbutmentMachiningStartedByTransferId(
       transferDoc._id,
     );
@@ -1348,9 +1377,44 @@ export async function mapAbutmentPastReadyByTransferDocs(docs) {
     );
   }
 
-  const healIds = stickyStartedTransferIds.filter(
-    (id) => result.get(id) !== true && Types.ObjectId.isValid(id),
-  );
+  // sticky fail-closed / 준비 복귀 heal — resolveAbutmentPastReadyFromRows SSOT
+  for (const transferKey of stickyStartedTransferIds) {
+    if (result.get(transferKey) === true) continue;
+    const ids = [
+      ...new Set([
+        ...(relatedIdsByTransfer.get(transferKey) || []),
+        ...(partnerIdsByTransfer.get(transferKey) || []),
+      ]),
+    ];
+    const rows = ids.map((id) => requestById.get(id)).filter(Boolean);
+    const { pastReady, shouldClearSticky } = resolveAbutmentPastReadyFromRows({
+      stickyStarted: true,
+      rows: ids.length === 0 ? [] : rows,
+    });
+    if (pastReady) {
+      result.set(transferKey, true);
+      continue;
+    }
+    if (!shouldClearSticky) {
+      result.set(transferKey, false);
+    }
+  }
+
+  const healIds = stickyStartedTransferIds.filter((id) => {
+    if (result.get(id) === true) return false;
+    if (!Types.ObjectId.isValid(id)) return false;
+    const ids = [
+      ...new Set([
+        ...(relatedIdsByTransfer.get(id) || []),
+        ...(partnerIdsByTransfer.get(id) || []),
+      ]),
+    ];
+    const rows = ids.map((rid) => requestById.get(rid)).filter(Boolean);
+    return resolveAbutmentPastReadyFromRows({
+      stickyStarted: true,
+      rows: ids.length === 0 ? [] : rows,
+    }).shouldClearSticky;
+  });
   if (healIds.length > 0) {
     await PracticeTransfer.updateMany(
       { _id: { $in: healIds.map((id) => new Types.ObjectId(id)) } },

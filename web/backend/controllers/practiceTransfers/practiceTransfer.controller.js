@@ -8202,7 +8202,7 @@ export async function markReceivedPracticeTransferRelease(req, res) {
       return res.status(409).json({
         success: false,
         message:
-          "어벗 가공이 시작된 의뢰는 수락 취소할 수 없습니다. 제조사가 준비 단계일 때만 가능합니다.",
+          "어벗 가공이 시작된 의뢰는 작업시작을 취소할 수 없습니다. 리메이크로 필요한 치아만 재제작해 주세요.",
         code: "abutment_machining_started",
       });
     }
@@ -8258,7 +8258,7 @@ export async function markReceivedPracticeTransferRelease(req, res) {
       return res.status(409).json({
         success: false,
         message:
-          "어벗 가공이 시작된 의뢰는 수락 취소할 수 없습니다. 제조사가 준비 단계일 때만 가능합니다.",
+          "어벗 가공이 시작된 의뢰는 작업시작을 취소할 수 없습니다. 리메이크로 필요한 치아만 재제작해 주세요.",
         code: "abutment_machining_started",
       });
     }
