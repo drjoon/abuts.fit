@@ -1,9 +1,16 @@
 // related files:
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/components/practice/AbutmentDesignConfirmDialog.tsx
+// - web/frontend/src/shared/components/practice/LabReceiveDualRoleAssignDialog.tsx
+// - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
 // change-log:
+// - 2026-09-12: 치아 열 items-start·상단 패딩 — 번호 잘림·하단 허공 제거.
+// - 2026-09-12: 모달 폭 확대 — 치아 열 최소 8개 한 줄.
+// - 2026-09-12: 한 화면 압축 — 빈 드롭칸 제거·썸네일 축소·미배정 스트립.
+// - 2026-09-12: 드롭다운 제거 — 치아번호 나열 + STL 썸네일 드래그 매칭·연결선.
+// - 2026-09-12: 카드 — 치아(위) ↔ STL 프리뷰(아래) 세로 연결선 레이아웃.
 // - 2026-09-12: 다중 STL — 3D 확인 전 파일명↔치아 매핑 요약·수정.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type DragEvent } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -13,13 +20,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { StlPreviewThumbnail } from "@/features/requests/components/StlPreviewThumbnail";
 import { cn } from "@/shared/ui/cn";
 
 export type AbutmentDesignToothAssignPending = {
@@ -51,11 +52,17 @@ type Props = {
   onCancel?: () => void;
 };
 
-const EMPTY_VALUE = "__none__";
+const UNASSIGNED_ZONE = "__unassigned__";
+/** 8열 × 5rem + gap ≈ 46rem — 모달 max-w와 맞춤 */
+const THUMB_W = "w-20"; // 5rem
 
 function toothLabel(tooth: string) {
   const t = String(tooth || "").trim();
   return t || "—";
+}
+
+function fileKey(file: File, index: number) {
+  return `${file.name}:${file.size}:${file.lastModified}:${index}`;
 }
 
 export function AbutmentDesignToothAssignDialog({
@@ -68,21 +75,36 @@ export function AbutmentDesignToothAssignDialog({
   onCancel,
 }: Props) {
   const [requestIdByIndex, setRequestIdByIndex] = useState<string[]>([]);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [overZone, setOverZone] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
+    setDragIndex(null);
+    setOverZone(null);
+    const used = new Set<string>();
     setRequestIdByIndex(
       rows.map((row) => {
         const suggested = String(row.suggestedRequestId || "").trim();
-        if (suggested && pendingMetas.some((m) => m.requestId === suggested)) {
+        if (
+          suggested &&
+          !used.has(suggested) &&
+          pendingMetas.some((m) => m.requestId === suggested)
+        ) {
+          used.add(suggested);
           return suggested;
         }
         const byTooth = String(row.suggestedTooth || "").trim();
         if (byTooth) {
           const match = pendingMetas.find(
-            (m) => String(m.tooth || "").trim() === byTooth,
+            (m) =>
+              !used.has(m.requestId) &&
+              String(m.tooth || "").trim() === byTooth,
           );
-          if (match) return match.requestId;
+          if (match) {
+            used.add(match.requestId);
+            return match.requestId;
+          }
         }
         return "";
       }),
@@ -97,37 +119,86 @@ export function AbutmentDesignToothAssignDialog({
     return map;
   }, [pendingMetas]);
 
-  const duplicateRequestIds = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const id of requestIdByIndex) {
-      const key = String(id || "").trim();
-      if (!key) continue;
-      counts.set(key, (counts.get(key) || 0) + 1);
+  const fileIndexByRequestId = useMemo(() => {
+    const map = new Map<string, number>();
+    for (let i = 0; i < requestIdByIndex.length; i += 1) {
+      const id = String(requestIdByIndex[i] || "").trim();
+      if (!id) continue;
+      if (!map.has(id)) map.set(id, i);
     }
-    const dups = new Set<string>();
-    for (const [id, count] of counts) {
-      if (count > 1) dups.add(id);
-    }
-    return dups;
+    return map;
   }, [requestIdByIndex]);
 
-  const unmatchedSuggested = useMemo(() => {
-    return rows.map((row, index) => {
-      const suggested = String(row.suggestedTooth || "").trim();
-      if (!suggested) return false;
-      const assignedId = String(requestIdByIndex[index] || "").trim();
-      const assignedTooth = toothByRequestId.get(assignedId) || "";
-      return assignedTooth !== suggested;
-    });
-  }, [rows, requestIdByIndex, toothByRequestId]);
+  const unassignedIndexes = useMemo(() => {
+    return rows
+      .map((_, index) => index)
+      .filter((index) => !String(requestIdByIndex[index] || "").trim());
+  }, [rows, requestIdByIndex]);
 
   const canConfirm = useMemo(() => {
     if (submitting || rows.length === 0) return false;
     if (requestIdByIndex.length !== rows.length) return false;
     if (requestIdByIndex.some((id) => !String(id || "").trim())) return false;
-    if (duplicateRequestIds.size > 0) return false;
+    const used = new Set<string>();
+    for (const id of requestIdByIndex) {
+      const key = String(id || "").trim();
+      if (used.has(key)) return false;
+      used.add(key);
+    }
     return true;
-  }, [submitting, rows.length, requestIdByIndex, duplicateRequestIds]);
+  }, [submitting, rows.length, requestIdByIndex]);
+
+  const assignFileToZone = (fileIndex: number, zone: string) => {
+    if (submitting) return;
+    if (fileIndex < 0 || fileIndex >= rows.length) return;
+
+    setRequestIdByIndex((prev) => {
+      const next = [...prev];
+      if (zone === UNASSIGNED_ZONE) {
+        next[fileIndex] = "";
+        return next;
+      }
+      if (!pendingMetas.some((m) => m.requestId === zone)) return prev;
+
+      const previousOccupant = next.findIndex(
+        (id, i) => i !== fileIndex && String(id || "").trim() === zone,
+      );
+      const fromTooth = String(next[fileIndex] || "").trim();
+      next[fileIndex] = zone;
+      if (previousOccupant >= 0) {
+        next[previousOccupant] = fromTooth;
+      }
+      return next;
+    });
+  };
+
+  const handleDragStart = (event: DragEvent, index: number) => {
+    if (submitting) return;
+    setDragIndex(index);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", String(index));
+  };
+
+  const handleDragEnd = () => {
+    setDragIndex(null);
+    setOverZone(null);
+  };
+
+  const handleZoneDragOver = (event: DragEvent, zone: string) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    setOverZone(zone);
+  };
+
+  const handleZoneDrop = (event: DragEvent, zone: string) => {
+    event.preventDefault();
+    const raw = event.dataTransfer.getData("text/plain");
+    const index = Number.parseInt(raw, 10);
+    setOverZone(null);
+    setDragIndex(null);
+    if (!Number.isFinite(index) || index < 0 || index >= rows.length) return;
+    assignFileToZone(index, zone);
+  };
 
   const handleOpenChange = (next: boolean) => {
     if (submitting) return;
@@ -147,100 +218,179 @@ export function AbutmentDesignToothAssignDialog({
     void onConfirm(assignments);
   };
 
+  const renderThumb = (index: number) => {
+    const row = rows[index];
+    if (!row) return null;
+    const dragging = dragIndex === index;
+    const suggested = String(row.suggestedTooth || "").trim();
+    const assignedId = String(requestIdByIndex[index] || "").trim();
+    const assignedTooth = assignedId
+      ? toothByRequestId.get(assignedId) || ""
+      : "";
+    const mismatch =
+      Boolean(suggested) &&
+      Boolean(assignedTooth) &&
+      assignedTooth !== suggested;
+
+    return (
+      <button
+        key={fileKey(row.file, index)}
+        type="button"
+        draggable={!submitting}
+        disabled={submitting}
+        onDragStart={(event) => handleDragStart(event, index)}
+        onDragEnd={handleDragEnd}
+        className={cn(
+          "flex shrink-0 cursor-grab flex-col overflow-hidden rounded-md border bg-white text-left active:cursor-grabbing",
+          THUMB_W,
+          mismatch ? "border-amber-300" : "border-slate-200",
+          dragging && "opacity-50",
+          submitting && "cursor-not-allowed opacity-60",
+        )}
+      >
+        <div className="aspect-square w-full bg-slate-100">
+          <StlPreviewThumbnail file={row.file} className="h-full w-full" />
+        </div>
+        <span
+          className="truncate px-1 py-0.5 text-[9px] leading-tight text-slate-600"
+          title={row.file.name}
+        >
+          {row.file.name}
+        </span>
+        {suggested ? (
+          <span
+            className={cn(
+              "truncate px-1 pb-0.5 text-[9px] leading-tight",
+              mismatch ? "text-amber-700" : "text-muted-foreground",
+            )}
+          >
+            추정 {toothLabel(suggested)}
+            {mismatch ? " · 다름" : ""}
+          </span>
+        ) : null}
+      </button>
+    );
+  };
+
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-h-[90vh] max-w-lg gap-0 overflow-hidden p-0 sm:rounded-xl">
-        <DialogHeader className="shrink-0 space-y-1 border-b border-slate-100 px-5 py-4 pr-12">
+      <DialogContent className="max-w-[min(96vw,56rem)] gap-0 overflow-hidden p-0 sm:max-w-[min(96vw,56rem)] sm:rounded-xl sm:p-0">
+        <DialogHeader className="shrink-0 space-y-0.5 border-b border-slate-100 px-4 py-3 pr-12">
           <DialogTitle className="text-base font-semibold tracking-tight">
             파일 ↔ 치아 확인
           </DialogTitle>
-          <DialogDescription className="text-sm text-muted-foreground">
-            각 STL이 어떤 치아 어벗인지 확인한 뒤 다음으로 진행하세요.
+          <DialogDescription className="text-[12px] text-muted-foreground">
+            STL을 치아 번호 위로 드래그해 맞춰 주세요.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="max-h-[min(60vh,420px)] space-y-2 overflow-y-auto px-5 py-4">
-          {rows.map((row, index) => {
-            const assignedId = String(requestIdByIndex[index] || "").trim();
-            const isDup = assignedId && duplicateRequestIds.has(assignedId);
-            const suggestedMismatch = unmatchedSuggested[index];
-            const suggested = String(row.suggestedTooth || "").trim();
-            return (
-              <div
-                key={`${row.file.name}:${row.file.size}:${row.file.lastModified}:${index}`}
-                className={cn(
-                  "rounded-lg border px-3 py-2.5",
-                  isDup
-                    ? "border-destructive/50 bg-destructive/5"
-                    : suggestedMismatch
-                      ? "border-amber-300 bg-amber-50/60"
-                      : "border-slate-200 bg-white",
-                )}
-              >
-                <div className="mb-2 min-w-0">
-                  <p
-                    className="truncate text-sm font-medium text-slate-900"
-                    title={row.file.name}
-                  >
-                    {row.file.name}
-                  </p>
-                  <p className="mt-0.5 text-[11px] text-muted-foreground">
-                    {suggested
-                      ? `파일명 추정 치아: ${toothLabel(suggested)}`
-                      : "파일명에서 치아를 읽지 못함"}
-                    {suggestedMismatch && assignedId
-                      ? " · 선택과 다름"
-                      : null}
-                    {isDup ? " · 치아 중복" : null}
-                  </p>
-                </div>
-                <Select
-                  value={assignedId || EMPTY_VALUE}
-                  disabled={submitting}
-                  onValueChange={(value) => {
-                    const next =
-                      value === EMPTY_VALUE ? "" : String(value || "").trim();
-                    setRequestIdByIndex((prev) => {
-                      const copy = [...prev];
-                      copy[index] = next;
-                      return copy;
-                    });
-                  }}
+        <div className="space-y-3 px-4 py-3">
+          {/* 치아 행: 최소 8열 한 줄 (넘치면 가로 스크롤). items-start로 높이 stretch·하단 허공 방지. */}
+          <div className="flex flex-nowrap items-start justify-center gap-2 overflow-x-auto px-0.5 pt-1 pb-1">
+            {pendingMetas.map((meta) => {
+              const tooth = toothLabel(meta.tooth);
+              const assignedIndex = fileIndexByRequestId.get(meta.requestId);
+              const filled = assignedIndex != null;
+              const over = overZone === meta.requestId;
+              const suggestedMismatch =
+                filled &&
+                Boolean(
+                  String(rows[assignedIndex]?.suggestedTooth || "").trim(),
+                ) &&
+                String(rows[assignedIndex]?.suggestedTooth || "").trim() !==
+                  String(meta.tooth || "").trim();
+
+              return (
+                <div
+                  key={meta.requestId}
+                  className={cn(
+                    "flex w-20 shrink-0 flex-col items-center rounded-lg px-1 pb-1.5 pt-2 transition-colors",
+                    over
+                      ? "bg-primary/10 ring-2 ring-primary/40"
+                      : suggestedMismatch
+                        ? "bg-amber-50/80 ring-1 ring-amber-300"
+                        : filled
+                          ? "bg-slate-50 ring-1 ring-slate-200"
+                          : "bg-transparent",
+                  )}
+                  onDragOver={(event) =>
+                    handleZoneDragOver(event, meta.requestId)
+                  }
+                  onDragLeave={() =>
+                    setOverZone((prev) =>
+                      prev === meta.requestId ? null : prev,
+                    )
+                  }
+                  onDrop={(event) => handleZoneDrop(event, meta.requestId)}
                 >
-                  <SelectTrigger className="h-9 w-full">
-                    <SelectValue placeholder="치아 선택" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={EMPTY_VALUE}>치아 선택</SelectItem>
-                    {pendingMetas.map((meta) => {
-                      const tooth = toothLabel(meta.tooth);
-                      const takenElsewhere =
-                        String(requestIdByIndex[index] || "").trim() !==
-                          meta.requestId &&
-                        requestIdByIndex.some(
-                          (id, i) =>
-                            i !== index &&
-                            String(id || "").trim() === meta.requestId,
-                        );
-                      return (
-                        <SelectItem
-                          key={meta.requestId}
-                          value={meta.requestId}
-                          disabled={takenElsewhere}
-                        >
-                          {tooth}
-                          {takenElsewhere ? " (다른 파일)" : ""}
-                        </SelectItem>
-                      );
-                    })}
-                  </SelectContent>
-                </Select>
+                  <div
+                    className={cn(
+                      "flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold tabular-nums",
+                      filled
+                        ? "bg-slate-900 text-white"
+                        : over
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-slate-200 text-slate-700",
+                    )}
+                  >
+                    {tooth}
+                  </div>
+
+                  {filled ? (
+                    <>
+                      <div
+                        className="flex flex-col items-center py-0.5"
+                        aria-hidden
+                      >
+                        <div className="h-2.5 w-px bg-slate-400" />
+                        <div className="h-1 w-1 rounded-full bg-slate-500" />
+                        <div className="h-2.5 w-px bg-slate-400" />
+                      </div>
+                      {renderThumb(assignedIndex)}
+                    </>
+                  ) : (
+                    <p className="mt-1 text-[10px] text-muted-foreground">
+                      드롭
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* 미배정 — 있을 때만, 한 줄 스트립 */}
+          {unassignedIndexes.length > 0 ? (
+            <div
+              className={cn(
+                "rounded-lg border border-dashed px-2 py-2 transition-colors",
+                overZone === UNASSIGNED_ZONE
+                  ? "border-primary bg-primary/5"
+                  : "border-slate-200 bg-slate-50/70",
+              )}
+              onDragOver={(event) => handleZoneDragOver(event, UNASSIGNED_ZONE)}
+              onDragLeave={() =>
+                setOverZone((prev) =>
+                  prev === UNASSIGNED_ZONE ? null : prev,
+                )
+              }
+              onDrop={(event) => handleZoneDrop(event, UNASSIGNED_ZONE)}
+            >
+              <div className="mb-1.5 flex items-baseline justify-between gap-2">
+                <p className="text-[12px] font-medium text-slate-700">
+                  미배정 STL
+                </p>
+                <span className="text-[10px] tabular-nums text-muted-foreground">
+                  {unassignedIndexes.length}개 · 위로 드래그
+                </span>
               </div>
-            );
-          })}
+              <div className="flex flex-wrap justify-center gap-2">
+                {unassignedIndexes.map((index) => renderThumb(index))}
+              </div>
+            </div>
+          ) : null}
         </div>
 
-        <DialogFooter className="shrink-0 gap-2 border-t border-slate-100 px-5 py-3 sm:justify-end">
+        <DialogFooter className="shrink-0 gap-2 border-t border-slate-100 px-4 py-2.5 sm:justify-end">
           <Button
             type="button"
             variant="outline"
@@ -249,11 +399,7 @@ export function AbutmentDesignToothAssignDialog({
           >
             취소
           </Button>
-          <Button
-            type="button"
-            disabled={!canConfirm}
-            onClick={handleConfirm}
-          >
+          <Button type="button" disabled={!canConfirm} onClick={handleConfirm}>
             {submitting ? "처리 중..." : "확인 후 다음"}
           </Button>
         </DialogFooter>

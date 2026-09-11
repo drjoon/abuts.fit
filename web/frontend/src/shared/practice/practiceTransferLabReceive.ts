@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/components/practice/LabReceiveWorkUploadDialog.tsx
 // change-log:
+// - 2026-09-12: designFileCount — files[]가 있으면 length SSOT(낙관 count 과다 시 업로드 막힘 방지).
 // - 2026-09-12: 비어벗 작업취소 — 도착일(포함) 이후 CTA 숨김(showWorkCancel).
 // - 2026-09-11: pastReady 작업취소 차단 — 디자인 미러가 비어도 sticky/pastReady면 유지.
 // - 2026-09-11: 가공(pastReady) 후 어벗 취소 CTA 숨김 — 리메이크(선택 치아 재제작)로 유도.
@@ -586,11 +587,15 @@ export function countPracticeTransferDesignFiles(
   transfer: PracticeTransferLabReceiveItem | null | undefined,
 ) {
   if (!transfer) return 0;
-  return Number(
-    transfer.production?.designFileCount ||
-      transfer.production?.designFiles?.length ||
-      0,
-  );
+  const fromCount = Number(transfer.production?.designFileCount || 0) || 0;
+  const files = transfer.production?.designFiles;
+  if (Array.isArray(files)) {
+    // 목록 요약만 오고 files=[]·count>0 인 경우 count 유지.
+    // files가 채워졌는데 count가 더 크면(낙관/미러 불일치) files.length SSOT.
+    if (files.length === 0 && fromCount > 0) return fromCount;
+    return files.length;
+  }
+  return fromCount;
 }
 
 /** 치식 요약·연동 Request 기준, 올려야 할 어벗디자인 개수(어벗츠 CNC 대상만) */

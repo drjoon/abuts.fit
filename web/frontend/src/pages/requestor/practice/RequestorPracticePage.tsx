@@ -47,6 +47,7 @@
 // - 2026-09-05: 가이드투어 — pause·수료 시 데모 PTX·상세 삭제(치과 oral 정리와 동일).
 // - 2026-09-05: 가이드투어 — 수신 영화형(데모 PTX·상세 오픈·변이 가드).
 // - 2026-09-02: 어벗츠 제공 CA만 있어도 안내 표시. 심플어벗은 항상 제외.
+// - 2026-09-12: 어벗 업로드 가드 — 취소선과 동일 uploadedTeeth SSOT. handoff 실패 시 해당 파일만 롤백.
 // - 2026-09-03: 수신 헤더 — 어벗 뱃지 왼쪽 간격 없음. 진행중→어벗츠 생산중(정책은 사이드바).
 // - 2026-09-03: 어벗 진행상황 옆「상세」— 연동 CA 의뢰 상세(RequestDetailDialog).
 // - 2026-09-03: 어벗 STL — 비STL·≥3MB 구강스캔 가드 ConfirmDialog + 다시 올리기.
@@ -307,6 +308,7 @@ import {
   isLabReceiveHiddenTerminalStatus,
   listPracticeTransferAbutsCustomAbutmentToothWorks,
   listPracticeTransferPendingProstheticSlots,
+  listPracticeTransferUploadedAbutmentTeeth,
   practiceTransferAbutmentMachiningStarted,
   practiceTransferWorkCancelBlockedByArrival,
   practiceTransferHasCustomAbutment,
@@ -4871,18 +4873,14 @@ export function RequestorPracticeReceivePage({
         .filter(Boolean);
       const workingTransfer = transfer;
 
-      const existingTeeth = new Set(
-        (workingTransfer.production?.designFiles || [])
-          .map((row) => String(row.tooth || "").trim())
-          .filter(Boolean),
-      );
-      const designFileCount = Number(
-        workingTransfer.production?.designFileCount ||
-          workingTransfer.production?.designFiles?.length ||
-          0,
+      // 취소선(LabPendingAbutmentGuide)과 동일 SSOT — tooth 비어 있는 designFiles도 앞에서부터 배정
+      const uploadedTeeth = listPracticeTransferUploadedAbutmentTeeth(
+        workingTransfer,
+        implantCatalog,
       );
       const caTeethRows = listPracticeTransferAbutsCustomAbutmentToothWorks(
         workingTransfer,
+        implantCatalog,
       );
       const caTeethOrdered = caTeethRows
         .map((row) => String(row.toothNumber || "").trim())
@@ -4890,7 +4888,7 @@ export function RequestorPracticeReceivePage({
       const caToothSet = new Set(caTeethOrdered);
 
       if (caTeethOrdered.length === 0) {
-        if (practiceTransferHasPendingLabCustomAbutment(workingTransfer)) {
+        if (practiceTransferHasPendingLabCustomAbutment(workingTransfer, implantCatalog)) {
           toast({
             title: "어벗츠 미제공 임플란트",
             description:
@@ -4906,6 +4904,26 @@ export function RequestorPracticeReceivePage({
         });
         return "error";
       }
+
+      const buildProvisionalMeta = (tooth: string): AbutmentPendingMeta => {
+        const row = caTeethRows.find(
+          (item) => String(item.toothNumber || "").trim() === tooth,
+        );
+        return {
+          requestId: provisionalAbutmentRequestId(tooth),
+          tooth,
+          caseInfos: row
+            ? {
+                tooth,
+                implantManufacturer: row.implantManufacturer,
+                implantBrand: row.implantBrand,
+                implantFamily: row.implantFamily,
+                implantType: row.implantType,
+              }
+            : { tooth },
+          designCompletedAt: "",
+        };
+      };
 
       let pendingMetas: AbutmentPendingMeta[] = [];
 
@@ -4942,45 +4960,27 @@ export function RequestorPracticeReceivePage({
           return { ...meta, tooth: fallback };
         });
 
+        // designCompletedAt만으로 제외하지 않음 — 파일 미러가 빠진 치아는 재업로드 허용
         pendingMetas = enrichedMetas.filter((meta) => {
-          if (meta.designCompletedAt) return false;
           const tooth = String(meta.tooth || "").trim();
-          if (tooth && existingTeeth.has(tooth)) return false;
-          if (caToothSet.size > 0) {
-            if (!tooth || !caToothSet.has(tooth)) return false;
-          }
+          if (!tooth || !caToothSet.has(tooth)) return false;
+          if (uploadedTeeth.has(tooth)) return false;
           return true;
         });
+
+        const pendingToothSet = new Set(
+          pendingMetas.map((meta) => String(meta.tooth || "").trim()).filter(Boolean),
+        );
+        for (const tooth of caTeethOrdered) {
+          if (uploadedTeeth.has(tooth) || pendingToothSet.has(tooth)) continue;
+          pendingMetas.push(buildProvisionalMeta(tooth));
+          pendingToothSet.add(tooth);
+        }
       } else {
         // 수락만 된 상태 — Request는 STL handoff에서 생성. 치식으로 큐잉.
         pendingMetas = caTeethOrdered
-          .filter((tooth) => !existingTeeth.has(tooth))
-          .map((tooth) => {
-            const row = caTeethRows.find(
-              (item) => String(item.toothNumber || "").trim() === tooth,
-            );
-            return {
-              requestId: provisionalAbutmentRequestId(tooth),
-              tooth,
-              caseInfos: row
-                ? {
-                    tooth,
-                    implantManufacturer: row.implantManufacturer,
-                    implantBrand: row.implantBrand,
-                    implantFamily: row.implantFamily,
-                    implantType: row.implantType,
-                  }
-                : { tooth },
-              designCompletedAt: "",
-            };
-          });
-      }
-
-      // designFiles에 치아가 비어 있는 경우: 개수만큼 앞에서 제외
-      const assignedDesignCount = existingTeeth.size;
-      const orphanDesignCount = Math.max(0, designFileCount - assignedDesignCount);
-      if (orphanDesignCount > 0 && pendingMetas.length > 0) {
-        pendingMetas = pendingMetas.slice(orphanDesignCount);
+          .filter((tooth) => !uploadedTeeth.has(tooth))
+          .map((tooth) => buildProvisionalMeta(tooth));
       }
 
       if (pendingMetas.length === 0) {
@@ -5023,6 +5023,7 @@ export function RequestorPracticeReceivePage({
       cardActionBusyId,
       designConfirmBusy,
       fetchRequestCaseInfos,
+      implantCatalog,
       openAbutmentDesignConfirmQueue,
       toast,
       token,
@@ -5264,11 +5265,31 @@ export function RequestorPracticeReceivePage({
                 res.data && typeof res.data === "object"
                   ? (res.data as Record<string, unknown>)
                   : {};
+              // 큐·병렬 handoff 중 다른 파일 낙관 패치를 지우지 않도록 실패 파일만 제거
+              const removeFailedDesignFile = (
+                row: ReceivedPracticeTransfer,
+              ): ReceivedPracticeTransfer => {
+                const files = Array.isArray(row.production?.designFiles)
+                  ? row.production.designFiles
+                  : [];
+                const nextFiles = files.filter(
+                  (fileRow) => String(fileRow.s3Key || "").trim() !== s3Key,
+                );
+                if (nextFiles.length === files.length) return row;
+                return {
+                  ...row,
+                  production: {
+                    ...row.production,
+                    designFiles: nextFiles,
+                    designFileCount: nextFiles.length,
+                  },
+                };
+              };
               setTransfers((prev) =>
                 prev.map((row) =>
                   row._id === transfer._id ||
                   row.transferId === transfer.transferId
-                    ? transfer
+                    ? removeFailedDesignFile(row)
                     : row,
                 ),
               );
@@ -5276,7 +5297,7 @@ export function RequestorPracticeReceivePage({
                 prev &&
                 (prev._id === transfer._id ||
                   prev.transferId === transfer.transferId)
-                  ? transfer
+                  ? removeFailedDesignFile(prev)
                   : prev,
               );
               if (isPtxCaInsufficientCreditBody(body, res.status)) {
