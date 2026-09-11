@@ -287,6 +287,7 @@ import {
 // - 2026-08-18: full 치식에서는 R/M/L 스크롤 버튼을 숨긴다.
 // - 2026-08-19: 치아 옆 스크롤·R/M/L 제거. compact는 overflow-x + custom-scrollbar-x.
 // - 2026-08-20: Expert — 헤더 다음 메모|드롭존 2열, 보철물은 그 아래.
+// - 2026-09-11: 메모 제안 — 20건·아래로 표시·항목별 X 삭제.
 // - 2026-09-11: 메모 — 클릭·빈 줄 Enter·스페이스 시 최근 입력 5개 제안.
 // - 2026-08-20: 메모 라벨·?툴팁 제거. 메모|드롭존 높이 stretch 맞춤.
 // - 2026-08-25: 보철물 가이드투어 — 선택·해제·브리지·형태·복사·어벗·프리셋·견적 체험.
@@ -299,7 +300,7 @@ import {
 const PRACTICE_MEMO_SNIPPETS_LOCAL_KEY = "practice_transfer_memo_snippets_v1";
 const MAX_MEMO_SNIPPETS = 40;
 /** 최근 입력·자동완성 목록에 보여줄 최대 개수 */
-const MAX_MEMO_SUGGESTIONS = 5;
+const MAX_MEMO_SUGGESTIONS = 20;
 /** 카드 높이: 번호+형태+어벗+임플란트/스캔바디 2줄+복사 기준(이보다 짧으면 형태 버튼이 flex-shrink로 가려짐) */
 const TOOTH_CARD_HEIGHT_CLASS = "h-[12rem]";
 /** full(16칸) — compact와 동일. 9rem은 어벗 상세 시 유형 스위치가 찌그러짐 */
@@ -2972,6 +2973,25 @@ export const PracticeTransferRequestIntakePanel = ({
     commitMemoSnippets([text, ...without]);
   };
 
+  const removeMemoSnippet = (snippet: string) => {
+    const text = String(snippet || "").trim();
+    if (!text) return;
+    const next = memoSnippets.filter(
+      (item) => item.toLowerCase() !== text.toLowerCase(),
+    );
+    commitMemoSnippets(next);
+    if (suggestLineIndex !== null) {
+      const lineValue = memoLines[suggestLineIndex] || "";
+      const remaining = filterMemoSuggestions(lineValue, next);
+      if (remaining.length === 0) closeMemoSuggestions();
+      else {
+        setSuggestActiveIndex((prev) =>
+          Math.min(prev, Math.max(0, remaining.length - 1)),
+        );
+      }
+    }
+  };
+
   const closeMemoSuggestions = () => {
     setSuggestLineIndex(null);
     setSuggestActiveIndex(0);
@@ -3560,9 +3580,11 @@ export const PracticeTransferRequestIntakePanel = ({
           }
           className={cn(
             "flex flex-col gap-1.5 rounded-lg border border-slate-200 bg-white p-2.5",
-            besideMemoContent
-              ? "overflow-y-auto"
-              : (memoBoxClassName ?? "min-h-[9rem]"),
+            suggestLineIndex !== null
+              ? "overflow-visible"
+              : besideMemoContent
+                ? "overflow-y-auto"
+                : (memoBoxClassName ?? "min-h-[9rem]"),
           )}
           style={
             besideMemoContent && memoMatchBesideHeightPx != null
@@ -3715,24 +3737,41 @@ export const PracticeTransferRequestIntakePanel = ({
                   />
                   {showSuggestions ? (
                     <div className="absolute left-0 right-0 top-full z-30 mt-1 overflow-hidden rounded-md border border-slate-200 bg-white text-slate-900 shadow-lg">
-                      <ul className="max-h-48 overflow-y-auto py-1 text-sm">
+                      <ul className="max-h-72 overflow-y-auto py-1 text-sm">
                         {lineSuggestions.map((snippet, optionIndex) => (
-                          <li key={`memo-suggest-${index}-${optionIndex}:${snippet}`}>
+                          <li
+                            key={`memo-suggest-${index}-${optionIndex}:${snippet}`}
+                            className={cn(
+                              "flex items-center gap-0.5 hover:bg-primary-soft hover:text-primary-strong",
+                              optionIndex === suggestActiveIndex &&
+                                "bg-primary-soft text-primary-strong",
+                            )}
+                            onMouseEnter={() => setSuggestActiveIndex(optionIndex)}
+                          >
                             <button
                               type="button"
-                              className={cn(
-                                "flex w-full cursor-pointer items-center px-2.5 py-1.5 text-left hover:bg-primary-soft hover:text-primary-strong",
-                                optionIndex === suggestActiveIndex &&
-                                  "bg-primary-soft text-primary-strong",
-                              )}
+                              className="flex min-w-0 flex-1 cursor-pointer items-center px-2.5 py-1.5 text-left"
                               tabIndex={-1}
                               onMouseDown={(ev) => {
                                 ev.preventDefault();
                                 applyMemoSuggestion(index, snippet);
                               }}
-                              onMouseEnter={() => setSuggestActiveIndex(optionIndex)}
                             >
                               <span className="truncate">{snippet}</span>
+                            </button>
+                            <button
+                              type="button"
+                              className="mr-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-white/80 hover:text-destructive"
+                              tabIndex={-1}
+                              aria-label="최근 메모 삭제"
+                              title="삭제"
+                              onMouseDown={(ev) => {
+                                ev.preventDefault();
+                                ev.stopPropagation();
+                                removeMemoSnippet(snippet);
+                              }}
+                            >
+                              <X className="h-3.5 w-3.5" />
                             </button>
                           </li>
                         ))}
