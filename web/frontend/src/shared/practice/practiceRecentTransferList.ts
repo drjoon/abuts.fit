@@ -1,10 +1,12 @@
 /**
  * 치과 기공의뢰 — 최근 전송 목록 매핑·그룹·필터 SSOT.
- * 상단 5뱃지: 의뢰 / 취소 / 작업시작 / 완료 / 어벗 (출고·리메이크·거절 뱃지 삭제).
+ * 상단 5뱃지: 의뢰 / 작업시작 / 완료 / 취소 / 어벗 (출고·리메이크·거절 뱃지 삭제).
  * 취소=작업취소+기공소 거절(거부)+휴지통(취소). 어벗=CA 디자인 업로드(+제조 출고 단계).
  * 수락=의뢰수락. 완료=치과도착일 경과 자동 작업완료(어벗 미업로드). 채팅 unread는 상태 뱃지별 합산.
  * 자동매칭(공개 풀)은 공정상 의뢰 — 뱃지 집계·「의뢰」필터에 포함.
- * 기공소 수신은 거절·작업취소가 목록에서 빠져 취소/거절 뱃지 불필요 → 치과만 취소 포함 4뱃지.
+ * 기공소 수신은 거절·작업취소가 목록에서 빠져 취소/거절 뱃지 불필요 → 치과만 취소 포함 5뱃지.
+ * 본문 건수: 의뢰·작업시작=전체. 완료·취소·어벗=미열람만(clearedIds 제외).
+ * 2026-09-11: 배지 순서 의뢰→작업시작→완료→취소→어벗. 완료·취소·어벗 열람 시 본문 건수 감소.
  * 2026-09-11: listBadgeNavigate — 상태 전 건 순회(미확인 앞). 건수와 클릭 대상 일치.
  * 2026-09-09: listUnreadTransfersForStatusFilter — 상태 뱃지 unread 순회용.
  * 2026-09-02: 거절 뱃지 제거·기공소 거절은 취소 집계. 어벗=CA designFiles.
@@ -15,6 +17,7 @@
  * - web/frontend/src/pages/practice/components/PracticeRecentTransfersAllModal.tsx
  * - web/frontend/src/pages/practice/components/PracticeRecentTransfersCalendar.tsx
  * - web/frontend/src/pages/practice/components/PracticeStatusFilterBadges.tsx
+ * - web/frontend/src/shared/practice/practiceStatusBadgeReviewQueue.ts
  * - web/frontend/src/store/usePeriodStore.ts
  */
 import { type ChatRoom } from "@/shared/hooks/useChatRooms";
@@ -240,7 +243,7 @@ export type PracticeRecentStatusCounts = {
 
 /** 전체보기 기본 ON — 5상태 전부. 「기본」 리셋도 이 집합. */
 export const PRACTICE_RECENT_DEFAULT_ON_STATUS_FILTERS: readonly PracticeRecentStatusFilterKey[] =
-  ["발송완료", "취소", "의뢰수락", "도착완료", "작업완료"];
+  ["발송완료", "의뢰수락", "도착완료", "취소", "작업완료"];
 
 export const createPracticeRecentStatusFilterSet = (
   keys: readonly PracticeRecentStatusFilterKey[] = PRACTICE_RECENT_DEFAULT_ON_STATUS_FILTERS,
@@ -405,37 +408,42 @@ export const resolvePracticeRecentDisplayStatus = (row: {
   return apiStage;
 };
 
-/** 최근전송 상단 5뱃지 — 라벨·집계키·빠른툴팁 SSOT. */
+/** 최근전송 상단 5뱃지 — 라벨·집계키·빠른툴팁 SSOT. 순서=의뢰→작업시작→완료→취소→어벗. */
 export const PRACTICE_RECENT_STATUS_BADGES = [
   {
     filter: "발송완료",
     label: "의뢰",
     countKey: "sent",
-    tooltip: "치과에서 기공의뢰서 전송 후(자동매칭 공개 풀 포함)",
-  },
-  {
-    filter: "취소",
-    label: "취소",
-    countKey: "canceled",
-    tooltip: "기공소 작업취소·거절, 또는 휴지통으로 옮긴 취소 건",
+    tooltip:
+      "치과에서 기공의뢰서 전송 후(자동매칭 공개 풀 포함). 열어봐도 숫자는 그대로입니다 — 작업시작해 다음 단계로 넘길 때까지 계속 추적합니다.",
   },
   {
     filter: "의뢰수락",
     label: "작업시작",
     countKey: "accepted",
-    tooltip: "기공소가 작업을 시작한 건",
+    tooltip:
+      "기공소가 작업을 시작한 건. 열어봐도 숫자는 그대로입니다 — 완료·취소·어벗으로 넘어갈 때까지 계속 추적합니다.",
   },
   {
     filter: "도착완료",
     label: "완료",
     countKey: "finished",
-    tooltip: "치과도착일 경과 후 자동 작업완료(어벗 STL 없음)",
+    tooltip:
+      "치과도착일 경과 후 자동 작업완료(어벗 STL 없음). 한 번 열면 숫자에서 빠집니다 — 확인만 하면 되는 종료 건입니다.",
+  },
+  {
+    filter: "취소",
+    label: "취소",
+    countKey: "canceled",
+    tooltip:
+      "기공소 작업취소·거절, 또는 휴지통으로 옮긴 취소 건. 한 번 열면 숫자에서 빠집니다 — 확인만 하면 되는 종료 건입니다.",
   },
   {
     filter: "작업완료",
     label: "어벗",
     countKey: "abutment",
-    tooltip: "커스텀 어벗 디자인 업로드 후(제조 출고 단계 포함)",
+    tooltip:
+      "커스텀 어벗 디자인 업로드 후(제조 출고 단계 포함). 한 번 열면 숫자에서 빠집니다 — 확인만 하면 되는 종료 건입니다.",
   },
 ] as const satisfies ReadonlyArray<{
   filter: Exclude<PracticeRecentStatusFilter, "all">;
@@ -444,31 +452,44 @@ export const PRACTICE_RECENT_STATUS_BADGES = [
   tooltip: string;
 }>;
 
+/** 완료 뱃지 앞 시각 간격 — 의뢰·작업시작 | 완료·취소·어벗 */
+export const PRACTICE_RECENT_STATUS_BADGE_GAP_BEFORE_KEYS = ["도착완료"] as const;
+
+/** 완료·취소·어벗 — 상세를 한 번 열면 배지 본문 건수에서 제외. */
+export const practiceRecentStatusFilterClearsCountOnView = (
+  filter: PracticeRecentStatusFilterKey | string,
+) =>
+  filter === "취소" || filter === "도착완료" || filter === "작업완료";
+
 /** 기공소 수신 상단 4뱃지 — 취소 제외(거절·작업취소는 목록에서 제거되어 필터 불필요). */
 export const LAB_RECEIVE_STATUS_BADGES = [
   {
     filter: "발송완료",
     label: "의뢰",
     countKey: "sent",
-    tooltip: "치과에서 기공의뢰서 전송 후(자동매칭 공개 풀 포함)",
+    tooltip:
+      "치과에서 기공의뢰서 전송 후(자동매칭 공개 풀 포함). 열어봐도 숫자는 그대로입니다 — 작업시작해 다음 단계로 넘길 때까지 계속 추적합니다.",
   },
   {
     filter: "의뢰수락",
     label: "작업시작",
     countKey: "accepted",
-    tooltip: "기공소가 작업을 시작한 건",
+    tooltip:
+      "기공소가 작업을 시작한 건. 열어봐도 숫자는 그대로입니다 — 완료·어벗으로 넘어갈 때까지 계속 추적합니다.",
   },
   {
     filter: "도착완료",
     label: "완료",
     countKey: "finished",
-    tooltip: "치과도착일 경과 후 자동 작업완료(어벗 STL 없음)",
+    tooltip:
+      "치과도착일 경과 후 자동 작업완료(어벗 STL 없음). 한 번 열면 숫자에서 빠집니다 — 확인만 하면 되는 종료 건입니다.",
   },
   {
     filter: "작업완료",
     label: "어벗",
     countKey: "abutment",
-    tooltip: "커스텀 어벗 디자인 업로드 후(제조 출고 단계 포함)",
+    tooltip:
+      "커스텀 어벗 디자인 업로드 후(제조 출고 단계 포함). 한 번 열면 숫자에서 빠집니다 — 확인만 하면 되는 종료 건입니다.",
   },
 ] as const satisfies ReadonlyArray<{
   filter: Exclude<PracticeRecentStatusFilter, "all" | "취소">;
@@ -561,7 +582,7 @@ export const toStatusLabel = (manufacturerStage: unknown) => {
   return "발송완료";
 };
 
-/** 목록/카드 뱃지 라벨 — 상단 필터(의뢰·취소·작업시작·어벗)와 동일 문구 */
+/** 목록/카드 뱃지 라벨 — 상단 필터(의뢰·작업시작·완료·취소·어벗)와 동일 문구 */
 export const toStatusBadgeLabel = (
   status: unknown,
   opts?: {
@@ -1677,10 +1698,40 @@ const bumpPracticeRecentStatusCount = (
   acc.sent += delta;
 };
 
+/** 완료·취소·어벗 버킷이면 열람(cleared) 후 본문 건수에서 뺄 대상. */
+const isPracticeRecentClearOnViewBadgeTransfer = (transfer: {
+  status?: unknown;
+  designFileCount?: unknown;
+  designFiles?: unknown;
+  designReadyAt?: unknown;
+}) => {
+  const status = String(transfer.status || "").trim();
+  if (isPracticeRecentCancelBadgeStatus(status)) return true;
+  if (isPracticeRecentAbutmentBadgeStatus(transfer)) return true;
+  if (isPracticeRecentFinishedBadgeStatus(transfer)) return true;
+  return false;
+};
+
+/**
+ * 상태 뱃지 본문 건수.
+ * clearedIds가 있으면 완료·취소·어벗만 열람 건 제외. 의뢰·작업시작은 항상 전체.
+ */
 export const computeGroupedStatusCounts = (
   groupedTransfers: PracticeRecentTransferItem[],
+  clearedIds?: ReadonlySet<string> | null,
 ): PracticeRecentStatusCounts =>
   groupedTransfers.reduce((acc, request) => {
+    if (clearedIds && clearedIds.size > 0) {
+      const id = String(request.transferId || "").trim();
+      if (
+        id &&
+        id !== "-" &&
+        clearedIds.has(id) &&
+        isPracticeRecentClearOnViewBadgeTransfer(request)
+      ) {
+        return acc;
+      }
+    }
     bumpPracticeRecentStatusCount(acc, request, 1);
     return acc;
   }, emptyPracticeRecentStatusCounts());
@@ -1774,9 +1825,9 @@ export const listTransfersForStatusFilter = <
 };
 
 /**
- * 뱃지 클릭 순회 대상 — 해당 상태 **전 건**(배지 본문 건수와 동일).
+ * 뱃지 클릭 순회 대상 — 배지 본문 건수와 동일 집합(날짜 오름차순).
  * 미확인(채팅)을 앞에 두고, 날짜 오름차순은 유지(stable).
- * (예전: unread만 반환 → 건수와 순회 대상이 어긋남)
+ * 호출측에서 완료·취소·어벗은 미열람만 넘긴다.
  */
 export const listBadgeNavigateTransfersForStatusFilter = <
   T extends {

@@ -87,16 +87,15 @@ import {
 } from "@/shared/practice/labReceiveCalendarYmdRange";
 import { useAuthStore } from "@/store/useAuthStore";
 import {
-  PRACTICE_STATUS_BADGE_CLEARED_EVENT,
   isPracticeStatusBadgeQueueTransfer,
-  readPracticeStatusBadgeClearedIds,
-  type PracticeStatusBadgeClearedDetail,
+  migratePracticeStatusBadgeClearedFromLegacyLocalStorage,
 } from "@/shared/practice/practiceStatusBadgeReviewQueue";
 import {
   type PracticeRecentTransferItem,
   type PracticeRecentRequestItem,
   type PracticeRecentStatusFilterKey,
   PRACTICE_RECENT_STATUS_BADGES,
+  PRACTICE_RECENT_STATUS_BADGE_GAP_BEFORE_KEYS,
   computeGroupedStatusCounts,
   computeGroupedStatusUnreadCounts,
   canDeletePracticeTransferByStatus,
@@ -106,6 +105,7 @@ import {
   listBadgeNavigateTransfersForStatusFilter,
   mapMyPracticeTransferApiRows,
   patchPracticeRecentRequestProsthesisFollowUp,
+  practiceRecentStatusFilterClearsCountOnView,
   prosthesisFollowUpPatchFromRealtimePayload,
   toStatusBadgeLabel,
 } from "@/shared/practice/practiceRecentTransferList";
@@ -224,16 +224,17 @@ export function PracticeRecentTransfersAllModal({
   const setStoredHiddenWeekdays = useAuthStore(
     (s) => s.setLabReceiveCalendarHiddenWeekdays,
   );
-  const badgeScopeKey = useAuthStore((s) =>
-    String(s.user?.id || (s.user as { _id?: string } | null | undefined)?._id || "").trim(),
+  const badgeClearedTransferIds = useAuthStore(
+    (s) => s.user?.practiceStatusBadgeClearedTransferIds,
+  );
+  const badgeClearedIds = useMemo(
+    () => new Set(badgeClearedTransferIds || []),
+    [badgeClearedTransferIds],
   );
   const [search, setSearch] = useState(() =>
     String(initialSearch || "").trim()
       ? String(initialSearch || "")
       : readStoredRecentTransfersAllSearch(""),
-  );
-  const [badgeClearedIds, setBadgeClearedIds] = useState<Set<string>>(
-    () => readPracticeStatusBadgeClearedIds(badgeScopeKey),
   );
   const [dateKey, setDateKey] = useState<PracticeCalendarDateKey>(() =>
     normalizeLabReceiveCalendarDateKey(storedCalendarDateKey),
@@ -263,27 +264,8 @@ export function PracticeRecentTransfersAllModal({
   );
 
   useEffect(() => {
-    setBadgeClearedIds(readPracticeStatusBadgeClearedIds(badgeScopeKey));
-  }, [badgeScopeKey]);
-
-  useEffect(() => {
-    const onCleared = (evt: Event) => {
-      const detail =
-        evt instanceof CustomEvent && evt.detail && typeof evt.detail === "object"
-          ? (evt.detail as PracticeStatusBadgeClearedDetail)
-          : null;
-      if (!detail) return;
-      if (String(detail.scopeKey || "").trim() !== badgeScopeKey) {
-        setBadgeClearedIds(readPracticeStatusBadgeClearedIds(badgeScopeKey));
-        return;
-      }
-      setBadgeClearedIds(new Set(detail.clearedIds || []));
-    };
-    window.addEventListener(PRACTICE_STATUS_BADGE_CLEARED_EVENT, onCleared);
-    return () => {
-      window.removeEventListener(PRACTICE_STATUS_BADGE_CLEARED_EVENT, onCleared);
-    };
-  }, [badgeScopeKey]);
+    migratePracticeStatusBadgeClearedFromLegacyLocalStorage();
+  }, []);
 
   const handleViewModeChange = useCallback(
     (mode: LabReceiveCalendarViewMode) => {
@@ -522,7 +504,7 @@ export function PracticeRecentTransfersAllModal({
     [groupedTransfers],
   );
 
-  // 헤더 본문=상태별 전체 건수. 빨간 점=미확인(채팅).
+  // 헤더 본문: 의뢰·작업시작=전체, 완료·취소·어벗=미열람만. 빨간 점=미확인(채팅).
   // 목록·칩: 미처리=빨간 테두리, 미확인(채팅)=빨간 숫자만(테두리 없음).
   const badgeQueueTransfers = useMemo(
     () =>
@@ -540,8 +522,8 @@ export function PracticeRecentTransfersAllModal({
   );
 
   const statusCounts = useMemo(
-    () => computeGroupedStatusCounts(visibleGroupedTransfers),
-    [visibleGroupedTransfers],
+    () => computeGroupedStatusCounts(visibleGroupedTransfers, badgeClearedIds),
+    [badgeClearedIds, visibleGroupedTransfers],
   );
 
   const statusUnreadCounts = useMemo(
@@ -702,15 +684,21 @@ export function PracticeRecentTransfersAllModal({
   const navigateNextUnreadForStatus = useCallback(
     (key: string) => {
       const filterKey = key as PracticeRecentStatusFilterKey;
-      // 배지 본문 건수와 동일하게 해당 상태 전 건 순회.
+      // 배지 본문 건수와 동일하게 순회(완료·취소·어벗은 미열람만).
       // 미확인·미처리를 앞에 두되, 큐에만 가두면 열람 후 빠진 건이 누락됨.
       const queueMatched = listBadgeNavigateTransfersForStatusFilter(
         badgeQueueTransfers,
         filterKey,
         dateKey,
       );
+      const countSource = practiceRecentStatusFilterClearsCountOnView(filterKey)
+        ? visibleGroupedTransfers.filter((transfer) => {
+            const id = String(transfer.transferId || "").trim();
+            return !id || id === "-" || !badgeClearedIds.has(id);
+          })
+        : visibleGroupedTransfers;
       const allMatched = listBadgeNavigateTransfersForStatusFilter(
-        visibleGroupedTransfers,
+        countSource,
         filterKey,
         dateKey,
       );
@@ -741,6 +729,7 @@ export function PracticeRecentTransfersAllModal({
       );
     },
     [
+      badgeClearedIds,
       badgeQueueTransfers,
       dateKey,
       focusCalendarTransfer,
@@ -765,6 +754,7 @@ export function PracticeRecentTransfersAllModal({
     <PracticeStatusFilterBadges
       items={statusFilterBadgeItems}
       onUnreadNavigate={navigateNextUnreadForStatus}
+      gapBeforeKeys={PRACTICE_RECENT_STATUS_BADGE_GAP_BEFORE_KEYS}
       compact={isMobile}
       className={isMobile ? "contents" : undefined}
     />

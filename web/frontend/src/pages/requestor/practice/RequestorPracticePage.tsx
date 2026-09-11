@@ -209,11 +209,9 @@ import { apiFetch, request } from "@/shared/api/apiClient";
 import { useChatMessages } from "@/shared/hooks/useChatMessages";
 import { useChatRooms, requestChatRoomsClearUnread, type ChatRoom } from "@/shared/hooks/useChatRooms";
 import {
-  PRACTICE_STATUS_BADGE_CLEARED_EVENT,
   isPracticeStatusBadgeQueueTransfer,
   markPracticeStatusBadgeTransfersCleared,
-  readPracticeStatusBadgeClearedIds,
-  type PracticeStatusBadgeClearedDetail,
+  migratePracticeStatusBadgeClearedFromLegacyLocalStorage,
 } from "@/shared/practice/practiceStatusBadgeReviewQueue";
 import { anonymizeAutoMatchChatSenderName } from "@/shared/practice/autoMatchIdentity";
 import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
@@ -227,9 +225,11 @@ import { useS3FileDownload } from "@/shared/files/useS3FileDownload";
 import { cn } from "@/shared/ui/cn";
 import {
   LAB_RECEIVE_STATUS_BADGES,
+  PRACTICE_RECENT_STATUS_BADGE_GAP_BEFORE_KEYS,
   computeGroupedStatusCounts,
   computeGroupedStatusUnreadCounts,
   listBadgeNavigateTransfersForStatusFilter,
+  practiceRecentStatusFilterClearsCountOnView,
   toStatusBadgeLabel,
   type PracticeRecentStatusFilterKey,
   type PracticeRecentTransferItem,
@@ -720,9 +720,12 @@ export function RequestorPracticeReceivePage({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
-  const badgeScopeKey = String(user?._id || user?.id || "").trim();
-  const [badgeClearedIds, setBadgeClearedIds] = useState<Set<string>>(
-    () => readPracticeStatusBadgeClearedIds(badgeScopeKey),
+  const badgeClearedTransferIds = useAuthStore(
+    (s) => s.user?.practiceStatusBadgeClearedTransferIds,
+  );
+  const badgeClearedIds = useMemo(
+    () => new Set(badgeClearedTransferIds || []),
+    [badgeClearedTransferIds],
   );
   const [dateKey, setDateKey] = useState<PracticeCalendarDateKey>(() =>
     normalizeLabReceiveCalendarDateKey(storedCalendarDateKey),
@@ -757,27 +760,8 @@ export function RequestorPracticeReceivePage({
   );
 
   useEffect(() => {
-    setBadgeClearedIds(readPracticeStatusBadgeClearedIds(badgeScopeKey));
-  }, [badgeScopeKey]);
-
-  useEffect(() => {
-    const onCleared = (evt: Event) => {
-      const detail =
-        evt instanceof CustomEvent && evt.detail && typeof evt.detail === "object"
-          ? (evt.detail as PracticeStatusBadgeClearedDetail)
-          : null;
-      if (!detail) return;
-      if (String(detail.scopeKey || "").trim() !== badgeScopeKey) {
-        setBadgeClearedIds(readPracticeStatusBadgeClearedIds(badgeScopeKey));
-        return;
-      }
-      setBadgeClearedIds(new Set(detail.clearedIds || []));
-    };
-    window.addEventListener(PRACTICE_STATUS_BADGE_CLEARED_EVENT, onCleared);
-    return () => {
-      window.removeEventListener(PRACTICE_STATUS_BADGE_CLEARED_EVENT, onCleared);
-    };
-  }, [badgeScopeKey]);
+    migratePracticeStatusBadgeClearedFromLegacyLocalStorage();
+  }, []);
 
   useEffect(() => {
     if (
@@ -2150,8 +2134,11 @@ export function RequestorPracticeReceivePage({
         transferId: transfer.transferId || transfer._id,
       }),
     );
-    return computeGroupedStatusCounts(asItems as PracticeRecentTransferItem[]);
-  }, [baseFilteredTransfers]);
+    return computeGroupedStatusCounts(
+      asItems as PracticeRecentTransferItem[],
+      badgeClearedIds,
+    );
+  }, [badgeClearedIds, baseFilteredTransfers]);
 
   const statusUnreadCounts = useMemo(() => {
     const asItems = baseFilteredTransfers.map(
@@ -5614,7 +5601,7 @@ export function RequestorPracticeReceivePage({
       // 헤더 확인 큐·채팅 unread·미확인 의뢰 — 열자마자 카운터 감소.
       const openedTransferId = String(transfer.transferId || "").trim();
       if (openedTransferId) {
-        markPracticeStatusBadgeTransfersCleared(badgeScopeKey, [openedTransferId]);
+        markPracticeStatusBadgeTransfersCleared([openedTransferId]);
         if (!transfer.isRead) {
           setTransfers((prev) =>
             prev.map((row) =>
@@ -5641,7 +5628,6 @@ export function RequestorPracticeReceivePage({
       await resolveTransferChatRoom(transfer, resolveSeq);
     },
     [
-      badgeScopeKey,
       chatUploads,
       clearUnreadForTransferIds,
       emitUnreadBadgeRefresh,
@@ -5953,7 +5939,7 @@ export function RequestorPracticeReceivePage({
         arrivalDate: transfer.arrivalDate,
         createdAt: transfer.createdAt,
       });
-      // 배지 본문 건수와 동일하게 해당 상태 전 건 순회.
+      // 배지 본문 건수와 동일하게 순회(완료·어벗은 미열람만).
       // 미확인·미처리를 앞에 두되, 큐에만 가두면 열람 후 빠진 건이 누락됨.
       const queueRows = baseFilteredTransfers.filter((transfer) =>
         isPracticeStatusBadgeQueueTransfer(
@@ -5970,8 +5956,14 @@ export function RequestorPracticeReceivePage({
         filterKey,
         calendarDateKey,
       );
+      const countRows = practiceRecentStatusFilterClearsCountOnView(filterKey)
+        ? baseFilteredTransfers.filter((transfer) => {
+            const id = String(transfer.transferId || transfer._id || "").trim();
+            return !id || id === "-" || !badgeClearedIds.has(id);
+          })
+        : baseFilteredTransfers;
       const allMatched = listBadgeNavigateTransfersForStatusFilter(
-        baseFilteredTransfers.map(toMeta),
+        countRows.map(toMeta),
         filterKey,
         calendarDateKey,
       );
@@ -6036,6 +6028,7 @@ export function RequestorPracticeReceivePage({
         className="min-w-0 flex-1 sm:justify-center"
         items={labStatusFilterBadgeItems}
         onUnreadNavigate={navigateNextUnreadForStatus}
+        gapBeforeKeys={PRACTICE_RECENT_STATUS_BADGE_GAP_BEFORE_KEYS}
         countSuffix="건"
         trailing={
           <RequestorAbutmentPageHeader variant="policyInProgress" />

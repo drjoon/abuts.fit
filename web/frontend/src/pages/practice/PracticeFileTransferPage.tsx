@@ -1145,7 +1145,7 @@ const toStatusLabel = (manufacturerStage: unknown) => {
   return "발송완료";
 };
 
-/** 목록/카드 뱃지 라벨 — 상단 필터(의뢰·취소·작업시작·어벗)와 동일 문구 */
+/** 목록/카드 뱃지 라벨 — 상단 필터(의뢰·작업시작·완료·취소·어벗)와 동일 문구 */
 const toStatusBadgeLabel = (
   status: unknown,
   opts?: {
@@ -5307,10 +5307,7 @@ export const PracticeFileTransferPage = ({
     // 헤더 확인 큐·채팅 unread — 열자마자 카운터 감소.
     const openedTransferId = String(transfer.transferId || "").trim();
     if (openedTransferId && openedTransferId !== "-") {
-      markPracticeStatusBadgeTransfersCleared(
-        authUser?.id || (authUser as { _id?: string } | null)?._id,
-        [openedTransferId],
-      );
+      markPracticeStatusBadgeTransfersCleared([openedTransferId]);
       clearUnreadForTransferIds([openedTransferId]);
       requestChatRoomsClearUnread({ transferIds: [openedTransferId] });
     }

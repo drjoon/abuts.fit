@@ -1,10 +1,10 @@
 /**
  * 치과 전체보기·기공의뢰수신 공통 — 상단 상태 뱃지 행.
- * 본문 숫자=해당 상태 전체 건수. 빨간 점=미확인(채팅).
+ * 본문 숫자: 의뢰·작업시작=전체, 완료·취소·어벗=미열람. 빨간 점=미확인(채팅).
  * 클릭=미확인·미처리 우선으로 해당 상태 건을 하나씩 연다.
  * 캘린더·목록 칩 빨간 숫자=미확인(채팅)만. 빨간 테두리=미처리(작업큐)만(채팅만은 테두리 없음).
- * 2026-09-11: 클릭 순회=상태 전 건(미확인·미처리 앞). 큐만 보면 열람 후 건 누락.
- * 2026-09-11: 헤더 본문=상태 건수(열람으로 0 되지 않음). 미처리·미확인은 테두리/숫자·안내 바로.
+ * 2026-09-11: 완료·취소·어벗 본문=미열람만(계정 preferences). 순서 의뢰→작업시작→완료→취소→어벗. 완료 앞 여백.
+ * 2026-09-11: 클릭 순회=본문 건수와 동일 집합(미확인·미처리 앞).
  * 2026-09-10: 표시 on/off·「기본」리셋 제거.
  * 2026-09-03: trailing — 어벗츠 생산중 등. 정책 안내는 사이드바.
  * 2026-08-27: 발송 뒤 리메이크·미확인 간격. 미확인 전용 뱃지용 nested unread 숨김.
@@ -32,7 +32,7 @@ export type PracticeStatusFilterBadgeItem = {
   key: string;
   label: string;
   tone: PracticeCalendarStatusTone;
-  /** 해당 상태 전체 건수 — 본문 숫자 */
+  /** 의뢰·작업시작=전체 / 완료·취소·어벗=미열람 — 본문 숫자 */
   count: number;
   /** 미확인(채팅) — 빨간 카운터 */
   unreadCount?: number;
@@ -46,7 +46,7 @@ type PracticeStatusFilterBadgesProps = {
   onUnreadNavigate: (key: string) => void;
   /** 건수 뒤 접미사. 치과 모달="", 기공의뢰수신="건" */
   countSuffix?: string;
-  /** 이 키들 앞에 간격(발송 | 리메이크·미확인 / 완료 | 어벗) */
+  /** 이 키들 앞에 간격(의뢰·작업시작 | 완료·취소·어벗) */
   gapBeforeKeys?: readonly string[];
   /** 뱃지 행 끝 액션(정책 안내·진행중 등) */
   trailing?: ReactNode;
@@ -102,7 +102,7 @@ export function PracticeStatusFilterBadges({
                 type="button"
                 className={cn(
                   "relative shrink-0 rounded-full",
-                  withGap && "ml-3",
+                  withGap && "ml-5",
                   !canNavigate && "cursor-default",
                 )}
                 onClick={() => {

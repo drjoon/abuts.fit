@@ -19,6 +19,7 @@ import { normalizeLastDashboardPath } from "../../utils/lastDashboardPath.util.j
 import { normalizeSidebarOpen } from "../../utils/sidebarOpen.util.js";
 import { normalizeLabReceiveCalendarDateKey } from "../../utils/labReceiveCalendarDateKey.util.js";
 import { normalizeLabReceiveCalendarHiddenWeekdays } from "../../utils/labReceiveCalendarHiddenWeekdays.util.js";
+import { normalizePracticeStatusBadgeClearedTransferIds } from "../../utils/practiceStatusBadgeClearedTransferIds.util.js";
 import {
   isGuideTourAlwaysOnBusiness,
   normalizeGuideTour,
@@ -1140,6 +1141,126 @@ async function updateLabReceiveCalendarHiddenWeekdays(req, res) {
 }
 
 /**
+ * 상단 상태 뱃지(완료·취소·어벗) 열람 제외 transferId 조회
+ * @route GET /api/users/practice-status-badge-cleared-transfer-ids
+ */
+async function getPracticeStatusBadgeClearedTransferIds(req, res) {
+  try {
+    const user = await User.findById(req.user._id)
+      .select("preferences.practiceStatusBadgeClearedTransferIds")
+      .lean();
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "사용자를 찾을 수 없습니다.",
+      });
+    }
+    return res.status(200).json({
+      success: true,
+      data: {
+        transferIds: normalizePracticeStatusBadgeClearedTransferIds(
+          user?.preferences?.practiceStatusBadgeClearedTransferIds,
+        ),
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "상태 뱃지 열람 목록 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * 상단 상태 뱃지(완료·취소·어벗) 열람 제외 transferId 추가
+ * @route PUT /api/users/practice-status-badge-cleared-transfer-ids
+ * body: { transferIds: string[] } — $addToSet 병합 후 상한 정규화
+ */
+async function updatePracticeStatusBadgeClearedTransferIds(req, res) {
+  try {
+    if (!Array.isArray(req.body?.transferIds)) {
+      return res.status(400).json({
+        success: false,
+        message: "유효하지 않은 transferId 목록입니다.",
+      });
+    }
+    const addIds = normalizePracticeStatusBadgeClearedTransferIds(
+      req.body.transferIds,
+    );
+    if (addIds.length === 0) {
+      const user = await User.findById(req.user._id)
+        .select("preferences.practiceStatusBadgeClearedTransferIds")
+        .lean();
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: "사용자를 찾을 수 없습니다.",
+        });
+      }
+      return res.status(200).json({
+        success: true,
+        data: {
+          transferIds: normalizePracticeStatusBadgeClearedTransferIds(
+            user?.preferences?.practiceStatusBadgeClearedTransferIds,
+          ),
+        },
+      });
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      req.user._id,
+      {
+        $addToSet: {
+          "preferences.practiceStatusBadgeClearedTransferIds": {
+            $each: addIds,
+          },
+        },
+      },
+      { new: true, runValidators: true },
+    ).select("preferences.practiceStatusBadgeClearedTransferIds");
+
+    if (!updatedUser) {
+      return res.status(404).json({
+        success: false,
+        message: "사용자를 찾을 수 없습니다.",
+      });
+    }
+
+    const normalized = normalizePracticeStatusBadgeClearedTransferIds(
+      updatedUser.preferences?.practiceStatusBadgeClearedTransferIds,
+    );
+    const rawLen = Array.isArray(
+      updatedUser.preferences?.practiceStatusBadgeClearedTransferIds,
+    )
+      ? updatedUser.preferences.practiceStatusBadgeClearedTransferIds.length
+      : 0;
+    if (normalized.length !== rawLen) {
+      await User.findByIdAndUpdate(
+        req.user._id,
+        {
+          $set: {
+            "preferences.practiceStatusBadgeClearedTransferIds": normalized,
+          },
+        },
+        { runValidators: true },
+      );
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: { transferIds: normalized },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "상태 뱃지 열람 목록 저장 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
  * 테스트치과·테스트기공소 소속이면 가이드투어 수료를 고정하지 않는다.
  */
 async function resolveGuideTourAlwaysOn(userId) {
@@ -1253,6 +1374,8 @@ export {
   updateLabReceiveCalendarDateKey,
   getLabReceiveCalendarHiddenWeekdays,
   updateLabReceiveCalendarHiddenWeekdays,
+  getPracticeStatusBadgeClearedTransferIds,
+  updatePracticeStatusBadgeClearedTransferIds,
   updateGuideTour,
   getMySecurityLogs,
 };

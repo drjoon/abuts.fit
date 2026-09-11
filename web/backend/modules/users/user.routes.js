@@ -59,6 +59,16 @@ router.put(
   userController.updateLabReceiveCalendarHiddenWeekdays,
 );
 
+// 상단 상태 뱃지(완료·취소·어벗) 열람 제외 transferId
+router.get(
+  "/practice-status-badge-cleared-transfer-ids",
+  userController.getPracticeStatusBadgeClearedTransferIds,
+);
+router.put(
+  "/practice-status-badge-cleared-transfer-ids",
+  userController.updatePracticeStatusBadgeClearedTransferIds,
+);
+
 // 플랫폼 가이드투어 (치과·기공소 1회)
 router.put("/guide-tour", userController.updateGuideTour);
 

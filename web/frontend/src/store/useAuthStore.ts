@@ -8,11 +8,14 @@
 // - web/backend/utils/labReceiveCalendarDateKey.util.js
 // - web/frontend/src/shared/practice/labReceiveCalendarHiddenWeekdays.ts
 // - web/backend/utils/labReceiveCalendarHiddenWeekdays.util.js
+// - web/frontend/src/shared/practice/practiceStatusBadgeClearedTransferIds.ts
+// - web/backend/utils/practiceStatusBadgeClearedTransferIds.util.js
 // - web/backend/models/user.model.js
 // - web/backend/modules/auth/auth.routes.js
 // - web/backend/controllers/users/user.controller.js
 // - web/frontend/src/shared/layout/sidebarOpen.ts
 // - web/backend/utils/sidebarOpen.util.js
+// - 2026-09-11: 계정 preferences.practiceStatusBadgeClearedTransferIds (완료·취소·어벗 열람 제외)
 // - 2026-08-28: /me 응답이 진행 중 토글한 sidebarOpen을 덮어쓰지 않게 epoch 가드
 // - 2026-08-27: 계정 preferences.sidebarOpen (데스크톱 사이드바 펼침, 기본 open)
 // - 2026-08-22: 계정 preferences.labReceiveCalendarHiddenWeekdays (캘린더 숨길 요일, 기본 일·토)
@@ -39,6 +42,7 @@ import {
   type LabReceiveCalendarDateKey,
 } from "@/shared/practice/labReceiveCalendarDateKey";
 import { normalizeLabReceiveCalendarHiddenWeekdays } from "@/shared/practice/labReceiveCalendarHiddenWeekdays";
+import { normalizePracticeStatusBadgeClearedTransferIds } from "@/shared/practice/practiceStatusBadgeClearedTransferIds";
 
 const AUTH_TOKEN_KEY = "abuts_auth_token";
 const AUTH_REFRESH_TOKEN_KEY = "abuts_auth_refresh_token";
@@ -101,6 +105,8 @@ export interface User {
   labReceiveCalendarDateKey?: LabReceiveCalendarDateKey;
   /** 기공의뢰·기공의뢰수신 캘린더 숨길 요일(0=일…6=토). 기본 일·토 */
   labReceiveCalendarHiddenWeekdays?: number[];
+  /** 완료·취소·어벗 뱃지에서 열람 후 본문 건수 제외할 transferId */
+  practiceStatusBadgeClearedTransferIds?: string[];
 }
 
 const normalizeApiUser = (u: unknown): User | null => {
@@ -243,6 +249,16 @@ const normalizeApiUser = (u: unknown): User | null => {
           row.labReceiveCalendarHiddenWeekdays,
       );
     })(),
+    practiceStatusBadgeClearedTransferIds: (() => {
+      const prefs =
+        row.preferences && typeof row.preferences === "object"
+          ? (row.preferences as Record<string, unknown>)
+          : null;
+      return normalizePracticeStatusBadgeClearedTransferIds(
+        prefs?.practiceStatusBadgeClearedTransferIds ??
+          row.practiceStatusBadgeClearedTransferIds,
+      );
+    })(),
   };
 };
 
@@ -282,6 +298,7 @@ interface AuthState {
   }) => void;
   setLabReceiveCalendarDateKey: (dateKey: LabReceiveCalendarDateKey) => void;
   setLabReceiveCalendarHiddenWeekdays: (hiddenWeekdays: number[]) => void;
+  setPracticeStatusBadgeClearedTransferIds: (transferIds: string[]) => void;
   logout: () => void;
 }
 
@@ -605,6 +622,15 @@ export const useAuthStore = create<AuthState>((set, get) => {
           normalizedUser.sidebarOpen = current.sidebarOpen;
         }
 
+        // 열람 제외 ID는 append-only — /me가 이전 스냅샷이어도 메모리에 있는 건 유지
+        if (current?.id === normalizedUser.id) {
+          normalizedUser.practiceStatusBadgeClearedTransferIds =
+            normalizePracticeStatusBadgeClearedTransferIds([
+              ...(normalizedUser.practiceStatusBadgeClearedTransferIds || []),
+              ...(current.practiceStatusBadgeClearedTransferIds || []),
+            ]);
+        }
+
         try {
           persistAuthCredentials({
             token: effectiveToken,
@@ -719,6 +745,22 @@ export const useAuthStore = create<AuthState>((set, get) => {
         ...current,
         labReceiveCalendarHiddenWeekdays:
           normalizeLabReceiveCalendarHiddenWeekdays(hiddenWeekdays),
+      };
+      try {
+        localStorage.setItem(AUTH_USER_KEY, JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      set({ user: next });
+    },
+    setPracticeStatusBadgeClearedTransferIds: (transferIds: string[]) => {
+      if (isMemoryAuthStale(get().token)) return;
+      const current = get().user;
+      if (!current) return;
+      const next = {
+        ...current,
+        practiceStatusBadgeClearedTransferIds:
+          normalizePracticeStatusBadgeClearedTransferIds(transferIds),
       };
       try {
         localStorage.setItem(AUTH_USER_KEY, JSON.stringify(next));
