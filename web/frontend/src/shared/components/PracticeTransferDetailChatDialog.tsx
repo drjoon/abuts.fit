@@ -14,6 +14,7 @@
 // - web/frontend/src/shared/files/downloadWithProgress.ts
 // - web/frontend/src/shared/files/s3BlobCache.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-11: 의뢰/진행 탭 제거 — 단일 스크롤(의뢰↑·진행↓), 점프 버튼, 채팅 유무로 초기 위치.
 // - 2026-09-11: 어벗 가공 시작 시 「작업 취소」CTA 숨김(카드와 동일). 클릭 판정만 의존하지 않음.
 // - 2026-09-10: chatHeaderAction — 탭 행 → 환자/도착일 식별 스트립 오른쪽.
 // - 2026-09-10: 드롭존 활성 시 채팅 opacity 45→80(가독성).
@@ -112,6 +113,8 @@ import {
 import {
   Box,
   CalendarClock,
+  ArrowDown,
+  ArrowUp,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -148,7 +151,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/shared/ui/cn";
 import { toKstYmd, ymdToKstDate } from "@/shared/date/kst";
 import { type ChatMessage } from "@/shared/hooks/useChatRooms";
@@ -389,11 +391,10 @@ type PracticeTransferDetailChatDialogProps = {
   /** 채팅 헤더 바로 아래 — 상대방 내부 메모 */
   counterpartyMemoStrip?: ReactNode;
   /**
-   * 탭 아래 고정 식별 줄(치과·환자 등). 있으면 summaryItems 파싱보다 우선.
-   * 진행 상황에서도 의뢰 상세를 오가지 않도록 표시.
+   * 식별 줄(치과·환자 등). 있으면 summaryItems 파싱보다 우선.
    */
   caseIdentity?: PracticeTransferDialogCaseIdentity | null;
-  /** 의뢰상세 요약 아래 + 진행 상황 탭 상단 — 예: 어벗 업로드 지연, 미가입 초대 */
+  /** 의뢰 요약 아래·진행 상단 공통 — 예: 어벗 업로드 지연, 미가입 초대 */
   summaryBanner?: ReactNode;
   /**
    * 기공소 작업시작 바 왼쪽 안내(예: 플랫폼 가입 이전 리메이크 확인).
@@ -411,8 +412,8 @@ type PracticeTransferDetailChatDialogProps = {
   skipJig?: boolean;
   feeViewer?: PracticeTransferFeeQuoteViewer;
   /**
-   * 열릴 때 기본 탭. 미지정 시 feeViewer 기준(lab→의뢰 상세, practice→진행 상황).
-   * 기공소 캘린더: 미읽음→detail, 이미 읽음→chat.
+   * 열릴 때 스크롤 위치 힌트. detail=맨 위(의뢰), chat=맨 아래(진행).
+   * 미지정 시 채팅 내역이 있으면 아래, 없으면 위.
    */
   initialPanelTab?: "detail" | "chat";
   labAnchorId?: string | null;
@@ -706,21 +707,18 @@ export function PracticeTransferDetailChatDialog({
     dockLeft,
     dockRight,
   } = usePracticeTransferPanelLayout();
-  const resolvedInitialPanelTab: "detail" | "chat" =
+  const resolvedInitialPanelTab: "detail" | "chat" | null =
     initialPanelTab === "detail" || initialPanelTab === "chat"
       ? initialPanelTab
-      : feeViewer === "lab"
-        ? "detail"
-        : "chat";
-  const [panelTab, setPanelTab] = useState<"detail" | "chat">(resolvedInitialPanelTab);
+      : null;
   const [detailMoreOpen, setDetailMoreOpen] = useState(false);
   const [rearrivalOpen, setRearrivalOpen] = useState(false);
   const [rearrivalDraft, setRearrivalDraft] = useState<Date | undefined>(undefined);
   const [previewOpen, setPreviewOpen] = useState(false);
-
-  useEffect(() => {
-    if (open) setPanelTab(resolvedInitialPanelTab);
-  }, [open, resolvedInitialPanelTab]);
+  const [scrollEdge, setScrollEdge] = useState<"top" | "bottom" | "middle">("top");
+  const scrollBodyRef = useRef<HTMLDivElement | null>(null);
+  const didInitialScrollRef = useRef(false);
+  const openedWithoutMessagesRef = useRef(false);
 
   useEffect(() => {
     if (!open || isMobile) return;
@@ -729,20 +727,6 @@ export function PracticeTransferDetailChatDialog({
     else dockRight();
   }, [open, isMobile, preferredDockSide, preferredDockNonce, dockLeft, dockRight]);
 
-  const handlePanelTabChange = useCallback((value: string) => {
-    setPanelTab(value === "detail" ? "detail" : "chat");
-  }, []);
-
-  const activeRemakeChargeIndexes = useMemo(() => {
-    const set = new Set<number>();
-    const rows = Array.isArray(remakeCharges) ? remakeCharges : [];
-    rows.forEach((row, i) => {
-      const raw = Math.trunc(Number(row?.chargeIndex));
-      set.add(Number.isFinite(raw) ? raw : i);
-    });
-    return set;
-  }, [remakeCharges]);
-
   const handleChromePointerDown = useCallback(
     (e: ReactPointerEvent) => {
       if (e.button !== 0) return;
@@ -750,19 +734,111 @@ export function PracticeTransferDetailChatDialog({
       if (target?.closest("button, a, input, textarea, select, [data-no-drag]")) {
         return;
       }
-      // 탭 클릭은 유지 — threshold 드래그로 이동
       beginHeaderDrag(e.clientX, e.clientY);
     },
     [beginHeaderDrag],
   );
 
+  const updateScrollEdge = useCallback(() => {
+    const el = scrollBodyRef.current;
+    if (!el) return;
+    const { scrollTop, scrollHeight, clientHeight } = el;
+    const maxScroll = Math.max(0, scrollHeight - clientHeight);
+    if (maxScroll < 48) {
+      setScrollEdge("middle");
+      return;
+    }
+    const nearTop = scrollTop <= 56;
+    const nearBottom = scrollTop >= maxScroll - 56;
+    if (nearTop && !nearBottom) setScrollEdge("top");
+    else if (nearBottom) setScrollEdge("bottom");
+    else setScrollEdge("middle");
+  }, []);
+
+  const scrollToDetailTop = useCallback(() => {
+    scrollBodyRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+  }, []);
+
+  const scrollToProgressBottom = useCallback(() => {
+    const el = scrollBodyRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  }, []);
+
+  const applyScrollPosition = useCallback((preferBottom: boolean) => {
+    const el = scrollBodyRef.current;
+    if (!el) return;
+    if (preferBottom) {
+      el.scrollTop = el.scrollHeight;
+    } else {
+      el.scrollTop = 0;
+    }
+    const { scrollTop, scrollHeight, clientHeight } = el;
+    const maxScroll = Math.max(0, scrollHeight - clientHeight);
+    if (maxScroll < 48) {
+      setScrollEdge("middle");
+      return;
+    }
+    const nearTop = scrollTop <= 56;
+    const nearBottom = scrollTop >= maxScroll - 56;
+    if (nearTop && !nearBottom) setScrollEdge("top");
+    else if (nearBottom) setScrollEdge("bottom");
+    else setScrollEdge("middle");
+  }, []);
+
   useEffect(() => {
-    if (!open || panelTab !== "chat") return;
+    if (!open) {
+      didInitialScrollRef.current = false;
+      openedWithoutMessagesRef.current = false;
+      setScrollEdge("top");
+      return;
+    }
+    if (minimized || chatLoading) return;
+
+    const preferBottom =
+      resolvedInitialPanelTab === "chat"
+        ? true
+        : resolvedInitialPanelTab === "detail"
+          ? false
+          : chatMessages.length > 0;
+
+    if (!didInitialScrollRef.current) {
+      didInitialScrollRef.current = true;
+      openedWithoutMessagesRef.current =
+        resolvedInitialPanelTab == null && chatMessages.length === 0;
+      const id = requestAnimationFrame(() => applyScrollPosition(preferBottom));
+      return () => cancelAnimationFrame(id);
+    }
+
+    // 열 때 비어 있다가 채팅이 도착하면 맨 아래로 한 번 보정
+    if (
+      openedWithoutMessagesRef.current &&
+      resolvedInitialPanelTab == null &&
+      chatMessages.length > 0
+    ) {
+      openedWithoutMessagesRef.current = false;
+      const id = requestAnimationFrame(() => applyScrollPosition(true));
+      return () => cancelAnimationFrame(id);
+    }
+  }, [
+    open,
+    minimized,
+    chatLoading,
+    chatMessages.length,
+    resolvedInitialPanelTab,
+    applyScrollPosition,
+  ]);
+
+  useEffect(() => {
+    if (!open || minimized || !didInitialScrollRef.current) return;
+    if (scrollEdge !== "bottom") return;
     const id = requestAnimationFrame(() => {
-      chatBottomRef.current?.scrollIntoView({ behavior: "auto" });
+      const el = scrollBodyRef.current;
+      if (!el) return;
+      el.scrollTop = el.scrollHeight;
     });
     return () => cancelAnimationFrame(id);
-  }, [open, panelTab, chatBottomRef, chatMessages.length]);
+  }, [open, minimized, scrollEdge, chatMessages.length]);
 
   const resolvedChatRoomId = useMemo(() => {
     const fromProp = String(chatRoomId || "").trim();
@@ -776,8 +852,18 @@ export function PracticeTransferDetailChatDialog({
 
   useRegisterChatSoundViewing(
     resolvedChatRoomId,
-    Boolean(open && !minimized && panelTab === "chat" && resolvedChatRoomId),
+    Boolean(open && !minimized && resolvedChatRoomId),
   );
+
+  const activeRemakeChargeIndexes = useMemo(() => {
+    const set = new Set<number>();
+    const rows = Array.isArray(remakeCharges) ? remakeCharges : [];
+    rows.forEach((row, i) => {
+      const raw = Math.trunc(Number(row?.chargeIndex));
+      set.add(Number.isFinite(raw) ? raw : i);
+    });
+    return set;
+  }, [remakeCharges]);
 
   const reactionUserNameById = useMemo(
     () => buildChatReactionUserNameById({ messages: chatMessages }),
@@ -1696,8 +1782,7 @@ export function PracticeTransferDetailChatDialog({
     };
   }, [caseIdentity, summaryItems, toothWorks]);
   const showArrivalInChatChrome = Boolean(
-    panelTab === "chat" &&
-      (onAppendArrival || nextStageSegments.length > 0),
+    onAppendArrival || nextStageSegments.length > 0,
   );
   const identityDateLabel = String(caseIdentityStrip?.secondary || "").trim();
   const handlePrintDetail = useCallback(() => {
@@ -1738,8 +1823,7 @@ export function PracticeTransferDetailChatDialog({
       const valueWithAction =
         isArrivalRow &&
         onAppendArrival &&
-        opts?.showArrivalAction !== false &&
-        panelTab === "detail" ? (
+        opts?.showArrivalAction !== false ? (
           <div className="flex flex-wrap items-center gap-1.5">
             {row.tooltip ? (
               <Tooltip>
@@ -1825,7 +1909,7 @@ export function PracticeTransferDetailChatDialog({
   const workFileDropActive = Boolean(
     workFileDrop && !workFileDrop.disabled && !minimized,
   );
-  const chatFileDropActive = panelTab === "chat" && !inputDisabled && !minimized;
+  const chatFileDropActive = !inputDisabled && !minimized;
   const handleChatTabDropFiles = useCallback(
     (files: File[]) => {
       if (!files.length) return;
@@ -2016,10 +2100,7 @@ export function PracticeTransferDetailChatDialog({
           left: layout.x,
           top: layout.y,
           width: layout.w,
-          height:
-            panelTab === "detail" && !minimized && !maximized
-              ? "auto"
-              : layout.h,
+          height: layout.h,
           maxWidth: "none",
           maxHeight: layout.h,
           transform: "none",
@@ -2042,26 +2123,29 @@ export function PracticeTransferDetailChatDialog({
 
         <PracticeTransferFileDropTarget
           fileInputId={
-            workFileDrop?.fileInputId || "practice-transfer-detail-noop-drop"
+            workFileDrop?.fileInputId || "practice-transfer-unified-drop"
           }
-          onFiles={workFileDrop?.onFiles ?? (() => {})}
-          disabled={
-            !workFileDrop ||
-            workFileDrop.disabled ||
-            minimized ||
-            panelTab === "chat"
-          }
+          onFiles={handleChatTabDropFiles}
+          disabled={!chatFileDropActive && !workFileDropActive}
           showDefaultUi={false}
           fillHeight
-          accept={PRACTICE_TRANSFER_STL_ACCEPT}
-          acceptedHint={workFileDrop?.dropHint || "어벗 STL"}
+          accept={
+            workFileDropActive
+              ? PRACTICE_TRANSFER_STL_ACCEPT
+              : undefined
+          }
+          acceptedHint={
+            workFileDropActive
+              ? workFileDrop?.dropHint || "어벗 STL"
+              : "사진·파일"
+          }
           filterFiles={(files) => files}
           className="flex min-h-0 flex-1 flex-col"
           activeClassName="ring-2 ring-inset ring-primary bg-primary-soft/25"
         >
           {({ isDragActive }) => (
             <>
-              {isDragActive && workFileDropActive ? (
+              {isDragActive && (workFileDropActive || chatFileDropActive) ? (
                 <div
                   className="pointer-events-none absolute inset-0 z-[305] flex flex-col items-center justify-center gap-2 rounded-lg bg-primary/10 px-6 backdrop-blur-[2px]"
                   aria-hidden
@@ -2070,22 +2154,19 @@ export function PracticeTransferDetailChatDialog({
                     <UploadCloud className="h-8 w-8" />
                   </div>
                   <p className="text-sm font-semibold text-primary-strong">
-                    파일을 놓아 업로드
+                    {workFileDropActive
+                      ? "파일을 놓아 업로드"
+                      : "사진·파일을 놓아 첨부"}
                   </p>
                   <p className="text-center text-xs text-muted-foreground">
-                    {workFileDrop?.dropHint || PRACTICE_ACCEPTED_HINT}
+                    {workFileDropActive
+                      ? workFileDrop?.dropHint || PRACTICE_ACCEPTED_HINT
+                      : "채팅에 보낼 파일을 여기에 놓으세요"}
                   </p>
                 </div>
               ) : null}
 
-        <Tabs
-          value={panelTab}
-          onValueChange={handlePanelTabChange}
-          className={cn(
-            "flex min-h-0 flex-col overflow-hidden",
-            panelTab === "chat" || minimized || maximized ? "flex-1" : "",
-          )}
-        >
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <div
             className={cn(
               "grid shrink-0 cursor-grab grid-cols-[1fr_auto] items-center gap-2 border-b px-3 active:cursor-grabbing",
@@ -2109,22 +2190,12 @@ export function PracticeTransferDetailChatDialog({
                 {caseIdentityStrip?.primary || title}
               </button>
             ) : (
-              <TabsList className="h-11 w-auto shrink-0 justify-self-start p-1">
-                <TabsTrigger
-                  value="detail"
-                  className="gap-1.5 px-4 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
-                >
-                  <FileIcon className="h-3.5 w-3.5" />
-                  의뢰
-                </TabsTrigger>
-                <TabsTrigger
-                  value="chat"
-                  className="gap-1.5 px-4 py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
-                >
-                  <MessageSquare className="h-3.5 w-3.5" />
-                  진행
-                </TabsTrigger>
-              </TabsList>
+              <div className="flex min-w-0 items-center gap-2 justify-self-start px-1">
+                <FileIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                <span className="truncate text-sm font-semibold text-foreground">
+                  의뢰 · 진행
+                </span>
+              </div>
             )}
             <div
               className="flex shrink-0 items-center justify-end gap-1"
@@ -2200,294 +2271,11 @@ export function PracticeTransferDetailChatDialog({
 
           {!minimized ? (
           <>
-          <TabsContent
-            value="detail"
-            className="custom-scrollbar mt-0 max-h-[inherit] overflow-y-auto px-5 py-3 text-sm focus-visible:ring-0"
-          >
-            <div className="space-y-5">
-              <section className="space-y-1">
-                <div className="flex items-center justify-between gap-2">
-                  <h3 className="text-[13px] font-semibold text-foreground">
-                    핵심 정보
-                  </h3>
-                  {feeViewer === "lab" ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-7 shrink-0 gap-1.5 px-2.5 text-xs"
-                      title="의뢰 상세 인쇄 (A5)"
-                      onClick={handlePrintDetail}
-                    >
-                      <Printer className="h-3.5 w-3.5" />
-                      프린트
-                    </Button>
-                  ) : null}
-                </div>
-                <dl className="divide-y divide-border/70">
-                  {renderSummaryRows(
-                    partitionedSummary.primary.length > 0
-                      ? partitionedSummary.primary
-                      : partitionedSummary.secondary,
-                  )}
-                </dl>
-                {partitionedSummary.primary.length > 0 &&
-                partitionedSummary.secondary.length > 0 ? (
-                  <Collapsible
-                    open={detailMoreOpen}
-                    onOpenChange={setDetailMoreOpen}
-                    className="pt-1"
-                  >
-                    <CollapsibleTrigger asChild>
-                      <button
-                        type="button"
-                        className="flex w-full items-center gap-1.5 rounded-md py-1.5 text-left text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
-                      >
-                        <ChevronDown
-                          className={cn(
-                            "h-3.5 w-3.5 shrink-0 transition-transform",
-                            detailMoreOpen && "rotate-180",
-                          )}
-                        />
-                        {detailMoreOpen
-                          ? "상세 정보 접기"
-                          : `상세 정보 (${partitionedSummary.secondary.length})`}
-                      </button>
-                    </CollapsibleTrigger>
-                    <CollapsibleContent>
-                      <dl className="mt-1 divide-y divide-border/60 border-t border-border/60">
-                        {renderSummaryRows(partitionedSummary.secondary, {
-                          showArrivalAction: false,
-                        })}
-                      </dl>
-                    </CollapsibleContent>
-                  </Collapsible>
-                ) : null}
-              </section>
-
-              {summaryBanner ? (
-                <div>{summaryBanner}</div>
-              ) : null}
-
-              {hasToothWorks ? (
-                <section className="space-y-2.5 border-t border-border/70 pt-4">
-                  <h3 className="text-[13px] font-semibold text-foreground">
-                    치식 · 보철물
-                  </h3>
-                  <PracticeToothWorkChartReadOnly
-                    key={toothWorksKey || "tooth-works"}
-                    toothWorks={toothWorks}
-                    feeQuote={feeQuote}
-                    feeViewer={feeViewer}
-                    labAnchorId={labAnchorId}
-                    skipJig={skipJig}
-                    labEffectiveStars={labEffectiveStars}
-                  />
-                  <PracticeRemakeChargesStrip remakeCharges={remakeCharges} />
-                </section>
-              ) : remakeCharges && remakeCharges.length > 0 ? (
-                <section className="border-t border-border/70 pt-4">
-                  <PracticeRemakeChargesStrip remakeCharges={remakeCharges} />
-                </section>
-              ) : null}
-
-              {hasMeaningfulMemo ? (
-                <section className="space-y-2.5 border-t border-border/70 pt-4">
-                  <h3 className="text-[13px] font-semibold text-foreground">
-                    의뢰 메모
-                  </h3>
-                  <p className="custom-scrollbar max-h-48 overflow-y-auto rounded-md bg-muted/40 px-3 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words text-foreground">
-                    {memo}
-                  </p>
-                </section>
-              ) : null}
-
-              <section className="space-y-2.5 border-t border-border/70 pt-4">
-                <div className="flex items-center justify-between gap-2">
-                  <h3 className="text-[13px] font-semibold text-foreground">
-                    {filesLabel}{" "}
-                    <span className="font-normal text-muted-foreground">
-                      ({files.length}개)
-                    </span>
-                  </h3>
-                  {files.length > 0 ? (
-                    files.some((f) => isDcmFileName(f.fileName)) ? (
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            disabled={
-                              downloadAllBusy || requestFilesDownloadLocked
-                            }
-                          >
-                            {downloadAllBusy ? "다운로드 중..." : "전체 다운로드"}
-                            <ChevronDown className="ml-1 h-3.5 w-3.5 opacity-70" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="z-[400]">
-                          <DropdownMenuItem
-                            onClick={() =>
-                              void onDownloadAllFiles({ dcmFormat: "dcm" })
-                            }
-                          >
-                            DCM 원본
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() =>
-                              void onDownloadAllFiles({ dcmFormat: "ply" })
-                            }
-                          >
-                            PLY (칼라)
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    ) : (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => void onDownloadAllFiles()}
-                        disabled={
-                          downloadAllBusy || requestFilesDownloadLocked
-                        }
-                      >
-                        {downloadAllBusy ? "다운로드 중..." : "전체 다운로드"}
-                      </Button>
-                    )
-                  ) : null}
-                </div>
-                {requestFilesDownloadLocked && files.length > 0 ? (
-                  <p className="text-xs leading-relaxed text-amber-800 dark:text-amber-200">
-                    {requestFilesDownloadLockedReason}
-                  </p>
-                ) : null}
-                {files.length ? (
-                  <div className="custom-scrollbar max-h-64 overflow-y-auto pr-1">
-                    <div className="grid grid-cols-4 gap-2">
-                      {files.map((file, idx) =>
-                        renderFileTile(
-                          file,
-                          idx,
-                          "request",
-                          requestFilesDownloadLocked,
-                        ),
-                      )}
-                    </div>
-                  </div>
-                ) : oralScanAttachMode === "practice_required" ? (
-                  <p className="text-sm leading-relaxed text-destructive">
-                    {ORAL_SCAN_REQUIRED_FROM_PRACTICE}
-                  </p>
-                ) : (
-                  <p className="text-sm text-muted-foreground">파일 없음</p>
-                )}
-              </section>
-
-              {showWorkFilesSection ? (
-                <section className="space-y-3 border-t border-border/70 pt-4">
-                  <h3 className="text-[13px] font-semibold text-foreground">
-                    {workFilesLabel}
-                  </h3>
-                  {designFileList.length > 0 ? (
-                    <div className="space-y-1.5">
-                      <p className="text-[13px] text-muted-foreground">
-                        {designFilesLabel}{" "}
-                        <span>({designFileList.length}개)</span>
-                      </p>
-                      <div className="custom-scrollbar max-h-64 overflow-y-auto pr-1">
-                        <div className="grid grid-cols-4 gap-2">
-                          {designFileList.map((file, idx) =>
-                            renderFileTile(file, idx, "design"),
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ) : null}
-                  {resultFileList.length > 0 ? (
-                    <div className="space-y-1.5">
-                      <p className="text-[13px] text-muted-foreground">
-                        {resultFilesLabel}{" "}
-                        <span>({resultFileList.length}개)</span>
-                      </p>
-                      <div className="custom-scrollbar max-h-64 overflow-y-auto pr-1">
-                        <div className="grid grid-cols-4 gap-2">
-                          {resultFileList.map((file, idx) =>
-                            renderFileTile(file, idx, "result"),
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ) : null}
-                </section>
-              ) : null}
-
-              {showProductionConfirm && onConfirmProduction ? (
-                <div className="rounded-md border border-primary/30 bg-primary-soft/40 p-3">
-                  <p className="text-sm text-primary-strong">
-                    {productionConfirmTitle}
-                  </p>
-                  <Button
-                    type="button"
-                    className="mt-2"
-                    disabled={productionConfirmBusy}
-                    onClick={handleConfirmPanelClick}
-                  >
-                    {productionConfirmBusy
-                      ? "처리 중..."
-                      : confirmPreviewTarget
-                        ? `미리보기 · ${productionConfirmButtonLabel}`
-                        : productionConfirmButtonLabel}
-                  </Button>
-                </div>
-              ) : null}
-            </div>
-          </TabsContent>
-
-          <TabsContent
-            value="chat"
-            className="mt-0 flex min-h-0 flex-1 flex-col overflow-hidden focus-visible:ring-0"
-          >
-            <PracticeTransferFileDropTarget
-              fileInputId="practice-transfer-chat-attach-drop"
-              onFiles={handleChatTabDropFiles}
-              disabled={!chatFileDropActive}
-              showDefaultUi={false}
-              filterFiles={(files) => files}
-              fillHeight
-              className="flex min-h-0 flex-1 flex-col overflow-hidden"
-              activeClassName="ring-2 ring-inset ring-primary bg-primary-soft/25"
-            >
-              {({ isDragActive: chatDragActive }) => (
-                <>
-              {chatDragActive && chatFileDropActive ? (
-                <div
-                  className="pointer-events-none absolute inset-0 z-[305] flex flex-col items-center justify-center gap-2 rounded-lg bg-primary/10 px-6 backdrop-blur-[2px]"
-                  aria-hidden
-                >
-                  <div className="rounded-full bg-primary-soft p-3 text-primary-strong shadow-sm">
-                    <UploadCloud className="h-8 w-8" />
-                  </div>
-                  <p className="text-sm font-semibold text-primary-strong">
-                    {workFileDropActive
-                      ? "파일을 놓아 업로드"
-                      : "사진·파일을 놓아 첨부"}
-                  </p>
-                  <p className="text-center text-xs text-muted-foreground">
-                    {workFileDropActive
-                      ? "STL 파일만 작업 업로드"
-                      : "채팅에 보낼 파일을 여기에 놓으세요"}
-                  </p>
-                </div>
-              ) : null}
-
               {(counterpartyMemoStrip ||
                 onEditRequest ||
                 onCancelRequest ||
                 nextStageSegments.length > 0 ||
-                onAppendArrival) &&
-              panelTab === "chat" ? (
+                onAppendArrival) ? (
                 <div className="shrink-0 border-b bg-muted/25">
                   {nextStageSegments.length > 0 || onAppendArrival ? (
                     <div className="flex flex-wrap items-center gap-2 px-4 py-2 sm:px-5">
@@ -2757,20 +2545,272 @@ export function PracticeTransferDetailChatDialog({
                 </div>
               ) : null}
 
-              <div
-                className="grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(0,1fr)_auto] overflow-hidden"
-                data-guide-tour="lab_chat"
-              >
-                <div
-                  className={cn(
-                    "relative flex min-h-0 min-w-0 flex-col",
-                    workFileDropActive &&
-                      "m-2 rounded-md border-2 border-dashed border-primary/45 bg-primary/[0.03]",
+          <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" data-guide-tour="lab_chat">
+            <div
+              ref={scrollBodyRef}
+              onScroll={updateScrollEdge}
+              className={cn(
+                "custom-scrollbar relative z-[1] min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain transition-opacity",
+                workFileDropActive &&
+                  !workFileDropUploading &&
+                  "opacity-80",
+              )}
+            >
+              <div className="space-y-5 px-5 py-3 text-sm">
+                <div className="flex items-center gap-1.5 text-[13px] font-semibold text-foreground">
+                  <FileIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                  의뢰
+                </div>
+
+              <section className="space-y-1">
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="text-[13px] font-semibold text-foreground">
+                    핵심 정보
+                  </h3>
+                  {feeViewer === "lab" ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 shrink-0 gap-1.5 px-2.5 text-xs"
+                      title="의뢰 상세 인쇄 (A5)"
+                      onClick={handlePrintDetail}
+                    >
+                      <Printer className="h-3.5 w-3.5" />
+                      프린트
+                    </Button>
+                  ) : null}
+                </div>
+                <dl className="divide-y divide-border/70">
+                  {renderSummaryRows(
+                    partitionedSummary.primary.length > 0
+                      ? partitionedSummary.primary
+                      : partitionedSummary.secondary,
                   )}
-                  {...(workFileDropActive
-                    ? { "data-guide-tour": "lab_design" }
-                    : {})}
-                >
+                </dl>
+                {partitionedSummary.primary.length > 0 &&
+                partitionedSummary.secondary.length > 0 ? (
+                  <Collapsible
+                    open={detailMoreOpen}
+                    onOpenChange={setDetailMoreOpen}
+                    className="pt-1"
+                  >
+                    <CollapsibleTrigger asChild>
+                      <button
+                        type="button"
+                        className="flex w-full items-center gap-1.5 rounded-md py-1.5 text-left text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+                      >
+                        <ChevronDown
+                          className={cn(
+                            "h-3.5 w-3.5 shrink-0 transition-transform",
+                            detailMoreOpen && "rotate-180",
+                          )}
+                        />
+                        {detailMoreOpen
+                          ? "상세 정보 접기"
+                          : `상세 정보 (${partitionedSummary.secondary.length})`}
+                      </button>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <dl className="mt-1 divide-y divide-border/60 border-t border-border/60">
+                        {renderSummaryRows(partitionedSummary.secondary, {
+                          showArrivalAction: false,
+                        })}
+                      </dl>
+                    </CollapsibleContent>
+                  </Collapsible>
+                ) : null}
+              </section>
+
+              {hasToothWorks ? (
+                <section className="space-y-2.5 border-t border-border/70 pt-4">
+                  <h3 className="text-[13px] font-semibold text-foreground">
+                    치식 · 보철물
+                  </h3>
+                  <PracticeToothWorkChartReadOnly
+                    key={toothWorksKey || "tooth-works"}
+                    toothWorks={toothWorks}
+                    feeQuote={feeQuote}
+                    feeViewer={feeViewer}
+                    labAnchorId={labAnchorId}
+                    skipJig={skipJig}
+                    labEffectiveStars={labEffectiveStars}
+                  />
+                  <PracticeRemakeChargesStrip remakeCharges={remakeCharges} />
+                </section>
+              ) : remakeCharges && remakeCharges.length > 0 ? (
+                <section className="border-t border-border/70 pt-4">
+                  <PracticeRemakeChargesStrip remakeCharges={remakeCharges} />
+                </section>
+              ) : null}
+
+              {hasMeaningfulMemo ? (
+                <section className="space-y-2.5 border-t border-border/70 pt-4">
+                  <h3 className="text-[13px] font-semibold text-foreground">
+                    의뢰 메모
+                  </h3>
+                  <p className="custom-scrollbar max-h-48 overflow-y-auto rounded-md bg-muted/40 px-3 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words text-foreground">
+                    {memo}
+                  </p>
+                </section>
+              ) : null}
+
+              <section className="space-y-2.5 border-t border-border/70 pt-4">
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="text-[13px] font-semibold text-foreground">
+                    {filesLabel}{" "}
+                    <span className="font-normal text-muted-foreground">
+                      ({files.length}개)
+                    </span>
+                  </h3>
+                  {files.length > 0 ? (
+                    files.some((f) => isDcmFileName(f.fileName)) ? (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={
+                              downloadAllBusy || requestFilesDownloadLocked
+                            }
+                          >
+                            {downloadAllBusy ? "다운로드 중..." : "전체 다운로드"}
+                            <ChevronDown className="ml-1 h-3.5 w-3.5 opacity-70" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="z-[400]">
+                          <DropdownMenuItem
+                            onClick={() =>
+                              void onDownloadAllFiles({ dcmFormat: "dcm" })
+                            }
+                          >
+                            DCM 원본
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() =>
+                              void onDownloadAllFiles({ dcmFormat: "ply" })
+                            }
+                          >
+                            PLY (칼라)
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    ) : (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void onDownloadAllFiles()}
+                        disabled={
+                          downloadAllBusy || requestFilesDownloadLocked
+                        }
+                      >
+                        {downloadAllBusy ? "다운로드 중..." : "전체 다운로드"}
+                      </Button>
+                    )
+                  ) : null}
+                </div>
+                {requestFilesDownloadLocked && files.length > 0 ? (
+                  <p className="text-xs leading-relaxed text-amber-800 dark:text-amber-200">
+                    {requestFilesDownloadLockedReason}
+                  </p>
+                ) : null}
+                {files.length ? (
+                  <div className="custom-scrollbar max-h-64 overflow-y-auto pr-1">
+                    <div className="grid grid-cols-4 gap-2">
+                      {files.map((file, idx) =>
+                        renderFileTile(
+                          file,
+                          idx,
+                          "request",
+                          requestFilesDownloadLocked,
+                        ),
+                      )}
+                    </div>
+                  </div>
+                ) : oralScanAttachMode === "practice_required" ? (
+                  <p className="text-sm leading-relaxed text-destructive">
+                    {ORAL_SCAN_REQUIRED_FROM_PRACTICE}
+                  </p>
+                ) : (
+                  <p className="text-sm text-muted-foreground">파일 없음</p>
+                )}
+              </section>
+
+              {showWorkFilesSection ? (
+                <section className="space-y-3 border-t border-border/70 pt-4">
+                  <h3 className="text-[13px] font-semibold text-foreground">
+                    {workFilesLabel}
+                  </h3>
+                  {designFileList.length > 0 ? (
+                    <div className="space-y-1.5">
+                      <p className="text-[13px] text-muted-foreground">
+                        {designFilesLabel}{" "}
+                        <span>({designFileList.length}개)</span>
+                      </p>
+                      <div className="custom-scrollbar max-h-64 overflow-y-auto pr-1">
+                        <div className="grid grid-cols-4 gap-2">
+                          {designFileList.map((file, idx) =>
+                            renderFileTile(file, idx, "design"),
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+                  {resultFileList.length > 0 ? (
+                    <div className="space-y-1.5">
+                      <p className="text-[13px] text-muted-foreground">
+                        {resultFilesLabel}{" "}
+                        <span>({resultFileList.length}개)</span>
+                      </p>
+                      <div className="custom-scrollbar max-h-64 overflow-y-auto pr-1">
+                        <div className="grid grid-cols-4 gap-2">
+                          {resultFileList.map((file, idx) =>
+                            renderFileTile(file, idx, "result"),
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+                </section>
+              ) : null}
+
+              {showProductionConfirm && onConfirmProduction ? (
+                <div className="rounded-md border border-primary/30 bg-primary-soft/40 p-3">
+                  <p className="text-sm text-primary-strong">
+                    {productionConfirmTitle}
+                  </p>
+                  <Button
+                    type="button"
+                    className="mt-2"
+                    disabled={productionConfirmBusy}
+                    onClick={handleConfirmPanelClick}
+                  >
+                    {productionConfirmBusy
+                      ? "처리 중..."
+                      : confirmPreviewTarget
+                        ? `미리보기 · ${productionConfirmButtonLabel}`
+                        : productionConfirmButtonLabel}
+                  </Button>
+                </div>
+              ) : null}
+              </div>
+
+              <div
+                className={cn(
+                  "border-t border-border/70",
+                  workFileDropActive &&
+                    "m-2 rounded-md border-2 border-dashed border-primary/45 bg-primary/[0.03]",
+                )}
+                {...(workFileDropActive
+                  ? { "data-guide-tour": "lab_design" }
+                  : {})}
+              >
+                <div className="flex items-center gap-1.5 px-5 pt-4 text-[13px] font-semibold text-foreground">
+                  <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
+                  진행
+                </div>
                   {workFileDropUploading ? (
                     <div
                       className="pointer-events-none z-[2] shrink-0 border-b border-primary/25 bg-primary px-5 py-2.5 text-primary-foreground"
@@ -2834,14 +2874,6 @@ export function PracticeTransferDetailChatDialog({
                     </button>
                   ) : null}
 
-                  <div
-                    className={cn(
-                      "custom-scrollbar relative z-[1] min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain transition-opacity",
-                      workFileDropActive &&
-                        !workFileDropUploading &&
-                        "opacity-80",
-                    )}
-                  >
                     <div className="w-full min-w-0 max-w-full space-y-2 px-5 py-2">
                       {chatLoading ? (
                         <div className="py-4 text-center text-xs text-muted-foreground">
@@ -2975,8 +3007,62 @@ export function PracticeTransferDetailChatDialog({
 
                       <div ref={chatBottomRef} />
                     </div>
-                  </div>
-                </div>
+                <div className="h-2" />
+              </div>
+            </div>
+
+            <div
+              className={cn(
+                "pointer-events-none absolute inset-x-0 z-[20] flex justify-center px-3 transition-all duration-300 ease-out",
+                scrollEdge === "top"
+                  ? "bottom-[4.75rem] translate-y-0 opacity-100"
+                  : "bottom-[4rem] translate-y-2 opacity-0",
+              )}
+            >
+              <button
+                type="button"
+                data-no-drag
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full border border-border/80 bg-background/95 px-3.5 py-2 text-xs font-medium text-foreground shadow-md backdrop-blur-sm transition-transform duration-300",
+                  scrollEdge === "top"
+                    ? "pointer-events-auto scale-100"
+                    : "pointer-events-none scale-95",
+                )}
+                onClick={scrollToProgressBottom}
+                aria-label="진행으로 이동"
+                title="진행으로 이동"
+                tabIndex={scrollEdge === "top" ? 0 : -1}
+              >
+                <ArrowDown className="h-3.5 w-3.5 animate-bounce" />
+                진행
+              </button>
+            </div>
+            <div
+              className={cn(
+                "pointer-events-none absolute inset-x-0 z-[20] flex justify-center px-3 transition-all duration-300 ease-out",
+                scrollEdge === "bottom"
+                  ? "top-3 translate-y-0 opacity-100"
+                  : "top-0 -translate-y-2 opacity-0",
+              )}
+            >
+              <button
+                type="button"
+                data-no-drag
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full border border-border/80 bg-background/95 px-3.5 py-2 text-xs font-medium text-foreground shadow-md backdrop-blur-sm transition-transform duration-300",
+                  scrollEdge === "bottom"
+                    ? "pointer-events-auto scale-100"
+                    : "pointer-events-none scale-95",
+                )}
+                onClick={scrollToDetailTop}
+                aria-label="의뢰로 이동"
+                title="의뢰로 이동"
+                tabIndex={scrollEdge === "bottom" ? 0 : -1}
+              >
+                <ArrowUp className="h-3.5 w-3.5 animate-bounce" />
+                의뢰
+              </button>
+            </div>
 
                 <div className="shrink-0">
                   <ChatComposer
@@ -3001,14 +3087,12 @@ export function PracticeTransferDetailChatDialog({
                     compact
                   />
                 </div>
-              </div>
-                </>
-              )}
-            </PracticeTransferFileDropTarget>
-          </TabsContent>
+          </div>
           </>
           ) : null}
-        </Tabs>
+
+        </div>
+
 
         {!minimized && !maximized && !isMobile ? (
           <>

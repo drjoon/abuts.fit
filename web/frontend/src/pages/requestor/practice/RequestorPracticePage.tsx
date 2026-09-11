@@ -827,10 +827,10 @@ export function RequestorPracticeReceivePage({
   const [abutmentRequestDetailBusy, setAbutmentRequestDetailBusy] =
     useState(false);
   const [selectedTransfer, setSelectedTransfer] = useState<ReceivedPracticeTransfer | null>(null);
-  /** 열 때 탭 고정 — mark-read 후 isRead 갱신으로 탭이 바뀌지 않게 */
-  const [dialogInitialPanelTab, setDialogInitialPanelTab] = useState<"detail" | "chat">(
-    "detail",
-  );
+  /** 열 때 스크롤 힌트(detail=위, chat=아래). 미지정 시 채팅 유무로 결정 */
+  const [dialogInitialPanelTab, setDialogInitialPanelTab] = useState<
+    "detail" | "chat" | undefined
+  >(undefined);
   const [acceptBusy, setAcceptBusy] = useState(false);
   const [ptxCaCreditConfirmOpen, setPtxCaCreditConfirmOpen] = useState(false);
   const [ptxCaCreditConfirmMessage, setPtxCaCreditConfirmMessage] = useState("");
@@ -5588,10 +5588,8 @@ export function RequestorPracticeReceivePage({
       const panel =
         options?.panel === "chat" || options?.panel === "detail"
           ? options.panel
-          : transfer.isRead
-            ? "chat"
-            : "detail";
-      // 미읽음(첫 확인) → 의뢰 상세, 이미 읽음(진행중) → 진행 상황 (옵션으로 고정 가능)
+          : undefined;
+      // 명시 panel만 고정. 그 외는 채팅 내역 유무로 위/아래 결정
       setDialogInitialPanelTab(panel);
       setSelectedTransfer(transfer);
       setDialogOpen(true);
