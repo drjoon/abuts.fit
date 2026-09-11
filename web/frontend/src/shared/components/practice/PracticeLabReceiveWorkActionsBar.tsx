@@ -184,7 +184,7 @@ export function PracticeLabReceiveWorkActionsBar({
           </span>
         </TooltipTrigger>
         <TooltipContent side="top" className="max-w-xs text-xs">
-          제조 가공이 시작되어 취소할 수 없습니다. 상단 「리메이크」에서 필요한
+          제조 가공이 시작되어 취소할 수 없습니다. 「리메이크」에서 필요한
           치아만 재제작하세요.
         </TooltipContent>
       </Tooltip>

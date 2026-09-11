@@ -29,6 +29,8 @@
 // - web/backend/utils/labReceiveCalendarHiddenWeekdays.util.js
 // - web/frontend/src/shared/practice/labReceiveCalendarViewMode.ts
 // - web/backend/controllers/users/user.controller.js
+// - 2026-09-11: 치과 UI 맞춤 — 목록 치과명 제거·색 범례·상세 헤더 점.
+// - 2026-09-11: 리메이크 CTA — 헤더 → 작업 취소 옆(trailing).
 // - 2026-09-11: 어벗 가공 후 작업취소 — FE CTA 숨김 + API fail-closed(sticky/링크유실).
 // - 2026-09-11: 가공(pastReady) 후 「리메이크」=선택 치아 리메이크 의뢰(새 PTX). 청구는 가공 전만.
 // - 2026-09-10: 리메이크 청구 CTA — 식별 스트립(환자/도착일) 오른쪽, 라벨 「리메이크」.
@@ -362,6 +364,7 @@ import {
 } from "@/shared/shipping/hanjinTrackingLabel";
 import {
   PracticeRecentTransfersCalendar,
+  assignCalendarRainbowDotColors,
   expandPracticeCalendarChipsByArrivalDates,
   resolvePracticeCalendarStatusTone,
   resolvePracticeStatusFilterBadgeTone,
@@ -2241,7 +2244,7 @@ export function RequestorPracticeReceivePage({
           implantCatalog,
         ),
         sortLabel: clinic,
-        line: [clinic, patientLine, surchargeLabel].filter(Boolean).join(" / "),
+        line: [patientLine, surchargeLabel].filter(Boolean).join(" / "),
         unreadCount: transferChatUnreadCount(transfer),
         reviewHighlight: isPracticeStatusBadgeQueueTransfer(
           {
@@ -2398,6 +2401,20 @@ export function RequestorPracticeReceivePage({
     () => resolvePracticeTransferToothWorks(selectedTransfer, implantCatalog),
     [selectedTransfer, implantCatalog],
   );
+  const practiceColorDots = useMemo(() => {
+    const entries = sortedFilteredTransfers.map((transfer) => {
+      const clinic =
+        transfer.matchingMode === "auto"
+          ? "자동 매칭"
+          : String(transfer.practice?.businessName || "").trim() || "-";
+      return {
+        colorKey:
+          String(transfer.practiceBusinessAnchorId || "").trim() || clinic,
+        name: clinic,
+      };
+    });
+    return assignCalendarRainbowDotColors(entries);
+  }, [sortedFilteredTransfers]);
   const selectedTransferCaseIdentity = useMemo(() => {
     if (!selectedTransfer) return null;
     const hidePractice =
@@ -2440,11 +2457,23 @@ export function RequestorPracticeReceivePage({
       order ? `주문 ${order}` : "",
       arrival ? `도착 ${arrival}` : "",
     ].filter(Boolean);
+    const colorKeyClinic =
+      selectedTransfer.matchingMode === "auto"
+        ? "자동 매칭"
+        : String(selectedTransfer.practice?.businessName || "").trim() || "-";
+    const colorKey =
+      String(selectedTransfer.practiceBusinessAnchorId || "").trim() ||
+      colorKeyClinic;
+    const dot = practiceColorDots.get(colorKey);
     return {
       primary: identity,
       secondary: dateParts.length ? dateParts.join(" · ") : undefined,
+      colorKey,
+      dotColor: dot?.color || undefined,
+      dotStyle: dot?.style || undefined,
     };
   }, [
+    practiceColorDots,
     selectedTransfer,
     selectedTransferPatientName,
     user?.role,
@@ -6331,6 +6360,9 @@ export function RequestorPracticeReceivePage({
               guideTourItemId={
                 guideTourLabCalendarStep ? GUIDE_TOUR_DEMO_TRANSFER_ID : null
               }
+              showLabColorLegend
+              colorLegendTitle="치과"
+              pinAbutsInColorLegend={false}
             />
           )}
         </>
@@ -6614,36 +6646,7 @@ export function RequestorPracticeReceivePage({
         authToken={token}
         initialPanelTab={dialogInitialPanelTab}
         guideTourElevate={guideTourWantsReceiveDetail}
-        chatHeaderAction={
-          selectedTransfer &&
-          !isGuideTourDemoTransfer(selectedTransfer) &&
-          Boolean(
-            selectedTransfer.isAccepted ||
-              selectedTransfer.isDownloaded ||
-              selectedTransfer.requestorDownloadedAt ||
-              selectedTransfer.autoMatch?.completed ||
-              selectedTransfer.production?.confirmedAt,
-          ) &&
-          !String(selectedTransfer.workCanceledAt || "").trim() &&
-          selectedTransfer.manufacturerStage !== "작업취소" ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="h-8 gap-1 border-amber-300 bg-amber-50 px-2.5 text-xs text-amber-950 hover:bg-amber-100 hover:text-amber-950"
-              disabled={remakeChargeBusy || labRemakeCreateBusy}
-              title={
-                practiceTransferAbutmentMachiningStarted(selectedTransfer)
-                  ? "가공 시작 후 어벗 취소 불가 · 선택 치아만 리메이크 의뢰"
-                  : "동일 의뢰건에 리메이크 기공비를 청구합니다"
-              }
-              onClick={() => openLabRemakeFlow()}
-            >
-              <Repeat className="h-3.5 w-3.5" />
-              리메이크
-            </Button>
-          ) : null
-        }
+        chatHeaderAction={null}
         caseIdentity={selectedTransferCaseIdentity}
         composerToolbarExtra={
           selectedTransfer?.practiceBusinessAnchorId ? (
@@ -6887,6 +6890,37 @@ export function RequestorPracticeReceivePage({
             selectedTransfer,
             implantCatalog,
           );
+          const showLabRemakeCta =
+            !isGuideTourDemoTransfer(selectedTransfer) &&
+            Boolean(
+              selectedTransfer.isAccepted ||
+                selectedTransfer.isDownloaded ||
+                selectedTransfer.requestorDownloadedAt ||
+                selectedTransfer.autoMatch?.completed ||
+                selectedTransfer.production?.confirmedAt,
+            ) &&
+            !String(selectedTransfer.workCanceledAt || "").trim() &&
+            selectedTransfer.manufacturerStage !== "작업취소";
+          // 가공 후는 바의 pastReadyRemakeButton이 담당 — 중복 방지
+          const remakeTrailing =
+            showLabRemakeCta && !workState.abutmentCancelBlockedPastReady ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 gap-1 border-amber-300 bg-amber-50 px-2.5 text-xs text-amber-950 hover:bg-amber-100 hover:text-amber-950"
+                disabled={remakeChargeBusy || labRemakeCreateBusy}
+                title={
+                  practiceTransferAbutmentMachiningStarted(selectedTransfer)
+                    ? "가공 시작 후 어벗 취소 불가 · 선택 치아만 리메이크 의뢰"
+                    : "동일 의뢰건에 리메이크 기공비를 청구합니다"
+                }
+                onClick={() => openLabRemakeFlow()}
+              >
+                <Repeat className="h-3.5 w-3.5" />
+                리메이크
+              </Button>
+            ) : null;
           if (
             !workState.showWorkActions &&
             !workState.showCompletedStageHeaderCancel &&
@@ -6894,7 +6928,13 @@ export function RequestorPracticeReceivePage({
             !workState.hasPendingLabCa &&
             !workState.hasAbutsCa
           ) {
-            return releaseAction;
+            if (!remakeTrailing && !releaseAction) return null;
+            return (
+              <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+                {remakeTrailing}
+                {releaseAction}
+              </div>
+            );
           }
           const transferKey = String(
             selectedTransfer.transferId || selectedTransfer._id || "",
@@ -6922,7 +6962,7 @@ export function RequestorPracticeReceivePage({
                 : "작업 완료 취소"}
             </Button>
           ) : null;
-          // 어벗 가공 시작 후면 작업취소 trailing 숨김(카드·상세 CTA와 동일)
+          // 어벗 가공 시작 뒤에는 작업취소 trailing 숨김(카드·상세 CTA와 동일)
           const releaseTrailing =
             workState.productionStarted || workState.abutmentCancelBlockedPastReady
               ? null
@@ -6934,7 +6974,12 @@ export function RequestorPracticeReceivePage({
               busy={rowBusy}
               designConfirmBusy={designConfirmBusyId === transferKey}
               showProductionCancelInBar
-              trailingActions={completedCancelAction || releaseTrailing}
+              trailingActions={
+                <>
+                  {remakeTrailing}
+                  {completedCancelAction || releaseTrailing}
+                </>
+              }
               onAbutmentProductionCancel={(event) =>
                 void handleCardAbutmentProductionCancel(
                   selectedTransfer,

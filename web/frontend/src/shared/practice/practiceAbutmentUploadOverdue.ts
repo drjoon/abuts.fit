@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/components/practice/PracticeAbutmentUploadOverdueAlert.tsx
 // - web/frontend/src/pages/practice/components/PracticeRecentTransfersCalendar.tsx
 // - web/frontend/src/shared/practice/practiceTransferLabReceive.ts
+// - 2026-09-11: 기공소 노란 배너 — 「어벗 업로드 대기중」(상세 접미사 제거).
 // - 2026-09-02: 수락·기한만료 후 24h/48h/도착일 경과 커스텀 어벗 STL 미업로드 경고.
 // - 2026-09-02: 치과(practice) 문구 — 기공소 업로드 대기·문의 톤(업로드 CTA 없음).
 
@@ -14,7 +15,7 @@ export type PracticeAbutmentUploadOverdueLevel = "yellow" | "red" | "deadline";
 export type PracticeAbutmentUploadOverdueViewer = "practice" | "lab";
 
 export const PRACTICE_ABUTMENT_UPLOAD_OVERDUE_YELLOW_LABEL =
-  "어벗 업로드 대기";
+  "어벗 업로드 대기중";
 export const PRACTICE_ABUTMENT_UPLOAD_OVERDUE_RED_LABEL = "어벗 업로드 지연";
 export const PRACTICE_ABUTMENT_UPLOAD_OVERDUE_DEADLINE_LABEL = "기한 만료";
 

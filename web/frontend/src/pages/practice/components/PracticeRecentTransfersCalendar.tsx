@@ -27,11 +27,13 @@
  * - 2026-08-20: 안읽음(수신 미확인·채팅) 빨간 배지를 칩에 표시.
  * - 2026-08-21: 상단 필터 뱃지 ON=진한 상태색 / OFF=흐린 무채색(표시 on/off 대비).
  * - 2026-09-11: 캘린더 칩 — 기공소 색 점 왼쪽 여백(pl-1).
+ * - 2026-09-11: 칩 호버 — openDelay 400ms, side=right + pointer-events-none(클릭 가림 방지).
  * - 2026-09-11: 기공소 점 — 7원색 + 빈원(8–14) + 이중외곽(15+).
  * - 2026-09-11: 기공소 점 — 무지개 원색 순번 배정(초록 1칸, 해시 몰림 방지).
  * - 2026-09-11: 기공소 점 — 무지개 원색(초록 1칸만, 녹색 계열 혼동 방지).
  * - 2026-09-11: 기공소 점 — 20원색(색상환 균등·고채도).
  * - 2026-09-11: 기공소 점 팔레트 — 색·명도 분산으로 인접 초록/파랑 혼동 완화.
+ * - 2026-09-11: 기공소 수신 — colorLegendTitle·pinAbutsInColorLegend(치과 범례, 어벗츠 고정 없음).
  * - 2026-09-11: 치과 목록 — 기공소명 제거, 캘린더 아래 색 도트 범례(어벗츠+거래 기공소).
  * - 2026-09-11: 목록·칩 — 작업 큐=빨간 테두리, 채팅 unread=빨간 숫자(분리).
  * - 2026-09-10: 상단 뱃지 표시 on/off 제거 — active 톤만 사용(unread 순회).
@@ -405,12 +407,14 @@ function PracticeCalendarChipHover({
       : "";
 
   return (
-    <HoverCard openDelay={200} closeDelay={100}>
+    <HoverCard openDelay={400} closeDelay={100}>
       <HoverCardTrigger asChild>{children}</HoverCardTrigger>
       <HoverCardContent
-        side="top"
+        side="right"
         align="start"
-        className="z-[400] w-72 space-y-1.5 p-3 text-xs"
+        sideOffset={8}
+        collisionPadding={12}
+        className="pointer-events-none z-[400] w-72 space-y-1.5 p-3 text-xs"
       >
         {groupName ? (
           <p className="flex min-w-0 items-center gap-1.5 font-semibold text-foreground">
@@ -630,10 +634,17 @@ type PracticeRecentTransfersCalendarProps = {
   /** 데스크톱 — 검색 아래·달력/목록 오른쪽 고정 상세 카드 */
   detailPanel?: ReactNode;
   /**
-   * 치과 목록: 좌측 미니캘린더 아래 기공소 색 도트 범례(어벗츠 + 거래 기공소).
-   * 목록 줄에서는 기공소명을 빼고 점만으로 구분할 때 켠다.
+   * 좌측 미니캘린더 아래 거래처 색 도트 범례.
+   * 목록 줄에서 거래처명을 빼고 점만으로 구분할 때 켠다.
    */
   showLabColorLegend?: boolean;
+  /** 범례 제목. 치과 화면=`기공소`, 기공소 수신=`치과`. */
+  colorLegendTitle?: string;
+  /**
+   * 범례·점 배정에 어벗츠를 맨 위(초록)로 고정할지.
+   * 치과→기공소 목록만 true. 기공소→치과 수신은 false.
+   */
+  pinAbutsInColorLegend?: boolean;
 };
 
 const agendaDateLabel = (ymd: string) => {
@@ -789,6 +800,8 @@ export function PracticeRecentTransfersCalendar({
   detailPanelOpen = false,
   detailPanel = null,
   showLabColorLegend = false,
+  colorLegendTitle = "기공소",
+  pinAbutsInColorLegend = true,
 }: PracticeRecentTransfersCalendarProps) {
   const isGuideTourChip = (itemId: string) => {
     const want = String(guideTourItemId || "").trim();
@@ -808,20 +821,24 @@ export function PracticeRecentTransfersCalendar({
       colorKey,
       name,
     }));
-    const hasAbuts = entries.some(
-      (row) => row.name === ABUTS_PINNED_LAB_NAME,
-    );
-    if (!hasAbuts) {
-      entries.unshift({
-        colorKey: ABUTS_PINNED_LAB_NAME,
-        name: ABUTS_PINNED_LAB_NAME,
+    if (pinAbutsInColorLegend) {
+      const hasAbuts = entries.some(
+        (row) => row.name === ABUTS_PINNED_LAB_NAME,
+      );
+      if (!hasAbuts) {
+        entries.unshift({
+          colorKey: ABUTS_PINNED_LAB_NAME,
+          name: ABUTS_PINNED_LAB_NAME,
+        });
+      }
+      entries.sort((a, b) => {
+        if (a.name === ABUTS_PINNED_LAB_NAME) return -1;
+        if (b.name === ABUTS_PINNED_LAB_NAME) return 1;
+        return a.name.localeCompare(b.name, "ko");
       });
+    } else {
+      entries.sort((a, b) => a.name.localeCompare(b.name, "ko"));
     }
-    entries.sort((a, b) => {
-      if (a.name === ABUTS_PINNED_LAB_NAME) return -1;
-      if (b.name === ABUTS_PINNED_LAB_NAME) return 1;
-      return a.name.localeCompare(b.name, "ko");
-    });
     const colors = assignCalendarRainbowDotColors(entries);
     return entries.map((row) => {
       const assigned =
@@ -836,7 +853,7 @@ export function PracticeRecentTransfersCalendar({
         style: assigned.style,
       };
     });
-  }, [items]);
+  }, [items, pinAbutsInColorLegend]);
   const labDotByKey = useMemo(() => {
     const map = new Map<string, CalendarLabDotAssignment>();
     for (const row of labColorLegend) {
@@ -1491,7 +1508,7 @@ export function PracticeRecentTransfersCalendar({
             {showLabColorLegend && labColorLegend.length > 0 ? (
               <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto rounded-md border border-slate-200/80 bg-white px-2 py-2 shadow-sm">
                 <p className="mb-1.5 px-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                  기공소
+                  {colorLegendTitle}
                 </p>
                 <ul className="space-y-1">
                   {labColorLegend

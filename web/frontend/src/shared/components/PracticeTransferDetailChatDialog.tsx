@@ -14,6 +14,7 @@
 // - web/frontend/src/shared/files/downloadWithProgress.ts
 // - web/frontend/src/shared/files/s3BlobCache.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-11: 작업시작 바 — 작업+배송기간 제거, 주문/도착을 버튼 왼쪽에.
 // - 2026-09-11: inline 미선택 — 빈 안내 카드(패널은 항상 표시).
 // - 2026-09-11: variant=inline — 작업영역 오른쪽 고정 카드(검색 아래·달력/목록 옆).
 // - 2026-09-11: 진행(메시지) min-h-full 복원 — 주문/도착 아래 뷰포트를 채움.
@@ -189,11 +190,6 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { PracticeWorkPeriodText } from "@/shared/components/practice/PracticeWorkPeriodText";
-import {
-  getPracticeWorkPeriodDays,
-  isPracticeWorkPeriodShort,
-} from "@/shared/practice/practiceWorkPeriod";
 import {
   ORAL_SCAN_DOWNLOAD_LOCKED_UNTIL_ABUTS_DESIGN,
   ORAL_SCAN_REQUIRED_FROM_PRACTICE,
@@ -1902,8 +1898,6 @@ export function PracticeTransferDetailChatDialog({
     typeof acceptedWorkActions === "function"
       ? acceptedWorkActions({ releaseAction })
       : acceptedWorkActions;
-  const workPeriodDays = getPracticeWorkPeriodDays(orderDate, arrivalDate, orderedAt);
-  const showShortWorkPeriod = isPracticeWorkPeriodShort(workPeriodDays);
   const acceptDisabled = acceptBusy || oralScanBlocksAccept;
   const acceptBarSurchargeLabel = (() => {
     const multiplier = normalizeLabFeeMultiplier(feeQuote?.labFeeMultiplier);
@@ -2077,7 +2071,9 @@ export function PracticeTransferDetailChatDialog({
                         {caseIdentityStrip.primary}
                       </span>
                     </p>
-                    {identityDateLabel && !showArrivalInChatChrome ? (
+                    {identityDateLabel &&
+                    !showArrivalInChatChrome &&
+                    !showAcceptBar ? (
                       <p className="mt-0.5 truncate text-xs text-muted-foreground">
                         {identityDateLabel}
                       </p>
@@ -2262,15 +2258,10 @@ export function PracticeTransferDetailChatDialog({
                     </div>
                   ) : null}
                   <div className="flex shrink-0 items-center gap-2 self-end sm:ml-auto sm:self-auto">
-                    {showShortWorkPeriod ? (
-                      <PracticeWorkPeriodText
-                        orderDate={orderDate}
-                        arrivalDate={arrivalDate}
-                        at={orderedAt}
-                        variant="labeled"
-                        viewer="lab"
-                        className="text-xs"
-                      />
+                    {identityDateLabel ? (
+                      <span className="text-xs tabular-nums text-muted-foreground">
+                        {identityDateLabel}
+                      </span>
                     ) : null}
                     {onOpenSubcontract ? (
                       <Button

@@ -1,6 +1,7 @@
 // related files:
 // - web/frontend/src/shared/practice/practiceAbutmentUploadOverdue.ts
 // - web/frontend/src/shared/components/practice/PracticeLabReceiveWorkActionsBar.tsx
+// - 2026-09-11: 기공소 배너 — 라벨만(대기중). 상세는 툴팁.
 // - 2026-09-02: 수락 후 어벗 STL 미업로드 24h/48h 경고 배너.
 // - 2026-09-02: viewer=practice|lab — 치과는 대기/문의, 기공소는 업로드 독촉.
 
@@ -68,7 +69,7 @@ export function PracticeAbutmentUploadOverdueAlert({
             aria-hidden
           />
           <span className="font-medium">{label}</span>
-          {!compact ? (
+          {viewer === "practice" && !compact ? (
             <span className="text-[11px] opacity-90">— {detail}</span>
           ) : null}
         </div>
