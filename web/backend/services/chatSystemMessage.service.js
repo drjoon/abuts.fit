@@ -106,8 +106,7 @@ export async function pullUsersFromPracticeTransferChatRoom({
 
 /**
  * PracticeTransfer 채팅방에 시스템 이벤트 메시지를 남긴다.
- * 치과 대응이 필요한 상태 변경(작업취소·거부·생산/디자인 컨펌 요청 등)용.
- * 수락·어벗/보철 업로드 등 대응 불필요 이벤트에는 쓰지 않는다.
+ * 작업시작·작업취소·거부·생산/디자인 컨펌 요청 등 상태 변경용.
  * @returns {Promise<object|null>}
  */
 export async function postPracticeTransferSystemChatMessage({

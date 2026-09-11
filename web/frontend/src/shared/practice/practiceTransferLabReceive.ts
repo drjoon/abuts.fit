@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/components/practice/LabReceiveWorkUploadDialog.tsx
 // change-log:
+// - 2026-09-12: 비어벗 작업취소 — 도착일(포함) 이후 CTA 숨김(showWorkCancel).
 // - 2026-09-11: pastReady 작업취소 차단 — 디자인 미러가 비어도 sticky/pastReady면 유지.
 // - 2026-09-11: 가공(pastReady) 후 어벗 취소 CTA 숨김 — 리메이크(선택 치아 재제작)로 유도.
 // - 2026-09-07: 플랫폼 가입 이전 의뢰건 리메이크 — 라벨·안내 카피·판정 헬퍼.
@@ -65,6 +66,7 @@ import type {
 } from "@/shared/practice/practiceLabRating";
 import type { PracticeAbutmentDeliveryInfo } from "@/shared/shipping/hanjinTrackingLabel";
 import { resolvePracticeAbutmentUploadOverdueLevel } from "@/shared/practice/practiceAbutmentUploadOverdue";
+import { toKstYmd } from "@/shared/date/kst";
 
 export type PracticeTransferLabReceiveFile = {
   id: string;
@@ -534,6 +536,52 @@ export function practiceTransferAbutmentMachiningStarted(
   return Boolean(transfer?.production?.abutmentProductionStartedAt);
 }
 
+/** 도착일 도래(당일 포함). 비어벗 작업취소 차단용. */
+export function isPracticeArrivalDateReached(
+  arrivalYmd?: string | null,
+  todayYmd?: string | null,
+) {
+  const arrival = String(arrivalYmd || "").trim();
+  const today = String(todayYmd || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(arrival)) return false;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(today)) return false;
+  return arrival <= today;
+}
+
+function resolvePracticeTransferArrivalYmdForCancel(
+  transfer:
+    | {
+        arrivalDate?: string | null;
+        arrivalDates?: string[] | null;
+      }
+    | null
+    | undefined,
+) {
+  const direct = String(transfer?.arrivalDate || "").trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(direct)) return direct;
+  const list = Array.isArray(transfer?.arrivalDates)
+    ? transfer.arrivalDates
+        .map((ymd) => String(ymd || "").trim())
+        .filter((ymd) => /^\d{4}-\d{2}-\d{2}$/.test(ymd))
+    : [];
+  return list.length > 0 ? list[list.length - 1] : "";
+}
+
+/**
+ * 어벗츠 CNC CA가 없는 의뢰 — 치과도착일(포함) 이후 작업취소 CTA 숨김.
+ */
+export function practiceTransferWorkCancelBlockedByArrival(
+  transfer: PracticeTransferLabReceiveItem | null | undefined,
+  catalog: RoundBarCatalogRow[] = [],
+  todayYmd?: string | null,
+) {
+  if (!transfer) return false;
+  if (practiceTransferHasAbutsCustomAbutment(transfer, catalog)) return false;
+  const arrival = resolvePracticeTransferArrivalYmdForCancel(transfer);
+  const today = String(todayYmd || toKstYmd(new Date()) || "").trim();
+  return isPracticeArrivalDateReached(arrival, today);
+}
+
 export function countPracticeTransferDesignFiles(
   transfer: PracticeTransferLabReceiveItem | null | undefined,
 ) {
@@ -878,6 +926,10 @@ export type PracticeLabReceiveWorkActionState = {
    * 리메이크로 선택 치아만 재제작하도록 안내.
    */
   abutmentCancelBlockedPastReady: boolean;
+  /** 비어벗 — 치과도착일(포함) 이후 작업취소 불가 */
+  arrivalCancelBlocked: boolean;
+  /** 작업시작 취소 CTA(카드 헤더·상세 trailing) */
+  showWorkCancel: boolean;
   /** 완료 후 — 헤더「작업 완료 취소」 */
   showCompletedStageHeaderCancel: boolean;
   /** 레거시: 디자인 업로드 후 기공소 확인 CTA */
@@ -908,6 +960,8 @@ export function resolvePracticeLabReceiveWorkActionState(
     showWorkActions: false,
     showAbutmentProductionCancel: false,
     abutmentCancelBlockedPastReady: false,
+    arrivalCancelBlocked: false,
+    showWorkCancel: false,
     showCompletedStageHeaderCancel: false,
     showDesignConfirm: false,
     showMarkCompleteWithoutFiles: false,
@@ -992,6 +1046,14 @@ export function resolvePracticeLabReceiveWorkActionState(
       hasLinkedAbutmentRequests ||
       Boolean(transfer.production?.abutmentProductionStartedAt) ||
       Boolean(transfer.production?.abutmentPastReady));
+  const arrivalCancelBlocked = practiceTransferWorkCancelBlockedByArrival(
+    enrichedTransfer,
+    catalog,
+  );
+  const showWorkCancel =
+    showWorkActions &&
+    !abutmentCancelBlockedPastReady &&
+    !arrivalCancelBlocked;
   // 전부 업로드 중(남은 어벗 있음)에는 작업완료 취소 대신 업로드·어벗 취소 바 유지
   const showCompletedStageHeaderCancel =
     !showWorkActions && showAbutmentProductionCancel;
@@ -1020,6 +1082,8 @@ export function resolvePracticeLabReceiveWorkActionState(
     showWorkActions,
     showAbutmentProductionCancel,
     abutmentCancelBlockedPastReady,
+    arrivalCancelBlocked,
+    showWorkCancel,
     showCompletedStageHeaderCancel,
     showDesignConfirm,
     showMarkCompleteWithoutFiles,

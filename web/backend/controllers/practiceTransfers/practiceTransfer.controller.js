@@ -100,6 +100,7 @@ import {
   syncArrivalDatesWithMemoYmd,
   syncOrderDatesWithMemoYmd,
 } from "../../utils/practiceTransferArrivalDates.js";
+import { isPracticeTransferWorkCancelBlockedByArrival } from "../../utils/practiceTransferArrivalAutoComplete.js";
 import {
   normalizeLabRequestStagePlans,
   advanceLabRequestStagePlans,
@@ -252,8 +253,9 @@ import { completePracticeTransferWork } from "../../services/practiceTransferCom
 // - 2026-08-21: confirm-production·lab design-confirm — 게이트 저장·응답 후 생산 시작(CAM) 비동기.
 // - 2026-08-21: 치과 어벗 디자인 컨펌 시 기공소 채팅 안내(design_confirmed).
 // - 2026-08-21: mark-release — past-ready 1회·rollback∥clear·잔액 sync는 응답 후.
-// - 2026-08-21: 채팅 시스템 메시지는 치과 대응이 필요할 때만(취소·거부·생산진행/디자인컨펌 요청). 수락·업로드는 남기지 않음.
-// - 2026-08-14: 수락도 작업취소와 같이 채팅 시스템 메시지(work_accept) 남김. → 2026-08-21 철회.
+// - 2026-09-12: 작업시작(work_accept) 채팅 시스템 메시지 복구. 비어벗은 도착일(포함) 이후 mark-release 거부.
+// - 2026-08-21: 채팅 시스템 메시지는 치과 대응이 필요할 때만(취소·거부·생산진행/디자인컨펌 요청). 수락·업로드는 남기지 않음. → 2026-09-12 작업시작 복구.
+// - 2026-08-14: 수락도 작업취소와 같이 채팅 시스템 메시지(work_accept) 남김. → 2026-08-21 철회 → 2026-09-12 복구.
 // - 2026-08-14: mark-accepted — 치과 practice:transfer-updated에 확정 feeQuote 포함.
 // - 2026-08-16: mark-reject 지정=작업취소(치과 취소·휴지통 아님). mark-release auto=자동매칭 재공개.
 // - 2026-08-16: 수신 목록 — 별점 다운그레이드(유효별>의뢰별 수가) 페이로드.
@@ -7224,8 +7226,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
           action: "auto-match-claimed",
           source: "autoMatchClaim",
         },
-        // 수락은 치과 대응 불필요 — 채팅 시스템 메시지 없음
-        systemChatContent: "",
+        systemChatContent: "작업을 시작했습니다.",
       });
 
       return res.status(200).json({
@@ -7417,6 +7418,11 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
     };
 
     emitAppEventToUser(req.user?._id, "practice:transfer-updated", realtimePayload);
+    const labLabelForChat =
+      String(doc.targetLabName || "").trim() &&
+      String(doc.targetLabName || "").trim() !== AUTO_MATCH_LAB_DISPLAY_NAME
+        ? String(doc.targetLabName || "").trim()
+        : "기공소";
     scheduleAcceptSideEffects({
       doc,
       labAnchorId,
@@ -7426,8 +7432,10 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
       billingResult,
       realtimePayload,
       practiceRealtimePayload: realtimePayload,
-      // 수락은 치과 대응 불필요 — 채팅 시스템 메시지 없음(방 생성만)
-      systemChatContent: "",
+      // 이미 작업시작한 건 재진입 시 시스템 메시지 중복 방지
+      systemChatContent: alreadyAccepted
+        ? ""
+        : `기공소「${labLabelForChat}」이(가) 작업을 시작했습니다.`,
     });
 
     return res.status(200).json({
@@ -8212,6 +8220,14 @@ export async function markReceivedPracticeTransferRelease(req, res) {
         message:
           "어벗 가공이 시작된 의뢰는 작업시작을 취소할 수 없습니다. 리메이크로 필요한 치아만 재제작해 주세요.",
         code: "abutment_machining_started",
+      });
+    }
+
+    if (isPracticeTransferWorkCancelBlockedByArrival(doc)) {
+      return res.status(409).json({
+        success: false,
+        message: "치과도착일 이후에는 작업시작을 취소할 수 없습니다.",
+        code: "arrival_date_reached",
       });
     }
 

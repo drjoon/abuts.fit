@@ -132,6 +132,7 @@ export function PracticeTransferLabReceiveCard({
   );
   const {
     showWorkActions,
+    showWorkCancel,
     showAbutmentProductionCancel,
     showCompletedStageHeaderCancel,
     designStlUploadMode,
@@ -169,7 +170,7 @@ export function PracticeTransferLabReceiveCard({
     >
       {cardBusy ? "처리 중..." : "하청 전환"}
     </Button>
-  ) : showWorkActions ? (
+  ) : showWorkCancel ? (
     <Button
       type="button"
       size="sm"

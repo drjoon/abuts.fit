@@ -2,8 +2,10 @@ import { describe, expect, it } from "@jest/globals";
 
 import {
   isPracticeArrivalDatePast,
+  isPracticeArrivalDateReached,
   isPracticeTransferDueForArrivalAutoComplete,
   isPracticeTransferDueForArrivalDeadlineExpire,
+  isPracticeTransferWorkCancelBlockedByArrival,
   resolvePracticeTransferCurrentArrivalYmd,
 } from "../../utils/practiceTransferArrivalAutoComplete.js";
 
@@ -12,6 +14,34 @@ describe("practiceTransfer arrival auto-complete eligibility", () => {
     expect(isPracticeArrivalDatePast("2026-09-02", "2026-09-02")).toBe(false);
     expect(isPracticeArrivalDatePast("2026-09-03", "2026-09-02")).toBe(false);
     expect(isPracticeArrivalDatePast("2026-09-01", "2026-09-02")).toBe(true);
+  });
+
+  it("treats arrival day as reached for non-abutment work-cancel", () => {
+    expect(isPracticeArrivalDateReached("2026-09-02", "2026-09-02")).toBe(true);
+    expect(isPracticeArrivalDateReached("2026-09-03", "2026-09-02")).toBe(false);
+    expect(isPracticeArrivalDateReached("2026-09-01", "2026-09-02")).toBe(true);
+  });
+
+  it("blocks work-cancel by arrival only when no abuts CNC CA", () => {
+    const base = {
+      arrivalDates: ["2026-09-03"],
+      toothWorks: [{ toothNumber: "21", customAbutment: false }],
+    };
+    expect(
+      isPracticeTransferWorkCancelBlockedByArrival(base, "2026-09-03"),
+    ).toBe(true);
+    expect(
+      isPracticeTransferWorkCancelBlockedByArrival(base, "2026-09-02"),
+    ).toBe(false);
+    expect(
+      isPracticeTransferWorkCancelBlockedByArrival(
+        {
+          ...base,
+          toothWorks: [{ toothNumber: "21", customAbutment: true }],
+        },
+        "2026-09-03",
+      ),
+    ).toBe(false);
   });
 
   it("resolves current arrival from arrivalDates last entry", () => {

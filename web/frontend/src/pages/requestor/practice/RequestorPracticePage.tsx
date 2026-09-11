@@ -300,6 +300,7 @@ import {
   listPracticeTransferAbutsCustomAbutmentToothWorks,
   listPracticeTransferPendingProstheticSlots,
   practiceTransferAbutmentMachiningStarted,
+  practiceTransferWorkCancelBlockedByArrival,
   practiceTransferHasCustomAbutment,
   practiceTransferHasPendingLabCustomAbutment,
   practiceTransferLabReceiveUnreadBadgeCount,
@@ -3686,6 +3687,16 @@ export function RequestorPracticeReceivePage({
         });
         return false;
       }
+      if (
+        practiceTransferWorkCancelBlockedByArrival(transfer, implantCatalog)
+      ) {
+        toast({
+          title: "작업시작 취소 불가",
+          description: "치과도착일 이후에는 작업시작을 취소할 수 없습니다.",
+          variant: "destructive",
+        });
+        return false;
+      }
 
       const isAuto = String(transfer.matchingMode || "") === "auto";
       const canceledAt = new Date().toISOString();
@@ -3783,16 +3794,18 @@ export function RequestorPracticeReceivePage({
               if (code === "abutment_machining_started") {
                 markLocalMachiningStarted();
               }
+              const cancelBlocked =
+                code === "abutment_machining_started" ||
+                code === "arrival_date_reached";
               toast({
-                title:
-                  code === "abutment_machining_started"
-                    ? "작업시작 취소 불가"
-                    : "작업 취소 실패",
+                title: cancelBlocked ? "작업시작 취소 불가" : "작업 취소 실패",
                 description: String(
                   body.message ||
                     (code === "abutment_machining_started"
                       ? "어벗 가공이 시작된 의뢰는 작업시작을 취소할 수 없습니다. 리메이크로 필요한 치아만 재제작해 주세요."
-                      : "작업 취소 요청 중 오류가 발생했습니다."),
+                      : code === "arrival_date_reached"
+                        ? "치과도착일 이후에는 작업시작을 취소할 수 없습니다."
+                        : "작업 취소 요청 중 오류가 발생했습니다."),
                 ),
                 variant: "destructive",
               });
@@ -3858,7 +3871,7 @@ export function RequestorPracticeReceivePage({
         return false;
       }
     },
-    [ACTION_UI_MIN_MS, applyAcceptedLocalPatch, loadCalendarTransfers, queryClient, toast, token],
+    [ACTION_UI_MIN_MS, applyAcceptedLocalPatch, implantCatalog, loadCalendarTransfers, queryClient, toast, token],
   );
 
   const markTransferOpenSubcontract = useCallback(
@@ -6854,6 +6867,10 @@ export function RequestorPracticeReceivePage({
         abutmentMachiningStarted={practiceTransferAbutmentMachiningStarted(
           selectedTransfer,
         )}
+        workCancelBlocked={practiceTransferWorkCancelBlockedByArrival(
+          selectedTransfer,
+          implantCatalog,
+        )}
         remainingLabel={null}
         onAccept={
           selectedTransfer?.labRejected ||
@@ -6921,11 +6938,8 @@ export function RequestorPracticeReceivePage({
                 : "작업 완료 취소"}
             </Button>
           ) : null;
-          // 어벗 가공 시작 뒤에는 작업취소 trailing 숨김(카드·상세 CTA와 동일)
-          const releaseTrailing =
-            workState.productionStarted || workState.abutmentCancelBlockedPastReady
-              ? null
-              : releaseAction;
+          // 어벗 가공·비어벗 도착일 이후에는 작업취소 trailing 숨김(카드·상세 CTA와 동일)
+          const releaseTrailing = workState.showWorkCancel ? releaseAction : null;
           return (
             <PracticeLabReceiveWorkActionsBar
               transfer={selectedTransfer}

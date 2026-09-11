@@ -454,6 +454,8 @@ type PracticeTransferDetailChatDialogProps = {
   workCompleted?: boolean;
   /** 어벗 가공 시작(준비 아님) — 의뢰 수락 취소 불가 */
   abutmentMachiningStarted?: boolean;
+  /** 비어벗 도착일 도래 등 — 작업취소 CTA 숨김 */
+  workCancelBlocked?: boolean;
   /** 레거시: 자동매칭 남은시간 라벨(강제 클레임 만료 폐기 후 미사용) */
   remainingLabel?: string | null;
   onAccept?: () => void | Promise<void>;
@@ -614,6 +616,7 @@ export function PracticeTransferDetailChatDialog({
   workCanceled = false,
   workCompleted = false,
   abutmentMachiningStarted = false,
+  workCancelBlocked = false,
   onAccept,
   rejectBusy: _rejectBusy = false,
   onReject: _onReject,
@@ -1822,13 +1825,14 @@ export function PracticeTransferDetailChatDialog({
   /** 작업취소 후 수락이 풀렸지만 채팅은 이어갈 때 */
   const showReacceptBar =
     Boolean(onAccept) && !accepted && workCanceled;
-  /** 수락 직후: 수락 버튼 자리에 작업취소(어벗 가공 시작 후면 숨김) */
+    /** 수락 직후: 수락 버튼 자리에 작업취소(어벗 가공·도착일 차단 시 숨김) */
   const showReleaseBar =
     Boolean(onRelease) &&
     accepted &&
     !workCanceled &&
     !workCompleted &&
-    !abutmentMachiningStarted;
+    !abutmentMachiningStarted &&
+    !workCancelBlocked;
   const workFileDropActive = Boolean(
     workFileDrop && !workFileDrop.disabled && !minimized,
   );
