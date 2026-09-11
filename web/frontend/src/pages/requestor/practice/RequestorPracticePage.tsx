@@ -47,6 +47,7 @@
 // - 2026-09-05: 가이드투어 — pause·수료 시 데모 PTX·상세 삭제(치과 oral 정리와 동일).
 // - 2026-09-05: 가이드투어 — 수신 영화형(데모 PTX·상세 오픈·변이 가드).
 // - 2026-09-02: 어벗츠 제공 CA만 있어도 안내 표시. 심플어벗은 항상 제외.
+// - 2026-09-12: 어벗 handoff 성공 시 stale designFiles 덮어쓰기 금지(취소선·썸네일 플리커 제거).
 // - 2026-09-12: 어벗 업로드 가드 — 취소선과 동일 uploadedTeeth SSOT. handoff 실패 시 해당 파일만 롤백.
 // - 2026-09-03: 수신 헤더 — 어벗 뱃지 왼쪽 간격 없음. 진행중→어벗츠 생산중(정책은 사이드바).
 // - 2026-09-03: 어벗 진행상황 옆「상세」— 연동 CA 의뢰 상세(RequestDetailDialog).
@@ -1437,6 +1438,88 @@ export function RequestorPracticeReceivePage({
     [buildProductionCancelLocalPatch, isStuckNeedsStageReopen, token],
   );
 
+  /**
+   * 목록 재조회 시 서버 designFiles가 아직 덜 미러된 경우,
+   * 로컬 낙관 패치(미러 전 s3Key)를 버리지 않아 취소선·썸네일 플리커를 막는다.
+   */
+  const mergeTransferPreserveOptimisticDesigns = useCallback(
+    (
+      local: ReceivedPracticeTransfer,
+      server: ReceivedPracticeTransfer,
+    ): ReceivedPracticeTransfer => {
+      const localFiles = Array.isArray(local.production?.designFiles)
+        ? local.production.designFiles
+        : [];
+      const serverFiles = Array.isArray(server.production?.designFiles)
+        ? server.production.designFiles
+        : [];
+      if (localFiles.length === 0) return server;
+
+      const s3Of = (row: ReceivedPracticeFile) =>
+        String(row?.s3Key || "").trim();
+      const localByKey = new Map(
+        localFiles.map((row) => [s3Of(row), row] as const).filter(([k]) => k),
+      );
+      const serverKeys = new Set(
+        serverFiles.map(s3Of).filter(Boolean),
+      );
+      const pendingLocal = localFiles.filter((row) => {
+        const key = s3Of(row);
+        return key && !serverKeys.has(key);
+      });
+      const stableServerFiles = serverFiles.map((row) => {
+        const key = s3Of(row);
+        const prev = key ? localByKey.get(key) : undefined;
+        if (!prev) return row;
+        // 썸네일 캐시·리스트 키 안정화(로컬 id 유지)
+        return {
+          ...row,
+          id: prev.id || row.id,
+          tooth: String(row.tooth || prev.tooth || "").trim(),
+        };
+      });
+      const mergedFiles = [...stableServerFiles, ...pendingLocal];
+      if (
+        pendingLocal.length === 0 &&
+        stableServerFiles.length === localFiles.length &&
+        stableServerFiles.every(
+          (row, i) =>
+            s3Of(row) === s3Of(localFiles[i]) && row.id === localFiles[i]?.id,
+        )
+      ) {
+        // 파일 목록 동일 — production 기타 필드만 서버 반영, designFiles 참조 유지
+        return {
+          ...server,
+          production: {
+            ...server.production,
+            designFiles: localFiles,
+            designFileCount: localFiles.length,
+          },
+        };
+      }
+      return {
+        ...server,
+        production: {
+          ...server.production,
+          designFiles: mergedFiles,
+          designFileCount: mergedFiles.length,
+          designReadyAt:
+            server.production?.designReadyAt ||
+            local.production?.designReadyAt ||
+            null,
+          labDesignConfirmedAt:
+            server.production?.labDesignConfirmedAt ||
+            local.production?.labDesignConfirmedAt ||
+            null,
+          abutmentPastReady:
+            server.production?.abutmentPastReady ??
+            local.production?.abutmentPastReady,
+        },
+      };
+    },
+    [],
+  );
+
   const fetchCalendarTransfers = useCallback(
     async (options?: { silent?: boolean }): Promise<ReceivedPracticeTransfer[]> => {
       if (!token) return [];
@@ -1468,7 +1551,23 @@ export function RequestorPracticeReceivePage({
         const parsed = parseTransfersBody(res.data);
         const mapped = mapTransferRows(parsed.transfers);
 
-        setTransfers(mapped);
+        setTransfers((prev) => {
+          const prevByKey = new Map<string, ReceivedPracticeTransfer>();
+          for (const row of prev) {
+            const a = String(row.transferId || "").trim();
+            const b = String(row._id || "").trim();
+            if (a) prevByKey.set(a, row);
+            if (b) prevByKey.set(b, row);
+          }
+          return mapped.map((serverRow) => {
+            const local =
+              prevByKey.get(String(serverRow.transferId || "").trim()) ||
+              prevByKey.get(String(serverRow._id || "").trim());
+            return local
+              ? mergeTransferPreserveOptimisticDesigns(local, serverRow)
+              : serverRow;
+          });
+        });
         setSelectedTransfer((prev) => {
           if (!prev) return prev;
           const key = String(prev.transferId || prev._id || "").trim();
@@ -1478,7 +1577,8 @@ export function RequestorPracticeReceivePage({
               String(row.transferId || "").trim() === key ||
               String(row._id || "").trim() === key,
           );
-          return next || prev;
+          if (!next) return prev;
+          return mergeTransferPreserveOptimisticDesigns(prev, next);
         });
 
         emitUnreadBadgeRefresh(parsed.unreadCount);
@@ -1500,6 +1600,7 @@ export function RequestorPracticeReceivePage({
       dateKey,
       emitUnreadBadgeRefresh,
       mapTransferRows,
+      mergeTransferPreserveOptimisticDesigns,
       parseTransfersBody,
       reopenStuckTransfers,
       token,
@@ -5148,7 +5249,7 @@ export function RequestorPracticeReceivePage({
 
         const nowIso = new Date().toISOString();
         const uploadedDesignFile: ReceivedPracticeFile = {
-          id: `design-local-${Date.now()}-${queueIndex}`,
+          id: `design-local-${s3Key}`,
           patientName: String(caseInfos.patientName || "").trim(),
           tooth: String(caseInfos.tooth || "").trim(),
           originalName: String(temp?.originalName || file.name || "").trim(),
@@ -5158,41 +5259,61 @@ export function RequestorPracticeReceivePage({
           size: Number(temp?.size ?? file.size ?? 0),
           s3Key,
         };
-        const prevDesignFiles = Array.isArray(transfer.production?.designFiles)
-          ? transfer.production.designFiles
-          : [];
-        const nextDesignFiles = [
-          ...prevDesignFiles.filter((row) => row.s3Key !== s3Key),
-          uploadedDesignFile,
-        ];
-        const productionPatch: ReceivedPracticeTransfer["production"] = {
-          ...transfer.production,
-          designFileCount: nextDesignFiles.length,
-          designFiles: nextDesignFiles,
-          designReadyAt: transfer.production?.designReadyAt || nowIso,
-          labDesignConfirmedAt:
-            transfer.production?.labDesignConfirmedAt || nowIso,
-          abutmentProductionStartedAt: null,
-          abutmentPastReady: false,
-        };
-        const patchedTransfer: ReceivedPracticeTransfer = {
-          ...transfer,
-          production: productionPatch,
+
+        /** 최신 production.designFiles에 합류 — 순차 handoff가 서로를 지우지 않음 */
+        const mergeOptimisticDesignFile = (
+          row: ReceivedPracticeTransfer,
+        ): ReceivedPracticeTransfer => {
+          const prevFiles = Array.isArray(row.production?.designFiles)
+            ? row.production.designFiles
+            : [];
+          const nextFiles = [
+            ...prevFiles.filter(
+              (fileRow) => String(fileRow.s3Key || "").trim() !== s3Key,
+            ),
+            uploadedDesignFile,
+          ];
+          return {
+            ...row,
+            production: {
+              ...row.production,
+              designFileCount: nextFiles.length,
+              designFiles: nextFiles,
+              designReadyAt: row.production?.designReadyAt || nowIso,
+              labDesignConfirmedAt:
+                row.production?.labDesignConfirmedAt || nowIso,
+              abutmentProductionStartedAt: null,
+              abutmentPastReady: false,
+            },
+          };
         };
 
+        let patchedForQueue: ReceivedPracticeTransfer | null = null;
         setTransfers((prev) =>
-          prev.map((row) =>
-            row._id === transfer._id || row.transferId === transfer.transferId
-              ? patchedTransfer
-              : row,
-          ),
+          prev.map((row) => {
+            if (
+              row._id !== transfer._id &&
+              row.transferId !== transfer.transferId
+            ) {
+              return row;
+            }
+            const next = mergeOptimisticDesignFile(row);
+            patchedForQueue = next;
+            return next;
+          }),
         );
-        setSelectedTransfer((prev) =>
-          prev &&
-          (prev._id === transfer._id || prev.transferId === transfer.transferId)
-            ? patchedTransfer
-            : prev,
-        );
+        setSelectedTransfer((prev) => {
+          if (
+            !prev ||
+            (prev._id !== transfer._id &&
+              prev.transferId !== transfer.transferId)
+          ) {
+            return prev;
+          }
+          const next = mergeOptimisticDesignFile(prev);
+          patchedForQueue = next;
+          return next;
+        });
 
         const nextIndex = queueIndex + 1;
         const isLast = nextIndex >= queueTotal;
@@ -5206,7 +5327,9 @@ export function RequestorPracticeReceivePage({
                 : "완성 어벗 STL이 업로드되어 제조사 준비 큐에 등록되었습니다. 준비 단계에서는 취소·재업로드할 수 있습니다.",
           });
         } else {
-          setDesignConfirmTransfer(patchedTransfer);
+          setDesignConfirmTransfer(
+            patchedForQueue || mergeOptimisticDesignFile(transfer),
+          );
           setDesignConfirmQueueIndex(nextIndex);
           toast({
             title: `어벗디자인 업로드 (${nextIndex}/${queueTotal})`,
@@ -5326,27 +5449,36 @@ export function RequestorPracticeReceivePage({
               : [];
             const createdRequestId = String(data.requestId || "").trim();
             if (relatedFromRes.length > 0 || createdRequestId) {
-              const nextRelated =
-                relatedFromRes.length > 0
-                  ? relatedFromRes
-                  : [
-                      ...new Set(
-                        [
-                          ...(patchedTransfer.production?.relatedRequestIds ||
-                            []),
-                          createdRequestId,
-                        ].filter(Boolean),
-                      ),
-                    ];
-              const relatedPatch = {
-                ...patchedTransfer.production,
-                relatedRequestIds: nextRelated,
+              const mergeRelatedOnly = (
+                row: ReceivedPracticeTransfer,
+              ): ReceivedPracticeTransfer => {
+                const prevRelated = Array.isArray(
+                  row.production?.relatedRequestIds,
+                )
+                  ? row.production.relatedRequestIds
+                  : [];
+                const nextRelated =
+                  relatedFromRes.length > 0
+                    ? relatedFromRes
+                    : [
+                        ...new Set(
+                          [...prevRelated, createdRequestId].filter(Boolean),
+                        ),
+                      ];
+                // designFiles는 건드리지 않음 — stale snapshot 덮어쓰기로 취소선·썸네일 플리커 방지
+                return {
+                  ...row,
+                  production: {
+                    ...row.production,
+                    relatedRequestIds: nextRelated,
+                  },
+                };
               };
               setTransfers((prev) =>
                 prev.map((row) =>
                   row._id === transfer._id ||
                   row.transferId === transfer.transferId
-                    ? { ...row, production: relatedPatch }
+                    ? mergeRelatedOnly(row)
                     : row,
                 ),
               );
@@ -5354,7 +5486,7 @@ export function RequestorPracticeReceivePage({
                 prev &&
                 (prev._id === transfer._id ||
                   prev.transferId === transfer.transferId)
-                  ? { ...prev, production: relatedPatch }
+                  ? mergeRelatedOnly(prev)
                   : prev,
               );
               if (
@@ -5387,16 +5519,16 @@ export function RequestorPracticeReceivePage({
               pendingProstheticAfterAbutmentRef.current = null;
               if (pendingProsthetic?.files?.length) {
                 beginCompleteWithFiles(
-                  {
-                    ...patchedTransfer,
+                  mergeOptimisticDesignFile({
+                    ...transfer,
                     production: {
-                      ...patchedTransfer.production,
+                      ...transfer.production,
                       relatedRequestIds:
                         relatedFromRes.length > 0
                           ? relatedFromRes
-                          : patchedTransfer.production?.relatedRequestIds,
+                          : transfer.production?.relatedRequestIds,
                     },
-                  },
+                  }),
                   pendingProsthetic.files,
                 );
               }
@@ -5634,17 +5766,17 @@ export function RequestorPracticeReceivePage({
         );
 
         toast({
-          title: "작업 단계 되돌림",
+          title: "어벗 생산 취소",
           description:
-            "발송(작업완료)을 작업시작 단계로 되돌렸습니다. 어벗·보철을 다시 올리거나 작업 취소할 수 있습니다.",
+            "어벗 디자인 업로드가 취소되었습니다. 다시 올리거나 작업시작을 취소할 수 있습니다.",
         });
       } catch (error) {
         toast({
-          title: "작업 단계 되돌림 실패",
+          title: "어벗 생산 취소 실패",
           description:
             error instanceof Error
               ? error.message
-              : "작업 단계를 되돌리는 중 오류가 발생했습니다.",
+              : "어벗 생산을 취소하는 중 오류가 발생했습니다.",
           variant: "destructive",
         });
       } finally {
@@ -5652,6 +5784,140 @@ export function RequestorPracticeReceivePage({
       }
     },
     [applyAcceptedLocalPatch, buildProductionCancelLocalPatch, cardActionBusyId, toast, token],
+  );
+
+  const buildToothCancelLocalPatch = useCallback(
+    (
+      transfer: ReceivedPracticeTransfer,
+      tooth: string,
+    ): ReceivedPracticeTransfer => {
+      const toothKey = String(tooth || "").trim();
+      const prevFiles = Array.isArray(transfer.production?.designFiles)
+        ? transfer.production.designFiles
+        : [];
+      const nextFiles = prevFiles.filter(
+        (row) => String(row?.tooth || "").trim() !== toothKey,
+      );
+      if (nextFiles.length === 0) {
+        return buildProductionCancelLocalPatch(transfer);
+      }
+      return {
+        ...transfer,
+        production: {
+          ...transfer.production,
+          designFiles: nextFiles,
+          designFileCount: nextFiles.length,
+          designReadyAt: transfer.production?.designReadyAt || null,
+        },
+      };
+    },
+    [buildProductionCancelLocalPatch],
+  );
+
+  const handleCardAbutmentToothCancel = useCallback(
+    async (
+      transfer: ReceivedPracticeTransfer,
+      tooth: string,
+      event: MouseEvent,
+    ) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!token) return;
+      const toothKey = String(tooth || "").trim();
+      if (!toothKey) return;
+      const id = String(transfer.transferId || transfer._id || "").trim();
+      if (!id || cardActionBusyId) return;
+
+      const relatedIds = (transfer.production?.relatedRequestIds || [])
+        .map((raw) => String(raw || "").trim())
+        .filter(Boolean);
+      if (relatedIds.length === 0) {
+        toast({
+          title: "디자인 의뢰 없음",
+          description: "연결된 제조 의뢰를 찾지 못했습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setCardActionBusyId(id);
+      try {
+        const requestId = relatedIds[0];
+        const cancelRes = await apiFetch<{
+          success?: boolean;
+          message?: string;
+          data?: { remainingDesignCount?: number; clearedAll?: boolean };
+        }>({
+          path: `/api/requests/${encodeURIComponent(requestId)}/design-handoff/cancel`,
+          method: "POST",
+          token,
+          jsonBody: { tooth: toothKey },
+        });
+        if (!cancelRes.ok) {
+          const body =
+            cancelRes.data && typeof cancelRes.data === "object"
+              ? (cancelRes.data as Record<string, unknown>)
+              : {};
+          const code = String(body.code || "").trim();
+          if (code === "manufacturer_not_ready") {
+            applyAcceptedLocalPatch(transfer, {
+              production: {
+                ...transfer.production,
+                abutmentPastReady: true,
+                abutmentProductionStartedAt:
+                  transfer.production?.abutmentProductionStartedAt ||
+                  new Date().toISOString(),
+              },
+            });
+          }
+          throw new Error(
+            String(
+              body.message ||
+                "제조 가공이 시작되어 어벗을 취소할 수 없습니다. 리메이크로 선택 치아만 재제작해 주세요.",
+            ),
+          );
+        }
+
+        const patched = buildToothCancelLocalPatch(transfer, toothKey);
+        setTransfers((prev) =>
+          prev.map((row) =>
+            row._id === transfer._id || row.transferId === transfer.transferId
+              ? patched
+              : row,
+          ),
+        );
+        setSelectedTransfer((prev) =>
+          prev &&
+          (prev._id === transfer._id || prev.transferId === transfer.transferId)
+            ? patched
+            : prev,
+        );
+
+        toast({
+          title: `치아 #${toothKey} 취소`,
+          description:
+            "해당 치아 어벗 디자인이 취소되었습니다. 다시 업로드할 수 있습니다.",
+        });
+      } catch (error) {
+        toast({
+          title: "치아 어벗 취소 실패",
+          description:
+            error instanceof Error
+              ? error.message
+              : "치아 어벗을 취소하는 중 오류가 발생했습니다.",
+          variant: "destructive",
+        });
+      } finally {
+        setCardActionBusyId("");
+      }
+    },
+    [
+      applyAcceptedLocalPatch,
+      buildToothCancelLocalPatch,
+      cardActionBusyId,
+      toast,
+      token,
+    ],
   );
 
   const handleCardDropFiles = useCallback(
@@ -7104,6 +7370,13 @@ export function RequestorPracticeReceivePage({
               onAbutmentProductionCancel={(event) =>
                 void handleCardAbutmentProductionCancel(
                   selectedTransfer,
+                  event,
+                )
+              }
+              onAbutmentToothCancel={(tooth, event) =>
+                void handleCardAbutmentToothCancel(
+                  selectedTransfer,
+                  tooth,
                   event,
                 )
               }

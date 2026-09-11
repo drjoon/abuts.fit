@@ -6,6 +6,8 @@
 // - web/frontend/src/pages/admin/system/AdminRoundBarAbutmentTab.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // change-log:
+// - 2026-09-12: 생산의뢰 완료 — (전체취소)·치아 클릭 개별 취소 상수.
+// - 2026-09-12: 생산의뢰 완료 — (준비: 취소 가능)/(가공: 취소 불가) 접미 상수.
 // - 2026-09-03: LabPendingAbutmentGuide 표시는 `{라벨} — {치아번호}` (스펙 생략).
 // - 2026-08-26: OR(` | `) 스펙 전개 헬퍼(드롭다운 개별 옵션).
 // - 2026-08-26: 카탈로그 매칭으로 프리셋 도입중/요청중 뱃지·플래그 보강.
@@ -245,21 +247,34 @@ export const LAB_PENDING_ABUTMENT_SELF_PROCESS_LABEL = "기공소 자체 처리"
 export const LAB_PENDING_ABUTMENT_ABUTS_ORDER_LABEL = "어벗츠 생산의뢰";
 /** STL 업로드 후 — 이미 제조사 큐에 등록됨 */
 export const LAB_PENDING_ABUTMENT_ABUTS_ORDERED_LABEL = "어벗츠 생산의뢰 완료";
+/** 제조사 준비 — 전체 생산 취소 */
+export const LAB_PENDING_ABUTMENT_CANCEL_ALL_SUFFIX = "(전체취소)";
+/** @deprecated 사용처 없음 — CANCEL_ALL_SUFFIX */
+export const LAB_PENDING_ABUTMENT_CANCEL_READY_SUFFIX =
+  LAB_PENDING_ABUTMENT_CANCEL_ALL_SUFFIX;
+/** @deprecated 상태는 표시하지 않음(준비일 때만 취소 CTA) */
+export const LAB_PENDING_ABUTMENT_CANCEL_BLOCKED_SUFFIX = "(가공: 취소 불가)";
 /** 호버 툴팁 — 미제공만 */
 export const LAB_PENDING_ABUTMENT_TOOLTIP_SELF_ONLY =
   "어벗츠에서 아직 CNC를 제공하지 않는 임플란트입니다. 해당 커스텀어벗은 기공소에서 자체 제작하세요.";
 /** 호버 툴팁 — 어벗츠 제공만(업로드 전) */
 export const LAB_PENDING_ABUTMENT_TOOLTIP_ABUTS_ONLY =
   "어벗츠에서 CNC를 제공하는 커스텀어벗입니다. STL을 올려 생산 의뢰하세요.";
-/** 호버 툴팁 — 어벗츠 제공만(생산의뢰 완료) */
+/** 호버 툴팁 — 어벗츠 제공만(생산의뢰 완료·준비 취소 가능) */
 export const LAB_PENDING_ABUTMENT_TOOLTIP_ABUTS_ORDERED =
-  "어벗츠 대상은 이미 생산 의뢰되었습니다. 준비 단계에서는 취소·재업로드할 수 있습니다.";
+  "어벗츠 대상은 이미 생산 의뢰되었습니다. 치아번호를 누르면 해당 치아만, (전체취소)를 누르면 모두 취소·재업로드할 수 있습니다.";
+/** 호버 툴팁 — 어벗츠 제공만(가공 중·취소 불가) */
+export const LAB_PENDING_ABUTMENT_TOOLTIP_ABUTS_ORDERED_BLOCKED =
+  "어벗츠 대상은 이미 생산 의뢰되었고 제조 가공이 시작되어 취소할 수 없습니다. 리메이크로 선택 치아만 재제작하세요.";
 /** 호버 툴팁 — 미제공 + 어벗츠 대상(업로드 전) */
 export const LAB_PENDING_ABUTMENT_TOOLTIP_MIXED =
   "어벗츠 미제공 치아는 기공소에서 자체 제작하고, 어벗츠 대상만 STL을 올려 생산 의뢰하세요.";
-/** 호버 툴팁 — 미제공 + 어벗츠 생산의뢰 완료 */
+/** 호버 툴팁 — 미제공 + 어벗츠 생산의뢰 완료(준비) */
 export const LAB_PENDING_ABUTMENT_TOOLTIP_MIXED_ORDERED =
-  "어벗츠 미제공 치아는 기공소에서 자체 제작하세요. 어벗츠 대상은 이미 생산 의뢰되었고, 준비 단계에서는 취소·재업로드할 수 있습니다.";
+  "어벗츠 미제공 치아는 기공소에서 자체 제작하세요. 어벗츠 대상은 이미 생산 의뢰되었습니다. 치아번호·(전체취소)로 준비 단계에서 취소·재업로드할 수 있습니다.";
+/** 호버 툴팁 — 미제공 + 어벗츠 생산의뢰 완료(가공·취소 불가) */
+export const LAB_PENDING_ABUTMENT_TOOLTIP_MIXED_ORDERED_BLOCKED =
+  "어벗츠 미제공 치아는 기공소에서 자체 제작하세요. 어벗츠 대상은 이미 생산 의뢰되었고 제조 가공이 시작되어 취소할 수 없습니다.";
 /** @deprecated 라벨 SSOT — SELF_PROCESS_LABEL 사용 */
 export const LAB_PENDING_ABUTMENT_GUIDE_BODY =
   LAB_PENDING_ABUTMENT_SELF_PROCESS_LABEL;

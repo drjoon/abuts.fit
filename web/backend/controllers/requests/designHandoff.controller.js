@@ -1,3 +1,4 @@
+// - 2026-09-12: handoff/cancel — body.tooth면 해당 치아 CA·미러만 취소(준비 단계).
 // - 2026-09-11: handoff/cancel — 연동 CA 중 하나라도 준비 이후(가공+)면 전체 취소 차단·리메이크 안내.
 // - 2026-09-09: CA STL 재업로드 remake — remake-charge realtime(billingDelta) fan-out.
 // - 2026-09-04: PTX handoff — 치식(toothWorks) 임플란트 스펙을 SSOT로 유지(FE 확인 모달 TS3→US 오염 방지).
@@ -424,6 +425,51 @@ const clearPtxDesignMirror = async (transferId) => {
       },
     },
   );
+};
+
+/**
+ * 치아 1개만 미러에서 제거. 남은 파일이 없으면 clearPtxDesignMirror와 동일하게 스테이지 재오픈.
+ * @returns {{ remainingCount: number, clearedAll: boolean }}
+ */
+const pullPtxDesignFileForTooth = async (transferId, tooth) => {
+  const toothKey = String(tooth || "").trim();
+  if (
+    !transferId ||
+    !Types.ObjectId.isValid(String(transferId)) ||
+    !toothKey
+  ) {
+    return { remainingCount: 0, clearedAll: false };
+  }
+  const doc = await PracticeTransfer.findById(transferId)
+    .select({
+      "production.designFiles": 1,
+      "production.confirmedAt": 1,
+      "autoMatch.completedAt": 1,
+      resultFiles: 1,
+    })
+    .lean();
+  const prevFiles = Array.isArray(doc?.production?.designFiles)
+    ? doc.production.designFiles
+    : [];
+  const nextFiles = prevFiles.filter(
+    (row) => String(row?.tooth || "").trim() !== toothKey,
+  );
+  if (nextFiles.length === prevFiles.length) {
+    return { remainingCount: nextFiles.length, clearedAll: false };
+  }
+  if (nextFiles.length === 0) {
+    await clearPtxDesignMirror(transferId);
+    return { remainingCount: 0, clearedAll: true };
+  }
+  await PracticeTransfer.updateOne(
+    { _id: transferId },
+    {
+      $set: {
+        "production.designFiles": nextFiles,
+      },
+    },
+  );
+  return { remainingCount: nextFiles.length, clearedAll: false };
 };
 
 /**
@@ -1438,6 +1484,8 @@ export async function cancelDesignHandoff(req, res) {
       });
     }
 
+    const cancelTooth = String(req.body?.tooth || "").trim();
+
     const mirroredDesignCount = Array.isArray(transferDoc?.production?.designFiles)
       ? transferDoc.production.designFiles.length
       : 0;
@@ -1459,6 +1507,7 @@ export async function cancelDesignHandoff(req, res) {
       message,
       extraData = {},
       feeRevokePending = false,
+      feeRevokeRequestIds = null,
     }) => {
       try {
         emitAppEventToRoles(["manufacturer", "admin"], "worksheet:count-update", {
@@ -1477,7 +1526,11 @@ export async function cancelDesignHandoff(req, res) {
 
       if (feeRevokePending) {
         const uniqueRevokeIds = Array.from(
-          new Set([primaryRequestId, ...relatedRequestIds]),
+          new Set(
+            Array.isArray(feeRevokeRequestIds) && feeRevokeRequestIds.length
+              ? feeRevokeRequestIds.map((id) => String(id || "").trim()).filter(Boolean)
+              : [primaryRequestId, ...relatedRequestIds],
+          ),
         );
         void (async () => {
           try {
@@ -1515,6 +1568,87 @@ export async function cancelDesignHandoff(req, res) {
         },
       });
     };
+
+    // 치아 1개만 취소 — 해당 CA Request + 미러 designFiles만 제거. 나머지는 유지.
+    if (cancelTooth) {
+      const toothRequestId = await findRelatedAbutmentRequestIdForTooth({
+        relatedRequestIds:
+          relatedRequestIds.length > 0 ? relatedRequestIds : [primaryRequestId],
+        tooth: cancelTooth,
+      });
+      if (!toothRequestId) {
+        return res.status(404).json({
+          success: false,
+          message: `치아 #${cancelTooth}에 해당하는 어벗츠 의뢰를 찾지 못했습니다.`,
+        });
+      }
+
+      const toothRequest =
+        String(toothRequestId) === primaryRequestId
+          ? request
+          : await Request.findById(toothRequestId);
+      if (!toothRequest) {
+        return res.status(404).json({
+          success: false,
+          message: `치아 #${cancelTooth} 의뢰를 찾을 수 없습니다.`,
+        });
+      }
+      if (isAbutmentRequestPastReadyForCancel(toothRequest)) {
+        return res.status(409).json({
+          success: false,
+          message:
+            "제조사가 가공(준비 이후)에 들어가면 어벗디자인을 취소할 수 없습니다. 리메이크로 선택 치아만 재제작해 주세요.",
+          code: "manufacturer_not_ready",
+        });
+      }
+
+      const hadToothDesign =
+        Boolean(toothRequest.designCompletedAt) ||
+        (Array.isArray(transferDoc?.production?.designFiles) &&
+          transferDoc.production.designFiles.some(
+            (row) => String(row?.tooth || "").trim() === cancelTooth,
+          ));
+      if (!hadToothDesign && !transferNeedsReopen) {
+        return res.status(400).json({
+          success: false,
+          message: `치아 #${cancelTooth}에 업로드된 어벗디자인이 없습니다.`,
+        });
+      }
+
+      applyPtxDesignCancelFields(toothRequest);
+      const pullResult = await Promise.all([
+        toothRequest.save(),
+        pullPtxDesignFileForTooth(relatedTransferId, cancelTooth),
+        markPtxRelatedRequestsCancelled(relatedTransferId, {
+          relatedRequestIds: [String(toothRequest._id)],
+          skipRequestIds: [String(toothRequest._id)],
+        }),
+      ]).then(([, pull]) => pull);
+
+      void releaseRequestCreditHoldsOnCancel({
+        request: toothRequest,
+        excludeSiblingIds: [String(toothRequest._id)],
+      }).catch((holdErr) => {
+        console.warn(
+          "[DESIGN_HANDOFF_CANCEL] credit hold release failed",
+          String(toothRequest._id),
+          holdErr?.message || holdErr,
+        );
+      });
+
+      return finishCancelResponse({
+        message: `치아 #${cancelTooth} 어벗디자인 업로드가 취소되었습니다. 다시 업로드할 수 있습니다.`,
+        extraData: {
+          cancelReason: "ptx-design-handoff-cancel-tooth",
+          tooth: cancelTooth,
+          remainingDesignCount: Number(pullResult?.remainingCount || 0),
+          clearedAll: Boolean(pullResult?.clearedAll),
+          abutmentDesignFeeRevoked: hadToothDesign,
+        },
+        feeRevokePending: hadToothDesign,
+        feeRevokeRequestIds: [String(toothRequest._id)],
+      });
+    }
 
     const clearMirrorAndCancelRelated = async (skipPrimary = false) => {
       await Promise.all([

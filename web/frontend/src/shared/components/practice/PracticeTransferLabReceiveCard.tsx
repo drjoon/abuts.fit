@@ -5,6 +5,7 @@
 // - web/frontend/src/shared/components/practice/PracticeLabReceiveWorkActionsBar.tsx
 // - web/frontend/src/shared/components/practice/PracticeRecentTransferListCardDetail.tsx
 // change-log:
+// - 2026-09-12: 생산의뢰 완료 줄 클릭 취소 — 헤더「작업 완료 취소」중복 제거.
 // - 2026-09-07: 플랫폼 가입 이전 의뢰건 리메이크 뱃지.
 // - 2026-09-03: 카드 드롭 — 비STL도 전달(부모에서 가드·다시 올리기 안내). STL accept는 파일창 힌트용.
 // - 2026-09-02: 카드 드롭 — STL만 accept/filter(다른 확장자 거부).
@@ -37,11 +38,6 @@
 import type { KeyboardEvent, MouseEvent } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { cn } from "@/shared/ui/cn";
 import { toStatusBadgeLabel } from "@/shared/practice/practiceRecentTransferList";
 import { isPracticeTransferAcceptOverdue } from "@/shared/practice/practiceAcceptOverdue";
@@ -97,6 +93,7 @@ export type PracticeTransferLabReceiveCardProps = {
   anodizingEnabled?: boolean | null;
   onOpen: () => void;
   onAbutmentProductionCancel: (event: MouseEvent) => void;
+  onAbutmentToothCancel?: (tooth: string, event: MouseEvent) => void;
   onRelease: (event: MouseEvent) => void;
   onOpenSubcontract?: (event: MouseEvent) => void;
   onDesignConfirm: () => void;
@@ -114,6 +111,7 @@ export function PracticeTransferLabReceiveCard({
   dimRejected = false,
   onOpen,
   onAbutmentProductionCancel,
+  onAbutmentToothCancel,
   onRelease,
   onOpenSubcontract,
   onDesignConfirm,
@@ -133,7 +131,6 @@ export function PracticeTransferLabReceiveCard({
   const {
     showWorkActions,
     showWorkCancel,
-    showAbutmentProductionCancel,
     showCompletedStageHeaderCancel,
     designStlUploadMode,
   } = workState;
@@ -154,7 +151,7 @@ export function PracticeTransferLabReceiveCard({
     }
   };
 
-  /** 헤더 우측 — 수락중「의뢰 수락 취소」/ 완료후「작업 완료 취소」/ 우선창「하청 전환」 */
+  /** 헤더 우측 — 수락중「작업시작 취소」/ 우선창「하청 전환」(생산 취소는 안내 줄 클릭) */
   const headerCancelButton = transfer.autoMatch?.canOpenSubcontract &&
   onOpenSubcontract ? (
     <Button
@@ -181,26 +178,9 @@ export function PracticeTransferLabReceiveCard({
     >
       {cardBusy ? "처리 중..." : "작업시작 취소"}
     </Button>
-  ) : showCompletedStageHeaderCancel ? (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={cardBusy}
-          className="h-7 px-2 text-[11px]"
-          onClick={(event) => void onAbutmentProductionCancel(event)}
-        >
-          {cardBusy ? "처리 중..." : "작업 완료 취소"}
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent side="top" className="max-w-xs text-xs">
-        발송(작업완료) 단계를 작업시작으로 되돌립니다. 제조사 준비 단계에서만
-        가능합니다. 가공이 시작되면 리메이크로 선택 치아만 재제작하세요.
-      </TooltipContent>
-    </Tooltip>
   ) : null;
+  // 생산의뢰 완료·준비 취소는 LabPendingAbutmentGuide「(준비: 취소 가능)」줄 클릭 SSOT
+  // (헤더「작업 완료 취소」는 중복이라 제거)
 
   const clinicLabel =
     transfer.matchingMode === "auto"
@@ -275,16 +255,17 @@ export function PracticeTransferLabReceiveCard({
         }
       />
 
-      {showWorkActions || showCompletedStageHeaderCancel ? (
+      {showWorkActions ||
+      showCompletedStageHeaderCancel ||
+      workState.abutmentCancelBlockedPastReady ? (
         <div className="mt-3 border-t border-slate-100 pt-3">
           <PracticeLabReceiveWorkActionsBar
             transfer={transfer}
             busy={cardBusy}
             designConfirmBusy={designConfirmBusy}
-            showProductionCancelInBar={
-              Boolean(showAbutmentProductionCancel && showWorkActions)
-            }
+            showProductionCancelInBar
             onAbutmentProductionCancel={onAbutmentProductionCancel}
+            onAbutmentToothCancel={onAbutmentToothCancel}
             onDesignConfirm={onDesignConfirm}
           />
         </div>
