@@ -26,6 +26,11 @@
  * - 2026-08-20: 치과 전체보기 칩도 상단 뱃지 상태색(그룹색 대신).
  * - 2026-08-20: 안읽음(수신 미확인·채팅) 빨간 배지를 칩에 표시.
  * - 2026-08-21: 상단 필터 뱃지 ON=진한 상태색 / OFF=흐린 무채색(표시 on/off 대비).
+ * - 2026-09-11: 기공소 점 — 7원색 + 빈원(8–14) + 이중외곽(15+).
+ * - 2026-09-11: 기공소 점 — 무지개 원색 순번 배정(초록 1칸, 해시 몰림 방지).
+ * - 2026-09-11: 기공소 점 — 무지개 원색(초록 1칸만, 녹색 계열 혼동 방지).
+ * - 2026-09-11: 기공소 점 — 20원색(색상환 균등·고채도).
+ * - 2026-09-11: 기공소 점 팔레트 — 색·명도 분산으로 인접 초록/파랑 혼동 완화.
  * - 2026-09-11: 치과 목록 — 기공소명 제거, 캘린더 아래 색 도트 범례(어벗츠+거래 기공소).
  * - 2026-09-11: 목록·칩 — 작업 큐=빨간 테두리, 채팅 unread=빨간 숫자(분리).
  * - 2026-09-10: 상단 뱃지 표시 on/off 제거 — active 톤만 사용(unread 순회).
@@ -228,16 +233,120 @@ export const calendarGroupChipStyle = (
 };
 
 /**
- * 목록 기공소·치과 구분 점 — 파스텔·서로 다른 색상(상태색과 무관).
- * 칩 텍스트색(진한 톤) 대신 점 전용 팔레트.
+ * 기공소·치과 구분 점 — 무지개 7원색.
+ * 0–6: 채움 · 7–13: 빈 원 · 14+: 이중 외곽선(색은 7색 순환).
  */
-export const calendarGroupDotColor = (groupKey: string): string => {
-  const hues = [
-    12, 32, 48, 72, 95, 125, 152, 175, 195, 208, 225, 245, 265, 285, 310, 335,
-  ];
-  const hue = hues[hashString(groupKey || "-") % hues.length];
-  return `hsl(${hue} 58% 72%)`;
+export const CALENDAR_RAINBOW_DOT_COLORS = [
+  "hsl(0 100% 50%)", // red
+  "hsl(28 100% 50%)", // orange
+  "hsl(48 100% 48%)", // yellow
+  "hsl(120 90% 40%)", // green
+  "hsl(195 100% 45%)", // sky/cyan
+  "hsl(230 100% 55%)", // blue
+  "hsl(285 85% 52%)", // violet
+] as const;
+
+export type CalendarLabDotStyle = "filled" | "hollow" | "double";
+
+export type CalendarLabDotAssignment = {
+  color: string;
+  style: CalendarLabDotStyle;
 };
+
+export function calendarLabDotStyleForIndex(index: number): CalendarLabDotStyle {
+  if (index < CALENDAR_RAINBOW_DOT_COLORS.length) return "filled";
+  if (index < CALENDAR_RAINBOW_DOT_COLORS.length * 2) return "hollow";
+  return "double";
+}
+
+/** 폴백(맵 없을 때). 가능하면 assignCalendarRainbowDotColors 사용. */
+export const calendarGroupDotColor = (groupKey: string): string => {
+  return CALENDAR_RAINBOW_DOT_COLORS[
+    hashString(groupKey || "-") % CALENDAR_RAINBOW_DOT_COLORS.length
+  ];
+};
+
+/**
+ * 어벗츠 우선 → 이름순으로 무지개 원색·점 스타일을 순서대로 배정.
+ * 같은 colorKey는 항상 같은 색·스타일(범례·목록·모달 일치).
+ */
+export function assignCalendarRainbowDotColors(
+  entries: Array<{ colorKey: string; name?: string | null }>,
+): Map<string, CalendarLabDotAssignment> {
+  const byKey = new Map<string, string>();
+  for (const row of entries) {
+    const key = String(row.colorKey || "").trim();
+    if (!key) continue;
+    const name = String(row.name || "").trim();
+    if (!byKey.has(key)) byKey.set(key, name || key);
+  }
+  const sorted = Array.from(byKey.entries()).sort(([keyA, nameA], [keyB, nameB]) => {
+    const aAbuts =
+      nameA === ABUTS_PINNED_LAB_NAME || keyA === ABUTS_PINNED_LAB_NAME;
+    const bAbuts =
+      nameB === ABUTS_PINNED_LAB_NAME || keyB === ABUTS_PINNED_LAB_NAME;
+    if (aAbuts && !bAbuts) return -1;
+    if (!aAbuts && bAbuts) return 1;
+    return nameA.localeCompare(nameB, "ko") || keyA.localeCompare(keyB);
+  });
+  const map = new Map<string, CalendarLabDotAssignment>();
+  sorted.forEach(([key], index) => {
+    map.set(key, {
+      color:
+        CALENDAR_RAINBOW_DOT_COLORS[
+          index % CALENDAR_RAINBOW_DOT_COLORS.length
+        ],
+      style: calendarLabDotStyleForIndex(index),
+    });
+  });
+  return map;
+}
+
+/** 범례·목록·모달 공통 기공소 색 점 */
+export function CalendarLabColorDot({
+  color,
+  style = "filled",
+  className,
+}: {
+  color: string;
+  style?: CalendarLabDotStyle | null;
+  className?: string;
+}) {
+  const resolved = style || "filled";
+  if (resolved === "hollow") {
+    return (
+      <span
+        className={cn(
+          "box-border h-2.5 w-2.5 shrink-0 rounded-full bg-transparent",
+          className,
+        )}
+        style={{ border: `2px solid ${color}` }}
+        aria-hidden
+      />
+    );
+  }
+  if (resolved === "double") {
+    return (
+      <span
+        className={cn("h-2.5 w-2.5 shrink-0 rounded-full bg-transparent", className)}
+        style={{
+          boxShadow: `inset 0 0 0 1.5px ${color}, 0 0 0 1.5px #fff, 0 0 0 3px ${color}`,
+        }}
+        aria-hidden
+      />
+    );
+  }
+  return (
+    <span
+      className={cn(
+        "h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-black/5",
+        className,
+      )}
+      style={{ backgroundColor: color }}
+      aria-hidden
+    />
+  );
+}
 
 /**
  * 상단 뱃지(의뢰·작업시작·완료·취소·어벗)와 같은 칩 색.
@@ -593,8 +702,41 @@ export function PracticeRecentTransfersCalendar({
       if (b.name === ABUTS_PINNED_LAB_NAME) return 1;
       return a.name.localeCompare(b.name, "ko");
     });
-    return entries;
+    const colors = assignCalendarRainbowDotColors(entries);
+    return entries.map((row) => {
+      const assigned =
+        colors.get(row.colorKey) ||
+        ({
+          color: calendarGroupDotColor(row.colorKey),
+          style: "filled" as const,
+        } satisfies CalendarLabDotAssignment);
+      return {
+        ...row,
+        color: assigned.color,
+        style: assigned.style,
+      };
+    });
   }, [items, showLabColorLegend]);
+  const labDotByKey = useMemo(() => {
+    if (!showLabColorLegend) return null;
+    const map = new Map<string, CalendarLabDotAssignment>();
+    for (const row of labColorLegend) {
+      map.set(row.colorKey, { color: row.color, style: row.style });
+    }
+    return map;
+  }, [labColorLegend, showLabColorLegend]);
+  const resolveLabDot = (colorKey: string): CalendarLabDotAssignment => {
+    const key = String(colorKey || "").trim();
+    if (!key) {
+      return { color: calendarGroupDotColor("-"), style: "filled" };
+    }
+    return (
+      labDotByKey?.get(key) || {
+        color: calendarGroupDotColor(key),
+        style: "filled",
+      }
+    );
+  };
   const todayYmd = toKstYmd(new Date()) || "";
   const originYmd = todayYmd || cursorYmd;
   const weeks = useMemo(() => buildWeeksFromOrigin(originYmd), [originYmd]);
@@ -1237,12 +1379,10 @@ export function PracticeRecentTransfersCalendar({
                       key={row.colorKey}
                       className="flex min-w-0 items-center gap-1.5 px-0.5"
                     >
-                      <span
-                        className="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-black/5"
-                        style={{
-                          backgroundColor: calendarGroupDotColor(row.colorKey),
-                        }}
-                        aria-hidden
+                      <CalendarLabColorDot
+                        color={row.color}
+                        style={row.style}
+                        className="mt-0.5"
                       />
                       <span className="min-w-0 truncate text-[11px] leading-snug text-slate-700">
                         {row.name}
@@ -1348,7 +1488,7 @@ export function PracticeRecentTransfersCalendar({
                               )
                             : "";
                           const guideTourChip = isGuideTourChip(item.id);
-                          const dotColor = calendarGroupDotColor(item.colorKey);
+                          const labDot = resolveLabDot(item.colorKey);
                           return (
                             <div
                               key={`${item.id}:${ymd}`}
@@ -1368,10 +1508,10 @@ export function PracticeRecentTransfersCalendar({
                                 ? { "data-guide-tour": guideTourItemTarget }
                                 : {})}
                             >
-                              <span
-                                className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-black/5"
-                                style={{ backgroundColor: dotColor }}
-                                aria-hidden
+                              <CalendarLabColorDot
+                                color={labDot.color}
+                                style={labDot.style}
+                                className="mt-1.5"
                               />
                               {showDelete ? (
                                 <button

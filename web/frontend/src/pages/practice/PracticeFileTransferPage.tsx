@@ -200,10 +200,12 @@ import {
   isPinnedAbutsRecentLab,
   preferCachedAbutsLab,
   resolveTestLabByName,
+  ABUTS_PINNED_LAB_NAME,
   ABUTS_PINNED_LAB_SEED,
   TEST_LAB_NAME,
   type SearchBusinessResult,
 } from "@/pages/practice/hooks/usePracticeTransferStep1";
+import { assignCalendarRainbowDotColors } from "@/pages/practice/components/PracticeRecentTransfersCalendar";
 import {
   useChatRooms,
   requestChatRoomsRefresh,
@@ -4778,6 +4780,23 @@ export const PracticeFileTransferPage = ({
     [selectedTransfer],
   );
 
+  const practiceLabDots = useMemo(() => {
+    const entries = recentRequests.map((row) => {
+      const lab = String(row.targetLab || "")
+        .replace(/\s*→.*$/g, "")
+        .trim();
+      return {
+        colorKey: String(row.targetLabAnchorId || "").trim() || lab,
+        name: lab,
+      };
+    });
+    entries.unshift({
+      colorKey: ABUTS_PINNED_LAB_NAME,
+      name: ABUTS_PINNED_LAB_NAME,
+    });
+    return assignCalendarRainbowDotColors(entries);
+  }, [recentRequests]);
+
   const selectedTransferCaseIdentity = useMemo(() => {
     if (!selectedTransfer || !selectedTransferDetailModel) return null;
     const lab = String(selectedTransfer.targetLab || "").trim();
@@ -4809,12 +4828,17 @@ export const PracticeFileTransferPage = ({
       order ? `주문 ${order}` : "",
       arrival ? `도착 ${arrival}` : "",
     ].filter(Boolean);
+    const colorKey =
+      String(selectedTransfer.targetLabAnchorId || "").trim() || lab;
+    const dot = practiceLabDots.get(colorKey);
     return {
       primary: identity,
       secondary: dateParts.length ? dateParts.join(" · ") : undefined,
-      colorKey: String(selectedTransfer.targetLabAnchorId || "").trim() || lab,
+      colorKey,
+      dotColor: dot?.color || undefined,
+      dotStyle: dot?.style || undefined,
     };
-  }, [selectedTransfer, selectedTransferDetailModel]);
+  }, [practiceLabDots, selectedTransfer, selectedTransferDetailModel]);
 
   const prosthesisFollowUpEligibility = useMemo(() => {
     if (!selectedTransfer) {

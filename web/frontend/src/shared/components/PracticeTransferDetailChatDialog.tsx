@@ -14,6 +14,7 @@
 // - web/frontend/src/shared/files/downloadWithProgress.ts
 // - web/frontend/src/shared/files/s3BlobCache.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-11: 오른쪽 사이드 패널(풀하이트). 상단 크롬 제거·알림음→채팅 툴바·닫기는 식별 줄.
 // - 2026-09-11: 헤더「의뢰 · 진행」라벨 제거, 치식·보철물 카드 복원.
 // - 2026-09-11: 메모·평가 → 채팅 # 옆 아이콘(composerToolbarExtra).
 // - 2026-09-11: 채팅 min-height에 식별·기공소 메모/평가 크롬 높이 합산.
@@ -106,7 +107,6 @@
 // - 2026-08-14: 수락 후 같은 자리(채팅 상단 바)에 작업취소 버튼.
 // - 2026-08-15: 요약 작업기간 — 5일 미만 빨간 표시·툴팁. 수락 바 거부·짧은 작업기간.
 import {
-  type PointerEvent as ReactPointerEvent,
   type ReactNode,
   type RefObject,
   useCallback,
@@ -122,8 +122,6 @@ import {
   ArrowDown,
   ArrowUp,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   FileIcon,
   MoreHorizontal,
   Pencil,
@@ -164,7 +162,11 @@ import { buildChatReactionUserNameById } from "@/features/chat/components/chatRe
 import { type ReplyToMessage } from "@/features/chat/components/MessageReply";
 import { PracticeToothWorkChartReadOnly } from "@/shared/components/practice/PracticeToothWorkChartReadOnly";
 import { PracticeRemakeChargesStrip } from "@/shared/components/practice/PracticeRemakeChargesStrip";
-import { calendarGroupDotColor } from "@/pages/practice/components/PracticeRecentTransfersCalendar";
+import {
+  CalendarLabColorDot,
+  calendarGroupDotColor,
+  type CalendarLabDotStyle,
+} from "@/pages/practice/components/PracticeRecentTransfersCalendar";
 import { usePracticeTransferPanelLayout } from "@/shared/components/practice/usePracticeTransferPanelLayout";
 import { useIsMobile } from "@/shared/hooks/use-mobile";
 import {
@@ -347,8 +349,12 @@ export type PracticeTransferDialogCaseIdentity = {
   primary: string;
   /** 예: 주문 2026-09-10 · 도착 2026-09-13 — 다음 도착일과 한 줄 */
   secondary?: string;
-  /** 캘린더 목록 점과 동일 — 기공소(또는 치과) 구분 색 */
+  /** 캘린더 목록 점과 동일 — 기공소(또는 치과) 구분 키 */
   colorKey?: string | null;
+  /** 무지개 순번 배정 색. 있으면 colorKey 해시보다 우선 */
+  dotColor?: string | null;
+  /** 채움 / 빈 원 / 이중 외곽선 */
+  dotStyle?: CalendarLabDotStyle | null;
 };
 
 type PracticeTransferDetailChatDialogProps = {
@@ -675,11 +681,7 @@ export function PracticeTransferDetailChatDialog({
     layout,
     minimized,
     maximized,
-    beginHeaderDrag,
     beginResize,
-    minimize,
-    toggleMaximize,
-    dockLeft,
     dockRight,
   } = usePracticeTransferPanelLayout();
   const resolvedInitialPanelTab: "detail" | "chat" | null =
@@ -718,22 +720,9 @@ export function PracticeTransferDetailChatDialog({
 
   useEffect(() => {
     if (!open || isMobile) return;
-    if (preferredDockSide !== "left" && preferredDockSide !== "right") return;
-    if (preferredDockSide === "left") dockLeft();
-    else dockRight();
-  }, [open, isMobile, preferredDockSide, preferredDockNonce, dockLeft, dockRight]);
-
-  const handleChromePointerDown = useCallback(
-    (e: ReactPointerEvent) => {
-      if (e.button !== 0) return;
-      const target = e.target as HTMLElement | null;
-      if (target?.closest("button, a, input, textarea, select, [data-no-drag]")) {
-        return;
-      }
-      beginHeaderDrag(e.clientX, e.clientY);
-    },
-    [beginHeaderDrag],
-  );
+    // 항상 오른쪽 사이드 패널(캘린더 preferredDockSide도 우측 고정)
+    dockRight();
+  }, [open, isMobile, preferredDockSide, preferredDockNonce, dockRight]);
 
   const updateScrollEdge = useCallback(() => {
     const el = scrollBodyRef.current;
@@ -1736,6 +1725,8 @@ export function PracticeTransferDetailChatDialog({
     const fromPropPrimary = String(caseIdentity?.primary || "").trim();
     const fromPropSecondary = String(caseIdentity?.secondary || "").trim();
     const fromPropColorKey = String(caseIdentity?.colorKey || "").trim();
+    const fromPropDotColor = String(caseIdentity?.dotColor || "").trim();
+    const fromPropDotStyle = caseIdentity?.dotStyle || null;
     const orderYmd =
       String(orderDate || "").trim() ||
       summaryItemValue(summaryItems, "재주문일") ||
@@ -1756,6 +1747,8 @@ export function PracticeTransferDetailChatDialog({
         primary: fromPropPrimary,
         secondary: enrichedSecondary,
         colorKey: fromPropColorKey || undefined,
+        dotColor: fromPropDotColor || undefined,
+        dotStyle: fromPropDotStyle || undefined,
       };
     }
     const practiceName = summaryItemValue(summaryItems, "치과");
@@ -1787,6 +1780,8 @@ export function PracticeTransferDetailChatDialog({
         shipYmd: shipDate,
       }),
       colorKey: undefined as string | undefined,
+      dotColor: undefined as string | undefined,
+      dotStyle: undefined as CalendarLabDotStyle | undefined,
     };
   }, [caseIdentity, orderDate, summaryItems, toothWorks]);
   const showArrivalInChatChrome = Boolean(
@@ -2033,9 +2028,10 @@ export function PracticeTransferDetailChatDialog({
           pointerEvents: "auto",
         }}
         className={cn(
-          "pointer-events-auto relative flex flex-col gap-0 overflow-hidden rounded-lg border bg-background p-0 duration-0",
+          "pointer-events-auto relative flex flex-col gap-0 overflow-hidden border border-r-0 bg-background p-0 duration-0",
+          isMobile ? "rounded-lg" : "rounded-l-lg rounded-r-none",
           guideTourElevate ? "z-[410]" : "z-[300]",
-          "shadow-[0_4px_16px_rgba(15,23,42,0.18),0_18px_48px_rgba(15,23,42,0.32),0_40px_80px_-12px_rgba(15,23,42,0.28)]",
+          "shadow-[-12px_0_40px_-12px_rgba(15,23,42,0.28),-4px_0_16px_rgba(15,23,42,0.12)]",
           "translate-x-0 translate-y-0",
           "w-auto max-w-none sm:w-auto sm:max-w-none sm:p-0",
           "data-[state=open]:animate-none data-[state=closed]:animate-none",
@@ -2073,7 +2069,7 @@ export function PracticeTransferDetailChatDialog({
             <>
               {isDragActive && (workFileDropActive || chatFileDropActive) ? (
                 <div
-                  className="pointer-events-none absolute inset-0 z-[305] flex flex-col items-center justify-center gap-2 rounded-lg bg-primary/10 px-6 backdrop-blur-[2px]"
+                  className="pointer-events-none absolute inset-0 z-[305] flex flex-col items-center justify-center gap-2 rounded-l-lg bg-primary/10 px-6 backdrop-blur-[2px]"
                   aria-hidden
                 >
                   <div className="rounded-full bg-primary-soft p-3 text-primary-strong shadow-sm">
@@ -2093,97 +2089,24 @@ export function PracticeTransferDetailChatDialog({
               ) : null}
 
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <div
-            className={cn(
-              "grid shrink-0 cursor-grab grid-cols-[1fr_auto] items-center gap-2 border-b px-3 active:cursor-grabbing",
-              minimized ? "h-12 py-0" : "py-3.5",
-            )}
-            onPointerDown={handleChromePointerDown}
-            onDoubleClick={(e) => {
-              if (isMobile) return;
-              const target = e.target as HTMLElement | null;
-              if (target?.closest("button, [data-no-drag]")) return;
-              toggleMaximize();
-            }}
-          >
-            {minimized ? (
-              <button
-                type="button"
-                className="min-w-0 truncate text-left text-sm font-medium text-foreground"
-                onClick={() => minimize()}
-                data-no-drag
-              >
-                {caseIdentityStrip?.primary || title}
-              </button>
-            ) : (
-              <div className="min-w-0 justify-self-start" />
-            )}
-            <div
-              className="flex shrink-0 items-center justify-end gap-1"
-              data-no-drag
-            >
-              {!minimized ? (
-                <ChatSoundGlobalToggle />
-              ) : null}
-              {!minimized && !isMobile ? (
-                <>
-                  <button
-                    type="button"
-                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md opacity-70 transition-opacity hover:bg-slate-100 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                    aria-label="왼쪽에 붙이기"
-                    title="왼쪽에 붙이기"
-                    onClick={() => dockLeft()}
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </button>
-                  <button
-                    type="button"
-                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md opacity-70 transition-opacity hover:bg-slate-100 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                    aria-label="오른쪽에 붙이기"
-                    title="오른쪽에 붙이기"
-                    onClick={() => dockRight()}
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </button>
-                </>
-              ) : null}
-              <button
-                type="button"
-                className={cn(
-                  "inline-flex items-center justify-center rounded-md opacity-70 ring-offset-background transition-opacity hover:bg-slate-100 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
-                  isMobile ? "h-11 w-11" : "h-12 w-12",
-                )}
-                aria-label="닫기"
-                title="닫기"
-                onClick={() => onOpenChange(false)}
-              >
-                <X
-                  className={isMobile ? "h-6 w-6" : "h-7 w-7"}
-                  strokeWidth={2.25}
-                />
-                <span className="sr-only">Close</span>
-              </button>
-            </div>
-          </div>
-
           {!minimized ? (
           <>
           <div ref={panelChromeRef} className="shrink-0">
-          {(caseIdentityStrip || chatHeaderAction) ? (
-            <div className="flex items-center justify-between gap-3 border-b bg-slate-50 px-5 py-2.5">
+          <div className="flex items-center justify-between gap-3 border-b bg-slate-50 px-5 py-2.5">
               <div className="min-w-0 flex-1">
                 {caseIdentityStrip ? (
                   <>
                     <p className="flex min-w-0 items-center gap-2 truncate text-sm font-semibold text-foreground">
-                      {caseIdentityStrip.colorKey ? (
-                        <span
-                          className="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-black/5"
-                          style={{
-                            backgroundColor: calendarGroupDotColor(
-                              caseIdentityStrip.colorKey,
-                            ),
-                          }}
-                          aria-hidden
+                      {caseIdentityStrip.dotColor ||
+                      caseIdentityStrip.colorKey ? (
+                        <CalendarLabColorDot
+                          color={
+                            caseIdentityStrip.dotColor ||
+                            calendarGroupDotColor(
+                              caseIdentityStrip.colorKey || "-",
+                            )
+                          }
+                          style={caseIdentityStrip.dotStyle || "filled"}
                         />
                       ) : null}
                       <span className="min-w-0 truncate">
@@ -2196,15 +2119,32 @@ export function PracticeTransferDetailChatDialog({
                       </p>
                     ) : null}
                   </>
-                ) : null}
+                ) : (
+                  <p className="truncate text-sm font-semibold text-foreground">
+                    {title}
+                  </p>
+                )}
               </div>
-              {chatHeaderAction ? (
-                <div className="shrink-0" data-no-drag>
-                  {chatHeaderAction}
-                </div>
-              ) : null}
+              <div className="flex shrink-0 items-center gap-1" data-no-drag>
+                {chatHeaderAction}
+                <button
+                  type="button"
+                  className={cn(
+                    "inline-flex items-center justify-center rounded-md opacity-70 ring-offset-background transition-opacity hover:bg-slate-100 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+                    isMobile ? "h-10 w-10" : "h-9 w-9",
+                  )}
+                  aria-label="닫기"
+                  title="닫기"
+                  onClick={() => onOpenChange(false)}
+                >
+                  <X
+                    className={isMobile ? "h-5 w-5" : "h-5 w-5"}
+                    strokeWidth={2.25}
+                  />
+                  <span className="sr-only">Close</span>
+                </button>
+              </div>
             </div>
-          ) : null}
 
               {(onEditRequest ||
                 onCancelRequest ||
@@ -2946,7 +2886,12 @@ export function PracticeTransferDetailChatDialog({
                     }
                     replyTo={replyTo}
                     onCancelReply={onCancelReply}
-                    toolbarExtra={composerToolbarExtra}
+                    toolbarExtra={
+                      <>
+                        {composerToolbarExtra}
+                        <ChatSoundGlobalToggle />
+                      </>
+                    }
                     compact
                   />
                 </div>
@@ -2958,88 +2903,16 @@ export function PracticeTransferDetailChatDialog({
 
 
         {!minimized && !maximized && !isMobile ? (
-          <>
-            <div
-              data-no-drag
-              className="absolute left-3 right-3 top-0 z-30 h-3 cursor-ns-resize touch-none"
-              onPointerDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
-                beginResize("n", e.clientX, e.clientY);
-              }}
-            />
-            <div
-              data-no-drag
-              className="absolute bottom-0 left-3 right-3 z-30 h-3 cursor-ns-resize touch-none"
-              onPointerDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
-                beginResize("s", e.clientX, e.clientY);
-              }}
-            />
-            <div
-              data-no-drag
-              className="absolute bottom-3 left-0 top-3 z-30 w-3 cursor-ew-resize touch-none"
-              onPointerDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
-                beginResize("w", e.clientX, e.clientY);
-              }}
-            />
-            <div
-              data-no-drag
-              className="absolute bottom-3 right-0 top-3 z-30 w-3 cursor-ew-resize touch-none"
-              onPointerDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
-                beginResize("e", e.clientX, e.clientY);
-              }}
-            />
-            <div
-              data-no-drag
-              className="absolute left-0 top-0 z-40 h-4 w-4 cursor-nwse-resize touch-none"
-              onPointerDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
-                beginResize("nw", e.clientX, e.clientY);
-              }}
-            />
-            <div
-              data-no-drag
-              className="absolute right-0 top-0 z-40 h-4 w-4 cursor-nesw-resize touch-none"
-              onPointerDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
-                beginResize("ne", e.clientX, e.clientY);
-              }}
-            />
-            <div
-              data-no-drag
-              className="absolute bottom-0 left-0 z-40 h-4 w-4 cursor-nesw-resize touch-none"
-              onPointerDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
-                beginResize("sw", e.clientX, e.clientY);
-              }}
-            />
-            <div
-              data-no-drag
-              className="absolute bottom-0 right-0 z-40 h-4 w-4 cursor-nwse-resize touch-none"
-              onPointerDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
-                beginResize("se", e.clientX, e.clientY);
-              }}
-            />
-          </>
+          <div
+            data-no-drag
+            className="absolute bottom-0 left-0 top-0 z-30 w-1.5 cursor-ew-resize touch-none hover:bg-primary/15"
+            onPointerDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+              beginResize("w", e.clientX, e.clientY);
+            }}
+          />
         ) : null}
             </>
           )}
