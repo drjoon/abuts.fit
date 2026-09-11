@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-09-12: CA 생성 — partnerBilling 잔존·병렬 레이스 중복을 치아당 1건으로 정리(어벗츠 생산중 잔존 방지).
 // - 2026-09-11: 작업취소 pastReady — sticky+링크없음/전부취소는 fail-closed(환불 차단). 준비 복귀만 sticky heal.
 // - 2026-09-09: PTX 리메이크+CA 포함 시 CA Request는 remake 과금(computePriceForRequest). 기본 리메이크는 CA 미시드.
 // - 2026-09-04: Request 생성 전 CNC 주문가능 스펙 검증(미도입 US 등 폴백·유입 금지).
@@ -582,6 +583,146 @@ const clampScheduleToTarget = async (productionSchedule, targetYmd) => {
   return next;
 };
 
+const PTX_ABUTMENT_CANCEL_STAGE_FILTER = { $in: ["준비", "취소"] };
+
+const markAbutmentRequestsCancelledByIds = async (ids) => {
+  const oids = (Array.isArray(ids) ? ids : [])
+    .map((id) => String(id || "").trim())
+    .filter((id) => Types.ObjectId.isValid(id))
+    .map((id) => new Types.ObjectId(id));
+  if (!oids.length) return 0;
+  const result = await Request.updateMany(
+    {
+      _id: { $in: oids },
+      manufacturerStage: PTX_ABUTMENT_CANCEL_STAGE_FILTER,
+      "caseInfos.hexVerificationSample": { $ne: true },
+    },
+    {
+      $set: { manufacturerStage: "취소" },
+      $unset: {
+        designCompletedAt: "",
+        designCompletedBy: "",
+        designLabBusinessAnchorId: "",
+      },
+    },
+  );
+  return Number(result?.modifiedCount || 0);
+};
+
+/** partnerBilling으로 묶인 비취소 CA Request id */
+async function listActivePartnerLinkedAbutmentRequestIds(transferMongoId) {
+  const id = String(transferMongoId || "").trim();
+  if (!id || !Types.ObjectId.isValid(id)) return [];
+  const rows = await Request.find({
+    "partnerBilling.relatedPracticeTransferId": new Types.ObjectId(id),
+    "caseInfos.hexVerificationSample": { $ne: true },
+    manufacturerStage: { $ne: "취소" },
+  })
+    .select({ _id: 1 })
+    .lean();
+  return rows.map((row) => String(row._id));
+}
+
+/**
+ * 치아당 준비 CA 1건만 남긴다(디자인 완료 우선, 동률이면 최신).
+ * 레이스 중복·relatedRequestIds 밖 잔존을 정리한다.
+ */
+async function reconcileActiveAbutmentRequestsPerTooth({
+  transferDoc,
+  candidateRequestIds = [],
+} = {}) {
+  const transferMongoId = String(transferDoc?._id || "").trim();
+  const seedIds = (Array.isArray(candidateRequestIds) ? candidateRequestIds : [])
+    .map((id) => String(id || "").trim())
+    .filter((id) => Types.ObjectId.isValid(id));
+
+  const partnerIds = transferMongoId
+    ? await listActivePartnerLinkedAbutmentRequestIds(transferMongoId)
+    : [];
+  const mergedIds = [...new Set([...seedIds, ...partnerIds])];
+  if (!mergedIds.length) return seedIds;
+
+  const docs = await Request.find({
+    _id: { $in: mergedIds.map((id) => new Types.ObjectId(id)) },
+    "caseInfos.hexVerificationSample": { $ne: true },
+    manufacturerStage: { $ne: "취소" },
+  })
+    .select({
+      _id: 1,
+      "caseInfos.tooth": 1,
+      designCompletedAt: 1,
+      createdAt: 1,
+      updatedAt: 1,
+    })
+    .lean();
+
+  const winnersByTooth = new Map();
+  for (const doc of docs) {
+    const tooth = String(doc?.caseInfos?.tooth || "").trim() || `__${doc._id}`;
+    const prev = winnersByTooth.get(tooth);
+    if (!prev) {
+      winnersByTooth.set(tooth, doc);
+      continue;
+    }
+    const prevDesigned = Boolean(prev.designCompletedAt);
+    const nextDesigned = Boolean(doc.designCompletedAt);
+    if (nextDesigned && !prevDesigned) {
+      winnersByTooth.set(tooth, doc);
+      continue;
+    }
+    if (nextDesigned === prevDesigned) {
+      const prevTs = new Date(prev.updatedAt || prev.createdAt || 0).getTime();
+      const nextTs = new Date(doc.updatedAt || doc.createdAt || 0).getTime();
+      if (nextTs >= prevTs) winnersByTooth.set(tooth, doc);
+    }
+  }
+
+  const winnerIds = [...winnersByTooth.values()].map((doc) => String(doc._id));
+  const winnerSet = new Set(winnerIds);
+  const loserIds = docs
+    .map((doc) => String(doc._id))
+    .filter((id) => !winnerSet.has(id));
+  if (loserIds.length > 0) {
+    await markAbutmentRequestsCancelledByIds(loserIds);
+  }
+
+  // seed 순서 유지 + 승자만
+  const ordered = [];
+  const seen = new Set();
+  for (const id of seedIds) {
+    if (winnerSet.has(id) && !seen.has(id)) {
+      ordered.push(id);
+      seen.add(id);
+    }
+  }
+  for (const id of winnerIds) {
+    if (!seen.has(id)) {
+      ordered.push(id);
+      seen.add(id);
+    }
+  }
+  return ordered;
+}
+
+/** relatedRequestIds(캐논) 밖 준비 잔존만 취소 */
+async function cancelOrphanAbutmentRequestsOutsideCanonical({
+  transferDoc,
+  canonicalRequestIds = [],
+} = {}) {
+  const transferMongoId = String(transferDoc?._id || "").trim();
+  if (!transferMongoId || !Types.ObjectId.isValid(transferMongoId)) return 0;
+  const keep = new Set(
+    (Array.isArray(canonicalRequestIds) ? canonicalRequestIds : [])
+      .map((id) => String(id || "").trim())
+      .filter(Boolean),
+  );
+  const activeIds = await listActivePartnerLinkedAbutmentRequestIds(
+    transferMongoId,
+  );
+  const orphanIds = activeIds.filter((id) => !keep.has(id));
+  return markAbutmentRequestsCancelledByIds(orphanIds);
+}
+
 /**
  * 커스텀어벗 → 어벗츠 생산 의뢰 생성(어벗 STL handoff 직전).
  * 소스 파일 = PTX 구강스캔(files, 선택). productMode 고정 custom_abutment(생산만).
@@ -607,12 +748,33 @@ export async function createAbutmentRequestsFromPracticeTransfer({
         .filter((id) => Types.ObjectId.isValid(id))
     : [];
   if (existingIds.length > 0) {
-    // 신규 생성은 스킵. 헥스 확인 샘플은 designCompletedAt(어벗 STL handoff) 이후
+    // 신규 생성은 스킵. related 밖 partnerBilling 잔존(레이스 중복)만 취소.
+    await cancelOrphanAbutmentRequestsOutsideCanonical({
+      transferDoc,
+      canonicalRequestIds: existingIds,
+    });
+    // 헥스 확인 샘플은 designCompletedAt(어벗 STL handoff) 이후
     // designHandoff / worksheet backfill에서만 만든다.
     return {
       created: [],
       skippedReason: "already_created",
       requestIds: existingIds,
+    };
+  }
+
+  // relatedRequestIds가 비어도 partnerBilling에 준비 잔존이 있으면 재사용(레이스/취소 누락 heal).
+  const activePartnerIds = await listActivePartnerLinkedAbutmentRequestIds(
+    transferDoc?._id,
+  );
+  if (activePartnerIds.length > 0) {
+    const reconciledIds = await reconcileActiveAbutmentRequestsPerTooth({
+      transferDoc,
+      candidateRequestIds: activePartnerIds,
+    });
+    return {
+      created: [],
+      skippedReason: "already_created",
+      requestIds: reconciledIds,
     };
   }
 
@@ -1010,6 +1172,13 @@ export async function createAbutmentRequestsFromPracticeTransfer({
   // 헥스 확인 샘플은 어벗 STL handoff(designCompletedAt) 이후에만 생성.
   // (이 시점의 신규 Request는 아직 designCompletedAt이 없어 schedule해도 no-op)
 
+  // 병렬 handoff 레이스: 같은 PTX에 치아당 복수 CA가 생기면 승자 1건만 남긴다.
+  const createdIds = created.map((doc) => String(doc._id));
+  const requestIds = await reconcileActiveAbutmentRequestsPerTooth({
+    transferDoc,
+    candidateRequestIds: createdIds,
+  });
+
   try {
     await triggerDashboardSummaryRefreshForAnchorId(labAnchorId);
   } catch {
@@ -1022,9 +1191,9 @@ export async function createAbutmentRequestsFromPracticeTransfer({
   }
 
   return {
-    created,
+    created: created.filter((doc) => requestIds.includes(String(doc._id))),
     skippedReason: null,
-    requestIds: created.map((doc) => String(doc._id)),
+    requestIds,
     shippingMode,
   };
 }

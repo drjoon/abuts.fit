@@ -1,3 +1,4 @@
+// - 2026-09-12: handoff/cancel — partnerBilling 잔존(레이스 중복) CA도 relatedRequestIds와 함께 취소.
 // - 2026-09-12: handoff/cancel — body.tooth면 해당 치아 CA·미러만 취소(준비 단계).
 // - 2026-09-11: handoff/cancel — 연동 CA 중 하나라도 준비 이후(가공+)면 전체 취소 차단·리메이크 안내.
 // - 2026-09-09: CA STL 재업로드 remake — remake-charge realtime(billingDelta) fan-out.
@@ -61,6 +62,7 @@ import {
 import { isDesignClaimActive } from "../../utils/designClaim.js";
 import { updateReviewStatusByStage } from "./common.review.controller.js";
 import {
+  collectLinkedAbutmentRequestObjectIds,
   ensureAbutmentRequestsForHandoff,
   findRelatedAbutmentRequestIdForTooth,
   hasCustomAbutmentToothWorks,
@@ -475,9 +477,11 @@ const pullPtxDesignFileForTooth = async (transferId, tooth) => {
 /**
  * PTX 생산 취소: 연동 CA Request들을 관리자·제조사 큐에서 「취소」로 내린다.
  * 다치아: 각 Request의 구강스캔(designSourceFiles)도 복원해 재업로드 가능하게 한다.
+ * relatedRequestIds뿐 아니라 partnerBilling 잔존(병렬 업로드 레이스 중복)도 포함한다.
  * 헥스 확인용 복사샘플은 relatedRequestIds에 없으므로 referenceIds로 별도 수집해 함께 취소한다.
  * @param {object} [options]
- * @param {string[]} [options.relatedRequestIds] — 이미 조회한 id(재조회 생략)
+ * @param {string[]} [options.relatedRequestIds] — Transfer에 알려진 id(시드; partner 잔존과 병합)
+ * @param {string} [options.tooth] — 있으면 해당 치아 CA만 취소
  * @param {Set<string>|string[]} [options.skipRequestIds] — 이미 처리한 Request(중복 save 방지)
  */
 const applyPtxDesignCancelFields = (request) => {
@@ -521,22 +525,32 @@ const markPtxRelatedRequestsCancelled = async (transferId, options = {}) => {
       .map((id) => String(id || "").trim())
       .filter(Boolean),
   );
-  let idStrings = Array.isArray(options.relatedRequestIds)
+  const toothKey = String(options.tooth || "").trim();
+
+  const seedRelated = Array.isArray(options.relatedRequestIds)
     ? options.relatedRequestIds
         .map((id) => String(id || "").trim())
         .filter((id) => Types.ObjectId.isValid(id))
     : null;
-  if (!idStrings) {
-    const transferDoc = await PracticeTransfer.findById(transferId)
-      .select({ "production.relatedRequestIds": 1 })
+
+  // relatedRequestIds + partnerBilling 잔존(레이스 중복)을 모두 수집
+  const linkedOids = await collectLinkedAbutmentRequestObjectIds({
+    _id: transferId,
+    production: {
+      relatedRequestIds: seedRelated,
+    },
+  });
+  let idStrings = linkedOids.map((id) => String(id));
+
+  if (toothKey && idStrings.length > 0) {
+    const toothRows = await Request.find({
+      _id: { $in: linkedOids },
+      "caseInfos.hexVerificationSample": { $ne: true },
+      "caseInfos.tooth": toothKey,
+    })
+      .select({ _id: 1 })
       .lean();
-    idStrings = (
-      Array.isArray(transferDoc?.production?.relatedRequestIds)
-        ? transferDoc.production.relatedRequestIds
-        : []
-    )
-      .map((id) => String(id || "").trim())
-      .filter((id) => Types.ObjectId.isValid(id));
+    idStrings = toothRows.map((row) => String(row._id));
   }
 
   // 헥스 샘플은 relatedRequestIds에 없음 → 원본(+이미 취소한 primary) requestId로 조회.
@@ -1620,7 +1634,9 @@ export async function cancelDesignHandoff(req, res) {
         toothRequest.save(),
         pullPtxDesignFileForTooth(relatedTransferId, cancelTooth),
         markPtxRelatedRequestsCancelled(relatedTransferId, {
-          relatedRequestIds: [String(toothRequest._id)],
+          relatedRequestIds:
+            relatedRequestIds.length > 0 ? relatedRequestIds : [primaryRequestId],
+          tooth: cancelTooth,
           skipRequestIds: [String(toothRequest._id)],
         }),
       ]).then(([, pull]) => pull);
