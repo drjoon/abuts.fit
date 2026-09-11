@@ -149,7 +149,7 @@ export async function completePracticeTransferWork({
     return {
       ok: false,
       statusCode: 409,
-      message: "의뢰수락된 건만 작업 완료할 수 있습니다.",
+      message: "작업시작한 건만 작업 완료할 수 있습니다.",
     };
   }
 

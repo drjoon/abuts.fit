@@ -1488,11 +1488,11 @@ export async function getOrCreatePracticeTransferChatRoom(req, res) {
         success: false,
         message: isPracticeSide
           ? isAutoOpenPool
-            ? "기공소에서 의뢰 수락 후 채팅방을 열 수 있습니다."
+            ? "기공소에서 작업시작 후 채팅방을 열 수 있습니다."
             : "아직 연결 가능한 기공소가 지정되지 않았습니다."
           : isAutoOpenPool
-            ? "의뢰수락 후 치과와 채팅할 수 있습니다."
-            : "기공소에서 의뢰 수락 후 채팅방을 열 수 있습니다.",
+            ? "작업시작 후 치과와 채팅할 수 있습니다."
+            : "기공소에서 작업시작 후 채팅방을 열 수 있습니다.",
       });
     }
 

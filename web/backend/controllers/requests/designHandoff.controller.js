@@ -640,7 +640,7 @@ export async function handoffDesignToProduction(req, res) {
       return res.status(403).json({
         success: false,
         message: request?.partnerBilling?.relatedPracticeTransferId
-          ? "기공의뢰 커스텀어벗 디자인은 수락한 기공소만 할 수 있습니다."
+          ? "기공의뢰 커스텀어벗 디자인은 작업을 시작한 기공소만 할 수 있습니다."
           : "디자인 큐 접근 권한이 없습니다.",
       });
     }
@@ -1356,7 +1356,7 @@ export async function cancelDesignHandoff(req, res) {
     if (role !== "requestor" && role !== "admin" && role !== "internalLab") {
       return res.status(403).json({
         success: false,
-        message: "디자인 취소는 수락 기공소만 할 수 있습니다.",
+        message: "디자인 취소는 작업시작 기공소만 할 수 있습니다.",
       });
     }
 
@@ -1415,7 +1415,7 @@ export async function cancelDesignHandoff(req, res) {
     ) {
       return res.status(403).json({
         success: false,
-        message: "수락한 기공소만 디자인을 취소할 수 있습니다.",
+        message: "작업을 시작한 기공소만 디자인을 취소할 수 있습니다.",
       });
     }
     healRequestOwnershipToAcceptingLab(request, transferTargetLabAnchorId);
@@ -1662,7 +1662,7 @@ export async function handoffPracticeTransferAbutmentDesign(req, res) {
     if (!isAcceptingLab) {
       return res.status(403).json({
         success: false,
-        message: "수락한 기공소만 어벗 디자인을 업로드할 수 있습니다.",
+        message: "작업을 시작한 기공소만 어벗 디자인을 업로드할 수 있습니다.",
       });
     }
 
@@ -1673,7 +1673,7 @@ export async function handoffPracticeTransferAbutmentDesign(req, res) {
     if (!accepted) {
       return res.status(409).json({
         success: false,
-        message: "의뢰를 수락한 뒤에 어벗 디자인을 업로드할 수 있습니다.",
+        message: "작업을 시작한 뒤에 어벗 디자인을 업로드할 수 있습니다.",
       });
     }
 

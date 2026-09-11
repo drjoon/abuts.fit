@@ -277,7 +277,7 @@ export const buildGuideTourDemoChatMessages = (): ChatMessage[] => {
         name: "테스트기공소",
         role: "requestor",
       },
-      content: "네, 수락 후 디자인 진행하겠습니다.",
+      content: "네, 작업시작 후 디자인 진행하겠습니다.",
       createdAt: new Date(now - 30_000).toISOString(),
       updatedAt: new Date(now - 30_000).toISOString(),
     },

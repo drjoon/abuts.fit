@@ -262,7 +262,7 @@ export const LAB_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   {
     id: "lab_calendar",
     title: "기공의뢰 · 치과로부터",
-    hint: "오늘 날짜에 있는 치과 의뢰를 눌러 상세·수락·채팅을 이어갑니다.",
+    hint: "오늘 날짜에 있는 치과 의뢰를 눌러 상세·작업시작·채팅을 이어갑니다.",
     path: LAB_RECEIVE_PATH,
     target: "lab_calendar_item",
     advance: "next",

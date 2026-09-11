@@ -3778,8 +3778,8 @@ export function RequestorPracticeReceivePage({
         toast({
           title: "작업 취소",
           description: isAuto
-            ? "수락을 취소해 공개 풀로 되돌렸습니다."
-            : "의뢰수락을 취소했습니다.",
+            ? "작업을 취소해 공개 풀로 되돌렸습니다."
+            : "작업시작을 취소했습니다.",
         });
 
         void apiPromise
@@ -5391,10 +5391,10 @@ export function RequestorPracticeReceivePage({
         toast({
           title: workState.showWorkActions
             ? "업로드할 어벗 없음"
-            : "의뢰 수락 후 업로드",
+            : "작업시작 후 업로드",
           description: workState.showWorkActions
             ? "커스텀 어벗 디자인이 더 필요하지 않습니다."
-            : "의뢰를 수락한 뒤에 어벗 STL을 올릴 수 있습니다.",
+            : "작업을 시작한 뒤에 어벗 STL을 올릴 수 있습니다.",
         });
         return;
       }
@@ -5494,7 +5494,7 @@ export function RequestorPracticeReceivePage({
         toast({
           title: "작업 단계 되돌림",
           description:
-            "발송(작업완료)을 의뢰수락으로 되돌렸습니다. 어벗·보철을 다시 올리거나 작업 취소할 수 있습니다.",
+            "발송(작업완료)을 작업시작 단계로 되돌렸습니다. 어벗·보철을 다시 올리거나 작업 취소할 수 있습니다.",
         });
       } catch (error) {
         toast({

@@ -15,10 +15,10 @@ export const PRACTICE_ACCEPT_OVERDUE_BADGE_CLASS =
   "border-accent/80 bg-accent-soft text-accent-strong hover:bg-accent-soft";
 
 export const PRACTICE_ACCEPT_OVERDUE_TOOLTIP_PRACTICE =
-  "주문 후 1영업일이 지났는데 기공소 수락이 없습니다.";
+  "주문 후 1영업일이 지났는데 기공소 작업시작이 없습니다.";
 
 export const PRACTICE_ACCEPT_OVERDUE_TOOLTIP_LAB =
-  "주문 후 1영업일이 지났는데 아직 수락하지 않은 의뢰입니다.";
+  "주문 후 1영업일이 지났는데 아직 작업을 시작하지 않은 의뢰입니다.";
 
 export type PracticeAcceptOverdueViewer = "practice" | "lab";
 

@@ -282,7 +282,7 @@ export const canAppendProsthesisFollowUp = (input: {
     return {
       ok: false,
       reason: "not_accepted",
-      message: "기공소 수락 후에 최종 보철 제작을 의뢰할 수 있습니다.",
+      message: "기공소 작업시작 후에 최종 보철 제작을 의뢰할 수 있습니다.",
     };
   }
 

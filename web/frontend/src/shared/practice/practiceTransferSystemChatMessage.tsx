@@ -53,6 +53,22 @@ const normalizeToothWorkRow = (
   } as ToothWorkSelection;
 };
 
+/**
+ * 레거시 시스템 채팅 문구 → 현재 UI 라벨(작업시작).
+ * DB·구 클라이언트에 남은 「의뢰를 수락했습니다」 등을 표시만 교정한다.
+ */
+export function normalizeLegacyPracticeTransferSystemChatContent(
+  content: unknown,
+): string {
+  let text = String(content ?? "");
+  if (!text) return text;
+  text = text.replace(/의뢰를 수락했습니다/g, "작업을 시작했습니다");
+  text = text.replace(/의뢰를 수락할 수 없습니다/g, "작업을 시작할 수 없습니다");
+  text = text.replace(/의뢰 수락/g, "작업시작");
+  text = text.replace(/의뢰수락/g, "작업시작");
+  return text;
+}
+
 /** 레거시 한 줄 텍스트 → toothWorks (예: `33-34 브리지, 45-46 브리지`) */
 const parseLegacyFollowUpToothWorks = (label: string): ToothWorkSelection[] => {
   const parts = String(label || "")

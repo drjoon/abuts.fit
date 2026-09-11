@@ -669,7 +669,7 @@ export const LabFeeScheduleTab = () => {
               item.enabled !== false && Math.round(Number(item.price || 0)) > 0,
           ) ? (
           <p className="mt-2 text-[12px] font-medium text-red-600">
-            제공할 항목을 켜야 의뢰를 수락할 수 있습니다.
+            제공할 항목을 켜야 작업을 시작할 수 있습니다.
           </p>
         ) : null}
         <p className="mt-2 text-[12px] leading-snug text-slate-500">
@@ -753,7 +753,7 @@ export const LabFeeScheduleTab = () => {
 
                 {needsInput ? (
                   <p className="rounded-xl bg-red-50 px-3 py-2 text-[12px] font-medium text-red-600">
-                    이 항목을 켜고 수가를 입력해야 의뢰를 수락할 수 있습니다.
+                    이 항목을 켜고 수가를 입력해야 작업을 시작할 수 있습니다.
                   </p>
                 ) : null}
 

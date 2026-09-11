@@ -19,17 +19,17 @@ export const PRACTICE_ABUTMENT_UPLOAD_OVERDUE_RED_LABEL = "어벗 업로드 지�
 export const PRACTICE_ABUTMENT_UPLOAD_OVERDUE_DEADLINE_LABEL = "기한 만료";
 
 export const PRACTICE_ABUTMENT_UPLOAD_OVERDUE_TOOLTIP_YELLOW =
-  "수락 후 24시간이 지났는데 커스텀 어벗 STL이 아직 업로드되지 않았습니다.";
+  "작업시작 후 24시간이 지났는데 커스텀 어벗 STL이 아직 업로드되지 않았습니다.";
 export const PRACTICE_ABUTMENT_UPLOAD_OVERDUE_TOOLTIP_RED =
-  "수락 후 48시간이 지났는데 커스텀 어벗 STL이 아직 업로드되지 않았습니다. 빠른 업로드를 부탁드립니다.";
+  "작업시작 후 48시간이 지났는데 커스텀 어벗 STL이 아직 업로드되지 않았습니다. 빠른 업로드를 부탁드립니다.";
 export const PRACTICE_ABUTMENT_UPLOAD_OVERDUE_TOOLTIP_DEADLINE =
   "치과도착일이 지났으나 커스텀 어벗 STL이 아직 업로드되지 않았습니다. 즉시 업로드해 주세요.";
 
 /** 치과 상세·캘린더 — 기공소가 아직 올리지 않음 */
 export const PRACTICE_ABUTMENT_UPLOAD_OVERDUE_TOOLTIP_YELLOW_PRACTICE =
-  "기공소 수락 후 24시간이 지났는데 커스텀 어벗 STL이 아직 업로드되지 않았습니다.";
+  "기공소 작업시작 후 24시간이 지났는데 커스텀 어벗 STL이 아직 업로드되지 않았습니다.";
 export const PRACTICE_ABUTMENT_UPLOAD_OVERDUE_TOOLTIP_RED_PRACTICE =
-  "기공소 수락 후 48시간이 지났는데 커스텀 어벗 STL이 아직 업로드되지 않았습니다. 기공소에 문의해 주세요.";
+  "기공소 작업시작 후 48시간이 지났는데 커스텀 어벗 STL이 아직 업로드되지 않았습니다. 기공소에 문의해 주세요.";
 export const PRACTICE_ABUTMENT_UPLOAD_OVERDUE_TOOLTIP_DEADLINE_PRACTICE =
   "치과도착일이 지났으나 기공소에서 커스텀 어벗 STL을 아직 올리지 않았습니다. 기공소에 문의해 주세요.";
 

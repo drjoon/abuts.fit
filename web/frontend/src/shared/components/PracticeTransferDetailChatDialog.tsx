@@ -1931,6 +1931,9 @@ export function PracticeTransferDetailChatDialog({
   const oralScanBlocksAccept = oralScanAttachMode === "practice_required";
   const rawChatError = String(chatError || "").trim();
   const isPreAcceptChatHint =
+    rawChatError === "작업시작 후 치과와 채팅할 수 있습니다." ||
+    rawChatError === "기공소에서 작업시작 후 채팅방을 열 수 있습니다." ||
+    // 레거시 API 문구
     rawChatError === "의뢰수락 후 치과와 채팅할 수 있습니다." ||
     rawChatError === "기공소에서 의뢰 수락 후 채팅방을 열 수 있습니다.";
   /** 자동매칭 공개 풀 등 방이 없을 때: 수락 바와 같은 안내를 메시지 영역에 중복하지 않음 */

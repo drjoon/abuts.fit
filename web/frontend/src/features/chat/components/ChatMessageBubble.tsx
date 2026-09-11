@@ -63,7 +63,10 @@ import {
   getPracticeTransferFileExtension,
   PRACTICE_TRANSFER_IMAGE_EXTENSIONS,
 } from "@/shared/practice/practiceTransferAccept";
-import { PracticeTransferSystemChatBody } from "@/shared/practice/practiceTransferSystemChatMessage";
+import {
+  PracticeTransferSystemChatBody,
+  normalizeLegacyPracticeTransferSystemChatContent,
+} from "@/shared/practice/practiceTransferSystemChatMessage";
 
 export type ChatBubbleAttachment = {
   fileId?: string;
@@ -728,7 +731,7 @@ export function ChatMessageBubble({
           )}
         >
           <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] leading-snug">
-            {message.content}
+            {normalizeLegacyPracticeTransferSystemChatContent(message.content)}
           </p>
           <p className={cn("mt-0.5 opacity-70", compact ? "text-[10px]" : "text-[11px]")}>
             {formatTime(message.createdAt)}

@@ -3563,7 +3563,7 @@ export async function updatePracticeTransferContent(req, res) {
       return res.status(409).json({
         success: false,
         message:
-          "기공소가 수락하기 전(의뢰 단계)에만 내용을 수정할 수 있습니다.",
+          "기공소가 작업시작하기 전(의뢰 단계)에만 내용을 수정할 수 있습니다.",
         reason: "not_pending_accept",
         manufacturerStage: resolvePracticeTransferManufacturerStage(doc),
       });
@@ -3958,7 +3958,7 @@ export async function updatePracticeTransferContent(req, res) {
       return res.status(409).json({
         success: false,
         message:
-          "기공소가 이미 수락했거나 의뢰 단계가 아니어서 수정할 수 없습니다.",
+          "기공소가 이미 작업을 시작했거나 의뢰 단계가 아니어서 수정할 수 없습니다.",
         reason: "not_pending_accept",
       });
     }
@@ -6974,7 +6974,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
     if (isPracticeTransferDeletedStatus(doc.status)) {
       return res.status(409).json({
         success: false,
-        message: "삭제된 기공의뢰는 수락할 수 없습니다.",
+        message: "삭제된 기공의뢰는 작업을 시작할 수 없습니다.",
       });
     }
 
@@ -7010,7 +7010,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
         success: false,
         message:
           String(scanErr?.message || "").trim() ||
-          "구강스캔 파일이 없어 의뢰를 수락할 수 없습니다.",
+          "구강스캔 파일이 없어 작업을 시작할 수 없습니다.",
         reason: scanErr?.code || "oral_scan_required",
       });
     }
@@ -7067,7 +7067,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
       if (isAutoMatchClaimActive(doc, now.getTime()) && !claimIsMine) {
         return res.status(409).json({
           success: false,
-          message: "다른 기공소가 이미 수락했습니다.",
+          message: "다른 기공소가 이미 작업을 시작했습니다.",
           data: toAutoMatchApiFields(doc, labAnchorId),
         });
       }
@@ -7126,7 +7126,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
         const latest = await PracticeTransfer.findById(doc._id).lean();
         return res.status(409).json({
           success: false,
-          message: "다른 기공소가 이미 수락했습니다.",
+          message: "다른 기공소가 이미 작업을 시작했습니다.",
           data: latest ? toAutoMatchApiFields(latest, labAnchorId) : null,
         });
       }
@@ -7174,7 +7174,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
         const status = Number(billingErr?.statusCode || 500);
         return res.status(status).json({
           success: false,
-          message: billingErr?.message || "기공의뢰 수락 과금에 실패했습니다.",
+          message: billingErr?.message || "기공의뢰 작업시작 과금에 실패했습니다.",
           ...(billingErr?.payload || {}),
         });
       }
@@ -7283,7 +7283,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
         const status = Number(billingErr?.statusCode || 500);
         return res.status(status).json({
           success: false,
-          message: billingErr?.message || "기공의뢰 수락 과금에 실패했습니다.",
+          message: billingErr?.message || "기공의뢰 작업시작 과금에 실패했습니다.",
           ...(billingErr?.payload || {}),
         });
       }
@@ -7367,7 +7367,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
         return res.status(status >= 400 && status < 600 ? status : 500).json({
           success: false,
           message:
-            settleErr?.message || "기공의뢰 수락 정산에 실패했습니다.",
+            settleErr?.message || "기공의뢰 작업시작 정산에 실패했습니다.",
           ...(settleErr?.payload || {}),
         });
       }
@@ -7458,7 +7458,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
   } catch (error) {
     return res.status(500).json({
       success: false,
-      message: "기공의뢰 수락 처리 중 오류가 발생했습니다.",
+      message: "기공의뢰 작업시작 처리 중 오류가 발생했습니다.",
       error: error?.message,
     });
   }
@@ -7520,21 +7520,21 @@ export async function markReceivedPracticeTransferComplete(req, res) {
     if (!accepted) {
       return res.status(409).json({
         success: false,
-        message: "의뢰수락된 건만 작업 완료할 수 있습니다.",
+        message: "작업시작한 건만 작업 완료할 수 있습니다.",
       });
     }
 
     if (String(doc.targetLabAnchorId || "").trim() !== labAnchorId) {
       return res.status(403).json({
         success: false,
-        message: "수락한 기공소만 작업 완료할 수 있습니다.",
+        message: "작업을 시작한 기공소만 작업 완료할 수 있습니다.",
       });
     }
 
     if (isAuto && !isAutoMatchClaimActive(doc)) {
       return res.status(409).json({
         success: false,
-        message: "수락되지 않은 의뢰입니다.",
+        message: "아직 작업이 시작되지 않은 의뢰입니다.",
         data: toAutoMatchApiFields(doc, labAnchorId),
       });
     }
@@ -7646,21 +7646,21 @@ export async function appendReceivedPracticeTransferResultFiles(req, res) {
     if (!accepted) {
       return res.status(409).json({
         success: false,
-        message: "의뢰수락된 건만 결과 파일을 올릴 수 있습니다.",
+        message: "작업시작한 건만 결과 파일을 올릴 수 있습니다.",
       });
     }
 
     if (String(doc.targetLabAnchorId || "").trim() !== labAnchorId) {
       return res.status(403).json({
         success: false,
-        message: "수락한 기공소만 결과 파일을 올릴 수 있습니다.",
+        message: "작업을 시작한 기공소만 결과 파일을 올릴 수 있습니다.",
       });
     }
 
     if (isAuto && !isAutoMatchClaimActive(doc)) {
       return res.status(409).json({
         success: false,
-        message: "수락되지 않은 의뢰입니다.",
+        message: "아직 작업이 시작되지 않은 의뢰입니다.",
         data: toAutoMatchApiFields(doc, labAnchorId),
       });
     }
@@ -7796,7 +7796,7 @@ export async function confirmPracticeTransferAbutmentDesign(req, res) {
     if (String(doc.targetLabAnchorId || "").trim() !== labAnchorId && role !== "admin") {
       return res.status(403).json({
         success: false,
-        message: "수락한 기공소만 어벗 디자인을 확인할 수 있습니다.",
+        message: "작업을 시작한 기공소만 어벗 디자인을 확인할 수 있습니다.",
       });
     }
 
@@ -8201,14 +8201,14 @@ export async function markReceivedPracticeTransferRelease(req, res) {
       }
       return res.status(409).json({
         success: false,
-        message: "의뢰수락된 건만 작업 취소할 수 있습니다.",
+        message: "작업시작한 건만 작업 취소할 수 있습니다.",
       });
     }
 
     if (String(doc.targetLabAnchorId || "").trim() !== labAnchorId) {
       return res.status(403).json({
         success: false,
-        message: "수락한 기공소만 작업 취소할 수 있습니다.",
+        message: "작업을 시작한 기공소만 작업 취소할 수 있습니다.",
       });
     }
 
@@ -8685,7 +8685,7 @@ export async function markReceivedPracticeTransferReject(req, res) {
     if (doc.requestorDownloadedAt) {
       return res.status(409).json({
         success: false,
-        message: "이미 수락한 의뢰는 거부할 수 없습니다. 작업취소를 이용해주세요.",
+        message: "이미 작업을 시작한 의뢰는 거부할 수 없습니다. 작업취소를 이용해주세요.",
       });
     }
 

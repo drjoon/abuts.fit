@@ -196,7 +196,7 @@ export function PracticeTransferLabReceiveCard({
         </Button>
       </TooltipTrigger>
       <TooltipContent side="top" className="max-w-xs text-xs">
-        발송(작업완료) 단계를 의뢰수락으로 되돌립니다. 제조사 준비 단계에서만
+        발송(작업완료) 단계를 작업시작으로 되돌립니다. 제조사 준비 단계에서만
         가능합니다. 가공이 시작되면 리메이크로 선택 치아만 재제작하세요.
       </TooltipContent>
     </Tooltip>

@@ -76,7 +76,7 @@ export async function claimDesignRequest(req, res) {
       return res.status(403).json({
         success: false,
         message: existingForAuth?.partnerBilling?.relatedPracticeTransferId
-          ? "기공의뢰 커스텀어벗 디자인은 수락한 기공소만 할 수 있습니다."
+          ? "기공의뢰 커스텀어벗 디자인은 작업을 시작한 기공소만 할 수 있습니다."
           : "디자인 큐 접근 권한이 없습니다.",
       });
     }
