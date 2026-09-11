@@ -2,6 +2,7 @@
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/shared/practice/transferMemo.ts
+// - 2026-09-11: shade 복원(치아 카드 쉐이드).
 // - 2026-08-13: 유지장치·임시치아 연결도 드래프트에서 복원(isLinkableProsthesisType).
 // - 2026-08-19: 임시치아에서 다른 형태로 바꿔도 커스텀어벗 플래그·규격을 유지한다.
 
@@ -52,12 +53,15 @@ export const restoreToothWorksFromDraft = (
             .filter((v) => adjacent.includes(v))
         : [];
 
+    const shade = String(row.shade || "").trim().slice(0, 24);
+
     return {
       toothNumber,
       prosthesisType,
       customAbutment,
       ...pickToothWorkAbutmentProductMode(row, customAbutment),
       bridgeLinkedTeeth,
+      ...(shade ? { shade } : {}),
       ...pickToothWorkCustomSpecs(
         {
           implantManufacturer: String(row.implantManufacturer || "").trim(),

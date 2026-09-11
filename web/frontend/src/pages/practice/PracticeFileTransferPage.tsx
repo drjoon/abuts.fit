@@ -233,7 +233,6 @@ import {
 import { PracticeProsthesisFollowUpDialog } from "@/shared/components/practice/PracticeProsthesisFollowUpDialog";
 import { canAppendProsthesisFollowUp, canManagePendingProsthesisFollowUp, getLatestPendingProsthesisFollowUp, isFinalProsthesisType, isFollowUpProsthesisPhase } from "@/shared/practice/prosthesisFollowUp";
 import { PracticeLabRatingControl } from "@/shared/components/practice/PracticeLabRatingControl";
-import { CounterpartyMemoStrip } from "@/shared/components/practice/CounterpartyMemoStrip";
 import { PracticeTransferIntakeSection } from "@/shared/components/practice/PracticeTransferIntakeSection";
 import {
   PracticeTransferMobileOralPhotoIntake,

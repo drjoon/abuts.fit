@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // - web/frontend/src/shared/practice/transferMemo.ts
+// - 2026-09-11: 읽기 전용 카드에 쉐이드 표시.
 // - 2026-09-07: 상·하악 전체(16치) compact 표시는 번호 나열 대신 상악/하악 카드.
 // - 2026-08-19: 수가 Off면 live quote-context로 기공비 미설정·어벗 단가 표시.
 // - 2026-08-19: 치아 옆 스크롤·R/M/L 제거. 견적 바에 << < > >>(1칸·5칸).
@@ -38,6 +39,7 @@ import {
   formatToothNumbersForCard,
   LOWER_ARCH_TEETH,
   UPPER_ARCH_TEETH,
+  normalizeToothShade,
   type ToothWorkSelection,
 } from "@/shared/practice/transferMemo";
 import {
@@ -539,6 +541,11 @@ export const PracticeToothWorkChartReadOnly = ({
               </div>
             </div>
           ) : null}
+          {!isMissingTooth && normalizeToothShade(row.shade) ? (
+            <span className="mt-auto mb-0.5 inline-flex max-w-full shrink-0 items-center justify-center rounded-full border border-amber-300/90 bg-amber-50 px-1.5 py-0.5 text-[11px] font-semibold leading-none tracking-tight text-amber-900">
+              <span className="truncate">{normalizeToothShade(row.shade)}</span>
+            </span>
+          ) : null}
         </div>
       </div>
     );
@@ -910,6 +917,11 @@ export const PracticeToothWorkChartReadOnly = ({
                             </TooltipProvider>
                           )}
                         </div>
+                      ) : null}
+                      {!isMissingTooth && normalizeToothShade(row.shade) ? (
+                        <span className="mt-auto mb-0.5 inline-flex max-w-full shrink-0 items-center justify-center rounded-full border border-amber-300/90 bg-amber-50 px-1.5 py-0.5 text-[11px] font-semibold leading-none tracking-tight text-amber-900">
+                          <span className="truncate">{normalizeToothShade(row.shade)}</span>
+                        </span>
                       ) : null}
                     </div>
                   </div>

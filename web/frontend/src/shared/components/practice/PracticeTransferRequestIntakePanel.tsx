@@ -135,6 +135,11 @@ import {
   normalizeAccountAbutmentProductMode,
   pickToothWorkCustomSpecs,
   resolveToothAbutmentProductMode,
+  normalizeToothShade,
+  TOOTH_SHADE_PRESETS,
+  isToothShadePreset,
+  normalizeShadeFavorites,
+  rememberShadeFavorite,
   // 레거시(2026-08-22): canOfferPracticeTransferSkipJig / resolvePracticeTransferSkipJig — skipJig UI 삭제.
   type AbutmentProductMode,
   type PracticeAbutmentFavorite,
@@ -174,6 +179,14 @@ import { usePracticeTransferFeeQuote } from "@/shared/practice/usePracticeTransf
 import {
   formatWonRange,
 } from "@/shared/practice/practiceTransferFeeQuote";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/shared/hooks/use-toast";
@@ -205,6 +218,9 @@ import {
 // - 2026-09-05: 메모|파일 2열 — 메모 카드 높이를 파일 패널에 ResizeObserver로 맞춤(stretch 과대 확장 방지).
 // - 2026-09-05: 플랫폼 Spotlight — stepId로 data-guide-tour 직접 마킹(로컬 스텝 sync 전에도 홀).
 // - 2026-09-05: 견적→뒤로 프리셋 — Spotlight 클릭 outside dismiss로 모달 즉시 닫힘 방지·다음 틱 재오픈.
+// - 2026-09-11: 보철 형태 드롭다운 「입력」→ prosthesisTypes 계정 저장. 커스텀·입력 X.
+// - 2026-09-11: 쉐이드 직접 입력 → 계정 shadeFavorites 저장. 배지·입력 X로 삭제.
+// - 2026-09-11: 치아 카드 — 쉐이드 배지(A2·A3·A1·A3.5·입력) + 보철 형태 드롭다운(클릭 순환 대체).
 // - 2026-09-05: 견적 투어 — 하이라이트에 금액이 보이게 blur 해제(툴팁 체험은 유지).
 // - 2026-09-05: 가이드투어 견적 — pointerenter 650ms 대신 툴팁 실오픈 후 진행(레이스 방지).
 // - 2026-09-07: 커스텀어벗 설정 모달 폭 48→64rem. 스캔바디 긴 프리셋 라벨용(카드 2줄은 AbutmentFields).
@@ -301,10 +317,22 @@ const PRACTICE_MEMO_SNIPPETS_LOCAL_KEY = "practice_transfer_memo_snippets_v1";
 const MAX_MEMO_SNIPPETS = 40;
 /** 최근 입력·자동완성 목록에 보여줄 최대 개수 */
 const MAX_MEMO_SUGGESTIONS = 20;
-/** 카드 높이: 번호+형태+어벗+임플란트/스캔바디 2줄+복사 기준(이보다 짧으면 형태 버튼이 flex-shrink로 가려짐) */
-const TOOTH_CARD_HEIGHT_CLASS = "h-[12rem]";
+/** 카드 높이: 번호+형태+어벗+임플란트/스캔바디 2줄+쉐이드+복사 기준(이보다 짧으면 형태 버튼이 flex-shrink로 가려짐) */
+const TOOTH_CARD_HEIGHT_CLASS = "h-[12.75rem]";
 /** full(16칸) — compact와 동일. 9rem은 어벗 상세 시 유형 스위치가 찌그러짐 */
-const TOOTH_CARD_HEIGHT_FULL_CLASS = "h-[12rem]";
+const TOOTH_CARD_HEIGHT_FULL_CLASS = "h-[12.75rem]";
+const TOOTH_SHADE_CUSTOM_OPTION = "__custom__";
+const TOOTH_TYPE_CUSTOM_OPTION = "__type_custom__";
+const BUILTIN_PROSTHESIS_TYPE_SET = new Set<string>([
+  ...STANDALONE_PROSTHESIS_TYPES,
+  ...LINKED_PROSTHESIS_TYPES,
+]);
+const isBuiltinProsthesisType = (type: string) =>
+  BUILTIN_PROSTHESIS_TYPE_SET.has(String(type || "").trim()) ||
+  isCustomAbutmentProsthesisType(type) ||
+  isMissingToothProsthesisType(type) ||
+  isTemporaryToothProsthesisType(type) ||
+  isRetainerProsthesisType(type);
 /** compact — 치아당 5rem 고정, 가로 스크롤 */
 const TOOTH_SLOT_COMPACT_CLASS = "relative w-[5rem] max-w-[5rem] shrink-0 snap-start";
 /** full(16칸) — 전폭을 균등 분할(가로 스크롤·프로그레스 겹침 방지) */
@@ -560,73 +588,14 @@ const copyToothWorkContentToTooth = (
     bridgeLinkedTeeth: Array.isArray(target.bridgeLinkedTeeth)
       ? [...target.bridgeLinkedTeeth]
       : [],
+    ...(normalizeToothShade(source.shade)
+      ? { shade: normalizeToothShade(source.shade) }
+      : {}),
     ...(wantsCustom
       ? pickToothWorkCustomSpecs(source, true)
       : emptyToothWorkCustomSpecs()),
   };
   return next;
-};
-
-const matchesLinkedToggleType = (current: string, type: string) => {
-  if (type === NO_WORK_PROSTHESIS_TYPE) return isMissingToothProsthesisType(current);
-  if (type === "유지장치") return isRetainerProsthesisType(current);
-  if (type === "임시치아") return isTemporaryToothProsthesisType(current);
-  return current === type;
-};
-
-/** 선택 치아 클릭: 인레이→크라운→커스텀어벗→임시치아 / 브리지↔결손치↔유지장치↔임시치아 */
-const resolveNextProsthesisType = (
-  prev: ToothWorkSelection[],
-  toothNumber: string,
-  prosthesisTypes: string[],
-): { index: number; nextType: string } | null => {
-  const idx = prev.findIndex((row) => String(row.toothNumber || "").trim() === toothNumber);
-  if (idx < 0) return null;
-  const row = prev[idx];
-  const links = collectAdjacentBridgeLinks(prev, row.toothNumber);
-  const isLinked = links.length > 0;
-  const options = getProsthesisTypesForLinkState(isLinked, prosthesisTypes);
-  if (options.length === 0) return null;
-
-  const current = String(row.prosthesisType || "").trim();
-  let nextType: string | null = null;
-  if (isLinked) {
-    const cycle = LINKED_PROSTHESIS_TYPES.filter((type) =>
-      options.some((option) => matchesLinkedToggleType(option, type)),
-    );
-    if (cycle.length > 0) {
-      const currentIdx = cycle.findIndex((type) => matchesLinkedToggleType(current, type));
-      nextType = cycle[(currentIdx >= 0 ? currentIdx + 1 : 0) % cycle.length]!;
-    }
-  }
-  if (!nextType) {
-    const cycle = STANDALONE_PROSTHESIS_TYPES.filter((type) =>
-      options.some((option) =>
-        type === CUSTOM_ABUTMENT_PROSTHESIS_TYPE
-          ? isCustomAbutmentProsthesisType(option)
-          : type === "임시치아"
-            ? isTemporaryToothProsthesisType(option)
-            : option === type,
-      ),
-    ).map((type) =>
-      type === CUSTOM_ABUTMENT_PROSTHESIS_TYPE
-        ? options.find((option) => isCustomAbutmentProsthesisType(option)) || type
-        : type,
-    );
-    const currentIdx = cycle.findIndex((type) =>
-      isCustomAbutmentProsthesisType(type)
-        ? isCustomAbutmentProsthesisType(current)
-        : type === "임시치아"
-          ? isTemporaryToothProsthesisType(current)
-          : type === current,
-    );
-    nextType =
-      cycle.length > 0
-        ? cycle[(currentIdx >= 0 ? currentIdx + 1 : 0) % cycle.length]!
-        : options.find((type) => type === "크라운") || options[0]!;
-  }
-  if (!nextType || nextType === current) return null;
-  return { index: idx, nextType };
 };
 
 const TOOTH_MARQUEE_MOVE_THRESHOLD_PX = 6;
@@ -838,8 +807,10 @@ export type PracticeTransferRequestIntakePanelProps = {
   normalizedProsthesisTypes: string[];
   setProsthesisTypeCatalogDraft: (value: string[]) => void;
   setProsthesisTypeSettingsDialogOpen: (open: boolean) => void;
-  /** 전체 선택·커스텀 추가 시 카탈로그에 타입 합침 */
+  /** 전체 선택·커스텀 추가 시 카탈로그에 타입 합침(계정 저장 포함) */
   onEnsureProsthesisTypesInCatalog?: (types: string[]) => void;
+  /** 보철 형태 카탈로그 전체 교체(커스텀 삭제 등·계정 저장) */
+  onProsthesisTypesCatalogChange?: (next: string[]) => void | Promise<void>;
   /** 전체치열 모달 좌측 보철물 목록(계정 설정). 없으면 기본 프리셋 */
   archBulkProsthesisTypes?: string[];
   onArchBulkProsthesisTypesChange?: (next: string[]) => void | Promise<void>;
@@ -858,6 +829,9 @@ export type PracticeTransferRequestIntakePanelProps = {
   memoInputId: string;
   memoSnippets?: string[];
   onMemoSnippetsChange?: (next: string[]) => void | Promise<void>;
+  /** 치아 카드 쉐이드 직접 입력(계정 저장·MRU) */
+  shadeFavorites?: string[];
+  onShadeFavoritesChange?: (next: string[]) => void | Promise<void>;
   onImeComposingChange?: (composing: boolean) => void;
   prosthesisTypeSelectWidthClassName?: string;
   showBridgeConnections?: boolean;
@@ -982,6 +956,7 @@ export const PracticeTransferRequestIntakePanel = ({
   setProsthesisTypeCatalogDraft,
   setProsthesisTypeSettingsDialogOpen,
   onEnsureProsthesisTypesInCatalog,
+  onProsthesisTypesCatalogChange,
   archBulkProsthesisTypes,
   onArchBulkProsthesisTypesChange,
   requestStagePresets: requestStagePresetsProp,
@@ -995,6 +970,8 @@ export const PracticeTransferRequestIntakePanel = ({
   memoInputId,
   memoSnippets: memoSnippetsProp,
   onMemoSnippetsChange,
+  shadeFavorites: shadeFavoritesProp,
+  onShadeFavoritesChange,
   onImeComposingChange,
   prosthesisTypeSelectWidthClassName = "w-[7rem]",
   showBridgeConnections = false,
@@ -1582,6 +1559,20 @@ export const PracticeTransferRequestIntakePanel = ({
   );
   const [archEditingIndex, setArchEditingIndex] = useState<number | null>(null);
   const [archEditDraft, setArchEditDraft] = useState("");
+  /** 쉐이드 드롭다운 — 열린 치아번호 / 직접 입력 초안 */
+  const [shadeMenuTooth, setShadeMenuTooth] = useState<string | null>(null);
+  const [shadeCustomMenuTooth, setShadeCustomMenuTooth] = useState<string | null>(
+    null,
+  );
+  const [shadeCustomDraft, setShadeCustomDraft] = useState("");
+  const shadeCustomInputRef = useRef<HTMLInputElement | null>(null);
+  /** 보철 형태 드롭다운 — 열린 치아 / 직접 입력 */
+  const [typeMenuTooth, setTypeMenuTooth] = useState<string | null>(null);
+  const [typeCustomMenuTooth, setTypeCustomMenuTooth] = useState<string | null>(
+    null,
+  );
+  const [typeCustomDraft, setTypeCustomDraft] = useState("");
+  const typeCustomInputRef = useRef<HTMLInputElement | null>(null);
   const [archReorderFromIndex, setArchReorderFromIndex] = useState<number | null>(
     null,
   );
@@ -2165,6 +2156,104 @@ export const PracticeTransferRequestIntakePanel = ({
     window.addEventListener("pointercancel", onUp);
   };
 
+  const applyToothShade = (
+    toothNumber: string,
+    nextShade: string,
+    options?: { rememberFavorite?: boolean },
+  ) => {
+    const tooth = String(toothNumber || "").trim();
+    const shade = normalizeToothShade(nextShade);
+    if (!/^[1-4][1-8]$/.test(tooth)) return;
+    setToothWorks((prev) => {
+      const idx = prev.findIndex(
+        (row) => String(row.toothNumber || "").trim() === tooth,
+      );
+      if (idx < 0) return prev;
+      const current = prev[idx];
+      const prevShade = normalizeToothShade(current.shade);
+      if (prevShade === shade) return prev;
+      const next = [...prev];
+      if (shade) next[idx] = { ...current, shade };
+      else {
+        const { shade: _removed, ...rest } = current;
+        next[idx] = rest;
+      }
+      return next;
+    });
+    if (options?.rememberFavorite !== false && shade && !isToothShadePreset(shade)) {
+      const nextFavorites = rememberShadeFavorite(shadeFavoritesProp, shade);
+      if (
+        JSON.stringify(nextFavorites) !==
+        JSON.stringify(normalizeShadeFavorites(shadeFavoritesProp))
+      ) {
+        void onShadeFavoritesChange?.(nextFavorites);
+      }
+    }
+  };
+
+  const removeShadeFavorite = (shadeRaw: string) => {
+    const target = normalizeToothShade(shadeRaw).toLowerCase();
+    if (!target) return;
+    const next = normalizeShadeFavorites(shadeFavoritesProp).filter(
+      (item) => item.toLowerCase() !== target,
+    );
+    void onShadeFavoritesChange?.(next);
+  };
+
+  const applyProsthesisTypeFromMenu = (
+    toothNumber: string,
+    nextTypeRaw: string,
+    options?: { ensureInCatalog?: boolean },
+  ) => {
+    const tooth = String(toothNumber || "").trim();
+    const nextType = String(nextTypeRaw || "").trim();
+    if (!/^[1-4][1-8]$/.test(tooth) || !nextType) return;
+    if (options?.ensureInCatalog) {
+      onEnsureProsthesisTypesInCatalog?.([nextType]);
+    }
+    setToothWorks((prev) => {
+      const idx = prev.findIndex(
+        (row) => String(row.toothNumber || "").trim() === tooth,
+      );
+      if (idx < 0) return prev;
+      const current = prev[idx];
+      if (!current) return prev;
+      const isLinkedSpan =
+        collectAdjacentBridgeLinks(prev, current.toothNumber).length > 0;
+      if (isLinkedSpan) {
+        const cycled = applyCycledLinkedSpanProsthesisType(
+          prev,
+          current.toothNumber,
+          nextType,
+          linkedSpanTypeSnapshotRef.current,
+          lockedMode ?? defaultAbutmentProductMode,
+        );
+        linkedSpanTypeSnapshotRef.current = cycled.snapshot;
+        return cycled.rows;
+      }
+      const next = [...prev];
+      next[idx] = applyIntakeProsthesisType(current, nextType);
+      return next;
+    });
+    suppressAbutmentCheckboxUntilRef.current = Date.now() + 500;
+    const modalIdx = toothWorks.findIndex(
+      (row) => String(row.toothNumber || "").trim() === tooth,
+    );
+    if (customSpecsModalTarget === modalIdx) {
+      customSpecsModalSnapshotRef.current = null;
+      closeCustomSpecsModal();
+    }
+  };
+
+  const removeCustomProsthesisType = (typeRaw: string) => {
+    const target = String(typeRaw || "").trim();
+    if (!target || isBuiltinProsthesisType(target)) return;
+    const next = normalizedProsthesisTypes.filter(
+      (item) => item.toLowerCase() !== target.toLowerCase(),
+    );
+    void onProsthesisTypesCatalogChange?.(next);
+  };
+
   const renderToothCopyHandle = (toothNumber: string, canDrag: boolean) => {
     const isSource = toothCopyDrag?.sourceTooth === toothNumber;
     return (
@@ -2172,7 +2261,7 @@ export const PracticeTransferRequestIntakePanel = ({
         data-no-tooth-marquee=""
         data-tooth-copy-handle={toothNumber}
         className={cn(
-          "relative z-20 mt-auto mb-0.5 inline-flex shrink-0 select-none items-center rounded-full px-1.5 py-0.5 text-[11px] font-semibold leading-none tracking-tight transition-colors",
+          "relative z-20 inline-flex shrink-0 select-none items-center rounded-full px-1.5 py-0.5 text-[11px] font-semibold leading-none tracking-tight transition-colors",
           canDrag
             ? "cursor-grab border border-primary-muted/80 bg-primary-soft text-primary-strong shadow-sm hover:border-primary/70 hover:bg-primary/15 hover:text-primary-strong active:cursor-grabbing"
             : "cursor-default border border-transparent bg-slate-100/70 text-slate-400",
@@ -2190,6 +2279,210 @@ export const PracticeTransferRequestIntakePanel = ({
       </span>
     );
   };
+
+  const renderToothShadeBadge = (
+    toothNumber: string,
+    shadeRaw: string | undefined,
+  ) => {
+    const shade = normalizeToothShade(shadeRaw);
+    const isCustom = Boolean(shade) && !isToothShadePreset(shade);
+    const menuOpen = shadeMenuTooth === toothNumber;
+    const customOpen = shadeCustomMenuTooth === toothNumber;
+    // 직접 입력 편집 중만 「입력」선택. 저장된 커스텀(B2 등)은 해당 항목이 선택됨.
+    const radioValue = customOpen ? TOOTH_SHADE_CUSTOM_OPTION : shade;
+    const savedCustoms = normalizeShadeFavorites(shadeFavoritesProp).filter(
+      (item) => !isToothShadePreset(item),
+    );
+
+    return (
+      <div className="relative z-20 flex max-w-full items-center justify-center gap-0.5">
+        <DropdownMenu
+          open={menuOpen}
+          onOpenChange={(open) => {
+            if (open) {
+              setShadeMenuTooth(toothNumber);
+              setShadeCustomDraft(isCustom ? shade : "");
+              setShadeCustomMenuTooth(isCustom ? toothNumber : null);
+              return;
+            }
+            if (shadeMenuTooth === toothNumber) setShadeMenuTooth(null);
+            if (shadeCustomMenuTooth === toothNumber) {
+              setShadeCustomMenuTooth(null);
+              setShadeCustomDraft("");
+            }
+          }}
+        >
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              data-no-tooth-marquee=""
+              data-tooth-shade-toggle={toothNumber}
+              className={cn(
+                "inline-flex max-w-full shrink-0 select-none items-center justify-center rounded-full px-1.5 py-0.5 text-[11px] font-semibold leading-none tracking-tight transition-colors",
+                shade
+                  ? "border border-amber-300/90 bg-amber-50 text-amber-900 shadow-sm hover:border-amber-400 hover:bg-amber-100"
+                  : "border border-slate-200/90 bg-white/90 text-slate-500 hover:border-primary/50 hover:bg-primary-soft/60 hover:text-primary-strong",
+              )}
+              title="쉐이드 선택"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              <span className="truncate">{shade || "쉐이드"}</span>
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="center"
+            className="w-max min-w-[5.5rem] p-1"
+            data-no-tooth-marquee=""
+            onCloseAutoFocus={(e) => e.preventDefault()}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <DropdownMenuRadioGroup
+              value={radioValue}
+              onValueChange={(value) => {
+                if (value === TOOTH_SHADE_CUSTOM_OPTION) {
+                  setShadeCustomMenuTooth(toothNumber);
+                  setShadeCustomDraft(isCustom ? shade : "");
+                  window.setTimeout(() => shadeCustomInputRef.current?.focus(), 0);
+                  return;
+                }
+                applyToothShade(toothNumber, value);
+                setShadeCustomMenuTooth(null);
+                setShadeCustomDraft("");
+                setShadeMenuTooth(null);
+              }}
+            >
+              {TOOTH_SHADE_PRESETS.map((preset) => (
+                <DropdownMenuRadioItem
+                  key={preset}
+                  value={preset}
+                  className="text-xs"
+                  data-no-tooth-marquee=""
+                >
+                  {preset}
+                </DropdownMenuRadioItem>
+              ))}
+              {savedCustoms.map((favorite) => (
+                <DropdownMenuRadioItem
+                  key={`shade-fav-${favorite}`}
+                  value={favorite}
+                  className="pr-1 text-xs"
+                  data-no-tooth-marquee=""
+                >
+                  <span className="min-w-0 flex-1 truncate">{favorite}</span>
+                  <button
+                    type="button"
+                    className="ml-1 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                    title="계정에서 삭제"
+                    aria-label={`${favorite} 삭제`}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      removeShadeFavorite(favorite);
+                      if (normalizeToothShade(shade).toLowerCase() === favorite.toLowerCase()) {
+                        applyToothShade(toothNumber, "", { rememberFavorite: false });
+                      }
+                    }}
+                  >
+                    <X className="h-3 w-3" strokeWidth={2.5} />
+                  </button>
+                </DropdownMenuRadioItem>
+              ))}
+              <DropdownMenuRadioItem
+                value={TOOTH_SHADE_CUSTOM_OPTION}
+                className="text-xs"
+                data-no-tooth-marquee=""
+                onSelect={(e) => e.preventDefault()}
+              >
+                입력
+              </DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+            {customOpen ? (
+              <>
+                <DropdownMenuSeparator />
+                <div
+                  className="flex items-center gap-1 px-1.5 pb-1.5 pt-0.5"
+                  data-no-tooth-marquee=""
+                  onPointerDown={(e) => e.stopPropagation()}
+                >
+                  <Input
+                    ref={shadeCustomInputRef}
+                    value={shadeCustomDraft}
+                    maxLength={24}
+                    placeholder="예: B2"
+                    className="h-7 flex-1 text-xs"
+                    onChange={(e) => setShadeCustomDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key !== "Enter") return;
+                      e.preventDefault();
+                      applyToothShade(toothNumber, shadeCustomDraft);
+                      setShadeCustomMenuTooth(null);
+                      setShadeCustomDraft("");
+                      setShadeMenuTooth(null);
+                    }}
+                  />
+                  {shadeCustomDraft ? (
+                    <button
+                      type="button"
+                      className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                      title="입력 지우기"
+                      aria-label="입력 지우기"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setShadeCustomDraft("");
+                        window.setTimeout(() => shadeCustomInputRef.current?.focus(), 0);
+                      }}
+                    >
+                      <X className="h-3.5 w-3.5" strokeWidth={2.5} />
+                    </button>
+                  ) : null}
+                </div>
+              </>
+            ) : null}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        {shade ? (
+          <button
+            type="button"
+            data-no-tooth-marquee=""
+            className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-amber-800/70 hover:bg-amber-100 hover:text-amber-950"
+            title="쉐이드 지우기"
+            aria-label="쉐이드 지우기"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              applyToothShade(toothNumber, "", { rememberFavorite: false });
+              if (shadeMenuTooth === toothNumber) setShadeMenuTooth(null);
+            }}
+          >
+            <X className="h-3 w-3" strokeWidth={2.5} />
+          </button>
+        ) : null}
+      </div>
+    );
+  };
+
+  const renderToothFooter = (
+    toothNumber: string,
+    options: {
+      canDragCopy: boolean;
+      shade?: string;
+      showShade: boolean;
+    },
+  ) => (
+    <div className="relative z-20 mt-auto mb-0.5 flex w-full flex-col items-center gap-0.5">
+      {options.showShade
+        ? renderToothShadeBadge(toothNumber, options.shade)
+        : null}
+      {renderToothCopyHandle(toothNumber, options.canDragCopy)}
+    </div>
+  );
 
   useEffect(() => {
     let overlayPointer = false;
@@ -4025,7 +4318,10 @@ export const PracticeTransferRequestIntakePanel = ({
                           >
                             {toothNumber}
                           </span>
-                          {renderToothCopyHandle(toothNumber, false)}
+                          {renderToothFooter(toothNumber, {
+                            canDragCopy: false,
+                            showShade: false,
+                          })}
                         </div>
                       ) : null;
 
@@ -4340,7 +4636,7 @@ export const PracticeTransferRequestIntakePanel = ({
                               {row.toothNumber}
                             </span>
 
-                            {/* 2) 치아형태 — 글자 클릭 시에만 인레이→크라운→커스텀어벗→임시치아 / 브리지↔결손치↔유지장치↔임시치아 */}
+                            {/* 2) 치아형태 — 드롭다운 + 직접 입력(계정 저장) */}
                             {(() => {
                               const typeLabel = isMissingTooth
                                 ? NO_WORK_PROSTHESIS_TYPE
@@ -4350,71 +4646,218 @@ export const PracticeTransferRequestIntakePanel = ({
                                     isLinked,
                                     normalizedProsthesisTypes,
                                   );
+                              const typeOptions = getProsthesisTypesForLinkState(
+                                isLinked,
+                                normalizedProsthesisTypes,
+                              );
+                              const isTypeCustom =
+                                Boolean(typeLabel) &&
+                                !isBuiltinProsthesisType(typeLabel);
+                              const menuOpen = typeMenuTooth === toothNumber;
+                              const customOpen = typeCustomMenuTooth === toothNumber;
+                              const radioValue = customOpen
+                                ? TOOTH_TYPE_CUSTOM_OPTION
+                                : typeLabel;
+                              const customTypes = typeOptions.filter(
+                                (type) => !isBuiltinProsthesisType(type),
+                              );
+                              const builtinTypes = typeOptions.filter((type) =>
+                                isBuiltinProsthesisType(type),
+                              );
+
                               const typeButton = (
-                                <button
-                                  type="button"
-                                  data-no-tooth-marquee=""
-                                  data-prosthesis-type-toggle=""
-                                  className={cn(
-                                    "relative mt-1.5 flex h-7 w-full min-w-0 shrink-0 cursor-pointer items-center justify-center truncate rounded-md px-0.5 text-center text-[11px]",
-                                    isMissingTooth
-                                      ? "z-20 bg-transparent text-slate-500 hover:bg-transparent"
-                                      : "z-[1] text-slate-600 hover:bg-primary-soft hover:text-primary-strong",
-                                    toothWorkGuideTourStepId === "type" &&
-                                      !isMissingTooth &&
-                                      "practice-tooth-guide-pulse",
-                                  )}
-                                  title={
-                                    isMissingTooth
-                                      ? undefined
-                                      : isLinked
-                                        ? "클릭: 브리지 ↔ 결손치 ↔ 유지장치 ↔ 임시치아 (결손치로 바꿀 때만 해당 치아, 나머지는 연결 전체 동일)"
-                                        : "클릭: 인레이 → 크라운 → 커스텀어벗 → 임시치아"
-                                  }
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    // 마키 억제는 카드 해제용. 형태 버튼(여백 포함) 클릭은 순환한다.
-                                    const resolved = resolveNextProsthesisType(
-                                      toothWorks,
-                                      toothNumber,
-                                      normalizedProsthesisTypes,
-                                    );
-                                    if (!resolved) return;
-                                    setToothWorks((prev) => {
-                                      const current = prev[resolved.index];
-                                      if (!current) return prev;
-                                      const isLinkedSpan =
-                                        collectAdjacentBridgeLinks(prev, current.toothNumber)
-                                          .length > 0;
-                                      if (isLinkedSpan) {
-                                        const cycled = applyCycledLinkedSpanProsthesisType(
-                                          prev,
-                                          current.toothNumber,
-                                          resolved.nextType,
-                                          linkedSpanTypeSnapshotRef.current,
-                                          lockedMode ?? defaultAbutmentProductMode,
-                                        );
-                                        linkedSpanTypeSnapshotRef.current = cycled.snapshot;
-                                        return cycled.rows;
-                                      }
-                                      const next = [...prev];
-                                      next[resolved.index] = applyIntakeProsthesisType(
-                                        current,
-                                        resolved.nextType,
+                                <DropdownMenu
+                                  open={menuOpen}
+                                  onOpenChange={(open) => {
+                                    if (open) {
+                                      setTypeMenuTooth(toothNumber);
+                                      setTypeCustomDraft(isTypeCustom ? typeLabel : "");
+                                      setTypeCustomMenuTooth(
+                                        isTypeCustom ? toothNumber : null,
                                       );
-                                      return next;
-                                    });
-                                    // 형태 글자 클릭은 타입만 순환. 모달은 어벗 체크·상세 클릭에서만.
-                                    suppressAbutmentCheckboxUntilRef.current = Date.now() + 500;
-                                    if (customSpecsModalTarget === resolved.index) {
-                                      customSpecsModalSnapshotRef.current = null;
-                                      closeCustomSpecsModal();
+                                      return;
+                                    }
+                                    if (typeMenuTooth === toothNumber) {
+                                      setTypeMenuTooth(null);
+                                    }
+                                    if (typeCustomMenuTooth === toothNumber) {
+                                      setTypeCustomMenuTooth(null);
+                                      setTypeCustomDraft("");
                                     }
                                   }}
                                 >
-                                  {typeLabel}
-                                </button>
+                                  <DropdownMenuTrigger asChild>
+                                    <button
+                                      type="button"
+                                      data-no-tooth-marquee=""
+                                      data-prosthesis-type-toggle=""
+                                      className={cn(
+                                        "relative mt-1.5 flex h-7 w-full min-w-0 shrink-0 cursor-pointer items-center justify-center gap-0.5 truncate rounded-md px-0.5 text-center text-[11px]",
+                                        isMissingTooth
+                                          ? "z-20 bg-transparent text-slate-500 hover:bg-slate-100/80"
+                                          : "z-[1] text-slate-600 hover:bg-primary-soft hover:text-primary-strong",
+                                        toothWorkGuideTourStepId === "type" &&
+                                          "practice-tooth-guide-pulse",
+                                      )}
+                                      title="보철물 형태 선택"
+                                      onClick={(e) => e.stopPropagation()}
+                                      onPointerDown={(e) => e.stopPropagation()}
+                                    >
+                                      <span className="min-w-0 truncate">{typeLabel}</span>
+                                      <ChevronsUpDown className="h-3 w-3 shrink-0 opacity-50" />
+                                    </button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent
+                                    align="center"
+                                    className="w-max min-w-[6rem] p-1"
+                                    data-no-tooth-marquee=""
+                                    onCloseAutoFocus={(e) => e.preventDefault()}
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <DropdownMenuRadioGroup
+                                      value={radioValue}
+                                      onValueChange={(value) => {
+                                        if (value === TOOTH_TYPE_CUSTOM_OPTION) {
+                                          setTypeCustomMenuTooth(toothNumber);
+                                          setTypeCustomDraft(
+                                            isTypeCustom ? typeLabel : "",
+                                          );
+                                          window.setTimeout(
+                                            () => typeCustomInputRef.current?.focus(),
+                                            0,
+                                          );
+                                          return;
+                                        }
+                                        applyProsthesisTypeFromMenu(toothNumber, value);
+                                        setTypeCustomMenuTooth(null);
+                                        setTypeCustomDraft("");
+                                        setTypeMenuTooth(null);
+                                      }}
+                                    >
+                                      {builtinTypes.map((type) => (
+                                        <DropdownMenuRadioItem
+                                          key={type}
+                                          value={type}
+                                          className="text-xs"
+                                          data-no-tooth-marquee=""
+                                        >
+                                          {type}
+                                        </DropdownMenuRadioItem>
+                                      ))}
+                                      {customTypes.map((type) => (
+                                        <DropdownMenuRadioItem
+                                          key={`type-custom-${type}`}
+                                          value={type}
+                                          className="pr-1 text-xs"
+                                          data-no-tooth-marquee=""
+                                        >
+                                          <span className="min-w-0 flex-1 truncate">
+                                            {type}
+                                          </span>
+                                          <button
+                                            type="button"
+                                            className="ml-1 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                                            title="계정에서 삭제"
+                                            aria-label={`${type} 삭제`}
+                                            onPointerDown={(e) => e.stopPropagation()}
+                                            onClick={(e) => {
+                                              e.preventDefault();
+                                              e.stopPropagation();
+                                              removeCustomProsthesisType(type);
+                                              if (
+                                                typeLabel.toLowerCase() ===
+                                                type.toLowerCase()
+                                              ) {
+                                                const fallback =
+                                                  builtinTypes[0] ||
+                                                  resolveProsthesisTypeForLinkState(
+                                                    "",
+                                                    isLinked,
+                                                    normalizedProsthesisTypes,
+                                                  );
+                                                if (fallback) {
+                                                  applyProsthesisTypeFromMenu(
+                                                    toothNumber,
+                                                    fallback,
+                                                  );
+                                                }
+                                              }
+                                            }}
+                                          >
+                                            <X className="h-3 w-3" strokeWidth={2.5} />
+                                          </button>
+                                        </DropdownMenuRadioItem>
+                                      ))}
+                                      <DropdownMenuRadioItem
+                                        value={TOOTH_TYPE_CUSTOM_OPTION}
+                                        className="text-xs"
+                                        data-no-tooth-marquee=""
+                                        onSelect={(e) => e.preventDefault()}
+                                      >
+                                        입력
+                                      </DropdownMenuRadioItem>
+                                    </DropdownMenuRadioGroup>
+                                    {customOpen ? (
+                                      <>
+                                        <DropdownMenuSeparator />
+                                        <div
+                                          className="flex items-center gap-1 px-1.5 pb-1.5 pt-0.5"
+                                          data-no-tooth-marquee=""
+                                          onPointerDown={(e) => e.stopPropagation()}
+                                        >
+                                          <Input
+                                            ref={typeCustomInputRef}
+                                            value={typeCustomDraft}
+                                            maxLength={24}
+                                            placeholder="예: 비니어"
+                                            className="h-7 flex-1 text-xs"
+                                            onChange={(e) =>
+                                              setTypeCustomDraft(e.target.value)
+                                            }
+                                            onKeyDown={(e) => {
+                                              if (e.key !== "Enter") return;
+                                              e.preventDefault();
+                                              const nextType =
+                                                String(typeCustomDraft || "").trim();
+                                              if (!nextType) return;
+                                              applyProsthesisTypeFromMenu(
+                                                toothNumber,
+                                                nextType,
+                                                { ensureInCatalog: true },
+                                              );
+                                              setTypeCustomMenuTooth(null);
+                                              setTypeCustomDraft("");
+                                              setTypeMenuTooth(null);
+                                            }}
+                                          />
+                                          {typeCustomDraft ? (
+                                            <button
+                                              type="button"
+                                              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                                              title="입력 지우기"
+                                              aria-label="입력 지우기"
+                                              onClick={(e) => {
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                                setTypeCustomDraft("");
+                                                window.setTimeout(
+                                                  () =>
+                                                    typeCustomInputRef.current?.focus(),
+                                                  0,
+                                                );
+                                              }}
+                                            >
+                                              <X
+                                                className="h-3.5 w-3.5"
+                                                strokeWidth={2.5}
+                                              />
+                                            </button>
+                                          ) : null}
+                                        </div>
+                                      </>
+                                    ) : null}
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
                               );
                               if (!isMissingTooth) return typeButton;
                               return (
@@ -4592,7 +5035,11 @@ export const PracticeTransferRequestIntakePanel = ({
                                 </p>
                               );
                             })()}
-                            {renderToothCopyHandle(toothNumber, true)}
+                            {renderToothFooter(toothNumber, {
+                              canDragCopy: true,
+                              shade: row.shade,
+                              showShade: !isMissingTooth,
+                            })}
                           </div>
                           </div>
                           {bridgeControl}

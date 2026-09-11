@@ -42,6 +42,8 @@ const buildToothWorksHtml = (toothWorks: ToothWorkSelection[]) => {
       const type = String(row.prosthesisType || "보철").trim() || "보철";
       const isMissing = isMissingToothProsthesisType(row.prosthesisType);
       const details: string[] = [];
+      const shade = String(row.shade || "").trim();
+      if (shade && !isMissing) details.push(`쉐이드 ${shade}`);
       if (
         !isMissing &&
         isCustomAbutmentSupportedProsthesisType(row.prosthesisType) &&

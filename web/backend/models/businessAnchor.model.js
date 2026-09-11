@@ -760,6 +760,11 @@ const businessAnchorSchema = new mongoose.Schema(
         type: [String],
         default: [],
       },
+      /** 치아 카드 쉐이드 직접 입력(MRU). A2·A3·A1·A3.5 프리셋은 제외 */
+      shadeFavorites: {
+        type: [String],
+        default: [],
+      },
       implantFavorites: {
         type: [
           {

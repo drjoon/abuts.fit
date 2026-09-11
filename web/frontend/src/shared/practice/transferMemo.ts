@@ -5,6 +5,7 @@
 // - web/backend/services/practiceTransferProduction.service.js
 // - web/backend/controllers/practiceTransfers/practiceTransferSettings.controller.js
 // change-log:
+// - 2026-09-11: toothWorks.shade — Vita 프리셋(A2·A3·A1·A3.5) + 직접 입력. 메모 직렬화 `#A2`.
 // - 2026-09-02: formatImplantSummary — 도입중(implantAddRequest)이어도 실제 brand/family/type 표시(자리표시만 축약).
 // - 2026-09-02: 치식 직렬화 `{…/…/+add}` — implantAddRequest 왕복(요청중 CA가 어벗츠 업로드로 오인되지 않게).
 // - 2026-09-01: 기공의뢰 caseInfos.tooth는 toothWorks 치식 SSOT(파일명 추출 금지). 단치아면 파일에도 반영.
@@ -73,6 +74,50 @@ export const ABUTMENT_PRODUCT_MODE_SHORT_LABEL: Record<AbutmentProductMode, stri
 const CUSTOM_ABUTMENT_DESIGN_TOKEN = "커스텀어벗디자인생산";
 const CUSTOM_ABUTMENT_TOKEN = "커스텀어벗";
 
+/** 치아 카드 쉐이드 프리셋 순서(드롭다운). 「입력」은 직접 입력 */
+export const TOOTH_SHADE_PRESETS = ["A2", "A3", "A1", "A3.5"] as const;
+export type ToothShadePreset = (typeof TOOTH_SHADE_PRESETS)[number];
+
+export const normalizeToothShade = (value: unknown) =>
+  String(value || "")
+    .trim()
+    .slice(0, 24);
+
+export const isToothShadePreset = (value: unknown): value is ToothShadePreset =>
+  (TOOTH_SHADE_PRESETS as readonly string[]).includes(String(value || "").trim());
+
+/** 계정에 저장하는 직접 입력 쉐이드(프리셋 제외). MRU 앞쪽 */
+export const MAX_SHADE_FAVORITES = 24;
+
+export const normalizeShadeFavorites = (items: unknown): string[] => {
+  if (!Array.isArray(items)) return [];
+  const seen = new Set<string>();
+  const next: string[] = [];
+  for (const item of items) {
+    const text = normalizeToothShade(item);
+    if (!text) continue;
+    if (isToothShadePreset(text)) continue;
+    const key = text.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    next.push(text);
+    if (next.length >= MAX_SHADE_FAVORITES) break;
+  }
+  return next;
+};
+
+/** 새 직접 입력을 맨 앞에 두고 중복·프리셋 제거 */
+export const rememberShadeFavorite = (
+  prev: unknown,
+  shadeRaw: unknown,
+): string[] => {
+  const shade = normalizeToothShade(shadeRaw);
+  if (!shade || isToothShadePreset(shade)) {
+    return normalizeShadeFavorites(prev);
+  }
+  return normalizeShadeFavorites([shade, ...(Array.isArray(prev) ? prev : [])]);
+};
+
 export type ToothWorkSelection = {
   toothNumber: string;
   prosthesisType: string;
@@ -80,6 +125,8 @@ export type ToothWorkSelection = {
   /** 커스텀어벗일 때만 의미. 신규 선택은 계정 기본(디자인+생산). 미설정 레거시는 생산만 */
   abutmentProductMode?: AbutmentProductMode;
   bridgeLinkedTeeth: string[];
+  /** Vita 등 쉐이드(A2·A3…). 비우면 미선택. 프리셋 외 값은 직접 입력 */
+  shade?: string;
   /** 커스텀어벗일 때만 의미 있음. 동기화/임시저장 memo에 포함 */
   implantManufacturer?: string;
   implantBrand?: string;
@@ -890,12 +937,14 @@ export const normalizeToothWorks = (items: ToothWorkSelection[]) =>
               .filter((v) => adjacent.includes(v))
           : [];
 
+      const shade = normalizeToothShade(row?.shade);
       return {
         toothNumber,
         prosthesisType,
         customAbutment,
         ...pickToothWorkAbutmentProductMode(row, customAbutment),
         bridgeLinkedTeeth,
+        ...(shade ? { shade } : {}),
         ...clearSimpleAbutmentIfCustomProsthesis({
           prosthesisType,
           ...pickToothWorkCustomSpecs(row, customAbutment),
@@ -931,12 +980,14 @@ export const normalizeToothWorksForSync = (items: ToothWorkSelection[]) =>
               .filter((v) => adjacent.includes(v))
           : [];
 
+      const shade = normalizeToothShade(row?.shade);
       return {
         toothNumber,
         prosthesisType,
         customAbutment,
         ...pickToothWorkAbutmentProductMode(row, customAbutment),
         bridgeLinkedTeeth,
+        ...(shade ? { shade } : {}),
         ...clearSimpleAbutmentIfCustomProsthesis({
           prosthesisType,
           ...pickToothWorkCustomSpecs(row, customAbutment),
@@ -988,6 +1039,12 @@ export const parseToothWorks = (value: string) =>
         customAbutment = true;
       }
 
+      const shadeMatch = withoutLinked.match(/#(.+)$/);
+      const shade = shadeMatch ? normalizeToothShade(shadeMatch[1]) : "";
+      withoutLinked = shadeMatch
+        ? withoutLinked.slice(0, shadeMatch.index).trim()
+        : withoutLinked;
+
       const prosthesisType = toCanonicalProsthesisType(
         withoutLinked ||
           (customAbutment ? CUSTOM_ABUTMENT_PROSTHESIS_TYPE : toothNumber ? "크라운" : ""),
@@ -1008,6 +1065,7 @@ export const parseToothWorks = (value: string) =>
           customAbutment,
         ),
         bridgeLinkedTeeth,
+        ...(shade ? { shade } : {}),
         ...pickToothWorkCustomSpecs(specsParsed, customAbutment),
       };
     })
@@ -1029,7 +1087,9 @@ export const serializeToothWorks = (rows: ToothWorkSelection[]) =>
         isCustomAbutmentSupportedProsthesisType(row.prosthesisType) && row.customAbutment
           ? `${serializeCustomAbutmentToken(row)}${serializeCustomSpecsSuffix(row)}`
           : "";
-      return `${row.toothNumber}=${row.prosthesisType}${custom}${linked}`;
+      const shade = normalizeToothShade(row.shade);
+      const shadeToken = shade ? `#${shade}` : "";
+      return `${row.toothNumber}=${row.prosthesisType}${shadeToken}${custom}${linked}`;
     })
     .join(" | ");
 
@@ -1052,7 +1112,9 @@ export const serializeToothWorksForSync = (rows: ToothWorkSelection[]) =>
         (isCustomAbutmentProsthesisType(prosthesisType) || row.customAbutment)
           ? `${serializeCustomAbutmentToken(row)}${serializeCustomSpecsSuffix(row)}`
           : "";
-      return `${toothToken}=${prosthesisType}${custom}${linked}`;
+      const shade = normalizeToothShade(row.shade);
+      const shadeToken = shade ? `#${shade}` : "";
+      return `${toothToken}=${prosthesisType}${shadeToken}${custom}${linked}`;
     })
     .join(" | ");
 
@@ -1077,6 +1139,8 @@ export const formatToothWorksForDisplay = (
       ? String(row.prosthesisType || "").replace(/커스텀어벗/g, customAbutmentLabel)
       : row.prosthesisType;
     const details = [prosthesisLabel];
+    const shade = normalizeToothShade(row.shade);
+    if (shade) details.push(`쉐이드 ${shade}`);
     if (row.customAbutment) {
       const modeLabel =
         ABUTMENT_PRODUCT_MODE_SHORT_LABEL[resolveToothAbutmentProductMode(row)];

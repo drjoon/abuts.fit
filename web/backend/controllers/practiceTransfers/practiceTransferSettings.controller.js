@@ -17,6 +17,7 @@ import { loadStarBandEligibleLabAnchorIds } from "../../utils/practiceTransferAu
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
+// - 2026-09-11: shadeFavorites — 치아 카드 직접 입력 쉐이드 계정 저장.
 // - 2026-08-14: autoMatchBudget(자동매칭 기공비 min/max).
 // - 2026-08-14: autoMatchMinLabRating(자동매칭 최소 별·2nd chance).
 // - 2026-08-16: autoMatchBudget version3 — minPct/maxPct.
@@ -50,6 +51,7 @@ const DEFAULT_ARCH_BULK_PROSTHESIS_TYPES = [
 ];
 const MAX_ARCH_BULK_PROSTHESIS_TYPES = 20;
 const MAX_MEMO_SNIPPETS = 40;
+const MAX_SHADE_FAVORITES = 24;
 const MAX_IMPLANT_FAVORITES = 40;
 const MAX_ABUTMENT_FAVORITES = 40;
 
@@ -100,6 +102,24 @@ const normalizeMemoSnippets = (items) => {
   }
 
   return Array.from(dedup.values()).slice(0, MAX_MEMO_SNIPPETS);
+};
+
+const SHADE_PRESET_KEYS = new Set(["a2", "a3", "a1", "a3.5"]);
+
+const normalizeShadeFavorites = (items) => {
+  const list = Array.isArray(items) ? items : [];
+  const dedup = new Map();
+
+  for (const item of list) {
+    const trimmed = String(item || "").trim().slice(0, 24);
+    if (!trimmed) continue;
+    const key = trimmed.toLowerCase();
+    // 프리셋(A2·A3·A1·A3.5)은 드롭다운 고정 — 즐겨찾기에 중복 저장하지 않음
+    if (SHADE_PRESET_KEYS.has(key)) continue;
+    if (!dedup.has(key)) dedup.set(key, trimmed);
+  }
+
+  return Array.from(dedup.values()).slice(0, MAX_SHADE_FAVORITES);
 };
 
 const normalizeImplantFavorites = (items) => {
@@ -302,6 +322,7 @@ const toSettingsResponse = async (anchor, { persistHydrated = false } = {}) => {
       settings?.requestStagePresets,
     ),
     memoSnippets: normalizeMemoSnippets(settings?.memoSnippets),
+    shadeFavorites: normalizeShadeFavorites(settings?.shadeFavorites),
     implantFavorites,
     abutmentFavorites: normalizeAbutmentFavorites(settings?.abutmentFavorites),
     promoNoticeDismissedAt,
@@ -389,6 +410,7 @@ export async function upsertPracticeTransferSettings(req, res) {
       "requestStagePresets",
     );
     const hasMemoSnippets = Object.prototype.hasOwnProperty.call(body, "memoSnippets");
+    const hasShadeFavorites = Object.prototype.hasOwnProperty.call(body, "shadeFavorites");
     const hasImplantFavorites = Object.prototype.hasOwnProperty.call(body, "implantFavorites");
     const hasAbutmentFavorites = Object.prototype.hasOwnProperty.call(body, "abutmentFavorites");
     const hasPromoNoticeDismissedAt = Object.prototype.hasOwnProperty.call(body, "promoNoticeDismissedAt");
@@ -446,6 +468,11 @@ export async function upsertPracticeTransferSettings(req, res) {
     }
     if (hasMemoSnippets) {
       setPatch["practiceTransferSettings.memoSnippets"] = normalizeMemoSnippets(body.memoSnippets);
+    }
+    if (hasShadeFavorites) {
+      setPatch["practiceTransferSettings.shadeFavorites"] = normalizeShadeFavorites(
+        body.shadeFavorites,
+      );
     }
     if (hasImplantFavorites) {
       setPatch["practiceTransferSettings.implantFavorites"] =
