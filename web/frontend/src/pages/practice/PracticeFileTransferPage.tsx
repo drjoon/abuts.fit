@@ -10002,7 +10002,7 @@ export const PracticeFileTransferPage = ({
             void toggleReaction(messageId, emoji)
           }
           onDeleteMessage={(messageId) => void deleteMessage(messageId)}
-          composerPlaceholder="문의 내용을 입력하세요 (# 로 의뢰건 불러오기)"
+          composerPlaceholder="문의 내용을 입력하세요"
           requestPicks={recentRequests
             .map((row) => ({
               requestId: String(row.transferId || "").trim(),

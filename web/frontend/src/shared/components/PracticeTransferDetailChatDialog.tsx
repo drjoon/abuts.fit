@@ -517,7 +517,7 @@ type PracticeTransferDetailChatDialogProps = {
   onDeleteMessage?: (messageId: string) => void | Promise<void>;
   composerPlaceholder: string;
   inputDisabled: boolean;
-  /** # 로 삽입할 의뢰건 목록 */
+  /** $ 로 삽입할 의뢰건 목록 */
   requestPicks?: RequestPickItem[];
   requestPicksLoading?: boolean;
   onRequestPicksNeeded?: () => void;

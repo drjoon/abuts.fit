@@ -7,7 +7,8 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferMobileOralPhotoIntake.tsx
 // - web/frontend/src/features/chat/components/NewChatWidget.tsx
 // change-log:
-// - 2026-09-11: toolbarExtra — # 옆 메모·평가 아이콘 슬롯.
+// - 2026-09-12: 의뢰건 불러오기 트리거 # → $ (입력·DollarSign 버튼). placeholder 안내 문구 제거.
+// - 2026-09-11: toolbarExtra — $ 옆 메모·평가 아이콘 슬롯.
 // - 2026-09-07: 의뢰건 불러오기 트리거 $ → # 통일(입력·placeholder·Hash 버튼).
 // - 2026-09-07: # 목록 화살표 선택·의뢰ID+환자이름 토큰 삽입.
 // - 2026-09-07: # 입력으로 의뢰건 불러오기·placeholder 안내.
@@ -28,7 +29,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Camera, Hash, Paperclip, Send } from "lucide-react";
+import { Camera, DollarSign, Paperclip, Send } from "lucide-react";
 import type { BackgroundUploadItem } from "@/shared/hooks/useBackgroundTempUpload";
 import { BackgroundUploadList } from "@/shared/components/upload/BackgroundUploadList";
 import {
@@ -51,20 +52,19 @@ export type RequestPickItem = {
   tooth?: string;
 };
 
-/** `#검색어` 멘션 — 커서 앞 구간에서 마지막 `#…` */
+/** `$검색어` 멘션 — 커서 앞 구간에서 마지막 `$…` */
 export const getHashMentionAtCursor = (
   value: string,
   cursor: number,
 ): { start: number; query: string } | null => {
   const safeCursor = Math.max(0, Math.min(cursor, value.length));
   const before = value.slice(0, safeCursor);
-  const match = before.match(/#([^\s#]*)$/);
+  const match = before.match(/\$([^\s$]*)$/);
   if (!match || match.index == null) return null;
   return { start: match.index, query: String(match[1] || "") };
 };
 
-export const CHAT_CASE_MENTION_PLACEHOLDER =
-  "메시지를 입력하세요 (# 로 의뢰건 불러오기)";
+export const CHAT_CASE_MENTION_PLACEHOLDER = "메시지를 입력하세요";
 
 type Props = {
   draft: string;
@@ -81,7 +81,7 @@ type Props = {
   onRetryPendingFile?: (id: string) => void;
 
   requestPicks?: RequestPickItem[];
-  /** # 로 의뢰 목록이 필요할 때(지연 로드) */
+  /** $ 로 의뢰 목록이 필요할 때(지연 로드) */
   onRequestPicksNeeded?: () => void;
   requestPicksLoading?: boolean;
   onInsertRequestId?: (requestId: string) => void;
@@ -91,7 +91,7 @@ type Props = {
 
   /** 모달 등 — 하단 여백을 줄인 컴팩트 패딩 */
   compact?: boolean;
-  /** # 버튼 오른쪽(메모·평가 아이콘 등) */
+  /** $ 버튼 오른쪽(메모·평가 아이콘 등) */
   toolbarExtra?: ReactNode;
   className?: string;
 };
@@ -366,7 +366,7 @@ export const ChatComposer = (props: Props) => {
           <div className="rounded-lg border bg-popover p-2 shadow-md">
             <div className="mb-1 px-1 text-[11px] font-medium text-muted-foreground">
               의뢰건 선택
-              {mention?.query ? ` · “${mention.query}”` : " · # 검색"}
+              {mention?.query ? ` · “${mention.query}”` : " · $ 검색"}
             </div>
             {renderPickList(insertCaseToken)}
           </div>
@@ -536,15 +536,15 @@ export const ChatComposer = (props: Props) => {
                   size="icon"
                   className={iconBtnClass}
                   disabled={controlsDisabled}
-                  title="의뢰건 불러오기 (#)"
+                  title="의뢰건 불러오기 ($)"
                   aria-label="의뢰건 불러오기"
                 >
-                  <Hash className={isMobile ? "h-5 w-5" : "h-4 w-4"} />
+                  <DollarSign className={isMobile ? "h-5 w-5" : "h-4 w-4"} />
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-80 p-2" align="start">
                 <div className="mb-1 px-1 text-[11px] font-medium text-muted-foreground">
-                  의뢰건 선택 · # 로도 불러올 수 있습니다
+                  의뢰건 선택 · $ 로도 불러올 수 있습니다
                 </div>
                 {renderPickList(insertCaseToken)}
               </PopoverContent>
