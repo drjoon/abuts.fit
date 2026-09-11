@@ -23,6 +23,7 @@ import {
   listRemakePartOptions,
   selectedKeysToRemakeParts,
   buildToothWorksFromRemakeSelection,
+  summarizeRemakeSelection,
   type RemakeSelectedPart,
 } from "@/features/chat/components/chatRemakeParts";
 import { toKstYmd } from "@/shared/date/kst";
@@ -475,20 +476,13 @@ export function ChatRemakePromptDialog({
       onConfirm={() => {
         if (!canSubmitRemake) return;
         const parts = selectedKeysToRemakeParts(partOptions, selectedKeys);
-        const labels = partOptions
-          .filter((o) => selectedKeys.has(o.key))
-          .map((o) =>
-            isAbutmentRemake && o.kind === "ca"
-              ? `${o.toothNumber || "—"} · 어벗`
-              : o.label,
-          );
         void onResolve({
           kind: "remake",
           arrivalYmd,
           includeCustomAbutment: parts.some((p) => p.customAbutment),
           selectedParts: parts,
           remakeFeeTotal,
-          summaryLabel: labels.join(", "),
+          summaryLabel: summarizeRemakeSelection(partOptions, selectedKeys),
         });
       }}
       onCancel={() => {

@@ -26,6 +26,8 @@ import {
   buildToothWorksFromRemakeSelection,
   collectChargedRemakePartKeys,
   remakeChargeSourceLabel,
+  summarizeRemakeSelection,
+  compactRemakeSummaryLabel,
   type RemakePartOption,
 } from "@/features/chat/components/chatRemakeParts";
 import {
@@ -476,9 +478,9 @@ export function LabRemakeChargeDialog({
                         ),
                       );
                       const label =
-                        String(row?.summaryLabel || "")
-                          .trim()
-                          .replace(/커스텀어벗/g, "어벗") ||
+                        compactRemakeSummaryLabel(
+                          String(row?.summaryLabel || "").trim(),
+                        ) ||
                         (Array.isArray(row?.toothNumbers) &&
                         row.toothNumbers.length
                           ? row.toothNumbers.map((t) => `#${t}`).join(", ")
@@ -591,17 +593,13 @@ export function LabRemakeChargeDialog({
       onConfirm={() => {
         if (!canSubmit) return;
         const parts = selectedKeysToRemakeParts(partOptions, activeSelectedKeys);
-        const labels = partOptions
-          .filter((o) => activeSelectedKeys.has(o.key))
-          .map((o) =>
-            o.kind === "ca"
-              ? `${o.toothNumber || "—"} · 어벗`
-              : o.label,
-          );
         void onConfirm({
           selectedParts: parts,
           remakeFeeTotal,
-          summaryLabel: labels.join(", "),
+          summaryLabel: summarizeRemakeSelection(
+            partOptions,
+            activeSelectedKeys,
+          ),
         });
       }}
       onCancel={() => {

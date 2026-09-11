@@ -24,6 +24,139 @@ import {
 } from "../utils/labFeeSchedule.js";
 import { practiceTransferNotDeletedMongoFilter } from "../utils/practiceTransferStage.js";
 
+/** FDI 악궁 순 — 연속 치아 구간 축약용 (FE chatRemakeParts와 동일) */
+const UPPER_ARCH_TEETH = [
+  "18",
+  "17",
+  "16",
+  "15",
+  "14",
+  "13",
+  "12",
+  "11",
+  "21",
+  "22",
+  "23",
+  "24",
+  "25",
+  "26",
+  "27",
+  "28",
+];
+const LOWER_ARCH_TEETH = [
+  "48",
+  "47",
+  "46",
+  "45",
+  "44",
+  "43",
+  "42",
+  "41",
+  "31",
+  "32",
+  "33",
+  "34",
+  "35",
+  "36",
+  "37",
+  "38",
+];
+const ARCH_TOOTH_ORDER = [...UPPER_ARCH_TEETH, ...LOWER_ARCH_TEETH];
+const ARCH_TOOTH_INDEX = new Map(
+  ARCH_TOOTH_ORDER.map((tooth, index) => [tooth, index]),
+);
+
+/** 전체가 한 연속 구간이면 17-15, 아니면 17,15 (부분 구간 혼용 금지) */
+export function formatCompactToothNumbers(teeth) {
+  const sorted = [
+    ...new Set(
+      (Array.isArray(teeth) ? teeth : [])
+        .map((t) => String(t || "").trim())
+        .filter((t) => /^[1-4][1-8]$/.test(t)),
+    ),
+  ].sort(
+    (a, b) =>
+      (ARCH_TOOTH_INDEX.get(a) ?? Number.MAX_SAFE_INTEGER) -
+      (ARCH_TOOTH_INDEX.get(b) ?? Number.MAX_SAFE_INTEGER),
+  );
+  if (sorted.length === 0) return "";
+
+  const runs = [];
+  for (const tooth of sorted) {
+    const prevRun = runs[runs.length - 1];
+    const prev = prevRun?.[prevRun.length - 1];
+    const prevIdx = prev != null ? ARCH_TOOTH_INDEX.get(prev) : undefined;
+    const curIdx = ARCH_TOOTH_INDEX.get(tooth);
+    if (
+      prevRun &&
+      prevIdx != null &&
+      curIdx != null &&
+      curIdx === prevIdx + 1
+    ) {
+      prevRun.push(tooth);
+      continue;
+    }
+    runs.push([tooth]);
+  }
+
+  // 파닉 포함 브리지처럼 한 스팬만 있을 때만 `-`. 어벗 등 띄엄띄엄이면 전부 `,`.
+  if (runs.length === 1 && runs[0].length >= 2) {
+    const run = runs[0];
+    return `${run[0]}-${run[run.length - 1]}`;
+  }
+  return sorted.join(",");
+}
+
+/**
+ * selectedParts → `17-15 브리지, 17,15 어벗`
+ * @param {unknown[]} toothWorks
+ * @param {Array<{ index?: unknown, prosthesis?: unknown, customAbutment?: unknown, includeCustomAbutment?: unknown, ca?: unknown }>} selectedParts
+ */
+export function buildRemakePartsSummaryLabel(toothWorks, selectedParts) {
+  const rows = Array.isArray(toothWorks) ? toothWorks : [];
+  const parts = Array.isArray(selectedParts) ? selectedParts : [];
+  const typeOrder = [];
+  const teethByType = new Map();
+
+  const push = (typeLabel, tooth) => {
+    const type = String(typeLabel || "").trim() || "보철";
+    if (!teethByType.has(type)) {
+      teethByType.set(type, []);
+      typeOrder.push(type);
+    }
+    const n = String(tooth || "").trim();
+    if (n) teethByType.get(type).push(n);
+  };
+
+  for (const part of parts) {
+    if (!part || typeof part !== "object") continue;
+    const index = Math.trunc(Number(part.index));
+    if (!Number.isFinite(index) || index < 0) continue;
+    const row = rows[index] || {};
+    const tooth = String(row?.toothNumber || row?.tooth || "").trim();
+    if (part.prosthesis === true) {
+      const type = String(row?.prosthesisType || "보철").trim() || "보철";
+      push(type === "커스텀어벗" ? "어벗" : type, tooth);
+    }
+    const wantCa = Boolean(
+      part.customAbutment === true ||
+        part.includeCustomAbutment === true ||
+        part.ca === true,
+    );
+    if (wantCa) push("어벗", tooth);
+  }
+
+  return typeOrder
+    .map((typeLabel) => {
+      const teethLabel = formatCompactToothNumbers(
+        teethByType.get(typeLabel) || [],
+      );
+      return teethLabel ? `${teethLabel} ${typeLabel}` : typeLabel;
+    })
+    .filter(Boolean)
+    .join(", ");
+}
+
 export function getCaDesignUploadCountForTooth(transferDoc, tooth) {
   const key = String(tooth || "").trim();
   if (!key) return 0;
@@ -382,7 +515,9 @@ export async function applyPracticeTransferRemakeCharge({
     chargedBy: actorUserId || null,
     source: chargeSource,
     toothNumbers,
-    summaryLabel: String(summaryLabel || "").trim(),
+    summaryLabel:
+      buildRemakePartsSummaryLabel(sourceToothWorks, parts) ||
+      String(summaryLabel || "").trim(),
     selectedParts: parts,
     billingDelta: {
       labFeeTotal: deltaLabFee,
@@ -658,7 +793,7 @@ export async function applyCaReuploadRemakeCharge({
     transferDoc,
     remakeToothWorks,
     selectedParts: [{ index, prosthesis: false, customAbutment: true }],
-    summaryLabel: `#${toothKey} · 커스텀어벗`,
+    summaryLabel: toothKey ? `${toothKey} 어벗` : "어벗",
     source: "ca_reupload",
     actorUserId,
     displayLabel: "커스텀어벗 리메이크",

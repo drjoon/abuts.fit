@@ -10,7 +10,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { remakeChargeSourceLabel } from "@/features/chat/components/chatRemakeParts";
+import { remakeChargeSourceLabel, compactRemakeSummaryLabel } from "@/features/chat/components/chatRemakeParts";
 import type { PracticeTransferRemakeCharge } from "@/shared/practice/practiceTransferLabReceive";
 import { cn } from "@/shared/ui/cn";
 
@@ -103,7 +103,9 @@ export function PracticeRemakeChargesStrip({
                 ),
               );
               const label =
-                String(row?.summaryLabel || "").trim() ||
+                compactRemakeSummaryLabel(
+                  String(row?.summaryLabel || "").trim(),
+                ) ||
                 (Array.isArray(row?.toothNumbers) && row.toothNumbers.length
                   ? row.toothNumbers.map((t) => `#${t}`).join(", ")
                   : "리메이크");

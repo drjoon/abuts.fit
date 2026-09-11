@@ -37,6 +37,7 @@ import {
   applyPracticeTransferRemakeCharge,
   cancelPracticeTransferRemakeCharge,
   settleUnreleasedRemakeChargesForTransfer,
+  buildRemakePartsSummaryLabel,
 } from "../../services/practiceTransferRemakeCharge.service.js";
 import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.js";
 import {
@@ -5257,8 +5258,8 @@ export async function chargeReceivedPracticeTransferRemake(req, res) {
         ? chargeRecord.selectedParts
         : selectedParts;
     const partsLabel =
-      summaryLabel ||
       chargeRecord?.summaryLabel ||
+      summaryLabel ||
       (Array.isArray(chargeRecord?.toothNumbers) && chargeRecord.toothNumbers.length
         ? chargeRecord.toothNumbers.map((t) => `#${t}`).join(", ")
         : "리메이크");
@@ -5853,31 +5854,7 @@ export async function remakePracticeTransfers(req, res) {
           ? "기공소에서 리메이크 의뢰를 생성했습니다"
           : "리메이크 의뢰가 전달되었습니다";
       const selectedPartsLabel = Array.isArray(selectedPartsRaw)
-        ? selectedPartsRaw
-            .map((part) => {
-              const index = Math.trunc(Number(part?.index));
-              const tooth =
-                Number.isFinite(index) && index >= 0
-                  ? String(sourceToothWorks[index]?.toothNumber || "").trim()
-                  : "";
-              const bits = [];
-              if (part?.prosthesis) {
-                const type = String(
-                  sourceToothWorks[index]?.prosthesisType || "보철",
-                ).trim();
-                bits.push(tooth ? `${tooth} · ${type}` : type);
-              }
-              if (
-                part?.customAbutment === true ||
-                part?.includeCustomAbutment === true ||
-                part?.ca === true
-              ) {
-                bits.push(tooth ? `${tooth} · 어벗` : "어벗");
-              }
-              return bits.join(", ");
-            })
-            .filter(Boolean)
-            .join(", ")
+        ? buildRemakePartsSummaryLabel(sourceToothWorks, selectedPartsRaw)
         : "";
 
       created.push({

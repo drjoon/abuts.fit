@@ -160,6 +160,7 @@ import {
   LAB_FEE_SHIPPING_ITEM_NAME,
 } from "@/shared/practice/labFeeSchedule";
 import { parsePracticeTransferMemoMeta } from "@/shared/practice/transferMemo";
+import { compactRemakeSummaryLabel } from "@/features/chat/components/chatRemakeParts";
 import { formatKstYmdToKo } from "@/shared/date/kst";
 import {
   CREDIT_FREE_BUCKET_HINT,
@@ -1289,16 +1290,19 @@ const buildRemakeChargeFeeQuote = (
       ),
     ),
   );
-  const summaryLabel =
-    String(charge?.summaryLabel || "").trim() || "리메이크";
+  const summaryLabel = compactRemakeSummaryLabel(
+    String(charge?.summaryLabel || "").trim(),
+  ) || "리메이크";
   const parts = summaryLabel
-    .split(/,\s*/)
+    .split(/,\s+/)
     .map((s) => s.trim())
     .filter(Boolean);
   const lines =
     parts.length > 0
       ? parts.map((part) => {
-          const m = part.match(/^(.+?)\s*[·.]\s*(.+)$/);
+          const m =
+            part.match(/^(.+?)\s*[·.]\s*(.+)$/) ||
+            part.match(/^([0-9][0-9,\-]*)\s+(.+)$/);
           const toothNumber = m ? String(m[1] || "").trim() : "";
           const prosthesisType = m
             ? String(m[2] || "").trim() || "리메이크"

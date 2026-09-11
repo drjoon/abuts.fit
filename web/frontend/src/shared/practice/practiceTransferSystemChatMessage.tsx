@@ -7,6 +7,7 @@
 // - 2026-09-02: 후속 보철 차트 — 버블 밖 전폭(의뢰상세와 동일 레이아웃), embedded 제거.
 import { cn } from "@/shared/ui/cn";
 import { PracticeToothWorkChartReadOnly } from "@/shared/components/practice/PracticeToothWorkChartReadOnly";
+import { compactRemakeSummaryLabel } from "@/features/chat/components/chatRemakeParts";
 import type { ChatMessage } from "@/shared/hooks/useChatRooms";
 import type { PracticeTransferFeeQuote } from "@/shared/practice/practiceTransferFeeQuote";
 import { isFollowUpProsthesisPhase } from "@/shared/practice/prosthesisFollowUp";
@@ -329,7 +330,9 @@ export function PracticeTransferSystemChatBody({
         ? (message.systemPayload as Record<string, unknown>)
         : {};
     const feeTotal = Math.max(0, Math.round(Number(payload.remakeFeeTotal || 0)));
-    const summaryLabel = String(payload.summaryLabel || "").trim();
+    const summaryLabel = compactRemakeSummaryLabel(
+      String(payload.summaryLabel || "").trim(),
+    );
     return (
       <div
         id={messageDomId}
@@ -386,7 +389,9 @@ export function PracticeTransferSystemChatBody({
       ),
     );
     const arrivalYmd = String(payload.arrivalYmd || "").trim();
-    const summaryLabel = String(payload.summaryLabel || "").trim();
+    const summaryLabel = compactRemakeSummaryLabel(
+      String(payload.summaryLabel || "").trim(),
+    );
     const source = String(payload.source || "").trim();
     const rawChargeIndex = Math.trunc(Number(payload.chargeIndex));
     let chargeIndex = Number.isFinite(rawChargeIndex) ? rawChargeIndex : null;
@@ -416,9 +421,9 @@ export function PracticeTransferSystemChatBody({
       contentLines[0] === "CA 재업로드"
         ? contentLines.slice(1)
         : contentLines;
-    const bodyWithoutFee = bodyLines.filter(
-      (line) => !/^리메이크비\s/.test(line),
-    );
+    const bodyWithoutFee = bodyLines
+      .filter((line) => !/^리메이크비\s/.test(line))
+      .map((line) => compactRemakeSummaryLabel(line) || line);
     const feeFromContent = (() => {
       const feeLine = bodyLines.find((line) => /^리메이크비\s/.test(line));
       if (!feeLine) return 0;

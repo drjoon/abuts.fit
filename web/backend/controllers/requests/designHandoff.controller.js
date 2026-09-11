@@ -1191,17 +1191,20 @@ export async function handoffDesignToProduction(req, res) {
                     ),
                   ),
                 );
+                const caSummary =
+                  String(charged.chargeRecord?.summaryLabel || "").trim() ||
+                  (bumpTooth ? `${bumpTooth} 어벗` : "어벗");
                 await postPracticeTransferSystemChatMessage({
                   transferMongoId: fresh._id,
                   senderUserId: userId,
                   content:
                     feeTotal > 0
-                      ? `CA 재업로드\n#${bumpTooth} · 커스텀어벗\n리메이크비 ${feeTotal.toLocaleString("ko-KR")}원`
-                      : `CA 재업로드\n#${bumpTooth} · 커스텀어벗`,
+                      ? `CA 재업로드\n${caSummary}\n리메이크비 ${feeTotal.toLocaleString("ko-KR")}원`
+                      : `CA 재업로드\n${caSummary}`,
                   systemEvent: "practice_transfer_remake_charge",
                   systemPayload: {
                     source: "ca_reupload",
-                    summaryLabel: `#${bumpTooth} · 커스텀어벗`,
+                    summaryLabel: caSummary,
                     toothNumbers: [bumpTooth],
                     billingDelta: charged.chargeRecord?.billingDelta || null,
                     remakeFeeTotal: feeTotal,
