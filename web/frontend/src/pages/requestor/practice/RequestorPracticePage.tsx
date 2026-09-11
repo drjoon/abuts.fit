@@ -234,6 +234,7 @@ import {
   type PracticeRecentStatusFilterKey,
   type PracticeRecentTransferItem,
 } from "@/shared/practice/practiceRecentTransferList";
+import { sortLabReceivePendingWorkPriority } from "@/shared/practice/labReceivePendingWorkPriority";
 import {
   PracticeTransferDetailChatDialog,
   type PracticeTransferDialogFileItem,
@@ -5842,7 +5843,7 @@ export function RequestorPracticeReceivePage({
   }, [baseFilteredTransfers, chatUnreadByTransferId, transferChatUnreadCount]);
 
   const unreadNoticeItems = useMemo(() => {
-    return baseFilteredTransfers
+    const rows = baseFilteredTransfers
       .map((transfer) => {
         const id = String(transfer.transferId || transfer._id || "").trim();
         const pendingWork = isPracticeStatusBadgeQueueTransfer(
@@ -5865,6 +5866,9 @@ export function RequestorPracticeReceivePage({
           id,
           pendingWork,
           chatUnread,
+          arrivalDate: transfer.arrivalDate,
+          hasCustomAbutment: Boolean(transfer.hasCustomAbutment),
+          createdAt: transfer.createdAt,
           label: [
             clinic,
             formatPracticeTransferListPatientWithTeeth(patient, teeth) || "—",
@@ -5872,6 +5876,12 @@ export function RequestorPracticeReceivePage({
         };
       })
       .filter((row): row is NonNullable<typeof row> => Boolean(row));
+
+    const pending = sortLabReceivePendingWorkPriority(
+      rows.filter((row) => row.pendingWork),
+    );
+    const chatOnly = rows.filter((row) => !row.pendingWork);
+    return [...pending, ...chatOnly];
   }, [
     badgeClearedIds,
     baseFilteredTransfers,
@@ -5938,6 +5948,7 @@ export function RequestorPracticeReceivePage({
         orderDate: transfer.orderDate,
         arrivalDate: transfer.arrivalDate,
         createdAt: transfer.createdAt,
+        hasCustomAbutment: Boolean(transfer.hasCustomAbutment),
       });
       // 배지 본문 건수와 동일하게 순회(완료·어벗은 미열람만).
       // 미확인·미처리를 앞에 두되, 큐에만 가두면 열람 후 빠진 건이 누락됨.
@@ -5972,7 +5983,7 @@ export function RequestorPracticeReceivePage({
           String(row.transfer.transferId || row.transfer._id || "").trim(),
         ),
       );
-      const queue = [
+      const merged = [
         ...queueMatched,
         ...allMatched.filter(
           (row) =>
@@ -5981,6 +5992,11 @@ export function RequestorPracticeReceivePage({
             ),
         ),
       ];
+      // 「의뢰」뱃지 — 미처리 우선순위(도착 3일 이내 → CA디자인 → 도착임박)로 순회.
+      const queue =
+        filterKey === "발송완료"
+          ? sortLabReceivePendingWorkPriority(merged)
+          : merged;
       if (queue.length === 0) return;
 
       const transferIdOf = (row: (typeof queue)[number]) =>
