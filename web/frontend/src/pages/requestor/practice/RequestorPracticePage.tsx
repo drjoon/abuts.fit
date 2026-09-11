@@ -42,7 +42,8 @@
 // - 2026-09-09: 기공소 「리메이크 청구」— LabRemakeChargeDialog + received remake-charges.
 // - 2026-09-07: 가이드투어 lab_remake — 데모 리메이크 뱃지·상세 탭·수가.
 // - 2026-09-07: 상세 헤더 식별 — 전송ID 제거, `치과/환자 치식 · 도착` 한 줄.
-// - 2026-09-07: 분할 업로드 AlertDialog z-320 — 플로팅 의뢰상세(z-300)에 가리지 않게.
+// - 2026-09-12: 어벗 STL→치아확인 모달 — relatedRequest N× GET /api/requests 제거(PTX toothWorks로 pending 즉시 구성).
+// - 2026-09-12: 「일부만 올리시나요?」분할 확인 AlertDialog 제거 — 일부 파일이면 바로 지정/디자인 모달.
 // - 2026-09-05: 가이드투어 lab_calendar — 오늘 데모 칩 홀·클릭 시 상세·다음.
 // - 2026-09-05: 가이드투어 — pause·수료 시 데모 PTX·상세 삭제(치과 oral 정리와 동일).
 // - 2026-09-05: 가이드투어 — 수신 영화형(데모 PTX·상세 오픈·변이 가드).
@@ -200,16 +201,6 @@ import {
   type LabReceiveWorkUploadAssignment,
 } from "@/shared/components/practice/LabReceiveWorkUploadDialog";
 import { useImplantConnectionCatalog } from "@/shared/practice/useImplantConnectionCatalog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -475,15 +466,6 @@ const applyRemakeChargeLocalPatch = (
   };
 };
 
-type LabReceiveSplitAskState = {
-  mode: "abutment" | "prosthetic";
-  transfer: ReceivedPracticeTransfer;
-  files: File[];
-  pendingCount: number;
-  abutmentPending?: AbutmentPendingMeta[];
-  prostheticSlots?: LabReceiveUploadSlotOption[];
-};
-
 type LabReceiveWorkUploadState = {
   mode: "abutment" | "prosthetic";
   transfer: ReceivedPracticeTransfer;
@@ -496,7 +478,6 @@ type LabReceiveWorkUploadState = {
 
 type DesignUploadStartResult =
   | "opened"
-  | "split"
   | "skipped"
   | "error"
   | "gated";
@@ -904,8 +885,6 @@ export function RequestorPracticeReceivePage({
             .filter(Boolean);
     return [...new Set(teeth)].map((tooth) => ({ id: tooth, label: tooth }));
   }, [designConfirmPendingMetas, designConfirmTransfer?.toothWorksSummary]);
-  const [splitAskState, setSplitAskState] =
-    useState<LabReceiveSplitAskState | null>(null);
   const [workUploadState, setWorkUploadState] =
     useState<LabReceiveWorkUploadState | null>(null);
   const [workUploadBusy, setWorkUploadBusy] = useState(false);
@@ -3636,13 +3615,32 @@ export function RequestorPracticeReceivePage({
       }
 
       if (nextFiles.length < slotOptions.length) {
-        // 분할 확인 전에는 S3에 올리지 않음 — 확인 후 지정 모달/제출에서 한 번만.
-        setSplitAskState({
+        const auto = resolveProstheticAssignments(
+          nextFiles,
+          slotOptions,
+          pendingSlots,
+        );
+        if (auto) {
+          void submitProstheticAssignments({
+            transfer,
+            assignments: auto,
+            pendingSlotCount: slotOptions.length,
+            splitMode: true,
+          });
+          return;
+        }
+        const suggestedIds = nextFiles.map((file) => {
+          const tooth = String(parseFilenameWithRules(file.name)?.tooth || "").trim();
+          if (!tooth) return null;
+          return slotOptions.find((slot) => slot.tooth === tooth)?.id || null;
+        });
+        openWorkUploadDialog({
           mode: "prosthetic",
           transfer,
           files: nextFiles,
-          pendingCount: slotOptions.length,
-          prostheticSlots: slotOptions,
+          slots: slotOptions,
+          initialSlotIds: suggestedIds,
+          splitMode: true,
         });
         return;
       }
@@ -4601,53 +4599,6 @@ export function RequestorPracticeReceivePage({
     [],
   );
 
-  const fetchRequestCaseInfos = useCallback(
-    async (requestId: string) => {
-      if (!token || !requestId) {
-        return {
-          caseInfos: null as Record<string, unknown> | null,
-          designCompletedAt: "",
-        };
-      }
-      try {
-        const res = await apiFetch<{
-          data?: {
-            caseInfos?: Record<string, unknown>;
-            designCompletedAt?: string | null;
-          };
-          caseInfos?: Record<string, unknown>;
-          designCompletedAt?: string | null;
-        }>({
-          path: `/api/requests/${encodeURIComponent(requestId)}`,
-          method: "GET",
-          token,
-        });
-        if (!res.ok) {
-          return { caseInfos: null, designCompletedAt: "" };
-        }
-        const body = (res.data || {}) as {
-          data?: {
-            caseInfos?: Record<string, unknown>;
-            designCompletedAt?: string | null;
-          };
-          caseInfos?: Record<string, unknown>;
-          designCompletedAt?: string | null;
-        };
-        const data = body.data || body;
-        return {
-          caseInfos:
-            data?.caseInfos && typeof data.caseInfos === "object"
-              ? data.caseInfos
-              : null,
-          designCompletedAt: String(data?.designCompletedAt || "").trim(),
-        };
-      } catch {
-        return { caseInfos: null, designCompletedAt: "" };
-      }
-    },
-    [token],
-  );
-
   const resolveAbutmentDesignTeethFromFiles = useCallback(
     async (files: File[]): Promise<string[]> => {
       const ruleTeeth = files.map((file) =>
@@ -4969,9 +4920,6 @@ export function RequestorPracticeReceivePage({
         return "gated";
       }
 
-      const relatedIds = (transfer.production?.relatedRequestIds || [])
-        .map((raw) => String(raw || "").trim())
-        .filter(Boolean);
       const workingTransfer = transfer;
 
       // 취소선(LabPendingAbutmentGuide)과 동일 SSOT — tooth 비어 있는 designFiles도 앞에서부터 배정
@@ -4986,7 +4934,6 @@ export function RequestorPracticeReceivePage({
       const caTeethOrdered = caTeethRows
         .map((row) => String(row.toothNumber || "").trim())
         .filter(Boolean);
-      const caToothSet = new Set(caTeethOrdered);
 
       if (caTeethOrdered.length === 0) {
         if (practiceTransferHasPendingLabCustomAbutment(workingTransfer, implantCatalog)) {
@@ -5026,63 +4973,11 @@ export function RequestorPracticeReceivePage({
         };
       };
 
-      let pendingMetas: AbutmentPendingMeta[] = [];
-
-      if (relatedIds.length > 0) {
-        const requestMetas = (
-          await Promise.all(
-            relatedIds.map(async (requestId, idx) => {
-              const meta = await fetchRequestCaseInfos(requestId);
-              if (meta.caseInfos?.hexVerificationSample === true) return null;
-              const fromRequest = String(meta.caseInfos?.tooth || "").trim();
-              const tooth = fromRequest || caTeethOrdered[idx] || "";
-              return {
-                requestId,
-                tooth,
-                caseInfos: meta.caseInfos,
-                designCompletedAt: meta.designCompletedAt,
-              };
-            }),
-          )
-        ).filter((row): row is AbutmentPendingMeta => Boolean(row));
-
-        const usedEnrichTeeth = new Set(
-          requestMetas
-            .map((row) => String(row.tooth || "").trim())
-            .filter(Boolean),
-        );
-        const enrichedMetas = requestMetas.map((meta, idx) => {
-          if (String(meta.tooth || "").trim()) return meta;
-          const fallback =
-            caTeethOrdered.find((tooth) => !usedEnrichTeeth.has(tooth)) ||
-            caTeethOrdered[idx] ||
-            "";
-          if (fallback) usedEnrichTeeth.add(fallback);
-          return { ...meta, tooth: fallback };
-        });
-
-        // designCompletedAt만으로 제외하지 않음 — 파일 미러가 빠진 치아는 재업로드 허용
-        pendingMetas = enrichedMetas.filter((meta) => {
-          const tooth = String(meta.tooth || "").trim();
-          if (!tooth || !caToothSet.has(tooth)) return false;
-          if (uploadedTeeth.has(tooth)) return false;
-          return true;
-        });
-
-        const pendingToothSet = new Set(
-          pendingMetas.map((meta) => String(meta.tooth || "").trim()).filter(Boolean),
-        );
-        for (const tooth of caTeethOrdered) {
-          if (uploadedTeeth.has(tooth) || pendingToothSet.has(tooth)) continue;
-          pendingMetas.push(buildProvisionalMeta(tooth));
-          pendingToothSet.add(tooth);
-        }
-      } else {
-        // 수락만 된 상태 — Request는 STL handoff에서 생성. 치식으로 큐잉.
-        pendingMetas = caTeethOrdered
-          .filter((tooth) => !uploadedTeeth.has(tooth))
-          .map((tooth) => buildProvisionalMeta(tooth));
-      }
+      // relatedRequestIds별 GET /api/requests 금지 — 모달 오픈이 N×1~2s에 묶임.
+      // 치식·임플란트는 PTX toothWorks SSOT. handoff는 tooth로 Request를 찾는다.
+      const pendingMetas: AbutmentPendingMeta[] = caTeethOrdered
+        .filter((tooth) => !uploadedTeeth.has(tooth))
+        .map((tooth) => buildProvisionalMeta(tooth));
 
       if (pendingMetas.length === 0) {
         toast({
@@ -5101,18 +4996,6 @@ export function RequestorPracticeReceivePage({
         return "error";
       }
 
-      if (stlToUse.length < pendingMetas.length) {
-        // 분할 확인 전에는 S3에 올리지 않음 — 확인 후 디자인 모달에서 한 번만.
-        setSplitAskState({
-          mode: "abutment",
-          transfer: workingTransfer,
-          files: stlToUse,
-          pendingCount: pendingMetas.length,
-          abutmentPending: pendingMetas,
-        });
-        return "split";
-      }
-
       await openAbutmentDesignConfirmQueue(
         workingTransfer,
         stlToUse,
@@ -5123,7 +5006,6 @@ export function RequestorPracticeReceivePage({
     [
       cardActionBusyId,
       designConfirmBusy,
-      fetchRequestCaseInfos,
       implantCatalog,
       openAbutmentDesignConfirmQueue,
       toast,
@@ -5575,68 +5457,6 @@ export function RequestorPracticeReceivePage({
       peekCachedUploadedFiles,
     ],
   );
-
-  const handleSplitAskConfirm = useCallback(() => {
-    const ask = splitAskState;
-    setSplitAskState(null);
-    if (!ask) return;
-
-    if (ask.mode === "abutment") {
-      void openAbutmentDesignConfirmQueue(
-        ask.transfer,
-        ask.files,
-        ask.abutmentPending || [],
-      );
-      return;
-    }
-
-    const slots = ask.prostheticSlots || [];
-    const pendingSlots = listPracticeTransferPendingProstheticSlots(ask.transfer);
-    const auto = resolveProstheticAssignments(ask.files, slots, pendingSlots);
-    if (auto) {
-      void submitProstheticAssignments({
-        transfer: ask.transfer,
-        assignments: auto,
-        pendingSlotCount: ask.pendingCount,
-        splitMode: true,
-      });
-      return;
-    }
-
-    const suggestedIds = ask.files.map((file) => {
-      const tooth = String(parseFilenameWithRules(file.name)?.tooth || "").trim();
-      if (!tooth) return null;
-      return slots.find((slot) => slot.tooth === tooth)?.id || null;
-    });
-    openWorkUploadDialog({
-      mode: "prosthetic",
-      transfer: ask.transfer,
-      files: ask.files,
-      slots,
-      initialSlotIds: suggestedIds,
-      splitMode: true,
-    });
-  }, [
-    openAbutmentDesignConfirmQueue,
-    openWorkUploadDialog,
-    resolveProstheticAssignments,
-    splitAskState,
-    submitProstheticAssignments,
-  ]);
-
-  const handleSplitAskDecline = useCallback(() => {
-    const ask = splitAskState;
-    setSplitAskState(null);
-    if (ask?.mode === "abutment") {
-      const pending = pendingProstheticAfterAbutmentRef.current;
-      pendingProstheticAfterAbutmentRef.current = null;
-      if (pending?.files?.length) {
-        beginCompleteWithFiles(ask.transfer, pending.files);
-      }
-      return;
-    }
-    clearPendingProstheticAfterAbutment();
-  }, [beginCompleteWithFiles, clearPendingProstheticAfterAbutment, splitAskState]);
 
   const handleWorkUploadConfirm = useCallback(
     async (assignments: LabReceiveWorkUploadAssignment[]) => {
@@ -6946,33 +6766,6 @@ export function RequestorPracticeReceivePage({
         splitMode={Boolean(workUploadState?.splitMode)}
         onConfirm={handleWorkUploadConfirm}
       />
-      <AlertDialog
-        open={Boolean(splitAskState)}
-        onOpenChange={(open) => {
-          if (!open) setSplitAskState(null);
-        }}
-      >
-        <AlertDialogContent
-          // Above floating transfer panel (z-300). Same band as abutment confirm.
-          className="z-[320]"
-          overlayClassName="z-[310]"
-        >
-          <AlertDialogHeader>
-            <AlertDialogTitle>일부만 올리시나요?</AlertDialogTitle>
-            <AlertDialogDescription>
-              선택한 파일만 먼저 올립니다. 나머지는 나중에 올릴 수 있습니다.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={handleSplitAskDecline}>
-              취소
-            </AlertDialogCancel>
-            <AlertDialogAction onClick={handleSplitAskConfirm}>
-              확인
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
       <div className="flex min-h-0 flex-1 flex-col gap-3">
         {showDesignQueue && !showTransfers ? (
           <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
