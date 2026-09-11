@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-11: Complete 슬롯 — 포장.발송·추적관리 건은 준비 롤백/재승인 비활성.
 // - 2026-08-30: Now Playing X — 확인 후 브리지 정지(C_STOP) + machining/cancel.
 // - 2026-08-29: Next Up「CAM 생성 중」블러 옆 생성 중단 버튼.
 // - 2026-08-29: Now Playing NC 프리로드 READY(준비됨) 뱃지 숨김 — UPLOADING/FAILED만 표시.
@@ -505,6 +506,15 @@ export const MachineQueueCard = ({
   const lastCompletedRequestId = String(
     effectiveLastCompleted?.requestId || "",
   ).trim();
+  // Complete 슬롯 롤백은 재가공용(가공·세척.패킹)만 허용.
+  // 포장.발송·추적관리(이미 발송) 건을 준비로 되돌리면 추적관리에서 빠지는 사고가 난다.
+  const lastCompletedStage = String(
+    (effectiveLastCompleted as any)?.manufacturerStage || "",
+  ).trim();
+  const canRollbackCompleted =
+    !!lastCompletedRequestId &&
+    !!onRollbackCompleted &&
+    (lastCompletedStage === "가공" || lastCompletedStage === "세척.패킹");
   const getLotShortCode = (slot?: QueueItem | null) =>
     String(slot?.lotNumber?.value || "")
       .trim()
@@ -522,7 +532,8 @@ export const MachineQueueCard = ({
   ).trim();
   const completedCanApprove =
     !!String((effectiveLastCompleted as any)?.requestMongoId || "").trim() &&
-    !!onApproveFromRollback;
+    !!onApproveFromRollback &&
+    (lastCompletedStage === "가공" || lastCompletedStage === "세척.패킹");
 
   const slotActionBtn = (enabled: boolean) =>
     `inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition-opacity hover:bg-slate-50 ${
@@ -810,18 +821,21 @@ export const MachineQueueCard = ({
               <div className="flex items-center gap-1 shrink-0">
                 <button
                   type="button"
-                  className={slotActionBtn(
-                    !!(lastCompletedRequestId && onRollbackCompleted),
-                  )}
+                  className={slotActionBtn(canRollbackCompleted)}
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (!lastCompletedRequestId) return;
-                    if (!onRollbackCompleted) return;
+                    if (!canRollbackCompleted) return;
                     setCompletedRolledBack(true);
-                    onRollbackCompleted(lastCompletedRequestId, machineId);
+                    onRollbackCompleted?.(lastCompletedRequestId, machineId);
                   }}
-                  disabled={!lastCompletedRequestId || !onRollbackCompleted}
-                  title="준비로 되돌리기"
+                  disabled={!canRollbackCompleted}
+                  title={
+                    canRollbackCompleted
+                      ? "준비로 되돌리기"
+                      : lastCompletedStage
+                        ? `현재 ${lastCompletedStage} 단계라 준비 롤백 불가`
+                        : "준비로 되돌리기"
+                  }
                 >
                   <ArrowLeft className="h-3 w-3" />
                 </button>

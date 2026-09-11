@@ -3,6 +3,7 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // change-log:
+// - 2026-09-11: 포장.발송·추적관리 완료건은 Complete 목록에서 준비 롤백 버튼 비활성.
 // - 2026-08-26: 되돌리기 이력(rollbackCount) 취소선·흐림 표시 제거.
 // - 2026-08-26: requestDeleted(샘플 삭제) 건은 스냅샷 라벨 + 되돌리기/자주검사 비활성.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -35,6 +36,7 @@ type CompletedMachiningItem = {
   durationSeconds: number;
   displayLabel: string | null;
   rollbackCount?: number;
+  manufacturerStage?: string | null;
   clinicName?: string;
   patientName?: string;
   tooth?: string;
@@ -314,7 +316,12 @@ export const CompletedMachiningRecordsModal = ({
             {formattedItems.map((row, index) => {
               const item = items[index];
               const requestDeleted = Boolean(item?.requestDeleted);
+              const stage = String(item?.manufacturerStage || "").trim();
+              const canRollbackStage =
+                stage === "가공" || stage === "세척.패킹";
               const canActOnRequest = Boolean(row.rid) && !requestDeleted;
+              const canRollback =
+                canActOnRequest && canRollbackStage && !!onRollbackRequest;
               return (
                 <div
                   key={item.id}
@@ -382,15 +389,28 @@ export const CompletedMachiningRecordsModal = ({
                         />
                       </div>
                     </div>
-                    {canActOnRequest && onRollbackRequest ? (
+                    {canRollback ? (
                       <button
                         type="button"
                         className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                         onClick={(e) => {
                           e.stopPropagation();
-                          onRollbackRequest(row.rid, machineId);
+                          onRollbackRequest?.(row.rid, machineId);
                         }}
                         title="준비로 되돌리기"
+                      >
+                        <ArrowLeft className="h-3.5 w-3.5" />
+                      </button>
+                    ) : canActOnRequest && onRollbackRequest ? (
+                      <button
+                        type="button"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-300 cursor-not-allowed"
+                        disabled
+                        title={
+                          stage
+                            ? `현재 ${stage} 단계라 준비 롤백 불가`
+                            : "준비 롤백 불가"
+                        }
                       >
                         <ArrowLeft className="h-3.5 w-3.5" />
                       </button>

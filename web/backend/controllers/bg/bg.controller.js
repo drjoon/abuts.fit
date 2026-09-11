@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-11: late NC/CNC 콜백이 세척.패킹 이후 단계를 가공으로 회귀시키지 않음.
 // - 2026-09-11: pending-stl — manufacturerStage=준비만(가공 이후 백로그 재기동 복구 제외).
 // - 2026-09-04: pending-stl — APPROVED 전제 제거. 제조 준비 가드+어벗 .stl만(핸드오프 PENDING도 복구).
 // - 2026-09-03: 2-filled 성공 시 stlPreload NONE, 실패 시 FAILED. 취소 의뢰 콜백 ignore.
@@ -1022,14 +1023,24 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
         if (shouldPromoteToCam) {
           // 작업 공정 변경: CAM은 더 이상 노출/사용하지 않으므로,
           // 의뢰 승인 후 NC 생성이 완료되는 시점에 바로 가공 단계로 전환한다.
-          try {
-            const cloned = {
-              manufacturerStage: request?.manufacturerStage,
-            };
-            applyStatusMapping(cloned, "가공");
-            updateData["manufacturerStage"] = cloned.manufacturerStage;
-          } catch {
-            updateData["manufacturerStage"] = "가공";
+          // 이미 세척.패킹 이후로 넘어간 건은 late NC 콜백으로 가공으로 회귀시키지 않는다.
+          const currentStage = String(request?.manufacturerStage || "").trim();
+          const canPromoteToMachining =
+            !currentStage || currentStage === "준비" || currentStage === "CAM";
+          if (canPromoteToMachining) {
+            try {
+              const cloned = {
+                manufacturerStage: request?.manufacturerStage,
+              };
+              applyStatusMapping(cloned, "가공");
+              updateData["manufacturerStage"] = cloned.manufacturerStage;
+            } catch {
+              updateData["manufacturerStage"] = "가공";
+            }
+          } else {
+            console.log(
+              `[BG-Callback] sourceStep=3-nc request=${request?.requestId || "-"} skip stage promote (current=${currentStage || "EMPTY"})`,
+            );
           }
           updateData["caseInfos.reviewByStage.request.status"] = "APPROVED";
           updateData["caseInfos.reviewByStage.request.reason"] = "";
@@ -1072,14 +1083,29 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
           updateData["productionSchedule.assignedMachine"] = metadata.machineId;
         }
         // CNC 가공 시작(또는 완료) 시점에만 manufacturerStage/status 를 '가공'으로 전환한다.
-        try {
-          const cloned = {
-            manufacturerStage: request?.manufacturerStage,
-          };
-          applyStatusMapping(cloned, "가공");
-          updateData["manufacturerStage"] = cloned.manufacturerStage;
-        } catch {
-          updateData["manufacturerStage"] = "가공";
+        // 이미 발송·추적관리로 넘어간 건은 late CNC 콜백으로 회귀시키지 않는다.
+        {
+          const currentStage = String(request?.manufacturerStage || "").trim();
+          const canEnterMachiningStage =
+            !currentStage ||
+            currentStage === "준비" ||
+            currentStage === "가공" ||
+            currentStage === "CAM";
+          if (canEnterMachiningStage) {
+            try {
+              const cloned = {
+                manufacturerStage: request?.manufacturerStage,
+              };
+              applyStatusMapping(cloned, "가공");
+              updateData["manufacturerStage"] = cloned.manufacturerStage;
+            } catch {
+              updateData["manufacturerStage"] = "가공";
+            }
+          } else {
+            console.log(
+              `[BG-Callback] sourceStep=cnc request=${request?.requestId || "-"} skip stage regression (current=${currentStage || "EMPTY"})`,
+            );
+          }
         }
         updateData["caseInfos.reviewByStage.cam.status"] = "APPROVED";
         updateData["caseInfos.reviewByStage.cam.reason"] = "";

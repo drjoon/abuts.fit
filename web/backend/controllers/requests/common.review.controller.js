@@ -10,6 +10,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers.ts
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
+// - 2026-09-11: stage-file 롤백 시 포장.발송·추적관리 건 준비/가공 회귀 차단(Complete 슬롯 오롤백 방지).
 // - 2026-09-03: 세척.패킹 승인 시 각인 이미지(stageFiles.packing) 필수(카드/프리뷰 → 수동 이동).
 // - 2026-08-22: 작업용 샘플도 우편함·포장.발송·추적관리 동일(크레딧만 isManufacturerSampleRequest skip).
 // - 2026-08-20: 샘플도 패킹 승인 후 포장.발송·우편함 유지(일반 의뢰와 동일).
@@ -50,6 +51,7 @@ import { emitAppEventToRoles } from "../../socket.js";
 import { isDesignClaimActive } from "../../utils/designClaim.js";
 import {
   revertManufacturerStageByReviewStage,
+  assertRollbackAllowedForCurrentStage,
   ensureRequestCreditSpendOnMachiningEnter,
   ensureRequestCreditRollbackDeleteOnRollbackToCam,
   enterManufacturerShippingStage,
@@ -532,19 +534,35 @@ export async function deleteStageFile(req, res) {
     const s3Key = meta?.s3Key;
 
     if (rollbackOnly) {
+      const currentStageForGuard =
+        String(request?.manufacturerStage || "").trim() || null;
       console.log("[STAGE_FILE_ROLLBACK] request received", {
         requestMongoId: String(request._id),
         requestId: String(request.requestId || ""),
         stage,
         rollbackOnly,
         preserveStage,
-        currentStage: String(request?.manufacturerStage || "").trim() || null,
+        currentStage: currentStageForGuard,
         businessAnchorId: String(
           request?.businessAnchorId || request?.requestor?.businessAnchorId || "",
         ).trim() || null,
         actorUserId: req.user?._id ? String(req.user._id) : null,
         role: String(req.user?.role || ""),
       });
+
+      try {
+        assertRollbackAllowedForCurrentStage({
+          stage,
+          currentStage: currentStageForGuard,
+        });
+      } catch (stageGuardErr) {
+        return res.status(stageGuardErr?.statusCode || 409).json({
+          success: false,
+          message:
+            stageGuardErr?.message ||
+            "현재 단계에서는 롤백할 수 없습니다.",
+        });
+      }
 
       request.caseInfos.reviewByStage[stage] = {
         status: "PENDING",
@@ -806,6 +824,19 @@ export async function deleteStageFile(req, res) {
     const previousManufacturerStage = String(
       request?.manufacturerStage || "",
     ).trim();
+
+    try {
+      assertRollbackAllowedForCurrentStage({
+        stage,
+        currentStage: previousManufacturerStage,
+      });
+    } catch (stageGuardErr) {
+      return res.status(stageGuardErr?.statusCode || 409).json({
+        success: false,
+        message:
+          stageGuardErr?.message || "현재 단계에서는 롤백할 수 없습니다.",
+      });
+    }
 
     clearStageFileMeta(request, stage);
     bumpRollbackCount(request, stage);

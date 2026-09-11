@@ -10,6 +10,7 @@
 // - web/backend/controllers/requests/shipping.controller.js
 // - web/backend/controllers/requests/shipping.Tracking.helpers.js
 // change-log:
+// - 2026-09-11: stage-file 롤백 허용 stage 가드(포장.발송·추적관리 → 준비 회귀 차단). machining 롤백 복귀 라벨을 준비로 통일.
 // - 2026-09-09: 리메이크 제조사 지급 6,600원(포함가). applyManufacturerUnit + remake 단가.
 // - 2026-09-06: 딜러·개발운영 earn에 affiliateVatRate VAT(포함가 장부). REV_ADMIN은 면세.
 // - 2026-08-23: 리메이크·무료크레딧 결제는 제조사 무료 생산.
@@ -685,10 +686,42 @@ async function postSpendCommitGeneralLedger({
   });
 }
 
+/**
+ * stage-file 롤백이 허용되는 현재 manufacturerStage.
+ * 가공 롤백(준비 복귀)은 재가공을 위해 세척.패킹까지 허용한다.
+ * 포장.발송·추적관리(이미 발송) 건을 Complete 슬롯 등에서 준비/가공으로 되돌리면 안 된다.
+ */
+export const ROLLBACK_ALLOWED_CURRENT_STAGES = Object.freeze({
+  machining: Object.freeze(["가공", "세척.패킹"]),
+  packing: Object.freeze(["세척.패킹"]),
+  shipping: Object.freeze(["포장.발송"]),
+  tracking: Object.freeze(["추적관리"]),
+});
+
+export function assertRollbackAllowedForCurrentStage({
+  stage,
+  currentStage,
+} = {}) {
+  const reviewStage = String(stage || "")
+    .trim()
+    .toLowerCase();
+  const allowed = ROLLBACK_ALLOWED_CURRENT_STAGES[reviewStage];
+  if (!allowed) return;
+  const cur = String(currentStage || "").trim();
+  if (allowed.includes(cur)) return;
+  const err = new Error(
+    cur
+      ? `현재 단계(${cur})에서는 ${reviewStage} 롤백을 할 수 없습니다. 이미 발송·추적관리로 넘어간 건은 준비/가공으로 되돌릴 수 없습니다.`
+      : `현재 단계 정보가 없어 ${reviewStage} 롤백을 할 수 없습니다.`,
+  );
+  err.statusCode = 409;
+  throw err;
+}
+
 export function revertManufacturerStageByReviewStage(request, stage) {
   const prevStageMap = {
-    // machining 롤백의 이전 단계는 request stage(의뢰)다.
-    machining: "의뢰",
+    // machining 롤백의 이전 단계는 request stage(준비)다.
+    machining: "준비",
     packing: "가공",
     shipping: "세척.패킹",
     tracking: "포장.발송",

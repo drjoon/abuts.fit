@@ -6,6 +6,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
 // - web/frontend/src/pages/manufacturer/equipment/cnc/hooks/useManUpload.ts
 // change-log:
+// - 2026-09-11: CNC start/complete가 포장.발송·추적관리 건을 가공/세척.패킹으로 회귀시키지 않음. last-completed에 manufacturerStage 포함.
 // - 2026-08-26: 가공기록에 의뢰 라벨 스냅샷. 샘플 삭제 후에도 완료 목록 라벨 유지.
 // - 2026-08-17: 우편함 배정 SSOT는 가공→세척.패킹 진입. 포장.발송은 기존 배정 유지.
 // - 2026-08-08: 가공 완료 시 NC(T0707→#7) 툴번호로 사용량·수명 카운트.
@@ -210,7 +211,7 @@ export async function getCompletedMachiningRecords(req, res) {
       if (requestIds.length > 0) {
         const requests = await Request.find({ requestId: { $in: requestIds } })
           .select(
-            "requestId caseInfos lotNumber productionSchedule source requestCategory",
+            "requestId manufacturerStage caseInfos lotNumber productionSchedule source requestCategory",
           )
           .lean();
         for (const r of requests) {
@@ -228,6 +229,7 @@ export async function getCompletedMachiningRecords(req, res) {
             lotNumber,
             requestMongoId: String(r?._id || "").trim(),
             rollbackCount,
+            manufacturerStage: String(r?.manufacturerStage || "").trim(),
             implantManufacturer: String(
               r?.caseInfos?.implantManufacturer || "",
             ).trim(),
@@ -792,6 +794,9 @@ function resolveCompletedRecordLabels(rec, reqInfo) {
     requestCategory:
       String(live?.requestCategory || rec?.requestCategory || "").trim() ||
       null,
+    manufacturerStage: requestDeleted
+      ? null
+      : String(live?.manufacturerStage || "").trim() || null,
   };
 }
 
@@ -1760,6 +1765,8 @@ export async function recordMachiningStartForBridge(req, res) {
         requestCategory: 1,
       });
       const fromStage = String(existing?.manufacturerStage || "").trim() || null;
+      const canEnterMachiningStage =
+        !fromStage || fromStage === "준비" || fromStage === "가공";
 
       if (record?._id && existing) {
         const labelSnap = buildRequestLabelSnapshot(existing);
@@ -1790,13 +1797,25 @@ export async function recordMachiningStartForBridge(req, res) {
         update.$set["productionSchedule.machiningRecord"] = record._id;
       }
 
-      const stageCarrier = {
-        manufacturerStage: existing?.manufacturerStage,
-        status: existing?.status,
-      };
-      applyStatusMapping(stageCarrier, "가공");
-      update.$set["manufacturerStage"] = stageCarrier.manufacturerStage;
-      update.$set["status"] = stageCarrier.status;
+      // 이미 세척.패킹·포장.발송·추적관리로 넘어간 건은 CNC start 이벤트로 가공 단계로 회귀시키지 않는다.
+      if (canEnterMachiningStage) {
+        const stageCarrier = {
+          manufacturerStage: existing?.manufacturerStage,
+          status: existing?.status,
+        };
+        applyStatusMapping(stageCarrier, "가공");
+        update.$set["manufacturerStage"] = stageCarrier.manufacturerStage;
+        update.$set["status"] = stageCarrier.status;
+      } else {
+        console.warn(
+          "[bridge:machining:start] skip stage regression",
+          JSON.stringify({
+            machineId: mid,
+            requestId,
+            fromStage,
+          }),
+        );
+      }
 
       const updatedRequest = await Request.findOneAndUpdate(
         { requestId },
@@ -2378,26 +2397,39 @@ export async function recordMachiningCompleteForBridge(req, res) {
 
         // CNC 가공 완료 시 제조 단계는 세척/패킹 단계로 전환한다.
         // status/manufacturerStage enum 은 '세척.패킹' 을 사용한다.
-        applyStatusMapping(request, "세척.패킹");
-        const requestAnchorIdStr = normalizeBusinessAnchorId(
-          request.businessAnchorId,
-        );
-        const requestorAnchorIdStr = normalizeBusinessAnchorId(
-          request.requestor?.businessAnchorId,
-        );
+        // 이미 포장.발송·추적관리로 넘어간 건은 complete 이벤트로 단계를 되돌리지 않는다.
+        const canEnterPackingStage = fromStage === "가공";
+        if (canEnterPackingStage) {
+          applyStatusMapping(request, "세척.패킹");
+          const requestAnchorIdStr = normalizeBusinessAnchorId(
+            request.businessAnchorId,
+          );
+          const requestorAnchorIdStr = normalizeBusinessAnchorId(
+            request.requestor?.businessAnchorId,
+          );
 
-        // request 문서의 businessAnchorId가 비어 있는 경우에만 requestor anchor로 보정
-        if (!requestAnchorIdStr && requestorAnchorIdStr) {
-          request.businessAnchorId = request.requestor.businessAnchorId;
+          // request 문서의 businessAnchorId가 비어 있는 경우에만 requestor anchor로 보정
+          if (!requestAnchorIdStr && requestorAnchorIdStr) {
+            request.businessAnchorId = request.requestor.businessAnchorId;
+          }
+
+          // 우편함 배정 SSOT: 가공→세척.패킹 진입 시 1회 배정한다.
+          const effectiveAnchorId =
+            requestAnchorIdStr || requestorAnchorIdStr || null;
+          await assignMailboxForCleaningPackingEnter({
+            request,
+            requestorOrgId: effectiveAnchorId,
+          });
+        } else {
+          console.warn(
+            "[bridge:machining:complete] skip stage regression",
+            JSON.stringify({
+              machineId: mid,
+              requestId,
+              fromStage,
+            }),
+          );
         }
-
-        // 우편함 배정 SSOT: 가공→세척.패킹 진입 시 1회 배정한다.
-        const effectiveAnchorId =
-          requestAnchorIdStr || requestorAnchorIdStr || null;
-        await assignMailboxForCleaningPackingEnter({
-          request,
-          requestorOrgId: effectiveAnchorId,
-        });
         await request.save();
         console.log(
           "[bridge:machining:complete] request/record updated",
@@ -2405,7 +2437,9 @@ export async function recordMachiningCompleteForBridge(req, res) {
             machineId: mid,
             requestId,
             recordId: record?._id,
-            stage: "세척.패킹",
+            stage: canEnterPackingStage
+              ? "세척.패킹"
+              : fromStage || null,
             mailboxAddress: request.mailboxAddress || null,
           }),
         );

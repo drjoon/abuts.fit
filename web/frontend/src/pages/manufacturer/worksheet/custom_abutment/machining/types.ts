@@ -90,6 +90,7 @@ export type LastCompletedMachining = {
   tooth?: string;
   businessName?: string;
   rollbackCount?: number;
+  manufacturerStage?: string | null;
   estimatedShipYmd?: string | null;
   lotNumber?: {
     value?: string;
