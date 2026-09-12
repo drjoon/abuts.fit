@@ -310,15 +310,16 @@ import {
 // - 2026-08-25: full 치식 — 카드가 전폭을 나눠 갖고 스크롤 없이 16칸 표시. 위·아래 여백으로 경계 보존.
 // - 2026-08-25: full 치식 카드 높이 12rem 복구·형태 버튼 shrink-0 — 어벗 상세 시 유형 스위치 가림 방지.
 // - 2026-09-02: full 치식 슬롯 래퍼 contents 복구 — shrink-0 래퍼가 flex-1 전폭 분할을 막아 카드가 좁아지던 문제.
+// - 2026-09-12: 보철물 카드 높이 12.75→11.75rem, 번호·형태·어벗 여백 축소.
 
 const PRACTICE_MEMO_SNIPPETS_LOCAL_KEY = "practice_transfer_memo_snippets_v1";
 const MAX_MEMO_SNIPPETS = 40;
 /** 최근 입력·자동완성 목록에 보여줄 최대 개수 */
 const MAX_MEMO_SUGGESTIONS = 20;
 /** 카드 높이: 번호+형태+어벗+임플란트/스캔바디 2줄+쉐이드+복사 기준(이보다 짧으면 형태 버튼이 flex-shrink로 가려짐) */
-const TOOTH_CARD_HEIGHT_CLASS = "h-[12.75rem]";
+const TOOTH_CARD_HEIGHT_CLASS = "h-[11.75rem]";
 /** full(16칸) — compact와 동일. 9rem은 어벗 상세 시 유형 스위치가 찌그러짐 */
-const TOOTH_CARD_HEIGHT_FULL_CLASS = "h-[12.75rem]";
+const TOOTH_CARD_HEIGHT_FULL_CLASS = "h-[11.75rem]";
 const TOOTH_SHADE_CUSTOM_OPTION = "__custom__";
 const TOOTH_TYPE_CUSTOM_OPTION = "__type_custom__";
 const BUILTIN_PROSTHESIS_TYPE_SET = new Set<string>([
@@ -4206,7 +4207,7 @@ export const PracticeTransferRequestIntakePanel = ({
                           data-tooth-select={toothNumber}
                           data-tooth-slot-empty=""
                           className={cn(
-                            "flex w-full touch-none flex-col items-center justify-start rounded-xl border border-slate-200/90 bg-gradient-to-b from-white to-slate-50/80 px-0.5 pt-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] transition-all",
+                            "flex w-full touch-none flex-col items-center justify-start rounded-xl border border-slate-200/90 bg-gradient-to-b from-white to-slate-50/80 px-0.5 pt-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] transition-all",
                             toothCardHeightClass,
                             "hover:border-primary/70 hover:from-primary-soft/80 hover:to-white hover:shadow-sm hover:shadow-primary-soft/60",
                             toothMarqueePreview?.teeth.has(toothNumber) &&
@@ -4231,7 +4232,7 @@ export const PracticeTransferRequestIntakePanel = ({
                           <span
                             className={cn(
                               "flex items-center font-semibold tabular-nums tracking-tight text-slate-400/90",
-                              showFullToothChart ? "h-8 text-base" : "h-10 text-xl",
+                              showFullToothChart ? "h-7 text-base" : "h-8 text-lg",
                             )}
                           >
                             {toothNumber}
@@ -4485,7 +4486,7 @@ export const PracticeTransferRequestIntakePanel = ({
                             data-tooth-select={toothNumber}
                             data-tooth-slot-selected=""
                             className={cn(
-                              "relative flex w-full min-w-0 flex-col items-center justify-start overflow-hidden border px-0.5 pb-1 pt-1.5 shadow-sm",
+                              "relative flex w-full min-w-0 flex-col items-center justify-start overflow-hidden border px-0.5 pb-0.5 pt-1 shadow-sm",
                               toothCardHeightClass,
                               isMissingTooth
                                 ? isLinked
@@ -4521,7 +4522,7 @@ export const PracticeTransferRequestIntakePanel = ({
                                 aria-hidden
                                 viewBox="0 0 100 100"
                                 preserveAspectRatio="none"
-                                className="pointer-events-none absolute inset-x-2 top-9 bottom-3 z-[5] text-slate-300/40"
+                                className="pointer-events-none absolute inset-x-2 top-7 bottom-3 z-[5] text-slate-300/40"
                               >
                                 <line
                                   x1="8"
@@ -4548,7 +4549,7 @@ export const PracticeTransferRequestIntakePanel = ({
                             <span
                               className={cn(
                                 "relative z-[1] flex shrink-0 items-center font-bold tabular-nums tracking-tight text-slate-800",
-                                showFullToothChart ? "h-8 text-base" : "h-10 text-xl",
+                                showFullToothChart ? "h-7 text-base" : "h-8 text-lg",
                               )}
                             >
                               {row.toothNumber}
@@ -4610,7 +4611,7 @@ export const PracticeTransferRequestIntakePanel = ({
                                       data-no-tooth-marquee=""
                                       data-prosthesis-type-toggle=""
                                       className={cn(
-                                        "relative mt-1.5 flex h-7 w-full min-w-0 shrink-0 cursor-pointer items-center justify-center gap-0.5 truncate rounded-md px-0.5 text-center text-[11px]",
+                                        "relative mt-1 flex h-6 w-full min-w-0 shrink-0 cursor-pointer items-center justify-center gap-0.5 truncate rounded-md px-0.5 text-center text-[11px]",
                                         isMissingTooth
                                           ? "z-20 bg-transparent text-slate-500 hover:bg-slate-100/80"
                                           : "z-[1] text-slate-600 hover:bg-primary-soft hover:text-primary-strong",
@@ -4798,7 +4799,7 @@ export const PracticeTransferRequestIntakePanel = ({
                                     : undefined
                                 }
                                 className={cn(
-                                  "mt-2 inline-flex h-5 shrink-0 cursor-pointer items-center justify-center gap-0.5 px-0.5 text-[11px] leading-none",
+                                  "mt-1 inline-flex h-5 shrink-0 cursor-pointer items-center justify-center gap-0.5 px-0.5 text-[11px] leading-none",
                                   missingAbutmentPreset
                                     ? "text-destructive"
                                     : "text-slate-600",
@@ -4875,7 +4876,7 @@ export const PracticeTransferRequestIntakePanel = ({
                                 data-no-tooth-marquee=""
                                 className={cn(
                                   "flex w-full shrink-0 flex-col items-center gap-0.5 leading-none",
-                                  showAbutmentCheckbox ? "mt-0.5" : "mt-2",
+                                  showAbutmentCheckbox ? "mt-0.5" : "mt-1",
                                   isCustomAbutGuideTourStepId(
                                     toothWorkGuideTourStepId,
                                   )
