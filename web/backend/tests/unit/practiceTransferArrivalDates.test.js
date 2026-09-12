@@ -4,7 +4,10 @@ import {
   addCivilDaysYmd,
   appendPracticeArrivalDate,
   compactPracticeArrivalDatesToSingleFuture,
+  defaultAbutmentShipYmdFromArrival,
+  PRACTICE_ABUTMENT_SHIP_BEFORE_ARRIVAL_CIVIL_DAYS,
   PRACTICE_ARRIVAL_SHADE_EXTEND_CIVIL_DAYS,
+  resolveEffectiveAbutmentShipYmd,
   resolvePracticeArrivalDates,
   resolvePracticeOrderDates,
   syncArrivalDatesWithMemoYmd,
@@ -15,6 +18,17 @@ describe("practiceTransferArrivalDates", () => {
   it("adds civil days", () => {
     expect(addCivilDaysYmd("2026-08-27", 7)).toBe("2026-09-03");
     expect(PRACTICE_ARRIVAL_SHADE_EXTEND_CIVIL_DAYS).toBe(7);
+  });
+
+  it("defaults abutment ship to arrival − 3 civil days", () => {
+    expect(PRACTICE_ABUTMENT_SHIP_BEFORE_ARRIVAL_CIVIL_DAYS).toBe(3);
+    expect(defaultAbutmentShipYmdFromArrival("2026-08-20")).toBe("2026-08-17");
+    expect(
+      resolveEffectiveAbutmentShipYmd({
+        production: { abutmentShipYmd: "2026-08-14" },
+        arrivalDate: "2026-08-20",
+      }),
+    ).toBe("2026-08-14");
   });
 
   it("seeds from memo when arrivalDates empty", () => {

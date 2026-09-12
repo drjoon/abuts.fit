@@ -95,6 +95,7 @@ import {
   revertPracticeArrivalAppend,
   resolveCurrentArrivalYmd,
   resolveCurrentOrderYmd,
+  resolveEffectiveAbutmentShipYmd,
   resolvePracticeArrivalDates,
   resolvePracticeOrderDates,
   syncArrivalDatesWithMemoYmd,
@@ -172,10 +173,12 @@ import {
   mapAbutmentPastReadyByTransferDocs,
   mapAbutmentDeliveryByTransferDocs,
   normalizeResultFiles,
+  repriceAndReschedulePtxAbutmentRequest,
   resolveOralScanFilesForAccept,
   shouldLockLabOralScanDownload,
   tryStartAbutmentProduction,
 } from "../../services/practiceTransferProduction.service.js";
+import Request from "../../models/request.model.js";
 import { assertAbutmentPresetsComplete } from "../../utils/practiceTransferAbutmentPresets.js";
 import {
   canEditPracticeTransferContent,
@@ -203,6 +206,7 @@ import { completePracticeTransferWork } from "../../services/practiceTransferCom
 // - web/backend/utils/practiceTransferAbutmentPresets.js
 // - web/backend/utils/practiceLabRating.js
 // - web/backend/utils/practiceTransferStage.js
+// - 2026-09-12: abutment-ship-ymd — 기공소 어벗 출고일 설정(기본 도착−3달력일). 연동 CA 스케줄은 응답 후.
 // - 2026-09-11: remake — selectedParts 요약 채팅·기공소 「리메이크 의뢰」문구.
 // - 2026-09-02: cancel-batch — 저널 rollback 후 billing.heldAt/held* 도 초기화(기공소 적립 보류 미러 잔존 방지).
 // - 2026-08-31: createPracticeTransfer — 크레딧 hold 성공 후에만 201. 실패 시 전송 삭제·402(가짜 성공→임시저장만 남는 버그).
@@ -918,6 +922,11 @@ const toProductionApiFields = (production, { abutmentPastReady } = {}) => {
     labDesignConfirmedAt: p.labDesignConfirmedAt || null,
     practiceDesignConfirmedAt: p.practiceDesignConfirmedAt || null,
     abutmentProductionStartedAt: p.abutmentProductionStartedAt || null,
+    /** 기공소 지정 어벗 출고일(KST YMD). 미설정 시 FE는 도착−3달력일 기본. */
+    abutmentShipYmd: (() => {
+      const ymd = String(p.abutmentShipYmd || "").trim();
+      return /^\d{4}-\d{2}-\d{2}$/.test(ymd) ? ymd : null;
+    })(),
     /** 연동 CA Request가 준비 단계를 지남 → 생산/수락 취소 불가 */
     abutmentPastReady: pastReady,
     confirmedAt: p.confirmedAt || null,
@@ -7750,6 +7759,205 @@ export async function appendReceivedPracticeTransferResultFiles(req, res) {
 /**
  * 기공소 「어벗 디자인 확인」— Abuts 디자인 수락 후 생산 게이트.
  */
+/**
+ * 기공소 — 어벗 출고일(KST YMD) 설정.
+ * 기본(미설정)은 치과도착일 − 3달력일. 연동 CA Request 스케줄은 응답 후 보정.
+ */
+export async function setPracticeTransferAbutmentShipYmd(req, res) {
+  try {
+    const role = String(req.user?.role || "").trim();
+    if (!isPracticeTransferLabReceiverRole(role)) {
+      return res.status(403).json({ success: false, message: "권한이 없습니다." });
+    }
+
+    const transferIdFilter = buildTransferIdFilter(req.params?.transferId);
+    if (!transferIdFilter) {
+      return res.status(400).json({
+        success: false,
+        message: "transferId가 필요합니다.",
+      });
+    }
+
+    const shipYmdRaw = String(
+      req.body?.abutmentShipYmd || req.body?.shipYmd || "",
+    ).trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(shipYmdRaw)) {
+      return res.status(400).json({
+        success: false,
+        message: "어벗 출고일(YYYY-MM-DD)이 필요합니다.",
+      });
+    }
+
+    const { scope, labAnchorId } = await buildReceivedScope(req);
+    if (scope === null || !labAnchorId) {
+      return res.status(404).json({ success: false, message: "전송 내역을 찾을 수 없습니다." });
+    }
+
+    const doc = await PracticeTransfer.findOne({
+      ...scope,
+      ...transferIdFilter,
+    });
+
+    if (!doc) {
+      return res.status(404).json({ success: false, message: "전송 내역을 찾을 수 없습니다." });
+    }
+
+    if (isPracticeTransferDeletedStatus(doc.status)) {
+      return res.status(409).json({
+        success: false,
+        message: "삭제된 기공의뢰는 출고일을 변경할 수 없습니다.",
+      });
+    }
+
+    if (!doc.requestorDownloadedAt) {
+      return res.status(409).json({
+        success: false,
+        message: "작업을 시작한 뒤에 어벗 출고일을 설정할 수 있습니다.",
+      });
+    }
+
+    if (
+      String(doc.targetLabAnchorId || "").trim() !== labAnchorId &&
+      role !== "admin"
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "작업을 시작한 기공소만 어벗 출고일을 설정할 수 있습니다.",
+      });
+    }
+
+    if (!hasCustomAbutmentToothWorks(doc.toothWorks)) {
+      return res.status(400).json({
+        success: false,
+        message: "커스텀 어벗먼트가 없는 의뢰입니다.",
+      });
+    }
+
+    const arrivalYmd =
+      resolveCurrentArrivalYmd(resolvePracticeArrivalDates(doc)) || null;
+    if (arrivalYmd && shipYmdRaw > arrivalYmd) {
+      return res.status(400).json({
+        success: false,
+        message: "어벗 출고일은 치과도착일 이전이어야 합니다.",
+      });
+    }
+
+    const pastReady = await resolveRelatedAbutmentPastReady(doc);
+    if (pastReady) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "제조 가공이 시작된 뒤에는 어벗 출고일을 변경할 수 없습니다.",
+      });
+    }
+
+    await PracticeTransfer.updateOne(
+      { _id: doc._id },
+      { $set: { "production.abutmentShipYmd": shipYmdRaw } },
+    );
+
+    const production = {
+      ...(doc.production && typeof doc.production === "object"
+        ? doc.production
+        : {}),
+      abutmentShipYmd: shipYmdRaw,
+    };
+    const productionApi = toProductionApiFields(production, {
+      abutmentPastReady: false,
+    });
+    const effectiveShipYmd =
+      resolveEffectiveAbutmentShipYmd({
+        production,
+        arrivalDates: doc.arrivalDates,
+        transferMemo: doc.transferMemo,
+        arrivalDate: arrivalYmd,
+      }) || shipYmdRaw;
+
+    const now = new Date();
+    const realtimePayload = {
+      action: "abutment-ship-ymd-updated",
+      transferId: String(doc.transferId || "").trim(),
+      transferMongoId: String(doc._id || "").trim(),
+      targetLabAnchorId: labAnchorId,
+      practiceUserId: String(doc.practiceUserId || "").trim() || null,
+      production: productionApi,
+      abutmentShipYmd: shipYmdRaw,
+      effectiveAbutmentShipYmd: effectiveShipYmd,
+      updatedAt: now,
+    };
+
+    emitAppEventToUser(req.user?._id, "practice:transfer-updated", realtimePayload);
+    void emitPracticeTransferEventToPracticeUsers({
+      practiceBusinessAnchorId: doc.practiceBusinessAnchorId,
+      type: "practice:transfer-updated",
+      payload: realtimePayload,
+      extraUserIds: [doc.practiceUserId],
+    }).catch((err) => {
+      console.warn("[practiceTransfer] abutment-ship-ymd practice emit", err);
+    });
+    void emitPracticeTransferEventToRequestorUsers({
+      targetLabAnchorId: labAnchorId,
+      type: "practice:transfer-updated",
+      payload: realtimePayload,
+    }).catch((err) => {
+      console.warn("[practiceTransfer] abutment-ship-ymd lab emit", err);
+    });
+
+    const relatedIds = Array.isArray(production.relatedRequestIds)
+      ? production.relatedRequestIds
+          .map((id) => String(id || "").trim())
+          .filter(Boolean)
+      : [];
+    if (relatedIds.length > 0) {
+      const transferForReprice = {
+        ...doc.toObject?.() || doc,
+        production,
+      };
+      void (async () => {
+        try {
+          const requests = await Request.find({
+            _id: { $in: relatedIds },
+            manufacturerStage: { $nin: ["취소"] },
+          });
+          await Promise.all(
+            requests.map(async (requestDoc) => {
+              const stage = String(requestDoc.manufacturerStage || "").trim();
+              if (stage && stage !== "준비" && stage !== "의뢰") return;
+              await repriceAndReschedulePtxAbutmentRequest({
+                requestDoc,
+                transferDoc: transferForReprice,
+                scheduleMode: "holdFast",
+              });
+              await requestDoc.save();
+            }),
+          );
+        } catch (err) {
+          console.warn(
+            "[practiceTransfer] abutment-ship-ymd CA reschedule",
+            err,
+          );
+        }
+      })();
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        transferId: String(doc.transferId || "").trim(),
+        production: productionApi,
+        abutmentShipYmd: shipYmdRaw,
+        effectiveAbutmentShipYmd: effectiveShipYmd,
+      },
+    });
+  } catch (error) {
+    console.error("setPracticeTransferAbutmentShipYmd error:", error);
+    return res.status(500).json({
+      success: false,
+      message: error?.message || "어벗 출고일 설정에 실패했습니다.",
+    });
+  }
+}
+
 export async function confirmPracticeTransferAbutmentDesign(req, res) {
   try {
     const role = String(req.user?.role || "").trim();

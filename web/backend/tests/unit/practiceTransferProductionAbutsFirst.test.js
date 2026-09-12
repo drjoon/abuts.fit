@@ -10,13 +10,39 @@ import {
   normalizeResultFiles,
   parseArrivalYmdFromMemo,
   resolveManufacturerTargetShipYmd,
+  resolvePtxCaTargetShipYmd,
   resolveOralScanFilesForAccept,
   shouldLockLabOralScanDownload,
 } from "../../services/practiceTransferProduction.service.js";
+import {
+  defaultAbutmentShipYmdFromArrival,
+  resolveEffectiveAbutmentShipYmd,
+} from "../../utils/practiceTransferArrivalDates.js";
 
 describe("practiceTransferProduction Abuts-first helpers", () => {
-  test("PTX CA ship offset is dental-direct (arrival − 2 business days)", () => {
+  test("PTX CA ship offset legacy constant remains 2 business days", () => {
     expect(PTX_CA_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS).toBe(2);
+  });
+
+  test("resolvePtxCaTargetShipYmd defaults to arrival − 3 civil days", () => {
+    expect(
+      resolvePtxCaTargetShipYmd(
+        { transferMemo: "[치과도착일: 2026-08-20]" },
+        "2026-08-20",
+      ),
+    ).toBe("2026-08-17");
+    expect(
+      resolvePtxCaTargetShipYmd({
+        production: { abutmentShipYmd: "2026-08-15" },
+        transferMemo: "[치과도착일: 2026-08-20]",
+      }),
+    ).toBe("2026-08-15");
+    expect(defaultAbutmentShipYmdFromArrival("2026-08-20")).toBe("2026-08-17");
+    expect(
+      resolveEffectiveAbutmentShipYmd({
+        arrivalDate: "2026-08-20",
+      }),
+    ).toBe("2026-08-17");
   });
 
   test("resolveShippingModeForPracticeTransferArrival: always 묶음 including ≤3 rush", async () => {

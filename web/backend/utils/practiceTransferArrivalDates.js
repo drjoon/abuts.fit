@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-12: 어벗 출고일 기본=치과도착일 − 3달력일. 기공소 설정값(production.abutmentShipYmd) 우선.
 // - 2026-08-27: 재도착 시 주문일도 오늘(KST) 누적(orderDates) — 주문일/도착일 캘린더 모두 확인.
 // - 2026-08-27: 재도착일 — 오늘(KST) 이후는 하나만. 다시 고르면 교체(과거·오늘 이력만 캘린더 유지).
 // - 2026-08-27: 치과도착일 누적(arrivalDates). 최종일=배열 끝·메모 태그. 신규 전송 없이 캘린더 다중 표시.
@@ -20,6 +21,35 @@ const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** 쉐이드 변경 등 — 오늘(KST) 기준 기본 연기 일수(달력일). */
 export const PRACTICE_ARRIVAL_SHADE_EXTEND_CIVIL_DAYS = 7;
+
+/** 어벗 출고 기본 = 치과도착일 − N달력일. 기공소가 production.abutmentShipYmd로 덮어씀. */
+export const PRACTICE_ABUTMENT_SHIP_BEFORE_ARRIVAL_CIVIL_DAYS = 3;
+
+/**
+ * @param {string|null|undefined} arrivalYmd
+ * @returns {string|null}
+ */
+export function defaultAbutmentShipYmdFromArrival(arrivalYmd) {
+  return addCivilDaysYmd(
+    arrivalYmd,
+    -PRACTICE_ABUTMENT_SHIP_BEFORE_ARRIVAL_CIVIL_DAYS,
+  );
+}
+
+/**
+ * 기공소 설정값 우선, 없으면 치과도착일 − 3달력일.
+ * @param {{ production?: { abutmentShipYmd?: unknown }, arrivalDates?: unknown, transferMemo?: unknown, arrivalDate?: unknown } | null | undefined} doc
+ * @returns {string|null}
+ */
+export function resolveEffectiveAbutmentShipYmd(doc) {
+  const stored = String(doc?.production?.abutmentShipYmd || "").trim();
+  if (YMD_RE.test(stored)) return stored;
+  const direct = String(doc?.arrivalDate || "").trim();
+  const arrival = YMD_RE.test(direct)
+    ? direct
+    : resolveCurrentArrivalYmd(resolvePracticeArrivalDates(doc));
+  return defaultAbutmentShipYmdFromArrival(arrival);
+}
 
 /**
  * @param {unknown} value

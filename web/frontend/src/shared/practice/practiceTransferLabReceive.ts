@@ -153,6 +153,8 @@ export type PracticeTransferLabReceiveItem = {
     labDesignConfirmedAt?: string | null;
     practiceDesignConfirmedAt?: string | null;
     abutmentProductionStartedAt?: string | null;
+    /** 기공소 지정 어벗 출고일(KST YMD). 미설정 시 도착−3달력일 기본. */
+    abutmentShipYmd?: string | null;
     /** 연동 CA가 준비 단계를 지남(가공 등) — 생산/수락 취소 불가 */
     abutmentPastReady?: boolean;
     confirmedAt?: string | null;

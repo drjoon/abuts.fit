@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - 2026-09-11: 수신 미처리(작업시작 전) 전 기간 OR용 targetLab+status+downloadedAt.
 // - 2026-08-28: 캘린더 조회용 orderDates/arrivalDates compound index.
+// - 2026-09-12: production.abutmentShipYmd — 기공소 어벗 출고일(기본 도착−3달력일).
 // - 2026-08-14: /my 정렬용 compound index (anchor+createdAt+_id, legacy user).
 import mongoose from "mongoose";
 
@@ -212,6 +213,11 @@ const practiceTransferSchema = new mongoose.Schema(
         default: null,
       },
       abutmentProductionStartedAt: { type: Date, default: null },
+      /**
+       * 기공소가 지정한 어벗 출고일(KST YMD).
+       * 미설정 시 치과도착일 − 3달력일(기본). CA Request estimatedShipYmd 목표로 사용.
+       */
+      abutmentShipYmd: { type: String, default: null, trim: true },
       // 크라운 작업완료 후 치과 「생산 진행」또는 skip 시 자동 확정
       confirmedAt: { type: Date, default: null, index: true },
       confirmedBy: {

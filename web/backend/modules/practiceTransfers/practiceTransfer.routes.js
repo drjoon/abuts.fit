@@ -47,6 +47,7 @@ import {
   appendPracticeTransferProsthesis,
   cancelPracticeTransferProsthesisFollowUp,
   updatePracticeTransferProsthesisFollowUp,
+  setPracticeTransferAbutmentShipYmd,
 } from "../../controllers/practiceTransfers/practiceTransfer.controller.js";
 import { handoffPracticeTransferAbutmentDesign, reportImplantCatalogMismatch } from "../../controllers/requests/designHandoff.controller.js";
 import {
@@ -261,6 +262,13 @@ router.post(
   authenticate,
   receiveAuth,
   handoffPracticeTransferAbutmentDesign,
+);
+
+router.post(
+  "/:transferId/abutment-ship-ymd",
+  authenticate,
+  receiveAuth,
+  setPracticeTransferAbutmentShipYmd,
 );
 
 router.post(

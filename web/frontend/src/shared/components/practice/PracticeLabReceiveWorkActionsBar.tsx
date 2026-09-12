@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/practice/practiceTransferLabReceive.ts
 // change-log:
+// - 2026-09-12: 어벗 출고일 설정 버튼(STL 업로드 옆) · 출고−3일 임박/경과 경고.
 // - 2026-09-12: 준비 — 치아 클릭 개별 취소 · (전체취소). 상태 접미 제거.
 // - 2026-09-12: 생산의뢰 완료 줄 — (준비: 취소 가능) 클릭 / (가공: 취소 불가). 중복 CTA 숨김.
 // - 2026-09-12: 가공(pastReady) 「리메이크」CTA 복구(무료 선택 리메이크 · 수가 청구 없음).
@@ -20,18 +21,25 @@
 // - 2026-09-02: 보철/dual 제거. CA 어벗 업로드 + 파일 없는 작업 완료 CTA.
 // - 2026-09-02: 수락 후 24h/48h 어벗 STL 미업로드 경고 배너.
 import type { MouseEvent, ReactNode } from "react";
-import { Repeat, Upload, X } from "lucide-react";
+import { AlertTriangle, Repeat, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { PracticeAbutmentShipDateButton } from "@/shared/components/practice/PracticeAbutmentShipDateButton";
 import { PracticeAbutmentUploadOverdueAlert } from "@/shared/components/practice/PracticeAbutmentUploadOverdueAlert";
 import {
   LabPendingAbutmentGuide,
   type LabPendingAbutsCancelAffinity,
 } from "@/shared/components/practice/LabPendingAbutmentGuide";
+import {
+  getAbutmentShipWarnLabel,
+  getAbutmentShipWarnMessage,
+  resolveAbutmentShipWarnLevel,
+  resolveEffectiveAbutmentShipYmd,
+} from "@/shared/practice/practiceAbutmentShipYmd";
 import {
   listPracticeTransferCustomAbutmentToothWorks,
   listPracticeTransferUploadedAbutmentTeeth,
@@ -40,6 +48,7 @@ import {
   type PracticeTransferLabReceiveItem,
 } from "@/shared/practice/practiceTransferLabReceive";
 import type { RoundBarCatalogRow } from "@/shared/practice/roundBarAbutment";
+import { toKstYmd } from "@/shared/date/kst";
 import { cn } from "@/shared/ui/cn";
 
 export type PracticeLabReceiveWorkActionsBarProps = {
@@ -58,6 +67,9 @@ export type PracticeLabReceiveWorkActionsBarProps = {
   onOpenAbutmentRemake?: (event: MouseEvent) => void;
   /** 어벗 STL 파일창 — 작업 취소 옆 */
   onAbutmentStlUpload?: (event: MouseEvent) => void;
+  /** 어벗 출고일 저장(기공소) */
+  onAbutmentShipYmdSave?: (shipYmd: string) => void | Promise<void>;
+  abutmentShipBusy?: boolean;
   onDesignConfirm?: () => void;
   trailingActions?: ReactNode;
   className?: string;
@@ -85,6 +97,8 @@ export function PracticeLabReceiveWorkActionsBar({
   onAbutmentToothCancel,
   onOpenAbutmentRemake,
   onAbutmentStlUpload,
+  onAbutmentShipYmdSave,
+  abutmentShipBusy = false,
   onDesignConfirm,
   trailingActions = null,
   className,
@@ -95,6 +109,13 @@ export function PracticeLabReceiveWorkActionsBar({
     transfer,
     catalog,
   );
+  const effectiveShipYmd = resolveEffectiveAbutmentShipYmd(transfer);
+  const shipWarnLevel = resolveAbutmentShipWarnLevel({
+    shipYmd: effectiveShipYmd,
+    todayYmd: toKstYmd(new Date()),
+  });
+  const showAbutmentShip =
+    state.designStlUploadMode === "abutment" && Boolean(onAbutmentShipYmdSave);
   const hasTrailing = Boolean(trailingActions);
   const hasAbutmentGuide = state.hasPendingLabCa || state.hasAbutsCa;
   const showAbutmentUpload =
@@ -106,7 +127,8 @@ export function PracticeLabReceiveWorkActionsBar({
     !hasTrailing &&
     !hasAbutmentGuide &&
     !uploadOverdue &&
-    !showAbutmentUpload
+    !showAbutmentUpload &&
+    !showAbutmentShip
   ) {
     return null;
   }
@@ -120,6 +142,42 @@ export function PracticeLabReceiveWorkActionsBar({
     uploadOverdueAlert && state.hasAbutsCa ? uploadOverdueAlert : null;
   const standaloneOverdue =
     uploadOverdueAlert && !state.hasAbutsCa ? uploadOverdueAlert : null;
+
+  const shipWarnAlert =
+    showAbutmentShip && shipWarnLevel ? (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div
+            role="status"
+            className={cn(
+              "flex w-fit max-w-full cursor-help items-center gap-1.5 rounded-md border px-2 py-1.5 text-xs leading-snug",
+              shipWarnLevel === "past"
+                ? "border-red-300 bg-red-50 text-red-900 dark:border-red-700 dark:bg-red-950/40 dark:text-red-100"
+                : "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100",
+            )}
+          >
+            <AlertTriangle
+              className={cn(
+                "mt-0.5 h-4 w-4 shrink-0",
+                shipWarnLevel === "past" ? "text-red-600" : "text-amber-600",
+              )}
+              aria-hidden
+            />
+            <span className="font-medium">
+              {getAbutmentShipWarnLabel(shipWarnLevel)}
+            </span>
+            <span className="text-[11px] opacity-90">
+              {shipWarnLevel === "past"
+                ? "— 출고일을 확인하세요"
+                : "— 출고 3일 전입니다"}
+            </span>
+          </div>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
+          {getAbutmentShipWarnMessage(shipWarnLevel, effectiveShipYmd)}
+        </TooltipContent>
+      </Tooltip>
+    ) : null;
 
   const abutsProductionOrdered =
     (state.showAbutmentProductionCancel ||
@@ -188,6 +246,15 @@ export function PracticeLabReceiveWorkActionsBar({
     </Tooltip>
   ) : null;
 
+  const abutmentShipButton = showAbutmentShip ? (
+    <PracticeAbutmentShipDateButton
+      transfer={transfer}
+      busy={abutmentShipBusy}
+      disabled={busy}
+      onSave={onAbutmentShipYmdSave}
+    />
+  ) : null;
+
   // 부분 업로드(미완료)만 별도 버튼 — 완료 줄 클릭이 SSOT
   const productionCancelButton =
     showProductionCancelInBar &&
@@ -249,11 +316,13 @@ export function PracticeLabReceiveWorkActionsBar({
 
   const cancelCluster =
     abutmentUploadButton ||
+    abutmentShipButton ||
     productionCancelButton ||
     pastReadyRemakeButton ||
     hasEffectiveTrailing ? (
       <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1.5">
         {abutmentUploadButton}
+        {abutmentShipButton}
         {productionCancelButton}
         {pastReadyRemakeButton}
         {effectiveTrailing}
@@ -290,6 +359,7 @@ export function PracticeLabReceiveWorkActionsBar({
     return (
       <div className={cn("w-full min-w-0 space-y-1.5", className)}>
         {standaloneOverdue}
+        {shipWarnAlert}
         {pendingLabGuide}
         {renderActionRow(designConfirmButton)}
       </div>
@@ -304,6 +374,7 @@ export function PracticeLabReceiveWorkActionsBar({
     return (
       <div className={cn("w-full min-w-0 space-y-1.5", className)}>
         {standaloneOverdue}
+        {shipWarnAlert}
         {pendingLabGuide}
         {renderActionRow(null)}
       </div>
@@ -313,6 +384,7 @@ export function PracticeLabReceiveWorkActionsBar({
   return (
     <div className={cn("w-full min-w-0 space-y-1.5", className)}>
       {standaloneOverdue}
+      {shipWarnAlert}
       {pendingLabGuide}
       {cancelCluster ??
         (effectiveTrailing ? (

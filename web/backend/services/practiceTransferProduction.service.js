@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-09-12: PTX CA 출고 목표 — 기공소 abutmentShipYmd 또는 치과도착일−3달력일(직납 −2영업일 폴백 폐기).
 // - 2026-09-12: CA 생성 — partnerBilling 잔존·병렬 레이스 중복을 치아당 1건으로 정리(어벗츠 생산중 잔존 방지).
 // - 2026-09-11: 작업취소 pastReady — sticky+링크없음/전부취소는 fail-closed(환불 차단). 준비 복귀만 sticky heal.
 // - 2026-09-09: PTX 리메이크+CA 포함 시 CA Request는 remake 과금(computePriceForRequest). 기본 리메이크는 CA 미시드.
@@ -108,6 +109,7 @@ import { recomputeBulkShippingSnapshotForBusinessAnchorId } from "./bulkShipping
 import { releaseRequestCreditHoldsOnCancel } from "./requestCreditHold.service.js";
 import { updateReviewStatusByStage } from "../controllers/requests/common.review.controller.js";
 import { prevKoreanBusinessDayYmd } from "../utils/krBusinessDays.js";
+import { resolveEffectiveAbutmentShipYmd } from "../utils/practiceTransferArrivalDates.js";
 import { isPendingRoundBarAbutment, isSimpleAbutmentModeForFee } from "../utils/labFeeSchedule.js";
 import { emitAppEventToRoles } from "../socket.js";
 
@@ -461,13 +463,13 @@ const ymdToUtcNoonMs = (ymd) => {
 };
 
 /**
- * PTX CA 치과 직납 배송 lead(영업일).
- * 제조사 출고 목표 = 치과도착일 − 이 값 (기공소 경유 시절 −3 → −2).
- * 지정 도착일 1영업일 전 배송이 목표.
+ * @deprecated 레거시. PTX CA는 resolvePtxCaTargetShipYmd(도착−3달력일·기공소 설정) SSOT.
+ * 제조사 출고 목표 = 치과도착일 − 이 값(영업일).
  */
 export const PTX_CA_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS = 2;
 
 /**
+ * @deprecated resolvePtxCaTargetShipYmd 사용.
  * 제조사 출고 목표 = 치과도착일 − 2영업일 (치과 직납).
  */
 export async function resolveManufacturerTargetShipYmd(arrivalYmd) {
@@ -477,6 +479,23 @@ export async function resolveManufacturerTargetShipYmd(arrivalYmd) {
     ymd = await prevKoreanBusinessDayYmd({ fromYmd: ymd });
   }
   return ymd;
+}
+
+/**
+ * PTX CA 출고 목표 SSOT.
+ * 기공소 production.abutmentShipYmd 우선, 없으면 치과도착일 − 3달력일.
+ */
+export function resolvePtxCaTargetShipYmd(transferDoc, arrivalYmd = null) {
+  const arrival =
+    String(arrivalYmd || "").trim() ||
+    String(transferDoc?.arrivalDate || "").trim() ||
+    null;
+  return resolveEffectiveAbutmentShipYmd({
+    production: transferDoc?.production,
+    arrivalDates: transferDoc?.arrivalDates,
+    transferMemo: transferDoc?.transferMemo,
+    arrivalDate: arrival,
+  });
 }
 
 /**
@@ -858,10 +877,8 @@ export async function createAbutmentRequestsFromPracticeTransfer({
     String(scanFiles[0]?.patientName || "").trim() ||
     "환자";
   const arrivalYmd = parseArrivalYmdFromMemo(transferDoc?.transferMemo);
-  // 항상 도착−2 출고 목표(묶음). 지정 도착일 1영업일 전 배송.
-  const targetShipYmd = arrivalYmd
-    ? await resolveManufacturerTargetShipYmd(arrivalYmd)
-    : null;
+  // 기공소 출고일 설정 또는 도착−3달력일(묶음 clamp 전 목표).
+  const targetShipYmd = resolvePtxCaTargetShipYmd(transferDoc, arrivalYmd);
 
   const billing =
     transferDoc?.billing && typeof transferDoc.billing === "object"
@@ -2289,9 +2306,7 @@ export async function repriceAndReschedulePtxAbutmentRequest({
   }
 
   const arrivalYmd = parseArrivalYmdFromMemo(transferDoc?.transferMemo);
-  const targetShipYmd = arrivalYmd
-    ? await resolveManufacturerTargetShipYmd(arrivalYmd)
-    : null;
+  const targetShipYmd = resolvePtxCaTargetShipYmd(transferDoc, arrivalYmd);
 
   if (!requestDoc.caseInfos || typeof requestDoc.caseInfos !== "object") {
     requestDoc.caseInfos = {};
@@ -2303,7 +2318,7 @@ export async function repriceAndReschedulePtxAbutmentRequest({
   let estimatedShipYmd = null;
 
   if (holdFast) {
-    // hold 박스 키용 출고일만 — 도착−2 또는 기존 timeline. 무거운 리드타임 스케줄은 생략.
+    // hold 박스 키용 출고일만 — 기공소 설정/도착−3 또는 기존 timeline. 무거운 리드타임 스케줄은 생략.
     const existingYmd = String(
       requestDoc?.timeline?.estimatedShipYmd ||
         requestDoc?.timeline?.nextEstimatedShipYmd ||

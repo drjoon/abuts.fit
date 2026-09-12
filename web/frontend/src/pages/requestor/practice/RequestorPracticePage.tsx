@@ -29,6 +29,7 @@
 // - web/backend/utils/labReceiveCalendarHiddenWeekdays.util.js
 // - web/frontend/src/shared/practice/labReceiveCalendarViewMode.ts
 // - web/backend/controllers/users/user.controller.js
+// - 2026-09-12: 어벗 출고일 설정(도착−3달력일 기본) — STL 업로드 옆 · 낙관적 패치.
 // - 2026-09-12: 채팅 없으면 상세 초기 스크롤=보철물(상단). 빈 목록 시 chatBottom 강제 스크롤 제거.
 // - 2026-09-12: 가공(pastReady) 「리메이크」CTA 복구(무료 선택 리메이크) · 생성 후 새 PTX 선택.
 // - 2026-09-12: 다중 STL — 3D 확인 전 파일명↔치아 매핑 요약 다이얼로그.
@@ -836,6 +837,7 @@ export function RequestorPracticeReceivePage({
   const [cardActionBusyId, setCardActionBusyId] = useState<string>("");
   const cardActionBusyIdRef = useRef<string>("");
   const [designConfirmBusyId, setDesignConfirmBusyId] = useState<string>("");
+  const [abutmentShipBusyId, setAbutmentShipBusyId] = useState<string>("");
   const [designConfirmOpen, setDesignConfirmOpen] = useState(false);
   const [designConfirmBusy, setDesignConfirmBusy] = useState(false);
   /** handoff API in-flight — 「처리 중」표시 없이 중복 확인 클릭만 막음 */
@@ -1145,6 +1147,10 @@ export function RequestorPracticeReceivePage({
               abutmentProductionStartedAt: productionRaw.abutmentProductionStartedAt
                 ? String(productionRaw.abutmentProductionStartedAt)
                 : null,
+              abutmentShipYmd: (() => {
+                const ymd = String(productionRaw.abutmentShipYmd || "").trim();
+                return /^\d{4}-\d{2}-\d{2}$/.test(ymd) ? ymd : null;
+              })(),
               abutmentPastReady: Boolean(productionRaw.abutmentPastReady),
               confirmedAt: productionRaw.confirmedAt
                 ? String(productionRaw.confirmedAt)
@@ -3690,6 +3696,138 @@ export function RequestorPracticeReceivePage({
       toast,
       workUploadBusy,
     ],
+  );
+
+  const saveAbutmentShipYmd = useCallback(
+    async (transfer: ReceivedPracticeTransfer, shipYmd: string) => {
+      if (!token) return;
+      const id = String(transfer.transferId || transfer._id || "").trim();
+      const ymd = String(shipYmd || "").trim();
+      if (!id || !/^\d{4}-\d{2}-\d{2}$/.test(ymd) || abutmentShipBusyId) return;
+
+      const prevShipYmd = String(
+        transfer.production?.abutmentShipYmd || "",
+      ).trim();
+      setAbutmentShipBusyId(id);
+      setTransfers((prev) =>
+        prev.map((row) => {
+          if (String(row.transferId || row._id || "").trim() !== id) return row;
+          return {
+            ...row,
+            production: {
+              ...(row.production || {}),
+              abutmentShipYmd: ymd,
+            },
+          };
+        }),
+      );
+
+      try {
+        const res = await apiFetch<{
+          success?: boolean;
+          message?: string;
+          data?: {
+            production?: ReceivedPracticeTransfer["production"];
+            abutmentShipYmd?: string;
+          };
+        }>({
+          path: `/api/practice/transfers/${encodeURIComponent(transfer.transferId)}/abutment-ship-ymd`,
+          method: "POST",
+          token,
+          jsonBody: { abutmentShipYmd: ymd },
+        });
+        if (!res.ok) {
+          const body =
+            res.data && typeof res.data === "object"
+              ? (res.data as Record<string, unknown>)
+              : {};
+          setTransfers((prev) =>
+            prev.map((row) => {
+              if (String(row.transferId || row._id || "").trim() !== id) {
+                return row;
+              }
+              return {
+                ...row,
+                production: {
+                  ...(row.production || {}),
+                  abutmentShipYmd: /^\d{4}-\d{2}-\d{2}$/.test(prevShipYmd)
+                    ? prevShipYmd
+                    : null,
+                },
+              };
+            }),
+          );
+          toast({
+            title: "출고일 설정 실패",
+            description: String(
+              body.message || "어벗 출고일을 저장하지 못했습니다.",
+            ),
+            variant: "destructive",
+          });
+          return;
+        }
+        const body =
+          res.data && typeof res.data === "object"
+            ? (res.data as {
+                data?: {
+                  production?: { abutmentShipYmd?: string | null };
+                  abutmentShipYmd?: string;
+                };
+              })
+            : {};
+        const savedYmd = String(
+          body.data?.production?.abutmentShipYmd ||
+            body.data?.abutmentShipYmd ||
+            ymd,
+        ).trim();
+        if (/^\d{4}-\d{2}-\d{2}$/.test(savedYmd) && savedYmd !== ymd) {
+          setTransfers((prev) =>
+            prev.map((row) => {
+              if (String(row.transferId || row._id || "").trim() !== id) {
+                return row;
+              }
+              return {
+                ...row,
+                production: {
+                  ...(row.production || {}),
+                  abutmentShipYmd: savedYmd,
+                },
+              };
+            }),
+          );
+        }
+        toast({
+          title: "출고일 설정 완료",
+          description: "어벗 출고일이 저장되었습니다.",
+        });
+      } catch (error) {
+        setTransfers((prev) =>
+          prev.map((row) => {
+            if (String(row.transferId || row._id || "").trim() !== id) return row;
+            return {
+              ...row,
+              production: {
+                ...(row.production || {}),
+                abutmentShipYmd: /^\d{4}-\d{2}-\d{2}$/.test(prevShipYmd)
+                  ? prevShipYmd
+                  : null,
+              },
+            };
+          }),
+        );
+        toast({
+          title: "출고일 설정 실패",
+          description:
+            error instanceof Error
+              ? error.message
+              : "어벗 출고일을 저장하지 못했습니다.",
+          variant: "destructive",
+        });
+      } finally {
+        setAbutmentShipBusyId("");
+      }
+    },
+    [abutmentShipBusyId, toast, token],
   );
 
   const confirmAbutmentDesign = useCallback(
@@ -7195,6 +7333,10 @@ export function RequestorPracticeReceivePage({
                   }
                 })();
               }}
+              onAbutmentShipYmdSave={(shipYmd) =>
+                void saveAbutmentShipYmd(selectedTransfer, shipYmd)
+              }
+              abutmentShipBusy={abutmentShipBusyId === transferKey}
               onDesignConfirm={() => {
                 void confirmAbutmentDesign(selectedTransfer);
               }}
