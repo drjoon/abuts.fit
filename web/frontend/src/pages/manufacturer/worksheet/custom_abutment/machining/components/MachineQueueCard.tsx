@@ -1,5 +1,5 @@
 // change-log:
-// - 2026-09-12: Next Up CAM 오버레이 — 아주 옅은 블러+반투명「작업중/작업중지」(준비 탭과 동일).
+// - 2026-09-12: Next Up CAM 오버레이 — 블러 제거·옅은 틴트+반투명「작업중/작업중지」(준비 탭과 동일).
 // - 2026-09-11: Complete 슬롯 — 포장.발송·추적관리 건은 준비 롤백/재승인 비활성.
 // - 2026-08-30: Now Playing X — 확인 후 브리지 정지(C_STOP) + machining/cancel.
 // - 2026-08-29: Next Up「CAM 생성 중」블러 옆 생성 중단 버튼.
@@ -1161,7 +1161,7 @@ export const MachineQueueCard = ({
           >
             {nextUpCamRegenPending ? (
               <div
-                className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-2 rounded-[inherit] bg-white/15 backdrop-blur-[1px]"
+                className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-2 rounded-[inherit] bg-white/10"
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -1174,13 +1174,13 @@ export const MachineQueueCard = ({
                 aria-live="polite"
                 aria-label="작업중"
               >
-                <span className="rounded-full border border-primary-muted/50 bg-primary-soft/40 px-3 py-1.5 text-sm font-extrabold text-primary-strong shadow-sm">
+                <span className="rounded-full border border-primary/35 bg-primary-soft/70 px-3 py-1.5 text-sm font-extrabold text-primary-strong">
                   작업중
                 </span>
                 {onCancelCamGeneration && nextUpRequestId ? (
                   <button
                     type="button"
-                    className="rounded-full border border-slate-300/60 bg-white/40 px-3 py-1.5 text-sm font-bold text-slate-700 shadow-sm hover:bg-white/55 disabled:opacity-50"
+                    className="rounded-full border border-slate-400/40 bg-white/75 px-3 py-1.5 text-sm font-bold text-slate-700 hover:bg-white/85 disabled:opacity-50"
                     disabled={nextUpCamCancelling}
                     onClick={(e) => {
                       e.preventDefault();

@@ -1,5 +1,5 @@
 // change-log:
-// - 2026-09-12: 라이노 오버레이 — 아주 옅은 블러+반투명「작업중/작업중지」(의뢰 내용 또렷이).
+// - 2026-09-12: 라이노 오버레이 — 블러 제거·옅은 틴트+반투명「작업중/작업중지」(의뢰 내용 또렷이).
 // - 2026-09-04: 세척.패킹 카드에 각인 이미지(또는 pending) 드롭 매칭 지원.
 // - 2026-09-09: 라이노 블러 — GENERATING만(idle filled 미수신 해제). 오버레이 약하게(내용 가독).
 // - 2026-09-03: 준비 탭「라이노 작업중」오버레이에 중단 버튼(뱃지 아래).
@@ -809,7 +809,7 @@ export const WorksheetCardGrid = ({
           >
             {rhinoWorkPending ? (
               <div
-                className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-2 rounded-[inherit] bg-white/15 backdrop-blur-[1px] cursor-not-allowed"
+                className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-2 rounded-[inherit] bg-white/10 cursor-not-allowed"
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -822,13 +822,13 @@ export const WorksheetCardGrid = ({
                 aria-live="polite"
                 aria-label="작업중"
               >
-                <span className="rounded-full border border-primary-muted/50 bg-primary-soft/40 px-3 py-1.5 text-sm font-extrabold text-primary-strong shadow-sm">
+                <span className="rounded-full border border-primary/35 bg-primary-soft/70 px-3 py-1.5 text-sm font-extrabold text-primary-strong">
                   작업중
                 </span>
                 {onCancelRhinoWork ? (
                   <button
                     type="button"
-                    className="rounded-full border border-slate-300/60 bg-white/40 px-3 py-1.5 text-sm font-bold text-slate-700 shadow-sm hover:bg-white/55 disabled:opacity-50 cursor-pointer"
+                    className="rounded-full border border-slate-400/40 bg-white/75 px-3 py-1.5 text-sm font-bold text-slate-700 hover:bg-white/85 disabled:opacity-50 cursor-pointer"
                     disabled={!!rhinoCancellingIds[String(request._id || request.requestId || "")]}
                     onClick={(e) => {
                       e.preventDefault();

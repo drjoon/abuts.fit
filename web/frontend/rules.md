@@ -314,7 +314,7 @@ Notes:
   - `src/pages/manufacturer/worksheet/custom_abutment/machining/hooks/useMachiningBoard.ts`
   - `src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx`
 - 「우선순위」 버튼 → `MachiningPriorityRulesModal` (`GET /api/cnc-machines/machining-priority-rules`)
-- Next Up 카드 드래그 → 다른 장비 Next Up으로 이동 (`POST /api/cnc-machines/queues/move`). 이동 시 기존 NC를 삭제하고 CAM을 재생성한다. NC 미수신(재생성 중)이면 Next Up에 옅은 블러 + 반투명 「작업중/작업중지」 오버레이(준비 탭 라이노와 동일).
+- Next Up 카드 드래그 → 다른 장비 Next Up으로 이동 (`POST /api/cnc-machines/queues/move`). 이동 시 기존 NC를 삭제하고 CAM을 재생성한다. NC 미수신(재생성 중)이면 Next Up에 옅은 틴트 + 반투명 「작업중/작업중지」 오버레이(준비 탭 라이노와 동일, 본문 블러 없음).
 - 신속배송 14:00 빠른 가공 재배치:
   - socket `machining:express-rebalance` / queues `meta.expressRebalanceAlert`
   - Alert 칩 클릭 → `ExpressRebalanceAlertModal` (장비별 배정·예상 가공시간·예상 완료·예측 기준)
@@ -397,8 +397,8 @@ Notes:
   - 라이노 작업 중 카드: `productionSchedule.stlPreload.status=GENERATING`
     또는 filled 재생성 pending(`markFilledStlRegenerationPending` /
     `filled-stl-regeneration-started`)일 때만
-    카드 본문을 아주 옅게 블러(`bg-white/15` · `backdrop-blur-[1px]`)하고
-    반투명 「작업중/작업중지」(`bg-*/40`) 오버레이로 클릭을 막는다(의뢰 내용은 또렷이 가독).
+    카드 본문은 블러 없이 옅은 틴트(`bg-white/10`)만 덮고
+    반투명 「작업중/작업중지」(`bg-*/70`·`bg-white/75`)로 클릭을 막는다(의뢰 내용은 또렷이 가독).
     filled STL(`caseInfos.stlFile.s3Key`, legacy `camFile` 폴백) 미수신 idle 카드는 블러하지 않는다.
     생성 완료 웹소켓(`request:stage-changed` source=`bg-file-processed`,
     `request:stl-metadata-updated` source=`bg-file-processed:2-filled`,
