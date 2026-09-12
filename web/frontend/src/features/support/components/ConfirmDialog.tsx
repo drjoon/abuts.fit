@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-09-12: z-[320]/[321] — Popover/Tooltip(z-400)이 위에 오도록(플로팅 패널 z-300 위).
+// - 2026-09-12: title — ReactNode 허용(제목+도움말 아이콘).
 // - 2026-09-10: showCloseButton · closeOnBackdrop · dense 옵션.
 // - 2026-08-19: busy — 확인 처리 중 버튼 잠금.
 // - 2026-08-11: panelClassName — 3D 프리뷰 등 넓은 확인 모달용.
@@ -16,7 +18,7 @@ import { cn } from "@/shared/ui/cn";
 
 interface ConfirmDialogProps {
   open: boolean;
-  title: string;
+  title: ReactNode;
   description?: ReactNode;
   confirmLabel?: string;
   cancelLabel?: string;
@@ -78,7 +80,7 @@ export const ConfirmDialog = ({
 
   return createPortal(
     <div
-      className="fixed inset-0 bg-black/30 flex items-center justify-center z-[10050] p-4 backdrop-blur-sm pointer-events-auto"
+      className="fixed inset-0 z-[320] flex items-center justify-center bg-black/30 p-4 backdrop-blur-sm pointer-events-auto"
       role="dialog"
       aria-modal="true"
       onClick={(e) => {
@@ -89,7 +91,7 @@ export const ConfirmDialog = ({
     >
       <div
         className={cn(
-          "bg-white rounded-2xl shadow-2xl w-full max-w-md transform transition-all z-[10051] max-h-[90vh] overflow-y-auto",
+          "relative z-[321] max-h-[90vh] w-full max-w-md transform overflow-y-auto rounded-2xl bg-white shadow-2xl transition-all",
           dense ? "p-4" : "p-6",
           panelClassName,
         )}

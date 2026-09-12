@@ -1,3 +1,7 @@
+// - 2026-09-12: 기공소(actor=lab) — 치과도착일 read-only.
+// - 2026-09-12: 리메이크 기본 도착일=오늘+원본 리드 · 주문일(오늘) 표시.
+// - 2026-09-12: 와이드 모달·8열 치아 타일·안내 툴팁화.
+// - 2026-09-12: ConfirmDialog showCloseButton · closeOnBackdrop.
 // - 2026-09-11: intent=abutment_remake — 가공 후 선택 치아 리메이크 의뢰(기본 미선택·어벗 라벨).
 // related files:
 // - web/frontend/src/features/chat/components/chatRemake.ts
@@ -6,25 +10,30 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/practice/usePracticeTransferFeeQuote.ts
 
-import { useEffect, useMemo, useState } from "react";
-import { CalendarDays, Repeat } from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { CalendarDays, Check, CircleHelp, Repeat } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import {
   listRemakePartOptions,
   selectedKeysToRemakeParts,
   buildToothWorksFromRemakeSelection,
   summarizeRemakeSelection,
+  type RemakePartOption,
   type RemakeSelectedPart,
 } from "@/features/chat/components/chatRemakeParts";
-import { toKstYmd } from "@/shared/date/kst";
+import { toKstYmd, kstAddCivilDays, kstYmdDiffDays } from "@/shared/date/kst";
 import {
   formatManWon,
   formatWon,
@@ -33,9 +42,33 @@ import {
   LAB_FEE_CUSTOM_ABUTMENT_REMAKE_DEFAULT_PRICE,
   LAB_FEE_REMAKE_FREE,
 } from "@/shared/practice/labFeeSchedule";
+import { DEFAULT_PRACTICE_ARRIVAL_OFFSET_DAYS } from "@/shared/practice/labArrivalDefaults";
 import type { ToothWorkSelection } from "@/shared/practice/transferMemo";
 import { usePracticeTransferFeeQuote } from "@/shared/practice/usePracticeTransferFeeQuote";
 import { cn } from "@/shared/ui/cn";
+
+/** 리메이크 기본 도착일 = 오늘 + 원본(주문→도착) 일수. 없으면 계정 기본 오프셋. */
+export function resolveRemakeDefaultArrivalYmd(input: {
+  todayYmd: string;
+  sourceOrderYmd?: string | null;
+  sourceArrivalYmd?: string | null;
+  fallbackOffsetDays?: number;
+}): string {
+  const today = String(input.todayYmd || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(today)) return "";
+  const lead = kstYmdDiffDays(input.sourceOrderYmd, input.sourceArrivalYmd);
+  const fallback = Math.max(
+    0,
+    Math.floor(
+      Number(
+        input.fallbackOffsetDays ?? DEFAULT_PRACTICE_ARRIVAL_OFFSET_DAYS,
+      ) || 0,
+    ),
+  );
+  const offset = lead != null && lead > 0 ? lead : fallback;
+  const next = kstAddCivilDays(today, offset) || today;
+  return next < today ? today : next;
+}
 
 export type ChatRemakePromptResult =
   | { kind: "skip" }
@@ -66,9 +99,160 @@ type ChatRemakePromptDialogProps = {
   intent?: "chat_record" | "abutment_remake";
   /** abutment_remake — 치아번호로 CA 옵션 사전선택(예: 가공 치아 클릭) */
   initialSelectedTeeth?: string[] | null;
+  /** 원본 의뢰 주문일·도착일 → 리메이크 기본 도착일(오늘+리드) 계산 */
+  sourceOrderYmd?: string | null;
+  sourceArrivalYmd?: string | null;
   onResolve: (result: ChatRemakePromptResult) => void | Promise<void>;
   onCancel: () => void;
 };
+
+function HelpTip({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex text-muted-foreground/70 transition-colors hover:text-foreground"
+          aria-label={label}
+        >
+          <CircleHelp className="h-3.5 w-3.5" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent
+        side="top"
+        className="max-w-[min(100vw-2rem,22rem)] space-y-1 text-left text-xs leading-relaxed"
+      >
+        {children}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+function RemakePartTile({
+  opt,
+  checked,
+  busy,
+  subtitle,
+  tone,
+  onToggle,
+}: {
+  opt: RemakePartOption;
+  checked: boolean;
+  busy: boolean;
+  subtitle: string;
+  tone: "amber" | "sky";
+  onToggle: () => void;
+}) {
+  const selectedTone =
+    tone === "sky"
+      ? "border-sky-400 bg-sky-50 text-sky-950 ring-1 ring-sky-300/60"
+      : "border-amber-400 bg-amber-50 text-amber-950 ring-1 ring-amber-300/60";
+
+  return (
+    <button
+      type="button"
+      disabled={busy}
+      onClick={onToggle}
+      aria-pressed={checked}
+      className={cn(
+        "relative flex h-[3.25rem] w-[4.5rem] shrink-0 flex-col items-center justify-center gap-0.5 rounded-lg border px-1 py-1.5 text-center transition-all",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-1",
+        "disabled:cursor-not-allowed disabled:opacity-60",
+        checked
+          ? selectedTone
+          : "border-slate-200/90 bg-white text-slate-800 hover:border-slate-300 hover:bg-slate-50/80",
+      )}
+    >
+      {checked ? (
+        <span
+          className={cn(
+            "absolute right-1 top-1 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full text-white",
+            tone === "sky" ? "bg-sky-500" : "bg-amber-500",
+          )}
+          aria-hidden
+        >
+          <Check className="h-2.5 w-2.5" strokeWidth={3} />
+        </span>
+      ) : null}
+      <span className="text-[13px] font-semibold tabular-nums leading-none">
+        #{opt.toothNumber}
+      </span>
+      <span
+        className={cn(
+          "max-w-full truncate px-0.5 text-[10px] leading-tight",
+          checked ? "opacity-80" : "text-muted-foreground",
+        )}
+        title={subtitle}
+      >
+        {subtitle}
+      </span>
+    </button>
+  );
+}
+
+function PartSection({
+  title,
+  options,
+  selectedKeys,
+  busy,
+  tone,
+  subtitleFor,
+  onToggleKey,
+  onSelectAll,
+}: {
+  title: string;
+  options: RemakePartOption[];
+  selectedKeys: ReadonlySet<string>;
+  busy: boolean;
+  tone: "amber" | "sky";
+  subtitleFor: (opt: RemakePartOption) => string;
+  onToggleKey: (key: string) => void;
+  onSelectAll: () => void;
+}) {
+  if (options.length === 0) return null;
+  const allOn = options.every((o) => selectedKeys.has(o.key));
+
+  return (
+    <section className="space-y-1.5">
+      <div className="flex items-center justify-center gap-2">
+        <h3 className="text-[12px] font-semibold tracking-tight text-slate-700">
+          {title}
+          <span className="ml-1.5 font-normal tabular-nums text-muted-foreground">
+            {options.filter((o) => selectedKeys.has(o.key)).length}/
+            {options.length}
+          </span>
+        </h3>
+        <button
+          type="button"
+          className="text-[11px] font-medium text-primary hover:underline disabled:opacity-50"
+          disabled={busy}
+          onClick={onSelectAll}
+        >
+          {allOn ? "전체 해제" : "전체 선택"}
+        </button>
+      </div>
+      <div className="flex flex-wrap justify-center gap-1.5">
+        {options.map((opt) => (
+          <RemakePartTile
+            key={opt.key}
+            opt={opt}
+            checked={selectedKeys.has(opt.key)}
+            busy={busy}
+            subtitle={subtitleFor(opt)}
+            tone={tone}
+            onToggle={() => onToggleKey(opt.key)}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
 
 export function ChatRemakePromptDialog({
   open,
@@ -82,12 +266,23 @@ export function ChatRemakePromptDialog({
   actor = "practice",
   intent = "chat_record",
   initialSelectedTeeth = null,
+  sourceOrderYmd = null,
+  sourceArrivalYmd = null,
   onResolve,
   onCancel,
 }: ChatRemakePromptDialogProps) {
   const todayYmd = toKstYmd(new Date()) || "";
+  const defaultArrivalYmd = useMemo(
+    () =>
+      resolveRemakeDefaultArrivalYmd({
+        todayYmd,
+        sourceOrderYmd,
+        sourceArrivalYmd,
+      }),
+    [todayYmd, sourceOrderYmd, sourceArrivalYmd],
+  );
   const [step, setStep] = useState<"ask" | "configure">(initialStep);
-  const [arrivalYmd, setArrivalYmd] = useState(todayYmd);
+  const [arrivalYmd, setArrivalYmd] = useState(defaultArrivalYmd || todayYmd);
   const [arrivalOpen, setArrivalOpen] = useState(false);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(() => new Set());
   const isAbutmentRemake = intent === "abutment_remake";
@@ -118,7 +313,7 @@ export function ChatRemakePromptDialog({
   useEffect(() => {
     if (!open) return;
     setStep(initialStep);
-    setArrivalYmd(todayYmd);
+    setArrivalYmd(defaultArrivalYmd || todayYmd);
     setArrivalOpen(false);
     // abutment_remake: 전부 선택 실수 방지(예: 14 제외·15-17만).
     // initialSelectedTeeth가 있으면 해당 CA만 사전선택.
@@ -148,6 +343,7 @@ export function ChatRemakePromptDialog({
     open,
     initialStep,
     todayYmd,
+    defaultArrivalYmd,
     partOptions,
     isAbutmentRemake,
     initialToothSet,
@@ -186,7 +382,7 @@ export function ChatRemakePromptDialog({
   const caRemakeDefaultLabel = `${LAB_FEE_CUSTOM_ABUTMENT_REMAKE_DEFAULT_PRICE.toLocaleString("ko-KR")}원`;
 
   const feeText = useMemo(() => {
-    if (selectedToothWorks.length === 0) return "선택 없음";
+    if (selectedToothWorks.length === 0) return "—";
     if (liveQuote.contextReady && remakeFeeTotal >= 0) {
       return formatWon(remakeFeeTotal);
     }
@@ -194,7 +390,7 @@ export function ChatRemakePromptDialog({
       (p) => p.customAbutment,
     );
     if (hasCa && remakeFeeWithCaLabel) return remakeFeeWithCaLabel;
-    return remakeFeeLabel || "견적 계산 중…";
+    return remakeFeeLabel || "…";
   }, [
     liveQuote.contextReady,
     remakeFeeLabel,
@@ -240,17 +436,16 @@ export function ChatRemakePromptDialog({
         open
         title="이 첨부는 리메이크인가요?"
         description={
-          <div className="space-y-2 text-left text-sm">
-            <p>
-              리메이크이면 범위·도착일을 선택한 뒤 기공의뢰로 기록·과금됩니다.
-              아니면 채팅 첨부만 전송합니다.
-            </p>
-          </div>
+          <p className="text-left text-sm text-muted-foreground">
+            예 → 범위·도착일 기록 · 아니요 → 채팅 첨부만
+          </p>
         }
         confirmLabel="예, 리메이크"
         cancelLabel="아니요"
         confirmTone="primary"
         busy={busy}
+        showCloseButton
+        closeOnBackdrop
         onConfirm={() => setStep("configure")}
         onCancel={() => {
           if (busy) return;
@@ -263,227 +458,168 @@ export function ChatRemakePromptDialog({
   const isMetaOnly = variant === "meta_only";
   const isLab = actor === "lab";
 
+  const titleHelp = isAbutmentRemake
+    ? "가공이 시작된 어벗은 취소할 수 없습니다. 재제작이 필요한 부위만 선택하세요. 선택하지 않은 치아는 그대로 둡니다."
+    : isMetaOnly
+      ? "구강 스캔은 3Shape 등으로 보내고, 여기에는 범위·도착일·수가만 기록합니다."
+      : isLab
+        ? "치과가 리메이크 체크를 빠뜨린 경우 기공소에서 범위를 기록할 수 있습니다."
+        : "선택한 보철·어벗만 리메이크 의뢰로 전달됩니다. 작업시작 시 리메이크 기공비가 청구됩니다.";
+
+  const feeHelp =
+    LAB_FEE_REMAKE_FREE || isLab || isAbutmentRemake ? (
+      <p>치과↔기공소 리메이크비는 무료입니다.</p>
+    ) : hasSelectedCa ? (
+      <p>
+        커스텀어벗 리메이크 수가 미설정 시 개당 {caRemakeDefaultLabel}. 설정 →
+        기공비에서 변경할 수 있습니다.
+      </p>
+    ) : (
+      <p>작업시작 시 정산에 반영됩니다.</p>
+    );
+
   return (
     <ConfirmDialog
       open
       title={
-        isAbutmentRemake
-          ? "리메이크할 부위를 선택하세요"
-          : isLab
-            ? "리메이크 범위를 기록할까요?"
-            : isMetaOnly
-              ? "리메이크 내역을 전달할까요?"
-              : "리메이크 범위를 선택하세요"
-      }
-      panelClassName="max-w-lg"
-      description={
-        <div className="space-y-4 text-left text-sm">
-          <p className="text-[13px] leading-snug text-slate-600">
+        <span className="inline-flex items-center gap-1.5">
+          <span>
             {isAbutmentRemake
-              ? "제조 가공이 시작된 어벗은 취소할 수 없습니다. 재제작이 필요한 보철·어벗만 골라 새 리메이크 의뢰를 만듭니다. 선택하지 않은 치아(예: 14 크라운·어벗)는 그대로 둡니다."
-              : isMetaOnly
-                ? "구강 스캔은 3Shape Communicate 등으로 보내고, 여기에는 리메이크 범위·도착일·수가만 기록합니다."
-                : isLab
-                  ? "치과가 리메이크 체크를 빠뜨린 경우, 기공소에서 범위를 지정해 기록할 수 있습니다."
-                  : "리메이크할 보철·커스텀어벗을 선택한 뒤 전달합니다. 작업시작 시 리메이크 기공비가 청구됩니다."}
-          </p>
-
-          <div className="space-y-1.5">
-            <div className="flex items-center gap-1.5 text-[13px] font-medium text-slate-800">
-              <CalendarDays className="h-3.5 w-3.5 text-slate-500" />
-              치과도착일
+              ? "리메이크 부위 선택"
+              : isLab
+                ? "리메이크 범위 기록"
+                : isMetaOnly
+                  ? "리메이크 내역 전달"
+                  : "리메이크 범위 선택"}
+          </span>
+          <HelpTip label="도움말">
+            <p>{titleHelp}</p>
+          </HelpTip>
+        </span>
+      }
+      panelClassName="max-w-[52rem]"
+      dense
+      showCloseButton
+      closeOnBackdrop
+      description={
+        <div className="space-y-3.5 text-left">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1.5">
+              <div className="inline-flex items-center gap-1.5 text-[12px]">
+                <span className="font-medium text-slate-500">주문일</span>
+                <span className="tabular-nums font-semibold text-slate-800">
+                  {todayYmd || "—"}
+                </span>
+              </div>
+              <div className="inline-flex items-center gap-1.5 text-[12px]">
+                <span className="inline-flex shrink-0 items-center gap-1 font-medium text-slate-500">
+                  <CalendarDays className="h-3.5 w-3.5 text-slate-400" />
+                  치과도착일
+                  {isLab ? (
+                    <HelpTip label="치과도착일 안내">
+                      <p>치과도착일은 치과가 지정합니다. 기공소에서는 변경할 수 없습니다.</p>
+                    </HelpTip>
+                  ) : null}
+                </span>
+                {isLab ? (
+                  <span className="tabular-nums font-semibold text-slate-800">
+                    {arrivalYmd || "—"}
+                  </span>
+                ) : (
+                  <Popover open={arrivalOpen} onOpenChange={setArrivalOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className={cn(
+                          "h-8 min-w-[8.5rem] justify-start px-2.5 text-[13px] font-medium tabular-nums",
+                          arrivalYmd ? "text-slate-900" : "text-muted-foreground",
+                        )}
+                        disabled={busy}
+                      >
+                        {arrivalYmd || "날짜 선택"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent
+                      align="start"
+                      className="w-auto p-0"
+                      onOpenAutoFocus={(e) => e.preventDefault()}
+                    >
+                      <Calendar
+                        mode="single"
+                        required
+                        numberOfMonths={1}
+                        selected={
+                          arrivalYmd
+                            ? new Date(`${arrivalYmd}T12:00:00+09:00`)
+                            : undefined
+                        }
+                        onSelect={(date) => {
+                          const ymd = toKstYmd(date) || "";
+                          if (!ymd) return;
+                          setArrivalYmd(ymd);
+                          setArrivalOpen(false);
+                        }}
+                        disabled={(date) => {
+                          const ymd = toKstYmd(date) || "";
+                          if (!ymd) return true;
+                          return Boolean(todayYmd && ymd < todayYmd);
+                        }}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                )}
+              </div>
             </div>
-            <Popover open={arrivalOpen} onOpenChange={setArrivalOpen}>
-              <PopoverTrigger asChild>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className={cn(
-                    "h-10 w-full justify-start font-medium",
-                    arrivalYmd ? "text-slate-900" : "text-muted-foreground",
-                  )}
-                  disabled={busy}
-                >
-                  {arrivalYmd || "날짜 선택"}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent
-                align="start"
-                className="w-auto p-0"
-                onOpenAutoFocus={(e) => e.preventDefault()}
-              >
-                <Calendar
-                  mode="single"
-                  required
-                  numberOfMonths={1}
-                  selected={
-                    arrivalYmd
-                      ? new Date(`${arrivalYmd}T12:00:00+09:00`)
-                      : undefined
-                  }
-                  onSelect={(date) => {
-                    const ymd = toKstYmd(date) || "";
-                    if (!ymd) return;
-                    setArrivalYmd(ymd);
-                    setArrivalOpen(false);
-                  }}
-                  disabled={(date) => {
-                    const ymd = toKstYmd(date) || "";
-                    if (!ymd) return true;
-                    return Boolean(todayYmd && ymd < todayYmd);
-                  }}
-                  initialFocus
-                />
-              </PopoverContent>
-            </Popover>
+
+            <div className="inline-flex items-center gap-2 rounded-lg border border-amber-200/70 bg-gradient-to-r from-amber-50 to-orange-50/50 px-2.5 py-1.5">
+              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-900/80">
+                <Repeat className="h-3.5 w-3.5 text-amber-700" />
+                리메이크비
+                <HelpTip label="리메이크비 안내">{feeHelp}</HelpTip>
+              </span>
+              <span className="text-[14px] font-semibold tabular-nums tracking-tight text-amber-950">
+                {feeText}
+              </span>
+              {remakeFeeTotal > 0 && liveQuote.contextReady ? (
+                <span className="text-[10px] tabular-nums text-amber-800/70">
+                  ≈{formatManWon(remakeFeeTotal)}
+                </span>
+              ) : null}
+            </div>
           </div>
 
-          {prosthesisOptions.length > 0 ? (
-            <section className="space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <h3 className="text-[13px] font-semibold text-slate-800">보철</h3>
-                <button
-                  type="button"
-                  className="text-[12px] font-medium text-primary hover:underline"
-                  disabled={busy}
-                  onClick={() =>
-                    selectAllIn(prosthesisOptions.map((o) => o.key))
-                  }
-                >
-                  {prosthesisOptions.every((o) => selectedKeys.has(o.key))
-                    ? "전체 해제"
-                    : "전체 선택"}
-                </button>
-              </div>
-              <div className="grid gap-2 sm:grid-cols-2">
-                {prosthesisOptions.map((opt) => {
-                  const checked = selectedKeys.has(opt.key);
-                  return (
-                    <label
-                      key={opt.key}
-                      className={cn(
-                        "flex cursor-pointer items-start gap-2.5 rounded-xl border px-3 py-2.5 transition-colors",
-                        checked
-                          ? "border-amber-300 bg-amber-50/90 shadow-sm"
-                          : "border-slate-200 bg-white hover:border-slate-300",
-                      )}
-                    >
-                      <Checkbox
-                        checked={checked}
-                        onCheckedChange={() => toggleKey(opt.key)}
-                        className="mt-0.5"
-                        disabled={busy}
-                      />
-                      <span className="min-w-0 space-y-0.5">
-                        <span className="block text-[13px] font-semibold tabular-nums text-slate-900">
-                          #{opt.toothNumber}
-                        </span>
-                        <span className="block text-[12px] text-muted-foreground">
-                          {opt.prosthesisType}
-                        </span>
-                      </span>
-                    </label>
-                  );
-                })}
-              </div>
-            </section>
-          ) : null}
+          <PartSection
+            title="보철"
+            options={prosthesisOptions}
+            selectedKeys={selectedKeys}
+            busy={busy}
+            tone="amber"
+            subtitleFor={(o) => o.prosthesisType}
+            onToggleKey={toggleKey}
+            onSelectAll={() =>
+              selectAllIn(prosthesisOptions.map((o) => o.key))
+            }
+          />
 
-          {caOptions.length > 0 ? (
-            <section className="space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <h3 className="text-[13px] font-semibold text-slate-800">
-                  {isAbutmentRemake ? "어벗" : "커스텀어벗"}
-                </h3>
-                <button
-                  type="button"
-                  className="text-[12px] font-medium text-primary hover:underline"
-                  disabled={busy}
-                  onClick={() => selectAllIn(caOptions.map((o) => o.key))}
-                >
-                  {caOptions.every((o) => selectedKeys.has(o.key))
-                    ? "전체 해제"
-                    : "전체 선택"}
-                </button>
-              </div>
-              <div className="grid gap-2 sm:grid-cols-2">
-                {caOptions.map((opt) => {
-                  const checked = selectedKeys.has(opt.key);
-                  return (
-                    <label
-                      key={opt.key}
-                      className={cn(
-                        "flex cursor-pointer items-start gap-2.5 rounded-xl border px-3 py-2.5 transition-colors",
-                        checked
-                          ? "border-sky-300 bg-sky-50/90 shadow-sm"
-                          : "border-slate-200 bg-white hover:border-slate-300",
-                      )}
-                    >
-                      <Checkbox
-                        checked={checked}
-                        onCheckedChange={() => toggleKey(opt.key)}
-                        className="mt-0.5"
-                        disabled={busy}
-                      />
-                      <span className="min-w-0 space-y-0.5">
-                        <span className="block text-[13px] font-semibold tabular-nums text-slate-900">
-                          #{opt.toothNumber}
-                        </span>
-                        <span className="block text-[12px] text-muted-foreground">
-                          {isAbutmentRemake ? "어벗" : "커스텀어벗"}
-                        </span>
-                      </span>
-                    </label>
-                  );
-                })}
-              </div>
-            </section>
-          ) : null}
+          <PartSection
+            title={isAbutmentRemake ? "어벗" : "커스텀어벗"}
+            options={caOptions}
+            selectedKeys={selectedKeys}
+            busy={busy}
+            tone="sky"
+            subtitleFor={() => (isAbutmentRemake ? "어벗" : "CA")}
+            onToggleKey={toggleKey}
+            onSelectAll={() => selectAllIn(caOptions.map((o) => o.key))}
+          />
 
           {partOptions.length === 0 ? (
             <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-[12px] text-muted-foreground">
               선택할 보철·어벗이 없습니다.
             </p>
           ) : null}
-
-          <div className="flex items-center justify-between gap-3 rounded-xl border border-amber-200/80 bg-gradient-to-r from-amber-50 to-orange-50/60 px-3.5 py-3">
-            <div className="flex items-center gap-2 text-[13px] font-medium text-amber-950">
-              <Repeat className="h-4 w-4 text-amber-700" />
-              리메이크비
-            </div>
-            <div className="text-right">
-              <div className="text-[15px] font-semibold tabular-nums text-amber-950">
-                {feeText}
-              </div>
-              {remakeFeeTotal > 0 && liveQuote.contextReady ? (
-                <div className="text-[11px] text-amber-800/80">
-                  ≈ {formatManWon(remakeFeeTotal)}
-                </div>
-              ) : null}
-            </div>
-          </div>
-          {hasSelectedCa ? (
-            <p className="rounded-lg border border-amber-100 bg-amber-50/50 px-3 py-2 text-[11px] leading-snug text-amber-950/90">
-              {LAB_FEE_REMAKE_FREE || isLab || isAbutmentRemake ? (
-                <>치과↔기공소 리메이크비는 무료입니다.</>
-              ) : (
-                <>
-                  커스텀어벗 리메이크 수가가 기공소에 미설정이면 개당{" "}
-                  {caRemakeDefaultLabel}이 적용됩니다. 기공소는 설정 → 기공비에서
-                  변경할 수 있습니다.
-                </>
-              )}
-            </p>
-          ) : LAB_FEE_REMAKE_FREE ? (
-            <p className="rounded-lg border border-emerald-100 bg-emerald-50/50 px-3 py-2 text-[11px] leading-snug text-emerald-950/90">
-              치과↔기공소 리메이크비는 무료입니다.
-            </p>
-          ) : null}
-          <p className="text-[11px] leading-snug text-muted-foreground">
-            {isAbutmentRemake
-              ? "새 리메이크 의뢰가 생성됩니다. 작업시작 후 선택한 어벗 STL만 다시 올리면 됩니다."
-              : "작업시작 시 정산(GL)에 반영되며, 채팅에도 내역이 남습니다."}
-          </p>
         </div>
       }
       confirmLabel={

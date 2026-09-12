@@ -29,6 +29,7 @@
 // - web/backend/utils/labReceiveCalendarHiddenWeekdays.util.js
 // - web/frontend/src/shared/practice/labReceiveCalendarViewMode.ts
 // - web/backend/controllers/users/user.controller.js
+// - 2026-09-12: 기공소 리메이크 — 원본 리드로 기본 도착일 · POST /received/remake.
 // - 2026-09-12: 어벗 출고일 설정(도착−3달력일 기본) — STL 업로드 옆 · 낙관적 패치.
 // - 2026-09-12: 채팅 없으면 상세 초기 스크롤=보철물(상단). 빈 목록 시 chatBottom 강제 스크롤 제거.
 // - 2026-09-12: 가공(pastReady) 「리메이크」CTA 복구(무료 선택 리메이크) · 생성 후 새 PTX 선택.
@@ -4455,7 +4456,8 @@ export function RequestorPracticeReceivePage({
             failed?: Array<{ message?: string }>;
           };
         }>({
-          path: "/api/practice/transfers/remake",
+          // 기공소 수신(mode=receive) → receiveAuth. 발신용 /remake 는 practice 역할 필요.
+          path: "/api/practice/transfers/received/remake",
           method: "POST",
           token,
           jsonBody: {
@@ -7554,6 +7556,22 @@ export function RequestorPracticeReceivePage({
         actor="lab"
         intent="abutment_remake"
         initialSelectedTeeth={labRemakeInitialTeeth}
+        sourceOrderYmd={
+          (Array.isArray(selectedTransfer?.orderDates) &&
+            selectedTransfer.orderDates[
+              selectedTransfer.orderDates.length - 1
+            ]) ||
+          selectedTransfer?.orderDate ||
+          null
+        }
+        sourceArrivalYmd={
+          (Array.isArray(selectedTransfer?.arrivalDates) &&
+            selectedTransfer.arrivalDates[
+              selectedTransfer.arrivalDates.length - 1
+            ]) ||
+          selectedTransfer?.arrivalDate ||
+          null
+        }
         onResolve={(result) => void handleConfirmLabRemakeCreate(result)}
         onCancel={() => {
           if (labRemakeCreateBusy) return;
