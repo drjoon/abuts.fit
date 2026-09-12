@@ -14,6 +14,7 @@
 // - web/frontend/src/shared/files/downloadWithProgress.ts
 // - web/frontend/src/shared/files/s3BlobCache.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-12: 의뢰·작업 파일 타일 썸네일 — aspect-square → 2:1(세로 약 절반).
 // - 2026-09-12: 의뢰 파일 삭제→휴지통. 썸네일 끝 휴지통+카운터·복원.
 // - 2026-09-12: 휴지통 팝오버 — 전체 복원(s3Keys 일괄).
 // - 2026-09-12: 의뢰 파일 — 업로드 웨이브(첫/두 번째/…) 클러스터.
@@ -379,6 +380,9 @@ export type PracticeTransferDialogCaseIdentity = {
   /** 채움 / 빈 원 / 이중 외곽선 */
   dotStyle?: CalendarLabDotStyle | null;
 };
+
+/** 의뢰·작업 파일 타일 썸네일 — 정사각 대비 세로 약 절반 */
+const FILE_TILE_THUMB_ASPECT_CLASS = "aspect-[2/1]";
 
 type PracticeTransferDetailChatDialogProps = {
   open: boolean;
@@ -2147,7 +2151,12 @@ export function PracticeTransferDetailChatDialog({
           title={title}
           className="flex w-full flex-col items-stretch text-left disabled:opacity-60 disabled:pointer-events-none"
         >
-          <div className="relative aspect-square w-full overflow-hidden bg-slate-100">
+          <div
+            className={cn(
+              "relative w-full overflow-hidden bg-slate-100",
+              FILE_TILE_THUMB_ASPECT_CLASS,
+            )}
+          >
             {isMesh && modelThumbFile ? (
               <StlPreviewThumbnail
                 file={modelThumbFile}
@@ -2162,11 +2171,11 @@ export function PracticeTransferDetailChatDialog({
                 draggable={false}
               />
             ) : (
-              <div className="flex h-full w-full flex-col items-center justify-center gap-1 px-1 text-slate-500">
+              <div className="flex h-full w-full flex-col items-center justify-center gap-0.5 px-1 text-slate-500">
                 {isMesh ? (
-                  <Box className="h-7 w-7 shrink-0" aria-hidden />
+                  <Box className="h-5 w-5 shrink-0" aria-hidden />
                 ) : (
-                  <FileIcon className="h-7 w-7 shrink-0" aria-hidden />
+                  <FileIcon className="h-5 w-5 shrink-0" aria-hidden />
                 )}
                 <span className="max-w-full truncate text-[10px] font-semibold tracking-wide text-slate-600">
                   {typeLabel}
@@ -2222,12 +2231,17 @@ export function PracticeTransferDetailChatDialog({
           </button>
         ) : null}
         <div className="flex w-full flex-col items-stretch">
-          <div className="relative aspect-square w-full overflow-hidden bg-slate-100">
-            <div className="flex h-full w-full flex-col items-center justify-center gap-1 px-1 text-slate-500">
+          <div
+            className={cn(
+              "relative w-full overflow-hidden bg-slate-100",
+              FILE_TILE_THUMB_ASPECT_CLASS,
+            )}
+          >
+            <div className="flex h-full w-full flex-col items-center justify-center gap-0.5 px-1 text-slate-500">
               {isMesh ? (
-                <Box className="h-7 w-7 shrink-0" aria-hidden />
+                <Box className="h-5 w-5 shrink-0" aria-hidden />
               ) : (
-                <FileIcon className="h-7 w-7 shrink-0" aria-hidden />
+                <FileIcon className="h-5 w-5 shrink-0" aria-hidden />
               )}
               <span className="max-w-full truncate text-[10px] font-semibold tracking-wide text-slate-600">
                 {typeLabel}
@@ -2277,8 +2291,13 @@ export function PracticeTransferDetailChatDialog({
           title={`휴지통 ${trashedFileList.length}개`}
           aria-label={`휴지통 ${trashedFileList.length}개`}
         >
-          <div className="relative flex aspect-square w-full flex-col items-center justify-center gap-1 bg-slate-200/60 text-slate-600">
-            <Trash2 className="h-7 w-7 shrink-0" aria-hidden />
+          <div
+            className={cn(
+              "relative flex w-full flex-col items-center justify-center gap-0.5 bg-slate-200/60 text-slate-600",
+              FILE_TILE_THUMB_ASPECT_CLASS,
+            )}
+          >
+            <Trash2 className="h-5 w-5 shrink-0" aria-hidden />
             <span className="absolute right-1 top-1 inline-flex min-w-5 items-center justify-center rounded-full bg-slate-800 px-1.5 py-0.5 text-[10px] font-semibold text-white">
               {trashedFileList.length}
             </span>
