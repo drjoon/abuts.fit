@@ -544,7 +544,7 @@ body:has(.guide-tour-root) .guide-tour-nested-dialog-overlay {
 
 /*
  * 기공의뢰 목록 모드 — 미니 달력 고정폭(항상 표시).
- * 남는 폭은 목록·채팅이 flex 비율로 분배. md 미만은 숨김.
+ * 남는 폭은 목록·채팅 드래그 분할(PracticeTransferMainDetailSplit). md 미만은 숨김.
  */
 .practice-transfer-list-side-cal {
   display: none;

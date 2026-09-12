@@ -39,6 +39,7 @@
  * - 2026-09-11: 목록·칩 — 작업 큐=빨간 테두리, 채팅 unread=빨간 숫자(분리).
  * - 2026-09-10: 상단 뱃지 표시 on/off 제거 — active 톤만 사용(unread 순회).
  * - 2026-09-10: focusItemId/focusEpoch — 뱃지 순회 시 해당 칩·목록 행으로 스크롤.
+ * - 2026-09-13: 목록·캘린더 ↔ 채팅 — 드래그 가로 분할 + localStorage(autoSaveId).
  * - 2026-09-12: 목록/캘린더 — 미니달력 고정폭. 본문·채팅은 flex 비율로 함께 축소.
  * - 2026-09-12: 목록 — 미니 달력 항상 표시(md+, 신규주문·날짜 이동). container 숨김 제거.
  * - 2026-09-12: 목록 — 달력 표시를 CSS @container로(JS 숨김 고착 제거). 72rem 이상에서 전체 표시.
@@ -91,6 +92,11 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@/components/ui/resizable";
 import { cn } from "@/shared/ui/cn";
 import {
   kstAddCivilDays,
@@ -167,18 +173,144 @@ export type PracticeCalendarChipItem = {
  */
 export const PRACTICE_TRANSFER_LIST_DETAIL_RESERVE_CLASS = "pr-[26.5rem]";
 /**
- * @deprecated 인라인 상세는 비율 flex(`PRACTICE_TRANSFER_DETAIL_PANE_CLASS`) 사용.
+ * @deprecated 인라인 상세는 `PracticeTransferMainDetailSplit` 사용.
  * 플로팅 도킹 reserve와 맞춘 레거시 고정폭 토큰.
  */
 export const PRACTICE_TRANSFER_DETAIL_PANEL_WIDTH_CLASS = "w-[26.5rem]";
 /**
- * 미니달력=고정 13.75rem(CSS). 목록·주간캘린더와 채팅은 남는 폭을 비율로 나눔.
- * (목록/캘린더 약간 넓게 1.15 : 채팅 1)
+ * 미니달력=고정 13.75rem(CSS). 목록·주간캘린더 ↔ 채팅은 드래그 분할.
+ * 기본 비율 1.15 : 1. 최소폭: 캘린더 30rem / 목록 20rem / 채팅 20rem.
  */
-const PRACTICE_TRANSFER_MAIN_PANE_CLASS =
-  "flex min-h-0 min-w-[14rem] flex-[1.15_1_0%] flex-col overflow-hidden";
+const PRACTICE_TRANSFER_CALENDAR_MAIN_MIN_REM = 30;
+const PRACTICE_TRANSFER_LIST_MAIN_MIN_REM = 20;
+const PRACTICE_TRANSFER_DETAIL_MIN_REM = 20;
+const PRACTICE_TRANSFER_MAIN_DEFAULT_PCT = (1.15 / (1.15 + 1)) * 100;
+const PRACTICE_TRANSFER_DETAIL_DEFAULT_PCT =
+  100 - PRACTICE_TRANSFER_MAIN_DEFAULT_PCT;
+/** react-resizable-panels autoSaveId → localStorage `react-resizable-panels:${id}` */
+const PRACTICE_TRANSFER_SPLIT_AUTO_SAVE_ID =
+  "abuts.practiceTransfer.mainDetailSplit.v1";
 const PRACTICE_TRANSFER_DETAIL_PANE_CLASS =
-  "flex min-h-0 min-w-[16rem] flex-[1_1_0%] flex-col overflow-hidden bg-background";
+  "flex min-h-0 min-w-[20rem] flex-col overflow-hidden bg-background";
+
+function remToPx(rem: number): number {
+  if (typeof window === "undefined") return rem * 16;
+  const root = Number.parseFloat(
+    getComputedStyle(document.documentElement).fontSize,
+  );
+  return rem * (Number.isFinite(root) && root > 0 ? root : 16);
+}
+
+function PracticeTransferMainDetailSplit({
+  main,
+  detail,
+  mainMinRem,
+}: {
+  main: ReactNode;
+  detail: ReactNode;
+  mainMinRem: number;
+}) {
+  const groupRef = useRef<HTMLDivElement | null>(null);
+  const [minSizes, setMinSizes] = useState({
+    main: 28,
+    detail: 32,
+  });
+
+  useLayoutEffect(() => {
+    const el = groupRef.current;
+    if (!el) return;
+    const update = () => {
+      const w = el.getBoundingClientRect().width;
+      if (w < 1) return;
+      let mainMin = (remToPx(mainMinRem) / w) * 100;
+      let detailMin = (remToPx(PRACTICE_TRANSFER_DETAIL_MIN_REM) / w) * 100;
+      const sum = mainMin + detailMin;
+      if (sum > 100) {
+        mainMin = (mainMin / sum) * 100;
+        detailMin = (detailMin / sum) * 100;
+      }
+      setMinSizes((prev) => {
+        if (
+          Math.abs(prev.main - mainMin) < 0.2 &&
+          Math.abs(prev.detail - detailMin) < 0.2
+        ) {
+          return prev;
+        }
+        return { main: mainMin, detail: detailMin };
+      });
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [mainMinRem]);
+
+  return (
+    <div ref={groupRef} className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <ResizablePanelGroup
+        direction="horizontal"
+        autoSaveId={PRACTICE_TRANSFER_SPLIT_AUTO_SAVE_ID}
+        className="min-h-0 flex-1"
+      >
+        <ResizablePanel
+          id="practice-transfer-main"
+          order={1}
+          defaultSize={PRACTICE_TRANSFER_MAIN_DEFAULT_PCT}
+          minSize={minSizes.main}
+          className={cn(
+            "flex min-h-0 flex-col overflow-hidden",
+            mainMinRem === PRACTICE_TRANSFER_CALENDAR_MAIN_MIN_REM
+              ? "min-w-[30rem]"
+              : "min-w-[20rem]",
+          )}
+        >
+          {main}
+        </ResizablePanel>
+        <ResizableHandle
+          withHandle
+          title="가로폭 조절"
+          aria-label="가로폭 조절"
+          className="group mx-0.5 w-2 rounded-full bg-slate-200/90 transition-colors hover:bg-primary/25 data-[resize-handle-active]:bg-primary/35"
+        />
+        <ResizablePanel
+          id="practice-transfer-detail"
+          order={2}
+          defaultSize={PRACTICE_TRANSFER_DETAIL_DEFAULT_PCT}
+          minSize={minSizes.detail}
+          className={PRACTICE_TRANSFER_DETAIL_PANE_CLASS}
+        >
+          {detail}
+        </ResizablePanel>
+      </ResizablePanelGroup>
+    </div>
+  );
+}
+
+/** 채팅 슬롯이 있으면 드래그 분할, 없으면 본문만 flex-1. */
+function PracticeTransferMainWithOptionalDetail({
+  detail,
+  mainMinRem,
+  children,
+}: {
+  detail?: ReactNode;
+  mainMinRem: number;
+  children: ReactNode;
+}) {
+  if (!detail) {
+    return (
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        {children}
+      </div>
+    );
+  }
+  return (
+    <PracticeTransferMainDetailSplit
+      main={children}
+      detail={detail}
+      mainMinRem={mainMinRem}
+    />
+  );
+}
 
 /** 누적 주문일·도착일 → 캘린더 칩 다중 배치(같은 건·크레딧 중복 없음). */
 export function expandPracticeCalendarChipsByArrivalDates(
@@ -1559,12 +1691,9 @@ export function PracticeRecentTransfersCalendar({
               </div>
             ) : null}
           </aside>
-          <div
-            className={cn(
-              detailPanel
-                ? PRACTICE_TRANSFER_MAIN_PANE_CLASS
-                : "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden",
-            )}
+          <PracticeTransferMainWithOptionalDetail
+            detail={detailPanel}
+            mainMinRem={PRACTICE_TRANSFER_LIST_MAIN_MIN_REM}
           >
           <div
             ref={listScrollRef}
@@ -1753,16 +1882,14 @@ export function PracticeRecentTransfersCalendar({
               </div>
             )}
           </div>
-          </div>
-          {detailPanel ? (
-            <aside className={PRACTICE_TRANSFER_DETAIL_PANE_CLASS}>
-              {detailPanel}
-            </aside>
-          ) : null}
+          </PracticeTransferMainWithOptionalDetail>
         </div>
       ) : (
-      <div className="flex min-h-0 min-w-0 flex-1 gap-3 overflow-hidden">
-      <div className={PRACTICE_TRANSFER_MAIN_PANE_CLASS}>
+      <PracticeTransferMainWithOptionalDetail
+        detail={detailPanel}
+        mainMinRem={PRACTICE_TRANSFER_CALENDAR_MAIN_MIN_REM}
+      >
+      <div className="flex h-full min-h-0 flex-col overflow-hidden">
         <div
           className="grid shrink-0 border-l border-t"
           style={{
@@ -1997,12 +2124,7 @@ export function PracticeRecentTransfersCalendar({
           })}
         </div>
       </div>
-          {detailPanel ? (
-            <aside className={PRACTICE_TRANSFER_DETAIL_PANE_CLASS}>
-              {detailPanel}
-            </aside>
-          ) : null}
-      </div>
+      </PracticeTransferMainWithOptionalDetail>
       )}
     </div>
   );
