@@ -434,7 +434,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - **레거시(2026-08-22 삭제)**: 「지그 제작 불필요」(`skipJig`) UI/계정 옵션 제거. `production.skipJig`·`practiceTransferSettings.skipJig`는 구 스냅샷 호환용. **기공소→치과·치과→기공소 배송비는 무료**(크레딧과 무관)
     - 작업 기한은 치과 도착일·채팅 소통. (레거시 3시간 `deadlineAt` 만료 재공개는 폐기)
     - 기공소 수신 카드(작업시작): `PracticeTransferFileDropTarget` + `[작업완료]`(크라운) / `[어벗 디자인 확인]` / `[작업취소]` (`RequestorPracticePage`). 배송선택 모달 없음
-  - 가상 의뢰 행 매핑 기준: `controllers/practiceTransfers/practiceTransfer.controller.js#toVirtualRequestRows`
+  - 가상 의뢰 행 매핑 기준: `controllers/practiceTransfers/practiceTransfer.controller.js#toVirtualRequestRows` (`files[]`·`trashedFiles` 포함 — 치과 상세 휴지통 타일).
   - practice 전송 목록/취소/복구 권한 범위 SSOT: 동일 치과 `practiceBusinessAnchorId`(=`req.user.businessAnchorId`) 구성원 공유.
     구현: `buildPracticeOwnedScope` (`getMyPracticeTransfers` / `cancelPracticeTransfersBatch` / `restorePracticeTransfersBatch` / draft list·DELETE by id).
     동일 치과 practice 멤버의 `practiceUserId`도 포함해 앵커 미기입 레거시 문서를 함께 조회한다.
@@ -443,6 +443,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - practice 파일전송 생성(`POST /api/practice/transfers`) 성공 시 관련 임시저장(`draftId` 또는 작성자 활성 draft)을 **완전 삭제**(휴지통 아님)하고 `draft-cleared`를 fan-out한다. 전송 건은 최근 전송 내역에만 남는다.
   - 기공의뢰 납기 영업일: 낮 12시 이전은 주문일(오늘) 포함, 이후는 제외. `resolvePracticeTransferArrivalPolicy` → `countWeekdayBusinessDays(..., now)`. 프론트 `getPracticeWorkPeriodDays`와 동일. 1+2 이상 허용(0+2 거부).
   - 작업시작 전(의뢰=`발송완료|수신완료|자동매칭`) 내용 수정: `POST /api/practice/transfers/:transferId/update-content`. transferId·채팅방 유지, 파일·치식·메모·기공소·보류액 갱신, `requestorReadAt` 초기화, `practice:transfer-updated` action=`content-updated`. 작업시작·취소·거부 이후 409. 기공소·치식·지그·할증이 같으면 크레딧 rollback+hold를 건너뛴다.
+  - 의뢰 파일(구강 스캔·쉐이드 등) 추가/삭제(작업시작 이후에도): 치과 `POST /:transferId/request-files`·`.../request-files/remove`·`.../restore`, 기공소 `POST /received/:transferId/request-files`·`.../remove`·`.../restore`. remove는 `files[]`→`trashedFiles[]` soft-delete(S3 유지), restore는 복원. emit `request-files-appended|request-files-trashed|request-files-restored`. 각 업로드는 `uploadBatchId`+`uploadedAt` 웨이브 스탬프(FE 첫/두 번째/… 클러스터).
   - `draft-upserted` 이벤트는 `transferMemo`·`files` 스냅샷을 포함해 수신측이 추가 GET 없이 폼을 반영할 수 있다.
     임시저장은 `practice:transfer-updated` + `action: draft-upserted|draft-cleared`.
     구현: `emitPracticeTransferEventToPracticeUsers`.

@@ -6,6 +6,7 @@
  * 자동매칭(공개 풀)은 공정상 의뢰 — 뱃지 집계·「의뢰」필터에 포함.
  * 기공소 수신은 거절·작업취소가 목록에서 빠져 취소/거절 뱃지 불필요 → 치과만 취소 포함 5뱃지.
  * 본문 건수: 의뢰·작업시작=전체. 완료·취소·어벗=미열람만(clearedIds 제외).
+ * 2026-09-12: 치과 /my trashedFiles 병합 — 활성 files와 겹치면 휴지통에서 제거.
  * 2026-09-11: 배지 순서 의뢰→작업시작→완료→취소→어벗. 완료·취소·어벗 열람 시 본문 건수 감소.
  * 2026-09-11: listBadgeNavigate — 상태 전 건 순회(미확인 앞). 건수와 클릭 대상 일치.
  * 2026-09-09: listUnreadTransfersForStatusFilter — 상태 뱃지 unread 순회용.
@@ -51,6 +52,12 @@ export type PracticeRecentTransferFileItem = {
   fileName: string;
   s3Key: string;
   size: number;
+  /** 같은 업로드(드롭·전송) 웨이브 ID */
+  uploadBatchId?: string | null;
+  /** 웨이브가 의뢰 파일에 붙은 시각(ISO) */
+  uploadedAt?: string | null;
+  /** 휴지통 이동 시각(ISO). trashedFiles 전용 */
+  trashedAt?: string | null;
 };
 
 export type PracticeRecentRequestItem = {
@@ -81,6 +88,8 @@ export type PracticeRecentRequestItem = {
   fileSize: number;
   /** 의뢰 원본 첨부 전체(스캔·쉐이드 포토 등). /my files[] SSOT */
   files?: PracticeRecentTransferFileItem[];
+  /** 의뢰 파일 휴지통 */
+  trashedFiles?: PracticeRecentTransferFileItem[];
   resultFiles?: PracticeRecentTransferFileItem[];
   designFiles?: PracticeRecentTransferFileItem[];
   hasCustomAbutment?: boolean;
@@ -154,6 +163,8 @@ export type PracticeRecentTransferItem = {
   transferMongoIds: string[];
   fileNames: string[];
   files: PracticeRecentTransferFileItem[];
+  /** 의뢰 파일 휴지통 */
+  trashedFiles?: PracticeRecentTransferFileItem[];
   resultFiles?: PracticeRecentTransferFileItem[];
   designFiles?: PracticeRecentTransferFileItem[];
   hasCustomAbutment?: boolean;
@@ -696,6 +707,9 @@ const mapApiFileItems = (raw: unknown): PracticeRecentTransferFileItem[] => {
         ).trim(),
         s3Key: String(item.s3Key || nested?.s3Key || nested?.key || "").trim(),
         size: Number(item.size ?? nested?.size ?? 0),
+        uploadBatchId: String(item.uploadBatchId || "").trim() || null,
+        uploadedAt: String(item.uploadedAt || "").trim() || null,
+        trashedAt: String(item.trashedAt || "").trim() || null,
       };
     })
     .filter((f) => f.fileName && f.s3Key);
@@ -823,6 +837,7 @@ export const mapMyPracticeTransferApiRows = (
       const requestId = String(r.requestId || r._id || "").trim();
       const requestMongoId = String(r.practiceTransferId || r._id || "").trim();
       const filesFromApi = mapApiFileItems(r.files);
+      const trashedFiles = mapApiFileItems(r.trashedFiles);
       const legacyFileName = String(fileObj.originalName || fileObj.name || "").trim();
       const legacyS3Key = String(fileObj.s3Key || "").trim();
       const legacySize = Number(fileObj.size || 0);
@@ -884,6 +899,7 @@ export const mapMyPracticeTransferApiRows = (
         fileS3Key: primaryFile?.s3Key || "",
         fileSize: Number(primaryFile?.size || 0),
         files,
+        trashedFiles,
         resultFiles,
         designFiles,
         hasCustomAbutment: Boolean(r.hasCustomAbutment),
@@ -1097,6 +1113,24 @@ export const mergeOpenPracticeTransferFromRequestRows = (
     (acc, row) => mergeFileItemsByS3Key(acc, collectPracticeRequestFiles(row)),
     Array.isArray(prev.files) ? prev.files : [],
   );
+  // /my·캘린더 row에 files[]·trashedFiles가 있으면 휴지통은 응답 기준으로 재구성
+  const rowsCarryFileArrays = openRows.some(
+    (row) => Array.isArray(row.files) || Array.isArray(row.trashedFiles),
+  );
+  const mergedTrashedFiles = openRows
+    .reduce<PracticeRecentTransferFileItem[]>(
+      (acc, row) => mergeFileItemsByS3Key(acc, row.trashedFiles),
+      rowsCarryFileArrays
+        ? []
+        : Array.isArray(prev.trashedFiles)
+          ? prev.trashedFiles
+          : [],
+    )
+    .filter((file) => {
+      const key = String(file?.s3Key || "").trim();
+      if (!key) return false;
+      return !mergedRequestFiles.some((active) => active.s3Key === key);
+    });
   const mergedResultFiles = openRows.reduce<PracticeRecentTransferFileItem[]>(
     (acc, row) => mergeFileItemsByS3Key(acc, row.resultFiles),
     [],
@@ -1127,6 +1161,7 @@ export const mergeOpenPracticeTransferFromRequestRows = (
     files: mergedRequestFiles,
     fileCount: mergedRequestFiles.length,
     fileNames: mergedRequestFiles.map((f) => f.fileName).filter(Boolean),
+    trashedFiles: mergedTrashedFiles,
     resultFiles: mergedResultFiles,
     designFiles: mergedDesignFiles,
     designFileCount: nextDesignFileCount,
@@ -1372,6 +1407,7 @@ export const groupPracticeRecentRequests = (
         transferMongoIds: req.requestMongoId ? [req.requestMongoId] : [],
         fileNames: fileList.map((f) => f.fileName).filter(Boolean),
         files: fileList,
+        trashedFiles: Array.isArray(req.trashedFiles) ? [...req.trashedFiles] : [],
         resultFiles: Array.isArray(req.resultFiles) ? [...req.resultFiles] : [],
         designFiles: Array.isArray(req.designFiles) ? [...req.designFiles] : [],
         hasCustomAbutment: Boolean(req.hasCustomAbutment),
@@ -1453,6 +1489,20 @@ export const groupPracticeRecentRequests = (
     existing.files = Array.from(existing._files.values());
     existing.fileNames = existing.files.map((f) => f.fileName).filter(Boolean);
     existing.fileCount = existing.files.length;
+    if (Array.isArray(req.trashedFiles)) {
+      const trashByKey = new Map(
+        (existing.trashedFiles || []).map((f) => [f.s3Key, f] as const),
+      );
+      for (const file of req.trashedFiles) {
+        if (file?.s3Key) trashByKey.set(file.s3Key, file);
+      }
+      // 활성 files에 다시 올라온 키는 휴지통에서 제거(복원·목록 재조회 정합)
+      for (const file of existing.files || []) {
+        const key = String(file?.s3Key || "").trim();
+        if (key) trashByKey.delete(key);
+      }
+      existing.trashedFiles = Array.from(trashByKey.values());
+    }
     if (patientKey) {
       existing._patients.add(patientKey);
     }

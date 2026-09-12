@@ -178,6 +178,10 @@ import {
   repriceAndReschedulePtxAbutmentRequest,
   resolveOralScanFilesForAccept,
   shouldLockLabOralScanDownload,
+  stampPracticeTransferFileBatch,
+  mergePracticeTransferFilesByS3Key,
+  softDeletePracticeTransferRequestFiles,
+  restorePracticeTransferRequestFiles,
   tryStartAbutmentProduction,
 } from "../../services/practiceTransferProduction.service.js";
 import Request from "../../models/request.model.js";
@@ -208,6 +212,9 @@ import { completePracticeTransferWork } from "../../services/practiceTransferCom
 // - web/backend/utils/practiceTransferAbutmentPresets.js
 // - web/backend/utils/practiceLabRating.js
 // - web/backend/utils/practiceTransferStage.js
+// - 2026-09-12: GET /my toVirtualRequestRows — files[]·trashedFiles(의뢰 파일 휴지통) 포함.
+// - 2026-09-12: request-files — uploadBatchId·uploadedAt 웨이브 스탬프(시점별 클러스터).
+// - 2026-09-12: request-files append/remove — 상세 패널 드롭·클립으로 의뢰 파일(3D·이미지) 추가·삭제.
 // - 2026-09-12: GET /received 캘린더도 abutmentPastReadyTeeth enrich(리프레시 후 준비 취소선 오표시 방지).
 // - 2026-09-12: abutment-ship-ymd — pastReady 객체 truthy 버그(항상 409) 수정. 도착−n(최소 2·기본 3).
 // - 2026-09-12: abutment-ship-ymd — 도착−n(최소 2달력일). 기본 −3. CA 스케줄은 응답 후.
@@ -950,18 +957,29 @@ const toProductionApiFields = (production, { abutmentPastReady, abutmentPastRead
 
 const toTransferFilesApiFields = (transferDoc) => {
   const files = normalizeResultFiles(transferDoc?.files);
+  const trashedFiles = normalizeResultFiles(transferDoc?.trashedFiles);
   const transferMongoId = String(transferDoc?._id || "").trim();
+  const mapFileRow = (item, idx, prefix = "") => ({
+    id: `${transferMongoId}${prefix}::${idx + 1}`,
+    patientName: String(item?.patientName || "").trim(),
+    tooth: String(item?.tooth || "").trim(),
+    originalName: String(item?.file?.originalName || "").trim(),
+    mimetype: String(item?.file?.mimetype || "application/octet-stream").trim(),
+    size: Number(item?.file?.size || 0),
+    s3Key: String(item?.file?.s3Key || "").trim(),
+    uploadBatchId: String(item?.uploadBatchId || "").trim() || null,
+    uploadedAt: item?.uploadedAt
+      ? new Date(item.uploadedAt).toISOString()
+      : null,
+    trashedAt: item?.trashedAt ? new Date(item.trashedAt).toISOString() : null,
+  });
   return {
     fileCount: files.length,
-    files: files.map((item, idx) => ({
-      id: `${transferMongoId}::${idx + 1}`,
-      patientName: String(item?.patientName || "").trim(),
-      tooth: String(item?.tooth || "").trim(),
-      originalName: String(item?.file?.originalName || "").trim(),
-      mimetype: String(item?.file?.mimetype || "application/octet-stream").trim(),
-      size: Number(item?.file?.size || 0),
-      s3Key: String(item?.file?.s3Key || "").trim(),
-    })),
+    files: files.map((item, idx) => mapFileRow(item, idx)),
+    trashedFileCount: trashedFiles.length,
+    trashedFiles: trashedFiles.map((item, idx) =>
+      mapFileRow(item, idx, "::trash"),
+    ),
     oralScanDownloadLocked: shouldLockLabOralScanDownload(transferDoc),
   };
 };
@@ -1104,6 +1122,8 @@ const toVirtualRequestRows = (transferDoc) => {
     arrivalDate: currentArrivalYmd || null,
     orderDates,
     orderDate: orderYmd || null,
+    // 의뢰 파일·휴지통 — 치과 상세 썸네일/복원용 (캘린더 row와 동일 SSOT)
+    ...toTransferFilesApiFields(transferDoc),
     resultFiles: resultFiles.map((rf, rfIdx) => ({
       id: `${String(transferDoc._id)}::result::${rfIdx + 1}`,
       patientName: String(rf?.patientName || "").trim(),
@@ -3031,7 +3051,9 @@ export async function createPracticeTransfer(req, res) {
     const transferMemo =
       String(req.body?.transferMemo || "").trim() || extractTransferMemoFromMessage(message);
 
-    const files = mapPracticeTransferFilesFromCaseInfos(caseInfos);
+    const files = stampPracticeTransferFileBatch(
+      mapPracticeTransferFilesFromCaseInfos(caseInfos),
+    );
 
     const toothWorksRaw =
       (Array.isArray(req.body?.toothWorks) && req.body.toothWorks) ||
@@ -3647,7 +3669,30 @@ export async function updatePracticeTransferContent(req, res) {
     const transferMemo =
       String(req.body?.transferMemo || "").trim() ||
       extractTransferMemoFromMessage(message);
-    const files = mapPracticeTransferFilesFromCaseInfos(caseInfos);
+    const mappedFiles = mapPracticeTransferFilesFromCaseInfos(caseInfos);
+    const existingFiles = normalizeResultFiles(doc.files);
+    const existingByKey = new Map(
+      existingFiles.map((row) => [String(row.file?.s3Key || "").trim(), row]),
+    );
+    const kept = [];
+    const fresh = [];
+    for (const row of mappedFiles) {
+      const key = String(row?.file?.s3Key || "").trim();
+      const prev = key ? existingByKey.get(key) : null;
+      if (prev?.uploadBatchId) {
+        kept.push({
+          ...row,
+          uploadBatchId: prev.uploadBatchId,
+          uploadedAt: prev.uploadedAt || undefined,
+        });
+      } else {
+        fresh.push(row);
+      }
+    }
+    const files = [
+      ...kept,
+      ...stampPracticeTransferFileBatch(fresh),
+    ];
     const toothWorksRaw =
       (Array.isArray(req.body?.toothWorks) && req.body.toothWorks) ||
       (Array.isArray(first?.toothWorks) && first.toothWorks) ||
@@ -5687,41 +5732,20 @@ export async function remakePracticeTransfers(req, res) {
         continue;
       }
 
-      const files = Array.isArray(source.files)
-        ? source.files
-            .map((item) => ({
-              patientName: String(item?.patientName || "").trim(),
-              tooth: String(item?.tooth || "").trim(),
-              file: {
-                originalName: String(item?.file?.originalName || "").trim(),
-                mimetype: String(
-                  item?.file?.mimetype || "application/octet-stream",
-                ).trim(),
-                size: Number(item?.file?.size || 0),
-                s3Key: String(item?.file?.s3Key || "").trim(),
-              },
-            }))
-            .filter((item) => item.file.originalName && item.file.s3Key)
-        : [];
-
-      if (extraFilesNormalized.length > 0) {
-        const seenKeys = new Set(
-          files.map((item) => String(item.file.s3Key || "").trim()).filter(Boolean),
-        );
-        const defaultPatientName =
-          String(files[0]?.patientName || "").trim() ||
-          String(extraFilesNormalized[0]?.patientName || "").trim();
-        for (const extra of extraFilesNormalized) {
-          const key = String(extra.file.s3Key || "").trim();
-          if (!key || seenKeys.has(key)) continue;
-          seenKeys.add(key);
-          files.push({
-            patientName: String(extra.patientName || defaultPatientName).trim(),
-            tooth: String(extra.tooth || "").trim(),
-            file: extra.file,
-          });
-        }
-      }
+      const copiedFiles = stampPracticeTransferFileBatch(
+        normalizeResultFiles(source.files),
+        {
+          uploadedAt: source.createdAt || new Date(),
+          force: false,
+        },
+      );
+      const files =
+        extraFilesNormalized.length > 0
+          ? mergePracticeTransferFilesByS3Key(
+              copiedFiles,
+              stampPracticeTransferFileBatch(extraFilesNormalized),
+            )
+          : copiedFiles;
 
       try {
         await assertPracticeTransferPaidCreditSufficient({
@@ -6622,6 +6646,7 @@ export async function getReceivedPracticeTransfers(req, res) {
           ? practiceUser.practiceProfile
           : null;
       const files = Array.isArray(doc?.files) ? doc.files : [];
+      const trashedFiles = Array.isArray(doc?.trashedFiles) ? doc.trashedFiles : [];
       const resultFiles = Array.isArray(doc?.resultFiles) ? doc.resultFiles : [];
       const toothWorks = Array.isArray(doc?.toothWorks) ? doc.toothWorks : [];
       const production =
@@ -6735,6 +6760,27 @@ export async function getReceivedPracticeTransfers(req, res) {
           mimetype: String(item?.file?.mimetype || "application/octet-stream").trim(),
           size: Number(item?.file?.size || 0),
           s3Key: String(item?.file?.s3Key || "").trim(),
+          uploadBatchId: String(item?.uploadBatchId || "").trim() || null,
+          uploadedAt: item?.uploadedAt
+            ? new Date(item.uploadedAt).toISOString()
+            : null,
+        })),
+        trashedFileCount: trashedFiles.length,
+        trashedFiles: trashedFiles.map((item, idx) => ({
+          id: `${String(doc?._id || "")}::trash::${idx + 1}`,
+          patientName: String(item?.patientName || "").trim(),
+          tooth: String(item?.tooth || "").trim(),
+          originalName: String(item?.file?.originalName || "").trim(),
+          mimetype: String(item?.file?.mimetype || "application/octet-stream").trim(),
+          size: Number(item?.file?.size || 0),
+          s3Key: String(item?.file?.s3Key || "").trim(),
+          uploadBatchId: String(item?.uploadBatchId || "").trim() || null,
+          uploadedAt: item?.uploadedAt
+            ? new Date(item.uploadedAt).toISOString()
+            : null,
+          trashedAt: item?.trashedAt
+            ? new Date(item.trashedAt).toISOString()
+            : null,
         })),
         oralScanDownloadLocked,
         resultFileCount: resultFiles.length,
@@ -7767,6 +7813,557 @@ export async function appendReceivedPracticeTransferResultFiles(req, res) {
     return res.status(500).json({
       success: false,
       message: "보철 결과 파일 저장 중 오류가 발생했습니다.",
+      error: error?.message,
+    });
+  }
+}
+
+const normalizeIncomingRequestFiles = (raw) => {
+  const list = normalizeResultFiles(raw);
+  return list.filter((row) =>
+    isAllowedPracticeFile(String(row?.file?.originalName || "")),
+  );
+};
+
+const emitRequestFilesUpdated = async ({
+  doc,
+  req,
+  action,
+  labAnchorId = null,
+}) => {
+  const now = new Date();
+  const targetLab =
+    String(labAnchorId || doc.targetLabAnchorId || "").trim() || null;
+  const realtimePayload = {
+    action,
+    transferId: String(doc.transferId || "").trim(),
+    transferMongoId: String(doc._id || "").trim(),
+    targetLabAnchorId: targetLab,
+    matchingMode: isAutoMatchMode(doc) ? "auto" : "direct",
+    practiceUserId: String(doc.practiceUserId || "").trim() || null,
+    status: String(doc.status || "active").trim(),
+    manufacturerStage: String(doc.manufacturerStage || "").trim() || null,
+    updatedAt: doc.updatedAt || now,
+    fileCount: normalizeResultFiles(doc.files).length,
+    ...toTransferFilesApiFields(doc),
+  };
+
+  emitAppEventToUser(req.user?._id, "practice:transfer-updated", realtimePayload);
+  await Promise.all([
+    emitPracticeTransferEventToPracticeUsers({
+      practiceBusinessAnchorId: doc.practiceBusinessAnchorId,
+      type: "practice:transfer-updated",
+      payload: realtimePayload,
+      extraUserIds: [doc.practiceUserId],
+    }),
+    targetLab
+      ? emitPracticeTransferEventToRequestorUsers({
+          targetLabAnchorId: targetLab,
+          type: "practice:transfer-updated",
+          payload: realtimePayload,
+        })
+      : Promise.resolve(),
+  ]);
+  return realtimePayload;
+};
+
+/**
+ * 치과 — 의뢰 파일(구강 스캔·쉐이드 포토 등) append.
+ * related: POST /api/practice/transfers/:transferId/request-files
+ */
+export async function appendPracticeTransferRequestFiles(req, res) {
+  try {
+    const role = String(req.user?.role || "").trim();
+    if (!isPracticeTransferSenderRole(role)) {
+      return res.status(403).json({ success: false, message: "권한이 없습니다." });
+    }
+
+    const transferIdFilter = buildTransferIdFilter(req.params?.transferId);
+    if (!transferIdFilter) {
+      return res.status(400).json({
+        success: false,
+        message: "transferId가 필요합니다.",
+      });
+    }
+
+    const { scope } = await buildPracticeOwnedScope(req);
+    const doc = await PracticeTransfer.findOne({
+      ...scope,
+      ...transferIdFilter,
+    });
+    if (!doc) {
+      return res.status(404).json({
+        success: false,
+        message: "전송 내역을 찾을 수 없습니다.",
+      });
+    }
+    if (isPracticeTransferDeletedStatus(doc.status)) {
+      return res.status(409).json({
+        success: false,
+        message: "삭제된 기공의뢰에는 파일을 추가할 수 없습니다.",
+      });
+    }
+
+    const incoming = stampPracticeTransferFileBatch(
+      normalizeIncomingRequestFiles(req.body?.files),
+    );
+    if (incoming.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "의뢰 파일(3D·이미지)을 1개 이상 업로드해주세요.",
+      });
+    }
+
+    const existing = normalizeResultFiles(doc.files);
+    // 레거시(무스탬프)는 첫 웨이브로 묶은 뒤 신규 웨이브 append
+    const existingStamped = stampPracticeTransferFileBatch(existing, {
+      uploadedAt: doc.createdAt || new Date(),
+      force: false,
+    });
+    doc.files = mergePracticeTransferFilesByS3Key(existingStamped, incoming);
+    await doc.save();
+
+    const payload = await emitRequestFilesUpdated({
+      doc,
+      req,
+      action: "request-files-appended",
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        transferId: String(doc.transferId || "").trim(),
+        ...toTransferFilesApiFields(doc),
+        updatedAt: payload.updatedAt,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "의뢰 파일 저장 중 오류가 발생했습니다.",
+      error: error?.message,
+    });
+  }
+}
+
+/**
+ * 치과 — 의뢰 파일 삭제(s3Key).
+ * related: POST /api/practice/transfers/:transferId/request-files/remove
+ */
+export async function removePracticeTransferRequestFiles(req, res) {
+  try {
+    const role = String(req.user?.role || "").trim();
+    if (!isPracticeTransferSenderRole(role)) {
+      return res.status(403).json({ success: false, message: "권한이 없습니다." });
+    }
+
+    const transferIdFilter = buildTransferIdFilter(req.params?.transferId);
+    if (!transferIdFilter) {
+      return res.status(400).json({
+        success: false,
+        message: "transferId가 필요합니다.",
+      });
+    }
+
+    const rawKeys = Array.isArray(req.body?.s3Keys)
+      ? req.body.s3Keys
+      : req.body?.s3Key
+        ? [req.body.s3Key]
+        : [];
+    const removeKeys = new Set(
+      rawKeys.map((key) => String(key || "").trim()).filter(Boolean),
+    );
+    if (removeKeys.size === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "삭제할 파일(s3Key)이 필요합니다.",
+      });
+    }
+
+    const { scope } = await buildPracticeOwnedScope(req);
+    const doc = await PracticeTransfer.findOne({
+      ...scope,
+      ...transferIdFilter,
+    });
+    if (!doc) {
+      return res.status(404).json({
+        success: false,
+        message: "전송 내역을 찾을 수 없습니다.",
+      });
+    }
+    if (isPracticeTransferDeletedStatus(doc.status)) {
+      return res.status(409).json({
+        success: false,
+        message: "삭제된 기공의뢰의 파일은 수정할 수 없습니다.",
+      });
+    }
+
+    const moved = softDeletePracticeTransferRequestFiles(doc, removeKeys);
+    if (!moved) {
+      return res.status(404).json({
+        success: false,
+        message: "삭제할 파일을 찾지 못했습니다.",
+      });
+    }
+    await doc.save();
+
+    const payload = await emitRequestFilesUpdated({
+      doc,
+      req,
+      action: "request-files-trashed",
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        transferId: String(doc.transferId || "").trim(),
+        ...toTransferFilesApiFields(doc),
+        updatedAt: payload.updatedAt,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "의뢰 파일 삭제 중 오류가 발생했습니다.",
+      error: error?.message,
+    });
+  }
+}
+
+/**
+ * 치과 — 의뢰 파일 휴지통 복원.
+ * related: POST /api/practice/transfers/:transferId/request-files/restore
+ */
+export async function restorePracticeTransferRequestFilesApi(req, res) {
+  try {
+    const role = String(req.user?.role || "").trim();
+    if (!isPracticeTransferSenderRole(role)) {
+      return res.status(403).json({ success: false, message: "권한이 없습니다." });
+    }
+
+    const transferIdFilter = buildTransferIdFilter(req.params?.transferId);
+    if (!transferIdFilter) {
+      return res.status(400).json({
+        success: false,
+        message: "transferId가 필요합니다.",
+      });
+    }
+
+    const rawKeys = Array.isArray(req.body?.s3Keys)
+      ? req.body.s3Keys
+      : req.body?.s3Key
+        ? [req.body.s3Key]
+        : [];
+    const restoreKeys = rawKeys
+      .map((key) => String(key || "").trim())
+      .filter(Boolean);
+    if (!restoreKeys.length) {
+      return res.status(400).json({
+        success: false,
+        message: "복원할 파일(s3Key)이 필요합니다.",
+      });
+    }
+
+    const { scope } = await buildPracticeOwnedScope(req);
+    const doc = await PracticeTransfer.findOne({
+      ...scope,
+      ...transferIdFilter,
+    });
+    if (!doc) {
+      return res.status(404).json({
+        success: false,
+        message: "전송 내역을 찾을 수 없습니다.",
+      });
+    }
+    if (isPracticeTransferDeletedStatus(doc.status)) {
+      return res.status(409).json({
+        success: false,
+        message: "삭제된 기공의뢰의 파일은 수정할 수 없습니다.",
+      });
+    }
+
+    const restored = restorePracticeTransferRequestFiles(doc, restoreKeys);
+    if (!restored) {
+      return res.status(404).json({
+        success: false,
+        message: "복원할 파일을 찾지 못했습니다.",
+      });
+    }
+    await doc.save();
+
+    const payload = await emitRequestFilesUpdated({
+      doc,
+      req,
+      action: "request-files-restored",
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        transferId: String(doc.transferId || "").trim(),
+        ...toTransferFilesApiFields(doc),
+        updatedAt: payload.updatedAt,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "의뢰 파일 복원 중 오류가 발생했습니다.",
+      error: error?.message,
+    });
+  }
+}
+
+/**
+ * 기공소 — 의뢰 파일 append (지정 수신 건).
+ * related: POST /api/practice/transfers/received/:transferId/request-files
+ */
+export async function appendReceivedPracticeTransferRequestFiles(req, res) {
+  try {
+    const role = String(req.user?.role || "").trim();
+    if (!isPracticeTransferLabReceiverRole(role)) {
+      return res.status(403).json({ success: false, message: "권한이 없습니다." });
+    }
+
+    const transferIdFilter = buildTransferIdFilter(req.params?.transferId);
+    if (!transferIdFilter) {
+      return res.status(400).json({
+        success: false,
+        message: "transferId가 필요합니다.",
+      });
+    }
+
+    const { scope, labAnchorId } = await buildReceivedScope(req);
+    if (scope === null || !labAnchorId) {
+      return res.status(404).json({ success: false, message: "전송 내역을 찾을 수 없습니다." });
+    }
+
+    const doc = await PracticeTransfer.findOne({
+      ...scope,
+      ...transferIdFilter,
+    });
+    if (!doc) {
+      return res.status(404).json({ success: false, message: "전송 내역을 찾을 수 없습니다." });
+    }
+    if (isPracticeTransferDeletedStatus(doc.status)) {
+      return res.status(409).json({
+        success: false,
+        message: "삭제된 기공의뢰에는 파일을 추가할 수 없습니다.",
+      });
+    }
+
+    const incoming = stampPracticeTransferFileBatch(
+      normalizeIncomingRequestFiles(req.body?.files),
+    );
+    if (incoming.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "의뢰 파일(3D·이미지)을 1개 이상 업로드해주세요.",
+      });
+    }
+
+    const existing = normalizeResultFiles(doc.files);
+    const existingStamped = stampPracticeTransferFileBatch(existing, {
+      uploadedAt: doc.createdAt || new Date(),
+      force: false,
+    });
+    doc.files = mergePracticeTransferFilesByS3Key(existingStamped, incoming);
+    await doc.save();
+
+    const payload = await emitRequestFilesUpdated({
+      doc,
+      req,
+      action: "request-files-appended",
+      labAnchorId,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        transferId: String(doc.transferId || "").trim(),
+        ...toTransferFilesApiFields(doc),
+        updatedAt: payload.updatedAt,
+        ...toAutoMatchApiFields(doc, labAnchorId),
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "의뢰 파일 저장 중 오류가 발생했습니다.",
+      error: error?.message,
+    });
+  }
+}
+
+/**
+ * 기공소 — 의뢰 파일 삭제.
+ * related: POST /api/practice/transfers/received/:transferId/request-files/remove
+ */
+export async function removeReceivedPracticeTransferRequestFiles(req, res) {
+  try {
+    const role = String(req.user?.role || "").trim();
+    if (!isPracticeTransferLabReceiverRole(role)) {
+      return res.status(403).json({ success: false, message: "권한이 없습니다." });
+    }
+
+    const transferIdFilter = buildTransferIdFilter(req.params?.transferId);
+    if (!transferIdFilter) {
+      return res.status(400).json({
+        success: false,
+        message: "transferId가 필요합니다.",
+      });
+    }
+
+    const rawKeys = Array.isArray(req.body?.s3Keys)
+      ? req.body.s3Keys
+      : req.body?.s3Key
+        ? [req.body.s3Key]
+        : [];
+    const removeKeys = new Set(
+      rawKeys.map((key) => String(key || "").trim()).filter(Boolean),
+    );
+    if (removeKeys.size === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "삭제할 파일(s3Key)이 필요합니다.",
+      });
+    }
+
+    const { scope, labAnchorId } = await buildReceivedScope(req);
+    if (scope === null || !labAnchorId) {
+      return res.status(404).json({ success: false, message: "전송 내역을 찾을 수 없습니다." });
+    }
+
+    const doc = await PracticeTransfer.findOne({
+      ...scope,
+      ...transferIdFilter,
+    });
+    if (!doc) {
+      return res.status(404).json({ success: false, message: "전송 내역을 찾을 수 없습니다." });
+    }
+    if (isPracticeTransferDeletedStatus(doc.status)) {
+      return res.status(409).json({
+        success: false,
+        message: "삭제된 기공의뢰의 파일은 수정할 수 없습니다.",
+      });
+    }
+
+    const moved = softDeletePracticeTransferRequestFiles(doc, removeKeys);
+    if (!moved) {
+      return res.status(404).json({
+        success: false,
+        message: "삭제할 파일을 찾지 못했습니다.",
+      });
+    }
+    await doc.save();
+
+    const payload = await emitRequestFilesUpdated({
+      doc,
+      req,
+      action: "request-files-trashed",
+      labAnchorId,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        transferId: String(doc.transferId || "").trim(),
+        ...toTransferFilesApiFields(doc),
+        updatedAt: payload.updatedAt,
+        ...toAutoMatchApiFields(doc, labAnchorId),
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "의뢰 파일 삭제 중 오류가 발생했습니다.",
+      error: error?.message,
+    });
+  }
+}
+
+/**
+ * 기공소 — 의뢰 파일 휴지통 복원.
+ * related: POST /api/practice/transfers/received/:transferId/request-files/restore
+ */
+export async function restoreReceivedPracticeTransferRequestFiles(req, res) {
+  try {
+    const role = String(req.user?.role || "").trim();
+    if (!isPracticeTransferLabReceiverRole(role)) {
+      return res.status(403).json({ success: false, message: "권한이 없습니다." });
+    }
+
+    const transferIdFilter = buildTransferIdFilter(req.params?.transferId);
+    if (!transferIdFilter) {
+      return res.status(400).json({
+        success: false,
+        message: "transferId가 필요합니다.",
+      });
+    }
+
+    const rawKeys = Array.isArray(req.body?.s3Keys)
+      ? req.body.s3Keys
+      : req.body?.s3Key
+        ? [req.body.s3Key]
+        : [];
+    const restoreKeys = rawKeys
+      .map((key) => String(key || "").trim())
+      .filter(Boolean);
+    if (!restoreKeys.length) {
+      return res.status(400).json({
+        success: false,
+        message: "복원할 파일(s3Key)이 필요합니다.",
+      });
+    }
+
+    const { scope, labAnchorId } = await buildReceivedScope(req);
+    if (scope === null || !labAnchorId) {
+      return res.status(404).json({ success: false, message: "전송 내역을 찾을 수 없습니다." });
+    }
+
+    const doc = await PracticeTransfer.findOne({
+      ...scope,
+      ...transferIdFilter,
+    });
+    if (!doc) {
+      return res.status(404).json({ success: false, message: "전송 내역을 찾을 수 없습니다." });
+    }
+    if (isPracticeTransferDeletedStatus(doc.status)) {
+      return res.status(409).json({
+        success: false,
+        message: "삭제된 기공의뢰의 파일은 수정할 수 없습니다.",
+      });
+    }
+
+    const restored = restorePracticeTransferRequestFiles(doc, restoreKeys);
+    if (!restored) {
+      return res.status(404).json({
+        success: false,
+        message: "복원할 파일을 찾지 못했습니다.",
+      });
+    }
+    await doc.save();
+
+    const payload = await emitRequestFilesUpdated({
+      doc,
+      req,
+      action: "request-files-restored",
+      labAnchorId,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        transferId: String(doc.transferId || "").trim(),
+        ...toTransferFilesApiFields(doc),
+        updatedAt: payload.updatedAt,
+        ...toAutoMatchApiFields(doc, labAnchorId),
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "의뢰 파일 복원 중 오류가 발생했습니다.",
       error: error?.message,
     });
   }

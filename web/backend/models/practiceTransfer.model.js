@@ -2,6 +2,8 @@
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
+// - 2026-09-12: trashedFiles — 의뢰 파일 soft-delete(휴지통)·복원.
+// - 2026-09-12: files.uploadBatchId·uploadedAt — 업로드 시점(웨이브) 클러스터.
 // - 2026-09-11: 수신 미처리(작업시작 전) 전 기간 OR용 targetLab+status+downloadedAt.
 // - 2026-08-28: 캘린더 조회용 orderDates/arrivalDates compound index.
 // - 2026-09-12: production.abutmentShipYmd — 기공소 어벗 출고일(기본 도착−3달력일).
@@ -12,6 +14,12 @@ const practiceTransferFileSchema = new mongoose.Schema(
   {
     patientName: { type: String, default: "", trim: true },
     tooth: { type: String, default: "", trim: true },
+    /** 같은 API 업로드(드롭·전송)끼리 묶는 웨이브 ID */
+    uploadBatchId: { type: String, default: "", trim: true },
+    /** 해당 웨이브가 transfer.files에 붙은 시각 */
+    uploadedAt: { type: Date, default: null },
+    /** trashedFiles 전용 — 휴지통 이동 시각 */
+    trashedAt: { type: Date, default: null },
     file: {
       originalName: { type: String, required: true, trim: true },
       mimetype: { type: String, default: "application/octet-stream", trim: true },
@@ -158,6 +166,11 @@ const practiceTransferSchema = new mongoose.Schema(
       index: true,
     },
     files: {
+      type: [practiceTransferFileSchema],
+      default: [],
+    },
+    /** 의뢰 파일 휴지통( soft-delete ). 복원 시 files로 복귀 */
+    trashedFiles: {
       type: [practiceTransferFileSchema],
       default: [],
     },

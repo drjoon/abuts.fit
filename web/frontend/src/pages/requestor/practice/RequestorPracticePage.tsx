@@ -29,6 +29,7 @@
 // - web/backend/utils/labReceiveCalendarHiddenWeekdays.util.js
 // - web/frontend/src/shared/practice/labReceiveCalendarViewMode.ts
 // - web/backend/controllers/users/user.controller.js
+// - 2026-09-12: 상세 드롭·클립 — 3D/이미지 의뢰 파일 append·삭제(X).
 // - 2026-09-12: 기공소 리메이크 — 원본 리드로 기본 도착일 · POST /received/remake.
 // - 2026-09-12: 어벗 출고일 설정(도착−3달력일 기본) — STL 업로드 옆 · 낙관적 패치.
 // - 2026-09-12: 채팅 없으면 상세 초기 스크롤=보철물(상단). 빈 목록 시 chatBottom 강제 스크롤 제거.
@@ -329,6 +330,7 @@ import {
 import {
   filterPracticeTransferFiles,
   getPracticeTransferFileExtension,
+  partitionDetailAttachFiles,
   PRACTICE_TRANSFER_ACCEPT,
   PRACTICE_TRANSFER_STL_ACCEPT,
 } from "@/shared/practice/practiceTransferAccept";
@@ -705,6 +707,13 @@ export function RequestorPracticeReceivePage({
     uploadProgress,
   } = useFilePreUpload({ token });
   const chatUploads = useBackgroundTempUpload({ token });
+  const requestFileUploads = useBackgroundTempUpload({ token });
+  const [removingRequestFileKeys, setRemovingRequestFileKeys] = useState<
+    string[]
+  >([]);
+  const [restoringRequestFileKeys, setRestoringRequestFileKeys] = useState<
+    string[]
+  >([]);
   const {
     downloadingKeys,
     downloadProgressByKey,
@@ -1050,11 +1059,18 @@ export function RequestorPracticeReceivePage({
             mimetype: String(item.mimetype || "application/octet-stream").trim(),
             size: Number(item.size || 0),
             s3Key: String(item.s3Key || "").trim(),
+            uploadBatchId: String(item.uploadBatchId || "").trim() || null,
+            uploadedAt: String(item.uploadedAt || "").trim() || null,
+            trashedAt: String(item.trashedAt || "").trim() || null,
           };
         };
 
         const files: ReceivedPracticeFile[] = filesRaw
           .map((f, idx) => mapFileRow(f, idx))
+          .filter((f) => f.originalName && f.s3Key);
+        const trashedFilesRaw = Array.isArray(r.trashedFiles) ? r.trashedFiles : [];
+        const trashedFiles: ReceivedPracticeFile[] = trashedFilesRaw
+          .map((f, idx) => mapFileRow(f, idx, ":trash"))
           .filter((f) => f.originalName && f.s3Key);
         const resultFiles: ReceivedPracticeFile[] = resultFilesRaw
           .map((f, idx) => mapFileRow(f, idx, ":result"))
@@ -1292,6 +1308,7 @@ export function RequestorPracticeReceivePage({
           ),
           fileCount: Number(r.fileCount || files.length || 0),
           files,
+          trashedFiles,
           resultFileCount: Number(r.resultFileCount || resultFiles.length || 0),
           resultFiles,
           feeQuote: parsePracticeTransferFeeQuote(r.feeQuote),
@@ -6286,10 +6303,339 @@ export function RequestorPracticeReceivePage({
     [downloadS3File],
   );
 
-  const handleAttachChatFiles = useCallback((nextFiles: File[]) => {
-    if (!nextFiles.length) return;
-    chatUploads.addFiles(nextFiles);
-  }, [chatUploads.addFiles]);
+  const patchReceivedRequestFiles = useCallback(
+    (
+      transferId: string,
+      nextFiles: Array<{
+        id: string;
+        patientName: string;
+        tooth: string;
+        originalName: string;
+        mimetype: string;
+        size: number;
+        s3Key: string;
+        uploadBatchId?: string | null;
+        uploadedAt?: string | null;
+        trashedAt?: string | null;
+      }>,
+      nextTrashedFiles?: Array<{
+        id: string;
+        patientName: string;
+        tooth: string;
+        originalName: string;
+        mimetype: string;
+        size: number;
+        s3Key: string;
+        uploadBatchId?: string | null;
+        uploadedAt?: string | null;
+        trashedAt?: string | null;
+      }>,
+    ) => {
+      const id = String(transferId || "").trim();
+      if (!id) return;
+      setSelectedTransfer((prev) =>
+        prev && String(prev.transferId || "").trim() === id
+          ? {
+              ...prev,
+              files: nextFiles,
+              fileCount: nextFiles.length,
+              ...(nextTrashedFiles ? { trashedFiles: nextTrashedFiles } : {}),
+            }
+          : prev,
+      );
+      setTransfers((prev) =>
+        prev.map((row) =>
+          String(row.transferId || "").trim() === id
+            ? {
+                ...row,
+                files: nextFiles,
+                fileCount: nextFiles.length,
+                ...(nextTrashedFiles ? { trashedFiles: nextTrashedFiles } : {}),
+              }
+            : row,
+        ),
+      );
+    },
+    [],
+  );
+
+  const mapApiReceivedRequestFiles = useCallback(
+    (raw: unknown, transferMongoId = "") => {
+      if (!Array.isArray(raw)) return [];
+      return raw
+        .map((row, idx) => {
+          const r =
+            row && typeof row === "object"
+              ? (row as Record<string, unknown>)
+              : {};
+          const originalName = String(r.originalName || "").trim();
+          const s3Key = String(r.s3Key || "").trim();
+          if (!originalName || !s3Key) return null;
+          return {
+            id: String(r.id || `${transferMongoId}:${idx + 1}`),
+            patientName: String(r.patientName || "").trim(),
+            tooth: String(r.tooth || "").trim(),
+            originalName,
+            mimetype: String(r.mimetype || "application/octet-stream").trim(),
+            size: Number(r.size || 0) || 0,
+            s3Key,
+            uploadBatchId: String(r.uploadBatchId || "").trim() || null,
+            uploadedAt: String(r.uploadedAt || "").trim() || null,
+            trashedAt: String(r.trashedAt || "").trim() || null,
+          };
+        })
+        .filter((row): row is NonNullable<typeof row> => Boolean(row));
+    },
+    [],
+  );
+
+  const handleAttachRequestFiles = useCallback(
+    (nextFiles: File[]) => {
+      if (!nextFiles.length) return;
+      const transferId = String(selectedTransfer?.transferId || "").trim();
+      if (!token || !transferId) {
+        toast({
+          title: "의뢰를 선택해 주세요",
+          description: "의뢰 파일을 추가하려면 수신 의뢰를 연 뒤 올려 주세요.",
+          variant: "destructive",
+        });
+        return;
+      }
+      requestFileUploads.addFiles(nextFiles);
+      void (async () => {
+        try {
+          const uploaded = await ensureFilesUploaded(nextFiles);
+          const patientName = String(
+            selectedTransfer?.files?.[0]?.patientName || "",
+          ).trim();
+          const payload = uploaded
+            .map((file) => {
+              const originalName = String(file.originalName || "").trim();
+              const s3Key = String(file.key || "").trim();
+              if (!originalName || !s3Key) return null;
+              return {
+                patientName,
+                tooth: "",
+                file: {
+                  originalName,
+                  mimetype: String(
+                    file.mimetype || file.fileType || "application/octet-stream",
+                  ).trim(),
+                  size: Number(file.size || 0) || 0,
+                  s3Key,
+                },
+              };
+            })
+            .filter(Boolean);
+          if (!payload.length) {
+            throw new Error("파일 업로드에 실패했습니다.");
+          }
+          const res = await apiFetch<unknown>({
+            path: `/api/practice/transfers/received/${encodeURIComponent(transferId)}/request-files`,
+            method: "POST",
+            token,
+            jsonBody: { files: payload },
+          });
+          if (!res.ok) {
+            const body =
+              res.data && typeof res.data === "object"
+                ? (res.data as Record<string, unknown>)
+                : {};
+            throw new Error(
+              String(body.message || "의뢰 파일 저장 중 오류가 발생했습니다."),
+            );
+          }
+          const body =
+            res.data && typeof res.data === "object"
+              ? (res.data as Record<string, unknown>)
+              : {};
+          const data =
+            body.data && typeof body.data === "object"
+              ? (body.data as Record<string, unknown>)
+              : body;
+          const mapped = mapApiReceivedRequestFiles(
+            data.files,
+            String(selectedTransfer?._id || ""),
+          );
+          const mappedTrash = mapApiReceivedRequestFiles(
+            data.trashedFiles,
+            String(selectedTransfer?._id || ""),
+          );
+          patchReceivedRequestFiles(transferId, mapped, mappedTrash);
+          for (const file of nextFiles) {
+            requestFileUploads.removeItem(toTempUploadFileKey(file));
+          }
+        } catch (error) {
+          toast({
+            title: "의뢰 파일 추가 실패",
+            description:
+              error instanceof Error
+                ? error.message
+                : "의뢰 파일 저장 중 오류가 발생했습니다.",
+            variant: "destructive",
+          });
+        }
+      })();
+    },
+    [
+      ensureFilesUploaded,
+      mapApiReceivedRequestFiles,
+      patchReceivedRequestFiles,
+      requestFileUploads,
+      selectedTransfer?._id,
+      selectedTransfer?.files,
+      selectedTransfer?.transferId,
+      toast,
+      token,
+    ],
+  );
+
+  const handleAttachChatFiles = useCallback(
+    (nextFiles: File[]) => {
+      if (!nextFiles.length) return;
+      // 방어: 3D·이미지는 채팅이 아니라 의뢰 파일로 (STL 작업파일 분기는 다이얼로그에서 선처리)
+      const { requestFiles, chatFiles } = partitionDetailAttachFiles(nextFiles);
+      if (requestFiles.length) handleAttachRequestFiles(requestFiles);
+      if (chatFiles.length) chatUploads.addFiles(chatFiles);
+    },
+    [chatUploads.addFiles, handleAttachRequestFiles],
+  );
+
+  const handleRemoveRequestFile = useCallback(
+    async (file: { fileName: string; s3Key: string }) => {
+      const transferId = String(selectedTransfer?.transferId || "").trim();
+      const s3Key = String(file.s3Key || "").trim();
+      if (!token || !transferId || !s3Key) return;
+      setRemovingRequestFileKeys((prev) =>
+        prev.includes(s3Key) ? prev : [...prev, s3Key],
+      );
+      try {
+        const res = await apiFetch<unknown>({
+          path: `/api/practice/transfers/received/${encodeURIComponent(transferId)}/request-files/remove`,
+          method: "POST",
+          token,
+          jsonBody: { s3Key },
+        });
+        if (!res.ok) {
+          const body =
+            res.data && typeof res.data === "object"
+              ? (res.data as Record<string, unknown>)
+              : {};
+          throw new Error(
+            String(body.message || "의뢰 파일 삭제 중 오류가 발생했습니다."),
+          );
+        }
+        const body =
+          res.data && typeof res.data === "object"
+            ? (res.data as Record<string, unknown>)
+            : {};
+        const data =
+          body.data && typeof body.data === "object"
+            ? (body.data as Record<string, unknown>)
+            : body;
+        const mapped = mapApiReceivedRequestFiles(
+          data.files,
+          String(selectedTransfer?._id || ""),
+        );
+        const mappedTrash = mapApiReceivedRequestFiles(
+          data.trashedFiles,
+          String(selectedTransfer?._id || ""),
+        );
+        patchReceivedRequestFiles(transferId, mapped, mappedTrash);
+        toast({
+          title: "휴지통으로 이동",
+          description: "의뢰 파일 휴지통에서 복원할 수 있습니다.",
+        });
+      } catch (error) {
+        toast({
+          title: "의뢰 파일 삭제 실패",
+          description:
+            error instanceof Error
+              ? error.message
+              : "의뢰 파일 삭제 중 오류가 발생했습니다.",
+          variant: "destructive",
+        });
+      } finally {
+        setRemovingRequestFileKeys((prev) => prev.filter((key) => key !== s3Key));
+      }
+    },
+    [
+      mapApiReceivedRequestFiles,
+      patchReceivedRequestFiles,
+      selectedTransfer?._id,
+      selectedTransfer?.transferId,
+      toast,
+      token,
+    ],
+  );
+
+  const handleRestoreRequestFile = useCallback(
+    async (file: { fileName: string; s3Key: string }) => {
+      const transferId = String(selectedTransfer?.transferId || "").trim();
+      const s3Key = String(file.s3Key || "").trim();
+      if (!token || !transferId || !s3Key) return;
+      setRestoringRequestFileKeys((prev) =>
+        prev.includes(s3Key) ? prev : [...prev, s3Key],
+      );
+      try {
+        const res = await apiFetch<unknown>({
+          path: `/api/practice/transfers/received/${encodeURIComponent(transferId)}/request-files/restore`,
+          method: "POST",
+          token,
+          jsonBody: { s3Key },
+        });
+        if (!res.ok) {
+          const body =
+            res.data && typeof res.data === "object"
+              ? (res.data as Record<string, unknown>)
+              : {};
+          throw new Error(
+            String(body.message || "의뢰 파일 복원 중 오류가 발생했습니다."),
+          );
+        }
+        const body =
+          res.data && typeof res.data === "object"
+            ? (res.data as Record<string, unknown>)
+            : {};
+        const data =
+          body.data && typeof body.data === "object"
+            ? (body.data as Record<string, unknown>)
+            : body;
+        patchReceivedRequestFiles(
+          transferId,
+          mapApiReceivedRequestFiles(
+            data.files,
+            String(selectedTransfer?._id || ""),
+          ),
+          mapApiReceivedRequestFiles(
+            data.trashedFiles,
+            String(selectedTransfer?._id || ""),
+          ),
+        );
+      } catch (error) {
+        toast({
+          title: "의뢰 파일 복원 실패",
+          description:
+            error instanceof Error
+              ? error.message
+              : "의뢰 파일 복원 중 오류가 발생했습니다.",
+          variant: "destructive",
+        });
+      } finally {
+        setRestoringRequestFileKeys((prev) =>
+          prev.filter((key) => key !== s3Key),
+        );
+      }
+    },
+    [
+      mapApiReceivedRequestFiles,
+      patchReceivedRequestFiles,
+      selectedTransfer?._id,
+      selectedTransfer?.transferId,
+      toast,
+      token,
+    ],
+  );
 
   const handleSendChat = useCallback(async () => {
     const text = chatDraft.trim();
@@ -7277,13 +7623,26 @@ export function RequestorPracticeReceivePage({
           selectedTransfer?.starDowngrade?.labEffectiveStars ??
           null
         }
-        filesLabel="의뢰 파일 (구강 스캔, 쉐이드 포토 등)"
+        filesLabel="의뢰 파일"
         files={
           (selectedTransfer?.files || []).map((file) => ({
             id: file.id,
             fileName: file.originalName,
             size: Number(file.size || 0),
             s3Key: String(file.s3Key || "").trim(),
+            uploadBatchId: file.uploadBatchId || null,
+            uploadedAt: file.uploadedAt || null,
+          })) satisfies PracticeTransferDialogFileItem[]
+        }
+        trashedFiles={
+          (selectedTransfer?.trashedFiles || []).map((file) => ({
+            id: file.id,
+            fileName: file.originalName,
+            size: Number(file.size || 0),
+            s3Key: String(file.s3Key || "").trim(),
+            uploadBatchId: file.uploadBatchId || null,
+            uploadedAt: file.uploadedAt || null,
+            trashedAt: file.trashedAt || null,
           })) satisfies PracticeTransferDialogFileItem[]
         }
         oralScanAttachMode={null}
@@ -7492,6 +7851,14 @@ export function RequestorPracticeReceivePage({
         onRemoveAttachedChatFile={chatUploads.removeItem}
         onRetryAttachedChatFile={chatUploads.retryItem}
         onAttachChatFiles={handleAttachChatFiles}
+        onAttachRequestFiles={handleAttachRequestFiles}
+        onRemoveRequestFile={(file) => void handleRemoveRequestFile(file)}
+        onRestoreRequestFile={(file) => void handleRestoreRequestFile(file)}
+        requestFilePendingUploads={requestFileUploads.items}
+        onRemovePendingRequestFile={requestFileUploads.removeItem}
+        onRetryPendingRequestFile={requestFileUploads.retryItem}
+        removingRequestFileKeys={removingRequestFileKeys}
+        restoringRequestFileKeys={restoringRequestFileKeys}
         chatDraft={chatDraft}
         onChangeChatDraft={setChatDraft}
         onSendChatMessage={() => void handleSendChat()}

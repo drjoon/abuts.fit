@@ -42,10 +42,13 @@ export const getPracticeTransferFileExtension = (fileName: string) => {
   return name.slice(idx);
 };
 
-export const isPracticeTransferAcceptedFile = (file: File) => {
-  const ext = getPracticeTransferFileExtension(file.name);
+export const isPracticeTransferAcceptedFileName = (fileName: string) => {
+  const ext = getPracticeTransferFileExtension(fileName);
   return PRACTICE_TRANSFER_ALLOWED_EXTENSIONS.has(ext);
 };
+
+export const isPracticeTransferAcceptedFile = (file: File) =>
+  isPracticeTransferAcceptedFileName(file.name);
 
 export const filterPracticeTransferFiles = (files: File[]) =>
   files.filter((file) => isPracticeTransferAcceptedFile(file));
@@ -62,4 +65,18 @@ export const partitionLabChatDropFiles = (files: File[]) => {
     else chatFiles.push(file);
   }
   return { stlFiles, chatFiles };
+};
+
+/**
+ * 상세 패널 드롭·클립 첨부 — 3D/이미지는 의뢰 파일, 그 외는 채팅.
+ * (기공소 작업 STL 분기는 partitionLabChatDropFiles 후 남은 파일에 적용)
+ */
+export const partitionDetailAttachFiles = (files: File[]) => {
+  const requestFiles: File[] = [];
+  const chatFiles: File[] = [];
+  for (const file of files) {
+    if (isPracticeTransferAcceptedFile(file)) requestFiles.push(file);
+    else chatFiles.push(file);
+  }
+  return { requestFiles, chatFiles };
 };

@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-09-12: normalizeResultFiles — uploadBatchId·uploadedAt 보존. stampPracticeTransferFileBatch.
 // - 2026-09-12: 가공 진입 — abutmentPastReadyTeeth + 기공소 practice:transfer-updated(abutment-production-started).
 // - 2026-09-12: GET /received 캘린더 목록도 pastReadyTeeth enrich(리프레시 후 준비 취소선 오표시 방지).
 // - 2026-09-12: PTX CA 출고 목표 — 기공소 abutmentShipYmd 또는 치과도착일−3달력일(직납 −2영업일 폴백 폐기).
@@ -64,6 +65,7 @@
 // - 2026-08-15: 구강스캔 — 자동매칭은 치과 필수, 지정은 수락 기공소 업로드 허용.
 // - 2026-08-15: Abuts-first — 수락 시 스캔(files)로 Request 생성, 기일 기준 스케줄, 디자인 컨펌 후 생산.
 // - 2026-08-13: 치아별 abutmentProductMode(생산만/디자인+생산)를 어벗츠 의뢰 productMode로 전달.
+import { randomUUID } from "crypto";
 import { Types } from "mongoose";
 import Request from "../models/request.model.js";
 import PracticeTransfer from "../models/practiceTransfer.model.js";
@@ -141,6 +143,13 @@ const listCustomAbutmentToothWorks = (toothWorks, implantFavorites = null) =>
       !isPendingRoundBarAbutment(row, implantFavorites),
   );
 
+const parseUploadedAt = (value) => {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+  if (value == null || value === "") return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
 const normalizeResultFiles = (raw) => {
   const list = Array.isArray(raw) ? raw : [];
   return list
@@ -151,9 +160,15 @@ const normalizeResultFiles = (raw) => {
       ).trim();
       const s3Key = String(file?.s3Key || file?.key || row?.s3Key || "").trim();
       if (!originalName || !s3Key) return null;
+      const uploadBatchId = String(row?.uploadBatchId || "").trim();
+      const uploadedAt = parseUploadedAt(row?.uploadedAt);
+      const trashedAt = parseUploadedAt(row?.trashedAt);
       return {
         patientName: String(row?.patientName || "").trim(),
         tooth: String(row?.tooth || "").trim(),
+        ...(uploadBatchId ? { uploadBatchId } : {}),
+        ...(uploadedAt ? { uploadedAt } : {}),
+        ...(trashedAt ? { trashedAt } : {}),
         file: {
           originalName,
           mimetype: String(
@@ -166,6 +181,119 @@ const normalizeResultFiles = (raw) => {
     })
     .filter(Boolean);
 };
+
+/**
+ * 같은 업로드 웨이브로 stamp. force면 기존 batch도 덮어씀.
+ * missingOnly(기본) — batch/시각 없는 행만 채움.
+ */
+export function stampPracticeTransferFileBatch(
+  files,
+  { batchId = null, uploadedAt = null, force = false } = {},
+) {
+  const list = normalizeResultFiles(files);
+  if (!list.length) return [];
+  const id = String(batchId || "").trim() || randomUUID();
+  const at = parseUploadedAt(uploadedAt) || new Date();
+  return list.map((row) => {
+    if (!force && row.uploadBatchId && row.uploadedAt) return row;
+    return {
+      ...row,
+      uploadBatchId:
+        force || !row.uploadBatchId ? id : String(row.uploadBatchId).trim(),
+      uploadedAt: force || !row.uploadedAt ? at : row.uploadedAt,
+    };
+  });
+}
+
+/** s3Key 기준 merge. incoming이 stamp를 가지면 그대로, 없으면 기존 stamp 유지. */
+export function mergePracticeTransferFilesByS3Key(existing, incoming) {
+  const byKey = new Map(
+    normalizeResultFiles(existing).map((row) => [
+      String(row.file?.s3Key || "").trim(),
+      row,
+    ]),
+  );
+  for (const row of normalizeResultFiles(incoming)) {
+    const key = String(row.file?.s3Key || "").trim();
+    if (!key) continue;
+    const prev = byKey.get(key);
+    byKey.set(key, {
+      ...row,
+      uploadBatchId: row.uploadBatchId || prev?.uploadBatchId,
+      uploadedAt: row.uploadedAt || prev?.uploadedAt,
+    });
+  }
+  return [...byKey.values()].map((row) => ({
+    patientName: row.patientName,
+    tooth: row.tooth,
+    ...(row.uploadBatchId ? { uploadBatchId: row.uploadBatchId } : {}),
+    ...(row.uploadedAt ? { uploadedAt: row.uploadedAt } : {}),
+    ...(row.trashedAt ? { trashedAt: row.trashedAt } : {}),
+    file: row.file,
+  }));
+}
+
+/** files → trashedFiles 이동(soft-delete). 이동된 행 수 반환 */
+export function softDeletePracticeTransferRequestFiles(doc, removeKeysInput) {
+  const removeKeys = new Set(
+    [...(removeKeysInput || [])]
+      .map((key) => String(key || "").trim())
+      .filter(Boolean),
+  );
+  if (!removeKeys.size) return 0;
+  const existing = normalizeResultFiles(doc?.files);
+  const trash = normalizeResultFiles(doc?.trashedFiles);
+  const now = new Date();
+  const kept = [];
+  const moved = [];
+  for (const row of existing) {
+    const key = String(row.file?.s3Key || "").trim();
+    if (key && removeKeys.has(key)) {
+      moved.push({ ...row, trashedAt: now });
+    } else {
+      kept.push(row);
+    }
+  }
+  if (!moved.length) return 0;
+  const byKey = new Map(
+    trash.map((row) => [String(row.file?.s3Key || "").trim(), row]),
+  );
+  for (const row of moved) {
+    const key = String(row.file?.s3Key || "").trim();
+    if (!key) continue;
+    byKey.set(key, row);
+  }
+  doc.files = kept;
+  doc.trashedFiles = [...byKey.values()];
+  return moved.length;
+}
+
+/** trashedFiles → files 복원. 복원된 행 수 반환 */
+export function restorePracticeTransferRequestFiles(doc, restoreKeysInput) {
+  const restoreKeys = new Set(
+    [...(restoreKeysInput || [])]
+      .map((key) => String(key || "").trim())
+      .filter(Boolean),
+  );
+  if (!restoreKeys.size) return 0;
+  const existing = normalizeResultFiles(doc?.files);
+  const trash = normalizeResultFiles(doc?.trashedFiles);
+  const keptTrash = [];
+  const restored = [];
+  for (const row of trash) {
+    const key = String(row.file?.s3Key || "").trim();
+    if (key && restoreKeys.has(key)) {
+      const { trashedAt: _trashedAt, ...rest } = row;
+      restored.push(rest);
+    } else {
+      keptTrash.push(row);
+    }
+  }
+  if (!restored.length) return 0;
+  doc.files = mergePracticeTransferFilesByS3Key(existing, restored);
+  doc.trashedFiles = keptTrash;
+  return restored.length;
+}
 
 /** @deprecated 생성 시 구강스캔은 선택. 메시지·코드는 레거시 클라이언트용 */
 export const ORAL_SCAN_REQUIRED_FOR_AUTO_MATCH_CREATE =

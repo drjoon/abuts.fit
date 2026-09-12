@@ -79,6 +79,9 @@ export type PracticeTransferLabReceiveFile = {
   mimetype: string;
   size: number;
   s3Key: string;
+  uploadBatchId?: string | null;
+  uploadedAt?: string | null;
+  trashedAt?: string | null;
 };
 
 export type PracticeTransferRemakeCharge = {
@@ -174,6 +177,7 @@ export type PracticeTransferLabReceiveItem = {
   labFeeMultiplier?: number;
   fileCount: number;
   files: PracticeTransferLabReceiveFile[];
+  trashedFiles?: PracticeTransferLabReceiveFile[];
   resultFileCount?: number;
   resultFiles?: PracticeTransferLabReceiveFile[];
   feeQuote?: PracticeTransferFeeQuote | null;

@@ -134,6 +134,9 @@ const toDialogFiles = (
       fileName: file.fileName,
       size: Number(file.size || 0),
       s3Key,
+      uploadBatchId: file.uploadBatchId || null,
+      uploadedAt: file.uploadedAt || null,
+      trashedAt: file.trashedAt || null,
     };
   });
 
@@ -143,6 +146,7 @@ export type PracticeSenderTransferDetailModel = {
   toothWorks: ToothWorkSelection[];
   toothWorksKey: string;
   files: PracticeTransferDialogFileItem[];
+  trashedFiles: PracticeTransferDialogFileItem[];
   designFiles: PracticeTransferDialogFileItem[];
   resultFiles: PracticeTransferDialogFileItem[];
   skipJig: boolean;
@@ -296,6 +300,7 @@ export function buildPracticeSenderTransferDetailModel(
         : parsed.toothWorks) || [],
     toothWorksKey: transferKey,
     files: toDialogFiles(transfer.files, "request"),
+    trashedFiles: toDialogFiles(transfer.trashedFiles, "trash"),
     designFiles: toDialogFiles(transfer.designFiles, "design"),
     resultFiles: toDialogFiles(transfer.resultFiles, "result"),
     skipJig: Boolean(transfer.skipJig),

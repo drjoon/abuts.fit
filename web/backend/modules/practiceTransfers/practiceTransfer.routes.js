@@ -48,6 +48,12 @@ import {
   cancelPracticeTransferProsthesisFollowUp,
   updatePracticeTransferProsthesisFollowUp,
   setPracticeTransferAbutmentShipYmd,
+  appendPracticeTransferRequestFiles,
+  removePracticeTransferRequestFiles,
+  restorePracticeTransferRequestFilesApi,
+  appendReceivedPracticeTransferRequestFiles,
+  removeReceivedPracticeTransferRequestFiles,
+  restoreReceivedPracticeTransferRequestFiles,
 } from "../../controllers/practiceTransfers/practiceTransfer.controller.js";
 import { handoffPracticeTransferAbutmentDesign, reportImplantCatalogMismatch } from "../../controllers/requests/designHandoff.controller.js";
 import {
@@ -164,10 +170,52 @@ router.post(
 );
 
 router.post(
+  "/received/:transferId/request-files",
+  authenticate,
+  receiveAuth,
+  appendReceivedPracticeTransferRequestFiles,
+);
+
+router.post(
+  "/received/:transferId/request-files/remove",
+  authenticate,
+  receiveAuth,
+  removeReceivedPracticeTransferRequestFiles,
+);
+
+router.post(
+  "/received/:transferId/request-files/restore",
+  authenticate,
+  receiveAuth,
+  restoreReceivedPracticeTransferRequestFiles,
+);
+
+router.post(
   "/:transferId/update-content",
   authenticate,
   sendAuth,
   updatePracticeTransferContent,
+);
+
+router.post(
+  "/:transferId/request-files",
+  authenticate,
+  sendAuth,
+  appendPracticeTransferRequestFiles,
+);
+
+router.post(
+  "/:transferId/request-files/remove",
+  authenticate,
+  sendAuth,
+  removePracticeTransferRequestFiles,
+);
+
+router.post(
+  "/:transferId/request-files/restore",
+  authenticate,
+  sendAuth,
+  restorePracticeTransferRequestFilesApi,
 );
 
 router.post(

@@ -14,6 +14,9 @@
 // - web/frontend/src/shared/files/downloadWithProgress.ts
 // - web/frontend/src/shared/files/s3BlobCache.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-12: 의뢰 파일 삭제→휴지통. 썸네일 끝 휴지통+카운터·복원.
+// - 2026-09-12: 의뢰 파일 — 업로드 웨이브(첫/두 번째/…) 클러스터.
+// - 2026-09-12: 드롭·클립 — 3D/이미지→의뢰 파일, 그 외→채팅. 의뢰 파일 타일 X 삭제.
 // - 2026-09-12: 별·알림음 — 환자·치아번호 줄 오른쪽.
 // - 2026-09-12: 별·알림음 — 채팅 툴바 → 주문/도착 줄 오른쪽.
 // - 2026-09-12: 채팅 없으면 초기 스크롤=보철물(상단). 전환·빈 목록 시 하단 고정 금지.
@@ -136,6 +139,7 @@ import {
   MoreHorizontal,
   Pencil,
   Printer,
+  RotateCcw,
   Trash2,
   UploadCloud,
   X,
@@ -233,9 +237,16 @@ import { LabPendingAbutmentGuide } from "@/shared/components/practice/LabPending
 import { LAB_RECEIVE_ABUTMENT_UPLOAD_HINT } from "@/shared/components/practice/PracticeLabReceiveWorkActionsBar";
 import {
   getPracticeTransferFileExtension,
+  isPracticeTransferAcceptedFileName,
+  partitionDetailAttachFiles,
+  partitionLabChatDropFiles,
   PRACTICE_TRANSFER_IMAGE_EXTENSIONS,
   PRACTICE_TRANSFER_STL_ACCEPT,
 } from "@/shared/practice/practiceTransferAccept";
+import {
+  clusterPracticeTransferFileWaves,
+  formatPracticeUploadWaveTime,
+} from "@/shared/practice/practiceTransferFileWaves";
 import {
   PracticeTransferFileDropTarget,
 } from "@/shared/components/practice/PracticeTransferFileDropTarget";
@@ -333,6 +344,9 @@ export type PracticeTransferDialogFileItem = {
   fileName: string;
   size: number;
   s3Key: string;
+  uploadBatchId?: string | null;
+  uploadedAt?: string | null;
+  trashedAt?: string | null;
 };
 
 /** 기공의뢰수신 — 수락 후 페이지 전체 파일 드롭(카드와 동일 라우팅) */
@@ -407,9 +421,11 @@ type PracticeTransferDetailChatDialogProps = {
   labAnchorId?: string | null;
   /** 기공소 뷰 — 자동매칭 기공비 별점 확정가 */
   labEffectiveStars?: number | null;
-  /** 예: 의뢰 파일 (구강 스캔, 쉐이드 포토 등) */
+  /** 예: 의뢰 파일 */
   filesLabel: string;
   files: PracticeTransferDialogFileItem[];
+  /** 의뢰 파일 휴지통 */
+  trashedFiles?: PracticeTransferDialogFileItem[];
   /** 수락 전 구강스캔 미첨부(CA). 자동매칭만 치과 필수 안내 */
   oralScanAttachMode?: "practice_required" | null;
   /**
@@ -507,6 +523,22 @@ type PracticeTransferDetailChatDialogProps = {
   onRemoveAttachedChatFile: (id: string) => void;
   onRetryAttachedChatFile?: (id: string) => void;
   onAttachChatFiles: (files: File[]) => void;
+  /**
+   * 3D·이미지 → 의뢰 파일. 있으면 드롭/클립/카메라가 포맷별로 분기.
+   * 없으면 기존처럼 전부 채팅 첨부.
+   */
+  onAttachRequestFiles?: (files: File[]) => void;
+  /** 의뢰 파일 타일 X — s3Key로 휴지통 이동 */
+  onRemoveRequestFile?: (file: PracticeTransferDialogFileItem) => void | Promise<void>;
+  /** 휴지통 → 의뢰 파일 복원 */
+  onRestoreRequestFile?: (file: PracticeTransferDialogFileItem) => void | Promise<void>;
+  /** 의뢰 파일 업로드 중(타일 그리드에 표시) */
+  requestFilePendingUploads?: BackgroundUploadItem[];
+  onRemovePendingRequestFile?: (id: string) => void;
+  onRetryPendingRequestFile?: (id: string) => void;
+  /** 삭제/복원 중 s3Key — X·복원 비활성 */
+  removingRequestFileKeys?: string[];
+  restoringRequestFileKeys?: string[];
   chatDraft: string;
   onChangeChatDraft: (value: string) => void;
   onSendChatMessage: () => void | Promise<void>;
@@ -596,6 +628,7 @@ export function PracticeTransferDetailChatDialog({
   labEffectiveStars = null,
   filesLabel,
   files,
+  trashedFiles = [],
   oralScanAttachMode = null,
   requestFilesDownloadLocked = false,
   requestFilesDownloadLockedReason = ORAL_SCAN_DOWNLOAD_LOCKED_UNTIL_ABUTS_DESIGN,
@@ -647,6 +680,14 @@ export function PracticeTransferDetailChatDialog({
   onRemoveAttachedChatFile,
   onRetryAttachedChatFile,
   onAttachChatFiles,
+  onAttachRequestFiles,
+  onRemoveRequestFile,
+  onRestoreRequestFile,
+  requestFilePendingUploads = [],
+  onRemovePendingRequestFile,
+  onRetryPendingRequestFile,
+  removingRequestFileKeys = [],
+  restoringRequestFileKeys = [],
   chatDraft,
   onChangeChatDraft,
   onSendChatMessage,
@@ -1857,15 +1898,49 @@ export function PracticeTransferDetailChatDialog({
   const workFileDropActive = Boolean(
     workFileDrop && !workFileDrop.disabled && !minimized,
   );
+  const requestFileAttachActive = Boolean(onAttachRequestFiles) && !minimized;
   const chatFileDropActive = !inputDisabled && !minimized;
+  const unifiedFileDropActive =
+    workFileDropActive || requestFileAttachActive || chatFileDropActive;
+
+  const routePickedOrDroppedFiles = useCallback(
+    (files: File[]) => {
+      if (!files.length) return;
+      let remaining = files;
+      if (workFileDropActive && workFileDrop) {
+        const { stlFiles, chatFiles } = partitionLabChatDropFiles(files);
+        if (stlFiles.length) workFileDrop.onFiles(stlFiles);
+        remaining = chatFiles;
+        if (!remaining.length) return;
+      }
+      if (onAttachRequestFiles) {
+        const { requestFiles, chatFiles } = partitionDetailAttachFiles(remaining);
+        if (requestFiles.length) onAttachRequestFiles(requestFiles);
+        if (chatFiles.length && chatFileDropActive) onAttachChatFiles(chatFiles);
+        else if (chatFiles.length && !chatFileDropActive) {
+          // 채팅 잠금 시 비허용 포맷은 무시(의뢰 파일만 받음)
+        }
+        return;
+      }
+      if (chatFileDropActive) onAttachChatFiles(remaining);
+    },
+    [
+      chatFileDropActive,
+      onAttachChatFiles,
+      onAttachRequestFiles,
+      workFileDrop,
+      workFileDropActive,
+    ],
+  );
+
   const [pageWorkDropActive, setPageWorkDropActive] = useState(false);
   const pageWorkDropDepthRef = useRef(0);
-  const workFileDropOnFilesRef = useRef(workFileDrop?.onFiles);
+  const routePickedOrDroppedFilesRef = useRef(routePickedOrDroppedFiles);
   useEffect(() => {
-    workFileDropOnFilesRef.current = workFileDrop?.onFiles;
-  }, [workFileDrop?.onFiles]);
+    routePickedOrDroppedFilesRef.current = routePickedOrDroppedFiles;
+  }, [routePickedOrDroppedFiles]);
 
-  /** 어벗 STL — 페이지(window) 전체 드래그·드롭 */
+  /** 어벗 STL — 페이지(window) 전체 드래그·드롭 (비STL은 의뢰 파일/채팅 분기) */
   useEffect(() => {
     if (!open || !workFileDropActive || workFileDrop?.disabled) {
       pageWorkDropDepthRef.current = 0;
@@ -1906,7 +1981,7 @@ export function PracticeTransferDetailChatDialog({
       const direct = Array.from(event.dataTransfer?.files || []);
       void (async () => {
         const files = await extractDroppedFiles(items, direct);
-        if (files.length) workFileDropOnFilesRef.current?.(files);
+        if (files.length) routePickedOrDroppedFilesRef.current(files);
       })();
     };
 
@@ -1926,15 +2001,9 @@ export function PracticeTransferDetailChatDialog({
 
   const handleChatTabDropFiles = useCallback(
     (files: File[]) => {
-      if (!files.length) return;
-      if (workFileDropActive) {
-        // 비STL·큰 STL 가드/다시 올리기는 부모 beginDesignUploadWithFiles SSOT
-        workFileDrop!.onFiles(files);
-        return;
-      }
-      onAttachChatFiles(files);
+      routePickedOrDroppedFiles(files);
     },
-    [onAttachChatFiles, workFileDrop, workFileDropActive],
+    [routePickedOrDroppedFiles],
   );
   const workFileDropGuideDetail = String(
     workFileDrop?.guideDetail || "",
@@ -2007,6 +2076,11 @@ export function PracticeTransferDetailChatDialog({
   const resultFileList = Array.isArray(resultFiles) ? resultFiles : [];
   const showWorkFilesSection =
     designFileList.length > 0 || resultFileList.length > 0;
+  const requestFileWaves = clusterPracticeTransferFileWaves(files);
+  const trashedFileList = Array.isArray(trashedFiles) ? trashedFiles : [];
+  /** 휴지통에 파일이 있을 때만 썸네일 끝 타일 표시 */
+  const showRequestFileTrash =
+    Boolean(onRestoreRequestFile) && trashedFileList.length > 0;
 
   const renderFileTile = (
     file: PracticeTransferDialogFileItem,
@@ -2018,6 +2092,13 @@ export function PracticeTransferDetailChatDialog({
     const isBusy =
       downloadAllBusy ||
       (busyKey ? downloadingFileKeys.includes(busyKey) : false);
+    const isRemoving =
+      Boolean(busyKey) && removingRequestFileKeys.includes(busyKey);
+    const canRemoveRequestFile =
+      keyPrefix === "request" &&
+      Boolean(onRemoveRequestFile) &&
+      Boolean(busyKey) &&
+      !locked;
     const progress = busyKey ? Number(downloadProgressByKey[busyKey] ?? 0) : 0;
     const isMesh = isModelPreviewExt(getModelExtLower(file.fileName));
     const isImage = isImagePreviewExt(
@@ -2039,10 +2120,26 @@ export function PracticeTransferDetailChatDialog({
         key={`${keyPrefix}:${busyKey || file.id || idx}`}
         className="relative min-w-0 overflow-hidden rounded-md border bg-slate-50"
       >
+        {canRemoveRequestFile ? (
+          <button
+            type="button"
+            className="absolute right-1 top-1 z-10 inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-900/65 text-white shadow-sm hover:bg-destructive disabled:opacity-50"
+            title="파일 삭제"
+            aria-label="파일 삭제"
+            disabled={isRemoving || isBusy}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              void onRemoveRequestFile?.(file);
+            }}
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={() => handleFileRowClick(file, locked)}
-          disabled={isBusy || locked}
+          disabled={isBusy || locked || isRemoving}
           title={title}
           className="flex w-full flex-col items-stretch text-left disabled:opacity-60 disabled:pointer-events-none"
         >
@@ -2079,12 +2176,14 @@ export function PracticeTransferDetailChatDialog({
                 </span>
               </div>
             ) : null}
-            {isBusy ? (
+            {isBusy || isRemoving ? (
               <div className="absolute inset-x-0 bottom-0 bg-slate-900/55 px-1 py-0.5">
                 <p className="text-center text-[10px] text-white">
-                  {Math.round(progress)}%
+                  {isRemoving ? "삭제 중…" : `${Math.round(progress)}%`}
                 </p>
-                <Progress value={progress} className="mt-0.5 h-1" />
+                {!isRemoving ? (
+                  <Progress value={progress} className="mt-0.5 h-1" />
+                ) : null}
               </div>
             ) : null}
           </div>
@@ -2099,6 +2198,152 @@ export function PracticeTransferDetailChatDialog({
     );
   };
 
+  const renderPendingRequestFileTile = (item: BackgroundUploadItem) => {
+    const isMesh = isModelPreviewExt(getModelExtLower(item.file.name));
+    const typeLabel = fileTypeLabel(item.file.name);
+    return (
+      <div
+        key={`pending-request:${item.id}`}
+        className="relative min-w-0 overflow-hidden rounded-md border border-dashed border-primary/40 bg-primary-soft/20"
+      >
+        {onRemovePendingRequestFile ? (
+          <button
+            type="button"
+            className="absolute right-1 top-1 z-10 inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-900/65 text-white shadow-sm hover:bg-destructive"
+            title="업로드 취소"
+            aria-label="업로드 취소"
+            onClick={() => onRemovePendingRequestFile(item.id)}
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        ) : null}
+        <div className="flex w-full flex-col items-stretch">
+          <div className="relative aspect-square w-full overflow-hidden bg-slate-100">
+            <div className="flex h-full w-full flex-col items-center justify-center gap-1 px-1 text-slate-500">
+              {isMesh ? (
+                <Box className="h-7 w-7 shrink-0" aria-hidden />
+              ) : (
+                <FileIcon className="h-7 w-7 shrink-0" aria-hidden />
+              )}
+              <span className="max-w-full truncate text-[10px] font-semibold tracking-wide text-slate-600">
+                {typeLabel}
+              </span>
+            </div>
+            <div className="absolute inset-x-0 bottom-0 bg-slate-900/55 px-1 py-0.5">
+              <p className="text-center text-[10px] text-white">
+                {item.status === "error"
+                  ? "실패"
+                  : item.status === "done"
+                    ? "저장 중…"
+                    : `${Math.round(item.progress || 0)}%`}
+              </p>
+              {item.status !== "error" ? (
+                <Progress
+                  value={item.status === "done" ? 100 : item.progress || 0}
+                  className="mt-0.5 h-1"
+                />
+              ) : onRetryPendingRequestFile ? (
+                <button
+                  type="button"
+                  className="mt-0.5 w-full text-center text-[10px] text-white underline"
+                  onClick={() => onRetryPendingRequestFile(item.id)}
+                >
+                  다시 시도
+                </button>
+              ) : null}
+            </div>
+          </div>
+          <p
+            className="truncate px-1.5 py-1.5 text-center text-[11px] font-medium text-slate-800"
+            title={item.file.name}
+          >
+            {item.file.name}
+          </p>
+        </div>
+      </div>
+    );
+  };
+
+  const renderRequestFileTrashTile = () => (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="relative min-w-0 overflow-hidden rounded-md border border-dashed border-slate-300 bg-slate-100/80 text-left hover:bg-slate-100"
+          title={`휴지통 ${trashedFileList.length}개`}
+          aria-label={`휴지통 ${trashedFileList.length}개`}
+        >
+          <div className="relative flex aspect-square w-full flex-col items-center justify-center gap-1 bg-slate-200/60 text-slate-600">
+            <Trash2 className="h-7 w-7 shrink-0" aria-hidden />
+            <span className="absolute right-1 top-1 inline-flex min-w-5 items-center justify-center rounded-full bg-slate-800 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+              {trashedFileList.length}
+            </span>
+          </div>
+          <p className="truncate px-1.5 py-1.5 text-center text-[11px] font-medium text-slate-700">
+            휴지통
+          </p>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="end"
+        side="top"
+        className="z-[400] w-80 p-3"
+      >
+        <p className="mb-2 text-xs font-semibold text-foreground">
+          휴지통{" "}
+          <span className="font-normal text-muted-foreground">
+            ({trashedFileList.length}개)
+          </span>
+        </p>
+        {trashedFileList.length === 0 ? (
+          <p className="py-3 text-center text-xs text-muted-foreground">
+            삭제한 의뢰 파일이 없습니다.
+          </p>
+        ) : (
+          <div className="custom-scrollbar max-h-64 space-y-2 overflow-y-auto">
+            {trashedFileList.map((file) => {
+              const key = String(file.s3Key || file.id || "").trim();
+              const busy = key
+                ? restoringRequestFileKeys.includes(key)
+                : false;
+              return (
+                <div
+                  key={`trash:${key || file.fileName}`}
+                  className="flex items-center gap-2 rounded-md border bg-background px-2 py-1.5"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p
+                      className="truncate text-xs font-medium text-foreground"
+                      title={file.fileName}
+                    >
+                      {file.fileName}
+                    </p>
+                    {file.trashedAt ? (
+                      <p className="text-[10px] text-muted-foreground">
+                        {formatPracticeUploadWaveTime(file.trashedAt)}
+                      </p>
+                    ) : null}
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-7 shrink-0 gap-1 px-2 text-[11px]"
+                    disabled={busy || !onRestoreRequestFile}
+                    onClick={() => void onRestoreRequestFile?.(file)}
+                  >
+                    <RotateCcw className="h-3 w-3" />
+                    {busy ? "복원 중…" : "복원"}
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
+
   const panelBody = (
         <PracticeTransferFileDropTarget
           fileInputId={
@@ -2108,7 +2353,7 @@ export function PracticeTransferDetailChatDialog({
           disabled={
             workFileDropActive
               ? true
-              : !chatFileDropActive
+              : !unifiedFileDropActive
           }
           showDefaultUi={false}
           fillHeight
@@ -2120,7 +2365,9 @@ export function PracticeTransferDetailChatDialog({
           acceptedHint={
             workFileDropActive
               ? workFileDrop?.dropHint || "어벗 STL"
-              : "사진·파일"
+              : requestFileAttachActive
+                ? "3D·이미지 → 의뢰 파일"
+                : "사진·파일"
           }
           filterFiles={(files) => files}
           className="flex min-h-0 flex-1 flex-col"
@@ -2151,7 +2398,7 @@ export function PracticeTransferDetailChatDialog({
                 : null}
               {!workFileDropActive &&
               isDragActive &&
-              chatFileDropActive ? (
+              unifiedFileDropActive ? (
                 <div
                   className="pointer-events-none absolute inset-0 z-[305] flex flex-col items-center justify-center gap-2 rounded-md bg-primary/10 px-6 backdrop-blur-[2px]"
                   aria-hidden
@@ -2160,10 +2407,14 @@ export function PracticeTransferDetailChatDialog({
                     <UploadCloud className="h-8 w-8" />
                   </div>
                   <p className="text-sm font-semibold text-primary-strong">
-                    사진·파일을 놓아 첨부
+                    {requestFileAttachActive
+                      ? "파일을 놓아 첨부"
+                      : "사진·파일을 놓아 첨부"}
                   </p>
                   <p className="text-center text-xs text-muted-foreground">
-                    채팅에 보낼 파일을 여기에 놓으세요
+                    {requestFileAttachActive
+                      ? "3D·이미지 → 의뢰 파일 · 그 외 → 채팅"
+                      : "채팅에 보낼 파일을 여기에 놓으세요"}
                   </p>
                 </div>
               ) : null}
@@ -2534,7 +2785,7 @@ export function PracticeTransferDetailChatDialog({
                   <h3 className="text-[13px] font-semibold text-foreground">
                     {filesLabel}{" "}
                     <span className="font-normal text-muted-foreground">
-                      ({files.length}개)
+                      ({files.length + requestFilePendingUploads.length}개)
                     </span>
                   </h3>
                   <div className="flex shrink-0 items-center gap-1.5">
@@ -2605,16 +2856,73 @@ export function PracticeTransferDetailChatDialog({
                     {requestFilesDownloadLockedReason}
                   </p>
                 ) : null}
-                {files.length ? (
-                  <div className="grid grid-cols-4 gap-2">
-                    {files.map((file, idx) =>
-                      renderFileTile(
-                        file,
-                        idx,
-                        "request",
-                        requestFilesDownloadLocked,
-                      ),
-                    )}
+                {files.length ||
+                requestFilePendingUploads.length ||
+                showRequestFileTrash ? (
+                  <div className="space-y-3">
+                    {requestFileWaves.map((wave, waveIndex) => {
+                      const timeLabel = formatPracticeUploadWaveTime(
+                        wave.uploadedAt,
+                      );
+                      const isLastWave =
+                        waveIndex === requestFileWaves.length - 1 &&
+                        requestFilePendingUploads.length === 0;
+                      return (
+                        <div key={wave.batchId} className="space-y-1.5">
+                          <div className="flex items-baseline justify-between gap-2">
+                            <p className="text-[12px] font-medium text-slate-700">
+                              {wave.label}
+                              <span className="ml-1.5 font-normal text-muted-foreground">
+                                ({wave.files.length}개)
+                              </span>
+                            </p>
+                            {timeLabel ? (
+                              <p className="shrink-0 text-[11px] text-muted-foreground">
+                                {timeLabel}
+                              </p>
+                            ) : null}
+                          </div>
+                          <div className="grid grid-cols-4 gap-2">
+                            {wave.files.map((file, idx) =>
+                              renderFileTile(
+                                file,
+                                idx,
+                                `request:${wave.batchId}`,
+                                requestFilesDownloadLocked,
+                              ),
+                            )}
+                            {isLastWave && showRequestFileTrash
+                              ? renderRequestFileTrashTile()
+                              : null}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {requestFilePendingUploads.length > 0 ? (
+                      <div className="space-y-1.5">
+                        <p className="text-[12px] font-medium text-slate-700">
+                          업로드 중
+                          <span className="ml-1.5 font-normal text-muted-foreground">
+                            ({requestFilePendingUploads.length}개)
+                          </span>
+                        </p>
+                        <div className="grid grid-cols-4 gap-2">
+                          {requestFilePendingUploads.map((item) =>
+                            renderPendingRequestFileTile(item),
+                          )}
+                          {showRequestFileTrash
+                            ? renderRequestFileTrashTile()
+                            : null}
+                        </div>
+                      </div>
+                    ) : null}
+                    {!requestFileWaves.length &&
+                    !requestFilePendingUploads.length &&
+                    showRequestFileTrash ? (
+                      <div className="grid grid-cols-4 gap-2">
+                        {renderRequestFileTrashTile()}
+                      </div>
+                    ) : null}
                   </div>
                 ) : oralScanAttachMode === "practice_required" ? (
                   <p className="text-sm leading-relaxed text-destructive">
@@ -2736,10 +3044,26 @@ export function PracticeTransferDetailChatDialog({
                         const senderId = String(
                           message.sender?._id || "",
                         ).trim();
+                        // 의뢰 파일(3D·이미지)은 채팅 버블에 다시 그리지 않음 — 상단 의뢰 파일 섹션이 SSOT
+                        const chatOnlyAttachments = Array.isArray(
+                          message.attachments,
+                        )
+                          ? message.attachments.filter(
+                              (file) =>
+                                !isPracticeTransferAcceptedFileName(
+                                  String(file?.fileName || ""),
+                                ),
+                            )
+                          : [];
+                        const messageForBubble =
+                          chatOnlyAttachments.length ===
+                          (message.attachments?.length || 0)
+                            ? message
+                            : { ...message, attachments: chatOnlyAttachments };
                         return (
                           <ChatMessageBubble
                             key={message._id}
-                            message={message}
+                            message={messageForBubble}
                             isMine={isMyMessage(senderId)}
                             currentUserId={currentUserId}
                             authToken={authToken}
@@ -2906,7 +3230,7 @@ export function PracticeTransferDetailChatDialog({
                     disabled={inputDisabled}
                     isSending={sendDisabled}
                     pendingUploads={chatAttachedFiles}
-                    onPickFiles={onAttachChatFiles}
+                    onPickFiles={routePickedOrDroppedFiles}
                     onRemovePendingFile={onRemoveAttachedChatFile}
                     onRetryPendingFile={onRetryAttachedChatFile}
                     requestPicks={requestPicks}
