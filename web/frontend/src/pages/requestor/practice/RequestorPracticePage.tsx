@@ -28,7 +28,9 @@
 // - web/frontend/src/shared/practice/labReceiveCalendarHiddenWeekdays.ts
 // - web/backend/utils/labReceiveCalendarHiddenWeekdays.util.js
 // - web/frontend/src/shared/practice/labReceiveCalendarViewMode.ts
+// - web/frontend/src/shared/practice/labReceiveCalendarCursorYmd.ts
 // - web/backend/controllers/users/user.controller.js
+// - 2026-09-13: 캘린더/목록 커서(YMD) localStorage 복원 — 릴로드 시 직전 위치 유지.
 // - 2026-09-12: 상세 드롭·클립 — 3D/이미지 의뢰 파일 append·삭제(X).
 // - 2026-09-12: 기공소 리메이크 — 원본 리드로 기본 도착일 · POST /received/remake.
 // - 2026-09-12: 어벗 출고일 설정(도착−3달력일 기본) — STL 업로드 옆 · 낙관적 패치.
@@ -351,6 +353,10 @@ import {
 import { toKstYmd, toKstYmdLoose, kstYmdWeekday } from "@/shared/date/kst";
 import { normalizeLabReceiveCalendarDateKey } from "@/shared/practice/labReceiveCalendarDateKey";
 import { normalizeLabReceiveCalendarHiddenWeekdays } from "@/shared/practice/labReceiveCalendarHiddenWeekdays";
+import {
+  readStoredLabReceiveCalendarCursorYmd,
+  writeStoredLabReceiveCalendarCursorYmd,
+} from "@/shared/practice/labReceiveCalendarCursorYmd";
 import {
   readStoredLabReceiveCalendarViewMode,
   writeStoredLabReceiveCalendarViewMode,
@@ -738,7 +744,10 @@ export function RequestorPracticeReceivePage({
   const [dateKey, setDateKey] = useState<PracticeCalendarDateKey>(() =>
     normalizeLabReceiveCalendarDateKey(storedCalendarDateKey),
   );
-  const [cursorYmd, setCursorYmd] = useState(() => toKstYmd(new Date()) || "");
+  const [cursorYmd, setCursorYmd] = useState(
+    () =>
+      readStoredLabReceiveCalendarCursorYmd() || toKstYmd(new Date()) || "",
+  );
   const [hiddenWeekdays, setHiddenWeekdays] = useState<number[]>(() =>
     normalizeLabReceiveCalendarHiddenWeekdays(storedHiddenWeekdays),
   );
@@ -757,6 +766,11 @@ export function RequestorPracticeReceivePage({
       ),
     [cursorYmd, viewMode],
   );
+
+  const handleCursorChange = useCallback((ymd: string) => {
+    setCursorYmd(ymd);
+    writeStoredLabReceiveCalendarCursorYmd(ymd);
+  }, []);
 
   const handleViewModeChange = useCallback(
     (mode: LabReceiveCalendarViewMode) => {
@@ -2188,8 +2202,8 @@ export function RequestorPracticeReceivePage({
   useEffect(() => {
     if (!guideTourLabCalendarStep) return;
     const today = toKstYmd(new Date()) || "";
-    if (today) setCursorYmd(today);
-  }, [guideTourLabCalendarStep]);
+    if (today) handleCursorChange(today);
+  }, [guideTourLabCalendarStep, handleCursorChange]);
 
   /** 데모 PTX 상세·채팅 잔류 제거(목록 주입은 active=false면 baseFiltered에서 제외) */
   const clearGuideTourDemoSelection = useCallback(() => {
@@ -6801,11 +6815,11 @@ export function RequestorPracticeReceivePage({
           : transfer.orderDate || transfer.createdAt;
       const ymd = toKstYmdLoose(raw) || toKstYmd(raw);
       if (!ymd) return "";
-      setCursorYmd(ymd);
+      handleCursorChange(ymd);
       setAlignEpoch((n) => n + 1);
       return ymd;
     },
-    [calendarDateKey],
+    [calendarDateKey, handleCursorChange],
   );
 
   const focusCalendarTransfer = useCallback(
@@ -7185,7 +7199,7 @@ export function RequestorPracticeReceivePage({
               items={calendarItems}
               dateKey={calendarDateKey}
               cursorYmd={cursorYmd}
-              onCursorChange={setCursorYmd}
+              onCursorChange={handleCursorChange}
               onDateKeyChange={handleCalendarDateKeyChange}
               viewMode={viewMode}
               onViewModeChange={handleViewModeChange}

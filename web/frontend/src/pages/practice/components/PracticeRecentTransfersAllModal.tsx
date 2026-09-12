@@ -45,6 +45,7 @@
  * - 2026-09-09: 상태 뱃지 unread 카운터 클릭 시 안읽음 건 순회(표시 토글은 카운터 없을 때만).
  * - 2026-09-10: 상태 표시 on/off 제거. 헤더=확인 큐(열면 감소), 칩=실제 채팅 unread만.
  * - 2026-09-12: PC 헤더 nowrap — 상태뱃지·액션 1줄(좁은 폭 overflow-x). 충분 폭이면 액션 라벨 표시.
+ * - 2026-09-13: 캘린더/목록 커서(YMD) localStorage 복원 — 열기·릴로드 시 오늘로 리셋하지 않음.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronRight, Search, Trash2, X } from "lucide-react";
@@ -73,6 +74,10 @@ import { useIsMobile } from "@/shared/hooks/use-mobile";
 import { toKstYmd, toKstYmdLoose } from "@/shared/date/kst";
 import { normalizeLabReceiveCalendarDateKey } from "@/shared/practice/labReceiveCalendarDateKey";
 import { normalizeLabReceiveCalendarHiddenWeekdays } from "@/shared/practice/labReceiveCalendarHiddenWeekdays";
+import {
+  readStoredLabReceiveCalendarCursorYmd,
+  writeStoredLabReceiveCalendarCursorYmd,
+} from "@/shared/practice/labReceiveCalendarCursorYmd";
 import {
   readStoredLabReceiveCalendarViewMode,
   writeStoredLabReceiveCalendarViewMode,
@@ -246,7 +251,10 @@ export function PracticeRecentTransfersAllModal({
   const [dateKey, setDateKey] = useState<PracticeCalendarDateKey>(() =>
     normalizeLabReceiveCalendarDateKey(storedCalendarDateKey),
   );
-  const [cursorYmd, setCursorYmd] = useState(() => toKstYmd(new Date()) || "");
+  const [cursorYmd, setCursorYmd] = useState(
+    () =>
+      readStoredLabReceiveCalendarCursorYmd() || toKstYmd(new Date()) || "",
+  );
   const [hiddenWeekdays, setHiddenWeekdays] = useState<number[]>(() =>
     normalizeLabReceiveCalendarHiddenWeekdays(storedHiddenWeekdays),
   );
@@ -290,6 +298,11 @@ export function PracticeRecentTransfersAllModal({
     return () => ro.disconnect();
   }, [isMobile, open]);
 
+  const handleCursorChange = useCallback((ymd: string) => {
+    setCursorYmd(ymd);
+    writeStoredLabReceiveCalendarCursorYmd(ymd);
+  }, []);
+
   const handleViewModeChange = useCallback(
     (mode: LabReceiveCalendarViewMode) => {
       setViewMode(mode);
@@ -310,7 +323,7 @@ export function PracticeRecentTransfersAllModal({
     // 의뢰상세 → 전체보기 재오픈 시에도 검색창이 비지 않게 한다.
     const seeded = String(initialSearch || "").trim();
     setSearch(seeded ? seeded : readStoredRecentTransfersAllSearch(""));
-    setCursorYmd(toKstYmd(new Date()) || "");
+    // 커서(YMD)는 localStorage에 유지 — 열 때마다 오늘로 리셋하지 않음.
     setDateKey(normalizeLabReceiveCalendarDateKey(storedCalendarDateKey));
     setHiddenWeekdays(
       normalizeLabReceiveCalendarHiddenWeekdays(storedHiddenWeekdays),
@@ -684,11 +697,11 @@ export function PracticeRecentTransfersAllModal({
           : transfer.orderDate || transfer.arrivalDate;
       const ymd = toKstYmdLoose(raw) || toKstYmd(raw);
       if (!ymd) return "";
-      setCursorYmd(ymd);
+      handleCursorChange(ymd);
       setAlignEpoch((n) => n + 1);
       return ymd;
     },
-    [dateKey],
+    [dateKey, handleCursorChange],
   );
 
   const focusCalendarTransfer = useCallback(
@@ -1040,7 +1053,7 @@ export function PracticeRecentTransfersAllModal({
                 items={calendarItems}
                 dateKey={dateKey}
                 cursorYmd={cursorYmd}
-                onCursorChange={setCursorYmd}
+                onCursorChange={handleCursorChange}
                 onDateKeyChange={handleCalendarDateKeyChange}
                 viewMode={viewMode}
                 onViewModeChange={handleViewModeChange}

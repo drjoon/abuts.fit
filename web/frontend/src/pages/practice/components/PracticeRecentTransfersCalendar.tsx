@@ -39,6 +39,7 @@
  * - 2026-09-11: 목록·칩 — 작업 큐=빨간 테두리, 채팅 unread=빨간 숫자(분리).
  * - 2026-09-10: 상단 뱃지 표시 on/off 제거 — active 톤만 사용(unread 순회).
  * - 2026-09-10: focusItemId/focusEpoch — 뱃지 순회 시 해당 칩·목록 행으로 스크롤.
+ * - 2026-09-13: 목록 — 초기/릴로드 시 커서 월로 스크롤(데이터 도착 전 force align 유지).
  * - 2026-09-13: 목록·캘린더 ↔ 채팅 — 모드별 분할 위치 localStorage 분리.
  * - 2026-09-13: 목록·캘린더 ↔ 채팅 — 드래그 가로 분할 + localStorage(autoSaveId).
  * - 2026-09-12: 목록/캘린더 — 미니달력 고정폭. 본문·채팅은 flex 비율로 함께 축소.
@@ -1336,9 +1337,16 @@ export function PracticeRecentTransfersCalendar({
   useEffect(() => {
     if (viewMode !== "list") return;
     if (listForceAlignRef.current) {
-      listForceAlignRef.current = false;
       const target =
         listRestoreYmdRef.current || cursorYmd || captionMonth || todayYmd;
+      if (!target) return;
+      const targetMonth = kstStartOfMonth(target) || target;
+      const monthHasDay = agendaDays.some(
+        (day) => (kstStartOfMonth(day.ymd) || day.ymd) === targetMonth,
+      );
+      // fetch 전 빈 목록에서 force를 소비하지 않음 — items 도착 후 커서 근처로 맞춤.
+      if (!monthHasDay && agendaDays.length === 0) return;
+      listForceAlignRef.current = false;
       listRestoreYmdRef.current = null;
       const id = window.requestAnimationFrame(() => {
         scrollListToYmd(target, "auto");
@@ -1362,7 +1370,8 @@ export function PracticeRecentTransfersCalendar({
     window.setTimeout(() => {
       listPinCursorRef.current = false;
     }, 480);
-  }, [alignEpoch, viewMode, captionMonth, items]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- scroll helpers close over latest DOM refs
+  }, [alignEpoch, viewMode, captionMonth, items, agendaDays, cursorYmd, todayYmd]);
 
   const resolveListVisibleYmd = () => {
     const el = listScrollRef.current;
