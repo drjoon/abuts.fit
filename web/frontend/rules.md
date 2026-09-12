@@ -397,8 +397,8 @@ Notes:
   - 라이노 작업 중 카드: `productionSchedule.stlPreload.status=GENERATING`
     또는 filled 재생성 pending(`markFilledStlRegenerationPending` /
     `filled-stl-regeneration-started`)일 때만
-    카드 본문을 옅게 블러(`bg-white/40` · `backdrop-blur-[3px]`)하고
-    반투명 「작업중/작업중지」 오버레이로 클릭을 막는다(의뢰 내용은 가독 유지).
+    카드 본문을 아주 옅게 블러(`bg-white/15` · `backdrop-blur-[1px]`)하고
+    반투명 「작업중/작업중지」(`bg-*/40`) 오버레이로 클릭을 막는다(의뢰 내용은 또렷이 가독).
     filled STL(`caseInfos.stlFile.s3Key`, legacy `camFile` 폴백) 미수신 idle 카드는 블러하지 않는다.
     생성 완료 웹소켓(`request:stage-changed` source=`bg-file-processed`,
     `request:stl-metadata-updated` source=`bg-file-processed:2-filled`,
