@@ -7,6 +7,7 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferMobileOralPhotoIntake.tsx
 // - web/frontend/src/features/chat/components/NewChatWidget.tsx
 // change-log:
+// - 2026-09-13: compact — 전송 버튼을 입력창 오른쪽(도구 줄 위)으로 올려 글로벌 채팅 FAB와 겹침 방지.
 // - 2026-09-12: 의뢰건 선택 목록 requestId 중복 제거(/my 파일별 가상 row).
 // - 2026-09-12: 의뢰건 불러오기 트리거 # → $ (입력·DollarSign 버튼). placeholder 안내 문구 제거.
 // - 2026-09-11: toolbarExtra — $ 옆 메모·평가 아이콘 슬롯.
@@ -297,6 +298,55 @@ export const ChatComposer = (props: Props) => {
     if (images.length) handleCameraFiles(images);
   };
 
+  const handleComposerKeyDown = (
+    e: React.KeyboardEvent<HTMLTextAreaElement>,
+  ) => {
+    if (e.nativeEvent.isComposing) return;
+
+    if (e.key === "Escape" && (mentionOpen || hashOpen)) {
+      e.preventDefault();
+      setMentionOpen(false);
+      setHashOpen(false);
+      return;
+    }
+
+    if (pickListOpen && filteredPicks.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setHighlightIndex((prev) =>
+          Math.min(filteredPicks.length - 1, prev + 1),
+        );
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setHighlightIndex((prev) => Math.max(0, prev - 1));
+        return;
+      }
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        const pick =
+          filteredPicks[highlightIndex] || filteredPicks[0] || null;
+        if (pick) insertCaseToken(pick);
+        return;
+      }
+      if (e.key === "Tab") {
+        e.preventDefault();
+        const pick =
+          filteredPicks[highlightIndex] || filteredPicks[0] || null;
+        if (pick) insertCaseToken(pick);
+        return;
+      }
+    }
+
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      onSend();
+    }
+  };
+
+  const sendBesideInput = compact && !isMobile;
+
   const iconBtnClass = cn(
     "shrink-0",
     isMobile ? "h-11 w-11 touch-manipulation" : "h-9 w-9",
@@ -385,71 +435,60 @@ export const ChatComposer = (props: Props) => {
         </div>
       ) : null}
 
-      <Textarea
-        ref={textareaRef}
-        value={draft}
-        onChange={(e) => {
-          onDraftChange(e.target.value);
-          setCursor(e.target.selectionStart ?? e.target.value.length);
-        }}
-        onClick={syncCursor}
-        onKeyUp={syncCursor}
-        onSelect={syncCursor}
-        onPaste={handlePaste}
-        placeholder={resolvedPlaceholder}
-        className={cn(
-          "resize-none",
-          compact &&
-            "min-h-0 border-0 bg-transparent px-1 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0",
-          isMobile && "min-h-[4.5rem] text-base",
-        )}
-        rows={isMobile ? 2 : compact ? 2 : 3}
-        disabled={!!disabled || !!isSending}
-        onKeyDown={(e) => {
-          if (e.nativeEvent.isComposing) return;
-
-          if (e.key === "Escape" && (mentionOpen || hashOpen)) {
-            e.preventDefault();
-            setMentionOpen(false);
-            setHashOpen(false);
-            return;
-          }
-
-          if (pickListOpen && filteredPicks.length > 0) {
-            if (e.key === "ArrowDown") {
-              e.preventDefault();
-              setHighlightIndex((prev) =>
-                Math.min(filteredPicks.length - 1, prev + 1),
-              );
-              return;
-            }
-            if (e.key === "ArrowUp") {
-              e.preventDefault();
-              setHighlightIndex((prev) => Math.max(0, prev - 1));
-              return;
-            }
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              const pick =
-                filteredPicks[highlightIndex] || filteredPicks[0] || null;
-              if (pick) insertCaseToken(pick);
-              return;
-            }
-            if (e.key === "Tab") {
-              e.preventDefault();
-              const pick =
-                filteredPicks[highlightIndex] || filteredPicks[0] || null;
-              if (pick) insertCaseToken(pick);
-              return;
-            }
-          }
-
-          if (e.key === "Enter" && !e.shiftKey) {
-            e.preventDefault();
-            onSend();
-          }
-        }}
-      />
+      {sendBesideInput ? (
+        <div className="flex items-start gap-2">
+          <Textarea
+            ref={textareaRef}
+            value={draft}
+            onChange={(e) => {
+              onDraftChange(e.target.value);
+              setCursor(e.target.selectionStart ?? e.target.value.length);
+            }}
+            onClick={syncCursor}
+            onKeyUp={syncCursor}
+            onSelect={syncCursor}
+            onPaste={handlePaste}
+            placeholder={resolvedPlaceholder}
+            className="min-h-0 flex-1 resize-none border-0 bg-transparent px-1 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+            rows={2}
+            disabled={!!disabled || !!isSending}
+            onKeyDown={handleComposerKeyDown}
+          />
+          <Button
+            type="button"
+            size="icon"
+            onClick={onSend}
+            disabled={sendDisabled}
+            className={cn(iconBtnClass, "mt-1.5 shrink-0 sm:mt-2")}
+            aria-label="보내기"
+          >
+            <Send className="h-4 w-4" />
+          </Button>
+        </div>
+      ) : (
+        <Textarea
+          ref={textareaRef}
+          value={draft}
+          onChange={(e) => {
+            onDraftChange(e.target.value);
+            setCursor(e.target.selectionStart ?? e.target.value.length);
+          }}
+          onClick={syncCursor}
+          onKeyUp={syncCursor}
+          onSelect={syncCursor}
+          onPaste={handlePaste}
+          placeholder={resolvedPlaceholder}
+          className={cn(
+            "resize-none",
+            compact &&
+              "min-h-0 border-0 bg-transparent px-1 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0",
+            isMobile && "min-h-[4.5rem] text-base",
+          )}
+          rows={isMobile ? 2 : compact ? 2 : 3}
+          disabled={!!disabled || !!isSending}
+          onKeyDown={handleComposerKeyDown}
+        />
+      )}
 
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 flex-1 items-center gap-1">
@@ -566,16 +605,18 @@ export const ChatComposer = (props: Props) => {
           {toolbarExtra}
         </div>
 
-        <Button
-          type="button"
-          size="icon"
-          onClick={onSend}
-          disabled={sendDisabled}
-          className={cn(iconBtnClass, isMobile && "rounded-xl")}
-          aria-label="보내기"
-        >
-          <Send className={isMobile ? "h-5 w-5" : "h-4 w-4"} />
-        </Button>
+        {!sendBesideInput ? (
+          <Button
+            type="button"
+            size="icon"
+            onClick={onSend}
+            disabled={sendDisabled}
+            className={cn(iconBtnClass, isMobile && "rounded-xl")}
+            aria-label="보내기"
+          >
+            <Send className={isMobile ? "h-5 w-5" : "h-4 w-4"} />
+          </Button>
+        ) : null}
       </div>
     </div>
   );

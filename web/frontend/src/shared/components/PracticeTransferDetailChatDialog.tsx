@@ -1951,15 +1951,12 @@ export function PracticeTransferDetailChatDialog({
           onAttachChatFiles(otherFiles);
         }
         if (!imageFiles.length) return;
-        if (requestFileAttachActive && chatFileDropActive) {
+        // 어벗 STL 모드에서도 이미지면 의뢰파일/채팅 선택(채팅 입력 잠금이어도 첨부 큐는 가능)
+        if (onAttachChatFiles) {
           setPendingImageFiles(imageFiles);
           return;
         }
-        if (requestFileAttachActive) {
-          onAttachRequestFiles(imageFiles);
-          return;
-        }
-        if (chatFileDropActive) onAttachChatFiles(imageFiles);
+        onAttachRequestFiles(imageFiles);
         return;
       }
       if (chatFileDropActive) onAttachChatFiles(remaining);
@@ -1968,7 +1965,6 @@ export function PracticeTransferDetailChatDialog({
       chatFileDropActive,
       onAttachChatFiles,
       onAttachRequestFiles,
-      requestFileAttachActive,
       workFileDrop,
       workFileDropActive,
     ],
@@ -3414,10 +3410,10 @@ export function PracticeTransferDetailChatDialog({
             를 의뢰 파일(케이스 자료)로 둘지, 채팅 대화에 첨부할지 선택해 주세요.
           </AlertDialogDescription>
         </AlertDialogHeader>
-        <AlertDialogFooter className="flex-col gap-2 sm:flex-col sm:space-x-0">
+        <AlertDialogFooter className="flex-row gap-2 sm:justify-stretch sm:space-x-0">
           <Button
             type="button"
-            className="w-full"
+            className="flex-1"
             onClick={() => {
               const files = pendingImageFiles || [];
               clearPendingImageFiles();
@@ -3431,7 +3427,7 @@ export function PracticeTransferDetailChatDialog({
           <Button
             type="button"
             variant="secondary"
-            className="w-full"
+            className="flex-1"
             onClick={() => {
               const files = pendingImageFiles || [];
               clearPendingImageFiles();
@@ -3440,7 +3436,7 @@ export function PracticeTransferDetailChatDialog({
           >
             채팅
           </Button>
-          <AlertDialogCancel className="mt-0 w-full">취소</AlertDialogCancel>
+          <AlertDialogCancel className="mt-0 flex-1">취소</AlertDialogCancel>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
