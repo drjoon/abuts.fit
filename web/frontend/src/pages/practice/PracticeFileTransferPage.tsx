@@ -5908,9 +5908,11 @@ export const PracticeFileTransferPage = ({
 
   const handleAttachChatFiles = (nextFiles: File[]) => {
     if (!nextFiles.length) return;
-    // 방어: 3D·이미지는 채팅이 아니라 의뢰 파일로
-    const { requestFiles, chatFiles } = partitionDetailAttachFiles(nextFiles);
-    if (requestFiles.length) handleAttachRequestFiles(requestFiles);
+    // 방어: 3D만 의뢰 파일로. 이미지는 사용자가 채팅으로 고른 경우 유지.
+    const { modelFiles, imageFiles, otherFiles } =
+      partitionDetailAttachFiles(nextFiles);
+    if (modelFiles.length) handleAttachRequestFiles(modelFiles);
+    const chatFiles = [...imageFiles, ...otherFiles];
     if (chatFiles.length) chatUploads.addFiles(chatFiles);
   };
 

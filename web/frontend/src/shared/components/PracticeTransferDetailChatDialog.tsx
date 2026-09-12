@@ -14,11 +14,12 @@
 // - web/frontend/src/shared/files/downloadWithProgress.ts
 // - web/frontend/src/shared/files/s3BlobCache.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-13: 이미지 첨부 — 의뢰 파일 vs 채팅 선택. 3D만 의뢰 파일 자동. 채팅 버블은 3D만 숨김.
 // - 2026-09-12: 의뢰·작업 파일 타일 썸네일 — aspect-square → 2:1(세로 약 절반).
 // - 2026-09-12: 의뢰 파일 삭제→휴지통. 썸네일 끝 휴지통+카운터·복원.
 // - 2026-09-12: 휴지통 팝오버 — 전체 복원(s3Keys 일괄).
 // - 2026-09-12: 의뢰 파일 — 업로드 웨이브(첫/두 번째/…) 클러스터.
-// - 2026-09-12: 드롭·클립 — 3D/이미지→의뢰 파일, 그 외→채팅. 의뢰 파일 타일 X 삭제.
+// - 2026-09-12: 드롭·클립 — 3D→의뢰 파일, 이미지→선택, 그 외→채팅. 의뢰 파일 타일 X 삭제.
 // - 2026-09-12: 별·알림음 — 환자·치아번호 줄 오른쪽.
 // - 2026-09-12: 별·알림음 — 채팅 툴바 → 주문/도착 줄 오른쪽.
 // - 2026-09-12: 채팅 없으면 초기 스크롤=보철물(상단). 전환·빈 목록 시 하단 고정 금지.
@@ -149,6 +150,15 @@ import {
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -239,7 +249,7 @@ import { LabPendingAbutmentGuide } from "@/shared/components/practice/LabPending
 import { LAB_RECEIVE_ABUTMENT_UPLOAD_HINT } from "@/shared/components/practice/PracticeLabReceiveWorkActionsBar";
 import {
   getPracticeTransferFileExtension,
-  isPracticeTransferAcceptedFileName,
+  isPracticeTransferModelFileName,
   partitionDetailAttachFiles,
   partitionLabChatDropFiles,
   PRACTICE_TRANSFER_IMAGE_EXTENSIONS,
@@ -529,8 +539,8 @@ type PracticeTransferDetailChatDialogProps = {
   onRetryAttachedChatFile?: (id: string) => void;
   onAttachChatFiles: (files: File[]) => void;
   /**
-   * 3D·이미지 → 의뢰 파일. 있으면 드롭/클립/카메라가 포맷별로 분기.
-   * 없으면 기존처럼 전부 채팅 첨부.
+   * 3D → 의뢰 파일(자동). 이미지 → 의뢰 파일 vs 채팅 선택.
+   * 있으면 드롭/클립/카메라가 포맷별로 분기. 없으면 기존처럼 전부 채팅 첨부.
    */
   onAttachRequestFiles?: (files: File[]) => void;
   /** 의뢰 파일 타일 X — s3Key로 휴지통 이동 */
@@ -1911,6 +1921,18 @@ export function PracticeTransferDetailChatDialog({
   const unifiedFileDropActive =
     workFileDropActive || requestFileAttachActive || chatFileDropActive;
 
+  const [pendingImageFiles, setPendingImageFiles] = useState<File[] | null>(
+    null,
+  );
+
+  const clearPendingImageFiles = useCallback(() => {
+    setPendingImageFiles(null);
+  }, []);
+
+  useEffect(() => {
+    clearPendingImageFiles();
+  }, [chatRoomId, clearPendingImageFiles, open]);
+
   const routePickedOrDroppedFiles = useCallback(
     (files: File[]) => {
       if (!files.length) return;
@@ -1922,12 +1944,22 @@ export function PracticeTransferDetailChatDialog({
         if (!remaining.length) return;
       }
       if (onAttachRequestFiles) {
-        const { requestFiles, chatFiles } = partitionDetailAttachFiles(remaining);
-        if (requestFiles.length) onAttachRequestFiles(requestFiles);
-        if (chatFiles.length && chatFileDropActive) onAttachChatFiles(chatFiles);
-        else if (chatFiles.length && !chatFileDropActive) {
-          // 채팅 잠금 시 비허용 포맷은 무시(의뢰 파일만 받음)
+        const { modelFiles, imageFiles, otherFiles } =
+          partitionDetailAttachFiles(remaining);
+        if (modelFiles.length) onAttachRequestFiles(modelFiles);
+        if (otherFiles.length && chatFileDropActive) {
+          onAttachChatFiles(otherFiles);
         }
+        if (!imageFiles.length) return;
+        if (requestFileAttachActive && chatFileDropActive) {
+          setPendingImageFiles(imageFiles);
+          return;
+        }
+        if (requestFileAttachActive) {
+          onAttachRequestFiles(imageFiles);
+          return;
+        }
+        if (chatFileDropActive) onAttachChatFiles(imageFiles);
         return;
       }
       if (chatFileDropActive) onAttachChatFiles(remaining);
@@ -1936,6 +1968,7 @@ export function PracticeTransferDetailChatDialog({
       chatFileDropActive,
       onAttachChatFiles,
       onAttachRequestFiles,
+      requestFileAttachActive,
       workFileDrop,
       workFileDropActive,
     ],
@@ -2408,7 +2441,7 @@ export function PracticeTransferDetailChatDialog({
             workFileDropActive
               ? workFileDrop?.dropHint || "어벗 STL"
               : requestFileAttachActive
-                ? "3D·이미지 → 의뢰 파일"
+                ? "3D → 의뢰 파일 · 이미지 → 선택"
                 : "사진·파일"
           }
           filterFiles={(files) => files}
@@ -2455,7 +2488,7 @@ export function PracticeTransferDetailChatDialog({
                   </p>
                   <p className="text-center text-xs text-muted-foreground">
                     {requestFileAttachActive
-                      ? "3D·이미지 → 의뢰 파일 · 그 외 → 채팅"
+                      ? "3D → 의뢰 파일 · 이미지 → 의뢰 파일/채팅 선택 · 그 외 → 채팅"
                       : "채팅에 보낼 파일을 여기에 놓으세요"}
                   </p>
                 </div>
@@ -3086,13 +3119,13 @@ export function PracticeTransferDetailChatDialog({
                         const senderId = String(
                           message.sender?._id || "",
                         ).trim();
-                        // 의뢰 파일(3D·이미지)은 채팅 버블에 다시 그리지 않음 — 상단 의뢰 파일 섹션이 SSOT
+                        // 의뢰 파일로 올린 3D만 채팅 버블에서 숨김 — 이미지는 채팅 첨부로 남을 수 있음
                         const chatOnlyAttachments = Array.isArray(
                           message.attachments,
                         )
                           ? message.attachments.filter(
                               (file) =>
-                                !isPracticeTransferAcceptedFileName(
+                                !isPracticeTransferModelFileName(
                                   String(file?.fileName || ""),
                                 ),
                             )
@@ -3360,6 +3393,59 @@ export function PracticeTransferDetailChatDialog({
     />
   );
 
+  const pendingImageCount = pendingImageFiles?.length || 0;
+  const imageAttachChoiceDialog = (
+    <AlertDialog
+      open={pendingImageCount > 0}
+      onOpenChange={(next) => {
+        if (!next) clearPendingImageFiles();
+      }}
+    >
+      <AlertDialogContent
+        className="z-[330] sm:max-w-md"
+        overlayClassName="z-[325]"
+      >
+        <AlertDialogHeader>
+          <AlertDialogTitle>이미지를 어디에 첨부할까요?</AlertDialogTitle>
+          <AlertDialogDescription>
+            {pendingImageCount > 1
+              ? `${pendingImageCount}개 이미지`
+              : "1개 이미지"}
+            를 의뢰 파일(케이스 자료)로 둘지, 채팅 대화에 첨부할지 선택해 주세요.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter className="flex-col gap-2 sm:flex-col sm:space-x-0">
+          <Button
+            type="button"
+            className="w-full"
+            onClick={() => {
+              const files = pendingImageFiles || [];
+              clearPendingImageFiles();
+              if (files.length && onAttachRequestFiles) {
+                onAttachRequestFiles(files);
+              }
+            }}
+          >
+            의뢰 파일
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            className="w-full"
+            onClick={() => {
+              const files = pendingImageFiles || [];
+              clearPendingImageFiles();
+              if (files.length) onAttachChatFiles(files);
+            }}
+          >
+            채팅
+          </Button>
+          <AlertDialogCancel className="mt-0 w-full">취소</AlertDialogCancel>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+
   if (isInline) {
     if (!open) {
       return (
@@ -3373,6 +3459,7 @@ export function PracticeTransferDetailChatDialog({
             </p>
           </div>
           {modelPreview}
+          {imageAttachChoiceDialog}
         </>
       );
     }
@@ -3389,6 +3476,7 @@ export function PracticeTransferDetailChatDialog({
           {panelBody}
         </div>
         {modelPreview}
+        {imageAttachChoiceDialog}
       </>
     );
   }
@@ -3433,6 +3521,7 @@ export function PracticeTransferDetailChatDialog({
       </DialogContent>
     </Dialog>
     {modelPreview}
+    {imageAttachChoiceDialog}
     </>
   );
 }

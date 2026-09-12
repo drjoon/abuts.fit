@@ -42,6 +42,16 @@ export const getPracticeTransferFileExtension = (fileName: string) => {
   return name.slice(idx);
 };
 
+export const isPracticeTransferModelFileName = (fileName: string) =>
+  PRACTICE_TRANSFER_MODEL_EXTENSIONS.has(
+    getPracticeTransferFileExtension(fileName),
+  );
+
+export const isPracticeTransferImageFileName = (fileName: string) =>
+  PRACTICE_TRANSFER_IMAGE_EXTENSIONS.has(
+    getPracticeTransferFileExtension(fileName),
+  );
+
 export const isPracticeTransferAcceptedFileName = (fileName: string) => {
   const ext = getPracticeTransferFileExtension(fileName);
   return PRACTICE_TRANSFER_ALLOWED_EXTENSIONS.has(ext);
@@ -49,6 +59,12 @@ export const isPracticeTransferAcceptedFileName = (fileName: string) => {
 
 export const isPracticeTransferAcceptedFile = (file: File) =>
   isPracticeTransferAcceptedFileName(file.name);
+
+export const isPracticeTransferModelFile = (file: File) =>
+  isPracticeTransferModelFileName(file.name);
+
+export const isPracticeTransferImageFile = (file: File) =>
+  isPracticeTransferImageFileName(file.name);
 
 export const filterPracticeTransferFiles = (files: File[]) =>
   files.filter((file) => isPracticeTransferAcceptedFile(file));
@@ -68,15 +84,20 @@ export const partitionLabChatDropFiles = (files: File[]) => {
 };
 
 /**
- * 상세 패널 드롭·클립 첨부 — 3D/이미지는 의뢰 파일, 그 외는 채팅.
- * (기공소 작업 STL 분기는 partitionLabChatDropFiles 후 남은 파일에 적용)
+ * 상세 패널 드롭·클립 첨부 분기.
+ * - 3D(model) → 의뢰 파일(자동)
+ * - 이미지 → 호출측에서 의뢰 파일 vs 채팅 선택
+ * - 그 외 → 채팅
+ * (기공소 작업 STL은 partitionLabChatDropFiles 후 남은 파일에 적용)
  */
 export const partitionDetailAttachFiles = (files: File[]) => {
-  const requestFiles: File[] = [];
-  const chatFiles: File[] = [];
+  const modelFiles: File[] = [];
+  const imageFiles: File[] = [];
+  const otherFiles: File[] = [];
   for (const file of files) {
-    if (isPracticeTransferAcceptedFile(file)) requestFiles.push(file);
-    else chatFiles.push(file);
+    if (isPracticeTransferModelFile(file)) modelFiles.push(file);
+    else if (isPracticeTransferImageFile(file)) imageFiles.push(file);
+    else otherFiles.push(file);
   }
-  return { requestFiles, chatFiles };
+  return { modelFiles, imageFiles, otherFiles };
 };
