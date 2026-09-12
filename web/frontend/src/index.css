@@ -542,3 +542,25 @@ body:has(.guide-tour-root) .guide-tour-nested-dialog-overlay {
   }
 }
 
+/*
+ * 기공의뢰 목록 모드 — 미니 달력 고정폭(항상 표시).
+ * 남는 폭은 목록·채팅이 flex 비율로 분배. md 미만은 숨김.
+ */
+.practice-transfer-list-side-cal {
+  display: none;
+  width: 13.75rem;
+  min-width: 13.75rem;
+  max-width: 13.75rem;
+  min-height: 0;
+  flex-shrink: 0;
+  flex-grow: 0;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+@media (min-width: 768px) {
+  .practice-transfer-list-side-cal {
+    display: flex;
+  }
+}
+

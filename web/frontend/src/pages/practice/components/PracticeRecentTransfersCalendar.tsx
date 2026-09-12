@@ -39,6 +39,17 @@
  * - 2026-09-11: 목록·칩 — 작업 큐=빨간 테두리, 채팅 unread=빨간 숫자(분리).
  * - 2026-09-10: 상단 뱃지 표시 on/off 제거 — active 톤만 사용(unread 순회).
  * - 2026-09-10: focusItemId/focusEpoch — 뱃지 순회 시 해당 칩·목록 행으로 스크롤.
+ * - 2026-09-12: 목록/캘린더 — 미니달력 고정폭. 본문·채팅은 flex 비율로 함께 축소.
+ * - 2026-09-12: 목록 — 미니 달력 항상 표시(md+, 신규주문·날짜 이동). container 숨김 제거.
+ * - 2026-09-12: 목록 — 달력 표시를 CSS @container로(JS 숨김 고착 제거). 72rem 이상에서 전체 표시.
+ * - 2026-09-12: 목록 — 달력 재표시: 히스테리시스 데드존·width<160 스킵 제거. 넓힐 때 달력 복귀 고정.
+ * - 2026-09-12: 목록 — 달력 표시 임계(30+26.5+13.75)로 사이드바 펼침에서도 달력 유지. 목록 36rem(min 30). 측정 0폭·히스테리시스 수정.
+ * - 2026-09-12: 목록 — 달력은 공간 충분 시 13.75rem 전체 표시, 부족 시 ResizeObserver로 통째 숨김(부분 클립 없음).
+ * - 2026-09-12: 목록 — flex(달력 shrink 우선 클립 | 목록 35–45 | 채팅 26.5+grow). absolute 겹침 제거.
+ * - 2026-09-12: 목록 — CSS grid(거터|목록 35–45|채팅 26.5+1fr). 좁으면 달력 가림, 채팅 잘림 방지.
+ * - 2026-09-12: 목록 — 좁으면 pl로 달력 가림·채팅 !min-w 26.5rem(shrink-0). min-w-0이 채팅을 찌그러뜨리던 문제 수정.
+ * - 2026-09-12: 목록 — 좁으면 미니달력 위에 목록/채팅 겹침(최소 35rem·26.5rem). 넓으면 달력 여백 유지·채팅 flex-1.
+ * - 2026-09-12: 목록 — 좌측 폭 45rem(최소 35rem)·상세 flex-1. 사이드바 여유·남는 폭은 채팅으로. 캘린더는 고정 비율 유지.
  * - 2026-09-10: 목록 — 날짜 아래 의뢰 배치·가로폭 확보. dot 옆 휴지통·커스텀어벗 아이콘.
  * - 2026-09-10: 목록 — 상세 패널 열림 시 오른쪽 예약 폭으로 모달과 겹침 방지.
  * - 2026-09-05: guideTourItemId — 특정 칩에 data-guide-tour(수신 투어 오늘 의뢰).
@@ -155,8 +166,19 @@ export type PracticeCalendarChipItem = {
  * usePracticeTransferPanelLayout dock 폭과 맞춤.
  */
 export const PRACTICE_TRANSFER_LIST_DETAIL_RESERVE_CLASS = "pr-[26.5rem]";
-/** 인라인 상세 카드 폭 — 목록 reserve와 동일 */
+/**
+ * @deprecated 인라인 상세는 비율 flex(`PRACTICE_TRANSFER_DETAIL_PANE_CLASS`) 사용.
+ * 플로팅 도킹 reserve와 맞춘 레거시 고정폭 토큰.
+ */
 export const PRACTICE_TRANSFER_DETAIL_PANEL_WIDTH_CLASS = "w-[26.5rem]";
+/**
+ * 미니달력=고정 13.75rem(CSS). 목록·주간캘린더와 채팅은 남는 폭을 비율로 나눔.
+ * (목록/캘린더 약간 넓게 1.15 : 채팅 1)
+ */
+const PRACTICE_TRANSFER_MAIN_PANE_CLASS =
+  "flex min-h-0 min-w-[14rem] flex-[1.15_1_0%] flex-col overflow-hidden";
+const PRACTICE_TRANSFER_DETAIL_PANE_CLASS =
+  "flex min-h-0 min-w-[16rem] flex-[1_1_0%] flex-col overflow-hidden bg-background";
 
 /** 누적 주문일·도착일 → 캘린더 칩 다중 배치(같은 건·크레딧 중복 없음). */
 export function expandPracticeCalendarChipsByArrivalDates(
@@ -1496,9 +1518,8 @@ export function PracticeRecentTransfersCalendar({
       </div>
 
       {isListMode ? (
-        <div className="flex min-h-0 flex-1 gap-3 overflow-hidden">
-          <div className="flex min-h-0 min-w-0 flex-1 gap-3 overflow-hidden">
-          <aside className="hidden w-[13.75rem] shrink-0 flex-col gap-2 md:flex">
+        <div className="flex min-h-0 min-w-0 flex-1 gap-3 overflow-x-auto overflow-y-hidden">
+          <aside className="practice-transfer-list-side-cal">
             <ListSideMonthCalendar
               monthYmd={captionMonth}
               todayYmd={todayYmd}
@@ -1538,6 +1559,13 @@ export function PracticeRecentTransfersCalendar({
               </div>
             ) : null}
           </aside>
+          <div
+            className={cn(
+              detailPanel
+                ? PRACTICE_TRANSFER_MAIN_PANE_CLASS
+                : "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden",
+            )}
+          >
           <div
             ref={listScrollRef}
             className="custom-scrollbar min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain rounded-md border border-slate-200/80 bg-white"
@@ -1727,19 +1755,14 @@ export function PracticeRecentTransfersCalendar({
           </div>
           </div>
           {detailPanel ? (
-            <aside
-              className={cn(
-                "flex min-h-0 shrink-0 flex-col overflow-hidden",
-                PRACTICE_TRANSFER_DETAIL_PANEL_WIDTH_CLASS,
-              )}
-            >
+            <aside className={PRACTICE_TRANSFER_DETAIL_PANE_CLASS}>
               {detailPanel}
             </aside>
           ) : null}
         </div>
       ) : (
-      <div className="flex min-h-0 flex-1 gap-3 overflow-hidden">
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      <div className="flex min-h-0 min-w-0 flex-1 gap-3 overflow-hidden">
+      <div className={PRACTICE_TRANSFER_MAIN_PANE_CLASS}>
         <div
           className="grid shrink-0 border-l border-t"
           style={{
@@ -1975,12 +1998,7 @@ export function PracticeRecentTransfersCalendar({
         </div>
       </div>
           {detailPanel ? (
-            <aside
-              className={cn(
-                "flex min-h-0 shrink-0 flex-col overflow-hidden",
-                PRACTICE_TRANSFER_DETAIL_PANEL_WIDTH_CLASS,
-              )}
-            >
+            <aside className={PRACTICE_TRANSFER_DETAIL_PANE_CLASS}>
               {detailPanel}
             </aside>
           ) : null}

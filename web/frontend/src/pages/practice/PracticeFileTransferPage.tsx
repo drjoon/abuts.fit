@@ -131,6 +131,7 @@
  * - 2026-08-28: 모바일 신규의뢰 — 인셋 시트·라운드·세이프에리어. 본문 패딩 확대.
  * - 2026-08-28: 모바일 신규의뢰 모달 — 퀵메뉴 1줄·헤더 배치, 촬영 CTA 축소.
  * - 2026-08-28: 모바일 헤더 액션 — 신규·임시·휴지 아이콘 버튼(한 줄).
+ * - 2026-09-12: 헤더 — 리메이크 옆에 「신규주문」(작성 모달). PC도 달력 외 CTA.
  * - 2026-08-28: 모바일 목록 헤더에 신규의뢰 CTA(PC는 캘린더 날짜 클릭).
  * - 2026-08-28: 신규 의뢰 모달 — 새로작성·임시저장·휴지통·가이드투어를 DialogHeader로.
  * - 2026-08-28: 레거시 Express(단계 위저드) 모드 제거. 전폭 작성 UI만.
@@ -8667,6 +8668,23 @@ export const PracticeFileTransferPage = ({
             variant="outline"
             size="sm"
             className="h-9 shrink-0 gap-1 rounded-full border-slate-200 bg-white px-3 shadow-sm"
+            aria-label="신규주문"
+            title="신규주문"
+            onClick={() =>
+              void handleStartNewTransfer({
+                openCompose: true,
+                silentToast: true,
+              })
+            }
+          >
+            <Plus className="h-4 w-4 shrink-0" />
+            신규주문
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-9 shrink-0 gap-1 rounded-full border-slate-200 bg-white px-3 shadow-sm"
             aria-label="리메이크"
             title="리메이크"
             onClick={() => setRemakeSearchOpen(true)}
@@ -8739,6 +8757,21 @@ export const PracticeFileTransferPage = ({
         </div>
       ) : (
         <>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-9 gap-1.5 px-3"
+            onClick={() =>
+              void handleStartNewTransfer({
+                openCompose: true,
+                silentToast: true,
+              })
+            }
+          >
+            <Plus className="h-4 w-4 shrink-0" />
+            신규주문
+          </Button>
           <Button
             type="button"
             variant="outline"
