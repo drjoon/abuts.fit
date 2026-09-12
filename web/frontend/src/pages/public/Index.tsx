@@ -3,8 +3,8 @@ import { GuestChatModal } from "@/features/support/components/GuestChatModal";
 import { PublicPageLayout } from "./components/PublicPageLayout";
 import { LandingPlatformIntro } from "@/features/landing/LandingPlatformIntro";
 import { LandingAudienceSection } from "@/features/landing/LandingAudienceSection";
-import { LandingStoreShowcase } from "@/features/landing/LandingStoreShowcase";
 import { LandingPlatformSection } from "@/features/landing/LandingPlatformSection";
+import { LandingStoreShowcase } from "@/features/landing/LandingStoreShowcase";
 
 // related files:
 // - web/frontend/src/App.tsx
@@ -17,10 +17,14 @@ const Index = () => {
 
   return (
     <PublicPageLayout contentClassName="relative z-10 w-full max-w-none px-0 py-0">
+      {/* 1. 한눈에: 브랜드 + 한 줄 + CTA + 제품 비주얼 */}
       <LandingPlatformIntro />
+      {/* 2. 왜 / 누구에게 */}
       <LandingAudienceSection />
-      <LandingStoreShowcase />
+      {/* 3. 어떻게 */}
       <LandingPlatformSection onContact={() => setShowGuestChat(true)} />
+      {/* 4. 같은 생태계 (보조) */}
+      <LandingStoreShowcase />
       <GuestChatModal open={showGuestChat} onOpenChange={setShowGuestChat} />
     </PublicPageLayout>
   );

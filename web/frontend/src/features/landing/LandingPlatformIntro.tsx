@@ -2,31 +2,13 @@
 // - web/frontend/src/pages/public/Index.tsx
 // - web/frontend/src/pages/public/components/PublicPageLayout.tsx
 // - web/frontend/src/features/landing/landingTheme.ts
-// - web/frontend/src/shared/sales/platformPitchBlocks.tsx
-import { ArrowRight, ChevronRight } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
-import { apiFetch } from "@/shared/api/apiClient";
 import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath";
-import {
-  PlatformPitchStatGrid,
-  type PlatformPitchStats,
-} from "@/shared/sales/platformPitchBlocks";
 import { LANDING_CAD_PREVIEW } from "./landingAssets";
-import {
-  landingIdentity,
-  landingTheme,
-  workflowSteps,
-} from "./landingTheme";
+import { landingIdentity, landingTheme } from "./landingTheme";
 
 export const LandingPlatformIntro = () => {
   const navigate = useNavigate();
@@ -34,85 +16,46 @@ export const LandingPlatformIntro = () => {
   const user = useAuthStore((s) => s.user);
   const entryPath = resolveEntryDashboardPath(user);
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["public-platform-pitch"],
-    staleTime: 60_000,
-    queryFn: async () => {
-      const res = await apiFetch<{
-        success?: boolean;
-        data?: PlatformPitchStats;
-        message?: string;
-      }>({
-        path: "/api/system/platform-pitch",
-        method: "GET",
-      });
-      if (!res.ok || !res.data?.success) {
-        throw new Error(res.data?.message || "플랫폼 소개 통계 조회에 실패했습니다.");
-      }
-      return res.data.data || {};
-    },
-    retry: false,
-  });
-
   return (
-    <section id="platform" className="relative">
-      <div className="relative z-10 mx-auto grid max-w-6xl items-center gap-8 px-4 pb-12 pt-20 sm:gap-10 sm:px-6 sm:pb-16 sm:pt-24 md:py-16 lg:grid-cols-2 lg:gap-14 lg:py-20">
-        <div className="space-y-6 text-center lg:text-left">
+    <section
+      id="platform"
+      className="relative isolate min-h-[min(100svh,900px)] overflow-hidden"
+    >
+      {/* Soft light field */}
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute inset-0 bg-gradient-to-br from-[#0a1628] via-[#07101c] to-[#030711]" />
+        <div className="absolute -top-24 left-1/4 h-[28rem] w-[36rem] -translate-x-1/2 rounded-full bg-sky-300/20 blur-[100px]" />
+        <div className="absolute top-10 right-[-5%] h-[32rem] w-[32rem] rounded-full bg-white/15 blur-[110px]" />
+        <div className="absolute bottom-0 left-[-8%] h-[22rem] w-[22rem] rounded-full bg-cyan-300/12 blur-[90px]" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_70%_40%,rgba(186,230,253,0.18),transparent_55%)]" />
+      </div>
+
+      <div className="relative z-10 mx-auto grid min-h-[min(100svh,900px)] max-w-6xl items-center gap-10 px-4 pb-16 pt-28 sm:gap-12 sm:px-6 sm:pb-20 sm:pt-32 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:gap-14 lg:pb-24">
+        <div className="max-w-xl space-y-6 animate-slide-up lg:max-w-none">
           <p
-            className={`inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-medium tracking-[0.2em] ${landingTheme.glass} animate-slide-up`}
-            style={{ animationDelay: "0.05s" }}
+            className={`inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-[11px] font-medium tracking-[0.18em] ${landingTheme.glassStrong}`}
           >
-            <span className="h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_8px_hsl(var(--primary)/0.8)]" />
-            <span className={landingTheme.accentText}>
-              {landingIdentity.eyebrow}
-            </span>
+            <span className="h-1.5 w-1.5 rounded-full bg-sky-300 shadow-[0_0_10px_rgba(125,211,252,0.85)]" />
+            <span className="text-sky-100/90">{landingIdentity.eyebrow}</span>
           </p>
 
-          <h1
-            className="text-3xl font-semibold leading-tight text-white md:text-4xl animate-slide-up"
-            style={{ animationDelay: "0.1s" }}
-          >
-            <span className="notranslate block text-white/90">abuts.fit</span>
-            <span className={`mt-2 block ${landingTheme.headlineGradient}`}>
+          <div className="space-y-3">
+            <h1 className="notranslate text-4xl font-semibold tracking-tight text-white drop-shadow-[0_0_28px_rgba(255,255,255,0.18)] sm:text-5xl md:text-6xl">
+              {landingIdentity.brandLine}
+            </h1>
+            <p className="text-lg font-medium leading-snug text-white sm:text-xl md:text-[1.65rem] md:leading-snug">
               {landingIdentity.oneLiner}
-            </span>
-          </h1>
-
-          <p
-            className="mx-auto max-w-lg text-base leading-relaxed text-white/75 lg:mx-0 animate-slide-up"
-            style={{ animationDelay: "0.18s" }}
-          >
-            {landingIdentity.body}
-          </p>
-
-          <div
-            className="flex flex-wrap items-center justify-center gap-1 lg:justify-start animate-slide-up"
-            style={{ animationDelay: "0.24s" }}
-          >
-            {workflowSteps.map((step, index) => (
-              <div key={step} className="flex items-center gap-1">
-                <span
-                  className={`rounded-full px-3 py-1 text-xs text-white/80 ${landingTheme.glassStrong}`}
-                >
-                  {step}
-                </span>
-                {index < workflowSteps.length - 1 && (
-                  <ChevronRight className="hidden h-3 w-3 text-white/30 sm:block" />
-                )}
-              </div>
-            ))}
+            </p>
+            <p className="max-w-lg text-sm leading-relaxed text-slate-200/85 sm:text-base">
+              {landingIdentity.body}
+            </p>
           </div>
 
-          <div
-            className="flex flex-wrap items-center justify-center gap-3 lg:justify-start animate-slide-up"
-            style={{ animationDelay: "0.3s" }}
-          >
+          <div className="flex flex-wrap items-center gap-3 pt-1">
             <Button
               size="lg"
-              className={`h-11 px-7 font-semibold ${landingTheme.ctaPrimary}`}
-              onClick={() =>
-                navigate(isAuthenticated ? entryPath : "/signup")
-              }
+              className={`h-11 px-7 font-semibold shadow-[0_0_40px_rgba(255,255,255,0.22)] ${landingTheme.ctaPrimary}`}
+              onClick={() => navigate(isAuthenticated ? entryPath : "/signup")}
             >
               지금 가입하기
               <ArrowRight className="ml-2 h-4 w-4" />
@@ -120,40 +63,44 @@ export const LandingPlatformIntro = () => {
             <Button
               size="lg"
               variant="outline"
-              className={`h-11 px-7 border-white/30 bg-transparent text-white hover:bg-white/10 ${landingTheme.ctaGhost}`}
-              onClick={() =>
-                document
-                  .getElementById("audience")
-                  ?.scrollIntoView({ behavior: "smooth" })
-              }
+              className={`h-11 px-7 border-white/25 bg-white/[0.06] text-white hover:bg-white/12 ${landingTheme.ctaGhost}`}
+              onClick={() => {
+                const el = document.getElementById("audience");
+                if (!el) return;
+                const navOffset = 80; // fixed nav h-14/h-16 + breathing room
+                const top =
+                  el.getBoundingClientRect().top + window.scrollY - navOffset;
+                window.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+              }}
             >
-              치과 · 기공소 혜택 보기
+              치과 · 기공소 혜택
             </Button>
           </div>
         </div>
 
-        <div className="space-y-5 animate-hero-rise" style={{ animationDelay: "0.15s" }}>
-          <Card className={landingTheme.statCard}>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg">왜 abuts.fit인가</CardTitle>
-              <CardDescription className="text-sm text-slate-500">
-                {landingIdentity.vision}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <PlatformPitchStatGrid stats={data} isLoading={isLoading} />
-              <p className="text-xs leading-relaxed text-slate-500">
-                {landingIdentity.manufacturerNote}
-              </p>
-            </CardContent>
-          </Card>
-
-          <div className={landingTheme.imageFrame}>
-            <div className={`${landingTheme.imageInner} animate-landing-float`}>
+        <div
+          className="relative mx-auto w-full max-w-xl animate-hero-rise lg:max-w-none"
+          style={{ animationDelay: "0.12s" }}
+        >
+          {/* Key light behind product */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute left-1/2 top-1/2 h-[120%] w-[120%] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,rgba(255,255,255,0.38)_0%,rgba(125,211,252,0.22)_32%,transparent_68%)] blur-2xl"
+          />
+          <div
+            aria-hidden
+            className="pointer-events-none absolute -right-6 top-8 h-40 w-40 rounded-full bg-sky-200/35 blur-3xl"
+          />
+          <div
+            className={`${landingTheme.imageFrame} relative shadow-[0_0_80px_rgba(186,230,253,0.22)]`}
+          >
+            <div
+              className={`${landingTheme.imageInner} bg-gradient-to-br from-white via-slate-50 to-sky-50/90 p-2 sm:p-3`}
+            >
               <img
                 src={LANDING_CAD_PREVIEW}
                 alt="커스텀 어벗먼트 CAD 스펙"
-                className="w-full object-contain"
+                className="w-full object-contain animate-landing-float"
               />
             </div>
           </div>

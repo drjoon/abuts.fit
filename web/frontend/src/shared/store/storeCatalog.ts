@@ -52,10 +52,10 @@ export const STORE_CATEGORIES: StoreCategory[] = [
       {
         id: "simple-abutment-2",
         name: "SimpleAbutment2",
-        image: "/store/simple-abutment-206.jpg",
+        image: "/store/transparent/simple-abutment-206.png",
         blurb: "DT-Hex Simple Abut.",
         description: "Submerged type용 Simple Abutment (DT-Hex).",
-        galleryImages: ["/store/simple-abutment-206.jpg"],
+        galleryImages: ["/store/transparent/simple-abutment-206.png"],
         contentImages: ["/store/detail/simple-abutment-2-1.jpg"],
         specs: [
           { label: "품명", value: "치과용임플란트상부구조물" },
@@ -75,11 +75,11 @@ export const STORE_CATEGORIES: StoreCategory[] = [
       {
         id: "simple-healing-2",
         name: "SimpleHealing2",
-        image: "/store/simple-healing.jpg",
+        image: "/store/transparent/simple-healing.png",
         blurb: "Healing Abut.",
         description:
           "Fixture 식립 후 치은 치유·형성용 Healing Abutment.",
-        galleryImages: ["/store/simple-healing.jpg"],
+        galleryImages: ["/store/transparent/simple-healing.png"],
         contentImages: ["/store/detail/simple-healing-2-1.jpg"],
         specs: [
           { label: "품명", value: "치과용임플란트상부구조물" },
@@ -105,10 +105,10 @@ export const STORE_CATEGORIES: StoreCategory[] = [
       {
         id: "bone-pen",
         name: "BonePen",
-        image: "/store/bone-pen.jpg",
+        image: "/store/transparent/bone-pen.png",
         blurb: "골 절삭·채집",
         description: "핸드피스 부착용. 치조골 절삭·채집 후 BonePin으로 공간 확인.",
-        galleryImages: ["/store/bone-pen.jpg"],
+        galleryImages: ["/store/transparent/bone-pen.png"],
         contentImages: ["/store/detail/bone-pen-1.jpg"],
         specs: [
           { label: "품목명", value: "치과임플란트시술용드릴" },
@@ -132,11 +132,11 @@ export const STORE_CATEGORIES: StoreCategory[] = [
       {
         id: "bone-pin",
         name: "BonePin",
-        image: "/store/bone-pin.jpg",
+        image: "/store/transparent/bone-pin.png",
         blurb: "가상 크라운 Pin",
         description:
           "BonePen과 동일 사이즈 Pin으로 수평·수직 공간 확인.",
-        galleryImages: ["/store/bone-pin.jpg"],
+        galleryImages: ["/store/transparent/bone-pin.png"],
         contentImages: ["/store/detail/bone-pin-1.jpg"],
         specs: [
           { label: "품목명", value: "치과용임플란트시술기구" },
@@ -165,10 +165,10 @@ export const STORE_CATEGORIES: StoreCategory[] = [
       {
         id: "check-pin",
         name: "CheckPin",
-        image: "/store/check-pin.jpg",
+        image: "/store/transparent/check-pin.png",
         blurb: "교합 높이 확인",
         description: "Fixture 식립 후 수평·수직 공간 확인.",
-        galleryImages: ["/store/check-pin.jpg"],
+        galleryImages: ["/store/transparent/check-pin.png"],
         contentImages: ["/store/detail/check-pin-1.jpg"],
         specs: [
           { label: "품목명", value: "치과용임플란트시술기구" },
@@ -191,10 +191,10 @@ export const STORE_CATEGORIES: StoreCategory[] = [
       {
         id: "bone-shaper",
         name: "BoneShaper",
-        image: "/store/bone-shaper.jpg",
+        image: "/store/transparent/bone-shaper.png",
         blurb: "피질골 삭제·성형",
         description: "Healing Abut. 체결용 피질골 삭제·성형.",
-        galleryImages: ["/store/bone-shaper.jpg"],
+        galleryImages: ["/store/transparent/bone-shaper.png"],
         contentImages: ["/store/detail/bone-shaper-1.jpg"],
         specs: [
           { label: "품목명", value: "치과임플란트시술용드릴" },
@@ -224,12 +224,12 @@ export const STORE_CATEGORIES: StoreCategory[] = [
       {
         id: "gingival-shaper",
         name: "GingivalShaper",
-        image: "/store/gingival-shaper.jpg",
+        image: "/store/transparent/gingival-shaper.png",
         blurb: "마진 치은 삭제",
         imageScale: 1.55,
         description: "Simple Abut. 마진 부위 치은 삭제.",
         galleryImages: [
-          "/store/gingival-shaper.jpg",
+          "/store/transparent/gingival-shaper.png",
           "/store/gingival-shaper-296.jpg",
         ],
         contentImages: ["/store/detail/gingival-shaper-1.jpg"],

@@ -1,31 +1,36 @@
 // related files:
 // - web/frontend/src/features/landing/LandingPlatformIntro.tsx
-// - web/frontend/src/features/landing/LandingPlatformSection.tsx
 // - web/frontend/src/features/landing/LandingAudienceSection.tsx
+// - web/frontend/src/features/landing/LandingPlatformSection.tsx
 // - web/frontend/src/pages/public/components/PublicPageLayout.tsx
 
 /** 랜딩 UI 토큰 — 페이지 배경은 PublicPageLayout SSOT */
 export const landingTheme = {
-  accentText: "text-primary/90",
-  headlineGradient:
-    "bg-gradient-to-r from-primary-glow via-primary to-accent bg-clip-text text-transparent",
+  accentText: "text-sky-200/90",
+  /** 한 톤의 soft highlight — 다색 그라데이션 대신 */
+  headlineSoft: "text-white",
   glass:
-    "border border-white/[0.08] bg-white/[0.03] backdrop-blur-xl",
+    "border border-white/[0.12] bg-white/[0.07] backdrop-blur-xl",
   glassStrong:
-    "border border-white/10 bg-white/[0.06] backdrop-blur-2xl shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)]",
+    "border border-white/[0.14] bg-white/[0.1] backdrop-blur-2xl shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)]",
+  panel:
+    "rounded-2xl border border-white/[0.12] bg-white/[0.08] backdrop-blur-xl shadow-[0_20px_50px_rgba(0,0,0,0.2)]",
+  panelSoft:
+    "rounded-2xl border border-white/[0.1] bg-gradient-to-b from-white/[0.1] to-white/[0.04] backdrop-blur-xl",
   imageFrame:
-    "overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-white/[0.08] to-white/[0.02] p-[1px] shadow-[0_32px_80px_rgba(0,0,0,0.35)]",
-  imageInner: "rounded-[15px] bg-white/95 ring-1 ring-white/20",
+    "overflow-hidden rounded-2xl border border-white/20 bg-gradient-to-br from-white/25 to-white/5 p-[1px] shadow-[0_32px_80px_rgba(0,0,0,0.28)]",
+  imageInner: "rounded-[15px] bg-white ring-1 ring-white/40",
   ctaPrimary:
-    "rounded-full bg-white text-slate-900 shadow-[0_8px_32px_rgba(255,255,255,0.12)] transition-all hover:bg-white/90",
+    "rounded-full bg-white text-slate-900 shadow-[0_8px_32px_rgba(255,255,255,0.2)] transition-all hover:bg-white/90",
   ctaGhost:
-    "rounded-full border border-white/15 bg-white/[0.04] text-white/85 backdrop-blur-sm transition-all hover:border-white/25 hover:bg-white/[0.08] hover:text-white",
+    "rounded-full border border-white/20 bg-white/[0.07] text-white/90 backdrop-blur-sm transition-all hover:border-white/30 hover:bg-white/[0.12] hover:text-white",
+  /** @deprecated light cards — prefer panel / panelSoft on dark landing */
   statCard:
     "rounded-2xl border border-white/15 bg-white/90 text-slate-900 shadow-[0_18px_45px_rgba(6,8,20,0.35)] backdrop-blur-2xl",
   featureCard:
-    "rounded-2xl border border-white/10 bg-white/90 text-slate-900 shadow-[0_18px_45px_rgba(6,8,20,0.35)] backdrop-blur-2xl",
+    "rounded-2xl border border-white/10 bg-white/[0.06] text-white shadow-[0_18px_45px_rgba(6,8,20,0.25)] backdrop-blur-2xl",
   pipelineCard:
-    "rounded-2xl border border-white/10 bg-gradient-to-br from-white/95 to-white/80 text-slate-900 shadow-[0_20px_50px_rgba(6,8,20,0.35)] backdrop-blur-2xl",
+    "rounded-2xl border border-white/10 bg-white/[0.05] text-white shadow-[0_20px_50px_rgba(6,8,20,0.25)] backdrop-blur-2xl",
 } as const;
 
 /** 회사 정체성 · 비전 (영업·랜딩 공통) */
@@ -34,7 +39,7 @@ export const landingIdentity = {
   brandLine: "abuts.fit",
   oneLiner:
     "치과·기공소·CNC 제조를 한 흐름으로 잇는 디지털 제작 워크스페이스",
-  body: "커스텀 어벗·보철 제작을 주문부터 생산·추적·결제·계산서까지 — 치과와 기공소, 어벗츠가 같은 기록으로 이어집니다.",
+  body: "커스텀 어벗·보철을 의뢰부터 제작·배송·정산까지 한곳에서. 진행과 돈이 같은 기록으로 남습니다.",
   identity:
     "임플란트 커스텀 어벗·보철의 운영·연결 허브. 단순 쇼핑몰이 아니라 의뢰·제작·배송·정산을 한곳에서 관리합니다.",
   vision:
@@ -52,44 +57,22 @@ export const workflowSteps = [
   "계산서",
 ] as const;
 
-export const landingFeatures = [
-  {
-    title: "한 플랫폼에서 끝",
-    description:
-      "의뢰·디자인 컨펌·생산·배송 추적·크레딧 결제·세금계산서까지 분리되지 않습니다.",
-  },
-  {
-    title: "진행이 보이는 스테이지",
-    description:
-      "준비→CAM→가공→패킹→발송 타임라인으로 지금 어디까지인지 즉시 확인합니다.",
-  },
-  {
-    title: "품질 게이트",
-    description:
-      "제조 단계마다 검사·승인 절차로 일관된 결과를 만듭니다.",
-  },
-  {
-    title: "기록이 남는 정산",
-    description:
-      "파일·채팅·크레딧·계산서가 한 장부로 남아 누락과 분쟁이 줄어듭니다.",
-  },
-] as const;
-
-export const landingPipeline = [
+/** 랜딩 본문용 — 짧은 한 줄 (중복 최소화) */
+export const landingFlowSteps = [
   {
     step: "01",
-    title: "의뢰 등록",
-    body: "스캔·모델·3D 디자인 업로드와 의뢰 정보 입력",
+    title: "의뢰",
+    body: "스캔·디자인·의뢰 정보를 한곳에서 등록",
   },
   {
     step: "02",
-    title: "디자인 · 제조",
-    body: "기공 작업과 CNC 스테이지별 승인·피드백",
+    title: "제작",
+    body: "기공·CNC 스테이지가 같은 타임라인으로",
   },
   {
     step: "03",
     title: "배송 · 정산",
-    body: "가상 우편함·배송 추적·크레딧·계산서",
+    body: "출고 추적과 크레딧·계산서까지 이어짐",
   },
 ] as const;
 
@@ -116,6 +99,12 @@ export const landingAudiencePractice = {
     "크레딧(거래 선수금) 결제 · 월말 (세금)계산서",
     "스토어에서 어벗·시술 키트까지 같은 생태계",
   ],
+  /** 랜딩용 짧은 혜택 (히어로 이후 스캔용) */
+  landingBenefits: [
+    "앱에서 바로 의뢰 · 지정 기공소 전송",
+    "출고·배송 추적으로 진행 문의 감소",
+    "크레딧 결제 · 월말 계산서",
+  ],
   cta: "치과로 시작하기",
 } as const;
 
@@ -134,6 +123,11 @@ export const landingAudienceLab = {
     "수가·정산·크레딧으로 수기 정산·누락 감소",
     "제조사와 같은 스테이지 타임라인으로 납기 조율",
     "어벗츠 네트워크를 통한 신규 치과 의뢰 기회",
+  ],
+  landingBenefits: [
+    "수신·작업시작·완료를 한 보드에서",
+    "CNC 생산은 어벗츠로 · 수기 정산 감소",
+    "네트워크를 통한 신규 의뢰 기회",
   ],
   cta: "기공소로 시작하기",
 } as const;

@@ -2,32 +2,12 @@
 // - web/frontend/src/pages/public/Index.tsx
 // - web/frontend/src/pages/public/components/PublicPageLayout.tsx
 // - web/frontend/src/features/landing/landingTheme.ts
+import { Send } from "lucide-react";
 import { useInView } from "react-intersection-observer";
-import {
-  CheckCircle,
-  Clock8,
-  Layers,
-  Receipt,
-  Send,
-  Shield,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { useNavigate } from "react-router-dom";
-import {
-  landingFeatures,
-  landingIdentity,
-  landingPipeline,
-  landingTheme,
-} from "./landingTheme";
-
-const FEATURE_ICONS = [Layers, Clock8, Shield, Receipt] as const;
+import { Button } from "@/components/ui/button";
+import { cn } from "@/shared/ui/cn";
+import { landingFlowSteps, landingIdentity, landingTheme } from "./landingTheme";
 
 interface LandingPlatformSectionProps {
   onContact: () => void;
@@ -44,116 +24,86 @@ export const LandingPlatformSection = ({
       id="platform-details"
       className="relative border-t border-white/[0.06]"
     >
-      <div ref={ref} className="mx-auto max-w-6xl space-y-10 px-4 py-12 sm:space-y-12 sm:px-6 sm:py-14 lg:py-16">
+      <div
+        ref={ref}
+        className="mx-auto max-w-6xl space-y-12 px-4 py-14 sm:px-6 sm:py-16 lg:py-20"
+      >
         <div
-          className={`mx-auto max-w-2xl text-center transition-all duration-700 ${
-            inView ? "translate-y-0 opacity-100" : "translate-y-6 opacity-0"
-          }`}
+          className={cn(
+            "mx-auto max-w-2xl text-center transition-all duration-700",
+            inView ? "translate-y-0 opacity-100" : "translate-y-6 opacity-0",
+          )}
         >
-          <h2 className="text-2xl font-semibold text-white md:text-3xl">
-            플랫폼 장점
+          <p
+            className={`inline-flex rounded-full px-3.5 py-1 text-[11px] tracking-[0.18em] text-white/55 ${landingTheme.glass}`}
+          >
+            FLOW
+          </p>
+          <h2 className="mt-4 text-2xl font-semibold tracking-tight text-white sm:text-3xl">
+            세 단계로 끝나는 제작 흐름
           </h2>
-          <p className="mt-3 text-sm leading-relaxed text-white/65 md:text-base">
-            {landingIdentity.identity}
+          <p className="mt-3 text-sm leading-relaxed text-white/60 sm:text-base">
+            {landingIdentity.vision}
           </p>
         </div>
 
-        <div
-          className={`grid gap-4 sm:grid-cols-2 lg:grid-cols-4 ${
-            inView ? "" : "opacity-0"
-          }`}
-        >
-          {landingFeatures.map((feature, index) => {
-            const Icon = FEATURE_ICONS[index] ?? Shield;
-            return (
-              <Card
-                key={feature.title}
-                className={`${landingTheme.featureCard} transition-all duration-700 ${
-                  inView
-                    ? "translate-y-0 opacity-100"
-                    : "translate-y-6 opacity-0"
-                }`}
-                style={{ transitionDelay: `${80 + index * 60}ms` }}
-              >
-                <CardHeader className="flex flex-row items-center gap-3 pb-2">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900/5">
-                    <Icon className="h-5 w-5 text-slate-900" />
-                  </div>
-                  <CardTitle className="text-base">{feature.title}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <CardDescription className="text-sm leading-relaxed text-slate-600">
-                    {feature.description}
-                  </CardDescription>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-
-        <div
-          className={`grid gap-4 lg:grid-cols-3 ${
-            inView ? "" : "opacity-0"
-          }`}
-        >
-          {landingPipeline.map((stage, index) => (
-            <Card
+        <div className="grid gap-3 md:grid-cols-3">
+          {landingFlowSteps.map((stage, index) => (
+            <div
               key={stage.step}
-              className={`${landingTheme.pipelineCard} transition-all duration-700 ${
-                inView
-                  ? "translate-y-0 opacity-100"
-                  : "translate-y-6 opacity-0"
-              }`}
-              style={{ transitionDelay: `${200 + index * 80}ms` }}
+              className={cn(
+                "relative p-5 transition-all duration-700 sm:p-6",
+                landingTheme.panelSoft,
+                inView ? "translate-y-0 opacity-100" : "translate-y-6 opacity-0",
+              )}
+              style={{ transitionDelay: `${100 + index * 70}ms` }}
             >
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <p className="text-xs uppercase tracking-[0.5em] text-slate-400">
-                    {stage.step}
-                  </p>
-                  <CheckCircle className="h-4 w-4 text-primary" />
-                </div>
-                <CardTitle className="text-lg">{stage.title}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-slate-600">{stage.body}</p>
-              </CardContent>
-            </Card>
+              <p className="text-[11px] tracking-[0.28em] text-white/35">
+                {stage.step}
+              </p>
+              <h3 className="mt-3 text-lg font-semibold text-white">
+                {stage.title}
+              </h3>
+              <p className="mt-2 text-sm leading-relaxed text-white/60">
+                {stage.body}
+              </p>
+            </div>
           ))}
         </div>
 
-        <Card
+        <div
           id="support"
-          className={`${landingTheme.statCard} transition-all duration-700 ${
-            inView ? "translate-y-0 opacity-100" : "translate-y-6 opacity-0"
-          }`}
-          style={{ transitionDelay: "360ms" }}
+          className={cn(
+            "flex flex-col items-start justify-between gap-5 p-6 transition-all duration-700 sm:flex-row sm:items-center sm:p-7",
+            landingTheme.panel,
+            inView ? "translate-y-0 opacity-100" : "translate-y-6 opacity-0",
+          )}
+          style={{ transitionDelay: "320ms" }}
         >
-          <CardHeader className="space-y-2">
-            <CardTitle className="text-xl">운영팀과 바로 연결</CardTitle>
-            <CardDescription className="text-slate-600">
-              가입 이전에도 궁금한 내용을 남기면 담당자가 메일로
-              답변드립니다.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <Button
-                className="h-11 flex-1 rounded-full bg-slate-900 text-white hover:bg-slate-800"
-                onClick={() => navigate("/login")}
-              >
-                Demo 계정으로 보기
-              </Button>
-              <Button
-                className="h-11 flex-1 rounded-full bg-slate-200 font-semibold text-slate-900 hover:bg-slate-100"
-                onClick={onContact}
-              >
-                문의 남기기
-                <Send className="ml-2 h-4 w-4" />
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+          <div className="space-y-1.5">
+            <h3 className="text-lg font-semibold text-white">
+              먼저 둘러보거나, 물어보세요
+            </h3>
+            <p className="text-sm text-white/55">
+              Demo로 화면을 보거나, 가입 전에도 문의할 수 있습니다.
+            </p>
+          </div>
+          <div className="flex w-full flex-col gap-2.5 sm:w-auto sm:flex-row">
+            <Button
+              className={`h-11 px-6 font-semibold ${landingTheme.ctaPrimary}`}
+              onClick={() => navigate("/login")}
+            >
+              Demo 계정으로 보기
+            </Button>
+            <Button
+              className={`h-11 px-6 ${landingTheme.ctaGhost}`}
+              onClick={onContact}
+            >
+              문의 남기기
+              <Send className="ml-2 h-4 w-4" />
+            </Button>
+          </div>
+        </div>
       </div>
     </section>
   );

@@ -33,11 +33,10 @@ export const Footer = () => {
   ];
 
   return (
-    <footer className="relative mt-8 border-t border-white/10 bg-[#030711]/80 text-white backdrop-blur-3xl">
+    <footer className="relative mt-0 border-t border-white/10 bg-[#030711]/90 text-white backdrop-blur-3xl">
       <div className="pointer-events-none absolute inset-0">
-        <div className="absolute -top-32 right-[-140px] h-[26rem] w-[26rem] rounded-full bg-gradient-to-br from-primary/35 via-primary/24 to-primary/18 blur-[220px]" />
-        <div className="absolute bottom-[-140px] left-[-140px] h-[24rem] w-[24rem] rounded-full bg-gradient-to-br from-destructive/32 via-destructive/20 to-accent/14 blur-[230px]" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_15%_75%,rgba(96,165,250,0.15),transparent_55%),radial-gradient(circle_at_80%_20%,rgba(192,132,252,0.12),transparent_60%)] opacity-70" />
+        <div className="absolute -top-24 right-[-120px] h-[22rem] w-[22rem] rounded-full bg-sky-500/8 blur-[160px]" />
+        <div className="absolute bottom-[-100px] left-[-100px] h-[20rem] w-[20rem] rounded-full bg-slate-400/6 blur-[160px]" />
       </div>
       <div className="container mx-auto px-6 py-16 sm:px-10 lg:px-16">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
