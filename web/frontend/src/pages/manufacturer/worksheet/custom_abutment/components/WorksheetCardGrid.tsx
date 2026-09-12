@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-12: 라이노 오버레이 — 옅은 블러+반투명「작업중/작업중지」(의뢰 내용 가독).
 // - 2026-09-04: 세척.패킹 카드에 각인 이미지(또는 pending) 드롭 매칭 지원.
 // - 2026-09-09: 라이노 블러 — GENERATING만(idle filled 미수신 해제). 오버레이 약하게(내용 가독).
 // - 2026-09-03: 준비 탭「라이노 작업중」오버레이에 중단 버튼(뱃지 아래).
@@ -808,7 +809,7 @@ export const WorksheetCardGrid = ({
           >
             {rhinoWorkPending ? (
               <div
-                className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-2 rounded-[inherit] bg-white/25 backdrop-blur-[1.5px] cursor-not-allowed"
+                className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-2 rounded-[inherit] bg-white/40 backdrop-blur-[3px] cursor-not-allowed"
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -819,15 +820,15 @@ export const WorksheetCardGrid = ({
                 }}
                 role="status"
                 aria-live="polite"
-                aria-label="라이노 작업중"
+                aria-label="작업중"
               >
-                <span className="rounded-full border border-primary-muted bg-primary-soft/90 px-3 py-1.5 text-sm font-extrabold text-primary-strong shadow-sm">
-                  라이노 작업중
+                <span className="rounded-full border border-primary-muted/70 bg-primary-soft/65 px-3 py-1.5 text-sm font-extrabold text-primary-strong shadow-sm backdrop-blur-sm">
+                  작업중
                 </span>
                 {onCancelRhinoWork ? (
                   <button
                     type="button"
-                    className="rounded-full border border-slate-300 bg-white/95 px-3 py-1.5 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50 cursor-pointer"
+                    className="rounded-full border border-slate-300/80 bg-white/65 px-3 py-1.5 text-sm font-bold text-slate-700 shadow-sm backdrop-blur-sm hover:bg-white/80 disabled:opacity-50 cursor-pointer"
                     disabled={!!rhinoCancellingIds[String(request._id || request.requestId || "")]}
                     onClick={(e) => {
                       e.preventDefault();
@@ -844,14 +845,14 @@ export const WorksheetCardGrid = ({
                     onPointerDown={(e) => {
                       e.stopPropagation();
                     }}
-                    title="라이노 작업 중단"
-                    aria-label="라이노 작업 중단"
+                    title="작업중지"
+                    aria-label="작업중지"
                   >
                     {rhinoCancellingIds[
                       String(request._id || request.requestId || "")
                     ]
-                      ? "중단 중…"
-                      : "중단"}
+                      ? "중지 중…"
+                      : "작업중지"}
                   </button>
                 ) : null}
               </div>
