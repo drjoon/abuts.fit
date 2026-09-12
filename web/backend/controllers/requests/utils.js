@@ -8,6 +8,7 @@
 // - web/backend/controllers/requests/creation.from-draft.controller.js
 // - web/backend/controllers/requests/designHandoff.controller.js
 // change-log:
+// - 2026-09-12: 리메이크 매칭 — implantBrand 조건 제거(정책: 동일 치과·환자·치식·90일). forceRemakePricing.
 // - 2026-09-09: 커스텀어벗 리메이크 — 월 3건 무료 폐지, 건당 고정 10,000원(remake_fixed_10000).
 // - 2026-08-23: normalizeRequestForResponse business.requestSettings에 hexVerificationResultHex 포함.
 // - 2026-08-19: 90일 1만원·주문량할인 폐지. 단가=플랫폼 설정(+신속 expressFee).
@@ -37,6 +38,10 @@ import {
 } from "../../utils/krBusinessDays.js";
 import { normalizeImplantFields } from "../../utils/implantCanonical.js";
 import { resolveQuotedPriceWithExtras } from "./designPrice.utils.js";
+import {
+  buildAbutsRemakeFixedPrice,
+  remakePolicyCutoffDate,
+} from "../../utils/remakePricingPolicy.js";
 import {
   loadCreditSettingsDefaults,
   resolveCustomAbutmentRequestUnitPrice,
@@ -1240,6 +1245,8 @@ export async function computePriceForRequest({
   patientName,
   tooth,
   forceNewOrderPricing = false,
+  /** CA 재업로드 등 — 동일 건 리메이크로 확정 시 90일 조회 없이 1만원. */
+  forceRemakePricing = false,
   currentRequestId = null,
   creditSettings: creditSettingsOverride = null,
   pricingBaseDate: pricingBaseDateOverride = undefined,
@@ -1258,55 +1265,44 @@ export async function computePriceForRequest({
       ? { businessAnchorId: new Types.ObjectId(String(requestorOrgId)) }
       : { requestor: requestorId };
 
-  const REMAKE_FIXED_AMOUNT = 10000;
-
   const selfExclusionFilter =
     currentRequestId && Types.ObjectId.isValid(String(currentRequestId))
       ? { _id: { $ne: new Types.ObjectId(String(currentRequestId)) } }
       : {};
 
-  // 0) 리메이크 기준(90일): 동일 치과+환자+치아에 대해 직전 의뢰가 있으면 리메이크
-  const nowYmd = toKstYmd(now);
-  const nowKst = new Date(`${nowYmd}T00:00:00+09:00`);
-  nowKst.setDate(nowKst.getDate() - 90);
-  const remakeCutoff = nowKst;
+  // 리메이크 기준(90일): 동일 치과·환자·치식에 직전 의뢰가 있으면 어벗츠로 1만원.
+  const remakeCutoff = remakePolicyCutoffDate(now);
 
   const [creditSettings, existing] = await Promise.all([
     creditSettingsOverride
       ? Promise.resolve(creditSettingsOverride)
       : loadCreditSettingsDefaults({ requestorOrgId }),
-    skipExistingLookup || forceNewOrderPricing
+    skipExistingLookup || forceNewOrderPricing || forceRemakePricing
       ? Promise.resolve(null)
       : Request.findOne({
-      ...scopeFilter,
-      ...selfExclusionFilter,
-      "caseInfos.patientName": patientName,
-      "caseInfos.tooth": tooth,
-      "caseInfos.clinicName": clinicName,
-      "caseInfos.implantBrand": { $exists: true, $ne: "" },
-      manufacturerStage: { $ne: "취소" },
-      createdAt: { $gte: remakeCutoff },
-    })
-      .select({ _id: 1 })
-      .lean(),
+          ...scopeFilter,
+          ...selfExclusionFilter,
+          "caseInfos.patientName": patientName,
+          "caseInfos.tooth": tooth,
+          "caseInfos.clinicName": clinicName,
+          manufacturerStage: { $ne: "취소" },
+          createdAt: { $gte: remakeCutoff },
+        })
+          .select({ _id: 1 })
+          .lean(),
   ]);
   void pricingBaseDateOverride;
 
   // special.amount / productionPrice = CNC 생산만. 디자인+생산은 designFee로 가산.
-  // SSOT: 관리자 플랫폼 설정 단가(+신속 expressFee). 90일 1만원·주문량할인 없음.
+  // SSOT: 관리자 플랫폼 설정 단가(+신속 expressFee).
   const BASE_UNIT_PRICE = resolveCustomAbutmentRequestUnitPrice(creditSettings);
 
-  // 리메이크: 월 무료 쿼터 없음. 건당 고정 10,000원(배송비는 별도).
-  if (existing && !forceNewOrderPricing) {
-    return {
+  // 어벗츠로 리메이크: 건당 고정 10,000원(배송비는 별도). 치과로부터(PTX)는 LAB_FEE_REMAKE_FREE.
+  if ((forceRemakePricing || existing) && !forceNewOrderPricing) {
+    return buildAbutsRemakeFixedPrice({
       baseAmount: BASE_UNIT_PRICE,
-      discountAmount: Math.max(0, BASE_UNIT_PRICE - REMAKE_FIXED_AMOUNT),
-      amount: REMAKE_FIXED_AMOUNT,
-      currency: "KRW",
-      rule: "remake_fixed_10000",
-      discountMeta: {},
       quotedAt: now,
-    };
+    });
   }
 
   return {

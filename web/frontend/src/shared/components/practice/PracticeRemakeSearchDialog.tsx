@@ -1,10 +1,12 @@
 /**
- * 치과 기공의뢰 리메이크 — 최근 2주·환자명 모두 서버에서 조회.
+ * 치과 기공의뢰 리메이크 — 최근 90일·환자명 모두 서버에서 조회.
  * (캘린더와 별개인 /my 페이지 목록에 의존하지 않음)
  * related files:
  * - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
  * - web/frontend/src/shared/practice/practiceRecentTransferList.ts
  * - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
+ * change-log:
+ * - 2026-09-12: 기본 검색 창 14일 → 90일(리메이크 정책과 동일).
  */
 import { useEffect, useMemo, useState } from "react";
 import { CalendarDays, Loader2, Repeat, Search, X } from "lucide-react";
@@ -43,7 +45,7 @@ import {
 import { formatManWon } from "@/shared/practice/practiceTransferFeeQuote";
 import { PRE_PLATFORM_REMAKE_LABEL } from "@/shared/practice/practiceTransferLabReceive";
 
-const REMAKE_RECENT_DAYS = 14;
+const REMAKE_RECENT_DAYS = 90;
 const SEARCH_DEBOUNCE_MS = 300;
 
 export type PracticeRemakeSearchDialogProps = {
@@ -197,7 +199,7 @@ export function PracticeRemakeSearchDialog({
     if (searching) return "검색 중…";
     if (searchError) return searchError;
     if (activeQuery) return "결과 없음";
-    return "최근 2주 의뢰 없음";
+    return "최근 90일 의뢰 없음";
   })();
 
   return (

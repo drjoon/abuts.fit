@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-09-12: PTX→어벗츠 리메이크 — CA 재업로드 forceRemakePricing(1만). 미매칭 시 정가 생산 견적.
 // - 2026-09-12: normalizeResultFiles — uploadBatchId·uploadedAt 보존. stampPracticeTransferFileBatch.
 // - 2026-09-12: 가공 진입 — abutmentPastReadyTeeth + 기공소 practice:transfer-updated(abutment-production-started).
 // - 2026-09-12: GET /received 캘린더 목록도 pastReadyTeeth enrich(리프레시 후 준비 취소선 오표시 방지).
@@ -98,6 +99,7 @@ import { resolvePrcFileNames } from "../controllers/requests/prcMapping.utils.js
 import { resolveQuotedPriceWithExpressFee } from "../controllers/requests/expressPrice.utils.js";
 import { getManufacturerLeadTimesUtil } from "../controllers/businesses/leadTime.controller.js";
 import { loadCreditSettingsDefaults } from "../utils/creditSettingsDefaults.js";
+import { ABUTS_REMAKE_PRICE_RULE } from "../utils/remakePricingPolicy.js";
 import {
   ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
   pickAbutsAbutmentCreditPrices,
@@ -1153,7 +1155,7 @@ export async function createAbutmentRequestsFromPracticeTransfer({
     );
     let quotedPrice;
     if (isPtxRemake) {
-      // 기공소→어벗츠: 리메이크 과금(건당 10,000원). PTX 정가 생산 경로 금지.
+      // 기공소→어벗츠: 동일 치과·환자·치식·90일이면 건당 10,000원. 아니면 정가 생산.
       quotedPrice = await computePriceForRequest({
         requestorId: labUserId,
         requestorOrgId: labAnchorId,
@@ -1162,13 +1164,22 @@ export async function createAbutmentRequestsFromPracticeTransfer({
         tooth: String(normalizedCaseInfos?.tooth || "").trim(),
         creditSettings: creditSettingsForQuote,
       });
-      // Express/묶음은 PTX CA와 동일하게 적용
-      quotedPrice = resolveQuotedPriceWithExpressFee({
-        price: quotedPrice,
-        shippingMode,
-        expressFee: expressFeePerRequest,
-        expressQty: abutmentQty,
-      });
+      if (quotedPrice?.rule !== ABUTS_REMAKE_PRICE_RULE) {
+        quotedPrice = buildPtxAbutsProductionQuote({
+          creditSettings: creditSettingsForQuote,
+          shippingMode,
+          abutmentQty,
+          expressFeePerRequest,
+          quotedAt: requestedAt,
+        });
+      } else {
+        quotedPrice = resolveQuotedPriceWithExpressFee({
+          price: quotedPrice,
+          shippingMode,
+          expressFee: expressFeePerRequest,
+          expressQty: abutmentQty,
+        });
+      }
     } else {
       quotedPrice = buildPtxAbutsProductionQuote({
         creditSettings: creditSettingsForQuote,
@@ -2515,13 +2526,26 @@ export async function repriceAndReschedulePtxAbutmentRequest({
       patientName: String(requestDoc?.caseInfos?.patientName || "").trim(),
       tooth: String(requestDoc?.caseInfos?.tooth || "").trim(),
       creditSettings: creditSettingsForQuote,
+      currentRequestId: requestDoc?._id || null,
+      // CA STL 재업로드(2회차+)는 동일 건 리메이크 — 90일 조회 없이 1만원.
+      forceRemakePricing: Boolean(forceRemake),
     });
-    quotedPrice = resolveQuotedPriceWithExpressFee({
-      price: quotedPrice,
-      shippingMode,
-      expressFee: expressFeePerRequest,
-      expressQty: abutmentQty,
-    });
+    if (quotedPrice?.rule !== ABUTS_REMAKE_PRICE_RULE) {
+      quotedPrice = buildPtxAbutsProductionQuote({
+        creditSettings: creditSettingsForQuote,
+        shippingMode,
+        abutmentQty,
+        expressFeePerRequest,
+        quotedAt: requestedAt,
+      });
+    } else {
+      quotedPrice = resolveQuotedPriceWithExpressFee({
+        price: quotedPrice,
+        shippingMode,
+        expressFee: expressFeePerRequest,
+        expressQty: abutmentQty,
+      });
+    }
   } else {
     quotedPrice = buildPtxAbutsProductionQuote({
       creditSettings: creditSettingsForQuote,

@@ -109,6 +109,10 @@ import {
   advanceLabRequestStagePlans,
 } from "../../utils/practiceRequestStagePresets.js";
 import { toKstYmd } from "../requests/utils.js";
+import {
+  isWithinRemakePolicyWindow,
+  REMAKE_POLICY_WINDOW_DAYS,
+} from "../../utils/remakePricingPolicy.js";
 
 /** 작업시작(의뢰수락) 이후 — 리메이크 가능 stage */
 const PRACTICE_REMAKE_ELIGIBLE_STAGES = new Set([
@@ -5747,12 +5751,18 @@ export async function remakePracticeTransfers(req, res) {
             )
           : copiedFiles;
 
+      // 치과로부터 리메이크비: 원본이 최근 90일 이내이면 무료(LAB_FEE_REMAKE_FREE).
+      const remakePricing = isWithinRemakePolicyWindow(
+        source.createdAt ||
+          (Array.isArray(source.orderDates) ? source.orderDates[0] : null),
+      );
+
       try {
         await assertPracticeTransferPaidCreditSufficient({
           practiceAnchorId,
           labAnchorId: targetLabAnchorId,
           toothWorks,
-          remake: true,
+          remake: remakePricing,
         });
       } catch (creditErr) {
         const status = Number(creditErr?.statusCode || 500);
@@ -5776,7 +5786,7 @@ export async function remakePracticeTransfers(req, res) {
         practiceAnchorId,
         labAnchorId: targetLabAnchorId,
         toothWorks,
-        remake: true,
+        remake: remakePricing,
         matchingMode: "direct",
       });
 
@@ -6148,9 +6158,9 @@ const escapePracticeTransferPatientRegex = (value) =>
 
 /**
  * 리메이크 원본 검색.
- * - q 없음: 최근 14일(주문일·생성일) 작업시작 이후 의뢰
- * - q 있음: 환자명으로 전체 기간 검색
- * GET /api/practice/transfers/remake-candidates?q=&days=14&limit=30
+ * - q 없음: 최근 90일(주문일·생성일) 작업시작 이후 의뢰 — 리메이크 정책 창과 동일
+ * - q 있음: 환자명으로 전체 기간 검색(과금은 원본 90일 여부로 결정)
+ * GET /api/practice/transfers/remake-candidates?q=&days=90&limit=30
  */
 export async function searchRemakePracticeTransfers(req, res) {
   try {
@@ -6163,8 +6173,12 @@ export async function searchRemakePracticeTransfers(req, res) {
       .trim()
       .normalize("NFC");
     const recentDays = Math.min(
-      90,
-      Math.max(1, Number(req.query?.days || 14) || 14),
+      REMAKE_POLICY_WINDOW_DAYS,
+      Math.max(
+        1,
+        Number(req.query?.days || REMAKE_POLICY_WINDOW_DAYS) ||
+          REMAKE_POLICY_WINDOW_DAYS,
+      ),
     );
     const limit = Math.min(40, Math.max(1, Number(req.query?.limit || 30)));
     const {

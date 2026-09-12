@@ -65,6 +65,7 @@ import {
 } from "./production.utils.js";
 import { getManufacturerLeadTimesUtil } from "../businesses/leadTime.controller.js";
 import { loadCreditSettingsDefaults } from "../../utils/creditSettingsDefaults.js";
+import { remakePolicyCutoffDate } from "../../utils/remakePricingPolicy.js";
 import { prefetchKoreanHolidaysForYears } from "../../utils/krBusinessDays.js";
 import {
   countDesignAbutmentQty,
@@ -1045,9 +1046,7 @@ export async function createRequestsFromDraft(req, res) {
     }
 
     if (existingByCombo.size > 0) {
-      const remakeNowYmd = toKstYmd(new Date()) || getTodayYmdInKst();
-      const remakeCutoff = new Date(`${remakeNowYmd}T00:00:00+09:00`);
-      remakeCutoff.setDate(remakeCutoff.getDate() - 90);
+      const remakeCutoff = remakePolicyCutoffDate(new Date());
       const replaceCaseIdsForPrice = new Set(
         Array.from(resolutionsByCaseId.entries())
           .filter(([, r]) => String(r?.strategy || "") === "replace")
@@ -1069,7 +1068,6 @@ export async function createRequestsFromDraft(req, res) {
           ) {
             return;
           }
-          if (!String(existing?.caseInfos?.implantBrand || "").trim()) return;
           item.computedPrice = await computePriceForRequest({
             requestorId: req.user._id,
             requestorOrgId: req.user?.businessAnchorId,

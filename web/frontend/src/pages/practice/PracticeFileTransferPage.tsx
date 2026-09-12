@@ -10789,7 +10789,7 @@ export const PracticeFileTransferPage = ({
                   · {remakePending.transfer.targetLab || "기공소"}
                 </div>
                 <div>
-                  도착일 {remakePending.arrivalYmd} · 리메이크비{" "}
+                  도착일 {remakePending.arrivalYmd} · 치과→기공소 리메이크비{" "}
                   {formatManWon(
                     remakeFeeAmountForTransfer(
                       remakePending.transfer,
@@ -10798,7 +10798,8 @@ export const PracticeFileTransferPage = ({
                   )}
                 </div>
                 <div className="text-muted-foreground">
-                  기공소가 작업시작하면 리메이크 기공비로 처리됩니다.
+                  동일 치과·환자·치식·최근 90일 조건이면 치과→기공소 리메이크비는
+                  무료입니다. 기공소가 작업시작하면 반영됩니다.
                 </div>
                 {remakePending.transfer.hasCustomAbutment ? (
                   <label className="flex cursor-pointer items-start gap-2 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2 text-[13px]">
@@ -10814,16 +10815,15 @@ export const PracticeFileTransferPage = ({
                         커스텀어벗도 리메이크
                       </span>
                       <span className="block text-[12px] text-muted-foreground">
-                        기본은 보철만 리메이크합니다. 포함 시 기공소 커스텀어벗
-                        리메이크 수가가 설정되어 있어야 하며, 치과→기공소
-                        리메이크비와 기공소→어벗츠 리메이크 과금이 발생합니다.
+                        기본은 보철만 리메이크합니다. 포함 시 기공소→어벗츠
+                        리메이크는 동일 조건에서 건당 10,000원(배송비 별도)입니다.
                       </span>
                     </span>
                   </label>
                 ) : null}
                 {!remakePending.transfer.hasCustomAbutment ? (
                   <div className="text-[12px] text-muted-foreground">
-                    리메이크 의뢰 시 기공소 리메이크 수가가 청구됩니다.
+                    보철만 리메이크합니다(커스텀어벗 제외).
                   </div>
                 ) : null}
               </div>
@@ -10852,7 +10852,7 @@ export const PracticeFileTransferPage = ({
                 {String(selectedLab?.name || "").trim() || "기공소"}
               </div>
               <div>
-                도착일 {arrivalDate || "—"} · 리메이크비{" "}
+                도착일 {arrivalDate || "—"} · 치과→기공소 리메이크비{" "}
                 {formatManWon(
                   Math.max(
                     0,
@@ -10870,15 +10870,14 @@ export const PracticeFileTransferPage = ({
                 {PRE_PLATFORM_REMAKE_PRACTICE_SEND_HINT}
               </div>
               <div className="text-muted-foreground">
-                기공소가 작업시작하면 리메이크 기공비로 처리됩니다. 커스텀어벗은
-                기본 제외이며, 작성 화면에서 커스텀어벗을 넣으면 리메이크
-                수가·어벗츠 과금이 함께 적용됩니다.
+                동일 치과·환자·치식·최근 90일이면 치과→기공소 리메이크비는
+                무료입니다. 커스텀어벗은 기본 제외이며, 작성 화면에서 넣으면
+                기공소→어벗츠 리메이크는 건당 10,000원(배송비 별도)입니다.
               </div>
               {composeRemakeIncludesCustomAbutment ? (
                 <div className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-[12px] text-amber-950">
-                  커스텀어벗이 포함되어 있습니다. 기공소 커스텀어벗 리메이크
-                  수가가 설정되어 있어야 하며, 치과→기공소 리메이크비와
-                  기공소→어벗츠 리메이크 과금이 발생합니다.
+                  커스텀어벗이 포함되어 있습니다. 기공소→어벗츠 리메이크는 동일
+                  조건에서 건당 10,000원(배송비 별도)입니다.
                 </div>
               ) : null}
             </div>
