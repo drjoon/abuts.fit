@@ -9,7 +9,7 @@
 // - 2026-09-05: lab_detail — 코치마크 위쪽(1/N 캘린더와 동일). 오른쪽 반 배치 해제.
 // - 2026-09-05: 홀 rect 뷰포트 클램프 — 큰 모달(lab_detail) 포커스가 화면 밖으로 나가지 않게.
 // - 2026-09-05: store_workspace — 사이드바「스토어」별도 홀.
-// - 2026-09-05: new_request_workspace — 사이드바「기공의뢰+어벗디자인으로」별도 홀(복수 satellite 키).
+// - 2026-09-05: new_request_workspace — 사이드바「기공의뢰+어벗츠에/어벗츠로」별도 홀(복수 satellite 키).
 // - 2026-09-05: credits_* — 사이드바 위성 별칭·코치마크 중하단(탭·요약카드 노출).
 // - 2026-09-05: credits_workspace — 사이드바 별도 홀·코치마크를 작업영역 중하단(탭·요약카드 노출).
 // - 2026-09-05: oral_estimate — allowTargetInteraction으로 견적 호버·툴팁 가능.
@@ -202,7 +202,7 @@ function readSpotlightRects(target: string | null | undefined): Rect[] {
   if (satellites.length === 0) return [primaryRect];
 
   if (SEPARATE_SATELLITE_TARGETS.has(target)) {
-    // 사이드바 위성들(기공의뢰+구강스캔으로)은 하나의 홀로 union, 캘린더는 별도
+    // 사이드바 위성들(기공의뢰+기공소에)은 하나의 홀로 union, 캘린더는 별도
     let sideHole: Rect | null = null;
     for (const sat of satellites) {
       sideHole = sideHole ? unionRect(sideHole, sat) : sat;

@@ -5,7 +5,8 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/practice/practiceTransferLabReceive.ts
 // change-log:
-// - 2026-09-07: remake 옵션 — 리메이크 뱃지·수가(가이드투어 lab_remake).
+// - 2026-09-12: remake 데모 견적 0원(치과↔기공소 리메이크 무료 정책).
+// - 2026-09-07: remake 옵션 — 리메이크 뱃지·견적(가이드투어 lab_remake).
 // - 2026-09-07: 표시명 어벗츠치과 / 이환자(원본 실샘플 메타는 JSON meta 유지).
 // - 2026-09-05: 향기로운치과 실샘플 복사본(PLY·기공비·치식) 표시. publicPath fetch.
 // - 2026-09-05: 향기로운치과 6번대 CA 샘플 기반 기공비·파일 메타(익명). 데모 S3키=guide-tour/.
@@ -137,7 +138,7 @@ export const buildGuideTourDemoPlaceholderBlob = (): Blob =>
     type: "application/octet-stream",
   });
 
-/** 데모 수신 건 — accepted면 수락 후 디자인 드롭존 노출, remake면 리메이크 뱃지·수가 */
+/** 데모 수신 건 — accepted면 작업시작 후 디자인 드롭존 노출, remake면 리메이크 뱃지·무료 견적 */
 export const buildGuideTourDemoReceiveTransfer = (opts?: {
   accepted?: boolean;
   remake?: boolean;
@@ -194,8 +195,22 @@ export const buildGuideTourDemoReceiveTransfer = (opts?: {
     };
   });
 
+  // 치과↔기공소 리메이크비 무료(LAB_FEE_REMAKE_FREE) — 투어 데모 견적도 0원
   const feeQuote: PracticeTransferFeeQuote = remake
-    ? { ...GUIDE_TOUR_DEMO_FEE_QUOTE, isRemake: true }
+    ? {
+        ...GUIDE_TOUR_DEMO_FEE_QUOTE,
+        isRemake: true,
+        labFeeTotal: 0,
+        labAbutmentTotal: 0,
+        abutmentRetailTotal: 0,
+        total: 0,
+        lines: (GUIDE_TOUR_DEMO_FEE_QUOTE.lines || []).map((line) => ({
+          ...line,
+          labFee: 0,
+          labAbutmentFee: 0,
+          abutmentRetail: 0,
+        })),
+      }
     : GUIDE_TOUR_DEMO_FEE_QUOTE;
 
   return {

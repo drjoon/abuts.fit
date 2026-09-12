@@ -3,6 +3,8 @@
 // - web/frontend/src/shared/components/practice/PracticeToothWorkGuideTourBanner.tsx
 // - web/frontend/src/shared/guideTour/GuideTourProvider.tsx
 // change-log:
+// - 2026-09-12: remake·lab_remake — 90일 동일건 치과↔기공소 무료·어벗츠 1만원 정책 반영.
+// - 2026-09-12: abutment·abutment_order 제목 「기공의뢰 · 어벗츠에/어벗츠로」·힌트·스토어 카피 갱신.
 // - 2026-09-08: isNewRequestAbutmentGuideTourStepId — new-request draft/모달 격리용.
 // - 2026-09-07: remake·lab_remake — 치과 리메이크 버튼·기공소 리메이크 수신 안내.
 // - 2026-09-07: partner_chat — FAB로 의뢰건 없이 기공소↔치과 채팅(치과·기공소).
@@ -15,7 +17,7 @@
 // - 2026-09-05: lab — 3챕터(수신 영화형·정산3·어벗)·complete·레거시 normalize.
 // - 2026-09-05: complete — 수료 안내(intro형)·확인 시 구강스캔 포워딩.
 // - 2026-09-05: store — 사이드바 홀·힌트 단축.
-// - 2026-09-05: abutment — 사이드바「어벗디자인으로」홀·힌트 단축·건너뛰기 제거.
+// - 2026-09-05: abutment — 사이드바「어벗츠에」홀·힌트 단축·건너뛰기 제거.
 // - 2026-09-05: 정산 코치마크 3단 — 내역·통계·충전 각 페이지 문구·탭 강조.
 // - 2026-09-05: credits_ledger — 힌트 문구·사이드바 정산 홀·코치마크 하단(탭·요약카드 노출).
 // - 2026-09-05: oral_estimate — allowTargetInteraction(견적 호버·툴팁).
@@ -23,7 +25,7 @@
 // - 2026-09-05: custom_abut 임시 프리셋 3장 체험(implant·scanbody·simple). card_ops·custom_abut 조작 허용.
 // - 2026-09-05: oral_prosthesis 제거·card_ops로 통합(직접 체험).
 // - 2026-09-05: oral_calendar — 사이드바·캘린더 별도 구역. 전체 프로세스 N/15 카운터. 도착일 문구.
-// - 2026-09-05: intro 다음 oral_calendar — 사이드바「구강스캔으로」+ 캘린더 작업영역(작성 패널 전).
+// - 2026-09-05: intro 다음 oral_calendar — 사이드바「기공소에」+ 캘린더 작업영역(작성 패널 전).
 // - 2026-09-05: 시작(intro) 힌트 — 강제 줄바꿈 제거(코치마크 1줄 폭).
 // - 2026-09-05: 구강 챕터 영화형(이전/다음). calendar·세분 스텝 제거. card_ops만 조작 허용.
 // - 2026-09-05: oral_phone — memo 다음(4/15). forceMobile 제거, 안내 문구+폰 미리보기.
@@ -160,13 +162,13 @@ export const PRACTICE_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
     chapter: 1,
     // 작성 패널(compose)은 열지 않음 — 다음 oral_* 영화형에서 openCompose
   },
-  // —— 챕터1: 구강스캔 기공의뢰 (영화형) ——
+  // —— 챕터1: 「기공소에」기공의뢰 작성 (영화형) ——
   ...practiceOralMovieSteps,
   // —— 챕터1: 리메이크 ——
   {
     id: "remake",
     title: "리메이크 의뢰",
-    hint: "이전 의뢰를 찾아 리메이크 주문합니다. 플랫폼 가입 전 건도 주문할 수 있습니다.",
+    hint: "이전 의뢰·가입 전 건도 리메이크할 수 있습니다. 동일 환자·치식·최근 90일이면 치과→기공소 기공비는 무료입니다.",
     path: PRACTICE_ORAL_PATH,
     target: "practice_remake",
     advance: "next",
@@ -213,11 +215,11 @@ export const PRACTICE_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
     chapter: 2,
     creditsTab: "charge",
   },
-  // —— 챕터3: 커스텀어벗 ——
+  // —— 챕터3: 커스텀어벗(사이드바「어벗츠에」) ——
   {
     id: "abutment",
-    title: "커스텀어벗 CNC",
-    hint: "원내 기공실장님이 디자인한 커스텀어벗(STL)을 올려 CNC 생산할 수 있습니다.",
+    title: "기공의뢰 · 어벗츠에",
+    hint: "완성된 어벗 디자인(STL)을 올려 CNC 생산을 의뢰합니다.",
     path: NEW_REQUEST_PATH,
     target: "new_request_workspace",
     advance: "next",
@@ -227,7 +229,7 @@ export const PRACTICE_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   {
     id: "store",
     title: "스토어",
-    hint: "스토어에서 심플웨이 제품을 구매할 수 있습니다.",
+    hint: "어벗·시술 키트 등 기성품을 선수금으로 구매할 수 있습니다.",
     path: STORE_PATH,
     target: "store_workspace",
     advance: "next",
@@ -270,7 +272,7 @@ export const LAB_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
     // 칩 클릭 → 상세 오픈·다음 스텝(RequestorPracticePage)
     allowTargetInteraction: true,
   },
-  // —— 챕터1: 수신 상세(실사용 — 모달 전체 홀·스크롤·탭·수락 조작) ——
+  // —— 챕터1: 수신 상세(실사용 — 모달/패널 홀·스크롤·작업시작 조작) ——
   {
     id: "lab_detail",
     title: "의뢰 상세",
@@ -296,7 +298,7 @@ export const LAB_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   {
     id: "lab_design",
     title: "어벗 디자인 업로드",
-    hint: "작업시작 후 STL을 올리면 어벗츠에서 커스텀어벗 생산을 시작합니다.\n환자 정보, 임플란트 정보 등은 치과에서 넘겨준 정보 그대로 넘어갑니다.",
+    hint: "작업시작 후 STL을 올리면 어벗츠에서 커스텀어벗 생산을 시작합니다.\n환자·임플란트 정보는 치과에서 넘겨준 그대로 이어집니다.",
     path: LAB_RECEIVE_PATH,
     target: "lab_detail",
     advance: "next",
@@ -308,7 +310,7 @@ export const LAB_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   {
     id: "lab_remake",
     title: "리메이크 수신",
-    hint: "리메이크 의뢰는 뱃지로 표시됩니다.\n작업시작하면 기공소 수가의 리메이크 기공비가 적용됩니다.\n플랫폼 가입 전 건은 별도 안내를 확인한 뒤 작업시작하세요.",
+    hint: "리메이크 의뢰는 뱃지로 표시됩니다.\n동일 환자·치식·최근 90일이면 리메이크 기공비는 무료입니다.\n플랫폼 가입 전 건은 별도 안내를 확인한 뒤 작업시작하세요.",
     path: LAB_RECEIVE_PATH,
     target: "lab_remake",
     advance: "next",
@@ -340,7 +342,7 @@ export const LAB_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   {
     id: "credits_stats",
     title: "정산 · 통계",
-    hint: "치과 수신·어벗츠 의뢰 통계를 확인합니다.",
+    hint: "치과로부터·어벗츠로 통계를 확인합니다.",
     path: `${CREDITS_PATH}?tab=stats`,
     target: "credits_stats",
     advance: "next",
@@ -357,11 +359,11 @@ export const LAB_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
     chapter: 2,
     creditsTab: "charge",
   },
-  // —— 챕터3: 커스텀어벗 CNC ——
+  // —— 챕터3: 커스텀어벗 CNC(사이드바「어벗츠로」) ——
   {
     id: "abutment_order",
-    title: "커스텀어벗 CNC",
-    hint: '어벗츠 플랫폼 미가입 치과에서 보내온 의뢰건의 CNC 커스텀 어벗 생산은 "어벗츠로" 메뉴에서 진행합니다.',
+    title: "기공의뢰 · 어벗츠로",
+    hint: '플랫폼 미가입 치과 의뢰의 CNC 커스텀어벗 생산은 「어벗츠로」에서 진행합니다.',
     path: NEW_REQUEST_PATH,
     target: "new_request_workspace",
     advance: "next",
