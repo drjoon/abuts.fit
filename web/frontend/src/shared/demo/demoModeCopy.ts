@@ -49,9 +49,18 @@ export function resolveDemoModeDaysRemaining({
   return Math.max(0, Math.ceil((expiresMs - nowMs) / MS_PER_DAY));
 }
 
-/** 뱃지 라벨: 「데모 N일 남음」. 일수 없으면 「데모」, 0이면 「데모 종료 임박」. */
+/** 뱃지 표시: 「N일」(좁은 헤더용). 일수 없으면 「데모」, 0이면 「종료」. */
 export function formatDemoModeBadgeLabel(daysRemaining: number | null): string {
   if (daysRemaining == null) return DEMO_MODE_BADGE_LABEL;
+  if (daysRemaining <= 0) return "종료";
+  return `${daysRemaining}일`;
+}
+
+/** 접근성·툴팁용 전체 문구: 「데모 N일 남음」. */
+export function formatDemoModeBadgeAriaLabel(
+  daysRemaining: number | null,
+): string {
+  if (daysRemaining == null) return "데모 모드";
   if (daysRemaining <= 0) return "데모 종료 임박";
   return `데모 ${daysRemaining}일 남음`;
 }

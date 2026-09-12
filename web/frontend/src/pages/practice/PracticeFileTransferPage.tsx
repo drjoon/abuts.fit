@@ -131,6 +131,7 @@
  * - 2026-08-28: 모바일 신규의뢰 — 인셋 시트·라운드·세이프에리어. 본문 패딩 확대.
  * - 2026-08-28: 모바일 신규의뢰 모달 — 퀵메뉴 1줄·헤더 배치, 촬영 CTA 축소.
  * - 2026-08-28: 모바일 헤더 액션 — 신규·임시·휴지 아이콘 버튼(한 줄).
+ * - 2026-09-12: PC 헤더 액션 — 헤더 폭 충분 시 라벨, 좁으면 아이콘만. 데모 뱃지「N일」.
  * - 2026-09-12: 헤더 — 리메이크 옆에 「신규주문」(작성 모달). PC도 달력 외 CTA.
  * - 2026-08-28: 모바일 목록 헤더에 신규의뢰 CTA(PC는 캘린더 날짜 클릭).
  * - 2026-08-28: 신규 의뢰 모달 — 새로작성·임시저장·휴지통·가이드투어를 DialogHeader로.
@@ -8654,7 +8655,7 @@ export const PracticeFileTransferPage = ({
   /** 메인 헤더 — 모바일/PC: 임시저장·휴지통(+PC 데모). 아래 목록은 기공소 전송 완료건만. */
   const calendarHeaderActions = (
     <div
-      className="flex flex-wrap items-center gap-2"
+      className="flex flex-nowrap items-center gap-1.5 sm:gap-2"
       data-guide-tour={
         platformGuideTour.active && platformGuideTour.stepId === "oral_drafts"
           ? "oral_drafts"
@@ -8757,72 +8758,135 @@ export const PracticeFileTransferPage = ({
         </div>
       ) : (
         <>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-9 gap-1.5 px-3"
-            onClick={() =>
-              void handleStartNewTransfer({
-                openCompose: true,
-                silentToast: true,
-              })
-            }
-          >
-            <Plus className="h-4 w-4 shrink-0" />
-            신규주문
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-9 gap-1.5 px-3"
-            onClick={() => setRemakeSearchOpen(true)}
-            {...(platformGuideTour.active &&
-            platformGuideTour.stepId === "remake"
-              ? { "data-guide-tour": "practice_remake" }
-              : {})}
-          >
-            <Repeat className="h-4 w-4 shrink-0" />
-            리메이크
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className={cn(
-              "h-9 gap-1.5 px-3",
-              draftGroupedTransfers.length > 0 && "border-amber-300 bg-amber-50/80",
-              practiceTransferDraftStaleAttentionClassName(hasStaleDrafts),
-            )}
-            onClick={() => setDraftsOpen(true)}
-          >
-            <BookmarkPlus className="h-4 w-4 shrink-0" />
-            임시저장
-            {draftGroupedTransfers.length > 0 ? (
-              <Badge variant="outline" className={draftCountBadgeClass}>
-                {draftGroupedTransfers.length}
-              </Badge>
-            ) : null}
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-9 gap-1.5 px-3"
-            onClick={() => {
-              setTrashOpen(true);
-              void loadRecentRequests({ silent: true });
-            }}
-          >
-            <Trash2 className="h-4 w-4 shrink-0" />
-            휴지통
-            {trashGroupedTransfers.length > 0 ? (
-              <Badge variant="secondary" className="ml-0.5">
-                {trashGroupedTransfers.length}
-              </Badge>
-            ) : null}
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-9 w-9 shrink-0 gap-1.5 px-0 group-data-[wide=true]/hdr-actions:w-auto group-data-[wide=true]/hdr-actions:px-3"
+                aria-label="신규주문"
+                onClick={() =>
+                  void handleStartNewTransfer({
+                    openCompose: true,
+                    silentToast: true,
+                  })
+                }
+              >
+                <Plus className="h-4 w-4 shrink-0" />
+                <span className="hidden group-data-[wide=true]/hdr-actions:inline">
+                  신규주문
+                </span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="text-xs">
+              신규주문
+            </TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-9 w-9 shrink-0 gap-1.5 px-0 group-data-[wide=true]/hdr-actions:w-auto group-data-[wide=true]/hdr-actions:px-3"
+                aria-label="리메이크"
+                onClick={() => setRemakeSearchOpen(true)}
+                {...(platformGuideTour.active &&
+                platformGuideTour.stepId === "remake"
+                  ? { "data-guide-tour": "practice_remake" }
+                  : {})}
+              >
+                <Repeat className="h-4 w-4 shrink-0" />
+                <span className="hidden group-data-[wide=true]/hdr-actions:inline">
+                  리메이크
+                </span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="text-xs">
+              리메이크
+            </TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className={cn(
+                  "h-9 shrink-0 gap-1 px-2 group-data-[wide=true]/hdr-actions:gap-1.5 group-data-[wide=true]/hdr-actions:px-3",
+                  draftGroupedTransfers.length === 0 &&
+                    "w-9 px-0 group-data-[wide=true]/hdr-actions:w-auto group-data-[wide=true]/hdr-actions:px-3",
+                  draftGroupedTransfers.length > 0 && "border-amber-300 bg-amber-50/80",
+                  practiceTransferDraftStaleAttentionClassName(hasStaleDrafts),
+                )}
+                aria-label={
+                  draftGroupedTransfers.length > 0
+                    ? `임시저장 ${draftGroupedTransfers.length}건`
+                    : "임시저장"
+                }
+                onClick={() => setDraftsOpen(true)}
+              >
+                <BookmarkPlus className="h-4 w-4 shrink-0" />
+                <span className="hidden group-data-[wide=true]/hdr-actions:inline">
+                  임시저장
+                </span>
+                {draftGroupedTransfers.length > 0 ? (
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      draftCountBadgeClass,
+                      "h-4 min-w-4 justify-center rounded-full px-1 text-[10px] leading-none",
+                    )}
+                  >
+                    {draftGroupedTransfers.length}
+                  </Badge>
+                ) : null}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="text-xs">
+              임시저장 — 기공소 전송 전 작성 중 의뢰
+            </TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className={cn(
+                  "h-9 shrink-0 gap-1 px-2 group-data-[wide=true]/hdr-actions:gap-1.5 group-data-[wide=true]/hdr-actions:px-3",
+                  trashGroupedTransfers.length === 0 &&
+                    "w-9 px-0 group-data-[wide=true]/hdr-actions:w-auto group-data-[wide=true]/hdr-actions:px-3",
+                )}
+                aria-label={
+                  trashGroupedTransfers.length > 0
+                    ? `휴지통 ${trashGroupedTransfers.length}건`
+                    : "휴지통"
+                }
+                onClick={() => {
+                  setTrashOpen(true);
+                  void loadRecentRequests({ silent: true });
+                }}
+              >
+                <Trash2 className="h-4 w-4 shrink-0" />
+                <span className="hidden group-data-[wide=true]/hdr-actions:inline">
+                  휴지통
+                </span>
+                {trashGroupedTransfers.length > 0 ? (
+                  <Badge
+                    variant="secondary"
+                    className="h-4 min-w-4 justify-center rounded-full px-1 text-[10px] leading-none"
+                  >
+                    {trashGroupedTransfers.length}
+                  </Badge>
+                ) : null}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="text-xs">
+              휴지통
+            </TooltipContent>
+          </Tooltip>
           <DemoModeBadge />
         </>
       )}

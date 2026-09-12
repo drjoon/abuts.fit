@@ -5,6 +5,7 @@
 // - web/backend/controllers/businesses/business.demoMode.util.js
 // change-log:
 // - 2026-09-05: 유료 크레딧(CHARGE_PAID) 지급 시 데모→실사용 자동 전환.
+// - 2026-09-12: 뱃지 표시「N일」(aria/툴팁은「데모 N일 남음」).
 // - 2026-09-05: demoModeStartedAt/ExpiresAt → 남은 일수(데모 N일 남음).
 // - 2026-08-26: apiFetch 응답 언랩 수정 — res.data.data.demoMode (뱃지 미표시 원인).
 import { useCallback, useEffect, useState } from "react";

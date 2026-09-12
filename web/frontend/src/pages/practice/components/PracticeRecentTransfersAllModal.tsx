@@ -44,6 +44,7 @@
  * - 2026-09-08: 데스크톱 캘린더/목록(일정) 보기 — 목록은 커서 월 전체 조회.
  * - 2026-09-09: 상태 뱃지 unread 카운터 클릭 시 안읽음 건 순회(표시 토글은 카운터 없을 때만).
  * - 2026-09-10: 상태 표시 on/off 제거. 헤더=확인 큐(열면 감소), 칩=실제 채팅 unread만.
+ * - 2026-09-12: PC 헤더 nowrap — 상태뱃지·액션 1줄(좁은 폭 overflow-x). 충분 폭이면 액션 라벨 표시.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronRight, Search, Trash2, X } from "lucide-react";
@@ -215,6 +216,9 @@ export function PracticeRecentTransfersAllModal({
   const open = isPage ? true : Boolean(openProp);
   const isMobile = useIsMobile();
   const forceCloseRef = useRef(false);
+  /** PC 헤더 폭이 충분할 때 액션 버튼 라벨 표시(사이드바 등 실제 가용 폭 기준) */
+  const headerRowRef = useRef<HTMLDivElement | null>(null);
+  const [headerActionsWide, setHeaderActionsWide] = useState(true);
   const storedCalendarDateKey = useAuthStore(
     (s) => s.user?.labReceiveCalendarDateKey,
   );
@@ -269,6 +273,22 @@ export function PracticeRecentTransfersAllModal({
   useEffect(() => {
     migratePracticeStatusBadgeClearedFromLegacyLocalStorage();
   }, []);
+
+  /** 헤더 가용 폭 — 좁으면 액션 아이콘만, 충분하면 라벨(.practice-header-actions-wide) */
+  useEffect(() => {
+    if (isMobile || !open) return;
+    const el = headerRowRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const HEADER_ACTIONS_WIDE_MIN_PX = 1040;
+    const apply = () => {
+      const next = el.clientWidth >= HEADER_ACTIONS_WIDE_MIN_PX;
+      setHeaderActionsWide((prev) => (prev === next ? prev : next));
+    };
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [isMobile, open]);
 
   const handleViewModeChange = useCallback(
     (mode: LabReceiveCalendarViewMode) => {
@@ -759,7 +779,7 @@ export function PracticeRecentTransfersAllModal({
       onUnreadNavigate={navigateNextUnreadForStatus}
       gapBeforeKeys={PRACTICE_RECENT_STATUS_BADGE_GAP_BEFORE_KEYS}
       compact={isMobile}
-      className={isMobile ? "contents" : undefined}
+      className={isMobile ? "contents" : "flex-nowrap"}
     />
   );
 
@@ -808,7 +828,10 @@ export function PracticeRecentTransfersAllModal({
           </div>
         </div>
       ) : (
-        <div className="flex flex-wrap items-center gap-3">
+        <div
+          ref={headerRowRef}
+          className="flex flex-nowrap items-center gap-2 sm:gap-3"
+        >
           {isPage ? (
             <h1 className="sr-only">{headerTitle}</h1>
           ) : (
@@ -816,11 +839,14 @@ export function PracticeRecentTransfersAllModal({
               {headerTitle}
             </DialogTitle>
           )}
-          <div className="flex min-w-0 flex-1 flex-wrap items-center justify-center gap-2">
+          <div className="flex min-w-0 flex-1 flex-nowrap items-center justify-center gap-1.5 overflow-x-auto sm:gap-2">
             {statusBadges}
           </div>
           {headerActions ? (
-            <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <div
+              className="group/hdr-actions flex shrink-0 flex-nowrap items-center gap-1.5 sm:gap-2"
+              data-wide={headerActionsWide ? "true" : "false"}
+            >
               {headerActions}
             </div>
           ) : null}

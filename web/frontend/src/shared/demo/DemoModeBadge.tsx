@@ -20,6 +20,7 @@ import {
   DEMO_MODE_EXIT_CONFIRM_LABEL,
   DEMO_MODE_EXIT_TITLE,
   DEMO_MODE_EXIT_WARNING,
+  formatDemoModeBadgeAriaLabel,
   formatDemoModeBadgeLabel,
   resolveCreditLedgerDemoNoticeBody,
   resolveDemoModeExitBody,
@@ -41,6 +42,7 @@ export function DemoModeBadge({ className, onExited }: Props) {
   if (loading || !demoMode) return null;
 
   const badgeLabel = formatDemoModeBadgeLabel(daysRemaining);
+  const ariaLabel = formatDemoModeBadgeAriaLabel(daysRemaining);
   const noticeBody = resolveCreditLedgerDemoNoticeBody(kind);
   const exitBody = resolveDemoModeExitBody(kind);
 
@@ -55,18 +57,19 @@ export function DemoModeBadge({ className, onExited }: Props) {
               className,
             )}
             onClick={() => setConfirmOpen(true)}
-            aria-label={`${badgeLabel} — 클릭하여 실사용 전환`}
+            aria-label={`${ariaLabel} — 클릭하여 실사용 전환`}
           >
             <Badge
               variant="outline"
-              className="cursor-pointer border-amber-500/70 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-100"
+              className="cursor-pointer border-amber-500/70 bg-amber-50 px-2 py-1 text-xs font-semibold tabular-nums text-amber-800 hover:bg-amber-100"
             >
               {badgeLabel}
             </Badge>
           </button>
         </TooltipTrigger>
         <TooltipContent side="bottom" className="max-w-xs text-left">
-          <p className="text-xs leading-relaxed">{noticeBody}</p>
+          <p className="text-xs font-medium text-foreground">{ariaLabel}</p>
+          <p className="mt-1 text-xs leading-relaxed">{noticeBody}</p>
           <p className="mt-1.5 text-[11px] text-muted-foreground">
             클릭하면 실사용 전환을 확인할 수 있습니다.
           </p>
