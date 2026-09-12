@@ -7900,14 +7900,26 @@ export function RequestorPracticeReceivePage({
         }
         onDeleteMessage={(messageId) => void deleteMessage(messageId)}
         composerPlaceholder="치과에 전달할 내용을 입력하세요"
-        requestPicks={transfers
-          .map((row) => ({
-            requestId: String(row.transferId || "").trim(),
-            patientName: String(row.patientName || "").trim(),
-            tooth: String(row.tooth || row.toothWorksSummary || "").trim(),
-          }))
-          .filter((row) => row.requestId)
-          .slice(0, 40)}
+        requestPicks={(() => {
+          const seen = new Set<string>();
+          const picks: Array<{
+            requestId: string;
+            patientName: string;
+            tooth: string;
+          }> = [];
+          for (const row of transfers) {
+            const requestId = String(row.transferId || "").trim();
+            if (!requestId || seen.has(requestId)) continue;
+            seen.add(requestId);
+            picks.push({
+              requestId,
+              patientName: String(row.patientName || "").trim(),
+              tooth: String(row.tooth || row.toothWorksSummary || "").trim(),
+            });
+            if (picks.length >= 40) break;
+          }
+          return picks;
+        })()}
         onOpenRequestId={(requestId) =>
           openTransferWorkStatusById(requestId, "chat")
         }

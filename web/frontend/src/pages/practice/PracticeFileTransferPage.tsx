@@ -10439,16 +10439,29 @@ export const PracticeFileTransferPage = ({
           }
           onDeleteMessage={(messageId) => void deleteMessage(messageId)}
           composerPlaceholder="문의 내용을 입력하세요"
-          requestPicks={recentRequests
-            .map((row) => ({
-              requestId: String(row.transferId || "").trim(),
-              patientName: String(row.patientName || "").trim(),
-              tooth: Array.isArray(row.toothNumbers)
-                ? row.toothNumbers.filter(Boolean).join(",")
-                : "",
-            }))
-            .filter((row) => row.requestId && row.requestId !== "-")
-            .slice(0, 40)}
+          requestPicks={(() => {
+            // /my 가상 row는 파일마다 복제 — transferId 기준 1건만
+            const seen = new Set<string>();
+            const picks: Array<{
+              requestId: string;
+              patientName: string;
+              tooth: string;
+            }> = [];
+            for (const row of recentRequests) {
+              const requestId = String(row.transferId || "").trim();
+              if (!requestId || requestId === "-" || seen.has(requestId)) continue;
+              seen.add(requestId);
+              picks.push({
+                requestId,
+                patientName: String(row.patientName || "").trim(),
+                tooth: Array.isArray(row.toothNumbers)
+                  ? row.toothNumbers.filter(Boolean).join(",")
+                  : "",
+              });
+              if (picks.length >= 40) break;
+            }
+            return picks;
+          })()}
           onOpenRequestId={(requestId) => openTransferWorkStatusById(requestId)}
           inputDisabled={chatLoading || chatMessagesLoading || chatSending || !activeChatRoom?._id}
           sendDisabled={chatSending}

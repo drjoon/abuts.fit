@@ -7,6 +7,7 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferMobileOralPhotoIntake.tsx
 // - web/frontend/src/features/chat/components/NewChatWidget.tsx
 // change-log:
+// - 2026-09-12: 의뢰건 선택 목록 requestId 중복 제거(/my 파일별 가상 row).
 // - 2026-09-12: 의뢰건 불러오기 트리거 # → $ (입력·DollarSign 버튼). placeholder 안내 문구 제거.
 // - 2026-09-11: toolbarExtra — $ 옆 메모·평가 아이콘 슬롯.
 // - 2026-09-07: 의뢰건 불러오기 트리거 $ → # 통일(입력·placeholder·Hash 버튼).
@@ -156,13 +157,24 @@ export const ChatComposer = (props: Props) => {
   const filteredPicks = useMemo(() => {
     const list = Array.isArray(requestPicks) ? requestPicks : [];
     const q = String(mention?.query || "").trim().toLowerCase();
-    if (!q) return list;
-    return list.filter((r) => {
-      const id = String(r.requestId || "").toLowerCase();
-      const patient = String(r.patientName || "").toLowerCase();
-      const tooth = String(r.tooth || "").toLowerCase();
-      return id.includes(q) || patient.includes(q) || tooth.includes(q);
-    });
+    const matched = !q
+      ? list
+      : list.filter((r) => {
+          const id = String(r.requestId || "").toLowerCase();
+          const patient = String(r.patientName || "").toLowerCase();
+          const tooth = String(r.tooth || "").toLowerCase();
+          return id.includes(q) || patient.includes(q) || tooth.includes(q);
+        });
+    // transferId 기준 중복 제거 — practice /my 가상 row는 파일마다 복제될 수 있음
+    const seen = new Set<string>();
+    const unique: RequestPickItem[] = [];
+    for (const row of matched) {
+      const id = String(row.requestId || "").trim();
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      unique.push(row);
+    }
+    return unique;
   }, [requestPicks, mention?.query]);
 
   const onRequestPicksNeededRef = useRef(onRequestPicksNeeded);
