@@ -1,3 +1,4 @@
+// - 2026-09-12: 리메이크를 가격 카드(배송비 아래)로 이동. 치과로부터=무료, 어벗츠로=1만원.
 // - 2026-09-09: 리메이크 월 3건 무료 → 건당 10,000원 안내.
 // - 2026-09-03: 기공소 정책 — 단가 라벨·안내 문장 단축. 출고 리드타임(직경) 섹션 제거.
 // - 2026-09-03: 기공소 정책 안내 부제(기공의뢰수신·어벗생산의뢰…) 제거.
@@ -207,7 +208,7 @@ export const PricingPolicyDialog = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className='flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl sm:rounded-2xl'>
+      <DialogContent className='flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-[34rem] sm:rounded-2xl'>
         <DialogHeader className='shrink-0 border-b border-slate-100 px-6 pb-4 pt-6'>
           <DialogTitle className='text-xl font-semibold tracking-tight text-slate-900'>
             {title}
@@ -292,8 +293,8 @@ export const PricingPolicyDialog = ({
                   <PriceRow
                     label={
                       isLab
-                        ? '어벗 생산'
-                        : '어벗츠에 · 어벗 생산'
+                        ? '커스텀 어벗 생산'
+                        : '어벗츠에 · 커스텀 어벗 생산'
                     }
                     value={formatAbutsManwon(productionPrice)}
                     unitLabel='1개당'
@@ -310,27 +311,31 @@ export const PricingPolicyDialog = ({
                     value={formatAbutsAbutmentServiceWon(shippingFee)}
                     unitLabel='1박스당'
                   />
+                  <div className='h-px bg-slate-100' />
+                  <div className='space-y-1.5'>
+                    <div className='text-sm text-slate-600'>리메이크</div>
+                    <div className='flex items-baseline justify-between gap-3'>
+                      <div className='min-w-0 text-xs text-slate-500'>
+                        치과로부터 의뢰
+                      </div>
+                      <div className='shrink-0 text-base font-semibold tracking-tight tabular-nums text-slate-900'>
+                        무료
+                      </div>
+                    </div>
+                    <div className='flex items-baseline justify-between gap-3'>
+                      <div className='min-w-0 text-xs text-slate-500'>
+                        어벗츠로 의뢰
+                      </div>
+                      <div className='shrink-0 text-base font-semibold tracking-tight tabular-nums text-slate-900'>
+                        10,000원
+                      </div>
+                    </div>
+                    <p className='text-xs leading-relaxed text-slate-500'>
+                      동일 치과·환자·치식, 최근 90일 조건 충족시 적용
+                    </p>
+                  </div>
                 </div>
               </section>
-
-              <p className='text-xs leading-relaxed text-slate-500 px-1'>
-                기공소→어벗츠 생산비는 위 생산 단가입니다.
-              </p>
-
-              <div className='grid gap-3 sm:grid-cols-2'>
-                <PolicySection title='의뢰 취소'>
-                  <p>
-                    <span className='font-semibold text-slate-900'>
-                      준비 단계
-                    </span>
-                    에서만 취소 가능하며, 가공 단계부터는 취소할 수 없습니다.
-                  </p>
-                </PolicySection>
-                <PolicySection title='리메이크'>
-                  <p>건당 10,000원.</p>
-                  <p>동일 치과·환자·치식, 최근 90일 조건 충족 건에 한함.</p>
-                </PolicySection>
-              </div>
 
               <PolicySection title='출고 방식'>
                 <div className='space-y-2.5'>
