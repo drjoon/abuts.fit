@@ -6,6 +6,7 @@ import {
   compactPracticeArrivalDatesToSingleFuture,
   defaultAbutmentShipYmdFromArrival,
   PRACTICE_ABUTMENT_SHIP_BEFORE_ARRIVAL_CIVIL_DAYS,
+  PRACTICE_ABUTMENT_SHIP_MIN_BEFORE_ARRIVAL_CIVIL_DAYS,
   PRACTICE_ARRIVAL_SHADE_EXTEND_CIVIL_DAYS,
   resolveEffectiveAbutmentShipYmd,
   resolvePracticeArrivalDates,
@@ -22,6 +23,7 @@ describe("practiceTransferArrivalDates", () => {
 
   it("defaults abutment ship to arrival − 3 civil days", () => {
     expect(PRACTICE_ABUTMENT_SHIP_BEFORE_ARRIVAL_CIVIL_DAYS).toBe(3);
+    expect(PRACTICE_ABUTMENT_SHIP_MIN_BEFORE_ARRIVAL_CIVIL_DAYS).toBe(2);
     expect(defaultAbutmentShipYmdFromArrival("2026-08-20")).toBe("2026-08-17");
     expect(
       resolveEffectiveAbutmentShipYmd({

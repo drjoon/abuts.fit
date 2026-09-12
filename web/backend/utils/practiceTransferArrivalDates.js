@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-12: 어벗 출고일 최소=치과도착일 − 2달력일. 기본은 −3.
 // - 2026-09-12: 어벗 출고일 기본=치과도착일 − 3달력일. 기공소 설정값(production.abutmentShipYmd) 우선.
 // - 2026-08-27: 재도착 시 주문일도 오늘(KST) 누적(orderDates) — 주문일/도착일 캘린더 모두 확인.
 // - 2026-08-27: 재도착일 — 오늘(KST) 이후는 하나만. 다시 고르면 교체(과거·오늘 이력만 캘린더 유지).
@@ -24,6 +25,9 @@ export const PRACTICE_ARRIVAL_SHADE_EXTEND_CIVIL_DAYS = 7;
 
 /** 어벗 출고 기본 = 치과도착일 − N달력일. 기공소가 production.abutmentShipYmd로 덮어씀. */
 export const PRACTICE_ABUTMENT_SHIP_BEFORE_ARRIVAL_CIVIL_DAYS = 3;
+
+/** 어벗 출고 = 치과도착일 − n일에서 n 최소(달력일). */
+export const PRACTICE_ABUTMENT_SHIP_MIN_BEFORE_ARRIVAL_CIVIL_DAYS = 2;
 
 /**
  * @param {string|null|undefined} arrivalYmd

@@ -3,12 +3,14 @@
 // - web/frontend/src/shared/practice/practiceAbutmentShipYmd.ts
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // change-log:
+// - 2026-09-12: −n일 클릭 즉시 저장. 닫기·적용 제거.
+// - 2026-09-12: 팝오버 안내·출고/도착 2줄 표기(가독성).
+// - 2026-09-12: 달력 → 치과도착−n일 선택(최소 2·낮 12시 신속/묶음 상한).
 // - 2026-09-12: 기공소 어벗 출고일 설정 팝오버(기본 도착−3달력일).
 
-import { useEffect, useState, type MouseEvent } from "react";
+import { useState, type MouseEvent } from "react";
 import { CalendarClock } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   Popover,
   PopoverContent,
@@ -19,9 +21,16 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { formatKstYmdToKo } from "@/shared/date/kst";
 import {
-  defaultAbutmentShipYmdFromArrival,
+  PRACTICE_ABUTMENT_SHIP_BEFORE_ARRIVAL_CIVIL_DAYS,
+  abutmentShipYmdFromArrivalMinusN,
+  clampAbutmentShipN,
   formatAbutmentShipButtonLabel,
+  getAbutmentShipNPickerHintLines,
+  getAbutmentShipNPickerTooltip,
+  resolveAbutmentShipBeforeArrivalN,
+  resolveAbutmentShipNRange,
   resolveEffectiveAbutmentShipYmd,
   resolvePracticeTransferArrivalYmd,
 } from "@/shared/practice/practiceAbutmentShipYmd";
@@ -35,45 +44,61 @@ export type PracticeAbutmentShipDateButtonProps = {
   };
   busy?: boolean;
   disabled?: boolean;
+  /** 묶음 출고 주간 요일(있으면 12시 이후 max n에 반영) */
+  weeklyBatchDays?: unknown;
   onSave?: (shipYmd: string) => void | Promise<void>;
   className?: string;
 };
 
 /**
- * 어벗 STL 업로드 옆 — 출고일 설정(기본: 치과도착일 − 3달력일).
+ * 어벗 STL 업로드 옆 — 출고일 = 치과도착일 − n일. n 클릭 시 즉시 저장.
  */
 export function PracticeAbutmentShipDateButton({
   transfer,
   busy = false,
   disabled = false,
+  weeklyBatchDays,
   onSave,
   className,
 }: PracticeAbutmentShipDateButtonProps) {
   const [open, setOpen] = useState(false);
   const arrivalYmd = resolvePracticeTransferArrivalYmd(transfer);
   const effectiveShipYmd = resolveEffectiveAbutmentShipYmd(transfer);
-  const defaultShipYmd =
-    defaultAbutmentShipYmdFromArrival(arrivalYmd) || effectiveShipYmd || "";
-  const [draft, setDraft] = useState(effectiveShipYmd || defaultShipYmd);
+  const range = resolveAbutmentShipNRange({
+    arrivalYmd,
+    weeklyBatchDays,
+  });
 
-  useEffect(() => {
-    if (!open) return;
-    setDraft(effectiveShipYmd || defaultShipYmd);
-  }, [open, effectiveShipYmd, defaultShipYmd]);
+  const currentN =
+    clampAbutmentShipN(
+      resolveAbutmentShipBeforeArrivalN({
+        shipYmd: effectiveShipYmd,
+        arrivalYmd,
+      }) ?? PRACTICE_ABUTMENT_SHIP_BEFORE_ARRIVAL_CIVIL_DAYS,
+      range,
+    ) ?? PRACTICE_ABUTMENT_SHIP_BEFORE_ARRIVAL_CIVIL_DAYS;
 
-  const maxYmd = arrivalYmd || undefined;
-  const canApply =
-    /^\d{4}-\d{2}-\d{2}$/.test(draft) &&
-    (!maxYmd || draft <= maxYmd) &&
-    Boolean(onSave);
-
-  const handleApply = (event: MouseEvent) => {
+  const handleSelectN = (event: MouseEvent, n: number) => {
     event.stopPropagation();
-    if (!canApply || busy || !onSave) return;
-    void Promise.resolve(onSave(draft)).then(() => setOpen(false));
+    if (busy || disabled || !onSave || !range.selectable) return;
+    const shipYmd = abutmentShipYmdFromArrivalMinusN(arrivalYmd, n);
+    if (!shipYmd) return;
+    if (shipYmd === effectiveShipYmd) {
+      setOpen(false);
+      return;
+    }
+    void Promise.resolve(onSave(shipYmd)).then(() => setOpen(false));
   };
 
   const buttonLabel = formatAbutmentShipButtonLabel(effectiveShipYmd);
+  const hintLines = getAbutmentShipNPickerHintLines({ mode: range.mode });
+  const tooltip = getAbutmentShipNPickerTooltip({ mode: range.mode });
+  const nOptions = range.selectable
+    ? Array.from(
+        { length: range.maxN - range.minN + 1 },
+        (_, i) => range.minN + i,
+      )
+    : [];
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -96,51 +121,69 @@ export function PracticeAbutmentShipDateButton({
             </Button>
           </PopoverTrigger>
         </TooltipTrigger>
-        <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
-          기본은 치과도착일 3일 전 출고입니다. 기공소에서 변경할 수 있습니다.
+        <TooltipContent
+          side="top"
+          className="max-w-xs whitespace-pre-line text-xs leading-relaxed"
+        >
+          {tooltip}
         </TooltipContent>
       </Tooltip>
       <PopoverContent
         align="end"
-        className="w-64 space-y-2 p-3"
+        className="w-56 space-y-2.5 p-3"
         onOpenAutoFocus={(e) => e.preventDefault()}
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="text-[11px] leading-relaxed text-muted-foreground">
-          기본: 치과도착일
-          {arrivalYmd ? `(${arrivalYmd})` : ""} − 3일
-          {defaultShipYmd ? ` → ${defaultShipYmd}` : ""}.
+        <div className="space-y-0.5 text-[11px] leading-snug text-muted-foreground">
+          {hintLines.map((line) => (
+            <div key={line}>{line}</div>
+          ))}
         </div>
-        <Input
-          type="date"
-          value={draft}
-          max={maxYmd}
-          onChange={(e) => setDraft(e.target.value)}
-          className="h-9"
-        />
-        <div className="flex justify-end gap-1.5">
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            className="h-8 text-xs"
-            onClick={(event) => {
-              event.stopPropagation();
-              setOpen(false);
-            }}
-          >
-            닫기
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            className="h-8 text-xs"
-            disabled={!canApply || busy}
-            onClick={handleApply}
-          >
-            {busy ? "저장 중..." : "적용"}
-          </Button>
-        </div>
+        {range.selectable ? (
+          <>
+            <div className="flex flex-wrap gap-1.5">
+              {nOptions.map((n) => {
+                const selected = currentN === n;
+                return (
+                  <Button
+                    key={n}
+                    type="button"
+                    size="sm"
+                    variant={selected ? "default" : "outline"}
+                    disabled={busy}
+                    className="h-8 min-w-9 px-2 text-xs"
+                    onClick={(event) => handleSelectN(event, n)}
+                  >
+                    −{n}일
+                  </Button>
+                );
+              })}
+            </div>
+            <div className="space-y-0.5 text-[11px] leading-snug text-muted-foreground">
+              <div>
+                출고{" "}
+                <span className="font-medium text-foreground">
+                  {effectiveShipYmd
+                    ? formatKstYmdToKo(effectiveShipYmd)
+                    : "—"}
+                </span>
+              </div>
+              {arrivalYmd ? (
+                <div>
+                  도착{" "}
+                  <span className="font-medium text-foreground">
+                    {formatKstYmdToKo(arrivalYmd)}
+                  </span>
+                </div>
+              ) : null}
+            </div>
+          </>
+        ) : (
+          <div className="space-y-0.5 text-[11px] leading-snug text-amber-800 dark:text-amber-200">
+            <div>선택 가능한 n이 없습니다.</div>
+            <div>치과도착일을 확인해 주세요.</div>
+          </div>
+        )}
       </PopoverContent>
     </Popover>
   );
