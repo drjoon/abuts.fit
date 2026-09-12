@@ -208,6 +208,7 @@ import { completePracticeTransferWork } from "../../services/practiceTransferCom
 // - web/backend/utils/practiceTransferAbutmentPresets.js
 // - web/backend/utils/practiceLabRating.js
 // - web/backend/utils/practiceTransferStage.js
+// - 2026-09-12: GET /received 캘린더도 abutmentPastReadyTeeth enrich(리프레시 후 준비 취소선 오표시 방지).
 // - 2026-09-12: abutment-ship-ymd — pastReady 객체 truthy 버그(항상 409) 수정. 도착−n(최소 2·기본 3).
 // - 2026-09-12: abutment-ship-ymd — 도착−n(최소 2달력일). 기본 −3. CA 스케줄은 응답 후.
 // - 2026-09-12: abutment-ship-ymd — 기공소 어벗 출고일 설정(기본 도착−3달력일). 연동 CA 스케줄은 응답 후.
@@ -6573,7 +6574,8 @@ export async function getReceivedPracticeTransfers(req, res) {
       );
     }
 
-    // 캘린더: 배송·과거가공·별점 enrich 생략. 기공비는 상세에 필요해 유지.
+    // 캘린더: 배송·별점 enrich 생략. pastReady(치아별 가공)는 취소선/리메이크 UI SSOT라 유지.
+    // 기공비는 상세에 필요해 유지.
     const quotesById = await buildFeeQuotesForTransferDocs({
       docs,
       viewingLabAnchorId: labAnchorId,
@@ -6593,9 +6595,7 @@ export async function getReceivedPracticeTransfers(req, res) {
       !calendarRange && labAnchorId && Types.ObjectId.isValid(labAnchorId)
         ? loadGlobalLabRatingAggregates({ labAnchorIds: [labAnchorId] })
         : Promise.resolve(new Map()),
-      calendarRange
-        ? Promise.resolve(new Map())
-        : mapAbutmentPastReadyByTransferDocs(docs),
+      mapAbutmentPastReadyByTransferDocs(docs),
       calendarRange
         ? Promise.resolve(new Map())
         : mapAbutmentDeliveryByTransferDocs(docs),
@@ -6675,6 +6675,7 @@ export async function getReceivedPracticeTransfers(req, res) {
       const orderDate =
         resolveCurrentOrderYmd(orderDates) ||
         parseOrderYmdFromMemo(doc?.transferMemo);
+      const pastReadyInfo = abutmentPastReadyById.get(String(doc?._id || ""));
 
       return {
         _id: String(doc?._id || ""),
@@ -6707,14 +6708,15 @@ export async function getReceivedPracticeTransfers(req, res) {
         labRequestStagePlans: normalizeLabRequestStagePlans(
           doc?.labRequestStagePlans,
         ),
-        production: toProductionApiFields(production, {
-          abutmentPastReady: Boolean(
-            abutmentPastReadyById.get(String(doc?._id || ""))?.pastReady,
-          ),
-          abutmentPastReadyTeeth:
-            abutmentPastReadyById.get(String(doc?._id || ""))?.pastReadyTeeth ||
-            [],
-        }),
+        production: toProductionApiFields(
+          production,
+          pastReadyInfo
+            ? {
+                abutmentPastReady: Boolean(pastReadyInfo.pastReady),
+                abutmentPastReadyTeeth: pastReadyInfo.pastReadyTeeth || [],
+              }
+            : {},
+        ),
         abutmentDeliveryInfo,
         practice: practiceIdentity,
         practiceBusinessAnchorId: practiceAnchorIdForSurcharge,

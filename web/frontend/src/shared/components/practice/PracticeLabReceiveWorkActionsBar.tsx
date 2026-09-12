@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/practice/practiceTransferLabReceive.ts
 // change-log:
+// - 2026-09-12: 미업로드 잔여 시 pastReady=(전체리메이크) 대신 mixed(치아 리메이크만).
 // - 2026-09-12: 가공 치아 호박색·리메이크 클릭 · (전체리메이크). pastReadyTeeth 연동.
 // - 2026-09-12: 출고 임박 배너 제거(화면 공간). 출고일은 도착−n 선택 UI.
 // - 2026-09-12: 어벗 출고일 설정 버튼(STL 업로드 옆).
@@ -139,12 +140,13 @@ export function PracticeLabReceiveWorkActionsBar({
     (state.showAbutmentProductionCancel ||
       state.abutmentCancelBlockedPastReady) &&
     !state.needsMoreAbutmentDesigns;
-  // ready=전부 준비 취소 / past_ready=전부 가공 리메이크 / mixed=치아별
+  // ready=전부 준비 취소 / past_ready=전부 업로드·가공 리메이크 / mixed=치아별(잔여 업로드·준비 혼재)
   const abutsCancelAffinity: LabPendingAbutsCancelAffinity | null =
-    state.abutmentAllUploadedPastReady
+    state.abutmentAllUploadedPastReady && !state.needsMoreAbutmentDesigns
       ? "past_ready"
       : state.abutmentCancelBlockedPastReady &&
-          state.showAbutmentProductionCancel
+          (state.showAbutmentProductionCancel ||
+            state.needsMoreAbutmentDesigns)
         ? "mixed"
         : state.abutmentCancelBlockedPastReady
           ? "past_ready"

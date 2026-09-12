@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
 // - 2026-09-12: 가공 진입 — abutmentPastReadyTeeth + 기공소 practice:transfer-updated(abutment-production-started).
+// - 2026-09-12: GET /received 캘린더 목록도 pastReadyTeeth enrich(리프레시 후 준비 취소선 오표시 방지).
 // - 2026-09-12: PTX CA 출고 목표 — 기공소 abutmentShipYmd 또는 치과도착일−3달력일(직납 −2영업일 폴백 폐기).
 // - 2026-09-12: CA 생성 — partnerBilling 잔존·병렬 레이스 중복을 치아당 1건으로 정리(어벗츠 생산중 잔존 방지).
 // - 2026-09-11: 작업취소 pastReady — sticky+링크없음/전부취소는 fail-closed(환불 차단). 준비 복귀만 sticky heal.

@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/components/practice/LabReceiveWorkUploadDialog.tsx
 // change-log:
+// - 2026-09-12: 다치아 — 일부만 가공(pastReady)이어도 남은 STL 업로드 CTA 유지.
 // - 2026-09-12: pastReadyTeeth — 치아별 가공 표시·리메이크. 준비 치아는 취소 유지.
 // - 2026-09-12: designFileCount — files[]가 있으면 length SSOT(낙관 count 과다 시 업로드 막힘 방지).
 // - 2026-09-12: 비어벗 작업취소 — 도착일(포함) 이후 CTA 숨김(showWorkCancel).
@@ -1063,8 +1064,8 @@ export function resolvePracticeLabReceiveWorkActionState(
       resultCount === 0 &&
       !transfer.production?.confirmedAt &&
       !transfer.autoMatch?.completed) ||
-    // 다치아: 일부만 올려도(표시 상태는 작업완료/어벗) 남은 STL 업로드·드롭존 유지
-    (isLabAccepted && !productionStarted && needsMoreAbutmentDesigns);
+    // 다치아: 일부만 올려도(형제 치아 가공 중이어도) 남은 STL 업로드·드롭존 유지
+    (isLabAccepted && needsMoreAbutmentDesigns);
   // 보철 업로드 폐지 — CA 어벗만. 카드 드롭과 같이 수락 후에만 활성.
   const designStlUploadMode: PracticeLabReceiveDesignStlUploadMode =
     needsAbutmentDesigns && showWorkActions ? "abutment" : "none";
