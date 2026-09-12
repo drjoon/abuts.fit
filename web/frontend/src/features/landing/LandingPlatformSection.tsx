@@ -25,7 +25,6 @@ import {
   landingIdentity,
   landingPipeline,
   landingTheme,
-  whyAbutsPoints,
 } from "./landingTheme";
 
 const FEATURE_ICONS = [Layers, Clock8, Shield, Receipt] as const;
@@ -123,71 +122,38 @@ export const LandingPlatformSection = ({
           ))}
         </div>
 
-        <div
-          className={`grid gap-5 lg:grid-cols-2 ${
-            inView ? "" : "opacity-0"
+        <Card
+          id="support"
+          className={`${landingTheme.statCard} transition-all duration-700 ${
+            inView ? "translate-y-0 opacity-100" : "translate-y-6 opacity-0"
           }`}
+          style={{ transitionDelay: "360ms" }}
         >
-          <Card
-            id="support"
-            className={`${landingTheme.statCard} transition-all duration-700 ${
-              inView ? "translate-y-0 opacity-100" : "translate-y-6 opacity-0"
-            }`}
-            style={{ transitionDelay: "360ms" }}
-          >
-            <CardHeader className="space-y-2">
-              <CardTitle className="text-xl">운영팀과 바로 연결</CardTitle>
-              <CardDescription className="text-slate-600">
-                가입 이전에도 궁금한 내용을 남기면 담당자가 메일로
-                답변드립니다.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <Button
-                  className="h-11 flex-1 rounded-full bg-slate-900 text-white hover:bg-slate-800"
-                  onClick={() => navigate("/login")}
-                >
-                  Demo 계정으로 보기
-                </Button>
-                <Button
-                  className="h-11 flex-1 rounded-full bg-slate-200 font-semibold text-slate-900 hover:bg-slate-100"
-                  onClick={onContact}
-                >
-                  문의 남기기
-                  <Send className="ml-2 h-4 w-4" />
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card
-            className={`border-white/15 bg-gradient-to-br from-slate-900 via-slate-900/90 to-slate-900/80 text-white shadow-[0_30px_70px_rgba(1,2,10,0.5)] backdrop-blur-2xl transition-all duration-700 ${
-              inView ? "translate-y-0 opacity-100" : "translate-y-6 opacity-0"
-            }`}
-            style={{ transitionDelay: "420ms" }}
-          >
-            <CardHeader>
-              <CardTitle className="text-xl">30초 피치</CardTitle>
-              <CardDescription className="text-white/70">
-                영업·소개에 바로 쓸 수 있는 한 문단입니다.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <p className="text-sm leading-relaxed text-white/85">
-                {landingIdentity.pitch30s}
-              </p>
-              <ul className="space-y-3">
-                {whyAbutsPoints.map((point) => (
-                  <li key={point} className="flex items-start gap-3">
-                    <div className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary/70" />
-                    <p className="text-sm text-white/80">{point}</p>
-                  </li>
-                ))}
-              </ul>
-            </CardContent>
-          </Card>
-        </div>
+          <CardHeader className="space-y-2">
+            <CardTitle className="text-xl">운영팀과 바로 연결</CardTitle>
+            <CardDescription className="text-slate-600">
+              가입 이전에도 궁금한 내용을 남기면 담당자가 메일로
+              답변드립니다.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <Button
+                className="h-11 flex-1 rounded-full bg-slate-900 text-white hover:bg-slate-800"
+                onClick={() => navigate("/login")}
+              >
+                Demo 계정으로 보기
+              </Button>
+              <Button
+                className="h-11 flex-1 rounded-full bg-slate-200 font-semibold text-slate-900 hover:bg-slate-100"
+                onClick={onContact}
+              >
+                문의 남기기
+                <Send className="ml-2 h-4 w-4" />
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </section>
   );

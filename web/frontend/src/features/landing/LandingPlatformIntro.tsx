@@ -2,7 +2,9 @@
 // - web/frontend/src/pages/public/Index.tsx
 // - web/frontend/src/pages/public/components/PublicPageLayout.tsx
 // - web/frontend/src/features/landing/landingTheme.ts
+// - web/frontend/src/shared/sales/platformPitchBlocks.tsx
 import { ArrowRight, ChevronRight } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -13,11 +15,15 @@ import {
 } from "@/components/ui/card";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
+import { apiFetch } from "@/shared/api/apiClient";
 import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath";
+import {
+  PlatformPitchStatGrid,
+  type PlatformPitchStats,
+} from "@/shared/sales/platformPitchBlocks";
 import { LANDING_CAD_PREVIEW } from "./landingAssets";
 import {
   landingIdentity,
-  landingStats,
   landingTheme,
   workflowSteps,
 } from "./landingTheme";
@@ -27,6 +33,26 @@ export const LandingPlatformIntro = () => {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const user = useAuthStore((s) => s.user);
   const entryPath = resolveEntryDashboardPath(user);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["public-platform-pitch"],
+    staleTime: 60_000,
+    queryFn: async () => {
+      const res = await apiFetch<{
+        success?: boolean;
+        data?: PlatformPitchStats;
+        message?: string;
+      }>({
+        path: "/api/system/platform-pitch",
+        method: "GET",
+      });
+      if (!res.ok || !res.data?.success) {
+        throw new Error(res.data?.message || "플랫폼 소개 통계 조회에 실패했습니다.");
+      }
+      return res.data.data || {};
+    },
+    retry: false,
+  });
 
   return (
     <section id="platform" className="relative">
@@ -114,23 +140,9 @@ export const LandingPlatformIntro = () => {
                 {landingIdentity.vision}
               </CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-3">
-                {landingStats.map((stat) => (
-                  <div
-                    key={stat.label}
-                    className="rounded-xl border border-slate-200/60 bg-white/80 p-3 text-center"
-                  >
-                    <p className="text-xl font-semibold text-slate-900 md:text-2xl">
-                      {stat.value}
-                    </p>
-                    <p className="mt-1 text-[10px] uppercase tracking-[0.25em] text-slate-500">
-                      {stat.label}
-                    </p>
-                  </div>
-                ))}
-              </div>
-              <p className="mt-4 text-xs leading-relaxed text-slate-500">
+            <CardContent className="space-y-4">
+              <PlatformPitchStatGrid stats={data} isLoading={isLoading} />
+              <p className="text-xs leading-relaxed text-slate-500">
                 {landingIdentity.manufacturerNote}
               </p>
             </CardContent>

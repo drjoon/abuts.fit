@@ -52,12 +52,6 @@ export const workflowSteps = [
   "계산서",
 ] as const;
 
-export const landingStats = [
-  { label: "월간 케이스", value: "1,500+" },
-  { label: "평균 처리 시간", value: "24h 이내" },
-  { label: "동기화 성공률", value: "98.7%" },
-] as const;
-
 export const landingFeatures = [
   {
     title: "한 플랫폼에서 끝",
