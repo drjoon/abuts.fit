@@ -61,9 +61,11 @@ type ChatRemakePromptDialogProps = {
   actor?: "practice" | "lab";
   /**
    * abutment_remake: 가공 후 STL 취소 불가 → 선택 치아만 새 리메이크 의뢰.
-   * 기본 선택은 비움(전부 선택 실수 방지).
+   * 기본 선택은 비움(전부 선택 실수 방지). initialSelectedTeeth가 있으면 해당 CA 사전선택.
    */
   intent?: "chat_record" | "abutment_remake";
+  /** abutment_remake — 치아번호로 CA 옵션 사전선택(예: 가공 치아 클릭) */
+  initialSelectedTeeth?: string[] | null;
   onResolve: (result: ChatRemakePromptResult) => void | Promise<void>;
   onCancel: () => void;
 };
@@ -79,6 +81,7 @@ export function ChatRemakePromptDialog({
   variant = "from_3d",
   actor = "practice",
   intent = "chat_record",
+  initialSelectedTeeth = null,
   onResolve,
   onCancel,
 }: ChatRemakePromptDialogProps) {
@@ -102,15 +105,38 @@ export function ChatRemakePromptDialog({
     [partOptions],
   );
 
+  const initialToothSet = useMemo(() => {
+    const set = new Set<string>();
+    if (!Array.isArray(initialSelectedTeeth)) return set;
+    for (const raw of initialSelectedTeeth) {
+      const tooth = String(raw || "").trim();
+      if (tooth) set.add(tooth);
+    }
+    return set;
+  }, [initialSelectedTeeth]);
+
   useEffect(() => {
     if (!open) return;
     setStep(initialStep);
     setArrivalYmd(todayYmd);
     setArrivalOpen(false);
     // abutment_remake: 전부 선택 실수 방지(예: 14 제외·15-17만).
+    // initialSelectedTeeth가 있으면 해당 CA만 사전선택.
     // chat_record: 보철 전부 선택, CA는 미선택 (기존 정책).
     if (isAbutmentRemake) {
-      setSelectedKeys(new Set());
+      if (initialToothSet.size > 0) {
+        setSelectedKeys(
+          new Set(
+            partOptions
+              .filter(
+                (o) => o.kind === "ca" && initialToothSet.has(o.toothNumber),
+              )
+              .map((o) => o.key),
+          ),
+        );
+      } else {
+        setSelectedKeys(new Set());
+      }
     } else {
       setSelectedKeys(
         new Set(
@@ -118,7 +144,14 @@ export function ChatRemakePromptDialog({
         ),
       );
     }
-  }, [open, initialStep, todayYmd, partOptions, isAbutmentRemake]);
+  }, [
+    open,
+    initialStep,
+    todayYmd,
+    partOptions,
+    isAbutmentRemake,
+    initialToothSet,
+  ]);
 
   const selectedToothWorks = useMemo(() => {
     const rows = Array.isArray(toothWorks) ? toothWorks : [];

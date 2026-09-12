@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/components/practice/LabReceiveWorkUploadDialog.tsx
 // change-log:
+// - 2026-09-12: pastReadyTeeth — 치아별 가공 표시·리메이크. 준비 치아는 취소 유지.
 // - 2026-09-12: designFileCount — files[]가 있으면 length SSOT(낙관 count 과다 시 업로드 막힘 방지).
 // - 2026-09-12: 비어벗 작업취소 — 도착일(포함) 이후 CTA 숨김(showWorkCancel).
 // - 2026-09-11: pastReady 작업취소 차단 — 디자인 미러가 비어도 sticky/pastReady면 유지.
@@ -157,6 +158,8 @@ export type PracticeTransferLabReceiveItem = {
     abutmentShipYmd?: string | null;
     /** 연동 CA가 준비 단계를 지남(가공 등) — 생산/수락 취소 불가 */
     abutmentPastReady?: boolean;
+    /** 가공(준비 이후)에 들어간 치아번호 — 기공소 치아별 표시·리메이크 */
+    abutmentPastReadyTeeth?: string[];
     confirmedAt?: string | null;
     relatedRequestIds?: string[];
   } | null;
@@ -524,6 +527,7 @@ export function practiceTransferAbutmentMachiningStarted(
         production?: {
           abutmentProductionStartedAt?: string | null;
           abutmentPastReady?: boolean | null;
+          abutmentPastReadyTeeth?: string[] | null;
         } | null;
       }
     | null
@@ -536,7 +540,30 @@ export function practiceTransferAbutmentMachiningStarted(
   ) {
     return Boolean(transfer.production.abutmentPastReady);
   }
+  if (
+    Array.isArray(transfer?.production?.abutmentPastReadyTeeth) &&
+    transfer.production.abutmentPastReadyTeeth.length > 0
+  ) {
+    return true;
+  }
   return Boolean(transfer?.production?.abutmentProductionStartedAt);
+}
+
+/** 제조 가공(준비 이후)에 들어간 치아번호 집합 */
+export function listPracticeTransferPastReadyAbutmentTeeth(
+  transfer: PracticeTransferLabReceiveItem | null | undefined,
+): string[] {
+  const raw = transfer?.production?.abutmentPastReadyTeeth;
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const item of raw) {
+    const tooth = String(item || "").trim();
+    if (!tooth || seen.has(tooth)) continue;
+    seen.add(tooth);
+    out.push(tooth);
+  }
+  return out;
 }
 
 /** 도착일 도래(당일 포함). 비어벗 작업취소 차단용. */
@@ -933,6 +960,10 @@ export type PracticeLabReceiveWorkActionState = {
    * 리메이크로 선택 치아만 재제작하도록 안내.
    */
   abutmentCancelBlockedPastReady: boolean;
+  /** 업로드된 어벗 치아가 모두 가공(준비 이후) — (전체리메이크) */
+  abutmentAllUploadedPastReady: boolean;
+  /** 가공(준비 이후)에 들어간 치아번호 */
+  pastReadyTeeth: string[];
   /** 비어벗 — 치과도착일(포함) 이후 작업취소 불가 */
   arrivalCancelBlocked: boolean;
   /** 작업시작 취소 CTA(카드 헤더·상세 trailing) */
@@ -967,6 +998,8 @@ export function resolvePracticeLabReceiveWorkActionState(
     showWorkActions: false,
     showAbutmentProductionCancel: false,
     abutmentCancelBlockedPastReady: false,
+    abutmentAllUploadedPastReady: false,
+    pastReadyTeeth: [] as string[],
     arrivalCancelBlocked: false,
     showWorkCancel: false,
     showCompletedStageHeaderCancel: false,
@@ -1042,17 +1075,33 @@ export function resolvePracticeLabReceiveWorkActionState(
     hasAbutsCa &&
     (designFileCount > 0 || needsStageReopen) &&
     hasLinkedAbutmentRequests;
-  // 가공(준비 이후) 들어가면 STL 취소 불가 — 리메이크로 선택 치아 재제작.
+  const pastReadyTeeth = listPracticeTransferPastReadyAbutmentTeeth(transfer);
+  const pastReadyToothSet = new Set(pastReadyTeeth);
+  const uploadedTeeth = [
+    ...listPracticeTransferUploadedAbutmentTeeth(transfer, catalog),
+  ];
+  const uploadedPastReadyCount = uploadedTeeth.filter((t) =>
+    pastReadyToothSet.has(t),
+  ).length;
+  const uploadedReadyCount = uploadedTeeth.filter(
+    (t) => !pastReadyToothSet.has(t),
+  ).length;
+  const hasAnyPastReady =
+    productionStarted || pastReadyTeeth.length > 0;
+  const abutmentAllUploadedPastReady =
+    uploadedTeeth.length > 0 && uploadedReadyCount === 0 && uploadedPastReadyCount > 0;
+  // 준비 치아가 남아 있으면 치아/전체 취소 가능(형제 가공 중이어도).
   const showAbutmentProductionCancel =
-    hasCancelableAbutmentUpload && !productionStarted;
-  // 어벗 CNC 대상 + 가공 시작이면 작업취소/어벗취소 차단(디자인 미러가 비어도 sticky·pastReady 유지)
+    hasCancelableAbutmentUpload && uploadedReadyCount > 0;
+  // 어벗 CNC 대상 + 가공 시작이면 작업취소 차단·리메이크 유도
   const abutmentCancelBlockedPastReady =
     hasAbutsCa &&
-    productionStarted &&
+    hasAnyPastReady &&
     (hasCancelableAbutmentUpload ||
       hasLinkedAbutmentRequests ||
       Boolean(transfer.production?.abutmentProductionStartedAt) ||
-      Boolean(transfer.production?.abutmentPastReady));
+      Boolean(transfer.production?.abutmentPastReady) ||
+      pastReadyTeeth.length > 0);
   const arrivalCancelBlocked = practiceTransferWorkCancelBlockedByArrival(
     enrichedTransfer,
     catalog,
@@ -1089,6 +1138,8 @@ export function resolvePracticeLabReceiveWorkActionState(
     showWorkActions,
     showAbutmentProductionCancel,
     abutmentCancelBlockedPastReady,
+    abutmentAllUploadedPastReady,
+    pastReadyTeeth,
     arrivalCancelBlocked,
     showWorkCancel,
     showCompletedStageHeaderCancel,

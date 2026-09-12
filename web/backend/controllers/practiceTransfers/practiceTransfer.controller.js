@@ -90,7 +90,9 @@ import {
   upsertMemoOrderYmd,
 } from "../../utils/practiceTransferRush.js";
 import {
+  addCivilDaysYmd,
   appendPracticeArrivalDate,
+  PRACTICE_ABUTMENT_SHIP_MIN_BEFORE_ARRIVAL_CIVIL_DAYS,
   PRACTICE_ARRIVAL_SHADE_EXTEND_CIVIL_DAYS,
   revertPracticeArrivalAppend,
   resolveCurrentArrivalYmd,
@@ -206,6 +208,8 @@ import { completePracticeTransferWork } from "../../services/practiceTransferCom
 // - web/backend/utils/practiceTransferAbutmentPresets.js
 // - web/backend/utils/practiceLabRating.js
 // - web/backend/utils/practiceTransferStage.js
+// - 2026-09-12: abutment-ship-ymd — pastReady 객체 truthy 버그(항상 409) 수정. 도착−n(최소 2·기본 3).
+// - 2026-09-12: abutment-ship-ymd — 도착−n(최소 2달력일). 기본 −3. CA 스케줄은 응답 후.
 // - 2026-09-12: abutment-ship-ymd — 기공소 어벗 출고일 설정(기본 도착−3달력일). 연동 CA 스케줄은 응답 후.
 // - 2026-09-11: remake — selectedParts 요약 채팅·기공소 「리메이크 의뢰」문구.
 // - 2026-09-02: cancel-batch — 저널 rollback 후 billing.heldAt/held* 도 초기화(기공소 적립 보류 미러 잔존 방지).
@@ -889,7 +893,7 @@ const extractTransferMemoFromMessage = (message) => {
     .trim();
 };
 
-const toProductionApiFields = (production, { abutmentPastReady } = {}) => {
+const toProductionApiFields = (production, { abutmentPastReady, abutmentPastReadyTeeth } = {}) => {
   const p = production && typeof production === "object" ? production : {};
   const designFiles = normalizeResultFiles(p.designFiles);
   // 목록 등에서 라이브 pastReady를 넘기면 sticky startedAt보다 우선(가공→준비 복귀).
@@ -897,6 +901,11 @@ const toProductionApiFields = (production, { abutmentPastReady } = {}) => {
     abutmentPastReady !== undefined
       ? Boolean(abutmentPastReady)
       : Boolean(p.abutmentProductionStartedAt);
+  const pastReadyTeeth = Array.isArray(abutmentPastReadyTeeth)
+    ? abutmentPastReadyTeeth
+        .map((t) => String(t || "").trim())
+        .filter(Boolean)
+    : [];
   return {
     shippingMode:
       p.shippingMode === "express"
@@ -929,6 +938,8 @@ const toProductionApiFields = (production, { abutmentPastReady } = {}) => {
     })(),
     /** 연동 CA Request가 준비 단계를 지남 → 생산/수락 취소 불가 */
     abutmentPastReady: pastReady,
+    /** 가공(준비 이후)에 들어간 치아번호 — 기공소 치아별 표시·리메이크 */
+    abutmentPastReadyTeeth: pastReadyTeeth,
     confirmedAt: p.confirmedAt || null,
     relatedRequestIds: Array.isArray(p.relatedRequestIds)
       ? p.relatedRequestIds.map((id) => String(id))
@@ -6698,8 +6709,11 @@ export async function getReceivedPracticeTransfers(req, res) {
         ),
         production: toProductionApiFields(production, {
           abutmentPastReady: Boolean(
-            abutmentPastReadyById.get(String(doc?._id || "")),
+            abutmentPastReadyById.get(String(doc?._id || ""))?.pastReady,
           ),
+          abutmentPastReadyTeeth:
+            abutmentPastReadyById.get(String(doc?._id || ""))?.pastReadyTeeth ||
+            [],
         }),
         abutmentDeliveryInfo,
         practice: practiceIdentity,
@@ -7835,14 +7849,23 @@ export async function setPracticeTransferAbutmentShipYmd(req, res) {
 
     const arrivalYmd =
       resolveCurrentArrivalYmd(resolvePracticeArrivalDates(doc)) || null;
-    if (arrivalYmd && shipYmdRaw > arrivalYmd) {
-      return res.status(400).json({
-        success: false,
-        message: "어벗 출고일은 치과도착일 이전이어야 합니다.",
-      });
+    if (arrivalYmd) {
+      const latestAllowedShipYmd = addCivilDaysYmd(
+        arrivalYmd,
+        -PRACTICE_ABUTMENT_SHIP_MIN_BEFORE_ARRIVAL_CIVIL_DAYS,
+      );
+      if (
+        !latestAllowedShipYmd ||
+        shipYmdRaw > latestAllowedShipYmd
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: `어벗 출고일은 치과도착일 ${PRACTICE_ABUTMENT_SHIP_MIN_BEFORE_ARRIVAL_CIVIL_DAYS}일 이전이어야 합니다.`,
+        });
+      }
     }
 
-    const pastReady = await resolveRelatedAbutmentPastReady(doc);
+    const { pastReady } = await resolveRelatedAbutmentPastReady(doc);
     if (pastReady) {
       return res.status(409).json({
         success: false,

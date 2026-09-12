@@ -4,7 +4,9 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/practice/practiceTransferLabReceive.ts
 // change-log:
-// - 2026-09-12: 어벗 출고일 설정 버튼(STL 업로드 옆) · 출고−3일 임박/경과 경고.
+// - 2026-09-12: 가공 치아 호박색·리메이크 클릭 · (전체리메이크). pastReadyTeeth 연동.
+// - 2026-09-12: 출고 임박 배너 제거(화면 공간). 출고일은 도착−n 선택 UI.
+// - 2026-09-12: 어벗 출고일 설정 버튼(STL 업로드 옆).
 // - 2026-09-12: 준비 — 치아 클릭 개별 취소 · (전체취소). 상태 접미 제거.
 // - 2026-09-12: 생산의뢰 완료 줄 — (준비: 취소 가능) 클릭 / (가공: 취소 불가). 중복 CTA 숨김.
 // - 2026-09-12: 가공(pastReady) 「리메이크」CTA 복구(무료 선택 리메이크 · 수가 청구 없음).
@@ -21,7 +23,7 @@
 // - 2026-09-02: 보철/dual 제거. CA 어벗 업로드 + 파일 없는 작업 완료 CTA.
 // - 2026-09-02: 수락 후 24h/48h 어벗 STL 미업로드 경고 배너.
 import type { MouseEvent, ReactNode } from "react";
-import { AlertTriangle, Repeat, Upload, X } from "lucide-react";
+import { Repeat, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -35,20 +37,14 @@ import {
   type LabPendingAbutsCancelAffinity,
 } from "@/shared/components/practice/LabPendingAbutmentGuide";
 import {
-  getAbutmentShipWarnLabel,
-  getAbutmentShipWarnMessage,
-  resolveAbutmentShipWarnLevel,
-  resolveEffectiveAbutmentShipYmd,
-} from "@/shared/practice/practiceAbutmentShipYmd";
-import {
   listPracticeTransferCustomAbutmentToothWorks,
+  listPracticeTransferPastReadyAbutmentTeeth,
   listPracticeTransferUploadedAbutmentTeeth,
   resolvePracticeLabReceiveWorkActionState,
   resolvePracticeTransferAbutmentUploadOverdue,
   type PracticeTransferLabReceiveItem,
 } from "@/shared/practice/practiceTransferLabReceive";
 import type { RoundBarCatalogRow } from "@/shared/practice/roundBarAbutment";
-import { toKstYmd } from "@/shared/date/kst";
 import { cn } from "@/shared/ui/cn";
 
 export type PracticeLabReceiveWorkActionsBarProps = {
@@ -63,8 +59,8 @@ export type PracticeLabReceiveWorkActionsBarProps = {
   onAbutmentProductionCancel?: (event: MouseEvent) => void;
   /** 치아 1개 어벗 생산 취소(준비 단계) */
   onAbutmentToothCancel?: (tooth: string, event: MouseEvent) => void;
-  /** 가공 후 리메이크(선택 치아 재제작) — 취소 대신 */
-  onOpenAbutmentRemake?: (event: MouseEvent) => void;
+  /** 가공 후 리메이크(선택 치아 재제작) — 취소 대신. teeth면 사전선택 */
+  onOpenAbutmentRemake?: (event: MouseEvent, teeth?: string[]) => void;
   /** 어벗 STL 파일창 — 작업 취소 옆 */
   onAbutmentStlUpload?: (event: MouseEvent) => void;
   /** 어벗 출고일 저장(기공소) */
@@ -109,11 +105,6 @@ export function PracticeLabReceiveWorkActionsBar({
     transfer,
     catalog,
   );
-  const effectiveShipYmd = resolveEffectiveAbutmentShipYmd(transfer);
-  const shipWarnLevel = resolveAbutmentShipWarnLevel({
-    shipYmd: effectiveShipYmd,
-    todayYmd: toKstYmd(new Date()),
-  });
   const showAbutmentShip =
     state.designStlUploadMode === "abutment" && Boolean(onAbutmentShipYmdSave);
   const hasTrailing = Boolean(trailingActions);
@@ -143,56 +134,33 @@ export function PracticeLabReceiveWorkActionsBar({
   const standaloneOverdue =
     uploadOverdueAlert && !state.hasAbutsCa ? uploadOverdueAlert : null;
 
-  const shipWarnAlert =
-    showAbutmentShip && shipWarnLevel ? (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <div
-            role="status"
-            className={cn(
-              "flex w-fit max-w-full cursor-help items-center gap-1.5 rounded-md border px-2 py-1.5 text-xs leading-snug",
-              shipWarnLevel === "past"
-                ? "border-red-300 bg-red-50 text-red-900 dark:border-red-700 dark:bg-red-950/40 dark:text-red-100"
-                : "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100",
-            )}
-          >
-            <AlertTriangle
-              className={cn(
-                "mt-0.5 h-4 w-4 shrink-0",
-                shipWarnLevel === "past" ? "text-red-600" : "text-amber-600",
-              )}
-              aria-hidden
-            />
-            <span className="font-medium">
-              {getAbutmentShipWarnLabel(shipWarnLevel)}
-            </span>
-            <span className="text-[11px] opacity-90">
-              {shipWarnLevel === "past"
-                ? "— 출고일을 확인하세요"
-                : "— 출고 3일 전입니다"}
-            </span>
-          </div>
-        </TooltipTrigger>
-        <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
-          {getAbutmentShipWarnMessage(shipWarnLevel, effectiveShipYmd)}
-        </TooltipContent>
-      </Tooltip>
-    ) : null;
-
+  const pastReadyTeeth = listPracticeTransferPastReadyAbutmentTeeth(transfer);
   const abutsProductionOrdered =
     (state.showAbutmentProductionCancel ||
       state.abutmentCancelBlockedPastReady) &&
     !state.needsMoreAbutmentDesigns;
-  // 준비 단계에서만 취소 CTA(상태 문구 없음). 부분 업로드도 치아·전체취소 가능.
+  // ready=전부 준비 취소 / past_ready=전부 가공 리메이크 / mixed=치아별
   const abutsCancelAffinity: LabPendingAbutsCancelAffinity | null =
-    state.abutmentCancelBlockedPastReady
+    state.abutmentAllUploadedPastReady
       ? "past_ready"
-      : state.showAbutmentProductionCancel
-        ? "ready"
-        : null;
-  /** 완료 줄이 취소 CTA를 품으면 별도「어벗 취소」「작업 완료 취소」숨김 */
+      : state.abutmentCancelBlockedPastReady &&
+          state.showAbutmentProductionCancel
+        ? "mixed"
+        : state.abutmentCancelBlockedPastReady
+          ? "past_ready"
+          : state.showAbutmentProductionCancel
+            ? "ready"
+            : null;
+  /** 완료 줄이 취소·리메이크 CTA를 품으면 별도 바 버튼 숨김 */
+  const actionsOnAbutsGuide =
+    (abutsCancelAffinity === "ready" ||
+      abutsCancelAffinity === "mixed" ||
+      abutsCancelAffinity === "past_ready") &&
+    (Boolean(onAbutmentProductionCancel) ||
+      Boolean(onAbutmentToothCancel) ||
+      Boolean(onOpenAbutmentRemake));
   const cancelOnAbutsGuide =
-    abutsCancelAffinity === "ready" &&
+    (abutsCancelAffinity === "ready" || abutsCancelAffinity === "mixed") &&
     (Boolean(onAbutmentProductionCancel) || Boolean(onAbutmentToothCancel));
 
   const pendingLabGuide = hasAbutmentGuide ? (
@@ -206,17 +174,30 @@ export function PracticeLabReceiveWorkActionsBar({
       abutsCancelAffinity={abutsCancelAffinity}
       abutsCancelBusy={busy}
       onAbutsCancelAllClick={
-        cancelOnAbutsGuide && onAbutmentProductionCancel
+        abutsCancelAffinity === "ready" && onAbutmentProductionCancel
           ? onAbutmentProductionCancel
+          : undefined
+      }
+      onAbutsRemakeAllClick={
+        abutsCancelAffinity === "past_ready" && onOpenAbutmentRemake
+          ? (event) => onOpenAbutmentRemake(event, pastReadyTeeth)
           : undefined
       }
       onAbutsToothCancelClick={
         cancelOnAbutsGuide ? onAbutmentToothCancel : undefined
       }
+      onAbutsToothRemakeClick={
+        (abutsCancelAffinity === "past_ready" ||
+          abutsCancelAffinity === "mixed") &&
+        onOpenAbutmentRemake
+          ? (tooth, event) => onOpenAbutmentRemake(event, [tooth])
+          : undefined
+      }
       uploadedAbutmentTeeth={listPracticeTransferUploadedAbutmentTeeth(
         transfer,
         catalog,
       )}
+      pastReadyAbutmentTeeth={pastReadyTeeth}
       abutsTrailing={abutsInlineOverdue}
     />
   ) : null;
@@ -260,7 +241,7 @@ export function PracticeLabReceiveWorkActionsBar({
     showProductionCancelInBar &&
     state.showAbutmentProductionCancel &&
     state.showWorkActions &&
-    !cancelOnAbutsGuide ? (
+    !actionsOnAbutsGuide ? (
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
@@ -285,6 +266,7 @@ export function PracticeLabReceiveWorkActionsBar({
   const pastReadyRemakeButton =
     showProductionCancelInBar &&
     state.abutmentCancelBlockedPastReady &&
+    !actionsOnAbutsGuide &&
     onOpenAbutmentRemake ? (
       <Tooltip>
         <TooltipTrigger asChild>
@@ -296,7 +278,7 @@ export function PracticeLabReceiveWorkActionsBar({
             className="h-8 shrink-0 gap-1 border-amber-300 bg-amber-50 text-amber-950 hover:bg-amber-100 hover:text-amber-950 focus-visible:ring-0 focus-visible:ring-offset-0"
             onClick={(event) => {
               event.stopPropagation();
-              onOpenAbutmentRemake(event);
+              onOpenAbutmentRemake(event, pastReadyTeeth);
             }}
           >
             <Repeat className="h-3.5 w-3.5" />
@@ -310,8 +292,8 @@ export function PracticeLabReceiveWorkActionsBar({
       </Tooltip>
     ) : null;
 
-  // 완료 줄이 취소를 담당하면 trailing「작업 완료 취소」는 숨김
-  const effectiveTrailing = cancelOnAbutsGuide ? null : trailingActions;
+  // 완료 줄이 취소·리메이크를 담당하면 trailing「작업 완료 취소」는 숨김
+  const effectiveTrailing = actionsOnAbutsGuide ? null : trailingActions;
   const hasEffectiveTrailing = Boolean(effectiveTrailing);
 
   const cancelCluster =
@@ -359,7 +341,6 @@ export function PracticeLabReceiveWorkActionsBar({
     return (
       <div className={cn("w-full min-w-0 space-y-1.5", className)}>
         {standaloneOverdue}
-        {shipWarnAlert}
         {pendingLabGuide}
         {renderActionRow(designConfirmButton)}
       </div>
@@ -374,7 +355,6 @@ export function PracticeLabReceiveWorkActionsBar({
     return (
       <div className={cn("w-full min-w-0 space-y-1.5", className)}>
         {standaloneOverdue}
-        {shipWarnAlert}
         {pendingLabGuide}
         {renderActionRow(null)}
       </div>
@@ -384,7 +364,6 @@ export function PracticeLabReceiveWorkActionsBar({
   return (
     <div className={cn("w-full min-w-0 space-y-1.5", className)}>
       {standaloneOverdue}
-      {shipWarnAlert}
       {pendingLabGuide}
       {cancelCluster ??
         (effectiveTrailing ? (

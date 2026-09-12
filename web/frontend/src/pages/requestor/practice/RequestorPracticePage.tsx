@@ -927,6 +927,9 @@ export function RequestorPracticeReceivePage({
   } | null>(null);
   const [labRemakeCreateOpen, setLabRemakeCreateOpen] = useState(false);
   const [labRemakeCreateBusy, setLabRemakeCreateBusy] = useState(false);
+  const [labRemakeInitialTeeth, setLabRemakeInitialTeeth] = useState<
+    string[] | null
+  >(null);
   const [toothAssignOpen, setToothAssignOpen] = useState(false);
   const [toothAssignTransfer, setToothAssignTransfer] =
     useState<ReceivedPracticeTransfer | null>(null);
@@ -1152,6 +1155,13 @@ export function RequestorPracticeReceivePage({
                 return /^\d{4}-\d{2}-\d{2}$/.test(ymd) ? ymd : null;
               })(),
               abutmentPastReady: Boolean(productionRaw.abutmentPastReady),
+              abutmentPastReadyTeeth: Array.isArray(
+                productionRaw.abutmentPastReadyTeeth,
+              )
+                ? productionRaw.abutmentPastReadyTeeth
+                    .map((t) => String(t || "").trim())
+                    .filter(Boolean)
+                : [],
               confirmedAt: productionRaw.confirmedAt
                 ? String(productionRaw.confirmedAt)
                 : null,
@@ -1333,6 +1343,7 @@ export function RequestorPracticeReceivePage({
         labDesignConfirmedAt: null,
         abutmentProductionStartedAt: null,
         abutmentPastReady: false,
+        abutmentPastReadyTeeth: [],
         confirmedAt: null,
       };
       const clearedAutoMatch = transfer.autoMatch
@@ -1499,6 +1510,11 @@ export function RequestorPracticeReceivePage({
           abutmentPastReady:
             server.production?.abutmentPastReady ??
             local.production?.abutmentPastReady,
+          abutmentPastReadyTeeth:
+            Array.isArray(server.production?.abutmentPastReadyTeeth) &&
+            server.production.abutmentPastReadyTeeth.length > 0
+              ? server.production.abutmentPastReadyTeeth
+              : local.production?.abutmentPastReadyTeeth || [],
         },
       };
     },
@@ -1905,6 +1921,33 @@ export function RequestorPracticeReceivePage({
           ) {
             void prefetchMessages();
           }
+          if (hasUnreadCount) {
+            emitUnreadBadgeRefresh(unreadCount);
+          }
+          return;
+        }
+        if (action === "abutment-production-started") {
+          const productionRawFromRealtime =
+            payload.production && typeof payload.production === "object"
+              ? (payload.production as Record<string, unknown>)
+              : null;
+          const patchPastReady = (row: ReceivedPracticeTransfer) => ({
+            ...row,
+            production: mergeProductionPastReadyFromRealtime(
+              row.production,
+              productionRawFromRealtime,
+            ),
+          });
+          setTransfers((prev) =>
+            prev.map((row) =>
+              row.transferId === transferId ? patchPastReady(row) : row,
+            ),
+          );
+          setSelectedTransfer((prev) =>
+            prev && prev.transferId === transferId
+              ? patchPastReady(prev)
+              : prev,
+          );
           if (hasUnreadCount) {
             emitUnreadBadgeRefresh(unreadCount);
           }
@@ -2702,10 +2745,64 @@ export function RequestorPracticeReceivePage({
           : productionRaw?.shippingMode === "normal"
             ? ("normal" as const)
             : prev?.shippingMode || null;
+      const pastReadyTeeth = Array.isArray(productionRaw?.abutmentPastReadyTeeth)
+        ? productionRaw.abutmentPastReadyTeeth
+            .map((t) => String(t || "").trim())
+            .filter(Boolean)
+        : prev?.abutmentPastReadyTeeth;
       return {
         ...(prev || {}),
         shippingMode,
         relatedRequestIds,
+        ...(productionRaw?.abutmentPastReady != null
+          ? { abutmentPastReady: Boolean(productionRaw.abutmentPastReady) }
+          : {}),
+        ...(pastReadyTeeth != null
+          ? { abutmentPastReadyTeeth: pastReadyTeeth }
+          : {}),
+        ...(productionRaw?.abutmentProductionStartedAt
+          ? {
+              abutmentProductionStartedAt: String(
+                productionRaw.abutmentProductionStartedAt,
+              ),
+            }
+          : {}),
+      };
+    },
+    [],
+  );
+
+  const mergeProductionPastReadyFromRealtime = useCallback(
+    (
+      prev: ReceivedPracticeTransfer["production"] | null | undefined,
+      productionRaw?: Record<string, unknown> | null,
+    ): NonNullable<ReceivedPracticeTransfer["production"]> => {
+      const pastReadyTeeth = Array.isArray(productionRaw?.abutmentPastReadyTeeth)
+        ? productionRaw.abutmentPastReadyTeeth
+            .map((t) => String(t || "").trim())
+            .filter(Boolean)
+        : prev?.abutmentPastReadyTeeth || [];
+      const relatedRequestIds = Array.isArray(productionRaw?.relatedRequestIds)
+        ? productionRaw.relatedRequestIds
+            .map((id) => String(id || "").trim())
+            .filter(Boolean)
+        : prev?.relatedRequestIds || [];
+      return {
+        ...(prev || {}),
+        relatedRequestIds:
+          relatedRequestIds.length > 0
+            ? relatedRequestIds
+            : prev?.relatedRequestIds || [],
+        abutmentPastReady:
+          productionRaw?.abutmentPastReady != null
+            ? Boolean(productionRaw.abutmentPastReady)
+            : pastReadyTeeth.length > 0
+              ? true
+              : Boolean(prev?.abutmentPastReady),
+        abutmentPastReadyTeeth: pastReadyTeeth,
+        abutmentProductionStartedAt: productionRaw?.abutmentProductionStartedAt
+          ? String(productionRaw.abutmentProductionStartedAt)
+          : prev?.abutmentProductionStartedAt || new Date().toISOString(),
       };
     },
     [],
@@ -3263,6 +3360,13 @@ export function RequestorPracticeReceivePage({
             productionRawFromRes?.abutmentPastReady != null
               ? Boolean(productionRawFromRes.abutmentPastReady)
               : Boolean(transfer.production?.abutmentPastReady),
+          abutmentPastReadyTeeth: Array.isArray(
+            productionRawFromRes?.abutmentPastReadyTeeth,
+          )
+            ? productionRawFromRes.abutmentPastReadyTeeth
+                .map((t) => String(t || "").trim())
+                .filter(Boolean)
+            : transfer.production?.abutmentPastReadyTeeth || [],
           confirmedAt: autoConfirmedAt,
           relatedRequestIds: Array.isArray(productionRawFromRes?.relatedRequestIds)
             ? productionRawFromRes.relatedRequestIds.map((id) => String(id))
@@ -3884,6 +3988,13 @@ export function RequestorPracticeReceivePage({
                 productionRaw.abutmentPastReady != null
                   ? Boolean(productionRaw.abutmentPastReady)
                   : Boolean(transfer.production?.abutmentPastReady),
+              abutmentPastReadyTeeth: Array.isArray(
+                productionRaw.abutmentPastReadyTeeth,
+              )
+                ? productionRaw.abutmentPastReadyTeeth
+                    .map((t) => String(t || "").trim())
+                    .filter(Boolean)
+                : transfer.production?.abutmentPastReadyTeeth || [],
               designReadyAt: productionRaw.designReadyAt
                 ? String(productionRaw.designReadyAt)
                 : transfer.production?.designReadyAt || null,
@@ -4016,6 +4127,9 @@ export function RequestorPracticeReceivePage({
         const productionPatch: ReceivedPracticeTransfer["production"] = {
           ...transfer.production,
           abutmentPastReady: true,
+          abutmentPastReadyTeeth: [
+            ...(transfer.production?.abutmentPastReadyTeeth || []),
+          ],
           abutmentProductionStartedAt:
             transfer.production?.abutmentProductionStartedAt ||
             new Date().toISOString(),
@@ -4306,6 +4420,7 @@ export function RequestorPracticeReceivePage({
     async (result: ChatRemakePromptResult) => {
       if (result.kind !== "remake") {
         setLabRemakeCreateOpen(false);
+        setLabRemakeInitialTeeth(null);
         return;
       }
       if (!token || !selectedTransfer || labRemakeCreateBusy) return;
@@ -4315,6 +4430,7 @@ export function RequestorPracticeReceivePage({
           description: "데모 의뢰에서는 리메이크 의뢰를 실행하지 않습니다.",
         });
         setLabRemakeCreateOpen(false);
+        setLabRemakeInitialTeeth(null);
         return;
       }
       const mongoId = String(selectedTransfer._id || "").trim();
@@ -4372,6 +4488,7 @@ export function RequestorPracticeReceivePage({
           ),
         );
         setLabRemakeCreateOpen(false);
+        setLabRemakeInitialTeeth(null);
         toast({
           title: "리메이크 의뢰를 생성했습니다",
           description:
@@ -5304,6 +5421,7 @@ export function RequestorPracticeReceivePage({
                 row.production?.labDesignConfirmedAt || nowIso,
               abutmentProductionStartedAt: null,
               abutmentPastReady: false,
+              abutmentPastReadyTeeth: [],
             },
           };
         };
@@ -5692,6 +5810,11 @@ export function RequestorPracticeReceivePage({
               production: {
                 ...transfer.production,
                 abutmentPastReady: true,
+                abutmentPastReadyTeeth: [
+                  ...new Set([
+                    ...(transfer.production?.abutmentPastReadyTeeth || []),
+                  ]),
+                ],
                 abutmentProductionStartedAt:
                   transfer.production?.abutmentProductionStartedAt ||
                   new Date().toISOString(),
@@ -5822,6 +5945,12 @@ export function RequestorPracticeReceivePage({
               production: {
                 ...transfer.production,
                 abutmentPastReady: true,
+                abutmentPastReadyTeeth: [
+                  ...new Set([
+                    ...(transfer.production?.abutmentPastReadyTeeth || []),
+                    toothKey,
+                  ]),
+                ],
                 abutmentProductionStartedAt:
                   transfer.production?.abutmentProductionStartedAt ||
                   new Date().toISOString(),
@@ -6991,6 +7120,7 @@ export function RequestorPracticeReceivePage({
             setRemakeChargeCancelConfirm(null);
             setLabRemakeCreateOpen(false);
             setLabRemakeCreateBusy(false);
+            setLabRemakeInitialTeeth(null);
           }
         }}
         preferredDockSide={panelPreferredDockSide}
@@ -7311,7 +7441,7 @@ export function RequestorPracticeReceivePage({
                   event,
                 )
               }
-              onOpenAbutmentRemake={() => {
+              onOpenAbutmentRemake={(event, teeth) => {
                 if (isGuideTourDemoTransfer(selectedTransfer)) {
                   toast({
                     title: "가이드투어",
@@ -7320,6 +7450,9 @@ export function RequestorPracticeReceivePage({
                   });
                   return;
                 }
+                setLabRemakeInitialTeeth(
+                  Array.isArray(teeth) && teeth.length > 0 ? teeth : null,
+                );
                 setLabRemakeCreateOpen(true);
               }}
               onAbutmentStlUpload={() => {
@@ -7420,10 +7553,12 @@ export function RequestorPracticeReceivePage({
         initialStep="configure"
         actor="lab"
         intent="abutment_remake"
+        initialSelectedTeeth={labRemakeInitialTeeth}
         onResolve={(result) => void handleConfirmLabRemakeCreate(result)}
         onCancel={() => {
           if (labRemakeCreateBusy) return;
           setLabRemakeCreateOpen(false);
+          setLabRemakeInitialTeeth(null);
         }}
       />
       <ConfirmDialog

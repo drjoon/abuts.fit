@@ -1480,25 +1480,29 @@ export async function cancelDesignHandoff(req, res) {
     }
     healRequestOwnershipToAcceptingLab(request, transferTargetLabAnchorId);
 
-    // 연동 CA 중 하나라도 준비 이후(가공 포함)면 전부 취소 불가 — primary만 보면 형제가 가공중일 때 뚫림.
-    const relatedPastReady = transferDoc
-      ? Boolean(
-          (await resolveRelatedAbutmentPastReady(transferDoc)).pastReady,
-        )
-      : false;
-    if (
-      relatedPastReady ||
-      isAbutmentRequestPastReadyForCancel(request)
-    ) {
-      return res.status(409).json({
-        success: false,
-        message:
-          "제조사가 가공(준비 이후)에 들어가면 어벗디자인을 취소할 수 없습니다. 리메이크로 선택 치아만 재제작해 주세요.",
-        code: "manufacturer_not_ready",
-      });
+    // 전체 취소: 연동 CA 중 하나라도 준비 이후면 불가.
+    // 치아 단위 취소는 해당 Request만 아래에서 검사(형제 가공 중이어도 준비 치아는 취소 가능).
+    const cancelToothEarly = String(req.body?.tooth || "").trim();
+    if (!cancelToothEarly) {
+      const relatedPastReady = transferDoc
+        ? Boolean(
+            (await resolveRelatedAbutmentPastReady(transferDoc)).pastReady,
+          )
+        : false;
+      if (
+        relatedPastReady ||
+        isAbutmentRequestPastReadyForCancel(request)
+      ) {
+        return res.status(409).json({
+          success: false,
+          message:
+            "제조사가 가공(준비 이후)에 들어가면 어벗디자인을 취소할 수 없습니다. 리메이크로 선택 치아만 재제작해 주세요.",
+          code: "manufacturer_not_ready",
+        });
+      }
     }
 
-    const cancelTooth = String(req.body?.tooth || "").trim();
+    const cancelTooth = cancelToothEarly;
 
     const mirroredDesignCount = Array.isArray(transferDoc?.production?.designFiles)
       ? transferDoc.production.designFiles.length

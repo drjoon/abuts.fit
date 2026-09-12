@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-09-12: 가공 진입 — abutmentPastReadyTeeth + 기공소 practice:transfer-updated(abutment-production-started).
 // - 2026-09-12: PTX CA 출고 목표 — 기공소 abutmentShipYmd 또는 치과도착일−3달력일(직납 −2영업일 폴백 폐기).
 // - 2026-09-12: CA 생성 — partnerBilling 잔존·병렬 레이스 중복을 치아당 1건으로 정리(어벗츠 생산중 잔존 방지).
 // - 2026-09-11: 작업취소 pastReady — sticky+링크없음/전부취소는 fail-closed(환불 차단). 준비 복귀만 sticky heal.
@@ -111,7 +112,11 @@ import { updateReviewStatusByStage } from "../controllers/requests/common.review
 import { prevKoreanBusinessDayYmd } from "../utils/krBusinessDays.js";
 import { resolveEffectiveAbutmentShipYmd } from "../utils/practiceTransferArrivalDates.js";
 import { isPendingRoundBarAbutment, isSimpleAbutmentModeForFee } from "../utils/labFeeSchedule.js";
-import { emitAppEventToRoles } from "../socket.js";
+import { emitAppEventToRoles, emitAppEventToUser } from "../socket.js";
+import {
+  resolvePracticeUserIdsByAnchor,
+  resolveRequestorUserIdsByAnchor,
+} from "../utils/chatRealtimeRecipients.js";
 
 /** 커스텀어벗 치식(요청중 포함). 심플어벗(치과 재고) 제외. */
 const isCustomAbutmentToothWorkRow = (row) =>
@@ -1354,32 +1359,56 @@ export function isAbutmentRequestPastReadyForCancel(requestDoc) {
 }
 
 /**
+ * 연동 Request 행에서 가공(준비 이후) 치아번호 목록.
+ * hex 확인용 샘플(치아 없음·중복)은 제외.
+ */
+export function listAbutmentPastReadyTeethFromRows(rows = []) {
+  const list = Array.isArray(rows) ? rows : [];
+  const teeth = [];
+  const seen = new Set();
+  for (const row of list) {
+    if (!isAbutmentRequestPastReadyForCancel(row)) continue;
+    if (row?.caseInfos?.hexVerificationSample === true) continue;
+    const tooth = String(row?.caseInfos?.tooth || "").trim();
+    if (!tooth || seen.has(tooth)) continue;
+    seen.add(tooth);
+    teeth.push(tooth);
+  }
+  return teeth;
+}
+
+/**
  * sticky + 연동 Request 행으로 작업취소 차단 여부 판정(순수).
- * @returns {{ pastReady: boolean, shouldClearSticky: boolean }}
+ * @returns {{ pastReady: boolean, shouldClearSticky: boolean, pastReadyTeeth: string[] }}
  */
 export function resolveAbutmentPastReadyFromRows({
   stickyStarted = false,
   rows = [],
 } = {}) {
   const list = Array.isArray(rows) ? rows : [];
-  if (list.some((row) => isAbutmentRequestPastReadyForCancel(row))) {
-    return { pastReady: true, shouldClearSticky: false };
+  const pastReadyTeeth = listAbutmentPastReadyTeethFromRows(list);
+  if (pastReadyTeeth.length > 0 || list.some((row) => isAbutmentRequestPastReadyForCancel(row))) {
+    return {
+      pastReady: true,
+      shouldClearSticky: false,
+      pastReadyTeeth,
+    };
   }
   if (!stickyStarted) {
-    return { pastReady: false, shouldClearSticky: false };
+    return { pastReady: false, shouldClearSticky: false, pastReadyTeeth: [] };
   }
   // 링크 유실 또는 전부 취소 — 가공 이력(sticky)만으로 fail-closed
   if (list.length === 0) {
-    return { pastReady: true, shouldClearSticky: false };
+    return { pastReady: true, shouldClearSticky: false, pastReadyTeeth: [] };
   }
   const allCanceled = list.every(
     (row) => String(row?.manufacturerStage || "").trim() === "취소",
   );
   if (allCanceled) {
-    return { pastReady: true, shouldClearSticky: false };
+    return { pastReady: true, shouldClearSticky: false, pastReadyTeeth: [] };
   }
   // 전부 준비 = 제조사 준비 복귀 → sticky heal 후 취소 허용
-  return { pastReady: false, shouldClearSticky: true };
+  return { pastReady: false, shouldClearSticky: true, pastReadyTeeth: [] };
 }
 
 const collectRelatedRequestObjectIds = (transferDoc) => {
@@ -1428,8 +1457,11 @@ export async function collectLinkedAbutmentRequestObjectIds(transferDoc) {
  * 라이브 stage가 SSOT — 가공→준비 복귀(연동 Request가 모두 준비)면 sticky를 지우고 취소 재개.
  * sticky만 있고 링크가 비었거나 전부 취소면 fail-closed(작업취소·기공/어벗비 환불 차단).
  * linkedRequestIds를 함께 돌려 작업취소 핫패스에서 재조회를 피한다.
+ * @param {object} [options]
+ * @param {boolean} [options.skipStickyHeal] — 가공 진입 직후 emit 등에서 sticky를 지우지 않음
  */
-export async function resolveRelatedAbutmentPastReady(transferDoc) {
+export async function resolveRelatedAbutmentPastReady(transferDoc, options = {}) {
+  const skipStickyHeal = Boolean(options.skipStickyHeal);
   const linkedRequestIds =
     await collectLinkedAbutmentRequestObjectIds(transferDoc);
   const stickyStarted = Boolean(
@@ -1442,20 +1474,23 @@ export async function resolveRelatedAbutmentPastReady(transferDoc) {
       .select({
         manufacturerStage: 1,
         "productionSchedule.actualCamStart": 1,
+        "caseInfos.tooth": 1,
+        "caseInfos.hexVerificationSample": 1,
       })
       .lean();
   }
 
-  const { pastReady, shouldClearSticky } = resolveAbutmentPastReadyFromRows({
-    stickyStarted,
-    rows,
-  });
-  if (shouldClearSticky && transferDoc?._id) {
+  const { pastReady, shouldClearSticky, pastReadyTeeth } =
+    resolveAbutmentPastReadyFromRows({
+      stickyStarted,
+      rows,
+    });
+  if (shouldClearSticky && transferDoc?._id && !skipStickyHeal) {
     await clearPracticeTransferAbutmentMachiningStartedByTransferId(
       transferDoc._id,
     );
   }
-  return { pastReady, linkedRequestIds };
+  return { pastReady, pastReadyTeeth, linkedRequestIds };
 }
 
 export async function hasRelatedAbutmentPastReady(transferDoc) {
@@ -1464,7 +1499,7 @@ export async function hasRelatedAbutmentPastReady(transferDoc) {
 }
 
 /**
- * 수신 목록용 — transfer Mongo _id → 연동 어벗이 준비 단계를 지났는지.
+ * 수신 목록용 — transfer Mongo _id → { pastReady, pastReadyTeeth }.
  */
 export async function mapAbutmentPastReadyByTransferDocs(docs) {
   const result = new Map();
@@ -1503,6 +1538,8 @@ export async function mapAbutmentPastReadyByTransferDocs(docs) {
             manufacturerStage: 1,
             partnerBilling: 1,
             "productionSchedule.actualCamStart": 1,
+            "caseInfos.tooth": 1,
+            "caseInfos.hexVerificationSample": 1,
           })
           .lean()
       : [];
@@ -1524,9 +1561,6 @@ export async function mapAbutmentPastReadyByTransferDocs(docs) {
     bucket.push(reqId);
     partnerIdsByTransfer.set(transferKey, bucket);
     allRequestIds.add(reqId);
-    if (isAbutmentRequestPastReadyForCancel(row)) {
-      result.set(transferKey, true);
-    }
   }
 
   const needStageLookup = [...allRequestIds].filter((id) =>
@@ -1541,31 +1575,21 @@ export async function mapAbutmentPastReadyByTransferDocs(docs) {
           .select({
             manufacturerStage: 1,
             "productionSchedule.actualCamStart": 1,
+            "caseInfos.tooth": 1,
+            "caseInfos.hexVerificationSample": 1,
           })
           .lean()
       : [];
   const requestById = new Map(
     stageRows.map((row) => [String(row?._id || ""), row]),
   );
-
-  for (const transferKey of pendingKeys) {
-    if (result.has(transferKey)) continue;
-    const ids = [
-      ...(relatedIdsByTransfer.get(transferKey) || []),
-      ...(partnerIdsByTransfer.get(transferKey) || []),
-    ];
-    const unique = [...new Set(ids)];
-    result.set(
-      transferKey,
-      unique.some((id) =>
-        isAbutmentRequestPastReadyForCancel(requestById.get(id)),
-      ),
-    );
+  // partnerRows may have stage already — merge without losing tooth
+  for (const row of partnerRows) {
+    const id = String(row?._id || "").trim();
+    if (id && !requestById.has(id)) requestById.set(id, row);
   }
 
-  // sticky fail-closed / 준비 복귀 heal — resolveAbutmentPastReadyFromRows SSOT
-  for (const transferKey of stickyStartedTransferIds) {
-    if (result.get(transferKey) === true) continue;
+  for (const transferKey of pendingKeys) {
     const ids = [
       ...new Set([
         ...(relatedIdsByTransfer.get(transferKey) || []),
@@ -1573,21 +1597,21 @@ export async function mapAbutmentPastReadyByTransferDocs(docs) {
       ]),
     ];
     const rows = ids.map((id) => requestById.get(id)).filter(Boolean);
-    const { pastReady, shouldClearSticky } = resolveAbutmentPastReadyFromRows({
-      stickyStarted: true,
+    const resolved = resolveAbutmentPastReadyFromRows({
+      stickyStarted: stickyStartedTransferIds.includes(transferKey),
       rows: ids.length === 0 ? [] : rows,
     });
-    if (pastReady) {
-      result.set(transferKey, true);
-      continue;
-    }
-    if (!shouldClearSticky) {
-      result.set(transferKey, false);
-    }
+    result.set(transferKey, {
+      pastReady: Boolean(resolved.pastReady),
+      pastReadyTeeth: Array.isArray(resolved.pastReadyTeeth)
+        ? resolved.pastReadyTeeth
+        : [],
+    });
   }
 
   const healIds = stickyStartedTransferIds.filter((id) => {
-    if (result.get(id) === true) return false;
+    const info = result.get(id);
+    if (info?.pastReady === true) return false;
     if (!Types.ObjectId.isValid(id)) return false;
     const ids = [
       ...new Set([
@@ -1860,6 +1884,7 @@ export async function clearRelatedAbutmentProductionOnRelease(
 /**
  * PTX 연동 Request가 가공 진입하면 transfer에 abutmentProductionStartedAt을 남긴다.
  * (목록 API 배치 조회 없이도 취소 불가 플래그가 유지되도록)
+ * sticky가 이미 있어도 치아별 pastReady를 기공소에 실시간 push한다.
  */
 export async function markPracticeTransferAbutmentMachiningStarted(
   requestDoc,
@@ -1881,7 +1906,90 @@ export async function markPracticeTransferAbutmentMachiningStarted(
     },
     { $set: { "production.abutmentProductionStartedAt": at } },
   );
-  return { updated: Number(result?.modifiedCount || 0) > 0 };
+  const updated = Number(result?.modifiedCount || 0) > 0;
+
+  // 부수 효과 — 기공소 수신 UI 치아별 가공 표시(웹소켓)
+  void emitPracticeTransferAbutmentMachiningStartedRealtime({
+    transferMongoId: transferId,
+    requestDoc,
+    at,
+  }).catch((err) => {
+    console.warn(
+      "[markPracticeTransferAbutmentMachiningStarted] realtime emit failed",
+      err?.message || err,
+    );
+  });
+
+  return { updated };
+}
+
+async function emitPracticeTransferAbutmentMachiningStartedRealtime({
+  transferMongoId,
+  requestDoc,
+  at = new Date(),
+}) {
+  const transfer = await PracticeTransfer.findById(transferMongoId)
+    .select({
+      transferId: 1,
+      targetLabAnchorId: 1,
+      practiceBusinessAnchorId: 1,
+      practiceUserId: 1,
+      production: 1,
+      updatedAt: 1,
+    })
+    .lean();
+  if (!transfer) return;
+
+  const { pastReady, pastReadyTeeth } = await resolveRelatedAbutmentPastReady(
+    transfer,
+    { skipStickyHeal: true },
+  );
+  const tooth = String(requestDoc?.caseInfos?.tooth || "").trim();
+  const teeth = Array.isArray(pastReadyTeeth) ? [...pastReadyTeeth] : [];
+  if (tooth && !teeth.includes(tooth)) teeth.push(tooth);
+
+  const production = transfer.production || {};
+  const designFiles = Array.isArray(production.designFiles)
+    ? production.designFiles
+    : [];
+  const payload = {
+    action: "abutment-production-started",
+    transferId: String(transfer.transferId || "").trim(),
+    transferMongoId: String(transfer._id || "").trim(),
+    targetLabAnchorId: String(transfer.targetLabAnchorId || "").trim() || null,
+    practiceUserId: String(transfer.practiceUserId || "").trim() || null,
+    tooth: tooth || null,
+    production: {
+      abutmentPastReady: Boolean(pastReady) || teeth.length > 0,
+      abutmentPastReadyTeeth: teeth,
+      abutmentProductionStartedAt:
+        production.abutmentProductionStartedAt || at,
+      designReadyAt: production.designReadyAt || null,
+      designFileCount: designFiles.length,
+      relatedRequestIds: Array.isArray(production.relatedRequestIds)
+        ? production.relatedRequestIds.map((id) => String(id))
+        : [],
+    },
+    updatedAt: transfer.updatedAt || at,
+  };
+
+  const labAnchorId = String(transfer.targetLabAnchorId || "").trim();
+  const practiceAnchorId = String(
+    transfer.practiceBusinessAnchorId || "",
+  ).trim();
+  const [labUserIds, practiceUserIds] = await Promise.all([
+    labAnchorId ? resolveRequestorUserIdsByAnchor(labAnchorId) : [],
+    practiceAnchorId ? resolvePracticeUserIdsByAnchor(practiceAnchorId) : [],
+  ]);
+  const userIdSet = new Set([
+    ...labUserIds,
+    ...practiceUserIds,
+    String(transfer.practiceUserId || "").trim(),
+  ]);
+  for (const userId of userIdSet) {
+    if (!userId) continue;
+    emitAppEventToUser(userId, "practice:transfer-updated", payload);
+  }
 }
 
 export async function clearPracticeTransferAbutmentMachiningStartedByTransferId(

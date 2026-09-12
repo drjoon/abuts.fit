@@ -6,7 +6,7 @@ import { Types } from "mongoose";
 import User from "../models/user.model.js";
 import PracticeTransfer from "../models/practiceTransfer.model.js";
 
-const resolvePracticeUserIdsByAnchor = async (anchorId) => {
+export const resolvePracticeUserIdsByAnchor = async (anchorId) => {
   const raw = String(anchorId || "").trim();
   if (!raw || !Types.ObjectId.isValid(raw)) return [];
 
@@ -23,7 +23,7 @@ const resolvePracticeUserIdsByAnchor = async (anchorId) => {
     .filter(Boolean);
 };
 
-const resolveRequestorUserIdsByAnchor = async (anchorId) => {
+export const resolveRequestorUserIdsByAnchor = async (anchorId) => {
   const raw = String(anchorId || "").trim();
   if (!raw || !Types.ObjectId.isValid(raw)) return [];
 

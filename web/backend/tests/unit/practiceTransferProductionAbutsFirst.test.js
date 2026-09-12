@@ -377,34 +377,59 @@ describe("abutment pastReady work-cancel guard", () => {
 
     expect(
       resolveAbutmentPastReadyFromRows({ stickyStarted: true, rows: [] }),
-    ).toEqual({ pastReady: true, shouldClearSticky: false });
+    ).toEqual({
+      pastReady: true,
+      shouldClearSticky: false,
+      pastReadyTeeth: [],
+    });
 
     expect(
       resolveAbutmentPastReadyFromRows({
         stickyStarted: true,
         rows: [{ manufacturerStage: "취소" }],
       }),
-    ).toEqual({ pastReady: true, shouldClearSticky: false });
+    ).toEqual({
+      pastReady: true,
+      shouldClearSticky: false,
+      pastReadyTeeth: [],
+    });
 
     expect(
       resolveAbutmentPastReadyFromRows({
         stickyStarted: true,
         rows: [{ manufacturerStage: "준비" }],
       }),
-    ).toEqual({ pastReady: false, shouldClearSticky: true });
+    ).toEqual({
+      pastReady: false,
+      shouldClearSticky: true,
+      pastReadyTeeth: [],
+    });
 
     expect(
       resolveAbutmentPastReadyFromRows({
         stickyStarted: false,
         rows: [{ manufacturerStage: "준비" }],
       }),
-    ).toEqual({ pastReady: false, shouldClearSticky: false });
+    ).toEqual({
+      pastReady: false,
+      shouldClearSticky: false,
+      pastReadyTeeth: [],
+    });
 
     expect(
       resolveAbutmentPastReadyFromRows({
         stickyStarted: false,
-        rows: [{ manufacturerStage: "가공" }],
+        rows: [
+          {
+            manufacturerStage: "가공",
+            caseInfos: { tooth: "12" },
+          },
+        ],
       }),
-    ).toEqual({ pastReady: true, shouldClearSticky: false });
+    ).toEqual({
+      pastReady: true,
+      shouldClearSticky: false,
+      pastReadyTeeth: ["12"],
+    });
   });
 });
