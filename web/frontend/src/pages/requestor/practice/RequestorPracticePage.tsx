@@ -6569,20 +6569,26 @@ export function RequestorPracticeReceivePage({
     ],
   );
 
-  const handleRestoreRequestFile = useCallback(
-    async (file: { fileName: string; s3Key: string }) => {
+  const restoreRequestFilesByKeys = useCallback(
+    async (s3KeysInput: string[]) => {
       const transferId = String(selectedTransfer?.transferId || "").trim();
-      const s3Key = String(file.s3Key || "").trim();
-      if (!token || !transferId || !s3Key) return;
-      setRestoringRequestFileKeys((prev) =>
-        prev.includes(s3Key) ? prev : [...prev, s3Key],
-      );
+      const s3Keys = [
+        ...new Set(
+          s3KeysInput.map((key) => String(key || "").trim()).filter(Boolean),
+        ),
+      ];
+      if (!token || !transferId || !s3Keys.length) return;
+      setRestoringRequestFileKeys((prev) => [
+        ...prev,
+        ...s3Keys.filter((key) => !prev.includes(key)),
+      ]);
       try {
         const res = await apiFetch<unknown>({
           path: `/api/practice/transfers/received/${encodeURIComponent(transferId)}/request-files/restore`,
           method: "POST",
           token,
-          jsonBody: { s3Key },
+          jsonBody:
+            s3Keys.length === 1 ? { s3Key: s3Keys[0] } : { s3Keys },
         });
         if (!res.ok) {
           const body =
@@ -6623,7 +6629,7 @@ export function RequestorPracticeReceivePage({
         });
       } finally {
         setRestoringRequestFileKeys((prev) =>
-          prev.filter((key) => key !== s3Key),
+          prev.filter((key) => !s3Keys.includes(key)),
         );
       }
     },
@@ -6636,6 +6642,20 @@ export function RequestorPracticeReceivePage({
       token,
     ],
   );
+
+  const handleRestoreRequestFile = useCallback(
+    async (file: { fileName: string; s3Key: string }) => {
+      await restoreRequestFilesByKeys([file.s3Key]);
+    },
+    [restoreRequestFilesByKeys],
+  );
+
+  const handleRestoreAllRequestFiles = useCallback(async () => {
+    const keys = (selectedTransfer?.trashedFiles || []).map((file) =>
+      String(file.s3Key || "").trim(),
+    );
+    await restoreRequestFilesByKeys(keys);
+  }, [restoreRequestFilesByKeys, selectedTransfer?.trashedFiles]);
 
   const handleSendChat = useCallback(async () => {
     const text = chatDraft.trim();
@@ -7854,6 +7874,7 @@ export function RequestorPracticeReceivePage({
         onAttachRequestFiles={handleAttachRequestFiles}
         onRemoveRequestFile={(file) => void handleRemoveRequestFile(file)}
         onRestoreRequestFile={(file) => void handleRestoreRequestFile(file)}
+        onRestoreAllRequestFiles={() => void handleRestoreAllRequestFiles()}
         requestFilePendingUploads={requestFileUploads.items}
         onRemovePendingRequestFile={requestFileUploads.removeItem}
         onRetryPendingRequestFile={requestFileUploads.retryItem}

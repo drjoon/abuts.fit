@@ -15,6 +15,7 @@
 // - web/frontend/src/shared/files/s3BlobCache.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
 // - 2026-09-12: 의뢰 파일 삭제→휴지통. 썸네일 끝 휴지통+카운터·복원.
+// - 2026-09-12: 휴지통 팝오버 — 전체 복원(s3Keys 일괄).
 // - 2026-09-12: 의뢰 파일 — 업로드 웨이브(첫/두 번째/…) 클러스터.
 // - 2026-09-12: 드롭·클립 — 3D/이미지→의뢰 파일, 그 외→채팅. 의뢰 파일 타일 X 삭제.
 // - 2026-09-12: 별·알림음 — 환자·치아번호 줄 오른쪽.
@@ -532,6 +533,8 @@ type PracticeTransferDetailChatDialogProps = {
   onRemoveRequestFile?: (file: PracticeTransferDialogFileItem) => void | Promise<void>;
   /** 휴지통 → 의뢰 파일 복원 */
   onRestoreRequestFile?: (file: PracticeTransferDialogFileItem) => void | Promise<void>;
+  /** 휴지통 전체 복원(한 요청) */
+  onRestoreAllRequestFiles?: () => void | Promise<void>;
   /** 의뢰 파일 업로드 중(타일 그리드에 표시) */
   requestFilePendingUploads?: BackgroundUploadItem[];
   onRemovePendingRequestFile?: (id: string) => void;
@@ -683,6 +686,7 @@ export function PracticeTransferDetailChatDialog({
   onAttachRequestFiles,
   onRemoveRequestFile,
   onRestoreRequestFile,
+  onRestoreAllRequestFiles,
   requestFilePendingUploads = [],
   onRemovePendingRequestFile,
   onRetryPendingRequestFile,
@@ -2095,7 +2099,7 @@ export function PracticeTransferDetailChatDialog({
     const isRemoving =
       Boolean(busyKey) && removingRequestFileKeys.includes(busyKey);
     const canRemoveRequestFile =
-      keyPrefix === "request" &&
+      (keyPrefix === "request" || keyPrefix.startsWith("request:")) &&
       Boolean(onRemoveRequestFile) &&
       Boolean(busyKey) &&
       !locked;
@@ -2289,12 +2293,31 @@ export function PracticeTransferDetailChatDialog({
         side="top"
         className="z-[400] w-80 p-3"
       >
-        <p className="mb-2 text-xs font-semibold text-foreground">
-          휴지통{" "}
-          <span className="font-normal text-muted-foreground">
-            ({trashedFileList.length}개)
-          </span>
-        </p>
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <p className="text-xs font-semibold text-foreground">
+            휴지통{" "}
+            <span className="font-normal text-muted-foreground">
+              ({trashedFileList.length}개)
+            </span>
+          </p>
+          {trashedFileList.length > 0 && onRestoreAllRequestFiles ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-7 shrink-0 gap-1 px-2 text-[11px]"
+              disabled={
+                restoringRequestFileKeys.length > 0 || !onRestoreRequestFile
+              }
+              onClick={() => void onRestoreAllRequestFiles()}
+            >
+              <RotateCcw className="h-3 w-3" />
+              {restoringRequestFileKeys.length > 0
+                ? "복원 중…"
+                : "전체 복원"}
+            </Button>
+          ) : null}
+        </div>
         {trashedFileList.length === 0 ? (
           <p className="py-3 text-center text-xs text-muted-foreground">
             삭제한 의뢰 파일이 없습니다.
