@@ -543,8 +543,10 @@ body:has(.guide-tour-root) .guide-tour-nested-dialog-overlay {
 }
 
 /*
- * 기공의뢰 목록 모드 — 미니 달력 고정폭(항상 표시).
- * 남는 폭은 목록·채팅 드래그 분할(PracticeTransferMainDetailSplit). md 미만은 숨김.
+ * 기공의뢰 목록 모드 — 미니달력은 항상 표시.
+ * lg(1024)+ : 좌측 독립 컬럼(13.75rem, 기공소 범례 포함).
+ * lg 미만 : 미니달력을 목록 열 상단에만(채팅 열은 건드리지 않음).
+ * 남는 폭은 목록·채팅 드래그 분할(PracticeTransferMainDetailSplit).
  */
 .practice-transfer-list-side-cal {
   display: none;
@@ -558,9 +560,20 @@ body:has(.guide-tour-root) .guide-tour-nested-dialog-overlay {
   gap: 0.5rem;
 }
 
-@media (min-width: 768px) {
+@media (min-width: 1024px) {
   .practice-transfer-list-side-cal {
     display: flex;
+  }
+}
+
+.practice-transfer-list-cal-inline {
+  display: block;
+  flex-shrink: 0;
+}
+
+@media (min-width: 1024px) {
+  .practice-transfer-list-cal-inline {
+    display: none;
   }
 }
 

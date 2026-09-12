@@ -15,6 +15,7 @@ import {
 } from "@/shared/layout/sidebarOpen";
 import { cn } from "@/shared/ui/cn";
 
+// - 2026-09-13: 사이드바 도킹 브레이크포인트를 lg(1024)→xl(1280). 중간 가로폭에서 드로어로 접힘.
 // - 2026-09-09: 기공소에 툴팁 — 구강스캔 전제 제거(「어벗·임시치아·지르 보철 의뢰」).
 // - 2026-09-09: 기공의뢰 서브 — 치과 기공소에/어벗츠에, 기공소 치과로부터/어벗츠로.
 // - 2026-09-08: 구강스캔으로 툴팁 — 「어벗·임시치아·지르 보철 의뢰」로 짧게.
@@ -1610,7 +1611,7 @@ export const DashboardLayout = () => {
       <div className="flex h-dvh overflow-hidden">
         <div
           className={cn(
-            "fixed inset-0 z-50 bg-black/20 backdrop-blur-sm lg:hidden",
+            "fixed inset-0 z-50 bg-black/20 backdrop-blur-sm xl:hidden",
             mobileNavOpen ? "block" : "hidden",
           )}
           onClick={() => setMobileNavOpen(false)}
@@ -1622,8 +1623,8 @@ export const DashboardLayout = () => {
             "transform transition-all duration-300 ease-in-out",
             showExpandedChrome ? "w-60 min-w-60" : "w-24 min-w-24",
             mobileNavOpen
-              ? "translate-x-0 lg:relative"
-              : "-translate-x-full lg:relative lg:translate-x-0",
+              ? "translate-x-0 xl:relative"
+              : "-translate-x-full xl:relative xl:translate-x-0",
           )}
         >
           <div className="p-4 lg:p-6 border-b border-border">
@@ -1640,7 +1641,7 @@ export const DashboardLayout = () => {
             type="button"
             aria-label={sidebarOpen ? "사이드 메뉴 접기" : "사이드 메뉴 펼치기"}
             onClick={() => persistSidebarOpen(!sidebarOpen)}
-            className="hidden lg:flex items-center justify-center absolute top-20 -right-4 z-10 w-8 h-8 rounded-full bg-card border border-border shadow-sm hover:bg-muted/60 hover:border-muted-foreground/40 transition-colors"
+            className="hidden xl:flex items-center justify-center absolute top-20 -right-4 z-10 w-8 h-8 rounded-full bg-card border border-border shadow-sm hover:bg-muted/60 hover:border-muted-foreground/40 transition-colors"
           >
             {sidebarOpen ? (
               <PanelLeft className="w-4 h-4" />
@@ -1763,8 +1764,8 @@ export const DashboardLayout = () => {
           </div>
         </aside>
 
-        <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden lg:ml-0">
-          <div className="relative flex shrink-0 items-center border-b border-border bg-background/95 px-3 py-2.5 backdrop-blur supports-[backdrop-filter]:bg-background/60 lg:hidden">
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden xl:ml-0">
+          <div className="relative flex shrink-0 items-center border-b border-border bg-background/95 px-3 py-2.5 backdrop-blur supports-[backdrop-filter]:bg-background/60 xl:hidden">
             <Button
               type="button"
               variant="ghost"

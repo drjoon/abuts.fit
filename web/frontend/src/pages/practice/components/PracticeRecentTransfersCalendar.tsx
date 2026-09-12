@@ -39,6 +39,9 @@
  * - 2026-09-11: 목록·칩 — 작업 큐=빨간 테두리, 채팅 unread=빨간 숫자(분리).
  * - 2026-09-10: 상단 뱃지 표시 on/off 제거 — active 톤만 사용(unread 순회).
  * - 2026-09-10: focusItemId/focusEpoch — 뱃지 순회 시 해당 칩·목록 행으로 스크롤.
+ * - 2026-09-13: 목록 — lg 미만 미니달력은 목록 열 상단만(채팅 열 비침범).
+ * - 2026-09-13: 목록 — 미니달력 상단 이동을 md(768)→lg(1024). 첨1 폭에서 위로.
+ * - 2026-09-13: 목록 — md+는 좌측 미니달력 3열(첨1·첨2). md 미만(첨3)만 미니달력 본문 상단.
  * - 2026-09-13: 목록 — 초기/릴로드 시 커서 월로 스크롤(데이터 도착 전 force align 유지).
  * - 2026-09-13: 목록·캘린더 ↔ 채팅 — 모드별 분할 위치 localStorage 분리.
  * - 2026-09-13: 목록·캘린더 ↔ 채팅 — 드래그 가로 분할 + localStorage(autoSaveId).
@@ -180,7 +183,7 @@ export const PRACTICE_TRANSFER_LIST_DETAIL_RESERVE_CLASS = "pr-[26.5rem]";
  */
 export const PRACTICE_TRANSFER_DETAIL_PANEL_WIDTH_CLASS = "w-[26.5rem]";
 /**
- * 미니달력=고정 13.75rem(CSS). 목록·주간캘린더 ↔ 채팅은 드래그 분할.
+ * 미니달력=고정 13.75rem(좌측 컬럼 lg+ / lg 미만은 목록 열 상단만). 목록·주간캘린더 ↔ 채팅은 드래그 분할.
  * 기본 비율 1.15 : 1. 최소폭: 캘린더 30rem / 목록 20rem / 채팅 20rem.
  */
 const PRACTICE_TRANSFER_CALENDAR_MAIN_MIN_REM = 30;
@@ -1713,6 +1716,16 @@ export function PracticeRecentTransfersCalendar({
             mainMinRem={PRACTICE_TRANSFER_LIST_MAIN_MIN_REM}
             autoSaveId={PRACTICE_TRANSFER_SPLIT_AUTO_SAVE_ID_LIST}
           >
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 overflow-hidden">
+            <div className="practice-transfer-list-cal-inline">
+              <ListSideMonthCalendar
+                monthYmd={captionMonth}
+                todayYmd={todayYmd}
+                markedYmds={markedAgendaYmds}
+                canComposeArrival={Boolean(onSelectFutureDay)}
+                onSelectDay={handleSideDaySelect}
+              />
+            </div>
           <div
             ref={listScrollRef}
             className="custom-scrollbar min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain rounded-md border border-slate-200/80 bg-white"
@@ -1899,6 +1912,7 @@ export function PracticeRecentTransfersCalendar({
                 })}
               </div>
             )}
+          </div>
           </div>
           </PracticeTransferMainWithOptionalDetail>
         </div>
