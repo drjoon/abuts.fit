@@ -66,7 +66,6 @@ import {
   SalesSplit,
   SalesToolbar,
 } from "./salesUi";
-import { PlatformPitchPanel } from "@/shared/sales/PlatformPitchPanel";
 
 type ListFilter = "all" | "planned" | "done";
 
@@ -766,12 +765,6 @@ export default function SalesHomePage() {
 
   return (
     <SalesPageShell wide>
-      <div className="mb-3 w-full px-0 sm:px-0">
-        <PlatformPitchPanel
-          apiPath="/api/sales-team/platform-pitch"
-          queryKey="sales-team-platform-pitch"
-        />
-      </div>
       <SalesToolbar className="w-full">
         {/* 캘린더 | 일정 추가 / 필터 뱃지(한 줄) */}
         <div className="flex w-full flex-wrap items-center gap-x-2 gap-y-2">

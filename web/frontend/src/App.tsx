@@ -84,6 +84,9 @@ const SalesHomePage = lazy(() => import("./pages/salesTeam/SalesHomePage"));
 const SalesAccountsPage = lazy(
   () => import("./pages/salesTeam/SalesAccountsPage"),
 );
+const SalesPlatformPitchPage = lazy(
+  () => import("./pages/salesTeam/SalesPlatformPitchPage"),
+);
 const SalesPerformancePage = lazy(
   () => import("./pages/salesTeam/SalesPerformancePage"),
 );
@@ -670,6 +673,14 @@ const App = () => {
                     element={
                       <RoleProtectedRoute roles={["salesTeam"]}>
                         <SalesAccountsPage />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="sales/pitch"
+                    element={
+                      <RoleProtectedRoute roles={["salesTeam"]}>
+                        <SalesPlatformPitchPage />
                       </RoleProtectedRoute>
                     }
                   />

@@ -166,6 +166,7 @@ import {
   Headphones,
   Menu,
   X,
+  Layers,
 } from "lucide-react";
 import { AbutsLogo } from "@/components/branding/AbutsLogo";
 import {
@@ -367,6 +368,11 @@ const sidebarItems = {
     { icon: LayoutDashboard, label: "오늘", href: "/dashboard/sales" },
     { icon: Building2, label: "거래처", href: "/dashboard/sales/accounts" },
     {
+      icon: Layers,
+      label: "소개·피치",
+      href: "/dashboard/sales/pitch",
+    },
+    {
       icon: BarChart3,
       label: "성과",
       href: "/dashboard/sales/performance",
@@ -477,6 +483,11 @@ const salesTeamMenuSections: DashboardSidebarSection[] = [
     items: [
       { icon: LayoutDashboard, label: "오늘", href: "/dashboard/sales" },
       { icon: Building2, label: "거래처", href: "/dashboard/sales/accounts" },
+      {
+        icon: Layers,
+        label: "소개·피치",
+        href: "/dashboard/sales/pitch",
+      },
     ],
   },
   {
