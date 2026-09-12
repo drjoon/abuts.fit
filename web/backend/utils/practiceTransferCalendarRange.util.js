@@ -160,7 +160,7 @@ export function filterTransferDocsToCalendarRange(docs, range, options = {}) {
   });
 }
 
-/** 캘린더 목록 Mongo projection — 파일·치식·생산 메타만 */
+/** 캘린더·목록 Mongo projection — 파일·치식·생산·과금 메타(전체 Mixed 제외) */
 export const PRACTICE_TRANSFER_CALENDAR_LIST_SELECT = {
   transferId: 1,
   transferMemo: 1,
@@ -174,8 +174,10 @@ export const PRACTICE_TRANSFER_CALENDAR_LIST_SELECT = {
   practiceUserId: 1,
   orderDates: 1,
   arrivalDates: 1,
+  arrivalDeadlineExpiredAt: 1,
   toothWorks: 1,
   labRequestStagePlans: 1,
+  prosthesisFollowUps: 1,
   files: 1,
   trashedFiles: 1,
   resultFiles: 1,
@@ -185,6 +187,7 @@ export const PRACTICE_TRANSFER_CALENDAR_LIST_SELECT = {
   remakeCharges: 1,
   remakeSourceTransferId: 1,
   isRemake: 1,
+  manufacturerStage: 1,
   requestorReadAt: 1,
   requestorDownloadedAt: 1,
   workCanceledAt: 1,
@@ -193,3 +196,6 @@ export const PRACTICE_TRANSFER_CALENDAR_LIST_SELECT = {
   createdAt: 1,
   updatedAt: 1,
 };
+
+/** GET /my page 목록 — 캘린더와 동일 projection */
+export const PRACTICE_TRANSFER_MY_LIST_SELECT = PRACTICE_TRANSFER_CALENDAR_LIST_SELECT;

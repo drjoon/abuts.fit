@@ -140,6 +140,7 @@ import {
   mergeCalendarRangeWithAttentionFilter,
   parsePracticeTransferCalendarRangeQuery,
   PRACTICE_TRANSFER_CALENDAR_LIST_SELECT,
+  PRACTICE_TRANSFER_MY_LIST_SELECT,
   PRACTICE_TRANSFER_CALENDAR_RANGE_MAX,
 } from "../../utils/practiceTransferCalendarRange.util.js";
 import {
@@ -216,6 +217,7 @@ import { completePracticeTransferWork } from "../../services/practiceTransferCom
 // - web/backend/utils/practiceTransferAbutmentPresets.js
 // - web/backend/utils/practiceLabRating.js
 // - web/backend/utils/practiceTransferStage.js
+// - 2026-09-13: GET /my — 전송 1건=응답 1행(파일수만큼 files[]·feeQuote 복제 제거). 상세용 files[]는 1회만.
 // - 2026-09-12: GET /my toVirtualRequestRows — files[]·trashedFiles(의뢰 파일 휴지통) 포함.
 // - 2026-09-12: request-files — uploadBatchId·uploadedAt 웨이브 스탬프(시점별 클러스터).
 // - 2026-09-12: request-files append/remove — 상세 패널 드롭·클립으로 의뢰 파일(3D·이미지) 추가·삭제.
@@ -1055,7 +1057,7 @@ const serializeRemakeChargesForApi = (charges) =>
         : 0,
   }));
 
-const toVirtualRequestRows = (transferDoc) => {
+const toVirtualRequestRows = (transferDoc, { perFile = true } = {}) => {
   const transferId = String(transferDoc?.transferId || "").trim();
   const matchingMode = isAutoMatchMode(transferDoc) ? "auto" : "direct";
   const handledByCertifiedPartner =
@@ -1093,7 +1095,12 @@ const toVirtualRequestRows = (transferDoc) => {
   // 첨부 파일 없는 전송도 최근 의뢰 목록에 보이도록 placeholder row 1건 생성
   const memoPatientMatch = transferMemo.match(/\[\s*환자명\s*:\s*([^\]]+)\]/);
   const memoPatientName = String(memoPatientMatch?.[1] || "").trim();
-  const sourceRows = files.length > 0 ? files : [null];
+  // perFile=false: 목록/캘린더 — 전송 1건=1행(files[]는 아래에 1회만 실음)
+  const sourceRows = perFile
+    ? files.length > 0
+      ? files
+      : [null]
+    : [files[0] || null];
   const arrivalDates = resolvePracticeArrivalDates(transferDoc);
   const currentArrivalYmd = resolveCurrentArrivalYmd(arrivalDates);
   const orderDates = resolvePracticeOrderDates(transferDoc);
@@ -1168,14 +1175,17 @@ const toVirtualRequestRows = (transferDoc) => {
 };
 
 /**
- * 캘린더용 — 전송 1건 = 응답 1행(파일수만큼 복제하지 않음).
- * 칩·검색용 환자/치식만 합치고, fee/배송 enrich는 생략.
- * 의뢰 파일은 files[] 전부 포함(단건 caseInfos.file만 있으면 상세가 1개→N개로 늦게 채워짐).
+ * 목록·캘린더용 — 전송 1건 = 응답 1행(파일수만큼 files[]/feeQuote 복제하지 않음).
+ * 칩·검색용 환자/치식만 합치고, 의뢰 파일은 files[] 전부 1회 포함.
  */
-const toCalendarOwnedRequestRows = (transferDoc) => {
-  const rows = toVirtualRequestRows(transferDoc);
+const toOwnedListRequestRows = (transferDoc) => {
+  const rows = toVirtualRequestRows(transferDoc, { perFile: false });
   if (!rows.length) return [];
   const first = rows[0];
+  const files = Array.isArray(transferDoc?.files) ? transferDoc.files : [];
+  const toothWorks = Array.isArray(transferDoc?.toothWorks)
+    ? transferDoc.toothWorks
+    : [];
   const patients = [];
   const teeth = [];
   const seenPatient = new Set();
@@ -1191,17 +1201,23 @@ const toCalendarOwnedRequestRows = (transferDoc) => {
       teeth.push(tooth);
     }
   };
-  for (const row of rows) {
-    const patient = String(row?.caseInfos?.patientName || "").trim();
+  const transferMemo = String(transferDoc?.transferMemo || "").trim();
+  const memoPatientMatch = transferMemo.match(/\[\s*환자명\s*:\s*([^\]]+)\]/);
+  const memoPatientName = String(memoPatientMatch?.[1] || "").trim();
+  if (memoPatientName) {
+    seenPatient.add(memoPatientName);
+    patients.push(memoPatientName);
+  }
+  for (const file of files) {
+    const patient = String(file?.patientName || "").trim();
     if (patient && patient !== "-" && !seenPatient.has(patient)) {
       seenPatient.add(patient);
       patients.push(patient);
     }
-    pushTooth(row?.caseInfos?.tooth);
-    const toothWorks = Array.isArray(row?.toothWorks) ? row.toothWorks : [];
-    for (const work of toothWorks) {
-      pushTooth(work?.toothNumber);
-    }
+    pushTooth(file?.tooth);
+  }
+  for (const work of toothWorks) {
+    pushTooth(work?.toothNumber);
   }
   return [
     {
@@ -1209,7 +1225,6 @@ const toCalendarOwnedRequestRows = (transferDoc) => {
       feeQuote: null,
       labRating: null,
       abutmentDeliveryInfo: null,
-      // 가상행은 파일당 1건이라 first에 첨부가 1개뿐 → 상세 즉시 표시용으로 전체 files[] 부착
       ...toTransferFilesApiFields(transferDoc),
       caseInfos: {
         ...first.caseInfos,
@@ -1219,6 +1234,9 @@ const toCalendarOwnedRequestRows = (transferDoc) => {
     },
   ];
 };
+
+/** @deprecated alias — 캘린더·목록 모두 toOwnedListRequestRows */
+const toCalendarOwnedRequestRows = toOwnedListRequestRows;
 
 const isLabReceiveUnreadDoc = (doc, labAnchorId) => {
   const status = String(doc?.status || "").trim();
@@ -1893,6 +1911,9 @@ const fetchOwnedPracticeTransfersPage = async ({
   const calendarSelect = calendarRange
     ? PRACTICE_TRANSFER_CALENDAR_LIST_SELECT
     : null;
+  const listSelect = calendarRange
+    ? null
+    : PRACTICE_TRANSFER_MY_LIST_SELECT;
 
   if (calendarRange && calendarFilter) {
     const take = PRACTICE_TRANSFER_CALENDAR_RANGE_MAX;
@@ -1962,31 +1983,32 @@ const fetchOwnedPracticeTransfersPage = async ({
       ? practiceUserObjectIds
       : [];
     const fetchLimit = offset + take;
+    const applyListSelect = (query) =>
+      listSelect ? query.select(listSelect) : query;
     const [byAnchor, byLegacy] = await Promise.all([
-      PracticeTransfer.find({
-        practiceBusinessAnchorId: new Types.ObjectId(anchorId),
-      })
-        .sort(sort)
-        .limit(fetchLimit)
-        .lean(),
+      applyListSelect(
+        PracticeTransfer.find({
+          practiceBusinessAnchorId: new Types.ObjectId(anchorId),
+        })
+          .sort(sort)
+          .limit(fetchLimit),
+      ).lean(),
       ownerIds.length
-        ? PracticeTransfer.find({
-            practiceBusinessAnchorId: null,
-            practiceUserId: { $in: ownerIds },
-          })
-            .sort(sort)
-            .limit(fetchLimit)
-            .lean()
+        ? applyListSelect(
+            PracticeTransfer.find({
+              practiceBusinessAnchorId: null,
+              practiceUserId: { $in: ownerIds },
+            })
+              .sort(sort)
+              .limit(fetchLimit),
+          ).lean()
         : Promise.resolve([]),
     ]);
     return mergeNewestTransferDocs(byAnchor, byLegacy, fetchLimit).slice(offset);
   }
 
-  return PracticeTransfer.find(scope)
-    .sort(sort)
-    .skip(offset)
-    .limit(take)
-    .lean();
+  const pageQuery = PracticeTransfer.find(scope).sort(sort).skip(offset).limit(take);
+  return (listSelect ? pageQuery.select(listSelect) : pageQuery).lean();
 };
 
 const buildTransferIdFilter = (rawTransferId) => {
@@ -6081,7 +6103,7 @@ export async function getMyPracticeTransfers(req, res) {
               doc,
               { abutmentDeliveryInfo },
             );
-            return toVirtualRequestRows(doc).map((row) => ({
+            return toOwnedListRequestRows(doc).map((row) => ({
               ...row,
               manufacturerStage,
               feeQuote,
@@ -6106,9 +6128,6 @@ export async function getMyPracticeTransfers(req, res) {
       }
     }
 
-    const mapRows = calendarRange
-      ? toCalendarOwnedRequestRows
-      : toVirtualRequestRows;
     const requests = docs.flatMap((doc) => {
       const feeQuote = quotesById.get(String(doc?._id || "")) || null;
       const labId = String(resolvePerformingLabAnchorId(doc) || "").trim();
@@ -6122,7 +6141,7 @@ export async function getMyPracticeTransfers(req, res) {
       const manufacturerStage = resolvePracticeTransferManufacturerStage(doc, {
         abutmentDeliveryInfo,
       });
-      return mapRows(doc).map((row) => ({
+      return toOwnedListRequestRows(doc).map((row) => ({
         ...row,
         manufacturerStage,
         feeQuote,
