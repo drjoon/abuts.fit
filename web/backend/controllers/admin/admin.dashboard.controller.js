@@ -33,6 +33,7 @@ import {
 import { collectHappyCallReasonCodes } from "./happyCallReasons.js";
 import { buildUnsupportedAbutmentDashboardStats } from "../../services/unsupportedAbutmentDashboardStats.service.js";
 import { buildProsthesisFeeItemRequestDashboardStats } from "../../services/prosthesisFeeItemRequestDashboardStats.service.js";
+import { getPlatformGrowthStats } from "../../services/platformGrowthStats.service.js";
 
 const HAPPY_CALL_REASON_META = {
   first_completion_this_week: {
@@ -262,7 +263,7 @@ export async function getDashboardStats(req, res) {
     const forceFresh =
       String(req.query?.fresh || "").trim() === "1" ||
       String(req.query?.fresh || "").trim().toLowerCase() === "true";
-    const cacheKey = `admin-dashboard:v4:${periodKey}`;
+    const cacheKey = `admin-dashboard:v5:${periodKey}`;
     if (!forceFresh) {
       const cached = getRequestPerfCacheValue(cacheKey);
       if (cached) {
@@ -338,6 +339,7 @@ async function buildAdminDashboardPayload(req) {
       practiceTransferRecentRaw,
       unsupportedAbutmentStats,
       prosthesisFeeItemRequestStats,
+      platformGrowthStatsBase,
     ] = await Promise.all([
       User.aggregate([{ $group: { _id: "$role", count: { $sum: 1 } } }]),
       User.countDocuments({ role: "requestor" }),
@@ -676,7 +678,13 @@ async function buildAdminDashboardPayload(req) {
       ]),
       buildUnsupportedAbutmentDashboardStats(),
       buildProsthesisFeeItemRequestDashboardStats(),
+      getPlatformGrowthStats({ start, end }),
     ]);
+
+    const platformGrowthStats = {
+      ...(platformGrowthStatsBase || {}),
+      periodRevenue: Number(pricingSummary?.totalRevenue || 0),
+    };
 
     const userStatsByRole = {};
     userStats.forEach((stat) => {
@@ -1191,6 +1199,7 @@ async function buildAdminDashboardPayload(req) {
           requestorBusinessCount,
           byRole: userStatsByRole,
         },
+        platformGrowthStats,
         requestStats: {
           total: totalRequests,
           byStatus: requestStatsByStatus,

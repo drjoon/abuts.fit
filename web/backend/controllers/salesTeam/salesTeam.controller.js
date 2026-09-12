@@ -14,6 +14,7 @@ import {
   ensureSalesTeamReferralCode,
   resolveSalesTeamReferralAnchorId,
 } from "../../utils/salesTeamReferral.util.js";
+import { getPlatformSocialProof } from "../../services/platformGrowthStats.service.js";
 
 const COMMITMENTS = new Set(["confirmed", "around", "askBefore"]);
 const VISIT_STATUSES = new Set([
@@ -1937,6 +1938,20 @@ export async function getReferralInfo(req, res) {
     return res.status(500).json({
       success: false,
       message: error?.message || "소개 정보 조회에 실패했습니다.",
+    });
+  }
+}
+
+/** 고객 대면용 소셜 프루프 (매출 제외) */
+export async function getPlatformPitch(req, res) {
+  try {
+    const data = await getPlatformSocialProof();
+    return res.json({ success: true, data });
+  } catch (error) {
+    console.error("[salesTeam.getPlatformPitch]", error);
+    return res.status(500).json({
+      success: false,
+      message: error?.message || "플랫폼 소개 통계 조회에 실패했습니다.",
     });
   }
 }

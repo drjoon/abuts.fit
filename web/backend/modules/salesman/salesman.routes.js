@@ -7,6 +7,7 @@ import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
 import {
   getSalesmanDashboard,
   getSalesmanLedger,
+  getPlatformPitch,
 } from "../../controllers/salesman/salesman.controller.js";
 
 const router = Router();
@@ -16,5 +17,6 @@ router.use(authorize(["salesman", "devops"]));
 
 router.get("/dashboard", getSalesmanDashboard);
 router.get("/ledger", getSalesmanLedger);
+router.get("/platform-pitch", getPlatformPitch);
 
 export default router;

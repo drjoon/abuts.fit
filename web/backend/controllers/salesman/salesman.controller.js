@@ -14,6 +14,7 @@ import LedgerJournal from "../../models/ledgerJournal.model.js";
 import {
   buildOccurredAtFromPeriodQuery,
 } from "../../utils/kstQueryBounds.js";
+import { getPlatformSocialProof } from "../../services/platformGrowthStats.service.js";
 
 function parsePeriod(input) {
   const raw = String(input || "").trim();
@@ -727,6 +728,22 @@ export async function getSalesmanDashboard(req, res) {
     return res.status(500).json({
       success: false,
       message: "딜러 대시보드 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/** 고객 대면용 소셜 프루프 (매출 제외) */
+export async function getPlatformPitch(req, res) {
+  try {
+    res.set("x-abuts-handler", "salesman.getPlatformPitch");
+    const data = await getPlatformSocialProof();
+    return res.status(200).json({ success: true, data });
+  } catch (error) {
+    console.error("[salesman.getPlatformPitch] error", error);
+    return res.status(500).json({
+      success: false,
+      message: "플랫폼 소개 통계 조회 중 오류가 발생했습니다.",
       error: error.message,
     });
   }

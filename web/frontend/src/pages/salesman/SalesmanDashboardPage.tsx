@@ -30,6 +30,7 @@ import {
   useCommissionDashboard,
   formatMoney,
 } from "@/features/commission/useCommissionDashboard";
+import { PlatformPitchPanel } from "@/shared/sales/PlatformPitchPanel";
 
 export const SalesmanDashboardPage = () => {
   const { user, token } = useAuthStore();
@@ -149,49 +150,55 @@ export const SalesmanDashboardPage = () => {
           </div>
         }
         topSection={
-          <Card className="app-glass-card app-glass-card--lg mx-3 mt-3">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-semibold">불완전가공 단계 현황</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <div className="grid grid-cols-3 gap-2 text-xs">
-                <div>가능성 {Number(unmachinableCounts.potentialCount || 0).toLocaleString()}건</div>
-                <div>판정 {Number(unmachinableCounts.judgedCount || 0).toLocaleString()}건</div>
-                <div>확인 {Number(unmachinableCounts.confirmedCount || 0).toLocaleString()}건</div>
-              </div>
-              <div className="space-y-1 max-h-24 overflow-auto pr-1">
-                {unmachinableItems.map((item, idx) => {
-                  const rid = String((item as Record<string, unknown>)?.requestId || "").trim();
-                  const key = String((item as Record<string, unknown>)?._id || rid || `unmach-${idx}`);
-                  const code = String(
-                    (item as Record<string, unknown>)?.unmachinableDetailCode || "",
-                  );
-                  return (
-                  <div
-                    key={key}
-                    className="flex items-center justify-between gap-2 rounded border px-2 py-1"
-                  >
-                    <span className="text-xs truncate">{rid || "-"}</span>
-                    <Badge variant="outline" className="text-[10px]">
-                      {code === "confirmed"
-                        ? "확인"
-                        : code === "judged"
-                          ? "판정"
-                          : code === "potential"
-                            ? "가능성"
-                            : "-"}
-                    </Badge>
-                  </div>
-                  );
-                })}
-                {unmachinableItems.length === 0 && (
-                  <div className="text-xs text-muted-foreground">
-                    표시할 불완전가공 의뢰가 없습니다.
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
+          <div className="mx-3 mt-3 space-y-3">
+            <PlatformPitchPanel
+              apiPath="/api/salesman/platform-pitch"
+              queryKey="salesman-platform-pitch"
+            />
+            <Card className="app-glass-card app-glass-card--lg">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-semibold">불완전가공 단계 현황</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <div className="grid grid-cols-3 gap-2 text-xs">
+                  <div>가능성 {Number(unmachinableCounts.potentialCount || 0).toLocaleString()}건</div>
+                  <div>판정 {Number(unmachinableCounts.judgedCount || 0).toLocaleString()}건</div>
+                  <div>확인 {Number(unmachinableCounts.confirmedCount || 0).toLocaleString()}건</div>
+                </div>
+                <div className="space-y-1 max-h-24 overflow-auto pr-1">
+                  {unmachinableItems.map((item, idx) => {
+                    const rid = String((item as Record<string, unknown>)?.requestId || "").trim();
+                    const key = String((item as Record<string, unknown>)?._id || rid || `unmach-${idx}`);
+                    const code = String(
+                      (item as Record<string, unknown>)?.unmachinableDetailCode || "",
+                    );
+                    return (
+                    <div
+                      key={key}
+                      className="flex items-center justify-between gap-2 rounded border px-2 py-1"
+                    >
+                      <span className="text-xs truncate">{rid || "-"}</span>
+                      <Badge variant="outline" className="text-[10px]">
+                        {code === "confirmed"
+                          ? "확인"
+                          : code === "judged"
+                            ? "판정"
+                            : code === "potential"
+                              ? "가능성"
+                              : "-"}
+                      </Badge>
+                    </div>
+                    );
+                  })}
+                  {unmachinableItems.length === 0 && (
+                    <div className="text-xs text-muted-foreground">
+                      표시할 불완전가공 의뢰가 없습니다.
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         }
         statsGridClassName="grid grid-cols-1 gap-2.5 p-3 sm:grid-cols-2 lg:grid-cols-3"
         stats={

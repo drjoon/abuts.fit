@@ -25,6 +25,7 @@ import {
   searchPlatformBusinesses,
   suggestPlaces,
   resolvePlace,
+  getPlatformPitch,
 } from "../../controllers/salesTeam/salesTeam.controller.js";
 import {
   listCustomerRequirements,
@@ -49,6 +50,7 @@ const requirementRoles = ["salesTeam", "admin", "internalLab", "devops"];
 router.get("/home", authorize(salesOpsRoles), getSalesHome);
 router.get("/stats", authorize(salesOpsRoles), getSalesStats);
 router.get("/referral", authorize(salesOpsRoles), getReferralInfo);
+router.get("/platform-pitch", authorize(salesOpsRoles), getPlatformPitch);
 router.post("/route/optimize", authorize(salesOpsRoles), optimizeRoute);
 router.post("/route/suggest-days", authorize(salesOpsRoles), suggestRouteDays);
 router.get("/places/suggest", authorize(salesOpsRoles), suggestPlaces);

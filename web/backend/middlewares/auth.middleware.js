@@ -8,6 +8,7 @@ import User from "../models/user.model.js";
 import BusinessAnchor from "../models/businessAnchor.model.js";
 import { Types } from "mongoose";
 import { resolveDesignAccessForUser } from "../utils/designAccess.js";
+import { voidRecordUserAccessDay } from "../services/userAccess.service.js";
 
 const AUTH_USER_CACHE_TTL_MS = 30 * 1000;
 const __authUserCache = new Map();
@@ -129,6 +130,8 @@ export const authenticate = async (req, res, next) => {
 
     // 요청 객체에 사용자 정보 추가
     req.user = user;
+    // KST 일별 접속 1회 upsert (프로세스 캐시로 중복 write 억제)
+    voidRecordUserAccessDay({ userId: user._id, role: user.role });
     next();
   } catch (error) {
     res.set("Cache-Control", "no-store");

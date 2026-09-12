@@ -62,6 +62,7 @@ import {
   RotateCw,
   BarChart3,
   Layers,
+  Activity,
   type LucideIcon,
 } from "lucide-react";
 import { MachiningStatisticsModal } from "@/pages/manufacturer/worksheet/custom_abutment/machining/components/MachiningStatisticsModal";
@@ -138,6 +139,18 @@ type HappyCallMemoDialogItem = {
   companyName?: string;
 };
 
+type PlatformGrowthStats = {
+  todayAccessUsers?: number;
+  monthActiveUsers?: number;
+  totalUsers?: number;
+  practiceBusinessCount?: number;
+  labBusinessCount?: number;
+  periodRequestCount?: number;
+  allTimeRequestCount?: number;
+  monthRequestCount?: number;
+  periodRevenue?: number;
+};
+
 type AdminDashboardResponseData = {
   happyCallSummary?: HappyCallSummary;
   unmachinableSummary?: {
@@ -164,6 +177,7 @@ type AdminDashboardResponseData = {
     total?: number;
     requestorBusinessCount?: number;
   };
+  platformGrowthStats?: PlatformGrowthStats;
   systemAlerts?: DashboardData["systemAlerts"];
   practiceTransferStats?: PracticeTransferStats;
   unsupportedAbutmentStats?: UnsupportedAbutmentStats;
@@ -964,6 +978,11 @@ export const AdminDashboardPage = () => {
   const pricingSummary: PricingSummary | null = adminDashboardResponse?.success
     ? (adminDashboardResponse.data?.pricingSummary ?? null)
     : null;
+
+  const platformGrowthStats: PlatformGrowthStats | null =
+    adminDashboardResponse?.success
+      ? (adminDashboardResponse.data?.platformGrowthStats ?? null)
+      : null;
 
   const completionSummary = adminDashboardResponse?.success
     ? (adminDashboardResponse.data?.completionSummary ?? null)
@@ -2087,6 +2106,75 @@ export const AdminDashboardPage = () => {
         topSection={undefined}
         stats={
           <>
+            {/* 플랫폼 성장 KPI */}
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+              <Card className="app-glass-card app-glass-card--lg">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">오늘 접속</CardTitle>
+                  <Activity className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">
+                    {Number(platformGrowthStats?.todayAccessUsers || 0).toLocaleString()}
+                  </div>
+                  <p className="mt-1 text-[11px] text-muted-foreground">KST 오늘 로그인·접속</p>
+                </CardContent>
+              </Card>
+              <Card className="app-glass-card app-glass-card--lg">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">월간 유저</CardTitle>
+                  <Users className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">
+                    {Number(platformGrowthStats?.monthActiveUsers || 0).toLocaleString()}
+                  </div>
+                  <p className="mt-1 text-[11px] text-muted-foreground">KST 이번 달 접속</p>
+                </CardContent>
+              </Card>
+              <Card className="app-glass-card app-glass-card--lg">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">총 유저</CardTitle>
+                  <Users className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">
+                    {Number(platformGrowthStats?.totalUsers || 0).toLocaleString()}
+                  </div>
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    치과 {Number(platformGrowthStats?.practiceBusinessCount || 0).toLocaleString()} · 기공소{" "}
+                    {Number(platformGrowthStats?.labBusinessCount || 0).toLocaleString()}
+                  </p>
+                </CardContent>
+              </Card>
+              <Card className="app-glass-card app-glass-card--lg">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">이용건수</CardTitle>
+                  <BarChart3 className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">
+                    {Number(platformGrowthStats?.periodRequestCount || 0).toLocaleString()}
+                  </div>
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    기간 선택 · 누적 {Number(platformGrowthStats?.allTimeRequestCount || 0).toLocaleString()}
+                  </p>
+                </CardContent>
+              </Card>
+              <Card className="app-glass-card app-glass-card--lg">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">매출</CardTitle>
+                  <DollarSign className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">
+                    ₩{Number(platformGrowthStats?.periodRevenue || 0).toLocaleString()}
+                  </div>
+                  <p className="mt-1 text-[11px] text-muted-foreground">기간 유료 주문액</p>
+                </CardContent>
+              </Card>
+            </div>
+
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {/* 카드1: 진행 / 완료 */}
               <Card className="app-glass-card app-glass-card--lg">

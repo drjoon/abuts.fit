@@ -46,6 +46,7 @@ import {
   ensureSalesTeamPersonalAnchor,
   resolveSalesTeamReferralAnchorId,
 } from "../../utils/salesTeamReferral.util.js";
+import { voidRecordUserAccessDay } from "../../services/userAccess.service.js";
 
 const createReferralCode = (length, alphaOnly = false) => {
   const alphabet = alphaOnly
@@ -428,6 +429,8 @@ const sendLoginSuccessResponse = async ({
     }
   }
   await user.save();
+
+  voidRecordUserAccessDay({ userId: user._id, role: user.role });
 
   const token = generateToken({ userId: user._id, role: user.role });
   const refreshToken = generateRefreshToken(user._id);
@@ -1551,6 +1554,8 @@ async function refreshToken(req, res) {
 
     // 새 액세스 토큰 발급
     const newToken = generateToken({ userId: user._id, role: user.role });
+
+    voidRecordUserAccessDay({ userId: user._id, role: user.role });
 
     res.status(200).json({
       success: true,

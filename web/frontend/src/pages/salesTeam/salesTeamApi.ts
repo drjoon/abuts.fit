@@ -86,6 +86,14 @@ export const salesTeamApi = {
       referralCode: string | null;
     }>(token, "/api/sales-team/home"),
 
+  platformPitch: (token: string | null) =>
+    salesFetch<{
+      practiceBusinessCount: number;
+      labBusinessCount: number;
+      monthRequestCount: number;
+      allTimeRequestCount: number;
+    }>(token, "/api/sales-team/platform-pitch"),
+
   listAccounts: (
     token: string | null,
     params?: { q?: string; kind?: string; join?: string },
