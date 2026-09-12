@@ -16,7 +16,7 @@
 // - web/frontend/src/shared/files/fileBlobCache.ts
 // - web/frontend/src/shared/files/s3ImageThumb.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
-// - 2026-09-13: 3D 타일 선다운로드 유지 — IndexedDB 디스크 캐시(~2GB LRU)로 재방문 히트.
+// - 2026-09-13: 3D 타일 선다운로드 유지 — IndexedDB 디스크 캐시(~10GB LRU)로 재방문 히트.
 // - 2026-09-13: 이미지 첨부 — 의뢰 파일 vs 채팅 선택. 3D만 의뢰 파일 자동. 채팅 버블은 3D만 숨김.
 // - 2026-09-12: 의뢰·작업 파일 타일 썸네일 — aspect-square → 2:1(세로 약 절반).
 // - 2026-09-12: 의뢰 파일 삭제→휴지통. 썸네일 끝 휴지통+카운터·복원.

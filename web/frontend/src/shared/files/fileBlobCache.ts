@@ -8,7 +8,8 @@
 // IndexedDB 기반 바이너리 파일 Blob 캐시 유틸리티
 // key: fileId 또는 s3Key
 // change-log:
-// - 2026-09-13: 용량 상한 ~2GB + updatedAt LRU(오래된 것부터 삭제). 조회 시 touch. QuotaExceeded 재시도.
+// - 2026-09-13: 용량 상한 ~10GB + updatedAt LRU(오래된 것부터 삭제). 조회 시 touch. QuotaExceeded 재시도.
+// - 2026-09-13: 용량 상한 2GB→10GB.
 // - 2026-08-29: NC만 바뀔 때 stl:{id}:* 폴백을 지우지 않음 — camS3Key 있을 때만 filled STL 폴백 무효화.
 // - 2026-08-18: filled STL/NC 재생성 시 s3Key·버전 키·cnc:s3 접두 캐시를 함께 삭제.
 
@@ -16,8 +17,8 @@ const DB_NAME = "abutsfit-file-blob-cache";
 const DB_VERSION = 2;
 const STORE_NAME = "fileBlobs";
 
-/** 이 앱 파일 캐시에 쓸 로컬 디스크 상한(약 2GB). 초과 시 오래된(updatedAt) 항목부터 삭제. */
-export const FILE_BLOB_CACHE_MAX_BYTES = 2 * 1024 * 1024 * 1024;
+/** 이 앱 파일 캐시에 쓸 로컬 디스크 상한(약 10GB). 초과 시 오래된(updatedAt) 항목부터 삭제. */
+export const FILE_BLOB_CACHE_MAX_BYTES = 10 * 1024 * 1024 * 1024;
 
 export type FileBlobRecord = {
   key: string;
@@ -84,13 +85,13 @@ async function resolveCacheByteBudget(): Promise<number> {
     if (typeof navigator !== "undefined" && navigator.storage?.estimate) {
       const est = await navigator.storage.estimate();
       const quota = Number(est?.quota || 0);
-      // 오리진 전체 quota가 2GB보다 작으면(사파리 등) 캐시 상한도 맞춤
+      // 오리진 전체 quota가 10GB보다 작으면(사파리 등) 캐시 상한도 맞춤
       if (quota > 0) {
         budget = Math.min(budget, Math.max(64 * 1024 * 1024, quota));
       }
     }
   } catch {
-    // estimate 실패 시 2GB hard cap
+    // estimate 실패 시 10GB hard cap
   }
   return budget;
 }

@@ -1,5 +1,5 @@
 // change-log:
-// - 2026-09-13: IndexedDB ~2GB LRU(fileBlobCache) — 메시 선다운로드·재방문 히트.
+// - 2026-09-13: IndexedDB ~10GB LRU(fileBlobCache) — 메시 선다운로드·재방문 히트.
 // - 2026-09-05: guide-tour/* — public 정적 샘플 fetch(실 PLY). 실패 시 placeholder.
 // - 2026-09-05: guide-tour/demo S3키 — 네트워크 없이 placeholder blob(403 방지).
 // - 2026-08-16: S3 키 기준 IndexedDB blob 캐시 헬퍼.
