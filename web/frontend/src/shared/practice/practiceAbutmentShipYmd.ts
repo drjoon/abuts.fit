@@ -4,11 +4,11 @@
 // - web/frontend/src/shared/shipping/estimateShipDate.ts
 // - web/backend/utils/practiceTransferArrivalDates.js
 // change-log:
+// - 2026-09-12: 출고 버튼 라벨 연도 생략(M.D) — 가로폭 축소.
 // - 2026-09-12: 출고일=도착−n 선택(최소 2). 낮 12시 전 신속·이후 묶음 출고일까지.
 // - 2026-09-12: 어벗 출고일 기본=치과도착일−3달력일. 출고일−3일 임박 경고 폐기.
 
 import {
-  formatKstYmdToKo,
   kstAddCivilDays,
   kstYmdDiffDays,
   toKstYmd,
@@ -217,10 +217,15 @@ export function clampAbutmentShipN(
   return Math.min(range.maxN, Math.max(range.minN, raw));
 }
 
+/** 버튼용: `출고 M.D` (연도 생략 — 가로폭). 팝오버 상세는 연도 포함 유지. */
 export function formatAbutmentShipButtonLabel(shipYmd?: string | null): string {
   const ymd = String(shipYmd || "").trim();
-  if (!YMD_RE.test(ymd)) return "어벗 출고일";
-  return `출고 ${formatKstYmdToKo(ymd)}`;
+  const m = ymd.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return "어벗 출고일";
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  if (!month || !day) return "어벗 출고일";
+  return `출고 ${month}.${day}`;
 }
 
 /** 버튼·팝오버 안내 줄(줄바꿈 SSOT). `whitespace-pre-line`로 표시. */
