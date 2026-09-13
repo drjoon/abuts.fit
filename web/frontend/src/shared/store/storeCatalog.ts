@@ -1,9 +1,11 @@
 // change-log:
+// - 2026-09-13: 첨 가격표 판매가·pkg가. 키트 SKU + 어벗 EA. 충전≥550만 pkg.
 // - 2026-08-23: 상품 blurb·description 문구 축약.
 // related files:
 // - web/frontend/src/pages/requestor/store/RequestorStorePage.tsx
 // - web/frontend/src/pages/requestor/store/RequestorStoreProductPage.tsx
 // - web/frontend/src/features/landing/LandingStoreShowcase.tsx
+// - web/backend/constants/storeCatalog.js
 
 export type StoreProductSpec = {
   label: string;
@@ -29,8 +31,10 @@ export type StoreProduct = {
    * 고객 표시는 부가세 포함가.
    */
   taxType?: "과세" | "면세";
-  /** 부가세 포함 표시가(원). null이면 라벨만. */
+  /** 부가세 포함 판매가(원). null이면 라벨만. */
   listPriceInclusive?: number | null;
+  /** 부가세 포함 pkg가(원). 패키지 구매자(충전≥550만)에게 적용. */
+  packagePriceInclusive?: number | null;
 };
 
 export type StoreCategory = {
@@ -39,10 +43,12 @@ export type StoreCategory = {
   products: StoreProduct[];
 };
 
+/** 패키지 단가 적용: 유료 크레딧(CHARGE_PAID) 누적 충전 ≥ 이 금액. */
+export const STORE_PACKAGE_PREPAID_THRESHOLD = 5_500_000;
+
 /**
  * 치과 스토어 카탈로그.
- * 명칭·구성: Initial / Check / Gingival Kit + Abutment (첨1).
- * 설명·상품정보고시·상세 이미지: acrodent.com 제품 상세 페이지 기준.
+ * 명칭·구성·단가: Initial / Check / Prosthetic Kit + Abutment (첨 가격표).
  */
 export const STORE_CATEGORIES: StoreCategory[] = [
   {
@@ -53,8 +59,9 @@ export const STORE_CATEGORIES: StoreCategory[] = [
         id: "simple-abutment-2",
         name: "SimpleAbutment2",
         image: "/store/transparent/simple-abutment-206.png",
-        blurb: "DT-Hex Simple Abut.",
-        description: "Submerged type용 Simple Abutment (DT-Hex).",
+        blurb: "DT-Hex Simple Abut. · 특수코팅 · Concave",
+        description:
+          "Submerged type용 Simple Abutment (DT-Hex). 특수코팅으로 스프레이 없이 스캔. Concave profile. 높이 S(2.0)·M(3.5)·L(5.0)·XL(6.5), 직경 6·7·9 — 12종.",
         galleryImages: ["/store/transparent/simple-abutment-206.png"],
         contentImages: ["/store/detail/simple-abutment-2-1.jpg"],
         specs: [
@@ -68,7 +75,7 @@ export const STORE_CATEGORIES: StoreCategory[] = [
           },
           { label: "사용방법", value: "상품상세설명 참조" },
           { label: "사용시 주의사항 및 보관방법", value: "상품상세설명 참조" },
-          { label: "포장단위", value: "1set" },
+          { label: "포장단위", value: "1EA" },
           { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
         ],
       },
@@ -76,9 +83,9 @@ export const STORE_CATEGORIES: StoreCategory[] = [
         id: "simple-healing-2",
         name: "SimpleHealing2",
         image: "/store/transparent/simple-healing.png",
-        blurb: "Healing Abut.",
+        blurb: "Healing Abut. · Hex 2-piece · D-cut",
         description:
-          "Fixture 식립 후 치은 치유·형성용 Healing Abutment.",
+          "Fixture 식립 후 치은 치유·형성용 Healing Abutment. Hex, 2-piece, D-cut(B,L) fillet. 높이 S·M·L·XL × 직경 6·7·9 — 12종.",
         galleryImages: ["/store/transparent/simple-healing.png"],
         contentImages: ["/store/detail/simple-healing-2-1.jpg"],
         specs: [
@@ -103,57 +110,25 @@ export const STORE_CATEGORIES: StoreCategory[] = [
     label: "Initial Kit",
     products: [
       {
-        id: "bone-pen",
-        name: "BonePen",
-        image: "/store/transparent/bone-pen.png",
-        blurb: "골 절삭·채집",
-        description: "핸드피스 부착용. 치조골 절삭·채집 후 BonePin으로 공간 확인.",
-        galleryImages: ["/store/transparent/bone-pen.png"],
-        contentImages: ["/store/detail/bone-pen-1.jpg"],
-        specs: [
-          { label: "품목명", value: "치과임플란트시술용드릴" },
-          { label: "모델명", value: "BP6MV2외 14건" },
-          { label: "의료기기 허가, 신고 번호", value: "부산 제신 12-16 호" },
-          {
-            label: "사용목적",
-            value:
-              "임플란트 시술시 임플란트용 핸드피스에 부착하여 골을 절삭 및 채집하는 것을 목적으로 한다.",
-          },
-          { label: "사용방법", value: "상품상세설명 참조" },
-          { label: "사용시 주의사항 및 보관방법", value: "상품상세설명 참조" },
-          { label: "포장단위", value: "EA" },
-          { label: "제조자/제조국", value: "(주)애크로덴트/ 대한민국" },
-          {
-            label: "품질책임자/전화번호",
-            value: "이상훈 / Tel : 055-314-4607",
-          },
-        ],
-      },
-      {
-        id: "bone-pin",
-        name: "BonePin",
-        image: "/store/transparent/bone-pin.png",
-        blurb: "가상 크라운 Pin",
+        id: "initial-kit",
+        name: "Initial Kit",
+        image: "/store/guide-kit-case.jpg",
+        blurb: "InitialPen · InitialPin",
         description:
-          "BonePen과 동일 사이즈 Pin으로 수평·수직 공간 확인.",
-        galleryImages: ["/store/transparent/bone-pin.png"],
-        contentImages: ["/store/detail/bone-pin-1.jpg"],
+          "Lindemann type pen 2종, Cup 5종 구성. InitialPen(골 절삭·채집)과 InitialPin(가상 크라운 공간 확인) 키트.",
+        galleryImages: [
+          "/store/guide-kit-case.jpg",
+          "/store/transparent/bone-pen.png",
+          "/store/transparent/bone-pin.png",
+        ],
+        contentImages: [
+          "/store/detail/bone-pen-1.jpg",
+          "/store/detail/bone-pin-1.jpg",
+        ],
         specs: [
-          { label: "품목명", value: "치과용임플란트시술기구" },
-          { label: "모델명", value: "BPP6V2외 29건" },
-          { label: "의료기기 허가, 신고 번호", value: "부산 제신 12-23 호" },
-          {
-            label: "사용목적",
-            value: "치과용 임플란트를 시술하는 데에 사용되는 기구이다.",
-          },
-          { label: "사용방법", value: "상품상세설명 참조" },
-          { label: "사용시 주의사항 및 보관방법", value: "상품상세설명 참조" },
-          { label: "포장단위", value: "EA" },
-          { label: "제조자/제조국", value: "(주)애크로덴트 / 대한민국" },
-          {
-            label: "품질책임자/전화번호",
-            value: "이상훈 / Tel : 055-314-4607",
-          },
+          { label: "구성", value: "InitialPen, InitialPin, Cup" },
+          { label: "포장단위", value: "1키트" },
+          { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
         ],
       },
     ],
@@ -163,93 +138,49 @@ export const STORE_CATEGORIES: StoreCategory[] = [
     label: "Check Kit",
     products: [
       {
-        id: "check-pin",
-        name: "CheckPin",
+        id: "check-kit",
+        name: "Check Kit",
         image: "/store/transparent/check-pin.png",
-        blurb: "교합 높이 확인",
-        description: "Fixture 식립 후 수평·수직 공간 확인.",
-        galleryImages: ["/store/transparent/check-pin.png"],
-        contentImages: ["/store/detail/check-pin-1.jpg"],
-        specs: [
-          { label: "품목명", value: "치과용임플란트시술기구" },
-          { label: "모델명", value: "EX14외 11건" },
-          { label: "의료기기 허가, 신고 번호", value: "제신 19-1088 호" },
-          {
-            label: "사용목적",
-            value: "치과용 임플란트를 시술하는 데에 사용되는 기구이다.",
-          },
-          { label: "사용방법", value: "사용자 매뉴얼 참조" },
-          { label: "사용시 주의사항 및 보관방법", value: "사용자 매뉴얼 참조" },
-          { label: "포장단위", value: "EA" },
-          { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
-          {
-            label: "품질관리자/전화번호",
-            value: "이상훈 / Tel : 055-314-4607",
-          },
+        blurb: "CheckPin · BoneShaper",
+        description:
+          "CheckPin 5종, BoneShaper(S·M × Ø6·7·9) 6종. Fixture 식립 후 교합 높이 확인·피질골 성형.",
+        galleryImages: [
+          "/store/transparent/check-pin.png",
+          "/store/transparent/bone-shaper.png",
         ],
-      },
-      {
-        id: "bone-shaper",
-        name: "BoneShaper",
-        image: "/store/transparent/bone-shaper.png",
-        blurb: "피질골 삭제·성형",
-        description: "Healing Abut. 체결용 피질골 삭제·성형.",
-        galleryImages: ["/store/transparent/bone-shaper.png"],
-        contentImages: ["/store/detail/bone-shaper-1.jpg"],
+        contentImages: [
+          "/store/detail/check-pin-1.jpg",
+          "/store/detail/bone-shaper-1.jpg",
+        ],
         specs: [
-          { label: "품목명", value: "치과임플란트시술용드릴" },
-          { label: "모델명", value: "BS6V2외 9건" },
-          { label: "의료기기 허가, 신고 번호", value: "부산 제신 12-8 호" },
-          {
-            label: "사용목적",
-            value:
-              "임플란트 시술에서 임플란트용 핸드피스에 부착하여 골을 삭제하는 기구이다.",
-          },
-          { label: "사용방법", value: "상품상세설명 참조" },
-          { label: "사용시 주의사항 및 보관방법", value: "사용자 매뉴얼 참조" },
-          { label: "포장단위", value: "EA" },
-          { label: "제조자/제조국", value: "(주)애크로덴트/ 대한민국" },
-          {
-            label: "품질책임자/전화번호",
-            value: "이상훈 / Tel : 055-314-4607",
-          },
+          { label: "구성", value: "CheckPin, BoneShaper" },
+          { label: "포장단위", value: "1키트" },
+          { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
         ],
       },
     ],
   },
   {
-    id: "gingival-kit",
-    label: "Gingival Kit",
+    id: "prosthetic-kit",
+    label: "Prosthetic Kit",
     products: [
       {
-        id: "gingival-shaper",
-        name: "GingivalShaper",
+        id: "prosthetic-kit",
+        name: "Prosthetic Kit",
         image: "/store/transparent/gingival-shaper.png",
-        blurb: "마진 치은 삭제",
+        blurb: "GingivalShaper · Hex Driver",
         imageScale: 1.55,
-        description: "Simple Abut. 마진 부위 치은 삭제.",
+        description:
+          "GingivalShaper 5종, Hex Driver(S·M) 2종. Simple Abut. 마진 치은 삭제·체결용.",
         galleryImages: [
           "/store/transparent/gingival-shaper.png",
           "/store/gingival-shaper-296.jpg",
         ],
         contentImages: ["/store/detail/gingival-shaper-1.jpg"],
         specs: [
-          { label: "품명", value: "의료용절삭기구" },
-          { label: "모델명", value: "GS06V1외 41건" },
-          { label: "의료기기 허가, 신고 번호", value: "부산 제신 11-98 호" },
-          {
-            label: "사용목적",
-            value:
-              "천자기, 천공기 및 핸드피스 등에 사용하는 절삭용 버(burr), 절삭용 디스크, 광택용 휠, 스트립 등의 기구. 레이저, 수술기용 디스크를 포함한다.",
-          },
-          { label: "사용방법", value: "상품상세설명 참조" },
-          { label: "사용시 주의사항 및 보관방법", value: "상품상세설명 참조" },
-          { label: "포장단위", value: "EA" },
+          { label: "구성", value: "GingivalShaper, Hex Driver" },
+          { label: "포장단위", value: "1키트" },
           { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
-          {
-            label: "품질책임자/전화번호",
-            value: "이상훈 / Tel : 055-314-4607",
-          },
         ],
       },
     ],
@@ -270,15 +201,22 @@ export const STORE_SLIDES: StoreSlide[] = STORE_CATEGORIES.flatMap(
     })),
 );
 
-/** 스토어 전 상품 기본: 과세 · 부가세 포함가(데모 단가, 추후 관리 설정으로 교체). */
-const STORE_DEMO_INCLUSIVE_PRICES: Record<string, number> = {
-  "simple-abutment-2": 110_000,
-  "simple-healing-2": 55_000,
-  "bone-pen": 220_000,
-  "bone-pin": 88_000,
-  "check-pin": 165_000,
-  "bone-shaper": 132_000,
-  "gingival-shaper": 99_000,
+/** 판매가(부가세 포함). 백엔드 storeCatalog.js 와 동기. */
+const STORE_LIST_INCLUSIVE_PRICES: Record<string, number> = {
+  "initial-kit": 1_100_000,
+  "check-kit": 1_100_000,
+  "prosthetic-kit": 1_100_000,
+  "simple-abutment-2": 15_400,
+  "simple-healing-2": 15_400,
+};
+
+/** pkg가(부가세 포함). 충전≥550만 시 적용. */
+const STORE_PACKAGE_INCLUSIVE_PRICES: Record<string, number> = {
+  "initial-kit": 880_000,
+  "check-kit": 880_000,
+  "prosthetic-kit": 880_000,
+  "simple-abutment-2": 12_100,
+  "simple-healing-2": 12_100,
 };
 
 function withStoreTaxDefaults(product: StoreProduct): StoreProduct {
@@ -288,7 +226,11 @@ function withStoreTaxDefaults(product: StoreProduct): StoreProduct {
     listPriceInclusive:
       product.listPriceInclusive !== undefined
         ? product.listPriceInclusive
-        : (STORE_DEMO_INCLUSIVE_PRICES[product.id] ?? null),
+        : (STORE_LIST_INCLUSIVE_PRICES[product.id] ?? null),
+    packagePriceInclusive:
+      product.packagePriceInclusive !== undefined
+        ? product.packagePriceInclusive
+        : (STORE_PACKAGE_INCLUSIVE_PRICES[product.id] ?? null),
   };
 }
 
@@ -311,6 +253,18 @@ export function getStoreCategoryForProduct(productId: string | undefined) {
   return STORE_CATEGORIES.find((category) =>
     category.products.some((product) => product.id === productId),
   );
+}
+
+/** 패키지 구매자면 pkg가(있을 때), 아니면 판매가. */
+export function resolveStoreUnitPriceInclusive(
+  product: Pick<StoreProduct, "listPriceInclusive" | "packagePriceInclusive">,
+  isPackageBuyer: boolean,
+): number | null {
+  const list = product.listPriceInclusive;
+  if (list == null) return null;
+  if (!isPackageBuyer) return list;
+  const pkg = product.packagePriceInclusive;
+  return pkg != null ? pkg : list;
 }
 
 const CATEGORY_THEMES: Record<
@@ -340,7 +294,7 @@ const CATEGORY_THEMES: Record<
     ring: "ring-amber-400/15",
     progress: "bg-amber-400",
   },
-  "gingival-kit": {
+  "prosthetic-kit": {
     glow: "bg-emerald-400/12",
     accent: "text-emerald-300",
     ring: "ring-emerald-400/15",

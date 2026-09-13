@@ -174,12 +174,13 @@ let cachedAdminAnchorIdAt = 0;
 const ADMIN_ANCHOR_CACHE_MS = 60_000;
 
 /** 카탈로그 productId에 재고 문서가 없으면 기본 수량으로 생성(1회 bulk). */
-let storeInventorySeeded = false;
+let storeInventorySeededForKey = "";
 
 export async function ensureStoreInventorySeeded(session) {
   const ids = listStoreProductIds();
   if (ids.length === 0) return;
-  if (storeInventorySeeded) return;
+  const seedKey = ids.join(",");
+  if (storeInventorySeededForKey === seedKey) return;
   await StoreInventory.bulkWrite(
     ids.map((productId) => ({
       updateOne: {
@@ -196,7 +197,7 @@ export async function ensureStoreInventorySeeded(session) {
     })),
     { ordered: false, session: session || undefined },
   );
-  storeInventorySeeded = true;
+  storeInventorySeededForKey = seedKey;
 }
 
 export async function getInventoryMap(session) {

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-13: 패키지 구매자 판매가 취소선·pkg가. 적용 단가 VAT 분해.
 // - 2026-08-23: 상세 문구·타이포 축소, 중복 배지 정리.
 // related files:
 // - web/frontend/src/shared/store/storeCatalog.ts
@@ -13,6 +14,7 @@ import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusine
 import {
   getStoreCategoryForProduct,
   getStoreProductById,
+  resolveStoreUnitPriceInclusive,
 } from "@/shared/store/storeCatalog";
 import {
   STORE_PRICE_TAX_NOTE,
@@ -20,10 +22,13 @@ import {
 } from "@/shared/tax/invoiceLabels";
 import { formatWonWithUnit } from "@/shared/settlement/affiliateVat";
 import { useStoreCartStore } from "@/store/useStoreCartStore";
+import { useStorePackagePricing } from "@/shared/store/useStorePackagePricing";
+import { StorePriceDisplay } from "@/pages/requestor/store/StorePriceDisplay";
 
 export default function RequestorStoreProductPage() {
   const { productId } = useParams<{ productId: string }>();
   const { kind, loading } = useRequestorBusinessAccess();
+  const { isPackageBuyer } = useStorePackagePricing();
   const addItem = useStoreCartStore((s) => s.addItem);
   const product = getStoreProductById(productId);
   const category = getStoreCategoryForProduct(productId);
@@ -34,6 +39,9 @@ export default function RequestorStoreProductPage() {
       : [];
   const contentImages = product?.contentImages ?? [];
   const scale = product?.imageScale ?? 1;
+  const unitPrice = product
+    ? resolveStoreUnitPriceInclusive(product, isPackageBuyer)
+    : null;
 
   if (!loading && kind === "lab") {
     return <Navigate to="/dashboard/credits" replace />;
@@ -108,19 +116,17 @@ export default function RequestorStoreProductPage() {
               </p>
               {product.listPriceInclusive != null ? (
                 <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 pt-0.5">
-                  <span className="text-base font-semibold tabular-nums sm:text-lg">
-                    {formatWonWithUnit(product.listPriceInclusive)}
-                  </span>
-                  {product.listPriceInclusive > 0 ? (
+                  <StorePriceDisplay
+                    product={product}
+                    isPackageBuyer={isPackageBuyer}
+                    size="lg"
+                  />
+                  {unitPrice != null && unitPrice > 0 ? (
                     <span className="text-[11px] text-muted-foreground">
                       공급{" "}
-                      {formatWonWithUnit(
-                        splitInclusiveVat(product.listPriceInclusive).supply,
-                      )}{" "}
+                      {formatWonWithUnit(splitInclusiveVat(unitPrice).supply)}{" "}
                       · 세액{" "}
-                      {formatWonWithUnit(
-                        splitInclusiveVat(product.listPriceInclusive).vat,
-                      )}
+                      {formatWonWithUnit(splitInclusiveVat(unitPrice).vat)}
                     </span>
                   ) : null}
                 </div>

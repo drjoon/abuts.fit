@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-13: 판매가·pkg가. 충전≥550만 패키지 구매자 단가.
 // - 2026-08-23: 주문 생성+선수금 결제 단일 트랜잭션(이중 commit 제거).
 // - 2026-08-23: 스토어 신규 주문은 선수금만. 계좌이체 입금 경로 제거.
 // - 2026-08-23: 배송지·풀필먼트·장바구니 합치기 금지 가드.
@@ -6,6 +7,7 @@
 // related files:
 // - web/backend/services/storeSale.service.js
 // - web/backend/modules/store/store.routes.js
+// - web/backend/utils/storePackagePricing.js
 import mongoose from "mongoose";
 import StoreOrder from "../../models/storeOrder.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
@@ -15,7 +17,11 @@ import { generateStoreOrderDepositCode } from "../../utils/depositCode.utils.js"
 import { splitInclusiveVat } from "../../utils/storeVat.js";
 import {
   getStoreProductName,
+  getStoreProductPackagePriceInclusive,
   getStoreProductPriceInclusive,
+  listStoreProductIds,
+  resolveStoreUnitPriceInclusive,
+  STORE_PACKAGE_PREPAID_THRESHOLD,
 } from "../../constants/storeCatalog.js";
 import { STORE_CART_MERGE_WITH_CREDIT_OR_CUSTOM_ABUTMENT } from "../../constants/ledgerTaxLanes.js";
 import {
@@ -24,6 +30,7 @@ import {
   applyStoreShippingToOrderTotals,
 } from "../../constants/storeShipping.js";
 import { normalizeRequestorKind } from "../../utils/requestorCapabilities.js";
+import { resolveStorePackageBuyer } from "../../utils/storePackagePricing.js";
 import {
   cancelStoreOrderByUser,
   finalizeStoreSale,
@@ -86,7 +93,7 @@ async function assertPracticeKind(req, businessAnchorId) {
   return kind || "practice";
 }
 
-function buildOrderItems(rawItems) {
+function buildOrderItems(rawItems, { isPackageBuyer = false } = {}) {
   if (!Array.isArray(rawItems) || rawItems.length === 0) {
     const err = new Error("장바구니 항목이 없습니다.");
     err.statusCode = 400;
@@ -98,7 +105,7 @@ function buildOrderItems(rawItems) {
     const productId = String(raw?.productId || "").trim();
     const qty = Math.max(0, Math.round(Number(raw?.qty || 0)));
     if (!productId || qty <= 0) continue;
-    const unit = getStoreProductPriceInclusive(productId);
+    const unit = resolveStoreUnitPriceInclusive(productId, isPackageBuyer);
     if (unit == null) {
       const err = new Error(`알 수 없는 상품: ${productId}`);
       err.statusCode = 400;
@@ -119,7 +126,10 @@ function buildOrderItems(rawItems) {
   let amountTotal = 0;
 
   for (const [productId, qty] of merged.entries()) {
-    const unitPriceInclusive = getStoreProductPriceInclusive(productId);
+    const unitPriceInclusive = resolveStoreUnitPriceInclusive(
+      productId,
+      isPackageBuyer,
+    );
     const lineTotalInclusive = unitPriceInclusive * qty;
     const split = splitInclusiveVat(lineTotalInclusive);
     items.push({
@@ -201,17 +211,23 @@ export async function getStoreCatalog(req, res) {
     }
     await assertPracticeKind(req, businessAnchorId);
 
-    const [inventory, defaultShipping] = await Promise.all([
+    const [inventory, defaultShipping, packageBuyer] = await Promise.all([
       getInventoryMap(),
       resolveDefaultShipping({
         userId: req.user?._id,
         businessAnchorId,
       }),
+      resolveStorePackageBuyer(businessAnchorId),
     ]);
-    const products = Object.keys(inventory).map((productId) => ({
+    const products = listStoreProductIds().map((productId) => ({
       productId,
       name: getStoreProductName(productId),
       listPriceInclusive: getStoreProductPriceInclusive(productId),
+      packagePriceInclusive: getStoreProductPackagePriceInclusive(productId),
+      unitPriceInclusive: resolveStoreUnitPriceInclusive(
+        productId,
+        packageBuyer.isPackageBuyer,
+      ),
       qtyAvailable: inventory[productId]?.available ?? 0,
       qtyOnHand: inventory[productId]?.qtyOnHand ?? 0,
     }));
@@ -221,6 +237,11 @@ export async function getStoreCatalog(req, res) {
       data: {
         products,
         taxNote: "과세 · 부가세 포함",
+        packagePricing: {
+          threshold: STORE_PACKAGE_PREPAID_THRESHOLD,
+          isPackageBuyer: packageBuyer.isPackageBuyer,
+          paidChargeTotal: packageBuyer.paidChargeTotal,
+        },
         shippingPolicy: {
           feeInclusive: STORE_SHIPPING_FEE_INCLUSIVE,
           freeThresholdInclusive: STORE_SHIPPING_FREE_THRESHOLD_INCLUSIVE,
@@ -254,7 +275,10 @@ export async function createStoreOrder(req, res) {
     }
     await assertPracticeKind(req, businessAnchorId);
 
-    const built = buildOrderItems(req.body?.items);
+    const packageBuyer = await resolveStorePackageBuyer(businessAnchorId);
+    const built = buildOrderItems(req.body?.items, {
+      isPackageBuyer: packageBuyer.isPackageBuyer,
+    });
     const totals = applyStoreShippingToOrderTotals(built);
     const items = built.items;
     const {

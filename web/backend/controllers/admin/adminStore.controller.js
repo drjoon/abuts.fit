@@ -17,6 +17,7 @@ import {
 } from "../../services/storeSale.service.js";
 import {
   getStoreProductName,
+  getStoreProductPackagePriceInclusive,
   getStoreProductPriceInclusive,
   listStoreProductIds,
 } from "../../constants/storeCatalog.js";
@@ -42,6 +43,7 @@ export async function adminListStoreInventory(req, res) {
       productId,
       name: getStoreProductName(productId),
       listPriceInclusive: getStoreProductPriceInclusive(productId),
+      packagePriceInclusive: getStoreProductPackagePriceInclusive(productId),
       qtyOnHand: map[productId]?.qtyOnHand ?? 0,
       qtyReserved: map[productId]?.qtyReserved ?? 0,
       qtyAvailable: map[productId]?.available ?? 0,

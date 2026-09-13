@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-13: 키트·어벗 테이블 가격. 패키지 구매자 안내.
 // - 2026-08-23: 문구 축소, 모바일 1열 컴팩트 카드, 반응형 열 수 조정.
 // - 2026-08-23: 미리보기 제거. 장바구니·주문 진입.
 // - 2026-08-23: 작업영역 중첩 스크롤바를 카드 오른쪽 끝에 맞춤(workspace-nested-scroll).
@@ -13,23 +14,28 @@ import { Button } from "@/components/ui/button";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import {
   STORE_CATEGORIES,
+  STORE_PACKAGE_PREPAID_THRESHOLD,
   type StoreProduct,
 } from "@/shared/store/storeCatalog";
 import { StoreProductCard } from "@/pages/requestor/store/StoreProductCard";
 import { useStoreCartStore } from "@/store/useStoreCartStore";
 import { STORE_PRICE_TAX_NOTE } from "@/shared/tax/invoiceLabels";
+import { useStorePackagePricing } from "@/shared/store/useStorePackagePricing";
+import { formatWonWithUnit } from "@/shared/settlement/affiliateVat";
 
 const abutment = STORE_CATEGORIES.find((c) => c.id === "abutment")!;
 const initialKit = STORE_CATEGORIES.find((c) => c.id === "initial-kit")!;
 const checkKit = STORE_CATEGORIES.find((c) => c.id === "check-kit")!;
-const gingivalKit = STORE_CATEGORIES.find((c) => c.id === "gingival-kit")!;
+const prostheticKit = STORE_CATEGORIES.find((c) => c.id === "prosthetic-kit")!;
 
 function ProductRow({
   labels,
   products,
+  isPackageBuyer,
 }: {
   labels: string[];
   products: StoreProduct[];
+  isPackageBuyer: boolean;
 }) {
   return (
     <section className="space-y-2.5">
@@ -49,7 +55,11 @@ function ProductRow({
       {/* portrait phone: 1열 · landscape/sm+: 2 · md: 3 · lg: 4 */}
       <div className="grid grid-cols-1 gap-2 max-sm:landscape:grid-cols-2 sm:grid-cols-2 sm:gap-3 md:grid-cols-3 lg:grid-cols-4">
         {products.map((product) => (
-          <StoreProductCard key={product.id} product={product} />
+          <StoreProductCard
+            key={product.id}
+            product={product}
+            isPackageBuyer={isPackageBuyer}
+          />
         ))}
       </div>
     </section>
@@ -58,6 +68,7 @@ function ProductRow({
 
 export default function RequestorStorePage() {
   const { kind, loading } = useRequestorBusinessAccess();
+  const { isPackageBuyer } = useStorePackagePricing();
   const cartQty = useStoreCartStore((s) =>
     s.lines.reduce((n, l) => n + l.qty, 0),
   );
@@ -75,9 +86,15 @@ export default function RequestorStorePage() {
             <Badge variant="outline" className="text-[11px] font-normal">
               {STORE_PRICE_TAX_NOTE}
             </Badge>
-            <span className="text-[11px] text-muted-foreground">
-              선수금 · 커스텀어벗과 별도
-            </span>
+            {isPackageBuyer ? (
+              <Badge className="text-[11px] font-normal">패키지 단가</Badge>
+            ) : (
+              <span className="text-[11px] text-muted-foreground">
+                유료 크레딧{" "}
+                {formatWonWithUnit(STORE_PACKAGE_PREPAID_THRESHOLD)} 이상 충전 시
+                pkg 단가
+              </span>
+            )}
           </div>
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" size="sm" asChild>
@@ -94,12 +111,14 @@ export default function RequestorStorePage() {
 
         <div className="space-y-6 sm:space-y-8">
           <ProductRow
-            labels={[abutment.label, gingivalKit.label]}
-            products={[...abutment.products, ...gingivalKit.products]}
+            labels={[abutment.label, prostheticKit.label]}
+            products={[...abutment.products, ...prostheticKit.products]}
+            isPackageBuyer={isPackageBuyer}
           />
           <ProductRow
             labels={[initialKit.label, checkKit.label]}
             products={[...initialKit.products, ...checkKit.products]}
+            isPackageBuyer={isPackageBuyer}
           />
         </div>
       </div>

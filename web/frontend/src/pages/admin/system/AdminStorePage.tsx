@@ -20,6 +20,7 @@ type InventoryRow = {
   productId: string;
   name: string;
   listPriceInclusive: number | null;
+  packagePriceInclusive?: number | null;
   qtyOnHand: number;
   qtyReserved: number;
   qtyAvailable: number;
@@ -186,7 +187,8 @@ export default function AdminStorePage() {
                   <thead className="border-b border-border/70 bg-muted/30 text-left">
                     <tr>
                       <th className="px-3 py-2 font-medium">상품</th>
-                      <th className="px-3 py-2 font-medium">포함가</th>
+                      <th className="px-3 py-2 font-medium">판매가</th>
+                      <th className="px-3 py-2 font-medium">pkg가</th>
                       <th className="px-3 py-2 font-medium">가용</th>
                       <th className="px-3 py-2 font-medium">예약</th>
                       <th className="px-3 py-2 font-medium">보유</th>
@@ -203,6 +205,11 @@ export default function AdminStorePage() {
                         <td className="px-3 py-2 tabular-nums">
                           {row.listPriceInclusive != null
                             ? formatWonWithUnit(row.listPriceInclusive)
+                            : "—"}
+                        </td>
+                        <td className="px-3 py-2 tabular-nums">
+                          {row.packagePriceInclusive != null
+                            ? formatWonWithUnit(row.packagePriceInclusive)
                             : "—"}
                         </td>
                         <td className="px-3 py-2 tabular-nums">

@@ -19,7 +19,7 @@ import { Input } from "@/components/ui/input";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import { loadBusinessMeCached } from "@/shared/components/business/settings/business/businessMeCache";
-import { getStoreProductById } from "@/shared/store/storeCatalog";
+import { getStoreProductById, resolveStoreUnitPriceInclusive } from "@/shared/store/storeCatalog";
 import {
   STORE_PRICE_TAX_NOTE,
   splitInclusiveVat,
@@ -40,6 +40,8 @@ import {
   STORE_BUSINESS_SETTINGS_PATH,
   type StoreShippingForm,
 } from "@/shared/store/storeDefaultShipping";
+import { useStorePackagePricing } from "@/shared/store/useStorePackagePricing";
+import { StorePriceDisplay } from "@/pages/requestor/store/StorePriceDisplay";
 
 export default function RequestorStoreCartPage() {
   const { kind, loading } = useRequestorBusinessAccess();
@@ -50,6 +52,7 @@ export default function RequestorStoreCartPage() {
   const setQty = useStoreCartStore((s) => s.setQty);
   const removeItem = useStoreCartStore((s) => s.removeItem);
   const clear = useStoreCartStore((s) => s.clear);
+  const { isPackageBuyer } = useStorePackagePricing();
   const [submitting, setSubmitting] = useState(false);
   const [shippingLoading, setShippingLoading] = useState(true);
   const [shipping, setShipping] = useState<StoreShippingForm>(() =>
@@ -90,7 +93,8 @@ export default function RequestorStoreCartPage() {
       .map((line) => {
         const product = getStoreProductById(line.productId);
         if (!product || product.listPriceInclusive == null) return null;
-        const unit = product.listPriceInclusive;
+        const unit = resolveStoreUnitPriceInclusive(product, isPackageBuyer);
+        if (unit == null) return null;
         const lineTotal = unit * line.qty;
         const split = splitInclusiveVat(lineTotal);
         return { line, product, unit, lineTotal, split };
@@ -102,7 +106,7 @@ export default function RequestorStoreCartPage() {
       lineTotal: number;
       split: { supply: number; vat: number; total: number };
     }>;
-  }, [lines]);
+  }, [lines, isPackageBuyer]);
 
   const goodsTotal = useMemo(
     () => rows.reduce((s, r) => s + r.lineTotal, 0),
@@ -221,10 +225,18 @@ export default function RequestorStoreCartPage() {
                   >
                     <div className="min-w-0 flex-1 space-y-1">
                       <p className="font-medium">{product.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        단가 {formatWonWithUnit(unit)} · 공급{" "}
-                        {formatWonWithUnit(split.supply)} · 세액{" "}
-                        {formatWonWithUnit(split.vat)}
+                      <p className="flex flex-wrap items-baseline gap-x-1.5 text-xs text-muted-foreground">
+                        <span>단가</span>
+                        <StorePriceDisplay
+                          product={product}
+                          isPackageBuyer={isPackageBuyer}
+                          size="sm"
+                          className="text-xs"
+                        />
+                        <span>
+                          · 공급 {formatWonWithUnit(split.supply)} · 세액{" "}
+                          {formatWonWithUnit(split.vat)}
+                        </span>
                       </p>
                     </div>
                     <div className="flex items-center justify-between gap-3 sm:justify-end">
