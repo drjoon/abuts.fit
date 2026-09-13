@@ -39,9 +39,30 @@
 - `web/frontend/src/features/requests/components/StlPreviewViewer.tsx`
 - `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`
 
+## 1.1 Windows 재부팅 자동 기동 (PC1)
+
+Windows Update 등으로 재부팅되면 Rhino/ESPRIT/브리지는 수동 실행이 아니면 안 뜬다. PC1은 GUI(Rhino·ESPRIT)가 필요하므로 NSSM Session 0이 아니라 **로그온 시 Task Scheduler**로 기동한다.
+
+- 설치(원격 PC, **`bg\pc1`에서** 한 번):
+  - `cd C:\Users\user\abuts.fit\bg\pc1`
+  - `powershell -ExecutionPolicy Bypass -File .\Install-Pc1Autostart.ps1 -Action install`
+- 기동 스크립트: `bg/pc1/Start-Pc1Apps.ps1` (또는 `Start-Pc1Apps.cmd`)
+  - 순서: Rhino 8 + `_ScriptEditor` wake → rhino.cmd(:8000) → Esprit.cmd(:8001) → bridge exe(:8002)
+  - Rhino가 이미 떠 있고 pipe가 비면: COM `_ScriptEditor` → 실패 시 Rhino 재시작(`-runscript=_ScriptEditor`)
+  - pipe가 생긴 뒤 `init_instance.py`로 health ping (pipe 없을 때 script만으로는 wake 불가)
+  - 강제 재시작 테스트: `.\Start-Pc1Apps.ps1 -SkipDelay -ForceRhinoRestart`
+- 로그: `bg/pc1/logs/autostart-YYYYMMDD.log`
+- 전제: 제조 계정이 **로그온**되어야 한다. 로그인 화면에 멈추면 auto-logon을 켠다.
+- 제거: `Install-Pc1Autostart.ps1 -Action uninstall`
+
+관련 파일:
+- `bg/pc1/Start-Pc1Apps.ps1`
+- `bg/pc1/Install-Pc1Autostart.ps1`
+- `bg/pc1/rhino-server/compute/scripts/init_instance.py`
+
 ## 2. 트러블슈팅
 
-- `No active Rhino instances found via RhinoCode list`가 뜨면 Rhino 실행 후 `RhinoCode` 또는 `ScriptEditor`를 한 번 열어 RhinoCode 서비스를 깨웁니다.
+- `No active Rhino instances found via RhinoCode list`가 뜨면 Rhino 실행 후 `RhinoCode` 또는 `ScriptEditor`를 한 번 열어 RhinoCode 서비스를 깨웁니다. (자동 기동은 `Start-Pc1Apps.ps1`이 `_ScriptEditor` + `init_instance.py`로 동일 작업을 한다.)
 - align 버전은 올라갔는데 `residual_to_X_deg` 로그가 안 보이면, 실행 경로의 `process_abutment_stl.py` 반영 여부를 먼저 확인합니다.
   - `align_stl_coordinate.py`만 반영되고 래퍼 로그 출력 코드가 누락되면 잔차 로그가 사라질 수 있습니다.
 - **커넥션 Z 원점이 헥스에 붙는 경우(2026-08-18):**
