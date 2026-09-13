@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-13: Surgical Kit 통합. 레거시 Initial/Check SKU는 판매·재고 목록에서 제외(이름만 유지).
 // - 2026-09-13: Surgical Kit 통합(Initial+Check). 판매 132/88만·pkg 99/66. 단품 제조×2(Pen 6.6·Gingival 3.96·Torque 9.9). 풀패키지 구성합 682만·SA2/SH2×150.
 // - 2026-09-13: Kit Case 3종(Initial 13.2·Check/Prosthetic 11만)×2.
 // - 2026-09-13: 판매가표 동기 — 키트 88/96/88만·pkg 66/88/66, 단품 제조×2(Pen 5.5·Cup 0.55·Pin 2.75·Shaper 3.85·Hex 1.65).
@@ -55,24 +56,17 @@ export function packageInclusiveFromList(listInclusive) {
 /**
  * 판매가(부가세 포함) 기본값.
  * 키트·어벗: 판매가 고시. 단품: 제조단가(만원)×2.
- * 레거시 initial-kit / check-kit / kit-case-check 는 과거 주문 표시용.
+ * 신규 판매·재고 SSOT. 레거시 SKU는 NAMES만 유지(과거 주문 표시).
  */
 export const STORE_PRODUCT_INCLUSIVE_PRICES = Object.freeze({
   "full-package": 6_820_000, // 132+88 + SA2/SH2×150×1.54
   "surgical-kit": 1_320_000,
   "prosthetic-kit": 880_000,
-  /** @deprecated 레거시 주문 표시 */
-  "initial-kit": 880_000,
-  /** @deprecated 레거시 주문 표시 */
-  "check-kit": 960_000,
   "kit-case-surgical": 264_000, // mfg 13.2만 ×2
-  "kit-case-initial": 264_000, // alias → surgical
-  "kit-case-check": 220_000, // 레거시
   "kit-case-prosthetic": 220_000, // mfg 11만 ×2
   "initial-pen": 132_000, // SurgicalPen · mfg Pen 6.6만 ×2
   pen: 132_000, // mfg 6.6만 ×2
   cup: 11_000, // mfg 0.55만 ×2
-  "initial-pin": 55_000, // mfg 2.75만 ×2
   "check-pin": 55_000, // SurgicalPin · mfg 2.75만 ×2
   "bone-shaper": 77_000, // mfg 3.85만 ×2
   "gingival-shaper": 79_200, // mfg 3.96만 ×2
@@ -89,16 +83,11 @@ export const STORE_PRODUCT_PACKAGE_INCLUSIVE_PRICES = Object.freeze({
   "full-package": 5_000_000,
   "surgical-kit": 990_000,
   "prosthetic-kit": 660_000,
-  "initial-kit": 660_000,
-  "check-kit": 880_000,
   "kit-case-surgical": packageInclusiveFromList(264_000),
-  "kit-case-initial": packageInclusiveFromList(264_000),
-  "kit-case-check": packageInclusiveFromList(220_000),
   "kit-case-prosthetic": packageInclusiveFromList(220_000),
   "initial-pen": packageInclusiveFromList(132_000),
   pen: packageInclusiveFromList(132_000),
   cup: packageInclusiveFromList(11_000),
-  "initial-pin": packageInclusiveFromList(55_000),
   "check-pin": packageInclusiveFromList(55_000),
   "bone-shaper": packageInclusiveFromList(77_000),
   "gingival-shaper": packageInclusiveFromList(79_200),

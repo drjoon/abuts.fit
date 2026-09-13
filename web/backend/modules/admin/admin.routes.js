@@ -115,6 +115,7 @@ import {
   adminPatchStorePackageBuyer,
   adminGetStoreProductClusters,
   adminPutStoreProductClusters,
+  adminHideStoreProduct,
 } from "../../controllers/admin/adminStore.controller.js";
 import {
   adminGrantFreeShippingCredit,
@@ -492,6 +493,11 @@ router.patch(
   "/store/products/:productId/prices",
   authorize(["admin"], { subRoles: ["owner"] }),
   adminPatchStoreProductPrices,
+);
+router.delete(
+  "/store/products/:productId",
+  authorize(["admin"], { subRoles: ["owner"] }),
+  adminHideStoreProduct,
 );
 router.get(
   "/store/package-buyer/:businessAnchorId",

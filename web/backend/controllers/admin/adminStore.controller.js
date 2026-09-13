@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-13: DELETE 상품 — 관리자 재고 목록 숨김(hiddenProductIds).
 // - 2026-09-13: 감사로그 refId — ObjectId만 허용(클러스터 layout "default" 캐스트 오류 수정).
 // - 2026-09-13: GET action-count · 승인/거절/출고/배송완료 후 사이드바 배지 emit.
 // - 2026-09-13: 상품 클러스터 레이아웃 GET/PUT · inventory에 clusters 포함.
@@ -35,6 +36,7 @@ import {
 } from "../../utils/storeProductPricing.js";
 import {
   getOrSeedStoreProductClusterLayout,
+  hideStoreProductFromAdmin,
   resetStoreProductClusterLayout,
   saveStoreProductClusterLayout,
 } from "../../utils/storeProductClusterLayout.js";
@@ -68,24 +70,28 @@ export async function adminListStoreInventory(req, res) {
       getInventoryMap(),
       getOrSeedStoreProductClusterLayout(),
     ]);
-    const rows = listStoreProductIds().map((productId) => {
-      const defaults = getCatalogDefaultPrices(productId);
-      return {
-        productId,
-        name: getStoreProductName(productId),
-        listPriceInclusive: getStoreProductPriceInclusive(productId),
-        packagePriceInclusive: getStoreProductPackagePriceInclusive(productId),
-        defaultListPriceInclusive: defaults.listPriceInclusive,
-        defaultPackagePriceInclusive: defaults.packagePriceInclusive,
-        qtyOnHand: map[productId]?.qtyOnHand ?? 0,
-        qtyReserved: map[productId]?.qtyReserved ?? 0,
-        qtyAvailable: map[productId]?.available ?? 0,
-      };
-    });
+    const hidden = new Set(layout.hiddenProductIds || []);
+    const rows = listStoreProductIds()
+      .filter((productId) => !hidden.has(productId))
+      .map((productId) => {
+        const defaults = getCatalogDefaultPrices(productId);
+        return {
+          productId,
+          name: getStoreProductName(productId),
+          listPriceInclusive: getStoreProductPriceInclusive(productId),
+          packagePriceInclusive: getStoreProductPackagePriceInclusive(productId),
+          defaultListPriceInclusive: defaults.listPriceInclusive,
+          defaultPackagePriceInclusive: defaults.packagePriceInclusive,
+          qtyOnHand: map[productId]?.qtyOnHand ?? 0,
+          qtyReserved: map[productId]?.qtyReserved ?? 0,
+          qtyAvailable: map[productId]?.available ?? 0,
+        };
+      });
     return res.json({
       success: true,
       data: rows,
       clusters: layout.clusters,
+      hiddenProductIds: layout.hiddenProductIds || [],
     });
   } catch (error) {
     return res.status(500).json({
@@ -135,6 +141,28 @@ export async function adminPutStoreProductClusters(req, res) {
     return res.status(status).json({
       success: false,
       message: error.message || "product_clusters_put_failed",
+    });
+  }
+}
+
+/** DELETE /api/admin/store/products/:productId — 관리자 재고 목록에서 숨김 */
+export async function adminHideStoreProduct(req, res) {
+  try {
+    const productId = String(req.params?.productId || "").trim();
+    const layout = await hideStoreProductFromAdmin(productId);
+    await writeAuditLog({
+      req,
+      action: "STORE_PRODUCT_HIDE",
+      refType: "StoreProductClusterLayout",
+      refId: null,
+      details: { productId, hiddenProductIds: layout.hiddenProductIds },
+    });
+    return res.json({ success: true, data: layout });
+  } catch (error) {
+    const status = error.statusCode || 500;
+    return res.status(status).json({
+      success: false,
+      message: error.message || "product_hide_failed",
     });
   }
 }

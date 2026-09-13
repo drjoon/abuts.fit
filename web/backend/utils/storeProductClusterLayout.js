@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-13: hiddenProductIds — 미분류 상품 관리자 삭제(목록 숨김).
 // - 2026-09-13: Initial/Check·kit-case-initial/check 클러스터 → Surgical 기본으로 마이그레이션.
 // - 2026-09-13: 관리자 스토어 클러스터 레이아웃 로드/저장·검증.
 // related files:
@@ -32,6 +33,19 @@ function migrateLegacyKitCaseInClusters(clusters) {
   return cloneDefaultStoreProductClusters();
 }
 
+function normalizeHiddenProductIds(raw) {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set();
+  const out = [];
+  for (const item of raw) {
+    const id = String(item || "").trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out;
+}
+
 function normalizeCluster(raw) {
   const id = String(raw?.id || "").trim();
   const label = String(raw?.label || "").trim();
@@ -50,6 +64,17 @@ function normalizeCluster(raw) {
     parentProductId,
     childProductIds,
     ...(hint ? { compositionHint: hint } : {}),
+  };
+}
+
+function layoutPayload(doc, clustersFallback = null) {
+  const clusters = (doc?.clusters || clustersFallback || []).map((c) =>
+    normalizeCluster(c),
+  );
+  return {
+    key: LAYOUT_KEY,
+    clusters,
+    hiddenProductIds: normalizeHiddenProductIds(doc?.hiddenProductIds),
   };
 }
 
@@ -119,6 +144,18 @@ export function validateStoreProductClusters(clusters) {
   return { ok: true, clusters: normalized };
 }
 
+function stripProductFromClusters(clusters, productId) {
+  return (clusters || []).map((c) => {
+    const next = normalizeCluster(c);
+    return {
+      ...next,
+      parentProductId:
+        next.parentProductId === productId ? null : next.parentProductId,
+      childProductIds: next.childProductIds.filter((id) => id !== productId),
+    };
+  });
+}
+
 export async function getOrSeedStoreProductClusterLayout() {
   let doc = await StoreProductClusterLayout.findOne({ key: LAYOUT_KEY }).lean();
   if (doc?.clusters?.length) {
@@ -129,15 +166,9 @@ export async function getOrSeedStoreProductClusterLayout() {
         { $set: { clusters: migrated } },
         { new: true },
       ).lean();
-      return {
-        key: LAYOUT_KEY,
-        clusters: (doc?.clusters || migrated).map((c) => normalizeCluster(c)),
-      };
+      return layoutPayload(doc, migrated);
     }
-    return {
-      key: LAYOUT_KEY,
-      clusters: doc.clusters.map((c) => normalizeCluster(c)),
-    };
+    return layoutPayload(doc);
   }
 
   const clusters = cloneDefaultStoreProductClusters();
@@ -147,10 +178,7 @@ export async function getOrSeedStoreProductClusterLayout() {
     { upsert: true, new: true, setDefaultsOnInsert: true },
   ).lean();
 
-  return {
-    key: LAYOUT_KEY,
-    clusters: (doc?.clusters || clusters).map((c) => normalizeCluster(c)),
-  };
+  return layoutPayload(doc, clusters);
 }
 
 /**
@@ -170,14 +198,49 @@ export async function saveStoreProductClusterLayout(clusters) {
     { upsert: true, new: true, setDefaultsOnInsert: true },
   ).lean();
 
-  return {
-    key: LAYOUT_KEY,
-    clusters: (doc?.clusters || validated.clusters).map((c) =>
-      normalizeCluster(c),
-    ),
-  };
+  return layoutPayload(doc, validated.clusters);
 }
 
 export async function resetStoreProductClusterLayout() {
   return saveStoreProductClusterLayout(cloneDefaultStoreProductClusters());
+}
+
+/**
+ * 미분류(또는 목록) 상품을 관리자 재고에서 숨김. 과거 주문 표시용 이름은 유지.
+ * @param {string} productId
+ */
+export async function hideStoreProductFromAdmin(productId) {
+  const key = String(productId || "").trim();
+  if (!key) {
+    const err = new Error("productId_required");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const current = await getOrSeedStoreProductClusterLayout();
+  const hidden = new Set(current.hiddenProductIds);
+  hidden.add(key);
+  const hiddenProductIds = [...hidden];
+  const clusters = stripProductFromClusters(current.clusters, key);
+
+  // 숨긴 상품은 클러스터 검증 known에서 빠져도 되므로, 남은 클러스터만 검증.
+  const validated = validateStoreProductClusters(clusters);
+  if (!validated.ok) {
+    const err = new Error(validated.message);
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const doc = await StoreProductClusterLayout.findOneAndUpdate(
+    { key: LAYOUT_KEY },
+    {
+      $set: {
+        clusters: validated.clusters,
+        hiddenProductIds,
+      },
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  ).lean();
+
+  return layoutPayload(doc, validated.clusters);
 }

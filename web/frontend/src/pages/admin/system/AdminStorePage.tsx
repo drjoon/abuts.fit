@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-09-13: 미분류 상품 휴지통 — 관리자 목록에서 삭제(숨김).
+// - 2026-09-13: 상품 행마다 클러스터 제거(삭제) 아이콘.
 // - 2026-09-13: 주문 목록 기준 사이드바 스토어 액션 배지 로컬 동기화.
 // - 2026-09-13: 상품 드래그·클러스터 CRUD · 서버 레이아웃 저장.
 // - 2026-09-13: 상품 테이블을 키트 클러스터(구성 단품 하위)로 표시.
@@ -496,6 +498,36 @@ export default function AdminStorePage() {
       insertIndex,
     );
     void persistClusterLayout(next, { silent: true });
+  }
+
+  async function hideLeftoverProduct(productId: string) {
+    if (!productId || clusterBusy) return;
+    setClusterBusy(true);
+    try {
+      const res = await apiFetch<{
+        success?: boolean;
+        message?: string;
+        data?: { clusters?: StoreProductCluster[] };
+      }>({
+        path: `/api/admin/store/products/${encodeURIComponent(productId)}`,
+        method: "DELETE",
+      });
+      if (!res.ok || !res.data?.success) {
+        toast.error(res.data?.message || "삭제 실패");
+        return;
+      }
+      setInventory((prev) => prev.filter((row) => row.productId !== productId));
+      if (Array.isArray(res.data.data?.clusters)) {
+        setClusterLayout(cloneClusters(res.data.data.clusters));
+      } else {
+        setClusterLayout((prev) => removeProductFromClusters(prev, productId));
+      }
+      toast.success("상품을 목록에서 삭제했습니다");
+    } catch {
+      toast.error("삭제 실패");
+    } finally {
+      setClusterBusy(false);
+    }
   }
 
   function addCluster() {
@@ -1066,7 +1098,7 @@ export default function AdminStorePage() {
           />
         </td>
         <td className="px-3 py-2.5 align-top">
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
             <Button
               type="button"
               size="sm"
@@ -1083,6 +1115,28 @@ export default function AdminStorePage() {
               onClick={() => void resetProductPrices(row)}
             >
               기본가
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="h-8 px-2 text-muted-foreground"
+              disabled={clusterBusy}
+              title={
+                opts.role === "leftover"
+                  ? "목록에서 삭제"
+                  : "클러스터에서 제거 (기타로)"
+              }
+              aria-label={`${row.name} 삭제`}
+              onClick={() => {
+                if (opts.role === "leftover") {
+                  void hideLeftoverProduct(row.productId);
+                  return;
+                }
+                applyProductDrop(row.productId, "__leftover__", null);
+              }}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
             </Button>
           </div>
         </td>

@@ -27,6 +27,7 @@ const storeProductClusterLayoutSchema = new mongoose.Schema(
       trim: true,
       index: true,
     },
+    hiddenProductIds: { type: [String], default: [] },
     clusters: { type: [clusterSchema], default: [] },
   },
   { timestamps: true },
