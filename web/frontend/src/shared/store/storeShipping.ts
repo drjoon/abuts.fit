@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-13: 기공물 동봉은 어벗츠 CA 제작 포함 + 1주일 이내(발송·도착)만. 기본 직송은 유료.
 // - 2026-09-13: 기공물 동봉은 1주일 이내 치과 도착건이 있을 때만. 기본 직송은 유료.
 // - 2026-09-13: 10만원 임계 제거. 항상 기공물 동봉(무료) / 빠른 직송(+3,300).
 // - 2026-09-13: 10만원 이하 — 기공물 동봉(무료) / 빠른 직송(+3,300) 옵션.
@@ -11,7 +12,7 @@ import { splitInclusiveVat } from "@/shared/tax/invoiceLabels";
 /** 부가세 포함 배송료(원) — 빠른 직송(direct) 선택 시. */
 export const STORE_SHIPPING_FEE_INCLUSIVE = 3_300;
 
-/** 기공물 동봉(무료, 1주일 이내 도착건 있을 때만) */
+/** 기공물 동봉(무료, 어벗츠 CA 포함·1주일 이내 발송·도착만) */
 export const STORE_SHIPPING_MODE_LAB_BUNDLE = "lab_bundle" as const;
 
 /** 치과 직송(유료 빠른 배송) */

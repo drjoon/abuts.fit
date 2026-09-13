@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-13: 기공물 동봉=어벗츠 CA 제작 포함·1주일 이내만.
 // - 2026-09-13: 배송 옵션(기공물 동봉 / 빠른 직송) + 동봉 안내 카피.
 // - 2026-08-23: 배송지 = 설정·사업자 주소(읽기 전용). 변경은 설정 CTA.
 // - 2026-08-23: 기본 배송지 = practiceProfile(즉시). catalog API 호출 제거.
@@ -336,12 +337,12 @@ export default function RequestorStoreCartPage() {
                     />
                     <span className="min-w-0 space-y-0.5">
                       <span className="block text-sm font-medium">
-                        기공물 동봉 · 무료 (어벗츠기공소 이용시)
+                        기공물 동봉 · 무료 (어벗츠 커스텀어벗 포함시)
                       </span>
                       <span className="block text-xs text-muted-foreground">
                         {labBundleEligible && nextClinicArrivalYmd
                           ? `${formatKstYmdToKo(nextClinicArrivalYmd)} 기공물 도착시 받아보실 수 있습니다.`
-                          : "1주일 이내 도착건 있을 때만 선택 가능"}
+                          : "어벗츠 커스텀어벗 제작 포함 · 1주일 이내 발송건만 선택 가능"}
                       </span>
                     </span>
                   </label>

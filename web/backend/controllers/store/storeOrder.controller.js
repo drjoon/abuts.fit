@@ -1,5 +1,6 @@
 // change-log:
 // - 2026-09-13: 주문 생성·결제·취소 후 관리자 스토어 사이드바 배지 emit.
+// - 2026-09-13: 기공물 동봉=어벗츠 CA 제작 포함 + 1주일 이내(발송·도착).
 // - 2026-09-13: 기공물 동봉=1주일 이내 치과도착일. catalog에 nextClinicArrivalYmd.
 // - 2026-09-13: 배송 모드 lab_bundle|direct (10만원 이하 동봉/유료 빠른직송).
 // - 2026-09-13: 판매가·pkg가. 충전≥550만 패키지 구매자 단가.
@@ -253,7 +254,7 @@ export async function getStoreCatalog(req, res) {
         },
         shippingPolicy: {
           feeInclusive: STORE_SHIPPING_FEE_INCLUSIVE,
-          /** 기공물 동봉(무료, 1주일 이내 도착) 또는 빠른 직송(유료). */
+          /** 기공물 동봉(무료, 어벗츠 CA 포함·1주일 이내) 또는 빠른 직송(유료). */
           modes: {
             [STORE_SHIPPING_MODE_LAB_BUNDLE]: {
               label: "기공물 동봉",
@@ -315,7 +316,7 @@ export async function createStoreOrder(req, res) {
       return res.status(400).json({
         success: false,
         message:
-          "1주일 이내 치과 도착 기공물이 없어 기공물 동봉을 선택할 수 없습니다. 빠른 배송을 이용해 주세요.",
+          "어벗츠 커스텀어벗 제작이 포함된 1주일 이내 발송·도착건이 없어 기공물 동봉을 선택할 수 없습니다. 빠른 배송을 이용해 주세요.",
         code: "STORE_LAB_BUNDLE_UNAVAILABLE",
         payload: {
           nextClinicArrivalYmd: labBundle.nextClinicArrivalYmd,
