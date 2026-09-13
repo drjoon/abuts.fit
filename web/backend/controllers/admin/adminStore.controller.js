@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-13: 감사로그 refId — ObjectId만 허용(클러스터 layout "default" 캐스트 오류 수정).
 // - 2026-09-13: GET action-count · 승인/거절/출고/배송완료 후 사이드바 배지 emit.
 // - 2026-09-13: 상품 클러스터 레이아웃 GET/PUT · inventory에 clusters 포함.
 // - 2026-08-23: 출고·배송완료 API. 거절 시 fulfillment CANCELED.
@@ -11,6 +12,7 @@
 import StoreOrder from "../../models/storeOrder.model.js";
 import StoreInventory from "../../models/storeInventory.model.js";
 import AdminAuditLog from "../../models/adminAuditLog.model.js";
+import mongoose from "mongoose";
 import {
   ensureStoreInventorySeeded,
   finalizeStoreSale,
@@ -44,11 +46,16 @@ import {
 async function writeAuditLog({ req, action, refType, refId, details }) {
   const actorUserId = req.user?._id;
   if (!actorUserId) return;
+  // AdminAuditLog.refId is ObjectId — string productId/"default" must not be cast.
+  const oid =
+    refId != null && refId !== "" && mongoose.isValidObjectId(refId)
+      ? refId
+      : null;
   await AdminAuditLog.create({
     actorUserId,
     action,
     refType: String(refType || ""),
-    refId: refId || null,
+    refId: oid,
     details: details ?? null,
     ipAddress: String(req.headers["x-forwarded-for"] || req.ip || ""),
   });
@@ -115,8 +122,12 @@ export async function adminPutStoreProductClusters(req, res) {
         ? "STORE_PRODUCT_CLUSTER_LAYOUT_RESET"
         : "STORE_PRODUCT_CLUSTER_LAYOUT_PUT",
       refType: "StoreProductClusterLayout",
-      refId: "default",
-      details: { clusterCount: layout.clusters.length, reset },
+      refId: null,
+      details: {
+        key: "default",
+        clusterCount: layout.clusters.length,
+        reset,
+      },
     });
     return res.json({ success: true, data: layout });
   } catch (error) {
@@ -144,8 +155,9 @@ export async function adminPatchStoreProductPrices(req, res) {
       req,
       action: "STORE_PRODUCT_PRICE_PATCH",
       refType: "StoreProductPrice",
-      refId: productId,
+      refId: null,
       details: {
+        productId,
         listPriceInclusive: doc?.listPriceInclusive ?? null,
         packagePriceInclusive: doc?.packagePriceInclusive ?? null,
       },
@@ -273,8 +285,8 @@ export async function adminPatchStoreInventory(req, res) {
       req,
       action: "STORE_INVENTORY_PATCH",
       refType: "StoreInventory",
-      refId: productId,
-      details: { qtyOnHand },
+      refId: null,
+      details: { productId, qtyOnHand },
     });
 
     return res.json({ success: true, data: doc });
