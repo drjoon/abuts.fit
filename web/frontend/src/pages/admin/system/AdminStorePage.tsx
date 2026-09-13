@@ -55,6 +55,13 @@ export default function AdminStorePage() {
     Record<string, { courier: string; trackingNumber: string }>
   >({});
   const [busy, setBusy] = useState(true);
+  const [pkgBuyerId, setPkgBuyerId] = useState("");
+  const [pkgBuyer, setPkgBuyer] = useState<{
+    businessAnchorId: string;
+    name: string;
+    storePackageBuyer: boolean;
+  } | null>(null);
+  const [pkgBuyerBusy, setPkgBuyerBusy] = useState(false);
 
   const load = useCallback(async () => {
     setBusy(true);
@@ -164,6 +171,67 @@ export default function AdminStorePage() {
     }));
   }
 
+  async function loadPackageBuyer() {
+    const id = pkgBuyerId.trim();
+    if (!id) {
+      toast.error("사업자 BA ID를 입력해 주세요.");
+      return;
+    }
+    setPkgBuyerBusy(true);
+    try {
+      const res = await apiFetch<{
+        success: boolean;
+        data?: {
+          businessAnchorId: string;
+          name: string;
+          storePackageBuyer: boolean;
+        };
+        message?: string;
+      }>({ path: `/api/admin/store/package-buyer/${encodeURIComponent(id)}` });
+      if (!res.ok || !res.data?.success || !res.data.data) {
+        toast.error(res.data?.message || "조회 실패");
+        setPkgBuyer(null);
+        return;
+      }
+      setPkgBuyer(res.data.data);
+    } catch {
+      toast.error("패키지 구매자 조회 실패");
+      setPkgBuyer(null);
+    } finally {
+      setPkgBuyerBusy(false);
+    }
+  }
+
+  async function togglePackageBuyer(enabled: boolean) {
+    if (!pkgBuyer) return;
+    setPkgBuyerBusy(true);
+    try {
+      const res = await apiFetch<{
+        success: boolean;
+        data?: {
+          businessAnchorId: string;
+          name: string;
+          storePackageBuyer: boolean;
+        };
+        message?: string;
+      }>({
+        path: `/api/admin/store/package-buyer/${encodeURIComponent(pkgBuyer.businessAnchorId)}`,
+        method: "PATCH",
+        jsonBody: { enabled },
+      });
+      if (!res.ok || !res.data?.success || !res.data.data) {
+        toast.error(res.data?.message || "저장 실패");
+        return;
+      }
+      setPkgBuyer(res.data.data);
+      toast.success(enabled ? "패키지 단가 ON" : "패키지 단가 OFF");
+    } catch {
+      toast.error("저장 실패");
+    } finally {
+      setPkgBuyerBusy(false);
+    }
+  }
+
   return (
     <div className="custom-scrollbar workspace-nested-scroll h-full min-h-0 overflow-auto">
       <div className="mx-auto w-full max-w-5xl space-y-8 p-1">
@@ -180,6 +248,62 @@ export default function AdminStorePage() {
           <p className="text-sm text-muted-foreground">불러오는 중…</p>
         ) : (
           <>
+            <section className="space-y-3">
+              <h2 className="text-base font-semibold">패키지 단가 (BA)</h2>
+              <p className="text-xs text-muted-foreground">
+                BusinessAnchor.storePackageBuyer. 550만 이상 단건 충전 시 자동
+                ON. 수동 토글 가능.
+              </p>
+              <div className="flex flex-wrap items-end gap-2">
+                <div className="space-y-1">
+                  <label className="text-[11px] text-muted-foreground">
+                    사업자 BA ID
+                  </label>
+                  <Input
+                    className="h-8 w-72 font-mono text-xs"
+                    value={pkgBuyerId}
+                    onChange={(e) => setPkgBuyerId(e.target.value)}
+                    placeholder="ObjectId"
+                  />
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={pkgBuyerBusy}
+                  onClick={() => void loadPackageBuyer()}
+                >
+                  조회
+                </Button>
+              </div>
+              {pkgBuyer ? (
+                <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border/70 px-3 py-2 text-sm">
+                  <span className="font-medium">{pkgBuyer.name || "(이름 없음)"}</span>
+                  <span className="font-mono text-[11px] text-muted-foreground">
+                    {pkgBuyer.businessAnchorId}
+                  </span>
+                  <Badge
+                    variant={
+                      pkgBuyer.storePackageBuyer ? "default" : "outline"
+                    }
+                  >
+                    {pkgBuyer.storePackageBuyer ? "패키지 단가 ON" : "OFF"}
+                  </Badge>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={pkgBuyerBusy}
+                    onClick={() =>
+                      void togglePackageBuyer(!pkgBuyer.storePackageBuyer)
+                    }
+                  >
+                    {pkgBuyer.storePackageBuyer ? "OFF로" : "ON으로"}
+                  </Button>
+                </div>
+              ) : null}
+            </section>
+
             <section className="space-y-3">
               <h2 className="text-base font-semibold">재고</h2>
               <div className="overflow-x-auto rounded-xl border border-border/70">

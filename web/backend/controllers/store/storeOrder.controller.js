@@ -240,7 +240,7 @@ export async function getStoreCatalog(req, res) {
         packagePricing: {
           threshold: STORE_PACKAGE_PREPAID_THRESHOLD,
           isPackageBuyer: packageBuyer.isPackageBuyer,
-          paidChargeTotal: packageBuyer.paidChargeTotal,
+          storePackageBuyerAt: packageBuyer.storePackageBuyerAt,
         },
         shippingPolicy: {
           feeInclusive: STORE_SHIPPING_FEE_INCLUSIVE,

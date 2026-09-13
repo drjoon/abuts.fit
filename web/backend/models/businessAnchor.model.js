@@ -142,6 +142,20 @@ const businessAnchorSchema = new mongoose.Schema(
       default: false,
       index: true,
     },
+    /**
+     * 스토어 패키지(pkg) 단가 적용. 550만 이상 유료 크레딧 충전 시(또는 관리자) true.
+     * 장부 누적 조회 대신 BA 플래그 SSOT — 과거 충전 이력 의존 금지.
+     * related: web/backend/utils/storePackagePricing.js · storeCatalog.js
+     */
+    storePackageBuyer: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    storePackageBuyerAt: {
+      type: Date,
+      default: null,
+    },
     // 어벗츠 인증 기공소(ON): 치과의 자동 매칭 의뢰 공개 풀에 참여
     // related files:
     // - web/backend/utils/practiceTransferAutoMatch.js

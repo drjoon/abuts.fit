@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-13: BA.storePackageBuyer 플래그 조회(장부 누적 대신).
 // - 2026-09-13: 스토어 패키지 구매자(충전≥550만) 조회 훅.
 // related files:
 // - web/backend/controllers/store/storeOrder.controller.js
@@ -11,20 +12,18 @@ import { STORE_PACKAGE_PREPAID_THRESHOLD } from "@/shared/store/storeCatalog";
 export type StorePackagePricingState = {
   loading: boolean;
   isPackageBuyer: boolean;
-  paidChargeTotal: number;
   packageThreshold: number;
 };
 
 const DEFAULT: StorePackagePricingState = {
   loading: true,
   isPackageBuyer: false,
-  paidChargeTotal: 0,
   packageThreshold: STORE_PACKAGE_PREPAID_THRESHOLD,
 };
 
 /**
  * GET /api/store/catalog 의 packagePricing.
- * 유료 크레딧(CHARGE_PAID) 누적 ≥ threshold → isPackageBuyer.
+ * SSOT: BusinessAnchor.storePackageBuyer (550만 단건 충전 시 자동 ON).
  */
 export function useStorePackagePricing(): StorePackagePricingState {
   const token = useAuthStore((s) => s.token);
@@ -43,17 +42,15 @@ export function useStorePackagePricing(): StorePackagePricingState {
         packagePricing?: {
           threshold?: number;
           isPackageBuyer?: boolean;
-          paidChargeTotal?: number;
         };
       };
     }>({ path: "/api/store/catalog" })
       .then((res) => {
         if (cancelled) return;
-        const pkg = res?.data?.packagePricing;
+        const pkg = res.data?.data?.packagePricing;
         setState({
           loading: false,
           isPackageBuyer: Boolean(pkg?.isPackageBuyer),
-          paidChargeTotal: Math.max(0, Math.round(Number(pkg?.paidChargeTotal || 0))),
           packageThreshold: Math.max(
             1,
             Math.round(

@@ -21,6 +21,8 @@ import {
   getStoreProductPriceInclusive,
   listStoreProductIds,
 } from "../../constants/storeCatalog.js";
+import BusinessAnchor from "../../models/businessAnchor.model.js";
+import { setStorePackageBuyer } from "../../utils/storePackagePricing.js";
 
 async function writeAuditLog({ req, action, refType, refId, details }) {
   const actorUserId = req.user?._id;
@@ -53,6 +55,81 @@ export async function adminListStoreInventory(req, res) {
     return res.status(500).json({
       success: false,
       message: error.message || "inventory_list_failed",
+    });
+  }
+}
+
+/** GET /api/admin/store/package-buyer/:businessAnchorId */
+export async function adminGetStorePackageBuyer(req, res) {
+  try {
+    const id = String(req.params.businessAnchorId || "").trim();
+    const doc = await BusinessAnchor.findById(id)
+      .select({
+        name: 1,
+        requestorKind: 1,
+        storePackageBuyer: 1,
+        storePackageBuyerAt: 1,
+      })
+      .lean();
+    if (!doc) {
+      return res.status(404).json({ success: false, message: "business_not_found" });
+    }
+    return res.json({
+      success: true,
+      data: {
+        businessAnchorId: String(doc._id),
+        name: doc.name || "",
+        requestorKind: doc.requestorKind || null,
+        storePackageBuyer: Boolean(doc.storePackageBuyer),
+        storePackageBuyerAt: doc.storePackageBuyerAt || null,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message || "package_buyer_get_failed",
+    });
+  }
+}
+
+/** PATCH /api/admin/store/package-buyer/:businessAnchorId { enabled } */
+export async function adminPatchStorePackageBuyer(req, res) {
+  try {
+    const id = String(req.params.businessAnchorId || "").trim();
+    if (typeof req.body?.enabled !== "boolean") {
+      return res.status(400).json({
+        success: false,
+        message: "enabled(boolean) required",
+      });
+    }
+    const doc = await setStorePackageBuyer({
+      businessAnchorId: id,
+      enabled: req.body.enabled,
+    });
+    await writeAuditLog({
+      req,
+      action: "STORE_PACKAGE_BUYER_PATCH",
+      refType: "BusinessAnchor",
+      refId: id,
+      details: {
+        enabled: Boolean(req.body.enabled),
+        storePackageBuyer: Boolean(doc.storePackageBuyer),
+      },
+    });
+    return res.json({
+      success: true,
+      data: {
+        businessAnchorId: String(doc._id || id),
+        name: doc.name || "",
+        storePackageBuyer: Boolean(doc.storePackageBuyer),
+        storePackageBuyerAt: doc.storePackageBuyerAt || null,
+      },
+    });
+  } catch (error) {
+    const status = error.statusCode || 500;
+    return res.status(status).json({
+      success: false,
+      message: error.message || "package_buyer_patch_failed",
     });
   }
 }

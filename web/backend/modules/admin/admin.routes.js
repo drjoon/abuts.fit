@@ -108,6 +108,8 @@ import {
   adminRejectStoreOrder,
   adminShipStoreOrder,
   adminDeliverStoreOrder,
+  adminGetStorePackageBuyer,
+  adminPatchStorePackageBuyer,
 } from "../../controllers/admin/adminStore.controller.js";
 import {
   adminGrantFreeShippingCredit,
@@ -469,6 +471,16 @@ router.patch(
   "/store/inventory/:productId",
   authorize(["admin"], { subRoles: ["owner"] }),
   adminPatchStoreInventory,
+);
+router.get(
+  "/store/package-buyer/:businessAnchorId",
+  authorize(["admin"]),
+  adminGetStorePackageBuyer,
+);
+router.patch(
+  "/store/package-buyer/:businessAnchorId",
+  authorize(["admin"], { subRoles: ["owner"] }),
+  adminPatchStorePackageBuyer,
 );
 router.get("/store/orders", authorize(["admin"]), adminListStoreOrders);
 router.post(

@@ -407,6 +407,19 @@ async function approveChargeOrder(req, res, { mock = false } = {}) {
       chargeOrderId: order._id,
       chargeAmount: Number(order.supplyAmount || order.amountTotal || 0),
     });
+    void import("../../utils/storePackagePricing.js")
+      .then(({ enableStorePackageBuyerIfEligible }) =>
+        enableStorePackageBuyerIfEligible({
+          businessAnchorId: order.businessAnchorId,
+          chargeAmount: Number(order.supplyAmount || order.amountTotal || 0),
+        }),
+      )
+      .catch((err) => {
+        console.error(
+          "[adminCreditBPlan] storePackageBuyer enable failed:",
+          err?.message || err,
+        );
+      });
   }
 
   const updated = await ChargeOrder.findById(order._id)
@@ -870,6 +883,20 @@ export async function adminManualMatch(req, res) {
     chargeOrderId: order._id,
     chargeAmount: Number(order.supplyAmount || order.amountTotal || 0),
   });
+
+  void import("../../utils/storePackagePricing.js")
+    .then(({ enableStorePackageBuyerIfEligible }) =>
+      enableStorePackageBuyerIfEligible({
+        businessAnchorId: order.businessAnchorId,
+        chargeAmount: Number(order.supplyAmount || order.amountTotal || 0),
+      }),
+    )
+    .catch((err) => {
+      console.error(
+        "[adminMatch] storePackageBuyer enable failed:",
+        err?.message || err,
+      );
+    });
 
   notifyChargePrepaidApplied({
     userId: order.userId,

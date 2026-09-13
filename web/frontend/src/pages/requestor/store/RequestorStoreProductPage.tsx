@@ -76,7 +76,7 @@ export default function RequestorStoreProductPage() {
                 <img
                   src={galleryImages[0]}
                   alt={product.name}
-                  className="h-full w-full object-contain p-4 sm:p-6"
+                  className="h-full w-full object-contain p-2 sm:p-3"
                   style={
                     scale !== 1
                       ? {

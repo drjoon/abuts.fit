@@ -505,6 +505,19 @@ async function matchTxWithOrder({ tx, order }) {
         chargeOrderId: order._id,
         chargeAmount: Number(order.supplyAmount || order.amountTotal || 0),
       });
+      void import("./storePackagePricing.js")
+        .then(({ enableStorePackageBuyerIfEligible }) =>
+          enableStorePackageBuyerIfEligible({
+            businessAnchorId: order.businessAnchorId,
+            chargeAmount: Number(order.supplyAmount || order.amountTotal || 0),
+          }),
+        )
+        .catch((err) => {
+          console.error(
+            "[autoMatch] storePackageBuyer enable failed:",
+            err?.message || err,
+          );
+        });
       notifyChargePrepaidApplied({
         userId: order.userId,
         businessAnchorId: order.businessAnchorId,

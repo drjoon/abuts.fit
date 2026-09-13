@@ -10,13 +10,17 @@ import {
 } from "@/shared/store/storeCatalog";
 
 type StorePriceDisplayProps = {
-  product: Pick<StoreProduct, "listPriceInclusive" | "packagePriceInclusive">;
+  product: Pick<
+    StoreProduct,
+    "listPriceInclusive" | "packagePriceInclusive" | "alwaysUsePackagePrice"
+  >;
   isPackageBuyer: boolean;
   className?: string;
   /** 카드=sm, 상세=lg */
   size?: "sm" | "lg";
 };
 
+/** 패키지 구매자면 pkg가. alwaysUsePackagePrice 상품은 상시 pkg. */
 export function StorePriceDisplay({
   product,
   isPackageBuyer,
@@ -30,7 +34,7 @@ export function StorePriceDisplay({
   if (unit == null) return null;
 
   const showPkg =
-    isPackageBuyer &&
+    (isPackageBuyer || Boolean(product.alwaysUsePackagePrice)) &&
     product.packagePriceInclusive != null &&
     product.packagePriceInclusive !== list;
 

@@ -31,20 +31,21 @@ export function StoreProductCard({
         to={`/dashboard/store/${product.id}`}
         className="relative w-44 shrink-0 overflow-hidden bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:aspect-[5/4] sm:w-full"
       >
-        <img
-          src={product.image}
-          alt={product.name}
-          className={cn(
-            "h-full w-full object-contain p-3 transition-transform duration-300 sm:p-4",
-            scale === 1 && "group-hover:scale-[1.03]",
-          )}
+        <div
+          className="flex h-full w-full items-center justify-center"
           style={
             scale !== 1
               ? { transform: `scale(${scale})`, transformOrigin: "center" }
               : undefined
           }
-          loading="lazy"
-        />
+        >
+          <img
+            src={product.image}
+            alt={product.name}
+            className="h-full w-full object-contain p-1 transition-transform duration-300 group-hover:scale-[1.03] sm:p-1.5"
+            loading="lazy"
+          />
+        </div>
       </Link>
 
       <div className="flex min-w-0 flex-1 flex-col">

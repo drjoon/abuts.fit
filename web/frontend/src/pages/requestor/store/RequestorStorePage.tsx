@@ -1,8 +1,7 @@
 // change-log:
-// - 2026-09-13: 키트·어벗 테이블 가격. 패키지 구매자 안내.
-// - 2026-08-23: 문구 축소, 모바일 1열 컴팩트 카드, 반응형 열 수 조정.
-// - 2026-08-23: 미리보기 제거. 장바구니·주문 진입.
-// - 2026-08-23: 작업영역 중첩 스크롤바를 카드 오른쪽 끝에 맞춤(workspace-nested-scroll).
+// - 2026-09-13: 3행 레이아웃 — Abutment4 / Kit4 / 단품.
+// - 2026-09-13: 패키지·키트·단품 섹션 분리. 풀패키지 상단 노출.
+// - 2026-09-13: 패키지 안내 카피 정리(formatWon 제거).
 // related files:
 // - web/frontend/src/App.tsx
 // - web/frontend/src/pages/requestor/store/StoreProductCard.tsx
@@ -14,19 +13,16 @@ import { Button } from "@/components/ui/button";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import {
   STORE_CATEGORIES,
-  STORE_PACKAGE_PREPAID_THRESHOLD,
   type StoreProduct,
 } from "@/shared/store/storeCatalog";
 import { StoreProductCard } from "@/pages/requestor/store/StoreProductCard";
 import { useStoreCartStore } from "@/store/useStoreCartStore";
 import { STORE_PRICE_TAX_NOTE } from "@/shared/tax/invoiceLabels";
 import { useStorePackagePricing } from "@/shared/store/useStorePackagePricing";
-import { formatWonWithUnit } from "@/shared/settlement/affiliateVat";
 
 const abutment = STORE_CATEGORIES.find((c) => c.id === "abutment")!;
-const initialKit = STORE_CATEGORIES.find((c) => c.id === "initial-kit")!;
-const checkKit = STORE_CATEGORIES.find((c) => c.id === "check-kit")!;
-const prostheticKit = STORE_CATEGORIES.find((c) => c.id === "prosthetic-kit")!;
+const kits = STORE_CATEGORIES.find((c) => c.id === "kits")!;
+const parts = STORE_CATEGORIES.find((c) => c.id === "parts")!;
 
 function ProductRow({
   labels,
@@ -52,7 +48,6 @@ function ProductRow({
           {products.length}개
         </span>
       </div>
-      {/* portrait phone: 1열 · landscape/sm+: 2 · md: 3 · lg: 4 */}
       <div className="grid grid-cols-1 gap-2 max-sm:landscape:grid-cols-2 sm:grid-cols-2 sm:gap-3 md:grid-cols-3 lg:grid-cols-4">
         {products.map((product) => (
           <StoreProductCard
@@ -90,9 +85,7 @@ export default function RequestorStorePage() {
               <Badge className="text-[11px] font-normal">패키지 단가</Badge>
             ) : (
               <span className="text-[11px] text-muted-foreground">
-                유료 크레딧{" "}
-                {formatWonWithUnit(STORE_PACKAGE_PREPAID_THRESHOLD)} 이상 충전 시
-                pkg 단가
+                크레딧 550만원 충전 이력 있으면 패키지 단가 적용
               </span>
             )}
           </div>
@@ -111,13 +104,18 @@ export default function RequestorStorePage() {
 
         <div className="space-y-6 sm:space-y-8">
           <ProductRow
-            labels={[abutment.label, prostheticKit.label]}
-            products={[...abutment.products, ...prostheticKit.products]}
+            labels={["Abutment"]}
+            products={abutment.products}
             isPackageBuyer={isPackageBuyer}
           />
           <ProductRow
-            labels={[initialKit.label, checkKit.label]}
-            products={[...initialKit.products, ...checkKit.products]}
+            labels={["패키지 · Kit"]}
+            products={kits.products}
+            isPackageBuyer={isPackageBuyer}
+          />
+          <ProductRow
+            labels={["단품"]}
+            products={parts.products}
             isPackageBuyer={isPackageBuyer}
           />
         </div>
