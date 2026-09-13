@@ -21,8 +21,10 @@
 // - web/backend/controllers/requests/common.nc.controller.js
 // - web/backend/rules.md
 // - web/backend/services/prosthesisFeeItemRequestDashboardStats.service.js
+// - web/frontend/src/shared/noOrderAlerts/NoOrderAlertBanner.tsx
 // - 2026-09-05: 신규 보철물(기공수가) 요청 카드.
 // - 2026-09-05: 추가요청 승인(지정 기공소/전체) · 반려.
+// - 2026-09-13: 3·6개월 무주문 의뢰자 알람 배너.
 import { useEffect, useMemo, useState } from "react";
 import { getNormalizedStageLabelSafe } from "@/utils/stage";
 import { useNavigate } from "react-router-dom";
@@ -47,6 +49,10 @@ import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
 import { AdminPageShell } from "@/pages/admin/adminUi";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
+import {
+  NoOrderAlertBanner,
+  useNoOrderAlerts,
+} from "@/shared/noOrderAlerts";
 import {
   Users,
   FileText,
@@ -581,6 +587,10 @@ export const AdminDashboardPage = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { period, setPeriod } = usePeriodStore();
+  const {
+    data: noOrderAlertsData,
+    isLoading: noOrderAlertsLoading,
+  } = useNoOrderAlerts("/api/admin/no-order-alerts", "admin-no-order-alerts");
   const [happyCallDialogOpen, setHappyCallDialogOpen] = useState(false);
   const [riskSummaryDialogOpen, setRiskSummaryDialogOpen] = useState(false);
   const [hexVerificationDialogOpen, setHexVerificationDialogOpen] =
@@ -2174,6 +2184,11 @@ export const AdminDashboardPage = () => {
                 </CardContent>
               </Card>
             </div>
+
+            <NoOrderAlertBanner
+              data={noOrderAlertsData}
+              loading={noOrderAlertsLoading}
+            />
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {/* 카드1: 진행 / 완료 */}

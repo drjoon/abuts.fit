@@ -31,6 +31,10 @@ import {
   formatMoney,
 } from "@/features/commission/useCommissionDashboard";
 import { PlatformPitchPanel } from "@/shared/sales/PlatformPitchPanel";
+import {
+  NoOrderAlertBanner,
+  useNoOrderAlerts,
+} from "@/shared/noOrderAlerts";
 
 export const SalesmanDashboardPage = () => {
   const { user, token } = useAuthStore();
@@ -42,6 +46,13 @@ export const SalesmanDashboardPage = () => {
   const [period, setPeriod] = useState<PeriodFilterValue>("30d");
 
   const { data, loading } = useCommissionDashboard(period);
+  const {
+    data: noOrderAlertsData,
+    isLoading: noOrderAlertsLoading,
+  } = useNoOrderAlerts(
+    "/api/salesman/no-order-alerts",
+    "salesman-no-order-alerts",
+  );
 
   const { data: unmachinableOverviewResponse } = useQuery({
     queryKey: ["salesman-unmachinable-overview", period],
@@ -154,6 +165,10 @@ export const SalesmanDashboardPage = () => {
             <PlatformPitchPanel
               apiPath="/api/salesman/platform-pitch"
               queryKey="salesman-platform-pitch"
+            />
+            <NoOrderAlertBanner
+              data={noOrderAlertsData}
+              loading={noOrderAlertsLoading}
             />
             <Card className="app-glass-card app-glass-card--lg">
               <CardHeader className="pb-2">

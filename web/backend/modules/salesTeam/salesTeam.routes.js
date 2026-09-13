@@ -6,6 +6,7 @@ import { Router } from "express";
 import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
 import {
   getSalesHome,
+  getSalesTeamNoOrderAlerts,
   listAccounts,
   getAccount,
   createAccount,
@@ -48,6 +49,7 @@ const salesOpsRoles = ["salesTeam", "admin"];
 const requirementRoles = ["salesTeam", "admin", "internalLab", "devops"];
 
 router.get("/home", authorize(salesOpsRoles), getSalesHome);
+router.get("/no-order-alerts", authorize(salesOpsRoles), getSalesTeamNoOrderAlerts);
 router.get("/stats", authorize(salesOpsRoles), getSalesStats);
 router.get("/referral", authorize(salesOpsRoles), getReferralInfo);
 router.get("/platform-pitch", authorize(salesOpsRoles), getPlatformPitch);

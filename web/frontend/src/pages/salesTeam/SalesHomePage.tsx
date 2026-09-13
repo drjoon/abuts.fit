@@ -66,6 +66,10 @@ import {
   SalesSplit,
   SalesToolbar,
 } from "./salesUi";
+import {
+  NoOrderAlertBanner,
+  useNoOrderAlerts,
+} from "@/shared/noOrderAlerts";
 
 type ListFilter = "all" | "planned" | "done";
 
@@ -130,6 +134,13 @@ export default function SalesHomePage() {
   const token = useAuthStore((s) => s.token);
   const { toast } = useToast();
   const qc = useQueryClient();
+  const {
+    data: noOrderAlertsData,
+    isLoading: noOrderAlertsLoading,
+  } = useNoOrderAlerts(
+    "/api/sales-team/no-order-alerts",
+    "sales-team-no-order-alerts",
+  );
   const today = toKstYmd(new Date()) || "";
   const [searchParams, setSearchParams] = useSearchParams();
   const [ymd, setYmd] = useState(
@@ -817,6 +828,11 @@ export default function SalesHomePage() {
       </SalesToolbar>
 
       <div className="space-y-4">
+        <NoOrderAlertBanner
+          data={noOrderAlertsData}
+          loading={noOrderAlertsLoading}
+          variant="sales"
+        />
         <SalesSplit
           primaryClassName="order-2 lg:order-1"
           secondaryClassName="order-1 lg:order-2"

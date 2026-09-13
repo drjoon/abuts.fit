@@ -7,6 +7,7 @@ import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
 import {
   getSalesmanDashboard,
   getSalesmanLedger,
+  getSalesmanNoOrderAlerts,
   getPlatformPitch,
 } from "../../controllers/salesman/salesman.controller.js";
 
@@ -16,6 +17,7 @@ router.use(authenticate);
 router.use(authorize(["salesman", "devops"]));
 
 router.get("/dashboard", getSalesmanDashboard);
+router.get("/no-order-alerts", getSalesmanNoOrderAlerts);
 router.get("/ledger", getSalesmanLedger);
 router.get("/platform-pitch", getPlatformPitch);
 

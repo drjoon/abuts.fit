@@ -11,10 +11,12 @@ import BusinessAnchor from "../../models/businessAnchor.model.js";
 import User from "../../models/user.model.js";
 import LedgerLine from "../../models/ledgerLine.model.js";
 import LedgerJournal from "../../models/ledgerJournal.model.js";
+import { Types } from "mongoose";
 import {
   buildOccurredAtFromPeriodQuery,
 } from "../../utils/kstQueryBounds.js";
 import { getPlatformSocialProof } from "../../services/platformGrowthStats.service.js";
+import { listNoOrderAlerts } from "../../services/noOrderAlerts.service.js";
 
 function parsePeriod(input) {
   const raw = String(input || "").trim();
@@ -728,6 +730,46 @@ export async function getSalesmanDashboard(req, res) {
     return res.status(500).json({
       success: false,
       message: "딜러 대시보드 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/** 소개 의뢰자 중 3·6개월 무주문(마지막 완료 기준) 알람 */
+export async function getSalesmanNoOrderAlerts(req, res) {
+  try {
+    const me = req.user;
+    const myBusinessAnchorId = me?.businessAnchorId;
+    if (
+      !myBusinessAnchorId ||
+      !Types.ObjectId.isValid(String(myBusinessAnchorId))
+    ) {
+      return res.status(200).json({
+        success: true,
+        data: { summary: { count3m: 0, count6m: 0, total: 0 }, items: [] },
+      });
+    }
+
+    const myBusinessAnchorObjectId = new Types.ObjectId(
+      String(myBusinessAnchorId),
+    );
+    const referredRequestors = await BusinessAnchor.find({
+      referredByAnchorId: myBusinessAnchorObjectId,
+      businessType: "requestor",
+    })
+      .select({ _id: 1 })
+      .lean();
+
+    const data = await listNoOrderAlerts({
+      anchorIds: (referredRequestors || []).map((a) => a?._id),
+    });
+
+    return res.status(200).json({ success: true, data });
+  } catch (error) {
+    console.error("[salesman.getSalesmanNoOrderAlerts] error", error);
+    return res.status(500).json({
+      success: false,
+      message: "무주문 의뢰자 알람 조회 중 오류가 발생했습니다.",
       error: error.message,
     });
   }

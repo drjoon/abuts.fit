@@ -47,6 +47,7 @@ import {
   saveHappyCallMemoDraft,
   addHappyCallCompletionMemo,
 } from "../../controllers/admin/admin.dashboard.controller.js";
+import { getAdminNoOrderAlerts } from "../../controllers/admin/admin.noOrderAlerts.controller.js";
 import {
   listHexVerificationInProgress,
   completeHexVerification,
@@ -302,6 +303,7 @@ router.post("/requests/fix-business-anchor-id", fixMissingBusinessAnchorId);
 
 // 대시보드 통계
 router.get("/dashboard", getDashboardStats);
+router.get("/no-order-alerts", getAdminNoOrderAlerts);
 router.get("/dashboard/happy-call/completions", listHappyCallCompletions);
 router.post("/dashboard/happy-call/memo", saveHappyCallMemoDraft);
 router.post("/dashboard/happy-call/complete", completeHappyCall);

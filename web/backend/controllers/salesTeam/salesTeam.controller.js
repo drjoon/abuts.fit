@@ -15,6 +15,7 @@ import {
   resolveSalesTeamReferralAnchorId,
 } from "../../utils/salesTeamReferral.util.js";
 import { getPlatformSocialProof } from "../../services/platformGrowthStats.service.js";
+import { listNoOrderAlerts } from "../../services/noOrderAlerts.service.js";
 
 const COMMITMENTS = new Set(["confirmed", "around", "askBefore"]);
 const VISIT_STATUSES = new Set([
@@ -1158,6 +1159,31 @@ export async function getSalesHome(req, res) {
     return res.status(500).json({
       success: false,
       message: error?.message || "홈 조회에 실패했습니다.",
+    });
+  }
+}
+
+/** CRM 가입 거래처(BA 연결) 중 3·6개월 무주문 알람 */
+export async function getSalesTeamNoOrderAlerts(req, res) {
+  try {
+    const filter = {
+      ...accountVisibilityFilter(req.user._id, req.user.role),
+      businessAnchorId: { $ne: null },
+    };
+    const accounts = await SalesAccount.find(filter)
+      .select({ businessAnchorId: 1 })
+      .lean();
+
+    const data = await listNoOrderAlerts({
+      anchorIds: (accounts || []).map((a) => a?.businessAnchorId),
+    });
+
+    return res.json({ success: true, data });
+  } catch (error) {
+    console.error("[salesTeam.getSalesTeamNoOrderAlerts]", error);
+    return res.status(500).json({
+      success: false,
+      message: error?.message || "무주문 의뢰자 알람 조회에 실패했습니다.",
     });
   }
 }
