@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-13: R&D 직경 행 중앙에 R&D/불완전가공 하위 탭(상단 공정 탭에서 불완전가공 분리).
 // - 2026-09-09: 관리자 헥스 확정 후에도 제조사가 준비 단계에서 의뢰 단위 헥스 변경 가능.
 // - 2026-09-09: filled-stl-regeneration-started → stlPreload GENERATING 낙관 패치(재생성 블러).
 // - 2026-09-09: 준비 탭 Rhino GENERATING 고스트 — realtime hook에 requests/tabStage 전달(폴링 refetch).
@@ -45,6 +46,7 @@ import { useOutletContext, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/useAuthStore";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { type DiameterBucketKey } from "@/shared/ui/dashboard/WorksheetDiameterQueueBar";
 import {
   WorksheetDiameterQueueModal,
@@ -155,16 +157,35 @@ export const RequestPage = ({
     user?.role === "admin" ||
     user?.role === "internalLab" ||
     (useManufacturerQueueList && user?.role === "requestor");
-  const { worksheetSearch, showCompleted } = useOutletContext<{
-    worksheetSearch: string;
-    showCompleted: boolean;
-  }>();
+  const { worksheetSearch, showCompleted, rndCount, unmachinableCount } =
+    useOutletContext<{
+      worksheetSearch: string;
+      showCompleted: boolean;
+      rndCount?: number;
+      unmachinableCount?: number;
+    }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const rawTabStage = String(searchParams.get("stage") || "request").trim();
   // 작업 공정 변경: CAM 탭 비노출. legacy cam URL은 machining 탭으로 동작시킨다.
   const tabStage = rawTabStage === "cam" ? "machining" : rawTabStage;
   const isCamStage = false;
   const isMachiningStage = tabStage === "machining";
+  const isRndSection = tabStage === "rnd" || tabStage === "unmachinable";
+  const rndSectionTab = tabStage === "unmachinable" ? "unmachinable" : "rnd";
+
+  const switchRndSectionTab = useCallback(
+    (next: "rnd" | "unmachinable") => {
+      setSearchParams(
+        (prev) => {
+          const nextParams = new URLSearchParams(prev);
+          nextParams.set("stage", next);
+          return nextParams;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
 
   const DEFAULT_PAGE_LIMIT = 12;
   const SHIPPING_PAGE_LIMIT = 200;
@@ -3030,6 +3051,39 @@ export const RequestPage = ({
             counts={diameterQueueForReceive.counts}
             variant="compact"
             className="px-4 pt-2"
+            centerAddon={
+              isRndSection ? (
+                <Tabs
+                  value={rndSectionTab}
+                  onValueChange={(v) => {
+                    if (v === "rnd" || v === "unmachinable") {
+                      switchRndSectionTab(v);
+                    }
+                  }}
+                >
+                  <TabsList className="h-auto gap-1 bg-transparent p-0">
+                    <TabsTrigger
+                      value="rnd"
+                      className="h-8 gap-1 rounded-lg px-2.5 text-xs data-[state=active]:bg-primary-soft data-[state=active]:text-primary-strong"
+                    >
+                      <span>R&D</span>
+                      <span className="tabular-nums opacity-70">
+                        {rndCount ?? 0}
+                      </span>
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="unmachinable"
+                      className="h-8 gap-1 rounded-lg px-2.5 text-xs data-[state=active]:bg-primary-soft data-[state=active]:text-primary-strong"
+                    >
+                      <span>불완전가공</span>
+                      <span className="tabular-nums opacity-70">
+                        {unmachinableCount ?? 0}
+                      </span>
+                    </TabsTrigger>
+                  </TabsList>
+                </Tabs>
+              ) : null
+            }
             toolbar={
               showBulkCamRegenerate && tabStage === "request" ? (
                 <Button

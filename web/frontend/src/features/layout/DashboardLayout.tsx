@@ -15,6 +15,7 @@ import {
 } from "@/shared/layout/sidebarOpen";
 import { cn } from "@/shared/ui/cn";
 
+// - 2026-09-13: CNC 워크시트 — 불완전가공을 상단 공정 탭에서 제거하고 R&D 하위 탭으로 이동.
 // - 2026-09-13: 관리자「스토어」사이드바 액션 대기 배지(PENDING·READY·SHIPPED).
 // - 2026-09-13: 관리자 사이드에「스토어」(/dashboard/store-admin) 복구.
 // - 2026-09-13: 사이드바 도킹 브레이크포인트를 lg(1024)→xl(1280). 중간 가로폭에서 드로어로 접힘.
@@ -2014,7 +2015,10 @@ export const DashboardLayout = () => {
                               </Button>
                               <Button
                                 variant={
-                                  worksheetStage === "rnd" ? "default" : "ghost"
+                                  worksheetStage === "rnd" ||
+                                  worksheetStage === "unmachinable"
+                                    ? "default"
+                                    : "ghost"
                                 }
                                 size="sm"
                                 className="h-8 shrink-0 gap-1 px-2 text-xs"
@@ -2027,25 +2031,6 @@ export const DashboardLayout = () => {
                                 <span>R&D</span>
                                 <span className="tabular-nums opacity-70">
                                   {wsSummary.rndCount ?? 0}
-                                </span>
-                              </Button>
-                              <Button
-                                variant={
-                                  worksheetStage === "unmachinable"
-                                    ? "default"
-                                    : "ghost"
-                                }
-                                size="sm"
-                                className="h-8 shrink-0 gap-1 px-2 text-xs"
-                                onClick={() =>
-                                  navigate(
-                                    "/dashboard/worksheet?type=cnc&stage=unmachinable",
-                                  )
-                                }
-                              >
-                                <span>불완전가공</span>
-                                <span className="tabular-nums opacity-70">
-                                  {wsSummary.unmachinableCount ?? 0}
                                 </span>
                               </Button>
                             </div>
@@ -2144,6 +2129,8 @@ export const DashboardLayout = () => {
                             freeShippingCredit,
                             settlementCredit,
                             loadingCreditBalance,
+                            rndCount: wsSummary.rndCount ?? 0,
+                            unmachinableCount: wsSummary.unmachinableCount ?? 0,
                           }}
                         />
                       </div>
