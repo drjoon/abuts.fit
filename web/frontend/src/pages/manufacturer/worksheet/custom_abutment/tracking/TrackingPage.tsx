@@ -1679,9 +1679,9 @@ export const TrackingInquiryPage = () => {
           onValueChange={(v) => setTab(v as InquiryTab)}
           className="flex min-h-0 flex-1 flex-col"
         >
-          <div className="mb-3 flex flex-row items-center gap-3">
-            <div className="min-w-0 basis-1/3">
-              <TabsList className="h-8 w-full justify-start gap-1 bg-transparent p-0">
+          <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:gap-3">
+            <div className="min-w-0 w-full md:basis-1/3">
+              <TabsList className="h-auto w-full flex-wrap justify-start gap-1 bg-transparent p-0">
                 <TabsTrigger
                   value="shipping"
                   className="h-8 rounded-lg px-2.5 text-xs data-[state=active]:bg-primary-soft data-[state=active]:text-primary-strong"
@@ -1702,7 +1702,7 @@ export const TrackingInquiryPage = () => {
                 </TabsTrigger>
               </TabsList>
             </div>
-            <div className="flex min-w-0 basis-2/3 flex-wrap items-center justify-end gap-2">
+            <div className="flex w-full min-w-0 flex-wrap items-center justify-start gap-2 md:basis-2/3 md:justify-end">
               {tab === "udi" && (
                 <Button
                   variant="outline"
@@ -1757,7 +1757,7 @@ export const TrackingInquiryPage = () => {
             value="process"
             className="mt-0 space-y-2 data-[state=inactive]:hidden"
           >
-            <div className="rounded-md border bg-background">
+            <div className="rounded-md border bg-background overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -1928,7 +1928,7 @@ export const TrackingInquiryPage = () => {
             value="udi"
             className="mt-0 space-y-2 data-[state=inactive]:hidden"
           >
-            <div className="rounded-md border bg-background">
+            <div className="rounded-md border bg-background overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>

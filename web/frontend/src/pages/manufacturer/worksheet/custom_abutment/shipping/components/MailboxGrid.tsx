@@ -2378,15 +2378,15 @@ export const MailboxGrid = ({
       )}
 
       <MailboxStickyHeader>
-        <div className="mb-2 flex flex-row items-center gap-3">
-          <div className="min-w-0 basis-1/3">
+        <div className="mb-2 flex flex-col gap-2 md:flex-row md:items-center md:gap-3">
+          <div className="min-w-0 w-full md:basis-1/3">
             <MailboxShelfGroupTabs
               shelfGroups={shelfGroups}
               selectedGroupIdx={selectedGroupIdx}
               setSelectedGroupIdx={setSelectedGroupIdx}
             />
           </div>
-          <div className="min-w-0 basis-2/3">
+          <div className="min-w-0 w-full md:basis-2/3">
             <MailboxActionHeader
               isRequestingPickup={isRequestingPickup}
               actionButtons={actionButtons}

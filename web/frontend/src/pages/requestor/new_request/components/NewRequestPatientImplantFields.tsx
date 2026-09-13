@@ -522,7 +522,7 @@ export function NewRequestPatientImplantFields({
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="grid grid-cols-1 gap-2 text-foreground sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-2 text-foreground md:grid-cols-3">
         <div className="min-w-0">
           <LabeledAutocompleteField
             value={caseInfos?.clinicName || ""}
@@ -653,7 +653,7 @@ export function NewRequestPatientImplantFields({
         </div>
 
       {showImplantSelect ? (
-        <div className="grid grid-cols-1 gap-2 text-[10px] md:text-[11px] sm:grid-cols-4">
+        <div className="grid grid-cols-1 gap-2 text-[10px] md:grid-cols-2 md:text-[11px] lg:grid-cols-4">
               <div className="min-w-0 space-y-1">
                 <Select
                   value={resolveSelectValue(

@@ -118,13 +118,13 @@ export const SalesmanDashboardPage = () => {
         title="딜러 대시보드"
         subtitle=""
         headerRight={
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
             <PeriodFilter value={period} onChange={setPeriod} useStoreCustomRange={false} />
             <Button
               type="button"
               size="sm"
               variant="outline"
-              className="h-8"
+              className="h-8 w-full sm:w-auto"
               onClick={() => setPolicyOpen(true)}
             >
               의뢰자 정책
@@ -133,7 +133,7 @@ export const SalesmanDashboardPage = () => {
               type="button"
               size="sm"
               variant="outline"
-              className="h-8"
+              className="h-8 w-full sm:w-auto"
               onClick={() => setSalesmanPolicyOpen(true)}
             >
               딜러 정책
@@ -142,7 +142,7 @@ export const SalesmanDashboardPage = () => {
               type="button"
               size="sm"
               variant="outline"
-              className="h-8"
+              className="h-8 w-full sm:w-auto"
               onClick={() => setCreditModalOpen(true)}
             >
               보유 크레딧: {formatMoney(payableGross)}원
@@ -160,7 +160,7 @@ export const SalesmanDashboardPage = () => {
                 <CardTitle className="text-sm font-semibold">불완전가공 단계 현황</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
-                <div className="grid grid-cols-3 gap-2 text-xs">
+                <div className="grid grid-cols-1 gap-1.5 text-xs sm:grid-cols-3">
                   <div>가능성 {Number(unmachinableCounts.potentialCount || 0).toLocaleString()}건</div>
                   <div>판정 {Number(unmachinableCounts.judgedCount || 0).toLocaleString()}건</div>
                   <div>확인 {Number(unmachinableCounts.confirmedCount || 0).toLocaleString()}건</div>
@@ -218,8 +218,8 @@ export const SalesmanDashboardPage = () => {
                 </Tooltip>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="text-2xl sm:text-3xl md:text-4xl font-mono font-bold tracking-widest">
+                <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="text-2xl font-mono font-bold tracking-wider sm:text-3xl sm:tracking-widest md:text-4xl">
                     {normalizedReferralCode || (loading ? "..." : "-")}
                   </div>
                   <Button

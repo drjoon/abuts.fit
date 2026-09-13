@@ -789,7 +789,7 @@ export default function SalesHomePage() {
               일정 추가
             </Button>
           </div>
-          <div className="flex w-full flex-nowrap items-center justify-center gap-1 text-xs sm:w-auto sm:min-w-0 sm:flex-1 sm:gap-1.5 sm:text-sm">
+          <div className="flex w-full flex-wrap items-center justify-center gap-1 text-xs sm:w-auto sm:min-w-0 sm:flex-1 sm:flex-nowrap sm:gap-1.5 sm:text-sm">
             <StatusChip
               label="예정"
               value={String(plannedCount)}

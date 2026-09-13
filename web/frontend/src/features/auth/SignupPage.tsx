@@ -1197,10 +1197,14 @@ export const SignupPage = () => {
       </div>
 
       <main
-        className={`relative z-10 mx-auto flex min-h-screen w-full max-w-6xl flex-col justify-center gap-8 px-4 py-10 sm:gap-12 sm:px-6 sm:py-16 ${showHeroSection ? "lg:flex-row lg:items-center" : "items-center"}`}
+        className={`relative z-10 mx-auto flex min-h-screen w-full max-w-6xl justify-center gap-6 px-4 py-8 sm:gap-10 sm:px-6 sm:py-16 ${
+          showHeroSection
+            ? "flex-col-reverse lg:flex-row lg:items-center lg:gap-12"
+            : "flex-col items-center"
+        }`}
       >
         {showHeroSection && (
-          <section className="w-full space-y-6 text-center lg:w-1/2 lg:flex-1 lg:text-center">
+          <section className="hidden w-full space-y-6 text-center sm:block lg:w-1/2 lg:flex-1 lg:text-center">
             <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1 text-xs uppercase tracking-[0.3em] text-white/70">
               <span>secure access</span>
               <span className="h-1 w-1 rounded-full bg-primary/70" />
@@ -1230,7 +1234,7 @@ export const SignupPage = () => {
               </div>
             )}
             {!referrerInfo && (
-              <div className="rounded-2xl border border-white/15 bg-white/5 p-6 backdrop-blur">
+              <div className="hidden rounded-2xl border border-white/15 bg-white/5 p-6 backdrop-blur lg:block">
                 <p className="text-xs uppercase tracking-[0.4em] text-white/60">
                   realtime sync
                 </p>
@@ -1375,7 +1379,7 @@ export const SignupPage = () => {
                           </button>
                         </div>
                       ) : (
-                        <div className="flex gap-2">
+                        <div className="flex flex-col gap-2 sm:flex-row">
                           <Input
                             type="text"
                             placeholder="소개 코드 입력"
@@ -1400,7 +1404,7 @@ export const SignupPage = () => {
                               !manualReferralInput.trim()
                             }
                             onClick={() => void validateManualReferralCode()}
-                            className="h-11 px-4 flex-shrink-0 border-white/10 bg-white/5 text-white/80 hover:bg-white/10 hover:text-white"
+                            className="h-11 w-full shrink-0 border-white/10 bg-white/5 px-4 text-white/80 hover:bg-white/10 hover:text-white sm:w-auto"
                           >
                             {isValidatingReferral ? "확인 중..." : "확인"}
                           </Button>
@@ -1522,7 +1526,7 @@ export const SignupPage = () => {
                           </button>
                         </div>
                       ) : (
-                        <div className="flex gap-2">
+                        <div className="flex flex-col gap-2 sm:flex-row">
                           <Input
                             type="text"
                             placeholder="소개 코드 입력"
@@ -1547,7 +1551,7 @@ export const SignupPage = () => {
                               !manualReferralInput.trim()
                             }
                             onClick={() => void validateManualReferralCode()}
-                            className="h-11 px-4 flex-shrink-0 border-white/10 bg-white/5 text-white/80 hover:bg-white/10 hover:text-white"
+                            className="h-11 w-full shrink-0 border-white/10 bg-white/5 px-4 text-white/80 hover:bg-white/10 hover:text-white sm:w-auto"
                           >
                             {isValidatingReferral ? "확인 중..." : "확인"}
                           </Button>

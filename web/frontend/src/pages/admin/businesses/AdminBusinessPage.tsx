@@ -487,7 +487,7 @@ export default function AdminBusinessPage({
       }
     >
       <div className="mx-auto flex w-full max-w-7xl flex-1 min-h-0 flex-col gap-4 overflow-hidden">
-        <div className="grid shrink-0 grid-cols-2 gap-2.5 p-0.5 xl:grid-cols-4">
+        <div className="grid shrink-0 grid-cols-1 gap-2.5 p-0.5 sm:grid-cols-2 xl:grid-cols-4">
           {[
             {
               label: "총 사업자",
@@ -560,7 +560,7 @@ export default function AdminBusinessPage({
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
-              <div className="relative min-w-[220px] flex-1">
+              <div className="relative min-w-0 w-full flex-1 basis-full sm:min-w-[220px] sm:basis-auto">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <Input
                   value={search}

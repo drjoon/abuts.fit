@@ -2924,7 +2924,7 @@ export const CreditLedgerModal = ({
 
           <div
             ref={scrollRef}
-            className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-slate-200/80 bg-white/70 shadow-sm"
+            className="min-h-[min(50dvh,24rem)] flex-1 overflow-y-auto rounded-2xl border border-slate-200/80 bg-white/70 shadow-sm md:min-h-0"
           >
             <div className={RESPONSIVE.tableShell}>
               <Table className={RESPONSIVE.tableMinExtraWide}>

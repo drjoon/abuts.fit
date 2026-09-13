@@ -965,7 +965,7 @@ export const AdminUserManagement = ({
       }
     >
       <div className="mx-auto flex w-full max-w-7xl flex-1 min-h-0 flex-col gap-4 overflow-y-auto">
-        <div className="grid grid-cols-2 gap-2.5 p-0.5 md:grid-cols-4 xl:grid-cols-7">
+        <div className="grid grid-cols-1 gap-2.5 p-0.5 sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-7">
           {statsCards.map((card) => {
             const Icon = card.icon;
             return (

@@ -144,7 +144,7 @@ export default function SalesPerformancePage() {
           </p>
         ) : (
           <div className="grid gap-4 lg:grid-cols-[minmax(14rem,18rem)_minmax(0,1fr)] xl:grid-cols-[minmax(15rem,20rem)_minmax(0,1fr)] xl:gap-5">
-            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3 lg:grid-cols-1 lg:sticky lg:top-4 lg:self-start">
+            <div className="grid grid-cols-1 gap-2.5 md:grid-cols-3 lg:grid-cols-1 lg:sticky lg:top-4 lg:self-start">
               <SalesStatCard
                 compact
                 label="방문 완료"
@@ -305,7 +305,7 @@ export default function SalesPerformancePage() {
       ) : (
         <div className="grid gap-4 lg:grid-cols-[minmax(18rem,24rem)_minmax(0,1fr)] xl:gap-5">
           <div className="space-y-4 lg:sticky lg:top-4 lg:self-start">
-            <div className="grid grid-cols-3 gap-2.5">
+            <div className="grid grid-cols-1 gap-2.5 md:grid-cols-3">
               <SalesStatCard
                 compact
                 label="소개 가입"
@@ -321,7 +321,7 @@ export default function SalesPerformancePage() {
               description="현장에서 코드나 가입 링크를 공유하세요."
             >
               <div className="flex flex-col items-center gap-4 rounded-2xl border border-primary-muted/50 bg-gradient-to-br from-primary-soft/80 to-white px-4 py-8 text-center">
-                <div className="font-mono text-4xl font-semibold tracking-[0.35em] text-slate-900 sm:text-5xl">
+                <div className="font-mono text-3xl font-semibold tracking-[0.2em] text-slate-900 sm:text-5xl sm:tracking-[0.35em]">
                   {code || "—"}
                 </div>
                 {code ? (

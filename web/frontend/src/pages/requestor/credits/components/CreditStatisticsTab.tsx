@@ -65,7 +65,6 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart";
 import { cn } from "@/shared/ui/cn";
-import { RESPONSIVE } from "@/shared/ui/responsive";
 import {
   CREDIT_LEDGER_CHARGE_DETAIL_TITLE,
   CREDIT_LEDGER_CHARGE_LABEL,
@@ -406,8 +405,8 @@ function SummaryCardsRow({
   cardCount: number;
 }) {
   return (
-    <div className={cn("min-w-0", RESPONSIVE.tableShell, "pb-1")}>
-      <div className="flex min-w-max items-stretch gap-0.5 px-1 sm:gap-1">
+    <div className="min-w-0 pb-1">
+      <div className="flex flex-col items-stretch gap-2 px-1 md:min-w-max md:flex-row md:items-stretch md:gap-1">
         {children}
       </div>
       <span className="sr-only">{cardCount}개 요약</span>
@@ -417,12 +416,12 @@ function SummaryCardsRow({
 
 function SummarySkeleton({ cardCount }: { cardCount: number }) {
   return (
-    <div className={cn("min-w-0", RESPONSIVE.tableShell, "pb-1")}>
-      <div className="flex min-w-max items-stretch gap-0.5 px-1 sm:gap-1">
+    <div className="min-w-0 pb-1">
+      <div className="flex flex-col items-stretch gap-2 px-1 md:min-w-max md:flex-row md:items-stretch md:gap-0.5">
         {Array.from({ length: cardCount }).map((_, i) => (
           <div
             key={i}
-            className="min-h-[7.25rem] min-w-[8.5rem] flex-1 animate-pulse rounded-2xl border border-border/60 bg-muted/30 sm:min-w-[9.5rem] md:min-w-[10.5rem]"
+            className="min-h-[7.25rem] w-full min-w-0 animate-pulse rounded-2xl border border-border/60 bg-muted/30 md:min-w-[8.5rem] md:flex-1 lg:min-w-[10.5rem]"
           />
         ))}
       </div>
@@ -693,7 +692,7 @@ export function CreditStatisticsTab() {
   };
 
   const statCardClass =
-    "min-w-[8.5rem] flex-1 sm:min-w-[9.5rem] md:min-w-[10.5rem]";
+    "w-full min-w-0 md:min-w-[8.5rem] md:flex-1 lg:min-w-[10.5rem]";
 
   const abutsSpendTooltip = demoMode
     ? resolveCreditLedgerDemoPeriodSpendHint(isLab ? "lab" : "practice")
@@ -764,7 +763,7 @@ export function CreditStatisticsTab() {
           })
         }
       />
-      <SettlementEquationOperator symbol="−" />
+      <SettlementEquationOperator symbol="−" className="hidden md:flex" />
       <SettlementStatCard
         className={statCardClass}
         label={spendLabel}

@@ -600,7 +600,7 @@ export const AdminChatManagement = ({
                 </CardDescription>
               )}
               {activeChat && (
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <div className="text-xs text-muted-foreground truncate">
                     {(activeChat.participants || [])
                       .map(

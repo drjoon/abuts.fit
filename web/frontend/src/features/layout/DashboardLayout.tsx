@@ -1898,7 +1898,7 @@ export const DashboardLayout = () => {
                     )}
 
                     {isWorksheetRoute && (
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3 sm:flex-nowrap sm:justify-between">
+                      <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-3 lg:flex-nowrap lg:justify-between">
                         <div className="flex gap-2 flex-shrink-0">
                           <PeriodFilter value={period} onChange={setPeriod} />
                         </div>
@@ -1906,8 +1906,8 @@ export const DashboardLayout = () => {
                         {(worksheetType === "cnc" ||
                           worksheetType === "custom_abutment") && (
                           <>
-                            <div className="hidden sm:block h-8 w-px bg-muted-foreground/60 flex-shrink-0" />
-                            <div className="scroll-x-bar-top -mx-1 flex min-w-0 flex-nowrap gap-1 px-1 text-xs">
+                            <div className="hidden lg:block h-8 w-px bg-muted-foreground/60 flex-shrink-0" />
+                            <div className="scroll-x-bar-top -mx-1 flex w-full min-w-0 flex-nowrap gap-1 px-1 text-xs lg:w-auto">
                               <Button
                                 variant={
                                   worksheetStage === "request"
@@ -2052,7 +2052,7 @@ export const DashboardLayout = () => {
                           </>
                         )}
 
-                        <div className="w-full sm:w-auto sm:ml-auto flex items-center justify-end gap-2 shrink-0 sm:flex-nowrap">
+                        <div className="flex w-full flex-wrap items-center justify-start gap-2 shrink-0 lg:ml-auto lg:w-auto lg:flex-nowrap lg:justify-end">
                           <label className="flex items-center gap-1.5 text-xs text-muted-foreground select-none whitespace-nowrap shrink-0">
                             <input
                               type="checkbox"
@@ -2064,7 +2064,7 @@ export const DashboardLayout = () => {
                             />
                             <span>완료포함</span>
                           </label>
-                          <div className="relative w-[120px] lg:w-[180px] shrink-0">
+                          <div className="relative w-full max-w-[180px] sm:w-[120px] lg:w-[180px] shrink-0">
                             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                             <Input
                               placeholder="검색..."

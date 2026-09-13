@@ -2107,7 +2107,7 @@ export const AdminDashboardPage = () => {
         stats={
           <>
             {/* 플랫폼 성장 KPI */}
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3 lg:grid-cols-5">
               <Card className="app-glass-card app-glass-card--lg">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">오늘 접속</CardTitle>
@@ -3388,7 +3388,7 @@ export const AdminDashboardPage = () => {
         descriptionClassName="!mb-4 !max-h-none !overflow-hidden flex min-h-0 flex-1 flex-col"
         description={
           <div className="flex h-full min-h-0 flex-col gap-4 text-sm text-slate-700">
-            <div className="grid shrink-0 grid-cols-3 gap-2 sm:grid-cols-6">
+            <div className="grid shrink-0 grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-6">
               {[
                 {
                   label: "전송",

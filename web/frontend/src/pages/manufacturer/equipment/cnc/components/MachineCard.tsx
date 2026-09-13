@@ -569,7 +569,7 @@ export const MachineCard = (props: MachineCardProps) => {
         isActive ? "border-primary ring-2 ring-primary-muted" : "border-slate-200"
       }`}
     >
-      <div className="app-glass-card-content flex items-start justify-between gap-3">
+      <div className="app-glass-card-content flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex flex-col gap-1 min-w-0">
           <div className="flex items-center gap-2">
             <div className="text-[16px] font-extrabold text-slate-900 truncate max-w-[200px]">
@@ -644,7 +644,7 @@ export const MachineCard = (props: MachineCardProps) => {
           ) : null}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
           <div className="flex items-center gap-2">
             <div className="text-[11px] font-extrabold text-slate-700">
               더미가공

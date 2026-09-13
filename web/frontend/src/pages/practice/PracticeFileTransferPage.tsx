@@ -8665,7 +8665,7 @@ export const PracticeFileTransferPage = ({
       }
     >
       {isMobile ? (
-        <div className="flex w-full shrink-0 flex-nowrap items-center justify-center gap-2.5">
+        <div className="flex w-full flex-wrap items-center justify-center gap-2">
           <Button
             type="button"
             variant="outline"

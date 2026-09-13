@@ -29,7 +29,7 @@ export function RequestSettingsToolbar({
   anodizingTitle = "기공소 기본값으로 저장되며, 이후 제조 주문 메타데이터에 반영됩니다",
 }: RequestSettingsToolbarProps) {
   return (
-    <div className={cn("flex items-center gap-2 min-w-0", className)}>
+    <div className={cn("flex flex-wrap items-center gap-2 min-w-0", className)}>
       <Button
         type="button"
         variant="outline"

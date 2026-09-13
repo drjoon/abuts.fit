@@ -36,9 +36,9 @@ export const WorksheetQueueSummary = ({
   if (variant === "compact") {
     return (
       <div
-        className={`mb-3 flex items-center gap-3 ${className}`}
+        className={`mb-3 flex flex-col gap-2 md:flex-row md:items-center md:gap-3 ${className}`}
       >
-        <div className="flex min-w-0 shrink items-center gap-2">
+        <div className="flex min-w-0 w-full flex-wrap items-center gap-2 md:w-auto md:flex-nowrap">
           <div className="shrink-0 whitespace-nowrap text-base font-semibold text-slate-800">
             {total}건
           </div>
@@ -50,11 +50,11 @@ export const WorksheetQueueSummary = ({
             variant="compact"
           />
           {leadingAddon ? (
-            <div className="shrink-0">{leadingAddon}</div>
+            <div className="w-full min-w-0 shrink-0 sm:w-auto">{leadingAddon}</div>
           ) : null}
         </div>
         {toolbar ? (
-          <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
+          <div className="flex w-full min-w-0 flex-wrap items-center justify-start gap-2 md:ml-auto md:w-auto md:justify-end">
             {toolbar}
           </div>
         ) : null}

@@ -170,11 +170,11 @@ export const SettingsScaffold = ({
                   tabsTrailing && !fillHeight ? "sm:items-center" : null,
                 )}
               >
-                {/* 모바일: 탭이 넘치면 수평 스크롤. 좌우 패딩으로 첫/끝 탭이 잘리지 않게. */}
-                <div className="min-w-0 flex-1 overscroll-x-contain scroll-pl-1 scroll-pr-1 px-1 scroll-x-bar-top sm:overflow-visible sm:px-0 sm:[transform:none] sm:[&>*]:[transform:none]">
+                {/* 모바일: 탭은 줄바꿈. sm+ 에서도 wrap으로 가로 스크롤을 피한다. */}
+                <div className="min-w-0 flex-1 px-1 sm:px-0">
                   <TabsList
                     className={cn(
-                      "inline-flex h-auto min-w-full w-max max-w-none justify-start gap-1.5 sm:flex sm:w-full sm:flex-wrap sm:justify-center",
+                      "flex h-auto w-full flex-wrap justify-start gap-1.5 sm:justify-center",
                       compact ? "p-1" : "p-1.5",
                     )}
                   >

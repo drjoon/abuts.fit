@@ -816,8 +816,13 @@ export function PracticeRecentTransfersAllModal({
             <DialogTitle className="sr-only">{mobileTitle}</DialogTitle>
           )}
           {headerActions ? (
-            <div className="flex w-full shrink-0 flex-nowrap items-center justify-center">
+            <div className="flex w-full flex-wrap items-center justify-center gap-1.5">
               {headerActions}
+            </div>
+          ) : null}
+          {statusBadges ? (
+            <div className="flex w-full flex-wrap items-center justify-center gap-1.5">
+              {statusBadges}
             </div>
           ) : null}
           <div className="relative mx-auto w-full">
@@ -843,7 +848,7 @@ export function PracticeRecentTransfersAllModal({
       ) : (
         <div
           ref={headerRowRef}
-          className="flex flex-nowrap items-center gap-2 sm:gap-3"
+          className="flex flex-col gap-2 md:flex-row md:flex-nowrap md:items-center md:gap-2 lg:gap-3"
         >
           {isPage ? (
             <h1 className="sr-only">{headerTitle}</h1>
@@ -852,12 +857,12 @@ export function PracticeRecentTransfersAllModal({
               {headerTitle}
             </DialogTitle>
           )}
-          <div className="flex min-w-0 flex-1 flex-nowrap items-center justify-center gap-1.5 overflow-x-auto sm:gap-2">
+          <div className="flex min-w-0 w-full flex-wrap items-center justify-start gap-1.5 md:flex-1 md:flex-nowrap md:justify-center md:overflow-x-auto sm:gap-2">
             {statusBadges}
           </div>
           {headerActions ? (
             <div
-              className="group/hdr-actions flex shrink-0 flex-nowrap items-center gap-1.5 sm:gap-2"
+              className="group/hdr-actions flex w-full flex-wrap items-center justify-center gap-1.5 md:w-auto md:shrink-0 md:flex-nowrap sm:gap-2"
               data-wide={headerActionsWide ? "true" : "false"}
             >
               {headerActions}

@@ -512,7 +512,7 @@ export const AdminRequestMonitoring = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
           {statsCards.map((card) => {
             const Icon = card.icon;
             const active = selectedStatus === card.key;

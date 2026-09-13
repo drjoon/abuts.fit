@@ -67,7 +67,7 @@ export function CommissionPaymentsPage({
     <DashboardShell
       title={title}
       subtitle=""
-      statsGridClassName="grid grid-cols-1 gap-3 sm:grid-cols-3"
+      statsGridClassName="grid grid-cols-1 gap-3 md:grid-cols-3"
       stats={
         <>
           <SettlementStatCard

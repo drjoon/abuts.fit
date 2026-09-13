@@ -80,6 +80,7 @@ export const SalesmanSettingsPage = () => {
 
   return (
     <SettingsScaffold
+      compact
       tabs={tabs}
       activeTab={activeTab}
       onTabChange={(next) => {

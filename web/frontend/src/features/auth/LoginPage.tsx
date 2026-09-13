@@ -177,8 +177,8 @@ export const LoginPage = () => {
         />
       </div>
 
-      <main className="relative z-10 mx-auto flex min-h-screen w-full max-w-6xl flex-col justify-center gap-8 px-4 py-10 sm:gap-12 sm:px-6 sm:py-16 lg:flex-row lg:items-center">
-        <section className="w-full space-y-5 text-center sm:space-y-6 lg:w-1/2 lg:flex-1 lg:text-left">
+      <main className="relative z-10 mx-auto flex min-h-screen w-full max-w-6xl flex-col-reverse justify-center gap-6 px-4 py-8 sm:gap-10 sm:px-6 sm:py-16 lg:flex-row lg:items-center lg:gap-12">
+        <section className="hidden w-full space-y-5 text-center sm:block sm:space-y-6 lg:w-1/2 lg:flex-1 lg:text-left">
           <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1 text-xs uppercase tracking-[0.3em] text-white/70">
             <span>secure access</span>
             <span className="h-1 w-1 rounded-full bg-primary/70" />
@@ -192,7 +192,7 @@ export const LoginPage = () => {
               제작 현황, 스케줄, 실시간 트래킹을 모두 한 화면에서 제어하세요.
             </p>
           </div>
-          <div className="rounded-2xl border border-white/15 bg-white/5 p-6 backdrop-blur">
+          <div className="hidden rounded-2xl border border-white/15 bg-white/5 p-6 backdrop-blur lg:block">
             <p className="text-xs uppercase tracking-[0.4em] text-white/60">
               realtime sync
             </p>
@@ -262,7 +262,7 @@ export const LoginPage = () => {
 
 
                 <form onSubmit={handleSubmit} className="space-y-4 pt-4">
-                  <div className="grid gap-4 md:grid-cols-[1fr,auto] md:items-stretch">
+                  <div className="grid gap-3 sm:gap-4 md:grid-cols-[1fr,auto] md:items-stretch">
                     <div ref={columnRef} className="space-y-3">
                       <div className="space-y-2">
                         {/* <Label htmlFor="email">이메일</Label> */}

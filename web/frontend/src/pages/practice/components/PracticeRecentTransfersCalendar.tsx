@@ -1512,126 +1512,41 @@ export function PracticeRecentTransfersCalendar({
         ? { "data-guide-tour": guideTourTarget }
         : {})}
     >
-      <div className="flex min-h-8 flex-wrap items-center gap-2">
-        <div className="flex items-center gap-1">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            onClick={() => jumpMonth(-1)}
-            aria-label="이전 달"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <button
-            type="button"
-            className="min-w-[7.5rem] rounded-md px-1 py-0.5 text-center text-sm font-semibold tabular-nums hover:bg-muted/40"
-            title="오늘로 이동"
-            aria-label={`${monthCaption(captionMonth)}, 오늘로 이동`}
-            onClick={jumpToToday}
-          >
-            {monthCaption(captionMonth)}
-          </button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            onClick={() => jumpMonth(1)}
-            aria-label="다음 달"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-        </div>
-        {!isListMode ? (
-          <div className="flex flex-wrap items-center gap-1">
-            <span className="mr-0.5 text-[11px] text-muted-foreground">숨길 요일</span>
-            {LAB_RECEIVE_CALENDAR_WEEK_GRID_COLUMNS.map(({ dow, label }) => (
-              <button
-                key={`hide-${dow}`}
-                type="button"
-                className={cn(
-                  "h-7 min-w-7 rounded-md px-1.5 text-[11px] tabular-nums",
-                  hidden.has(dow)
-                    ? "bg-muted text-muted-foreground line-through"
-                    : "bg-background text-slate-700 ring-1 ring-inset ring-border hover:bg-muted/40",
-                )}
-                aria-pressed={hidden.has(dow)}
-                title={
-                  hidden.has(dow) ? `${label}요일 표시` : `${label}요일 숨김`
-                }
-                onClick={() => toggleHiddenDow(dow)}
-              >
-                {label}
-              </button>
-            ))}
+      <div className="flex min-h-8 flex-col gap-2 md:flex-row md:flex-wrap md:items-center">
+        <div className="flex items-center justify-between gap-2 md:justify-start">
+          <div className="flex items-center gap-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => jumpMonth(-1)}
+              aria-label="이전 달"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <button
+              type="button"
+              className="min-w-[7.5rem] rounded-md px-1 py-0.5 text-center text-sm font-semibold tabular-nums hover:bg-muted/40"
+              title="오늘로 이동"
+              aria-label={`${monthCaption(captionMonth)}, 오늘로 이동`}
+              onClick={jumpToToday}
+            >
+              {monthCaption(captionMonth)}
+            </button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => jumpMonth(1)}
+              aria-label="다음 달"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
           </div>
-        ) : null}
-        <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
-          {onSearchChange ? (
-            <div className="relative w-64 max-w-full shrink-0 sm:w-72">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={search ?? ""}
-                onChange={(e) => onSearchChange(e.target.value)}
-                className="h-9 w-full truncate pl-9 pr-8"
-                placeholder={searchPlaceholder}
-                title={searchPlaceholder}
-              />
-              {(search ?? "").trim() ? (
-                <button
-                  type="button"
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  onClick={() => onSearchChange("")}
-                  aria-label="검색어 지우기"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              ) : null}
-            </div>
-          ) : null}
-          <button
-            type="button"
-            className="rounded-full"
-            title="주문일"
-            aria-label="주문일"
-            onClick={() => onDateKeyChange("orderDate")}
-          >
-            <Badge
-              variant="outline"
-              className={cn(
-                "cursor-pointer leading-snug tracking-normal",
-                dateKey === "orderDate"
-                  ? "border-primary/70 bg-primary-soft text-primary-strong"
-                  : "hover:bg-muted/40",
-              )}
-            >
-              주문일
-            </Badge>
-          </button>
-          <button
-            type="button"
-            className="rounded-full"
-            title="치과도착일"
-            aria-label="치과도착일"
-            onClick={() => onDateKeyChange("arrivalDate")}
-          >
-            <Badge
-              variant="outline"
-              className={cn(
-                // leading-none+작은 글씨에서 「치과도착일」이 「치과의사착일」로 오인되는 경우 방지
-                "cursor-pointer leading-snug tracking-normal",
-                dateKey === "arrivalDate"
-                  ? "border-primary/70 bg-primary-soft text-primary-strong"
-                  : "hover:bg-muted/40",
-              )}
-            >
-              도착일
-            </Badge>
-          </button>
           <div
-            className="flex items-center rounded-md border border-slate-200 bg-white p-0.5"
+            className="flex items-center rounded-md border border-slate-200 bg-white p-0.5 md:hidden"
             role="group"
             aria-label="보기 전환"
           >
@@ -1665,6 +1580,131 @@ export function PracticeRecentTransfersCalendar({
               <List className="h-3.5 w-3.5" />
               목록
             </button>
+          </div>
+        </div>
+        {!isListMode ? (
+          <div className="flex w-full flex-wrap items-center gap-1 md:w-auto">
+            <span className="mr-0.5 text-[11px] text-muted-foreground">숨길 요일</span>
+            {LAB_RECEIVE_CALENDAR_WEEK_GRID_COLUMNS.map(({ dow, label }) => (
+              <button
+                key={`hide-${dow}`}
+                type="button"
+                className={cn(
+                  "h-7 min-w-7 rounded-md px-1.5 text-[11px] tabular-nums",
+                  hidden.has(dow)
+                    ? "bg-muted text-muted-foreground line-through"
+                    : "bg-background text-slate-700 ring-1 ring-inset ring-border hover:bg-muted/40",
+                )}
+                aria-pressed={hidden.has(dow)}
+                title={
+                  hidden.has(dow) ? `${label}요일 표시` : `${label}요일 숨김`
+                }
+                onClick={() => toggleHiddenDow(dow)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        ) : null}
+        <div className="flex w-full flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end md:ml-auto md:w-auto">
+          {onSearchChange ? (
+            <div className="relative w-full max-w-full shrink-0 md:w-64 lg:w-72">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={search ?? ""}
+                onChange={(e) => onSearchChange(e.target.value)}
+                className="h-9 w-full truncate pl-9 pr-8"
+                placeholder={searchPlaceholder}
+                title={searchPlaceholder}
+              />
+              {(search ?? "").trim() ? (
+                <button
+                  type="button"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  onClick={() => onSearchChange("")}
+                  aria-label="검색어 지우기"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              className="rounded-full"
+              title="주문일"
+              aria-label="주문일"
+              onClick={() => onDateKeyChange("orderDate")}
+            >
+              <Badge
+                variant="outline"
+                className={cn(
+                  "cursor-pointer leading-snug tracking-normal",
+                  dateKey === "orderDate"
+                    ? "border-primary/70 bg-primary-soft text-primary-strong"
+                    : "hover:bg-muted/40",
+                )}
+              >
+                주문일
+              </Badge>
+            </button>
+            <button
+              type="button"
+              className="rounded-full"
+              title="치과도착일"
+              aria-label="치과도착일"
+              onClick={() => onDateKeyChange("arrivalDate")}
+            >
+              <Badge
+                variant="outline"
+                className={cn(
+                  // leading-none+작은 글씨에서 「치과도착일」이 「치과의사착일」로 오인되는 경우 방지
+                  "cursor-pointer leading-snug tracking-normal",
+                  dateKey === "arrivalDate"
+                    ? "border-primary/70 bg-primary-soft text-primary-strong"
+                    : "hover:bg-muted/40",
+                )}
+              >
+                도착일
+              </Badge>
+            </button>
+            <div
+              className="hidden items-center rounded-md border border-slate-200 bg-white p-0.5 md:flex"
+              role="group"
+              aria-label="보기 전환"
+            >
+              <button
+                type="button"
+                className={cn(
+                  "inline-flex h-7 items-center gap-1 rounded px-2 text-[11px] font-medium",
+                  viewMode === "calendar"
+                    ? "bg-slate-900 text-white shadow-sm"
+                    : "text-slate-600 hover:bg-slate-50",
+                )}
+                aria-pressed={viewMode === "calendar"}
+                title="캘린더"
+                onClick={() => onViewModeChange("calendar")}
+              >
+                <CalendarDays className="h-3.5 w-3.5" />
+                캘린더
+              </button>
+              <button
+                type="button"
+                className={cn(
+                  "inline-flex h-7 items-center gap-1 rounded px-2 text-[11px] font-medium",
+                  viewMode === "list"
+                    ? "bg-slate-900 text-white shadow-sm"
+                    : "text-slate-600 hover:bg-slate-50",
+                )}
+                aria-pressed={viewMode === "list"}
+                title="목록"
+                onClick={() => onViewModeChange("list")}
+              >
+                <List className="h-3.5 w-3.5" />
+                목록
+              </button>
+            </div>
           </div>
         </div>
       </div>

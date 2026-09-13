@@ -338,11 +338,11 @@ export function NewRequestShippingSection({
               <Package className="w-5 h-5 text-primary" />
               묶음 출고
             </div>
-            <div className="flex flex-wrap items-center justify-center gap-2">
+            <div className="flex w-full max-w-sm flex-col items-center gap-2 sm:max-w-none sm:flex-row sm:flex-wrap sm:justify-center">
               <div className="text-sm text-slate-500 font-medium">출고일</div>
               <div
                 ref={weekdaysRef}
-                className={`flex gap-1 rounded-md px-1 py-1 transition-all ${
+                className={`flex w-full flex-wrap justify-center gap-1 rounded-md px-1 py-1 transition-all sm:w-auto sm:flex-nowrap ${
                   pulse
                     ? "bg-destructive-soft border border-destructive/80 ring-2 ring-destructive-muted"
                     : ""
@@ -355,7 +355,7 @@ export function NewRequestShippingSection({
                     type="button"
                     onClick={() => toggleDay(day.key)}
                     disabled={isDisabled || isUpdating}
-                    className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                    className={`min-w-[2.25rem] flex-1 px-2 py-1.5 rounded-md text-xs font-medium transition-colors sm:flex-none sm:px-3 sm:text-sm ${
                       selectedDays.includes(day.key)
                         ? "bg-primary text-white"
                         : "bg-slate-100 text-slate-600 hover:bg-slate-200"

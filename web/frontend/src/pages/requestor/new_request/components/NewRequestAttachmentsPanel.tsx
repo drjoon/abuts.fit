@@ -738,7 +738,7 @@ export function NewRequestAttachmentsPanel({
       fileInfo?.productMode === "design_custom_abutment"; // 레거시 문서만
 
     return (
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between sm:gap-2">
         {estimatedShip ? (
           <div className="flex items-center gap-1.5 text-xs text-slate-500 min-w-0">
             <Calendar className="w-3 h-3 shrink-0" />
@@ -1146,7 +1146,7 @@ export function NewRequestAttachmentsPanel({
   return (
     <>
       <div className="flex flex-col flex-1 min-h-0 gap-3 h-full">
-        <div className="flex shrink-0 items-center justify-between gap-2">
+        <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <RequestSettingsToolbar
             onOpenDesignSoftwareModal={onOpenDesignSoftwareModal}
             anodizingEnabled={anodizingEnabled}
@@ -1159,6 +1159,7 @@ export function NewRequestAttachmentsPanel({
             type="button"
             variant="outline"
             size="sm"
+            className="w-full sm:w-auto"
             onClick={handleClearAll}
             disabled={!files.length}
           >

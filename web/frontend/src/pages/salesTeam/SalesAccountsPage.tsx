@@ -238,7 +238,7 @@ export default function SalesAccountsPage() {
                   .join(" · ") || "연락처 없음"
               }
               trailing={
-                <div className="flex items-center gap-1">
+                <div className="flex max-w-[48%] flex-wrap items-center justify-end gap-1 sm:max-w-none">
                   {!hasCoords(item) ? (
                     <Badge variant="outline" className="text-amber-700">
                       좌표없음

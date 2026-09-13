@@ -315,7 +315,7 @@ export function PracticeLabReceiveWorkActionsBar({
 
   const renderActionRow = (primary: ReactNode) => (
     <div className="flex w-full min-w-0 flex-wrap items-center gap-1.5">
-      <div className="flex min-w-0 flex-nowrap items-center gap-1.5">
+      <div className="flex min-w-0 flex-wrap items-center gap-1.5 md:flex-nowrap">
         {primary}
       </div>
       {cancelCluster}
