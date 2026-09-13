@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-13: Initial/Check·kit-case-initial/check 클러스터 → Surgical 기본으로 마이그레이션.
 // - 2026-09-13: 관리자 스토어 클러스터 레이아웃 로드/저장·검증.
 // related files:
 // - web/backend/models/storeProductClusterLayout.model.js
@@ -10,13 +11,24 @@ import { cloneDefaultStoreProductClusters } from "../constants/storeProductClust
 
 const LAYOUT_KEY = "default";
 
-/** 레거시 단일 kit-case → 3종 옵션 SKU. */
+/** 레거시 Initial/Check 키트·단일 kit-case → Surgical 기본 클러스터. */
 function migrateLegacyKitCaseInClusters(clusters) {
   if (!Array.isArray(clusters) || !clusters.length) return clusters;
-  const hasLegacy = clusters.some((c) =>
-    (c?.childProductIds || []).includes("kit-case"),
-  );
-  if (!hasLegacy) return clusters;
+  const needsReset = clusters.some((c) => {
+    const id = String(c?.id || "");
+    const parent = String(c?.parentProductId || "");
+    const children = c?.childProductIds || [];
+    return (
+      id === "initial-kit" ||
+      id === "check-kit" ||
+      parent === "initial-kit" ||
+      parent === "check-kit" ||
+      children.includes("kit-case") ||
+      children.includes("kit-case-initial") ||
+      children.includes("kit-case-check")
+    );
+  });
+  if (!needsReset) return clusters;
   return cloneDefaultStoreProductClusters();
 }
 

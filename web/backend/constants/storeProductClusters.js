@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-13: Surgical Kit 클러스터 통합. 풀패키지 SA2·SH2 ×150.
 // - 2026-09-13: Kit Case 3종을 각 키트 클러스터에 배치.
 // - 2026-09-13: 관리자 스토어 상품 클러스터 기본 배치 SSOT.
 // related files:
@@ -23,31 +24,22 @@ export const STORE_DEFAULT_PRODUCT_CLUSTERS = Object.freeze([
     label: "500만 패키지",
     parentProductId: "full-package",
     childProductIds: Object.freeze([]),
-    compositionHint: "키트 3종 + SA2·SH2 ×100",
+    compositionHint: "키트 2종 + SA2·SH2 ×150",
   }),
   Object.freeze({
-    id: "initial-kit",
-    label: "Initial Kit",
-    parentProductId: "initial-kit",
+    id: "surgical-kit",
+    label: "Surgical Kit",
+    parentProductId: "surgical-kit",
     childProductIds: Object.freeze([
-      "kit-case-initial",
+      "kit-case-surgical",
       "initial-pen",
       "pen",
       "cup",
-      "initial-pin",
-    ]),
-    compositionHint: "Initial 케이스 + 이니셜펜 · 펜 · 컵 · 이니셜핀",
-  }),
-  Object.freeze({
-    id: "check-kit",
-    label: "Check Kit",
-    parentProductId: "check-kit",
-    childProductIds: Object.freeze([
-      "kit-case-check",
       "check-pin",
       "bone-shaper",
     ]),
-    compositionHint: "Check 케이스 · 체크핀 · 본셰이퍼",
+    compositionHint:
+      "Surgical 케이스 · SurgicalPen · Pen · Cup · SurgicalPin · BoneShaper",
   }),
   Object.freeze({
     id: "prosthetic-kit",

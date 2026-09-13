@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-13: Surgical Kit·SA2 Hex/D-cut·SH2 12종·풀패키지 ×150·Kit Case 2종 동기.
 // - 2026-09-13: 상단 hero와 동일 gallery-1만 제외, 나머지 상세 이미지 복구.
 // - 2026-09-13: acrodent.com 상세 이미지 OCR → 텍스트 블록 + 순수 제품 이미지.
 // related files:
@@ -21,36 +22,55 @@ export type StoreProductContent = {
 /** acrodent 상세(이미지)에서 OCR·분리한 스토어 상세 콘텐츠. */
 export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
   "simple-abutment-2": {
-    blurb: "For Submerged type · Anti-rotation form",
-    description: "서브머지드 타입용 Simple Abutment [Non-Hex] Anti-rotation 형태입니다. 플랫 페이스로 회전을 억제하며, Pen·Pin·Healing·Gingival Shaper와 동일 색상 밴드(Follow color-band)로 규격을 맞춰 보철까지 이어갑니다.",
+    blurb: "Hex · 2-piece · D-cut(B,L) with fillet",
+    description:
+      "Hex, 2-piece Simple Abutment. 직경·커프 사이즈를 인식할 수 있는 D-cut(B,L) with fillet. 높이 S·M·L·XL × 직경 6·7·9 — 12종. GingivalCap은 특수코팅으로 스프레이 없이 스캔 가능(Concave profile).",
     specs: [
       { label: "품명", value: "치과용임플란트상부구조물" },
-      { label: "모델명", value: "SS06-NC20외 265건" },
-      { label: "의료기기 허가, 신고 번호", value: "제인13-1673호" },
-      { label: "사용목적", value: "환자의 저작 기능 회복을 위해 사용하는 인공 치아와 같은 보철물을 지지하기 위하여 삽입" },
-      { label: "사용방법", value: "상품상세설명 참조" },
-      { label: "사용시 주의사항 및 보관방법", value: "상품상세설명 참조" },
-      { label: "포장단위", value: "1set" },
+      { label: "형태", value: "Hex, 2-piece, D-cut(B,L) with fillet" },
+      { label: "높이", value: "S / M / L / XL" },
+      { label: "직경", value: "6 · 7 · 9 (12종)" },
+      { label: "포장단위", value: "1EA" },
       { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
-      { label: "보험청구코드", value: "L7552057" },
       { label: "나사", value: "M2.0×0.4P" },
       { label: "HEX", value: "1.20 (Acodent/Osstem/Neo/Megagen/Dio) · 1.28 (Dentium/Dentis)" },
-      { label: "커프(C)", value: "S 2.0 / M 3.5 / L 5.0 mm" },
-      { label: "직경 라인", value: "6·7·8·9·10 (Ø4.4~Ø7.9대)" },
     ],
     blocks: [
-      { type: "heading", text: "Simple Abutment [Non-Hex] (Anti-rotation form)" },
-      { type: "text", text: "보험청구코드 L7552057. 상단 포스트 높이(H) 5.0mm, 드라이버 HEX 1.20/1.28, 나사 M2.0×0.4P." },
+      { type: "heading", text: "SimpleAbutment2 (Hex · 2-piece)" },
+      {
+        type: "text",
+        text: "직경·커프 사이즈 인식용 D-cut(B,L) with fillet. 높이 4종 × 직경 3종 = 12종.",
+      },
       { type: "heading", text: "제품의 규격" },
-      { type: "text", text: "치수: C(커프 높이), D(플레어 직경), H(포스트 높이), HD(HEX). 적용 임플란트군별로 Pd.No가 나뉩니다." },
-      { type: "list", items: ["Acodent · Osstem · Neo-implant · Megagen · Dio — HEX 1.20 (예: S2761~S2785 계열)", "Dentium · Dentis — HEX 1.28 (예: S2771~S2790 계열)", "Cuff: Short 2.0mm / Middle 3.5mm / Long 5.0mm", "직경 라인 6·7·8·9·10 (D Ø4.4 / Ø4.9 / Ø5.9 / Ø6.9 / Ø7.9대)"] },
-      { type: "image", src: "/store/content/simple-abutment-2/size-grid.jpg", alt: "치수 다이어그램: C/D/H/HD + 나사 M2.0×0.4P 도면" },
-      { type: "image", src: "/store/content/simple-abutment-2/color-band.jpg", alt: "Simple Abutment 사이즈 그리드 3×5 (S/M/L × 6–10)" },
-      { type: "heading", text: "제품의 특징 — Follow color-band" },
-      { type: "text", text: "Provision → Pen → Pin → BoneShaper → Healing Abut. → GC/SA → GingivalShaper → Final 순으로 동일 색상 밴드를 따라 규격을 맞춥니다." },
-      { type: "heading", text: "Pen·Pin으로 맞추는 15가지 규격" },
-      { type: "text", text: "Pen·Pin 직경 5종 × 눈금높이 3칸(S/M/L) = 15가지. 같은 규격의 Healing·Simple Abut.을 적용하면 교합 조정 시간을 줄일 수 있습니다." },
-      { type: "list", items: ["예: #7 부위를 10Pen으로 이니셜 드릴링 후 Initial 10Pin으로 육안 확인", "Size = 직경10 + 높이 S → 10S", "이후 Healing 10S, Simple Abut.(Final) 10S 적용"] },
+      {
+        type: "list",
+        items: [
+          "높이: S / M / L / XL",
+          "직경: 6 · 7 · 9",
+          "Hex, 2-piece",
+          "D-cut(B,L) with fillet",
+        ],
+      },
+      {
+        type: "image",
+        src: "/store/content/simple-abutment-2/size-grid.jpg",
+        alt: "치수 다이어그램: C/D/H/HD + 나사 M2.0×0.4P 도면",
+      },
+      {
+        type: "image",
+        src: "/store/content/simple-abutment-2/color-band.jpg",
+        alt: "Simple Abutment 사이즈 그리드",
+      },
+      { type: "heading", text: "GingivalCap" },
+      {
+        type: "text",
+        text: "특수코팅으로 스프레이 없이 스캔 가능. Concave profile.",
+      },
+      { type: "heading", text: "Follow color-band" },
+      {
+        type: "text",
+        text: "SurgicalPen·SurgicalPin·BoneShaper·Healing·GingivalShaper와 동일 색상 밴드로 규격을 맞춰 Final까지 연결합니다.",
+      },
     ],
   },
   "simple-abutment": {
@@ -82,30 +102,98 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
     ],
   },
   "simple-healing-2": {
-    blurb: "For Submerged type",
-    description: "서브머지드 타입용 Healing Abutment입니다. 커프 높이(S/M/L)와 직경(6–10) 조합으로 연조직 성형을 돕고, Simple Abutment와 같은 Follow color-band로 규격을 맞춥니다. (simple-healing과 동일 SKU)",
+    blurb: "높이 4종 × 직경 3종 · 12종",
+    description:
+      "높이 S(2.0)·M(3.5)·L(5.0)·XL(6.5), 직경 6·7·9 — 12종. Fixture 식립 후 치은 치유·형성. SimpleAbutment2와 동일 규격 체계.",
     specs: [
       { label: "품명", value: "치과용임플란트상부구조물" },
-      { label: "모델명", value: "SH06-H0C20 외 44건" },
-      { label: "의료기기 허가, 신고 번호", value: "제인19-4012호" },
-      { label: "사용목적", value: "환자의 저작 기능 회복을 위해 사용하는 인공 치아와 같은 보철물을 지지하기 위하여 삽입" },
-      { label: "사용방법", value: "상품상세설명 참조" },
-      { label: "사용시 주의사항 및 보관방법", value: "상품상세설명 참조" },
+      { label: "높이", value: "S 2.0 / M 3.5 / L 5.0 / XL 6.5 mm" },
+      { label: "직경", value: "6 · 7 · 9 (12종)" },
       { label: "포장단위", value: "1EA" },
       { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
       { label: "HEX", value: "1.20 / 1.28 (임플란트 시스템별)" },
-      { label: "헤드 높이(H)", value: "약 3.5 mm" },
-      { label: "커프(C)", value: "S 2.0 / M 3.5 / L 5.0 mm" },
     ],
     blocks: [
-      { type: "heading", text: "Healing Abutment" },
-      { type: "text", text: "픽스처 식립 후 연조직 힐링을 위한 어버트먼트. 상단 표기(예: 8M)로 규격을 확인하고 HEX 드라이버로 체결합니다." },
+      { type: "heading", text: "SimpleHealing2" },
+      {
+        type: "text",
+        text: "픽스처 식립 후 연조직 힐링용. SimpleAbutment2와 높이·직경 조합이 같습니다(각 12종).",
+      },
       { type: "heading", text: "제품의 규격" },
-      { type: "list", items: ["Acodent / Osstem / Neo / Megagen / Dio — HEX 1.20 (S1061~ 계열)", "Dentium / Dentis — HEX 1.28 (S1071~ 계열)", "Cuff S 2.0 / M 3.5 / L 5.0 mm", "직경 라인 6·7·8·9·10 (예: Ø5.4~Ø9.0대)"] },
-      { type: "image", src: "/store/content/simple-healing-2/size-grid.jpg", alt: "치수 다이어그램 D/H/C/HD + 상단 8M 표기 예시" },
-      { type: "image", src: "/store/content/simple-healing-2/color-band.jpg", alt: "Healing Abutment 사이즈 그리드 S/M/L × 6–10" },
+      {
+        type: "list",
+        items: [
+          "높이: S(2.0) · M(3.5) · L(5.0) · XL(6.5)",
+          "직경: 6 · 7 · 9",
+          "심플힐링2 · 심플어벗2 각각 12종",
+        ],
+      },
+      {
+        type: "image",
+        src: "/store/content/simple-healing-2/size-grid.jpg",
+        alt: "치수 다이어그램 D/H/C/HD",
+      },
+      {
+        type: "image",
+        src: "/store/content/simple-healing-2/color-band.jpg",
+        alt: "Healing Abutment 사이즈 그리드",
+      },
       { type: "heading", text: "Follow color-band" },
-      { type: "text", text: "Pen·Pin·BoneShaper와 동일 색상 밴드로 Healing → Simple Abut. → Final까지 규격을 유지합니다." },
+      {
+        type: "text",
+        text: "SurgicalPen·SurgicalPin·BoneShaper와 동일 색상 밴드로 Healing → Simple Abut. → Final까지 규격을 유지합니다.",
+      },
+    ],
+  },
+  "surgical-kit": {
+    blurb: "SurgicalPen · SurgicalPin · BoneShaper 통합 키트",
+    description:
+      "린데만 타입 SurgicalPen(Cup 포함), SurgicalPin(기존 CheckPin·InitialPin 겸용), BoneShaper S6·7·9 & M6·7·9(팁 조금 길게, 연마 없음)를 한 트레이에 구성한 시술 키트입니다.",
+    specs: [
+      { label: "포장단위", value: "1키트" },
+      { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
+      {
+        label: "구성",
+        value: "SurgicalPen×2, Cup×5, SurgicalPin×5, BoneShaper×6, Kit Case×1",
+      },
+    ],
+    blocks: [
+      { type: "heading", text: "Surgical Kit" },
+      {
+        type: "text",
+        text: "Initial·Check 단계를 하나의 Surgical Kit로 통합했습니다. 판매가 132만 · 패키지 구매자 pkg 99만.",
+      },
+      { type: "heading", text: "구성품" },
+      {
+        type: "list",
+        items: [
+          "SurgicalPen — 린데만 타입, 직경 2.X (Pen ×2)",
+          "Cup ×5",
+          "SurgicalPin ×5 — 기존 CheckPin이며 InitialPin 역할도 겸함",
+          "BoneShaper ×6 — S6·7·9 및 M6·7·9. 팁 조금 길게. 연마 없음",
+          "Kit Case ×1",
+        ],
+      },
+      {
+        type: "image",
+        src: "/store/content/initial-kit/tray.jpg",
+        alt: "Surgical Kit 트레이·구성품",
+      },
+      {
+        type: "image",
+        src: "/store/content/check-kit/tray.jpg",
+        alt: "BoneShaper·SurgicalPin 구성",
+      },
+      { type: "heading", text: "시술 흐름 요약" },
+      {
+        type: "list",
+        items: [
+          "1. SurgicalPen 드릴링 → SurgicalPin으로 수직·수평 확인",
+          "2. Fixture 식립 후 BoneShaper로 cortical bone 성형",
+          "3. SurgicalPin으로 패스·교합 높이 재확인",
+          "4. Prosthetics — Healing → Simple Abutment",
+        ],
+      },
     ],
   },
   "initial-kit": {
@@ -127,7 +215,7 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
     ],
     blocks: [
       { type: "heading", text: "매일 똑같이 잘 심기 위한 키트 \"Initial Kit\"" },
-      { type: "text", text: "TheSimple Kit Initial — Pd.No T7188 · 모델 TSKLv2 · 의료기기 신고번호 부산제신19-1062호." },
+      { type: "text", text: "TheSimple Kit Initial — Pd.No T7188 · 모델 TSKLv2 · 의료기기 신고번호 부산제신19-1062호. ※ 현재 스토어는 Surgical Kit로 통합 판매합니다." },
       { type: "heading", text: "구성품" },
       { type: "list", items: ["InitialPen 2종 (Short / Middle) — 모델 4F2228S·4F2228M, Pd.No T7094·T7095", "Cup 5종 (Ø6·7·8·9·10, 색상 구분) — BPC06028~BPC10028", "InitialPin 5종 (IP06~IP10, Cup과 동일 직경·색상) — Pd.No T7101~T7105", "Bone Trimmer Ø4.0 (B140, Pd.No T7093)", "GBR Pen (BPGBR, Pd.No T7013)"] },
       { type: "image", src: "/store/content/initial-kit/tray.jpg", alt: "Initial Kit 트레이·구성품 다이어그램" },
@@ -183,8 +271,9 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
     ],
   },
   "prosthetic-kit": {
-    blurb: "심플하게 시작했다면 심플하게 마무리 — 스트레스 없는 보철",
-    description: "TheSimple Kit Prosthetics(TSKP, Pd.No T7151)는 GingivalShaper와 Handpiece/Wrench HEX-driver, Torque wrench를 구성한 보철 마무리 키트입니다. Simple Abutment 마진 치은을 정리하고 Hex 1.20 나사를 체결·토크합니다.",
+    blurb: "GingivalShaper · Hex Driver · Torque — 스트레스 없는 보철",
+    description:
+      "GingivalShaper 5종, Hex Driver S/M(헥스 어벗 체결 가이드), Torque wrench를 구성한 보철 마무리 키트. 판매가 88만 · pkg 66만.",
     specs: [
       { label: "품명", value: "치과용임플란트시술기구 외" },
       { label: "모델명", value: "TSKP 외" },
@@ -199,51 +288,94 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
       { label: "키트 모델", value: "TSKP" },
     ],
     blocks: [
-      { type: "heading", text: "TheSimple Kit Prosthetics" },
-      { type: "text", text: "의료기기 신고번호 제신19-1054호. Follow color-band로 Initial·Check 단계와 규격을 이어 보철을 마무리합니다." },
+      { type: "heading", text: "Prosthetic Kit" },
+      {
+        type: "text",
+        text: "의료기기 신고번호 제신19-1054호. Surgical Kit와 Follow color-band로 규격을 이어 보철을 마무리합니다.",
+      },
       { type: "heading", text: "구성품" },
-      { type: "list", items: ["GingivalShaper (Short/Middle 계열, GS06V1–GS010V1)", "Handpiece HEX-driver (HD12, Hex 1.20)", "Wrench HEX-driver Short/Middle (WD12S / WD12M)", "Torque wrench (Hand Type)"] },
-      { type: "image", src: "/store/content/prosthetic-kit/tray.jpg", alt: "Prosthetic Kit 트레이·구성품 다이어그램" },
+      {
+        type: "list",
+        items: [
+          "GingivalShaper ×5",
+          "Hex Driver S, M ×2 — 헥스 어벗 체결 가이드",
+          "Torque wrench ×1",
+          "Kit Case ×1",
+        ],
+      },
+      {
+        type: "image",
+        src: "/store/content/prosthetic-kit/tray.jpg",
+        alt: "Prosthetic Kit 트레이·구성품 다이어그램",
+      },
       { type: "heading", text: "GingivalShaper" },
-      { type: "text", text: "Simple Abutment 숄더를 덮는 치은을 삭제해 깔끔한 마진을 확보합니다. 타사 어버트먼트에는 호환되지 않으며, 동일 규격끼리 사용합니다 (예: GS 8 → Simple Abut. 8S 또는 8M)." },
-      { type: "list", items: ["엔도용(추천) 또는 임플란트용 핸드피스에 체결", "주수하, 최대회전수 내에서 3~5초 (1:1 기준), 부족 시 1~2회 반복", "인접치 주의, 수직 사용"] },
+      {
+        type: "text",
+        text: "Simple Abutment 숄더를 덮는 치은을 삭제해 깔끔한 마진을 확보합니다. 타사 어버트먼트에는 호환되지 않으며, 동일 규격끼리 사용합니다.",
+      },
+      {
+        type: "list",
+        items: [
+          "엔도용(추천) 또는 임플란트용 핸드피스에 체결",
+          "주수하, 최대회전수 내에서 3~5초 (1:1 기준), 부족 시 1~2회 반복",
+          "인접치 주의, 수직 사용",
+        ],
+      },
       { type: "heading", text: "HEX-driver · Torque wrench" },
-      { type: "list", items: ["Handpiece HEX: 핸드피스 체결, speed 50rpm 미만", "Wrench HEX: 렌치에 체결 후 상부구조물/고정체 결합", "Torque wrench: W-Adaptor 체결(A) → 방향 설정(B) → 눈금에 맞게 당김(C)"] },
+      {
+        type: "list",
+        items: [
+          "Hex Driver S/M: 헥스 어벗 체결 가이드",
+          "Torque wrench: W-Adaptor 체결(A) → 방향 설정(B) → 눈금에 맞게 당김(C)",
+        ],
+      },
     ],
   },
   "initial-pen": {
-    blurb: "2-Step(Ø2.2×Ø2.8) 드릴 · Cup과 체결해 이니셜 골삭제",
-    description: "Initial Pen은 Cup과 체결해 사용하는 2-Step(Ø2.2×Ø2.8) 이니셜 드릴입니다. Short/Middle 길이로 제공되며, 인접치에 Cup을 밀착해 삭제 위치를 안정적으로 잡습니다.",
+    blurb: "린데만 타입 · 직경 2.X (SurgicalPen)",
+    description:
+      "SurgicalPen은 린데만 타입, 직경 2.X 드릴입니다. Surgical Kit 구성품이며 Cup과 체결해 사용합니다.",
     specs: [
-      { label: "품목명", value: "치과임플란트시술용드릴" },
-      { label: "모델명", value: "BT40외 49건" },
-      { label: "의료기기 허가, 신고 번호", value: "제신 19-1047 호" },
-      { label: "사용목적", value: "임플란트 시술에서 임플란트용 핸드피스에 부착하여 골을 삭제하는 기구" },
-      { label: "사용방법", value: "상품상세설명 참조" },
-      { label: "사용시 주의사항 및 보관방법", value: "상품상세설명 참조" },
-      { label: "포장단위", value: "EA" },
+      { label: "타입", value: "린데만 타입, 직경 2.X" },
+      { label: "포장단위", value: "1EA" },
       { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
-      { label: "품질책임자/전화번호", value: "이상훈 / Tel : 055-314-4607" },
-      { label: "길이", value: "Short 약 30.5mm / Middle 약 33.0mm" },
-      { label: "팁", value: "Ø2.2 → Ø2.8, 최대 삭제길이 약 7.5mm" },
       { label: "권장 RPM", value: "300~1,500 (20:1), Torque 45~55" },
     ],
     blocks: [
-      { type: "heading", text: "Initial Pen (Short / Middle)" },
-      { type: "text", text: "임플란트용 핸드피스에 부착해 치조골을 삭제하는 기구. TheSimple Kit Initial 구성품으로도 제공됩니다." },
-      { type: "image", src: "/store/content/initial-pen/pens.jpg", alt: "Initial Pen Short / Middle" },
-      { type: "heading", text: "적합한 직경 선택" },
-      { type: "text", text: "부적합 직경(예: 인접치에 걸리는 8mm)은 드릴팁이 치조골에 닿지 않을 수 있습니다. 치간·최종 보철 직경에 맞는 Cup/Pen을 선택하세요." },
-      { type: "image", src: "/store/content/initial-pen/fit-compare.jpg", alt: "적합/부적합 직경 비교 일러스트 (X vs O)" },
+      { type: "heading", text: "SurgicalPen" },
+      {
+        type: "text",
+        text: "린데만 타입 · 직경 2.X. Surgical Kit 구성품. 제조 6.6만 ×2 = 판매 13.2만.",
+      },
+      {
+        type: "image",
+        src: "/store/content/initial-pen/pens.jpg",
+        alt: "SurgicalPen",
+      },
       { type: "heading", text: "사용방법" },
-      { type: "list", items: ["핸드피스 20:1, 300~1,500 RPM, 45~55 Torque, 주수하", "Cup 측면을 인접치에 살짝 밀착, 양손 파지", "이동 시 회전이 완전히 멈춘 후 이동", "권장 사용 횟수 30회 이내"] },
+      {
+        type: "list",
+        items: [
+          "핸드피스 20:1, 300~1,500 RPM, 45~55 Torque, 주수하",
+          "Cup 측면을 인접치에 살짝 밀착, 양손 파지",
+          "이동 시 회전이 완전히 멈춘 후 이동",
+        ],
+      },
       { type: "heading", text: "펜 조립 · 분리" },
-      { type: "list", items: ["조립: Pen 선택 → Cup 선택 → 딸깍까지 끼움 → 사용", "분리: 세 손가락으로 Cup을 잡고 핸드피스를 고정한 채 당김", "세척은 분리, Autoclave 멸균은 조립 상태"] },
+      {
+        type: "list",
+        items: [
+          "조립: Pen 선택 → Cup 선택 → 딸깍까지 끼움 → 사용",
+          "분리: 세 손가락으로 Cup을 잡고 핸드피스를 고정한 채 당김",
+          "세척은 분리, Autoclave 멸균은 조립 상태",
+        ],
+      },
     ],
   },
   "pen": {
     blurb: "발치 즉시 식립 · 드릴링 패스 수정 · 플랩리스 이니셜 드릴링",
-    description: "Lindemann Pen(LD28L)은 끝이 뾰족하고 측방 블레이드가 있어 경사골에서도 미끄러짐 없이 초기 위치를 잡고, 발치 즉시 식립 시 측방 패스 수정에 유리합니다. Initial·BonePen Kit Light Cup과 결합할 수 있습니다(Cup 별매).",
+    description:
+      "Lindemann Pen. 제조 6.6만 ×2 = 13.2만. Cup과 결합 가능(Cup 별매).",
     specs: [
       { label: "품목명", value: "치과임플란트시술용드릴" },
       { label: "모델명", value: "LD28L" },
@@ -256,17 +388,39 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
       { label: "품질책임자/전화번호", value: "이상훈 / Tel : 055-314-4607" },
       { label: "길이", value: "Long 약 37.0mm" },
       { label: "직경", value: "Ø2.8" },
-      { label: "최대 삭제깊이", value: "Cup 미체결 약 18.3mm / Cup 체결 약 13.2mm 이내" },
       { label: "권장 RPM", value: "300~1,500, Torque 45~55 N·cm" },
     ],
     blocks: [
       { type: "heading", text: "Lindemann Pen" },
       { type: "heading", text: "제품 특징" },
-      { type: "list", items: ["끝이 뾰족해 초기 위치 결정이 쉽고, 날카로운 측방향 삭제 가능", "경사진 골에서도 미끄러짐 없이 삭제, 발치즉시 식립 시 측방 패스 수정에 활용", "Cup과 결합 가능 — 인접치 간격·교합 높이 가늠에 편리 (Cup 별매)", "스프링 구조로 Cup을 인접치와 비슷한 높이에 유지해 간격 잡기가 용이"] },
-      { type: "image", src: "/store/content/pen/full.jpg", alt: "Lindemann Pen 전체 + Cup 체결" },
-      { type: "image", src: "/store/content/pen/tip.jpg", alt: "팁 클로즈업(나선·블레이드)" },
+      {
+        type: "list",
+        items: [
+          "끝이 뾰족해 초기 위치 결정이 쉽고, 날카로운 측방향 삭제 가능",
+          "경사진 골에서도 미끄러짐 없이 삭제, 발치즉시 식립 시 측방 패스 수정에 활용",
+          "Cup과 결합 가능 — 인접치 간격·교합 높이 가늠에 편리 (Cup 별매)",
+          "스프링 구조로 Cup을 인접치와 비슷한 높이에 유지해 간격 잡기가 용이",
+        ],
+      },
+      {
+        type: "image",
+        src: "/store/content/pen/full.jpg",
+        alt: "Lindemann Pen 전체 + Cup 체결",
+      },
+      {
+        type: "image",
+        src: "/store/content/pen/tip.jpg",
+        alt: "팁 클로즈업(나선·블레이드)",
+      },
       { type: "heading", text: "사용방법 요지" },
-      { type: "list", items: ["Autoclave 습열멸균(132°C, 15분) 후 사용", "주수하 수직 사용, 양손 파지, 권장 30회 이내", "마찰열 감소를 위해 식염수 주수 필수"] },
+      {
+        type: "list",
+        items: [
+          "Autoclave 습열멸균(132°C, 15분) 후 사용",
+          "주수하 수직 사용, 양손 파지, 권장 30회 이내",
+          "마찰열 감소를 위해 식염수 주수 필수",
+        ],
+      },
     ],
   },
   "cup": {
@@ -326,71 +480,90 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
     ],
   },
   "check-pin": {
-    blurb: "Fixture 식립 후 패스·교합 높이 확인",
-    description: "CheckPin은 Submerged Fixture 식립 후 픽스처 내부에 삽입해 식립 패스와 교합면까지의 수직 공간을 확인하는 기구입니다. 1차 수술에서 수직 공간을 확보하면 2차 수술·교합 조정이 수월해집니다.",
+    blurb: "CheckPin + InitialPin 겸용 · SurgicalPin",
+    description:
+      "SurgicalPin은 기존 CheckPin이며 InitialPin 역할도 겸합니다. Fixture 식립 전후 패스·교합 높이·수직 공간 확인에 사용합니다.",
     specs: [
       { label: "품목명", value: "치과용임플란트시술기구" },
-      { label: "모델명", value: "EX14외 11건" },
-      { label: "의료기기 허가, 신고 번호", value: "제신 19-1088 호" },
-      { label: "사용목적", value: "치과용 임플란트를 시술하는 데에 사용되는 기구이다." },
-      { label: "사용방법", value: "사용자 매뉴얼 참조" },
-      { label: "사용시 주의사항 및 보관방법", value: "사용자 매뉴얼 참조" },
-      { label: "포장단위", value: "EA" },
+      { label: "역할", value: "CheckPin + InitialPin 겸용" },
+      { label: "포장단위", value: "1EA" },
       { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
-      { label: "품질관리자/전화번호", value: "이상훈 / Tel : 055-314-4607" },
-      { label: "모델", value: "CP06–CP10" },
-      { label: "직경", value: "Ø6.0–Ø10.0" },
-      { label: "Pd.No", value: "T7134–T7138" },
-      { label: "눈금", value: "3칸 × 1.5mm, 본체 약 7mm" },
+      { label: "직경", value: "Ø6.0–Ø10.0 (5종)" },
     ],
     blocks: [
-      { type: "heading", text: "CheckPin" },
-      { type: "text", text: "픽스처 식립 후 내부에 삽입하여 (1) 식립 패스 확인 (2) 픽스처와 교합면 높이 재확인." },
+      { type: "heading", text: "SurgicalPin" },
+      {
+        type: "text",
+        text: "기존 CheckPin이며 InitialPin 역할도 합니다. Surgical Kit에 5종 포함.",
+      },
       { type: "heading", text: "규격" },
-      { type: "list", items: ["CP06 Ø6.0 · CP07 Ø7.0 · CP08 Ø8.0 · CP09 Ø9.0 · CP10 Ø10.0", "의료기기 신고번호 제신19-1088호"] },
-      { type: "image", src: "/store/content/check-pin/row.jpg", alt: "CheckPin Ø6–10 색상 라인" },
+      {
+        type: "list",
+        items: [
+          "5종 (Cup과 동일 색상·직경 체계)",
+          "상하악 수직 공간·식립 패스·교합 높이 확인",
+        ],
+      },
+      {
+        type: "image",
+        src: "/store/content/check-pin/row.jpg",
+        alt: "SurgicalPin 색상 라인",
+      },
       { type: "heading", text: "사용방법" },
-      { type: "list", items: ["상하악 수직 공간 육안 확인용 — 3칸 눈금 상하 이동", "안전홀에 의료용 실 매듭 → Fixture 홈에 체결부 삽입 → 교합 밀착 후 눈금 확인 → 제거", "정밀 길이측정 기능 없음, 사용자 분리 사용 금지", "Autoclave 132°C, 15분 후 사용"] },
+      {
+        type: "list",
+        items: [
+          "드릴링 후 삽입해 수평·수직 확인 (InitialPin 역할)",
+          "Fixture 식립 후 내부에 삽입해 패스·교합 높이 재확인 (CheckPin 역할)",
+          "Autoclave 132°C, 15분 후 사용",
+        ],
+      },
     ],
   },
   "bone-shaper": {
-    blurb: "Fixture 식립 후 Healing 체결을 위한 cortical bone 삭제성형",
-    description: "BoneShaper S(및 M/L)는 픽스처 식립 후 핸드피스에 연결해 cortical bone를 성형하는 드릴입니다. Healing·어버트먼트와 골 간섭을 줄이고, 작은 사이즈부터 순차 사용하는 것을 권장합니다.",
+    blurb: "S6·7·9 & M6·7·9 · 6종",
+    description:
+      "BoneShaper S6·7·9 및 M6·7·9 = 총 6종. 팁 조금 길게, 연마 없음. Fixture 식립 후 Healing 체결용 cortical bone 성형.",
     specs: [
       { label: "품목명", value: "치과임플란트시술용드릴" },
-      { label: "모델명", value: "BS6V2외 9건" },
-      { label: "의료기기 허가, 신고 번호", value: "부산 제신 12-8 호" },
-      { label: "사용목적", value: "임플란트 시술에서 임플란트용 핸드피스에 부착하여 골을 삭제하는 기구이다." },
-      { label: "사용방법", value: "상품상세설명 참조" },
-      { label: "사용시 주의사항 및 보관방법", value: "사용자 매뉴얼 참조" },
-      { label: "포장단위", value: "EA" },
+      { label: "구성", value: "S6·7·9, M6·7·9 (6종)" },
+      { label: "비고", value: "팁 조금 길게 · 연마 없음" },
+      { label: "포장단위", value: "1EA" },
       { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
-      { label: "품질책임자/전화번호", value: "이상훈 / Tel : 055-314-4607" },
-      { label: "BoneShaper S 모델", value: "BS06V3–BS10V3 (Size 6S–10S)" },
-      { label: "BoneShaper M/L 모델", value: "BS06ML–BS10ML (Size 6ML–10ML)" },
       { label: "권장 조건", value: "20:1 / 1,000~1,500 rpm / 45~55 Torque / 주수하" },
     ],
     blocks: [
-      { type: "heading", text: "BoneShaper S" },
-      { type: "text", text: "임플란트용 핸드피스에 부착해 골을 삭제하는 기구. TheSimple Kit Check 구성품." },
-      { type: "heading", text: "규격 (S)" },
-      { type: "list", items: ["6S BS06V3 Ø5.8 · 7S BS07V3 Ø6.8 · 8S BS08V3 Ø7.8 · 9S BS09V3 Ø8.8 · 10S BS10V3 Ø9.8 (L 28.0mm)", "Pd.No T7041–T7045 · 신고번호 부산 제신12-8호"] },
-      { type: "image", src: "/store/content/bone-shaper/s-row.jpg", alt: "BoneShaper S 색상 라인 6–10" },
-      { type: "heading", text: "BoneShaper M/L (요약)" },
-      { type: "text", text: "M/L 라인(BS06ML–BS10ML)도 동일하게 픽스처에 수직으로 세워 cortical bone–어버트먼트 간섭을 제거합니다. 식립 후 항상 사용 권장." },
-      { type: "list", items: ["6ML–10ML / Pd.No T7139–T7143", "신고번호: 제신19-1047호"] },
-      { type: "image", src: "/store/content/bone-shaper/ml-row.jpg", alt: "BoneShaper M/L 색상 라인 6–10" },
-      { type: "image", src: "/store/content/bone-shaper/gallery-ml-1.jpg", alt: "BoneShaper M/L 제품" },
-      { type: "image", src: "/store/content/bone-shaper/tray.jpg", alt: "BoneShaper 트레이·구성" },
+      { type: "heading", text: "BoneShaper" },
+      {
+        type: "text",
+        text: "S6·7·9 및 M6·7·9 = 총 6종. 팁 조금 길게. 연마는 하지 않습니다. Surgical Kit 구성품.",
+      },
+      {
+        type: "image",
+        src: "/store/content/bone-shaper/s-row.jpg",
+        alt: "BoneShaper S 라인",
+      },
+      {
+        type: "image",
+        src: "/store/content/bone-shaper/ml-row.jpg",
+        alt: "BoneShaper M 라인",
+      },
       { type: "heading", text: "사용방법" },
-      { type: "list", items: ["적합한 사이즈 선택 후 핸드피스 체결", "작은 사이즈부터 순차 사용 (9번이면 6부터)", "Submerged Fixture 내부 구멍에 커넥션부 최대한 삽입", "수직으로 살짝 가압, 주수하 3~5초, 부족 시 2~3회 반복", "사용 후 초음파 세척·상온 건조"] },
-      { type: "heading", text: "주의사항" },
-      { type: "list", items: ["인접치에 주의하여 수직 사용", "비멸균 — Autoclave 132°C, 15분"] },
+      {
+        type: "list",
+        items: [
+          "적합한 사이즈 선택 후 핸드피스 체결",
+          "작은 사이즈부터 순차 사용",
+          "수직으로 살짝 가압, 주수하 3~5초",
+          "비멸균 — Autoclave 132°C, 15분",
+        ],
+      },
     ],
   },
   "gingival-shaper": {
-    blurb: "Simple Abutment margin 부위 치은 삭제용",
-    description: "GingivalShaper는 Simple Abutment 숄더를 덮는 치은을 삭제해 인상 채득용 마진을 확보하는 절삭 기구입니다. Simple Abutment Prosthetic part와만 호환되며 동일 규격을 사용해야 합니다.",
+    blurb: "GingivalShaper · 5종",
+    description:
+      "GingivalShaper 5종. Simple Abutment 마진 치은 삭제. 제조 3.96만 ×2 = 7.92만.",
     specs: [
       { label: "품명", value: "의료용절삭기구" },
       { label: "모델명", value: "GS06V1외 41건" },
@@ -443,7 +616,8 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
   },
   "torque-wrench": {
     blurb: "나사를 설정 토크로 조이는 Hand Type 토크 렌치",
-    description: "Torque wrench(Hand Type)는 임플란트 구성품 결합 시 나사를 지정 토크로 조이는 기구입니다. W-Adaptor를 체결하고 방향·눈금을 설정해 사용합니다.",
+    description:
+      "Torque wrench(Hand Type). 제조 9.9만 ×2 = 19.8만. W-Adaptor를 체결하고 방향·눈금을 설정해 사용합니다.",
     specs: [
       { label: "품명", value: "치과용임플란트시술기구" },
       { label: "모델명", value: "EX14외 11건" },
@@ -493,42 +667,68 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
     ],
   },
   "full-package": {
-    blurb: "키트 3종 + Abutment 200EA 일괄",
-    description: "Initial·Check·Prosthetic Kit 각 1키트, SimpleAbutment2 100EA, SimpleHealing2 100EA.",
+    blurb: "키트 2종 + Abutment 300EA 일괄",
+    description:
+      "Surgical·Prosthetic Kit 각 1키트, SimpleAbutment2 150EA, SimpleHealing2 150EA. 구성 판매합 682만 → 패키지 판매가 500만.",
     blocks: [
       { type: "heading", text: "500만 패키지 구성" },
-      { type: "list", items: ["TheSimple Kit Initial ×1", "TheSimple Kit Check ×1", "TheSimple Kit Prosthetics ×1", "Simple Abut.[Non-Hex]Anti-rotation ×100", "Healing Abut. ×100"] },
-      { type: "text", text: "각 구성품 상세·사용법은 해당 단품/키트 상세 페이지를 참고하세요." },
-      { type: "image", src: "/store/content/full-package/initial-kit.jpg", alt: "Initial Kit" },
-      { type: "image", src: "/store/content/full-package/check-kit.jpg", alt: "Check Kit" },
-      { type: "image", src: "/store/content/full-package/prosthetic-kit.jpg", alt: "Prosthetic Kit" },
-      { type: "image", src: "/store/content/full-package/simple-abutment-2.jpg", alt: "SimpleAbutment2" },
-      { type: "image", src: "/store/content/full-package/simple-healing-2.jpg", alt: "SimpleHealing2" },
+      {
+        type: "list",
+        items: [
+          "Surgical Kit ×1",
+          "Prosthetic Kit ×1",
+          "SimpleAbutment2 ×150",
+          "SimpleHealing2 ×150",
+        ],
+      },
+      {
+        type: "text",
+        text: "500만원 패키지 구매 시 pkg 가격이 적용됩니다. 각 구성품 상세는 해당 단품/키트 페이지를 참고하세요.",
+      },
+      {
+        type: "image",
+        src: "/store/content/full-package/initial-kit.jpg",
+        alt: "Surgical Kit",
+      },
+      {
+        type: "image",
+        src: "/store/content/full-package/prosthetic-kit.jpg",
+        alt: "Prosthetic Kit",
+      },
+      {
+        type: "image",
+        src: "/store/content/full-package/simple-abutment-2.jpg",
+        alt: "SimpleAbutment2",
+      },
+      {
+        type: "image",
+        src: "/store/content/full-package/simple-healing-2.jpg",
+        alt: "SimpleHealing2",
+      },
     ],
   },
   "kit-case": {
-    blurb: "Initial / Check / Prosthetic · 3종",
+    blurb: "Surgical / Prosthetic · 2종",
     description:
-      "TheSimple Kit 수납용 케이스. Initial·Check·Prosthetic 키트별로 케이스 형상이 다르며 단가도 다릅니다.",
+      "시술 키트 수납용 케이스. Surgical(제조 13.2만)×2 · Prosthetic(제조 11만)×2.",
     specs: [
       { label: "포장단위", value: "1EA" },
       { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
       {
         label: "옵션",
-        value: "Initial Kit Case · Check Kit Case · Prosthetic Kit Case",
+        value: "Surgical Kit Case · Prosthetic Kit Case",
       },
     ],
     blocks: [
-      { type: "heading", text: "Kit Case 3종" },
+      { type: "heading", text: "Kit Case 2종" },
       {
         type: "text",
-        text: "시술 키트 구성품을 수납·보관하는 케이스입니다. Initial / Check / Prosthetics 키트에 각각 맞는 케이스를 선택해 주세요.",
+        text: "시술 키트 구성품을 수납·보관하는 케이스입니다. Surgical / Prosthetic 키트에 맞는 케이스를 선택해 주세요.",
       },
       {
         type: "list",
         items: [
-          "Initial Kit Case — Initial Kit 전용 (판매가 264,000원)",
-          "Check Kit Case — Check Kit 전용 (판매가 220,000원)",
+          "Surgical Kit Case — Surgical Kit 전용 (판매가 264,000원)",
           "Prosthetic Kit Case — Prosthetic Kit 전용 (판매가 220,000원)",
         ],
       },
