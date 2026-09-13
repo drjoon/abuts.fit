@@ -696,6 +696,7 @@ export function RequestorPracticeReceivePage({
     ) => Promise<DesignUploadStartResult>
   >(async () => "error");
   const {
+    designSoftwareValue,
     anodizingEnabled,
     setAnodizingEnabled,
     anodizingSaving,
@@ -706,8 +707,10 @@ export function RequestorPracticeReceivePage({
     retentionGrooveDefault,
     saveRetentionGroove,
     modalOpen: requestSettingsModalOpen,
-    usesExoCad,
-    setUsesExoCad,
+    designSoftwareMode,
+    setDesignSoftwareMode,
+    customDesignSoftware,
+    setCustomDesignSoftware,
     exoCadVersion,
     setExoCadVersion,
     forceRequired: requestSettingsForceRequired,
@@ -6994,6 +6997,7 @@ export function RequestorPracticeReceivePage({
     <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         <RequestSettingsToolbar
+          designSoftwareLabel={String(designSoftwareValue || "").trim()}
           onOpenDesignSoftwareModal={openDesignSoftwareModal}
           anodizingEnabled={anodizingEnabled}
           anodizingSaving={anodizingSaving}
@@ -7302,8 +7306,10 @@ export function RequestorPracticeReceivePage({
       <DesignSoftwareSettingsDialog
         open={requestSettingsModalOpen}
         onOpenChange={handleRequestSettingsModalOpenChange}
-        usesExoCad={usesExoCad}
-        onUsesExoCadChange={setUsesExoCad}
+        mode={designSoftwareMode}
+        onModeChange={setDesignSoftwareMode}
+        customValue={customDesignSoftware}
+        onCustomValueChange={setCustomDesignSoftware}
         exoCadVersion={exoCadVersion}
         onExoCadVersionChange={setExoCadVersion}
         showAnodizing={!hasAnodizingSetting}
@@ -7472,6 +7478,7 @@ export function RequestorPracticeReceivePage({
                 className="shrink-0"
               />
               <RequestSettingsToolbar
+                designSoftwareLabel={String(designSoftwareValue || "").trim()}
                 onOpenDesignSoftwareModal={openDesignSoftwareModal}
                 anodizingEnabled={anodizingEnabled}
                 anodizingSaving={anodizingSaving}

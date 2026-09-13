@@ -290,8 +290,10 @@ const NewRequestPageContent = () => {
     settingsComplete,
     hasAnodizingSetting,
     modalOpen: designSoftwareModalOpen,
-    usesExoCad,
-    setUsesExoCad,
+    designSoftwareMode,
+    setDesignSoftwareMode,
+    customDesignSoftware,
+    setCustomDesignSoftware,
     exoCadVersion,
     setExoCadVersion,
     forceRequired: designSoftwareForceRequired,
@@ -1751,8 +1753,10 @@ const NewRequestPageContent = () => {
         <DesignSoftwareSettingsDialog
           open={designSoftwareModalOpen}
           onOpenChange={handleDesignSoftwareModalOpenChange}
-          usesExoCad={usesExoCad}
-          onUsesExoCadChange={setUsesExoCad}
+          mode={designSoftwareMode}
+          onModeChange={setDesignSoftwareMode}
+          customValue={customDesignSoftware}
+          onCustomValueChange={setCustomDesignSoftware}
           exoCadVersion={exoCadVersion}
           onExoCadVersionChange={setExoCadVersion}
           showAnodizing={!hasAnodizingSetting}
@@ -1832,6 +1836,7 @@ const NewRequestPageContent = () => {
               onFilesSelected={handleIncomingDroppedFiles}
               weeklyBatchDays={weeklyBatchDays}
               onCancelAll={handleCancelAll}
+              designSoftwareLabel={String(designSoftwareValue || "").trim()}
               onOpenDesignSoftwareModal={handleOpenDesignSoftwareModal}
               anodizingEnabled={anodizingEnabled}
               anodizingSaving={anodizingSaving}

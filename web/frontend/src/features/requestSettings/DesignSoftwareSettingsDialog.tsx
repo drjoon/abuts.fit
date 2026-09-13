@@ -2,6 +2,7 @@
 // - web/frontend/src/features/requestSettings/useRequestorRequestSettings.ts
 // - web/frontend/src/features/requestSettings/RequestSettingsToolbar.tsx
 // change-log:
+// - 2026-09-14: 3Shape/ExoCAD/그외 먼저 → ExoCAD일 때만 버전(3.0 이하·3.2 이상).
 // - 2026-09-13: 아노다이징 미설정 시 모달에 ON/OFF 선택 복구(첫 CA STL 업로드·작업시작 게이트).
 // - 2026-09-08: 버전 라벨을 예/아니오 → 3.0 이하·3.2 이상으로(비ExoCAD 아니오와 혼동 방지).
 // - 2026-09-08: ExoCAD 사용 여부 먼저 → 예일 때만 버전 질문.
@@ -22,11 +23,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { cn } from "@/shared/ui/cn";
 
-/** @deprecated 모달에서 소프트웨어 선택 UI 제거. 타입 호환용으로 유지. */
 export type DesignSoftwareMode = "3Shape" | "ExoCAD" | "custom";
 /** ExoCAD 버전 SSOT — backend designSoftwareHex.js 와 동일 */
 export type ExoCadVersion = "le_3_0" | "ge_3_2";
@@ -34,16 +35,17 @@ export type ExoCadVersion = "le_3_0" | "ge_3_2";
 type DesignSoftwareSettingsDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** null = 미선택. ExoCAD 사용 여부 */
-  usesExoCad?: boolean | null;
-  onUsesExoCadChange?: (uses: boolean) => void;
+  mode: DesignSoftwareMode;
+  onModeChange: (mode: DesignSoftwareMode) => void;
+  customValue: string;
+  onCustomValueChange: (value: string) => void;
   exoCadVersion?: ExoCadVersion | null;
   onExoCadVersionChange?: (version: ExoCadVersion) => void;
   /** 아노다이징을 한 번도 저장하지 않았을 때 모달에서 ON/OFF 선택 */
   showAnodizing?: boolean;
   anodizingEnabled?: boolean;
   onAnodizingEnabledChange?: (enabled: boolean) => void;
-  /** false면 ExoCAD 질문 숨김(아노다이징만 게이트) */
+  /** false면 디자인 SW 질문 숨김(아노다이징만 게이트) */
   showDesignSoftware?: boolean;
   saving?: boolean;
   onSave: () => void;
@@ -57,8 +59,10 @@ type DesignSoftwareSettingsDialogProps = {
 export function DesignSoftwareSettingsDialog({
   open,
   onOpenChange,
-  usesExoCad = null,
-  onUsesExoCadChange,
+  mode,
+  onModeChange,
+  customValue,
+  onCustomValueChange,
   exoCadVersion = null,
   onExoCadVersionChange,
   showAnodizing = false,
@@ -69,8 +73,6 @@ export function DesignSoftwareSettingsDialog({
   onSave,
   contentClassName,
 }: DesignSoftwareSettingsDialogProps) {
-  const usesValue =
-    usesExoCad === true ? "yes" : usesExoCad === false ? "no" : "";
   const anodizingOnly = showAnodizing && !showDesignSoftware;
 
   return (
@@ -84,43 +86,71 @@ export function DesignSoftwareSettingsDialog({
           <DialogTitle>
             {anodizingOnly
               ? "아노다이징을 사용하시나요?"
-              : "ExoCAD를 사용하시나요?"}
+              : "디자인 소프트웨어"}
           </DialogTitle>
-          <DialogDescription className="leading-relaxed">
-            {anodizingOnly
-              ? "기공소 기본값으로 저장되며, 이후 제조 주문에 반영됩니다."
-              : "ExoCAD인 경우 버전에 따라 헥스 보정이 달라질 수 있습니다."}
-          </DialogDescription>
+          {anodizingOnly ? (
+            <DialogDescription className="leading-relaxed">
+              기공소 기본값으로 저장되며, 이후 제조 주문에 반영됩니다.
+            </DialogDescription>
+          ) : (
+            <DialogDescription className="sr-only">
+              사용 중인 디자인 소프트웨어를 선택합니다.
+            </DialogDescription>
+          )}
         </DialogHeader>
 
         {showDesignSoftware ? (
           <>
             <RadioGroup
-              value={usesValue}
+              value={mode}
               onValueChange={(value) => {
-                if (value === "yes") onUsesExoCadChange?.(true);
-                if (value === "no") onUsesExoCadChange?.(false);
+                if (
+                  value === "3Shape" ||
+                  value === "ExoCAD" ||
+                  value === "custom"
+                ) {
+                  onModeChange(value);
+                }
               }}
               className="flex flex-wrap gap-x-5 gap-y-2"
             >
               <div className="flex items-center space-x-2">
-                <RadioGroupItem value="yes" id="req-settings-exocad-yes" />
-                <Label htmlFor="req-settings-exocad-yes" className="font-normal">
-                  예
+                <RadioGroupItem value="3Shape" id="req-settings-design-3shape" />
+                <Label htmlFor="req-settings-design-3shape" className="font-normal">
+                  3Shape
                 </Label>
               </div>
               <div className="flex items-center space-x-2">
-                <RadioGroupItem value="no" id="req-settings-exocad-no" />
-                <Label htmlFor="req-settings-exocad-no" className="font-normal">
-                  아니오 (다른 소프트웨어)
+                <RadioGroupItem value="ExoCAD" id="req-settings-design-exocad" />
+                <Label htmlFor="req-settings-design-exocad" className="font-normal">
+                  ExoCAD
+                </Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="custom" id="req-settings-design-custom" />
+                <Label htmlFor="req-settings-design-custom" className="font-normal">
+                  그외
                 </Label>
               </div>
             </RadioGroup>
 
-            {usesExoCad === true ? (
+            {mode === "custom" ? (
+              <Input
+                value={customValue}
+                onChange={(e) => onCustomValueChange(e.target.value)}
+                placeholder="사용 중인 디자인 소프트웨어를 입력해주세요"
+                maxLength={120}
+                autoFocus
+              />
+            ) : null}
+
+            {mode === "ExoCAD" ? (
               <div className="space-y-3 rounded-md border bg-muted/40 px-3 py-3">
                 <div className="space-y-1">
                   <Label className="text-sm font-medium">ExoCAD 버전</Label>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    ExoCAD인 경우 버전에 따라 헥스 보정이 달라질 수 있습니다.
+                  </p>
                   <p className="text-xs text-muted-foreground leading-relaxed">
                     3.2 이상으로 업그레이드를 권장합니다.
                   </p>

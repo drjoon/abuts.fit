@@ -2,6 +2,7 @@
 // - web/backend/controllers/businesses/business.controller.js
 // - web/frontend/src/features/requestSettings/DesignSoftwareSettingsDialog.tsx
 // change-log:
+// - 2026-09-14: 그외 라벨·ExoCAD 버전을 3.0 이하/3.2 이상으로 통일.
 // - 2026-09-03: 개인 User SSOT + ExoCAD 3.0 이하 Yes/No. BA는 대표자 템플릿만.
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -294,7 +295,7 @@ export const RequestTab = () => {
             <div className="space-y-2">
               <div className="flex items-center gap-2">
                 <RadioGroupItem value="custom" id="design-software-custom" />
-                <Label htmlFor="design-software-custom">직접 입력</Label>
+                <Label htmlFor="design-software-custom">그외</Label>
               </div>
               {designMode === "custom" ? (
                 <Input
@@ -311,12 +312,9 @@ export const RequestTab = () => {
 
           {designMode === "ExoCAD" ? (
             <div className="space-y-2 rounded-md border bg-muted/40 px-3 py-3">
-              <Label className="text-sm font-medium">
-                ExoCAD 3.0(Galway) 이하인가요?
-              </Label>
+              <Label className="text-sm font-medium">ExoCAD 버전</Label>
               <p className="text-xs text-muted-foreground">
-                3.0 이하는 헥스 30° 보정이 필요할 수 있어 관리 대상입니다. 3.2
-                이상으로 업그레이드를 권장합니다.
+                3.2 이상으로 업그레이드를 권장합니다.
               </p>
               <RadioGroup
                 value={exoCadVersion || ""}
@@ -330,13 +328,13 @@ export const RequestTab = () => {
                 <div className="flex items-center gap-2">
                   <RadioGroupItem value="le_3_0" id="settings-exocad-le30" />
                   <Label htmlFor="settings-exocad-le30" className="font-normal">
-                    예 (3.0 이하)
+                    3.0 이하
                   </Label>
                 </div>
                 <div className="flex items-center gap-2">
                   <RadioGroupItem value="ge_3_2" id="settings-exocad-ge32" />
                   <Label htmlFor="settings-exocad-ge32" className="font-normal">
-                    아니오 (3.2 이상)
+                    3.2 이상
                   </Label>
                 </div>
               </RadioGroup>

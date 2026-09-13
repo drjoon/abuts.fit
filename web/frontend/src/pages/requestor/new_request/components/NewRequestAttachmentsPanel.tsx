@@ -241,6 +241,7 @@ type Props = {
   listContainerRef: React.RefObject<HTMLDivElement | null>;
   onFilesSelected: (files: File[]) => void;
   uploadProgress?: Record<string, PreUploadFileProgress>;
+  designSoftwareLabel?: string | null;
   onOpenDesignSoftwareModal?: () => void;
   anodizingEnabled?: boolean;
   anodizingSaving?: boolean;
@@ -284,6 +285,7 @@ export function NewRequestAttachmentsPanel({
   listContainerRef,
   onFilesSelected,
   uploadProgress = {},
+  designSoftwareLabel,
   onOpenDesignSoftwareModal,
   anodizingEnabled = true,
   anodizingSaving = false,
@@ -1148,6 +1150,7 @@ export function NewRequestAttachmentsPanel({
       <div className="flex flex-col flex-1 min-h-0 gap-3 h-full">
         <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <RequestSettingsToolbar
+            designSoftwareLabel={designSoftwareLabel}
             onOpenDesignSoftwareModal={onOpenDesignSoftwareModal}
             anodizingEnabled={anodizingEnabled}
             anodizingSaving={anodizingSaving}
