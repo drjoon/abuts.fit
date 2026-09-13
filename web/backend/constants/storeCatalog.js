@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-13: 판매가표 동기 — 키트 88/96/88만·pkg 66/88/66, 단품 제조×2(Pen 5.5·Cup 0.55·Pin 2.75·Shaper 3.85·Hex 1.65).
 // - 2026-09-13: 500만 패키지·임계. 케이스 제조 11만×2. SA/SH 패키지 각 100EA.
 // - 2026-09-13: pkg=판매가×0.8 초과·5500원 배수(부가세 포함 500원·공급가 정수).
 // - 2026-09-13: 제조단가표 갱신. BA pkg 플래그.
@@ -54,19 +55,19 @@ export function packageInclusiveFromList(listInclusive) {
  * 키트·어벗: 판매가 고시. 단품: 제조단가(만원)×2.
  */
 export const STORE_PRODUCT_INCLUSIVE_PRICES = Object.freeze({
-  "full-package": 6_380_000, // 키트3×110 + SA2/SH2×100×1.54
-  "initial-kit": 1_100_000,
-  "check-kit": 1_100_000,
-  "prosthetic-kit": 1_100_000,
-  "kit-case": 220_000, // mfg 11만 ×2
-  "initial-pen": 154_000, // mfg 7.7만 ×2
-  pen: 132_000, // mfg 6.6만 ×2
-  cup: 22_000, // mfg 1.1만 ×2
-  "initial-pin": 66_000, // mfg 3.3만 ×2
-  "check-pin": 66_000,
-  "bone-shaper": 132_000, // mfg 6.6만 ×2
-  "gingival-shaper": 132_000,
-  "hex-driver": 44_000, // mfg 2.2만 ×2
+  "full-package": 5_800_000, // 88+96+88 + SA2/SH2×100×1.54
+  "initial-kit": 880_000,
+  "check-kit": 960_000,
+  "prosthetic-kit": 880_000,
+  "kit-case": 220_000, // mfg 11만 ×2 (Check/Prosthetic 케이스)
+  "initial-pen": 121_000, // mfg Pen 5.5+Cup 0.55 = 6.05만 ×2
+  pen: 110_000, // mfg 5.5만 ×2
+  cup: 11_000, // mfg 0.55만 ×2
+  "initial-pin": 55_000, // mfg 2.75만 ×2
+  "check-pin": 55_000,
+  "bone-shaper": 77_000, // mfg 3.85만 ×2
+  "gingival-shaper": 77_000,
+  "hex-driver": 33_000, // mfg 1.65만 ×2
   "torque-wrench": 176_000, // mfg 8.8만 ×2
   "simple-abutment-2": 15_400,
   "simple-healing-2": 15_400,
@@ -77,18 +78,18 @@ export const STORE_PRODUCT_INCLUSIVE_PRICES = Object.freeze({
 /** pkg가 기본값. full-package·키트·어벗은 고시가, 단품은 packageInclusiveFromList. */
 export const STORE_PRODUCT_PACKAGE_INCLUSIVE_PRICES = Object.freeze({
   "full-package": 5_000_000,
-  "initial-kit": 880_000,
+  "initial-kit": 660_000,
   "check-kit": 880_000,
-  "prosthetic-kit": 880_000,
+  "prosthetic-kit": 660_000,
   "kit-case": packageInclusiveFromList(220_000),
-  "initial-pen": packageInclusiveFromList(154_000),
-  pen: packageInclusiveFromList(132_000),
-  cup: 19_600, // 22,000×0.8대 · 100원 단위 지정가
-  "initial-pin": packageInclusiveFromList(66_000),
-  "check-pin": packageInclusiveFromList(66_000),
-  "bone-shaper": packageInclusiveFromList(132_000),
-  "gingival-shaper": packageInclusiveFromList(132_000),
-  "hex-driver": packageInclusiveFromList(44_000),
+  "initial-pen": packageInclusiveFromList(121_000),
+  pen: packageInclusiveFromList(110_000),
+  cup: packageInclusiveFromList(11_000),
+  "initial-pin": packageInclusiveFromList(55_000),
+  "check-pin": packageInclusiveFromList(55_000),
+  "bone-shaper": packageInclusiveFromList(77_000),
+  "gingival-shaper": packageInclusiveFromList(77_000),
+  "hex-driver": packageInclusiveFromList(33_000),
   "torque-wrench": packageInclusiveFromList(176_000),
   "simple-abutment-2": 12_100,
   "simple-healing-2": 12_100,

@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-09-13: 관리자 가격 입력·표시를 만원(소수 2자리·100원) 단위로.
+// - 2026-09-13: 상품 새로고침 시 가격·재고 draft를 서버 값으로 동기.
 // - 2026-09-13: 탭(주문·상품·패키지) · 가격 편집 · 거절 · 필터·스탯 UI.
 // - 2026-08-23: 풀필먼트(출고·배송완료) UI.
 // - 2026-08-23: 관리자 스토어 재고·주문 승인.
@@ -94,10 +96,41 @@ type ProductDraft = {
 
 type OrderFilter = "all" | "pending" | "ready" | "shipped" | "closed";
 
-function parseWonInput(raw: string): number | null {
-  const n = Math.round(Number(String(raw).replace(/,/g, "").trim()));
+/** 1만원 = 10,000원. 소수 2자리 = 100원 단위. */
+const WON_PER_MANWON = 10_000;
+
+/** 원 → 입력 draft (`88.00`). */
+function wonToManwonDraft(won: number | null | undefined): string {
+  if (won == null || !Number.isFinite(Number(won))) return "";
+  return (Number(won) / WON_PER_MANWON).toFixed(2);
+}
+
+/** 원 → UI 표시 (`88.00만원`). */
+function formatManwonUi(won: number | null | undefined): string {
+  if (won == null || !Number.isFinite(Number(won))) return "—";
+  return `${(Number(won) / WON_PER_MANWON).toFixed(2)}만원`;
+}
+
+/**
+ * 만원 입력 → 원.
+ * `88` / `88.00` / `1.54만원` 허용. 소수 2자리로 반올림(100원).
+ */
+function parseManwonInput(raw: string): number | null {
+  const s = String(raw)
+    .replace(/,/g, "")
+    .replace(/\s*만원\s*/g, "")
+    .trim();
+  if (s === "") return null;
+  const n = Number(s);
   if (!Number.isFinite(n) || n < 0) return null;
-  return n;
+  const manwon = Math.round(n * 100) / 100;
+  return Math.round(manwon * WON_PER_MANWON);
+}
+
+/** 입력 중 문자열을 저장용 만원 draft로 정규화(blur/저장 후). */
+function normalizeManwonDraft(raw: string): string {
+  const won = parseManwonInput(raw);
+  return won == null ? "" : wonToManwonDraft(won);
 }
 
 function orderNeedsAction(order: StoreOrder) {
@@ -163,18 +196,13 @@ export default function AdminStorePage() {
       const ord = ordRes.data?.data || [];
       setInventory(inv);
       setOrders(ord);
-      setProductDrafts((prev) => {
+      // 서버 유효가가 SSOT — 새로고침 시 로컬 draft를 덮어쓴다(만원 표시).
+      setProductDrafts(() => {
         const next: Record<string, ProductDraft> = {};
         for (const row of inv) {
-          next[row.productId] = prev[row.productId] ?? {
-            list:
-              row.listPriceInclusive != null
-                ? String(row.listPriceInclusive)
-                : "",
-            pkg:
-              row.packagePriceInclusive != null
-                ? String(row.packagePriceInclusive)
-                : "",
+          next[row.productId] = {
+            list: wonToManwonDraft(row.listPriceInclusive),
+            pkg: wonToManwonDraft(row.packagePriceInclusive),
             qty: String(row.qtyOnHand),
           };
         }
@@ -247,17 +275,17 @@ export default function AdminStorePage() {
       pkg: "",
       qty: String(row.qtyOnHand),
     };
-    const list = parseWonInput(draft.list);
+    const list = parseManwonInput(draft.list);
     const pkg =
-      draft.pkg.trim() === "" ? null : parseWonInput(draft.pkg);
+      draft.pkg.trim() === "" ? null : parseManwonInput(draft.pkg);
     const qtyOnHand = Math.round(Number(draft.qty));
 
     if (list == null) {
-      toast.error("판매가가 올바르지 않습니다.");
+      toast.error("판매가가 올바르지 않습니다. (만원, 소수 2자리)");
       return;
     }
     if (draft.pkg.trim() !== "" && pkg == null) {
-      toast.error("pkg가가 올바르지 않습니다.");
+      toast.error("pkg가가 올바르지 않습니다. (만원, 소수 2자리)");
       return;
     }
     if (!Number.isFinite(qtyOnHand) || qtyOnHand < 0) {
@@ -304,15 +332,15 @@ export default function AdminStorePage() {
       }
 
       const priceData = priceRes.data.data;
+      const savedList = priceData?.listPriceInclusive ?? list;
+      const savedPkg = priceData?.packagePriceInclusive ?? pkg;
       setInventory((prev) =>
         prev.map((r) =>
           r.productId === row.productId
             ? {
                 ...r,
-                listPriceInclusive:
-                  priceData?.listPriceInclusive ?? list,
-                packagePriceInclusive:
-                  priceData?.packagePriceInclusive ?? pkg,
+                listPriceInclusive: savedList,
+                packagePriceInclusive: savedPkg,
                 defaultListPriceInclusive:
                   priceData?.defaultListPriceInclusive ??
                   r.defaultListPriceInclusive,
@@ -328,15 +356,15 @@ export default function AdminStorePage() {
       setProductDrafts((prev) => ({
         ...prev,
         [row.productId]: {
-          list: String(priceData?.listPriceInclusive ?? list),
-          pkg:
-            priceData?.packagePriceInclusive != null
-              ? String(priceData.packagePriceInclusive)
-              : "",
+          list: wonToManwonDraft(savedList),
+          pkg: wonToManwonDraft(savedPkg),
           qty: String(qtyOnHand),
         },
       }));
-      toast.success("상품을 저장했습니다.");
+      toast.success(
+        `저장: 판매 ${formatManwonUi(savedList)}` +
+          (savedPkg != null ? ` · pkg ${formatManwonUi(savedPkg)}` : ""),
+      );
     } catch {
       toast.error("저장 실패");
     } finally {
@@ -379,12 +407,15 @@ export default function AdminStorePage() {
       setProductDrafts((prev) => ({
         ...prev,
         [row.productId]: {
-          list: list != null ? String(list) : "",
-          pkg: pkg != null ? String(pkg) : "",
+          list: wonToManwonDraft(list),
+          pkg: wonToManwonDraft(pkg),
           qty: prev[row.productId]?.qty ?? String(row.qtyOnHand),
         },
       }));
-      toast.success("카탈로그 기본가로 복원했습니다.");
+      toast.success(
+        `기본가 복원: ${formatManwonUi(list)}` +
+          (pkg != null ? ` · pkg ${formatManwonUi(pkg)}` : ""),
+      );
     } catch {
       toast.error("기본가 복원 실패");
     } finally {
@@ -889,19 +920,19 @@ export default function AdminStorePage() {
             <CreditSectionHeader
               icon={Boxes}
               title="상품 · 가격 · 재고"
-              description="판매가·pkg가(부가세 포함)와 보유 재고를 함께 저장합니다. 기본가 복원은 카탈로그 상수로 되돌립니다."
+              description="판매가·pkg가는 만원 단위(소수 2자리·100원)로 입력합니다. 저장·표시는 ###.##만원. API·DB는 원. 기본가 복원은 카탈로그 상수로 되돌립니다."
             />
             {busy && inventory.length === 0 ? (
               <p className="text-sm text-muted-foreground">불러오는 중…</p>
             ) : (
               <CreditPanel>
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[720px] text-sm">
+                  <table className="w-full min-w-[760px] text-sm">
                     <thead className="border-b border-border/70 bg-muted/30 text-left text-xs text-muted-foreground">
                       <tr>
                         <th className="px-3 py-2.5 font-medium">상품</th>
-                        <th className="px-3 py-2.5 font-medium">판매가</th>
-                        <th className="px-3 py-2.5 font-medium">pkg가</th>
+                        <th className="px-3 py-2.5 font-medium">판매가(만원)</th>
+                        <th className="px-3 py-2.5 font-medium">pkg가(만원)</th>
                         <th className="px-3 py-2.5 font-medium">가용</th>
                         <th className="px-3 py-2.5 font-medium">예약</th>
                         <th className="px-3 py-2.5 font-medium">보유</th>
@@ -911,14 +942,8 @@ export default function AdminStorePage() {
                     <tbody>
                       {inventory.map((row) => {
                         const draft = productDrafts[row.productId] || {
-                          list:
-                            row.listPriceInclusive != null
-                              ? String(row.listPriceInclusive)
-                              : "",
-                          pkg:
-                            row.packagePriceInclusive != null
-                              ? String(row.packagePriceInclusive)
-                              : "",
+                          list: wonToManwonDraft(row.listPriceInclusive),
+                          pkg: wonToManwonDraft(row.packagePriceInclusive),
                           qty: String(row.qtyOnHand),
                         };
                         const low = row.qtyAvailable <= 5;
@@ -935,31 +960,66 @@ export default function AdminStorePage() {
                               </div>
                             </td>
                             <td className="px-3 py-2.5 align-top">
-                              <Input
-                                className="h-8 w-[7.5rem] tabular-nums"
-                                value={draft.list}
-                                onChange={(e) =>
-                                  patchProductDraft(
-                                    row.productId,
-                                    "list",
-                                    e.target.value,
-                                  )
-                                }
-                              />
+                              <div className="flex items-center gap-1">
+                                <Input
+                                  className="h-8 w-[6.5rem] tabular-nums"
+                                  inputMode="decimal"
+                                  placeholder="0.00"
+                                  value={draft.list}
+                                  onChange={(e) =>
+                                    patchProductDraft(
+                                      row.productId,
+                                      "list",
+                                      e.target.value,
+                                    )
+                                  }
+                                  onBlur={() =>
+                                    patchProductDraft(
+                                      row.productId,
+                                      "list",
+                                      normalizeManwonDraft(draft.list),
+                                    )
+                                  }
+                                />
+                                <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                                  만원
+                                </span>
+                              </div>
                             </td>
                             <td className="px-3 py-2.5 align-top">
-                              <Input
-                                className="h-8 w-[7.5rem] tabular-nums"
-                                value={draft.pkg}
-                                placeholder="없음"
-                                onChange={(e) =>
-                                  patchProductDraft(
-                                    row.productId,
-                                    "pkg",
-                                    e.target.value,
-                                  )
-                                }
-                              />
+                              <div className="flex items-center gap-1">
+                                <Input
+                                  className="h-8 w-[6.5rem] tabular-nums"
+                                  inputMode="decimal"
+                                  placeholder="없음"
+                                  value={draft.pkg}
+                                  onChange={(e) =>
+                                    patchProductDraft(
+                                      row.productId,
+                                      "pkg",
+                                      e.target.value,
+                                    )
+                                  }
+                                  onBlur={() => {
+                                    if (draft.pkg.trim() === "") {
+                                      patchProductDraft(
+                                        row.productId,
+                                        "pkg",
+                                        "",
+                                      );
+                                      return;
+                                    }
+                                    patchProductDraft(
+                                      row.productId,
+                                      "pkg",
+                                      normalizeManwonDraft(draft.pkg),
+                                    );
+                                  }}
+                                />
+                                <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                                  만원
+                                </span>
+                              </div>
                             </td>
                             <td
                               className={cn(

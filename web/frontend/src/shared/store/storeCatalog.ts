@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-13: 판매가표 동기 — 키트 88/96/88만·pkg 66/88/66, 단품 제조×2, 풀패키지 구성합 580만.
 // - 2026-09-13: pkg=판매가×0.8 초과·5500원 배수(부가세 포함 500원·공급가 정수).
 // - 2026-09-13: 제조단가표 갱신(케이스 7.7·Pen 6.6·셰이퍼 6.6·Hex 2.2·Torque 8.8).
 // - 2026-09-13: 이미지·표기 acrodent.com 동기 (SA2=Non-Hex Anti-rotation, SA=Non-Hex).
@@ -145,7 +146,7 @@ export const STORE_CATEGORIES: StoreCategory[] = [
         blurb: "키트 3종 + Abutment 200EA 일괄",
         alwaysUsePackagePrice: true,
         description:
-          "Initial·Check·Prosthetic Kit 각 1키트, SimpleAbutment2 100EA, SimpleHealing2 100EA. 구성 판매합 638만 → 패키지 판매가 500만.",
+          "Initial·Check·Prosthetic Kit 각 1키트, SimpleAbutment2 100EA, SimpleHealing2 100EA. 구성 판매합 580만 → 패키지 판매가 500만.",
         galleryImages: [
           "/store/acrodent/full-package.jpg",
           "/store/acrodent/initial-kit.jpg",
@@ -167,7 +168,7 @@ export const STORE_CATEGORIES: StoreCategory[] = [
             value:
               "Initial Kit ×1, Check Kit ×1, Prosthetic Kit ×1, SimpleAbutment2 ×100, SimpleHealing2 ×100",
           },
-          { label: "구성 판매합", value: "6,380,000원" },
+          { label: "구성 판매합", value: "5,800,000원" },
           { label: "패키지 판매가", value: "5,000,000원" },
           { label: "포장단위", value: "1세트" },
           { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
@@ -179,7 +180,7 @@ export const STORE_CATEGORIES: StoreCategory[] = [
         image: "/store/acrodent/initial-kit.jpg",
         blurb: "TheSimple Kit Initial",
         description:
-          "acrodent TheSimple Kit Initial. Lindemann pen·Cup·InitialPin·Case. 판매가 110만.",
+          "acrodent TheSimple Kit Initial. Lindemann pen·Cup·InitialPin·Case. 판매가 88만.",
         galleryImages: [
           "/store/acrodent/initial-kit.jpg",
           "/store/acrodent/initial-pen.jpg",
@@ -203,7 +204,7 @@ export const STORE_CATEGORIES: StoreCategory[] = [
         image: "/store/acrodent/check-kit.jpg",
         blurb: "TheSimple Kit Check",
         description:
-          "acrodent TheSimple Kit Check. CheckPin·BoneShaper. 판매가 110만.",
+          "acrodent TheSimple Kit Check. CheckPin·BoneShaper(S/M 6종). 판매가 96만.",
         galleryImages: [
           "/store/acrodent/check-kit.jpg",
           "/store/acrodent/check-pin.jpg",
@@ -211,7 +212,7 @@ export const STORE_CATEGORIES: StoreCategory[] = [
         ],
         contentImages: ["/store/detail/check-kit-1.jpg"],
         specs: [
-          { label: "구성", value: "CheckPin ×5, BoneShaper ×5" },
+          { label: "구성", value: "CheckPin ×5, BoneShaper ×6, Kit Case ×1" },
           { label: "acrodent", value: "TheSimple Kit Check" },
           { label: "포장단위", value: "1키트" },
           { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
@@ -223,7 +224,7 @@ export const STORE_CATEGORIES: StoreCategory[] = [
         image: "/store/acrodent/prosthetic-kit.jpg",
         blurb: "TheSimple Kit Prosthetics",
         description:
-          "acrodent TheSimple Kit Prosthetics. GingivalShaper·Hex Driver·Torque. 판매가 110만.",
+          "acrodent TheSimple Kit Prosthetics. GingivalShaper·Hex Driver·Torque. 판매가 88만.",
         galleryImages: [
           "/store/acrodent/prosthetic-kit.jpg",
           "/store/acrodent/gingival-shaper.jpg",
@@ -234,7 +235,7 @@ export const STORE_CATEGORIES: StoreCategory[] = [
         specs: [
           {
             label: "구성",
-            value: "GingivalShaper ×5, Hex Driver ×2, Torque wrench ×1",
+            value: "GingivalShaper ×5, Hex Driver ×2, Torque wrench ×1, Kit Case ×1",
           },
           { label: "acrodent", value: "TheSimple Kit Prosthetics" },
           { label: "포장단위", value: "1키트" },
@@ -263,7 +264,7 @@ export const STORE_CATEGORIES: StoreCategory[] = [
         image: "/store/acrodent/initial-pen.jpg",
         blurb: "Initial Pen · 펜+컵 세트",
         description:
-          "acrodent Initial Pen. Lindemann type pen + Cup 세트. 제조 7.7만 ×2 = 15.4만.",
+          "acrodent Initial Pen. Lindemann type pen + Cup 세트. 제조 6.05만 ×2 = 12.1만.",
         galleryImages: [
           "/store/acrodent/initial-pen.jpg",
         ],
@@ -279,7 +280,7 @@ export const STORE_CATEGORIES: StoreCategory[] = [
         name: "Pen",
         image: "/store/acrodent/pen.jpg",
         blurb: "Lindemann Pen",
-        description: "acrodent Lindemann Pen. 제조 6.6만 ×2 = 13.2만.",
+        description: "acrodent Lindemann Pen. 제조 5.5만 ×2 = 11만.",
         galleryImages: ["/store/acrodent/pen.jpg"],
         contentImages: ["/store/detail/pen-1.jpg"],
         specs: [
@@ -293,7 +294,7 @@ export const STORE_CATEGORIES: StoreCategory[] = [
         name: "Cup",
         image: "/store/acrodent/cup.jpg",
         blurb: "Cup [Light & Initial]",
-        description: "acrodent Cup[Light & Initial]. 제조 1.1만 ×2 = 2.2만.",
+        description: "acrodent Cup[Light & Initial]. 제조 0.55만 ×2 = 1.1만.",
         galleryImages: ["/store/acrodent/cup.jpg"],
         contentImages: ["/store/detail/cup-1.jpg"],
         specs: [
@@ -307,7 +308,7 @@ export const STORE_CATEGORIES: StoreCategory[] = [
         name: "InitialPin",
         image: "/store/acrodent/initial-pin.jpg",
         blurb: "InitialPin · 5종",
-        description: "acrodent InitialPin. 제조 3.3만 ×2 = 6.6만.",
+        description: "acrodent InitialPin. 제조 2.75만 ×2 = 5.5만.",
         galleryImages: ["/store/acrodent/initial-pin.jpg"],
         contentImages: ["/store/detail/initial-pin-1.jpg"],
         specs: [
@@ -322,7 +323,7 @@ export const STORE_CATEGORIES: StoreCategory[] = [
         image: "/store/acrodent/check-pin.jpg",
         blurb: "교합 높이 확인 · 5종",
         description:
-          "acrodent CheckPin(Fixture 식립 후 교합 높이 확인). 제조 3.3만 ×2 = 6.6만.",
+          "acrodent CheckPin(Fixture 식립 후 교합 높이 확인). 제조 2.75만 ×2 = 5.5만.",
         galleryImages: ["/store/acrodent/check-pin.jpg"],
         contentImages: ["/store/detail/check-pin-1.jpg"],
         specs: [
@@ -335,13 +336,14 @@ export const STORE_CATEGORIES: StoreCategory[] = [
         id: "bone-shaper",
         name: "BoneShaper",
         image: "/store/acrodent/bone-shaper.jpg",
-        blurb: "BoneShaper S · 피질골 성형",
+        blurb: "BoneShaper · S/M 6종",
         description:
-          "acrodent BoneShaper S. Healing 체결용 피질골 삭제·성형. 제조 6.6만 ×2 = 13.2만.",
+          "acrodent BoneShaper. Healing 체결용 피질골 삭제·성형. S6·7·9 & M6·7·9. 제조 3.85만 ×2 = 7.7만.",
         galleryImages: ["/store/acrodent/bone-shaper.jpg"],
         contentImages: ["/store/detail/bone-shaper-1.jpg"],
         specs: [
-          { label: "acrodent", value: "BoneShaper S" },
+          { label: "acrodent", value: "BoneShaper" },
+          { label: "구성", value: "S6·7·9, M6·7·9 (주문 시 사이즈 지정)" },
           { label: "포장단위", value: "1EA" },
           { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
         ],
@@ -351,7 +353,7 @@ export const STORE_CATEGORIES: StoreCategory[] = [
         name: "GingivalShaper",
         image: "/store/acrodent/gingival-shaper.jpg",
         blurb: "GingivalShaper · 5종",
-        description: "acrodent GingivalShaper. 마진 치은 삭제. 제조 6.6만 ×2 = 13.2만.",
+        description: "acrodent GingivalShaper. 마진 치은 삭제. 제조 3.85만 ×2 = 7.7만.",
         galleryImages: ["/store/acrodent/gingival-shaper.jpg"],
         contentImages: ["/store/detail/gingival-shaper-1.jpg"],
         specs: [
@@ -366,7 +368,7 @@ export const STORE_CATEGORIES: StoreCategory[] = [
         image: "/store/acrodent/hex-driver.jpg",
         blurb: "1.20 HEX-driver[Wrench] · S/M",
         description:
-          "acrodent 1.20 HEX-driver[Wrench]. 제조 2.2만 ×2 = 4.4만.",
+          "acrodent 1.20 HEX-driver[Wrench]. 제조 1.65만 ×2 = 3.3만.",
         galleryImages: ["/store/acrodent/hex-driver.jpg"],
         contentImages: ["/store/detail/hex-driver-1.jpg"],
         specs: [
@@ -410,19 +412,19 @@ export const STORE_SLIDES: StoreSlide[] = STORE_CATEGORIES.flatMap(
 
 /** 판매가(부가세 포함). 백엔드 storeCatalog.js 와 동기. 단품=제조×2. */
 const STORE_LIST_INCLUSIVE_PRICES: Record<string, number> = {
-  "full-package": 6_380_000,
-  "initial-kit": 1_100_000,
-  "check-kit": 1_100_000,
-  "prosthetic-kit": 1_100_000,
+  "full-package": 5_800_000,
+  "initial-kit": 880_000,
+  "check-kit": 960_000,
+  "prosthetic-kit": 880_000,
   "kit-case": 220_000,
-  "initial-pen": 154_000,
-  pen: 132_000,
-  cup: 22_000,
-  "initial-pin": 66_000,
-  "check-pin": 66_000,
-  "bone-shaper": 132_000,
-  "gingival-shaper": 132_000,
-  "hex-driver": 44_000,
+  "initial-pen": 121_000,
+  pen: 110_000,
+  cup: 11_000,
+  "initial-pin": 55_000,
+  "check-pin": 55_000,
+  "bone-shaper": 77_000,
+  "gingival-shaper": 77_000,
+  "hex-driver": 33_000,
   "torque-wrench": 176_000,
   "simple-abutment-2": 15_400,
   "simple-healing-2": 15_400,
@@ -462,18 +464,18 @@ function packageInclusiveFromList(listInclusive: number): number {
 /** pkg가(부가세 포함). BA.storePackageBuyer 또는 풀패키지 상시. */
 const STORE_PACKAGE_INCLUSIVE_PRICES: Record<string, number> = {
   "full-package": 5_000_000,
-  "initial-kit": 880_000,
+  "initial-kit": 660_000,
   "check-kit": 880_000,
-  "prosthetic-kit": 880_000,
+  "prosthetic-kit": 660_000,
   "kit-case": packageInclusiveFromList(220_000),
-  "initial-pen": packageInclusiveFromList(154_000),
-  pen: packageInclusiveFromList(132_000),
-  cup: 19_600,
-  "initial-pin": packageInclusiveFromList(66_000),
-  "check-pin": packageInclusiveFromList(66_000),
-  "bone-shaper": packageInclusiveFromList(132_000),
-  "gingival-shaper": packageInclusiveFromList(132_000),
-  "hex-driver": packageInclusiveFromList(44_000),
+  "initial-pen": packageInclusiveFromList(121_000),
+  pen: packageInclusiveFromList(110_000),
+  cup: packageInclusiveFromList(11_000),
+  "initial-pin": packageInclusiveFromList(55_000),
+  "check-pin": packageInclusiveFromList(55_000),
+  "bone-shaper": packageInclusiveFromList(77_000),
+  "gingival-shaper": packageInclusiveFromList(77_000),
+  "hex-driver": packageInclusiveFromList(33_000),
   "torque-wrench": packageInclusiveFromList(176_000),
   "simple-abutment-2": 12_100,
   "simple-healing-2": 12_100,
