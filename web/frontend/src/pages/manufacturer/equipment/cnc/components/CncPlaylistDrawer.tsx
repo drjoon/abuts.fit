@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-13: 예약 관리 CAM 오버레이 — Next Up·라이노와 동일(블러 제거·옅은 틴트+반투명「작업중/작업중지」).
 // - 2026-08-29: 「CAM 생성 중」블러 옆 생성 중단 버튼.
 // - 2026-08-29: CAM 재생성 버튼·NC 미수신 시 Next Up과 동일 블러「CAM 생성 중」오버레이.
 // - 2026-08-08: CncModalShell 적용. 예약 관리 톤·compact 라벨로 정리.
@@ -211,7 +212,7 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
               job.hasNc === true ||
               Boolean(String(job.s3Key || "").trim()) ||
               Boolean(String(job.bridgePath || "").trim());
-            // 「CAM 생성 중」블러 SSOT (중단=CANCELLED 시 해제)
+            // 「작업중」오버레이 SSOT (중단=CANCELLED 시 해제, Next Up·라이노와 동일)
             const camRegenPending = isCamGenerationOverlayPending({
               requestId: job.requestId || job.id,
               hasNc,
@@ -262,7 +263,7 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
               >
                 {camRegenPending ? (
                   <div
-                    className="absolute inset-0 z-30 flex items-center justify-center gap-2 rounded-[inherit] bg-white/55 backdrop-blur-[6px]"
+                    className="absolute inset-0 z-30 flex items-center justify-center gap-2 rounded-[inherit] bg-white/10"
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
@@ -273,15 +274,15 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
                     }}
                     role="status"
                     aria-live="polite"
-                    aria-label="CAM 생성 중"
+                    aria-label="작업중"
                   >
-                    <span className="rounded-full border border-primary-muted bg-primary-soft/90 px-3 py-1.5 text-sm font-extrabold text-primary-strong shadow-sm">
-                      CAM 생성 중
+                    <span className="rounded-full border border-primary/35 bg-primary-soft/70 px-3 py-1.5 text-sm font-extrabold text-primary-strong">
+                      작업중
                     </span>
                     {onCancelCamGeneration ? (
                       <button
                         type="button"
-                        className="rounded-full border border-slate-300 bg-white/95 px-3 py-1.5 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
+                        className="rounded-full border border-slate-400/40 bg-white/75 px-3 py-1.5 text-sm font-bold text-slate-700 hover:bg-white/85 disabled:opacity-50"
                         disabled={!canCancelCam}
                         onClick={(e) => {
                           e.preventDefault();
@@ -292,10 +293,10 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
                         onPointerDown={(e) => {
                           e.stopPropagation();
                         }}
-                        title="생성 중단"
-                        aria-label="생성 중단"
+                        title="작업중지"
+                        aria-label="작업중지"
                       >
-                        {isCancelling ? "중단 중…" : "생성 중단"}
+                        {isCancelling ? "중지 중…" : "작업중지"}
                       </button>
                     ) : null}
                   </div>
@@ -316,7 +317,7 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
                     onOpenCode(job.id);
                   }}
                   disabled={camRegenPending}
-                  title={camRegenPending ? "CAM 생성 중" : job.name}
+                  title={camRegenPending ? "작업중" : job.name}
                 >
                   <div className="flex flex-wrap items-center gap-1.5 text-[13px] font-semibold text-slate-800">
                     {idx === 0 ? (

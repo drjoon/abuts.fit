@@ -809,7 +809,7 @@ export const WorksheetCardGrid = ({
           >
             {rhinoWorkPending ? (
               <div
-                className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-2 rounded-[inherit] bg-white/10 cursor-not-allowed"
+                className="absolute inset-0 z-30 flex items-center justify-center gap-2 rounded-[inherit] bg-white/10 cursor-not-allowed"
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();

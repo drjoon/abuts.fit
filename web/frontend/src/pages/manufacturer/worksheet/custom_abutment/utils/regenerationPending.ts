@@ -67,7 +67,7 @@ export function reconcileFilledStlRegenerationPending(
   }
 }
 
-/** Next Up / 예약 관리 「CAM 생성 중」블러 SSOT */
+/** Next Up / 예약 관리 「작업중」오버레이 표시 SSOT (블러 없음·옅은 틴트) */
 export function isCamGenerationOverlayPending(opts: {
   requestId?: unknown;
   hasNc?: boolean;

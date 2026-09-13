@@ -1161,7 +1161,7 @@ export const MachineQueueCard = ({
           >
             {nextUpCamRegenPending ? (
               <div
-                className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-2 rounded-[inherit] bg-white/10"
+                className="absolute inset-0 z-30 flex items-center justify-center gap-2 rounded-[inherit] bg-white/10"
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
