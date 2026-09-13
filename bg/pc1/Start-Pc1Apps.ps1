@@ -115,11 +115,31 @@ if (-not (Test-Path $LogDir)) {
 }
 $LogFile = Join-Path $LogDir ("autostart-{0:yyyyMMdd}.log" -f (Get-Date))
 
+# Korean UI labels via codepoints so CP949/UTF-8 file encoding cannot corrupt matches.
+function Get-UiLabelConfirm { return ([string]::new([char[]]@(0xD655, 0xC778))) }  # 확인
+function Get-UiLabelCancel { return ([string]::new([char[]]@(0xCDE8, 0xC18C))) }   # 취소
+
 function Write-Log {
   param([string]$Message, [string]$Level = "INFO")
   $line = "[{0:yyyy-MM-dd HH:mm:ss}] [{1}] {2}" -f (Get-Date), $Level, $Message
   Write-Host $line
-  try { Add-Content -Path $LogFile -Value $line -Encoding UTF8 } catch {}
+  for ($i = 0; $i -lt 8; $i++) {
+    try {
+      $fs = [System.IO.File]::Open(
+        $LogFile,
+        [System.IO.FileMode]::Append,
+        [System.IO.FileAccess]::Write,
+        [System.IO.FileShare]::ReadWrite
+      )
+      try {
+        $sw = New-Object System.IO.StreamWriter($fs, [System.Text.UTF8Encoding]::new($false))
+        try { $sw.WriteLine($line) } finally { $sw.Dispose() }
+      } finally { $fs.Dispose() }
+      break
+    } catch {
+      Start-Sleep -Milliseconds 40
+    }
+  }
 }
 
 function Test-TcpPortOpen {
@@ -221,11 +241,62 @@ function Get-ProcessWindows {
   return $out
 }
 
+function Get-UiButtonsOnWindow {
+  param($Hwnd)
+  $list = @()
+  if (-not ("System.Windows.Automation.AutomationElement" -as [type])) { return $list }
+  try {
+    $root = [System.Windows.Automation.AutomationElement]::FromHandle($Hwnd)
+    if (-not $root) { return $list }
+    $btnCond = New-Object System.Windows.Automation.PropertyCondition(
+      [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+      [System.Windows.Automation.ControlType]::Button
+    )
+    $buttons = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $btnCond)
+    foreach ($btn in $buttons) {
+      $list += [pscustomobject]@{
+        Element = $btn
+        Name = $btn.Current.Name
+        AutomationId = $btn.Current.AutomationId
+      }
+    }
+  } catch {}
+  return $list
+}
+
+function Invoke-UiButtonElement {
+  param($ButtonElement, [string]$WindowTitle, [int]$Pid)
+  $name = $ButtonElement.Current.Name
+  Write-Log "Clicking UI button name='$name' on '$WindowTitle' (pid=$Pid)"
+  try {
+    $pattern = $ButtonElement.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
+    $pattern.Invoke()
+    return $true
+  } catch {
+    Write-Log "InvokePattern failed: $($_.Exception.Message)" "WARN"
+    return $false
+  }
+}
+
+function Test-ButtonNameMatch {
+  param([string]$Name, [string[]]$WantNames)
+  if (-not $Name) { return $false }
+  $trimmed = $Name.Trim()
+  foreach ($want in $WantNames) {
+    if (-not $want) { continue }
+    if ($trimmed -eq $want) { return $true }
+    if ($trimmed.StartsWith($want)) { return $true }  # e.g. 확인(O)
+    if ($trimmed -like "*$want*") { return $true }
+  }
+  return $false
+}
+
 function Invoke-UiButtonClick {
   param(
     [string[]]$ProcessNames,
     [string[]]$ButtonNames,
-    [int]$TimeoutSec = 60
+    [int]$TimeoutSec = 60,
+    [switch]$PreferSplashLayout
   )
   if (-not ("System.Windows.Automation.AutomationElement" -as [type])) {
     Write-Log "UIAutomation assemblies unavailable" "WARN"
@@ -233,27 +304,54 @@ function Invoke-UiButtonClick {
   }
 
   $deadline = (Get-Date).AddSeconds($TimeoutSec)
+  $loggedDump = $false
   while ((Get-Date) -lt $deadline) {
     $wins = Get-ProcessWindows -ProcessNames $ProcessNames
-    foreach ($w in $wins) {
+    # Prefer non-document dialogs (splash/about) over "ESPRIT - [file.esp]"
+    $ordered = @($wins | Sort-Object {
+      $t = $_.Title
+      if (-not $t) { return 0 }
+      if ($t -match '\[.*\.esp\]') { return 2 }
+      if ($t -like "ESPRIT*") { return 1 }
+      return 0
+    })
+
+    foreach ($w in $ordered) {
       try {
-        $root = [System.Windows.Automation.AutomationElement]::FromHandle($w.Hwnd)
-        if (-not $root) { continue }
-        $btnCond = New-Object System.Windows.Automation.PropertyCondition(
-          [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
-          [System.Windows.Automation.ControlType]::Button
-        )
-        $buttons = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $btnCond)
+        [AbutsWin32]::FocusWindow($w.Hwnd)
+        Start-Sleep -Milliseconds 150
+        $buttons = @(Get-UiButtonsOnWindow -Hwnd $w.Hwnd)
+        if ($buttons.Count -eq 0) { continue }
+
+        if (-not $loggedDump) {
+          $dump = ($buttons | ForEach-Object {
+            $n = if ($_.Name) { $_.Name } else { "(empty)" }
+            "[$n/id=$($_.AutomationId)]"
+          }) -join " "
+          Write-Log "ESPRIT UI buttons on '$($w.Title)': $dump"
+          $loggedDump = $true
+        }
+
         foreach ($btn in $buttons) {
-          $name = $btn.Current.Name
-          if (-not $name) { continue }
-          foreach ($want in $ButtonNames) {
-            if ($name -eq $want -or $name -like "*$want*") {
-              Write-Log "Clicking UI button '$name' on '$($w.Title)' (pid=$($w.Pid))"
-              [AbutsWin32]::FocusWindow($w.Hwnd)
-              Start-Sleep -Milliseconds 200
-              $pattern = $btn.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
-              $pattern.Invoke()
+          if (Test-ButtonNameMatch -Name $btn.Name -WantNames $ButtonNames) {
+            if (Invoke-UiButtonElement -ButtonElement $btn.Element -WindowTitle $w.Title -Pid $w.Pid) {
+              return $true
+            }
+          }
+        }
+
+        # Splash layout: two stacked buttons (확인 then 취소) — click first if PreferSplashLayout.
+        if ($PreferSplashLayout -and $buttons.Count -ge 2 -and $buttons.Count -le 4) {
+          $cancel = Get-UiLabelCancel
+          $hasCancel = $false
+          foreach ($b in $buttons) {
+            if (Test-ButtonNameMatch -Name $b.Name -WantNames @($cancel, "Cancel", "&Cancel")) {
+              $hasCancel = $true
+              break
+            }
+          }
+          if ($hasCancel -or ($w.Title -notmatch '\[.*\.esp\]')) {
+            if (Invoke-UiButtonElement -ButtonElement $buttons[0].Element -WindowTitle $w.Title -Pid $w.Pid) {
               return $true
             }
           }
@@ -294,37 +392,56 @@ function Send-KeysToProcessWindow {
 
 function Dismiss-EspritSplash {
   param([int]$TimeoutSec = 90)
-  Write-Log "Waiting for ESPRIT splash 확인 button (up to ${TimeoutSec}s)..."
+  $confirm = Get-UiLabelConfirm
+  $cancel = Get-UiLabelCancel
+  Write-Log ("Waiting for ESPRIT splash confirm button '{0}' (up to {1}s)..." -f $confirm, $TimeoutSec)
   if ($WhatIf) { return $true }
 
-  # Primary: UI Automation click on 확인 / OK
-  $clicked = Invoke-UiButtonClick -ProcessNames @("esprit", "ESPRIT") -ButtonNames @("확인", "OK", "&OK") -TimeoutSec $TimeoutSec
+  # Primary: UI Automation click on confirm / OK (names via Unicode codepoints).
+  $clicked = Invoke-UiButtonClick `
+    -ProcessNames @("esprit", "ESPRIT") `
+    -ButtonNames @($confirm, "OK", "&OK", "Ok") `
+    -TimeoutSec $TimeoutSec `
+    -PreferSplashLayout
   if ($clicked) {
     Write-Log "ESPRIT splash dismissed via button click"
     return $true
   }
 
-  # Fallback: focus any ESPRIT dialog and tap Enter (default button is usually 확인)
-  Write-Log "Button click missed; trying Enter on ESPRIT windows..." "WARN"
-  $deadline = (Get-Date).AddSeconds(15)
+  # Fallback: focus splash-like windows and tap Enter (default is usually confirm).
+  Write-Log "Button click missed; trying Enter on ESPRIT dialogs..." "WARN"
+  $deadline = (Get-Date).AddSeconds(20)
   while ((Get-Date) -lt $deadline) {
     $wins = Get-ProcessWindows -ProcessNames @("esprit", "ESPRIT")
     foreach ($w in $wins) {
-      if (-not $w.Title) { continue }
-      # Splash/about is usually not the main "ESPRIT - [*.esp]" doc frame alone;
-      # still try Enter on top-level windows.
+      $buttons = @(Get-UiButtonsOnWindow -Hwnd $w.Hwnd)
+      $looksLikeSplash = $false
+      foreach ($b in $buttons) {
+        if (Test-ButtonNameMatch -Name $b.Name -WantNames @($confirm, $cancel, "OK", "Cancel")) {
+          $looksLikeSplash = $true
+          break
+        }
+      }
+      if (-not $looksLikeSplash -and $w.Title -match '\[.*\.esp\]') { continue }
+
       [AbutsWin32]::FocusWindow($w.Hwnd)
-      Start-Sleep -Milliseconds 200
+      Start-Sleep -Milliseconds 250
       [AbutsWin32]::TapEnter()
-      Write-Log "Tapped Enter on ESPRIT window '$($w.Title)'"
+      Write-Log "Tapped Enter on ESPRIT window '$($w.Title)' (buttons=$($buttons.Count))"
       Start-Sleep -Seconds 2
-      # If 확인 dialog is gone, main doc title remains — treat as success if button gone.
-      $still = Invoke-UiButtonClick -ProcessNames @("esprit", "ESPRIT") -ButtonNames @("확인") -TimeoutSec 1
-      if (-not $still) { return $true }
+
+      $stillConfirm = $false
+      foreach ($b in @(Get-UiButtonsOnWindow -Hwnd $w.Hwnd)) {
+        if (Test-ButtonNameMatch -Name $b.Name -WantNames @($confirm)) { $stillConfirm = $true; break }
+      }
+      if (-not $stillConfirm) {
+        Write-Log "ESPRIT splash appears dismissed after Enter"
+        return $true
+      }
     }
     Start-Sleep -Seconds 2
   }
-  Write-Log "ESPRIT splash 확인 not confirmed automatically — click it once manually if still open." "WARN"
+  Write-Log "ESPRIT splash confirm not auto-clicked — click it once manually if still open." "WARN"
   return $false
 }
 
