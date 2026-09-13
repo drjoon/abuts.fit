@@ -47,9 +47,9 @@ Windows Update 등으로 재부팅되면 Rhino/ESPRIT/브리지는 수동 실행
   - `cd C:\Users\user\abuts.fit\bg\pc1`
   - `powershell -ExecutionPolicy Bypass -File .\Install-Pc1Autostart.ps1 -Action install`
 - 기동 스크립트: `bg/pc1/Start-Pc1Apps.ps1` (또는 `Start-Pc1Apps.cmd`)
-  - 순서: Rhino 8 + ScriptEditor wake → rhino.cmd(:8000) → Esprit.cmd + splash `확인` → bridge(:8002)
+  - 순서: Rhino 8 + ScriptEditor wake → rhino.cmd(:8000) → Esprit.cmd(:8001) → bridge(:8002)
   - Rhino wake: `/runscript="_ScriptEditor"` → SendKeys `_ScriptEditor` → COM → 필요 시 Rhino 재시작
-  - ESPRIT: 라이선스/스플래시 창의 `확인` 버튼을 UI Automation으로 클릭 (실패 시 Enter)
+  - ESPRIT 스플래시/라이선스 `확인`은 수동 (자동 클릭 없음)
   - pipe가 생긴 뒤 `init_instance.py`로 health ping
   - 강제 재시작 테스트: `.\Start-Pc1Apps.ps1 -SkipDelay -ForceRhinoRestart`
 - 로그: `bg/pc1/logs/autostart-YYYYMMDD.log`

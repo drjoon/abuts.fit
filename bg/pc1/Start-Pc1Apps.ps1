@@ -9,12 +9,11 @@
 # Boot order after Windows logon (Rhino/ESPRIT need interactive desktop):
 #   1) Rhino 8 + ScriptEditor wake (RhinoCode pipe)
 #   2) rhino-server (:8000)
-#   3) ESPRIT + splash 확인 + add-in (:8001)
+#   3) ESPRIT + add-in (:8001) — splash/license OK is manual
 #   4) bridge-server (:8002)
 param(
   [int]$DelaySeconds = 45,
   [int]$RhinoReadyTimeoutSec = 180,
-  [int]$EspritSplashTimeoutSec = 90,
   [switch]$SkipDelay,
   [switch]$ForceRhinoRestart,
   [switch]$WhatIf
@@ -22,10 +21,8 @@ param(
 
 $ErrorActionPreference = "Continue"
 
-# --- Win32 / UI helpers (ScriptEditor keys + ESPRIT splash click) ---
+# --- Win32 / UI helpers (Rhino ScriptEditor SendKeys) ---
 Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
-Add-Type -AssemblyName UIAutomationClient -ErrorAction SilentlyContinue
-Add-Type -AssemblyName UIAutomationTypes -ErrorAction SilentlyContinue
 
 if (-not ("AbutsWin32" -as [type])) {
   Add-Type @"
@@ -45,12 +42,8 @@ public static class AbutsWin32 {
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
   [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
   [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hWnd);
-  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
-  [DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
 
   public const int SW_RESTORE = 9;
-  public const byte VK_RETURN = 0x0D;
-  public const uint KEYEVENTF_KEYUP = 0x0002;
 
   public static List<IntPtr> GetVisibleWindowsForPid(uint pid) {
     var list = new List<IntPtr>();
@@ -73,11 +66,6 @@ public static class AbutsWin32 {
     ShowWindow(hWnd, SW_RESTORE);
     BringWindowToTop(hWnd);
     SetForegroundWindow(hWnd);
-  }
-
-  public static void TapEnter() {
-    keybd_event(VK_RETURN, 0, 0, UIntPtr.Zero);
-    keybd_event(VK_RETURN, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
   }
 }
 "@
@@ -114,10 +102,6 @@ if (-not (Test-Path $LogDir)) {
   New-Item -ItemType Directory -Path $LogDir | Out-Null
 }
 $LogFile = Join-Path $LogDir ("autostart-{0:yyyyMMdd}.log" -f (Get-Date))
-
-# Korean UI labels via codepoints so CP949/UTF-8 file encoding cannot corrupt matches.
-function Get-UiLabelConfirm { return ([string]::new([char[]]@(0xD655, 0xC778))) }  # 확인
-function Get-UiLabelCancel { return ([string]::new([char[]]@(0xCDE8, 0xC18C))) }   # 취소
 
 function Write-Log {
   param([string]$Message, [string]$Level = "INFO")
@@ -241,130 +225,6 @@ function Get-ProcessWindows {
   return $out
 }
 
-function Get-UiButtonsOnWindow {
-  param($Hwnd)
-  $list = @()
-  if (-not ("System.Windows.Automation.AutomationElement" -as [type])) { return $list }
-  try {
-    $root = [System.Windows.Automation.AutomationElement]::FromHandle($Hwnd)
-    if (-not $root) { return $list }
-    $btnCond = New-Object System.Windows.Automation.PropertyCondition(
-      [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
-      [System.Windows.Automation.ControlType]::Button
-    )
-    $buttons = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $btnCond)
-    foreach ($btn in $buttons) {
-      $list += [pscustomobject]@{
-        Element = $btn
-        Name = $btn.Current.Name
-        AutomationId = $btn.Current.AutomationId
-      }
-    }
-  } catch {}
-  return $list
-}
-
-function Invoke-UiButtonElement {
-  param($ButtonElement, [string]$WindowTitle, [int]$Pid)
-  $name = $ButtonElement.Current.Name
-  Write-Log "Clicking UI button name='$name' on '$WindowTitle' (pid=$Pid)"
-  try {
-    $pattern = $ButtonElement.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
-    $pattern.Invoke()
-    return $true
-  } catch {
-    Write-Log "InvokePattern failed: $($_.Exception.Message)" "WARN"
-    return $false
-  }
-}
-
-function Test-ButtonNameMatch {
-  param([string]$Name, [string[]]$WantNames)
-  if (-not $Name) { return $false }
-  $trimmed = $Name.Trim()
-  foreach ($want in $WantNames) {
-    if (-not $want) { continue }
-    if ($trimmed -eq $want) { return $true }
-    if ($trimmed.StartsWith($want)) { return $true }  # e.g. 확인(O)
-    if ($trimmed -like "*$want*") { return $true }
-  }
-  return $false
-}
-
-function Invoke-UiButtonClick {
-  param(
-    [string[]]$ProcessNames,
-    [string[]]$ButtonNames,
-    [int]$TimeoutSec = 60,
-    [switch]$PreferSplashLayout
-  )
-  if (-not ("System.Windows.Automation.AutomationElement" -as [type])) {
-    Write-Log "UIAutomation assemblies unavailable" "WARN"
-    return $false
-  }
-
-  $deadline = (Get-Date).AddSeconds($TimeoutSec)
-  $loggedDump = $false
-  while ((Get-Date) -lt $deadline) {
-    $wins = Get-ProcessWindows -ProcessNames $ProcessNames
-    # Prefer non-document dialogs (splash/about) over "ESPRIT - [file.esp]"
-    $ordered = @($wins | Sort-Object {
-      $t = $_.Title
-      if (-not $t) { return 0 }
-      if ($t -match '\[.*\.esp\]') { return 2 }
-      if ($t -like "ESPRIT*") { return 1 }
-      return 0
-    })
-
-    foreach ($w in $ordered) {
-      try {
-        [AbutsWin32]::FocusWindow($w.Hwnd)
-        Start-Sleep -Milliseconds 150
-        $buttons = @(Get-UiButtonsOnWindow -Hwnd $w.Hwnd)
-        if ($buttons.Count -eq 0) { continue }
-
-        if (-not $loggedDump) {
-          $dump = ($buttons | ForEach-Object {
-            $n = if ($_.Name) { $_.Name } else { "(empty)" }
-            "[$n/id=$($_.AutomationId)]"
-          }) -join " "
-          Write-Log "ESPRIT UI buttons on '$($w.Title)': $dump"
-          $loggedDump = $true
-        }
-
-        foreach ($btn in $buttons) {
-          if (Test-ButtonNameMatch -Name $btn.Name -WantNames $ButtonNames) {
-            if (Invoke-UiButtonElement -ButtonElement $btn.Element -WindowTitle $w.Title -Pid $w.Pid) {
-              return $true
-            }
-          }
-        }
-
-        # Splash layout: two stacked buttons (확인 then 취소) — click first if PreferSplashLayout.
-        if ($PreferSplashLayout -and $buttons.Count -ge 2 -and $buttons.Count -le 4) {
-          $cancel = Get-UiLabelCancel
-          $hasCancel = $false
-          foreach ($b in $buttons) {
-            if (Test-ButtonNameMatch -Name $b.Name -WantNames @($cancel, "Cancel", "&Cancel")) {
-              $hasCancel = $true
-              break
-            }
-          }
-          if ($hasCancel -or ($w.Title -notmatch '\[.*\.esp\]')) {
-            if (Invoke-UiButtonElement -ButtonElement $buttons[0].Element -WindowTitle $w.Title -Pid $w.Pid) {
-              return $true
-            }
-          }
-        }
-      } catch {
-        # keep polling
-      }
-    }
-    Start-Sleep -Seconds 2
-  }
-  return $false
-}
-
 function Send-KeysToProcessWindow {
   param(
     [string[]]$ProcessNames,
@@ -388,61 +248,6 @@ function Send-KeysToProcessWindow {
     Write-Log "SendKeys failed: $($_.Exception.Message)" "WARN"
     return $false
   }
-}
-
-function Dismiss-EspritSplash {
-  param([int]$TimeoutSec = 90)
-  $confirm = Get-UiLabelConfirm
-  $cancel = Get-UiLabelCancel
-  Write-Log ("Waiting for ESPRIT splash confirm button '{0}' (up to {1}s)..." -f $confirm, $TimeoutSec)
-  if ($WhatIf) { return $true }
-
-  # Primary: UI Automation click on confirm / OK (names via Unicode codepoints).
-  $clicked = Invoke-UiButtonClick `
-    -ProcessNames @("esprit", "ESPRIT") `
-    -ButtonNames @($confirm, "OK", "&OK", "Ok") `
-    -TimeoutSec $TimeoutSec `
-    -PreferSplashLayout
-  if ($clicked) {
-    Write-Log "ESPRIT splash dismissed via button click"
-    return $true
-  }
-
-  # Fallback: focus splash-like windows and tap Enter (default is usually confirm).
-  Write-Log "Button click missed; trying Enter on ESPRIT dialogs..." "WARN"
-  $deadline = (Get-Date).AddSeconds(20)
-  while ((Get-Date) -lt $deadline) {
-    $wins = Get-ProcessWindows -ProcessNames @("esprit", "ESPRIT")
-    foreach ($w in $wins) {
-      $buttons = @(Get-UiButtonsOnWindow -Hwnd $w.Hwnd)
-      $looksLikeSplash = $false
-      foreach ($b in $buttons) {
-        if (Test-ButtonNameMatch -Name $b.Name -WantNames @($confirm, $cancel, "OK", "Cancel")) {
-          $looksLikeSplash = $true
-          break
-        }
-      }
-      if (-not $looksLikeSplash -and $w.Title -match '\[.*\.esp\]') { continue }
-
-      [AbutsWin32]::FocusWindow($w.Hwnd)
-      Start-Sleep -Milliseconds 250
-      [AbutsWin32]::TapEnter()
-      Write-Log "Tapped Enter on ESPRIT window '$($w.Title)' (buttons=$($buttons.Count))"
-      Start-Sleep -Seconds 2
-
-      $stillConfirm = $false
-      foreach ($b in @(Get-UiButtonsOnWindow -Hwnd $w.Hwnd)) {
-        if (Test-ButtonNameMatch -Name $b.Name -WantNames @($confirm)) { $stillConfirm = $true; break }
-      }
-      if (-not $stillConfirm) {
-        Write-Log "ESPRIT splash appears dismissed after Enter"
-        return $true
-      }
-    }
-    Start-Sleep -Seconds 2
-  }
-  Write-Log "ESPRIT splash confirm not auto-clicked — click it once manually if still open." "WARN"
-  return $false
 }
 
 function Invoke-RhinoScriptEditorViaCom {
@@ -607,25 +412,23 @@ function Start-RhinoServer {
 
 function Start-EspritApp {
   $esprit = Get-Process -Name "esprit" -ErrorAction SilentlyContinue
-  if (-not $esprit) {
-    if (Test-TcpPortOpen -Port 8001) {
-      Write-Log "esprit HTTP already listening on :8001"
-    } else {
-      $cmd = Join-Path $Pc1Root "esprit-addin\Esprit.cmd"
-      if (-not (Test-Path $cmd)) {
-        Write-Log "Missing $cmd (Pc1Root wrong?)" "ERROR"
-        return
-      }
-      Write-Log "Starting ESPRIT (Esprit.cmd)"
-      if (-not $WhatIf) {
-        Start-Process -FilePath "cmd.exe" -ArgumentList @("/c", "`"$cmd`"") -WorkingDirectory (Split-Path $cmd -Parent) -WindowStyle Minimized | Out-Null
-      }
-    }
-  } else {
+  if ($esprit) {
     Write-Log "ESPRIT already running (pid=$($esprit[0].Id))"
+    return
   }
-
-  Dismiss-EspritSplash -TimeoutSec $EspritSplashTimeoutSec | Out-Null
+  if (Test-TcpPortOpen -Port 8001) {
+    Write-Log "esprit HTTP already listening on :8001"
+    return
+  }
+  $cmd = Join-Path $Pc1Root "esprit-addin\Esprit.cmd"
+  if (-not (Test-Path $cmd)) {
+    Write-Log "Missing $cmd (Pc1Root wrong?)" "ERROR"
+    return
+  }
+  Write-Log "Starting ESPRIT (Esprit.cmd) — dismiss splash/license OK manually if shown"
+  if (-not $WhatIf) {
+    Start-Process -FilePath "cmd.exe" -ArgumentList @("/c", "`"$cmd`"") -WorkingDirectory (Split-Path $cmd -Parent) -WindowStyle Minimized | Out-Null
+  }
 }
 
 function Start-BridgeServer {
