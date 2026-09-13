@@ -23,6 +23,10 @@ import {
 } from "../../constants/storeCatalog.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { setStorePackageBuyer } from "../../utils/storePackagePricing.js";
+import {
+  getCatalogDefaultPrices,
+  upsertStoreProductPrice,
+} from "../../utils/storeProductPricing.js";
 
 async function writeAuditLog({ req, action, refType, refId, details }) {
   const actorUserId = req.user?._id;
@@ -41,20 +45,70 @@ export async function adminListStoreInventory(req, res) {
   try {
     await ensureStoreInventorySeeded();
     const map = await getInventoryMap();
-    const rows = listStoreProductIds().map((productId) => ({
-      productId,
-      name: getStoreProductName(productId),
-      listPriceInclusive: getStoreProductPriceInclusive(productId),
-      packagePriceInclusive: getStoreProductPackagePriceInclusive(productId),
-      qtyOnHand: map[productId]?.qtyOnHand ?? 0,
-      qtyReserved: map[productId]?.qtyReserved ?? 0,
-      qtyAvailable: map[productId]?.available ?? 0,
-    }));
+    const rows = listStoreProductIds().map((productId) => {
+      const defaults = getCatalogDefaultPrices(productId);
+      return {
+        productId,
+        name: getStoreProductName(productId),
+        listPriceInclusive: getStoreProductPriceInclusive(productId),
+        packagePriceInclusive: getStoreProductPackagePriceInclusive(productId),
+        defaultListPriceInclusive: defaults.listPriceInclusive,
+        defaultPackagePriceInclusive: defaults.packagePriceInclusive,
+        qtyOnHand: map[productId]?.qtyOnHand ?? 0,
+        qtyReserved: map[productId]?.qtyReserved ?? 0,
+        qtyAvailable: map[productId]?.available ?? 0,
+      };
+    });
     return res.json({ success: true, data: rows });
   } catch (error) {
     return res.status(500).json({
       success: false,
       message: error.message || "inventory_list_failed",
+    });
+  }
+}
+
+/** PATCH /api/admin/store/products/:productId/prices */
+export async function adminPatchStoreProductPrices(req, res) {
+  try {
+    const productId = String(req.params.productId || "").trim();
+    const body = req.body || {};
+    const doc = await upsertStoreProductPrice({
+      productId,
+      listPriceInclusive: body.listPriceInclusive,
+      packagePriceInclusive: body.packagePriceInclusive,
+      clearList: body.clearList === true,
+      clearPackage: body.clearPackage === true,
+    });
+    await writeAuditLog({
+      req,
+      action: "STORE_PRODUCT_PRICE_PATCH",
+      refType: "StoreProductPrice",
+      refId: productId,
+      details: {
+        listPriceInclusive: doc?.listPriceInclusive ?? null,
+        packagePriceInclusive: doc?.packagePriceInclusive ?? null,
+      },
+    });
+    return res.json({
+      success: true,
+      data: {
+        productId,
+        name: getStoreProductName(productId),
+        listPriceInclusive: getStoreProductPriceInclusive(productId),
+        packagePriceInclusive: getStoreProductPackagePriceInclusive(productId),
+        ...getCatalogDefaultPrices(productId),
+        override: {
+          listPriceInclusive: doc?.listPriceInclusive ?? null,
+          packagePriceInclusive: doc?.packagePriceInclusive ?? null,
+        },
+      },
+    });
+  } catch (error) {
+    const status = error.statusCode || 500;
+    return res.status(status).json({
+      success: false,
+      message: error.message || "product_price_patch_failed",
     });
   }
 }

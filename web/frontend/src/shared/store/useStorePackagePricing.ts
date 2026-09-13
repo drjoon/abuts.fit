@@ -1,29 +1,40 @@
 // change-log:
+// - 2026-09-13: catalog products 단가 오버레이(관리자 가격 반영).
 // - 2026-09-13: BA.storePackageBuyer 플래그 조회(장부 누적 대신).
-// - 2026-09-13: 스토어 패키지 구매자(충전≥550만) 조회 훅.
 // related files:
 // - web/backend/controllers/store/storeOrder.controller.js
 // - web/frontend/src/shared/store/storeCatalog.ts
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
-import { STORE_PACKAGE_PREPAID_THRESHOLD } from "@/shared/store/storeCatalog";
+import {
+  STORE_PACKAGE_PREPAID_THRESHOLD,
+  type StoreProduct,
+} from "@/shared/store/storeCatalog";
+
+export type StoreCatalogPriceRow = {
+  listPriceInclusive: number | null;
+  packagePriceInclusive: number | null;
+};
 
 export type StorePackagePricingState = {
   loading: boolean;
   isPackageBuyer: boolean;
   packageThreshold: number;
+  /** productId → 유효 단가(서버 카탈로그) */
+  priceByProductId: Record<string, StoreCatalogPriceRow>;
 };
 
 const DEFAULT: StorePackagePricingState = {
   loading: true,
   isPackageBuyer: false,
   packageThreshold: STORE_PACKAGE_PREPAID_THRESHOLD,
+  priceByProductId: {},
 };
 
 /**
- * GET /api/store/catalog 의 packagePricing.
- * SSOT: BusinessAnchor.storePackageBuyer (550만 단건 충전 시 자동 ON).
+ * GET /api/store/catalog.
+ * SSOT: BusinessAnchor.storePackageBuyer + 서버 판매가/pkg가.
  */
 export function useStorePackagePricing(): StorePackagePricingState {
   const token = useAuthStore((s) => s.token);
@@ -39,6 +50,11 @@ export function useStorePackagePricing(): StorePackagePricingState {
     void apiFetch<{
       success?: boolean;
       data?: {
+        products?: Array<{
+          productId?: string;
+          listPriceInclusive?: number | null;
+          packagePriceInclusive?: number | null;
+        }>;
         packagePricing?: {
           threshold?: number;
           isPackageBuyer?: boolean;
@@ -48,6 +64,21 @@ export function useStorePackagePricing(): StorePackagePricingState {
       .then((res) => {
         if (cancelled) return;
         const pkg = res.data?.data?.packagePricing;
+        const priceByProductId: Record<string, StoreCatalogPriceRow> = {};
+        for (const row of res.data?.data?.products || []) {
+          const id = String(row.productId || "").trim();
+          if (!id) continue;
+          priceByProductId[id] = {
+            listPriceInclusive:
+              row.listPriceInclusive == null
+                ? null
+                : Math.round(Number(row.listPriceInclusive)),
+            packagePriceInclusive:
+              row.packagePriceInclusive == null
+                ? null
+                : Math.round(Number(row.packagePriceInclusive)),
+          };
+        }
         setState({
           loading: false,
           isPackageBuyer: Boolean(pkg?.isPackageBuyer),
@@ -57,6 +88,7 @@ export function useStorePackagePricing(): StorePackagePricingState {
               Number(pkg?.threshold || STORE_PACKAGE_PREPAID_THRESHOLD),
             ),
           ),
+          priceByProductId,
         });
       })
       .catch(() => {
@@ -69,4 +101,35 @@ export function useStorePackagePricing(): StorePackagePricingState {
   }, [token]);
 
   return state;
+}
+
+/** 로컬 카탈로그 상품에 서버 단가를 입힌다. */
+export function applyStoreCatalogPrices(
+  product: StoreProduct,
+  priceByProductId: Record<string, StoreCatalogPriceRow>,
+): StoreProduct {
+  const row = priceByProductId[product.id];
+  if (!row) return product;
+  return {
+    ...product,
+    listPriceInclusive:
+      row.listPriceInclusive !== undefined
+        ? row.listPriceInclusive
+        : product.listPriceInclusive,
+    packagePriceInclusive:
+      row.packagePriceInclusive !== undefined
+        ? row.packagePriceInclusive
+        : product.packagePriceInclusive,
+  };
+}
+
+export function useStoreProductsWithServerPrices(
+  products: StoreProduct[],
+): StoreProduct[] {
+  const { priceByProductId } = useStorePackagePricing();
+  return useMemo(
+    () =>
+      products.map((p) => applyStoreCatalogPrices(p, priceByProductId)),
+    [products, priceByProductId],
+  );
 }

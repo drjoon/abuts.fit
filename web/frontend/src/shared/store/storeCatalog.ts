@@ -50,7 +50,8 @@ export type StoreCategory = {
 };
 
 /** 패키지 단가 적용: 유료 크레딧(CHARGE_PAID) 누적 충전 ≥ 이 금액. */
-export const STORE_PACKAGE_PREPAID_THRESHOLD = 5_500_000;
+export const STORE_PACKAGE_PREPAID_THRESHOLD = 5_000_000;
+
 
 const KIT_CASE_SPECS: StoreProductSpec[] = [
   { label: "포장단위", value: "1EA" },
@@ -139,12 +140,12 @@ export const STORE_CATEGORIES: StoreCategory[] = [
     products: [
       {
         id: "full-package",
-        name: "550만 패키지",
+        name: "500만 패키지",
         image: "/store/acrodent/full-package.jpg",
-        blurb: "키트 3종 + Abutment 240EA 일괄",
+        blurb: "키트 3종 + Abutment 200EA 일괄",
         alwaysUsePackagePrice: true,
         description:
-          "Initial·Check·Prosthetic Kit 각 1키트, SimpleAbutment2 120EA, SimpleHealing2 120EA. 구성 판매합 699.6만 → 패키지 판매가 550만.",
+          "Initial·Check·Prosthetic Kit 각 1키트, SimpleAbutment2 100EA, SimpleHealing2 100EA. 구성 판매합 638만 → 패키지 판매가 500만.",
         galleryImages: [
           "/store/acrodent/full-package.jpg",
           "/store/acrodent/initial-kit.jpg",
@@ -164,10 +165,10 @@ export const STORE_CATEGORIES: StoreCategory[] = [
           {
             label: "구성",
             value:
-              "Initial Kit ×1, Check Kit ×1, Prosthetic Kit ×1, SimpleAbutment2 ×120, SimpleHealing2 ×120",
+              "Initial Kit ×1, Check Kit ×1, Prosthetic Kit ×1, SimpleAbutment2 ×100, SimpleHealing2 ×100",
           },
-          { label: "구성 판매합", value: "6,996,000원" },
-          { label: "패키지 판매가", value: "5,500,000원" },
+          { label: "구성 판매합", value: "6,380,000원" },
+          { label: "패키지 판매가", value: "5,000,000원" },
           { label: "포장단위", value: "1세트" },
           { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
         ],
@@ -252,7 +253,7 @@ export const STORE_CATEGORIES: StoreCategory[] = [
         image: "/store/acrodent/kit-case.jpg",
         blurb: "키트 수납 케이스",
         description:
-          "시술 키트 수납용 케이스. 제조단가 7.7만 ×2 = 판매가 15.4만.",
+          "시술 키트 수납용 케이스. 제조단가 11만 ×2 = 판매가 22만.",
         galleryImages: ["/store/acrodent/kit-case.jpg"],
         specs: KIT_CASE_SPECS,
       },
@@ -409,11 +410,11 @@ export const STORE_SLIDES: StoreSlide[] = STORE_CATEGORIES.flatMap(
 
 /** 판매가(부가세 포함). 백엔드 storeCatalog.js 와 동기. 단품=제조×2. */
 const STORE_LIST_INCLUSIVE_PRICES: Record<string, number> = {
-  "full-package": 6_996_000,
+  "full-package": 6_380_000,
   "initial-kit": 1_100_000,
   "check-kit": 1_100_000,
   "prosthetic-kit": 1_100_000,
-  "kit-case": 154_000,
+  "kit-case": 220_000,
   "initial-pen": 154_000,
   pen: 132_000,
   cup: 22_000,
@@ -430,14 +431,27 @@ const STORE_LIST_INCLUSIVE_PRICES: Record<string, number> = {
 };
 
 /**
- * pkg 포함가 스텝: LCM(500, 11) — 500원 단위 + 부가세 10% 공급가 정수.
- * pkg = 판매가×0.8 초과 최소 배수. (예: 154,000 → 126,500)
- * 5500 배수가 판매가 초과 시 500원 단위·판매가 이하.
+ * pkg 포함가.
+ * - 3만원 미만: 100원 단위(×0.8)
+ * - 3만원 이상: 5500원 배수(부가세 포함 500원·공급가 정수)
  */
 const STORE_PACKAGE_PRICE_STEP = 5_500;
+const STORE_PACKAGE_PRICE_STEP_UNDER_30K = 100;
 
 function packageInclusiveFromList(listInclusive: number): number {
   const floor = listInclusive * 0.8;
+  if (listInclusive < 30_000) {
+    let pkg =
+      Math.ceil(floor / STORE_PACKAGE_PRICE_STEP_UNDER_30K) *
+      STORE_PACKAGE_PRICE_STEP_UNDER_30K;
+    if (pkg >= listInclusive) {
+      pkg =
+        Math.floor(floor / STORE_PACKAGE_PRICE_STEP_UNDER_30K) *
+        STORE_PACKAGE_PRICE_STEP_UNDER_30K;
+    }
+    if (pkg <= 0) return listInclusive;
+    return pkg < listInclusive ? pkg : listInclusive;
+  }
   const stepped =
     (Math.floor(floor / STORE_PACKAGE_PRICE_STEP) + 1) * STORE_PACKAGE_PRICE_STEP;
   if (stepped <= listInclusive) return stepped;
@@ -447,14 +461,14 @@ function packageInclusiveFromList(listInclusive: number): number {
 
 /** pkg가(부가세 포함). BA.storePackageBuyer 또는 풀패키지 상시. */
 const STORE_PACKAGE_INCLUSIVE_PRICES: Record<string, number> = {
-  "full-package": 5_500_000,
+  "full-package": 5_000_000,
   "initial-kit": 880_000,
   "check-kit": 880_000,
   "prosthetic-kit": 880_000,
-  "kit-case": packageInclusiveFromList(154_000),
+  "kit-case": packageInclusiveFromList(220_000),
   "initial-pen": packageInclusiveFromList(154_000),
   pen: packageInclusiveFromList(132_000),
-  cup: packageInclusiveFromList(22_000),
+  cup: 19_600,
   "initial-pin": packageInclusiveFromList(66_000),
   "check-pin": packageInclusiveFromList(66_000),
   "bone-shaper": packageInclusiveFromList(132_000),

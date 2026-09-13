@@ -103,6 +103,7 @@ import {
 import {
   adminListStoreInventory,
   adminPatchStoreInventory,
+  adminPatchStoreProductPrices,
   adminListStoreOrders,
   adminApproveStoreOrder,
   adminRejectStoreOrder,
@@ -471,6 +472,11 @@ router.patch(
   "/store/inventory/:productId",
   authorize(["admin"], { subRoles: ["owner"] }),
   adminPatchStoreInventory,
+);
+router.patch(
+  "/store/products/:productId/prices",
+  authorize(["admin"], { subRoles: ["owner"] }),
+  adminPatchStoreProductPrices,
 );
 router.get(
   "/store/package-buyer/:businessAnchorId",

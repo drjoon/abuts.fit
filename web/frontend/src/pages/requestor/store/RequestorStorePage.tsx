@@ -18,7 +18,7 @@ import {
 import { StoreProductCard } from "@/pages/requestor/store/StoreProductCard";
 import { useStoreCartStore } from "@/store/useStoreCartStore";
 import { STORE_PRICE_TAX_NOTE } from "@/shared/tax/invoiceLabels";
-import { useStorePackagePricing } from "@/shared/store/useStorePackagePricing";
+import { useStorePackagePricing, applyStoreCatalogPrices } from "@/shared/store/useStorePackagePricing";
 
 const abutment = STORE_CATEGORIES.find((c) => c.id === "abutment")!;
 const kits = STORE_CATEGORIES.find((c) => c.id === "kits")!;
@@ -63,14 +63,27 @@ function ProductRow({
 
 export default function RequestorStorePage() {
   const { kind, loading } = useRequestorBusinessAccess();
-  const { isPackageBuyer } = useStorePackagePricing();
+  const { isPackageBuyer, packageThreshold, priceByProductId } =
+    useStorePackagePricing();
   const cartQty = useStoreCartStore((s) =>
     s.lines.reduce((n, l) => n + l.qty, 0),
+  );
+
+  const abutmentProducts = abutment.products.map((p) =>
+    applyStoreCatalogPrices(p, priceByProductId),
+  );
+  const kitProducts = kits.products.map((p) =>
+    applyStoreCatalogPrices(p, priceByProductId),
+  );
+  const partProducts = parts.products.map((p) =>
+    applyStoreCatalogPrices(p, priceByProductId),
   );
 
   if (!loading && kind === "lab") {
     return <Navigate to="/dashboard/credits" replace />;
   }
+
+  const thresholdLabel = `${Math.round(packageThreshold / 10_000)}만원`;
 
   return (
     <div className="custom-scrollbar workspace-nested-scroll h-full min-h-0 overflow-auto" data-guide-tour="store_workspace">
@@ -85,7 +98,7 @@ export default function RequestorStorePage() {
               <Badge className="text-[11px] font-normal">패키지 단가</Badge>
             ) : (
               <span className="text-[11px] text-muted-foreground">
-                크레딧 550만원 충전 이력 있으면 패키지 단가 적용
+                크레딧 {thresholdLabel} 충전 이력 있으면 패키지 단가 적용
               </span>
             )}
           </div>
@@ -105,17 +118,17 @@ export default function RequestorStorePage() {
         <div className="space-y-6 sm:space-y-8">
           <ProductRow
             labels={["Abutment"]}
-            products={abutment.products}
+            products={abutmentProducts}
             isPackageBuyer={isPackageBuyer}
           />
           <ProductRow
             labels={["패키지 · Kit"]}
-            products={kits.products}
+            products={kitProducts}
             isPackageBuyer={isPackageBuyer}
           />
           <ProductRow
             labels={["단품"]}
-            products={parts.products}
+            products={partProducts}
             isPackageBuyer={isPackageBuyer}
           />
         </div>

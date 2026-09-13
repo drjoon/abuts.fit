@@ -21,6 +21,10 @@ import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusine
 import { loadBusinessMeCached } from "@/shared/components/business/settings/business/businessMeCache";
 import { getStoreProductById, resolveStoreUnitPriceInclusive } from "@/shared/store/storeCatalog";
 import {
+  applyStoreCatalogPrices,
+  useStorePackagePricing,
+} from "@/shared/store/useStorePackagePricing";
+import {
   STORE_PRICE_TAX_NOTE,
   splitInclusiveVat,
 } from "@/shared/tax/invoiceLabels";
@@ -40,7 +44,6 @@ import {
   STORE_BUSINESS_SETTINGS_PATH,
   type StoreShippingForm,
 } from "@/shared/store/storeDefaultShipping";
-import { useStorePackagePricing } from "@/shared/store/useStorePackagePricing";
 import { StorePriceDisplay } from "@/pages/requestor/store/StorePriceDisplay";
 
 export default function RequestorStoreCartPage() {
@@ -52,7 +55,7 @@ export default function RequestorStoreCartPage() {
   const setQty = useStoreCartStore((s) => s.setQty);
   const removeItem = useStoreCartStore((s) => s.removeItem);
   const clear = useStoreCartStore((s) => s.clear);
-  const { isPackageBuyer } = useStorePackagePricing();
+  const { isPackageBuyer, priceByProductId } = useStorePackagePricing();
   const [submitting, setSubmitting] = useState(false);
   const [shippingLoading, setShippingLoading] = useState(true);
   const [shipping, setShipping] = useState<StoreShippingForm>(() =>
@@ -91,8 +94,10 @@ export default function RequestorStoreCartPage() {
   const rows = useMemo(() => {
     return lines
       .map((line) => {
-        const product = getStoreProductById(line.productId);
-        if (!product || product.listPriceInclusive == null) return null;
+        const base = getStoreProductById(line.productId);
+        if (!base) return null;
+        const product = applyStoreCatalogPrices(base, priceByProductId);
+        if (product.listPriceInclusive == null) return null;
         const unit = resolveStoreUnitPriceInclusive(product, isPackageBuyer);
         if (unit == null) return null;
         const lineTotal = unit * line.qty;
@@ -106,7 +111,7 @@ export default function RequestorStoreCartPage() {
       lineTotal: number;
       split: { supply: number; vat: number; total: number };
     }>;
-  }, [lines, isPackageBuyer]);
+  }, [lines, isPackageBuyer, priceByProductId]);
 
   const goodsTotal = useMemo(
     () => rows.reduce((s, r) => s + r.lineTotal, 0),

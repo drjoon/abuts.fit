@@ -80,6 +80,18 @@ const dbReady = connect(mongoUri, {
     const readyState = mongoose.connection.readyState;
     console.log("[mongoose] readyState after connect:", readyState);
 
+    try {
+      const { refreshStorePriceOverrideCache } = await import(
+        "./utils/storeProductPricing.js"
+      );
+      await refreshStorePriceOverrideCache();
+    } catch (err) {
+      console.warn(
+        "[storeProductPricing] cache refresh failed:",
+        err?.message || err,
+      );
+    }
+
     const shouldSync =
       String(process.env.ENABLE_SYNC_INDEXES || "").toLowerCase() === "true";
     const isDev = process.env.NODE_ENV !== "production";

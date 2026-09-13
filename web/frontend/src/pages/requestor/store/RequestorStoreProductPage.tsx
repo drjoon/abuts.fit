@@ -22,15 +22,18 @@ import {
 } from "@/shared/tax/invoiceLabels";
 import { formatWonWithUnit } from "@/shared/settlement/affiliateVat";
 import { useStoreCartStore } from "@/store/useStoreCartStore";
-import { useStorePackagePricing } from "@/shared/store/useStorePackagePricing";
+import { useStorePackagePricing, applyStoreCatalogPrices } from "@/shared/store/useStorePackagePricing";
 import { StorePriceDisplay } from "@/pages/requestor/store/StorePriceDisplay";
 
 export default function RequestorStoreProductPage() {
   const { productId } = useParams<{ productId: string }>();
   const { kind, loading } = useRequestorBusinessAccess();
-  const { isPackageBuyer } = useStorePackagePricing();
+  const { isPackageBuyer, priceByProductId } = useStorePackagePricing();
   const addItem = useStoreCartStore((s) => s.addItem);
-  const product = getStoreProductById(productId);
+  const baseProduct = getStoreProductById(productId);
+  const product = baseProduct
+    ? applyStoreCatalogPrices(baseProduct, priceByProductId)
+    : undefined;
   const category = getStoreCategoryForProduct(productId);
   const galleryImages = product?.galleryImages?.length
     ? product.galleryImages
