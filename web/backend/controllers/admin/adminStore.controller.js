@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-13: GET package-buyers — 이름·사업자번호 검색 + ON 목록.
 // - 2026-09-13: DELETE 상품 — 관리자 재고 목록 숨김(hiddenProductIds).
 // - 2026-09-13: 감사로그 refId — ObjectId만 허용(클러스터 layout "default" 캐스트 오류 수정).
 // - 2026-09-13: GET action-count · 승인/거절/출고/배송완료 후 사이드바 배지 emit.
@@ -45,6 +46,30 @@ import {
   scheduleStoreAdminActionBadgeEmit,
 } from "../../utils/storeAdminBadge.util.js";
 
+const PACKAGE_BUYER_SELECT = {
+  name: 1,
+  requestorKind: 1,
+  businessNumberNormalized: 1,
+  "metadata.companyName": 1,
+  storePackageBuyer: 1,
+  storePackageBuyerAt: 1,
+};
+
+function escapeRegex(s) {
+  return String(s || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function mapPackageBuyerRow(doc) {
+  return {
+    businessAnchorId: String(doc._id),
+    name: String(doc.name || "").trim(),
+    companyName: String(doc.metadata?.companyName || "").trim(),
+    requestorKind: doc.requestorKind || null,
+    businessNumberNormalized: String(doc.businessNumberNormalized || "").trim(),
+    storePackageBuyer: Boolean(doc.storePackageBuyer),
+    storePackageBuyerAt: doc.storePackageBuyerAt || null,
+  };
+}
 async function writeAuditLog({ req, action, refType, refId, details }) {
   const actorUserId = req.user?._id;
   if (!actorUserId) return;
@@ -213,30 +238,88 @@ export async function adminPatchStoreProductPrices(req, res) {
   }
 }
 
+/** GET /api/admin/store/package-buyers?q=&limit=
+ * q 없으면 패키지 ON 목록. q 있으면 이름·상호·사업자번호·BA ID 검색.
+ */
+export async function adminListStorePackageBuyers(req, res) {
+  try {
+    const q = String(req.query.q || "").trim();
+    const limitRaw = Number(req.query.limit || 50);
+    const limit = Number.isFinite(limitRaw)
+      ? Math.min(Math.max(Math.trunc(limitRaw), 1), 200)
+      : 50;
+
+    /** @type {Record<string, unknown>} */
+    let filter;
+    // 스토어는 치과(practice)만.
+    const practiceOnly = { requestorKind: "practice" };
+    if (!q) {
+      filter = { ...practiceOnly, storePackageBuyer: true };
+    } else {
+      const escaped = escapeRegex(q);
+      const regex = new RegExp(escaped, "i");
+      const digits = q.replace(/\D/g, "");
+      const or = [
+        { name: regex },
+        { "metadata.companyName": regex },
+        { businessNumberNormalized: regex },
+      ];
+      if (digits.length >= 3) {
+        or.push({
+          businessNumberNormalized: new RegExp(escapeRegex(digits), "i"),
+        });
+      }
+      if (mongoose.isValidObjectId(q)) {
+        or.push({ _id: new mongoose.Types.ObjectId(q) });
+      }
+      filter = { ...practiceOnly, $or: or };
+    }
+
+    const docs = await BusinessAnchor.find(filter)
+      .select(PACKAGE_BUYER_SELECT)
+      .sort(
+        q
+          ? { name: 1 }
+          : { storePackageBuyerAt: -1, name: 1 },
+      )
+      .limit(limit)
+      .lean();
+
+    return res.json({
+      success: true,
+      data: {
+        q,
+        total: docs.length,
+        items: docs.map(mapPackageBuyerRow),
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message || "package_buyers_list_failed",
+    });
+  }
+}
+
 /** GET /api/admin/store/package-buyer/:businessAnchorId */
 export async function adminGetStorePackageBuyer(req, res) {
   try {
     const id = String(req.params.businessAnchorId || "").trim();
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "BA ID(ObjectId) 형식이 아닙니다. 이름·사업자번호로 검색해 주세요.",
+      });
+    }
     const doc = await BusinessAnchor.findById(id)
-      .select({
-        name: 1,
-        requestorKind: 1,
-        storePackageBuyer: 1,
-        storePackageBuyerAt: 1,
-      })
+      .select(PACKAGE_BUYER_SELECT)
       .lean();
     if (!doc) {
       return res.status(404).json({ success: false, message: "business_not_found" });
     }
     return res.json({
       success: true,
-      data: {
-        businessAnchorId: String(doc._id),
-        name: doc.name || "",
-        requestorKind: doc.requestorKind || null,
-        storePackageBuyer: Boolean(doc.storePackageBuyer),
-        storePackageBuyerAt: doc.storePackageBuyerAt || null,
-      },
+      data: mapPackageBuyerRow(doc),
     });
   } catch (error) {
     return res.status(500).json({
@@ -250,6 +333,12 @@ export async function adminGetStorePackageBuyer(req, res) {
 export async function adminPatchStorePackageBuyer(req, res) {
   try {
     const id = String(req.params.businessAnchorId || "").trim();
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "invalid_business_anchor",
+      });
+    }
     if (typeof req.body?.enabled !== "boolean") {
       return res.status(400).json({
         success: false,

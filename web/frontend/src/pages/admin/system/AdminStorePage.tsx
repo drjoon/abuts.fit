@@ -1,4 +1,7 @@
 // change-log:
+// - 2026-09-13: 패키지 검색 — 입력 즉시(150ms) 자동 조회.
+// - 2026-09-13: 패키지 탭 — 유형 열 제거 · 검색/ON 2열 배치.
+// - 2026-09-13: 패키지 탭 — 이름·사업자번호 검색 + ON 목록.
 // - 2026-09-13: 패키지 탭 — 500만 패키지 결제 시 자동 ON 안내.
 // - 2026-09-13: 미분류 상품 휴지통 — 관리자 목록에서 삭제(숨김).
 // - 2026-09-13: 상품 행마다 클러스터 제거(삭제) 아이콘.
@@ -20,13 +23,12 @@ import { useCallback, useEffect, useMemo, useState, Fragment } from "react";
 import {
   Boxes,
   GripVertical,
-  Package,
   Plus,
   RefreshCw,
-  Search,
   Trash2,
   Truck,
   Wallet,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -58,6 +60,23 @@ import {
   orderStatusBadgeVariant,
   summarizeOrderItems,
 } from "@/pages/requestor/store/storeOrderUi";
+
+type PackageBuyerRow = {
+  businessAnchorId: string;
+  name: string;
+  companyName?: string;
+  businessNumberNormalized?: string;
+  storePackageBuyer: boolean;
+  storePackageBuyerAt?: string | null;
+};
+
+function formatBizNo(raw?: string) {
+  const d = String(raw || "").replace(/\D/g, "");
+  if (d.length === 10) {
+    return `${d.slice(0, 3)}-${d.slice(3, 5)}-${d.slice(5)}`;
+  }
+  return raw || "—";
+}
 
 type InventoryRow = {
   productId: string;
@@ -340,13 +359,12 @@ export default function AdminStorePage() {
   const [editingClusterLabel, setEditingClusterLabel] = useState("");
   const [orderBusyId, setOrderBusyId] = useState<string | null>(null);
   const [orderFilter, setOrderFilter] = useState<OrderFilter>("all");
-  const [pkgBuyerId, setPkgBuyerId] = useState("");
-  const [pkgBuyer, setPkgBuyer] = useState<{
-    businessAnchorId: string;
-    name: string;
-    storePackageBuyer: boolean;
-  } | null>(null);
+  const [pkgBuyerQuery, setPkgBuyerQuery] = useState("");
+  const [pkgSearchRows, setPkgSearchRows] = useState<PackageBuyerRow[]>([]);
+  const [pkgSearchActive, setPkgSearchActive] = useState(false);
+  const [pkgOnRows, setPkgOnRows] = useState<PackageBuyerRow[]>([]);
   const [pkgBuyerBusy, setPkgBuyerBusy] = useState(false);
+  const [pkgToggleId, setPkgToggleId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setBusy(true);
@@ -883,40 +901,68 @@ export default function AdminStorePage() {
     }
   }
 
-  async function loadPackageBuyer() {
-    const id = pkgBuyerId.trim();
-    if (!id) {
-      toast.error("사업자 BA ID를 입력해 주세요.");
-      return;
-    }
+  async function loadPackageBuyerOnList() {
     setPkgBuyerBusy(true);
     try {
       const res = await apiFetch<{
         success: boolean;
-        data?: {
-          businessAnchorId: string;
-          name: string;
-          storePackageBuyer: boolean;
-        };
+        data?: { items?: PackageBuyerRow[] };
         message?: string;
-      }>({ path: `/api/admin/store/package-buyer/${encodeURIComponent(id)}` });
-      if (!res.ok || !res.data?.success || !res.data.data) {
-        toast.error(res.data?.message || "조회 실패");
-        setPkgBuyer(null);
+      }>({ path: "/api/admin/store/package-buyers?limit=200" });
+      if (!res.ok || !res.data?.success) {
+        toast.error(res.data?.message || "ON 목록 조회 실패");
         return;
       }
-      setPkgBuyer(res.data.data);
+      setPkgOnRows(res.data.data?.items || []);
     } catch {
-      toast.error("패키지 구매자 조회 실패");
-      setPkgBuyer(null);
+      toast.error("패키지 ON 목록 조회 실패");
     } finally {
       setPkgBuyerBusy(false);
     }
   }
 
-  async function togglePackageBuyer(enabled: boolean) {
-    if (!pkgBuyer) return;
-    setPkgBuyerBusy(true);
+  useEffect(() => {
+    const q = pkgBuyerQuery.trim();
+    if (!q) {
+      setPkgSearchActive(false);
+      setPkgSearchRows([]);
+      return;
+    }
+    setPkgSearchActive(true);
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const res = await apiFetch<{
+            success: boolean;
+            data?: { items?: PackageBuyerRow[] };
+            message?: string;
+          }>({
+            path: `/api/admin/store/package-buyers?q=${encodeURIComponent(q)}&limit=50`,
+          });
+          if (cancelled) return;
+          if (!res.ok || !res.data?.success) {
+            setPkgSearchRows([]);
+            return;
+          }
+          setPkgSearchRows(res.data.data?.items || []);
+        } catch {
+          if (!cancelled) setPkgSearchRows([]);
+        }
+      })();
+    }, 150);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [pkgBuyerQuery]);
+
+  async function togglePackageBuyerRow(
+    row: PackageBuyerRow,
+    enabled: boolean,
+  ) {
+    const id = row.businessAnchorId;
+    setPkgToggleId(id);
     try {
       const res = await apiFetch<{
         success: boolean;
@@ -924,10 +970,11 @@ export default function AdminStorePage() {
           businessAnchorId: string;
           name: string;
           storePackageBuyer: boolean;
+          storePackageBuyerAt?: string | null;
         };
         message?: string;
       }>({
-        path: `/api/admin/store/package-buyer/${encodeURIComponent(pkgBuyer.businessAnchorId)}`,
+        path: `/api/admin/store/package-buyer/${encodeURIComponent(id)}`,
         method: "PATCH",
         jsonBody: { enabled },
       });
@@ -935,14 +982,36 @@ export default function AdminStorePage() {
         toast.error(res.data?.message || "저장 실패");
         return;
       }
-      setPkgBuyer(res.data.data);
+      const next: PackageBuyerRow = {
+        ...row,
+        storePackageBuyer: Boolean(res.data.data.storePackageBuyer),
+        storePackageBuyerAt: res.data.data.storePackageBuyerAt ?? null,
+      };
+      setPkgSearchRows((prev) =>
+        prev.map((r) =>
+          r.businessAnchorId === id ? { ...r, ...next } : r,
+        ),
+      );
+      setPkgOnRows((prev) => {
+        if (enabled) {
+          const without = prev.filter((r) => r.businessAnchorId !== id);
+          return [next, ...without];
+        }
+        return prev.filter((r) => r.businessAnchorId !== id);
+      });
       toast.success(enabled ? "패키지 단가 ON" : "패키지 단가 OFF");
     } catch {
       toast.error("저장 실패");
     } finally {
-      setPkgBuyerBusy(false);
+      setPkgToggleId(null);
     }
   }
+
+  useEffect(() => {
+    if (tab !== "package") return;
+    void loadPackageBuyerOnList();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- tab enter only
+  }, [tab]);
 
   function renderInventoryPriceRow(
     row: InventoryRow,
@@ -1652,76 +1721,200 @@ export default function AdminStorePage() {
             <CreditSectionHeader
               icon={Wallet}
               title="패키지 구매자"
-              description="BusinessAnchor.storePackageBuyer. 500만 패키지(full-package) 결제 확정 시 자동 ON. 여기서 수동 토글할 수 있습니다."
+              description="500만 패키지(full-package) 결제 확정 시 자동 ON. 이름·사업자번호로 찾아 수동 토글할 수 있습니다."
             />
-            <CreditPanel className="space-y-4 p-4">
-              <div className="flex flex-wrap items-end gap-2">
+            <div className="grid gap-4 lg:grid-cols-2">
+              <CreditPanel className="space-y-4 p-4">
                 <div className="space-y-1">
                   <label className="text-[11px] text-muted-foreground">
-                    사업자 BA ID
+                    사업자 검색
                   </label>
-                  <Input
-                    className="h-9 w-80 font-mono text-xs"
-                    value={pkgBuyerId}
-                    onChange={(e) => setPkgBuyerId(e.target.value)}
-                    placeholder="ObjectId"
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") void loadPackageBuyer();
-                    }}
-                  />
-                </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={pkgBuyerBusy}
-                  onClick={() => void loadPackageBuyer()}
-                >
-                  <Search className="mr-1.5 h-3.5 w-3.5" />
-                  조회
-                </Button>
-              </div>
-
-              {pkgBuyer ? (
-                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/70 bg-muted/20 px-4 py-3">
-                  <div className="min-w-0 space-y-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Package className="h-4 w-4 text-muted-foreground" />
-                      <span className="font-medium">
-                        {pkgBuyer.name || "(이름 없음)"}
-                      </span>
-                      <Badge
-                        variant={
-                          pkgBuyer.storePackageBuyer ? "default" : "outline"
-                        }
-                      >
-                        {pkgBuyer.storePackageBuyer
-                          ? "패키지 단가 ON"
-                          : "OFF"}
-                      </Badge>
-                    </div>
-                    <p className="font-mono text-[11px] text-muted-foreground">
-                      {pkgBuyer.businessAnchorId}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">적용</span>
-                    <Switch
-                      checked={pkgBuyer.storePackageBuyer}
-                      disabled={pkgBuyerBusy}
-                      onCheckedChange={(checked) =>
-                        void togglePackageBuyer(checked)
-                      }
+                  <div className="relative">
+                    <Input
+                      className="h-9 pr-9 text-sm"
+                      value={pkgBuyerQuery}
+                      onChange={(e) => setPkgBuyerQuery(e.target.value)}
+                      placeholder="이름 · 상호 · 사업자번호 · BA ID"
+                      autoComplete="off"
                     />
+                    {pkgBuyerQuery ? (
+                      <button
+                        type="button"
+                        className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                        aria-label="검색어 지우기"
+                        onClick={() => setPkgBuyerQuery("")}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    ) : null}
                   </div>
                 </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  BA ID를 조회하면 패키지 단가 적용 여부를 확인하고 바꿀 수
-                  있습니다.
-                </p>
-              )}
-            </CreditPanel>
+
+                {!pkgSearchActive ? (
+                  <p className="text-sm text-muted-foreground">
+                    입력하는 즉시 검색됩니다.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    <h3 className="text-sm font-medium">
+                      검색 결과
+                      <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                        {pkgSearchRows.length}건
+                      </span>
+                    </h3>
+                    {pkgSearchRows.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">
+                        일치하는 사업자가 없습니다.
+                      </p>
+                    ) : (
+                      <div className="overflow-x-auto rounded-xl border border-border/70">
+                        <table className="w-full text-left text-sm">
+                          <thead className="border-b bg-muted/40 text-[11px] text-muted-foreground">
+                            <tr>
+                              <th className="px-3 py-2 font-medium">사업자</th>
+                              <th className="px-3 py-2 font-medium">
+                                사업자번호
+                              </th>
+                              <th className="px-3 py-2 font-medium text-right">
+                                패키지 단가
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {pkgSearchRows.map((row) => (
+                              <tr
+                                key={row.businessAnchorId}
+                                className="border-b border-border/50 last:border-0"
+                              >
+                                <td className="px-3 py-2.5">
+                                  <div className="font-medium">
+                                    {row.name ||
+                                      row.companyName ||
+                                      "(이름 없음)"}
+                                  </div>
+                                  <div className="font-mono text-[10px] text-muted-foreground">
+                                    {row.businessAnchorId}
+                                  </div>
+                                </td>
+                                <td className="px-3 py-2.5 font-mono text-xs">
+                                  {formatBizNo(row.businessNumberNormalized)}
+                                </td>
+                                <td className="px-3 py-2.5">
+                                  <div className="flex items-center justify-end gap-2">
+                                    <Badge
+                                      variant={
+                                        row.storePackageBuyer
+                                          ? "default"
+                                          : "outline"
+                                      }
+                                      className="text-[10px]"
+                                    >
+                                      {row.storePackageBuyer ? "ON" : "OFF"}
+                                    </Badge>
+                                    <Switch
+                                      checked={row.storePackageBuyer}
+                                      disabled={
+                                        pkgToggleId === row.businessAnchorId
+                                      }
+                                      onCheckedChange={(checked) =>
+                                        void togglePackageBuyerRow(
+                                          row,
+                                          checked,
+                                        )
+                                      }
+                                    />
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </CreditPanel>
+
+              <CreditPanel className="space-y-3 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-sm font-medium">
+                    패키지 단가 ON
+                    <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                      {pkgOnRows.length}곳
+                    </span>
+                  </h3>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="h-7"
+                    disabled={pkgBuyerBusy}
+                    onClick={() => void loadPackageBuyerOnList()}
+                  >
+                    <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+                    새로고침
+                  </Button>
+                </div>
+                {pkgOnRows.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    현재 패키지 단가가 켜진 사업자가 없습니다.
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto rounded-xl border border-border/70">
+                    <table className="w-full text-left text-sm">
+                      <thead className="border-b bg-muted/40 text-[11px] text-muted-foreground">
+                        <tr>
+                          <th className="px-3 py-2 font-medium">사업자</th>
+                          <th className="px-3 py-2 font-medium">적용 시각</th>
+                          <th className="px-3 py-2 font-medium text-right">
+                            적용
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pkgOnRows.map((row) => (
+                          <tr
+                            key={row.businessAnchorId}
+                            className="border-b border-border/50 last:border-0"
+                          >
+                            <td className="px-3 py-2.5">
+                              <div className="font-medium">
+                                {row.name ||
+                                  row.companyName ||
+                                  "(이름 없음)"}
+                              </div>
+                              <div className="text-[11px] text-muted-foreground">
+                                {formatBizNo(row.businessNumberNormalized)}
+                              </div>
+                            </td>
+                            <td className="px-3 py-2.5 text-xs text-muted-foreground">
+                              {row.storePackageBuyerAt
+                                ? formatKstDateTimeToKo(
+                                    row.storePackageBuyerAt,
+                                  )
+                                : "—"}
+                            </td>
+                            <td className="px-3 py-2.5">
+                              <div className="flex justify-end">
+                                <Switch
+                                  checked
+                                  disabled={
+                                    pkgToggleId === row.businessAnchorId
+                                  }
+                                  onCheckedChange={(checked) =>
+                                    void togglePackageBuyerRow(row, checked)
+                                  }
+                                />
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CreditPanel>
+            </div>
           </TabsContent>
         </Tabs>
       </div>

@@ -111,6 +111,7 @@ import {
   adminRejectStoreOrder,
   adminShipStoreOrder,
   adminDeliverStoreOrder,
+  adminListStorePackageBuyers,
   adminGetStorePackageBuyer,
   adminPatchStorePackageBuyer,
   adminGetStoreProductClusters,
@@ -498,6 +499,11 @@ router.delete(
   "/store/products/:productId",
   authorize(["admin"], { subRoles: ["owner"] }),
   adminHideStoreProduct,
+);
+router.get(
+  "/store/package-buyers",
+  authorize(["admin"]),
+  adminListStorePackageBuyers,
 );
 router.get(
   "/store/package-buyer/:businessAnchorId",
