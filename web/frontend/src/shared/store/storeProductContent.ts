@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-14: 풀패키지 Surgical+Prosthetic×1 + Abutment 4종×72(판매합 663.52만).
 // - 2026-09-14: 제조단가표 동기 — Hex/NonHex 명칭·Surgical pkg 88·Prosthetic GS×3/Driver S/M/L·단품 제조가.
 // - 2026-09-13: Surgical Kit·SA2 Hex/D-cut·SH2 12종·풀패키지 ×150·Kit Case 2종 동기.
 // - 2026-09-13: 상단 hero와 동일 gallery-1만 제외, 나머지 상세 이미지 복구.
@@ -671,9 +672,9 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
     ],
   },
   "full-package": {
-    blurb: "키트 2종 + Abutment 300EA 일괄",
+    blurb: "키트 2종 + Abutment 288EA",
     description:
-      "Surgical·Prosthetic Kit 각 1키트, SimpleAbutment-Hex 150EA, SimpleHealing-Hex 150EA. 구성 판매합 682만 → 패키지 판매가 500만.",
+      "Surgical·Prosthetic Kit 각 1키트, SimpleAbutment·Healing Hex/NonHex 각 72EA. 구성 판매합 663.52만 → 패키지 판매가 500만.",
     blocks: [
       { type: "heading", text: "500만 패키지 구성" },
       {
@@ -681,8 +682,10 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
         items: [
           "Surgical Kit ×1",
           "Prosthetic Kit ×1",
-          "SimpleAbutment-Hex ×150",
-          "SimpleHealing-Hex ×150",
+          "SimpleAbutment-Hex ×72",
+          "SimpleHealing-Hex ×72",
+          "SimpleAbutment-NonHex ×72",
+          "SimpleHealing-NonHex ×72",
         ],
       },
       {
@@ -708,6 +711,16 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
         type: "image",
         src: "/store/content/full-package/simple-healing-2.jpg",
         alt: "SimpleHealing-Hex",
+      },
+      {
+        type: "image",
+        src: "/store/content/simple-abutment/size-grid.jpg",
+        alt: "SimpleAbutment-NonHex",
+      },
+      {
+        type: "image",
+        src: "/store/content/simple-healing/size-grid.jpg",
+        alt: "SimpleHealing-NonHex",
       },
     ],
   },

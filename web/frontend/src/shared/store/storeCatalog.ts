@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-14: 판매가표 재동기 — 풀패키지 Surgical+Prosthetic×1 + Abutment 4종×72(판매합 663.52만)·패키지 판매가 500만.
 // - 2026-09-14: 제조단가표 동기 — Surgical pkg 88만. Prosthetic 케이스 12.1·Gingival 4.4·Hex 3.3·Torque 8.8×2. Hex/NonHex 명칭. Prosthetic GS×3·Driver S/M/L.
 // - 2026-09-13: Surgical Kit 통합(Initial+Check). 판매 132/88만·pkg 99/66. 단품 제조×2(Pen 6.6·Gingival 3.96·Torque 9.9). 풀패키지 구성합 682만·SA2/SH2×150.
 // - 2026-09-13: Kit Case Surgical/Prosthetic 2종(제조 13.2·11만)×2.
@@ -176,31 +177,34 @@ export const STORE_CATEGORIES: StoreCategory[] = [
         id: "full-package",
         name: "500만 패키지",
         image: "/store/acrodent/full-package.jpg",
-        blurb: "키트 2종 + Abutment 300EA 일괄",
+        blurb: "키트 2종 + Abutment 288EA",
         alwaysUsePackagePrice: true,
         description:
-          "Surgical·Prosthetic Kit 각 1키트, SimpleAbutment-Hex 150EA, SimpleHealing-Hex 150EA. 구성 판매합 682만 → 패키지 판매가 500만.",
+          "Surgical·Prosthetic Kit 각 1키트, SimpleAbutment·Healing Hex/NonHex 각 72EA. 구성 판매합 663.52만 → 패키지 판매가 500만.",
         galleryImages: [
           "/store/acrodent/full-package.jpg",
           "/store/acrodent/initial-kit.jpg",
           "/store/acrodent/prosthetic-kit.jpg",
           "/store/acrodent/simple-abutment-2.jpg",
           "/store/acrodent/simple-healing-2.jpg",
+          "/store/acrodent/simple-abutment.jpg",
+          "/store/acrodent/simple-healing.jpg",
         ],
         contentImages: [
           "/store/detail/initial-kit-1.jpg",
-          "/store/detail/check-kit-1.jpg",
           "/store/detail/prosthetic-kit-1.jpg",
           "/store/detail/simple-abutment-2-1.jpg",
           "/store/detail/simple-healing-2-1.jpg",
+          "/store/detail/simple-abutment-1.jpg",
+          "/store/detail/simple-healing-1.jpg",
         ],
         specs: [
           {
             label: "구성",
             value:
-              "Surgical Kit ×1, Prosthetic Kit ×1, SimpleAbutment-Hex ×150, SimpleHealing-Hex ×150",
+              "Surgical Kit ×1, Prosthetic Kit ×1, SimpleAbutment-Hex ×72, SimpleHealing-Hex ×72, SimpleAbutment-NonHex ×72, SimpleHealing-NonHex ×72",
           },
-          { label: "구성 판매합", value: "6,820,000원" },
+          { label: "구성 판매합", value: "6,635,200원" },
           { label: "패키지 판매가", value: "5,000,000원" },
           { label: "포장단위", value: "1세트" },
           { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
@@ -418,7 +422,7 @@ export const STORE_SLIDES: StoreSlide[] = STORE_CATEGORIES.flatMap(
 
 /** 판매가(부가세 포함). 백엔드 storeCatalog.js 와 동기. 단품=제조×2. */
 const STORE_LIST_INCLUSIVE_PRICES: Record<string, number> = {
-  "full-package": 6_820_000,
+  "full-package": 6_635_200,
   "surgical-kit": 1_320_000,
   "prosthetic-kit": 880_000,
   "kit-case": 242_000, // 카드 최저가(Prosthetic). 구매 SKU는 옵션 id.

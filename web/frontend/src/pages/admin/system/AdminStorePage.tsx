@@ -181,7 +181,7 @@ const DEFAULT_STORE_PRODUCT_CLUSTERS: StoreProductCluster[] = [
     label: "500만 패키지",
     parentProductId: "full-package",
     childProductIds: [],
-    compositionHint: "키트 2종 + SA-Hex·SH-Hex ×150",
+    compositionHint: "키트 2종 + Abutment 4종 ×72",
   },
   {
     id: "surgical-kit",

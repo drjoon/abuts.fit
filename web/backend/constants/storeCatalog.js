@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-14: 판매가표 재동기 — 풀패키지 Surgical+Prosthetic×1 + Abutment 4종×72(판매합 663.52만)·패키지 판매가 500만.
 // - 2026-09-14: 제조단가표 동기 — Surgical pkg 88만. Prosthetic 케이스 12.1·Gingival 4.4·Hex 3.3·Torque 8.8×2. 명칭 Hex/NonHex. Prosthetic 구성 GS×3·Driver S/M/L.
 // - 2026-09-13: pkg 자격=500만 패키지(full-package) 구매(크레딧 충전 트리거 제거).
 // - 2026-09-13: Surgical Kit 통합. 레거시 Initial/Check SKU는 판매·재고 목록에서 제외(이름만 유지).
@@ -64,7 +65,7 @@ export function packageInclusiveFromList(listInclusive) {
  * 신규 판매·재고 SSOT. 레거시 SKU는 NAMES만 유지(과거 주문 표시).
  */
 export const STORE_PRODUCT_INCLUSIVE_PRICES = Object.freeze({
-  "full-package": 6_820_000, // 132+88 + SA-Hex/SH-Hex×150×1.54
+  "full-package": 6_635_200, // Surgical 132 + Prosthetic 88 + Abutment 4종×72×1.54
   "surgical-kit": 1_320_000,
   "prosthetic-kit": 880_000,
   "kit-case-surgical": 264_000, // mfg 13.2만 ×2

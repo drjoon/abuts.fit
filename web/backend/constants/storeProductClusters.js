@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-14: 풀패키지 Surgical+Prosthetic×1 + Abutment 4종×72.
 // - 2026-09-14: 풀패키지 힌트 SA-Hex/SH-Hex · Abutment 표기 Hex/NonHex.
 // - 2026-09-13: Surgical Kit 클러스터 통합. 풀패키지 SA2·SH2 ×150.
 // - 2026-09-13: Kit Case 3종을 각 키트 클러스터에 배치.
@@ -25,7 +26,7 @@ export const STORE_DEFAULT_PRODUCT_CLUSTERS = Object.freeze([
     label: "500만 패키지",
     parentProductId: "full-package",
     childProductIds: Object.freeze([]),
-    compositionHint: "키트 2종 + SA-Hex·SH-Hex ×150",
+    compositionHint: "키트 2종 + Abutment 4종 ×72",
   }),
   Object.freeze({
     id: "surgical-kit",
