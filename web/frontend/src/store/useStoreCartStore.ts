@@ -22,7 +22,7 @@ type StoreCartState = {
 };
 
 /** 크레딧 충전·커스텀어벗 주문과 키/스토어를 공유하지 않음. */
-export const STORE_CART_STORAGE_KEY = "abuts_store_cart_v5";
+export const STORE_CART_STORAGE_KEY = "abuts_store_cart_v6";
 
 export const useStoreCartStore = create<StoreCartState>()(
   persist(

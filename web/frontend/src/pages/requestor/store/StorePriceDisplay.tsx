@@ -12,7 +12,10 @@ import {
 type StorePriceDisplayProps = {
   product: Pick<
     StoreProduct,
-    "listPriceInclusive" | "packagePriceInclusive" | "alwaysUsePackagePrice"
+    | "listPriceInclusive"
+    | "packagePriceInclusive"
+    | "alwaysUsePackagePrice"
+    | "priceFrom"
   >;
   isPackageBuyer: boolean;
   className?: string;
@@ -37,6 +40,7 @@ export function StorePriceDisplay({
     (isPackageBuyer || Boolean(product.alwaysUsePackagePrice)) &&
     product.packagePriceInclusive != null &&
     product.packagePriceInclusive !== list;
+  const fromSuffix = product.priceFrom ? "~" : "";
 
   const priceClass =
     size === "lg"
@@ -51,6 +55,7 @@ export function StorePriceDisplay({
     return (
       <span className={cn(priceClass, className)}>
         {formatWonWithUnit(list)}
+        {fromSuffix}
       </span>
     );
   }
@@ -62,8 +67,14 @@ export function StorePriceDisplay({
         className,
       )}
     >
-      <span className={strikeClass}>{formatWonWithUnit(list)}</span>
-      <span className={priceClass}>{formatWonWithUnit(unit)}</span>
+      <span className={strikeClass}>
+        {formatWonWithUnit(list)}
+        {fromSuffix}
+      </span>
+      <span className={priceClass}>
+        {formatWonWithUnit(unit)}
+        {fromSuffix}
+      </span>
     </span>
   );
 }

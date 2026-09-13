@@ -10,6 +10,16 @@ import { cloneDefaultStoreProductClusters } from "../constants/storeProductClust
 
 const LAYOUT_KEY = "default";
 
+/** 레거시 단일 kit-case → 3종 옵션 SKU. */
+function migrateLegacyKitCaseInClusters(clusters) {
+  if (!Array.isArray(clusters) || !clusters.length) return clusters;
+  const hasLegacy = clusters.some((c) =>
+    (c?.childProductIds || []).includes("kit-case"),
+  );
+  if (!hasLegacy) return clusters;
+  return cloneDefaultStoreProductClusters();
+}
+
 function normalizeCluster(raw) {
   const id = String(raw?.id || "").trim();
   const label = String(raw?.label || "").trim();
@@ -100,6 +110,18 @@ export function validateStoreProductClusters(clusters) {
 export async function getOrSeedStoreProductClusterLayout() {
   let doc = await StoreProductClusterLayout.findOne({ key: LAYOUT_KEY }).lean();
   if (doc?.clusters?.length) {
+    const migrated = migrateLegacyKitCaseInClusters(doc.clusters);
+    if (migrated !== doc.clusters) {
+      doc = await StoreProductClusterLayout.findOneAndUpdate(
+        { key: LAYOUT_KEY },
+        { $set: { clusters: migrated } },
+        { new: true },
+      ).lean();
+      return {
+        key: LAYOUT_KEY,
+        clusters: (doc?.clusters || migrated).map((c) => normalizeCluster(c)),
+      };
+    }
     return {
       key: LAYOUT_KEY,
       clusters: doc.clusters.map((c) => normalizeCluster(c)),

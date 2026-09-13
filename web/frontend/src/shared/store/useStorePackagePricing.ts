@@ -137,17 +137,36 @@ export function applyStoreCatalogPrices(
   priceByProductId: Record<string, StoreCatalogPriceRow>,
 ): StoreProduct {
   const row = priceByProductId[product.id];
-  if (!row) return product;
-  return {
+  const options = product.options?.map((opt) => {
+    const optRow = priceByProductId[opt.id];
+    if (!optRow) return opt;
+    return {
+      ...opt,
+      listPriceInclusive:
+        optRow.listPriceInclusive !== undefined
+          ? optRow.listPriceInclusive
+          : opt.listPriceInclusive,
+      packagePriceInclusive:
+        optRow.packagePriceInclusive !== undefined
+          ? optRow.packagePriceInclusive
+          : opt.packagePriceInclusive,
+    };
+  });
+  const next: StoreProduct = {
     ...product,
+    ...(options ? { options } : {}),
+  };
+  if (!row) return next;
+  return {
+    ...next,
     listPriceInclusive:
       row.listPriceInclusive !== undefined
         ? row.listPriceInclusive
-        : product.listPriceInclusive,
+        : next.listPriceInclusive,
     packagePriceInclusive:
       row.packagePriceInclusive !== undefined
         ? row.packagePriceInclusive
-        : product.packagePriceInclusive,
+        : next.packagePriceInclusive,
   };
 }
 

@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-09-13: Kit Case 3종 옵션(Initial 26.4만 · Check/Prosthetic 22만).
+// - 2026-09-13: 상세 본문은 storeProductContent.ts (acrodent OCR 텍스트+순수 이미지).
 // - 2026-09-13: 판매가표 동기 — 키트 88/96/88만·pkg 66/88/66, 단품 제조×2, 풀패키지 구성합 580만.
 // - 2026-09-13: pkg=판매가×0.8 초과·5500원 배수(부가세 포함 500원·공급가 정수).
 // - 2026-09-13: 제조단가표 갱신(케이스 7.7·Pen 6.6·셰이퍼 6.6·Hex 2.2·Torque 8.8).
@@ -7,6 +9,7 @@
 // - 2026-09-13: 첨 가격표 판매가·pkg가. 키트 SKU + 어벗 EA. 충전≥550만 pkg.
 // - 2026-08-23: 상품 blurb·description 문구 축약.
 // related files:
+// - web/frontend/src/shared/store/storeProductContent.ts
 // - web/frontend/src/pages/requestor/store/RequestorStorePage.tsx
 // - web/frontend/src/pages/requestor/store/RequestorStoreProductPage.tsx
 // - web/frontend/src/features/landing/LandingStoreShowcase.tsx
@@ -15,6 +18,14 @@
 export type StoreProductSpec = {
   label: string;
   value: string;
+};
+
+/** 필수 선택 옵션. 장바구니·주문에는 option.id(구매 SKU)가 담긴다. */
+export type StoreProductOption = {
+  id: string;
+  label: string;
+  listPriceInclusive?: number | null;
+  packagePriceInclusive?: number | null;
 };
 
 export type StoreProduct = {
@@ -42,6 +53,10 @@ export type StoreProduct = {
   packagePriceInclusive?: number | null;
   /** true면 충전 이력과 무관하게 pkg가(또는 패키지 판매가) 적용. */
   alwaysUsePackagePrice?: boolean;
+  /** 구매 전 필수 옵션(Kit Case 3종 등). */
+  options?: StoreProductOption[];
+  /** 카드 가격을 최저가~ 로 표시. */
+  priceFrom?: boolean;
 };
 
 export type StoreCategory = {
@@ -57,6 +72,28 @@ export const STORE_PACKAGE_PREPAID_THRESHOLD = 5_000_000;
 const KIT_CASE_SPECS: StoreProductSpec[] = [
   { label: "포장단위", value: "1EA" },
   { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
+];
+
+/** Kit Case 단품 — Initial(제조 13.2만) / Check·Prosthetic(제조 11만) ×2. */
+export const KIT_CASE_OPTIONS: StoreProductOption[] = [
+  {
+    id: "kit-case-initial",
+    label: "Initial Kit Case",
+    listPriceInclusive: 264_000,
+    packagePriceInclusive: 214_500,
+  },
+  {
+    id: "kit-case-check",
+    label: "Check Kit Case",
+    listPriceInclusive: 220_000,
+    packagePriceInclusive: 181_500,
+  },
+  {
+    id: "kit-case-prosthetic",
+    label: "Prosthetic Kit Case",
+    listPriceInclusive: 220_000,
+    packagePriceInclusive: 181_500,
+  },
 ];
 
 /**
@@ -149,7 +186,6 @@ export const STORE_CATEGORIES: StoreCategory[] = [
           "Initial·Check·Prosthetic Kit 각 1키트, SimpleAbutment2 100EA, SimpleHealing2 100EA. 구성 판매합 580만 → 패키지 판매가 500만.",
         galleryImages: [
           "/store/acrodent/full-package.jpg",
-          "/store/acrodent/initial-kit.jpg",
           "/store/acrodent/check-kit.jpg",
           "/store/acrodent/prosthetic-kit.jpg",
           "/store/acrodent/simple-abutment-2.jpg",
@@ -252,11 +288,13 @@ export const STORE_CATEGORIES: StoreCategory[] = [
         id: "kit-case",
         name: "Kit Case",
         image: "/store/acrodent/kit-case.jpg",
-        blurb: "키트 수납 케이스",
+        blurb: "Initial / Check / Prosthetic · 3종",
         description:
-          "시술 키트 수납용 케이스. 제조단가 11만 ×2 = 판매가 22만.",
+          "시술 키트 수납용 케이스. Initial(제조 13.2만)×2 · Check·Prosthetic(제조 11만)×2.",
         galleryImages: ["/store/acrodent/kit-case.jpg"],
         specs: KIT_CASE_SPECS,
+        options: KIT_CASE_OPTIONS,
+        priceFrom: true,
       },
       {
         id: "initial-pen",
@@ -416,7 +454,10 @@ const STORE_LIST_INCLUSIVE_PRICES: Record<string, number> = {
   "initial-kit": 880_000,
   "check-kit": 960_000,
   "prosthetic-kit": 880_000,
-  "kit-case": 220_000,
+  "kit-case": 220_000, // 카드 최저가(Check/Prosthetic). 구매 SKU는 옵션 id.
+  "kit-case-initial": 264_000,
+  "kit-case-check": 220_000,
+  "kit-case-prosthetic": 220_000,
   "initial-pen": 121_000,
   pen: 110_000,
   cup: 11_000,
@@ -468,6 +509,9 @@ const STORE_PACKAGE_INCLUSIVE_PRICES: Record<string, number> = {
   "check-kit": 880_000,
   "prosthetic-kit": 660_000,
   "kit-case": packageInclusiveFromList(220_000),
+  "kit-case-initial": packageInclusiveFromList(264_000),
+  "kit-case-check": packageInclusiveFromList(220_000),
+  "kit-case-prosthetic": packageInclusiveFromList(220_000),
   "initial-pen": packageInclusiveFromList(121_000),
   pen: packageInclusiveFromList(110_000),
   cup: packageInclusiveFromList(11_000),
@@ -490,6 +534,9 @@ const STORE_IMAGE_SCALES: Record<string, number> = {
   "check-kit": 1.18,
   "prosthetic-kit": 1.18,
   "kit-case": 1.22,
+  "kit-case-initial": 1.22,
+  "kit-case-check": 1.22,
+  "kit-case-prosthetic": 1.22,
   "initial-pen": 2.05,
   pen: 1.12,
   cup: 1.4,
@@ -502,8 +549,20 @@ const STORE_IMAGE_SCALES: Record<string, number> = {
 };
 
 function withStoreTaxDefaults(product: StoreProduct): StoreProduct {
+  const options = product.options?.map((opt) => ({
+    ...opt,
+    listPriceInclusive:
+      opt.listPriceInclusive !== undefined
+        ? opt.listPriceInclusive
+        : (STORE_LIST_INCLUSIVE_PRICES[opt.id] ?? null),
+    packagePriceInclusive:
+      opt.packagePriceInclusive !== undefined
+        ? opt.packagePriceInclusive
+        : (STORE_PACKAGE_INCLUSIVE_PRICES[opt.id] ?? null),
+  }));
   return {
     ...product,
+    ...(options ? { options } : {}),
     imageScale: product.imageScale ?? STORE_IMAGE_SCALES[product.id] ?? 1,
     taxType: product.taxType ?? "과세",
     listPriceInclusive:
@@ -517,6 +576,35 @@ function withStoreTaxDefaults(product: StoreProduct): StoreProduct {
   };
 }
 
+/** 옵션 SKU → 카탈로그 부모(상세 페이지 id). */
+const STORE_OPTION_PARENT_BY_ID: Record<string, string> = Object.fromEntries(
+  STORE_CATEGORIES.flatMap((category) =>
+    category.products.flatMap((product) =>
+      (product.options ?? []).map((opt) => [opt.id, product.id] as const),
+    ),
+  ),
+);
+
+/** 장바구니·주문용 옵션 SKU (목록 카드에는 부모만 노출). */
+const STORE_OPTION_PRODUCTS: StoreProduct[] = STORE_CATEGORIES.flatMap(
+  (category) =>
+    category.products.flatMap((product) =>
+      (product.options ?? []).map((opt) =>
+        withStoreTaxDefaults({
+          id: opt.id,
+          name: `${product.name} · ${opt.label.replace(/ Kit Case$/, "")}`,
+          image: product.image,
+          blurb: opt.label,
+          description: product.description,
+          galleryImages: product.galleryImages,
+          specs: product.specs,
+          listPriceInclusive: opt.listPriceInclusive,
+          packagePriceInclusive: opt.packagePriceInclusive,
+        }),
+      ),
+    ),
+);
+
 export const STORE_PRODUCTS: StoreProduct[] = STORE_CATEGORIES.flatMap(
   (category) => category.products.map(withStoreTaxDefaults),
 );
@@ -525,15 +613,26 @@ for (const category of STORE_CATEGORIES) {
   category.products = category.products.map(withStoreTaxDefaults);
 }
 
+export function getStoreOptionParentId(
+  productId: string | undefined,
+): string | undefined {
+  if (!productId) return undefined;
+  return STORE_OPTION_PARENT_BY_ID[productId];
+}
+
 export function getStoreProductById(productId: string | undefined) {
   if (!productId) return undefined;
-  return STORE_PRODUCTS.find((product) => product.id === productId);
+  return (
+    STORE_PRODUCTS.find((product) => product.id === productId) ??
+    STORE_OPTION_PRODUCTS.find((product) => product.id === productId)
+  );
 }
 
 export function getStoreCategoryForProduct(productId: string | undefined) {
   if (!productId) return undefined;
+  const displayId = getStoreOptionParentId(productId) ?? productId;
   return STORE_CATEGORIES.find((category) =>
-    category.products.some((product) => product.id === productId),
+    category.products.some((product) => product.id === displayId),
   );
 }
 

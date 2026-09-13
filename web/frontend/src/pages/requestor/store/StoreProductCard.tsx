@@ -18,6 +18,8 @@ export function StoreProductCard({
   const scale = product.imageScale ?? 1;
   const inclusive = product.listPriceInclusive;
   const addItem = useStoreCartStore((s) => s.addItem);
+  const requiresOption = Boolean(product.options?.length);
+  const detailHref = `/dashboard/store/${product.id}`;
 
   return (
     <article
@@ -28,7 +30,7 @@ export function StoreProductCard({
       )}
     >
       <Link
-        to={`/dashboard/store/${product.id}`}
+        to={detailHref}
         className="relative w-44 shrink-0 overflow-hidden bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:aspect-[5/4] sm:w-full"
       >
         <div
@@ -50,7 +52,7 @@ export function StoreProductCard({
 
       <div className="flex min-w-0 flex-1 flex-col">
         <Link
-          to={`/dashboard/store/${product.id}`}
+          to={detailHref}
           className="flex min-w-0 flex-1 flex-col justify-center gap-1 p-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:border-t sm:border-border/60"
         >
           <h3 className="truncate text-sm font-semibold tracking-tight text-foreground">
@@ -68,21 +70,36 @@ export function StoreProductCard({
           ) : null}
         </Link>
         <div className="border-t border-border/60 px-3 py-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-8 w-full text-xs"
-            disabled={inclusive == null}
-            onClick={(e) => {
-              e.preventDefault();
-              addItem(product.id, 1);
-              toast.success("장바구니에 담았습니다.");
-            }}
-          >
-            <span className="sm:hidden">담기</span>
-            <span className="hidden sm:inline">장바구니 담기</span>
-          </Button>
+          {requiresOption ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 w-full text-xs"
+              asChild
+            >
+              <Link to={detailHref}>
+                <span className="sm:hidden">옵션</span>
+                <span className="hidden sm:inline">옵션 선택</span>
+              </Link>
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 w-full text-xs"
+              disabled={inclusive == null}
+              onClick={(e) => {
+                e.preventDefault();
+                addItem(product.id, 1);
+                toast.success("장바구니에 담았습니다.");
+              }}
+            >
+              <span className="sm:hidden">담기</span>
+              <span className="hidden sm:inline">장바구니 담기</span>
+            </Button>
+          )}
         </div>
       </div>
     </article>

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-13: Kit Case 3종(Initial 13.2·Check/Prosthetic 11만)×2.
 // - 2026-09-13: 판매가표 동기 — 키트 88/96/88만·pkg 66/88/66, 단품 제조×2(Pen 5.5·Cup 0.55·Pin 2.75·Shaper 3.85·Hex 1.65).
 // - 2026-09-13: 500만 패키지·임계. 케이스 제조 11만×2. SA/SH 패키지 각 100EA.
 // - 2026-09-13: pkg=판매가×0.8 초과·5500원 배수(부가세 포함 500원·공급가 정수).
@@ -59,7 +60,9 @@ export const STORE_PRODUCT_INCLUSIVE_PRICES = Object.freeze({
   "initial-kit": 880_000,
   "check-kit": 960_000,
   "prosthetic-kit": 880_000,
-  "kit-case": 220_000, // mfg 11만 ×2 (Check/Prosthetic 케이스)
+  "kit-case-initial": 264_000, // mfg 13.2만 ×2
+  "kit-case-check": 220_000, // mfg 11만 ×2
+  "kit-case-prosthetic": 220_000, // mfg 11만 ×2
   "initial-pen": 121_000, // mfg Pen 5.5+Cup 0.55 = 6.05만 ×2
   pen: 110_000, // mfg 5.5만 ×2
   cup: 11_000, // mfg 0.55만 ×2
@@ -81,7 +84,9 @@ export const STORE_PRODUCT_PACKAGE_INCLUSIVE_PRICES = Object.freeze({
   "initial-kit": 660_000,
   "check-kit": 880_000,
   "prosthetic-kit": 660_000,
-  "kit-case": packageInclusiveFromList(220_000),
+  "kit-case-initial": packageInclusiveFromList(264_000),
+  "kit-case-check": packageInclusiveFromList(220_000),
+  "kit-case-prosthetic": packageInclusiveFromList(220_000),
   "initial-pen": packageInclusiveFromList(121_000),
   pen: packageInclusiveFromList(110_000),
   cup: packageInclusiveFromList(11_000),
@@ -107,6 +112,10 @@ export const STORE_PRODUCT_NAMES = Object.freeze({
   "initial-kit": "Initial Kit",
   "check-kit": "Check Kit",
   "prosthetic-kit": "Prosthetic Kit",
+  "kit-case-initial": "Kit Case · Initial",
+  "kit-case-check": "Kit Case · Check",
+  "kit-case-prosthetic": "Kit Case · Prosthetic",
+  /** 레거시 주문 표시용(신규 주문 불가). */
   "kit-case": "Kit Case",
   "initial-pen": "InitialPen",
   pen: "Pen",
