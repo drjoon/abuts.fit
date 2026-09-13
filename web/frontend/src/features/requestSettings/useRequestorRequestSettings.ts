@@ -5,6 +5,7 @@
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // change-log:
+// - 2026-09-13: 아노 미설정 게이트 — 모달 저장 시 anodizing도 함께 저장. openGateModal이 현재 SW 유지.
 // - 2026-09-08: ExoCAD 사용 여부 먼저 → 예일 때만 버전 필수. 아니오=비ExoCAD(기존값 유지·없으면 3Shape).
 // - 2026-09-03: ExoCAD 모달에서 아노다이징 분리(툴바 토글 전용).
 // - 2026-09-03: 설정 모달 ExoCAD 전용 — SW 선택 제거, 저장 시 ExoCAD 고정.
@@ -236,9 +237,21 @@ export function useRequestorRequestSettings(
         gatePendingRef.current = next;
         setGatePendingFiles(next);
       }
-      openModalForValue("", { force: true });
+      // SW가 이미 있어도 아노만 미설정일 수 있음 — 빈 값으로 덮지 않음
+      const current = String(
+        designSoftwareValue || draftDesignSoftware || "",
+      ).trim();
+      openModalForValue(current, {
+        force: true,
+        exoCadVersion: current === "ExoCAD" ? exoCadVersion : null,
+      });
     },
-    [openModalForValue],
+    [
+      designSoftwareValue,
+      draftDesignSoftware,
+      exoCadVersion,
+      openModalForValue,
+    ],
   );
 
   // 서버 설정 로드 + 미설정 시 진입 강제
@@ -467,22 +480,31 @@ export function useRequestorRequestSettings(
   }, []);
 
   const handleSaveDesignSoftware = useCallback(async () => {
-    if (usesExoCad === null) {
-      toast({
-        title: "선택이 필요합니다",
-        description: "ExoCAD 사용 여부를 선택해주세요.",
-        variant: "destructive",
-      });
-      return;
-    }
+    const swAlreadyComplete = !isIncomplete(
+      String(designSoftwareValue || draftDesignSoftware || "").trim(),
+      exoCadVersion,
+    );
+    // 아노만 미설정 게이트: ExoCAD 재선택 없이 아노만 저장
+    const anodizingOnlyGate = swAlreadyComplete && !hasAnodizingSetting;
 
-    if (usesExoCad && !exoCadVersion) {
-      toast({
-        title: "ExoCAD 버전이 필요합니다",
-        description: "3.0 이하 여부를 선택해주세요.",
-        variant: "destructive",
-      });
-      return;
+    if (!anodizingOnlyGate) {
+      if (usesExoCad === null) {
+        toast({
+          title: "선택이 필요합니다",
+          description: "ExoCAD 사용 여부를 선택해주세요.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (usesExoCad && !exoCadVersion) {
+        toast({
+          title: "ExoCAD 버전이 필요합니다",
+          description: "3.0 이하 여부를 선택해주세요.",
+          variant: "destructive",
+        });
+        return;
+      }
     }
 
     if (!token) {
@@ -498,24 +520,40 @@ export function useRequestorRequestSettings(
       designSoftwareValue || draftDesignSoftware || "",
     ).trim();
     // 비ExoCAD: 기존 비ExoCAD 값 유지, ExoCAD/미설정이면 3Shape
-    const designSoftware = usesExoCad
-      ? "ExoCAD"
-      : current && current !== "ExoCAD"
-        ? current
-        : "3Shape";
-    const nextExoVersion = usesExoCad ? exoCadVersion : null;
+    const designSoftware = anodizingOnlyGate
+      ? current
+      : usesExoCad
+        ? "ExoCAD"
+        : current && current !== "ExoCAD"
+          ? current
+          : "3Shape";
+    const nextExoVersion = anodizingOnlyGate
+      ? designSoftware === "ExoCAD"
+        ? exoCadVersion
+        : null
+      : usesExoCad
+        ? exoCadVersion
+        : null;
+    const shouldPersistAnodizing = !hasAnodizingSetting;
 
     setDesignSoftwareSaving(true);
     try {
       // 개인 User SSOT. 대표자만 BA 템플릿(신규 가입 시드)도 갱신.
-      // 아노다이징은 툴바 토글에서 별도 저장.
-      const savePayload: Record<string, string | null> = {
-        requestorDesignSoftware: designSoftware,
-        requestorExoCadVersion: nextExoVersion,
-      };
-      if (canEditBusinessDesignSoftware) {
-        savePayload.designSoftware = designSoftware;
-        savePayload.exoCadVersion = nextExoVersion;
+      // 아노 미설정 게이트에서는 모달에서 선택한 ON/OFF도 함께 저장.
+      const savePayload: Record<string, string | boolean | null> = {};
+      if (!anodizingOnlyGate) {
+        savePayload.requestorDesignSoftware = designSoftware;
+        savePayload.requestorExoCadVersion = nextExoVersion;
+        if (canEditBusinessDesignSoftware) {
+          savePayload.designSoftware = designSoftware;
+          savePayload.exoCadVersion = nextExoVersion;
+        }
+      }
+      if (shouldPersistAnodizing) {
+        savePayload.requestorAnodizingEnabled = anodizingEnabled;
+        if (canEditBusinessAnodizing) {
+          savePayload.anodizingEnabled = anodizingEnabled;
+        }
       }
 
       const res = await apiFetch<{
@@ -540,16 +578,33 @@ export function useRequestorRequestSettings(
         return;
       }
 
-      setDesignSoftwareValue(designSoftware);
-      setUsesExoCad(usesExoCad);
-      setExoCadVersion(nextExoVersion);
-      setNeedsBusinessDesignSoftwareBootstrap(false);
+      if (!anodizingOnlyGate) {
+        setDesignSoftwareValue(designSoftware);
+        setUsesExoCad(designSoftware === "ExoCAD");
+        setExoCadVersion(nextExoVersion);
+        setNeedsBusinessDesignSoftwareBootstrap(false);
+      }
+      if (shouldPersistAnodizing) {
+        anodizingTouchedRef.current = true;
+        setHasAnodizingSetting(true);
+        setNeedsBusinessAnodizingBootstrap(false);
+        onDefaultsChangeRef.current?.({
+          ...(anodizingOnlyGate
+            ? {}
+            : {
+                designSoftware,
+                exoCadVersion: nextExoVersion,
+              }),
+          anodizingEnabled,
+        });
+      } else if (!anodizingOnlyGate) {
+        onDefaultsChangeRef.current?.({
+          designSoftware,
+          exoCadVersion: nextExoVersion,
+        });
+      }
       setForceRequired(false);
       setModalOpen(false);
-      onDefaultsChangeRef.current?.({
-        designSoftware,
-        exoCadVersion: nextExoVersion,
-      });
 
       const pending = gatePendingRef.current;
       clearGatePending();
@@ -557,23 +612,39 @@ export function useRequestorRequestSettings(
         onGateCompleteRef.current?.(pending);
       }
 
+      const toastDescription = anodizingOnlyGate
+        ? anodizingEnabled
+          ? "아노다이징 ON으로 저장되었습니다."
+          : "아노다이징 OFF로 저장되었습니다."
+        : shouldPersistAnodizing
+          ? usesExoCad
+            ? nextExoVersion === "le_3_0"
+              ? "ExoCAD 3.0 이하 · 아노다이징이 저장되었습니다."
+              : "ExoCAD 3.2 이상 · 아노다이징이 저장되었습니다."
+            : "디자인 SW · 아노다이징이 저장되었습니다."
+          : usesExoCad
+            ? nextExoVersion === "le_3_0"
+              ? "ExoCAD 3.0 이하로 저장되었습니다."
+              : "ExoCAD 3.2 이상으로 저장되었습니다."
+            : "ExoCAD가 아닌 다른 소프트웨어로 저장되었습니다.";
+
       toast({
         title: "저장 완료",
-        description: usesExoCad
-          ? nextExoVersion === "le_3_0"
-            ? "ExoCAD 3.0 이하로 저장되었습니다."
-            : "ExoCAD 3.2 이상으로 저장되었습니다."
-          : "ExoCAD가 아닌 다른 소프트웨어로 저장되었습니다.",
+        description: toastDescription,
       });
     } finally {
       setDesignSoftwareSaving(false);
     }
   }, [
+    anodizingEnabled,
+    canEditBusinessAnodizing,
     canEditBusinessDesignSoftware,
     clearGatePending,
     designSoftwareValue,
     draftDesignSoftware,
     exoCadVersion,
+    hasAnodizingSetting,
+    isIncomplete,
     toast,
     token,
     usesExoCad,
@@ -689,6 +760,8 @@ export function useRequestorRequestSettings(
   );
 
   const settingsComplete = !isIncomplete(designSoftwareValue, exoCadVersion);
+  /** 디자인 SW + 아노다이징(명시 저장) 모두 준비됨 */
+  const settingsReady = settingsComplete && hasAnodizingSetting;
 
   return {
     loaded,
@@ -706,6 +779,7 @@ export function useRequestorRequestSettings(
     designSoftwareSaving,
     hasAnodizingSetting,
     settingsComplete,
+    settingsReady,
     modalOpen,
     forceRequired,
     gatePendingFiles,

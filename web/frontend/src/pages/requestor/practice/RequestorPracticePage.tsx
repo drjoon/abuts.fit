@@ -30,6 +30,7 @@
 // - web/frontend/src/shared/practice/labReceiveCalendarViewMode.ts
 // - web/frontend/src/shared/practice/labReceiveCalendarCursorYmd.ts
 // - web/backend/controllers/users/user.controller.js
+// - 2026-09-13: 커스텀어벗 STL 첫 업로드·작업시작 — 디자인SW·아노 미설정 시 게이트 모달.
 // - 2026-09-13: 캘린더/목록 커서(YMD) localStorage 복원 — 릴로드 시 직전 위치 유지.
 // - 2026-09-12: 상세 드롭·클립 — 3D/이미지 의뢰 파일 append·삭제(X).
 // - 2026-09-12: 기공소 리메이크 — 원본 리드로 기본 도착일 · POST /received/remake.
@@ -684,11 +685,24 @@ export function RequestorPracticeReceivePage({
   const isMobile = useIsMobile();
   const { period, setPeriod } = usePeriodStore();
   const { toast } = useToast();
+  const designSettingsGateTransferRef = useRef<ReceivedPracticeTransfer | null>(
+    null,
+  );
+  const beginDesignUploadWithFilesRef = useRef<
+    (
+      transfer: ReceivedPracticeTransfer,
+      files: File[],
+      options?: { skipOversizedGuard?: boolean; skipSettingsGate?: boolean },
+    ) => Promise<DesignUploadStartResult>
+  >(async () => "error");
   const {
     anodizingEnabled,
+    setAnodizingEnabled,
     anodizingSaving,
     designSoftwareSaving,
     settingsComplete,
+    settingsReady,
+    hasAnodizingSetting,
     retentionGrooveDefault,
     saveRetentionGroove,
     modalOpen: requestSettingsModalOpen,
@@ -698,12 +712,22 @@ export function RequestorPracticeReceivePage({
     setExoCadVersion,
     forceRequired: requestSettingsForceRequired,
     openDesignSoftwareModal,
+    openGateModal,
     handleSaveDesignSoftware,
     handleToggleAnodizing,
     handleModalOpenChange: handleRequestSettingsModalOpenChange,
   } = useRequestorRequestSettings({
     enabled: true,
     forceOnEntry: true,
+    onGateComplete: (files) => {
+      const transfer = designSettingsGateTransferRef.current;
+      designSettingsGateTransferRef.current = null;
+      if (!transfer || !files.length) return;
+      // 방금 저장한 설정이 다음 렌더 전이라 settingsReady가 stale — 재게이트 방지
+      void beginDesignUploadWithFilesRef.current(transfer, files, {
+        skipSettingsGate: true,
+      });
+    },
   });
   const { rooms, clearUnreadForTransferIds } = useChatRooms();
   const {
@@ -2852,8 +2876,8 @@ export function RequestorPracticeReceivePage({
     async (transfer: ReceivedPracticeTransfer) => {
       if (!token) return false;
 
-      if (!settingsComplete) {
-        openDesignSoftwareModal();
+      if (!settingsReady) {
+        openGateModal();
         toast({
           title: "설정이 필요합니다",
           description:
@@ -3169,10 +3193,10 @@ export function RequestorPracticeReceivePage({
       loadCalendarTransfers,
       mergeProductionRelatedRequestIds,
       navigate,
-      openDesignSoftwareModal,
+      openGateModal,
       openPtxCaCreditConfirm,
       pickRelatedRequestIdsFromPayload,
-      settingsComplete,
+      settingsReady,
       toast,
       token,
     ],
@@ -5134,7 +5158,7 @@ export function RequestorPracticeReceivePage({
     async (
       transfer: ReceivedPracticeTransfer,
       files: File[],
-      options?: { skipOversizedGuard?: boolean },
+      options?: { skipOversizedGuard?: boolean; skipSettingsGate?: boolean },
     ): Promise<DesignUploadStartResult> => {
       if (!token) return "error";
       if (isGuideTourDemoTransfer(transfer)) {
@@ -5151,6 +5175,19 @@ export function RequestorPracticeReceivePage({
 
       const allFiles = Array.from(files || []).filter(Boolean);
       if (!allFiles.length) return "error";
+
+      // 첫 CA 디자인 STL 업로드 전 — 디자인SW·아노다이징 미설정이면 설정 후 이어서 업로드
+      if (!options?.skipSettingsGate && !settingsReady) {
+        designSettingsGateTransferRef.current = transfer;
+        openGateModal(allFiles);
+        toast({
+          title: "설정이 필요합니다",
+          description:
+            "디자인 소프트웨어와 아노다이징을 먼저 설정한 뒤 업로드해 주세요.",
+          variant: "destructive",
+        });
+        return "gated";
+      }
 
       const stlFiles = allFiles.filter(
         (file) => getPracticeTransferFileExtension(file.name) === ".stl",
@@ -5296,11 +5333,15 @@ export function RequestorPracticeReceivePage({
       designConfirmBusy,
       implantCatalog,
       openAbutmentDesignConfirmQueue,
+      openGateModal,
+      settingsReady,
       toast,
       token,
       workUploadBusy,
     ],
   );
+
+  beginDesignUploadWithFilesRef.current = beginDesignUploadWithFiles;
 
   const clearDesignUploadGate = useCallback(() => {
     setDesignUploadGate(null);
@@ -7265,6 +7306,10 @@ export function RequestorPracticeReceivePage({
         onUsesExoCadChange={setUsesExoCad}
         exoCadVersion={exoCadVersion}
         onExoCadVersionChange={setExoCadVersion}
+        showAnodizing={!hasAnodizingSetting}
+        anodizingEnabled={anodizingEnabled}
+        onAnodizingEnabledChange={setAnodizingEnabled}
+        showDesignSoftware={!settingsComplete || hasAnodizingSetting}
         saving={designSoftwareSaving}
         onSave={() => {
           void handleSaveDesignSoftware();

@@ -288,6 +288,7 @@ const NewRequestPageContent = () => {
     anodizingSaving,
     designSoftwareSaving,
     settingsComplete,
+    hasAnodizingSetting,
     modalOpen: designSoftwareModalOpen,
     usesExoCad,
     setUsesExoCad,
@@ -1754,6 +1755,10 @@ const NewRequestPageContent = () => {
           onUsesExoCadChange={setUsesExoCad}
           exoCadVersion={exoCadVersion}
           onExoCadVersionChange={setExoCadVersion}
+          showAnodizing={!hasAnodizingSetting}
+          anodizingEnabled={anodizingEnabled}
+          onAnodizingEnabledChange={setAnodizingEnabled}
+          showDesignSoftware={!settingsComplete || hasAnodizingSetting}
           saving={designSoftwareSaving}
           onSave={() => {
             void handleSaveDesignSoftware();
