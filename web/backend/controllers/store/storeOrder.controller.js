@@ -3,7 +3,8 @@
 // - 2026-09-13: 기공물 동봉=어벗츠 CA 제작 포함 + 1주일 이내(발송·도착).
 // - 2026-09-13: 기공물 동봉=1주일 이내 치과도착일. catalog에 nextClinicArrivalYmd.
 // - 2026-09-13: 배송 모드 lab_bundle|direct (10만원 이하 동봉/유료 빠른직송).
-// - 2026-09-13: 판매가·pkg가. 충전≥550만 패키지 구매자 단가.
+// - 2026-09-13: pkg 자격=500만 패키지 구매(동일 장바구니·결제 확정).
+// - 2026-09-13: 판매가·pkg가. BA.storePackageBuyer 단가.
 // - 2026-08-23: 주문 생성+선수금 결제 단일 트랜잭션(이중 commit 제거).
 // - 2026-08-23: 스토어 신규 주문은 선수금만. 계좌이체 입금 경로 제거.
 // - 2026-08-23: 배송지·풀필먼트·장바구니 합치기 금지 가드.
@@ -36,7 +37,10 @@ import {
   applyStoreShippingToOrderTotals,
 } from "../../constants/storeShipping.js";
 import { normalizeRequestorKind } from "../../utils/requestorCapabilities.js";
-import { resolveStorePackageBuyer } from "../../utils/storePackagePricing.js";
+import {
+  resolveStorePackageBuyer,
+  storeItemsIncludeFullPackage,
+} from "../../utils/storePackagePricing.js";
 import { resolveStoreLabBundleEligibility } from "../../utils/storeLabBundleShipping.js";
 import {
   cancelStoreOrderByUser,
@@ -302,9 +306,11 @@ export async function createStoreOrder(req, res) {
       resolveStorePackageBuyer(businessAnchorId),
       resolveStoreLabBundleEligibility(businessAnchorId),
     ]);
-    const built = buildOrderItems(req.body?.items, {
-      isPackageBuyer: packageBuyer.isPackageBuyer,
-    });
+    // 500만 패키지와 동시 담으면 같은 주문부터 pkg 단가.
+    const isPackageBuyer =
+      packageBuyer.isPackageBuyer ||
+      storeItemsIncludeFullPackage(req.body?.items);
+    const built = buildOrderItems(req.body?.items, { isPackageBuyer });
     const requestedShippingMode =
       req.body?.shippingMode ?? req.body?.shipping?.mode;
     if (

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-13: 상단 안내 — 500만 패키지 구매 시 pkg 가격.
 // - 2026-09-13: 기공물 동봉 안내를 스토어 메인에서 제거하고 장바구니로 이동.
 // - 2026-09-13: 3행 레이아웃 — Abutment4 / Kit4 / 단품.
 // - 2026-09-13: 패키지·키트·단품 섹션 분리. 풀패키지 상단 노출.
@@ -64,8 +65,7 @@ function ProductRow({
 
 export default function RequestorStorePage() {
   const { kind, loading } = useRequestorBusinessAccess();
-  const { isPackageBuyer, packageThreshold, priceByProductId } =
-    useStorePackagePricing();
+  const { isPackageBuyer, priceByProductId } = useStorePackagePricing();
   const cartQty = useStoreCartStore((s) =>
     s.lines.reduce((n, l) => n + l.qty, 0),
   );
@@ -84,8 +84,6 @@ export default function RequestorStorePage() {
     return <Navigate to="/dashboard/credits" replace />;
   }
 
-  const thresholdLabel = `${Math.round(packageThreshold / 10_000)}만원`;
-
   return (
     <div className="custom-scrollbar workspace-nested-scroll h-full min-h-0 overflow-auto" data-guide-tour="store_workspace">
       <div className="mx-auto w-full max-w-6xl space-y-6 sm:space-y-8">
@@ -99,7 +97,7 @@ export default function RequestorStorePage() {
               <Badge className="text-[11px] font-normal">패키지 단가</Badge>
             ) : (
               <span className="text-[11px] text-muted-foreground">
-                크레딧 {thresholdLabel} 충전 이력 있으면 패키지 단가 적용
+                500만원 패키지 구매 시 pkg 가격 적용
               </span>
             )}
           </div>

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-13: full-package 결제 확정 시 BA.storePackageBuyer ON.
 // - 2026-09-13: 입금확정·선수금결제·취소 후 관리자 스토어 배지 emit(ownSession).
 // - 2026-09-06: REV_STORE_TAXABLE amount=부가세 포함가.
 // - 2026-09-06: 스토어 취소 = STORE_SALE 원본 유지 + REFUND(잔고 복구). 제조사 삭형과 분리.
@@ -26,6 +27,7 @@ import {
   listStoreProductIds,
   STORE_INVENTORY_DEFAULT_QTY,
 } from "../constants/storeCatalog.js";
+import { enableStorePackageBuyerIfEligible } from "../utils/storePackagePricing.js";
 import {
   postGeneralLedgerJournal,
   getJournalsByIdempotencyKeys,
@@ -552,6 +554,12 @@ export async function finalizeStoreSale({
       session,
     });
 
+    await enableStorePackageBuyerIfEligible({
+      businessAnchorId: order.businessAnchorId,
+      items: order.items,
+      session,
+    });
+
     // 건별 과세 draft 없음 — 월말 customerMonthlyInvoice 합산.
     finalized = true;
   };
@@ -722,6 +730,12 @@ export async function payStoreOrderWithCredit({
           refId: order._id,
         },
       ],
+      session,
+    });
+
+    await enableStorePackageBuyerIfEligible({
+      businessAnchorId: order.businessAnchorId,
+      items: order.items,
       session,
     });
 

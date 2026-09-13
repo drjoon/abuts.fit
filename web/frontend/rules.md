@@ -478,7 +478,7 @@ Notes:
 
 - 부가세(VAT) / 면세 UI 정책(강제, 루트 `rules.md` §2.3) — 겸영 이중 체계:
   - **고객·기공 경로(면세)**: 가격·충전·약관에서 "VAT 별도 / 부가세 포함 / VAT 10%" 문구 금지. 증빙은 **계산서**.
-  - **스토어 기성품(과세)**: 고객 표시는 **부가세 포함가** + `과세 · 부가세 포함`. **BA.`storePackageBuyer`**이면 판매가 취소선 + pkg가(550만 단건 충전 시 자동 ON). `RequestorStorePage` / cart / orders. 헬퍼: `shared/tax/invoiceLabels.ts` · `shared/store/storeCatalog.ts`.
+  - **스토어 기성품(과세)**: 고객 표시는 **부가세 포함가** + `과세 · 부가세 포함`. **BA.`storePackageBuyer`**이면 판매가 취소선 + pkg가(500만 패키지 `full-package` 결제 확정 시 자동 ON). `RequestorStorePage` / cart / orders. 헬퍼: `shared/tax/invoiceLabels.ts` · `shared/store/storeCatalog.ts`.
   - **관리자 스토어**: 재고·입금승인·출고(운송장)·배송완료 `/dashboard/store-admin` (`AdminStorePage`). 매출은 전액 어벗츠(`REV_STORE_TAXABLE`).
   - **과세 지급**: 어벗츠↔제조사, 어벗츠↔딜러사, 어벗츠↔개발운영사. 지급 UI에 공급가·부가세·합계와 **세금계산서** 표시.
   - **면세**: 치과·기공소·어벗츠(기공·커스텀어벗 고객 경로). 공급가·**계산서**.

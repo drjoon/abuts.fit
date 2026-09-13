@@ -1,13 +1,18 @@
 // change-log:
+// - 2026-09-13: 500만 패키지(full-package) 결제 확정 시 자동 ON(크레딧 충전 트리거 제거).
 // - 2026-09-13: BA.storePackageBuyer 플래그 SSOT. 충전≥550만 시 자동 ON.
 // - 2026-09-13: 유료 크레딧(CHARGE_PAID) 누적 ≥550만 → 스토어 pkg 구매자.
 // related files:
 // - web/backend/constants/storeCatalog.js
 // - web/backend/models/businessAnchor.model.js
+// - web/backend/services/storeSale.service.js
 // - web/backend/controllers/store/storeOrder.controller.js
 import mongoose from "mongoose";
 import BusinessAnchor from "../models/businessAnchor.model.js";
-import { STORE_PACKAGE_PREPAID_THRESHOLD } from "../constants/storeCatalog.js";
+import {
+  STORE_FULL_PACKAGE_PRODUCT_ID,
+  STORE_PACKAGE_PREPAID_THRESHOLD,
+} from "../constants/storeCatalog.js";
 
 function toObjectId(id) {
   if (!id) return null;
@@ -15,6 +20,16 @@ function toObjectId(id) {
   const s = String(id).trim();
   if (!mongoose.Types.ObjectId.isValid(s)) return null;
   return new mongoose.Types.ObjectId(s);
+}
+
+/** 주문·장바구니에 500만 패키지(full-package)가 포함되는지. */
+export function storeItemsIncludeFullPackage(items) {
+  if (!Array.isArray(items)) return false;
+  return items.some((it) => {
+    const productId = String(it?.productId || "").trim();
+    const qty = Math.max(0, Math.round(Number(it?.qty || 0)));
+    return productId === STORE_FULL_PACKAGE_PRODUCT_ID && qty > 0;
+  });
 }
 
 /**
@@ -49,26 +64,25 @@ export async function resolveStorePackageBuyer(businessAnchorId) {
 }
 
 /**
- * 550만 이상 충전(단건) 또는 관리자 수동 → 패키지 구매자 ON(멱등).
+ * 500만 패키지(full-package) 결제 확정 또는 관리자 수동 → 패키지 구매자 ON(멱등).
  * @param {{
  *   businessAnchorId: string|import("mongoose").Types.ObjectId,
- *   chargeAmount?: number,
+ *   items?: Array<{ productId?: string, qty?: number }>|null,
  *   force?: boolean,
  *   session?: import("mongoose").ClientSession|null,
  * }} args
  */
 export async function enableStorePackageBuyerIfEligible({
   businessAnchorId,
-  chargeAmount = 0,
+  items = null,
   force = false,
   session = null,
 }) {
   const oid = toObjectId(businessAnchorId);
   if (!oid) return { updated: false, isPackageBuyer: false };
 
-  const amount = Math.max(0, Math.round(Number(chargeAmount) || 0));
   const eligible =
-    force === true || amount >= STORE_PACKAGE_PREPAID_THRESHOLD;
+    force === true || storeItemsIncludeFullPackage(items);
   if (!eligible) {
     const cur = await BusinessAnchor.findById(oid)
       .select({ storePackageBuyer: 1 })

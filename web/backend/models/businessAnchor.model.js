@@ -143,7 +143,7 @@ const businessAnchorSchema = new mongoose.Schema(
       index: true,
     },
     /**
-     * 스토어 패키지(pkg) 단가 적용. 550만 이상 유료 크레딧 충전 시(또는 관리자) true.
+     * 스토어 패키지(pkg) 단가 적용. 500만 패키지(full-package) 결제 확정 시(또는 관리자) true.
      * 장부 누적 조회 대신 BA 플래그 SSOT — 과거 충전 이력 의존 금지.
      * related: web/backend/utils/storePackagePricing.js · storeCatalog.js
      */

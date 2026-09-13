@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-13: 패키지 탭 — 500만 패키지 결제 시 자동 ON 안내.
 // - 2026-09-13: 미분류 상품 휴지통 — 관리자 목록에서 삭제(숨김).
 // - 2026-09-13: 상품 행마다 클러스터 제거(삭제) 아이콘.
 // - 2026-09-13: 주문 목록 기준 사이드바 스토어 액션 배지 로컬 동기화.
@@ -36,7 +37,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { apiFetch } from "@/shared/api/apiClient";
 import { formatKstDateTimeToKo } from "@/shared/date/kst";
 import { formatWonWithUnit } from "@/shared/settlement/affiliateVat";
-import { STORE_PACKAGE_PREPAID_THRESHOLD } from "@/shared/store/storeCatalog";
 import {
   STORE_FULFILLMENT_STATUS_LABEL,
   STORE_REVENUE_OWNER_ROLE,
@@ -1652,7 +1652,7 @@ export default function AdminStorePage() {
             <CreditSectionHeader
               icon={Wallet}
               title="패키지 구매자"
-              description={`BusinessAnchor.storePackageBuyer. 단건 충전 ${formatWonWithUnit(STORE_PACKAGE_PREPAID_THRESHOLD)} 이상이면 자동 ON. 여기서 수동 토글할 수 있습니다.`}
+              description="BusinessAnchor.storePackageBuyer. 500만 패키지(full-package) 결제 확정 시 자동 ON. 여기서 수동 토글할 수 있습니다."
             />
             <CreditPanel className="space-y-4 p-4">
               <div className="flex flex-wrap items-end gap-2">

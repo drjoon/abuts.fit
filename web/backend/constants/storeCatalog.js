@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-13: pkg 자격=500만 패키지(full-package) 구매(크레딧 충전 트리거 제거).
 // - 2026-09-13: Surgical Kit 통합. 레거시 Initial/Check SKU는 판매·재고 목록에서 제외(이름만 유지).
 // - 2026-09-13: Surgical Kit 통합(Initial+Check). 판매 132/88만·pkg 99/66. 단품 제조×2(Pen 6.6·Gingival 3.96·Torque 9.9). 풀패키지 구성합 682만·SA2/SH2×150.
 // - 2026-09-13: Kit Case 3종(Initial 13.2·Check/Prosthetic 11만)×2.
@@ -13,7 +14,10 @@
 // - web/backend/models/storeProductPrice.model.js
 // - rules.md §2.3
 
-/** 패키지(pkg) 단가: BA.storePackageBuyer 또는 단건 충전≥이 금액 시 플래그 ON. */
+/** 500만 패키지 상품 ID. 결제 확정 시 BA.storePackageBuyer ON. */
+export const STORE_FULL_PACKAGE_PRODUCT_ID = "full-package";
+
+/** 500만 패키지 판매가(부가세 포함). 카탈로그·안내 카피용. */
 export const STORE_PACKAGE_PREPAID_THRESHOLD = 5_000_000;
 
 /**
@@ -101,7 +105,7 @@ export const STORE_PRODUCT_PACKAGE_INCLUSIVE_PRICES = Object.freeze({
 
 /** 풀패키지는 누구나 패키지 판매가(500만)로 결제. */
 export const STORE_ALWAYS_PACKAGE_PRICE_IDS = Object.freeze(
-  new Set(["full-package"]),
+  new Set([STORE_FULL_PACKAGE_PRODUCT_ID]),
 );
 
 export const STORE_PRODUCT_NAMES = Object.freeze({

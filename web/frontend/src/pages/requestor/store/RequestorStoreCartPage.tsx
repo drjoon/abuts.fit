@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-13: 500만 패키지 동시 담기 시 장바구니 pkg 단가.
 // - 2026-09-13: 기공물 동봉=어벗츠 CA 제작 포함·1주일 이내만.
 // - 2026-09-13: 배송 옵션(기공물 동봉 / 빠른 직송) + 동봉 안내 카피.
 // - 2026-08-23: 배송지 = 설정·사업자 주소(읽기 전용). 변경은 설정 CTA.
@@ -21,7 +22,7 @@ import { Input } from "@/components/ui/input";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import { loadBusinessMeCached } from "@/shared/components/business/settings/business/businessMeCache";
-import { getStoreProductById, resolveStoreUnitPriceInclusive } from "@/shared/store/storeCatalog";
+import { getStoreProductById, resolveStoreUnitPriceInclusive, STORE_FULL_PACKAGE_PRODUCT_ID } from "@/shared/store/storeCatalog";
 import {
   applyStoreCatalogPrices,
   useStorePackagePricing,
@@ -114,6 +115,14 @@ export default function RequestorStoreCartPage() {
   const shippingReady = isStoreShippingReady(shipping);
   const addressLine = formatStoreShippingAddressLine(shipping);
 
+  // 500만 패키지와 동시 담으면 서버 주문 생성과 동일하게 pkg 단가.
+  const effectivePackageBuyer =
+    isPackageBuyer ||
+    lines.some(
+      (l) =>
+        String(l.productId) === STORE_FULL_PACKAGE_PRODUCT_ID && l.qty > 0,
+    );
+
   const rows = useMemo(() => {
     return lines
       .map((line) => {
@@ -121,7 +130,10 @@ export default function RequestorStoreCartPage() {
         if (!base) return null;
         const product = applyStoreCatalogPrices(base, priceByProductId);
         if (product.listPriceInclusive == null) return null;
-        const unit = resolveStoreUnitPriceInclusive(product, isPackageBuyer);
+        const unit = resolveStoreUnitPriceInclusive(
+          product,
+          effectivePackageBuyer,
+        );
         if (unit == null) return null;
         const lineTotal = unit * line.qty;
         const split = splitInclusiveVat(lineTotal);
@@ -134,7 +146,7 @@ export default function RequestorStoreCartPage() {
       lineTotal: number;
       split: { supply: number; vat: number; total: number };
     }>;
-  }, [lines, isPackageBuyer, priceByProductId]);
+  }, [lines, effectivePackageBuyer, priceByProductId]);
 
   const goodsTotal = useMemo(
     () => rows.reduce((s, r) => s + r.lineTotal, 0),
@@ -262,7 +274,7 @@ export default function RequestorStoreCartPage() {
                         <span>단가</span>
                         <StorePriceDisplay
                           product={product}
-                          isPackageBuyer={isPackageBuyer}
+                          isPackageBuyer={effectivePackageBuyer}
                           size="sm"
                           className="text-xs"
                         />

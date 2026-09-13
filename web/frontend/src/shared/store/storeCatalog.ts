@@ -46,9 +46,9 @@ export type StoreProduct = {
   taxType?: "과세" | "면세";
   /** 부가세 포함 판매가(원). null이면 라벨만. */
   listPriceInclusive?: number | null;
-  /** 부가세 포함 pkg가(원). 패키지 구매자(충전≥500만)에게 적용. */
+  /** 부가세 포함 pkg가(원). 패키지 구매자(500만 패키지 구매)에게 적용. */
   packagePriceInclusive?: number | null;
-  /** true면 충전 이력과 무관하게 pkg가(또는 패키지 판매가) 적용. */
+  /** true면 패키지 구매자 여부와 무관하게 pkg가(또는 패키지 판매가) 적용. */
   alwaysUsePackagePrice?: boolean;
   /** 구매 전 필수 옵션(Kit Case 등). */
   options?: StoreProductOption[];
@@ -62,8 +62,9 @@ export type StoreCategory = {
   products: StoreProduct[];
 };
 
-/** 패키지 단가 적용: 유료 크레딧(CHARGE_PAID) 누적 충전 ≥ 이 금액. */
+/** 500만 패키지 판매가(부가세 포함). BA.storePackageBuyer는 full-package 결제 시 ON. */
 export const STORE_PACKAGE_PREPAID_THRESHOLD = 5_000_000;
+export const STORE_FULL_PACKAGE_PRODUCT_ID = "full-package";
 
 const KIT_CASE_SPECS: StoreProductSpec[] = [
   { label: "포장단위", value: "1EA" },
