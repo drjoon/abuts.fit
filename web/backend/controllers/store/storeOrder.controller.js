@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-09-13: 기공물 동봉=1주일 이내 치과도착일. catalog에 nextClinicArrivalYmd.
+// - 2026-09-13: 배송 모드 lab_bundle|direct (10만원 이하 동봉/유료 빠른직송).
 // - 2026-09-13: 판매가·pkg가. 충전≥550만 패키지 구매자 단가.
 // - 2026-08-23: 주문 생성+선수금 결제 단일 트랜잭션(이중 commit 제거).
 // - 2026-08-23: 스토어 신규 주문은 선수금만. 계좌이체 입금 경로 제거.
@@ -26,11 +28,13 @@ import {
 import { STORE_CART_MERGE_WITH_CREDIT_OR_CUSTOM_ABUTMENT } from "../../constants/ledgerTaxLanes.js";
 import {
   STORE_SHIPPING_FEE_INCLUSIVE,
-  STORE_SHIPPING_FREE_THRESHOLD_INCLUSIVE,
+  STORE_SHIPPING_MODE_DIRECT,
+  STORE_SHIPPING_MODE_LAB_BUNDLE,
   applyStoreShippingToOrderTotals,
 } from "../../constants/storeShipping.js";
 import { normalizeRequestorKind } from "../../utils/requestorCapabilities.js";
 import { resolveStorePackageBuyer } from "../../utils/storePackagePricing.js";
+import { resolveStoreLabBundleEligibility } from "../../utils/storeLabBundleShipping.js";
 import {
   cancelStoreOrderByUser,
   finalizeStoreSale,
@@ -211,14 +215,16 @@ export async function getStoreCatalog(req, res) {
     }
     await assertPracticeKind(req, businessAnchorId);
 
-    const [inventory, defaultShipping, packageBuyer] = await Promise.all([
-      getInventoryMap(),
-      resolveDefaultShipping({
-        userId: req.user?._id,
-        businessAnchorId,
-      }),
-      resolveStorePackageBuyer(businessAnchorId),
-    ]);
+    const [inventory, defaultShipping, packageBuyer, labBundle] =
+      await Promise.all([
+        getInventoryMap(),
+        resolveDefaultShipping({
+          userId: req.user?._id,
+          businessAnchorId,
+        }),
+        resolveStorePackageBuyer(businessAnchorId),
+        resolveStoreLabBundleEligibility(businessAnchorId),
+      ]);
     const products = listStoreProductIds().map((productId) => ({
       productId,
       name: getStoreProductName(productId),
@@ -244,7 +250,20 @@ export async function getStoreCatalog(req, res) {
         },
         shippingPolicy: {
           feeInclusive: STORE_SHIPPING_FEE_INCLUSIVE,
-          freeThresholdInclusive: STORE_SHIPPING_FREE_THRESHOLD_INCLUSIVE,
+          /** 기공물 동봉(무료, 1주일 이내 도착) 또는 빠른 직송(유료). */
+          modes: {
+            [STORE_SHIPPING_MODE_LAB_BUNDLE]: {
+              label: "기공물 동봉",
+              feeInclusive: 0,
+            },
+            [STORE_SHIPPING_MODE_DIRECT]: {
+              label: "치과 직송",
+              feeInclusive: STORE_SHIPPING_FEE_INCLUSIVE,
+            },
+          },
+          labBundleEligible: labBundle.labBundleEligible,
+          labBundleWithinDays: labBundle.labBundleWithinDays,
+          nextClinicArrivalYmd: labBundle.nextClinicArrivalYmd,
         },
         // 장바구니 합치기 금지 SSOT (프론트 카피·가드용)
         cartMergeWithCreditOrCustomAbutment:
@@ -275,14 +294,41 @@ export async function createStoreOrder(req, res) {
     }
     await assertPracticeKind(req, businessAnchorId);
 
-    const packageBuyer = await resolveStorePackageBuyer(businessAnchorId);
+    const [packageBuyer, labBundle] = await Promise.all([
+      resolveStorePackageBuyer(businessAnchorId),
+      resolveStoreLabBundleEligibility(businessAnchorId),
+    ]);
     const built = buildOrderItems(req.body?.items, {
       isPackageBuyer: packageBuyer.isPackageBuyer,
     });
-    const totals = applyStoreShippingToOrderTotals(built);
+    const requestedShippingMode =
+      req.body?.shippingMode ?? req.body?.shipping?.mode;
+    if (
+      String(requestedShippingMode || "")
+        .trim()
+        .toLowerCase() === STORE_SHIPPING_MODE_LAB_BUNDLE &&
+      !labBundle.labBundleEligible
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "1주일 이내 치과 도착 기공물이 없어 기공물 동봉을 선택할 수 없습니다. 빠른 배송을 이용해 주세요.",
+        code: "STORE_LAB_BUNDLE_UNAVAILABLE",
+        payload: {
+          nextClinicArrivalYmd: labBundle.nextClinicArrivalYmd,
+          labBundleWithinDays: labBundle.labBundleWithinDays,
+        },
+      });
+    }
+    const totals = applyStoreShippingToOrderTotals({
+      ...built,
+      shippingMode: requestedShippingMode,
+      labBundleEligible: labBundle.labBundleEligible,
+    });
     const items = built.items;
     const {
       itemsAmountTotal,
+      shippingMode,
       shippingFeeInclusive,
       shippingSupplyAmount,
       shippingVatAmount,
@@ -349,6 +395,7 @@ export async function createStoreOrder(req, res) {
               paymentMethod,
               items,
               shipping,
+              shippingMode,
               itemsAmountTotal,
               shippingFeeInclusive,
               shippingSupplyAmount,

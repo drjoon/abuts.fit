@@ -51,7 +51,10 @@ import {
   resolveStoreOrderItemsAmountTotal,
   summarizeOrderItems,
 } from "@/pages/requestor/store/storeOrderUi";
-import { resolveStoreOrderShippingFee } from "@/shared/store/storeShipping";
+import {
+  resolveStoreOrderShippingFee,
+  storeShippingModeLabel,
+} from "@/shared/store/storeShipping";
 import { RESPONSIVE } from "@/shared/ui/responsive";
 
 function copyText(text: string, label: string) {
@@ -622,6 +625,12 @@ export function RequestorStoreOrderDetailPage() {
                         : "무료"}
                     </span>
                   </div>
+                  {storeShippingModeLabel(order.shippingMode) ? (
+                    <div className="flex justify-between gap-3">
+                      <span className="text-muted-foreground">배송 방식</span>
+                      <span>{storeShippingModeLabel(order.shippingMode)}</span>
+                    </div>
+                  ) : null}
                   <div className="flex justify-between gap-3">
                     <span className="text-muted-foreground">공급가</span>
                     <span className="tabular-nums">

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-13: 배송 옵션(기공물 동봉 / 빠른 직송) + 동봉 안내 카피.
 // - 2026-08-23: 배송지 = 설정·사업자 주소(읽기 전용). 변경은 설정 CTA.
 // - 2026-08-23: 기본 배송지 = practiceProfile(즉시). catalog API 호출 제거.
 // - 2026-08-23: 스토어 결제 = 선수금만. 잔액 부족 시 충전 탭으로 이동.
@@ -35,7 +36,10 @@ import { apiFetch } from "@/shared/api/apiClient";
 import { STORE_SHELL_CLASS } from "@/pages/requestor/store/storeOrderUi";
 import {
   buildStoreOrderTotalsWithShipping,
-  STORE_SHIPPING_FREE_THRESHOLD_INCLUSIVE,
+  STORE_SHIPPING_FEE_INCLUSIVE,
+  STORE_SHIPPING_MODE_DIRECT,
+  STORE_SHIPPING_MODE_LAB_BUNDLE,
+  type StoreShippingMode,
 } from "@/shared/store/storeShipping";
 import {
   formatStoreShippingAddressLine,
@@ -45,6 +49,7 @@ import {
   type StoreShippingForm,
 } from "@/shared/store/storeDefaultShipping";
 import { StorePriceDisplay } from "@/pages/requestor/store/StorePriceDisplay";
+import { formatKstYmdToKo } from "@/shared/date/kst";
 
 export default function RequestorStoreCartPage() {
   const { kind, loading } = useRequestorBusinessAccess();
@@ -55,13 +60,30 @@ export default function RequestorStoreCartPage() {
   const setQty = useStoreCartStore((s) => s.setQty);
   const removeItem = useStoreCartStore((s) => s.removeItem);
   const clear = useStoreCartStore((s) => s.clear);
-  const { isPackageBuyer, priceByProductId } = useStorePackagePricing();
+  const {
+    isPackageBuyer,
+    priceByProductId,
+    loading: catalogLoading,
+    labBundleEligible,
+    nextClinicArrivalYmd,
+  } = useStorePackagePricing();
   const [submitting, setSubmitting] = useState(false);
   const [shippingLoading, setShippingLoading] = useState(true);
   const [shipping, setShipping] = useState<StoreShippingForm>(() =>
     resolveStoreShippingFromBusiness(user),
   );
   const [memo, setMemo] = useState("");
+  const [shippingModeChoice, setShippingModeChoice] =
+    useState<StoreShippingMode>(STORE_SHIPPING_MODE_LAB_BUNDLE);
+
+  useEffect(() => {
+    if (catalogLoading) return;
+    setShippingModeChoice(
+      labBundleEligible
+        ? STORE_SHIPPING_MODE_LAB_BUNDLE
+        : STORE_SHIPPING_MODE_DIRECT,
+    );
+  }, [catalogLoading, labBundleEligible]);
 
   useEffect(() => {
     if (!token) {
@@ -119,8 +141,12 @@ export default function RequestorStoreCartPage() {
   );
 
   const orderTotals = useMemo(
-    () => buildStoreOrderTotalsWithShipping(goodsTotal),
-    [goodsTotal],
+    () =>
+      buildStoreOrderTotalsWithShipping(goodsTotal, {
+        shippingMode: shippingModeChoice,
+        labBundleEligible,
+      }),
+    [goodsTotal, shippingModeChoice, labBundleEligible],
   );
 
   if (!loading && kind === "lab") {
@@ -154,6 +180,7 @@ export default function RequestorStoreCartPage() {
             qty: r.line.qty,
           })),
           shipping: { ...shipping, memo: memo.trim() },
+          shippingMode: orderTotals.shippingMode,
           paymentMethod: "CREDIT",
         },
       });
@@ -286,6 +313,64 @@ export default function RequestorStoreCartPage() {
               </ul>
 
               <div className="space-y-3 rounded-xl border border-border/70 bg-card p-4 sm:p-6">
+                <h2 className="text-sm font-semibold">배송 옵션</h2>
+                <div className="space-y-2">
+                  <label
+                    className={`flex gap-3 rounded-lg border border-border/70 p-3 ${
+                      labBundleEligible
+                        ? "cursor-pointer has-[:checked]:border-foreground/40"
+                        : "cursor-not-allowed opacity-60"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="store-shipping-mode"
+                      className="mt-1"
+                      disabled={!labBundleEligible}
+                      checked={
+                        shippingModeChoice === STORE_SHIPPING_MODE_LAB_BUNDLE
+                      }
+                      onChange={() =>
+                        setShippingModeChoice(STORE_SHIPPING_MODE_LAB_BUNDLE)
+                      }
+                    />
+                    <span className="min-w-0 space-y-0.5">
+                      <span className="block text-sm font-medium">
+                        기공물 동봉 · 무료 (어벗츠기공소 이용시)
+                      </span>
+                      <span className="block text-xs text-muted-foreground">
+                        {labBundleEligible && nextClinicArrivalYmd
+                          ? `${formatKstYmdToKo(nextClinicArrivalYmd)} 기공물 도착시 받아보실 수 있습니다.`
+                          : "1주일 이내 도착건 있을 때만 선택 가능"}
+                      </span>
+                    </span>
+                  </label>
+                  <label className="flex cursor-pointer gap-3 rounded-lg border border-border/70 p-3 has-[:checked]:border-foreground/40">
+                    <input
+                      type="radio"
+                      name="store-shipping-mode"
+                      className="mt-1"
+                      checked={
+                        shippingModeChoice === STORE_SHIPPING_MODE_DIRECT
+                      }
+                      onChange={() =>
+                        setShippingModeChoice(STORE_SHIPPING_MODE_DIRECT)
+                      }
+                    />
+                    <span className="min-w-0 space-y-0.5">
+                      <span className="block text-sm font-medium">
+                        빠른 배송 · 치과 직송 ·{" "}
+                        {formatWonWithUnit(STORE_SHIPPING_FEE_INCLUSIVE)}
+                      </span>
+                      <span className="block text-xs text-muted-foreground">
+                        기공물과 별도 직송
+                      </span>
+                    </span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="space-y-3 rounded-xl border border-border/70 bg-card p-4 sm:p-6">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <h2 className="text-sm font-semibold">배송지</h2>
                   <Button variant="link" size="sm" className="h-auto px-0" asChild>
@@ -352,8 +437,9 @@ export default function RequestorStoreCartPage() {
                 </span>
               </div>
               <p className="text-xs text-muted-foreground">
-                상품 {formatWonWithUnit(STORE_SHIPPING_FREE_THRESHOLD_INCLUSIVE)}{" "}
-                초과 시 배송 무료
+                {orderTotals.shippingMode === STORE_SHIPPING_MODE_DIRECT
+                  ? "빠른 배송(치과 직송)을 선택했습니다."
+                  : "기공물 동봉을 선택했습니다."}
               </p>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">공급가</span>

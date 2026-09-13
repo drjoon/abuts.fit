@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-13: StoreOrder.shippingMode(lab_bundle|direct) 표시.
 // - 2026-08-23: 스토어 주문 목록·상세 공통 UI(상태·진행·레이아웃).
 // related files:
 // - web/frontend/src/pages/requestor/store/RequestorStoreOrdersPage.tsx
@@ -30,6 +31,7 @@ export type StoreOrder = {
   shippingFeeInclusive?: number;
   shippingSupplyAmount?: number;
   shippingVatAmount?: number;
+  shippingMode?: string;
   expiresAt?: string;
   items?: Array<{ name: string; qty: number; lineTotalInclusive: number }>;
   shipping?: {

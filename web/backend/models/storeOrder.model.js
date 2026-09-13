@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-13: shippingMode lab_bundle|direct (10만원 이하 동봉/유료직송).
 // - 2026-08-23: 배송·출고 풀필먼트 필드(fulfillmentStatus·shipping).
 // - 2026-08-23: 스토어 기성품 입금주문(과세). ChargeOrder와 분리.
 // related files:
@@ -62,6 +63,15 @@ const storeOrderSchema = new mongoose.Schema(
       index: true,
     },
     shipping: { type: storeShippingSchema, default: () => ({}) },
+    /**
+     * lab_bundle=기공물 동봉(무료), direct=치과 직송(유료 빠른 배송).
+     */
+    shippingMode: {
+      type: String,
+      enum: ["lab_bundle", "direct", ""],
+      default: "",
+      index: true,
+    },
     courier: { type: String, default: "", trim: true },
     trackingNumber: { type: String, default: "", trim: true },
     shippedAt: { type: Date, default: null },
