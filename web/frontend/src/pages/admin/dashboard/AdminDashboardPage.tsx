@@ -76,6 +76,10 @@ import {
   HexVerificationAdminPanel,
   useHexVerificationSummary,
 } from "@/pages/admin/dashboard/HexVerificationAdminPanel";
+import {
+  PlatformGrowthDetailDialog,
+  type PlatformGrowthMetric,
+} from "@/pages/admin/dashboard/PlatformGrowthDetailDialog";
 
 // change-log add:
 // - 2026-09-03: ExoCAD 3.0 이하 BA 카드·제조사별 헥스 관리 패널
@@ -663,6 +667,8 @@ export const AdminDashboardPage = () => {
     useState<Record<string, string>>({});
   const [practiceTransferStatsDialogOpen, setPracticeTransferStatsDialogOpen] =
     useState(false);
+  const [growthDetailMetric, setGrowthDetailMetric] =
+    useState<PlatformGrowthMetric | null>(null);
   const [restoreTransferTarget, setRestoreTransferTarget] = useState<{
     transferId: string;
     transferMongoId: string;
@@ -2118,7 +2124,18 @@ export const AdminDashboardPage = () => {
           <>
             {/* 플랫폼 성장 KPI */}
             <div className="grid grid-cols-1 gap-3 md:grid-cols-3 lg:grid-cols-5">
-              <Card className="app-glass-card app-glass-card--lg">
+              <Card
+                className="app-glass-card app-glass-card--lg cursor-pointer transition hover:bg-slate-50/60"
+                onClick={() => setGrowthDetailMetric("todayAccess")}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setGrowthDetailMetric("todayAccess");
+                  }
+                }}
+              >
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">오늘 접속</CardTitle>
                   <Activity className="h-4 w-4 text-muted-foreground" />
@@ -2127,10 +2144,21 @@ export const AdminDashboardPage = () => {
                   <div className="text-2xl font-bold">
                     {Number(platformGrowthStats?.todayAccessUsers || 0).toLocaleString()}
                   </div>
-                  <p className="mt-1 text-[11px] text-muted-foreground">KST 오늘 로그인·접속</p>
+                  <p className="mt-1 text-[11px] text-muted-foreground">KST 오늘 로그인·접속 · 클릭하여 내역</p>
                 </CardContent>
               </Card>
-              <Card className="app-glass-card app-glass-card--lg">
+              <Card
+                className="app-glass-card app-glass-card--lg cursor-pointer transition hover:bg-slate-50/60"
+                onClick={() => setGrowthDetailMetric("monthAccess")}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setGrowthDetailMetric("monthAccess");
+                  }
+                }}
+              >
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">월간 유저</CardTitle>
                   <Users className="h-4 w-4 text-muted-foreground" />
@@ -2139,10 +2167,21 @@ export const AdminDashboardPage = () => {
                   <div className="text-2xl font-bold">
                     {Number(platformGrowthStats?.monthActiveUsers || 0).toLocaleString()}
                   </div>
-                  <p className="mt-1 text-[11px] text-muted-foreground">KST 이번 달 접속</p>
+                  <p className="mt-1 text-[11px] text-muted-foreground">KST 이번 달 접속 · 클릭하여 내역</p>
                 </CardContent>
               </Card>
-              <Card className="app-glass-card app-glass-card--lg">
+              <Card
+                className="app-glass-card app-glass-card--lg cursor-pointer transition hover:bg-slate-50/60"
+                onClick={() => setGrowthDetailMetric("totalUsers")}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setGrowthDetailMetric("totalUsers");
+                  }
+                }}
+              >
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">총 유저</CardTitle>
                   <Users className="h-4 w-4 text-muted-foreground" />
@@ -2153,11 +2192,22 @@ export const AdminDashboardPage = () => {
                   </div>
                   <p className="mt-1 text-[11px] text-muted-foreground">
                     치과 {Number(platformGrowthStats?.practiceBusinessCount || 0).toLocaleString()} · 기공소{" "}
-                    {Number(platformGrowthStats?.labBusinessCount || 0).toLocaleString()}
+                    {Number(platformGrowthStats?.labBusinessCount || 0).toLocaleString()} · 클릭하여 내역
                   </p>
                 </CardContent>
               </Card>
-              <Card className="app-glass-card app-glass-card--lg">
+              <Card
+                className="app-glass-card app-glass-card--lg cursor-pointer transition hover:bg-slate-50/60"
+                onClick={() => setGrowthDetailMetric("periodRequests")}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setGrowthDetailMetric("periodRequests");
+                  }
+                }}
+              >
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">이용건수</CardTitle>
                   <BarChart3 className="h-4 w-4 text-muted-foreground" />
@@ -2167,11 +2217,22 @@ export const AdminDashboardPage = () => {
                     {Number(platformGrowthStats?.periodRequestCount || 0).toLocaleString()}
                   </div>
                   <p className="mt-1 text-[11px] text-muted-foreground">
-                    기간 선택 · 누적 {Number(platformGrowthStats?.allTimeRequestCount || 0).toLocaleString()}
+                    기간 선택 · 누적 {Number(platformGrowthStats?.allTimeRequestCount || 0).toLocaleString()} · 클릭하여 내역
                   </p>
                 </CardContent>
               </Card>
-              <Card className="app-glass-card app-glass-card--lg">
+              <Card
+                className="app-glass-card app-glass-card--lg cursor-pointer transition hover:bg-slate-50/60"
+                onClick={() => setGrowthDetailMetric("periodRevenue")}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setGrowthDetailMetric("periodRevenue");
+                  }
+                }}
+              >
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">매출</CardTitle>
                   <DollarSign className="h-4 w-4 text-muted-foreground" />
@@ -2180,7 +2241,7 @@ export const AdminDashboardPage = () => {
                   <div className="text-2xl font-bold">
                     ₩{Number(platformGrowthStats?.periodRevenue || 0).toLocaleString()}
                   </div>
-                  <p className="mt-1 text-[11px] text-muted-foreground">기간 유료 주문액</p>
+                  <p className="mt-1 text-[11px] text-muted-foreground">기간 유료 주문액 · 클릭하여 내역</p>
                 </CardContent>
               </Card>
             </div>
@@ -2792,6 +2853,14 @@ export const AdminDashboardPage = () => {
           </>
         }
         mainLeft={undefined}
+      />
+
+      <PlatformGrowthDetailDialog
+        open={Boolean(growthDetailMetric)}
+        metric={growthDetailMetric}
+        period={period}
+        token={token}
+        onClose={() => setGrowthDetailMetric(null)}
       />
 
       <MachiningStatisticsModal

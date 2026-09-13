@@ -33,7 +33,10 @@ import {
 import { collectHappyCallReasonCodes } from "./happyCallReasons.js";
 import { buildUnsupportedAbutmentDashboardStats } from "../../services/unsupportedAbutmentDashboardStats.service.js";
 import { buildProsthesisFeeItemRequestDashboardStats } from "../../services/prosthesisFeeItemRequestDashboardStats.service.js";
-import { getPlatformGrowthStats } from "../../services/platformGrowthStats.service.js";
+import {
+  getPlatformGrowthDetail,
+  getPlatformGrowthStats,
+} from "../../services/platformGrowthStats.service.js";
 
 const HAPPY_CALL_REASON_META = {
   first_completion_this_week: {
@@ -283,6 +286,26 @@ export async function getDashboardStats(req, res) {
     res.status(500).json({
       success: false,
       message: "대시보드 통계 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/** KPI 카드 클릭 세부 내역 — GET /api/admin/dashboard/growth-detail?metric=... */
+export async function getAdminPlatformGrowthDetail(req, res) {
+  try {
+    const metric = String(req.query?.metric || "").trim();
+    const { start, end } = getDateRangeFromQuery(req);
+    const data = await getPlatformGrowthDetail({ metric, start, end });
+    return res.status(200).json({ success: true, data });
+  } catch (error) {
+    const status = Number(error?.statusCode) || 500;
+    return res.status(status).json({
+      success: false,
+      message:
+        status === 400
+          ? error.message || "잘못된 요청입니다."
+          : "성장 통계 세부 내역 조회 중 오류가 발생했습니다.",
       error: error.message,
     });
   }

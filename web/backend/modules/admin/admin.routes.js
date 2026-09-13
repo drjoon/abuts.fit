@@ -41,6 +41,7 @@ import {
 } from "../../controllers/admin/admin.requests.controller.js";
 import {
   getDashboardStats,
+  getAdminPlatformGrowthDetail,
   listHappyCallCompletions,
   completeHappyCall,
   revertLastHappyCallCompletion,
@@ -305,6 +306,7 @@ router.post("/requests/fix-business-anchor-id", fixMissingBusinessAnchorId);
 
 // 대시보드 통계
 router.get("/dashboard", getDashboardStats);
+router.get("/dashboard/growth-detail", getAdminPlatformGrowthDetail);
 router.get("/no-order-alerts", getAdminNoOrderAlerts);
 router.get("/dashboard/happy-call/completions", listHappyCallCompletions);
 router.post("/dashboard/happy-call/memo", saveHappyCallMemoDraft);

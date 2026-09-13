@@ -104,3 +104,44 @@ export async function getMonthAccessUserCount(now = new Date()) {
   if (!today || !monthStart) return 0;
   return getAccessUniques({ fromYmd: monthStart, toYmd: today });
 }
+
+/**
+ * Distinct users with access in [fromYmd, toYmd], with first/last touch and day count.
+ * Sorted by lastAt desc.
+ * @returns {Promise<Array<{ userId: string, role: string, firstAt: Date, lastAt: Date, dayCount: number }>>}
+ */
+export async function listAccessUsers({ fromYmd, toYmd, limit = 500 } = {}) {
+  const from = String(fromYmd || "").trim();
+  const to = String(toYmd || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+    return [];
+  }
+  const filter =
+    from === to
+      ? { ymd: from }
+      : { ymd: { $gte: from, $lte: to } };
+  const cap = Math.min(Math.max(Number(limit) || 500, 1), 2000);
+
+  const rows = await UserAccessDay.aggregate([
+    { $match: filter },
+    {
+      $group: {
+        _id: "$userId",
+        role: { $last: "$role" },
+        firstAt: { $min: "$firstAt" },
+        lastAt: { $max: "$lastAt" },
+        dayCount: { $sum: 1 },
+      },
+    },
+    { $sort: { lastAt: -1 } },
+    { $limit: cap },
+  ]);
+
+  return (rows || []).map((row) => ({
+    userId: String(row?._id || ""),
+    role: String(row?.role || ""),
+    firstAt: row?.firstAt || null,
+    lastAt: row?.lastAt || null,
+    dayCount: Number(row?.dayCount || 0),
+  }));
+}
