@@ -15,13 +15,14 @@ import {
 } from "@/shared/layout/sidebarOpen";
 import { cn } from "@/shared/ui/cn";
 
+// - 2026-09-13: 관리자 사이드에「스토어」(/dashboard/store-admin) 복구.
 // - 2026-09-13: 사이드바 도킹 브레이크포인트를 lg(1024)→xl(1280). 중간 가로폭에서 드로어로 접힘.
 // - 2026-09-09: 기공소에 툴팁 — 구강스캔 전제 제거(「어벗·임시치아·지르 보철 의뢰」).
 // - 2026-09-09: 기공의뢰 서브 — 치과 기공소에/어벗츠에, 기공소 치과로부터/어벗츠로.
 // - 2026-09-08: 구강스캔으로 툴팁 — 「어벗·임시치아·지르 보철 의뢰」로 짧게.
 // - 2026-09-08: 기본 기공수가 검토 대기 시 사이드바 설정 → platformTab=abutsFees 딥링크.
 // - 2026-09-06: 모바일/태블릿 상단 헤더 — lucide Menu·로고 절대 중앙 정렬.
-// - 2026-09-06: 관리자 사이드 15→7(홈·회원·의뢰·지원·채널·재무·설정) + 섹션 그룹.
+// - 2026-09-06: 관리자 사이드 15→7(홈·회원·의뢰·지원·채널·재무·설정) + 섹션 그룹. 스토어는 2026-09-13 복구.
 // - 2026-09-06: 영업본부 사이드 9→6(오늘·거래처·성과·요구사항·문의·설정) + 섹션 그룹.
 // - 2026-09-06: 원격 지원 요청 전역 토스트·사이드 소통/재무 순서·원격지원 상단.
 // - 2026-09-05: 데모 모드면 잔액≤0「크레딧 부족」destructive 토스트 생략.
@@ -359,6 +360,7 @@ const sidebarItems = {
     { icon: LayoutDashboard, label: "홈", href: "/dashboard" },
     { icon: Users, label: "회원", href: "/dashboard/members" },
     { icon: FileText, label: "의뢰", href: "/dashboard/monitoring" },
+    { icon: Store, label: "스토어", href: "/dashboard/store-admin" },
     { icon: Headphones, label: "지원", href: "/dashboard/support" },
     { icon: MessageSquare, label: "채널", href: "/dashboard/channels" },
     { icon: Wallet, label: "재무", href: "/dashboard/finance" },
@@ -452,6 +454,7 @@ const adminSidebarSections: DashboardSidebarSection[] = [
       { icon: LayoutDashboard, label: "홈", href: "/dashboard" },
       { icon: Users, label: "회원", href: "/dashboard/members" },
       { icon: FileText, label: "의뢰", href: "/dashboard/monitoring" },
+      { icon: Store, label: "스토어", href: "/dashboard/store-admin" },
     ],
   },
   {
