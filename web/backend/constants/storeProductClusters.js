@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-14: 풀패키지 힌트 SA-Hex/SH-Hex · Abutment 표기 Hex/NonHex.
 // - 2026-09-13: Surgical Kit 클러스터 통합. 풀패키지 SA2·SH2 ×150.
 // - 2026-09-13: Kit Case 3종을 각 키트 클러스터에 배치.
 // - 2026-09-13: 관리자 스토어 상품 클러스터 기본 배치 SSOT.
@@ -24,7 +25,7 @@ export const STORE_DEFAULT_PRODUCT_CLUSTERS = Object.freeze([
     label: "500만 패키지",
     parentProductId: "full-package",
     childProductIds: Object.freeze([]),
-    compositionHint: "키트 2종 + SA2·SH2 ×150",
+    compositionHint: "키트 2종 + SA-Hex·SH-Hex ×150",
   }),
   Object.freeze({
     id: "surgical-kit",
@@ -51,7 +52,8 @@ export const STORE_DEFAULT_PRODUCT_CLUSTERS = Object.freeze([
       "hex-driver",
       "torque-wrench",
     ]),
-    compositionHint: "Prosthetic 케이스 · 진지발셰이퍼 · 헥스드라이버 · 토크렌치",
+    compositionHint:
+      "Prosthetic 케이스 · GingivalShaper(6·7·9) · Hex Driver(S/M/L) · Torque",
   }),
   Object.freeze({
     id: "abutment",
@@ -63,7 +65,7 @@ export const STORE_DEFAULT_PRODUCT_CLUSTERS = Object.freeze([
       "simple-abutment",
       "simple-healing",
     ]),
-    compositionHint: "SimpleAbutment · Healing",
+    compositionHint: "SimpleAbutment-Hex/NonHex · SimpleHealing-Hex/NonHex",
   }),
 ]);
 

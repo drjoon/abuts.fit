@@ -181,7 +181,7 @@ const DEFAULT_STORE_PRODUCT_CLUSTERS: StoreProductCluster[] = [
     label: "500만 패키지",
     parentProductId: "full-package",
     childProductIds: [],
-    compositionHint: "키트 2종 + SA2·SH2 ×150",
+    compositionHint: "키트 2종 + SA-Hex·SH-Hex ×150",
   },
   {
     id: "surgical-kit",
@@ -208,7 +208,8 @@ const DEFAULT_STORE_PRODUCT_CLUSTERS: StoreProductCluster[] = [
       "hex-driver",
       "torque-wrench",
     ],
-    compositionHint: "Prosthetic 케이스 · 진지발셰이퍼 · 헥스드라이버 · 토크렌치",
+    compositionHint:
+      "Prosthetic 케이스 · GingivalShaper(6·7·9) · Hex Driver(S/M/L) · Torque",
   },
   {
     id: "abutment",
@@ -220,7 +221,7 @@ const DEFAULT_STORE_PRODUCT_CLUSTERS: StoreProductCluster[] = [
       "simple-abutment",
       "simple-healing",
     ],
-    compositionHint: "SimpleAbutment · Healing",
+    compositionHint: "SimpleAbutment-Hex/NonHex · SimpleHealing-Hex/NonHex",
   },
 ];
 

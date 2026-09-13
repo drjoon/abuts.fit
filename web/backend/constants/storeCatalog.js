@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-14: 제조단가표 동기 — Surgical pkg 88만. Prosthetic 케이스 12.1·Gingival 4.4·Hex 3.3·Torque 8.8×2. 명칭 Hex/NonHex. Prosthetic 구성 GS×3·Driver S/M/L.
 // - 2026-09-13: pkg 자격=500만 패키지(full-package) 구매(크레딧 충전 트리거 제거).
 // - 2026-09-13: Surgical Kit 통합. 레거시 Initial/Check SKU는 판매·재고 목록에서 제외(이름만 유지).
 // - 2026-09-13: Surgical Kit 통합(Initial+Check). 판매 132/88만·pkg 99/66. 단품 제조×2(Pen 6.6·Gingival 3.96·Torque 9.9). 풀패키지 구성합 682만·SA2/SH2×150.
@@ -63,19 +64,19 @@ export function packageInclusiveFromList(listInclusive) {
  * 신규 판매·재고 SSOT. 레거시 SKU는 NAMES만 유지(과거 주문 표시).
  */
 export const STORE_PRODUCT_INCLUSIVE_PRICES = Object.freeze({
-  "full-package": 6_820_000, // 132+88 + SA2/SH2×150×1.54
+  "full-package": 6_820_000, // 132+88 + SA-Hex/SH-Hex×150×1.54
   "surgical-kit": 1_320_000,
   "prosthetic-kit": 880_000,
   "kit-case-surgical": 264_000, // mfg 13.2만 ×2
-  "kit-case-prosthetic": 220_000, // mfg 11만 ×2
+  "kit-case-prosthetic": 242_000, // mfg 12.1만 ×2
   "initial-pen": 132_000, // SurgicalPen · mfg Pen 6.6만 ×2
   pen: 132_000, // mfg 6.6만 ×2
   cup: 11_000, // mfg 0.55만 ×2
   "check-pin": 55_000, // SurgicalPin · mfg 2.75만 ×2
   "bone-shaper": 77_000, // mfg 3.85만 ×2
-  "gingival-shaper": 79_200, // mfg 3.96만 ×2
-  "hex-driver": 33_000, // mfg 1.65만 ×2
-  "torque-wrench": 198_000, // mfg 9.9만 ×2
+  "gingival-shaper": 88_000, // mfg 4.4만 ×2
+  "hex-driver": 66_000, // mfg 3.3만 ×2
+  "torque-wrench": 176_000, // mfg 8.8만 ×2
   "simple-abutment-2": 15_400,
   "simple-healing-2": 15_400,
   "simple-abutment": 15_400,
@@ -85,18 +86,18 @@ export const STORE_PRODUCT_INCLUSIVE_PRICES = Object.freeze({
 /** pkg가 기본값. full-package·키트·어벗은 고시가, 단품은 packageInclusiveFromList. */
 export const STORE_PRODUCT_PACKAGE_INCLUSIVE_PRICES = Object.freeze({
   "full-package": 5_000_000,
-  "surgical-kit": 990_000,
+  "surgical-kit": 880_000,
   "prosthetic-kit": 660_000,
   "kit-case-surgical": packageInclusiveFromList(264_000),
-  "kit-case-prosthetic": packageInclusiveFromList(220_000),
+  "kit-case-prosthetic": packageInclusiveFromList(242_000),
   "initial-pen": packageInclusiveFromList(132_000),
   pen: packageInclusiveFromList(132_000),
   cup: packageInclusiveFromList(11_000),
   "check-pin": packageInclusiveFromList(55_000),
   "bone-shaper": packageInclusiveFromList(77_000),
-  "gingival-shaper": packageInclusiveFromList(79_200),
-  "hex-driver": packageInclusiveFromList(33_000),
-  "torque-wrench": packageInclusiveFromList(198_000),
+  "gingival-shaper": packageInclusiveFromList(88_000),
+  "hex-driver": packageInclusiveFromList(66_000),
+  "torque-wrench": packageInclusiveFromList(176_000),
   "simple-abutment-2": 12_100,
   "simple-healing-2": 12_100,
   "simple-abutment": 12_100,
@@ -129,10 +130,10 @@ export const STORE_PRODUCT_NAMES = Object.freeze({
   "gingival-shaper": "GingivalShaper",
   "hex-driver": "Hex Driver",
   "torque-wrench": "Torque wrench",
-  "simple-abutment-2": "SimpleAbutment2",
-  "simple-healing-2": "SimpleHealing2",
-  "simple-abutment": "SimpleAbutment",
-  "simple-healing": "SimpleHealing",
+  "simple-abutment-2": "SimpleAbutment-Hex",
+  "simple-healing-2": "SimpleHealing-Hex",
+  "simple-abutment": "SimpleAbutment-NonHex",
+  "simple-healing": "SimpleHealing-NonHex",
 });
 
 /** 신규 재고 문서 기본 수량. */

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-14: 제조단가표 동기 — Hex/NonHex 명칭·Surgical pkg 88·Prosthetic GS×3/Driver S/M/L·단품 제조가.
 // - 2026-09-13: Surgical Kit·SA2 Hex/D-cut·SH2 12종·풀패키지 ×150·Kit Case 2종 동기.
 // - 2026-09-13: 상단 hero와 동일 gallery-1만 제외, 나머지 상세 이미지 복구.
 // - 2026-09-13: acrodent.com 상세 이미지 OCR → 텍스트 블록 + 순수 제품 이미지.
@@ -36,7 +37,7 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
       { label: "HEX", value: "1.20 (Acodent/Osstem/Neo/Megagen/Dio) · 1.28 (Dentium/Dentis)" },
     ],
     blocks: [
-      { type: "heading", text: "SimpleAbutment2 (Hex · 2-piece)" },
+      { type: "heading", text: "SimpleAbutment-Hex (Hex · 2-piece)" },
       {
         type: "text",
         text: "직경·커프 사이즈 인식용 D-cut(B,L) with fillet. 높이 4종 × 직경 3종 = 12종.",
@@ -92,7 +93,7 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
     ],
     blocks: [
       { type: "heading", text: "Simple Abutment [Non-Hex]" },
-      { type: "text", text: "보험청구코드 L7552057. 치수 C(커프)·D(직경)·H(포스트)·HD(HEX), 나사 M2.0×P0.4." },
+      { type: "text", text: "보험청구코드 L7552057. 치수 C(커프)·D(직경)·H(포스트)·HD(HEX), 나사 M2.0×P0.4. 높이 S(2.0)·M(3.5)·L(5.0)·XL(6.5)." },
       { type: "heading", text: "제품의 규격" },
       { type: "list", items: ["적용: Acodent / Osstem / Neo-implant / Megagen / Dio — HEX 1.20 (S2061~ 계열)", "적용: Dentium / Dentis — HEX 1.28 (S2071~ 계열)", "Cuff Short 2.0 / Middle 3.5 / Long 5.0 mm", "직경 라인 6·7·8·9·10"] },
       { type: "image", src: "/store/content/simple-abutment/size-grid.jpg", alt: "치수 다이어그램 C/D/H/HD + 나사" },
@@ -104,7 +105,7 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
   "simple-healing-2": {
     blurb: "높이 4종 × 직경 3종 · 12종",
     description:
-      "높이 S(2.0)·M(3.5)·L(5.0)·XL(6.5), 직경 6·7·9 — 12종. Fixture 식립 후 치은 치유·형성. SimpleAbutment2와 동일 규격 체계.",
+      "높이 S(2.0)·M(3.5)·L(5.0)·XL(6.5), 직경 6·7·9 — 12종. Fixture 식립 후 치은 치유·형성. SimpleAbutment-Hex와 동일 규격 체계.",
     specs: [
       { label: "품명", value: "치과용임플란트상부구조물" },
       { label: "높이", value: "S 2.0 / M 3.5 / L 5.0 / XL 6.5 mm" },
@@ -114,10 +115,10 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
       { label: "HEX", value: "1.20 / 1.28 (임플란트 시스템별)" },
     ],
     blocks: [
-      { type: "heading", text: "SimpleHealing2" },
+      { type: "heading", text: "SimpleHealing-Hex" },
       {
         type: "text",
-        text: "픽스처 식립 후 연조직 힐링용. SimpleAbutment2와 높이·직경 조합이 같습니다(각 12종).",
+        text: "픽스처 식립 후 연조직 힐링용. SimpleAbutment-Hex와 높이·직경 조합이 같습니다(각 12종).",
       },
       { type: "heading", text: "제품의 규격" },
       {
@@ -161,13 +162,13 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
       { type: "heading", text: "Surgical Kit" },
       {
         type: "text",
-        text: "Initial·Check 단계를 하나의 Surgical Kit로 통합했습니다. 판매가 132만 · 패키지 구매자 pkg 99만.",
+        text: "Initial·Check 단계를 하나의 Surgical Kit로 통합했습니다. 판매가 132만 · 패키지 구매자 pkg 88만.",
       },
       { type: "heading", text: "구성품" },
       {
         type: "list",
         items: [
-          "SurgicalPen — 린데만 타입, 직경 2.X (Pen ×2)",
+          "SurgicalPen — 린데만 타입, 직경 2.3 (Pen ×2)",
           "Cup ×5",
           "SurgicalPin ×5 — 기존 CheckPin이며 InitialPin 역할도 겸함",
           "BoneShaper ×6 — S6·7·9 및 M6·7·9. 팁 조금 길게. 연마 없음",
@@ -273,7 +274,7 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
   "prosthetic-kit": {
     blurb: "GingivalShaper · Hex Driver · Torque — 스트레스 없는 보철",
     description:
-      "GingivalShaper 5종, Hex Driver S/M(헥스 어벗 체결 가이드), Torque wrench를 구성한 보철 마무리 키트. 판매가 88만 · pkg 66만.",
+      "GingivalShaper 6·7·9(3종), Hex Driver S/M/L(헥스 어벗 체결 가이드), Torque wrench를 구성한 보철 마무리 키트. 판매가 88만 · pkg 66만.",
     specs: [
       { label: "품명", value: "치과용임플란트시술기구 외" },
       { label: "모델명", value: "TSKP 외" },
@@ -297,8 +298,8 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
       {
         type: "list",
         items: [
-          "GingivalShaper ×5",
-          "Hex Driver S, M ×2 — 헥스 어벗 체결 가이드",
+          "GingivalShaper ×3 — 6 · 7 · 9",
+          "Hex Driver S, M, L ×3 — 헥스 어벗 체결 가이드",
           "Torque wrench ×1",
           "Kit Case ×1",
         ],
@@ -325,18 +326,18 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
       {
         type: "list",
         items: [
-          "Hex Driver S/M: 헥스 어벗 체결 가이드",
+          "Hex Driver S/M/L: 헥스 어벗 체결 가이드",
           "Torque wrench: W-Adaptor 체결(A) → 방향 설정(B) → 눈금에 맞게 당김(C)",
         ],
       },
     ],
   },
   "initial-pen": {
-    blurb: "린데만 타입 · 직경 2.X (SurgicalPen)",
+    blurb: "린데만 타입 · 직경 2.3 (SurgicalPen)",
     description:
-      "SurgicalPen은 린데만 타입, 직경 2.X 드릴입니다. Surgical Kit 구성품이며 Cup과 체결해 사용합니다.",
+      "SurgicalPen은 린데만 타입, 직경 2.3 드릴입니다. Surgical Kit 구성품이며 Cup과 체결해 사용합니다.",
     specs: [
-      { label: "타입", value: "린데만 타입, 직경 2.X" },
+      { label: "타입", value: "린데만 타입, 직경 2.3" },
       { label: "포장단위", value: "1EA" },
       { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
       { label: "권장 RPM", value: "300~1,500 (20:1), Torque 45~55" },
@@ -345,7 +346,7 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
       { type: "heading", text: "SurgicalPen" },
       {
         type: "text",
-        text: "린데만 타입 · 직경 2.X. Surgical Kit 구성품. 제조 6.6만 ×2 = 판매 13.2만.",
+        text: "린데만 타입 · 직경 2.3. Surgical Kit 구성품. 제조 6.6만 ×2 = 판매 13.2만.",
       },
       {
         type: "image",
@@ -561,9 +562,9 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
     ],
   },
   "gingival-shaper": {
-    blurb: "GingivalShaper · 5종",
+    blurb: "GingivalShaper · 6·7·9",
     description:
-      "GingivalShaper 5종. Simple Abutment 마진 치은 삭제. 제조 3.96만 ×2 = 7.92만.",
+      "GingivalShaper 6·7·9 = 3종. Simple Abutment 마진 치은 삭제. 제조 4.4만 ×2 = 8.8만.",
     specs: [
       { label: "품명", value: "의료용절삭기구" },
       { label: "모델명", value: "GS06V1외 41건" },
@@ -574,12 +575,13 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
       { label: "포장단위", value: "EA" },
       { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
       { label: "품질책임자/전화번호", value: "이상훈 / Tel : 055-314-4607" },
+      { label: "구성", value: "6 · 7 · 9 (3종)" },
       { label: "모델", value: "GS06V1–GS010V1" },
       { label: "직경 예", value: "Ø5.6–Ø9.6대" },
     ],
     blocks: [
       { type: "heading", text: "GingivalShaper" },
-      { type: "text", text: "깔끔한 마진 확보로 간편한 인상 채득이 가능합니다. ※ 타사 어버트먼트에는 호환되지 않습니다." },
+      { type: "text", text: "깔끔한 마진 확보로 간편한 인상 채득이 가능합니다. ※ 타사 어버트먼트에는 호환되지 않습니다. 키트 구성 3종(6·7·9)." },
       { type: "heading", text: "규격 매칭" },
       { type: "text", text: "예: GingivalShaper 8 사용 시 Simple Abutment 8S 또는 8M 사용." },
       { type: "list", items: ["GS06V1–GS010V1 (Pd.No T7026–T7030)", "신고번호: 부산 제신11-98호"] },
@@ -589,8 +591,9 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
     ],
   },
   "hex-driver": {
-    blurb: "Hex 1.20 나사를 조이는 Wrench HEX-driver",
-    description: "Wrench HEX-driver는 임플란트 구성품 결합 시 Hex 1.20 나사를 조이는 기구입니다. Short·Middle 길이로 제공되며 TheSimple Kit Prosthetics에 포함됩니다.",
+    blurb: "S/M/L · 헥스 어벗 체결 가이드",
+    description:
+      "Hex Driver S, M, L 3종. 헥스 어벗 체결 가이드. 제조 3.3만 ×2 = 6.6만.",
     specs: [
       { label: "품명", value: "치과임플란트시술용스크루드라이버" },
       { label: "모델명", value: "HA25S외 7건" },
@@ -601,15 +604,16 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
       { label: "포장단위", value: "EA" },
       { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
       { label: "품질책임자/전화번호", value: "이상훈 / Tel : 055-314-4607" },
-      { label: "모델", value: "WD12S (Short) / WD12M (Middle)" },
-      { label: "길이", value: "Short 약 20.0mm / Middle 약 24.0mm" },
+      { label: "구성", value: "S / M / L (3종)" },
+      { label: "모델", value: "WD12S (Short) / WD12M (Middle) / WD12L (Long)" },
+      { label: "길이", value: "Short · Middle · Long" },
       { label: "HEX", value: "1.20" },
       { label: "Pd.No", value: "T7145 / T7146" },
     ],
     blocks: [
-      { type: "heading", text: "Wrench HEX-driver (Short / Middle)" },
-      { type: "text", text: "임플란트 시술 시 구성품을 결합하는 과정에서 나사를 조이는 기구. 신고번호 제신19-1048호." },
-      { type: "image", src: "/store/content/hex-driver/drivers.jpg", alt: "HEX-driver Short / Middle" },
+      { type: "heading", text: "Wrench HEX-driver (S / M / L)" },
+      { type: "text", text: "임플란트 시술 시 구성품을 결합하는 과정에서 나사를 조이는 기구. 신고번호 제신19-1048호. 헥스 어벗 체결 가이드." },
+      { type: "image", src: "/store/content/hex-driver/drivers.jpg", alt: "HEX-driver S / M / L" },
       { type: "heading", text: "사용방법" },
       { type: "list", items: ["제품을 선택해 렌치에 체결", "상부구조물(또는 고정체)에 체결해 대상물로 이동 후 결합", "시술 전 Autoclave 습열멸균(132°C, 15분)"] },
     ],
@@ -617,7 +621,7 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
   "torque-wrench": {
     blurb: "나사를 설정 토크로 조이는 Hand Type 토크 렌치",
     description:
-      "Torque wrench(Hand Type). 제조 9.9만 ×2 = 19.8만. W-Adaptor를 체결하고 방향·눈금을 설정해 사용합니다.",
+      "Torque wrench(Hand Type). 제조 8.8만 ×2 = 17.6만. W-Adaptor를 체결하고 방향·눈금을 설정해 사용합니다.",
     specs: [
       { label: "품명", value: "치과용임플란트시술기구" },
       { label: "모델명", value: "EX14외 11건" },
@@ -641,8 +645,8 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
     ],
   },
   "simple-healing": {
-    blurb: "For Submerged type",
-    description: "서브머지드 타입용 Healing Abutment입니다. 커프 높이(S/M/L)와 직경(6–10) 조합으로 연조직 성형을 돕고, Simple Abutment와 같은 Follow color-band로 규격을 맞춥니다. (simple-healing과 동일 SKU)",
+    blurb: "For Submerged type · Non-Hex",
+    description: "서브머지드 타입용 Healing Abutment [Non-Hex]입니다. 힐링·어벗 각 12종. Simple Abutment와 같은 Follow color-band로 규격을 맞춥니다.",
     specs: [
       { label: "품명", value: "치과용임플란트상부구조물" },
       { label: "모델명", value: "SH06-H0C20 외 44건" },
@@ -669,7 +673,7 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
   "full-package": {
     blurb: "키트 2종 + Abutment 300EA 일괄",
     description:
-      "Surgical·Prosthetic Kit 각 1키트, SimpleAbutment2 150EA, SimpleHealing2 150EA. 구성 판매합 682만 → 패키지 판매가 500만.",
+      "Surgical·Prosthetic Kit 각 1키트, SimpleAbutment-Hex 150EA, SimpleHealing-Hex 150EA. 구성 판매합 682만 → 패키지 판매가 500만.",
     blocks: [
       { type: "heading", text: "500만 패키지 구성" },
       {
@@ -677,8 +681,8 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
         items: [
           "Surgical Kit ×1",
           "Prosthetic Kit ×1",
-          "SimpleAbutment2 ×150",
-          "SimpleHealing2 ×150",
+          "SimpleAbutment-Hex ×150",
+          "SimpleHealing-Hex ×150",
         ],
       },
       {
@@ -698,19 +702,19 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
       {
         type: "image",
         src: "/store/content/full-package/simple-abutment-2.jpg",
-        alt: "SimpleAbutment2",
+        alt: "SimpleAbutment-Hex",
       },
       {
         type: "image",
         src: "/store/content/full-package/simple-healing-2.jpg",
-        alt: "SimpleHealing2",
+        alt: "SimpleHealing-Hex",
       },
     ],
   },
   "kit-case": {
     blurb: "Surgical / Prosthetic · 2종",
     description:
-      "시술 키트 수납용 케이스. Surgical(제조 13.2만)×2 · Prosthetic(제조 11만)×2.",
+      "시술 키트 수납용 케이스. Surgical(제조 13.2만)×2 · Prosthetic(제조 12.1만)×2.",
     specs: [
       { label: "포장단위", value: "1EA" },
       { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
@@ -729,7 +733,7 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
         type: "list",
         items: [
           "Surgical Kit Case — Surgical Kit 전용 (판매가 264,000원)",
-          "Prosthetic Kit Case — Prosthetic Kit 전용 (판매가 220,000원)",
+          "Prosthetic Kit Case — Prosthetic Kit 전용 (판매가 242,000원)",
         ],
       },
     ],
