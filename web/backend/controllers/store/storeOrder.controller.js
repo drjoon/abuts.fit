@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-13: 주문 생성·결제·취소 후 관리자 스토어 사이드바 배지 emit.
 // - 2026-09-13: 기공물 동봉=1주일 이내 치과도착일. catalog에 nextClinicArrivalYmd.
 // - 2026-09-13: 배송 모드 lab_bundle|direct (10만원 이하 동봉/유료 빠른직송).
 // - 2026-09-13: 판매가·pkg가. 충전≥550만 패키지 구매자 단가.
@@ -10,6 +11,7 @@
 // - web/backend/services/storeSale.service.js
 // - web/backend/modules/store/store.routes.js
 // - web/backend/utils/storePackagePricing.js
+// - web/backend/utils/storeAdminBadge.util.js
 import mongoose from "mongoose";
 import StoreOrder from "../../models/storeOrder.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
@@ -42,6 +44,7 @@ import {
   payStoreOrderWithCredit,
   reserveStoreInventory,
 } from "../../services/storeSale.service.js";
+import { scheduleStoreAdminActionBadgeEmit } from "../../utils/storeAdminBadge.util.js";
 
 const B_PLAN_DEPOSIT_ACCOUNT_DEFAULTS = {
   bankName: "하나은행",
@@ -426,6 +429,7 @@ export async function createStoreOrder(req, res) {
       });
     }
     const paid = await StoreOrder.findById(created._id).lean();
+    scheduleStoreAdminActionBadgeEmit();
     return res.status(201).json({
       success: true,
       data: { order: paid, paymentMethod: "CREDIT" },
@@ -459,6 +463,7 @@ export async function payMyStoreOrderWithCredit(req, res) {
       userId: req.user?._id || null,
     });
     const updated = await StoreOrder.findById(id).lean();
+    scheduleStoreAdminActionBadgeEmit();
     return res.json({ success: true, data: updated, pay: result });
   } catch (error) {
     const status = error.statusCode || 500;
@@ -541,6 +546,7 @@ export async function cancelMyStoreOrder(req, res) {
       userId: req.user?._id || null,
     });
 
+    scheduleStoreAdminActionBadgeEmit();
     return res.json({ success: true, data: canceled });
   } catch (error) {
     const status = error.statusCode || 500;

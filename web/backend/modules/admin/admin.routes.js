@@ -105,12 +105,15 @@ import {
   adminPatchStoreInventory,
   adminPatchStoreProductPrices,
   adminListStoreOrders,
+  adminGetStoreActionCount,
   adminApproveStoreOrder,
   adminRejectStoreOrder,
   adminShipStoreOrder,
   adminDeliverStoreOrder,
   adminGetStorePackageBuyer,
   adminPatchStorePackageBuyer,
+  adminGetStoreProductClusters,
+  adminPutStoreProductClusters,
 } from "../../controllers/admin/adminStore.controller.js";
 import {
   adminGrantFreeShippingCredit,
@@ -468,6 +471,16 @@ router.get(
   authorize(["admin"]),
   adminListStoreInventory,
 );
+router.get(
+  "/store/product-clusters",
+  authorize(["admin"]),
+  adminGetStoreProductClusters,
+);
+router.put(
+  "/store/product-clusters",
+  authorize(["admin"], { subRoles: ["owner"] }),
+  adminPutStoreProductClusters,
+);
 router.patch(
   "/store/inventory/:productId",
   authorize(["admin"], { subRoles: ["owner"] }),
@@ -489,6 +502,11 @@ router.patch(
   adminPatchStorePackageBuyer,
 );
 router.get("/store/orders", authorize(["admin"]), adminListStoreOrders);
+router.get(
+  "/store/action-count",
+  authorize(["admin"]),
+  adminGetStoreActionCount,
+);
 router.post(
   "/store/orders/:id/approve",
   authorize(["admin"], { subRoles: ["owner"] }),

@@ -1,9 +1,13 @@
 // change-log:
+// - 2026-09-13: GET action-count · 승인/거절/출고/배송완료 후 사이드바 배지 emit.
+// - 2026-09-13: 상품 클러스터 레이아웃 GET/PUT · inventory에 clusters 포함.
 // - 2026-08-23: 출고·배송완료 API. 거절 시 fulfillment CANCELED.
 // - 2026-08-23: 관리자 스토어 재고·주문.
 // related files:
 // - web/backend/services/storeSale.service.js
 // - web/backend/modules/admin/admin.routes.js
+// - web/backend/utils/storeProductClusterLayout.js
+// - web/backend/utils/storeAdminBadge.util.js
 import StoreOrder from "../../models/storeOrder.model.js";
 import StoreInventory from "../../models/storeInventory.model.js";
 import AdminAuditLog from "../../models/adminAuditLog.model.js";
@@ -27,6 +31,15 @@ import {
   getCatalogDefaultPrices,
   upsertStoreProductPrice,
 } from "../../utils/storeProductPricing.js";
+import {
+  getOrSeedStoreProductClusterLayout,
+  resetStoreProductClusterLayout,
+  saveStoreProductClusterLayout,
+} from "../../utils/storeProductClusterLayout.js";
+import {
+  countStoreOrdersNeedingAdminAction,
+  scheduleStoreAdminActionBadgeEmit,
+} from "../../utils/storeAdminBadge.util.js";
 
 async function writeAuditLog({ req, action, refType, refId, details }) {
   const actorUserId = req.user?._id;
@@ -44,7 +57,10 @@ async function writeAuditLog({ req, action, refType, refId, details }) {
 export async function adminListStoreInventory(req, res) {
   try {
     await ensureStoreInventorySeeded();
-    const map = await getInventoryMap();
+    const [map, layout] = await Promise.all([
+      getInventoryMap(),
+      getOrSeedStoreProductClusterLayout(),
+    ]);
     const rows = listStoreProductIds().map((productId) => {
       const defaults = getCatalogDefaultPrices(productId);
       return {
@@ -59,11 +75,55 @@ export async function adminListStoreInventory(req, res) {
         qtyAvailable: map[productId]?.available ?? 0,
       };
     });
-    return res.json({ success: true, data: rows });
+    return res.json({
+      success: true,
+      data: rows,
+      clusters: layout.clusters,
+    });
   } catch (error) {
     return res.status(500).json({
       success: false,
       message: error.message || "inventory_list_failed",
+    });
+  }
+}
+
+/** GET /api/admin/store/product-clusters */
+export async function adminGetStoreProductClusters(req, res) {
+  try {
+    const layout = await getOrSeedStoreProductClusterLayout();
+    return res.json({ success: true, data: layout });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message || "product_clusters_get_failed",
+    });
+  }
+}
+
+/** PUT /api/admin/store/product-clusters */
+export async function adminPutStoreProductClusters(req, res) {
+  try {
+    const body = req.body || {};
+    const reset = body.reset === true;
+    const layout = reset
+      ? await resetStoreProductClusterLayout()
+      : await saveStoreProductClusterLayout(body.clusters);
+    await writeAuditLog({
+      req,
+      action: reset
+        ? "STORE_PRODUCT_CLUSTER_LAYOUT_RESET"
+        : "STORE_PRODUCT_CLUSTER_LAYOUT_PUT",
+      refType: "StoreProductClusterLayout",
+      refId: "default",
+      details: { clusterCount: layout.clusters.length, reset },
+    });
+    return res.json({ success: true, data: layout });
+  } catch (error) {
+    const status = error.statusCode || 500;
+    return res.status(status).json({
+      success: false,
+      message: error.message || "product_clusters_put_failed",
     });
   }
 }
@@ -246,6 +306,22 @@ export async function adminListStoreOrders(req, res) {
   }
 }
 
+/** GET /api/admin/store/action-count — 사이드바「스토어」배지 */
+export async function adminGetStoreActionCount(req, res) {
+  try {
+    const actionCount = await countStoreOrdersNeedingAdminAction();
+    return res.json({
+      success: true,
+      data: { actionCount: Math.max(0, Number(actionCount) || 0) },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message || "action_count_failed",
+    });
+  }
+}
+
 export async function adminApproveStoreOrder(req, res) {
   try {
     const id = String(req.params.id || "").trim();
@@ -285,6 +361,7 @@ export async function adminApproveStoreOrder(req, res) {
     });
 
     const updated = await StoreOrder.findById(id).lean();
+    scheduleStoreAdminActionBadgeEmit();
     return res.json({
       success: true,
       message: "스토어 주문이 확정되었습니다.",
@@ -337,6 +414,7 @@ export async function adminRejectStoreOrder(req, res) {
       details: { note },
     });
 
+    scheduleStoreAdminActionBadgeEmit();
     return res.json({ success: true, data: order.toObject() });
   } catch (error) {
     return res.status(500).json({
@@ -373,6 +451,7 @@ export async function adminShipStoreOrder(req, res) {
       },
     });
 
+    scheduleStoreAdminActionBadgeEmit();
     return res.json({
       success: true,
       message: "출고 처리되었습니다.",
@@ -408,6 +487,7 @@ export async function adminDeliverStoreOrder(req, res) {
       },
     });
 
+    scheduleStoreAdminActionBadgeEmit();
     return res.json({
       success: true,
       message: "배송 완료 처리되었습니다.",

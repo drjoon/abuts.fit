@@ -1,4 +1,7 @@
 // change-log:
+// - 2026-09-13: 주문 목록 기준 사이드바 스토어 액션 배지 로컬 동기화.
+// - 2026-09-13: 상품 드래그·클러스터 CRUD · 서버 레이아웃 저장.
+// - 2026-09-13: 상품 테이블을 키트 클러스터(구성 단품 하위)로 표시.
 // - 2026-09-13: 관리자 가격 입력·표시를 만원(소수 2자리·100원) 단위로.
 // - 2026-09-13: 상품 새로고침 시 가격·재고 draft를 서버 값으로 동기.
 // - 2026-09-13: 탭(주문·상품·패키지) · 가격 편집 · 거절 · 필터·스탯 UI.
@@ -6,14 +9,19 @@
 // - 2026-08-23: 관리자 스토어 재고·주문 승인.
 // related files:
 // - web/backend/controllers/admin/adminStore.controller.js
+// - web/backend/constants/storeProductClusters.js
 // - web/frontend/src/pages/requestor/store/storeOrderUi.tsx
 // - web/frontend/src/pages/admin/credits/creditPageUi.tsx
-import { useCallback, useEffect, useMemo, useState } from "react";
+// - web/frontend/src/features/layout/DashboardLayout.tsx
+import { useCallback, useEffect, useMemo, useState, Fragment } from "react";
 import {
   Boxes,
+  GripVertical,
   Package,
+  Plus,
   RefreshCw,
   Search,
+  Trash2,
   Truck,
   Wallet,
 } from "lucide-react";
@@ -133,12 +141,155 @@ function normalizeManwonDraft(raw: string): string {
   return won == null ? "" : wonToManwonDraft(won);
 }
 
+/**
+ * 관리자 상품 클러스터 (서버 StoreProductClusterLayout 과 동기).
+ * 부모 키트 아래에 구성 단품을 묶는다.
+ */
+type StoreProductCluster = {
+  id: string;
+  label: string;
+  parentProductId: string | null;
+  childProductIds: string[];
+  compositionHint?: string;
+};
+
+/** FE fallback — BE `storeProductClusters.js` 시드와 동일. */
+const DEFAULT_STORE_PRODUCT_CLUSTERS: StoreProductCluster[] = [
+  {
+    id: "full-package",
+    label: "500만 패키지",
+    parentProductId: "full-package",
+    childProductIds: [],
+    compositionHint: "키트 3종 + SA2·SH2 ×100",
+  },
+  {
+    id: "initial-kit",
+    label: "Initial Kit",
+    parentProductId: "initial-kit",
+    childProductIds: ["kit-case", "initial-pen", "pen", "cup", "initial-pin"],
+    compositionHint: "케이스 + 이니셜펜 · 펜 · 컵 · 이니셜핀",
+  },
+  {
+    id: "check-kit",
+    label: "Check Kit",
+    parentProductId: "check-kit",
+    childProductIds: ["check-pin", "bone-shaper"],
+    compositionHint: "체크핀 · 본셰이퍼 (+케이스)",
+  },
+  {
+    id: "prosthetic-kit",
+    label: "Prosthetic Kit",
+    parentProductId: "prosthetic-kit",
+    childProductIds: ["gingival-shaper", "hex-driver", "torque-wrench"],
+    compositionHint: "진지발셰이퍼 · 헥스드라이버 · 토크렌치 (+케이스)",
+  },
+  {
+    id: "abutment",
+    label: "Abutment",
+    parentProductId: null,
+    childProductIds: [
+      "simple-abutment-2",
+      "simple-healing-2",
+      "simple-abutment",
+      "simple-healing",
+    ],
+    compositionHint: "SimpleAbutment · Healing",
+  },
+];
+
+function cloneClusters(clusters: StoreProductCluster[]): StoreProductCluster[] {
+  return clusters.map((c) => ({
+    ...c,
+    childProductIds: [...c.childProductIds],
+  }));
+}
+
+/** 모든 클러스터에서 productId 제거(부모면 parent 해제). */
+function removeProductFromClusters(
+  clusters: StoreProductCluster[],
+  productId: string,
+): StoreProductCluster[] {
+  return clusters.map((c) => ({
+    ...c,
+    parentProductId:
+      c.parentProductId === productId ? null : c.parentProductId,
+    childProductIds: c.childProductIds.filter((id) => id !== productId),
+  }));
+}
+
+/**
+ * product를 targetCluster의 children에 index로 삽입.
+ * targetClusterId === "__leftover__" 이면 미분류.
+ */
+function moveProductInClusters(
+  clusters: StoreProductCluster[],
+  productId: string,
+  targetClusterId: string,
+  insertIndex: number | null,
+): StoreProductCluster[] {
+  if (targetClusterId === "__leftover__") {
+    return removeProductFromClusters(clusters, productId);
+  }
+
+  const source = clusters.find(
+    (c) =>
+      c.parentProductId === productId ||
+      c.childProductIds.includes(productId),
+  );
+  const sameCluster = source?.id === targetClusterId;
+
+  if (sameCluster && source) {
+    // 같은 클러스터 내 자식 순서만 변경 (부모 SKU는 children으로 내리지 않음)
+    if (source.parentProductId === productId) return clusters;
+    const from = source.childProductIds.indexOf(productId);
+    if (from < 0) return clusters;
+    const children = [...source.childProductIds];
+    children.splice(from, 1);
+    let to =
+      insertIndex == null || insertIndex < 0
+        ? children.length
+        : Math.min(insertIndex, children.length);
+    // from < to 이면 제거 후 인덱스가 한 칸 앞당겨짐 → 보정하지 않고
+    // "목표 행 앞에 삽입"이므로 from < insertIndex 일 때 to = insertIndex - 1
+    if (insertIndex != null && from < insertIndex) {
+      to = Math.min(insertIndex - 1, children.length);
+      to = Math.max(0, to);
+    }
+    children.splice(to, 0, productId);
+    return clusters.map((c) =>
+      c.id === targetClusterId ? { ...c, childProductIds: children } : c,
+    );
+  }
+
+  let next = removeProductFromClusters(clusters, productId);
+  next = next.map((c) => {
+    if (c.id !== targetClusterId) return c;
+    const children = [...c.childProductIds];
+    const idx =
+      insertIndex == null || insertIndex < 0
+        ? children.length
+        : Math.min(insertIndex, children.length);
+    children.splice(idx, 0, productId);
+    return { ...c, childProductIds: children };
+  });
+  return next;
+}
+
 function orderNeedsAction(order: StoreOrder) {
   if (order.status === "PENDING" || order.status === "MATCHED") return true;
   if (order.status === "PAID" && order.fulfillmentStatus === "READY") return true;
   if (order.status === "PAID" && order.fulfillmentStatus === "SHIPPED")
     return true;
   return false;
+}
+
+function publishStoreActionCount(orders: StoreOrder[]) {
+  const actionCount = orders.filter(orderNeedsAction).length;
+  window.dispatchEvent(
+    new CustomEvent("abuts:store-action-count", {
+      detail: { actionCount },
+    }),
+  );
 }
 
 function orderMatchesFilter(order: StoreOrder, filter: OrderFilter) {
@@ -163,6 +314,9 @@ export default function AdminStorePage() {
   const [tab, setTab] = useState("orders");
   const [inventory, setInventory] = useState<InventoryRow[]>([]);
   const [orders, setOrders] = useState<StoreOrder[]>([]);
+  const [clusterLayout, setClusterLayout] = useState<StoreProductCluster[]>(
+    () => cloneClusters(DEFAULT_STORE_PRODUCT_CLUSTERS),
+  );
   const [productDrafts, setProductDrafts] = useState<
     Record<string, ProductDraft>
   >({});
@@ -171,6 +325,11 @@ export default function AdminStorePage() {
   >({});
   const [busy, setBusy] = useState(true);
   const [savingProductId, setSavingProductId] = useState<string | null>(null);
+  const [clusterBusy, setClusterBusy] = useState(false);
+  const [dragProductId, setDragProductId] = useState<string | null>(null);
+  const [dragOverKey, setDragOverKey] = useState<string | null>(null);
+  const [editingClusterId, setEditingClusterId] = useState<string | null>(null);
+  const [editingClusterLabel, setEditingClusterLabel] = useState("");
   const [orderBusyId, setOrderBusyId] = useState<string | null>(null);
   const [orderFilter, setOrderFilter] = useState<OrderFilter>("all");
   const [pkgBuyerId, setPkgBuyerId] = useState("");
@@ -185,7 +344,11 @@ export default function AdminStorePage() {
     setBusy(true);
     try {
       const [invRes, ordRes] = await Promise.all([
-        apiFetch<{ success: boolean; data?: InventoryRow[] }>({
+        apiFetch<{
+          success: boolean;
+          data?: InventoryRow[];
+          clusters?: StoreProductCluster[];
+        }>({
           path: "/api/admin/store/inventory",
         }),
         apiFetch<{ success: boolean; data?: StoreOrder[] }>({
@@ -196,6 +359,10 @@ export default function AdminStorePage() {
       const ord = ordRes.data?.data || [];
       setInventory(inv);
       setOrders(ord);
+      const clusters = invRes.data?.clusters;
+      if (Array.isArray(clusters) && clusters.length > 0) {
+        setClusterLayout(cloneClusters(clusters));
+      }
       // 서버 유효가가 SSOT — 새로고침 시 로컬 draft를 덮어쓴다(만원 표시).
       setProductDrafts(() => {
         const next: Record<string, ProductDraft> = {};
@@ -219,6 +386,12 @@ export default function AdminStorePage() {
     void load();
   }, [load]);
 
+  // 초기 []로 사이드바 배지를 0으로 덮지 않음(로드 완료 후만 동기화).
+  useEffect(() => {
+    if (busy) return;
+    publishStoreActionCount(orders);
+  }, [orders, busy]);
+
   const stats = useMemo(() => {
     const pending = orders.filter(
       (o) => o.status === "PENDING" || o.status === "MATCHED",
@@ -233,10 +406,127 @@ export default function AdminStorePage() {
     return { pending, ready, shipped, lowStock };
   }, [orders, inventory]);
 
+  const inventoryById = useMemo(() => {
+    const map = new Map<string, InventoryRow>();
+    for (const row of inventory) map.set(row.productId, row);
+    return map;
+  }, [inventory]);
+
+  const productClusters = useMemo(() => {
+    const seen = new Set<string>();
+    const clusters = clusterLayout
+      .map((cluster) => {
+        const parent =
+          cluster.parentProductId != null
+            ? inventoryById.get(cluster.parentProductId) ?? null
+            : null;
+        if (parent) seen.add(parent.productId);
+        const children = cluster.childProductIds
+          .map((id) => inventoryById.get(id))
+          .filter((row): row is InventoryRow => Boolean(row));
+        for (const child of children) seen.add(child.productId);
+        return { ...cluster, parent, children };
+      })
+      .filter((c) => true);
+
+    const leftovers = inventory.filter((row) => !seen.has(row.productId));
+    return { clusters, leftovers };
+  }, [inventory, inventoryById, clusterLayout]);
+
   const filteredOrders = useMemo(
     () => orders.filter((o) => orderMatchesFilter(o, orderFilter)),
     [orders, orderFilter],
   );
+
+  async function persistClusterLayout(
+    next: StoreProductCluster[],
+    opts?: { reset?: boolean; silent?: boolean },
+  ) {
+    const prev = clusterLayout;
+    setClusterLayout(next);
+    setClusterBusy(true);
+    try {
+      const res = await apiFetch<{
+        success: boolean;
+        message?: string;
+        data?: { clusters?: StoreProductCluster[] };
+      }>({
+        path: "/api/admin/store/product-clusters",
+        method: "PUT",
+        jsonBody: opts?.reset
+          ? { reset: true }
+          : { clusters: next },
+      });
+      if (!res.ok || !res.data?.success) {
+        setClusterLayout(prev);
+        toast.error(res.data?.message || "클러스터 저장 실패");
+        return false;
+      }
+      if (Array.isArray(res.data.data?.clusters)) {
+        setClusterLayout(cloneClusters(res.data.data.clusters));
+      }
+      if (!opts?.silent) toast.success("클러스터 배치를 저장했습니다.");
+      return true;
+    } catch {
+      setClusterLayout(prev);
+      toast.error("클러스터 저장 실패");
+      return false;
+    } finally {
+      setClusterBusy(false);
+    }
+  }
+
+  function applyProductDrop(
+    productId: string,
+    targetClusterId: string,
+    insertIndex: number | null,
+  ) {
+    if (!productId) return;
+    // 부모 SKU를 자식으로 옮기면 해당 클러스터 parent 해제됨(removeProductFromClusters).
+    const next = moveProductInClusters(
+      clusterLayout,
+      productId,
+      targetClusterId,
+      insertIndex,
+    );
+    void persistClusterLayout(next, { silent: true });
+  }
+
+  function addCluster() {
+    const id = `cluster-${Date.now().toString(36)}`;
+    const next = [
+      ...clusterLayout,
+      {
+        id,
+        label: "새 클러스터",
+        parentProductId: null,
+        childProductIds: [] as string[],
+      },
+    ];
+    setEditingClusterId(id);
+    setEditingClusterLabel("새 클러스터");
+    void persistClusterLayout(next, { silent: true });
+  }
+
+  function commitClusterRename(clusterId: string) {
+    const label = editingClusterLabel.trim() || "이름 없음";
+    setEditingClusterId(null);
+    const next = clusterLayout.map((c) =>
+      c.id === clusterId ? { ...c, label } : c,
+    );
+    void persistClusterLayout(next, { silent: true });
+  }
+
+  function deleteCluster(clusterId: string) {
+    const next = clusterLayout.filter((c) => c.id !== clusterId);
+    void persistClusterLayout(next, { silent: true });
+  }
+
+  function resetClustersToDefault() {
+    void persistClusterLayout(cloneClusters(DEFAULT_STORE_PRODUCT_CLUSTERS), {
+      reset: true,
+    });
+  }
 
   function patchProductDraft(
     productId: string,
@@ -616,6 +906,184 @@ export default function AdminStorePage() {
     }
   }
 
+  function renderInventoryPriceRow(
+    row: InventoryRow,
+    opts: {
+      role: "parent" | "child" | "leftover";
+      clusterId: string;
+      insertIndex: number | null;
+    },
+  ) {
+    const draft = productDrafts[row.productId] || {
+      list: wonToManwonDraft(row.listPriceInclusive),
+      pkg: wonToManwonDraft(row.packagePriceInclusive),
+      qty: String(row.qtyOnHand),
+    };
+    const low = row.qtyAvailable <= 5;
+    const rowSaving = savingProductId === row.productId;
+    const isChild = opts.role === "child";
+    const dropKey = `row:${opts.clusterId}:${row.productId}`;
+    const isDragOver = dragOverKey === dropKey;
+    const isDragging = dragProductId === row.productId;
+
+    return (
+      <tr
+        key={row.productId}
+        className={cn(
+          "border-b border-border/40 last:border-0",
+          isChild && "bg-background/40",
+          isDragging && "opacity-50",
+          isDragOver && "ring-1 ring-inset ring-primary/40",
+        )}
+        onDragOver={(e) => {
+          if (!dragProductId || dragProductId === row.productId) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+          if (dragOverKey !== dropKey) setDragOverKey(dropKey);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const productId =
+            e.dataTransfer.getData("text/plain") || dragProductId || "";
+          setDragProductId(null);
+          setDragOverKey(null);
+          if (!productId || productId === row.productId) return;
+          applyProductDrop(productId, opts.clusterId, opts.insertIndex);
+        }}
+      >
+        <td className="px-3 py-2.5 align-top">
+          <div className={cn("flex items-start gap-1.5", isChild && "pl-3")}>
+            <button
+              type="button"
+              className="mt-0.5 cursor-grab touch-none text-muted-foreground active:cursor-grabbing"
+              draggable
+              title="드래그하여 이동"
+              aria-label={`${row.name} 이동`}
+              onDragStart={(e) => {
+                e.dataTransfer.setData("text/plain", row.productId);
+                e.dataTransfer.effectAllowed = "move";
+                setDragProductId(row.productId);
+              }}
+              onDragEnd={() => {
+                setDragProductId(null);
+                setDragOverKey(null);
+              }}
+            >
+              <GripVertical className="h-4 w-4" />
+            </button>
+            <div className="min-w-0">
+              <div
+                className={cn(
+                  "font-medium",
+                  isChild && "flex items-center gap-1.5 text-sm font-normal",
+                )}
+              >
+                {isChild ? (
+                  <span className="text-muted-foreground/70" aria-hidden>
+                    └
+                  </span>
+                ) : null}
+                {row.name}
+              </div>
+            </div>
+          </div>
+        </td>
+        <td className="px-3 py-2.5 align-top">
+          <div className="flex items-center gap-1">
+            <Input
+              className="h-8 w-[6.5rem] tabular-nums"
+              inputMode="decimal"
+              placeholder="0.00"
+              value={draft.list}
+              onChange={(e) =>
+                patchProductDraft(row.productId, "list", e.target.value)
+              }
+              onBlur={() =>
+                patchProductDraft(
+                  row.productId,
+                  "list",
+                  normalizeManwonDraft(draft.list),
+                )
+              }
+            />
+            <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+              만원
+            </span>
+          </div>
+        </td>
+        <td className="px-3 py-2.5 align-top">
+          <div className="flex items-center gap-1">
+            <Input
+              className="h-8 w-[6.5rem] tabular-nums"
+              inputMode="decimal"
+              placeholder="없음"
+              value={draft.pkg}
+              onChange={(e) =>
+                patchProductDraft(row.productId, "pkg", e.target.value)
+              }
+              onBlur={() => {
+                if (draft.pkg.trim() === "") {
+                  patchProductDraft(row.productId, "pkg", "");
+                  return;
+                }
+                patchProductDraft(
+                  row.productId,
+                  "pkg",
+                  normalizeManwonDraft(draft.pkg),
+                );
+              }}
+            />
+            <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+              만원
+            </span>
+          </div>
+        </td>
+        <td
+          className={cn(
+            "px-3 py-2.5 align-middle tabular-nums",
+            low && "font-semibold text-amber-700",
+          )}
+        >
+          {row.qtyAvailable}
+        </td>
+        <td className="px-3 py-2.5 align-middle tabular-nums text-muted-foreground">
+          {row.qtyReserved}
+        </td>
+        <td className="px-3 py-2.5 align-top">
+          <Input
+            className="h-8 w-20 tabular-nums"
+            value={draft.qty}
+            onChange={(e) =>
+              patchProductDraft(row.productId, "qty", e.target.value)
+            }
+          />
+        </td>
+        <td className="px-3 py-2.5 align-top">
+          <div className="flex flex-wrap gap-1.5">
+            <Button
+              type="button"
+              size="sm"
+              disabled={rowSaving}
+              onClick={() => void saveProduct(row)}
+            >
+              저장
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={rowSaving}
+              onClick={() => void resetProductPrices(row)}
+            >
+              기본가
+            </Button>
+          </div>
+        </td>
+      </tr>
+    );
+  }
+
   return (
     <div className="custom-scrollbar workspace-nested-scroll h-full min-h-0 overflow-auto">
       <div className="mx-auto w-full max-w-6xl space-y-5 p-1 pb-10">
@@ -917,11 +1385,34 @@ export default function AdminStorePage() {
           </TabsContent>
 
           <TabsContent value="products" className="mt-0 space-y-4">
-            <CreditSectionHeader
-              icon={Boxes}
-              title="상품 · 가격 · 재고"
-              description="판매가·pkg가는 만원 단위(소수 2자리·100원)로 입력합니다. 저장·표시는 ###.##만원. API·DB는 원. 기본가 복원은 카탈로그 상수로 되돌립니다."
-            />
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <CreditSectionHeader
+                icon={Boxes}
+                title="상품 · 가격 · 재고"
+                description="핸들로 드래그해 클러스터·순서를 바꿉니다. 가격은 만원(소수 2자리). 배치는 관리자 공통 저장."
+              />
+              <div className="flex flex-wrap gap-1.5">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={clusterBusy}
+                  onClick={() => addCluster()}
+                >
+                  <Plus className="mr-1.5 h-3.5 w-3.5" />
+                  클러스터 추가
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  disabled={clusterBusy}
+                  onClick={() => resetClustersToDefault()}
+                >
+                  기본 배치
+                </Button>
+              </div>
+            </div>
             {busy && inventory.length === 0 ? (
               <p className="text-sm text-muted-foreground">불러오는 중…</p>
             ) : (
@@ -940,135 +1431,156 @@ export default function AdminStorePage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {inventory.map((row) => {
-                        const draft = productDrafts[row.productId] || {
-                          list: wonToManwonDraft(row.listPriceInclusive),
-                          pkg: wonToManwonDraft(row.packagePriceInclusive),
-                          qty: String(row.qtyOnHand),
-                        };
-                        const low = row.qtyAvailable <= 5;
-                        const rowSaving = savingProductId === row.productId;
+                      {productClusters.clusters.map((cluster) => {
+                        const headerDropKey = `cluster:${cluster.id}`;
+                        const isHeaderOver = dragOverKey === headerDropKey;
                         return (
-                          <tr
-                            key={row.productId}
-                            className="border-b border-border/40 last:border-0"
-                          >
-                            <td className="px-3 py-2.5 align-top">
-                              <div className="font-medium">{row.name}</div>
-                              <div className="font-mono text-[10px] text-muted-foreground">
-                                {row.productId}
-                              </div>
-                            </td>
-                            <td className="px-3 py-2.5 align-top">
-                              <div className="flex items-center gap-1">
-                                <Input
-                                  className="h-8 w-[6.5rem] tabular-nums"
-                                  inputMode="decimal"
-                                  placeholder="0.00"
-                                  value={draft.list}
-                                  onChange={(e) =>
-                                    patchProductDraft(
-                                      row.productId,
-                                      "list",
-                                      e.target.value,
-                                    )
-                                  }
-                                  onBlur={() =>
-                                    patchProductDraft(
-                                      row.productId,
-                                      "list",
-                                      normalizeManwonDraft(draft.list),
-                                    )
-                                  }
-                                />
-                                <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                                  만원
-                                </span>
-                              </div>
-                            </td>
-                            <td className="px-3 py-2.5 align-top">
-                              <div className="flex items-center gap-1">
-                                <Input
-                                  className="h-8 w-[6.5rem] tabular-nums"
-                                  inputMode="decimal"
-                                  placeholder="없음"
-                                  value={draft.pkg}
-                                  onChange={(e) =>
-                                    patchProductDraft(
-                                      row.productId,
-                                      "pkg",
-                                      e.target.value,
-                                    )
-                                  }
-                                  onBlur={() => {
-                                    if (draft.pkg.trim() === "") {
-                                      patchProductDraft(
-                                        row.productId,
-                                        "pkg",
-                                        "",
-                                      );
-                                      return;
-                                    }
-                                    patchProductDraft(
-                                      row.productId,
-                                      "pkg",
-                                      normalizeManwonDraft(draft.pkg),
-                                    );
-                                  }}
-                                />
-                                <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                                  만원
-                                </span>
-                              </div>
-                            </td>
-                            <td
+                          <Fragment key={cluster.id}>
+                            <tr
                               className={cn(
-                                "px-3 py-2.5 align-middle tabular-nums",
-                                low && "font-semibold text-amber-700",
+                                "border-b border-border/50 bg-muted/25",
+                                isHeaderOver && "bg-primary/10",
                               )}
-                            >
-                              {row.qtyAvailable}
-                            </td>
-                            <td className="px-3 py-2.5 align-middle tabular-nums text-muted-foreground">
-                              {row.qtyReserved}
-                            </td>
-                            <td className="px-3 py-2.5 align-top">
-                              <Input
-                                className="h-8 w-20 tabular-nums"
-                                value={draft.qty}
-                                onChange={(e) =>
-                                  patchProductDraft(
-                                    row.productId,
-                                    "qty",
-                                    e.target.value,
-                                  )
+                              onDragOver={(e) => {
+                                if (!dragProductId) return;
+                                e.preventDefault();
+                                e.dataTransfer.dropEffect = "move";
+                                if (dragOverKey !== headerDropKey) {
+                                  setDragOverKey(headerDropKey);
                                 }
-                              />
-                            </td>
-                            <td className="px-3 py-2.5 align-top">
-                              <div className="flex flex-wrap gap-1.5">
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  disabled={rowSaving}
-                                  onClick={() => void saveProduct(row)}
-                                >
-                                  저장
-                                </Button>
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="ghost"
-                                  disabled={rowSaving}
-                                  onClick={() => void resetProductPrices(row)}
-                                >
-                                  기본가
-                                </Button>
-                              </div>
-                            </td>
-                          </tr>
+                              }}
+                              onDrop={(e) => {
+                                e.preventDefault();
+                                const productId =
+                                  e.dataTransfer.getData("text/plain") ||
+                                  dragProductId ||
+                                  "";
+                                setDragProductId(null);
+                                setDragOverKey(null);
+                                if (!productId) return;
+                                applyProductDrop(productId, cluster.id, null);
+                              }}
+                            >
+                              <td colSpan={7} className="px-3 py-2">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  {editingClusterId === cluster.id ? (
+                                    <Input
+                                      className="h-7 w-48 text-xs font-semibold"
+                                      value={editingClusterLabel}
+                                      autoFocus
+                                      onChange={(e) =>
+                                        setEditingClusterLabel(e.target.value)
+                                      }
+                                      onBlur={() =>
+                                        commitClusterRename(cluster.id)
+                                      }
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Enter") {
+                                          commitClusterRename(cluster.id);
+                                        }
+                                        if (e.key === "Escape") {
+                                          setEditingClusterId(null);
+                                        }
+                                      }}
+                                    />
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      className="text-xs font-semibold tracking-tight text-foreground/90 hover:underline"
+                                      onClick={() => {
+                                        setEditingClusterId(cluster.id);
+                                        setEditingClusterLabel(cluster.label);
+                                      }}
+                                      title="이름 변경"
+                                    >
+                                      {cluster.label}
+                                    </button>
+                                  )}
+                                  {cluster.compositionHint ? (
+                                    <span className="text-xs font-normal text-muted-foreground">
+                                      {cluster.compositionHint}
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] text-muted-foreground">
+                                      여기로 드롭하여 추가
+                                    </span>
+                                  )}
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="ghost"
+                                    className="ml-auto h-7 px-2 text-muted-foreground"
+                                    disabled={clusterBusy}
+                                    onClick={() => deleteCluster(cluster.id)}
+                                    title="클러스터 삭제 (구성품은 기타로)"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </Button>
+                                </div>
+                              </td>
+                            </tr>
+                            {cluster.parent
+                              ? renderInventoryPriceRow(cluster.parent, {
+                                  role: "parent",
+                                  clusterId: cluster.id,
+                                  insertIndex: 0,
+                                })
+                              : null}
+                            {cluster.children.map((child, childIdx) =>
+                              renderInventoryPriceRow(child, {
+                                role: "child",
+                                clusterId: cluster.id,
+                                insertIndex: childIdx,
+                              }),
+                            )}
+                          </Fragment>
                         );
                       })}
+                      <Fragment>
+                        <tr
+                          className={cn(
+                            "border-b border-border/50 bg-muted/25",
+                            dragOverKey === "cluster:__leftover__" &&
+                              "bg-primary/10",
+                          )}
+                          onDragOver={(e) => {
+                            if (!dragProductId) return;
+                            e.preventDefault();
+                            e.dataTransfer.dropEffect = "move";
+                            if (dragOverKey !== "cluster:__leftover__") {
+                              setDragOverKey("cluster:__leftover__");
+                            }
+                          }}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            const productId =
+                              e.dataTransfer.getData("text/plain") ||
+                              dragProductId ||
+                              "";
+                            setDragProductId(null);
+                            setDragOverKey(null);
+                            if (!productId) return;
+                            applyProductDrop(productId, "__leftover__", null);
+                          }}
+                        >
+                          <td
+                            colSpan={7}
+                            className="px-3 py-2 text-xs font-semibold text-foreground/90"
+                          >
+                            기타
+                            <span className="ml-2 font-normal text-muted-foreground">
+                              미분류 · 여기로 드롭하면 클러스터에서 제거
+                            </span>
+                          </td>
+                        </tr>
+                        {productClusters.leftovers.map((row) =>
+                          renderInventoryPriceRow(row, {
+                            role: "leftover",
+                            clusterId: "__leftover__",
+                            insertIndex: null,
+                          }),
+                        )}
+                      </Fragment>
                     </tbody>
                   </table>
                 </div>

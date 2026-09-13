@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-13: 입금확정·선수금결제·취소 후 관리자 스토어 배지 emit(ownSession).
 // - 2026-09-06: REV_STORE_TAXABLE amount=부가세 포함가.
 // - 2026-09-06: 스토어 취소 = STORE_SALE 원본 유지 + REFUND(잔고 복구). 제조사 삭형과 분리.
 // - 2026-08-23: 스토어 취소 = STORE_SALE 저널 삭제 + StoreOrder 취소 이력(canceledAt/By).
@@ -10,6 +11,7 @@
 // - rules.md §2.3
 // - web/backend/constants/ledgerTaxLanes.js
 // - web/backend/utils/creditBPlanMatching.js
+// - web/backend/utils/storeAdminBadge.util.js
 import mongoose from "mongoose";
 import StoreOrder from "../models/storeOrder.model.js";
 import StoreInventory from "../models/storeInventory.model.js";
@@ -37,6 +39,7 @@ import {
   buildTaxinvoiceObject,
   registIssueInvoice,
 } from "../utils/popbill.util.js";
+import { scheduleStoreAdminActionBadgeEmit } from "../utils/storeAdminBadge.util.js";
 
 function storeOrderSaleIdempotencyKeys(orderId) {
   const id = String(orderId || "").trim();
@@ -561,6 +564,10 @@ export async function finalizeStoreSale({
     }
   } finally {
     if (ownSession) session.endSession();
+  }
+
+  if (ownSession && (finalized || idempotent)) {
+    scheduleStoreAdminActionBadgeEmit();
   }
 
   return { finalized, idempotent };

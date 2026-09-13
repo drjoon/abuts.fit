@@ -15,6 +15,7 @@ import {
 } from "@/shared/layout/sidebarOpen";
 import { cn } from "@/shared/ui/cn";
 
+// - 2026-09-13: 관리자「스토어」사이드바 액션 대기 배지(PENDING·READY·SHIPPED).
 // - 2026-09-13: 관리자 사이드에「스토어」(/dashboard/store-admin) 복구.
 // - 2026-09-13: 사이드바 도킹 브레이크포인트를 lg(1024)→xl(1280). 중간 가로폭에서 드로어로 접힘.
 // - 2026-09-09: 기공소에 툴팁 — 구강스캔 전제 제거(「어벗·임시치아·지르 보철 의뢰」).
@@ -603,6 +604,7 @@ export const DashboardLayout = () => {
   const [requestorPracticeUnreadCount, setRequestorPracticeUnreadCount] =
     useState(0);
   const [abutsFeePendingCount, setAbutsFeePendingCount] = useState(0);
+  const [storeActionCount, setStoreActionCount] = useState(0);
   const { rooms: chatRooms } = useChatRooms();
   const {
     canUsePaid: requestorCanUsePaid,
@@ -1247,6 +1249,33 @@ export const DashboardLayout = () => {
     };
   }, [token, user.role]);
 
+  useEffect(() => {
+    if (user.role !== "admin" || !token) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await apiFetch<{
+          success?: boolean;
+          data?: { actionCount?: number };
+        }>({
+          path: "/api/admin/store/action-count",
+          method: "GET",
+          token,
+        });
+        if (cancelled || !res.ok) return;
+        const count = Number(res.data?.data?.actionCount);
+        if (Number.isFinite(count) && count >= 0) {
+          setStoreActionCount(count);
+        }
+      } catch {
+        // silent
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [token, user.role]);
+
   useAppEventListener({
     enabled: user.role === "admin",
     eventTypes: ["admin:implant-catalog-mismatch"],
@@ -1342,6 +1371,22 @@ export const DashboardLayout = () => {
 
   useAppEventListener({
     enabled: user.role === "admin",
+    eventTypes: ["store:action-count"],
+    deferWhenEditing: false,
+    onMatch: (evt) => {
+      const data =
+        evt?.data && typeof evt.data === "object"
+          ? (evt.data as { actionCount?: number })
+          : {};
+      const count = Number(data.actionCount);
+      if (Number.isFinite(count) && count >= 0) {
+        setStoreActionCount(count);
+      }
+    },
+  });
+
+  useAppEventListener({
+    enabled: user.role === "admin",
     eventTypes: ["remote-support:requested"],
     deferWhenEditing: false,
     onMatch: (evt) => {
@@ -1404,6 +1449,21 @@ export const DashboardLayout = () => {
     };
   }, [user.role]);
 
+  useEffect(() => {
+    if (user.role !== "admin") return;
+    const onStoreAction = (evt: Event) => {
+      const custom = evt as CustomEvent<{ actionCount?: unknown }>;
+      const next = Number(custom.detail?.actionCount);
+      if (Number.isFinite(next) && next >= 0) {
+        setStoreActionCount(next);
+      }
+    };
+    window.addEventListener("abuts:store-action-count", onStoreAction);
+    return () => {
+      window.removeEventListener("abuts:store-action-count", onStoreAction);
+    };
+  }, [user.role]);
+
   const resolvedMenuItems = (() => {
     if (!isCreditLow) return menuItems;
     return menuItems.map((item) => {
@@ -1441,6 +1501,9 @@ export const DashboardLayout = () => {
       if (path === "/dashboard/admin-settings" && user.role === "admin") {
         return adminCommBadge + Math.max(0, abutsFeePendingCount);
       }
+      if (path === "/dashboard/store-admin" && user.role === "admin") {
+        return adminCommBadge + Math.max(0, storeActionCount);
+      }
       return adminCommBadge;
     },
     [
@@ -1449,6 +1512,7 @@ export const DashboardLayout = () => {
       requestorKind,
       requestorPracticeChatUnreadCount,
       requestorPracticeUnreadCount,
+      storeActionCount,
       user.role,
     ],
   );
