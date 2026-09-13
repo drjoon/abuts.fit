@@ -9,17 +9,79 @@
 # Boot order after Windows logon (Rhino/ESPRIT need interactive desktop):
 #   1) Rhino 8 + ScriptEditor wake (RhinoCode pipe)
 #   2) rhino-server (:8000)
-#   3) ESPRIT + add-in (:8001)
+#   3) ESPRIT + splash 확인 + add-in (:8001)
 #   4) bridge-server (:8002)
 param(
   [int]$DelaySeconds = 45,
   [int]$RhinoReadyTimeoutSec = 180,
+  [int]$EspritSplashTimeoutSec = 90,
   [switch]$SkipDelay,
   [switch]$ForceRhinoRestart,
   [switch]$WhatIf
 )
 
 $ErrorActionPreference = "Continue"
+
+# --- Win32 / UI helpers (ScriptEditor keys + ESPRIT splash click) ---
+Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
+Add-Type -AssemblyName UIAutomationClient -ErrorAction SilentlyContinue
+Add-Type -AssemblyName UIAutomationTypes -ErrorAction SilentlyContinue
+
+if (-not ("AbutsWin32" -as [type])) {
+  Add-Type @"
+using System;
+using System.Text;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+
+public static class AbutsWin32 {
+  public delegate bool EnumProc(IntPtr hWnd, IntPtr lParam);
+
+  [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc lpEnumFunc, IntPtr lParam);
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+  public static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
+  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+  [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+
+  public const int SW_RESTORE = 9;
+  public const byte VK_RETURN = 0x0D;
+  public const uint KEYEVENTF_KEYUP = 0x0002;
+
+  public static List<IntPtr> GetVisibleWindowsForPid(uint pid) {
+    var list = new List<IntPtr>();
+    EnumWindows((hWnd, lParam) => {
+      uint wpid;
+      GetWindowThreadProcessId(hWnd, out wpid);
+      if (wpid == pid && IsWindowVisible(hWnd)) list.Add(hWnd);
+      return true;
+    }, IntPtr.Zero);
+    return list;
+  }
+
+  public static string GetTitle(IntPtr hWnd) {
+    var sb = new StringBuilder(512);
+    GetWindowText(hWnd, sb, sb.Capacity);
+    return sb.ToString();
+  }
+
+  public static void FocusWindow(IntPtr hWnd) {
+    ShowWindow(hWnd, SW_RESTORE);
+    BringWindowToTop(hWnd);
+    SetForegroundWindow(hWnd);
+  }
+
+  public static void TapEnter() {
+    keybd_event(VK_RETURN, 0, 0, UIntPtr.Zero);
+    keybd_event(VK_RETURN, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+  }
+}
+"@
+}
 
 function Test-Pc1RootCandidate {
   param([string]$Path)
@@ -128,24 +190,149 @@ function Get-RhinoCodePipeCount {
     if ($parsed -is [System.Array]) { return $parsed.Count }
     return 1
   } catch {
-    # Non-JSON list output: count non-empty lines as a weak signal.
     $lines = @($text -split "`r?`n" | Where-Object { $_.Trim() -ne "" })
     return $lines.Count
   }
 }
 
 function Get-RhinoProcesses {
-  $procs = @(Get-Process -Name "Rhino" -ErrorAction SilentlyContinue)
-  return $procs
+  return @(Get-Process -Name "Rhino" -ErrorAction SilentlyContinue)
+}
+
+function Get-ProcessWindows {
+  param([string[]]$ProcessNames)
+  $out = @()
+  foreach ($name in $ProcessNames) {
+    foreach ($proc in @(Get-Process -Name $name -ErrorAction SilentlyContinue)) {
+      try {
+        $hwnds = [AbutsWin32]::GetVisibleWindowsForPid([uint32]$proc.Id)
+        foreach ($h in $hwnds) {
+          $title = [AbutsWin32]::GetTitle($h)
+          $out += [pscustomobject]@{
+            ProcessName = $proc.ProcessName
+            Pid = $proc.Id
+            Hwnd = $h
+            Title = $title
+          }
+        }
+      } catch {}
+    }
+  }
+  return $out
+}
+
+function Invoke-UiButtonClick {
+  param(
+    [string[]]$ProcessNames,
+    [string[]]$ButtonNames,
+    [int]$TimeoutSec = 60
+  )
+  if (-not ("System.Windows.Automation.AutomationElement" -as [type])) {
+    Write-Log "UIAutomation assemblies unavailable" "WARN"
+    return $false
+  }
+
+  $deadline = (Get-Date).AddSeconds($TimeoutSec)
+  while ((Get-Date) -lt $deadline) {
+    $wins = Get-ProcessWindows -ProcessNames $ProcessNames
+    foreach ($w in $wins) {
+      try {
+        $root = [System.Windows.Automation.AutomationElement]::FromHandle($w.Hwnd)
+        if (-not $root) { continue }
+        $btnCond = New-Object System.Windows.Automation.PropertyCondition(
+          [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+          [System.Windows.Automation.ControlType]::Button
+        )
+        $buttons = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $btnCond)
+        foreach ($btn in $buttons) {
+          $name = $btn.Current.Name
+          if (-not $name) { continue }
+          foreach ($want in $ButtonNames) {
+            if ($name -eq $want -or $name -like "*$want*") {
+              Write-Log "Clicking UI button '$name' on '$($w.Title)' (pid=$($w.Pid))"
+              [AbutsWin32]::FocusWindow($w.Hwnd)
+              Start-Sleep -Milliseconds 200
+              $pattern = $btn.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
+              $pattern.Invoke()
+              return $true
+            }
+          }
+        }
+      } catch {
+        # keep polling
+      }
+    }
+    Start-Sleep -Seconds 2
+  }
+  return $false
+}
+
+function Send-KeysToProcessWindow {
+  param(
+    [string[]]$ProcessNames,
+    [string]$Keys,
+    [string]$TitleContains = $null
+  )
+  $wins = Get-ProcessWindows -ProcessNames $ProcessNames
+  if ($TitleContains) {
+    $wins = @($wins | Where-Object { $_.Title -and ($_.Title -like "*$TitleContains*") })
+  }
+  if ($wins.Count -eq 0) { return $false }
+  # Prefer largest / main-looking window (non-empty title).
+  $target = $wins | Sort-Object { if ($_.Title) { $_.Title.Length } else { 0 } } -Descending | Select-Object -First 1
+  try {
+    [AbutsWin32]::FocusWindow($target.Hwnd)
+    Start-Sleep -Milliseconds 400
+    [System.Windows.Forms.SendKeys]::SendWait($Keys)
+    Write-Log "Sent keys to $($target.ProcessName) '$($target.Title)': $Keys"
+    return $true
+  } catch {
+    Write-Log "SendKeys failed: $($_.Exception.Message)" "WARN"
+    return $false
+  }
+}
+
+function Dismiss-EspritSplash {
+  param([int]$TimeoutSec = 90)
+  Write-Log "Waiting for ESPRIT splash 확인 button (up to ${TimeoutSec}s)..."
+  if ($WhatIf) { return $true }
+
+  # Primary: UI Automation click on 확인 / OK
+  $clicked = Invoke-UiButtonClick -ProcessNames @("esprit", "ESPRIT") -ButtonNames @("확인", "OK", "&OK") -TimeoutSec $TimeoutSec
+  if ($clicked) {
+    Write-Log "ESPRIT splash dismissed via button click"
+    return $true
+  }
+
+  # Fallback: focus any ESPRIT dialog and tap Enter (default button is usually 확인)
+  Write-Log "Button click missed; trying Enter on ESPRIT windows..." "WARN"
+  $deadline = (Get-Date).AddSeconds(15)
+  while ((Get-Date) -lt $deadline) {
+    $wins = Get-ProcessWindows -ProcessNames @("esprit", "ESPRIT")
+    foreach ($w in $wins) {
+      if (-not $w.Title) { continue }
+      # Splash/about is usually not the main "ESPRIT - [*.esp]" doc frame alone;
+      # still try Enter on top-level windows.
+      [AbutsWin32]::FocusWindow($w.Hwnd)
+      Start-Sleep -Milliseconds 200
+      [AbutsWin32]::TapEnter()
+      Write-Log "Tapped Enter on ESPRIT window '$($w.Title)'"
+      Start-Sleep -Seconds 2
+      # If 확인 dialog is gone, main doc title remains — treat as success if button gone.
+      $still = Invoke-UiButtonClick -ProcessNames @("esprit", "ESPRIT") -ButtonNames @("확인") -TimeoutSec 1
+      if (-not $still) { return $true }
+    }
+    Start-Sleep -Seconds 2
+  }
+  Write-Log "ESPRIT splash 확인 not confirmed automatically — click it once manually if still open." "WARN"
+  return $false
 }
 
 function Invoke-RhinoScriptEditorViaCom {
-  # Prefer in-process wake when Rhino is already open.
   $progIds = @("Rhino.Application.8", "Rhino.Application")
   foreach ($id in $progIds) {
     try {
       $app = [Runtime.InteropServices.Marshal]::GetActiveObject($id)
-      # Underscore = no command echo; opens ScriptEditor / wakes RhinoCode.
       $null = $app.RunScript("_ScriptEditor", $false)
       Write-Log "Sent _ScriptEditor via COM ($id)"
       return $true
@@ -156,17 +343,27 @@ function Invoke-RhinoScriptEditorViaCom {
   return $false
 }
 
+function Invoke-RhinoScriptEditorViaKeys {
+  # Escape any modal, then run ScriptEditor command in Rhino command line.
+  $ok = Send-KeysToProcessWindow -ProcessNames @("Rhino") -Keys "{ESC}{ESC}_ScriptEditor{ENTER}"
+  if (-not $ok) {
+    $ok = Send-KeysToProcessWindow -ProcessNames @("Rhino") -Keys "{ESC}ScriptEditor{ENTER}"
+  }
+  return $ok
+}
+
 function Start-FreshRhinoWithScriptEditor {
   param($Paths)
   if (-not (Test-Path $Paths.RhinoApp)) {
     Write-Log "Rhino.exe not found: $($Paths.RhinoApp)" "ERROR"
     return $false
   }
-  Write-Log "Starting Rhino 8 with -runscript=_ScriptEditor"
+  # McNeel form: /runscript="..."  (hyphen form is often ignored)
+  Write-Log "Starting Rhino 8 /nosplash /runscript=`"_ScriptEditor`""
   if (-not $WhatIf) {
     Start-Process -FilePath $Paths.RhinoApp -ArgumentList @(
-      "-nosplash",
-      "-runscript=_ScriptEditor"
+      "/nosplash",
+      '/runscript="_ScriptEditor"'
     ) | Out-Null
   }
   return $true
@@ -202,12 +399,8 @@ function Start-RhinoWithScriptEditor {
       return $true
     }
     Write-Log "RhinoCode list empty while Rhino is up — waking ScriptEditor..."
-    $raw = Get-RhinoCodeListRaw -RhinoCode $Paths.RhinoCode
-    Write-Log "rhinocode list --json raw: $(if ($raw) { $raw } else { '(empty)' })"
-    $comOk = Invoke-RhinoScriptEditorViaCom
-    if (-not $comOk) {
-      # COM disabled / not registered → hard restart is the reliable wake path.
-      Restart-RhinoWithScriptEditor -Paths $Paths | Out-Null
+    if (-not (Invoke-RhinoScriptEditorViaCom)) {
+      Invoke-RhinoScriptEditorViaKeys | Out-Null
     }
   } else {
     Start-FreshRhinoWithScriptEditor -Paths $Paths | Out-Null
@@ -215,14 +408,18 @@ function Start-RhinoWithScriptEditor {
 
   $deadline = (Get-Date).AddSeconds($RhinoReadyTimeoutSec)
   $woke = $false
-  $comRetried = $false
-  $restartRetried = $false
+  $keysAt = 25
+  $comAt = 45
+  $restartAt = 70
+  $didKeys = $false
+  $didCom = $false
+  $didRestart = $false
+  $pollStart = Get-Date
 
   while ((Get-Date) -lt $deadline) {
     $count = Get-RhinoCodePipeCount -RhinoCode $Paths.RhinoCode
     if ($count -gt 0) {
       Write-Log "RhinoCode list OK (pipes=$count)"
-      # Optional: run init script against the live pipe (health ping).
       if ((Test-Path $Paths.RhinoCode) -and (Test-Path $Paths.InitScript) -and -not $WhatIf) {
         try {
           $p = Start-Process -FilePath $Paths.RhinoCode -ArgumentList @(
@@ -241,17 +438,27 @@ function Start-RhinoWithScriptEditor {
       break
     }
 
-    $elapsed = [int]((New-TimeSpan -Start ($deadline.AddSeconds(-$RhinoReadyTimeoutSec)) -End (Get-Date)).TotalSeconds)
+    $elapsed = [int]((Get-Date) - $pollStart).TotalSeconds
     Write-Log "Waiting for RhinoCode pipes... (${elapsed}s / ${RhinoReadyTimeoutSec}s)"
 
-    # Escalation: COM once more around 20s, then full Rhino restart around 40s.
-    if (-not $comRetried -and $elapsed -ge 20) {
-      $comRetried = $true
-      Invoke-RhinoScriptEditorViaCom | Out-Null
+    # Dismiss possible Rhino license/update modal with Enter, then ScriptEditor keys.
+    if (-not $didKeys -and $elapsed -ge $keysAt) {
+      $didKeys = $true
+      Write-Log "Trying Enter + _ScriptEditor via SendKeys..."
+      Send-KeysToProcessWindow -ProcessNames @("Rhino") -Keys "{ENTER}" | Out-Null
+      Start-Sleep -Seconds 1
+      Invoke-RhinoScriptEditorViaKeys | Out-Null
     }
-    if (-not $restartRetried -and $elapsed -ge 40) {
-      $restartRetried = $true
+    if (-not $didCom -and $elapsed -ge $comAt) {
+      $didCom = $true
+      Invoke-RhinoScriptEditorViaCom | Out-Null
+      Invoke-RhinoScriptEditorViaKeys | Out-Null
+    }
+    if (-not $didRestart -and $elapsed -ge $restartAt) {
+      $didRestart = $true
       Restart-RhinoWithScriptEditor -Paths $Paths | Out-Null
+      Start-Sleep -Seconds 20
+      Invoke-RhinoScriptEditorViaKeys | Out-Null
     }
 
     Start-Sleep -Seconds 5
@@ -260,7 +467,7 @@ function Start-RhinoWithScriptEditor {
   if (-not $woke) {
     $raw = Get-RhinoCodeListRaw -RhinoCode $Paths.RhinoCode
     Write-Log "RhinoCode pipes still empty after ${RhinoReadyTimeoutSec}s. raw=$(if ($raw) { $raw } else { '(empty)' })" "WARN"
-    Write-Log "Open ScriptEditor once manually in Rhino, or re-run with -ForceRhinoRestart." "WARN"
+    Write-Log "Open ScriptEditor once manually in Rhino (Tools > ScriptEditor), then pipes should appear." "WARN"
   }
   return $woke
 }
@@ -283,23 +490,25 @@ function Start-RhinoServer {
 
 function Start-EspritApp {
   $esprit = Get-Process -Name "esprit" -ErrorAction SilentlyContinue
-  if ($esprit) {
+  if (-not $esprit) {
+    if (Test-TcpPortOpen -Port 8001) {
+      Write-Log "esprit HTTP already listening on :8001"
+    } else {
+      $cmd = Join-Path $Pc1Root "esprit-addin\Esprit.cmd"
+      if (-not (Test-Path $cmd)) {
+        Write-Log "Missing $cmd (Pc1Root wrong?)" "ERROR"
+        return
+      }
+      Write-Log "Starting ESPRIT (Esprit.cmd)"
+      if (-not $WhatIf) {
+        Start-Process -FilePath "cmd.exe" -ArgumentList @("/c", "`"$cmd`"") -WorkingDirectory (Split-Path $cmd -Parent) -WindowStyle Minimized | Out-Null
+      }
+    }
+  } else {
     Write-Log "ESPRIT already running (pid=$($esprit[0].Id))"
-    return
   }
-  if (Test-TcpPortOpen -Port 8001) {
-    Write-Log "esprit HTTP already listening on :8001"
-    return
-  }
-  $cmd = Join-Path $Pc1Root "esprit-addin\Esprit.cmd"
-  if (-not (Test-Path $cmd)) {
-    Write-Log "Missing $cmd (Pc1Root wrong?)" "ERROR"
-    return
-  }
-  Write-Log "Starting ESPRIT (Esprit.cmd)"
-  if (-not $WhatIf) {
-    Start-Process -FilePath "cmd.exe" -ArgumentList @("/c", "`"$cmd`"") -WorkingDirectory (Split-Path $cmd -Parent) -WindowStyle Minimized | Out-Null
-  }
+
+  Dismiss-EspritSplash -TimeoutSec $EspritSplashTimeoutSec | Out-Null
 }
 
 function Start-BridgeServer {
@@ -312,11 +521,19 @@ function Start-BridgeServer {
     Write-Log "Missing bridge exe: $exe (Pc1Root wrong?)" "ERROR"
     return
   }
-  # Do not use bridge.cmd (forces MOCK=1). local.env is loaded by Config.TryLoadLocalEnv.
   Write-Log "Starting bridge-server: $exe"
   if (-not $WhatIf) {
     Start-Process -FilePath $exe -WorkingDirectory (Split-Path $exe -Parent) -WindowStyle Minimized | Out-Null
   }
+  # Give HTTP listener a moment (urlacl / bind).
+  for ($i = 0; $i -lt 10; $i++) {
+    if (Test-TcpPortOpen -Port 8002) {
+      Write-Log "bridge-server listening on :8002"
+      return
+    }
+    Start-Sleep -Seconds 1
+  }
+  Write-Log "bridge-server :8002 not open yet (check urlacl / local.env / exe console)" "WARN"
 }
 
 Write-Log "=== PC1 autostart begin (Pc1Root=$Pc1Root) ==="
@@ -339,7 +556,7 @@ Start-Sleep -Seconds 3
 Start-RhinoServer
 Start-Sleep -Seconds 5
 Start-EspritApp
-Start-Sleep -Seconds 8
+Start-Sleep -Seconds 3
 Start-BridgeServer
 
 Write-Log "Port check: 8000=$(Test-TcpPortOpen -Port 8000) 8001=$(Test-TcpPortOpen -Port 8001) 8002=$(Test-TcpPortOpen -Port 8002)"
