@@ -5,6 +5,8 @@
 // - web/backend/services/practiceTransferProduction.service.js
 // - web/backend/controllers/practiceTransfers/practiceTransferSettings.controller.js
 // change-log:
+// - 2026-09-14: 임플란트 칩 — CNC 6메이저(첨1) 하드코딩 기본 + 사용자 추가분 병합.
+// - 2026-09-14: 임플란트 칩 UI용 list/merge/remove/rename/reorder(제조사·브랜드·패밀리·타입).
 // - 2026-09-11: toothWorks.shade — Vita 프리셋(A2·A3·A1·A3.5) + 직접 입력. 메모 직렬화 `#A2`.
 // - 2026-09-02: formatImplantSummary — 도입중(implantAddRequest)이어도 실제 brand/family/type 표시(자리표시만 축약).
 // - 2026-09-02: 치식 직렬화 `{…/…/+add}` — implantAddRequest 왕복(요청중 CA가 어벗츠 업로드로 오인되지 않게).
@@ -35,6 +37,7 @@
 // - 2026-08-19: 브리지 연결 시 한쪽이 임시치아이면 스팬 전체가 임시치아. 커스텀 규격은 형태와 무관하게 유지.
 // - 2026-08-20: Pontic UI 제거. 레거시 Pontic은 브리지로 정규화(기공소가 지대치 없음을 추론).
 import { isPendingRoundBarAbutment } from "@/shared/practice/labFeeSchedule";
+import { mergeCncImplantSpecs } from "@/shared/practice/cncImplantCatalog";
 import {
   IMPLANT_ADD_REQUEST_OPTION,
   MANUFACTURER_ADD_REQUEST_BRAND,
@@ -830,6 +833,694 @@ export const reorderCompanySpecHeights = (
       (row) => companySpecKey(String(row.manufacturer || "")) !== companyKey,
     );
   return [...before, ...companyRows, ...after];
+};
+
+/** 임플란트 칩(제조사→브랜드→패밀리→타입). 상위 선택에 따라 하위 목록 유도. */
+export type ImplantChipOptions = {
+  manufacturers: string[];
+  brands: string[];
+  families: string[];
+  types: string[];
+};
+
+export type ImplantChipSelection = {
+  manufacturer?: string;
+  brand?: string;
+  family?: string;
+};
+
+const implantChipKey = (name: string) => String(name || "").trim().toLowerCase();
+
+const implantFavoriteQuadKey = (row: {
+  manufacturer?: string;
+  brand?: string;
+  family?: string;
+  type?: string;
+}) =>
+  `${String(row.manufacturer || "").trim()}|${String(row.brand || "").trim()}|${String(row.family || "").trim()}|${String(row.type || "").trim()}`.toLowerCase();
+
+const uniqueOrderedLabels = (
+  values: Array<string | undefined | null>,
+): string[] => {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of values) {
+    const value = String(raw || "").trim();
+    if (!value) continue;
+    const key = implantChipKey(value);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(value);
+  }
+  return out;
+};
+
+export const listImplantChipOptions = (
+  favorites: readonly PracticeImplantFavorite[] | null | undefined,
+  selected?: ImplantChipSelection | null,
+): ImplantChipOptions => {
+  const list = Array.isArray(favorites) ? favorites : [];
+  const manufacturers = uniqueOrderedLabels(list.map((row) => row.manufacturer));
+  const manufacturer = String(selected?.manufacturer || "").trim();
+  if (!manufacturer) {
+    return { manufacturers, brands: [], families: [], types: [] };
+  }
+  const mKey = implantChipKey(manufacturer);
+  const mfrRows = list.filter(
+    (row) => implantChipKey(String(row.manufacturer || "")) === mKey,
+  );
+  const brands = uniqueOrderedLabels(mfrRows.map((row) => row.brand));
+  const brand = String(selected?.brand || "").trim();
+  if (!brand) {
+    return { manufacturers, brands, families: [], types: [] };
+  }
+  const bKey = implantChipKey(brand);
+  const brandRows = mfrRows.filter(
+    (row) => implantChipKey(String(row.brand || "")) === bKey,
+  );
+  const families = uniqueOrderedLabels(brandRows.map((row) => row.family));
+  const family = String(selected?.family || "").trim();
+  if (!family) {
+    return { manufacturers, brands, families, types: [] };
+  }
+  const fKey = implantChipKey(family);
+  const familyRows = brandRows.filter(
+    (row) => implantChipKey(String(row.family || "")) === fKey,
+  );
+  const types = uniqueOrderedLabels(familyRows.map((row) => row.type));
+  return { manufacturers, brands, families, types };
+};
+
+/** 칩 옵션(표시 라벨 + 저장값 + CNC 내장 여부) */
+export type ImplantChipOptionItem = {
+  value: string;
+  label: string;
+  builtin: boolean;
+};
+
+export type ImplantChipOptionsDetailed = {
+  manufacturers: ImplantChipOptionItem[];
+  brands: ImplantChipOptionItem[];
+  families: ImplantChipOptionItem[];
+  types: ImplantChipOptionItem[];
+};
+
+type ImplantChipSourceRow = {
+  manufacturer: string;
+  brand: string;
+  family: string;
+  type: string;
+  displayManufacturer: string;
+  displayBrand: string;
+  displayFamily: string;
+  displayType: string;
+  builtin: boolean;
+};
+
+const implantChipAliasKeys = (value: string, display?: string) => {
+  const keys = new Set<string>();
+  const primary = implantChipKey(value);
+  if (primary) keys.add(primary);
+  const shown = implantChipKey(display || "");
+  if (shown) keys.add(shown);
+  return keys;
+};
+
+const implantChipRowMatches = (
+  row: ImplantChipSourceRow,
+  field: "manufacturer" | "brand" | "family" | "type",
+  selected: string,
+) => {
+  const token = implantChipKey(selected);
+  if (!token) return false;
+  if (field === "manufacturer") {
+    return implantChipAliasKeys(
+      row.manufacturer,
+      row.displayManufacturer,
+    ).has(token);
+  }
+  if (field === "brand") {
+    return implantChipAliasKeys(row.brand, row.displayBrand).has(token);
+  }
+  if (field === "family") {
+    return implantChipAliasKeys(row.family, row.displayFamily).has(token);
+  }
+  return implantChipAliasKeys(row.type, row.displayType).has(token);
+};
+
+/**
+ * CNC 첨1(6메이저) 하드코딩 스펙을 기본으로 두고, 계정 favorites의 추가분만 뒤에 붙인다.
+ * 칩 라벨은 display* · 저장·가공 매칭은 value(카탈로그 manufacturer/brand/…).
+ */
+export const listImplantChipOptionsWithCatalog = (
+  favorites: readonly PracticeImplantFavorite[] | null | undefined,
+  connections:
+    | ReadonlyArray<{
+        manufacturer: string;
+        brand?: string;
+        family?: string;
+        type?: string;
+        displayManufacturer?: string | null;
+        displayBrand?: string | null;
+        displayFamily?: string | null;
+      }>
+    | null
+    | undefined,
+  selected?: ImplantChipSelection | null,
+): ImplantChipOptionsDetailed => {
+  const cnc = mergeCncImplantSpecs(Array.isArray(connections) ? [...connections] : []);
+  const rows: ImplantChipSourceRow[] = [];
+  const seen = new Set<string>();
+
+  for (const row of cnc) {
+    const key = implantFavoriteQuadKey(row);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    rows.push({
+      manufacturer: row.manufacturer,
+      brand: row.brand,
+      family: row.family,
+      type: row.type,
+      displayManufacturer: row.displayManufacturer || row.manufacturer,
+      displayBrand: row.displayBrand || row.brand,
+      displayFamily: row.displayFamily || row.family,
+      displayType: row.type,
+      builtin: true,
+    });
+  }
+
+  for (const fav of Array.isArray(favorites) ? favorites : []) {
+    const manufacturer = String(fav.manufacturer || "").trim();
+    if (!manufacturer) continue;
+    const brand = String(fav.brand || "").trim();
+    const family = String(fav.family || "").trim();
+    const type = String(fav.type || "").trim();
+    const key = implantFavoriteQuadKey({
+      manufacturer,
+      brand,
+      family,
+      type,
+    });
+    if (seen.has(key)) continue;
+    // CNC display명으로 저장된 레거시 즐겨찾기는 내장과 동일 취급
+    const cncHit = cnc.find(
+      (row) =>
+        implantChipAliasKeys(row.manufacturer, row.displayManufacturer).has(
+          implantChipKey(manufacturer),
+        ) &&
+        (!brand ||
+          implantChipAliasKeys(row.brand, row.displayBrand).has(
+            implantChipKey(brand),
+          )) &&
+        (!family ||
+          implantChipAliasKeys(row.family, row.displayFamily).has(
+            implantChipKey(family),
+          )) &&
+        (!type ||
+          implantChipKey(row.type) === implantChipKey(type)),
+    );
+    if (cncHit && brand && family && type) {
+      seen.add(key);
+      continue;
+    }
+    seen.add(key);
+    rows.push({
+      manufacturer,
+      brand,
+      family,
+      type,
+      displayManufacturer: manufacturer,
+      displayBrand: brand,
+      displayFamily: family,
+      displayType: type,
+      builtin: false,
+    });
+  }
+
+  const pushUniqueItem = (
+    out: ImplantChipOptionItem[],
+    seenKeys: Set<string>,
+    value: string,
+    label: string,
+    builtin: boolean,
+  ) => {
+    const token = String(value || "").trim();
+    if (!token) return;
+    const key = implantChipKey(token);
+    if (seenKeys.has(key)) {
+      // 이미 CNC 내장이면 사용자 추가로 builtin을 덮어쓰지 않음
+      return;
+    }
+    seenKeys.add(key);
+    // display alias도 동일 키로 취급
+    const labelKey = implantChipKey(label);
+    if (labelKey) seenKeys.add(labelKey);
+    out.push({
+      value: token,
+      label: String(label || token).trim() || token,
+      builtin,
+    });
+  };
+
+  const manufacturers: ImplantChipOptionItem[] = [];
+  const mfrSeen = new Set<string>();
+  for (const row of rows) {
+    pushUniqueItem(
+      manufacturers,
+      mfrSeen,
+      row.manufacturer,
+      row.displayManufacturer,
+      row.builtin,
+    );
+  }
+
+  const manufacturer = String(selected?.manufacturer || "").trim();
+  if (!manufacturer) {
+    return { manufacturers, brands: [], families: [], types: [] };
+  }
+
+  const mfrRows = rows.filter((row) =>
+    implantChipRowMatches(row, "manufacturer", manufacturer),
+  );
+  const brands: ImplantChipOptionItem[] = [];
+  const brandSeen = new Set<string>();
+  for (const row of mfrRows) {
+    pushUniqueItem(
+      brands,
+      brandSeen,
+      row.brand,
+      row.displayBrand,
+      row.builtin,
+    );
+  }
+
+  const brand = String(selected?.brand || "").trim();
+  if (!brand) {
+    return { manufacturers, brands, families: [], types: [] };
+  }
+
+  const brandRows = mfrRows.filter((row) =>
+    implantChipRowMatches(row, "brand", brand),
+  );
+  const families: ImplantChipOptionItem[] = [];
+  const familySeen = new Set<string>();
+  for (const row of brandRows) {
+    pushUniqueItem(
+      families,
+      familySeen,
+      row.family,
+      row.displayFamily,
+      row.builtin,
+    );
+  }
+
+  const family = String(selected?.family || "").trim();
+  if (!family) {
+    return { manufacturers, brands, families, types: [] };
+  }
+
+  const familyRows = brandRows.filter((row) =>
+    implantChipRowMatches(row, "family", family),
+  );
+  const types: ImplantChipOptionItem[] = [];
+  const typeSeen = new Set<string>();
+  for (const row of familyRows) {
+    pushUniqueItem(
+      types,
+      typeSeen,
+      row.type,
+      row.displayType,
+      row.builtin,
+    );
+  }
+
+  return { manufacturers, brands, families, types };
+};
+
+/** 부분 프리셋 허용(제조사만 / +브랜드 / +패밀리 / 전체). */
+export const mergeImplantChipFavorite = (
+  favorites: readonly PracticeImplantFavorite[] | null | undefined,
+  next: {
+    manufacturer: string;
+    brand?: string;
+    family?: string;
+    type?: string;
+    id?: string;
+  },
+): PracticeImplantFavorite[] => {
+  const list = Array.isArray(favorites) ? [...favorites] : [];
+  const manufacturer = String(next.manufacturer || "").trim();
+  const brand = String(next.brand || "").trim();
+  const family = String(next.family || "").trim();
+  const type = String(next.type || "").trim();
+  if (!manufacturer) return list;
+  const key = implantFavoriteQuadKey({ manufacturer, brand, family, type });
+  if (list.some((row) => implantFavoriteQuadKey(row) === key)) return list;
+  return [
+    ...list,
+    {
+      id:
+        String(next.id || "").trim() ||
+        `imp-${Date.now().toString(36)}-${list.length + 1}`,
+      manufacturer,
+      brand,
+      family,
+      type,
+    },
+  ].slice(0, 40);
+};
+
+export const removeImplantChipManufacturer = (
+  favorites: readonly PracticeImplantFavorite[] | null | undefined,
+  manufacturer: string,
+): PracticeImplantFavorite[] => {
+  const key = implantChipKey(manufacturer);
+  if (!key) return Array.isArray(favorites) ? [...favorites] : [];
+  return (Array.isArray(favorites) ? favorites : []).filter(
+    (row) => implantChipKey(String(row.manufacturer || "")) !== key,
+  );
+};
+
+export const removeImplantChipBrand = (
+  favorites: readonly PracticeImplantFavorite[] | null | undefined,
+  manufacturer: string,
+  brand: string,
+): PracticeImplantFavorite[] => {
+  const mKey = implantChipKey(manufacturer);
+  const bKey = implantChipKey(brand);
+  if (!mKey || !bKey) return Array.isArray(favorites) ? [...favorites] : [];
+  return (Array.isArray(favorites) ? favorites : []).filter((row) => {
+    if (implantChipKey(String(row.manufacturer || "")) !== mKey) return true;
+    return implantChipKey(String(row.brand || "")) !== bKey;
+  });
+};
+
+export const removeImplantChipFamily = (
+  favorites: readonly PracticeImplantFavorite[] | null | undefined,
+  manufacturer: string,
+  brand: string,
+  family: string,
+): PracticeImplantFavorite[] => {
+  const mKey = implantChipKey(manufacturer);
+  const bKey = implantChipKey(brand);
+  const fKey = implantChipKey(family);
+  if (!mKey || !bKey || !fKey) {
+    return Array.isArray(favorites) ? [...favorites] : [];
+  }
+  return (Array.isArray(favorites) ? favorites : []).filter((row) => {
+    if (implantChipKey(String(row.manufacturer || "")) !== mKey) return true;
+    if (implantChipKey(String(row.brand || "")) !== bKey) return true;
+    return implantChipKey(String(row.family || "")) !== fKey;
+  });
+};
+
+export const removeImplantChipType = (
+  favorites: readonly PracticeImplantFavorite[] | null | undefined,
+  manufacturer: string,
+  brand: string,
+  family: string,
+  type: string,
+): PracticeImplantFavorite[] => {
+  const mKey = implantChipKey(manufacturer);
+  const bKey = implantChipKey(brand);
+  const fKey = implantChipKey(family);
+  const tKey = implantChipKey(type);
+  if (!mKey || !bKey || !fKey || !tKey) {
+    return Array.isArray(favorites) ? [...favorites] : [];
+  }
+  return (Array.isArray(favorites) ? favorites : []).filter((row) => {
+    if (implantChipKey(String(row.manufacturer || "")) !== mKey) return true;
+    if (implantChipKey(String(row.brand || "")) !== bKey) return true;
+    if (implantChipKey(String(row.family || "")) !== fKey) return true;
+    return implantChipKey(String(row.type || "")) !== tKey;
+  });
+};
+
+const dedupeImplantFavorites = (
+  list: PracticeImplantFavorite[],
+): PracticeImplantFavorite[] => {
+  const seen = new Set<string>();
+  const out: PracticeImplantFavorite[] = [];
+  for (const row of list) {
+    const key = implantFavoriteQuadKey(row);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(row);
+  }
+  return out;
+};
+
+export const renameImplantChipManufacturer = (
+  favorites: readonly PracticeImplantFavorite[] | null | undefined,
+  fromName: string,
+  toName: string,
+): PracticeImplantFavorite[] => {
+  const list = Array.isArray(favorites) ? favorites : [];
+  const fromKey = implantChipKey(fromName);
+  const nextName = String(toName || "").trim();
+  if (!fromKey || !nextName) return [...list];
+  const mapped = list.map((row) => {
+    if (implantChipKey(String(row.manufacturer || "")) !== fromKey) return row;
+    return { ...row, manufacturer: nextName };
+  });
+  return dedupeImplantFavorites(mapped);
+};
+
+export const renameImplantChipBrand = (
+  favorites: readonly PracticeImplantFavorite[] | null | undefined,
+  manufacturer: string,
+  fromName: string,
+  toName: string,
+): PracticeImplantFavorite[] => {
+  const list = Array.isArray(favorites) ? favorites : [];
+  const mKey = implantChipKey(manufacturer);
+  const fromKey = implantChipKey(fromName);
+  const nextName = String(toName || "").trim();
+  if (!mKey || !fromKey || !nextName) return [...list];
+  const mapped = list.map((row) => {
+    if (implantChipKey(String(row.manufacturer || "")) !== mKey) return row;
+    if (implantChipKey(String(row.brand || "")) !== fromKey) return row;
+    return { ...row, brand: nextName };
+  });
+  return dedupeImplantFavorites(mapped);
+};
+
+export const renameImplantChipFamily = (
+  favorites: readonly PracticeImplantFavorite[] | null | undefined,
+  manufacturer: string,
+  brand: string,
+  fromName: string,
+  toName: string,
+): PracticeImplantFavorite[] => {
+  const list = Array.isArray(favorites) ? favorites : [];
+  const mKey = implantChipKey(manufacturer);
+  const bKey = implantChipKey(brand);
+  const fromKey = implantChipKey(fromName);
+  const nextName = String(toName || "").trim();
+  if (!mKey || !bKey || !fromKey || !nextName) return [...list];
+  const mapped = list.map((row) => {
+    if (implantChipKey(String(row.manufacturer || "")) !== mKey) return row;
+    if (implantChipKey(String(row.brand || "")) !== bKey) return row;
+    if (implantChipKey(String(row.family || "")) !== fromKey) return row;
+    return { ...row, family: nextName };
+  });
+  return dedupeImplantFavorites(mapped);
+};
+
+export const renameImplantChipType = (
+  favorites: readonly PracticeImplantFavorite[] | null | undefined,
+  manufacturer: string,
+  brand: string,
+  family: string,
+  fromName: string,
+  toName: string,
+): PracticeImplantFavorite[] => {
+  const list = Array.isArray(favorites) ? favorites : [];
+  const mKey = implantChipKey(manufacturer);
+  const bKey = implantChipKey(brand);
+  const fKey = implantChipKey(family);
+  const fromKey = implantChipKey(fromName);
+  const nextName = String(toName || "").trim();
+  if (!mKey || !bKey || !fKey || !fromKey || !nextName) return [...list];
+  const mapped = list.map((row) => {
+    if (implantChipKey(String(row.manufacturer || "")) !== mKey) return row;
+    if (implantChipKey(String(row.brand || "")) !== bKey) return row;
+    if (implantChipKey(String(row.family || "")) !== fKey) return row;
+    if (implantChipKey(String(row.type || "")) !== fromKey) return row;
+    return { ...row, type: nextName };
+  });
+  return dedupeImplantFavorites(mapped);
+};
+
+const reorderImplantChipGroup = (
+  favorites: readonly PracticeImplantFavorite[] | null | undefined,
+  matchRow: (row: PracticeImplantFavorite) => boolean,
+  labels: string[],
+  fromIndex: number,
+  toIndex: number,
+  labelOf: (row: PracticeImplantFavorite) => string,
+): PracticeImplantFavorite[] => {
+  const list = Array.isArray(favorites) ? [...favorites] : [];
+  if (
+    fromIndex < 0 ||
+    toIndex < 0 ||
+    fromIndex >= labels.length ||
+    toIndex >= labels.length ||
+    fromIndex === toIndex
+  ) {
+    return list;
+  }
+  const nextLabels = [...labels];
+  const [moved] = nextLabels.splice(fromIndex, 1);
+  if (!moved) return list;
+  nextLabels.splice(toIndex, 0, moved);
+  const order = new Map(
+    nextLabels.map((label, i) => [implantChipKey(label), i] as const),
+  );
+  const matched: PracticeImplantFavorite[] = [];
+  for (const row of list) {
+    if (matchRow(row)) matched.push(row);
+  }
+  matched.sort((a, b) => {
+    const la = String(labelOf(a) || "").trim();
+    const lb = String(labelOf(b) || "").trim();
+    const ia = la ? (order.get(implantChipKey(la)) ?? 9999) : 9999;
+    const ib = lb ? (order.get(implantChipKey(lb)) ?? 9999) : 9999;
+    return ia - ib;
+  });
+  const firstIdx = list.findIndex(matchRow);
+  if (firstIdx < 0) {
+    return [...list.filter((row) => !matchRow(row)), ...matched];
+  }
+  const before = list.slice(0, firstIdx).filter((row) => !matchRow(row));
+  const after = list.slice(firstIdx).filter((row) => !matchRow(row));
+  return [...before, ...matched, ...after];
+};
+
+export const reorderImplantChipManufacturers = (
+  favorites: readonly PracticeImplantFavorite[] | null | undefined,
+  fromIndex: number,
+  toIndex: number,
+): PracticeImplantFavorite[] => {
+  const list = Array.isArray(favorites) ? [...favorites] : [];
+  const manufacturers = listImplantChipOptions(list).manufacturers;
+  if (
+    fromIndex < 0 ||
+    toIndex < 0 ||
+    fromIndex >= manufacturers.length ||
+    toIndex >= manufacturers.length ||
+    fromIndex === toIndex
+  ) {
+    return list;
+  }
+  const nextManufacturers = [...manufacturers];
+  const [moved] = nextManufacturers.splice(fromIndex, 1);
+  if (!moved) return list;
+  nextManufacturers.splice(toIndex, 0, moved);
+  const groups = new Map<string, PracticeImplantFavorite[]>();
+  for (const row of list) {
+    const name = String(row.manufacturer || "").trim();
+    if (!name) continue;
+    const key = implantChipKey(name);
+    const bucket = groups.get(key);
+    if (bucket) bucket.push(row);
+    else groups.set(key, [row]);
+  }
+  const out: PracticeImplantFavorite[] = [];
+  for (const name of nextManufacturers) {
+    const bucket = groups.get(implantChipKey(name));
+    if (bucket) out.push(...bucket);
+  }
+  return out;
+};
+
+export const reorderImplantChipBrands = (
+  favorites: readonly PracticeImplantFavorite[] | null | undefined,
+  manufacturer: string,
+  fromIndex: number,
+  toIndex: number,
+): PracticeImplantFavorite[] => {
+  const manufacturerName = String(manufacturer || "").trim();
+  if (!manufacturerName) {
+    return Array.isArray(favorites) ? [...favorites] : [];
+  }
+  const mKey = implantChipKey(manufacturerName);
+  const { brands } = listImplantChipOptions(favorites, {
+    manufacturer: manufacturerName,
+  });
+  return reorderImplantChipGroup(
+    favorites,
+    (row) => implantChipKey(String(row.manufacturer || "")) === mKey,
+    brands,
+    fromIndex,
+    toIndex,
+    (row) => String(row.brand || ""),
+  );
+};
+
+export const reorderImplantChipFamilies = (
+  favorites: readonly PracticeImplantFavorite[] | null | undefined,
+  manufacturer: string,
+  brand: string,
+  fromIndex: number,
+  toIndex: number,
+): PracticeImplantFavorite[] => {
+  const manufacturerName = String(manufacturer || "").trim();
+  const brandName = String(brand || "").trim();
+  if (!manufacturerName || !brandName) {
+    return Array.isArray(favorites) ? [...favorites] : [];
+  }
+  const mKey = implantChipKey(manufacturerName);
+  const bKey = implantChipKey(brandName);
+  const { families } = listImplantChipOptions(favorites, {
+    manufacturer: manufacturerName,
+    brand: brandName,
+  });
+  return reorderImplantChipGroup(
+    favorites,
+    (row) =>
+      implantChipKey(String(row.manufacturer || "")) === mKey &&
+      implantChipKey(String(row.brand || "")) === bKey,
+    families,
+    fromIndex,
+    toIndex,
+    (row) => String(row.family || ""),
+  );
+};
+
+export const reorderImplantChipTypes = (
+  favorites: readonly PracticeImplantFavorite[] | null | undefined,
+  manufacturer: string,
+  brand: string,
+  family: string,
+  fromIndex: number,
+  toIndex: number,
+): PracticeImplantFavorite[] => {
+  const manufacturerName = String(manufacturer || "").trim();
+  const brandName = String(brand || "").trim();
+  const familyName = String(family || "").trim();
+  if (!manufacturerName || !brandName || !familyName) {
+    return Array.isArray(favorites) ? [...favorites] : [];
+  }
+  const mKey = implantChipKey(manufacturerName);
+  const bKey = implantChipKey(brandName);
+  const fKey = implantChipKey(familyName);
+  const { types } = listImplantChipOptions(favorites, {
+    manufacturer: manufacturerName,
+    brand: brandName,
+    family: familyName,
+  });
+  return reorderImplantChipGroup(
+    favorites,
+    (row) =>
+      implantChipKey(String(row.manufacturer || "")) === mKey &&
+      implantChipKey(String(row.brand || "")) === bKey &&
+      implantChipKey(String(row.family || "")) === fKey,
+    types,
+    fromIndex,
+    toIndex,
+    (row) => String(row.type || ""),
+  );
 };
 
 export const emptyToothWorkImplant = () => ({

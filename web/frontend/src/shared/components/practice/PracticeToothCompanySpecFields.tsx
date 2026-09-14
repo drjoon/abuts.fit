@@ -1,8 +1,11 @@
 // related files:
+// - web/frontend/src/shared/components/practice/PracticeToothChoiceChips.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothSimpleAbutmentFields.tsx
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-09-14: dimmed 사이드는 칩 하이라이트 끄고, 활성 패널 테두리 강조(XOR 선택 구분).
+// - 2026-09-14: ChoiceChip 공통 모듈(PracticeToothChoiceChips) 사용.
 // - 2026-09-14: 심플어벗과 직경/높이 선택 하이라이트 분리(필드 공유·카탈로그는 별도).
 // - 2026-09-14: fill=flex로 가로 균등 채움 수정. 회사 칩도 fill. 단일 항목은 재클릭 해제 불가(비우기만).
 // - 2026-09-14: 추가/이름변경 입력폭 제한. 직경·높이 칩은 심플힐링처럼 가로 균등 채움.
@@ -12,10 +15,7 @@
 // - 2026-09-14: 단일 항목 강제선택 제거 — 스캔바디|심플힐링 XOR. 클릭으로만 선택·재클릭 해제.
 // - 2026-09-14: 칩 X 삭제·회사/직경/높이 행별 추가.
 // - 2026-09-14: 회사·직경·높이 칩 UI(심플어벗과 동일 행 높이). 회사별 직경/높이 프리셋 병합 저장.
-import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
-import { Plus, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { useEffect, useMemo, useState } from "react";
 import { Label } from "@/components/ui/label";
 import {
   emptyToothWorkAbutment,
@@ -34,7 +34,14 @@ import {
   reorderCompanySpecHeights,
   type PracticeAbutmentFavorite,
 } from "@/shared/practice/transferMemo";
-import { cn } from "@/shared/ui/cn";
+import {
+  PracticeToothChipAddButton,
+  PracticeToothChipInlineEditor,
+  PracticeToothChipPanel,
+  PracticeToothChipSectionHeader,
+  PracticeToothChoiceChip,
+  usePracticeToothChipEdit,
+} from "@/shared/components/practice/PracticeToothChoiceChips";
 
 export type ToothCompanySpecValues = {
   abutmentManufacturer: string;
@@ -56,118 +63,7 @@ type Props = {
   allowPresetEdit?: boolean;
 };
 
-type AddRowKind = "company" | "diameter" | "height" | null;
 type DragKind = "company" | "diameter" | "height";
-type RenameTarget = { kind: DragKind; from: string } | null;
-
-const ChoiceChip = ({
-  label,
-  active,
-  onClick,
-  onDelete,
-  className,
-  disabled = false,
-  fill = false,
-  draggable = false,
-  dragging = false,
-  dragOver = false,
-  onDragStart,
-  onDragEnd,
-  onDragOver,
-  onDrop,
-}: {
-  label: string;
-  active: boolean;
-  onClick: () => void;
-  onDelete?: () => void;
-  className?: string;
-  disabled?: boolean;
-  /** 심플힐링처럼 행 가로를 균등 채움 */
-  fill?: boolean;
-  draggable?: boolean;
-  dragging?: boolean;
-  dragOver?: boolean;
-  onDragStart?: (e: DragEvent) => void;
-  onDragEnd?: () => void;
-  onDragOver?: (e: DragEvent) => void;
-  onDrop?: (e: DragEvent) => void;
-}) => (
-  <span
-    draggable={draggable}
-    onDragStart={onDragStart}
-    onDragEnd={onDragEnd}
-    onDragOver={onDragOver}
-    onDrop={onDrop}
-    className={cn(
-      "h-9 max-w-full items-stretch overflow-hidden rounded-lg border text-sm font-semibold transition-colors",
-      fill ? "flex min-w-0 flex-1" : "inline-flex",
-      active
-        ? "border-service-abut/70 bg-service-abut-soft/60 text-slate-900 shadow-sm"
-        : "border-slate-200/90 bg-white text-slate-700",
-      disabled && "opacity-50",
-      draggable && !disabled && "cursor-grab active:cursor-grabbing",
-      dragging && "opacity-60",
-      dragOver && !dragging && "ring-1 ring-service-abut/50",
-      className,
-    )}
-  >
-    <button
-      type="button"
-      disabled={disabled}
-      className={cn(
-        "min-w-0 flex-1 truncate px-2 transition-colors",
-        fill ? "text-center" : "text-left",
-        !disabled &&
-          !active &&
-          "hover:border-slate-300 hover:bg-slate-50",
-        disabled && "cursor-not-allowed",
-      )}
-      onClick={onClick}
-      aria-pressed={active}
-    >
-      {label}
-    </button>
-    {onDelete ? (
-      <button
-        type="button"
-        data-preset-action=""
-        disabled={disabled}
-        className={cn(
-          "flex w-7 shrink-0 items-center justify-center border-l border-inherit text-slate-400 transition-colors hover:bg-destructive-soft hover:text-destructive",
-          disabled && "cursor-not-allowed",
-        )}
-        aria-label={`${label} 삭제`}
-        onClick={(e) => {
-          e.stopPropagation();
-          onDelete();
-        }}
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        <X className="h-3.5 w-3.5" />
-      </button>
-    ) : null}
-  </span>
-);
-
-const RowAddButton = ({
-  onClick,
-  disabled = false,
-}: {
-  onClick: () => void;
-  disabled?: boolean;
-}) => (
-  <Button
-    type="button"
-    variant="outline"
-    size="sm"
-    className="h-9 shrink-0 border-dashed border-service-abut/50 px-2 text-xs text-service-abut"
-    disabled={disabled}
-    onClick={onClick}
-  >
-    <Plus className="mr-0.5 h-3.5 w-3.5" />
-    추가
-  </Button>
-);
 
 export const PracticeToothCompanySpecFields = ({
   value,
@@ -182,16 +78,9 @@ export const PracticeToothCompanySpecFields = ({
   disabledHint,
   allowPresetEdit = true,
 }: Props) => {
-  const [presetEditMode, setPresetEditMode] = useState(false);
-  const [addRow, setAddRow] = useState<AddRowKind>(null);
-  const [addDraft, setAddDraft] = useState("");
-  const [renameTarget, setRenameTarget] = useState<RenameTarget>(null);
-  const [renameDraft, setRenameDraft] = useState("");
   const [favoritesBusy, setFavoritesBusy] = useState(false);
-  const [dragKind, setDragKind] = useState<DragKind | null>(null);
-  const [dragFromIndex, setDragFromIndex] = useState<number | null>(null);
-  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
-  const suppressClickAfterDragRef = useRef(false);
+  const canManage = allowPresetEdit && Boolean(onFavoritesChange);
+  const edit = usePracticeToothChipEdit<DragKind>({ canManage, disabled });
 
   const companyRaw = String(value.abutmentManufacturer || "").trim();
   const diameter = String(value.abutmentDiameter || "").trim();
@@ -203,15 +92,14 @@ export const PracticeToothCompanySpecFields = ({
     !isSimpleHealingKind(companyRaw)
       ? companyRaw
       : "";
-  const inactive = disabled || dimmed;
-  const canManage = allowPresetEdit && Boolean(onFavoritesChange);
   /** 선택 모드: 칩만. 편집 모드: X·추가·드래그 */
-  const showPresetActions = canManage && presetEditMode;
-  /** 심플어벗/힐링과 필드 공유 — 직접입력 회사일 때만 하이라이트(dimmed여도 초안 표시) */
-  const selectionOwnsValues = Boolean(company);
+  const showPresetActions = edit.showPresetActions;
+  /** 활성 사이드만 칩 하이라이트 — dimmed 초안은 값 유지·선택 표시 안 함 */
+  const selectionOwnsValues = Boolean(company) && !dimmed && !disabled;
   const selectedDiameter = selectionOwnsValues ? diameter : "";
   const selectedHeight = selectionOwnsValues ? height : "";
   const selectedCompany = selectionOwnsValues ? company : "";
+  const hasDraftOrSelection = Boolean(company || diameter || height);
 
   const options = useMemo(
     () => listCompanySpecOptions(favorites, company),
@@ -228,40 +116,13 @@ export const PracticeToothCompanySpecFields = ({
     }
   };
 
-  const clearDrag = () => {
-    setDragKind(null);
-    setDragFromIndex(null);
-    setDragOverIndex(null);
-  };
-
-  const exitPresetEditMode = () => {
-    setPresetEditMode(false);
-    setAddRow(null);
-    setAddDraft("");
-    setRenameTarget(null);
-    setRenameDraft("");
-    clearDrag();
-  };
-
-  const cancelRename = () => {
-    setRenameTarget(null);
-    setRenameDraft("");
-  };
-
-  const startRename = (kind: DragKind, from: string) => {
-    setAddRow(null);
-    setAddDraft("");
-    setRenameTarget({ kind, from });
-    setRenameDraft(from);
-  };
-
   const confirmRename = async () => {
-    if (!renameTarget) return;
-    const nextLabel = String(renameDraft || "").trim();
+    if (!edit.renameTarget) return;
+    const nextLabel = String(edit.renameDraft || "").trim();
     if (!nextLabel) return;
-    const { kind, from } = renameTarget;
+    const { kind, from } = edit.renameTarget;
     if (nextLabel === from) {
-      cancelRename();
+      edit.cancelRename();
       return;
     }
 
@@ -275,7 +136,7 @@ export const PracticeToothCompanySpecFields = ({
           abutmentHeight: height,
         });
       }
-      cancelRename();
+      edit.cancelRename();
       return;
     }
 
@@ -295,7 +156,7 @@ export const PracticeToothCompanySpecFields = ({
           diameter.toLowerCase() === from.toLowerCase() ? nextLabel : diameter,
         abutmentHeight: height,
       });
-      cancelRename();
+      edit.cancelRename();
       return;
     }
 
@@ -313,77 +174,24 @@ export const PracticeToothCompanySpecFields = ({
         abutmentHeight:
           height.toLowerCase() === from.toLowerCase() ? nextLabel : height,
       });
-      cancelRename();
+      edit.cancelRename();
     }
   };
 
-  const chipDragProps = (kind: DragKind, index: number) => {
-    if (!showPresetActions || disabled) return {};
-    return {
-      draggable: true as const,
-      dragging: dragKind === kind && dragFromIndex === index,
-      dragOver:
-        dragKind === kind &&
-        dragOverIndex === index &&
-        dragFromIndex != null &&
-        dragFromIndex !== index,
-      onDragStart: (e: DragEvent) => {
-        if (
-          (e.target as HTMLElement | null)?.closest?.("[data-preset-action]")
-        ) {
-          e.preventDefault();
-          return;
-        }
-        suppressClickAfterDragRef.current = false;
-        e.dataTransfer.setData("text/plain", `${kind}:${index}`);
-        e.dataTransfer.effectAllowed = "move";
-        setDragKind(kind);
-        setDragFromIndex(index);
-        setDragOverIndex(null);
-      },
-      onDragEnd: () => {
-        clearDrag();
-      },
-      onDragOver: (e: DragEvent) => {
-        if (dragKind !== kind || dragFromIndex == null) return;
-        e.preventDefault();
-        e.dataTransfer.dropEffect = "move";
-        if (dragOverIndex !== index) setDragOverIndex(index);
-      },
-      onDrop: (e: DragEvent) => {
-        e.preventDefault();
-        const raw =
-          e.dataTransfer.getData("text/plain") ||
-          (dragKind && dragFromIndex != null ? `${dragKind}:${dragFromIndex}` : "");
-        const [rawKind, rawFrom] = String(raw).split(":");
-        const fromIndex = Number(rawFrom);
-        clearDrag();
-        if (rawKind !== kind || !Number.isFinite(fromIndex)) return;
-        if (fromIndex === index) return;
-        suppressClickAfterDragRef.current = true;
-        if (kind === "company") {
-          void persistFavorites(
-            reorderCompanySpecCompanies(favorites, fromIndex, index),
-          );
-        } else if (kind === "diameter" && company) {
-          void persistFavorites(
-            reorderCompanySpecDiameters(favorites, company, fromIndex, index),
-          );
-        } else if (kind === "height" && company) {
-          void persistFavorites(
-            reorderCompanySpecHeights(favorites, company, fromIndex, index),
-          );
-        }
-      },
-    };
-  };
-
-  const runChipClick = (action: () => void) => {
-    if (suppressClickAfterDragRef.current) {
-      suppressClickAfterDragRef.current = false;
-      return;
+  const reorderForKind = (kind: DragKind, fromIndex: number, toIndex: number) => {
+    if (kind === "company") {
+      void persistFavorites(
+        reorderCompanySpecCompanies(favorites, fromIndex, toIndex),
+      );
+    } else if (kind === "diameter" && company) {
+      void persistFavorites(
+        reorderCompanySpecDiameters(favorites, company, fromIndex, toIndex),
+      );
+    } else if (kind === "height" && company) {
+      void persistFavorites(
+        reorderCompanySpecHeights(favorites, company, fromIndex, toIndex),
+      );
     }
-    action();
   };
 
   /** 비활성(dimmed) 카드 클릭·재클릭 시 이 사이드로 전환 */
@@ -497,8 +305,6 @@ export const PracticeToothCompanySpecFields = ({
     });
   };
 
-  const hasAny = Boolean(selectionOwnsValues && (company || diameter || height));
-
   // 회사 1개뿐이면 미선택 시 자동 선택(+ 단일 직경/높이 채움). XOR 해제는 「비우기」.
   // 심플어벗/힐링이 선택된 동안에는 덮어쓰지 않음.
   useEffect(() => {
@@ -531,17 +337,12 @@ export const PracticeToothCompanySpecFields = ({
     showPresetActions,
   ]);
 
-  const cancelAdd = () => {
-    setAddRow(null);
-    setAddDraft("");
-  };
-
   const confirmAdd = async () => {
-    const text = String(addDraft || "").trim();
-    if (!text || !addRow) return;
-    cancelRename();
+    const text = String(edit.addDraft || "").trim();
+    if (!text || !edit.addRow) return;
+    edit.cancelRename();
 
-    if (addRow === "company") {
+    if (edit.addRow === "company") {
       const merged = mergeCompanySpecFavorite(favorites, {
         manufacturer: text,
       });
@@ -553,13 +354,13 @@ export const PracticeToothCompanySpecFields = ({
           nextOpts.diameters.length === 1 ? nextOpts.diameters[0] : "",
         abutmentHeight: nextOpts.heights.length === 1 ? nextOpts.heights[0] : "",
       });
-      cancelAdd();
+      edit.cancelAdd();
       return;
     }
 
     if (!company) return;
 
-    if (addRow === "diameter") {
+    if (edit.addRow === "diameter") {
       const merged = mergeCompanySpecFavorite(favorites, {
         manufacturer: company,
         diameter: text,
@@ -571,11 +372,11 @@ export const PracticeToothCompanySpecFields = ({
         abutmentDiameter: text,
         abutmentHeight: height,
       });
-      cancelAdd();
+      edit.cancelAdd();
       return;
     }
 
-    if (addRow === "height") {
+    if (edit.addRow === "height") {
       const merged = mergeCompanySpecFavorite(favorites, {
         manufacturer: company,
         diameter: diameter || undefined,
@@ -587,7 +388,7 @@ export const PracticeToothCompanySpecFields = ({
         abutmentDiameter: diameter,
         abutmentHeight: text,
       });
-      cancelAdd();
+      edit.cancelAdd();
     }
   };
 
@@ -633,184 +434,27 @@ export const PracticeToothCompanySpecFields = ({
     });
   };
 
-  const renderInlineAdd = (
-    kind: Exclude<AddRowKind, null>,
-    placeholder: string,
-  ) => {
-    if (addRow !== kind) return null;
-    const narrow = kind === "diameter" || kind === "height";
-    return (
-      <div className="flex shrink-0 items-center gap-1.5">
-        <Input
-          value={addDraft}
-          placeholder={placeholder}
-          className={cn(
-            "h-9 text-sm",
-            narrow ? "w-20" : "w-32 max-w-[10rem]",
-          )}
-          autoFocus
-          onChange={(e) => setAddDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              void confirmAdd();
-            }
-            if (e.key === "Escape") {
-              e.preventDefault();
-              cancelAdd();
-            }
-          }}
-        />
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          className="h-9 px-2 text-xs"
-          disabled={favoritesBusy}
-          onClick={cancelAdd}
-        >
-          취소
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          className="h-9 px-2 text-xs"
-          disabled={favoritesBusy || !String(addDraft || "").trim()}
-          onClick={() => void confirmAdd()}
-        >
-          저장
-        </Button>
-      </div>
-    );
-  };
-
-  const renderInlineRename = (kind: DragKind, from: string) => {
-    if (
-      !renameTarget ||
-      renameTarget.kind !== kind ||
-      renameTarget.from !== from
-    ) {
-      return null;
-    }
-    const narrow = kind === "diameter" || kind === "height";
-    return (
-      <div
-        className={cn(
-          "flex items-center gap-1.5",
-          narrow ? "min-w-0 flex-1" : "shrink-0",
-        )}
-      >
-        <Input
-          value={renameDraft}
-          placeholder="라벨 변경"
-          className={cn(
-            "h-9 text-sm",
-            narrow ? "w-full min-w-0 max-w-[5.5rem]" : "w-32 max-w-[10rem]",
-          )}
-          autoFocus
-          onChange={(e) => setRenameDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              void confirmRename();
-            }
-            if (e.key === "Escape") {
-              e.preventDefault();
-              cancelRename();
-            }
-          }}
-        />
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          className="h-9 shrink-0 px-2 text-xs"
-          disabled={favoritesBusy}
-          onClick={cancelRename}
-        >
-          취소
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          className="h-9 shrink-0 px-2 text-xs"
-          disabled={favoritesBusy || !String(renameDraft || "").trim()}
-          onClick={() => void confirmRename()}
-        >
-          저장
-        </Button>
-      </div>
-    );
-  };
-
   return (
-    <div
-      role={dimmed && !disabled ? "button" : undefined}
-      tabIndex={dimmed && !disabled ? 0 : undefined}
-      className={cn(
-        "flex min-h-0 flex-1 flex-col gap-3 rounded-xl border border-service-abut-muted/80 bg-service-abut-soft/40 p-3 sm:p-4",
-        inactive && "opacity-55",
-        dimmed && !disabled && "cursor-pointer",
-        disabled && "pointer-events-none",
-        className,
-      )}
-      aria-disabled={disabled || undefined}
-      title={disabled ? disabledHint : undefined}
-      onClick={() => {
-        if (dimmed && !disabled) activateSide();
-      }}
-      onKeyDown={(e) => {
-        if (!dimmed || disabled) return;
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          activateSide();
-        }
-      }}
+    <PracticeToothChipPanel
+      accent="abut"
+      className={className}
+      dimmed={dimmed}
+      selected={!dimmed && !disabled && hasDraftOrSelection}
+      disabled={disabled}
+      disabledHint={disabledHint}
+      onActivate={activateSide}
     >
-      <div className="flex shrink-0 items-center justify-between gap-2">
-        <p className="text-sm font-semibold text-service-abut">{heading}</p>
-        <div
-          className="flex shrink-0 items-center gap-0.5"
-          onClick={(e) => e.stopPropagation()}
-          onKeyDown={(e) => e.stopPropagation()}
-        >
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-8 px-2 text-sm text-slate-500"
-            disabled={disabled || !hasAny}
-            onClick={() => onChange(emptyToothWorkAbutment())}
-          >
-            <X className="mr-1 h-4 w-4" />
-            비우기
-          </Button>
-          {canManage ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className={cn(
-                "h-8 px-2 text-sm",
-                presetEditMode
-                  ? "text-service-abut font-semibold"
-                  : "text-slate-500",
-              )}
-              disabled={disabled}
-              aria-pressed={presetEditMode}
-              onClick={() => {
-                if (presetEditMode) {
-                  exitPresetEditMode();
-                } else {
-                  setPresetEditMode(true);
-                }
-              }}
-            >
-              {presetEditMode ? "완료" : "편집"}
-            </Button>
-          ) : null}
-        </div>
-      </div>
+      <PracticeToothChipSectionHeader
+        accent="abut"
+        heading={heading}
+        canClear={hasDraftOrSelection}
+        clearDisabled={disabled}
+        onClear={() => onChange(emptyToothWorkAbutment())}
+        canEdit={canManage}
+        editMode={edit.presetEditMode}
+        onToggleEdit={edit.toggleEditMode}
+        stopPropagation
+      />
 
       {disabled && disabledHint ? (
         <p className="text-[11px] leading-snug text-slate-500">{disabledHint}</p>
@@ -821,45 +465,61 @@ export const PracticeToothCompanySpecFields = ({
         <div className="space-y-1.5">
           <div className="flex gap-1.5">
             {options.companies.map((name, index) =>
-              renameTarget?.kind === "company" && renameTarget.from === name ? (
-                <div key={`rename-company-${name}`} className="min-w-0 flex-1">
-                  {renderInlineRename("company", name)}
-                </div>
+              edit.isRenaming("company", name) ? (
+                <PracticeToothChipInlineEditor
+                  key={`rename-company-${name}`}
+                  value={edit.renameDraft}
+                  placeholder="라벨 변경"
+                  busy={favoritesBusy}
+                  size="wide"
+                  grow
+                  onChange={edit.setRenameDraft}
+                  onCancel={edit.cancelRename}
+                  onConfirm={() => void confirmRename()}
+                />
               ) : (
-                <ChoiceChip
+                <PracticeToothChoiceChip
                   key={name}
                   label={name}
                   active={selectedCompany === name}
                   disabled={disabled}
                   fill
                   onClick={() =>
-                    runChipClick(() => {
+                    edit.runChipClick(() => {
                       if (showPresetActions) {
-                        startRename("company", name);
+                        edit.startRename("company", name);
                         return;
                       }
                       selectCompany(name);
                     })
                   }
                   onDelete={
-                    showPresetActions ? () => void deleteCompany(name) : undefined
+                    showPresetActions
+                      ? () => void deleteCompany(name)
+                      : undefined
                   }
-                  {...chipDragProps("company", index)}
+                  {...edit.chipDragProps("company", index, (from, to) =>
+                    reorderForKind("company", from, to),
+                  )}
                 />
               ),
             )}
           </div>
           {showPresetActions ? (
-            addRow === "company" ? (
-              renderInlineAdd("company", companyLabel)
+            edit.addRow === "company" ? (
+              <PracticeToothChipInlineEditor
+                value={edit.addDraft}
+                placeholder={companyLabel}
+                busy={favoritesBusy}
+                size="wide"
+                onChange={edit.setAddDraft}
+                onCancel={edit.cancelAdd}
+                onConfirm={() => void confirmAdd()}
+              />
             ) : (
-              <RowAddButton
+              <PracticeToothChipAddButton
                 disabled={favoritesBusy || disabled}
-                onClick={() => {
-                  cancelRename();
-                  setAddRow("company");
-                  setAddDraft("");
-                }}
+                onClick={() => edit.beginAdd("company")}
               />
             )
           ) : options.companies.length === 0 ? (
@@ -878,22 +538,29 @@ export const PracticeToothCompanySpecFields = ({
           <div className="space-y-1.5">
             <div className="flex gap-1.5">
               {options.diameters.map((option, index) =>
-                renameTarget?.kind === "diameter" &&
-                renameTarget.from === option ? (
-                  <div key={`rename-diameter-${option}`} className="min-w-0 flex-1">
-                    {renderInlineRename("diameter", option)}
-                  </div>
+                edit.isRenaming("diameter", option) ? (
+                  <PracticeToothChipInlineEditor
+                    key={`rename-diameter-${option}`}
+                    value={edit.renameDraft}
+                    placeholder="라벨 변경"
+                    busy={favoritesBusy}
+                    size="narrow"
+                    grow
+                    onChange={edit.setRenameDraft}
+                    onCancel={edit.cancelRename}
+                    onConfirm={() => void confirmRename()}
+                  />
                 ) : (
-                  <ChoiceChip
+                  <PracticeToothChoiceChip
                     key={option}
                     label={option}
                     active={selectedDiameter === option}
                     disabled={disabled}
                     fill
                     onClick={() =>
-                      runChipClick(() => {
+                      edit.runChipClick(() => {
                         if (showPresetActions) {
-                          startRename("diameter", option);
+                          edit.startRename("diameter", option);
                           return;
                         }
                         selectDiameter(option);
@@ -904,22 +571,28 @@ export const PracticeToothCompanySpecFields = ({
                         ? () => void deleteDiameter(option)
                         : undefined
                     }
-                    {...chipDragProps("diameter", index)}
+                    {...edit.chipDragProps("diameter", index, (from, to) =>
+                      reorderForKind("diameter", from, to),
+                    )}
                   />
                 ),
               )}
             </div>
             {showPresetActions ? (
-              addRow === "diameter" ? (
-                renderInlineAdd("diameter", "직경")
+              edit.addRow === "diameter" ? (
+                <PracticeToothChipInlineEditor
+                  value={edit.addDraft}
+                  placeholder="직경"
+                  busy={favoritesBusy}
+                  size="narrow"
+                  onChange={edit.setAddDraft}
+                  onCancel={edit.cancelAdd}
+                  onConfirm={() => void confirmAdd()}
+                />
               ) : (
-                <RowAddButton
+                <PracticeToothChipAddButton
                   disabled={favoritesBusy || disabled}
-                  onClick={() => {
-                    cancelRename();
-                    setAddRow("diameter");
-                    setAddDraft("");
-                  }}
+                  onClick={() => edit.beginAdd("diameter")}
                 />
               )
             ) : !canManage && options.diameters.length === 0 ? (
@@ -937,22 +610,29 @@ export const PracticeToothCompanySpecFields = ({
           <div className="space-y-1.5">
             <div className="flex gap-1.5">
               {options.heights.map((option, index) =>
-                renameTarget?.kind === "height" &&
-                renameTarget.from === option ? (
-                  <div key={`rename-height-${option}`} className="min-w-0 flex-1">
-                    {renderInlineRename("height", option)}
-                  </div>
+                edit.isRenaming("height", option) ? (
+                  <PracticeToothChipInlineEditor
+                    key={`rename-height-${option}`}
+                    value={edit.renameDraft}
+                    placeholder="라벨 변경"
+                    busy={favoritesBusy}
+                    size="narrow"
+                    grow
+                    onChange={edit.setRenameDraft}
+                    onCancel={edit.cancelRename}
+                    onConfirm={() => void confirmRename()}
+                  />
                 ) : (
-                  <ChoiceChip
+                  <PracticeToothChoiceChip
                     key={option}
                     label={option}
                     active={selectedHeight === option}
                     disabled={disabled}
                     fill
                     onClick={() =>
-                      runChipClick(() => {
+                      edit.runChipClick(() => {
                         if (showPresetActions) {
-                          startRename("height", option);
+                          edit.startRename("height", option);
                           return;
                         }
                         selectHeight(option);
@@ -963,22 +643,28 @@ export const PracticeToothCompanySpecFields = ({
                         ? () => void deleteHeight(option)
                         : undefined
                     }
-                    {...chipDragProps("height", index)}
+                    {...edit.chipDragProps("height", index, (from, to) =>
+                      reorderForKind("height", from, to),
+                    )}
                   />
                 ),
               )}
             </div>
             {showPresetActions ? (
-              addRow === "height" ? (
-                renderInlineAdd("height", "높이")
+              edit.addRow === "height" ? (
+                <PracticeToothChipInlineEditor
+                  value={edit.addDraft}
+                  placeholder="높이"
+                  busy={favoritesBusy}
+                  size="narrow"
+                  onChange={edit.setAddDraft}
+                  onCancel={edit.cancelAdd}
+                  onConfirm={() => void confirmAdd()}
+                />
               ) : (
-                <RowAddButton
+                <PracticeToothChipAddButton
                   disabled={favoritesBusy || disabled}
-                  onClick={() => {
-                    cancelRename();
-                    setAddRow("height");
-                    setAddDraft("");
-                  }}
+                  onClick={() => edit.beginAdd("height")}
                 />
               )
             ) : !canManage && options.heights.length === 0 ? (
@@ -987,6 +673,6 @@ export const PracticeToothCompanySpecFields = ({
           </div>
         )}
       </div>
-    </div>
+    </PracticeToothChipPanel>
   );
 };

@@ -77,7 +77,7 @@ import {
   isAutoMatchLab,
   type SearchBusinessResult,
 } from "@/pages/practice/hooks/usePracticeTransferStep1";
-import { PracticeToothImplantFields } from "@/shared/components/practice/PracticeToothImplantFields";
+import { PracticeToothImplantChipFields } from "@/shared/components/practice/PracticeToothImplantChipFields";
 import { PracticeToothCompanySpecFields } from "@/shared/components/practice/PracticeToothCompanySpecFields";
 import { PracticeToothSimpleAbutmentFields } from "@/shared/components/practice/PracticeToothSimpleAbutmentFields";
 import { PracticeCustomSpecsPresetEditDialog } from "@/shared/components/practice/PracticeCustomSpecsPresetEditDialog";
@@ -115,6 +115,8 @@ import {
   DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
 } from "@/shared/practice/practiceLabRating";
 import type { ImplantConnection } from "@/shared/practice/useImplantConnectionCatalog";
+import { mergeCncImplantSpecs } from "@/shared/practice/cncImplantCatalog";
+import { implantFavoriteDisplayParts } from "@/shared/practice/implantDisplay";
 import {
   ABUTMENT_PRODUCT_MODE,
   ABUTMENT_PRODUCT_MODE_LABEL,
@@ -216,11 +218,15 @@ import {
 // - web/frontend/src/shared/practice/usePracticeToothWorkEditor.ts
 // - web/frontend/src/shared/practice/prosthesisFeeItemRequest.ts
 // - web/frontend/src/shared/components/practice/PracticeOrderArrivalDateRangeField.tsx
-// - web/frontend/src/shared/components/practice/PracticeToothImplantFields.tsx
-// - web/frontend/src/shared/components/practice/PracticeToothAbutmentFields.tsx
+// - web/frontend/src/shared/components/practice/PracticeToothChoiceChips.tsx
+// - web/frontend/src/shared/components/practice/PracticeToothImplantChipFields.tsx
+// - web/frontend/src/shared/components/practice/PracticeToothCompanySpecFields.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothSimpleAbutmentFields.tsx
 // - web/frontend/src/shared/components/practice/PracticeCustomSpecsPresetEditDialog.tsx
 // - web/frontend/src/shared/pricing/abutsAbutmentService.ts
+// - 2026-09-14: 스캔바디 위저드 푸터 — 1/2 취소·다음, 2/2 이전·취소·확인. STL 왼쪽·카피 단축.
+// - 2026-09-14: 스캔바디 2/2 헤더에 선택된 임플란트(CNC display) 표시.
+// - 2026-09-14: 스캔바디 1/2 임플란트 — 카드 프리셋 → 칩 UI(제조사·브랜드·패밀리·타입, CompanySpec과 동일).
 // - 2026-09-05: 플랫폼 투어 일시 중단 시 로컬 가운데 배너(보철물 N/8) 잔존 제거 — Spotlight만.
 // - 2026-09-05: 커스텀어벗 투어 — CA 없으면 16→15→14 크라운+CA 주입 후 모달 오픈.
 // - 2026-09-05: 커스텀어벗 투어 — scanbody·simple 스텝 삭제. 어벗 선택 시 견적(다음)으로. 기본 어벗=심플어벗 8·M.
@@ -3213,9 +3219,7 @@ export const PracticeTransferRequestIntakePanel = ({
       }
     } else if (implantTouched) {
       registerCustomSpecsPick("implant");
-      if (hasToothWorkImplantPreset({ ...row, ...merged })) {
-        setCustomSpecsWizardStep("abutment");
-      }
+      // 1/2→2/2는 「다음」클릭만 — 임플란트 선택만으로 스텝 전환하지 않음
     } else if (scanbodyTouched && abutmentSideComplete) {
       registerCustomSpecsPick("scanbody");
       // 투어: 스캔바디|심플어벗 설정 완료 → 견적(다음). 모달 닫지 않음(견적 스텝 effect가 닫음)
@@ -6017,6 +6021,27 @@ export const PracticeTransferRequestIntakePanel = ({
                         ? "심플어벗 또는 직접 입력"
                         : "2/2 · 심플어벗 또는 직접 입력"
                       : "2/2 · 스캔바디 또는 심플 힐링";
+              const selectedImplantHeaderLabel =
+                wizardStep === "abutment" &&
+                !abutmentSingleStep &&
+                implantReady
+                  ? (() => {
+                      const parts = implantFavoriteDisplayParts(
+                        modalSpecs,
+                        mergeCncImplantSpecs(implantConnections),
+                      );
+                      // fallback 「임플란트」단독은 깨진 표시로 숨김
+                      if (
+                        parts.line1 === "임플란트" &&
+                        !String(parts.line2 || "").trim()
+                      ) {
+                        return "";
+                      }
+                      return [parts.line1, parts.line2]
+                        .filter(Boolean)
+                        .join(" / ");
+                    })()
+                  : "";
               return (
                 <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
                   <DialogHeader className="shrink-0 space-y-1 text-left">
@@ -6026,6 +6051,14 @@ export const PracticeTransferRequestIntakePanel = ({
                     <p className="text-sm text-slate-500" aria-live="polite">
                       {stepSubtitle}
                     </p>
+                    {selectedImplantHeaderLabel ? (
+                      <p
+                        className="text-sm font-medium text-primary-strong"
+                        aria-live="polite"
+                      >
+                        {selectedImplantHeaderLabel}
+                      </p>
+                    ) : null}
                     <DialogDescription className="sr-only">
                       {(() => {
                         const abutmentSideHint = customProsthesis
@@ -6066,12 +6099,10 @@ export const PracticeTransferRequestIntakePanel = ({
                               "practice-tooth-guide-pulse rounded-xl",
                           )}
                         >
-                          <PracticeToothImplantFields
-                            mode="presets"
+                          <PracticeToothImplantChipFields
                             allowPresetEdit={!isPresetGuideTourStep}
                             heading="임플란트"
                             className="min-h-0 flex-1 border-primary/50 bg-primary-soft/60"
-                            guideOpenAdd={false}
                             value={modalSpecs}
                             onChange={(nextImplant) => {
                               patchCustomSpecsOnTooth(
@@ -6221,31 +6252,8 @@ export const PracticeTransferRequestIntakePanel = ({
                     />
                   </div>
 
-                  <DialogFooter className="grid shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-2 sm:space-x-0">
+                  <DialogFooter className="grid shrink-0 grid-cols-[auto_1fr_auto] items-center gap-2 sm:space-x-0">
                     <div className="flex flex-wrap items-center justify-start gap-2">
-                      {wizardStep === "abutment" && !abutmentSingleStep ? (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="h-10 min-w-[5.5rem]"
-                          onClick={() => setCustomSpecsWizardStep("implant")}
-                        >
-                          <ChevronLeft className="mr-1 h-4 w-4" />
-                          이전
-                        </Button>
-                      ) : wizardStep === "implant" && implantReady ? (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="h-10 min-w-[5.5rem]"
-                          onClick={() => setCustomSpecsWizardStep("abutment")}
-                        >
-                          다음
-                          <ChevronRight className="ml-1 h-4 w-4" />
-                        </Button>
-                      ) : null}
-                    </div>
-                    <div className="flex justify-center">
                       <Button
                         type="button"
                         className={
@@ -6257,15 +6265,27 @@ export const PracticeTransferRequestIntakePanel = ({
                       >
                         {alternateMode === ABUTMENT_PRODUCT_MODE.PRODUCTION ? (
                           <span className="flex flex-col items-center text-center">
-                            <span>STL 디자인 파일로</span>
-                            <span>어벗 생산만 의뢰</span>
+                            <span>STL 파일로</span>
+                            <span>어벗 생산 의뢰</span>
                           </span>
                         ) : (
                           ABUTMENT_PRODUCT_MODE_LABEL[alternateMode]
                         )}
                       </Button>
                     </div>
+                    <div aria-hidden className="min-w-0" />
                     <div className="flex flex-wrap items-center justify-end gap-2">
+                      {wizardStep === "abutment" && !abutmentSingleStep ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-10 min-w-[5.5rem]"
+                          onClick={() => setCustomSpecsWizardStep("implant")}
+                        >
+                          <ChevronLeft className="mr-1 h-4 w-4" />
+                          이전
+                        </Button>
+                      ) : null}
                       <Button
                         type="button"
                         variant="outline"
@@ -6274,13 +6294,25 @@ export const PracticeTransferRequestIntakePanel = ({
                       >
                         취소
                       </Button>
-                      <Button
-                        type="button"
-                        className="h-10 min-w-[5.5rem]"
-                        onClick={confirmCustomSpecsModal}
-                      >
-                        확인
-                      </Button>
+                      {wizardStep === "implant" && !abutmentSingleStep ? (
+                        <Button
+                          type="button"
+                          className="h-10 min-w-[5.5rem]"
+                          disabled={!implantReady}
+                          onClick={() => setCustomSpecsWizardStep("abutment")}
+                        >
+                          다음
+                          <ChevronRight className="ml-1 h-4 w-4" />
+                        </Button>
+                      ) : (
+                        <Button
+                          type="button"
+                          className="h-10 min-w-[5.5rem]"
+                          onClick={confirmCustomSpecsModal}
+                        >
+                          확인
+                        </Button>
+                      )}
                     </div>
                   </DialogFooter>
                 </div>
