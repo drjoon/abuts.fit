@@ -2,6 +2,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/features/settings/tabs/LabTradingPartnersTab.tsx
 // - web/backend/controllers/labTradingPartners/labTradingPartner.controller.js
+// - 2026-09-14: icon 트리거 native title 제거(Radix 툴팁만).
 // - 2026-09-12: triggerVariant=icon — 환자·치아번호 줄 오른쪽 별 트리거.
 // - 2026-09-12: triggerVariant=icon — 주문/도착 줄 오른쪽 별 트리거.
 // - 2026-09-11: triggerVariant=icon — 채팅 컴포저 # 옆 별 트리거.
@@ -243,7 +244,6 @@ export function LabPracticeFeeSurchargeControl({
           className,
         )}
         aria-label={ariaLabel}
-        title={buttonLabel}
         onClick={() => setOpen(true)}
       >
         <Star
@@ -289,7 +289,7 @@ export function LabPracticeFeeSurchargeControl({
           </span>
         </TooltipTrigger>
         <TooltipContent side="bottom" className="max-w-xs text-xs">
-          {hintText}
+          {triggerVariant === "icon" && isEvaluate ? dialogTitle : hintText}
         </TooltipContent>
       </Tooltip>
 

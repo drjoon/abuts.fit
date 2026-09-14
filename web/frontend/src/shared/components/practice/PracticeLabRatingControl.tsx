@@ -2,6 +2,7 @@
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/shared/practice/practiceLabRating.ts
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
+// - 2026-09-14: icon 트리거 native title 제거(Radix 툴팁만).
 // - 2026-09-11: variant=icon — 채팅 컴포저 # 옆 별 트리거.
 // - 2026-08-14: 치과→기공소 rating·메모. 채팅 헤더.
 // - 2026-08-16: 5점제. 안내 단순화. 별점은 기공소에 공개·치과정보는 비공개.
@@ -291,7 +292,6 @@ export function PracticeLabRatingControl({
                   className,
                 )}
                 aria-label={ariaLabel}
-                title={ariaLabel}
                 onPointerDown={onTriggerPointerDown}
                 onClick={() => setOpen(true)}
               >
