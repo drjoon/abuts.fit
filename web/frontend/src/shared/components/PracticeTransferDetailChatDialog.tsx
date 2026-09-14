@@ -80,6 +80,7 @@
 // - 2026-08-28: 기공소 오픈 시 의뢰상세 탭 우선. 활성 탭 primary(파란).
 // - 2026-08-28: 의뢰상세·채팅 좌우 분할 → 탭 전환(치과 기본 채팅).
 // - 2026-08-28: 채팅 탭 라벨 → 진행 상황(치과·기공소 공통).
+// - 2026-09-15: 치과 의뢰·제작 수정/취소 — …메뉴 제거, 치식·보철물 위 + 채팅 하단 명시 버튼.
 // - 2026-08-28: 치과 의뢰취소·수정 CTA — 의뢰상세 → 진행 상황 탭 상단.
 // - 2026-08-27: 채팅 버블에 보낸사람 이름 표시.
 // - 2026-08-27: 재도착일 — 오늘=재주문일·선택일=재도착일 동시 누적(주문일/도착일 캘린더).
@@ -112,8 +113,8 @@
 // - 2026-08-16: 이미지 미리보기(다운로드 오버레이) + IndexedDB 캐시.
 // - 2026-08-16: 프리뷰 파일 여러 개일 때 이전/다음 이동.
 // - 2026-08-16: STL/PLY/OBJ 클릭 시 3D 미리보기(다운로드는 모달).
-// - 2026-08-18: 치과 수락 전 의뢰 수정 CTA(좌측 의뢰정보 패널 상단).
-// - 2026-08-19: 치과 발신 상세에서 수락 전 의뢰 취소(휴지통).
+// - 2026-08-18: 치과 수락 전 의뢰 수정 CTA(채팅 하단 명시 버튼).
+// - 2026-08-19: 치과 발신 상세에서 수락 전 의뢰 취소(채팅 하단 명시 버튼).
 // - 2026-08-16: 어벗 가공 시작 시 상세 모달 작업취소(수락 취소) 비활성 안내.
 // - 2026-08-16: 파일 섹션 — 의뢰 파일(구강 스캔·쉐이드 포토 등) / 작업 파일(어벗 디자인·보철물).
 // - 2026-08-21: 구강스캔은 선택 — practice_required 수락 차단은 레거시(호출부 null).
@@ -145,8 +146,6 @@ import {
   ArrowUp,
   ChevronDown,
   FileIcon,
-  MoreHorizontal,
-  Pencil,
   Printer,
   RotateCcw,
   Trash2,
@@ -1041,6 +1040,91 @@ export function PracticeTransferDetailChatDialog({
   const nextArrivalAttention = isPracticeNextArrivalAttention(nextArrivalReminder);
   const nextArrivalTooltip =
     getPracticeNextArrivalReminderTooltip(nextArrivalReminder);
+
+  const renderRequestManageButtons = (opts?: { className?: string }) => {
+    if (!onEditRequest && !onCancelRequest) return null;
+    return (
+      <div
+        className={cn(
+          "relative z-[2] flex shrink-0 flex-wrap items-center justify-center gap-2",
+          opts?.className,
+        )}
+      >
+        {onEditRequest ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-9 border-primary/55 bg-background px-4 font-medium text-primary hover:bg-primary/10 hover:text-primary"
+            disabled={editRequestDisabled}
+            onClick={() => onEditRequest()}
+          >
+            의뢰 수정
+          </Button>
+        ) : null}
+        {onCancelRequest ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-9 border-destructive/55 bg-background px-4 font-medium text-destructive hover:bg-destructive/10 hover:text-destructive"
+            disabled={cancelRequestDisabled}
+            onClick={() => onCancelRequest()}
+          >
+            의뢰 취소
+          </Button>
+        ) : null}
+      </div>
+    );
+  };
+
+  const renderProsthesisFollowUpManageButtons = (opts?: {
+    className?: string;
+  }) => {
+    if (
+      !prosthesisFollowUpPending ||
+      (!onCancelProsthesisFollowUp && !onModifyProsthesisFollowUp)
+    ) {
+      return null;
+    }
+    return (
+      <div
+        className={cn(
+          "relative z-[2] flex shrink-0 flex-wrap items-center justify-center gap-2",
+          opts?.className,
+        )}
+      >
+        {onModifyProsthesisFollowUp ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-9 border-primary/55 bg-background px-4 font-medium text-primary hover:bg-primary/10 hover:text-primary"
+            disabled={
+              modifyProsthesisFollowUpBusy || cancelProsthesisFollowUpBusy
+            }
+            onClick={() => onModifyProsthesisFollowUp()}
+          >
+            {modifyProsthesisFollowUpBusy ? "변경 중…" : "제작 변경"}
+          </Button>
+        ) : null}
+        {onCancelProsthesisFollowUp ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-9 border-destructive/55 bg-background px-4 font-medium text-destructive hover:bg-destructive/10 hover:text-destructive"
+            disabled={
+              cancelProsthesisFollowUpBusy || modifyProsthesisFollowUpBusy
+            }
+            onClick={() => onCancelProsthesisFollowUp()}
+          >
+            {cancelProsthesisFollowUpBusy ? "취소 중…" : "제작 취소"}
+          </Button>
+        ) : null}
+      </div>
+    );
+  };
 
   const renderRearrivalPopover = () =>
     onAppendArrival ? (
@@ -2590,120 +2674,40 @@ export function PracticeTransferDetailChatDialog({
               ) : null}
             </div>
 
-              {(onEditRequest ||
-                onCancelRequest ||
-                nextStageSegments.length > 0 ||
-                onAppendArrival) ? (
+              {nextStageSegments.length > 0 || onAppendArrival ? (
                 <div className="border-b bg-muted/25">
-                  {nextStageSegments.length > 0 || onAppendArrival ? (
-                    <div className="flex flex-wrap items-center gap-2 px-4 py-2 sm:px-5">
-                      {nextStageSegments.length > 0 ? (
-                        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
-                          {identityDateLabel ? (
-                            <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                              {identityDateLabel}
-                            </span>
-                          ) : null}
-                          <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                            다음 공정
+                  <div className="flex flex-wrap items-center gap-2 px-4 py-2 sm:px-5">
+                    {nextStageSegments.length > 0 ? (
+                      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+                        {identityDateLabel ? (
+                          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                            {identityDateLabel}
                           </span>
-                          {nextStageSegments.map((seg, idx) => (
-                            <span
-                              key={`${seg.archLabel}:${seg.text}:${idx}`}
-                              className="inline-flex max-w-full items-center gap-1 rounded-md border border-border/80 bg-background px-2 py-0.5 text-xs leading-snug text-foreground"
-                            >
-                              {seg.archLabel ? (
-                                <span className="shrink-0 font-semibold text-primary">
-                                  {seg.archLabel}
-                                </span>
-                              ) : null}
-                              <span className="min-w-0 truncate">{seg.text}</span>
-                            </span>
-                          ))}
-                        </div>
-                      ) : (
-                        <span className="min-w-0 flex-1 truncate text-xs tabular-nums text-muted-foreground">
-                          {identityDateLabel || ""}
+                        ) : null}
+                        <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          다음 공정
                         </span>
-                      )}
-                      {onAppendArrival ? renderRearrivalPopover() : null}
-                      {onEditRequest || onCancelRequest ? (
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 w-7 shrink-0 px-0 text-muted-foreground"
-                              aria-label="의뢰 관리"
-                              title="의뢰 관리"
-                            >
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="z-[400]">
-                            {onEditRequest ? (
-                              <DropdownMenuItem
-                                disabled={editRequestDisabled}
-                                onSelect={() => onEditRequest()}
-                              >
-                                <Pencil className="mr-2 h-3.5 w-3.5" />
-                                의뢰 수정
-                              </DropdownMenuItem>
-                            ) : null}
-                            {onCancelRequest ? (
-                              <DropdownMenuItem
-                                disabled={cancelRequestDisabled}
-                                className="text-destructive focus:text-destructive"
-                                onSelect={() => onCancelRequest()}
-                              >
-                                <Trash2 className="mr-2 h-3.5 w-3.5" />
-                                의뢰 취소
-                              </DropdownMenuItem>
-                            ) : null}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      ) : null}
-                    </div>
-                  ) : onEditRequest || onCancelRequest ? (
-                    <div className="flex justify-end gap-1 px-4 py-1.5 sm:px-5">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
-                            aria-label="의뢰 관리"
+                        {nextStageSegments.map((seg, idx) => (
+                          <span
+                            key={`${seg.archLabel}:${seg.text}:${idx}`}
+                            className="inline-flex max-w-full items-center gap-1 rounded-md border border-border/80 bg-background px-2 py-0.5 text-xs leading-snug text-foreground"
                           >
-                            <MoreHorizontal className="h-4 w-4" />
-                            관리
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="z-[400]">
-                          {onEditRequest ? (
-                            <DropdownMenuItem
-                              disabled={editRequestDisabled}
-                              onSelect={() => onEditRequest()}
-                            >
-                              <Pencil className="mr-2 h-3.5 w-3.5" />
-                              의뢰 수정
-                            </DropdownMenuItem>
-                          ) : null}
-                          {onCancelRequest ? (
-                            <DropdownMenuItem
-                              disabled={cancelRequestDisabled}
-                              className="text-destructive focus:text-destructive"
-                              onSelect={() => onCancelRequest()}
-                            >
-                              <Trash2 className="mr-2 h-3.5 w-3.5" />
-                              의뢰 취소
-                            </DropdownMenuItem>
-                          ) : null}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  ) : null}
+                            {seg.archLabel ? (
+                              <span className="shrink-0 font-semibold text-primary">
+                                {seg.archLabel}
+                              </span>
+                            ) : null}
+                            <span className="min-w-0 truncate">{seg.text}</span>
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="min-w-0 flex-1 truncate text-xs tabular-nums text-muted-foreground">
+                        {identityDateLabel || ""}
+                      </span>
+                    )}
+                    {onAppendArrival ? renderRearrivalPopover() : null}
+                  </div>
                 </div>
               ) : null}
           </div>
@@ -2850,6 +2854,8 @@ export function PracticeTransferDetailChatDialog({
               )}
             >
               <div className="shrink-0 space-y-5 px-5 py-3 text-sm">
+              {renderRequestManageButtons()}
+              {renderProsthesisFollowUpManageButtons()}
               {Array.isArray(toothWorks) && toothWorks.length > 0 ? (
                 <section className="space-y-2.5">
                   <h3 className="text-[13px] font-semibold text-foreground">
@@ -3201,43 +3207,15 @@ export function PracticeTransferDetailChatDialog({
                         );
                       })}
 
-                      {prosthesisFollowUpPending &&
-                      (onCancelProsthesisFollowUp || onModifyProsthesisFollowUp) &&
-                      !chatLoading &&
-                      !visibleChatError ? (
-                        <div className="relative z-[2] mt-2 flex shrink-0 flex-wrap items-center justify-center gap-2 px-1">
-                          {onModifyProsthesisFollowUp ? (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="h-9 bg-background px-4"
-                              disabled={
-                                modifyProsthesisFollowUpBusy ||
-                                cancelProsthesisFollowUpBusy
-                              }
-                              onClick={() => onModifyProsthesisFollowUp()}
-                            >
-                              {modifyProsthesisFollowUpBusy ? "변경 중…" : "제작 변경"}
-                            </Button>
-                          ) : null}
-                          {onCancelProsthesisFollowUp ? (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="h-9 border-destructive/40 px-4 text-destructive hover:bg-destructive/5"
-                              disabled={
-                                cancelProsthesisFollowUpBusy ||
-                                modifyProsthesisFollowUpBusy
-                              }
-                              onClick={() => onCancelProsthesisFollowUp()}
-                            >
-                              {cancelProsthesisFollowUpBusy ? "취소 중…" : "제작 취소"}
-                            </Button>
-                          ) : null}
-                        </div>
-                      ) : null}
+                      {!chatLoading && !visibleChatError
+                        ? renderRequestManageButtons({ className: "mt-2 px-1" })
+                        : null}
+
+                      {!chatLoading && !visibleChatError
+                        ? renderProsthesisFollowUpManageButtons({
+                            className: "mt-2 px-1",
+                          })
+                        : null}
 
                       {onAppendProsthesis &&
                       !prosthesisFollowUpPending &&
