@@ -30,6 +30,7 @@
 // - web/frontend/src/shared/practice/labReceiveCalendarViewMode.ts
 // - web/frontend/src/shared/practice/labReceiveCalendarCursorYmd.ts
 // - web/backend/controllers/users/user.controller.js
+// - 2026-09-14: 어벗 출고일 낙관 패치 — 상세 selectedTransfer도 갱신(−3 고정 버그).
 // - 2026-09-13: 커스텀어벗 STL 첫 업로드·작업시작 — 디자인SW·아노 미설정 시 게이트 모달.
 // - 2026-09-13: 캘린더/목록 커서(YMD) localStorage 복원 — 릴로드 시 직전 위치 유지.
 // - 2026-09-12: 상세 드롭·클립 — 3D/이미지 의뢰 파일 append·삭제(X).
@@ -2001,6 +2002,41 @@ export function RequestorPracticeReceivePage({
           }
           return;
         }
+        if (action === "abutment-ship-ymd-updated") {
+          const productionRawFromRealtime =
+            payload.production && typeof payload.production === "object"
+              ? (payload.production as Record<string, unknown>)
+              : null;
+          const ymd = String(
+            productionRawFromRealtime?.abutmentShipYmd ||
+              payload.abutmentShipYmd ||
+              "",
+          ).trim();
+          const nextYmd = /^\d{4}-\d{2}-\d{2}$/.test(ymd) ? ymd : null;
+          if (nextYmd) {
+            const patchShip = (
+              row: ReceivedPracticeTransfer,
+            ): ReceivedPracticeTransfer => ({
+              ...row,
+              production: {
+                ...(row.production || {}),
+                abutmentShipYmd: nextYmd,
+              },
+            });
+            setTransfers((prev) =>
+              prev.map((row) =>
+                row.transferId === transferId ? patchShip(row) : row,
+              ),
+            );
+            setSelectedTransfer((prev) =>
+              prev && prev.transferId === transferId ? patchShip(prev) : prev,
+            );
+          }
+          if (hasUnreadCount) {
+            emitUnreadBadgeRefresh(unreadCount);
+          }
+          return;
+        }
         if (action === "abutment-production-started") {
           const productionRawFromRealtime =
             payload.production && typeof payload.production === "object"
@@ -3887,19 +3923,32 @@ export function RequestorPracticeReceivePage({
       const prevShipYmd = String(
         transfer.production?.abutmentShipYmd || "",
       ).trim();
+      const patchShipYmd = (
+        row: ReceivedPracticeTransfer,
+        nextYmd: string | null,
+      ): ReceivedPracticeTransfer => {
+        if (String(row.transferId || row._id || "").trim() !== id) return row;
+        return {
+          ...row,
+          production: {
+            ...(row.production || {}),
+            abutmentShipYmd: nextYmd,
+          },
+        };
+      };
+      const applyShipYmd = (nextYmd: string | null) => {
+        setTransfers((prev) => prev.map((row) => patchShipYmd(row, nextYmd)));
+        setSelectedTransfer((prev) =>
+          prev ? patchShipYmd(prev, nextYmd) : prev,
+        );
+      };
+
       setAbutmentShipBusyId(id);
-      setTransfers((prev) =>
-        prev.map((row) => {
-          if (String(row.transferId || row._id || "").trim() !== id) return row;
-          return {
-            ...row,
-            production: {
-              ...(row.production || {}),
-              abutmentShipYmd: ymd,
-            },
-          };
-        }),
-      );
+      applyShipYmd(ymd);
+
+      const revertYmd = /^\d{4}-\d{2}-\d{2}$/.test(prevShipYmd)
+        ? prevShipYmd
+        : null;
 
       try {
         const res = await apiFetch<{
@@ -3920,22 +3969,7 @@ export function RequestorPracticeReceivePage({
             res.data && typeof res.data === "object"
               ? (res.data as Record<string, unknown>)
               : {};
-          setTransfers((prev) =>
-            prev.map((row) => {
-              if (String(row.transferId || row._id || "").trim() !== id) {
-                return row;
-              }
-              return {
-                ...row,
-                production: {
-                  ...(row.production || {}),
-                  abutmentShipYmd: /^\d{4}-\d{2}-\d{2}$/.test(prevShipYmd)
-                    ? prevShipYmd
-                    : null,
-                },
-              };
-            }),
-          );
+          applyShipYmd(revertYmd);
           toast({
             title: "출고일 설정 실패",
             description: String(
@@ -3960,40 +3994,14 @@ export function RequestorPracticeReceivePage({
             ymd,
         ).trim();
         if (/^\d{4}-\d{2}-\d{2}$/.test(savedYmd) && savedYmd !== ymd) {
-          setTransfers((prev) =>
-            prev.map((row) => {
-              if (String(row.transferId || row._id || "").trim() !== id) {
-                return row;
-              }
-              return {
-                ...row,
-                production: {
-                  ...(row.production || {}),
-                  abutmentShipYmd: savedYmd,
-                },
-              };
-            }),
-          );
+          applyShipYmd(savedYmd);
         }
         toast({
           title: "출고일 설정 완료",
           description: "어벗 출고일이 저장되었습니다.",
         });
       } catch (error) {
-        setTransfers((prev) =>
-          prev.map((row) => {
-            if (String(row.transferId || row._id || "").trim() !== id) return row;
-            return {
-              ...row,
-              production: {
-                ...(row.production || {}),
-                abutmentShipYmd: /^\d{4}-\d{2}-\d{2}$/.test(prevShipYmd)
-                  ? prevShipYmd
-                  : null,
-              },
-            };
-          }),
-        );
+        applyShipYmd(revertYmd);
         toast({
           title: "출고일 설정 실패",
           description:
