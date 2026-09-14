@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/backend/controllers/practiceTransfers/practiceTransferBookmark.controller.js
 // - 2026-09-14: 의뢰상세 평가 왼쪽 북마크 토글(낙관적 패치).
+// - 2026-09-14: POST에 jsonBody 사용·실패 시 낙관적 패치 롤백.
 import { useState, type MouseEvent } from "react";
 import { Bookmark } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -53,19 +54,26 @@ export function PracticeTransferBookmarkControl({
     setBusy(true);
     onChanged?.(next);
     try {
-      if (next) {
-        await request({
-          path: `/api/practice/transfers/${encodeURIComponent(key)}/bookmark`,
-          method: "POST",
-          token,
-          body: { side },
-        });
-      } else {
-        await request({
-          path: `/api/practice/transfers/${encodeURIComponent(key)}/bookmark?side=${encodeURIComponent(side)}`,
-          method: "DELETE",
-          token,
-        });
+      const res = next
+        ? await request({
+            path: `/api/practice/transfers/${encodeURIComponent(key)}/bookmark`,
+            method: "POST",
+            token,
+            jsonBody: { side },
+          })
+        : await request({
+            path: `/api/practice/transfers/${encodeURIComponent(key)}/bookmark?side=${encodeURIComponent(side)}`,
+            method: "DELETE",
+            token,
+          });
+      if (!res.ok) {
+        const message =
+          res.data &&
+          typeof res.data === "object" &&
+          typeof (res.data as { message?: unknown }).message === "string"
+            ? String((res.data as { message: string }).message)
+            : "다시 시도해 주세요.";
+        throw new Error(message);
       }
     } catch (error) {
       onChanged?.(active);
