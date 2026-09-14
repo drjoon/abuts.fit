@@ -9,6 +9,7 @@
 import {
   isLinkableProsthesisType,
   pickToothWorkAbutmentProductMode,
+  pickToothWorkCustomAbutmentSelection,
   pickToothWorkCustomSpecs,
   type ToothWorkSelection,
 } from "@/shared/practice/transferMemo";
@@ -60,6 +61,7 @@ export const restoreToothWorksFromDraft = (
       prosthesisType,
       customAbutment,
       ...pickToothWorkAbutmentProductMode(row, customAbutment),
+      ...pickToothWorkCustomAbutmentSelection(row, customAbutment),
       bridgeLinkedTeeth,
       ...(shade ? { shade } : {}),
       ...pickToothWorkCustomSpecs(

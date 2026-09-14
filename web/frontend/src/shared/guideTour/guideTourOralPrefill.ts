@@ -44,6 +44,7 @@ export const GUIDE_TOUR_DEMO_SIMPLE_ABUTMENT = {
 
 const simpleAbut = {
   customAbutment: true as const,
+  customAbutmentSelection: "abutment" as const,
   ...GUIDE_TOUR_DEMO_SIMPLE_ABUTMENT,
 };
 
@@ -121,6 +122,7 @@ export const ensureGuideTourCustomAbutCrown = (
       toothNumber: tooth,
       prosthesisType: "크라운",
       customAbutment: true,
+      customAbutmentSelection: "abutment",
       bridgeLinkedTeeth: [],
       ...GUIDE_TOUR_DEMO_SIMPLE_ABUTMENT,
     },
@@ -152,6 +154,7 @@ export const buildGuideTourDemoToothWorks = (): ToothWorkSelection[] => {
     toothNumber: "13",
     prosthesisType: "크라운",
     customAbutment: true,
+    customAbutmentSelection: "abutment",
     bridgeLinkedTeeth: [],
     ...GUIDE_TOUR_DEMO_SIMPLE_ABUTMENT,
   };

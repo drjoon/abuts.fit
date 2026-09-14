@@ -133,12 +133,15 @@ import {
   ABUTMENT_PRODUCT_MODE,
   normalizeAccountAbutmentProductMode,
   normalizeImplantFavorites,
+  normalizeSimpleAbutmentOptionCatalog,
+  normalizeSimpleHealingOptionCatalog,
   normalizeToothWorksForSync,
   pickToothWorkCustomSpecs,
   resolvePracticeCaseToothFromToothWorks,
   type AbutmentProductMode,
   type PracticeAbutmentFavorite,
   type PracticeImplantFavorite,
+  type SimpleSpecOptionCatalog,
   type ToothWorkSelection as SharedToothWorkSelection,
 } from "@/shared/practice/transferMemo";
 import { useImplantConnectionCatalog } from "@/shared/practice/useImplantConnectionCatalog";
@@ -184,7 +187,11 @@ const PRACTICE_DRAFT_STORAGE_KEY = PRACTICE_DROPZONE_DRAFT_KEY;
 const PRACTICE_FILE_CACHE_META_KEY = "practice_dropzone_file_cache_meta_v1";
 const PRACTICE_SESSION_META_KEY = "practice_dropzone_session_meta_v1";
 const PRACTICE_SIGNUP_VERIFICATION_KEY = "practice_dropzone_signup_verification_v1";
-/** FileTransferPage와 동일 SSOT — 비로그인 프리셋도 여기 저장 후 가입/로그인 시 서버 반영 */
+/**
+ * FileTransfer와 동일 캐시 키.
+ * SSOT는 사업자 BA(`practiceTransferSettings`). localStorage는 비로그인 캐시·오프라인용.
+ * 로그인 후 변경은 POST /api/practice/transfers/settings → BA.
+ */
 const PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY = "practice_transfer_settings_v1";
 const PRACTICE_SESSION_TTL_MS = 3 * 365.25 * 24 * 60 * 60 * 1000; // 3년 (JWT 세션과 맞춤)
 const PRACTICE_FILE_CACHE_MAX_TOTAL_BYTES = 300 * 1024 * 1024; // 300MB
@@ -198,6 +205,9 @@ const readLocalFavoriteSettings = () => {
       return {
         implantFavorites: [] as PracticeImplantFavorite[],
         abutmentFavorites: [] as PracticeAbutmentFavorite[],
+        directAbutmentFavorites: [] as PracticeAbutmentFavorite[],
+        simpleAbutmentOptions: normalizeSimpleAbutmentOptionCatalog(null),
+        simpleHealingOptions: normalizeSimpleHealingOptionCatalog(null),
         defaultAbutmentProductMode: normalizeAccountAbutmentProductMode(undefined),
         hasDefaultAbutmentProductMode: false,
       };
@@ -210,6 +220,15 @@ const readLocalFavoriteSettings = () => {
     return {
       implantFavorites: normalizeImplantFavorites(parsed.implantFavorites),
       abutmentFavorites: normalizeAbutmentFavorites(parsed.abutmentFavorites),
+      directAbutmentFavorites: normalizeAbutmentFavorites(
+        parsed.directAbutmentFavorites,
+      ),
+      simpleAbutmentOptions: normalizeSimpleAbutmentOptionCatalog(
+        parsed.simpleAbutmentOptions,
+      ),
+      simpleHealingOptions: normalizeSimpleHealingOptionCatalog(
+        parsed.simpleHealingOptions,
+      ),
       defaultAbutmentProductMode: normalizeAccountAbutmentProductMode(
         parsed.defaultAbutmentProductMode,
       ),
@@ -219,6 +238,9 @@ const readLocalFavoriteSettings = () => {
     return {
       implantFavorites: [] as PracticeImplantFavorite[],
       abutmentFavorites: [] as PracticeAbutmentFavorite[],
+      directAbutmentFavorites: [] as PracticeAbutmentFavorite[],
+      simpleAbutmentOptions: normalizeSimpleAbutmentOptionCatalog(null),
+      simpleHealingOptions: normalizeSimpleHealingOptionCatalog(null),
       defaultAbutmentProductMode: normalizeAccountAbutmentProductMode(undefined),
       hasDefaultAbutmentProductMode: false,
     };
@@ -228,6 +250,9 @@ const readLocalFavoriteSettings = () => {
 const writeLocalFavoriteSettings = (params: {
   implantFavorites: PracticeImplantFavorite[];
   abutmentFavorites: PracticeAbutmentFavorite[];
+  directAbutmentFavorites?: PracticeAbutmentFavorite[];
+  simpleAbutmentOptions?: SimpleSpecOptionCatalog;
+  simpleHealingOptions?: SimpleSpecOptionCatalog;
   defaultAbutmentProductMode?: AbutmentProductMode;
 }) => {
   try {
@@ -242,6 +267,27 @@ const writeLocalFavoriteSettings = (params: {
         ...existing,
         implantFavorites: normalizeImplantFavorites(params.implantFavorites),
         abutmentFavorites: normalizeAbutmentFavorites(params.abutmentFavorites),
+        ...(Array.isArray(params.directAbutmentFavorites)
+          ? {
+              directAbutmentFavorites: normalizeAbutmentFavorites(
+                params.directAbutmentFavorites,
+              ),
+            }
+          : {}),
+        ...(params.simpleAbutmentOptions
+          ? {
+              simpleAbutmentOptions: normalizeSimpleAbutmentOptionCatalog(
+                params.simpleAbutmentOptions,
+              ),
+            }
+          : {}),
+        ...(params.simpleHealingOptions
+          ? {
+              simpleHealingOptions: normalizeSimpleHealingOptionCatalog(
+                params.simpleHealingOptions,
+              ),
+            }
+          : {}),
         ...(params.defaultAbutmentProductMode
           ? {
               defaultAbutmentProductMode: normalizeAccountAbutmentProductMode(
@@ -1007,6 +1053,17 @@ export const PracticeDropzonePage = () => {
   const [abutmentFavorites, setAbutmentFavorites] = useState<PracticeAbutmentFavorite[]>(
     () => readLocalFavoriteSettings().abutmentFavorites,
   );
+  const [directAbutmentFavorites, setDirectAbutmentFavorites] = useState<
+    PracticeAbutmentFavorite[]
+  >(() => readLocalFavoriteSettings().directAbutmentFavorites);
+  const [simpleAbutmentOptions, setSimpleAbutmentOptions] =
+    useState<SimpleSpecOptionCatalog>(
+      () => readLocalFavoriteSettings().simpleAbutmentOptions,
+    );
+  const [simpleHealingOptions, setSimpleHealingOptions] =
+    useState<SimpleSpecOptionCatalog>(
+      () => readLocalFavoriteSettings().simpleHealingOptions,
+    );
   const [defaultAbutmentProductMode, setDefaultAbutmentProductMode] =
     useState<AbutmentProductMode>(
       () => readLocalFavoriteSettings().defaultAbutmentProductMode,
@@ -1048,6 +1105,8 @@ export const PracticeDropzonePage = () => {
   /** 초안 복원 시에만 서버/캐시 인증상태를 되살린다. 사용자가 번호를 수정하면 false. */
   const allowEmailVerificationRestoreRef = useRef(true);
   const allowPhoneVerificationRestoreRef = useRef(true);
+  /** BA GET이 진행 중 로컬 프리셋 편집을 덮지 않도록 */
+  const favoritesDirtyRef = useRef(false);
 
   const isEmailValid = isValidEmail(email);
   const isPhoneValid = isValidMobilePhone(phone);
@@ -2069,18 +2128,28 @@ export const PracticeDropzonePage = () => {
     }
   };
 
+  /** 비로그인 localStorage → 사업자 BA 병합(게스트 프리셋 승격) */
   const syncLocalFavoritesToServer = useCallback(async (token: string) => {
     const local = readLocalFavoriteSettings();
     const localImplant = local.implantFavorites;
     const localAbutment = local.abutmentFavorites;
+    const localDirect = local.directAbutmentFavorites;
     const shouldSyncMode = local.hasDefaultAbutmentProductMode;
-    if (localImplant.length === 0 && localAbutment.length === 0 && !shouldSyncMode) return;
+    if (
+      localImplant.length === 0 &&
+      localAbutment.length === 0 &&
+      localDirect.length === 0 &&
+      !shouldSyncMode
+    ) {
+      return;
+    }
 
     try {
       const getRes = await apiFetch<{
         data?: {
           implantFavorites?: unknown;
           abutmentFavorites?: unknown;
+          directAbutmentFavorites?: unknown;
           defaultAbutmentProductMode?: unknown;
         };
       }>({
@@ -2094,20 +2163,25 @@ export const PracticeDropzonePage = () => {
       const serverAbutment = normalizeAbutmentFavorites(
         getRes.ok ? getRes.data?.data?.abutmentFavorites : [],
       );
+      const serverDirect = normalizeAbutmentFavorites(
+        getRes.ok ? getRes.data?.data?.directAbutmentFavorites : [],
+      );
       const serverMode = normalizeAccountAbutmentProductMode(
         getRes.ok ? getRes.data?.data?.defaultAbutmentProductMode : undefined,
       );
 
       const mergedImplant = normalizeImplantFavorites([...serverImplant, ...localImplant]);
       const mergedAbutment = normalizeAbutmentFavorites([...serverAbutment, ...localAbutment]);
+      const mergedDirect = normalizeAbutmentFavorites([...serverDirect, ...localDirect]);
       const mergedMode = shouldSyncMode
         ? local.defaultAbutmentProductMode
         : serverMode;
 
       const jsonBody: Record<string, unknown> = {};
-      if (localImplant.length > 0 || localAbutment.length > 0) {
+      if (localImplant.length > 0 || localAbutment.length > 0 || localDirect.length > 0) {
         jsonBody.implantFavorites = mergedImplant;
         jsonBody.abutmentFavorites = mergedAbutment;
+        jsonBody.directAbutmentFavorites = mergedDirect;
       }
       if (shouldSyncMode) {
         jsonBody.defaultAbutmentProductMode = mergedMode;
@@ -2163,16 +2237,54 @@ export const PracticeDropzonePage = () => {
 
       setImplantFavorites(nextImplant);
       setAbutmentFavorites(mergedAbutment);
+      setDirectAbutmentFavorites(mergedDirect);
       setDefaultAbutmentProductMode(mergedMode);
       writeLocalFavoriteSettings({
         implantFavorites: nextImplant,
         abutmentFavorites: mergedAbutment,
+        directAbutmentFavorites: mergedDirect,
         defaultAbutmentProductMode: mergedMode,
       });
     } catch {
       // 동기화 실패해도 의뢰 전송은 계속 진행
     }
   }, []);
+
+  /** 임플란트·어벗·직접입력 프리셋 → 사업자 BA (User 문서 아님) */
+  const saveFavoritesToBusinessAnchor = useCallback(
+    async (patch: {
+      implantFavorites?: PracticeImplantFavorite[];
+      abutmentFavorites?: PracticeAbutmentFavorite[];
+      directAbutmentFavorites?: PracticeAbutmentFavorite[];
+    }) => {
+      if (!authToken) return false;
+      const jsonBody: Record<string, unknown> = {};
+      if (Array.isArray(patch.implantFavorites)) {
+        jsonBody.implantFavorites = normalizeImplantFavorites(patch.implantFavorites);
+      }
+      if (Array.isArray(patch.abutmentFavorites)) {
+        jsonBody.abutmentFavorites = normalizeAbutmentFavorites(patch.abutmentFavorites);
+      }
+      if (Array.isArray(patch.directAbutmentFavorites)) {
+        jsonBody.directAbutmentFavorites = normalizeAbutmentFavorites(
+          patch.directAbutmentFavorites,
+        );
+      }
+      if (Object.keys(jsonBody).length === 0) return false;
+      try {
+        const res = await apiFetch<unknown>({
+          path: "/api/practice/transfers/settings",
+          method: "POST",
+          token: authToken,
+          jsonBody,
+        });
+        return Boolean(res.ok);
+      } catch {
+        return false;
+      }
+    },
+    [authToken],
+  );
 
   useAppEventDebouncedReload({
     enabled: Boolean(authToken),
@@ -2190,29 +2302,64 @@ export const PracticeDropzonePage = () => {
         writeLocalFavoriteSettings({
           implantFavorites: next,
           abutmentFavorites: local.abutmentFavorites,
+          directAbutmentFavorites: local.directAbutmentFavorites,
         });
         return next;
       });
     },
   });
 
+  /** 로그인 시 BA 프리셋 로드(+ 로컬 게스트 프리셋 승격) */
   useEffect(() => {
     if (!authToken) return;
-    if (readLocalFavoriteSettings().hasDefaultAbutmentProductMode) return;
     let cancelled = false;
     void (async () => {
       try {
+        await syncLocalFavoritesToServer(authToken);
+        if (cancelled) return;
+        if (favoritesDirtyRef.current) return;
         const getRes = await apiFetch<{
-          data?: { defaultAbutmentProductMode?: unknown };
+          data?: {
+            implantFavorites?: unknown;
+            abutmentFavorites?: unknown;
+            directAbutmentFavorites?: unknown;
+            simpleAbutmentOptions?: unknown;
+            simpleHealingOptions?: unknown;
+            defaultAbutmentProductMode?: unknown;
+          };
         }>({
           path: "/api/practice/transfers/settings",
           method: "GET",
           token: authToken,
         });
-        if (cancelled || !getRes.ok) return;
-        setDefaultAbutmentProductMode(
-          normalizeAccountAbutmentProductMode(getRes.data?.data?.defaultAbutmentProductMode),
+        if (cancelled || !getRes.ok || favoritesDirtyRef.current) return;
+        const data = getRes.data?.data;
+        const nextImplant = normalizeImplantFavorites(data?.implantFavorites);
+        const nextAbutment = normalizeAbutmentFavorites(data?.abutmentFavorites);
+        const nextDirect = normalizeAbutmentFavorites(data?.directAbutmentFavorites);
+        const nextSimpleAbutment = normalizeSimpleAbutmentOptionCatalog(
+          data?.simpleAbutmentOptions,
         );
+        const nextSimpleHealing = normalizeSimpleHealingOptionCatalog(
+          data?.simpleHealingOptions,
+        );
+        const nextMode = normalizeAccountAbutmentProductMode(
+          data?.defaultAbutmentProductMode,
+        );
+        setImplantFavorites(nextImplant);
+        setAbutmentFavorites(nextAbutment);
+        setDirectAbutmentFavorites(nextDirect);
+        setSimpleAbutmentOptions(nextSimpleAbutment);
+        setSimpleHealingOptions(nextSimpleHealing);
+        setDefaultAbutmentProductMode(nextMode);
+        writeLocalFavoriteSettings({
+          implantFavorites: nextImplant,
+          abutmentFavorites: nextAbutment,
+          directAbutmentFavorites: nextDirect,
+          simpleAbutmentOptions: nextSimpleAbutment,
+          simpleHealingOptions: nextSimpleHealing,
+          defaultAbutmentProductMode: nextMode,
+        });
       } catch {
         // ignore
       }
@@ -2220,7 +2367,7 @@ export const PracticeDropzonePage = () => {
     return () => {
       cancelled = true;
     };
-  }, [authToken]);
+  }, [authToken, syncLocalFavoritesToServer]);
 
   const handlePracticeLoginAndContinue = async () => {
     if (!canSubmitLogin) {
@@ -2908,6 +3055,7 @@ export const PracticeDropzonePage = () => {
                       writeLocalFavoriteSettings({
                         implantFavorites,
                         abutmentFavorites,
+                        directAbutmentFavorites,
                         defaultAbutmentProductMode: normalized,
                       });
                       if (!authToken) return;
@@ -2927,22 +3075,114 @@ export const PracticeDropzonePage = () => {
                     },
                     onImplantFavoritesChange: (next) => {
                       const normalized = normalizeImplantFavorites(next);
+                      favoritesDirtyRef.current = true;
                       setImplantFavorites(normalized);
                       writeLocalFavoriteSettings({
                         implantFavorites: normalized,
                         abutmentFavorites,
+                        directAbutmentFavorites,
                         defaultAbutmentProductMode,
                       });
+                      if (!authToken) return;
+                      void saveFavoritesToBusinessAnchor({
+                        implantFavorites: normalized,
+                      })
+                        .then((ok) => {
+                          if (ok) favoritesDirtyRef.current = false;
+                        })
+                        .catch(() => {});
                     },
                     abutmentFavorites,
                     onAbutmentFavoritesChange: (next) => {
                       const normalized = normalizeAbutmentFavorites(next);
+                      favoritesDirtyRef.current = true;
                       setAbutmentFavorites(normalized);
                       writeLocalFavoriteSettings({
                         implantFavorites,
                         abutmentFavorites: normalized,
+                        directAbutmentFavorites,
                         defaultAbutmentProductMode,
                       });
+                      if (!authToken) return;
+                      void saveFavoritesToBusinessAnchor({
+                        abutmentFavorites: normalized,
+                      })
+                        .then((ok) => {
+                          if (ok) favoritesDirtyRef.current = false;
+                        })
+                        .catch(() => {});
+                    },
+                    directAbutmentFavorites,
+                    onDirectAbutmentFavoritesChange: (next) => {
+                      const normalized = normalizeAbutmentFavorites(next);
+                      favoritesDirtyRef.current = true;
+                      setDirectAbutmentFavorites(normalized);
+                      writeLocalFavoriteSettings({
+                        implantFavorites,
+                        abutmentFavorites,
+                        directAbutmentFavorites: normalized,
+                        defaultAbutmentProductMode,
+                      });
+                      if (!authToken) return;
+                      void saveFavoritesToBusinessAnchor({
+                        directAbutmentFavorites: normalized,
+                      })
+                        .then((ok) => {
+                          if (ok) favoritesDirtyRef.current = false;
+                        })
+                        .catch(() => {});
+                    },
+                    simpleAbutmentOptions,
+                    onSimpleAbutmentOptionsChange: (next) => {
+                      const normalized =
+                        normalizeSimpleAbutmentOptionCatalog(next);
+                      favoritesDirtyRef.current = true;
+                      setSimpleAbutmentOptions(normalized);
+                      writeLocalFavoriteSettings({
+                        implantFavorites,
+                        abutmentFavorites,
+                        directAbutmentFavorites,
+                        simpleAbutmentOptions: normalized,
+                        simpleHealingOptions,
+                        defaultAbutmentProductMode,
+                      });
+                      if (!authToken) return;
+                      void apiFetch({
+                        path: "/api/practice/transfers/settings",
+                        method: "POST",
+                        token: authToken,
+                        jsonBody: { simpleAbutmentOptions: normalized },
+                      })
+                        .then((res) => {
+                          if (res.ok) favoritesDirtyRef.current = false;
+                        })
+                        .catch(() => {});
+                    },
+                    simpleHealingOptions,
+                    onSimpleHealingOptionsChange: (next) => {
+                      const normalized =
+                        normalizeSimpleHealingOptionCatalog(next);
+                      favoritesDirtyRef.current = true;
+                      setSimpleHealingOptions(normalized);
+                      writeLocalFavoriteSettings({
+                        implantFavorites,
+                        abutmentFavorites,
+                        directAbutmentFavorites,
+                        simpleAbutmentOptions,
+                        simpleHealingOptions: normalized,
+                        defaultAbutmentProductMode,
+                      });
+                      if (!authToken) return;
+                      void apiFetch({
+                        path: "/api/practice/transfers/settings",
+                        method: "POST",
+                        token: authToken,
+                        jsonBody: { simpleHealingOptions: normalized },
+                      })
+                        .then((res) => {
+                          if (res.ok) favoritesDirtyRef.current = false;
+                        })
+                        .catch(() => {});
                     },
                   }}
                 />

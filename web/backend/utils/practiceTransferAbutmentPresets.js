@@ -6,8 +6,6 @@
 // - 2026-08-13: 어벗 치아에 임플란트·스캔바디 프리셋이 없으면 기공소 전송을 거절.
 
 const SIMPLE_ABUTMENT_KINDS = new Set(["심플어벗", "심플밀링"]);
-const SIMPLE_ABUTMENT_DIAMETERS = new Set(["6", "7", "8", "9", "10"]);
-const SIMPLE_ABUTMENT_HEIGHTS = new Set(["S", "M", "L"]);
 
 const listCustomAbutmentRows = (toothWorks) =>
   (Array.isArray(toothWorks) ? toothWorks : []).filter(
@@ -18,11 +16,9 @@ const hasScanbodyOrSimpleAbutment = (row) => {
   const manufacturer = String(row?.abutmentManufacturer || "").trim();
   const diameter = String(row?.abutmentDiameter || "").trim();
   const height = String(row?.abutmentHeight || "").trim();
+  // 심플어벗/밀링: 종류 고정, 직경·높이는 BA 카탈로그 커스텀 허용(비어 있지 않으면 OK)
   if (SIMPLE_ABUTMENT_KINDS.has(manufacturer)) {
-    return (
-      SIMPLE_ABUTMENT_DIAMETERS.has(diameter) &&
-      SIMPLE_ABUTMENT_HEIGHTS.has(height)
-    );
+    return Boolean(diameter && height);
   }
   return Boolean(manufacturer && diameter && height);
 };

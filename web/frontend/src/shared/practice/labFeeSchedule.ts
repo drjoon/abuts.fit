@@ -384,8 +384,8 @@ export const isCustomAbutmentWork = (row?: {
   return Boolean(row?.hasCustomAbutment) || Boolean(row?.customAbutment);
 };
 
-/** 심플어벗/심플밀링 — 치과 재고. 기공소 커스텀어벗 수가·견적 제외(transferMemo와 동일 판별). */
-const SIMPLE_ABUTMENT_KINDS = new Set(["심플어벗", "심플밀링"]);
+/** 심플어벗/심플밀링/심플힐링 — 치과 재고. 기공소 커스텀어벗 수가·견적 제외(transferMemo와 동일 판별). */
+const SIMPLE_ABUTMENT_KINDS = new Set(["심플어벗", "심플밀링", "심플힐링"]);
 
 /**
  * 크라운·브리지·임시치아 + 심플어벗만 기공소 CA 수가에서 제외.

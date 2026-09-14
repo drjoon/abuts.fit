@@ -133,6 +133,9 @@ export function NewRequestDesignAbutmentFields({
   const [prosthesisTypeInput, setProsthesisTypeInput] = useState("");
   const [implantFavorites, setImplantFavorites] = useState<PracticeImplantFavorite[]>([]);
   const [abutmentFavorites, setAbutmentFavorites] = useState<PracticeAbutmentFavorite[]>([]);
+  const [directAbutmentFavorites, setDirectAbutmentFavorites] = useState<
+    PracticeAbutmentFavorite[]
+  >([]);
   const [archBulkProsthesisTypes, setArchBulkProsthesisTypes] = useState<string[]>([
     ...ARCH_BULK_PROSTHESIS_PRESETS,
   ]);
@@ -151,6 +154,7 @@ export function NewRequestDesignAbutmentFields({
     if (!token) {
       setImplantFavorites([]);
       setAbutmentFavorites([]);
+      setDirectAbutmentFavorites([]);
       setArchBulkProsthesisTypes([...ARCH_BULK_PROSTHESIS_PRESETS]);
       return;
     }
@@ -172,6 +176,7 @@ export function NewRequestDesignAbutmentFields({
           ? (body.data as {
               implantFavorites?: unknown;
               abutmentFavorites?: unknown;
+              directAbutmentFavorites?: unknown;
               archBulkProsthesisTypes?: unknown;
             })
           : null;
@@ -182,6 +187,9 @@ export function NewRequestDesignAbutmentFields({
       if (!skipFavorites) {
         setImplantFavorites(normalizeImplantFavorites(payload?.implantFavorites));
         setAbutmentFavorites(normalizeAbutmentFavorites(payload?.abutmentFavorites));
+        setDirectAbutmentFavorites(
+          normalizeAbutmentFavorites(payload?.directAbutmentFavorites),
+        );
       }
       const skipArchBulk =
         archDirtyAtStart ||
@@ -219,6 +227,7 @@ export function NewRequestDesignAbutmentFields({
     async (patch: {
       implantFavorites?: PracticeImplantFavorite[];
       abutmentFavorites?: PracticeAbutmentFavorite[];
+      directAbutmentFavorites?: PracticeAbutmentFavorite[];
       archBulkProsthesisTypes?: string[];
     }) => {
       if (!token) return false;
@@ -228,6 +237,11 @@ export function NewRequestDesignAbutmentFields({
       }
       if (Array.isArray(patch.abutmentFavorites)) {
         jsonBody.abutmentFavorites = normalizeAbutmentFavorites(patch.abutmentFavorites);
+      }
+      if (Array.isArray(patch.directAbutmentFavorites)) {
+        jsonBody.directAbutmentFavorites = normalizeAbutmentFavorites(
+          patch.directAbutmentFavorites,
+        );
       }
       if (Array.isArray(patch.archBulkProsthesisTypes)) {
         jsonBody.archBulkProsthesisTypes = normalizeArchBulkProsthesisTypes(
@@ -288,6 +302,21 @@ export function NewRequestDesignAbutmentFields({
       favoritesDirtyRef.current = true;
       setAbutmentFavorites(normalized);
       void saveFavoritesToServer({ abutmentFavorites: normalized }).then((ok) => {
+        if (ok && favoritesLocalWriteSeqRef.current === writeSeq) {
+          favoritesDirtyRef.current = false;
+        }
+      });
+    },
+    [saveFavoritesToServer],
+  );
+
+  const handleDirectAbutmentFavoritesChange = useCallback(
+    (next: PracticeAbutmentFavorite[]) => {
+      const normalized = normalizeAbutmentFavorites(next);
+      const writeSeq = (favoritesLocalWriteSeqRef.current += 1);
+      favoritesDirtyRef.current = true;
+      setDirectAbutmentFavorites(normalized);
+      void saveFavoritesToServer({ directAbutmentFavorites: normalized }).then((ok) => {
         if (ok && favoritesLocalWriteSeqRef.current === writeSeq) {
           favoritesDirtyRef.current = false;
         }
@@ -367,6 +396,8 @@ export function NewRequestDesignAbutmentFields({
     onImplantFavoritesChange: handleImplantFavoritesChange,
     abutmentFavorites,
     onAbutmentFavoritesChange: handleAbutmentFavoritesChange,
+    directAbutmentFavorites,
+    onDirectAbutmentFavoritesChange: handleDirectAbutmentFavoritesChange,
     archBulkProsthesisTypes,
     onArchBulkProsthesisTypesChange: handleArchBulkProsthesisTypesChange,
   } satisfies Partial<PracticeTransferRequestIntakePanelProps>;

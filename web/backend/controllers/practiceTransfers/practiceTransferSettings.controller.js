@@ -17,7 +17,8 @@ import { loadStarBandEligibleLabAnchorIds } from "../../utils/practiceTransferAu
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
-// - 2026-09-11: shadeFavorites — 치아 카드 직접 입력 쉐이드 계정 저장.
+// - 2026-09-11: shadeFavorites — 치아 카드 직접 입력 쉐이드 BA 저장.
+// - practiceTransferSettings SSOT: User가 아닌 BusinessAnchor(사업자 BA).
 // - 2026-08-14: autoMatchBudget(자동매칭 기공비 min/max).
 // - 2026-08-14: autoMatchMinLabRating(자동매칭 최소 별·2nd chance).
 // - 2026-08-16: autoMatchBudget version3 — minPct/maxPct.
@@ -189,6 +190,56 @@ const normalizeAbutmentFavorites = (items) => {
   return out;
 };
 
+const DEFAULT_SIMPLE_ABUTMENT_DIAMETERS = ["6", "7", "8", "9", "10"];
+const DEFAULT_SIMPLE_ABUTMENT_HEIGHTS = ["S", "M", "L"];
+const DEFAULT_SIMPLE_HEALING_DIAMETERS = ["6", "7", "9"];
+const DEFAULT_SIMPLE_HEALING_HEIGHTS = ["S", "M", "L", "XL"];
+
+const normalizeSimpleSpecLabels = (values, fallback, max = 24) => {
+  const list = Array.isArray(values) ? values : null;
+  if (!list) return [...fallback];
+  const out = [];
+  const seen = new Set();
+  for (const raw of list) {
+    const text = String(raw || "").trim();
+    if (!text) continue;
+    const key = text.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(text);
+    if (out.length >= max) break;
+  }
+  return out.length > 0 ? out : [...fallback];
+};
+
+const normalizeSimpleAbutmentOptions = (value) => {
+  const row = value && typeof value === "object" ? value : {};
+  return {
+    diameters: normalizeSimpleSpecLabels(
+      row.diameters,
+      DEFAULT_SIMPLE_ABUTMENT_DIAMETERS,
+    ),
+    heights: normalizeSimpleSpecLabels(
+      row.heights,
+      DEFAULT_SIMPLE_ABUTMENT_HEIGHTS,
+    ),
+  };
+};
+
+const normalizeSimpleHealingOptions = (value) => {
+  const row = value && typeof value === "object" ? value : {};
+  return {
+    diameters: normalizeSimpleSpecLabels(
+      row.diameters,
+      DEFAULT_SIMPLE_HEALING_DIAMETERS,
+    ),
+    heights: normalizeSimpleSpecLabels(
+      row.heights,
+      DEFAULT_SIMPLE_HEALING_HEIGHTS,
+    ),
+  };
+};
+
 const normalizeArrivalDefaultDays = (value) => {
   const raw = Number(value);
   if (!Number.isFinite(raw)) return DEFAULT_ARRIVAL_DEFAULT_DAYS;
@@ -324,6 +375,15 @@ const toSettingsResponse = async (anchor, { persistHydrated = false } = {}) => {
     shadeFavorites: normalizeShadeFavorites(settings?.shadeFavorites),
     implantFavorites,
     abutmentFavorites: normalizeAbutmentFavorites(settings?.abutmentFavorites),
+    directAbutmentFavorites: normalizeAbutmentFavorites(
+      settings?.directAbutmentFavorites,
+    ),
+    simpleAbutmentOptions: normalizeSimpleAbutmentOptions(
+      settings?.simpleAbutmentOptions,
+    ),
+    simpleHealingOptions: normalizeSimpleHealingOptions(
+      settings?.simpleHealingOptions,
+    ),
     promoNoticeDismissedAt,
     calendarNewRequestHintDismissedAt,
     skipDesignConfirm: true,
@@ -412,6 +472,18 @@ export async function upsertPracticeTransferSettings(req, res) {
     const hasShadeFavorites = Object.prototype.hasOwnProperty.call(body, "shadeFavorites");
     const hasImplantFavorites = Object.prototype.hasOwnProperty.call(body, "implantFavorites");
     const hasAbutmentFavorites = Object.prototype.hasOwnProperty.call(body, "abutmentFavorites");
+    const hasDirectAbutmentFavorites = Object.prototype.hasOwnProperty.call(
+      body,
+      "directAbutmentFavorites",
+    );
+    const hasSimpleAbutmentOptions = Object.prototype.hasOwnProperty.call(
+      body,
+      "simpleAbutmentOptions",
+    );
+    const hasSimpleHealingOptions = Object.prototype.hasOwnProperty.call(
+      body,
+      "simpleHealingOptions",
+    );
     const hasPromoNoticeDismissedAt = Object.prototype.hasOwnProperty.call(body, "promoNoticeDismissedAt");
     const hasCalendarNewRequestHintDismissedAt = Object.prototype.hasOwnProperty.call(
       body,
@@ -482,6 +554,18 @@ export async function upsertPracticeTransferSettings(req, res) {
     }
     if (hasAbutmentFavorites) {
       setPatch["practiceTransferSettings.abutmentFavorites"] = normalizeAbutmentFavorites(body.abutmentFavorites);
+    }
+    if (hasDirectAbutmentFavorites) {
+      setPatch["practiceTransferSettings.directAbutmentFavorites"] =
+        normalizeAbutmentFavorites(body.directAbutmentFavorites);
+    }
+    if (hasSimpleAbutmentOptions) {
+      setPatch["practiceTransferSettings.simpleAbutmentOptions"] =
+        normalizeSimpleAbutmentOptions(body.simpleAbutmentOptions);
+    }
+    if (hasSimpleHealingOptions) {
+      setPatch["practiceTransferSettings.simpleHealingOptions"] =
+        normalizeSimpleHealingOptions(body.simpleHealingOptions);
     }
     if (hasPromoNoticeDismissedAt) {
       const raw = body.promoNoticeDismissedAt;

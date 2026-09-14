@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/shared/ui/cn";
 import {
+  CUSTOM_ABUTMENT_SELECTION,
   formatAbutmentCompact,
   formatAbutmentSummary,
   formatImplantCompact,
@@ -40,6 +41,7 @@ import {
   LOWER_ARCH_TEETH,
   UPPER_ARCH_TEETH,
   normalizeToothShade,
+  resolveCustomAbutmentSelection,
   type ToothWorkSelection,
 } from "@/shared/practice/transferMemo";
 import {
@@ -528,7 +530,10 @@ export const PracticeToothWorkChartReadOnly = ({
                 {row.prosthesisType === "크라운" ||
                 row.prosthesisType === "브리지" ||
                 isTemporaryToothProsthesisType(row.prosthesisType)
-                  ? "어벗"
+                  ? resolveCustomAbutmentSelection(row) ===
+                    CUSTOM_ABUTMENT_SELECTION.SCANBODY
+                    ? "스캔바디"
+                    : "어벗"
                   : "커스텀"}
               </span>
               <div className="flex w-full flex-col items-stretch gap-0.5 px-0.5">
@@ -536,7 +541,11 @@ export const PracticeToothWorkChartReadOnly = ({
                   {implantCompact || "임플란트"}
                 </span>
                 <span className="min-h-5 w-full px-0.5 text-center text-[10px] leading-snug text-service-abut [overflow-wrap:anywhere]">
-                  {abutmentCompact || "스캔바디"}
+                  {abutmentCompact ||
+                    (resolveCustomAbutmentSelection(row) ===
+                    CUSTOM_ABUTMENT_SELECTION.ABUTMENT
+                      ? "직접 입력"
+                      : "스캔바디")}
                 </span>
               </div>
             </div>
@@ -878,7 +887,10 @@ export const PracticeToothWorkChartReadOnly = ({
                             {row.prosthesisType === "크라운" ||
                             row.prosthesisType === "브리지" ||
                             isTemporaryToothProsthesisType(row.prosthesisType)
-                              ? "어벗"
+                              ? resolveCustomAbutmentSelection(row) ===
+                                CUSTOM_ABUTMENT_SELECTION.SCANBODY
+                                ? "스캔바디"
+                                : "어벗"
                               : "커스텀"}
                           </span>
                           {embedded && !fullLayout ? (
@@ -887,7 +899,11 @@ export const PracticeToothWorkChartReadOnly = ({
                                 {implantCompact || "임플란트"}
                               </span>
                               <span className="h-5 w-full truncate px-0.5 text-center text-[10px] leading-none text-service-abut">
-                                {abutmentCompact || "스캔바디"}
+                                {abutmentCompact ||
+                                  (resolveCustomAbutmentSelection(row) ===
+                                  CUSTOM_ABUTMENT_SELECTION.ABUTMENT
+                                    ? "직접 입력"
+                                    : "스캔바디")}
                               </span>
                             </div>
                           ) : (
@@ -906,11 +922,19 @@ export const PracticeToothWorkChartReadOnly = ({
                                 <Tooltip>
                                   <TooltipTrigger asChild>
                                     <span className="h-5 w-full truncate px-0.5 text-center text-[10px] leading-none text-service-abut">
-                                      {abutmentCompact || "스캔바디"}
+                                      {abutmentCompact ||
+                                        (resolveCustomAbutmentSelection(row) ===
+                                        CUSTOM_ABUTMENT_SELECTION.ABUTMENT
+                                          ? "직접 입력"
+                                          : "스캔바디")}
                                     </span>
                                   </TooltipTrigger>
                                   <TooltipContent side="bottom" className="max-w-[16rem] text-xs">
-                                    {abutmentSummary || "스캔바디"}
+                                    {abutmentSummary ||
+                                      (resolveCustomAbutmentSelection(row) ===
+                                      CUSTOM_ABUTMENT_SELECTION.ABUTMENT
+                                        ? "직접 입력"
+                                        : "스캔바디")}
                                   </TooltipContent>
                                 </Tooltip>
                               </div>

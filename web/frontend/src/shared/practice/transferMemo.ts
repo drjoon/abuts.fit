@@ -9,6 +9,8 @@
 // - 2026-09-02: formatImplantSummary — 도입중(implantAddRequest)이어도 실제 brand/family/type 표시(자리표시만 축약).
 // - 2026-09-02: 치식 직렬화 `{…/…/+add}` — implantAddRequest 왕복(요청중 CA가 어벗츠 업로드로 오인되지 않게).
 // - 2026-09-01: 기공의뢰 caseInfos.tooth는 toothWorks 치식 SSOT(파일명 추출 금지). 단치아면 파일에도 반영.
+// - 2026-09-14: 어벗|스캔바디 라디오(customAbutmentSelection). 어벗=심플어벗+자가입력·규격 선택.
+// - 2026-09-14: 스캔바디 모드 심플힐링(직경 6/7/9·높이 S/M/L/XL·종류 없음). 어벗은 규격 없이 주문 가능.
 // - 2026-08-25: 커스텀어벗 보철 형태는 심플어벗 불가 — 어벗 쪽 완성=스캔바디만.
 // - 2026-08-25: 심플어벗(심플어벗/심플밀링·직경 6–10·높이 S/M/L) — 스캔바디와 XOR. 완성 시 프리셋 충족.
 // - 2026-08-21: 임플란트 추가 요청 프리셋 type을 옵션명으로 정규화(레거시 헥스 → 선택 가능).
@@ -86,7 +88,7 @@ export const normalizeToothShade = (value: unknown) =>
 export const isToothShadePreset = (value: unknown): value is ToothShadePreset =>
   (TOOTH_SHADE_PRESETS as readonly string[]).includes(String(value || "").trim());
 
-/** 계정에 저장하는 직접 입력 쉐이드(프리셋 제외). MRU 앞쪽 */
+/** 사업자 BA에 저장하는 직접 입력 쉐이드(프리셋 제외). MRU 앞쪽 */
 export const MAX_SHADE_FAVORITES = 24;
 
 export const normalizeShadeFavorites = (items: unknown): string[] => {
@@ -118,10 +120,29 @@ export const rememberShadeFavorite = (
   return normalizeShadeFavorites([shade, ...(Array.isArray(prev) ? prev : [])]);
 };
 
+/** 치아카드 라디오: 어벗(심플어벗+자가입력) | 스캔바디(스캔바디+심플힐링) */
+export const CUSTOM_ABUTMENT_SELECTION = {
+  ABUTMENT: "abutment",
+  SCANBODY: "scanbody",
+} as const;
+export type CustomAbutmentSelection =
+  (typeof CUSTOM_ABUTMENT_SELECTION)[keyof typeof CUSTOM_ABUTMENT_SELECTION];
+
+export const isCustomAbutmentSelection = (
+  value: unknown,
+): value is CustomAbutmentSelection =>
+  value === CUSTOM_ABUTMENT_SELECTION.ABUTMENT ||
+  value === CUSTOM_ABUTMENT_SELECTION.SCANBODY;
+
 export type ToothWorkSelection = {
   toothNumber: string;
   prosthesisType: string;
   customAbutment: boolean;
+  /**
+   * 어벗|스캔바디 라디오. customAbutment일 때만 의미.
+   * 레거시(미설정)는 resolveCustomAbutmentSelection으로 추론.
+   */
+  customAbutmentSelection?: CustomAbutmentSelection;
   /** 커스텀어벗일 때만 의미. 신규 선택은 계정 기본(디자인+생산). 미설정 레거시는 생산만 */
   abutmentProductMode?: AbutmentProductMode;
   bridgeLinkedTeeth: string[];
@@ -136,8 +157,9 @@ export type ToothWorkSelection = {
   implantAddRequest?: boolean;
   /**
    * 커스텀어벗 규격 (제조사/직경/높이).
-   * 스캔바디 프리셋과 심플어벗이 같은 필드를 XOR로 공유한다.
-   * 심플어벗일 때 manufacturer=심플어벗|심플밀링, diameter=6–10, height=S|M|L.
+   * 스캔바디·자가입력 프리셋과 심플어벗/심플힐링이 같은 필드를 XOR로 공유한다.
+   * - 심플어벗: manufacturer=심플어벗|심플밀링, diameter=6–10, height=S|M|L
+   * - 심플힐링: manufacturer=심플힐링, diameter=6|7|9, height=S|M|L|XL
    */
   abutmentManufacturer?: string;
   abutmentDiameter?: string;
@@ -152,8 +174,129 @@ export type SimpleAbutmentDiameter = (typeof SIMPLE_ABUTMENT_DIAMETERS)[number];
 export const SIMPLE_ABUTMENT_HEIGHTS = ["S", "M", "L"] as const;
 export type SimpleAbutmentHeight = (typeof SIMPLE_ABUTMENT_HEIGHTS)[number];
 
+/** 스캔바디 모드의 심플 힐링(종류 없음). manufacturer 고정값 */
+export const SIMPLE_HEALING_KIND = "심플힐링" as const;
+export const SIMPLE_HEALING_LABEL = "심플 힐링";
+export const SIMPLE_HEALING_DIAMETERS = ["6", "7", "9"] as const;
+export type SimpleHealingDiameter = (typeof SIMPLE_HEALING_DIAMETERS)[number];
+export const SIMPLE_HEALING_HEIGHTS = ["S", "M", "L", "XL"] as const;
+export type SimpleHealingHeight = (typeof SIMPLE_HEALING_HEIGHTS)[number];
+
+/** 심플어벗·심플힐링 직경/높이 칩 카탈로그(BA 저장). 비우면 기본값. */
+export type SimpleSpecOptionCatalog = {
+  diameters: string[];
+  heights: string[];
+};
+
+const normalizeSimpleSpecLabels = (
+  values: unknown,
+  fallback: readonly string[],
+  max = 24,
+): string[] => {
+  const list = Array.isArray(values) ? values : null;
+  if (!list) return [...fallback];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of list) {
+    const text = String(raw || "").trim();
+    if (!text) continue;
+    const key = text.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(text);
+    if (out.length >= max) break;
+  }
+  return out.length > 0 ? out : [...fallback];
+};
+
+export const normalizeSimpleAbutmentOptionCatalog = (
+  value: unknown,
+): SimpleSpecOptionCatalog => {
+  const row = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  return {
+    diameters: normalizeSimpleSpecLabels(row.diameters, SIMPLE_ABUTMENT_DIAMETERS),
+    heights: normalizeSimpleSpecLabels(row.heights, SIMPLE_ABUTMENT_HEIGHTS),
+  };
+};
+
+export const normalizeSimpleHealingOptionCatalog = (
+  value: unknown,
+): SimpleSpecOptionCatalog => {
+  const row = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  return {
+    diameters: normalizeSimpleSpecLabels(row.diameters, SIMPLE_HEALING_DIAMETERS),
+    heights: normalizeSimpleSpecLabels(row.heights, SIMPLE_HEALING_HEIGHTS),
+  };
+};
+
+export const renameSimpleSpecOption = (
+  options: readonly string[],
+  from: string,
+  to: string,
+  fallback: readonly string[],
+): string[] => {
+  const fromKey = String(from || "").trim().toLowerCase();
+  const toLabel = String(to || "").trim();
+  if (!fromKey || !toLabel) {
+    return normalizeSimpleSpecLabels(options, fallback);
+  }
+  const next = options.map((item) =>
+    String(item || "").trim().toLowerCase() === fromKey ? toLabel : item,
+  );
+  return normalizeSimpleSpecLabels(next, fallback);
+};
+
+export const removeSimpleSpecOption = (
+  options: readonly string[],
+  target: string,
+  fallback: readonly string[],
+): string[] => {
+  const key = String(target || "").trim().toLowerCase();
+  if (!key) return normalizeSimpleSpecLabels(options, fallback);
+  const next = options.filter(
+    (item) => String(item || "").trim().toLowerCase() !== key,
+  );
+  return normalizeSimpleSpecLabels(next, fallback);
+};
+
+export const addSimpleSpecOption = (
+  options: readonly string[],
+  label: string,
+  fallback: readonly string[],
+): string[] => {
+  const text = String(label || "").trim();
+  if (!text) return normalizeSimpleSpecLabels(options, fallback);
+  return normalizeSimpleSpecLabels([...options, text], fallback);
+};
+
+export const reorderSimpleSpecOptions = (
+  options: readonly string[],
+  fromIndex: number,
+  toIndex: number,
+  fallback: readonly string[],
+): string[] => {
+  const list = normalizeSimpleSpecLabels(options, fallback);
+  if (
+    fromIndex < 0 ||
+    toIndex < 0 ||
+    fromIndex >= list.length ||
+    toIndex >= list.length ||
+    fromIndex === toIndex
+  ) {
+    return list;
+  }
+  const next = [...list];
+  const [moved] = next.splice(fromIndex, 1);
+  if (!moved) return list;
+  next.splice(toIndex, 0, moved);
+  return next;
+};
+
 export const isSimpleAbutmentKind = (value: unknown): value is SimpleAbutmentKind =>
   (SIMPLE_ABUTMENT_KINDS as readonly string[]).includes(String(value || "").trim());
+
+export const isSimpleHealingKind = (value: unknown): value is typeof SIMPLE_HEALING_KIND =>
+  String(value || "").trim() === SIMPLE_HEALING_KIND;
 
 export const isSimpleAbutmentDiameter = (
   value: unknown,
@@ -163,10 +306,55 @@ export const isSimpleAbutmentDiameter = (
 export const isSimpleAbutmentHeight = (value: unknown): value is SimpleAbutmentHeight =>
   (SIMPLE_ABUTMENT_HEIGHTS as readonly string[]).includes(String(value || "").trim());
 
-/** 심플어벗 모드(종류만 골라도 true). 스캔바디와 XOR 판별용 */
+export const isSimpleHealingDiameter = (
+  value: unknown,
+): value is SimpleHealingDiameter =>
+  (SIMPLE_HEALING_DIAMETERS as readonly string[]).includes(String(value || "").trim());
+
+export const isSimpleHealingHeight = (value: unknown): value is SimpleHealingHeight =>
+  (SIMPLE_HEALING_HEIGHTS as readonly string[]).includes(String(value || "").trim());
+
+/** 심플어벗|심플힐링(종류만 골라도 true). 스캔바디/자가입력과 XOR 판별용 */
 export const isSimpleAbutmentMode = (
   row: Partial<ToothWorkSelection> | null | undefined,
-) => isSimpleAbutmentKind(row?.abutmentManufacturer);
+) =>
+  isSimpleAbutmentKind(row?.abutmentManufacturer) ||
+  isSimpleHealingKind(row?.abutmentManufacturer);
+
+export const resolveCustomAbutmentSelection = (
+  row?: Partial<ToothWorkSelection> | null,
+): CustomAbutmentSelection | null => {
+  if (!row?.customAbutment) return null;
+  if (isCustomAbutmentSelection(row.customAbutmentSelection)) {
+    return row.customAbutmentSelection;
+  }
+  // 레거시: 심플힐링 → 스캔바디, 심플어벗/밀링 → 어벗, 스캔바디 규격 → 스캔바디, 그 외 어벗
+  if (isSimpleHealingKind(row.abutmentManufacturer)) {
+    return CUSTOM_ABUTMENT_SELECTION.SCANBODY;
+  }
+  if (isSimpleAbutmentKind(row.abutmentManufacturer)) {
+    return CUSTOM_ABUTMENT_SELECTION.ABUTMENT;
+  }
+  if (
+    String(row.abutmentManufacturer || "").trim() ||
+    String(row.abutmentDiameter || "").trim() ||
+    String(row.abutmentHeight || "").trim()
+  ) {
+    return CUSTOM_ABUTMENT_SELECTION.SCANBODY;
+  }
+  return CUSTOM_ABUTMENT_SELECTION.ABUTMENT;
+};
+
+export const pickToothWorkCustomAbutmentSelection = (
+  row: Partial<ToothWorkSelection> | null | undefined,
+  customAbutment: boolean,
+): Pick<ToothWorkSelection, "customAbutmentSelection"> => {
+  if (!customAbutment) return {};
+  const selection =
+    resolveCustomAbutmentSelection({ ...row, customAbutment: true }) ||
+    CUSTOM_ABUTMENT_SELECTION.ABUTMENT;
+  return { customAbutmentSelection: selection };
+};
 
 export const resolveToothAbutmentProductMode = (
   row?: Partial<ToothWorkSelection> | null,
@@ -244,6 +432,404 @@ export type PracticeAbutmentFavorite = {
   manufacturer: string;
   diameter: string;
   height: string;
+};
+
+/** 회사별 직경·높이 옵션(플랫 프리셋에서 유도). 회사마다 목록이 다를 수 있음. */
+export type CompanySpecOptions = {
+  companies: string[];
+  diameters: string[];
+  heights: string[];
+};
+
+export const listCompanySpecOptions = (
+  favorites: readonly PracticeAbutmentFavorite[] | null | undefined,
+  selectedCompany?: string,
+): CompanySpecOptions => {
+  const list = Array.isArray(favorites) ? favorites : [];
+  const companies: string[] = [];
+  const companySeen = new Set<string>();
+  for (const row of list) {
+    const name = String(row?.manufacturer || "").trim();
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (companySeen.has(key)) continue;
+    companySeen.add(key);
+    companies.push(name);
+  }
+  const company = String(selectedCompany || "").trim();
+  if (!company) {
+    return { companies, diameters: [], heights: [] };
+  }
+  const companyKey = company.toLowerCase();
+  const diameters: string[] = [];
+  const heights: string[] = [];
+  const diameterSeen = new Set<string>();
+  const heightSeen = new Set<string>();
+  for (const row of list) {
+    if (String(row?.manufacturer || "").trim().toLowerCase() !== companyKey) {
+      continue;
+    }
+    const diameter = String(row?.diameter || "").trim();
+    const height = String(row?.height || "").trim();
+    if (diameter) {
+      const key = diameter.toLowerCase();
+      if (!diameterSeen.has(key)) {
+        diameterSeen.add(key);
+        diameters.push(diameter);
+      }
+    }
+    if (height) {
+      const key = height.toLowerCase();
+      if (!heightSeen.has(key)) {
+        heightSeen.add(key);
+        heights.push(height);
+      }
+    }
+  }
+  return { companies, diameters, heights };
+};
+
+/** 회사·직경·높이 프리셋 병합. 회사만 / 회사+직경 / 회사+높이 / 전체 모두 허용. */
+export const mergeCompanySpecFavorite = (
+  favorites: readonly PracticeAbutmentFavorite[] | null | undefined,
+  next: { manufacturer: string; diameter?: string; height?: string; id?: string },
+): PracticeAbutmentFavorite[] => {
+  const list = Array.isArray(favorites) ? [...favorites] : [];
+  const manufacturer = String(next.manufacturer || "").trim();
+  const diameter = String(next.diameter || "").trim();
+  const height = String(next.height || "").trim();
+  if (!manufacturer) return list;
+  const key = `${manufacturer}|${diameter}|${height}`.toLowerCase();
+  if (
+    list.some(
+      (row) =>
+        `${String(row.manufacturer || "").trim()}|${String(row.diameter || "").trim()}|${String(row.height || "").trim()}`.toLowerCase() ===
+        key,
+    )
+  ) {
+    return list;
+  }
+  return [
+    ...list,
+    {
+      id:
+        String(next.id || "").trim() ||
+        `abt-${Date.now().toString(36)}-${list.length + 1}`,
+      manufacturer,
+      diameter,
+      height,
+    },
+  ].slice(0, 40);
+};
+
+/** 회사 전체 삭제 */
+export const removeCompanySpecCompany = (
+  favorites: readonly PracticeAbutmentFavorite[] | null | undefined,
+  company: string,
+): PracticeAbutmentFavorite[] => {
+  const key = String(company || "").trim().toLowerCase();
+  if (!key) return Array.isArray(favorites) ? [...favorites] : [];
+  return (Array.isArray(favorites) ? favorites : []).filter(
+    (row) => String(row.manufacturer || "").trim().toLowerCase() !== key,
+  );
+};
+
+/** 회사의 특정 직경 삭제(해당 직경 행 제거) */
+export const removeCompanySpecDiameter = (
+  favorites: readonly PracticeAbutmentFavorite[] | null | undefined,
+  company: string,
+  diameter: string,
+): PracticeAbutmentFavorite[] => {
+  const companyKey = String(company || "").trim().toLowerCase();
+  const diameterKey = String(diameter || "").trim().toLowerCase();
+  if (!companyKey || !diameterKey) {
+    return Array.isArray(favorites) ? [...favorites] : [];
+  }
+  return (Array.isArray(favorites) ? favorites : []).filter((row) => {
+    if (String(row.manufacturer || "").trim().toLowerCase() !== companyKey) {
+      return true;
+    }
+    return String(row.diameter || "").trim().toLowerCase() !== diameterKey;
+  });
+};
+
+/** 회사의 특정 높이 삭제(해당 높이 행 제거) */
+export const removeCompanySpecHeight = (
+  favorites: readonly PracticeAbutmentFavorite[] | null | undefined,
+  company: string,
+  height: string,
+): PracticeAbutmentFavorite[] => {
+  const companyKey = String(company || "").trim().toLowerCase();
+  const heightKey = String(height || "").trim().toLowerCase();
+  if (!companyKey || !heightKey) {
+    return Array.isArray(favorites) ? [...favorites] : [];
+  }
+  return (Array.isArray(favorites) ? favorites : []).filter((row) => {
+    if (String(row.manufacturer || "").trim().toLowerCase() !== companyKey) {
+      return true;
+    }
+    return String(row.height || "").trim().toLowerCase() !== heightKey;
+  });
+};
+
+const favoriteTripleKey = (row: {
+  manufacturer?: string;
+  diameter?: string;
+  height?: string;
+}) =>
+  `${String(row.manufacturer || "").trim()}|${String(row.diameter || "").trim()}|${String(row.height || "").trim()}`.toLowerCase();
+
+const companySpecKey = (name: string) => String(name || "").trim().toLowerCase();
+
+/** 회사 라벨 변경(대소문자만 달라도 반영). 충돌 시 병합·중복 제거. */
+export const renameCompanySpecCompany = (
+  favorites: readonly PracticeAbutmentFavorite[] | null | undefined,
+  fromCompany: string,
+  toCompany: string,
+): PracticeAbutmentFavorite[] => {
+  const list = Array.isArray(favorites) ? favorites : [];
+  const fromKey = companySpecKey(fromCompany);
+  const toName = String(toCompany || "").trim();
+  if (!fromKey || !toName) return [...list];
+  const toKey = companySpecKey(toName);
+  const mapped = list.map((row) => {
+    if (companySpecKey(String(row.manufacturer || "")) !== fromKey) return row;
+    return { ...row, manufacturer: toName };
+  });
+  if (fromKey === toKey) return mapped;
+  const seen = new Set<string>();
+  const out: PracticeAbutmentFavorite[] = [];
+  for (const row of mapped) {
+    const key = favoriteTripleKey(row);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(row);
+  }
+  return out;
+};
+
+/** 선택 회사 내 직경 라벨 변경 */
+export const renameCompanySpecDiameter = (
+  favorites: readonly PracticeAbutmentFavorite[] | null | undefined,
+  company: string,
+  fromDiameter: string,
+  toDiameter: string,
+): PracticeAbutmentFavorite[] => {
+  const list = Array.isArray(favorites) ? favorites : [];
+  const companyKey = companySpecKey(company);
+  const fromKey = companySpecKey(fromDiameter);
+  const toName = String(toDiameter || "").trim();
+  if (!companyKey || !fromKey || !toName) return [...list];
+  const mapped = list.map((row) => {
+    if (companySpecKey(String(row.manufacturer || "")) !== companyKey) return row;
+    if (companySpecKey(String(row.diameter || "")) !== fromKey) return row;
+    return { ...row, diameter: toName };
+  });
+  const seen = new Set<string>();
+  const out: PracticeAbutmentFavorite[] = [];
+  for (const row of mapped) {
+    const key = favoriteTripleKey(row);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(row);
+  }
+  return out;
+};
+
+/** 선택 회사 내 높이 라벨 변경 */
+export const renameCompanySpecHeight = (
+  favorites: readonly PracticeAbutmentFavorite[] | null | undefined,
+  company: string,
+  fromHeight: string,
+  toHeight: string,
+): PracticeAbutmentFavorite[] => {
+  const list = Array.isArray(favorites) ? favorites : [];
+  const companyKey = companySpecKey(company);
+  const fromKey = companySpecKey(fromHeight);
+  const toName = String(toHeight || "").trim();
+  if (!companyKey || !fromKey || !toName) return [...list];
+  const mapped = list.map((row) => {
+    if (companySpecKey(String(row.manufacturer || "")) !== companyKey) return row;
+    if (companySpecKey(String(row.height || "")) !== fromKey) return row;
+    return { ...row, height: toName };
+  });
+  const seen = new Set<string>();
+  const out: PracticeAbutmentFavorite[] = [];
+  for (const row of mapped) {
+    const key = favoriteTripleKey(row);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(row);
+  }
+  return out;
+};
+
+/** 회사 칩 순서 변경 — 회사 그룹 단위로 favorites 재배열 */
+export const reorderCompanySpecCompanies = (
+  favorites: readonly PracticeAbutmentFavorite[] | null | undefined,
+  fromIndex: number,
+  toIndex: number,
+): PracticeAbutmentFavorite[] => {
+  const list = Array.isArray(favorites) ? [...favorites] : [];
+  const companies = listCompanySpecOptions(list).companies;
+  if (
+    fromIndex < 0 ||
+    toIndex < 0 ||
+    fromIndex >= companies.length ||
+    toIndex >= companies.length ||
+    fromIndex === toIndex
+  ) {
+    return list;
+  }
+  const nextCompanies = [...companies];
+  const [moved] = nextCompanies.splice(fromIndex, 1);
+  if (!moved) return list;
+  nextCompanies.splice(toIndex, 0, moved);
+
+  const groups = new Map<string, PracticeAbutmentFavorite[]>();
+  for (const row of list) {
+    const name = String(row.manufacturer || "").trim();
+    if (!name) continue;
+    const key = companySpecKey(name);
+    const bucket = groups.get(key);
+    if (bucket) bucket.push(row);
+    else groups.set(key, [row]);
+  }
+  const out: PracticeAbutmentFavorite[] = [];
+  for (const name of nextCompanies) {
+    const bucket = groups.get(companySpecKey(name));
+    if (bucket) out.push(...bucket);
+  }
+  return out;
+};
+
+/** 선택 회사 내 직경 칩 순서 변경 */
+export const reorderCompanySpecDiameters = (
+  favorites: readonly PracticeAbutmentFavorite[] | null | undefined,
+  company: string,
+  fromIndex: number,
+  toIndex: number,
+): PracticeAbutmentFavorite[] => {
+  const list = Array.isArray(favorites) ? [...favorites] : [];
+  const companyName = String(company || "").trim();
+  if (!companyName) return list;
+  const { diameters } = listCompanySpecOptions(list, companyName);
+  if (
+    fromIndex < 0 ||
+    toIndex < 0 ||
+    fromIndex >= diameters.length ||
+    toIndex >= diameters.length ||
+    fromIndex === toIndex
+  ) {
+    return list;
+  }
+  const nextDiameters = [...diameters];
+  const [moved] = nextDiameters.splice(fromIndex, 1);
+  if (!moved) return list;
+  nextDiameters.splice(toIndex, 0, moved);
+  const order = new Map(
+    nextDiameters.map((d, i) => [companySpecKey(d), i] as const),
+  );
+  const companyKey = companySpecKey(companyName);
+
+  const others: PracticeAbutmentFavorite[] = [];
+  const companyRows: PracticeAbutmentFavorite[] = [];
+  for (const row of list) {
+    if (companySpecKey(String(row.manufacturer || "")) === companyKey) {
+      companyRows.push(row);
+    } else {
+      others.push(row);
+    }
+  }
+  companyRows.sort((a, b) => {
+    const da = String(a.diameter || "").trim();
+    const db = String(b.diameter || "").trim();
+    const ia = da ? (order.get(companySpecKey(da)) ?? 9999) : 9999;
+    const ib = db ? (order.get(companySpecKey(db)) ?? 9999) : 9999;
+    return ia - ib;
+  });
+  // 회사 그룹 위치 유지: 원래 첫 회사 행 위치에 끼워 넣기
+  const firstIdx = list.findIndex(
+    (row) => companySpecKey(String(row.manufacturer || "")) === companyKey,
+  );
+  if (firstIdx < 0) return [...others, ...companyRows];
+  const before = list
+    .slice(0, firstIdx)
+    .filter(
+      (row) => companySpecKey(String(row.manufacturer || "")) !== companyKey,
+    );
+  const after = list
+    .slice(firstIdx)
+    .filter(
+      (row) => companySpecKey(String(row.manufacturer || "")) !== companyKey,
+    );
+  return [...before, ...companyRows, ...after];
+};
+
+/** 선택 회사 내 높이 칩 순서 변경 */
+export const reorderCompanySpecHeights = (
+  favorites: readonly PracticeAbutmentFavorite[] | null | undefined,
+  company: string,
+  fromIndex: number,
+  toIndex: number,
+): PracticeAbutmentFavorite[] => {
+  const list = Array.isArray(favorites) ? [...favorites] : [];
+  const companyName = String(company || "").trim();
+  if (!companyName) return list;
+  const { heights } = listCompanySpecOptions(list, companyName);
+  if (
+    fromIndex < 0 ||
+    toIndex < 0 ||
+    fromIndex >= heights.length ||
+    toIndex >= heights.length ||
+    fromIndex === toIndex
+  ) {
+    return list;
+  }
+  const nextHeights = [...heights];
+  const [moved] = nextHeights.splice(fromIndex, 1);
+  if (!moved) return list;
+  nextHeights.splice(toIndex, 0, moved);
+  const order = new Map(
+    nextHeights.map((h, i) => [companySpecKey(h), i] as const),
+  );
+  const companyKey = companySpecKey(companyName);
+
+  const companyRows: PracticeAbutmentFavorite[] = [];
+  for (const row of list) {
+    if (companySpecKey(String(row.manufacturer || "")) === companyKey) {
+      companyRows.push(row);
+    }
+  }
+  companyRows.sort((a, b) => {
+    const ha = String(a.height || "").trim();
+    const hb = String(b.height || "").trim();
+    const ia = ha ? (order.get(companySpecKey(ha)) ?? 9999) : 9999;
+    const ib = hb ? (order.get(companySpecKey(hb)) ?? 9999) : 9999;
+    return ia - ib;
+  });
+  const firstIdx = list.findIndex(
+    (row) => companySpecKey(String(row.manufacturer || "")) === companyKey,
+  );
+  if (firstIdx < 0) {
+    return [
+      ...list.filter(
+        (row) => companySpecKey(String(row.manufacturer || "")) !== companyKey,
+      ),
+      ...companyRows,
+    ];
+  }
+  const before = list
+    .slice(0, firstIdx)
+    .filter(
+      (row) => companySpecKey(String(row.manufacturer || "")) !== companyKey,
+    );
+  const after = list
+    .slice(firstIdx)
+    .filter(
+      (row) => companySpecKey(String(row.manufacturer || "")) !== companyKey,
+    );
+  return [...before, ...companyRows, ...after];
 };
 
 export const emptyToothWorkImplant = () => ({
@@ -377,13 +963,17 @@ export const formatAbutmentSummary = (
     .filter(Boolean)
     .join(" / ");
 
-/** 카드용 짧은 표시: 직경×높이 (심플어벗은 종류 약칭 포함) */
+/** 카드용 짧은 표시: 직경×높이 (심플어벗·심플힐링은 종류 약칭 포함) */
 export const formatAbutmentCompact = (
   row: Partial<ToothWorkSelection> | null | undefined,
 ) => {
   const manufacturer = String(row?.abutmentManufacturer || "").trim();
   const diameter = String(row?.abutmentDiameter || "").trim();
   const height = String(row?.abutmentHeight || "").trim();
+  if (isSimpleHealingKind(manufacturer)) {
+    if (diameter && height) return `힐링 ${diameter}×${height}`;
+    return ["힐링", diameter || height].filter(Boolean).join(" ");
+  }
   if (isSimpleAbutmentKind(manufacturer)) {
     const kindShort = manufacturer === "심플밀링" ? "밀링" : "심플";
     if (diameter && height) return `${kindShort} ${diameter}×${height}`;
@@ -767,7 +1357,7 @@ export const hasToothWorkScanbodyPreset = (
   row: Partial<ToothWorkSelection> | null | undefined,
 ) => {
   const specs = pickToothWorkAbutment(row, true);
-  if (isSimpleAbutmentKind(specs.abutmentManufacturer)) return false;
+  if (isSimpleAbutmentMode(specs)) return false;
   return Boolean(
     specs.abutmentManufacturer &&
       specs.abutmentDiameter &&
@@ -775,21 +1365,33 @@ export const hasToothWorkScanbodyPreset = (
   );
 };
 
-/** 심플어벗 종류·직경·높이가 모두 선택된 경우 */
+/** 심플어벗 종류·직경·높이가 모두 선택된 경우(직경/높이는 카탈로그 커스텀 허용) */
 export const hasToothWorkSimpleAbutment = (
   row: Partial<ToothWorkSelection> | null | undefined,
 ) => {
   const specs = pickToothWorkAbutment(row, true);
   return (
     isSimpleAbutmentKind(specs.abutmentManufacturer) &&
-    isSimpleAbutmentDiameter(specs.abutmentDiameter) &&
-    isSimpleAbutmentHeight(specs.abutmentHeight)
+    Boolean(String(specs.abutmentDiameter || "").trim()) &&
+    Boolean(String(specs.abutmentHeight || "").trim())
+  );
+};
+
+/** 심플힐링 직경·높이가 모두 선택된 경우(직경/높이는 카탈로그 커스텀 허용) */
+export const hasToothWorkSimpleHealing = (
+  row: Partial<ToothWorkSelection> | null | undefined,
+) => {
+  const specs = pickToothWorkAbutment(row, true);
+  return (
+    isSimpleHealingKind(specs.abutmentManufacturer) &&
+    Boolean(String(specs.abutmentDiameter || "").trim()) &&
+    Boolean(String(specs.abutmentHeight || "").trim())
   );
 };
 
 /**
- * 어벗 쪽 완성: 스캔바디 프리셋 또는 심플어벗 규격.
- * 커스텀어벗 보철 형태는 스캔바디만 허용(심플어벗=치과 재고는 크라운·브리지·임시치아+어벗만).
+ * 어벗 쪽 완성: 스캔바디/자가입력 프리셋 또는 심플어벗/심플힐링 규격.
+ * 커스텀어벗 보철 형태는 스캔바디만 허용(심플=치과 재고는 크라운·브리지·임시치아+어벗만).
  */
 export const hasToothWorkAbutmentSidePreset = (
   row: Partial<ToothWorkSelection> | null | undefined,
@@ -797,15 +1399,19 @@ export const hasToothWorkAbutmentSidePreset = (
   if (isCustomAbutmentProsthesisType(String(row?.prosthesisType || ""))) {
     return hasToothWorkScanbodyPreset(row);
   }
-  return hasToothWorkScanbodyPreset(row) || hasToothWorkSimpleAbutment(row);
+  return (
+    hasToothWorkScanbodyPreset(row) ||
+    hasToothWorkSimpleAbutment(row) ||
+    hasToothWorkSimpleHealing(row)
+  );
 };
 
-/** 어벗(커스텀어벗 형태 또는 크라운·브리지·임시치아 체크)에 임플란트·(스캔바디|심플어벗)이 모두 있는지 */
+/** 어벗(커스텀어벗 형태 또는 크라운·브리지·임시치아 체크)에 임플란트·(스캔바디|심플)이 모두 있는지 */
 export const hasCompleteAbutmentPresets = (
   row: Partial<ToothWorkSelection> | null | undefined,
 ) => hasToothWorkImplantPreset(row) && hasToothWorkAbutmentSidePreset(row);
 
-/** 커스텀어벗 보철 형태에 걸린 심플어벗 규격을 비운다 */
+/** 커스텀어벗 보철 형태에 걸린 심플어벗/심플힐링 규격을 비운다 */
 export const clearSimpleAbutmentIfCustomProsthesis = <
   T extends Partial<ToothWorkSelection>,
 >(
@@ -814,7 +1420,7 @@ export const clearSimpleAbutmentIfCustomProsthesis = <
   if (!isCustomAbutmentProsthesisType(String(row?.prosthesisType || ""))) {
     return row;
   }
-  if (!isSimpleAbutmentKind(row?.abutmentManufacturer)) return row;
+  if (!isSimpleAbutmentMode(row)) return row;
   return {
     ...row,
     ...emptyToothWorkAbutment(),
@@ -826,9 +1432,14 @@ export const isAbutmentPresetRequired = (
 ) => {
   const type = String(row?.prosthesisType || "");
   if (isCustomAbutmentProsthesisType(type)) return true;
-  return (
-    Boolean(row?.customAbutment) && isCustomAbutmentSupportedProsthesisType(type)
-  );
+  if (
+    !Boolean(row?.customAbutment) ||
+    !isCustomAbutmentSupportedProsthesisType(type)
+  ) {
+    return false;
+  }
+  // 어벗 라디오: 심플어벗/자가입력 없이 기공소 전송 가능
+  return resolveCustomAbutmentSelection(row) !== CUSTOM_ABUTMENT_SELECTION.ABUTMENT;
 };
 
 export const isAbutmentPresetMissing = (
@@ -943,6 +1554,7 @@ export const normalizeToothWorks = (items: ToothWorkSelection[]) =>
         prosthesisType,
         customAbutment,
         ...pickToothWorkAbutmentProductMode(row, customAbutment),
+        ...pickToothWorkCustomAbutmentSelection(row, customAbutment),
         bridgeLinkedTeeth,
         ...(shade ? { shade } : {}),
         ...clearSimpleAbutmentIfCustomProsthesis({
@@ -986,6 +1598,7 @@ export const normalizeToothWorksForSync = (items: ToothWorkSelection[]) =>
         prosthesisType,
         customAbutment,
         ...pickToothWorkAbutmentProductMode(row, customAbutment),
+        ...pickToothWorkCustomAbutmentSelection(row, customAbutment),
         bridgeLinkedTeeth,
         ...(shade ? { shade } : {}),
         ...clearSimpleAbutmentIfCustomProsthesis({
@@ -1062,6 +1675,15 @@ export const parseToothWorks = (value: string) =>
         customAbutment,
         ...pickToothWorkAbutmentProductMode(
           { abutmentProductMode },
+          customAbutment,
+        ),
+        ...pickToothWorkCustomAbutmentSelection(
+          {
+            customAbutment,
+            abutmentManufacturer: specsParsed.abutmentManufacturer,
+            abutmentDiameter: specsParsed.abutmentDiameter,
+            abutmentHeight: specsParsed.abutmentHeight,
+          },
           customAbutment,
         ),
         bridgeLinkedTeeth,

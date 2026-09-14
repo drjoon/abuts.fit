@@ -705,7 +705,8 @@ const businessAnchorSchema = new mongoose.Schema(
       // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
       // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
       // - 2026-08-14: implantFavorites roundBar/adopted/roundBarRequestId (환봉 제조사 추가요청)
-      // - 2026-08-13: defaultAbutmentProductMode(커스텀어벗 모달 계정 기본=디자인+생산)
+      // - 2026-08-13: defaultAbutmentProductMode(커스텀어벗 모달 BA 기본=디자인+생산)
+      // - 임플란트/어벗/직접입력·쉐이드·메모·보철형태 프리셋은 User가 아닌 BA practiceTransferSettings
       // - 2026-08-28: calendarNewRequestHintDismissedAt(도착일 클릭 신규의뢰 안내 닫음)
       arrivalDefaultDays: {
         type: Number,
@@ -807,6 +808,28 @@ const businessAnchorSchema = new mongoose.Schema(
           },
         ],
         default: [],
+      },
+      // 어벗「직접 입력」전용(스캔바디 abutmentFavorites와 분리)
+      directAbutmentFavorites: {
+        type: [
+          {
+            id: { type: String, default: "" },
+            manufacturer: { type: String, default: "" },
+            diameter: { type: String, default: "" },
+            height: { type: String, default: "" },
+          },
+        ],
+        default: [],
+      },
+      // 심플어벗 직경·높이 칩 카탈로그(종류는 고정)
+      simpleAbutmentOptions: {
+        diameters: { type: [String], default: [] },
+        heights: { type: [String], default: [] },
+      },
+      // 심플 힐링 직경·높이 칩 카탈로그
+      simpleHealingOptions: {
+        diameters: { type: [String], default: [] },
+        heights: { type: [String], default: [] },
       },
       promoNoticeDismissedAt: {
         type: Date,

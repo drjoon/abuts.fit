@@ -276,6 +276,7 @@ export const applyProsthesisTypeToRow = (
       ...row,
       prosthesisType: nextType,
       customAbutment: false,
+      customAbutmentSelection: undefined,
       abutmentProductMode: undefined,
       ...emptyToothWorkCustomSpecs(),
     };

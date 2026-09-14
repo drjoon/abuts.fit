@@ -518,7 +518,11 @@ export const enrichToothWorksPendingFromCatalog = <
     const abutmentManufacturer = String(
       (row as { abutmentManufacturer?: string }).abutmentManufacturer || "",
     ).trim();
-    if (abutmentManufacturer === "심플어벗" || abutmentManufacturer === "심플밀링") {
+    if (
+      abutmentManufacturer === "심플어벗" ||
+      abutmentManufacturer === "심플밀링" ||
+      abutmentManufacturer === "심플힐링"
+    ) {
       return row;
     }
     if (row.roundBarAdopted === true || row.adopted === true) return row;
