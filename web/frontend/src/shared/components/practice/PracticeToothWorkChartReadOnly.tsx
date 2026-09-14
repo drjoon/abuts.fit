@@ -58,6 +58,7 @@ import {
 import {
   buildToothWorkDisplayByTooth,
   hasPartialProsthesisFollowUp,
+  toothWorksUpToFollowUpFocus,
   type ProsthesisFollowUpRecord,
 } from "@/shared/practice/prosthesisFollowUp";
 import {
@@ -218,6 +219,11 @@ type PracticeToothWorkChartReadOnlyProps = {
   selectionDisabled?: boolean;
   /** 후속 제작 기록 — 단계별 기공비 섹션 */
   prosthesisFollowUps?: ProsthesisFollowUpRecord[] | null;
+  /**
+   * 캘린더 칩 단계 포커스 — 치식 표시·이번 단계 견적.
+   * `-1` 원 임시치아, `0..n` followUpIndex까지, `null` 최신 전체.
+   */
+  feeStageFocusIndex?: number | null;
 };
 
 export const PracticeToothWorkChartReadOnly = ({
@@ -241,6 +247,7 @@ export const PracticeToothWorkChartReadOnly = ({
   feeToothWorks,
   selectionDisabled = false,
   prosthesisFollowUps = null,
+  feeStageFocusIndex = null,
 }: PracticeToothWorkChartReadOnlyProps) => {
   const isMobile = useIsMobile();
   const [toothChartEnlargeOpen, setToothChartEnlargeOpen] = useState(false);
@@ -258,14 +265,24 @@ export const PracticeToothWorkChartReadOnly = ({
     if (!selectable) return toothWorks;
     return toothWorks.filter((row) => isSpanSelected(row));
   }, [feeToothWorks, selectable, toothWorks, selectedSpanKeys, spanKeyOf]);
+  /** 칩 단계 포커스 — 표시용 toothWorks만 자른다(견적 합계·전체 단계는 유지). */
+  const displayToothWorks = useMemo(
+    () =>
+      toothWorksUpToFollowUpFocus(
+        toothWorks,
+        prosthesisFollowUps,
+        feeStageFocusIndex,
+      ),
+    [feeStageFocusIndex, prosthesisFollowUps, toothWorks],
+  );
   const confirmedFeeLabel = useMemo(
     () =>
       hasPartialProsthesisFollowUp(quoteToothWorks) ? "변경 기공비" : null,
     [quoteToothWorks],
   );
   const byTooth = useMemo(
-    () => buildToothWorkDisplayByTooth(toothWorks),
-    [toothWorks],
+    () => buildToothWorkDisplayByTooth(displayToothWorks),
+    [displayToothWorks],
   );
 
   const allDisplayTeeth = useMemo(() => new Set(byTooth.keys()), [byTooth]);
@@ -1051,6 +1068,7 @@ export const PracticeToothWorkChartReadOnly = ({
       labEffectiveStars={labEffectiveStars}
       confirmedFeeLabel={confirmedFeeLabel}
       feeStages={feeStages}
+      feeStageFocusIndex={feeStageFocusIndex}
       className={
         embedded ? "border-0 bg-transparent px-0 py-1 shadow-none" : undefined
       }
@@ -1067,6 +1085,7 @@ export const PracticeToothWorkChartReadOnly = ({
         labEffectiveStars={labEffectiveStars}
         confirmedFeeLabel={confirmedFeeLabel}
         feeStages={feeStages}
+        feeStageFocusIndex={feeStageFocusIndex}
         className={
           embedded ? "border-0 bg-transparent px-0 py-1 shadow-none" : undefined
         }
@@ -1093,6 +1112,7 @@ export const PracticeToothWorkChartReadOnly = ({
         labEffectiveStars={labEffectiveStars}
         confirmedFeeLabel={confirmedFeeLabel}
         feeStages={feeStages}
+        feeStageFocusIndex={feeStageFocusIndex}
         className={embedded ? "border-0 bg-transparent px-0 py-1 shadow-none" : undefined}
       />
       {lowerEnlargeRow}

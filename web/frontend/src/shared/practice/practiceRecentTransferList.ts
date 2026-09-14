@@ -157,6 +157,11 @@ export type PracticeRecentTransferItem = {
   orderDates?: string[];
   /** 누적 치과도착일(마지막=최종·재도착일). 캘린더 다중 표시·연결용 */
   arrivalDates?: string[];
+  /**
+   * 캘린더 칩에서 연 단계 포커스(UI 전용).
+   * `-1` 원 임시치아, `0..n` followUpIndex, 없으면 최신.
+   */
+  focusFollowUpIndex?: number | null;
   status: string;
   fileCount: number;
   patientCount: number;

@@ -612,6 +612,11 @@ type PracticeTransferDetailChatDialogProps = {
   cancelProsthesisFollowUpBusy?: boolean;
   modifyProsthesisFollowUpBusy?: boolean;
   prosthesisFollowUps?: import("@/shared/practice/prosthesisFollowUp").ProsthesisFollowUpRecord[] | null;
+  /**
+   * 캘린더 칩 단계 포커스 — 치식·이번 단계 견적.
+   * `-1` 원 임시치아, `0..n` followUpIndex, 미지정 시 최신.
+   */
+  feeStageFocusIndex?: number | null;
   /** 기공소 — 리메이크 청구 채팅 카드 「청구 취소」 */
   onCancelRemakeCharge?: (chargeIndex: number | null) => void;
   remakeChargeCancelBusy?: boolean;
@@ -752,6 +757,7 @@ export function PracticeTransferDetailChatDialog({
   cancelProsthesisFollowUpBusy = false,
   modifyProsthesisFollowUpBusy = false,
   prosthesisFollowUps = null,
+  feeStageFocusIndex = null,
   onCancelRemakeCharge,
   remakeChargeCancelBusy = false,
   onCancelRequest,
@@ -2885,6 +2891,7 @@ export function PracticeTransferDetailChatDialog({
                     skipJig={skipJig}
                     labEffectiveStars={labEffectiveStars}
                     prosthesisFollowUps={prosthesisFollowUps}
+                    feeStageFocusIndex={feeStageFocusIndex}
                   />
                   <PracticeRemakeChargesStrip remakeCharges={remakeCharges} />
                 </section>

@@ -10,6 +10,8 @@
 // - 2026-09-15: 후속 보철 후 total≠lines 합이면 billing total 우선(낡은 임시치아 라인 고정 방지).
 // - 2026-09-15: 부분 후속(남은 임시치아) — confirmedFeeLabel「변경 기공비」.
 // - 2026-09-15: feeStages — 임시치아/지르 단계별 원래 기공비 섹션.
+// - 2026-09-15: feeStages 있으면 바 2줄(이번 단계·최종). 툴팁 max-h+scroll·collisionPadding.
+// - 2026-09-15: 이번 단계 툴팁=포커스 단계+최종, 최종 툴팁=전체 단계+최종.
 // - 2026-08-22: 기공소→치과 배송 무료. skipJig 옵션/안내 삭제. 정산 상세는 →어벗츠(박스)만.
 // - 2026-08-21: 기공의뢰 정산에서 기공소→어벗츠 배송 제외(기공소 박스 과금).
 // - 2026-08-21: 치과→기공소 배송 무료. 정산 상세는 →어벗츠(박스)만.
@@ -154,6 +156,13 @@ type PracticeTransferFeeEstimateProps = {
   confirmedFeeLabel?: string | null;
   /** 임시치아→지르 후속 시 단계별 원래 기공비 */
   feeStages?: import("@/shared/practice/prosthesisFollowUpFeeStages").PracticeFeeStageSection[] | null;
+  /**
+   * 캘린더 칩 등 단계 포커스.
+   * - `-1` 임시치아 단계
+   * - `0..n` 지르 보철 단계(followUpIndex)
+   * - `null` 최신 단계
+   */
+  feeStageFocusIndex?: number | null;
 };
 
 const formatCell = (value: number) => (value > 0 ? formatManWon(value) : "—");
@@ -481,6 +490,7 @@ function FeeBreakdownTable({
   tempCreditLabFeeTotal = 0,
   workTotalLabel = "기공비 총액",
   showColumnSubtotals = true,
+  workTotalOverride = null,
 }: {
   lines: FeeBreakdownLine[];
   labFacing?: boolean;
@@ -494,6 +504,8 @@ function FeeBreakdownTable({
   /** 단계별 섹션에서는 「소계」 */
   workTotalLabel?: string;
   showColumnSubtotals?: boolean;
+  /** 있으면 라인 합 대신 이 값을 단계/총액으로 표시(billingDelta SSOT) */
+  workTotalOverride?: number | null;
 }) {
   // 같은 치아 = 한 줄. 열: 보철기공비 | 커스텀어벗 | (있으면) 어벗 디자인+생산비.
   // 상·하악 전체 동일 보철은 상악/하악으로 축약.
@@ -528,7 +540,11 @@ function FeeBreakdownTable({
   const labShareTotal = prosthesisSubtotal + labAbutmentSubtotal;
   const tempCredit = Math.max(0, Math.round(Number(tempCreditLabFeeTotal || 0)));
   const workTotalGross = labShareTotal + abutmentSubtotal;
-  const workTotal = Math.max(0, workTotalGross - tempCredit);
+  const workTotalFromLines = Math.max(0, workTotalGross - tempCredit);
+  const workTotal =
+    workTotalOverride != null && Number.isFinite(Number(workTotalOverride))
+      ? Math.max(0, Math.round(Number(workTotalOverride)))
+      : workTotalFromLines;
   const prosthesisMin = lines.reduce((sum, line) => {
     const min =
       line.labFeeMin != null && Number.isFinite(line.labFeeMin)
@@ -758,6 +774,7 @@ export function PracticeTransferFeeEstimate({
   revealAmounts = false,
   confirmedFeeLabel = null,
   feeStages = null,
+  feeStageFocusIndex = null,
 }: PracticeTransferFeeEstimateProps) {
   const isLab = viewer === "lab";
   const isDetail = density === "detail";
@@ -835,6 +852,29 @@ export function PracticeTransferFeeEstimate({
     quote.lines.length > 0 ? mapQuoteLinesToBreakdown(quote.lines) : [];
   const stageSections =
     Array.isArray(feeStages) && feeStages.length > 0 ? feeStages : null;
+  /** 포커스 단계(임시=-1 → stages[0], 지르 N → zirconia-N). null이면 최신 */
+  const currentStageSection = (() => {
+    if (!stageSections) return null;
+    if (feeStageFocusIndex == null) {
+      return stageSections[stageSections.length - 1] ?? null;
+    }
+    if (feeStageFocusIndex < 0) {
+      return stageSections.find((stage) => stage.key === "temp") || stageSections[0] || null;
+    }
+    const key = `zirconia-${Math.floor(Number(feeStageFocusIndex))}`;
+    return (
+      stageSections.find((stage) => stage.key === key) ||
+      stageSections[Math.floor(Number(feeStageFocusIndex)) + 1] ||
+      stageSections[stageSections.length - 1] ||
+      null
+    );
+  })();
+  const currentStageAmount = currentStageSection
+    ? Math.max(
+        0,
+        Math.round(Number(currentStageSection.subtotal || 0)),
+      )
+    : null;
   const linesLabFeeMax = breakdownLines.reduce(
     (sum, line) => sum + line.labFee,
     0,
@@ -1018,7 +1058,72 @@ export function PracticeTransferFeeEstimate({
       ? abutmentFromBreakdown
       : Math.max(0, Math.round(Number(quote.abutmentRetailTotal || 0)));
 
-  const breakdownPanel = (
+  const renderFeeStagesPanel = (
+    stages: NonNullable<typeof stageSections>,
+  ) => (
+    <div className="space-y-3">
+      {stages.map((stage) => (
+        <div key={stage.key} className="space-y-1">
+          <p className="text-[11px] font-semibold leading-snug text-foreground">
+            {stage.title}
+            <span className="ml-1.5 font-medium tabular-nums text-muted-foreground">
+              {formatManWon(
+                Math.max(0, Math.round(Number(stage.subtotal || 0))),
+              )}
+            </span>
+          </p>
+          <FeeBreakdownTable
+            lines={mapQuoteLinesToBreakdown(stage.lines)}
+            labFacing={isLab}
+            tempCreditLabFeeTotal={Math.max(
+              0,
+              Math.round(Number(stage.tempCreditLabFeeTotal || 0)),
+            )}
+            workTotalLabel="단계 소계"
+            workTotalOverride={Math.max(
+              0,
+              Math.round(Number(stage.subtotal || 0)),
+            )}
+            showColumnSubtotals={false}
+          />
+        </div>
+      ))}
+      <p className="border-t border-foreground/15 pt-1.5 text-[12px] font-semibold tabular-nums">
+        최종 기공비 {formatManWon(amount)}
+      </p>
+    </div>
+  );
+
+  const feeTooltipContentClassName =
+    "pointer-events-auto max-h-[min(70vh,36rem)] w-max max-w-[min(100vw-2rem,36rem)] overflow-y-auto overflow-x-hidden select-text px-3 py-3 text-xs leading-relaxed";
+
+  const renderFeeTooltipContent = (panel: ReactNode) => (
+    <TooltipContent
+      side="bottom"
+      align="center"
+      sideOffset={8}
+      collisionPadding={24}
+      avoidCollisions
+      data-no-tooth-marquee=""
+      className={feeTooltipContentClassName}
+      onPointerDown={(event) => event.stopPropagation()}
+      onPointerUp={(event) => event.stopPropagation()}
+      onMouseDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
+    >
+      {panel}
+    </TooltipContent>
+  );
+
+  const amountBlurClass =
+    !isLab &&
+    !labFeeUnset &&
+    !hasMissingFees &&
+    !revealAmounts
+      ? "select-none blur-[8px] transition-[filter] duration-150 group-hover:select-text group-hover:blur-none group-focus-within:select-text group-focus-within:blur-none"
+      : "";
+
+  const warningsPanel = (
     <>
       {labFeeUnset && !hasMissingFees ? (
         <p className="text-muted-foreground">
@@ -1064,32 +1169,79 @@ export function PracticeTransferFeeEstimate({
           )}
         </p>
       ) : null}
-      {stageSections ? (
-        <div className="space-y-3">
-          {stageSections.map((stage) => (
-            <div key={stage.key} className="space-y-1">
-              <p className="text-[11px] font-semibold leading-snug text-foreground">
-                {stage.title}
-                <span className="ml-1.5 font-medium tabular-nums text-muted-foreground">
-                  {formatManWon(Math.max(0, Math.round(Number(stage.subtotal || 0))))}
+    </>
+  );
+
+  const breakdownExtras = (
+    <>
+      {surchargeLabel ? (
+        <p className="mt-1.5 text-[11px] leading-relaxed text-amber-800/90">
+          {surchargeLabel} 적용
+        </p>
+      ) : null}
+      {rushLabel ? (
+        <p className="mt-1.5 text-[11px] leading-relaxed text-amber-800/90">
+          {rushLabel} 적용
+        </p>
+      ) : null}
+      {shippingHintLines.length > 0 ? (
+        <div className="mt-1.5 space-y-0.5 border-t border-foreground/15 pt-1.5 text-[11px] leading-snug text-muted-foreground">
+          <p className="font-medium text-foreground/80">{shippingHeaderLabel}</p>
+          {shippingHintLines.map((row) => (
+            <p key={row.key} className="tabular-nums">
+              {row.label}{" "}
+              <span className="font-medium text-foreground">
+                {formatManWon(row.amount)}
+              </span>
+              {row.holdPending !== null && row.holdPending !== undefined ? (
+                <span
+                  className={cn(
+                    "ml-1.5 inline-flex rounded border px-1 py-px text-[10px] font-medium leading-tight",
+                    creditShareSettlementClass(row.holdPending),
+                  )}
+                >
+                  {creditShareSettlementLabel(row.holdPending)}
                 </span>
-              </p>
-              <FeeBreakdownTable
-                lines={mapQuoteLinesToBreakdown(stage.lines)}
-                labFacing={isLab}
-                tempCreditLabFeeTotal={Math.max(
-                  0,
-                  Math.round(Number(stage.tempCreditLabFeeTotal || 0)),
-                )}
-                workTotalLabel="단계 소계"
-                showColumnSubtotals={false}
-              />
-            </div>
+              ) : null}
+            </p>
           ))}
-          <p className="border-t border-foreground/15 pt-1.5 text-[12px] font-semibold tabular-nums">
-            기공비 총액 {formatManWon(amount)}
-          </p>
         </div>
+      ) : null}
+      {isDetail && !isLab && (quote.total > 0 || shippingTotal > 0) ? (
+        <p className="mt-1.5 border-t border-foreground/15 pt-1.5 font-medium tabular-nums">
+          {hasBudgetRange
+            ? `크레딧 소비 ${formatWonRange(
+                creditMin + shippingTotal,
+                amount + shippingTotal,
+              )}`
+            : `크레딧 소비 총액 ${formatManWon(quote.total + shippingTotal)}`}
+        </p>
+      ) : null}
+    </>
+  );
+
+  const currentStageTooltipPanel =
+    currentStageSection != null ? (
+      <>
+        {warningsPanel}
+        {renderFeeStagesPanel([currentStageSection])}
+        {breakdownExtras}
+      </>
+    ) : null;
+
+  const allStagesTooltipPanel = stageSections ? (
+    <>
+      {warningsPanel}
+      {renderFeeStagesPanel(stageSections)}
+      {breakdownExtras}
+    </>
+  ) : null;
+
+  const breakdownPanel = (
+    <>
+      {warningsPanel}
+      {stageSections ? (
+        renderFeeStagesPanel(stageSections)
       ) : breakdownLines.length > 0 || missingBreakdownLines.length > 0 ? (
         <div className="space-y-1.5">
           <FeeBreakdownTable
@@ -1162,50 +1314,7 @@ export function PracticeTransferFeeEstimate({
       ) : (
         <p className="text-muted-foreground">선택된 보철물이 없습니다.</p>
       )}
-      {surchargeLabel ? (
-        <p className="mt-1.5 text-[11px] leading-relaxed text-amber-800/90">
-          {surchargeLabel} 적용
-        </p>
-      ) : null}
-      {rushLabel ? (
-        <p className="mt-1.5 text-[11px] leading-relaxed text-amber-800/90">
-          {rushLabel} 적용
-        </p>
-      ) : null}
-      {shippingHintLines.length > 0 ? (
-        <div className="mt-1.5 space-y-0.5 border-t border-foreground/15 pt-1.5 text-[11px] leading-snug text-muted-foreground">
-          <p className="font-medium text-foreground/80">{shippingHeaderLabel}</p>
-          {shippingHintLines.map((row) => (
-            <p key={row.key} className="tabular-nums">
-              {row.label}{" "}
-              <span className="font-medium text-foreground">
-                {formatManWon(row.amount)}
-              </span>
-              {row.holdPending !== null && row.holdPending !== undefined ? (
-                <span
-                  className={cn(
-                    "ml-1.5 inline-flex rounded border px-1 py-px text-[10px] font-medium leading-tight",
-                    creditShareSettlementClass(row.holdPending),
-                  )}
-                >
-                  {creditShareSettlementLabel(row.holdPending)}
-                </span>
-              ) : null}
-            </p>
-          ))}
-          {/* 레거시(2026-08-22): skipJig「지그 제작 불필요」안내 삭제 */}
-        </div>
-      ) : null}
-      {isDetail && !isLab && (quote.total > 0 || shippingTotal > 0) ? (
-        <p className="mt-1.5 border-t border-foreground/15 pt-1.5 font-medium tabular-nums">
-          {hasBudgetRange
-            ? `크레딧 소비 ${formatWonRange(
-                creditMin + shippingTotal,
-                amount + shippingTotal,
-              )}`
-            : `크레딧 소비 총액 ${formatManWon(quote.total + shippingTotal)}`}
-        </p>
-      ) : null}
+      {breakdownExtras}
     </>
   );
 
@@ -1267,92 +1376,159 @@ export function PracticeTransferFeeEstimate({
             hasChartSideActions && "flex-1 justify-center",
           )}
         >
-          <Tooltip onOpenChange={onBreakdownTooltipOpenChange}>
-            <TooltipTrigger asChild>
-              <div
-                className={cn(
-                  "min-w-0 cursor-default",
-                  isCard
-                    ? "flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-sm"
-                    : "",
-                  !isLab &&
-                    !labFeeUnset &&
-                    !hasMissingFees &&
-                    !revealAmounts &&
-                    "select-none blur-[8px] transition-[filter] duration-150 group-hover:select-text group-hover:blur-none group-focus-within:select-text group-focus-within:blur-none",
-                )}
-              >
-                <span
+          {labFeeUnset ? (
+            <Tooltip onOpenChange={onBreakdownTooltipOpenChange}>
+              <TooltipTrigger asChild>
+                <div
                   className={cn(
-                    "font-semibold tabular-nums text-slate-800",
+                    "min-w-0 cursor-default font-semibold tabular-nums text-slate-800",
                     isCard ? "text-sm" : "text-sm sm:text-base",
+                    amountBlurClass,
                   )}
                 >
-                  {labFeeUnset ? (
-                    <>
-                      <span className="font-medium text-slate-600">기공비 </span>
-                      <span className="text-accent-strong">미설정</span>
-                      {hasMissingFees ? (
-                        <span className="ml-1.5 text-[11px] font-medium text-amber-700">
-                          · {missingFeeLabel}
-                        </span>
-                      ) : null}
-                      {abutmentOnlyAmount > 0 ? (
-                        <span className="ml-1.5 font-semibold tabular-nums text-slate-800">
-                          · 어벗 디자인+생산비 {formatManWon(abutmentOnlyAmount)}
-                        </span>
-                      ) : null}
-                    </>
-                  ) : (
-                    <>
-                      <span className="font-medium text-slate-600">{title} </span>
-                      {hasBudgetRange && !isLab
-                        ? formatWonRange(creditMin, amount)
-                        : formatManWon(amount)}
-                      {hasMissingFees ? (
-                        <span className="ml-1.5 text-[11px] font-medium text-amber-700">
-                          · {missingFeeLabel} 미설정
-                        </span>
-                      ) : null}
-                    </>
-                  )}
-                  {surchargeLabel ? (
+                  <span className="font-medium text-slate-600">기공비 </span>
+                  <span className="text-accent-strong">미설정</span>
+                  {hasMissingFees ? (
                     <span className="ml-1.5 text-[11px] font-medium text-amber-700">
-                      {surchargeLabel}
+                      · {missingFeeLabel}
                     </span>
                   ) : null}
-                  {rushLabel ? (
-                    <span className="ml-1.5 text-[11px] font-medium text-amber-700">
-                      {rushLabel}
+                  {abutmentOnlyAmount > 0 ? (
+                    <span className="ml-1.5 font-semibold tabular-nums text-slate-800">
+                      · 어벗 디자인+생산비 {formatManWon(abutmentOnlyAmount)}
                     </span>
                   ) : null}
-                </span>
-                {simple ? (
+                </div>
+              </TooltipTrigger>
+              {renderFeeTooltipContent(breakdownPanel)}
+            </Tooltip>
+          ) : currentStageAmount != null &&
+            currentStageTooltipPanel &&
+            allStagesTooltipPanel ? (
+            <div
+              className={cn(
+                "min-w-0",
+                isCard
+                  ? "flex flex-col items-start gap-0.5 text-left text-sm"
+                  : "flex flex-col items-center gap-0.5 text-center",
+                amountBlurClass,
+              )}
+            >
+              <Tooltip onOpenChange={onBreakdownTooltipOpenChange}>
+                <TooltipTrigger asChild>
                   <span
                     className={cn(
-                      "tabular-nums text-muted-foreground",
-                      isCard
-                        ? "text-[12px]"
-                        : "mt-0.5 block truncate text-[11px]",
+                      "cursor-default font-semibold tabular-nums text-slate-800",
+                      isCard ? "text-sm" : "text-sm sm:text-base",
                     )}
                   >
-                    {simple}
+                    <span className="font-medium text-slate-600">
+                      이번 단계 기공비{" "}
+                    </span>
+                    {formatManWon(currentStageAmount)}
+                    {surchargeLabel ? (
+                      <span className="ml-1.5 text-[11px] font-medium text-amber-700">
+                        {surchargeLabel}
+                      </span>
+                    ) : null}
+                    {rushLabel ? (
+                      <span className="ml-1.5 text-[11px] font-medium text-amber-700">
+                        {rushLabel}
+                      </span>
+                    ) : null}
                   </span>
-                ) : null}
-              </div>
-            </TooltipTrigger>
-            <TooltipContent
-              side={isCard ? "top" : "bottom"}
-              data-no-tooth-marquee=""
-              className="pointer-events-auto w-max max-w-[min(100vw-2rem,36rem)] select-text px-3 py-3 text-xs leading-relaxed"
-              onPointerDown={(event) => event.stopPropagation()}
-              onPointerUp={(event) => event.stopPropagation()}
-              onMouseDown={(event) => event.stopPropagation()}
-              onClick={(event) => event.stopPropagation()}
-            >
-              {breakdownPanel}
-            </TooltipContent>
-          </Tooltip>
+                </TooltipTrigger>
+                {renderFeeTooltipContent(currentStageTooltipPanel)}
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    className={cn(
+                      "cursor-default font-semibold tabular-nums text-slate-800",
+                      isCard ? "text-sm" : "text-sm sm:text-base",
+                    )}
+                  >
+                    <span className="font-medium text-slate-600">
+                      최종 기공비{" "}
+                    </span>
+                    {formatManWon(amount)}
+                    {hasMissingFees ? (
+                      <span className="ml-1.5 text-[11px] font-medium text-amber-700">
+                        · {missingFeeLabel} 미설정
+                      </span>
+                    ) : null}
+                  </span>
+                </TooltipTrigger>
+                {renderFeeTooltipContent(allStagesTooltipPanel)}
+              </Tooltip>
+              {simple ? (
+                <span
+                  className={cn(
+                    "tabular-nums text-muted-foreground",
+                    isCard
+                      ? "text-[12px]"
+                      : "mt-0.5 block truncate text-[11px]",
+                  )}
+                >
+                  {simple}
+                </span>
+              ) : null}
+            </div>
+          ) : (
+            <Tooltip onOpenChange={onBreakdownTooltipOpenChange}>
+              <TooltipTrigger asChild>
+                <div
+                  className={cn(
+                    "min-w-0 cursor-default",
+                    isCard
+                      ? "flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-sm"
+                      : "",
+                    amountBlurClass,
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "font-semibold tabular-nums text-slate-800",
+                      isCard ? "text-sm" : "text-sm sm:text-base",
+                    )}
+                  >
+                    <span className="font-medium text-slate-600">{title} </span>
+                    {hasBudgetRange && !isLab
+                      ? formatWonRange(creditMin, amount)
+                      : formatManWon(amount)}
+                    {hasMissingFees ? (
+                      <span className="ml-1.5 text-[11px] font-medium text-amber-700">
+                        · {missingFeeLabel} 미설정
+                      </span>
+                    ) : null}
+                    {surchargeLabel ? (
+                      <span className="ml-1.5 text-[11px] font-medium text-amber-700">
+                        {surchargeLabel}
+                      </span>
+                    ) : null}
+                    {rushLabel ? (
+                      <span className="ml-1.5 text-[11px] font-medium text-amber-700">
+                        {rushLabel}
+                      </span>
+                    ) : null}
+                  </span>
+                  {simple ? (
+                    <span
+                      className={cn(
+                        "tabular-nums text-muted-foreground",
+                        isCard
+                          ? "text-[12px]"
+                          : "mt-0.5 block truncate text-[11px]",
+                      )}
+                    >
+                      {simple}
+                    </span>
+                  ) : null}
+                </div>
+              </TooltipTrigger>
+              {renderFeeTooltipContent(breakdownPanel)}
+            </Tooltip>
+          )}
           <CircleHelp
             className="pointer-events-none h-3.5 w-3.5 shrink-0 text-muted-foreground/80"
             aria-hidden

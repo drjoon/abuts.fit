@@ -129,6 +129,10 @@ import {
   type PracticeCalendarDateKey,
 } from "@/pages/practice/components/PracticeRecentTransfersCalendar";
 import {
+  collectProsthesisFollowUpArrivalYmds,
+  resolveProsthesisFollowUpFocusIndex,
+} from "@/shared/practice/prosthesisFollowUp";
+import {
   PracticeStatusFilterBadges,
   type PracticeStatusFilterBadgeItem,
 } from "@/pages/practice/components/PracticeStatusFilterBadges";
@@ -581,12 +585,11 @@ export function PracticeRecentTransfersAllModal({
       const teeth = resolvePracticeTransferListToothNumbers(transfer);
       const patientLine =
         formatPracticeTransferListPatientWithTeeth(patient, teeth) || "—";
-      const linkedArrivalDates =
-        Array.isArray(transfer.arrivalDates) && transfer.arrivalDates.length > 0
-          ? transfer.arrivalDates
-          : transfer.arrivalDate
-            ? [transfer.arrivalDate]
-            : [];
+      const linkedArrivalDates = collectProsthesisFollowUpArrivalYmds({
+        arrivalDates: transfer.arrivalDates,
+        arrivalDate: transfer.arrivalDate,
+        prosthesisFollowUps: transfer.prosthesisFollowUps,
+      });
       const linkedOrderDates =
         Array.isArray(transfer.orderDates) && transfer.orderDates.length > 0
           ? transfer.orderDates
@@ -623,7 +626,50 @@ export function PracticeRecentTransfersAllModal({
         hasCustomAbutment: Boolean(transfer.hasCustomAbutment),
       };
     });
-    return expandPracticeCalendarChipsByArrivalDates(base, dateKey);
+    const expanded = expandPracticeCalendarChipsByArrivalDates(base, dateKey);
+    if (dateKey !== "arrivalDate") return expanded;
+
+    // 같은 도착일에 후속이 여러 건이면 칩을 단계별로 나눈다(15·14 지르 vs 12-22 지르).
+    const out: PracticeCalendarChipItem[] = [];
+    for (const chip of expanded) {
+      const baseId = String(chip.id || "").replace(/:(arr|ord):.*$/, "");
+      const row = filteredTransfers.find(
+        (t) => `${t.id}:${t.transferId}` === baseId,
+      );
+      const ymd = String(chip.arrivalDate || "").trim();
+      const records = (Array.isArray(row?.prosthesisFollowUps)
+        ? row!.prosthesisFollowUps!
+        : []
+      )
+        .filter((r) => !String(r?.canceledAt || "").trim())
+        .filter((r) => String(r?.arrivalYmd || "").trim() === ymd)
+        .slice()
+        .sort(
+          (a, b) => Number(a.followUpIndex || 0) - Number(b.followUpIndex || 0),
+        );
+      if (records.length <= 1) {
+        out.push({
+          ...chip,
+          focusFollowUpIndex: resolveProsthesisFollowUpFocusIndex({
+            arrivalYmd: ymd,
+            prosthesisFollowUps: row?.prosthesisFollowUps,
+          }),
+        });
+        continue;
+      }
+      const lastIdx = Number(records[records.length - 1]?.followUpIndex || 0);
+      for (const rec of records) {
+        const fuIdx = Math.max(0, Math.floor(Number(rec.followUpIndex || 0)));
+        out.push({
+          ...chip,
+          id: `${chip.id}:fu:${fuIdx}`,
+          focusFollowUpIndex: fuIdx,
+          isPriorArrival: chip.isPriorArrival || fuIdx < lastIdx,
+          canDelete: fuIdx < lastIdx ? false : chip.canDelete,
+        });
+      }
+    }
+    return out;
   }, [badgeClearedIds, dateKey, filteredTransfers]);
 
   const calendarItemById = useMemo(() => {
@@ -631,14 +677,25 @@ export function PracticeRecentTransfersAllModal({
     for (const transfer of filteredTransfers) {
       const baseId = `${transfer.id}:${transfer.transferId}`;
       map.set(baseId, transfer);
-      const arrivalDates =
-        Array.isArray(transfer.arrivalDates) && transfer.arrivalDates.length > 0
-          ? transfer.arrivalDates
-          : transfer.arrivalDate
-            ? [transfer.arrivalDate]
-            : [];
+      const arrivalDates = collectProsthesisFollowUpArrivalYmds({
+        arrivalDates: transfer.arrivalDates,
+        arrivalDate: transfer.arrivalDate,
+        prosthesisFollowUps: transfer.prosthesisFollowUps,
+      });
       for (const ymd of arrivalDates) {
         map.set(`${baseId}:arr:${ymd}`, transfer);
+        const fus = (Array.isArray(transfer.prosthesisFollowUps)
+          ? transfer.prosthesisFollowUps
+          : []
+        ).filter(
+          (r) =>
+            !String(r?.canceledAt || "").trim() &&
+            String(r?.arrivalYmd || "").trim() === ymd,
+        );
+        for (const rec of fus) {
+          const fuIdx = Math.max(0, Math.floor(Number(rec.followUpIndex || 0)));
+          map.set(`${baseId}:arr:${ymd}:fu:${fuIdx}`, transfer);
+        }
       }
       const orderDates =
         Array.isArray(transfer.orderDates) && transfer.orderDates.length > 0
@@ -1068,7 +1125,22 @@ export function PracticeRecentTransfersAllModal({
                 onSelectItem={(item, ctx) => {
                   const transfer = calendarItemById.get(item.id);
                   if (transfer) {
-                    onSelectTransfer(transfer, {
+                    const chipArrival = String(item.arrivalDate || "").trim();
+                    const chipOrder = String(item.orderDate || "").trim();
+                    onSelectTransfer(
+                      {
+                        ...transfer,
+                        ...(chipArrival ? { arrivalDate: chipArrival } : {}),
+                        ...(chipOrder ? { orderDate: chipOrder } : {}),
+                        focusFollowUpIndex: item.isPriorArrival
+                          ? item.focusFollowUpIndex ?? -1
+                          : resolveProsthesisFollowUpFocusIndex({
+                              arrivalYmd: chipArrival || transfer.arrivalDate,
+                              focusFollowUpIndex: item.focusFollowUpIndex,
+                              prosthesisFollowUps: transfer.prosthesisFollowUps,
+                            }),
+                      },
+                      {
                       preferredDockSide:
                         viewMode === "list"
                           ? "right"
@@ -1076,7 +1148,8 @@ export function PracticeRecentTransfersAllModal({
                               ctx.visibleColumnIndex,
                               ctx.visibleColumnCount,
                             ),
-                    });
+                      },
+                    );
                   }
                 }}
                 onDeleteItem={(item) => {

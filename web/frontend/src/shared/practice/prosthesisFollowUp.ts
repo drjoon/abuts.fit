@@ -251,16 +251,22 @@ export const buildToothWorkDisplayByTooth = (
     if (merged) map.set(tooth, { ...merged, toothNumber: tooth });
   }
 
-  // 본인 행이 없는 연결치만 스팬 행을 빌려 쓰되, 이후에도 원 행이 있으면 위에서 이김
+  // 후속 스팬 연결치는 원 임시치아 행이 있어도 후속 형태(브리지/크라운)로 맞춘다.
+  // (앵커만 브리지·연결치는 임시치아로 남는 표시 섞임 방지)
   for (const row of Array.isArray(toothWorks) ? toothWorks : []) {
-    const linked = Array.isArray(row?.bridgeLinkedTeeth)
-      ? row.bridgeLinkedTeeth.map((t) => String(t || "").trim()).filter(Boolean)
-      : [];
-    for (const tooth of linked) {
-      if (!/^[1-4][1-8]$/.test(tooth) || map.has(tooth)) continue;
-      const borrowed = mergeToothWorkRowsForChartDisplay([
-        { ...row, toothNumber: tooth },
-      ]);
+    if (
+      !isFollowUpProsthesisPhase(row) ||
+      !isFinalProsthesisType(String(row?.prosthesisType || ""))
+    ) {
+      continue;
+    }
+    for (const tooth of linkedTeethOf(row)) {
+      if (!/^[1-4][1-8]$/.test(tooth)) continue;
+      const existing = map.get(tooth);
+      const baseRows = existing
+        ? [existing, { ...row, toothNumber: tooth }]
+        : [{ ...row, toothNumber: tooth }];
+      const borrowed = mergeToothWorkRowsForChartDisplay(baseRows);
       if (borrowed) map.set(tooth, { ...borrowed, toothNumber: tooth });
     }
   }
@@ -449,6 +455,130 @@ export type ProsthesisFollowUpRecord = {
     finalTotal?: number;
     tempCreditLabFeeTotal?: number;
   } | null;
+};
+
+/**
+ * 캘린더 칩·의뢰상세 단계 포커스.
+ * - `-1` 원 임시치아만
+ * - `0..n` 해당 followUpIndex까지 포함
+ * - `null` 전체(최신)
+ */
+export type ProsthesisFollowUpFocusIndex = number | null;
+
+const activeFollowUpRecordsSorted = (
+  followUps: ReadonlyArray<ProsthesisFollowUpRecord> | null | undefined,
+) =>
+  (Array.isArray(followUps) ? followUps : [])
+    .filter((row) => !String(row?.canceledAt || "").trim())
+    .slice()
+    .sort(
+      (a, b) => Number(a.followUpIndex || 0) - Number(b.followUpIndex || 0),
+    );
+
+/** 원 도착일 후보 — arrivalDates에 빠진 previousArrivalYmd 복원용 */
+export const collectProsthesisFollowUpArrivalYmds = (input: {
+  arrivalDates?: string[] | null;
+  arrivalDate?: string | null;
+  prosthesisFollowUps?: ReadonlyArray<ProsthesisFollowUpRecord> | null;
+}) => {
+  const out: string[] = [];
+  const push = (raw: unknown) => {
+    const ymd = String(raw || "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd) || out.includes(ymd)) return;
+    out.push(ymd);
+  };
+  const records = activeFollowUpRecordsSorted(input.prosthesisFollowUps);
+  if (records[0]?.previousArrivalYmd) push(records[0].previousArrivalYmd);
+  for (const ymd of Array.isArray(input.arrivalDates) ? input.arrivalDates : []) {
+    push(ymd);
+  }
+  push(input.arrivalDate);
+  for (const row of records) push(row.arrivalYmd);
+  return out;
+};
+
+/**
+ * 칩 도착일·후속 인덱스로 표시 단계 결정.
+ * 같은 도착일에 후속이 여러 건이면 focusFollowUpIndex를 우선한다.
+ */
+export const resolveProsthesisFollowUpFocusIndex = (input: {
+  arrivalYmd?: string | null;
+  focusFollowUpIndex?: number | null;
+  prosthesisFollowUps?: ReadonlyArray<ProsthesisFollowUpRecord> | null;
+}): ProsthesisFollowUpFocusIndex => {
+  const records = activeFollowUpRecordsSorted(input.prosthesisFollowUps);
+  if (records.length === 0) return null;
+
+  if (
+    input.focusFollowUpIndex != null &&
+    Number.isFinite(Number(input.focusFollowUpIndex))
+  ) {
+    const idx = Math.floor(Number(input.focusFollowUpIndex));
+    if (idx < 0) return -1;
+    return Math.min(idx, Number(records[records.length - 1]?.followUpIndex || 0));
+  }
+
+  const ymd = String(input.arrivalYmd || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return null;
+
+  const matching = records.filter(
+    (row) => String(row.arrivalYmd || "").trim() === ymd,
+  );
+  if (matching.length > 0) {
+    return Math.max(...matching.map((row) => Number(row.followUpIndex || 0)));
+  }
+
+  const firstPrev = String(records[0]?.previousArrivalYmd || "").trim();
+  if (firstPrev && firstPrev === ymd) return -1;
+
+  // 후속 도착일이 아닌 과거 칩 → 원 임시치아
+  const followArrivals = new Set(
+    records.map((row) => String(row.arrivalYmd || "").trim()).filter(Boolean),
+  );
+  if (!followArrivals.has(ymd)) return -1;
+  return null;
+};
+
+/** focus 단계까지 포함된 toothWorks (차트·견적). null focus면 전체. */
+export const toothWorksUpToFollowUpFocus = <T extends Partial<ToothWorkSelection>>(
+  toothWorks: ReadonlyArray<T> | null | undefined,
+  followUps: ReadonlyArray<ProsthesisFollowUpRecord> | null | undefined,
+  focusIndex: ProsthesisFollowUpFocusIndex,
+): T[] => {
+  const rows = Array.isArray(toothWorks) ? [...toothWorks] : [];
+  if (focusIndex == null) return rows;
+  if (focusIndex < 0) {
+    return rows.filter((row) => !isFollowUpProsthesisPhase(row));
+  }
+
+  const records = activeFollowUpRecordsSorted(followUps).filter(
+    (row) => Number(row.followUpIndex || 0) <= focusIndex,
+  );
+  const allowedTeeth = new Set<string>();
+  for (const record of records) {
+    for (const tooth of Array.isArray(record.toothNumbers)
+      ? record.toothNumbers
+      : []) {
+      const t = String(tooth || "").trim();
+      if (t) allowedTeeth.add(t);
+    }
+  }
+
+  return rows.filter((row) => {
+    if (!isFollowUpProsthesisPhase(row)) return true;
+    if (!isFinalProsthesisType(String(row.prosthesisType || ""))) return false;
+    return linkedTeethOf(row).some((tooth) => allowedTeeth.has(tooth));
+  });
+};
+
+export const followUpsUpToFocus = (
+  followUps: ReadonlyArray<ProsthesisFollowUpRecord> | null | undefined,
+  focusIndex: ProsthesisFollowUpFocusIndex,
+) => {
+  const records = activeFollowUpRecordsSorted(followUps);
+  if (focusIndex == null) return records;
+  if (focusIndex < 0) return [];
+  return records.filter((row) => Number(row.followUpIndex || 0) <= focusIndex);
 };
 
 /** 후속 선택 스팬에 대응하는 원 임시치아 행(견적 차감용) */

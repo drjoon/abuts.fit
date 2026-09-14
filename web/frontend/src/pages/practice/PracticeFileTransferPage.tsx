@@ -11090,6 +11090,11 @@ export const PracticeFileTransferPage = ({
           cancelProsthesisFollowUpBusy={cancelProsthesisFollowUpBusy}
           modifyProsthesisFollowUpBusy={updateProsthesisFollowUpBusy}
           prosthesisFollowUps={selectedTransfer?.prosthesisFollowUps}
+          feeStageFocusIndex={
+            selectedTransfer?.focusFollowUpIndex !== undefined
+              ? selectedTransfer.focusFollowUpIndex
+              : null
+          }
           orderDate={selectedTransfer?.orderDate || null}
           arrivalDate={selectedTransfer?.arrivalDate || null}
           orderedAt={

@@ -153,6 +153,11 @@ export type PracticeCalendarChipItem = {
    * 동일 transfer 연결 표시용 — 클릭은 같은 의뢰상세.
    */
   isPriorArrival?: boolean;
+  /**
+   * 후속 보철 단계 포커스(캘린더 칩).
+   * `-1` 원 임시치아, `0..n` followUpIndex.
+   */
+  focusFollowUpIndex?: number | null;
   /** 연결 도착일 전체(툴팁) */
   linkedArrivalDates?: string[];
   /** 연결 주문일 전체(툴팁·주문일 캘린더 다중 칩) */
