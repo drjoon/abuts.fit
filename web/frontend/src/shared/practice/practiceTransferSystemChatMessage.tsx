@@ -235,6 +235,7 @@ type PracticeTransferSystemChatBodyProps = {
   transferToothWorks?: Partial<ToothWorkSelection>[] | null;
   /** 의뢰건 기공비 SSOT — 후속 증분이 아니라 최종(지르+CA) 견적 */
   transferFeeQuote?: PracticeTransferFeeQuote | null;
+  transferProsthesisFollowUps?: import("@/shared/practice/prosthesisFollowUp").ProsthesisFollowUpRecord[] | null;
   /** 기공소 — 리메이크 청구 취소 */
   onCancelRemakeCharge?: (chargeIndex: number | null) => void;
   remakeChargeCancelBusy?: boolean;
@@ -250,6 +251,7 @@ export function PracticeTransferSystemChatBody({
   labAnchorId = null,
   transferToothWorks = null,
   transferFeeQuote = null,
+  transferProsthesisFollowUps = null,
   onCancelRemakeCharge = undefined,
   remakeChargeCancelBusy = false,
   activeRemakeChargeIndexes = null,
@@ -295,6 +297,7 @@ export function PracticeTransferSystemChatBody({
             <PracticeToothWorkChartReadOnly
               toothWorks={toothWorks}
               feeToothWorks={feeToothWorks}
+              prosthesisFollowUps={transferProsthesisFollowUps}
               showHeader={false}
               labAnchorId={labAnchorId}
               feeQuote={caseFeeQuote}

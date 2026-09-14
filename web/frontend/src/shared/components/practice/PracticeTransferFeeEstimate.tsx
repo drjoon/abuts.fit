@@ -7,6 +7,9 @@
 // - 2026-09-05: revealAmounts — 가이드투어 견적 홀에서 hover 전 blur 숨김 해제.
 // - 2026-09-05: onBreakdownTooltipOpenChange — 가이드투어 견적 스텝이 툴팁 실오픈 기준으로 진행.
 // - 2026-08-27: 확정 기공비도 툴팁 라인 합 우선(레거시 abutmentRetail 스냅샷 불일치 방지).
+// - 2026-09-15: 후속 보철 후 total≠lines 합이면 billing total 우선(낡은 임시치아 라인 고정 방지).
+// - 2026-09-15: 부분 후속(남은 임시치아) — confirmedFeeLabel「변경 기공비」.
+// - 2026-09-15: feeStages — 임시치아/지르 단계별 원래 기공비 섹션.
 // - 2026-08-22: 기공소→치과 배송 무료. skipJig 옵션/안내 삭제. 정산 상세는 →어벗츠(박스)만.
 // - 2026-08-21: 기공의뢰 정산에서 기공소→어벗츠 배송 제외(기공소 박스 과금).
 // - 2026-08-21: 치과→기공소 배송 무료. 정산 상세는 →어벗츠(박스)만.
@@ -144,6 +147,13 @@ type PracticeTransferFeeEstimateProps = {
   onBreakdownTooltipOpenChange?: (open: boolean) => void;
   /** true면 금액 blur-until-hover 해제(가이드투어 견적 하이라이트 등) */
   revealAmounts?: boolean;
+  /**
+   * billed인데 임시치아 후속이 일부만 된 경우 등 —
+   * 기본「확정 기공비」대신 쓸 라벨(예: 변경 기공비).
+   */
+  confirmedFeeLabel?: string | null;
+  /** 임시치아→지르 후속 시 단계별 원래 기공비 */
+  feeStages?: import("@/shared/practice/prosthesisFollowUpFeeStages").PracticeFeeStageSection[] | null;
 };
 
 const formatCell = (value: number) => (value > 0 ? formatManWon(value) : "—");
@@ -469,6 +479,8 @@ function FeeBreakdownTable({
   labShareHoldPending = null,
   abutmentShareHoldPending = null,
   tempCreditLabFeeTotal = 0,
+  workTotalLabel = "기공비 총액",
+  showColumnSubtotals = true,
 }: {
   lines: FeeBreakdownLine[];
   labFacing?: boolean;
@@ -479,6 +491,9 @@ function FeeBreakdownTable({
   abutmentShareHoldPending?: boolean | null;
   /** 후속 제작 — 원 임시치아 기공비 차감 */
   tempCreditLabFeeTotal?: number;
+  /** 단계별 섹션에서는 「소계」 */
+  workTotalLabel?: string;
+  showColumnSubtotals?: boolean;
 }) {
   // 같은 치아 = 한 줄. 열: 보철기공비 | 커스텀어벗 | (있으면) 어벗 디자인+생산비.
   // 상·하악 전체 동일 보철은 상악/하악으로 축약.
@@ -643,7 +658,7 @@ function FeeBreakdownTable({
           ) : null}
         </div>
       ))}
-      {colCount > 1 ? (
+      {colCount > 1 && showColumnSubtotals ? (
         <>
           <span className="mt-0.5 border-t border-foreground/15 pt-1.5 font-medium">
             소계
@@ -703,7 +718,7 @@ function FeeBreakdownTable({
               tempCredit > 0 ? "pt-0.5" : "border-t border-foreground/15 pt-1.5",
             )}
           >
-            기공비 총액
+            {workTotalLabel}
           </span>
           <span
             className={cn(
@@ -741,6 +756,8 @@ export function PracticeTransferFeeEstimate({
   settlementShippingLines = null,
   onBreakdownTooltipOpenChange,
   revealAmounts = false,
+  confirmedFeeLabel = null,
+  feeStages = null,
 }: PracticeTransferFeeEstimateProps) {
   const isLab = viewer === "lab";
   const isDetail = density === "detail";
@@ -793,36 +810,31 @@ export function PracticeTransferFeeEstimate({
   );
   const labFeeAmount = (feeAtMax: number) =>
     Math.max(0, Math.round(Number(feeAtMax || 0)));
+  const mapQuoteLinesToBreakdown = (
+    lines: PracticeTransferFeeQuote["lines"],
+  ): FeeBreakdownLine[] =>
+    sortPracticeTransferFeeLines(Array.isArray(lines) ? lines : []).map((line) => {
+      const labFeeMax = Math.max(0, Math.round(Number(line.labFee || 0)));
+      const labFeeMinRaw =
+        line.labFeeMin != null && Number.isFinite(Number(line.labFeeMin))
+          ? Math.max(0, Math.round(Number(line.labFeeMin)))
+          : undefined;
+      return {
+        toothNumber: line.toothNumber,
+        prosthesisType: line.prosthesisType,
+        labFee: labFeeAmount(labFeeMax),
+        labFeeMin:
+          !isLab && !confirmed && labFeeMinRaw != null ? labFeeMinRaw : undefined,
+        labAbutmentFee: Math.max(0, Math.round(Number(line.labAbutmentFee || 0))),
+        labAbutmentPending: Boolean(line.labAbutmentPending),
+        abutmentRetail: Math.max(0, Math.round(Number(line.abutmentRetail || 0))),
+        abutmentRetailNote: line.abutmentRetailNote,
+      };
+    });
   const breakdownLines =
-    quote.lines.length > 0
-      ? sortPracticeTransferFeeLines(quote.lines).map((line) => {
-          const labFeeMax = Math.max(0, Math.round(Number(line.labFee || 0)));
-          const labFeeMinRaw =
-            line.labFeeMin != null && Number.isFinite(Number(line.labFeeMin))
-              ? Math.max(0, Math.round(Number(line.labFeeMin)))
-              : undefined;
-          return {
-            toothNumber: line.toothNumber,
-            prosthesisType: line.prosthesisType,
-            labFee: labFeeAmount(labFeeMax),
-            // 치과·수락 전만 자동매칭 하한. 확정·기공소는 단일 수가.
-            labFeeMin:
-              !isLab && !confirmed && labFeeMinRaw != null
-                ? labFeeMinRaw
-                : undefined,
-            labAbutmentFee: Math.max(
-              0,
-              Math.round(Number(line.labAbutmentFee || 0)),
-            ),
-            labAbutmentPending: Boolean(line.labAbutmentPending),
-            abutmentRetail: Math.max(
-              0,
-              Math.round(Number(line.abutmentRetail || 0)),
-            ),
-            abutmentRetailNote: line.abutmentRetailNote,
-          };
-        })
-      : [];
+    quote.lines.length > 0 ? mapQuoteLinesToBreakdown(quote.lines) : [];
+  const stageSections =
+    Array.isArray(feeStages) && feeStages.length > 0 ? feeStages : null;
   const linesLabFeeMax = breakdownLines.reduce(
     (sum, line) => sum + line.labFee,
     0,
@@ -887,16 +899,27 @@ export function PracticeTransferFeeEstimate({
     0,
     Math.round(Number(quote.abutmentRetailTotal || 0)),
   );
-  // 확정(billed)도 툴팁 라인 합을 우선 — 스냅샷 total과 라인 불일치(레거시 retail) 방지.
+  // 확정(billed)은 원칙적으로 툴팁 라인 합을 쓰되, 후속 보철 등으로
+  // total만 갱신되고 lines가 낡은 경우(합 ≠ total)에는 billing total을 우선한다.
+  const billedTotal = Math.max(0, Math.round(Number(quote.total || 0)));
+  const linesStaleVsBilled =
+    confirmed &&
+    billedTotal > 0 &&
+    workTotalFromBreakdown > 0 &&
+    workTotalFromBreakdown !== billedTotal;
   const amountGross = isLab
-    ? workTotalFromBreakdown > 0
+    ? workTotalFromBreakdown > 0 && !linesStaleVsBilled
       ? workTotalFromBreakdown
-      : labFeeTotalForLab + abutmentRetailTotal
-    : confirmed && workTotalFromBreakdown > 0
+      : linesStaleVsBilled
+        ? billedTotal
+        : labFeeTotalForLab + abutmentRetailTotal
+    : confirmed && workTotalFromBreakdown > 0 && !linesStaleVsBilled
       ? workTotalFromBreakdown
-      : hasBudgetRange
-        ? budgetLabFeeMax + abutmentRetailTotal
-        : quote.total + tempCreditLabFeeTotal;
+      : confirmed && billedTotal > 0
+        ? billedTotal + tempCreditLabFeeTotal
+        : hasBudgetRange
+          ? budgetLabFeeMax + abutmentRetailTotal
+          : quote.total + tempCreditLabFeeTotal;
   const amount = Math.max(0, amountGross - tempCreditLabFeeTotal);
   const creditMin = hasBudgetRange
     ? budgetLabFeeMin + abutmentRetailTotal
@@ -908,7 +931,7 @@ export function PracticeTransferFeeEstimate({
     : isLab
       ? "기공비"
       : confirmed
-        ? "확정 기공비"
+        ? String(confirmedFeeLabel || "").trim() || "확정 기공비"
         : "견적";
   // 보철기공비 + 어벗 디자인+생산비 = 기공비. 하청만 수수료 차감 수령.
   const labSettlementDisplay = Math.max(
@@ -1041,7 +1064,33 @@ export function PracticeTransferFeeEstimate({
           )}
         </p>
       ) : null}
-      {breakdownLines.length > 0 || missingBreakdownLines.length > 0 ? (
+      {stageSections ? (
+        <div className="space-y-3">
+          {stageSections.map((stage) => (
+            <div key={stage.key} className="space-y-1">
+              <p className="text-[11px] font-semibold leading-snug text-foreground">
+                {stage.title}
+                <span className="ml-1.5 font-medium tabular-nums text-muted-foreground">
+                  {formatManWon(Math.max(0, Math.round(Number(stage.subtotal || 0))))}
+                </span>
+              </p>
+              <FeeBreakdownTable
+                lines={mapQuoteLinesToBreakdown(stage.lines)}
+                labFacing={isLab}
+                tempCreditLabFeeTotal={Math.max(
+                  0,
+                  Math.round(Number(stage.tempCreditLabFeeTotal || 0)),
+                )}
+                workTotalLabel="단계 소계"
+                showColumnSubtotals={false}
+              />
+            </div>
+          ))}
+          <p className="border-t border-foreground/15 pt-1.5 text-[12px] font-semibold tabular-nums">
+            기공비 총액 {formatManWon(amount)}
+          </p>
+        </div>
+      ) : breakdownLines.length > 0 || missingBreakdownLines.length > 0 ? (
         <div className="space-y-1.5">
           <FeeBreakdownTable
             lines={[...breakdownLines, ...missingBreakdownLines]}

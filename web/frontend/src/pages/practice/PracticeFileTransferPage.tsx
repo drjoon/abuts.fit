@@ -308,6 +308,8 @@ import {
   mapMyPracticeTransferApiRows,
   mergeOpenPracticeTransferFromRequestRows,
   patchPracticeRecentRequestProsthesisFollowUp,
+  applyProsthesisFollowUpBillingToFeeQuote,
+  bumpFeeQuoteByProsthesisFollowUpDelta,
   prosthesisFollowUpPatchFromRealtimePayload,
   type ProsthesisFollowUpRecentRequestPatch,
   collectPracticeRequestFiles,
@@ -4830,17 +4832,15 @@ export const PracticeFileTransferPage = ({
             orderDates: Array.isArray(data.orderDates)
               ? data.orderDates.map((d) => String(d || "").trim()).filter(Boolean)
               : prev.orderDates,
-            feeQuote: prev.feeQuote
-              ? {
-                  ...prev.feeQuote,
-                  labFeeTotal:
-                    Math.max(0, Number(prev.feeQuote.labFeeTotal || 0)) +
-                    Math.max(0, Number(data.billingDelta?.labFeeTotal || 0)),
-                  total:
-                    Math.max(0, Number(prev.feeQuote.total || 0)) +
-                    Math.max(0, Number(data.billingDelta?.total || 0)),
-                }
-              : prev.feeQuote,
+            feeQuote: data.billing
+              ? applyProsthesisFollowUpBillingToFeeQuote(
+                  prev.feeQuote,
+                  data.billing,
+                ) || prev.feeQuote
+              : bumpFeeQuoteByProsthesisFollowUpDelta(
+                  prev.feeQuote,
+                  data.billingDelta,
+                ) || prev.feeQuote,
           };
         });
         applyProsthesisFollowUpToRecentRequests({
@@ -4860,6 +4860,7 @@ export const PracticeFileTransferPage = ({
             ? data.orderDates.map((d) => String(d || "").trim()).filter(Boolean)
             : undefined,
           billingDelta: data.billingDelta,
+          billing: data.billing,
         });
       } catch (error) {
         toast({
@@ -4930,12 +4931,9 @@ export const PracticeFileTransferPage = ({
           orderDates: Array.isArray(data.orderDates)
             ? data.orderDates.map((d) => String(d || "").trim()).filter(Boolean)
             : prev.orderDates,
-          feeQuote: data.billing && prev.feeQuote
-            ? {
-                ...prev.feeQuote,
-                labFeeTotal: Math.max(0, Number(data.billing.labFeeTotal || 0)),
-                total: Math.max(0, Number(data.billing.total || 0)),
-              }
+          feeQuote: data.billing
+            ? applyProsthesisFollowUpBillingToFeeQuote(prev.feeQuote, data.billing) ||
+              prev.feeQuote
             : prev.feeQuote,
         };
       });

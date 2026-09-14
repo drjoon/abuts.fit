@@ -16,7 +16,9 @@
 // - web/frontend/src/shared/files/fileBlobCache.ts
 // - web/frontend/src/shared/files/s3ImageThumb.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
-// - 2026-09-15: 치식·보철물 차트 — 후속 지르 행 제외(원 임시치아 라벨 유지).
+// - 2026-09-15: 치식·보철물 차트 — 후속 지르 반영(형태) + 단계별 기공비. 인쇄는 원 임시치아.
+// - 2026-09-15: 견적은 전체 toothWorks(feeToothWorks) — 후속 반영·임시치아 차감 라인 유지.
+// - 2026-09-15: 남은 임시치아 있으면 지르 보철 CTA 유지(제작 변경/취소와 병행).
 // - 2026-09-14: 모바일 플로팅 — mobileFloatingTopInset으로 채팅을 상단 액션 바 아래로.
 // - 2026-09-14: 모바일 플로팅 — mobileTopChrome을 채팅 **위** 고정 바에 두고 패널을 아래로 내린다.
 // - 2026-09-14: 모바일 플로팅 — mobileTopChrome(북마크 순회 등)을 채팅 상단에.
@@ -1168,7 +1170,7 @@ export function PracticeTransferDetailChatDialog({
         >
           <div className="border-b px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
             선택일=다음 도착일, 오늘=재주문일로 반영됩니다.
-            {onAppendProsthesis && !prosthesisFollowUpPending ? (
+            {onAppendProsthesis && !appendProsthesisDisabled ? (
               <>
                 <br />
                 적용 시 지르 보철로 바꿀지 묻고, 아니면 임시치아로
@@ -1986,6 +1988,10 @@ export function PracticeTransferDetailChatDialog({
   );
   const identityDateLabel = String(caseIdentityStrip?.secondary || "").trim();
   const chartToothWorks = useMemo(
+    () => (Array.isArray(toothWorks) ? toothWorks : []),
+    [toothWorks],
+  );
+  const printToothWorks = useMemo(
     () => baseToothWorksForDetailChart(toothWorks),
     [toothWorks],
   );
@@ -1999,10 +2005,10 @@ export function PracticeTransferDetailChatDialog({
     printPracticeTransferDetail({
       title,
       summaryItems,
-      toothWorks: chartToothWorks,
+      toothWorks: printToothWorks,
       memo,
     });
-  }, [title, summaryItems, chartToothWorks, memo]);
+  }, [title, summaryItems, printToothWorks, memo]);
 
   const hasMeaningfulMemo = Boolean(String(memo || "").trim() && memo !== "-");
 
@@ -2870,11 +2876,15 @@ export function PracticeTransferDetailChatDialog({
                   <PracticeToothWorkChartReadOnly
                     key={toothWorksKey || "tooth-works"}
                     toothWorks={chartToothWorks}
+                    feeToothWorks={
+                      Array.isArray(toothWorks) ? toothWorks : undefined
+                    }
                     feeQuote={feeQuote}
                     feeViewer={feeViewer}
                     labAnchorId={labAnchorId}
                     skipJig={skipJig}
                     labEffectiveStars={labEffectiveStars}
+                    prosthesisFollowUps={prosthesisFollowUps}
                   />
                   <PracticeRemakeChargesStrip remakeCharges={remakeCharges} />
                 </section>
@@ -3224,7 +3234,6 @@ export function PracticeTransferDetailChatDialog({
                         : null}
 
                       {onAppendProsthesis &&
-                      !prosthesisFollowUpPending &&
                       !chatLoading &&
                       !visibleChatError ? (
                         <div className="relative z-[2] mt-2 flex shrink-0 flex-col items-center gap-1.5 px-1">

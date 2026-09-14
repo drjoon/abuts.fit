@@ -713,6 +713,7 @@ export function ChatMessageBubble({
       labAnchorId: practiceTransferLabAnchorId,
       transferToothWorks: practiceTransferToothWorks,
       transferFeeQuote: practiceTransferFeeQuote,
+      transferProsthesisFollowUps: practiceTransferProsthesisFollowUps,
       onCancelRemakeCharge,
       remakeChargeCancelBusy,
       activeRemakeChargeIndexes,

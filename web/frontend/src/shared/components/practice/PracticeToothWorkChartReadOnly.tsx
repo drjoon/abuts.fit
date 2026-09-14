@@ -14,6 +14,8 @@
 // - 2026-08-25: 구강스캔(기공의뢰)은 디자인+생산 고정 — 치식 카드 모드 라벨 제거(작성 UI와 동일).
 // - 2026-09-02: full 치식 슬롯 래퍼 contents 복구 — shrink-0이 flex-1 전폭 분할을 막던 문제.
 // - 2026-09-15: 브리지 연결 이음새 — 행 gap-0으로 카드·연결선 사이 하얀 수직 거터 제거.
+// - 2026-09-15: 후속 앵커 1행 스팬 — 체크박스는 원 row 치아만(빌려쓴 연결치 제외).
+// - 2026-09-15: 부분 후속(남은 임시치아) — 변경 기공비 라벨.
 // - 2026-09-02: byTooth가 연결치에 첫 행을 덮어 13-12-11 브리지에서 11 연결·스펙이 끊기던 버그 수정.
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -53,7 +55,15 @@ import {
   NO_WORK_PROSTHESIS_TYPE,
   NO_WORK_PROSTHESIS_TOOLTIP,
 } from "@/shared/practice/usePracticeToothWorkEditor";
-import { buildToothWorkDisplayByTooth } from "@/shared/practice/prosthesisFollowUp";
+import {
+  buildToothWorkDisplayByTooth,
+  hasPartialProsthesisFollowUp,
+  type ProsthesisFollowUpRecord,
+} from "@/shared/practice/prosthesisFollowUp";
+import {
+  buildProsthesisFollowUpFeeStages,
+  type PracticeFeeStageSection,
+} from "@/shared/practice/prosthesisFollowUpFeeStages";
 import { PracticeTransferFeeEstimate } from "@/shared/components/practice/PracticeTransferFeeEstimate";
 import { PracticeToothChartHorizontalScroll } from "@/shared/components/practice/PracticeToothChartHorizontalScroll";
 import { useIsMobile } from "@/shared/hooks/use-mobile";
@@ -206,6 +216,8 @@ type PracticeToothWorkChartReadOnlyProps = {
   /** 선택 모드 — 견적·헤더 개수용 (미전달 시 선택된 스팬만 toothWorks에서 유도) */
   feeToothWorks?: ToothWorkSelection[];
   selectionDisabled?: boolean;
+  /** 후속 제작 기록 — 단계별 기공비 섹션 */
+  prosthesisFollowUps?: ProsthesisFollowUpRecord[] | null;
 };
 
 export const PracticeToothWorkChartReadOnly = ({
@@ -228,6 +240,7 @@ export const PracticeToothWorkChartReadOnly = ({
   spanKeyOf,
   feeToothWorks,
   selectionDisabled = false,
+  prosthesisFollowUps = null,
 }: PracticeToothWorkChartReadOnlyProps) => {
   const isMobile = useIsMobile();
   const [toothChartEnlargeOpen, setToothChartEnlargeOpen] = useState(false);
@@ -245,6 +258,11 @@ export const PracticeToothWorkChartReadOnly = ({
     if (!selectable) return toothWorks;
     return toothWorks.filter((row) => isSpanSelected(row));
   }, [feeToothWorks, selectable, toothWorks, selectedSpanKeys, spanKeyOf]);
+  const confirmedFeeLabel = useMemo(
+    () =>
+      hasPartialProsthesisFollowUp(quoteToothWorks) ? "변경 기공비" : null,
+    [quoteToothWorks],
+  );
   const byTooth = useMemo(
     () => buildToothWorkDisplayByTooth(toothWorks),
     [toothWorks],
@@ -325,19 +343,36 @@ export const PracticeToothWorkChartReadOnly = ({
 
   const storedLinesEmpty =
     !Array.isArray(storedFeeQuote?.lines) || storedFeeQuote.lines.length === 0;
-  const { quote: feeQuote } = usePracticeTransferFeeQuote({
+  const { quote: feeQuote, context: feeQuoteContext, contextReady: feeContextReady } =
+    usePracticeTransferFeeQuote({
     enabled:
       !storedFeeQuote ||
       storedFeeQuote.labFeeConfigured === false ||
       storedFeeQuote.total <= 0 ||
       // 확정 금액만 있고 내역 lines가 비면 live 재계산으로 툴팁을 채운다.
-      (storedFeeQuote.total > 0 && storedLinesEmpty),
+      (storedFeeQuote.total > 0 && storedLinesEmpty) ||
+      // 후속 지르가 있으면 단계별 섹션용 live context가 필요.
+      (Array.isArray(prosthesisFollowUps) && prosthesisFollowUps.length > 0) ||
+      hasPartialProsthesisFollowUp(quoteToothWorks),
     labAnchorId,
     toothWorks: quoteToothWorks,
     storedQuote: storedFeeQuote,
     skipAbutmentFees,
     creditToothWorks,
   });
+  const feeStages = useMemo((): PracticeFeeStageSection[] | null => {
+    if (!feeContextReady && feeQuoteContext.usedDefaultSchedule) return null;
+    return buildProsthesisFollowUpFeeStages({
+      toothWorks: quoteToothWorks,
+      prosthesisFollowUps,
+      context: feeQuoteContext,
+    });
+  }, [
+    feeContextReady,
+    feeQuoteContext,
+    prosthesisFollowUps,
+    quoteToothWorks,
+  ]);
 
   const enlargeOverlayClass =
     enlargeOverlayClassName || (embedded ? "z-[350]" : "z-[110]");
@@ -737,8 +772,11 @@ export const PracticeToothWorkChartReadOnly = ({
               const isMissingTooth = isMissingToothProsthesisType(row.prosthesisType);
               const spanKey = resolveSpanKey(row);
               const spanSelected = isSpanSelected(row);
-              const isAnchorTooth =
-                String(row.toothNumber || "").trim() === toothNumber;
+              // byTooth는 연결치에 toothNumber를 덮어쓰므로, 원 toothWorks 행 소유만 앵커로 본다.
+              const isAnchorTooth = toothWorks.some(
+                (candidate) =>
+                  String(candidate.toothNumber || "").trim() === toothNumber,
+              );
               const canToggleSpan =
                 selectable && Boolean(onToggleSpanKey) && !selectionDisabled;
 
@@ -1011,6 +1049,8 @@ export const PracticeToothWorkChartReadOnly = ({
       viewer={feeViewer}
       skipJig={skipJig}
       labEffectiveStars={labEffectiveStars}
+      confirmedFeeLabel={confirmedFeeLabel}
+      feeStages={feeStages}
       className={
         embedded ? "border-0 bg-transparent px-0 py-1 shadow-none" : undefined
       }
@@ -1025,6 +1065,8 @@ export const PracticeToothWorkChartReadOnly = ({
         viewer={feeViewer}
         skipJig={skipJig}
         labEffectiveStars={labEffectiveStars}
+        confirmedFeeLabel={confirmedFeeLabel}
+        feeStages={feeStages}
         className={
           embedded ? "border-0 bg-transparent px-0 py-1 shadow-none" : undefined
         }
@@ -1049,6 +1091,8 @@ export const PracticeToothWorkChartReadOnly = ({
         viewer={feeViewer}
         skipJig={skipJig}
         labEffectiveStars={labEffectiveStars}
+        confirmedFeeLabel={confirmedFeeLabel}
+        feeStages={feeStages}
         className={embedded ? "border-0 bg-transparent px-0 py-1 shadow-none" : undefined}
       />
       {lowerEnlargeRow}

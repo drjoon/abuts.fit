@@ -6,6 +6,7 @@
  * 자동매칭(공개 풀)은 공정상 의뢰 — 뱃지 집계·「의뢰」필터에 포함.
  * 기공소 수신은 거절·작업취소가 목록에서 빠져 취소/거절 뱃지 불필요 → 치과만 취소 포함 5뱃지.
  * 본문 건수: 의뢰·작업시작=전체. 완료·취소·어벗=미열람만(clearedIds 제외).
+ * 2026-09-15: 후속 보철 반영 시 feeQuote.lines 비움 — 확정 total과 낡은 라인 합(임시치아) 불일치 방지.
  * 2026-09-12: 치과 /my trashedFiles 병합 — 활성 files와 겹치면 휴지통에서 제거.
  * 2026-09-11: 배지 순서 의뢰→작업시작→완료→취소→어벗. 완료·취소·어벗 열람 시 본문 건수 감소.
  * 2026-09-11: listBadgeNavigate — 상태 전 건 순회(미확인 앞). 건수와 클릭 대상 일치.
@@ -1005,6 +1006,37 @@ export type ProsthesisFollowUpRecentRequestPatch = {
   billingDelta?: { total?: number; labFeeTotal?: number };
 };
 
+/** 후속 추가/취소 후 — total은 billing 기준, lines는 live 재계산을 위해 비운다. */
+export const applyProsthesisFollowUpBillingToFeeQuote = (
+  feeQuote: PracticeTransferFeeQuote | null | undefined,
+  billing: { total?: number; labFeeTotal?: number } | null | undefined,
+): PracticeTransferFeeQuote | null | undefined => {
+  if (!feeQuote || !billing) return feeQuote;
+  return {
+    ...feeQuote,
+    labFeeTotal: Math.max(0, Number(billing.labFeeTotal || 0)),
+    total: Math.max(0, Number(billing.total || 0)),
+    lines: [],
+  };
+};
+
+export const bumpFeeQuoteByProsthesisFollowUpDelta = (
+  feeQuote: PracticeTransferFeeQuote | null | undefined,
+  billingDelta: { total?: number; labFeeTotal?: number } | null | undefined,
+): PracticeTransferFeeQuote | null | undefined => {
+  if (!feeQuote || !billingDelta) return feeQuote;
+  return {
+    ...feeQuote,
+    labFeeTotal:
+      Math.max(0, Number(feeQuote.labFeeTotal || 0)) +
+      Math.max(0, Number(billingDelta.labFeeTotal || 0)),
+    total:
+      Math.max(0, Number(feeQuote.total || 0)) +
+      Math.max(0, Number(billingDelta.total || 0)),
+    lines: [],
+  };
+};
+
 export const isProsthesisFollowUpRealtimeAction = (action: unknown): boolean => {
   const normalized = String(action || "").trim().toLowerCase();
   return (
@@ -1082,21 +1114,13 @@ export const patchPracticeRecentRequestProsthesisFollowUp = (
   }
 
   if (patch.billing && next.feeQuote) {
-    next.feeQuote = {
-      ...next.feeQuote,
-      labFeeTotal: Math.max(0, Number(patch.billing.labFeeTotal || 0)),
-      total: Math.max(0, Number(patch.billing.total || 0)),
-    };
+    next.feeQuote =
+      applyProsthesisFollowUpBillingToFeeQuote(next.feeQuote, patch.billing) ||
+      next.feeQuote;
   } else if (patch.billingDelta && next.feeQuote) {
-    next.feeQuote = {
-      ...next.feeQuote,
-      labFeeTotal:
-        Math.max(0, Number(next.feeQuote.labFeeTotal || 0)) +
-        Math.max(0, Number(patch.billingDelta.labFeeTotal || 0)),
-      total:
-        Math.max(0, Number(next.feeQuote.total || 0)) +
-        Math.max(0, Number(patch.billingDelta.total || 0)),
-    };
+    next.feeQuote =
+      bumpFeeQuoteByProsthesisFollowUpDelta(next.feeQuote, patch.billingDelta) ||
+      next.feeQuote;
   }
 
   return next;

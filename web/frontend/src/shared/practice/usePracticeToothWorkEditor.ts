@@ -20,6 +20,7 @@ import { useMemo } from "react";
 // - 2026-08-20: Pontic은 UI에서 제거. 연결 스팬은 브리지·임시치아 등으로 표시하고 기공소가 추론.
 // - 2026-08-19: 임시치아도 크라운·브리지처럼 기존 커스텀 플래그·규격을 유지.
 // - 2026-08-20: 결손치로 바꿀 때만 해당 치아. 결손치→유지장치 등 나갈 때는 연결 전체 동기화.
+// - 2026-09-15: collectAdjacentBridgeLinks — 앵커 1행 스팬 멤버십으로 11↔21 등 인접 간선 복원.
 
 export type { ToothWorkSelection } from "@/shared/practice/transferMemo";
 import {
@@ -128,7 +129,9 @@ export const splitAdjacentTeethAboveBelow = (toothNumber: string) => {
   };
 };
 
-/** 본인 연결 + 인접 치아가 이쪽을 가리키는 연결을 합친다(한쪽만 있어도 브리지로 본다). */
+/** 본인 연결 + 인접 치아가 이쪽을 가리키는 연결을 합친다(한쪽만 있어도 브리지로 본다).
+ * 후속 제작 초안처럼 스팬이 앵커 1행(bridgeLinkedTeeth=전체)만 있어도
+ * 멤버 간 인접쌍(11↔21 정중선 포함)을 연결로 본다. */
 export const collectAdjacentBridgeLinks = (
   rows: ToothWorkSelection[],
   toothNumber: string,
@@ -146,6 +149,20 @@ export const collectAdjacentBridgeLinks = (
     if (!other || other === tooth || !adjacent.has(other)) continue;
     const otherLinks = Array.isArray(row.bridgeLinkedTeeth) ? row.bridgeLinkedTeeth : [];
     if (otherLinks.some((value) => String(value || "").trim() === tooth)) links.add(other);
+  }
+  // 앵커 1행 스팬 — 행 toothNumber가 없는 연결치도 멤버십으로 인접 간선 복원
+  for (const row of rows) {
+    const members = new Set<string>();
+    const anchor = String(row.toothNumber || "").trim();
+    if (anchor) members.add(anchor);
+    for (const linked of Array.isArray(row.bridgeLinkedTeeth) ? row.bridgeLinkedTeeth : []) {
+      const member = String(linked || "").trim();
+      if (member) members.add(member);
+    }
+    if (!members.has(tooth)) continue;
+    for (const adj of adjacent) {
+      if (members.has(adj)) links.add(adj);
+    }
   }
   return [...links];
 };

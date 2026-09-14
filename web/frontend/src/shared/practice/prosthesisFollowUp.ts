@@ -6,6 +6,7 @@
 // - 2026-09-08: 후속 제작 견적에 원 임시치아 기공비 차감.
 // - 2026-09-08: 치식 표시 — 후속 보철+원 임시치아 병존 시 형태는 후속, CA·어벗 스펙은 원치아 행.
 // - 2026-09-15: 후속 스팬 = 인접 연결 연결요소. 의뢰상세 차트는 원 임시치아만(baseToothWorksForDetailChart).
+// - 2026-09-15: 부분 후속(남은 임시치아) — 변경 기공비 라벨·지르 CTA 유지용 hasPartialProsthesisFollowUp.
 import {
   type ToothWorkSelection,
   isCustomAbutmentProsthesisType,
@@ -278,6 +279,20 @@ export const listPendingFollowUpTempSpans = (
   return buildConnectedTempSpans(tempRows).filter(
     ({ teeth }) => !teeth.some((t) => hasFollowUpProsthesisForTooth(toothWorks, t)),
   );
+};
+
+/** 일부만 후속 지르·아직 임시치아 스팬 남음(기공비=변경, 지르 CTA 유지) */
+export const hasPartialProsthesisFollowUp = (
+  toothWorks: ReadonlyArray<Partial<ToothWorkSelection>> | null | undefined,
+) => {
+  const rows = Array.isArray(toothWorks) ? [...toothWorks] : [];
+  const hasFollowUp = rows.some(
+    (row) =>
+      isFollowUpProsthesisPhase(row) &&
+      isFinalProsthesisType(String(row.prosthesisType || "")),
+  );
+  if (!hasFollowUp) return false;
+  return listPendingFollowUpTempSpans(rows).length > 0;
 };
 
 const cloneRowForFollowUp = (

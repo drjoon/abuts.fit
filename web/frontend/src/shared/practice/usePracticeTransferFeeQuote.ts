@@ -129,6 +129,7 @@ export const usePracticeTransferFeeQuote = (params: {
   creditToothWorks?: ToothWorkSelection[] | null;
 }): {
   quote: PracticeTransferFeeQuote;
+  context: PracticeTransferQuoteContext;
   contextReady: boolean;
 } => {
   const enabled = params.enabled !== false;
@@ -253,5 +254,5 @@ export const usePracticeTransferFeeQuote = (params: {
           }
         : liveQuote;
 
-  return { quote, contextReady };
+  return { quote, context, contextReady };
 };

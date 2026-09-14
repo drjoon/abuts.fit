@@ -326,6 +326,36 @@ describe("practiceTransferProsthesisFollowUp", () => {
     ).toEqual(["34-33", "44-45-46"]);
   });
 
+  test("anterior midline 12-11-21-22 stays one follow-up span", () => {
+    // 정중선 11↔21 포함 — 의뢰상세와 같이 전치부 임시치아 1스팬 → 지르 초안도 1행
+    const toothWorks = [
+      { toothNumber: "15", prosthesisType: "임시치아", bridgeLinkedTeeth: ["14"] },
+      { toothNumber: "14", prosthesisType: "임시치아", bridgeLinkedTeeth: ["15"] },
+      { toothNumber: "12", prosthesisType: "임시치아", bridgeLinkedTeeth: ["11"] },
+      {
+        toothNumber: "11",
+        prosthesisType: "임시치아",
+        bridgeLinkedTeeth: ["12", "21"],
+      },
+      {
+        toothNumber: "21",
+        prosthesisType: "임시치아",
+        bridgeLinkedTeeth: ["11", "22"],
+      },
+      { toothNumber: "22", prosthesisType: "임시치아", bridgeLinkedTeeth: ["21"] },
+    ];
+    const spans = listPendingFollowUpTempSpans(toothWorks);
+    expect(spans.map(({ teeth }) => teeth.join("-")).sort()).toEqual([
+      "12-11-21-22",
+      "15-14",
+    ]);
+    const draft = buildFollowUpToothWorksDraft(toothWorks);
+    expect(draft).toHaveLength(2);
+    const anterior = draft.find((row) => String(row.toothNumber) === "12");
+    expect(anterior?.prosthesisType).toBe("브리지");
+    expect(anterior?.bridgeLinkedTeeth).toEqual(["12", "11", "21", "22"]);
+  });
+
   test("pickSourceTempRowsForFollowUpCredit includes all teeth in follow-up span", () => {
     const source = [
       {
