@@ -15,6 +15,7 @@
 // - 2026-08-21: ExoCAD 버전(3.0 이하/3.2 이상) 선택 + 헥스 30도 안내 요약
 // - 2026-08-16: 미설정 게이트도 X/취소로 닫기 허용(재진입·새로고침 시 다시 노출).
 import { Button } from "@/components/ui/button";
+import type { CSSProperties } from "react";
 import {
   Dialog,
   DialogContent,
@@ -38,6 +39,7 @@ type DesignSoftwareSettingsDialogProps = {
   mode: DesignSoftwareMode;
   onModeChange: (mode: DesignSoftwareMode) => void;
   customValue: string;
+  contentStyle?: CSSProperties;
   onCustomValueChange: (value: string) => void;
   exoCadVersion?: ExoCadVersion | null;
   onExoCadVersionChange?: (version: ExoCadVersion) => void;
@@ -72,13 +74,16 @@ export function DesignSoftwareSettingsDialog({
   saving = false,
   onSave,
   contentClassName,
+  contentStyle,
 }: DesignSoftwareSettingsDialogProps) {
   const anodizingOnly = showAnodizing && !showDesignSoftware;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className={cn("gap-5", contentClassName || "sm:max-w-sm")}
+        overlayClassName="z-[319]"
+        style={contentStyle}
+        className={cn("z-[320] gap-5", contentClassName || "sm:max-w-sm")}
         closeClassName="right-3 top-3 rounded-full p-1.5 opacity-60 hover:bg-muted hover:opacity-100 focus:ring-1 focus:ring-offset-0"
         closeIconClassName="h-3.5 w-3.5"
       >

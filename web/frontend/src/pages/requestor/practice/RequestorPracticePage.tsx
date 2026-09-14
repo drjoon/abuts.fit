@@ -178,6 +178,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -6244,7 +6245,6 @@ export function RequestorPracticeReceivePage({
       setActiveChatRoom(null);
       setChatMessages([]);
       // 헤더 확인 큐·채팅 unread·미확인 의뢰 — 열자마자 카운터 감소.
-      const openedTransferId = String(transfer.transferId || "").trim();
       if (openedTransferId) {
         markPracticeStatusBadgeTransfersCleared([openedTransferId]);
         if (!transfer.isRead) {
@@ -7212,8 +7212,60 @@ export function RequestorPracticeReceivePage({
     );
   };
 
-  const transferSearchAndBadges = isMobile ? (
-    <div className="flex flex-nowrap items-center justify-center gap-1.5">
+  const [abutmentInProgressOpen, setAbutmentInProgressOpen] = useState(false);
+  const showMobileActionChrome =
+    isMobile &&
+    (dialogOpen || requestSettingsModalOpen || abutmentInProgressOpen);
+  const mobileActionChromeRef = useRef<HTMLDivElement | null>(null);
+  const [mobileActionChromeH, setMobileActionChromeH] = useState(0);
+  useLayoutEffect(() => {
+    if (!showMobileActionChrome) {
+      setMobileActionChromeH(0);
+      return;
+    }
+    const el = mobileActionChromeRef.current;
+    if (!el) return;
+    const apply = () => {
+      setMobileActionChromeH(Math.ceil(el.getBoundingClientRect().height));
+    };
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [showMobileActionChrome]);
+  /** 측정 전에도 바가 가려지지 않게 최소 inset */
+  const mobileActionChromeInsetPx = showMobileActionChrome
+    ? Math.max(mobileActionChromeH, 56)
+    : 0;
+  const mobileOverlayTopPx =
+    mobileActionChromeInsetPx > 0 ? mobileActionChromeInsetPx + 8 : null;
+  const mobileOverlayDialogStyle =
+    mobileOverlayTopPx != null
+      ? {
+          top: mobileOverlayTopPx,
+          bottom: "max(0.75rem, env(safe-area-inset-bottom))",
+          left: "0.75rem",
+          right: "0.75rem",
+          transform: "none" as const,
+          width: "auto",
+          maxWidth: "none",
+          height: "auto",
+          maxHeight: "none",
+        }
+      : undefined;
+
+  const labAbutmentInProgressTrigger = (
+    <RequestorAbutmentPageHeader
+      variant="policyInProgress"
+      iconOnly={isMobile}
+      inProgressOpen={abutmentInProgressOpen}
+      onInProgressOpenChange={setAbutmentInProgressOpen}
+      renderInProgressModal={false}
+    />
+  );
+
+  const labMobileHeaderActionButtons = (
+    <>
       <RequestSettingsToolbar
         designSoftwareLabel={String(designSoftwareValue || "").trim()}
         onOpenDesignSoftwareModal={openDesignSoftwareModal}
@@ -7223,8 +7275,28 @@ export function RequestorPracticeReceivePage({
         iconOnly
       />
       {bookmarkNavigateButton({ iconOnly: true })}
-      <RequestorAbutmentPageHeader variant="policyInProgress" iconOnly />
-      <DemoModeBadge className="shrink-0" />
+      {labAbutmentInProgressTrigger}
+    </>
+  );
+
+  const labMobileStatusBadges = (
+    <PracticeStatusFilterBadges
+      className="justify-center"
+      items={labStatusFilterBadgeItems}
+      onUnreadNavigate={navigateNextUnreadForStatus}
+      gapBeforeKeys={PRACTICE_RECENT_STATUS_BADGE_GAP_BEFORE_KEYS}
+      countSuffix="건"
+      compact
+    />
+  );
+
+  const transferSearchAndBadges = isMobile ? (
+    <div className="flex flex-col items-center gap-2">
+      <div className="flex flex-nowrap items-center justify-center gap-1.5">
+        {labMobileHeaderActionButtons}
+        <DemoModeBadge className="shrink-0" />
+      </div>
+      {labMobileStatusBadges}
     </div>
   ) : (
     <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
@@ -7246,7 +7318,12 @@ export function RequestorPracticeReceivePage({
         trailing={
           <span className="contents">
             {bookmarkNavigateButton()}
-            <RequestorAbutmentPageHeader variant="policyInProgress" />
+            <RequestorAbutmentPageHeader
+              variant="policyInProgress"
+              inProgressOpen={abutmentInProgressOpen}
+              onInProgressOpenChange={setAbutmentInProgressOpen}
+              renderInProgressModal={false}
+            />
           </span>
         }
       />
@@ -7539,6 +7616,24 @@ export function RequestorPracticeReceivePage({
       className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden px-3 sm:px-4"
       data-guide-tour="lab_receive_workspace"
     >
+      {showMobileActionChrome
+        ? createPortal(
+            <div
+              ref={mobileActionChromeRef}
+              className="fixed inset-x-0 top-0 z-[330] border-b border-slate-200 bg-slate-100/95 px-2 py-2 pt-[max(0.5rem,env(safe-area-inset-top))]"
+            >
+              <div className="flex w-full flex-col items-center gap-2">
+                <div className="flex w-full max-w-full flex-nowrap items-center justify-center gap-1.5 overflow-x-auto">
+                  {labMobileHeaderActionButtons}
+                </div>
+                <div className="flex w-full max-w-full flex-nowrap items-center justify-center overflow-x-auto">
+                  {labMobileStatusBadges}
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
       <DesignSoftwareSettingsDialog
         open={requestSettingsModalOpen}
         onOpenChange={handleRequestSettingsModalOpenChange}
@@ -7553,10 +7648,18 @@ export function RequestorPracticeReceivePage({
         onAnodizingEnabledChange={setAnodizingEnabled}
         showDesignSoftware={!settingsComplete || hasAnodizingSetting}
         saving={designSoftwareSaving}
+        contentStyle={mobileOverlayDialogStyle}
         onSave={() => {
           void handleSaveDesignSoftware();
         }}
         forceRequired={requestSettingsForceRequired}
+      />
+      <RequestorAbutmentPageHeader
+        variant="policyInProgress"
+        hideInProgressTrigger
+        inProgressOpen={abutmentInProgressOpen}
+        onInProgressOpenChange={setAbutmentInProgressOpen}
+        inProgressDialogStyle={mobileOverlayDialogStyle}
       />
       <AbutmentDesignToothAssignDialog
         open={toothAssignOpen}
@@ -7793,10 +7896,8 @@ export function RequestorPracticeReceivePage({
         initialPanelTab={dialogInitialPanelTab}
         guideTourElevate={guideTourWantsReceiveDetail}
         chatHeaderAction={null}
-        mobileTopChrome={
-          isMobile && bookmarkItems.length > 0
-            ? bookmarkNavigateButton({ iconOnly: true })
-            : null
+        mobileFloatingTopInset={
+          isMobile && showMobileActionChrome ? mobileActionChromeInsetPx : 0
         }
         caseIdentity={selectedTransferCaseIdentity}
         composerToolbarExtra={

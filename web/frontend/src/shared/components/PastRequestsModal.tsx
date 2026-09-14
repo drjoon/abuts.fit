@@ -25,7 +25,7 @@
 // - 2026-08-18: 지난 의뢰 기본에서 취소 제외(추적관리만).
 // - 2026-08-18: 열릴 때 initialPeriod로 페이지 헤더 기간과 동기.
 // - 2026-08-03: PastRequestsModal: display normalize manufacturer stage (의뢰 -> 준비) for table '상태' column. (display-only)
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { getNormalizedStageLabelSafe } from "@/utils/stage";
 import {
   Dialog,
@@ -99,6 +99,8 @@ export type PastRequestsModalProps = {
   suspend?: boolean;
   /** 상세에서 취소한 mongoId(들) — 목록에서 해당 행(+헥스 확인 쌍) 제거 */
   removeMongoId?: string | string[] | null;
+  /** 모바일 상단 액션 바 아래 오프셋 등 */
+  contentStyle?: CSSProperties;
 };
 
 const DEFAULT_MANUFACTURER_STAGE_IN = ["추적관리"];
@@ -231,6 +233,7 @@ export const PastRequestsModal = ({
   onCanceled,
   suspend = false,
   removeMongoId = null,
+  contentStyle,
 }: PastRequestsModalProps) => {
   const { token } = useAuthStore();
   const { toast } = useToast();
@@ -597,6 +600,7 @@ export const PastRequestsModal = ({
     >
       <DialogContent
         overlayClassName="z-[319]"
+        style={contentStyle}
         className={cn(
           "z-[320] flex h-[min(85vh,800px)] flex-col gap-0 overflow-hidden p-0 sm:rounded-2xl",
           RESPONSIVE.dialogContentFull,

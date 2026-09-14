@@ -143,7 +143,7 @@
  * - 2026-08-28: 캘린더 「신규 의뢰」버튼 → 도착일 클릭 안내(닫으면 계정 설정에 저장).
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate, useLocation, useSearchParams } from "react-router-dom";
 
@@ -5632,7 +5632,6 @@ export const PracticeFileTransferPage = ({
     }
 
     // 헤더 확인 큐·채팅 unread — 열자마자 카운터 감소.
-    const openedTransferId = String(transfer.transferId || "").trim();
     if (openedTransferId && openedTransferId !== "-") {
       markPracticeStatusBadgeTransfersCleared([openedTransferId]);
       clearUnreadForTransferIds([openedTransferId]);
@@ -8477,8 +8476,7 @@ export const PracticeFileTransferPage = ({
     if (options?.openCompose === false) {
       setComposeOpen(false);
     } else {
-      // 작성 모달과 의뢰 상세 채팅이 겹치지 않게 채팅 패널을 먼저 닫는다.
-      handleCloseTransferDialog();
+      // 채팅이 열린 채 위에 작성 모달을 띄운다(닫으면 채팅으로 복귀).
       setComposeOpen(true);
     }
 
@@ -9199,6 +9197,132 @@ export const PracticeFileTransferPage = ({
   };
 
   /** 메인 헤더 — 북마크·신규주문·리메이크·임시저장·휴지통(+PC 데모). */
+  const practiceMobileHeaderActionButtons = (
+    <>
+      {bookmarkNavigateButton({ mobile: true })}
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="h-9 w-9 shrink-0 rounded-full border-slate-200 bg-white p-0 shadow-sm"
+        aria-label="신규주문"
+        title="신규주문"
+        onClick={() =>
+          void handleStartNewTransfer({
+            openCompose: true,
+            silentToast: true,
+          })
+        }
+      >
+        <Plus className="h-4 w-4 shrink-0" />
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="h-9 w-9 shrink-0 rounded-full border-slate-200 bg-white p-0 shadow-sm"
+        aria-label="리메이크"
+        title="리메이크"
+        onClick={() => setRemakeSearchOpen(true)}
+        {...(platformGuideTour.active &&
+        platformGuideTour.stepId === "remake"
+          ? { "data-guide-tour": "practice_remake" }
+          : {})}
+      >
+        <Repeat className="h-4 w-4 shrink-0" />
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className={cn(
+          "h-9 shrink-0 gap-1 rounded-full border-slate-200 bg-white shadow-sm",
+          draftGroupedTransfers.length === 0 ? "w-9 p-0" : "px-2",
+          draftGroupedTransfers.length > 0 && "border-amber-300 bg-amber-50/90",
+          practiceTransferDraftStaleAttentionClassName(hasStaleDrafts),
+        )}
+        aria-label={
+          draftGroupedTransfers.length > 0
+            ? `임시저장 ${draftGroupedTransfers.length}건`
+            : "임시저장"
+        }
+        title="임시저장 — 기공소 전송 전 작성 중 의뢰"
+        onClick={() => setDraftsOpen(true)}
+      >
+        <BookmarkPlus className="h-4 w-4 shrink-0" />
+        {draftGroupedTransfers.length > 0 ? (
+          <Badge
+            variant="outline"
+            className={cn(
+              draftCountBadgeClass,
+              "h-4 min-w-4 justify-center rounded-full px-1 text-[10px] leading-none",
+            )}
+          >
+            {draftGroupedTransfers.length}
+          </Badge>
+        ) : null}
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className={cn(
+          "h-9 shrink-0 gap-1 rounded-full border-slate-200 bg-white shadow-sm",
+          trashGroupedTransfers.length === 0 ? "w-9 p-0" : "px-2",
+        )}
+        aria-label={
+          trashGroupedTransfers.length > 0
+            ? `휴지통 ${trashGroupedTransfers.length}건`
+            : "휴지통"
+        }
+        title="휴지통"
+        onClick={() => {
+          setTrashOpen(true);
+          void loadRecentRequests({ silent: true });
+        }}
+      >
+        <Trash2 className="h-4 w-4 shrink-0" />
+        {trashGroupedTransfers.length > 0 ? (
+          <Badge
+            variant="secondary"
+            className="h-4 min-w-4 justify-center rounded-full px-1 text-[10px] leading-none"
+          >
+            {trashGroupedTransfers.length}
+          </Badge>
+        ) : null}
+      </Button>
+    </>
+  );
+
+  const showMobileActionChrome =
+    isMobileViewport &&
+    (transferDialogOpen ||
+      composeOpen ||
+      draftsOpen ||
+      trashOpen ||
+      remakeSearchOpen);
+  const mobileActionChromeRef = useRef<HTMLDivElement | null>(null);
+  const [mobileActionChromeH, setMobileActionChromeH] = useState(0);
+  useLayoutEffect(() => {
+    if (!showMobileActionChrome) {
+      setMobileActionChromeH(0);
+      return;
+    }
+    const el = mobileActionChromeRef.current;
+    if (!el) return;
+    const apply = () => {
+      setMobileActionChromeH(Math.ceil(el.getBoundingClientRect().height));
+    };
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [showMobileActionChrome]);
+  const mobileOverlayTopPx =
+    showMobileActionChrome && mobileActionChromeH > 0
+      ? mobileActionChromeH + 8
+      : null;
+
   const calendarHeaderActions = (
     <div
       className="flex flex-nowrap items-center gap-1.5 sm:gap-2"
@@ -9210,98 +9334,7 @@ export const PracticeFileTransferPage = ({
     >
       {isMobile ? (
         <div className="flex w-full flex-nowrap items-center justify-center gap-1.5">
-          {bookmarkNavigateButton({ mobile: true })}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-9 w-9 shrink-0 rounded-full border-slate-200 bg-white p-0 shadow-sm"
-            aria-label="신규주문"
-            title="신규주문"
-            onClick={() =>
-              void handleStartNewTransfer({
-                openCompose: true,
-                silentToast: true,
-              })
-            }
-          >
-            <Plus className="h-4 w-4 shrink-0" />
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-9 w-9 shrink-0 rounded-full border-slate-200 bg-white p-0 shadow-sm"
-            aria-label="리메이크"
-            title="리메이크"
-            onClick={() => setRemakeSearchOpen(true)}
-            {...(platformGuideTour.active &&
-            platformGuideTour.stepId === "remake"
-              ? { "data-guide-tour": "practice_remake" }
-              : {})}
-          >
-            <Repeat className="h-4 w-4 shrink-0" />
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className={cn(
-              "h-9 shrink-0 gap-1 rounded-full border-slate-200 bg-white shadow-sm",
-              draftGroupedTransfers.length === 0 ? "w-9 p-0" : "px-2",
-              draftGroupedTransfers.length > 0 && "border-amber-300 bg-amber-50/90",
-              practiceTransferDraftStaleAttentionClassName(hasStaleDrafts),
-            )}
-            aria-label={
-              draftGroupedTransfers.length > 0
-                ? `임시저장 ${draftGroupedTransfers.length}건`
-                : "임시저장"
-            }
-            title="임시저장 — 기공소 전송 전 작성 중 의뢰"
-            onClick={() => setDraftsOpen(true)}
-          >
-            <BookmarkPlus className="h-4 w-4 shrink-0" />
-            {draftGroupedTransfers.length > 0 ? (
-              <Badge
-                variant="outline"
-                className={cn(
-                  draftCountBadgeClass,
-                  "h-4 min-w-4 justify-center rounded-full px-1 text-[10px] leading-none",
-                )}
-              >
-                {draftGroupedTransfers.length}
-              </Badge>
-            ) : null}
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className={cn(
-              "h-9 shrink-0 gap-1 rounded-full border-slate-200 bg-white shadow-sm",
-              trashGroupedTransfers.length === 0 ? "w-9 p-0" : "px-2",
-            )}
-            aria-label={
-              trashGroupedTransfers.length > 0
-                ? `휴지통 ${trashGroupedTransfers.length}건`
-                : "휴지통"
-            }
-            title="휴지통"
-            onClick={() => {
-              setTrashOpen(true);
-              void loadRecentRequests({ silent: true });
-            }}
-          >
-            <Trash2 className="h-4 w-4 shrink-0" />
-            {trashGroupedTransfers.length > 0 ? (
-              <Badge
-                variant="secondary"
-                className="h-4 min-w-4 justify-center rounded-full px-1 text-[10px] leading-none"
-              >
-                {trashGroupedTransfers.length}
-              </Badge>
-            ) : null}
-          </Button>
+          {practiceMobileHeaderActionButtons}
         </div>
       ) : (
         <>
@@ -9924,6 +9957,19 @@ export const PracticeFileTransferPage = ({
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      {showMobileActionChrome
+        ? createPortal(
+            <div
+              ref={mobileActionChromeRef}
+              className="fixed inset-x-0 top-0 z-[330] border-b border-slate-200 bg-slate-100/95 px-2 py-2 pt-[max(0.5rem,env(safe-area-inset-top))]"
+            >
+              <div className="mx-auto flex w-full max-w-full flex-nowrap items-center justify-center gap-1.5 overflow-x-auto">
+                {practiceMobileHeaderActionButtons}
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
       {showGuideTourPhonePreview ? (
         <GuideTourMobileOralPhotoPreview
           requestIntakeProps={practiceTransferRequestIntakeProps}
@@ -10004,10 +10050,15 @@ export const PracticeFileTransferPage = ({
           onEscapeKeyDown={(e) => {
             if (guideTourWantsComposeOpen) e.preventDefault();
           }}
+          style={
+            mobileOverlayTopPx != null
+              ? { top: mobileOverlayTopPx }
+              : undefined
+          }
           className={cn(
             "flex flex-col gap-0 overflow-hidden p-0 duration-200",
-            // 투어 중: 페이지(캘린더) 위·블러(z-420) 아래 — 홀이 작성 화면을 뚫어 보이게
-            guideTourWantsComposeOpen && "z-[410]",
+            // 플로팅 채팅(z-300)·상단 크롬(z-310) 위
+            guideTourWantsComposeOpen ? "z-[410]" : "z-[320]",
             isMobile
               ? cn(
                   "left-3 right-3 top-[max(0.75rem,env(safe-area-inset-top))] bottom-[max(0.75rem,env(safe-area-inset-bottom))]",
@@ -10025,7 +10076,9 @@ export const PracticeFileTransferPage = ({
                 ),
           )}
           overlayClassName={
-            guideTourWantsComposeOpen ? "z-[409] bg-transparent" : undefined
+            guideTourWantsComposeOpen
+              ? "z-[409] bg-transparent"
+              : "z-[319]"
           }
         >
           <DialogClose
@@ -10319,8 +10372,14 @@ export const PracticeFileTransferPage = ({
         <Dialog open={draftsOpen} onOpenChange={setDraftsOpen}>
           <DialogContent
             hideClose
+            overlayClassName="z-[319]"
+            style={
+              mobileOverlayTopPx != null
+                ? { top: mobileOverlayTopPx }
+                : undefined
+            }
             className={cn(
-              "flex flex-col gap-0 overflow-hidden p-0",
+              "z-[320] flex flex-col gap-0 overflow-hidden p-0",
               isMobile
                 ? cn(
                     "left-3 right-3 top-[max(0.75rem,env(safe-area-inset-top))] bottom-[max(0.75rem,env(safe-area-inset-bottom))]",
@@ -10621,8 +10680,14 @@ export const PracticeFileTransferPage = ({
         <Dialog open={trashOpen} onOpenChange={setTrashOpen}>
           <DialogContent
             hideClose
+            overlayClassName="z-[319]"
+            style={
+              mobileOverlayTopPx != null
+                ? { top: mobileOverlayTopPx }
+                : undefined
+            }
             className={cn(
-              "flex flex-col gap-0 overflow-hidden p-0",
+              "z-[320] flex flex-col gap-0 overflow-hidden p-0",
               isMobile
                 ? cn(
                     "left-3 right-3 top-[max(0.75rem,env(safe-area-inset-top))] bottom-[max(0.75rem,env(safe-area-inset-bottom))]",
@@ -10984,10 +11049,8 @@ export const PracticeFileTransferPage = ({
           }
           cancelRequestDisabled={deletingTransfer}
           chatHeaderAction={null}
-          mobileTopChrome={
-            isMobileViewport && bookmarkItems.length > 0
-              ? bookmarkNavigateButton({ mobile: true })
-              : null
+          mobileFloatingTopInset={
+            isMobileViewport && showMobileActionChrome ? mobileActionChromeH : 0
           }
           composerToolbarExtra={
             selectedTransfer ? (
@@ -11477,6 +11540,21 @@ export const PracticeFileTransferPage = ({
           onOpenChange={setRemakeSearchOpen}
           transfers={groupedTransfers}
           busy={remakeBusy}
+          contentStyle={
+            mobileOverlayTopPx != null
+              ? {
+                  top: mobileOverlayTopPx,
+                  bottom: "max(0.75rem, env(safe-area-inset-bottom))",
+                  left: "0.75rem",
+                  right: "0.75rem",
+                  transform: "none",
+                  width: "auto",
+                  maxWidth: "none",
+                  height: "auto",
+                  maxHeight: "none",
+                }
+              : undefined
+          }
           onSelectRemake={({ transfer, arrivalYmd }) => {
             askRemakeForTransfer(transfer, arrivalYmd);
           }}

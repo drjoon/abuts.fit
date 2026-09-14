@@ -9,7 +9,7 @@
  * - 2026-09-14: 기본 검색 창 90→180일(리메이크 정책과 동일).
  * - 2026-09-12: 기본 검색 창 14일 → 90일(리메이크 정책과 동일).
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { CalendarDays, Loader2, Repeat, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -55,6 +55,8 @@ export type PracticeRemakeSearchDialogProps = {
   /** @deprecated 서버 조회로 대체. 호환용으로 남겨 둠. */
   transfers?: PracticeRecentTransferItem[];
   busy?: boolean;
+  /** 모바일 상단 액션 바 아래 오프셋 등 */
+  contentStyle?: CSSProperties;
   onSelectRemake: (payload: {
     transfer: PracticeRecentTransferItem;
     arrivalYmd: string;
@@ -75,6 +77,7 @@ export function PracticeRemakeSearchDialog({
   open,
   onOpenChange,
   busy = false,
+  contentStyle,
   onSelectRemake,
   onPrePlatformRemake,
 }: PracticeRemakeSearchDialogProps) {
@@ -205,7 +208,11 @@ export function PracticeRemakeSearchDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[90vh] w-full max-w-lg flex-col gap-0 overflow-hidden p-0 sm:max-w-xl">
+      <DialogContent
+        overlayClassName="z-[319]"
+        style={contentStyle}
+        className="z-[320] flex max-h-[90vh] w-full max-w-lg flex-col gap-0 overflow-hidden p-0 sm:max-w-xl"
+      >
         <DialogHeader className="shrink-0 space-y-0 border-b px-5 py-4 text-left">
           <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
             <Repeat className="h-5 w-5 text-amber-600" />

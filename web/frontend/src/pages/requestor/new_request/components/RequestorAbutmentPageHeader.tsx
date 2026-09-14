@@ -30,7 +30,7 @@
 // - web/frontend/src/features/requests/components/RequestDetailDialog.tsx
 // - web/frontend/src/shared/realtime/useAppEventDebouncedReload.ts
 // - web/frontend/src/shared/realtime/creditBalanceEvent.ts
-import { useMemo, useState } from "react";
+import { useMemo, useState, type CSSProperties } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Factory } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -80,11 +80,26 @@ type RequestorAbutmentPageHeaderProps = {
   variant?: RequestorAbutmentPageHeaderVariant;
   /** true면 아이콘+건수만(모바일·좁은 폭 헤더) */
   iconOnly?: boolean;
+  /** 제어 모드 — 진행중 모달 open */
+  inProgressOpen?: boolean;
+  /** 진행중/어벗츠 생산중 모달 open 변경 */
+  onInProgressOpenChange?: (open: boolean) => void;
+  /** false면 트리거 버튼만(모달은 페이지에서 1회 렌더) */
+  renderInProgressModal?: boolean;
+  /** true면 트리거 숨김(모달 호스트 전용) */
+  hideInProgressTrigger?: boolean;
+  /** 진행중 모달 top 오프셋(모바일 액션 바) */
+  inProgressDialogStyle?: CSSProperties;
 };
 
 export const RequestorAbutmentPageHeader = ({
   variant = "full",
   iconOnly = false,
+  inProgressOpen: inProgressOpenProp,
+  onInProgressOpenChange,
+  renderInProgressModal = true,
+  hideInProgressTrigger = false,
+  inProgressDialogStyle,
 }: RequestorAbutmentPageHeaderProps = {}) => {
   const isPolicyInProgressOnly = variant === "policyInProgress";
   const { user, token } = useAuthStore();
@@ -98,7 +113,16 @@ export const RequestorAbutmentPageHeader = ({
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [period, setPeriod] = useState<PeriodFilterValue>("30d");
-  const [inProgressOpen, setInProgressOpen] = useState(false);
+  const isInProgressControlled = typeof inProgressOpenProp === "boolean";
+  const [inProgressOpenUncontrolled, setInProgressOpenUncontrolled] =
+    useState(false);
+  const inProgressOpen = isInProgressControlled
+    ? Boolean(inProgressOpenProp)
+    : inProgressOpenUncontrolled;
+  const setInProgressOpen = (next: boolean) => {
+    if (!isInProgressControlled) setInProgressOpenUncontrolled(next);
+    onInProgressOpenChange?.(next);
+  };
   const [pastOpen, setPastOpen] = useState(false);
   const [selectedPastRequest, setSelectedPastRequest] = useState<any | null>(
     null,
@@ -434,6 +458,7 @@ export const RequestorAbutmentPageHeader = ({
   const policyAndInProgressActions = (
     <>
       {showPolicyInHeader ? <RequestorPolicyRemakeHeader /> : null}
+      {!hideInProgressTrigger ? (
       <Button
         type="button"
         variant="outline"
@@ -479,6 +504,7 @@ export const RequestorAbutmentPageHeader = ({
           </>
         )}
       </Button>
+      ) : null}
     </>
   );
 
@@ -496,6 +522,7 @@ export const RequestorAbutmentPageHeader = ({
       onCanceled={refreshHeaderCounts}
       onCancelRequest={cancelRequestByMongoId}
       onCancelRequests={cancelRequestsByMongoIds}
+      contentStyle={inProgressDialogStyle}
       onSelectRequest={(request) => {
         setListSource("inProgress");
         setSelectedPastRequest(request);
@@ -565,8 +592,8 @@ export const RequestorAbutmentPageHeader = ({
     return (
       <span className="contents">
         {policyAndInProgressActions}
-        {inProgressModal}
-        {detailAndCancelDialogs}
+        {renderInProgressModal ? inProgressModal : null}
+        {renderInProgressModal ? detailAndCancelDialogs : null}
       </span>
     );
   }
