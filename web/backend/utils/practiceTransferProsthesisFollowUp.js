@@ -2,6 +2,7 @@
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 // - web/backend/utils/practiceTransferStage.js
 // - web/frontend/src/shared/practice/prosthesisFollowUp.ts
+// - 2026-09-15: 후속 스팬 = 인접 연결 연결요소(44-45 / 45-46 쪼개짐 방지). 기공비 차감은 스팬 치아 전원.
 // - 2026-09-08: 진행 탭 채팅 payload에 임플란트·어벗 스펙 포함(serializeFollowUpToothWorksForChatPayload).
 // - 2026-09-08: 후속 제작 시 원 임시치아 기공비 차감(브리지/크라운 순증분만 홀드).
 // - 2026-09-08: 차트 표시 맵 — 후속+원 병존 시 형태는 후속, CA·스펙은 원 임시치아 행.
@@ -27,6 +28,23 @@ const toToothDecadeSortNumber = (toothNumber) => {
 
 const sortTeethFdi = (teeth) =>
   [...teeth].sort((a, b) => toToothDecadeSortNumber(a) - toToothDecadeSortNumber(b));
+
+const getAdjacentTeeth = (toothNumber) => {
+  const raw = String(toothNumber || "").trim();
+  if (!/^[1-4][1-8]$/.test(raw)) return [];
+  const tens = Number(raw[0]);
+  const ones = Number(raw[1]);
+  const out = [];
+  if (ones > 1) out.push(`${tens}${ones - 1}`);
+  if (ones < 8) out.push(`${tens}${ones + 1}`);
+  if (ones === 1) {
+    if (tens === 1) out.push("21");
+    if (tens === 2) out.push("11");
+    if (tens === 3) out.push("41");
+    if (tens === 4) out.push("31");
+  }
+  return [...new Set(out)];
+};
 
 export const isTemporaryToothProsthesisType = (prosthesisType) => {
   const compact = normalizeCompact(prosthesisType);
@@ -60,6 +78,68 @@ const spanKey = (teeth) => teeth.join("-");
 /** 후속 보철 1단위(크라운·브리지 스팬) 식별 키 */
 export const followUpRowSpanKey = (row) => spanKey(linkedTeethOf(row));
 
+/** 행 집합 안에서 인접 브리지 연결(한쪽만 있어도 연결). */
+const collectAdjacentLinksAmongRows = (rows, toothNumber) => {
+  const tooth = String(toothNumber || "").trim();
+  const adjacent = new Set(getAdjacentTeeth(tooth));
+  const byTooth = new Map();
+  for (const row of rows) {
+    const other = String(row?.toothNumber || "").trim();
+    if (other && !byTooth.has(other)) byTooth.set(other, row);
+  }
+  const links = new Set();
+  const self = byTooth.get(tooth);
+  for (const linked of Array.isArray(self?.bridgeLinkedTeeth)
+    ? self.bridgeLinkedTeeth
+    : []) {
+    const other = String(linked || "").trim();
+    if (adjacent.has(other) && byTooth.has(other)) links.add(other);
+  }
+  for (const [other, row] of byTooth) {
+    if (!other || other === tooth || !adjacent.has(other)) continue;
+    const otherLinks = Array.isArray(row?.bridgeLinkedTeeth)
+      ? row.bridgeLinkedTeeth
+      : [];
+    if (otherLinks.some((value) => String(value || "").trim() === tooth)) {
+      links.add(other);
+    }
+  }
+  return [...links];
+};
+
+/**
+ * 임시치아 행의 인접 연결을 연결요소(스팬)로 묶는다.
+ * 치아별 bridgeLinkedTeeth가 인접만 저장돼도 44-45-46을 하나로 본다.
+ */
+const buildConnectedTempSpans = (tempRows) => {
+  const byTooth = new Map();
+  for (const row of Array.isArray(tempRows) ? tempRows : []) {
+    const tooth = String(row?.toothNumber || "").trim();
+    if (!/^[1-4][1-8]$/.test(tooth) || byTooth.has(tooth)) continue;
+    byTooth.set(tooth, row);
+  }
+  const visited = new Set();
+  const spans = [];
+  for (const start of sortTeethFdi([...byTooth.keys()])) {
+    if (visited.has(start)) continue;
+    const component = [];
+    const queue = [start];
+    while (queue.length > 0) {
+      const current = queue.shift();
+      if (visited.has(current)) continue;
+      visited.add(current);
+      component.push(current);
+      for (const neighbor of collectAdjacentLinksAmongRows(tempRows, current)) {
+        if (!visited.has(neighbor) && byTooth.has(neighbor)) queue.push(neighbor);
+      }
+    }
+    const teeth = sortTeethFdi(component);
+    const sourceRow = byTooth.get(teeth[0]) || byTooth.get(start);
+    spans.push({ teeth, sourceRow });
+  }
+  return spans;
+};
+
 /** 임시치아 치아가 이미 후속 크라운/브리지로 추가됐는지 */
 export const hasFollowUpProsthesisForTooth = (toothWorks, toothNumber) => {
   const tooth = String(toothNumber || "").trim();
@@ -82,17 +162,9 @@ export const listPendingFollowUpTempSpans = (toothWorks) => {
       !isFollowUpProsthesisPhase(row) &&
       String(row?.toothNumber || "").trim(),
   );
-  const seen = new Set();
-  const spans = [];
-  for (const row of tempRows) {
-    const teeth = linkedTeethOf(row);
-    const key = spanKey(teeth);
-    if (seen.has(key)) continue;
-    if (teeth.some((t) => hasFollowUpProsthesisForTooth(rows, t))) continue;
-    seen.add(key);
-    spans.push({ teeth, sourceRow: row });
-  }
-  return spans;
+  return buildConnectedTempSpans(tempRows).filter(
+    ({ teeth }) => !teeth.some((t) => hasFollowUpProsthesisForTooth(rows, t)),
+  );
 };
 
 /** 후속 보철에 원 임시치아 임플란트·어벗 스펙 상속 */
@@ -179,11 +251,13 @@ export const normalizeFollowUpToothWorksInput = (rawRows) => {
         : [toothNumber];
       const linked =
         prosthesisType === "브리지"
-          ? Array.from(new Set([toothNumber, ...bridgeLinkedTeeth])).sort()
+          ? sortTeethFdi(
+              Array.from(new Set([toothNumber, ...bridgeLinkedTeeth])),
+            )
           : [toothNumber];
       return {
         ...row,
-        toothNumber,
+        toothNumber: linked[0] || toothNumber,
         prosthesisType,
         bridgeLinkedTeeth: linked,
         prosthesisPhase: FOLLOW_UP_PHASE,
@@ -449,7 +523,7 @@ export const validateFollowUpToothWorksAgainstSource = (
 
 /**
  * 후속 선택 스팬에 대응하는 원 임시치아 행(어벗 제외 기공비 차감용).
- * 스팬 단위로 매칭 — 부분 선택 시 해당 스팬만.
+ * 스팬에 속한 치아 행을 모두 포함 — 인접만 저장된 bridgeLinkedTeeth와도 매칭.
  */
 export const pickSourceTempRowsForFollowUpCredit = (
   sourceToothWorks,
@@ -459,29 +533,22 @@ export const pickSourceTempRowsForFollowUpCredit = (
   const followUps = Array.isArray(followUpRows) ? followUpRows : [];
   if (source.length === 0 || followUps.length === 0) return [];
 
-  const followKeys = new Set(
-    followUps
-      .filter(
-        (row) =>
-          isFollowUpProsthesisPhase(row) &&
-          isFinalProsthesisType(row?.prosthesisType),
-      )
-      .map((row) => followUpRowSpanKey(row))
-      .filter(Boolean),
-  );
-  if (followKeys.size === 0) return [];
+  const followTeeth = new Set();
+  for (const row of followUps) {
+    if (!isFollowUpProsthesisPhase(row)) continue;
+    if (!isFinalProsthesisType(row?.prosthesisType)) continue;
+    for (const tooth of linkedTeethOf(row)) followTeeth.add(tooth);
+  }
+  if (followTeeth.size === 0) return [];
 
   const out = [];
   const seen = new Set();
   for (const row of source) {
     if (!isTemporaryToothProsthesisType(row?.prosthesisType)) continue;
     if (isFollowUpProsthesisPhase(row)) continue;
-    const teeth = linkedTeethOf(row);
-    const key = spanKey(teeth);
-    if (!key || !followKeys.has(key)) continue;
-    const dedupe = `${String(row?.toothNumber || "").trim()}:${key}`;
-    if (seen.has(dedupe)) continue;
-    seen.add(dedupe);
+    const tooth = String(row?.toothNumber || "").trim();
+    if (!tooth || !followTeeth.has(tooth) || seen.has(tooth)) continue;
+    seen.add(tooth);
     out.push(row);
   }
   return out;

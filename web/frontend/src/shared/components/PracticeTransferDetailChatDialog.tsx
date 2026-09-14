@@ -16,6 +16,7 @@
 // - web/frontend/src/shared/files/fileBlobCache.ts
 // - web/frontend/src/shared/files/s3ImageThumb.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-15: 치식·보철물 차트 — 후속 지르 행 제외(원 임시치아 라벨 유지).
 // - 2026-09-14: 모바일 플로팅 — mobileFloatingTopInset으로 채팅을 상단 액션 바 아래로.
 // - 2026-09-14: 모바일 플로팅 — mobileTopChrome을 채팅 **위** 고정 바에 두고 패널을 아래로 내린다.
 // - 2026-09-14: 모바일 플로팅 — mobileTopChrome(북마크 순회 등)을 채팅 상단에.
@@ -272,6 +273,7 @@ import {
   extractDroppedFiles,
 } from "@/shared/files/extractDroppedFiles";
 import { printPracticeTransferDetail } from "@/shared/practice/practiceTransferDetailPrint";
+import { baseToothWorksForDetailChart } from "@/shared/practice/prosthesisFollowUp";
 import {
   nextStageOfPlan,
   normalizeLabRequestStagePlans,
@@ -1983,6 +1985,10 @@ export function PracticeTransferDetailChatDialog({
     onAppendArrival || nextStageSegments.length > 0,
   );
   const identityDateLabel = String(caseIdentityStrip?.secondary || "").trim();
+  const chartToothWorks = useMemo(
+    () => baseToothWorksForDetailChart(toothWorks),
+    [toothWorks],
+  );
   const identityChromeActions = (
     <div className="flex shrink-0 items-center gap-0.5" data-no-drag>
       {composerToolbarExtra}
@@ -1993,10 +1999,10 @@ export function PracticeTransferDetailChatDialog({
     printPracticeTransferDetail({
       title,
       summaryItems,
-      toothWorks: toothWorks || [],
+      toothWorks: chartToothWorks,
       memo,
     });
-  }, [title, summaryItems, toothWorks, memo]);
+  }, [title, summaryItems, chartToothWorks, memo]);
 
   const hasMeaningfulMemo = Boolean(String(memo || "").trim() && memo !== "-");
 
@@ -2856,14 +2862,14 @@ export function PracticeTransferDetailChatDialog({
               <div className="shrink-0 space-y-5 px-5 py-3 text-sm">
               {renderRequestManageButtons()}
               {renderProsthesisFollowUpManageButtons()}
-              {Array.isArray(toothWorks) && toothWorks.length > 0 ? (
+              {Array.isArray(chartToothWorks) && chartToothWorks.length > 0 ? (
                 <section className="space-y-2.5">
                   <h3 className="text-[13px] font-semibold text-foreground">
                     치식 · 보철물
                   </h3>
                   <PracticeToothWorkChartReadOnly
                     key={toothWorksKey || "tooth-works"}
-                    toothWorks={toothWorks}
+                    toothWorks={chartToothWorks}
                     feeQuote={feeQuote}
                     feeViewer={feeViewer}
                     labAnchorId={labAnchorId}

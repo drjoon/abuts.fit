@@ -285,6 +285,74 @@ describe("practiceTransferProsthesisFollowUp", () => {
     expect(credited.total).toBe(90000);
   });
 
+  test("listPendingFollowUpTempSpans merges adjacent-only links into one span", () => {
+    // 치아별 bridgeLinkedTeeth가 인접만 있어도 44-45-46은 스팬 1개
+    const toothWorks = [
+      {
+        toothNumber: "46",
+        prosthesisType: "임시치아",
+        bridgeLinkedTeeth: ["45"],
+      },
+      {
+        toothNumber: "44",
+        prosthesisType: "임시치아",
+        bridgeLinkedTeeth: ["45"],
+      },
+      {
+        toothNumber: "45",
+        prosthesisType: "임시치아",
+        bridgeLinkedTeeth: ["44", "46"],
+      },
+      {
+        toothNumber: "33",
+        prosthesisType: "임시치아",
+        bridgeLinkedTeeth: ["34"],
+      },
+      {
+        toothNumber: "34",
+        prosthesisType: "임시치아",
+        bridgeLinkedTeeth: ["33"],
+      },
+    ];
+    const spans = listPendingFollowUpTempSpans(toothWorks);
+    expect(spans).toHaveLength(2);
+    const keys = spans.map(({ teeth }) => teeth.join("-")).sort();
+    expect(keys).toEqual(["34-33", "44-45-46"]);
+    const draft = buildFollowUpToothWorksDraft(toothWorks);
+    expect(draft).toHaveLength(2);
+    expect(draft.every((row) => row.prosthesisType === "브리지")).toBe(true);
+    expect(
+      draft.map((row) => (row.bridgeLinkedTeeth || []).join("-")).sort(),
+    ).toEqual(["34-33", "44-45-46"]);
+  });
+
+  test("pickSourceTempRowsForFollowUpCredit includes all teeth in follow-up span", () => {
+    const source = [
+      {
+        toothNumber: "46",
+        prosthesisType: "임시치아",
+        bridgeLinkedTeeth: ["45"],
+      },
+      {
+        toothNumber: "44",
+        prosthesisType: "임시치아",
+        bridgeLinkedTeeth: ["45"],
+      },
+      {
+        toothNumber: "45",
+        prosthesisType: "임시치아",
+        bridgeLinkedTeeth: ["44", "46"],
+      },
+    ];
+    const followUp = buildFollowUpToothWorksDraft(source);
+    const credited = pickSourceTempRowsForFollowUpCredit(source, followUp);
+    expect(credited.map((row) => row.toothNumber).sort()).toEqual([
+      "44",
+      "45",
+      "46",
+    ]);
+  });
+
   test("차트 표시는 후속 보철 형태를 쓰되 CA는 원 임시치아 입력을 유지한다", () => {
     const toothWorks = [
       {
