@@ -599,7 +599,7 @@ const ymdToUtcNoonMs = (ymd) => {
 };
 
 /**
- * @deprecated 레거시. PTX CA는 resolvePtxCaTargetShipYmd(도착−3달력일·기공소 설정) SSOT.
+ * @deprecated 레거시. PTX CA는 resolvePtxCaTargetShipYmd(도착−3영업일·기공소 설정) SSOT.
  * 제조사 출고 목표 = 치과도착일 − 이 값(영업일).
  */
 export const PTX_CA_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS = 2;
@@ -619,7 +619,7 @@ export async function resolveManufacturerTargetShipYmd(arrivalYmd) {
 
 /**
  * PTX CA 출고 목표 SSOT.
- * 기공소 production.abutmentShipYmd 우선, 없으면 치과도착일 − 3달력일.
+ * 기공소 production.abutmentShipYmd 우선, 없으면 치과도착일 − 3영업일.
  */
 export function resolvePtxCaTargetShipYmd(transferDoc, arrivalYmd = null) {
   const arrival =
@@ -1013,7 +1013,7 @@ export async function createAbutmentRequestsFromPracticeTransfer({
     String(scanFiles[0]?.patientName || "").trim() ||
     "환자";
   const arrivalYmd = parseArrivalYmdFromMemo(transferDoc?.transferMemo);
-  // 기공소 출고일 설정 또는 도착−3달력일(묶음 clamp 전 목표).
+  // 기공소 출고일 설정 또는 도착−3영업일(묶음 clamp 전 목표).
   const targetShipYmd = resolvePtxCaTargetShipYmd(transferDoc, arrivalYmd);
 
   const billing =

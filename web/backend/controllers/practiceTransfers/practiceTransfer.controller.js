@@ -91,9 +91,9 @@ import {
   upsertMemoOrderYmd,
 } from "../../utils/practiceTransferRush.js";
 import {
-  addCivilDaysYmd,
+  addBusinessDaysYmd,
   appendPracticeArrivalDate,
-  PRACTICE_ABUTMENT_SHIP_MIN_BEFORE_ARRIVAL_CIVIL_DAYS,
+  PRACTICE_ABUTMENT_SHIP_MIN_BEFORE_ARRIVAL_BUSINESS_DAYS,
   PRACTICE_ARRIVAL_SHADE_EXTEND_CIVIL_DAYS,
   revertPracticeArrivalAppend,
   resolveCurrentArrivalYmd,
@@ -959,7 +959,7 @@ const toProductionApiFields = (production, { abutmentPastReady, abutmentPastRead
     labDesignConfirmedAt: p.labDesignConfirmedAt || null,
     practiceDesignConfirmedAt: p.practiceDesignConfirmedAt || null,
     abutmentProductionStartedAt: p.abutmentProductionStartedAt || null,
-    /** 기공소 지정 어벗 출고일(KST YMD). 미설정 시 FE는 도착−3달력일 기본. */
+    /** 기공소 지정 어벗 출고일(KST YMD). 미설정 시 FE는 도착−3영업일 기본. */
     abutmentShipYmd: (() => {
       const ymd = String(p.abutmentShipYmd || "").trim();
       return /^\d{4}-\d{2}-\d{2}$/.test(ymd) ? ymd : null;
@@ -8623,7 +8623,7 @@ export async function restoreReceivedPracticeTransferRequestFiles(req, res) {
  */
 /**
  * 기공소 — 어벗 출고일(KST YMD) 설정.
- * 기본(미설정)은 치과도착일 − 3달력일. 연동 CA Request 스케줄은 응답 후 보정.
+ * 기본(미설정)은 치과도착일 − 3영업일. 연동 CA Request 스케줄은 응답 후 보정.
  */
 export async function setPracticeTransferAbutmentShipYmd(req, res) {
   try {
@@ -8698,9 +8698,9 @@ export async function setPracticeTransferAbutmentShipYmd(req, res) {
     const arrivalYmd =
       resolveCurrentArrivalYmd(resolvePracticeArrivalDates(doc)) || null;
     if (arrivalYmd) {
-      const latestAllowedShipYmd = addCivilDaysYmd(
+      const latestAllowedShipYmd = addBusinessDaysYmd(
         arrivalYmd,
-        -PRACTICE_ABUTMENT_SHIP_MIN_BEFORE_ARRIVAL_CIVIL_DAYS,
+        -PRACTICE_ABUTMENT_SHIP_MIN_BEFORE_ARRIVAL_BUSINESS_DAYS,
       );
       if (
         !latestAllowedShipYmd ||
@@ -8708,7 +8708,7 @@ export async function setPracticeTransferAbutmentShipYmd(req, res) {
       ) {
         return res.status(400).json({
           success: false,
-          message: `어벗 출고일은 치과도착일 ${PRACTICE_ABUTMENT_SHIP_MIN_BEFORE_ARRIVAL_CIVIL_DAYS}일 이전이어야 합니다.`,
+          message: `어벗 출고일은 치과도착일 ${PRACTICE_ABUTMENT_SHIP_MIN_BEFORE_ARRIVAL_BUSINESS_DAYS}영업일 이전이어야 합니다.`,
         });
       }
     }

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-15: 어벗 출고일 기본/최소 = 치과도착일 − N영업일(월~금). 달력일 폐기.
 // - 2026-09-12: 어벗 출고일 최소=치과도착일 − 2달력일. 기본은 −3.
 // - 2026-09-12: 어벗 출고일 기본=치과도착일 − 3달력일. 기공소 설정값(production.abutmentShipYmd) 우선.
 // - 2026-08-27: 재도착 시 주문일도 오늘(KST) 누적(orderDates) — 주문일/도착일 캘린더 모두 확인.
@@ -23,25 +24,25 @@ const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
 /** 쉐이드 변경 등 — 오늘(KST) 기준 기본 연기 일수(달력일). */
 export const PRACTICE_ARRIVAL_SHADE_EXTEND_CIVIL_DAYS = 7;
 
-/** 어벗 출고 기본 = 치과도착일 − N달력일. 기공소가 production.abutmentShipYmd로 덮어씀. */
-export const PRACTICE_ABUTMENT_SHIP_BEFORE_ARRIVAL_CIVIL_DAYS = 3;
+/** 어벗 출고 기본 = 치과도착일 − N영업일. 기공소가 production.abutmentShipYmd로 덮어씀. */
+export const PRACTICE_ABUTMENT_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS = 3;
 
-/** 어벗 출고 = 치과도착일 − n일에서 n 최소(달력일). */
-export const PRACTICE_ABUTMENT_SHIP_MIN_BEFORE_ARRIVAL_CIVIL_DAYS = 2;
+/** 어벗 출고 = 치과도착일 − n일에서 n 최소(영업일). */
+export const PRACTICE_ABUTMENT_SHIP_MIN_BEFORE_ARRIVAL_BUSINESS_DAYS = 2;
 
 /**
  * @param {string|null|undefined} arrivalYmd
  * @returns {string|null}
  */
 export function defaultAbutmentShipYmdFromArrival(arrivalYmd) {
-  return addCivilDaysYmd(
+  return addBusinessDaysYmd(
     arrivalYmd,
-    -PRACTICE_ABUTMENT_SHIP_BEFORE_ARRIVAL_CIVIL_DAYS,
+    -PRACTICE_ABUTMENT_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS,
   );
 }
 
 /**
- * 기공소 설정값 우선, 없으면 치과도착일 − 3달력일.
+ * 기공소 설정값 우선, 없으면 치과도착일 − 3영업일.
  * @param {{ production?: { abutmentShipYmd?: unknown }, arrivalDates?: unknown, transferMemo?: unknown, arrivalDate?: unknown } | null | undefined} doc
  * @returns {string|null}
  */
@@ -90,6 +91,33 @@ export function addCivilDaysYmd(ymd, days) {
   const mm = String(next.getUTCMonth() + 1).padStart(2, "0");
   const dd = String(next.getUTCDate()).padStart(2, "0");
   return `${yy}-${mm}-${dd}`;
+}
+
+/**
+ * ±N영업일(월~금, 공휴일 미제외). FE kstAddBusinessDays와 동일.
+ * @param {string|null|undefined} ymd
+ * @param {number} days
+ * @returns {string|null}
+ */
+export function addBusinessDaysYmd(ymd, days) {
+  const raw = String(ymd || "").trim();
+  if (!YMD_RE.test(raw)) return null;
+  const n = Math.trunc(Number(days) || 0);
+  if (n === 0) return raw;
+  const step = n > 0 ? 1 : -1;
+  const target = Math.abs(n);
+  let cursor = raw;
+  let added = 0;
+  let guard = 0;
+  while (added < target && guard < 3700) {
+    cursor = addCivilDaysYmd(cursor, step);
+    if (!cursor) return null;
+    const [y, m, d] = cursor.split("-").map(Number);
+    const dow = new Date(Date.UTC(y, m - 1, d, 12)).getUTCDay();
+    if (dow !== 0 && dow !== 6) added += 1;
+    guard += 1;
+  }
+  return cursor;
 }
 
 /**

@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/practice/practiceAbutmentShipYmd.ts
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // change-log:
+// - 2026-09-15: −n = 영업일. 안내·버튼 표기 영업일.
 // - 2026-09-14: 팝오버 — 출고일 지정 안내, 어벗츠 출고 / 치과 도착.
 // - 2026-09-12: −n일 클릭 즉시 저장. 닫기·적용 제거.
 // - 2026-09-12: 팝오버 안내·출고/도착 2줄 표기(가독성).
@@ -24,7 +25,7 @@ import {
 } from "@/components/ui/tooltip";
 import { formatKstYmdToKo } from "@/shared/date/kst";
 import {
-  PRACTICE_ABUTMENT_SHIP_BEFORE_ARRIVAL_CIVIL_DAYS,
+  PRACTICE_ABUTMENT_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS,
   abutmentShipYmdFromArrivalMinusN,
   clampAbutmentShipN,
   formatAbutmentShipButtonLabel,
@@ -52,7 +53,7 @@ export type PracticeAbutmentShipDateButtonProps = {
 };
 
 /**
- * 어벗 STL 업로드 옆 — 출고일 = 치과도착일 − n일. n 클릭 시 즉시 저장.
+ * 어벗 STL 업로드 옆 — 출고일 = 치과도착일 − n영업일. n 클릭 시 즉시 저장.
  */
 export function PracticeAbutmentShipDateButton({
   transfer,
@@ -75,9 +76,9 @@ export function PracticeAbutmentShipDateButton({
       resolveAbutmentShipBeforeArrivalN({
         shipYmd: effectiveShipYmd,
         arrivalYmd,
-      }) ?? PRACTICE_ABUTMENT_SHIP_BEFORE_ARRIVAL_CIVIL_DAYS,
+      }) ?? PRACTICE_ABUTMENT_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS,
       range,
-    ) ?? PRACTICE_ABUTMENT_SHIP_BEFORE_ARRIVAL_CIVIL_DAYS;
+    ) ?? PRACTICE_ABUTMENT_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS;
 
   const handleSelectN = (event: MouseEvent, n: number) => {
     event.stopPropagation();
@@ -131,7 +132,7 @@ export function PracticeAbutmentShipDateButton({
       </Tooltip>
       <PopoverContent
         align="end"
-        className="w-56 space-y-2.5 p-3"
+        className="w-64 space-y-2.5 p-3"
         onOpenAutoFocus={(e) => e.preventDefault()}
         onClick={(event) => event.stopPropagation()}
       >
@@ -152,10 +153,10 @@ export function PracticeAbutmentShipDateButton({
                     size="sm"
                     variant={selected ? "default" : "outline"}
                     disabled={busy}
-                    className="h-8 min-w-9 px-2 text-xs"
+                    className="h-8 min-w-[4.25rem] px-2 text-xs"
                     onClick={(event) => handleSelectN(event, n)}
                   >
-                    −{n}일
+                    −{n}영업일
                   </Button>
                 );
               })}

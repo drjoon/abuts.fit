@@ -4,14 +4,15 @@
 // - web/frontend/src/shared/shipping/estimateShipDate.ts
 // - web/backend/utils/practiceTransferArrivalDates.js
 // change-log:
+// - 2026-09-15: 출고일=도착−n 을 영업일(월~금) 기준으로. 주말 끼면 토요일이 아닌 목요일 등.
 // - 2026-09-14: 팝오버 안내 — 「출고일 지정: 치과도착 − n일 전」(12시 컷오프 줄 제거).
 // - 2026-09-12: 출고 버튼 라벨 연도 생략(M.D) — 가로폭 축소.
 // - 2026-09-12: 출고일=도착−n 선택(최소 2). 낮 12시 전 신속·이후 묶음 출고일까지.
 // - 2026-09-12: 어벗 출고일 기본=치과도착일−3달력일. 출고일−3일 임박 경고 폐기.
 
 import {
-  kstAddCivilDays,
-  kstYmdDiffDays,
+  kstAddBusinessDays,
+  kstYmdDiffBusinessDays,
   toKstYmd,
 } from "@/shared/date/kst";
 import {
@@ -19,11 +20,11 @@ import {
   resolveNextWeeklyBatchYmd,
 } from "@/shared/shipping/weeklyBatchSchedule";
 
-/** 어벗 출고 기본 = 치과도착일 − N달력일 */
-export const PRACTICE_ABUTMENT_SHIP_BEFORE_ARRIVAL_CIVIL_DAYS = 3;
+/** 어벗 출고 기본 = 치과도착일 − N영업일 */
+export const PRACTICE_ABUTMENT_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS = 3;
 
-/** 어벗 출고 = 치과도착일 − n일에서 n 최소 */
-export const PRACTICE_ABUTMENT_SHIP_MIN_BEFORE_ARRIVAL_CIVIL_DAYS = 2;
+/** 어벗 출고 = 치과도착일 − n일에서 n 최소(영업일) */
+export const PRACTICE_ABUTMENT_SHIP_MIN_BEFORE_ARRIVAL_BUSINESS_DAYS = 2;
 
 /** 신속/묶음 컷오프(KST). 이전=신속출고일, 이후=묶음출고일. */
 export const PRACTICE_ABUTMENT_SHIP_NOON_CUTOFF_HOUR_KST = 12;
@@ -53,17 +54,7 @@ function getKstWeekdayFromYmd(ymd: string): number | null {
 
 function addBusinessDaysFromKstYmd(startYmd: string, days: number): string {
   if (!Number.isFinite(days) || days <= 0) return startYmd;
-  const result = new Date(`${startYmd}T12:00:00+09:00`);
-  if (Number.isNaN(result.getTime())) return startYmd;
-  let added = 0;
-  while (added < days) {
-    result.setUTCDate(result.getUTCDate() + 1);
-    const day = getKstWeekdayFromYmd(toKstYmd(result) || startYmd);
-    if (day != null && day !== 0 && day !== 6) {
-      added += 1;
-    }
-  }
-  return toKstYmd(result) || startYmd;
+  return kstAddBusinessDays(startYmd, days) || startYmd;
 }
 
 function nextBusinessDayInclusive(startYmd: string): string {
@@ -75,9 +66,9 @@ function nextBusinessDayInclusive(startYmd: string): string {
 export function defaultAbutmentShipYmdFromArrival(
   arrivalYmd?: string | null,
 ): string | null {
-  return kstAddCivilDays(
+  return kstAddBusinessDays(
     arrivalYmd,
-    -PRACTICE_ABUTMENT_SHIP_BEFORE_ARRIVAL_CIVIL_DAYS,
+    -PRACTICE_ABUTMENT_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS,
   );
 }
 
@@ -95,7 +86,7 @@ export function resolvePracticeTransferArrivalYmd(transfer?: {
   return list.length > 0 ? list[list.length - 1]! : null;
 }
 
-/** 기공소 설정값 우선, 없으면 치과도착일 − 3달력일 */
+/** 기공소 설정값 우선, 없으면 치과도착일 − 3영업일 */
 export function resolveEffectiveAbutmentShipYmd(transfer?: {
   arrivalDate?: string | null;
   arrivalDates?: string[] | null;
@@ -137,7 +128,7 @@ export function resolveEarliestSelectableAbutmentShipYmd(opts?: {
   return resolveNextWeeklyBatchYmd(base, batchDays);
 }
 
-/** 출고일 = 치과도착일 − n달력일 */
+/** 출고일 = 치과도착일 − n영업일 */
 export function abutmentShipYmdFromArrivalMinusN(
   arrivalYmd?: string | null,
   n?: number | null,
@@ -145,14 +136,14 @@ export function abutmentShipYmdFromArrivalMinusN(
   if (
     typeof n !== "number" ||
     !Number.isFinite(n) ||
-    n < PRACTICE_ABUTMENT_SHIP_MIN_BEFORE_ARRIVAL_CIVIL_DAYS
+    n < PRACTICE_ABUTMENT_SHIP_MIN_BEFORE_ARRIVAL_BUSINESS_DAYS
   ) {
     return null;
   }
-  return kstAddCivilDays(arrivalYmd, -Math.floor(n));
+  return kstAddBusinessDays(arrivalYmd, -Math.floor(n));
 }
 
-/** 현재 출고일의 n (도착 − 출고). 없거나 비정상이면 null. */
+/** 현재 출고일의 n (도착 − 출고, 영업일). 없거나 비정상이면 null. */
 export function resolveAbutmentShipBeforeArrivalN(opts: {
   shipYmd?: string | null;
   arrivalYmd?: string | null;
@@ -160,15 +151,18 @@ export function resolveAbutmentShipBeforeArrivalN(opts: {
   const ship = String(opts.shipYmd || "").trim();
   const arrival = String(opts.arrivalYmd || "").trim();
   if (!YMD_RE.test(ship) || !YMD_RE.test(arrival)) return null;
-  const n = kstYmdDiffDays(ship, arrival);
-  if (n == null || n < PRACTICE_ABUTMENT_SHIP_MIN_BEFORE_ARRIVAL_CIVIL_DAYS) {
+  const n = kstYmdDiffBusinessDays(ship, arrival);
+  if (
+    n == null ||
+    n < PRACTICE_ABUTMENT_SHIP_MIN_BEFORE_ARRIVAL_BUSINESS_DAYS
+  ) {
     return null;
   }
   return n;
 }
 
 /**
- * n 선택 범위. min=2, max=도착−(신속|묶음 출고일) 달력일 수.
+ * n 선택 범위. min=2, max=도착−(신속|묶음 출고일) 영업일 수.
  * max < min 이면 선택 불가(도착이 너무 촉박).
  */
 export function resolveAbutmentShipNRange(opts: {
@@ -182,7 +176,7 @@ export function resolveAbutmentShipNRange(opts: {
   earliestShipYmd: string | null;
   selectable: boolean;
 } {
-  const minN = PRACTICE_ABUTMENT_SHIP_MIN_BEFORE_ARRIVAL_CIVIL_DAYS;
+  const minN = PRACTICE_ABUTMENT_SHIP_MIN_BEFORE_ARRIVAL_BUSINESS_DAYS;
   const at = opts.at ?? new Date();
   const mode = resolveAbutmentShipCutoffMode(at);
   const arrival = String(opts.arrivalYmd || "").trim();
@@ -193,7 +187,7 @@ export function resolveAbutmentShipNRange(opts: {
   if (!YMD_RE.test(arrival) || !earliestShipYmd) {
     return { minN, maxN: minN, mode, earliestShipYmd, selectable: false };
   }
-  const maxN = kstYmdDiffDays(earliestShipYmd, arrival);
+  const maxN = kstYmdDiffBusinessDays(earliestShipYmd, arrival);
   if (maxN == null || maxN < minN) {
     return {
       minN,
@@ -214,7 +208,7 @@ export function clampAbutmentShipN(
   const raw =
     typeof n === "number" && Number.isFinite(n)
       ? Math.floor(n)
-      : PRACTICE_ABUTMENT_SHIP_BEFORE_ARRIVAL_CIVIL_DAYS;
+      : PRACTICE_ABUTMENT_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS;
   return Math.min(range.maxN, Math.max(range.minN, raw));
 }
 
@@ -231,7 +225,7 @@ export function formatAbutmentShipButtonLabel(shipYmd?: string | null): string {
 
 /** 버튼·팝오버 안내 줄(줄바꿈 SSOT). `whitespace-pre-line`로 표시. */
 export function getAbutmentShipNPickerHintLines(): string[] {
-  return ["출고일 지정: 치과도착 − n일 전"];
+  return ["출고일 지정: 치과도착 − n영업일 전"];
 }
 
 /** 호버 툴팁용 한 블록 문자열 */

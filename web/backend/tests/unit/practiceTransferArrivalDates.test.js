@@ -5,8 +5,8 @@ import {
   appendPracticeArrivalDate,
   compactPracticeArrivalDatesToSingleFuture,
   defaultAbutmentShipYmdFromArrival,
-  PRACTICE_ABUTMENT_SHIP_BEFORE_ARRIVAL_CIVIL_DAYS,
-  PRACTICE_ABUTMENT_SHIP_MIN_BEFORE_ARRIVAL_CIVIL_DAYS,
+  PRACTICE_ABUTMENT_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS,
+  PRACTICE_ABUTMENT_SHIP_MIN_BEFORE_ARRIVAL_BUSINESS_DAYS,
   PRACTICE_ARRIVAL_SHADE_EXTEND_CIVIL_DAYS,
   resolveEffectiveAbutmentShipYmd,
   resolvePracticeArrivalDates,
@@ -21,10 +21,12 @@ describe("practiceTransferArrivalDates", () => {
     expect(PRACTICE_ARRIVAL_SHADE_EXTEND_CIVIL_DAYS).toBe(7);
   });
 
-  it("defaults abutment ship to arrival − 3 civil days", () => {
-    expect(PRACTICE_ABUTMENT_SHIP_BEFORE_ARRIVAL_CIVIL_DAYS).toBe(3);
-    expect(PRACTICE_ABUTMENT_SHIP_MIN_BEFORE_ARRIVAL_CIVIL_DAYS).toBe(2);
+  it("defaults abutment ship to arrival − 3 business days", () => {
+    expect(PRACTICE_ABUTMENT_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS).toBe(3);
+    expect(PRACTICE_ABUTMENT_SHIP_MIN_BEFORE_ARRIVAL_BUSINESS_DAYS).toBe(2);
     expect(defaultAbutmentShipYmdFromArrival("2026-08-20")).toBe("2026-08-17");
+    // 화 9/22 − 3영업일 = 목 9/17 (주말 건너뜀; 달력 −3이면 토 9/19)
+    expect(defaultAbutmentShipYmdFromArrival("2026-09-22")).toBe("2026-09-17");
     expect(
       resolveEffectiveAbutmentShipYmd({
         production: { abutmentShipYmd: "2026-08-14" },
