@@ -224,6 +224,7 @@ import {
 // - web/frontend/src/shared/components/practice/PracticeToothSimpleAbutmentFields.tsx
 // - web/frontend/src/shared/components/practice/PracticeCustomSpecsPresetEditDialog.tsx
 // - web/frontend/src/shared/pricing/abutsAbutmentService.ts
+// - 2026-09-14: XOR dimmed — 커밋된 사이드만 선명(미선택 시 양쪽 흐림). 흐림 opacity 강화.
 // - 2026-09-14: 스캔바디 위저드 푸터 — 1/2 취소·다음, 2/2 이전·취소·확인. STL 왼쪽·카피 단축.
 // - 2026-09-14: 스캔바디 2/2 헤더에 선택된 임플란트(CNC display) 표시.
 // - 2026-09-14: 스캔바디 1/2 임플란트 — 카드 프리셋 → 칩 UI(제조사·브랜드·패밀리·타입, CompanySpec과 동일).
@@ -5965,6 +5966,17 @@ export const PracticeTransferRequestIntakePanel = ({
                     modalSpecs.abutmentDiameter ||
                     modalSpecs.abutmentHeight,
                 );
+              const healingMode =
+                !simpleDisabled &&
+                isSimpleHealingKind(modalSpecs.abutmentManufacturer);
+              /**
+               * XOR: 커밋된 사이드만 선명. 미선택(둘 다 초안만)이면 양쪽 흐림 → 클릭으로 활성화.
+               * (예전: 미선택 시 양쪽 선명 + 초안 칩 하이라이트 → 어느 쪽인지 모호)
+               */
+              const simpleAbutmentDimmed = !simpleMode;
+              const directInputDimmed = !freeformSelected;
+              const scanbodyDimmed = !freeformSelected;
+              const simpleHealingDimmed = !healingMode;
               void abutmentSideDraftTick;
               const toothDraftKey = modalTooth.toothNumber;
               const simpleAbutmentDraft = readAbutmentSideDraft(
@@ -5994,9 +6006,6 @@ export const PracticeTransferRequestIntakePanel = ({
               const directInputValue = freeformSelected
                 ? abutmentSideValue
                 : directInputDraft;
-              const healingMode =
-                !simpleDisabled &&
-                isSimpleHealingKind(modalSpecs.abutmentManufacturer);
               const scanbodyValue = freeformSelected
                 ? abutmentSideValue
                 : scanbodyDraft;
@@ -6124,7 +6133,7 @@ export const PracticeTransferRequestIntakePanel = ({
                           <PracticeToothSimpleAbutmentFields
                             variant="abutment"
                             heading="심플어벗"
-                            dimmed={!simpleDisabled && freeformSelected}
+                            dimmed={!simpleDisabled && simpleAbutmentDimmed}
                             disabled={simpleDisabled}
                             disabledHint="커스텀어벗 형태에서는 스캔바디만 선택할 수 있습니다."
                             allowPresetEdit={!isPresetGuideTourStep}
@@ -6135,7 +6144,7 @@ export const PracticeTransferRequestIntakePanel = ({
                                 : onSimpleAbutmentOptionsChange
                             }
                             className={cn(
-                              "min-h-0 border-service-abut-muted/90 bg-service-abut-soft/40",
+                              "min-h-0",
                               tourAbutmentFocus &&
                                 "practice-tooth-guide-pulse rounded-xl",
                             )}
@@ -6151,10 +6160,10 @@ export const PracticeTransferRequestIntakePanel = ({
                           <PracticeToothCompanySpecFields
                             heading="직접 입력"
                             companyLabel="회사"
-                            dimmed={simpleMode}
+                            dimmed={directInputDimmed}
                             allowPresetEdit={!isPresetGuideTourStep}
                             className={cn(
-                              "min-h-0 border-service-abut-muted/90 bg-service-abut-soft/40",
+                              "min-h-0",
                               tourAbutmentFocus &&
                                 "practice-tooth-guide-pulse rounded-xl",
                             )}
@@ -6179,10 +6188,10 @@ export const PracticeTransferRequestIntakePanel = ({
                           <PracticeToothCompanySpecFields
                             heading="스캔바디"
                             companyLabel="회사"
-                            dimmed={simpleMode}
+                            dimmed={scanbodyDimmed}
                             allowPresetEdit={!isPresetGuideTourStep}
                             className={cn(
-                              "min-h-0 border-service-abut-muted/90 bg-service-abut-soft/40",
+                              "min-h-0",
                               tourAbutmentFocus &&
                                 "practice-tooth-guide-pulse rounded-xl",
                             )}
@@ -6204,7 +6213,7 @@ export const PracticeTransferRequestIntakePanel = ({
                           <PracticeToothSimpleAbutmentFields
                             variant="healing"
                             heading={SIMPLE_HEALING_LABEL}
-                            dimmed={!simpleDisabled && freeformSelected}
+                            dimmed={!simpleDisabled && simpleHealingDimmed}
                             disabled={simpleDisabled}
                             disabledHint="커스텀어벗 형태에서는 스캔바디만 선택할 수 있습니다."
                             allowPresetEdit={!isPresetGuideTourStep}
@@ -6215,7 +6224,7 @@ export const PracticeTransferRequestIntakePanel = ({
                                 : onSimpleHealingOptionsChange
                             }
                             className={cn(
-                              "min-h-0 border-service-abut-muted/90 bg-service-abut-soft/40",
+                              "min-h-0",
                               tourAbutmentFocus &&
                                 "practice-tooth-guide-pulse rounded-xl",
                             )}

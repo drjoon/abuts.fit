@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/practice/PracticeToothSimpleAbutmentFields.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothImplantChipFields.tsx
 // change-log:
+// - 2026-09-14: dimmed 흐림 강화(opacity-35 + saturate). 칩 하이라이트 제거·활성 패널 테두리.
 // - 2026-09-14: dimmed 사이드 칩 하이라이트 제거·활성 패널 테두리 강조(XOR).
 // - 2026-09-14: 임플란트·스캔바디·심플어벗/힐링·직접입력 공통 칩 UI(ChoiceChip·추가·헤더·인라인·드래그 훅).
 import {
@@ -343,8 +344,8 @@ export const PracticeToothChipPanel = ({
       className={cn(
         "flex min-h-0 flex-1 flex-col gap-3 rounded-xl border p-3 sm:p-4 transition-opacity",
         tone.panel,
+        inactive && "opacity-35 saturate-50",
         selected && !inactive && tone.panelSelected,
-        inactive && "opacity-45",
         clickable && "cursor-pointer",
         disabled && "pointer-events-none",
         className,
