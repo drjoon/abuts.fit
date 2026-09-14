@@ -1,10 +1,14 @@
 import * as THREE from "three";
 
+// change-log:
+// - 2026-09-14: OrthographicCamera 지원 — 줌은 camera.zoom, 패닝 스케일 ortho 분기.
 type ScreenSpaceOrbitControlsEvent = "start" | "change" | "end";
 
 type ScreenSpaceOrbitControlsListener = () => void;
 
 type DragMode = "none" | "rotate" | "pan";
+
+type OrbitCamera = THREE.PerspectiveCamera | THREE.OrthographicCamera;
 
 export type ScreenSpaceOrbitControlsOptions = {
   rotateSpeed?: number;
@@ -13,6 +17,9 @@ export type ScreenSpaceOrbitControlsOptions = {
   enablePan?: boolean;
   minDistance?: number;
   maxDistance?: number;
+  /** Orthographic only — clamp camera.zoom */
+  minZoom?: number;
+  maxZoom?: number;
 };
 
 /**
@@ -20,6 +27,7 @@ export type ScreenSpaceOrbitControlsOptions = {
  * - Horizontal drag: rotate around screen Y (camera local up) → keeps current horizon level
  * - Vertical drag: rotate around screen X (camera local right)
  * - Pan: middle / right / Shift+left drag (screen-space)
+ * - Orthographic zoom: camera.zoom (distance does not change apparent size)
  *
  * World Z turntable is intentionally not used: scan PLY axes often disagree with
  * “level teeth” on screen, so Z-azimuth feels like spinning/tilting.
@@ -33,6 +41,8 @@ export class ScreenSpaceOrbitControls {
   enablePan: boolean;
   minDistance: number;
   maxDistance: number;
+  minZoom: number;
+  maxZoom: number;
 
   /**
    * True if the last completed pointer gesture moved the camera (rotate/pan).
@@ -40,7 +50,7 @@ export class ScreenSpaceOrbitControls {
    */
   lastGestureMoved = false;
 
-  private readonly camera: THREE.PerspectiveCamera;
+  private readonly camera: OrbitCamera;
   private readonly domElement: HTMLElement;
   private readonly offset = new THREE.Vector3();
   private readonly screenRight = new THREE.Vector3();
@@ -122,18 +132,29 @@ export class ScreenSpaceOrbitControls {
     event.preventDefault();
     this.syncFromCamera();
     const scale = Math.exp((event.deltaY * this.zoomSpeed) / 100);
-    this.radius = THREE.MathUtils.clamp(
-      this.radius * scale,
-      this.minDistance,
-      this.maxDistance,
-    );
-    this.offset.subVectors(this.camera.position, this.target);
-    if (this.offset.lengthSq() < 1e-16) {
-      this.offset.set(0, -1, 0);
+
+    if (this.isOrthographic()) {
+      // Ortho: apparent size comes from frustum/zoom, not camera distance.
+      this.camera.zoom = THREE.MathUtils.clamp(
+        this.camera.zoom / scale,
+        this.minZoom,
+        this.maxZoom,
+      );
+      this.camera.updateProjectionMatrix();
+    } else {
+      this.radius = THREE.MathUtils.clamp(
+        this.radius * scale,
+        this.minDistance,
+        this.maxDistance,
+      );
+      this.offset.subVectors(this.camera.position, this.target);
+      if (this.offset.lengthSq() < 1e-16) {
+        this.offset.set(0, -1, 0);
+      }
+      this.offset.setLength(this.radius);
+      this.camera.position.copy(this.target).add(this.offset);
+      this.camera.lookAt(this.target);
     }
-    this.offset.setLength(this.radius);
-    this.camera.position.copy(this.target).add(this.offset);
-    this.camera.lookAt(this.target);
     this.dispatch("change");
   };
 
@@ -143,7 +164,7 @@ export class ScreenSpaceOrbitControls {
   };
 
   constructor(
-    camera: THREE.PerspectiveCamera,
+    camera: OrbitCamera,
     domElement: HTMLElement,
     options: ScreenSpaceOrbitControlsOptions = {},
   ) {
@@ -155,6 +176,8 @@ export class ScreenSpaceOrbitControls {
     this.enablePan = options.enablePan ?? true;
     this.minDistance = options.minDistance ?? 0.01;
     this.maxDistance = options.maxDistance ?? Infinity;
+    this.minZoom = options.minZoom ?? 0.2;
+    this.maxZoom = options.maxZoom ?? 20;
 
     domElement.style.touchAction = "none";
     domElement.addEventListener("pointerdown", this.onPointerDown);
@@ -204,6 +227,12 @@ export class ScreenSpaceOrbitControls {
     this.listeners.clear();
   }
 
+  private isOrthographic(): this is {
+    camera: THREE.OrthographicCamera;
+  } {
+    return (this.camera as THREE.OrthographicCamera).isOrthographicCamera === true;
+  }
+
   private resolveDragMode(event: PointerEvent): DragMode {
     // Middle or right → pan. Shift+left → pan. Left → rotate.
     if (event.button === 1 || event.button === 2) {
@@ -250,12 +279,22 @@ export class ScreenSpaceOrbitControls {
 
   private panFromScreenDelta(deltaX: number, deltaY: number) {
     const elementHeight = Math.max(this.domElement.clientHeight, 1);
-    // Match three.js OrbitControls perspective pan scale (screen-space).
-    const targetDistance =
-      this.radius *
-      Math.tan(THREE.MathUtils.degToRad(this.camera.fov * 0.5));
-    const panScale =
-      ((2 * targetDistance) / elementHeight) * this.panSpeed;
+    let panScale: number;
+    if (this.isOrthographic()) {
+      // Match three.js OrbitControls orthographic pan (world units per pixel).
+      panScale =
+        ((this.camera.top - this.camera.bottom) /
+          this.camera.zoom /
+          elementHeight) *
+        this.panSpeed;
+    } else {
+      // Match three.js OrbitControls perspective pan scale (screen-space).
+      const perspective = this.camera as THREE.PerspectiveCamera;
+      const targetDistance =
+        this.radius *
+        Math.tan(THREE.MathUtils.degToRad(perspective.fov * 0.5));
+      panScale = ((2 * targetDistance) / elementHeight) * this.panSpeed;
+    }
 
     this.camera.updateMatrixWorld();
     this.panRight.setFromMatrixColumn(this.camera.matrixWorld, 0);

@@ -3,6 +3,7 @@
 // - web/frontend/src/features/requests/components/StlPreviewViewer.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // - web/frontend/src/features/chat/components/ChatMessageBubble.tsx
+// - 2026-09-14: Orthographic 카메라 — 뷰어와 동일하게 평행 왜곡 없이 맞춤.
 // - 2026-08-23: 의뢰 상세 작업 파일 타일용 정적 3D 썸네일.
 // - 2026-08-28: WebGL은 1회 렌더 후 PNG 스냅샷·즉시 dispose — 모달 뷰어와 컨텍스트 충돌 방지.
 // - 2026-08-28: PLY/OBJ 버텍스 컬러·TextureFile 칼라 표시.
@@ -27,8 +28,8 @@ type Props = {
 /** 썸네일 캡처 해상도(CSS px). DPR 보정은 renderer에서. */
 const THUMB_CSS_SIZE = 160;
 
-function fitCameraToGeometry(
-  camera: THREE.PerspectiveCamera,
+function fitOrthographicCameraToGeometry(
+  camera: THREE.OrthographicCamera,
   bbox: THREE.Box3,
 ): void {
   const viewTarget = bbox.getCenter(new THREE.Vector3());
@@ -39,15 +40,22 @@ function fitCameraToGeometry(
     bbox.getBoundingSphere(new THREE.Sphere()).radius ||
     1;
   const viewDir = new THREE.Vector3(1, -1, 0.9).normalize();
-  const fovRad = THREE.MathUtils.degToRad(camera.fov);
-  const aspect = Math.max(camera.aspect, 0.01);
-  const halfVFov = fovRad / 2;
-  const halfHFov = Math.atan(Math.tan(halfVFov) * aspect);
-  const fitDistance = Math.max(
-    radius / Math.sin(halfVFov),
-    radius / Math.sin(halfHFov),
-  );
-  const distance = fitDistance * 1.08;
+  const aspect = Math.max(camera.right - camera.left, 0.01) /
+    Math.max(camera.top - camera.bottom, 0.01);
+  const half = radius * 1.08;
+  if (aspect >= 1) {
+    camera.left = -half * aspect;
+    camera.right = half * aspect;
+    camera.top = half;
+    camera.bottom = -half;
+  } else {
+    camera.left = -half;
+    camera.right = half;
+    camera.top = half / aspect;
+    camera.bottom = -half / aspect;
+  }
+  camera.zoom = 1;
+  const distance = Math.max(radius * 4, 40);
   camera.position.copy(
     viewTarget.clone().add(viewDir.clone().multiplyScalar(distance)),
   );
@@ -155,7 +163,7 @@ export function StlPreviewThumbnail({
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0xf1f5f9);
 
-    const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
+    const camera = new THREE.OrthographicCamera(-40, 40, 40, -40, 0.1, 1000);
     camera.up.set(0, 0, 1);
 
     // preserveDrawingBuffer: toDataURL 캡처용. 썸네일은 1프레임만 쓰므로 OK.
@@ -211,7 +219,7 @@ export function StlPreviewThumbnail({
         scene?.add(mesh);
 
         if (geometry.boundingBox) {
-          fitCameraToGeometry(camera, geometry.boundingBox);
+          fitOrthographicCameraToGeometry(camera, geometry.boundingBox);
         }
         renderer?.render(scene!, camera);
 

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-14: Orthographic 카메라 — 교합면에서도 평행 어벗이 원근으로 어긋나지 않게.
 // - 2026-09-04: Lot 포스트 — 법선이 글자 중앙(engraveZ·θ)을 지나게.
 // - 2026-09-04: Lot 포스트 — 글자별 C(θ) 수직평면(CNC 동일). 곡면 점별 래핑 제거.
 // - 2026-09-04: Lot 각인 — hex|post target 분기 (기본 헥스면, 포스트면 옵트인).
@@ -454,14 +455,24 @@ export function StlPreviewViewer({
 
     setError(null);
 
-    const height = containerRef.current.clientHeight || 300;
+    let height = containerRef.current.clientHeight || 300;
     let width = containerRef.current.clientWidth || 300;
 
     const scene = new THREE.Scene();
     sceneRef.current = scene;
     scene.background = new THREE.Color(0xf9fafb);
 
-    const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
+    // Orthographic: 평행선이 수렴하지 않아 교합면에서 abutment 평행을 올바르게 본다.
+    const aspect0 = width / Math.max(height, 1);
+    const frustumSize0 = 80;
+    const camera = new THREE.OrthographicCamera(
+      (frustumSize0 * aspect0) / -2,
+      (frustumSize0 * aspect0) / 2,
+      frustumSize0 / 2,
+      frustumSize0 / -2,
+      0.1,
+      1000,
+    );
     camera.position.set(0, -60, 60);
     camera.up.set(0, 0, 1);
 
@@ -1933,17 +1944,23 @@ export function StlPreviewViewer({
         const viewDir = new THREE.Vector3(1, -1, 0.9).normalize();
 
         applyCameraFit = () => {
-          // FOV/aspect 기준으로 바운딩 스피어가 뷰포트에 맞게 들어오도록 카메라 거리 계산.
-          const fovRad = THREE.MathUtils.degToRad(camera.fov);
-          const aspect = Math.max(camera.aspect, 0.01);
-          const halfVFov = fovRad / 2;
-          const halfHFov = Math.atan(Math.tan(halfVFov) * aspect);
-          const fitDistance = Math.max(
-            radius / Math.sin(halfVFov),
-            radius / Math.sin(halfHFov),
-          );
+          // Ortho frustum으로 바운딩 스피어를 맞춘다(거리≠크기). 휠 줌은 camera.zoom.
+          const aspect = Math.max(width / Math.max(height, 1), 0.01);
+          const half = radius * 1.08;
+          if (aspect >= 1) {
+            camera.left = -half * aspect;
+            camera.right = half * aspect;
+            camera.top = half;
+            camera.bottom = -half;
+          } else {
+            camera.left = -half;
+            camera.right = half;
+            camera.top = half / aspect;
+            camera.bottom = -half / aspect;
+          }
+          camera.zoom = 1;
           // 오버레이는 absolute라 카메라 여백을 따로 두지 않는다. 모델 전체가 보이게만 맞춤.
-          const distance = fitDistance * 1.08;
+          const distance = Math.max(radius * 4, 40);
           camera.position.copy(
             viewTarget.clone().add(viewDir.clone().multiplyScalar(distance)),
           );
@@ -1982,7 +1999,12 @@ export function StlPreviewViewer({
       const newWidth = containerRef.current.clientWidth || width;
       const newHeight = containerRef.current.clientHeight || height;
       width = newWidth;
-      camera.aspect = newWidth / Math.max(newHeight, 1);
+      height = newHeight;
+      const aspect = newWidth / Math.max(newHeight, 1);
+      // Keep vertical frustum extent; only rebalance left/right for aspect.
+      const halfH = (camera.top - camera.bottom) / 2;
+      camera.left = -halfH * aspect;
+      camera.right = halfH * aspect;
       camera.updateProjectionMatrix();
       renderer.setSize(newWidth, newHeight, false);
       renderer.domElement.style.width = "100%";
