@@ -224,6 +224,7 @@ import {
 // - web/frontend/src/shared/components/practice/PracticeToothSimpleAbutmentFields.tsx
 // - web/frontend/src/shared/components/practice/PracticeCustomSpecsPresetEditDialog.tsx
 // - web/frontend/src/shared/pricing/abutsAbutmentService.ts
+// - 2026-09-15: 커스텀어벗 모달 기본 z-[340] — compose Dialog(z-320) 뒤에 가려지던 문제.
 // - 2026-09-14: XOR dimmed — 커밋된 사이드만 선명(미선택 시 양쪽 흐림). 흐림 opacity 강화.
 // - 2026-09-14: 스캔바디 위저드 푸터 — 1/2 취소·다음, 2/2 이전·취소·확인. STL 왼쪽·카피 단축.
 // - 2026-09-14: 스캔바디 2/2 헤더에 선택된 임플란트(CNC display) 표시.
@@ -971,8 +972,9 @@ export const PracticeTransferRequestIntakePanel = ({
   className,
   hideEnlargeButton = false,
   toothChartDisplayMode = "compact",
-  nestedDialogClassName,
-  nestedDialogOverlayClassName,
+  // 신규 의뢰 compose Dialog(z-320) 위. NewRequest 등 낮은 스택은 props로 덮어씀.
+  nestedDialogClassName = "z-[340]",
+  nestedDialogOverlayClassName = "z-[339]",
   aboveMemoContent,
   besideMemoContent,
   memoBoxClassName,

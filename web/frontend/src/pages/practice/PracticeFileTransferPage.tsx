@@ -27,6 +27,7 @@
  * - web/frontend/src/shared/practice/openPracticeTransferChat.ts
  * - web/frontend/src/shared/components/practice/PracticeLabRatingControl.tsx
  * - web/frontend/src/shared/practice/practiceLabRating.ts
+ * - 2026-09-15: 어벗/스캔바디 설정 모달 z-[340] — compose(z-320) 뒤에 가려지던 문제.
  * - 2026-09-14: 모바일 액션(신규·리메이크·임시·휴지) — 채팅형 전체화면·상단 크롬·닫으면 캘린더 메인.
  * - web/frontend/src/shared/ui/mobileActionOverlay.tsx
  * - 2026-09-14: 신규 작성·전송 시 180일 동일 환자·치아 → 리메이크 확인.
@@ -9550,6 +9551,9 @@ export const PracticeFileTransferPage = ({
   const practiceTransferRequestIntakeProps: PracticeTransferRequestIntakePanelProps = {
     variant: "plain",
     toothChartDisplayMode: "full",
+    // compose Dialog(z-320)·모바일 크롬(z-330) 위 — 어벗/스캔바디·전체악궁 모달
+    nestedDialogClassName: "z-[340]",
+    nestedDialogOverlayClassName: "z-[339]",
                     selectedLab,
                   setSelectedLab: selectLabForIntake,
                   labOpen,
