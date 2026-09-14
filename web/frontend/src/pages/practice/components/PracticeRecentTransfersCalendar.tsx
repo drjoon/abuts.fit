@@ -26,6 +26,7 @@
  * - 2026-08-20: 치과 전체보기 칩도 상단 뱃지 상태색(그룹색 대신).
  * - 2026-08-20: 안읽음(수신 미확인·채팅) 빨간 배지를 칩에 표시.
  * - 2026-08-21: 상단 필터 뱃지 ON=진한 상태색 / OFF=흐린 무채색(표시 on/off 대비).
+ * - 2026-09-15: 목록·캘린더 칩 호버 — 글자(라인)에만 트리거(박스/flex-1 전체 제외).
  * - 2026-09-11: 칩 호버 — 마우스 근처(top)·openDelay 400ms·pointer-events-none.
  * - 2026-09-11: 캘린더 칩 — 기공소 색 점 왼쪽 여백(pl-1).
  * - 2026-09-11: 칩 호버 — openDelay 400ms, side=right + pointer-events-none(클릭 가림 방지).
@@ -1914,32 +1915,32 @@ export function PracticeRecentTransfersCalendar({
                                   <Hexagon className="h-3.5 w-3.5" aria-hidden />
                                 </span>
                               ) : null}
-                              <PracticeCalendarChipHover
-                                item={item}
-                                labDot={labDot}
-                                overdueTooltip={overdueTooltip}
+                              <button
+                                type="button"
+                                className="min-w-0 flex-1 text-left text-[13px] leading-snug text-slate-900"
+                                onClick={() => selectListItem(item, ymd)}
                               >
-                                <button
-                                  type="button"
-                                  className="min-w-0 flex-1 text-left text-[13px] leading-snug text-slate-900"
-                                  onClick={() => selectListItem(item, ymd)}
-                                >
-                                  <span className="inline-flex max-w-full items-start gap-1">
-                                    <span className="min-w-0 line-clamp-2 break-all">
+                                <span className="inline-flex max-w-full items-start gap-1">
+                                  <PracticeCalendarChipHover
+                                    item={item}
+                                    labDot={labDot}
+                                    overdueTooltip={overdueTooltip}
+                                  >
+                                    <span className="inline-block w-fit max-w-full line-clamp-2 break-all">
                                       {linkPrefix}
                                       {item.line}
                                     </span>
-                                    {unreadCount > 0 ? (
-                                      <span
-                                        className="mt-0.5 inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-white"
-                                        aria-label={`미확인(채팅) ${unreadLabel}`}
-                                      >
-                                        {unreadLabel}
-                                      </span>
-                                    ) : null}
-                                  </span>
-                                </button>
-                              </PracticeCalendarChipHover>
+                                  </PracticeCalendarChipHover>
+                                  {unreadCount > 0 ? (
+                                    <span
+                                      className="mt-0.5 inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-white"
+                                      aria-label={`미확인(채팅) ${unreadLabel}`}
+                                    >
+                                      {unreadLabel}
+                                    </span>
+                                  ) : null}
+                                </span>
+                              </button>
                             </div>
                           );
                         })}
@@ -2157,40 +2158,40 @@ export function PracticeRecentTransfersCalendar({
                                   <Hexagon className="h-3 w-3" aria-hidden />
                                 </span>
                               ) : null}
-                              <PracticeCalendarChipHover
-                                item={item}
-                                labDot={labDot}
-                                overdueTooltip={overdueTooltip}
+                              <button
+                                type="button"
+                                className="min-w-0 flex-1 px-1 py-0.5 text-left text-[10px] leading-snug"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onSelectItem(item, {
+                                    ymd: day.ymd,
+                                    dow: day.dow,
+                                    visibleColumnIndex,
+                                    visibleColumnCount: colCount,
+                                  });
+                                }}
                               >
-                                <button
-                                  type="button"
-                                  className="min-w-0 flex-1 px-1 py-0.5 text-left text-[10px] leading-snug"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    onSelectItem(item, {
-                                      ymd: day.ymd,
-                                      dow: day.dow,
-                                      visibleColumnIndex,
-                                      visibleColumnCount: colCount,
-                                    });
-                                  }}
-                                >
-                                  <span className="inline-flex max-w-full items-start gap-0.5">
-                                    <span className="min-w-0 line-clamp-2 break-all">
+                                <span className="inline-flex max-w-full items-start gap-0.5">
+                                  <PracticeCalendarChipHover
+                                    item={item}
+                                    labDot={labDot}
+                                    overdueTooltip={overdueTooltip}
+                                  >
+                                    <span className="inline-block w-fit max-w-full line-clamp-2 break-all">
                                       {linkPrefix}
                                       {item.line}
                                     </span>
-                                    {unreadCount > 0 ? (
-                                      <span
-                                        className="mt-px inline-flex h-3.5 min-w-3.5 shrink-0 items-center justify-center rounded-full bg-destructive px-0.5 text-[9px] font-semibold leading-none text-white"
-                                        aria-label={`미확인(채팅) ${unreadLabel}`}
-                                      >
-                                        {unreadLabel}
-                                      </span>
-                                    ) : null}
-                                  </span>
-                                </button>
-                              </PracticeCalendarChipHover>
+                                  </PracticeCalendarChipHover>
+                                  {unreadCount > 0 ? (
+                                    <span
+                                      className="mt-px inline-flex h-3.5 min-w-3.5 shrink-0 items-center justify-center rounded-full bg-destructive px-0.5 text-[9px] font-semibold leading-none text-white"
+                                      aria-label={`미확인(채팅) ${unreadLabel}`}
+                                    >
+                                      {unreadLabel}
+                                    </span>
+                                  ) : null}
+                                </span>
+                              </button>
                             </div>
                           );
                         })}
