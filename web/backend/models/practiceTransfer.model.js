@@ -8,6 +8,7 @@
 // - 2026-08-28: 캘린더 조회용 orderDates/arrivalDates compound index.
 // - 2026-09-12: production.abutmentShipYmd — 기공소 어벗 출고일(기본 도착−3달력일).
 // - 2026-08-14: /my 정렬용 compound index (anchor+createdAt+_id, legacy user).
+// - 2026-09-14: files.patientName+createdAt — 동일 환자·치아 180일 감지.
 import mongoose from "mongoose";
 
 const practiceTransferFileSchema = new mongoose.Schema(
@@ -482,6 +483,12 @@ practiceTransferSchema.index({
   practiceBusinessAnchorId: 1,
   createdAt: -1,
   _id: -1,
+});
+// 신규 작성 시 동일 환자·치아(180일) 감지 — files.patientName exact + createdAt
+practiceTransferSchema.index({
+  practiceBusinessAnchorId: 1,
+  "files.patientName": 1,
+  createdAt: -1,
 });
 practiceTransferSchema.index({
   practiceBusinessAnchorId: 1,

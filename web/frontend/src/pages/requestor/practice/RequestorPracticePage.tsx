@@ -258,6 +258,15 @@ import {
 } from "@/shared/practice/openPracticeTransferChat";
 import { RequestDetailDialog } from "@/features/requests/components/RequestDetailDialog";
 import { LabPracticeFeeSurchargeControl } from "@/shared/components/practice/LabPracticeFeeSurchargeControl";
+import { PracticeTransferBookmarkControl } from "@/shared/components/practice/PracticeTransferBookmarkControl";
+import {
+  bookmarkIdSetFromItems,
+  fetchPracticeTransferBookmarks,
+  pickNextBookmarkItem,
+  PRACTICE_TRANSFER_BOOKMARK_BADGE_KEY,
+  transferMongoIdsQuery,
+  type PracticeTransferBookmarkItem,
+} from "@/shared/practice/practiceTransferBookmarks";
 import {
   parsePracticeTransferFeeQuote,
 } from "@/shared/practice/practiceTransferFeeQuote";
@@ -876,6 +885,13 @@ export function RequestorPracticeReceivePage({
   const [abutmentRequestDetailBusy, setAbutmentRequestDetailBusy] =
     useState(false);
   const [selectedTransfer, setSelectedTransfer] = useState<ReceivedPracticeTransfer | null>(null);
+  const [bookmarkItems, setBookmarkItems] = useState<PracticeTransferBookmarkItem[]>(
+    [],
+  );
+  const [bookmarkedTransferCache, setBookmarkedTransferCache] = useState<
+    ReceivedPracticeTransfer[]
+  >([]);
+  const bookmarkNavigateLastIdRef = useRef("");
   /** 열 때 스크롤 힌트(detail=위, chat=아래). 미지정 시 채팅 유무로 결정 */
   const [dialogInitialPanelTab, setDialogInitialPanelTab] = useState<
     "detail" | "chat" | undefined
@@ -6258,7 +6274,11 @@ export function RequestorPracticeReceivePage({
       const transfer =
         transfers.find(
           (row) => String(row.transferId || "").trim() === transferId,
-        ) || null;
+        ) ||
+        bookmarkedTransferCache.find(
+          (row) => String(row.transferId || "").trim() === transferId,
+        ) ||
+        null;
       if (!transfer) {
         toast({
           title: "의뢰건을 찾을 수 없습니다",
@@ -6269,8 +6289,123 @@ export function RequestorPracticeReceivePage({
       }
       void openTransferDialog(transfer, { panel });
     },
-    [openTransferDialog, toast, transfers],
+    [bookmarkedTransferCache, openTransferDialog, toast, transfers],
   );
+
+  const bookmarkedIdSet = useMemo(
+    () => bookmarkIdSetFromItems(bookmarkItems),
+    [bookmarkItems],
+  );
+
+  const refreshLabBookmarks = useCallback(async () => {
+    if (!token) {
+      setBookmarkItems([]);
+      setBookmarkedTransferCache([]);
+      return;
+    }
+    try {
+      const payload = await fetchPracticeTransferBookmarks({
+        token,
+        side: "receive",
+      });
+      setBookmarkItems(payload.items);
+      const mongoIds = payload.items
+        .map((item) => String(item.transferMongoId || "").trim())
+        .filter(Boolean);
+      if (!mongoIds.length) {
+        setBookmarkedTransferCache([]);
+        return;
+      }
+      const qs = new URLSearchParams();
+      qs.set("transferMongoIds", transferMongoIdsQuery(mongoIds));
+      qs.set("limit", String(Math.min(200, Math.max(mongoIds.length, 1))));
+      const raw = await request({
+        path: `/api/practice/transfers/received?${qs.toString()}`,
+        method: "GET",
+        token,
+      });
+      const parsed = parseTransfersBody(raw);
+      const mapped = mapTransferRows(parsed.transfers);
+      const byId = new Map(
+        mapped.map((row) => [String(row.transferId || "").trim(), row]),
+      );
+      const byMongo = new Map(
+        mapped.map((row) => [String(row._id || "").trim(), row]),
+      );
+      const ordered = payload.items
+        .map((item) => {
+          const tid = String(item.transferId || "").trim();
+          const mid = String(item.transferMongoId || "").trim();
+          return (tid && byId.get(tid)) || (mid && byMongo.get(mid)) || null;
+        })
+        .filter((row): row is ReceivedPracticeTransfer => Boolean(row));
+      setBookmarkedTransferCache(ordered);
+    } catch {
+      // 배지·아이콘만 실패해도 본문은 유지
+    }
+  }, [mapTransferRows, parseTransfersBody, token]);
+
+  useEffect(() => {
+    void refreshLabBookmarks();
+  }, [refreshLabBookmarks]);
+
+  const handleBookmarkChanged = useCallback(
+    (transfer: ReceivedPracticeTransfer, bookmarked: boolean) => {
+      const transferId = String(transfer.transferId || "").trim();
+      const mongoId = String(transfer._id || "").trim();
+      setBookmarkItems((prev) => {
+        const without = prev.filter(
+          (row) =>
+            String(row.transferId || "").trim() !== transferId &&
+            String(row.transferMongoId || "").trim() !== mongoId,
+        );
+        if (!bookmarked) return without;
+        return [
+          {
+            transferMongoId: mongoId,
+            transferId,
+            side: "receive",
+            createdAt: new Date().toISOString(),
+          },
+          ...without,
+        ];
+      });
+      setBookmarkedTransferCache((prev) => {
+        const without = prev.filter(
+          (row) => String(row.transferId || "").trim() !== transferId,
+        );
+        if (!bookmarked) return without;
+        return [transfer, ...without];
+      });
+    },
+    [],
+  );
+
+  const navigateNextBookmark = useCallback(() => {
+    const next = pickNextBookmarkItem(
+      bookmarkedTransferCache,
+      bookmarkNavigateLastIdRef.current,
+    );
+    if (!next) {
+      if (bookmarkItems.length > 0) {
+        void refreshLabBookmarks();
+        toast({
+          title: "북마크 불러오는 중",
+          description: "다시 클릭하면 순회합니다.",
+        });
+      }
+      return;
+    }
+    const transferId = String(next.transferId || "").trim();
+    bookmarkNavigateLastIdRef.current = transferId;
+    void openTransferDialog(next, { preferredDockSide: "right" });
+  }, [
+    bookmarkItems.length,
+    bookmarkedTransferCache,
+    openTransferDialog,
+    refreshLabBookmarks,
+    toast,
+  ]);
 
   useEffect(() => {
     const onOpen = (evt: Event) => {
@@ -6769,7 +6904,7 @@ export function RequestorPracticeReceivePage({
   ]);
 
   const labStatusFilterBadgeItems = useMemo((): PracticeStatusFilterBadgeItem[] => {
-    return LAB_RECEIVE_STATUS_BADGES.map((item) => ({
+    const statusItems = LAB_RECEIVE_STATUS_BADGES.map((item) => ({
       key: item.filter,
       label: item.label,
       tone: resolvePracticeStatusFilterBadgeTone(item.filter),
@@ -6777,7 +6912,18 @@ export function RequestorPracticeReceivePage({
       unreadCount: statusUnreadCounts[item.countKey],
       tooltip: item.tooltip,
     }));
-  }, [statusCounts, statusUnreadCounts]);
+    return [
+      ...statusItems,
+      {
+        key: PRACTICE_TRANSFER_BOOKMARK_BADGE_KEY,
+        label: "북마크",
+        tone: "bookmark" as const,
+        count: bookmarkItems.length,
+        tooltip:
+          "북마크한 의뢰(전기간). 클릭하면 북마크를 하나씩 열어 순회합니다.",
+      },
+    ];
+  }, [bookmarkItems.length, statusCounts, statusUnreadCounts]);
 
   const pendingWorkNoticeTotal = useMemo(() => {
     return baseFilteredTransfers.reduce((sum, transfer) => {
@@ -6900,6 +7046,10 @@ export function RequestorPracticeReceivePage({
 
   const navigateNextUnreadForStatus = useCallback(
     (key: string) => {
+      if (key === PRACTICE_TRANSFER_BOOKMARK_BADGE_KEY) {
+        navigateNextBookmark();
+        return;
+      }
       const filterKey = key as LabReceiveStatusFilterKey;
       const toMeta = (transfer: (typeof baseFilteredTransfers)[number]) => ({
         transfer,
@@ -6987,6 +7137,7 @@ export function RequestorPracticeReceivePage({
       calendarDateKey,
       focusCalendarTransfer,
       isMobile,
+      navigateNextBookmark,
       selectTransferFromCalendar,
       transferChatUnreadCount,
       viewMode,
@@ -7008,7 +7159,10 @@ export function RequestorPracticeReceivePage({
         className="min-w-0 flex-1 sm:justify-center"
         items={labStatusFilterBadgeItems}
         onUnreadNavigate={navigateNextUnreadForStatus}
-        gapBeforeKeys={PRACTICE_RECENT_STATUS_BADGE_GAP_BEFORE_KEYS}
+        gapBeforeKeys={[
+          ...PRACTICE_RECENT_STATUS_BADGE_GAP_BEFORE_KEYS,
+          PRACTICE_TRANSFER_BOOKMARK_BADGE_KEY,
+        ]}
         countSuffix="건"
         trailing={
           <RequestorAbutmentPageHeader variant="policyInProgress" />
@@ -7569,33 +7723,56 @@ export function RequestorPracticeReceivePage({
         chatHeaderAction={null}
         caseIdentity={selectedTransferCaseIdentity}
         composerToolbarExtra={
-          selectedTransfer?.practiceBusinessAnchorId ? (
-            <LabPracticeFeeSurchargeControl
-              triggerVariant="icon"
-              practiceAnchorId={selectedTransfer.practiceBusinessAnchorId}
-              multiplier={selectedTransfer.labFeeMultiplier}
-              buttonLabel="평가"
-              dialogTitle="치과 평가"
-              variant="evaluate"
-              onChanged={(next) => {
-                // live 설정만 갱신. 해당 의뢰 feeQuote(스냅샷)는 바꾸지 않는다.
-                const practiceAnchorId =
-                  selectedTransfer.practiceBusinessAnchorId;
-                setTransfers((prev) =>
-                  prev.map((row) =>
-                    row.practiceBusinessAnchorId === practiceAnchorId
-                      ? { ...row, labFeeMultiplier: next }
-                      : row,
-                  ),
-                );
-                setSelectedTransfer((prev) =>
-                  prev && prev.practiceBusinessAnchorId === practiceAnchorId
-                    ? { ...prev, labFeeMultiplier: next }
-                    : prev,
-                );
-                void loadCalendarTransfers({ silent: true });
-              }}
-            />
+          selectedTransfer ? (
+            <>
+              {String(selectedTransfer.transferId || selectedTransfer._id || "").trim() &&
+              !isGuideTourDemoTransfer(selectedTransfer) ? (
+                <PracticeTransferBookmarkControl
+                  transferKey={
+                    String(selectedTransfer._id || "").trim() ||
+                    String(selectedTransfer.transferId || "").trim()
+                  }
+                  bookmarked={
+                    bookmarkedIdSet.has(String(selectedTransfer._id || "").trim()) ||
+                    bookmarkedIdSet.has(
+                      String(selectedTransfer.transferId || "").trim(),
+                    )
+                  }
+                  side="receive"
+                  onChanged={(next) =>
+                    handleBookmarkChanged(selectedTransfer, next)
+                  }
+                />
+              ) : null}
+              {selectedTransfer.practiceBusinessAnchorId ? (
+                <LabPracticeFeeSurchargeControl
+                  triggerVariant="icon"
+                  practiceAnchorId={selectedTransfer.practiceBusinessAnchorId}
+                  multiplier={selectedTransfer.labFeeMultiplier}
+                  buttonLabel="평가"
+                  dialogTitle="치과 평가"
+                  variant="evaluate"
+                  onChanged={(next) => {
+                    // live 설정만 갱신. 해당 의뢰 feeQuote(스냅샷)는 바꾸지 않는다.
+                    const practiceAnchorId =
+                      selectedTransfer.practiceBusinessAnchorId;
+                    setTransfers((prev) =>
+                      prev.map((row) =>
+                        row.practiceBusinessAnchorId === practiceAnchorId
+                          ? { ...row, labFeeMultiplier: next }
+                          : row,
+                      ),
+                    );
+                    setSelectedTransfer((prev) =>
+                      prev && prev.practiceBusinessAnchorId === practiceAnchorId
+                        ? { ...prev, labFeeMultiplier: next }
+                        : prev,
+                    );
+                    void loadCalendarTransfers({ silent: true });
+                  }}
+                />
+              ) : null}
+            </>
           ) : null
         }
         summaryBanner={

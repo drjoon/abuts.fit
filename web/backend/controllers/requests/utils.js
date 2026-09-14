@@ -8,7 +8,8 @@
 // - web/backend/controllers/requests/creation.from-draft.controller.js
 // - web/backend/controllers/requests/designHandoff.controller.js
 // change-log:
-// - 2026-09-12: 리메이크 매칭 — implantBrand 조건 제거(정책: 동일 치과·환자·치식·90일). forceRemakePricing.
+// - 2026-09-14: 리메이크 매칭 창 90→180일(REMAKE_POLICY_WINDOW_DAYS).
+// - 2026-09-12: 리메이크 매칭 — implantBrand 조건 제거(정책: 동일 치과·환자·치식·창). forceRemakePricing.
 // - 2026-09-09: 커스텀어벗 리메이크 — 월 3건 무료 폐지, 건당 고정 10,000원(remake_fixed_10000).
 // - 2026-08-23: normalizeRequestForResponse business.requestSettings에 hexVerificationResultHex 포함.
 // - 2026-08-19: 90일 1만원·주문량할인 폐지. 단가=플랫폼 설정(+신속 expressFee).
@@ -1245,7 +1246,7 @@ export async function computePriceForRequest({
   patientName,
   tooth,
   forceNewOrderPricing = false,
-  /** CA 재업로드 등 — 동일 건 리메이크로 확정 시 90일 조회 없이 1만원. */
+  /** CA 재업로드 등 — 동일 건 리메이크로 확정 시 창 조회 없이 1만원. */
   forceRemakePricing = false,
   currentRequestId = null,
   creditSettings: creditSettingsOverride = null,
@@ -1270,7 +1271,7 @@ export async function computePriceForRequest({
       ? { _id: { $ne: new Types.ObjectId(String(currentRequestId)) } }
       : {};
 
-  // 리메이크 기준(90일): 동일 치과·환자·치식에 직전 의뢰가 있으면 어벗츠로 1만원.
+  // 리메이크 기준(REMAKE_POLICY_WINDOW_DAYS): 동일 치과·환자·치식에 직전 의뢰가 있으면 어벗츠로 1만원.
   const remakeCutoff = remakePolicyCutoffDate(now);
 
   const [creditSettings, existing] = await Promise.all([

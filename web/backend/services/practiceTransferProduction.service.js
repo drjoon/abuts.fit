@@ -1155,7 +1155,7 @@ export async function createAbutmentRequestsFromPracticeTransfer({
     );
     let quotedPrice;
     if (isPtxRemake) {
-      // 기공소→어벗츠: 동일 치과·환자·치식·90일이면 건당 10,000원. 아니면 정가 생산.
+      // 기공소→어벗츠: 동일 치과·환자·치식·180일이면 건당 10,000원. 아니면 정가 생산.
       quotedPrice = await computePriceForRequest({
         requestorId: labUserId,
         requestorOrgId: labAnchorId,
@@ -2527,7 +2527,7 @@ export async function repriceAndReschedulePtxAbutmentRequest({
       tooth: String(requestDoc?.caseInfos?.tooth || "").trim(),
       creditSettings: creditSettingsForQuote,
       currentRequestId: requestDoc?._id || null,
-      // CA STL 재업로드(2회차+)는 동일 건 리메이크 — 90일 조회 없이 1만원.
+      // CA STL 재업로드(2회차+)는 동일 건 리메이크 — 180일 조회 없이 1만원.
       forceRemakePricing: Boolean(forceRemake),
     });
     if (quotedPrice?.rule !== ABUTS_REMAKE_PRICE_RULE) {

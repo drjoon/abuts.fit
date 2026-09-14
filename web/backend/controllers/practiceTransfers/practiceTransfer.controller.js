@@ -73,6 +73,7 @@ import {
   toAutoMatchApiFields,
   wantsAbutsPrimePool,
 } from "../../utils/practiceTransferAutoMatch.js";
+import { parseTransferMongoIdsQuery } from "./practiceTransferBookmark.controller.js";
 import {
   clearAutoMatchPriorityTimers,
   notifyAutoMatchPoolCreatedWithPriority,
@@ -113,6 +114,15 @@ import {
   isWithinRemakePolicyWindow,
   REMAKE_POLICY_WINDOW_DAYS,
 } from "../../utils/remakePricingPolicy.js";
+import {
+  SIMILAR_CASE_DETECT_WINDOW_DAYS,
+  collectToothNumbersFromToothWorks,
+  escapePatientNameForMemoRegex,
+  parseToothNumbersQuery,
+  similarCaseDetectCutoffDate,
+  toSimilarCaseMatchApi,
+  toothNumbersOverlap,
+} from "../../utils/practiceTransferSimilarCase.js";
 
 /** 작업시작(의뢰수락) 이후 — 리메이크 가능 stage */
 const PRACTICE_REMAKE_ELIGIBLE_STAGES = new Set([
@@ -207,6 +217,8 @@ import { completePracticeTransferWork } from "../../services/practiceTransferCom
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
+// - web/backend/models/practiceTransferBookmark.model.js
+// - web/backend/controllers/practiceTransfers/practiceTransferBookmark.controller.js
 // - web/backend/models/practiceTransfer.model.js
 // - web/backend/models/practiceTransferDraft.model.js
 // - web/backend/models/file.model.js
@@ -217,6 +229,8 @@ import { completePracticeTransferWork } from "../../services/practiceTransferCom
 // - web/backend/utils/practiceTransferAbutmentPresets.js
 // - web/backend/utils/practiceLabRating.js
 // - web/backend/utils/practiceTransferStage.js
+// - 2026-09-14: GET /my|/received?transferMongoIds= — 북마크 전기간 hydrate.
+// - 2026-09-14: GET /check-similar — 180일 동일 환자·치아. create isRemake+source 연결.
 // - 2026-09-13: GET /my — 전송 1건=응답 1행(파일수만큼 files[]·feeQuote 복제 제거). 상세용 files[]는 1회만.
 // - 2026-09-12: GET /my toVirtualRequestRows — files[]·trashedFiles(의뢰 파일 휴지통) 포함.
 // - 2026-09-12: request-files — uploadBatchId·uploadedAt 웨이브 스탬프(시점별 클러스터).
@@ -3117,6 +3131,25 @@ export async function createPracticeTransfer(req, res) {
         req.body?.includeCa === true ||
         req.body?.includeCustomAbutmentRemake === true,
     );
+    const remakeSourceMongoIdRaw = String(
+      req.body?.remakeSourceTransferMongoId ||
+        req.body?.sourceTransferMongoId ||
+        "",
+    ).trim();
+    const remakeSourceTransferIdRaw = String(
+      req.body?.remakeSourceTransferId || req.body?.sourceTransferId || "",
+    ).trim();
+
+    if (
+      isRemakeRequest &&
+      remakeSourceMongoIdRaw &&
+      !Types.ObjectId.isValid(remakeSourceMongoIdRaw)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "리메이크 원본 의뢰 ID가 올바르지 않습니다.",
+      });
+    }
 
     // PTX 리메이크 기본: 커스텀어벗 제외. 포함 시에만 CA 유지·리메이크 수가 강제.
     if (isRemakeRequest && !includeCustomAbutmentRemake) {
@@ -3164,20 +3197,51 @@ export async function createPracticeTransfer(req, res) {
       });
     }
 
-    // 별점·납기·견적·차단검사 병렬. 응답은 create 직후, hold·기공소 알림은 이후.
+    // 별점·납기·견적·차단·원본(리메이크) 병렬. 응답은 create 직후, hold·기공소 알림은 이후.
     let __t = __createT0;
-    const [starBand, arrivalPolicy, practiceLabRatings] = await Promise.all([
-      loadStarBandForPracticeRequest({
-        practiceAnchorId,
-        body: req.body,
-      }),
-      resolvePracticeTransferArrivalPolicy({
-        transferMemo,
-        rushProcessing,
-      }),
-      loadPracticeLabRatings(practiceAnchorId),
-    ]);
-    __t = __mark("star+arrival", __t);
+    const needRemakeSource =
+      isRemakeRequest &&
+      remakeSourceMongoIdRaw &&
+      Types.ObjectId.isValid(remakeSourceMongoIdRaw);
+    const [starBand, arrivalPolicy, practiceLabRatings, remakeSourceDoc] =
+      await Promise.all([
+        loadStarBandForPracticeRequest({
+          practiceAnchorId,
+          body: req.body,
+        }),
+        resolvePracticeTransferArrivalPolicy({
+          transferMemo,
+          rushProcessing,
+        }),
+        loadPracticeLabRatings(practiceAnchorId),
+        needRemakeSource
+          ? buildPracticeOwnedScope(req).then(({ scope }) =>
+              PracticeTransfer.findOne({
+                ...scope,
+                _id: new Types.ObjectId(remakeSourceMongoIdRaw),
+                status: { $nin: ["deleted", "canceled"] },
+              })
+                .select({ transferId: 1, createdAt: 1, orderDates: 1 })
+                .lean(),
+            )
+          : Promise.resolve(null),
+      ]);
+    __t = __mark("star+arrival+remakeSource", __t);
+    if (needRemakeSource && !remakeSourceDoc) {
+      return res.status(404).json({
+        success: false,
+        message: "리메이크 원본 의뢰를 찾지 못했습니다.",
+      });
+    }
+    // 원의뢰 연결 시 수가 무료창(180일)만 remake pricing. 미연결(플랫폼 이전)은 플래그 그대로.
+    const remakePricing = remakeSourceDoc
+      ? isWithinRemakePolicyWindow(
+          remakeSourceDoc.createdAt ||
+            (Array.isArray(remakeSourceDoc.orderDates)
+              ? remakeSourceDoc.orderDates[0]
+              : null),
+        )
+      : isRemakeRequest;
     if (!arrivalPolicy.ok) {
       return res.status(arrivalPolicy.statusCode || 400).json({
         success: false,
@@ -3207,7 +3271,7 @@ export async function createPracticeTransfer(req, res) {
         autoMatchBudget,
         catalog: autoMatchCatalog,
         rushFeeMultiplier,
-        remake: isRemakeRequest,
+        remake: remakePricing,
       }),
       String(matchingMode || "").trim() === "direct"
         ? assertLabAllowedAsDirectPracticeTarget({
@@ -3264,7 +3328,7 @@ export async function createPracticeTransfer(req, res) {
         skipJig,
         fees: feeQuote.fees,
         balanceMode: "snapshot",
-        remake: isRemakeRequest,
+        remake: remakePricing,
       });
       createShippingFees = creditCheck?.shipping || null;
     } catch (creditErr) {
@@ -3346,8 +3410,11 @@ export async function createPracticeTransfer(req, res) {
       ...(isRemakeRequest
         ? {
             remake: {
-              sourceTransferId: "",
-              sourceTransferMongoId: null,
+              sourceTransferId:
+                remakeSourceTransferIdRaw ||
+                String(remakeSourceDoc?.transferId || "").trim() ||
+                "",
+              sourceTransferMongoId: remakeSourceDoc?._id || null,
               requestedAt: new Date(),
               requestedBy: req.user?._id || null,
               includeCustomAbutment:
@@ -3397,8 +3464,13 @@ export async function createPracticeTransfer(req, res) {
         ? {
             isRemake: true,
             remake: {
-              sourceTransferId: null,
-              sourceTransferMongoId: null,
+              sourceTransferId:
+                remakeSourceTransferIdRaw ||
+                String(remakeSourceDoc?.transferId || "").trim() ||
+                null,
+              sourceTransferMongoId: remakeSourceDoc
+                ? String(remakeSourceDoc._id)
+                : null,
             },
           }
         : {}),
@@ -5773,7 +5845,7 @@ export async function remakePracticeTransfers(req, res) {
             )
           : copiedFiles;
 
-      // 치과로부터 리메이크비: 원본이 최근 90일 이내이면 무료(LAB_FEE_REMAKE_FREE).
+      // 치과로부터 리메이크비: 원본이 최근 180일 이내이면 무료(LAB_FEE_REMAKE_FREE).
       const remakePricing = isWithinRemakePolicyWindow(
         source.createdAt ||
           (Array.isArray(source.orderDates) ? source.orderDates[0] : null),
@@ -6022,7 +6094,10 @@ export async function getMyPracticeTransfers(req, res) {
       return res.status(403).json({ success: false, message: "권한이 없습니다." });
     }
 
-    const calendarRange = parsePracticeTransferCalendarRangeQuery(req.query);
+    const transferMongoIds = parseTransferMongoIdsQuery(req.query);
+    const calendarRange = transferMongoIds
+      ? null
+      : parsePracticeTransferCalendarRangeQuery(req.query);
     const page = Math.max(1, Number(req.query?.page || 1));
     const limit = Math.min(200, Math.max(1, Number(req.query?.limit || 100)));
     const skip = (page - 1) * limit;
@@ -6035,19 +6110,28 @@ export async function getMyPracticeTransfers(req, res) {
       req.user?.businessAnchorId || "",
     ).trim();
 
-    const fetched = await fetchOwnedPracticeTransfersPage({
-      scope: baseFilter,
-      practiceBusinessAnchorId:
-        String(req.user?.role || "").trim() === "admin"
-          ? null
-          : practiceBusinessAnchorId,
-      practiceUserObjectIds,
-      skip: calendarRange ? 0 : skip,
-      limit,
-      calendarRange,
-    });
-    const hasMore = calendarRange ? false : fetched.length > limit;
-    const docs = calendarRange
+    let fetched;
+    if (transferMongoIds) {
+      fetched = await PracticeTransfer.find({
+        $and: [baseFilter, { _id: { $in: transferMongoIds } }],
+      })
+        .sort({ createdAt: -1, _id: -1 })
+        .lean();
+    } else {
+      fetched = await fetchOwnedPracticeTransfersPage({
+        scope: baseFilter,
+        practiceBusinessAnchorId:
+          String(req.user?.role || "").trim() === "admin"
+            ? null
+            : practiceBusinessAnchorId,
+        practiceUserObjectIds,
+        skip: calendarRange ? 0 : skip,
+        limit,
+        calendarRange,
+      });
+    }
+    const hasMore = calendarRange || transferMongoIds ? false : fetched.length > limit;
+    const docs = calendarRange || transferMongoIds
       ? fetched
       : hasMore
         ? fetched.slice(0, limit)
@@ -6177,8 +6261,8 @@ const escapePracticeTransferPatientRegex = (value) =>
 
 /**
  * 리메이크 원본 검색.
- * - q 없음: 최근 90일(주문일·생성일) 작업시작 이후 의뢰 — 리메이크 정책 창과 동일
- * - q 있음: 환자명으로 전체 기간 검색(과금은 원본 90일 여부로 결정)
+ * - q 없음: 최근 180일(주문일·생성일) 작업시작 이후 의뢰 — 리메이크 정책 창과 동일
+ * - q 있음: 환자명으로 전체 기간 검색(과금은 원본 180일 여부로 결정)
  * GET /api/practice/transfers/remake-candidates?q=&days=90&limit=30
  */
 export async function searchRemakePracticeTransfers(req, res) {
@@ -6311,6 +6395,118 @@ export async function searchRemakePracticeTransfers(req, res) {
     return res.status(500).json({
       success: false,
       message: "리메이크 원본 검색 중 오류가 발생했습니다.",
+      error: error?.message,
+    });
+  }
+}
+
+/**
+ * 신규 작성·임시저장·전송 직전 — 최근 180일 동일 환자·치아 overlap.
+ * 견적/목록 매핑 없이 lean+limit만(저지연).
+ * query: patientName, teeth(comma), days?, limit?, excludeTransferMongoId?
+ */
+export async function checkSimilarPracticeTransfers(req, res) {
+  try {
+    const role = String(req.user?.role || "").trim();
+    if (!isPracticeTransferSenderRole(role)) {
+      return res.status(403).json({ success: false, message: "권한이 없습니다." });
+    }
+
+    const patientName = String(req.query?.patientName || "")
+      .trim()
+      .normalize("NFC");
+    const toothNumbers = parseToothNumbersQuery(
+      req.query?.teeth || req.query?.tooth || req.query?.toothNumbers,
+    );
+    if (!patientName || toothNumbers.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "patientName과 teeth가 필요합니다.",
+      });
+    }
+
+    const days = Math.min(
+      365,
+      Math.max(
+        1,
+        Number(req.query?.days || SIMILAR_CASE_DETECT_WINDOW_DAYS) ||
+          SIMILAR_CASE_DETECT_WINDOW_DAYS,
+      ),
+    );
+    const limit = Math.min(10, Math.max(1, Number(req.query?.limit || 5)));
+    const excludeId = String(
+      req.query?.excludeTransferMongoId || req.query?.excludeId || "",
+    ).trim();
+
+    const { scope: baseFilter } = await buildPracticeOwnedScope(req);
+    const fromDate = similarCaseDetectCutoffDate(days);
+    const memoRe = new RegExp(
+      `\\[\\s*환자명\\s*:\\s*${escapePatientNameForMemoRegex(patientName)}\\s*\\]`,
+    );
+
+    const mongoQuery = {
+      $and: [
+        baseFilter,
+        practiceTransferNotDeletedMongoFilter(),
+        { status: { $nin: ["deleted", "canceled"] } },
+        { createdAt: { $gte: fromDate } },
+        {
+          $or: [
+            { "files.patientName": patientName },
+            { transferMemo: memoRe },
+          ],
+        },
+        ...(excludeId && Types.ObjectId.isValid(excludeId)
+          ? [{ _id: { $ne: new Types.ObjectId(excludeId) } }]
+          : []),
+      ],
+    };
+
+    // BA+createdAt 또는 BA+patientName+createdAt 인덱스 경로. fee quote 없음.
+    const fetched = await PracticeTransfer.find(mongoQuery)
+      .select({
+        transferId: 1,
+        transferMemo: 1,
+        targetLabName: 1,
+        createdAt: 1,
+        orderDates: 1,
+        toothWorks: 1,
+        "files.patientName": 1,
+        requestorDownloadedAt: 1,
+        status: 1,
+        matchingMode: 1,
+        production: 1,
+        billing: 1,
+        remake: 1,
+      })
+      .sort({ createdAt: -1, _id: -1 })
+      .limit(Math.min(80, limit * 8))
+      .lean();
+
+    const matches = [];
+    for (const doc of fetched) {
+      const docTeeth = collectToothNumbersFromToothWorks(doc?.toothWorks);
+      if (!toothNumbersOverlap(toothNumbers, docTeeth)) continue;
+      const match = toSimilarCaseMatchApi(doc);
+      match.manufacturerStage = resolvePracticeTransferManufacturerStage(doc);
+      matches.push(match);
+      if (matches.length >= limit) break;
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        exists: matches.length > 0,
+        days,
+        patientName,
+        toothNumbers,
+        matches,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "동일 환자·치아 의뢰 확인 중 오류가 발생했습니다.",
       error: error?.message,
     });
   }
@@ -6545,7 +6741,10 @@ export async function getReceivedPracticeTransfers(req, res) {
       return res.status(403).json({ success: false, message: "권한이 없습니다." });
     }
 
-    const calendarRange = parsePracticeTransferCalendarRangeQuery(req.query);
+    const transferMongoIds = parseTransferMongoIdsQuery(req.query);
+    const calendarRange = transferMongoIds
+      ? null
+      : parsePracticeTransferCalendarRangeQuery(req.query);
     const page = Math.max(1, Number(req.query?.page || 1));
     const limit = Math.min(200, Math.max(1, Number(req.query?.limit || 10)));
     const skip = (page - 1) * limit;
@@ -6572,28 +6771,39 @@ export async function getReceivedPracticeTransfers(req, res) {
     // 치과 의뢰 삭제(status=deleted|레거시 canceled)는 수신 목록·총건수에서 제외.
     // 기공소 작업취소(workCanceledAt, status=active)는 계속 「취소」로 노출.
     // 캘린더 표시 창 + 미확인·미처리(전 기간) OR — 사이드바·작업큐 누락을 막는다.
+    // transferMongoIds — 북마크 등 전기간 ID hydrate(캘린더 무시).
     const calendarFilter = calendarRange
       ? buildPracticeTransferCalendarDateRangeFilter(calendarRange)
       : null;
     const attentionFilter = buildLabReceiveAttentionFilter(labAnchorId);
-    const listScope = calendarFilter
+    const listScope = transferMongoIds
       ? {
           $and: [
             scope,
             practiceTransferNotDeletedMongoFilter(),
-            mergeCalendarRangeWithAttentionFilter(
-              calendarFilter,
-              attentionFilter,
-            ),
+            { _id: { $in: transferMongoIds } },
           ],
         }
-      : { $and: [scope, practiceTransferNotDeletedMongoFilter()] };
+      : calendarFilter
+        ? {
+            $and: [
+              scope,
+              practiceTransferNotDeletedMongoFilter(),
+              mergeCalendarRangeWithAttentionFilter(
+                calendarFilter,
+                attentionFilter,
+              ),
+            ],
+          }
+        : { $and: [scope, practiceTransferNotDeletedMongoFilter()] };
 
     const listQuery = PracticeTransfer.find(listScope).sort({
       createdAt: -1,
       _id: -1,
     });
-    if (calendarRange) {
+    if (transferMongoIds) {
+      // full fields for bookmark hydrate
+    } else if (calendarRange) {
       listQuery
         .select(PRACTICE_TRANSFER_CALENDAR_LIST_SELECT)
         .limit(PRACTICE_TRANSFER_CALENDAR_RANGE_MAX);
@@ -6609,12 +6819,14 @@ export async function getReceivedPracticeTransfers(req, res) {
 
     const [rawDocs, totalCount, unreadCount] = await Promise.all([
       listQuery.lean(),
-      calendarRange
+      calendarRange || transferMongoIds
         ? Promise.resolve(null)
         : PracticeTransfer.countDocuments(listScope),
-      PracticeTransfer.countDocuments({
-        $and: [scope, ...buildLabReceiveUnreadMatchParts(labAnchorId)],
-      }),
+      transferMongoIds
+        ? Promise.resolve(0)
+        : PracticeTransfer.countDocuments({
+            $and: [scope, ...buildLabReceiveUnreadMatchParts(labAnchorId)],
+          }),
     ]);
 
     const docs = calendarRange
@@ -6850,10 +7062,14 @@ export async function getReceivedPracticeTransfers(req, res) {
           page,
           limit,
           count: transfers.length,
-          total: calendarRange ? transfers.length : totalCount,
-          hasMore: calendarRange
-            ? false
-            : skip + transfers.length < totalCount,
+          total:
+            calendarRange || transferMongoIds
+              ? transfers.length
+              : totalCount,
+          hasMore:
+            calendarRange || transferMongoIds
+              ? false
+              : skip + transfers.length < totalCount,
         },
       },
     });

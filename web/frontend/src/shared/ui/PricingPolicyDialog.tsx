@@ -331,7 +331,7 @@ export const PricingPolicyDialog = ({
                       </div>
                     </div>
                     <p className='text-xs leading-relaxed text-slate-500'>
-                      동일 치과·환자·치식, 최근 90일 조건 충족시 적용
+                      동일 치과·환자·치식, 최근 180일 조건 충족시 적용
                     </p>
                   </div>
                 </div>

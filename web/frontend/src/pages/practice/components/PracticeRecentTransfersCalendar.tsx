@@ -137,7 +137,8 @@ export type PracticeCalendarStatusTone =
   | "finished"
   | "completed"
   | "canceled"
-  | "unread";
+  | "unread"
+  | "bookmark";
 
 export type PracticeCalendarChipItem = {
   id: string;
@@ -651,6 +652,7 @@ export const PRACTICE_CALENDAR_STATUS_CHIP_STYLE: Record<
   completed: { backgroundColor: "hsl(152 48% 86%)", color: "hsl(152 55% 22%)" },
   canceled: { backgroundColor: "hsl(0 55% 90%)", color: "hsl(0 48% 34%)" },
   unread: { backgroundColor: "#ffffff", color: "hsl(0 48% 34%)" },
+  bookmark: { backgroundColor: "hsl(199 70% 90%)", color: "hsl(201 55% 28%)" },
 };
 
 /** ON=캘린더 칩과 같은 진한 상태색 / OFF=흐린 무채색 — 표시 on/off가 즉시 읽히게. */
@@ -682,6 +684,10 @@ export const PRACTICE_STATUS_FILTER_BADGE_CLASS: Record<
     idle: "border-[3px] border-double border-red-200 bg-white text-red-300 opacity-40 hover:opacity-60",
     active:
       "border-[3px] border-double border-red-600 bg-white text-red-700 shadow-sm",
+  },
+  bookmark: {
+    idle: "border-slate-200 bg-slate-50/60 text-slate-400 opacity-40 hover:opacity-60 hover:bg-slate-50",
+    active: "border-sky-500/90 bg-sky-100 text-sky-950 shadow-sm",
   },
 };
 

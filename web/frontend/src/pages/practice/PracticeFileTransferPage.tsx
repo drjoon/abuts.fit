@@ -27,6 +27,7 @@
  * - web/frontend/src/shared/practice/openPracticeTransferChat.ts
  * - web/frontend/src/shared/components/practice/PracticeLabRatingControl.tsx
  * - web/frontend/src/shared/practice/practiceLabRating.ts
+ * - 2026-09-14: 신규 작성·전송 시 180일 동일 환자·치아 → 리메이크 확인.
  * - 2026-09-12: 상세 드롭·클립 — 3D/이미지 의뢰 파일 append·삭제(X).
  * - 2026-09-07: 상세 헤더 식별 — 전송ID 제거, `기공소/환자 치식 · 도착` 한 줄.
  * - 2026-09-07: 캘린더 클릭 도착일 — auto-sync effect가 pin을 존중·await 후에도 재적용.
@@ -244,6 +245,14 @@ import {
 import { PracticeProsthesisFollowUpDialog } from "@/shared/components/practice/PracticeProsthesisFollowUpDialog";
 import { canAppendProsthesisFollowUp, canManagePendingProsthesisFollowUp, getLatestPendingProsthesisFollowUp, isFinalProsthesisType, isFollowUpProsthesisPhase } from "@/shared/practice/prosthesisFollowUp";
 import { PracticeLabRatingControl } from "@/shared/components/practice/PracticeLabRatingControl";
+import { PracticeTransferBookmarkControl } from "@/shared/components/practice/PracticeTransferBookmarkControl";
+import {
+  bookmarkIdSetFromItems,
+  fetchPracticeTransferBookmarks,
+  pickNextBookmarkItem,
+  transferMongoIdsQuery,
+  type PracticeTransferBookmarkItem,
+} from "@/shared/practice/practiceTransferBookmarks";
 import { PracticeTransferIntakeSection } from "@/shared/components/practice/PracticeTransferIntakeSection";
 import {
   PracticeTransferMobileOralPhotoIntake,
@@ -304,6 +313,10 @@ import {
 } from "@/shared/practice/practiceLabRating";
 import { PracticeLabRejectedReselectDialog } from "@/shared/components/practice/PracticeLabRejectedReselectDialog";
 import { PracticeRemakeSearchDialog } from "@/shared/components/practice/PracticeRemakeSearchDialog";
+import {
+  PracticeSimilarCaseRemakeDialog,
+  type PracticeSimilarCaseMatch,
+} from "@/shared/components/practice/PracticeSimilarCaseRemakeDialog";
 import { normalizeMemoSnippets } from "@/shared/components/practice/PracticeTransferRequestIntakePanel";
 import {
   ARCH_BULK_PROSTHESIS_PRESETS,
@@ -1309,6 +1322,13 @@ export const PracticeFileTransferPage = ({
   const [recentRequestsError, setRecentRequestsError] = useState("");
   const [recentRequestsHasMore, setRecentRequestsHasMore] = useState(false);
   const [selectedTransfer, setSelectedTransfer] = useState<RecentTransferItem | null>(null);
+  const [bookmarkItems, setBookmarkItems] = useState<PracticeTransferBookmarkItem[]>(
+    [],
+  );
+  const [bookmarkedTransferCache, setBookmarkedTransferCache] = useState<
+    RecentTransferItem[]
+  >([]);
+  const bookmarkNavigateLastIdRef = useRef("");
   const [editingSentTransfer, setEditingSentTransfer] = useState<EditingSentTransfer | null>(null);
   const [labRejectedReselectTarget, setLabRejectedReselectTarget] =
     useState<RecentTransferItem | null>(null);
@@ -1637,6 +1657,22 @@ export const PracticeFileTransferPage = ({
   directAbutmentFavoritesRef.current = directAbutmentFavorites;
   const [composeOpen, setComposeOpen] = useState(false);
   const [composeRemakeMode, setComposeRemakeMode] = useState(false);
+  const [linkedRemakeSource, setLinkedRemakeSource] =
+    useState<PracticeSimilarCaseMatch | null>(null);
+  const [similarCaseMatches, setSimilarCaseMatches] = useState<
+    PracticeSimilarCaseMatch[]
+  >([]);
+  const [similarCaseSelectedId, setSimilarCaseSelectedId] = useState("");
+  const [similarCasePromptOpen, setSimilarCasePromptOpen] = useState(false);
+  const [similarCaseBusy, setSimilarCaseBusy] = useState(false);
+  /** patient|teeth fingerprint → remake|new */
+  const similarCaseResolutionRef = useRef<{
+    fingerprint: string;
+    decision: "remake" | "new";
+  } | null>(null);
+  const similarCaseCheckGenRef = useRef(0);
+  const similarCasePromptedFpRef = useRef("");
+  const pendingSubmitAfterSimilarRef = useRef(false);
   const [remakeSearchOpen, setRemakeSearchOpen] = useState(false);
   const [remakeBusy, setRemakeBusy] = useState(false);
   const [remakeConfirmOpen, setRemakeConfirmOpen] = useState(false);
@@ -1677,7 +1713,10 @@ export const PracticeFileTransferPage = ({
     labAnchorId: selectedLab?._id,
     toothWorks: syncToothWorks,
     implantFavorites,
-    remake: true,
+    // 원의뢰 180일 밖이면 정가(리메이크 플래그와 수가 분리)
+    remake:
+      !linkedRemakeSource ||
+      linkedRemakeSource.withinRemakePricingWindow !== false,
     rushFeeMultiplier: 1,
   });
   const composeRemakeIncludesCustomAbutment = useMemo(
@@ -1694,6 +1733,113 @@ export const PracticeFileTransferPage = ({
     () => String(patientName || "").trim().normalize("NFC"),
     [patientName],
   );
+  const composeToothNumbersKey = useMemo(() => {
+    const set = new Set<string>();
+    for (const row of syncToothWorks) {
+      const tooth = String(row?.toothNumber || "").trim();
+      if (tooth) set.add(tooth);
+      for (const linked of row?.bridgeLinkedTeeth || []) {
+        const t = String(linked || "").trim();
+        if (t) set.add(t);
+      }
+    }
+    return Array.from(set).sort().join(",");
+  }, [syncToothWorks]);
+  const similarCaseFingerprint = useMemo(() => {
+    if (
+      !hasAutosaveReadyPatientName(normalizedPatientName) ||
+      !composeToothNumbersKey
+    ) {
+      return "";
+    }
+    return `${normalizedPatientName}|${composeToothNumbersKey}`;
+  }, [normalizedPatientName, composeToothNumbersKey]);
+
+  // 환자·치아 지문이 바뀌면 이전 리메이크/신규 결정을 무효화(플랫폼 이전 수동 리메이크는 유지).
+  useEffect(() => {
+    const resolved = similarCaseResolutionRef.current;
+    if (!resolved?.fingerprint) return;
+    if (resolved.fingerprint === similarCaseFingerprint) return;
+    similarCaseResolutionRef.current = null;
+    similarCasePromptedFpRef.current = "";
+    if (resolved.decision === "remake") {
+      setComposeRemakeMode(false);
+      setLinkedRemakeSource(null);
+    }
+  }, [similarCaseFingerprint]);
+
+  // 환자명(완성형 한글)+치아 준비 시 180일 동일건 백그라운드 조회. 임시저장/전송을 막지 않음.
+  useEffect(() => {
+    if (!composeOpen || editingSentTransfer || composeRemakeMode) return;
+    if (!authToken || !similarCaseFingerprint) return;
+
+    const resolved = similarCaseResolutionRef.current;
+    if (resolved?.fingerprint === similarCaseFingerprint) return;
+    if (similarCasePromptedFpRef.current === similarCaseFingerprint) return;
+
+    const gen = ++similarCaseCheckGenRef.current;
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const qs = new URLSearchParams({
+            patientName: normalizedPatientName,
+            teeth: composeToothNumbersKey,
+            days: "180",
+            limit: "5",
+          });
+          const excludeId = String(
+            editingSentTransferRef.current?.transferMongoId ||
+              editingSentTransferRef.current?.id ||
+              "",
+          ).trim();
+          if (excludeId) qs.set("excludeTransferMongoId", excludeId);
+
+          const res = await apiFetch<{
+            success?: boolean;
+            data?: {
+              exists?: boolean;
+              matches?: PracticeSimilarCaseMatch[];
+            };
+          }>({
+            path: `/api/practice/transfers/check-similar?${qs}`,
+            method: "GET",
+            token: authToken,
+          });
+          if (similarCaseCheckGenRef.current !== gen) return;
+          if (!res.ok) return;
+          const matches = Array.isArray(res.data?.data?.matches)
+            ? res.data.data.matches
+            : [];
+          if (matches.length === 0) {
+            similarCaseResolutionRef.current = {
+              fingerprint: similarCaseFingerprint,
+              decision: "new",
+            };
+            setSimilarCaseMatches([]);
+            setSimilarCasePromptOpen(false);
+            return;
+          }
+          similarCasePromptedFpRef.current = similarCaseFingerprint;
+          setSimilarCaseMatches(matches);
+          setSimilarCaseSelectedId(String(matches[0]?._id || ""));
+          setSimilarCasePromptOpen(true);
+        } catch {
+          // 검색 실패는 전송을 막지 않음(전송 시 한 번 더 시도).
+        }
+      })();
+    }, 400);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    authToken,
+    composeOpen,
+    composeRemakeMode,
+    composeToothNumbersKey,
+    editingSentTransfer,
+    normalizedPatientName,
+    similarCaseFingerprint,
+  ]);
+
   const currentFormFingerprint = useMemo(
     () =>
       buildPracticeTransferFormFingerprint({
@@ -5505,6 +5651,9 @@ export const PracticeFileTransferPage = ({
         draftGroupedTransfers.find(
           (row) => String(row.transferId || "").trim() === transferId,
         ) ||
+        bookmarkedTransferCache.find(
+          (row) => String(row.transferId || "").trim() === transferId,
+        ) ||
         null;
       if (transfer) {
         void handleOpenTransferDialog(transfer);
@@ -5527,6 +5676,7 @@ export const PracticeFileTransferPage = ({
       });
     },
     [
+      bookmarkedTransferCache,
       chatRooms,
       draftGroupedTransfers,
       groupedTransfers,
@@ -5534,6 +5684,138 @@ export const PracticeFileTransferPage = ({
       toast,
     ],
   );
+
+  const bookmarkedIdSet = useMemo(
+    () => bookmarkIdSetFromItems(bookmarkItems),
+    [bookmarkItems],
+  );
+
+  const refreshPracticeBookmarks = useCallback(async () => {
+    if (!authToken) {
+      setBookmarkItems([]);
+      setBookmarkedTransferCache([]);
+      return;
+    }
+    try {
+      const payload = await fetchPracticeTransferBookmarks({
+        token: authToken,
+        side: "send",
+      });
+      setBookmarkItems(payload.items);
+      const mongoIds = payload.items
+        .map((item) => String(item.transferMongoId || "").trim())
+        .filter(Boolean);
+      if (!mongoIds.length) {
+        setBookmarkedTransferCache([]);
+        return;
+      }
+      const qs = new URLSearchParams();
+      qs.set("transferMongoIds", transferMongoIdsQuery(mongoIds));
+      qs.set("limit", String(Math.min(200, Math.max(mongoIds.length, 1))));
+      const raw = await request({
+        path: `/api/practice/transfers/my?${qs.toString()}`,
+        method: "GET",
+        token: authToken,
+      });
+      const body =
+        raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+      const data =
+        body.data && typeof body.data === "object"
+          ? (body.data as Record<string, unknown>)
+          : body;
+      const rows = mapMyPracticeTransferApiRows(
+        Array.isArray(data.requests) ? data.requests : [],
+      );
+      const grouped = groupPracticeRecentRequests(rows, chatRooms);
+      // 북마크 최신순 유지
+      const byId = new Map(
+        grouped.map((row) => [String(row.transferId || "").trim(), row]),
+      );
+      const byMongo = new Map(
+        grouped.flatMap((row) =>
+          (row.transferMongoIds || []).map(
+            (id) => [String(id || "").trim(), row] as const,
+          ),
+        ),
+      );
+      const ordered = payload.items
+        .map((item) => {
+          const tid = String(item.transferId || "").trim();
+          const mid = String(item.transferMongoId || "").trim();
+          return (tid && byId.get(tid)) || (mid && byMongo.get(mid)) || null;
+        })
+        .filter((row): row is RecentTransferItem => Boolean(row));
+      setBookmarkedTransferCache(ordered);
+    } catch {
+      // 배지·아이콘만 실패해도 본문은 유지
+    }
+  }, [authToken, chatRooms]);
+
+  useEffect(() => {
+    void refreshPracticeBookmarks();
+  }, [refreshPracticeBookmarks]);
+
+  const handleBookmarkChanged = useCallback(
+    (transfer: RecentTransferItem, bookmarked: boolean) => {
+      const transferId = String(transfer.transferId || "").trim();
+      const mongoId = String(transfer.transferMongoIds?.[0] || "").trim();
+      setBookmarkItems((prev) => {
+        const without = prev.filter(
+          (row) =>
+            String(row.transferId || "").trim() !== transferId &&
+            String(row.transferMongoId || "").trim() !== mongoId,
+        );
+        if (!bookmarked) return without;
+        return [
+          {
+            transferMongoId: mongoId,
+            transferId,
+            side: "send",
+            createdAt: new Date().toISOString(),
+          },
+          ...without,
+        ];
+      });
+      setBookmarkedTransferCache((prev) => {
+        const without = prev.filter(
+          (row) => String(row.transferId || "").trim() !== transferId,
+        );
+        if (!bookmarked) return without;
+        return [transfer, ...without];
+      });
+    },
+    [],
+  );
+
+  const navigateNextBookmark = useCallback(() => {
+    const next = pickNextBookmarkItem(
+      bookmarkedTransferCache,
+      bookmarkNavigateLastIdRef.current,
+    );
+    if (!next) {
+      if (bookmarkItems.length > 0) {
+        void refreshPracticeBookmarks().then(() => {
+          // hydrate 직후 재시도는 다음 클릭
+        });
+        toast({
+          title: "북마크 불러오는 중",
+          description: "다시 클릭하면 순회합니다.",
+        });
+      }
+      return;
+    }
+    const transferId = String(next.transferId || "").trim();
+    bookmarkNavigateLastIdRef.current = transferId;
+    void handleOpenTransferDialog(next, {
+      preferredDockSide: "right",
+      returnToAllModal: true,
+    });
+  }, [
+    bookmarkItems.length,
+    bookmarkedTransferCache,
+    refreshPracticeBookmarks,
+    toast,
+  ]);
 
   useEffect(() => {
     const onOpen = (evt: Event) => {
@@ -7563,6 +7845,7 @@ export const PracticeFileTransferPage = ({
 
   const handleSubmitPracticeRequest = async (options?: {
     skipRemakeConfirm?: boolean;
+    skipSimilarCaseConfirm?: boolean;
   }) => {
     if (requestSubmittingRef.current || requestSubmitting) return;
 
@@ -7591,6 +7874,60 @@ export const PracticeFileTransferPage = ({
         variant: "destructive",
       });
       return;
+    }
+
+    // 신규 작성: 동일 환자·치아 미확인 시 전송 전 확인(리메이크/신규).
+    if (
+      !editingSentTransfer &&
+      !composeRemakeMode &&
+      !options?.skipSimilarCaseConfirm &&
+      similarCaseFingerprint
+    ) {
+      const resolved = similarCaseResolutionRef.current;
+      if (resolved?.fingerprint !== similarCaseFingerprint) {
+        pendingSubmitAfterSimilarRef.current = true;
+        setSimilarCaseBusy(true);
+        try {
+          const qs = new URLSearchParams({
+            patientName: normalizedPatientName,
+            teeth: composeToothNumbersKey,
+            days: "180",
+            limit: "5",
+          });
+          const res = await apiFetch<{
+            success?: boolean;
+            data?: {
+              exists?: boolean;
+              matches?: PracticeSimilarCaseMatch[];
+            };
+          }>({
+            path: `/api/practice/transfers/check-similar?${qs}`,
+            method: "GET",
+            token: authToken,
+          });
+          const matches = res.ok && Array.isArray(res.data?.data?.matches)
+            ? res.data.data.matches
+            : [];
+          if (matches.length > 0) {
+            setSimilarCaseMatches(matches);
+            setSimilarCaseSelectedId(String(matches[0]?._id || ""));
+            setSimilarCasePromptOpen(true);
+            return;
+          }
+          similarCaseResolutionRef.current = {
+            fingerprint: similarCaseFingerprint,
+            decision: "new",
+          };
+        } catch {
+          // 조회 실패 시 신규로 진행(전송 자체를 막지 않음).
+          similarCaseResolutionRef.current = {
+            fingerprint: similarCaseFingerprint,
+            decision: "new",
+          };
+        } finally {
+          setSimilarCaseBusy(false);
+        }
+      }
     }
 
     if (
@@ -7798,6 +8135,13 @@ export const PracticeFileTransferPage = ({
           ...(composeRemakeMode && !editing
             ? {
                 isRemake: true,
+                ...(linkedRemakeSource?._id
+                  ? {
+                      remakeSourceTransferMongoId: linkedRemakeSource._id,
+                      remakeSourceTransferId:
+                        linkedRemakeSource.transferId || undefined,
+                    }
+                  : {}),
                 ...(composeRemakeIncludesCustomAbutment
                   ? { includeCustomAbutment: true }
                   : {}),
@@ -7852,6 +8196,12 @@ export const PracticeFileTransferPage = ({
 
       setComposeRemakeMode(false);
       setComposeRemakeConfirmOpen(false);
+      setLinkedRemakeSource(null);
+      setSimilarCaseMatches([]);
+      setSimilarCasePromptOpen(false);
+      similarCaseResolutionRef.current = null;
+      similarCasePromptedFpRef.current = "";
+      pendingSubmitAfterSimilarRef.current = false;
       setComposeOpen(false);
       void loadRecentRequests({ silent: true });
       setCalendarRefreshNonce((n) => n + 1);
@@ -7998,6 +8348,15 @@ export const PracticeFileTransferPage = ({
 
     setComposeRemakeMode(Boolean(options?.remake));
     setComposeRemakeConfirmOpen(false);
+    setLinkedRemakeSource(null);
+    setSimilarCaseMatches([]);
+    setSimilarCaseSelectedId("");
+    setSimilarCasePromptOpen(false);
+    similarCaseResolutionRef.current = options?.remake
+      ? { fingerprint: "", decision: "remake" }
+      : null;
+    similarCasePromptedFpRef.current = "";
+    pendingSubmitAfterSimilarRef.current = false;
     setLabOpen(false);
     setLabSearch("");
     // 최근 기공소는 드롭다운 후보로 유지. 선택은 비운 뒤 테스트기공소 자동 선택이 채운다.
@@ -9515,6 +9874,8 @@ export const PracticeFileTransferPage = ({
           headerActions={calendarHeaderActions}
           onSelectFutureDay={openComposeForArrival}
           calendarRefreshNonce={calendarRefreshNonce}
+          bookmarkCount={bookmarkItems.length}
+          onBookmarkNavigate={navigateNextBookmark}
           onSelectTransfer={(transfer, options) => {
             void handleOpenTransferDialog(transfer, {
               returnToAllModal: true,
@@ -9541,6 +9902,12 @@ export const PracticeFileTransferPage = ({
           if (!open) {
             setComposeRemakeMode(false);
             setComposeRemakeConfirmOpen(false);
+            setLinkedRemakeSource(null);
+            setSimilarCaseMatches([]);
+            setSimilarCasePromptOpen(false);
+            similarCaseResolutionRef.current = null;
+            similarCasePromptedFpRef.current = "";
+            pendingSubmitAfterSimilarRef.current = false;
           }
         }}
       >
@@ -9615,7 +9982,9 @@ export const PracticeFileTransferPage = ({
                   variant="outline"
                   className="border-amber-400 bg-amber-50 text-amber-800"
                 >
-                  {PRE_PLATFORM_REMAKE_LABEL}
+                  {linkedRemakeSource
+                    ? "리메이크"
+                    : PRE_PLATFORM_REMAKE_LABEL}
                 </Badge>
               ) : null}
             </DialogTitle>
@@ -9712,7 +10081,9 @@ export const PracticeFileTransferPage = ({
           <div className="flex items-center justify-end gap-3">
             {composeRemakeMode && !editingSentTransfer ? (
               <p className="max-w-[16rem] text-right text-xs leading-snug text-muted-foreground sm:max-w-xs">
-                {PRE_PLATFORM_REMAKE_PRACTICE_SEND_HINT}
+                {linkedRemakeSource
+                  ? `원의뢰 ${linkedRemakeSource.transferId || linkedRemakeSource.orderYmd || ""}에 연결 · 기공소에 리메이크로 표시됩니다.`
+                  : PRE_PLATFORM_REMAKE_PRACTICE_SEND_HINT}
               </p>
             ) : null}
             <Tooltip>
@@ -10532,39 +10903,65 @@ export const PracticeFileTransferPage = ({
           cancelRequestDisabled={deletingTransfer}
           chatHeaderAction={null}
           composerToolbarExtra={
-            selectedTransfer &&
-            selectedTransfer.canRateLab &&
-            selectedTransfer.transferMongoIds?.[0] ? (
-              <PracticeLabRatingControl
-                variant="icon"
-                transferMongoId={String(selectedTransfer.transferMongoIds[0])}
-                rating={selectedTransfer.labRating || null}
-                onChanged={(next) => {
-                  setSelectedTransfer((prev) =>
-                    prev
-                      ? { ...prev, labRating: next, canRateLab: true }
-                      : prev,
-                  );
-                  setRecentRequests((prev) =>
-                    prev.map((row) =>
-                      row.requestMongoId ===
-                        String(selectedTransfer.transferMongoIds?.[0] || "")
-                        ? { ...row, labRating: next, canRateLab: true }
-                        : row,
-                    ),
-                  );
-                  const performingId = String(
-                    selectedTransfer.performingLabAnchorId || "",
-                  ).trim();
-                  if (performingId) {
-                    setOwnOneStarBlockedLabIds((prev) => {
-                      const without = prev.filter((id) => id !== performingId);
-                      if (next.stars === 1) return [...without, performingId];
-                      return without;
-                    });
-                  }
-                }}
-              />
+            selectedTransfer ? (
+              <>
+                {selectedTransfer.transferId &&
+                selectedTransfer.transferId !== "-" &&
+                selectedTransfer.transferId !== PRACTICE_DRAFT_TRANSFER_ID &&
+                selectedTransfer.status !== "임시저장" ? (
+                  <PracticeTransferBookmarkControl
+                    transferKey={
+                      String(selectedTransfer.transferMongoIds?.[0] || "").trim() ||
+                      String(selectedTransfer.transferId || "").trim()
+                    }
+                    bookmarked={
+                      bookmarkedIdSet.has(
+                        String(selectedTransfer.transferMongoIds?.[0] || "").trim(),
+                      ) ||
+                      bookmarkedIdSet.has(
+                        String(selectedTransfer.transferId || "").trim(),
+                      )
+                    }
+                    side="send"
+                    onChanged={(next) =>
+                      handleBookmarkChanged(selectedTransfer, next)
+                    }
+                  />
+                ) : null}
+                {selectedTransfer.canRateLab &&
+                selectedTransfer.transferMongoIds?.[0] ? (
+                  <PracticeLabRatingControl
+                    variant="icon"
+                    transferMongoId={String(selectedTransfer.transferMongoIds[0])}
+                    rating={selectedTransfer.labRating || null}
+                    onChanged={(next) => {
+                      setSelectedTransfer((prev) =>
+                        prev
+                          ? { ...prev, labRating: next, canRateLab: true }
+                          : prev,
+                      );
+                      setRecentRequests((prev) =>
+                        prev.map((row) =>
+                          row.requestMongoId ===
+                            String(selectedTransfer.transferMongoIds?.[0] || "")
+                            ? { ...row, labRating: next, canRateLab: true }
+                            : row,
+                        ),
+                      );
+                      const performingId = String(
+                        selectedTransfer.performingLabAnchorId || "",
+                      ).trim();
+                      if (performingId) {
+                        setOwnOneStarBlockedLabIds((prev) => {
+                          const without = prev.filter((id) => id !== performingId);
+                          if (next.stars === 1) return [...without, performingId];
+                          return without;
+                        });
+                      }
+                    }}
+                  />
+                ) : null}
+              </>
             ) : null
           }
           summaryItems={selectedTransferDetailModel?.summaryItems || []}
@@ -11005,6 +11402,58 @@ export const PracticeFileTransferPage = ({
           }}
         />
 
+        <PracticeSimilarCaseRemakeDialog
+          open={similarCasePromptOpen}
+          matches={similarCaseMatches}
+          selectedId={similarCaseSelectedId}
+          onSelectId={setSimilarCaseSelectedId}
+          busy={similarCaseBusy || requestSubmitting}
+          onCancel={() => {
+            if (similarCaseBusy || requestSubmitting) return;
+            pendingSubmitAfterSimilarRef.current = false;
+            setSimilarCasePromptOpen(false);
+          }}
+          onConfirmNew={() => {
+            if (!similarCaseFingerprint) {
+              setSimilarCasePromptOpen(false);
+              return;
+            }
+            similarCaseResolutionRef.current = {
+              fingerprint: similarCaseFingerprint,
+              decision: "new",
+            };
+            setLinkedRemakeSource(null);
+            setComposeRemakeMode(false);
+            setSimilarCasePromptOpen(false);
+            if (pendingSubmitAfterSimilarRef.current) {
+              pendingSubmitAfterSimilarRef.current = false;
+              void handleSubmitPracticeRequest({
+                skipSimilarCaseConfirm: true,
+              });
+            }
+          }}
+          onConfirmRemake={() => {
+            const selected =
+              similarCaseMatches.find((m) => m._id === similarCaseSelectedId) ||
+              similarCaseMatches[0] ||
+              null;
+            if (!selected?._id || !similarCaseFingerprint) return;
+            similarCaseResolutionRef.current = {
+              fingerprint: similarCaseFingerprint,
+              decision: "remake",
+            };
+            setLinkedRemakeSource(selected);
+            setComposeRemakeMode(true);
+            setSimilarCasePromptOpen(false);
+            if (pendingSubmitAfterSimilarRef.current) {
+              pendingSubmitAfterSimilarRef.current = false;
+              void handleSubmitPracticeRequest({
+                skipSimilarCaseConfirm: true,
+              });
+            }
+          }}
+        />
+
         <ConfirmDialog
           open={remakeConfirmOpen}
           title="리메이크 의뢰를 전송할까요?"
@@ -11027,7 +11476,7 @@ export const PracticeFileTransferPage = ({
                   )}
                 </div>
                 <div className="text-muted-foreground">
-                  동일 치과·환자·치식·최근 90일 조건이면 치과→기공소 리메이크비는
+                  동일 치과·환자·치식·최근 180일 조건이면 치과→기공소 리메이크비는
                   무료입니다. 기공소가 작업시작하면 반영됩니다.
                 </div>
                 {remakePending.transfer.hasCustomAbutment ? (
@@ -11099,7 +11548,7 @@ export const PracticeFileTransferPage = ({
                 {PRE_PLATFORM_REMAKE_PRACTICE_SEND_HINT}
               </div>
               <div className="text-muted-foreground">
-                동일 치과·환자·치식·최근 90일이면 치과→기공소 리메이크비는
+                동일 치과·환자·치식·최근 180일이면 치과→기공소 리메이크비는
                 무료입니다. 커스텀어벗은 기본 제외이며, 작성 화면에서 넣으면
                 기공소→어벗츠 리메이크는 건당 10,000원(배송비 별도)입니다.
               </div>

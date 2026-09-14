@@ -1660,7 +1660,7 @@ const NewRequestPageContent = () => {
               {duplicatePrompt?.mode === "tracking" && (
                 <div className="rounded border border-primary-muted bg-primary-soft px-2.5 py-2 text-[11px] text-primary-strong">
                   리메이크로 접수 시 건당 10,000원(배송비 별도). 동일 치과·환자·치식,
-                  최근 90일 조건 충족 시 적용.
+                  최근 180일 조건 충족 시 적용.
                 </div>
               )}
               {duplicateList.map((dup, idx) => {

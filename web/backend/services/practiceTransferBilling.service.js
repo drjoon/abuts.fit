@@ -11,6 +11,7 @@
 // - web/backend/models/ledgerLine.model.js
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
+// - 2026-09-14: remakeFeeQuote — 원본 180일 창 밖이면 정가(리메이크 무료 미적용).
 // - 2026-09-12: remakeFeeQuote — 원본 90일 창 밖이면 정가(리메이크 무료 미적용).
 // - 2026-08-27: billed 견적 — 레거시 abutmentRetail 스냅샷이면 기공소 CA 수가(live)로 표시 승격.
 // - 2026-08-26: labAbutmentPending는 미도입 플래그만(금액>0과 OR 하지 않음).
@@ -5367,7 +5368,7 @@ export async function buildFeeQuotesForTransferDocs({
           practiceId,
         );
     // 기본 리메이크 견적=보철만(CA 제외). CA 포함 견적은 별도 필드.
-    // 원본이 리메이크 정책 창(90일) 밖이면 정가(비-리메이크) 견적.
+    // 원본이 리메이크 정책 창(180일) 밖이면 정가(비-리메이크) 견적.
     const remakePricingEligible = isWithinRemakePolicyWindow(doc?.createdAt);
     const remakeToothWorksProsthesisOnly =
       stripCustomAbutmentFromToothWorks(toothWorks);

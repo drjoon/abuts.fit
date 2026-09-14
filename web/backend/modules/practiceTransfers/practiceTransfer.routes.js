@@ -2,6 +2,7 @@
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 // - web/backend/controllers/practiceTransfers/practiceTransferSettings.controller.js
 // - web/backend/controllers/practiceTransfers/roundBarAbutmentRequest.controller.js
+// - web/backend/controllers/practiceTransfers/practiceTransferBookmark.controller.js
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 import express from "express";
@@ -38,6 +39,7 @@ import {
   chargeReceivedPracticeTransferRemake,
   cancelReceivedPracticeTransferRemakeCharge,
   searchRemakePracticeTransfers,
+  checkSimilarPracticeTransfers,
   restorePracticeTransfersBatch,
   retargetPracticeTransferLab,
   upsertPracticeTransferDraft,
@@ -62,6 +64,11 @@ import {
 } from "../../controllers/practiceTransfers/practiceTransferSettings.controller.js";
 import { createRoundBarAbutmentRequest } from "../../controllers/practiceTransfers/roundBarAbutmentRequest.controller.js";
 import { createProsthesisFeeItemRequest } from "../../controllers/practiceTransfers/prosthesisFeeItemRequest.controller.js";
+import {
+  addPracticeTransferBookmark,
+  listPracticeTransferBookmarks,
+  removePracticeTransferBookmark,
+} from "../../controllers/practiceTransfers/practiceTransferBookmark.controller.js";
 
 const router = express.Router();
 
@@ -76,10 +83,22 @@ router.post("/", authenticate, sendAuth, createPracticeTransfer);
 
 router.get("/my", authenticate, sendAuth, getMyPracticeTransfers);
 router.get(
+  "/bookmarks",
+  authenticate,
+  authorize(["practice", "requestor", "internalLab", "admin"]),
+  listPracticeTransferBookmarks,
+);
+router.get(
   "/remake-candidates",
   authenticate,
   sendAuth,
   searchRemakePracticeTransfers,
+);
+router.get(
+  "/check-similar",
+  authenticate,
+  sendAuth,
+  checkSimilarPracticeTransfers,
 );
 router.get(
   "/subcontract-direct-blocked-labs",
@@ -261,6 +280,20 @@ router.post(
   authenticate,
   sendAuth,
   upsertPracticeTransferLabRating,
+);
+
+router.post(
+  "/:transferId/bookmark",
+  authenticate,
+  authorize(["practice", "requestor", "internalLab", "admin"]),
+  addPracticeTransferBookmark,
+);
+
+router.delete(
+  "/:transferId/bookmark",
+  authenticate,
+  authorize(["practice", "requestor", "internalLab", "admin"]),
+  removePracticeTransferBookmark,
 );
 
 router.post(
