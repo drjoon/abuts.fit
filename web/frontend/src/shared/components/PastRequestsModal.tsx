@@ -7,6 +7,7 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // change-log:
+// - 2026-09-14: 모바일 — 테이블 대신 카드 목록(가로 스크롤 제거).
 // - 2026-09-03: description="" — 안내 문구 숨김(진행중 등).
 // - 2026-09-03: scroll-x-bar-top을 flex-1 세로 스크롤과 분리(rotateX로 표가 아래로 붙던 문제).
 // - 2026-08-21: 기공의뢰(PTX) 연동 CA는 어벗츠로의뢰에서 취소 불가·수신 작업취소 안내.
@@ -24,7 +25,7 @@
 // - 2026-08-18: 지난 의뢰 기본에서 취소 제외(추적관리만).
 // - 2026-08-18: 열릴 때 initialPeriod로 페이지 헤더 기간과 동기.
 // - 2026-08-03: PastRequestsModal: display normalize manufacturer stage (의뢰 -> 준비) for table '상태' column. (display-only)
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { getNormalizedStageLabelSafe } from "@/utils/stage";
 import {
   Dialog,
@@ -171,6 +172,34 @@ const formatDate = (iso?: string) => {
     hour: "2-digit",
     minute: "2-digit",
   });
+};
+
+const DeliveryStatusChip = ({
+  row,
+  emptyFallback = <span className="text-slate-400">-</span>,
+}: {
+  row: any;
+  emptyFallback?: ReactNode;
+}) => {
+  const di =
+    row?.deliveryInfoRef && typeof row.deliveryInfoRef === "object"
+      ? row.deliveryInfoRef
+      : null;
+  const label = getHanjinDeliveryStatusLabel(di);
+  if (!label) return <>{emptyFallback}</>;
+  const isDone = label === "배송완료";
+  return (
+    <span
+      className={
+        isDone
+          ? "inline-block max-w-[9.5rem] truncate rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800"
+          : "inline-block max-w-[9.5rem] truncate rounded bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800"
+      }
+      title={label}
+    >
+      {label}
+    </span>
+  );
 };
 
 const ymdRangeForPeriod = (
@@ -567,8 +596,9 @@ export const PastRequestsModal = ({
       }}
     >
       <DialogContent
+        overlayClassName="z-[319]"
         className={cn(
-          "flex h-[min(85vh,800px)] flex-col gap-0 overflow-hidden p-0 sm:rounded-2xl",
+          "z-[320] flex h-[min(85vh,800px)] flex-col gap-0 overflow-hidden p-0 sm:rounded-2xl",
           RESPONSIVE.dialogContentFull,
           "sm:max-w-[min(96vw,1440px)]",
           suspend && "hidden",
@@ -604,8 +634,8 @@ export const PastRequestsModal = ({
 
         <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 py-4 sm:px-6 sm:py-5">
           <div className="rounded-xl bg-slate-50 px-3.5 py-3">
-            <div className="flex w-full flex-wrap items-center gap-2">
-              <div className="flex flex-wrap items-center gap-2 py-0.5">
+            <div className="flex w-full flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+              <div className="flex min-w-0 flex-wrap items-center gap-2 py-0.5">
                 <PeriodFilter
                   value={period}
                   onChange={setPeriod}
@@ -658,16 +688,175 @@ export const PastRequestsModal = ({
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 placeholder="검색 (의뢰번호/치과/환자/임플란트)"
-                className="h-9 w-full min-w-0 flex-1 rounded-lg bg-white sm:ml-auto sm:max-w-[360px] sm:flex-none sm:w-[320px]"
+                className="h-9 w-full min-w-0 rounded-lg bg-white sm:ml-auto sm:max-w-[360px] sm:flex-none sm:w-[320px]"
               />
             </div>
           </div>
 
           <div
             ref={scrollRef}
-            className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-slate-200/80 bg-white/70 shadow-sm"
+            className="min-h-0 flex-1 overflow-y-auto overscroll-contain rounded-2xl border border-slate-200/80 bg-white/70 shadow-sm"
           >
-            <div className={RESPONSIVE.tableShell}>
+            {/* Mobile: card list */}
+            <div className="space-y-2.5 p-3 md:hidden">
+              {allowCancel && cancelableRows.length > 0 ? (
+                <div className="flex items-center gap-2 px-0.5 pb-0.5">
+                  <Checkbox
+                    checked={
+                      allCancelableSelected
+                        ? true
+                        : someCancelableSelected
+                          ? "indeterminate"
+                          : false
+                    }
+                    disabled={cancelableRows.length === 0 || canceling}
+                    onCheckedChange={(value) =>
+                      handleSelectAllCancelable(value === true)
+                    }
+                    aria-label="준비 단계 의뢰 모두 선택"
+                  />
+                  <span className="text-xs text-slate-500">
+                    준비 단계 전체 선택
+                  </span>
+                </div>
+              ) : null}
+
+              {filteredRows.map((r: any) => {
+                const ci = r?.caseInfos || {};
+                const id = requestMongoId(r);
+                const stage =
+                  getNormalizedStageLabelSafe(r) ||
+                  String(r?.manufacturerStage || "-");
+                const caseText =
+                  [ci?.clinicName, ci?.patientName, ci?.tooth]
+                    .filter(Boolean)
+                    .join(" ") || "-";
+                const implantText = formatImplantDisplay(ci);
+                const requestId = String(r?.requestId || "-");
+                const isPtxLinked = isPracticeTransferLinkedRequest(r);
+                const canCancelRow =
+                  allowCancel && isPrepCancelable(r) && !isPtxLinked;
+                const canGuidePtxCancel =
+                  allowCancel && isPrepCancelable(r) && isPtxLinked;
+
+                return (
+                  <div
+                    key={id || requestId}
+                    role="button"
+                    tabIndex={0}
+                    className="group w-full cursor-pointer rounded-2xl border border-slate-200/80 bg-white p-3.5 text-left shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-[transform,box-shadow,border-color] active:scale-[0.985] active:bg-slate-50/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    onClick={() => onSelectRequest(r)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        onSelectRequest(r);
+                      }
+                    }}
+                  >
+                    <div className="flex min-w-0 items-start gap-2.5">
+                      {allowCancel ? (
+                        <div
+                          className="pt-0.5"
+                          onClick={(e) => e.stopPropagation()}
+                          onKeyDown={(e) => e.stopPropagation()}
+                        >
+                          <Checkbox
+                            checked={Boolean(id) && selectedIds.has(id)}
+                            disabled={!canCancelRow || canceling}
+                            onCheckedChange={(value) =>
+                              toggleSelection(id, value === true)
+                            }
+                            aria-label={`${requestId} 선택`}
+                          />
+                        </div>
+                      ) : null}
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                          <span className="inline-flex h-6 shrink-0 items-center rounded-md bg-slate-100 px-2 text-[11px] font-semibold text-slate-800">
+                            {stage}
+                          </span>
+                          <ShippingModeBadge source={r} size="sm" />
+                          <DeliveryStatusChip row={r} emptyFallback={null} />
+                          <span className="ml-auto shrink-0 text-[11px] tabular-nums text-slate-500">
+                            {formatDate(r?.createdAt)}
+                          </span>
+                        </div>
+
+                        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                          <p className="min-w-0 text-[15px] font-semibold leading-snug text-slate-900">
+                            {caseText}
+                          </p>
+                          <RequestCaseMetaBadges
+                            designSoftware={ci?.designSoftware}
+                            anodizingEnabled={
+                              typeof ci?.anodizingEnabled === "boolean"
+                                ? ci.anodizingEnabled
+                                : null
+                            }
+                            hexVerificationSample={Boolean(
+                              (ci as { hexVerificationSample?: boolean })
+                                ?.hexVerificationSample,
+                            )}
+                            practiceTransferLinked={isPtxLinked}
+                          />
+                        </div>
+
+                        <p className="truncate text-xs text-slate-600">
+                          {implantText || "-"}
+                        </p>
+
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-mono text-[11px] text-slate-500">
+                            {requestId}
+                          </span>
+                          {allowCancel && (canCancelRow || canGuidePtxCancel) ? (
+                            <Button
+                              type="button"
+                              variant="destructive"
+                              size="sm"
+                              className="h-7 shrink-0 px-2.5 text-[11px]"
+                              disabled={canceling}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (canGuidePtxCancel) {
+                                  toast({
+                                    title:
+                                      "기공의뢰 건은 여기서 취소할 수 없습니다",
+                                    description:
+                                      PRACTICE_TRANSFER_CANCEL_FROM_ABUTS_MESSAGE,
+                                    duration: 4500,
+                                  });
+                                  return;
+                                }
+                                if (!canCancelRow) return;
+                                setCancelTargets([r]);
+                              }}
+                            >
+                              취소
+                            </Button>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {loading && (
+                <div className="py-8 text-center text-sm text-slate-500">
+                  불러오는 중...
+                </div>
+              )}
+
+              {!loading && filteredRows.length === 0 && (
+                <div className="py-12 text-center text-sm text-slate-500">
+                  조회 결과가 없습니다.
+                </div>
+              )}
+            </div>
+
+            {/* Desktop: table */}
+            <div className={cn("hidden md:block", RESPONSIVE.tableShell)}>
             <Table className={RESPONSIVE.tableMinExtraWide}>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
@@ -745,32 +934,7 @@ export const PastRequestsModal = ({
                         {stage}
                       </TableCell>
                       <TableCell className="text-xs text-slate-700">
-                        {(() => {
-                          const di =
-                            r?.deliveryInfoRef &&
-                            typeof r.deliveryInfoRef === "object"
-                              ? r.deliveryInfoRef
-                              : null;
-                          const label = getHanjinDeliveryStatusLabel(di);
-                          if (!label) {
-                            return (
-                              <span className="text-slate-400">-</span>
-                            );
-                          }
-                          const isDone = label === "배송완료";
-                          return (
-                            <span
-                              className={
-                                isDone
-                                  ? "inline-block max-w-[9.5rem] truncate rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800"
-                                  : "inline-block max-w-[9.5rem] truncate rounded bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800"
-                              }
-                              title={label}
-                            >
-                              {label}
-                            </span>
-                          );
-                        })()}
+                        <DeliveryStatusChip row={r} />
                       </TableCell>
                       <TableCell>
                         <ShippingModeBadge source={r} size="sm" />
