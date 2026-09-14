@@ -4,6 +4,7 @@
 // - web/frontend/src/shared/shipping/estimateShipDate.ts
 // - web/backend/utils/practiceTransferArrivalDates.js
 // change-log:
+// - 2026-09-14: 팝오버 안내 — 「출고일 지정: 치과도착 − n일 전」(12시 컷오프 줄 제거).
 // - 2026-09-12: 출고 버튼 라벨 연도 생략(M.D) — 가로폭 축소.
 // - 2026-09-12: 출고일=도착−n 선택(최소 2). 낮 12시 전 신속·이후 묶음 출고일까지.
 // - 2026-09-12: 어벗 출고일 기본=치과도착일−3달력일. 출고일−3일 임박 경고 폐기.
@@ -229,21 +230,11 @@ export function formatAbutmentShipButtonLabel(shipYmd?: string | null): string {
 }
 
 /** 버튼·팝오버 안내 줄(줄바꿈 SSOT). `whitespace-pre-line`로 표시. */
-export function getAbutmentShipNPickerHintLines(opts?: {
-  mode?: PracticeAbutmentShipCutoffMode;
-}): string[] {
-  const mode = opts?.mode ?? resolveAbutmentShipCutoffMode();
-  const modeLabel = mode === "express" ? "신속출고일" : "묶음출고일";
-  const noonSide = mode === "express" ? "전" : "후";
-  return [
-    "출고 = 치과도착 − n일 (n ≥ 2)",
-    `낮 12시 ${noonSide} → ${modeLabel}까지`,
-  ];
+export function getAbutmentShipNPickerHintLines(): string[] {
+  return ["출고일 지정: 치과도착 − n일 전"];
 }
 
 /** 호버 툴팁용 한 블록 문자열 */
-export function getAbutmentShipNPickerTooltip(opts?: {
-  mode?: PracticeAbutmentShipCutoffMode;
-}): string {
-  return getAbutmentShipNPickerHintLines(opts).join("\n");
+export function getAbutmentShipNPickerTooltip(): string {
+  return getAbutmentShipNPickerHintLines().join("\n");
 }

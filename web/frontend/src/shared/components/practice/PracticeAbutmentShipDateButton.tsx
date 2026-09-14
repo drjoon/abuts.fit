@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/practice/practiceAbutmentShipYmd.ts
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // change-log:
+// - 2026-09-14: 팝오버 — 출고일 지정 안내, 어벗츠 출고 / 치과 도착.
 // - 2026-09-12: −n일 클릭 즉시 저장. 닫기·적용 제거.
 // - 2026-09-12: 팝오버 안내·출고/도착 2줄 표기(가독성).
 // - 2026-09-12: 달력 → 치과도착−n일 선택(최소 2·낮 12시 신속/묶음 상한).
@@ -91,8 +92,8 @@ export function PracticeAbutmentShipDateButton({
   };
 
   const buttonLabel = formatAbutmentShipButtonLabel(effectiveShipYmd);
-  const hintLines = getAbutmentShipNPickerHintLines({ mode: range.mode });
-  const tooltip = getAbutmentShipNPickerTooltip({ mode: range.mode });
+  const hintLines = getAbutmentShipNPickerHintLines();
+  const tooltip = getAbutmentShipNPickerTooltip();
   const nOptions = range.selectable
     ? Array.from(
         { length: range.maxN - range.minN + 1 },
@@ -161,7 +162,7 @@ export function PracticeAbutmentShipDateButton({
             </div>
             <div className="space-y-0.5 text-[11px] leading-snug text-muted-foreground">
               <div>
-                출고{" "}
+                어벗츠 출고{" "}
                 <span className="font-medium text-foreground">
                   {effectiveShipYmd
                     ? formatKstYmdToKo(effectiveShipYmd)
@@ -170,7 +171,7 @@ export function PracticeAbutmentShipDateButton({
               </div>
               {arrivalYmd ? (
                 <div>
-                  도착{" "}
+                  치과 도착{" "}
                   <span className="font-medium text-foreground">
                     {formatKstYmdToKo(arrivalYmd)}
                   </span>
