@@ -4,8 +4,10 @@
  * related files:
  * - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
  * - web/frontend/src/shared/practice/practiceRecentTransferList.ts
+ * - web/frontend/src/shared/ui/mobileActionOverlay.tsx
  * - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
  * change-log:
+ * - 2026-09-14: 모바일 — 채팅형 전체화면 시트·통일 X(상단 액션 크롬 아래).
  * - 2026-09-14: 기본 검색 창 90→180일(리메이크 정책과 동일).
  * - 2026-09-12: 기본 검색 창 14일 → 90일(리메이크 정책과 동일).
  */
@@ -29,6 +31,13 @@ import {
 } from "@/components/ui/popover";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/shared/ui/cn";
+import {
+  MobileActionCloseButton,
+  mobileActionOverlayContentClassName,
+  mobileActionOverlayHeaderClassName,
+  mobileActionOverlayTitleClassName,
+  mobileActionSheetDismissProps,
+} from "@/shared/ui/mobileActionOverlay";
 import { apiFetch } from "@/shared/api/apiClient";
 import { toKstYmd } from "@/shared/date/kst";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -55,6 +64,8 @@ export type PracticeRemakeSearchDialogProps = {
   /** @deprecated 서버 조회로 대체. 호환용으로 남겨 둠. */
   transfers?: PracticeRecentTransferItem[];
   busy?: boolean;
+  /** 모바일 상단 액션 바 아래 전체화면 */
+  mobileSheet?: boolean;
   /** 모바일 상단 액션 바 아래 오프셋 등 */
   contentStyle?: CSSProperties;
   onSelectRemake: (payload: {
@@ -77,6 +88,7 @@ export function PracticeRemakeSearchDialog({
   open,
   onOpenChange,
   busy = false,
+  mobileSheet = false,
   contentStyle,
   onSelectRemake,
   onPrePlatformRemake,
@@ -207,23 +219,50 @@ export function PracticeRemakeSearchDialog({
   })();
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} modal={!mobileSheet} onOpenChange={onOpenChange}>
       <DialogContent
+        hideClose={mobileSheet}
         overlayClassName="z-[319]"
         style={contentStyle}
-        className="z-[320] flex max-h-[90vh] w-full max-w-lg flex-col gap-0 overflow-hidden p-0 sm:max-w-xl"
+        className={cn(
+          "z-[320] flex flex-col gap-0 overflow-hidden p-0",
+          mobileSheet
+            ? mobileActionOverlayContentClassName
+            : "max-h-[90vh] w-full max-w-lg sm:max-w-xl",
+        )}
+        {...(mobileSheet ? mobileActionSheetDismissProps : {})}
       >
-        <DialogHeader className="shrink-0 space-y-0 border-b px-5 py-4 text-left">
-          <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
-            <Repeat className="h-5 w-5 text-amber-600" />
-            리메이크 의뢰
-          </DialogTitle>
-          <DialogDescription className="sr-only">
-            최근 의뢰를 고르거나 환자명으로 검색해 리메이크합니다.
-          </DialogDescription>
-        </DialogHeader>
+        {mobileSheet ? (
+          <div className={mobileActionOverlayHeaderClassName}>
+            <DialogHeader className="min-w-0 flex-1 space-y-0 text-left">
+              <DialogTitle className={mobileActionOverlayTitleClassName}>
+                <Repeat className="h-5 w-5 text-amber-600" />
+                리메이크 의뢰
+              </DialogTitle>
+              <DialogDescription className="sr-only">
+                최근 의뢰를 고르거나 환자명으로 검색해 리메이크합니다.
+              </DialogDescription>
+            </DialogHeader>
+            <MobileActionCloseButton onClick={() => onOpenChange(false)} />
+          </div>
+        ) : (
+          <DialogHeader className="shrink-0 space-y-0 border-b px-5 py-4 text-left">
+            <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
+              <Repeat className="h-5 w-5 text-amber-600" />
+              리메이크 의뢰
+            </DialogTitle>
+            <DialogDescription className="sr-only">
+              최근 의뢰를 고르거나 환자명으로 검색해 리메이크합니다.
+            </DialogDescription>
+          </DialogHeader>
+        )}
 
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-4">
+        <div
+          className={cn(
+            "min-h-0 flex-1 space-y-3 overflow-y-auto",
+            mobileSheet ? "px-4 py-4" : "px-5 py-4",
+          )}
+        >
           <div className="relative">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -249,7 +288,12 @@ export function PracticeRemakeSearchDialog({
             ) : null}
           </div>
 
-          <div className="max-h-56 space-y-1 overflow-y-auto rounded-lg border p-1.5">
+          <div
+            className={cn(
+              "space-y-1 overflow-y-auto rounded-lg border p-1.5",
+              mobileSheet ? "max-h-[min(40vh,320px)]" : "max-h-56",
+            )}
+          >
             {hits.length === 0 ? (
               <p className="px-2 py-6 text-center text-sm text-muted-foreground">
                 {emptyMessage}

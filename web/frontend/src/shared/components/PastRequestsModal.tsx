@@ -7,6 +7,7 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // change-log:
+// - 2026-09-14: 모바일 시트 — 채팅형 전체화면·통일 X(상단 액션 크롬 아래).
 // - 2026-09-14: 모바일 — 테이블 대신 카드 목록(가로 스크롤 제거).
 // - 2026-09-03: description="" — 안내 문구 숨김(진행중 등).
 // - 2026-09-03: scroll-x-bar-top을 flex-1 세로 스크롤과 분리(rotateX로 표가 아래로 붙던 문제).
@@ -61,6 +62,13 @@ import {
   isPracticeTransferLinkedRequest,
 } from "@/shared/practice/practiceTransferAbutsCancel";
 import { cn } from "@/shared/ui/cn";
+import {
+  MobileActionCloseButton,
+  mobileActionOverlayContentClassName,
+  mobileActionOverlayHeaderClassName,
+  mobileActionOverlayTitleClassName,
+  mobileActionSheetDismissProps,
+} from "@/shared/ui/mobileActionOverlay";
 import { RESPONSIVE } from "@/shared/ui/responsive";
 
 type ApiMyRequestsResponse = {
@@ -101,6 +109,8 @@ export type PastRequestsModalProps = {
   removeMongoId?: string | string[] | null;
   /** 모바일 상단 액션 바 아래 오프셋 등 */
   contentStyle?: CSSProperties;
+  /** 모바일 채팅형 전체화면 시트 */
+  mobileSheet?: boolean;
 };
 
 const DEFAULT_MANUFACTURER_STAGE_IN = ["추적관리"];
@@ -234,6 +244,7 @@ export const PastRequestsModal = ({
   suspend = false,
   removeMongoId = null,
   contentStyle,
+  mobileSheet = false,
 }: PastRequestsModalProps) => {
   const { token } = useAuthStore();
   const { toast } = useToast();
@@ -592,49 +603,82 @@ export const PastRequestsModal = ({
     <>
     <Dialog
       open={open}
-      modal={!suspend}
+      modal={!suspend && !mobileSheet}
       onOpenChange={(next) => {
         if (!next && dismissLocked) return;
         onOpenChange(next);
       }}
     >
       <DialogContent
+        hideClose={mobileSheet}
         overlayClassName="z-[319]"
         style={contentStyle}
         className={cn(
-          "z-[320] flex h-[min(85vh,800px)] flex-col gap-0 overflow-hidden p-0 sm:rounded-2xl",
-          RESPONSIVE.dialogContentFull,
-          "sm:max-w-[min(96vw,1440px)]",
+          "z-[320] flex flex-col gap-0 overflow-hidden p-0",
+          mobileSheet
+            ? mobileActionOverlayContentClassName
+            : cn(
+                "h-[min(85vh,800px)] sm:rounded-2xl",
+                RESPONSIVE.dialogContentFull,
+                "sm:max-w-[min(96vw,1440px)]",
+              ),
           suspend && "hidden",
         )}
+        {...(mobileSheet ? mobileActionSheetDismissProps : {})}
         onPointerDownOutside={(e) => {
-          if (dismissLocked) e.preventDefault();
+          if (dismissLocked || mobileSheet) e.preventDefault();
         }}
         onInteractOutside={(e) => {
-          if (dismissLocked) e.preventDefault();
+          if (dismissLocked || mobileSheet) e.preventDefault();
         }}
         onFocusOutside={(e) => {
-          if (dismissLocked) e.preventDefault();
+          if (dismissLocked || mobileSheet) e.preventDefault();
         }}
         onEscapeKeyDown={(e) => {
           if (dismissLocked) e.preventDefault();
         }}
       >
-        <DialogHeader className="space-y-1.5 border-b border-slate-100 px-4 pb-4 pt-5 pr-12 text-left sm:px-6">
-          <DialogTitle className="text-xl font-semibold tracking-tight text-slate-900">
-            {title || "완료 내역"}
-          </DialogTitle>
-          {description !== "" ? (
-            <DialogDescription className="text-sm text-slate-500">
-              {description ||
-                "추적관리 단계의 완료 내역을 기간별로 확인하고 상세를 엽니다."}
-            </DialogDescription>
-          ) : (
-            <DialogDescription className="sr-only">
+        {mobileSheet ? (
+          <div className={mobileActionOverlayHeaderClassName}>
+            <DialogHeader className="min-w-0 flex-1 space-y-0 text-left">
+              <DialogTitle className={mobileActionOverlayTitleClassName}>
+                {title || "완료 내역"}
+              </DialogTitle>
+              {description !== "" ? (
+                <DialogDescription className="mt-0.5 text-xs text-muted-foreground">
+                  {description ||
+                    "추적관리 단계의 완료 내역을 기간별로 확인하고 상세를 엽니다."}
+                </DialogDescription>
+              ) : (
+                <DialogDescription className="sr-only">
+                  {title || "완료 내역"}
+                </DialogDescription>
+              )}
+            </DialogHeader>
+            <MobileActionCloseButton
+              onClick={() => {
+                if (dismissLocked) return;
+                onOpenChange(false);
+              }}
+            />
+          </div>
+        ) : (
+          <DialogHeader className="space-y-1.5 border-b border-slate-100 px-4 pb-4 pt-5 pr-12 text-left sm:px-6">
+            <DialogTitle className="text-xl font-semibold tracking-tight text-slate-900">
               {title || "완료 내역"}
-            </DialogDescription>
-          )}
-        </DialogHeader>
+            </DialogTitle>
+            {description !== "" ? (
+              <DialogDescription className="text-sm text-slate-500">
+                {description ||
+                  "추적관리 단계의 완료 내역을 기간별로 확인하고 상세를 엽니다."}
+              </DialogDescription>
+            ) : (
+              <DialogDescription className="sr-only">
+                {title || "완료 내역"}
+              </DialogDescription>
+            )}
+          </DialogHeader>
+        )}
 
         <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 py-4 sm:px-6 sm:py-5">
           <div className="rounded-xl bg-slate-50 px-3.5 py-3">

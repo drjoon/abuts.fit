@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-14: 진행중 모달 — 모바일 채팅형 전체화면 시트(inProgressMobileSheet).
 // - 2026-09-14: 진행중/어벗츠 생산중 버튼에 Factory 아이콘. iconOnly·좁은 폭은 건수 배지.
 // - 2026-09-03: 기공의뢰수신 — 어벗츠 생산중 라벨. 정책은 사이드바. 어벗 뱃지 왼쪽 간격 없음.
 // - 2026-09-03: 기공소 정책 안내는 사이드바(LabPricingPolicyBanner). 헤더는 치과만.
@@ -90,6 +91,8 @@ type RequestorAbutmentPageHeaderProps = {
   hideInProgressTrigger?: boolean;
   /** 진행중 모달 top 오프셋(모바일 액션 바) */
   inProgressDialogStyle?: CSSProperties;
+  /** 모바일 채팅형 전체화면 시트 */
+  inProgressMobileSheet?: boolean;
 };
 
 export const RequestorAbutmentPageHeader = ({
@@ -100,6 +103,7 @@ export const RequestorAbutmentPageHeader = ({
   renderInProgressModal = true,
   hideInProgressTrigger = false,
   inProgressDialogStyle,
+  inProgressMobileSheet = false,
 }: RequestorAbutmentPageHeaderProps = {}) => {
   const isPolicyInProgressOnly = variant === "policyInProgress";
   const { user, token } = useAuthStore();
@@ -523,6 +527,7 @@ export const RequestorAbutmentPageHeader = ({
       onCancelRequest={cancelRequestByMongoId}
       onCancelRequests={cancelRequestsByMongoIds}
       contentStyle={inProgressDialogStyle}
+      mobileSheet={inProgressMobileSheet}
       onSelectRequest={(request) => {
         setListSource("inProgress");
         setSelectedPastRequest(request);

@@ -30,6 +30,8 @@
 // - web/frontend/src/shared/practice/labReceiveCalendarViewMode.ts
 // - web/frontend/src/shared/practice/labReceiveCalendarCursorYmd.ts
 // - web/backend/controllers/users/user.controller.js
+// - 2026-09-14: 모바일 액션(설정·어벗 진행중) — 채팅형 전체화면·상단 크롬·닫으면 목록 메인.
+// - web/frontend/src/shared/ui/mobileActionOverlay.tsx
 // - 2026-09-14: 어벗 출고일 낙관 패치 — 상세 selectedTransfer도 갱신(−3 고정 버그).
 // - 2026-09-13: 커스텀어벗 STL 첫 업로드·작업시작 — 디자인SW·아노 미설정 시 게이트 모달.
 // - 2026-09-13: 캘린더/목록 커서(YMD) localStorage 복원 — 릴로드 시 직전 위치 유지.
@@ -242,6 +244,7 @@ import {
 } from "@/shared/hooks/useBackgroundTempUpload";
 import { useS3FileDownload } from "@/shared/files/useS3FileDownload";
 import { cn } from "@/shared/ui/cn";
+import { mobileActionOverlayTopStyle, MOBILE_ACTION_CHROME_ATTR } from "@/shared/ui/mobileActionOverlay";
 import {
   LAB_RECEIVE_STATUS_BADGES,
   PRACTICE_RECENT_STATUS_BADGE_GAP_BEFORE_KEYS,
@@ -881,6 +884,7 @@ export function RequestorPracticeReceivePage({
   );
 
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [abutmentInProgressOpen, setAbutmentInProgressOpen] = useState(false);
   const [detailSlotEl, setDetailSlotEl] = useState<HTMLDivElement | null>(null);
   const [panelPreferredDockSide, setPanelPreferredDockSide] =
     useState<PracticeTransferPanelDockSide | null>(null);
@@ -6207,6 +6211,9 @@ export function RequestorPracticeReceivePage({
       },
     ) => {
       if (!token && !isGuideTourDemoTransfer(transfer)) return;
+      // 채팅이 메인이 되면 설정·어벗 진행중 시트를 닫아, 닫기 시 목록 메인으로 복귀
+      handleRequestSettingsModalOpenChange(false);
+      setAbutmentInProgressOpen(false);
       const resolveSeq = ++chatRoomResolveSeqRef.current;
       const openedTransferId = String(transfer.transferId || "").trim();
       if (openedTransferId) {
@@ -6276,6 +6283,7 @@ export function RequestorPracticeReceivePage({
       chatUploads,
       clearUnreadForTransferIds,
       emitUnreadBadgeRefresh,
+      handleRequestSettingsModalOpenChange,
       markTransferRead,
       resolveTransferChatRoom,
       setChatMessages,
@@ -7212,7 +7220,36 @@ export function RequestorPracticeReceivePage({
     );
   };
 
-  const [abutmentInProgressOpen, setAbutmentInProgressOpen] = useState(false);
+  const dismissLabOverlaysForAction = useCallback(
+    (keep: "settings" | "abutment" | "chat" | null) => {
+      if (keep !== "chat" && dialogOpen) {
+        setDialogOpen(false);
+        setSelectedTransfer(null);
+        setActiveChatRoom(null);
+        setChatMessages([]);
+        setChatError("");
+      }
+      if (keep !== "settings") {
+        handleRequestSettingsModalOpenChange(false);
+      }
+      if (keep !== "abutment") setAbutmentInProgressOpen(false);
+    },
+    [dialogOpen, handleRequestSettingsModalOpenChange, setChatMessages],
+  );
+
+  const openLabDesignSoftwareModal = useCallback(() => {
+    dismissLabOverlaysForAction("settings");
+    openDesignSoftwareModal();
+  }, [dismissLabOverlaysForAction, openDesignSoftwareModal]);
+
+  const openLabAbutmentInProgress = useCallback(
+    (open: boolean) => {
+      if (open) dismissLabOverlaysForAction("abutment");
+      setAbutmentInProgressOpen(open);
+    },
+    [dismissLabOverlaysForAction],
+  );
+
   const showMobileActionChrome =
     isMobile &&
     (dialogOpen || requestSettingsModalOpen || abutmentInProgressOpen);
@@ -7238,28 +7275,18 @@ export function RequestorPracticeReceivePage({
     ? Math.max(mobileActionChromeH, 56)
     : 0;
   const mobileOverlayTopPx =
-    mobileActionChromeInsetPx > 0 ? mobileActionChromeInsetPx + 8 : null;
-  const mobileOverlayDialogStyle =
-    mobileOverlayTopPx != null
-      ? {
-          top: mobileOverlayTopPx,
-          bottom: "max(0.75rem, env(safe-area-inset-bottom))",
-          left: "0.75rem",
-          right: "0.75rem",
-          transform: "none" as const,
-          width: "auto",
-          maxWidth: "none",
-          height: "auto",
-          maxHeight: "none",
-        }
-      : undefined;
+    mobileActionChromeInsetPx > 0 ? mobileActionChromeInsetPx : null;
+  const mobileOverlayDialogStyle = mobileActionOverlayTopStyle(
+    mobileOverlayTopPx,
+  );
+  const labMobileSheet = Boolean(isMobile && mobileOverlayDialogStyle);
 
   const labAbutmentInProgressTrigger = (
     <RequestorAbutmentPageHeader
       variant="policyInProgress"
       iconOnly={isMobile}
       inProgressOpen={abutmentInProgressOpen}
-      onInProgressOpenChange={setAbutmentInProgressOpen}
+      onInProgressOpenChange={openLabAbutmentInProgress}
       renderInProgressModal={false}
     />
   );
@@ -7268,7 +7295,7 @@ export function RequestorPracticeReceivePage({
     <>
       <RequestSettingsToolbar
         designSoftwareLabel={String(designSoftwareValue || "").trim()}
-        onOpenDesignSoftwareModal={openDesignSoftwareModal}
+        onOpenDesignSoftwareModal={openLabDesignSoftwareModal}
         anodizingEnabled={anodizingEnabled}
         anodizingSaving={anodizingSaving}
         onToggleAnodizing={handleToggleAnodizing}
@@ -7303,7 +7330,7 @@ export function RequestorPracticeReceivePage({
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         <RequestSettingsToolbar
           designSoftwareLabel={String(designSoftwareValue || "").trim()}
-          onOpenDesignSoftwareModal={openDesignSoftwareModal}
+          onOpenDesignSoftwareModal={openLabDesignSoftwareModal}
           anodizingEnabled={anodizingEnabled}
           anodizingSaving={anodizingSaving}
           onToggleAnodizing={handleToggleAnodizing}
@@ -7321,7 +7348,7 @@ export function RequestorPracticeReceivePage({
             <RequestorAbutmentPageHeader
               variant="policyInProgress"
               inProgressOpen={abutmentInProgressOpen}
-              onInProgressOpenChange={setAbutmentInProgressOpen}
+              onInProgressOpenChange={openLabAbutmentInProgress}
               renderInProgressModal={false}
             />
           </span>
@@ -7620,6 +7647,7 @@ export function RequestorPracticeReceivePage({
         ? createPortal(
             <div
               ref={mobileActionChromeRef}
+              {...{ [MOBILE_ACTION_CHROME_ATTR]: "" }}
               className="fixed inset-x-0 top-0 z-[330] border-b border-slate-200 bg-slate-100/95 px-2 py-2 pt-[max(0.5rem,env(safe-area-inset-top))]"
             >
               <div className="flex w-full flex-col items-center gap-2">
@@ -7648,6 +7676,7 @@ export function RequestorPracticeReceivePage({
         onAnodizingEnabledChange={setAnodizingEnabled}
         showDesignSoftware={!settingsComplete || hasAnodizingSetting}
         saving={designSoftwareSaving}
+        mobileSheet={labMobileSheet}
         contentStyle={mobileOverlayDialogStyle}
         onSave={() => {
           void handleSaveDesignSoftware();
@@ -7658,8 +7687,9 @@ export function RequestorPracticeReceivePage({
         variant="policyInProgress"
         hideInProgressTrigger
         inProgressOpen={abutmentInProgressOpen}
-        onInProgressOpenChange={setAbutmentInProgressOpen}
+        onInProgressOpenChange={openLabAbutmentInProgress}
         inProgressDialogStyle={mobileOverlayDialogStyle}
+        inProgressMobileSheet={labMobileSheet}
       />
       <AbutmentDesignToothAssignDialog
         open={toothAssignOpen}
