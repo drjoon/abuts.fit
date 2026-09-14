@@ -5690,11 +5690,13 @@ export const PracticeFileTransferPage = ({
     [bookmarkItems],
   );
 
-  const refreshPracticeBookmarks = useCallback(async () => {
+  const refreshPracticeBookmarks = useCallback(async (): Promise<
+    RecentTransferItem[]
+  > => {
     if (!authToken) {
       setBookmarkItems([]);
       setBookmarkedTransferCache([]);
-      return;
+      return [];
     }
     try {
       const payload = await fetchPracticeTransferBookmarks({
@@ -5707,25 +5709,35 @@ export const PracticeFileTransferPage = ({
         .filter(Boolean);
       if (!mongoIds.length) {
         setBookmarkedTransferCache([]);
-        return;
+        return [];
       }
       const qs = new URLSearchParams();
       qs.set("transferMongoIds", transferMongoIdsQuery(mongoIds));
       qs.set("limit", String(Math.min(200, Math.max(mongoIds.length, 1))));
-      const raw = await request({
+      const res = await request({
         path: `/api/practice/transfers/my?${qs.toString()}`,
         method: "GET",
         token: authToken,
       });
-      const body =
-        raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+      if (!res.ok) {
+        setBookmarkedTransferCache([]);
+        return [];
+      }
+      // apiFetch → { data: 서버JSON }; 서버 → { success, data: { requests } }
+      const body = res.data;
       const data =
-        body.data && typeof body.data === "object"
-          ? (body.data as Record<string, unknown>)
+        body &&
+        typeof body === "object" &&
+        "data" in (body as Record<string, unknown>)
+          ? (body as { data?: unknown }).data
           : body;
-      const rows = mapMyPracticeTransferApiRows(
-        Array.isArray(data.requests) ? data.requests : [],
-      );
+      const list =
+        data &&
+        typeof data === "object" &&
+        Array.isArray((data as { requests?: unknown }).requests)
+          ? ((data as { requests: unknown[] }).requests ?? [])
+          : [];
+      const rows = mapMyPracticeTransferApiRows(list);
       const grouped = groupPracticeRecentRequests(rows, chatRooms);
       // 북마크 최신순 유지
       const byId = new Map(
@@ -5746,8 +5758,10 @@ export const PracticeFileTransferPage = ({
         })
         .filter((row): row is RecentTransferItem => Boolean(row));
       setBookmarkedTransferCache(ordered);
+      return ordered;
     } catch {
       // 배지·아이콘만 실패해도 본문은 유지
+      return [];
     }
   }, [authToken, chatRooms]);
 
@@ -5787,19 +5801,21 @@ export const PracticeFileTransferPage = ({
     [],
   );
 
-  const navigateNextBookmark = useCallback(() => {
+  const navigateNextBookmark = useCallback(async () => {
+    let cache = bookmarkedTransferCache;
+    if (!cache.length && bookmarkItems.length > 0) {
+      cache = await refreshPracticeBookmarks();
+    }
     const next = pickNextBookmarkItem(
-      bookmarkedTransferCache,
+      cache,
       bookmarkNavigateLastIdRef.current,
     );
     if (!next) {
       if (bookmarkItems.length > 0) {
-        void refreshPracticeBookmarks().then(() => {
-          // hydrate 직후 재시도는 다음 클릭
-        });
         toast({
-          title: "북마크 불러오는 중",
-          description: "다시 클릭하면 순회합니다.",
+          title: "북마크한 의뢰를 열 수 없습니다",
+          description: "의뢰가 삭제되었거나 권한이 없을 수 있습니다.",
+          variant: "destructive",
         });
       }
       return;
@@ -5813,6 +5829,7 @@ export const PracticeFileTransferPage = ({
   }, [
     bookmarkItems.length,
     bookmarkedTransferCache,
+    handleOpenTransferDialog,
     refreshPracticeBookmarks,
     toast,
   ]);

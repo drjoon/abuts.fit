@@ -6305,11 +6305,13 @@ export function RequestorPracticeReceivePage({
     [bookmarkItems],
   );
 
-  const refreshLabBookmarks = useCallback(async () => {
+  const refreshLabBookmarks = useCallback(async (): Promise<
+    ReceivedPracticeTransfer[]
+  > => {
     if (!token) {
       setBookmarkItems([]);
       setBookmarkedTransferCache([]);
-      return;
+      return [];
     }
     try {
       const payload = await fetchPracticeTransferBookmarks({
@@ -6322,17 +6324,22 @@ export function RequestorPracticeReceivePage({
         .filter(Boolean);
       if (!mongoIds.length) {
         setBookmarkedTransferCache([]);
-        return;
+        return [];
       }
       const qs = new URLSearchParams();
       qs.set("transferMongoIds", transferMongoIdsQuery(mongoIds));
       qs.set("limit", String(Math.min(200, Math.max(mongoIds.length, 1))));
-      const raw = await request({
+      const res = await request({
         path: `/api/practice/transfers/received?${qs.toString()}`,
         method: "GET",
         token,
       });
-      const parsed = parseTransfersBody(raw);
+      if (!res.ok) {
+        setBookmarkedTransferCache([]);
+        return [];
+      }
+      // 목록 조회와 동일: parseTransfersBody에는 apiFetch의 res.data(서버 JSON)를 넘긴다.
+      const parsed = parseTransfersBody(res.data);
       const mapped = mapTransferRows(parsed.transfers);
       const byId = new Map(
         mapped.map((row) => [String(row.transferId || "").trim(), row]),
@@ -6348,8 +6355,10 @@ export function RequestorPracticeReceivePage({
         })
         .filter((row): row is ReceivedPracticeTransfer => Boolean(row));
       setBookmarkedTransferCache(ordered);
+      return ordered;
     } catch {
       // 배지·아이콘만 실패해도 본문은 유지
+      return [];
     }
   }, [mapTransferRows, parseTransfersBody, token]);
 
@@ -6389,17 +6398,21 @@ export function RequestorPracticeReceivePage({
     [],
   );
 
-  const navigateNextBookmark = useCallback(() => {
+  const navigateNextBookmark = useCallback(async () => {
+    let cache = bookmarkedTransferCache;
+    if (!cache.length && bookmarkItems.length > 0) {
+      cache = await refreshLabBookmarks();
+    }
     const next = pickNextBookmarkItem(
-      bookmarkedTransferCache,
+      cache,
       bookmarkNavigateLastIdRef.current,
     );
     if (!next) {
       if (bookmarkItems.length > 0) {
-        void refreshLabBookmarks();
         toast({
-          title: "북마크 불러오는 중",
-          description: "다시 클릭하면 순회합니다.",
+          title: "북마크한 의뢰를 열 수 없습니다",
+          description: "의뢰가 삭제되었거나 권한이 없을 수 있습니다.",
+          variant: "destructive",
         });
       }
       return;
