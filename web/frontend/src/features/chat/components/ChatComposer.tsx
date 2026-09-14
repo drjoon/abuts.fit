@@ -7,6 +7,7 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferMobileOralPhotoIntake.tsx
 // - web/frontend/src/features/chat/components/NewChatWidget.tsx
 // change-log:
+// - 2026-09-15: 의뢰건 불러오기 — native title → Radix Tooltip(600ms)로 첨부·사진찍기와 동일.
 // - 2026-09-13: compact — 전송 버튼을 입력창 오른쪽(도구 줄 위)으로 올려 글로벌 채팅 FAB와 겹침 방지.
 // - 2026-09-12: 의뢰건 선택 목록 requestId 중복 제거(/my 파일별 가상 row).
 // - 2026-09-12: 의뢰건 불러오기 트리거 # → $ (입력·DollarSign 버튼). placeholder 안내 문구 제거.
@@ -573,33 +574,39 @@ export const ChatComposer = (props: Props) => {
           )}
 
           {canInsertRequestId ? (
-            <Popover
-              open={hashOpen}
-              onOpenChange={(open) => {
-                setHashOpen(open);
-                if (open) onRequestPicksNeeded?.();
-              }}
-            >
-              <PopoverTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className={iconBtnClass}
-                  disabled={controlsDisabled}
-                  title="의뢰건 불러오기 ($)"
-                  aria-label="의뢰건 불러오기"
-                >
-                  <DollarSign className={isMobile ? "h-5 w-5" : "h-4 w-4"} />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-80 p-2" align="start">
-                <div className="mb-1 px-1 text-[11px] font-medium text-muted-foreground">
-                  의뢰건 선택 · $ 로도 불러올 수 있습니다
-                </div>
-                {renderPickList(insertCaseToken)}
-              </PopoverContent>
-            </Popover>
+            <TooltipProvider>
+              <Popover
+                open={hashOpen}
+                onOpenChange={(open) => {
+                  setHashOpen(open);
+                  if (open) onRequestPicksNeeded?.();
+                }}
+              >
+                <Tooltip open={hashOpen ? false : undefined}>
+                  <TooltipTrigger asChild>
+                    <PopoverTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className={iconBtnClass}
+                        disabled={controlsDisabled}
+                        aria-label="의뢰건 불러오기"
+                      >
+                        <DollarSign className={isMobile ? "h-5 w-5" : "h-4 w-4"} />
+                      </Button>
+                    </PopoverTrigger>
+                  </TooltipTrigger>
+                  <TooltipContent>의뢰건 불러오기 ($)</TooltipContent>
+                </Tooltip>
+                <PopoverContent className="w-80 p-2" align="start">
+                  <div className="mb-1 px-1 text-[11px] font-medium text-muted-foreground">
+                    의뢰건 선택 · $ 로도 불러올 수 있습니다
+                  </div>
+                  {renderPickList(insertCaseToken)}
+                </PopoverContent>
+              </Popover>
+            </TooltipProvider>
           ) : null}
 
           {toolbarExtra}
