@@ -13,6 +13,7 @@
 // - 2026-09-02: 모바일 5연결+ 브리지 — 치아당 5rem 고정폭 + 가로 스와이프.
 // - 2026-08-25: 구강스캔(기공의뢰)은 디자인+생산 고정 — 치식 카드 모드 라벨 제거(작성 UI와 동일).
 // - 2026-09-02: full 치식 슬롯 래퍼 contents 복구 — shrink-0이 flex-1 전폭 분할을 막던 문제.
+// - 2026-09-15: 브리지 연결 이음새 — 행 gap-0으로 카드·연결선 사이 하얀 수직 거터 제거.
 // - 2026-09-02: byTooth가 연결치에 첫 행을 덮어 13-12-11 브리지에서 11 연결·스펙이 끊기던 버그 수정.
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -68,7 +69,11 @@ const TOOTH_CARD_HEIGHT_CLASS = "h-[12rem]";
 const TOOTH_SLOT_CLASS = TOOTH_CARD_WIDTH_CLASS;
 /** full(16칸) — 전폭 균등 분할 */
 const TOOTH_SLOT_FULL_CLASS = "min-w-0 flex-1 basis-0";
-const BRIDGE_GAP_MIDLINE_CLASS = "w-2.5 shrink-0";
+/** 정중선 — 미연결 폭에 구 행 gap 포함 */
+const BRIDGE_GAP_MIDLINE_CLASS = "w-3 shrink-0";
+const BRIDGE_GAP_UNLINKED_CLASS = "w-2 shrink-0";
+const BRIDGE_GAP_LINKED_CLASS =
+  "relative z-20 flex w-1.5 shrink-0 items-center justify-center self-stretch border-y border-primary bg-gradient-to-b from-primary-soft via-primary-soft to-white";
 
 const toToothDecadeSortNumber = (toothNumber: string) => {
   const raw = String(toothNumber || "").trim();
@@ -368,7 +373,7 @@ export const PracticeToothWorkChartReadOnly = ({
   ) => {
     if (bridgeLinked && adjacentVisible) {
       return (
-        <div className="relative z-20 flex w-1.5 shrink-0 items-center justify-center self-stretch border-y border-primary bg-gradient-to-b from-primary-soft via-primary-soft to-white">
+        <div className={BRIDGE_GAP_LINKED_CLASS}>
           <span
             aria-hidden
             className="pointer-events-none absolute inset-y-3 left-1/2 w-[3px] -translate-x-1/2 rounded-full bg-primary/70"
@@ -391,13 +396,13 @@ export const PracticeToothWorkChartReadOnly = ({
         <div
           className={cn(
             "shrink-0 self-stretch",
-            isMidlinePair ? BRIDGE_GAP_MIDLINE_CLASS : "w-1.5",
+            isMidlinePair ? BRIDGE_GAP_MIDLINE_CLASS : BRIDGE_GAP_UNLINKED_CLASS,
           )}
           aria-hidden
         />
       );
     }
-    return <div className="w-2 shrink-0" aria-hidden />;
+    return <div className="w-2.5 shrink-0" aria-hidden />;
   };
 
   const mobileToothCardShellClass =
@@ -661,7 +666,7 @@ export const PracticeToothWorkChartReadOnly = ({
       const rowTrack = (
         <div
           className={cn(
-            "items-stretch gap-0.5",
+            "items-stretch gap-0",
             fullLayout ? "flex w-full min-w-0" : "inline-flex w-max",
           )}
         >

@@ -335,6 +335,7 @@ import {
 // - 2026-08-25: full 치식 — 카드가 전폭을 나눠 갖고 스크롤 없이 16칸 표시. 위·아래 여백으로 경계 보존.
 // - 2026-08-25: full 치식 카드 높이 12rem 복구·형태 버튼 shrink-0 — 어벗 상세 시 유형 스위치 가림 방지.
 // - 2026-09-02: full 치식 슬롯 래퍼 contents 복구 — shrink-0 래퍼가 flex-1 전폭 분할을 막아 카드가 좁아지던 문제.
+// - 2026-09-15: 브리지 연결 이음새 — 행 gap-0으로 카드·연결선 사이 하얀 수직 거터 제거(미연결 폭에 구 gap 포함).
 // - 2026-09-12: 보철물 카드 높이 12.75→11.75rem, 번호·형태·어벗 여백 축소.
 
 const PRACTICE_MEMO_SNIPPETS_LOCAL_KEY = "practice_transfer_memo_snippets_v1";
@@ -361,11 +362,13 @@ const isBuiltinProsthesisType = (type: string) =>
 const TOOTH_SLOT_COMPACT_CLASS = "relative w-[5rem] max-w-[5rem] shrink-0 snap-start";
 /** full(16칸) — 전폭을 균등 분할(가로 스크롤·프로그레스 겹침 방지) */
 const TOOTH_SLOT_FULL_CLASS = "min-w-0 flex-1 basis-0";
+/** 연결 시 카드와 flush — 행 gap 없이 이음새만 (하얀 수직 거터 방지) */
 const BRIDGE_GAP_LINKED_CLASS =
   "w-1.5 border-y border-primary bg-gradient-to-b from-primary-soft via-primary-soft to-white";
-const BRIDGE_GAP_UNLINKED_CLASS = "w-1.5";
+/** 미연결 — 옛 행 gap-0.5를 폭에 포함 */
+const BRIDGE_GAP_UNLINKED_CLASS = "w-2";
 /** 정중선(11–21 / 41–31) 이음 — 좌우 악궁을 조금 띄움 */
-const BRIDGE_GAP_MIDLINE_CLASS = "w-2.5";
+const BRIDGE_GAP_MIDLINE_CLASS = "w-3";
 const BRIDGE_BUTTON_CLASS =
   "absolute left-1/2 top-1/2 z-10 flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border shadow-sm transition-colors";
 
@@ -4310,7 +4313,7 @@ export const PracticeTransferRequestIntakePanel = ({
               const rowTrack = (
                 <div
                   className={cn(
-                    "items-stretch gap-0.5",
+                    "items-stretch gap-0",
                     showFullToothChart
                       ? "flex w-full min-w-0"
                       : "inline-flex w-max",
@@ -4461,7 +4464,7 @@ export const PracticeTransferRequestIntakePanel = ({
                           <div
                             className={cn(
                               "shrink-0",
-                              showFullToothChart ? "w-1.5" : "w-2",
+                              showFullToothChart ? "w-2" : "w-2.5",
                             )}
                             aria-hidden
                           />
@@ -4631,7 +4634,7 @@ export const PracticeTransferRequestIntakePanel = ({
                         <div
                           className={cn(
                             "shrink-0",
-                            showFullToothChart ? "w-1.5" : "w-2",
+                            showFullToothChart ? "w-2" : "w-2.5",
                           )}
                           aria-hidden
                         />
