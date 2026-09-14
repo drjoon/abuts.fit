@@ -192,7 +192,7 @@ export function PracticeProsthesisFollowUpDialog({
         ) : null}
         <DialogHeader className="border-b px-5 py-4 text-left">
           <DialogTitle>
-            {isEdit ? "최종 보철 제작 변경" : "지르 브리지·크라운 제작"}
+            {isEdit ? "최종 보철 제작 변경" : "지르 보철 제작"}
           </DialogTitle>
           {!isEdit ? (
             <p className="pt-1 text-sm font-normal leading-relaxed text-muted-foreground">

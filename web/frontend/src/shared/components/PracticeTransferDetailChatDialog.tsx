@@ -1169,7 +1169,7 @@ export function PracticeTransferDetailChatDialog({
             {onAppendProsthesis && !prosthesisFollowUpPending ? (
               <>
                 <br />
-                적용 시 지르 브리지·크라운으로 바꿀지 묻고, 아니면 임시치아로
+                적용 시 지르 보철로 바꿀지 묻고, 아니면 임시치아로
                 계속합니다(추가 과금 없음).
               </>
             ) : null}
@@ -3235,7 +3235,7 @@ export function PracticeTransferDetailChatDialog({
                             title={appendProsthesisHint || undefined}
                             onClick={() => onAppendProsthesis()}
                           >
-                            {appendProsthesisBusy ? "처리 중…" : "지르 브리지·크라운"}
+                            {appendProsthesisBusy ? "처리 중…" : "지르 보철"}
                           </Button>
                           {appendProsthesisHint && appendProsthesisDisabled ? (
                             <p className="max-w-full text-center text-xs leading-snug text-muted-foreground">

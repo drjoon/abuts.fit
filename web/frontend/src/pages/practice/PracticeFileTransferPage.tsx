@@ -11325,7 +11325,7 @@ export const PracticeFileTransferPage = ({
 
         <ConfirmDialog
           open={followUpOfferOpen}
-          title="지르 브리지(크라운)으로 변경할까요?"
+          title="지르 보철로 변경할까요?"
           description={
             <>
               예: 임시치아 기공비는 차감되고 브리지·크라운 기공비만 추가됩니다.
