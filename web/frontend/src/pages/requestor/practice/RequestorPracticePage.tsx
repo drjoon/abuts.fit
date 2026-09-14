@@ -184,7 +184,7 @@ import {
   type MouseEvent,
 } from "react";
 import { createPortal } from "react-dom";
-import { ChevronRight, Search, X } from "lucide-react";
+import { ChevronRight, Search, X, Bookmark } from "lucide-react";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
 import { DesignSoftwareSettingsDialog } from "@/features/requestSettings/DesignSoftwareSettingsDialog";
@@ -210,6 +210,11 @@ import {
 import { useImplantConnectionCatalog } from "@/shared/practice/useImplantConnectionCatalog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -264,7 +269,6 @@ import {
   bookmarkIdSetFromItems,
   fetchPracticeTransferBookmarks,
   pickNextBookmarkItem,
-  PRACTICE_TRANSFER_BOOKMARK_BADGE_KEY,
   transferMongoIdsQuery,
   type PracticeTransferBookmarkItem,
 } from "@/shared/practice/practiceTransferBookmarks";
@@ -6203,6 +6207,10 @@ export function RequestorPracticeReceivePage({
     ) => {
       if (!token && !isGuideTourDemoTransfer(transfer)) return;
       const resolveSeq = ++chatRoomResolveSeqRef.current;
+      const openedTransferId = String(transfer.transferId || "").trim();
+      if (openedTransferId) {
+        bookmarkNavigateLastIdRef.current = openedTransferId;
+      }
 
       if (options && "preferredDockSide" in options) {
         const side = options.preferredDockSide ?? null;
@@ -6925,7 +6933,7 @@ export function RequestorPracticeReceivePage({
   ]);
 
   const labStatusFilterBadgeItems = useMemo((): PracticeStatusFilterBadgeItem[] => {
-    const statusItems = LAB_RECEIVE_STATUS_BADGES.map((item) => ({
+    return LAB_RECEIVE_STATUS_BADGES.map((item) => ({
       key: item.filter,
       label: item.label,
       tone: resolvePracticeStatusFilterBadgeTone(item.filter),
@@ -6933,18 +6941,7 @@ export function RequestorPracticeReceivePage({
       unreadCount: statusUnreadCounts[item.countKey],
       tooltip: item.tooltip,
     }));
-    return [
-      ...statusItems,
-      {
-        key: PRACTICE_TRANSFER_BOOKMARK_BADGE_KEY,
-        label: "북마크",
-        tone: "bookmark" as const,
-        count: bookmarkItems.length,
-        tooltip:
-          "북마크한 의뢰(전기간). 클릭하면 북마크를 하나씩 열어 순회합니다.",
-      },
-    ];
-  }, [bookmarkItems.length, statusCounts, statusUnreadCounts]);
+  }, [statusCounts, statusUnreadCounts]);
 
   const pendingWorkNoticeTotal = useMemo(() => {
     return baseFilteredTransfers.reduce((sum, transfer) => {
@@ -7067,10 +7064,6 @@ export function RequestorPracticeReceivePage({
 
   const navigateNextUnreadForStatus = useCallback(
     (key: string) => {
-      if (key === PRACTICE_TRANSFER_BOOKMARK_BADGE_KEY) {
-        navigateNextBookmark();
-        return;
-      }
       const filterKey = key as LabReceiveStatusFilterKey;
       const toMeta = (transfer: (typeof baseFilteredTransfers)[number]) => ({
         transfer,
@@ -7158,14 +7151,82 @@ export function RequestorPracticeReceivePage({
       calendarDateKey,
       focusCalendarTransfer,
       isMobile,
-      navigateNextBookmark,
       selectTransferFromCalendar,
       transferChatUnreadCount,
       viewMode,
     ],
   );
 
-  const transferSearchAndBadges = (
+  const bookmarkNavigateButton = (opts?: { iconOnly?: boolean }) => {
+    const iconOnly = Boolean(opts?.iconOnly);
+    const count = bookmarkItems.length;
+    const aria = count > 0 ? `북마크 ${count}건` : "북마크";
+    const button = (
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className={cn(
+          "h-8 shrink-0 gap-1 text-xs",
+          iconOnly
+            ? count > 0
+              ? "px-2"
+              : "w-8 px-0"
+            : count === 0
+              ? "w-8 px-0 sm:w-auto sm:px-3"
+              : "px-2 sm:px-3",
+          count > 0 && "border-sky-300 bg-sky-50/80",
+        )}
+        aria-label={aria}
+        title="북마크한 의뢰(전기간). 클릭하면 하나씩 열어 순회합니다."
+        disabled={count === 0}
+        onClick={() => void navigateNextBookmark()}
+      >
+        <Bookmark
+          className={cn(
+            "h-3.5 w-3.5 shrink-0",
+            count > 0 && "fill-sky-600 text-sky-700",
+          )}
+        />
+        {!iconOnly ? (
+          <span className="hidden sm:inline">북마크</span>
+        ) : null}
+        {count > 0 ? (
+          <Badge
+            variant="outline"
+            className="h-4 min-w-4 justify-center rounded-full border-sky-200 bg-sky-100 px-1 text-[10px] leading-none text-sky-800"
+          >
+            {count}
+          </Badge>
+        ) : null}
+      </Button>
+    );
+    if (iconOnly) return button;
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>{button}</TooltipTrigger>
+        <TooltipContent side="bottom" className="text-xs">
+          북마크한 의뢰(전기간). 클릭하면 하나씩 열어 순회합니다.
+        </TooltipContent>
+      </Tooltip>
+    );
+  };
+
+  const transferSearchAndBadges = isMobile ? (
+    <div className="flex flex-nowrap items-center justify-center gap-1.5">
+      <RequestSettingsToolbar
+        designSoftwareLabel={String(designSoftwareValue || "").trim()}
+        onOpenDesignSoftwareModal={openDesignSoftwareModal}
+        anodizingEnabled={anodizingEnabled}
+        anodizingSaving={anodizingSaving}
+        onToggleAnodizing={handleToggleAnodizing}
+        iconOnly
+      />
+      {bookmarkNavigateButton({ iconOnly: true })}
+      <RequestorAbutmentPageHeader variant="policyInProgress" iconOnly />
+      <DemoModeBadge className="shrink-0" />
+    </div>
+  ) : (
     <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         <RequestSettingsToolbar
@@ -7180,13 +7241,13 @@ export function RequestorPracticeReceivePage({
         className="min-w-0 flex-1 sm:justify-center"
         items={labStatusFilterBadgeItems}
         onUnreadNavigate={navigateNextUnreadForStatus}
-        gapBeforeKeys={[
-          ...PRACTICE_RECENT_STATUS_BADGE_GAP_BEFORE_KEYS,
-          PRACTICE_TRANSFER_BOOKMARK_BADGE_KEY,
-        ]}
+        gapBeforeKeys={PRACTICE_RECENT_STATUS_BADGE_GAP_BEFORE_KEYS}
         countSuffix="건"
         trailing={
-          <RequestorAbutmentPageHeader variant="policyInProgress" />
+          <span className="contents">
+            {bookmarkNavigateButton()}
+            <RequestorAbutmentPageHeader variant="policyInProgress" />
+          </span>
         }
       />
       <DemoModeBadge className="shrink-0 sm:ml-auto" />
@@ -7658,6 +7719,7 @@ export function RequestorPracticeReceivePage({
                 anodizingEnabled={anodizingEnabled}
                 anodizingSaving={anodizingSaving}
                 onToggleAnodizing={handleToggleAnodizing}
+                iconOnly={isMobile}
               />
               <DemoModeBadge className="shrink-0" />
             </div>
@@ -7667,25 +7729,14 @@ export function RequestorPracticeReceivePage({
 
         {showTransfers ? (
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden pt-1">
-            {roleSwitcher || !isMobile ? (
-              <div className="shrink-0 space-y-3 pb-3 pr-1">
-                {roleSwitcher ? (
-                  <div className="flex flex-wrap items-center gap-3">
-                    {roleSwitcher}
-                  </div>
-                ) : null}
-                {!isMobile ? transferSearchAndBadges : null}
-                {isMobile ? (
-                  <div className="flex justify-end">
-                    <DemoModeBadge className="shrink-0" />
-                  </div>
-                ) : null}
-              </div>
-            ) : isMobile ? (
-              <div className="flex shrink-0 justify-end pb-2 pr-1">
-                <DemoModeBadge className="shrink-0" />
-              </div>
-            ) : null}
+            <div className="shrink-0 space-y-3 pb-3 pr-1">
+              {roleSwitcher ? (
+                <div className="flex flex-wrap items-center gap-3">
+                  {roleSwitcher}
+                </div>
+              ) : null}
+              {transferSearchAndBadges}
+            </div>
             <div
               className={cn(
                 "flex min-h-0 flex-1 flex-col overflow-hidden",
@@ -7742,6 +7793,11 @@ export function RequestorPracticeReceivePage({
         initialPanelTab={dialogInitialPanelTab}
         guideTourElevate={guideTourWantsReceiveDetail}
         chatHeaderAction={null}
+        mobileTopChrome={
+          isMobile && bookmarkItems.length > 0
+            ? bookmarkNavigateButton({ iconOnly: true })
+            : null
+        }
         caseIdentity={selectedTransferCaseIdentity}
         composerToolbarExtra={
           selectedTransfer ? (

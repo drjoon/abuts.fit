@@ -150,6 +150,7 @@ import { useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import {
   Trash2,
   RotateCcw,
+  Bookmark,
   BookmarkPlus,
   ChevronsUpDown,
   Check,
@@ -5570,6 +5571,10 @@ export const PracticeFileTransferPage = ({
     const returnToAllModal = Boolean(options?.returnToAllModal);
     // 최근의뢰(전체보기)에서 연 경우 — 전체보기는 유지하고 플로팅 상세만 독립 운영
     returnToAllModalRef.current = returnToAllModal;
+    const openedTransferId = String(transfer.transferId || "").trim();
+    if (openedTransferId) {
+      bookmarkNavigateLastIdRef.current = openedTransferId;
+    }
     const isDraftTransfer =
       transfer.status === "임시저장" ||
       transfer.transferId === PRACTICE_DRAFT_TRANSFER_ID;
@@ -9133,7 +9138,67 @@ export const PracticeFileTransferPage = ({
     </>
   );
 
-  /** 메인 헤더 — 모바일/PC: 임시저장·휴지통(+PC 데모). 아래 목록은 기공소 전송 완료건만. */
+  const bookmarkNavigateButton = (opts?: { mobile?: boolean }) => {
+    const mobile = Boolean(opts?.mobile);
+    const count = bookmarkItems.length;
+    const aria =
+      count > 0 ? `북마크 ${count}건` : "북마크";
+    const className = mobile
+      ? cn(
+          "h-9 shrink-0 gap-1 rounded-full border-slate-200 bg-white shadow-sm",
+          count === 0 ? "w-9 p-0" : "px-2",
+          count > 0 && "border-sky-300 bg-sky-50/90",
+        )
+      : cn(
+          "h-9 shrink-0 gap-1 px-2 group-data-[wide=true]/hdr-actions:gap-1.5 group-data-[wide=true]/hdr-actions:px-3",
+          count === 0 &&
+            "w-9 px-0 group-data-[wide=true]/hdr-actions:w-auto group-data-[wide=true]/hdr-actions:px-3",
+          count > 0 && "border-sky-300 bg-sky-50/80",
+        );
+    const button = (
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className={className}
+        aria-label={aria}
+        title="북마크한 의뢰(전기간). 클릭하면 하나씩 열어 순회합니다."
+        disabled={count === 0}
+        onClick={() => void navigateNextBookmark()}
+      >
+        <Bookmark
+          className={cn(
+            "h-4 w-4 shrink-0",
+            count > 0 && "fill-sky-600 text-sky-700",
+          )}
+        />
+        {!mobile ? (
+          <span className="hidden group-data-[wide=true]/hdr-actions:inline">
+            북마크
+          </span>
+        ) : null}
+        {count > 0 ? (
+          <Badge
+            variant="outline"
+            className="h-4 min-w-4 justify-center rounded-full border-sky-200 bg-sky-100 px-1 text-[10px] leading-none text-sky-800"
+          >
+            {count}
+          </Badge>
+        ) : null}
+      </Button>
+    );
+    if (mobile) return button;
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>{button}</TooltipTrigger>
+        <TooltipContent side="bottom" className="text-xs">
+          북마크한 의뢰(전기간). 클릭하면 하나씩 열어 순회합니다.
+        </TooltipContent>
+      </Tooltip>
+    );
+  };
+
+  /** 메인 헤더 — 북마크·신규주문·리메이크·임시저장·휴지통(+PC 데모). */
   const calendarHeaderActions = (
     <div
       className="flex flex-nowrap items-center gap-1.5 sm:gap-2"
@@ -9144,12 +9209,13 @@ export const PracticeFileTransferPage = ({
       }
     >
       {isMobile ? (
-        <div className="flex w-full flex-wrap items-center justify-center gap-2">
+        <div className="flex w-full flex-nowrap items-center justify-center gap-1.5">
+          {bookmarkNavigateButton({ mobile: true })}
           <Button
             type="button"
             variant="outline"
             size="sm"
-            className="h-9 shrink-0 gap-1 rounded-full border-slate-200 bg-white px-3 shadow-sm"
+            className="h-9 w-9 shrink-0 rounded-full border-slate-200 bg-white p-0 shadow-sm"
             aria-label="신규주문"
             title="신규주문"
             onClick={() =>
@@ -9160,13 +9226,12 @@ export const PracticeFileTransferPage = ({
             }
           >
             <Plus className="h-4 w-4 shrink-0" />
-            신규주문
           </Button>
           <Button
             type="button"
             variant="outline"
             size="sm"
-            className="h-9 shrink-0 gap-1 rounded-full border-slate-200 bg-white px-3 shadow-sm"
+            className="h-9 w-9 shrink-0 rounded-full border-slate-200 bg-white p-0 shadow-sm"
             aria-label="리메이크"
             title="리메이크"
             onClick={() => setRemakeSearchOpen(true)}
@@ -9176,14 +9241,14 @@ export const PracticeFileTransferPage = ({
               : {})}
           >
             <Repeat className="h-4 w-4 shrink-0" />
-            리메이크
           </Button>
           <Button
             type="button"
             variant="outline"
             size="sm"
             className={cn(
-              "h-9 shrink-0 gap-1 rounded-full border-slate-200 bg-white px-3 shadow-sm",
+              "h-9 shrink-0 gap-1 rounded-full border-slate-200 bg-white shadow-sm",
+              draftGroupedTransfers.length === 0 ? "w-9 p-0" : "px-2",
               draftGroupedTransfers.length > 0 && "border-amber-300 bg-amber-50/90",
               practiceTransferDraftStaleAttentionClassName(hasStaleDrafts),
             )}
@@ -9196,7 +9261,6 @@ export const PracticeFileTransferPage = ({
             onClick={() => setDraftsOpen(true)}
           >
             <BookmarkPlus className="h-4 w-4 shrink-0" />
-            임시저장
             {draftGroupedTransfers.length > 0 ? (
               <Badge
                 variant="outline"
@@ -9213,7 +9277,10 @@ export const PracticeFileTransferPage = ({
             type="button"
             variant="outline"
             size="sm"
-            className="h-9 shrink-0 gap-1 rounded-full border-slate-200 bg-white px-3 shadow-sm"
+            className={cn(
+              "h-9 shrink-0 gap-1 rounded-full border-slate-200 bg-white shadow-sm",
+              trashGroupedTransfers.length === 0 ? "w-9 p-0" : "px-2",
+            )}
             aria-label={
               trashGroupedTransfers.length > 0
                 ? `휴지통 ${trashGroupedTransfers.length}건`
@@ -9226,7 +9293,6 @@ export const PracticeFileTransferPage = ({
             }}
           >
             <Trash2 className="h-4 w-4 shrink-0" />
-            휴지통
             {trashGroupedTransfers.length > 0 ? (
               <Badge
                 variant="secondary"
@@ -9239,6 +9305,7 @@ export const PracticeFileTransferPage = ({
         </div>
       ) : (
         <>
+          {bookmarkNavigateButton()}
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -9891,8 +9958,6 @@ export const PracticeFileTransferPage = ({
           headerActions={calendarHeaderActions}
           onSelectFutureDay={openComposeForArrival}
           calendarRefreshNonce={calendarRefreshNonce}
-          bookmarkCount={bookmarkItems.length}
-          onBookmarkNavigate={navigateNextBookmark}
           onSelectTransfer={(transfer, options) => {
             void handleOpenTransferDialog(transfer, {
               returnToAllModal: true,
@@ -10919,6 +10984,11 @@ export const PracticeFileTransferPage = ({
           }
           cancelRequestDisabled={deletingTransfer}
           chatHeaderAction={null}
+          mobileTopChrome={
+            isMobileViewport && bookmarkItems.length > 0
+              ? bookmarkNavigateButton({ mobile: true })
+              : null
+          }
           composerToolbarExtra={
             selectedTransfer ? (
               <>

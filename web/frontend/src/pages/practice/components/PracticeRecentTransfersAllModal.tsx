@@ -132,7 +132,6 @@ import {
   PracticeStatusFilterBadges,
   type PracticeStatusFilterBadgeItem,
 } from "@/pages/practice/components/PracticeStatusFilterBadges";
-import { PRACTICE_TRANSFER_BOOKMARK_BADGE_KEY } from "@/shared/practice/practiceTransferBookmarks";
 import {
   PracticeTransferListPatientArrivalRow,
   formatPracticeTransferListPatientWithTeeth,
@@ -193,10 +192,6 @@ type PracticeRecentTransfersAllModalProps = {
   onSelectFutureDay?: (ymd: string) => void;
   /** 값이 바뀌면 캘린더 구간 API를 다시 친다(전송 직후 등). */
   calendarRefreshNonce?: number;
-  /** 북마크 배지 건수(전기간). 미지정 시 배지 숨김. */
-  bookmarkCount?: number;
-  /** 북마크 배지 클릭 — 전기간 북마크 순회 */
-  onBookmarkNavigate?: () => void;
   onSelectTransfer: (
     transfer: PracticeRecentTransferItem,
     options?: { preferredDockSide?: PracticeTransferPanelDockSide },
@@ -221,8 +216,6 @@ export function PracticeRecentTransfersAllModal({
   headerActions,
   onSelectFutureDay,
   calendarRefreshNonce = 0,
-  bookmarkCount,
-  onBookmarkNavigate,
   onSelectTransfer,
   onDeleteTransfer,
 }: PracticeRecentTransfersAllModalProps) {
@@ -728,10 +721,6 @@ export function PracticeRecentTransfersAllModal({
 
   const navigateNextUnreadForStatus = useCallback(
     (key: string) => {
-      if (key === PRACTICE_TRANSFER_BOOKMARK_BADGE_KEY) {
-        onBookmarkNavigate?.();
-        return;
-      }
       const filterKey = key as PracticeRecentStatusFilterKey;
       // 배지 본문 건수와 동일하게 순회(완료·취소·어벗은 미열람만).
       // 미확인·미처리를 앞에 두되, 큐에만 가두면 열람 후 빠진 건이 누락됨.
@@ -782,7 +771,6 @@ export function PracticeRecentTransfersAllModal({
       badgeQueueTransfers,
       dateKey,
       focusCalendarTransfer,
-      onBookmarkNavigate,
       onSelectTransfer,
       viewMode,
       visibleGroupedTransfers,
@@ -790,7 +778,7 @@ export function PracticeRecentTransfersAllModal({
   );
 
   const statusFilterBadgeItems = useMemo((): PracticeStatusFilterBadgeItem[] => {
-    const statusItems = PRACTICE_RECENT_STATUS_BADGES.map((item) => ({
+    return PRACTICE_RECENT_STATUS_BADGES.map((item) => ({
       key: item.filter,
       label: item.label,
       tone: resolvePracticeStatusFilterBadgeTone(item.filter),
@@ -798,28 +786,13 @@ export function PracticeRecentTransfersAllModal({
       unreadCount: statusUnreadCounts[item.countKey],
       tooltip: item.tooltip,
     }));
-    if (bookmarkCount == null || !onBookmarkNavigate) return statusItems;
-    return [
-      ...statusItems,
-      {
-        key: PRACTICE_TRANSFER_BOOKMARK_BADGE_KEY,
-        label: "북마크",
-        tone: "bookmark" as const,
-        count: Math.max(0, Number(bookmarkCount) || 0),
-        tooltip:
-          "북마크한 의뢰(전기간). 클릭하면 북마크를 하나씩 열어 순회합니다.",
-      },
-    ];
-  }, [bookmarkCount, onBookmarkNavigate, statusCounts, statusUnreadCounts]);
+  }, [statusCounts, statusUnreadCounts]);
 
   const statusBadges = (
     <PracticeStatusFilterBadges
       items={statusFilterBadgeItems}
       onUnreadNavigate={navigateNextUnreadForStatus}
-      gapBeforeKeys={[
-        ...PRACTICE_RECENT_STATUS_BADGE_GAP_BEFORE_KEYS,
-        PRACTICE_TRANSFER_BOOKMARK_BADGE_KEY,
-      ]}
+      gapBeforeKeys={PRACTICE_RECENT_STATUS_BADGE_GAP_BEFORE_KEYS}
       compact={isMobile}
       className={isMobile ? "contents" : "flex-nowrap"}
     />

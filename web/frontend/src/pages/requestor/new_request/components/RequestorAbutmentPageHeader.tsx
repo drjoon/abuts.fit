@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-14: 진행중/어벗츠 생산중 버튼에 Factory 아이콘. iconOnly·좁은 폭은 건수 배지.
 // - 2026-09-03: 기공의뢰수신 — 어벗츠 생산중 라벨. 정책은 사이드바. 어벗 뱃지 왼쪽 간격 없음.
 // - 2026-09-03: 기공소 정책 안내는 사이드바(LabPricingPolicyBanner). 헤더는 치과만.
 // - 2026-09-03: 진행중 모달 안내 문구 제거.
@@ -31,6 +32,8 @@
 // - web/frontend/src/shared/realtime/creditBalanceEvent.ts
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Factory } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -47,6 +50,7 @@ import { RequestDetailDialog } from "@/features/requests/components/RequestDetai
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { DemoModeBadge } from "@/shared/demo/DemoModeBadge";
 import { getNormalizedStageLabelSafe } from "@/utils/stage";
+import { cn } from "@/shared/ui/cn";
 import type { PeriodFilterValue } from "@/shared/ui/PeriodFilter";
 import {
   PRACTICE_TRANSFER_CANCEL_FROM_ABUTS_MESSAGE,
@@ -74,10 +78,13 @@ type RequestorAbutmentPageHeaderProps = {
    * policyInProgress — 기공의뢰수신 등: 어벗츠 생산중만(정책은 사이드바).
    */
   variant?: RequestorAbutmentPageHeaderVariant;
+  /** true면 아이콘+건수만(모바일·좁은 폭 헤더) */
+  iconOnly?: boolean;
 };
 
 export const RequestorAbutmentPageHeader = ({
   variant = "full",
+  iconOnly = false,
 }: RequestorAbutmentPageHeaderProps = {}) => {
   const isPolicyInProgressOnly = variant === "policyInProgress";
   const { user, token } = useAuthStore();
@@ -421,6 +428,9 @@ export const RequestorAbutmentPageHeader = ({
     }
   };
 
+  const inProgressCountLabel = `${inProgressCount.toLocaleString()}건`;
+  const inProgressAria = `${inProgressLabel} ${inProgressCountLabel}`;
+
   const policyAndInProgressActions = (
     <>
       {showPolicyInHeader ? <RequestorPolicyRemakeHeader /> : null}
@@ -428,10 +438,46 @@ export const RequestorAbutmentPageHeader = ({
         type="button"
         variant="outline"
         size="sm"
-        className="h-8 px-3 text-xs"
+        className={cn(
+          "h-8 shrink-0 gap-1 text-xs",
+          iconOnly
+            ? inProgressCount > 0
+              ? "px-2"
+              : "w-8 px-0"
+            : "gap-1.5 px-2 sm:px-3",
+        )}
         onClick={() => setInProgressOpen(true)}
+        aria-label={inProgressAria}
+        title={inProgressAria}
       >
-        {inProgressLabel} {inProgressCount.toLocaleString()}건
+        <Factory className="h-3.5 w-3.5 shrink-0" />
+        {iconOnly ? (
+          inProgressCount > 0 ? (
+            <Badge
+              variant="secondary"
+              className="h-4 min-w-4 justify-center rounded-full px-1 text-[10px] leading-none"
+            >
+              {inProgressCount > 99 ? "99+" : inProgressCount}
+            </Badge>
+          ) : (
+            <span className="sr-only">{inProgressAria}</span>
+          )
+        ) : (
+          <>
+            <span className="hidden sm:inline">{inProgressLabel} </span>
+            <span className="sm:hidden" aria-hidden>
+              {inProgressCount > 0 ? (
+                <Badge
+                  variant="secondary"
+                  className="h-4 min-w-4 justify-center rounded-full px-1 text-[10px] leading-none"
+                >
+                  {inProgressCount > 99 ? "99+" : inProgressCount}
+                </Badge>
+              ) : null}
+            </span>
+            <span className="hidden sm:inline">{inProgressCountLabel}</span>
+          </>
+        )}
       </Button>
     </>
   );

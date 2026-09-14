@@ -16,6 +16,7 @@
 // - web/frontend/src/shared/files/fileBlobCache.ts
 // - web/frontend/src/shared/files/s3ImageThumb.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-14: 모바일 플로팅 — mobileTopChrome(북마크 순회 등)을 채팅 상단에.
 // - 2026-09-13: 3D 타일 선다운로드 유지 — IndexedDB 디스크 캐시(~10GB LRU)로 재방문 히트.
 // - 2026-09-13: 이미지 첨부 — 의뢰 파일 vs 채팅 선택. 3D만 의뢰 파일 자동. 채팅 버블은 3D만 숨김.
 // - 2026-09-12: 의뢰·작업 파일 타일 썸네일 — aspect-square → 2:1(세로 약 절반).
@@ -406,6 +407,11 @@ type PracticeTransferDetailChatDialogProps = {
   authToken?: string | null;
   /** 환자/도착일 식별 스트립 오른쪽(예: 기공소 리메이크 청구) */
   chatHeaderAction?: ReactNode;
+  /**
+   * 모바일 플로팅 — 채팅 패널 바로 위(목록 헤더 액션이 가려질 때).
+   * 북마크 순회 등. inline·데스크톱에서는 무시.
+   */
+  mobileTopChrome?: ReactNode;
   /** 채팅 헤더 바로 아래 — 상대방 내부 메모 (레거시·미사용 권장) */
   counterpartyMemoStrip?: ReactNode;
   /** 환자·치아번호 줄 오른쪽 — 메모·평가 아이콘 */
@@ -630,6 +636,7 @@ export function PracticeTransferDetailChatDialog({
   conversationTitle: _conversationTitle,
   authToken = null,
   chatHeaderAction = null,
+  mobileTopChrome = null,
   counterpartyMemoStrip: _counterpartyMemoStrip = null,
   composerToolbarExtra = null,
   caseIdentity = null,
@@ -2435,6 +2442,17 @@ export function PracticeTransferDetailChatDialog({
   );
 
   const panelBody = (
+    <div className="flex min-h-0 flex-1 flex-col">
+      {isMobile && !isInline && mobileTopChrome ? (
+        <div
+          className="shrink-0 border-b border-slate-200/90 bg-slate-100/95 px-2 py-2"
+          data-no-drag
+        >
+          <div className="flex flex-nowrap items-center justify-center gap-1.5">
+            {mobileTopChrome}
+          </div>
+        </div>
+      ) : null}
         <PracticeTransferFileDropTarget
           fileInputId={
             workFileDrop?.fileInputId || "practice-transfer-unified-drop"
@@ -3356,6 +3374,7 @@ export function PracticeTransferDetailChatDialog({
             </>
           )}
         </PracticeTransferFileDropTarget>
+    </div>
   );
 
   const modelPreview = (
