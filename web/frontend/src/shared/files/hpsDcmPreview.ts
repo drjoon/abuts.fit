@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-14: CE Blowfish PADDING.NONE — NULL이 블록 패딩 0을 swap 전에 잘라 BiteScan Adler 실패.
 // - 2026-09-10: TextureData2·VertexColorSet·Facets tint → 버텍스 칼라(베이크). PLY export용 mesh 데이터.
 // - 2026-09-10: 3Shape/TRIOS HPS(.dcm) → Three.BufferGeometry 클라이언트 파서 (CA/CC/CE).
 // related files:
@@ -130,6 +131,11 @@ function buildCeKey(
   return scramble ? scrambleKey(key) : key;
 }
 
+/**
+ * CE Blowfish ECB. Must use PADDING.NONE: NULL strips trailing 0-pad before the
+ * 8-byte endian swap, which corrupts the last floats when plaintext length % 8 ≠ 0
+ * (common on BiteScan vertex buffers). Caller truncates via truncateSize.
+ */
 function decryptCeBuffer(
   encrypted: Uint8Array,
   key: Uint8Array,
@@ -144,7 +150,7 @@ function decryptCeBuffer(
   }
 
   swapEndiannessInPlace(data);
-  const bf = new Blowfish(key, Blowfish.MODE.ECB, Blowfish.PADDING.NULL);
+  const bf = new Blowfish(key, Blowfish.MODE.ECB, Blowfish.PADDING.NONE);
   const decrypted = bf.decode(data, Blowfish.TYPE.UINT8_ARRAY);
   swapEndiannessInPlace(decrypted);
   if (truncateSize > 0 && decrypted.length > truncateSize) {
