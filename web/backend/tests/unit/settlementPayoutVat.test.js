@@ -1,13 +1,25 @@
 // related files:
 // - web/backend/services/settlement.service.js
 // change-log:
+// - 2026-09-16: 기공소 지급 유보 50만원 단위 테스트.
 // - 2026-09-06: 과세 잔액=포함가. 지급 재가산 없음(÷1.1 분해).
 // - 2026-08-23: 제조사=일반과세(지급 VAT·세금계산서).
 import {
+  LAB_SETTLEMENT_PAYOUT_RESERVE_WON,
+  resolveLabSettlementPayableAmount,
   resolveSettlementInvoiceDraftSpec,
   resolveSettlementPayoutAmounts,
   TAXABLE_SETTLEMENT_ROLES,
 } from "../../services/settlement.service.js";
+
+describe("resolveLabSettlementPayableAmount", () => {
+  test("leaves 500k reserve and pays the rest", () => {
+    expect(resolveLabSettlementPayableAmount(1_200_000)).toBe(700_000);
+    expect(resolveLabSettlementPayableAmount(LAB_SETTLEMENT_PAYOUT_RESERVE_WON)).toBe(0);
+    expect(resolveLabSettlementPayableAmount(400_000)).toBe(0);
+    expect(resolveLabSettlementPayableAmount(0)).toBe(0);
+  });
+});
 
 describe("resolveSettlementPayoutAmounts", () => {
   test("salesman: inclusive balance → deposit as-is, split for invoice", () => {

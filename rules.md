@@ -216,7 +216,7 @@
 - 정산 지급 가능 잔액 집계 원칙:
   - `SETTLEMENT_PAYOUT`은 포함
   - **제조사**: 부가세 포함가(`amountIncludingVat`) 기준, 지급=잔액 그대로·세금계산서(÷1.1). 고객 유료·무료와 무관하게 `EARN/ADJUST` 전액 지급 대상(리메이크는 remake 단가 적립). 매달 말일 일괄 지급 전까지 미정산 잔액.
-  - **어벗츠·기공소**: 공급가(`amountExcludingVat`) 기준, 면세 계산서. `EARN/ADJUST`는 `creditKind=PAID|null`만 포함 (무료 제외)
+  - **어벗츠·기공소**: 공급가(`amountExcludingVat`) 기준, 면세 계산서. `EARN/ADJUST`는 `creditKind=PAID|null`만 포함 (무료 제외). **기공소 월 지급**은 다음 달 초 사용을 위해 **50만원 유보** 후 나머지 잔액만 지급(`LAB_SETTLEMENT_PAYOUT_RESERVE_WON`).
   - **딜러사·개발운영사**: 장부 적립·미정산은 부가세 포함가. 지급은 잔액 그대로·세금계산서(÷1.1)
   - 딜러사·개발운영사·어벗츠의 무료(`FREE_REQUEST|FREE_SHIPPING`) 수익은 지급 대상에서 제외(표시·확인용만). 제조사는 리메이크·무료 크레딧 포함 약정 단가 지급.
 - CreditLedger → GL 이관 보정 원칙:

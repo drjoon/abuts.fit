@@ -216,7 +216,7 @@ Notes:
   - `src/pages/admin/support/AdminSmsPage.tsx` (로컬 SMS 템플릿 CRUD·사업자/사용자 휴대폰 수신자 선택)
 - 역할별 정산
   - 공통 UI: `src/shared/settlement/settlementUi.tsx` · VAT 카피 `src/shared/settlement/affiliateVat.ts` (의뢰자 크레딧/기공크레딧 최신 스타일)
-  - 기공소/어벗츠기공소: 정산(`/dashboard/credits`)「지급」탭 — `LabSettlementPayoutTab.tsx`(기공크레딧 잔액·**월별** 적립/지급/상태(지급·계산서), 면세 계산서, max-w-4xl). 통장 사본·입금 계좌는 설정>사업자(`LabPayoutAccountCard`). 미등록 시 지급 진입·정산일 7일 전 일 1회 안내, 지급일까지 미등록이면 1개월 이월. 구 `/dashboard/payments`·`?tab=settlement`는 `?tab=payout`으로 호환.
+  - 기공소/어벗츠기공소: 정산(`/dashboard/credits`)「지급」탭 — `LabSettlementPayoutTab.tsx`(기공크레딧 잔액·**월별** 적립/지급/상태(지급·계산서), 면세 계산서, max-w-4xl). 월 지급은 **다음 달 초 사용 유보 50만원** 제외 후 잔액만(`LAB_SETTLEMENT_PAYOUT_RESERVE_WON`). 통장 사본·입금 계좌는 설정>사업자(`LabPayoutAccountCard`). 미등록 시 지급 진입·정산일 7일 전 일 1회 안내, 지급일까지 미등록이면 1개월 이월. 구 `/dashboard/payments`·`?tab=settlement`는 `?tab=payout`으로 호환.
   - 제조사: `src/pages/manufacturer/payments/PaymentsPage.tsx` — 거래 원장(일시·지급상태·금액·잔액·거래내역). 유형 열은 생략(모두 커스텀어벗 생산+배송비). **생산·배송은 KST 하루 1행**(의뢰 1건=어벗 1개라 기공의뢰처럼 못 묶음). 클릭 상세는 의뢰/배송을 별 섹션으로 나누고, 그 안에서 **배송자 BA**(requestor businessAnchor·우편함)별. PTX는 치과명이 아니라 기공소 BA로 표기. 장부·미정산=부가세 포함가(어벗 1개당 매입가 기본 8,800, 리메이크 6,600). 무료 크레딧 결제 포함 약정 단가가 미정산으로 쌓이며 말일 일괄 지급(재가산 없음·세금계산서÷1.1). 정산규칙 모달은 플랫폼 설정 매입가·배송단가를 표시.
   - 딜러: `src/pages/salesman/SalesmanPaymentsPage.tsx` — 부가세 포함가 장부·미정산, 지급=잔액 그대로·세금계산서(÷1.1)
   - 개발운영사: `src/pages/devops/DevopsPaymentsPage.tsx` — 부가세 포함가 장부·미정산, 지급=잔액 그대로·세금계산서(÷1.1)

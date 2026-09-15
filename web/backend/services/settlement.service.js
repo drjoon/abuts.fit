@@ -5,6 +5,7 @@
 // - web/backend/services/creditRevenuePolicy.service.js
 // - web/backend/utils/creditSettingsDefaults.js
 // change-log:
+// - 2026-09-16: 기공소 월 지급 — 다음달 사용 유보 50만원 제외 후 잔액만 지급.
 // - 2026-09-09: 리메이크 제조사 지급(기본 6,600 포함가). 무료 생산(0) 폐지.
 // - 2026-09-06: 과세 관계사 잔액=포함가, 지급 시 VAT 재가산 없음(÷1.1 분해만). 기공은 면세 공급가.
 // - 2026-08-23: 제조사=일반과세 — TAXABLE_SETTLEMENT_ROLES·지급 VAT·세금계산서.
@@ -37,6 +38,18 @@ export const TAXABLE_SETTLEMENT_ROLES = new Set([
   "salesman",
   "devops",
 ]);
+
+/** 기공소 월 지급 시 다음 달 초 사용을 위해 남기는 기공크레딧(원). */
+export const LAB_SETTLEMENT_PAYOUT_RESERVE_WON = 500_000;
+
+/**
+ * 기공소 지급 가능액 = 원장 기공크레딧 잔액 − 유보금.
+ * 잔액이 유보금 이하면 0(해당 월 지급 없음).
+ */
+export function resolveLabSettlementPayableAmount(balanceAmount) {
+  const balance = Math.max(0, Math.round(Number(balanceAmount || 0)));
+  return Math.max(0, balance - LAB_SETTLEMENT_PAYOUT_RESERVE_WON);
+}
 
 /** 정산 배치 확정 시 계산서/세금계산서 Draft 자동 생성 대상(면세 포함). */
 export const SETTLEMENT_INVOICE_DRAFT_ROLES = new Set([
@@ -214,10 +227,15 @@ export async function computeSettlementPayoutBreakdown({
   businessAnchorId,
   vatRate,
 }) {
-  const balanceAmount = await computeSettlementBalance({
+  const ledgerBalance = await computeSettlementBalance({
     role,
     businessAnchorId,
   });
+  // 기공소만 다음달 사용 유보금(50만원)을 남기고 나머지 지급.
+  const balanceAmount =
+    role === "lab"
+      ? resolveLabSettlementPayableAmount(ledgerBalance)
+      : ledgerBalance;
   const rate =
     vatRate === undefined || vatRate === null
       ? await resolveAffiliateVatRate()

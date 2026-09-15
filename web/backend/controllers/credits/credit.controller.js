@@ -33,6 +33,10 @@ import { postGeneralLedgerJournal } from "../../services/generalLedger.service.j
 import { getTodayYmdInKst } from "../../utils/krBusinessDays.js";
 import SettlementBatchItem from "../../models/settlementBatchItem.model.js";
 import SettlementBatch from "../../models/settlementBatch.model.js";
+import {
+  LAB_SETTLEMENT_PAYOUT_RESERVE_WON,
+  resolveLabSettlementPayableAmount,
+} from "../../services/settlement.service.js";
 
 // NOTE:
 // - /api/credits/balance 는 GL 집계 SSOT를 즉시 반영해야 하므로
@@ -397,6 +401,7 @@ export async function getMyCreditSpendInsights(req, res) {
 /**
  * 기공소 기공크레딧(LAB_SETTLEMENT_CREDIT) 월 정산 인출.
  * 의뢰/배송 잔액과 분리. SETTLEMENT_PAYOUT으로 차감.
+ * 다음달 사용 유보금(50만원)은 인출 불가.
  */
 export async function createLabSettlementPayout(req, res) {
   try {
@@ -433,11 +438,17 @@ export async function createLabSettlementPayout(req, res) {
       businessAnchorId: anchorId,
     });
     const available = Number(snapshot?.settlementCredit || 0);
-    if (available < amount) {
+    const payable = resolveLabSettlementPayableAmount(available);
+    if (payable < amount) {
       return res.status(400).json({
         success: false,
-        message: "기공정산크레딧 잔액이 부족합니다.",
-        data: { available, requested: amount },
+        message: `다음 달 사용을 위해 기공크레딧 ${LAB_SETTLEMENT_PAYOUT_RESERVE_WON.toLocaleString("ko-KR")}원은 남겨 둡니다. 지급 가능 잔액이 부족합니다.`,
+        data: {
+          available,
+          payable,
+          reserve: LAB_SETTLEMENT_PAYOUT_RESERVE_WON,
+          requested: amount,
+        },
       });
     }
 

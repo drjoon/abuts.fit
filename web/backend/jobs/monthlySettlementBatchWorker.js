@@ -15,6 +15,7 @@ import {
 import { resolvePreviousKstMonthRange } from "../services/practiceLabInvoice.service.js";
 
 // change-log:
+// - 2026-09-16: 기공소 지급액은 computeSettlementPayoutBreakdown의 50만원 유보 반영.
 // - 2026-08-17: DRAFT 배치 금액을 지급 분해(공급가·VAT·입금합계)로 생성.
 
 let timerHandle = null;

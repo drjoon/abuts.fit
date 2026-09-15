@@ -3,7 +3,7 @@
 // - web/frontend/src/shared/components/business/settings/LabPayoutAccountCard.tsx
 // - web/backend/jobs/monthlySettlementBatchWorker.js
 // change-log:
-// - 2026-09-16: 기공소 통장사본·정산일(1일) 리마인드 헬퍼. 미등록 시 지급 1개월 이월 안내.
+// - 2026-09-16: 기공소 통장사본·정산일(1일) 리마인드 헬퍼. 미등록 시 지급 1개월 이월 안내. 월 지급 유보 50만원 상수.
 import { toKstYmd } from "@/shared/date/kst";
 
 /** KST 월 정산일(기본 1일). 백엔드 SETTLEMENT_BATCH_DAY_OF_MONTH 와 맞춤. */
@@ -87,3 +87,9 @@ export function markLabPayoutRemindShownToday(anchorId: string, now = new Date()
 
 export const LAB_PAYOUT_BANKBOOK_DELAY_NOTICE =
   "정산 지급일까지 통장 사본을 등록하지 않으면, 이번 달 지급분은 1개월 후 다음 달에 지급됩니다.";
+
+/** 월 지급 시 다음 달 초 사용을 위해 남기는 기공크레딧(원). BE `LAB_SETTLEMENT_PAYOUT_RESERVE_WON` 와 맞춤. */
+export const LAB_SETTLEMENT_PAYOUT_RESERVE_WON = 500_000;
+
+export const LAB_SETTLEMENT_PAYOUT_RESERVE_NOTICE =
+  "다음 달 초 사용을 위해 기공크레딧 50만원은 남겨 두고, 나머지 잔액만 지급합니다.";

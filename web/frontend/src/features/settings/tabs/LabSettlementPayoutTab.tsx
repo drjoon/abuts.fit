@@ -6,7 +6,7 @@
 // - web/frontend/src/shared/settlement/affiliateVat.ts
 // - web/backend/controllers/credits/credit.controller.js
 // change-log:
-// - 2026-09-16: 정산규칙 모달 — 작업완료 적립·통장사본 이월·월 지급 기준으로 간단 정리.
+// - 2026-09-16: 정산규칙 모달 — 작업완료 적립·통장사본 이월·월 지급 유보 50만원 기준 간단 정리.
 // - 2026-09-16: 상태=지급+계산서. 통장사본 미등록 일 1회 안내·1개월 이월 강조.
 // - 2026-09-16: 일별→월별 집계. 필수열(정산월·적립·지급·상태). 충전과 동일 max-w-4xl.
 // - 2026-09-16: 요약 카드용 일별 스냅샷은 탭과 무관하게 기간 변경 시 항상 로드. 지급 목록은 기간·검색 클라이언트 필터.
@@ -53,6 +53,7 @@ import {
 } from "@/shared/settlement/settlementUi";
 import {
   LAB_PAYOUT_BANKBOOK_DELAY_NOTICE,
+  LAB_SETTLEMENT_PAYOUT_RESERVE_NOTICE,
   isLabPayoutReady,
   type LabPayoutAccountSnapshot,
 } from "@/shared/settlement/labPayoutBankbook";
@@ -614,7 +615,9 @@ export const LabSettlementPayoutTab = () => {
                     <CalendarClock className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
                     <p>
                       KST 월별 집계 후 등록 계좌로 매월 자동 지급됩니다. 별도
-                      요청은 필요 없습니다. {LAB_PAYOUT_BANKBOOK_DELAY_NOTICE}
+                      요청은 필요 없습니다.{" "}
+                      {LAB_SETTLEMENT_PAYOUT_RESERVE_NOTICE}{" "}
+                      {LAB_PAYOUT_BANKBOOK_DELAY_NOTICE}
                     </p>
                   </div>
                 </SettlementPolicySection>
