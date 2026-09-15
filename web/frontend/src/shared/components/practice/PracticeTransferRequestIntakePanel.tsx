@@ -224,6 +224,7 @@ import {
 // - web/frontend/src/shared/components/practice/PracticeToothSimpleAbutmentFields.tsx
 // - web/frontend/src/shared/components/practice/PracticeCustomSpecsPresetEditDialog.tsx
 // - web/frontend/src/shared/pricing/abutsAbutmentService.ts
+// - 2026-09-15: 직접 어벗(심플어벗·직접입력)도 스캔바디와 같이 임플란트 1/2 → 규격 2/2 위저드.
 // - 2026-09-15: 커스텀어벗 모달 기본 z-[340] — compose Dialog(z-320) 뒤에 가려지던 문제.
 // - 2026-09-14: XOR dimmed — 커밋된 사이드만 선명(미선택 시 양쪽 흐림). 흐림 opacity 강화.
 // - 2026-09-14: 스캔바디 위저드 푸터 — 1/2 취소·다음, 2/2 이전·취소·확인. STL 왼쪽·카피 단축.
@@ -2932,18 +2933,8 @@ export const PracticeTransferRequestIntakePanel = ({
     const requestedSelection = isCustomAbutmentSelection(options?.selection)
       ? options.selection
       : null;
-    const previewRow = toothWorks[index];
-    const previewSelection =
-      requestedSelection ||
-      resolveCustomAbutmentSelection(
-        previewRow ? { ...previewRow, customAbutment: true } : { customAbutment: true },
-      ) ||
-      CUSTOM_ABUTMENT_SELECTION.ABUTMENT;
-    // 어벗: 임플란트(첨1) 생략 → 심플어벗/직접입력. 스캔바디·투어는 임플란트부터.
-    const startAtAbutmentStep =
-      previewSelection === CUSTOM_ABUTMENT_SELECTION.ABUTMENT &&
-      !isCustomAbutGuideTourStepId(toothWorkGuideTourStepId);
-    setCustomSpecsWizardStep(startAtAbutmentStep ? "abutment" : "implant");
+    // 어벗·스캔바디 모두 임플란트(1/2)부터. 심플어벗·직접입력도 임플란트 선택 후 2/2.
+    setCustomSpecsWizardStep("implant");
     setToothWorks((prev) => {
       const row = prev[index];
       if (!row) return prev;
@@ -6019,8 +6010,6 @@ export const PracticeTransferRequestIntakePanel = ({
                 : simpleHealingDraft;
               const implantReady = hasToothWorkImplantPreset(modalSpecs);
               const wizardStep = customSpecsWizardStep;
-              const abutmentSingleStep =
-                isAbutmentModal && !isPresetGuideTourStep;
               const tourImplantFocus =
                 isPresetGuideTourStep && wizardStep === "implant";
               const tourAbutmentFocus =
@@ -6031,14 +6020,10 @@ export const PracticeTransferRequestIntakePanel = ({
                   : customProsthesis
                     ? "2/2 · 스캔바디 선택"
                     : isAbutmentModal
-                      ? abutmentSingleStep
-                        ? "심플어벗 또는 직접 입력"
-                        : "2/2 · 심플어벗 또는 직접 입력"
+                      ? "2/2 · 심플어벗 또는 직접 입력"
                       : "2/2 · 스캔바디 또는 심플 힐링";
               const selectedImplantHeaderLabel =
-                wizardStep === "abutment" &&
-                !abutmentSingleStep &&
-                implantReady
+                wizardStep === "abutment" && implantReady
                   ? (() => {
                       const parts = implantFavoriteDisplayParts(
                         modalSpecs,
@@ -6078,7 +6063,7 @@ export const PracticeTransferRequestIntakePanel = ({
                         const abutmentSideHint = customProsthesis
                           ? "임플란트를 선택한 뒤 스캔바디를 선택하면 저장되고 닫힙니다."
                           : isAbutmentModal
-                            ? "심플어벗 또는 직접 입력을 선택하거나, 입력 없이 확인할 수 있습니다."
+                            ? "임플란트를 선택한 뒤 심플어벗 또는 직접 입력을 선택하거나, 입력 없이 확인할 수 있습니다."
                             : "임플란트를 선택한 뒤 스캔바디 또는 심플 힐링을 선택하면 저장되고 닫힙니다.";
                         if (
                           lockedMode === ABUTMENT_PRODUCT_MODE.DESIGN_AND_PRODUCTION
@@ -6105,7 +6090,7 @@ export const PracticeTransferRequestIntakePanel = ({
 
                   <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
                     <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto p-1.5 sm:p-2">
-                      {wizardStep === "implant" && !abutmentSingleStep ? (
+                      {wizardStep === "implant" ? (
                         <div
                           className={cn(
                             "flex min-h-0 min-w-0 flex-1 flex-col gap-1.5",
@@ -6289,7 +6274,7 @@ export const PracticeTransferRequestIntakePanel = ({
                     </div>
                     <div aria-hidden className="min-w-0" />
                     <div className="flex flex-wrap items-center justify-end gap-2">
-                      {wizardStep === "abutment" && !abutmentSingleStep ? (
+                      {wizardStep === "abutment" ? (
                         <Button
                           type="button"
                           variant="outline"
@@ -6308,7 +6293,7 @@ export const PracticeTransferRequestIntakePanel = ({
                       >
                         취소
                       </Button>
-                      {wizardStep === "implant" && !abutmentSingleStep ? (
+                      {wizardStep === "implant" ? (
                         <Button
                           type="button"
                           className="h-10 min-w-[5.5rem]"

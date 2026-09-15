@@ -11,8 +11,9 @@
 // - 2026-09-02: formatImplantSummary — 도입중(implantAddRequest)이어도 실제 brand/family/type 표시(자리표시만 축약).
 // - 2026-09-02: 치식 직렬화 `{…/…/+add}` — implantAddRequest 왕복(요청중 CA가 어벗츠 업로드로 오인되지 않게).
 // - 2026-09-01: 기공의뢰 caseInfos.tooth는 toothWorks 치식 SSOT(파일명 추출 금지). 단치아면 파일에도 반영.
+// - 2026-09-15: 어벗 라디오도 임플란트 필수(심플·직접입력 규격은 선택). 스캔바디는 임플란트+규격.
 // - 2026-09-14: 어벗|스캔바디 라디오(customAbutmentSelection). 어벗=심플어벗+자가입력·규격 선택.
-// - 2026-09-14: 스캔바디 모드 심플힐링(직경 6/7/9·높이 S/M/L/XL·종류 없음). 어벗은 규격 없이 주문 가능.
+// - 2026-09-14: 스캔바디 모드 심플힐링(직경 6/7/9·높이 S/M/L/XL·종류 없음). 어벗 쪽 심플/직접입력 규격은 선택.
 // - 2026-08-25: 커스텀어벗 보철 형태는 심플어벗 불가 — 어벗 쪽 완성=스캔바디만.
 // - 2026-08-25: 심플어벗(심플어벗/심플밀링·직경 6–10·높이 S/M/L) — 스캔바디와 XOR. 완성 시 프리셋 충족.
 // - 2026-08-21: 임플란트 추가 요청 프리셋 type을 옵션명으로 정규화(레거시 헥스 → 선택 가능).
@@ -2123,19 +2124,24 @@ export const isAbutmentPresetRequired = (
 ) => {
   const type = String(row?.prosthesisType || "");
   if (isCustomAbutmentProsthesisType(type)) return true;
-  if (
-    !Boolean(row?.customAbutment) ||
-    !isCustomAbutmentSupportedProsthesisType(type)
-  ) {
-    return false;
-  }
-  // 어벗 라디오: 심플어벗/자가입력 없이 기공소 전송 가능
-  return resolveCustomAbutmentSelection(row) !== CUSTOM_ABUTMENT_SELECTION.ABUTMENT;
+  return (
+    Boolean(row?.customAbutment) && isCustomAbutmentSupportedProsthesisType(type)
+  );
 };
 
 export const isAbutmentPresetMissing = (
   row: Partial<ToothWorkSelection> | null | undefined,
-) => isAbutmentPresetRequired(row) && !hasCompleteAbutmentPresets(row);
+) => {
+  if (!isAbutmentPresetRequired(row)) return false;
+  // 어벗 라디오: 임플란트만 필수(심플어벗/직접입력 규격은 선택)
+  if (
+    !isCustomAbutmentProsthesisType(String(row?.prosthesisType || "")) &&
+    resolveCustomAbutmentSelection(row) === CUSTOM_ABUTMENT_SELECTION.ABUTMENT
+  ) {
+    return !hasToothWorkImplantPreset(row);
+  }
+  return !hasCompleteAbutmentPresets(row);
+};
 
 export const listMissingAbutmentPresetTeeth = (
   rows: readonly Partial<ToothWorkSelection>[] | null | undefined,
