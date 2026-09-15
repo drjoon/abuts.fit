@@ -12,6 +12,8 @@ import {
   getGenAI as getSharedGenAI,
   extractBusinessLicenseFields,
 } from "../../services/businessLicenseOcr.service.js";
+import { extractBankbookFields } from "../../services/bankbookOcr.service.js";
+import { verifyPayoutAccount } from "../../services/payoutAccountVerify.service.js";
 
 // 지연 초기화: dotenv 로드 후 첫 호출 시 초기화
 let _apiKey = null;
@@ -886,4 +888,177 @@ export async function recognizeLotNumber(req, res) {
   }
 }
 
-export default { parseFilenames, parseBusinessLicense, recognizeLotNumber };
+
+export async function parseBankbook(req, res) {
+  try {
+    const { fileId, s3Key, originalName } = req.body || {};
+
+    if (!fileId && !s3Key) {
+      return res.status(400).json({
+        success: false,
+        message: "fileId 또는 s3Key가 필요합니다.",
+      });
+    }
+
+    const roleCheck = assertBusinessRole(req, res);
+    if (!roleCheck) return;
+
+    const key = String(s3Key || "").trim();
+    if (!key) {
+      return res.status(400).json({
+        success: false,
+        message: "s3Key가 필요합니다.",
+      });
+    }
+
+    const name = String(originalName || "").toLowerCase();
+    const isImage =
+      name.endsWith(".jpg") ||
+      name.endsWith(".jpeg") ||
+      name.endsWith(".png") ||
+      name.endsWith(".webp");
+    if (!isImage) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "통장 사본 자동 인식은 이미지(JPG/PNG)만 지원합니다. PDF는 업로드만 가능합니다.",
+      });
+    }
+
+    let buffer;
+    try {
+      buffer = await s3Utils.getObjectBufferFromS3(key);
+    } catch (e) {
+      const code = String(e?.Code || e?.name || "").trim();
+      if (code === "NoSuchKey") {
+        return res.status(400).json({
+          success: false,
+          message:
+            "업로드된 파일을 저장소에서 찾을 수 없습니다. 다시 업로드해주세요.",
+        });
+      }
+      throw e;
+    }
+    if (!buffer || buffer.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "S3에서 파일을 읽을 수 없습니다.",
+      });
+    }
+
+    const genAI = getSharedGenAI();
+    if (!genAI) {
+      return res.status(503).json({
+        success: false,
+        message:
+          "GOOGLE_API_KEY가 설정되지 않아 통장 사본 자동 인식이 비활성화되어 있습니다.",
+      });
+    }
+
+    const clientIp =
+      req.ip ||
+      req.headers["x-forwarded-for"] ||
+      (req.connection && req.connection.remoteAddress) ||
+      "unknown";
+    const guardKey = `gemini-parseBankbook:${clientIp}`;
+    const guard = shouldBlockExternalCall(guardKey);
+    if (guard?.blocked) {
+      return res.status(429).json({
+        success: false,
+        message:
+          "AI 외부 API가 짧은 시간에 과도하게 호출되어 잠시 차단되었습니다. 잠시 후 다시 시도해주세요.",
+      });
+    }
+
+    const { ok: parseOk, extracted, reason } =
+      await extractBankbookFields(buffer);
+    if (!parseOk) {
+      console.error("[AI] parseBankbook: OCR failed", {
+        originalName,
+        s3Key: key,
+        reason,
+      });
+      return res.status(422).json({
+        success: false,
+        message:
+          "통장 사본을 인식하지 못했습니다. 선명한 이미지를 다시 업로드하거나 수동으로 입력해주세요.",
+        data: {
+          metadata: extracted || {},
+          accountCheck: null,
+        },
+      });
+    }
+
+    // 사업자번호가 있으면 팝빌 실명조회까지 한 번에 (응답 지연 최소화: 필수 OCR 후 검증).
+    let businessNumber = "";
+    const businessAnchorId = String(req.user?.businessAnchorId || "").trim();
+    if (businessAnchorId) {
+      const anchor = await BusinessAnchor.findById(businessAnchorId)
+        .select({ "metadata.businessNumber": 1 })
+        .lean();
+      businessNumber = String(anchor?.metadata?.businessNumber || "").replace(
+        /\D/g,
+        "",
+      );
+    }
+
+    let accountCheck = null;
+    if (extracted.bankName && extracted.accountNumber) {
+      const verifyGuard = shouldBlockExternalCall(
+        `popbill-accountCheck:${clientIp}`,
+      );
+      if (!verifyGuard?.blocked) {
+        accountCheck = await verifyPayoutAccount({
+          bankName: extracted.bankName,
+          bankCode: extracted.bankCode,
+          accountNumber: extracted.accountNumber,
+          holderName: extracted.holderName,
+          businessNumber,
+        });
+        // 팝빌이 예금주명을 돌려주면 OCR 빈칸을 보강.
+        if (
+          accountCheck?.accountName &&
+          !String(extracted.holderName || "").trim()
+        ) {
+          extracted.holderName = accountCheck.accountName;
+        }
+        if (accountCheck?.bankName) {
+          extracted.bankName = accountCheck.bankName;
+        }
+        if (accountCheck?.bankCode) {
+          extracted.bankCode = accountCheck.bankCode;
+        }
+      }
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        input: {
+          fileId: fileId || null,
+          s3Key: key,
+          originalName: originalName || null,
+        },
+        metadata: extracted,
+        accountCheck,
+      },
+    });
+  } catch (error) {
+    console.error("[AI] parseBankbook error", error);
+    if (error?.status === 429 || error?.errorDetails) {
+      return res.status(429).json({
+        success: false,
+        message:
+          "AI 인식 서비스 할당량이 초과되었습니다. 잠시 후 다시 시도해주세요.",
+        error: error.message,
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: "통장 사본 처리 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+export default { parseFilenames, parseBusinessLicense, parseBankbook, recognizeLotNumber };

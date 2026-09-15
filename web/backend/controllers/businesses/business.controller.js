@@ -26,6 +26,7 @@ import {
   updateMyBusiness,
   getMyAutoMatchParticipation,
   setMyAutoMatchParticipation,
+  verifyMyPayoutAccount,
 } from "./business.update.controller.js";
 import {
   beginDemoConversionPending,
@@ -49,7 +50,7 @@ import {
   ensureRequestorOrgAnchor,
   isSyntheticPracticeBusinessNumber,
 } from "./requestorOrgAnchor.util.js";
-export { updateMyBusiness, getMyAutoMatchParticipation, setMyAutoMatchParticipation };
+export { updateMyBusiness, getMyAutoMatchParticipation, setMyAutoMatchParticipation, verifyMyPayoutAccount };
 
 export async function checkBusinessNumberDuplicate(req, res) {
   try {

@@ -59,6 +59,7 @@ import {
   toLabRatingSummaryApi,
 } from "../../utils/practiceLabRating.js";
 import { resolvePlatformFeeRate, resolveDirectPlatformFeeRateConfigured } from "../../services/creditRevenuePolicy.service.js";
+import { verifyPayoutAccount } from "../../services/payoutAccountVerify.service.js";
 
 function resolveLabPartnerInviteToken(req) {
   return String(
@@ -1552,6 +1553,70 @@ export async function setMyAutoMatchParticipation(req, res) {
       message: wantActive
         ? "자동 매칭 참여 중 오류가 발생했습니다."
         : "자동 매칭 해지 중 오류가 발생했습니다.",
+    });
+  }
+}
+
+export async function verifyMyPayoutAccount(req, res) {
+  try {
+    const roleCheck = assertBusinessRole(req, res);
+    if (!roleCheck) return;
+    const { businessType } = roleCheck;
+
+    const bankName = String(req.body?.bankName || "").trim();
+    const accountNumber = String(req.body?.accountNumber || "")
+      .replace(/\s/g, "")
+      .trim();
+    const holderName = String(req.body?.holderName || "").trim();
+
+    if (!bankName || !accountNumber || !holderName) {
+      return res.status(400).json({
+        success: false,
+        message: "은행/계좌번호/예금주를 모두 입력해주세요.",
+      });
+    }
+
+    let businessNumber = String(req.body?.businessNumber || "").replace(
+      /\D/g,
+      "",
+    );
+    const businessAnchorId = String(req.user?.businessAnchorId || "").trim();
+    if (!businessNumber && businessAnchorId) {
+      const anchor = await BusinessAnchor.findOne({
+        _id: businessAnchorId,
+        businessType,
+      })
+        .select({ "metadata.businessNumber": 1 })
+        .lean();
+      businessNumber = String(anchor?.metadata?.businessNumber || "").replace(
+        /\D/g,
+        "",
+      );
+    }
+
+    const accountCheck = await verifyPayoutAccount({
+      bankName,
+      accountNumber,
+      holderName,
+      businessNumber,
+    });
+
+    return res.json({
+      success: true,
+      data: {
+        accountCheck,
+        suggested: {
+          bankName: accountCheck.bankName || bankName,
+          holderName: accountCheck.accountName || holderName,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("[business.verifyMyPayoutAccount]", error);
+    return res.status(500).json({
+      success: false,
+      message: "계좌 확인 중 오류가 발생했습니다.",
+      error: error?.message,
     });
   }
 }

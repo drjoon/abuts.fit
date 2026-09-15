@@ -2,6 +2,7 @@
 // - web/backend/rules.md
 // - web/backend/app.js
 // - web/backend/server.js
+// - 2026-09-16: AccountCheckService 예금주 성명/실명조회 래퍼.
 import popbill from "popbill";
 
 const LinkID = process.env.POPBILL_LINK_ID;
@@ -34,6 +35,7 @@ export const easyFinBankService = popbill.EasyFinBankService();
 export const taxinvoiceService = popbill.TaxinvoiceService();
 export const kakaoService = popbill.KakaoService();
 export const messageService = popbill.MessageService();
+export const accountCheckService = popbill.AccountCheckService();
 
 export const getPopbillChargeInfo = async (CorpNum, serviceType) => {
   return new Promise((resolve, reject) => {
@@ -511,6 +513,85 @@ export const cancelIssuedInvoice = ({
       mgtKey,
       memo,
       "",
+      (response) => resolve(response),
+      (error) => reject(error),
+    );
+  });
+};
+
+/** 예금주조회(AccountCheck) 호출에 필요한 팝빌 회원 설정이 있는지. */
+export const isPopbillAccountCheckConfigured = () => {
+  const linkId = String(process.env.POPBILL_LINK_ID || "").trim();
+  const secret = String(process.env.POPBILL_SECRET_KEY || "").trim();
+  const corpNum = String(process.env.POPBILL_CORP_NUM || "").replace(/\D/g, "");
+  return Boolean(linkId && secret && corpNum);
+};
+
+const getPopbillAccountCheckConfig = () => {
+  const corpNum = String(process.env.POPBILL_CORP_NUM || "").replace(/\D/g, "");
+  const userIdRaw = String(process.env.POPBILL_USER_ID || "").trim();
+  const userId = userIdRaw.replace(/[^\x20-\x7E]/g, "").trim();
+  const linkId = String(process.env.POPBILL_LINK_ID || "").trim();
+  const secret = String(process.env.POPBILL_SECRET_KEY || "").trim();
+
+  if (!linkId || !secret) {
+    throw new Error("POPBILL_LINK_ID/POPBILL_SECRET_KEY 환경변수가 필요합니다.");
+  }
+  if (!corpNum) {
+    throw new Error("POPBILL_CORP_NUM 환경변수가 필요합니다.");
+  }
+
+  return { corpNum, userId: userId || "" };
+};
+
+/**
+ * 팝빌 성명조회 — 은행코드+계좌번호 → 예금주명.
+ * @returns {Promise<{ result, resultMessage, accountName, bankCode, accountNumber, checkDT }>}
+ */
+export const checkPopbillAccountInfo = async ({
+  bankCode,
+  accountNumber,
+} = {}) => {
+  const { corpNum, userId } = getPopbillAccountCheckConfig();
+  const code = String(bankCode || "").replace(/\D/g, "").padStart(4, "0");
+  const acct = String(accountNumber || "").replace(/\D/g, "");
+
+  return new Promise((resolve, reject) => {
+    accountCheckService.checkAccountInfo(
+      corpNum,
+      code,
+      acct,
+      userId,
+      (response) => resolve(response),
+      (error) => reject(error),
+    );
+  });
+};
+
+/**
+ * 팝빌 실명조회 — 은행코드+계좌번호+사업자/생년월일.
+ * identityNumType: "B"(사업자) | "P"(개인 yyMMdd)
+ */
+export const checkPopbillDepositorInfo = async ({
+  bankCode,
+  accountNumber,
+  identityNumType,
+  identityNum,
+} = {}) => {
+  const { corpNum, userId } = getPopbillAccountCheckConfig();
+  const code = String(bankCode || "").replace(/\D/g, "").padStart(4, "0");
+  const acct = String(accountNumber || "").replace(/\D/g, "");
+  const idType = String(identityNumType || "").trim().toUpperCase();
+  const idNum = String(identityNum || "").replace(/\D/g, "");
+
+  return new Promise((resolve, reject) => {
+    accountCheckService.checkDepositorInfo(
+      corpNum,
+      code,
+      acct,
+      idType,
+      idNum,
+      userId,
       (response) => resolve(response),
       (error) => reject(error),
     );

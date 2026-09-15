@@ -14,6 +14,7 @@ export const {
   updateMyBusiness,
   getMyAutoMatchParticipation,
   setMyAutoMatchParticipation,
+  verifyMyPayoutAccount,
   clearMyBusinessLicense,
   checkBusinessNumberDuplicate,
   lookupPostalCode,

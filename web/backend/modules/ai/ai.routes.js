@@ -2,6 +2,7 @@
 // - web/backend/rules.md
 // - web/backend/app.js
 // - web/backend/server.js
+// - 2026-09-16: POST /parse-bankbook 통장 사본 OCR.
 import { Router } from "express";
 import aiController from "../../controllers/ai/ai.controller.js";
 import { authenticate } from "../../middlewares/auth.middleware.js";
@@ -14,6 +15,11 @@ router.post(
   "/parse-business-license",
   authenticate,
   aiController.parseBusinessLicense
+);
+router.post(
+  "/parse-bankbook",
+  authenticate,
+  aiController.parseBankbook
 );
 router.post(
   "/recognize-lot-number",

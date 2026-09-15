@@ -2,6 +2,7 @@
 // - web/backend/rules.md
 // - web/backend/app.js
 // - web/backend/server.js
+// - 2026-09-16: POST /me/verify-payout-account 팝빌 계좌확인.
 import { Router } from "express";
 import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
 import * as businessController from "../../controllers/businesses/business.api.controller.js";
@@ -47,6 +48,12 @@ router.patch(
   "/me",
   authorize(BUSINESS_ACCOUNT_ROLES),
   businessController.updateMyBusiness,
+);
+
+router.post(
+  "/me/verify-payout-account",
+  authorize(BUSINESS_ACCOUNT_ROLES),
+  businessController.verifyMyPayoutAccount,
 );
 
 router.get(
