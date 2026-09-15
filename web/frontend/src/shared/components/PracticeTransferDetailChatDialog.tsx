@@ -276,7 +276,10 @@ import {
   extractDroppedFiles,
 } from "@/shared/files/extractDroppedFiles";
 import { printPracticeTransferDetail } from "@/shared/practice/practiceTransferDetailPrint";
-import { baseToothWorksForDetailChart } from "@/shared/practice/prosthesisFollowUp";
+import {
+  baseToothWorksForDetailChart,
+  listCompletedFollowUpToothWorks,
+} from "@/shared/practice/prosthesisFollowUp";
 import {
   nextStageOfPlan,
   normalizeLabRequestStagePlans,
@@ -606,6 +609,8 @@ type PracticeTransferDetailChatDialogProps = {
   appendProsthesisDisabled?: boolean;
   appendProsthesisBusy?: boolean;
   appendProsthesisHint?: string | null;
+  /** 모든 임시치아 → 지르 완료 — 최종 보철 카드·최종 기공비 */
+  prosthesisFollowUpComplete?: boolean;
   /** 기공소 수락 전 pending 후속 제작 */
   onCancelProsthesisFollowUp?: () => void;
   onModifyProsthesisFollowUp?: () => void;
@@ -753,6 +758,7 @@ export function PracticeTransferDetailChatDialog({
   appendProsthesisDisabled = false,
   appendProsthesisBusy = false,
   appendProsthesisHint = null,
+  prosthesisFollowUpComplete = false,
   onCancelProsthesisFollowUp,
   onModifyProsthesisFollowUp,
   prosthesisFollowUpPending = false,
@@ -3220,6 +3226,9 @@ export function PracticeTransferDetailChatDialog({
                             practiceTransferProsthesisFollowUps={prosthesisFollowUps}
                             practiceTransferToothWorks={toothWorks}
                             practiceTransferFeeQuote={feeQuote}
+                            practiceTransferProsthesisFeeStages={
+                              prosthesisFeeStages
+                            }
                             onCancelRemakeCharge={onCancelRemakeCharge}
                             remakeChargeCancelBusy={remakeChargeCancelBusy}
                             activeRemakeChargeIndexes={activeRemakeChargeIndexes}
@@ -3275,6 +3284,33 @@ export function PracticeTransferDetailChatDialog({
                             <p className="max-w-full text-center text-xs leading-snug text-muted-foreground">
                               {appendProsthesisHint}
                             </p>
+                          ) : null}
+                          {prosthesisFollowUpComplete &&
+                          Array.isArray(toothWorks) &&
+                          toothWorks.length > 0 ? (
+                            <div className="mt-2 w-full min-w-0 max-w-full text-left">
+                              <p className="mb-1.5 text-center text-[11px] font-medium text-foreground">
+                                확정 보철 · 최종 기공비
+                              </p>
+                              <PracticeToothWorkChartReadOnly
+                                toothWorks={listCompletedFollowUpToothWorks(
+                                  toothWorks,
+                                )}
+                                feeToothWorks={listCompletedFollowUpToothWorks(
+                                  toothWorks,
+                                )}
+                                showHeader={false}
+                                labAnchorId={labAnchorId}
+                                feeViewer={feeViewer}
+                                skipJig={skipJig}
+                                labEffectiveStars={labEffectiveStars}
+                                confirmedFeeLabel="최종 기공비"
+                                showFinalFee={false}
+                                enlargeOverlayClassName="z-[350]"
+                                enlargeDialogClassName="z-[360]"
+                                className="border-0 bg-transparent p-0 shadow-none"
+                              />
+                            </div>
                           ) : null}
                         </div>
                       ) : null}

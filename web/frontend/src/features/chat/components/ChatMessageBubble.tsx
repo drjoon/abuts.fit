@@ -105,6 +105,8 @@ type ChatMessageBubbleProps = {
   practiceTransferToothWorks?: import("@/shared/practice/transferMemo").ToothWorkSelection[] | null;
   /** 의뢰건 최종 기공비(지르+CA). 후속 증분 billingDelta와 별개 */
   practiceTransferFeeQuote?: import("@/shared/practice/practiceTransferFeeQuote").PracticeTransferFeeQuote | null;
+  /** 단계별 견적 스냅샷 — 후속 채팅「이번 단계」 */
+  practiceTransferProsthesisFeeStages?: import("@/shared/practice/prosthesisFollowUp").ProsthesisFeeStageRecord[] | null;
   /** 기공소 — 리메이크 청구 카드 「청구 취소」 */
   onCancelRemakeCharge?: (chargeIndex: number | null) => void;
   remakeChargeCancelBusy?: boolean;
@@ -347,6 +349,7 @@ export function ChatMessageBubble({
   practiceTransferProsthesisFollowUps = null,
   practiceTransferToothWorks = null,
   practiceTransferFeeQuote = null,
+  practiceTransferProsthesisFeeStages = null,
   onCancelRemakeCharge,
   remakeChargeCancelBusy = false,
   activeRemakeChargeIndexes = null,
@@ -714,6 +717,7 @@ export function ChatMessageBubble({
       transferToothWorks: practiceTransferToothWorks,
       transferFeeQuote: practiceTransferFeeQuote,
       transferProsthesisFollowUps: practiceTransferProsthesisFollowUps,
+      transferProsthesisFeeStages: practiceTransferProsthesisFeeStages,
       onCancelRemakeCharge,
       remakeChargeCancelBusy,
       activeRemakeChargeIndexes,

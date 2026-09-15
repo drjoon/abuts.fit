@@ -6,6 +6,7 @@
 // - 2026-09-08: 후속 채팅 차트 — 스팬을 치아별로 펼치고 원 임시치아 CA·스펙을 치아단위로 복원.
 // - 2026-09-02: 후속 보철 차트 — 버블 밖 전폭(의뢰상세와 동일 레이아웃), embedded 제거.
 // - 2026-09-15: 후속 채팅 차트 — followUps 미전달(메인 1단계 포커스와 분리). 추가 치아만 표시.
+// - 2026-09-15: 후속 채팅 견적 — 해당 지르 단계 포커스·스냅샷. 최종 바는 숨김(부분 후속).
 import { cn } from "@/shared/ui/cn";
 import { PracticeToothWorkChartReadOnly } from "@/shared/components/practice/PracticeToothWorkChartReadOnly";
 import { compactRemakeSummaryLabel } from "@/features/chat/components/chatRemakeParts";
@@ -237,6 +238,8 @@ type PracticeTransferSystemChatBodyProps = {
   /** 의뢰건 기공비 SSOT — 후속 증분이 아니라 최종(지르+CA) 견적 */
   transferFeeQuote?: PracticeTransferFeeQuote | null;
   transferProsthesisFollowUps?: import("@/shared/practice/prosthesisFollowUp").ProsthesisFollowUpRecord[] | null;
+  /** 단계별 견적 스냅샷 — 채팅 후속 카드「이번 단계」SSOT */
+  transferProsthesisFeeStages?: import("@/shared/practice/prosthesisFollowUp").ProsthesisFeeStageRecord[] | null;
   /** 기공소 — 리메이크 청구 취소 */
   onCancelRemakeCharge?: (chargeIndex: number | null) => void;
   remakeChargeCancelBusy?: boolean;
@@ -252,7 +255,8 @@ export function PracticeTransferSystemChatBody({
   labAnchorId = null,
   transferToothWorks = null,
   transferFeeQuote = null,
-  transferProsthesisFollowUps: _transferProsthesisFollowUps = null,
+  transferProsthesisFollowUps = null,
+  transferProsthesisFeeStages = null,
   onCancelRemakeCharge = undefined,
   remakeChargeCancelBusy = false,
   activeRemakeChargeIndexes = null,
@@ -265,15 +269,89 @@ export function PracticeTransferSystemChatBody({
 
   if (followUpPayload) {
     const { arrivalYmd, toothWorks } = followUpPayload;
-    // 한 의뢰건 기공비는 1가지(최종 지르+CA). 후속 billingDelta(증분)로 대체하지 않는다.
-    const caseFeeQuote =
-      transferFeeQuote &&
-      (transferFeeQuote.total > 0 ||
-        (Array.isArray(transferFeeQuote.lines) && transferFeeQuote.lines.length > 0))
-        ? transferFeeQuote
+    const payload =
+      message.systemPayload && typeof message.systemPayload === "object"
+        ? (message.systemPayload as Record<string, unknown>)
         : null;
-    // 채팅 카드는「이번에 추가한」지르만 — 메인 치식 1단계 스냅샷과 섞지 않음
-    const feeToothWorks = toothWorks;
+    const followUpIndexRaw = Number(payload?.followUpIndex);
+    const followUpIndex = Number.isFinite(followUpIndexRaw)
+      ? Math.max(0, Math.floor(followUpIndexRaw))
+      : 0;
+    // 표시는 추가 지르만. 견적·부분후속 판별은 전체 toothWorks(남은 임시치아 포함).
+    const feeToothWorks =
+      Array.isArray(transferToothWorks) && transferToothWorks.length > 0
+        ? (transferToothWorks as ToothWorkSelection[])
+        : toothWorks;
+    const stageKey = `zirconia-${followUpIndex}`;
+    const stageSnap = (
+      Array.isArray(transferProsthesisFeeStages)
+        ? transferProsthesisFeeStages
+        : []
+    ).find((row) => String(row?.key || "").trim() === stageKey);
+    const followUpRecord = (
+      Array.isArray(transferProsthesisFollowUps)
+        ? transferProsthesisFollowUps
+        : []
+    ).find(
+      (row) =>
+        !String(row?.canceledAt || "").trim() &&
+        Number(row?.followUpIndex || 0) === followUpIndex,
+    );
+    const payloadBillingDelta =
+      payload?.billingDelta && typeof payload.billingDelta === "object"
+        ? (payload.billingDelta as {
+            finalLabFeeTotal?: unknown;
+            finalTotal?: unknown;
+            lines?: unknown;
+          })
+        : null;
+    const stageLinesRaw =
+      (Array.isArray(stageSnap?.lines) && stageSnap!.lines.length > 0
+        ? stageSnap!.lines
+        : null) ||
+      (Array.isArray(followUpRecord?.billingDelta?.lines)
+        ? followUpRecord!.billingDelta!.lines
+        : null) ||
+      (Array.isArray(payloadBillingDelta?.lines)
+        ? payloadBillingDelta!.lines
+        : null);
+    const stageLines = Array.isArray(stageLinesRaw) ? stageLinesRaw : null;
+    const stageTotal = Math.max(
+      0,
+      Math.round(
+        Number(
+          stageSnap?.total ??
+            stageSnap?.labFeeTotal ??
+            followUpRecord?.billingDelta?.finalTotal ??
+            followUpRecord?.billingDelta?.finalLabFeeTotal ??
+            payloadBillingDelta?.finalTotal ??
+            payloadBillingDelta?.finalLabFeeTotal ??
+            0,
+        ),
+      ),
+    );
+    const stageFeeQuote: PracticeTransferFeeQuote | null =
+      stageTotal > 0 || (Array.isArray(stageLines) && stageLines.length > 0)
+        ? ({
+            relationshipKind: transferFeeQuote?.relationshipKind || "none",
+            feeRateApplied: Number(transferFeeQuote?.feeRateApplied || 0),
+            labSettlementAmount: 0,
+            abutsRevenueAmount: 0,
+            total: stageTotal,
+            labFeeTotal: stageTotal,
+            labAbutmentTotal: 0,
+            abutmentRetailTotal: 0,
+            lines: (stageLines || []) as PracticeTransferFeeQuote["lines"],
+            tempCreditLabFeeTotal: 0,
+            billed: true,
+            labFeeConfigured: transferFeeQuote?.labFeeConfigured !== false,
+          } satisfies PracticeTransferFeeQuote)
+        : transferFeeQuote &&
+            (transferFeeQuote.total > 0 ||
+              (Array.isArray(transferFeeQuote.lines) &&
+                transferFeeQuote.lines.length > 0))
+          ? { ...transferFeeQuote, tempCreditLabFeeTotal: 0 }
+          : null;
     return (
       <div
         id={messageDomId}
@@ -299,7 +377,12 @@ export function PracticeTransferSystemChatBody({
               feeToothWorks={feeToothWorks}
               showHeader={false}
               labAnchorId={labAnchorId}
-              feeQuote={caseFeeQuote}
+              feeQuote={stageFeeQuote}
+              prosthesisFollowUps={transferProsthesisFollowUps}
+              prosthesisFeeStages={transferProsthesisFeeStages}
+              feeStageFocusIndex={followUpIndex}
+              // 단계 스냅샷 보호 — 최종 기공비는 완료 카드에서만
+              showFinalFee={false}
               enlargeOverlayClassName="z-[350]"
               enlargeDialogClassName="z-[360]"
               className="border-0 bg-transparent p-0 shadow-none"

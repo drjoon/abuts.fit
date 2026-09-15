@@ -58,6 +58,8 @@ import {
 import {
   buildToothWorkDisplayByTooth,
   hasPartialProsthesisFollowUp,
+  isFinalProsthesisType,
+  isFollowUpProsthesisPhase,
   toothWorksUpToFollowUpFocus,
   type ProsthesisFeeStageRecord,
   type ProsthesisFollowUpRecord,
@@ -229,6 +231,13 @@ type PracticeToothWorkChartReadOnlyProps = {
    * `null` 후속 있으면 최신 지르 단계(원·후속 합쳐 표시하지 않음).
    */
   feeStageFocusIndex?: number | null;
+  /**
+   * 최종 기공비 바. true면 표시. 기본/미지정은 숨김(단계 스냅샷 보호).
+   * 전부 지르 전환 완료 카드에서만 true.
+   */
+  showFinalFee?: boolean | null;
+  /** 견적 라벨 강제(예: 최종 기공비). 미지정이면 부분후속→변경 기공비 */
+  confirmedFeeLabel?: string | null;
 };
 
 export const PracticeToothWorkChartReadOnly = ({
@@ -254,6 +263,8 @@ export const PracticeToothWorkChartReadOnly = ({
   prosthesisFollowUps = null,
   prosthesisFeeStages = null,
   feeStageFocusIndex = null,
+  showFinalFee: showFinalFeeProp = null,
+  confirmedFeeLabel: confirmedFeeLabelProp = null,
 }: PracticeToothWorkChartReadOnlyProps) => {
   const isMobile = useIsMobile();
   const [toothChartEnlargeOpen, setToothChartEnlargeOpen] = useState(false);
@@ -281,11 +292,12 @@ export const PracticeToothWorkChartReadOnly = ({
       ),
     [feeStageFocusIndex, prosthesisFollowUps, toothWorks],
   );
-  const confirmedFeeLabel = useMemo(
-    () =>
-      hasPartialProsthesisFollowUp(quoteToothWorks) ? "변경 기공비" : null,
-    [quoteToothWorks],
-  );
+  const confirmedFeeLabel = useMemo(() => {
+    if (confirmedFeeLabelProp != null && String(confirmedFeeLabelProp).trim()) {
+      return String(confirmedFeeLabelProp).trim();
+    }
+    return hasPartialProsthesisFollowUp(quoteToothWorks) ? "변경 기공비" : null;
+  }, [confirmedFeeLabelProp, quoteToothWorks]);
   const byTooth = useMemo(
     () => buildToothWorkDisplayByTooth(displayToothWorks),
     [displayToothWorks],
@@ -418,43 +430,94 @@ export const PracticeToothWorkChartReadOnly = ({
     quoteToothWorks,
   ]);
 
-  /** 후속 단계 UI — 최종 바는 live 지르+CA. 단계 섹션은 스냅샷/재계산 feeStages. */
+  const showFinalFee = useMemo(() => {
+    // 단계 스냅샷 보호 — 최종 바는 완료 카드 등에서만 명시적으로 켠다.
+    if (showFinalFeeProp != null) return Boolean(showFinalFeeProp);
+    return false;
+  }, [showFinalFeeProp]);
+
+  /** 후속 단계 UI — 최종 바는 전부 지르 전환 후·명시 시에만(처음부터 지르+CA). 단계 섹션은 스냅샷. */
   const feeQuoteForStages = useMemo(() => {
     if (!feeStages || feeStages.length === 0) return feeQuote;
-    if (hasStoredFeeStages) {
-      // 단계 내역은 스냅샷. 최종 합만 케이스 feeQuote(또는 live) 유지.
-      return {
+    let next: PracticeTransferFeeQuote = hasStoredFeeStages
+      ? {
+          ...feeQuote,
+          tempCreditLabFeeTotal: 0,
+        }
+      : feeQuote;
+    if (!hasStoredFeeStages) {
+      if (!feeContextReady && feeQuoteContext.usedDefaultSchedule) return feeQuote;
+      // 전부 지르면 임시치아 차감 없이 지르+CA로 재계산(처음부터 지르 제작처럼)
+      const live = buildFeeQuoteFromContext({
+        toothWorks: quoteToothWorks,
+        context: feeQuoteContext,
+        skipAbutmentFees,
+        creditToothWorks: undefined,
+      });
+      if (!(live.total > 0 || (Array.isArray(live.lines) && live.lines.length > 0))) {
+        return feeQuote;
+      }
+      next = {
         ...feeQuote,
+        total: Math.max(0, Math.round(Number(live.total || 0))),
+        labFeeTotal: Math.max(0, Math.round(Number(live.labFeeTotal || 0))),
+        labAbutmentTotal: Math.max(
+          0,
+          Math.round(Number(live.labAbutmentTotal || 0)),
+        ),
+        abutmentRetailTotal: Math.max(
+          0,
+          Math.round(Number(live.abutmentRetailTotal || 0)),
+        ),
+        lines: Array.isArray(live.lines) && live.lines.length > 0
+          ? live.lines
+          : feeQuote.lines,
         tempCreditLabFeeTotal: 0,
       };
     }
-    if (!feeContextReady && feeQuoteContext.usedDefaultSchedule) return feeQuote;
-    const live = buildFeeQuoteFromContext({
-      toothWorks: quoteToothWorks,
-      context: feeQuoteContext,
-      skipAbutmentFees,
-      creditToothWorks: undefined,
-    });
-    if (!(live.total > 0 || (Array.isArray(live.lines) && live.lines.length > 0))) {
-      return feeQuote;
+    // 최종 기공비: 누적 billing이 아니라 지르 행 전부(처음부터 지르) 재견적
+    if (showFinalFee && (feeContextReady || !feeQuoteContext.usedDefaultSchedule)) {
+      const followUpOnly = quoteToothWorks.filter(
+        (row) =>
+          isFollowUpProsthesisPhase(row) &&
+          isFinalProsthesisType(String(row.prosthesisType || "")),
+      );
+      if (followUpOnly.length > 0) {
+        const finalLive = buildFeeQuoteFromContext({
+          toothWorks: followUpOnly as ToothWorkSelection[],
+          context: feeQuoteContext,
+          skipAbutmentFees: false,
+          creditToothWorks: undefined,
+        });
+        if (
+          finalLive.total > 0 ||
+          (Array.isArray(finalLive.lines) && finalLive.lines.length > 0)
+        ) {
+          next = {
+            ...next,
+            total: Math.max(0, Math.round(Number(finalLive.total || 0))),
+            labFeeTotal: Math.max(
+              0,
+              Math.round(Number(finalLive.labFeeTotal || 0)),
+            ),
+            labAbutmentTotal: Math.max(
+              0,
+              Math.round(Number(finalLive.labAbutmentTotal || 0)),
+            ),
+            abutmentRetailTotal: Math.max(
+              0,
+              Math.round(Number(finalLive.abutmentRetailTotal || 0)),
+            ),
+            lines:
+              Array.isArray(finalLive.lines) && finalLive.lines.length > 0
+                ? finalLive.lines
+                : next.lines,
+            tempCreditLabFeeTotal: 0,
+          };
+        }
+      }
     }
-    return {
-      ...feeQuote,
-      total: Math.max(0, Math.round(Number(live.total || 0))),
-      labFeeTotal: Math.max(0, Math.round(Number(live.labFeeTotal || 0))),
-      labAbutmentTotal: Math.max(
-        0,
-        Math.round(Number(live.labAbutmentTotal || 0)),
-      ),
-      abutmentRetailTotal: Math.max(
-        0,
-        Math.round(Number(live.abutmentRetailTotal || 0)),
-      ),
-      lines: Array.isArray(live.lines) && live.lines.length > 0
-        ? live.lines
-        : feeQuote.lines,
-      tempCreditLabFeeTotal: 0,
-    };
+    return next;
   }, [
     feeContextReady,
     feeQuote,
@@ -462,6 +525,7 @@ export const PracticeToothWorkChartReadOnly = ({
     feeStages,
     hasStoredFeeStages,
     quoteToothWorks,
+    showFinalFee,
     skipAbutmentFees,
   ]);
 
@@ -1143,6 +1207,7 @@ export const PracticeToothWorkChartReadOnly = ({
       confirmedFeeLabel={confirmedFeeLabel}
       feeStages={feeStages}
       feeStageFocusIndex={feeStageFocusIndex}
+      showFinalFee={showFinalFee}
       className={
         embedded ? "border-0 bg-transparent px-0 py-1 shadow-none" : undefined
       }
@@ -1160,6 +1225,7 @@ export const PracticeToothWorkChartReadOnly = ({
         confirmedFeeLabel={confirmedFeeLabel}
         feeStages={feeStages}
         feeStageFocusIndex={feeStageFocusIndex}
+        showFinalFee={showFinalFee}
         className={
           embedded ? "border-0 bg-transparent px-0 py-1 shadow-none" : undefined
         }
@@ -1187,6 +1253,7 @@ export const PracticeToothWorkChartReadOnly = ({
         confirmedFeeLabel={confirmedFeeLabel}
         feeStages={feeStages}
         feeStageFocusIndex={feeStageFocusIndex}
+        showFinalFee={showFinalFee}
         className={embedded ? "border-0 bg-transparent px-0 py-1 shadow-none" : undefined}
       />
       {lowerEnlargeRow}

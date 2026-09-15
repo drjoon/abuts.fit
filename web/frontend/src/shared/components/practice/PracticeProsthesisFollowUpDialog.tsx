@@ -6,6 +6,8 @@
 // - 2026-09-01: 크라운·브리지 단위 선택(부분 제작) — 보철물 카드에서 체크.
 // - 2026-09-01: 재도착일 적용 시 계정·기공소 기본 소요일 서버 저장.
 // - 2026-09-15: 제작 의뢰 시 도착일 팝오버를 먼저 열어 확정하게 함.
+// - 2026-09-15: 제작 변경 — pending 후속 지르 표시(단계 포커스 필터 없음).
+// - 2026-09-15: 지르 제작·변경 모달 — 이번 단계 견적만(최종 기공비 숨김).
 import { useEffect, useMemo, useState } from "react";
 import { CalendarClock } from "lucide-react";
 import {
@@ -26,6 +28,8 @@ import { PracticeToothWorkChartReadOnly } from "@/shared/components/practice/Pra
 import {
   buildFollowUpToothWorksDraft,
   followUpRowSpanKey,
+  listEditablePendingFollowUpToothWorks,
+  type ProsthesisFollowUpRecord,
 } from "@/shared/practice/prosthesisFollowUp";
 import { toKstYmd, ymdToKstDate } from "@/shared/date/kst";
 import { useIsMobile } from "@/shared/hooks/use-mobile";
@@ -39,6 +43,8 @@ type Props = {
   onOpenChange: (open: boolean) => void;
   mode?: "create" | "edit";
   toothWorks?: Partial<ToothWorkSelection>[] | null;
+  prosthesisFollowUps?: ReadonlyArray<ProsthesisFollowUpRecord> | null;
+  requestorDownloadedAt?: string | null;
   orderDate: string;
   defaultArrivalYmd: string;
   arrivalDefaultDays: number;
@@ -60,6 +66,8 @@ export function PracticeProsthesisFollowUpDialog({
   onOpenChange,
   mode = "create",
   toothWorks,
+  prosthesisFollowUps = null,
+  requestorDownloadedAt = null,
   orderDate,
   defaultArrivalYmd,
   arrivalDefaultDays: _arrivalDefaultDays,
@@ -77,12 +85,13 @@ export function PracticeProsthesisFollowUpDialog({
   const availableRows = useMemo(
     () =>
       isEdit
-        ? (Array.isArray(toothWorks) ? toothWorks : []).filter((row) =>
-            String((row as { prosthesisPhase?: string }).prosthesisPhase || "").trim() ===
-            "followUp",
+        ? listEditablePendingFollowUpToothWorks(
+            toothWorks,
+            prosthesisFollowUps,
+            requestorDownloadedAt,
           )
         : buildFollowUpToothWorksDraft(Array.isArray(toothWorks) ? toothWorks : []),
-    [isEdit, toothWorks],
+    [isEdit, prosthesisFollowUps, requestorDownloadedAt, toothWorks],
   );
   const [selectedSpanKeys, setSelectedSpanKeys] = useState<Set<string>>(
     () => new Set(),
@@ -187,8 +196,9 @@ export function PracticeProsthesisFollowUpDialog({
           {!isEdit ? (
             <p className="pt-1 text-sm font-normal leading-relaxed text-muted-foreground">
               임시치아를 지르 최종 보철로 바꿉니다. 이번 단계 기공비는
-              브리지·크라운 수가이며, 최종 기공비는 지르 보철과 커스텀어벗
-              합계로 표시됩니다. 지금은 임시치아로 계속하려면 이 창을 닫고
+              브리지·크라운 수가입니다. 모든 임시치아를 지르로 바꾼 뒤에만
+              최종 기공비(처음부터 지르·커스텀어벗으로 제작한 합계)가
+              표시됩니다. 지금은 임시치아로 계속하려면 이 창을 닫고
               「다음 도착일」만 지정하면 됩니다.
             </p>
           ) : null}
@@ -292,12 +302,15 @@ export function PracticeProsthesisFollowUpDialog({
                   spanKeyOf={followUpRowSpanKey}
                   selectionDisabled={busy}
                   showHeader
+                  showFinalFee={false}
                   enlargeOverlayClassName="z-[350]"
                   enlargeDialogClassName="z-[360]"
                 />
               ) : (
                 <p className="rounded-lg border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
-                  제작할 보철 치식이 없습니다.
+                  {isEdit
+                    ? "변경할 후속 보철이 없습니다. 기공소 작업시작 전 건만 변경할 수 있습니다."
+                    : "제작할 보철 치식이 없습니다."}
                 </p>
               )}
             </div>

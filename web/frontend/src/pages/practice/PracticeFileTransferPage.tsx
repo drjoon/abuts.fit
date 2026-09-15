@@ -259,7 +259,7 @@ import {
   PracticeTransferDetailChatDialog,
 } from "@/shared/components/PracticeTransferDetailChatDialog";
 import { PracticeProsthesisFollowUpDialog } from "@/shared/components/practice/PracticeProsthesisFollowUpDialog";
-import { canAppendProsthesisFollowUp, canManagePendingProsthesisFollowUp, getLatestPendingProsthesisFollowUp, isFinalProsthesisType, isFollowUpProsthesisPhase } from "@/shared/practice/prosthesisFollowUp";
+import { canAppendProsthesisFollowUp, canManagePendingProsthesisFollowUp, getLatestPendingProsthesisFollowUp } from "@/shared/practice/prosthesisFollowUp";
 import { PracticeLabRatingControl } from "@/shared/components/practice/PracticeLabRatingControl";
 import { PracticeTransferBookmarkControl } from "@/shared/components/practice/PracticeTransferBookmarkControl";
 import {
@@ -5207,19 +5207,10 @@ export const PracticeFileTransferPage = ({
     selectedTransfer?.status,
   ]);
 
-  const showProsthesisFollowUpManage = useMemo(() => {
-    if (prosthesisFollowUpManage.ok) return true;
-    if (prosthesisFollowUpEligibility.reason !== "already_appended") return false;
-    return (selectedTransferDetailModel?.toothWorks || []).some(
-      (row) =>
-        isFollowUpProsthesisPhase(row) &&
-        isFinalProsthesisType(String(row.prosthesisType || "")),
-    );
-  }, [
-    prosthesisFollowUpEligibility.reason,
-    prosthesisFollowUpManage.ok,
-    selectedTransferDetailModel?.toothWorks,
-  ]);
+  const showProsthesisFollowUpManage = prosthesisFollowUpManage.ok;
+
+  const prosthesisFollowUpComplete =
+    prosthesisFollowUpEligibility.reason === "already_appended";
 
   const pendingProsthesisFollowUp = useMemo(
     () =>
@@ -11115,6 +11106,7 @@ export const PracticeFileTransferPage = ({
               ? null
               : prosthesisFollowUpEligibility.message || null
           }
+          prosthesisFollowUpComplete={prosthesisFollowUpComplete}
           prosthesisFollowUpPending={showProsthesisFollowUpManage}
           onModifyProsthesisFollowUp={
             showProsthesisFollowUpManage
@@ -11358,6 +11350,12 @@ export const PracticeFileTransferPage = ({
           }}
           mode={followUpDialogMode}
           toothWorks={selectedTransferDetailModel?.toothWorks || []}
+          prosthesisFollowUps={selectedTransfer?.prosthesisFollowUps || null}
+          requestorDownloadedAt={
+            selectedTransfer?.requestorDownloadedAt ||
+            selectedTransfer?.requestorAcceptedAt ||
+            null
+          }
           orderDate={followUpDialogSchedule.orderDate}
           defaultArrivalYmd={followUpDialogSchedule.defaultArrivalYmd}
           arrivalDefaultDays={followUpDialogSchedule.arrivalDefaultDays}
@@ -11381,7 +11379,9 @@ export const PracticeFileTransferPage = ({
           title="지르 보철로 변경할까요?"
           description={
             <>
-              예: 이번 단계에 브리지·크라운 기공비가 추가되고, 최종 기공비는 지르 보철+커스텀어벗으로 표시됩니다.
+              예: 이번 단계에 브리지·크라운 기공비가 추가됩니다. 남은
+              임시치아가 있으면 이번 단계 기공비만 보이고, 전부 지르로 바꾼
+              뒤에 최종 기공비(처음부터 지르·커스텀어벗 합계)가 표시됩니다.
               <br />
               아니오: 임시치아로 계속 진행합니다(다음 도착일만 반영, 추가 과금
               없음). 임시치아를 한 번 더 만든 뒤에도, 다음 도착일을 지정할 때

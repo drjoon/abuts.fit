@@ -4957,6 +4957,7 @@ export async function appendPracticeTransferProsthesis(req, res) {
         systemEvent: "practice_transfer_prosthesis_follow_up",
         systemPayload: {
           arrivalYmd: rawYmd,
+          followUpIndex,
           billingDelta: followUpRecord.billingDelta || null,
           toothWorks: serializeFollowUpToothWorksForChatPayload(followUpRows),
         },

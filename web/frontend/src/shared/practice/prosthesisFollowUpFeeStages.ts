@@ -5,6 +5,7 @@
 // - 2026-09-15: prosthesisFeeStages 스냅샷 우선 — live 재계산으로 최종 견적에 덮지 않음.
 // - 2026-09-15: 임시치아 단계 / 지르 보철 단계별 원래 기공비 섹션.
 // - 2026-09-15: 지르 단계는 차감 없이 브리지/크라운 수가(표시). 최종=지르+CA.
+// - 2026-09-15: 후속-only(채팅) — 빈 임시 단계 생략. 지르 1단계만 있어도 섹션 반환.
 import {
   baseToothWorksForDetailChart,
   hasPartialProsthesisFollowUp,
@@ -135,13 +136,19 @@ export const sectionsFromStoredProsthesisFeeStages = (
       } satisfies PracticeFeeStageSection;
     })
     .filter(Boolean) as PracticeFeeStageSection[];
-  return list.length > 1 ? list : null;
+  const hasZir = list.some((stage) => stage.key.startsWith("zirconia-"));
+  const hasTemp = list.some((stage) => stage.key === "temp");
+  // 임시+지르, 또는 지르만(후속 채팅). 임시만 있으면 일반 견적 바 유지.
+  if (hasZir) return list;
+  if (hasTemp && list.length > 1) return list;
+  return null;
 };
 
 /**
  * 후속 지르가 있으면 단계별 기공비 섹션을 만든다.
  * - 저장된 prosthesisFeeStages가 있으면 SSOT(최종 견적으로 덮지 않음)
  * - 없으면 live: 임시치아 단계 = 원 임시치아(+CA), 지르 = 브리지/크라운 수가
+ * - 후속-only(원 행 없음)면 빈 임시 단계를 넣지 않음
  */
 export const buildProsthesisFollowUpFeeStages = (input: {
   toothWorks?: ReadonlyArray<Partial<ToothWorkSelection>> | null;
@@ -162,19 +169,20 @@ export const buildProsthesisFollowUpFeeStages = (input: {
   if (followUpRows.length === 0 && records.length === 0) return null;
 
   const baseRows = baseToothWorksForDetailChart(toothWorks);
-  const stage1Quote = buildFeeQuoteFromContext({
-    toothWorks: baseRows as ToothWorkSelection[],
-    context: input.context,
-  });
+  const stages: PracticeFeeStageSection[] = [];
 
-  const stages: PracticeFeeStageSection[] = [
-    {
+  if (baseRows.length > 0) {
+    const stage1Quote = buildFeeQuoteFromContext({
+      toothWorks: baseRows as ToothWorkSelection[],
+      context: input.context,
+    });
+    stages.push({
       key: "temp",
       title: "임시치아 단계",
       lines: Array.isArray(stage1Quote.lines) ? stage1Quote.lines : [],
       subtotal: Math.max(0, Math.round(Number(stage1Quote.total || 0))),
-    },
-  ];
+    });
+  }
 
   const recordsToRender =
     records.length > 0
@@ -225,7 +233,7 @@ export const buildProsthesisFollowUpFeeStages = (input: {
     const idx =
       record.followUpIndex != null && Number.isFinite(Number(record.followUpIndex))
         ? Number(record.followUpIndex)
-        : stages.length - 1;
+        : Math.max(0, stages.filter((s) => s.key.startsWith("zirconia-")).length);
     stages.push({
       key: `zirconia-${idx}`,
       title: recordsToRender.length > 1 ? `지르 보철 단계 ${idx + 1}` : "지르 보철 단계",
@@ -239,7 +247,12 @@ export const buildProsthesisFollowUpFeeStages = (input: {
     });
   }
 
-  return stages.length > 1 ? stages : null;
+  const hasTemp = stages.some((stage) => stage.key === "temp");
+  const hasZir = stages.some((stage) => stage.key.startsWith("zirconia-"));
+  // 단계 UI: 임시+지르, 또는 지르만(후속 채팅 카드)
+  if (hasZir) return stages;
+  if (hasTemp && stages.length > 1) return stages;
+  return null;
 };
 
 export const feeStagesConfirmedLabel = (

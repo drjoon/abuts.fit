@@ -591,12 +591,18 @@ export function PracticeRecentTransfersAllModal({
         arrivalDate: transfer.arrivalDate,
         prosthesisFollowUps: transfer.prosthesisFollowUps,
       });
-      const linkedOrderDates =
-        Array.isArray(transfer.orderDates) && transfer.orderDates.length > 0
-          ? transfer.orderDates
-          : transfer.orderDate
-            ? [transfer.orderDate]
-            : [];
+      const linkedOrderDates = [
+        ...new Set(
+          (Array.isArray(transfer.orderDates) && transfer.orderDates.length > 0
+            ? transfer.orderDates
+            : transfer.orderDate
+              ? [transfer.orderDate]
+              : []
+          )
+            .map((d) => String(d || "").trim())
+            .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)),
+        ),
+      ].sort();
       const chatUnread = Math.max(0, Number(transfer.unreadCount || 0));
       return {
         id: `${transfer.id}:${transfer.transferId}`,

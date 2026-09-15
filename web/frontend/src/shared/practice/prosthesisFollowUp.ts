@@ -10,6 +10,8 @@
 // - 2026-09-15: 캘린더 칩 포커스 — 해당 단계 치아만(누적 브리지 표시 금지). 견적 표시는 차감 없음.
 // - 2026-09-15: focus=null + 후속 있음 → 원 임시치아 단계(-1). 지르는 칩·append 직후 focus로만.
 // - 2026-09-15: 부분 후속 포커스 — 해당 지르 치아 + 아직 미전환 임시치아 스팬(원본 스냅샷 소실 방지).
+// - 2026-09-15: followUps 배열 없이도 toothWorks 후속 행이 있으면 focus=null → -1(원 스냅샷 보호).
+// - 2026-09-15: 후속-only(지르 다이얼로그 초안·채팅)는 focus=null 유지 — 원 행이 있을 때만 -1.
 import {
   type ToothWorkSelection,
   isCustomAbutmentProsthesisType,
@@ -583,13 +585,23 @@ export const toothWorksUpToFollowUpFocus = <T extends Partial<ToothWorkSelection
   focusIndex: ProsthesisFollowUpFocusIndex,
 ): T[] => {
   const rows = Array.isArray(toothWorks) ? [...toothWorks] : [];
+  const hasFollowUpRowsInToothWorks = rows.some(
+    (row) =>
+      isFollowUpProsthesisPhase(row) &&
+      isFinalProsthesisType(String(row.prosthesisType || "")),
+  );
+  const hasBaseRowsInToothWorks = rows.some(
+    (row) => !isFollowUpProsthesisPhase(row),
+  );
   const effectiveFocus =
     focusIndex == null
       ? (() => {
           const records = activeFollowUpRecordsSorted(followUps);
-          // 후속이 있어도 기본은 원 임시치아 스냅샷(지르로 덮이지 않음)
-          if (records.length === 0) return null;
-          return -1;
+          // 원 임시치아+후속 지르가 함께 있을 때만 기본을 원 스냅샷(-1)으로.
+          // 후속 초안만 넘기는 지르 제작 다이얼로그·채팅 카드는 그대로 표시.
+          if (records.length > 0) return -1;
+          if (hasFollowUpRowsInToothWorks && hasBaseRowsInToothWorks) return -1;
+          return null;
         })()
       : focusIndex;
   if (effectiveFocus == null) return rows;
@@ -780,4 +792,74 @@ export const getLatestPendingProsthesisFollowUp = (
   return [...pending].sort(
     (a, b) => Number(b.followUpIndex || 0) - Number(a.followUpIndex || 0),
   )[0];
+};
+
+/**
+ * 완료된 후속 지르 행만(원 임시치아 제외) — 최종 보철 카드·최종 기공비 견적용.
+ */
+export const listCompletedFollowUpToothWorks = <
+  T extends Partial<ToothWorkSelection>,
+>(
+  toothWorks: ReadonlyArray<T> | null | undefined,
+): T[] => {
+  const rows = Array.isArray(toothWorks) ? [...toothWorks] : [];
+  return rows.filter(
+    (row) =>
+      isFollowUpProsthesisPhase(row) &&
+      isFinalProsthesisType(String(row.prosthesisType || "")),
+  );
+};
+
+/**
+ * 제작 변경용 — 기공소 작업시작 전(pending) 후속 지르 행.
+ * toothWorks의 followUp 행을 우선하고, 없으면 pending toothNumbers로 복원.
+ */
+export const listEditablePendingFollowUpToothWorks = (
+  toothWorks: ReadonlyArray<Partial<ToothWorkSelection>> | null | undefined,
+  followUps?: ReadonlyArray<ProsthesisFollowUpRecord> | null,
+  requestorDownloadedAt?: string | null,
+): Array<ToothWorkSelection & { prosthesisPhase: string }> => {
+  const rows = Array.isArray(toothWorks) ? [...toothWorks] : [];
+  const pending = getPendingProsthesisFollowUps(
+    followUps,
+    requestorDownloadedAt,
+  );
+  const followUpRows = rows.filter(
+    (row) =>
+      isFollowUpProsthesisPhase(row) &&
+      isFinalProsthesisType(String(row.prosthesisType || "")),
+  ) as Array<ToothWorkSelection & { prosthesisPhase: string }>;
+
+  if (pending.length === 0) return followUpRows;
+
+  const pendingTeeth = new Set<string>();
+  for (const rec of pending) {
+    for (const tooth of Array.isArray(rec.toothNumbers) ? rec.toothNumbers : []) {
+      const t = String(tooth || "").trim();
+      if (t) pendingTeeth.add(t);
+    }
+  }
+  if (pendingTeeth.size === 0) return followUpRows;
+
+  const matched = followUpRows.filter((row) => {
+    const anchor = String(row.toothNumber || "").trim();
+    if (anchor && pendingTeeth.has(anchor)) return true;
+    return linkedTeethOf(row).some((tooth) => pendingTeeth.has(tooth));
+  });
+  if (matched.length > 0) return matched;
+
+  // followUp 행이 목록에 없으면 원 임시치아 스팬으로 초안 복원(표시·도착일 변경용)
+  const baseTemps = rows.filter(
+    (row) =>
+      isTemporaryToothProsthesisType(String(row.prosthesisType || "")) &&
+      !isFollowUpProsthesisPhase(row),
+  );
+  const pendingTempRows = baseTemps.filter((row) =>
+    pendingTeeth.has(String(row.toothNumber || "").trim()),
+  );
+  if (pendingTempRows.length === 0) return [];
+  return buildConnectedTempSpans(pendingTempRows).map(({ teeth, sourceRow }) => {
+    const prosthesisType = teeth.length >= 2 ? "브리지" : "크라운";
+    return cloneRowForFollowUp(sourceRow, prosthesisType, teeth);
+  });
 };

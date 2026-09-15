@@ -13,6 +13,7 @@
 // - 2026-09-15: feeStages 있으면 바 2줄(이번 단계·최종). 툴팁 max-h+scroll·collisionPadding.
 // - 2026-09-15: 이번 단계 툴팁=포커스 단계, 최종 툴팁=지르+CA(차감·임시치아 단계 숨김).
 // - 2026-09-15: focus null/-1 → 임시치아 단계만(지르 stageSections[0] 폴백 금지).
+// - 2026-09-15: 부분 후속 — 최종 기공비 숨김. 전부 지르 전환 후에만 최종(차감 표현 없음).
 // - 2026-08-22: 기공소→치과 배송 무료. skipJig 옵션/안내 삭제. 정산 상세는 →어벗츠(박스)만.
 // - 2026-08-21: 기공의뢰 정산에서 기공소→어벗츠 배송 제외(기공소 박스 과금).
 // - 2026-08-21: 치과→기공소 배송 무료. 정산 상세는 →어벗츠(박스)만.
@@ -164,6 +165,11 @@ type PracticeTransferFeeEstimateProps = {
    * - `null` 최신 단계
    */
   feeStageFocusIndex?: number | null;
+  /**
+   * true면「최종 기공비」바 표시(모든 임시치아→지르 완료).
+   * false/미지정이면 이번 단계만(부분 후속·중간 단계).
+   */
+  showFinalFee?: boolean;
 };
 
 const formatCell = (value: number) => (value > 0 ? formatManWon(value) : "—");
@@ -776,6 +782,7 @@ export function PracticeTransferFeeEstimate({
   confirmedFeeLabel = null,
   feeStages = null,
   feeStageFocusIndex = null,
+  showFinalFee = false,
 }: PracticeTransferFeeEstimateProps) {
   const isLab = viewer === "lab";
   const isDetail = density === "detail";
@@ -857,7 +864,14 @@ export function PracticeTransferFeeEstimate({
   const currentStageSection = (() => {
     if (!stageSections) return null;
     if (feeStageFocusIndex == null || feeStageFocusIndex < 0) {
-      return stageSections.find((stage) => stage.key === "temp") || null;
+      const temp =
+        stageSections.find((stage) => stage.key === "temp") || null;
+      // 후속-only(채팅): temp 없음 → 첫 지르 단계
+      if (temp) return temp;
+      return (
+        stageSections.find((stage) => stage.key.startsWith("zirconia-")) ||
+        null
+      );
     }
     const key = `zirconia-${Math.floor(Number(feeStageFocusIndex))}`;
     return (
@@ -866,6 +880,9 @@ export function PracticeTransferFeeEstimate({
       null
     );
   })();
+  const showFinalFeeBar =
+    Boolean(showFinalFee) &&
+    Boolean(stageSections?.some((stage) => stage.key.startsWith("zirconia-")));
   const currentStageAmount = currentStageSection
     ? Math.max(
         0,
@@ -1253,19 +1270,24 @@ export function PracticeTransferFeeEstimate({
       </>
     ) : null;
 
-  const allStagesTooltipPanel = stageSections ? (
-    <>
-      {warningsPanel}
-      {renderFinalFeePanel()}
-      {breakdownExtras}
-    </>
-  ) : null;
+  const allStagesTooltipPanel =
+    showFinalFeeBar && stageSections ? (
+      <>
+        {warningsPanel}
+        {renderFinalFeePanel()}
+        {breakdownExtras}
+      </>
+    ) : null;
 
   const breakdownPanel = (
     <>
       {warningsPanel}
-      {stageSections ? (
+      {stageSections && showFinalFeeBar ? (
         renderFinalFeePanel()
+      ) : stageSections && currentStageSection ? (
+        renderFeeStagesPanel([currentStageSection], {
+          showFinalTotal: false,
+        })
       ) : breakdownLines.length > 0 || missingBreakdownLines.length > 0 ? (
         <div className="space-y-1.5">
           <FeeBreakdownTable
@@ -1423,9 +1445,7 @@ export function PracticeTransferFeeEstimate({
               </TooltipTrigger>
               {renderFeeTooltipContent(breakdownPanel)}
             </Tooltip>
-          ) : currentStageAmount != null &&
-            currentStageTooltipPanel &&
-            allStagesTooltipPanel ? (
+          ) : currentStageAmount != null && currentStageTooltipPanel ? (
             <div
               className={cn(
                 "min-w-0",
@@ -1444,7 +1464,9 @@ export function PracticeTransferFeeEstimate({
                     )}
                   >
                     <span className="font-medium text-slate-600">
-                      이번 단계 기공비{" "}
+                      {showFinalFeeBar && !currentStageSection
+                        ? "최종 기공비 "
+                        : "이번 단계 기공비 "}
                     </span>
                     {formatManWon(currentStageAmount)}
                     {surchargeLabel ? (
@@ -1461,27 +1483,29 @@ export function PracticeTransferFeeEstimate({
                 </TooltipTrigger>
                 {renderFeeTooltipContent(currentStageTooltipPanel)}
               </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span
-                    className={cn(
-                      "cursor-default font-semibold tabular-nums text-slate-800",
-                      isCard ? "text-sm" : "text-sm sm:text-base",
-                    )}
-                  >
-                    <span className="font-medium text-slate-600">
-                      최종 기공비{" "}
-                    </span>
-                    {formatManWon(amount)}
-                    {hasMissingFees ? (
-                      <span className="ml-1.5 text-[11px] font-medium text-amber-700">
-                        · {missingFeeLabel} 미설정
+              {showFinalFeeBar && allStagesTooltipPanel ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span
+                      className={cn(
+                        "cursor-default font-semibold tabular-nums text-slate-800",
+                        isCard ? "text-sm" : "text-sm sm:text-base",
+                      )}
+                    >
+                      <span className="font-medium text-slate-600">
+                        최종 기공비{" "}
                       </span>
-                    ) : null}
-                  </span>
-                </TooltipTrigger>
-                {renderFeeTooltipContent(allStagesTooltipPanel)}
-              </Tooltip>
+                      {formatManWon(amount)}
+                      {hasMissingFees ? (
+                        <span className="ml-1.5 text-[11px] font-medium text-amber-700">
+                          · {missingFeeLabel} 미설정
+                        </span>
+                      ) : null}
+                    </span>
+                  </TooltipTrigger>
+                  {renderFeeTooltipContent(allStagesTooltipPanel)}
+                </Tooltip>
+              ) : null}
               {simple ? (
                 <span
                   className={cn(

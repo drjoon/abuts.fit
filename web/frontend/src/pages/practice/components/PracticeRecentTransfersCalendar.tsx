@@ -352,10 +352,15 @@ export function expandPracticeCalendarChipsByArrivalDates(
       dateKey === "orderDate"
         ? String(item.orderDate || "").trim()
         : String(item.arrivalDate || "").trim();
-    const dates =
-      linked.length > 0
-        ? linked
-        : [fallback].filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d));
+    // 같은 YMD 중복(같은 날 여러 번 지르 추가) → 하루 1칩
+    const dates = [
+      ...new Set(
+        (linked.length > 0
+          ? linked
+          : [fallback].filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
+        ).filter(Boolean),
+      ),
+    ].sort();
     if (dates.length <= 1) {
       out.push({
         ...item,
