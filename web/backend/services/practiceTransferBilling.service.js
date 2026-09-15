@@ -11,6 +11,7 @@
 // - web/backend/models/ledgerLine.model.js
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
+// - 2026-09-15: 후속 보철 — labSettledAt 이후 hold는 즉시 기공소 적립(리메이크와 동일).
 // - 2026-09-14: remakeFeeQuote — 원본 180일 창 밖이면 정가(리메이크 무료 미적용).
 // - 2026-09-12: remakeFeeQuote — 원본 90일 창 밖이면 정가(리메이크 무료 미적용).
 // - 2026-08-27: billed 견적 — 레거시 abutmentRetail 스냅샷이면 기공소 CA 수가(live)로 표시 승격.
@@ -1402,6 +1403,18 @@ function practiceTransferHoldAdjustKey(transferId) {
 }
 function practiceTransferFollowUpHoldKey(transferId, followUpIndex) {
   return `practice_transfer:${String(transferId)}:follow_up_hold:${Math.max(
+    0,
+    Math.floor(Number(followUpIndex) || 0),
+  )}`;
+}
+function practiceTransferFollowUpReleaseKey(transferId, followUpIndex) {
+  return `practice_transfer:${String(transferId)}:follow_up_release:${Math.max(
+    0,
+    Math.floor(Number(followUpIndex) || 0),
+  )}`;
+}
+function practiceTransferFollowUpPlatformFeeKey(transferId, followUpIndex) {
+  return `practice_transfer:${String(transferId)}:follow_up_lab_platform_fee:${Math.max(
     0,
     Math.floor(Number(followUpIndex) || 0),
   )}`;
@@ -5009,7 +5022,361 @@ export async function cancelPracticeTransferRemakeChargeCredits({
   };
 }
 
-/** 후속 보철 취소 — 해당 followUpIndex hold 물리 삭제·잔액 복원 */
+/**
+ * 후속 보철 hold → 기공소 정산 적립.
+ * 원본은 작업시작 시 이미 labSettledAt — hold만 두면 기공소 적립이 원금액에 멈춤.
+ * 리메이크 청구와 동일하게 증분 멱등키로 즉시 해제.
+ */
+export async function releasePracticeTransferProsthesisFollowUpLabShare({
+  transfer,
+  followUpIndex = 0,
+  deltaFees,
+  holdMeta = null,
+  actorUserId = null,
+  session: outerSession = null,
+  displayLabel = "후속 보철 추가",
+}) {
+  const transferId = transfer?._id;
+  const practiceAnchorId = transfer?.practiceBusinessAnchorId;
+  const labAnchorId =
+    resolvePerformingLabAnchorId(transfer) || transfer?.targetLabAnchorId;
+  if (!transferId || !practiceAnchorId || !labAnchorId) {
+    return { released: false, reason: "missing_anchors" };
+  }
+
+  const releaseAmount = Math.max(
+    0,
+    Math.round(Number(deltaFees?.labFeeTotal ?? deltaFees?.total ?? 0) || 0),
+  );
+  if (releaseAmount <= 0) {
+    return {
+      released: false,
+      reason: "zero_fee",
+      labFeeTotal: 0,
+      platformFee: 0,
+      labSettlementAmount: 0,
+    };
+  }
+
+  const releaseKey = practiceTransferFollowUpReleaseKey(
+    transferId,
+    followUpIndex,
+  );
+  const feeKey = practiceTransferFollowUpPlatformFeeKey(
+    transferId,
+    followUpIndex,
+  );
+  const holdBaseKey = practiceTransferFollowUpHoldKey(
+    transferId,
+    followUpIndex,
+  );
+
+  const [existingRelease, existingFee, holdLive, payoutRates] =
+    await Promise.all([
+      getJournalByIdempotencyKey({
+        idempotencyKey: releaseKey,
+        session: outerSession,
+      }),
+      getJournalByIdempotencyKey({
+        idempotencyKey: feeKey,
+        session: outerSession,
+      }),
+      resolveLiveIdempotencyKey(holdBaseKey, outerSession),
+      loadCachedDevopsPayoutRates(),
+    ]);
+
+  if (existingRelease?.journalId) {
+    return {
+      released: false,
+      reason: "already_released",
+      journalId: existingRelease.journalId,
+      labFeeTotal: releaseAmount,
+      platformFee: 0,
+      labSettlementAmount: 0,
+    };
+  }
+  if (!holdLive?.existing?.journalId) {
+    return { released: false, reason: "no_hold" };
+  }
+
+  const feeRateApplied = resolvePracticeTransferFeeRate({
+    matchingMode:
+      String(transfer?.matchingMode || "").trim() === "auto" ? "auto" : "direct",
+    payoutRates,
+  });
+  const platformFee = Math.max(
+    0,
+    Math.round(releaseAmount * Number(feeRateApplied || 0)),
+  );
+  const labNet = Math.max(0, releaseAmount - platformFee);
+
+  const fromPaid = Math.max(
+    0,
+    Math.round(
+      Number(
+        holdMeta?.fromPaid ?? holdLive.existing?.meta?.fromPaid ?? 0,
+      ),
+    ),
+  );
+  const fromFreeRequest = Math.max(
+    0,
+    Math.round(
+      Number(
+        holdMeta?.fromFreeRequest ??
+          holdLive.existing?.meta?.fromFreeRequest ??
+          0,
+      ),
+    ),
+  );
+  const fromFreeShipping = Math.max(
+    0,
+    Math.round(
+      Number(
+        holdMeta?.fromFreeShipping ??
+          holdLive.existing?.meta?.fromFreeShipping ??
+          0,
+      ),
+    ),
+  );
+
+  const ownSession = !outerSession;
+  const session = outerSession || (await mongoose.startSession());
+  if (ownSession) session.startTransaction();
+
+  try {
+    await lockGuard(practiceAnchorId, session);
+    const revenueOwners = await resolveRevenueOwners({
+      practiceAnchorId,
+      session,
+    });
+    const devopsAnchorId = revenueOwners?.devopsAnchorId || null;
+    if (!devopsAnchorId) {
+      const err = new Error("에스크로(devops) 사업자를 찾을 수 없습니다.");
+      err.statusCode = 500;
+      throw err;
+    }
+
+    const itemLabel = String(displayLabel || "").trim() || "후속 보철 추가";
+    const releaseLines = [
+      {
+        accountCode: "PLATFORM_ESCROW",
+        ownerRole: "devops",
+        ownerId: devopsAnchorId,
+        amount: -releaseAmount,
+        amountExcludingVat: -releaseAmount,
+        vatAmount: 0,
+        creditKind: null,
+        refType: "PRACTICE_TRANSFER",
+        refId: transferId,
+        meta: {
+          source: "practice_transfer_follow_up_release",
+          displayKind: "lab_share",
+          displayLabel: itemLabel,
+          itemLabel,
+          holdShare: "lab",
+          followUpIndex,
+        },
+      },
+      {
+        accountCode: "LAB_SETTLEMENT_CREDIT",
+        ownerRole: "requestor",
+        ownerId: String(labAnchorId),
+        amount: releaseAmount,
+        amountExcludingVat: releaseAmount,
+        vatAmount: 0,
+        creditKind: "SETTLEMENT",
+        refType: "PRACTICE_TRANSFER",
+        refId: transferId,
+        meta: {
+          source: "practice_transfer_follow_up_lab_share",
+          displayKind: "lab_credit",
+          displayLabel: itemLabel,
+          itemLabel,
+          feeRateApplied,
+          labFee: releaseAmount,
+          followUpIndex,
+        },
+      },
+    ];
+
+    const releaseJournal = await postGeneralLedgerJournal({
+      idempotencyKey: releaseKey,
+      eventType: "PRACTICE_TRANSFER_ESCROW_RELEASE",
+      businessAnchorId: practiceAnchorId,
+      refType: "PRACTICE_TRANSFER",
+      refId: transferId,
+      createdBy: actorUserId,
+      meta: {
+        holdShare: "lab",
+        labAnchorId: String(labAnchorId),
+        labFeeTotal: releaseAmount,
+        platformFee,
+        labSettlementAmount: labNet,
+        feeRateApplied,
+        followUpIndex,
+        displayLabel: itemLabel,
+        itemLabel,
+      },
+      lines: releaseLines,
+      session,
+      skipIdempotencyLookup: true,
+    });
+
+    let feeJournalId = existingFee?.journalId || null;
+    if (platformFee > 0 && !existingFee?.journalId) {
+      const feeLines = [
+        {
+          accountCode: "LAB_SETTLEMENT_CREDIT",
+          ownerRole: "requestor",
+          ownerId: String(labAnchorId),
+          amount: -platformFee,
+          amountExcludingVat: -platformFee,
+          vatAmount: 0,
+          creditKind: "SETTLEMENT",
+          refType: "PRACTICE_TRANSFER",
+          refId: transferId,
+          meta: {
+            source: "practice_transfer_follow_up_lab_platform_fee",
+            displayKind: "platform_fee",
+            displayLabel: "플랫폼 수수료",
+            feeRateApplied,
+            labFee: releaseAmount,
+            followUpIndex,
+          },
+        },
+      ];
+      const heldTotalForFree = releaseAmount;
+      const freeShareOfPlatformFee =
+        heldTotalForFree > 0
+          ? Math.round(
+              (platformFee * (fromFreeRequest + fromFreeShipping)) /
+                heldTotalForFree,
+            )
+          : 0;
+      const fromFree = fromFreeRequest + fromFreeShipping;
+      const freeReqShareOfPlatformFee =
+        fromFree > 0
+          ? Math.round((freeShareOfPlatformFee * fromFreeRequest) / fromFree)
+          : 0;
+      const freeShipShareOfPlatformFee = Math.max(
+        0,
+        freeShareOfPlatformFee - freeReqShareOfPlatformFee,
+      );
+      pushRevenueLines({
+        isRemake: true,
+        lines: feeLines,
+        owners: revenueOwners,
+        spendAmount: platformFee,
+        freeAmount: freeShareOfPlatformFee,
+        fromFreeRequest: freeReqShareOfPlatformFee,
+        fromFreeShipping: freeShipShareOfPlatformFee,
+        refType: "PRACTICE_TRANSFER",
+        refId: transferId,
+        meta: {
+          source: "follow_up_lab_platform_fee",
+          displayKind: "platform_fee",
+          displayLabel: "플랫폼 수수료",
+          feeRateApplied,
+          feeTotal: releaseAmount,
+          followUpIndex,
+        },
+      });
+
+      const feeJournal = await postGeneralLedgerJournal({
+        idempotencyKey: feeKey,
+        eventType: "PRACTICE_TRANSFER_LAB_PLATFORM_FEE",
+        businessAnchorId: labAnchorId,
+        refType: "PRACTICE_TRANSFER",
+        refId: transferId,
+        createdBy: actorUserId,
+        meta: {
+          labAnchorId: String(labAnchorId),
+          labFeeTotal: releaseAmount,
+          platformFee,
+          feeRateApplied,
+          followUpIndex,
+        },
+        lines: feeLines,
+        session,
+        skipIdempotencyLookup: true,
+      });
+      feeJournalId = feeJournal?.journalId || null;
+    }
+
+    if (ownSession) await session.commitTransaction();
+
+    try {
+      await upsertBusinessCreditBalanceFromLedger({
+        businessAnchorId: labAnchorId,
+        session: null,
+      });
+    } catch {
+      // best-effort
+    }
+
+    return {
+      released: true,
+      journalId: releaseJournal?.journalId || null,
+      feeJournalId,
+      labFeeTotal: releaseAmount,
+      platformFee,
+      labSettlementAmount: labNet,
+      feeRateApplied,
+    };
+  } catch (error) {
+    if (ownSession) {
+      try {
+        await session.abortTransaction();
+      } catch {
+        // ignore
+      }
+    }
+    throw error;
+  } finally {
+    if (ownSession) session.endSession();
+  }
+}
+
+/**
+ * prosthesisFollowUps 중 hold만 있고 release 없는 건을 기공소 정산으로 해제.
+ */
+export async function settleUnreleasedProsthesisFollowUpsForTransfer({
+  transfer,
+  actorUserId = null,
+}) {
+  const doc = transfer;
+  if (!doc?._id) return [];
+  const followUps = Array.isArray(doc.prosthesisFollowUps)
+    ? doc.prosthesisFollowUps
+    : [];
+  const out = [];
+  for (const row of followUps) {
+    if (String(row?.canceledAt || "").trim()) continue;
+    const followUpIndex = Math.max(
+      0,
+      Math.floor(Number(row?.followUpIndex || 0)),
+    );
+    const deltaLab = Math.max(
+      0,
+      Math.round(
+        Number(row?.billingDelta?.labFeeTotal ?? row?.billingDelta?.total ?? 0),
+      ),
+    );
+    if (deltaLab <= 0) continue;
+    // eslint-disable-next-line no-await-in-loop
+    const result = await releasePracticeTransferProsthesisFollowUpLabShare({
+      transfer: doc,
+      followUpIndex,
+      deltaFees: { labFeeTotal: deltaLab, total: deltaLab },
+      actorUserId,
+      displayLabel: "후속 보철 추가",
+    });
+    out.push({ followUpIndex, ...result });
+  }
+  return out;
+}
+
+/** 후속 보철 취소 — release(+fee)·hold 저널 물리 삭제·잔액 복원 */
 export async function releasePracticeTransferProsthesisFollowUpCredits({
   transfer,
   followUpIndex = 0,
@@ -5017,75 +5384,116 @@ export async function releasePracticeTransferProsthesisFollowUpCredits({
 }) {
   const transferId = transfer?._id;
   const practiceAnchorId = transfer?.practiceBusinessAnchorId;
+  const labAnchorId =
+    resolvePerformingLabAnchorId(transfer) || transfer?.targetLabAnchorId;
   if (!transferId || !practiceAnchorId) {
     return { released: false, reason: "missing_anchors" };
   }
 
-  const baseFollowUpKey = practiceTransferFollowUpHoldKey(
+  const holdBase = practiceTransferFollowUpHoldKey(transferId, followUpIndex);
+  const releaseBase = practiceTransferFollowUpReleaseKey(
     transferId,
     followUpIndex,
   );
-  const { existing } = await resolveLiveIdempotencyKey(
-    baseFollowUpKey,
-    outerSession,
+  const feeBase = practiceTransferFollowUpPlatformFeeKey(
+    transferId,
+    followUpIndex,
   );
-  if (!existing?.journalId) {
+
+  const [holdLive, releaseLive, feeLive] = await Promise.all([
+    resolveLiveIdempotencyKey(holdBase, outerSession),
+    resolveLiveIdempotencyKey(releaseBase, outerSession),
+    resolveLiveIdempotencyKey(feeBase, outerSession),
+  ]);
+
+  if (
+    !holdLive?.existing?.journalId &&
+    !releaseLive?.existing?.journalId &&
+    !feeLive?.existing?.journalId
+  ) {
     return { released: false, reason: "no_hold" };
   }
 
-  const lines = await LedgerLine.find({ journalId: existing.journalId })
-    .select({ accountCode: 1, ownerId: 1, amount: 1 })
-    .session(outerSession || null)
-    .lean();
-
-  const deleted = await deleteGeneralLedgerCommitJournal({
-    journalId: existing.journalId,
-    expectedEventTypes: ["PRACTICE_TRANSFER_SPEND_HOLD"],
-    session: outerSession,
-  });
-  if (!deleted?.deleted) {
-    return {
-      released: false,
-      reason: deleted?.reason || "delete_failed",
-    };
+  const toDelete = [];
+  if (feeLive?.existing?.journalId) {
+    toDelete.push({
+      journalId: feeLive.existing.journalId,
+      events: ["PRACTICE_TRANSFER_LAB_PLATFORM_FEE"],
+    });
+  }
+  if (releaseLive?.existing?.journalId) {
+    toDelete.push({
+      journalId: releaseLive.existing.journalId,
+      events: ["PRACTICE_TRANSFER_ESCROW_RELEASE"],
+    });
+  }
+  if (holdLive?.existing?.journalId) {
+    toDelete.push({
+      journalId: holdLive.existing.journalId,
+      events: ["PRACTICE_TRANSFER_SPEND_HOLD"],
+    });
   }
 
-  const balanceRestoreByAnchor = {};
-  for (const line of lines || []) {
-    const code = String(line?.accountCode || "").trim();
-    if (!PRACTICE_TRANSFER_BALANCE_ACCOUNT_CODES.has(code)) continue;
-    const ownerId = String(line?.ownerId || "").trim();
-    if (!ownerId || !Types.ObjectId.isValid(ownerId)) continue;
-    const amount = Number(line?.amount || 0);
-    if (!Number.isFinite(amount) || amount === 0) continue;
-    balanceRestoreByAnchor[ownerId] =
-      Number(balanceRestoreByAnchor[ownerId] || 0) - amount;
+  const balanceTouch = new Set(
+    [practiceAnchorId, labAnchorId].map((id) => String(id || "").trim()).filter(Boolean),
+  );
+
+  for (const row of toDelete) {
+    // eslint-disable-next-line no-await-in-loop
+    const deleted = await deleteGeneralLedgerCommitJournal({
+      journalId: row.journalId,
+      expectedEventTypes: row.events,
+      session: outerSession,
+    });
+    if (!deleted?.deleted) {
+      return {
+        released: false,
+        reason: deleted?.reason || "delete_failed",
+        journalId: row.journalId,
+      };
+    }
+  }
+
+  for (const ownerId of balanceTouch) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      await upsertBusinessCreditBalanceFromLedger({
+        businessAnchorId: ownerId,
+        session: outerSession,
+      });
+    } catch {
+      // best-effort
+    }
   }
 
   try {
-    await upsertBusinessCreditBalanceFromLedger({
-      businessAnchorId: practiceAnchorId,
-      session: outerSession,
-    });
     const { emitCreditBalanceUpdatedToBusiness } = await import(
       "../utils/creditRealtime.js"
     );
     await emitCreditBalanceUpdatedToBusiness({
       businessAnchorId: practiceAnchorId,
-      balanceDelta: Number(balanceRestoreByAnchor[String(practiceAnchorId)] || 0),
       reason: "practice_transfer_prosthesis_follow_up_cancel",
       refId: transferId,
       forceEmit: true,
     });
+    if (labAnchorId && String(labAnchorId) !== String(practiceAnchorId)) {
+      await emitCreditBalanceUpdatedToBusiness({
+        businessAnchorId: labAnchorId,
+        reason: "practice_transfer_prosthesis_follow_up_cancel",
+        refId: transferId,
+        forceEmit: true,
+      });
+    }
   } catch {
     // best-effort
   }
 
   return {
     released: true,
-    journalId: existing.journalId,
+    journalId: holdLive?.existing?.journalId || releaseLive?.existing?.journalId || null,
     refundJournalId: null,
-    balanceRestoreByAnchor,
+    hadRelease: Boolean(releaseLive?.existing?.journalId),
+    hadHold: Boolean(holdLive?.existing?.journalId),
   };
 }
 

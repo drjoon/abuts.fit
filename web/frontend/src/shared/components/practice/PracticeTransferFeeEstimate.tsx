@@ -16,6 +16,7 @@
 // - 2026-09-15: 부분 후속 — 최종 기공비 숨김. 전부 지르 전환 후에만 최종(차감 표현 없음).
 // - 2026-09-15: 확정 보철(임시 단계 없음) — 최종만(지르+CA). 지르 단계(CA 제외) 단독 표기 금지.
 // - 2026-09-15: showFinalFee면 최종만(지르+CA). 단계 바(CA 제외)와 병행하지 않음.
+// - 2026-09-15: 기공소 확정 기공비 라벨(confirmedFeeLabel / finalFeeLabel).
 // - 2026-08-22: 기공소→치과 배송 무료. skipJig 옵션/안내 삭제. 정산 상세는 →어벗츠(박스)만.
 // - 2026-08-21: 기공의뢰 정산에서 기공소→어벗츠 배송 제외(기공소 박스 과금).
 // - 2026-08-21: 치과→기공소 배송 무료. 정산 상세는 →어벗츠(박스)만.
@@ -982,6 +983,9 @@ export function PracticeTransferFeeEstimate({
   const creditMin = hasBudgetRange
     ? budgetLabFeeMin + abutmentRetailTotal
     : quote.total;
+  const finalFeeLabel =
+    String(confirmedFeeLabel || "").trim() ||
+    (isLab ? "확정 기공비" : "최종 기공비");
   const title = quote.isRemake
     ? isLab
       ? "리메이크 기공비"
@@ -1106,7 +1110,7 @@ export function PracticeTransferFeeEstimate({
       ))}
       {options?.showFinalTotal === false ? null : (
         <p className="border-t border-foreground/15 pt-1.5 text-[12px] font-semibold tabular-nums">
-          최종 기공비 {formatManWon(amount)}
+          {finalFeeLabel} {formatManWon(amount)}
         </p>
       )}
     </div>
@@ -1115,7 +1119,7 @@ export function PracticeTransferFeeEstimate({
   const renderFinalFeePanel = () => (
     <div className="space-y-1.5">
       <p className="text-[11px] font-semibold leading-snug text-foreground">
-        최종 기공비
+        {finalFeeLabel}
         <span className="ml-1.5 font-medium tabular-nums text-muted-foreground">
           {formatManWon(amount)}
         </span>
@@ -1127,7 +1131,7 @@ export function PracticeTransferFeeEstimate({
           labTotalMinOverride={labTotalMinOverride}
           labTotalMaxOverride={labTotalMaxOverride}
           tempCreditLabFeeTotal={0}
-          workTotalLabel="최종 기공비"
+          workTotalLabel={finalFeeLabel}
           workTotalOverride={amount}
           showColumnSubtotals={false}
         />
@@ -1470,7 +1474,7 @@ export function PracticeTransferFeeEstimate({
                     >
                       <span className="font-medium text-slate-600">
                         {showFinalFeeBar && !currentStageSection
-                          ? "최종 기공비 "
+                          ? `${finalFeeLabel} `
                           : "이번 단계 기공비 "}
                       </span>
                       {formatManWon(currentStageAmount)}
@@ -1503,7 +1507,7 @@ export function PracticeTransferFeeEstimate({
                       )}
                     >
                       <span className="font-medium text-slate-600">
-                        최종 기공비{" "}
+                        {finalFeeLabel}{" "}
                       </span>
                       {formatManWon(amount)}
                       {hasMissingFees ? (

@@ -30,6 +30,7 @@
 // - web/frontend/src/shared/practice/labReceiveCalendarViewMode.ts
 // - web/frontend/src/shared/practice/labReceiveCalendarCursorYmd.ts
 // - web/backend/controllers/users/user.controller.js
+// - 2026-09-15: 전부 지르 전환 후 상세에 확정 보철·확정 기공비 카드.
 // - 2026-09-14: 모바일 액션(설정·어벗 진행중) — 채팅형 전체화면·상단 크롬·닫으면 목록 메인.
 // - web/frontend/src/shared/ui/mobileActionOverlay.tsx
 // - 2026-09-14: 어벗 출고일 낙관 패치 — 상세 selectedTransfer도 갱신(−3 고정 버그).
@@ -407,6 +408,7 @@ import {
   type PracticeCalendarDateKey,
 } from "@/pages/practice/components/PracticeRecentTransfersCalendar";
 import {
+  canAppendProsthesisFollowUp,
   canLabStartProsthesisFollowUpWork,
   collectProsthesisFollowUpArrivalYmds,
   resolveProsthesisFollowUpFocusIndex,
@@ -3436,6 +3438,27 @@ export function RequestorPracticeReceivePage({
       selectedTransfer?.toothWorks,
     ],
   );
+
+  const prosthesisFollowUpComplete = useMemo(() => {
+    const eligibility = canAppendProsthesisFollowUp({
+      toothWorks: selectedTransferToothWorks,
+      toothWorksSummary: selectedTransfer?.toothWorksSummary,
+      requestorDownloadedAt:
+        selectedTransfer?.requestorDownloadedAt ||
+        selectedTransfer?.requestorAcceptedAt ||
+        null,
+      status: selectedTransfer?.status,
+      hasCustomAbutment: selectedTransfer?.hasCustomAbutment,
+    });
+    return eligibility.reason === "already_appended";
+  }, [
+    selectedTransfer?.hasCustomAbutment,
+    selectedTransfer?.requestorAcceptedAt,
+    selectedTransfer?.requestorDownloadedAt,
+    selectedTransfer?.status,
+    selectedTransfer?.toothWorksSummary,
+    selectedTransferToothWorks,
+  ]);
 
   const handleAcceptProsthesisFollowUpWork = useCallback(async () => {
     const transfer = selectedTransfer;
@@ -8426,6 +8449,7 @@ export function RequestorPracticeReceivePage({
                 : null
         }
         prosthesisFollowUpWorkPending={prosthesisFollowUpLabStart.ok}
+        prosthesisFollowUpComplete={prosthesisFollowUpComplete}
         onAcceptProsthesisFollowUpWork={
           prosthesisFollowUpLabStart.ok
             ? () => void handleAcceptProsthesisFollowUpWork()

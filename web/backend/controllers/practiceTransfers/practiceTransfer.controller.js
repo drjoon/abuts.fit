@@ -22,6 +22,8 @@ import {
   holdPracticeTransferCredits,
   holdPracticeTransferProsthesisFollowUpCredits,
   releasePracticeTransferProsthesisFollowUpCredits,
+  releasePracticeTransferProsthesisFollowUpLabShare,
+  settleUnreleasedProsthesisFollowUpsForTransfer,
   loadPracticeTransferQuoteContext,
   quoteProsthesisFollowUpFees,
   releasePracticeTransferLabShare,
@@ -2119,6 +2121,13 @@ const runProsthesisFollowUpSideEffectsInBackground = ({
     if (emitCreditBalance && practiceBusinessAnchorId) {
       try {
         await emitCreditBalanceUpdatedToBusiness(practiceBusinessAnchorId);
+      } catch {
+        // best-effort
+      }
+    }
+    if (emitCreditBalance && targetLabAnchorIdText) {
+      try {
+        await emitCreditBalanceUpdatedToBusiness(targetLabAnchorIdText);
       } catch {
         // best-effort
       }
@@ -4792,6 +4801,35 @@ export async function appendPracticeTransferProsthesis(req, res) {
       });
     }
 
+    // 작업시작 후 후속 — hold만 두면 기공소 적립이 원금액에 멈춤 → 즉시 증분 정산.
+    let followUpLabRelease = null;
+    if (doc.billing?.labSettledAt && deltaLabFee > 0) {
+      try {
+        followUpLabRelease =
+          await releasePracticeTransferProsthesisFollowUpLabShare({
+            transfer: doc,
+            followUpIndex,
+            deltaFees,
+            holdMeta: holdResult,
+            actorUserId: req.user?._id,
+            displayLabel: "후속 보철 추가",
+          });
+      } catch (releaseErr) {
+        console.error(
+          "[appendPracticeTransferProsthesis] follow-up lab release failed",
+          String(doc?._id || ""),
+          releaseErr?.message || releaseErr,
+        );
+        return res.status(Number(releaseErr?.statusCode || 500)).json({
+          success: false,
+          message:
+            releaseErr?.message ||
+            "후속 보철 보류 후 기공소 정산에 실패했습니다.",
+          ...(releaseErr?.payload || {}),
+        });
+      }
+    }
+
     const appended = appendPracticeArrivalDate({
       transferMemo: doc.transferMemo,
       arrivalDates: doc.arrivalDates,
@@ -4960,6 +4998,12 @@ export async function appendPracticeTransferProsthesis(req, res) {
       holdFromFreeShipping:
         Math.max(0, Math.round(Number(prevBilling.holdFromFreeShipping || 0))) +
         Math.max(0, Math.round(Number(holdResult.fromFreeShipping || 0))),
+      labSettlementAmount:
+        Math.max(0, Math.round(Number(prevBilling.labSettlementAmount || 0))) +
+        Math.max(
+          0,
+          Math.round(Number(followUpLabRelease?.labSettlementAmount || 0)),
+        ),
     };
 
     const updated = await PracticeTransfer.findOneAndUpdate(
@@ -5117,7 +5161,7 @@ export async function cancelPracticeTransferProsthesisFollowUp(req, res) {
     for (const record of pending) {
       const followUpIndex = Math.max(0, Math.floor(Number(record?.followUpIndex || 0)));
       canceledFollowUpIndexes.push(followUpIndex);
-      await releasePracticeTransferProsthesisFollowUpCredits({
+      const cancelGl = await releasePracticeTransferProsthesisFollowUpCredits({
         transfer: doc,
         followUpIndex,
       });
@@ -5144,6 +5188,9 @@ export async function cancelPracticeTransferProsthesisFollowUp(req, res) {
         0,
         Math.round(Number(record?.billingDelta?.total || deltaLab)),
       );
+      const releasedLabNet = cancelGl?.hadRelease
+        ? deltaLab
+        : 0;
       nextBilling = {
         ...nextBilling,
         labFeeTotal: Math.max(0, Math.round(Number(nextBilling.labFeeTotal || 0)) - deltaLab),
@@ -5152,6 +5199,10 @@ export async function cancelPracticeTransferProsthesisFollowUp(req, res) {
         heldLabTotal: Math.max(
           0,
           Math.round(Number(nextBilling.heldLabTotal || 0)) - deltaLab,
+        ),
+        labSettlementAmount: Math.max(
+          0,
+          Math.round(Number(nextBilling.labSettlementAmount || 0)) - releasedLabNet,
         ),
       };
 
@@ -5487,6 +5538,52 @@ export async function acceptPracticeTransferProsthesisFollowUp(req, res) {
       now,
     );
 
+    // 이미 작업시작(정산)된 건의 미해제 후속 hold → 기공소 적립(멱등).
+    let followUpSettleResults = [];
+    if (doc.billing?.labSettledAt) {
+      try {
+        followUpSettleResults =
+          await settleUnreleasedProsthesisFollowUpsForTransfer({
+            transfer: doc,
+            actorUserId: req.user?._id,
+          });
+      } catch (settleErr) {
+        console.error(
+          "[acceptPracticeTransferProsthesisFollowUp] settle follow-ups failed",
+          String(doc?._id || ""),
+          settleErr?.message || settleErr,
+        );
+        return res.status(Number(settleErr?.statusCode || 500)).json({
+          success: false,
+          message:
+            settleErr?.message ||
+            "후속 보철 기공소 정산에 실패했습니다.",
+          ...(settleErr?.payload || {}),
+        });
+      }
+    }
+    const settledLabNet = followUpSettleResults.reduce(
+      (sum, row) =>
+        sum +
+        (row?.released
+          ? Math.max(0, Math.round(Number(row.labSettlementAmount || 0)))
+          : 0),
+      0,
+    );
+    const prevBilling =
+      doc.billing && typeof doc.billing === "object" ? doc.billing : {};
+    const nextBilling =
+      settledLabNet > 0
+        ? {
+            ...prevBilling,
+            labSettlementAmount:
+              Math.max(
+                0,
+                Math.round(Number(prevBilling.labSettlementAmount || 0)),
+              ) + settledLabNet,
+          }
+        : null;
+
     const updated = await PracticeTransfer.findOneAndUpdate(
       { _id: doc._id, ...practiceTransferNotDeletedMongoFilter() },
       {
@@ -5494,6 +5591,7 @@ export async function acceptPracticeTransferProsthesisFollowUp(req, res) {
           prosthesisFollowUps: nextFollowUps,
           requestorReadAt: null,
           requestorReadBy: null,
+          ...(nextBilling ? { billing: nextBilling } : {}),
         },
       },
       { new: true },
@@ -5515,6 +5613,7 @@ export async function acceptPracticeTransferProsthesisFollowUp(req, res) {
       practiceUserId: updated.practiceUserId,
       targetLabAnchorIdText,
       transferMongoId: String(updated._id),
+      emitCreditBalance: settledLabNet > 0,
       chat: {
         senderUserId: req.user?._id,
         content: "지르 보철 작업시작",

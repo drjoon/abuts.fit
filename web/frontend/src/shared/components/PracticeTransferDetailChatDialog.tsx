@@ -20,6 +20,7 @@
 // - 2026-09-15: 견적은 전체 toothWorks(feeToothWorks) — 후속 반영·임시치아 차감 라인 유지.
 // - 2026-09-15: 남은 임시치아 있으면 지르 보철 CTA 유지(제작 변경/취소와 병행).
 // - 2026-09-15: 확정 보철·최종 기공비 — showFinalFee(지르+커스텀어벗).
+// - 2026-09-15: 확정 보철 카드 — 치과 지르 CTA와 분리. 기공소도 확정 기공비 표시.
 // - 2026-09-15: 원 임시치아 단계(focus<0) — 스크롤을 치식 상단으로(채팅 후속 카드에 가려지지 않음).
 // - 2026-09-14: 모바일 플로팅 — mobileFloatingTopInset으로 채팅을 상단 액션 바 아래로.
 // - 2026-09-14: 모바일 플로팅 — mobileTopChrome을 채팅 **위** 고정 바에 두고 패널을 아래로 내린다.
@@ -3336,33 +3337,40 @@ export function PracticeTransferDetailChatDialog({
                               {appendProsthesisHint}
                             </p>
                           ) : null}
-                          {prosthesisFollowUpComplete &&
-                          Array.isArray(toothWorks) &&
-                          toothWorks.length > 0 ? (
-                            <div className="mt-2 w-full min-w-0 max-w-full text-left">
-                              <p className="mb-1.5 text-center text-[11px] font-medium text-foreground">
-                                확정 보철 · 최종 기공비
-                              </p>
-                              <PracticeToothWorkChartReadOnly
-                                toothWorks={listCompletedFollowUpToothWorks(
-                                  toothWorks,
-                                )}
-                                feeToothWorks={
-                                  Array.isArray(toothWorks) ? toothWorks : undefined
-                                }
-                                showHeader={false}
-                                labAnchorId={labAnchorId}
-                                feeViewer={feeViewer}
-                                skipJig={skipJig}
-                                labEffectiveStars={labEffectiveStars}
-                                confirmedFeeLabel="최종 기공비"
-                                showFinalFee
-                                enlargeOverlayClassName="z-[350]"
-                                enlargeDialogClassName="z-[360]"
-                                className="border-0 bg-transparent p-0 shadow-none"
-                              />
-                            </div>
-                          ) : null}
+                        </div>
+                      ) : null}
+
+                      {prosthesisFollowUpComplete &&
+                      !chatLoading &&
+                      !visibleChatError &&
+                      Array.isArray(toothWorks) &&
+                      toothWorks.length > 0 ? (
+                        <div className="relative z-[2] mt-2 w-full min-w-0 max-w-full px-1 text-left">
+                          <p className="mb-1.5 text-center text-[11px] font-medium text-foreground">
+                            {feeViewer === "lab"
+                              ? "확정 보철 · 확정 기공비"
+                              : "확정 보철 · 최종 기공비"}
+                          </p>
+                          <PracticeToothWorkChartReadOnly
+                            toothWorks={listCompletedFollowUpToothWorks(
+                              toothWorks,
+                            )}
+                            feeToothWorks={
+                              Array.isArray(toothWorks) ? toothWorks : undefined
+                            }
+                            showHeader={false}
+                            labAnchorId={labAnchorId}
+                            feeViewer={feeViewer}
+                            skipJig={skipJig}
+                            labEffectiveStars={labEffectiveStars}
+                            confirmedFeeLabel={
+                              feeViewer === "lab" ? "확정 기공비" : "최종 기공비"
+                            }
+                            showFinalFee
+                            enlargeOverlayClassName="z-[350]"
+                            enlargeDialogClassName="z-[360]"
+                            className="border-0 bg-transparent p-0 shadow-none"
+                          />
                         </div>
                       ) : null}
 
