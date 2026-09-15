@@ -195,8 +195,6 @@ const formatYmLabel = (ym: string) => {
   return `${y}년 ${m}월`;
 };
 
-const pctLabel = (rate: number) => `${Math.round(Number(rate || 0) * 100)}%`;
-
 const payoutYmOf = (row: PayoutItem): string | null => {
   if (row.batchId?.periodStart) {
     return ymdToYm(toKstYmd(new Date(row.batchId.periodStart)));
@@ -225,9 +223,7 @@ export const LabSettlementPayoutTab = () => {
   const [snapLoading, setSnapLoading] = useState(false);
   const [snapItems, setSnapItems] = useState<LabDailySnapshotRow[]>([]);
   const [settlementCredit, setSettlementCredit] = useState(0);
-  const [platformFeeRate, setPlatformFeeRate] = useState(0.1);
 
-  const platformFeePct = pctLabel(platformFeeRate);
   const loading = snapLoading || payoutLoading;
 
   const loadBalance = useCallback(async () => {
@@ -247,38 +243,9 @@ export const LabSettlementPayoutTab = () => {
     }
   }, [token]);
 
-  const loadFeeRates = useCallback(async () => {
-    if (!token) return;
-    try {
-      const res = await request<{
-        data?: {
-          window?: {
-            feeRates?: {
-              platformFeeRate?: number;
-              nonPartnerFeeRate?: number;
-            };
-          };
-        };
-      }>({
-        path: "/api/lab-trading-partners",
-        method: "GET",
-        token,
-      });
-      if (!res.ok) return;
-      const rates = res.data?.data?.window?.feeRates;
-      const next = Number(
-        rates?.platformFeeRate ?? rates?.nonPartnerFeeRate ?? 0.1,
-      );
-      if (Number.isFinite(next)) setPlatformFeeRate(next);
-    } catch {
-      // keep default
-    }
-  }, [token]);
-
   useEffect(() => {
     void loadBalance();
-    void loadFeeRates();
-  }, [loadBalance, loadFeeRates]);
+  }, [loadBalance]);
 
   useEffect(() => {
     if (!token) return;
@@ -593,10 +560,8 @@ export const LabSettlementPayoutTab = () => {
                       <span className="font-semibold text-slate-900">
                         기공크레딧
                       </span>
-                      으로 적립됩니다. 자동 매칭은 플랫폼 수수료(
-                      {platformFeePct})를 제외하고, 지정 기공소는 전액
-                      적립됩니다. 치과 무료 크레딧 결제분도 동일하며 비용은
-                      플랫폼이 부담합니다. 취소·롤백 시 해당 적립은
+                      으로 적립됩니다. 치과 무료 크레딧 결제분도 동일하며
+                      비용은 플랫폼이 부담합니다. 취소·롤백 시 해당 적립은
                       삭제됩니다.
                     </p>
                   </div>
