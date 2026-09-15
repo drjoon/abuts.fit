@@ -785,22 +785,23 @@ export const applyProsthesisFollowUpTempCredit = (input: {
 
 export const isPendingProsthesisFollowUpRecord = (
   record?: ProsthesisFollowUpRecord | null,
-  requestorDownloadedAt?: string | null,
+  _requestorDownloadedAt?: string | null,
 ) => {
   if (!record) return false;
   if (record.canceledAt) return false;
   if (!record.labAcceptedAt) return true;
-  const mainAcceptedAt = String(requestorDownloadedAt || "").trim();
   const appendedAt = record.appendedAt;
-  if (!appendedAt) return false;
-  if (!mainAcceptedAt) {
-    // 수락 시각 미동기화 — labAcceptedAt만 있으면 재수락 오염 가능성, pending 유지
-    return true;
+  if (!appendedAt) {
+    // appendedAt 없는 레거시 — labAcceptedAt만으로 작업시작 완료
+    return false;
   }
-  const mainMs = new Date(mainAcceptedAt).getTime();
+  const acceptMs = new Date(record.labAcceptedAt).getTime();
   const appendMs = new Date(appendedAt).getTime();
-  if (!Number.isFinite(mainMs) || !Number.isFinite(appendMs)) return false;
-  return appendMs >= mainMs;
+  if (!Number.isFinite(acceptMs) || !Number.isFinite(appendMs)) return false;
+  // 지르 작업시작이 후속 추가 시각 이상이면 pending 해제
+  if (acceptMs >= appendMs) return false;
+  void _requestorDownloadedAt;
+  return true;
 };
 
 export const getPendingProsthesisFollowUps = (
@@ -832,6 +833,75 @@ export const canManagePendingProsthesisFollowUp = (input: {
     };
   }
   return { ok: true as const, pending };
+};
+
+/** 기공소 — pending 지르 후속 「지르 작업 시작」 */
+export const canLabStartProsthesisFollowUpWork = (input: {
+  prosthesisFollowUps?: ProsthesisFollowUpRecord[] | null;
+  toothWorks?: ReadonlyArray<Partial<ToothWorkSelection>> | null;
+  status?: string | null;
+  manufacturerStage?: string | null;
+  requestorDownloadedAt?: string | null;
+  requestorAcceptedAt?: string | null;
+  isAccepted?: boolean | null;
+  isDownloaded?: boolean | null;
+}) => {
+  const status = String(input.status || "").trim();
+  const stage = String(input.manufacturerStage || "").trim();
+  if (
+    status === "취소" ||
+    status === "작업취소" ||
+    stage === "취소" ||
+    stage === "작업취소"
+  ) {
+    return { ok: false as const, reason: "canceled", message: "취소된 의뢰입니다." };
+  }
+  const mainAccepted = Boolean(
+    input.isAccepted ||
+      input.isDownloaded ||
+      String(input.requestorDownloadedAt || "").trim() ||
+      String(input.requestorAcceptedAt || "").trim() ||
+      stage === "의뢰수락" ||
+      stage === "다운로드완료" ||
+      stage === "작업완료" ||
+      stage === "생산진행" ||
+      stage === "포장.발송",
+  );
+  if (!mainAccepted) {
+    return {
+      ok: false as const,
+      reason: "not_accepted",
+      message: "본건 작업시작 후에 지르 작업을 시작할 수 있습니다.",
+    };
+  }
+  const pending = getPendingProsthesisFollowUps(
+    input.prosthesisFollowUps,
+    input.requestorDownloadedAt,
+  );
+  if (pending.length > 0) {
+    return { ok: true as const, pending };
+  }
+  // 목록에 followUps가 비어도 toothWorks에 후속 지르 행이 있으면 시작 대상으로 표시(API는 DB 기준)
+  const hasFollowUpRows = (Array.isArray(input.toothWorks) ? input.toothWorks : []).some(
+    (row) =>
+      isFollowUpProsthesisPhase(row) &&
+      isFinalProsthesisType(String(row?.prosthesisType || "")),
+  );
+  const activeFollowUps = (Array.isArray(input.prosthesisFollowUps)
+    ? input.prosthesisFollowUps
+    : []
+  ).filter((row) => !String(row?.canceledAt || "").trim());
+  const anyLabStarted = activeFollowUps.some((row) =>
+    Boolean(String(row?.labAcceptedAt || "").trim()),
+  );
+  if (hasFollowUpRows && !anyLabStarted) {
+    return { ok: true as const, pending: activeFollowUps };
+  }
+  return {
+    ok: false as const,
+    reason: "no_pending",
+    message: "시작할 지르 보철 후속이 없습니다.",
+  };
 };
 
 export const getLatestPendingProsthesisFollowUp = (

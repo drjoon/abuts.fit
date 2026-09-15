@@ -250,6 +250,7 @@ import {
   PRACTICE_RECENT_STATUS_BADGE_GAP_BEFORE_KEYS,
   computeGroupedStatusCounts,
   computeGroupedStatusUnreadCounts,
+  isProsthesisFollowUpRealtimeAction,
   listBadgeNavigateTransfersForStatusFilter,
   practiceRecentStatusFilterClearsCountOnView,
   toStatusBadgeLabel,
@@ -406,6 +407,7 @@ import {
   type PracticeCalendarDateKey,
 } from "@/pages/practice/components/PracticeRecentTransfersCalendar";
 import {
+  canLabStartProsthesisFollowUpWork,
   collectProsthesisFollowUpArrivalYmds,
   resolveProsthesisFollowUpFocusIndex,
 } from "@/shared/practice/prosthesisFollowUp";
@@ -914,6 +916,8 @@ export function RequestorPracticeReceivePage({
     "detail" | "chat" | undefined
   >(undefined);
   const [acceptBusy, setAcceptBusy] = useState(false);
+  const [acceptProsthesisFollowUpWorkBusy, setAcceptProsthesisFollowUpWorkBusy] =
+    useState(false);
   const [ptxCaCreditConfirmOpen, setPtxCaCreditConfirmOpen] = useState(false);
   const [ptxCaCreditConfirmMessage, setPtxCaCreditConfirmMessage] = useState("");
   const [openSubcontractBusy, setOpenSubcontractBusy] = useState(false);
@@ -1844,6 +1848,78 @@ export function RequestorPracticeReceivePage({
       }
 
       if (type === "practice:transfer-updated" && transferId) {
+        if (isProsthesisFollowUpRealtimeAction(action)) {
+          const patchFollowUp = (
+            row: ReceivedPracticeTransfer,
+          ): ReceivedPracticeTransfer => ({
+            ...row,
+            ...(Array.isArray(payload.toothWorks)
+              ? {
+                  toothWorks:
+                    payload.toothWorks as ReceivedPracticeTransfer["toothWorks"],
+                }
+              : {}),
+            ...(Array.isArray(payload.prosthesisFollowUps)
+              ? {
+                  prosthesisFollowUps:
+                    payload.prosthesisFollowUps as ReceivedPracticeTransfer["prosthesisFollowUps"],
+                }
+              : {}),
+            ...(Array.isArray(payload.prosthesisFeeStages)
+              ? {
+                  prosthesisFeeStages:
+                    payload.prosthesisFeeStages as ReceivedPracticeTransfer["prosthesisFeeStages"],
+                }
+              : {}),
+            ...(payload.arrivalDate != null
+              ? { arrivalDate: String(payload.arrivalDate).trim() }
+              : {}),
+            ...(Array.isArray(payload.arrivalDates)
+              ? {
+                  arrivalDates: (payload.arrivalDates as unknown[])
+                    .map((d) => String(d || "").trim())
+                    .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)),
+                }
+              : {}),
+            ...(payload.orderDate != null
+              ? { orderDate: String(payload.orderDate).trim() }
+              : {}),
+            ...(Array.isArray(payload.orderDates)
+              ? {
+                  orderDates: (payload.orderDates as unknown[])
+                    .map((d) => String(d || "").trim())
+                    .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)),
+                }
+              : {}),
+            ...(payload.billing && typeof payload.billing === "object"
+              ? {
+                  feeQuote: parsePracticeTransferFeeQuote({
+                    ...(row.feeQuote || {}),
+                    ...(payload.billing as Record<string, unknown>),
+                  }),
+                }
+              : {}),
+          });
+          setTransfers((prev) =>
+            prev.map((row) =>
+              row.transferId === transferId ? patchFollowUp(row) : row,
+            ),
+          );
+          setSelectedTransfer((prev) =>
+            prev && prev.transferId === transferId ? patchFollowUp(prev) : prev,
+          );
+          if (
+            dialogOpen &&
+            String(selectedTransfer?.transferId || "").trim() === transferId &&
+            activeChatRoom?._id
+          ) {
+            void prefetchMessages();
+          }
+          if (hasUnreadCount) {
+            emitUnreadBadgeRefresh(unreadCount);
+          }
+          return;
+        }
         if (
           action === "auto-match-released" ||
           action === "accept-released" ||
@@ -3333,6 +3409,131 @@ export function RequestorPracticeReceivePage({
       token,
     ],
   );
+
+  const prosthesisFollowUpLabStart = useMemo(
+    () =>
+      canLabStartProsthesisFollowUpWork({
+        prosthesisFollowUps: selectedTransfer?.prosthesisFollowUps,
+        toothWorks: selectedTransfer?.toothWorks,
+        status: selectedTransfer?.status,
+        manufacturerStage: selectedTransfer?.manufacturerStage,
+        requestorDownloadedAt:
+          selectedTransfer?.requestorDownloadedAt ||
+          selectedTransfer?.requestorAcceptedAt ||
+          null,
+        requestorAcceptedAt: selectedTransfer?.requestorAcceptedAt || null,
+        isAccepted: selectedTransfer?.isAccepted,
+        isDownloaded: selectedTransfer?.isDownloaded,
+      }),
+    [
+      selectedTransfer?.isAccepted,
+      selectedTransfer?.isDownloaded,
+      selectedTransfer?.manufacturerStage,
+      selectedTransfer?.prosthesisFollowUps,
+      selectedTransfer?.requestorAcceptedAt,
+      selectedTransfer?.requestorDownloadedAt,
+      selectedTransfer?.status,
+      selectedTransfer?.toothWorks,
+    ],
+  );
+
+  const handleAcceptProsthesisFollowUpWork = useCallback(async () => {
+    const transfer = selectedTransfer;
+    if (!transfer || !token || acceptProsthesisFollowUpWorkBusy) return;
+    const transferId = String(transfer.transferId || "").trim();
+    if (!transferId) return;
+    const gate = canLabStartProsthesisFollowUpWork({
+      prosthesisFollowUps: transfer.prosthesisFollowUps,
+      toothWorks: transfer.toothWorks,
+      status: transfer.status,
+      manufacturerStage: transfer.manufacturerStage,
+      requestorDownloadedAt:
+        transfer.requestorDownloadedAt || transfer.requestorAcceptedAt || null,
+      requestorAcceptedAt: transfer.requestorAcceptedAt || null,
+      isAccepted: transfer.isAccepted,
+      isDownloaded: transfer.isDownloaded,
+    });
+    if (!gate.ok) {
+      toast({
+        title: "지르 작업시작 불가",
+        description: gate.message || "시작할 지르 보철이 없습니다.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setAcceptProsthesisFollowUpWorkBusy(true);
+    const acceptedAtIso = new Date().toISOString();
+    try {
+      const res = await apiFetch<{
+        success?: boolean;
+        message?: string;
+        data?: {
+          prosthesisFollowUps?: ReceivedPracticeTransfer["prosthesisFollowUps"];
+        };
+      }>({
+        path: `/api/practice/transfers/${encodeURIComponent(transferId)}/accept-prosthesis-follow-up`,
+        method: "POST",
+        token,
+      });
+      if (!res.ok) {
+        const body = res.data && typeof res.data === "object" ? res.data : {};
+        toast({
+          title: "지르 작업시작 실패",
+          description:
+            String((body as { message?: string }).message || "").trim() ||
+            "다시 시도해주세요.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const nextFollowUps = Array.isArray(res.data?.data?.prosthesisFollowUps)
+        ? res.data!.data!.prosthesisFollowUps
+        : (Array.isArray(transfer.prosthesisFollowUps)
+            ? transfer.prosthesisFollowUps
+            : []
+          ).map((row) =>
+            gate.pending.some(
+              (p) =>
+                Number(p.followUpIndex || 0) === Number(row?.followUpIndex || 0),
+            )
+              ? { ...row, labAcceptedAt: acceptedAtIso }
+              : row,
+          );
+
+      const patch = { prosthesisFollowUps: nextFollowUps, requestorReadAt: null };
+      setSelectedTransfer((prev) =>
+        prev && String(prev.transferId || "") === transferId
+          ? { ...prev, ...patch }
+          : prev,
+      );
+      setTransfers((prev) =>
+        prev.map((row) =>
+          String(row.transferId || "") === transferId ? { ...row, ...patch } : row,
+        ),
+      );
+
+      toast({
+        title: "지르 작업시작 완료",
+        description:
+          res.data?.message || "지르 보철 작업을 시작했습니다.",
+      });
+    } catch {
+      toast({
+        title: "지르 작업시작 실패",
+        description: "지르 작업시작 요청 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setAcceptProsthesisFollowUpWorkBusy(false);
+    }
+  }, [
+    acceptProsthesisFollowUpWorkBusy,
+    selectedTransfer,
+    toast,
+    token,
+  ]);
 
   const mapApiResultFiles = useCallback(
     (
@@ -8224,6 +8425,13 @@ export function RequestorPracticeReceivePage({
                 ? `zirconia-${Math.floor(Number(selectedTransfer.focusFollowUpIndex))}`
                 : null
         }
+        prosthesisFollowUpWorkPending={prosthesisFollowUpLabStart.ok}
+        onAcceptProsthesisFollowUpWork={
+          prosthesisFollowUpLabStart.ok
+            ? () => void handleAcceptProsthesisFollowUpWork()
+            : undefined
+        }
+        acceptProsthesisFollowUpWorkBusy={acceptProsthesisFollowUpWorkBusy}
         feeQuote={selectedTransfer?.feeQuote || null}
         remakeCharges={selectedTransfer?.remakeCharges || null}
         onCancelRemakeCharge={(chargeIndex) => {
@@ -8361,9 +8569,23 @@ export function RequestorPracticeReceivePage({
             !workState.hasPendingLabCa &&
             !workState.hasAbutsCa
           ) {
-            if (!releaseAction) return null;
+            const labZirOnly = prosthesisFollowUpLabStart.ok ? (
+              <Button
+                type="button"
+                size="sm"
+                disabled={acceptProsthesisFollowUpWorkBusy}
+                className="h-8 shrink-0"
+                onClick={() => void handleAcceptProsthesisFollowUpWork()}
+              >
+                {acceptProsthesisFollowUpWorkBusy
+                  ? "처리 중…"
+                  : "지르 작업 시작"}
+              </Button>
+            ) : null;
+            if (!releaseAction && !labZirOnly) return null;
             return (
               <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+                {labZirOnly}
                 {releaseAction}
               </div>
             );
@@ -8396,6 +8618,24 @@ export function RequestorPracticeReceivePage({
           ) : null;
           // 어벗 가공·비어벗 도착일 이후에는 작업취소 trailing 숨김(카드·상세 CTA와 동일)
           const releaseTrailing = workState.showWorkCancel ? releaseAction : null;
+          const labZirStartButton = prosthesisFollowUpLabStart.ok ? (
+            <Button
+              type="button"
+              size="sm"
+              disabled={acceptProsthesisFollowUpWorkBusy}
+              className="h-8 shrink-0"
+              onClick={() => void handleAcceptProsthesisFollowUpWork()}
+            >
+              {acceptProsthesisFollowUpWorkBusy ? "처리 중…" : "지르 작업 시작"}
+            </Button>
+          ) : null;
+          const trailingWithZir =
+            labZirStartButton || completedCancelAction || releaseTrailing ? (
+              <>
+                {labZirStartButton}
+                {completedCancelAction || releaseTrailing}
+              </>
+            ) : null;
           return (
             <PracticeLabReceiveWorkActionsBar
               transfer={selectedTransfer}
@@ -8403,7 +8643,7 @@ export function RequestorPracticeReceivePage({
               busy={rowBusy}
               designConfirmBusy={designConfirmBusyId === transferKey}
               showProductionCancelInBar
-              trailingActions={completedCancelAction || releaseTrailing}
+              trailingActions={trailingWithZir}
               onAbutmentProductionCancel={(event) =>
                 void handleCardAbutmentProductionCancel(
                   selectedTransfer,

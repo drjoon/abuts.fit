@@ -147,7 +147,7 @@ describe("practiceTransferProsthesisFollowUp", () => {
     ).toBe(false);
   });
 
-  test("follow-up appended after main accept stays pending even with labAcceptedAt", () => {
+  test("follow-up with labAcceptedAt after append is not pending (지르 작업시작)", () => {
     const requestorDownloadedAt = new Date("2026-09-01T10:00:00+09:00");
     const appendedAt = new Date("2026-09-01T12:00:00+09:00");
     const labAcceptedAt = new Date("2026-09-01T12:05:00+09:00");
@@ -156,7 +156,7 @@ describe("practiceTransferProsthesisFollowUp", () => {
         { arrivalYmd: "2026-09-11", labAcceptedAt, appendedAt },
         requestorDownloadedAt,
       ),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       canManagePendingProsthesisFollowUp({
         prosthesisFollowUps: [
@@ -164,6 +164,18 @@ describe("practiceTransferProsthesisFollowUp", () => {
         ],
         requestorDownloadedAt,
       }).ok,
+    ).toBe(false);
+  });
+
+  test("stale labAcceptedAt before append stays pending", () => {
+    const requestorDownloadedAt = new Date("2026-09-01T10:00:00+09:00");
+    const labAcceptedAt = new Date("2026-09-01T10:00:00+09:00");
+    const appendedAt = new Date("2026-09-01T12:00:00+09:00");
+    expect(
+      isPendingProsthesisFollowUpRecord(
+        { arrivalYmd: "2026-09-11", labAcceptedAt, appendedAt },
+        requestorDownloadedAt,
+      ),
     ).toBe(true);
   });
 

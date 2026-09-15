@@ -49,6 +49,7 @@ import {
   appendPracticeTransferProsthesis,
   cancelPracticeTransferProsthesisFollowUp,
   updatePracticeTransferProsthesisFollowUp,
+  acceptPracticeTransferProsthesisFollowUp,
   setPracticeTransferAbutmentShipYmd,
   appendPracticeTransferRequestFiles,
   removePracticeTransferRequestFiles,
@@ -263,6 +264,13 @@ router.post(
   authenticate,
   sendAuth,
   updatePracticeTransferProsthesisFollowUp,
+);
+
+router.post(
+  "/:transferId/accept-prosthesis-follow-up",
+  authenticate,
+  receiveAuth,
+  acceptPracticeTransferProsthesisFollowUp,
 );
 
 router.get("/received", authenticate, receiveAuth, getReceivedPracticeTransfers);

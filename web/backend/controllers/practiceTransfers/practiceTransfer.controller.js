@@ -137,6 +137,7 @@ import {
   buildFollowUpToothWorksDraft,
   buildProsthesisFeeStageRecord,
   canAppendProsthesisFollowUp,
+  canLabStartProsthesisFollowUpWork,
   canManagePendingProsthesisFollowUp,
   getPendingProsthesisFollowUps,
   hasTemporaryProsthesisRows,
@@ -5438,6 +5439,118 @@ export async function updatePracticeTransferProsthesisFollowUp(req, res) {
 }
 
 /**
+ * 기공소 — pending 지르 후속 「지르 작업 시작」.
+ * labAcceptedAt을 지금으로 찍어 치과 제작변경/취소(pending)를 닫는다.
+ */
+export async function acceptPracticeTransferProsthesisFollowUp(req, res) {
+  try {
+    const transferIdFilter = buildTransferIdFilter(req.params?.transferId);
+    if (!transferIdFilter) {
+      return res.status(400).json({
+        success: false,
+        message: "transferId가 필요합니다.",
+      });
+    }
+
+    const { scope, labAnchorId } = await buildReceivedScope(req);
+    if (!labAnchorId) {
+      return res.status(403).json({
+        success: false,
+        message: "기공소 권한이 필요합니다.",
+      });
+    }
+
+    const doc = await PracticeTransfer.findOne({
+      ...scope,
+      ...transferIdFilter,
+      ...practiceTransferNotDeletedMongoFilter(),
+    });
+    if (!doc) {
+      return res.status(404).json({
+        success: false,
+        message: "전송 내역을 찾을 수 없습니다.",
+      });
+    }
+
+    const gate = canLabStartProsthesisFollowUpWork(doc);
+    if (!gate.ok) {
+      return res.status(409).json({
+        success: false,
+        message: gate.message || "지르 작업을 시작할 수 없습니다.",
+        reason: gate.reason,
+      });
+    }
+
+    const now = new Date();
+    const nextFollowUps = markPendingProsthesisFollowUpsAccepted(
+      doc.prosthesisFollowUps,
+      now,
+    );
+
+    const updated = await PracticeTransfer.findOneAndUpdate(
+      { _id: doc._id, ...practiceTransferNotDeletedMongoFilter() },
+      {
+        $set: {
+          prosthesisFollowUps: nextFollowUps,
+          requestorReadAt: null,
+          requestorReadBy: null,
+        },
+      },
+      { new: true },
+    );
+    if (!updated) {
+      return res.status(409).json({
+        success: false,
+        message: "지르 작업시작을 반영하지 못했습니다.",
+      });
+    }
+
+    const targetLabAnchorIdText = String(updated.targetLabAnchorId || "").trim();
+    const serializedFollowUps = serializeProsthesisFollowUpsForApi(
+      updated.prosthesisFollowUps || nextFollowUps,
+    );
+
+    runProsthesisFollowUpSideEffectsInBackground({
+      practiceBusinessAnchorId: updated.practiceBusinessAnchorId,
+      practiceUserId: updated.practiceUserId,
+      targetLabAnchorIdText,
+      transferMongoId: String(updated._id),
+      chat: {
+        senderUserId: req.user?._id,
+        content: "지르 보철 작업시작",
+        systemEvent: "practice_transfer_prosthesis_follow_up_accept",
+      },
+      realtimePayload: {
+        source: "acceptPracticeTransferProsthesisFollowUp",
+        action: "prosthesis-follow-up-accept",
+        transferId: String(updated.transferId || "").trim(),
+        transferMongoId: String(updated._id || ""),
+        targetLabAnchorId: targetLabAnchorIdText || null,
+        practiceUserId: String(updated.practiceUserId || ""),
+        prosthesisFollowUps: serializedFollowUps,
+        requestorReadAt: null,
+      },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "지르 보철 작업을 시작했습니다.",
+      data: {
+        prosthesisFollowUps: serializedFollowUps,
+        requestorReadAt: null,
+      },
+    });
+  } catch (error) {
+    const status = Number(error?.statusCode || 500);
+    return res.status(status >= 400 && status < 600 ? status : 500).json({
+      success: false,
+      message: error?.message || "지르 작업시작 중 오류가 발생했습니다.",
+      ...(error?.payload || {}),
+    });
+  }
+}
+
+/**
  * POST /api/practice/transfers/received/:transferId/remake-charges
  * 기공소 — 동일 의뢰건에 리메이크 수가 청구(새 PTX 생성 없음).
  */
@@ -7140,6 +7253,18 @@ export async function getReceivedPracticeTransfers(req, res) {
         autoMatch: autoFields.autoMatch,
         toothWorks,
         hasCustomAbutment: hasCustomAbutmentToothWorks(toothWorks),
+        prosthesisFollowUps: serializeProsthesisFollowUpsForApi(
+          doc?.prosthesisFollowUps,
+        ),
+        prosthesisFeeStages: serializeProsthesisFeeStagesForApi(
+          hydrateProsthesisFeeStages({
+            prosthesisFeeStages: doc?.prosthesisFeeStages,
+            prosthesisFollowUps: doc?.prosthesisFollowUps,
+            toothWorks,
+            orderYmd: orderDate || null,
+            arrivalYmd: arrivalDate || null,
+          }),
+        ),
         labRequestStagePlans: normalizeLabRequestStagePlans(
           doc?.labRequestStagePlans,
         ),

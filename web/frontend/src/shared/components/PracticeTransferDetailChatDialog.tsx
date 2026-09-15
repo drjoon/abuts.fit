@@ -626,6 +626,10 @@ type PracticeTransferDetailChatDialogProps = {
   feeStageFocusIndex?: number | null;
   /** Stage SSOT key (`temp` | `zirconia-N`) */
   feeStageKey?: string | null;
+  /** 기공소 — pending 지르 후속 「지르 작업 시작」 */
+  onAcceptProsthesisFollowUpWork?: () => void;
+  acceptProsthesisFollowUpWorkBusy?: boolean;
+  prosthesisFollowUpWorkPending?: boolean;
   /** 기공소 — 리메이크 청구 채팅 카드 「청구 취소」 */
   onCancelRemakeCharge?: (chargeIndex: number | null) => void;
   remakeChargeCancelBusy?: boolean;
@@ -770,6 +774,9 @@ export function PracticeTransferDetailChatDialog({
   prosthesisFeeStages = null,
   feeStageFocusIndex = null,
   feeStageKey = null,
+  onAcceptProsthesisFollowUpWork,
+  acceptProsthesisFollowUpWorkBusy = false,
+  prosthesisFollowUpWorkPending = false,
   onCancelRemakeCharge,
   remakeChargeCancelBusy = false,
   onCancelRequest,
@@ -1152,6 +1159,32 @@ export function PracticeTransferDetailChatDialog({
             {cancelProsthesisFollowUpBusy ? "취소 중…" : "제작 취소"}
           </Button>
         ) : null}
+      </div>
+    );
+  };
+
+  const renderProsthesisFollowUpLabStartButton = (opts?: {
+    className?: string;
+  }) => {
+    if (!prosthesisFollowUpWorkPending || !onAcceptProsthesisFollowUpWork) {
+      return null;
+    }
+    return (
+      <div
+        className={cn(
+          "relative z-[2] flex shrink-0 flex-wrap items-center justify-center gap-2",
+          opts?.className,
+        )}
+      >
+        <Button
+          type="button"
+          size="sm"
+          className="h-9 px-5 font-medium"
+          disabled={acceptProsthesisFollowUpWorkBusy}
+          onClick={() => onAcceptProsthesisFollowUpWork()}
+        >
+          {acceptProsthesisFollowUpWorkBusy ? "처리 중…" : "지르 작업 시작"}
+        </Button>
       </div>
     );
   };
@@ -2847,16 +2880,9 @@ export function PracticeTransferDetailChatDialog({
 
               {showReleaseBar ? (
                 <div className="shrink-0 border-b bg-muted/40 px-5 py-2 flex flex-col gap-1.5">
-                  {typeof acceptedWorkActions === "function" ? (
-                    resolvedAcceptedWorkActions
-                  ) : resolvedAcceptedWorkActions ? (
+                  {resolvedAcceptedWorkActions ? (
                     <div className="flex min-w-0 w-full flex-col gap-1.5">
                       {resolvedAcceptedWorkActions}
-                      {releaseAction ? (
-                        <div className="flex flex-wrap items-center gap-2">
-                          {releaseAction}
-                        </div>
-                      ) : null}
                     </div>
                   ) : (
                     <>
@@ -2865,6 +2891,7 @@ export function PracticeTransferDetailChatDialog({
                       </p>
                       <div className="flex flex-wrap items-center gap-2">
                         {releaseAction}
+                        {renderProsthesisFollowUpLabStartButton()}
                       </div>
                     </>
                   )}
@@ -2876,7 +2903,19 @@ export function PracticeTransferDetailChatDialog({
               !workCanceled &&
               resolvedAcceptedWorkActions ? (
                 <div className="shrink-0 border-b bg-muted/40 px-5 py-2">
-                  {resolvedAcceptedWorkActions}
+                  <div className="flex min-w-0 w-full flex-col gap-1.5">
+                    {resolvedAcceptedWorkActions}
+                  </div>
+                </div>
+              ) : null}
+
+              {!showReleaseBar &&
+              accepted &&
+              !workCanceled &&
+              !resolvedAcceptedWorkActions &&
+              prosthesisFollowUpWorkPending ? (
+                <div className="shrink-0 border-b bg-muted/40 px-5 py-2">
+                  {renderProsthesisFollowUpLabStartButton()}
                 </div>
               ) : null}
 
@@ -2894,6 +2933,7 @@ export function PracticeTransferDetailChatDialog({
               <div className="shrink-0 space-y-5 px-5 py-3 text-sm">
               {renderRequestManageButtons()}
               {renderProsthesisFollowUpManageButtons()}
+              {renderProsthesisFollowUpLabStartButton()}
               {Array.isArray(chartToothWorks) && chartToothWorks.length > 0 ? (
                 <section className="space-y-2.5">
                   <h3 className="text-[13px] font-semibold text-foreground">
@@ -3261,6 +3301,12 @@ export function PracticeTransferDetailChatDialog({
 
                       {!chatLoading && !visibleChatError
                         ? renderProsthesisFollowUpManageButtons({
+                            className: "mt-2 px-1",
+                          })
+                        : null}
+
+                      {!chatLoading && !visibleChatError
+                        ? renderProsthesisFollowUpLabStartButton({
                             className: "mt-2 px-1",
                           })
                         : null}

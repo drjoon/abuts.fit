@@ -371,15 +371,19 @@ export const isPendingProsthesisFollowUpRecord = (
   if (!record || typeof record !== "object") return false;
   if (record.canceledAt) return false;
   if (!record.labAcceptedAt) return true;
-  const mainAcceptedAt = requestorDownloadedAt || null;
   const appendedAt = record.appendedAt;
-  if (!appendedAt) return false;
-  if (!mainAcceptedAt) return true;
-  const mainMs = new Date(mainAcceptedAt).getTime();
+  if (!appendedAt) {
+    // appendedAt 없는 레거시 — labAcceptedAt만으로 작업시작 완료로 본다
+    return false;
+  }
+  const acceptMs = new Date(record.labAcceptedAt).getTime();
   const appendMs = new Date(appendedAt).getTime();
-  if (!Number.isFinite(mainMs) || !Number.isFinite(appendMs)) return false;
-  // 최초 기공소 수락 이후 추가된 후속 제작은 별도 수락 전까지 pending
-  return appendMs >= mainMs;
+  if (!Number.isFinite(acceptMs) || !Number.isFinite(appendMs)) return false;
+  // 지르 작업시작(labAcceptedAt)이 후속 추가 시각 이상이면 pending 해제
+  if (acceptMs >= appendMs) return false;
+  // 본건 작업시작 시 오염된 과거 stamp — 별도 지르 작업시작 전까지 pending 유지
+  void requestorDownloadedAt;
+  return true;
 };
 
 /** 기공소 수락 전(pending) 후속 제작 이력 */
@@ -416,9 +420,54 @@ export const markPendingProsthesisFollowUpsAccepted = (followUps, acceptedAt = n
   const list = Array.isArray(followUps) ? followUps : [];
   const when = acceptedAt instanceof Date ? acceptedAt : new Date();
   return list.map((row) => {
-    if (!isPendingProsthesisFollowUpRecord(row)) return row;
-    return { ...row, labAcceptedAt: when };
+    const plain = row && typeof row.toObject === "function" ? row.toObject() : row;
+    if (!isPendingProsthesisFollowUpRecord(plain)) return row;
+    return { ...plain, labAcceptedAt: when };
   });
+};
+
+/** 기공소 — pending 지르 후속이 있으면 「지르 작업 시작」가능 */
+export const canLabStartProsthesisFollowUpWork = (transferDoc) => {
+  if (!transferDoc || typeof transferDoc !== "object") {
+    return { ok: false, reason: "missing_transfer", message: "의뢰를 찾을 수 없습니다." };
+  }
+  if (isPracticeTransferDeletedStatus(transferDoc.status)) {
+    return { ok: false, reason: "deleted", message: "삭제된 의뢰입니다." };
+  }
+  const stage = String(
+    transferDoc.manufacturerStage || transferDoc.status || "",
+  ).trim();
+  if (stage === "작업취소" || stage === "취소") {
+    return { ok: false, reason: "canceled", message: "취소된 의뢰입니다." };
+  }
+  const mainAccepted = Boolean(
+    transferDoc.requestorDownloadedAt ||
+      transferDoc.requestorAcceptedAt ||
+      stage === "의뢰수락" ||
+      stage === "다운로드완료" ||
+      stage === "작업완료" ||
+      stage === "생산진행" ||
+      stage === "포장.발송",
+  );
+  if (!mainAccepted) {
+    return {
+      ok: false,
+      reason: "not_accepted",
+      message: "본건 작업시작 후에 지르 작업을 시작할 수 있습니다.",
+    };
+  }
+  const pending = getPendingProsthesisFollowUps(
+    transferDoc.prosthesisFollowUps,
+    transferDoc.requestorDownloadedAt,
+  );
+  if (pending.length === 0) {
+    return {
+      ok: false,
+      reason: "no_pending",
+      message: "시작할 지르 보철 후속이 없습니다.",
+    };
+  }
+  return { ok: true, pending };
 };
 
 export const canManagePendingProsthesisFollowUp = (transferDoc) => {
