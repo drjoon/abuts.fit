@@ -112,6 +112,10 @@ export type PracticeTransferLabReceiveItem = {
   toothWorks?: ToothWorkSelection[];
   /** 틀니 등 다단계 기공의뢰 단계 스냅샷 */
   labRequestStagePlans?: import("@/shared/practice/requestStagePresets").PracticeLabRequestStagePlan[];
+  /** 임시치아 → 지르 후속 제작 기록 */
+  prosthesisFollowUps?: import("@/shared/practice/prosthesisFollowUp").ProsthesisFollowUpRecord[];
+  /** 캘린더 칩 단계 포커스(-1 원 임시치아, 0..n 후속) */
+  focusFollowUpIndex?: number | null;
   status: string;
   manufacturerStage?: string;
   createdAt: string;

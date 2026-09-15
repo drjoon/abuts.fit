@@ -132,6 +132,7 @@ import {
   collectProsthesisFollowUpArrivalYmds,
   resolveProsthesisFollowUpFocusIndex,
 } from "@/shared/practice/prosthesisFollowUp";
+import { attachProsthesisFollowUpFocusToCalendarChips } from "@/shared/practice/prosthesisFollowUpCalendarChips";
 import {
   PracticeStatusFilterBadges,
   type PracticeStatusFilterBadgeItem,
@@ -629,47 +630,15 @@ export function PracticeRecentTransfersAllModal({
     const expanded = expandPracticeCalendarChipsByArrivalDates(base, dateKey);
     if (dateKey !== "arrivalDate") return expanded;
 
-    // 같은 도착일에 후속이 여러 건이면 칩을 단계별로 나눈다(15·14 지르 vs 12-22 지르).
-    const out: PracticeCalendarChipItem[] = [];
-    for (const chip of expanded) {
-      const baseId = String(chip.id || "").replace(/:(arr|ord):.*$/, "");
-      const row = filteredTransfers.find(
-        (t) => `${t.id}:${t.transferId}` === baseId,
-      );
-      const ymd = String(chip.arrivalDate || "").trim();
-      const records = (Array.isArray(row?.prosthesisFollowUps)
-        ? row!.prosthesisFollowUps!
-        : []
-      )
-        .filter((r) => !String(r?.canceledAt || "").trim())
-        .filter((r) => String(r?.arrivalYmd || "").trim() === ymd)
-        .slice()
-        .sort(
-          (a, b) => Number(a.followUpIndex || 0) - Number(b.followUpIndex || 0),
+    return attachProsthesisFollowUpFocusToCalendarChips({
+      chips: expanded,
+      getFollowUps: (transferBaseId) => {
+        const row = filteredTransfers.find(
+          (t) => `${t.id}:${t.transferId}` === transferBaseId,
         );
-      if (records.length <= 1) {
-        out.push({
-          ...chip,
-          focusFollowUpIndex: resolveProsthesisFollowUpFocusIndex({
-            arrivalYmd: ymd,
-            prosthesisFollowUps: row?.prosthesisFollowUps,
-          }),
-        });
-        continue;
-      }
-      const lastIdx = Number(records[records.length - 1]?.followUpIndex || 0);
-      for (const rec of records) {
-        const fuIdx = Math.max(0, Math.floor(Number(rec.followUpIndex || 0)));
-        out.push({
-          ...chip,
-          id: `${chip.id}:fu:${fuIdx}`,
-          focusFollowUpIndex: fuIdx,
-          isPriorArrival: chip.isPriorArrival || fuIdx < lastIdx,
-          canDelete: fuIdx < lastIdx ? false : chip.canDelete,
-        });
-      }
-    }
-    return out;
+        return row?.prosthesisFollowUps;
+      },
+    });
   }, [badgeClearedIds, dateKey, filteredTransfers]);
 
   const calendarItemById = useMemo(() => {
@@ -684,6 +653,7 @@ export function PracticeRecentTransfersAllModal({
       });
       for (const ymd of arrivalDates) {
         map.set(`${baseId}:arr:${ymd}`, transfer);
+        map.set(`${baseId}:arr:${ymd}:stage:temp`, transfer);
         const fus = (Array.isArray(transfer.prosthesisFollowUps)
           ? transfer.prosthesisFollowUps
           : []

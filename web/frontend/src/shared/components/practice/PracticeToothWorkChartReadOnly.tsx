@@ -69,9 +69,10 @@ import { PracticeTransferFeeEstimate } from "@/shared/components/practice/Practi
 import { PracticeToothChartHorizontalScroll } from "@/shared/components/practice/PracticeToothChartHorizontalScroll";
 import { useIsMobile } from "@/shared/hooks/use-mobile";
 import { usePracticeTransferFeeQuote } from "@/shared/practice/usePracticeTransferFeeQuote";
-import type {
-  PracticeTransferFeeQuote,
-  PracticeTransferFeeQuoteViewer,
+import {
+  buildFeeQuoteFromContext,
+  type PracticeTransferFeeQuote,
+  type PracticeTransferFeeQuoteViewer,
 } from "@/shared/practice/practiceTransferFeeQuote";
 
 const TOOTH_CARD_WIDTH_CLASS = "w-[5rem] max-w-[5rem] shrink-0";
@@ -221,7 +222,7 @@ type PracticeToothWorkChartReadOnlyProps = {
   prosthesisFollowUps?: ProsthesisFollowUpRecord[] | null;
   /**
    * 캘린더 칩 단계 포커스 — 치식 표시·이번 단계 견적.
-   * `-1` 원 임시치아, `0..n` followUpIndex까지, `null` 최신 전체.
+   * `-1` 원 임시치아, `0..n` 해당 followUpIndex만, `null` 최신 전체.
    */
   feeStageFocusIndex?: number | null;
 };
@@ -389,6 +390,45 @@ export const PracticeToothWorkChartReadOnly = ({
     feeQuoteContext,
     prosthesisFollowUps,
     quoteToothWorks,
+  ]);
+
+  /** 후속 단계 UI — 저장된 원 임시치아 확정가 대신 live 지르+CA 합계를 최종으로 쓴다. */
+  const feeQuoteForStages = useMemo(() => {
+    if (!feeStages || feeStages.length === 0) return feeQuote;
+    if (!feeContextReady && feeQuoteContext.usedDefaultSchedule) return feeQuote;
+    const live = buildFeeQuoteFromContext({
+      toothWorks: quoteToothWorks,
+      context: feeQuoteContext,
+      skipAbutmentFees,
+      creditToothWorks: undefined,
+    });
+    if (!(live.total > 0 || (Array.isArray(live.lines) && live.lines.length > 0))) {
+      return feeQuote;
+    }
+    return {
+      ...feeQuote,
+      total: Math.max(0, Math.round(Number(live.total || 0))),
+      labFeeTotal: Math.max(0, Math.round(Number(live.labFeeTotal || 0))),
+      labAbutmentTotal: Math.max(
+        0,
+        Math.round(Number(live.labAbutmentTotal || 0)),
+      ),
+      abutmentRetailTotal: Math.max(
+        0,
+        Math.round(Number(live.abutmentRetailTotal || 0)),
+      ),
+      lines: Array.isArray(live.lines) && live.lines.length > 0
+        ? live.lines
+        : feeQuote.lines,
+      tempCreditLabFeeTotal: 0,
+    };
+  }, [
+    feeContextReady,
+    feeQuote,
+    feeQuoteContext,
+    feeStages,
+    quoteToothWorks,
+    skipAbutmentFees,
   ]);
 
   const enlargeOverlayClass =
@@ -1062,7 +1102,7 @@ export const PracticeToothWorkChartReadOnly = ({
 
   const feeEstimate = (
     <PracticeTransferFeeEstimate
-      quote={feeQuote}
+      quote={feeQuoteForStages}
       viewer={feeViewer}
       skipJig={skipJig}
       labEffectiveStars={labEffectiveStars}
@@ -1079,7 +1119,7 @@ export const PracticeToothWorkChartReadOnly = ({
     <div className="space-y-3">
       {renderMobileArchSection("상악", upperSpanEntries)}
       <PracticeTransferFeeEstimate
-        quote={feeQuote}
+        quote={feeQuoteForStages}
         viewer={feeViewer}
         skipJig={skipJig}
         labEffectiveStars={labEffectiveStars}
@@ -1106,7 +1146,7 @@ export const PracticeToothWorkChartReadOnly = ({
     <div className="space-y-2">
       {upperEnlargeRow}
       <PracticeTransferFeeEstimate
-        quote={feeQuote}
+        quote={feeQuoteForStages}
         viewer={feeViewer}
         skipJig={skipJig}
         labEffectiveStars={labEffectiveStars}

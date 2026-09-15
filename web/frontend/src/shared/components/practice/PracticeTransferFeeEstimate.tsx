@@ -9,9 +9,9 @@
 // - 2026-08-27: 확정 기공비도 툴팁 라인 합 우선(레거시 abutmentRetail 스냅샷 불일치 방지).
 // - 2026-09-15: 후속 보철 후 total≠lines 합이면 billing total 우선(낡은 임시치아 라인 고정 방지).
 // - 2026-09-15: 부분 후속(남은 임시치아) — confirmedFeeLabel「변경 기공비」.
-// - 2026-09-15: feeStages — 임시치아/지르 단계별 원래 기공비 섹션.
+// - 2026-09-15: feeStages — 임시치아/지르 단계별 기공비(지르는 차감 없이 수가).
 // - 2026-09-15: feeStages 있으면 바 2줄(이번 단계·최종). 툴팁 max-h+scroll·collisionPadding.
-// - 2026-09-15: 이번 단계 툴팁=포커스 단계+최종, 최종 툴팁=전체 단계+최종.
+// - 2026-09-15: 이번 단계 툴팁=포커스 단계, 최종 툴팁=지르+CA(차감·임시치아 단계 숨김).
 // - 2026-08-22: 기공소→치과 배송 무료. skipJig 옵션/안내 삭제. 정산 상세는 →어벗츠(박스)만.
 // - 2026-08-21: 기공의뢰 정산에서 기공소→어벗츠 배송 제외(기공소 박스 과금).
 // - 2026-08-21: 치과→기공소 배송 무료. 정산 상세는 →어벗츠(박스)만.
@@ -1060,6 +1060,7 @@ export function PracticeTransferFeeEstimate({
 
   const renderFeeStagesPanel = (
     stages: NonNullable<typeof stageSections>,
+    options?: { showFinalTotal?: boolean },
   ) => (
     <div className="space-y-3">
       {stages.map((stage) => (
@@ -1075,10 +1076,7 @@ export function PracticeTransferFeeEstimate({
           <FeeBreakdownTable
             lines={mapQuoteLinesToBreakdown(stage.lines)}
             labFacing={isLab}
-            tempCreditLabFeeTotal={Math.max(
-              0,
-              Math.round(Number(stage.tempCreditLabFeeTotal || 0)),
-            )}
+            tempCreditLabFeeTotal={0}
             workTotalLabel="단계 소계"
             workTotalOverride={Math.max(
               0,
@@ -1088,9 +1086,36 @@ export function PracticeTransferFeeEstimate({
           />
         </div>
       ))}
-      <p className="border-t border-foreground/15 pt-1.5 text-[12px] font-semibold tabular-nums">
-        최종 기공비 {formatManWon(amount)}
+      {options?.showFinalTotal === false ? null : (
+        <p className="border-t border-foreground/15 pt-1.5 text-[12px] font-semibold tabular-nums">
+          최종 기공비 {formatManWon(amount)}
+        </p>
+      )}
+    </div>
+  );
+
+  const renderFinalFeePanel = () => (
+    <div className="space-y-1.5">
+      <p className="text-[11px] font-semibold leading-snug text-foreground">
+        최종 기공비
+        <span className="ml-1.5 font-medium tabular-nums text-muted-foreground">
+          {formatManWon(amount)}
+        </span>
       </p>
+      {breakdownLines.length > 0 || missingBreakdownLines.length > 0 ? (
+        <FeeBreakdownTable
+          lines={[...breakdownLines, ...missingBreakdownLines]}
+          labFacing={isLab}
+          labTotalMinOverride={labTotalMinOverride}
+          labTotalMaxOverride={labTotalMaxOverride}
+          tempCreditLabFeeTotal={0}
+          workTotalLabel="최종 기공비"
+          workTotalOverride={amount}
+          showColumnSubtotals={false}
+        />
+      ) : (
+        <p className="tabular-nums font-semibold">{formatManWon(amount)}</p>
+      )}
     </div>
   );
 
@@ -1224,7 +1249,9 @@ export function PracticeTransferFeeEstimate({
     currentStageSection != null ? (
       <>
         {warningsPanel}
-        {renderFeeStagesPanel([currentStageSection])}
+        {renderFeeStagesPanel([currentStageSection], {
+          showFinalTotal: false,
+        })}
         {breakdownExtras}
       </>
     ) : null;
@@ -1232,7 +1259,7 @@ export function PracticeTransferFeeEstimate({
   const allStagesTooltipPanel = stageSections ? (
     <>
       {warningsPanel}
-      {renderFeeStagesPanel(stageSections)}
+      {renderFinalFeePanel()}
       {breakdownExtras}
     </>
   ) : null;
@@ -1241,7 +1268,7 @@ export function PracticeTransferFeeEstimate({
     <>
       {warningsPanel}
       {stageSections ? (
-        renderFeeStagesPanel(stageSections)
+        renderFinalFeePanel()
       ) : breakdownLines.length > 0 || missingBreakdownLines.length > 0 ? (
         <div className="space-y-1.5">
           <FeeBreakdownTable
@@ -1265,7 +1292,7 @@ export function PracticeTransferFeeEstimate({
             abutmentShareHoldPending={
               showCreditShareSettlement ? creditAbutmentHoldPending : null
             }
-            tempCreditLabFeeTotal={tempCreditLabFeeTotal}
+            tempCreditLabFeeTotal={0}
           />
           {hasBudgetRange && !isLab ? (
             <p className="text-[11px] text-muted-foreground">
@@ -1307,9 +1334,6 @@ export function PracticeTransferFeeEstimate({
       ) : labFeeUnset ? null : amount > 0 ? (
         <p className="text-muted-foreground">
           기공비 {formatManWon(amount)}
-          {tempCreditLabFeeTotal > 0
-            ? ` (임시치아 차감 ${formatManWon(tempCreditLabFeeTotal)})`
-            : ""}
         </p>
       ) : (
         <p className="text-muted-foreground">선택된 보철물이 없습니다.</p>

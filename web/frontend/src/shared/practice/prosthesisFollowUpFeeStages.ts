@@ -3,12 +3,12 @@
 // - web/frontend/src/shared/practice/practiceTransferFeeQuote.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
 // - 2026-09-15: 임시치아 단계 / 지르 보철 단계별 원래 기공비 섹션.
+// - 2026-09-15: 지르 단계는 차감 없이 브리지/크라운 수가(표시). 최종=지르+CA.
 import {
   baseToothWorksForDetailChart,
   hasPartialProsthesisFollowUp,
   isFinalProsthesisType,
   isFollowUpProsthesisPhase,
-  pickSourceTempRowsForFollowUpCredit,
   type ProsthesisFollowUpRecord,
 } from "@/shared/practice/prosthesisFollowUp";
 import {
@@ -24,9 +24,9 @@ export type PracticeFeeStageSection = {
   /** 예: 임시치아 단계 · 지르 보철 단계 */
   title: string;
   lines: PracticeTransferFeeLine[];
-  /** 단계 소계(지르는 차감 후 순증분) */
+  /** 단계 소계(지르=브리지/크라운 수가, 차감 없음) */
   subtotal: number;
-  /** 지르 단계 — 원 임시치아 기공비 차감 */
+  /** @deprecated 표시에서 임시치아 차감 제거. 하위 호환용 */
   tempCreditLabFeeTotal?: number;
 };
 
@@ -67,9 +67,9 @@ const rowsForFollowUpRecord = (
 };
 
 /**
- * 후속 지르가 있으면 단계별 원래 기공비 섹션을 만든다.
+ * 후속 지르가 있으면 단계별 기공비 섹션을 만든다.
  * - 임시치아 단계: 원 임시치아(+CA) 전체 견적
- * - 지르 보철 단계(건별): 브리지/크라운 수가 − 해당 임시치아 차감 = 순증분
+ * - 지르 보철 단계(건별): 브리지/크라운 수가(임시치아 차감 없음)
  * 없으면 null → 기존 단일 테이블 유지.
  */
 export const buildProsthesisFollowUpFeeStages = (input: {
@@ -121,23 +121,27 @@ export const buildProsthesisFollowUpFeeStages = (input: {
   for (const record of recordsToRender) {
     const rows = rowsForFollowUpRecord(followUpRows, record);
     if (rows.length === 0) continue;
-    const creditRows = pickSourceTempRowsForFollowUpCredit(baseRows, rows);
     const grossQuote = buildFeeQuoteFromContext({
       toothWorks: rows,
       context: input.context,
       skipAbutmentFees: true,
-      creditToothWorks: creditRows as ToothWorkSelection[],
     });
 
     const delta = record.billingDelta;
-    const tempCredit =
-      delta?.tempCreditLabFeeTotal != null
-        ? Math.max(0, Math.round(Number(delta.tempCreditLabFeeTotal)))
-        : Math.max(0, Math.round(Number(grossQuote.tempCreditLabFeeTotal || 0)));
+    // 표시는 차감 전 지르 수가. billingDelta.finalLabFeeTotal 우선.
     const subtotal =
-      delta?.labFeeTotal != null
-        ? Math.max(0, Math.round(Number(delta.labFeeTotal)))
-        : Math.max(0, Math.round(Number(grossQuote.total || 0)));
+      delta?.finalLabFeeTotal != null
+        ? Math.max(0, Math.round(Number(delta.finalLabFeeTotal)))
+        : Math.max(
+            0,
+            Math.round(
+              Number(
+                grossQuote.finalLabFeeTotal != null
+                  ? grossQuote.finalLabFeeTotal
+                  : grossQuote.labFeeTotal || grossQuote.total || 0,
+              ),
+            ),
+          );
 
     const idx =
       record.followUpIndex != null && Number.isFinite(Number(record.followUpIndex))
@@ -148,7 +152,6 @@ export const buildProsthesisFollowUpFeeStages = (input: {
       title: recordsToRender.length > 1 ? `지르 보철 단계 ${idx + 1}` : "지르 보철 단계",
       lines: Array.isArray(grossQuote.lines) ? grossQuote.lines : [],
       subtotal,
-      tempCreditLabFeeTotal: tempCredit > 0 ? tempCredit : undefined,
     });
   }
 

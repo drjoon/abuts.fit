@@ -25,7 +25,6 @@ import { PracticeToothWorkChartReadOnly } from "@/shared/components/practice/Pra
 import {
   buildFollowUpToothWorksDraft,
   followUpRowSpanKey,
-  pickSourceTempRowsForFollowUpCredit,
 } from "@/shared/practice/prosthesisFollowUp";
 import { toKstYmd, ymdToKstDate } from "@/shared/date/kst";
 import { useIsMobile } from "@/shared/hooks/use-mobile";
@@ -102,17 +101,6 @@ export function PracticeProsthesisFollowUpDialog({
             selectedSpanKeys.has(followUpRowSpanKey(row)),
           ),
     [availableRows, isEdit, selectedSpanKeys],
-  );
-
-  const creditToothWorks = useMemo(
-    () =>
-      isEdit
-        ? []
-        : pickSourceTempRowsForFollowUpCredit(
-            Array.isArray(toothWorks) ? toothWorks : [],
-            selectedRows,
-          ),
-    [isEdit, selectedRows, toothWorks],
   );
 
   useEffect(() => {
@@ -196,9 +184,10 @@ export function PracticeProsthesisFollowUpDialog({
           </DialogTitle>
           {!isEdit ? (
             <p className="pt-1 text-sm font-normal leading-relaxed text-muted-foreground">
-              임시치아를 지르 최종 보철로 바꿉니다. 기존 임시치아 기공비는
-              차감되고 브리지·크라운 기공비만 추가됩니다. 지금은 임시치아로
-              계속하려면 이 창을 닫고 「다음 도착일」만 지정하면 됩니다.
+              임시치아를 지르 최종 보철로 바꿉니다. 이번 단계 기공비는
+              브리지·크라운 수가이며, 최종 기공비는 지르 보철과 커스텀어벗
+              합계로 표시됩니다. 지금은 임시치아로 계속하려면 이 창을 닫고
+              「다음 도착일」만 지정하면 됩니다.
             </p>
           ) : null}
         </DialogHeader>
@@ -294,7 +283,6 @@ export function PracticeProsthesisFollowUpDialog({
                   labAnchorId={labAnchorId}
                   feeViewer="practice"
                   skipAbutmentFees
-                  creditToothWorks={creditToothWorks as ToothWorkSelection[]}
                   embedded
                   selectable={!isEdit}
                   selectedSpanKeys={selectedSpanKeys}

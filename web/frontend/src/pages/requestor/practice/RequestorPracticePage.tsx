@@ -406,6 +406,13 @@ import {
   type PracticeCalendarDateKey,
 } from "@/pages/practice/components/PracticeRecentTransfersCalendar";
 import {
+  collectProsthesisFollowUpArrivalYmds,
+  resolveProsthesisFollowUpFocusIndex,
+} from "@/shared/practice/prosthesisFollowUp";
+import {
+  attachProsthesisFollowUpFocusToCalendarChips,
+} from "@/shared/practice/prosthesisFollowUpCalendarChips";
+import {
   PracticeStatusFilterBadges,
   type PracticeStatusFilterBadgeItem,
 } from "@/pages/practice/components/PracticeStatusFilterBadges";
@@ -1317,6 +1324,11 @@ export function RequestorPracticeReceivePage({
             ? normalizeLabRequestStagePlans(
                 (r as { labRequestStagePlans: unknown }).labRequestStagePlans,
               )
+            : undefined,
+          prosthesisFollowUps: Array.isArray(r.prosthesisFollowUps)
+            ? (r.prosthesisFollowUps as NonNullable<
+                ReceivedPracticeTransfer["prosthesisFollowUps"]
+              >)
             : undefined,
           status: String(r.status || "active").trim(),
           manufacturerStage: String(r.manufacturerStage || "").trim() || undefined,
@@ -2483,12 +2495,16 @@ export function RequestorPracticeReceivePage({
           ? formatLabFeeMultiplierLabel(surchargeMultiplier)
           : "";
       const transferId = String(transfer.transferId || transfer._id || "").trim();
-      const linkedArrivalDates =
-        Array.isArray(transfer.arrivalDates) && transfer.arrivalDates.length > 0
-          ? transfer.arrivalDates
-          : transfer.arrivalDate
-            ? [transfer.arrivalDate]
-            : [];
+      const linkedArrivalDates = collectProsthesisFollowUpArrivalYmds({
+        arrivalDates:
+          Array.isArray(transfer.arrivalDates) && transfer.arrivalDates.length > 0
+            ? transfer.arrivalDates
+            : transfer.arrivalDate
+              ? [transfer.arrivalDate]
+              : [],
+        arrivalDate: transfer.arrivalDate,
+        prosthesisFollowUps: transfer.prosthesisFollowUps,
+      });
       const linkedOrderDates =
         Array.isArray(transfer.orderDates) && transfer.orderDates.length > 0
           ? transfer.orderDates
@@ -2530,7 +2546,21 @@ export function RequestorPracticeReceivePage({
         hasCustomAbutment: Boolean(transfer.hasCustomAbutment),
       };
     });
-    return expandPracticeCalendarChipsByArrivalDates(base, calendarDateKey);
+    const expanded = expandPracticeCalendarChipsByArrivalDates(
+      base,
+      calendarDateKey,
+    );
+    if (calendarDateKey !== "arrivalDate") return expanded;
+    return attachProsthesisFollowUpFocusToCalendarChips({
+      chips: expanded,
+      getFollowUps: (transferBaseId) => {
+        const row = sortedFilteredTransfers.find(
+          (t) =>
+            String(t.transferId || t._id || "").trim() === transferBaseId,
+        );
+        return row?.prosthesisFollowUps;
+      },
+    });
   }, [
     badgeClearedIds,
     calendarDateKey,
@@ -2545,14 +2575,26 @@ export function RequestorPracticeReceivePage({
       const id = String(transfer.transferId || transfer._id || "").trim();
       if (!id) continue;
       map.set(id, transfer);
-      const arrivalDates =
-        Array.isArray(transfer.arrivalDates) && transfer.arrivalDates.length > 0
-          ? transfer.arrivalDates
-          : transfer.arrivalDate
-            ? [transfer.arrivalDate]
-            : [];
+      const arrivalDates = collectProsthesisFollowUpArrivalYmds({
+        arrivalDates: transfer.arrivalDates,
+        arrivalDate: transfer.arrivalDate,
+        prosthesisFollowUps: transfer.prosthesisFollowUps,
+      });
       for (const ymd of arrivalDates) {
         map.set(`${id}:arr:${ymd}`, transfer);
+        map.set(`${id}:arr:${ymd}:stage:temp`, transfer);
+        const fus = (Array.isArray(transfer.prosthesisFollowUps)
+          ? transfer.prosthesisFollowUps
+          : []
+        ).filter(
+          (r) =>
+            !String(r?.canceledAt || "").trim() &&
+            String(r?.arrivalYmd || "").trim() === ymd,
+        );
+        for (const rec of fus) {
+          const fuIdx = Math.max(0, Math.floor(Number(rec.followUpIndex || 0)));
+          map.set(`${id}:arr:${ymd}:fu:${fuIdx}`, transfer);
+        }
       }
       const orderDates =
         Array.isArray(transfer.orderDates) && transfer.orderDates.length > 0
@@ -7053,17 +7095,37 @@ export function RequestorPracticeReceivePage({
   const selectTransferFromCalendar = useCallback(
     (
       transfer: ReceivedPracticeTransfer,
-      options?: { preferredDockSide?: PracticeTransferPanelDockSide },
+      options?: {
+        preferredDockSide?: PracticeTransferPanelDockSide;
+        focusFollowUpIndex?: number | null;
+        arrivalDate?: string | null;
+        orderDate?: string | null;
+      },
     ) => {
       if (guideTourLabCalendarStep && isGuideTourDemoTransfer(transfer)) {
         platformGuideTour.advance();
         return;
       }
-      void openTransferDialog(transfer, {
-        ...(options && "preferredDockSide" in options
-          ? { preferredDockSide: options.preferredDockSide ?? null }
-          : {}),
-      });
+      void openTransferDialog(
+        {
+          ...transfer,
+          ...(options?.arrivalDate
+            ? { arrivalDate: String(options.arrivalDate).trim() }
+            : {}),
+          ...(options?.orderDate
+            ? { orderDate: String(options.orderDate).trim() }
+            : {}),
+          focusFollowUpIndex:
+            options && "focusFollowUpIndex" in options
+              ? options.focusFollowUpIndex ?? null
+              : transfer.focusFollowUpIndex,
+        },
+        {
+          ...(options && "preferredDockSide" in options
+            ? { preferredDockSide: options.preferredDockSide ?? null }
+            : {}),
+        },
+      );
     },
     [guideTourLabCalendarStep, openTransferDialog, platformGuideTour],
   );
@@ -7592,6 +7654,8 @@ export function RequestorPracticeReceivePage({
               onSelectItem={(item, ctx) => {
                 const transfer = calendarTransferById.get(item.id);
                 if (transfer) {
+                  const chipArrival = String(item.arrivalDate || "").trim();
+                  const chipOrder = String(item.orderDate || "").trim();
                   selectTransferFromCalendar(transfer, {
                     preferredDockSide:
                       viewMode === "list"
@@ -7600,6 +7664,15 @@ export function RequestorPracticeReceivePage({
                             ctx.visibleColumnIndex,
                             ctx.visibleColumnCount,
                           ),
+                    arrivalDate: chipArrival || null,
+                    orderDate: chipOrder || null,
+                    focusFollowUpIndex: item.isPriorArrival
+                      ? item.focusFollowUpIndex ?? -1
+                      : resolveProsthesisFollowUpFocusIndex({
+                          arrivalYmd: chipArrival || transfer.arrivalDate,
+                          focusFollowUpIndex: item.focusFollowUpIndex,
+                          prosthesisFollowUps: transfer.prosthesisFollowUps,
+                        }),
                   });
                 }
               }}
@@ -8083,6 +8156,12 @@ export function RequestorPracticeReceivePage({
         toothWorks={selectedTransferToothWorks}
         toothWorksKey={selectedTransfer?.transferId || "requestor-transfer"}
         labRequestStagePlans={selectedTransfer?.labRequestStagePlans || null}
+        prosthesisFollowUps={selectedTransfer?.prosthesisFollowUps || null}
+        feeStageFocusIndex={
+          selectedTransfer?.focusFollowUpIndex !== undefined
+            ? selectedTransfer.focusFollowUpIndex
+            : null
+        }
         feeQuote={selectedTransfer?.feeQuote || null}
         remakeCharges={selectedTransfer?.remakeCharges || null}
         onCancelRemakeCharge={(chargeIndex) => {
@@ -8091,6 +8170,7 @@ export function RequestorPracticeReceivePage({
         remakeChargeCancelBusy={remakeChargeCancelBusy}
         skipJig={Boolean(selectedTransfer?.production?.skipJig)}
         feeViewer="lab"
+        labAnchorId={String(user?.businessAnchorId || "").trim() || null}
         labEffectiveStars={
           selectedTransfer?.labRatingSummary?.effectiveStars ??
           selectedTransfer?.starDowngrade?.labEffectiveStars ??

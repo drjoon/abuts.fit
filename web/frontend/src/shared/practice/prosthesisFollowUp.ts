@@ -7,6 +7,7 @@
 // - 2026-09-08: 치식 표시 — 후속 보철+원 임시치아 병존 시 형태는 후속, CA·어벗 스펙은 원치아 행.
 // - 2026-09-15: 후속 스팬 = 인접 연결 연결요소. 의뢰상세 차트는 원 임시치아만(baseToothWorksForDetailChart).
 // - 2026-09-15: 부분 후속(남은 임시치아) — 변경 기공비 라벨·지르 CTA 유지용 hasPartialProsthesisFollowUp.
+// - 2026-09-15: 캘린더 칩 포커스 — 해당 단계 치아만(누적 브리지 표시 금지). 견적 표시는 차감 없음.
 import {
   type ToothWorkSelection,
   isCustomAbutmentProsthesisType,
@@ -460,8 +461,8 @@ export type ProsthesisFollowUpRecord = {
 /**
  * 캘린더 칩·의뢰상세 단계 포커스.
  * - `-1` 원 임시치아만
- * - `0..n` 해당 followUpIndex까지 포함
- * - `null` 전체(최신)
+ * - `0..n` 해당 followUpIndex 단계만(누적 아님)
+ * - `null` 전체(최종 상태)
  */
 export type ProsthesisFollowUpFocusIndex = number | null;
 
@@ -539,7 +540,12 @@ export const resolveProsthesisFollowUpFocusIndex = (input: {
   return null;
 };
 
-/** focus 단계까지 포함된 toothWorks (차트·견적). null focus면 전체. */
+/**
+ * 캘린더 칩 단계에 해당하는 toothWorks (차트 표시).
+ * - null: 전체(최종 상태)
+ * - -1: 원 임시치아만
+ * - N: 해당 후속 건 치아만(그 단계 지르 + 동일 치아 원행 CA 스펙)
+ */
 export const toothWorksUpToFollowUpFocus = <T extends Partial<ToothWorkSelection>>(
   toothWorks: ReadonlyArray<T> | null | undefined,
   followUps: ReadonlyArray<ProsthesisFollowUpRecord> | null | undefined,
@@ -551,23 +557,44 @@ export const toothWorksUpToFollowUpFocus = <T extends Partial<ToothWorkSelection
     return rows.filter((row) => !isFollowUpProsthesisPhase(row));
   }
 
-  const records = activeFollowUpRecordsSorted(followUps).filter(
-    (row) => Number(row.followUpIndex || 0) <= focusIndex,
+  const record = activeFollowUpRecordsSorted(followUps).find(
+    (row) => Number(row.followUpIndex || 0) === Math.floor(Number(focusIndex)),
   );
   const allowedTeeth = new Set<string>();
-  for (const record of records) {
-    for (const tooth of Array.isArray(record.toothNumbers)
-      ? record.toothNumbers
-      : []) {
-      const t = String(tooth || "").trim();
-      if (t) allowedTeeth.add(t);
+  for (const tooth of Array.isArray(record?.toothNumbers)
+    ? record!.toothNumbers
+    : []) {
+    const t = String(tooth || "").trim();
+    if (t) allowedTeeth.add(t);
+  }
+  if (allowedTeeth.size === 0) {
+    // 레거시(치아 목록 없음): 단일 후속이면 전체 지르, 아니면 해당 단계 표시 불가
+    const allFollowUpRecords = activeFollowUpRecordsSorted(followUps);
+    if (allFollowUpRecords.length <= 1) {
+      for (const row of rows) {
+        if (
+          !isFollowUpProsthesisPhase(row) ||
+          !isFinalProsthesisType(String(row.prosthesisType || ""))
+        ) {
+          continue;
+        }
+        for (const tooth of linkedTeethOf(row)) allowedTeeth.add(tooth);
+      }
     }
   }
+  if (allowedTeeth.size === 0) return [];
+
+  const touchesAllowed = (row: T) => {
+    const anchor = String(row?.toothNumber || "").trim();
+    if (anchor && allowedTeeth.has(anchor)) return true;
+    return linkedTeethOf(row).some((tooth) => allowedTeeth.has(tooth));
+  };
 
   return rows.filter((row) => {
+    if (!touchesAllowed(row)) return false;
     if (!isFollowUpProsthesisPhase(row)) return true;
-    if (!isFinalProsthesisType(String(row.prosthesisType || ""))) return false;
-    return linkedTeethOf(row).some((tooth) => allowedTeeth.has(tooth));
+    // 다른 후속 건의 지르 행은 제외(누적 브리지 표시 방지)
+    return isFinalProsthesisType(String(row.prosthesisType || ""));
   });
 };
 
