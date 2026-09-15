@@ -114,6 +114,8 @@ export type PracticeTransferLabReceiveItem = {
   labRequestStagePlans?: import("@/shared/practice/requestStagePresets").PracticeLabRequestStagePlan[];
   /** 임시치아 → 지르 후속 제작 기록 */
   prosthesisFollowUps?: import("@/shared/practice/prosthesisFollowUp").ProsthesisFollowUpRecord[];
+  /** 단계별 견적 스냅샷(임시/지르). 최종 feeQuote와 분리 */
+  prosthesisFeeStages?: import("@/shared/practice/prosthesisFollowUp").ProsthesisFeeStageRecord[];
   /** 캘린더 칩 단계 포커스(-1 원 임시치아, 0..n 후속) */
   focusFollowUpIndex?: number | null;
   status: string;

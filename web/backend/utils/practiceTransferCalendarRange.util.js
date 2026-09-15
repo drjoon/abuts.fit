@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-15: CALENDAR_LIST_SELECT에 prosthesisFeeStages — 단계별 견적 스냅샷.
 // - 2026-09-12: CALENDAR_LIST_SELECT에 trashedFiles — 상세 모달 휴지통 타일 유지.
 // - 2026-09-11: 캘린더 창 ∪ 미확인·미처리(작업시작 전) 전 기간 OR.
 // - 2026-08-28: $expr/$regexFind 제거 — orderDates/arrivalDates elemMatch + 레거시 createdAt.
@@ -178,6 +179,7 @@ export const PRACTICE_TRANSFER_CALENDAR_LIST_SELECT = {
   toothWorks: 1,
   labRequestStagePlans: 1,
   prosthesisFollowUps: 1,
+  prosthesisFeeStages: 1,
   files: 1,
   trashedFiles: 1,
   resultFiles: 1,

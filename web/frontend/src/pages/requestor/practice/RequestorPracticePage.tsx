@@ -1330,6 +1330,13 @@ export function RequestorPracticeReceivePage({
                 ReceivedPracticeTransfer["prosthesisFollowUps"]
               >)
             : undefined,
+          prosthesisFeeStages: Array.isArray(
+            (r as { prosthesisFeeStages?: unknown }).prosthesisFeeStages,
+          )
+            ? ((r as { prosthesisFeeStages: NonNullable<
+                ReceivedPracticeTransfer["prosthesisFeeStages"]
+              > }).prosthesisFeeStages)
+            : undefined,
           status: String(r.status || "active").trim(),
           manufacturerStage: String(r.manufacturerStage || "").trim() || undefined,
           createdAt: String(r.createdAt || "").trim(),
@@ -8170,6 +8177,7 @@ export function RequestorPracticeReceivePage({
         toothWorksKey={selectedTransfer?.transferId || "requestor-transfer"}
         labRequestStagePlans={selectedTransfer?.labRequestStagePlans || null}
         prosthesisFollowUps={selectedTransfer?.prosthesisFollowUps || null}
+        prosthesisFeeStages={selectedTransfer?.prosthesisFeeStages || null}
         feeStageFocusIndex={
           selectedTransfer?.focusFollowUpIndex !== undefined
             ? selectedTransfer.focusFollowUpIndex

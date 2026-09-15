@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/practice/prosthesisFollowUp.ts
 // - web/frontend/src/shared/practice/practiceTransferFeeQuote.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
+// - 2026-09-15: prosthesisFeeStages 스냅샷 우선 — live 재계산으로 최종 견적에 덮지 않음.
 // - 2026-09-15: 임시치아 단계 / 지르 보철 단계별 원래 기공비 섹션.
 // - 2026-09-15: 지르 단계는 차감 없이 브리지/크라운 수가(표시). 최종=지르+CA.
 import {
@@ -9,6 +10,7 @@ import {
   hasPartialProsthesisFollowUp,
   isFinalProsthesisType,
   isFollowUpProsthesisPhase,
+  type ProsthesisFeeStageRecord,
   type ProsthesisFollowUpRecord,
 } from "@/shared/practice/prosthesisFollowUp";
 import {
@@ -66,17 +68,92 @@ const rowsForFollowUpRecord = (
   });
 };
 
+const normalizeStageLines = (
+  lines: ProsthesisFeeStageRecord["lines"] | PracticeTransferFeeLine[] | null | undefined,
+): PracticeTransferFeeLine[] =>
+  (Array.isArray(lines) ? lines : [])
+    .map((line) => {
+      if (!line || typeof line !== "object") return null;
+      const toothNumber = String(line.toothNumber || "").trim();
+      const prosthesisType = String(line.prosthesisType || "").trim();
+      if (!toothNumber && !prosthesisType) return null;
+      return {
+        toothNumber,
+        prosthesisType,
+        labFee: Math.max(0, Math.round(Number(line.labFee || 0))),
+        ...(line.labFeeMin != null && Number.isFinite(Number(line.labFeeMin))
+          ? { labFeeMin: Math.max(0, Math.round(Number(line.labFeeMin))) }
+          : {}),
+        labAbutmentFee: Math.max(0, Math.round(Number(line.labAbutmentFee || 0))),
+        ...(line.labAbutmentPending ? { labAbutmentPending: true } : {}),
+        abutmentRetail: Math.max(0, Math.round(Number(line.abutmentRetail || 0))),
+        ...(line.abutmentRetailNote
+          ? {
+              abutmentRetailNote: line.abutmentRetailNote as PracticeTransferFeeLine["abutmentRetailNote"],
+            }
+          : {}),
+      } satisfies PracticeTransferFeeLine;
+    })
+    .filter(Boolean) as PracticeTransferFeeLine[];
+
+/** 저장된 단계 스냅샷 → UI 섹션. 라인·소계가 있으면 live 재계산을 쓰지 않는다. */
+export const sectionsFromStoredProsthesisFeeStages = (
+  stages: ReadonlyArray<ProsthesisFeeStageRecord> | null | undefined,
+): PracticeFeeStageSection[] | null => {
+  const list = (Array.isArray(stages) ? stages : [])
+    .map((row) => {
+      const key = String(row?.key || "").trim();
+      if (!key) return null;
+      const lines = normalizeStageLines(row.lines);
+      const subtotal = Math.max(
+        0,
+        Math.round(Number(row.total ?? row.labFeeTotal ?? 0)),
+      );
+      if (subtotal <= 0 && lines.length === 0) return null;
+      return {
+        key,
+        title:
+          String(row.title || "").trim() ||
+          (key === "temp"
+            ? "임시치아 단계"
+            : key.startsWith("zirconia-")
+              ? "지르 보철 단계"
+              : key),
+        lines,
+        subtotal: subtotal > 0 ? subtotal : lines.reduce(
+          (sum, line) =>
+            sum +
+            Math.max(0, Math.round(Number(line.labFee || 0))) +
+            Math.max(0, Math.round(Number(line.labAbutmentFee || 0))) +
+            Math.max(0, Math.round(Number(line.abutmentRetail || 0))),
+          0,
+        ),
+        tempCreditLabFeeTotal: Math.max(
+          0,
+          Math.round(Number(row.tempCreditLabFeeTotal || 0)),
+        ),
+      } satisfies PracticeFeeStageSection;
+    })
+    .filter(Boolean) as PracticeFeeStageSection[];
+  return list.length > 1 ? list : null;
+};
+
 /**
  * 후속 지르가 있으면 단계별 기공비 섹션을 만든다.
- * - 임시치아 단계: 원 임시치아(+CA) 전체 견적
- * - 지르 보철 단계(건별): 브리지/크라운 수가(임시치아 차감 없음)
- * 없으면 null → 기존 단일 테이블 유지.
+ * - 저장된 prosthesisFeeStages가 있으면 SSOT(최종 견적으로 덮지 않음)
+ * - 없으면 live: 임시치아 단계 = 원 임시치아(+CA), 지르 = 브리지/크라운 수가
  */
 export const buildProsthesisFollowUpFeeStages = (input: {
   toothWorks?: ReadonlyArray<Partial<ToothWorkSelection>> | null;
   prosthesisFollowUps?: ReadonlyArray<ProsthesisFollowUpRecord> | null;
+  prosthesisFeeStages?: ReadonlyArray<ProsthesisFeeStageRecord> | null;
   context?: PracticeTransferQuoteContext | null;
 }): PracticeFeeStageSection[] | null => {
+  const fromStored = sectionsFromStoredProsthesisFeeStages(
+    input.prosthesisFeeStages,
+  );
+  if (fromStored) return fromStored;
+
   const toothWorks = Array.isArray(input.toothWorks) ? [...input.toothWorks] : [];
   if (toothWorks.length === 0) return null;
 
@@ -121,6 +198,8 @@ export const buildProsthesisFollowUpFeeStages = (input: {
   for (const record of recordsToRender) {
     const rows = rowsForFollowUpRecord(followUpRows, record);
     if (rows.length === 0) continue;
+
+    const storedDeltaLines = normalizeStageLines(record.billingDelta?.lines);
     const grossQuote = buildFeeQuoteFromContext({
       toothWorks: rows,
       context: input.context,
@@ -150,7 +229,12 @@ export const buildProsthesisFollowUpFeeStages = (input: {
     stages.push({
       key: `zirconia-${idx}`,
       title: recordsToRender.length > 1 ? `지르 보철 단계 ${idx + 1}` : "지르 보철 단계",
-      lines: Array.isArray(grossQuote.lines) ? grossQuote.lines : [],
+      lines:
+        storedDeltaLines.length > 0
+          ? storedDeltaLines
+          : Array.isArray(grossQuote.lines)
+            ? grossQuote.lines
+            : [],
       subtotal,
     });
   }

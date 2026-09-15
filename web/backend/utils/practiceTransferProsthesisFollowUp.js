@@ -2,6 +2,8 @@
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 // - web/backend/utils/practiceTransferStage.js
 // - web/frontend/src/shared/practice/prosthesisFollowUp.ts
+// - web/frontend/src/shared/practice/prosthesisFollowUpFeeStages.ts
+// - 2026-09-15: prosthesisFeeStages — 단계별 견적 스냅샷(임시/지르). case billing·최종 feeQuote와 분리.
 // - 2026-09-15: 후속 스팬 = 인접 연결 연결요소(44-45 / 45-46 쪼개짐 방지). 기공비 차감은 스팬 치아 전원.
 // - 2026-09-08: 진행 탭 채팅 payload에 임플란트·어벗 스펙 포함(serializeFollowUpToothWorksForChatPayload).
 // - 2026-09-08: 후속 제작 시 원 임시치아 기공비 차감(브리지/크라운 순증분만 홀드).
@@ -581,3 +583,185 @@ export const applyProsthesisFollowUpTempCredit = ({
     total: netTotal,
   };
 };
+
+/** 후속 행 제외 — 임시치아 단계 스냅샷용 */
+export const baseToothWorksWithoutFollowUp = (toothWorks) =>
+  (Array.isArray(toothWorks) ? toothWorks : []).filter(
+    (row) => !isFollowUpProsthesisPhase(row),
+  );
+
+export const hasTemporaryProsthesisRows = (toothWorks) =>
+  (Array.isArray(toothWorks) ? toothWorks : []).some(
+    (row) =>
+      isTemporaryToothProsthesisType(row?.prosthesisType) &&
+      !isFollowUpProsthesisPhase(row),
+  );
+
+/** 견적 라인 스냅샷 — 표시·재계산에 필요한 필드만 */
+export const normalizeProsthesisFeeLines = (lines) =>
+  (Array.isArray(lines) ? lines : [])
+    .map((line) => {
+      if (!line || typeof line !== "object") return null;
+      const toothNumber = String(line.toothNumber || "").trim();
+      const prosthesisType = String(line.prosthesisType || "").trim();
+      if (!toothNumber && !prosthesisType) return null;
+      const out = {
+        toothNumber,
+        prosthesisType,
+        labFee: Math.max(0, Math.round(Number(line.labFee || 0))),
+        labAbutmentFee: Math.max(
+          0,
+          Math.round(Number(line.labAbutmentFee || 0)),
+        ),
+        abutmentRetail: Math.max(
+          0,
+          Math.round(Number(line.abutmentRetail || 0)),
+        ),
+      };
+      if (line.labFeeMin != null && Number.isFinite(Number(line.labFeeMin))) {
+        out.labFeeMin = Math.max(0, Math.round(Number(line.labFeeMin)));
+      }
+      if (line.labAbutmentPending) out.labAbutmentPending = true;
+      if (line.abutmentRetailNote) {
+        out.abutmentRetailNote = String(line.abutmentRetailNote).trim();
+      }
+      return out;
+    })
+    .filter(Boolean);
+
+export const PROSTHESIS_FEE_STAGE_TEMP_KEY = "temp";
+
+export const zirconiaProsthesisFeeStageKey = (followUpIndex) =>
+  `zirconia-${Math.max(0, Math.floor(Number(followUpIndex) || 0))}`;
+
+/**
+ * 단계별 견적 스냅샷 1건.
+ * - temp: 원 임시치아(+CA) 수가
+ * - zirconia-N: 해당 후속 브리지/크라운 수가(차감 전). net*는 홀드용 순증분.
+ */
+export const buildProsthesisFeeStageRecord = ({
+  key,
+  followUpIndex = -1,
+  title = "",
+  fees = null,
+  netLabFeeTotal = null,
+  netTotal = null,
+  tempCreditLabFeeTotal = 0,
+  quotedAt = null,
+} = {}) => {
+  const labFeeTotal = Math.max(
+    0,
+    Math.round(Number(fees?.labFeeTotal ?? fees?.total ?? 0)),
+  );
+  const total = Math.max(
+    0,
+    Math.round(Number(fees?.total != null ? fees.total : labFeeTotal)),
+  );
+  const idx =
+    followUpIndex == null || !Number.isFinite(Number(followUpIndex))
+      ? -1
+      : Math.floor(Number(followUpIndex));
+  const record = {
+    key: String(key || "").trim() || (idx < 0 ? PROSTHESIS_FEE_STAGE_TEMP_KEY : zirconiaProsthesisFeeStageKey(idx)),
+    followUpIndex: idx,
+    title:
+      String(title || "").trim() ||
+      (idx < 0
+        ? "임시치아 단계"
+        : `지르 보철 단계${idx > 0 ? ` ${idx + 1}` : ""}`.trim()),
+    labFeeTotal,
+    total,
+    lines: normalizeProsthesisFeeLines(fees?.lines),
+    quotedAt: quotedAt instanceof Date ? quotedAt : quotedAt ? new Date(quotedAt) : new Date(),
+  };
+  if (idx >= 0) {
+    record.netLabFeeTotal = Math.max(
+      0,
+      Math.round(
+        Number(netLabFeeTotal != null ? netLabFeeTotal : labFeeTotal),
+      ),
+    );
+    record.netTotal = Math.max(
+      0,
+      Math.round(Number(netTotal != null ? netTotal : total)),
+    );
+    record.tempCreditLabFeeTotal = Math.max(
+      0,
+      Math.round(Number(tempCreditLabFeeTotal || 0)),
+    );
+  }
+  return record;
+};
+
+export const listProsthesisFeeStages = (stages) =>
+  (Array.isArray(stages) ? stages : [])
+    .map((row) => (row && typeof row.toObject === "function" ? row.toObject() : row))
+    .filter((row) => row && typeof row === "object" && String(row.key || "").trim());
+
+/** 같은 key면 교체하지 않고 유지(이미 저장된 단계 덮어쓰기 방지). force=true면 교체. */
+export const upsertProsthesisFeeStage = (
+  stages,
+  stage,
+  { force = false } = {},
+) => {
+  const list = listProsthesisFeeStages(stages);
+  const nextStage =
+    stage && typeof stage === "object" ? { ...stage } : null;
+  if (!nextStage || !String(nextStage.key || "").trim()) return list;
+  const key = String(nextStage.key).trim();
+  const idx = list.findIndex((row) => String(row?.key || "").trim() === key);
+  if (idx >= 0) {
+    if (!force) return list;
+    const copy = [...list];
+    copy[idx] = { ...list[idx], ...nextStage, key };
+    return copy;
+  }
+  return [...list, nextStage];
+};
+
+export const removeProsthesisFeeStagesByFollowUpIndexes = (
+  stages,
+  followUpIndexes,
+) => {
+  const drop = new Set(
+    (Array.isArray(followUpIndexes) ? followUpIndexes : [])
+      .map((n) => Math.max(0, Math.floor(Number(n))))
+      .filter((n) => Number.isFinite(n)),
+  );
+  if (drop.size === 0) return listProsthesisFeeStages(stages);
+  return listProsthesisFeeStages(stages).filter((row) => {
+    const idx = Math.floor(Number(row?.followUpIndex));
+    if (!Number.isFinite(idx) || idx < 0) return true;
+    return !drop.has(idx);
+  });
+};
+
+export const serializeProsthesisFeeStagesForApi = (stages) =>
+  listProsthesisFeeStages(stages).map((row) => ({
+    key: String(row.key || "").trim(),
+    followUpIndex:
+      row.followUpIndex != null && Number.isFinite(Number(row.followUpIndex))
+        ? Math.floor(Number(row.followUpIndex))
+        : -1,
+    title: String(row.title || "").trim(),
+    labFeeTotal: Math.max(0, Math.round(Number(row.labFeeTotal || 0))),
+    total: Math.max(0, Math.round(Number(row.total || 0))),
+    lines: normalizeProsthesisFeeLines(row.lines),
+    quotedAt: row.quotedAt || null,
+    ...(row.followUpIndex != null && Number(row.followUpIndex) >= 0
+      ? {
+          netLabFeeTotal: Math.max(
+            0,
+            Math.round(Number(row.netLabFeeTotal ?? row.labFeeTotal ?? 0)),
+          ),
+          netTotal: Math.max(
+            0,
+            Math.round(Number(row.netTotal ?? row.total ?? 0)),
+          ),
+          tempCreditLabFeeTotal: Math.max(
+            0,
+            Math.round(Number(row.tempCreditLabFeeTotal || 0)),
+          ),
+        }
+      : {}),
+  }));

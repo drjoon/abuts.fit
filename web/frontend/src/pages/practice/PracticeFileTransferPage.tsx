@@ -4782,6 +4782,7 @@ export const PracticeFileTransferPage = ({
             orderDate?: string;
             orderDates?: string[];
             prosthesisFollowUps?: RecentTransferItem["prosthesisFollowUps"];
+            prosthesisFeeStages?: RecentTransferItem["prosthesisFeeStages"];
             billing?: { total?: number; labFeeTotal?: number };
             billingDelta?: { total?: number; labFeeTotal?: number };
           };
@@ -4841,6 +4842,9 @@ export const PracticeFileTransferPage = ({
               ? (data.toothWorks as ToothWorkSelection[])
               : prev.toothWorks,
             prosthesisFollowUps: nextFollowUps,
+            prosthesisFeeStages: Array.isArray(data.prosthesisFeeStages)
+              ? data.prosthesisFeeStages
+              : prev.prosthesisFeeStages,
             focusFollowUpIndex: latestFocus,
             arrivalDate: String(data.arrivalDate || prev.arrivalDate || ""),
             arrivalDates: Array.isArray(data.arrivalDates)
@@ -4868,6 +4872,9 @@ export const PracticeFileTransferPage = ({
             : undefined,
           prosthesisFollowUps: Array.isArray(data.prosthesisFollowUps)
             ? data.prosthesisFollowUps
+            : undefined,
+          prosthesisFeeStages: Array.isArray(data.prosthesisFeeStages)
+            ? data.prosthesisFeeStages
             : undefined,
           arrivalDate: String(data.arrivalDate || "").trim() || undefined,
           arrivalDates: Array.isArray(data.arrivalDates)
@@ -4941,6 +4948,9 @@ export const PracticeFileTransferPage = ({
           prosthesisFollowUps: Array.isArray(data.prosthesisFollowUps)
             ? data.prosthesisFollowUps
             : prev.prosthesisFollowUps,
+          prosthesisFeeStages: Array.isArray(data.prosthesisFeeStages)
+            ? data.prosthesisFeeStages
+            : prev.prosthesisFeeStages,
           arrivalDate: String(data.arrivalDate || prev.arrivalDate || ""),
           arrivalDates: Array.isArray(data.arrivalDates)
             ? data.arrivalDates.map((d) => String(d || "").trim()).filter(Boolean)
@@ -4962,6 +4972,9 @@ export const PracticeFileTransferPage = ({
           : undefined,
         prosthesisFollowUps: Array.isArray(data.prosthesisFollowUps)
           ? data.prosthesisFollowUps
+          : undefined,
+        prosthesisFeeStages: Array.isArray(data.prosthesisFeeStages)
+          ? data.prosthesisFeeStages
           : undefined,
         arrivalDate: String(data.arrivalDate || "").trim() || undefined,
         arrivalDates: Array.isArray(data.arrivalDates)
@@ -7738,6 +7751,8 @@ export const PracticeFileTransferPage = ({
               toothWorks: patched.toothWorks ?? prev.toothWorks,
               prosthesisFollowUps:
                 patched.prosthesisFollowUps ?? prev.prosthesisFollowUps,
+              prosthesisFeeStages:
+                patched.prosthesisFeeStages ?? prev.prosthesisFeeStages,
               arrivalDate: patched.arrivalDate || prev.arrivalDate,
               arrivalDates: patched.arrivalDates ?? prev.arrivalDates,
               orderDate: patched.orderDate || prev.orderDate,
@@ -11118,6 +11133,7 @@ export const PracticeFileTransferPage = ({
           cancelProsthesisFollowUpBusy={cancelProsthesisFollowUpBusy}
           modifyProsthesisFollowUpBusy={updateProsthesisFollowUpBusy}
           prosthesisFollowUps={selectedTransfer?.prosthesisFollowUps}
+          prosthesisFeeStages={selectedTransfer?.prosthesisFeeStages}
           feeStageFocusIndex={
             selectedTransfer?.focusFollowUpIndex !== undefined
               ? selectedTransfer.focusFollowUpIndex

@@ -354,6 +354,7 @@ const practiceTransferSchema = new mongoose.Schema(
     /**
      * 임시치아 배송 후 동일 건에 크라운/브리지 후속 추가 이력.
      * toothWorks에 prosthesisPhase=followUp 항목이 append되며, 어벗 재청구 없음.
+     * billingDelta: 홀드 순증분(labFeeTotal/total) + 표시용 최종·차감·라인(lines).
      */
     prosthesisFollowUps: {
       type: [
@@ -368,8 +369,8 @@ const practiceTransferSchema = new mongoose.Schema(
           orderYmd: { type: String, default: "", trim: true },
           toothNumbers: { type: [String], default: [] },
           billingDelta: {
-            labFeeTotal: { type: Number, default: 0 },
-            total: { type: Number, default: 0 },
+            type: mongoose.Schema.Types.Mixed,
+            default: undefined,
           },
           followUpIndex: { type: Number, default: 0 },
           previousArrivalYmd: { type: String, default: "", trim: true },
@@ -381,6 +382,27 @@ const practiceTransferSchema = new mongoose.Schema(
             ref: "User",
             default: null,
           },
+        },
+      ],
+      default: undefined,
+    },
+    /**
+     * 단계별 보철 견적 스냅샷(임시치아 / 지르 후속).
+     * case billing·목록 feeQuote(최종 합)와 분리. 후속 추가 시 기존 단계를 덮어쓰지 않음.
+     */
+    prosthesisFeeStages: {
+      type: [
+        {
+          key: { type: String, default: "", trim: true },
+          followUpIndex: { type: Number, default: -1 },
+          title: { type: String, default: "", trim: true },
+          labFeeTotal: { type: Number, default: 0 },
+          total: { type: Number, default: 0 },
+          lines: { type: Array, default: [] },
+          quotedAt: { type: Date, default: null },
+          netLabFeeTotal: { type: Number, default: 0 },
+          netTotal: { type: Number, default: 0 },
+          tempCreditLabFeeTotal: { type: Number, default: 0 },
         },
       ],
       default: undefined,

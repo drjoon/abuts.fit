@@ -3,15 +3,21 @@
 import {
   applyProsthesisFollowUpTempCredit,
   buildFollowUpToothWorksDraft,
+  buildProsthesisFeeStageRecord,
   buildToothWorkDisplayByTooth,
   canAppendProsthesisFollowUp,
   canManagePendingProsthesisFollowUp,
   isPendingProsthesisFollowUpRecord,
   listPendingFollowUpTempSpans,
+  listProsthesisFeeStages,
   pickSourceTempRowsForFollowUpCredit,
+  PROSTHESIS_FEE_STAGE_TEMP_KEY,
+  removeProsthesisFeeStagesByFollowUpIndexes,
   serializeFollowUpToothWorksForChatPayload,
   stripFollowUpToothWorksForRecord,
+  upsertProsthesisFeeStage,
   validateFollowUpToothWorksAgainstSource,
+  zirconiaProsthesisFeeStageKey,
 } from "../../utils/practiceTransferProsthesisFollowUp.js";
 import {
   computePracticeTransferRetailFees,
@@ -481,5 +487,84 @@ describe("practiceTransferProsthesisFollowUp", () => {
     expect(merged.get("14")?.prosthesisType).toBe("브리지");
     expect(merged.get("24")?.prosthesisType).toBe("임시치아");
     expect(merged.get("25")?.prosthesisType).toBe("임시치아");
+  });
+
+  test("prosthesisFeeStages upsert keeps existing temp stage and adds zirconia", () => {
+    const temp = buildProsthesisFeeStageRecord({
+      key: PROSTHESIS_FEE_STAGE_TEMP_KEY,
+      followUpIndex: -1,
+      title: "임시치아 단계",
+      fees: {
+        labFeeTotal: 70000,
+        total: 150000,
+        lines: [
+          {
+            toothNumber: "34",
+            prosthesisType: "임시치아",
+            labFee: 30000,
+            labAbutmentFee: 40000,
+            abutmentRetail: 0,
+          },
+        ],
+      },
+    });
+    let stages = upsertProsthesisFeeStage([], temp);
+    expect(stages).toHaveLength(1);
+    expect(stages[0].key).toBe("temp");
+    expect(stages[0].total).toBe(150000);
+    expect(stages[0].lines).toHaveLength(1);
+
+    // 같은 key 재upsert는 덮어쓰지 않음
+    stages = upsertProsthesisFeeStage(
+      stages,
+      buildProsthesisFeeStageRecord({
+        key: PROSTHESIS_FEE_STAGE_TEMP_KEY,
+        followUpIndex: -1,
+        fees: { labFeeTotal: 1, total: 1, lines: [] },
+      }),
+    );
+    expect(stages[0].total).toBe(150000);
+
+    stages = upsertProsthesisFeeStage(
+      stages,
+      buildProsthesisFeeStageRecord({
+        key: zirconiaProsthesisFeeStageKey(0),
+        followUpIndex: 0,
+        title: "지르 보철 단계",
+        fees: {
+          labFeeTotal: 120000,
+          total: 120000,
+          lines: [
+            {
+              toothNumber: "34",
+              prosthesisType: "브리지",
+              labFee: 60000,
+              labAbutmentFee: 0,
+              abutmentRetail: 0,
+            },
+            {
+              toothNumber: "33",
+              prosthesisType: "브리지",
+              labFee: 60000,
+              labAbutmentFee: 0,
+              abutmentRetail: 0,
+            },
+          ],
+        },
+        netLabFeeTotal: 90000,
+        netTotal: 90000,
+        tempCreditLabFeeTotal: 30000,
+      }),
+    );
+    expect(listProsthesisFeeStages(stages).map((s) => s.key)).toEqual([
+      "temp",
+      "zirconia-0",
+    ]);
+    expect(stages[1].labFeeTotal).toBe(120000);
+    expect(stages[1].netLabFeeTotal).toBe(90000);
+    expect(stages[1].lines).toHaveLength(2);
+
+    const afterCancel = removeProsthesisFeeStagesByFollowUpIndexes(stages, [0]);
+    expect(afterCancel.map((s) => s.key)).toEqual(["temp"]);
   });
 });

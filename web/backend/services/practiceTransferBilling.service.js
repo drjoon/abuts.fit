@@ -5159,6 +5159,8 @@ export async function quoteProsthesisFollowUpFees({
       finalLabFeeTotal: credited.finalLabFeeTotal,
       finalTotal: credited.finalTotal,
       tempCreditLabFeeTotal: credited.tempCreditLabFeeTotal,
+      /** 지르 단계 표시용 — 차감 전 라인(최종 합산 feeQuote와 분리) */
+      lines: Array.isArray(grossFees.lines) ? grossFees.lines : [],
     },
   };
 }

@@ -133,16 +133,26 @@ const PRACTICE_REMAKE_ELIGIBLE_STAGES = new Set([
   "포장.발송",
 ]);
 import {
+  baseToothWorksWithoutFollowUp,
   buildFollowUpToothWorksDraft,
+  buildProsthesisFeeStageRecord,
   canAppendProsthesisFollowUp,
   canManagePendingProsthesisFollowUp,
   getPendingProsthesisFollowUps,
+  hasTemporaryProsthesisRows,
   isPendingProsthesisFollowUpRecord,
+  listProsthesisFeeStages,
   markPendingProsthesisFollowUpsAccepted,
   mergeFollowUpToothWorks,
+  normalizeProsthesisFeeLines,
+  PROSTHESIS_FEE_STAGE_TEMP_KEY,
+  removeProsthesisFeeStagesByFollowUpIndexes,
   serializeFollowUpToothWorksForChatPayload,
+  serializeProsthesisFeeStagesForApi,
   stripFollowUpToothWorksForRecord,
+  upsertProsthesisFeeStage,
   validateFollowUpToothWorksAgainstSource,
+  zirconiaProsthesisFeeStageKey,
 } from "../../utils/practiceTransferProsthesisFollowUp.js";
 import {
   buildPracticeTransferCalendarDateRangeFilter,
@@ -1135,6 +1145,9 @@ const toVirtualRequestRows = (transferDoc, { perFile = true } = {}) => {
     hasCustomAbutment: hasCustomAbutmentToothWorks(toothWorks),
     prosthesisFollowUps: serializeProsthesisFollowUpsForApi(
       transferDoc?.prosthesisFollowUps,
+    ),
+    prosthesisFeeStages: serializeProsthesisFeeStagesForApi(
+      transferDoc?.prosthesisFeeStages,
     ),
     remakeCharges: serializeRemakeChargesForApi(transferDoc?.remakeCharges),
     labRequestStagePlans: normalizeLabRequestStagePlans(
@@ -3349,6 +3362,18 @@ export async function createPracticeTransfer(req, res) {
       ...(isRemakeRequest ? { isRemake: true } : {}),
     };
 
+    /** 임시치아 단계 견적 스냅샷 — 후속 추가 시 최종 견적에 덮이지 않도록 생성 시 고정 */
+    const initialProsthesisFeeStages = hasTemporaryProsthesisRows(toothWorksRaw)
+      ? [
+          buildProsthesisFeeStageRecord({
+            key: PROSTHESIS_FEE_STAGE_TEMP_KEY,
+            followUpIndex: -1,
+            title: "임시치아 단계",
+            fees: feeQuote?.fees || null,
+          }),
+        ]
+      : undefined;
+
     const autoMatchPriorityFields =
       matchingMode === "auto"
         ? buildAutoMatchPriorityFields({
@@ -3407,6 +3432,9 @@ export async function createPracticeTransfer(req, res) {
         req.body?.labRequestStagePlans,
       ),
       billing: billingPreview,
+      ...(initialProsthesisFeeStages
+        ? { prosthesisFeeStages: initialProsthesisFeeStages }
+        : {}),
       ...(isRemakeRequest
         ? {
             remake: {
@@ -4801,6 +4829,9 @@ export async function appendPracticeTransferProsthesis(req, res) {
           0,
           Math.round(Number(billingDelta.tempCreditLabFeeTotal || 0)),
         ),
+        lines: normalizeProsthesisFeeLines(
+          billingDelta.lines || feeQuote?.grossFees?.lines,
+        ),
       },
       followUpIndex,
       previousArrivalYmd: String(appended.previousYmd || "").trim(),
@@ -4809,6 +4840,61 @@ export async function appendPracticeTransferProsthesis(req, res) {
       canceledAt: null,
       canceledBy: null,
     };
+
+    /** 단계별 견적 스냅샷 — 기존 temp/지르를 덮어쓰지 않고 이번 지르만 추가 */
+    let nextProsthesisFeeStages = listProsthesisFeeStages(doc.prosthesisFeeStages);
+    const hasTempStage = nextProsthesisFeeStages.some(
+      (row) => String(row?.key || "").trim() === PROSTHESIS_FEE_STAGE_TEMP_KEY,
+    );
+    if (!hasTempStage && hasTemporaryProsthesisRows(sourceToothWorks)) {
+      const tempRows = baseToothWorksWithoutFollowUp(sourceToothWorks);
+      try {
+        const tempQuote = await buildPracticeTransferQuote({
+          practiceAnchorId,
+          labAnchorId: targetLabAnchorId,
+          toothWorks: tempRows,
+          skipAbutmentFees: false,
+          remake: false,
+          matchingMode: "direct",
+          rushFeeMultiplier: Number(doc.billing?.rushFeeMultiplier || 1),
+        });
+        nextProsthesisFeeStages = upsertProsthesisFeeStage(
+          nextProsthesisFeeStages,
+          buildProsthesisFeeStageRecord({
+            key: PROSTHESIS_FEE_STAGE_TEMP_KEY,
+            followUpIndex: -1,
+            title: "임시치아 단계",
+            fees: tempQuote?.fees || null,
+          }),
+        );
+      } catch (tempSnapErr) {
+        console.warn(
+          "[appendPracticeTransferProsthesis] temp fee stage snapshot failed",
+          String(doc?._id || ""),
+          tempSnapErr?.message || tempSnapErr,
+        );
+      }
+    }
+    const grossFees = feeQuote?.grossFees || {};
+    nextProsthesisFeeStages = upsertProsthesisFeeStage(
+      nextProsthesisFeeStages,
+      buildProsthesisFeeStageRecord({
+        key: zirconiaProsthesisFeeStageKey(followUpIndex),
+        followUpIndex,
+        title:
+          followUpIndex > 0
+            ? `지르 보철 단계 ${followUpIndex + 1}`
+            : "지르 보철 단계",
+        fees: {
+          labFeeTotal: billingDelta.finalLabFeeTotal ?? grossFees.labFeeTotal,
+          total: billingDelta.finalTotal ?? grossFees.total,
+          lines: billingDelta.lines || grossFees.lines,
+        },
+        netLabFeeTotal: deltaLabFee,
+        netTotal: deltaTotal,
+        tempCreditLabFeeTotal: billingDelta.tempCreditLabFeeTotal || 0,
+      }),
+    );
 
     const nextBilling = {
       ...prevBilling,
@@ -4841,6 +4927,7 @@ export async function appendPracticeTransferProsthesis(req, res) {
           arrivalDates: appended.arrivalDates,
           orderDates: appended.orderDates,
           billing: nextBilling,
+          prosthesisFeeStages: nextProsthesisFeeStages,
           requestorReadAt: null,
           requestorReadBy: null,
         },
@@ -4883,6 +4970,9 @@ export async function appendPracticeTransferProsthesis(req, res) {
         practiceUserId: String(req.user?._id || ""),
         toothWorks: mergedToothWorks,
         prosthesisFollowUps: updated.prosthesisFollowUps || [],
+        prosthesisFeeStages: serializeProsthesisFeeStagesForApi(
+          updated.prosthesisFeeStages || nextProsthesisFeeStages,
+        ),
         arrivalDates: appended.arrivalDates,
         arrivalDate: appended.nextYmd,
         orderDates: appended.orderDates,
@@ -4900,6 +4990,9 @@ export async function appendPracticeTransferProsthesis(req, res) {
         transferId: String(updated.transferId || "").trim(),
         toothWorks: mergedToothWorks,
         prosthesisFollowUps: updated.prosthesisFollowUps || [],
+        prosthesisFeeStages: serializeProsthesisFeeStagesForApi(
+          updated.prosthesisFeeStages || nextProsthesisFeeStages,
+        ),
         arrivalDates: appended.arrivalDates,
         arrivalDate: appended.nextYmd,
         orderDates: appended.orderDates,
@@ -4973,9 +5066,11 @@ export async function cancelPracticeTransferProsthesisFollowUp(req, res) {
           row && typeof row.toObject === "function" ? row.toObject() : { ...row },
         )
       : [];
+    const canceledFollowUpIndexes = [];
 
     for (const record of pending) {
       const followUpIndex = Math.max(0, Math.floor(Number(record?.followUpIndex || 0)));
+      canceledFollowUpIndexes.push(followUpIndex);
       await releasePracticeTransferProsthesisFollowUpCredits({
         transfer: doc,
         followUpIndex,
@@ -5028,6 +5123,11 @@ export async function cancelPracticeTransferProsthesisFollowUp(req, res) {
       }
     }
 
+    const nextProsthesisFeeStages = removeProsthesisFeeStagesByFollowUpIndexes(
+      doc.prosthesisFeeStages,
+      canceledFollowUpIndexes,
+    );
+
     const updated = await PracticeTransfer.findOneAndUpdate(
       { _id: doc._id, ...practiceTransferNotDeletedMongoFilter() },
       {
@@ -5038,6 +5138,7 @@ export async function cancelPracticeTransferProsthesisFollowUp(req, res) {
           transferMemo,
           billing: nextBilling,
           prosthesisFollowUps: followUps,
+          prosthesisFeeStages: nextProsthesisFeeStages,
           requestorReadAt: null,
           requestorReadBy: null,
         },
@@ -5073,6 +5174,9 @@ export async function cancelPracticeTransferProsthesisFollowUp(req, res) {
         practiceUserId: String(req.user?._id || ""),
         toothWorks,
         prosthesisFollowUps: updated.prosthesisFollowUps || [],
+        prosthesisFeeStages: serializeProsthesisFeeStagesForApi(
+          updated.prosthesisFeeStages || nextProsthesisFeeStages,
+        ),
         arrivalDates,
         arrivalDate: resolveCurrentArrivalYmd(arrivalDates),
         orderDates,
@@ -5089,6 +5193,9 @@ export async function cancelPracticeTransferProsthesisFollowUp(req, res) {
         toothWorks,
         prosthesisFollowUps: serializeProsthesisFollowUpsForApi(
           updated.prosthesisFollowUps,
+        ),
+        prosthesisFeeStages: serializeProsthesisFeeStagesForApi(
+          updated.prosthesisFeeStages || nextProsthesisFeeStages,
         ),
         arrivalDates,
         arrivalDate: resolveCurrentArrivalYmd(arrivalDates),

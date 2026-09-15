@@ -59,6 +59,7 @@ import {
   buildToothWorkDisplayByTooth,
   hasPartialProsthesisFollowUp,
   toothWorksUpToFollowUpFocus,
+  type ProsthesisFeeStageRecord,
   type ProsthesisFollowUpRecord,
 } from "@/shared/practice/prosthesisFollowUp";
 import {
@@ -220,6 +221,8 @@ type PracticeToothWorkChartReadOnlyProps = {
   selectionDisabled?: boolean;
   /** 후속 제작 기록 — 단계별 기공비 섹션 */
   prosthesisFollowUps?: ProsthesisFollowUpRecord[] | null;
+  /** 저장된 단계별 견적 스냅샷(있으면 live 재계산보다 우선) */
+  prosthesisFeeStages?: ProsthesisFeeStageRecord[] | null;
   /**
    * 캘린더 칩 단계 포커스 — 치식 표시·이번 단계 견적.
    * `-1` 원 임시치아, `0..n` 해당 followUpIndex만,
@@ -249,6 +252,7 @@ export const PracticeToothWorkChartReadOnly = ({
   feeToothWorks,
   selectionDisabled = false,
   prosthesisFollowUps = null,
+  prosthesisFeeStages = null,
   feeStageFocusIndex = null,
 }: PracticeToothWorkChartReadOnlyProps) => {
   const isMobile = useIsMobile();
@@ -362,6 +366,14 @@ export const PracticeToothWorkChartReadOnly = ({
 
   const storedLinesEmpty =
     !Array.isArray(storedFeeQuote?.lines) || storedFeeQuote.lines.length === 0;
+  const hasStoredFeeStages =
+    Array.isArray(prosthesisFeeStages) &&
+    prosthesisFeeStages.some(
+      (row) =>
+        String(row?.key || "").trim() &&
+        (Math.max(0, Number(row.total || row.labFeeTotal || 0)) > 0 ||
+          (Array.isArray(row.lines) && row.lines.length > 0)),
+    );
   const { quote: feeQuote, context: feeQuoteContext, contextReady: feeContextReady } =
     usePracticeTransferFeeQuote({
     enabled:
@@ -370,9 +382,11 @@ export const PracticeToothWorkChartReadOnly = ({
       storedFeeQuote.total <= 0 ||
       // 확정 금액만 있고 내역 lines가 비면 live 재계산으로 툴팁을 채운다.
       (storedFeeQuote.total > 0 && storedLinesEmpty) ||
-      // 후속 지르가 있으면 단계별 섹션용 live context가 필요.
-      (Array.isArray(prosthesisFollowUps) && prosthesisFollowUps.length > 0) ||
-      hasPartialProsthesisFollowUp(quoteToothWorks),
+      // 단계 스냅샷이 없으면 live로 임시/지르 섹션을 재구성한다.
+      (!hasStoredFeeStages &&
+        Array.isArray(prosthesisFollowUps) &&
+        prosthesisFollowUps.length > 0) ||
+      (!hasStoredFeeStages && hasPartialProsthesisFollowUp(quoteToothWorks)),
     labAnchorId,
     toothWorks: quoteToothWorks,
     storedQuote: storedFeeQuote,
@@ -380,22 +394,40 @@ export const PracticeToothWorkChartReadOnly = ({
     creditToothWorks,
   });
   const feeStages = useMemo((): PracticeFeeStageSection[] | null => {
+    if (hasStoredFeeStages) {
+      return buildProsthesisFollowUpFeeStages({
+        toothWorks: quoteToothWorks,
+        prosthesisFollowUps,
+        prosthesisFeeStages,
+        context: feeQuoteContext,
+      });
+    }
     if (!feeContextReady && feeQuoteContext.usedDefaultSchedule) return null;
     return buildProsthesisFollowUpFeeStages({
       toothWorks: quoteToothWorks,
       prosthesisFollowUps,
+      prosthesisFeeStages,
       context: feeQuoteContext,
     });
   }, [
     feeContextReady,
     feeQuoteContext,
+    hasStoredFeeStages,
+    prosthesisFeeStages,
     prosthesisFollowUps,
     quoteToothWorks,
   ]);
 
-  /** 후속 단계 UI — 저장된 원 임시치아 확정가 대신 live 지르+CA 합계를 최종으로 쓴다. */
+  /** 후속 단계 UI — 최종 바는 live 지르+CA. 단계 섹션은 스냅샷/재계산 feeStages. */
   const feeQuoteForStages = useMemo(() => {
     if (!feeStages || feeStages.length === 0) return feeQuote;
+    if (hasStoredFeeStages) {
+      // 단계 내역은 스냅샷. 최종 합만 케이스 feeQuote(또는 live) 유지.
+      return {
+        ...feeQuote,
+        tempCreditLabFeeTotal: 0,
+      };
+    }
     if (!feeContextReady && feeQuoteContext.usedDefaultSchedule) return feeQuote;
     const live = buildFeeQuoteFromContext({
       toothWorks: quoteToothWorks,
@@ -428,6 +460,7 @@ export const PracticeToothWorkChartReadOnly = ({
     feeQuote,
     feeQuoteContext,
     feeStages,
+    hasStoredFeeStages,
     quoteToothWorks,
     skipAbutmentFees,
   ]);

@@ -5,7 +5,7 @@
 // - 2026-09-01: 임시치아 배송 후 동일 건 크라운/브리지 후속 추가(프론트 SSOT).
 // - 2026-09-08: 후속 제작 견적에 원 임시치아 기공비 차감.
 // - 2026-09-08: 치식 표시 — 후속 보철+원 임시치아 병존 시 형태는 후속, CA·어벗 스펙은 원치아 행.
-// - 2026-09-15: 후속 스팬 = 인접 연결 연결요소. 의뢰상세 차트는 원 임시치아만(baseToothWorksForDetailChart).
+// - 2026-09-15: ProsthesisFeeStageRecord — 단계별 견적 스냅샷 타입.
 // - 2026-09-15: 부분 후속(남은 임시치아) — 변경 기공비 라벨·지르 CTA 유지용 hasPartialProsthesisFollowUp.
 // - 2026-09-15: 캘린더 칩 포커스 — 해당 단계 치아만(누적 브리지 표시 금지). 견적 표시는 차감 없음.
 // - 2026-09-15: focus=null + 후속 있음 → 최신 지르 단계만(원·후속 합쳐 임시가 지르로 보이는 표시 금지).
@@ -456,7 +456,35 @@ export type ProsthesisFollowUpRecord = {
     finalLabFeeTotal?: number;
     finalTotal?: number;
     tempCreditLabFeeTotal?: number;
+    /** 지르 단계 스냅샷 라인(차감 전). 최종 case feeQuote와 별개 */
+    lines?: Array<{
+      toothNumber?: string;
+      prosthesisType?: string;
+      labFee?: number;
+      labFeeMin?: number;
+      labAbutmentFee?: number;
+      labAbutmentPending?: boolean;
+      abutmentRetail?: number;
+      abutmentRetailNote?: string;
+    }>;
   } | null;
+};
+
+/**
+ * PracticeTransfer.prosthesisFeeStages — 단계별 견적 스냅샷.
+ * case billing / feeQuote(최종 합)와 분리. 후속 추가 시 기존 단계를 덮지 않음.
+ */
+export type ProsthesisFeeStageRecord = {
+  key: string;
+  followUpIndex?: number;
+  title?: string;
+  labFeeTotal?: number;
+  total?: number;
+  lines?: NonNullable<ProsthesisFollowUpRecord["billingDelta"]>["lines"];
+  quotedAt?: string | null;
+  netLabFeeTotal?: number;
+  netTotal?: number;
+  tempCreditLabFeeTotal?: number;
 };
 
 /**

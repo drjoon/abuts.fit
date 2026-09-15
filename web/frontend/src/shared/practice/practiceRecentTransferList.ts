@@ -136,6 +136,8 @@ export type PracticeRecentRequestItem = {
   /** API toothWorks 스냅샷(후속 보철 append 등 memo보다 우선) */
   toothWorks?: Array<Record<string, unknown>>;
   prosthesisFollowUps?: import("@/shared/practice/prosthesisFollowUp").ProsthesisFollowUpRecord[];
+  /** 단계별 견적 스냅샷(임시/지르). 최종 feeQuote와 분리 */
+  prosthesisFeeStages?: import("@/shared/practice/prosthesisFollowUp").ProsthesisFeeStageRecord[];
   /** 다단계 기공의뢰(틀니 등) 단계 계획 스냅샷 */
   labRequestStagePlans?: import("@/shared/practice/requestStagePresets").PracticeLabRequestStagePlan[];
   requestorDownloadedAt?: string | null;
@@ -231,6 +233,7 @@ export type PracticeRecentTransferItem = {
   /** 임시저장 — KST 1일+ 미갱신(깜빡임) */
   draftStaleHighlight?: boolean;
   prosthesisFollowUps?: import("@/shared/practice/prosthesisFollowUp").ProsthesisFollowUpRecord[];
+  prosthesisFeeStages?: import("@/shared/practice/prosthesisFollowUp").ProsthesisFeeStageRecord[];
   labRequestStagePlans?: import("@/shared/practice/requestStagePresets").PracticeLabRequestStagePlan[];
   toothWorks?: Array<Record<string, unknown>>;
   requestorDownloadedAt?: string | null;
@@ -975,6 +978,12 @@ export const mapMyPracticeTransferApiRows = (
         prosthesisFollowUps: Array.isArray(r.prosthesisFollowUps)
           ? (r.prosthesisFollowUps as PracticeRecentRequestItem["prosthesisFollowUps"])
           : [],
+        prosthesisFeeStages: Array.isArray(
+          (r as { prosthesisFeeStages?: unknown }).prosthesisFeeStages,
+        )
+          ? ((r as { prosthesisFeeStages: PracticeRecentRequestItem["prosthesisFeeStages"] })
+              .prosthesisFeeStages)
+          : [],
         labRequestStagePlans: Array.isArray(
           (r as { labRequestStagePlans?: unknown }).labRequestStagePlans,
         )
@@ -1003,6 +1012,7 @@ export type ProsthesisFollowUpRecentRequestPatch = {
   transferId: string;
   toothWorks?: PracticeRecentRequestItem["toothWorks"];
   prosthesisFollowUps?: PracticeRecentRequestItem["prosthesisFollowUps"];
+  prosthesisFeeStages?: PracticeRecentRequestItem["prosthesisFeeStages"];
   arrivalDate?: string;
   arrivalDates?: string[];
   orderDate?: string;
@@ -1070,6 +1080,9 @@ export const prosthesisFollowUpPatchFromRealtimePayload = (
     prosthesisFollowUps: Array.isArray(payload.prosthesisFollowUps)
       ? (payload.prosthesisFollowUps as PracticeRecentRequestItem["prosthesisFollowUps"])
       : undefined,
+    prosthesisFeeStages: Array.isArray(payload.prosthesisFeeStages)
+      ? (payload.prosthesisFeeStages as PracticeRecentRequestItem["prosthesisFeeStages"])
+      : undefined,
     arrivalDate: payload.arrivalDate != null ? String(payload.arrivalDate).trim() : undefined,
     arrivalDates: Array.isArray(payload.arrivalDates)
       ? payload.arrivalDates.map((d) => String(d || "").trim()).filter(Boolean)
@@ -1100,6 +1113,9 @@ export const patchPracticeRecentRequestProsthesisFollowUp = (
   if (Array.isArray(patch.toothWorks)) next.toothWorks = patch.toothWorks;
   if (Array.isArray(patch.prosthesisFollowUps)) {
     next.prosthesisFollowUps = patch.prosthesisFollowUps;
+  }
+  if (Array.isArray(patch.prosthesisFeeStages)) {
+    next.prosthesisFeeStages = patch.prosthesisFeeStages;
   }
   if (Array.isArray(patch.arrivalDates) && patch.arrivalDates.length > 0) {
     next.arrivalDates = [...patch.arrivalDates];
@@ -1241,6 +1257,12 @@ export const mergeOpenPracticeTransferFromRequestRows = (
         (r) => Array.isArray(r.prosthesisFollowUps) && r.prosthesisFollowUps.length > 0,
       )?.prosthesisFollowUps ||
       prev.prosthesisFollowUps ||
+      [],
+    prosthesisFeeStages:
+      openRows.find(
+        (r) => Array.isArray(r.prosthesisFeeStages) && r.prosthesisFeeStages.length > 0,
+      )?.prosthesisFeeStages ||
+      prev.prosthesisFeeStages ||
       [],
     labRequestStagePlans:
       openRows.find(
@@ -1475,6 +1497,9 @@ export const groupPracticeRecentRequests = (
         prosthesisFollowUps: Array.isArray(req.prosthesisFollowUps)
           ? [...req.prosthesisFollowUps]
           : [],
+        prosthesisFeeStages: Array.isArray(req.prosthesisFeeStages)
+          ? [...req.prosthesisFeeStages]
+          : [],
         labRequestStagePlans: Array.isArray(req.labRequestStagePlans)
           ? [...req.labRequestStagePlans]
           : [],
@@ -1582,6 +1607,9 @@ export const groupPracticeRecentRequests = (
     }
     if (Array.isArray(req.prosthesisFollowUps) && req.prosthesisFollowUps.length > 0) {
       existing.prosthesisFollowUps = [...req.prosthesisFollowUps];
+    }
+    if (Array.isArray(req.prosthesisFeeStages) && req.prosthesisFeeStages.length > 0) {
+      existing.prosthesisFeeStages = [...req.prosthesisFeeStages];
     }
     if (Array.isArray(req.labRequestStagePlans) && req.labRequestStagePlans.length > 0) {
       existing.labRequestStagePlans = [...req.labRequestStagePlans];
