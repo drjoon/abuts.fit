@@ -3,8 +3,9 @@
 // - web/frontend/src/shared/components/business/settings/BusinessTab.tsx
 // - web/backend/controllers/businesses/business.update.controller.js
 // change-log:
-// - 2026-09-16: 기공소 정산 입금 계좌·통장 사본 등록(설정>사업자).
-import { useCallback, useEffect, useState } from "react";
+// - 2026-09-16: 기공소 정산 입금 계좌·통장 사본 등록(설정>사업자). focus=payout 시 카드로 스크롤.
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Landmark, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +19,7 @@ import {
   loadBusinessMeCached,
 } from "@/shared/components/business/settings/business/businessMeCache";
 import {
+  LAB_PAYOUT_ACCOUNT_CARD_ID,
   hasLabPayoutBankbook,
   isLabPayoutReady,
   type LabPayoutAccountSnapshot,
@@ -34,6 +36,9 @@ export function LabPayoutAccountCard({ onSaved }: Props) {
   const { toast } = useToast();
   const { uploadFilesWithToast } = useUploadWithProgressToast({ token });
   const businessType = resolveBusinessType(user?.role, "requestor");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const shouldFocusPayout = searchParams.get("focus") === "payout";
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -72,6 +77,19 @@ export function LabPayoutAccountCard({ onSaved }: Props) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (loading || !shouldFocusPayout) return;
+    const timer = window.setTimeout(() => {
+      cardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      const next = new URLSearchParams(searchParams);
+      if (next.has("focus")) {
+        next.delete("focus");
+        setSearchParams(next, { replace: true });
+      }
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [loading, shouldFocusPayout, searchParams, setSearchParams]);
 
   const handleBankbookUpload = async (file: File) => {
     if (!token) return;
@@ -192,14 +210,22 @@ export function LabPayoutAccountCard({ onSaved }: Props) {
 
   if (loading) {
     return (
-      <div className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 text-sm text-muted-foreground sm:p-5">
+      <div
+        id={LAB_PAYOUT_ACCOUNT_CARD_ID}
+        ref={cardRef}
+        className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 text-sm text-muted-foreground sm:p-5"
+      >
         입금 계좌 정보를 불러오는 중…
       </div>
     );
   }
 
   return (
-    <div className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5">
+    <div
+      id={LAB_PAYOUT_ACCOUNT_CARD_ID}
+      ref={cardRef}
+      className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5"
+    >
       <div className="mb-3 flex items-start gap-2">
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200/80">
           <Landmark className="h-4 w-4 text-primary-strong" />

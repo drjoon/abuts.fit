@@ -88,6 +88,11 @@ export function markLabPayoutRemindShownToday(anchorId: string, now = new Date()
 export const LAB_PAYOUT_BANKBOOK_DELAY_NOTICE =
   "정산 지급일까지 통장 사본을 등록하지 않으면, 이번 달 지급분은 1개월 후 다음 달에 지급됩니다.";
 
+/** 설정 · 사업자 탭의 통장 사본·입금 계좌 카드로 스크롤. */
+export const LAB_PAYOUT_ACCOUNT_CARD_ID = "lab-payout-account-card";
+export const LAB_PAYOUT_SETTINGS_PATH =
+  "/dashboard/settings?tab=business&focus=payout";
+
 /** 월 지급 시 다음 달 초 사용을 위해 남기는 기공크레딧(원). BE `LAB_SETTLEMENT_PAYOUT_RESERVE_WON` 와 맞춤. */
 export const LAB_SETTLEMENT_PAYOUT_RESERVE_WON = 500_000;
 

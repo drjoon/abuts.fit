@@ -53,6 +53,7 @@ import {
 } from "@/shared/settlement/settlementUi";
 import {
   LAB_PAYOUT_BANKBOOK_DELAY_NOTICE,
+  LAB_PAYOUT_SETTINGS_PATH,
   LAB_SETTLEMENT_PAYOUT_RESERVE_NOTICE,
   isLabPayoutReady,
   type LabPayoutAccountSnapshot,
@@ -524,8 +525,8 @@ export const LabSettlementPayoutTab = () => {
             type="button"
             size="sm"
             variant="outline"
-            className="mt-2 h-8 border-amber-300 bg-white text-amber-950 hover:bg-amber-100"
-            onClick={() => navigate("/dashboard/settings?tab=business")}
+            className="mt-2 h-8 border-amber-300 bg-white text-amber-950 hover:bg-amber-100 hover:text-amber-950"
+            onClick={() => navigate(LAB_PAYOUT_SETTINGS_PATH)}
           >
             설정 · 사업자에서 등록
           </Button>
