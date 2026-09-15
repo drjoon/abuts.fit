@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/practice/practiceAbutmentShipYmd.ts
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // change-log:
+// - 2026-09-16: 배치 — 어벗츠 생산의뢰 줄 오른쪽(업로드 행에서 이동).
 // - 2026-09-15: −n = 영업일. 안내·버튼 표기 영업일.
 // - 2026-09-14: 팝오버 — 출고일 지정 안내, 어벗츠 출고 / 치과 도착.
 // - 2026-09-12: −n일 클릭 즉시 저장. 닫기·적용 제거.
@@ -53,7 +54,7 @@ export type PracticeAbutmentShipDateButtonProps = {
 };
 
 /**
- * 어벗 STL 업로드 옆 — 출고일 = 치과도착일 − n영업일. n 클릭 시 즉시 저장.
+ * 어벗츠 생산의뢰 줄 오른쪽 — 출고일 = 치과도착일 − n영업일. n 클릭 시 즉시 저장.
  */
 export function PracticeAbutmentShipDateButton({
   transfer,

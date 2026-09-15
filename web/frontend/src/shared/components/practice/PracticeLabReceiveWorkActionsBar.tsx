@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/practice/practiceTransferLabReceive.ts
 // change-log:
+// - 2026-09-16: 출고일 버튼 — 어벗츠 생산의뢰 줄 오른쪽 끝(업로드·지르 행에서 이동).
 // - 2026-09-12: 미업로드 잔여 시 pastReady=(전체리메이크) 대신 mixed(치아 리메이크만).
 // - 2026-09-12: 가공 치아 호박색·리메이크 클릭 · (전체리메이크). pastReadyTeeth 연동.
 // - 2026-09-12: 출고 임박 배너 제거(화면 공간). 출고일은 도착−n 선택 UI.
@@ -135,6 +136,27 @@ export function PracticeLabReceiveWorkActionsBar({
   const standaloneOverdue =
     uploadOverdueAlert && !state.hasAbutsCa ? uploadOverdueAlert : null;
 
+  /** 출고일 — 생산의뢰 줄이 있으면 그 줄 오른쪽 끝, 없으면 업로드 행 */
+  const shipOnAbutsLine = showAbutmentShip && state.hasAbutsCa;
+  const shipInActionRow = showAbutmentShip && !state.hasAbutsCa;
+
+  const abutmentShipButton = showAbutmentShip ? (
+    <PracticeAbutmentShipDateButton
+      transfer={transfer}
+      busy={abutmentShipBusy}
+      disabled={busy}
+      onSave={onAbutmentShipYmdSave}
+    />
+  ) : null;
+
+  const abutsTrailing =
+    abutsInlineOverdue || shipOnAbutsLine ? (
+      <div className="flex shrink-0 items-center gap-1.5">
+        {abutsInlineOverdue}
+        {shipOnAbutsLine ? abutmentShipButton : null}
+      </div>
+    ) : null;
+
   const pastReadyTeeth = listPracticeTransferPastReadyAbutmentTeeth(transfer);
   const abutsProductionOrdered =
     (state.showAbutmentProductionCancel ||
@@ -200,7 +222,7 @@ export function PracticeLabReceiveWorkActionsBar({
         catalog,
       )}
       pastReadyAbutmentTeeth={pastReadyTeeth}
-      abutsTrailing={abutsInlineOverdue}
+      abutsTrailing={abutsTrailing}
     />
   ) : null;
 
@@ -227,15 +249,6 @@ export function PracticeLabReceiveWorkActionsBar({
         {" 페이지 어디에나 파일을 놓아도 됩니다."}
       </TooltipContent>
     </Tooltip>
-  ) : null;
-
-  const abutmentShipButton = showAbutmentShip ? (
-    <PracticeAbutmentShipDateButton
-      transfer={transfer}
-      busy={abutmentShipBusy}
-      disabled={busy}
-      onSave={onAbutmentShipYmdSave}
-    />
   ) : null;
 
   // 부분 업로드(미완료)만 별도 버튼 — 완료 줄 클릭이 SSOT
@@ -300,13 +313,13 @@ export function PracticeLabReceiveWorkActionsBar({
 
   const cancelCluster =
     abutmentUploadButton ||
-    abutmentShipButton ||
+    (shipInActionRow ? abutmentShipButton : null) ||
     productionCancelButton ||
     pastReadyRemakeButton ||
     hasEffectiveTrailing ? (
       <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1.5">
         {abutmentUploadButton}
-        {abutmentShipButton}
+        {shipInActionRow ? abutmentShipButton : null}
         {productionCancelButton}
         {pastReadyRemakeButton}
         {effectiveTrailing}

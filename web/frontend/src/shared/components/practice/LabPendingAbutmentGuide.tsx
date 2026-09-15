@@ -6,6 +6,7 @@
 // - 2026-09-12: 가공 치아 호박색·클릭=리메이크 · (전체리메이크). 툴팁 문장 줄바꿈.
 // - 2026-09-12: 준비 단계 — 치아번호 클릭=개별 취소 · (전체취소). 상태 문구 비표시.
 // - 2026-09-12: 생산의뢰 완료 — (준비: 취소 가능) 클릭 취소 · (가공: 취소 불가).
+// - 2026-09-16: 어벗츠 생산의뢰 줄 오른쪽 trailing에 출고일 버튼도 배치.
 // - 2026-09-11: 어벗츠 생산의뢰 줄 오른쪽 trailing(업로드 대기 배지).
 // - 2026-09-03: 업로드 치아 — 에메랄드 + 굵은 취소선(decoration-2.5px).
 // - 2026-09-03: 어벗 STL 업로드된 치아는 번호에 취소줄(line-through).
@@ -83,7 +84,7 @@ export type LabPendingAbutmentGuideProps = {
   uploadedAbutmentTeeth?: Iterable<string> | null;
   /** 제조 가공(준비 이후)에 들어간 치아 — 호박색·리메이크 */
   pastReadyAbutmentTeeth?: Iterable<string> | null;
-  /** 어벗츠 생산의뢰 줄 맨 오른쪽(예: [업로드 대기] 배지) */
+  /** 어벗츠 생산의뢰 줄 맨 오른쪽(출고일 버튼 · [업로드 대기] 배지) */
   abutsTrailing?: ReactNode;
   className?: string;
 };
