@@ -222,7 +222,8 @@ type PracticeToothWorkChartReadOnlyProps = {
   prosthesisFollowUps?: ProsthesisFollowUpRecord[] | null;
   /**
    * 캘린더 칩 단계 포커스 — 치식 표시·이번 단계 견적.
-   * `-1` 원 임시치아, `0..n` 해당 followUpIndex만, `null` 최신 전체.
+   * `-1` 원 임시치아, `0..n` 해당 followUpIndex만,
+   * `null` 후속 있으면 최신 지르 단계(원·후속 합쳐 표시하지 않음).
    */
   feeStageFocusIndex?: number | null;
 };

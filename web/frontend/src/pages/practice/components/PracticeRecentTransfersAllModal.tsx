@@ -628,10 +628,9 @@ export function PracticeRecentTransfersAllModal({
       };
     });
     const expanded = expandPracticeCalendarChipsByArrivalDates(base, dateKey);
-    if (dateKey !== "arrivalDate") return expanded;
-
     return attachProsthesisFollowUpFocusToCalendarChips({
       chips: expanded,
+      dateKey,
       getFollowUps: (transferBaseId) => {
         const row = filteredTransfers.find(
           (t) => `${t.id}:${t.transferId}` === transferBaseId,
@@ -675,6 +674,19 @@ export function PracticeRecentTransfersAllModal({
             : [];
       for (const ymd of orderDates) {
         map.set(`${baseId}:ord:${ymd}`, transfer);
+        map.set(`${baseId}:ord:${ymd}:stage:temp`, transfer);
+        const fusOnOrder = (Array.isArray(transfer.prosthesisFollowUps)
+          ? transfer.prosthesisFollowUps
+          : []
+        ).filter(
+          (r) =>
+            !String(r?.canceledAt || "").trim() &&
+            String(r?.orderYmd || r?.arrivalYmd || "").trim() === ymd,
+        );
+        for (const rec of fusOnOrder) {
+          const fuIdx = Math.max(0, Math.floor(Number(rec.followUpIndex || 0)));
+          map.set(`${baseId}:ord:${ymd}:fu:${fuIdx}`, transfer);
+        }
       }
     }
     return map;

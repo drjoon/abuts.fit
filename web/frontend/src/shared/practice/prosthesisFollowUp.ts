@@ -8,6 +8,7 @@
 // - 2026-09-15: 후속 스팬 = 인접 연결 연결요소. 의뢰상세 차트는 원 임시치아만(baseToothWorksForDetailChart).
 // - 2026-09-15: 부분 후속(남은 임시치아) — 변경 기공비 라벨·지르 CTA 유지용 hasPartialProsthesisFollowUp.
 // - 2026-09-15: 캘린더 칩 포커스 — 해당 단계 치아만(누적 브리지 표시 금지). 견적 표시는 차감 없음.
+// - 2026-09-15: focus=null + 후속 있음 → 최신 지르 단계만(원·후속 합쳐 임시가 지르로 보이는 표시 금지).
 import {
   type ToothWorkSelection,
   isCustomAbutmentProsthesisType,
@@ -542,7 +543,7 @@ export const resolveProsthesisFollowUpFocusIndex = (input: {
 
 /**
  * 캘린더 칩 단계에 해당하는 toothWorks (차트 표시).
- * - null: 전체(최종 상태)
+ * - null: 후속 없으면 전체. 후속 있으면 최신 지르 단계만(원·후속 합쳐 보이지 않음)
  * - -1: 원 임시치아만
  * - N: 해당 후속 건 치아만(그 단계 지르 + 동일 치아 원행 CA 스펙)
  */
@@ -552,13 +553,27 @@ export const toothWorksUpToFollowUpFocus = <T extends Partial<ToothWorkSelection
   focusIndex: ProsthesisFollowUpFocusIndex,
 ): T[] => {
   const rows = Array.isArray(toothWorks) ? [...toothWorks] : [];
-  if (focusIndex == null) return rows;
-  if (focusIndex < 0) {
+  const effectiveFocus =
+    focusIndex == null
+      ? (() => {
+          const records = activeFollowUpRecordsSorted(followUps);
+          if (records.length === 0) return null;
+          return Math.max(
+            0,
+            Math.floor(
+              Number(records[records.length - 1]?.followUpIndex || 0),
+            ),
+          );
+        })()
+      : focusIndex;
+  if (effectiveFocus == null) return rows;
+  if (effectiveFocus < 0) {
     return rows.filter((row) => !isFollowUpProsthesisPhase(row));
   }
 
   const record = activeFollowUpRecordsSorted(followUps).find(
-    (row) => Number(row.followUpIndex || 0) === Math.floor(Number(focusIndex)),
+    (row) =>
+      Number(row.followUpIndex || 0) === Math.floor(Number(effectiveFocus)),
   );
   const allowedTeeth = new Set<string>();
   for (const tooth of Array.isArray(record?.toothNumbers)

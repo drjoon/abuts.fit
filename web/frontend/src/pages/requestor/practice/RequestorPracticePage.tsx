@@ -2550,9 +2550,9 @@ export function RequestorPracticeReceivePage({
       base,
       calendarDateKey,
     );
-    if (calendarDateKey !== "arrivalDate") return expanded;
     return attachProsthesisFollowUpFocusToCalendarChips({
       chips: expanded,
+      dateKey: calendarDateKey,
       getFollowUps: (transferBaseId) => {
         const row = sortedFilteredTransfers.find(
           (t) =>
@@ -2604,6 +2604,19 @@ export function RequestorPracticeReceivePage({
             : [];
       for (const ymd of orderDates) {
         map.set(`${id}:ord:${ymd}`, transfer);
+        map.set(`${id}:ord:${ymd}:stage:temp`, transfer);
+        const fusOnOrder = (Array.isArray(transfer.prosthesisFollowUps)
+          ? transfer.prosthesisFollowUps
+          : []
+        ).filter(
+          (r) =>
+            !String(r?.canceledAt || "").trim() &&
+            String(r?.orderYmd || r?.arrivalYmd || "").trim() === ymd,
+        );
+        for (const rec of fusOnOrder) {
+          const fuIdx = Math.max(0, Math.floor(Number(rec.followUpIndex || 0)));
+          map.set(`${id}:ord:${ymd}:fu:${fuIdx}`, transfer);
+        }
       }
     }
     return map;

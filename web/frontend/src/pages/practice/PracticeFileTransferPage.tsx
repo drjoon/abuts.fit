@@ -4816,14 +4816,32 @@ export const PracticeFileTransferPage = ({
         });
         setSelectedTransfer((prev) => {
           if (!prev) return prev;
+          const nextFollowUps = Array.isArray(data.prosthesisFollowUps)
+            ? data.prosthesisFollowUps
+            : prev.prosthesisFollowUps;
+          const activeFollowUps = (Array.isArray(nextFollowUps)
+            ? nextFollowUps
+            : []
+          ).filter((row) => !String(row?.canceledAt || "").trim());
+          const latestFocus =
+            activeFollowUps.length > 0
+              ? Math.max(
+                  0,
+                  Math.floor(
+                    Number(
+                      activeFollowUps[activeFollowUps.length - 1]
+                        ?.followUpIndex || activeFollowUps.length - 1,
+                    ),
+                  ),
+                )
+              : 0;
           return {
             ...prev,
             toothWorks: Array.isArray(data.toothWorks)
               ? (data.toothWorks as ToothWorkSelection[])
               : prev.toothWorks,
-            prosthesisFollowUps: Array.isArray(data.prosthesisFollowUps)
-              ? data.prosthesisFollowUps
-              : prev.prosthesisFollowUps,
+            prosthesisFollowUps: nextFollowUps,
+            focusFollowUpIndex: latestFocus,
             arrivalDate: String(data.arrivalDate || prev.arrivalDate || ""),
             arrivalDates: Array.isArray(data.arrivalDates)
               ? data.arrivalDates.map((d) => String(d || "").trim()).filter(Boolean)
@@ -11059,7 +11077,17 @@ export const PracticeFileTransferPage = ({
                     });
                     return;
                   }
-                  setFollowUpPreferredArrivalYmd(null);
+                  // 현재 도착일이 유효하면 유지. 없으면 기본 소요일(내일 등) — 팝오버에서 확정.
+                  const currentArrival = String(
+                    selectedTransfer.arrivalDate || "",
+                  ).trim();
+                  const today = String(todayDate || "").trim();
+                  setFollowUpPreferredArrivalYmd(
+                    /^\d{4}-\d{2}-\d{2}$/.test(currentArrival) &&
+                      (!today || currentArrival >= today)
+                      ? currentArrival
+                      : null,
+                  );
                   setFollowUpDialogMode("create");
                   setFollowUpDialogOpen(true);
                 }

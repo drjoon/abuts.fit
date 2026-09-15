@@ -143,6 +143,11 @@ export type ToothWorkSelection = {
   prosthesisType: string;
   customAbutment: boolean;
   /**
+   * 후속 지르 행 표시. `followUp`이면 원 임시치아와 단계 분리.
+   * normalize/API 스냅샷에서 유지해야 캘린더 focus·차트 단계 분리가 동작한다.
+   */
+  prosthesisPhase?: string;
+  /**
    * 어벗|스캔바디 라디오. customAbutment일 때만 의미.
    * 레거시(미설정)는 resolveCustomAbutmentSelection으로 추론.
    */
@@ -2246,10 +2251,14 @@ export const normalizeToothWorks = (items: ToothWorkSelection[]) =>
           : [];
 
       const shade = normalizeToothShade(row?.shade);
+      const prosthesisPhase = String(
+        (row as { prosthesisPhase?: string })?.prosthesisPhase || "",
+      ).trim();
       return {
         toothNumber,
         prosthesisType,
         customAbutment,
+        ...(prosthesisPhase ? { prosthesisPhase } : {}),
         ...pickToothWorkAbutmentProductMode(row, customAbutment),
         ...pickToothWorkCustomAbutmentSelection(row, customAbutment),
         bridgeLinkedTeeth,
@@ -2290,10 +2299,12 @@ export const normalizeToothWorksForSync = (items: ToothWorkSelection[]) =>
           : [];
 
       const shade = normalizeToothShade(row?.shade);
+      const prosthesisPhase = String(row?.prosthesisPhase || "").trim();
       return {
         toothNumber,
         prosthesisType,
         customAbutment,
+        ...(prosthesisPhase ? { prosthesisPhase } : {}),
         ...pickToothWorkAbutmentProductMode(row, customAbutment),
         ...pickToothWorkCustomAbutmentSelection(row, customAbutment),
         bridgeLinkedTeeth,

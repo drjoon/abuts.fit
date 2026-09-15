@@ -5,6 +5,7 @@
 // - 2026-09-01: 임시치아 → 최종 보철 후속 제작 확인 다이얼로그.
 // - 2026-09-01: 크라운·브리지 단위 선택(부분 제작) — 보철물 카드에서 체크.
 // - 2026-09-01: 재도착일 적용 시 계정·기공소 기본 소요일 서버 저장.
+// - 2026-09-15: 제작 의뢰 시 도착일 팝오버를 먼저 열어 확정하게 함.
 import { useEffect, useMemo, useState } from "react";
 import { CalendarClock } from "lucide-react";
 import {
@@ -106,7 +107,8 @@ export function PracticeProsthesisFollowUpDialog({
   useEffect(() => {
     if (!open) return;
     setArrivalDate(String(defaultArrivalYmd || "").trim());
-    setArrivalPickerOpen(false);
+    // 제작 의뢰: 도착일을 먼저 고르도록 팝오버를 연다(기본 내일로만 두고 넘어가지 않음).
+    setArrivalPickerOpen(!isEdit);
     if (!isEdit) {
       setSelectedSpanKeys(
         new Set(availableRows.map((row) => followUpRowSpanKey(row))),

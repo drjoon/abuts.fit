@@ -437,4 +437,49 @@ describe("practiceTransferProsthesisFollowUp", () => {
     expect(byTooth.get("44")?.customAbutment).toBe(true);
     expect(byTooth.get("46")?.abutmentManufacturer).toBe("NEO");
   });
+
+  test("부분 후속 — 원 행만 보면 전부 임시치아, 합치면 전환 치아만 지르", () => {
+    const toothWorks = [
+      {
+        toothNumber: "15",
+        prosthesisType: "임시치아",
+        bridgeLinkedTeeth: ["15", "14"],
+      },
+      {
+        toothNumber: "14",
+        prosthesisType: "임시치아",
+        bridgeLinkedTeeth: ["15", "14"],
+      },
+      {
+        toothNumber: "24",
+        prosthesisType: "임시치아",
+        bridgeLinkedTeeth: ["24", "25"],
+      },
+      {
+        toothNumber: "25",
+        prosthesisType: "임시치아",
+        bridgeLinkedTeeth: ["24", "25"],
+      },
+      {
+        toothNumber: "15",
+        prosthesisType: "브리지",
+        prosthesisPhase: "followUp",
+        bridgeLinkedTeeth: ["15", "14"],
+      },
+    ];
+    const baseOnly = toothWorks.filter(
+      (row) => String(row.prosthesisPhase || "").trim() !== "followUp",
+    );
+    const baseDisplay = buildToothWorkDisplayByTooth(baseOnly);
+    expect(baseDisplay.get("15")?.prosthesisType).toBe("임시치아");
+    expect(baseDisplay.get("14")?.prosthesisType).toBe("임시치아");
+    expect(baseDisplay.get("24")?.prosthesisType).toBe("임시치아");
+    expect(baseDisplay.get("25")?.prosthesisType).toBe("임시치아");
+
+    const merged = buildToothWorkDisplayByTooth(toothWorks);
+    expect(merged.get("15")?.prosthesisType).toBe("브리지");
+    expect(merged.get("14")?.prosthesisType).toBe("브리지");
+    expect(merged.get("24")?.prosthesisType).toBe("임시치아");
+    expect(merged.get("25")?.prosthesisType).toBe("임시치아");
+  });
 });
