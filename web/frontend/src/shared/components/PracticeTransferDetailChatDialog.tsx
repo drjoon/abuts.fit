@@ -19,6 +19,7 @@
 // - 2026-09-15: 치식·보철물 차트 — 후속 지르 반영(형태) + 단계별 기공비. 인쇄는 원 임시치아.
 // - 2026-09-15: 견적은 전체 toothWorks(feeToothWorks) — 후속 반영·임시치아 차감 라인 유지.
 // - 2026-09-15: 남은 임시치아 있으면 지르 보철 CTA 유지(제작 변경/취소와 병행).
+// - 2026-09-15: 원 임시치아 단계(focus<0) — 스크롤을 치식 상단으로(채팅 후속 카드에 가려지지 않음).
 // - 2026-09-14: 모바일 플로팅 — mobileFloatingTopInset으로 채팅을 상단 액션 바 아래로.
 // - 2026-09-14: 모바일 플로팅 — mobileTopChrome을 채팅 **위** 고정 바에 두고 패널을 아래로 내린다.
 // - 2026-09-14: 모바일 플로팅 — mobileTopChrome(북마크 순회 등)을 채팅 상단에.
@@ -797,7 +798,10 @@ export function PracticeTransferDetailChatDialog({
   const didInitialScrollRef = useRef(false);
   const openedWithoutMessagesRef = useRef(false);
   const scrollIdentityRef = useRef<string>("");
-  const scrollIdentity = String(toothWorksKey || caseIdentity?.primary || "").trim();
+  const scrollIdentity = [
+    String(toothWorksKey || caseIdentity?.primary || "").trim(),
+    feeStageFocusIndex == null ? "default" : String(feeStageFocusIndex),
+  ].join("|");
   const floatingTopInset =
     isMobile && !isInline
       ? Math.max(0, Math.round(Number(mobileFloatingTopInset) || 0))
@@ -883,10 +887,13 @@ export function PracticeTransferDetailChatDialog({
     }
     if (minimized || chatLoading) return;
 
+    const preferStageDetailTop =
+      feeStageFocusIndex != null &&
+      Number.isFinite(Number(feeStageFocusIndex));
     const preferBottom =
       resolvedInitialPanelTab === "chat"
         ? true
-        : resolvedInitialPanelTab === "detail"
+        : resolvedInitialPanelTab === "detail" || preferStageDetailTop
           ? false
           : chatMessages.length > 0;
 
@@ -902,6 +909,7 @@ export function PracticeTransferDetailChatDialog({
     if (
       openedWithoutMessagesRef.current &&
       resolvedInitialPanelTab == null &&
+      !preferStageDetailTop &&
       chatMessages.length > 0
     ) {
       openedWithoutMessagesRef.current = false;
@@ -913,6 +921,7 @@ export function PracticeTransferDetailChatDialog({
     minimized,
     chatLoading,
     chatMessages.length,
+    feeStageFocusIndex,
     resolvedInitialPanelTab,
     scrollIdentity,
     applyScrollPosition,

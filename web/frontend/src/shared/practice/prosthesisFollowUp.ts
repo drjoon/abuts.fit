@@ -8,7 +8,7 @@
 // - 2026-09-15: ProsthesisFeeStageRecord — 단계별 견적 스냅샷 타입.
 // - 2026-09-15: 부분 후속(남은 임시치아) — 변경 기공비 라벨·지르 CTA 유지용 hasPartialProsthesisFollowUp.
 // - 2026-09-15: 캘린더 칩 포커스 — 해당 단계 치아만(누적 브리지 표시 금지). 견적 표시는 차감 없음.
-// - 2026-09-15: focus=null + 후속 있음 → 최신 지르 단계만(원·후속 합쳐 임시가 지르로 보이는 표시 금지).
+// - 2026-09-15: focus=null + 후속 있음 → 원 임시치아 단계(-1). 지르는 칩·append 직후 focus로만.
 // - 2026-09-15: 부분 후속 포커스 — 해당 지르 치아 + 아직 미전환 임시치아 스팬(원본 스냅샷 소실 방지).
 import {
   type ToothWorkSelection,
@@ -572,7 +572,7 @@ export const resolveProsthesisFollowUpFocusIndex = (input: {
 
 /**
  * 캘린더 칩 단계에 해당하는 toothWorks (차트 표시).
- * - null: 후속 없으면 전체. 후속 있으면 최신 지르 단계(+미전환 임시)
+ * - null: 후속 없으면 전체. 후속 있으면 원 임시치아 단계(-1) — 1단계 스냅샷 유지
  * - -1: 원 임시치아만
  * - N: 해당 후속 건 치아(그 단계 지르 + 동일 치아 원행 CA) + 아직 미전환 임시치아 스팬
  *       (다른 후속 건의 지르는 제외 — 누적 브리지 표시 방지)
@@ -587,13 +587,9 @@ export const toothWorksUpToFollowUpFocus = <T extends Partial<ToothWorkSelection
     focusIndex == null
       ? (() => {
           const records = activeFollowUpRecordsSorted(followUps);
+          // 후속이 있어도 기본은 원 임시치아 스냅샷(지르로 덮이지 않음)
           if (records.length === 0) return null;
-          return Math.max(
-            0,
-            Math.floor(
-              Number(records[records.length - 1]?.followUpIndex || 0),
-            ),
-          );
+          return -1;
         })()
       : focusIndex;
   if (effectiveFocus == null) return rows;

@@ -12,6 +12,7 @@
 // - 2026-09-15: feeStages — 임시치아/지르 단계별 기공비(지르는 차감 없이 수가).
 // - 2026-09-15: feeStages 있으면 바 2줄(이번 단계·최종). 툴팁 max-h+scroll·collisionPadding.
 // - 2026-09-15: 이번 단계 툴팁=포커스 단계, 최종 툴팁=지르+CA(차감·임시치아 단계 숨김).
+// - 2026-09-15: focus null/-1 → 임시치아 단계만(지르 stageSections[0] 폴백 금지).
 // - 2026-08-22: 기공소→치과 배송 무료. skipJig 옵션/안내 삭제. 정산 상세는 →어벗츠(박스)만.
 // - 2026-08-21: 기공의뢰 정산에서 기공소→어벗츠 배송 제외(기공소 박스 과금).
 // - 2026-08-21: 치과→기공소 배송 무료. 정산 상세는 →어벗츠(박스)만.
@@ -852,20 +853,16 @@ export function PracticeTransferFeeEstimate({
     quote.lines.length > 0 ? mapQuoteLinesToBreakdown(quote.lines) : [];
   const stageSections =
     Array.isArray(feeStages) && feeStages.length > 0 ? feeStages : null;
-  /** 포커스 단계(임시=-1 → stages[0], 지르 N → zirconia-N). null이면 최신 */
+  /** 포커스 단계(임시=-1·null → temp, 지르 N → zirconia-N). temp 없으면 지르로 폴백하지 않음 */
   const currentStageSection = (() => {
     if (!stageSections) return null;
-    if (feeStageFocusIndex == null) {
-      return stageSections[stageSections.length - 1] ?? null;
-    }
-    if (feeStageFocusIndex < 0) {
-      return stageSections.find((stage) => stage.key === "temp") || stageSections[0] || null;
+    if (feeStageFocusIndex == null || feeStageFocusIndex < 0) {
+      return stageSections.find((stage) => stage.key === "temp") || null;
     }
     const key = `zirconia-${Math.floor(Number(feeStageFocusIndex))}`;
     return (
       stageSections.find((stage) => stage.key === key) ||
       stageSections[Math.floor(Number(feeStageFocusIndex)) + 1] ||
-      stageSections[stageSections.length - 1] ||
       null
     );
   })();

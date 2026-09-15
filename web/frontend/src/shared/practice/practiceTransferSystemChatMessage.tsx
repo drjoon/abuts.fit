@@ -5,6 +5,7 @@
 // - 2026-09-08: 후속 보철 채팅 — 임플란트·어벗 스펙 유지 + transfer toothWorks로 레거시 payload 보강.
 // - 2026-09-08: 후속 채팅 차트 — 스팬을 치아별로 펼치고 원 임시치아 CA·스펙을 치아단위로 복원.
 // - 2026-09-02: 후속 보철 차트 — 버블 밖 전폭(의뢰상세와 동일 레이아웃), embedded 제거.
+// - 2026-09-15: 후속 채팅 차트 — followUps 미전달(메인 1단계 포커스와 분리). 추가 치아만 표시.
 import { cn } from "@/shared/ui/cn";
 import { PracticeToothWorkChartReadOnly } from "@/shared/components/practice/PracticeToothWorkChartReadOnly";
 import { compactRemakeSummaryLabel } from "@/features/chat/components/chatRemakeParts";
@@ -251,7 +252,7 @@ export function PracticeTransferSystemChatBody({
   labAnchorId = null,
   transferToothWorks = null,
   transferFeeQuote = null,
-  transferProsthesisFollowUps = null,
+  transferProsthesisFollowUps: _transferProsthesisFollowUps = null,
   onCancelRemakeCharge = undefined,
   remakeChargeCancelBusy = false,
   activeRemakeChargeIndexes = null,
@@ -271,9 +272,8 @@ export function PracticeTransferSystemChatBody({
         (Array.isArray(transferFeeQuote.lines) && transferFeeQuote.lines.length > 0))
         ? transferFeeQuote
         : null;
-    const feeToothWorks = Array.isArray(transferToothWorks)
-      ? (transferToothWorks as ToothWorkSelection[])
-      : toothWorks;
+    // 채팅 카드는「이번에 추가한」지르만 — 메인 치식 1단계 스냅샷과 섞지 않음
+    const feeToothWorks = toothWorks;
     return (
       <div
         id={messageDomId}
@@ -297,7 +297,6 @@ export function PracticeTransferSystemChatBody({
             <PracticeToothWorkChartReadOnly
               toothWorks={toothWorks}
               feeToothWorks={feeToothWorks}
-              prosthesisFollowUps={transferProsthesisFollowUps}
               showHeader={false}
               labAnchorId={labAnchorId}
               feeQuote={caseFeeQuote}

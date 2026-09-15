@@ -11139,6 +11139,12 @@ export const PracticeFileTransferPage = ({
               ? selectedTransfer.focusFollowUpIndex
               : null
           }
+          initialPanelTab={
+            selectedTransfer?.focusFollowUpIndex != null &&
+            Number(selectedTransfer.focusFollowUpIndex) < 0
+              ? "detail"
+              : undefined
+          }
           orderDate={selectedTransfer?.orderDate || null}
           arrivalDate={selectedTransfer?.arrivalDate || null}
           orderedAt={

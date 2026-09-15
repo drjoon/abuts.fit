@@ -7126,6 +7126,10 @@ export function RequestorPracticeReceivePage({
         platformGuideTour.advance();
         return;
       }
+      const focusFollowUpIndex =
+        options && "focusFollowUpIndex" in options
+          ? options.focusFollowUpIndex ?? null
+          : transfer.focusFollowUpIndex;
       void openTransferDialog(
         {
           ...transfer,
@@ -7135,14 +7139,14 @@ export function RequestorPracticeReceivePage({
           ...(options?.orderDate
             ? { orderDate: String(options.orderDate).trim() }
             : {}),
-          focusFollowUpIndex:
-            options && "focusFollowUpIndex" in options
-              ? options.focusFollowUpIndex ?? null
-              : transfer.focusFollowUpIndex,
+          focusFollowUpIndex,
         },
         {
           ...(options && "preferredDockSide" in options
             ? { preferredDockSide: options.preferredDockSide ?? null }
+            : {}),
+          ...(focusFollowUpIndex != null && Number(focusFollowUpIndex) < 0
+            ? { panel: "detail" as const }
             : {}),
         },
       );
