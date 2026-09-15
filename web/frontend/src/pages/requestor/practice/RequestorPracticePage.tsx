@@ -7696,13 +7696,15 @@ export function RequestorPracticeReceivePage({
                           ),
                     arrivalDate: chipArrival || null,
                     orderDate: chipOrder || null,
-                    focusFollowUpIndex: item.isPriorArrival
-                      ? item.focusFollowUpIndex ?? -1
-                      : resolveProsthesisFollowUpFocusIndex({
-                          arrivalYmd: chipArrival || transfer.arrivalDate,
-                          focusFollowUpIndex: item.focusFollowUpIndex,
-                          prosthesisFollowUps: transfer.prosthesisFollowUps,
-                        }),
+                    focusFollowUpIndex:
+                      item.focusFollowUpIndex != null &&
+                      Number.isFinite(Number(item.focusFollowUpIndex))
+                        ? Math.floor(Number(item.focusFollowUpIndex))
+                        : resolveProsthesisFollowUpFocusIndex({
+                            arrivalYmd: chipArrival || transfer.arrivalDate,
+                            focusFollowUpIndex: item.focusFollowUpIndex,
+                            prosthesisFollowUps: transfer.prosthesisFollowUps,
+                          }),
                   });
                 }
               }}

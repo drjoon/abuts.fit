@@ -4,7 +4,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - 2026-09-15: 후속 지르 단계별 캘린더 칩 + 원 임시치아(focus=-1) 칩.
 // - 2026-09-15: 의뢰일·도착일 모두 단계 칩. 같은 날 후속도 원본(임시) 칩 분리.
-// - 2026-09-15: 같은 날 후속 여러 건 → 칩 1개(최신 focus). 다른 날만 재도착처럼 분리.
+// - 2026-09-15: 같은 날 후속 여러 건 → 칩 1개(원 임시치아 focus=-1). 지르는 채팅. 다른 날만 분리.
 import {
   resolveProsthesisFollowUpFocusIndex,
   type ProsthesisFollowUpRecord,
@@ -118,15 +118,30 @@ export const attachProsthesisFollowUpFocusToCalendarChips = <
       continue;
     }
 
-    // 같은 날 후속 N건 → 목록 1칩(최신 단계). 재도착처럼 날짜가 다를 때만 분리.
-    const last = records[records.length - 1];
-    out.push({
-      ...chip,
-      focusFollowUpIndex: Math.max(
-        0,
-        Math.floor(Number(last?.followUpIndex || 0)),
-      ),
-    });
+    // 원 의뢰일과 같은 날 → 칩 1개 = 원 임시치아(focus=-1). 지르는 채팅.
+    // 다른 날 후속(재도착형) → 그 날 최신 지르 단계.
+    const originalYmd = previousStageYmd(allFollowUps[0], dateKey, "");
+    if (originalYmd && originalYmd === ymd) {
+      out.push({
+        ...chip,
+        focusFollowUpIndex: -1,
+      });
+    } else if (originalYmd && originalYmd !== ymd) {
+      const last = records[records.length - 1];
+      out.push({
+        ...chip,
+        focusFollowUpIndex: Math.max(
+          0,
+          Math.floor(Number(last?.followUpIndex || 0)),
+        ),
+      });
+    } else {
+      // previousYmd 없음(레거시) — 원본 스냅샷 보호
+      out.push({
+        ...chip,
+        focusFollowUpIndex: -1,
+      });
+    }
   }
 
   const withTempStage: T[] = [];

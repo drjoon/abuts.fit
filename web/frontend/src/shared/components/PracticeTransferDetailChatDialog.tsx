@@ -621,7 +621,7 @@ type PracticeTransferDetailChatDialogProps = {
   prosthesisFeeStages?: import("@/shared/practice/prosthesisFollowUp").ProsthesisFeeStageRecord[] | null;
   /**
    * 캘린더 칩 단계 포커스 — 치식·이번 단계 견적.
-   * `-1` 원 임시치아, `0..n` followUpIndex, 미지정 시 최신.
+   * `-1` 원 임시치아, `0..n` followUpIndex, 미지정 시 원 임시치아(-1).
    */
   feeStageFocusIndex?: number | null;
   /** 기공소 — 리메이크 청구 채팅 카드 「청구 취소」 */

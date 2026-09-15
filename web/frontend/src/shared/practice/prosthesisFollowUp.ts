@@ -7,9 +7,9 @@
 // - 2026-09-08: 치식 표시 — 후속 보철+원 임시치아 병존 시 형태는 후속, CA·어벗 스펙은 원치아 행.
 // - 2026-09-15: ProsthesisFeeStageRecord — 단계별 견적 스냅샷 타입.
 // - 2026-09-15: 부분 후속(남은 임시치아) — 변경 기공비 라벨·지르 CTA 유지용 hasPartialProsthesisFollowUp.
+// - 2026-09-15: 부분 후속 포커스 — 해당 단계 지르만(미전환 임시를 섞지 않음). 원본은 focus=-1.
 // - 2026-09-15: 캘린더 칩 포커스 — 해당 단계 치아만(누적 브리지 표시 금지). 견적 표시는 차감 없음.
 // - 2026-09-15: focus=null + 후속 있음 → 원 임시치아 단계(-1). 지르는 칩·append 직후 focus로만.
-// - 2026-09-15: 부분 후속 포커스 — 해당 지르 치아 + 아직 미전환 임시치아 스팬(원본 스냅샷 소실 방지).
 // - 2026-09-15: followUps 배열 없이도 toothWorks 후속 행이 있으면 focus=null → -1(원 스냅샷 보호).
 // - 2026-09-15: 후속-only(지르 다이얼로그 초안·채팅)는 focus=null 유지 — 원 행이 있을 때만 -1.
 import {
@@ -575,9 +575,8 @@ export const resolveProsthesisFollowUpFocusIndex = (input: {
 /**
  * 캘린더 칩 단계에 해당하는 toothWorks (차트 표시).
  * - null: 후속 없으면 전체. 후속 있으면 원 임시치아 단계(-1) — 1단계 스냅샷 유지
- * - -1: 원 임시치아만
- * - N: 해당 후속 건 치아(그 단계 지르 + 동일 치아 원행 CA) + 아직 미전환 임시치아 스팬
- *       (다른 후속 건의 지르는 제외 — 누적 브리지 표시 방지)
+ * - -1: 원 임시치아만(후속 지르 행 제외 — 원본 스냅샷 보호)
+ * - N: 해당 후속 건의 지르 치아만(미전환 임시치아를 섞지 않음 — 원본과 혼동 방지)
  */
 export const toothWorksUpToFollowUpFocus = <T extends Partial<ToothWorkSelection>>(
   toothWorks: ReadonlyArray<T> | null | undefined,
@@ -636,17 +635,7 @@ export const toothWorksUpToFollowUpFocus = <T extends Partial<ToothWorkSelection
     }
   }
 
-  // 부분 후속: 아직 지르로 안 바꾼 임시치아도 원본 스냅샷처럼 함께 표시
-  const pendingTeeth = new Set<string>();
-  for (const { teeth } of listPendingFollowUpTempSpans(rows)) {
-    for (const tooth of teeth) {
-      const t = String(tooth || "").trim();
-      if (t) pendingTeeth.add(t);
-    }
-  }
-
-  const allowedTeeth = new Set<string>([...stageTeeth, ...pendingTeeth]);
-  if (allowedTeeth.size === 0) return [];
+  if (stageTeeth.size === 0) return [];
 
   const touchesSet = (row: T, set: Set<string>) => {
     const anchor = String(row?.toothNumber || "").trim();
@@ -655,10 +644,8 @@ export const toothWorksUpToFollowUpFocus = <T extends Partial<ToothWorkSelection
   };
 
   return rows.filter((row) => {
-    if (!touchesSet(row, allowedTeeth)) return false;
-    if (!isFollowUpProsthesisPhase(row)) return true;
-    // 포커스 단계 치아의 지르만(다른 후속·미전환 임시에 붙은 지르 행 제외)
     if (!touchesSet(row, stageTeeth)) return false;
+    if (!isFollowUpProsthesisPhase(row)) return true;
     return isFinalProsthesisType(String(row.prosthesisType || ""));
   });
 };

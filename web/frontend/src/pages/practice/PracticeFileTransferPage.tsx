@@ -4820,22 +4820,7 @@ export const PracticeFileTransferPage = ({
           const nextFollowUps = Array.isArray(data.prosthesisFollowUps)
             ? data.prosthesisFollowUps
             : prev.prosthesisFollowUps;
-          const activeFollowUps = (Array.isArray(nextFollowUps)
-            ? nextFollowUps
-            : []
-          ).filter((row) => !String(row?.canceledAt || "").trim());
-          const latestFocus =
-            activeFollowUps.length > 0
-              ? Math.max(
-                  0,
-                  Math.floor(
-                    Number(
-                      activeFollowUps[activeFollowUps.length - 1]
-                        ?.followUpIndex || activeFollowUps.length - 1,
-                    ),
-                  ),
-                )
-              : 0;
+          // 상단 치식은 원 임시치아 스냅샷 유지. 방금 추가한 지르는 채팅 카드.
           return {
             ...prev,
             toothWorks: Array.isArray(data.toothWorks)
@@ -4845,7 +4830,7 @@ export const PracticeFileTransferPage = ({
             prosthesisFeeStages: Array.isArray(data.prosthesisFeeStages)
               ? data.prosthesisFeeStages
               : prev.prosthesisFeeStages,
-            focusFollowUpIndex: latestFocus,
+            focusFollowUpIndex: -1,
             arrivalDate: String(data.arrivalDate || prev.arrivalDate || ""),
             arrivalDates: Array.isArray(data.arrivalDates)
               ? data.arrivalDates.map((d) => String(d || "").trim()).filter(Boolean)
