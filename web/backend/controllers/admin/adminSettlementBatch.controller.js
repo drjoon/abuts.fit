@@ -12,6 +12,7 @@ import {
   AFFILIATE_SETTLEMENT_ACCOUNTS,
   computeSettlementPayoutBreakdown,
   hasPayoutAccount,
+  hasLabPayoutReady,
   postSettlementPayoutJournal,
   resolveSettlementInvoiceDraftSpec,
 } from "../../services/settlement.service.js";
@@ -52,11 +53,23 @@ function parseRange(req) {
 
 function accountSnapshot(anchor) {
   const account = anchor?.payoutAccount || {};
+  const bankbook = account?.bankbook || {};
   return {
     bankName: String(account.bankName || ""),
     accountNumber: String(account.accountNumber || ""),
     holderName: String(account.holderName || ""),
+    bankbook: {
+      s3Key: String(bankbook.s3Key || ""),
+      fileId: String(bankbook.fileId || ""),
+      originalName: String(bankbook.originalName || ""),
+      uploadedAt: bankbook.uploadedAt || null,
+    },
   };
+}
+
+function isPayoutAccountReady(role, account) {
+  if (role === "lab") return hasLabPayoutReady(account);
+  return hasPayoutAccount(account);
 }
 
 async function resolveAbutsAnchor() {
@@ -170,7 +183,7 @@ export async function adminConfirmSettlementBatch(req, res) {
       item.supplyAmount = breakdown.supplyAmount;
       item.vatAmount = breakdown.vatAmount;
       item.payoutAccount = accountSnapshot(anchor);
-      if (breakdown.amount <= 0 || !hasPayoutAccount(item.payoutAccount)) {
+      if (breakdown.amount <= 0 || !isPayoutAccountReady(item.role, item.payoutAccount)) {
         item.status = "EXCLUDED_NO_ACCOUNT";
         await item.save();
         continue;

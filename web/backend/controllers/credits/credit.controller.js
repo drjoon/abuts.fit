@@ -1049,6 +1049,11 @@ export async function listMyLabSettlementBatchItems(req, res) {
         model: SettlementBatch,
         select: "periodStart periodEnd status confirmedAt completedAt",
       })
+      .populate({
+        path: "invoiceDraftId",
+        model: "TaxInvoiceDraft",
+        select: "status taxType totalAmount",
+      })
       .lean();
     return res.json({ success: true, data: items });
   } catch (error) {

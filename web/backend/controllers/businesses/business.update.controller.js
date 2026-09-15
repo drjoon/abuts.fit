@@ -258,6 +258,10 @@ export async function updateMyBusiness(req, res) {
 
     const nextName = String(req.body?.name || "").trim();
     const businessLicenseInput = req.body?.businessLicense || null;
+    const payoutAccountProvided = hasOwnKey(req.body, "payoutAccount");
+    const payoutAccountInput = payoutAccountProvided
+      ? req.body?.payoutAccount
+      : null;
 
     const representativeNameProvided = hasOwnKey(
       req.body,
@@ -636,6 +640,64 @@ export async function updateMyBusiness(req, res) {
       (businessLicense.s3Key || businessLicense.originalName)
     ) {
       patch.businessLicense = businessLicense;
+    }
+
+    if (payoutAccountProvided) {
+      const bankName = String(payoutAccountInput?.bankName || "").trim();
+      const holderName = String(payoutAccountInput?.holderName || "").trim();
+      const accountNumber = String(payoutAccountInput?.accountNumber || "")
+        .replace(/\s/g, "")
+        .trim();
+      const bankbookProvided = hasOwnKey(payoutAccountInput || {}, "bankbook");
+      const bankbookInput = bankbookProvided
+        ? payoutAccountInput?.bankbook
+        : null;
+      const bankbookS3Key = String(bankbookInput?.s3Key || "").trim();
+      const bankbookFileId = String(bankbookInput?.fileId || "").trim();
+      const bankbookName = String(bankbookInput?.originalName || "").trim();
+      const hasBankbook = Boolean(bankbookS3Key || bankbookFileId);
+      const anyAccountField = Boolean(bankName || holderName || accountNumber);
+
+      if (anyAccountField && (!bankName || !holderName || !accountNumber)) {
+        return res.status(400).json({
+          success: false,
+          message: "은행/계좌번호/예금주를 모두 입력해주세요.",
+        });
+      }
+
+      const prevAccount = businessAnchor?.payoutAccount || {};
+      const prevBook = prevAccount?.bankbook || {};
+      const nextBankbook = !bankbookProvided
+        ? {
+            s3Key: String(prevBook.s3Key || ""),
+            fileId: String(prevBook.fileId || ""),
+            originalName: String(prevBook.originalName || ""),
+            uploadedAt: prevBook.uploadedAt || null,
+          }
+        : hasBankbook
+          ? {
+              s3Key: bankbookS3Key,
+              fileId: bankbookFileId,
+              originalName: bankbookName,
+              uploadedAt: new Date(),
+            }
+          : {
+              s3Key: "",
+              fileId: "",
+              originalName: "",
+              uploadedAt: null,
+            };
+
+      patch.payoutAccount = {
+        bankName,
+        accountNumber,
+        holderName,
+        updatedAt:
+          anyAccountField || hasBankbook || bankbookProvided
+            ? new Date()
+            : null,
+        bankbook: nextBankbook,
+      };
     }
 
     if (

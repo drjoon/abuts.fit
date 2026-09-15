@@ -44,7 +44,7 @@ export type GuideTourKind = "practice" | "lab";
 
 export type GuideTourAdvanceMode = "next" | "action";
 
-export type GuideTourCreditsTab = "ledger" | "stats" | "charge";
+export type GuideTourCreditsTab = "ledger" | "stats" | "charge" | "payout";
 
 export type GuideTourStepDef = {
   id: string;
@@ -359,6 +359,16 @@ export const LAB_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
     advance: "next",
     chapter: 2,
     creditsTab: "charge",
+  },
+  {
+    id: "credits_payout",
+    title: "정산 · 지급",
+    hint: "기공크레딧 잔액과 월 지급 내역을 확인합니다.",
+    path: `${CREDITS_PATH}?tab=payout`,
+    target: "credits_payout",
+    advance: "next",
+    chapter: 2,
+    creditsTab: "payout",
   },
   // —— 챕터3: 커스텀어벗 CNC(사이드바「어벗츠로」) ——
   {

@@ -69,6 +69,7 @@ import {
   resolveRequestorProfile,
   type RequestorProfile,
 } from "@/shared/business/requestorCapabilities";
+import { LabPayoutAccountCard } from "@/shared/components/business/settings/LabPayoutAccountCard";
 import { Building2 } from "lucide-react";
 
 interface BusinessTabProps {
@@ -1020,6 +1021,12 @@ export const BusinessTab = ({
                     }
                   />
                 )}
+
+                {membershipMgmt.membership === "owner" &&
+                (requestorProfile.kind === "lab" ||
+                  user?.role === "internalLab") ? (
+                  <LabPayoutAccountCard />
+                ) : null}
               </div>
             )}
 

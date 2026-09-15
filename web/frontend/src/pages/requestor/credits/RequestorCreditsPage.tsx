@@ -1,5 +1,6 @@
 // change-log:
-// - 2026-09-05: 가이드투어 — 정산 3탭(내역·통계·충전)별 data-guide-tour·활성 탭 강조.
+// - 2026-09-16: 기공소·어벗츠기공소 — 충전 옆「지급」탭(LabSettlementPayoutTab). ?tab=settlement → payout.
+// - 2026-09-05: 가이드투어 — 정산 탭(내역·통계·충전·지급)별 data-guide-tour·활성 탭 강조.
 // - 2026-08-26: 데모 뱃지 — 탭 바 max-w-4xl 유지, 뱃지만 max-w-6xl 우측 끝.
 // - 2026-08-26: 데모 모드 뱃지(탭 바 우측). 실사용 전환 확인.
 // - 2026-08-22: 정산 페이지 탭 순서 — 내역·통계·충전. 사이드바 라벨 정산.
@@ -27,47 +28,60 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/shared/components/CreditLedgerModal.tsx
 // - web/frontend/src/features/settings/tabs/CreditPaymentTab.tsx
+// - web/frontend/src/features/settings/tabs/LabSettlementPayoutTab.tsx
 // - web/frontend/src/shared/components/RequestorWorkspaceHeader.tsx
 // - web/frontend/src/shared/ui/skeletons/RequestorCreditsPageSkeleton.tsx
 // - web/frontend/src/shared/demo/DemoModeBadge.tsx
 // - web/frontend/src/shared/guideTour/guideTourSteps.ts
 // - web/frontend/src/shared/guideTour/GuideTourProvider.tsx
+// - web/frontend/src/shared/business/useRequestorBusinessAccess.ts
 import { useCallback, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { CreditCard, BarChart3, Wallet } from "lucide-react";
+import { BarChart3, CreditCard, HandCoins, Wallet } from "lucide-react";
 import {
   SettingsScaffold,
   type SettingsTabDef,
 } from "@/features/components/SettingsScaffold";
 import { PaymentTab } from "@/features/settings/tabs/CreditPaymentTab";
+import { LabSettlementPayoutTab } from "@/features/settings/tabs/LabSettlementPayoutTab";
 import { CreditLedgerModal } from "@/shared/components/CreditLedgerModal";
 import { DemoModeBadge } from "@/shared/demo/DemoModeBadge";
 import { useGuideTour } from "@/shared/guideTour/GuideTourProvider";
+import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import { useAuthStore } from "@/store/useAuthStore";
 
 import { CreditStatisticsTab } from "@/pages/requestor/credits/components/CreditStatisticsTab";
 
-type TabKey = "ledger" | "stats" | "charge";
+type TabKey = "ledger" | "stats" | "charge" | "payout";
 
 const CREDITS_GUIDE_TOUR_TARGETS = new Set([
   "credits_ledger",
   "credits_stats",
   "credits_charge",
+  "credits_payout",
   "credits_workspace",
 ]);
 
+const resolveCreditsTab = (
+  raw: string | null,
+  isLab: boolean,
+): TabKey => {
+  if (raw === "charge") return "charge";
+  if (raw === "stats") return "stats";
+  if (raw === "payout" || raw === "settlement") {
+    return isLab ? "payout" : "ledger";
+  }
+  return "ledger";
+};
+
 export default function RequestorCreditsPage() {
   const { user } = useAuthStore();
+  const { kind } = useRequestorBusinessAccess();
+  const isLab = kind === "lab" || user?.role === "internalLab";
   const guideTour = useGuideTour();
   const [searchParams, setSearchParams] = useSearchParams();
   const [ledgerKey, setLedgerKey] = useState(0);
-  const tabFromUrl = (searchParams.get("tab") as TabKey | null) || "ledger";
-  const activeTab: TabKey =
-    tabFromUrl === "charge"
-      ? "charge"
-      : tabFromUrl === "stats"
-        ? "stats"
-        : "ledger";
+  const activeTab = resolveCreditsTab(searchParams.get("tab"), isLab);
 
   const guideTourTarget =
     guideTour.active &&
@@ -80,8 +94,8 @@ export default function RequestorCreditsPage() {
     setLedgerKey((n) => n + 1);
   }, []);
 
-  const tabs = useMemo<SettingsTabDef[]>(
-    () => [
+  const tabs = useMemo<SettingsTabDef[]>(() => {
+    const next: SettingsTabDef[] = [
       {
         key: "ledger",
         label: "내역",
@@ -120,9 +134,24 @@ export default function RequestorCreditsPage() {
             </div>
           ) : null,
       },
-    ],
-    [activeTab, user, ledgerKey],
-  );
+    ];
+
+    if (isLab) {
+      next.push({
+        key: "payout",
+        label: "지급",
+        icon: HandCoins,
+        content:
+          activeTab === "payout" ? (
+            <div className="h-full min-h-0 overflow-hidden">
+              <LabSettlementPayoutTab />
+            </div>
+          ) : null,
+      });
+    }
+
+    return next;
+  }, [activeTab, user, ledgerKey, isLab]);
 
   return (
     <div

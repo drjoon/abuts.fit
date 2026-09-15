@@ -36,6 +36,7 @@ import { useLabReceiveUnreadSound } from "@/shared/hooks/useLabReceiveUnreadSoun
 // - web/frontend/src/pages/admin/AdminFinancePage.tsx
 // - web/frontend/src/pages/admin/AdminSettingsHubPage.tsx
 // change-log:
+// - 2026-09-16: 기공소·어벗츠기공소 /payments → 크레딧「지급」탭(?tab=payout).
 // - 2026-09-06: 관리자 사이드 허브(회원·지원·채널·재무·설정) + 구 URL 리다이렉트.
 
 const Index = lazy(() => import("./pages/public/Index"));
@@ -138,7 +139,6 @@ import AdminStorePage from "@/pages/admin/system/AdminStorePage";
 import ReferralGroupsPage from "@/pages/requestor/referralGroups/ReferralGroupsPage";
 import SalesmanPaymentsPage from "@/pages/salesman/SalesmanPaymentsPage";
 import DevopsPaymentsPage from "@/pages/devops/DevopsPaymentsPage";
-import { LabSettlementPayoutTab } from "@/features/settings/tabs/LabSettlementPayoutTab";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 const CncDashboardPage = lazy(() =>
   import("./pages/manufacturer/equipment/EquipmentPage").then((m) => ({
@@ -283,12 +283,14 @@ const PaymentsRoute = () => {
   if (user.role === "admin") {
     return <Navigate to="/dashboard/finance?tab=payments" replace />;
   }
-  if (user.role === "internalLab") return <LabSettlementPayoutTab />;
-  // 기공소(requestor lab) 사이드「정산」은 제거. 구 북마크는 크레딧 내역으로.
+  // 기공소·어벗츠기공소 지급은 크레딧「지급」탭. 구 /payments·정산 북마크 호환.
+  if (user.role === "internalLab") {
+    return <Navigate to="/dashboard/credits?tab=payout" replace />;
+  }
   if (user.role === "requestor") {
     if (accessLoading) return null;
     if (kind === "lab") {
-      return <Navigate to="/dashboard/credits?tab=ledger" replace />;
+      return <Navigate to="/dashboard/credits?tab=payout" replace />;
     }
   }
   return <Navigate to="/dashboard" replace />;

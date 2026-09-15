@@ -277,6 +277,13 @@ const businessAnchorSchema = new mongoose.Schema(
       accountNumber: { type: String, default: "" },
       holderName: { type: String, default: "" },
       updatedAt: { type: Date, default: null },
+      /** 사업자 통장 사본(입금 계좌 확인용). */
+      bankbook: {
+        s3Key: { type: String, default: "" },
+        fileId: { type: String, default: "" },
+        originalName: { type: String, default: "" },
+        uploadedAt: { type: Date, default: null },
+      },
     },
     payoutRates: {
       manufacturerRate: { type: Number, default: 0, min: 0, max: 1 },

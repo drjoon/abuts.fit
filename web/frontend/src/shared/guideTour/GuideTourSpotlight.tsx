@@ -72,6 +72,7 @@ const SEPARATE_SATELLITE_TARGETS = new Set([
   "credits_ledger",
   "credits_stats",
   "credits_charge",
+  "credits_payout",
   "new_request_workspace",
   "store_workspace",
 ]);
@@ -91,12 +92,14 @@ const PREFER_LOWER_IN_HOLE_TARGETS = new Set([
   "credits_ledger",
   "credits_stats",
   "credits_charge",
+  "credits_payout",
 ]);
 /** 사이드바 위성 id가 스텝 target과 다를 때(정산 3탭) */
 const SATELLITE_ALIAS: Record<string, string[]> = {
   credits_ledger: ["credits_workspace"],
   credits_stats: ["credits_workspace"],
   credits_charge: ["credits_workspace"],
+  credits_payout: ["credits_workspace"],
 };
 /** 코치마크를 뷰포트 오른쪽(견적 중앙 툴팁과 겹침 회피: card_ops·estimate) */
 const PREFER_RIGHT_HALF_TARGETS = new Set([

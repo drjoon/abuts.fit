@@ -237,6 +237,15 @@ export function hasPayoutAccount(account) {
   );
 }
 
+/** 기공소 월 지급: 계좌 텍스트 + 통장 사본 모두 필요. */
+export function hasLabPayoutReady(account) {
+  if (!hasPayoutAccount(account)) return false;
+  const book = account?.bankbook || {};
+  return Boolean(
+    String(book?.s3Key || "").trim() || String(book?.fileId || "").trim(),
+  );
+}
+
 /**
  * 실송금이 끝난 뒤에만 GL에 지급을 포스팅한다. 배치 item ID가 idempotency key라
  * 관리자 재클릭/네트워크 재시도에도 이중 지급 원장을 만들지 않는다.

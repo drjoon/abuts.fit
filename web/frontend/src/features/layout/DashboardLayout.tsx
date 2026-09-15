@@ -15,6 +15,8 @@ import {
 } from "@/shared/layout/sidebarOpen";
 import { cn } from "@/shared/ui/cn";
 
+// - 2026-09-16: 어벗츠기공소 사이드 — 크레딧·정산 이중 메뉴를「정산」(/dashboard/credits)로 통합. 지급은 크레딧「지급」탭.
+// - 2026-09-16: 기공소 통장사본 미등록 — 정산일 7일 전 일 1회 안내 모달.
 // - 2026-09-13: CNC 워크시트 — 불완전가공을 상단 공정 탭에서 제거하고 R&D 하위 탭으로 이동.
 // - 2026-09-13: 관리자「스토어」사이드바 액션 대기 배지(PENDING·READY·SHIPPED).
 // - 2026-09-13: 관리자 사이드에「스토어」(/dashboard/store-admin) 복구.
@@ -127,6 +129,7 @@ import { LabFeeSetupPrompt } from "@/features/settings/LabFeeSetupPrompt";
 import { LabDashboardTopBanners } from "@/features/lab/LabDashboardTopBanners";
 import { GuideTourProvider } from "@/shared/guideTour/GuideTourProvider";
 import { GuideTourSidebarButton } from "@/shared/guideTour/GuideTourSidebarButton";
+import { useLabPayoutBankbookReminder } from "@/shared/settlement/useLabPayoutBankbookReminder";
 import { getRequestorRoleBadgeLabel } from "@/shared/business/requestorCapabilities";
 import { getAppUserRoleLabel } from "@/shared/types/role";
 import { ToastAction } from "@/components/ui/toast";
@@ -348,8 +351,7 @@ const sidebarItems = {
   ],
   internalLab: [
     buildLabGigongRequestSidebarGroup(INTERNAL_LAB_RECEIVE_HREF),
-    { icon: Wallet, label: "크레딧", href: CREDITS_HREF },
-    { icon: Wallet, label: "정산", href: "/dashboard/payments" },
+    { icon: Wallet, label: "정산", href: CREDITS_HREF },
     {
       icon: ClipboardList,
       label: "고객 요구사항",
@@ -571,6 +573,8 @@ export const DashboardLayout = () => {
   const location = useLocation();
   const { toast } = useToast();
   const { demoMode } = useDemoMode();
+  const { dialog: labPayoutBankbookRemindDialog } =
+    useLabPayoutBankbookReminder();
   const [creditBalance, setCreditBalance] = useState<number | null>(null);
   const [paidCredit, setPaidCredit] = useState<number | null>(null);
   const [freeRequestCredit, setFreeRequestCredit] = useState<number | null>(
@@ -1676,6 +1680,7 @@ export const DashboardLayout = () => {
         isLab={requestorKind === "lab" || user.role === "internalLab"}
         ready={!requestorAccessLoading || user.role === "internalLab"}
       />
+      {labPayoutBankbookRemindDialog}
       <div className="flex h-dvh overflow-hidden">
         <div
           className={cn(

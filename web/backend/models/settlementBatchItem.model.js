@@ -48,6 +48,12 @@ const settlementBatchItemSchema = new mongoose.Schema(
       bankName: { type: String, default: "" },
       accountNumber: { type: String, default: "" },
       holderName: { type: String, default: "" },
+      bankbook: {
+        s3Key: { type: String, default: "" },
+        fileId: { type: String, default: "" },
+        originalName: { type: String, default: "" },
+        uploadedAt: { type: Date, default: null },
+      },
     },
     status: {
       type: String,
