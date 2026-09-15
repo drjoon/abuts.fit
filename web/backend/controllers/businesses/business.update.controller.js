@@ -2,6 +2,7 @@
 // - web/backend/rules.md
 // - web/backend/app.js
 // - web/backend/server.js
+// - 2026-09-16: 정산 입금 계좌 등록·변경·삭제는 대표자만. clear 지원.
 import { Types } from "mongoose";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import User from "../../models/user.model.js";
@@ -352,6 +353,7 @@ export async function updateMyBusiness(req, res) {
         zipCodeProvided ||
         startDateProvided ||
         hasOwnKey(req.body, "businessLicense") ||
+        payoutAccountProvided ||
         requestorProfileProvided;
       if (!canEdit && (nonShippingProvided || !shippingPolicyProvided)) {
         return res.status(403).json({
@@ -644,22 +646,51 @@ export async function updateMyBusiness(req, res) {
     }
 
     if (payoutAccountProvided) {
-      const bankName = String(payoutAccountInput?.bankName || "").trim();
-      const holderName = String(payoutAccountInput?.holderName || "").trim();
-      const accountNumber = String(payoutAccountInput?.accountNumber || "")
-        .replace(/\s/g, "")
-        .trim();
-      const bankbookProvided = hasOwnKey(payoutAccountInput || {}, "bankbook");
-      const bankbookInput = bankbookProvided
-        ? payoutAccountInput?.bankbook
-        : null;
+      if (hasBusinessAnchor) {
+        const meId = String(req.user._id);
+        const canEditPayout =
+          businessAnchor &&
+          (String(businessAnchor.primaryContactUserId) === meId ||
+            (Array.isArray(businessAnchor.owners) &&
+              businessAnchor.owners.some((c) => String(c) === meId)));
+        if (!canEditPayout) {
+          return res.status(403).json({
+            success: false,
+            message: "대표자만 정산 입금 계좌를 등록·변경·삭제할 수 있습니다.",
+          });
+        }
+      }
+
+      const clearRequested = Boolean(payoutAccountInput?.clear);
+      const bankName = clearRequested
+        ? ""
+        : String(payoutAccountInput?.bankName || "").trim();
+      const holderName = clearRequested
+        ? ""
+        : String(payoutAccountInput?.holderName || "").trim();
+      const accountNumber = clearRequested
+        ? ""
+        : String(payoutAccountInput?.accountNumber || "")
+            .replace(/\s/g, "")
+            .trim();
+      const bankbookProvided =
+        clearRequested || hasOwnKey(payoutAccountInput || {}, "bankbook");
+      const bankbookInput = clearRequested
+        ? null
+        : bankbookProvided
+          ? payoutAccountInput?.bankbook
+          : null;
       const bankbookS3Key = String(bankbookInput?.s3Key || "").trim();
       const bankbookFileId = String(bankbookInput?.fileId || "").trim();
       const bankbookName = String(bankbookInput?.originalName || "").trim();
       const hasBankbook = Boolean(bankbookS3Key || bankbookFileId);
       const anyAccountField = Boolean(bankName || holderName || accountNumber);
 
-      if (anyAccountField && (!bankName || !holderName || !accountNumber)) {
+      if (
+        !clearRequested &&
+        anyAccountField &&
+        (!bankName || !holderName || !accountNumber)
+      ) {
         return res.status(400).json({
           success: false,
           message: "은행/계좌번호/예금주를 모두 입력해주세요.",
@@ -668,33 +699,40 @@ export async function updateMyBusiness(req, res) {
 
       const prevAccount = businessAnchor?.payoutAccount || {};
       const prevBook = prevAccount?.bankbook || {};
-      const nextBankbook = !bankbookProvided
+      const nextBankbook = clearRequested
         ? {
-            s3Key: String(prevBook.s3Key || ""),
-            fileId: String(prevBook.fileId || ""),
-            originalName: String(prevBook.originalName || ""),
-            uploadedAt: prevBook.uploadedAt || null,
+            s3Key: "",
+            fileId: "",
+            originalName: "",
+            uploadedAt: null,
           }
-        : hasBankbook
+        : !bankbookProvided
           ? {
-              s3Key: bankbookS3Key,
-              fileId: bankbookFileId,
-              originalName: bankbookName,
-              uploadedAt: new Date(),
+              s3Key: String(prevBook.s3Key || ""),
+              fileId: String(prevBook.fileId || ""),
+              originalName: String(prevBook.originalName || ""),
+              uploadedAt: prevBook.uploadedAt || null,
             }
-          : {
-              s3Key: "",
-              fileId: "",
-              originalName: "",
-              uploadedAt: null,
-            };
+          : hasBankbook
+            ? {
+                s3Key: bankbookS3Key,
+                fileId: bankbookFileId,
+                originalName: bankbookName,
+                uploadedAt: new Date(),
+              }
+            : {
+                s3Key: "",
+                fileId: "",
+                originalName: "",
+                uploadedAt: null,
+              };
 
       patch.payoutAccount = {
         bankName,
         accountNumber,
         holderName,
         updatedAt:
-          anyAccountField || hasBankbook || bankbookProvided
+          clearRequested || anyAccountField || hasBankbook || bankbookProvided
             ? new Date()
             : null,
         bankbook: nextBankbook,
@@ -1562,6 +1600,30 @@ export async function verifyMyPayoutAccount(req, res) {
     const roleCheck = assertBusinessRole(req, res);
     if (!roleCheck) return;
     const { businessType } = roleCheck;
+
+    const businessAnchorIdForOwner = String(
+      req.user?.businessAnchorId || "",
+    ).trim();
+    if (businessAnchorIdForOwner) {
+      const ownerAnchor = await BusinessAnchor.findOne({
+        _id: businessAnchorIdForOwner,
+        businessType,
+      })
+        .select({ primaryContactUserId: 1, owners: 1 })
+        .lean();
+      const meId = String(req.user._id);
+      const canVerify =
+        ownerAnchor &&
+        (String(ownerAnchor.primaryContactUserId) === meId ||
+          (Array.isArray(ownerAnchor.owners) &&
+            ownerAnchor.owners.some((c) => String(c) === meId)));
+      if (!canVerify) {
+        return res.status(403).json({
+          success: false,
+          message: "대표자만 정산 입금 계좌를 확인할 수 있습니다.",
+        });
+      }
+    }
 
     const bankName = String(req.body?.bankName || "").trim();
     const accountNumber = String(req.body?.accountNumber || "")

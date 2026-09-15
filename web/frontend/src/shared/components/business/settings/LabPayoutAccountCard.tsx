@@ -5,6 +5,8 @@
 // change-log:
 // - 2026-09-16: 기공소 정산 입금 계좌·통장 사본 등록(설정>사업자). focus=payout 시 카드로 스크롤.
 // - 2026-09-16: 통장 사본 업로드 시 Gemini OCR 자동입력 + 팝빌 예금주조회.
+// - 2026-09-16: 대표자만 등록·변경·삭제. 계좌 삭제(clear) 추가.
+// - 2026-09-16: 확인·저장 완료 후 계좌 확인/저장 버튼 비활성(수정 시 재활성).
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
@@ -20,6 +22,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
@@ -30,6 +42,7 @@ import {
 } from "@/shared/components/business/settings/business/businessMeCache";
 import {
   LAB_PAYOUT_ACCOUNT_CARD_ID,
+  hasLabPayoutAccountText,
   hasLabPayoutBankbook,
   isLabPayoutReady,
   type LabPayoutAccountSnapshot,
@@ -48,7 +61,9 @@ type AccountCheck = {
 
 type Props = {
   /** 저장 후 부모 갱신 */
-  onSaved?: (account: LabPayoutAccountSnapshot) => void;
+  onSaved?: (account: LabPayoutAccountSnapshot | null) => void;
+  /** 대표자만 true. false면 조회만. */
+  canEdit?: boolean;
 };
 
 type UploadStatus = "idle" | "uploading" | "ocr" | "validating";
@@ -57,7 +72,7 @@ const isImageFile = (file: File) =>
   ["image/jpeg", "image/png", "image/webp"].includes(file.type) ||
   /\.(jpe?g|png|webp)$/i.test(file.name);
 
-export function LabPayoutAccountCard({ onSaved }: Props) {
+export function LabPayoutAccountCard({ onSaved, canEdit = true }: Props) {
   const { token, user } = useAuthStore();
   const { toast } = useToast();
   const { uploadFilesWithToast } = useUploadWithProgressToast({ token });
@@ -70,6 +85,8 @@ export function LabPayoutAccountCard({ onSaved }: Props) {
   const [saving, setSaving] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<UploadStatus>("idle");
   const [verifying, setVerifying] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [bankName, setBankName] = useState("");
   const [accountNumber, setAccountNumber] = useState("");
   const [holderName, setHolderName] = useState("");
@@ -77,10 +94,26 @@ export function LabPayoutAccountCard({ onSaved }: Props) {
     LabPayoutAccountSnapshot["bankbook"]
   >(null);
   const [accountCheck, setAccountCheck] = useState<AccountCheck | null>(null);
+  /** 서버에 저장된 준비 완료 계좌(로드/저장 성공). */
+  const [savedClean, setSavedClean] = useState(false);
+  /** 로드·저장 이후 입력/통장 사본이 바뀌었는지. */
+  const [dirty, setDirty] = useState(false);
 
-  const busy = uploadStatus !== "idle" || saving || verifying;
+  const busy = uploadStatus !== "idle" || saving || verifying || deleting;
+  const hasAccountData =
+    hasLabPayoutAccountText({ bankName, accountNumber, holderName }) ||
+    hasLabPayoutBankbook({ bankbook });
+  const verifiedForCurrent = Boolean(
+    accountCheck?.verified || accountCheck?.skipped,
+  );
+  const verifyDisabled =
+    busy || !canEdit || verifiedForCurrent || (!dirty && savedClean);
+  const saveDisabled = busy || !canEdit || !dirty;
 
-  const clearAccountCheck = () => setAccountCheck(null);
+  const markDirty = () => {
+    setDirty(true);
+    setAccountCheck(null);
+  };
 
   const load = useCallback(async () => {
     if (!token) {
@@ -100,6 +133,9 @@ export function LabPayoutAccountCard({ onSaved }: Props) {
       setHolderName(String(pa.holderName || ""));
       setBankbook(pa.bankbook || null);
       setAccountCheck(null);
+      const ready = isLabPayoutReady(pa);
+      setSavedClean(ready);
+      setDirty(false);
     } catch {
       // ignore
     } finally {
@@ -220,7 +256,7 @@ export function LabPayoutAccountCard({ onSaved }: Props) {
   };
 
   const handleBankbookUpload = async (file: File) => {
-    if (!token) return;
+    if (!token || !canEdit) return;
     const allowed = new Set([
       "image/jpeg",
       "image/png",
@@ -244,7 +280,8 @@ export function LabPayoutAccountCard({ onSaved }: Props) {
       return;
     }
     setUploadStatus("uploading");
-    clearAccountCheck();
+    setDirty(true);
+    setAccountCheck(null);
     try {
       const uploaded = await uploadFilesWithToast([file]);
       const first = uploaded?.[0];
@@ -350,8 +387,50 @@ export function LabPayoutAccountCard({ onSaved }: Props) {
     }
   };
 
+  const remove = async () => {
+    if (!token || !canEdit) return;
+    setDeleting(true);
+    try {
+      const res = await request({
+        path: "/api/businesses/me",
+        method: "PATCH",
+        token,
+        jsonBody: { payoutAccount: { clear: true } },
+      });
+      if (!res.ok) {
+        throw new Error(
+          (res.data as { message?: string } | undefined)?.message ||
+            "삭제 실패",
+        );
+      }
+      setBankName("");
+      setAccountNumber("");
+      setHolderName("");
+      setBankbook(null);
+      setAccountCheck(null);
+      setSavedClean(false);
+      setDirty(false);
+      invalidateBusinessMeCache({ token, businessType });
+      onSaved?.(null);
+      toast({
+        title: "정산 입금 계좌 삭제 완료",
+        description: "정산 지급 전에 다시 등록해주세요.",
+      });
+      setDeleteConfirmOpen(false);
+    } catch (err: unknown) {
+      toast({
+        title: "삭제 실패",
+        description:
+          err instanceof Error ? err.message : "삭제에 실패했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const save = async () => {
-    if (!token) return;
+    if (!token || !canEdit) return;
     const next: LabPayoutAccountSnapshot = {
       bankName: bankName.trim(),
       accountNumber: accountNumber.replace(/\s/g, "").trim(),
@@ -410,6 +489,8 @@ export function LabPayoutAccountCard({ onSaved }: Props) {
         );
       }
       invalidateBusinessMeCache({ token, businessType });
+      setSavedClean(isLabPayoutReady(next));
+      setDirty(false);
       onSaved?.(next);
       toast({
         title: "입금 계좌 저장 완료",
@@ -468,6 +549,7 @@ export function LabPayoutAccountCard({ onSaved }: Props) {
           </p>
           <p className="text-xs text-muted-foreground">
             통장 사본을 올리면 AI가 계좌를 채우고, 팝빌로 예금주를 확인합니다.
+            등록·변경·삭제는 대표자만 가능합니다.
           </p>
         </div>
       </div>
@@ -480,11 +562,11 @@ export function LabPayoutAccountCard({ onSaved }: Props) {
             value={bankName}
             onChange={(e) => {
               setBankName(e.target.value);
-              clearAccountCheck();
+              markDirty();
             }}
             placeholder="예: 국민은행"
             className="h-9 rounded-xl"
-            disabled={busy}
+            disabled={busy || !canEdit}
           />
         </div>
         <div className="space-y-1.5">
@@ -494,11 +576,11 @@ export function LabPayoutAccountCard({ onSaved }: Props) {
             value={accountNumber}
             onChange={(e) => {
               setAccountNumber(e.target.value);
-              clearAccountCheck();
+              markDirty();
             }}
             placeholder="숫자만 입력"
             className="h-9 rounded-xl"
-            disabled={busy}
+            disabled={busy || !canEdit}
           />
         </div>
         <div className="space-y-1.5">
@@ -508,11 +590,11 @@ export function LabPayoutAccountCard({ onSaved }: Props) {
             value={holderName}
             onChange={(e) => {
               setHolderName(e.target.value);
-              clearAccountCheck();
+              markDirty();
             }}
             placeholder="사업자 명의"
             className="h-9 rounded-xl"
-            disabled={busy}
+            disabled={busy || !canEdit}
           />
         </div>
       </div>
@@ -565,7 +647,7 @@ export function LabPayoutAccountCard({ onSaved }: Props) {
             type="button"
             variant={hasLabPayoutBankbook({ bankbook }) ? "outline" : "default"}
             size="sm"
-            disabled={busy}
+            disabled={busy || !canEdit}
             className="relative"
             onClick={() => {
               const input = document.getElementById(
@@ -599,10 +681,10 @@ export function LabPayoutAccountCard({ onSaved }: Props) {
                 type="button"
                 className="rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
                 aria-label="통장 사본 제거"
-                disabled={busy}
+                disabled={busy || !canEdit}
                 onClick={() => {
                   setBankbook(null);
-                  clearAccountCheck();
+                  markDirty();
                 }}
               >
                 <X className="h-3.5 w-3.5" />
@@ -619,32 +701,81 @@ export function LabPayoutAccountCard({ onSaved }: Props) {
         </p>
       </div>
 
-      <div className="mt-4 flex flex-wrap justify-end gap-2">
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={busy}
-          onClick={() => void verifyAccount()}
-        >
-          {verifying ? (
-            <>
-              <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-              확인 중…
-            </>
-          ) : (
-            "계좌 확인"
-          )}
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          disabled={busy}
-          onClick={() => void save()}
-        >
-          {saving ? "저장 중…" : "저장"}
-        </Button>
-      </div>
+      {canEdit ? (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            {hasAccountData ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                disabled={busy}
+                onClick={() => setDeleteConfirmOpen(true)}
+              >
+                {deleting ? "삭제 중…" : "정산 입금 계좌 삭제"}
+              </Button>
+            ) : null}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={verifyDisabled}
+              onClick={() => void verifyAccount()}
+            >
+              {verifying ? (
+                <>
+                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                  확인 중…
+                </>
+              ) : verifiedForCurrent || (!dirty && savedClean) ? (
+                "확인됨"
+              ) : (
+                "계좌 확인"
+              )}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={saveDisabled}
+              onClick={() => void save()}
+            >
+              {saving ? "저장 중…" : !dirty && savedClean ? "저장됨" : "저장"}
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <p className="mt-4 text-xs text-muted-foreground">
+          정산 입금 계좌는 대표자만 등록·변경·삭제할 수 있습니다.
+        </p>
+      )}
+
+      <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>정산 입금 계좌를 삭제할까요?</AlertDialogTitle>
+            <AlertDialogDescription>
+              은행·계좌번호·예금주·통장 사본이 모두 삭제됩니다. 정산 지급 전에
+              다시 등록해야 합니다.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>취소</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={(e) => {
+                e.preventDefault();
+                void remove();
+              }}
+            >
+              {deleting ? "삭제 중…" : "삭제"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

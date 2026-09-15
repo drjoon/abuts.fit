@@ -1025,7 +1025,7 @@ export const BusinessTab = ({
                 {membershipMgmt.membership === "owner" &&
                 (requestorProfile.kind === "lab" ||
                   user?.role === "internalLab") ? (
-                  <LabPayoutAccountCard />
+                  <LabPayoutAccountCard canEdit />
                 ) : null}
               </div>
             )}

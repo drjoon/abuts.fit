@@ -902,6 +902,29 @@ export async function parseBankbook(req, res) {
 
     const roleCheck = assertBusinessRole(req, res);
     if (!roleCheck) return;
+    const { businessType } = roleCheck;
+
+    const businessAnchorId = String(req.user?.businessAnchorId || "").trim();
+    if (businessAnchorId) {
+      const anchor = await BusinessAnchor.findOne({
+        _id: businessAnchorId,
+        businessType,
+      })
+        .select({ primaryContactUserId: 1, owners: 1 })
+        .lean();
+      const meId = String(req.user._id);
+      const canUpload =
+        anchor &&
+        (String(anchor.primaryContactUserId) === meId ||
+          (Array.isArray(anchor.owners) &&
+            anchor.owners.some((c) => String(c) === meId)));
+      if (!canUpload) {
+        return res.status(403).json({
+          success: false,
+          message: "대표자만 통장 사본을 인식·등록할 수 있습니다.",
+        });
+      }
+    }
 
     const key = String(s3Key || "").trim();
     if (!key) {
@@ -991,12 +1014,11 @@ export async function parseBankbook(req, res) {
 
     // 사업자번호가 있으면 팝빌 실명조회까지 한 번에 (응답 지연 최소화: 필수 OCR 후 검증).
     let businessNumber = "";
-    const businessAnchorId = String(req.user?.businessAnchorId || "").trim();
     if (businessAnchorId) {
-      const anchor = await BusinessAnchor.findById(businessAnchorId)
+      const bizAnchor = await BusinessAnchor.findById(businessAnchorId)
         .select({ "metadata.businessNumber": 1 })
         .lean();
-      businessNumber = String(anchor?.metadata?.businessNumber || "").replace(
+      businessNumber = String(bizAnchor?.metadata?.businessNumber || "").replace(
         /\D/g,
         "",
       );
