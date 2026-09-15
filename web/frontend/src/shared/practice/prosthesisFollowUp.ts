@@ -12,6 +12,7 @@
 // - 2026-09-15: focus=null + 후속 있음 → 원 임시치아 단계(-1). 지르는 칩·append 직후 focus로만.
 // - 2026-09-15: followUps 배열 없이도 toothWorks 후속 행이 있으면 focus=null → -1(원 스냅샷 보호).
 // - 2026-09-15: 후속-only(지르 다이얼로그 초안·채팅)는 focus=null 유지 — 원 행이 있을 때만 -1.
+// - 2026-09-15: toothWorksForFinalProsthesisFeeQuote — 최종(지르+CA). followUp phase 제거·원 CA 병합.
 import {
   type ToothWorkSelection,
   isCustomAbutmentProsthesisType,
@@ -932,6 +933,77 @@ export const listCompletedFollowUpToothWorks = <
       isFollowUpProsthesisPhase(row) &&
       isFinalProsthesisType(String(row.prosthesisType || "")),
   );
+};
+
+/**
+ * 최종 기공비(처음부터 지르·커스텀어벗) 견적용 치식.
+ * - labFeeSchedule은 followUp phase 행의 CA를 항상 0으로 둠 → phase 제거
+ * - CA·어벗 스펙은 원 임시치아 행 우선(차트 merge와 동일)
+ * - 치아별로 펼쳐 브리지 연결치 CA가 누락되지 않게 함
+ */
+export const toothWorksForFinalProsthesisFeeQuote = (
+  toothWorks: ReadonlyArray<Partial<ToothWorkSelection>> | null | undefined,
+): ToothWorkSelection[] => {
+  const rows = Array.isArray(toothWorks) ? toothWorks : [];
+  const followUps = listCompletedFollowUpToothWorks(rows);
+  if (followUps.length === 0) return [];
+
+  const baseByTooth = new Map<string, Partial<ToothWorkSelection>>();
+  for (const row of rows) {
+    if (isFollowUpProsthesisPhase(row)) continue;
+    const tooth = String(row?.toothNumber || "").trim();
+    if (!/^[1-4][1-8]$/.test(tooth)) continue;
+    if (!baseByTooth.has(tooth)) baseByTooth.set(tooth, row);
+  }
+
+  const out: ToothWorkSelection[] = [];
+  const seenSpan = new Set<string>();
+  for (const fu of followUps) {
+    const teeth = linkedTeethOf(fu);
+    const list =
+      teeth.length > 0
+        ? teeth
+        : [String(fu.toothNumber || "").trim()].filter((t) =>
+            /^[1-4][1-8]$/.test(t),
+          );
+    if (list.length === 0) continue;
+    const spanKey = `${list.join("-")}:${String(fu.prosthesisType || "").trim()}`;
+    if (seenSpan.has(spanKey)) continue;
+    seenSpan.add(spanKey);
+
+    const prosthesisType =
+      list.length >= 2
+        ? "브리지"
+        : String(fu.prosthesisType || "").trim() || "크라운";
+
+    for (const tooth of list) {
+      const base = baseByTooth.get(tooth);
+      const merged: ToothWorkSelection = {
+        ...(fu as ToothWorkSelection),
+        toothNumber: tooth,
+        prosthesisType,
+        bridgeLinkedTeeth: list.length >= 2 ? list : [],
+        customAbutment: Boolean(
+          base?.customAbutment ?? (fu as ToothWorkSelection).customAbutment,
+        ),
+      };
+      if (base) {
+        for (const key of DISPLAY_ABUTMENT_SPEC_KEYS) {
+          if (key === "customAbutment") {
+            merged.customAbutment = Boolean(base.customAbutment);
+            continue;
+          }
+          const value = base[key as keyof ToothWorkSelection];
+          if (value != null && String(value).trim() !== "") {
+            (merged as Record<string, unknown>)[key] = value;
+          }
+        }
+      }
+      delete (merged as { prosthesisPhase?: string }).prosthesisPhase;
+      out.push(merged);
+    }
+  }
+  return out;
 };
 
 /**

@@ -19,6 +19,7 @@
 // - 2026-09-15: 치식·보철물 차트 — 후속 지르 반영(형태) + 단계별 기공비. 인쇄는 원 임시치아.
 // - 2026-09-15: 견적은 전체 toothWorks(feeToothWorks) — 후속 반영·임시치아 차감 라인 유지.
 // - 2026-09-15: 남은 임시치아 있으면 지르 보철 CTA 유지(제작 변경/취소와 병행).
+// - 2026-09-15: 확정 보철·최종 기공비 — showFinalFee(지르+커스텀어벗).
 // - 2026-09-15: 원 임시치아 단계(focus<0) — 스크롤을 치식 상단으로(채팅 후속 카드에 가려지지 않음).
 // - 2026-09-14: 모바일 플로팅 — mobileFloatingTopInset으로 채팅을 상단 액션 바 아래로.
 // - 2026-09-14: 모바일 플로팅 — mobileTopChrome을 채팅 **위** 고정 바에 두고 패널을 아래로 내린다.
@@ -3346,16 +3347,16 @@ export function PracticeTransferDetailChatDialog({
                                 toothWorks={listCompletedFollowUpToothWorks(
                                   toothWorks,
                                 )}
-                                feeToothWorks={listCompletedFollowUpToothWorks(
-                                  toothWorks,
-                                )}
+                                feeToothWorks={
+                                  Array.isArray(toothWorks) ? toothWorks : undefined
+                                }
                                 showHeader={false}
                                 labAnchorId={labAnchorId}
                                 feeViewer={feeViewer}
                                 skipJig={skipJig}
                                 labEffectiveStars={labEffectiveStars}
                                 confirmedFeeLabel="최종 기공비"
-                                showFinalFee={false}
+                                showFinalFee
                                 enlargeOverlayClassName="z-[350]"
                                 enlargeDialogClassName="z-[360]"
                                 className="border-0 bg-transparent p-0 shadow-none"

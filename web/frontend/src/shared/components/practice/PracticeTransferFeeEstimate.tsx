@@ -14,6 +14,8 @@
 // - 2026-09-15: 이번 단계 툴팁=포커스 단계, 최종 툴팁=지르+CA(차감·임시치아 단계 숨김).
 // - 2026-09-15: focus null/-1 → 임시치아 단계만(지르 stageSections[0] 폴백 금지).
 // - 2026-09-15: 부분 후속 — 최종 기공비 숨김. 전부 지르 전환 후에만 최종(차감 표현 없음).
+// - 2026-09-15: 확정 보철(임시 단계 없음) — 최종만(지르+CA). 지르 단계(CA 제외) 단독 표기 금지.
+// - 2026-09-15: showFinalFee면 최종만(지르+CA). 단계 바(CA 제외)와 병행하지 않음.
 // - 2026-08-22: 기공소→치과 배송 무료. skipJig 옵션/안내 삭제. 정산 상세는 →어벗츠(박스)만.
 // - 2026-08-21: 기공의뢰 정산에서 기공소→어벗츠 배송 제외(기공소 박스 과금).
 // - 2026-08-21: 치과→기공소 배송 무료. 정산 상세는 →어벗츠(박스)만.
@@ -883,6 +885,8 @@ export function PracticeTransferFeeEstimate({
   const showFinalFeeBar =
     Boolean(showFinalFee) &&
     Boolean(stageSections?.some((stage) => stage.key.startsWith("zirconia-")));
+  /** 확정 보철·최종 바 — 단계(지르 CA 제외) 대신 최종(지르+CA)만 */
+  const finalFeeOnly = showFinalFeeBar;
   const currentStageAmount = currentStageSection
     ? Math.max(
         0,
@@ -1455,36 +1459,42 @@ export function PracticeTransferFeeEstimate({
                 amountBlurClass,
               )}
             >
-              <Tooltip onOpenChange={onBreakdownTooltipOpenChange}>
-                <TooltipTrigger asChild>
-                  <span
-                    className={cn(
-                      "cursor-default font-semibold tabular-nums text-slate-800",
-                      isCard ? "text-sm" : "text-sm sm:text-base",
-                    )}
-                  >
-                    <span className="font-medium text-slate-600">
-                      {showFinalFeeBar && !currentStageSection
-                        ? "최종 기공비 "
-                        : "이번 단계 기공비 "}
+              {!finalFeeOnly ? (
+                <Tooltip onOpenChange={onBreakdownTooltipOpenChange}>
+                  <TooltipTrigger asChild>
+                    <span
+                      className={cn(
+                        "cursor-default font-semibold tabular-nums text-slate-800",
+                        isCard ? "text-sm" : "text-sm sm:text-base",
+                      )}
+                    >
+                      <span className="font-medium text-slate-600">
+                        {showFinalFeeBar && !currentStageSection
+                          ? "최종 기공비 "
+                          : "이번 단계 기공비 "}
+                      </span>
+                      {formatManWon(currentStageAmount)}
+                      {surchargeLabel ? (
+                        <span className="ml-1.5 text-[11px] font-medium text-amber-700">
+                          {surchargeLabel}
+                        </span>
+                      ) : null}
+                      {rushLabel ? (
+                        <span className="ml-1.5 text-[11px] font-medium text-amber-700">
+                          {rushLabel}
+                        </span>
+                      ) : null}
                     </span>
-                    {formatManWon(currentStageAmount)}
-                    {surchargeLabel ? (
-                      <span className="ml-1.5 text-[11px] font-medium text-amber-700">
-                        {surchargeLabel}
-                      </span>
-                    ) : null}
-                    {rushLabel ? (
-                      <span className="ml-1.5 text-[11px] font-medium text-amber-700">
-                        {rushLabel}
-                      </span>
-                    ) : null}
-                  </span>
-                </TooltipTrigger>
-                {renderFeeTooltipContent(currentStageTooltipPanel)}
-              </Tooltip>
+                  </TooltipTrigger>
+                  {renderFeeTooltipContent(currentStageTooltipPanel)}
+                </Tooltip>
+              ) : null}
               {showFinalFeeBar && allStagesTooltipPanel ? (
-                <Tooltip>
+                <Tooltip
+                  onOpenChange={
+                    finalFeeOnly ? onBreakdownTooltipOpenChange : undefined
+                  }
+                >
                   <TooltipTrigger asChild>
                     <span
                       className={cn(
@@ -1499,6 +1509,16 @@ export function PracticeTransferFeeEstimate({
                       {hasMissingFees ? (
                         <span className="ml-1.5 text-[11px] font-medium text-amber-700">
                           · {missingFeeLabel} 미설정
+                        </span>
+                      ) : null}
+                      {finalFeeOnly && surchargeLabel ? (
+                        <span className="ml-1.5 text-[11px] font-medium text-amber-700">
+                          {surchargeLabel}
+                        </span>
+                      ) : null}
+                      {finalFeeOnly && rushLabel ? (
+                        <span className="ml-1.5 text-[11px] font-medium text-amber-700">
+                          {rushLabel}
                         </span>
                       ) : null}
                     </span>

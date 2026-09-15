@@ -16,6 +16,7 @@
 // - 2026-09-15: 브리지 연결 이음새 — 행 gap-0으로 카드·연결선 사이 하얀 수직 거터 제거.
 // - 2026-09-15: 후속 앵커 1행 스팬 — 체크박스는 원 row 치아만(빌려쓴 연결치 제외).
 // - 2026-09-15: 부분 후속(남은 임시치아) — 변경 기공비 라벨.
+// - 2026-09-15: 최종 기공비 — toothWorksForFinalProsthesisFeeQuote(followUp CA 스킵 우회).
 // - 2026-09-02: byTooth가 연결치에 첫 행을 덮어 13-12-11 브리지에서 11 연결·스펙이 끊기던 버그 수정.
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -58,8 +59,7 @@ import {
 import {
   buildToothWorkDisplayByTooth,
   hasPartialProsthesisFollowUp,
-  isFinalProsthesisType,
-  isFollowUpProsthesisPhase,
+  toothWorksForFinalProsthesisFeeQuote,
   toothWorksForProsthesisStage,
   type ProsthesisFeeStageRecord,
   type ProsthesisFollowUpRecord,
@@ -488,16 +488,13 @@ export const PracticeToothWorkChartReadOnly = ({
         tempCreditLabFeeTotal: 0,
       };
     }
-    // 최종 기공비: 누적 billing이 아니라 지르 행 전부(처음부터 지르) 재견적
+    // 최종 기공비: 누적 billing이 아니라 지르+원 CA(처음부터 지르) 재견적.
+    // followUp phase 행은 labFee가 CA를 0으로 두므로 phase 제거·원 CA 병합 행을 쓴다.
     if (showFinalFee && (feeContextReady || !feeQuoteContext.usedDefaultSchedule)) {
-      const followUpOnly = quoteToothWorks.filter(
-        (row) =>
-          isFollowUpProsthesisPhase(row) &&
-          isFinalProsthesisType(String(row.prosthesisType || "")),
-      );
-      if (followUpOnly.length > 0) {
+      const finalRows = toothWorksForFinalProsthesisFeeQuote(quoteToothWorks);
+      if (finalRows.length > 0) {
         const finalLive = buildFeeQuoteFromContext({
-          toothWorks: followUpOnly as ToothWorkSelection[],
+          toothWorks: finalRows,
           context: feeQuoteContext,
           skipAbutmentFees: false,
           creditToothWorks: undefined,
