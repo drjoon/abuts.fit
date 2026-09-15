@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-16: 통계 로딩 요약 스켈레톤 — 충전−소비|의뢰건수 3칸(구 4칸).
 // - 2026-09-05: 요약 충전 카드 라벨「충전」(치과·기공소 공통, 유료 접두 제거).
 // - 2026-09-05: 데모 모드 충전 카드 라벨「충전」(유료/선수금 아님).
 // - 2026-09-11: 기공소 정산 적립·통계 — 확정만(적립 보류 제외). 치과 소비 툴팁=결제 보류 포함 명시.
@@ -1134,11 +1135,11 @@ export function CreditStatisticsTab() {
                   ))}
                 </div>
                 <div className="h-9 w-36 animate-pulse rounded-xl border border-border/60 bg-muted/30" />
-                <SummarySkeleton cardCount={4} />
+                <SummarySkeleton cardCount={3} />
               </>
             ) : (
               <>
-                <SummarySkeleton cardCount={4} />
+                <SummarySkeleton cardCount={3} />
                 <div className="h-9 w-48 animate-pulse rounded-xl border border-border/60 bg-muted/30" />
                 <div className="grid min-w-0 gap-3 md:grid-cols-2">
                   {Array.from({ length: 4 }).map((_, i) => (

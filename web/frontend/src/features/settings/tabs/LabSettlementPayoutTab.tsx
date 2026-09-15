@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/settlement/affiliateVat.ts
 // - web/backend/controllers/credits/credit.controller.js
 // change-log:
+// - 2026-09-16: 지급 표 로딩 — 텍스트 대신 4열 행 스켈레톤.
 // - 2026-09-16: 정산규칙 모달 — 작업완료 적립·통장사본 이월·월 지급 유보 50만원 기준 간단 정리.
 // - 2026-09-16: 상태=지급+계산서. 통장사본 미등록 일 1회 안내·1개월 이월 강조.
 // - 2026-09-16: 일별→월별 집계. 필수열(정산월·적립·지급·상태). 충전과 동일 max-w-4xl.
@@ -51,6 +52,7 @@ import {
   SettlementStatCard,
   SettlementTableFrame,
 } from "@/shared/settlement/settlementUi";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   LAB_PAYOUT_BANKBOOK_DELAY_NOTICE,
   LAB_PAYOUT_SETTINGS_PATH,
@@ -723,7 +725,25 @@ export const LabSettlementPayoutTab = () => {
                       </TableRow>
                     );
                   })}
-                  {loading && (
+                  {loading && sortedRows.length === 0
+                    ? Array.from({ length: 6 }).map((_, idx) => (
+                        <TableRow key={`payout-skel-${idx}`}>
+                          <TableCell className="py-3">
+                            <Skeleton className="mx-auto h-4 w-16" />
+                          </TableCell>
+                          <TableCell className="py-3">
+                            <Skeleton className="mx-auto h-4 w-20" />
+                          </TableCell>
+                          <TableCell className="py-3">
+                            <Skeleton className="mx-auto h-4 w-20" />
+                          </TableCell>
+                          <TableCell className="py-3">
+                            <Skeleton className="mx-auto h-4 w-14" />
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    : null}
+                  {loading && sortedRows.length > 0 ? (
                     <TableRow>
                       <TableCell
                         colSpan={4}
@@ -732,7 +752,7 @@ export const LabSettlementPayoutTab = () => {
                         불러오는 중...
                       </TableCell>
                     </TableRow>
-                  )}
+                  ) : null}
                   {!loading && sortedRows.length === 0 && (
                     <TableRow>
                       <TableCell

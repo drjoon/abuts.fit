@@ -62,7 +62,10 @@ export const RequestorSettingsPage = () => {
   const { user } = useAuthStore();
   const [searchParams, setSearchParams] = useSearchParams();
   const { loading: accessLoading, kind } = useRequestorBusinessAccess();
-  const isLab = kind === "lab" || user?.role === "internalLab";
+  const isLab =
+    kind === "lab" ||
+    user?.role === "internalLab" ||
+    user?.requestorKind === "lab";
 
   const joinDate = user?.createdAt ? String(user.createdAt) : null;
 

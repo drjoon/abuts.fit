@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-16: access 로딩 스켈레톤 탭 3|4(지급 포함). isLab에 user.requestorKind 힌트.
 // - 2026-09-16: 기공소·어벗츠기공소 — 충전 옆「지급」탭(LabSettlementPayoutTab). ?tab=settlement → payout.
 // - 2026-09-05: 가이드투어 — 정산 탭(내역·통계·충전·지급)별 data-guide-tour·활성 탭 강조.
 // - 2026-08-26: 데모 뱃지 — 탭 바 max-w-4xl 유지, 뱃지만 max-w-6xl 우측 끝.
@@ -49,6 +50,7 @@ import { DemoModeBadge } from "@/shared/demo/DemoModeBadge";
 import { useGuideTour } from "@/shared/guideTour/GuideTourProvider";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import { useAuthStore } from "@/store/useAuthStore";
+import { RequestorCreditsPageSkeleton } from "@/shared/ui/skeletons/RequestorCreditsPageSkeleton";
 
 import { CreditStatisticsTab } from "@/pages/requestor/credits/components/CreditStatisticsTab";
 
@@ -76,8 +78,12 @@ const resolveCreditsTab = (
 
 export default function RequestorCreditsPage() {
   const { user } = useAuthStore();
-  const { kind } = useRequestorBusinessAccess();
-  const isLab = kind === "lab" || user?.role === "internalLab";
+  const { kind, loading: accessLoading } = useRequestorBusinessAccess();
+  // kind 확정 전에도 auth 힌트로 지급 탭 칸을 맞춤(스켈레톤·첫 페인트 3→4 플리커 방지).
+  const isLab =
+    kind === "lab" ||
+    user?.role === "internalLab" ||
+    user?.requestorKind === "lab";
   const guideTour = useGuideTour();
   const [searchParams, setSearchParams] = useSearchParams();
   const [ledgerKey, setLedgerKey] = useState(0);
@@ -152,6 +158,16 @@ export default function RequestorCreditsPage() {
 
     return next;
   }, [activeTab, user, ledgerKey, isLab]);
+
+  // accessLoading early return은 모든 hooks 이후(Rules of Hooks).
+  if (accessLoading) {
+    return (
+      <RequestorCreditsPageSkeleton
+        tabCount={isLab ? 4 : 3}
+        showSettlement={isLab}
+      />
+    );
+  }
 
   return (
     <div
