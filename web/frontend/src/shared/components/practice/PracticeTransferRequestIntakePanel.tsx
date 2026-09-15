@@ -224,6 +224,7 @@ import {
 // - web/frontend/src/shared/components/practice/PracticeToothSimpleAbutmentFields.tsx
 // - web/frontend/src/shared/components/practice/PracticeCustomSpecsPresetEditDialog.tsx
 // - web/frontend/src/shared/pricing/abutsAbutmentService.ts
+// - 2026-09-15: 스캔바디 1/2→2/2 — 오픈 직후 클릭 누수·자동 advance 차단(일부 Windows).
 // - 2026-09-15: 직접 어벗(심플어벗·직접입력)도 스캔바디와 같이 임플란트 1/2 → 규격 2/2 위저드.
 // - 2026-09-15: 커스텀어벗 모달 기본 z-[340] — compose Dialog(z-320) 뒤에 가려지던 문제.
 // - 2026-09-14: XOR dimmed — 커밋된 사이드만 선명(미선택 시 양쪽 흐림). 흐림 opacity 강화.
@@ -1536,6 +1537,12 @@ export const PracticeTransferRequestIntakePanel = ({
   const customSpecsPresetEditOpenRef = useRef(false);
   /** 이번 모달에서 임플란트/스캔바디를 각각 클릭 선택했는지 */
   const customSpecsPickSessionRef = useRef({ implant: false, scanbody: false });
+  /**
+   * 모달 오픈을 트리거한 pointer의 mouseup/click 누수로 「다음」이 눌리는 것 방지.
+   * (일부 Windows: 라디오 클릭 → 모달 페인트 후 같은 제스처가 푸터 버튼에 전달)
+   * Date.now() 미만이면 1/2→2/2 전환 무시.
+   */
+  const customSpecsWizardAdvanceBlockedUntilRef = useRef(0);
   const customSpecsModalSnapshotRef = useRef<{
     index: number;
     row: ToothWorkSelection;
@@ -2929,6 +2936,7 @@ export const PracticeTransferRequestIntakePanel = ({
     }
     customSpecsPresetEditOpenRef.current = false;
     customSpecsPickSessionRef.current = { implant: false, scanbody: false };
+    customSpecsWizardAdvanceBlockedUntilRef.current = 0;
     setCustomSpecsPresetEditOpen(false);
     const requestedSelection = isCustomAbutmentSelection(options?.selection)
       ? options.selection
@@ -2994,6 +3002,19 @@ export const PracticeTransferRequestIntakePanel = ({
     setCustomSpecsModalTarget(index);
   };
 
+  /**
+   * 라디오/버튼 클릭으로 열 때 — 현재 click 핸들러가 끝난 뒤 오픈.
+   * (같은 제스처의 mouseup이 새로 생긴 「다음」에 떨어지는 click-through 완화)
+   */
+  const openCustomSpecsModalAfterPointer = (
+    index: number,
+    options?: { selection?: CustomAbutmentSelection },
+  ) => {
+    window.setTimeout(() => {
+      openCustomSpecsModal(index, options);
+    }, 0);
+  };
+
   const syncCustomSpecsModalSideDrafts = (
     row: (typeof toothWorks)[number] | null | undefined,
   ) => {
@@ -3021,6 +3042,7 @@ export const PracticeTransferRequestIntakePanel = ({
     }
     customSpecsPresetEditOpenRef.current = false;
     customSpecsPickSessionRef.current = { implant: false, scanbody: false };
+    customSpecsWizardAdvanceBlockedUntilRef.current = 0;
     setCustomSpecsPresetEditOpen(false);
     setCustomSpecsWizardStep("implant");
     setCustomSpecsModalTarget(null);
@@ -3051,11 +3073,17 @@ export const PracticeTransferRequestIntakePanel = ({
     closeCustomSpecsModal({ skipSideDraftSync: true });
   };
 
+  /** 1/2→2/2는 사용자 「다음」만. 오픈 직후 포인터 누수·레거시 자동 전환 차단. */
+  const goToAbutmentWizardStep = () => {
+    if (Date.now() < customSpecsWizardAdvanceBlockedUntilRef.current) return;
+    setCustomSpecsWizardStep("abutment");
+  };
+
   const confirmCustomSpecsModal = () => {
     if (isCustomAbutGuideTourStepId(toothWorkGuideTourStepId)) {
-      // 임플란트 단 「확인」→ 어벗 선택
+      // 임플란트 단 「확인」→ 어벗 선택(「다음」과 동일 가드)
       if (customSpecsWizardStep === "implant") {
-        setCustomSpecsWizardStep("abutment");
+        goToAbutmentWizardStep();
         return;
       }
       // 어벗 단 「확인」→ 투어 다음(닫으면 재오픈되며 임플란트 단으로 돌아감)
@@ -3074,6 +3102,20 @@ export const PracticeTransferRequestIntakePanel = ({
     syncCustomSpecsModalSideDrafts(row);
     // 오픈 순간만 — toothWorks 후속 편집은 patchAbutmentSideOnTooth가 저장
     // eslint-disable-next-line react-hooks/exhaustive-deps -- open-only sync
+  }, [customSpecsModalTarget]);
+
+  // 오픈 트리거 click/mouseup이 모달 「다음」으로 전달되지 않게 잠시 잠금
+  useEffect(() => {
+    if (customSpecsModalTarget === null) {
+      customSpecsWizardAdvanceBlockedUntilRef.current = 0;
+      return;
+    }
+    // 일부 Windows: 모달 페인트가 느려 오픈 제스처가 1~2초 뒤 푸터에 닿음
+    customSpecsWizardAdvanceBlockedUntilRef.current = Date.now() + 1600;
+    const timer = window.setTimeout(() => {
+      customSpecsWizardAdvanceBlockedUntilRef.current = 0;
+    }, 1600);
+    return () => window.clearTimeout(timer);
   }, [customSpecsModalTarget]);
 
   const isPresetGuideTourStep = isCustomAbutGuideTourStepId(
@@ -3210,7 +3252,7 @@ export const PracticeTransferRequestIntakePanel = ({
     });
     if (implantTouched && scanbodyTouched && abutmentSideComplete) {
       registerCustomSpecsPick("both");
-      setCustomSpecsWizardStep("abutment");
+      // 1/2→2/2는 「다음」클릭만 — 패치로 스텝 전환하지 않음(오픈 누수·자동 점프 방지)
       if (isCustomAbutGuideTourStepId(toothWorkGuideTourStepId)) {
         completeToothWorkGuideTourAction();
       }
@@ -5076,7 +5118,7 @@ export const PracticeTransferRequestIntakePanel = ({
                                             });
                                             return;
                                           }
-                                          openCustomSpecsModal(originalIndex, {
+                                          openCustomSpecsModalAfterPointer(originalIndex, {
                                             selection: option.value,
                                           });
                                         }}
@@ -5116,7 +5158,9 @@ export const PracticeTransferRequestIntakePanel = ({
                                                 ? "font-semibold text-destructive hover:bg-destructive-soft"
                                                 : "text-primary-strong hover:bg-primary-soft/70",
                                           )}
-                                          onClick={() => openCustomSpecsModal(originalIndex)}
+                                          onClick={() =>
+                                            openCustomSpecsModalAfterPointer(originalIndex)
+                                          }
                                         >
                                           {implantCompact || "임플란트"}
                                         </button>
@@ -5140,7 +5184,9 @@ export const PracticeTransferRequestIntakePanel = ({
                                                 ? "font-semibold text-destructive hover:bg-destructive-soft"
                                                 : "text-service-abut hover:bg-service-abut-soft",
                                           )}
-                                          onClick={() => openCustomSpecsModal(originalIndex)}
+                                          onClick={() =>
+                                            openCustomSpecsModalAfterPointer(originalIndex)
+                                          }
                                         >
                                           {abutmentCompact || abutmentSidePlaceholder}
                                         </button>
@@ -5873,6 +5919,10 @@ export const PracticeTransferRequestIntakePanel = ({
             "guide-tour-nested-dialog-overlay",
             nestedDialogOverlayClassName,
           )}
+          // 오픈 포커스가 푸터 「다음」에 가면 Enter/Space·클릭 누수로 2단 점프할 수 있음
+          onOpenAutoFocus={(event) => {
+            event.preventDefault();
+          }}
           // 투어 코치「뒤로/다음」클릭이 모달 outside로 잡혀 즉시 닫히는 것 방지
           onPointerDownOutside={
             isPresetGuideTourStep
@@ -6298,7 +6348,7 @@ export const PracticeTransferRequestIntakePanel = ({
                           type="button"
                           className="h-10 min-w-[5.5rem]"
                           disabled={!implantReady}
-                          onClick={() => setCustomSpecsWizardStep("abutment")}
+                          onClick={() => goToAbutmentWizardStep()}
                         >
                           다음
                           <ChevronRight className="ml-1 h-4 w-4" />
