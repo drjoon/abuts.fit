@@ -32,6 +32,7 @@
 // - 2026-09-12: 휴지통 팝오버 — 전체 복원(s3Keys 일괄).
 // - 2026-09-12: 의뢰 파일 — 업로드 웨이브(첫/두 번째/…) 클러스터.
 // - 2026-09-12: 드롭·클립 — 3D→의뢰 파일, 이미지→선택, 그 외→채팅. 의뢰 파일 타일 X 삭제.
+// - 2026-09-16: 주문·도착 줄 오른쪽 끝 — 작업시작 / 작업 취소(별도 바에서 이동).
 // - 2026-09-12: 별·알림음 — 환자·치아번호 줄 오른쪽.
 // - 2026-09-12: 별·알림음 — 채팅 툴바 → 주문/도착 줄 오른쪽.
 // - 2026-09-12: 채팅 없으면 초기 스크롤=보철물(상단). 전환·빈 목록 시 하단 고정 금지.
@@ -2266,6 +2267,12 @@ export function PracticeTransferDetailChatDialog({
       ? `다시 작업시작 [${remainingLabel}]`
       : "다시 작업시작";
   const releaseButtonLabel = releaseBusy ? "취소 중..." : "작업 취소";
+  const acceptDisabled = acceptBusy || oralScanBlocksAccept;
+  const acceptBarSurchargeLabel = (() => {
+    const multiplier = normalizeLabFeeMultiplier(feeQuote?.labFeeMultiplier);
+    if (multiplier <= 1) return null;
+    return formatLabFeeMultiplierLabel(multiplier);
+  })();
   const releaseAction =
     showReleaseBar && onRelease ? (
       <TooltipProvider>
@@ -2288,16 +2295,88 @@ export function PracticeTransferDetailChatDialog({
         </Tooltip>
       </TooltipProvider>
     ) : null;
+  const acceptBarPrimaryActions = showAcceptBar ? (
+    <>
+      {onOpenSubcontract ? (
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          onClick={() => void onOpenSubcontract()}
+          disabled={acceptBusy || openSubcontractBusy}
+        >
+          {openSubcontractBusy ? "전환 중..." : "하청 전환"}
+        </Button>
+      ) : null}
+      {acceptBarSurchargeLabel ? (
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="inline-flex shrink-0 items-center rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-900">
+                {acceptBarSurchargeLabel}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-xs leading-relaxed">
+              이 치과는 어벗츠기공소 기준 할증 대상입니다. 견적·정산은 기본
+              기공수가(생성 시 스냅샷)를 따릅니다.
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      ) : null}
+      <Button
+        type="button"
+        size="sm"
+        className={cn(
+          guideTourPulseAcceptActions && "practice-tooth-guide-pulse",
+        )}
+        onClick={() => void onAccept?.()}
+        disabled={acceptDisabled}
+      >
+        {acceptButtonLabel}
+      </Button>
+    </>
+  ) : null;
+  const reacceptBarPrimaryAction = showReacceptBar ? (
+    <Button
+      type="button"
+      size="sm"
+      onClick={() => void onAccept?.()}
+      disabled={acceptBusy || oralScanBlocksAccept}
+    >
+      {reacceptButtonLabel}
+    </Button>
+  ) : null;
+  const identityDateRowActions =
+    acceptBarPrimaryActions || reacceptBarPrimaryAction || releaseAction ? (
+      <div
+        className="flex shrink-0 flex-wrap items-center justify-end gap-2"
+        data-no-drag
+        {...(showAcceptBar ? { "data-guide-tour": "lab_accept" } : {})}
+      >
+        {acceptBarPrimaryActions}
+        {reacceptBarPrimaryAction}
+        {releaseAction}
+      </div>
+    ) : null;
+  const renderIdentityDateRow = (className?: string) => {
+    if (!identityDateLabel && !identityDateRowActions) return null;
+    return (
+      <div className={cn("flex min-w-0 items-center gap-2", className)}>
+        {identityDateLabel ? (
+          <span className="min-w-0 flex-1 truncate text-xs tabular-nums text-muted-foreground">
+            {identityDateLabel}
+          </span>
+        ) : (
+          <span className="min-w-0 flex-1" aria-hidden />
+        )}
+        {identityDateRowActions}
+      </div>
+    );
+  };
   const resolvedAcceptedWorkActions =
     typeof acceptedWorkActions === "function"
-      ? acceptedWorkActions({ releaseAction })
+      ? acceptedWorkActions({ releaseAction: null })
       : acceptedWorkActions;
-  const acceptDisabled = acceptBusy || oralScanBlocksAccept;
-  const acceptBarSurchargeLabel = (() => {
-    const multiplier = normalizeLabFeeMultiplier(feeQuote?.labFeeMultiplier);
-    if (multiplier <= 1) return null;
-    return formatLabFeeMultiplierLabel(multiplier);
-  })();
   const designFileList = Array.isArray(designFiles) ? designFiles : [];
   const resultFileList = Array.isArray(resultFiles) ? resultFiles : [];
   const showWorkFilesSection =
@@ -2707,11 +2786,9 @@ export function PracticeTransferDetailChatDialog({
                       </p>
                       {identityChromeActions}
                     </div>
-                    {identityDateLabel && !showArrivalInChatChrome ? (
-                      <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                        {identityDateLabel}
-                      </p>
-                    ) : null}
+                    {!showArrivalInChatChrome
+                      ? renderIdentityDateRow("mt-0.5")
+                      : null}
                   </>
                 ) : (
                   <div className="flex min-w-0 items-center gap-1">
@@ -2749,14 +2826,12 @@ export function PracticeTransferDetailChatDialog({
 
               {nextStageSegments.length > 0 || onAppendArrival ? (
                 <div className="border-b bg-muted/25">
+                  {showArrivalInChatChrome
+                    ? renderIdentityDateRow("px-4 pt-2 sm:px-5")
+                    : null}
                   <div className="flex flex-wrap items-center gap-2 px-4 py-2 sm:px-5">
                     {nextStageSegments.length > 0 ? (
                       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
-                        {identityDateLabel ? (
-                          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                            {identityDateLabel}
-                          </span>
-                        ) : null}
                         <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                           다음 공정
                         </span>
@@ -2775,9 +2850,7 @@ export function PracticeTransferDetailChatDialog({
                         ))}
                       </div>
                     ) : (
-                      <span className="min-w-0 flex-1 truncate text-xs tabular-nums text-muted-foreground">
-                        {identityDateLabel || ""}
-                      </span>
+                      <span className="min-w-0 flex-1" aria-hidden />
                     )}
                     {onAppendArrival ? renderRearrivalPopover() : null}
                   </div>
@@ -2789,94 +2862,42 @@ export function PracticeTransferDetailChatDialog({
                 <div className="shrink-0 border-b px-5 py-2">{summaryBanner}</div>
               ) : null}
 
-              {showAcceptBar ? (
+              {showAcceptBar &&
+              (hasPendingLabCustomAbutment ||
+                hasAbutsCustomAbutment ||
+                oralScanAttachMode === "practice_required" ||
+                acceptBarHint) ? (
                 <div
-                  className="shrink-0 border-b bg-muted/40 px-5 py-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
-                  data-guide-tour="lab_accept"
+                  className="shrink-0 border-b bg-muted/40 px-5 py-2"
                 >
-                  {hasPendingLabCustomAbutment ||
-                  hasAbutsCustomAbutment ||
-                  oralScanAttachMode === "practice_required" ||
-                  acceptBarHint ? (
-                    <div className="min-w-0 space-y-1">
-                      {acceptBarHint ? (
-                        <div className="text-xs leading-relaxed text-muted-foreground">
-                          {acceptBarHint}
-                        </div>
-                      ) : null}
-                      {hasPendingLabCustomAbutment ||
-                      hasAbutsCustomAbutment ? (
-                        <LabPendingAbutmentGuide
-                          toothWorks={toothWorks}
-                          mixedWithAbuts={hasAbutsCustomAbutment}
-                        />
-                      ) : null}
-                      {oralScanAttachMode === "practice_required" ? (
-                        <p className="text-xs text-destructive leading-relaxed">
-                          {ORAL_SCAN_REQUIRED_FROM_PRACTICE}
-                        </p>
-                      ) : null}
-                    </div>
-                  ) : null}
-                  <div className="flex shrink-0 items-center gap-2 self-end sm:ml-auto sm:self-auto">
-                    {onOpenSubcontract ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => void onOpenSubcontract()}
-                        disabled={acceptBusy || openSubcontractBusy}
-                      >
-                        {openSubcontractBusy ? "전환 중..." : "하청 전환"}
-                      </Button>
+                  <div className="min-w-0 space-y-1">
+                    {acceptBarHint ? (
+                      <div className="text-xs leading-relaxed text-muted-foreground">
+                        {acceptBarHint}
+                      </div>
                     ) : null}
-                    {acceptBarSurchargeLabel ? (
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="inline-flex shrink-0 items-center rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-900">
-                              {acceptBarSurchargeLabel}
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent className="max-w-xs leading-relaxed">
-                            이 치과는 어벗츠기공소 기준 할증 대상입니다. 견적·정산은
-                            기본 기공수가(생성 시 스냅샷)를 따릅니다.
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
+                    {hasPendingLabCustomAbutment ||
+                    hasAbutsCustomAbutment ? (
+                      <LabPendingAbutmentGuide
+                        toothWorks={toothWorks}
+                        mixedWithAbuts={hasAbutsCustomAbutment}
+                      />
                     ) : null}
-                    <Button
-                      type="button"
-                      size="sm"
-                      className={cn(
-                        guideTourPulseAcceptActions &&
-                          "practice-tooth-guide-pulse",
-                      )}
-                      onClick={() => void onAccept?.()}
-                      disabled={acceptDisabled}
-                    >
-                      {acceptButtonLabel}
-                    </Button>
+                    {oralScanAttachMode === "practice_required" ? (
+                      <p className="text-xs text-destructive leading-relaxed">
+                        {ORAL_SCAN_REQUIRED_FROM_PRACTICE}
+                      </p>
+                    ) : null}
                   </div>
                 </div>
               ) : null}
 
               {showReacceptBar ? (
-                <div className="shrink-0 border-b bg-muted/40 px-5 py-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="shrink-0 border-b bg-muted/40 px-5 py-2">
                   <p className="text-xs text-muted-foreground">
                     작업이 취소된 상태입니다. 채팅은 이어갈 수 있고, 다시 작업시작하면
                     작업을 진행할 수 있습니다.
                   </p>
-                  <div className="flex shrink-0 items-center gap-2 self-end sm:self-auto">
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={() => void onAccept?.()}
-                      disabled={acceptBusy || oralScanBlocksAccept}
-                    >
-                      {reacceptButtonLabel}
-                    </Button>
-                  </div>
                 </div>
               ) : null}
 
@@ -2892,7 +2913,6 @@ export function PracticeTransferDetailChatDialog({
                         작업시작한 의뢰입니다. 작업취소하면 작업시작이 해제됩니다.
                       </p>
                       <div className="flex flex-wrap items-center gap-2">
-                        {releaseAction}
                         {renderProsthesisFollowUpLabStartButton()}
                       </div>
                     </>
