@@ -158,6 +158,8 @@ export type PracticeCalendarChipItem = {
    * `-1` 원 임시치아, `0..n` followUpIndex.
    */
   focusFollowUpIndex?: number | null;
+  /** Stage SSOT — `temp` | `zirconia-N` */
+  prosthesisStageKey?: string | null;
   /** 연결 도착일 전체(툴팁) */
   linkedArrivalDates?: string[];
   /** 연결 주문일 전체(툴팁·주문일 캘린더 다중 칩) */

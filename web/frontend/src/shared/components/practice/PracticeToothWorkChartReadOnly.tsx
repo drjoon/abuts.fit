@@ -60,7 +60,7 @@ import {
   hasPartialProsthesisFollowUp,
   isFinalProsthesisType,
   isFollowUpProsthesisPhase,
-  toothWorksUpToFollowUpFocus,
+  toothWorksForProsthesisStage,
   type ProsthesisFeeStageRecord,
   type ProsthesisFollowUpRecord,
 } from "@/shared/practice/prosthesisFollowUp";
@@ -226,11 +226,13 @@ type PracticeToothWorkChartReadOnlyProps = {
   /** 저장된 단계별 견적 스냅샷(있으면 live 재계산보다 우선) */
   prosthesisFeeStages?: ProsthesisFeeStageRecord[] | null;
   /**
-   * 캘린더 칩 단계 포커스 — 치식 표시·이번 단계 견적.
-   * `-1` 원 임시치아, `0..n` 해당 followUpIndex만,
-   * `null` 후속 있으면 최신 지르 단계(원·후속 합쳐 표시하지 않음).
+   * 캘린더 칩 단계 포커스 — Stage 스냅샷(치식) 우선.
+   * `-1` 원 임시치아, `0..n` 해당 followUpIndex,
+   * `null`이면 후속 있을 때 temp 스냅샷 보호.
    */
   feeStageFocusIndex?: number | null;
+  /** Stage SSOT key (`temp` | `zirconia-N`). 있으면 focus보다 우선 */
+  feeStageKey?: string | null;
   /**
    * 최종 기공비 바. true면 표시. 기본/미지정은 숨김(단계 스냅샷 보호).
    * 전부 지르 전환 완료 카드에서만 true.
@@ -263,6 +265,7 @@ export const PracticeToothWorkChartReadOnly = ({
   prosthesisFollowUps = null,
   prosthesisFeeStages = null,
   feeStageFocusIndex = null,
+  feeStageKey = null,
   showFinalFee: showFinalFeeProp = null,
   confirmedFeeLabel: confirmedFeeLabelProp = null,
 }: PracticeToothWorkChartReadOnlyProps) => {
@@ -282,15 +285,23 @@ export const PracticeToothWorkChartReadOnly = ({
     if (!selectable) return toothWorks;
     return toothWorks.filter((row) => isSpanSelected(row));
   }, [feeToothWorks, selectable, toothWorks, selectedSpanKeys, spanKeyOf]);
-  /** 칩 단계 포커스 — 표시용 toothWorks만 자른다(견적 합계·전체 단계는 유지). 부분 후속이면 미전환 임시도 포함. */
+  /** Stage 스냅샷 우선 — case toothWorks focus 필터는 레거시 fallback */
   const displayToothWorks = useMemo(
     () =>
-      toothWorksUpToFollowUpFocus(
+      toothWorksForProsthesisStage({
         toothWorks,
         prosthesisFollowUps,
-        feeStageFocusIndex,
-      ),
-    [feeStageFocusIndex, prosthesisFollowUps, toothWorks],
+        prosthesisFeeStages,
+        stageKey: feeStageKey,
+        focusFollowUpIndex: feeStageFocusIndex,
+      }),
+    [
+      feeStageFocusIndex,
+      feeStageKey,
+      prosthesisFeeStages,
+      prosthesisFollowUps,
+      toothWorks,
+    ],
   );
   const confirmedFeeLabel = useMemo(() => {
     if (confirmedFeeLabelProp != null && String(confirmedFeeLabelProp).trim()) {
@@ -317,14 +328,16 @@ export const PracticeToothWorkChartReadOnly = ({
   const chartTeeth = selectable ? allDisplayTeeth : selectedTeeth;
 
   const mobileSpanEntries = useMemo((): MobileSpanEntry[] => {
-    const spans = buildBridgeSpanTeethList(toothWorks);
+    const spans = buildBridgeSpanTeethList(displayToothWorks);
     const entries: MobileSpanEntry[] = [];
     for (const teeth of spans) {
       const anchor = teeth[0] || "";
       if (!anchor) continue;
       const row =
         byTooth.get(anchor) ||
-        toothWorks.find((candidate) => String(candidate.toothNumber || "").trim() === anchor);
+        displayToothWorks.find(
+          (candidate) => String(candidate.toothNumber || "").trim() === anchor,
+        );
       if (!row) continue;
       const spanKey =
         spanKeyOf?.({
@@ -335,7 +348,7 @@ export const PracticeToothWorkChartReadOnly = ({
       entries.push({ teeth, row, spanKey });
     }
     return entries;
-  }, [toothWorks, byTooth, spanKeyOf]);
+  }, [displayToothWorks, byTooth, spanKeyOf]);
 
   const upperSpanEntries = useMemo(
     () => mobileSpanEntries.filter((entry) => isUpperArchTooth(entry.teeth[0] || "")),

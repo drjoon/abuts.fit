@@ -624,6 +624,8 @@ type PracticeTransferDetailChatDialogProps = {
    * `-1` 원 임시치아, `0..n` followUpIndex, 미지정 시 원 임시치아(-1).
    */
   feeStageFocusIndex?: number | null;
+  /** Stage SSOT key (`temp` | `zirconia-N`) */
+  feeStageKey?: string | null;
   /** 기공소 — 리메이크 청구 채팅 카드 「청구 취소」 */
   onCancelRemakeCharge?: (chargeIndex: number | null) => void;
   remakeChargeCancelBusy?: boolean;
@@ -767,6 +769,7 @@ export function PracticeTransferDetailChatDialog({
   prosthesisFollowUps = null,
   prosthesisFeeStages = null,
   feeStageFocusIndex = null,
+  feeStageKey = null,
   onCancelRemakeCharge,
   remakeChargeCancelBusy = false,
   onCancelRequest,
@@ -2910,6 +2913,7 @@ export function PracticeTransferDetailChatDialog({
                     prosthesisFollowUps={prosthesisFollowUps}
                     prosthesisFeeStages={prosthesisFeeStages}
                     feeStageFocusIndex={feeStageFocusIndex}
+                    feeStageKey={feeStageKey}
                   />
                   <PracticeRemakeChargesStrip remakeCharges={remakeCharges} />
                 </section>

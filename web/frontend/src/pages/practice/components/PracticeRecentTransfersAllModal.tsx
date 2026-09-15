@@ -1129,6 +1129,14 @@ export function PracticeRecentTransfersAllModal({
                                 focusFollowUpIndex: item.focusFollowUpIndex,
                                 prosthesisFollowUps: transfer.prosthesisFollowUps,
                               }),
+                        prosthesisStageKey:
+                          String(item.prosthesisStageKey || "").trim() ||
+                          (item.focusFollowUpIndex != null &&
+                          Number.isFinite(Number(item.focusFollowUpIndex))
+                            ? Number(item.focusFollowUpIndex) < 0
+                              ? "temp"
+                              : `zirconia-${Math.floor(Number(item.focusFollowUpIndex))}`
+                            : null),
                       },
                       {
                       preferredDockSide:

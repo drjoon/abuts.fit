@@ -161,9 +161,12 @@ export type PracticeRecentTransferItem = {
   arrivalDates?: string[];
   /**
    * 캘린더 칩에서 연 단계 포커스(UI 전용).
-   * `-1` 원 임시치아, `0..n` followUpIndex, 없으면 최신.
+   * `-1` 원 임시치아, `0..n` followUpIndex.
+   * Stage SSOT: prosthesisStageKey가 있으면 그걸 우선.
    */
   focusFollowUpIndex?: number | null;
+  /** Stage SSOT — `temp` | `zirconia-N` (칩에서 설정) */
+  prosthesisStageKey?: string | null;
   status: string;
   fileCount: number;
   patientCount: number;

@@ -7124,6 +7124,7 @@ export function RequestorPracticeReceivePage({
       options?: {
         preferredDockSide?: PracticeTransferPanelDockSide;
         focusFollowUpIndex?: number | null;
+        prosthesisStageKey?: string | null;
         arrivalDate?: string | null;
         orderDate?: string | null;
       },
@@ -7136,6 +7137,10 @@ export function RequestorPracticeReceivePage({
         options && "focusFollowUpIndex" in options
           ? options.focusFollowUpIndex ?? null
           : transfer.focusFollowUpIndex;
+      const prosthesisStageKey =
+        options && "prosthesisStageKey" in options
+          ? options.prosthesisStageKey ?? null
+          : (transfer as { prosthesisStageKey?: string | null }).prosthesisStageKey;
       void openTransferDialog(
         {
           ...transfer,
@@ -7146,6 +7151,7 @@ export function RequestorPracticeReceivePage({
             ? { orderDate: String(options.orderDate).trim() }
             : {}),
           focusFollowUpIndex,
+          prosthesisStageKey,
         },
         {
           ...(options && "preferredDockSide" in options
@@ -7705,6 +7711,14 @@ export function RequestorPracticeReceivePage({
                             focusFollowUpIndex: item.focusFollowUpIndex,
                             prosthesisFollowUps: transfer.prosthesisFollowUps,
                           }),
+                    prosthesisStageKey:
+                      String(item.prosthesisStageKey || "").trim() ||
+                      (item.focusFollowUpIndex != null &&
+                      Number.isFinite(Number(item.focusFollowUpIndex))
+                        ? Number(item.focusFollowUpIndex) < 0
+                          ? "temp"
+                          : `zirconia-${Math.floor(Number(item.focusFollowUpIndex))}`
+                        : null),
                   });
                 }
               }}
@@ -8194,6 +8208,21 @@ export function RequestorPracticeReceivePage({
           selectedTransfer?.focusFollowUpIndex !== undefined
             ? selectedTransfer.focusFollowUpIndex
             : null
+        }
+        feeStageKey={
+          (selectedTransfer as { prosthesisStageKey?: string | null })
+            ?.prosthesisStageKey != null
+            ? String(
+                (selectedTransfer as { prosthesisStageKey?: string | null })
+                  .prosthesisStageKey || "",
+              ).trim() || null
+            : selectedTransfer?.focusFollowUpIndex != null &&
+                Number(selectedTransfer.focusFollowUpIndex) < 0
+              ? "temp"
+              : selectedTransfer?.focusFollowUpIndex != null &&
+                  Number.isFinite(Number(selectedTransfer.focusFollowUpIndex))
+                ? `zirconia-${Math.floor(Number(selectedTransfer.focusFollowUpIndex))}`
+                : null
         }
         feeQuote={selectedTransfer?.feeQuote || null}
         remakeCharges={selectedTransfer?.remakeCharges || null}

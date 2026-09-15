@@ -387,8 +387,9 @@ const practiceTransferSchema = new mongoose.Schema(
       default: undefined,
     },
     /**
-     * 단계별 보철 견적 스냅샷(임시치아 / 지르 후속).
-     * case billing·목록 feeQuote(최종 합)와 분리. 후속 추가 시 기존 단계를 덮어쓰지 않음.
+     * 단계별 불변 스냅샷(임시치아 / 지르 후속) — SSOT.
+     * 표시용 toothWorks·견적(fee)은 작성 시 1회 고정. case toothWorks(작업용 합집합)·billing(누적 net)과 분리.
+     * 같은 key는 덮어쓰지 않음(cancel 시 zirconia-*만 제거).
      */
     prosthesisFeeStages: {
       type: [
@@ -396,6 +397,8 @@ const practiceTransferSchema = new mongoose.Schema(
           key: { type: String, default: "", trim: true },
           followUpIndex: { type: Number, default: -1 },
           title: { type: String, default: "", trim: true },
+          /** 이 단계 차트용 치식 복사본(불변) */
+          toothWorks: { type: Array, default: undefined },
           labFeeTotal: { type: Number, default: 0 },
           total: { type: Number, default: 0 },
           lines: { type: Array, default: [] },
@@ -403,6 +406,10 @@ const practiceTransferSchema = new mongoose.Schema(
           netLabFeeTotal: { type: Number, default: 0 },
           netTotal: { type: Number, default: 0 },
           tempCreditLabFeeTotal: { type: Number, default: 0 },
+          orderYmd: { type: String, default: "", trim: true },
+          arrivalYmd: { type: String, default: "", trim: true },
+          previousOrderYmd: { type: String, default: "", trim: true },
+          previousArrivalYmd: { type: String, default: "", trim: true },
         },
       ],
       default: undefined,

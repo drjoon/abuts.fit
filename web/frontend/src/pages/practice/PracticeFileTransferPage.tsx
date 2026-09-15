@@ -4831,6 +4831,7 @@ export const PracticeFileTransferPage = ({
               ? data.prosthesisFeeStages
               : prev.prosthesisFeeStages,
             focusFollowUpIndex: -1,
+            prosthesisStageKey: "temp",
             arrivalDate: String(data.arrivalDate || prev.arrivalDate || ""),
             arrivalDates: Array.isArray(data.arrivalDates)
               ? data.arrivalDates.map((d) => String(d || "").trim()).filter(Boolean)
@@ -11115,6 +11116,17 @@ export const PracticeFileTransferPage = ({
             selectedTransfer?.focusFollowUpIndex !== undefined
               ? selectedTransfer.focusFollowUpIndex
               : null
+          }
+          feeStageKey={
+            selectedTransfer?.prosthesisStageKey != null
+              ? selectedTransfer.prosthesisStageKey
+              : selectedTransfer?.focusFollowUpIndex != null &&
+                  Number(selectedTransfer.focusFollowUpIndex) < 0
+                ? "temp"
+                : selectedTransfer?.focusFollowUpIndex != null &&
+                    Number.isFinite(Number(selectedTransfer.focusFollowUpIndex))
+                  ? `zirconia-${Math.floor(Number(selectedTransfer.focusFollowUpIndex))}`
+                  : null
           }
           initialPanelTab={
             selectedTransfer?.focusFollowUpIndex != null &&

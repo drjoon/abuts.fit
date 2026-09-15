@@ -481,6 +481,8 @@ export type ProsthesisFeeStageRecord = {
   key: string;
   followUpIndex?: number;
   title?: string;
+  /** 이 단계 차트용 치식 스냅샷(불변). 있으면 focus 필터 대신 이걸 표시 */
+  toothWorks?: Partial<ToothWorkSelection>[];
   labFeeTotal?: number;
   total?: number;
   lines?: NonNullable<ProsthesisFollowUpRecord["billingDelta"]>["lines"];
@@ -488,6 +490,68 @@ export type ProsthesisFeeStageRecord = {
   netLabFeeTotal?: number;
   netTotal?: number;
   tempCreditLabFeeTotal?: number;
+  orderYmd?: string | null;
+  arrivalYmd?: string | null;
+  previousOrderYmd?: string | null;
+  previousArrivalYmd?: string | null;
+};
+
+export const PROSTHESIS_FEE_STAGE_TEMP_KEY = "temp";
+
+export const zirconiaProsthesisFeeStageKey = (followUpIndex: number) =>
+  `zirconia-${Math.max(0, Math.floor(Number(followUpIndex) || 0))}`;
+
+export const getProsthesisFeeStageByKey = (
+  stages: ReadonlyArray<ProsthesisFeeStageRecord> | null | undefined,
+  key: string | null | undefined,
+): ProsthesisFeeStageRecord | null => {
+  const want = String(key || "").trim();
+  if (!want) return null;
+  const list = Array.isArray(stages) ? stages : [];
+  return list.find((row) => String(row?.key || "").trim() === want) || null;
+};
+
+/** focusFollowUpIndex → stage key (칩 호환) */
+export const prosthesisStageKeyFromFocusIndex = (
+  focusIndex: ProsthesisFollowUpFocusIndex,
+): string | null => {
+  if (focusIndex == null) return null;
+  if (focusIndex < 0) return PROSTHESIS_FEE_STAGE_TEMP_KEY;
+  return zirconiaProsthesisFeeStageKey(focusIndex);
+};
+
+/**
+ * 단계 표시용 toothWorks — Stage 스냅샷 우선, 없으면 focus 필터 fallback.
+ */
+export const toothWorksForProsthesisStage = <T extends Partial<ToothWorkSelection>>(
+  input: {
+    toothWorks?: ReadonlyArray<T> | null;
+    prosthesisFollowUps?: ReadonlyArray<ProsthesisFollowUpRecord> | null;
+    prosthesisFeeStages?: ReadonlyArray<ProsthesisFeeStageRecord> | null;
+    stageKey?: string | null;
+    focusFollowUpIndex?: ProsthesisFollowUpFocusIndex;
+  },
+): T[] => {
+  const stageKey =
+    String(input.stageKey || "").trim() ||
+    prosthesisStageKeyFromFocusIndex(input.focusFollowUpIndex ?? null) ||
+    "";
+  if (stageKey) {
+    const stage = getProsthesisFeeStageByKey(input.prosthesisFeeStages, stageKey);
+    if (Array.isArray(stage?.toothWorks) && stage!.toothWorks!.length > 0) {
+      return stage!.toothWorks as T[];
+    }
+  }
+  return toothWorksUpToFollowUpFocus(
+    input.toothWorks,
+    input.prosthesisFollowUps,
+    input.focusFollowUpIndex ??
+      (stageKey === PROSTHESIS_FEE_STAGE_TEMP_KEY
+        ? -1
+        : stageKey.startsWith("zirconia-")
+          ? Math.max(0, Math.floor(Number(stageKey.slice("zirconia-".length)) || 0))
+          : null),
+  );
 };
 
 /**
@@ -495,6 +559,8 @@ export type ProsthesisFeeStageRecord = {
  * - `-1` 원 임시치아만
  * - `0..n` 해당 followUpIndex 단계만(누적 아님)
  * - `null` 전체(최종 상태)
+ * Stage SSOT: 가능하면 stageKey/`prosthesisFeeStages[].toothWorks`를 쓰고,
+ * focus는 칩 호환 alias로만 유지한다.
  */
 export type ProsthesisFollowUpFocusIndex = number | null;
 
@@ -533,6 +599,7 @@ export const collectProsthesisFollowUpArrivalYmds = (input: {
 /**
  * 칩 도착일·후속 인덱스로 표시 단계 결정.
  * 같은 도착일에 후속이 여러 건이면 focusFollowUpIndex를 우선한다.
+ * Stage SSOT: 같은 날(원 임시일)은 항상 -1(temp). latest-zir fallback 없음.
  */
 export const resolveProsthesisFollowUpFocusIndex = (input: {
   arrivalYmd?: string | null;
@@ -554,15 +621,15 @@ export const resolveProsthesisFollowUpFocusIndex = (input: {
   const ymd = String(input.arrivalYmd || "").trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return null;
 
+  const firstPrev = String(records[0]?.previousArrivalYmd || "").trim();
+  if (firstPrev && firstPrev === ymd) return -1;
+
   const matching = records.filter(
     (row) => String(row.arrivalYmd || "").trim() === ymd,
   );
   if (matching.length > 0) {
     return Math.max(...matching.map((row) => Number(row.followUpIndex || 0)));
   }
-
-  const firstPrev = String(records[0]?.previousArrivalYmd || "").trim();
-  if (firstPrev && firstPrev === ymd) return -1;
 
   // 후속 도착일이 아닌 과거 칩 → 원 임시치아
   const followArrivals = new Set(

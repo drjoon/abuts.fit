@@ -7,13 +7,17 @@ import {
   buildToothWorkDisplayByTooth,
   canAppendProsthesisFollowUp,
   canManagePendingProsthesisFollowUp,
+  cloneToothWorksForStageSnapshot,
+  hydrateProsthesisFeeStages,
   isPendingProsthesisFollowUpRecord,
   listPendingFollowUpTempSpans,
   listProsthesisFeeStages,
+  patchProsthesisFeeStageArrivalYmd,
   pickSourceTempRowsForFollowUpCredit,
   PROSTHESIS_FEE_STAGE_TEMP_KEY,
   removeProsthesisFeeStagesByFollowUpIndexes,
   serializeFollowUpToothWorksForChatPayload,
+  serializeProsthesisFeeStagesForApi,
   stripFollowUpToothWorksForRecord,
   upsertProsthesisFeeStage,
   validateFollowUpToothWorksAgainstSource,
@@ -566,5 +570,237 @@ describe("practiceTransferProsthesisFollowUp", () => {
 
     const afterCancel = removeProsthesisFeeStagesByFollowUpIndexes(stages, [0]);
     expect(afterCancel.map((s) => s.key)).toEqual(["temp"]);
+  });
+
+  test("stage toothWorks snapshot is immutable across zirconia upsert", () => {
+    const tempRows = [
+      {
+        toothNumber: "16",
+        prosthesisType: "임시치아",
+        customAbutment: true,
+        bridgeLinkedTeeth: ["16"],
+      },
+      {
+        toothNumber: "17",
+        prosthesisType: "임시치아",
+        customAbutment: false,
+        bridgeLinkedTeeth: ["17"],
+      },
+    ];
+    let stages = upsertProsthesisFeeStage(
+      [],
+      buildProsthesisFeeStageRecord({
+        key: PROSTHESIS_FEE_STAGE_TEMP_KEY,
+        followUpIndex: -1,
+        title: "임시치아 단계",
+        toothWorks: tempRows,
+        fees: {
+          labFeeTotal: 60000,
+          total: 140000,
+          lines: [
+            {
+              toothNumber: "16",
+              prosthesisType: "임시치아",
+              labFee: 30000,
+              labAbutmentFee: 40000,
+              abutmentRetail: 0,
+            },
+            {
+              toothNumber: "17",
+              prosthesisType: "임시치아",
+              labFee: 30000,
+              labAbutmentFee: 0,
+              abutmentRetail: 0,
+            },
+          ],
+        },
+        orderYmd: "2026-09-15",
+        arrivalYmd: "2026-09-18",
+      }),
+    );
+    expect(stages[0].toothWorks).toHaveLength(2);
+    expect(stages[0].toothWorks.map((r) => r.prosthesisType)).toEqual([
+      "임시치아",
+      "임시치아",
+    ]);
+
+    const zirRows = [
+      {
+        toothNumber: "16",
+        prosthesisType: "브리지",
+        prosthesisPhase: "followUp",
+        bridgeLinkedTeeth: ["16", "17"],
+      },
+    ];
+    stages = upsertProsthesisFeeStage(
+      stages,
+      buildProsthesisFeeStageRecord({
+        key: zirconiaProsthesisFeeStageKey(0),
+        followUpIndex: 0,
+        toothWorks: zirRows,
+        fees: {
+          labFeeTotal: 120000,
+          total: 120000,
+          lines: [
+            {
+              toothNumber: "16",
+              prosthesisType: "브리지",
+              labFee: 120000,
+              labAbutmentFee: 0,
+              abutmentRetail: 0,
+            },
+          ],
+        },
+        netLabFeeTotal: 90000,
+        netTotal: 90000,
+        tempCreditLabFeeTotal: 30000,
+        orderYmd: "2026-09-15",
+        arrivalYmd: "2026-09-15",
+        previousOrderYmd: "2026-09-15",
+        previousArrivalYmd: "2026-09-18",
+      }),
+    );
+
+    // temp 치식·견적 불변
+    expect(stages[0].key).toBe("temp");
+    expect(stages[0].total).toBe(140000);
+    expect(stages[0].toothWorks.map((r) => r.prosthesisType)).toEqual([
+      "임시치아",
+      "임시치아",
+    ]);
+    // zir = gross; net은 hold용
+    expect(stages[1].total).toBe(120000);
+    expect(stages[1].netLabFeeTotal).toBe(90000);
+    expect(stages[1].toothWorks[0].prosthesisType).toBe("브리지");
+
+    // 같은 temp key 재upsert는 toothWorks도 덮지 않음
+    stages = upsertProsthesisFeeStage(
+      stages,
+      buildProsthesisFeeStageRecord({
+        key: PROSTHESIS_FEE_STAGE_TEMP_KEY,
+        followUpIndex: -1,
+        toothWorks: zirRows,
+        fees: { labFeeTotal: 1, total: 1, lines: [] },
+      }),
+    );
+    expect(stages[0].total).toBe(140000);
+    expect(stages[0].toothWorks.map((r) => r.prosthesisType)).toEqual([
+      "임시치아",
+      "임시치아",
+    ]);
+
+    const serialized = serializeProsthesisFeeStagesForApi(stages);
+    expect(serialized[0].toothWorks).toHaveLength(2);
+    expect(serialized[1].previousArrivalYmd).toBe("2026-09-18");
+  });
+
+  test("hydrateProsthesisFeeStages fills missing toothWorks without overwriting fees", () => {
+    const caseRows = [
+      { toothNumber: "11", prosthesisType: "임시치아", bridgeLinkedTeeth: ["11"] },
+      {
+        toothNumber: "11",
+        prosthesisType: "크라운",
+        prosthesisPhase: "followUp",
+        bridgeLinkedTeeth: ["11"],
+      },
+    ];
+    const stages = hydrateProsthesisFeeStages({
+      prosthesisFeeStages: [
+        buildProsthesisFeeStageRecord({
+          key: PROSTHESIS_FEE_STAGE_TEMP_KEY,
+          followUpIndex: -1,
+          fees: {
+            labFeeTotal: 50000,
+            total: 90000,
+            lines: [
+              {
+                toothNumber: "11",
+                prosthesisType: "임시치아",
+                labFee: 50000,
+                labAbutmentFee: 0,
+                abutmentRetail: 0,
+              },
+            ],
+          },
+        }),
+      ],
+      prosthesisFollowUps: [
+        {
+          followUpIndex: 0,
+          arrivalYmd: "2026-09-20",
+          orderYmd: "2026-09-20",
+          previousArrivalYmd: "2026-09-15",
+          previousOrderYmd: "2026-09-15",
+          toothNumbers: ["11"],
+          billingDelta: {
+            labFeeTotal: 40000,
+            total: 40000,
+            finalLabFeeTotal: 90000,
+            finalTotal: 90000,
+            tempCreditLabFeeTotal: 50000,
+            lines: [
+              {
+                toothNumber: "11",
+                prosthesisType: "크라운",
+                labFee: 90000,
+                labAbutmentFee: 0,
+                abutmentRetail: 0,
+              },
+            ],
+          },
+        },
+      ],
+      toothWorks: caseRows,
+      orderYmd: "2026-09-15",
+      arrivalYmd: "2026-09-15",
+    });
+    expect(stages.find((s) => s.key === "temp").total).toBe(90000);
+    expect(stages.find((s) => s.key === "temp").toothWorks[0].prosthesisType).toBe(
+      "임시치아",
+    );
+    const zir = stages.find((s) => s.key === "zirconia-0");
+    expect(zir.total).toBe(90000);
+    expect(zir.netLabFeeTotal).toBe(40000);
+    expect(zir.toothWorks[0].prosthesisType).toBe("크라운");
+  });
+
+  test("patchProsthesisFeeStageArrivalYmd keeps fee and toothWorks", () => {
+    let stages = [
+      buildProsthesisFeeStageRecord({
+        key: zirconiaProsthesisFeeStageKey(0),
+        followUpIndex: 0,
+        toothWorks: [
+          {
+            toothNumber: "21",
+            prosthesisType: "크라운",
+            prosthesisPhase: "followUp",
+            bridgeLinkedTeeth: ["21"],
+          },
+        ],
+        fees: { labFeeTotal: 80000, total: 80000, lines: [] },
+        netLabFeeTotal: 50000,
+        arrivalYmd: "2026-09-16",
+      }),
+    ];
+    stages = patchProsthesisFeeStageArrivalYmd(stages, 0, "2026-09-22");
+    expect(stages[0].arrivalYmd).toBe("2026-09-22");
+    expect(stages[0].total).toBe(80000);
+    expect(stages[0].toothWorks[0].toothNumber).toBe("21");
+  });
+
+  test("cloneToothWorksForStageSnapshot keeps abutment specs", () => {
+    const cloned = cloneToothWorksForStageSnapshot([
+      {
+        toothNumber: "36",
+        prosthesisType: "임시치아",
+        customAbutment: true,
+        implantManufacturer: "OSSTEM",
+        abutmentDiameter: "4.0",
+        bridgeLinkedTeeth: ["36"],
+      },
+    ]);
+    expect(cloned[0].implantManufacturer).toBe("OSSTEM");
+    expect(cloned[0].abutmentDiameter).toBe("4.0");
+    expect(cloned[0].customAbutment).toBe(true);
   });
 });

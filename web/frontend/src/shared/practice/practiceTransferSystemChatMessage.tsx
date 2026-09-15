@@ -288,6 +288,10 @@ export function PracticeTransferSystemChatBody({
         ? transferProsthesisFeeStages
         : []
     ).find((row) => String(row?.key || "").trim() === stageKey);
+    const stageToothWorks =
+      Array.isArray(stageSnap?.toothWorks) && stageSnap!.toothWorks!.length > 0
+        ? (stageSnap!.toothWorks as ToothWorkSelection[])
+        : toothWorks;
     const followUpRecord = (
       Array.isArray(transferProsthesisFollowUps)
         ? transferProsthesisFollowUps
@@ -370,10 +374,10 @@ export function PracticeTransferSystemChatBody({
             ) : null}
           </div>
         </div>
-        {toothWorks.length > 0 ? (
+        {stageToothWorks.length > 0 ? (
           <div className="mt-2 w-full min-w-0 max-w-full text-left text-foreground">
             <PracticeToothWorkChartReadOnly
-              toothWorks={toothWorks}
+              toothWorks={stageToothWorks}
               feeToothWorks={feeToothWorks}
               showHeader={false}
               labAnchorId={labAnchorId}
@@ -381,6 +385,7 @@ export function PracticeTransferSystemChatBody({
               prosthesisFollowUps={transferProsthesisFollowUps}
               prosthesisFeeStages={transferProsthesisFeeStages}
               feeStageFocusIndex={followUpIndex}
+              feeStageKey={stageKey}
               // 단계 스냅샷 보호 — 최종 기공비는 완료 카드에서만
               showFinalFee={false}
               enlargeOverlayClassName="z-[350]"

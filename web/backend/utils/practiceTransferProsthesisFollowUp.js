@@ -3,7 +3,8 @@
 // - web/backend/utils/practiceTransferStage.js
 // - web/frontend/src/shared/practice/prosthesisFollowUp.ts
 // - web/frontend/src/shared/practice/prosthesisFollowUpFeeStages.ts
-// - 2026-09-15: prosthesisFeeStages — 단계별 견적 스냅샷(임시/지르). case billing·최종 feeQuote와 분리.
+// - 2026-09-15: prosthesisFeeStages — 단계별 불변 스냅샷(치식+견적). case billing·최종 feeQuote와 분리.
+// - 2026-09-15: Stage SSOT — toothWorks/YMD 고정. UI는 case toothWorks focus 필터 대신 stage 조회.
 // - 2026-09-15: 후속 스팬 = 인접 연결 연결요소(44-45 / 45-46 쪼개짐 방지). 기공비 차감은 스팬 치아 전원.
 // - 2026-09-08: 진행 탭 채팅 payload에 임플란트·어벗 스펙 포함(serializeFollowUpToothWorksForChatPayload).
 // - 2026-09-08: 후속 제작 시 원 임시치아 기공비 차감(브리지/크라운 순증분만 홀드).
@@ -629,14 +630,60 @@ export const normalizeProsthesisFeeLines = (lines) =>
     })
     .filter(Boolean);
 
+/** Stage 치식 스냅샷 — 표시에 필요한 필드만 평문 복사 */
+export const cloneToothWorksForStageSnapshot = (toothWorks) =>
+  (Array.isArray(toothWorks) ? toothWorks : [])
+    .map((row) => {
+      if (!row || typeof row !== "object") return null;
+      const plain =
+        typeof row.toObject === "function" ? row.toObject() : { ...row };
+      const toothNumber = String(plain.toothNumber || "").trim();
+      const prosthesisType = String(plain.prosthesisType || "").trim();
+      if (!toothNumber && !prosthesisType) return null;
+      const linked = Array.isArray(plain.bridgeLinkedTeeth)
+        ? plain.bridgeLinkedTeeth.map((t) => String(t || "").trim()).filter(Boolean)
+        : [];
+      const out = {
+        toothNumber,
+        prosthesisType,
+        customAbutment: Boolean(plain.customAbutment),
+        bridgeLinkedTeeth: linked,
+      };
+      if (String(plain.prosthesisPhase || "").trim()) {
+        out.prosthesisPhase = String(plain.prosthesisPhase).trim();
+      }
+      for (const key of FOLLOW_UP_SPEC_COPY_KEYS) {
+        if (plain[key] != null && String(plain[key]).trim() !== "") {
+          out[key] = plain[key];
+        }
+      }
+      return out;
+    })
+    .filter(Boolean);
+
+const normalizeStageYmd = (raw) => {
+  const ymd = String(raw || "").trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(ymd) ? ymd : "";
+};
+
 export const PROSTHESIS_FEE_STAGE_TEMP_KEY = "temp";
 
 export const zirconiaProsthesisFeeStageKey = (followUpIndex) =>
   `zirconia-${Math.max(0, Math.floor(Number(followUpIndex) || 0))}`;
 
+export const getProsthesisFeeStageByKey = (stages, key) => {
+  const want = String(key || "").trim();
+  if (!want) return null;
+  return (
+    listProsthesisFeeStages(stages).find(
+      (row) => String(row?.key || "").trim() === want,
+    ) || null
+  );
+};
+
 /**
- * 단계별 견적 스냅샷 1건.
- * - temp: 원 임시치아(+CA) 수가
+ * 단계별 불변 스냅샷 1건.
+ * - temp: 원 임시치아(+CA) 수가 + toothWorks
  * - zirconia-N: 해당 후속 브리지/크라운 수가(차감 전). net*는 홀드용 순증분.
  */
 export const buildProsthesisFeeStageRecord = ({
@@ -644,10 +691,15 @@ export const buildProsthesisFeeStageRecord = ({
   followUpIndex = -1,
   title = "",
   fees = null,
+  toothWorks = null,
   netLabFeeTotal = null,
   netTotal = null,
   tempCreditLabFeeTotal = 0,
   quotedAt = null,
+  orderYmd = "",
+  arrivalYmd = "",
+  previousOrderYmd = "",
+  previousArrivalYmd = "",
 } = {}) => {
   const labFeeTotal = Math.max(
     0,
@@ -661,6 +713,7 @@ export const buildProsthesisFeeStageRecord = ({
     followUpIndex == null || !Number.isFinite(Number(followUpIndex))
       ? -1
       : Math.floor(Number(followUpIndex));
+  const snapshotToothWorks = cloneToothWorksForStageSnapshot(toothWorks);
   const record = {
     key: String(key || "").trim() || (idx < 0 ? PROSTHESIS_FEE_STAGE_TEMP_KEY : zirconiaProsthesisFeeStageKey(idx)),
     followUpIndex: idx,
@@ -673,7 +726,14 @@ export const buildProsthesisFeeStageRecord = ({
     total,
     lines: normalizeProsthesisFeeLines(fees?.lines),
     quotedAt: quotedAt instanceof Date ? quotedAt : quotedAt ? new Date(quotedAt) : new Date(),
+    orderYmd: normalizeStageYmd(orderYmd),
+    arrivalYmd: normalizeStageYmd(arrivalYmd),
+    previousOrderYmd: normalizeStageYmd(previousOrderYmd),
+    previousArrivalYmd: normalizeStageYmd(previousArrivalYmd),
   };
+  if (snapshotToothWorks.length > 0) {
+    record.toothWorks = snapshotToothWorks;
+  }
   if (idx >= 0) {
     record.netLabFeeTotal = Math.max(
       0,
@@ -719,6 +779,22 @@ export const upsertProsthesisFeeStage = (
   return [...list, nextStage];
 };
 
+/**
+ * 지르 단계 arrivalYmd만 갱신(치식·견적 불변). key 없으면 no-op.
+ */
+export const patchProsthesisFeeStageArrivalYmd = (stages, followUpIndex, arrivalYmd) => {
+  const list = listProsthesisFeeStages(stages);
+  const idx = Math.max(0, Math.floor(Number(followUpIndex) || 0));
+  const key = zirconiaProsthesisFeeStageKey(idx);
+  const ymd = normalizeStageYmd(arrivalYmd);
+  if (!ymd) return list;
+  const at = list.findIndex((row) => String(row?.key || "").trim() === key);
+  if (at < 0) return list;
+  const copy = [...list];
+  copy[at] = { ...list[at], arrivalYmd: ymd };
+  return copy;
+};
+
 export const removeProsthesisFeeStagesByFollowUpIndexes = (
   stages,
   followUpIndexes,
@@ -736,6 +812,135 @@ export const removeProsthesisFeeStagesByFollowUpIndexes = (
   });
 };
 
+const followUpToothWorksFromCase = (toothWorks, record) => {
+  const rows = Array.isArray(toothWorks) ? toothWorks : [];
+  const teeth = new Set(
+    (Array.isArray(record?.toothNumbers) ? record.toothNumbers : [])
+      .map((t) => String(t || "").trim())
+      .filter(Boolean),
+  );
+  const followUps = rows.filter(
+    (row) =>
+      isFollowUpProsthesisPhase(row) &&
+      isFinalProsthesisType(row?.prosthesisType),
+  );
+  if (teeth.size === 0) return followUps;
+  return followUps.filter((row) => {
+    const anchor = String(row?.toothNumber || "").trim();
+    if (anchor && teeth.has(anchor)) return true;
+    return linkedTeethOf(row).some((t) => teeth.has(t));
+  });
+};
+
+/**
+ * 레거시(치식 스냅샷 없는 feeStages / stages 없음) → 표시용 Stage hydrate.
+ * 저장은 호출측에서 선택. 기존 key의 fee·lines는 덮지 않고 toothWorks/YMD만 채움.
+ */
+export const hydrateProsthesisFeeStages = ({
+  prosthesisFeeStages,
+  prosthesisFollowUps,
+  toothWorks,
+  orderYmd = "",
+  arrivalYmd = "",
+} = {}) => {
+  const caseRows = Array.isArray(toothWorks) ? toothWorks : [];
+  const baseRows = baseToothWorksWithoutFollowUp(caseRows);
+  const followUps = (Array.isArray(prosthesisFollowUps) ? prosthesisFollowUps : [])
+    .map((row) => (row && typeof row.toObject === "function" ? row.toObject() : row))
+    .filter((row) => row && !String(row?.canceledAt || "").trim());
+
+  let stages = listProsthesisFeeStages(prosthesisFeeStages);
+  const hasTemp = stages.some(
+    (row) => String(row?.key || "").trim() === PROSTHESIS_FEE_STAGE_TEMP_KEY,
+  );
+  if (!hasTemp && hasTemporaryProsthesisRows(caseRows)) {
+    stages = upsertProsthesisFeeStage(
+      stages,
+      buildProsthesisFeeStageRecord({
+        key: PROSTHESIS_FEE_STAGE_TEMP_KEY,
+        followUpIndex: -1,
+        title: "임시치아 단계",
+        toothWorks: baseRows,
+        orderYmd,
+        arrivalYmd,
+        fees: { labFeeTotal: 0, total: 0, lines: [] },
+      }),
+    );
+  }
+
+  stages = stages.map((row) => {
+    const key = String(row?.key || "").trim();
+    const next = { ...row };
+    if (
+      key === PROSTHESIS_FEE_STAGE_TEMP_KEY &&
+      (!Array.isArray(next.toothWorks) || next.toothWorks.length === 0) &&
+      baseRows.length > 0
+    ) {
+      next.toothWorks = cloneToothWorksForStageSnapshot(baseRows);
+    }
+    if (!next.orderYmd && orderYmd) next.orderYmd = normalizeStageYmd(orderYmd);
+    if (!next.arrivalYmd && arrivalYmd && key === PROSTHESIS_FEE_STAGE_TEMP_KEY) {
+      next.arrivalYmd = normalizeStageYmd(arrivalYmd);
+    }
+    return next;
+  });
+
+  for (const fu of followUps) {
+    const idx = Math.max(0, Math.floor(Number(fu?.followUpIndex || 0)));
+    const key = zirconiaProsthesisFeeStageKey(idx);
+    const existing = stages.find((row) => String(row?.key || "").trim() === key);
+    const zirRows = followUpToothWorksFromCase(caseRows, fu);
+    const delta = fu?.billingDelta && typeof fu.billingDelta === "object"
+      ? fu.billingDelta
+      : {};
+    if (!existing) {
+      stages = upsertProsthesisFeeStage(
+        stages,
+        buildProsthesisFeeStageRecord({
+          key,
+          followUpIndex: idx,
+          title: idx > 0 ? `지르 보철 단계 ${idx + 1}` : "지르 보철 단계",
+          toothWorks: zirRows,
+          fees: {
+            labFeeTotal: delta.finalLabFeeTotal ?? delta.labFeeTotal,
+            total: delta.finalTotal ?? delta.total,
+            lines: delta.lines,
+          },
+          netLabFeeTotal: delta.labFeeTotal,
+          netTotal: delta.total,
+          tempCreditLabFeeTotal: delta.tempCreditLabFeeTotal || 0,
+          orderYmd: fu.orderYmd,
+          arrivalYmd: fu.arrivalYmd,
+          previousOrderYmd: fu.previousOrderYmd,
+          previousArrivalYmd: fu.previousArrivalYmd,
+        }),
+      );
+      continue;
+    }
+    const at = stages.findIndex((row) => String(row?.key || "").trim() === key);
+    if (at < 0) continue;
+    const patched = { ...stages[at] };
+    if (
+      (!Array.isArray(patched.toothWorks) || patched.toothWorks.length === 0) &&
+      zirRows.length > 0
+    ) {
+      patched.toothWorks = cloneToothWorksForStageSnapshot(zirRows);
+    }
+    if (!patched.orderYmd) patched.orderYmd = normalizeStageYmd(fu.orderYmd);
+    if (!patched.arrivalYmd) patched.arrivalYmd = normalizeStageYmd(fu.arrivalYmd);
+    if (!patched.previousOrderYmd) {
+      patched.previousOrderYmd = normalizeStageYmd(fu.previousOrderYmd);
+    }
+    if (!patched.previousArrivalYmd) {
+      patched.previousArrivalYmd = normalizeStageYmd(fu.previousArrivalYmd);
+    }
+    stages = [...stages];
+    stages[at] = patched;
+  }
+
+  return stages;
+};
+
 export const serializeProsthesisFeeStagesForApi = (stages) =>
   listProsthesisFeeStages(stages).map((row) => ({
     key: String(row.key || "").trim(),
@@ -748,6 +953,11 @@ export const serializeProsthesisFeeStagesForApi = (stages) =>
     total: Math.max(0, Math.round(Number(row.total || 0))),
     lines: normalizeProsthesisFeeLines(row.lines),
     quotedAt: row.quotedAt || null,
+    toothWorks: cloneToothWorksForStageSnapshot(row.toothWorks),
+    orderYmd: normalizeStageYmd(row.orderYmd),
+    arrivalYmd: normalizeStageYmd(row.arrivalYmd),
+    previousOrderYmd: normalizeStageYmd(row.previousOrderYmd),
+    previousArrivalYmd: normalizeStageYmd(row.previousArrivalYmd),
     ...(row.followUpIndex != null && Number(row.followUpIndex) >= 0
       ? {
           netLabFeeTotal: Math.max(
