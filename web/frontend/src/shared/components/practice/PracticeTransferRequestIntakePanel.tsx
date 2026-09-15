@@ -224,6 +224,7 @@ import {
 // - web/frontend/src/shared/components/practice/PracticeToothSimpleAbutmentFields.tsx
 // - web/frontend/src/shared/components/practice/PracticeCustomSpecsPresetEditDialog.tsx
 // - web/frontend/src/shared/pricing/abutsAbutmentService.ts
+// - 2026-09-15: 스캔바디 라디오 — 클릭 즉시 selection lock(일부 Windows에서 직접어벗 모달로 열리는 문제).
 // - 2026-09-15: 스캔바디 1/2→2/2 — 오픈 직후 클릭 누수·자동 advance 차단(일부 Windows).
 // - 2026-09-15: 직접 어벗(심플어벗·직접입력)도 스캔바디와 같이 임플란트 1/2 → 규격 2/2 위저드.
 // - 2026-09-15: 커스텀어벗 모달 기본 z-[340] — compose Dialog(z-320) 뒤에 가려지던 문제.
@@ -1527,6 +1528,16 @@ export const PracticeTransferRequestIntakePanel = ({
   }, [feeQuote?.lines, selectedLab]);
   /** null = closed; number = 해당 치아 커스텀어벗 설정 */
   const [customSpecsModalTarget, setCustomSpecsModalTarget] = useState<number | null>(null);
+  /**
+   * 라디오로 연 모달의 어벗|스캔바디 모드 고정값.
+   * deferred open·toothWorks 반영 전·Windows 클릭 누수에도 제목/2단 패널이 뒤집히지 않게 한다.
+   */
+  const [customSpecsModalSelectionLock, setCustomSpecsModalSelectionLock] =
+    useState<CustomAbutmentSelection | null>(null);
+  const customSpecsModalSelectionLockRef = useRef<CustomAbutmentSelection | null>(
+    null,
+  );
+  const openCustomSpecsModalTimerRef = useRef<number | null>(null);
   /** 심플|직접·스캔|힐링 사이드 초안 표시용(localStorage 갱신 트리거) */
   const [abutmentSideDraftTick, setAbutmentSideDraftTick] = useState(0);
   /** 커스텀어벗 설정 위저드: 1 임플란트 → 2 스캔바디|심플어벗 */
@@ -2941,6 +2952,14 @@ export const PracticeTransferRequestIntakePanel = ({
     const requestedSelection = isCustomAbutmentSelection(options?.selection)
       ? options.selection
       : null;
+    const lockedSelection =
+      requestedSelection ||
+      (current
+        ? resolveCustomAbutmentSelection({ ...current, customAbutment: true })
+        : null) ||
+      CUSTOM_ABUTMENT_SELECTION.ABUTMENT;
+    customSpecsModalSelectionLockRef.current = lockedSelection;
+    setCustomSpecsModalSelectionLock(lockedSelection);
     // 어벗·스캔바디 모두 임플란트(1/2)부터. 심플어벗·직접입력도 임플란트 선택 후 2/2.
     setCustomSpecsWizardStep("implant");
     setToothWorks((prev) => {
@@ -3010,7 +3029,19 @@ export const PracticeTransferRequestIntakePanel = ({
     index: number,
     options?: { selection?: CustomAbutmentSelection },
   ) => {
-    window.setTimeout(() => {
+    if (isCustomAbutmentSelection(options?.selection)) {
+      customSpecsModalSelectionLockRef.current = options.selection;
+      setCustomSpecsModalSelectionLock(options.selection);
+    } else {
+      // compact 재오픈 — 이전 라디오 pointerdown lock을 주입하지 않음
+      customSpecsModalSelectionLockRef.current = null;
+      setCustomSpecsModalSelectionLock(null);
+    }
+    if (openCustomSpecsModalTimerRef.current != null) {
+      window.clearTimeout(openCustomSpecsModalTimerRef.current);
+    }
+    openCustomSpecsModalTimerRef.current = window.setTimeout(() => {
+      openCustomSpecsModalTimerRef.current = null;
       openCustomSpecsModal(index, options);
     }, 0);
   };
@@ -3020,7 +3051,9 @@ export const PracticeTransferRequestIntakePanel = ({
   ) => {
     if (!row) return;
     const selection =
-      resolveCustomAbutmentSelection(row) || CUSTOM_ABUTMENT_SELECTION.ABUTMENT;
+      customSpecsModalSelectionLockRef.current ||
+      resolveCustomAbutmentSelection(row) ||
+      CUSTOM_ABUTMENT_SELECTION.ABUTMENT;
     syncActiveAbutmentSideDraft({
       toothNumber: row.toothNumber,
       specs: {
@@ -3043,6 +3076,12 @@ export const PracticeTransferRequestIntakePanel = ({
     customSpecsPresetEditOpenRef.current = false;
     customSpecsPickSessionRef.current = { implant: false, scanbody: false };
     customSpecsWizardAdvanceBlockedUntilRef.current = 0;
+    if (openCustomSpecsModalTimerRef.current != null) {
+      window.clearTimeout(openCustomSpecsModalTimerRef.current);
+      openCustomSpecsModalTimerRef.current = null;
+    }
+    customSpecsModalSelectionLockRef.current = null;
+    setCustomSpecsModalSelectionLock(null);
     setCustomSpecsPresetEditOpen(false);
     setCustomSpecsWizardStep("implant");
     setCustomSpecsModalTarget(null);
@@ -5037,22 +5076,78 @@ export const PracticeTransferRequestIntakePanel = ({
                                   const checked =
                                     Boolean(row.customAbutment) &&
                                     selectionKind === option.value;
+                                  const applySelectionAndOpen = () => {
+                                    customSpecsModalSelectionLockRef.current =
+                                      option.value;
+                                    setCustomSpecsModalSelectionLock(option.value);
+                                    setToothWorks((prev) => {
+                                      const current = prev[originalIndex];
+                                      if (!current) return prev;
+                                      const nextMode = lockedMode
+                                        ? lockedMode
+                                        : isAbutmentProductMode(
+                                              current.abutmentProductMode,
+                                            )
+                                          ? current.abutmentProductMode
+                                          : defaultAbutmentProductMode;
+                                      const prevSelection =
+                                        resolveCustomAbutmentSelection(current);
+                                      const selectionChanged =
+                                        prevSelection != null &&
+                                        prevSelection !== option.value;
+                                      const base = selectionChanged
+                                        ? {
+                                            ...current,
+                                            ...emptyToothWorkAbutment(),
+                                          }
+                                        : current;
+                                      const next = [...prev];
+                                      next[originalIndex] = {
+                                        ...base,
+                                        customAbutment: true,
+                                        customAbutmentSelection: option.value,
+                                        abutmentProductMode: nextMode,
+                                      };
+                                      return next;
+                                    });
+                                    openCustomSpecsModalAfterPointer(originalIndex, {
+                                      selection: option.value,
+                                    });
+                                  };
                                   return (
                                     <label
                                       key={option.value}
                                       className={cn(
-                                        "inline-flex h-4 cursor-pointer items-center justify-center gap-0.5 text-[10px] leading-none",
+                                        // Windows DPI·원격 포인터: h-4 마이크로 라디오는 오클릭 쉬움
+                                        "inline-flex min-h-6 cursor-pointer items-center justify-center gap-0.5 px-0.5 py-0.5 text-[10px] leading-none",
                                         missingAbutmentPreset && checked
                                           ? "text-destructive"
                                           : checked
                                             ? "text-slate-800"
                                             : "text-slate-600",
                                       )}
+                                      onPointerDown={(e) => {
+                                        e.stopPropagation();
+                                        if (
+                                          Date.now() <
+                                          suppressAbutmentCheckboxUntilRef.current
+                                        ) {
+                                          return;
+                                        }
+                                        // 눌리는 순간 의도 모드 고정(mouseup 전에 카드 레이아웃이 바뀌어도 유지)
+                                        if (!checked) {
+                                          customSpecsModalSelectionLockRef.current =
+                                            option.value;
+                                          setCustomSpecsModalSelectionLock(
+                                            option.value,
+                                          );
+                                        }
+                                      }}
                                     >
                                       <input
                                         type="radio"
                                         name={`custom-abut-selection-${toothNumber}-${originalIndex}`}
-                                        className="h-3 w-3 shrink-0 accent-primary-strong"
+                                        className="h-3.5 w-3.5 shrink-0 accent-primary-strong"
                                         checked={checked}
                                         onClick={(e) => {
                                           e.stopPropagation();
@@ -5118,9 +5213,7 @@ export const PracticeTransferRequestIntakePanel = ({
                                             });
                                             return;
                                           }
-                                          openCustomSpecsModalAfterPointer(originalIndex, {
-                                            selection: option.value,
-                                          });
+                                          applySelectionAndOpen();
                                         }}
                                       />
                                       <span className="whitespace-nowrap">{option.label}</span>
@@ -5998,6 +6091,7 @@ export const PracticeTransferRequestIntakePanel = ({
                 modalTooth.prosthesisType,
               );
               const modalSelection =
+                customSpecsModalSelectionLock ||
                 resolveCustomAbutmentSelection(modalTooth) ||
                 CUSTOM_ABUTMENT_SELECTION.ABUTMENT;
               const isAbutmentModal =
