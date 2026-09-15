@@ -164,6 +164,10 @@ import {
   type AbutmentSideKey,
 } from "@/shared/practice/practiceAbutmentSideDraft";
 import {
+  applyCustomSpecsLastDefaults,
+  rememberCustomSpecsLastDefaults,
+} from "@/shared/practice/practiceCustomSpecsLastDefaults";
+import {
   buildLabIntroMessage,
   buildReferralSignupLink,
 } from "@/shared/platform/referralShareMessages";
@@ -224,6 +228,7 @@ import {
 // - web/frontend/src/shared/components/practice/PracticeToothSimpleAbutmentFields.tsx
 // - web/frontend/src/shared/components/practice/PracticeCustomSpecsPresetEditDialog.tsx
 // - web/frontend/src/shared/pricing/abutsAbutmentService.ts
+// - 2026-09-15: 확인 후 Windows 클릭 누수로 라디오 해제·규격 소실 방지 + 직전 선택 localStorage 기본값.
 // - 2026-09-15: 스캔바디 라디오 — 클릭 즉시 selection lock(일부 Windows에서 직접어벗 모달로 열리는 문제).
 // - 2026-09-15: 스캔바디 1/2→2/2 — 오픈 직후 클릭 누수·자동 advance 차단(일부 Windows).
 // - 2026-09-15: 직접 어벗(심플어벗·직접입력)도 스캔바디와 같이 임플란트 1/2 → 규격 2/2 위저드.
@@ -1538,6 +1543,13 @@ export const PracticeTransferRequestIntakePanel = ({
     null,
   );
   const openCustomSpecsModalTimerRef = useRef<number | null>(null);
+  /**
+   * Dialog onOpenChange(false)가 확인과 취소를 구분.
+   * (확인 직후 Radix dismiss가 cancel/스냅샷 복원으로 규격을 되돌리는 것 방지)
+   */
+  const customSpecsModalDismissKindRef = useRef<"confirm" | "cancel" | null>(
+    null,
+  );
   /** 심플|직접·스캔|힐링 사이드 초안 표시용(localStorage 갱신 트리거) */
   const [abutmentSideDraftTick, setAbutmentSideDraftTick] = useState(0);
   /** 커스텀어벗 설정 위저드: 1 임플란트 → 2 스캔바디|심플어벗 */
@@ -2997,25 +3009,30 @@ export const PracticeTransferRequestIntakePanel = ({
       const withTourDefault = tourSimpleDefault
         ? { ...specsBase, ...tourSimpleDefault }
         : specsBase;
-      const changedAbut =
-        withTourDefault.abutmentManufacturer !== row.abutmentManufacturer ||
-        withTourDefault.abutmentDiameter !== row.abutmentDiameter ||
-        withTourDefault.abutmentHeight !== row.abutmentHeight;
-      if (
-        row.customAbutment &&
-        row.abutmentProductMode === nextMode &&
-        row.customAbutmentSelection === nextSelection &&
-        !changedAbut
-      ) {
-        return prev;
-      }
-      const next = [...prev];
-      next[index] = {
-        ...withTourDefault,
+      // 투어 데모가 없을 때: 비어 있는 임플란트·어벗 규격에 직전 선택 채움
+      const withLastDefaults = tourSimpleDefault
+        ? withTourDefault
+        : applyCustomSpecsLastDefaults(withTourDefault, nextSelection);
+      const nextRow = {
+        ...withLastDefaults,
         customAbutment: true,
         customAbutmentSelection: nextSelection,
         abutmentProductMode: nextMode,
       };
+      const unchanged =
+        row.customAbutment &&
+        row.abutmentProductMode === nextRow.abutmentProductMode &&
+        row.customAbutmentSelection === nextRow.customAbutmentSelection &&
+        row.implantManufacturer === nextRow.implantManufacturer &&
+        row.implantBrand === nextRow.implantBrand &&
+        row.implantFamily === nextRow.implantFamily &&
+        row.implantType === nextRow.implantType &&
+        row.abutmentManufacturer === nextRow.abutmentManufacturer &&
+        row.abutmentDiameter === nextRow.abutmentDiameter &&
+        row.abutmentHeight === nextRow.abutmentHeight;
+      if (unchanged) return prev;
+      const next = [...prev];
+      next[index] = nextRow;
       return next;
     });
     setCustomSpecsModalTarget(index);
@@ -3085,6 +3102,7 @@ export const PracticeTransferRequestIntakePanel = ({
     setCustomSpecsPresetEditOpen(false);
     setCustomSpecsWizardStep("implant");
     setCustomSpecsModalTarget(null);
+    // dismiss kind는 onOpenChange에서 confirm 판별 후 비움(여기서 지우면 레이스)
   };
 
   const restoreCustomSpecsModalSnapshot = () => {
@@ -3103,6 +3121,9 @@ export const PracticeTransferRequestIntakePanel = ({
   };
 
   const cancelCustomSpecsModal = () => {
+    // onOpenChange(false)와 취소 버튼이 연달아 호출될 수 있음
+    if (customSpecsModalDismissKindRef.current === "cancel") return;
+    customSpecsModalDismissKindRef.current = "cancel";
     const snap = customSpecsModalSnapshotRef.current;
     // 취소 시 스냅샷 기준으로 활성 사이드 초안 복구(편집 중 값은 폐기)
     if (snap) {
@@ -3129,6 +3150,12 @@ export const PracticeTransferRequestIntakePanel = ({
       completeToothWorkGuideTourAction();
       return;
     }
+    if (typeof customSpecsModalTarget === "number") {
+      rememberCustomSpecsLastDefaults(toothWorks[customSpecsModalTarget]);
+    }
+    // 확인 직후 같은 제스처가 치아 라디오에 닿아 언체크·규격 소실되는 것 방지(Windows)
+    suppressAbutmentCheckboxUntilRef.current = Date.now() + 1600;
+    customSpecsModalDismissKindRef.current = "confirm";
     customSpecsModalSnapshotRef.current = null;
     closeCustomSpecsModal();
   };
@@ -3251,39 +3278,41 @@ export const PracticeTransferRequestIntakePanel = ({
     index: number,
     patch: Partial<ReturnType<typeof emptyToothWorkCustomSpecs>>,
   ) => {
-    const row = toothWorks[index];
-    if (!row) return;
-    const customProsthesis = isCustomAbutmentProsthesisType(row.prosthesisType);
-    // 커스텀어벗 보철 형태에서는 심플어벗 패치 무시
-    if (
-      customProsthesis &&
-      ("abutmentManufacturer" in patch ||
-        "abutmentDiameter" in patch ||
-        "abutmentHeight" in patch) &&
-      isSimpleAbutmentMode({ ...row, ...patch })
-    ) {
-      patch = { ...patch, ...emptyToothWorkAbutment() };
-    }
-    const merged = {
-      ...pickToothWorkCustomSpecs(row, true),
-      ...patch,
-    };
-    const implantTouched = (
-      ["implantManufacturer", "implantBrand", "implantFamily", "implantType"] as const
-    ).some((key) => key in patch);
-    const scanbodyTouched = (
-      ["abutmentManufacturer", "abutmentDiameter", "abutmentHeight"] as const
-    ).some((key) => key in patch);
-    const abutmentSideComplete = hasToothWorkAbutmentSidePreset({
-      ...row,
-      ...merged,
-    });
+    let implantTouched = false;
+    let scanbodyTouched = false;
+    let abutmentSideComplete = false;
     setToothWorks((prev) => {
+      const row = prev[index];
+      if (!row) return prev;
+      let nextPatch = patch;
+      const customProsthesis = isCustomAbutmentProsthesisType(row.prosthesisType);
+      // 커스텀어벗 보철 형태에서는 심플어벗 패치 무시
+      if (
+        customProsthesis &&
+        ("abutmentManufacturer" in nextPatch ||
+          "abutmentDiameter" in nextPatch ||
+          "abutmentHeight" in nextPatch) &&
+        isSimpleAbutmentMode({ ...row, ...nextPatch })
+      ) {
+        nextPatch = { ...nextPatch, ...emptyToothWorkAbutment() };
+      }
+      const merged = {
+        ...pickToothWorkCustomSpecs(row, true),
+        ...nextPatch,
+      };
+      implantTouched = (
+        ["implantManufacturer", "implantBrand", "implantFamily", "implantType"] as const
+      ).some((key) => key in patch);
+      scanbodyTouched = (
+        ["abutmentManufacturer", "abutmentDiameter", "abutmentHeight"] as const
+      ).some((key) => key in patch);
+      abutmentSideComplete = hasToothWorkAbutmentSidePreset({
+        ...row,
+        ...merged,
+      });
       const next = [...prev];
-      const current = next[index];
-      if (!current) return prev;
       next[index] = {
-        ...current,
+        ...row,
         customAbutment: true,
         ...merged,
       };
@@ -3332,6 +3361,7 @@ export const PracticeTransferRequestIntakePanel = ({
       detectSide,
     });
     setAbutmentSideDraftTick((n) => n + 1);
+    // merge는 patchCustomSpecsOnTooth가 prev 기준으로 적용(연속 칩 클릭 stale overwrite 방지)
     patchCustomSpecsOnTooth(index, resolved);
   };
 
@@ -5996,7 +6026,14 @@ export const PracticeTransferRequestIntakePanel = ({
       <Dialog
         open={customSpecsModalTarget !== null}
         onOpenChange={(open) => {
-          if (!open) cancelCustomSpecsModal();
+          if (open) return;
+          // 확인으로 닫힌 경우 cancel/스냅샷 복원 금지(Windows에서 저장 값이 비는 주원인)
+          if (customSpecsModalDismissKindRef.current === "confirm") {
+            customSpecsModalDismissKindRef.current = null;
+            return;
+          }
+          cancelCustomSpecsModal();
+          customSpecsModalDismissKindRef.current = null;
         }}
       >
         <DialogContent
