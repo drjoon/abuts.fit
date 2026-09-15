@@ -14,6 +14,7 @@
 // - 2026-08-26: brand/family/type OR(` | `) 파싱·조인 헬퍼. 요청중/도입중/도입 상태.
 // - 2026-08-26: 관리자 추가·isPublic·명시 저장(입력값 그대로).
 // - 2026-08-24: 관리자 어벗 추가 요청 삭제 API 클라이언트.
+// - 2026-09-15: 심플힐링=스캔바디 일종(CA) — 환봉 카탈로그 enrich 대상(심플어벗/심플밀링만 제외).
 // - 2026-09-02: 공개 카탈로그 미매칭 치식도 도입중 플래그 보강(안내·어벗츠 제외). 심플어벗은 보강 제외.
 // - 2026-09-02: 어벗츠 제공만·완료 호버 툴팁 상수.
 // - 2026-09-02: matchesRoundBarCatalogSpec — brand/family/type OR(` | `) 토큰 교집합.
@@ -514,14 +515,13 @@ export const enrichToothWorksPendingFromCatalog = <
   if (!Array.isArray(catalog) || catalog.length === 0) return list;
   return list.map((row) => {
     if (!row?.customAbutment) return row;
-    // 심플어벗(치과 재고)은 기공소 자체 처리 대상이 아님 — labFeeSchedule과 순환 import 방지용 인라인.
+    // 심플어벗/심플밀링(치과 재고)만 기공소 CA·환봉 enrich 제외. 심플힐링=스캔바디 일종.
     const abutmentManufacturer = String(
       (row as { abutmentManufacturer?: string }).abutmentManufacturer || "",
     ).trim();
     if (
       abutmentManufacturer === "심플어벗" ||
-      abutmentManufacturer === "심플밀링" ||
-      abutmentManufacturer === "심플힐링"
+      abutmentManufacturer === "심플밀링"
     ) {
       return row;
     }

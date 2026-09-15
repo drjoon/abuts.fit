@@ -1,5 +1,6 @@
 // related files:
 // - web/backend/utils/labFeeSchedule.js
+// - 2026-09-15: 심플힐링=스캔바디 일종 → 크라운+심플힐링도 지그포함 CA 수가.
 // - 2026-08-25: 단독 커스텀어벗은 심플이어도 지그제외 수가. Off면 missingFeeNames.
 // - 2026-08-25: 심플어벗은 기공소 어벗 수가·견적에서 제외.
 // - 2026-08-24: 커스텀어벗 수가 perSet·0원 저장이어도 normalize로 perTooth 강제·단가 반영.
@@ -219,6 +220,45 @@ describe("labFeeSchedule", () => {
       fees.lines.find(
         (l) =>
           l.toothNumber === "36" &&
+          l.prosthesisType === LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME,
+      )?.labAbutmentFee,
+    ).toBe(withJig);
+  });
+
+  test("심플힐링은 스캔바디 일종 — 크라운+심플힐링도 지그포함 CA 수가", () => {
+    const fees = computePracticeTransferRetailFees({
+      toothWorks: [
+        {
+          toothNumber: "23",
+          prosthesisType: "크라운",
+          customAbutment: true,
+          abutmentManufacturer: "심플힐링",
+          abutmentDiameter: "7",
+          abutmentHeight: "M",
+        },
+      ],
+      labFeeSchedule: LAB_FEE_SCHEDULE_SAMPLE,
+      abutmentPricingTier: "regular",
+    });
+    const crown = Math.round(
+      Number(
+        LAB_FEE_SCHEDULE_SAMPLE.items.find((i) => i.name === "크라운")?.price ||
+          0,
+      ),
+    );
+    const withJig = Math.round(
+      Number(
+        LAB_FEE_SCHEDULE_SAMPLE.items.find(
+          (i) => i.name === LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME,
+        )?.price || 0,
+      ),
+    );
+    expect(fees.labAbutmentTotal).toBe(withJig);
+    expect(fees.labFeeTotal).toBe(crown + withJig);
+    expect(
+      fees.lines.find(
+        (l) =>
+          l.toothNumber === "23" &&
           l.prosthesisType === LAB_FEE_CUSTOM_ABUTMENT_WITH_JIG_NAME,
       )?.labAbutmentFee,
     ).toBe(withJig);
