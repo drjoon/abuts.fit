@@ -68,6 +68,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/shared/ui/cn";
+import { armPointerClickThroughGuard } from "@/shared/dom/armPointerClickThroughGuard";
 import { PracticeOrderArrivalDateRangeField } from "@/shared/components/practice/PracticeOrderArrivalDateRangeField";
 import {
   ABUTS_PINNED_LAB_NAME,
@@ -231,6 +232,10 @@ import {
 // - 2026-09-15: 확인 후 Windows 클릭 누수로 라디오 해제·규격 소실 방지 + 직전 선택 localStorage 기본값.
 // - 2026-09-15: 스캔바디 라디오 — 클릭 즉시 selection lock(일부 Windows에서 직접어벗 모달로 열리는 문제).
 // - 2026-09-15: 스캔바디 1/2→2/2 — 오픈 직후 클릭 누수·자동 advance 차단(일부 Windows).
+// - 2026-09-15: 「다음」더블클릭 — advance 잠금 1.6s→0.4s·임플란트 조작 시 즉시 해제. 푸터 우측 잘림 여백.
+// - 2026-09-15: 취소/닫기 직후 클릭 누수로 모달 재오픈·라디오 토글 방지. 푸터는 오픈 직후 pointer-events로만 무장.
+// - 2026-09-15: 어벗 라디오 재클릭 불안정 — 억제를 닫은 치아만·350ms. 취소는 항상 동작, 「다음」만 200ms 가드.
+// - 2026-09-15: 클릭 누수 — ms 억제 제거. armPointerClickThroughGuard(제스처 잔여 pointerup/click 흡수, 다음 pointerdown에 해제).
 // - 2026-09-15: 직접 어벗(심플어벗·직접입력)도 스캔바디와 같이 임플란트 1/2 → 규격 2/2 위저드.
 // - 2026-09-15: 커스텀어벗 모달 기본 z-[340] — compose Dialog(z-320) 뒤에 가려지던 문제.
 // - 2026-09-14: XOR dimmed — 커밋된 사이드만 선명(미선택 시 양쪽 흐림). 흐림 opacity 강화.
@@ -1560,12 +1565,6 @@ export const PracticeTransferRequestIntakePanel = ({
   const customSpecsPresetEditOpenRef = useRef(false);
   /** 이번 모달에서 임플란트/스캔바디를 각각 클릭 선택했는지 */
   const customSpecsPickSessionRef = useRef({ implant: false, scanbody: false });
-  /**
-   * 모달 오픈을 트리거한 pointer의 mouseup/click 누수로 「다음」이 눌리는 것 방지.
-   * (일부 Windows: 라디오 클릭 → 모달 페인트 후 같은 제스처가 푸터 버튼에 전달)
-   * Date.now() 미만이면 1/2→2/2 전환 무시.
-   */
-  const customSpecsWizardAdvanceBlockedUntilRef = useRef(0);
   const customSpecsModalSnapshotRef = useRef<{
     index: number;
     row: ToothWorkSelection;
@@ -1648,8 +1647,6 @@ export const PracticeTransferRequestIntakePanel = ({
   const toothChartRef = useRef<HTMLDivElement | null>(null);
   const toothSelectAnchorRef = useRef<string | null>(null);
   const suppressToothClickRef = useRef(false);
-  /** 인레이→크라운 직후 어벗 체크박스가 같은 클릭을 받아 모달이 열리는 것 방지 */
-  const suppressAbutmentCheckboxUntilRef = useRef(0);
   /** 유지장치 진입 직전 치아별 행. 브리지 등으로 복귀 시 미클릭 치아 내용 복원 */
   const linkedSpanTypeSnapshotRef = useRef<LinkedSpanProsthesisSnapshot>({});
   const toothMarqueeSessionRef = useRef<{
@@ -2252,7 +2249,7 @@ export const PracticeTransferRequestIntakePanel = ({
       next[idx] = applyIntakeProsthesisType(current, nextType);
       return next;
     });
-    suppressAbutmentCheckboxUntilRef.current = Date.now() + 500;
+    armPointerClickThroughGuard();
     const modalIdx = toothWorks.findIndex(
       (row) => String(row.toothNumber || "").trim() === tooth,
     );
@@ -2943,6 +2940,8 @@ export const PracticeTransferRequestIntakePanel = ({
     if (toothWorkGuideTourStepId === "prosthesis") {
       return;
     }
+    // 오픈 직후 잔여 클릭이 푸터(다음 등)에 닿지 않게 — 다음 pointerdown에서 자동 해제
+    armPointerClickThroughGuard();
     const current = toothWorks[index];
     if (current) {
       const snapshotRow = clearSimpleAbutmentIfCustomProsthesis({
@@ -2959,7 +2958,6 @@ export const PracticeTransferRequestIntakePanel = ({
     }
     customSpecsPresetEditOpenRef.current = false;
     customSpecsPickSessionRef.current = { implant: false, scanbody: false };
-    customSpecsWizardAdvanceBlockedUntilRef.current = 0;
     setCustomSpecsPresetEditOpen(false);
     const requestedSelection = isCustomAbutmentSelection(options?.selection)
       ? options.selection
@@ -3092,7 +3090,6 @@ export const PracticeTransferRequestIntakePanel = ({
     }
     customSpecsPresetEditOpenRef.current = false;
     customSpecsPickSessionRef.current = { implant: false, scanbody: false };
-    customSpecsWizardAdvanceBlockedUntilRef.current = 0;
     if (openCustomSpecsModalTimerRef.current != null) {
       window.clearTimeout(openCustomSpecsModalTimerRef.current);
       openCustomSpecsModalTimerRef.current = null;
@@ -3124,6 +3121,8 @@ export const PracticeTransferRequestIntakePanel = ({
     // onOpenChange(false)와 취소 버튼이 연달아 호출될 수 있음
     if (customSpecsModalDismissKindRef.current === "cancel") return;
     customSpecsModalDismissKindRef.current = "cancel";
+    // 닫힘 직후 잔여 pointerup/click이 치아 라디오에 닿지 않게(ms 억제 아님)
+    armPointerClickThroughGuard();
     const snap = customSpecsModalSnapshotRef.current;
     // 취소 시 스냅샷 기준으로 활성 사이드 초안 복구(편집 중 값은 폐기)
     if (snap) {
@@ -3133,9 +3132,8 @@ export const PracticeTransferRequestIntakePanel = ({
     closeCustomSpecsModal({ skipSideDraftSync: true });
   };
 
-  /** 1/2→2/2는 사용자 「다음」만. 오픈 직후 포인터 누수·레거시 자동 전환 차단. */
+  /** 1/2→2/2는 사용자 「다음」만. 오픈 잔여 클릭은 armPointerClickThroughGuard. */
   const goToAbutmentWizardStep = () => {
-    if (Date.now() < customSpecsWizardAdvanceBlockedUntilRef.current) return;
     setCustomSpecsWizardStep("abutment");
   };
 
@@ -3153,8 +3151,8 @@ export const PracticeTransferRequestIntakePanel = ({
     if (typeof customSpecsModalTarget === "number") {
       rememberCustomSpecsLastDefaults(toothWorks[customSpecsModalTarget]);
     }
-    // 확인 직후 같은 제스처가 치아 라디오에 닿아 언체크·규격 소실되는 것 방지(Windows)
-    suppressAbutmentCheckboxUntilRef.current = Date.now() + 1600;
+    // 확인 직후 잔여 클릭이 라디오 언체크·규격 소실로 이어지지 않게
+    armPointerClickThroughGuard();
     customSpecsModalDismissKindRef.current = "confirm";
     customSpecsModalSnapshotRef.current = null;
     closeCustomSpecsModal();
@@ -3168,20 +3166,6 @@ export const PracticeTransferRequestIntakePanel = ({
     syncCustomSpecsModalSideDrafts(row);
     // 오픈 순간만 — toothWorks 후속 편집은 patchAbutmentSideOnTooth가 저장
     // eslint-disable-next-line react-hooks/exhaustive-deps -- open-only sync
-  }, [customSpecsModalTarget]);
-
-  // 오픈 트리거 click/mouseup이 모달 「다음」으로 전달되지 않게 잠시 잠금
-  useEffect(() => {
-    if (customSpecsModalTarget === null) {
-      customSpecsWizardAdvanceBlockedUntilRef.current = 0;
-      return;
-    }
-    // 일부 Windows: 모달 페인트가 느려 오픈 제스처가 1~2초 뒤 푸터에 닿음
-    customSpecsWizardAdvanceBlockedUntilRef.current = Date.now() + 1600;
-    const timer = window.setTimeout(() => {
-      customSpecsWizardAdvanceBlockedUntilRef.current = 0;
-    }, 1600);
-    return () => window.clearTimeout(timer);
   }, [customSpecsModalTarget]);
 
   const isPresetGuideTourStep = isCustomAbutGuideTourStepId(
@@ -5158,12 +5142,6 @@ export const PracticeTransferRequestIntakePanel = ({
                                       )}
                                       onPointerDown={(e) => {
                                         e.stopPropagation();
-                                        if (
-                                          Date.now() <
-                                          suppressAbutmentCheckboxUntilRef.current
-                                        ) {
-                                          return;
-                                        }
                                         // 눌리는 순간 의도 모드 고정(mouseup 전에 카드 레이아웃이 바뀌어도 유지)
                                         if (!checked) {
                                           customSpecsModalSelectionLockRef.current =
@@ -5181,13 +5159,6 @@ export const PracticeTransferRequestIntakePanel = ({
                                         checked={checked}
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          if (
-                                            Date.now() <
-                                            suppressAbutmentCheckboxUntilRef.current
-                                          ) {
-                                            e.preventDefault();
-                                            return;
-                                          }
                                           // 같은 라디오 재클릭 → 해제(기존 체크박스 언체크와 동일)
                                           if (checked) {
                                             e.preventDefault();
@@ -5208,18 +5179,13 @@ export const PracticeTransferRequestIntakePanel = ({
                                               customSpecsModalTarget === originalIndex
                                             ) {
                                               customSpecsModalSnapshotRef.current = null;
+                                              armPointerClickThroughGuard();
                                               closeCustomSpecsModal();
                                             }
                                           }
                                         }}
                                         onChange={(e) => {
                                           e.stopPropagation();
-                                          if (
-                                            Date.now() <
-                                            suppressAbutmentCheckboxUntilRef.current
-                                          ) {
-                                            return;
-                                          }
                                           if (!e.target.checked) return;
                                           if (toothWorkGuideTourStepId === "abutment") {
                                             setToothWorks((prev) => {
@@ -6039,7 +6005,8 @@ export const PracticeTransferRequestIntakePanel = ({
         <DialogContent
           className={cn(
             // 화면 중앙. 스캔바디 프리셋 긴 라벨용 폭(초과는 카드 2줄). max-h로 뷰포트 넘침만 방지
-            "guide-tour-nested-dialog flex max-h-[calc(100dvh-2rem)] w-[min(52rem,calc(100vw-1.5rem))] flex-col gap-3 overflow-hidden p-4 sm:max-w-[min(52rem,calc(100vw-1.5rem))] sm:p-5",
+            // px는 푸터 우측 버튼(다음/확인)이 overflow-hidden에 잘리지 않게 여유
+            "guide-tour-nested-dialog flex max-h-[calc(100dvh-2rem)] w-[min(52rem,calc(100vw-1.5rem))] flex-col gap-3 overflow-hidden px-5 py-4 sm:max-w-[min(52rem,calc(100vw-1.5rem))] sm:px-6 sm:py-5",
             // 프리셋 투어: 코치마크 자리 확보(상단 여백)
             isPresetGuideTourStep &&
               "!top-[10.5rem] !translate-y-0 max-h-[calc(100dvh-11.5rem)]",
@@ -6053,13 +6020,15 @@ export const PracticeTransferRequestIntakePanel = ({
           onOpenAutoFocus={(event) => {
             event.preventDefault();
           }}
-          // 투어 코치「뒤로/다음」클릭이 모달 outside로 잡혀 즉시 닫히는 것 방지
+          // 바깥 클릭으로 닫을 때 — 닫힘 전 가드(잔여 클릭이 치아 차트로 낙하 방지). 투어는 outside 자체 차단.
           onPointerDownOutside={
             isPresetGuideTourStep
               ? (event) => {
                   event.preventDefault();
                 }
-              : undefined
+              : () => {
+                  armPointerClickThroughGuard();
+                }
           }
           onInteractOutside={
             isPresetGuideTourStep
@@ -6432,8 +6401,8 @@ export const PracticeTransferRequestIntakePanel = ({
                     />
                   </div>
 
-                  <DialogFooter className="grid shrink-0 grid-cols-[auto_1fr_auto] items-center gap-2 sm:space-x-0">
-                    <div className="flex flex-wrap items-center justify-start gap-2">
+                  <DialogFooter className="flex shrink-0 flex-row flex-wrap items-center justify-between gap-x-3 gap-y-2 sm:space-x-0">
+                    <div className="flex min-w-0 flex-wrap items-center justify-start gap-2">
                       <Button
                         type="button"
                         className={
@@ -6453,8 +6422,7 @@ export const PracticeTransferRequestIntakePanel = ({
                         )}
                       </Button>
                     </div>
-                    <div aria-hidden className="min-w-0" />
-                    <div className="flex flex-wrap items-center justify-end gap-2">
+                    <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
                       {wizardStep === "abutment" ? (
                         <Button
                           type="button"
