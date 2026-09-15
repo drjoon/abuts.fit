@@ -9,6 +9,7 @@
 // - 2026-09-15: 부분 후속(남은 임시치아) — 변경 기공비 라벨·지르 CTA 유지용 hasPartialProsthesisFollowUp.
 // - 2026-09-15: 캘린더 칩 포커스 — 해당 단계 치아만(누적 브리지 표시 금지). 견적 표시는 차감 없음.
 // - 2026-09-15: focus=null + 후속 있음 → 최신 지르 단계만(원·후속 합쳐 임시가 지르로 보이는 표시 금지).
+// - 2026-09-15: 부분 후속 포커스 — 해당 지르 치아 + 아직 미전환 임시치아 스팬(원본 스냅샷 소실 방지).
 import {
   type ToothWorkSelection,
   isCustomAbutmentProsthesisType,
@@ -571,9 +572,10 @@ export const resolveProsthesisFollowUpFocusIndex = (input: {
 
 /**
  * 캘린더 칩 단계에 해당하는 toothWorks (차트 표시).
- * - null: 후속 없으면 전체. 후속 있으면 최신 지르 단계만(원·후속 합쳐 보이지 않음)
+ * - null: 후속 없으면 전체. 후속 있으면 최신 지르 단계(+미전환 임시)
  * - -1: 원 임시치아만
- * - N: 해당 후속 건 치아만(그 단계 지르 + 동일 치아 원행 CA 스펙)
+ * - N: 해당 후속 건 치아(그 단계 지르 + 동일 치아 원행 CA) + 아직 미전환 임시치아 스팬
+ *       (다른 후속 건의 지르는 제외 — 누적 브리지 표시 방지)
  */
 export const toothWorksUpToFollowUpFocus = <T extends Partial<ToothWorkSelection>>(
   toothWorks: ReadonlyArray<T> | null | undefined,
@@ -603,14 +605,14 @@ export const toothWorksUpToFollowUpFocus = <T extends Partial<ToothWorkSelection
     (row) =>
       Number(row.followUpIndex || 0) === Math.floor(Number(effectiveFocus)),
   );
-  const allowedTeeth = new Set<string>();
+  const stageTeeth = new Set<string>();
   for (const tooth of Array.isArray(record?.toothNumbers)
     ? record!.toothNumbers
     : []) {
     const t = String(tooth || "").trim();
-    if (t) allowedTeeth.add(t);
+    if (t) stageTeeth.add(t);
   }
-  if (allowedTeeth.size === 0) {
+  if (stageTeeth.size === 0) {
     // 레거시(치아 목록 없음): 단일 후속이면 전체 지르, 아니면 해당 단계 표시 불가
     const allFollowUpRecords = activeFollowUpRecordsSorted(followUps);
     if (allFollowUpRecords.length <= 1) {
@@ -621,22 +623,34 @@ export const toothWorksUpToFollowUpFocus = <T extends Partial<ToothWorkSelection
         ) {
           continue;
         }
-        for (const tooth of linkedTeethOf(row)) allowedTeeth.add(tooth);
+        for (const tooth of linkedTeethOf(row)) stageTeeth.add(tooth);
       }
     }
   }
+
+  // 부분 후속: 아직 지르로 안 바꾼 임시치아도 원본 스냅샷처럼 함께 표시
+  const pendingTeeth = new Set<string>();
+  for (const { teeth } of listPendingFollowUpTempSpans(rows)) {
+    for (const tooth of teeth) {
+      const t = String(tooth || "").trim();
+      if (t) pendingTeeth.add(t);
+    }
+  }
+
+  const allowedTeeth = new Set<string>([...stageTeeth, ...pendingTeeth]);
   if (allowedTeeth.size === 0) return [];
 
-  const touchesAllowed = (row: T) => {
+  const touchesSet = (row: T, set: Set<string>) => {
     const anchor = String(row?.toothNumber || "").trim();
-    if (anchor && allowedTeeth.has(anchor)) return true;
-    return linkedTeethOf(row).some((tooth) => allowedTeeth.has(tooth));
+    if (anchor && set.has(anchor)) return true;
+    return linkedTeethOf(row).some((tooth) => set.has(tooth));
   };
 
   return rows.filter((row) => {
-    if (!touchesAllowed(row)) return false;
+    if (!touchesSet(row, allowedTeeth)) return false;
     if (!isFollowUpProsthesisPhase(row)) return true;
-    // 다른 후속 건의 지르 행은 제외(누적 브리지 표시 방지)
+    // 포커스 단계 치아의 지르만(다른 후속·미전환 임시에 붙은 지르 행 제외)
+    if (!touchesSet(row, stageTeeth)) return false;
     return isFinalProsthesisType(String(row.prosthesisType || ""));
   });
 };

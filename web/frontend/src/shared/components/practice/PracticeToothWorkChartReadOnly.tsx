@@ -271,7 +271,7 @@ export const PracticeToothWorkChartReadOnly = ({
     if (!selectable) return toothWorks;
     return toothWorks.filter((row) => isSpanSelected(row));
   }, [feeToothWorks, selectable, toothWorks, selectedSpanKeys, spanKeyOf]);
-  /** 칩 단계 포커스 — 표시용 toothWorks만 자른다(견적 합계·전체 단계는 유지). */
+  /** 칩 단계 포커스 — 표시용 toothWorks만 자른다(견적 합계·전체 단계는 유지). 부분 후속이면 미전환 임시도 포함. */
   const displayToothWorks = useMemo(
     () =>
       toothWorksUpToFollowUpFocus(
