@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-17: 텍스처 베이크 시 R/B 스왑(hpsdecode와 동일) — DCM 치은이 보라색으로 보이던 문제.
 // - 2026-09-14: CE Blowfish PADDING.NONE — NULL이 블록 패딩 0을 swap 전에 잘라 BiteScan Adler 실패.
 // - 2026-09-10: TextureData2·VertexColorSet·Facets tint → 버텍스 칼라(베이크). PLY export용 mesh 데이터.
 // - 2026-09-10: 3Shape/TRIOS HPS(.dcm) → Three.BufferGeometry 클라이언트 파서 (CA/CC/CE).
@@ -640,6 +641,8 @@ async function decodeJpegRgb(
 /**
  * Texture UV + JPEG → per-vertex RGB (corner samples averaged).
  * Adapted from hpsdecode.texture_to_vertex_colors (MIT).
+ * 3Shape HPS JPEG는 채널이 BGR로 들어가 있어 샘플 후 R/B를 바꾼다
+ * (hpsdecode: Image.merge("RGB", (b, g, r))).
  */
 async function bakeTextureToVertexColors(
   indices: Uint32Array,
@@ -660,9 +663,10 @@ async function bakeTextureToVertexColors(
     const y = Math.min(height - 1, Math.max(0, Math.round(v * (height - 1))));
     const p = (y * width + x) * 4;
     const o = vIdx * 3;
-    sums[o] += rgba[p]!;
+    // JPEG decode RGB → display RGB (R↔B)
+    sums[o] += rgba[p + 2]!;
     sums[o + 1] += rgba[p + 1]!;
-    sums[o + 2] += rgba[p + 2]!;
+    sums[o + 2] += rgba[p]!;
     counts[vIdx]! += 1;
   }
 
