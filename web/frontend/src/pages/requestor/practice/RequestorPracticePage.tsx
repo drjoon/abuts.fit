@@ -58,6 +58,7 @@
 // - 2026-09-05: 가이드투어 — pause·수료 시 데모 PTX·상세 삭제(치과 oral 정리와 동일).
 // - 2026-09-05: 가이드투어 — 수신 영화형(데모 PTX·상세 오픈·변이 가드).
 // - 2026-09-02: 어벗츠 제공 CA만 있어도 안내 표시. 심플어벗은 항상 제외.
+// - 2026-09-16: 지르 작업 시작 — stickyTrailing(업로드 옆 유지). 채팅 상·하단 중복 CTA 제거는 DetailChatDialog.
 // - 2026-09-16: 보철·의뢰파일 — S3(병렬) 후 낙관 패치·busy 해제, 저장 API는 백그라운드(어벗 handoff와 동일).
 // - 2026-09-16: 어벗 handoff — 확인 직후 S3·낙관 패치·다음 파일. handoff는 Promise.allSettled 병렬(다치아). BE 미러 clear 수정으로 레이스 완화.
 // - 2026-09-12: 어벗 handoff 성공 시 stale designFiles 덮어쓰기 금지(취소선·썸네일 플리커 제거).
@@ -8908,13 +8909,8 @@ export function RequestorPracticeReceivePage({
               {acceptProsthesisFollowUpWorkBusy ? "처리 중…" : "지르 작업 시작"}
             </Button>
           ) : null;
-          const trailingWithZir =
-            labZirStartButton || completedCancelAction || releaseTrailing ? (
-              <>
-                {labZirStartButton}
-                {completedCancelAction || releaseTrailing}
-              </>
-            ) : null;
+          const releaseTrailingOnly =
+            completedCancelAction || releaseTrailing || null;
           return (
             <PracticeLabReceiveWorkActionsBar
               transfer={selectedTransfer}
@@ -8922,7 +8918,8 @@ export function RequestorPracticeReceivePage({
               busy={rowBusy}
               designConfirmBusy={designConfirmBusyId === transferKey}
               showProductionCancelInBar
-              trailingActions={trailingWithZir}
+              stickyTrailingActions={labZirStartButton}
+              trailingActions={releaseTrailingOnly}
               onAbutmentProductionCancel={(event) =>
                 void handleCardAbutmentProductionCancel(
                   selectedTransfer,

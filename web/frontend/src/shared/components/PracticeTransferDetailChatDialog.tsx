@@ -16,6 +16,7 @@
 // - web/frontend/src/shared/files/fileBlobCache.ts
 // - web/frontend/src/shared/files/s3ImageThumb.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-16: 기공소 — 채팅 스크롤 상·하단 액션 CTA 제거. 지르 작업 시작은 헤더(acceptedWorkActions)만.
 // - 2026-09-15: 치식·보철물 차트 — 후속 지르 반영(형태) + 단계별 기공비. 인쇄는 원 임시치아.
 // - 2026-09-15: 견적은 전체 toothWorks(feeToothWorks) — 후속 반영·임시치아 차감 라인 유지.
 // - 2026-09-15: 남은 임시치아 있으면 지르 보철 CTA 유지(제작 변경/취소와 병행).
@@ -2953,9 +2954,11 @@ export function PracticeTransferDetailChatDialog({
               )}
             >
               <div className="shrink-0 space-y-5 px-5 py-3 text-sm">
-              {renderRequestManageButtons()}
-              {renderProsthesisFollowUpManageButtons()}
-              {renderProsthesisFollowUpLabStartButton()}
+              {/* 치과(practice)만 채팅 상단 액션 — 기공소는 헤더 acceptedWorkActions */}
+              {feeViewer === "practice" ? renderRequestManageButtons() : null}
+              {feeViewer === "practice"
+                ? renderProsthesisFollowUpManageButtons()
+                : null}
               {Array.isArray(chartToothWorks) && chartToothWorks.length > 0 ? (
                 <section className="space-y-2.5">
                   <h3 className="text-[13px] font-semibold text-foreground">
@@ -3317,23 +3320,22 @@ export function PracticeTransferDetailChatDialog({
                         );
                       })}
 
-                      {!chatLoading && !visibleChatError
+                      {!chatLoading &&
+                      !visibleChatError &&
+                      feeViewer === "practice"
                         ? renderRequestManageButtons({ className: "mt-2 px-1" })
                         : null}
 
-                      {!chatLoading && !visibleChatError
+                      {!chatLoading &&
+                      !visibleChatError &&
+                      feeViewer === "practice"
                         ? renderProsthesisFollowUpManageButtons({
                             className: "mt-2 px-1",
                           })
                         : null}
 
-                      {!chatLoading && !visibleChatError
-                        ? renderProsthesisFollowUpLabStartButton({
-                            className: "mt-2 px-1",
-                          })
-                        : null}
-
                       {onAppendProsthesis &&
+                      feeViewer === "practice" &&
                       !chatLoading &&
                       !visibleChatError ? (
                         <div className="relative z-[2] mt-2 flex shrink-0 flex-col items-center gap-1.5 px-1">

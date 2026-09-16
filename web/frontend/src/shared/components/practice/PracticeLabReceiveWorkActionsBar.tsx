@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/practice/practiceTransferLabReceive.ts
 // change-log:
+// - 2026-09-16: stickyTrailingActions — 어벗 완료 줄이 취소·리메이크를 맡아도 지르 작업 시작 유지.
 // - 2026-09-16: 출고일 버튼 — 어벗츠 생산의뢰 줄 오른쪽 끝(업로드·지르 행에서 이동).
 // - 2026-09-12: 미업로드 잔여 시 pastReady=(전체리메이크) 대신 mixed(치아 리메이크만).
 // - 2026-09-12: 가공 치아 호박색·리메이크 클릭 · (전체리메이크). pastReadyTeeth 연동.
@@ -69,6 +70,12 @@ export type PracticeLabReceiveWorkActionsBarProps = {
   onAbutmentShipYmdSave?: (shipYmd: string) => void | Promise<void>;
   abutmentShipBusy?: boolean;
   onDesignConfirm?: () => void;
+  /**
+   * 업로드·취소 옆 상시 CTA(지르 작업 시작 등).
+   * 어벗 완료 줄이 취소·리메이크를 맡아도 숨기지 않는다.
+   */
+  stickyTrailingActions?: ReactNode;
+  /** 작업 취소·작업 완료 취소 — 완료 줄이 담당하면 숨김 */
   trailingActions?: ReactNode;
   className?: string;
 };
@@ -98,6 +105,7 @@ export function PracticeLabReceiveWorkActionsBar({
   onAbutmentShipYmdSave,
   abutmentShipBusy = false,
   onDesignConfirm,
+  stickyTrailingActions = null,
   trailingActions = null,
   className,
 }: PracticeLabReceiveWorkActionsBarProps) {
@@ -109,6 +117,7 @@ export function PracticeLabReceiveWorkActionsBar({
   );
   const showAbutmentShip =
     state.designStlUploadMode === "abutment" && Boolean(onAbutmentShipYmdSave);
+  const hasStickyTrailing = Boolean(stickyTrailingActions);
   const hasTrailing = Boolean(trailingActions);
   const hasAbutmentGuide = state.hasPendingLabCa || state.hasAbutsCa;
   const showAbutmentUpload =
@@ -117,6 +126,7 @@ export function PracticeLabReceiveWorkActionsBar({
     !state.showWorkActions &&
     !state.showCompletedStageHeaderCancel &&
     !state.abutmentCancelBlockedPastReady &&
+    !hasStickyTrailing &&
     !hasTrailing &&
     !hasAbutmentGuide &&
     !uploadOverdue &&
@@ -307,9 +317,10 @@ export function PracticeLabReceiveWorkActionsBar({
       </Tooltip>
     ) : null;
 
-  // 완료 줄이 취소·리메이크를 담당하면 trailing「작업 완료 취소」는 숨김
+  // 완료 줄이 취소·리메이크를 담당하면 trailing「작업 완료 취소」만 숨김(지르 등 sticky는 유지)
   const effectiveTrailing = actionsOnAbutsGuide ? null : trailingActions;
-  const hasEffectiveTrailing = Boolean(effectiveTrailing);
+  const hasEffectiveTrailing =
+    hasStickyTrailing || Boolean(effectiveTrailing);
 
   const cancelCluster =
     abutmentUploadButton ||
@@ -322,6 +333,7 @@ export function PracticeLabReceiveWorkActionsBar({
         {shipInActionRow ? abutmentShipButton : null}
         {productionCancelButton}
         {pastReadyRemakeButton}
+        {stickyTrailingActions}
         {effectiveTrailing}
       </div>
     ) : null;
@@ -376,16 +388,19 @@ export function PracticeLabReceiveWorkActionsBar({
     );
   }
 
+  const stickyOrTrailing =
+    stickyTrailingActions || effectiveTrailing ? (
+      <div className="flex flex-wrap items-center gap-1.5">
+        {stickyTrailingActions}
+        {effectiveTrailing}
+      </div>
+    ) : null;
+
   return (
     <div className={cn("w-full min-w-0 space-y-1.5", className)}>
       {standaloneOverdue}
       {pendingLabGuide}
-      {cancelCluster ??
-        (effectiveTrailing ? (
-          <div className="flex flex-wrap items-center gap-1.5">
-            {effectiveTrailing}
-          </div>
-        ) : null)}
+      {cancelCluster ?? stickyOrTrailing}
     </div>
   );
 }
