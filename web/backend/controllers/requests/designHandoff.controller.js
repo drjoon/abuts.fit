@@ -1,3 +1,4 @@
+// - 2026-09-16: PTX mirror 실패 시 clearPtxDesignMirror 금지 — 형제 치아 designFiles 소실 방지. DB 재조회·재시도.
 // - 2026-09-12: handoff/cancel — partnerBilling 잔존(레이스 중복) CA도 relatedRequestIds와 함께 취소.
 // - 2026-09-12: handoff/cancel — body.tooth면 해당 치아 CA·미러만 취소(준비 단계).
 // - 2026-09-11: handoff/cancel — 연동 CA 중 하나라도 준비 이후(가공+)면 전체 취소 차단·리메이크 안내.
@@ -1044,9 +1045,6 @@ export async function handoffDesignToProduction(req, res) {
         );
       });
 
-      const priorDesignCount = Array.isArray(transferDoc?.production?.designFiles)
-        ? transferDoc.production.designFiles.length
-        : 0;
       const labConfirmPayload =
         transferDoc && isAcceptingLab
           ? {
@@ -1061,6 +1059,16 @@ export async function handoffDesignToProduction(req, res) {
       const heldEstimatedShipYmd = String(
         request?.timeline?.estimatedShipYmd || "",
       ).trim();
+      const mirrorTooth = String(request?.caseInfos?.tooth || "").trim();
+      const mirrorPatientName = String(
+        request?.caseInfos?.patientName || "",
+      ).trim();
+      const mirrorFilePayload = {
+        originalName: nextPrimary.originalName,
+        mimetype: nextPrimary.fileType,
+        size: nextPrimary.fileSize,
+        s3Key: nextPrimary.s3Key,
+      };
 
       void (async () => {
         // 미러/labMeta보다 Rhino를 먼저 — enqueue 누락·고스트「라이노 작업중」방지
@@ -1169,24 +1177,63 @@ export async function handoffDesignToProduction(req, res) {
             }
           }
 
-          const mirroredDoc = await mirrorDesignFileToPracticeTransfer({
-            transferId: relatedTransferId,
-            file: {
-              originalName: nextPrimary.originalName,
-              mimetype: nextPrimary.fileType,
-              size: nextPrimary.fileSize,
-              s3Key: nextPrimary.s3Key,
-            },
-            tooth: String(request?.caseInfos?.tooth || "").trim(),
-            patientName: String(request?.caseInfos?.patientName || "").trim(),
-            labDesignConfirm: labConfirmPayload,
-          });
-          const mirroredDesignCount = Array.isArray(
+          // 병렬 handoff: priorCount는 DB 재조회. 실패해도 형제 치아만 정리(전체 clear 금지).
+          const freshBeforeMirror = await PracticeTransfer.findById(
+            relatedTransferId,
+          )
+            .select({ "production.designFiles": 1 })
+            .lean();
+          const priorDesignCount = Array.isArray(
+            freshBeforeMirror?.production?.designFiles,
+          )
+            ? freshBeforeMirror.production.designFiles.length
+            : 0;
+          const alreadyMirrored = Array.isArray(
+            freshBeforeMirror?.production?.designFiles,
+          )
+            ? freshBeforeMirror.production.designFiles.some(
+                (row) =>
+                  String(row?.file?.s3Key || row?.s3Key || "").trim() ===
+                  String(nextPrimary.s3Key || "").trim(),
+              )
+            : false;
+
+          let mirroredDoc = alreadyMirrored
+            ? freshBeforeMirror
+            : await mirrorDesignFileToPracticeTransfer({
+                transferId: relatedTransferId,
+                file: mirrorFilePayload,
+                tooth: mirrorTooth,
+                patientName: mirrorPatientName,
+                labDesignConfirm: labConfirmPayload,
+              });
+          let mirroredDesignCount = Array.isArray(
             mirroredDoc?.production?.designFiles,
           )
             ? mirroredDoc.production.designFiles.length
             : 0;
-          if (!mirroredDoc || mirroredDesignCount <= priorDesignCount) {
+          if (
+            !alreadyMirrored &&
+            (!mirroredDoc || mirroredDesignCount <= priorDesignCount)
+          ) {
+            // 1회 재시도(일시 실패)
+            mirroredDoc = await mirrorDesignFileToPracticeTransfer({
+              transferId: relatedTransferId,
+              file: mirrorFilePayload,
+              tooth: mirrorTooth,
+              patientName: mirrorPatientName,
+              labDesignConfirm: labConfirmPayload,
+            });
+            mirroredDesignCount = Array.isArray(
+              mirroredDoc?.production?.designFiles,
+            )
+              ? mirroredDoc.production.designFiles.length
+              : 0;
+          }
+          if (
+            !alreadyMirrored &&
+            (!mirroredDoc || mirroredDesignCount <= priorDesignCount)
+          ) {
             throw new Error(
               "PracticeTransfer design mirror failed (designFiles not updated).",
             );
@@ -1207,7 +1254,7 @@ export async function handoffDesignToProduction(req, res) {
             });
           }
 
-          const bumpTooth = String(request?.caseInfos?.tooth || "").trim();
+          const bumpTooth = mirrorTooth;
           if (bumpTooth) {
             void bumpCaDesignUploadCount({
               transferId: relatedTransferId,
@@ -1339,12 +1386,20 @@ export async function handoffDesignToProduction(req, res) {
             "[DESIGN_HANDOFF] PTX mirror failed after request save",
             mirrorErr,
           );
+          // 전체 clear·치아 pull 금지 — 다치아 병렬 시 형제 파일 소실 / 성공 Request인데 UI만 빈 상태 방지.
+          // Request.caseInfos.file은 이미 저장됨 → 미러만 재시도.
           try {
-            await clearPtxDesignMirror(relatedTransferId);
-          } catch (rollbackErr) {
+            await mirrorDesignFileToPracticeTransfer({
+              transferId: relatedTransferId,
+              file: mirrorFilePayload,
+              tooth: mirrorTooth,
+              patientName: mirrorPatientName,
+              labDesignConfirm: labConfirmPayload,
+            });
+          } catch (retryErr) {
             console.error(
-              "[DESIGN_HANDOFF] PTX mirror rollback failed",
-              rollbackErr,
+              "[DESIGN_HANDOFF] PTX mirror retry also failed",
+              retryErr,
             );
           }
         }

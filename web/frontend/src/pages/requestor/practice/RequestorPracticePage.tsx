@@ -58,12 +58,13 @@
 // - 2026-09-05: 가이드투어 — pause·수료 시 데모 PTX·상세 삭제(치과 oral 정리와 동일).
 // - 2026-09-05: 가이드투어 — 수신 영화형(데모 PTX·상세 오픈·변이 가드).
 // - 2026-09-02: 어벗츠 제공 CA만 있어도 안내 표시. 심플어벗은 항상 제외.
+// - 2026-09-16: 보철·의뢰파일 — S3(병렬) 후 낙관 패치·busy 해제, 저장 API는 백그라운드(어벗 handoff와 동일).
+// - 2026-09-16: 어벗 handoff — 확인 직후 S3·낙관 패치·다음 파일. handoff는 Promise.allSettled 병렬(다치아). BE 미러 clear 수정으로 레이스 완화.
 // - 2026-09-12: 어벗 handoff 성공 시 stale designFiles 덮어쓰기 금지(취소선·썸네일 플리커 제거).
 // - 2026-09-12: 어벗 업로드 가드 — 취소선과 동일 uploadedTeeth SSOT. handoff 실패 시 해당 파일만 롤백.
 // - 2026-09-03: 수신 헤더 — 어벗 뱃지 왼쪽 간격 없음. 진행중→어벗츠 생산중(정책은 사이드바).
 // - 2026-09-03: 어벗 진행상황 옆「상세」— 연동 CA 의뢰 상세(RequestDetailDialog).
 // - 2026-09-03: 어벗 STL — 비STL·≥3MB 구강스캔 가드 ConfirmDialog + 다시 올리기.
-// - 2026-09-03: 어벗 handoff — S3 후 낙관 패치·busy 해제, API는 백그라운드(실패 시 롤백).
 // - 2026-09-02: 도입중 CA 안내 — 공개 카탈로그로 플래그 보강(Osstem US 등 저장 누락 보정).
 // - 2026-09-02: 요청중 CA — implantAddRequest 보존·어벗츠 업로드 CTA 오인 방지.
 // - 2026-09-02: 어벗 확인 — 사전 S3 캐시만 handoff에 사용·버튼「확인」(업로드 중 비활성).
@@ -932,6 +933,8 @@ export function RequestorPracticeReceivePage({
   const [designConfirmBusy, setDesignConfirmBusy] = useState(false);
   /** handoff API in-flight — 「처리 중」표시 없이 중복 확인 클릭만 막음 */
   const designHandoffInFlightRef = useRef(false);
+  /** 다치아 큐에서 병렬 handoff Promise — 마지막 확인 시 Promise.allSettled */
+  const designHandoffPromisesRef = useRef<Promise<void>[]>([]);
   const [designConfirmQueue, setDesignConfirmQueue] = useState<
     Array<{
       file: File;
@@ -3628,6 +3631,8 @@ export function RequestorPracticeReceivePage({
       transfer: ReceivedPracticeTransfer,
       options: {
         assignments: LabReceiveWorkUploadAssignment[];
+        /** 낙관 패치·토스트는 호출측 — API 동기화만 */
+        silentUi?: boolean;
       },
     ) => {
       if (!token) return false;
@@ -3636,6 +3641,7 @@ export function RequestorPracticeReceivePage({
       const assignments = Array.isArray(options.assignments)
         ? options.assignments
         : [];
+      const silentUi = Boolean(options.silentUi);
       // 파일 없는 작업 완료 허용(수락 시 이미 정산).
 
       try {
@@ -3644,11 +3650,13 @@ export function RequestorPracticeReceivePage({
             ? await buildResultFilePayloadFromAssignments(assignments)
             : [];
         if (assignments.length > 0 && incoming.length === 0) {
-          toast({
-            title: "업로드 실패",
-            description: "결과 파일 업로드에 실패했습니다.",
-            variant: "destructive",
-          });
+          if (!silentUi) {
+            toast({
+              title: "업로드 실패",
+              description: "결과 파일 업로드에 실패했습니다.",
+              variant: "destructive",
+            });
+          }
           return false;
         }
 
@@ -3685,11 +3693,13 @@ export function RequestorPracticeReceivePage({
             res.data && typeof res.data === "object"
               ? (res.data as Record<string, unknown>)
               : {};
-          toast({
-            title: "작업 완료 실패",
-            description: String(body.message || "작업 완료 처리 중 오류가 발생했습니다."),
-            variant: "destructive",
-          });
+          if (!silentUi) {
+            toast({
+              title: "작업 완료 실패",
+              description: String(body.message || "작업 완료 처리 중 오류가 발생했습니다."),
+              variant: "destructive",
+            });
+          }
           return false;
         }
 
@@ -3813,18 +3823,22 @@ export function RequestorPracticeReceivePage({
             : prev,
         );
 
-        toast({
-          title: autoConfirmedAt
-            ? "기공 디자인 완료 처리합니다. 생산 후 배송해주세요"
-            : "기공 디자인 완료. 치과의 컨펌을 기다리겠습니다.",
-        });
+        if (!silentUi) {
+          toast({
+            title: autoConfirmedAt
+              ? "기공 디자인 완료 처리합니다. 생산 후 배송해주세요"
+              : "기공 디자인 완료. 치과의 컨펌을 기다리겠습니다.",
+          });
+        }
         return true;
       } catch {
-        toast({
-          title: "작업 완료 실패",
-          description: "작업 완료 요청 중 오류가 발생했습니다.",
-          variant: "destructive",
-        });
+        if (!silentUi) {
+          toast({
+            title: "작업 완료 실패",
+            description: "작업 완료 요청 중 오류가 발생했습니다.",
+            variant: "destructive",
+          });
+        }
         return false;
       }
     },
@@ -3840,17 +3854,21 @@ export function RequestorPracticeReceivePage({
     async (
       transfer: ReceivedPracticeTransfer,
       assignments: LabReceiveWorkUploadAssignment[],
+      options?: { silentUi?: boolean },
     ) => {
       if (!token) return false;
       if (assignments.length === 0) return false;
+      const silentUi = Boolean(options?.silentUi);
       try {
         const incoming = await buildResultFilePayloadFromAssignments(assignments);
         if (incoming.length === 0) {
-          toast({
-            title: "업로드 실패",
-            description: "결과 파일 업로드에 실패했습니다.",
-            variant: "destructive",
-          });
+          if (!silentUi) {
+            toast({
+              title: "업로드 실패",
+              description: "결과 파일 업로드에 실패했습니다.",
+              variant: "destructive",
+            });
+          }
           return false;
         }
         const res = await apiFetch<unknown>({
@@ -3864,11 +3882,13 @@ export function RequestorPracticeReceivePage({
             res.data && typeof res.data === "object"
               ? (res.data as Record<string, unknown>)
               : {};
-          toast({
-            title: "보철 저장 실패",
-            description: String(body.message || "보철 파일 저장 중 오류가 발생했습니다."),
-            variant: "destructive",
-          });
+          if (!silentUi) {
+            toast({
+              title: "보철 저장 실패",
+              description: String(body.message || "보철 파일 저장 중 오류가 발생했습니다."),
+              variant: "destructive",
+            });
+          }
           return false;
         }
         const body =
@@ -3917,17 +3937,21 @@ export function RequestorPracticeReceivePage({
               }
             : prev,
         );
-        toast({
-          title: "보철 일부 저장",
-          description: `${incoming.length}개 파일을 저장했습니다. 나머지 작업 후 이어서 올려주세요.`,
-        });
+        if (!silentUi) {
+          toast({
+            title: "보철 일부 저장",
+            description: `${incoming.length}개 파일을 저장했습니다. 나머지 작업 후 이어서 올려주세요.`,
+          });
+        }
         return true;
       } catch {
-        toast({
-          title: "보철 저장 실패",
-          description: "보철 파일 저장 중 오류가 발생했습니다.",
-          variant: "destructive",
-        });
+        if (!silentUi) {
+          toast({
+            title: "보철 저장 실패",
+            description: "보철 파일 저장 중 오류가 발생했습니다.",
+            variant: "destructive",
+          });
+        }
         return false;
       }
     },
@@ -4061,13 +4085,206 @@ export function RequestorPracticeReceivePage({
       setWorkUploadBusy(true);
       setCardActionBusyId(String(transfer.transferId || transfer._id || ""));
       try {
+        // S3는 모달 중 사전업로드·ensure 병렬. 확인 클릭은 캐시 재사용이 대부분.
+        const incoming = await buildResultFilePayloadFromAssignments(assignments);
+        if (incoming.length === 0) {
+          toast({
+            title: "업로드 실패",
+            description: "결과 파일 업로드에 실패했습니다.",
+            variant: "destructive",
+          });
+          return false;
+        }
+
         const remainingAfter = pendingSlotCount - assignments.length;
         const shouldComplete = !splitMode || remainingAfter <= 0;
-        const ok = shouldComplete
-          ? await markTransferComplete(transfer, { assignments })
-          : await appendTransferResultFiles(transfer, assignments);
-        if (ok) setWorkUploadState(null);
-        return ok;
+        const incomingKeys = new Set(
+          incoming.map((row) => String(row.file.s3Key || "").trim()).filter(Boolean),
+        );
+        const optimisticResultFiles = mapApiResultFiles(transfer, null, [
+          ...(transfer.resultFiles || []).map((row) => ({
+            patientName: row.patientName,
+            tooth: row.tooth,
+            file: {
+              originalName: row.originalName,
+              mimetype: row.mimetype,
+              size: row.size,
+              s3Key: row.s3Key,
+            },
+          })),
+          ...incoming,
+        ]);
+        const nowIso = new Date().toISOString();
+        const applyOptimistic = () => {
+          setTransfers((prev) =>
+            prev.map((row) => {
+              if (
+                row._id !== transfer._id &&
+                row.transferId !== transfer.transferId
+              ) {
+                return row;
+              }
+              if (!shouldComplete) {
+                return {
+                  ...row,
+                  resultFiles: optimisticResultFiles,
+                  resultFileCount: optimisticResultFiles.length,
+                };
+              }
+              return {
+                ...row,
+                autoMatch: {
+                  ...(row.autoMatch || {}),
+                  completedAt: nowIso,
+                  openPool: false,
+                  claimActive: false,
+                  completed: true,
+                  mine: true,
+                  remainingMs: null,
+                },
+                manufacturerStage: "작업완료",
+                resultFiles: optimisticResultFiles,
+                resultFileCount: optimisticResultFiles.length,
+              };
+            }),
+          );
+          setSelectedTransfer((prev) => {
+            if (
+              !prev ||
+              (prev._id !== transfer._id &&
+                prev.transferId !== transfer.transferId)
+            ) {
+              return prev;
+            }
+            if (!shouldComplete) {
+              return {
+                ...prev,
+                resultFiles: optimisticResultFiles,
+                resultFileCount: optimisticResultFiles.length,
+              };
+            }
+            return {
+              ...prev,
+              autoMatch: {
+                ...(prev.autoMatch || {}),
+                completedAt: nowIso,
+                openPool: false,
+                claimActive: false,
+                completed: true,
+                mine: true,
+                remainingMs: null,
+              },
+              manufacturerStage: "작업완료",
+              resultFiles: optimisticResultFiles,
+              resultFileCount: optimisticResultFiles.length,
+            };
+          });
+        };
+        const rollbackOptimistic = () => {
+          setTransfers((prev) =>
+            prev.map((row) => {
+              if (
+                row._id !== transfer._id &&
+                row.transferId !== transfer.transferId
+              ) {
+                return row;
+              }
+              const nextFiles = (row.resultFiles || []).filter(
+                (fileRow) =>
+                  !incomingKeys.has(String(fileRow.s3Key || "").trim()),
+              );
+              return {
+                ...transfer,
+                ...row,
+                resultFiles: nextFiles,
+                resultFileCount: nextFiles.length,
+                autoMatch: transfer.autoMatch,
+                manufacturerStage: transfer.manufacturerStage,
+                production: transfer.production,
+              };
+            }),
+          );
+          setSelectedTransfer((prev) => {
+            if (
+              !prev ||
+              (prev._id !== transfer._id &&
+                prev.transferId !== transfer.transferId)
+            ) {
+              return prev;
+            }
+            const nextFiles = (prev.resultFiles || []).filter(
+              (fileRow) =>
+                !incomingKeys.has(String(fileRow.s3Key || "").trim()),
+            );
+            return {
+              ...transfer,
+              ...prev,
+              resultFiles: nextFiles,
+              resultFileCount: nextFiles.length,
+              autoMatch: transfer.autoMatch,
+              manufacturerStage: transfer.manufacturerStage,
+              production: transfer.production,
+            };
+          });
+        };
+
+        applyOptimistic();
+        setWorkUploadState(null);
+        toast({
+          title: shouldComplete
+            ? "기공 디자인 완료"
+            : "보철 일부 저장",
+          description: shouldComplete
+            ? "보철 파일이 업로드되었습니다. 치과의 컨펌을 기다리겠습니다."
+            : `${incoming.length}개 파일을 저장했습니다. 나머지 작업 후 이어서 올려주세요.`,
+        });
+
+        // S3·낙관 패치 끝 — 「처리 중」해제. 저장 API는 백그라운드.
+        setWorkUploadBusy(false);
+        setCardActionBusyId("");
+
+        void (async () => {
+          try {
+            const ok = shouldComplete
+              ? await markTransferComplete(transfer, {
+                  assignments,
+                  silentUi: true,
+                })
+              : await appendTransferResultFiles(transfer, assignments, {
+                  silentUi: true,
+                });
+            if (!ok) {
+              rollbackOptimistic();
+              toast({
+                title: shouldComplete ? "작업 완료 실패" : "보철 저장 실패",
+                description: shouldComplete
+                  ? "작업 완료 처리 중 오류가 발생했습니다."
+                  : "보철 파일 저장 중 오류가 발생했습니다.",
+                variant: "destructive",
+              });
+            }
+          } catch {
+            rollbackOptimistic();
+            toast({
+              title: shouldComplete ? "작업 완료 실패" : "보철 저장 실패",
+              description: shouldComplete
+                ? "작업 완료 요청 중 오류가 발생했습니다."
+                : "보철 파일 저장 중 오류가 발생했습니다.",
+              variant: "destructive",
+            });
+          }
+        })();
+        return true;
+      } catch (error) {
+        toast({
+          title: "업로드 실패",
+          description:
+            error instanceof Error
+              ? error.message
+              : "보철 파일 업로드 중 오류가 발생했습니다.",
+          variant: "destructive",
+        });
+        return false;
       } finally {
         setWorkUploadBusy(false);
         setCardActionBusyId("");
@@ -4076,7 +4293,10 @@ export function RequestorPracticeReceivePage({
     [
       appendTransferResultFiles,
       beginWorkFilePreUpload,
+      buildResultFilePayloadFromAssignments,
+      mapApiResultFiles,
       markTransferComplete,
+      toast,
       workUploadBusy,
     ],
   );
@@ -5454,6 +5674,7 @@ export function RequestorPracticeReceivePage({
       setDesignConfirmTransfer(transfer);
       setDesignConfirmQueue(queue);
       setDesignConfirmQueueIndex(0);
+      designHandoffPromisesRef.current = [];
       setDesignConfirmOpen(true);
     },
     [
@@ -5772,7 +5993,7 @@ export function RequestorPracticeReceivePage({
       }
 
       designHandoffInFlightRef.current = true;
-      // S3만 잠깐 busy — handoff API는 「처리 중」에 묶지 않음
+      // S3만 busy — handoff는 백그라운드 Promise.all(다치아 병렬)
       setDesignConfirmBusy(true);
       try {
         const cached = peekCachedUploadedFiles([file]);
@@ -5799,7 +6020,7 @@ export function RequestorPracticeReceivePage({
           s3Key,
         };
 
-        /** 최신 production.designFiles에 합류 — 순차 handoff가 서로를 지우지 않음 */
+        /** 최신 production.designFiles에 합류 — 병렬 handoff가 서로를 지우지 않음 */
         const mergeOptimisticDesignFile = (
           row: ReceivedPracticeTransfer,
         ): ReceivedPracticeTransfer => {
@@ -5877,7 +6098,7 @@ export function RequestorPracticeReceivePage({
           });
         }
 
-        // S3·낙관 패치 끝 — 「처리 중」해제. handoff API는 백그라운드.
+        // S3·낙관 패치 끝 — 「처리 중」해제. handoff는 병렬.
         designHandoffInFlightRef.current = false;
         setDesignConfirmBusy(false);
         setCardActionBusyId("");
@@ -5885,205 +6106,198 @@ export function RequestorPracticeReceivePage({
         const transferKey = String(
           transfer.transferId || transfer._id || "",
         ).trim();
-        void (async () => {
-          try {
-            const res = await apiFetch<{
-              success?: boolean;
+        const handoffPromise = (async () => {
+          const res = await apiFetch<{
+            success?: boolean;
+            message?: string;
+            data?: {
+              productionStarted?: boolean;
               message?: string;
-              data?: {
-                productionStarted?: boolean;
-                message?: string;
-                requestId?: string;
-                relatedRequestIds?: string[];
-              };
-            }>({
-              path: `/api/practice/transfers/${encodeURIComponent(transferKey)}/abutment-design-handoff`,
-              method: "POST",
-              token,
-              jsonBody: {
-                tooth: toothForHandoff,
-                file: {
-                  originalName: temp?.originalName || file.name,
-                  size: temp?.size ?? file.size,
-                  mimetype:
-                    temp?.mimetype || file.type || "application/octet-stream",
-                  s3Key,
-                  s3Url: temp?.location || "",
-                },
-                retentionGroove: caseInfos.retentionGroove,
-                caseInfos: {
-                  clinicName: caseInfos.clinicName,
-                  patientName: caseInfos.patientName,
-                  tooth: toothForHandoff || caseInfos.tooth,
-                  implantManufacturer: caseInfos.implantManufacturer,
-                  implantBrand: caseInfos.implantBrand,
-                  implantFamily: caseInfos.implantFamily,
-                  implantType: caseInfos.implantType,
-                  retentionGroove: caseInfos.retentionGroove,
-                },
+              requestId?: string;
+              relatedRequestIds?: string[];
+            };
+          }>({
+            path: `/api/practice/transfers/${encodeURIComponent(transferKey)}/abutment-design-handoff`,
+            method: "POST",
+            token,
+            jsonBody: {
+              tooth: toothForHandoff,
+              file: {
+                originalName: temp?.originalName || file.name,
+                size: temp?.size ?? file.size,
+                mimetype:
+                  temp?.mimetype || file.type || "application/octet-stream",
+                s3Key,
+                s3Url: temp?.location || "",
               },
-            });
-            if (!res.ok) {
-              const body =
-                res.data && typeof res.data === "object"
-                  ? (res.data as Record<string, unknown>)
-                  : {};
-              // 큐·병렬 handoff 중 다른 파일 낙관 패치를 지우지 않도록 실패 파일만 제거
-              const removeFailedDesignFile = (
-                row: ReceivedPracticeTransfer,
-              ): ReceivedPracticeTransfer => {
-                const files = Array.isArray(row.production?.designFiles)
-                  ? row.production.designFiles
-                  : [];
-                const nextFiles = files.filter(
-                  (fileRow) => String(fileRow.s3Key || "").trim() !== s3Key,
-                );
-                if (nextFiles.length === files.length) return row;
-                return {
-                  ...row,
-                  production: {
-                    ...row.production,
-                    designFiles: nextFiles,
-                    designFileCount: nextFiles.length,
-                  },
-                };
-              };
-              setTransfers((prev) =>
-                prev.map((row) =>
-                  row._id === transfer._id ||
-                  row.transferId === transfer.transferId
-                    ? removeFailedDesignFile(row)
-                    : row,
-                ),
-              );
-              setSelectedTransfer((prev) =>
-                prev &&
-                (prev._id === transfer._id ||
-                  prev.transferId === transfer.transferId)
-                  ? removeFailedDesignFile(prev)
-                  : prev,
-              );
-              if (isPtxCaInsufficientCreditBody(body, res.status)) {
-                openPtxCaCreditConfirm(String(body.message || ""));
-                return;
-              }
-              throw new Error(
-                String(
-                  body.message || "어벗디자인 파일 업로드에 실패했습니다.",
-                ),
-              );
-            }
-
+              retentionGroove: caseInfos.retentionGroove,
+              caseInfos: {
+                clinicName: caseInfos.clinicName,
+                patientName: caseInfos.patientName,
+                tooth: toothForHandoff || caseInfos.tooth,
+                implantManufacturer: caseInfos.implantManufacturer,
+                implantBrand: caseInfos.implantBrand,
+                implantFamily: caseInfos.implantFamily,
+                implantType: caseInfos.implantType,
+                retentionGroove: caseInfos.retentionGroove,
+              },
+            },
+          });
+          if (!res.ok) {
             const body =
               res.data && typeof res.data === "object"
                 ? (res.data as Record<string, unknown>)
                 : {};
-            const data =
-              body.data && typeof body.data === "object"
-                ? (body.data as Record<string, unknown>)
-                : body;
-            const relatedFromRes = Array.isArray(data.relatedRequestIds)
-              ? data.relatedRequestIds
-                  .map((id) => String(id || "").trim())
-                  .filter(Boolean)
-              : [];
-            const createdRequestId = String(data.requestId || "").trim();
-            if (relatedFromRes.length > 0 || createdRequestId) {
-              const mergeRelatedOnly = (
-                row: ReceivedPracticeTransfer,
-              ): ReceivedPracticeTransfer => {
-                const prevRelated = Array.isArray(
-                  row.production?.relatedRequestIds,
-                )
-                  ? row.production.relatedRequestIds
-                  : [];
-                const nextRelated =
-                  relatedFromRes.length > 0
-                    ? relatedFromRes
-                    : [
-                        ...new Set(
-                          [...prevRelated, createdRequestId].filter(Boolean),
-                        ),
-                      ];
-                // designFiles는 건드리지 않음 — stale snapshot 덮어쓰기로 취소선·썸네일 플리커 방지
-                return {
-                  ...row,
-                  production: {
-                    ...row.production,
-                    relatedRequestIds: nextRelated,
-                  },
-                };
+            const removeFailedDesignFile = (
+              row: ReceivedPracticeTransfer,
+            ): ReceivedPracticeTransfer => {
+              const files = Array.isArray(row.production?.designFiles)
+                ? row.production.designFiles
+                : [];
+              const nextFiles = files.filter(
+                (fileRow) => String(fileRow.s3Key || "").trim() !== s3Key,
+              );
+              if (nextFiles.length === files.length) return row;
+              return {
+                ...row,
+                production: {
+                  ...row.production,
+                  designFiles: nextFiles,
+                  designFileCount: nextFiles.length,
+                },
               };
-              setTransfers((prev) =>
+            };
+            setTransfers((prev) =>
+              prev.map((row) =>
+                row._id === transfer._id ||
+                row.transferId === transfer.transferId
+                  ? removeFailedDesignFile(row)
+                  : row,
+              ),
+            );
+            setSelectedTransfer((prev) =>
+              prev &&
+              (prev._id === transfer._id ||
+                prev.transferId === transfer.transferId)
+                ? removeFailedDesignFile(prev)
+                : prev,
+            );
+            if (isPtxCaInsufficientCreditBody(body, res.status)) {
+              openPtxCaCreditConfirm(String(body.message || ""));
+              return;
+            }
+            throw new Error(
+              String(
+                body.message || "어벗디자인 파일 업로드에 실패했습니다.",
+              ),
+            );
+          }
+
+          const body =
+            res.data && typeof res.data === "object"
+              ? (res.data as Record<string, unknown>)
+              : {};
+          const data =
+            body.data && typeof body.data === "object"
+              ? (body.data as Record<string, unknown>)
+              : body;
+          const relatedFromRes = Array.isArray(data.relatedRequestIds)
+            ? data.relatedRequestIds
+                .map((id) => String(id || "").trim())
+                .filter(Boolean)
+            : [];
+          const createdRequestId = String(data.requestId || "").trim();
+          if (relatedFromRes.length > 0 || createdRequestId) {
+            const mergeRelatedOnly = (
+              row: ReceivedPracticeTransfer,
+            ): ReceivedPracticeTransfer => {
+              const prevRelated = Array.isArray(
+                row.production?.relatedRequestIds,
+              )
+                ? row.production.relatedRequestIds
+                : [];
+              const nextRelated =
+                relatedFromRes.length > 0
+                  ? relatedFromRes
+                  : [
+                      ...new Set(
+                        [...prevRelated, createdRequestId].filter(Boolean),
+                      ),
+                    ];
+              return {
+                ...row,
+                production: {
+                  ...row.production,
+                  relatedRequestIds: nextRelated,
+                },
+              };
+            };
+            setTransfers((prev) =>
+              prev.map((row) =>
+                row._id === transfer._id ||
+                row.transferId === transfer.transferId
+                  ? mergeRelatedOnly(row)
+                  : row,
+              ),
+            );
+            setSelectedTransfer((prev) =>
+              prev &&
+              (prev._id === transfer._id ||
+                prev.transferId === transfer.transferId)
+                ? mergeRelatedOnly(prev)
+                : prev,
+            );
+            if (
+              createdRequestId &&
+              isProvisionalAbutmentRequestId(requestId)
+            ) {
+              setDesignConfirmPendingMetas((prev) =>
+                prev.map((meta) =>
+                  meta.requestId === requestId ||
+                  meta.tooth === toothForHandoff
+                    ? { ...meta, requestId: createdRequestId }
+                    : meta,
+                ),
+              );
+              setDesignConfirmQueue((prev) =>
                 prev.map((row) =>
-                  row._id === transfer._id ||
-                  row.transferId === transfer.transferId
-                    ? mergeRelatedOnly(row)
+                  row.requestId === requestId ||
+                  String(row.caseInfos?.tooth || "").trim() ===
+                    toothForHandoff
+                    ? { ...row, requestId: createdRequestId }
                     : row,
                 ),
               );
-              setSelectedTransfer((prev) =>
-                prev &&
-                (prev._id === transfer._id ||
-                  prev.transferId === transfer.transferId)
-                  ? mergeRelatedOnly(prev)
-                  : prev,
-              );
-              if (
-                createdRequestId &&
-                isProvisionalAbutmentRequestId(requestId)
-              ) {
-                setDesignConfirmPendingMetas((prev) =>
-                  prev.map((meta) =>
-                    meta.requestId === requestId ||
-                    meta.tooth === toothForHandoff
-                      ? { ...meta, requestId: createdRequestId }
-                      : meta,
-                  ),
-                );
-                setDesignConfirmQueue((prev) =>
-                  prev.map((row) =>
-                    row.requestId === requestId ||
-                    String(row.caseInfos?.tooth || "").trim() ===
-                      toothForHandoff
-                      ? { ...row, requestId: createdRequestId }
-                      : row,
-                  ),
-                );
-              }
             }
-
-            if (isLast) {
-              const pendingProsthetic =
-                pendingProstheticAfterAbutmentRef.current;
-              pendingProstheticAfterAbutmentRef.current = null;
-              if (pendingProsthetic?.files?.length) {
-                beginCompleteWithFiles(
-                  mergeOptimisticDesignFile({
-                    ...transfer,
-                    production: {
-                      ...transfer.production,
-                      relatedRequestIds:
-                        relatedFromRes.length > 0
-                          ? relatedFromRes
-                          : transfer.production?.relatedRequestIds,
-                    },
-                  }),
-                  pendingProsthetic.files,
-                );
-              }
-            }
-          } catch (error) {
-            toast({
-              title: "업로드 실패",
-              description:
-                error instanceof Error
-                  ? error.message
-                  : "어벗디자인 파일 업로드 중 오류가 발생했습니다.",
-              variant: "destructive",
-            });
           }
-        })();
+        })().catch((error) => {
+          toast({
+            title: "업로드 실패",
+            description:
+              error instanceof Error
+                ? error.message
+                : "어벗디자인 파일 업로드 중 오류가 발생했습니다.",
+            variant: "destructive",
+          });
+        });
+
+        designHandoffPromisesRef.current.push(handoffPromise);
+
+        if (isLast) {
+          const pending = designHandoffPromisesRef.current;
+          designHandoffPromisesRef.current = [];
+          void Promise.allSettled(pending).then(() => {
+            const pendingProsthetic =
+              pendingProstheticAfterAbutmentRef.current;
+            pendingProstheticAfterAbutmentRef.current = null;
+            if (pendingProsthetic?.files?.length) {
+              beginCompleteWithFiles(
+                mergeOptimisticDesignFile(transfer),
+                pendingProsthetic.files,
+              );
+            }
+          });
+        }
       } catch (error) {
         designHandoffInFlightRef.current = false;
         setDesignConfirmBusy(false);
@@ -6926,6 +7140,7 @@ export function RequestorPracticeReceivePage({
       requestFileUploads.addFiles(nextFiles);
       void (async () => {
         try {
+          // S3 병렬 → 낙관 패치 → 저장 API(어벗/보철과 동일)
           const uploaded = await ensureFilesUploaded(nextFiles);
           const patientName = String(
             selectedTransfer?.files?.[0]?.patientName || "",
@@ -6948,10 +7163,51 @@ export function RequestorPracticeReceivePage({
                 },
               };
             })
-            .filter(Boolean);
+            .filter(Boolean) as Array<{
+            patientName: string;
+            tooth: string;
+            file: {
+              originalName: string;
+              mimetype: string;
+              size: number;
+              s3Key: string;
+            };
+          }>;
           if (!payload.length) {
             throw new Error("파일 업로드에 실패했습니다.");
           }
+          const transferMongoId = String(selectedTransfer?._id || "");
+          const optimisticMapped = mapApiReceivedRequestFiles(
+            payload.map((row) => ({
+              originalName: row.file.originalName,
+              s3Key: row.file.s3Key,
+              mimetype: row.file.mimetype,
+              size: row.file.size,
+              patientName: row.patientName,
+              tooth: row.tooth,
+            })),
+            transferMongoId,
+          );
+          const optimisticKeys = new Set(
+            optimisticMapped.map((row) => String(row.s3Key || "").trim()),
+          );
+          const prevFiles = Array.isArray(selectedTransfer?.files)
+            ? selectedTransfer.files
+            : [];
+          const prevTrash = Array.isArray(selectedTransfer?.trashedFiles)
+            ? selectedTransfer.trashedFiles
+            : [];
+          const mergedOptimistic = [
+            ...prevFiles.filter(
+              (row) => !optimisticKeys.has(String(row.s3Key || "").trim()),
+            ),
+            ...optimisticMapped,
+          ];
+          patchReceivedRequestFiles(transferId, mergedOptimistic, prevTrash);
+          for (const file of nextFiles) {
+            requestFileUploads.removeItem(toTempUploadFileKey(file));
+          }
+
           const res = await apiFetch<unknown>({
             path: `/api/practice/transfers/received/${encodeURIComponent(transferId)}/request-files`,
             method: "POST",
@@ -6963,6 +7219,7 @@ export function RequestorPracticeReceivePage({
               res.data && typeof res.data === "object"
                 ? (res.data as Record<string, unknown>)
                 : {};
+            patchReceivedRequestFiles(transferId, prevFiles, prevTrash);
             throw new Error(
               String(body.message || "의뢰 파일 저장 중 오류가 발생했습니다."),
             );
@@ -6977,16 +7234,13 @@ export function RequestorPracticeReceivePage({
               : body;
           const mapped = mapApiReceivedRequestFiles(
             data.files,
-            String(selectedTransfer?._id || ""),
+            transferMongoId,
           );
           const mappedTrash = mapApiReceivedRequestFiles(
             data.trashedFiles,
-            String(selectedTransfer?._id || ""),
+            transferMongoId,
           );
           patchReceivedRequestFiles(transferId, mapped, mappedTrash);
-          for (const file of nextFiles) {
-            requestFileUploads.removeItem(toTempUploadFileKey(file));
-          }
         } catch (error) {
           toast({
             title: "의뢰 파일 추가 실패",
@@ -7006,6 +7260,7 @@ export function RequestorPracticeReceivePage({
       requestFileUploads,
       selectedTransfer?._id,
       selectedTransfer?.files,
+      selectedTransfer?.trashedFiles,
       selectedTransfer?.transferId,
       toast,
       token,

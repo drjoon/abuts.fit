@@ -27,6 +27,7 @@
  * - web/frontend/src/shared/practice/openPracticeTransferChat.ts
  * - web/frontend/src/shared/components/practice/PracticeLabRatingControl.tsx
  * - web/frontend/src/shared/practice/practiceLabRating.ts
+ * - 2026-09-16: 의뢰 파일 append — S3 병렬 후 낙관 패치·저장 API(기공소 수신과 동일 패턴).
  * - 2026-09-15: 어벗/스캔바디 설정 모달 z-[340] — compose(z-320) 뒤에 가려지던 문제.
  * - 2026-09-14: 모바일 액션(신규·리메이크·임시·휴지) — 채팅형 전체화면·상단 크롬·닫으면 캘린더 메인.
  * - web/frontend/src/shared/ui/mobileActionOverlay.tsx
@@ -6275,6 +6276,7 @@ export const PracticeFileTransferPage = ({
       requestFileUploads.addFiles(nextFiles);
       void (async () => {
         try {
+          // S3 병렬 → 낙관 패치 → 저장 API(기공소 수신·어벗 handoff와 동일)
           const uploaded = await ensureFilesUploaded(nextFiles);
           const patientName = String(
             selectedTransferDetailModel?.patientName || "",
@@ -6297,10 +6299,46 @@ export const PracticeFileTransferPage = ({
                 },
               };
             })
-            .filter(Boolean);
+            .filter(Boolean) as Array<{
+            patientName: string;
+            tooth: string;
+            file: {
+              originalName: string;
+              mimetype: string;
+              size: number;
+              s3Key: string;
+            };
+          }>;
           if (!payload.length) {
             throw new Error("파일 업로드에 실패했습니다.");
           }
+          const optimisticMapped = mapApiRequestFiles(
+            payload.map((row) => ({
+              originalName: row.file.originalName,
+              s3Key: row.file.s3Key,
+              size: row.file.size,
+            })),
+          );
+          const optimisticKeys = new Set(
+            optimisticMapped.map((row) => String(row.s3Key || "").trim()),
+          );
+          const prevFiles = Array.isArray(selectedTransfer?.files)
+            ? (selectedTransfer.files as TransferFileItem[])
+            : [];
+          const prevTrash = Array.isArray(selectedTransfer?.trashedFiles)
+            ? (selectedTransfer.trashedFiles as TransferFileItem[])
+            : [];
+          const mergedOptimistic = [
+            ...prevFiles.filter(
+              (row) => !optimisticKeys.has(String(row.s3Key || "").trim()),
+            ),
+            ...optimisticMapped,
+          ];
+          patchTransferRequestFiles(transferId, mergedOptimistic, prevTrash);
+          for (const file of nextFiles) {
+            requestFileUploads.removeItem(toTempUploadFileKey(file));
+          }
+
           const res = await apiFetch<unknown>({
             path: `/api/practice/transfers/${encodeURIComponent(transferId)}/request-files`,
             method: "POST",
@@ -6312,6 +6350,7 @@ export const PracticeFileTransferPage = ({
               res.data && typeof res.data === "object"
                 ? (res.data as Record<string, unknown>)
                 : {};
+            patchTransferRequestFiles(transferId, prevFiles, prevTrash);
             throw new Error(
               String(body.message || "의뢰 파일 저장 중 오류가 발생했습니다."),
             );
@@ -6325,22 +6364,11 @@ export const PracticeFileTransferPage = ({
               ? (body.data as Record<string, unknown>)
               : body;
           const mapped = mapApiRequestFiles(data.files);
-          if (mapped.length) {
-            patchTransferRequestFiles(
-              transferId,
-              mapped,
-              mapApiRequestFiles(data.trashedFiles),
-            );
-          } else {
-            patchTransferRequestFiles(
-              transferId,
-              [],
-              mapApiRequestFiles(data.trashedFiles),
-            );
-          }
-          for (const file of nextFiles) {
-            requestFileUploads.removeItem(toTempUploadFileKey(file));
-          }
+          patchTransferRequestFiles(
+            transferId,
+            mapped,
+            mapApiRequestFiles(data.trashedFiles),
+          );
         } catch (error) {
           toast({
             title: "의뢰 파일 추가 실패",
@@ -6359,6 +6387,8 @@ export const PracticeFileTransferPage = ({
       mapApiRequestFiles,
       patchTransferRequestFiles,
       requestFileUploads,
+      selectedTransfer?.files,
+      selectedTransfer?.trashedFiles,
       selectedTransfer?.transferId,
       selectedTransferDetailModel?.patientName,
       toast,
