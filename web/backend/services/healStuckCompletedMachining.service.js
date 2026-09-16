@@ -5,6 +5,7 @@
 // - web/backend/controllers/requests/common.requests.controller.js
 // - web/backend/controllers/requests/mailbox.utils.js
 // change-log:
+// - 2026-09-16: 불완전가공(rnd.unmachinableAt)은 힐 대상에서 제외(판정 후 가공 복귀 SSOT).
 // - 2026-09-16: CNC 완료인데 manufacturerStage가 가공에 남은 stuck 건 → 세척.패킹 힐.
 import Request from "../models/request.model.js";
 import {
@@ -50,10 +51,16 @@ export function isRequestMachiningWorkCompleted(requestLike) {
   return false;
 }
 
-/** Mongo 필터: 가공 stage + CNC 완료 증거 */
+export function isRequestUnmachinableJudged(requestLike) {
+  return Boolean(requestLike?.rnd?.unmachinableAt);
+}
+
+/** Mongo 필터: 가공 stage + CNC 완료 증거 (불완전가공 제외) */
 export function buildStuckCompletedMachiningFilter() {
   return {
     manufacturerStage: "가공",
+    // 불완전가공 판정 건은 의도적으로 가공으로 복귀한다 — 세척.패킹 힐 금지
+    "rnd.unmachinableAt": null,
     $or: [
       { "productionSchedule.actualMachiningComplete": { $type: "date" } },
       {
@@ -78,6 +85,9 @@ export async function healStuckCompletedMachiningToPacking(
   const fromStage = String(request.manufacturerStage || "").trim();
   if (fromStage !== "가공") {
     return { healed: false, reason: "not_machining_stage", fromStage };
+  }
+  if (isRequestUnmachinableJudged(request)) {
+    return { healed: false, reason: "unmachinable", fromStage };
   }
   if (!isRequestMachiningWorkCompleted(request)) {
     return { healed: false, reason: "not_completed", fromStage };

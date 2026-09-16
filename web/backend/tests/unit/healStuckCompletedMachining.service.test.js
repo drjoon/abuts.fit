@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   buildStuckCompletedMachiningFilter,
   isRequestMachiningWorkCompleted,
+  isRequestUnmachinableJudged,
 } from "../../services/healStuckCompletedMachining.service.js";
 
 function testIsCompleted() {
@@ -35,13 +36,23 @@ function testIsCompleted() {
   );
 }
 
+function testUnmachinable() {
+  assert.equal(isRequestUnmachinableJudged({}), false);
+  assert.equal(
+    isRequestUnmachinableJudged({ rnd: { unmachinableAt: new Date() } }),
+    true,
+  );
+}
+
 function testFilter() {
   const f = buildStuckCompletedMachiningFilter();
   assert.equal(f.manufacturerStage, "가공");
+  assert.equal(f["rnd.unmachinableAt"], null);
   assert.ok(Array.isArray(f.$or));
   assert.ok(f.$or.length >= 2);
 }
 
 testIsCompleted();
+testUnmachinable();
 testFilter();
 console.log("healStuckCompletedMachining.service.test.js ok");

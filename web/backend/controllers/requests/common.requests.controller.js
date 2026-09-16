@@ -1,5 +1,6 @@
 // change-log:
-// - 2026-09-16: 관리자 모니터링 조회 전 CNC완료+가공 stuck → 세척.패킹 힐.
+// - 2026-09-16: 관리자 모니터링 R&D·불완전가공 탭(rndDone/rndUnmachinable) 허용.
+// - 2026-09-16: 관리자 모니터링에서 불완전가공(rnd.unmachinableAt) 제외 + CNC완료 stuck 힐.
 // - 2026-09-09: 관리자 헥스 확정 후에도 제조사 updateRndHexRotation 허용(의뢰 단위 보정). 신규 시드만 확정값 우선.
 // - 2026-09-03: 배치 취소 시 헥스 샘플 쌍은 원본 권한만으로 포함(제조사 isRequestor 가드로 누락 방지).
 // - 2026-09-03: 워크시트 준비 조회 시 미확정 제조사 헥스 확인 샘플 누락분을 fire-and-forget 보정.
@@ -1471,32 +1472,63 @@ export async function getAllRequests(req, res) {
       filter.createdAt = createdAtFilter;
     }
 
-    // 관리자 모니터링: 내부 샘플/R&D·복사 샘플 제외 + 제조사 준비 큐와 동일 범위
-    // (PTX 디자인 미완료·레거시 design_custom_abutment는 제조사-준비에 없으므로 표시하지 않음)
+    // 관리자 모니터링:
+    // - 기본(ops): 샘플·불완전가공 제외 + 제조사 준비 큐 가드
+    // - rndDone=1: R&D 보관 탭(샘플 허용, 불완전가공 제외 가드 생략)
+    // - rndUnmachinable=1: 불완전가공 탭(unmachinableAt 제외 가드 생략)
     if (view === "monitoring") {
-      // CNC 완료인데 stage만 가공에 남은 stuck → 목록/카운트 전에 세척.패킹으로 힐
-      try {
-        await healAllStuckCompletedMachiningRequests({
-          limit: 50,
-          source: "admin-monitoring-list",
-        });
-      } catch (err) {
-        console.warn("[getAllRequests] stuck machining heal failed", {
-          message: err?.message || String(err),
-        });
-      }
+      const rndDoneRaw = String(req.query.rndDone || "")
+        .trim()
+        .toLowerCase();
+      const rndUnmachinableRaw = String(req.query.rndUnmachinable || "")
+        .trim()
+        .toLowerCase();
+      const isRndArchiveTab = rndDoneRaw === "1" || rndDoneRaw === "true";
+      const isUnmachinableTab =
+        rndUnmachinableRaw === "1" || rndUnmachinableRaw === "true";
 
-      const monitoringGuards = [
-        buildNonSampleRequestGuard(),
-        buildWorksheetReadyQueueGuard(),
-      ];
-      if (Array.isArray(filter.$and)) {
-        filter.$and = [...filter.$and, ...monitoringGuards];
-      } else if (Object.keys(filter).length === 0) {
-        filter = { $and: monitoringGuards };
-      } else {
-        filter = { $and: [filter, ...monitoringGuards] };
+      if (!isRndArchiveTab && !isUnmachinableTab) {
+        // CNC 완료인데 stage만 가공에 남은 stuck → 목록/카운트 전에 세척.패킹으로 힐
+        // (불완전가공 판정 건은 힐 서비스에서 스킵)
+        try {
+          await healAllStuckCompletedMachiningRequests({
+            limit: 50,
+            source: "admin-monitoring-list",
+          });
+        } catch (err) {
+          console.warn("[getAllRequests] stuck machining heal failed", {
+            message: err?.message || String(err),
+          });
+        }
+
+        const monitoringGuards = [
+          buildNonSampleRequestGuard(),
+          buildWorksheetReadyQueueGuard(),
+          // 제조사 워크시트 rndUnmachinable=0 과 동일
+          { "rnd.unmachinableAt": null },
+        ];
+        if (Array.isArray(filter.$and)) {
+          filter.$and = [...filter.$and, ...monitoringGuards];
+        } else if (Object.keys(filter).length === 0) {
+          filter = { $and: monitoringGuards };
+        } else {
+          filter = { $and: [filter, ...monitoringGuards] };
+        }
+      } else if (isUnmachinableTab) {
+        // 불완전가공: 유상 order 품질 판정 — 샘플 제외·준비 큐 가드만
+        const monitoringGuards = [
+          buildNonSampleRequestGuard(),
+          buildWorksheetReadyQueueGuard(),
+        ];
+        if (Array.isArray(filter.$and)) {
+          filter.$and = [...filter.$and, ...monitoringGuards];
+        } else if (Object.keys(filter).length === 0) {
+          filter = { $and: monitoringGuards };
+        } else {
+          filter = { $and: [filter, ...monitoringGuards] };
+        }
       }
+      // R&D 보관 탭: rndDone 가드만 사용(샘플 허용). 추가 monitoring 가드 없음.
     }
 
     // 제조사: 같은 BusinessAnchor 조직 내 대표/직원이 의뢰 공유 + 취소 제외
@@ -1762,6 +1794,10 @@ export async function getAllRequests(req, res) {
       "caseInfos.productMode",
       "designCompletedAt",
       "partnerBilling.relatedPracticeTransferId",
+      "rnd.unmachinableAt",
+      "rnd.unmachinableReason",
+      "rnd.unmachinableFromStage",
+      "rnd.doneAt",
       "requestor",
     ].join(" ");
 

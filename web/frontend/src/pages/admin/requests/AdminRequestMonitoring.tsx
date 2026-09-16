@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-09-16: R&D·불완전가공 탭 추가(제조사 워크시트와 동일 버킷).
+// - 2026-09-16: 불완전가공(rnd.unmachinableAt) 제외 — 제조사 일반 탭·불완전가공 탭과 맞춤.
 // - 2026-08-26: 제조사 준비 큐와 동일 범위 — PTX 디자인 미완료·레거시 디자인 mode 제외(BE monitoring 가드와 맞춤).
 // - 2026-08-09: 샘플(고스트) 제외 확인용 FE 가드. 직원명 숨기고 치과명 표시. 필터/요약 좌측 여백 정리.
 // - 2026-08-09: 진행중 stage를 목록 상단 정렬. 의뢰ID 숨김·신속/묶음 뱃지·필터/요약 여백. 카운트는 목록과 동일 소스만 사용.
@@ -30,6 +32,8 @@ import {
   Trash2,
   RotateCcw,
   Package,
+  FlaskConical,
+  AlertTriangle,
 } from "lucide-react";
 import { getMonitoringStageLabel } from "@/utils/stage";
 
@@ -40,9 +44,11 @@ type StatusFilter =
   | "세척.패킹"
   | "포장.발송"
   | "추적관리"
-  | "취소";
+  | "취소"
+  | "R&D"
+  | "불완전가공";
 
-const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
+const OPS_STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
   { key: "all", label: "전체" },
   { key: "준비", label: "준비" },
   { key: "가공", label: "가공" },
@@ -52,6 +58,13 @@ const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
   { key: "취소", label: "취소" },
 ];
 
+const RND_STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
+  { key: "R&D", label: "R&D" },
+  { key: "불완전가공", label: "불완전가공" },
+];
+
+const STATUS_FILTERS = [...OPS_STATUS_FILTERS, ...RND_STATUS_FILTERS];
+
 const STAGE_CHIP: Record<string, string> = {
   준비: "border-primary-muted bg-primary-soft text-primary-strong",
   가공: "border-primary-muted bg-primary-soft text-primary-strong",
@@ -59,6 +72,8 @@ const STAGE_CHIP: Record<string, string> = {
   "포장.발송": "border-accent-muted bg-accent-soft text-accent-strong",
   추적관리: "border-slate-200 bg-slate-50 text-slate-600",
   취소: "border-destructive-muted bg-destructive-soft text-destructive",
+  "R&D": "border-violet-200 bg-violet-50 text-violet-700",
+  불완전가공: "border-amber-200 bg-amber-50 text-amber-800",
 };
 
 /** 전체 목록에서 진행중 건이 카운트와 맞게 상단에 보이도록 */
@@ -88,14 +103,34 @@ const isSampleRequest = (request: any) => {
  * 제조사 준비 큐 대상인지 — BE buildWorksheetReadyQueueGuard / productModeNe SSOT
  * - 레거시 design_custom_abutment 제외
  * - PTX 연동 + designCompletedAt 없음 → 기공소 디자인 대기, 제외
+ * - 불완전가공(rnd.unmachinableAt) 제외 — 제조사 일반 탭과 동일(불완전가공 탭 전용)
  */
 const isWorksheetReadyQueueRequest = (request: any) => {
+  if (request?.rnd?.unmachinableAt) return false;
   const productMode = String(request?.caseInfos?.productMode || "").trim();
   if (productMode === "design_custom_abutment") return false;
   const relatedPtxId =
     request?.partnerBilling?.relatedPracticeTransferId ?? null;
   if (relatedPtxId && !request?.designCompletedAt) return false;
   return true;
+};
+
+const isRndArchiveRequest = (request: any) => {
+  const requestCategory = String(request?.requestCategory || "").trim();
+  if (requestCategory === "rnd_sample") return true;
+  if (requestCategory === "copied_sample") return false;
+  const doneAt = Boolean(request?.rnd?.doneAt);
+  if (!doneAt) return false;
+  return String(request?.source || "").trim() === "manufacturer_sample";
+};
+
+const isUnmachinableRequest = (request: any) =>
+  Boolean(request?.rnd?.unmachinableAt);
+
+const inPeriod = (request: any, startMs: number, endMs: number) => {
+  const createdAtMs = new Date(request?.createdAt || 0).getTime();
+  if (!Number.isFinite(createdAtMs)) return false;
+  return createdAtMs >= startMs && createdAtMs <= endMs;
 };
 
 const formatKstDate = (value: unknown) => {
@@ -116,12 +151,76 @@ const StageChip = ({ stage }: { stage: string }) => (
 
 const PAGE_SIZE = 12;
 
+type MonitoringBucket = "ops" | "rnd" | "unmachinable";
+
+const fetchMonitoringBucket = async ({
+  token,
+  period,
+  bucket,
+}: {
+  token: string;
+  period: unknown;
+  bucket: MonitoringBucket;
+}) => {
+  const LIMIT = 120;
+  const { startDate, endDate } = periodToRange(period);
+
+  const fetchPage = async (page: number) => {
+    const query = new URLSearchParams({
+      page: String(page),
+      limit: String(LIMIT),
+      sortBy: "createdAt",
+      sortOrder: "desc",
+      includeTotal: page === 1 ? "true" : "false",
+      view: "monitoring",
+      startDate,
+      endDate,
+    });
+    if (bucket === "rnd") {
+      query.set("rndDone", "1");
+    } else if (bucket === "unmachinable") {
+      query.set("rndUnmachinable", "1");
+      query.set("rndDone", "0");
+    }
+
+    return apiFetch<any>({
+      path: `/api/requests?${query.toString()}`,
+      method: "GET",
+      token,
+    });
+  };
+
+  const firstRes = await fetchPage(1);
+  if (!firstRes.ok || !firstRes.data?.data?.requests) return [];
+
+  const firstPageRequests = Array.isArray(firstRes.data.data.requests)
+    ? firstRes.data.data.requests
+    : [];
+
+  const totalPages = Number(firstRes.data?.data?.pagination?.pages || 1);
+  if (!Number.isFinite(totalPages) || totalPages <= 1) {
+    return firstPageRequests;
+  }
+
+  const restResponses = await Promise.all(
+    Array.from({ length: totalPages - 1 }, (_, i) => fetchPage(i + 2)),
+  );
+  const restRequests = restResponses.flatMap((res) => {
+    if (!res.ok || !res.data?.data?.requests) return [];
+    return Array.isArray(res.data.data.requests) ? res.data.data.requests : [];
+  });
+
+  return [...firstPageRequests, ...restRequests];
+};
+
 export const AdminRequestMonitoring = () => {
   const { token } = useAuthStore();
   const [searchParams] = useSearchParams();
   const { period } = usePeriodStore();
   const { toast } = useToast();
-  const [requests, setRequests] = useState<any[]>([]);
+  const [opsRequests, setOpsRequests] = useState<any[]>([]);
+  const [rndRequests, setRndRequests] = useState<any[]>([]);
+  const [unmachinableRequests, setUnmachinableRequests] = useState<any[]>([]);
   const initialQuery = String(searchParams.get("q") || "").trim();
   const focusRequestMongoId = String(
     searchParams.get("focusRequestMongoId") || "",
@@ -142,6 +241,17 @@ export const AdminRequestMonitoring = () => {
   const listScrollRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
+  const patchRequestInBuckets = (
+    requestMongoId: string,
+    patch: Record<string, unknown>,
+  ) => {
+    const apply = (prev: any[]) =>
+      prev.map((r) => (r._id === requestMongoId ? { ...r, ...patch } : r));
+    setOpsRequests(apply);
+    setRndRequests(apply);
+    setUnmachinableRequests(apply);
+  };
+
   const handleDeleteRequest = async (
     requestId: string,
     requestMongoId: string,
@@ -158,11 +268,7 @@ export const AdminRequestMonitoring = () => {
       });
 
       if (res.ok) {
-        setRequests((prev) =>
-          prev.map((r) =>
-            r._id === requestMongoId ? { ...r, manufacturerStage: "취소" } : r,
-          ),
-        );
+        patchRequestInBuckets(requestMongoId, { manufacturerStage: "취소" });
         toast({
           title: "의뢰 삭제 완료",
           description: `의뢰 ${requestId}이(가) 취소 처리되었습니다.`,
@@ -210,11 +316,7 @@ export const AdminRequestMonitoring = () => {
       });
 
       if (res.ok) {
-        setRequests((prev) =>
-          prev.map((r) =>
-            r._id === requestMongoId ? { ...r, manufacturerStage: "준비" } : r,
-          ),
-        );
+        patchRequestInBuckets(requestMongoId, { manufacturerStage: "준비" });
         toast({
           title: "의뢰 복구 완료",
           description: `의뢰 ${requestId}이(가) 준비 상태로 복구되었습니다.`,
@@ -245,93 +347,68 @@ export const AdminRequestMonitoring = () => {
   useEffect(() => {
     let canceled = false;
 
-    const fetchRequests = async () => {
+    const fetchAll = async () => {
       if (!token) return;
       try {
-        const LIMIT = 120;
-        const { startDate, endDate } = periodToRange(period);
-
-        const fetchPage = async (page: number) => {
-          const query = new URLSearchParams({
-            page: String(page),
-            limit: String(LIMIT),
-            sortBy: "createdAt",
-            sortOrder: "desc",
-            includeTotal: page === 1 ? "true" : "false",
-            view: "monitoring",
-            startDate,
-            endDate,
-          });
-
-          return apiFetch<any>({
-            path: `/api/requests?${query.toString()}`,
-            method: "GET",
-            token,
-          });
-        };
-
-        const firstRes = await fetchPage(1);
-        if (!firstRes.ok || !firstRes.data?.data?.requests) {
-          if (!canceled) {
-            setRequests([]);
-            setVisibleCount(PAGE_SIZE);
-          }
-          return;
-        }
-
-        const firstPageRequests = Array.isArray(firstRes.data.data.requests)
-          ? firstRes.data.data.requests
-          : [];
-
-        if (!canceled) {
-          setRequests(firstPageRequests);
-          setVisibleCount(PAGE_SIZE);
-        }
-
-        const totalPages = Number(firstRes.data?.data?.pagination?.pages || 1);
-        if (!Number.isFinite(totalPages) || totalPages <= 1) return;
-
-        const restPagePromises: Promise<any>[] = [];
-        for (let page = 2; page <= totalPages; page += 1) {
-          restPagePromises.push(fetchPage(page));
-        }
-
-        const restResponses = await Promise.all(restPagePromises);
-        const restRequests = restResponses.flatMap((res) => {
-          if (!res.ok || !res.data?.data?.requests) return [];
-          return Array.isArray(res.data.data.requests)
-            ? res.data.data.requests
-            : [];
-        });
-
-        if (!canceled) {
-          setRequests([...firstPageRequests, ...restRequests]);
-        }
+        const [ops, rnd, unmachinable] = await Promise.all([
+          fetchMonitoringBucket({ token, period, bucket: "ops" }),
+          fetchMonitoringBucket({ token, period, bucket: "rnd" }),
+          fetchMonitoringBucket({ token, period, bucket: "unmachinable" }),
+        ]);
+        if (canceled) return;
+        setOpsRequests(ops);
+        setRndRequests(rnd);
+        setUnmachinableRequests(unmachinable);
+        setVisibleCount(PAGE_SIZE);
       } catch (error) {
         console.error("Failed to fetch requests:", error);
       }
     };
 
-    void fetchRequests();
+    void fetchAll();
 
     return () => {
       canceled = true;
     };
   }, [token, period]);
 
-  const periodFilteredRequests = useMemo(() => {
+  const { startMs, endMs } = useMemo(() => {
     const { startDate, endDate } = periodToRange(period);
-    const startMs = new Date(startDate).getTime();
-    const endMs = new Date(endDate).getTime();
+    return {
+      startMs: new Date(startDate).getTime(),
+      endMs: new Date(endDate).getTime(),
+    };
+  }, [period]);
 
-    return requests.filter((request) => {
-      if (isSampleRequest(request)) return false;
-      if (!isWorksheetReadyQueueRequest(request)) return false;
-      const createdAtMs = new Date(request?.createdAt || 0).getTime();
-      if (!Number.isFinite(createdAtMs)) return false;
-      return createdAtMs >= startMs && createdAtMs <= endMs;
-    });
-  }, [requests, period]);
+  const periodOpsRequests = useMemo(
+    () =>
+      opsRequests.filter((request) => {
+        if (isSampleRequest(request)) return false;
+        if (!isWorksheetReadyQueueRequest(request)) return false;
+        return inPeriod(request, startMs, endMs);
+      }),
+    [opsRequests, startMs, endMs],
+  );
+
+  const periodRndRequests = useMemo(
+    () =>
+      rndRequests.filter((request) => {
+        if (!isRndArchiveRequest(request)) return false;
+        if (isUnmachinableRequest(request)) return false;
+        return inPeriod(request, startMs, endMs);
+      }),
+    [rndRequests, startMs, endMs],
+  );
+
+  const periodUnmachinableRequests = useMemo(
+    () =>
+      unmachinableRequests.filter((request) => {
+        if (!isUnmachinableRequest(request)) return false;
+        if (isSampleRequest(request)) return false;
+        return inPeriod(request, startMs, endMs);
+      }),
+    [unmachinableRequests, startMs, endMs],
+  );
 
   // 카운트 = 목록과 동일 배열·동일 정규화 (서버 stats 미사용)
   const requestStats = useMemo(() => {
@@ -342,9 +419,11 @@ export const AdminRequestMonitoring = () => {
       "포장.발송": 0,
       추적관리: 0,
       취소: 0,
+      "R&D": periodRndRequests.length,
+      불완전가공: periodUnmachinableRequests.length,
     };
 
-    periodFilteredRequests.forEach((request) => {
+    periodOpsRequests.forEach((request) => {
       const stage = getMonitoringStageLabel(request);
       if (byStatus[stage] != null) {
         byStatus[stage] += 1;
@@ -352,14 +431,25 @@ export const AdminRequestMonitoring = () => {
     });
 
     return {
-      total: periodFilteredRequests.length,
+      total: periodOpsRequests.length,
       byStatus,
     };
-  }, [periodFilteredRequests]);
+  }, [periodOpsRequests, periodRndRequests, periodUnmachinableRequests]);
+
+  const sourceRows = useMemo(() => {
+    if (selectedStatus === "R&D") return periodRndRequests;
+    if (selectedStatus === "불완전가공") return periodUnmachinableRequests;
+    return periodOpsRequests;
+  }, [
+    selectedStatus,
+    periodOpsRequests,
+    periodRndRequests,
+    periodUnmachinableRequests,
+  ]);
 
   const filteredRequests = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    const rows = periodFilteredRequests.filter((request) => {
+    const rows = sourceRows.filter((request) => {
       const caseInfos = request.caseInfos || {};
       const requestor = request.requestor || {};
       const effectiveStatus = getMonitoringStageLabel(request);
@@ -379,7 +469,14 @@ export const AdminRequestMonitoring = () => {
           .includes(q) ||
         String(request._id || "")
           .toLowerCase()
+          .includes(q) ||
+        String(request.rnd?.unmachinableReason || "")
+          .toLowerCase()
           .includes(q);
+
+      if (selectedStatus === "R&D" || selectedStatus === "불완전가공") {
+        return matchesSearch;
+      }
 
       const matchesStatus =
         selectedStatus === "all" || effectiveStatus === selectedStatus;
@@ -398,7 +495,7 @@ export const AdminRequestMonitoring = () => {
       const timeB = new Date(b?.createdAt || 0).getTime();
       return timeB - timeA;
     });
-  }, [periodFilteredRequests, searchQuery, selectedStatus]);
+  }, [sourceRows, searchQuery, selectedStatus]);
 
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
@@ -426,6 +523,8 @@ export const AdminRequestMonitoring = () => {
   const packagingCount = byStatus["세척.패킹"] || 0;
   const shippingCount = byStatus["포장.발송"] || 0;
   const trackingCount = byStatus["추적관리"] || 0;
+  const rndCount = byStatus["R&D"] || 0;
+  const unmachinableCount = byStatus["불완전가공"] || 0;
 
   const statsCards: {
     key: StatusFilter;
@@ -475,226 +574,289 @@ export const AdminRequestMonitoring = () => {
       iconWrap: "bg-slate-100",
       iconClass: "text-slate-600",
     },
+    {
+      key: "R&D",
+      label: "R&D",
+      count: rndCount,
+      icon: FlaskConical,
+      iconWrap: "bg-violet-50",
+      iconClass: "text-violet-700",
+    },
+    {
+      key: "불완전가공",
+      label: "불완전가공",
+      count: unmachinableCount,
+      icon: AlertTriangle,
+      iconWrap: "bg-amber-50",
+      iconClass: "text-amber-700",
+    },
   ];
+
+  const listTitle =
+    selectedStatus === "R&D"
+      ? "R&D 목록"
+      : selectedStatus === "불완전가공"
+        ? "불완전가공 목록"
+        : "의뢰 목록";
 
   return (
     <AdminPageShell flush className="flex min-h-0 flex-1 flex-col">
-    <div className="flex h-full min-h-0 flex-col px-0 pt-1 pb-2">
-      <div className="mx-auto flex w-full max-w-7xl flex-1 min-h-0 flex-col gap-4 overflow-y-auto">
-        <div className="flex flex-wrap items-center gap-3 px-0.5">
-          <div className="relative min-w-0 w-full flex-1 sm:min-w-[200px]">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <Input
-              placeholder="환자·치과·의뢰자·의뢰번호 검색..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-9 rounded-lg border-slate-200 bg-white pl-9 text-sm shadow-sm"
-            />
+      <div className="flex h-full min-h-0 flex-col px-0 pt-1 pb-2">
+        <div className="mx-auto flex w-full max-w-7xl flex-1 min-h-0 flex-col gap-4 overflow-y-auto">
+          <div className="flex flex-wrap items-center gap-3 px-0.5">
+            <div className="relative min-w-0 w-full flex-1 sm:min-w-[200px]">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Input
+                placeholder="환자·치과·의뢰자·의뢰번호 검색..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="h-9 rounded-lg border-slate-200 bg-white pl-9 text-sm shadow-sm"
+              />
+            </div>
+            <div className="inline-flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
+              {OPS_STATUS_FILTERS.map((filter) => {
+                const active = selectedStatus === filter.key;
+                return (
+                  <button
+                    key={filter.key}
+                    type="button"
+                    onClick={() => setSelectedStatus(filter.key)}
+                    className={`rounded-md px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                      active
+                        ? "bg-slate-900 text-white"
+                        : "text-slate-600 hover:bg-slate-50"
+                    }`}
+                  >
+                    {filter.label}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="inline-flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
+              {RND_STATUS_FILTERS.map((filter) => {
+                const active = selectedStatus === filter.key;
+                const count =
+                  filter.key === "R&D" ? rndCount : unmachinableCount;
+                return (
+                  <button
+                    key={filter.key}
+                    type="button"
+                    onClick={() => setSelectedStatus(filter.key)}
+                    className={`rounded-md px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                      active
+                        ? "bg-slate-900 text-white"
+                        : "text-slate-600 hover:bg-slate-50"
+                    }`}
+                  >
+                    {filter.label}
+                    <span className="ml-1 tabular-nums opacity-70">{count}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
-          <div className="inline-flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
-            {STATUS_FILTERS.map((filter) => {
-              const active = selectedStatus === filter.key;
+
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
+            {statsCards.map((card) => {
+              const Icon = card.icon;
+              const active = selectedStatus === card.key;
               return (
                 <button
-                  key={filter.key}
+                  key={card.key}
                   type="button"
-                  onClick={() => setSelectedStatus(filter.key)}
-                  className={`rounded-md px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                  onClick={() =>
+                    setSelectedStatus(active ? "all" : card.key)
+                  }
+                  className={`rounded-xl border bg-white px-3.5 py-3 text-left shadow-sm transition-colors ${
                     active
-                      ? "bg-slate-900 text-white"
-                      : "text-slate-600 hover:bg-slate-50"
+                      ? "border-slate-900 ring-1 ring-slate-900"
+                      : "border-slate-200/80 hover:border-slate-300 hover:bg-slate-50/60"
                   }`}
                 >
-                  {filter.label}
+                  <div className="flex items-center gap-3">
+                    <div className={`rounded-lg p-2 ${card.iconWrap}`}>
+                      <Icon className={`h-4 w-4 ${card.iconClass}`} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-medium text-slate-500">
+                        {card.label}
+                      </p>
+                      <p className="text-xl font-bold tabular-nums tracking-tight text-slate-900">
+                        {card.count.toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
                 </button>
               );
             })}
           </div>
-        </div>
 
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
-          {statsCards.map((card) => {
-            const Icon = card.icon;
-            const active = selectedStatus === card.key;
-            return (
-              <button
-                key={card.key}
-                type="button"
-                onClick={() =>
-                  setSelectedStatus(active ? "all" : card.key)
-                }
-                className={`rounded-xl border bg-white px-3.5 py-3 text-left shadow-sm transition-colors ${
-                  active
-                    ? "border-slate-900 ring-1 ring-slate-900"
-                    : "border-slate-200/80 hover:border-slate-300 hover:bg-slate-50/60"
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <div className={`rounded-lg p-2 ${card.iconWrap}`}>
-                    <Icon className={`h-4 w-4 ${card.iconClass}`} />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-[11px] font-medium text-slate-500">
-                      {card.label}
-                    </p>
-                    <p className="text-xl font-bold tabular-nums tracking-tight text-slate-900">
-                      {card.count.toLocaleString()}
-                    </p>
-                  </div>
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
+            <div className="flex shrink-0 items-baseline justify-between gap-3 border-b border-slate-100 px-5 py-3.5 sm:px-6">
+              <h2 className="text-sm font-bold tracking-tight text-slate-900">
+                {listTitle}
+              </h2>
+              <p className="text-xs text-slate-500">
+                총 {filteredRequests.length.toLocaleString()}건
+              </p>
+            </div>
+
+            <div
+              ref={listScrollRef}
+              className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6"
+            >
+              {filteredRequests.length === 0 ? (
+                <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50/50 px-4 py-16 text-center">
+                  <XCircle className="mb-2 h-5 w-5 text-slate-300" />
+                  <p className="text-sm font-medium text-slate-600">
+                    조건에 맞는 의뢰가 없습니다
+                  </p>
+                  <p className="mt-1 text-xs text-slate-400">
+                    기간·상태 필터 또는 검색어를 바꿔 보세요
+                  </p>
                 </div>
-              </button>
-            );
-          })}
-        </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2 xl:grid-cols-3">
+                  {filteredRequests.slice(0, visibleCount).map((request) => {
+                    const stage = getMonitoringStageLabel(request);
+                    const isDeleting = deletingIds.has(request._id);
+                    const isRestoring = restoringIds.has(request._id);
+                    const isActionPending = isDeleting || isRestoring;
+                    const isFocused =
+                      (focusRequestMongoId &&
+                        String(request._id || "").trim() ===
+                          focusRequestMongoId) ||
+                      (focusRequestId &&
+                        String(request.requestId || "").trim() ===
+                          focusRequestId);
+                    const patient =
+                      String(request.caseInfos?.patientName || "").trim() ||
+                      "환자명 없음";
+                    const tooth = String(request.caseInfos?.tooth || "").trim();
+                    const clinicName = String(
+                      request.caseInfos?.clinicName || "",
+                    ).trim();
+                    const businessName = String(
+                      request.requestor?.business || "",
+                    ).trim();
+                    // 직원/대표명(requestor.name)은 숨기고 치과명·기공소명만 표시
+                    const orgLabel =
+                      [clinicName, businessName].filter(Boolean).join(" · ") ||
+                      "치과명 미확인";
+                    const price = Number(
+                      request.price?.paidAmount ?? request.price?.amount ?? 0,
+                    );
+                    const priority = String(request.priority || "").trim();
+                    const showPriority =
+                      priority === "높음" || priority === "긴급";
+                    const unmachinableReason = String(
+                      request.rnd?.unmachinableReason || "",
+                    ).trim();
+                    const chipLabel =
+                      selectedStatus === "R&D"
+                        ? "R&D"
+                        : selectedStatus === "불완전가공"
+                          ? "불완전가공"
+                          : stage;
 
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
-          <div className="flex shrink-0 items-baseline justify-between gap-3 border-b border-slate-100 px-5 py-3.5 sm:px-6">
-            <h2 className="text-sm font-bold tracking-tight text-slate-900">
-              의뢰 목록
-            </h2>
-            <p className="text-xs text-slate-500">
-              총 {filteredRequests.length.toLocaleString()}건
-            </p>
-          </div>
-
-          <div
-            ref={listScrollRef}
-            className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6"
-          >
-            {filteredRequests.length === 0 ? (
-              <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50/50 px-4 py-16 text-center">
-                <XCircle className="mb-2 h-5 w-5 text-slate-300" />
-                <p className="text-sm font-medium text-slate-600">
-                  조건에 맞는 의뢰가 없습니다
-                </p>
-                <p className="mt-1 text-xs text-slate-400">
-                  기간·상태 필터 또는 검색어를 바꿔 보세요
-                </p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2 xl:grid-cols-3">
-                {filteredRequests.slice(0, visibleCount).map((request) => {
-                  const stage = getMonitoringStageLabel(request);
-                  const isDeleting = deletingIds.has(request._id);
-                  const isRestoring = restoringIds.has(request._id);
-                  const isActionPending = isDeleting || isRestoring;
-                  const isFocused =
-                    (focusRequestMongoId &&
-                      String(request._id || "").trim() ===
-                        focusRequestMongoId) ||
-                    (focusRequestId &&
-                      String(request.requestId || "").trim() ===
-                        focusRequestId);
-                  const patient =
-                    String(request.caseInfos?.patientName || "").trim() ||
-                    "환자명 없음";
-                  const tooth = String(request.caseInfos?.tooth || "").trim();
-                  const clinicName = String(
-                    request.caseInfos?.clinicName || "",
-                  ).trim();
-                  const businessName = String(
-                    request.requestor?.business || "",
-                  ).trim();
-                  // 직원/대표명(requestor.name)은 숨기고 치과명·기공소명만 표시
-                  const orgLabel =
-                    [clinicName, businessName].filter(Boolean).join(" · ") ||
-                    "치과명 미확인";
-                  const price = Number(
-                    request.price?.paidAmount ?? request.price?.amount ?? 0,
-                  );
-                  const priority = String(request.priority || "").trim();
-                  const showPriority = priority === "높음" || priority === "긴급";
-
-                  return (
-                    <div
-                      key={request._id || request.id}
-                      className={`relative rounded-xl border border-slate-200/80 bg-white px-3.5 py-2.5 transition-colors hover:bg-slate-50/70 ${
-                        isActionPending ? "pointer-events-none opacity-50" : ""
-                      } ${
-                        isFocused
-                          ? "border-slate-900 ring-1 ring-slate-900"
-                          : ""
-                      }`}
-                    >
-                      <div className="flex items-start gap-2">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5">
-                            <h3 className="truncate text-sm font-semibold text-slate-900">
-                              {patient}
-                              {tooth ? (
-                                <span className="font-medium text-slate-500">
-                                  {" "}
-                                  · {tooth}
+                    return (
+                      <div
+                        key={request._id || request.id}
+                        className={`relative rounded-xl border border-slate-200/80 bg-white px-3.5 py-2.5 transition-colors hover:bg-slate-50/70 ${
+                          isActionPending
+                            ? "pointer-events-none opacity-50"
+                            : ""
+                        } ${
+                          isFocused
+                            ? "border-slate-900 ring-1 ring-slate-900"
+                            : ""
+                        }`}
+                      >
+                        <div className="flex items-start gap-2">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <h3 className="truncate text-sm font-semibold text-slate-900">
+                                {patient}
+                                {tooth ? (
+                                  <span className="font-medium text-slate-500">
+                                    {" "}
+                                    · {tooth}
+                                  </span>
+                                ) : null}
+                              </h3>
+                              {showPriority ? (
+                                <span className="shrink-0 rounded-md border border-destructive-muted bg-destructive-soft px-1.5 py-0.5 text-[10px] font-semibold text-destructive">
+                                  {priority}
                                 </span>
                               ) : null}
-                            </h3>
-                            {showPriority ? (
-                              <span className="shrink-0 rounded-md border border-destructive-muted bg-destructive-soft px-1.5 py-0.5 text-[10px] font-semibold text-destructive">
-                                {priority}
+                            </div>
+                            <p className="mt-0.5 truncate text-[11px] text-slate-500">
+                              {orgLabel}
+                            </p>
+                            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                              <ShippingModeBadge source={request} size="sm" />
+                              <span className="text-[11px] text-slate-400">
+                                {formatKstDate(request.createdAt)}
                               </span>
+                            </div>
+                            {selectedStatus === "불완전가공" &&
+                            unmachinableReason ? (
+                              <p className="mt-1.5 line-clamp-2 text-[11px] text-amber-800">
+                                {unmachinableReason}
+                              </p>
                             ) : null}
                           </div>
-                          <p className="mt-0.5 truncate text-[11px] text-slate-500">
-                            {orgLabel}
-                          </p>
-                          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                            <ShippingModeBadge source={request} size="sm" />
-                            <span className="text-[11px] text-slate-400">
-                              {formatKstDate(request.createdAt)}
-                            </span>
-                          </div>
-                        </div>
 
-                        <div className="flex shrink-0 flex-col items-end gap-1.5">
-                          <div className="flex items-center gap-1">
-                            <StageChip stage={stage} />
-                            {stage === "취소" ? (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  handleRestoreRequest(
-                                    request.requestId,
-                                    request._id,
-                                  )
-                                }
-                                disabled={isActionPending}
-                                className="flex h-6 w-6 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                                title="준비 상태로 복구"
-                              >
-                                <RotateCcw className="h-3.5 w-3.5" />
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  handleDeleteRequest(
-                                    request.requestId,
-                                    request._id,
-                                  )
-                                }
-                                disabled={isActionPending}
-                                className="flex h-6 w-6 items-center justify-center rounded-md text-slate-400 hover:bg-destructive-soft hover:text-destructive"
-                                title="의뢰 취소"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            )}
+                          <div className="flex shrink-0 flex-col items-end gap-1.5">
+                            <div className="flex items-center gap-1">
+                              <StageChip stage={chipLabel} />
+                              {stage === "취소" ? (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleRestoreRequest(
+                                      request.requestId,
+                                      request._id,
+                                    )
+                                  }
+                                  disabled={isActionPending}
+                                  className="flex h-6 w-6 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                                  title="준비 상태로 복구"
+                                >
+                                  <RotateCcw className="h-3.5 w-3.5" />
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleDeleteRequest(
+                                      request.requestId,
+                                      request._id,
+                                    )
+                                  }
+                                  disabled={isActionPending}
+                                  className="flex h-6 w-6 items-center justify-center rounded-md text-slate-400 hover:bg-destructive-soft hover:text-destructive"
+                                  title="의뢰 취소"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                            </div>
+                            <p className="text-xs font-semibold tabular-nums text-slate-800">
+                              {price.toLocaleString()}원
+                            </p>
                           </div>
-                          <p className="text-xs font-semibold tabular-nums text-slate-800">
-                            {price.toLocaleString()}원
-                          </p>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-            <div ref={sentinelRef} className="h-4" />
+                    );
+                  })}
+                </div>
+              )}
+              <div ref={sentinelRef} className="h-4" />
+            </div>
           </div>
         </div>
       </div>
-    </div>
     </AdminPageShell>
   );
 };

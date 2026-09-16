@@ -33,6 +33,7 @@ import { markPracticeTransferAbutmentMachiningStarted } from "../../services/pra
 import {
   healStuckCompletedMachiningToPacking,
   isRequestMachiningWorkCompleted,
+  isRequestUnmachinableJudged,
 } from "../../services/healStuckCompletedMachining.service.js";
 import Machine from "../../models/machine.model.js";
 import {
@@ -955,6 +956,7 @@ export async function getLastCompletedMachiningMap(req, res) {
               "productionSchedule.actualMachiningComplete",
               "productionSchedule.machiningProgress.phase",
               "productionSchedule.machiningRecord",
+              "rnd.unmachinableAt",
               "mailboxAddress",
               "requestor",
               "shippingMode",
@@ -994,6 +996,7 @@ export async function getLastCompletedMachiningMap(req, res) {
             manufacturerStage: String(r?.manufacturerStage || "").trim(),
             caseInfos: r?.caseInfos || null,
             productionSchedule: r?.productionSchedule || null,
+            rnd: r?.rnd || null,
             shippingMode: r?.shippingMode || null,
             finalShipping: r?.finalShipping
               ? { mode: r.finalShipping.mode || null }
@@ -1013,6 +1016,7 @@ export async function getLastCompletedMachiningMap(req, res) {
 
     // 롤백 후 재진입(준비/가공)한 의뢰의 과거 COMPLETED 레코드는 Complete 슬롯에 노출하지 않는다.
     // 단, CNC 완료 증거가 남아 있는데 stage만 가공에 남은 stuck은 세척.패킹으로 힐하고 Complete를 유지한다.
+    // 불완전가공 판정 건은 의도적 가공 복귀이므로 힐하지 않고 Complete에서 스킵한다.
     const ACTIVE_REMACHINING_STAGES = new Set(["준비", "가공"]);
     const skippedRequestIds = new Set();
     const remachiningMachineIds = [];
@@ -1025,8 +1029,12 @@ export async function getLastCompletedMachiningMap(req, res) {
       const stage = String(info.manufacturerStage || "").trim();
       if (!ACTIVE_REMACHINING_STAGES.has(stage)) continue;
 
-      // stuck: stage=가공 + CNC 완료 → 힐 (재가공이 아님)
-      if (stage === "가공" && isRequestMachiningWorkCompleted(info)) {
+      // stuck: stage=가공 + CNC 완료 + 불완전가공 아님 → 힐
+      if (
+        stage === "가공" &&
+        isRequestMachiningWorkCompleted(info) &&
+        !isRequestUnmachinableJudged(info)
+      ) {
         stuckHealIds.push(rid);
         continue;
       }
