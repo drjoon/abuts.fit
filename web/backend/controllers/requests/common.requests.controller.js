@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-16: 관리자 모니터링 조회 전 CNC완료+가공 stuck → 세척.패킹 힐.
 // - 2026-09-09: 관리자 헥스 확정 후에도 제조사 updateRndHexRotation 허용(의뢰 단위 보정). 신규 시드만 확정값 우선.
 // - 2026-09-03: 배치 취소 시 헥스 샘플 쌍은 원본 권한만으로 포함(제조사 isRequestor 가드로 누락 방지).
 // - 2026-09-03: 워크시트 준비 조회 시 미확정 제조사 헥스 확인 샘플 누락분을 fire-and-forget 보정.
@@ -101,6 +102,7 @@ import {
   ensureMissingHexVerificationSamplesInReadyList,
 } from "../../services/hexVerificationSample.service.js";
 import { buildWorksheetReadyQueueGuard } from "../../services/worksheetReadyQueue.guard.js";
+import { healAllStuckCompletedMachiningRequests } from "../../services/healStuckCompletedMachining.service.js";
 
 const ESPRIT_BASE =
   process.env.ESPRIT_ADDIN_BASE_URL ||
@@ -1472,6 +1474,18 @@ export async function getAllRequests(req, res) {
     // 관리자 모니터링: 내부 샘플/R&D·복사 샘플 제외 + 제조사 준비 큐와 동일 범위
     // (PTX 디자인 미완료·레거시 design_custom_abutment는 제조사-준비에 없으므로 표시하지 않음)
     if (view === "monitoring") {
+      // CNC 완료인데 stage만 가공에 남은 stuck → 목록/카운트 전에 세척.패킹으로 힐
+      try {
+        await healAllStuckCompletedMachiningRequests({
+          limit: 50,
+          source: "admin-monitoring-list",
+        });
+      } catch (err) {
+        console.warn("[getAllRequests] stuck machining heal failed", {
+          message: err?.message || String(err),
+        });
+      }
+
       const monitoringGuards = [
         buildNonSampleRequestGuard(),
         buildWorksheetReadyQueueGuard(),

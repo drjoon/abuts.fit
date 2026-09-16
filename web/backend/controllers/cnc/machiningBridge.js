@@ -6,6 +6,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
 // - web/frontend/src/pages/manufacturer/equipment/cnc/hooks/useManUpload.ts
 // change-log:
+// - 2026-09-16: last-completed — CNC 완료+stage 가공 stuck은 세척.패킹 힐 후 Complete 유지(재가공 스킵과 구분).
 // - 2026-09-11: CNC start/complete가 포장.발송·추적관리 건을 가공/세척.패킹으로 회귀시키지 않음. last-completed에 manufacturerStage 포함.
 // - 2026-08-26: 가공기록에 의뢰 라벨 스냅샷. 샘플 삭제 후에도 완료 목록 라벨 유지.
 // - 2026-08-17: 우편함 배정 SSOT는 가공→세척.패킹 진입. 포장.발송은 기존 배정 유지.
@@ -29,6 +30,10 @@ import {
   normalizeBusinessAnchorId,
 } from "../../controllers/requests/mailbox.utils.js";
 import { markPracticeTransferAbutmentMachiningStarted } from "../../services/practiceTransferProduction.service.js";
+import {
+  healStuckCompletedMachiningToPacking,
+  isRequestMachiningWorkCompleted,
+} from "../../services/healStuckCompletedMachining.service.js";
 import Machine from "../../models/machine.model.js";
 import {
   BRIDGE_BASE,
@@ -946,6 +951,12 @@ export async function getLastCompletedMachiningMap(req, res) {
               "caseInfos.anodizingEnabled",
               "caseInfos.ncFile.s3Key",
               "caseInfos.ncFile.fileName",
+              "caseInfos.reviewByStage.machining",
+              "productionSchedule.actualMachiningComplete",
+              "productionSchedule.machiningProgress.phase",
+              "productionSchedule.machiningRecord",
+              "mailboxAddress",
+              "requestor",
               "shippingMode",
               "finalShipping.mode",
               "originalShipping.mode",
@@ -982,6 +993,7 @@ export async function getLastCompletedMachiningMap(req, res) {
             rollbackCount,
             manufacturerStage: String(r?.manufacturerStage || "").trim(),
             caseInfos: r?.caseInfos || null,
+            productionSchedule: r?.productionSchedule || null,
             shippingMode: r?.shippingMode || null,
             finalShipping: r?.finalShipping
               ? { mode: r.finalShipping.mode || null }
@@ -1000,19 +1012,53 @@ export async function getLastCompletedMachiningMap(req, res) {
     }
 
     // 롤백 후 재진입(준비/가공)한 의뢰의 과거 COMPLETED 레코드는 Complete 슬롯에 노출하지 않는다.
+    // 단, CNC 완료 증거가 남아 있는데 stage만 가공에 남은 stuck은 세척.패킹으로 힐하고 Complete를 유지한다.
     const ACTIVE_REMACHINING_STAGES = new Set(["준비", "가공"]);
     const skippedRequestIds = new Set();
     const remachiningMachineIds = [];
+    const stuckHealIds = [];
     for (const [mid, rec] of byMachine) {
       const rid = String(rec?.requestId || "").trim();
       if (!rid) continue;
       const info = requestInfoMap.get(rid);
       if (!info) continue;
-      if (ACTIVE_REMACHINING_STAGES.has(info.manufacturerStage)) {
-        skippedRequestIds.add(rid);
-        remachiningMachineIds.push(mid);
+      const stage = String(info.manufacturerStage || "").trim();
+      if (!ACTIVE_REMACHINING_STAGES.has(stage)) continue;
+
+      // stuck: stage=가공 + CNC 완료 → 힐 (재가공이 아님)
+      if (stage === "가공" && isRequestMachiningWorkCompleted(info)) {
+        stuckHealIds.push(rid);
+        continue;
+      }
+
+      skippedRequestIds.add(rid);
+      remachiningMachineIds.push(mid);
+    }
+
+    if (stuckHealIds.length > 0) {
+      const uniqueHealIds = [...new Set(stuckHealIds)];
+      const healDocs = await Request.find({ requestId: { $in: uniqueHealIds } })
+        .populate("requestor", "businessAnchorId");
+      for (const doc of healDocs) {
+        try {
+          const result = await healStuckCompletedMachiningToPacking(doc, {
+            source: "bridge-last-completed",
+            save: true,
+          });
+          if (result.healed) {
+            const rid = String(doc.requestId || "").trim();
+            const info = requestInfoMap.get(rid);
+            if (info) info.manufacturerStage = "세척.패킹";
+          }
+        } catch (err) {
+          console.warn("[bridge:last-completed] stuck heal failed", {
+            requestId: doc?.requestId || null,
+            message: err?.message || String(err),
+          });
+        }
       }
     }
+
     for (const mid of remachiningMachineIds) {
       byMachine.delete(mid);
     }

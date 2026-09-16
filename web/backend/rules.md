@@ -822,6 +822,9 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - `GET /api/requests?view=monitoring`: find+stage aggregate 병렬, page>1은 includeTotal 없이 목록만,
       projection은 카드 UI 필드만. 인덱스 `Request(createdAt, _id)`.
       샘플 제외 + 제조사 준비 큐(productModeNe)와 동일 — PTX 디자인 미완료·레거시 `design_custom_abutment` 제외.
+      CNC 완료(`actualMachiningComplete` / progress.phase=COMPLETED)인데 `manufacturerStage=가공`인 stuck은
+      목록 전에 `healStuckCompletedMachining`으로 `세척.패킹` 승격(제조사 Complete 숨김·관리자 가공 잔존 방지).
+      동일 힐: `stageProgressionWorker`, bridge last-completed. 수동: `scripts/db/heal-stuck-completed-machining.js`.
     - `GET /api/admin/comm-badges` 의뢰(request) 배지도 동일 준비 큐 범위(PTX 디자인 대기 제외).
     - 어드민/제조사 대시보드 `inProgress*`(`requestDashboardStats`)도 준비 stage에서 동일 준비 큐 필터.
   - 관리자 크레딧(`credit:balance-updated`)은 `requestor`, `admin` role fan-out으로 발행하고,

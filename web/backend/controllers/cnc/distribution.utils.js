@@ -6,9 +6,11 @@
 // - web/backend/controllers/cnc/production.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
 // change-log:
+// - 2026-09-16: isMachiningCompleted — actualMachiningComplete/progress.phase도 완료로 인정.
 // - 2026-08-07: 재배정용 커버 장비 랭킹 헬퍼 추가 (최소 소재 우선, exact-group 금지).
 // - 2026-08-07: 소재≥maxDiameter 커버 헬퍼 추가 (auto-next/재배정 SSOT).
 import Request from "../../models/request.model.js";
+import { isRequestMachiningWorkCompleted } from "../../services/healStuckCompletedMachining.service.js";
 
 // 가공 단계는 `가공` 단일값만 허용한다.
 export const MACHINING_STAGE_ALIASES = ["가공"];
@@ -227,19 +229,8 @@ export function isMachiningInProgress(reqItem) {
 }
 
 export function isMachiningCompleted(reqItem) {
-  const record = reqItem?.productionSchedule?.machiningRecord;
-  if (!record) return false;
-
-  const status = String(record?.status || "")
-    .trim()
-    .toUpperCase();
-  if (status === "COMPLETED" || status === "SUCCESS" || status === "DONE")
-    return true;
-
-  const completedAt = record?.completedAt
-    ? new Date(record.completedAt).getTime()
-    : 0;
-  return completedAt > 0;
+  // populate 없는 ObjectId만 있어도 actualMachiningComplete/phase로 완료 판정
+  return isRequestMachiningWorkCompleted(reqItem);
 }
 
 export function getMachiningLoadWeight(reqItem) {

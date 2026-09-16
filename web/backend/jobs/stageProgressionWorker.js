@@ -4,6 +4,7 @@
 // - web/backend/server.js
 // - web/backend/controllers/requests/mailbox.utils.js
 // change-log:
+// - 2026-09-16: 가공→세척.패킹은 CNC 완료 stuck만 힐(출고일만으로 미완료 가공 승격 금지).
 // - 2026-08-22: 세척.패킹→포장.발송 자동 진행에서 샘플(source/price.rule) 제외 제거.
 //   작업용 샘플도 정식 의뢰와 같이 포장.발송·추적관리까지 진행.
 // - 2026-08-17: 우편함 배정은 가공→세척.패킹, 포장.발송은 기존 배정 유지.
@@ -15,10 +16,8 @@ import {
   addKoreanBusinessDays,
   applyStatusMapping,
 } from "../controllers/requests/utils.js";
-import {
-  assignMailboxForCleaningPackingEnter,
-} from "../controllers/requests/mailbox.utils.js";
 import { enterManufacturerShippingStage } from "../controllers/requests/common.review.helpers.js";
+import { healAllStuckCompletedMachiningRequests } from "../services/healStuckCompletedMachining.service.js";
 import { resolveMongoUri } from "../utils/mongoUri.js";
 
 /**
@@ -86,26 +85,15 @@ async function progressStages() {
       console.log(`  [레거시 CAM→가공 보정] ${req.requestId}`);
     }
 
-    // 3. 가공 → 세척.패킹: 출고 예정일 1영업일 이내 도달한 가공 완료 건
-    const productionToPackaging = await Request.find({
-      manufacturerStage: "가공",
-      "timeline.estimatedShipYmd": { $exists: true, $lte: oneDayFromNow },
-    }).populate("requestor", "businessAnchorId");
-
-    for (const req of productionToPackaging) {
-      applyStatusMapping(req, "세척.패킹");
-      // 우편함 배정 SSOT: 가공→세척.패킹 진입 시 1회 배정한다.
-      const requestorOrgId =
-        req.businessAnchorId || req.requestor?.businessAnchorId || null;
-      await assignMailboxForCleaningPackingEnter({
-        request: req,
-        requestorOrgId,
-      });
-      await req.save();
-      updatedCount++;
-      console.log(
-        `  [가공→세척.패킹] ${req.requestId} mailbox=${req.mailboxAddress || "-"} (SHIP: ${req.timeline.estimatedShipYmd})`,
-      );
+    // 3. 가공 → 세척.패킹: CNC 완료인데 stage가 가공에 남은 stuck 건만 힐
+    // (출고일만으로 미완료 가공을 패킹으로 올리면 제조사 큐/관리자 모니터링이 어긋난다)
+    const stuckHeal = await healAllStuckCompletedMachiningRequests({
+      limit: 100,
+      source: "stage_progression_worker",
+    });
+    updatedCount += stuckHeal.healed;
+    for (const rid of stuckHeal.requestIds) {
+      console.log(`  [가공→세척.패킹] ${rid} (stuck completed heal)`);
     }
 
     // 4. 세척.패킹 → 포장.발송: 출고 예정일이 도래한 세척·패킹 완료 건
