@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/components/practice/LabReceiveWorkUploadDialog.tsx
 // change-log:
+// - 2026-09-16: 커스텀어벗 목록 — 후속(지르) 행 제외(임시치아 CA와 치아번호 중복 방지).
 // - 2026-09-12: 다치아 — 일부만 가공(pastReady)이어도 남은 STL 업로드 CTA 유지.
 // - 2026-09-12: pastReadyTeeth — 치아별 가공 표시·리메이크. 준비 치아는 취소 유지.
 // - 2026-09-12: designFileCount — files[]가 있으면 length SSOT(낙관 count 과다 시 업로드 막힘 방지).
@@ -58,6 +59,7 @@ import {
   isPendingRoundBarAbutment,
   isSimpleAbutmentModeForFee,
 } from "@/shared/practice/labFeeSchedule";
+import { isFollowUpProsthesisPhase } from "@/shared/practice/prosthesisFollowUp";
 import {
   enrichToothWorksPendingFromCatalog,
   type RoundBarCatalogRow,
@@ -472,7 +474,8 @@ export function resolvePracticeTransferToothWorks(
 
 /**
  * 치식 요약의 커스텀어벗 행 (스캔바디 CNC·요청중 포함).
- * 심플어벗(치과 재고)은 제외 — STL 업로드·어벗츠 Request 대상 아님.
+ * 심플어벗(치과 재고)·후속(지르) 행은 제외 — STL 업로드·어벗츠 Request 대상 아님.
+ * 후속 행은 임시치아 CA를 복사하므로 넣으면 「15, 15, 14」처럼 치아번호가 중복된다.
  */
 export function listPracticeTransferCustomAbutmentToothWorks(
   transfer: PracticeTransferLabReceiveItem | null | undefined,
@@ -481,7 +484,9 @@ export function listPracticeTransferCustomAbutmentToothWorks(
   if (!transfer) return [] as ToothWorkSelection[];
   return resolvePracticeTransferToothWorks(transfer, catalog).filter(
     (row) =>
-      Boolean(row.customAbutment) && !isSimpleAbutmentModeForFee(row),
+      Boolean(row.customAbutment) &&
+      !isSimpleAbutmentModeForFee(row) &&
+      !isFollowUpProsthesisPhase(row),
   );
 }
 

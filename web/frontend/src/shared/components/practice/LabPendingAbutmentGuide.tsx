@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/practice/PracticeLabReceiveWorkActionsBar.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // change-log:
+// - 2026-09-16: 후속(지르) 행은 안내 치아번호에서 제외(임시치아 CA 중복 방지).
 // - 2026-09-12: 가공 치아 호박색·클릭=리메이크 · (전체리메이크). 툴팁 문장 줄바꿈.
 // - 2026-09-12: 준비 단계 — 치아번호 클릭=개별 취소 · (전체취소). 상태 문구 비표시.
 // - 2026-09-12: 생산의뢰 완료 — (준비: 취소 가능) 클릭 취소 · (가공: 취소 불가).
@@ -48,6 +49,7 @@ import {
   isPendingRoundBarAbutment,
   isSimpleAbutmentModeForFee,
 } from "@/shared/practice/labFeeSchedule";
+import { isFollowUpProsthesisPhase } from "@/shared/practice/prosthesisFollowUp";
 import {
   toToothMemoSortNumber,
   type ToothWorkSelection,
@@ -97,9 +99,13 @@ function sortByTooth(rows: ToothWorkSelection[]) {
   );
 }
 
-/** 커스텀어벗만 — 심플어벗(치과 재고)은 항상 제외 */
+/** 커스텀어벗만 — 심플어벗·후속(지르) 행은 항상 제외 */
 function isCustomAbutmentGuideRow(row: ToothWorkSelection) {
-  return Boolean(row.customAbutment) && !isSimpleAbutmentModeForFee(row);
+  return (
+    Boolean(row.customAbutment) &&
+    !isSimpleAbutmentModeForFee(row) &&
+    !isFollowUpProsthesisPhase(row)
+  );
 }
 
 function listPendingRows(toothWorks: ToothWorkSelection[] | null | undefined) {
