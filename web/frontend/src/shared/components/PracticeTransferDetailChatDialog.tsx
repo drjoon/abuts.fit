@@ -16,6 +16,7 @@
 // - web/frontend/src/shared/files/fileBlobCache.ts
 // - web/frontend/src/shared/files/s3ImageThumb.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-16: 채팅 헤더 — 1줄=타이틀, 2줄=주문/도착·다음도착일, 경계선, 3줄=액션.
 // - 2026-09-16: 기공소 — 채팅 스크롤 상·하단 액션 CTA 제거. 지르 작업 시작은 헤더(acceptedWorkActions)만.
 // - 2026-09-15: 치식·보철물 차트 — 후속 지르 반영(형태) + 단계별 기공비. 인쇄는 원 임시치아.
 // - 2026-09-15: 견적은 전체 toothWorks(feeToothWorks) — 후속 반영·임시치아 차감 라인 유지.
@@ -33,7 +34,6 @@
 // - 2026-09-12: 휴지통 팝오버 — 전체 복원(s3Keys 일괄).
 // - 2026-09-12: 의뢰 파일 — 업로드 웨이브(첫/두 번째/…) 클러스터.
 // - 2026-09-12: 드롭·클립 — 3D→의뢰 파일, 이미지→선택, 그 외→채팅. 의뢰 파일 타일 X 삭제.
-// - 2026-09-16: 주문·도착 줄 오른쪽 끝 — 작업시작 / 작업 취소(별도 바에서 이동).
 // - 2026-09-12: 별·알림음 — 환자·치아번호 줄 오른쪽.
 // - 2026-09-12: 별·알림음 — 채팅 툴바 → 주문/도착 줄 오른쪽.
 // - 2026-09-12: 채팅 없으면 초기 스크롤=보철물(상단). 전환·빈 목록 시 하단 고정 금지.
@@ -1082,91 +1082,6 @@ export function PracticeTransferDetailChatDialog({
   const nextArrivalTooltip =
     getPracticeNextArrivalReminderTooltip(nextArrivalReminder);
 
-  const renderRequestManageButtons = (opts?: { className?: string }) => {
-    if (!onEditRequest && !onCancelRequest) return null;
-    return (
-      <div
-        className={cn(
-          "relative z-[2] flex shrink-0 flex-wrap items-center justify-center gap-2",
-          opts?.className,
-        )}
-      >
-        {onEditRequest ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-9 border-primary/55 bg-background px-4 font-medium text-primary hover:bg-primary/10 hover:text-primary"
-            disabled={editRequestDisabled}
-            onClick={() => onEditRequest()}
-          >
-            의뢰 수정
-          </Button>
-        ) : null}
-        {onCancelRequest ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-9 border-destructive/55 bg-background px-4 font-medium text-destructive hover:bg-destructive/10 hover:text-destructive"
-            disabled={cancelRequestDisabled}
-            onClick={() => onCancelRequest()}
-          >
-            의뢰 취소
-          </Button>
-        ) : null}
-      </div>
-    );
-  };
-
-  const renderProsthesisFollowUpManageButtons = (opts?: {
-    className?: string;
-  }) => {
-    if (
-      !prosthesisFollowUpPending ||
-      (!onCancelProsthesisFollowUp && !onModifyProsthesisFollowUp)
-    ) {
-      return null;
-    }
-    return (
-      <div
-        className={cn(
-          "relative z-[2] flex shrink-0 flex-wrap items-center justify-center gap-2",
-          opts?.className,
-        )}
-      >
-        {onModifyProsthesisFollowUp ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-9 border-primary/55 bg-background px-4 font-medium text-primary hover:bg-primary/10 hover:text-primary"
-            disabled={
-              modifyProsthesisFollowUpBusy || cancelProsthesisFollowUpBusy
-            }
-            onClick={() => onModifyProsthesisFollowUp()}
-          >
-            {modifyProsthesisFollowUpBusy ? "변경 중…" : "제작 변경"}
-          </Button>
-        ) : null}
-        {onCancelProsthesisFollowUp ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-9 border-destructive/55 bg-background px-4 font-medium text-destructive hover:bg-destructive/10 hover:text-destructive"
-            disabled={
-              cancelProsthesisFollowUpBusy || modifyProsthesisFollowUpBusy
-            }
-            onClick={() => onCancelProsthesisFollowUp()}
-          >
-            {cancelProsthesisFollowUpBusy ? "취소 중…" : "제작 취소"}
-          </Button>
-        ) : null}
-      </div>
-    );
-  };
-
   const renderProsthesisFollowUpLabStartButton = (opts?: {
     className?: string;
   }) => {
@@ -2046,9 +1961,6 @@ export function PracticeTransferDetailChatDialog({
       dotStyle: undefined as CalendarLabDotStyle | undefined,
     };
   }, [caseIdentity, orderDate, summaryItems, toothWorks]);
-  const showArrivalInChatChrome = Boolean(
-    onAppendArrival || nextStageSegments.length > 0,
-  );
   const identityDateLabel = String(caseIdentityStrip?.secondary || "").trim();
   const chartToothWorks = useMemo(
     () => (Array.isArray(toothWorks) ? toothWorks : []),
@@ -2347,7 +2259,7 @@ export function PracticeTransferDetailChatDialog({
       {reacceptButtonLabel}
     </Button>
   ) : null;
-  const identityDateRowActions =
+  const labIdentityDateRowActions =
     acceptBarPrimaryActions || reacceptBarPrimaryAction || releaseAction ? (
       <div
         className="flex shrink-0 flex-wrap items-center justify-end gap-2"
@@ -2359,8 +2271,114 @@ export function PracticeTransferDetailChatDialog({
         {releaseAction}
       </div>
     ) : null;
+  const practiceHeaderActionButtons = (() => {
+    if (feeViewer !== "practice") return null;
+    const buttons: ReactNode[] = [];
+    if (onEditRequest) {
+      buttons.push(
+        <Button
+          key="edit-request"
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-8 border-primary/55 bg-background px-3 font-medium text-primary hover:bg-primary/10 hover:text-primary"
+          disabled={editRequestDisabled}
+          onClick={() => onEditRequest()}
+        >
+          의뢰 수정
+        </Button>,
+      );
+    }
+    if (onCancelRequest) {
+      buttons.push(
+        <Button
+          key="cancel-request"
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-8 border-destructive/55 bg-background px-3 font-medium text-destructive hover:bg-destructive/10 hover:text-destructive"
+          disabled={cancelRequestDisabled}
+          onClick={() => onCancelRequest()}
+        >
+          의뢰 취소
+        </Button>,
+      );
+    }
+    if (prosthesisFollowUpPending && onModifyProsthesisFollowUp) {
+      buttons.push(
+        <Button
+          key="modify-follow-up"
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-8 border-primary/55 bg-background px-3 font-medium text-primary hover:bg-primary/10 hover:text-primary"
+          disabled={
+            modifyProsthesisFollowUpBusy || cancelProsthesisFollowUpBusy
+          }
+          onClick={() => onModifyProsthesisFollowUp()}
+        >
+          {modifyProsthesisFollowUpBusy ? "변경 중…" : "제작 변경"}
+        </Button>,
+      );
+    }
+    if (prosthesisFollowUpPending && onCancelProsthesisFollowUp) {
+      buttons.push(
+        <Button
+          key="cancel-follow-up"
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-8 border-destructive/55 bg-background px-3 font-medium text-destructive hover:bg-destructive/10 hover:text-destructive"
+          disabled={
+            cancelProsthesisFollowUpBusy || modifyProsthesisFollowUpBusy
+          }
+          onClick={() => onCancelProsthesisFollowUp()}
+        >
+          {cancelProsthesisFollowUpBusy ? "취소 중…" : "제작 취소"}
+        </Button>,
+      );
+    }
+    if (onAppendProsthesis) {
+      buttons.push(
+        <Button
+          key="append-prosthesis"
+          type="button"
+          size="sm"
+          className={cn(
+            "h-8 px-3",
+            appendProsthesisDisabled || appendProsthesisBusy
+              ? "cursor-not-allowed opacity-70"
+              : "",
+          )}
+          disabled={appendProsthesisBusy || appendProsthesisDisabled}
+          title={appendProsthesisHint || undefined}
+          onClick={() => onAppendProsthesis()}
+        >
+          {appendProsthesisBusy ? "처리 중…" : "지르 보철"}
+        </Button>,
+      );
+    }
+    if (buttons.length === 0) return null;
+    return (
+      <div
+        className="flex shrink-0 flex-wrap items-center justify-end gap-2"
+        data-no-drag
+      >
+        {buttons}
+      </div>
+    );
+  })();
+  const rearrivalControl = onAppendArrival ? renderRearrivalPopover() : null;
+  const headerActionButtons =
+    labIdentityDateRowActions || practiceHeaderActionButtons;
+  /**
+   * 헤더 1줄: 타이틀 + 아이콘
+   * 2줄: 주문/도착(+다음도착일)
+   * ─── 경계선
+   * 3줄: 작업시작·작업취소 / 제작변경·취소·지르 보철
+   */
   const renderIdentityDateRow = (className?: string) => {
-    if (!identityDateLabel && !identityDateRowActions) return null;
+    if (!identityDateLabel && !rearrivalControl) return null;
     return (
       <div className={cn("flex min-w-0 items-center gap-2", className)}>
         {identityDateLabel ? (
@@ -2370,7 +2388,15 @@ export function PracticeTransferDetailChatDialog({
         ) : (
           <span className="min-w-0 flex-1" aria-hidden />
         )}
-        {identityDateRowActions}
+        {rearrivalControl}
+      </div>
+    );
+  };
+  const renderHeaderActionRow = () => {
+    if (!headerActionButtons) return null;
+    return (
+      <div className="flex min-w-0 items-center justify-end gap-2 border-b bg-background px-5 py-2">
+        {headerActionButtons}
       </div>
     );
   };
@@ -2787,17 +2813,18 @@ export function PracticeTransferDetailChatDialog({
                       </p>
                       {identityChromeActions}
                     </div>
-                    {!showArrivalInChatChrome
-                      ? renderIdentityDateRow("mt-0.5")
-                      : null}
+                    {renderIdentityDateRow("mt-0.5")}
                   </>
                 ) : (
-                  <div className="flex min-w-0 items-center gap-1">
-                    <p className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">
-                      {title}
-                    </p>
-                    {identityChromeActions}
-                  </div>
+                  <>
+                    <div className="flex min-w-0 items-center gap-1">
+                      <p className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">
+                        {title}
+                      </p>
+                      {identityChromeActions}
+                    </div>
+                    {renderIdentityDateRow("mt-0.5")}
+                  </>
                 )}
               </div>
               {chatHeaderAction || !isInline ? (
@@ -2825,35 +2852,29 @@ export function PracticeTransferDetailChatDialog({
               ) : null}
             </div>
 
-              {nextStageSegments.length > 0 || onAppendArrival ? (
+              {renderHeaderActionRow()}
+
+              {nextStageSegments.length > 0 ? (
                 <div className="border-b bg-muted/25">
-                  {showArrivalInChatChrome
-                    ? renderIdentityDateRow("px-4 pt-2 sm:px-5")
-                    : null}
                   <div className="flex flex-wrap items-center gap-2 px-4 py-2 sm:px-5">
-                    {nextStageSegments.length > 0 ? (
-                      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
-                        <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                          다음 공정
+                    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+                      <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        다음 공정
+                      </span>
+                      {nextStageSegments.map((seg, idx) => (
+                        <span
+                          key={`${seg.archLabel}:${seg.text}:${idx}`}
+                          className="inline-flex max-w-full items-center gap-1 rounded-md border border-border/80 bg-background px-2 py-0.5 text-xs leading-snug text-foreground"
+                        >
+                          {seg.archLabel ? (
+                            <span className="shrink-0 font-semibold text-primary">
+                              {seg.archLabel}
+                            </span>
+                          ) : null}
+                          <span className="min-w-0 truncate">{seg.text}</span>
                         </span>
-                        {nextStageSegments.map((seg, idx) => (
-                          <span
-                            key={`${seg.archLabel}:${seg.text}:${idx}`}
-                            className="inline-flex max-w-full items-center gap-1 rounded-md border border-border/80 bg-background px-2 py-0.5 text-xs leading-snug text-foreground"
-                          >
-                            {seg.archLabel ? (
-                              <span className="shrink-0 font-semibold text-primary">
-                                {seg.archLabel}
-                              </span>
-                            ) : null}
-                            <span className="min-w-0 truncate">{seg.text}</span>
-                          </span>
-                        ))}
-                      </div>
-                    ) : (
-                      <span className="min-w-0 flex-1" aria-hidden />
-                    )}
-                    {onAppendArrival ? renderRearrivalPopover() : null}
+                      ))}
+                    </div>
                   </div>
                 </div>
               ) : null}
@@ -2954,11 +2975,7 @@ export function PracticeTransferDetailChatDialog({
               )}
             >
               <div className="shrink-0 space-y-5 px-5 py-3 text-sm">
-              {/* 치과(practice)만 채팅 상단 액션 — 기공소는 헤더 acceptedWorkActions */}
-              {feeViewer === "practice" ? renderRequestManageButtons() : null}
-              {feeViewer === "practice"
-                ? renderProsthesisFollowUpManageButtons()
-                : null}
+              {/* 치과·기공소 액션은 헤더 3줄 — 채팅 스크롤 CTA 없음 */}
               {Array.isArray(chartToothWorks) && chartToothWorks.length > 0 ? (
                 <section className="space-y-2.5">
                   <h3 className="text-[13px] font-semibold text-foreground">
@@ -3322,49 +3339,7 @@ export function PracticeTransferDetailChatDialog({
 
                       {!chatLoading &&
                       !visibleChatError &&
-                      feeViewer === "practice"
-                        ? renderRequestManageButtons({ className: "mt-2 px-1" })
-                        : null}
-
-                      {!chatLoading &&
-                      !visibleChatError &&
-                      feeViewer === "practice"
-                        ? renderProsthesisFollowUpManageButtons({
-                            className: "mt-2 px-1",
-                          })
-                        : null}
-
-                      {onAppendProsthesis &&
-                      feeViewer === "practice" &&
-                      !chatLoading &&
-                      !visibleChatError ? (
-                        <div className="relative z-[2] mt-2 flex shrink-0 flex-col items-center gap-1.5 px-1">
-                          <Button
-                            type="button"
-                            size="sm"
-                            className={cn(
-                              "h-9 px-5",
-                              appendProsthesisDisabled || appendProsthesisBusy
-                                ? "cursor-not-allowed opacity-70"
-                                : "",
-                            )}
-                            disabled={appendProsthesisBusy || appendProsthesisDisabled}
-                            title={appendProsthesisHint || undefined}
-                            onClick={() => onAppendProsthesis()}
-                          >
-                            {appendProsthesisBusy ? "처리 중…" : "지르 보철"}
-                          </Button>
-                          {appendProsthesisHint && appendProsthesisDisabled ? (
-                            <p className="max-w-full text-center text-xs leading-snug text-muted-foreground">
-                              {appendProsthesisHint}
-                            </p>
-                          ) : null}
-                        </div>
-                      ) : null}
-
-                      {prosthesisFollowUpComplete &&
-                      !chatLoading &&
-                      !visibleChatError &&
+                      prosthesisFollowUpComplete &&
                       Array.isArray(toothWorks) &&
                       toothWorks.length > 0 ? (
                         <div className="relative z-[2] mt-2 w-full min-w-0 max-w-full px-1 text-left">
