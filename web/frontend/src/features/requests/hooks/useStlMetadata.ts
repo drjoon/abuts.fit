@@ -3,6 +3,8 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/shared/realtime/useAppEventListener.ts
+// change-log:
+// - 2026-09-17: stl-metadata-updated 시 finishLine만 와도 기존 메타 merge(manual FL이 taper 등을 지우지 않음).
 /**
  * STL 메타데이터 조회 및 재계산 훅
  * 백엔드 DB 캐시를 우선 사용하고, 필요시 재계산 트리거
@@ -151,7 +153,15 @@ export function useStlMetadata(requestId?: string): UseStlMetadataResult {
           : {};
       const eventMetadata = payload.metadata;
       if (eventMetadata && typeof eventMetadata === "object") {
-        setMetadata(eventMetadata as StlMetadata);
+        // manual-finish-line 등은 finishLine만 보낼 수 있다. 기존 메타를 덮어쓰지 말고 merge.
+        setMetadata((prev) => ({
+          ...(prev || {}),
+          ...(eventMetadata as StlMetadata),
+          finishLine:
+            (eventMetadata as StlMetadata).finishLine !== undefined
+              ? (eventMetadata as StlMetadata).finishLine
+              : prev?.finishLine,
+        }));
         setCached(true);
         setError(null);
         return;

@@ -3,6 +3,7 @@
 // - web/backend/app.js
 // - web/backend/server.js
 // change-log:
+// - 2026-09-17: manual finish-line 저장 시 stlMetadataUpdatedAt + 전체 메타 emit(FP와 동일).
 // - 2026-09-09: process-file — stlPreload GENERATING을 응답 전 await(FE 블러/reload 레이스 방지).
 // - 2026-09-04: triggerRhino — stlPreload GENERATING 선반영 + BRIDGE_SHARED_SECRET 폴백.
 // - 2026-09-03: 취소된 의뢰 process-file 거부(409) — GENERATING 고스트 방지.
@@ -277,6 +278,7 @@ export const saveManualFinishLine = asyncHandler(async (req, res) => {
     strategyUsed: normalized.strategyUsed || "FRONTEND_GUIDED_SMOOTH",
     source: "frontend-manual",
   };
+  request.caseInfos.stlMetadataUpdatedAt = new Date();
   await request.save();
 
   let normalizedUpdatedRequest = null;
@@ -286,13 +288,26 @@ export const saveManualFinishLine = asyncHandler(async (req, res) => {
     normalizedUpdatedRequest = null;
   }
 
+  const eventMetadata = {
+    maxDiameter: request.caseInfos?.maxDiameter,
+    connectionDiameter: request.caseInfos?.connectionDiameter,
+    totalLength: request.caseInfos?.totalLength,
+    updatedAt: request.caseInfos?.stlMetadataUpdatedAt,
+    l1: request.caseInfos?.l1,
+    taperAngle: request.caseInfos?.taperAngle,
+    tiltAxisVector: request.caseInfos?.tiltAxisVector,
+    frontPoint: request.caseInfos?.frontPoint,
+    frontFaceEndOffsetMm: request.caseInfos?.frontFaceEndOffsetMm,
+    taperGuide: request.caseInfos?.taperGuide,
+    hexRotation: request.caseInfos?.hexRotation,
+    finishLine: request.caseInfos.finishLine,
+  };
+
   emitAppEventToRoles(["manufacturer", "admin"], "request:stl-metadata-updated", {
     source: "manual-finish-line",
     requestId: request.requestId,
     requestMongoId: String(request._id || "").trim() || null,
-    metadata: {
-      finishLine: request.caseInfos.finishLine,
-    },
+    metadata: eventMetadata,
     request: normalizedUpdatedRequest,
   });
 

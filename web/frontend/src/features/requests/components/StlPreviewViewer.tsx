@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-17: FL max/min_z — points prop 우선(수동 보정 override 즉시 반영).
 // - 2026-09-14: Orthographic 카메라 — 교합면에서도 평행 어벗이 원근으로 어긋나지 않게.
 // - 2026-09-04: Lot 포스트 — 법선이 글자 중앙(engraveZ·θ)을 지나게.
 // - 2026-09-04: Lot 포스트 — 글자별 C(θ) 수직평면(CNC 동일). 곡면 점별 래핑 제거.
@@ -221,12 +222,18 @@ export function StlPreviewViewer({
   const finishLineExtremaFromPoints = getFinishLineExtremaFromPoints(
     finishLinePoints,
   );
-  const finishLineMaxZ = Number.isFinite(Number(resolvedMetadata?.finishLine?.max_z))
-    ? Number(resolvedMetadata?.finishLine?.max_z)
-    : finishLineExtremaFromPoints?.max?.z ?? null;
-  const finishLineMinZ = Number.isFinite(Number(resolvedMetadata?.finishLine?.min_z))
-    ? Number(resolvedMetadata?.finishLine?.min_z)
-    : finishLineExtremaFromPoints?.min?.z ?? null;
+  // points prop이 있으면(수동 보정 override 포함) points 기준 extrema를 우선한다.
+  // metadata.max_z/min_z만 보면 저장 직후·override 중 수치가 안 바뀐다.
+  const finishLineMaxZ = finishLineExtremaFromPoints
+    ? finishLineExtremaFromPoints.max.z
+    : Number.isFinite(Number(resolvedMetadata?.finishLine?.max_z))
+      ? Number(resolvedMetadata?.finishLine?.max_z)
+      : null;
+  const finishLineMinZ = finishLineExtremaFromPoints
+    ? finishLineExtremaFromPoints.min.z
+    : Number.isFinite(Number(resolvedMetadata?.finishLine?.min_z))
+      ? Number(resolvedMetadata?.finishLine?.min_z)
+      : null;
 
   const isFilledFile =
     forceFilled || file.name.toLowerCase().includes("filled");
@@ -891,17 +898,16 @@ export function StlPreviewViewer({
               .filter((z) => Number.isFinite(z))
           : [];
 
-        // finishline 높이 SSOT: max_z/min_z
-        // - 서버가 내려준 finishLine.max_z를 우선 사용한다.
-        // - 값이 없을 때만 점열(points)에서 계산해 fallback한다.
+        // finishline 높이 SSOT: points prop이 있으면 points, 없으면 metadata.max_z
         const metadataFinishLineMaxZ = Number(
           resolvedMetadataRef.current?.finishLine?.max_z,
         );
-        const finishLineMaxZ = Number.isFinite(metadataFinishLineMaxZ)
-          ? metadataFinishLineMaxZ
-          : finishLineZs.length > 0
+        const finishLineMaxZ =
+          finishLineZs.length > 0
             ? Math.max(...finishLineZs)
-            : null;
+            : Number.isFinite(metadataFinishLineMaxZ)
+              ? metadataFinishLineMaxZ
+              : null;
 
         // 마진을 제외한 중간 영역으로 재조정 (finishLineMaxZ ~ z_max 사이의 40%~60% 구간, 중앙 20%)
         let postStartZ = bbox.min.z + totalLength * 0.6;

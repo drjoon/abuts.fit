@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-17: FL 수동 — 기존 FL 위 시작/끝점 스냅·자동 닫기, farthestPair→픽순서 패치, 저장 후 STL forceRefresh 제거.
 // - 2026-09-09: ExoCAD≤3.0 헥스 미해석 시 준비 승인 비활성(designSoftware 30° 폴백 제거와 연동).
 // - 2026-09-09: filled STL 재생성 시작 시 filled-stl-regeneration-started 이벤트(준비 탭 블러).
 // - 2026-09-04: 헥스 draft — requestorHexRotation/finalHexRotation 레거시 폴백 제거. 없으면 에러 토스트.
@@ -194,11 +195,14 @@ const normalizeEventId = (value: unknown): string => {
   return "";
 };
 
-const normalizeLoopPoints = (pts: number[][]): number[][] => {
-  const valid = (Array.isArray(pts) ? pts : [])
+const normalizeXyzPoints = (pts: number[][]): number[][] =>
+  (Array.isArray(pts) ? pts : [])
     .filter((p) => Array.isArray(p) && p.length >= 3)
     .map((p) => [Number(p[0]), Number(p[1]), Number(p[2])])
     .filter((p) => p.every((v) => Number.isFinite(v)));
+
+const normalizeLoopPoints = (pts: number[][]): number[][] => {
+  const valid = normalizeXyzPoints(pts);
   if (valid.length < 3) return [];
   const first = valid[0];
   const last = valid[valid.length - 1];
@@ -210,6 +214,97 @@ const normalizeLoopPoints = (pts: number[][]): number[][] => {
     return valid.slice(0, -1);
   }
   return valid;
+};
+
+/** 기존 FL 폴리라인에 가까운 픽은 선분 위 최근접점으로 스냅 (시작/끝점 인식). */
+const FINISH_LINE_SNAP_MM = 0.75;
+
+const closestPointOnPolyline = (
+  p: number[],
+  poly: number[][],
+): { point: number[]; distSq: number; segIndex: number } | null => {
+  if (!Array.isArray(poly) || poly.length === 0) return null;
+  if (poly.length === 1) {
+    const dx = p[0] - poly[0][0];
+    const dy = p[1] - poly[0][1];
+    const dz = p[2] - poly[0][2];
+    return {
+      point: [poly[0][0], poly[0][1], poly[0][2]],
+      distSq: dx * dx + dy * dy + dz * dz,
+      segIndex: 0,
+    };
+  }
+  let bestDist = Number.POSITIVE_INFINITY;
+  let bestPoint: number[] = [poly[0][0], poly[0][1], poly[0][2]];
+  let bestSeg = 0;
+  const n = poly.length;
+  // closed loop: also check last→first
+  for (let i = 0; i < n; i += 1) {
+    const a = poly[i];
+    const b = poly[(i + 1) % n];
+    const abx = b[0] - a[0];
+    const aby = b[1] - a[1];
+    const abz = b[2] - a[2];
+    const apx = p[0] - a[0];
+    const apy = p[1] - a[1];
+    const apz = p[2] - a[2];
+    const denom = Math.max(1e-9, abx * abx + aby * aby + abz * abz);
+    const t = Math.max(0, Math.min(1, (apx * abx + apy * aby + apz * abz) / denom));
+    const qx = a[0] + abx * t;
+    const qy = a[1] + aby * t;
+    const qz = a[2] + abz * t;
+    const dx = p[0] - qx;
+    const dy = p[1] - qy;
+    const dz = p[2] - qz;
+    const d = dx * dx + dy * dy + dz * dz;
+    if (d < bestDist) {
+      bestDist = d;
+      bestPoint = [qx, qy, qz];
+      bestSeg = i;
+    }
+  }
+  return { point: bestPoint, distSq: bestDist, segIndex: bestSeg };
+};
+
+const snapPointToFinishLine = (
+  p: number[],
+  base: number[][],
+  thresholdMm = FINISH_LINE_SNAP_MM,
+): { point: number[]; segIndex: number } | null => {
+  const hit = closestPointOnPolyline(p, base);
+  if (!hit || !Number.isFinite(hit.distSq)) return null;
+  if (hit.distSq > thresholdMm * thresholdMm) return null;
+  return { point: hit.point, segIndex: hit.segIndex };
+};
+
+const finishLineArcStepCount = (
+  n: number,
+  startIdx: number,
+  endIdx: number,
+): number => {
+  if (n <= 0) return 0;
+  const forward = (endIdx - startIdx + n) % n;
+  const backward = (startIdx - endIdx + n) % n;
+  return Math.min(forward, backward);
+};
+
+const extremaFromPoints = (
+  pts: number[][] | null | undefined,
+): { max_z: number; min_z: number; max_z_point: number[]; min_z_point: number[] } | null => {
+  const valid = normalizeXyzPoints(Array.isArray(pts) ? pts : []);
+  if (valid.length === 0) return null;
+  let minIdx = 0;
+  let maxIdx = 0;
+  for (let i = 1; i < valid.length; i += 1) {
+    if (valid[i][2] < valid[minIdx][2]) minIdx = i;
+    if (valid[i][2] > valid[maxIdx][2]) maxIdx = i;
+  }
+  return {
+    min_z: valid[minIdx][2],
+    max_z: valid[maxIdx][2],
+    min_z_point: valid[minIdx],
+    max_z_point: valid[maxIdx],
+  };
 };
 
 const nearestIndex = (pts: number[][], q: number[]): number => {
@@ -263,46 +358,6 @@ const polylineLength = (pts: number[][]): number => {
 
 
 
-const farthestPair = (pts: number[][]): [number, number] => {
-  let bestA = 0;
-  let bestB = Math.min(1, Math.max(0, pts.length - 1));
-  let best = -1;
-  for (let i = 0; i < pts.length; i += 1) {
-    for (let j = i + 1; j < pts.length; j += 1) {
-      const dx = pts[j][0] - pts[i][0];
-      const dy = pts[j][1] - pts[i][1];
-      const dz = pts[j][2] - pts[i][2];
-      const d = dx * dx + dy * dy + dz * dz;
-      if (d > best) {
-        best = d;
-        bestA = i;
-        bestB = j;
-      }
-    }
-  }
-  return [bestA, bestB];
-};
-
-const orderPickedByEndpoints = (
-  picked: number[][],
-  start: number[],
-  end: number[],
-): number[][] => {
-  const vx = end[0] - start[0];
-  const vy = end[1] - start[1];
-  const vz = end[2] - start[2];
-  const vLen2 = Math.max(1e-9, vx * vx + vy * vy + vz * vz);
-  return [...picked].sort((a, b) => {
-    const ta =
-      ((a[0] - start[0]) * vx + (a[1] - start[1]) * vy + (a[2] - start[2]) * vz) /
-      vLen2;
-    const tb =
-      ((b[0] - start[0]) * vx + (b[1] - start[1]) * vy + (b[2] - start[2]) * vz) /
-      vLen2;
-    return ta - tb;
-  });
-};
-
 const pointToPolylineMinDistSq = (p: number[], poly: number[][]): number => {
   if (poly.length === 0) return Number.POSITIVE_INFINITY;
   if (poly.length === 1) {
@@ -347,14 +402,16 @@ const buildPatchedFinishLinePoints = (
   pickedPointsRaw: number[][],
 ): number[][] => {
   const base = normalizeLoopPoints(basePointsRaw);
-  const pickedRaw = normalizeLoopPoints(pickedPointsRaw);
+  // 픽은 루프가 아님(시작·끝·중간). 2점(시작+끝)만으로도 구간 교체 가능.
+  const pickedRaw = normalizeXyzPoints(pickedPointsRaw);
   if (base.length < 6) return base;
   if (pickedRaw.length < 2) return base;
 
-  const [ea, eb] = farthestPair(pickedRaw);
-  const pickedStart = pickedRaw[ea];
-  const pickedEnd = pickedRaw[eb];
-  const pickedOrdered = orderPickedByEndpoints(pickedRaw, pickedStart, pickedEnd);
+  // 사용자 픽 순서를 끝점으로 사용한다.
+  // farthestPair는 수직 bump 중간점이 멀리 떨어져 시작/끝이 잘못 잡혀 FL이 엉뚱해진다.
+  const pickedStart = pickedRaw[0];
+  const pickedEnd = pickedRaw[pickedRaw.length - 1];
+  const pickedOrdered = pickedRaw;
 
   const startIdx = nearestIndex(base, pickedStart);
   let endIdx = nearestIndex(base, pickedEnd);
@@ -377,19 +434,7 @@ const buildPatchedFinishLinePoints = (
 
   const startSnap = base[startIdx];
   const endSnap = base[endIdx];
-  const inner = pickedOrdered.filter(
-    (p) =>
-      !(
-        Math.abs(p[0] - pickedStart[0]) < 1e-9 &&
-        Math.abs(p[1] - pickedStart[1]) < 1e-9 &&
-        Math.abs(p[2] - pickedStart[2]) < 1e-9
-      ) &&
-      !(
-        Math.abs(p[0] - pickedEnd[0]) < 1e-9 &&
-        Math.abs(p[1] - pickedEnd[1]) < 1e-9 &&
-        Math.abs(p[2] - pickedEnd[2]) < 1e-9
-      ),
-  );
+  const inner = pickedOrdered.slice(1, -1);
 
   // 사용자 요청: 시작/끝점을 제외한 입력 포인트는 반드시 커브가 통과해야 한다.
   // 따라서 패치 구간에서 내부 포인트는 스무딩으로 이동시키지 않고 그대로 사용한다.
@@ -1117,6 +1162,10 @@ export const PreviewModal = ({
     stlMetadata?.finishLine?.points) ||
     null) as number[][] | null;
 
+  const overrideFinishLineMeta = guidedFinishLineOverridePoints
+    ? extremaFromPoints(guidedFinishLineOverridePoints)
+    : null;
+
   const toValidFrontPoint = (
     value: unknown,
   ): { x: number; y: number; z: number } | null => {
@@ -1147,12 +1196,43 @@ export const PreviewModal = ({
     ? {
         ...stlMetadata,
         ...(effectiveFrontPoint ? { frontPoint: effectiveFrontPoint } : null),
+        ...(overrideFinishLineMeta || guidedFinishLineOverridePoints
+          ? {
+              finishLine: {
+                ...(stlMetadata.finishLine || {}),
+                ...(guidedFinishLineOverridePoints
+                  ? { points: guidedFinishLineOverridePoints }
+                  : null),
+                ...(overrideFinishLineMeta || null),
+              },
+            }
+          : null),
       }
-    : effectiveFrontPoint
-      ? { frontPoint: effectiveFrontPoint }
+    : effectiveFrontPoint || overrideFinishLineMeta || guidedFinishLineOverridePoints
+      ? {
+          ...(effectiveFrontPoint ? { frontPoint: effectiveFrontPoint } : null),
+          ...(overrideFinishLineMeta || guidedFinishLineOverridePoints
+            ? {
+                finishLine: {
+                  ...(guidedFinishLineOverridePoints
+                    ? { points: guidedFinishLineOverridePoints }
+                    : null),
+                  ...(overrideFinishLineMeta || null),
+                },
+              }
+            : null),
+        }
       : null;
 
   const getFinishLineExtremaZ = () => {
+    // 수동 보정 override가 있으면 표시 중인 points에서 min/max를 다시 잡는다.
+    if (overrideFinishLineMeta) {
+      return {
+        maxZ: overrideFinishLineMeta.max_z,
+        minZ: overrideFinishLineMeta.min_z,
+      };
+    }
+
     const metaMax = Number(stlMetadata?.finishLine?.max_z);
     const metaMin = Number(stlMetadata?.finishLine?.min_z);
     if (Number.isFinite(metaMax) && Number.isFinite(metaMin)) {
@@ -1165,14 +1245,9 @@ export const PreviewModal = ({
       return { maxZ: reqMax, minZ: reqMin };
     }
 
-    if (Array.isArray(finishLinePoints) && finishLinePoints.length > 0) {
-      const zs = finishLinePoints
-        .filter((p) => Array.isArray(p) && p.length >= 3)
-        .map((p) => Number(p[2]))
-        .filter((z) => Number.isFinite(z));
-      if (zs.length > 0) {
-        return { maxZ: Math.max(...zs), minZ: Math.min(...zs) };
-      }
+    const fromPoints = extremaFromPoints(finishLinePoints);
+    if (fromPoints) {
+      return { maxZ: fromPoints.max_z, minZ: fromPoints.min_z };
     }
 
     return { maxZ: null as number | null, minZ: null as number | null };
@@ -1793,49 +1868,33 @@ export const PreviewModal = ({
     );
   };
 
-  const handleAddGuidedFinishLinePoint = (point: [number, number, number]) => {
-    setGuidedFinishLinePoints((prev) => {
-      const nextPoint = [Number(point[0]), Number(point[1]), Number(point[2])];
-      if (!nextPoint.every((v) => Number.isFinite(v))) return prev;
-      const exists = prev.some(
-        (p) =>
-          Math.abs(Number(p[0]) - nextPoint[0]) < 1e-6 &&
-          Math.abs(Number(p[1]) - nextPoint[1]) < 1e-6 &&
-          Math.abs(Number(p[2]) - nextPoint[2]) < 1e-6,
-      );
-      if (exists) return prev;
-      if (prev.length >= 24) return prev;
-      return [...prev, nextPoint];
-    });
-  };
-
-  const handleSetGuidedFrontPoint = (point: [number, number, number]) => {
-    const nextPoint: [number, number, number] = [
-      Number(point[0]),
-      Number(point[1]),
-      Number(point[2]),
-    ];
-    if (!nextPoint.every((v) => Number.isFinite(v))) return;
-    setGuidedFrontPointPick(nextPoint);
-  };
-
-  const handleUndoGuidedFinishLinePoint = () => {
-    if (!guidedFinishLineMode || guidedFinishLineSubmitting || isUploading) return;
-    setGuidedFinishLinePoints((prev) => prev.slice(0, -1));
-  };
-
-  const handleUndoGuidedFrontPoint = () => {
-    if (!guidedFrontPointMode || guidedFrontPointSubmitting || isUploading) return;
-    setGuidedFrontPointPick(null);
-  };
-
-  const handleSubmitGuidedFinishLine = async () => {
+  const submitGuidedFinishLineWithPicks = async (pickedPoints: number[][]) => {
     if (!canGuideFinishLine || guidedFinishLineSubmitting || isUploading) return;
 
     const basePoints = Array.isArray(finishLinePoints) ? finishLinePoints : [];
+    // 시작/끝이 FL에 안 붙어 있어도 최근접 FL 점으로 스냅해 패치한다.
+    const picksForPatch = (() => {
+      const raw = normalizeXyzPoints(pickedPoints);
+      if (raw.length < 2 || basePoints.length < 3) return raw;
+      const startSnap =
+        snapPointToFinishLine(raw[0], basePoints, FINISH_LINE_SNAP_MM * 2.5) ||
+        null;
+      const endSnap =
+        snapPointToFinishLine(
+          raw[raw.length - 1],
+          basePoints,
+          FINISH_LINE_SNAP_MM * 2.5,
+        ) || null;
+      if (!startSnap && !endSnap) return raw;
+      const next = [...raw];
+      if (startSnap) next[0] = startSnap.point;
+      if (endSnap) next[next.length - 1] = endSnap.point;
+      return next;
+    })();
+
     const patchedPoints = buildPatchedFinishLinePoints(
       basePoints,
-      guidedFinishLinePoints,
+      picksForPatch,
     );
 
     if (patchedPoints.length < 3) {
@@ -1881,7 +1940,13 @@ export const PreviewModal = ({
         error?: string;
         detail?: string;
         data?: {
-          finishLine?: { points?: unknown };
+          finishLine?: {
+            points?: unknown;
+            max_z?: unknown;
+            min_z?: unknown;
+            max_z_point?: unknown;
+            min_z_point?: unknown;
+          };
         };
       };
 
@@ -1899,7 +1964,8 @@ export const PreviewModal = ({
         return;
       }
 
-      const savedPoints = body?.data?.finishLine?.points;
+      const savedFinishLine = body?.data?.finishLine;
+      const savedPoints = savedFinishLine?.points;
       if (Array.isArray(savedPoints) && savedPoints.length >= 3) {
         setGuidedFinishLineOverridePoints(savedPoints as number[][]);
       }
@@ -1907,9 +1973,12 @@ export const PreviewModal = ({
       setGuidedFinishLineMode(false);
       setGuidedFinishLinePoints([]);
 
-      if (onRefreshPreview) {
-        await onRefreshPreview(activeReq, { forceRefresh: true });
-      }
+      // FP와 동일: DB 메타만 갱신. STL forceRefresh는 「STL 불러오는 중…」에 고정시킨다.
+      // request:stl-metadata-updated(manual-finish-line)가 오버레이 min/max·points를 반영한다.
+      toast({
+        title: "저장 완료",
+        description: "피니시라인을 저장했습니다.",
+      });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "";
       toast({
@@ -1920,6 +1989,81 @@ export const PreviewModal = ({
     } finally {
       setGuidedFinishLineSubmitting(false);
     }
+  };
+
+  const handleAddGuidedFinishLinePoint = (point: [number, number, number]) => {
+    if (!guidedFinishLineMode || guidedFinishLineSubmitting || isUploading) return;
+
+    const raw: [number, number, number] = [
+      Number(point[0]),
+      Number(point[1]),
+      Number(point[2]),
+    ];
+    if (!raw.every((v) => Number.isFinite(v))) return;
+
+    const basePoints = Array.isArray(finishLinePoints) ? finishLinePoints : [];
+    const snap =
+      basePoints.length >= 3
+        ? snapPointToFinishLine(raw, basePoints, FINISH_LINE_SNAP_MM)
+        : null;
+    const nextPoint: number[] = snap ? snap.point : raw;
+
+    const prev = guidedFinishLinePoints;
+    const exists = prev.some(
+      (p) =>
+        Math.abs(Number(p[0]) - nextPoint[0]) < 1e-6 &&
+        Math.abs(Number(p[1]) - nextPoint[1]) < 1e-6 &&
+        Math.abs(Number(p[2]) - nextPoint[2]) < 1e-6,
+    );
+    if (exists || prev.length >= 24) return;
+
+    // 시작점: 기존 FL 위면 스냅해서 자동 시작
+    if (prev.length === 0) {
+      setGuidedFinishLinePoints([nextPoint]);
+      return;
+    }
+
+    // 끝점: 기존 FL 위에 다시 찍히면 스냅 후 자동 닫기(저장)
+    if (snap && basePoints.length >= 3) {
+      const startIdx = nearestIndex(basePoints, prev[0]);
+      const endIdx = nearestIndex(basePoints, snap.point);
+      if (
+        startIdx !== endIdx &&
+        finishLineArcStepCount(basePoints.length, startIdx, endIdx) >= 2
+      ) {
+        const completed = [...prev, snap.point];
+        setGuidedFinishLinePoints(completed);
+        void submitGuidedFinishLineWithPicks(completed);
+        return;
+      }
+    }
+
+    setGuidedFinishLinePoints([...prev, nextPoint]);
+  };
+
+  const handleSetGuidedFrontPoint = (point: [number, number, number]) => {
+    const nextPoint: [number, number, number] = [
+      Number(point[0]),
+      Number(point[1]),
+      Number(point[2]),
+    ];
+    if (!nextPoint.every((v) => Number.isFinite(v))) return;
+    setGuidedFrontPointPick(nextPoint);
+  };
+
+  const handleUndoGuidedFinishLinePoint = () => {
+    if (!guidedFinishLineMode || guidedFinishLineSubmitting || isUploading) return;
+    setGuidedFinishLinePoints((prev) => prev.slice(0, -1));
+  };
+
+  const handleUndoGuidedFrontPoint = () => {
+    if (!guidedFrontPointMode || guidedFrontPointSubmitting || isUploading) return;
+    setGuidedFrontPointPick(null);
+  };
+
+  const handleSubmitGuidedFinishLine = async () => {
+    if (!canGuideFinishLine || guidedFinishLineSubmitting || isUploading) return;
+    await submitGuidedFinishLineWithPicks(guidedFinishLinePoints);
   };
 
   const handleSubmitGuidedFrontPoint = async () => {
@@ -3349,7 +3493,7 @@ export const PreviewModal = ({
                     <StlPreviewViewer
                       file={leftViewer}
                       requestId={requestId}
-                      metadata={stlMetadata}
+                      metadata={viewerStlMetadata}
                       showOverlay={true}
                       showLotEngraving={showLotEngraving}
                       lotSerialCode={lotSerialCode}
