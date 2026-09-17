@@ -1019,9 +1019,11 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             // M98P 구간만 실제 각인 코드로 교체하고 나머지는 prc 그대로 사용
             //
             // lotEngravingTarget (PreviewModal 포스트면 체크 → request-meta → Esprit):
-            // - hex(기본): 기존 PRC 각인 그대로 (C0.0 + G1 V-0.35). C 회전은 이후
+            // - hex(기본): PRC 각인 그대로 (C0.0 + PRC 글자간 이동, 원래 G1 V-0.35). C 회전은 이후
             //   ApplyManufacturerHexRotationToNc 가 T0606과 같이 T0909에 적용 → 헥스면 수직 유지.
-            // - post: 사이트방위 C + H피치로 모션 재작성 (Apply는 C0/C30만 건드리므로 포스트 C 유지).
+            // - post: 사이트방위 C + H피치로 모션 재작성 (헥스면 V/C0 제거). Apply는 C0/C30만
+            //   건드리므로 포스트 C 유지.
+            // NC 주석: PRC `(Serial)` 슬롯은 원래 헥스면. 생성 결과 `(Serial Hex|Post)`.
             var templateLines = ReadSerialTemplateFromPrc(occurrenceInPrc, connectionPrcPath);
             if (templateLines == null || templateLines.Count == 0)
             {
@@ -1031,6 +1033,12 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
 
             string target = NormalizeLotEngravingTarget(lotEngravingTarget);
             bool isPostTarget = string.Equals(target, "post", StringComparison.Ordinal);
+            // NC 소괄호 주석 SSOT: PRC 원본 `(Serial)` = 헥스면 시작 마커.
+            // target=post 이면 같은 슬롯을 포스트면 좌표로 덮어쓰고 주석을 `(Serial Post)` 로 기록.
+            // target=hex 이면 `(Serial Hex)`. 한 타깃만 각인(동시 헥스+포스트 금지).
+            string serialFaceComment = isPostTarget
+                ? (occurrenceInPrc == 0 ? "(Serial Post)" : "(Serial Deburr Post)")
+                : (occurrenceInPrc == 0 ? "(Serial Hex)" : "(Serial Deburr Hex)");
 
             string interCharMove;
             double firstCharCDeg = 0.0;
@@ -1057,7 +1065,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             }
             else
             {
-                // 헥스면 기존 경로: PRC 이동 명령(V피치)만 쓰고 좌표/C는 템플릿 유지.
+                // 헥스면: PRC 템플릿의 글자 간 이동을 그대로 사용 (원래 G1 V-0.35).
+                // 2026-09-04 포스트면 실험(2fa30c330)이 오스템 PRC만 H10으로 바꿨다 복구 누락된 적 있음 → PRC를 V피치로 되돌릴 것.
                 interCharMove = ExtractInterCharMove(templateLines);
                 AppLogger.Log(
                     $"NcFileGenerator: Serial(hex) PRC 템플릿 유지 interChar='{interCharMove}', " +
@@ -1070,6 +1079,14 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             foreach (var line in templateLines)
             {
                 string trimmed = line.Trim();
+
+                // PRC/템플릿 `(Serial)` → 면 명시 주석으로 교체
+                if (string.Equals(trimmed, "(Serial)", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(trimmed, "(Serial Deburr)", StringComparison.OrdinalIgnoreCase))
+                {
+                    result.Add(serialFaceComment);
+                    continue;
+                }
 
                 if (!inMacroSection && trimmed.StartsWith("M98P", StringComparison.OrdinalIgnoreCase))
                 {
@@ -1106,7 +1123,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 }
             }
 
-            AppLogger.Log($"NcFileGenerator: Serial 블록 빌드 완료 (occurrence:{occurrenceInPrc}, target={target}) - {result.Count} lines");
+            AppLogger.Log(
+                $"NcFileGenerator: Serial 블록 빌드 완료 (occurrence:{occurrenceInPrc}, target={target}, comment={serialFaceComment}) - {result.Count} lines");
             return result;
         }
 
@@ -1153,8 +1171,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             out double approachDiameterX)
         {
             const double wBase = 30.0;
-            const double aboveFl = 1.0;
-            const double pitchArcMm = 0.35;
+            // FE LOT_ENGRAVING_DEFAULTS.aboveFinishLineMm / charPitchArcMm 과 동일 (사이트 없을 때만)
+            const double aboveFl = 1.5;
+            const double pitchArcMm = 0.45;
             const double depthMm = 0.12;
             const double defaultRadius = 2.0;
 
@@ -1233,8 +1252,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
         private static string ExtractInterCharMove(List<string> templateLines)
         {
             // prc 템플릿에서 첫 M98P 다음에 오는 이동 명령 추출
-            // prc 구조: :M98P0001 / :G1V-0.35F1000 / :M98P0002 / ...
-            // → 첫 M98P 직후의 비어있지 않은 줄이 이동 명령
+            // 헥스면 원래 SSOT: :M98P0001 / :G1 V-0.35 F1000 / :M98P0002 / ...
+            // → 첫 M98P 직후의 비어있지 않은 줄이 이동 명령 (PRC를 함부로 덮어쓰지 않음)
             bool pastFirstMacro = false;
             foreach (var line in templateLines)
             {

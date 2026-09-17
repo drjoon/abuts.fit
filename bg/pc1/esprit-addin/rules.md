@@ -299,8 +299,10 @@
   - `T4848` → **항상 `C0.000`** (모드/`addDeg`와 무관)
   - Connection PRC 기준 T0606×3 + T0909×2 = 5곳 (+ T4848 1 = 최대 6)
   - Serial `lotEngravingTarget` (PreviewModal 포스트면 → request-meta → Esprit):
-    - **hex(기본)**: 기존 PRC Serial 그대로 (`C0.0` + `G1 V-0.35`). 이후 `ApplyManufacturerHexRotationToNc`가 T0606·T0909 C를 같은 헥스모드로 치환 → 헥스면 수직 유지.
-    - **post**: Serial이 사이트 C + `H=-pitchC`로 재작성. Apply는 `C0`/`C30`만 치환하므로 포스트 C는 유지되고 T0606만 헥스모드.
+    - **hex(기본)**: PRC Serial 그대로 (`C0.0` + PRC 글자간 이동; 원래 `G1 V-0.35`). 이후 `ApplyManufacturerHexRotationToNc`가 T0606·T0909 C를 같은 헥스모드로 치환 → 헥스면 수직 유지.
+    - **post**: Serial이 사이트 C + `H=-pitchC`로 재작성(헥스면 모션 제거). Apply는 `C0`/`C30`만 치환하므로 포스트 C는 유지되고 T0606만 헥스모드.
+    - NC 소괄호 주석: PRC 원본 `(Serial)` = **헥스면** 슬롯 마커. 생성 후 `(Serial Hex)` / `(Serial Post)` 로 면 기록(동시 각인 금지).
+    - 이력: `2fa30c330`(2026-09-04)가 오스템 TS MH/RH Serial을 `H10`·`Y0`로 바꿈 → `fb223ec92`가 코드상 hex/post 분기는 복구했으나 PRC V피치는 미복구. 오스템 PRC는 원래 `G1 V-0.35`로 되돌림.
   - 처리 순서: `UpdateSerialBlocks` → `ApplyManufacturerHexRotationToNc` (헥스면 C 동반 회전 SSOT)
   - 공구번호 미검출(상방 10줄 내 Txxxx 없음)만 즉시 예외(백엔드 실패 콜백 → 프론트 토스트).
   - 미지원 공구(예: Finish `T0707`) 근접 `C0`/`C30`은 **스킵**(치환·카운트 안 함). Connection 화이트리스트 후보를 계속 탐색.
