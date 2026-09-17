@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-17: VertexColorSet도 R/B 스왑 — BiteScan(텍스처 없음)이 보라색이던 문제.
 // - 2026-09-17: 텍스처 베이크 시 R/B 스왑(hpsdecode와 동일) — DCM 치은이 보라색으로 보이던 문제.
 // - 2026-09-14: CE Blowfish PADDING.NONE — NULL이 블록 패딩 0을 swap 전에 잘라 BiteScan Adler 실패.
 // - 2026-09-10: TextureData2·VertexColorSet·Facets tint → 버텍스 칼라(베이크). PLY export용 mesh 데이터.
@@ -594,19 +595,35 @@ function parseTextureCoords(
   return uvs;
 }
 
+/**
+ * VertexColorSet → per-vertex RGB.
+ * 3Shape HPS는 텍스처 JPEG와 같이 BGR로 저장되어 있어 R↔B를 바꾼다
+ * (BiteScan은 UV/텍스처 없이 VertexColorSet만 있는 경우가 많음).
+ */
 function parseVertexColorBytes(
   data: Uint8Array,
   vertexCount: number,
 ): Uint8Array | null {
   if (vertexCount <= 0 || data.length < vertexCount * 3) return null;
   const bpp = Math.floor(data.length / vertexCount);
-  if (bpp === 3) return data.subarray(0, vertexCount * 3);
+  if (bpp === 3) {
+    const out = new Uint8Array(vertexCount * 3);
+    for (let i = 0; i < vertexCount; i += 1) {
+      const o = i * 3;
+      out[o] = data[o + 2]!;
+      out[o + 1] = data[o + 1]!;
+      out[o + 2] = data[o]!;
+    }
+    return out;
+  }
   if (bpp === 4) {
     const out = new Uint8Array(vertexCount * 3);
     for (let i = 0; i < vertexCount; i += 1) {
-      out[i * 3] = data[i * 4]!;
-      out[i * 3 + 1] = data[i * 4 + 1]!;
-      out[i * 3 + 2] = data[i * 4 + 2]!;
+      const s = i * 4;
+      const o = i * 3;
+      out[o] = data[s + 2]!;
+      out[o + 1] = data[s + 1]!;
+      out[o + 2] = data[s]!;
     }
     return out;
   }
