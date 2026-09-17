@@ -1196,9 +1196,9 @@ export const RequestPage = ({
       try {
         // 생산용 샘플은 R&D 보관(done) 경로가 아니라 작업 복사본(rnd.doneAt=null)으로 생성한다.
         // 탭 기준으로 시작 공정을 고정한다.
-        // - 의뢰 탭: 의뢰로 생성
+        // - 준비 탭: 준비로 생성
         // - 그 외 단계: 가공으로 생성(허용 시작 공정 제한)
-        const startStage = tabStage === "request" ? "의뢰" : "가공";
+        const startStage = tabStage === "request" ? "준비" : "가공";
 
         const sourceIsRndSample = isRndSampleRequest(req);
 

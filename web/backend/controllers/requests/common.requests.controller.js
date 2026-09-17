@@ -4597,7 +4597,9 @@ function parseCloneStartStage(
   value,
   { allowMachining = true, defaultStage = "준비" } = {},
 ) {
-  const raw = String(value || "").trim();
+  // manufacturerStage SSOT는 "준비". 레거시 "의뢰"/request 는 준비로 정규화.
+  let raw = String(value || "").trim();
+  if (raw === "의뢰" || raw.toLowerCase() === "request") raw = "준비";
   const allowed = allowMachining ? CLONE_START_STAGE_VALUES : ["준비", "CAM"];
   if (!raw) return defaultStage;
   if (!allowed.includes(raw)) {
@@ -4716,7 +4718,8 @@ export async function cloneAsSample(req, res) {
       const isDelivered = !!di.deliveredAt;
       const isTrackingStage = stage === "추적관리";
       const isPackingStage = stage === "세척.패킹";
-      const isRequestStage = stage === "준비";
+      const isRequestStage =
+        stage === "준비" || stage === "의뢰" || stage.toLowerCase() === "request";
       const isCamStage = stage === "CAM" || stage.toLowerCase() === "cam";
 
       if (
@@ -4962,7 +4965,7 @@ export async function cloneFromSampleToRequest(req, res) {
       const now = new Date();
       const startStage = parseCloneStartStage(req.body?.startStage, {
         allowMachining: true,
-        defaultStage: "의뢰",
+        defaultStage: "준비",
       });
 
       const clonedRequest = new Request({
@@ -5096,7 +5099,7 @@ export async function cloneFromSampleToRequest(req, res) {
 }
 
 /**
- * 추적관리 대상 의뢰건을 선택 공정(의뢰/CAM/가공)으로 재제작 복사
+ * 추적관리 대상 의뢰건을 선택 공정(준비/CAM/가공/세척.패킹)으로 재제작 복사
  * - 원본 의뢰는 유지
  * - 복사본은 source=manufacturer_sample, rnd.doneAt=null 로 생성
  * - 프론트에서 카드 선택 또는 기간 선택으로 requestIds를 만들어 전달한다.
@@ -5111,7 +5114,7 @@ export async function cloneRequestsForRecall(req, res) {
 
     const startStage = parseCloneStartStage(req.body?.startStage, {
       allowMachining: true,
-      defaultStage: "의뢰",
+      defaultStage: "준비",
     });
 
     const rawIds = Array.isArray(req.body?.requestIds)
