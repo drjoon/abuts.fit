@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-17: 공정 탭과 중복되는 단계 뱃지 숨김. 세척·패킹(이후) NC 뱃지 숨김(가공 이후 당연).
 // - 2026-09-17: 의뢰카드 썸네일을 absolute→flex 본문으로 — 좌우 px-3 대칭·환자폭↑.
 // - 2026-09-17: 의뢰카드 CardContent p-6 잔존 제거(p-0+px-3) — 좌여백=썸네일 right-3.
 // - 2026-09-17: 세척·패킹에도 FL 썸네일. 스크류 뱃지 nowrap·레일 폭 가변으로 1줄 유지.
@@ -560,33 +561,13 @@ export const WorksheetCardGrid = ({
           return `${base} bg-slate-50 text-slate-700 border-slate-200`;
         })();
 
-        const stageBadgeClassName = (() => {
-          const s = String(stageForRollback || "").trim();
-          const base =
-            "text-[11px] px-2 py-0.5 font-extrabold leading-[1.1] border";
-          if (s === "CAM") {
-            return `${base} bg-primary-soft text-primary-strong border-primary-muted`;
-          }
-          if (s === "가공") {
-            return `${base} bg-primary-soft text-primary-strong border-primary-muted`;
-          }
-          if (s === "세척.패킹") {
-            return `${base} bg-primary-soft text-primary-strong border-primary-muted`;
-          }
-          if (s === "발송" || s === "포장.발송") {
-            return `${base} bg-accent-soft text-accent-strong border-accent-muted`;
-          }
-          if (s === "추적관리") {
-            return `${base} bg-slate-50 text-slate-700 border-slate-200`;
-          }
-          return `${base} bg-slate-50 text-slate-700 border-slate-200`;
-        })();
-        const stageBadgeLabel = (() => {
-          const s = String(stageForRollback || "").trim();
-          if (s === "세척.패킹") return "세척·패킹";
-          if (s === "발송" || s === "포장.발송") return "포장·발송";
-          return s || "준비";
-        })();
+        // NC 뱃지: 준비/가공에서만(세척·패킹 이후는 가공 완료 전제라 중복).
+        // 단계 뱃지(준비/가공/세척·패킹 등)는 상단 공정 탭과 중복이라 카드에서 미표시.
+        const showNcBadge =
+          hasNcFile &&
+          tabStage !== "packing" &&
+          tabStage !== "shipping" &&
+          tabStage !== "tracking";
 
         const machiningElapsedLabel = (() => {
           if (!isMachiningStage) return "";
@@ -1158,7 +1139,7 @@ export const WorksheetCardGrid = ({
                     {lotCodeSource}
                   </Badge>
                 )}
-                {hasNcFile && (
+                {showNcBadge && (
                   <Badge
                     variant="outline"
                     className="text-[11px] px-2 py-0.5 font-extrabold leading-[1.1] border border-primary-muted bg-primary-soft text-primary-strong whitespace-nowrap"
@@ -1171,20 +1152,12 @@ export const WorksheetCardGrid = ({
                   className="text-[11px] px-2 py-0.5 font-semibold leading-[1.1] whitespace-nowrap"
                 />
                 {deadlineInfo && (
-                  <>
-                    <Badge
-                      variant="outline"
-                      className={`text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border whitespace-nowrap ${deadlineInfo.badgeClass}`}
-                    >
-                      {deadlineInfo.displayText}
-                    </Badge>
-                    <Badge
-                      variant="outline"
-                      className={`${stageBadgeClassName} whitespace-nowrap`}
-                    >
-                      {stageBadgeLabel}
-                    </Badge>
-                  </>
+                  <Badge
+                    variant="outline"
+                    className={`text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border whitespace-nowrap ${deadlineInfo.badgeClass}`}
+                  >
+                    {deadlineInfo.displayText}
+                  </Badge>
                 )}
               </div>
             ) : null}
