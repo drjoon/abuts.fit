@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-17: 수동 픽 — 더블클릭→드래그 없는 한 번 클릭(오빗과 구분). crosshair 커서.
 // - 2026-09-17: FL max/min_z — points prop 우선(수동 보정 override 즉시 반영).
 // - 2026-09-14: Orthographic 카메라 — 교합면에서도 평행 어벗이 원근으로 어긋나지 않게.
 // - 2026-09-04: Lot 포스트 — 법선이 글자 중앙(engraveZ·θ)을 지나게.
@@ -80,6 +81,9 @@ type Props = {
   finishLinePoints?: number[][] | null;
   enableManualPick?: boolean;
   manualPickPoints?: number[][] | null;
+  /** 표면 한 번 클릭(드래그 없음)으로 픽. FL/FP 수동 모드. */
+  onSurfacePointPick?: (point: [number, number, number]) => void;
+  /** @deprecated onSurfacePointPick 사용. 하위 호환용 별칭. */
   onSurfacePointDoubleClick?: (point: [number, number, number]) => void;
   onManualUndo?: () => void;
   className?: string;
@@ -109,6 +113,7 @@ export function StlPreviewViewer({
   finishLinePoints,
   enableManualPick = false,
   manualPickPoints,
+  onSurfacePointPick,
   onSurfacePointDoubleClick,
   onManualUndo,
   className,
@@ -128,10 +133,19 @@ export function StlPreviewViewer({
   const modelPivotRef = useRef<THREE.Group | null>(null);
   const meshRef = useRef<THREE.Mesh | null>(null);
   const dblClickHandlerRef = useRef<((event: MouseEvent) => void) | null>(null);
+  const pickPointerDownHandlerRef = useRef<((event: PointerEvent) => void) | null>(
+    null,
+  );
+  const pickPointerUpHandlerRef = useRef<((event: PointerEvent) => void) | null>(
+    null,
+  );
   const contextMenuHandlerRef = useRef<((event: MouseEvent) => void) | null>(null);
-  const onSurfacePointDoubleClickRef = useRef(onSurfacePointDoubleClick);
+  const onSurfacePointPickRef = useRef(
+    onSurfacePointPick || onSurfacePointDoubleClick,
+  );
   const onManualUndoRef = useRef(onManualUndo);
   const enableManualPickRef = useRef(enableManualPick);
+  const pickPointerDownPosRef = useRef<{ x: number; y: number } | null>(null);
   const manualPickMarkersRef = useRef<THREE.Mesh[]>([]);
   const lotEngravingGroupRef = useRef<THREE.Group | null>(null);
   const lotEngravingLineMatsRef = useRef<LineMaterial[]>([]);
@@ -310,8 +324,9 @@ export function StlPreviewViewer({
   }, [onDiameterComputed]);
 
   useEffect(() => {
-    onSurfacePointDoubleClickRef.current = onSurfacePointDoubleClick;
-  }, [onSurfacePointDoubleClick]);
+    onSurfacePointPickRef.current =
+      onSurfacePointPick || onSurfacePointDoubleClick;
+  }, [onSurfacePointPick, onSurfacePointDoubleClick]);
 
   useEffect(() => {
     onManualUndoRef.current = onManualUndo;
@@ -319,6 +334,10 @@ export function StlPreviewViewer({
 
   useEffect(() => {
     enableManualPickRef.current = enableManualPick;
+    const canvas = containerRef.current?.querySelector("canvas");
+    if (canvas instanceof HTMLElement) {
+      canvas.style.cursor = enableManualPick ? "crosshair" : "";
+    }
   }, [enableManualPick]);
 
   useEffect(() => {
@@ -1486,16 +1505,20 @@ export function StlPreviewViewer({
         modelPivot.add(mesh);
         meshRef.current = mesh;
 
-        if (onSurfacePointDoubleClickRef.current || onManualUndoRef.current) {
+        if (onSurfacePointPickRef.current || onManualUndoRef.current) {
           const raycaster = new THREE.Raycaster();
           const pointer = new THREE.Vector2();
-          const onDblClick = (event: MouseEvent) => {
+          const PICK_MOVE_PX = 6;
+
+          const pickFromClient = (clientX: number, clientY: number) => {
             if (!enableManualPickRef.current) return;
-            if (!onSurfacePointDoubleClickRef.current) return;
+            if (!onSurfacePointPickRef.current) return;
             try {
               const rect = renderer.domElement.getBoundingClientRect();
-              const px = ((event.clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1;
-              const py = -((event.clientY - rect.top) / Math.max(1, rect.height)) * 2 + 1;
+              const px =
+                ((clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1;
+              const py =
+                -((clientY - rect.top) / Math.max(1, rect.height)) * 2 + 1;
               pointer.set(px, py);
               raycaster.setFromCamera(pointer, camera);
               const hits = raycaster.intersectObject(mesh, true);
@@ -1504,7 +1527,7 @@ export function StlPreviewViewer({
               if (!hit) return;
               const modelPoint = hit.clone();
               if (!isFilled) modelPoint.add(center);
-              onSurfacePointDoubleClickRef.current?.([
+              onSurfacePointPickRef.current?.([
                 Number(modelPoint.x),
                 Number(modelPoint.y),
                 Number(modelPoint.z),
@@ -1513,11 +1536,56 @@ export function StlPreviewViewer({
               // noop
             }
           };
-          if (dblClickHandlerRef.current) {
-            renderer.domElement.removeEventListener("dblclick", dblClickHandlerRef.current);
+
+          const onPointerDown = (event: PointerEvent) => {
+            if (!enableManualPickRef.current) return;
+            if (event.button !== 0) return;
+            pickPointerDownPosRef.current = {
+              x: event.clientX,
+              y: event.clientY,
+            };
+          };
+
+          const onPointerUp = (event: PointerEvent) => {
+            if (!enableManualPickRef.current) return;
+            if (event.button !== 0) return;
+            const down = pickPointerDownPosRef.current;
+            pickPointerDownPosRef.current = null;
+            if (!down) return;
+            // 오빗/패닝 드래그와 구분: 이동이 크거나 gesture moved면 픽하지 않음
+            if (controls.lastGestureMoved) return;
+            const dx = event.clientX - down.x;
+            const dy = event.clientY - down.y;
+            if (dx * dx + dy * dy > PICK_MOVE_PX * PICK_MOVE_PX) return;
+            pickFromClient(event.clientX, event.clientY);
+          };
+
+          if (pickPointerDownHandlerRef.current) {
+            renderer.domElement.removeEventListener(
+              "pointerdown",
+              pickPointerDownHandlerRef.current,
+            );
           }
-          renderer.domElement.addEventListener("dblclick", onDblClick);
-          dblClickHandlerRef.current = onDblClick;
+          if (pickPointerUpHandlerRef.current) {
+            renderer.domElement.removeEventListener(
+              "pointerup",
+              pickPointerUpHandlerRef.current,
+            );
+          }
+          if (dblClickHandlerRef.current) {
+            renderer.domElement.removeEventListener(
+              "dblclick",
+              dblClickHandlerRef.current,
+            );
+            dblClickHandlerRef.current = null;
+          }
+          renderer.domElement.addEventListener("pointerdown", onPointerDown);
+          renderer.domElement.addEventListener("pointerup", onPointerUp);
+          pickPointerDownHandlerRef.current = onPointerDown;
+          pickPointerUpHandlerRef.current = onPointerUp;
+          renderer.domElement.style.cursor = enableManualPickRef.current
+            ? "crosshair"
+            : "";
 
           const onContextMenu = (event: MouseEvent) => {
             if (!enableManualPickRef.current) return;
@@ -2048,6 +2116,20 @@ export function StlPreviewViewer({
       cancelled = true;
       cancelAnimationFrame(frameId);
       try {
+        if (pickPointerDownHandlerRef.current) {
+          renderer.domElement.removeEventListener(
+            "pointerdown",
+            pickPointerDownHandlerRef.current,
+          );
+          pickPointerDownHandlerRef.current = null;
+        }
+        if (pickPointerUpHandlerRef.current) {
+          renderer.domElement.removeEventListener(
+            "pointerup",
+            pickPointerUpHandlerRef.current,
+          );
+          pickPointerUpHandlerRef.current = null;
+        }
         if (dblClickHandlerRef.current) {
           renderer.domElement.removeEventListener("dblclick", dblClickHandlerRef.current);
           dblClickHandlerRef.current = null;
@@ -2056,6 +2138,7 @@ export function StlPreviewViewer({
           renderer.domElement.removeEventListener("contextmenu", contextMenuHandlerRef.current);
           contextMenuHandlerRef.current = null;
         }
+        renderer.domElement.style.cursor = "";
       } catch {
         // noop
       }

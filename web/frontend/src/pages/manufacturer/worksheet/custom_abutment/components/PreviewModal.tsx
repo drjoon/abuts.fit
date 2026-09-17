@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-09-17: FL 수동 UX — 한 번 클릭 픽·중간점 FL 스냅 해제·저장/실행취소 바·스냅 완화.
+// - 2026-09-17: Rhino FL points 불량 검출 → 「피니시라인 불량」뱃지·수동처리 안내(FL 강조).
 // - 2026-09-17: FL 수동 — 기존 FL 위 시작/끝점 스냅·자동 닫기, farthestPair→픽순서 패치, 저장 후 STL forceRefresh 제거.
 // - 2026-09-09: ExoCAD≤3.0 헥스 미해석 시 준비 승인 비활성(designSoftware 30° 폴백 제거와 연동).
 // - 2026-09-09: filled STL 재생성 시작 시 filled-stl-regeneration-started 이벤트(준비 탭 블러).
@@ -55,6 +57,7 @@
 // - web/backend/controllers/requests/common.requests.controller.js
 // - web/backend/modules/requests/request.routes.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/regenerationPending.ts
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/finishLineQuality.ts
 // - web/backend/controllers/rhino/rhino.controller.js
 // - web/backend/modules/rhino/rhino.routes.js
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -99,6 +102,7 @@ import {
   resolveFilledStlFile,
   resolvePracticeDirectShippingContact,
 } from "../utils/request";
+import { isFinishLineDefective } from "../utils/finishLineQuality";
 import { resolveImplantConnectionSpec } from "@/utils/implantConnectionSpec";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
@@ -217,7 +221,7 @@ const normalizeLoopPoints = (pts: number[][]): number[][] => {
 };
 
 /** 기존 FL 폴리라인에 가까운 픽은 선분 위 최근접점으로 스냅 (시작/끝점 인식). */
-const FINISH_LINE_SNAP_MM = 0.75;
+const FINISH_LINE_SNAP_MM = 1.5;
 
 const closestPointOnPolyline = (
   p: number[],
@@ -1257,6 +1261,7 @@ export const PreviewModal = ({
 
   const isFinishLineMinZRisky =
     Number.isFinite(finishLineMinZ) && Number(finishLineMinZ) < 1;
+  const isFinishLineCaptureBad = isFinishLineDefective(finishLinePoints);
   const isUnmachinable = Boolean((activeReq as any)?.rnd?.unmachinableAt);
   const shouldShowUnmachinableWarning = isFinishLineMinZRisky && !isUnmachinable;
   const requestorContinueAt = String(
@@ -2002,43 +2007,47 @@ export const PreviewModal = ({
     if (!raw.every((v) => Number.isFinite(v))) return;
 
     const basePoints = Array.isArray(finishLinePoints) ? finishLinePoints : [];
-    const snap =
-      basePoints.length >= 3
-        ? snapPointToFinishLine(raw, basePoints, FINISH_LINE_SNAP_MM)
-        : null;
-    const nextPoint: number[] = snap ? snap.point : raw;
-
     const prev = guidedFinishLinePoints;
     const exists = prev.some(
       (p) =>
-        Math.abs(Number(p[0]) - nextPoint[0]) < 1e-6 &&
-        Math.abs(Number(p[1]) - nextPoint[1]) < 1e-6 &&
-        Math.abs(Number(p[2]) - nextPoint[2]) < 1e-6,
+        Math.abs(Number(p[0]) - raw[0]) < 1e-6 &&
+        Math.abs(Number(p[1]) - raw[1]) < 1e-6 &&
+        Math.abs(Number(p[2]) - raw[2]) < 1e-6,
     );
     if (exists || prev.length >= 24) return;
 
-    // 시작점: 기존 FL 위면 스냅해서 자동 시작
+    // 시작점만 기존 FL에 스냅(구간 패치 기준점). 중간점은 표면 좌표 유지 —
+    // 불량 FL 근처 클릭이 빨간 라인으로 빨려 들어가면 보정 경로가 망가진다.
     if (prev.length === 0) {
-      setGuidedFinishLinePoints([nextPoint]);
+      const startSnap =
+        basePoints.length >= 3
+          ? snapPointToFinishLine(raw, basePoints, FINISH_LINE_SNAP_MM * 2)
+          : null;
+      setGuidedFinishLinePoints([startSnap ? startSnap.point : raw]);
       return;
     }
 
+    const endSnap =
+      basePoints.length >= 3
+        ? snapPointToFinishLine(raw, basePoints, FINISH_LINE_SNAP_MM * 2)
+        : null;
+
     // 끝점: 기존 FL 위에 다시 찍히면 스냅 후 자동 닫기(저장)
-    if (snap && basePoints.length >= 3) {
+    if (endSnap && basePoints.length >= 3) {
       const startIdx = nearestIndex(basePoints, prev[0]);
-      const endIdx = nearestIndex(basePoints, snap.point);
+      const endIdx = nearestIndex(basePoints, endSnap.point);
       if (
         startIdx !== endIdx &&
         finishLineArcStepCount(basePoints.length, startIdx, endIdx) >= 2
       ) {
-        const completed = [...prev, snap.point];
+        const completed = [...prev, endSnap.point];
         setGuidedFinishLinePoints(completed);
         void submitGuidedFinishLineWithPicks(completed);
         return;
       }
     }
 
-    setGuidedFinishLinePoints([...prev, nextPoint]);
+    setGuidedFinishLinePoints([...prev, raw]);
   };
 
   const handleSetGuidedFrontPoint = (point: [number, number, number]) => {
@@ -2529,7 +2538,9 @@ export const PreviewModal = ({
           RESPONSIVE.dialogContentPreview,
           // 우상단 기본 닫기(X)와 헤더 컨트롤이 겹치지 않도록 여유.
           "flex flex-col overflow-hidden gap-3 p-3 pr-10 sm:gap-4 sm:p-6 sm:pr-12",
-          shouldShowUnmachinableWarning || isUnmachinable
+          shouldShowUnmachinableWarning ||
+            isUnmachinable ||
+            isFinishLineCaptureBad
             ? "border-accent-muted ring-2 ring-accent-muted/80"
             : "",
         )}
@@ -2584,6 +2595,15 @@ export const PreviewModal = ({
                       {isUnmachinable ? "불완전가공" : "불완전가공 확인요망"}
                     </Badge>
                   )}
+                  {isFinishLineCaptureBad ? (
+                    <Badge
+                      variant="outline"
+                      className="text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border border-destructive/70 bg-destructive-soft text-destructive whitespace-nowrap"
+                      title="피니시라인이 어깨를 따라가지 않습니다. FL 버튼으로 수정하세요."
+                    >
+                      피니시라인 불량
+                    </Badge>
+                  ) : null}
                   {showLatestContinueBadge && (
                     <Badge
                       variant="outline"
@@ -2594,7 +2614,9 @@ export const PreviewModal = ({
                     </Badge>
                   )}
                 </div>
-              ) : isUnmachinable || showLatestContinueBadge ? (
+              ) : isUnmachinable ||
+                showLatestContinueBadge ||
+                isFinishLineCaptureBad ? (
                 <div className="flex flex-nowrap items-center gap-1.5">
                   {shouldShowUnmachinableBadge && (
                     <Badge
@@ -2608,6 +2630,15 @@ export const PreviewModal = ({
                       {isUnmachinable ? "불완전가공" : "불완전가공 확인요망"}
                     </Badge>
                   )}
+                  {isFinishLineCaptureBad ? (
+                    <Badge
+                      variant="outline"
+                      className="text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border border-destructive/70 bg-destructive-soft text-destructive whitespace-nowrap"
+                      title="피니시라인이 어깨를 따라가지 않습니다. FL 버튼으로 수정하세요."
+                    >
+                      피니시라인 불량
+                    </Badge>
+                  ) : null}
                   {showLatestContinueBadge && (
                     <Badge
                       variant="outline"
@@ -3290,7 +3321,86 @@ export const PreviewModal = ({
             </div>
           ) : (
             <div className="grid flex-1 min-h-0 grid-cols-1 gap-3 overflow-y-auto max-md:landscape:grid-cols-2 max-md:landscape:gap-2 max-md:landscape:overflow-hidden md:grid-cols-2 md:gap-4 md:overflow-hidden">
-              <div className="border rounded-lg p-2.5 sm:p-3 space-y-2 flex flex-col overflow-hidden min-h-[min(48vh,420px)] max-md:landscape:min-h-0 md:min-h-0">
+              <div
+                className={`border rounded-lg p-2.5 sm:p-3 space-y-2 flex flex-col overflow-hidden min-h-[min(48vh,420px)] max-md:landscape:min-h-0 md:min-h-0 ${
+                  isFinishLineCaptureBad && isCamStage
+                    ? "border-destructive/60 ring-1 ring-destructive/30"
+                    : ""
+                }`}
+              >
+                {guidedFinishLineMode && isCamStage ? (
+                  <div
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-accent/50 bg-accent-soft px-2.5 py-1.5 text-[12px] font-semibold text-accent-strong"
+                    role="status"
+                  >
+                    <span className="min-w-0">
+                      {guidedFinishLinePoints.length === 0
+                        ? "① 빨간 라인 위 시작점을 한 번 클릭"
+                        : guidedFinishLinePoints.length === 1
+                          ? "② 올바른 어깨를 따라 클릭한 뒤, 빨간 라인 위 끝점 클릭 또는 저장"
+                          : `② 경로 ${guidedFinishLinePoints.length}점 — 끝점 클릭 또는 저장`}
+                    </span>
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      <button
+                        type="button"
+                        className="rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                        disabled={
+                          guidedFinishLinePoints.length === 0 ||
+                          guidedFinishLineSubmitting ||
+                          isUploading
+                        }
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleUndoGuidedFinishLinePoint();
+                        }}
+                      >
+                        실행취소
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded border border-accent/60 bg-white px-2 py-0.5 text-[11px] font-bold text-accent-strong hover:bg-accent-soft disabled:opacity-40"
+                        disabled={
+                          guidedFinishLinePoints.length < 2 ||
+                          guidedFinishLineSubmitting ||
+                          isUploading
+                        }
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          void handleSubmitGuidedFinishLine();
+                        }}
+                      >
+                        {guidedFinishLineSubmitting ? "저장 중…" : "저장"}
+                      </button>
+                    </div>
+                  </div>
+                ) : isFinishLineCaptureBad && isCamStage ? (
+                  <div
+                    className="flex items-center justify-between gap-2 rounded-md border border-destructive/50 bg-destructive-soft px-2.5 py-1.5 text-[12px] font-semibold text-destructive"
+                    role="status"
+                  >
+                    <span>피니시라인 불량 — FL로 수정하세요</span>
+                    {canGuideFinishLine && !guidedFinishLineMode ? (
+                      <button
+                        type="button"
+                        className="shrink-0 rounded border border-destructive/60 bg-white px-2 py-0.5 text-[11px] font-bold text-destructive hover:bg-destructive/10"
+                        disabled={
+                          guidedFinishLineSubmitting ||
+                          guidedFrontPointSubmitting ||
+                          isUploading
+                        }
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleToggleFinishLineEdit();
+                        }}
+                      >
+                        FL 수정
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
                 <div className="flex items-center justify-between gap-2 min-w-0">
                   <button
                     type="button"
@@ -3320,7 +3430,9 @@ export const PreviewModal = ({
                                 className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[11px] font-bold transition ${
                                   guidedFinishLineMode
                                     ? "border-accent/80 bg-accent-soft text-accent-strong"
-                                    : "border-primary-muted bg-primary-soft text-primary-strong hover:bg-primary-soft"
+                                    : isFinishLineCaptureBad
+                                      ? "border-destructive/80 bg-destructive-soft text-destructive hover:bg-destructive/15 ring-2 ring-destructive/30"
+                                      : "border-primary-muted bg-primary-soft text-primary-strong hover:bg-primary-soft"
                                 } ${guidedFinishLineSubmitting || guidedFrontPointSubmitting || isUploading ? "opacity-60 cursor-not-allowed" : ""}`}
                                 disabled={
                                   guidedFinishLineSubmitting ||
@@ -3335,14 +3447,18 @@ export const PreviewModal = ({
                                 aria-label={
                                   guidedFinishLineMode
                                     ? "Finish Line 수동편집 완료"
-                                    : "Finish Line"
+                                    : isFinishLineCaptureBad
+                                      ? "피니시라인 불량 — FL 수정"
+                                      : "Finish Line"
                                 }
                               >
                                 FL
                               </button>
                             </TooltipTrigger>
                             <TooltipContent side="bottom">
-                              Finish Line
+                              {isFinishLineCaptureBad
+                                ? "피니시라인 불량 — FL 수정"
+                                : "Finish Line"}
                             </TooltipContent>
                           </Tooltip>
                         )}
@@ -3476,7 +3592,7 @@ export const PreviewModal = ({
                             ? [guidedFrontPointPick]
                             : null
                       }
-                      onSurfacePointDoubleClick={
+                      onSurfacePointPick={
                         guidedFrontPointMode
                           ? handleSetGuidedFrontPoint
                           : handleAddGuidedFinishLinePoint
@@ -3511,7 +3627,11 @@ export const PreviewModal = ({
               </div>
 
               <div
-                className="border rounded-lg p-2.5 sm:p-3 space-y-2 flex flex-col overflow-hidden min-h-[min(48vh,420px)] max-md:landscape:min-h-0 md:min-h-0"
+                className={`border rounded-lg p-2.5 sm:p-3 space-y-2 flex flex-col overflow-hidden min-h-[min(48vh,420px)] max-md:landscape:min-h-0 md:min-h-0 ${
+                  isFinishLineCaptureBad && !isCamStage
+                    ? "border-destructive/60 ring-1 ring-destructive/30"
+                    : ""
+                }`}
                 onDragOver={(e) => {
                   if (!isStageFileStage || isTrackingStage || isUploading) return;
                   e.preventDefault();
@@ -3526,6 +3646,79 @@ export const PreviewModal = ({
                   onUploadRight(file);
                 }}
               >
+                {guidedFinishLineMode && !isCamStage ? (
+                  <div
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-accent/50 bg-accent-soft px-2.5 py-1.5 text-[12px] font-semibold text-accent-strong"
+                    role="status"
+                  >
+                    <span className="min-w-0">
+                      {guidedFinishLinePoints.length === 0
+                        ? "① 빨간 라인 위 시작점을 한 번 클릭"
+                        : guidedFinishLinePoints.length === 1
+                          ? "② 올바른 어깨를 따라 클릭한 뒤, 빨간 라인 위 끝점 클릭 또는 저장"
+                          : `② 경로 ${guidedFinishLinePoints.length}점 — 끝점 클릭 또는 저장`}
+                    </span>
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      <button
+                        type="button"
+                        className="rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                        disabled={
+                          guidedFinishLinePoints.length === 0 ||
+                          guidedFinishLineSubmitting ||
+                          isUploading
+                        }
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleUndoGuidedFinishLinePoint();
+                        }}
+                      >
+                        실행취소
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded border border-accent/60 bg-white px-2 py-0.5 text-[11px] font-bold text-accent-strong hover:bg-accent-soft disabled:opacity-40"
+                        disabled={
+                          guidedFinishLinePoints.length < 2 ||
+                          guidedFinishLineSubmitting ||
+                          isUploading
+                        }
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          void handleSubmitGuidedFinishLine();
+                        }}
+                      >
+                        {guidedFinishLineSubmitting ? "저장 중…" : "저장"}
+                      </button>
+                    </div>
+                  </div>
+                ) : isFinishLineCaptureBad && !isTrackingStage && !isCamStage ? (
+                  <div
+                    className="flex items-center justify-between gap-2 rounded-md border border-destructive/50 bg-destructive-soft px-2.5 py-1.5 text-[12px] font-semibold text-destructive"
+                    role="status"
+                  >
+                    <span>피니시라인 불량 — FL로 수정하세요</span>
+                    {canGuideFinishLine && !guidedFinishLineMode ? (
+                      <button
+                        type="button"
+                        className="shrink-0 rounded border border-destructive/60 bg-white px-2 py-0.5 text-[11px] font-bold text-destructive hover:bg-destructive/10"
+                        disabled={
+                          guidedFinishLineSubmitting ||
+                          guidedFrontPointSubmitting ||
+                          isUploading
+                        }
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleToggleFinishLineEdit();
+                        }}
+                      >
+                        FL 수정
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
                 <div className="flex items-center justify-between gap-2 min-w-0">
                   {isTrackingStage ? (
                     <div className="inline-flex h-8 items-center rounded-md border border-slate-200 bg-slate-50 p-0.5 min-w-0">
@@ -3603,7 +3796,9 @@ export const PreviewModal = ({
                                     className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[11px] font-bold transition ${
                                       guidedFinishLineMode
                                         ? "border-accent/80 bg-accent-soft text-accent-strong"
-                                        : "border-primary-muted bg-primary-soft text-primary-strong hover:bg-primary-soft"
+                                        : isFinishLineCaptureBad
+                                          ? "border-destructive/80 bg-destructive-soft text-destructive hover:bg-destructive/15 ring-2 ring-destructive/30"
+                                          : "border-primary-muted bg-primary-soft text-primary-strong hover:bg-primary-soft"
                                     } ${guidedFinishLineSubmitting || guidedFrontPointSubmitting || isUploading ? "opacity-60 cursor-not-allowed" : ""}`}
                                     disabled={
                                       guidedFinishLineSubmitting ||
@@ -3618,14 +3813,18 @@ export const PreviewModal = ({
                                     aria-label={
                                       guidedFinishLineMode
                                         ? "Finish Line 수동편집 완료"
-                                        : "Finish Line"
+                                        : isFinishLineCaptureBad
+                                          ? "피니시라인 불량 — FL 수정"
+                                          : "Finish Line"
                                     }
                                   >
                                     FL
                                   </button>
                                 </TooltipTrigger>
                                 <TooltipContent side="bottom">
-                                  Finish Line
+                                  {isFinishLineCaptureBad
+                                    ? "피니시라인 불량 — FL 수정"
+                                    : "Finish Line"}
                                 </TooltipContent>
                               </Tooltip>
                             )}
@@ -3969,7 +4168,7 @@ export const PreviewModal = ({
                             ? [guidedFrontPointPick]
                             : null
                       }
-                      onSurfacePointDoubleClick={
+                      onSurfacePointPick={
                         guidedFrontPointMode
                           ? handleSetGuidedFrontPoint
                           : handleAddGuidedFinishLinePoint

@@ -1,4 +1,10 @@
 // change-log:
+// - 2026-09-17: 의뢰카드 썸네일을 absolute→flex 본문으로 — 좌우 px-3 대칭·환자폭↑.
+// - 2026-09-17: 의뢰카드 CardContent p-6 잔존 제거(p-0+px-3) — 좌여백=썸네일 right-3.
+// - 2026-09-17: 세척·패킹에도 FL 썸네일. 스크류 뱃지 nowrap·레일 폭 가변으로 1줄 유지.
+// - 2026-09-17: 의뢰카드 본문 pr — 썸네일 세로스택에 맞춰 축소(환자/임플란트 가로폭↑·카드 높이↓).
+// - 2026-09-17: FL 썸네일을 로트 위 세로 스택, 불량 뱃지「FL 확인」을 썸네일 바로 위로.
+// - 2026-09-17: 피니시라인 points 기하 불량 검출 → 카드 「피니시라인 불량」뱃지(썸네일 아래 문구 제거).
 // - 2026-09-17: 준비/가공 카드 오른쪽에 filled STL+피니시라인 썸네일(프리뷰 오른쪽과 동일).
 // - 2026-09-12: 라이노 오버레이 — 블러 제거·옅은 틴트+반투명「작업중/작업중지」(의뢰 내용 또렷이).
 // - 2026-09-04: 세척.패킹 카드에 각인 이미지(또는 pending) 드롭 매칭 지원.
@@ -28,6 +34,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/FilledStlCardThumbnail.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/hooks/usePackingCapture.ts
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/finishLineQuality.ts
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useWorksheetRealtimeStatus.ts
 // - web/frontend/src/shared/shipping/shippingMode.ts
 // - web/frontend/src/shared/shipping/ShippingModeBadge.tsx
@@ -64,6 +71,7 @@ import {
   HEX_VERIFICATION_SAMPLE_LABEL,
   isHexVerificationSampleRequest,
 } from "../utils/hexRotation";
+import { isFinishLineDefective } from "../utils/finishLineQuality";
 import { RequestInfoSummary } from "./RequestInfoSummary";
 import { FilledStlCardThumbnail } from "./FilledStlCardThumbnail";
 import { resolveShippingMode } from "@/shared/shipping/shippingMode";
@@ -314,6 +322,9 @@ export const WorksheetCardGrid = ({
         const finishLineMinZRaw = Number((caseInfos as any)?.finishLine?.min_z);
         const isFinishLineMinZRisky =
           Number.isFinite(finishLineMinZRaw) && finishLineMinZRaw < 1;
+        const isFinishLineCaptureBad = isFinishLineDefective(
+          (caseInfos as any)?.finishLine?.points,
+        );
         const isUnmachinableSample = Boolean(
           (request as any)?.rnd?.unmachinableAt,
         );
@@ -639,15 +650,21 @@ export const WorksheetCardGrid = ({
             tabStage === "cam") &&
           Boolean(lotShortCode);
         const showFilledFlThumb =
-          (tabStage === "request" || tabStage === "cam") &&
+          (tabStage === "request" ||
+            tabStage === "cam" ||
+            tabStage === "packing") &&
           !rhinoWorkPending &&
           Boolean(String(resolveFilledStlFile(caseInfos)?.s3Key || "").trim());
+        const showScrewTypeBadge =
+          tabStage === "packing" &&
+          Boolean(resolvedConnectionSpec.screwType);
         const showSideSpecBadges =
           shouldShowAnodizingOffBadge ||
           showLotShortBadge ||
-          (tabStage === "packing" && Boolean(resolvedConnectionSpec.screwType)) ||
+          showScrewTypeBadge ||
           (tabStage === "packing" && isPrinted);
         const showRightRail = showFilledFlThumb || showSideSpecBadges;
+        // summaryRightPadClass 제거 — 썸네일을 flex 본문에 넣어 좌우 px 대칭
 
         const hasTopFloatingControls =
           Boolean(onToggleSelected) ||
@@ -804,7 +821,9 @@ export const WorksheetCardGrid = ({
                               ? "border-accent border-2"
                               : "border-slate-200"
             } ${
-              isFinishLineMinZRisky || isUnmachinableSample
+              isFinishLineMinZRisky ||
+              isUnmachinableSample ||
+              isFinishLineCaptureBad
                 ? "border-accent-muted ring-2 ring-accent-muted/80"
                 : ""
             } ${onToggleSelected && !rhinoWorkPending ? "cursor-pointer" : ""} ${
@@ -1132,66 +1151,6 @@ export const WorksheetCardGrid = ({
                 </button>
               )}
             </div>
-            {showRightRail && (
-              <div className="absolute right-3 top-1/2 -translate-y-1/2 z-20 flex items-center gap-1.5">
-                {showFilledFlThumb && (
-                  <button
-                    type="button"
-                    className="h-[72px] w-[72px] overflow-hidden rounded-md border border-slate-200 bg-slate-100 shadow-sm transition hover:border-primary/50 hover:shadow"
-                    onClick={handleOpenCardPreview}
-                    onPointerDown={(e) => {
-                      e.stopPropagation();
-                    }}
-                    aria-label="피니시라인 프리뷰 열기"
-                    title="피니시라인 프리뷰"
-                  >
-                    <FilledStlCardThumbnail request={request} />
-                  </button>
-                )}
-                {showSideSpecBadges ? (
-                  <div className="flex flex-col items-end gap-1.5">
-                    {shouldShowAnodizingOffBadge && (
-                      <Badge
-                        variant="outline"
-                        className="text-[16px] px-3 py-1 font-semibold leading-[1.1] border border-slate-300 bg-slate-100 text-slate-700"
-                      >
-                        아노X
-                      </Badge>
-                    )}
-                    {showLotShortBadge && (
-                      <Badge
-                        variant="outline"
-                        className="text-[16px] px-3 py-1 font-extrabold leading-[1.1] border border-slate-800 bg-slate-900 text-white tracking-wider"
-                        title={
-                          tabStage === "packing"
-                            ? `각인코드 ${lotShortCode}`
-                            : `로트번호 ${lotShortCode}`
-                        }
-                      >
-                        {lotShortCode}
-                      </Badge>
-                    )}
-                    {tabStage === "packing" &&
-                      resolvedConnectionSpec.screwType && (
-                        <Badge
-                          variant="outline"
-                          className="text-[16px] px-3 py-1 font-extrabold leading-[1.1] border border-primary-muted bg-primary-soft text-primary-strong"
-                        >
-                          스크류 {resolvedConnectionSpec.screwType}
-                        </Badge>
-                      )}
-                    {tabStage === "packing" && isPrinted && (
-                      <Badge
-                        variant="outline"
-                        className="text-[10px] px-1.5 py-0 font-semibold border-slate-300 bg-slate-100 text-slate-500"
-                      >
-                        ✓ 출력 완료
-                      </Badge>
-                    )}
-                  </div>
-                ) : null}
-              </div>
-            )}
             {hasBottomFloatingBadges ? (
               <div className="absolute right-2 bottom-2 z-20 flex items-center gap-1 flex-nowrap">
                 {shouldShowFullLot && (
@@ -1243,28 +1202,21 @@ export const WorksheetCardGrid = ({
               </div>
             )}
             <CardContent
-              className={`relative z-10 px-3 flex-1 flex flex-col gap-2 ${
+              className={`relative z-10 !p-0 !px-3 flex-1 flex flex-col gap-2 ${
                 hasRealtimeProgress
-                  ? "pt-14"
+                  ? "!pt-14"
                   : hasTopFloatingControls
-                    ? "pt-10"
-                    : "pt-6"
-              } ${hasBottomFloatingBadges ? "pb-8" : "pb-4"} ${
+                    ? "!pt-10"
+                    : "!pt-6"
+              } ${hasBottomFloatingBadges ? "!pb-8" : "!pb-4"} ${
                 isNewSystemRequest ? "bg-primary-soft/40" : ""
               }`}
             >
-              <div
-                className={`transition ${
-                  showFilledFlThumb
-                    ? showSideSpecBadges
-                      ? "pr-40"
-                      : "pr-24"
-                    : showSideSpecBadges
-                      ? "pr-24"
-                      : ""
-                }`}
-                onClick={handleOpenCardPreview}
-              >
+              <div className="flex items-center gap-2">
+                <div
+                  className="min-w-0 flex-1 transition"
+                  onClick={handleOpenCardPreview}
+                >
                 <RequestInfoSummary
                   requestorLabel={
                     request.requestor?.business ||
@@ -1359,6 +1311,90 @@ export const WorksheetCardGrid = ({
                     </div>
                   </div>
                 )}
+                </div>
+
+                {showRightRail ? (
+                  <div className="flex shrink-0 flex-col items-center gap-1 self-center">
+                    {showFilledFlThumb ? (
+                      <>
+                        {isFinishLineCaptureBad && !rhinoWorkPending ? (
+                          <Badge
+                            variant="outline"
+                            className="h-5 max-w-full truncate text-[10px] px-1.5 py-0 font-semibold leading-none border border-destructive/70 bg-destructive-soft text-destructive flex items-center"
+                            title="피니시라인이 어깨를 따라가지 않습니다. 프리뷰에서 FL로 수정하세요."
+                          >
+                            FL 확인
+                          </Badge>
+                        ) : null}
+                        <button
+                          type="button"
+                          className={`h-[72px] w-[72px] shrink-0 overflow-hidden rounded-md border bg-slate-100 shadow-sm transition hover:shadow ${
+                            isFinishLineCaptureBad
+                              ? "border-destructive/80 ring-2 ring-destructive/40 hover:border-destructive"
+                              : "border-slate-200 hover:border-primary/50"
+                          }`}
+                          onClick={handleOpenCardPreview}
+                          onPointerDown={(e) => {
+                            e.stopPropagation();
+                          }}
+                          aria-label={
+                            isFinishLineCaptureBad
+                              ? "FL 확인 — 프리뷰 열기"
+                              : "피니시라인 프리뷰 열기"
+                          }
+                          title={
+                            isFinishLineCaptureBad
+                              ? "FL 확인"
+                              : "피니시라인 프리뷰"
+                          }
+                        >
+                          <FilledStlCardThumbnail request={request} />
+                        </button>
+                      </>
+                    ) : null}
+                    {showSideSpecBadges ? (
+                      <div className="flex flex-col items-center gap-1">
+                        {shouldShowAnodizingOffBadge && (
+                          <Badge
+                            variant="outline"
+                            className="whitespace-nowrap text-[16px] px-3 py-1 font-semibold leading-[1.1] border border-slate-300 bg-slate-100 text-slate-700"
+                          >
+                            아노X
+                          </Badge>
+                        )}
+                        {showLotShortBadge && (
+                          <Badge
+                            variant="outline"
+                            className="whitespace-nowrap text-[16px] px-3 py-1 font-extrabold leading-[1.1] border border-slate-800 bg-slate-900 text-white tracking-wider"
+                            title={
+                              tabStage === "packing"
+                                ? `각인코드 ${lotShortCode}`
+                                : `로트번호 ${lotShortCode}`
+                            }
+                          >
+                            {lotShortCode}
+                          </Badge>
+                        )}
+                        {showScrewTypeBadge && (
+                          <Badge
+                            variant="outline"
+                            className="whitespace-nowrap text-[16px] px-3 py-1 font-extrabold leading-[1.1] border border-primary-muted bg-primary-soft text-primary-strong"
+                          >
+                            스크류 {resolvedConnectionSpec.screwType}
+                          </Badge>
+                        )}
+                        {tabStage === "packing" && isPrinted && (
+                          <Badge
+                            variant="outline"
+                            className="whitespace-nowrap text-[10px] px-1.5 py-0 font-semibold border-slate-300 bg-slate-100 text-slate-500"
+                          >
+                            ✓ 출력 완료
+                          </Badge>
+                        )}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
 
               {tabStage === "rnd" && isSampleRequest && onSaveRndMemo && (
