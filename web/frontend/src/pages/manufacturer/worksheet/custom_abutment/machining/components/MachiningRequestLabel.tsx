@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-17: hideDeadline — Complete 등 가공 완료 슬롯에서 출고시간 뱃지 숨김.
 // - 2026-08-08: density=compact|full — 카드/재생목록은 필수 뱃지만, 상세 모달은 전체.
 // - 2026-08-07: 모바일 라벨에도 의뢰자명(business) 표시.
 // - 2026-08-06: 마감까지 남은 시간 뱃지(getDeadlineInfo) 표시. estimatedShipYmd 기반.
@@ -33,6 +34,8 @@ type Props = {
   shippingSource?: ShippingModeSource;
   showFastMachiningRebalance?: boolean | null;
   estimatedShipYmd?: string | null;
+  /** true면 출고시간(마감) 뱃지 미표시 — Complete 등 가공 완료 슬롯용 */
+  hideDeadline?: boolean;
   /** compact: 카드/재생목록 — 필수 뱃지만. full: 상세 모달 — 기존 전체 */
   density?: "compact" | "full";
 };
@@ -58,6 +61,7 @@ export const MachiningRequestLabel = ({
   shippingSource,
   showFastMachiningRebalance,
   estimatedShipYmd,
+  hideDeadline = false,
   density = "full",
 }: Props) => {
   const compact = density === "compact";
@@ -127,9 +131,11 @@ export const MachiningRequestLabel = ({
   })();
 
   const renderInfoBadges = () => {
-    const showDeadline = compact
-      ? Boolean(deadlineInfo && urgentDeadline)
-      : Boolean(deadlineInfo);
+    const showDeadline =
+      !hideDeadline &&
+      (compact
+        ? Boolean(deadlineInfo && urgentDeadline)
+        : Boolean(deadlineInfo));
     const showNc = compact ? showNcBadge : showNcBadge;
     const showShipping = Boolean(shippingSource);
     const showRebalance = !compact && Boolean(showFastMachiningRebalance);

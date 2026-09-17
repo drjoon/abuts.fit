@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-17: Complete 슬롯 — 출고시간(마감) 뱃지 숨김(hideDeadline).
 // - 2026-09-12: Next Up CAM 오버레이 — 블러 제거·옅은 틴트+반투명「작업중/작업중지」(준비 탭과 동일).
 // - 2026-09-11: Complete 슬롯 — 포장.발송·추적관리 건은 준비 롤백/재승인 비활성.
 // - 2026-08-30: Now Playing X — 확인 후 브리지 정지(C_STOP) + machining/cancel.
@@ -862,6 +863,7 @@ export const MachineQueueCard = ({
               {effectiveLastCompleted ? (
                 <MachiningRequestLabel
                   density="compact"
+                  hideDeadline
                   business={(effectiveLastCompleted as any)?.businessName}
                   clinicName={(effectiveLastCompleted as any)?.clinicName}
                   patientName={(effectiveLastCompleted as any)?.patientName}
