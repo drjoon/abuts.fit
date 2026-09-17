@@ -1,19 +1,20 @@
 // change-log:
+// - 2026-09-17: 카드 썸네일 로드를 프리뷰와 동일하게 `/cam-file-url` + IndexedDB로 맞춤(S3 프록시 실패 수정).
 // - 2026-09-17: 준비/가공 의뢰카드 — filled STL + 피니시라인 썸네일(프리뷰 오른쪽과 동일 소스).
 // related files:
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/usePreviewLoader.ts
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts
-// - web/frontend/src/shared/files/s3BlobCache.ts
-import { useEffect, useRef, useState } from "react";
+// - web/frontend/src/shared/files/stlIndexedDb.ts
+import { useEffect, useState } from "react";
 import { Box } from "lucide-react";
 import { StlPreviewThumbnail } from "@/features/requests/components/StlPreviewThumbnail";
 import {
   fileFromModelBlob,
   modelFileBasename,
 } from "@/shared/files/modelPreviewFile";
-import { fetchS3BlobCached } from "@/shared/files/s3BlobCache";
-import { buildS3ProxyDownloadUrl } from "@/shared/files/useS3FileDownload";
+import { getFileBlob, setFileBlob } from "@/shared/files/stlIndexedDb";
 import { useAuthStore } from "@/store/useAuthStore";
 import { cn } from "@/shared/ui/cn";
 import {
@@ -28,8 +29,10 @@ type Props = {
 
 function ensureFilledFileName(name: string): string {
   const base = modelFileBasename(name, "model.filled.stl");
-  if (base.toLowerCase().includes("filled")) return base;
-  return base.replace(/\.stl$/i, ".filled.stl");
+  if (/\.filled\./i.test(base) || /filled/i.test(base)) return base;
+  return base.toLowerCase().endsWith(".stl")
+    ? base.replace(/\.stl$/i, ".filled.stl")
+    : `${base}.filled.stl`;
 }
 
 function resolveFinishLinePoints(
@@ -40,49 +43,52 @@ function resolveFinishLinePoints(
   return points;
 }
 
+function buildCamCacheKey(
+  s3Key: string | null | undefined,
+  meta?: { fileSize?: unknown; uploadedAt?: unknown } | null,
+  fallbackId?: string,
+): string | null {
+  const base = String(s3Key || "").trim();
+  const fileSize = meta?.fileSize != null ? String(meta.fileSize) : "";
+  const uploadedAt = meta?.uploadedAt ? String(meta.uploadedAt) : "";
+  if (base) {
+    if (!fileSize && !uploadedAt) return base;
+    return `${base}:v=${fileSize}:${uploadedAt}`;
+  }
+  const id = String(fallbackId || "").trim();
+  if (!id) return null;
+  const fb = `stl:${id}:cam`;
+  if (!fileSize && !uploadedAt) return fb;
+  return `${fb}:v=${fileSize}:${uploadedAt}`;
+}
+
 export function FilledStlCardThumbnail({ request, className }: Props) {
   const token = useAuthStore((s) => s.token);
-  const rootRef = useRef<HTMLDivElement | null>(null);
-  const [visible, setVisible] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [failed, setFailed] = useState(false);
 
+  const requestMongoId = String(request?._id || "").trim();
   const filledMeta = resolveFilledStlFile(request?.caseInfos);
   const s3Key = String(filledMeta?.s3Key || "").trim();
   const fileName = ensureFilledFileName(
     String(
-      filledMeta?.originalName ||
+      filledMeta?.filePath ||
+        filledMeta?.originalName ||
         filledMeta?.fileName ||
-        filledMeta?.filePath ||
         "model.filled.stl",
     ),
   );
   const finishLinePoints = resolveFinishLinePoints(request);
+  const cacheKey = buildCamCacheKey(
+    s3Key,
+    filledMeta,
+    requestMongoId || String(request?.requestId || "").trim(),
+  );
 
   useEffect(() => {
-    const el = rootRef.current;
-    if (!el) return;
-    if (typeof IntersectionObserver === "undefined") {
-      setVisible(true);
-      return;
-    }
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          setVisible(true);
-          observer.disconnect();
-        }
-      },
-      { rootMargin: "120px 0px", threshold: 0.01 },
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
-
-  useEffect(() => {
-    if (!visible || !token || !s3Key) {
+    if (!token || !requestMongoId || !s3Key) {
       setFile(null);
-      setFailed(!s3Key);
+      setFailed(!s3Key || !requestMongoId);
       return;
     }
 
@@ -92,20 +98,55 @@ export function FilledStlCardThumbnail({ request, className }: Props) {
 
     void (async () => {
       try {
-        const blob = await fetchS3BlobCached({
-          s3Key,
-          fileName,
-          token,
-          buildUrl: buildS3ProxyDownloadUrl,
-          signal: ac.signal,
-        });
-        if (cancelled || ac.signal.aborted) return;
-        setFile(fileFromModelBlob(blob, fileName));
-      } catch {
-        if (!cancelled && !ac.signal.aborted) {
-          setFailed(true);
-          setFile(null);
+        if (cacheKey) {
+          const cached = await getFileBlob(cacheKey);
+          if (cancelled || ac.signal.aborted) return;
+          if (cached) {
+            setFile(fileFromModelBlob(cached, fileName));
+            return;
+          }
         }
+
+        const signedRes = await fetch(
+          `/api/requests/${encodeURIComponent(requestMongoId)}/cam-file-url`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+            signal: ac.signal,
+          },
+        );
+        if (!signedRes.ok) {
+          throw new Error(`cam-file-url failed: ${signedRes.status}`);
+        }
+        const body = await signedRes.json().catch(() => ({}));
+        const signedUrl = String(body?.data?.url || "").trim();
+        const resolvedName =
+          String(body?.data?.fileName || "").trim() || fileName;
+        if (!signedUrl) throw new Error("signed url missing");
+
+        const fileRes = await fetch(signedUrl, { signal: ac.signal });
+        if (!fileRes.ok) throw new Error(`filled stl fetch failed: ${fileRes.status}`);
+        const blob = await fileRes.blob();
+        if (cancelled || ac.signal.aborted) return;
+
+        if (cacheKey) {
+          try {
+            await setFileBlob(cacheKey, blob);
+          } catch {
+            // ignore cache write
+          }
+        }
+
+        setFile(
+          fileFromModelBlob(
+            blob,
+            ensureFilledFileName(resolvedName || fileName),
+          ),
+        );
+      } catch (err) {
+        if (cancelled || ac.signal.aborted) return;
+        if ((err as { name?: string })?.name === "AbortError") return;
+        setFailed(true);
+        setFile(null);
       }
     })();
 
@@ -113,14 +154,10 @@ export function FilledStlCardThumbnail({ request, className }: Props) {
       cancelled = true;
       ac.abort();
     };
-  }, [visible, token, s3Key, fileName]);
+  }, [token, requestMongoId, s3Key, fileName, cacheKey]);
 
   return (
-    <div
-      ref={rootRef}
-      className={cn("h-full w-full", className)}
-      aria-hidden
-    >
+    <div className={cn("h-full w-full", className)} aria-hidden>
       {file ? (
         <StlPreviewThumbnail
           file={file}
@@ -130,7 +167,10 @@ export function FilledStlCardThumbnail({ request, className }: Props) {
       ) : (
         <div className="flex h-full w-full items-center justify-center text-slate-400">
           <Box
-            className={cn("h-6 w-6 shrink-0", failed ? "opacity-40" : "opacity-60")}
+            className={cn(
+              "h-6 w-6 shrink-0",
+              failed ? "opacity-40" : "opacity-60 animate-pulse",
+            )}
             aria-hidden
           />
         </div>

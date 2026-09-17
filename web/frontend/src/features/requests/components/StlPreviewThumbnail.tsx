@@ -301,11 +301,15 @@ export function StlPreviewThumbnail({
         mesh = new THREE.Mesh(geometry, material);
         scene?.add(mesh);
 
-        finishLineMesh = addFinishLineOverlay(
-          scene!,
-          finishLinePoints,
-          geometry.boundingBox,
-        );
+        try {
+          finishLineMesh = addFinishLineOverlay(
+            scene!,
+            finishLinePoints,
+            geometry.boundingBox,
+          );
+        } catch {
+          finishLineMesh = null;
+        }
 
         if (geometry.boundingBox) {
           fitOrthographicCameraToGeometry(camera, geometry.boundingBox);
