@@ -1,13 +1,16 @@
-// related files:
-// - web/frontend/src/shared/files/modelPreviewFile.ts
-// - web/frontend/src/features/requests/components/StlPreviewViewer.tsx
-// - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
-// - web/frontend/src/features/chat/components/ChatMessageBubble.tsx
+// change-log:
+// - 2026-09-17: finishLinePoints — 준비 카드용 filled STL 썸네일에 FL(빨간 튜브) 오버레이.
 // - 2026-09-14: Orthographic 카메라 — 뷰어와 동일하게 평행 왜곡 없이 맞춤.
 // - 2026-08-23: 의뢰 상세 작업 파일 타일용 정적 3D 썸네일.
 // - 2026-08-28: WebGL은 1회 렌더 후 PNG 스냅샷·즉시 dispose — 모달 뷰어와 컨텍스트 충돌 방지.
 // - 2026-08-28: PLY/OBJ 버텍스 컬러·TextureFile 칼라 표시.
 // - 2026-08-28: companionFiles 참조 변경만으로 썸네일 null 리셋하지 않음(플리커 방지).
+// related files:
+// - web/frontend/src/shared/files/modelPreviewFile.ts
+// - web/frontend/src/features/requests/components/StlPreviewViewer.tsx
+// - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
+// - web/frontend/src/features/chat/components/ChatMessageBubble.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/FilledStlCardThumbnail.tsx
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { Box } from "lucide-react";
@@ -22,6 +25,8 @@ type Props = {
   file: File;
   textureFile?: File | null;
   companionFiles?: File[] | null;
+  /** filled STL 피니시라인(xyz). 있으면 빨간 튜브로 오버레이. */
+  finishLinePoints?: number[][] | null;
   className?: string;
 };
 
@@ -121,10 +126,71 @@ function companionFilesIdentityKey(files: File[] | null | undefined): string {
     .join("|");
 }
 
+function finishLineIdentityKey(points: number[][] | null | undefined): string {
+  if (!Array.isArray(points) || points.length < 2) return "";
+  const first = points[0];
+  const mid = points[Math.floor(points.length / 2)];
+  const last = points[points.length - 1];
+  const fmt = (p: number[] | undefined) =>
+    Array.isArray(p) && p.length >= 3
+      ? `${Number(p[0]).toFixed(3)},${Number(p[1]).toFixed(3)},${Number(p[2]).toFixed(3)}`
+      : "";
+  return `${points.length}:${fmt(first)}|${fmt(mid)}|${fmt(last)}`;
+}
+
+function addFinishLineOverlay(
+  scene: THREE.Scene,
+  points: number[][] | null | undefined,
+  bbox: THREE.Box3 | null | undefined,
+): THREE.Mesh | null {
+  if (!Array.isArray(points) || points.length < 2) return null;
+  const pts = points
+    .filter((p) => Array.isArray(p) && p.length >= 3)
+    .map((p) => new THREE.Vector3(Number(p[0]), Number(p[1]), Number(p[2])))
+    .filter((v) => Number.isFinite(v.x) && Number.isFinite(v.y) && Number.isFinite(v.z));
+  if (pts.length < 2) return null;
+
+  const closedPts = pts.slice();
+  const first = closedPts[0];
+  const last = closedPts[closedPts.length - 1];
+  if (first && last && !first.equals(last)) {
+    closedPts.push(first.clone());
+  }
+
+  const curve = new THREE.CatmullRomCurve3(closedPts, true);
+  const tubularSegments = Math.max(pts.length * 3, 120);
+  const size = new THREE.Vector3();
+  bbox?.getSize(size);
+  const diag = size.length() || 40;
+  const radius = Math.max(diag * 0.003, 0.05);
+
+  const tubeGeometry = new THREE.TubeGeometry(
+    curve,
+    tubularSegments,
+    radius,
+    12,
+    true,
+  );
+  const tubeMaterial = new THREE.MeshPhongMaterial({
+    color: 0xff2d2d,
+    emissive: 0xaa0000,
+    shininess: 80,
+    transparent: true,
+    opacity: 1,
+    depthTest: false,
+    depthWrite: false,
+  });
+  const finishLine = new THREE.Mesh(tubeGeometry, tubeMaterial);
+  finishLine.renderOrder = 10;
+  scene.add(finishLine);
+  return finishLine;
+}
+
 export function StlPreviewThumbnail({
   file,
   textureFile = null,
   companionFiles = null,
+  finishLinePoints = null,
   className,
 }: Props) {
   const [thumbUrl, setThumbUrl] = useState<string | null>(null);
@@ -132,12 +198,14 @@ export function StlPreviewThumbnail({
   const fileKey = fileIdentityKey(file);
   const textureKey = fileIdentityKey(textureFile);
   const companionKey = companionFilesIdentityKey(companionFiles);
-  const shownFileKeyRef = useRef("");
+  const finishLineKey = finishLineIdentityKey(finishLinePoints);
+  const shownCaptureKeyRef = useRef("");
 
   useEffect(() => {
     let cancelled = false;
     let released = false;
     let mesh: THREE.Mesh | null = null;
+    let finishLineMesh: THREE.Mesh | null = null;
     let geometry: THREE.BufferGeometry | null = null;
     let previewTexture: THREE.Texture | null = null;
     let scene: THREE.Scene | null = null;
@@ -146,6 +214,17 @@ export function StlPreviewThumbnail({
     const release = () => {
       if (released) return;
       released = true;
+      if (finishLineMesh && scene) {
+        scene.remove(finishLineMesh);
+        finishLineMesh.geometry?.dispose();
+        const flMat = finishLineMesh.material;
+        if (Array.isArray(flMat)) {
+          flMat.forEach((item) => item.dispose());
+        } else {
+          flMat?.dispose();
+        }
+        finishLineMesh = null;
+      }
       releaseWebGl(renderer, mesh, geometry, scene, previewTexture);
       renderer = null;
       mesh = null;
@@ -155,8 +234,12 @@ export function StlPreviewThumbnail({
     };
 
     setFailed(false);
-    // 모델 파일이 바뀐 경우에만 placeholder. companion/texture 갱신은 이전 PNG 유지.
-    if (shownFileKeyRef.current && shownFileKeyRef.current !== fileKey) {
+    const captureKey = `${fileKey}|${finishLineKey}`;
+    // 모델/FL이 바뀐 경우에만 placeholder. companion/texture 갱신은 이전 PNG 유지.
+    if (
+      shownCaptureKeyRef.current &&
+      shownCaptureKeyRef.current !== captureKey
+    ) {
       setThumbUrl(null);
     }
 
@@ -218,6 +301,12 @@ export function StlPreviewThumbnail({
         mesh = new THREE.Mesh(geometry, material);
         scene?.add(mesh);
 
+        finishLineMesh = addFinishLineOverlay(
+          scene!,
+          finishLinePoints,
+          geometry.boundingBox,
+        );
+
         if (geometry.boundingBox) {
           fitOrthographicCameraToGeometry(camera, geometry.boundingBox);
         }
@@ -225,7 +314,7 @@ export function StlPreviewThumbnail({
 
         const dataUrl = renderer!.domElement.toDataURL("image/png");
         if (cancelled || released) return;
-        shownFileKeyRef.current = fileKey;
+        shownCaptureKeyRef.current = captureKey;
         setThumbUrl(dataUrl);
       } catch {
         if (!cancelled) setFailed(true);
@@ -238,9 +327,9 @@ export function StlPreviewThumbnail({
       cancelled = true;
       release();
     };
-    // file/texture/companion 객체 참조가 매 렌더 바뀌어도 identity key가 같으면 재캡처하지 않는다.
+    // file/texture/companion/FL 객체 참조가 매 렌더 바뀌어도 identity key가 같으면 재캡처하지 않는다.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- identity keys are SSOT
-  }, [companionKey, fileKey, textureKey]);
+  }, [companionKey, fileKey, finishLineKey, textureKey]);
 
   if (failed) {
     return (

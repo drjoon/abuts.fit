@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-17: 준비/가공 카드 오른쪽에 filled STL+피니시라인 썸네일(프리뷰 오른쪽과 동일).
 // - 2026-09-12: 라이노 오버레이 — 블러 제거·옅은 틴트+반투명「작업중/작업중지」(의뢰 내용 또렷이).
 // - 2026-09-04: 세척.패킹 카드에 각인 이미지(또는 pending) 드롭 매칭 지원.
 // - 2026-09-09: 라이노 블러 — GENERATING만(idle filled 미수신 해제). 오버레이 약하게(내용 가독).
@@ -24,6 +25,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestInfoSummary.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/FilledStlCardThumbnail.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/hooks/usePackingCapture.ts
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useWorksheetRealtimeStatus.ts
@@ -63,6 +65,7 @@ import {
   isHexVerificationSampleRequest,
 } from "../utils/hexRotation";
 import { RequestInfoSummary } from "./RequestInfoSummary";
+import { FilledStlCardThumbnail } from "./FilledStlCardThumbnail";
 import { resolveShippingMode } from "@/shared/shipping/shippingMode";
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
 import { PACKING_PENDING_DRAG_MIME } from "../packing/hooks/usePackingCapture";
@@ -635,11 +638,16 @@ export const WorksheetCardGrid = ({
             tabStage === "request" ||
             tabStage === "cam") &&
           Boolean(lotShortCode);
+        const showFilledFlThumb =
+          (tabStage === "request" || tabStage === "cam") &&
+          !rhinoWorkPending &&
+          Boolean(String(resolveFilledStlFile(caseInfos)?.s3Key || "").trim());
         const showSideSpecBadges =
           shouldShowAnodizingOffBadge ||
           showLotShortBadge ||
           (tabStage === "packing" && Boolean(resolvedConnectionSpec.screwType)) ||
           (tabStage === "packing" && isPrinted);
+        const showRightRail = showFilledFlThumb || showSideSpecBadges;
 
         const hasTopFloatingControls =
           Boolean(onToggleSelected) ||
@@ -1124,45 +1132,64 @@ export const WorksheetCardGrid = ({
                 </button>
               )}
             </div>
-            {showSideSpecBadges && (
-              <div className="absolute right-3 top-1/2 -translate-y-1/2 z-20 flex flex-col items-end gap-1.5">
-                {shouldShowAnodizingOffBadge && (
-                  <Badge
-                    variant="outline"
-                    className="text-[16px] px-3 py-1 font-semibold leading-[1.1] border border-slate-300 bg-slate-100 text-slate-700"
+            {showRightRail && (
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 z-20 flex items-center gap-1.5">
+                {showFilledFlThumb && (
+                  <button
+                    type="button"
+                    className="h-[72px] w-[72px] overflow-hidden rounded-md border border-slate-200 bg-slate-100 shadow-sm transition hover:border-primary/50 hover:shadow"
+                    onClick={handleOpenCardPreview}
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                    }}
+                    aria-label="피니시라인 프리뷰 열기"
+                    title="피니시라인 프리뷰"
                   >
-                    아노X
-                  </Badge>
+                    <FilledStlCardThumbnail request={request} />
+                  </button>
                 )}
-                {showLotShortBadge && (
-                  <Badge
-                    variant="outline"
-                    className="text-[16px] px-3 py-1 font-extrabold leading-[1.1] border border-slate-800 bg-slate-900 text-white tracking-wider"
-                    title={
-                      tabStage === "packing"
-                        ? `각인코드 ${lotShortCode}`
-                        : `로트번호 ${lotShortCode}`
-                    }
-                  >
-                    {lotShortCode}
-                  </Badge>
-                )}
-                {tabStage === "packing" && resolvedConnectionSpec.screwType && (
-                  <Badge
-                    variant="outline"
-                    className="text-[16px] px-3 py-1 font-extrabold leading-[1.1] border border-primary-muted bg-primary-soft text-primary-strong"
-                  >
-                    스크류 {resolvedConnectionSpec.screwType}
-                  </Badge>
-                )}
-                {tabStage === "packing" && isPrinted && (
-                  <Badge
-                    variant="outline"
-                    className="text-[10px] px-1.5 py-0 font-semibold border-slate-300 bg-slate-100 text-slate-500"
-                  >
-                    ✓ 출력 완료
-                  </Badge>
-                )}
+                {showSideSpecBadges ? (
+                  <div className="flex flex-col items-end gap-1.5">
+                    {shouldShowAnodizingOffBadge && (
+                      <Badge
+                        variant="outline"
+                        className="text-[16px] px-3 py-1 font-semibold leading-[1.1] border border-slate-300 bg-slate-100 text-slate-700"
+                      >
+                        아노X
+                      </Badge>
+                    )}
+                    {showLotShortBadge && (
+                      <Badge
+                        variant="outline"
+                        className="text-[16px] px-3 py-1 font-extrabold leading-[1.1] border border-slate-800 bg-slate-900 text-white tracking-wider"
+                        title={
+                          tabStage === "packing"
+                            ? `각인코드 ${lotShortCode}`
+                            : `로트번호 ${lotShortCode}`
+                        }
+                      >
+                        {lotShortCode}
+                      </Badge>
+                    )}
+                    {tabStage === "packing" &&
+                      resolvedConnectionSpec.screwType && (
+                        <Badge
+                          variant="outline"
+                          className="text-[16px] px-3 py-1 font-extrabold leading-[1.1] border border-primary-muted bg-primary-soft text-primary-strong"
+                        >
+                          스크류 {resolvedConnectionSpec.screwType}
+                        </Badge>
+                      )}
+                    {tabStage === "packing" && isPrinted && (
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] px-1.5 py-0 font-semibold border-slate-300 bg-slate-100 text-slate-500"
+                      >
+                        ✓ 출력 완료
+                      </Badge>
+                    )}
+                  </div>
+                ) : null}
               </div>
             )}
             {hasBottomFloatingBadges ? (
@@ -1227,7 +1254,15 @@ export const WorksheetCardGrid = ({
               }`}
             >
               <div
-                className={`transition ${showSideSpecBadges ? "pr-24" : ""}`}
+                className={`transition ${
+                  showFilledFlThumb
+                    ? showSideSpecBadges
+                      ? "pr-40"
+                      : "pr-24"
+                    : showSideSpecBadges
+                      ? "pr-24"
+                      : ""
+                }`}
                 onClick={handleOpenCardPreview}
               >
                 <RequestInfoSummary
