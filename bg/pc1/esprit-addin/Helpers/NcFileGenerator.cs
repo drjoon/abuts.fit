@@ -558,8 +558,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 bool serialDeburrUpdated = ReplaceSerialBlock(lines, "(Serial Deburr)", secondBlock);
                 if (!serialDeburrUpdated)
                 {
-                    // (Serial Deburr) 마커가 없으면 두 번째 (Serial) 마커에 적용
-                    serialDeburrUpdated = ReplaceSerialBlock(lines, "(Serial)", secondBlock, occurrenceIndex: 1);
+                    // PRC→NC는 둘 다 `(Serial)`. 1번째를 Post/Hex로 바꾼 뒤엔 남은 `(Serial)`이
+                    // occurrence 0뿐이라 index 1을 쓰면 Deburr 슬롯이 통째로 스킵된다.
+                    serialDeburrUpdated = ReplaceSerialBlock(lines, "(Serial)", secondBlock, occurrenceIndex: 0);
                     AppLogger.Log($"NcFileGenerator: 2번째 (Serial) 블록 교체 - {(serialDeburrUpdated ? "성공" : "⚠️ 마커 없음")}");
                 }
                 else
