@@ -1020,8 +1020,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             // M98P 구간만 실제 각인 코드로 교체하고 나머지는 prc 그대로 사용
             //
             // lotEngravingTarget (PreviewModal 포스트면 체크 → request-meta → Esprit):
-            // - hex(기본): PRC 각인 그대로 (C0.0 + PRC 글자간 이동, 원래 G1 V-0.35). C 회전은 이후
-            //   ApplyManufacturerHexRotationToNc 가 T0606과 같이 T0909에 적용 → 헥스면 수직 유지.
+            // - hex(기본): PRC 각인 좌표 유지 + 글자간은 ResolveHexInterCharMove(V피치; H피치면 강제).
+            //   C 회전은 이후 ApplyManufacturerHexRotationToNc 가 T0606과 같이 T0909에 적용 → 헥스면 수직 유지.
             // - post: 사이트방위 C + H피치로 모션 재작성 (헥스면 V/C0 제거). Apply는 C0/C30만
             //   건드리므로 포스트 C 유지.
             // NC 주석: PRC `(Serial)` 슬롯은 원래 헥스면. 생성 결과 `(Serial Hex|Post)`.
@@ -1066,11 +1066,11 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             }
             else
             {
-                // 헥스면: PRC 템플릿의 글자 간 이동을 그대로 사용 (원래 G1 V-0.35).
-                // 2026-09-04 포스트면 실험(2fa30c330)이 오스템 PRC만 H10으로 바꿨다 복구 누락된 적 있음 → PRC를 V피치로 되돌릴 것.
-                interCharMove = ExtractInterCharMove(templateLines);
+                // 헥스면: PRC 글자 간 이동(SSOT G1 V-0.35). H피치가 들어오면 공기절삭 → 실물 각인 누락.
+                // 이력: 2fa30c330이 오스템 PRC만 H10으로 바꿨고 fb223ec92가 PRC 미복구 → Extract만으론 재발.
+                interCharMove = ResolveHexInterCharMove(templateLines);
                 AppLogger.Log(
-                    $"NcFileGenerator: Serial(hex) PRC 템플릿 유지 interChar='{interCharMove}', " +
+                    $"NcFileGenerator: Serial(hex) interChar='{interCharMove}', " +
                     $"serial='{serialCode}', occurrence={occurrenceInPrc} (C는 이후 헥스 후처리)");
             }
 
@@ -1248,6 +1248,22 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             }
 
             return line;
+        }
+
+        // 헥스면 글자 간 이동 SSOT. PRC가 정상이면 그대로, H피치(포스트면 잔재)면 V피치로 강제.
+        private static string ResolveHexInterCharMove(List<string> templateLines)
+        {
+            const string hexInterCharSsot = "G1V-0.35F1000";
+            string fromPrc = ExtractInterCharMove(templateLines);
+            // 포스트면 피치(H±n)가 헥스 경로에 들어가면 C축만 돌고 평면(V) 이동이 없어 헥스면에 안 박힌다.
+            if (!string.IsNullOrWhiteSpace(fromPrc) &&
+                Regex.IsMatch(fromPrc, @"\bH\s*[+-]?\d", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+            {
+                AppLogger.Log(
+                    $"NcFileGenerator: ⚠️ Serial(hex) PRC 글자간이 H피치('{fromPrc}') — 포스트면 잔재로 보고 {hexInterCharSsot} 사용");
+                return hexInterCharSsot;
+            }
+            return fromPrc;
         }
 
         private static string ExtractInterCharMove(List<string> templateLines)

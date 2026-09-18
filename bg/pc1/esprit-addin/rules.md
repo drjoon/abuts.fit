@@ -303,7 +303,7 @@
     - **post**: Serial이 사이트 C + `H=-pitchC`로 재작성(헥스면 모션 제거). Apply는 `C0`/`C30`만 치환하므로 포스트 C는 유지되고 T0606만 헥스모드.
     - NC 소괄호 주석: PRC 원본 `(Serial)` ×2(본·Deburr). 생성 후 `(Serial Hex|Post)` + `(Serial Deburr Hex|Post)` (동시 각인 금지).
     - `UpdateSerialBlocks`: 1번째 `(Serial)` 교체 후 Deburr 폴백은 **남은 `(Serial)` occurrence 0** (index 1이면 마커 누락).
-    - 이력: `2fa30c330`(2026-09-04)가 오스템 TS MH/RH Serial을 `H10`·`Y0`로 바꿈 → `fb223ec92`가 코드상 hex/post 분기는 복구했으나 PRC V피치는 미복구. 오스템 PRC는 원래 `G1 V-0.35`로 되돌림.
+    - 이력: `2fa30c330`(2026-09-04)가 오스템 TS MH/RH Serial을 `H10`·`Y0`로 바꿈 → `fb223ec92`가 코드상 hex/post 분기는 복구했으나 PRC V피치는 미복구 → 헥스면 실물 각인 누락. 오스템 PRC는 원래 `G1 V-0.35`로 되돌림. `ResolveHexInterCharMove`가 hex 경로에 H피치가 들어오면 V피치로 강제.
   - 처리 순서: `UpdateSerialBlocks` → `ApplyManufacturerHexRotationToNc` (헥스면 C 동반 회전 SSOT)
   - 공구번호 미검출(상방 10줄 내 Txxxx 없음)만 즉시 예외(백엔드 실패 콜백 → 프론트 토스트).
   - 미지원 공구(예: Finish `T0707`) 근접 `C0`/`C30`은 **스킵**(치환·카운트 안 함). Connection 화이트리스트 후보를 계속 탐색.
