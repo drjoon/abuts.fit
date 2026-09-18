@@ -853,8 +853,8 @@ function pickLotEngravingSiteFromGuides(directions, opts = {}) {
   }
   const pitchArcMm = 0.35;
   const charPitchCDeg = (pitchArcMm / radius) * (180 / Math.PI);
-  // NC 식 SSOT: X[면직경+0.93] (헥스 X[2.485+0.945]). 메타에는 평가값 저장.
-  const cutDiameterX = 2 * radius + 0.93;
+  // OD 면 안쪽 DOC 0.12 (CA260917-BJZ X5.235). 헥스 HEX+0.93 금지(BKB 공기절삭).
+  const cutDiameterX = Math.max(2 * radius - 2 * 0.12, 1.0);
 
   return {
     angleDeg: Math.round(best.angle * 1000) / 1000,

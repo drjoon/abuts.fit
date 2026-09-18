@@ -805,8 +805,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 radius = fallback;
             }
             double pitchC = (0.35 / radius) * (180.0 / Math.PI);
-            // 헥스 Serial SSOT: NC 절삭 식 X[면직경+0.93] (HEX X2.485 → Serial X[2.485+0.945])
-            double cutX = 2.0 * radius + 0.93;
+            // OD 면 안쪽 DOC 0.12 (BJZ X5.235). 헥스 HEX+0.93 금지(BKB 공기절삭).
+            double cutX = Math.Max(2.0 * radius - 2.0 * 0.12, 1.0);
             return new BackendApiClient.RequestMetaLotEngravingSite
             {
                 angleDeg = best.angle,
