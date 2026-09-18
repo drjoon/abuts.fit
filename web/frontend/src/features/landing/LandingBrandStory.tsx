@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { useAuthStore } from "@/store/useAuthStore";
 import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath";
 import { LandingPracticeWorkspacePreview } from "./LandingPracticeWorkspacePreview";
+import { LandingProductCasePreview } from "./LandingProductCasePreview";
 import { landingAbout, landingTheme } from "./landingTheme";
 
 function scrollToProblems() {
@@ -111,10 +112,8 @@ export const LandingBrandStory = () => {
                     <LandingPracticeWorkspacePreview className="min-h-[200px] sm:min-h-[220px]" />
                   </div>
                 ) : (
-                  <div className="flex min-h-[200px] items-center justify-center border-b border-dashed border-slate-200 bg-gradient-to-br from-slate-50 to-white sm:min-h-[220px]">
-                    <p className={`text-sm ${landingTheme.faint}`}>
-                      제품 개발 사례 이미지 영역
-                    </p>
+                  <div className="border-b border-slate-100">
+                    <LandingProductCasePreview className="min-h-[200px] sm:min-h-[220px]" />
                   </div>
                 )}
                 <div className="p-5 sm:p-6">

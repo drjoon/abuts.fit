@@ -107,19 +107,12 @@ export const LandingStoreShowcase = () => {
                 landingTheme.panelSoft,
               )}
             >
-              <div className="flex h-40 items-center justify-center bg-gradient-to-b from-slate-50 to-white p-4 sm:h-44">
+              {/* 스토어 imageScale은 큰 타일용 — 랜딩 h-40에서는 잘리므로 적용하지 않음 */}
+              <div className="flex h-40 items-center justify-center overflow-hidden bg-gradient-to-b from-slate-50 to-white p-4 sm:h-44">
                 <img
                   src={product.image}
                   alt={product.name}
-                  className="max-h-full w-full object-contain transition duration-300 group-hover:scale-[1.03]"
-                  style={
-                    product.imageScale && product.imageScale !== 1
-                      ? {
-                          transform: `scale(${product.imageScale})`,
-                          transformOrigin: "center",
-                        }
-                      : undefined
-                  }
+                  className="max-h-full max-w-full object-contain transition duration-300 group-hover:scale-[1.03]"
                 />
               </div>
               <div className="flex flex-1 flex-col gap-1 border-t border-slate-100 px-4 py-3.5">

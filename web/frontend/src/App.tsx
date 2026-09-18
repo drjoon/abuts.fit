@@ -3,6 +3,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AppLayout } from "@/features/layout/AppLayout";
+import { ScrollToTop } from "@/features/layout/ScrollToTop";
 import { LoadingScreen } from "@/shared/ui/feedback/LoadingScreen";
 import {
   BrowserRouter,
@@ -544,6 +545,7 @@ const App = () => {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider delayDuration={600} skipDelayDuration={0}>
         <BrowserRouter>
+          <ScrollToTop />
           <Toaster />
           <Sonner />
           <AppLayout>

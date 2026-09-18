@@ -64,7 +64,7 @@ export const Navigation = ({ tone = "dark" }: NavigationProps) => {
       scrollToLandingSection(id);
       return;
     }
-    if (href === "/" && location.pathname === "/") {
+    if (!href.includes("#") && location.pathname === href) {
       window.scrollTo({ top: 0, behavior: "smooth" });
       return;
     }
