@@ -20,6 +20,7 @@ import {
 import { normalizeRequestorKind } from "../../utils/requestorCapabilities.js";
 import { validateCreditSupplyAmount } from "../../utils/creditChargeUnit.js";
 import { buildPartySnapshotFromAnchor } from "../../utils/taxInvoiceParty.util.js";
+import { scheduleFinancePendingBadgeEmit } from "../../services/adminCommBadge.service.js";
 
 async function resolveRequestorKindForCharge(req, businessAnchorId) {
   const anchor = await BusinessAnchor.findById(businessAnchorId)
@@ -301,6 +302,8 @@ export async function createChargeOrder(req, res) {
     status: "PENDING",
     expiresAt,
   });
+
+  scheduleFinancePendingBadgeEmit();
 
   return res.status(201).json({
     success: true,

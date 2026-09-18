@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-18: 기공수가 대기 카운트를 공유 스토어에 반영(설정 허브 탭 배지).
 // - 2026-09-08: 검토 대기(pending) 있을 때 platformTab 미지정이면 기본 기공수가로 진입(하이라이트만 되고 크레딧 본문이 보이던 UX 수정).
 // - 2026-08-22: 작업 영역 가로폭을 사업영역과 동일하게 max-w-4xl로 축소.
 // - 2026-08-21: 커스텀어벗 탭 — 치과 공급 삭제, 기공소 공급→커스텀어벗 가격(생산만).
@@ -43,6 +44,7 @@ import {
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
+import { useAdminAbutsFeePendingStore } from "@/store/useAdminAbutsFeePendingStore";
 
 type TabKey = "credits" | "customAbut" | "autoMatch" | "abutsFees" | "labFees";
 
@@ -75,14 +77,15 @@ export const AdminPlatformSettingsPage = ({
       });
       if (!res.ok) return;
       const payload = res.data?.data;
+      let next = 0;
       if (typeof payload?.pendingCount === "number") {
-        setAbutsPendingCount(Math.max(0, payload.pendingCount));
-        return;
+        next = Math.max(0, payload.pendingCount);
+      } else {
+        const items = Array.isArray(payload?.items) ? payload.items : [];
+        next = items.filter((item) => item.pendingReview === true).length;
       }
-      const items = Array.isArray(payload?.items) ? payload.items : [];
-      setAbutsPendingCount(
-        items.filter((item) => item.pendingReview === true).length,
-      );
+      setAbutsPendingCount(next);
+      useAdminAbutsFeePendingStore.getState().setCount(next);
     } catch {
       // silent
     }
@@ -102,6 +105,7 @@ export const AdminPlatformSettingsPage = ({
       );
       if (Number.isFinite(count) && count >= 0) {
         setAbutsPendingCount(count);
+        useAdminAbutsFeePendingStore.getState().setCount(count);
         return;
       }
       void refreshPendingCount();
@@ -111,6 +115,7 @@ export const AdminPlatformSettingsPage = ({
   const handlePendingCountChange = useCallback((count: number) => {
     const next = Math.max(0, Number(count) || 0);
     setAbutsPendingCount(next);
+    useAdminAbutsFeePendingStore.getState().setCount(next);
     try {
       window.dispatchEvent(
         new CustomEvent("abuts:abuts-lab-fee-pending", {

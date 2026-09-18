@@ -3,9 +3,11 @@
 // - web/backend/app.js
 // - web/backend/server.js
 // - web/backend/services/worksheetReadyQueue.guard.js
+// - web/backend/services/adminCommBadge.service.js
 // - web/backend/models/remoteSupport/remoteSupportSession.model.js
 // - web/frontend/src/shared/hooks/useAdminCommBadges.ts
 // change-log:
+// - 2026-09-18: member·finance·tax 액션대기 카운트 추가.
 // - 2026-09-18: 메일 배지 = inbound 수신함 미읽음만.
 // - 2026-09-06: remoteSupport = 직원 발신 pending 세션 수.
 // - 2026-08-26: 의뢰 배지 = 제조사 준비 큐와 동일(PTX 디자인 미완료·레거시 디자인 mode 제외).
@@ -16,9 +18,14 @@ import Chat from "../../models/chat.model.js";
 import ChatRoom from "../../models/chatRoom.model.js";
 import RemoteSupportSession from "../../models/remoteSupport/remoteSupportSession.model.js";
 import { buildWorksheetReadyQueueGuard } from "../../services/worksheetReadyQueue.guard.js";
+import {
+  countFinanceChargePending,
+  countMemberPending,
+  countTaxPending,
+} from "../../services/adminCommBadge.service.js";
 
 /**
- * 관리자 소통 메뉴 배지 카운트 조회
+ * 관리자 소통·액션대기 메뉴 배지 카운트 조회
  * @route GET /api/admin/comm-badges
  *
  * 이벤트 기반으로 실시간 업데이트되며, 이 엔드포인트는 초기 로드 시에만 호출된다.
@@ -26,58 +33,70 @@ import { buildWorksheetReadyQueueGuard } from "../../services/worksheetReadyQueu
  */
 export async function adminGetCommBadges(req, res) {
   try {
-    const [requestCount, inquiryCount, mailCount, chatCount, remoteSupportCount] =
-      await Promise.all([
-        // 준비: 제조사 준비 큐와 동일 범위(PTX 디자인 대기·레거시 디자인 mode 제외)
-        Request.countDocuments({
-          $and: [
-            { manufacturerStage: "준비" },
-            { source: { $ne: "manufacturer_sample" } },
-            buildWorksheetReadyQueueGuard(),
-          ],
-        }),
+    const [
+      requestCount,
+      inquiryCount,
+      mailCount,
+      chatCount,
+      remoteSupportCount,
+      memberCount,
+      financeCount,
+      taxCount,
+    ] = await Promise.all([
+      // 준비: 제조사 준비 큐와 동일 범위(PTX 디자인 대기·레거시 디자인 mode 제외)
+      Request.countDocuments({
+        $and: [
+          { manufacturerStage: "준비" },
+          { source: { $ne: "manufacturer_sample" } },
+          buildWorksheetReadyQueueGuard(),
+        ],
+      }),
 
-        // 문의: 처리되지 않은 열린 문의
-        BusinessRegistrationInquiry.countDocuments({ status: "open" }),
+      // 문의: 처리되지 않은 열린 문의
+      BusinessRegistrationInquiry.countDocuments({ status: "open" }),
 
-        // 메일: 수신함의 읽지 않은 인바운드 메일
-        Mail.countDocuments({
-          folder: "inbox",
-          isRead: false,
-          direction: "inbound",
-        }),
+      // 메일: 수신함의 읽지 않은 인바운드 메일
+      Mail.countDocuments({
+        folder: "inbox",
+        isRead: false,
+        direction: "inbound",
+      }),
 
-        // 채팅: 관리자가 참여 중인 채팅방의 총 미읽음 메시지 수
-        (async () => {
-          const adminUserId = req.user._id;
-          const rooms = await ChatRoom.find({
-            participants: adminUserId,
-            isArchived: false,
-          })
-            .select("_id")
-            .lean();
-          if (!rooms.length) return 0;
-          const roomIds = rooms.map((r) => r._id);
-          const result = await Chat.aggregate([
-            {
-              $match: {
-                roomId: { $in: roomIds },
-                isDeleted: false,
-                sender: { $ne: adminUserId },
-                "readBy.userId": { $ne: adminUserId },
-              },
+      // 채팅: 관리자가 참여 중인 채팅방의 총 미읽음 메시지 수
+      (async () => {
+        const adminUserId = req.user._id;
+        const rooms = await ChatRoom.find({
+          participants: adminUserId,
+          isArchived: false,
+        })
+          .select("_id")
+          .lean();
+        if (!rooms.length) return 0;
+        const roomIds = rooms.map((r) => r._id);
+        const result = await Chat.aggregate([
+          {
+            $match: {
+              roomId: { $in: roomIds },
+              isDeleted: false,
+              sender: { $ne: adminUserId },
+              "readBy.userId": { $ne: adminUserId },
             },
-            { $count: "total" },
-          ]);
-          return result[0]?.total ?? 0;
-        })(),
+          },
+          { $count: "total" },
+        ]);
+        return result[0]?.total ?? 0;
+      })(),
 
-        // 원격 지원: 직원 발신·대기 중 세션
-        RemoteSupportSession.countDocuments({
-          status: "pending",
-          initiatedBy: "staff",
-        }),
-      ]);
+      // 원격 지원: 직원 발신·대기 중 세션
+      RemoteSupportSession.countDocuments({
+        status: "pending",
+        initiatedBy: "staff",
+      }),
+
+      countMemberPending(),
+      countFinanceChargePending(),
+      countTaxPending(),
+    ]);
 
     return res.json({
       success: true,
@@ -88,6 +107,9 @@ export async function adminGetCommBadges(req, res) {
         chat: chatCount,
         sms: 0,
         remoteSupport: remoteSupportCount,
+        member: memberCount,
+        finance: financeCount,
+        tax: taxCount,
       },
     });
   } catch (error) {

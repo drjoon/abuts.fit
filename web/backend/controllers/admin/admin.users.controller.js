@@ -9,6 +9,7 @@ import Request from "../../models/request.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { generateRandomPassword } from "./admin.shared.controller.js";
 import { emitReferralMembershipChanged } from "../../services/requestSnapshotTriggers.service.js";
+import { scheduleMemberPendingBadgeEmit } from "../../services/adminCommBadge.service.js";
 
 export async function getAllUsers(req, res) {
   try {
@@ -189,6 +190,7 @@ export async function createUser(req, res) {
     await user.save();
 
     const fresh = await User.findById(user._id).select("-password").lean();
+    if (!approvedAt) scheduleMemberPendingBadgeEmit();
     return res.status(201).json({
       success: true,
       data: {
@@ -222,6 +224,7 @@ export async function approveUser(req, res) {
     if (!user.approvedAt) user.approvedAt = new Date();
     user.active = true;
     await user.save();
+    scheduleMemberPendingBadgeEmit();
     return res.status(200).json({
       success: true,
       data: {
@@ -256,6 +259,7 @@ export async function rejectUser(req, res) {
     user.active = false;
     user.approvedAt = null;
     await user.save();
+    scheduleMemberPendingBadgeEmit();
     return res.status(200).json({
       success: true,
       data: {
@@ -417,6 +421,7 @@ export async function toggleUserActive(req, res) {
     user.active = !user.active;
     if (user.active && !user.approvedAt) user.approvedAt = new Date();
     await user.save();
+    scheduleMemberPendingBadgeEmit();
     res.status(200).json({
       success: true,
       message: `사용자가 ${user.active ? "활성화" : "비활성화"}되었습니다.`,
@@ -668,6 +673,7 @@ export async function deleteUserWithBusiness(req, res) {
       includeBusiness: true,
     });
 
+    scheduleMemberPendingBadgeEmit();
     return res.status(200).json({
       success: true,
       message: "사용자와 연결된 사업자가 성공적으로 삭제되었습니다.",
@@ -694,6 +700,7 @@ export async function deleteUser(req, res) {
       user: validation.user,
       includeBusiness: false,
     });
+    scheduleMemberPendingBadgeEmit();
     res.status(200).json({
       success: true,
       message: "사용자가 성공적으로 삭제되었습니다.",

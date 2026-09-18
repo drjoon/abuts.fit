@@ -11,6 +11,7 @@ import {
   getTaxinvoiceInfo,
 } from "../../utils/popbill.util.js";
 import { verifyBusinessNumber } from "../../services/hometax.service.js";
+import { scheduleTaxPendingBadgeEmit } from "../../services/adminCommBadge.service.js";
 
 async function writeAuditLog({ req, action, refType, refId, details }) {
   const actorUserId = req.user?._id;
@@ -227,6 +228,7 @@ export async function adminCancelTaxInvoiceDraft(req, res) {
       refId: id,
       details: null,
     });
+    scheduleTaxPendingBadgeEmit();
     const updated = await TaxInvoiceDraft.findById(id).lean();
     return res.json({ success: true, data: updated });
   }
@@ -521,6 +523,7 @@ export async function adminIssueTaxInvoice(req, res) {
       details: { mgtKey, trxID },
     });
 
+    scheduleTaxPendingBadgeEmit();
     const updated = await TaxInvoiceDraft.findById(id).lean();
     return res.json({
       success: true,

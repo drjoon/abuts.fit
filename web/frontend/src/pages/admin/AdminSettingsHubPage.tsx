@@ -3,12 +3,15 @@
 // - web/frontend/src/pages/admin/system/AdminPlatformSettingsPage.tsx
 // - web/frontend/src/pages/admin/partners/AdminPartnersPage.tsx
 // - web/frontend/src/pages/admin/settings/SettingsPage.tsx
+// - web/frontend/src/store/useAdminAbutsFeePendingStore.ts
 // change-log:
+// - 2026-09-18: 플랫폼 탭에 기본 기공수가 검토 대기 배지.
 // - 2026-09-06: 플랫폼·사업영역·계정설정 허브(?tab=platform|partners|account).
 import { useSearchParams } from "react-router-dom";
 import { AdminPlatformSettingsPage } from "@/pages/admin/system/AdminPlatformSettingsPage";
 import { AdminPartnersPage } from "@/pages/admin/partners/AdminPartnersPage";
 import { AdminSettingsPage } from "@/pages/admin/settings/SettingsPage";
+import { useAdminAbutsFeePendingStore } from "@/store/useAdminAbutsFeePendingStore";
 import {
   AdminPageShell,
   AdminSegmentTabs,
@@ -25,6 +28,7 @@ function parseTab(raw: string | null): SettingsHubTab {
 export default function AdminSettingsHubPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = parseTab(searchParams.get("tab"));
+  const abutsFeePendingCount = useAdminAbutsFeePendingStore((s) => s.count);
 
   const setTab = (next: SettingsHubTab) => {
     const nextParams = setHubTabParam(searchParams, next, "platform");
@@ -41,7 +45,11 @@ export default function AdminSettingsHubPage() {
         value={tab}
         onChange={setTab}
         options={[
-          { value: "platform", label: "플랫폼" },
+          {
+            value: "platform",
+            label: "플랫폼",
+            badge: abutsFeePendingCount,
+          },
           { value: "partners", label: "사업영역" },
           { value: "account", label: "계정" },
         ]}

@@ -25,6 +25,10 @@ import {
   notifyChargePrepaidApplied,
 } from "../../utils/creditBPlanMatching.js";
 import { postGeneralLedgerJournal } from "../../services/generalLedger.service.js";
+import {
+  scheduleFinancePendingBadgeEmit,
+  scheduleTaxPendingBadgeEmit,
+} from "../../services/adminCommBadge.service.js";
 
 async function writeAuditLog({ req, action, refType, refId, details }) {
   const actorUserId = req.user?._id;
@@ -451,6 +455,9 @@ async function approveChargeOrder(req, res, { mock = false } = {}) {
     priority: "1",
   });
 
+  scheduleFinancePendingBadgeEmit();
+  scheduleTaxPendingBadgeEmit();
+
   return res.json({
     success: true,
     data: { chargeOrder: updated },
@@ -569,6 +576,8 @@ export async function adminRejectChargeOrder(req, res) {
     }원)\n사유: ${note}`,
     priority: "0",
   });
+
+  scheduleFinancePendingBadgeEmit();
 
   return res.json({ success: true, data: updated });
 }

@@ -2,11 +2,14 @@
 // - web/frontend/src/pages/admin/adminUi.tsx
 // - web/frontend/src/pages/admin/businesses/AdminBusinessPage.tsx
 // - web/frontend/src/pages/admin/users/AdminUserManagement.tsx
+// - web/frontend/src/shared/hooks/useAdminCommBadges.ts
 // change-log:
+// - 2026-09-18: 사용자 탭 승인대기 unread 배지.
 // - 2026-09-06: 사업자·사용자 허브(?tab=businesses|users).
 import { useSearchParams } from "react-router-dom";
 import AdminBusinessPage from "@/pages/admin/businesses/AdminBusinessPage";
 import { AdminUserManagement } from "@/pages/admin/users/AdminUserManagement";
+import { useAdminCommBadges } from "@/shared/hooks/useAdminCommBadges";
 import {
   AdminPageShell,
   AdminSegmentTabs,
@@ -22,6 +25,7 @@ function parseTab(raw: string | null): MembersTab {
 export default function AdminMembersPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = parseTab(searchParams.get("tab"));
+  const { counts } = useAdminCommBadges();
 
   const setTab = (next: MembersTab) => {
     setSearchParams(setHubTabParam(searchParams, next, "businesses"), {
@@ -36,7 +40,7 @@ export default function AdminMembersPage() {
         onChange={setTab}
         options={[
           { value: "businesses", label: "사업자" },
-          { value: "users", label: "사용자" },
+          { value: "users", label: "사용자", badge: counts.member },
         ]}
       />
       <div className="min-h-0 flex-1">

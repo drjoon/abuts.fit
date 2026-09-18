@@ -36,6 +36,7 @@ import {
   logAuthFailure,
 } from "../../controllers/admin/admin.shared.controller.js";
 import { triggerPricingSnapshotForUserDoc } from "../../services/requestSnapshotTriggers.service.js";
+import { scheduleMemberPendingBadgeEmit } from "../../services/adminCommBadge.service.js";
 import { getBusinessCreditBalanceSnapshot } from "../../services/creditBalance.service.js";
 import { postGeneralLedgerJournal } from "../../services/generalLedger.service.js";
 import { sendEmail } from "../../utils/email.util.js";
@@ -835,6 +836,9 @@ async function register(req, res) {
     delete userWithoutPassword.password;
 
     const isApproved = Boolean(userWithoutPassword.approvedAt);
+    if (!isApproved) {
+      scheduleMemberPendingBadgeEmit();
+    }
     const token = isApproved
       ? generateToken({ userId: user._id, role: user.role })
       : null;

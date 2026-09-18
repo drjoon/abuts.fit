@@ -4,7 +4,10 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/shared/realtime/socket.ts
 // - web/frontend/src/pages/admin/AdminChannelsPage.tsx
+// - web/frontend/src/pages/admin/AdminMembersPage.tsx
+// - web/frontend/src/pages/admin/AdminFinancePage.tsx
 // change-log:
+// - 2026-09-18: member·finance·tax 액션대기 키·절대 count 반영; 회원·재무 사이드 합산.
 // - 2026-09-18: 레이아웃·허브 공유 zustand; 채널은 방문 clear 없이 true unread; 소켓 구독 1회.
 // - 2026-09-06: 지원·채널 허브 합산 배지·탭 단위 clear.
 // - 2026-09-06: remoteSupport 배지 키·href 추가.
@@ -21,7 +24,10 @@ export type CommBadgeKey =
   | "mail"
   | "inquiry"
   | "sms"
-  | "remoteSupport";
+  | "remoteSupport"
+  | "member"
+  | "finance"
+  | "tax";
 
 export type CommBadgeCounts = Record<CommBadgeKey, number>;
 
@@ -34,12 +40,16 @@ const COMM_BADGE_HREFS: Record<string, CommBadgeKey> = {
   "/dashboard/inquiries": "inquiry",
   "/dashboard/support": "remoteSupport",
   "/dashboard/remote-support": "remoteSupport",
+  "/dashboard/members": "member",
+  "/dashboard/finance": "finance",
 };
 
 const HUB_BADGE_KEYS: Record<string, CommBadgeKey[]> = {
   "/dashboard/support": ["remoteSupport", "inquiry"],
   "/dashboard/channels": ["chat", "sms", "mail"],
   "/dashboard/monitoring": ["request"],
+  "/dashboard/members": ["member"],
+  "/dashboard/finance": ["finance", "tax"],
 };
 
 const TAB_BADGE_KEYS: Record<string, CommBadgeKey> = {
@@ -50,8 +60,15 @@ const TAB_BADGE_KEYS: Record<string, CommBadgeKey> = {
   mail: "mail",
 };
 
-/** 채널 허브는 실제 unread를 유지 (방문 시 0으로 지우지 않음) */
-const CHANNEL_UNREAD_KEYS: CommBadgeKey[] = ["chat", "sms", "mail"];
+/** 채널·회원·재무는 실제 대기/unread 유지 (방문 시 0으로 지우지 않음) */
+const TRUE_COUNT_KEYS: CommBadgeKey[] = [
+  "chat",
+  "sms",
+  "mail",
+  "member",
+  "finance",
+  "tax",
+];
 
 const INITIAL_COUNTS: CommBadgeCounts = {
   request: 0,
@@ -60,12 +77,16 @@ const INITIAL_COUNTS: CommBadgeCounts = {
   inquiry: 0,
   sms: 0,
   remoteSupport: 0,
+  member: 0,
+  finance: 0,
+  tax: 0,
 };
 
 type AdminCommBadgeStore = {
   counts: CommBadgeCounts;
   setCounts: (next: CommBadgeCounts) => void;
   applyDelta: (key: CommBadgeKey, delta: number) => void;
+  setKeyCount: (key: CommBadgeKey, count: number) => void;
   zeroKeys: (keys: CommBadgeKey[]) => void;
 };
 
@@ -77,6 +98,13 @@ export const useAdminCommBadgeStore = create<AdminCommBadgeStore>((set) => ({
       counts: {
         ...state.counts,
         [key]: Math.max(0, (state.counts[key] ?? 0) + delta),
+      },
+    })),
+  setKeyCount: (key, count) =>
+    set((state) => ({
+      counts: {
+        ...state.counts,
+        [key]: Math.max(0, count),
       },
     })),
   zeroKeys: (keys) =>
@@ -93,7 +121,7 @@ export const useAdminCommBadgeStore = create<AdminCommBadgeStore>((set) => ({
     }),
 }));
 
-/** 모듈 단일 fetch / cleared / socket — Layout·Channels 허브가 공유 */
+/** 모듈 단일 fetch / cleared / socket — Layout·허브가 공유 */
 const clearedKeysRef = { current: new Set<CommBadgeKey>() };
 let fetchStartedForToken: string | null = null;
 let socketUnsub: (() => void) | null = null;
@@ -121,23 +149,29 @@ function ensureSocketListener() {
   if (socketUnsub) return;
   socketUnsub = onAppEvent((evt) => {
     if (String(evt?.type || "") !== "comm:badge-update") return;
-    const { key, delta } = (evt.data || {}) as {
+    const { key, delta, count } = (evt.data || {}) as {
       key?: CommBadgeKey;
       delta?: number;
+      count?: number;
     };
-    if (!key || typeof delta !== "number") return;
+    if (!key) return;
+    if (typeof count === "number" && Number.isFinite(count)) {
+      useAdminCommBadgeStore.getState().setKeyCount(key, count);
+      return;
+    }
+    if (typeof delta !== "number") return;
     if (clearedKeysRef.current.has(key) && delta > 0) return;
     useAdminCommBadgeStore.getState().applyDelta(key, delta);
   });
 }
 
 /**
- * 관리자 소통 메뉴 배지 카운트 관리 훅.
+ * 관리자 소통·액션대기 메뉴 배지 카운트 관리 훅.
  *
  * - 마운트 시 /api/admin/comm-badges 로 초기 카운트를 1회 조회(전역 공유)
- * - 이후 app-event comm:badge-update 소켓 이벤트로 실시간 증감(구독 1회)
+ * - 이후 app-event comm:badge-update 소켓 이벤트로 실시간 증감/절대값(구독 1회)
  * - 지원/모니터링 등은 방문 시 해당 키를 0으로 초기화
- * - 채널(채팅·메시지·메일)은 true unread 유지(읽음 처리 시 서버 delta)
+ * - 채널·회원·재무는 true count 유지
  */
 export function useAdminCommBadges() {
   const { token, user } = useAuthStore();
@@ -152,27 +186,18 @@ export function useAdminCommBadges() {
     void fetchAdminCommBadges(token);
   }, [token, user?.role]);
 
-  /**
-   * 특정 소통 페이지를 방문했을 때 해당 배지를 0으로 초기화.
-   * DashboardLayout에서 경로 변경 시 호출.
-   * 채널 허브(chat/sms/mail)는 unread를 유지하고 cleared에서만 제외.
-   */
   const clearBadgeForPath = useCallback(
     (pathname: string, search = "") => {
       const path = String(pathname || "").replace(/\/$/, "") || "/";
       const tab = new URLSearchParams(search).get("tab");
 
-      if (path === "/dashboard/channels") {
-        // true unread 유지 + 다른 키 visit-clear 억제 해제
-        clearedKeysRef.current = new Set();
-        return;
-      }
-
-      // 레거시 단독 경로도 채널 키면 clear 하지 않음
       if (
+        path === "/dashboard/channels" ||
         path === "/dashboard/chat-management" ||
         path === "/dashboard/sms" ||
-        path === "/dashboard/mail"
+        path === "/dashboard/mail" ||
+        path === "/dashboard/members" ||
+        path === "/dashboard/finance"
       ) {
         clearedKeysRef.current = new Set();
         return;
@@ -184,7 +209,7 @@ export function useAdminCommBadges() {
         keys.add(TAB_BADGE_KEYS[tab || "remote"] || "remoteSupport");
       } else {
         const single = COMM_BADGE_HREFS[path];
-        if (single && !CHANNEL_UNREAD_KEYS.includes(single)) {
+        if (single && !TRUE_COUNT_KEYS.includes(single)) {
           keys.add(single);
         }
       }

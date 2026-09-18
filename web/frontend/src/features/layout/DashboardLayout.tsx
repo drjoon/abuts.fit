@@ -3,6 +3,7 @@ import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/useAuthStore";
 import { usePeriodStore } from "@/store/usePeriodStore";
+import { useAdminAbutsFeePendingStore } from "@/store/useAdminAbutsFeePendingStore";
 import { AdminPeriodDateFilter } from "@/shared/ui/AdminPeriodDateFilter";
 import { PeriodFilter } from "@/shared/ui/PeriodFilter";
 import { apiFetch } from "@/shared/api/apiClient";
@@ -15,6 +16,7 @@ import {
 } from "@/shared/layout/sidebarOpen";
 import { cn } from "@/shared/ui/cn";
 
+// - 2026-09-18: 기본 기공수가 대기 카운트를 공유 스토어로 설정 허브 탭 배지와 동기화.
 // - 2026-09-16: 어벗츠기공소 사이드 — 크레딧·정산 이중 메뉴를「정산」(/dashboard/credits)로 통합. 지급은 크레딧「지급」탭.
 // - 2026-09-16: 기공소 통장사본 미등록 — 정산일 7일 전 일 1회 안내 모달.
 // - 2026-09-13: CNC 워크시트 — 불완전가공을 상단 공정 탭에서 제거하고 R&D 하위 탭으로 이동.
@@ -608,7 +610,11 @@ export const DashboardLayout = () => {
     useState<ColleagueAccount | null>(null);
   const [requestorPracticeUnreadCount, setRequestorPracticeUnreadCount] =
     useState(0);
-  const [abutsFeePendingCount, setAbutsFeePendingCount] = useState(0);
+  const abutsFeePendingCount = useAdminAbutsFeePendingStore((s) => s.count);
+  const setAbutsFeePendingCount = useAdminAbutsFeePendingStore(
+    (s) => s.setCount,
+  );
+  const bumpAbutsFeePendingCount = useAdminAbutsFeePendingStore((s) => s.bump);
   const [storeActionCount, setStoreActionCount] = useState(0);
   const { rooms: chatRooms } = useChatRooms();
   const {
@@ -1346,7 +1352,7 @@ export const DashboardLayout = () => {
         setAbutsFeePendingCount(count);
       } else {
         const added = Array.isArray(data.items) ? data.items.length : 1;
-        setAbutsFeePendingCount((prev) => Math.max(0, prev + added));
+        bumpAbutsFeePendingCount(added);
       }
       const names = (Array.isArray(data.items) ? data.items : [])
         .map((item) => String(item?.name || "").trim())
