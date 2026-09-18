@@ -212,18 +212,18 @@ export const landingOffers: LandingOffer[] = [
       {
         name: "심플 힐링",
         line: "식립 뒤 치은을 형성합니다.",
-        price: "₩15,400",
+        price: "₩16,500",
         priceNote: "부가세 포함 · 1EA",
-        specs: ["Hex · Non-Hex", "높이·직경 12종", "제조 (주)애크로덴트"],
+        specs: ["Hex · Non-Hex", "직경 6 · 7 · 9", "제조 (주)애크로덴트"],
         buy: { kind: "store", label: "구매하기", productId: "simple-healing-2" },
         visual: HEALING_VISUAL,
       },
       {
         name: "심플어벗",
         line: "보철 전에 규격을 고릅니다.",
-        price: "₩15,400",
+        price: "₩16,500",
         priceNote: "부가세 포함 · 1EA",
-        specs: ["Hex · Non-Hex", "높이 S · M · L · XL", "제조 (주)애크로덴트"],
+        specs: ["Hex · Non-Hex", "높이 XS–XL", "제조 (주)애크로덴트"],
         buy: { kind: "store", label: "구매하기", productId: "simple-abutment-2" },
         visual: ABUTMENT_VISUAL,
       },
@@ -232,12 +232,12 @@ export const landingOffers: LandingOffer[] = [
     slides: [
       {
         title: "Surgical Kit.",
-        line: "판매가 ₩1,320,000.",
+        line: "판매가 ₩1,540,000.",
         visual: KIT_VISUAL,
       },
       {
         title: "Prosthetic Kit.",
-        line: "판매가 ₩880,000.",
+        line: "판매가 ₩1,100,000.",
         visual: {
           kind: "photo",
           src: PROSTHETIC_KIT,
@@ -255,8 +255,8 @@ export const landingOffers: LandingOffer[] = [
       },
     ],
     specs: [
-      { label: "힐링", value: "12종" },
-      { label: "심플어벗", value: "12종" },
+      { label: "힐링", value: "직경 6·7·9" },
+      { label: "심플어벗", value: "높이 5단" },
       { label: "키트", value: "식립 · 체결" },
       { label: "제조", value: "(주)애크로덴트" },
     ],
@@ -267,7 +267,7 @@ export const landingOffers: LandingOffer[] = [
       },
       {
         q: "Hex와 Non-Hex가 있나요?",
-        a: "힐링과 심플어벗 모두 Hex · Non-Hex입니다. 판매가는 각 ₩15,400입니다.",
+        a: "힐링과 심플어벗 모두 Hex · Non-Hex입니다. 판매가는 각 ₩16,500입니다.",
       },
       {
         q: "키트는 무엇이 필요한가요?",

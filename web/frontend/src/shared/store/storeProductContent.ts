@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-19: 키트 구성·단가 — Surgical Pen-Drill/Cup·SurgicalPin(BonePin), Prosthetic Grip Driver×5·Scan bar×4, 풀패키지 어벗 4종×60(판매합 660만).
 // - 2026-09-14: 풀패키지 Surgical+Prosthetic×1 + Abutment 4종×72(판매합 663.52만).
 // - 2026-09-14: 제조단가표 동기 — Hex/NonHex 명칭·Surgical pkg 88·Prosthetic GS×3/Driver S/M/L·단품 제조가.
 // - 2026-09-13: Surgical Kit·SA2 Hex/D-cut·SH2 12종·풀패키지 ×150·Kit Case 2종 동기.
@@ -77,7 +78,7 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
   },
   "simple-abutment": {
     blurb: "For Submerged type",
-    description: "서브머지드 타입용 Simple Abutment [Non-Hex]입니다. 커프 높이(S/M/L)와 직경 라인(6–10)으로 규격을 선택하며, Follow color-band로 시술·보철 기구와 색상을 맞춰 사용합니다.",
+    description: "서브머지드 타입용 Simple Abutment [Non-Hex]입니다. 높이 XS(0.5)·S(2.0)·M(3.5)·L(5.0)·XL(6.5) × 직경 6·7·9 — 15종. Follow color-band로 시술·보철 기구와 색상을 맞춰 사용합니다.",
     specs: [
       { label: "품명", value: "치과용임플란트상부구조물" },
       { label: "모델명", value: "SS06-NC20 외 265건" },
@@ -90,13 +91,13 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
       { label: "보험청구코드", value: "L7552057" },
       { label: "나사", value: "M2.0×P0.4" },
       { label: "HEX", value: "1.20 / 1.28 (임플란트 시스템별)" },
-      { label: "커프(C)", value: "S 2.0 / M 3.5 / L 5.0 mm" },
+      { label: "커프(C)", value: "XS 0.5 / S 2.0 / M 3.5 / L 5.0 / XL 6.5 mm" },
     ],
     blocks: [
       { type: "heading", text: "Simple Abutment [Non-Hex]" },
-      { type: "text", text: "보험청구코드 L7552057. 치수 C(커프)·D(직경)·H(포스트)·HD(HEX), 나사 M2.0×P0.4. 높이 S(2.0)·M(3.5)·L(5.0)·XL(6.5)." },
+      { type: "text", text: "보험청구코드 L7552057. 치수 C(커프)·D(직경)·H(포스트)·HD(HEX), 나사 M2.0×P0.4. 높이 XS(0.5)·S(2.0)·M(3.5)·L(5.0)·XL(6.5) × 직경 6·7·9 — 15종." },
       { type: "heading", text: "제품의 규격" },
-      { type: "list", items: ["적용: Acodent / Osstem / Neo-implant / Megagen / Dio — HEX 1.20 (S2061~ 계열)", "적용: Dentium / Dentis — HEX 1.28 (S2071~ 계열)", "Cuff Short 2.0 / Middle 3.5 / Long 5.0 mm", "직경 라인 6·7·8·9·10"] },
+      { type: "list", items: ["적용: Acodent / Osstem / Neo-implant / Megagen / Dio — HEX 1.20 (S2061~ 계열)", "적용: Dentium / Dentis — HEX 1.28 (S2071~ 계열)", "Cuff XS 0.5 / S 2.0 / M 3.5 / L 5.0 / XL 6.5 mm", "직경 6 · 7 · 9 (15종)"] },
       { type: "image", src: "/store/content/simple-abutment/size-grid.jpg", alt: "치수 다이어그램 C/D/H/HD + 나사" },
       { type: "image", src: "/store/content/simple-abutment/color-band.jpg", alt: "Simple Abutment 사이즈 그리드 S/M/L × 6–10" },
       { type: "heading", text: "Follow color-band" },
@@ -150,29 +151,29 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
   "surgical-kit": {
     blurb: "SurgicalPen · SurgicalPin · BoneShaper 통합 키트",
     description:
-      "린데만 타입 SurgicalPen(Cup 포함), SurgicalPin(기존 CheckPin·InitialPin 겸용), BoneShaper S6·7·9 & M6·7·9(팁 조금 길게, 연마 없음)를 한 트레이에 구성한 시술 키트입니다.",
+      "린데만 타입 SurgicalPen(Pen-Drill×2, Pen-Cup×5), SurgicalPin(CheckPin·BonePin), BoneShaper S6·7·9 & M6·7·9(팁 조금 길게)를 한 트레이에 구성한 시술 키트입니다.",
     specs: [
       { label: "포장단위", value: "1키트" },
       { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
       {
         label: "구성",
-        value: "SurgicalPen×2, Cup×5, SurgicalPin×5, BoneShaper×6, Kit Case×1",
+        value: "Pen-Drill×2, Pen-Cup×5, SurgicalPin×5, BoneShaper×6, Kit Case×1",
       },
     ],
     blocks: [
       { type: "heading", text: "Surgical Kit" },
       {
         type: "text",
-        text: "Initial·Check 단계를 하나의 Surgical Kit로 통합했습니다. 판매가 132만 · 패키지 구매자 pkg 88만.",
+        text: "판매가 154만 · 패키지 구매자 pkg 121만.",
       },
       { type: "heading", text: "구성품" },
       {
         type: "list",
         items: [
-          "SurgicalPen — 린데만 타입, 직경 2.3 (Pen ×2)",
-          "Cup ×5",
-          "SurgicalPin ×5 — 기존 CheckPin이며 InitialPin 역할도 겸함",
-          "BoneShaper ×6 — S6·7·9 및 M6·7·9. 팁 조금 길게. 연마 없음",
+          "Pen-Drill ×2 — 린데만 타입, 직경 2.3",
+          "Pen-Cup ×5",
+          "SurgicalPin ×5 — CheckPin 타입, BonePin 기능",
+          "BoneShaper ×6 — S6·7·9 및 M6·7·9. 팁 조금 길게",
           "Kit Case ×1",
         ],
       },
@@ -273,9 +274,9 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
     ],
   },
   "prosthetic-kit": {
-    blurb: "GingivalShaper · Hex Driver · Torque — 스트레스 없는 보철",
+    blurb: "GingivalShaper · Grip Driver · Scan bar",
     description:
-      "GingivalShaper 6·7·9(3종), Hex Driver S/M/L(헥스 어벗 체결 가이드), Torque wrench를 구성한 보철 마무리 키트. 판매가 88만 · pkg 66만.",
+      "GingivalShaper 6·7·9(3종), Grip Driver Hand S/M/L·Handpiece M/L(5), Scan bar 8·16mm 각 2, Torque wrench. 판매가 110만 · pkg 88만.",
     specs: [
       { label: "품명", value: "치과용임플란트시술기구 외" },
       { label: "모델명", value: "TSKP 외" },
@@ -300,7 +301,8 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
         type: "list",
         items: [
           "GingivalShaper ×3 — 6 · 7 · 9",
-          "Hex Driver S, M, L ×3 — 헥스 어벗 체결 가이드",
+          "Grip Driver ×5 — Hand S·M·L, Handpiece M·L",
+          "Scan bar ×4 — 8mm ×2, 16mm ×2",
           "Torque wrench ×1",
           "Kit Case ×1",
         ],
@@ -323,11 +325,12 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
           "인접치 주의, 수직 사용",
         ],
       },
-      { type: "heading", text: "HEX-driver · Torque wrench" },
+      { type: "heading", text: "Grip Driver · Scan bar · Torque wrench" },
       {
         type: "list",
         items: [
-          "Hex Driver S/M/L: 헥스 어벗 체결 가이드",
+          "Grip Driver: Hand S·M·L, Handpiece M·L",
+          "Scan bar: 8mm · 16mm 각 2",
           "Torque wrench: W-Adaptor 체결(A) → 방향 설정(B) → 눈금에 맞게 당김(C)",
         ],
       },
@@ -347,7 +350,7 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
       { type: "heading", text: "SurgicalPen" },
       {
         type: "text",
-        text: "린데만 타입 · 직경 2.3. Surgical Kit 구성품. 제조 6.6만 ×2 = 판매 13.2만.",
+        text: "린데만 타입 · 직경 2.3. Surgical Kit 구성품. 제조 7.7만 ×2 = 판매 15.4만.",
       },
       {
         type: "image",
@@ -377,7 +380,7 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
   "pen": {
     blurb: "발치 즉시 식립 · 드릴링 패스 수정 · 플랩리스 이니셜 드릴링",
     description:
-      "Lindemann Pen. 제조 6.6만 ×2 = 13.2만. Cup과 결합 가능(Cup 별매).",
+      "Lindemann Pen-Drill. 제조 7.7만 ×2 = 15.4만. Cup과 결합 가능(Cup 별매).",
     specs: [
       { label: "품목명", value: "치과임플란트시술용드릴" },
       { label: "모델명", value: "LD28L" },
@@ -482,12 +485,12 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
     ],
   },
   "check-pin": {
-    blurb: "CheckPin + InitialPin 겸용 · SurgicalPin",
+    blurb: "CheckPin · BonePin · SurgicalPin",
     description:
-      "SurgicalPin은 기존 CheckPin이며 InitialPin 역할도 겸합니다. Fixture 식립 전후 패스·교합 높이·수직 공간 확인에 사용합니다.",
+      "SurgicalPin은 CheckPin 타입에 BonePin 기능을 더한 핀입니다. Fixture 식립 전후 패스·교합 높이·수직 공간 확인에 사용합니다.",
     specs: [
       { label: "품목명", value: "치과용임플란트시술기구" },
-      { label: "역할", value: "CheckPin + InitialPin 겸용" },
+      { label: "역할", value: "CheckPin · BonePin" },
       { label: "포장단위", value: "1EA" },
       { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
       { label: "직경", value: "Ø6.0–Ø10.0 (5종)" },
@@ -496,7 +499,7 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
       { type: "heading", text: "SurgicalPin" },
       {
         type: "text",
-        text: "기존 CheckPin이며 InitialPin 역할도 합니다. Surgical Kit에 5종 포함.",
+        text: "CheckPin 타입에 BonePin 기능을 더했습니다. Surgical Kit에 5종 포함.",
       },
       { type: "heading", text: "규격" },
       {
@@ -515,8 +518,8 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
       {
         type: "list",
         items: [
-          "드릴링 후 삽입해 수평·수직 확인 (InitialPin 역할)",
-          "Fixture 식립 후 내부에 삽입해 패스·교합 높이 재확인 (CheckPin 역할)",
+          "드릴링 후 삽입해 수평·수직 확인 (BonePin)",
+          "Fixture 식립 후 내부에 삽입해 패스·교합 높이 재확인 (CheckPin)",
           "Autoclave 132°C, 15분 후 사용",
         ],
       },
@@ -525,11 +528,11 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
   "bone-shaper": {
     blurb: "S6·7·9 & M6·7·9 · 6종",
     description:
-      "BoneShaper S6·7·9 및 M6·7·9 = 총 6종. 팁 조금 길게, 연마 없음. Fixture 식립 후 Healing 체결용 cortical bone 성형.",
+      "BoneShaper S6·7·9 및 M6·7·9 = 총 6종. 팁 조금 길게. Fixture 식립 후 Healing 체결용 cortical bone 성형.",
     specs: [
       { label: "품목명", value: "치과임플란트시술용드릴" },
       { label: "구성", value: "S6·7·9, M6·7·9 (6종)" },
-      { label: "비고", value: "팁 조금 길게 · 연마 없음" },
+      { label: "비고", value: "팁 조금 길게" },
       { label: "포장단위", value: "1EA" },
       { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
       { label: "권장 조건", value: "20:1 / 1,000~1,500 rpm / 45~55 Torque / 주수하" },
@@ -538,7 +541,7 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
       { type: "heading", text: "BoneShaper" },
       {
         type: "text",
-        text: "S6·7·9 및 M6·7·9 = 총 6종. 팁 조금 길게. 연마는 하지 않습니다. Surgical Kit 구성품.",
+        text: "S6·7·9 및 M6·7·9 = 총 6종. 팁 조금 길게. Surgical Kit 구성품.",
       },
       {
         type: "image",
@@ -592,9 +595,9 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
     ],
   },
   "hex-driver": {
-    blurb: "S/M/L · 헥스 어벗 체결 가이드",
+    blurb: "Hand S·M·L · Handpiece M·L",
     description:
-      "Hex Driver S, M, L 3종. 헥스 어벗 체결 가이드. 제조 3.3만 ×2 = 6.6만.",
+      "Grip Driver. Hand S·M·L, Handpiece M·L — 5종. 제조 2.2만 ×2 = 4.4만.",
     specs: [
       { label: "품명", value: "치과임플란트시술용스크루드라이버" },
       { label: "모델명", value: "HA25S외 7건" },
@@ -605,15 +608,15 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
       { label: "포장단위", value: "EA" },
       { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
       { label: "품질책임자/전화번호", value: "이상훈 / Tel : 055-314-4607" },
-      { label: "구성", value: "S / M / L (3종)" },
+      { label: "구성", value: "Hand S·M·L, Handpiece M·L (5종)" },
       { label: "모델", value: "WD12S (Short) / WD12M (Middle) / WD12L (Long)" },
       { label: "길이", value: "Short · Middle · Long" },
       { label: "HEX", value: "1.20" },
       { label: "Pd.No", value: "T7145 / T7146" },
     ],
     blocks: [
-      { type: "heading", text: "Wrench HEX-driver (S / M / L)" },
-      { type: "text", text: "임플란트 시술 시 구성품을 결합하는 과정에서 나사를 조이는 기구. 신고번호 제신19-1048호. 헥스 어벗 체결 가이드." },
+      { type: "heading", text: "Grip Driver" },
+      { type: "text", text: "Hand S·M·L, Handpiece M·L. 어벗 체결용. 제조 2.2만 ×2 = 4.4만." },
       { type: "image", src: "/store/content/hex-driver/drivers.jpg", alt: "HEX-driver S / M / L" },
       { type: "heading", text: "사용방법" },
       { type: "list", items: ["제품을 선택해 렌치에 체결", "상부구조물(또는 고정체)에 체결해 대상물로 이동 후 결합", "시술 전 Autoclave 습열멸균(132°C, 15분)"] },
@@ -622,7 +625,7 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
   "torque-wrench": {
     blurb: "나사를 설정 토크로 조이는 Hand Type 토크 렌치",
     description:
-      "Torque wrench(Hand Type). 제조 8.8만 ×2 = 17.6만. W-Adaptor를 체결하고 방향·눈금을 설정해 사용합니다.",
+      "Torque wrench(Hand Type). 제조 9.9만 ×2 = 19.8만. W-Adaptor를 체결하고 방향·눈금을 설정해 사용합니다.",
     specs: [
       { label: "품명", value: "치과용임플란트시술기구" },
       { label: "모델명", value: "EX14외 11건" },
@@ -647,7 +650,7 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
   },
   "simple-healing": {
     blurb: "For Submerged type · Non-Hex",
-    description: "서브머지드 타입용 Healing Abutment [Non-Hex]입니다. 힐링·어벗 각 12종. Simple Abutment와 같은 Follow color-band로 규격을 맞춥니다.",
+    description: "서브머지드 타입용 Healing Abutment [Non-Hex]입니다. 힐링·어벗 각 15종. Simple Abutment와 같은 Follow color-band로 규격을 맞춥니다.",
     specs: [
       { label: "품명", value: "치과용임플란트상부구조물" },
       { label: "모델명", value: "SH06-H0C20 외 44건" },
@@ -659,22 +662,22 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
       { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
       { label: "HEX", value: "1.20 / 1.28 (임플란트 시스템별)" },
       { label: "헤드 높이(H)", value: "약 3.5 mm" },
-      { label: "커프(C)", value: "S 2.0 / M 3.5 / L 5.0 mm" },
+      { label: "커프(C)", value: "XS 0.5 / S 2.0 / M 3.5 / L 5.0 / XL 6.5 mm" },
     ],
     blocks: [
       { type: "heading", text: "Healing Abutment" },
       { type: "text", text: "픽스처 식립 후 연조직 힐링을 위한 어버트먼트. 상단 표기(예: 8M)로 규격을 확인하고 HEX 드라이버로 체결합니다." },
       { type: "heading", text: "제품의 규격" },
-      { type: "list", items: ["Acodent / Osstem / Neo / Megagen / Dio — HEX 1.20 (S1061~ 계열)", "Dentium / Dentis — HEX 1.28 (S1071~ 계열)", "Cuff S 2.0 / M 3.5 / L 5.0 mm", "직경 라인 6·7·8·9·10 (예: Ø5.4~Ø9.0대)"] },
+      { type: "list", items: ["Acodent / Osstem / Neo / Megagen / Dio — HEX 1.20 (S1061~ 계열)", "Dentium / Dentis — HEX 1.28 (S1071~ 계열)", "Cuff XS 0.5 / S 2.0 / M 3.5 / L 5.0 / XL 6.5 mm", "직경 6 · 7 · 9 (15종)"] },
       { type: "image", src: "/store/content/simple-healing/size-grid.jpg", alt: "치수 다이어그램 D/H/C/HD + 상단 8M 표기 예시" },
       { type: "heading", text: "Follow color-band" },
       { type: "text", text: "Pen·Pin·BoneShaper와 동일 색상 밴드로 Healing → Simple Abut. → Final까지 규격을 유지합니다." },
     ],
   },
   "full-package": {
-    blurb: "키트 2종 + Abutment 288EA",
+    blurb: "키트 2종 + Abutment 240EA",
     description:
-      "Surgical·Prosthetic Kit 각 1키트, SimpleAbutment·Healing Hex/NonHex 각 72EA. 구성 판매합 663.52만 → 패키지 판매가 500만.",
+      "Surgical·Prosthetic Kit 각 1키트, SimpleAbutment·Healing Hex/NonHex 각 60EA. 구성 판매합 660만 → 패키지 판매가 500만.",
     blocks: [
       { type: "heading", text: "500만 패키지 구성" },
       {
@@ -682,10 +685,10 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
         items: [
           "Surgical Kit ×1",
           "Prosthetic Kit ×1",
-          "SimpleAbutment-Hex ×72",
-          "SimpleHealing-Hex ×72",
-          "SimpleAbutment-NonHex ×72",
-          "SimpleHealing-NonHex ×72",
+          "SimpleAbutment-Hex ×60",
+          "SimpleHealing-Hex ×60",
+          "SimpleAbutment-NonHex ×60",
+          "SimpleHealing-NonHex ×60",
         ],
       },
       {
@@ -727,7 +730,7 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
   "kit-case": {
     blurb: "Surgical / Prosthetic · 2종",
     description:
-      "시술 키트 수납용 케이스. Surgical(제조 13.2만)×2 · Prosthetic(제조 12.1만)×2.",
+      "시술 키트 수납용 케이스. Surgical·Prosthetic 모두 제조 12.1만 ×2 = 24.2만.",
     specs: [
       { label: "포장단위", value: "1EA" },
       { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
@@ -745,7 +748,7 @@ export const STORE_PRODUCT_CONTENT: Record<string, StoreProductContent> = {
       {
         type: "list",
         items: [
-          "Surgical Kit Case — Surgical Kit 전용 (판매가 264,000원)",
+          "Surgical Kit Case — Surgical Kit 전용 (판매가 242,000원)",
           "Prosthetic Kit Case — Prosthetic Kit 전용 (판매가 242,000원)",
         ],
       },

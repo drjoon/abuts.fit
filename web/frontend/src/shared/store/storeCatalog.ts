@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-19: 판매·구성 재동기 — Surgical 154/pkg 121, Prosthetic 110/pkg 88(Grip Driver×5·Scan bar×4), Abutment 1.65/pkg 1.32×60. 풀패키지 구성합 660만·판매가 500만. 단품=제조×2.
 // - 2026-09-14: 판매가표 재동기 — 풀패키지 Surgical+Prosthetic×1 + Abutment 4종×72(판매합 663.52만)·패키지 판매가 500만.
 // - 2026-09-14: 제조단가표 동기 — Surgical pkg 88만. Prosthetic 케이스 12.1·Gingival 4.4·Hex 3.3·Torque 8.8×2. Hex/NonHex 명칭. Prosthetic GS×3·Driver S/M/L.
 // - 2026-09-13: Surgical Kit 통합(Initial+Check). 판매 132/88만·pkg 99/66. 단품 제조×2(Pen 6.6·Gingival 3.96·Torque 9.9). 풀패키지 구성합 682만·SA2/SH2×150.
@@ -73,13 +74,13 @@ const KIT_CASE_SPECS: StoreProductSpec[] = [
   { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
 ];
 
-/** Kit Case 단품 — Surgical(제조 13.2만) / Prosthetic(제조 12.1만) ×2. */
+/** Kit Case 단품 — Surgical·Prosthetic 모두 제조 12.1만 ×2. */
 export const KIT_CASE_OPTIONS: StoreProductOption[] = [
   {
     id: "kit-case-surgical",
     label: "Surgical Kit Case",
-    listPriceInclusive: 264_000,
-    packagePriceInclusive: 214_500,
+    listPriceInclusive: 242_000,
+    packagePriceInclusive: 198_000,
   },
   {
     id: "kit-case-prosthetic",
@@ -139,13 +140,13 @@ export const STORE_CATEGORIES: StoreCategory[] = [
         image: "/store/acrodent/simple-abutment.jpg",
         blurb: "Simple Abut. [Non-Hex]",
         description:
-          "acrodent Simple Abut. [Non-Hex]. Submerged type용 기본형 Simple Abutment. 높이 S(2.0)·M(3.5)·L(5.0)·XL(6.5).",
+          "acrodent Simple Abut. [Non-Hex]. 높이 XS(0.5)·S(2.0)·M(3.5)·L(5.0)·XL(6.5) × 직경 6·7·9 — 15종.",
         galleryImages: ["/store/acrodent/simple-abutment.jpg"],
         contentImages: ["/store/detail/simple-abutment-1.jpg"],
         specs: [
           { label: "품명", value: "치과용임플란트상부구조물" },
           { label: "acrodent", value: "Simple Abut. [Non-Hex]" },
-          { label: "높이", value: "S 2.0 / M 3.5 / L 5.0 / XL 6.5 mm" },
+          { label: "높이", value: "XS 0.5 / S 2.0 / M 3.5 / L 5.0 / XL 6.5 mm" },
           { label: "포장단위", value: "1EA" },
           { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
         ],
@@ -156,13 +157,13 @@ export const STORE_CATEGORIES: StoreCategory[] = [
         image: "/store/acrodent/simple-healing.jpg",
         blurb: "Healing Abut. · Non-Hex",
         description:
-          "acrodent Healing Abut. [Non-Hex]. Fixture 식립 후 치은 치유·형성용. 힐링·어벗 각 12종.",
+          "acrodent Healing Abut. [Non-Hex]. Fixture 식립 후 치은 치유·형성용. 힐링·어벗 각 15종.",
         galleryImages: ["/store/acrodent/simple-healing.jpg"],
         contentImages: ["/store/detail/simple-healing-1.jpg"],
         specs: [
           { label: "품명", value: "치과용임플란트상부구조물" },
           { label: "acrodent", value: "Healing Abut. [Non-Hex]" },
-          { label: "규격", value: "힐링·어벗 각 12종" },
+          { label: "규격", value: "힐링·어벗 각 15종" },
           { label: "포장단위", value: "1EA" },
           { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
         ],
@@ -177,10 +178,10 @@ export const STORE_CATEGORIES: StoreCategory[] = [
         id: "full-package",
         name: "500만 패키지",
         image: "/store/acrodent/full-package.jpg",
-        blurb: "키트 2종 + Abutment 288EA",
+        blurb: "키트 2종 + Abutment 240EA",
         alwaysUsePackagePrice: true,
         description:
-          "Surgical·Prosthetic Kit 각 1키트, SimpleAbutment·Healing Hex/NonHex 각 72EA. 구성 판매합 663.52만 → 패키지 판매가 500만.",
+          "Surgical·Prosthetic Kit 각 1키트, SimpleAbutment·Healing Hex/NonHex 각 60EA. 구성 판매합 660만 → 패키지 판매가 500만.",
         galleryImages: [
           "/store/acrodent/full-package.jpg",
           "/store/acrodent/initial-kit.jpg",
@@ -202,9 +203,9 @@ export const STORE_CATEGORIES: StoreCategory[] = [
           {
             label: "구성",
             value:
-              "Surgical Kit ×1, Prosthetic Kit ×1, SimpleAbutment-Hex ×72, SimpleHealing-Hex ×72, SimpleAbutment-NonHex ×72, SimpleHealing-NonHex ×72",
+              "Surgical Kit ×1, Prosthetic Kit ×1, SimpleAbutment-Hex ×60, SimpleHealing-Hex ×60, SimpleAbutment-NonHex ×60, SimpleHealing-NonHex ×60",
           },
-          { label: "구성 판매합", value: "6,635,200원" },
+          { label: "구성 판매합", value: "6,600,000원" },
           { label: "패키지 판매가", value: "5,000,000원" },
           { label: "포장단위", value: "1세트" },
           { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
@@ -216,7 +217,7 @@ export const STORE_CATEGORIES: StoreCategory[] = [
         image: "/store/acrodent/initial-kit.jpg",
         blurb: "SurgicalPen · SurgicalPin · BoneShaper",
         description:
-          "린데만 타입 SurgicalPen(Cup 포함, 직경 2.3), SurgicalPin(CheckPin+InitialPin 겸용), BoneShaper S/M 6종. 판매가 132만 · pkg 88만.",
+          "린데만 타입 SurgicalPen(Pen-Drill×2, Pen-Cup×5, 직경 2.3), SurgicalPin(CheckPin·BonePin), BoneShaper S/M 6종. 판매가 154만 · pkg 121만.",
         galleryImages: [
           "/store/acrodent/initial-kit.jpg",
           "/store/acrodent/check-kit.jpg",
@@ -233,9 +234,9 @@ export const STORE_CATEGORIES: StoreCategory[] = [
           {
             label: "구성",
             value:
-              "SurgicalPen(Pen)×2, Cup×5, SurgicalPin×5, BoneShaper×6, Kit Case×1",
+              "Pen-Drill×2, Pen-Cup×5, SurgicalPin×5, BoneShaper×6, Kit Case×1",
           },
-          { label: "BoneShaper", value: "S6·7·9 & M6·7·9 (6종)" },
+          { label: "BoneShaper", value: "S6·7·9 & M6·7·9 (6종) · 팁 조금 길게" },
           { label: "포장단위", value: "1키트" },
           { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
         ],
@@ -244,9 +245,9 @@ export const STORE_CATEGORIES: StoreCategory[] = [
         id: "prosthetic-kit",
         name: "Prosthetic Kit",
         image: "/store/acrodent/prosthetic-kit.jpg",
-        blurb: "GingivalShaper · Hex Driver · Torque",
+        blurb: "GingivalShaper · Grip Driver · Scan bar",
         description:
-          "GingivalShaper 6·7·9(3종), Hex Driver S/M/L(헥스 어벗 체결 가이드), Torque wrench. 판매가 88만 · pkg 66만.",
+          "GingivalShaper 6·7·9(3종), Grip Driver Hand S/M/L·Handpiece M/L(5), Scan bar 8·16mm 각 2, Torque wrench. 판매가 110만 · pkg 88만.",
         galleryImages: [
           "/store/acrodent/prosthetic-kit.jpg",
           "/store/acrodent/gingival-shaper.jpg",
@@ -258,9 +259,13 @@ export const STORE_CATEGORIES: StoreCategory[] = [
           {
             label: "구성",
             value:
-              "GingivalShaper ×3, Hex Driver ×3, Torque wrench ×1, Kit Case ×1",
+              "GingivalShaper ×3, Grip Driver ×5, Scan bar ×4, Torque wrench ×1, Kit Case ×1",
           },
-          { label: "Hex Driver", value: "S, M, L 3종 · 헥스 어벗 체결 가이드" },
+          {
+            label: "Grip Driver",
+            value: "Hand S·M·L, Handpiece M·L (5종)",
+          },
+          { label: "Scan bar", value: "8mm ×2, 16mm ×2" },
           { label: "GingivalShaper", value: "6 · 7 · 9 (3종)" },
           { label: "포장단위", value: "1키트" },
           { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
@@ -278,7 +283,7 @@ export const STORE_CATEGORIES: StoreCategory[] = [
         image: "/store/acrodent/kit-case.jpg",
         blurb: "Surgical / Prosthetic · 2종",
         description:
-          "시술 키트 수납용 케이스. Surgical(제조 13.2만)×2 · Prosthetic(제조 12.1만)×2.",
+          "시술 키트 수납용 케이스. Surgical·Prosthetic 모두 제조 12.1만 ×2 = 24.2만.",
         galleryImages: ["/store/acrodent/kit-case.jpg"],
         specs: KIT_CASE_SPECS,
         options: KIT_CASE_OPTIONS,
@@ -290,7 +295,7 @@ export const STORE_CATEGORIES: StoreCategory[] = [
         image: "/store/acrodent/initial-pen.jpg",
         blurb: "린데만 타입 · 직경 2.3",
         description:
-          "린데만 타입 SurgicalPen, 직경 2.3. 제조 6.6만 ×2 = 13.2만.",
+          "린데만 타입 Pen-Drill, 직경 2.3. 제조 7.7만 ×2 = 15.4만.",
         galleryImages: ["/store/acrodent/initial-pen.jpg"],
         contentImages: ["/store/detail/initial-pen-1.jpg"],
         specs: [
@@ -304,7 +309,7 @@ export const STORE_CATEGORIES: StoreCategory[] = [
         name: "Pen",
         image: "/store/acrodent/pen.jpg",
         blurb: "Lindemann Pen",
-        description: "acrodent Lindemann Pen. 제조 6.6만 ×2 = 13.2만.",
+        description: "acrodent Lindemann Pen-Drill. 제조 7.7만 ×2 = 15.4만.",
         galleryImages: ["/store/acrodent/pen.jpg"],
         contentImages: ["/store/detail/pen-1.jpg"],
         specs: [
@@ -318,7 +323,7 @@ export const STORE_CATEGORIES: StoreCategory[] = [
         name: "Cup",
         image: "/store/acrodent/cup.jpg",
         blurb: "Cup · 5종",
-        description: "acrodent Cup. 제조 0.55만 ×2 = 1.1만.",
+        description: "Pen-Cup. 제조 1.32만 ×2 = 2.64만.",
         galleryImages: ["/store/acrodent/cup.jpg"],
         contentImages: ["/store/detail/cup-1.jpg"],
         specs: [
@@ -331,13 +336,13 @@ export const STORE_CATEGORIES: StoreCategory[] = [
         id: "check-pin",
         name: "SurgicalPin",
         image: "/store/acrodent/check-pin.jpg",
-        blurb: "CheckPin + InitialPin 겸용 · 5종",
+        blurb: "CheckPin · BonePin · 5종",
         description:
-          "기존 CheckPin이며 InitialPin 역할도 겸함. 제조 2.75만 ×2 = 5.5만.",
+          "CheckPin 타입에 BonePin 기능을 더한 SurgicalPin. 제조 3.3만 ×2 = 6.6만.",
         galleryImages: ["/store/acrodent/check-pin.jpg"],
         contentImages: ["/store/detail/check-pin-1.jpg"],
         specs: [
-          { label: "역할", value: "CheckPin + InitialPin 겸용" },
+          { label: "역할", value: "CheckPin · BonePin" },
           { label: "포장단위", value: "1EA" },
           { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
         ],
@@ -348,12 +353,12 @@ export const STORE_CATEGORIES: StoreCategory[] = [
         image: "/store/acrodent/bone-shaper.jpg",
         blurb: "BoneShaper · S/M 6종",
         description:
-          "S6·7·9 및 M6·7·9 = 총 6종. 팁 조금 길게. 연마 없음. 제조 3.85만 ×2 = 7.7만.",
+          "S6·7·9 및 M6·7·9 = 총 6종. 팁 조금 길게. 제조 4.4만 ×2 = 8.8만.",
         galleryImages: ["/store/acrodent/bone-shaper.jpg"],
         contentImages: ["/store/detail/bone-shaper-1.jpg"],
         specs: [
           { label: "구성", value: "S6·7·9, M6·7·9 (주문 시 사이즈 지정)" },
-          { label: "비고", value: "팁 조금 길게 · 연마 없음" },
+          { label: "비고", value: "팁 조금 길게" },
           { label: "포장단위", value: "1EA" },
           { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
         ],
@@ -374,16 +379,16 @@ export const STORE_CATEGORIES: StoreCategory[] = [
       },
       {
         id: "hex-driver",
-        name: "Hex Driver",
+        name: "Grip Driver",
         image: "/store/acrodent/hex-driver.jpg",
-        blurb: "S/M/L · 헥스 어벗 체결 가이드",
+        blurb: "Hand S·M·L · Handpiece M·L",
         description:
-          "Hex Driver S, M, L 3종. 헥스 어벗 체결 가이드. 제조 3.3만 ×2 = 6.6만.",
+          "Grip Driver. Hand S·M·L, Handpiece M·L — 5종. 제조 2.2만 ×2 = 4.4만.",
         galleryImages: ["/store/acrodent/hex-driver.jpg"],
         contentImages: ["/store/detail/hex-driver-1.jpg"],
         specs: [
-          { label: "구성", value: "S, M, L (주문 시 사이즈 지정)" },
-          { label: "용도", value: "헥스 어벗 체결 가이드" },
+          { label: "구성", value: "Hand S·M·L, Handpiece M·L (5종)" },
+          { label: "용도", value: "어벗 체결" },
           { label: "포장단위", value: "1EA" },
           { label: "제조자/제조국", value: "(주)애크로덴트/대한민국" },
         ],
@@ -393,7 +398,7 @@ export const STORE_CATEGORIES: StoreCategory[] = [
         name: "Torque wrench",
         image: "/store/acrodent/torque-wrench.jpg",
         blurb: "Torque wrench",
-        description: "acrodent Torque wrench. 제조 8.8만 ×2 = 17.6만.",
+        description: "Torque wrench. 제조 9.9만 ×2 = 19.8만.",
         galleryImages: ["/store/acrodent/torque-wrench.jpg"],
         contentImages: ["/store/detail/torque-wrench-1.jpg"],
         specs: [
@@ -422,24 +427,24 @@ export const STORE_SLIDES: StoreSlide[] = STORE_CATEGORIES.flatMap(
 
 /** 판매가(부가세 포함). 백엔드 storeCatalog.js 와 동기. 단품=제조×2. */
 const STORE_LIST_INCLUSIVE_PRICES: Record<string, number> = {
-  "full-package": 6_635_200,
-  "surgical-kit": 1_320_000,
-  "prosthetic-kit": 880_000,
-  "kit-case": 242_000, // 카드 최저가(Prosthetic). 구매 SKU는 옵션 id.
-  "kit-case-surgical": 264_000,
+  "full-package": 6_600_000, // Surgical 154 + Prosthetic 110 + Abutment 4종×60×1.65
+  "surgical-kit": 1_540_000,
+  "prosthetic-kit": 1_100_000,
+  "kit-case": 242_000,
+  "kit-case-surgical": 242_000, // mfg 12.1만 ×2
   "kit-case-prosthetic": 242_000,
-  "initial-pen": 132_000,
-  pen: 132_000,
-  cup: 11_000,
-  "check-pin": 55_000,
-  "bone-shaper": 77_000,
-  "gingival-shaper": 88_000,
-  "hex-driver": 66_000,
-  "torque-wrench": 176_000,
-  "simple-abutment-2": 15_400,
-  "simple-healing-2": 15_400,
-  "simple-abutment": 15_400,
-  "simple-healing": 15_400,
+  "initial-pen": 154_000, // Pen-Drill mfg 7.7만 ×2
+  pen: 154_000,
+  cup: 26_400, // Pen-Cup mfg 1.32만 ×2
+  "check-pin": 66_000, // SurgicalPin mfg 3.3만 ×2
+  "bone-shaper": 88_000, // mfg 4.4만 ×2
+  "gingival-shaper": 88_000, // mfg 4.4만 ×2
+  "hex-driver": 44_000, // Grip Driver mfg 2.2만 ×2
+  "torque-wrench": 198_000, // mfg 9.9만 ×2
+  "simple-abutment-2": 16_500,
+  "simple-healing-2": 16_500,
+  "simple-abutment": 16_500,
+  "simple-healing": 16_500,
 };
 
 /**
@@ -474,23 +479,23 @@ function packageInclusiveFromList(listInclusive: number): number {
 /** pkg가(부가세 포함). BA.storePackageBuyer 또는 풀패키지 상시. */
 const STORE_PACKAGE_INCLUSIVE_PRICES: Record<string, number> = {
   "full-package": 5_000_000,
-  "surgical-kit": 880_000,
-  "prosthetic-kit": 660_000,
+  "surgical-kit": 1_210_000,
+  "prosthetic-kit": 880_000,
   "kit-case": packageInclusiveFromList(242_000),
-  "kit-case-surgical": packageInclusiveFromList(264_000),
+  "kit-case-surgical": packageInclusiveFromList(242_000),
   "kit-case-prosthetic": packageInclusiveFromList(242_000),
-  "initial-pen": packageInclusiveFromList(132_000),
-  pen: packageInclusiveFromList(132_000),
-  cup: packageInclusiveFromList(11_000),
-  "check-pin": packageInclusiveFromList(55_000),
-  "bone-shaper": packageInclusiveFromList(77_000),
+  "initial-pen": packageInclusiveFromList(154_000),
+  pen: packageInclusiveFromList(154_000),
+  cup: packageInclusiveFromList(26_400),
+  "check-pin": packageInclusiveFromList(66_000),
+  "bone-shaper": packageInclusiveFromList(88_000),
   "gingival-shaper": packageInclusiveFromList(88_000),
-  "hex-driver": packageInclusiveFromList(66_000),
-  "torque-wrench": packageInclusiveFromList(176_000),
-  "simple-abutment-2": 12_100,
-  "simple-healing-2": 12_100,
-  "simple-abutment": 12_100,
-  "simple-healing": 12_100,
+  "hex-driver": packageInclusiveFromList(44_000),
+  "torque-wrench": packageInclusiveFromList(198_000),
+  "simple-abutment-2": 13_200,
+  "simple-healing-2": 13_200,
+  "simple-abutment": 13_200,
+  "simple-healing": 13_200,
 };
 
 /** 타일 여백 보정 — 흰 배경 큰 상품일수록 확대. 어벗 4종은 원본(1). */

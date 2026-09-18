@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-19: 저장 레이아웃의 구성 힌트를 신규 키트·패키지 구성으로 갱신.
 // - 2026-09-13: hiddenProductIds — 미분류 상품 관리자 삭제(목록 숨김).
 // - 2026-09-13: Initial/Check·kit-case-initial/check 클러스터 → Surgical 기본으로 마이그레이션.
 // - 2026-09-13: 관리자 스토어 클러스터 레이아웃 로드/저장·검증.
@@ -31,6 +32,28 @@ function migrateLegacyKitCaseInClusters(clusters) {
   });
   if (!needsReset) return clusters;
   return cloneDefaultStoreProductClusters();
+}
+
+/** 2026-09-19 구성 힌트. 저장된 레이아웃의 힌트만 갱신하고 배치는 유지. */
+const COMPOSITION_HINTS = Object.freeze({
+  "full-package": "키트 2종 + Abutment 4종 ×60",
+  "surgical-kit":
+    "Surgical 케이스 · Pen-Drill · Pen-Cup · SurgicalPin · BoneShaper",
+  "prosthetic-kit":
+    "Prosthetic 케이스 · GingivalShaper(6·7·9) · Grip Driver(5) · Scan bar · Torque",
+});
+
+function migrateCompositionHints(clusters) {
+  if (!Array.isArray(clusters) || !clusters.length) return clusters;
+  let changed = false;
+  const next = clusters.map((c) => {
+    const id = String(c?.id || "");
+    const hint = COMPOSITION_HINTS[id];
+    if (!hint || String(c?.compositionHint || "") === hint) return c;
+    changed = true;
+    return { ...c, compositionHint: hint };
+  });
+  return changed ? next : clusters;
 }
 
 function normalizeHiddenProductIds(raw) {
@@ -159,7 +182,8 @@ function stripProductFromClusters(clusters, productId) {
 export async function getOrSeedStoreProductClusterLayout() {
   let doc = await StoreProductClusterLayout.findOne({ key: LAYOUT_KEY }).lean();
   if (doc?.clusters?.length) {
-    const migrated = migrateLegacyKitCaseInClusters(doc.clusters);
+    const migratedLegacy = migrateLegacyKitCaseInClusters(doc.clusters);
+    const migrated = migrateCompositionHints(migratedLegacy);
     if (migrated !== doc.clusters) {
       doc = await StoreProductClusterLayout.findOneAndUpdate(
         { key: LAYOUT_KEY },

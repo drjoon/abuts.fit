@@ -181,7 +181,7 @@ const DEFAULT_STORE_PRODUCT_CLUSTERS: StoreProductCluster[] = [
     label: "500만 패키지",
     parentProductId: "full-package",
     childProductIds: [],
-    compositionHint: "키트 2종 + Abutment 4종 ×72",
+    compositionHint: "키트 2종 + Abutment 4종 ×60",
   },
   {
     id: "surgical-kit",
@@ -196,7 +196,7 @@ const DEFAULT_STORE_PRODUCT_CLUSTERS: StoreProductCluster[] = [
       "bone-shaper",
     ],
     compositionHint:
-      "Surgical 케이스 · SurgicalPen · Pen · Cup · SurgicalPin · BoneShaper",
+      "Surgical 케이스 · Pen-Drill · Pen-Cup · SurgicalPin · BoneShaper",
   },
   {
     id: "prosthetic-kit",
@@ -209,7 +209,7 @@ const DEFAULT_STORE_PRODUCT_CLUSTERS: StoreProductCluster[] = [
       "torque-wrench",
     ],
     compositionHint:
-      "Prosthetic 케이스 · GingivalShaper(6·7·9) · Hex Driver(S/M/L) · Torque",
+      "Prosthetic 케이스 · GingivalShaper(6·7·9) · Grip Driver(5) · Scan bar · Torque",
   },
   {
     id: "abutment",

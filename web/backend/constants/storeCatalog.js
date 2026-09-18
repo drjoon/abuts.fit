@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-19: 판매·구성 재동기 — Surgical 154/pkg 121, Prosthetic 110/pkg 88, Abutment 1.65/pkg 1.32×60. 풀패키지 구성합 660만·판매가 500만. 단품=제조×2.
 // - 2026-09-14: 판매가표 재동기 — 풀패키지 Surgical+Prosthetic×1 + Abutment 4종×72(판매합 663.52만)·패키지 판매가 500만.
 // - 2026-09-14: 제조단가표 동기 — Surgical pkg 88만. Prosthetic 케이스 12.1·Gingival 4.4·Hex 3.3·Torque 8.8×2. 명칭 Hex/NonHex. Prosthetic 구성 GS×3·Driver S/M/L.
 // - 2026-09-13: pkg 자격=500만 패키지(full-package) 구매(크레딧 충전 트리거 제거).
@@ -65,44 +66,44 @@ export function packageInclusiveFromList(listInclusive) {
  * 신규 판매·재고 SSOT. 레거시 SKU는 NAMES만 유지(과거 주문 표시).
  */
 export const STORE_PRODUCT_INCLUSIVE_PRICES = Object.freeze({
-  "full-package": 6_635_200, // Surgical 132 + Prosthetic 88 + Abutment 4종×72×1.54
-  "surgical-kit": 1_320_000,
-  "prosthetic-kit": 880_000,
-  "kit-case-surgical": 264_000, // mfg 13.2만 ×2
+  "full-package": 6_600_000, // Surgical 154 + Prosthetic 110 + Abutment 4종×60×1.65
+  "surgical-kit": 1_540_000,
+  "prosthetic-kit": 1_100_000,
+  "kit-case-surgical": 242_000, // mfg 12.1만 ×2
   "kit-case-prosthetic": 242_000, // mfg 12.1만 ×2
-  "initial-pen": 132_000, // SurgicalPen · mfg Pen 6.6만 ×2
-  pen: 132_000, // mfg 6.6만 ×2
-  cup: 11_000, // mfg 0.55만 ×2
-  "check-pin": 55_000, // SurgicalPin · mfg 2.75만 ×2
-  "bone-shaper": 77_000, // mfg 3.85만 ×2
+  "initial-pen": 154_000, // Pen-Drill · mfg 7.7만 ×2
+  pen: 154_000, // mfg 7.7만 ×2
+  cup: 26_400, // Pen-Cup · mfg 1.32만 ×2
+  "check-pin": 66_000, // SurgicalPin · mfg 3.3만 ×2
+  "bone-shaper": 88_000, // mfg 4.4만 ×2
   "gingival-shaper": 88_000, // mfg 4.4만 ×2
-  "hex-driver": 66_000, // mfg 3.3만 ×2
-  "torque-wrench": 176_000, // mfg 8.8만 ×2
-  "simple-abutment-2": 15_400,
-  "simple-healing-2": 15_400,
-  "simple-abutment": 15_400,
-  "simple-healing": 15_400,
+  "hex-driver": 44_000, // Grip Driver · mfg 2.2만 ×2
+  "torque-wrench": 198_000, // mfg 9.9만 ×2
+  "simple-abutment-2": 16_500,
+  "simple-healing-2": 16_500,
+  "simple-abutment": 16_500,
+  "simple-healing": 16_500,
 });
 
 /** pkg가 기본값. full-package·키트·어벗은 고시가, 단품은 packageInclusiveFromList. */
 export const STORE_PRODUCT_PACKAGE_INCLUSIVE_PRICES = Object.freeze({
   "full-package": 5_000_000,
-  "surgical-kit": 880_000,
-  "prosthetic-kit": 660_000,
-  "kit-case-surgical": packageInclusiveFromList(264_000),
+  "surgical-kit": 1_210_000,
+  "prosthetic-kit": 880_000,
+  "kit-case-surgical": packageInclusiveFromList(242_000),
   "kit-case-prosthetic": packageInclusiveFromList(242_000),
-  "initial-pen": packageInclusiveFromList(132_000),
-  pen: packageInclusiveFromList(132_000),
-  cup: packageInclusiveFromList(11_000),
-  "check-pin": packageInclusiveFromList(55_000),
-  "bone-shaper": packageInclusiveFromList(77_000),
+  "initial-pen": packageInclusiveFromList(154_000),
+  pen: packageInclusiveFromList(154_000),
+  cup: packageInclusiveFromList(26_400),
+  "check-pin": packageInclusiveFromList(66_000),
+  "bone-shaper": packageInclusiveFromList(88_000),
   "gingival-shaper": packageInclusiveFromList(88_000),
-  "hex-driver": packageInclusiveFromList(66_000),
-  "torque-wrench": packageInclusiveFromList(176_000),
-  "simple-abutment-2": 12_100,
-  "simple-healing-2": 12_100,
-  "simple-abutment": 12_100,
-  "simple-healing": 12_100,
+  "hex-driver": packageInclusiveFromList(44_000),
+  "torque-wrench": packageInclusiveFromList(198_000),
+  "simple-abutment-2": 13_200,
+  "simple-healing-2": 13_200,
+  "simple-abutment": 13_200,
+  "simple-healing": 13_200,
 });
 
 /** 풀패키지는 누구나 패키지 판매가(500만)로 결제. */
@@ -129,7 +130,7 @@ export const STORE_PRODUCT_NAMES = Object.freeze({
   "check-pin": "SurgicalPin",
   "bone-shaper": "BoneShaper",
   "gingival-shaper": "GingivalShaper",
-  "hex-driver": "Hex Driver",
+  "hex-driver": "Grip Driver",
   "torque-wrench": "Torque wrench",
   "simple-abutment-2": "SimpleAbutment-Hex",
   "simple-healing-2": "SimpleHealing-Hex",

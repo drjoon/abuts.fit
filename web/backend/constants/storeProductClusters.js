@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-19: 풀패키지 Abutment 4종×60. Prosthetic Grip Driver·Scan bar.
 // - 2026-09-14: 풀패키지 Surgical+Prosthetic×1 + Abutment 4종×72.
 // - 2026-09-14: 풀패키지 힌트 SA-Hex/SH-Hex · Abutment 표기 Hex/NonHex.
 // - 2026-09-13: Surgical Kit 클러스터 통합. 풀패키지 SA2·SH2 ×150.
@@ -26,7 +27,7 @@ export const STORE_DEFAULT_PRODUCT_CLUSTERS = Object.freeze([
     label: "500만 패키지",
     parentProductId: "full-package",
     childProductIds: Object.freeze([]),
-    compositionHint: "키트 2종 + Abutment 4종 ×72",
+    compositionHint: "키트 2종 + Abutment 4종 ×60",
   }),
   Object.freeze({
     id: "surgical-kit",
@@ -41,7 +42,7 @@ export const STORE_DEFAULT_PRODUCT_CLUSTERS = Object.freeze([
       "bone-shaper",
     ]),
     compositionHint:
-      "Surgical 케이스 · SurgicalPen · Pen · Cup · SurgicalPin · BoneShaper",
+      "Surgical 케이스 · Pen-Drill · Pen-Cup · SurgicalPin · BoneShaper",
   }),
   Object.freeze({
     id: "prosthetic-kit",
@@ -54,7 +55,7 @@ export const STORE_DEFAULT_PRODUCT_CLUSTERS = Object.freeze([
       "torque-wrench",
     ]),
     compositionHint:
-      "Prosthetic 케이스 · GingivalShaper(6·7·9) · Hex Driver(S/M/L) · Torque",
+      "Prosthetic 케이스 · GingivalShaper(6·7·9) · Grip Driver(5) · Scan bar · Torque",
   }),
   Object.freeze({
     id: "abutment",
