@@ -329,7 +329,7 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
           <h1
             className={cn(
               ONE,
-              "mt-5 text-[clamp(2rem,6.2vw,4.75rem)] font-semibold text-slate-900",
+              "mt-8 text-[clamp(2rem,6.2vw,4.75rem)] font-semibold leading-[1.15] text-slate-900 sm:mt-10",
             )}
           >
             {offer.heroTitle}
@@ -337,7 +337,7 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
           <p
             className={cn(
               ONE,
-              "mt-4 text-[clamp(1.05rem,2.2vw,1.5rem)] text-slate-600",
+              "mt-8 text-[clamp(1.05rem,2.2vw,1.5rem)] text-slate-600 sm:mt-10",
             )}
           >
             {offer.line}
@@ -345,7 +345,7 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
           {offer.cta ? (
             <Button
               type="button"
-              className="mt-10 h-12 rounded-full bg-[#2563eb] px-8 text-sm font-semibold text-white hover:bg-[#1d4ed8]"
+              className="mt-12 h-12 rounded-full bg-[#2563eb] px-8 text-sm font-semibold text-white hover:bg-[#1d4ed8] sm:mt-14"
               onClick={() => {
                 if (offer.cta) onBuy(offer.cta);
               }}
@@ -354,7 +354,7 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
             </Button>
           ) : null}
           {offer.products ? (
-            <div className="mt-10 flex flex-wrap items-center justify-center gap-x-10 gap-y-3">
+            <div className="mt-12 flex flex-wrap items-center justify-center gap-x-10 gap-y-3 sm:mt-14">
               {offer.products.map((product) => (
                 <a
                   key={product.name}

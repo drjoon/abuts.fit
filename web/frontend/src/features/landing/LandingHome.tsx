@@ -64,13 +64,13 @@ export function LandingHome() {
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/15 to-black/25" />
         <div className="relative z-10 w-full px-6 pb-12 pt-28 sm:px-10 sm:pb-16 lg:px-16">
-          <h1 className="max-w-3xl text-4xl font-semibold tracking-tight text-white sm:text-6xl">
+          <h1 className="max-w-3xl text-4xl font-semibold leading-[1.15] tracking-tight text-white sm:text-6xl">
             {landingHome.heroTitle}
           </h1>
-          <p className="mt-4 max-w-xl text-lg text-white/90 sm:text-xl">
+          <p className="mt-6 max-w-xl text-lg text-white/90 sm:mt-8 sm:text-xl">
             {landingHome.heroBody}
           </p>
-          <p className="mt-2 max-w-xl text-lg text-white/80 sm:text-xl">
+          <p className="mt-4 max-w-xl text-lg text-white/80 sm:mt-5 sm:text-xl">
             {landingHome.heroSupport}
           </p>
           <Button
@@ -104,10 +104,10 @@ export function LandingHome() {
               <p className="text-[11px] font-semibold tracking-[0.16em] text-white/80">
                 {offer.navLabel}
               </p>
-              <h2 className="mt-1.5 text-2xl font-semibold tracking-tight text-white">
+              <h2 className="mt-3 text-2xl font-semibold tracking-tight text-white">
                 {offer.punch}
               </h2>
-              <p className="mt-1.5 text-sm leading-relaxed text-white/90">
+              <p className="mt-3 text-sm leading-relaxed text-white/90">
                 {offer.line}
               </p>
             </div>
