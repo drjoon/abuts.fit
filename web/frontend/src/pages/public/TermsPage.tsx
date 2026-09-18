@@ -15,6 +15,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   PublicPageLayout,
   PUBLIC_CARD_CLASS,
+  PUBLIC_PAGE_EYEBROW,
+  PUBLIC_PAGE_TITLE,
+  PUBLIC_PAGE_SUBTITLE,
 } from "./components/PublicPageLayout";
 
 export const TermsPage = () => {
@@ -22,19 +25,19 @@ export const TermsPage = () => {
     <PublicPageLayout>
       <div className="space-y-8 max-w-4xl mx-auto">
         <div className="text-center space-y-2">
-          <p className="text-xs uppercase tracking-[0.35em] text-white/60">
+          <p className={PUBLIC_PAGE_EYEBROW}>
             policy
           </p>
-          <h1 className="text-4xl font-semibold text-white">이용약관</h1>
-          <p className="text-white/70">최종 개정일: 2026년 8월 12일</p>
+          <h1 className={PUBLIC_PAGE_TITLE}>이용약관</h1>
+          <p className="text-slate-600">최종 개정일: 2026년 8월 12일</p>
         </div>
 
         <div className="space-y-8">
           <div>
-            <p className="text-xs uppercase tracking-[0.35em] text-white/60">
+            <p className={PUBLIC_PAGE_EYEBROW}>
               part i
             </p>
-            <h2 className="mt-1 text-2xl font-semibold text-white">통칙</h2>
+            <h2 className="mt-1 text-2xl font-semibold text-[#0b2a5c]">통칙</h2>
           </div>
 
           <Card className={PUBLIC_CARD_CLASS}>
@@ -236,10 +239,10 @@ export const TermsPage = () => {
           </Card>
 
           <div className="pt-4">
-            <p className="text-xs uppercase tracking-[0.35em] text-white/60">
+            <p className={PUBLIC_PAGE_EYEBROW}>
               part ii
             </p>
-            <h2 className="mt-1 text-2xl font-semibold text-white">
+            <h2 className="mt-1 text-2xl font-semibold text-[#0b2a5c]">
               치과회원에 대한 기공물 공급
             </h2>
           </div>
@@ -304,10 +307,10 @@ export const TermsPage = () => {
           </Card>
 
           <div className="pt-4">
-            <p className="text-xs uppercase tracking-[0.35em] text-white/60">
+            <p className={PUBLIC_PAGE_EYEBROW}>
               part iii
             </p>
-            <h2 className="mt-1 text-2xl font-semibold text-white">
+            <h2 className="mt-1 text-2xl font-semibold text-[#0b2a5c]">
               기공회원의 기공물 공급
             </h2>
           </div>

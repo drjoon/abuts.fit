@@ -1,183 +1,139 @@
 // related files:
 // - web/frontend/src/pages/public/Index.tsx
 // - web/frontend/src/shared/store/storeCatalog.ts
-import { useCallback, useEffect, useState } from "react";
-import useEmblaCarousel from "embla-carousel-react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { useMemo, useState } from "react";
+import { ArrowRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/shared/ui/cn";
 import {
-  STORE_SLIDES,
-  getStoreSlideTheme,
+  STORE_CATEGORIES,
+  type StoreProduct,
 } from "@/shared/store/storeCatalog";
 import { landingTheme } from "./landingTheme";
 
-const AUTOPLAY_MS = 6000;
+type BrowseFilter = "all" | "abutment" | "healing" | "kits" | "parts";
 
+const FILTERS: { id: BrowseFilter; label: string }[] = [
+  { id: "all", label: "전체" },
+  { id: "abutment", label: "어벗먼트" },
+  { id: "healing", label: "힐링" },
+  { id: "kits", label: "시술 키트" },
+  { id: "parts", label: "기구" },
+];
+
+function isHealingProduct(product: StoreProduct) {
+  return /healing/i.test(product.id) || /healing/i.test(product.name);
+}
+
+function productsForFilter(filter: BrowseFilter): StoreProduct[] {
+  const abutment = STORE_CATEGORIES.find((c) => c.id === "abutment")?.products ?? [];
+  const kits = STORE_CATEGORIES.find((c) => c.id === "kits")?.products ?? [];
+  const parts = STORE_CATEGORIES.find((c) => c.id === "parts")?.products ?? [];
+
+  if (filter === "abutment") {
+    return abutment.filter((p) => !isHealingProduct(p));
+  }
+  if (filter === "healing") {
+    return abutment.filter((p) => isHealingProduct(p));
+  }
+  if (filter === "kits") return kits.filter((p) => p.id !== "full-package");
+  if (filter === "parts") return parts;
+  return [
+    ...abutment.filter((p) => !isHealingProduct(p)).slice(0, 1),
+    ...abutment.filter((p) => isHealingProduct(p)).slice(0, 1),
+    ...kits.filter((p) => p.id !== "full-package").slice(0, 1),
+  ];
+}
+
+/** 기획: 제품 둘러보기 — 카테고리 탭 + 카드 그리드 */
 export const LandingStoreShowcase = () => {
   const navigate = useNavigate();
-  const [emblaRef, emblaApi] = useEmblaCarousel({ loop: true, duration: 28 });
-  const [selectedIndex, setSelectedIndex] = useState(0);
-
-  const scrollTo = useCallback(
-    (index: number) => emblaApi?.scrollTo(index),
-    [emblaApi],
-  );
-  const scrollPrev = useCallback(() => emblaApi?.scrollPrev(), [emblaApi]);
-  const scrollNext = useCallback(() => emblaApi?.scrollNext(), [emblaApi]);
-
-  useEffect(() => {
-    if (!emblaApi) return;
-    const onSelect = () => setSelectedIndex(emblaApi.selectedScrollSnap());
-    onSelect();
-    emblaApi.on("select", onSelect);
-    return () => {
-      emblaApi.off("select", onSelect);
-    };
-  }, [emblaApi]);
-
-  useEffect(() => {
-    if (!emblaApi) return;
-    const timer = window.setInterval(() => emblaApi.scrollNext(), AUTOPLAY_MS);
-    return () => window.clearInterval(timer);
-  }, [emblaApi]);
-
-  const active = STORE_SLIDES[selectedIndex];
+  const [filter, setFilter] = useState<BrowseFilter>("all");
+  const products = useMemo(() => productsForFilter(filter).slice(0, 6), [filter]);
 
   return (
     <section
       id="store"
       className="relative scroll-mt-20 border-t border-slate-200/80 bg-white sm:scroll-mt-24"
     >
-      <div className="mx-auto max-w-6xl px-4 py-14 sm:px-6 sm:py-16 lg:py-20">
-        <div className="mx-auto max-w-2xl text-center">
-          <p className={landingTheme.eyebrow}>PRODUCTS</p>
-          <h2
-            className={`mt-4 text-2xl font-semibold tracking-tight sm:text-3xl ${landingTheme.headline}`}
+      <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-12 lg:py-14">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2
+              className={`text-2xl font-semibold tracking-tight sm:text-3xl ${landingTheme.headline}`}
+            >
+              제품 둘러보기
+            </h2>
+            <p className={`mt-1.5 text-sm ${landingTheme.muted}`}>
+              어벗먼트·힐링·시술 키트·기구
+            </p>
+          </div>
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 text-sm font-semibold text-sky-600 hover:text-sky-700"
+            onClick={() => navigate("/signup")}
           >
-            제품 둘러보기
-          </h2>
-          <p
-            className={`mt-3 text-sm leading-relaxed sm:text-base ${landingTheme.body}`}
-          >
-            어벗먼트·힐링·시술 키트·기구. 가입 후 스토어에서 이어집니다.
-          </p>
+            전체 제품
+            <ArrowRight className="h-4 w-4" />
+          </button>
         </div>
 
-        <div
-          className={cn(
-            "mt-8 overflow-hidden p-4 sm:mt-10 sm:p-6 lg:p-8",
-            landingTheme.panel,
-          )}
-        >
-          <div className="grid items-center gap-8 lg:grid-cols-[1.1fr_0.9fr] lg:gap-10">
-            <div className="min-w-0 space-y-4 text-center lg:text-left">
-              <p
-                className={`text-[11px] font-medium uppercase tracking-[0.22em] ${landingTheme.faint}`}
-              >
-                {active?.categoryLabel}
-              </p>
-              <h3
-                className={`text-2xl font-semibold tracking-tight sm:text-3xl ${landingTheme.headline}`}
-              >
-                {active?.name}
-              </h3>
-              <p
-                className={`mx-auto max-w-md text-sm leading-relaxed lg:mx-0 ${landingTheme.body}`}
-              >
-                {active?.blurb}
-              </p>
-              <div className="flex flex-wrap items-center justify-center gap-2 pt-1 lg:justify-start">
-                <Button
-                  className={`h-10 px-5 ${landingTheme.ctaGhost}`}
-                  onClick={() => navigate("/signup")}
-                >
-                  가입 후 스토어 보기
-                </Button>
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={scrollPrev}
-                    className={`flex h-9 w-9 items-center justify-center ${landingTheme.ctaGhost}`}
-                    aria-label="이전 상품"
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </button>
-                  <span
-                    className={`min-w-[3.25rem] text-center text-xs tabular-nums ${landingTheme.faint}`}
-                  >
-                    {String(selectedIndex + 1).padStart(2, "0")} /{" "}
-                    {String(STORE_SLIDES.length).padStart(2, "0")}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={scrollNext}
-                    className={`flex h-9 w-9 items-center justify-center ${landingTheme.ctaGhost}`}
-                    aria-label="다음 상품"
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-            </div>
+        <div className="mt-5 flex flex-wrap gap-2">
+          {FILTERS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setFilter(item.id)}
+              className={cn(
+                "rounded-full px-3.5 py-1.5 text-sm font-medium transition",
+                filter === item.id
+                  ? "bg-[#2563eb] text-white shadow-[0_6px_16px_rgba(37,99,235,0.25)]"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200/80",
+              )}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
 
-            <div ref={emblaRef} className="overflow-hidden">
-              <div className="flex">
-                {STORE_SLIDES.map((slide) => {
-                  const theme = getStoreSlideTheme(slide.categoryId);
-                  const scale = slide.imageScale ?? 1;
-                  return (
-                    <div
-                      key={slide.id}
-                      className="min-w-0 shrink-0 grow-0 basis-full"
-                    >
-                      <div className="relative flex items-center justify-center py-2">
-                        <div
-                          className={cn(
-                            "pointer-events-none absolute h-40 w-40 rounded-full blur-3xl",
-                            theme.glow,
-                            "opacity-25",
-                          )}
-                        />
-                        <img
-                          src={slide.image}
-                          alt={slide.name}
-                          className="relative z-[1] h-48 w-full max-w-xs object-contain sm:h-56"
-                          style={
-                            scale !== 1
-                              ? {
-                                  transform: `scale(${scale})`,
-                                  transformOrigin: "center",
-                                }
-                              : undefined
-                          }
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
+        <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 lg:gap-4">
+          {products.map((product) => (
+            <button
+              key={product.id}
+              type="button"
+              onClick={() => navigate("/signup")}
+              className={cn(
+                "group flex flex-col overflow-hidden text-left transition hover:border-sky-200 hover:shadow-[0_12px_28px_rgba(15,23,42,0.08)]",
+                landingTheme.panelSoft,
+              )}
+            >
+              <div className="flex h-40 items-center justify-center bg-gradient-to-b from-slate-50 to-white p-4 sm:h-44">
+                <img
+                  src={product.image}
+                  alt={product.name}
+                  className="max-h-full w-full object-contain transition duration-300 group-hover:scale-[1.03]"
+                  style={
+                    product.imageScale && product.imageScale !== 1
+                      ? {
+                          transform: `scale(${product.imageScale})`,
+                          transformOrigin: "center",
+                        }
+                      : undefined
+                  }
+                />
               </div>
-            </div>
-          </div>
-
-          <div className="mt-6 flex flex-wrap items-center justify-center gap-1.5 border-t border-slate-100 pt-5">
-            {STORE_SLIDES.map((slide, index) => (
-              <button
-                key={slide.id}
-                type="button"
-                onClick={() => scrollTo(index)}
-                className={cn(
-                  "rounded-full px-2.5 py-1 text-[10px] font-medium uppercase tracking-wider transition-colors",
-                  index === selectedIndex
-                    ? "bg-sky-100 text-sky-700"
-                    : `${landingTheme.faint} hover:text-slate-600`,
-                )}
-              >
-                {slide.name}
-              </button>
-            ))}
-          </div>
+              <div className="flex flex-1 flex-col gap-1 border-t border-slate-100 px-4 py-3.5">
+                <p className={`font-semibold ${landingTheme.headline}`}>
+                  {product.name}
+                </p>
+                <p className={`text-xs ${landingTheme.muted}`}>{product.blurb}</p>
+                <span className="mt-2 inline-flex items-center gap-1 text-sm font-semibold text-sky-600">
+                  제품 보기
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </span>
+              </div>
+            </button>
+          ))}
         </div>
       </div>
     </section>

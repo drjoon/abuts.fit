@@ -6,6 +6,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   PublicPageLayout,
   PUBLIC_CARD_CLASS,
+  PUBLIC_PAGE_EYEBROW,
+  PUBLIC_PAGE_TITLE,
+  PUBLIC_PAGE_SUBTITLE,
 } from "./components/PublicPageLayout";
 import { COMPANY_PHONE, PRIVACY_EMAIL } from "@/shared/lib/contactInfo";
 
@@ -14,13 +17,13 @@ export const PrivacyPage = () => {
     <PublicPageLayout>
       <div className="space-y-8 max-w-4xl mx-auto">
         <div className="text-center space-y-2">
-          <p className="text-xs uppercase tracking-[0.35em] text-white/60">
+          <p className={PUBLIC_PAGE_EYEBROW}>
             privacy
           </p>
-          <h1 className="text-4xl font-semibold text-white">
+          <h1 className={PUBLIC_PAGE_TITLE}>
             개인정보처리방침
           </h1>
-          <p className="text-white/70">최종 개정일: 2026년 3월 2일</p>
+          <p className="text-slate-600">최종 개정일: 2026년 3월 2일</p>
         </div>
 
         <div className="space-y-8">

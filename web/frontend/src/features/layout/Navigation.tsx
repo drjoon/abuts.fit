@@ -9,7 +9,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
 import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath";
 import { cn } from "@/shared/ui/cn";
-import logo from "@/assets/logo.png";
+import { AbutsLogo } from "@/components/branding/AbutsLogo";
 
 function scrollToLandingSection(id: string) {
   const element = document.getElementById(id);
@@ -31,10 +31,10 @@ export const Navigation = ({ tone = "dark" }: NavigationProps) => {
   const isLight = tone === "light";
 
   const menuItems: { label: string; href: string }[] = [
-    { label: "어버츠 소개", href: "/#about" },
-    { label: "플랫폼 소개", href: "/#platform" },
-    { label: "제품 소개", href: "/#store" },
-    { label: "소식", href: "/help" },
+    { label: "제작 의뢰", href: "/signup" },
+    { label: "제품 구매", href: "/#store" },
+    { label: "이용 안내", href: "/help" },
+    { label: "고객센터", href: "/contact" },
   ];
 
   useEffect(() => {
@@ -49,6 +49,10 @@ export const Navigation = ({ tone = "dark" }: NavigationProps) => {
 
   const handleMenuClick = (href: string) => {
     setIsOpen(false);
+    if (href === "/signup" && isAuthenticated) {
+      navigate(resolveEntryDashboardPath(user));
+      return;
+    }
     if (href.startsWith("/#")) {
       const id = href.slice(2);
       if (location.pathname !== "/") {
@@ -117,7 +121,7 @@ export const Navigation = ({ tone = "dark" }: NavigationProps) => {
         className="h-11 w-full bg-[#2563eb] text-white hover:bg-[#1d4ed8]"
         onClick={handleSignupClick}
       >
-        시작하기
+        회원가입
       </Button>
     </>
   );
@@ -141,20 +145,16 @@ export const Navigation = ({ tone = "dark" }: NavigationProps) => {
           <button
             type="button"
             className={cn(
-              "flex min-w-0 items-center gap-2 transition hover:opacity-90 sm:gap-3",
+              "flex min-w-0 items-center transition hover:opacity-90",
               isLight ? "text-slate-900" : "text-white",
             )}
             onClick={() => navigate("/")}
           >
-            <img
-              src={logo}
-              alt="Abuts.fit"
-              className="h-10 w-10 shrink-0 object-contain sm:h-12 sm:w-12"
-              style={{ backgroundColor: "transparent" }}
+            <AbutsLogo
+              variant={isLight ? "light" : "dark"}
+              iconClassName="h-10 w-10 sm:h-12 sm:w-12"
+              wordmarkClassName="truncate text-lg sm:text-2xl"
             />
-            <span className="notranslate truncate bg-gradient-to-r from-[#6E8BFF] via-[#A278FF] to-[#FF9D62] bg-clip-text text-lg font-semibold text-transparent sm:text-2xl">
-              abuts.fit
-            </span>
           </button>
 
           <div className="hidden items-center space-x-8 md:flex">
@@ -217,7 +217,7 @@ export const Navigation = ({ tone = "dark" }: NavigationProps) => {
                   }
                   onClick={handleSignupClick}
                 >
-                  시작하기
+                  회원가입
                 </Button>
               </>
             )}

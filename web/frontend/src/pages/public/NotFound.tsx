@@ -41,7 +41,7 @@ const NotFound = () => {
             </p>
             <Button
               asChild
-              className="w-full rounded-full bg-slate-900 text-white hover:bg-slate-800"
+              className="w-full rounded-full bg-[#2563eb] text-white hover:bg-[#1d4ed8]"
             >
               <a href="/">
                 <ArrowLeft className="mr-2 h-4 w-4" /> 홈으로 돌아가기

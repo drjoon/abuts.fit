@@ -6,6 +6,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   PublicPageLayout,
   PUBLIC_CARD_CLASS,
+  PUBLIC_PAGE_EYEBROW,
+  PUBLIC_PAGE_TITLE,
+  PUBLIC_PAGE_SUBTITLE,
 } from "./components/PublicPageLayout";
 import { Building, MapPin, Phone, Mail, FileText } from "lucide-react";
 import {
@@ -23,11 +26,11 @@ export const BusinessPage = () => {
     <PublicPageLayout>
       <div className="space-y-10">
         <div className="text-center space-y-3">
-          <p className="text-xs uppercase tracking-[0.35em] text-white/60">
+          <p className={PUBLIC_PAGE_EYEBROW}>
             Company info
           </p>
-          <h1 className="text-4xl font-semibold text-white">사업자 정보</h1>
-          <p className="text-white/70">
+          <h1 className={PUBLIC_PAGE_TITLE}>사업자 정보</h1>
+          <p className="text-slate-600">
             어벗츠.핏을 운영하는 어벗츠 주식회사의 공식 정보입니다.
           </p>
         </div>

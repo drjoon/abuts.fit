@@ -7,6 +7,9 @@ import { Shield, Lock, Eye, FileText } from "lucide-react";
 import {
   PublicPageLayout,
   PUBLIC_CARD_CLASS,
+  PUBLIC_PAGE_EYEBROW,
+  PUBLIC_PAGE_TITLE,
+  PUBLIC_PAGE_SUBTITLE,
 } from "./components/PublicPageLayout";
 import { COMPANY_PHONE, SECURITY_EMAIL } from "@/shared/lib/contactInfo";
 
@@ -87,11 +90,11 @@ export const SecurityPage = () => {
     <PublicPageLayout>
       <div className="space-y-8 max-w-4xl mx-auto">
         <div className="text-center space-y-2">
-          <p className="text-xs uppercase tracking-[0.35em] text-white/60">
+          <p className={PUBLIC_PAGE_EYEBROW}>
             security
           </p>
-          <h1 className="text-4xl font-semibold text-white">보안 정책</h1>
-          <p className="text-white/70">
+          <h1 className={PUBLIC_PAGE_TITLE}>보안 정책</h1>
+          <p className="text-slate-600">
             어벗츠.핏의 보안 정책과 데이터 보호 방침
           </p>
         </div>

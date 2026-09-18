@@ -62,7 +62,7 @@ export const landingIdentity = {
     "어벗츠.핏은 치과와 기공소가 커스텀 어벗·보철을 의뢰부터 제작·배송·정산까지 한곳에서 처리하는 디지털 제작 플랫폼입니다. 놓치던 진행과 돈이 같은 기록·같은 화면으로 정리됩니다.",
 } as const;
 
-/** 공개 랜딩 About 스토리 (어버츠 소개) */
+/** 공개 랜딩 About 스토리 (어벗츠 소개) */
 export const landingAbout = {
   eyebrow: "ABOUT ABUTS",
   headline: "진료실에서 느낀 불편을,\n직접 바꾸기 시작했습니다.",
@@ -98,7 +98,7 @@ export const landingAbout = {
       id: "platform" as const,
       label: "플랫폼 개발 사례",
       title: "의뢰·진행·정산을 한 흐름으로",
-      body: "장부와 메신저로 흩어지던 업무를 같은 화면의 제작 워크스페이스로 모았습니다.",
+      body: "장부와 메신저로 흩어지던 업무를 같은 화면의 제작 워크스페이스로 모았습니다. 치과는 의뢰 캘린더와 기공소 채팅을 한곳에서 봅니다.",
     },
   ],
   identityEyebrow: "직접 사용하며 개선합니다",

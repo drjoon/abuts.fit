@@ -16,6 +16,9 @@ import {
 import {
   PublicPageLayout,
   PUBLIC_CARD_CLASS,
+  PUBLIC_PAGE_EYEBROW,
+  PUBLIC_PAGE_TITLE,
+  PUBLIC_PAGE_SUBTITLE,
 } from "./components/PublicPageLayout";
 import {
   Search,
@@ -110,11 +113,11 @@ export const HelpPage = () => {
     <PublicPageLayout>
       <div className="space-y-8 max-w-4xl mx-auto">
         <div className="text-center space-y-2">
-          <p className="text-xs uppercase tracking-[0.35em] text-white/60">
+          <p className={PUBLIC_PAGE_EYEBROW}>
             support
           </p>
-          <h1 className="text-4xl font-semibold text-white">도움말 센터</h1>
-          <p className="text-white/70">
+          <h1 className={PUBLIC_PAGE_TITLE}>도움말 센터</h1>
+          <p className={PUBLIC_PAGE_SUBTITLE}>
             기공료 선입금, 면세 계산서, 의뢰 이용에 대한 안내입니다
           </p>
         </div>
@@ -128,7 +131,7 @@ export const HelpPage = () => {
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="기공료 선입금, 환불, 계산서…"
-                className="w-full pl-10 pr-4 py-3 rounded-lg bg-white/80 text-slate-900 focus:outline-none"
+                className="w-full rounded-lg border border-slate-200 bg-slate-50 pl-10 pr-4 py-3 text-slate-900 outline-none focus:border-sky-300 focus:bg-white focus:ring-2 focus:ring-sky-100"
               />
             </div>
           </CardContent>

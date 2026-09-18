@@ -3,17 +3,18 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 import { FileText, Download, ExternalLink } from "lucide-react";
+import { PublicPageLayout } from "./components/PublicPageLayout";
 
 export default function ManualPage() {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
-      <div className="container mx-auto px-4 py-16 max-w-4xl">
+    <PublicPageLayout contentClassName="relative z-10 mx-auto w-full max-w-4xl px-4 pt-20 pb-12 sm:px-6 sm:pt-24 sm:pb-16">
+      <div>
         {/* Header */}
-        <div className="text-center mb-12">
-          <div className="inline-flex items-center justify-center w-20 h-20 bg-primary-strong rounded-2xl mb-6">
-            <FileText className="w-10 h-10 text-white" />
+        <div className="mb-12 text-center">
+          <div className="mb-6 inline-flex h-20 w-20 items-center justify-center rounded-2xl bg-[#2563eb]">
+            <FileText className="h-10 w-10 text-white" />
           </div>
-          <h1 className="text-4xl font-bold text-slate-900 mb-4">
+          <h1 className="mb-4 text-4xl font-bold text-[#0b2a5c]">
             커스텀 어버트먼트 사용자 매뉴얼
           </h1>
           <p className="text-lg text-slate-600">
@@ -153,13 +154,12 @@ export default function ManualPage() {
           </div>
         </div>
 
-        {/* Contact */}
-        <div className="bg-gradient-to-r from-primary-strong to-primary-strong rounded-2xl shadow-lg p-8 text-white">
-          <h2 className="text-2xl font-bold mb-6">문의하기</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="rounded-2xl bg-[#0b2a5c] p-8 text-white shadow-lg">
+          <h2 className="mb-6 text-2xl font-bold">문의하기</h2>
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
             <div>
-              <h3 className="font-semibold mb-3">제조업자</h3>
-              <div className="space-y-2 text-primary-soft">
+              <h3 className="mb-3 font-semibold">제조업자</h3>
+              <div className="space-y-2 text-sky-100/90">
                 <div>(주)애크로덴트</div>
                 <div>경남 김해시 전하로85번길 5</div>
                 <div>T: 055-314-4607</div>
@@ -169,15 +169,15 @@ export default function ManualPage() {
                 href="https://acrodent.com"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 mt-4 text-white hover:text-primary-muted transition-colors"
+                className="mt-4 inline-flex items-center gap-2 text-white transition-colors hover:text-sky-200"
               >
-                <ExternalLink className="w-4 h-4" />
+                <ExternalLink className="h-4 w-4" />
                 웹사이트 방문
               </a>
             </div>
             <div>
-              <h3 className="font-semibold mb-3">판매업자</h3>
-              <div className="space-y-2 text-primary-soft">
+              <h3 className="mb-3 font-semibold">판매업자</h3>
+              <div className="space-y-2 text-sky-100/90">
                 <div>어벗츠 주식회사</div>
                 <div>경남 거제시 거제중앙로29길 6, 3층</div>
                 <div>T: 1588-3948</div>
@@ -186,21 +186,20 @@ export default function ManualPage() {
                 href="https://abuts.fit"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 mt-4 text-white hover:text-primary-muted transition-colors"
+                className="mt-4 inline-flex items-center gap-2 text-white transition-colors hover:text-sky-200"
               >
-                <ExternalLink className="w-4 h-4" />
+                <ExternalLink className="h-4 w-4" />
                 웹사이트 방문
               </a>
             </div>
           </div>
         </div>
 
-        {/* Footer */}
-        <div className="text-center mt-12 text-slate-500 text-sm">
+        <div className="mt-12 text-center text-sm text-slate-500">
           <p>본 매뉴얼은 의료기기 사용에 관한 일반적인 정보를 제공합니다.</p>
           <p className="mt-2">구체적인 사용 방법은 치과의사의 전문적인 판단에 따라야 합니다.</p>
         </div>
       </div>
-    </div>
+    </PublicPageLayout>
   );
 }

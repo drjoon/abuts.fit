@@ -6,6 +6,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   PublicPageLayout,
   PUBLIC_CARD_CLASS,
+  PUBLIC_PAGE_EYEBROW,
+  PUBLIC_PAGE_TITLE,
+  PUBLIC_PAGE_SUBTITLE,
 } from "./components/PublicPageLayout";
 import { Cookie, Settings, Info, Shield } from "lucide-react";
 
@@ -103,11 +106,11 @@ export const CookiesPage = () => {
     <PublicPageLayout>
       <div className="space-y-8 max-w-4xl mx-auto">
         <div className="text-center space-y-2">
-          <p className="text-xs uppercase tracking-[0.35em] text-white/60">
+          <p className={PUBLIC_PAGE_EYEBROW}>
             cookies
           </p>
-          <h1 className="text-4xl font-semibold text-white">쿠키 정책</h1>
-          <p className="text-white/70">
+          <h1 className={PUBLIC_PAGE_TITLE}>쿠키 정책</h1>
+          <p className="text-slate-600">
             어벗츠.핏의 쿠키 사용 방침 및 관리 방법
           </p>
         </div>

@@ -11,6 +11,9 @@ import { Link } from "react-router-dom";
 import {
   PublicPageLayout,
   PUBLIC_CARD_CLASS,
+  PUBLIC_PAGE_EYEBROW,
+  PUBLIC_PAGE_TITLE,
+  PUBLIC_PAGE_SUBTITLE,
 } from "./components/PublicPageLayout";
 
 function formatWon(value: number) {
@@ -26,13 +29,13 @@ export const ServicePage = () => {
     <PublicPageLayout>
       <div className="space-y-8 max-w-4xl mx-auto">
         <div className="text-center space-y-2">
-          <p className="text-xs uppercase tracking-[0.35em] text-white/60">
+          <p className={PUBLIC_PAGE_EYEBROW}>
             service
           </p>
-          <h1 className="text-4xl font-semibold text-white">
+          <h1 className={PUBLIC_PAGE_TITLE}>
             서비스/상품 안내
           </h1>
-          <p className="text-white/70">
+          <p className="text-slate-600">
             abuts.fit 서비스 내용 및 기공료 선입금(크레딧) 안내
           </p>
         </div>
@@ -103,7 +106,7 @@ export const ServicePage = () => {
                   {products.map((p) => (
                     <div
                       key={p.supply}
-                      className="rounded-2xl border border-white/20 bg-white/85 p-4 text-slate-900"
+                      className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-slate-900"
                     >
                       <div className="text-sm font-medium">
                         기공료 선입금{" "}

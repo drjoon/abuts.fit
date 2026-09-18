@@ -95,13 +95,14 @@ Notes:
   - `src/features/layout/AccountSwitcher.tsx` (사이드바 계정 팝업 · 같은 사업자 계정 전환)
   - `src/store/useAuthStore.ts` (`switchAccount`)
 - 공개 랜딩 (`/`)
-  - `src/pages/public/Index.tsx` — About 스토리 → Platform(의뢰·퀵메뉴) → Store → Flow/문의
-  - `PublicPageLayout tone="light"` (약관·도움말 등 기타 공개 페이지는 dark 유지)
+  - `src/pages/public/Index.tsx` — Platform 홈(검색·의뢰·퀵메뉴) → 제품 둘러보기 → 짧은 About
+  - `PublicPageLayout` 기본 `tone="light"` (랜딩·도움말·약관·문의 등 공개 안내 공통)
+  - 카드/타이포 SSOT: `PUBLIC_CARD_CLASS` · `PUBLIC_PAGE_EYEBROW` · `PUBLIC_PAGE_TITLE` · `PUBLIC_PAGE_SUBTITLE`
   - 카피 SSOT: `src/features/landing/landingTheme.ts`
-    (`landingAbout` · `landingIdentity` · `landingAudiencePractice` · `landingAudienceLab` · flow/quickMenus)
-  - `LandingAboutSection` · `LandingPlatformIntro` · `LandingStoreShowcase` ·
-    `LandingPlatformSection` · `Footer`
+  - `LandingPlatformIntro` · `LandingStoreShowcase` · `LandingAboutSection` ·
+    `LandingMobileTabBar` · `LandingPracticeWorkspacePreview` · `Footer`
   - 영업 피치 패널은 `LandingAudienceSection` + `platformPitchBlocks` 유지
+  - `LandingPlatformSection`은 레거시(랜딩 Index에서 미사용)
 - 공용 타입(역할 SSOT)
   - `src/shared/types/role.ts`
   - `src/shared/components/RoleSelect.tsx` (역할 Select. 사업영역 주체 등)

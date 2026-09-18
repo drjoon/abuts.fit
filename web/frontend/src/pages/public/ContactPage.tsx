@@ -11,11 +11,16 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   PublicPageLayout,
   PUBLIC_CARD_CLASS,
+  PUBLIC_PAGE_EYEBROW,
+  PUBLIC_PAGE_TITLE,
+  PUBLIC_PAGE_SUBTITLE,
 } from "./components/PublicPageLayout";
 import { MapPin, Phone, Mail, Clock, Send } from "lucide-react";
 import { useToast } from "@/shared/hooks/use-toast";
 import {
   COMPANY_ADDRESS,
+  COMPANY_MAP_EMBED_URL,
+  COMPANY_MAP_EXTERNAL_URL,
   COMPANY_PHONE,
   CONTACT_EMAIL,
 } from "@/shared/lib/contactInfo";
@@ -62,11 +67,11 @@ export const ContactPage = () => {
     <PublicPageLayout>
       <div className="space-y-8 max-w-6xl mx-auto">
         <div className="text-center space-y-2">
-          <p className="text-xs uppercase tracking-[0.35em] text-white/60">
+          <p className={PUBLIC_PAGE_EYEBROW}>
             contact
           </p>
-          <h1 className="text-4xl font-semibold text-white">문의하기</h1>
-          <p className="text-white/70">
+          <h1 className={PUBLIC_PAGE_TITLE}>문의하기</h1>
+          <p className="text-slate-600">
             궁금한 점이나 제안 사항이 있다면 언제든 메시지를 남겨주세요.
           </p>
         </div>
@@ -113,8 +118,28 @@ export const ContactPage = () => {
 
             <Card className={PUBLIC_CARD_CLASS}>
               <CardContent className="p-0">
-                <div className="flex h-64 items-center justify-center rounded-2xl bg-slate-900/10 text-slate-500">
-                  지도 영역
+                <div className="overflow-hidden rounded-2xl">
+                  <iframe
+                    title={`${COMPANY_ADDRESS} 위치`}
+                    src={COMPANY_MAP_EMBED_URL}
+                    className="h-64 w-full border-0 bg-slate-100"
+                    loading="lazy"
+                    referrerPolicy="no-referrer-when-downgrade"
+                    allowFullScreen
+                  />
+                  <div className="flex items-center justify-between gap-3 border-t border-slate-100 px-4 py-2.5">
+                    <p className="truncate text-xs text-slate-500">
+                      {COMPANY_ADDRESS}
+                    </p>
+                    <a
+                      href={COMPANY_MAP_EXTERNAL_URL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="shrink-0 text-xs font-semibold text-sky-600 hover:text-sky-700"
+                    >
+                      지도에서 열기
+                    </a>
+                  </div>
                 </div>
               </CardContent>
             </Card>

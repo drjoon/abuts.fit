@@ -6,7 +6,6 @@
 import { Badge } from "@/components/ui/badge";
 import { Mail, Phone, MapPin, Instagram, Facebook } from "lucide-react";
 import { Link } from "react-router-dom";
-import logo from "@/assets/logo.png";
 import {
   COMPANY_ADDRESS,
   COMPANY_BUSINESS_REGISTRATION_NUMBER,
@@ -17,6 +16,7 @@ import {
 } from "@/shared/lib/contactInfo";
 import { landingIdentity } from "@/features/landing/landingTheme";
 import { cn } from "@/shared/ui/cn";
+import { AbutsLogo } from "@/components/branding/AbutsLogo";
 
 type FooterProps = {
   tone?: "dark" | "light";
@@ -60,13 +60,14 @@ export const Footer = ({ tone = "dark" }: FooterProps) => {
         <div className="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-4">
           <div className="lg:col-span-2">
             <div
-              className="mb-6 flex cursor-pointer items-center space-x-3"
+              className="mb-6 flex cursor-pointer items-center"
               onClick={() => (window.location.href = "/")}
             >
-              <img src={logo} alt="Abuts.fit" className="h-8 w-8" />
-              <span className="bg-gradient-hero bg-clip-text text-xl font-bold text-transparent">
-                abuts.fit
-              </span>
+              <AbutsLogo
+                variant={isLight ? "light" : "dark"}
+                iconClassName="h-8 w-8"
+                wordmarkClassName="text-xl font-bold"
+              />
             </div>
 
             <p

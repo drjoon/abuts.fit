@@ -2,18 +2,26 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/pages/public/HelpPage.tsx
 import { ReactNode } from "react";
 import { Navigation } from "@/features/layout/Navigation";
 import { Footer } from "@/features/landing/Footer";
 import { cn } from "@/shared/ui/cn";
 
+/** 공개 안내 페이지 카드 (라이트) */
 export const PUBLIC_CARD_CLASS =
-  "border-white/10 bg-white/[0.08] text-white shadow-[0_25px_65px_rgba(7,7,19,0.28)] backdrop-blur-2xl";
+  "border-slate-200/90 bg-white text-slate-900 shadow-[0_12px_40px_rgba(15,23,42,0.06)]";
+
+/** 페이지 상단 eyebrow / title / subtitle */
+export const PUBLIC_PAGE_EYEBROW =
+  "text-xs uppercase tracking-[0.35em] text-sky-600/80";
+export const PUBLIC_PAGE_TITLE = "text-4xl font-semibold text-[#0b2a5c]";
+export const PUBLIC_PAGE_SUBTITLE = "text-slate-600";
 
 interface PublicPageLayoutProps {
   children: ReactNode;
   contentClassName?: string;
-  /** 공개 랜딩(`/`)은 light. 약관·도움말 등 기타 공개 페이지는 dark 유지 */
+  /** 기본 light. Index 랜딩도 light */
   tone?: "dark" | "light";
 }
 
@@ -23,7 +31,7 @@ const DEFAULT_CONTENT_CLASS =
 export const PublicPageLayout = ({
   children,
   contentClassName,
-  tone = "dark",
+  tone = "light",
 }: PublicPageLayoutProps) => {
   const resolvedContentClass = contentClassName ?? DEFAULT_CONTENT_CLASS;
   const isLight = tone === "light";
