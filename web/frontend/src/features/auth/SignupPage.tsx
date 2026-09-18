@@ -20,6 +20,7 @@ import {
   STAFF_SIGNUP_ROLES,
   type AppUserRole,
 } from "@/shared/types/role";
+import { AuthMarketingPanel } from "@/features/auth/AuthMarketingPanel";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -1203,14 +1204,12 @@ export const SignupPage = () => {
             : "flex-col items-center"
         }`}
       >
-        {showHeroSection && (
-          <section className="hidden w-full space-y-6 text-center sm:block lg:w-1/2 lg:flex-1 lg:text-center">
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1 text-xs uppercase tracking-[0.3em] text-white/70">
-              <span>secure access</span>
-              <span className="h-1 w-1 rounded-full bg-primary/70" />
-              <span>abuts.fit</span>
-            </div>
-            {referrerInfo ? (
+        {showHeroSection &&
+          (referrerInfo ? (
+            <section className="hidden w-full space-y-6 text-center sm:block lg:w-1/2 lg:flex-1 lg:text-center">
+              <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1 text-xs tracking-[0.12em] text-white/70">
+                <span>abuts.fit</span>
+              </div>
               <div className="space-y-4">
                 <h1 className="text-3xl font-semibold leading-tight text-white md:text-4xl">
                   환영합니다.
@@ -1222,30 +1221,10 @@ export const SignupPage = () => {
                   에서 소개받으셨군요!
                 </h2>
               </div>
-            ) : (
-              <div className="space-y-4">
-                <h1 className="text-3xl font-semibold leading-tight text-white md:text-4xl">
-                  하나의 로그인으로 제조 · 배송까지
-                </h1>
-                <p className="text-base text-white/80">
-                  제작 현황, 스케줄, 실시간 트래킹을 모두 한 화면에서
-                  제어하세요.
-                </p>
-              </div>
-            )}
-            {!referrerInfo && (
-              <div className="hidden rounded-2xl border border-white/15 bg-white/5 p-6 backdrop-blur lg:block">
-                <p className="text-xs uppercase tracking-[0.4em] text-white/60">
-                  realtime sync
-                </p>
-                <p className="text-4xl font-semibold text-white">98.7%</p>
-                <p className="text-sm text-white/70">
-                  동기화 성공률 · 운영팀 SLA 기준
-                </p>
-              </div>
-            )}
-          </section>
-        )}
+            </section>
+          ) : (
+            <AuthMarketingPanel align="center" />
+          ))}
 
         <section
           className={`mx-auto w-full max-w-md sm:max-w-lg ${showHeroSection ? "lg:mx-0 lg:max-w-none lg:w-1/2 lg:flex-1" : "lg:max-w-xl"}`}

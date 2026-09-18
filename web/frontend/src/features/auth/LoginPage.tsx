@@ -11,6 +11,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { Mail, Lock, Eye, EyeOff } from "lucide-react";
 import { useToast } from "@/shared/hooks/use-toast";
 import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath";
+import { AuthMarketingPanel } from "@/features/auth/AuthMarketingPanel";
 
 type DevAccount = {
   label: string;
@@ -178,30 +179,7 @@ export const LoginPage = () => {
       </div>
 
       <main className="relative z-10 mx-auto flex min-h-screen w-full max-w-6xl flex-col-reverse justify-center gap-6 px-4 py-8 sm:gap-10 sm:px-6 sm:py-16 lg:flex-row lg:items-center lg:gap-12">
-        <section className="hidden w-full space-y-5 text-center sm:block sm:space-y-6 lg:w-1/2 lg:flex-1 lg:text-left">
-          <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1 text-xs uppercase tracking-[0.3em] text-white/70">
-            <span>secure access</span>
-            <span className="h-1 w-1 rounded-full bg-primary/70" />
-            <span>abuts.fit</span>
-          </div>
-          <div className="space-y-4">
-            <h1 className="text-3xl font-semibold leading-tight text-white md:text-4xl">
-              하나의 로그인으로 제조 · 배송까지
-            </h1>
-            <p className="text-base text-white/80">
-              제작 현황, 스케줄, 실시간 트래킹을 모두 한 화면에서 제어하세요.
-            </p>
-          </div>
-          <div className="hidden rounded-2xl border border-white/15 bg-white/5 p-6 backdrop-blur lg:block">
-            <p className="text-xs uppercase tracking-[0.4em] text-white/60">
-              realtime sync
-            </p>
-            <p className="text-4xl font-semibold text-white">98.7%</p>
-            <p className="text-sm text-white/70">
-              동기화 성공률 · 운영팀 SLA 기준
-            </p>
-          </div>
-        </section>
+        <AuthMarketingPanel />
 
         <section className="mx-auto w-full max-w-md sm:max-w-lg lg:mx-0 lg:max-w-none lg:w-1/2 lg:flex-1">
           <div className="w-full space-y-6">

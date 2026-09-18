@@ -220,6 +220,6 @@ export const landingAudiences = [
 export const landingHome = {
   heroTitle: "심플웨이를 시작으로.",
   heroBody: "의뢰하고, 깎고, 기공합니다.",
-  heroSupport: "플랫폼이 한 화면에서 잇습니다.",
+  heroSupport: "플랫폼이 모두를 이어줍니다.",
   ctaStart: "시작하기",
 } as const;

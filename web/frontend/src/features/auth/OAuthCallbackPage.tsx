@@ -159,9 +159,7 @@ export const OAuthCallbackPage = () => {
 
       <main className="relative z-10 mx-auto flex min-h-screen max-w-4xl flex-col items-center justify-center px-4 py-16 text-center">
         <div className="w-full max-w-md rounded-2xl border border-white/12 bg-white/5 p-8 text-white shadow-[0_25px_65px_rgba(7,7,19,0.55)] backdrop-blur-2xl">
-          <p className="text-sm uppercase tracking-[0.4em] text-white/60">
-            processing
-          </p>
+          <p className="text-sm tracking-[0.12em] text-white/60">abuts.fit</p>
           <h1 className="mt-3 text-2xl font-semibold">로그인 처리 중...</h1>
           <p className="mt-2 text-white/70 text-sm">
             소셜 로그인 응답을 확인하는 중입니다. 잠시만 기다려주세요.

@@ -107,9 +107,7 @@ export const ResetPasswordPage = () => {
       <main className="relative z-10 mx-auto flex min-h-screen max-w-4xl flex-col items-center justify-center px-4 py-16 text-center">
         <div className="space-y-3">
           <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1 text-xs uppercase tracking-[0.3em] text-white/70">
-            <span>account</span>
-            <span className="h-1 w-1 rounded-full bg-primary/70" />
-            <span>security</span>
+            <span>abuts.fit</span>
           </div>
           <h1 className="text-3xl font-semibold text-white">
             새 비밀번호 설정
