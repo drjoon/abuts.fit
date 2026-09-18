@@ -1123,7 +1123,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
         ///
         /// 포스트 차이점:
         ///   - C = 사이트 방위, 글자간 = G1 H(증분 C) F1000 (헥스 G1 V와 동일하게 이송; G0 H 금지)
-        ///   - X접근 = 표면직경+여유 (표면 밖), X절삭 = 얕은 반경 깊이(과다 DOC → 센터밀 파손)
+        ///   - X접근 = 표면직경+여유 (표면 밖), X절삭 = radius 기반 DOC 근사(포스트 비원형)
         /// </summary>
         private static List<string> BuildPostSideSerialBlock(
             string serialCode,
@@ -1167,7 +1167,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 "G4 U0.05",
                 // 표면 바깥까지 접근 (아직 절삭 아님)
                 $"G1 X{FormatNcNumber(approachDiameterX, "0.000")} F2000",
-                // 가공면 완속 진입 (얕은 DOC)
+                // 가공면 완속 진입 (DOC≈0.12, 비원형 근사)
                 $"G1 X{FormatNcNumber(cutDiameterX, "0.000")} F500",
                 // 헥스 RH Serial 의 `G4U0.2` — 매크로 각인 전 안정
                 "G4 U0.2",
@@ -1230,7 +1230,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
         /// X(직경) SSOT (선반):
         /// - surfaceDiameterX = 2*radius (가공면)
         /// - approachDiameterX = surface + 여유 (표면 밖 — F2000 접근은 여기까지만)
-        /// - cutDiameterX = surface − 2*depth (얕은 DOC; 과다 깊이 → 센터밀 파손)
+        /// - cutDiameterX = surface − 2*depth (depth=0.12; 비원형 단면 근사)
         /// site.cutDiameterX 가 더 깊으면(더 작은 X) minCut 로 클램프.
         /// </summary>
         private static void ResolvePostLotEngravingNcParams(
@@ -1247,8 +1247,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             // FE LOT_ENGRAVING_DEFAULTS.aboveFinishLineMm / charPitchArcMm 과 동일 (사이트 없을 때만)
             const double aboveFl = 1.5;
             const double pitchArcMm = 0.45;
-            // 포스트 OD 각인은 헥스면보다 팁 부하가 큼. 0.12mm DOC는 파손 위험 → 얕게.
-            const double depthMm = 0.06;
+            // FE LOT_ENGRAVING_DEFAULTS.engraveDepthMm 과 동일. 포스트는 비원형 단면이라 근사값.
+            const double depthMm = 0.12;
             const double approachClearanceDia = 1.2;
             const double defaultRadius = 2.0;
 

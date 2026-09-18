@@ -61,8 +61,8 @@ export const LOT_ENGRAVING_DEFAULTS = {
   aboveFinishLineMm: 1.5,
   /** 글자 간 원주 호 길이(mm). CNC H = arc/r (프리뷰 Z축 방위). */
   charPitchArcMm: 0.45,
-  /** 각인 깊이(반경 방향, mm). cutDiameterX = 2*(radius - depth). 포스트 OD는 0.06 초과 금지(센터밀 파손). */
-  engraveDepthMm: 0.06,
+  /** 각인 깊이(반경 방향, mm). cutDiameterX = 2*(radius - depth). 포스트는 비원형 단면이라 근사. */
+  engraveDepthMm: 0.12,
   /** 경사각 |taper| 하위 비율(가장 완만한 쪽). */
   taperBottomFraction: 0.1,
 } as const;
