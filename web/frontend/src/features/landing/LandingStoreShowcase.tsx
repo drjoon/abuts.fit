@@ -46,19 +46,22 @@ export const LandingStoreShowcase = () => {
   const active = STORE_SLIDES[selectedIndex];
 
   return (
-    <section id="store" className="relative border-t border-white/[0.06]">
+    <section
+      id="store"
+      className="relative scroll-mt-20 border-t border-slate-200/80 bg-white sm:scroll-mt-24"
+    >
       <div className="mx-auto max-w-6xl px-4 py-14 sm:px-6 sm:py-16 lg:py-20">
         <div className="mx-auto max-w-2xl text-center">
-          <p
-            className={`inline-flex rounded-full px-3.5 py-1 text-[11px] tracking-[0.18em] text-white/55 ${landingTheme.glass}`}
+          <p className={landingTheme.eyebrow}>PRODUCTS</p>
+          <h2
+            className={`mt-4 text-2xl font-semibold tracking-tight sm:text-3xl ${landingTheme.headline}`}
           >
-            ECOSYSTEM
-          </p>
-          <h2 className="mt-4 text-2xl font-semibold tracking-tight text-white sm:text-3xl">
-            시술 키트도 같은 흐름 안에
+            제품 둘러보기
           </h2>
-          <p className="mt-3 text-sm leading-relaxed text-white/60 sm:text-base">
-            커스텀 제작과 함께 쓰는 시술·키트. 가입 후 스토어에서 이어집니다.
+          <p
+            className={`mt-3 text-sm leading-relaxed sm:text-base ${landingTheme.body}`}
+          >
+            어벗먼트·힐링·시술 키트·기구. 가입 후 스토어에서 이어집니다.
           </p>
         </div>
 
@@ -70,13 +73,19 @@ export const LandingStoreShowcase = () => {
         >
           <div className="grid items-center gap-8 lg:grid-cols-[1.1fr_0.9fr] lg:gap-10">
             <div className="min-w-0 space-y-4 text-center lg:text-left">
-              <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-white/40">
+              <p
+                className={`text-[11px] font-medium uppercase tracking-[0.22em] ${landingTheme.faint}`}
+              >
                 {active?.categoryLabel}
               </p>
-              <h3 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">
+              <h3
+                className={`text-2xl font-semibold tracking-tight sm:text-3xl ${landingTheme.headline}`}
+              >
                 {active?.name}
               </h3>
-              <p className="mx-auto max-w-md text-sm leading-relaxed text-white/60 lg:mx-0">
+              <p
+                className={`mx-auto max-w-md text-sm leading-relaxed lg:mx-0 ${landingTheme.body}`}
+              >
                 {active?.blurb}
               </p>
               <div className="flex flex-wrap items-center justify-center gap-2 pt-1 lg:justify-start">
@@ -95,7 +104,9 @@ export const LandingStoreShowcase = () => {
                   >
                     <ChevronLeft className="h-4 w-4" />
                   </button>
-                  <span className="min-w-[3.25rem] text-center text-xs tabular-nums text-white/40">
+                  <span
+                    className={`min-w-[3.25rem] text-center text-xs tabular-nums ${landingTheme.faint}`}
+                  >
                     {String(selectedIndex + 1).padStart(2, "0")} /{" "}
                     {String(STORE_SLIDES.length).padStart(2, "0")}
                   </span>
@@ -126,7 +137,7 @@ export const LandingStoreShowcase = () => {
                           className={cn(
                             "pointer-events-none absolute h-40 w-40 rounded-full blur-3xl",
                             theme.glow,
-                            "opacity-35",
+                            "opacity-25",
                           )}
                         />
                         <img
@@ -150,7 +161,7 @@ export const LandingStoreShowcase = () => {
             </div>
           </div>
 
-          <div className="mt-6 flex flex-wrap items-center justify-center gap-1.5 border-t border-white/[0.06] pt-5">
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-1.5 border-t border-slate-100 pt-5">
             {STORE_SLIDES.map((slide, index) => (
               <button
                 key={slide.id}
@@ -159,8 +170,8 @@ export const LandingStoreShowcase = () => {
                 className={cn(
                   "rounded-full px-2.5 py-1 text-[10px] font-medium uppercase tracking-wider transition-colors",
                   index === selectedIndex
-                    ? "bg-white/10 text-white"
-                    : "text-white/35 hover:text-white/60",
+                    ? "bg-sky-100 text-sky-700"
+                    : `${landingTheme.faint} hover:text-slate-600`,
                 )}
               >
                 {slide.name}

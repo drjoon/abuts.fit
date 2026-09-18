@@ -64,7 +64,7 @@ export const LandingAudienceSection = () => {
   return (
     <section
       id="audience"
-      className="relative scroll-mt-20 border-t border-white/[0.06] sm:scroll-mt-24"
+      className="relative scroll-mt-20 border-t border-slate-200/80 bg-white sm:scroll-mt-24"
     >
       <div
         ref={ref}
@@ -74,13 +74,15 @@ export const LandingAudienceSection = () => {
         )}
       >
         <div className="mx-auto max-w-2xl text-center">
-          <p className={`inline-flex rounded-full px-3.5 py-1 text-[11px] tracking-[0.18em] text-white/55 ${landingTheme.glass}`}>
-            WHY ABUTS
-          </p>
-          <h2 className="mt-4 text-2xl font-semibold tracking-tight text-white sm:text-3xl">
+          <p className={landingTheme.eyebrow}>WHY ABUTS</p>
+          <h2
+            className={`mt-4 text-2xl font-semibold tracking-tight sm:text-3xl ${landingTheme.headline}`}
+          >
             같은 화면에서 이어지는 제작
           </h2>
-          <p className="mt-3 text-sm leading-relaxed text-white/60 sm:text-base">
+          <p
+            className={`mt-3 text-sm leading-relaxed sm:text-base ${landingTheme.body}`}
+          >
             납기·배송·정산이 흩어지지 않습니다.
             <br />
             치과와 기공소가 각자 필요한 이유로 같은 플랫폼을 씁니다.
@@ -93,8 +95,10 @@ export const LandingAudienceSection = () => {
               key={stat.label}
               className="rounded-xl px-3 py-3 text-center sm:px-4 sm:py-3.5"
             >
-              <p className="text-[11px] text-white/45">{stat.label}</p>
-              <p className="mt-1 text-lg font-semibold tabular-nums tracking-tight text-white sm:text-xl">
+              <p className={`text-[11px] ${landingTheme.faint}`}>{stat.label}</p>
+              <p
+                className={`mt-1 text-lg font-semibold tabular-nums tracking-tight sm:text-xl ${landingTheme.headline}`}
+              >
                 {stat.value}
               </p>
             </div>
@@ -107,10 +111,12 @@ export const LandingAudienceSection = () => {
               key={point}
               className={`flex items-start gap-2.5 px-3.5 py-3 ${landingTheme.panelSoft}`}
             >
-              <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white/10 text-sky-200">
+              <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-sky-100 text-sky-600">
                 <Check className="h-3 w-3" strokeWidth={3} />
               </span>
-              <span className="text-sm leading-relaxed text-white/75">{point}</span>
+              <span className={`text-sm leading-relaxed ${landingTheme.body}`}>
+                {point}
+              </span>
             </li>
           ))}
         </ul>
@@ -175,9 +181,7 @@ function AudiencePanel({
       className={cn(
         "flex h-full flex-col p-5 sm:p-6 transition-all duration-700",
         landingTheme.panelSoft,
-        isPractice
-          ? "ring-1 ring-sky-400/15"
-          : "ring-1 ring-emerald-400/15",
+        isPractice ? "ring-1 ring-sky-200" : "ring-1 ring-emerald-200",
         inView ? "translate-y-0 opacity-100" : "translate-y-6 opacity-0",
       )}
       style={{ transitionDelay: `${delayMs}ms` }}
@@ -186,26 +190,33 @@ function AudiencePanel({
         <div
           className={cn(
             "flex h-10 w-10 items-center justify-center rounded-xl",
-            isPractice ? "bg-sky-400/15 text-sky-200" : "bg-emerald-400/15 text-emerald-200",
+            isPractice
+              ? "bg-sky-100 text-sky-600"
+              : "bg-emerald-100 text-emerald-600",
           )}
         >
           <Icon className="h-5 w-5" />
         </div>
-        <span className="text-xs font-semibold tracking-wide text-white/55">
+        <span className={`text-xs font-semibold tracking-wide ${landingTheme.muted}`}>
           {shortLabel}
         </span>
       </div>
-      <h3 className="mt-4 text-lg font-semibold leading-snug text-white sm:text-xl">
+      <h3
+        className={`mt-4 text-lg font-semibold leading-snug sm:text-xl ${landingTheme.headline}`}
+      >
         {headline}
       </h3>
-      <p className="mt-1.5 text-sm text-white/55">{subheadline}</p>
+      <p className={`mt-1.5 text-sm ${landingTheme.muted}`}>{subheadline}</p>
       <ul className="mt-5 flex-1 space-y-2.5">
         {benefits.map((b) => (
-          <li key={b} className="flex items-start gap-2 text-sm text-white/75">
+          <li
+            key={b}
+            className={`flex items-start gap-2 text-sm ${landingTheme.body}`}
+          >
             <span
               className={cn(
                 "mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full",
-                isPractice ? "bg-sky-300/80" : "bg-emerald-300/80",
+                isPractice ? "bg-sky-500" : "bg-emerald-500",
               )}
             />
             <span>{b}</span>
@@ -213,11 +224,7 @@ function AudiencePanel({
         ))}
       </ul>
       <Button
-        className={cn(
-          "mt-6 h-11 w-full font-semibold",
-          landingTheme.ctaGhost,
-          "border-white/15 text-white hover:bg-white/10",
-        )}
+        className={cn("mt-6 h-11 w-full font-semibold", landingTheme.ctaGhost)}
         onClick={onCta}
       >
         {cta}

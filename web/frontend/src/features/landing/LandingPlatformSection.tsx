@@ -22,7 +22,7 @@ export const LandingPlatformSection = ({
   return (
     <section
       id="platform-details"
-      className="relative border-t border-white/[0.06]"
+      className="relative border-t border-slate-200/80 bg-white"
     >
       <div
         ref={ref}
@@ -34,15 +34,15 @@ export const LandingPlatformSection = ({
             inView ? "translate-y-0 opacity-100" : "translate-y-6 opacity-0",
           )}
         >
-          <p
-            className={`inline-flex rounded-full px-3.5 py-1 text-[11px] tracking-[0.18em] text-white/55 ${landingTheme.glass}`}
+          <p className={landingTheme.eyebrow}>FLOW</p>
+          <h2
+            className={`mt-4 text-2xl font-semibold tracking-tight sm:text-3xl ${landingTheme.headline}`}
           >
-            FLOW
-          </p>
-          <h2 className="mt-4 text-2xl font-semibold tracking-tight text-white sm:text-3xl">
             세 단계로 끝나는 제작 흐름
           </h2>
-          <p className="mt-3 text-sm leading-relaxed text-white/60 sm:text-base">
+          <p
+            className={`mt-3 text-sm leading-relaxed sm:text-base ${landingTheme.body}`}
+          >
             {landingIdentity.vision}
           </p>
         </div>
@@ -58,13 +58,13 @@ export const LandingPlatformSection = ({
               )}
               style={{ transitionDelay: `${100 + index * 70}ms` }}
             >
-              <p className="text-[11px] tracking-[0.28em] text-white/35">
+              <p className={`text-[11px] tracking-[0.28em] ${landingTheme.faint}`}>
                 {stage.step}
               </p>
-              <h3 className="mt-3 text-lg font-semibold text-white">
+              <h3 className={`mt-3 text-lg font-semibold ${landingTheme.headline}`}>
                 {stage.title}
               </h3>
-              <p className="mt-2 text-sm leading-relaxed text-white/60">
+              <p className={`mt-2 text-sm leading-relaxed ${landingTheme.body}`}>
                 {stage.body}
               </p>
             </div>
@@ -81,10 +81,10 @@ export const LandingPlatformSection = ({
           style={{ transitionDelay: "320ms" }}
         >
           <div className="space-y-1.5">
-            <h3 className="text-lg font-semibold text-white">
+            <h3 className={`text-lg font-semibold ${landingTheme.headline}`}>
               먼저 둘러보거나, 물어보세요
             </h3>
-            <p className="text-sm text-white/55">
+            <p className={`text-sm ${landingTheme.muted}`}>
               Demo로 화면을 보거나, 가입 전에도 문의할 수 있습니다.
             </p>
           </div>

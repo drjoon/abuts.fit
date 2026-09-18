@@ -95,11 +95,13 @@ Notes:
   - `src/features/layout/AccountSwitcher.tsx` (사이드바 계정 팝업 · 같은 사업자 계정 전환)
   - `src/store/useAuthStore.ts` (`switchAccount`)
 - 공개 랜딩 (`/`)
-  - `src/pages/public/Index.tsx` — Intro → Audience(치과·기공) → Store → Platform details
+  - `src/pages/public/Index.tsx` — About 스토리 → Platform(의뢰·퀵메뉴) → Store → Flow/문의
+  - `PublicPageLayout tone="light"` (약관·도움말 등 기타 공개 페이지는 dark 유지)
   - 카피 SSOT: `src/features/landing/landingTheme.ts`
-    (`landingIdentity` · `landingAudiencePractice` · `landingAudienceLab` · features/pipeline)
-  - `LandingPlatformIntro` · `LandingAudienceSection` · `LandingStoreShowcase` ·
+    (`landingAbout` · `landingIdentity` · `landingAudiencePractice` · `landingAudienceLab` · flow/quickMenus)
+  - `LandingAboutSection` · `LandingPlatformIntro` · `LandingStoreShowcase` ·
     `LandingPlatformSection` · `Footer`
+  - 영업 피치 패널은 `LandingAudienceSection` + `platformPitchBlocks` 유지
 - 공용 타입(역할 SSOT)
   - `src/shared/types/role.ts`
   - `src/shared/components/RoleSelect.tsx` (역할 Select. 사업영역 주체 등)

@@ -2,29 +2,64 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Menu, X } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
 import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath";
+import { cn } from "@/shared/ui/cn";
 import logo from "@/assets/logo.png";
 
-export const Navigation = () => {
+function scrollToLandingSection(id: string) {
+  const element = document.getElementById(id);
+  if (!element) return false;
+  const top = element.getBoundingClientRect().top + window.scrollY - 80;
+  window.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+  return true;
+}
+
+type NavigationProps = {
+  tone?: "dark" | "light";
+};
+
+export const Navigation = ({ tone = "dark" }: NavigationProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
   const { isAuthenticated, user, logout } = useAuthStore();
+  const isLight = tone === "light";
 
-  const menuItems: { label: string; href: string }[] = [];
+  const menuItems: { label: string; href: string }[] = [
+    { label: "어버츠 소개", href: "/#about" },
+    { label: "플랫폼 소개", href: "/#platform" },
+    { label: "제품 소개", href: "/#store" },
+    { label: "소식", href: "/help" },
+  ];
+
+  useEffect(() => {
+    if (location.pathname !== "/" || !location.hash) return;
+    const id = location.hash.replace(/^#/, "");
+    if (!id) return;
+    const timer = window.setTimeout(() => {
+      scrollToLandingSection(id);
+    }, 50);
+    return () => window.clearTimeout(timer);
+  }, [location.pathname, location.hash]);
 
   const handleMenuClick = (href: string) => {
-    if (href.startsWith("#")) {
-      const element = document.querySelector(href);
-      if (element) {
-        element.scrollIntoView({ behavior: "smooth" });
-      }
-    }
     setIsOpen(false);
+    if (href.startsWith("/#")) {
+      const id = href.slice(2);
+      if (location.pathname !== "/") {
+        navigate({ pathname: "/", hash: `#${id}` });
+        return;
+      }
+      navigate({ pathname: "/", hash: `#${id}` }, { replace: true });
+      scrollToLandingSection(id);
+      return;
+    }
+    navigate(href);
   };
 
   const handleLoginClick = () => {
@@ -79,25 +114,36 @@ export const Navigation = () => {
       </Button>
       <Button
         type="button"
-        className="h-11 w-full bg-slate-900 text-white hover:bg-slate-800"
+        className="h-11 w-full bg-[#2563eb] text-white hover:bg-[#1d4ed8]"
         onClick={handleSignupClick}
       >
-        회원가입
+        시작하기
       </Button>
     </>
   );
 
   return (
     <nav className="fixed top-0 z-50 w-full">
-      {/* Header chrome only — keep absolute layers below content (z-0). */}
-      <div className="absolute inset-0 z-0 border-b border-white/10 bg-[#02040c] md:bg-[#02040c]/95 md:backdrop-blur-3xl" />
-      <div className="pointer-events-none absolute inset-0 z-0 bg-[radial-gradient(circle_at_22%_-15%,rgba(59,130,246,0.25),transparent_58%),radial-gradient(circle_at_78%_-20%,rgba(147,51,234,0.22),transparent_60%),radial-gradient(circle_at_50%_25%,rgba(6,78,59,0.18),transparent_72%)] opacity-70" />
+      <div
+        className={cn(
+          "absolute inset-0 z-0 border-b backdrop-blur-3xl",
+          isLight
+            ? "border-slate-200/80 bg-white/90"
+            : "border-white/10 bg-[#02040c] md:bg-[#02040c]/95",
+        )}
+      />
+      {!isLight ? (
+        <div className="pointer-events-none absolute inset-0 z-0 bg-[radial-gradient(circle_at_22%_-15%,rgba(59,130,246,0.25),transparent_58%),radial-gradient(circle_at_78%_-20%,rgba(147,51,234,0.22),transparent_60%),radial-gradient(circle_at_50%_25%,rgba(6,78,59,0.18),transparent_72%)] opacity-70" />
+      ) : null}
 
       <div className="relative z-10 container mx-auto px-4 sm:px-6">
         <div className="relative flex h-14 items-center justify-between sm:h-16">
           <button
             type="button"
-            className="flex min-w-0 items-center gap-2 text-white transition hover:opacity-90 sm:gap-3"
+            className={cn(
+              "flex min-w-0 items-center gap-2 transition hover:opacity-90 sm:gap-3",
+              isLight ? "text-slate-900" : "text-white",
+            )}
             onClick={() => navigate("/")}
           >
             <img
@@ -117,7 +163,12 @@ export const Navigation = () => {
                 key={item.label}
                 type="button"
                 onClick={() => handleMenuClick(item.href)}
-                className="text-muted-foreground transition-colors hover:text-foreground"
+                className={cn(
+                  "text-sm transition-colors",
+                  isLight
+                    ? "text-slate-500 hover:text-slate-900"
+                    : "text-white/55 hover:text-white",
+                )}
               >
                 {item.label}
               </button>
@@ -127,12 +178,17 @@ export const Navigation = () => {
           <div className="hidden items-center space-x-4 md:flex">
             {isAuthenticated ? (
               <>
-                <span className="text-sm text-white/70">
+                <span
+                  className={cn(
+                    "text-sm",
+                    isLight ? "text-slate-600" : "text-white/70",
+                  )}
+                >
                   안녕하세요, {user?.name}님
                 </span>
                 <Button
                   variant="ghost"
-                  className="text-white"
+                  className={isLight ? "text-slate-700" : "text-white"}
                   onClick={handleLoginClick}
                 >
                   대시보드
@@ -148,16 +204,20 @@ export const Navigation = () => {
               <>
                 <Button
                   variant="ghost"
-                  className="text-white"
+                  className={isLight ? "text-slate-700" : "text-white"}
                   onClick={handleLoginClick}
                 >
                   로그인
                 </Button>
                 <Button
-                  className="bg-white text-slate-900 hover:bg-white/90"
+                  className={
+                    isLight
+                      ? "bg-[#2563eb] text-white hover:bg-[#1d4ed8]"
+                      : "bg-white text-slate-900 hover:bg-white/90"
+                  }
                   onClick={handleSignupClick}
                 >
-                  회원가입
+                  시작하기
                 </Button>
               </>
             )}
@@ -165,7 +225,12 @@ export const Navigation = () => {
 
           <button
             type="button"
-            className="-mr-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-white transition hover:bg-white/10 md:hidden"
+            className={cn(
+              "-mr-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-lg transition md:hidden",
+              isLight
+                ? "text-slate-700 hover:bg-slate-100"
+                : "text-white hover:bg-white/10",
+            )}
             onClick={() => setIsOpen(!isOpen)}
             aria-expanded={isOpen}
             aria-label="메뉴 토글"
@@ -175,7 +240,6 @@ export const Navigation = () => {
         </div>
       </div>
 
-      {/* Fixed panel escapes header absolute overlays that otherwise paint over buttons. */}
       {isOpen ? (
         <>
           <button

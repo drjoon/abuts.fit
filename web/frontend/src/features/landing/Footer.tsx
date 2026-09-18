@@ -16,8 +16,15 @@ import {
   CONTACT_EMAIL,
 } from "@/shared/lib/contactInfo";
 import { landingIdentity } from "@/features/landing/landingTheme";
+import { cn } from "@/shared/ui/cn";
 
-export const Footer = () => {
+type FooterProps = {
+  tone?: "dark" | "light";
+};
+
+export const Footer = ({ tone = "dark" }: FooterProps) => {
+  const isLight = tone === "light";
+
   const support = [
     { label: "도움말 센터", href: "/help" },
     { label: "문의하기", href: "/contact" },
@@ -33,62 +40,105 @@ export const Footer = () => {
   ];
 
   return (
-    <footer className="relative mt-0 border-t border-white/10 bg-[#030711]/90 text-white backdrop-blur-3xl">
+    <footer
+      className={cn(
+        "relative mt-0 border-t backdrop-blur-3xl",
+        isLight
+          ? "border-slate-200 bg-white text-slate-900"
+          : "border-white/10 bg-[#030711]/90 text-white",
+      )}
+    >
       <div className="pointer-events-none absolute inset-0">
-        <div className="absolute -top-24 right-[-120px] h-[22rem] w-[22rem] rounded-full bg-sky-500/8 blur-[160px]" />
-        <div className="absolute bottom-[-100px] left-[-100px] h-[20rem] w-[20rem] rounded-full bg-slate-400/6 blur-[160px]" />
+        <div
+          className={cn(
+            "absolute -top-24 right-[-120px] h-[22rem] w-[22rem] rounded-full blur-[160px]",
+            isLight ? "bg-sky-200/40" : "bg-sky-500/8",
+          )}
+        />
       </div>
       <div className="container mx-auto px-6 py-16 sm:px-10 lg:px-16">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+        <div className="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-4">
           <div className="lg:col-span-2">
             <div
-              className="flex items-center space-x-3 mb-6 cursor-pointer"
+              className="mb-6 flex cursor-pointer items-center space-x-3"
               onClick={() => (window.location.href = "/")}
             >
               <img src={logo} alt="Abuts.fit" className="h-8 w-8" />
-              <span className="text-xl font-bold bg-gradient-hero bg-clip-text text-transparent">
+              <span className="bg-gradient-hero bg-clip-text text-xl font-bold text-transparent">
                 abuts.fit
               </span>
             </div>
 
-            <p className="text-white/70 mb-6 leading-relaxed">
-              {landingIdentity.oneLiner}. {landingIdentity.manufacturerNote}
+            <p
+              className={cn(
+                "mb-6 leading-relaxed",
+                isLight ? "text-slate-600" : "text-white/70",
+              )}
+            >
+              치과의 더 나은 진료를 위한 파트너.{" "}
+              {landingIdentity.manufacturerNote}
             </p>
 
             <div className="space-y-3">
-              <div className="flex items-center text-white/70">
-                <Mail className="w-4 h-4 mr-2" />
+              <div
+                className={cn(
+                  "flex items-center",
+                  isLight ? "text-slate-600" : "text-white/70",
+                )}
+              >
+                <Mail className="mr-2 h-4 w-4" />
                 <a
                   href={`mailto:${CONTACT_EMAIL}`}
-                  className="hover:text-white transition-colors"
+                  className={cn(
+                    "transition-colors",
+                    isLight ? "hover:text-slate-900" : "hover:text-white",
+                  )}
                 >
                   {CONTACT_EMAIL}
                 </a>
               </div>
-              <div className="flex items-center text-white/70">
-                <Phone className="w-4 h-4 mr-2" />
+              <div
+                className={cn(
+                  "flex items-center",
+                  isLight ? "text-slate-600" : "text-white/70",
+                )}
+              >
+                <Phone className="mr-2 h-4 w-4" />
                 <a
                   href={`tel:${COMPANY_PHONE}`}
-                  className="hover:text-white transition-colors"
+                  className={cn(
+                    "transition-colors",
+                    isLight ? "hover:text-slate-900" : "hover:text-white",
+                  )}
                 >
                   {COMPANY_PHONE}
                 </a>
               </div>
-              <div className="flex items-center text-white/70">
-                <MapPin className="w-4 h-4 mr-2" />
+              <div
+                className={cn(
+                  "flex items-center",
+                  isLight ? "text-slate-600" : "text-white/70",
+                )}
+              >
+                <MapPin className="mr-2 h-4 w-4" />
                 <span>{COMPANY_ADDRESS}</span>
               </div>
             </div>
           </div>
 
           <div>
-            <h3 className="font-semibold mb-4">고객 지원</h3>
+            <h3 className="mb-4 font-semibold">고객 지원</h3>
             <ul className="space-y-3">
               {support.map((link) => (
                 <li key={link.label}>
                   <Link
                     to={link.href}
-                    className="text-white/60 hover:text-white transition-colors"
+                    className={cn(
+                      "transition-colors",
+                      isLight
+                        ? "text-slate-500 hover:text-slate-900"
+                        : "text-white/60 hover:text-white",
+                    )}
                   >
                     {link.label}
                   </Link>
@@ -98,13 +148,18 @@ export const Footer = () => {
           </div>
 
           <div>
-            <h3 className="font-semibold mb-4">약관 및 정책</h3>
+            <h3 className="mb-4 font-semibold">약관 및 정책</h3>
             <ul className="space-y-3">
               {legal.map((link) => (
                 <li key={link.label}>
                   <Link
                     to={link.href}
-                    className="text-white/60 hover:text-white transition-colors"
+                    className={cn(
+                      "transition-colors",
+                      isLight
+                        ? "text-slate-500 hover:text-slate-900"
+                        : "text-white/60 hover:text-white",
+                    )}
                   >
                     {link.label}
                   </Link>
@@ -114,11 +169,21 @@ export const Footer = () => {
           </div>
         </div>
 
-        <div className="mt-8 pt-8 border-t border-white/10">
-          <div className="flex flex-col md:flex-row items-center justify-between">
-            <div className="flex items-center space-x-4 mb-4 md:mb-0">
+        <div
+          className={cn(
+            "mt-8 border-t pt-8",
+            isLight ? "border-slate-200" : "border-white/10",
+          )}
+        >
+          <div className="flex flex-col items-center justify-between md:flex-row">
+            <div className="mb-4 flex items-center space-x-4 md:mb-0">
               <Badge variant="secondary">한국어</Badge>
-              <span className="text-white/60 text-sm">
+              <span
+                className={cn(
+                  "text-sm",
+                  isLight ? "text-slate-500" : "text-white/60",
+                )}
+              >
                 © 2026 어벗츠 주식회사. All rights reserved.
               </span>
             </div>
@@ -128,29 +193,44 @@ export const Footer = () => {
                 href="https://www.instagram.com/abuts.fit"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-white/60 hover:text-white transition-colors"
+                className={cn(
+                  "transition-colors",
+                  isLight
+                    ? "text-slate-500 hover:text-slate-900"
+                    : "text-white/60 hover:text-white",
+                )}
                 aria-label="Instagram"
               >
-                <Instagram className="w-5 h-5" />
+                <Instagram className="h-5 w-5" />
               </a>
               <a
                 href="https://www.facebook.com/abuts.fit"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-white/60 hover:text-white transition-colors"
+                className={cn(
+                  "transition-colors",
+                  isLight
+                    ? "text-slate-500 hover:text-slate-900"
+                    : "text-white/60 hover:text-white",
+                )}
                 aria-label="Facebook"
               >
-                <Facebook className="w-5 h-5" />
+                <Facebook className="h-5 w-5" />
               </a>
               <a
                 href="https://x.com/abuts_fit"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-white/60 hover:text-white transition-colors"
+                className={cn(
+                  "transition-colors",
+                  isLight
+                    ? "text-slate-500 hover:text-slate-900"
+                    : "text-white/60 hover:text-white",
+                )}
                 aria-label="X (Twitter)"
               >
                 <svg
-                  className="w-5 h-5"
+                  className="h-5 w-5"
                   viewBox="0 0 24 24"
                   fill="currentColor"
                 >
@@ -160,7 +240,12 @@ export const Footer = () => {
             </div>
           </div>
 
-          <div className="mt-6 text-xs text-white/60 leading-relaxed">
+          <div
+            className={cn(
+              "mt-6 text-xs leading-relaxed",
+              isLight ? "text-slate-500" : "text-white/60",
+            )}
+          >
             <div>
               {COMPANY_NAME} | 대표자: {COMPANY_CEO_NAME} | 사업자등록번호:{" "}
               {COMPANY_BUSINESS_REGISTRATION_NUMBER}
