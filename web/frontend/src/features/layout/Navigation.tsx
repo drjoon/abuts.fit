@@ -26,6 +26,8 @@ type NavigationProps = {
   overlay?: boolean;
 };
 
+type NavMenuItem = { label: string; href: string };
+
 export const Navigation = ({ tone = "dark", overlay = false }: NavigationProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
@@ -37,16 +39,29 @@ export const Navigation = ({ tone = "dark", overlay = false }: NavigationProps) 
     location.pathname === "/" || location.pathname.startsWith("/offer/");
   const overlayClear = overlay && !scrolled && !isOpen;
 
-  const menuItems: { label: string; href: string }[] = isOfferNav
-    ? landingOffers.map((offer) => ({
-        label: offer.navLabel,
-        href: offerPath(offer.slug),
-      }))
-    : [
-        { label: "어벗츠 소개", href: "/" },
-        { label: "플랫폼과 제품", href: "/platform" },
-      ];
-  const mobileMenuItems = menuItems;
+  const toNavItem = (offer: (typeof landingOffers)[number]): NavMenuItem => ({
+    label: offer.navLabel,
+    href: offerPath(offer.slug),
+  });
+  const platformOffer = isOfferNav
+    ? landingOffers.find((offer) => offer.slug === "platform")
+    : undefined;
+  const connectedItems = isOfferNav
+    ? landingOffers
+        .filter((offer) => offer.slug !== "platform")
+        .map(toNavItem)
+    : [];
+  /** 플랫폼이 심플웨이·커스텀어벗·기공사업부를 연결한다. */
+  const showConnectedNav = Boolean(platformOffer) && connectedItems.length > 0;
+  const platformItem = platformOffer ? toNavItem(platformOffer) : null;
+  const menuItems: NavMenuItem[] = showConnectedNav
+    ? []
+    : isOfferNav
+      ? landingOffers.map(toNavItem)
+      : [
+          { label: "어벗츠 소개", href: "/" },
+          { label: "플랫폼과 제품", href: "/platform" },
+        ];
 
   useEffect(() => {
     if (!overlay) return;
@@ -109,6 +124,48 @@ export const Navigation = ({ tone = "dark", overlay = false }: NavigationProps) 
   const handleLogout = () => {
     logout();
     setIsOpen(false);
+  };
+
+  const renderDesktopItem = (item: NavMenuItem) => {
+    const current = location.pathname === item.href;
+    return (
+      <button
+        key={item.href}
+        type="button"
+        onClick={() => handleMenuClick(item.href)}
+        aria-current={current ? "page" : undefined}
+        className={cn(
+          "text-sm transition-colors",
+          isLight
+            ? "text-[15px] font-semibold text-slate-900 hover:text-slate-600"
+            : "text-white/55 hover:text-white",
+          current &&
+            (isLight
+              ? "underline decoration-2 underline-offset-8"
+              : "text-white"),
+        )}
+      >
+        {item.label}
+      </button>
+    );
+  };
+
+  const renderMobileItem = (item: NavMenuItem) => {
+    const current = location.pathname === item.href;
+    return (
+      <button
+        key={item.href}
+        type="button"
+        onClick={() => handleMenuClick(item.href)}
+        aria-current={current ? "page" : undefined}
+        className={cn(
+          "block min-h-11 w-full rounded-lg px-2 py-2.5 text-left text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-900",
+          current && "font-semibold text-slate-900",
+        )}
+      >
+        {item.label}
+      </button>
+    );
   };
 
   const mobileAuthButtons = isAuthenticated ? (
@@ -185,30 +242,30 @@ export const Navigation = ({ tone = "dark", overlay = false }: NavigationProps) 
             />
           </button>
 
-          <div className="hidden items-center space-x-5 md:flex">
-            {menuItems.map((item) => {
-              const current = location.pathname === item.href;
-              return (
-                <button
-                  key={item.label}
-                  type="button"
-                  onClick={() => handleMenuClick(item.href)}
-                  aria-current={current ? "page" : undefined}
+          <div className="hidden items-center gap-5 md:flex">
+            {showConnectedNav && platformItem ? (
+              <>
+                {renderDesktopItem(platformItem)}
+                <span
                   className={cn(
-                    "text-sm transition-colors",
-                    isLight
-                      ? "text-[15px] font-semibold text-slate-900 hover:text-slate-600"
-                      : "text-white/55 hover:text-white",
-                    current &&
-                      (isLight
-                        ? "underline decoration-2 underline-offset-8"
-                        : "text-white"),
+                    "select-none text-lg font-light leading-none",
+                    isLight ? "text-slate-400" : "text-white/50",
                   )}
+                  aria-hidden
                 >
-                  {item.label}
-                </button>
-              );
-            })}
+                  +
+                </span>
+                <div
+                  className="flex items-center gap-5"
+                  role="group"
+                  aria-label="플랫폼이 연결하는 메뉴"
+                >
+                  {connectedItems.map(renderDesktopItem)}
+                </div>
+              </>
+            ) : (
+              menuItems.map(renderDesktopItem)
+            )}
           </div>
 
           <div className="hidden items-center space-x-4 md:flex">
@@ -285,16 +342,23 @@ export const Navigation = ({ tone = "dark", overlay = false }: NavigationProps) 
             onClick={() => setIsOpen(false)}
           />
           <div className="fixed inset-x-0 top-14 z-[60] border-b border-slate-200 bg-white px-4 pb-5 pt-4 shadow-[0_18px_40px_rgba(2,4,12,0.35)] md:hidden">
-            {mobileMenuItems.map((item) => (
-              <button
-                key={item.label}
-                type="button"
-                onClick={() => handleMenuClick(item.href)}
-                className="block min-h-11 w-full rounded-lg px-2 py-2.5 text-left text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-900"
-              >
-                {item.label}
-              </button>
-            ))}
+            {showConnectedNav && platformItem ? (
+              <>
+                {renderMobileItem(platformItem)}
+                <div
+                  className="flex items-center gap-2 px-2 py-1 text-slate-400"
+                  aria-hidden
+                >
+                  <span className="text-base font-light leading-none">+</span>
+                  <span className="h-px flex-1 bg-slate-200" />
+                </div>
+                <div role="group" aria-label="플랫폼이 연결하는 메뉴">
+                  {connectedItems.map(renderMobileItem)}
+                </div>
+              </>
+            ) : (
+              menuItems.map(renderMobileItem)
+            )}
             <div className="space-y-2">{mobileAuthButtons}</div>
           </div>
         </>

@@ -577,3 +577,22 @@ body:has(.guide-tour-root) .guide-tour-nested-dialog-overlay {
   }
 }
 
+@keyframes offer-hero-drift {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(1.06);
+  }
+}
+
+.offer-hero-drift {
+  animation: offer-hero-drift 18s ease-in-out infinite alternate;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .offer-hero-drift {
+    animation: none;
+  }
+}
+

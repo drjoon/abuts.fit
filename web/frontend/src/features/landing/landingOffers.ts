@@ -3,6 +3,13 @@
 // - web/frontend/src/features/landing/LandingOfferPage.tsx
 // - web/frontend/src/features/landing/landingAssets.ts
 // - rules.md §1.5–§2.6 · web/frontend/rules.md (기공의뢰·정산·스토어)
+//
+// 가격은 공개 고시·판매가만 적는다.
+// - 스토어 판매가(부가세 포함): storeCatalog.ts STORE_LIST_INCLUSIVE_PRICES
+// - 스토어 배송: STORE_SHIPPING_FEE_INCLUSIVE 3,300
+// - 커스텀어벗 고시: membershipProductionPrice 15,000 / membershipDesignAndProductionPrice 25,000
+// - 커스텀어벗 배송: creditSettings.shippingFee 3,500 (부가세 없는 계산서)
+// - 기공 기준가: autoMatchBudget.ts ADMIN_LAB_FEE_BASE (의뢰 시 확정)
 import {
   LANDING_CAD_PREVIEW,
   LANDING_CASE_ABUTMENT,
@@ -19,72 +26,202 @@ export type OfferVisual =
     }
   | { kind: "workspace" };
 
-export type OfferSection = {
+export type OfferIcon =
+  | "request"
+  | "start"
+  | "pay"
+  | "ship"
+  | "store"
+  | "scan"
+  | "healing"
+  | "abutment"
+  | "kit"
+  | "crown"
+  | "cnc"
+  | "lab"
+  | "quality"
+  | "box";
+
+export type OfferHighlight = {
+  icon: OfferIcon;
+  label: string;
+  line: string;
+};
+
+export type OfferBuy =
+  | { kind: "start"; label: string }
+  | { kind: "store"; label: string; productId: string };
+
+export type OfferProductCard = {
+  name: string;
+  line: string;
+  price: string;
+  priceNote: string;
+  shipping: string;
+  specs: [string, string, string];
+  buy: OfferBuy;
+  visual: OfferVisual;
+};
+
+export type OfferSlide = {
   title: string;
-  body: string;
+  line: string;
+  visual: OfferVisual;
+};
+
+export type OfferScene = {
+  title: string;
+  line: string;
   visual: OfferVisual;
 };
 
 export type LandingOffer = {
   slug: string;
   navLabel: string;
+  /** 홈 타일. 오퍼 히어로는 heroTitle. */
   punch: string;
+  heroTitle: string;
   line: string;
   lead: string;
+  hero: "video" | "tile";
   tile: OfferVisual;
-  sections: OfferSection[];
+  highlights: OfferHighlight[];
+  scene: OfferScene;
+  products: [OfferProductCard, OfferProductCard];
+  slides: OfferSlide[];
+  specs: Array<{ label: string; value: string }>;
+  learn: Array<{ label: string; line: string; href: string }>;
+  faq: Array<{ q: string; a: string }>;
 };
 
 const PROSTHETIC_KIT = "/store/acrodent/prosthetic-kit.jpg";
+const FULL_PACKAGE = "/store/acrodent/full-package.jpg";
+
+const HEALING_VISUAL: OfferVisual = {
+  kind: "photo",
+  src: LANDING_CASE_HEALING,
+  alt: "심플 힐링 어벗",
+};
+
+const ABUTMENT_VISUAL: OfferVisual = {
+  kind: "photo",
+  src: LANDING_CASE_ABUTMENT,
+  alt: "심플어벗",
+};
+
+const KIT_VISUAL: OfferVisual = {
+  kind: "photo",
+  src: LANDING_CASE_KIT,
+  alt: "Surgical Kit",
+};
+
+const PAIR_VISUAL: OfferVisual = {
+  kind: "pair",
+  items: [
+    {
+      src: LANDING_CASE_HEALING,
+      alt: "심플 힐링 어벗",
+      caption: "심플 힐링",
+    },
+    {
+      src: LANDING_CASE_ABUTMENT,
+      alt: "심플어벗",
+      caption: "심플어벗",
+    },
+  ],
+};
 
 export const landingOffers: LandingOffer[] = [
   {
     slug: "platform",
     navLabel: "플랫폼",
     punch: "의뢰, 정산, 배송.",
-    line: "치과와 기공소가 같은 화면에서 끝냅니다.",
+    heroTitle: "의뢰, 정산, 배송.",
+    line: "같은 화면에서 끝냅니다.",
     lead: "기공의뢰서, 정산과 계산서, 배송 확인. 제품 구매까지 한 계정입니다.",
+    hero: "tile",
     tile: { kind: "workspace" },
-    sections: [
+    highlights: [
+      { icon: "request", label: "의뢰서", line: "스캔과 보철을 올립니다" },
+      { icon: "start", label: "작업시작", line: "진행이 한 화면에 남음" },
+      { icon: "pay", label: "정산", line: "월말 계산서가 나갑니다" },
+      { icon: "ship", label: "배송", line: "치과·기공소 배송 무료" },
+      { icon: "store", label: "스토어", line: "같은 계정으로 구매" },
+    ],
+    scene: {
+      title: "메신저 대신 의뢰서.",
+      line: "스캔과 보철이 한 기록입니다.",
+      visual: { kind: "workspace" },
+    },
+    products: [
       {
-        title: "메신저 대신, 의뢰서.",
-        body: "치과가 스캔과 보철을 올립니다. 기공소를 지정하거나, 인증된 기공소에 자동으로 맡깁니다. 진행은 의뢰, 작업시작, 디자인, 출고로 같은 화면에 남고, 채팅도 그 옆입니다.",
+        name: "지정 의뢰",
+        line: "플랫폼 수수료가 없습니다.",
+        price: "₩0",
+        priceNote: "월 참여비 없음",
+        shipping: "배송 무료",
+        specs: ["기공소를 직접 지정", "플랫폼 수수료 없음", "진행은 같은 화면"],
+        buy: { kind: "start", label: "시작하기" },
         visual: { kind: "workspace" },
       },
       {
-        title: "돈도 같은 기록.",
-        body: "결제는 크레딧입니다. 선불페이가 아니라, 기공·커스텀어벗·스토어에만 쓰는 거래 선수금입니다. 기공과 커스텀어벗은 부가세 없는 계산서, 스토어 기성품은 부가세 포함 세금계산서. 월말에 각각 따로 나갑니다. 지정 의뢰는 플랫폼 수수료가 없고, 자동매칭은 작업이 끝난 뒤 기공비에서만 빠집니다. 월 참여비는 없습니다.",
-        visual: {
-          kind: "blank",
-          caption: "크레딧 잔액과 월말 계산서·세금계산서가 나란히 보이는 화면",
-        },
+        name: "심플어벗",
+        line: "스토어에서 바로 삽니다.",
+        price: "₩15,400",
+        priceNote: "부가세 포함 · 1EA",
+        shipping: "배송비 ₩3,300",
+        specs: ["Hex · Non-Hex", "높이 S · M · L · XL", "제조 (주)애크로덴트"],
+        buy: { kind: "store", label: "구매하기", productId: "simple-abutment-2" },
+        visual: ABUTMENT_VISUAL,
+      },
+    ],
+    slides: [
+      {
+        title: "크레딧으로 결제.",
+        line: "선불페이가 아닌 거래 선수금.",
+        visual: { kind: "workspace" },
       },
       {
-        title: "어디로 가는지 보입니다.",
-        body: "치과와 기공소 사이 배송은 무료입니다. 출고와 추적은 의뢰서와 같은 화면에서 확인합니다.",
-        visual: {
-          kind: "blank",
-          caption: "출고 예정과 배송 추적이 의뢰 카드에 붙은 화면",
-        },
+        title: "계산서는 둘로.",
+        line: "기공과 스토어는 따로 나갑니다.",
+        visual: PAIR_VISUAL,
       },
       {
-        title: "제품은 스토어에서.",
-        body: "심플 힐링, 심플어벗, 시술 키트를 같은 계정으로 삽니다. 가격은 부가세 포함이고, 기공 결제와 스토어 결제는 나누어 진행합니다.",
-        visual: {
-          kind: "pair",
-          items: [
-            {
-              src: LANDING_CASE_HEALING,
-              alt: "심플 힐링 어벗",
-              caption: "심플 힐링 어벗",
-            },
-            {
-              src: LANDING_CASE_KIT,
-              alt: "Surgical Kit",
-              caption: "Surgical Kit",
-            },
-          ],
-        },
+        title: "출고가 보입니다.",
+        line: "추적이 의뢰 카드에 붙습니다.",
+        visual: KIT_VISUAL,
+      },
+    ],
+    specs: [
+      { label: "결제", value: "크레딧" },
+      { label: "계산서", value: "월말 분리" },
+      { label: "지정 수수료", value: "없음" },
+      { label: "치과 배송", value: "무료" },
+    ],
+    learn: [
+      { label: "심플웨이", line: "힐링에서 보철까지.", href: "/offer/simple-way" },
+      { label: "커스텀어벗", line: "주문이 가공이 됩니다.", href: "/offer/custom-abutment" },
+    ],
+    faq: [
+      {
+        q: "월 이용료가 있나요?",
+        a: "없습니다. 기공·커스텀어벗·스토어는 크레딧으로 결제합니다.",
+      },
+      {
+        q: "지정 의뢰 수수료는요?",
+        a: "없습니다. 자동매칭만 작업이 끝난 뒤 기공비에서 빠집니다.",
+      },
+      {
+        q: "배송비는 얼마인가요?",
+        a: "치과와 기공소 사이는 무료입니다. 스토어 배송비는 ₩3,300입니다.",
+      },
+      {
+        q: "계산서는 어떻게 나오나요?",
+        a: "기공·커스텀어벗은 부가세 없는 계산서, 스토어는 세금계산서. 월말에 따로.",
+      },
+      {
+        q: "누가 가입하나요?",
+        a: "치과와 기공소가 같은 플랫폼을 씁니다.",
       },
     ],
   },
@@ -92,77 +229,100 @@ export const landingOffers: LandingOffer[] = [
     slug: "simple-way",
     navLabel: "심플웨이",
     punch: "스캔하면 시작.",
-    line: "힐링에서 심플어벗, 보철 기공까지.",
+    heroTitle: "스캔하면 시작.",
+    line: "힐링에서 보철까지.",
     lead: "심플 힐링 어벗을 구강 스캔해 올리면, 어벗 선택과 보철이 한 흐름입니다.",
-    tile: {
-      kind: "pair",
-      items: [
-        {
-          src: LANDING_CASE_HEALING,
-          alt: "심플 힐링 어벗",
-          caption: "심플 힐링 어벗",
-        },
-        {
-          src: LANDING_CASE_ABUTMENT,
-          alt: "심플어벗",
-          caption: "심플어벗",
-        },
-      ],
+    hero: "video",
+    tile: PAIR_VISUAL,
+    highlights: [
+      { icon: "healing", label: "힐링", line: "치은을 짧게 형성" },
+      { icon: "abutment", label: "심플어벗", line: "규격에서 바로 선택" },
+      { icon: "kit", label: "Surgical", line: "식립은 이 키트" },
+      { icon: "crown", label: "Prosthetic", line: "체결은 이 키트" },
+      { icon: "scan", label: "보철", line: "같은 의뢰로 이어짐" },
+    ],
+    scene: {
+      title: "힐링을 스캔합니다.",
+      line: "그다음 어벗을 고릅니다.",
+      visual: PAIR_VISUAL,
     },
-    sections: [
+    products: [
       {
-        title: "짧게 심고, 짧게 고릅니다.",
-        body: "심플 힐링 어벗과 심플어벗은 Hex·Non-Hex로 나뉩니다. 시술은 Surgical Kit, 보철 체결은 Prosthetic Kit. 제조는 (주)애크로덴트입니다.",
+        name: "심플 힐링",
+        line: "식립 뒤 치은을 형성합니다.",
+        price: "₩15,400",
+        priceNote: "부가세 포함 · 1EA",
+        shipping: "배송비 ₩3,300",
+        specs: ["Hex · Non-Hex", "높이·직경 12종", "제조 (주)애크로덴트"],
+        buy: { kind: "store", label: "구매하기", productId: "simple-healing-2" },
+        visual: HEALING_VISUAL,
+      },
+      {
+        name: "심플어벗",
+        line: "보철 전에 규격을 고릅니다.",
+        price: "₩15,400",
+        priceNote: "부가세 포함 · 1EA",
+        shipping: "배송비 ₩3,300",
+        specs: ["Hex · Non-Hex", "높이 S · M · L · XL", "제조 (주)애크로덴트"],
+        buy: { kind: "store", label: "구매하기", productId: "simple-abutment-2" },
+        visual: ABUTMENT_VISUAL,
+      },
+    ],
+    slides: [
+      {
+        title: "Surgical Kit.",
+        line: "판매가 ₩1,320,000.",
+        visual: KIT_VISUAL,
+      },
+      {
+        title: "Prosthetic Kit.",
+        line: "판매가 ₩880,000.",
         visual: {
-          kind: "pair",
-          items: [
-            {
-              src: LANDING_CASE_HEALING,
-              alt: "심플 힐링 어벗",
-              caption: "심플 힐링 어벗",
-            },
-            {
-              src: LANDING_CASE_ABUTMENT,
-              alt: "심플어벗",
-              caption: "심플어벗",
-            },
-          ],
+          kind: "photo",
+          src: PROSTHETIC_KIT,
+          alt: "Prosthetic Kit",
         },
       },
       {
-        title: "힐링을 스캔해 올리면.",
-        body: "구강에 체결한 심플 힐링 어벗을 스캔해 플랫폼에 올립니다. 그다음 규격 심플어벗을 고르거나, 커스텀어벗 제작으로 넘깁니다.",
+        title: "500만 패키지.",
+        line: "패키지 판매가 ₩5,000,000.",
         visual: {
-          kind: "blank",
-          caption: "구강에 체결된 심플 힐링 어벗을 스캔하는 장면",
+          kind: "photo",
+          src: FULL_PACKAGE,
+          alt: "500만 패키지",
         },
       },
+    ],
+    specs: [
+      { label: "힐링", value: "12종" },
+      { label: "심플어벗", value: "12종" },
+      { label: "키트", value: "식립 · 체결" },
+      { label: "제조", value: "(주)애크로덴트" },
+    ],
+    learn: [
+      { label: "플랫폼", line: "의뢰와 정산이 한곳.", href: "/offer/platform" },
+      { label: "커스텀어벗", line: "규격 다음의 CNC.", href: "/offer/custom-abutment" },
+    ],
+    faq: [
       {
-        title: "키트는 두 가지.",
-        body: "Surgical Kit는 식립, Prosthetic Kit는 치은 형성과 어벗 체결입니다. 스토어에서 키트와 어벗을 먼저 갖춥니다.",
-        visual: {
-          kind: "pair",
-          items: [
-            {
-              src: LANDING_CASE_KIT,
-              alt: "Surgical Kit",
-              caption: "Surgical Kit",
-            },
-            {
-              src: PROSTHETIC_KIT,
-              alt: "Prosthetic Kit",
-              caption: "Prosthetic Kit",
-            },
-          ],
-        },
+        q: "심플웨이는 무엇인가요?",
+        a: "심플 힐링을 스캔해 올리고, 심플어벗과 보철로 이어지는 흐름입니다.",
       },
       {
-        title: "보철은 기공으로.",
-        body: "어벗이 정해지면 크라운·브리지 같은 보철이 같은 의뢰서에서 이어집니다. 기공사업부나 지정 기공소가 그 다음을 맡습니다.",
-        visual: {
-          kind: "blank",
-          caption: "심플어벗 위에 보철이 올라간 완성 케이스",
-        },
+        q: "Hex와 Non-Hex가 있나요?",
+        a: "힐링과 심플어벗 모두 Hex · Non-Hex입니다. 판매가는 각 ₩15,400입니다.",
+      },
+      {
+        q: "키트는 무엇이 필요한가요?",
+        a: "Surgical Kit는 식립, Prosthetic Kit는 치은 형성과 어벗 체결입니다.",
+      },
+      {
+        q: "배송비는요?",
+        a: "스토어 배송비는 건당 ₩3,300, 부가세 포함입니다.",
+      },
+      {
+        q: "보철은 어디서 하나요?",
+        a: "어벗이 정해지면 같은 의뢰서에서 기공으로 이어집니다.",
       },
     ],
   },
@@ -170,46 +330,108 @@ export const landingOffers: LandingOffer[] = [
     slug: "custom-abutment",
     navLabel: "커스텀어벗",
     punch: "일정한 품질의 CNC 어벗.",
-    line: "플랫폼 주문이 가공이 됩니다.",
+    heroTitle: "일정한 CNC 품질.",
+    line: "주문이 가공이 됩니다.",
     lead: "플랫폼과 연계된 자동화 공정으로, 균일한 품질의 CNC 커스텀 어벗을 만듭니다.",
+    hero: "tile",
     tile: {
       kind: "photo",
       src: LANDING_CAD_PREVIEW,
       alt: "커스텀 어벗 CAD",
     },
-    sections: [
+    highlights: [
+      { icon: "request", label: "주문", line: "스캔이 올라오면 시작" },
+      { icon: "lab", label: "디자인", line: "기공소가 올리면 가공" },
+      { icon: "cnc", label: "CNC", line: "건마다 같은 공정" },
+      { icon: "box", label: "출고", line: "주문한 기공소로" },
+      { icon: "pay", label: "정산", line: "고시 단가로 정산" },
+    ],
+    scene: {
+      title: "디자인이 곧 가공.",
+      line: "올리는 순간 CNC가 시작.",
+      visual: {
+        kind: "photo",
+        src: LANDING_CAD_PREVIEW,
+        alt: "커스텀 어벗 CAD",
+      },
+    },
+    products: [
       {
-        title: "주문이 가공이 됩니다.",
-        body: "스캔이 올라온 의뢰가 애크로덴트 CNC로 이어집니다. 건마다 같은 공정이라 품질이 균일합니다.",
+        name: "생산",
+        line: "디자인은 기공소가 합니다.",
+        price: "₩15,000",
+        priceNote: "고시 · 1어벗",
+        shipping: "박스당 ₩3,500",
+        specs: ["부가세 없는 계산서", "기공소가 디자인", "완성품은 기공소로"],
+        buy: { kind: "start", label: "의뢰하기" },
         visual: {
           kind: "photo",
           src: LANDING_CAD_PREVIEW,
-          alt: "커스텀 어벗 CAD 프리뷰",
+          alt: "커스텀 어벗 CAD",
         },
       },
       {
-        title: "기공소가 디자인하면, 바로 깎습니다.",
-        body: "작업시작과 함께 스캔 기준으로 제작이 열립니다. 그 기공소가 디자인을 올리는 순간 가공이 자동으로 시작됩니다.",
+        name: "디자인+생산",
+        line: "디자인부터 가공까지.",
+        price: "₩25,000",
+        priceNote: "고시 · 1어벗",
+        shipping: "박스당 ₩3,500",
+        specs: ["부가세 없는 계산서", "디자인비 포함", "완성품은 기공소로"],
+        buy: { kind: "start", label: "의뢰하기" },
+        visual: ABUTMENT_VISUAL,
+      },
+    ],
+    slides: [
+      {
+        title: "주문이 가공됩니다.",
+        line: "애크로덴트 CNC로 이어집니다.",
         visual: {
-          kind: "blank",
-          caption: "기공소가 디자인을 올리고 가공이 시작되는 화면",
+          kind: "photo",
+          src: LANDING_CAD_PREVIEW,
+          alt: "커스텀 어벗 CAD",
         },
       },
       {
-        title: "만든 뒤, 주문한 기공소로.",
-        body: "완성품은 치과로 바로 가지 않고 주문한 기공소가 받습니다. 보철과 함께 치과로 이어집니다.",
-        visual: {
-          kind: "blank",
-          caption: "CNC로 가공된 커스텀 어벗이 출고되는 장면",
-        },
+        title: "기공소가 받습니다.",
+        line: "보철과 함께 치과로 갑니다.",
+        visual: { kind: "workspace" },
       },
       {
-        title: "대금은 나뉘어 있습니다.",
-        body: "치과가 내는 커스텀어벗 금액은 그 기공소 수가입니다. 생산 단가는 플랫폼에 고시되어 있고, 기공소가 어벗츠와 정산합니다. 배송비는 박스당이며, 이 대금은 부가세 없는 계산서입니다.",
-        visual: {
-          kind: "blank",
-          caption: "커스텀어벗 고시 단가와 박스당 배송비가 보이는 안내",
-        },
+        title: "대금은 나뉩니다.",
+        line: "치과 수가는 기공소 수가.",
+        visual: PAIR_VISUAL,
+      },
+    ],
+    specs: [
+      { label: "생산 고시", value: "₩15,000" },
+      { label: "디자인+생산", value: "₩25,000" },
+      { label: "배송", value: "박스당 ₩3,500" },
+      { label: "계산서", value: "부가세 없음" },
+    ],
+    learn: [
+      { label: "심플웨이", line: "규격 어벗부터.", href: "/offer/simple-way" },
+      { label: "기공사업부", line: "보철을 이어서.", href: "/offer/lab" },
+    ],
+    faq: [
+      {
+        q: "가격은 얼마인가요?",
+        a: "생산 ₩15,000, 디자인+생산 ₩25,000. 플랫폼 고시이고 1어벗 기준입니다.",
+      },
+      {
+        q: "배송비는요?",
+        a: "박스당 ₩3,500입니다. 이 대금은 부가세 없는 계산서입니다.",
+      },
+      {
+        q: "완성품은 어디로 가나요?",
+        a: "치과가 아니라 주문한 기공소로 갑니다. 보철과 함께 치과로 이어집니다.",
+      },
+      {
+        q: "가공은 언제 시작되나요?",
+        a: "작업시작 후, 그 기공소가 디자인을 올리는 순간 시작됩니다.",
+      },
+      {
+        q: "치과가 내는 돈은요?",
+        a: "치과가 내는 커스텀어벗 금액은 그 기공소 수가입니다. 생산 단가는 고시입니다.",
       },
     ],
   },
@@ -217,33 +439,96 @@ export const landingOffers: LandingOffer[] = [
     slug: "lab",
     navLabel: "기공사업부",
     punch: "보철을 이어서.",
-    line: "어벗츠 제품으로 이어지는 기공.",
+    heroTitle: "보철을 이어서.",
+    line: "어벗츠 제품 다음 기공.",
     lead: "어벗츠가 직접 운영하는 기공소입니다. 어벗츠 제품 다음의 보철을 맡습니다.",
-    tile: {
-      kind: "blank",
-      caption: "기공실에서 보철을 작업하는 사진",
+    hero: "tile",
+    tile: { kind: "workspace" },
+    highlights: [
+      { icon: "lab", label: "기공실", line: "어벗츠가 직접 운영" },
+      { icon: "start", label: "작업시작", line: "접수되면 보드에" },
+      { icon: "crown", label: "보철", line: "크라운과 브리지" },
+      { icon: "abutment", label: "연결", line: "어벗 다음이 끊기지 않음" },
+      { icon: "ship", label: "출고", line: "치과로 배송은 무료" },
+    ],
+    scene: {
+      title: "접수에서 출고까지.",
+      line: "진행은 플랫폼과 같습니다.",
+      visual: { kind: "workspace" },
     },
-    sections: [
+    products: [
       {
-        title: "어벗츠의 기공소.",
-        body: "기공사업부는 어벗츠 주식회사 안의 기공소입니다. 치과 의뢰를 직접 받아 보철을 만들고, 기공료를 받습니다.",
-        visual: {
-          kind: "blank",
-          caption: "어벗츠 기공실 전경",
-        },
+        name: "크라운",
+        line: "치아당 기준가입니다.",
+        price: "₩60,000",
+        priceNote: "치아당 · 기준가",
+        shipping: "배송 무료",
+        specs: ["의뢰 시 수가 확정", "어벗츠 기공사업부", "치과 배송은 무료"],
+        buy: { kind: "start", label: "의뢰하기" },
+        visual: ABUTMENT_VISUAL,
       },
       {
-        title: "접수에서 출고까지.",
-        body: "의뢰가 오면 작업시작으로 보드에 올립니다. 디자인과 제작을 거쳐 출고하고, 진행은 플랫폼과 같은 화면에서 봅니다.",
+        name: "인레이",
+        line: "치아당 기준가입니다.",
+        price: "₩50,000",
+        priceNote: "치아당 · 기준가",
+        shipping: "배송 무료",
+        specs: ["의뢰 시 수가 확정", "자동매칭 기준가", "치과 배송은 무료"],
+        buy: { kind: "start", label: "의뢰하기" },
+        visual: { kind: "workspace" },
+      },
+    ],
+    slides: [
+      {
+        title: "어벗츠의 기공소.",
+        line: "보철을 직접 만듭니다.",
         visual: { kind: "workspace" },
       },
       {
-        title: "어벗츠 제품이 그대로 이어집니다.",
-        body: "심플어벗을 고른 케이스도, CNC 커스텀어벗이 도착한 케이스도, 보철 기공으로 넘어갑니다. 제품과 기공이 다른 업체에서 끊기지 않습니다.",
+        title: "심플어벗 다음.",
+        line: "보철이 같은 흐름입니다.",
+        visual: ABUTMENT_VISUAL,
+      },
+      {
+        title: "커스텀어벗 다음.",
+        line: "도착하면 보철로 넘깁니다.",
         visual: {
-          kind: "blank",
-          caption: "심플어벗 또는 커스텀어벗에 보철이 연결된 완성물",
+          kind: "photo",
+          src: LANDING_CAD_PREVIEW,
+          alt: "커스텀 어벗",
         },
+      },
+    ],
+    specs: [
+      { label: "크라운", value: "₩60,000" },
+      { label: "인레이", value: "₩50,000" },
+      { label: "단위", value: "치아당 기준" },
+      { label: "배송", value: "무료" },
+    ],
+    learn: [
+      { label: "플랫폼", line: "의뢰하고 진행을 봅니다.", href: "/offer/platform" },
+      { label: "커스텀어벗", line: "CNC 다음이 보철.", href: "/offer/custom-abutment" },
+    ],
+    faq: [
+      {
+        q: "기공사업부는 무엇인가요?",
+        a: "어벗츠 주식회사 안의 기공소입니다. 치과 의뢰를 직접 받아 보철을 만듭니다.",
+      },
+      {
+        q: "가격은 확정인가요?",
+        a: "크라운 ₩60,000, 인레이 ₩50,000은 치아당 기준가입니다. 실제 수가는 의뢰할 때 확정됩니다.",
+      },
+      {
+        q: "배송비는요?",
+        a: "치과와 기공소 사이 배송은 무료입니다.",
+      },
+      {
+        q: "어떤 케이스를 맡나요?",
+        a: "심플어벗을 고른 케이스와, CNC 커스텀어벗이 도착한 케이스의 보철입니다.",
+      },
+      {
+        q: "진행은 어디서 보나요?",
+        a: "작업시작, 디자인, 출고가 플랫폼과 같은 화면에 남습니다.",
       },
     ],
   },

@@ -2,140 +2,253 @@
 // - web/frontend/src/pages/public/OfferPage.tsx
 // - web/frontend/src/features/landing/landingOffers.ts
 // - web/frontend/src/features/landing/OfferVisual.tsx
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import type { ReactNode } from "react";
+import {
+  Box,
+  ChevronLeft,
+  ChevronRight,
+  Cpu,
+  Crown,
+  FileText,
+  Play,
+  Receipt,
+  ScanLine,
+  ShieldCheck,
+  ShoppingBag,
+  Sparkles,
+  Truck,
+  Wrench,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 import { useAuthStore } from "@/store/useAuthStore";
 import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath";
 import { cn } from "@/shared/ui/cn";
+import { LANDING_HERO_POSTER, LANDING_HERO_VIDEO } from "./landingAssets";
 import { OfferVisual } from "./OfferVisual";
 import {
-  landingOffers,
-  offerPath,
   type LandingOffer,
-  type OfferSection,
+  type OfferBuy,
+  type OfferIcon,
   type OfferVisual as OfferVisualModel,
 } from "./landingOffers";
 
-/** 긴 문장은 한 줄. 짧은 문장만 2~3열. 4열은 쓰지 않는다. */
-function packSectionRows(sections: OfferSection[]) {
-  const rows: OfferSection[][] = [];
-  let bucket: OfferSection[] = [];
-  const flush = (size: number) => {
-    while (bucket.length > size) {
-      rows.push(bucket.splice(0, size));
-    }
-    if (bucket.length) {
-      rows.push(bucket);
-      bucket = [];
-    }
-  };
-  for (const section of sections) {
-    if (section.body.length >= 88) {
-      flush(2);
-      rows.push([section]);
-      continue;
-    }
-    bucket.push(section);
-  }
-  flush(bucket.length === 3 ? 3 : 2);
-  return rows;
+const ICONS: Record<OfferIcon, typeof FileText> = {
+  request: FileText,
+  start: Play,
+  pay: Receipt,
+  ship: Truck,
+  store: ShoppingBag,
+  scan: ScanLine,
+  healing: Sparkles,
+  abutment: Box,
+  kit: Wrench,
+  crown: Crown,
+  cnc: Cpu,
+  lab: Crown,
+  quality: ShieldCheck,
+  box: Box,
+};
+
+const ONE =
+  "whitespace-nowrap tracking-tight";
+
+function usePrefersReducedMotion() {
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const apply = () => setReduced(mq.matches);
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
+  return reduced;
 }
 
-function OverlayCopy({
-  eyebrow,
-  title,
-  body,
-  as = "h2",
+function MediaFrame({
+  visual,
+  video,
+  reduced,
+  drift,
+  className,
 }: {
-  eyebrow?: string;
-  title: string;
-  body: string;
-  as?: "h1" | "h2";
+  visual: OfferVisualModel;
+  video?: boolean;
+  reduced: boolean;
+  drift?: boolean;
+  className?: string;
 }) {
-  const Title = as;
   return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/45 to-transparent px-6 pb-8 pt-28 sm:px-10 sm:pb-10 lg:px-14">
-      {eyebrow ? (
-        <p className="text-xs font-semibold tracking-[0.18em] text-white/80">
-          {eyebrow}
-        </p>
-      ) : null}
-      <Title
-        className={cn(
-          "max-w-3xl font-semibold tracking-tight text-white",
-          as === "h1"
-            ? "mt-3 text-4xl sm:text-6xl"
-            : "mt-2 text-3xl sm:text-5xl",
-        )}
-      >
-        {title}
-      </Title>
-      <p className="mt-3 max-w-xl text-base leading-relaxed text-white/90 sm:text-lg">
-        {body}
-      </p>
+    <div className={cn("relative h-full w-full overflow-hidden bg-[#e7e9ee]", className)}>
+      {video && !reduced ? (
+        <video
+          className="absolute inset-0 h-full w-full object-cover"
+          autoPlay
+          muted
+          loop
+          playsInline
+          poster={LANDING_HERO_POSTER}
+          aria-label="심플웨이 시술 키트 영상"
+        >
+          <source src={LANDING_HERO_VIDEO} type="video/mp4" />
+        </video>
+      ) : (
+        <div
+          className={cn(
+            "absolute inset-0",
+            drift && !reduced && "offer-hero-drift",
+          )}
+        >
+          {video && reduced ? (
+            <img
+              src={LANDING_HERO_POSTER}
+              alt=""
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <OfferVisual visual={visual} fill className="h-full min-h-0" />
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-function BleedFrame({
-  visual,
-  minH,
-  children,
+function ProductCards({
+  offer,
+  onBuy,
 }: {
-  visual: OfferVisualModel;
-  minH: string;
-  children: ReactNode;
+  offer: LandingOffer;
+  onBuy: (buy: OfferBuy) => void;
 }) {
   return (
-    <section className={cn("relative overflow-hidden", minH)}>
-      <div className="absolute inset-0">
-        <OfferVisual visual={visual} tile className="h-full min-h-0" />
+    <section id="buy" className="scroll-mt-20 bg-[#f3f4f6] px-4 py-24 sm:px-8 sm:py-32 lg:px-12">
+      <div className="mx-auto grid max-w-6xl gap-6 md:grid-cols-2 md:gap-8">
+        {offer.products.map((product) => (
+          <article
+            key={product.name}
+            className="flex flex-col overflow-hidden rounded-[2rem] bg-white"
+          >
+            <div className="h-64 bg-[#eef1f6] sm:h-72">
+              <OfferVisual visual={product.visual} fill className="h-full min-h-0" />
+            </div>
+            <div className="flex flex-1 flex-col px-7 py-8 sm:px-10 sm:py-10">
+              <h2 className={cn(ONE, "text-3xl font-semibold text-slate-900")}>
+                {product.name}
+              </h2>
+              <p className={cn(ONE, "mt-2 text-base text-slate-600")}>{product.line}</p>
+              <p className={cn(ONE, "mt-8 text-3xl font-semibold tabular-nums text-slate-900")}>
+                {product.price}
+              </p>
+              <p className={cn(ONE, "mt-1 text-sm text-slate-500")}>{product.priceNote}</p>
+              <p className={cn(ONE, "mt-1 text-sm text-slate-500")}>{product.shipping}</p>
+              <Button
+                type="button"
+                className="mt-8 h-12 w-full rounded-full bg-[#2563eb] text-sm font-semibold text-white hover:bg-[#1d4ed8]"
+                onClick={() => onBuy(product.buy)}
+              >
+                {product.buy.label}
+              </Button>
+              <ul className="mt-8 space-y-2.5 border-t border-slate-100 pt-6">
+                {product.specs.map((spec) => (
+                  <li key={spec} className={cn(ONE, "text-sm text-slate-700")}>
+                    {spec}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </article>
+        ))}
       </div>
-      {children}
     </section>
   );
 }
 
-function StoryCard({
-  section,
-  wide,
+function Slideshow({
+  offer,
+  reduced,
 }: {
-  section: OfferSection;
-  wide: boolean;
+  offer: LandingOffer;
+  reduced: boolean;
 }) {
+  const [index, setIndex] = useState(0);
+  const count = offer.slides.length;
+
+  useEffect(() => {
+    setIndex(0);
+  }, [offer.slug]);
+
+  useEffect(() => {
+    if (reduced || count < 2) return;
+    const id = window.setInterval(() => {
+      setIndex((current) => (current + 1) % count);
+    }, 6500);
+    return () => window.clearInterval(id);
+  }, [reduced, count, offer.slug]);
+
+  const slide = offer.slides[index];
+  if (!slide) return null;
+
+  const go = (next: number) => {
+    setIndex((next + count) % count);
+  };
+
   return (
-    <article
-      className={cn(
-        "overflow-hidden rounded-[1.5rem] bg-white",
-        wide && "lg:grid lg:grid-cols-12",
-      )}
-    >
-      <div
-        className={cn(
-          "overflow-hidden bg-[#e7e9ee]",
-          wide ? "h-56 lg:col-span-5 lg:h-full lg:min-h-[18rem]" : "h-52 sm:h-56",
-        )}
-      >
-        <OfferVisual
-          visual={section.visual}
-          className="h-full min-h-0 [&_img]:max-h-full"
-        />
-      </div>
-      <div
-        className={cn(
-          "px-6 py-6 sm:px-8 sm:py-8",
-          wide && "flex flex-col justify-center lg:col-span-7 lg:px-10 lg:py-10",
-        )}
-      >
-        <h2 className="text-2xl font-semibold tracking-tight text-slate-900">
-          {section.title}
+    <section className="bg-white px-4 py-24 sm:px-8 sm:py-32 lg:px-12" aria-roledescription="carousel">
+      <div className="mx-auto max-w-6xl">
+        <h2 className={cn(ONE, "text-center text-[clamp(1.75rem,4vw,3rem)] font-semibold text-slate-900")}>
+          한 흐름으로 봅니다.
         </h2>
-        <p className="mt-3 max-w-2xl text-base leading-7 text-slate-600">
-          {section.body}
-        </p>
+        <div className="relative mt-14 overflow-hidden rounded-[2rem] bg-[#e7e9ee]">
+          <div className="h-[22rem] sm:h-[28rem]">
+            <MediaFrame visual={slide.visual} reduced={reduced} />
+          </div>
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/35 to-transparent px-6 pb-8 pt-24 sm:px-10">
+            <p className={cn(ONE, "text-2xl font-semibold text-white sm:text-4xl")}>
+              {slide.title}
+            </p>
+            <p className={cn(ONE, "mt-2 text-sm text-white/90 sm:text-base")}>{slide.line}</p>
+          </div>
+          <button
+            type="button"
+            className="absolute left-3 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-slate-900 shadow-sm hover:bg-white"
+            aria-label="이전 슬라이드"
+            onClick={() => go(index - 1)}
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+          <button
+            type="button"
+            className="absolute right-3 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-slate-900 shadow-sm hover:bg-white"
+            aria-label="다음 슬라이드"
+            onClick={() => go(index + 1)}
+          >
+            <ChevronRight className="h-5 w-5" />
+          </button>
+        </div>
+        <div className="mt-6 flex justify-center gap-2">
+          {offer.slides.map((item, dot) => (
+            <button
+              key={item.title}
+              type="button"
+              aria-label={`${dot + 1}번째 슬라이드`}
+              aria-current={dot === index}
+              className={cn(
+                "h-2.5 rounded-full transition-all",
+                dot === index ? "w-8 bg-slate-900" : "w-2.5 bg-slate-300",
+              )}
+              onClick={() => setIndex(dot)}
+            />
+          ))}
+        </div>
       </div>
-    </article>
+    </section>
   );
 }
 
@@ -143,89 +256,193 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
   const navigate = useNavigate();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const user = useAuthStore((s) => s.user);
-  const others = landingOffers.filter((item) => item.slug !== offer.slug);
+  const reduced = usePrefersReducedMotion();
+
+  const onBuy = (buy: OfferBuy) => {
+    if (buy.kind === "store") {
+      if (isAuthenticated && user?.role === "requestor") {
+        navigate(`/dashboard/store/${buy.productId}`);
+        return;
+      }
+      navigate(isAuthenticated ? resolveEntryDashboardPath(user) : "/signup");
+      return;
+    }
+    navigate(isAuthenticated ? resolveEntryDashboardPath(user) : "/signup");
+  };
 
   return (
-    <div className="bg-[#f3f4f6] px-4 pb-12 pt-24 text-slate-900 sm:px-6 lg:px-10">
-      <BleedFrame
-        visual={offer.tile}
-        minH="min-h-[22rem] overflow-hidden rounded-[1.5rem] sm:min-h-[26rem] lg:min-h-[32rem]"
-      >
-        <OverlayCopy
-          as="h1"
-          eyebrow={offer.navLabel}
-          title={offer.punch}
-          body={offer.lead}
-        />
-      </BleedFrame>
-
-      <div className="mt-6 space-y-6 sm:mt-8">
-        {packSectionRows(offer.sections).map((row) => (
-          <div
-            key={row[0]?.title}
+    <div className="bg-white text-slate-900">
+      <section className="bg-[#f4f5f7]">
+        <div className="relative h-[68vh] min-h-[26rem] overflow-hidden">
+          <MediaFrame
+            visual={offer.tile}
+            video={offer.hero === "video"}
+            reduced={reduced}
+            drift={offer.hero !== "video"}
+          />
+        </div>
+        <div className="px-6 pb-24 pt-16 text-center sm:px-10 sm:pb-32 sm:pt-20">
+          <p className="text-xs font-semibold tracking-[0.22em] text-slate-500">
+            {offer.navLabel}
+          </p>
+          <h1
             className={cn(
-              "grid gap-6",
-              row.length === 3 && "lg:grid-cols-3",
-              row.length === 2 && "md:grid-cols-2",
+              ONE,
+              "mt-5 text-[clamp(2rem,6.2vw,4.75rem)] font-semibold text-slate-900",
             )}
           >
-            {row.map((section) => (
-              <StoryCard
-                key={section.title}
-                section={section}
-                wide={row.length === 1}
-              />
+            {offer.heroTitle}
+          </h1>
+          <p
+            className={cn(
+              ONE,
+              "mt-4 text-[clamp(1.05rem,2.2vw,1.5rem)] text-slate-600",
+            )}
+          >
+            {offer.line}
+          </p>
+          <div className="mt-10 flex flex-wrap items-center justify-center gap-x-10 gap-y-3">
+            {offer.products.map((product) => (
+              <a
+                key={product.name}
+                href="#buy"
+                className={cn(
+                  ONE,
+                  "text-sm font-semibold text-[#1d4ed8] underline-offset-4 hover:underline",
+                )}
+              >
+                {product.name}
+              </a>
             ))}
           </div>
-        ))}
-      </div>
+        </div>
+      </section>
 
-      <div className="flex flex-wrap items-center gap-3 px-6 py-8 sm:px-10 lg:px-16">
-        <Button
-          type="button"
-          className="h-11 rounded-full bg-[#2563eb] px-6 text-sm font-semibold text-white hover:bg-[#1d4ed8]"
-          onClick={() =>
-            navigate(
-              isAuthenticated ? resolveEntryDashboardPath(user) : "/signup",
-            )
-          }
-        >
-          시작하기
-        </Button>
-        {offer.slug === "platform" || offer.slug === "simple-way" ? (
-          <Button
-            type="button"
-            variant="outline"
-            className="h-11 rounded-full border-slate-300 bg-white px-6 text-sm font-semibold"
-            onClick={() => navigate("/platform#store")}
-          >
-            스토어 보기
-          </Button>
-        ) : null}
-      </div>
+      <section className="bg-white px-4 py-20 sm:px-8 sm:py-28 lg:px-12">
+        <div className="mx-auto max-w-6xl">
+          <div className="-mx-4 flex snap-x snap-mandatory gap-4 overflow-x-auto px-4 pb-2 lg:mx-0 lg:grid lg:grid-cols-5 lg:gap-5 lg:overflow-visible lg:px-0">
+            {offer.highlights.slice(0, 5).map((item) => {
+              const Icon = ICONS[item.icon];
+              return (
+                <article
+                  key={item.label}
+                  className="w-[13.75rem] shrink-0 snap-start rounded-[1.5rem] bg-[#f4f5f7] px-5 py-8 lg:w-auto"
+                >
+                  <span className="flex h-11 w-11 items-center justify-center rounded-full bg-white text-slate-900">
+                    <Icon className="h-5 w-5" aria-hidden />
+                  </span>
+                  <h2 className={cn(ONE, "mt-6 text-lg font-semibold text-slate-900")}>
+                    {item.label}
+                  </h2>
+                  <p className={cn(ONE, "mt-2 text-sm text-slate-600")}>{item.line}</p>
+                </article>
+              );
+            })}
+          </div>
+        </div>
+      </section>
 
-      <section
-        className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3"
-      >
-        {others.map((item) => (
-          <Link
-            key={item.slug}
-            to={offerPath(item.slug)}
-            className="group relative block min-h-[16rem] overflow-hidden rounded-[1.5rem] bg-[#e7e9ee]"
+      <section className="bg-white px-4 pb-8 pt-8 sm:px-8 sm:pb-16 sm:pt-12 lg:px-12">
+        <div className="mx-auto max-w-6xl text-center">
+          <h2
+            className={cn(
+              ONE,
+              "text-[clamp(1.75rem,4.2vw,3.25rem)] font-semibold text-slate-900",
+            )}
           >
-            <div className="absolute inset-0 transition duration-500 group-hover:scale-[1.02]">
-              <OfferVisual visual={item.tile} tile className="h-full min-h-0" />
-            </div>
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/45 to-transparent px-5 pb-5 pt-16">
-              <p className="text-[11px] font-semibold tracking-[0.16em] text-white/80">
-                {item.navLabel}
-              </p>
-              <p className="mt-1.5 text-2xl font-semibold tracking-tight text-white">
-                {item.punch}
-              </p>
-            </div>
-          </Link>
-        ))}
+            {offer.scene.title}
+          </h2>
+          <p className={cn(ONE, "mt-4 text-base text-slate-600 sm:text-lg")}>
+            {offer.scene.line}
+          </p>
+          <div className="mt-14 h-[24rem] overflow-hidden rounded-[2rem] sm:mt-16 sm:h-[32rem]">
+            <MediaFrame visual={offer.scene.visual} reduced={reduced} />
+          </div>
+        </div>
+      </section>
+
+      <ProductCards offer={offer} onBuy={onBuy} />
+      <Slideshow offer={offer} reduced={reduced} />
+
+      <section className="bg-[#f3f4f6] px-6 py-24 sm:px-10 sm:py-32">
+        <div className="mx-auto max-w-6xl">
+          <h2
+            className={cn(
+              ONE,
+              "text-center text-[clamp(1.75rem,4vw,3rem)] font-semibold text-slate-900",
+            )}
+          >
+            간단히 보는 스펙.
+          </h2>
+          <dl className="mt-16 grid gap-10 sm:grid-cols-2 lg:grid-cols-4">
+            {offer.specs.map((spec) => (
+              <div key={spec.label} className="text-center">
+                <dt className={cn(ONE, "text-sm text-slate-500")}>{spec.label}</dt>
+                <dd className={cn(ONE, "mt-3 text-xl font-semibold text-slate-900")}>
+                  {spec.value}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      </section>
+
+      <section className="bg-white px-4 py-24 sm:px-8 sm:py-32 lg:px-12">
+        <div className="mx-auto max-w-6xl">
+          <h2
+            className={cn(
+              ONE,
+              "text-center text-[clamp(1.75rem,4vw,3rem)] font-semibold text-slate-900",
+            )}
+          >
+            더 알아보기.
+          </h2>
+          <div className="mt-14 grid gap-6 md:grid-cols-2">
+            {offer.learn.map((item) => (
+              <Link
+                key={item.href}
+                to={item.href}
+                className="flex min-h-[16rem] flex-col justify-between rounded-[2rem] bg-[#f4f5f7] px-8 py-10 transition hover:bg-[#eceef2] sm:px-10"
+              >
+                <div>
+                  <h3 className={cn(ONE, "text-3xl font-semibold text-slate-900")}>
+                    {item.label}
+                  </h3>
+                  <p className={cn(ONE, "mt-3 text-base text-slate-600")}>{item.line}</p>
+                </div>
+                <span className="mt-10 inline-flex items-center gap-1 text-sm font-semibold text-[#1d4ed8]">
+                  알아보기
+                  <ChevronRight className="h-4 w-4" />
+                </span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="bg-white px-6 pb-28 sm:px-10">
+        <div className="mx-auto max-w-3xl">
+          <h2
+            className={cn(
+              ONE,
+              "text-center text-[clamp(1.75rem,4vw,3rem)] font-semibold text-slate-900",
+            )}
+          >
+            FAQ
+          </h2>
+          <Accordion type="single" collapsible className="mt-12">
+            {offer.faq.map((item) => (
+              <AccordionItem key={item.q} value={item.q} className="border-slate-200">
+                <AccordionTrigger className="py-5 text-left text-base font-semibold text-slate-900 hover:no-underline">
+                  {item.q}
+                </AccordionTrigger>
+                <AccordionContent className="text-base leading-7 text-slate-600">
+                  {item.a}
+                </AccordionContent>
+              </AccordionItem>
+            ))}
+          </Accordion>
+        </div>
       </section>
     </div>
   );

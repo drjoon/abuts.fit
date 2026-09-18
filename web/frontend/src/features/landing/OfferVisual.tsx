@@ -9,17 +9,21 @@ export function OfferVisual({
   visual,
   className,
   tile = false,
+  fill = false,
 }: {
   visual: OfferVisualModel;
   className?: string;
   /** 홈 카드. 캡션은 숨기고, 빈 칸 문구는 위쪽에 둔다 */
   tile?: boolean;
+  /** 히어로·슬라이드. 프레임을 채운다 */
+  fill?: boolean;
 }) {
   if (visual.kind === "blank") {
     return (
       <div
         className={cn(
-          "flex h-full min-h-[16rem] w-full flex-col items-center bg-[#e7e9ee] px-8 text-center",
+          "flex h-full w-full flex-col items-center bg-[#e7e9ee] px-8 text-center",
+          fill ? "min-h-0 justify-center" : "min-h-[16rem]",
           tile ? "justify-start pt-10 sm:pt-14" : "justify-center",
           className,
         )}
@@ -39,7 +43,11 @@ export function OfferVisual({
       <div
         className={cn(
           "flex h-full w-full bg-[#eef1f6]",
-          tile ? "items-start p-4 pb-36 sm:p-6 sm:pb-40" : "min-h-[16rem] items-center p-4 sm:p-8",
+          tile
+            ? "items-start p-4 pb-36 sm:p-6 sm:pb-40"
+            : fill
+              ? "min-h-0 items-center p-4 sm:p-6"
+              : "min-h-[16rem] items-center p-4 sm:p-8",
           className,
         )}
       >
@@ -55,7 +63,9 @@ export function OfferVisual({
           "grid h-full w-full grid-cols-2 gap-3 bg-[#f3f4f6]",
           tile
             ? "content-start items-start p-4 pb-40 sm:gap-6 sm:p-8 sm:pb-44"
-            : "min-h-[16rem] p-4 sm:gap-4 sm:p-8",
+            : fill
+              ? "min-h-0 content-center items-center p-6 sm:gap-6 sm:p-10"
+              : "min-h-[16rem] p-4 sm:gap-4 sm:p-8",
           className,
         )}
       >
@@ -69,12 +79,14 @@ export function OfferVisual({
               alt={item.alt}
               className={cn(
                 "w-full object-contain",
-                tile
-                  ? "h-[min(46%,18rem)] sm:h-[min(52%,22rem)]"
-                  : "h-[min(52vh,22rem)] sm:h-[min(58vh,28rem)]",
+            fill
+              ? "h-full max-h-[70%] object-contain"
+              : tile
+                ? "h-[min(46%,18rem)] sm:h-[min(52%,22rem)]"
+                : "h-[min(52vh,22rem)] sm:h-[min(58vh,28rem)]",
               )}
             />
-            {tile ? null : (
+            {tile || fill ? null : (
               <figcaption className="mt-3 text-center text-xs font-medium text-slate-600 sm:text-sm">
                 {item.caption}
               </figcaption>
@@ -89,14 +101,17 @@ export function OfferVisual({
     <div
       className={cn(
         "flex h-full w-full items-center justify-center bg-[#f3f4f6]",
-        tile ? "p-4 pb-40 sm:p-8 sm:pb-44" : "min-h-[16rem] p-4 sm:p-8",
+        tile ? "p-4 pb-40 sm:p-8 sm:pb-44" : fill ? "min-h-0 p-6 sm:p-10" : "min-h-[16rem] p-4 sm:p-8",
         className,
       )}
     >
       <img
         src={visual.src}
         alt={visual.alt}
-        className="h-[min(62vh,32rem)] w-full object-contain"
+        className={cn(
+          "w-full object-contain",
+          fill ? "h-full max-h-full" : "h-[min(62vh,32rem)]",
+        )}
       />
     </div>
   );

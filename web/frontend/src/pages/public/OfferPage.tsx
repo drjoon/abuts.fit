@@ -7,7 +7,7 @@ import { LandingOfferPage } from "@/features/landing/LandingOfferPage";
 import { getLandingOffer } from "@/features/landing/landingOffers";
 import { PublicPageLayout } from "./components/PublicPageLayout";
 
-/** `/offer/:slug` — 헤더 4메뉴의 상세 설명 */
+/** `/offer/:slug` — 헤더(플랫폼 + 연결 메뉴)의 상세 설명 */
 const OfferPage = () => {
   const { slug } = useParams();
   const offer = getLandingOffer(slug);
