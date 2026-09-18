@@ -242,21 +242,21 @@ export const Navigation = ({ tone = "dark", overlay = false }: NavigationProps) 
             />
           </button>
 
-          <div className="hidden items-center gap-5 md:flex">
+          <div className="hidden items-center gap-8 md:flex">
             {showConnectedNav && platformItem ? (
               <>
                 {renderDesktopItem(platformItem)}
                 <span
                   className={cn(
-                    "select-none text-lg font-light leading-none",
-                    isLight ? "text-slate-400" : "text-white/50",
+                    "select-none text-xl font-medium leading-none",
+                    isLight ? "text-slate-900" : "text-white",
                   )}
                   aria-hidden
                 >
                   +
                 </span>
                 <div
-                  className="flex items-center gap-5"
+                  className="flex items-center gap-4"
                   role="group"
                   aria-label="플랫폼이 연결하는 메뉴"
                 >
