@@ -3,7 +3,10 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/practice/components/PracticeRecentTransfersCalendar.tsx
+// - 2026-09-18: 영업일 = 주말+한국 공휴일 제외(Nager 정적 목록·추석 포함).
 // - 2026-08-20: kstAddCivilMonths — PeriodFilter 달력 좌·우 chevron 월 이동.
+import { isKrPublicHolidayYmd } from "@/shared/date/krHolidays";
+
 const KST_TZ = "Asia/Seoul";
 
 export function toKstYmd(input?: string | number | Date | null): string | null {
@@ -129,9 +132,10 @@ export function kstYmdWeekday(ymd?: string | null): number | null {
   return new Date(Date.UTC(y, m - 1, d, 12)).getUTCDay();
 }
 
-function isKstWeekdayYmd(ymd: string): boolean {
+function isKstBusinessDayYmd(ymd: string): boolean {
   const dow = kstYmdWeekday(ymd);
-  return dow != null && dow !== 0 && dow !== 6;
+  if (dow == null || dow === 0 || dow === 6) return false;
+  return !isKrPublicHolidayYmd(ymd);
 }
 
 function addOneCivilDayYmd(ymd: string): string | null {
@@ -184,10 +188,9 @@ function shouldIncludeFromYmd(
 }
 
 /**
- * KST 영업일(월~금) 차이 (to - from).
+ * KST 영업일(월~금·공휴일 제외) 차이 (to - from).
  * 기본: from 다음날부터 to까지. 같은 날이면 0.
  * includeFromIfBeforeNoon: 주문일이 at의 KST 날짜이고 낮 12시 전이면 from 포함.
- * 공휴일은 제외하지 않음(프론트 ETA와 동일).
  */
 export function kstYmdDiffBusinessDays(
   fromYmd?: string | null,
@@ -206,21 +209,21 @@ export function kstYmdDiffBusinessDays(
 
   const includeFrom = shouldIncludeFromYmd(from, options);
   if (from === to) {
-    return includeFrom && isKstWeekdayYmd(from) ? 1 : 0;
+    return includeFrom && isKstBusinessDayYmd(from) ? 1 : 0;
   }
 
   let count = 0;
   let cursor = includeFrom ? from : addOneCivilDayYmd(from);
   let guard = 0;
   while (cursor && cursor <= to && guard < 3700) {
-    if (isKstWeekdayYmd(cursor)) count += 1;
+    if (isKstBusinessDayYmd(cursor)) count += 1;
     cursor = addOneCivilDayYmd(cursor);
     guard += 1;
   }
   return count;
 }
 
-/** startYmd 기준 ±N영업일 YMD(월~금, 공휴일 미제외). 음수면 과거로. */
+/** startYmd 기준 ±N영업일 YMD(월~금·한국 공휴일 제외). 음수면 과거로. */
 export function kstAddBusinessDays(
   startYmd?: string | null,
   days = 0,
@@ -237,7 +240,7 @@ export function kstAddBusinessDays(
   while (added < target && guard < 3700) {
     cursor = kstAddCivilDays(cursor, step) || "";
     if (!cursor) return null;
-    if (isKstWeekdayYmd(cursor)) added += 1;
+    if (isKstBusinessDayYmd(cursor)) added += 1;
     guard += 1;
   }
   return cursor || null;

@@ -24,25 +24,34 @@ describe("practiceTransferProduction Abuts-first helpers", () => {
     expect(PTX_CA_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS).toBe(2);
   });
 
-  test("resolvePtxCaTargetShipYmd defaults to arrival − 3 civil days", () => {
+  test("resolvePtxCaTargetShipYmd defaults to arrival − 3 business days", () => {
     expect(
       resolvePtxCaTargetShipYmd(
         { transferMemo: "[치과도착일: 2026-08-20]" },
         "2026-08-20",
       ),
-    ).toBe("2026-08-17");
+    ).toBe("2026-08-14");
     expect(
       resolvePtxCaTargetShipYmd({
         production: { abutmentShipYmd: "2026-08-15" },
         transferMemo: "[치과도착일: 2026-08-20]",
       }),
     ).toBe("2026-08-15");
-    expect(defaultAbutmentShipYmdFromArrival("2026-08-20")).toBe("2026-08-17");
+    // 목 8/20 − 3영업일 = 금 8/14 (8/17 광복절 대체공휴일 제외)
+    expect(defaultAbutmentShipYmdFromArrival("2026-08-20")).toBe("2026-08-14");
     expect(
       resolveEffectiveAbutmentShipYmd({
         arrivalDate: "2026-08-20",
       }),
-    ).toBe("2026-08-17");
+    ).toBe("2026-08-14");
+    // 추석 연휴(9/24–26) 제외 → 도착 9/28 − 3영업일 = 9/21
+    expect(defaultAbutmentShipYmdFromArrival("2026-09-28")).toBe("2026-09-21");
+    expect(
+      resolvePtxCaTargetShipYmd(
+        { transferMemo: "[치과도착일: 2026-09-28]" },
+        "2026-09-28",
+      ),
+    ).toBe("2026-09-21");
   });
 
   test("resolveShippingModeForPracticeTransferArrival: always 묶음 including ≤3 rush", async () => {

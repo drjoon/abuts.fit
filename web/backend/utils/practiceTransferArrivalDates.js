@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-18: 어벗 출고 영업일 = 주말+한국 공휴일 제외(Nager 정적 폴백·추석 9/24–26).
 // - 2026-09-15: 어벗 출고일 기본/최소 = 치과도착일 − N영업일(월~금). 달력일 폐기.
 // - 2026-09-12: 어벗 출고일 최소=치과도착일 − 2달력일. 기본은 −3.
 // - 2026-09-12: 어벗 출고일 기본=치과도착일 − 3달력일. 기공소 설정값(production.abutmentShipYmd) 우선.
@@ -10,6 +11,7 @@
 // - web/backend/utils/practiceTransferCalendarRange.util.js
 // - web/backend/models/practiceTransfer.model.js
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
+// - web/backend/utils/krHolidays.static.js
 
 import { toKstYmd } from "../controllers/requests/utils.js";
 import {
@@ -18,6 +20,7 @@ import {
   upsertMemoArrivalYmd,
   upsertMemoOrderYmd,
 } from "./practiceTransferRush.js";
+import { isStaticKrHolidayYmd } from "./krHolidays.static.js";
 
 const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -94,7 +97,7 @@ export function addCivilDaysYmd(ymd, days) {
 }
 
 /**
- * ±N영업일(월~금, 공휴일 미제외). FE kstAddBusinessDays와 동일.
+ * ±N영업일(월~금, 한국 공휴일 제외). FE kstAddBusinessDays와 동일.
  * @param {string|null|undefined} ymd
  * @param {number} days
  * @returns {string|null}
@@ -114,7 +117,9 @@ export function addBusinessDaysYmd(ymd, days) {
     if (!cursor) return null;
     const [y, m, d] = cursor.split("-").map(Number);
     const dow = new Date(Date.UTC(y, m - 1, d, 12)).getUTCDay();
-    if (dow !== 0 && dow !== 6) added += 1;
+    if (dow !== 0 && dow !== 6 && !isStaticKrHolidayYmd(cursor)) {
+      added += 1;
+    }
     guard += 1;
   }
   return cursor;

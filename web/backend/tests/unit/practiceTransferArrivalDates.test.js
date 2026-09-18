@@ -24,9 +24,12 @@ describe("practiceTransferArrivalDates", () => {
   it("defaults abutment ship to arrival − 3 business days", () => {
     expect(PRACTICE_ABUTMENT_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS).toBe(3);
     expect(PRACTICE_ABUTMENT_SHIP_MIN_BEFORE_ARRIVAL_BUSINESS_DAYS).toBe(2);
-    expect(defaultAbutmentShipYmdFromArrival("2026-08-20")).toBe("2026-08-17");
+    // 목 8/20 − 3영업일 = 금 8/14 (8/17 광복절 대체공휴일 제외)
+    expect(defaultAbutmentShipYmdFromArrival("2026-08-20")).toBe("2026-08-14");
     // 화 9/22 − 3영업일 = 목 9/17 (주말 건너뜀; 달력 −3이면 토 9/19)
     expect(defaultAbutmentShipYmdFromArrival("2026-09-22")).toBe("2026-09-17");
+    // 월 9/28 − 3영업일 = 월 9/21 (추석 연휴 9/24–26 제외; 주말만이면 수 9/23)
+    expect(defaultAbutmentShipYmdFromArrival("2026-09-28")).toBe("2026-09-21");
     expect(
       resolveEffectiveAbutmentShipYmd({
         production: { abutmentShipYmd: "2026-08-14" },

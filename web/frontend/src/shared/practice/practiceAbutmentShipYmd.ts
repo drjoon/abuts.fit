@@ -4,6 +4,7 @@
 // - web/frontend/src/shared/shipping/estimateShipDate.ts
 // - web/backend/utils/practiceTransferArrivalDates.js
 // change-log:
+// - 2026-09-18: 출고 영업일 = 주말+한국 공휴일 제외(kstAddBusinessDays).
 // - 2026-09-15: 출고일=도착−n 을 영업일(월~금) 기준으로. 주말 끼면 토요일이 아닌 목요일 등.
 // - 2026-09-14: 팝오버 안내 — 「출고일 지정: 치과도착 − n일 전」(12시 컷오프 줄 제거).
 // - 2026-09-12: 출고 버튼 라벨 연도 생략(M.D) — 가로폭 축소.
@@ -15,6 +16,7 @@ import {
   kstYmdDiffBusinessDays,
   toKstYmd,
 } from "@/shared/date/kst";
+import { isKrPublicHolidayYmd } from "@/shared/date/krHolidays";
 import {
   normalizeWeeklyBatchDays,
   resolveNextWeeklyBatchYmd,
@@ -59,7 +61,14 @@ function addBusinessDaysFromKstYmd(startYmd: string, days: number): string {
 
 function nextBusinessDayInclusive(startYmd: string): string {
   const day = getKstWeekdayFromYmd(startYmd);
-  if (day != null && day !== 0 && day !== 6) return startYmd;
+  if (
+    day != null &&
+    day !== 0 &&
+    day !== 6 &&
+    !isKrPublicHolidayYmd(startYmd)
+  ) {
+    return startYmd;
+  }
   return addBusinessDaysFromKstYmd(startYmd, 1);
 }
 

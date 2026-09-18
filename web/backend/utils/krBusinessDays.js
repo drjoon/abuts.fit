@@ -1,11 +1,14 @@
 // change-log:
+// - 2026-09-18: addKoreanBusinessDays 음수(과거) 지원. Nager 실패 시 정적 KR 공휴일 폴백·캐시와 union.
 // - 2026-08-19: 같은 연도 공휴일 조회는 inflight 1회로 합치고 prefetchKoreanHolidaysForYears로 제출 경로에서 미리 워밍.
 // - 2026-08-06: getTodayYmdInKst(date?)가 인자 날짜를 반영. 재계산 시 "오늘"로 밀리던 버그 수정.
 // related files:
 // - web/backend/rules.md
 // - web/backend/app.js
 // - web/backend/server.js
+// - web/backend/utils/krHolidays.static.js
 import HolidayCache from "../models/holidayCache.model.js";
+import { getStaticKrHolidaySet } from "./krHolidays.static.js";
 
 const KST_TZ = "Asia/Seoul";
 
@@ -112,11 +115,23 @@ function isWeekendUtc(date) {
   return dow === 0 || dow === 6;
 }
 
+function mergeHolidaySets(...sets) {
+  const out = new Set();
+  for (const set of sets) {
+    if (!set) continue;
+    for (const ymd of set) {
+      if (typeof ymd === "string" && ymd) out.add(ymd);
+    }
+  }
+  return out;
+}
+
 async function fetchKrHolidaySet(year) {
   const cached = holidaysCache.get(year);
   const now = Date.now();
+  const staticSet = getStaticKrHolidaySet(year);
   if (cached && now - cached.fetchedAt < 24 * 60 * 60 * 1000) {
-    return cached.set;
+    return mergeHolidaySets(staticSet, cached.set);
   }
 
   const inflight = holidaysInflight.get(year);
@@ -134,7 +149,7 @@ async function fetchKrHolidaySet(year) {
         if (doc?.dates?.length && doc?.expiresAt) {
           const expiresAtMs = new Date(doc.expiresAt).getTime();
           if (!Number.isNaN(expiresAtMs) && expiresAtMs > now) {
-            const setFromDb = new Set(doc.dates);
+            const setFromDb = mergeHolidaySets(staticSet, new Set(doc.dates));
             holidaysCache.set(year, {
               set: setFromDb,
               fetchedAt: new Date(doc.fetchedAt || now).getTime(),
@@ -147,46 +162,55 @@ async function fetchKrHolidaySet(year) {
       }
     }
 
-    const url = `https://date.nager.at/api/v3/PublicHolidays/${year}/KR`;
-    const resp = await fetch(url, {
-      headers: {
-        Accept: "application/json",
-      },
-    });
-    if (!resp.ok) {
-      throw new Error(`Holiday API failed: ${resp.status}`);
-    }
-    const data = await resp.json();
-    const set = new Set(
-      Array.isArray(data)
-        ? data
-            .map((row) => (typeof row?.date === "string" ? row.date : null))
-            .filter(Boolean)
-        : [],
-    );
-
-    holidaysCache.set(year, { set, fetchedAt: Date.now() });
-
-    if (isDbReady) {
-      try {
-        const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
-        await HolidayCache.findOneAndUpdate(
-          { countryCode: "KR", year },
-          {
-            $set: {
-              dates: Array.from(set),
-              fetchedAt: new Date(),
-              expiresAt,
-            },
-          },
-          { upsert: true, new: true },
-        ).lean();
-      } catch {
-        // ignore
+    try {
+      const url = `https://date.nager.at/api/v3/PublicHolidays/${year}/KR`;
+      const resp = await fetch(url, {
+        headers: {
+          Accept: "application/json",
+        },
+      });
+      if (!resp.ok) {
+        throw new Error(`Holiday API failed: ${resp.status}`);
       }
-    }
+      const data = await resp.json();
+      const set = mergeHolidaySets(
+        staticSet,
+        new Set(
+          Array.isArray(data)
+            ? data
+                .map((row) => (typeof row?.date === "string" ? row.date : null))
+                .filter(Boolean)
+            : [],
+        ),
+      );
 
-    return set;
+      holidaysCache.set(year, { set, fetchedAt: Date.now() });
+
+      if (isDbReady) {
+        try {
+          const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
+          await HolidayCache.findOneAndUpdate(
+            { countryCode: "KR", year },
+            {
+              $set: {
+                dates: Array.from(set),
+                fetchedAt: new Date(),
+                expiresAt,
+              },
+            },
+            { upsert: true, new: true },
+          ).lean();
+        } catch {
+          // ignore
+        }
+      }
+
+      return set;
+    } catch {
+      // Nager 실패 시 정적 폴백(추석 등)으로 영업일 계산 유지
+      holidaysCache.set(year, { set: staticSet, fetchedAt: Date.now() });
+      return staticSet;
+    }
   })().finally(() => {
     holidaysInflight.delete(year);
   });
@@ -233,13 +257,17 @@ export async function addKoreanBusinessDays({ startYmd, days }) {
   if (!start) {
     throw new Error("Invalid startYmd");
   }
-  const targetDays = typeof days === "number" && days > 0 ? days : 0;
+  const n = typeof days === "number" && Number.isFinite(days) ? Math.trunc(days) : 0;
+  if (n === 0) return utcDateToYmd(start);
+
+  const stepMs = (n > 0 ? 1 : -1) * 24 * 60 * 60 * 1000;
+  const targetDays = Math.abs(n);
 
   let current = new Date(start.getTime());
   let count = 0;
 
   while (count < targetDays) {
-    current = new Date(current.getTime() + 24 * 60 * 60 * 1000);
+    current = new Date(current.getTime() + stepMs);
     const ymd = utcDateToYmd(current);
     if (await isKoreanBusinessDayYmd(ymd)) {
       count += 1;

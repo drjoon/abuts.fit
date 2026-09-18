@@ -10,6 +10,7 @@
 // - web/backend/controllers/requests/production.utils.js
 // - web/backend/controllers/requests/expressSelectable.utils.js
 import { toKstYmd } from "@/shared/date/kst";
+import { isKrPublicHolidayYmd } from "@/shared/date/krHolidays";
 import {
   normalizeWeeklyBatchDays,
   resolveNextWeeklyBatchYmd,
@@ -60,8 +61,9 @@ function addBusinessDaysFromKstYmd(startYmd: string, days: number): string {
   let added = 0;
   while (added < days) {
     result.setUTCDate(result.getUTCDate() + 1);
-    const day = getKstWeekdayFromYmd(toKstYmd(result) || startYmd);
-    if (day != null && day !== 0 && day !== 6) {
+    const ymd = toKstYmd(result) || startYmd;
+    const day = getKstWeekdayFromYmd(ymd);
+    if (day != null && day !== 0 && day !== 6 && !isKrPublicHolidayYmd(ymd)) {
       added += 1;
     }
   }
