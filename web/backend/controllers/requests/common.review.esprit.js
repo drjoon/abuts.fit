@@ -126,6 +126,9 @@ export async function triggerEspritForNc({
       RequestId: String(request.requestId || ""),
       // add-in 구현/버전에 따라 key casing 차이를 허용하기 위해 소문자 키도 함께 전달
       requestId: String(request.requestId || ""),
+      // BG register-file 1순위. 복사샘플이 원본 filled STL을 공유해도 원본 ncFile을 덮지 않게 한다.
+      RequestMongoId: String(request._id || ""),
+      requestMongoId: String(request._id || ""),
       StlPath: camFileName,
       NcOutputPath: ncFileName,
       Force: Boolean(force),

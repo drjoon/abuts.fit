@@ -24,6 +24,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
     public class NcGenerationRequest
     {
         [DataMember] public string RequestId { get; set; }
+        // BG register-file 1순위 식별자. 복사샘플/원본 분리 SSOT (rules: requestMongoId → requestId).
+        [DataMember] public string RequestMongoId { get; set; }
+        [DataMember(Name = "requestMongoId")] public string requestMongoId { get; set; }
         [DataMember] public string StlPath { get; set; }
         [DataMember] public string NcOutputPath { get; set; }
         [DataMember] public bool Force { get; set; }
@@ -713,6 +716,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             AppLogger.Log("[NC Processing] Invoking StlFileProcessor.Process()...");
             // requestId는 payload의 canonical 값을 사용한다.
             // stlPath 파일명에서 requestId를 역추론하면 원본/샘플이 섞여 잘못된 의뢰가 갱신될 수 있다.
+            string requestMongoIdHint = !string.IsNullOrWhiteSpace(req.RequestMongoId)
+                ? req.RequestMongoId.Trim()
+                : (!string.IsNullOrWhiteSpace(req.requestMongoId) ? req.requestMongoId.Trim() : null);
             processor.Process(
                 stlPath,
                 frontLimitX,
@@ -724,7 +730,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 req.TiltAxisVector?.y,
                 req.TiltAxisVector?.z,
                 hexRotationMode,
-                hexAppliedDeg);
+                hexAppliedDeg,
+                requestMongoIdHint);
             AppLogger.Log($"[NC Processing] CAM processing completed successfully: {req.RequestId}");
         }
         private async Task ProcessQueueLoop(CancellationToken token)

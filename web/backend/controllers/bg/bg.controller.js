@@ -34,6 +34,12 @@ import CncEvent from "../../models/cncEvent.model.js";
 import CncMachine from "../../models/cncMachine.model.js";
 import { getPresignedPutUrl } from "../../utils/s3.utils.js";
 import {
+  isCopiedSampleRequest,
+  isRndArchivedSampleRequest,
+  scoreBgFilenameMatchCandidate,
+  shouldRefuseNcOverwriteOnProductionOrder,
+} from "../../utils/bgCallbackRequestMatch.js";
+import {
   applyStatusMapping,
   normalizeRequestForResponse,
   ensureLotNumberForMachining,
@@ -61,20 +67,10 @@ const BG_STORAGE_BASE =
 
 const BRIDGE_SHARED_SECRET = process.env.BRIDGE_SHARED_SECRET || "";
 
-// related files (request category SSOT):
+// related files (request category / copy-sample isolation SSOT):
+// - web/backend/utils/bgCallbackRequestMatch.js
 // - web/backend/models/request.model.js
 // - web/backend/controllers/requests/common.requests.controller.js
-const REQUEST_CATEGORY = {
-  RND_SAMPLE: "rnd_sample",
-  COPIED_SAMPLE: "copied_sample",
-};
-
-const isRndArchivedSampleRequest = (requestLike) =>
-  String(requestLike?.requestCategory || "").trim() === REQUEST_CATEGORY.RND_SAMPLE;
-
-const isCopiedSampleRequest = (requestLike) =>
-  String(requestLike?.requestCategory || "").trim() ===
-  REQUEST_CATEGORY.COPIED_SAMPLE;
 
 const normalizeRetentionGroove = (value) => {
   const rg = String(value || "")
@@ -510,13 +506,16 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
 
   // 1. 의뢰 찾기
   // 중요: 원본/복사본이 동일 파일명을 공유할 수 있으므로 ObjectId 기반 식별을 최우선으로 사용한다.
+  // 복사샘플 생성 이후 액션(NC 등)은 샘플에만 적용 — 원본 ncFile 덮어쓰기 금지.
   let request = null;
+  let matchSource = null;
   const payloadRequestMongoId = String(
     requestMongoId || metadata?.requestMongoId || metadata?._id || "",
   ).trim();
 
   if (payloadRequestMongoId) {
     request = await Request.findById(payloadRequestMongoId);
+    if (request) matchSource = "mongoId";
     console.log(
       `[BG-Callback] Searched by requestMongoId=${payloadRequestMongoId}, found=${!!request}`,
     );
@@ -524,6 +523,7 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
 
   if (!request && requestId) {
     request = await Request.findOne({ requestId });
+    if (request) matchSource = "requestId";
     console.log(
       `[BG-Callback] Searched by requestId=${requestId}, found=${!!request}`,
     );
@@ -531,6 +531,7 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
 
   // requestId로 못 찾은 경우, 3-nc 경로에서 requestId를 추정해 우선 검색
   // 예: fileName="3-nc/20260604-WHDNDTGF/xxx.nc" 또는 "20260604-WHDNDTGF/xxx.nc"
+  // 주의: 복사샘플이 원본 STL 파일명을 쓰면 로컬 폴더가 원본Id로 샐 수 있음 → 기존 nc 있는 order 덮어쓰기는 아래에서 거부.
   if (!request && String(sourceStep || "").trim() === "3-nc") {
     try {
       const rawFile = String(fileName || "")
@@ -545,6 +546,7 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
         });
         if (guessed) {
           request = guessed;
+          matchSource = "pathGuess";
           console.log(
             `[BG-Callback] Matched by nc output path requestId=${candidateRequestId}`,
           );
@@ -574,6 +576,7 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
         .select({
           requestId: 1,
           source: 1,
+          requestCategory: 1,
           manufacturerStage: 1,
           "rnd.doneAt": 1,
           updatedAt: 1,
@@ -625,17 +628,14 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
           actualCamStart &&
           !actualCamComplete;
 
-        // 동일 파일명을 공유하는 경우를 대비해 점수를 크게 벌려 오매칭 가능성을 낮춘다.
-        //  1) CAM 처리 진행중(active window)
-        //  2) 현재 단계가 의뢰/CAM
-        //  3) NC 미생성
-        //  4) 작업용 샘플 복사본(doneAt=null)
-        //  5) 최근 업데이트
-        let score = 0;
-        if (isActiveCamWindow) score += 50;
-        if (stageLabel === "준비" || stageLabel === "CAM") score += 15;
-        if (!hasNcFile) score += 10;
-        if (isSampleWorkingCopy) score += 8;
+        const score = scoreBgFilenameMatchCandidate({
+          requestLike: r,
+          sourceStep,
+          requestReviewStatus,
+          actualCamStart,
+          actualCamComplete,
+          hasNcFile,
+        });
 
         matchedCandidates.push({
           _id: r?._id,
@@ -662,6 +662,7 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
             .join(", ")}`,
         );
         request = await Request.findById(chosen._id); // 갱신을 위해 도큐먼트 객체로 다시 가져옴
+        if (request) matchSource = "filename";
       }
 
       if (!request) {
@@ -749,6 +750,44 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
     );
   }
 
+  // 복사샘플 NC가 파일명/경로 fallback으로 정식 의뢰(원본)의 기존 ncFile을 덮지 못하게 한다.
+  {
+    const hasExistingNcFile = Boolean(
+      request?.caseInfos?.ncFile?.s3Key || request?.caseInfos?.ncFile?.filePath,
+    );
+    if (
+      shouldRefuseNcOverwriteOnProductionOrder({
+        sourceStep,
+        status,
+        matchSource,
+        requestLike: request,
+        hasExistingNcFile,
+      })
+    ) {
+      console.warn("[BG-Callback] Refused NC overwrite on production order", {
+        requestId: request?.requestId || null,
+        matchSource,
+        sourceStep,
+        fileName,
+        requestIdFromPayload: requestId || null,
+        requestMongoIdFromPayload: payloadRequestMongoId || null,
+      });
+      return res.status(200).json(
+        new ApiResponse(
+          200,
+          {
+            found: true,
+            ignored: true,
+            reason: "refuse_overwrite_production_nc",
+            requestId: request?.requestId || null,
+            matchSource,
+          },
+          "정식 의뢰의 기존 NC는 파일명 fallback으로 덮어쓰지 않습니다. (복사샘플 격리)",
+        ),
+      );
+    }
+  }
+
   // 2. S3 업로드 (성공 시에만, 로컬 스토리지에서 읽어서)
   let s3Info = null;
   if (status === "success") {
@@ -762,12 +801,13 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
               .replace(/^\/+/, "")
               .replace(/^3-nc\//i, "");
             // 이미 서브디렉토리가 포함된 경우(Esprit이 {date}-{code}/{stlName}.nc 형태로 저장)엔 그대로 사용
-            // 단순 파일명(program.nc 등)이면 requestId 폴더를 추가하여 의뢰별 고유 경로 생성
+            // 단순 파일명(program.nc 등)이면 **매칭된 의뢰** requestId 폴더를 추가 (payload requestId 금지 — 오매칭 시 원본 오염).
             if (cleanName.includes("/")) {
               return `3-nc/${cleanName}`;
             }
-            return requestId
-              ? `3-nc/${requestId}/${cleanName}`
+            const ownedRequestId = String(request?.requestId || "").trim();
+            return ownedRequestId
+              ? `3-nc/${ownedRequestId}/${cleanName}`
               : `3-nc/${cleanName}`;
           })()
         : fileName;
@@ -1673,14 +1713,20 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
     const all = await Request.find({ manufacturerStage: { $ne: "취소" } })
       .select({
         requestId: 1,
+        requestCategory: 1,
+        manufacturerStage: 1,
+        updatedAt: 1,
         caseInfos: 1,
         lotNumber: 1,
         // filePath 기반 조회 fallback에서도 동일하게 전처리 모드값을 내려주기 위해 포함한다.
         "rnd.manufacturerHexRotation": 1,
+        productionSchedule: 1,
       })
       .lean();
 
+    const candidates = [];
     for (const r of all) {
+      if (isRndArchivedSampleRequest(r)) continue;
       const ci = r?.caseInfos || {};
       const storedNames = [
         ci?.file?.originalName,
@@ -1690,10 +1736,29 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
       ].filter(Boolean);
 
       const hit = storedNames.some((n) => normalizeFilePath(n) === normalized);
-      if (hit) {
-        request = r;
-        break;
-      }
+      if (!hit) continue;
+
+      const hasNcFile = Boolean(ci?.ncFile?.s3Key || ci?.ncFile?.filePath);
+      const score = scoreBgFilenameMatchCandidate({
+        requestLike: r,
+        sourceStep: "2-filled",
+        requestReviewStatus: String(ci?.reviewByStage?.request?.status || "").trim(),
+        actualCamStart: r?.productionSchedule?.actualCamStart,
+        actualCamComplete: r?.productionSchedule?.actualCamComplete,
+        hasNcFile,
+      });
+      candidates.push({
+        r,
+        score,
+        updatedAt: r?.updatedAt ? new Date(r.updatedAt).getTime() : 0,
+      });
+    }
+    candidates.sort((a, b) => {
+      if (a.score !== b.score) return b.score - a.score;
+      return b.updatedAt - a.updatedAt;
+    });
+    if (candidates.length) {
+      request = candidates[0].r;
     }
   }
 

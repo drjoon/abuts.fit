@@ -79,7 +79,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             }
         }
 
-        public static void NotifyBackendSuccess(string requestId, string stlPath, string ncPath)
+        public static void NotifyBackendSuccess(string requestId, string stlPath, string ncPath, string requestMongoId = null)
         {
             try
             {
@@ -115,26 +115,31 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 string url = $"{baseUrl}/bg/register-file";
                 string originalName = string.IsNullOrWhiteSpace(stlPath) ? "" : Path.GetFileName(stlPath);
 
-                if (string.IsNullOrWhiteSpace(requestId) && !string.IsNullOrWhiteSpace(stlPath))
+                // 정책: payload RequestId가 SSOT. STL 파일명 역추론 금지
+                // (복사샘플이 원본 filled STL을 공유하면 원본 requestId로 오염됨).
+                if (string.IsNullOrWhiteSpace(requestId))
                 {
-                    requestId = ExtractRequestIdFromStlPath(stlPath);
-                    AppLogger.Log($"BackendApiClient: requestId extracted from stlPath: {requestId}");
+                    AppLogger.Log("BackendApiClient: register-file skip (empty requestId; STL reverse-lookup forbidden)");
+                    return;
                 }
 
                 // [정책] OS temp 기반 임시 파일 사용 — 로지컈 경로 대신 파일명만 백엔드에 전달
                 string ncRelativePath = fi.Name;
+                string mongoIdJson = string.IsNullOrWhiteSpace(requestMongoId)
+                    ? ""
+                    : $",\"requestMongoId\":\"{EscapeJson(requestMongoId.Trim())}\"";
 
                 string json;
                 if (upload.ok)
                 {
-                    json = $"{{\"sourceStep\":\"3-nc\",\"fileName\":\"{EscapeJson(ncRelativePath)}\",\"originalFileName\":\"{EscapeJson(originalName)}\",\"requestId\":\"{EscapeJson(requestId)}\",\"status\":\"success\",\"s3Key\":\"{EscapeJson(upload.s3Key)}\",\"s3Url\":\"{EscapeJson(upload.s3Url)}\",\"fileSize\":{upload.fileSize}}}";
+                    json = $"{{\"sourceStep\":\"3-nc\",\"fileName\":\"{EscapeJson(ncRelativePath)}\",\"originalFileName\":\"{EscapeJson(originalName)}\",\"requestId\":\"{EscapeJson(requestId)}\"{mongoIdJson},\"status\":\"success\",\"s3Key\":\"{EscapeJson(upload.s3Key)}\",\"s3Url\":\"{EscapeJson(upload.s3Url)}\",\"fileSize\":{upload.fileSize}}}";
                 }
                 else
                 {
-                    json = $"{{\"sourceStep\":\"3-nc\",\"fileName\":\"{EscapeJson(ncRelativePath)}\",\"originalFileName\":\"{EscapeJson(originalName)}\",\"requestId\":\"{EscapeJson(requestId)}\",\"status\":\"success\",\"metadata\":{{\"fileSize\":{fi.Length},\"upload\":\"fallback_no_s3\"}}}}";
+                    json = $"{{\"sourceStep\":\"3-nc\",\"fileName\":\"{EscapeJson(ncRelativePath)}\",\"originalFileName\":\"{EscapeJson(originalName)}\",\"requestId\":\"{EscapeJson(requestId)}\"{mongoIdJson},\"status\":\"success\",\"metadata\":{{\"fileSize\":{fi.Length},\"upload\":\"fallback_no_s3\"}}}}";
                 }
 
-                AppLogger.Log($"BackendApiClient: register-file POST {url} with requestId={requestId}, fileName={ncRelativePath}");
+                AppLogger.Log($"BackendApiClient: register-file POST {url} with requestId={requestId}, requestMongoId={(requestMongoId ?? "<null>")}, fileName={ncRelativePath}");
 
                 using (var req = new HttpRequestMessage(HttpMethod.Post, url))
                 {

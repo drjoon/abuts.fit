@@ -23,6 +23,8 @@
 - NC 출력 파일명은 최종적으로 `*.nc`로 정규화합니다.
 - request-meta 조회/등록 귀속의 SSOT는 HTTP payload의 `RequestId` 입니다.
   - `StlPath` 파일명에서 requestId를 역추론하면 원본/샘플이 섞일 수 있으므로 금지합니다.
+  - NC 출력 폴더도 payload `RequestId`만 사용합니다 (`3-nc/{RequestId}/…`). STL 파일명 금지.
+  - `RequestMongoId`를 register-file에 함께 전달해 BG가 원본 ncFile을 덮지 않게 합니다.
 
 ## 2. 구현 체크포인트
 

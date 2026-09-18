@@ -111,6 +111,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         // request-meta caseInfos.lotEngravingTarget — "hex"(기본) | "post"
         private string _backendLotEngravingTarget;
         private string _backendRequestId;
+        private string _backendRequestMongoId;
         private string _backendImplantLabel;
         private double[][] _backendFinishLinePoints;
         // request-meta(caseInfos.manufacturerHexRotation) 제조사 헥스 회전 모드값
@@ -155,7 +156,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         // requestIdHint:
         // - 백엔드가 트리거 시 전달한 canonical requestId
         // - R&D 샘플 복사본이 원본과 동일 STL 파일명을 공유해도, 공정/콜백 귀속이 원본으로 섞이지 않도록 우선 사용한다.
-        public void Process(string stlPath, double? frontLimitX = null, double? backLimitX = null, double? materialDiameter = null, bool twoPhase = false, string requestIdHint = null, double? tiltAxisX = null, double? tiltAxisY = null, double? tiltAxisZ = null, string manufacturerHexRotationHint = null, double? hexRotationAppliedDegHint = null)
+        public void Process(string stlPath, double? frontLimitX = null, double? backLimitX = null, double? materialDiameter = null, bool twoPhase = false, string requestIdHint = null, double? tiltAxisX = null, double? tiltAxisY = null, double? tiltAxisZ = null, string manufacturerHexRotationHint = null, double? hexRotationAppliedDegHint = null, string requestMongoIdHint = null)
         {
             AppLogger.BeginRun();
             var processSw = System.Diagnostics.Stopwatch.StartNew();
@@ -213,15 +214,26 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             _backendLotEngravingSite = null;
             _backendLotEngravingTarget = null;
             _backendRequestId = null;
+            _backendRequestMongoId = null;
             _backendImplantLabel = null;
             _backendFinishLinePoints = null;
             // hex mode/appliedDeg는 payload SSOT — 아래 null 초기화 대상에서 제외한다.
             try
             {
-                requestId = string.IsNullOrWhiteSpace(requestIdHint)
-                    ? BackendApiClient.ExtractRequestIdFromStlPath(stlPath)
-                    : requestIdHint.Trim();
-                AppLogger.Log($"StlFileProcessor: requestId resolved={requestId} (source={(string.IsNullOrWhiteSpace(requestIdHint) ? "stlPath" : "payload")})");
+                // payload RequestId가 SSOT. STL 파일명 역추론은 원본/샘플 공유 STL에서 원본으로 샌다.
+                if (string.IsNullOrWhiteSpace(requestIdHint))
+                {
+                    AppLogger.Log("StlFileProcessor: ⚠️ requestIdHint 없음 — STL 경로 역추론은 사용하지 않음 (원본 오염 방지)");
+                    requestId = null;
+                }
+                else
+                {
+                    requestId = requestIdHint.Trim();
+                }
+                _backendRequestMongoId = string.IsNullOrWhiteSpace(requestMongoIdHint)
+                    ? null
+                    : requestMongoIdHint.Trim();
+                AppLogger.Log($"StlFileProcessor: requestId resolved={requestId ?? "<null>"} (source=payload), requestMongoId={(_backendRequestMongoId ?? "<null>")}");
                 if (!string.IsNullOrWhiteSpace(requestId))
                 {
                     BackendApiClient.RequestMetaResponse requestMetaResponse = FetchRequestMeta(requestId);
@@ -482,7 +494,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     _backendManufacturerHexRotation,
                     _backendHexRotationAppliedDeg,
                     _backendLotEngravingSite,
-                    _backendLotEngravingTarget);
+                    _backendLotEngravingTarget,
+                    // 복사샘플이 원본 filled STL을 공유해도 NC 폴더/콜백은 payload RequestId만 쓴다.
+                    requestId);
                 ncSw.Stop();
                 AppLogger.Log($"StlFileProcessor: NC 생성 종료 - path={ncFilePath ?? "<null>"}");
                 AppLogger.Log($"[PERF] StlFileProcessor.GenerateNc END elapsedMs={ncSw.ElapsedMilliseconds}");
@@ -490,7 +504,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 if (!string.IsNullOrWhiteSpace(ncFilePath))
                 {
                     AppLogger.Log($"StlFileProcessor: NC file generated - {ncFilePath}");
-                    BackendApiClient.NotifyBackendSuccess(requestId, stlPath, ncFilePath);
+                    BackendApiClient.NotifyBackendSuccess(requestId, stlPath, ncFilePath, _backendRequestMongoId);
                 }
                 else
                 {
@@ -605,6 +619,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             _backendLotEngravingSite = null;
             _backendLotEngravingTarget = null;
             _backendRequestId = null;
+            _backendRequestMongoId = null;
             _backendImplantLabel = null;
             _backendFinishLinePoints = null;
             _backendManufacturerHexRotation = null;

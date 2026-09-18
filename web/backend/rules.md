@@ -311,6 +311,11 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - 가공 이력의 영속 SSOT는 `MachiningRecord` 입니다.
 - 팝빌/세금계산서 작업은 web이 직접 처리하지 않고 큐에 넣습니다.
 - BG 콜백 의뢰 매칭 우선순위는 `requestMongoId` → `requestId` → 파일명 fallback 입니다.
+- **복사샘플 격리**: 생성 시점에만 원본 데이터를 복사한다. 이후 샘플 NC 재생성·각인 타깃 변경 등은 샘플에만 적용하고 원본 `caseInfos.ncFile`을 덮어쓰지 않는다.
+  - Esprit는 payload `RequestId`/`RequestMongoId`를 SSOT로 쓰고, STL 파일명에서 requestId를 역추론하지 않는다(공유 filled STL).
+  - NC 로컬 출력 폴더도 payload requestId 기준 (`3-nc/{sampleId}/…`).
+  - BG `register-file` 파일명/경로 fallback은 이미 NC가 있는 정식 의뢰(`order`) 덮어쓰기를 거부한다.
+  - 구현: `utils/bgCallbackRequestMatch.js`, `controllers/bg/bg.controller.js`, `common.review.esprit.js`, esprit-addin `NcFileGenerator`/`BackendApiClient`.
 - Rhino filled STL(`sourceStep=2-filled`)은 `caseInfos.stlFile`에 저장한다(SSOT).
   - 레거시 호환: 동일 메타를 `caseInfos.camFile`에도 미러 기록. 읽기는 `stlFile || camFile` (`utils/filledStlFile.js`).
   - Esprit NC는 `caseInfos.ncFile` (camFile ≠ NC).

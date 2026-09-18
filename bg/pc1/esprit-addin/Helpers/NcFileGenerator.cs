@@ -42,7 +42,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             System.IO.Directory.CreateDirectory(_outputFolder);
             _postProcessorFile = postProcessorFile ?? "Acro_dent_XE.asc";
         }
-        public string GenerateNcFile(Document document, string stlPath, double frontPointX, double stockDiameter, string serialCode, double? stlBoundingTopZ = null, string connectionPrcPath = null, string manufacturerHexRotation = null, double? hexRotationAppliedDeg = null, BackendApiClient.RequestMetaLotEngravingSite lotEngravingSite = null, string lotEngravingTarget = null)
+        // canonicalRequestId: HTTP payload RequestId (복사샘플/원본 분리 SSOT).
+        // STL 파일명에서 requestId를 역추론하면 샘플이 원본 filled STL을 공유할 때
+        // 3-nc/{원본Id}/ 아래로 써져 BG path-guess가 원본 ncFile을 덮을 수 있다.
+        public string GenerateNcFile(Document document, string stlPath, double frontPointX, double stockDiameter, string serialCode, double? stlBoundingTopZ = null, string connectionPrcPath = null, string manufacturerHexRotation = null, double? hexRotationAppliedDeg = null, BackendApiClient.RequestMetaLotEngravingSite lotEngravingSite = null, string lotEngravingTarget = null, string canonicalRequestId = null)
         {
             if (document == null)
             {
@@ -51,7 +54,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
 
             string postDir = _espApp.Configuration.GetFileDirectory(espFileType.espFileTypePostProcessor);
             string postFilePath = Path.Combine(postDir, _postProcessorFile);
-            string ncFileName = BuildNcFilePath(stlPath);
+            string ncFileName = BuildNcFilePath(stlPath, canonicalRequestId);
 
             AppLogger.Log($"NcFileGenerator: NC 생성 준비 - postDir='{postDir}', postFile='{postFilePath}', out='{ncFileName}'");
             if (!File.Exists(postFilePath))
@@ -86,7 +89,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             catch (Exception ex)
             {
                 AppLogger.Log($"NcFileGenerator: NCCode.Execute 1차 실패 - {ex.GetType().Name}:{ex.Message}");
-                string fallbackPath = BuildExecuteFallbackNcPath(stlPath, ncFileName);
+                string fallbackPath = BuildExecuteFallbackNcPath(stlPath, ncFileName, canonicalRequestId);
                 AppLogger.Log($"NcFileGenerator: NCCode.Execute 재시도(ASCII fallback) - {fallbackPath}");
                 document.NCCode.Execute(postFilePath, fallbackPath, Missing.Value);
                 AppLogger.Log($"NcFileGenerator: NC 저장 완료(fallback) - {fallbackPath}");
@@ -110,12 +113,19 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             EnsureNcCoordinateDecimalsOnFile(executedNcPath);
             return executedNcPath;
         }
-        private string BuildNcFilePath(string stlPath)
+        private string BuildNcFilePath(string stlPath, string canonicalRequestId = null)
         {
             string baseName = Path.GetFileNameWithoutExtension(stlPath) ?? "output";
             string sanitizedBase = RemoveFilledToken(baseName);
 
-            string requestId = BackendApiClient.ExtractRequestIdFromStlPath(stlPath);
+            // payload RequestId 우선. STL 파일명 역추론은 원본/샘플 공유 STL에서 원본 폴더로 새는 버그.
+            string requestId = !string.IsNullOrWhiteSpace(canonicalRequestId)
+                ? canonicalRequestId.Trim()
+                : null;
+            if (string.IsNullOrWhiteSpace(requestId))
+            {
+                AppLogger.Log("NcFileGenerator: ⚠️ canonicalRequestId 없음 — STL 경로 역추론은 사용하지 않음 (원본 오염 방지)");
+            }
 
             if (!string.IsNullOrWhiteSpace(requestId))
             {
@@ -126,9 +136,11 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
 
             return Path.Combine(_outputFolder, sanitizedBase + ".nc");
         }
-        private string BuildExecuteFallbackNcPath(string stlPath, string currentNcPath)
+        private string BuildExecuteFallbackNcPath(string stlPath, string currentNcPath, string canonicalRequestId = null)
         {
-            string requestId = BackendApiClient.ExtractRequestIdFromStlPath(stlPath);
+            string requestId = !string.IsNullOrWhiteSpace(canonicalRequestId)
+                ? canonicalRequestId.Trim()
+                : null;
             string dir = Path.GetDirectoryName(currentNcPath);
             if (string.IsNullOrWhiteSpace(dir))
             {
