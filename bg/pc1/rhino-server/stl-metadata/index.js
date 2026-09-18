@@ -853,7 +853,8 @@ function pickLotEngravingSiteFromGuides(directions, opts = {}) {
   }
   const pitchArcMm = 0.35;
   const charPitchCDeg = (pitchArcMm / radius) * (180 / Math.PI);
-  const depthMm = 0.12;
+  // Esprit NcFileGenerator ResolvePostLotEngravingNcParams depthMm=0.06 과 동일 (과다 DOC → 센터밀 파손)
+  const depthMm = 0.06;
   const cutDiameterX = Math.max(2 * (radius - depthMm), 1.0);
 
   return {

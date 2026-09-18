@@ -100,8 +100,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
 
             // Serial 먼저, 헥스 C 후처리 나중 (기존 헥스면 각인 SSOT).
             // - hex(기본): PRC Serial(C0.0 + V피치) 그대로 → Apply가 T0606/T0909 C를 헥스모드로 같이 돌림
-            // - post: Serial이 사이트 C·H피치로 덮음 → Apply는 C0/C30만 치환하므로 포스트 C는 유지, T0606만 헥스모드
-            // 검색: ApplyManufacturerHexRotationToNc / lotEngravingTarget / STL모델+
+            // - post: BuildPostSideSerialBlock(스핀들→G4→완속 plunge, 사이트 C·G1 H) → Apply는 C0/C30만
+            //   치환하므로 포스트 C는 유지, T0606만 헥스모드
+            // 검색: ApplyManufacturerHexRotationToNc / BuildPostSideSerialBlock / lotEngravingTarget / STL모델+
             string serialForNc = NormalizeSerialCode(serialCode);
             AppLogger.Log($"NcFileGenerator: Serial 각인 코드 적용 - Raw:'{serialCode ?? string.Empty}' => Use:'{serialForNc}', target='{NormalizeLotEngravingTarget(lotEngravingTarget)}'");
             UpdateSerialBlocks(executedNcPath, serialForNc, connectionPrcPath, lotEngravingSite, hexRotationAppliedDeg, manufacturerHexRotation, lotEngravingTarget);
@@ -1034,9 +1035,29 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             // lotEngravingTarget (PreviewModal 포스트면 체크 → request-meta → Esprit):
             // - hex(기본): PRC 각인 좌표 유지 + 글자간은 ResolveHexInterCharMove(V피치; H피치면 강제).
             //   C 회전은 이후 ApplyManufacturerHexRotationToNc 가 T0606과 같이 T0909에 적용 → 헥스면 수직 유지.
-            // - post: 사이트방위 C + H피치로 모션 재작성 (헥스면 V/C0 제거). Apply는 C0/C30만
-            //   건드리므로 포스트 C 유지.
+            // - post: BuildPostSideSerialBlock — 헥스 Serial과 동일한 진입(스핀들→G4→완속 plunge),
+            //   사이트 C + G1 H피치. Apply는 C0/C30만 건드리므로 포스트 C 유지.
             // NC 주석: PRC `(Serial)` 슬롯은 원래 헥스면. 생성 결과 `(Serial Hex|Post)`.
+            string target = NormalizeLotEngravingTarget(lotEngravingTarget);
+            bool isPostTarget = string.Equals(target, "post", StringComparison.Ordinal);
+            string serialFaceComment = isPostTarget
+                ? (occurrenceInPrc == 0 ? "(Serial Post)" : "(Serial Deburr Post)")
+                : (occurrenceInPrc == 0 ? "(Serial Hex)" : "(Serial Deburr Hex)");
+
+            // 포스트면: PRC 라인 rewrite 없이 전용 블록 생성 (헥스 진입 패턴 SSOT).
+            if (isPostTarget)
+            {
+                var postBlock = BuildPostSideSerialBlock(
+                    serialCode,
+                    occurrenceInPrc,
+                    serialFaceComment,
+                    lotEngravingSite,
+                    hexRotationAppliedDeg);
+                AppLogger.Log(
+                    $"NcFileGenerator: Serial 블록 빌드 완료 (occurrence:{occurrenceInPrc}, target=post, comment={serialFaceComment}) - {postBlock.Count} lines");
+                return postBlock;
+            }
+
             var templateLines = ReadSerialTemplateFromPrc(occurrenceInPrc, connectionPrcPath);
             if (templateLines == null || templateLines.Count == 0)
             {
@@ -1044,47 +1065,12 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 return new List<string> { "(Serial)", "// ERROR: prc template not found" };
             }
 
-            string target = NormalizeLotEngravingTarget(lotEngravingTarget);
-            bool isPostTarget = string.Equals(target, "post", StringComparison.Ordinal);
-            // NC 소괄호 주석 SSOT: PRC 원본 `(Serial)` = 헥스면 시작 마커.
-            // target=post 이면 같은 슬롯을 포스트면 좌표로 덮어쓰고 주석을 `(Serial Post)` 로 기록.
-            // target=hex 이면 `(Serial Hex)`. 한 타깃만 각인(동시 헥스+포스트 금지).
-            string serialFaceComment = isPostTarget
-                ? (occurrenceInPrc == 0 ? "(Serial Post)" : "(Serial Deburr Post)")
-                : (occurrenceInPrc == 0 ? "(Serial Hex)" : "(Serial Deburr Hex)");
-
-            string interCharMove;
-            double firstCharCDeg = 0.0;
-            double zOffset = 0.0;
-            double cutDiameterX = 0.0;
-            double approachDiameterX = 0.0;
-
-            if (isPostTarget)
-            {
-                ResolvePostLotEngravingNcParams(
-                    lotEngravingSite,
-                    hexRotationAppliedDeg,
-                    out zOffset,
-                    out double siteCAxisDeg,
-                    out double pitchCDeg,
-                    out cutDiameterX,
-                    out approachDiameterX);
-
-                firstCharCDeg = NormalizeAngleDeg(siteCAxisDeg);
-                interCharMove = $"G0 Y0.0 H{FormatNcNumber(-pitchCDeg, "0.000")}";
-                AppLogger.Log(
-                    $"NcFileGenerator: Serial(post) Z={FormatNcNumber(zOffset)}, C0={FormatNcNumber(firstCharCDeg, "0.000")}, " +
-                    $"H={FormatNcNumber(-pitchCDeg)}, X={FormatNcNumber(cutDiameterX)}, serial='{serialCode}', occurrence={occurrenceInPrc}");
-            }
-            else
-            {
-                // 헥스면: PRC 글자 간 이동(SSOT G1 V-0.35). H피치가 들어오면 공기절삭 → 실물 각인 누락.
-                // 이력: 2fa30c330이 오스템 PRC만 H10으로 바꿨고 fb223ec92가 PRC 미복구 → Extract만으론 재발.
-                interCharMove = ResolveHexInterCharMove(templateLines);
-                AppLogger.Log(
-                    $"NcFileGenerator: Serial(hex) interChar='{interCharMove}', " +
-                    $"serial='{serialCode}', occurrence={occurrenceInPrc} (C는 이후 헥스 후처리)");
-            }
+            // 헥스면: PRC 글자 간 이동(SSOT G1 V-0.35). H피치가 들어오면 공기절삭 → 실물 각인 누락.
+            // 이력: 2fa30c330이 오스템 PRC만 H10으로 바꿨고 fb223ec92가 PRC 미복구 → Extract만으론 재발.
+            string interCharMove = ResolveHexInterCharMove(templateLines);
+            AppLogger.Log(
+                $"NcFileGenerator: Serial(hex) interChar='{interCharMove}', " +
+                $"serial='{serialCode}', occurrence={occurrenceInPrc} (C는 이후 헥스 후처리)");
 
             var result = new List<string>();
             bool inMacroSection = false;
@@ -1120,25 +1106,92 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                     continue;
                 }
 
-                if (isPostTarget)
-                {
-                    result.Add(RewriteSerialMotionLineForPostSide(
-                        line,
-                        zOffset,
-                        firstCharCDeg,
-                        cutDiameterX,
-                        approachDiameterX));
-                }
-                else
-                {
-                    // 헥스면: prc 원본 그대로 (C0.0 포함) — ApplyManufacturerHexRotationToNc 가 C 치환
-                    result.Add(line);
-                }
+                // 헥스면: prc 원본 그대로 (C0.0 포함) — ApplyManufacturerHexRotationToNc 가 C 치환
+                result.Add(line);
             }
 
             AppLogger.Log(
                 $"NcFileGenerator: Serial 블록 빌드 완료 (occurrence:{occurrenceInPrc}, target={target}, comment={serialFaceComment}) - {result.Count} lines");
             return result;
+        }
+
+        /// <summary>
+        /// 포스트면 Serial NC SSOT — 헥스면 PRC Serial 진입 패턴을 그대로 따른다.
+        ///
+        /// 헥스(오스템 TS) 원형:
+        ///   M23 Sxxxx → G98 G0(안전) → G4 U0.05 → G1 X접근 F2000 → G1 X절삭 F500 → (G4) → M98 + G1 V피치
+        ///
+        /// 포스트 차이점:
+        ///   - C = 사이트 방위, 글자간 = G1 H(증분 C) F1000 (헥스 G1 V와 동일하게 이송; G0 H 금지)
+        ///   - X접근 = 표면직경+여유 (표면 밖), X절삭 = 얕은 반경 깊이(과다 DOC → 센터밀 파손)
+        /// </summary>
+        private static List<string> BuildPostSideSerialBlock(
+            string serialCode,
+            int occurrenceInPrc,
+            string serialFaceComment,
+            BackendApiClient.RequestMetaLotEngravingSite lotEngravingSite,
+            double? hexRotationAppliedDeg)
+        {
+            ResolvePostLotEngravingNcParams(
+                lotEngravingSite,
+                hexRotationAppliedDeg,
+                out double zOffset,
+                out double siteCAxisDeg,
+                out double pitchCDeg,
+                out double cutDiameterX,
+                out double approachDiameterX,
+                out double surfaceDiameterX);
+
+            double firstCharCDeg = NormalizeAngleDeg(siteCAxisDeg);
+            // 헥스 G1 V-0.35 F1000 과 동일: 절삭 깊이에서 급속(G0 H) 금지 — 팁이 박힌 채 C 급속이면 부러짐.
+            string interCharMove = $"G1 Y0.0 H{FormatNcNumber(-pitchCDeg, "0.000")} F1000";
+            // 본각인 S1000 / Deburr S2000 — 헥스 PRC와 동일. 진입 전 회전이 핵심(정지 상태로 plunge 금지).
+            string spindleLine = occurrenceInPrc == 0 ? "M23 S1000" : "M23 S2000";
+
+            AppLogger.Log(
+                $"NcFileGenerator: Serial(post) Z={FormatNcNumber(zOffset)}, C0={FormatNcNumber(firstCharCDeg, "0.000")}, " +
+                $"H={FormatNcNumber(-pitchCDeg)}, surfaceX={FormatNcNumber(surfaceDiameterX)}, " +
+                $"approachX={FormatNcNumber(approachDiameterX)}, cutX={FormatNcNumber(cutDiameterX)}, " +
+                $"serial='{serialCode}', occurrence={occurrenceInPrc}");
+
+            var block = new List<string>
+            {
+                serialFaceComment,
+                "T0909 (CENTER MILL/D2.0*A90)",
+                "M50",
+                "G28H0.0",
+                spindleLine,
+                // 소재 밖 안전 위치에서 C·Z 정렬 (접촉 전)
+                $"G98 G0 X[#521+1.8] Z[#520+#523+{FormatNcNumber(zOffset, "0.000")}] Y0.0 C{FormatNcNumber(firstCharCDeg, "0.000")}",
+                // 스핀들 안정 — 헥스 본각인 PRC `G4 U0.05`
+                "G4 U0.05",
+                // 표면 바깥까지 접근 (아직 절삭 아님)
+                $"G1 X{FormatNcNumber(approachDiameterX, "0.000")} F2000",
+                // 가공면 완속 진입 (얕은 DOC)
+                $"G1 X{FormatNcNumber(cutDiameterX, "0.000")} F500",
+                // 헥스 RH Serial 의 `G4U0.2` — 매크로 각인 전 안정
+                "G4 U0.2",
+            };
+
+            block.AddRange(BuildSerialMacroLines(serialCode, interCharMove));
+
+            // 헥스 Serial 종료와 동일 계열 (본/Deburr M25·M51 순서만 맞춤)
+            block.Add("G0 X30.0");
+            block.Add("G0 Z-17.5");
+            block.Add("G0 T0");
+            if (occurrenceInPrc == 0)
+            {
+                block.Add("M25");
+                block.Add("M51");
+                block.Add("G99");
+            }
+            else
+            {
+                block.Add("M51");
+                block.Add("M25");
+            }
+            block.Add("M1");
+            return block;
         }
 
         private static string NormalizeLotEngravingTarget(string lotEngravingTarget)
@@ -1173,6 +1226,12 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
 
         /// <summary>
         /// 포스트 각인 사이트 → Z/X/pitch/C_site. C_site = 90 + W − θ (W=30−appliedDeg).
+        ///
+        /// X(직경) SSOT (선반):
+        /// - surfaceDiameterX = 2*radius (가공면)
+        /// - approachDiameterX = surface + 여유 (표면 밖 — F2000 접근은 여기까지만)
+        /// - cutDiameterX = surface − 2*depth (얕은 DOC; 과다 깊이 → 센터밀 파손)
+        /// site.cutDiameterX 가 더 깊으면(더 작은 X) minCut 로 클램프.
         /// </summary>
         private static void ResolvePostLotEngravingNcParams(
             BackendApiClient.RequestMetaLotEngravingSite site,
@@ -1181,13 +1240,16 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             out double cAxisDeg,
             out double pitchCDeg,
             out double cutDiameterX,
-            out double approachDiameterX)
+            out double approachDiameterX,
+            out double surfaceDiameterX)
         {
             const double wBase = 30.0;
             // FE LOT_ENGRAVING_DEFAULTS.aboveFinishLineMm / charPitchArcMm 과 동일 (사이트 없을 때만)
             const double aboveFl = 1.5;
             const double pitchArcMm = 0.45;
-            const double depthMm = 0.12;
+            // 포스트 OD 각인은 헥스면보다 팁 부하가 큼. 0.12mm DOC는 파손 위험 → 얕게.
+            const double depthMm = 0.06;
+            const double approachClearanceDia = 1.2;
             const double defaultRadius = 2.0;
 
             double applied = hexAppliedDeg.HasValue && !double.IsNaN(hexAppliedDeg.Value) && !double.IsInfinity(hexAppliedDeg.Value)
@@ -1201,23 +1263,27 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             {
                 zOffset = site.engraveZ;
                 double radius = site.radius > 0.4 ? site.radius : defaultRadius;
+                surfaceDiameterX = 2.0 * radius;
                 pitchCDeg = site.charPitchCDeg > 1e-6
                     ? site.charPitchCDeg
                     : (pitchArcMm / radius) * (180.0 / Math.PI);
+                double minCutDia = Math.Max(surfaceDiameterX - 2.0 * depthMm, 1.0);
+                // 선반 X=직경: 값이 클수록 얕음. site 값이 더 깊으면(작으면) minCut 로 올린다.
                 cutDiameterX = site.cutDiameterX > 1.0
-                    ? site.cutDiameterX
-                    : Math.Max(2.0 * (radius - depthMm), 1.0);
+                    ? Math.Max(site.cutDiameterX, minCutDia)
+                    : minCutDia;
+                approachDiameterX = surfaceDiameterX + approachClearanceDia;
                 cAxisDeg = NormalizeAngleDeg(90.0 + wAxis - site.angleDeg);
-                approachDiameterX = cutDiameterX + 1.2;
                 return;
             }
 
             // 사이트 없으면 FL+1 추정 불가 → 안전 폴백 (기존 연결부 근방)
             zOffset = aboveFl + 3.0;
+            surfaceDiameterX = 2.0 * defaultRadius;
             pitchCDeg = (pitchArcMm / defaultRadius) * (180.0 / Math.PI);
-            cutDiameterX = Math.Max(2.0 * (defaultRadius - depthMm), 1.0);
+            cutDiameterX = Math.Max(surfaceDiameterX - 2.0 * depthMm, 1.0);
+            approachDiameterX = surfaceDiameterX + approachClearanceDia;
             cAxisDeg = NormalizeAngleDeg(90.0 + wAxis);
-            approachDiameterX = cutDiameterX + 1.2;
             AppLogger.Log("NcFileGenerator: ⚠️ lotEngravingSite 없음 — Serial 폴백 좌표 사용");
         }
 
@@ -1226,40 +1292,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             double a = deg % 360.0;
             if (a < 0) a += 360.0;
             return a;
-        }
-
-        private static string RewriteSerialMotionLineForPostSide(
-            string line,
-            double zOffset,
-            double cAxisDeg,
-            double cutDiameterX,
-            double approachDiameterX)
-        {
-            if (string.IsNullOrWhiteSpace(line)) return line;
-            string trimmed = line.Trim();
-
-            // 시작 접근: G98 G0 X[#521+…] Z[#520+#523+z] Y0 C…
-            if (Regex.IsMatch(trimmed, @"G98\s*G0", RegexOptions.IgnoreCase) ||
-                (Regex.IsMatch(trimmed, @"^G0\b", RegexOptions.IgnoreCase) &&
-                 Regex.IsMatch(trimmed, @"Z\s*\[", RegexOptions.IgnoreCase) &&
-                 Regex.IsMatch(trimmed, @"[#]521", RegexOptions.IgnoreCase)))
-            {
-                return $"G98 G0 X[#521+1.8] Z[#520+#523+{FormatNcNumber(zOffset, "0.000")}] Y0.0 C{FormatNcNumber(cAxisDeg, "0.000")}";
-            }
-
-            // 접근 plunge G1 X4.0 F2000 → 사이트보다 조금 바깥
-            if (Regex.IsMatch(trimmed, @"G1\s*X\s*[+-]?\d+(?:\.\d+)?\s*F\s*2000", RegexOptions.IgnoreCase))
-            {
-                return $"G1 X{FormatNcNumber(approachDiameterX, "0.000")} F2000";
-            }
-
-            // 절삭 깊이 G1 X3.43 F500
-            if (Regex.IsMatch(trimmed, @"G1\s*X\s*[+-]?\d+(?:\.\d+)?\s*F\s*500", RegexOptions.IgnoreCase))
-            {
-                return $"G1 X{FormatNcNumber(cutDiameterX, "0.000")} F500";
-            }
-
-            return line;
         }
 
         // 헥스면 글자 간 이동 SSOT. PRC가 정상이면 그대로, H피치(포스트면 잔재)면 V피치로 강제.

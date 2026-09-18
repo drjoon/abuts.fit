@@ -302,7 +302,10 @@
   - Connection PRC 기준 T0606×3 + T0909×2 = 5곳 (+ T4848 1 = 최대 6)
   - Serial `lotEngravingTarget` (PreviewModal 포스트면 → request-meta → Esprit):
     - **hex(기본)**: PRC Serial 그대로 (`C0.0` + PRC 글자간 이동; 원래 `G1 V-0.35`). 이후 `ApplyManufacturerHexRotationToNc`가 T0606·T0909 C를 같은 헥스모드로 치환 → 헥스면 수직 유지.
-    - **post**: Serial이 사이트 C + `H=-pitchC`로 재작성(헥스면 모션 제거). Apply는 `C0`/`C30`만 치환하므로 포스트 C는 유지되고 T0606만 헥스모드.
+    - **post**: `BuildPostSideSerialBlock` — 헥스 Serial과 동일 진입 시퀀스.
+      - `M23 S1000|S2000` → `G98 G0`(소재 밖) → `G4 U0.05` → `G1 X접근 F2000`(표면+1.2) → `G1 X절삭 F500`(DOC≤0.06) → `G4 U0.2` → `M98` + **`G1 H… F1000`**
+      - 금지: 절삭 깊이에서 `G0 H`(급속 C) — 센터밀 파손. 접근 X는 `cut+1.2`가 아니라 **표면직경+여유**.
+      - Apply는 `C0`/`C30`만 치환하므로 포스트 C는 유지되고 T0606만 헥스모드.
     - NC 소괄호 주석: PRC 원본 `(Serial)` ×2(본·Deburr). 생성 후 `(Serial Hex|Post)` + `(Serial Deburr Hex|Post)` (동시 각인 금지).
     - `UpdateSerialBlocks`: 1번째 `(Serial)` 교체 후 Deburr 폴백은 **남은 `(Serial)` occurrence 0** (index 1이면 마커 누락).
     - 이력: `2fa30c330`(2026-09-04)가 오스템 TS MH/RH Serial을 `H10`·`Y0`로 바꿈 → `fb223ec92`가 코드상 hex/post 분기는 복구했으나 PRC V피치는 미복구 → 헥스면 실물 각인 누락. 오스템 PRC는 원래 `G1 V-0.35`로 되돌림. `ResolveHexInterCharMove`가 hex 경로에 H피치가 들어오면 V피치로 강제.
@@ -323,7 +326,7 @@
     - `TryResolveHexRotationTargets` / `ResolvePlusModeAddDeg` / `ResolveHexToolCAxisDeg` (modeBase·addDeg)
     - `FindNearestToolCodeNearLine` (상방 10줄 공구 탐색)
     - `ApplyManufacturerHexRotationToNc` (공구별 C축 치환)
-    - `BuildSerialBlock` (hex=PRC 원본 / post=사이트C+H) / `RewriteSerialMotionLineForPostSide`
+    - `BuildSerialBlock` (hex=PRC 원본) / `BuildPostSideSerialBlock` (post=헥스형 진입+사이트C+G1 H) / `ResolvePostLotEngravingNcParams`
     - `FormatRotationNumber` / `EnsureNcCoordinateDecimalsOnFile` (C30.000 소수점 강제)
   - `StlFileProcessor.Process` (request-meta `lotEngravingTarget` 전달)
   - PreviewModal `포스트면` 체크 → `caseInfos.lotEngravingTarget` → request-meta → Esprit
