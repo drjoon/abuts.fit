@@ -2365,7 +2365,10 @@ export function StlPreviewViewer({
     const serial = normalizeLotSerialCode(lotSerialCode);
     if (!serial) return;
 
-    const target = lotEngravingTarget === "post" ? "post" : "hex";
+    // 2026-09-18: 포스트면 각인 포기 → 항상 hex (추후 Connection PRC).
+    const target = "hex" as const;
+    // const target = lotEngravingTarget === "post" ? "post" : "hex";
+    void lotEngravingTarget;
     const hexApplied = Number(resolvedMetadata?.hexRotation?.appliedDeg);
     const meshCenter = centerRef.current;
     const axisCenter = {

@@ -3431,13 +3431,20 @@ export const updateRequestLotEngravingTargetOverride = asyncHandler(
       "lotEngravingTarget",
     );
     const rawTarget = req.body?.lotEngravingTarget;
-    const lotEngravingTarget =
-      rawTarget === "post" || rawTarget === "hex" ? rawTarget : null;
+    // 2026-09-18: 포스트면 각인 포기. post 요청 거부 → hex만 허용 (추후 Connection PRC).
+    if (rawTarget === "post") {
+      return res.status(400).json({
+        success: false,
+        message:
+          "포스트면 각인은 비활성입니다. 헥스면(hex)만 사용합니다. (추후 Connection PRC로 이전 예정)",
+      });
+    }
+    const lotEngravingTarget = rawTarget === "hex" ? "hex" : null;
 
     if (!hasTarget || !lotEngravingTarget) {
       return res.status(400).json({
         success: false,
-        message: "lotEngravingTarget('hex'|'post') 값이 필요합니다.",
+        message: "lotEngravingTarget('hex') 값이 필요합니다. (post 비활성)",
       });
     }
 

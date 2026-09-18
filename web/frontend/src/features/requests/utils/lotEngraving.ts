@@ -1,5 +1,7 @@
 // change-log:
-// - 2026-09-18: 포스트 절삭 X = 표면−2×0.12 (BJZ X5.235). 표면+0.93 공기절삭(BKB) 폐기.
+// - 2026-09-18: 포스트면 각인 포기(비활성). 헥스면만. 추후 Connection PRC.
+// - 2026-09-18: 포스트 DOC 0.12→0.05 (T0909 팁 파손). plunge F200. 헥스+0.93≠OD.
+// - 2026-09-18: 포스트 절삭 X = 표면−2×DOC. 표면+0.93 공기절삭(BKB) 폐기.
 // - 2026-09-18: 포스트 NC Z — bbox.max.z(tip)=NC0, machineZ=bboxTop−engrave 거리. #520+#523 금지. X=2×반경.
 // - 2026-09-04: 포스트 측면 — 법선(engraveZ·θ)이 글자 중앙을 지나게 (하단/시작 앵커 폐기).
 // - 2026-09-04: 포스트 측면 — 글자마다 C(θ) 고정 수직평면. 곡면 래핑(점별 레이캐스트) 폐기.
@@ -85,9 +87,9 @@ export const LOT_ENGRAVING_DEFAULTS = {
   charPitchArcMm: 0.45,
   /**
    * 포스트 OD 각인 DOC(반경 mm). NC 절삭 직경 = 2*(r − DOC).
-   * 검증: CA260917-BJZ surface≈5.475 → cut X5.235. 헥스 HEX+0.93 금지.
+   * OD는 팁이 원통에 직접 닿음 — DOC 0.12는 T0909 파손. 헥스 HEX+0.93(팁 외곽) 금지.
    */
-  engraveDepthMm: 0.12,
+  engraveDepthMm: 0.05,
   /** 포스트 접근 X = 표면직경 + 이 값(직경 mm). */
   serialApproachClearanceDiaMm: 1.2,
   /** @deprecated 헥스면 tip-over-surface. 포스트 OD에 쓰면 공기절삭. */
@@ -824,12 +826,12 @@ export function parseLotEngravingFromNc(ncText: unknown): LotEngravingNcParams |
 
   const cutMatches = [
     ...block.matchAll(
-      /G1\s*X\s*\[\s*([+-]?\d+(?:\.\d+)?)\s*-\s*([+-]?\d+(?:\.\d+)?)\s*\]\s*F\s*500/gi,
+      /G1\s*X\s*\[\s*([+-]?\d+(?:\.\d+)?)\s*-\s*([+-]?\d+(?:\.\d+)?)\s*\]\s*F\s*(?:200|500)/gi,
     ),
     ...block.matchAll(
-      /G1\s*X\s*\[\s*([+-]?\d+(?:\.\d+)?)\s*\+\s*([+-]?\d+(?:\.\d+)?)\s*\]\s*F\s*500/gi,
+      /G1\s*X\s*\[\s*([+-]?\d+(?:\.\d+)?)\s*\+\s*([+-]?\d+(?:\.\d+)?)\s*\]\s*F\s*(?:200|500)/gi,
     ),
-    ...block.matchAll(/G1\s*X\s*([+-]?\d+(?:\.\d+)?)\s*F\s*500/gi),
+    ...block.matchAll(/G1\s*X\s*([+-]?\d+(?:\.\d+)?)\s*F\s*(?:200|500)/gi),
   ];
   let cutRaw = LOT_ENGRAVING_DEFAULTS.cutDiameterX;
   if (cutMatches.length) {
@@ -837,7 +839,7 @@ export function parseLotEngravingFromNc(ncText: unknown): LotEngravingNcParams |
     if (m.length >= 3 && m[2] != null) {
       const a = Number(m[1]);
       const b = Number(m[2]);
-      // X[surface-0.240] DOC / 레거시 X[surface+0.93] 공기식
+      // X[surface-0.100] DOC / 레거시 X[surface+0.93] 공기식 · F500
       const isDocExpr = /X\s*\[\s*[+-]?\d+(?:\.\d+)?\s*-/i.test(m[0]);
       cutRaw = isDocExpr ? a - b : a + b;
     } else {
@@ -1068,18 +1070,13 @@ export function buildLotEngravingStlPolylines(opts: {
     z: number,
   ) => { x: number; y: number; z: number } | null;
 }): Array<Array<{ x: number; y: number; z: number }>> {
-  const target: LotEngravingTarget =
-    opts.target === "post" ? "post" : "hex";
-
-  if (target === "post") {
-    if (!opts.site) return [];
-    return buildPostSideLotEngravingStlPolylines({
-      serialCode: opts.serialCode,
-      site: opts.site,
-      center: opts.center,
-      resolveSurfacePoint: opts.resolveSurfacePoint,
-    });
-  }
+  // 2026-09-18: 포스트면 각인 포기 → 항상 헥스면 (추후 Connection PRC).
+  // const target: LotEngravingTarget = opts.target === "post" ? "post" : "hex";
+  // if (target === "post") { return buildPostSideLotEngravingStlPolylines(...); }
+  void opts.target;
+  void opts.site;
+  void opts.center;
+  void opts.resolveSurfacePoint;
 
   return buildHexFaceLotEngravingStlPolylines({
     serialCode: opts.serialCode,

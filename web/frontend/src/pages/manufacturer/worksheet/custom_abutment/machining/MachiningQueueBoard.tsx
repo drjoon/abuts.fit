@@ -1181,6 +1181,12 @@ export const MachiningQueueBoard = ({
 
   const handleSaveLotEngravingTargetOverrideFromCamPreview = useCallback(
     async (req: ManufacturerRequest, nextValue: "hex" | "post") => {
+      // 2026-09-18: 포스트면 각인 포기 (추후 Connection PRC).
+      if (nextValue === "post") {
+        throw new Error(
+          "포스트면 각인은 비활성입니다. 헥스면만 사용합니다. (추후 Connection PRC)",
+        );
+      }
       if (!token) return;
 
       let requestMongoId = String(req?._id || "").trim();

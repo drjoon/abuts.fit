@@ -847,14 +847,13 @@ function pickLotEngravingSiteFromGuides(directions, opts = {}) {
   if (Number.isFinite(best.slope) && Number.isFinite(best.intercept)) {
     radius = best.slope * engraveZ + best.intercept;
   }
-  const fallback = Number(opts.radiusFallback);
+  // OD 얕은 DOC 0.05. 반경 실패 시 null — r=2 폴백 금지(과절삭).
   if (!Number.isFinite(radius) || radius < 0.4) {
-    radius = Number.isFinite(fallback) && fallback > 0.4 ? fallback : 2.0;
+    return null;
   }
-  const pitchArcMm = 0.35;
+  const pitchArcMm = 0.45;
   const charPitchCDeg = (pitchArcMm / radius) * (180 / Math.PI);
-  // OD 면 안쪽 DOC 0.12 (CA260917-BJZ X5.235). 헥스 HEX+0.93 금지(BKB 공기절삭).
-  const cutDiameterX = Math.max(2 * radius - 2 * 0.12, 1.0);
+  const cutDiameterX = Math.max(2 * radius - 2 * 0.05, 1.0);
 
   return {
     angleDeg: Math.round(best.angle * 1000) / 1000,

@@ -300,19 +300,12 @@
     - `appliedDeg` 없으면 플러스 모드 NC 후처리 예외
   - `T4848` → **항상 `C0.000`** (모드/`addDeg`와 무관)
   - Connection PRC 기준 T0606×3 + T0909×2 = 5곳 (+ T4848 1 = 최대 6)
-  - Serial `lotEngravingTarget` (PreviewModal 포스트면 → request-meta → Esprit):
-    - **hex(기본)**: PRC Serial 그대로 (`C0.0` + PRC 글자간 이동; 원래 `G1 V-0.35`). 이후 `ApplyManufacturerHexRotationToNc`가 T0606·T0909 C를 같은 헥스모드로 치환 → 헥스면 수직 유지.
-    - **post**: `BuildPostSideSerialBlock` — 헥스 Serial과 동일 진입 시퀀스.
-      - **Z SSOT**: NC tip=0 = STL `bbox.max.z`(`taperGuide.zEnd`).
-        `machineZ = bboxTopZ − engraveStlZ` (bbox top→각인 거리)를 **절대 Z로 기입**. `#520+#523+…` 금지.
-      - **X SSOT (선반 직경, OD 면 안쪽 DOC — 헥스 HEX+0.93 과 다름)**:
-        절삭 `X[{표면}-0.240]` (= surface − 2×0.12). 검증: CA260917-BJZ `X5.235` @ surface≈5.475.
-        접근 `X[{표면}+1.200]`. **금지**: `X[표면+0.93]` (CA260918-BKB 공기절삭 회귀).
-        `site.cutDiameterX`는 메타 표시용; NC 절삭은 반경에서 재계산.
-      - `M23 S1000|S2000` → `G98 G0`(소재 밖) → `G4 U0.05` → `G1 X접근 F2000` → `G1 X절삭 F500` → `G4 U0.2` → `M98` + **`G1 H… F1000`**
-      - 금지: 절삭 깊이에서 `G0 H`(급속 C) — 센터밀 파손.
-      - Apply는 `C0`/`C30`만 치환하므로 포스트 C는 유지되고 T0606만 헥스모드.
-    - NC 소괄호 주석: PRC 원본 `(Serial)` ×2(본·Deburr). 생성 후 `(Serial Hex|Post)` + `(Serial Deburr Hex|Post)` (동시 각인 금지).
+  - Serial `lotEngravingTarget` (2026-09-18 **포스트면 포기** → 항상 hex. 추후 Connection PRC):
+    - **hex(현행 SSOT)**: PRC Serial 그대로 (`C0.0` + PRC 글자간 이동; 원래 `G1 V-0.35`). 이후 `ApplyManufacturerHexRotationToNc`가 T0606·T0909 C를 같은 헥스모드로 치환 → 헥스면 수직 유지.
+    - **post(비활성)**: `NormalizeLotEngravingTarget`가 post→hex 강제. `BuildPostSideSerialBlock` 호출 안 함.
+      PreviewModal「포스트면」체크 숨김. request-meta·override API도 hex만.
+      (구 구현은 `BuildPostSideSerialBlock` / `ResolvePostLotEngravingNcParams` 에 잔존 — 재활성 금지 until Connection PRC.)
+    - NC 소괄호 주석: 생성 후 `(Serial Hex)` + `(Serial Deburr Hex)`.
     - `UpdateSerialBlocks`: 1번째 `(Serial)` 교체 후 Deburr 폴백은 **남은 `(Serial)` occurrence 0** (index 1이면 마커 누락).
     - 이력: `2fa30c330`(2026-09-04)가 오스템 TS MH/RH Serial을 `H10`·`Y0`로 바꿈 → `fb223ec92`가 코드상 hex/post 분기는 복구했으나 PRC V피치는 미복구 → 헥스면 실물 각인 누락. 오스템 PRC는 원래 `G1 V-0.35`로 되돌림. `ResolveHexInterCharMove`가 hex 경로에 H피치가 들어오면 V피치로 강제.
   - 처리 순서: `UpdateSerialBlocks` → `ApplyManufacturerHexRotationToNc` (헥스면 C 동반 회전 SSOT)
@@ -332,10 +325,10 @@
     - `TryResolveHexRotationTargets` / `ResolvePlusModeAddDeg` / `ResolveHexToolCAxisDeg` (modeBase·addDeg)
     - `FindNearestToolCodeNearLine` (상방 10줄 공구 탐색)
     - `ApplyManufacturerHexRotationToNc` (공구별 C축 치환)
-    - `BuildSerialBlock` (hex=PRC 원본) / `BuildPostSideSerialBlock` (post=절대Z·직경X·사이트C+G1 H) / `ResolvePostLotEngravingNcParams` / `StlZToPostMachineZ`
+    - `BuildSerialBlock` (hex=PRC 원본; post 비활성) / `BuildPostSideSerialBlock`(잔존·미호출) / `NormalizeLotEngravingTarget`(항상 hex)
     - `FormatRotationNumber` / `EnsureNcCoordinateDecimalsOnFile` (C30.000 소수점 강제)
-  - `StlFileProcessor.Process` (request-meta `lotEngravingTarget` 전달)
-  - PreviewModal `포스트면` 체크 → `caseInfos.lotEngravingTarget` → request-meta → Esprit
+  - `StlFileProcessor.Process` (lotEngravingTarget 강제 hex)
+  - PreviewModal「포스트면」체크 숨김. 추후 Connection PRC로 포스트 각인 이전 예정.
 
 ## 5. 정리 원칙
 

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-18: request-meta lotEngravingSite — guides로 산출(r=2 폴백 과절삭·T0909 파손 방지).
 // - 2026-09-11: late NC/CNC 콜백이 세척.패킹 이후 단계를 가공으로 회귀시키지 않음.
 // - 2026-09-11: pending-stl — manufacturerStage=준비만(가공 이후 백로그 재기동 복구 제외).
 // - 2026-09-04: pending-stl — APPROVED 전제 제거. 제조 준비 가드+어벗 .stl만(핸드오프 PENDING도 복구).
@@ -7,6 +8,8 @@
 // - 2026-08-16: request-meta — manufacturerHexRotation 누락 시 caseInfos/STL모델대로 폴백(500 제거).
 // related files:
 // - web/backend/rules.md
+// - bg/pc1/rhino-server/stl-metadata/index.js (pickLotEngravingSiteFromGuides)
+// - bg/pc1/esprit-addin/Helpers/NcFileGenerator.cs (ResolvePostLotEngravingNcParams)
 // - web/backend/controllers/requests/common.review.helpers.js
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/requests/utils.js
@@ -89,6 +92,55 @@ const normalizeRetentionGrooveOrNull = (value) => {
   if (rg === "deep" || rg === "있음") return "deep";
   if (rg === "none" || rg === "shallow" || rg === "없음") return "none";
   return null;
+};
+
+/**
+ * taperGuide.multiDirectionGuides → 포스트 로트 각인 사이트.
+ * stl-metadata pickLotEngravingSiteFromGuides / Esprit TryPick 과 동일.
+ * r=2 폴백 금지 (실제 OD보다 작은 X → 과절삭·T0909 파손).
+ */
+const pickLotEngravingSiteFromTaperGuide = (taperGuide) => {
+  const guides = Array.isArray(taperGuide?.multiDirectionGuides)
+    ? taperGuide.multiDirectionGuides
+    : [];
+  const scored = [];
+  for (const g of guides) {
+    const angle = Number(g?.angle);
+    const taperAbs = Math.abs(Number(g?.taperAngle));
+    const flZ = Number(g?.dirFinishLineZ);
+    const slope = Number(g?.slope);
+    const intercept = Number(g?.intercept);
+    if (![angle, taperAbs, flZ].every(Number.isFinite)) continue;
+    scored.push({ angle, taperAbs, flZ, slope, intercept });
+  }
+  if (scored.length === 0) return null;
+  scored.sort((a, b) => a.taperAbs - b.taperAbs);
+  const keep = Math.max(1, Math.ceil(scored.length * 0.1));
+  const bottom = scored.slice(0, keep);
+  bottom.sort((a, b) => {
+    if (a.flZ !== b.flZ) return a.flZ - b.flZ;
+    return a.taperAbs - b.taperAbs;
+  });
+  const best = bottom[0];
+  if (!best) return null;
+  const engraveZ = best.flZ + 1.5;
+  let radius = Number.NaN;
+  if (Number.isFinite(best.slope) && Number.isFinite(best.intercept)) {
+    radius = best.slope * engraveZ + best.intercept;
+  }
+  if (!Number.isFinite(radius) || radius < 0.4) return null;
+  const pitchArcMm = 0.45;
+  const charPitchCDeg = (pitchArcMm / radius) * (180 / Math.PI);
+  const cutDiameterX = Math.max(2 * radius - 2 * 0.05, 1.0);
+  return {
+    angleDeg: Math.round(best.angle * 1000) / 1000,
+    finishLineZ: Math.round(best.flZ * 1000) / 1000,
+    engraveZ: Math.round(engraveZ * 1000) / 1000,
+    radius: Math.round(radius * 1000) / 1000,
+    taperAbs: Math.round(best.taperAbs * 1000) / 1000,
+    charPitchCDeg: Math.round(charPitchCDeg * 10000) / 10000,
+    cutDiameterX: Math.round(cutDiameterX * 1000) / 1000,
+  };
 };
 
 // related files (manufacturer hex rotation mode validation):
@@ -1894,13 +1946,20 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
             ci?.taperGuide && typeof ci.taperGuide === "object"
               ? ci.taperGuide
               : null,
-          lotEngravingSite:
-            ci?.lotEngravingSite && typeof ci.lotEngravingSite === "object"
-              ? ci.lotEngravingSite
-              : null,
-          // 헥스면(기본) | 포스트 측면. Esprit Serial 분기 SSOT.
-          lotEngravingTarget:
-            ci?.lotEngravingTarget === "post" ? "post" : "hex",
+          lotEngravingSite: (() => {
+            const stored =
+              ci?.lotEngravingSite &&
+              typeof ci.lotEngravingSite === "object" &&
+              Number(ci.lotEngravingSite.radius) > 0.4
+                ? ci.lotEngravingSite
+                : null;
+            if (stored) return stored;
+            // DB에 사이트 없어도 guides로 산출 (r=2 폴백 과절삭 방지).
+            return pickLotEngravingSiteFromTaperGuide(ci?.taperGuide);
+          })(),
+          // 2026-09-18: 포스트면 각인 포기 → 항상 hex (추후 Connection PRC).
+          lotEngravingTarget: "hex",
+          // lotEngravingTarget: ci?.lotEngravingTarget === "post" ? "post" : "hex",
         },
       },
       "Request meta",
@@ -2427,8 +2486,15 @@ export const registerStlMetadata = asyncHandler(async (req, res) => {
   if (taperGuide) {
     metadataSetPayload["caseInfos.taperGuide"] = taperGuide;
   }
-  if (lotEngravingSite && typeof lotEngravingSite === "object") {
-    metadataSetPayload["caseInfos.lotEngravingSite"] = lotEngravingSite;
+  // 사이트 없으면 guides로 산출해 저장 (request-meta·Esprit r=2 폴백 방지)
+  const resolvedLotSite =
+    lotEngravingSite &&
+    typeof lotEngravingSite === "object" &&
+    Number(lotEngravingSite.radius) > 0.4
+      ? lotEngravingSite
+      : pickLotEngravingSiteFromTaperGuide(taperGuide);
+  if (resolvedLotSite) {
+    metadataSetPayload["caseInfos.lotEngravingSite"] = resolvedLotSite;
   }
 
   // related files:

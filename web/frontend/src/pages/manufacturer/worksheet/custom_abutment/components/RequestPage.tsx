@@ -2232,6 +2232,16 @@ export const RequestPage = ({
 
   const handleSaveLotEngravingTargetOverride = useCallback(
     async (req: ManufacturerRequest, nextValue: "hex" | "post") => {
+      // 2026-09-18: 포스트면 각인 포기 (추후 Connection PRC).
+      if (nextValue === "post") {
+        toast({
+          title: "포스트면 각인 비활성",
+          description:
+            "헥스면만 사용합니다. 포스트면은 Connection PRC로 이전 예정입니다.",
+          variant: "destructive",
+        });
+        return;
+      }
       if (!req?._id) return;
       const requestMongoId = String(req._id || "").trim();
       if (!requestMongoId) return;

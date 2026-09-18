@@ -928,8 +928,10 @@ export const PreviewModal = ({
       setWideSplitEnabledDraft(true);
     }
 
-    const caseLotTarget = (req as any)?.caseInfos?.lotEngravingTarget;
-    setLotEngravingTargetDraft(caseLotTarget === "post" ? "post" : "hex");
+    // 2026-09-18: 포스트면 각인 포기 → 항상 hex (추후 Connection PRC).
+    // const caseLotTarget = (req as any)?.caseInfos?.lotEngravingTarget;
+    // setLotEngravingTargetDraft(caseLotTarget === "post" ? "post" : "hex");
+    setLotEngravingTargetDraft("hex");
     setShowLotEngraving(false);
 
     // 헥스 회전 SSOT: caseInfos.hexRotation.mode
@@ -2311,39 +2313,9 @@ export const PreviewModal = ({
     }
   };
 
-  const handleToggleLotEngravingOnPost = async (checked: boolean) => {
-    if (lotEngravingTargetSaving || approveBusy) return;
-
-    const next: "hex" | "post" = checked ? "post" : "hex";
-    const prev = lotEngravingTargetDraft;
-    // STL 미리보기는 단계와 무관하게 즉시 반영
-    setLotEngravingTargetDraft(next);
-
-    const prepStages = new Set(["준비", "의뢰", "CAM", "request", "cam"]);
-    const mfgStage = String(activeReq?.manufacturerStage || "").trim();
-    const canPersist =
-      Boolean(onSaveLotEngravingTargetOverride) &&
-      (currentReviewStageKey === "request" ||
-        currentReviewStageKey === "cam") &&
-      prepStages.has(mfgStage);
-    if (!canPersist || !onSaveLotEngravingTargetOverride) return;
-
-    setLotEngravingTargetSaving(true);
-    try {
-      await onSaveLotEngravingTargetOverride(activeReq, next);
-    } catch (error) {
-      setLotEngravingTargetDraft(prev);
-      toast({
-        title: "각인 위치 저장 실패",
-        description:
-          error instanceof Error
-            ? error.message
-            : "잠시 후 다시 시도해주세요.",
-        variant: "destructive",
-      });
-    } finally {
-      setLotEngravingTargetSaving(false);
-    }
+  // 2026-09-18: 포스트면 각인 포기. UI·저장 경로 비활성 (추후 Connection PRC).
+  const handleToggleLotEngravingOnPost = async (_checked: boolean) => {
+    return;
   };
 
   const handleToggleAnodizingEnabled = async (checked: boolean) => {
@@ -2683,34 +2655,9 @@ export const PreviewModal = ({
                   {showLotEngraving ? "O" : "X"}
                 </span>
               </label>
-              <label
-                className={`inline-flex items-center gap-1.5 rounded-md border px-1.5 py-1 text-[11px] font-semibold ${
-                  canToggleLotEngravingTarget
-                    ? "border-slate-200 bg-white text-slate-700"
-                    : "border-slate-200 bg-slate-100 text-slate-400"
-                }`}
-                title={
-                  canPersistLotEngravingTarget
-                    ? "기본=헥스면. 체크 시 포스트 측면(FL+1.5mm·C축). 둘 중 하나만 가공."
-                    : "미리보기만 전환됩니다. 저장(가공 반영)은 준비 단계에서만 가능합니다."
-                }
-              >
-                <input
-                  type="checkbox"
-                  className="h-3.5 w-3.5 rounded border-slate-300"
-                  checked={lotEngravingTargetDraft === "post"}
-                  disabled={!canToggleLotEngravingTarget}
-                  onChange={(e) => {
-                    void handleToggleLotEngravingOnPost(
-                      Boolean(e.target.checked),
-                    );
-                  }}
-                />
-                <span className="whitespace-nowrap">포스트면</span>
-                <span className="text-[10px] font-semibold text-slate-500">
-                  {lotEngravingTargetDraft === "post" ? "O" : "X"}
-                </span>
-              </label>
+              {/* 2026-09-18: 포스트면 각인 포기 — UI 숨김. 추후 Connection PRC.
+              <label ...>포스트면</label>
+              */}
               <label
                 className={`inline-flex items-center gap-1.5 rounded-md border px-1.5 py-1 text-[11px] font-semibold ${
                   canOverrideWideSplit && !approveBusy && !wideSplitSaving

@@ -282,55 +282,28 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         }
                     }
                     _backendSerialCode = requestMetaResponse?.data?.serialCode;
+                    // 2026-09-18: 포스트면 각인 포기 → 항상 hex. (추후 Connection PRC)
+                    // 구: lotEngravingTarget=="post" 분기 + TryPickLotEngravingSiteFromGuides + site 필수 검사.
+                    _backendLotEngravingSite = null;
+                    _backendLotEngravingTarget = "hex";
+                    _backendPostTipStlZ = null;
+                    if (string.Equals(requestMeta?.lotEngravingTarget, "post", StringComparison.OrdinalIgnoreCase))
+                    {
+                        AppLogger.Log(
+                            $"StlFileProcessor: lotEngravingTarget=post 무시 → hex (포스트면 각인 비활성) requestId={requestId}");
+                    }
+                    AppLogger.Log(
+                        $"StlFileProcessor: lotEngravingTarget={_backendLotEngravingTarget} (post 경로 비활성)");
+                    /* --- 포스트면 각인 (비활성 2026-09-18) ---
                     _backendLotEngravingSite = requestMeta?.lotEngravingSite;
                     _backendLotEngravingTarget =
                         string.Equals(requestMeta?.lotEngravingTarget, "post", StringComparison.OrdinalIgnoreCase)
                             ? "post"
                             : "hex";
-                    // 포스트 tip SSOT = STL bbox top Z (taperGuide.zEnd). NC에서 tip=0.
-                    // machineZ = bboxTopZ − engraveStlZ (tip→각인 거리). frontPoint는 최후 폴백.
-                    if (requestMeta?.taperGuide != null &&
-                        !double.IsNaN(requestMeta.taperGuide.zEnd) &&
-                        !double.IsInfinity(requestMeta.taperGuide.zEnd))
-                    {
-                        _backendPostTipStlZ = requestMeta.taperGuide.zEnd;
-                    }
-                    else if (requestMeta?.frontPoint != null &&
-                             requestMeta.frontPoint.Length >= 3 &&
-                             !double.IsNaN(requestMeta.frontPoint[2]) &&
-                             !double.IsInfinity(requestMeta.frontPoint[2]))
-                    {
-                        _backendPostTipStlZ = requestMeta.frontPoint[2];
-                        AppLogger.Log(
-                            $"StlFileProcessor: ⚠️ post tip에 taperGuide.zEnd(bbox.max.z) 없음 — frontPoint[2]={requestMeta.frontPoint[2]:F3} 폴백");
-                    }
-                    if (_backendLotEngravingSite == null &&
-                        requestMeta?.taperGuide?.multiDirectionGuides != null &&
-                        requestMeta.taperGuide.multiDirectionGuides.Length > 0)
-                    {
-                        _backendLotEngravingSite = TryPickLotEngravingSiteFromGuides(
-                            requestMeta.taperGuide.multiDirectionGuides,
-                            requestMeta.maxDiameter);
-                    }
-                    // 구메타 → SSOT FL+1.5 정규화
-                    if (_backendLotEngravingSite != null &&
-                        !double.IsNaN(_backendLotEngravingSite.finishLineZ) &&
-                        !double.IsInfinity(_backendLotEngravingSite.finishLineZ))
-                    {
-                        _backendLotEngravingSite.engraveZ =
-                            _backendLotEngravingSite.finishLineZ + 1.5;
-                    }
-                    if (_backendLotEngravingSite != null)
-                    {
-                        AppLogger.Log($"StlFileProcessor: lotEngravingSite angle={_backendLotEngravingSite.angleDeg:F2} flZ={_backendLotEngravingSite.finishLineZ:F3} engraveZ={_backendLotEngravingSite.engraveZ:F3} r={_backendLotEngravingSite.radius:F3}");
-                    }
-                    else
-                    {
-                        AppLogger.Log("StlFileProcessor: ⚠️ lotEngravingSite 없음 — Serial은 폴백 좌표");
-                    }
-                    AppLogger.Log(
-                        $"StlFileProcessor: lotEngravingTarget={_backendLotEngravingTarget}, " +
-                        $"postTipStlZ={(_backendPostTipStlZ.HasValue ? _backendPostTipStlZ.Value.ToString("F3", CultureInfo.InvariantCulture) : "<null>")}");
+                    if (requestMeta?.taperGuide != null && ...) { _backendPostTipStlZ = ... }
+                    if (guides...) { TryPickLotEngravingSiteFromGuides... }
+                    if (post && !siteOk) throw ...
+                    --- */
                     _backendRequestId = requestId;
                     if (requestMeta != null)
                     {
@@ -773,6 +746,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             BackendApiClient.RequestMetaTaperDirectionGuide[] guides,
             double maxDiameter)
         {
+            // maxDiameter: 호출부 호환용. 반경 폴백에 쓰지 않음(과절삭).
+            _ = maxDiameter;
             if (guides == null || guides.Length == 0) return null;
             var scored = new List<(double angle, double taperAbs, double flZ, double slope, double intercept)>();
             foreach (var g in guides)
@@ -799,14 +774,16 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             var best = bottom[0];
             double engraveZ = best.flZ + 1.5;
             double radius = best.slope * engraveZ + best.intercept;
-            double fallback = maxDiameter > 0 ? Math.Max(1.0, maxDiameter * 0.35) : 2.0;
+            // 반경 산출 실패 시 null — r=2/maxD*0.35 폴백은 과절삭(실제 OD보다 작은 X).
             if (double.IsNaN(radius) || double.IsInfinity(radius) || radius < 0.4)
             {
-                radius = fallback;
+                AppLogger.Log(
+                    $"StlFileProcessor: ⚠️ lotEngravingSite 반경 산출 실패 (θ={best.angle:F1} flZ={best.flZ:F3} slope={best.slope:F4})");
+                return null;
             }
-            double pitchC = (0.35 / radius) * (180.0 / Math.PI);
-            // OD 면 안쪽 DOC 0.12 (BJZ X5.235). 헥스 HEX+0.93 금지(BKB 공기절삭).
-            double cutX = Math.Max(2.0 * radius - 2.0 * 0.12, 1.0);
+            double pitchC = (0.45 / radius) * (180.0 / Math.PI);
+            // OD 얕은 DOC 0.05 (0.12→T0909 파손). 헥스 HEX+0.93 금지(BKB 공기절삭).
+            double cutX = Math.Max(2.0 * radius - 2.0 * 0.05, 1.0);
             return new BackendApiClient.RequestMetaLotEngravingSite
             {
                 angleDeg = best.angle,
