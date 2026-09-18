@@ -41,6 +41,7 @@ import { useLabReceiveUnreadSound } from "@/shared/hooks/useLabReceiveUnreadSoun
 // - 2026-09-06: 관리자 사이드 허브(회원·지원·채널·재무·설정) + 구 URL 리다이렉트.
 
 const Index = lazy(() => import("./pages/public/Index"));
+const OfferPage = lazy(() => import("./pages/public/OfferPage"));
 const ManualPage = lazy(() => import("./pages/public/ManualPage"));
 const LoginPage = lazy(() =>
   import("./features/auth/LoginPage").then((m) => ({ default: m.LoginPage })),
@@ -552,6 +553,7 @@ const App = () => {
             <Suspense fallback={<LoadingScreen />}>
               <Routes>
                 <Route path="/" element={<Index />} />
+                <Route path="/offer/:slug" element={<OfferPage />} />
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/signup" element={<SignupEntryRoute />} />
                 <Route

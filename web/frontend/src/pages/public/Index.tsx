@@ -1,18 +1,20 @@
 // related files:
 // - web/frontend/src/App.tsx
-// - web/frontend/src/features/landing/LandingBrandStory.tsx
+// - web/frontend/src/features/landing/LandingHome.tsx
 // - web/frontend/src/features/landing/landingTheme.ts
+// - web/frontend/src/pages/public/components/PublicPageLayout.tsx
 import { PublicPageLayout } from "./components/PublicPageLayout";
-import { LandingBrandStory } from "@/features/landing/LandingBrandStory";
+import { LandingHome } from "@/features/landing/LandingHome";
 
-/** `/` — 브랜드/스토리 감성 랜딩 (첨1) */
+/** `/` — 큰 이미지 4장. 상세는 `/offer/:slug` */
 const Index = () => {
   return (
     <PublicPageLayout
       tone="light"
+      navOverlay
       contentClassName="relative z-10 w-full max-w-none px-0 py-0"
     >
-      <LandingBrandStory />
+      <LandingHome />
     </PublicPageLayout>
   );
 };

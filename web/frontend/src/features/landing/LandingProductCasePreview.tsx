@@ -1,5 +1,5 @@
 // related files:
-// - web/frontend/src/features/landing/LandingBrandStory.tsx
+// - web/frontend/src/features/landing/landingAssets.ts
 // - web/frontend/src/features/landing/landingAssets.ts
 // - web/frontend/public/store/acrodent/
 import { cn } from "@/shared/ui/cn";

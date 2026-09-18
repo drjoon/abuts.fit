@@ -1,6 +1,6 @@
 // related files:
 // - web/frontend/src/features/landing/LandingAboutSection.tsx
-// - web/frontend/src/features/landing/LandingBrandStory.tsx
+// - web/frontend/src/features/landing/LandingHome.tsx
 // - web/frontend/src/features/landing/LandingPlatformIntro.tsx
 // - web/frontend/src/features/landing/LandingAudienceSection.tsx
 // - web/frontend/src/features/landing/LandingPlatformSection.tsx
@@ -215,3 +215,11 @@ export const landingAudiences = [
   landingAudiencePractice,
   landingAudienceLab,
 ] as const;
+
+/** `/` 히어로. 네 메뉴 카피는 `landingOffers.ts`. */
+export const landingHome = {
+  heroTitle: "심플웨이를 시작으로.",
+  heroBody: "의뢰하고, 깎고, 기공합니다.",
+  heroSupport: "플랫폼이 한 화면에서 잇습니다.",
+  ctaStart: "시작하기",
+} as const;

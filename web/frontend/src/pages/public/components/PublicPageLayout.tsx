@@ -23,6 +23,8 @@ interface PublicPageLayoutProps {
   contentClassName?: string;
   /** 기본 light. Index 랜딩도 light */
   tone?: "dark" | "light";
+  /** `/` 히어로 위로 네비를 겹친다 */
+  navOverlay?: boolean;
 }
 
 const DEFAULT_CONTENT_CLASS =
@@ -32,6 +34,7 @@ export const PublicPageLayout = ({
   children,
   contentClassName,
   tone = "light",
+  navOverlay = false,
 }: PublicPageLayoutProps) => {
   const resolvedContentClass = contentClassName ?? DEFAULT_CONTENT_CLASS;
   const isLight = tone === "light";
@@ -39,11 +42,12 @@ export const PublicPageLayout = ({
   return (
     <div
       className={cn(
-        "relative min-h-screen overflow-hidden",
-        isLight ? "bg-[#f7f9fc] text-slate-900" : "bg-[#07111f] text-white",
+        "relative min-h-screen",
+        navOverlay ? "overflow-x-hidden bg-white text-slate-900" : "overflow-hidden",
+        !navOverlay && (isLight ? "bg-[#f7f9fc] text-slate-900" : "bg-[#07111f] text-white"),
       )}
     >
-      {isLight ? (
+      {navOverlay ? null : isLight ? (
         <div className="pointer-events-none absolute inset-0">
           <div className="absolute inset-0 bg-gradient-to-b from-white via-[#f7f9fc] to-[#eef3f9]" />
           <div className="absolute -top-32 left-[-6%] h-[28rem] w-[32rem] rounded-full bg-sky-200/35 blur-[120px]" />
@@ -67,7 +71,7 @@ export const PublicPageLayout = ({
         </div>
       )}
 
-      <Navigation tone={tone} />
+      <Navigation tone={tone} overlay={navOverlay} />
 
       <main className={resolvedContentClass}>{children}</main>
 

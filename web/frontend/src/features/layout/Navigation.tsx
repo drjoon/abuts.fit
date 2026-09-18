@@ -10,6 +10,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath";
 import { cn } from "@/shared/ui/cn";
 import { AbutsLogo } from "@/components/branding/AbutsLogo";
+import { landingOffers, offerPath } from "@/features/landing/landingOffers";
 
 function scrollToLandingSection(id: string) {
   const element = document.getElementById(id);
@@ -21,19 +22,39 @@ function scrollToLandingSection(id: string) {
 
 type NavigationProps = {
   tone?: "dark" | "light";
+  /** 랜딩 히어로 위. 맨 위에서는 배경을 비운다 */
+  overlay?: boolean;
 };
 
-export const Navigation = ({ tone = "dark" }: NavigationProps) => {
+export const Navigation = ({ tone = "dark", overlay = false }: NavigationProps) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const { isAuthenticated, user, logout } = useAuthStore();
   const isLight = tone === "light";
+  const isOfferNav =
+    location.pathname === "/" || location.pathname.startsWith("/offer/");
+  const overlayClear = overlay && !scrolled && !isOpen;
 
-  const menuItems: { label: string; href: string }[] = [
-    { label: "어벗츠 소개", href: "/" },
-    { label: "플랫폼과 제품", href: "/platform" },
-  ];
+  const menuItems: { label: string; href: string }[] = isOfferNav
+    ? landingOffers.map((offer) => ({
+        label: offer.navLabel,
+        href: offerPath(offer.slug),
+      }))
+    : [
+        { label: "어벗츠 소개", href: "/" },
+        { label: "플랫폼과 제품", href: "/platform" },
+      ];
+  const mobileMenuItems = menuItems;
+
+  useEffect(() => {
+    if (!overlay) return;
+    const onScroll = () => setScrolled(window.scrollY > 12);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [overlay]);
 
   useEffect(() => {
     if (!location.hash) return;
@@ -135,10 +156,12 @@ export const Navigation = ({ tone = "dark" }: NavigationProps) => {
     <nav className="fixed top-0 z-50 w-full">
       <div
         className={cn(
-          "absolute inset-0 z-0 border-b backdrop-blur-3xl",
-          isLight
-            ? "border-slate-200/80 bg-white/90"
-            : "border-white/10 bg-[#02040c] md:bg-[#02040c]/95",
+          "absolute inset-0 z-0 border-b backdrop-blur-3xl transition-colors",
+          overlayClear && !isLight
+            ? "border-transparent bg-transparent backdrop-blur-none"
+            : isLight
+              ? "border-slate-200/70 bg-white/50 backdrop-blur-xl"
+              : "border-white/10 bg-[#02040c] md:bg-[#02040c]/95",
         )}
       />
       {!isLight ? (
@@ -162,22 +185,30 @@ export const Navigation = ({ tone = "dark" }: NavigationProps) => {
             />
           </button>
 
-          <div className="hidden items-center space-x-8 md:flex">
-            {menuItems.map((item) => (
-              <button
-                key={item.label}
-                type="button"
-                onClick={() => handleMenuClick(item.href)}
-                className={cn(
-                  "text-sm transition-colors",
-                  isLight
-                    ? "text-slate-500 hover:text-slate-900"
-                    : "text-white/55 hover:text-white",
-                )}
-              >
-                {item.label}
-              </button>
-            ))}
+          <div className="hidden items-center space-x-5 md:flex">
+            {menuItems.map((item) => {
+              const current = location.pathname === item.href;
+              return (
+                <button
+                  key={item.label}
+                  type="button"
+                  onClick={() => handleMenuClick(item.href)}
+                  aria-current={current ? "page" : undefined}
+                  className={cn(
+                    "text-sm transition-colors",
+                    isLight
+                      ? "text-[15px] font-semibold text-slate-900 hover:text-slate-600"
+                      : "text-white/55 hover:text-white",
+                    current &&
+                      (isLight
+                        ? "underline decoration-2 underline-offset-8"
+                        : "text-white"),
+                  )}
+                >
+                  {item.label}
+                </button>
+              );
+            })}
           </div>
 
           <div className="hidden items-center space-x-4 md:flex">
@@ -254,7 +285,7 @@ export const Navigation = ({ tone = "dark" }: NavigationProps) => {
             onClick={() => setIsOpen(false)}
           />
           <div className="fixed inset-x-0 top-14 z-[60] border-b border-slate-200 bg-white px-4 pb-5 pt-4 shadow-[0_18px_40px_rgba(2,4,12,0.35)] md:hidden">
-            {menuItems.map((item) => (
+            {mobileMenuItems.map((item) => (
               <button
                 key={item.label}
                 type="button"

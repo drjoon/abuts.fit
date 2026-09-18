@@ -7,6 +7,11 @@
 /** 랜딩 CAD 프리뷰 (치수·스펙 주석 포함) */
 export const LANDING_CAD_PREVIEW = "/landing/abutment-cad-preview.png";
 
+/** 히어로 — ACRODENT TheSimple Implant 발췌 (키트 클로즈업 · 4키트 · Check) */
+export const LANDING_HERO_VIDEO = "/landing/hero-simple.mp4";
+export const LANDING_HERO_POSTER = "/landing/hero-poster.jpg";
+export const LANDING_SIMPLE_WAY_STILL = "/landing/simple-way-kits.jpg";
+
 /** 제품 실사 이미지 (acrodent Simple Abut. [Non-Hex] Anti-rotation) */
 export const LANDING_PRODUCT_IMAGE = "/store/acrodent/simple-abutment-2.jpg";
 
