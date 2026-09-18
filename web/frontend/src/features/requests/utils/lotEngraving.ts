@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-09-18: 포스트 절삭 X 식 `X[표면+0.93]` (헥스 `X[2.485+0.945]`). 합산 리터럴·면 안쪽 DOC 금지.
+// - 2026-09-18: 포스트 절삭 X = 표면직경+0.93 (헥스 Serial X3.43 vs HEX X2.485). 면 안쪽 DOC 폐기.
 // - 2026-09-18: 포스트 NC Z — bbox.max.z(tip)=NC0, machineZ=bboxTop−engrave 거리. #520+#523 금지. X=2×반경.
 // - 2026-09-04: 포스트 측면 — 법선(engraveZ·θ)이 글자 중앙을 지나게 (하단/시작 앵커 폐기).
 // - 2026-09-04: 포스트 측면 — 글자마다 C(θ) 고정 수직평면. 곡면 래핑(점별 레이캐스트) 폐기.
@@ -82,7 +84,14 @@ export const LOT_ENGRAVING_DEFAULTS = {
   aboveFinishLineMm: 1.5,
   /** 글자 간 원주 호 길이(mm). CNC H = arc/r (프리뷰 Z축 방위). */
   charPitchArcMm: 0.45,
-  /** 각인 깊이(반경 방향, mm). cutDiameterX = 2*(radius - depth). 포스트는 비원형 단면이라 근사. */
+  /**
+   * Serial 절삭 X = 면 직경 + 이 값 (직경 mm).
+   * 헥스 SSOT: HEX X2.485 → Serial X3.43 (= +0.945≈0.93). 포스트도 동일.
+   */
+  serialTipOverSurfaceDiaMm: 0.93,
+  /** 접근 X = 절삭 X + 이 값. 헥스 X4.0 − X3.43. */
+  serialApproachOverCutDiaMm: 0.57,
+  /** @deprecated 면 안쪽 DOC. Serial 절삭은 serialTipOverSurfaceDiaMm 사용. */
   engraveDepthMm: 0.12,
   /** 경사각 |taper| 하위 비율(가장 완만한 쪽). */
   taperBottomFraction: 0.1,
@@ -678,10 +687,8 @@ export function pickPostSideLotEngravingSite(opts: {
         wAxisBaseDeg: opts.wAxisBaseDeg,
       }),
       charPitchCDeg,
-      cutDiameterX: Math.max(
-        2 * (radius - LOT_ENGRAVING_DEFAULTS.engraveDepthMm),
-        1.0,
-      ),
+      cutDiameterX:
+        2 * radius + LOT_ENGRAVING_DEFAULTS.serialTipOverSurfaceDiaMm,
     };
   }
 
@@ -744,8 +751,8 @@ export function pickPostSideLotEngravingSite(opts: {
     hexAppliedDeg: opts.hexAppliedDeg,
     wAxisBaseDeg: opts.wAxisBaseDeg,
   });
-  const depth = LOT_ENGRAVING_DEFAULTS.engraveDepthMm;
-  const cutDiameterX = Math.max(2 * (radius - depth), 1.0);
+  const cutDiameterX =
+    2 * radius + LOT_ENGRAVING_DEFAULTS.serialTipOverSurfaceDiaMm;
 
   return {
     angleDeg: best.angle,
@@ -813,11 +820,19 @@ export function parseLotEngravingFromNc(ncText: unknown): LotEngravingNcParams |
       : LOT_ENGRAVING_DEFAULTS.zOffset;
 
   const cutMatches = [
+    ...block.matchAll(/G1\s*X\s*\[\s*([+-]?\d+(?:\.\d+)?)\s*\+\s*([+-]?\d+(?:\.\d+)?)\s*\]\s*F\s*500/gi),
     ...block.matchAll(/G1\s*X\s*([+-]?\d+(?:\.\d+)?)\s*F\s*500/gi),
   ];
-  const cutRaw = cutMatches.length
-    ? Number(cutMatches[cutMatches.length - 1][1])
-    : LOT_ENGRAVING_DEFAULTS.cutDiameterX;
+  let cutRaw = LOT_ENGRAVING_DEFAULTS.cutDiameterX;
+  if (cutMatches.length) {
+    const m = cutMatches[cutMatches.length - 1];
+    if (m.length >= 3 && m[2] != null) {
+      // X[surface+0.93] 식
+      cutRaw = Number(m[1]) + Number(m[2]);
+    } else {
+      cutRaw = Number(m[1]);
+    }
+  }
 
   const pitchCMatch =
     block.match(/G0\s*H\s*([+-]?\d+(?:\.\d+)?)/i) ||

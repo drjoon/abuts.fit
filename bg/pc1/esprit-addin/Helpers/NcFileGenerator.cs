@@ -1129,7 +1129,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
         /// 포스트 차이점:
         ///   - Z = bboxTopStlZ − engraveStlZ (STL bbox top→각인 거리). NC tip=0. #520+#523 금지.
         ///   - C = 사이트 방위, 글자간 = G1 H(증분 C) F1000 (헥스 G1 V와 동일하게 이송; G0 H 금지)
-        ///   - X = 직경 모드(2×반경). 표면 r=4 → X8.0. 접근=2*(r+0.6), 절삭=2*(r−DOC).
+        ///   - X 직경 SSOT (헥스 Serial과 동일, 식 기입):
+        ///       절삭  `X[{표면직경}+0.93]`   예) 헥스 `X[2.485+0.945]`→X3.43 / 포스트 `X[5.475+0.930]`
+        ///       접근  `X[{표면}+0.93+0.57]`  예) 헥스 X4.0 = 3.43+0.57
+        ///     금지: 합산 리터럴만 쓰기·면 안쪽 DOC(`2*(r−d)`).
         /// </summary>
         private static List<string> BuildPostSideSerialBlock(
             string serialCode,
@@ -1156,10 +1159,14 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             // 본각인 S1000 / Deburr S2000 — 헥스 PRC와 동일. 진입 전 회전이 핵심(정지 상태로 plunge 금지).
             string spindleLine = occurrenceInPrc == 0 ? "M23 S1000" : "M23 S2000";
 
+            // X 식 SSOT — 합산 리터럴 금지. 컨트롤러가 [a+b] 평가 (X[#521+1.8]과 동일).
+            string cutXExpr = FormatPostSerialCutXExpr(surfaceDiameterX);
+            string approachXExpr = FormatPostSerialApproachXExpr(surfaceDiameterX);
+
             AppLogger.Log(
                 $"NcFileGenerator: Serial(post) Z={FormatNcNumber(machineZ)} (tip→hex 절대), C0={FormatNcNumber(firstCharCDeg, "0.000")}, " +
                 $"H={FormatNcNumber(-pitchCDeg)}, surfaceX={FormatNcNumber(surfaceDiameterX)}(=2r), " +
-                $"approachX={FormatNcNumber(approachDiameterX)}, cutX={FormatNcNumber(cutDiameterX)}, " +
+                $"approach={approachXExpr} (≈{FormatNcNumber(approachDiameterX)}), cut={cutXExpr} (≈{FormatNcNumber(cutDiameterX)}), " +
                 $"serial='{serialCode}', occurrence={occurrenceInPrc}");
 
             var block = new List<string>
@@ -1173,10 +1180,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 $"G98 G0 X[#521+1.8] Z{FormatNcNumber(machineZ, "0.000")} Y0.0 C{FormatNcNumber(firstCharCDeg, "0.000")}",
                 // 스핀들 안정 — 헥스 본각인 PRC `G4 U0.05`
                 "G4 U0.05",
-                // 표면 바깥까지 접근 (직경 X = 2×(r+여유), 아직 절삭 아님)
-                $"G1 X{FormatNcNumber(approachDiameterX, "0.000")} F2000",
-                // 가공면 완속 진입 (직경 X = 2×(r−DOC))
-                $"G1 X{FormatNcNumber(cutDiameterX, "0.000")} F500",
+                // 접근/절삭 X = 식 기입 (표면+0.93[+0.57]). 헥스 Serial X[2.485+0.945] 패턴.
+                $"G1 {approachXExpr} F2000",
+                $"G1 {cutXExpr} F500",
                 // 헥스 RH Serial 의 `G4U0.2` — 매크로 각인 전 안정
                 "G4 U0.2",
             };
@@ -1243,16 +1249,33 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             return bboxTopStlZ - engraveStlZ;
         }
 
+        // 포스트 Serial X 식 SSOT (검색: FormatPostSerialCutXExpr / serialTipOverSurfaceDia / X[2.485+0.945])
+        // 헥스: HEX면 X2.485, Serial 절삭 ≈ X3.43 → +0.945≈0.93. 포스트도 동일 가산.
+        // NC는 합산값(X6.405) 금지 — X[표면+0.93] 형태로 남겨 검수·튜닝 가능.
+        private const double PostSerialTipOverSurfaceDia = 0.93;
+        private const double PostSerialApproachOverCutDia = 0.57;
+
+        private static string FormatPostSerialCutXExpr(double surfaceDiameterX)
+        {
+            return $"X[{FormatNcNumber(surfaceDiameterX, "0.000")}+{FormatNcNumber(PostSerialTipOverSurfaceDia, "0.000")}]";
+        }
+
+        private static string FormatPostSerialApproachXExpr(double surfaceDiameterX)
+        {
+            return $"X[{FormatNcNumber(surfaceDiameterX, "0.000")}+{FormatNcNumber(PostSerialTipOverSurfaceDia, "0.000")}+{FormatNcNumber(PostSerialApproachOverCutDia, "0.000")}]";
+        }
+
         /// <summary>
         /// 포스트 각인 사이트 → 절대 Z / 직경 X / pitch / C_site.
         /// C_site = 90 + W − θ (W=30−appliedDeg).
         ///
         /// Z: NC tip=0 = STL bbox.max.z. machineZ = bboxTop − engraveZ (거리).
-        /// X(직경) SSOT (선반):
-        /// - CAD/메시 반경 r → NC X = 2r (예: 표면 r=4.0 → X8.0)
+        /// X(직경) SSOT (선반, 헥스 Serial과 동일):
         /// - surfaceDiameterX = 2*radius
-        /// - approachDiameterX = 2*(radius + 0.6)  (반경 여유 0.6 → 직경 +1.2)
-        /// - cutDiameterX = 2*(radius − depth) (depth=0.12; 비원형 단면 근사)
+        /// - NC 절삭 식: X[surface+0.93]  (HEX X2.485 → Serial X[2.485+0.945])
+        /// - NC 접근 식: X[surface+0.93+0.57]
+        /// - cutDiameterX/approachDiameterX 숫자 = 식 평가값 (로그·사이트 메타용)
+        /// 금지: surface − 2*DOC 로 면 안쪽 plunge (각인 불량).
         /// </summary>
         private static void ResolvePostLotEngravingNcParams(
             BackendApiClient.RequestMetaLotEngravingSite site,
@@ -1269,10 +1292,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             // FE LOT_ENGRAVING_DEFAULTS.aboveFinishLineMm / charPitchArcMm 과 동일 (사이트 없을 때만)
             const double aboveFl = 1.5;
             const double pitchArcMm = 0.45;
-            // FE LOT_ENGRAVING_DEFAULTS.engraveDepthMm 과 동일. 포스트는 비원형 단면이라 근사값.
-            const double depthMm = 0.12;
-            // 반경 방향 접근 여유(mm). 직경 NC로는 ×2.
-            const double approachClearanceRadius = 0.6;
             const double defaultRadius = 2.0;
 
             double applied = hexAppliedDeg.HasValue && !double.IsNaN(hexAppliedDeg.Value) && !double.IsInfinity(hexAppliedDeg.Value)
@@ -1288,10 +1307,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             {
                 engraveStlZ = site.engraveZ;
                 double radius = site.radius > 0.4 ? site.radius : defaultRadius;
-                // 선반 X = 직경 = 2×반경 (표면 r=4.0 → X8.0)
                 surfaceDiameterX = 2.0 * radius;
-                approachDiameterX = 2.0 * (radius + approachClearanceRadius);
-                cutDiameterX = 2.0 * Math.Max(radius - depthMm, 0.5);
+                cutDiameterX = surfaceDiameterX + PostSerialTipOverSurfaceDia;
+                approachDiameterX = cutDiameterX + PostSerialApproachOverCutDia;
                 pitchCDeg = site.charPitchCDeg > 1e-6
                     ? site.charPitchCDeg
                     : (pitchArcMm / radius) * (180.0 / Math.PI);
@@ -1302,9 +1320,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 // 사이트 없으면 FL+1.5 추정 불가 → 안전 폴백 (기존 연결부 근방 스케일)
                 engraveStlZ = aboveFl + 3.0;
                 surfaceDiameterX = 2.0 * defaultRadius;
+                cutDiameterX = surfaceDiameterX + PostSerialTipOverSurfaceDia;
+                approachDiameterX = cutDiameterX + PostSerialApproachOverCutDia;
                 pitchCDeg = (pitchArcMm / defaultRadius) * (180.0 / Math.PI);
-                cutDiameterX = 2.0 * Math.Max(defaultRadius - depthMm, 0.5);
-                approachDiameterX = 2.0 * (defaultRadius + approachClearanceRadius);
                 cAxisDeg = NormalizeAngleDeg(90.0 + wAxis);
                 AppLogger.Log("NcFileGenerator: ⚠️ lotEngravingSite 없음 — Serial 폴백 좌표 사용");
             }

@@ -853,9 +853,8 @@ function pickLotEngravingSiteFromGuides(directions, opts = {}) {
   }
   const pitchArcMm = 0.35;
   const charPitchCDeg = (pitchArcMm / radius) * (180 / Math.PI);
-  // Esprit NcFileGenerator / FE LOT_ENGRAVING_DEFAULTS.engraveDepthMm 과 동일 (포스트 비원형 → 근사)
-  const depthMm = 0.12;
-  const cutDiameterX = Math.max(2 * (radius - depthMm), 1.0);
+  // NC 식 SSOT: X[면직경+0.93] (헥스 X[2.485+0.945]). 메타에는 평가값 저장.
+  const cutDiameterX = 2 * radius + 0.93;
 
   return {
     angleDeg: Math.round(best.angle * 1000) / 1000,
