@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-18: 포스트 NC Z — bbox.max.z(tip)=NC0, machineZ=bboxTop−engrave 거리. #520+#523 금지. X=2×반경.
 // - 2026-09-04: 포스트 측면 — 법선(engraveZ·θ)이 글자 중앙을 지나게 (하단/시작 앵커 폐기).
 // - 2026-09-04: 포스트 측면 — 글자마다 C(θ) 고정 수직평면. 곡면 래핑(점별 레이캐스트) 폐기.
 // - 2026-09-04: 각인 target hex|post 이중 경로. 기본 헥스면, 포스트면은 옵트인.
@@ -26,7 +27,7 @@
  *
  * SSOT (다른 부위 각인에도 동일):
  * - NC X는 직경 모드 (#521 = STOCK DIA). 우리 좌표 반경 = X / 2.
- *   예: G1 X3.43 → radius 1.715, G1 X3.0 → 1.5
+ *   예: 표면 반경 4.0 → NC X8.0, G1 X3.43 → radius 1.715
  * - X가 작을수록 축에 가깝 = 더 깊게 파냄.
  *   Serial 절삭 X3.43(r=1.715) vs HEX 면 X2.485(r=1.2425):
  *   3.43 > 2.485 이므로 Serial 팁은 HEX 면보다 얕은(바깥) 깊이.
@@ -37,6 +38,26 @@ export function cncDiameterXToRadius(diameterX: number): number {
   const x = Number(diameterX);
   if (!Number.isFinite(x)) return 0;
   return Math.abs(x) / 2;
+}
+
+/** 메시/CAD 반경 → 선반 NC 직경 X (r=4.0 → X8.0). */
+export function radiusToCncDiameterX(radius: number): number {
+  const r = Number(radius);
+  if (!Number.isFinite(r)) return 0;
+  return Math.abs(r) * 2;
+}
+
+/**
+ * 포스트면 CNC 절대 Z.
+ * NC tip=0 = STL bbox.max.z (taperGuide.zEnd).
+ * machineZ = bboxTopStlZ − engraveStlZ (bbox top → 각인 높이 거리).
+ */
+export function stlZToPostMachineZ(bboxTopStlZ: number, engraveStlZ: number): number {
+  return Number(bboxTopStlZ) - Number(engraveStlZ);
+}
+
+export function postMachineZToStlZ(bboxTopStlZ: number, machineZ: number): number {
+  return Number(bboxTopStlZ) - Number(machineZ);
 }
 
 /** PRC Serial / NC 헤더 기본값. */
@@ -70,7 +91,7 @@ export const LOT_ENGRAVING_DEFAULTS = {
 export type LotEngravingNcParams = {
   startY: number;
   charPitchY: number;
-  /** Serial 블록 Z offset = 피니시라인Z+1.5 (포스트 측면). */
+  /** Serial 블록 Z — 헥스=PRC #520+#523 offset / 포스트=절대 Z(tip=0) 또는 사이트 engraveZ(STL). */
   zOffset: number;
   /** @deprecated 헥스면 폴백용 */
   hexZOffset: number;
@@ -767,7 +788,7 @@ export function parseLotEngravingFromNc(ncText: unknown): LotEngravingNcParams |
   const text = String(ncText || "");
   if (!text) return null;
 
-  const serialIdx = text.search(/\(Serial\)/i);
+  const serialIdx = text.search(/\(Serial(\s+(Post|Hex|Deburr(\s+(Post|Hex))?))?\)/i);
   if (serialIdx < 0) return null;
   const block = text.slice(serialIdx, serialIdx + 900);
 
@@ -778,10 +799,18 @@ export function parseLotEngravingFromNc(ncText: unknown): LotEngravingNcParams |
   const cAxisDeg = Number(startCMatch[1]);
   if (!Number.isFinite(startY) || !Number.isFinite(cAxisDeg)) return null;
 
-  const zExpr = block.match(
+  // 레거시 헥스: Z[#520+#523+offset]. 포스트: 절대 Z (tip=0).
+  const zMacro = block.match(
     /Z\s*\[\s*#520\s*\+\s*#523\s*\+\s*([+-]?\d+(?:\.\d+)?)\s*\]/i,
   );
-  const zOffsetRaw = zExpr ? Number(zExpr[1]) : LOT_ENGRAVING_DEFAULTS.zOffset;
+  const zAbs = !zMacro
+    ? block.match(/Z\s*([+-]?\d+(?:\.\d+)?)/i)
+    : null;
+  const zOffsetRaw = zMacro
+    ? Number(zMacro[1])
+    : zAbs
+      ? Number(zAbs[1])
+      : LOT_ENGRAVING_DEFAULTS.zOffset;
 
   const cutMatches = [
     ...block.matchAll(/G1\s*X\s*([+-]?\d+(?:\.\d+)?)\s*F\s*500/gi),

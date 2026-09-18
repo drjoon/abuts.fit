@@ -110,6 +110,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private BackendApiClient.RequestMetaLotEngravingSite _backendLotEngravingSite;
         // request-meta caseInfos.lotEngravingTarget — "hex"(기본) | "post"
         private string _backendLotEngravingTarget;
+        // 포스트 tip STL Z = bbox.max.z (taperGuide.zEnd). NC Z=0. machineZ = tip − engrave.
+        private double? _backendPostTipStlZ;
         private string _backendRequestId;
         private string _backendRequestMongoId;
         private string _backendImplantLabel;
@@ -213,6 +215,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             _backendSerialCode = null;
             _backendLotEngravingSite = null;
             _backendLotEngravingTarget = null;
+            _backendPostTipStlZ = null;
             _backendRequestId = null;
             _backendRequestMongoId = null;
             _backendImplantLabel = null;
@@ -284,6 +287,23 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         string.Equals(requestMeta?.lotEngravingTarget, "post", StringComparison.OrdinalIgnoreCase)
                             ? "post"
                             : "hex";
+                    // 포스트 tip SSOT = STL bbox top Z (taperGuide.zEnd). NC에서 tip=0.
+                    // machineZ = bboxTopZ − engraveStlZ (tip→각인 거리). frontPoint는 최후 폴백.
+                    if (requestMeta?.taperGuide != null &&
+                        !double.IsNaN(requestMeta.taperGuide.zEnd) &&
+                        !double.IsInfinity(requestMeta.taperGuide.zEnd))
+                    {
+                        _backendPostTipStlZ = requestMeta.taperGuide.zEnd;
+                    }
+                    else if (requestMeta?.frontPoint != null &&
+                             requestMeta.frontPoint.Length >= 3 &&
+                             !double.IsNaN(requestMeta.frontPoint[2]) &&
+                             !double.IsInfinity(requestMeta.frontPoint[2]))
+                    {
+                        _backendPostTipStlZ = requestMeta.frontPoint[2];
+                        AppLogger.Log(
+                            $"StlFileProcessor: ⚠️ post tip에 taperGuide.zEnd(bbox.max.z) 없음 — frontPoint[2]={requestMeta.frontPoint[2]:F3} 폴백");
+                    }
                     if (_backendLotEngravingSite == null &&
                         requestMeta?.taperGuide?.multiDirectionGuides != null &&
                         requestMeta.taperGuide.multiDirectionGuides.Length > 0)
@@ -308,7 +328,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     {
                         AppLogger.Log("StlFileProcessor: ⚠️ lotEngravingSite 없음 — Serial은 폴백 좌표");
                     }
-                    AppLogger.Log($"StlFileProcessor: lotEngravingTarget={_backendLotEngravingTarget}");
+                    AppLogger.Log(
+                        $"StlFileProcessor: lotEngravingTarget={_backendLotEngravingTarget}, " +
+                        $"postTipStlZ={(_backendPostTipStlZ.HasValue ? _backendPostTipStlZ.Value.ToString("F3", CultureInfo.InvariantCulture) : "<null>")}");
                     _backendRequestId = requestId;
                     if (requestMeta != null)
                     {
@@ -496,7 +518,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     _backendLotEngravingSite,
                     _backendLotEngravingTarget,
                     // 복사샘플이 원본 filled STL을 공유해도 NC 폴더/콜백은 payload RequestId만 쓴다.
-                    requestId);
+                    requestId,
+                    _backendPostTipStlZ);
                 ncSw.Stop();
                 AppLogger.Log($"StlFileProcessor: NC 생성 종료 - path={ncFilePath ?? "<null>"}");
                 AppLogger.Log($"[PERF] StlFileProcessor.GenerateNc END elapsedMs={ncSw.ElapsedMilliseconds}");
@@ -618,6 +641,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             _backendSerialCode = null;
             _backendLotEngravingSite = null;
             _backendLotEngravingTarget = null;
+            _backendPostTipStlZ = null;
             _backendRequestId = null;
             _backendRequestMongoId = null;
             _backendImplantLabel = null;

@@ -303,8 +303,12 @@
   - Serial `lotEngravingTarget` (PreviewModal 포스트면 → request-meta → Esprit):
     - **hex(기본)**: PRC Serial 그대로 (`C0.0` + PRC 글자간 이동; 원래 `G1 V-0.35`). 이후 `ApplyManufacturerHexRotationToNc`가 T0606·T0909 C를 같은 헥스모드로 치환 → 헥스면 수직 유지.
     - **post**: `BuildPostSideSerialBlock` — 헥스 Serial과 동일 진입 시퀀스.
-      - `M23 S1000|S2000` → `G98 G0`(소재 밖) → `G4 U0.05` → `G1 X접근 F2000`(표면+1.2) → `G1 X절삭 F500`(DOC≈0.12, 비원형 근사) → `G4 U0.2` → `M98` + **`G1 H… F1000`**
-      - 금지: 절삭 깊이에서 `G0 H`(급속 C) — 센터밀 파손. 접근 X는 `cut+1.2`가 아니라 **표면직경+여유**.
+      - **Z SSOT**: NC tip=0 = STL `bbox.max.z`(`taperGuide.zEnd`).
+        `machineZ = bboxTopZ − engraveStlZ` (bbox top→각인 거리)를 **절대 Z로 기입**. `#520+#523+…` 금지.
+      - **X SSOT (선반 직경)**: CAD 반경 r → NC `X=2r` (표면 r=4 → `X8.0`).
+        접근 `X=2*(r+0.6)`, 절삭 `X=2*(r−0.12)`.
+      - `M23 S1000|S2000` → `G98 G0`(소재 밖) → `G4 U0.05` → `G1 X접근 F2000` → `G1 X절삭 F500` → `G4 U0.2` → `M98` + **`G1 H… F1000`**
+      - 금지: 절삭 깊이에서 `G0 H`(급속 C) — 센터밀 파손.
       - Apply는 `C0`/`C30`만 치환하므로 포스트 C는 유지되고 T0606만 헥스모드.
     - NC 소괄호 주석: PRC 원본 `(Serial)` ×2(본·Deburr). 생성 후 `(Serial Hex|Post)` + `(Serial Deburr Hex|Post)` (동시 각인 금지).
     - `UpdateSerialBlocks`: 1번째 `(Serial)` 교체 후 Deburr 폴백은 **남은 `(Serial)` occurrence 0** (index 1이면 마커 누락).
@@ -326,7 +330,7 @@
     - `TryResolveHexRotationTargets` / `ResolvePlusModeAddDeg` / `ResolveHexToolCAxisDeg` (modeBase·addDeg)
     - `FindNearestToolCodeNearLine` (상방 10줄 공구 탐색)
     - `ApplyManufacturerHexRotationToNc` (공구별 C축 치환)
-    - `BuildSerialBlock` (hex=PRC 원본) / `BuildPostSideSerialBlock` (post=헥스형 진입+사이트C+G1 H) / `ResolvePostLotEngravingNcParams`
+    - `BuildSerialBlock` (hex=PRC 원본) / `BuildPostSideSerialBlock` (post=절대Z·직경X·사이트C+G1 H) / `ResolvePostLotEngravingNcParams` / `StlZToPostMachineZ`
     - `FormatRotationNumber` / `EnsureNcCoordinateDecimalsOnFile` (C30.000 소수점 강제)
   - `StlFileProcessor.Process` (request-meta `lotEngravingTarget` 전달)
   - PreviewModal `포스트면` 체크 → `caseInfos.lotEngravingTarget` → request-meta → Esprit

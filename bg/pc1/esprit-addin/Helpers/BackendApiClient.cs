@@ -390,6 +390,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             //   예) minor 10도 선택 시 canonical 라벨: "헥스40도회전"
             // - legacy 입력("0"|"30")은 add-in에서 canonical로 정규화해 처리
             [DataMember(Name = "manufacturerHexRotation")] public string manufacturerHexRotation { get; set; }
+            // Rhino frontPoint [x,y,z] — tip 폴백만. tip SSOT는 taperGuide.zEnd(=bbox.max.z).
+            [DataMember(Name = "frontPoint")] public double[] frontPoint { get; set; }
             // 유지홈 옵션 ("none"|"deep", legacy "shallow" 허용) —
             // 5axisComposite_A.prc StepIncrement 오버라이드에 사용.
             [DataMember] public string retentionGroove { get; set; }
