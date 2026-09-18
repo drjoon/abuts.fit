@@ -5,6 +5,7 @@
 // - web/frontend/src/pages/admin/support/AdminMailPage.tsx
 // - web/frontend/src/shared/hooks/useAdminCommBadges.ts
 // change-log:
+// - 2026-09-18: 탭 배지 = 공유 useAdminCommBadges unread(채팅·메일 실시간).
 // - 2026-09-06: 채팅·SMS·메일 허브(?tab=chat|sms|mail).
 import { useSearchParams } from "react-router-dom";
 import { AdminChatManagement } from "@/pages/admin/support/AdminChatManagement";

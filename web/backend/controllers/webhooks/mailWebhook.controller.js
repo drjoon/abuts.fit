@@ -2,7 +2,11 @@
 // - web/backend/rules.md
 // - web/backend/app.js
 // - web/backend/server.js
+// - web/backend/services/adminCommBadge.service.js
+// change-log:
+// - 2026-09-18: 인바운드 저장 시 관리자 메일 unread 배지 +1.
 import Mail from "../../models/mail.model.js";
+import { emitMailUnreadBadge } from "../../services/adminCommBadge.service.js";
 
 const toBool = (v) =>
   String(v || "")
@@ -60,6 +64,10 @@ export async function receiveInboundMail(req, res) {
       messageId,
       receivedAt: receivedAt ? new Date(receivedAt) : new Date(),
     });
+
+    if (mail.folder === "inbox" && mail.isRead !== true) {
+      emitMailUnreadBadge(1);
+    }
 
     return res.status(200).json({ success: true, data: mail });
   } catch (error) {

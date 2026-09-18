@@ -163,19 +163,21 @@ export function initializeSocket(server) {
           }
         });
 
-        // 참여 중인 admin 소켓에 채팅 배지 업데이트 이벤트 전송
+        // 참여 중인 admin에게 채팅 배지 업데이트 이벤트 전송
         if (socket.userRole !== "admin") {
+          const notified = new Set();
           for (const s of io.sockets.sockets.values()) {
             if (
               s.userRole === "admin" &&
               s.userId !== socket.userId &&
-              room.participants.some((p) => p.toString() === s.userId)
+              room.participants.some((p) => p.toString() === s.userId) &&
+              !notified.has(String(s.userId))
             ) {
               emitAppEventToUser(s.userId, "comm:badge-update", {
                 key: "chat",
                 delta: 1,
               });
-              break;
+              notified.add(String(s.userId));
             }
           }
         }
@@ -201,7 +203,7 @@ export function initializeSocket(server) {
       try {
         const { roomId, messageIds } = data;
 
-        await Chat.updateMany(
+        const updated = await Chat.updateMany(
           {
             _id: { $in: messageIds },
             roomId,
@@ -222,6 +224,16 @@ export function initializeSocket(server) {
           messageIds,
           readAt: new Date(),
         });
+
+        const modifiedCount = Number(
+          updated?.modifiedCount ?? updated?.nModified ?? 0,
+        );
+        if (modifiedCount > 0 && socket.userRole === "admin") {
+          emitAppEventToUser(socket.userId, "comm:badge-update", {
+            key: "chat",
+            delta: -modifiedCount,
+          });
+        }
       } catch (error) {
         console.error("읽음 처리 오류:", error);
       }

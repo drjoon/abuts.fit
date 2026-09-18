@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-18: HTTP 메시지 전송·읽음 시 관리자 chat unread 배지 증감.
 // - 2026-09-07: chat:message-created 페이로드에 파트너 앵커(실시간 FAB unread용).
 // - 2026-09-07: 기공소↔치과 파트너 DM(의뢰건 무관) — partner-counterparts / partner-room.
 // - 2026-08-26: GET /rooms — 휴지통(deleted|canceled) 의뢰 방은 목록·unread 제외(직접 open은 유지).
@@ -49,6 +50,7 @@ import {
   resolveCallerPartnerChatContext,
 } from "../../utils/partnerChat.util.js";
 import { emitAppEventToUser, emitToUser } from "../../socket.js";
+import { emitAdminCommBadgeToUser } from "../../services/adminCommBadge.service.js";
 
 const __chatPerfCache = new Map();
 const __chatInFlight = new Map();
@@ -1772,6 +1774,9 @@ export async function getChatMessages(req, res) {
             readerUserId: userId,
             readAt: readAt.toISOString(),
           });
+          if (req.user?.role === "admin") {
+            emitAdminCommBadgeToUser(userId, "chat", -modifiedCount);
+          }
         }
       } catch (error) {
         console.error("Error updating chat read state:", error);
@@ -1943,6 +1948,19 @@ export async function sendChatMessage(req, res) {
       relatedLabAnchorId: room.relatedLabAnchorId,
       relatedPracticeAnchorId: room.relatedPracticeAnchorId,
     });
+
+    // 관리자 채널 채팅 unread — HTTP 전송 경로(위젯·어드민 UI) 배지 반영
+    if (userRole !== "admin" && recipientIds.length) {
+      const adminParticipants = await User.find({
+        _id: { $in: recipientIds },
+        role: "admin",
+      })
+        .select("_id")
+        .lean();
+      for (const admin of adminParticipants) {
+        emitAdminCommBadgeToUser(admin._id, "chat", 1);
+      }
+    }
 
     res.status(201).json({
       success: true,

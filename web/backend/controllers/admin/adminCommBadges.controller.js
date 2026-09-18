@@ -6,6 +6,7 @@
 // - web/backend/models/remoteSupport/remoteSupportSession.model.js
 // - web/frontend/src/shared/hooks/useAdminCommBadges.ts
 // change-log:
+// - 2026-09-18: 메일 배지 = inbound 수신함 미읽음만.
 // - 2026-09-06: remoteSupport = 직원 발신 pending 세션 수.
 // - 2026-08-26: 의뢰 배지 = 제조사 준비 큐와 동일(PTX 디자인 미완료·레거시 디자인 mode 제외).
 import Request from "../../models/request.model.js";
@@ -39,8 +40,12 @@ export async function adminGetCommBadges(req, res) {
         // 문의: 처리되지 않은 열린 문의
         BusinessRegistrationInquiry.countDocuments({ status: "open" }),
 
-        // 메일: 수신함의 읽지 않은 메일
-        Mail.countDocuments({ folder: "inbox", isRead: false }),
+        // 메일: 수신함의 읽지 않은 인바운드 메일
+        Mail.countDocuments({
+          folder: "inbox",
+          isRead: false,
+          direction: "inbound",
+        }),
 
         // 채팅: 관리자가 참여 중인 채팅방의 총 미읽음 메시지 수
         (async () => {

@@ -2,7 +2,20 @@
 // - web/backend/rules.md
 // - web/backend/app.js
 // - web/backend/server.js
+// - web/backend/services/adminCommBadge.service.js
+// change-log:
+// - 2026-09-18: Brevo 인바운드·읽음/이동 시 관리자 메일 unread 배지 동기화.
 import Mail from "../../models/mail.model.js";
+import { emitMailUnreadBadge } from "../../services/adminCommBadge.service.js";
+
+function isInboxUnreadMail(mail) {
+  return (
+    mail &&
+    mail.folder === "inbox" &&
+    mail.isRead !== true &&
+    (mail.direction == null || mail.direction === "inbound")
+  );
+}
 
 /**
  * Brevo 인바운드 이메일 webhook 핸들러
@@ -62,6 +75,9 @@ export async function handleInboundEmailWebhook(req, res) {
 
         await email.save();
         savedEmails.push(email._id);
+        if (isInboxUnreadMail(email)) {
+          emitMailUnreadBadge(1);
+        }
 
         console.log(
           `[InboundEmail] Saved email from ${item.From.Address}: ${item.Subject}`,
@@ -234,18 +250,22 @@ export async function adminMarkInboundEmailAsRead(req, res) {
   try {
     const { id } = req.params;
 
+    const prev = await Mail.findById(id);
+    if (!prev) {
+      return res.status(404).json({
+        success: false,
+        message: "Email not found",
+      });
+    }
+    const wasInboxUnread = isInboxUnreadMail(prev);
+
     const email = await Mail.findByIdAndUpdate(
       id,
       { isRead: true, readAt: new Date() },
       { new: true },
     );
 
-    if (!email) {
-      return res.status(404).json({
-        success: false,
-        message: "Email not found",
-      });
-    }
+    if (wasInboxUnread) emitMailUnreadBadge(-1);
 
     res.json({
       success: true,
@@ -269,18 +289,22 @@ export async function adminMarkInboundEmailAsUnread(req, res) {
   try {
     const { id } = req.params;
 
+    const prev = await Mail.findById(id);
+    if (!prev) {
+      return res.status(404).json({
+        success: false,
+        message: "Email not found",
+      });
+    }
+    const wasInboxUnread = isInboxUnreadMail(prev);
+
     const email = await Mail.findByIdAndUpdate(
       id,
       { isRead: false, $unset: { readAt: "" } },
       { new: true },
     );
 
-    if (!email) {
-      return res.status(404).json({
-        success: false,
-        message: "Email not found",
-      });
-    }
+    if (!wasInboxUnread && isInboxUnreadMail(email)) emitMailUnreadBadge(1);
 
     res.json({
       success: true,
@@ -304,18 +328,22 @@ export async function adminMoveInboundEmailToSpam(req, res) {
   try {
     const { id } = req.params;
 
+    const prev = await Mail.findById(id);
+    if (!prev) {
+      return res.status(404).json({
+        success: false,
+        message: "Email not found",
+      });
+    }
+    const wasInboxUnread = isInboxUnreadMail(prev);
+
     const email = await Mail.findByIdAndUpdate(
       id,
       { folder: "spam" },
       { new: true },
     );
 
-    if (!email) {
-      return res.status(404).json({
-        success: false,
-        message: "Email not found",
-      });
-    }
+    if (wasInboxUnread) emitMailUnreadBadge(-1);
 
     res.json({
       success: true,
@@ -339,18 +367,22 @@ export async function adminMoveInboundEmailToTrash(req, res) {
   try {
     const { id } = req.params;
 
+    const prev = await Mail.findById(id);
+    if (!prev) {
+      return res.status(404).json({
+        success: false,
+        message: "Email not found",
+      });
+    }
+    const wasInboxUnread = isInboxUnreadMail(prev);
+
     const email = await Mail.findByIdAndUpdate(
       id,
       { folder: "trash", trashedAt: new Date() },
       { new: true },
     );
 
-    if (!email) {
-      return res.status(404).json({
-        success: false,
-        message: "Email not found",
-      });
-    }
+    if (wasInboxUnread) emitMailUnreadBadge(-1);
 
     res.json({
       success: true,
@@ -374,17 +406,22 @@ export async function adminRestoreInboundEmail(req, res) {
   try {
     const { id } = req.params;
 
+    const prev = await Mail.findById(id);
+    if (!prev) {
+      return res.status(404).json({
+        success: false,
+        message: "Email not found",
+      });
+    }
+
     const email = await Mail.findByIdAndUpdate(
       id,
       { folder: "inbox", $unset: { trashedAt: "" } },
       { new: true },
     );
 
-    if (!email) {
-      return res.status(404).json({
-        success: false,
-        message: "Email not found",
-      });
+    if (!isInboxUnreadMail(prev) && isInboxUnreadMail(email)) {
+      emitMailUnreadBadge(1);
     }
 
     res.json({
@@ -417,6 +454,8 @@ export async function adminDeleteInboundEmail(req, res) {
         message: "Email not found",
       });
     }
+
+    if (isInboxUnreadMail(email)) emitMailUnreadBadge(-1);
 
     res.json({
       success: true,
