@@ -1,8 +1,11 @@
 // related files:
 // - web/frontend/src/features/landing/LandingAboutSection.tsx
+// - web/frontend/src/features/landing/LandingBrandStory.tsx
 // - web/frontend/src/features/landing/LandingPlatformIntro.tsx
 // - web/frontend/src/features/landing/LandingAudienceSection.tsx
 // - web/frontend/src/features/landing/LandingPlatformSection.tsx
+// - web/frontend/src/pages/public/Index.tsx
+// - web/frontend/src/pages/public/PlatformPage.tsx
 // - web/frontend/src/pages/public/components/PublicPageLayout.tsx
 
 /** 랜딩 UI 토큰 — 라이트 톤. 페이지 배경은 PublicPageLayout tone="light" */

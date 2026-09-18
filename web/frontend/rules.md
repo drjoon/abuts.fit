@@ -95,12 +95,16 @@ Notes:
   - `src/features/layout/AccountSwitcher.tsx` (사이드바 계정 팝업 · 같은 사업자 계정 전환)
   - `src/store/useAuthStore.ts` (`switchAccount`)
 - 공개 랜딩 (`/`)
-  - `src/pages/public/Index.tsx` — Platform 홈(검색·의뢰·퀵메뉴) → 제품 둘러보기 → 짧은 About
+  - `src/pages/public/Index.tsx` — 브랜드/스토리 감성 랜딩(첨1)
+  - `src/pages/public/PlatformPage.tsx` — 서비스 홈(첨2) `/platform`: 의뢰·퀵메뉴·제품 둘러보기
+  - `src/pages/public/AboutPage.tsx` — 레거시 `/about` → `/` 리다이렉트
   - `PublicPageLayout` 기본 `tone="light"` (랜딩·도움말·약관·문의 등 공개 안내 공통)
   - 카드/타이포 SSOT: `PUBLIC_CARD_CLASS` · `PUBLIC_PAGE_EYEBROW` · `PUBLIC_PAGE_TITLE` · `PUBLIC_PAGE_SUBTITLE`
   - 카피 SSOT: `src/features/landing/landingTheme.ts`
-  - `LandingPlatformIntro` · `LandingStoreShowcase` · `LandingAboutSection` ·
-    `LandingMobileTabBar` · `LandingPracticeWorkspacePreview` · `Footer`
+  - `LandingBrandStory`(랜딩) · `LandingPlatformIntro` · `LandingStoreShowcase` ·
+    `LandingAboutSection`(`/platform`→`/` 스트립) · `LandingMobileTabBar` ·
+    `LandingPracticeWorkspacePreview` · `Footer`
+  - `/platform` 게스트: 이용 내역 로그인 CTA / 회원: 의뢰·주문·정산 바로가기
   - 영업 피치 패널은 `LandingAudienceSection` + `platformPitchBlocks` 유지
   - `LandingPlatformSection`은 레거시(랜딩 Index에서 미사용)
 - 공용 타입(역할 SSOT)

@@ -1,4 +1,5 @@
 // related files:
+// - web/frontend/src/features/landing/LandingBrandStory.tsx
 // - web/frontend/src/features/landing/LandingAboutSection.tsx
 // - web/frontend/src/pages/practice/components/PracticeRecentTransfersCalendar.tsx
 import { CalendarDays, MessageSquare } from "lucide-react";

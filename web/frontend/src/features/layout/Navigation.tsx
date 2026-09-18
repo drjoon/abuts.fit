@@ -31,14 +31,13 @@ export const Navigation = ({ tone = "dark" }: NavigationProps) => {
   const isLight = tone === "light";
 
   const menuItems: { label: string; href: string }[] = [
-    { label: "제작 의뢰", href: "/signup" },
-    { label: "제품 구매", href: "/#store" },
-    { label: "이용 안내", href: "/help" },
-    { label: "고객센터", href: "/contact" },
+    { label: "어벗츠 소개", href: "/" },
+    { label: "플랫폼과 제품", href: "/platform" },
   ];
 
   useEffect(() => {
-    if (location.pathname !== "/" || !location.hash) return;
+    if (!location.hash) return;
+    if (location.pathname !== "/" && location.pathname !== "/platform") return;
     const id = location.hash.replace(/^#/, "");
     if (!id) return;
     const timer = window.setTimeout(() => {
@@ -53,14 +52,20 @@ export const Navigation = ({ tone = "dark" }: NavigationProps) => {
       navigate(resolveEntryDashboardPath(user));
       return;
     }
-    if (href.startsWith("/#")) {
-      const id = href.slice(2);
-      if (location.pathname !== "/") {
-        navigate({ pathname: "/", hash: `#${id}` });
+    const hashIndex = href.indexOf("#");
+    if (hashIndex >= 0) {
+      const pathname = href.slice(0, hashIndex) || "/";
+      const id = href.slice(hashIndex + 1);
+      if (location.pathname !== pathname) {
+        navigate({ pathname, hash: `#${id}` });
         return;
       }
-      navigate({ pathname: "/", hash: `#${id}` }, { replace: true });
+      navigate({ pathname, hash: `#${id}` }, { replace: true });
       scrollToLandingSection(id);
+      return;
+    }
+    if (href === "/" && location.pathname === "/") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
       return;
     }
     navigate(href);

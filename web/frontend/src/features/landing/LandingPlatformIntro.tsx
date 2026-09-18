@@ -1,5 +1,5 @@
 // related files:
-// - web/frontend/src/pages/public/Index.tsx
+// - web/frontend/src/pages/public/PlatformPage.tsx
 // - web/frontend/src/pages/public/components/PublicPageLayout.tsx
 // - web/frontend/src/features/landing/landingTheme.ts
 import {
@@ -40,7 +40,7 @@ function scrollToId(id: string) {
   window.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
 }
 
-/** 기획 홈: 제작 의뢰 히어로 · 스토어 · 퀵메뉴 · 이용 안내 */
+/** 서비스 홈(`/platform`): 제작 의뢰 히어로 · 스토어 · 퀵메뉴 · 이용 안내 */
 export const LandingPlatformIntro = () => {
   const navigate = useNavigate();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -154,8 +154,17 @@ export const LandingPlatformIntro = () => {
         <div className="grid grid-cols-3 gap-2 sm:grid-cols-3 lg:grid-cols-6 lg:gap-3">
           {landingQuickMenus.map((item) => {
             const Icon = QUICK_ICONS[item.id];
-            const href =
-              item.href === "/signup"
+            const authedHrefById: Record<string, string> = {
+              request: entryPath,
+              progress: "/dashboard/practice-transfers",
+              shipping: "/dashboard/practice-transfers",
+              store: "/dashboard/store",
+              orders: "/dashboard/store/orders",
+              settlement: "/dashboard/credits",
+            };
+            const href = isAuthenticated
+              ? (authedHrefById[item.id] ?? entryPath)
+              : item.href === "/signup"
                 ? startPath
                 : item.href === "/login"
                   ? accountPath
@@ -210,24 +219,61 @@ export const LandingPlatformIntro = () => {
               </Button>
             </div>
           </div>
-          <div
-            className={`${landingTheme.panelSoft} flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5`}
-          >
-            <div>
-              <p className={`font-medium ${landingTheme.headline}`}>
-                이용 내역을 확인하세요
-              </p>
-              <p className={`mt-1 text-sm ${landingTheme.muted}`}>
-                로그인하면 의뢰·주문·정산 내역을 볼 수 있습니다.
-              </p>
-            </div>
-            <Button
-              className={`h-9 shrink-0 px-5 font-semibold ${landingTheme.ctaPrimary}`}
-              onClick={() => navigate(accountPath)}
+          {isAuthenticated ? (
+            <div
+              className={`${landingTheme.panelSoft} flex flex-col gap-3 p-4 sm:p-5`}
             >
-              {isAuthenticated ? "대시보드" : "로그인"}
-            </Button>
-          </div>
+              <div>
+                <p className={`font-medium ${landingTheme.headline}`}>
+                  내 이용 현황
+                </p>
+                <p className={`mt-1 text-sm ${landingTheme.muted}`}>
+                  의뢰·주문·정산을 바로 확인하세요.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  className={`h-9 px-3 ${landingTheme.ctaGhost}`}
+                  onClick={() => navigate("/dashboard/practice-transfers")}
+                >
+                  의뢰 내역
+                </Button>
+                <Button
+                  variant="outline"
+                  className={`h-9 px-3 ${landingTheme.ctaGhost}`}
+                  onClick={() => navigate("/dashboard/store/orders")}
+                >
+                  주문 내역
+                </Button>
+                <Button
+                  className={`h-9 px-4 font-semibold ${landingTheme.ctaPrimary}`}
+                  onClick={() => navigate("/dashboard/credits")}
+                >
+                  정산
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div
+              className={`${landingTheme.panelSoft} flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5`}
+            >
+              <div>
+                <p className={`font-medium ${landingTheme.headline}`}>
+                  이용 내역을 확인하세요
+                </p>
+                <p className={`mt-1 text-sm ${landingTheme.muted}`}>
+                  로그인하면 의뢰·주문·정산 내역을 볼 수 있습니다.
+                </p>
+              </div>
+              <Button
+                className={`h-9 shrink-0 px-5 font-semibold ${landingTheme.ctaPrimary}`}
+                onClick={() => navigate(accountPath)}
+              >
+                로그인
+              </Button>
+            </div>
+          )}
         </div>
       </div>
     </section>

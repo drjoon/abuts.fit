@@ -26,6 +26,8 @@ export const Footer = ({ tone = "dark" }: FooterProps) => {
   const isLight = tone === "light";
 
   const support = [
+    { label: "어벗츠 소개", href: "/" },
+    { label: "플랫폼", href: "/platform" },
     { label: "도움말 센터", href: "/help" },
     { label: "문의하기", href: "/contact" },
     { label: "보안 정책", href: "/security" },

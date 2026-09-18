@@ -1,5 +1,5 @@
 // related files:
-// - web/frontend/src/pages/public/Index.tsx
+// - web/frontend/src/pages/public/PlatformPage.tsx
 // - web/frontend/src/features/landing/LandingPlatformIntro.tsx
 import {
   Home,
@@ -17,7 +17,7 @@ type LandingMobileTabBarProps = {
   onContact?: () => void;
 };
 
-/** 기획 모바일 하단 탭 — 공개 랜딩 전용 */
+/** 모바일 하단 탭 — 서비스 홈(`/platform`) 전용 */
 export function LandingMobileTabBar({ onContact }: LandingMobileTabBarProps) {
   const navigate = useNavigate();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -70,7 +70,17 @@ export function LandingMobileTabBar({ onContact }: LandingMobileTabBarProps) {
       id: "my",
       label: "마이",
       icon: UserRound,
-      onClick: () => (onContact ? onContact() : navigate(accountPath)),
+      onClick: () => {
+        if (isAuthenticated) {
+          navigate(accountPath);
+          return;
+        }
+        if (onContact) {
+          onContact();
+          return;
+        }
+        navigate(accountPath);
+      },
     },
   ];
 

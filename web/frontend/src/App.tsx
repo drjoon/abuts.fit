@@ -191,6 +191,16 @@ const BusinessPage = lazy(() =>
     default: m.BusinessPage,
   })),
 );
+const AboutPage = lazy(() =>
+  import("./pages/public/AboutPage").then((m) => ({
+    default: m.AboutPage,
+  })),
+);
+const PlatformPage = lazy(() =>
+  import("./pages/public/PlatformPage").then((m) => ({
+    default: m.PlatformPage,
+  })),
+);
 const CreditsPage = lazy(() =>
   import("./pages/public/CreditsPage").then((m) => ({
     default: m.CreditsPage,
@@ -564,6 +574,8 @@ const App = () => {
                 <Route path="/cookies" element={<CookiesPage />} />
                 <Route path="/service" element={<ServicePage />} />
                 <Route path="/business" element={<BusinessPage />} />
+                <Route path="/about" element={<AboutPage />} />
+                <Route path="/platform" element={<PlatformPage />} />
                 <Route path="/credits" element={<CreditsPage />} />
                 <Route path="/refund-policy" element={<RefundPolicyPage />} />
                 <Route
