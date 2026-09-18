@@ -79,11 +79,11 @@ export function OfferVisual({
               alt={item.alt}
               className={cn(
                 "w-full object-contain",
-            fill
-              ? "h-full max-h-[70%] object-contain"
-              : tile
-                ? "h-[min(46%,18rem)] sm:h-[min(52%,22rem)]"
-                : "h-[min(52vh,22rem)] sm:h-[min(58vh,28rem)]",
+                fill
+                  ? "h-full max-h-[70%]"
+                  : tile
+                    ? "h-[min(46%,18rem)] sm:h-[min(52%,22rem)]"
+                    : "h-[min(52vh,22rem)] sm:h-[min(58vh,28rem)]",
               )}
             />
             {tile || fill ? null : (

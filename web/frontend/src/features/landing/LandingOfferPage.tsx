@@ -3,7 +3,7 @@
 // - web/frontend/src/features/landing/landingOffers.ts
 // - web/frontend/src/features/landing/OfferVisual.tsx
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import {
   Box,
   ChevronLeft,
@@ -121,16 +121,16 @@ function MediaFrame({
 }
 
 function ProductCards({
-  offer,
+  products,
   onBuy,
 }: {
-  offer: LandingOffer;
+  products: NonNullable<LandingOffer["products"]>;
   onBuy: (buy: OfferBuy) => void;
 }) {
   return (
     <section id="buy" className="scroll-mt-20 bg-[#f3f4f6] px-4 py-24 sm:px-8 sm:py-32 lg:px-12">
       <div className="mx-auto grid max-w-6xl gap-6 md:grid-cols-2 md:gap-8">
-        {offer.products.map((product) => (
+        {products.map((product) => (
           <article
             key={product.name}
             className="flex flex-col overflow-hidden rounded-[2rem] bg-white"
@@ -147,7 +147,6 @@ function ProductCards({
                 {product.price}
               </p>
               <p className={cn(ONE, "mt-1 text-sm text-slate-500")}>{product.priceNote}</p>
-              <p className={cn(ONE, "mt-1 text-sm text-slate-500")}>{product.shipping}</p>
               <Button
                 type="button"
                 className="mt-8 h-12 w-full rounded-full bg-[#2563eb] text-sm font-semibold text-white hover:bg-[#1d4ed8]"
@@ -170,19 +169,61 @@ function ProductCards({
   );
 }
 
+function StoryCards({
+  stories,
+}: {
+  stories: NonNullable<LandingOffer["stories"]>;
+}) {
+  return (
+    <section className="bg-[#f3f4f6] px-4 py-24 sm:px-8 sm:py-32 lg:px-12">
+      <div className="mx-auto grid max-w-6xl gap-6 md:grid-cols-2 md:gap-8">
+        {stories.map((story) => (
+          <article
+            key={story.name}
+            className="flex flex-col overflow-hidden rounded-[2rem] bg-white"
+          >
+            {story.visual ? (
+              <div className="h-64 bg-[#eef1f6] sm:h-80">
+                <OfferVisual visual={story.visual} fill className="h-full min-h-0" />
+              </div>
+            ) : null}
+            <div className="flex flex-1 flex-col px-7 py-8 sm:px-10 sm:py-10">
+              <h2 className={cn(ONE, "text-3xl font-semibold text-slate-900")}>
+                {story.name}
+              </h2>
+              <p className={cn(ONE, "mt-2 text-base text-slate-600")}>{story.line}</p>
+              <ul className="mt-8 space-y-2.5">
+                {story.points.map((point) => (
+                  <li key={point} className={cn(ONE, "text-sm text-slate-700")}>
+                    {point}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function Slideshow({
-  offer,
+  heading,
+  slides,
+  slug,
   reduced,
 }: {
-  offer: LandingOffer;
+  heading: string;
+  slides: NonNullable<LandingOffer["slides"]>;
+  slug: string;
   reduced: boolean;
 }) {
   const [index, setIndex] = useState(0);
-  const count = offer.slides.length;
+  const count = slides.length;
 
   useEffect(() => {
     setIndex(0);
-  }, [offer.slug]);
+  }, [slug]);
 
   useEffect(() => {
     if (reduced || count < 2) return;
@@ -190,9 +231,9 @@ function Slideshow({
       setIndex((current) => (current + 1) % count);
     }, 6500);
     return () => window.clearInterval(id);
-  }, [reduced, count, offer.slug]);
+  }, [reduced, count, slug]);
 
-  const slide = offer.slides[index];
+  const slide = slides[index];
   if (!slide) return null;
 
   const go = (next: number) => {
@@ -203,7 +244,7 @@ function Slideshow({
     <section className="bg-white px-4 py-24 sm:px-8 sm:py-32 lg:px-12" aria-roledescription="carousel">
       <div className="mx-auto max-w-6xl">
         <h2 className={cn(ONE, "text-center text-[clamp(1.75rem,4vw,3rem)] font-semibold text-slate-900")}>
-          한 흐름으로 봅니다.
+          {heading}
         </h2>
         <div className="relative mt-14 overflow-hidden rounded-[2rem] bg-[#e7e9ee]">
           <div className="h-[22rem] sm:h-[28rem]">
@@ -233,7 +274,7 @@ function Slideshow({
           </button>
         </div>
         <div className="mt-6 flex justify-center gap-2">
-          {offer.slides.map((item, dot) => (
+          {slides.map((item, dot) => (
             <button
               key={item.title}
               type="button"
@@ -301,149 +342,154 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
           >
             {offer.line}
           </p>
-          <div className="mt-10 flex flex-wrap items-center justify-center gap-x-10 gap-y-3">
-            {offer.products.map((product) => (
-              <a
-                key={product.name}
-                href="#buy"
-                className={cn(
-                  ONE,
-                  "text-sm font-semibold text-[#1d4ed8] underline-offset-4 hover:underline",
-                )}
-              >
-                {product.name}
-              </a>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="bg-white px-4 py-20 sm:px-8 sm:py-28 lg:px-12">
-        <div className="mx-auto max-w-6xl">
-          <div className="-mx-4 flex snap-x snap-mandatory gap-4 overflow-x-auto px-4 pb-2 lg:mx-0 lg:grid lg:grid-cols-5 lg:gap-5 lg:overflow-visible lg:px-0">
-            {offer.highlights.slice(0, 5).map((item) => {
-              const Icon = ICONS[item.icon];
-              return (
-                <article
-                  key={item.label}
-                  className="w-[13.75rem] shrink-0 snap-start rounded-[1.5rem] bg-[#f4f5f7] px-5 py-8 lg:w-auto"
+          {offer.cta ? (
+            <Button
+              type="button"
+              className="mt-10 h-12 rounded-full bg-[#2563eb] px-8 text-sm font-semibold text-white hover:bg-[#1d4ed8]"
+              onClick={() => {
+                if (offer.cta) onBuy(offer.cta);
+              }}
+            >
+              {offer.cta.label}
+            </Button>
+          ) : null}
+          {offer.products ? (
+            <div className="mt-10 flex flex-wrap items-center justify-center gap-x-10 gap-y-3">
+              {offer.products.map((product) => (
+                <a
+                  key={product.name}
+                  href="#buy"
+                  className={cn(
+                    ONE,
+                    "text-sm font-semibold text-[#1d4ed8] underline-offset-4 hover:underline",
+                  )}
                 >
-                  <span className="flex h-11 w-11 items-center justify-center rounded-full bg-white text-slate-900">
-                    <Icon className="h-5 w-5" aria-hidden />
-                  </span>
-                  <h2 className={cn(ONE, "mt-6 text-lg font-semibold text-slate-900")}>
-                    {item.label}
-                  </h2>
-                  <p className={cn(ONE, "mt-2 text-sm text-slate-600")}>{item.line}</p>
-                </article>
-              );
-            })}
+                  {product.name}
+                </a>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      </section>
+
+      {offer.highlights ? (
+        <section className="bg-white px-4 py-20 sm:px-8 sm:py-28 lg:px-12">
+          <div className="mx-auto max-w-6xl">
+            <div
+              className={cn(
+                "-mx-4 flex snap-x snap-mandatory gap-4 overflow-x-auto px-4 pb-2 lg:mx-0 lg:grid lg:gap-5 lg:overflow-visible lg:px-0",
+                offer.highlights.length >= 5
+                  ? "lg:grid-cols-5"
+                  : "lg:grid-cols-4",
+              )}
+            >
+              {offer.highlights.slice(0, 5).map((item) => {
+                const Icon = ICONS[item.icon];
+                return (
+                  <article
+                    key={item.label}
+                    className="w-[13.75rem] shrink-0 snap-start rounded-[1.5rem] bg-[#f4f5f7] px-5 py-8 lg:w-auto"
+                  >
+                    <span className="flex h-11 w-11 items-center justify-center rounded-full bg-white text-slate-900">
+                      <Icon className="h-5 w-5" aria-hidden />
+                    </span>
+                    <h2 className={cn(ONE, "mt-6 text-lg font-semibold text-slate-900")}>
+                      {item.label}
+                    </h2>
+                    <p className={cn(ONE, "mt-2 text-sm text-slate-600")}>{item.line}</p>
+                  </article>
+                );
+              })}
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      ) : null}
 
-      <section className="bg-white px-4 pb-8 pt-8 sm:px-8 sm:pb-16 sm:pt-12 lg:px-12">
-        <div className="mx-auto max-w-6xl text-center">
-          <h2
-            className={cn(
-              ONE,
-              "text-[clamp(1.75rem,4.2vw,3.25rem)] font-semibold text-slate-900",
-            )}
-          >
-            {offer.scene.title}
-          </h2>
-          <p className={cn(ONE, "mt-4 text-base text-slate-600 sm:text-lg")}>
-            {offer.scene.line}
-          </p>
-          <div className="mt-14 h-[24rem] overflow-hidden rounded-[2rem] sm:mt-16 sm:h-[32rem]">
-            <MediaFrame visual={offer.scene.visual} reduced={reduced} />
+      {offer.scene ? (
+        <section className="bg-white px-4 py-16 sm:px-8 sm:py-24 lg:px-12">
+          <div className="mx-auto max-w-6xl text-center">
+            <h2
+              className={cn(
+                ONE,
+                "text-[clamp(1.75rem,4.2vw,3.25rem)] font-semibold text-slate-900",
+              )}
+            >
+              {offer.scene.title}
+            </h2>
+            <p className={cn(ONE, "mt-4 text-base text-slate-600 sm:text-lg")}>
+              {offer.scene.line}
+            </p>
+            <div className="mt-14 h-[24rem] overflow-hidden rounded-[2rem] sm:mt-16 sm:h-[32rem]">
+              <MediaFrame visual={offer.scene.visual} reduced={reduced} />
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      ) : null}
 
-      <ProductCards offer={offer} onBuy={onBuy} />
-      <Slideshow offer={offer} reduced={reduced} />
+      {offer.products ? (
+        <ProductCards products={offer.products} onBuy={onBuy} />
+      ) : null}
+      {offer.stories ? <StoryCards stories={offer.stories} /> : null}
+      {offer.slides ? (
+        <Slideshow
+          heading={offer.slideHeading ?? "키트도 함께."}
+          slides={offer.slides}
+          slug={offer.slug}
+          reduced={reduced}
+        />
+      ) : null}
 
-      <section className="bg-[#f3f4f6] px-6 py-24 sm:px-10 sm:py-32">
-        <div className="mx-auto max-w-6xl">
-          <h2
-            className={cn(
-              ONE,
-              "text-center text-[clamp(1.75rem,4vw,3rem)] font-semibold text-slate-900",
-            )}
-          >
-            간단히 보는 스펙.
-          </h2>
-          <dl className="mt-16 grid gap-10 sm:grid-cols-2 lg:grid-cols-4">
-            {offer.specs.map((spec) => (
-              <div key={spec.label} className="text-center">
-                <dt className={cn(ONE, "text-sm text-slate-500")}>{spec.label}</dt>
-                <dd className={cn(ONE, "mt-3 text-xl font-semibold text-slate-900")}>
-                  {spec.value}
-                </dd>
-              </div>
-            ))}
-          </dl>
-        </div>
-      </section>
-
-      <section className="bg-white px-4 py-24 sm:px-8 sm:py-32 lg:px-12">
-        <div className="mx-auto max-w-6xl">
-          <h2
-            className={cn(
-              ONE,
-              "text-center text-[clamp(1.75rem,4vw,3rem)] font-semibold text-slate-900",
-            )}
-          >
-            더 알아보기.
-          </h2>
-          <div className="mt-14 grid gap-6 md:grid-cols-2">
-            {offer.learn.map((item) => (
-              <Link
-                key={item.href}
-                to={item.href}
-                className="flex min-h-[16rem] flex-col justify-between rounded-[2rem] bg-[#f4f5f7] px-8 py-10 transition hover:bg-[#eceef2] sm:px-10"
-              >
-                <div>
-                  <h3 className={cn(ONE, "text-3xl font-semibold text-slate-900")}>
-                    {item.label}
-                  </h3>
-                  <p className={cn(ONE, "mt-3 text-base text-slate-600")}>{item.line}</p>
+      {offer.specs ? (
+        <section className="bg-[#f3f4f6] px-6 py-24 sm:px-10 sm:py-32">
+          <div className="mx-auto max-w-6xl">
+            <h2
+              className={cn(
+                ONE,
+                "text-center text-[clamp(1.75rem,4vw,3rem)] font-semibold text-slate-900",
+              )}
+            >
+              간단히 보는 스펙.
+            </h2>
+            <dl className="mt-16 grid gap-10 sm:grid-cols-2 lg:grid-cols-4">
+              {offer.specs.map((spec) => (
+                <div key={spec.label} className="text-center">
+                  <dt className={cn(ONE, "text-sm text-slate-500")}>{spec.label}</dt>
+                  <dd className={cn(ONE, "mt-3 text-xl font-semibold text-slate-900")}>
+                    {spec.value}
+                  </dd>
                 </div>
-                <span className="mt-10 inline-flex items-center gap-1 text-sm font-semibold text-[#1d4ed8]">
-                  알아보기
-                  <ChevronRight className="h-4 w-4" />
-                </span>
-              </Link>
-            ))}
+              ))}
+            </dl>
           </div>
-        </div>
-      </section>
+        </section>
+      ) : null}
 
-      <section className="bg-white px-6 pb-28 sm:px-10">
-        <div className="mx-auto max-w-3xl">
-          <h2
-            className={cn(
-              ONE,
-              "text-center text-[clamp(1.75rem,4vw,3rem)] font-semibold text-slate-900",
-            )}
-          >
-            FAQ
-          </h2>
-          <Accordion type="single" collapsible className="mt-12">
-            {offer.faq.map((item) => (
-              <AccordionItem key={item.q} value={item.q} className="border-slate-200">
-                <AccordionTrigger className="py-5 text-left text-base font-semibold text-slate-900 hover:no-underline">
-                  {item.q}
-                </AccordionTrigger>
-                <AccordionContent className="text-base leading-7 text-slate-600">
-                  {item.a}
-                </AccordionContent>
-              </AccordionItem>
-            ))}
-          </Accordion>
-        </div>
-      </section>
+      {offer.faq ? (
+        <section className="bg-white px-6 py-24 sm:px-10 sm:pb-28">
+          <div className="mx-auto max-w-3xl">
+            <h2
+              className={cn(
+                ONE,
+                "text-center text-[clamp(1.75rem,4vw,3rem)] font-semibold text-slate-900",
+              )}
+            >
+              FAQ
+            </h2>
+            <Accordion type="single" collapsible className="mt-12">
+              {offer.faq.map((item) => (
+                <AccordionItem key={item.q} value={item.q} className="border-slate-200">
+                  <AccordionTrigger className="py-5 text-left text-base font-semibold text-slate-900 hover:no-underline">
+                    {item.q}
+                  </AccordionTrigger>
+                  <AccordionContent className="text-base leading-7 text-slate-600">
+                    {item.a}
+                  </AccordionContent>
+                </AccordionItem>
+              ))}
+            </Accordion>
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 }
