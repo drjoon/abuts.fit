@@ -27,6 +27,7 @@
  * - web/frontend/src/shared/practice/openPracticeTransferChat.ts
  * - web/frontend/src/shared/components/practice/PracticeLabRatingControl.tsx
  * - web/frontend/src/shared/practice/practiceLabRating.ts
+ * - 2026-09-20: 작업 파일 전체 다운로드 — 어벗 디자인·보철물을 zip 하나로.
  * - 2026-09-16: 의뢰 파일 append — S3 병렬 후 낙관 패치·저장 API(기공소 수신과 동일 패턴).
  * - 2026-09-15: 어벗/스캔바디 설정 모달 z-[340] — compose(z-320) 뒤에 가려지던 문제.
  * - 2026-09-14: 모바일 액션(신규·리메이크·임시·휴지) — 채팅형 전체화면·상단 크롬·닫으면 캘린더 메인.
@@ -1379,8 +1380,10 @@ export const PracticeFileTransferPage = ({
     downloadingKeys,
     downloadProgressByKey,
     downloadAllBusy,
+    downloadZipBusy,
     downloadS3File,
     downloadAll,
+    downloadAsZip,
     resetDownloads,
   } = useS3FileDownload(authToken);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -6090,6 +6093,30 @@ export const PracticeFileTransferPage = ({
     },
     [downloadAll, selectedTransferDetailModel],
   );
+
+  const handleDownloadAllWorkFiles = useCallback(async () => {
+    const model = selectedTransferDetailModel;
+    if (!model) return;
+    const toTarget = (file: { s3Key?: string; fileName?: string }) => ({
+      s3Key: String(file.s3Key || "").trim(),
+      fileName: String(file.fileName || "file").trim() || "file",
+      busyKey: String(file.s3Key || "").trim(),
+    });
+    const patient = String(model.patientName || "").trim();
+    await downloadAsZip({
+      zipFileName: patient ? `${patient}_작업파일` : "작업파일",
+      groups: [
+        {
+          folder: "어벗 디자인",
+          files: (model.designFiles || []).map(toTarget),
+        },
+        {
+          folder: "보철물",
+          files: (model.resultFiles || []).map(toTarget),
+        },
+      ],
+    });
+  }, [downloadAsZip, selectedTransferDetailModel]);
 
   const handleConfirmProduction = useCallback(async () => {
     if (!authToken || !selectedTransfer || productionConfirmBusy) return;
@@ -11286,6 +11313,8 @@ export const PracticeFileTransferPage = ({
           downloadingFileKeys={downloadingKeys}
           downloadProgressByKey={downloadProgressByKey}
           downloadAllBusy={downloadAllBusy}
+          downloadAllWorkFilesBusy={downloadZipBusy}
+          onDownloadAllWorkFiles={() => void handleDownloadAllWorkFiles()}
           onDownloadAllFiles={(opts) => void handleDownloadAllTransferFiles(opts)}
           onDownloadTransferFile={(file, opts) =>
             void handleDownloadTransferFile(

@@ -16,6 +16,7 @@
 // - web/frontend/src/shared/files/fileBlobCache.ts
 // - web/frontend/src/shared/files/s3ImageThumb.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-20: 작업 파일 전체 다운로드 — 어벗 디자인·보철물을 zip 하나로.
 // - 2026-09-16: 채팅 헤더 — 1줄=타이틀, 2줄=주문/도착·다음도착일, 경계선, 3줄=액션.
 // - 2026-09-16: 기공소 — 채팅 스크롤 상·하단 액션 CTA 제거. 지르 작업 시작은 헤더(acceptedWorkActions)만.
 // - 2026-09-15: 치식·보철물 차트 — 후속 지르 반영(형태) + 단계별 기공비. 인쇄는 원 임시치아.
@@ -489,6 +490,9 @@ type PracticeTransferDetailChatDialogProps = {
   /** 파일별 다운로드 진행률 0~100 */
   downloadProgressByKey?: Record<string, number>;
   downloadAllBusy?: boolean;
+  /** 작업 파일(어벗 디자인·보철물) zip 전체 다운로드 */
+  downloadAllWorkFilesBusy?: boolean;
+  onDownloadAllWorkFiles?: () => void | Promise<void>;
   onDownloadAllFiles: (opts?: {
     dcmFormat?: DcmDownloadFormat;
   }) => void | Promise<void>;
@@ -699,6 +703,8 @@ export function PracticeTransferDetailChatDialog({
   downloadingFileKeys = [],
   downloadProgressByKey = {},
   downloadAllBusy = false,
+  downloadAllWorkFilesBusy = false,
+  onDownloadAllWorkFiles,
   onDownloadAllFiles,
   onDownloadTransferFile,
   acceptBusy = false,
@@ -1759,6 +1765,7 @@ export function PracticeTransferDetailChatDialog({
       const busyKey = s3DownloadBusyKey(file);
       const isBusy =
         downloadAllBusy ||
+        downloadAllWorkFilesBusy ||
         (busyKey ? downloadingFileKeys.includes(busyKey) : false);
       if (isBusy) return;
 
@@ -1771,6 +1778,7 @@ export function PracticeTransferDetailChatDialog({
     },
     [
       downloadAllBusy,
+      downloadAllWorkFilesBusy,
       downloadingFileKeys,
       onDownloadTransferFile,
       openFilePreview,
@@ -1877,7 +1885,9 @@ export function PracticeTransferDetailChatDialog({
   const previewBusyKey = previewMeta ? s3DownloadBusyKey(previewMeta) : "";
   const previewDownloadBusy =
     Boolean(previewBusyKey) &&
-    (downloadAllBusy || downloadingFileKeys.includes(previewBusyKey));
+    (downloadAllBusy ||
+      downloadAllWorkFilesBusy ||
+      downloadingFileKeys.includes(previewBusyKey));
   const previewCount = previewableFiles.length;
   const canPreviewPrev = previewIndex > 0;
   const canPreviewNext =
@@ -2423,6 +2433,7 @@ export function PracticeTransferDetailChatDialog({
     const busyKey = String(file.s3Key || file.id || "").trim();
     const isBusy =
       downloadAllBusy ||
+      downloadAllWorkFilesBusy ||
       (busyKey ? downloadingFileKeys.includes(busyKey) : false);
     const isRemoving =
       Boolean(busyKey) && removingRequestFileKeys.includes(busyKey);
@@ -3047,7 +3058,9 @@ export function PracticeTransferDetailChatDialog({
                               variant="outline"
                               size="sm"
                               disabled={
-                                downloadAllBusy || requestFilesDownloadLocked
+                                downloadAllBusy ||
+                                downloadAllWorkFilesBusy ||
+                                requestFilesDownloadLocked
                               }
                             >
                               {downloadAllBusy ? "다운로드 중..." : "전체 다운로드"}
@@ -3078,7 +3091,9 @@ export function PracticeTransferDetailChatDialog({
                           size="sm"
                           onClick={() => void onDownloadAllFiles()}
                           disabled={
-                            downloadAllBusy || requestFilesDownloadLocked
+                            downloadAllBusy ||
+                            downloadAllWorkFilesBusy ||
+                            requestFilesDownloadLocked
                           }
                         >
                           {downloadAllBusy ? "다운로드 중..." : "전체 다운로드"}
@@ -3171,9 +3186,25 @@ export function PracticeTransferDetailChatDialog({
 
               {showWorkFilesSection ? (
                 <section className="space-y-3 border-t border-border/70 pt-4">
-                  <h3 className="text-[13px] font-semibold text-foreground">
-                    {workFilesLabel}
-                  </h3>
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="text-[13px] font-semibold text-foreground">
+                      {workFilesLabel}
+                    </h3>
+                    {onDownloadAllWorkFiles ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="shrink-0"
+                        onClick={() => void onDownloadAllWorkFiles()}
+                        disabled={downloadAllWorkFilesBusy || downloadAllBusy}
+                      >
+                        {downloadAllWorkFilesBusy
+                          ? "다운로드 중..."
+                          : "전체 다운로드"}
+                      </Button>
+                    ) : null}
+                  </div>
                   {designFileList.length > 0 ? (
                     <div className="space-y-1.5">
                       <p className="text-[13px] text-muted-foreground">
