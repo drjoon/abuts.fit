@@ -75,7 +75,7 @@ function OfferSlideshow({
             key={shot.src}
             className={cn(
               "flex h-full min-w-full items-center justify-center p-3 sm:p-5",
-              tile && "pb-28 sm:pb-32",
+              tile && "pb-24 sm:pb-28",
             )}
           >
             <img
@@ -107,7 +107,7 @@ function OfferSlideshow({
           </button>
           <div className={cn(
             "absolute left-0 right-0 z-20 flex justify-center gap-1.5",
-            tile ? "bottom-28 sm:bottom-32" : "bottom-4",
+            tile ? "bottom-24 sm:bottom-28" : "bottom-4",
           )}>
             {shots.map((shot, i) => (
               <button
@@ -148,7 +148,7 @@ export function OfferVisual({
         className={cn(
           "flex h-full w-full flex-col items-center bg-[#e7e9ee] px-8 text-center",
           fill ? "min-h-0 justify-center" : "min-h-[16rem]",
-          tile ? "justify-start pt-10 sm:pt-14" : "justify-center",
+          tile ? "justify-start pt-8 sm:pt-10" : "justify-center",
           className,
         )}
       >
@@ -172,7 +172,7 @@ export function OfferVisual({
         className={cn(
           "flex h-full w-full bg-[#eef1f6]",
           tile
-            ? "items-start p-4 pb-36 sm:p-6 sm:pb-40"
+            ? "items-start p-4 pb-28 sm:p-6 sm:pb-32"
             : fill
               ? "min-h-0 items-center p-4 sm:p-6"
               : "min-h-[16rem] items-center p-4 sm:p-8",
@@ -190,7 +190,7 @@ export function OfferVisual({
         className={cn(
           "grid h-full w-full grid-cols-2 gap-3 bg-[#f3f4f6]",
           tile
-            ? "content-start items-start p-4 pb-40 sm:gap-6 sm:p-8 sm:pb-44"
+            ? "content-start items-start p-4 pb-28 sm:gap-6 sm:p-8 sm:pb-32"
             : fill
               ? "min-h-0 content-center items-center p-6 sm:gap-6 sm:p-10"
               : "min-h-[16rem] p-4 sm:gap-4 sm:p-8",
@@ -229,7 +229,7 @@ export function OfferVisual({
     <div
       className={cn(
         "flex h-full w-full items-center justify-center bg-[#f3f4f6]",
-        tile ? "p-4 pb-40 sm:p-8 sm:pb-44" : fill ? "min-h-0 p-6 sm:p-10" : "min-h-[16rem] p-4 sm:p-8",
+        tile ? "p-4 pb-28 sm:p-8 sm:pb-32" : fill ? "min-h-0 p-5 sm:p-8" : "min-h-[16rem] p-4 sm:p-8",
         className,
       )}
     >

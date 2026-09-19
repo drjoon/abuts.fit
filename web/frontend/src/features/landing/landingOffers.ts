@@ -11,6 +11,8 @@ import {
   LANDING_CASE_ABUTMENT,
   LANDING_CASE_HEALING,
   LANDING_CASE_KIT,
+  LANDING_CUSTOM_ABUTMENT,
+  LANDING_CUSTOM_TRACKING,
   LANDING_PLATFORM_BOARD,
   LANDING_PLATFORM_LEDGER,
   LANDING_PLATFORM_REQUEST,
@@ -96,6 +98,8 @@ export type LandingOffer = {
   lead: string;
   hero: "video" | "tile";
   tile: OfferVisual;
+  /** 오퍼 히어로. 없으면 tile. 홈 타일과 겹치지 않을 때. */
+  pageVisual?: OfferVisual;
   /** 히어로 아래 시작 버튼. 상품 카드가 있으면 쓰지 않는다. */
   cta?: OfferBuy;
   highlights?: OfferHighlight[];
@@ -327,6 +331,14 @@ export const landingOffers: LandingOffer[] = [
     lead: "건마다 같은 공정입니다.",
     hero: "tile",
     tile: {
+      kind: "slideshow",
+      shots: [
+        { src: LANDING_CUSTOM_ABUTMENT, alt: "커스텀 어벗 실물" },
+        { src: LANDING_CAD_PREVIEW, alt: "커스텀 어벗 CAD" },
+        { src: LANDING_CUSTOM_TRACKING, alt: "CNC 추적관리" },
+      ],
+    },
+    pageVisual: {
       kind: "photo",
       src: LANDING_CAD_PREVIEW,
       alt: "커스텀 어벗 CAD",
@@ -337,8 +349,8 @@ export const landingOffers: LandingOffer[] = [
       line: "올리는 순간 CNC가 시작.",
       visual: {
         kind: "photo",
-        src: LANDING_CAD_PREVIEW,
-        alt: "커스텀 어벗 CAD",
+        src: LANDING_CUSTOM_ABUTMENT,
+        alt: "커스텀 어벗 실물",
       },
     },
     stories: [
@@ -346,17 +358,16 @@ export const landingOffers: LandingOffer[] = [
         name: "같은 품질",
         line: "건마다 같은 공정입니다.",
         points: ["스캔이 올라오면 시작", "애크로덴트 CNC", "품질이 균일합니다"],
-        visual: {
-          kind: "photo",
-          src: LANDING_CAD_PREVIEW,
-          alt: "커스텀 어벗 CAD",
-        },
       },
       {
         name: "기공소로 도착",
         line: "보철과 함께 옵니다.",
         points: ["치과로 바로 가지 않음", "주문한 기공소가 받음", "보철 기공으로 이어짐"],
-        visual: { kind: "workspace" },
+        visual: {
+          kind: "photo",
+          src: LANDING_CUSTOM_TRACKING,
+          alt: "CNC 추적관리",
+        },
       },
     ],
     faq: [

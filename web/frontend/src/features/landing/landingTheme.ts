@@ -219,6 +219,16 @@ export const landingAudiences = [
 /** 랜딩·오퍼 본문. 넓은 화면에서는 가운데로 모은다. */
 export const landingContent = "mx-auto w-full max-w-6xl px-5 sm:px-8 lg:px-10";
 
+/** 섹션 상하 여백 — 오퍼·홈 공통 */
+export const landingSectionY = {
+  band: "pt-14 pb-16 sm:pt-16 sm:pb-20",
+  bandTight: "pt-10 pb-14 sm:pt-12 sm:pb-16",
+  bandLoose: "pt-14 pb-16 sm:pt-20 sm:pb-20",
+  storyGap: "gap-14 sm:gap-20",
+  media: "h-[20rem] sm:h-[24rem] lg:h-[28rem]",
+  sceneMin: "min-h-[56vh] sm:min-h-[62vh]",
+} as const;
+
 /** `/` 히어로. 네 메뉴 카피는 `landingOffers.ts`. */
 export const landingHome = {
   heroTitle: "심플웨이를 시작으로.",

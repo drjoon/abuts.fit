@@ -61,7 +61,8 @@ export const Footer = ({ tone = "dark" }: FooterProps) => {
       </div>
       <div
         className={cn(
-          "mx-auto w-full py-16",
+          "mx-auto w-full",
+          landing ? "py-12 sm:py-14" : "py-16",
           landing ? landingContent : "container px-6 sm:px-10 lg:px-16",
         )}
       >

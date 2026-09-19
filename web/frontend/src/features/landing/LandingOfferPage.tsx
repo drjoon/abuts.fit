@@ -30,7 +30,7 @@ import {
 import { useAuthStore } from "@/store/useAuthStore";
 import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath";
 import { cn } from "@/shared/ui/cn";
-import { landingContent } from "./landingTheme";
+import { landingContent, landingSectionY } from "./landingTheme";
 import { LANDING_HERO_POSTER, LANDING_HERO_VIDEO } from "./landingAssets";
 import { OfferVisual } from "./OfferVisual";
 import {
@@ -128,36 +128,36 @@ function ProductCards({
   onBuy: (buy: OfferBuy) => void;
 }) {
   return (
-    <section id="buy" className="scroll-mt-20 bg-[#f3f4f6] pt-16 pb-24 sm:pt-20 sm:pb-32">
-      <div className={cn(landingContent, "grid gap-8 md:grid-cols-2 lg:gap-10")}>
+    <section id="buy" className={cn("scroll-mt-20 bg-[#f3f4f6]", landingSectionY.band)}>
+      <div className={cn(landingContent, "grid gap-6 md:grid-cols-2 lg:gap-8")}>
         {products.map((product, index) => (
           <article
             key={product.name}
             className={cn(
               "flex flex-col overflow-hidden rounded-[2rem] bg-white",
-              index === 0 && "md:mt-10",
+              index === 0 && "md:mt-6",
             )}
           >
-            <div className="h-72 bg-[#eef1f6] sm:h-80">
+            <div className="h-64 bg-[#eef1f6] sm:h-72">
               <OfferVisual visual={product.visual} fill className="h-full min-h-0" />
             </div>
-            <div className="flex flex-1 flex-col px-7 pt-8 pb-10 sm:px-10 sm:pt-10 sm:pb-12">
+            <div className="flex flex-1 flex-col px-7 pt-6 pb-8 sm:px-10 sm:pt-8 sm:pb-10">
               <h2 className={cn(ONE, "text-4xl font-semibold text-slate-900")}>
                 {product.name}
               </h2>
               <p className={cn(ONE, "mt-2 text-xl text-slate-600")}>{product.line}</p>
-              <p className={cn(ONE, "mt-10 text-4xl font-semibold tabular-nums text-slate-900")}>
+              <p className={cn(ONE, "mt-8 text-4xl font-semibold tabular-nums text-slate-900")}>
                 {product.price}
               </p>
               <p className={cn(ONE, "mt-1 text-base text-slate-500")}>{product.priceNote}</p>
               <Button
                 type="button"
-                className="mt-8 h-12 w-full rounded-full bg-[#2563eb] text-base font-semibold text-white hover:bg-[#1d4ed8]"
+                className="mt-6 h-12 w-full rounded-full bg-[#2563eb] text-base font-semibold text-white hover:bg-[#1d4ed8]"
                 onClick={() => onBuy(product.buy)}
               >
                 {product.buy.label}
               </Button>
-              <ul className="mt-10 space-y-3 border-t border-slate-100 pt-8">
+              <ul className="mt-8 space-y-3 border-t border-slate-100 pt-6">
                 {product.specs.map((spec) => (
                   <li key={spec} className={cn(ONE, "text-lg text-slate-800")}>
                     {spec}
@@ -174,49 +174,39 @@ function ProductCards({
 
 function StoryRows({
   stories,
-  lead,
 }: {
   stories: NonNullable<LandingOffer["stories"]>;
-  lead?: string;
 }) {
   return (
-    <section className="bg-[#f3f4f6] pt-8 pb-16 sm:pt-12 sm:pb-24">
-      <div className={cn(landingContent, "flex flex-col gap-20 sm:gap-28")}>
-        {lead ? (
-          <h2
-            className={cn(
-              ONE,
-              "max-w-3xl text-[clamp(2rem,4.5vw,3.5rem)] font-semibold leading-[1.1] text-slate-900",
-            )}
-          >
-            {lead}
-          </h2>
-        ) : null}
+    <section className={cn("bg-[#f3f4f6]", landingSectionY.bandTight)}>
+      <div className={landingContent}>
+        <div className={cn("flex flex-col", landingSectionY.storyGap)}>
         {stories.map((story, index) => (
           <article
             key={story.name}
-            className="grid items-center gap-8 lg:grid-cols-2 lg:gap-16"
+            className="grid items-center gap-6 lg:grid-cols-2 lg:gap-12"
           >
             {story.visual ? (
               <div
                 className={cn(
-                  "h-[22rem] overflow-hidden rounded-[1.75rem] bg-[#e7e9ee] sm:h-[28rem] lg:h-[32rem]",
+                  "overflow-hidden rounded-[1.75rem] bg-[#e7e9ee]",
+                  landingSectionY.media,
                   index % 2 === 1 && "lg:order-2",
                 )}
               >
                 <OfferVisual visual={story.visual} fill className="h-full min-h-0" />
               </div>
             ) : null}
-            <div className={cn(index % 2 === 1 ? "lg:pr-6" : "lg:pl-4 lg:pt-10")}>
-              <h3 className={cn(ONE, "text-4xl font-semibold text-slate-900 sm:text-5xl")}>
+            <div className={cn(story.visual ? (index % 2 === 1 ? "lg:pr-4" : "lg:pl-2") : "lg:col-span-2 max-w-2xl")}>
+              <h3 className={cn(ONE, "text-3xl font-semibold text-slate-900 sm:text-4xl")}>
                 {story.name}
               </h3>
-              <p className={cn(ONE, "mt-3 text-xl text-slate-600 sm:text-2xl")}>
+              <p className={cn(ONE, "mt-2 text-lg text-slate-600 sm:text-xl")}>
                 {story.line}
               </p>
-              <ul className="mt-10 space-y-3">
+              <ul className="mt-6 space-y-2.5">
                 {story.points.map((point) => (
-                  <li key={point} className={cn(ONE, "text-xl text-slate-800 sm:text-2xl")}>
+                  <li key={point} className={cn(ONE, "text-lg text-slate-800 sm:text-xl")}>
                     {point}
                   </li>
                 ))}
@@ -224,6 +214,7 @@ function StoryRows({
             </div>
           </article>
         ))}
+        </div>
       </div>
     </section>
   );
@@ -263,20 +254,20 @@ function Slideshow({
   };
 
   return (
-    <section className="bg-white pt-16 pb-20 sm:pt-24 sm:pb-28" aria-roledescription="carousel">
+    <section className={cn("bg-white", landingSectionY.bandLoose)} aria-roledescription="carousel">
       <div className={landingContent}>
         <h2 className={cn(ONE, "max-w-xl text-[clamp(2rem,4.2vw,3.25rem)] font-semibold leading-tight text-slate-900")}>
           {heading}
         </h2>
-        <div className="relative mt-14 overflow-hidden rounded-[2rem] bg-[#e7e9ee]">
-          <div className="h-[22rem] sm:h-[28rem]">
+        <div className="relative mt-8 overflow-hidden rounded-[2rem] bg-[#e7e9ee] sm:mt-10">
+          <div className={landingSectionY.media}>
             <MediaFrame visual={slide.visual} reduced={reduced} />
           </div>
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/35 to-transparent px-6 pb-8 pt-24 sm:px-10">
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/35 to-transparent px-6 pb-6 pt-20 sm:px-10 sm:pb-8">
             <p className={cn(ONE, "text-2xl font-semibold text-white sm:text-4xl")}>
               {slide.title}
             </p>
-            <p className={cn(ONE, "mt-3 text-lg text-white/90 sm:text-2xl")}>{slide.line}</p>
+            <p className={cn(ONE, "mt-2 text-lg text-white/90 sm:text-xl")}>{slide.line}</p>
           </div>
           <button
             type="button"
@@ -295,7 +286,7 @@ function Slideshow({
             <ChevronRight className="h-5 w-5" />
           </button>
         </div>
-        <div className="mt-6 flex justify-center gap-2">
+        <div className="mt-5 flex justify-center gap-2">
           {slides.map((item, dot) => (
             <button
               key={item.title}
@@ -366,7 +357,7 @@ function HeroCopy({
         <Button
           type="button"
           className={cn(
-            "mt-10 h-12 rounded-full px-8 text-base font-semibold",
+            "mt-7 h-12 rounded-full px-8 text-base font-semibold",
             onDark
               ? "bg-white text-slate-900 hover:bg-white/90"
               : "bg-[#2563eb] text-white hover:bg-[#1d4ed8]",
@@ -417,6 +408,8 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
     navigate(isAuthenticated ? resolveEntryDashboardPath(user) : "/signup");
   };
 
+  const heroVisual = offer.pageVisual ?? offer.tile;
+
   return (
     <div className="bg-white text-slate-900">
       {offer.hero === "video" ? (
@@ -425,14 +418,14 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
           <div className="relative min-h-[calc(100svh-3.5rem)] sm:min-h-[calc(100svh-4rem)]">
             <div className="absolute inset-0">
               <MediaFrame
-                visual={offer.tile}
+                visual={heroVisual}
                 video
                 reduced={reduced}
                 className="h-full"
               />
             </div>
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-black/25" />
-            <div className={cn(landingContent, "relative flex min-h-[calc(100svh-3.5rem)] items-end pb-14 pt-10 sm:min-h-[calc(100svh-4rem)] sm:pb-20")}>
+            <div className={cn(landingContent, "relative flex min-h-[calc(100svh-3.5rem)] items-end pb-10 pt-8 sm:min-h-[calc(100svh-4rem)] sm:pb-14")}>
               <HeroCopy offer={offer} onBuy={onBuy} onDark />
             </div>
           </div>
@@ -440,16 +433,16 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
       ) : (
         <section className="bg-[#f4f5f7]">
           <div className="h-14 sm:h-16" aria-hidden />
-          <div className={cn(landingContent, "grid items-center lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)] lg:gap-10")}>
-            <div className="flex flex-col pt-5 pb-8 lg:py-8">
+          <div className={cn(landingContent, "grid items-center lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)] lg:gap-8")}>
+            <div className="flex flex-col pt-4 pb-6 lg:py-6">
               <HeroCopy offer={offer} onBuy={onBuy} />
             </div>
-            <div className="pb-3 lg:py-2">
-              <div className="h-[min(62vh,38rem)] w-full overflow-hidden rounded-[1.75rem] bg-[#e7e9ee] lg:h-[min(74vh,44rem)] lg:rounded-[2rem]">
+            <div className="pb-4 lg:py-4">
+              <div className="h-[min(56vh,34rem)] w-full overflow-hidden rounded-[1.75rem] bg-[#e7e9ee] lg:h-[min(64vh,40rem)] lg:rounded-[2rem]">
                 <MediaFrame
-                  visual={offer.tile}
+                  visual={heroVisual}
                   reduced={reduced}
-                  drift={offer.tile.kind !== "slideshow"}
+                  drift={heroVisual.kind !== "slideshow"}
                 />
               </div>
             </div>
@@ -458,7 +451,7 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
       )}
 
       {offer.highlights ? (
-        <section className="bg-white pt-16 pb-8 sm:pt-28 sm:pb-12">
+        <section className={cn("bg-white", landingSectionY.bandTight)}>
           <div className={landingContent}>
             <h2
               className={cn(
@@ -468,7 +461,7 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
             >
               {offer.lead}
             </h2>
-            <div className="mt-10 grid gap-4 sm:mt-14 sm:grid-cols-2 lg:grid-cols-6 lg:gap-5">
+            <div className="mt-8 grid gap-3 sm:mt-10 sm:grid-cols-2 lg:grid-cols-6 lg:gap-4">
               {offer.highlights.slice(0, 5).map((item, index) => {
                 const Icon = ICONS[item.icon];
                 const featured = index === 0;
@@ -477,18 +470,18 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
                     key={item.label}
                     className={cn(
                       "rounded-[1.75rem] bg-[#f4f5f7]",
-                      featured ? "px-7 py-10 sm:col-span-2 sm:px-9 sm:py-14" : "px-6 py-8",
+                      featured ? "px-6 py-8 sm:col-span-2 sm:px-8 sm:py-10" : "px-5 py-6",
                       highlightSpan(index, offer.highlights?.length ?? 0),
                     )}
                   >
-                    <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white text-slate-900">
-                      <Icon className={featured ? "h-6 w-6" : "h-5 w-5"} aria-hidden />
+                    <span className="flex h-11 w-11 items-center justify-center rounded-full bg-white text-slate-900">
+                      <Icon className={featured ? "h-5 w-5" : "h-4 w-4"} aria-hidden />
                     </span>
                     <h3
                       className={cn(
                         ONE,
-                        "mt-6 font-semibold text-slate-900",
-                        featured ? "text-3xl sm:text-4xl" : "text-2xl",
+                        "mt-4 font-semibold text-slate-900",
+                        featured ? "text-2xl sm:text-3xl" : "text-xl",
                       )}
                     >
                       {item.label}
@@ -497,8 +490,8 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
                       className={cn(
                         ONE,
                         featured
-                          ? "mt-3 text-xl text-slate-700"
-                          : "mt-2 text-lg text-slate-600",
+                          ? "mt-2 text-lg text-slate-700"
+                          : "mt-1.5 text-base text-slate-600",
                       )}
                     >
                       {item.line}
@@ -512,12 +505,12 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
       ) : null}
 
       {offer.scene ? (
-        <section className="relative min-h-[70vh] bg-[#e7e9ee]">
+        <section className={cn("relative bg-[#e7e9ee]", landingSectionY.sceneMin)}>
           <div className="absolute inset-0">
             <MediaFrame visual={offer.scene.visual} reduced={reduced} />
           </div>
           <div className="absolute inset-0 bg-gradient-to-r from-black/75 via-black/35 to-transparent" />
-          <div className="relative flex min-h-[70vh] items-end pb-12 sm:pb-16">
+          <div className={cn("relative flex items-end pb-10 sm:pb-12", landingSectionY.sceneMin)}>
             <div className={landingContent}>
             <div className="max-w-xl">
               <h2
@@ -528,7 +521,7 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
               >
                 {offer.scene.title}
               </h2>
-              <p className={cn(ONE, "mt-4 text-xl text-white/90 sm:text-2xl")}>
+              <p className={cn(ONE, "mt-3 text-xl text-white/90 sm:text-2xl")}>
                 {offer.scene.line}
               </p>
             </div>
@@ -541,10 +534,7 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
         <ProductCards products={offer.products} onBuy={onBuy} />
       ) : null}
       {offer.stories ? (
-        <StoryRows
-          stories={offer.stories}
-          lead={offer.highlights ? undefined : offer.lead}
-        />
+        <StoryRows stories={offer.stories} />
       ) : null}
       {offer.slides ? (
         <Slideshow
@@ -556,7 +546,7 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
       ) : null}
 
       {offer.specs ? (
-        <section className="bg-[#f3f4f6] pt-16 pb-24 sm:pt-20 sm:pb-32">
+        <section className={cn("bg-[#f3f4f6]", landingSectionY.band)}>
           <div className={landingContent}>
             <h2
               className={cn(
@@ -566,11 +556,11 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
             >
               간단히 보는 스펙.
             </h2>
-            <dl className="mt-12 grid gap-x-8 gap-y-10 sm:grid-cols-2 lg:mt-16 lg:grid-cols-4">
+            <dl className="mt-8 grid gap-x-8 gap-y-8 sm:grid-cols-2 lg:mt-10 lg:grid-cols-4">
               {offer.specs.map((spec, index) => (
-                <div key={spec.label} className={cn(index === 0 && "lg:pt-2")}>
+                <div key={spec.label} className={cn(index === 0 && "lg:pt-1")}>
                   <dt className={cn(ONE, "text-base text-slate-500")}>{spec.label}</dt>
-                  <dd className={cn(ONE, "mt-2 text-2xl font-semibold text-slate-900")}>
+                  <dd className={cn(ONE, "mt-1.5 text-2xl font-semibold text-slate-900")}>
                     {spec.value}
                   </dd>
                 </div>
@@ -581,9 +571,9 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
       ) : null}
 
       {offer.faq ? (
-        <section className="bg-white pt-20 pb-16 sm:pt-32 sm:pb-24">
-          <div className={cn(landingContent, "grid gap-8 lg:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)] lg:gap-16")}>
-            <div className="lg:pt-2">
+        <section className={cn("bg-white", landingSectionY.bandLoose)}>
+          <div className={cn(landingContent, "grid gap-6 lg:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)] lg:gap-12")}>
+            <div>
               <h2
                 className={cn(
                   ONE,
@@ -592,17 +582,17 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
               >
                 FAQ
               </h2>
-              <p className="mt-4 max-w-xs text-lg leading-snug text-slate-600">
+              <p className="mt-3 max-w-xs text-lg leading-snug text-slate-600">
                 {offer.navLabel}에서 먼저 묻는 것만.
               </p>
             </div>
             <Accordion type="single" collapsible>
               {offer.faq.map((item) => (
                 <AccordionItem key={item.q} value={item.q} className="border-slate-200">
-                  <AccordionTrigger className="py-6 text-left text-lg font-semibold text-slate-900 hover:no-underline sm:text-xl">
+                  <AccordionTrigger className="py-5 text-left text-lg font-semibold text-slate-900 hover:no-underline sm:text-xl">
                     {item.q}
                   </AccordionTrigger>
-                  <AccordionContent className="pb-6 text-lg leading-8 text-slate-600">
+                  <AccordionContent className="pb-5 text-lg leading-8 text-slate-600">
                     {item.a}
                   </AccordionContent>
                 </AccordionItem>
