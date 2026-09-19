@@ -8,7 +8,7 @@
 // - web/backend/services/practiceTransferBilling.service.js
 // - web/backend/models/businessAnchor.model.js
 // - web/backend/services/requestCreditHold.service.js
-// - 2026-09-06: REFUND(비제조사 취소) 표시·기간 소비 상계. 환불된 HOLD는 적립 보류 미러 제외.
+// - 2026-09-20: CA 디자인 STL 미업로드·생산비 미지급 PTX는 적립 보류 미러에서 제외.
 // - 2026-09-05: 정산 적립 집계 — PRACTICE_TRANSFER_ESCROW_RELEASE(+LAB_SETTLEMENT_CREDIT) 포함. 내역 행 타입과 동일.
 // - 2026-09-02: 적립 보류 미러 — deleted/canceled 제외 + HOLD 저널 없으면 스킵(치과 취소 후 heldAt 잔여 방어).
 // - 2026-08-31: 적립 보류 미러 — workCanceledAt 수락 취소 건 제외.
@@ -1420,6 +1420,7 @@ export async function aggregateRequestorPeriodLedgerSummary({
   includePendingLabSettlement = false,
   usageScope = "all",
   practiceDemoMode = false,
+  excludeRefIds = null,
 }) {
   const scope = parseCreditUsageScope(usageScope);
   const match = {
@@ -1543,6 +1544,15 @@ export async function aggregateRequestorPeriodLedgerSummary({
     },
   ]);
 
+  const excludedRefs =
+    excludeRefIds instanceof Set
+      ? excludeRefIds
+      : new Set(
+          (Array.isArray(excludeRefIds) ? excludeRefIds : [])
+            .map((id) => String(id || "").trim())
+            .filter(Boolean),
+        );
+
   const settlementPtxIds = [];
   for (const row of rows) {
     const eventType = String(row?.eventType || "");
@@ -1562,6 +1572,14 @@ export async function aggregateRequestorPeriodLedgerSummary({
     const accountCode = String(row?.accountCode || "");
     const amount = Number(row?.amount || 0);
     const refId = row?.refId ? String(row.refId) : "";
+    const refType = String(row?.refType || "").trim().toUpperCase();
+    if (
+      excludedRefs.size &&
+      refType === "PRACTICE_TRANSFER" &&
+      excludedRefs.has(refId)
+    ) {
+      continue;
+    }
     const isSettlementEarn = isLabSettlementEarnEvent({
       eventType,
       accountCode,
@@ -1752,17 +1770,31 @@ export async function listPendingLabSettlementLedgerRows({
       transferId: 1,
       practiceBusinessAnchorId: 1,
       billing: 1,
+      toothWorks: 1,
       createdAt: 1,
+      "production.designFiles": 1,
+      "production.designFileCount": 1,
+      "production.relatedRequestIds": 1,
     })
     .sort({ "billing.heldAt": -1 })
     .limit(Math.max(1, Math.min(500, Number(limit) || 200)))
     .lean();
   if (!transfers.length) return [];
 
-  const transferIds = transfers.map((t) => t._id);
+  const { selectPracticeTransferIdsBlockedFromSettlement } = await import(
+    "../../services/practiceTransferBilling.service.js"
+  );
+  const blockedFromSettlement =
+    await selectPracticeTransferIdsBlockedFromSettlement(transfers);
+  const visibleTransfers = transfers.filter(
+    (row) => !blockedFromSettlement.has(String(row?._id || "")),
+  );
+  if (!visibleTransfers.length) return [];
+
+  const transferIds = visibleTransfers.map((t) => t._id);
   const practiceIds = [
     ...new Set(
-      transfers
+      visibleTransfers
         .map((t) => String(t.practiceBusinessAnchorId || ""))
         .filter(Boolean),
     ),
@@ -1885,7 +1917,7 @@ export async function listPendingLabSettlementLedgerRows({
   }
 
   const rows = [];
-  for (const doc of transfers) {
+  for (const doc of visibleTransfers) {
     const id = String(doc._id);
     const billing = doc.billing || {};
     const heldLabTotal = Math.max(

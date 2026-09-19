@@ -7,6 +7,7 @@
 // - web/backend/controllers/credits/credit.controller.js
 // change-log:
 // - 2026-09-16: 지급 표 로딩 — 텍스트 대신 4열 행 스켈레톤.
+// - 2026-09-20: 정산규칙 — 커스텀어벗은 STL·생산비 지급 뒤에만 적립·지급.
 // - 2026-09-16: 정산규칙 모달 — 작업완료 적립·통장사본 이월·월 지급 유보 50만원 기준 간단 정리.
 // - 2026-09-16: 상태=지급+계산서. 통장사본 미등록 일 1회 안내·1개월 이월 강조.
 // - 2026-09-16: 일별→월별 집계. 필수열(정산월·적립·지급·상태). 충전과 동일 max-w-4xl.
@@ -56,6 +57,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   LAB_PAYOUT_BANKBOOK_DELAY_NOTICE,
   LAB_PAYOUT_SETTINGS_PATH,
+  LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE,
   LAB_SETTLEMENT_PAYOUT_RESERVE_NOTICE,
   isLabPayoutReady,
   type LabPayoutAccountSnapshot,
@@ -556,13 +558,13 @@ export const LabSettlementPayoutTab = () => {
                   <div className="flex gap-2.5">
                     <HandCoins className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
                     <p>
-                      작업완료 시 기공비가{" "}
+                      보철은 작업시작 시{" "}
                       <span className="font-semibold text-slate-900">
                         기공크레딧
                       </span>
-                      으로 적립됩니다. 치과 무료 크레딧 결제분도 동일하며
-                      비용은 플랫폼이 부담합니다. 취소·롤백 시 해당 적립은
-                      삭제됩니다.
+                      으로 적립됩니다. {LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE}{" "}
+                      치과 무료 크레딧 결제분도 동일하며 비용은 플랫폼이
+                      부담합니다. 취소·롤백 시 해당 적립은 삭제됩니다.
                     </p>
                   </div>
                 </SettlementPolicySection>

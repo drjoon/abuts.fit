@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-20: 정산 적립 안내 — 커스텀어벗은 STL·생산비 지급 뒤에만 포함.
 // - 2026-09-16: 통계 로딩 요약 스켈레톤 — 충전−소비|의뢰건수 3칸(구 4칸).
 // - 2026-09-05: 요약 충전 카드 라벨「충전」(치과·기공소 공통, 유료 접두 제거).
 // - 2026-09-05: 데모 모드 충전 카드 라벨「충전」(유료/선수금 아님).
@@ -57,6 +58,7 @@ import {
   SettlementStatCard,
 } from "@/shared/settlement/settlementUi";
 import { formatWonWithUnit, roundWon } from "@/shared/settlement/affiliateVat";
+import { LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE } from "@/shared/settlement/labPayoutBankbook";
 import {
   ChartContainer,
   ChartLegend,
@@ -805,7 +807,7 @@ export function CreditStatisticsTab() {
         label="정산 적립"
         value={settlementEarnTotal}
         hint="안내"
-        hintTooltip="선택한 기간에 확정 적립된 기공 정산 합계입니다. 적립 보류는 포함하지 않습니다."
+        hintTooltip={`선택한 기간에 확정 적립된 기공 정산 합계입니다. 적립 보류는 포함하지 않습니다. ${LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE}`}
         onClick={() =>
           openDrillDown({
             title: "정산 적립 내역",

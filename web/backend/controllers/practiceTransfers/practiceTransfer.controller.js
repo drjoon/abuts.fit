@@ -1471,7 +1471,7 @@ const buildAcceptedFeeQuotePayload = (billingResult, doc) => {
 };
 
 
-/** 수락 시 보류 확정 직후 기공소몫 에스크로 해제(치과→기공소 결제). 이미 정산이면 no-op. */
+/** 작업시작 시 보류 확정 직후 기공소몫 해제. CA는 디자인 STL·생산비 지급 전에는 보류만 유지. */
 const settleLabShareOnAccept = async (doc, actorUserId) => {
   if (doc?.billing?.labSettledAt) {
     return { released: false, reason: "already_settled" };

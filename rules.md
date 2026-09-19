@@ -129,7 +129,8 @@
     치과 어벗디자인·기공소 어벗생산 배송비는 **의뢰 사업자 + 예정 출고일** 1회(치과명으로 쪼개지 않음).
     PTX(구강스캔) CA 배송비는 주문 기공소 크레딧(제조사→기공소). 동일 제출 배치에서도 1회.
   - `REQUEST_SPEND_COMMIT`: **CAM 승인(가공 진입)** 시 보류→매출 전환(레거시 무보류만 실차감)
-  - `SHIPPING_SPEND_COMMIT`: **포장.발송 진입(세척.패킹 승인)** 시 배송 보류→매출 전환(레거시·PTX abuts는 기존 SSOT)
+  - `SHIPPING_SPEND_COMMIT`: **포장.발송 진입(세척.패킹 승인)** 시 배송 보류→매출 전환(레거시·PTX abuts는 기존 SSOT). 배송비는 박스 단위. 어벗 해제와 같이 옮기지 않는다.
+  - **비거래처 선불 어벗 해제(강제)**: 치과가 선불한 비거래처(`practicePrepaid && !isTradingPartner`)는 생성 시 어벗 소매가가 PTX 보류에 이미 있다. 가공 진입 `REQUEST_SPEND_COMMIT`은 건너뛴다(이중 청구). 어벗츠 수취는 제조사 발송 `releasePracticeTransferAbutmentShare`(의뢰 1건 전체, `practice_transfer:{id}:escrow_release_abutment`)만. **가공 진입으로 옮기지 않는다.** 치아 하나 진입에 전액이 풀리고, 발송 전 취소가 제조사 매출(`REV_MANUFACTURER`) 롤백·잔여 치아 재보류가 되며, 제조사 정산이 발송보다 빨라진다. 부분 취소 경로 없음. 기공소 부담(거래처)만 가공 진입 차감. 배송비와 무관.
   - **포장.발송 진입 SSOT**: `enterManufacturerShippingStage()` (`common.review.helpers.js`) — 우편함 유지·수취인 스냅샷·배송비 commit·단계 매핑. 새 경로 추가 시 이 함수만 호출(백필·단위 테스트 제외).
   - `REQUEST` 차감 삭제: **가공 롤백(CAM 복귀)** 시 대응 COMMIT 이벤트/라인 **물리 삭제**(HOLD는 유지). 제조사 의뢰비만.
   - `SHIPPING` 차감 삭제: **포장.발송 롤백(세척.패킹 복귀)** 시 대응 COMMIT 이벤트/라인 **물리 삭제**. 제조사 배송비만.

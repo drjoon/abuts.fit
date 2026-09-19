@@ -1,5 +1,5 @@
 // change-log:
-// - 2026-09-08: 삭제·작업취소 PTX는 정산 무관 숨김. status select 누락 수정. 하드삭제 orphan GL도 숨김.
+// - 2026-09-20: CA 디자인 STL 미업로드·생산비 미지급은 정산 내역·기간 소비에서 제외.
 // - 2026-09-08: q 검색 — 환자명(files·transferMemo)·의뢰 caseInfos도 refId 매칭. 1글자 허용.
 // - 2026-09-02: 치과 휴지통(deleted|canceled) PTX도 장부 enrich에서 숨김(적립/결제 오인 방지).
 // - 2026-08-31: 수락 취소(workCanceledAt)·미정산 PTX는 장부 enrich에서 숨김(「적립/결제 완료」 오인 방지).
@@ -44,7 +44,7 @@ import BusinessAnchor from "../../models/businessAnchor.model.js";
 import LedgerLine from "../../models/ledgerLine.model.js";
 import LedgerJournal from "../../models/ledgerJournal.model.js";
 import { getBusinessCreditBalanceSnapshot } from "../../services/creditBalance.service.js";
-import { buildFeeQuotesForTransferDocs } from "../../services/practiceTransferBilling.service.js";
+import { buildFeeQuotesForTransferDocs, listPracticeTransferIdsBlockedFromSettlement } from "../../services/practiceTransferBilling.service.js";
 import { scheduleHealMissingExpressSurchargesForBusiness } from "../requests/common.review.helpers.js";
 import { normalizeRequestorKind } from "../../utils/requestorCapabilities.js";
 import { isCustomAbutmentLabFeeLineType } from "../../utils/labFeeSchedule.js";
@@ -546,9 +546,26 @@ export async function listMyCreditLedger(req, res) {
 
   const periodOccurredAt =
     Object.keys(occurredAt).length ? occurredAt : null;
-  const periodSummaryPromise =
+  const blockedSettlementIdsPromise =
+    requestorKind === "practice" || requestorKind === "lab"
+      ? listPracticeTransferIdsBlockedFromSettlement({
+          practiceAnchorId:
+            requestorKind === "practice" ? anchorObjectId : null,
+          labAnchorId: requestorKind === "lab" ? anchorObjectId : null,
+        })
+      : Promise.resolve(new Set());
+
+  const [balanceSnapshot, facetRaw, blockedSettlementIds] = await Promise.all([
+    getBusinessCreditBalanceSnapshot({
+      businessAnchorId: anchorObjectId,
+      upsertIfMissing: true,
+    }),
+    LedgerLine.aggregate(pipeline),
+    blockedSettlementIdsPromise,
+  ]);
+  const periodLedgerSummary =
     page === 1 && (requestorKind === "practice" || requestorKind === "lab")
-      ? aggregateRequestorPeriodLedgerSummary({
+      ? await aggregateRequestorPeriodLedgerSummary({
           ownerObjectId: anchorObjectId,
           occurredAt: periodOccurredAt,
           journalCollectionName: LedgerJournal.collection.name,
@@ -556,17 +573,9 @@ export async function listMyCreditLedger(req, res) {
           includePendingLabSettlement: false,
           usageScope,
           practiceDemoMode,
+          excludeRefIds: blockedSettlementIds,
         })
-      : Promise.resolve(null);
-
-  const [balanceSnapshot, facetRaw, periodLedgerSummary] = await Promise.all([
-    getBusinessCreditBalanceSnapshot({
-      businessAnchorId: anchorObjectId,
-      upsertIfMissing: true,
-    }),
-    LedgerLine.aggregate(pipeline),
-    periodSummaryPromise,
-  ]);
+      : null;
   const currentBalance = Number(balanceSnapshot?.balance || 0);
   const currentSettlementCredit = Number(balanceSnapshot?.settlementCredit || 0);
 
@@ -589,6 +598,15 @@ export async function listMyCreditLedger(req, res) {
     hasMore = merged.hasMore;
     skippedSum = merged.skippedSum;
     skippedDemoSum = Number(merged.skippedDemoSum || 0);
+  }
+
+  if (blockedSettlementIds?.size) {
+    pageRows = pageRows.filter((row) => {
+      const refType = String(row?.refType || "").trim().toUpperCase();
+      const refId = String(row?.refId || "").trim();
+      if (refType !== "PRACTICE_TRANSFER") return true;
+      return !blockedSettlementIds.has(refId);
+    });
   }
 
   const allRows = mergeRequestExpressSurchargeIntoMachiningSpend(pageRows);

@@ -10,7 +10,8 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers.ts
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
-// - 2026-09-11: stage-file 롤백 시 포장.발송·추적관리 건 준비/가공 회귀 차단(Complete 슬롯 오롤백 방지).
+// - 2026-09-20: 비거래처 어벗 해제는 포장.발송 유지(가공 진입으로 옮기지 않음).
+// - 2026-09-20: PTX 포장.발송 후 치과→기공소 정산(선불 생산비 지급 시점).
 // - 2026-09-03: 세척.패킹 승인 시 각인 이미지(stageFiles.packing) 필수(카드/프리뷰 → 수동 이동).
 // - 2026-08-22: 작업용 샘플도 우편함·포장.발송·추적관리 동일(크레딧만 isManufacturerSampleRequest skip).
 // - 2026-08-20: 샘플도 패킹 승인 후 포장.발송·우편함 유지(일반 의뢰와 동일).
@@ -1834,7 +1835,9 @@ export async function updateReviewStatusByStage(req, res) {
             source: "review.packing_approve",
           });
 
-          // PTX 연동 CA: 제조사 발송=어벗츠몫 에스크로 해제(배송비 면제 경로에서도 실행).
+          // PTX 연동 CA: 제조사 발송에서만 어벗츠몫 해제. 가공 진입으로 옮기지 말 것.
+          // 의뢰 1키 전액 · 발송 전 취소는 보류만 풀면 됨 · 제조사 매출은 여기서 인식.
+          // 배송비(enterManufacturerShippingStage)와 별개. 배송비 면제여도 해제는 실행.
           {
             const pb =
               request?.partnerBilling &&
@@ -1851,6 +1854,7 @@ export async function updateReviewStatusByStage(req, res) {
                 ).default;
                 const {
                   releasePracticeTransferAbutmentShare,
+                  settlePracticeToLabShareIfReady,
                 } = await import(
                   "../../services/practiceTransferBilling.service.js"
                 );
@@ -1899,6 +1903,13 @@ export async function updateReviewStatusByStage(req, res) {
                     };
                     await ptxDoc.save({ session: session || undefined });
                   }
+                }
+                if (ptxDoc?._id) {
+                  await settlePracticeToLabShareIfReady({
+                    transferId: relatedPtxId,
+                    actorUserId: req.user?._id || null,
+                    session: session || null,
+                  });
                 }
               } catch (abutReleaseErr) {
                 console.error(

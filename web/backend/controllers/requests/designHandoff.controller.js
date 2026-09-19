@@ -89,8 +89,8 @@ import {
 import { isPtxLabDesignedAbutmentRequest } from "./common.review.helpers.js";
 import { postPracticeTransferSystemChatMessage } from "../../services/chatSystemMessage.service.js";
 import {
-  grantAbutmentDesignLabFee,
   revokeAbutmentDesignLabFee,
+  settlePracticeToLabShareIfReady,
 } from "../../services/practiceTransferBilling.service.js";
 import {
   applyCaReuploadRemakeCharge,
@@ -1240,16 +1240,14 @@ export async function handoffDesignToProduction(req, res) {
           }
 
           if (transferDoc && isAcceptingLab) {
-            void grantAbutmentDesignLabFee({
-              requestDoc: request,
+            // 디자인비·치과→기공소 정산은 생산비 지급 후에만. 지금은 조건 미달이면 no-op.
+            void settlePracticeToLabShareIfReady({
               transferId: relatedTransferId,
-              labAnchorId:
-                labAnchorId || String(transferDoc.targetLabAnchorId || "").trim(),
               actorUserId: userId,
-            }).catch((grantErr) => {
+            }).catch((settleErr) => {
               console.error(
-                "[DESIGN_HANDOFF] abutment design fee grant failed",
-                grantErr,
+                "[DESIGN_HANDOFF] practice-to-lab settlement failed",
+                settleErr,
               );
             });
           }

@@ -1,5 +1,5 @@
 // change-log:
-// - 2026-09-05: 정산 적립 분류 — PRACTICE_TRANSFER_ESCROW_RELEASE 포함(기간 요약·내역과 동일).
+// - 2026-09-20: CA 디자인 STL 미업로드·생산비 미지급 PTX는 정산 통계에서 제외.
 // - 2026-08-31: 기공소 통계 — 치과→기공(정산)·기공→어벗츠(충전/소비) 건수·파트너·보철 분리.
 // - 2026-08-31: usageScope(real|demo|all) — 데모/실사용 통계 필터. hasDemoUsage 응답.
 // - 2026-09-11: 기공소 정산 적립·파트너·보철·의뢰건수 — 확정만(적립 보류 제외).
@@ -23,7 +23,7 @@ import PracticeTransfer from "../../models/practiceTransfer.model.js";
 import Request from "../../models/request.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { normalizeRequestorKind } from "../../utils/requestorCapabilities.js";
-import { buildFeeQuotesForTransferDocs } from "../../services/practiceTransferBilling.service.js";
+import { buildFeeQuotesForTransferDocs, selectPracticeTransferIdsBlockedFromSettlement } from "../../services/practiceTransferBilling.service.js";
 import { parseKstQueryBoundDate } from "../../utils/kstQueryBounds.js";
 import {
   isLabSettlementEarnEvent,
@@ -457,6 +457,9 @@ export async function getMyCreditLedgerStats(req, res) {
             targetLabAnchorId: 1,
             toothWorks: 1,
             billing: 1,
+            "production.designFiles": 1,
+            "production.designFileCount": 1,
+            "production.relatedRequestIds": 1,
             matchingMode: 1,
             createdAt: 1,
             remake: 1,
@@ -520,6 +523,10 @@ export async function getMyCreditLedgerStats(req, res) {
         })
       : new Map();
 
+  const blockedSettlementIds = await selectPracticeTransferIdsBlockedFromSettlement(
+    ptxDocs || [],
+  );
+
   const byPeriodMap = new Map();
   const byCategoryMap = new Map();
   const byPartnerMap = new Map();
@@ -544,6 +551,14 @@ export async function getMyCreditLedgerStats(req, res) {
   for (const row of scopedJournalRows) {
     const eventType = String(row?.eventType || "");
     const refType = String(row?.refType || "");
+    const refId = row?.refId ? String(row.refId) : "";
+    if (
+      blockedSettlementIds.size &&
+      refType.trim().toUpperCase() === "PRACTICE_TRANSFER" &&
+      blockedSettlementIds.has(refId)
+    ) {
+      continue;
+    }
     const accountCode = String(row?.accountCode || "");
     const amount = Number(row?.amount || 0);
     const ymd = String(row?.ymd || "");
@@ -637,7 +652,6 @@ export async function getMyCreditLedgerStats(req, res) {
     const catRow = byCategoryMap.get(catKey);
     if (catRow) catRow.label = CATEGORY_LABELS[catKey] || catKey;
 
-    const refId = row?.refId ? String(row.refId) : "";
     const rt = refType.trim().toUpperCase();
     let partnerLabel = "";
 

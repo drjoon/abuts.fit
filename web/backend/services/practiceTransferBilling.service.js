@@ -11,6 +11,8 @@
 // - web/backend/models/ledgerLine.model.js
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
+// - 2026-09-20: 비거래처 어벗 해제는 제조사 발송 유지. 가공 진입 이동 금지.
+// - 2026-09-20: CA 치과→기공소 정산은 디자인 STL + 어벗 생산비 지급 후. 그 전 payout·정산 제외.
 // - 2026-09-15: 후속 보철 — labSettledAt 이후 hold는 즉시 기공소 적립(리메이크와 동일).
 // - 2026-09-14: remakeFeeQuote — 원본 180일 창 밖이면 정가(리메이크 무료 미적용).
 // - 2026-09-12: remakeFeeQuote — 원본 90일 창 밖이면 정가(리메이크 무료 미적용).
@@ -176,6 +178,11 @@ import {
 import { shouldChargePracticeTransferLabShipping } from "../utils/practiceTransferLabShipping.js";
 import { SHIPPING_LEDGER_LABELS } from "../utils/shippingLedgerLabels.js";
 import { isWithinRemakePolicyWindow } from "../utils/remakePricingPolicy.js";
+import {
+  awaitsAbutmentShareRelease,
+  requestMachiningSpendGlKey,
+  resolvePracticeToLabSettlementBlock,
+} from "./practiceTransferLabSettlementGate.js";
 import {
   getRequestPerfCacheValue,
   invalidateRequestPerfCacheByPrefix,
@@ -490,6 +497,8 @@ function pushRevenueLines({
     creditSettings,
     qty: manufacturerQty,
     isRemake: Boolean(isRemake) || Boolean(meta?.isRemake),
+    remakeSaleAmount:
+      meta?.remakeSaleAmount != null ? meta.remakeSaleAmount : undefined,
   });
   const revenueKindSplit = splitRevenueByCreditKindProRata({
     ownerBaseByRole: revenueBaseByOwner,
@@ -2893,14 +2902,466 @@ export async function adjustPracticeTransferHold({
   }
 }
 
+function machiningSpendGlKey(requestId) {
+  return requestMachiningSpendGlKey(requestId);
+}
+
+async function readPracticeToLabSettlementBlock(
+  transfer,
+  { session = null, extraPaidRequestId = null } = {},
+) {
+  const {
+    listCustomAbutmentToothWorks,
+    practiceTransferNeedsMoreAbutmentDesigns,
+  } = await import("./practiceTransferProduction.service.js");
+  const works = Array.isArray(transfer?.toothWorks) ? transfer.toothWorks : [];
+  const customAbutmentCount = listCustomAbutmentToothWorks(works).length;
+  if (customAbutmentCount <= 0) return null;
+  if (practiceTransferNeedsMoreAbutmentDesigns(transfer)) {
+    return "awaiting_abutment_design_stl";
+  }
+
+  const awaitShare = awaitsAbutmentShareRelease(transfer);
+  if (awaitShare) {
+    const journal = await getJournalByIdempotencyKey({
+      idempotencyKey: practiceTransferEscrowReleaseAbutmentKey(transfer?._id),
+      session,
+    });
+    return resolvePracticeToLabSettlementBlock({
+      customAbutmentCount,
+      awaitAbutmentShareRelease: true,
+      abutmentProductionReleased: Boolean(journal?.journalId),
+    });
+  }
+
+  const ids = [
+    ...new Set(
+      (Array.isArray(transfer?.production?.relatedRequestIds)
+        ? transfer.production.relatedRequestIds
+        : []
+      )
+        .map((id) => String(id || "").trim())
+        .filter((id) => Types.ObjectId.isValid(id)),
+    ),
+  ];
+  const extra = String(extraPaidRequestId || "").trim();
+  if (extra && Types.ObjectId.isValid(extra) && !ids.includes(extra)) {
+    ids.push(extra);
+  }
+  if (!ids.length) {
+    return resolvePracticeToLabSettlementBlock({ customAbutmentCount });
+  }
+
+  const Request = (await import("../models/request.model.js")).default;
+  const rows = await Request.find({
+    _id: { $in: ids.map((id) => new Types.ObjectId(id)) },
+  })
+    .select({ manufacturerStage: 1 })
+    .session(session || null)
+    .lean();
+  const found = new Set((rows || []).map((row) => String(row?._id || "")));
+  const cancelled = new Set(
+    (rows || [])
+      .filter((row) => String(row?.manufacturerStage || "").trim() === "취소")
+      .map((row) => String(row?._id || "")),
+  );
+  const active = ids.filter((id) => found.has(id) && !cancelled.has(id));
+  const missing = ids.filter((id) => !found.has(id));
+  const productionPaymentWaived =
+    ids.length > 0 && active.length === 0 && missing.length === 0;
+  let paid = [];
+  if (!productionPaymentWaived && active.length) {
+    const journals = await getJournalsByIdempotencyKeys({
+      idempotencyKeys: active.map((id) => machiningSpendGlKey(id)),
+      session,
+    });
+    paid = active.filter((id) => journals.has(machiningSpendGlKey(id)));
+    if (extra && active.includes(extra) && !paid.includes(extra)) {
+      paid.push(extra);
+    }
+  }
+  return resolvePracticeToLabSettlementBlock({
+    customAbutmentCount,
+    productionPaymentWaived,
+    activeProductionRequestIds: active,
+    paidProductionRequestIds: paid,
+  });
+}
+
+/**
+ * 정산 페이지·payout에서 빼야 하는 PTX id.
+ * 커스텀어벗인데 디자인 STL이 없거나 어벗 생산비가 아직 어벗츠에 지급되지 않은 건.
+ */
+export async function selectPracticeTransferIdsBlockedFromSettlement(
+  transfers,
+  { session = null } = {},
+) {
+  const {
+    listCustomAbutmentToothWorks,
+    practiceTransferNeedsMoreAbutmentDesigns,
+  } = await import("./practiceTransferProduction.service.js");
+  const blocked = new Set();
+  const shareWait = [];
+  const labPay = [];
+  for (const transfer of Array.isArray(transfers) ? transfers : []) {
+    const id = String(transfer?._id || "").trim();
+    if (!id) continue;
+    const customAbutmentCount = listCustomAbutmentToothWorks(
+      transfer?.toothWorks || [],
+    ).length;
+    if (customAbutmentCount <= 0) continue;
+    if (practiceTransferNeedsMoreAbutmentDesigns(transfer)) {
+      blocked.add(id);
+      continue;
+    }
+    if (awaitsAbutmentShareRelease(transfer)) shareWait.push(transfer);
+    else labPay.push(transfer);
+  }
+
+  if (shareWait.length) {
+    const journals = await getJournalsByIdempotencyKeys({
+      idempotencyKeys: shareWait.map((transfer) =>
+        practiceTransferEscrowReleaseAbutmentKey(transfer._id),
+      ),
+      session,
+    });
+    for (const transfer of shareWait) {
+      const key = practiceTransferEscrowReleaseAbutmentKey(transfer._id);
+      if (!journals.has(key)) blocked.add(String(transfer._id));
+    }
+  }
+
+  if (labPay.length) {
+    const idsByTransfer = new Map();
+    const allIds = [];
+    for (const transfer of labPay) {
+      const ids = [
+        ...new Set(
+          (Array.isArray(transfer?.production?.relatedRequestIds)
+            ? transfer.production.relatedRequestIds
+            : []
+          )
+            .map((id) => String(id || "").trim())
+            .filter((id) => Types.ObjectId.isValid(id)),
+        ),
+      ];
+      idsByTransfer.set(String(transfer._id), ids);
+      allIds.push(...ids);
+    }
+    const uniqueIds = [...new Set(allIds)];
+    const Request = (await import("../models/request.model.js")).default;
+    const rows = uniqueIds.length
+      ? await Request.find({
+          _id: { $in: uniqueIds.map((id) => new Types.ObjectId(id)) },
+        })
+          .select({ manufacturerStage: 1 })
+          .session(session || null)
+          .lean()
+      : [];
+    const found = new Set((rows || []).map((row) => String(row?._id || "")));
+    const cancelled = new Set(
+      (rows || [])
+        .filter((row) => String(row?.manufacturerStage || "").trim() === "취소")
+        .map((row) => String(row?._id || "")),
+    );
+    const activeByTransfer = new Map();
+    const payKeys = [];
+    for (const transfer of labPay) {
+      const id = String(transfer._id);
+      const ids = idsByTransfer.get(id) || [];
+      const active = ids.filter((reqId) => found.has(reqId) && !cancelled.has(reqId));
+      const missing = ids.filter((reqId) => !found.has(reqId));
+      if (ids.length > 0 && active.length === 0 && missing.length === 0) {
+        continue;
+      }
+      if (!active.length) {
+        blocked.add(id);
+        continue;
+      }
+      activeByTransfer.set(id, active);
+      payKeys.push(...active.map((reqId) => requestMachiningSpendGlKey(reqId)));
+    }
+    const journals = await getJournalsByIdempotencyKeys({
+      idempotencyKeys: payKeys,
+      session,
+    });
+    for (const [id, active] of activeByTransfer) {
+      const paid = active.every((reqId) =>
+        journals.has(requestMachiningSpendGlKey(reqId)),
+      );
+      if (!paid) blocked.add(id);
+    }
+  }
+  return blocked;
+}
+
+export async function listPracticeTransferIdsBlockedFromSettlement({
+  practiceAnchorId = null,
+  labAnchorId = null,
+  session = null,
+} = {}) {
+  const practiceId = String(practiceAnchorId || "").trim();
+  const labId = String(labAnchorId || "").trim();
+  if (
+    (!practiceId || !Types.ObjectId.isValid(practiceId)) &&
+    (!labId || !Types.ObjectId.isValid(labId))
+  ) {
+    return new Set();
+  }
+  const PracticeTransfer = (await import("../models/practiceTransfer.model.js"))
+    .default;
+  const { practiceTransferNotDeletedMongoFilter } = await import(
+    "../utils/practiceTransferStage.js"
+  );
+  const and = [
+    practiceTransferNotDeletedMongoFilter(),
+    { "billing.heldAt": { $ne: null } },
+    {
+      $or: [
+        { "billing.labSettledAt": null },
+        { "billing.labSettledAt": { $exists: false } },
+      ],
+    },
+    {
+      $or: [{ workCanceledAt: null }, { workCanceledAt: { $exists: false } }],
+    },
+  ];
+  if (practiceId && Types.ObjectId.isValid(practiceId)) {
+    and.push({
+      practiceBusinessAnchorId: new Types.ObjectId(practiceId),
+    });
+  }
+  if (labId && Types.ObjectId.isValid(labId)) {
+    const labOid = new Types.ObjectId(labId);
+    and.push({
+      $or: [{ assigneeLabAnchorId: labOid }, { targetLabAnchorId: labOid }],
+    });
+  }
+  const docs = await PracticeTransfer.find({ $and: and })
+    .select({
+      toothWorks: 1,
+      billing: 1,
+      "production.designFiles": 1,
+      "production.designFileCount": 1,
+      "production.relatedRequestIds": 1,
+    })
+    .limit(1000)
+    .session(session || null)
+    .lean();
+  return selectPracticeTransferIdsBlockedFromSettlement(docs, { session });
+}
+
+async function movePracticeTransferHoldLedgerTo(transferId, occurredAt, session) {
+  const journals = await LedgerJournal.find({
+    refType: "PRACTICE_TRANSFER",
+    refId: transferId,
+    eventType: {
+      $in: ["PRACTICE_TRANSFER_SPEND_HOLD", "PRACTICE_TRANSFER_HOLD_ADJUST"],
+    },
+  })
+    .select({ journalId: 1 })
+    .session(session || null)
+    .lean();
+  const journalIds = (journals || [])
+    .map((row) => String(row?.journalId || "").trim())
+    .filter(Boolean);
+  if (!journalIds.length) return;
+  const at = occurredAt instanceof Date ? occurredAt : new Date();
+  await LedgerJournal.updateMany(
+    { journalId: { $in: journalIds } },
+    { $set: { occurredAt: at } },
+  ).session(session || null);
+  await LedgerLine.updateMany(
+    { journalId: { $in: journalIds } },
+    { $set: { occurredAt: at } },
+  ).session(session || null);
+}
+
+function shouldPersistLabShareSettlement(releaseResult) {
+  return (
+    Boolean(releaseResult?.released) ||
+    releaseResult?.reason === "already_released" ||
+    releaseResult?.reason === "zero_lab_fee" ||
+    releaseResult?.reason === "legacy_already_settled"
+  );
+}
+
+async function grantLegacyAbutmentDesignFees(transfer, actorUserId) {
+  const ids = [
+    ...new Set(
+      (Array.isArray(transfer?.production?.relatedRequestIds)
+        ? transfer.production.relatedRequestIds
+        : []
+      )
+        .map((id) => String(id || "").trim())
+        .filter((id) => Types.ObjectId.isValid(id)),
+    ),
+  ];
+  if (!ids.length) return;
+  const Request = (await import("../models/request.model.js")).default;
+  const docs = await Request.find({
+    _id: { $in: ids.map((id) => new Types.ObjectId(id)) },
+  });
+  const labAnchorId = String(
+    transfer?.assigneeLabAnchorId || transfer?.targetLabAnchorId || "",
+  ).trim();
+  for (const requestDoc of docs || []) {
+    if (String(requestDoc?.manufacturerStage || "").trim() === "취소") continue;
+    // eslint-disable-next-line no-await-in-loop
+    await grantAbutmentDesignLabFee({
+      requestDoc,
+      transferId: String(transfer?._id || ""),
+      labAnchorId,
+      actorUserId,
+    });
+  }
+}
+
+/**
+ * 디자인 STL이 있고 어벗 생산비가 지급된 뒤에만 치과→기공소 정산.
+ * 기간이 지나도 이 호출 시점의 저널로 잡는다.
+ */
+export async function settlePracticeToLabShareIfReady({
+  transfer = null,
+  transferId = null,
+  actorUserId = null,
+  session = null,
+  extraPaidRequestId = null,
+} = {}) {
+  const PracticeTransfer = (await import("../models/practiceTransfer.model.js"))
+    .default;
+  const id = String(transfer?._id || transferId || "").trim();
+  if (!id || !Types.ObjectId.isValid(id)) {
+    return { released: false, reason: "missing_transfer" };
+  }
+  const doc =
+    transfer ||
+    (await PracticeTransfer.findById(id).session(session || null));
+  if (!doc?._id) return { released: false, reason: "missing_transfer" };
+  if (doc.billing?.labSettledAt) {
+    return { released: false, reason: "already_settled" };
+  }
+
+  const releaseResult = await releasePracticeTransferLabShare({
+    transfer: doc,
+    toothWorks: Array.isArray(doc.toothWorks) ? doc.toothWorks : [],
+    actorUserId,
+    session,
+    extraPaidRequestId,
+  });
+  if (!shouldPersistLabShareSettlement(releaseResult)) return releaseResult;
+
+  const labSettledAt = new Date();
+  const heldAbutment = Math.max(
+    0,
+    Math.round(
+      Number(
+        releaseResult.fees?.abutmentRetailTotal ??
+          doc.billing?.heldAbutmentTotal ??
+          doc.billing?.abutmentRetailTotal ??
+          0,
+      ),
+    ),
+  );
+  const abutmentAlreadySettled = Boolean(
+    doc.billing?.abutmentSettledAt || heldAbutment <= 0,
+  );
+  const $set = {
+    "billing.labFeeTotal":
+      releaseResult.fees?.labFeeTotal ??
+      releaseResult.labFeeTotal ??
+      Number(doc.billing?.labFeeTotal || 0),
+    "billing.abutmentRetailTotal":
+      releaseResult.fees?.abutmentRetailTotal ??
+      Number(doc.billing?.abutmentRetailTotal || 0),
+    "billing.abutmentQty":
+      releaseResult.fees?.abutmentQty ?? Number(doc.billing?.abutmentQty || 0),
+    "billing.total":
+      releaseResult.fees?.total ?? Number(doc.billing?.total || 0),
+    "billing.labSettlementAmount":
+      releaseResult.labSettlementAmount ??
+      Number(doc.billing?.labSettlementAmount || 0),
+    "billing.abutsRevenueAmount":
+      releaseResult.abutsRevenueAmount ??
+      Number(doc.billing?.abutsRevenueAmount || 0),
+    "billing.labSettledAt": labSettledAt,
+  };
+  if (abutmentAlreadySettled) {
+    $set["billing.abutmentSettledAt"] =
+      doc.billing?.abutmentSettledAt || labSettledAt;
+    $set["billing.settledAt"] = labSettledAt;
+  }
+  await PracticeTransfer.updateOne({ _id: doc._id }, { $set }).session(
+    session || null,
+  );
+  doc.billing = {
+    ...(doc.billing && typeof doc.billing === "object" ? doc.billing : {}),
+    labFeeTotal: $set["billing.labFeeTotal"],
+    abutmentRetailTotal: $set["billing.abutmentRetailTotal"],
+    abutmentQty: $set["billing.abutmentQty"],
+    total: $set["billing.total"],
+    labSettlementAmount: $set["billing.labSettlementAmount"],
+    abutsRevenueAmount: $set["billing.abutsRevenueAmount"],
+    labSettledAt,
+    ...(abutmentAlreadySettled
+      ? {
+          abutmentSettledAt: $set["billing.abutmentSettledAt"],
+          settledAt: labSettledAt,
+        }
+      : {}),
+  };
+
+  if (releaseResult?.released) {
+    await movePracticeTransferHoldLedgerTo(doc._id, labSettledAt, session);
+    try {
+      await settleUnreleasedProsthesisFollowUpsForTransfer({
+        transfer: doc,
+        actorUserId,
+        session,
+      });
+    } catch (followErr) {
+      console.error(
+        "[practiceTransfer] deferred follow-up lab settlement failed",
+        String(doc._id),
+        followErr?.message || followErr,
+      );
+    }
+    try {
+      await settleUnreleasedRemakeChargesForTransfer({
+        transfer: doc,
+        actorUserId,
+        session,
+      });
+    } catch (remakeErr) {
+      console.error(
+        "[practiceTransfer] deferred remake lab settlement failed",
+        String(doc._id),
+        remakeErr?.message || remakeErr,
+      );
+    }
+    try {
+      await grantLegacyAbutmentDesignFees(doc, actorUserId);
+    } catch (grantErr) {
+      console.error(
+        "[practiceTransfer] deferred abutment design fee grant failed",
+        String(doc._id),
+        grantErr?.message || grantErr,
+      );
+    }
+  }
+  return releaseResult;
+}
+
 /**
  * 기공소 발송(mark-complete): 기공소몫 에스크로 해제 → 기공크레딧 총액 적립 + 플랫폼 수수료 차감.
+ * 커스텀어벗은 디자인 STL + 생산비 지급 전에는 released=false.
  */
 export async function releasePracticeTransferLabShare({
   transfer,
   toothWorks = null,
   actorUserId = null,
   session: outerSession = null,
+  extraPaidRequestId = null,
 }) {
   const transferId = transfer?._id;
   const practiceAnchorId = transfer?.practiceBusinessAnchorId;
@@ -2990,6 +3451,21 @@ export async function releasePracticeTransferLabShare({
       reason: "zero_lab_fee",
       fees,
       labFeeTotal: 0,
+      platformFee: 0,
+      labSettlementAmount: 0,
+    };
+  }
+
+  const settlementBlock = await readPracticeToLabSettlementBlock(transfer, {
+    session: outerSession,
+    extraPaidRequestId,
+  });
+  if (settlementBlock) {
+    return {
+      released: false,
+      reason: settlementBlock,
+      fees,
+      labFeeTotal,
       platformFee: 0,
       labSettlementAmount: 0,
     };
@@ -3228,7 +3704,9 @@ export async function releasePracticeTransferLabShare({
 }
 
 /**
- * 제조사 발송(포장.발송): 어벗츠몫 에스크로 해제 → 어벗츠 매출.
+ * 제조사 발송(포장.발송)에서만 어벗츠몫 에스크로 해제 → 생산 매출·제조사 단가.
+ * 가공 진입으로 옮기지 말 것. 비거래처 선불은 여기에 또 차감하지 않는다
+ * (생성 보류에 소매가 있음). 키는 의뢰 1건 전체. 배송비 저널은 만들지 않는다.
  */
 export async function releasePracticeTransferAbutmentShare({
   transfer,
@@ -4645,6 +5123,19 @@ export async function releasePracticeTransferRemakeChargeCredits({
     return { released: false, reason: "no_hold" };
   }
 
+  const settlementBlock = await readPracticeToLabSettlementBlock(transfer, {
+    session: outerSession,
+  });
+  if (settlementBlock) {
+    return {
+      released: false,
+      reason: settlementBlock,
+      labFeeTotal: releaseAmount,
+      platformFee: 0,
+      labSettlementAmount: 0,
+    };
+  }
+
   const feeRateApplied = resolvePracticeTransferFeeRate({
     matchingMode:
       String(transfer?.matchingMode || "").trim() === "auto" ? "auto" : "direct",
@@ -4891,11 +5382,13 @@ export async function releasePracticeTransferRemakeChargeCredits({
 export async function settleUnreleasedRemakeChargesForTransfer({
   transfer,
   actorUserId = null,
+  session = null,
 }) {
   const doc = transfer;
   if (!doc?._id) return [];
   const charges = Array.isArray(doc.remakeCharges) ? doc.remakeCharges : [];
   const out = [];
+  let extraNet = 0;
   for (let i = 0; i < charges.length; i += 1) {
     const row = charges[i];
     const chargeIndex = Number.isFinite(Math.trunc(Number(row?.chargeIndex)))
@@ -4917,9 +5410,25 @@ export async function settleUnreleasedRemakeChargesForTransfer({
       chargeIndex,
       deltaFees: { labFeeTotal: deltaLab, total: deltaLab },
       actorUserId,
+      session,
       displayLabel: label,
     });
+    if (result?.released) {
+      extraNet += Math.max(
+        0,
+        Math.round(Number(result.labSettlementAmount || 0)),
+      );
+    }
     out.push({ chargeIndex, ...result });
+  }
+  if (extraNet > 0) {
+    const PracticeTransfer = (
+      await import("../models/practiceTransfer.model.js")
+    ).default;
+    await PracticeTransfer.updateOne(
+      { _id: doc._id },
+      { $inc: { "billing.labSettlementAmount": extraNet } },
+    ).session(session || null);
   }
   return out;
 }
@@ -5097,6 +5606,19 @@ export async function releasePracticeTransferProsthesisFollowUpLabShare({
   }
   if (!holdLive?.existing?.journalId) {
     return { released: false, reason: "no_hold" };
+  }
+
+  const settlementBlock = await readPracticeToLabSettlementBlock(transfer, {
+    session: outerSession,
+  });
+  if (settlementBlock) {
+    return {
+      released: false,
+      reason: settlementBlock,
+      labFeeTotal: releaseAmount,
+      platformFee: 0,
+      labSettlementAmount: 0,
+    };
   }
 
   const feeRateApplied = resolvePracticeTransferFeeRate({
@@ -5343,6 +5865,7 @@ export async function releasePracticeTransferProsthesisFollowUpLabShare({
 export async function settleUnreleasedProsthesisFollowUpsForTransfer({
   transfer,
   actorUserId = null,
+  session = null,
 }) {
   const doc = transfer;
   if (!doc?._id) return [];
@@ -5370,6 +5893,7 @@ export async function settleUnreleasedProsthesisFollowUpsForTransfer({
       deltaFees: { labFeeTotal: deltaLab, total: deltaLab },
       actorUserId,
       displayLabel: "후속 보철 추가",
+      session,
     });
     out.push({ followUpIndex, ...result });
   }

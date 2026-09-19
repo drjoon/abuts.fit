@@ -1,3 +1,4 @@
+// - 2026-09-20: 기공소 정책 안내 — 커스텀어벗 정산은 STL·생산비 지급 뒤.
 // - 2026-09-12: 리메이크를 가격 카드(배송비 아래)로 이동. 치과로부터=무료, 어벗츠로=1만원.
 // - 2026-09-09: 리메이크 월 3건 무료 → 건당 10,000원 안내.
 // - 2026-09-03: 기공소 정책 — 단가 라벨·안내 문장 단축. 출고 리드타임(직경) 섹션 제거.
@@ -58,6 +59,7 @@ import {
   formatAbutsAbutmentServiceWon,
   formatAbutsManwon
 } from '@/shared/pricing/abutsAbutmentService';
+import { LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE } from '@/shared/settlement/labPayoutBankbook';
 
 type Props = {
   open: boolean;
@@ -336,6 +338,12 @@ export const PricingPolicyDialog = ({
                   </div>
                 </div>
               </section>
+
+              {isLab ? (
+                <PolicySection title='정산'>
+                  <p>{LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE}</p>
+                </PolicySection>
+              ) : null}
 
               <PolicySection title='출고 방식'>
                 <div className='space-y-2.5'>

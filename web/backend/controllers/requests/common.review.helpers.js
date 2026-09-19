@@ -10,7 +10,9 @@
 // - web/backend/controllers/requests/shipping.controller.js
 // - web/backend/controllers/requests/shipping.Tracking.helpers.js
 // change-log:
-// - 2026-09-11: stage-file 롤백 허용 stage 가드(포장.발송·추적관리 → 준비 회귀 차단). machining 롤백 복귀 라벨을 준비로 통일.
+// - 2026-09-20: 비거래처 선불은 가공 차감 스킵 유지(보류에 소매가 있음, 이중 청구).
+// - 2026-09-20: 리메이크도 일반 매입가(판매가의 50%). 리메이크 매입가 설정 미사용.
+// - 2026-09-20: PTX CA 가공 차감 후 치과→기공소 정산(디자인 STL·생산비 지급 게이트).
 // - 2026-09-09: 리메이크 제조사 지급 6,600원(포함가). applyManufacturerUnit + remake 단가.
 // - 2026-09-06: 딜러·개발운영 earn에 affiliateVatRate VAT(포함가 장부). REV_ADMIN은 면세.
 // - 2026-08-23: 리메이크·무료크레딧 결제는 제조사 무료 생산.
@@ -993,7 +995,9 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
   const isTradingPartner = Boolean(partnerBilling.isTradingPartner);
   const isPtxLabDesigned = isPtxLabDesignedAbutmentRequest(request);
 
-  // 비거래처: 기공의뢰에서 어벗 소매가가 이미 REV_*로 반영됨 → 생산 차감 스킵
+  // 비거래처 선불: 생성 시 어벗 소매가가 PTX 보류에 있음 → 생산 차감 스킵(이중 청구).
+  // 어벗츠 수취는 여기가 아니라 제조사 발송 releasePracticeTransferAbutmentShare.
+  // 가공 진입으로 옮기지 말 것. 배송비(SHIPPING_SPEND_COMMIT)와 무관.
   // PTX 기공소 디자인: 표시 의뢰비는 생산만(멤버십/일반 + 신속)으로 스탬프.
   if (practicePrepaid && !isTradingPartner) {
     if (isPtxLabDesigned) {
@@ -1145,6 +1149,7 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
     session,
   });
 
+  let releasePtxLabShareAfterMachining = false;
   let spendResult;
   if (machiningHoldMeta?.journalId) {
     const spentAmount = Number(
@@ -1183,6 +1188,7 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
       requestId: request?.requestId,
       amount: spentAmount,
     });
+    releasePtxLabShareAfterMachining = true;
   } else if (isSignupFreeTestRequest(request)) {
     const glPostResult = await postSpendCommitGeneralLedger({
       eventType: "REQUEST_SPEND_COMMIT",
@@ -1211,6 +1217,7 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
       requestId: request?.requestId,
       amount: 0,
     });
+    releasePtxLabShareAfterMachining = true;
   } else {
   spendResult = await spendRequestCreditAtomic({
     request,
@@ -1282,6 +1289,7 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
         refId: request._id,
       });
     }
+    releasePtxLabShareAfterMachining = true;
   } else if (spendResult?.reason === "already_spent") {
     console.log("[CREDIT_SPEND] skip existing machining spend for request", {
       requestId: request?.requestId,
@@ -1289,7 +1297,25 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
       existingUniqueKey: spendResult?.existingUniqueKey || null,
       currentUniqueKey: spendResult?.uniqueKey || null,
     });
+    releasePtxLabShareAfterMachining = true;
   }
+  }
+
+  if (releasePtxLabShareAfterMachining) {
+    const relatedPtxId = String(
+      request?.partnerBilling?.relatedPracticeTransferId || "",
+    ).trim();
+    if (relatedPtxId && Types.ObjectId.isValid(relatedPtxId)) {
+      const { settlePracticeToLabShareIfReady } = await import(
+        "../../services/practiceTransferBilling.service.js"
+      );
+      await settlePracticeToLabShareIfReady({
+        transferId: relatedPtxId,
+        actorUserId,
+        session,
+        extraPaidRequestId: request?._id || null,
+      });
+    }
   }
 
   if (expressFee <= 0) return;

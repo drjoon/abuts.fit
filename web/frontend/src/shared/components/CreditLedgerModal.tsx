@@ -5,6 +5,7 @@
 // - 2026-09-05: 요약 충전 카드 라벨「충전」(치과·기공소 공통, 유료 접두 제거)·안내 툴팁 정리.
 // - 2026-09-05: 데모 모드 충전 카드 라벨「충전」(유료/선수금 아님)·가상 잔고 안내.
 // - 2026-09-05: 요약 수식에서 무료 충전 카드 제거(유료 [+정산] − 소비). 잔여 무료 버킷은 compact만.
+// - 2026-09-20: 정산 적립 안내 — 커스텀어벗은 STL·생산비 지급 뒤에만 포함.
 // - 2026-09-11: 기공소 정산 적립 카드·통계 — 확정만(적립 보류 제외). 잔액·수식과 일치.
 // - 2026-09-05: 기공소 현재 잔액 — spendableBalance(정산 적립 포함). balance(유료+무료)만 쓰던 버그 수정.
 // - 2026-09-05: 데모/실사용 집계 필터·2줄 잔액·행「데모」뱃지 제거. 잔액 음수 표시 허용.
@@ -137,6 +138,7 @@ import {
   SettlementEquationOperator,
   SettlementStatCard,
 } from "@/shared/settlement/settlementUi";
+import { LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE } from "@/shared/settlement/labPayoutBankbook";
 import {
   Tooltip,
   TooltipContent,
@@ -2665,7 +2667,7 @@ export const CreditLedgerModal = ({
     ? CREDIT_LEDGER_DEMO_CHARGE_HINT
     : "선택한 기간에 충전된 금액 합계입니다.";
   const periodSettlementEarnTooltip =
-    "선택한 기간에 확정 적립된 기공 정산 합계입니다. 적립 보류는 포함하지 않습니다.";
+    `선택한 기간에 확정 적립된 기공 정산 합계입니다. 적립 보류는 포함하지 않습니다. ${LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE}`;
   const periodSpendTooltip = isDemoMode
     ? resolveCreditLedgerDemoPeriodSpendHint(demoKind)
     : showSettlementCredit
