@@ -1,3 +1,4 @@
+import { type ReactNode } from "react";
 import { Camera, ImagePlus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,6 +32,7 @@ import type { PreUploadFileStatus } from "@/shared/hooks/useFilePreUpload";
 // - 2026-08-20: 썸네일 클릭 시 크게 보기. 파일명도 같은 미리보기.
 // - 2026-08-20: fillHeight — 메모 옆 열에서 빈 드롭존 높이 맞춤.
 // - 2026-08-26: requirementNoteExtra — TRIOS Communicate 한 줄.
+// - 2026-09-19: 치과 신규의뢰 — PLY·DCM 추천 강조, TRIOS 안내 제거·드롭존 높이 보정.
 // - 2026-09-05: oral_memo_files primary는 Intake 메모|파일 그리드 — 파일 단독 satellite 제거.
 // - 2026-09-05: data-guide-tour=oral_files — 가이드투어 파일드롭 하이라이트.
 // - 2026-09-05: oral_phone — 모바일 환자사진 안내 문구에 data-guide-tour.
@@ -52,7 +54,9 @@ export const PRACTICE_FILE_LIST_VIEWPORT_CLASS =
   "max-h-[11.25rem] min-h-0";
 
 export type PracticeTransferFilePaneProps = {
-  acceptedHint?: string;
+  acceptedHint?: ReactNode;
+  /** 빈 드롭존 안 추가 높이 클래스. 아래 안내가 한 줄 줄었을 때 세로 맞춤 */
+  dropZoneGrowClassName?: string;
   fileInputId: string;
   files: PracticeTransferFileDisplayItem[];
   totalSizeMb: string;
@@ -106,6 +110,7 @@ const resolveFileMeta = (file: PracticeTransferFileDisplayItem): string => {
 
 export const PracticeTransferFilePane = ({
   acceptedHint = PRACTICE_ACCEPTED_HINT,
+  dropZoneGrowClassName,
   fileInputId,
   files,
   totalSizeMb,
@@ -144,6 +149,7 @@ export const PracticeTransferFilePane = ({
         onFiles={onPickFiles}
         disabled={disabled}
         acceptedHint={acceptedHint}
+        dropZoneGrowClassName={!hasFiles ? dropZoneGrowClassName : undefined}
         compact={hasFiles}
         fillHeight={fillHeight && !hasFiles}
         label="클릭하거나 파일을 드래그해 추가"

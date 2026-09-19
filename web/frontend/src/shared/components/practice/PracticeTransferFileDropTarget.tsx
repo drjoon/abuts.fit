@@ -40,7 +40,9 @@ export type PracticeTransferFileDropTargetProps = {
   disabled?: boolean;
   multiple?: boolean;
   accept?: string;
-  acceptedHint?: string;
+  acceptedHint?: ReactNode;
+  /** 라벨 안 추가 높이. 안내 한 줄이 빠졌을 때 세로 맞춤용 */
+  dropZoneGrowClassName?: string;
   /** 기본: 기공의뢰 허용 확장자. 생산의뢰는 STL만 넘기려면 호출측에서 지정 */
   filterFiles?: (files: File[]) => File[];
   className?: string;
@@ -67,6 +69,7 @@ export function PracticeTransferFileDropTarget({
   multiple = true,
   accept = PRACTICE_TRANSFER_ACCEPT,
   acceptedHint = PRACTICE_ACCEPTED_HINT,
+  dropZoneGrowClassName,
   filterFiles = filterPracticeTransferFiles,
   className,
   activeClassName = "border-primary bg-primary-soft/40 ring-2 ring-primary/30",
@@ -209,6 +212,9 @@ export function PracticeTransferFileDropTarget({
             >
               {acceptedHint}
             </p>
+          ) : null}
+          {dropZoneGrowClassName ? (
+            <span className={cn("block", dropZoneGrowClassName)} aria-hidden />
           ) : null}
         </label>
       ) : null}

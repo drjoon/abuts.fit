@@ -219,7 +219,6 @@ import {
 } from "@/shared/practice/practiceTransferAccept";
 import { useAuthStore } from "@/store/useAuthStore";
 import {
-  PRACTICE_ACCEPTED_HINT,
   coerceAutoMatchLab,
   getBusinessLabel,
   usePracticeTransferStep1,
@@ -8958,12 +8957,17 @@ export const PracticeFileTransferPage = ({
 
 
   const practiceTransferFilePaneProps: PracticeTransferFilePaneProps = {
-    acceptedHint: PRACTICE_ACCEPTED_HINT,
+    acceptedHint: (
+      <>
+        <span className="font-bold text-foreground">PLY · DCM (추천)</span>
+        {" · STL · OBJ · 이미지"}
+      </>
+    ),
+    // TRIOS 안내 한 줄(text 11px leading-snug + gap-1)만큼 빈 드롭존을 늘림
+    dropZoneGrowClassName: "h-[calc(0.25rem+15.125px)]",
                     fileInputId: "practice-file-transfer-input",
                     requirementNote:
                       "모바일에서 환자 사진 찍어 첨부할 수 있어요.",
-                    requirementNoteExtra:
-                      "TRIOS 스캔은 Communicate로 기공소에 보내 주세요.",
                     files: combinedDisplayFiles.map((file) => {
                       const localFile =
                         file.kind === "local" ? files[file.localIndex] : null;
