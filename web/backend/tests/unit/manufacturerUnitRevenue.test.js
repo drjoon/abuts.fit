@@ -281,7 +281,7 @@ describe("manufacturer fixed unit + residual allocation", () => {
     expect(alloc.admin).toBe(318);
   });
 
-  test("remake: manufacturer unit applied at remake price", () => {
+  test("remake uses the same purchase as a normal request", () => {
     expect(
       resolveManufacturerUnitApply({
         source: "abutment_retail",
@@ -290,24 +290,31 @@ describe("manufacturer fixed unit + residual allocation", () => {
         isRemake: true,
       }),
     ).toBe(true);
-    expect(
-      resolveManufacturerUnitApply({
-        isShippingSpend: true,
-        isRemake: true,
-      }),
-    ).toBe(true);
-    const earn = resolveManufacturerUnitEarn({
+    const priced = {
+      ...creditSettings,
+      labProductionPrice: 13000,
+      manufacturerRequestUnitPrice: 6612,
+      manufacturerRemakeUnitPrice: 6600,
+    };
+    const normal = resolveManufacturerUnitEarn({
       isShippingSpend: false,
-      creditSettings,
-      qty: 1,
-      isRemake: true,
+      creditSettings: priced,
+      qty: 2,
     });
-    expect(earn).toEqual({
-      supply: 6000,
-      vat: 600,
-      total: 6600,
+    const remake = resolveManufacturerUnitEarn({
+      isShippingSpend: false,
+      creditSettings: priced,
+      qty: 2,
+      isRemake: true,
+      remakeSaleAmount: 0,
+    });
+    expect(remake).toEqual(normal);
+    expect(remake).toEqual({
+      supply: 11818,
+      vat: 1182,
+      total: 13000,
       vatRate: 0.1,
-      qty: 1,
+      qty: 2,
     });
   });
 
@@ -343,18 +350,42 @@ describe("manufacturer fixed unit + residual allocation", () => {
     ).toBe(20000);
   });
 
-  test("remake: manufacturer gets remake unit (6600 inclusive)", () => {
+  test("sale 13000: purchase inclusive is 50% (6500)", () => {
+    const earn = resolveManufacturerUnitEarn({
+      isShippingSpend: false,
+      creditSettings: {
+        ...creditSettings,
+        labProductionPrice: 13000,
+        manufacturerRequestUnitPrice: 6612,
+      },
+      qty: 1,
+    });
+    expect(earn).toEqual({
+      supply: 5909,
+      vat: 591,
+      total: 6500,
+      vatRate: 0.1,
+      qty: 1,
+    });
+  });
+
+  test("remake allocation uses the same manufacturer unit", () => {
+    const priced = {
+      ...creditSettings,
+      labProductionPrice: 13000,
+    };
     const alloc = resolveRevenueOwnerBaseAllocation({
       spendAmount: 10000,
       hasSalesmanReferrer: true,
       configuredRates: {},
       owners,
       isShippingSpend: false,
-      creditSettings,
+      creditSettings: priced,
       isRemake: true,
+      remakeSaleAmount: 0,
     });
-    expect(alloc.manufacturer).toBe(6000);
-    expect(alloc.manufacturerVat).toBe(600);
+    expect(alloc.manufacturer).toBe(5909);
+    expect(alloc.manufacturerVat).toBe(591);
     expect(
       alloc.manufacturer + alloc.devops + alloc.salesman + alloc.admin,
     ).toBe(10000);

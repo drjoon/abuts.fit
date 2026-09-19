@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/date/kst.ts
 // - web/frontend/src/features/settings/tabs/LabSettlementPayoutTab.tsx
 // change-log:
+// - 2026-09-20: 정산규칙 — 리메이크도 일반 매입가(판매가의 50%).
 // - 2026-09-06: 미정산=부가세 포함가. 힌트「포함가·세금계산서」(지급 시 +VAT 제거).
 // - 2026-09-06: 오른쪽 요약 카드「지급 합계」→「전월 지급」(KST 전월 SETTLEMENT_PAYOUT).
 // - 2026-09-06: 미정산 검증을 공급가 합으로 맞춤(VAT 포함 net 거부).
@@ -405,10 +406,6 @@ export const ManufacturerPaymentPage = () => {
   const manufacturerRequestUnitPrice = Number(
     systemSettings?.creditSettings?.manufacturerRequestUnitPrice ??
       CREDIT_SETTINGS_DEFAULTS.manufacturerRequestUnitPrice,
-  );
-  const manufacturerRemakeUnitPrice = Number(
-    systemSettings?.creditSettings?.manufacturerRemakeUnitPrice ??
-      CREDIT_SETTINGS_DEFAULTS.manufacturerRemakeUnitPrice,
   );
   const manufacturerShippingUnitPrice = Number(
     systemSettings?.creditSettings?.manufacturerShippingUnitPrice ??
@@ -929,14 +926,8 @@ export const ManufacturerPaymentPage = () => {
                       {formatWonWithUnit(
                         splitInclusiveVat(manufacturerRequestUnitPrice).supply,
                       )}
-                      ). 리메이크는 어벗 1개당{" "}
-                      {formatWonWithUnit(manufacturerRemakeUnitPrice)}
-                      (부가세 포함, 공급가{" "}
-                      {formatWonWithUnit(
-                        splitInclusiveVat(manufacturerRemakeUnitPrice).supply,
-                      )}
-                      ). 무료 크레딧 결제건을 포함해 유료·무료 구분 없이 약정
-                      단가를 지급합니다.
+                      ). 리메이크도 같은 매입가를 지급합니다. 무료 크레딧 결제건을
+                      포함해 유료·무료 구분 없이 약정 단가를 지급합니다.
                     </p>
                   </div>
                 </SettlementPolicySection>

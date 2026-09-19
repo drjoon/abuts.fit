@@ -92,9 +92,9 @@ const systemSettingsSchema = new mongoose.Schema(
         default: [],
       },
       shippingFee: { type: Number, default: 3500 },
-      // 제조사(일반과세) 하청 매입가(부가세 포함 기본 8,800). 장부·미정산=포함가.
+      // 제조사(일반과세) 하청 매입가. 저장값과 무관하게 로드 시 판매가의 50%(부가세 포함).
       manufacturerRequestUnitPrice: { type: Number, default: 8800 },
-      // 리메이크 생산 매입가(부가세 포함 기본 6,600).
+      // 레거시 저장 필드. 정산은 리메이크 구분 없이 판매가의 50%.
       manufacturerRemakeUnitPrice: { type: Number, default: 6600 },
       // 개발운영사 어벗 생산 외주 공급가(1어벗당). 장부=포함가(지급 재가산 없음).
       devopsRequestUnitPrice: { type: Number, default: 775 },

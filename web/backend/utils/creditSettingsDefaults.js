@@ -6,7 +6,7 @@
 // - web/backend/controllers/admin/admin.settings.controller.js
 // - web/frontend/src/features/settings/tabs/AdminCreditSettingsTab.tsx
 // change-log:
-// - 2026-08-22: 환봉 생산가 0·미설정 시 CNC 판매가와 동일하게 승격.
+// - 2026-09-20: 제조사 매입가(포함가) = 커스텀어벗 판매가의 50%.
 // - 2026-08-22: 제조사 고정단가(8,800) 선차감 후 잔여 비중 분배(딜러 30:개발 10:어벗츠 40 / 없으면 20:80).
 // - 2026-08-22: 치과 멤버십/일반 청구 이중가 제거. membership* 단일 고시. pricingTier 분기 삭제.
 // - 2026-08-19: 기공소 오버레이 미설정 폴백을 고시(membership*)로.
@@ -26,6 +26,7 @@ import {
   pickAbutsAbutmentCreditPrices,
   normalizeAbutsAbutmentCreditPrices,
 } from "./abutsAbutmentService.js";
+import { manufacturerPurchaseFromSale } from "../services/creditRevenuePolicy.service.js";
 
 const clampPracticeRushFeeMultiplier = (value, fallback = 1.2) => {
   const n = Number(value);
@@ -555,9 +556,24 @@ export function normalizeLoadedCreditSettings(creditSettings = {}) {
     SCHEMA_DEFAULTS,
     "regular",
   );
+  const salePrice = (() => {
+    const lab = Math.round(Number(creditSettings.labProductionPrice));
+    if (Number.isFinite(lab) && lab > 0) return lab;
+    const membership = Math.round(
+      Number(abutmentPrices.membershipProductionPrice),
+    );
+    if (Number.isFinite(membership) && membership > 0) return membership;
+    return 0;
+  })();
+  const derivedPurchase =
+    salePrice > 0 ? manufacturerPurchaseFromSale(salePrice) : null;
+  const partySource =
+    derivedPurchase == null
+      ? creditSettings
+      : { ...creditSettings, manufacturerRequestUnitPrice: derivedPurchase };
   const withRoundBar = {
     ...abutmentPrices,
-    ...buildNormalizedTierPartyFields(creditSettings, SCHEMA_DEFAULTS),
+    ...buildNormalizedTierPartyFields(partySource, SCHEMA_DEFAULTS),
     ...readLabSupplyPrices({
       ...creditSettings,
       // 환봉 0·미설정은 CNC 판매가로 승격된 abutmentPrices를 lab 폴백에 반영.
@@ -579,7 +595,8 @@ export function normalizeLoadedCreditSettings(creditSettings = {}) {
       : [],
     shippingFee: Number(creditSettings.shippingFee ?? SCHEMA_DEFAULTS.shippingFee),
     manufacturerRequestUnitPrice: Number(
-      withRoundBar.membershipProductionManufacturerUnitPrice ??
+      derivedPurchase ??
+        withRoundBar.membershipProductionManufacturerUnitPrice ??
         SCHEMA_DEFAULTS.manufacturerRequestUnitPrice,
     ),
     manufacturerRemakeUnitPrice: Number(

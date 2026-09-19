@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-20: 매입가 = 판매가의 50%(읽기 전용). 리메이크 매입가 입력 제거.
 // - 2026-08-24: 분배 비율 — 딜러사 포함 섹션·딜러사 비포함 안내문 제거(딜러 분배 중단).
 // - 2026-08-23: 제조사=일반과세. 매입 공급가로 잔여 분배(부가세 포함가는 표시·설정값).
 // - 2026-08-22: 가격 라벨 — 판매가(부가세 면제)·매입가(부가세 포함).
@@ -209,6 +210,11 @@ const REGULAR_RESIDUAL_SHARE_PERCENTS = {
 
 const DEFAULT_MANUFACTURER_REQUEST_UNIT_PRICE = 8800;
 const DEFAULT_MANUFACTURER_REMAKE_UNIT_PRICE = 6600;
+
+/** 매입가(부가세 포함) = 판매가(부가세 면제)의 50%. */
+function purchasePriceFromSale(sale: number): number {
+  return Math.max(0, Math.round((Number(sale) || 0) * 0.5));
+}
 
 function clampSharePercent(value: number, fallback = 0): number {
   const n = Number(value);
@@ -1003,6 +1009,9 @@ function normalizeCreditSettings(
         .map((item) => normalizeSpecialRequestorPrice(item, withPrices))
         .filter((item) => item.requestorAnchorId)
     : fallback.specialRequestorPrices;
+  withPrices.manufacturerRequestUnitPrice = purchasePriceFromSale(
+    withPrices.labProductionPrice,
+  );
   return withPrices;
 }
 
@@ -1032,6 +1041,7 @@ function SalesAmountCard({
   value,
   onChange,
   disabled,
+  readOnly = false,
   saveState = "idle",
   help,
   step = AMOUNT_STEP,
@@ -1040,8 +1050,9 @@ function SalesAmountCard({
   title: string;
   badge?: string;
   value: number;
-  onChange: (next: number) => void;
+  onChange?: (next: number) => void;
   disabled?: boolean;
+  readOnly?: boolean;
   saveState?: AutoSaveState;
   help?: string;
   /** 스피너 증감 단위. 기본 1,000원. */
@@ -1065,11 +1076,12 @@ function SalesAmountCard({
           type="number"
           min="0"
           step={step}
+          readOnly={readOnly}
           className="h-11 rounded-xl border-slate-200 bg-slate-50/60 pr-14 text-right text-base font-semibold tabular-nums tracking-tight"
           value={value}
-          disabled={disabled}
+          disabled={disabled || readOnly}
           onChange={(event) =>
-            onChange(Math.max(0, Number(event.target.value)))
+            onChange?.(Math.max(0, Number(event.target.value)))
           }
         />
         <span className="pointer-events-none absolute right-8 top-1/2 -translate-y-1/2 text-xs font-medium text-slate-400">
@@ -1361,6 +1373,7 @@ export const AdminCreditSettingsTab = ({
   const updateSalePrice = useCallback(
     (next: number) => {
       const sale = Math.max(0, Math.round(Number(next) || 0));
+      const purchase = purchasePriceFromSale(sale);
       applySettingsUpdate((prev) =>
         syncComputedPartyFields({
           ...prev,
@@ -1371,6 +1384,7 @@ export const AdminCreditSettingsTab = ({
           membershipRoundBarProductionPrice: sale,
           regularRoundBarProductionPrice: sale,
           minCreditForRequest: sale,
+          manufacturerRequestUnitPrice: purchase,
         }),
       );
       scheduleItemSave("salePrice", () => {
@@ -1389,24 +1403,6 @@ export const AdminCreditSettingsTab = ({
       });
     },
     [applySettingsUpdate, scheduleItemSave],
-  );
-
-  const updatePurchasePrice = useCallback(
-    (next: number) => {
-      updateSharePercent({
-        manufacturerRequestUnitPrice: Math.max(0, Math.round(Number(next) || 0)),
-      });
-    },
-    [updateSharePercent],
-  );
-
-  const updateRemakePurchasePrice = useCallback(
-    (next: number) => {
-      updateSharePercent({
-        manufacturerRemakeUnitPrice: Math.max(0, Math.round(Number(next) || 0)),
-      });
-    },
-    [updateSharePercent],
   );
 
   const updateShippingPurchasePrice = useCallback(
@@ -1602,7 +1598,7 @@ export const AdminCreditSettingsTab = ({
                 <SectionHeader
                   icon={Banknote}
                   title="가격"
-                  description="커스텀어벗 판매가와 제조사 매입가(부가세 포함)입니다. CNC·환봉 구분 없이 동일 판매가를 적용합니다."
+                  description="커스텀어벗 판매가입니다. 매입가는 판매가의 50%로 자동 계산됩니다. CNC·환봉 구분 없이 동일 판매가를 적용합니다."
                   trailing={
                     <AutoSaveIndicator
                       state={
@@ -1625,20 +1621,10 @@ export const AdminCreditSettingsTab = ({
                   <SalesAmountCard
                     id="customAbutPurchasePrice"
                     title="매입가(부가세 포함)"
-                    value={settings.manufacturerRequestUnitPrice}
+                    value={purchasePriceFromSale(settings.labProductionPrice)}
                     disabled={loading}
-                    step={PURCHASE_AMOUNT_STEP}
-                    onChange={updatePurchasePrice}
-                    help="부가세 포함 제조사 고정단가. 장부·미정산은 포함가이며, 지급 시 재가산 없이 세금계산서만 ÷1.1로 분해합니다."
-                  />
-                  <SalesAmountCard
-                    id="customAbutRemakePurchasePrice"
-                    title="리메이크 매입가(부가세 포함)"
-                    value={settings.manufacturerRemakeUnitPrice}
-                    disabled={loading}
-                    step={PURCHASE_AMOUNT_STEP}
-                    onChange={updateRemakePurchasePrice}
-                    help="리메이크 생산 시 제조사 지급 단가(부가세 포함). 기본 6,600원."
+                    readOnly
+                    help="판매가의 50%로 자동 계산됩니다. 장부·미정산은 이 포함가이며, 지급 시 재가산 없이 세금계산서만 ÷1.1로 분해합니다."
                   />
                   <SalesAmountCard
                     id="customAbutShippingPurchasePrice"
@@ -1667,7 +1653,7 @@ export const AdminCreditSettingsTab = ({
                 />
                 <SharePercentPanel
                   salePrice={settings.labProductionPrice}
-                  purchasePrice={settings.manufacturerRequestUnitPrice}
+                  purchasePrice={purchasePriceFromSale(settings.labProductionPrice)}
                   regularShares={readResidualSharePercents(settings, "regular")}
                   disabled={loading}
                   onRegularChange={(patch) => updateSharePercent(patch)}
