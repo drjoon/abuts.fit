@@ -11,6 +11,10 @@ import {
   LANDING_CASE_ABUTMENT,
   LANDING_CASE_HEALING,
   LANDING_CASE_KIT,
+  LANDING_PLATFORM_BOARD,
+  LANDING_PLATFORM_LEDGER,
+  LANDING_PLATFORM_REQUEST,
+  LANDING_PLATFORM_STATS,
 } from "./landingAssets";
 
 export type OfferVisual =
@@ -20,7 +24,11 @@ export type OfferVisual =
       kind: "pair";
       items: Array<{ src: string; alt: string; caption: string }>;
     }
-  | { kind: "workspace" };
+  | { kind: "workspace" }
+  | {
+      kind: "slideshow";
+      shots: Array<{ src: string; alt: string }>;
+    };
 
 export type OfferIcon =
   | "request"
@@ -147,7 +155,15 @@ export const landingOffers: LandingOffer[] = [
     line: "같은 화면에서 끝냅니다.",
     lead: "기공의뢰서, 정산과 계산서, 배송 확인. 제품 구매까지 한 계정입니다.",
     hero: "tile",
-    tile: { kind: "workspace" },
+    tile: {
+      kind: "slideshow",
+      shots: [
+        { src: LANDING_PLATFORM_BOARD, alt: "의뢰 진행" },
+        { src: LANDING_PLATFORM_REQUEST, alt: "신규 의뢰" },
+        { src: LANDING_PLATFORM_STATS, alt: "정산 통계" },
+        { src: LANDING_PLATFORM_LEDGER, alt: "정산 내역" },
+      ],
+    },
     cta: { kind: "start", label: "시작하기" },
     highlights: [
       { icon: "request", label: "의뢰서", line: "스캔과 보철을 올립니다" },
@@ -161,12 +177,21 @@ export const landingOffers: LandingOffer[] = [
         name: "지정 기공소",
         line: "수수료 없이 맡깁니다.",
         points: ["원하는 기공소 지정", "플랫폼 수수료 없음", "월 참여비도 없음"],
-        visual: { kind: "workspace" },
+        visual: {
+          kind: "photo",
+          src: LANDING_PLATFORM_REQUEST,
+          alt: "신규 의뢰",
+        },
       },
       {
         name: "진행과 정산",
         line: "돈과 물건이 한 기록.",
         points: ["상태가 같은 화면", "계산서는 월말에", "배송 문의가 줄어듦"],
+        visual: {
+          kind: "photo",
+          src: LANDING_PLATFORM_BOARD,
+          alt: "의뢰 진행",
+        },
       },
     ],
     faq: [

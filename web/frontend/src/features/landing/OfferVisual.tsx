@@ -1,9 +1,77 @@
 // related files:
 // - web/frontend/src/features/landing/landingOffers.ts
 // - web/frontend/src/features/landing/LandingPracticeWorkspacePreview.tsx
+import { useEffect, useState } from "react";
 import { cn } from "@/shared/ui/cn";
 import type { OfferVisual as OfferVisualModel } from "./landingOffers";
 import { LandingPracticeWorkspacePreview } from "./LandingPracticeWorkspacePreview";
+
+function usePrefersReducedMotion() {
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const apply = () => setReduced(mq.matches);
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
+  return reduced;
+}
+
+function OfferSlideshow({
+  shots,
+  tile = false,
+  className,
+}: {
+  shots: Array<{ src: string; alt: string }>;
+  tile?: boolean;
+  className?: string;
+}) {
+  const [index, setIndex] = useState(0);
+  const reduced = usePrefersReducedMotion();
+
+  useEffect(() => {
+    if (reduced || shots.length < 2) return;
+    const id = window.setInterval(() => {
+      setIndex((current) => (current + 1) % shots.length);
+    }, 5500);
+    return () => window.clearInterval(id);
+  }, [reduced, shots.length]);
+
+  return (
+    <div className={cn("relative h-full min-h-0 w-full overflow-hidden bg-[#e8ecf1]", className)}>
+      {shots.map((shot, i) => (
+        <div
+          key={shot.src}
+          className={cn(
+            "absolute inset-0 flex items-center justify-center p-3 transition-opacity duration-700 sm:p-5",
+            tile && "pb-28 sm:pb-32",
+            i === index ? "opacity-100" : "pointer-events-none opacity-0",
+          )}
+        >
+          <img
+            src={shot.src}
+            alt={i === index ? shot.alt : ""}
+            className="max-h-full max-w-full rounded-xl object-contain shadow-[0_16px_40px_rgba(15,23,42,0.12)]"
+          />
+        </div>
+      ))}
+      {!tile && shots.length > 1 ? (
+        <div className="pointer-events-none absolute bottom-4 left-0 right-0 flex justify-center gap-1.5">
+          {shots.map((shot, i) => (
+            <span
+              key={shot.src}
+              className={cn(
+                "h-1.5 rounded-full",
+                i === index ? "w-6 bg-slate-900/80" : "w-1.5 bg-slate-900/30",
+              )}
+            />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 export function OfferVisual({
   visual,
@@ -36,6 +104,10 @@ export function OfferVisual({
         </p>
       </div>
     );
+  }
+
+  if (visual.kind === "slideshow") {
+    return <OfferSlideshow shots={visual.shots} tile={tile} className={className} />;
   }
 
   if (visual.kind === "workspace") {

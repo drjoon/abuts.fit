@@ -9,6 +9,7 @@ import {
   STORE_CATEGORIES,
   type StoreProduct,
 } from "@/shared/store/storeCatalog";
+import { LANDING_STORE_SHELF } from "./landingAssets";
 import { landingTheme } from "./landingTheme";
 
 type BrowseFilter = "all" | "abutment" | "healing" | "kits" | "parts";
@@ -76,6 +77,14 @@ export const LandingStoreShowcase = () => {
             전체 제품
             <ArrowRight className="h-4 w-4" />
           </button>
+        </div>
+
+        <div className="mt-6 overflow-hidden rounded-[1.75rem] border border-slate-200/80 bg-[#e8ecf1]">
+          <img
+            src={LANDING_STORE_SHELF}
+            alt="어벗츠 스토어. 어벗먼트와 시술 키트"
+            className="max-h-[32rem] w-full object-contain object-top"
+          />
         </div>
 
         <div className="mt-5 flex flex-wrap gap-2">

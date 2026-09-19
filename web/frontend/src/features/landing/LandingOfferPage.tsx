@@ -319,7 +319,7 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
             visual={offer.tile}
             video={offer.hero === "video"}
             reduced={reduced}
-            drift={offer.hero !== "video"}
+            drift={offer.hero !== "video" && offer.tile.kind !== "slideshow"}
           />
         </div>
         <div className="px-6 pb-24 pt-16 text-center sm:px-10 sm:pb-32 sm:pt-20">
