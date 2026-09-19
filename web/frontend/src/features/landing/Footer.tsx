@@ -5,7 +5,7 @@
 // - web/frontend/src/features/landing/landingTheme.ts
 import { Badge } from "@/components/ui/badge";
 import { Mail, Phone, MapPin, Instagram, Facebook } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import {
   COMPANY_ADDRESS,
   COMPANY_BUSINESS_REGISTRATION_NUMBER,
@@ -14,7 +14,7 @@ import {
   COMPANY_PHONE,
   CONTACT_EMAIL,
 } from "@/shared/lib/contactInfo";
-import { landingIdentity } from "@/features/landing/landingTheme";
+import { landingIdentity, landingContent } from "@/features/landing/landingTheme";
 import { cn } from "@/shared/ui/cn";
 import { AbutsLogo } from "@/components/branding/AbutsLogo";
 
@@ -24,6 +24,8 @@ type FooterProps = {
 
 export const Footer = ({ tone = "dark" }: FooterProps) => {
   const isLight = tone === "light";
+  const { pathname } = useLocation();
+  const landing = pathname === "/" || pathname.startsWith("/offer/");
 
   const support = [
     { label: "어벗츠 소개", href: "/" },
@@ -57,7 +59,12 @@ export const Footer = ({ tone = "dark" }: FooterProps) => {
           )}
         />
       </div>
-      <div className="container mx-auto px-6 py-16 sm:px-10 lg:px-16">
+      <div
+        className={cn(
+          "mx-auto w-full py-16",
+          landing ? landingContent : "container px-6 sm:px-10 lg:px-16",
+        )}
+      >
         <div className="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-4">
           <div className="lg:col-span-2">
             <div

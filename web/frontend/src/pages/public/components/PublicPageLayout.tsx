@@ -25,6 +25,8 @@ interface PublicPageLayoutProps {
   tone?: "dark" | "light";
   /** `/` 히어로 위로 네비를 겹친다 */
   navOverlay?: boolean;
+  /** 장식 배경 없이 흰 캔버스. 서브 오퍼(스크린샷 히어로) */
+  plain?: boolean;
 }
 
 const DEFAULT_CONTENT_CLASS =
@@ -35,19 +37,21 @@ export const PublicPageLayout = ({
   contentClassName,
   tone = "light",
   navOverlay = false,
+  plain = false,
 }: PublicPageLayoutProps) => {
   const resolvedContentClass = contentClassName ?? DEFAULT_CONTENT_CLASS;
   const isLight = tone === "light";
+  const bare = navOverlay || plain;
 
   return (
     <div
       className={cn(
         "relative min-h-screen",
-        navOverlay ? "overflow-x-hidden bg-white text-slate-900" : "overflow-hidden",
-        !navOverlay && (isLight ? "bg-[#f7f9fc] text-slate-900" : "bg-[#07111f] text-white"),
+        bare ? "overflow-x-hidden bg-white text-slate-900" : "overflow-hidden",
+        !bare && (isLight ? "bg-[#f7f9fc] text-slate-900" : "bg-[#07111f] text-white"),
       )}
     >
-      {navOverlay ? null : isLight ? (
+      {bare ? null : isLight ? (
         <div className="pointer-events-none absolute inset-0">
           <div className="absolute inset-0 bg-gradient-to-b from-white via-[#f7f9fc] to-[#eef3f9]" />
           <div className="absolute -top-32 left-[-6%] h-[28rem] w-[32rem] rounded-full bg-sky-200/35 blur-[120px]" />

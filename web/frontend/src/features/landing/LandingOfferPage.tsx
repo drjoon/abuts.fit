@@ -30,6 +30,7 @@ import {
 import { useAuthStore } from "@/store/useAuthStore";
 import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath";
 import { cn } from "@/shared/ui/cn";
+import { landingContent } from "./landingTheme";
 import { LANDING_HERO_POSTER, LANDING_HERO_VIDEO } from "./landingAssets";
 import { OfferVisual } from "./OfferVisual";
 import {
@@ -56,8 +57,7 @@ const ICONS: Record<OfferIcon, typeof FileText> = {
   box: Box,
 };
 
-const ONE =
-  "whitespace-nowrap tracking-tight";
+const ONE = "tracking-tight";
 
 function usePrefersReducedMotion() {
   const [reduced, setReduced] = useState(false);
@@ -88,7 +88,7 @@ function MediaFrame({
     <div className={cn("relative h-full w-full overflow-hidden bg-[#e7e9ee]", className)}>
       {video && !reduced ? (
         <video
-          className="absolute inset-0 h-full w-full object-cover"
+          className="absolute inset-0 h-full w-full object-cover object-top"
           autoPlay
           muted
           loop
@@ -109,7 +109,7 @@ function MediaFrame({
             <img
               src={LANDING_HERO_POSTER}
               alt=""
-              className="h-full w-full object-cover"
+              className="h-full w-full object-cover object-top"
             />
           ) : (
             <OfferVisual visual={visual} fill className="h-full min-h-0" />
@@ -128,35 +128,38 @@ function ProductCards({
   onBuy: (buy: OfferBuy) => void;
 }) {
   return (
-    <section id="buy" className="scroll-mt-20 bg-[#f3f4f6] px-4 py-24 sm:px-8 sm:py-32 lg:px-12">
-      <div className="mx-auto grid max-w-6xl gap-6 md:grid-cols-2 md:gap-8">
-        {products.map((product) => (
+    <section id="buy" className="scroll-mt-20 bg-[#f3f4f6] pt-16 pb-24 sm:pt-20 sm:pb-32">
+      <div className={cn(landingContent, "grid gap-8 md:grid-cols-2 lg:gap-10")}>
+        {products.map((product, index) => (
           <article
             key={product.name}
-            className="flex flex-col overflow-hidden rounded-[2rem] bg-white"
+            className={cn(
+              "flex flex-col overflow-hidden rounded-[2rem] bg-white",
+              index === 0 && "md:mt-10",
+            )}
           >
-            <div className="h-64 bg-[#eef1f6] sm:h-72">
+            <div className="h-72 bg-[#eef1f6] sm:h-80">
               <OfferVisual visual={product.visual} fill className="h-full min-h-0" />
             </div>
-            <div className="flex flex-1 flex-col px-7 py-8 sm:px-10 sm:py-10">
-              <h2 className={cn(ONE, "text-3xl font-semibold text-slate-900")}>
+            <div className="flex flex-1 flex-col px-7 pt-8 pb-10 sm:px-10 sm:pt-10 sm:pb-12">
+              <h2 className={cn(ONE, "text-4xl font-semibold text-slate-900")}>
                 {product.name}
               </h2>
-              <p className={cn(ONE, "mt-2 text-base text-slate-600")}>{product.line}</p>
-              <p className={cn(ONE, "mt-8 text-3xl font-semibold tabular-nums text-slate-900")}>
+              <p className={cn(ONE, "mt-2 text-xl text-slate-600")}>{product.line}</p>
+              <p className={cn(ONE, "mt-10 text-4xl font-semibold tabular-nums text-slate-900")}>
                 {product.price}
               </p>
-              <p className={cn(ONE, "mt-1 text-sm text-slate-500")}>{product.priceNote}</p>
+              <p className={cn(ONE, "mt-1 text-base text-slate-500")}>{product.priceNote}</p>
               <Button
                 type="button"
-                className="mt-8 h-12 w-full rounded-full bg-[#2563eb] text-sm font-semibold text-white hover:bg-[#1d4ed8]"
+                className="mt-8 h-12 w-full rounded-full bg-[#2563eb] text-base font-semibold text-white hover:bg-[#1d4ed8]"
                 onClick={() => onBuy(product.buy)}
               >
                 {product.buy.label}
               </Button>
-              <ul className="mt-8 space-y-2.5 border-t border-slate-100 pt-6">
+              <ul className="mt-10 space-y-3 border-t border-slate-100 pt-8">
                 {product.specs.map((spec) => (
-                  <li key={spec} className={cn(ONE, "text-sm text-slate-700")}>
+                  <li key={spec} className={cn(ONE, "text-lg text-slate-800")}>
                     {spec}
                   </li>
                 ))}
@@ -169,32 +172,51 @@ function ProductCards({
   );
 }
 
-function StoryCards({
+function StoryRows({
   stories,
+  lead,
 }: {
   stories: NonNullable<LandingOffer["stories"]>;
+  lead?: string;
 }) {
   return (
-    <section className="bg-[#f3f4f6] px-4 py-24 sm:px-8 sm:py-32 lg:px-12">
-      <div className="mx-auto grid max-w-6xl gap-6 md:grid-cols-2 md:gap-8">
-        {stories.map((story) => (
+    <section className="bg-[#f3f4f6] pt-8 pb-16 sm:pt-12 sm:pb-24">
+      <div className={cn(landingContent, "flex flex-col gap-20 sm:gap-28")}>
+        {lead ? (
+          <h2
+            className={cn(
+              ONE,
+              "max-w-3xl text-[clamp(2rem,4.5vw,3.5rem)] font-semibold leading-[1.1] text-slate-900",
+            )}
+          >
+            {lead}
+          </h2>
+        ) : null}
+        {stories.map((story, index) => (
           <article
             key={story.name}
-            className="flex flex-col overflow-hidden rounded-[2rem] bg-white"
+            className="grid items-center gap-8 lg:grid-cols-2 lg:gap-16"
           >
             {story.visual ? (
-              <div className="h-64 bg-[#eef1f6] sm:h-80">
+              <div
+                className={cn(
+                  "h-[22rem] overflow-hidden rounded-[1.75rem] bg-[#e7e9ee] sm:h-[28rem] lg:h-[32rem]",
+                  index % 2 === 1 && "lg:order-2",
+                )}
+              >
                 <OfferVisual visual={story.visual} fill className="h-full min-h-0" />
               </div>
             ) : null}
-            <div className="flex flex-1 flex-col px-7 py-8 sm:px-10 sm:py-10">
-              <h2 className={cn(ONE, "text-3xl font-semibold text-slate-900")}>
+            <div className={cn(index % 2 === 1 ? "lg:pr-6" : "lg:pl-4 lg:pt-10")}>
+              <h3 className={cn(ONE, "text-4xl font-semibold text-slate-900 sm:text-5xl")}>
                 {story.name}
-              </h2>
-              <p className={cn(ONE, "mt-2 text-base text-slate-600")}>{story.line}</p>
-              <ul className="mt-8 space-y-2.5">
+              </h3>
+              <p className={cn(ONE, "mt-3 text-xl text-slate-600 sm:text-2xl")}>
+                {story.line}
+              </p>
+              <ul className="mt-10 space-y-3">
                 {story.points.map((point) => (
-                  <li key={point} className={cn(ONE, "text-sm text-slate-700")}>
+                  <li key={point} className={cn(ONE, "text-xl text-slate-800 sm:text-2xl")}>
                     {point}
                   </li>
                 ))}
@@ -241,9 +263,9 @@ function Slideshow({
   };
 
   return (
-    <section className="bg-white px-4 py-24 sm:px-8 sm:py-32 lg:px-12" aria-roledescription="carousel">
-      <div className="mx-auto max-w-6xl">
-        <h2 className={cn(ONE, "text-center text-[clamp(1.75rem,4vw,3rem)] font-semibold text-slate-900")}>
+    <section className="bg-white pt-16 pb-20 sm:pt-24 sm:pb-28" aria-roledescription="carousel">
+      <div className={landingContent}>
+        <h2 className={cn(ONE, "max-w-xl text-[clamp(2rem,4.2vw,3.25rem)] font-semibold leading-tight text-slate-900")}>
           {heading}
         </h2>
         <div className="relative mt-14 overflow-hidden rounded-[2rem] bg-[#e7e9ee]">
@@ -254,7 +276,7 @@ function Slideshow({
             <p className={cn(ONE, "text-2xl font-semibold text-white sm:text-4xl")}>
               {slide.title}
             </p>
-            <p className={cn(ONE, "mt-2 text-sm text-white/90 sm:text-base")}>{slide.line}</p>
+            <p className={cn(ONE, "mt-3 text-lg text-white/90 sm:text-2xl")}>{slide.line}</p>
           </div>
           <button
             type="button"
@@ -293,6 +315,90 @@ function Slideshow({
   );
 }
 
+function highlightSpan(index: number, count: number) {
+  if (count >= 5) {
+    if (index === 0) return "lg:col-span-4";
+    return "lg:col-span-2";
+  }
+  if (index === 0 || index === 1) return "lg:col-span-3";
+  if (index === count - 1) return "lg:col-span-4";
+  return "lg:col-span-2";
+}
+
+function HeroCopy({
+  offer,
+  onBuy,
+  onDark = false,
+}: {
+  offer: LandingOffer;
+  onBuy: (buy: OfferBuy) => void;
+  onDark?: boolean;
+}) {
+  return (
+    <div>
+      <p
+        className={cn(
+          "text-2xl font-medium sm:text-3xl",
+          onDark ? "text-white/85" : "text-slate-500",
+        )}
+      >
+        {offer.navLabel}
+      </p>
+      <h1
+        className={cn(
+          ONE,
+          "mt-2 text-[clamp(2.6rem,5vw,4.25rem)] font-semibold leading-[1.08]",
+          onDark ? "text-white" : "text-slate-900",
+        )}
+      >
+        {offer.heroTitle}
+      </h1>
+      <p
+        className={cn(
+          ONE,
+          "mt-4 max-w-xl text-xl leading-snug sm:text-2xl",
+          onDark ? "text-white/90" : "text-slate-600",
+        )}
+      >
+        {offer.line}
+      </p>
+      {offer.cta ? (
+        <Button
+          type="button"
+          className={cn(
+            "mt-10 h-12 rounded-full px-8 text-base font-semibold",
+            onDark
+              ? "bg-white text-slate-900 hover:bg-white/90"
+              : "bg-[#2563eb] text-white hover:bg-[#1d4ed8]",
+          )}
+          onClick={() => {
+            if (offer.cta) onBuy(offer.cta);
+          }}
+        >
+          {offer.cta.label}
+        </Button>
+      ) : null}
+      {offer.products ? (
+        <div className="mt-8 flex flex-wrap gap-x-8 gap-y-2">
+          {offer.products.map((product) => (
+            <a
+              key={product.name}
+              href="#buy"
+              className={cn(
+                ONE,
+                "text-lg font-semibold underline-offset-4 hover:underline",
+                onDark ? "text-white" : "text-[#1d4ed8]",
+              )}
+            >
+              {product.name}
+            </a>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
   const navigate = useNavigate();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -313,90 +419,90 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
 
   return (
     <div className="bg-white text-slate-900">
-      <section className="bg-[#f4f5f7]">
-        <div className="relative h-[68vh] min-h-[26rem] overflow-hidden">
-          <MediaFrame
-            visual={offer.tile}
-            video={offer.hero === "video"}
-            reduced={reduced}
-            drift={offer.hero !== "video" && offer.tile.kind !== "slideshow"}
-          />
-        </div>
-        <div className="px-6 pb-24 pt-16 text-center sm:px-10 sm:pb-32 sm:pt-20">
-          <p className="text-xs font-semibold tracking-[0.22em] text-slate-500">
-            {offer.navLabel}
-          </p>
-          <h1
-            className={cn(
-              ONE,
-              "mt-8 text-[clamp(2rem,6.2vw,4.75rem)] font-semibold leading-[1.15] text-slate-900 sm:mt-10",
-            )}
-          >
-            {offer.heroTitle}
-          </h1>
-          <p
-            className={cn(
-              ONE,
-              "mt-8 text-[clamp(1.05rem,2.2vw,1.5rem)] text-slate-600 sm:mt-10",
-            )}
-          >
-            {offer.line}
-          </p>
-          {offer.cta ? (
-            <Button
-              type="button"
-              className="mt-12 h-12 rounded-full bg-[#2563eb] px-8 text-sm font-semibold text-white hover:bg-[#1d4ed8] sm:mt-14"
-              onClick={() => {
-                if (offer.cta) onBuy(offer.cta);
-              }}
-            >
-              {offer.cta.label}
-            </Button>
-          ) : null}
-          {offer.products ? (
-            <div className="mt-12 flex flex-wrap items-center justify-center gap-x-10 gap-y-3 sm:mt-14">
-              {offer.products.map((product) => (
-                <a
-                  key={product.name}
-                  href="#buy"
-                  className={cn(
-                    ONE,
-                    "text-sm font-semibold text-[#1d4ed8] underline-offset-4 hover:underline",
-                  )}
-                >
-                  {product.name}
-                </a>
-              ))}
+      {offer.hero === "video" ? (
+        <section className="bg-black">
+          <div className="h-14 bg-white sm:h-16" aria-hidden />
+          <div className="relative min-h-[calc(100svh-3.5rem)] sm:min-h-[calc(100svh-4rem)]">
+            <div className="absolute inset-0">
+              <MediaFrame
+                visual={offer.tile}
+                video
+                reduced={reduced}
+                className="h-full"
+              />
             </div>
-          ) : null}
-        </div>
-      </section>
+            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-black/25" />
+            <div className={cn(landingContent, "relative flex min-h-[calc(100svh-3.5rem)] items-end pb-14 pt-10 sm:min-h-[calc(100svh-4rem)] sm:pb-20")}>
+              <HeroCopy offer={offer} onBuy={onBuy} onDark />
+            </div>
+          </div>
+        </section>
+      ) : (
+        <section className="bg-[#f4f5f7]">
+          <div className="h-14 sm:h-16" aria-hidden />
+          <div className={cn(landingContent, "grid items-center lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)] lg:gap-10")}>
+            <div className="flex flex-col pt-5 pb-8 lg:py-8">
+              <HeroCopy offer={offer} onBuy={onBuy} />
+            </div>
+            <div className="pb-3 lg:py-2">
+              <div className="h-[min(62vh,38rem)] w-full overflow-hidden rounded-[1.75rem] bg-[#e7e9ee] lg:h-[min(74vh,44rem)] lg:rounded-[2rem]">
+                <MediaFrame
+                  visual={offer.tile}
+                  reduced={reduced}
+                  drift={offer.tile.kind !== "slideshow"}
+                />
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
 
       {offer.highlights ? (
-        <section className="bg-white px-4 py-20 sm:px-8 sm:py-28 lg:px-12">
-          <div className="mx-auto max-w-6xl">
-            <div
+        <section className="bg-white pt-16 pb-8 sm:pt-28 sm:pb-12">
+          <div className={landingContent}>
+            <h2
               className={cn(
-                "-mx-4 flex snap-x snap-mandatory gap-4 overflow-x-auto px-4 pb-2 lg:mx-0 lg:grid lg:gap-5 lg:overflow-visible lg:px-0",
-                offer.highlights.length >= 5
-                  ? "lg:grid-cols-5"
-                  : "lg:grid-cols-4",
+                ONE,
+                "max-w-3xl text-[clamp(2rem,4.5vw,3.5rem)] font-semibold leading-[1.1] text-slate-900",
               )}
             >
-              {offer.highlights.slice(0, 5).map((item) => {
+              {offer.lead}
+            </h2>
+            <div className="mt-10 grid gap-4 sm:mt-14 sm:grid-cols-2 lg:grid-cols-6 lg:gap-5">
+              {offer.highlights.slice(0, 5).map((item, index) => {
                 const Icon = ICONS[item.icon];
+                const featured = index === 0;
                 return (
                   <article
                     key={item.label}
-                    className="w-[13.75rem] shrink-0 snap-start rounded-[1.5rem] bg-[#f4f5f7] px-5 py-8 lg:w-auto"
+                    className={cn(
+                      "rounded-[1.75rem] bg-[#f4f5f7]",
+                      featured ? "px-7 py-10 sm:col-span-2 sm:px-9 sm:py-14" : "px-6 py-8",
+                      highlightSpan(index, offer.highlights?.length ?? 0),
+                    )}
                   >
-                    <span className="flex h-11 w-11 items-center justify-center rounded-full bg-white text-slate-900">
-                      <Icon className="h-5 w-5" aria-hidden />
+                    <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white text-slate-900">
+                      <Icon className={featured ? "h-6 w-6" : "h-5 w-5"} aria-hidden />
                     </span>
-                    <h2 className={cn(ONE, "mt-6 text-lg font-semibold text-slate-900")}>
+                    <h3
+                      className={cn(
+                        ONE,
+                        "mt-6 font-semibold text-slate-900",
+                        featured ? "text-3xl sm:text-4xl" : "text-2xl",
+                      )}
+                    >
                       {item.label}
-                    </h2>
-                    <p className={cn(ONE, "mt-2 text-sm text-slate-600")}>{item.line}</p>
+                    </h3>
+                    <p
+                      className={cn(
+                        ONE,
+                        featured
+                          ? "mt-3 text-xl text-slate-700"
+                          : "mt-2 text-lg text-slate-600",
+                      )}
+                    >
+                      {item.line}
+                    </p>
                   </article>
                 );
               })}
@@ -406,21 +512,26 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
       ) : null}
 
       {offer.scene ? (
-        <section className="bg-white px-4 py-16 sm:px-8 sm:py-24 lg:px-12">
-          <div className="mx-auto max-w-6xl text-center">
-            <h2
-              className={cn(
-                ONE,
-                "text-[clamp(1.75rem,4.2vw,3.25rem)] font-semibold text-slate-900",
-              )}
-            >
-              {offer.scene.title}
-            </h2>
-            <p className={cn(ONE, "mt-4 text-base text-slate-600 sm:text-lg")}>
-              {offer.scene.line}
-            </p>
-            <div className="mt-14 h-[24rem] overflow-hidden rounded-[2rem] sm:mt-16 sm:h-[32rem]">
-              <MediaFrame visual={offer.scene.visual} reduced={reduced} />
+        <section className="relative min-h-[70vh] bg-[#e7e9ee]">
+          <div className="absolute inset-0">
+            <MediaFrame visual={offer.scene.visual} reduced={reduced} />
+          </div>
+          <div className="absolute inset-0 bg-gradient-to-r from-black/75 via-black/35 to-transparent" />
+          <div className="relative flex min-h-[70vh] items-end pb-12 sm:pb-16">
+            <div className={landingContent}>
+            <div className="max-w-xl">
+              <h2
+                className={cn(
+                  ONE,
+                  "text-[clamp(2.25rem,5vw,4rem)] font-semibold leading-[1.08] text-white",
+                )}
+              >
+                {offer.scene.title}
+              </h2>
+              <p className={cn(ONE, "mt-4 text-xl text-white/90 sm:text-2xl")}>
+                {offer.scene.line}
+              </p>
+            </div>
             </div>
           </div>
         </section>
@@ -429,7 +540,12 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
       {offer.products ? (
         <ProductCards products={offer.products} onBuy={onBuy} />
       ) : null}
-      {offer.stories ? <StoryCards stories={offer.stories} /> : null}
+      {offer.stories ? (
+        <StoryRows
+          stories={offer.stories}
+          lead={offer.highlights ? undefined : offer.lead}
+        />
+      ) : null}
       {offer.slides ? (
         <Slideshow
           heading={offer.slideHeading ?? "키트도 함께."}
@@ -440,21 +556,21 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
       ) : null}
 
       {offer.specs ? (
-        <section className="bg-[#f3f4f6] px-6 py-24 sm:px-10 sm:py-32">
-          <div className="mx-auto max-w-6xl">
+        <section className="bg-[#f3f4f6] pt-16 pb-24 sm:pt-20 sm:pb-32">
+          <div className={landingContent}>
             <h2
               className={cn(
                 ONE,
-                "text-center text-[clamp(1.75rem,4vw,3rem)] font-semibold text-slate-900",
+                "max-w-xl text-[clamp(2rem,4vw,3.25rem)] font-semibold text-slate-900",
               )}
             >
               간단히 보는 스펙.
             </h2>
-            <dl className="mt-16 grid gap-10 sm:grid-cols-2 lg:grid-cols-4">
-              {offer.specs.map((spec) => (
-                <div key={spec.label} className="text-center">
-                  <dt className={cn(ONE, "text-sm text-slate-500")}>{spec.label}</dt>
-                  <dd className={cn(ONE, "mt-3 text-xl font-semibold text-slate-900")}>
+            <dl className="mt-12 grid gap-x-8 gap-y-10 sm:grid-cols-2 lg:mt-16 lg:grid-cols-4">
+              {offer.specs.map((spec, index) => (
+                <div key={spec.label} className={cn(index === 0 && "lg:pt-2")}>
+                  <dt className={cn(ONE, "text-base text-slate-500")}>{spec.label}</dt>
+                  <dd className={cn(ONE, "mt-2 text-2xl font-semibold text-slate-900")}>
                     {spec.value}
                   </dd>
                 </div>
@@ -465,23 +581,28 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
       ) : null}
 
       {offer.faq ? (
-        <section className="bg-white px-6 py-24 sm:px-10 sm:pb-28">
-          <div className="mx-auto max-w-3xl">
-            <h2
-              className={cn(
-                ONE,
-                "text-center text-[clamp(1.75rem,4vw,3rem)] font-semibold text-slate-900",
-              )}
-            >
-              FAQ
-            </h2>
-            <Accordion type="single" collapsible className="mt-12">
+        <section className="bg-white pt-20 pb-16 sm:pt-32 sm:pb-24">
+          <div className={cn(landingContent, "grid gap-8 lg:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)] lg:gap-16")}>
+            <div className="lg:pt-2">
+              <h2
+                className={cn(
+                  ONE,
+                  "text-[clamp(2.5rem,5vw,4rem)] font-semibold text-slate-900",
+                )}
+              >
+                FAQ
+              </h2>
+              <p className="mt-4 max-w-xs text-lg leading-snug text-slate-600">
+                {offer.navLabel}에서 먼저 묻는 것만.
+              </p>
+            </div>
+            <Accordion type="single" collapsible>
               {offer.faq.map((item) => (
                 <AccordionItem key={item.q} value={item.q} className="border-slate-200">
-                  <AccordionTrigger className="py-5 text-left text-base font-semibold text-slate-900 hover:no-underline">
+                  <AccordionTrigger className="py-6 text-left text-lg font-semibold text-slate-900 hover:no-underline sm:text-xl">
                     {item.q}
                   </AccordionTrigger>
-                  <AccordionContent className="text-base leading-7 text-slate-600">
+                  <AccordionContent className="pb-6 text-lg leading-8 text-slate-600">
                     {item.a}
                   </AccordionContent>
                 </AccordionItem>

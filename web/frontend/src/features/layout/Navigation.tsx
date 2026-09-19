@@ -11,6 +11,7 @@ import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath
 import { cn } from "@/shared/ui/cn";
 import { AbutsLogo } from "@/components/branding/AbutsLogo";
 import { landingOffers, offerPath } from "@/features/landing/landingOffers";
+import { landingContent } from "@/features/landing/landingTheme";
 
 function scrollToLandingSection(id: string) {
   const element = document.getElementById(id);
@@ -34,10 +35,11 @@ export const Navigation = ({ tone = "dark", overlay = false }: NavigationProps) 
   const navigate = useNavigate();
   const location = useLocation();
   const { isAuthenticated, user, logout } = useAuthStore();
-  const isLight = tone === "light";
   const isOfferNav =
     location.pathname === "/" || location.pathname.startsWith("/offer/");
   const overlayClear = overlay && !scrolled && !isOpen;
+  /** 영상 히어로 위는 밝은 글자. 스크롤하면 라이트 바로 돌아온다. */
+  const isLight = tone === "light" && !overlayClear;
 
   const toNavItem = (offer: (typeof landingOffers)[number]): NavMenuItem => ({
     label: offer.navLabel,
@@ -213,19 +215,24 @@ export const Navigation = ({ tone = "dark", overlay = false }: NavigationProps) 
     <nav className="fixed top-0 z-50 w-full">
       <div
         className={cn(
-          "absolute inset-0 z-0 border-b backdrop-blur-3xl transition-colors",
-          overlayClear && !isLight
-            ? "border-transparent bg-transparent backdrop-blur-none"
+          "absolute inset-0 z-0 border-b transition-colors",
+          overlayClear
+            ? "border-transparent bg-transparent"
             : isLight
-              ? "border-slate-200/70 bg-white/50 backdrop-blur-xl"
-              : "border-white/10 bg-[#02040c] md:bg-[#02040c]/95",
+              ? "border-black/10 bg-white/80"
+              : "border-white/10 bg-[#02040c] backdrop-blur-xl md:bg-[#02040c]/95",
         )}
       />
-      {!isLight ? (
+      {!isLight && !overlayClear ? (
         <div className="pointer-events-none absolute inset-0 z-0 bg-[radial-gradient(circle_at_22%_-15%,rgba(59,130,246,0.25),transparent_58%),radial-gradient(circle_at_78%_-20%,rgba(147,51,234,0.22),transparent_60%),radial-gradient(circle_at_50%_25%,rgba(6,78,59,0.18),transparent_72%)] opacity-70" />
       ) : null}
 
-      <div className="relative z-10 container mx-auto px-4 sm:px-6">
+      <div
+        className={cn(
+          "relative z-10 mx-auto w-full",
+          isOfferNav ? landingContent : "container px-4 sm:px-6",
+        )}
+      >
         <div className="relative flex h-14 items-center justify-between sm:h-16">
           <button
             type="button"

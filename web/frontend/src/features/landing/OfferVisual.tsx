@@ -2,6 +2,7 @@
 // - web/frontend/src/features/landing/landingOffers.ts
 // - web/frontend/src/features/landing/LandingPracticeWorkspacePreview.tsx
 import { useEffect, useState } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/shared/ui/cn";
 import type { OfferVisual as OfferVisualModel } from "./landingOffers";
 import { LandingPracticeWorkspacePreview } from "./LandingPracticeWorkspacePreview";
@@ -28,46 +29,101 @@ function OfferSlideshow({
   className?: string;
 }) {
   const [index, setIndex] = useState(0);
+  const [dragX, setDragX] = useState<number | null>(null);
   const reduced = usePrefersReducedMotion();
+  const count = shots.length;
 
   useEffect(() => {
-    if (reduced || shots.length < 2) return;
+    if (reduced || count < 2) return;
     const id = window.setInterval(() => {
-      setIndex((current) => (current + 1) % shots.length);
+      setIndex((current) => (current + 1) % count);
     }, 5500);
     return () => window.clearInterval(id);
-  }, [reduced, shots.length]);
+  }, [reduced, count, index]);
+
+  const go = (next: number) => {
+    if (count < 1) return;
+    setIndex((next + count) % count);
+  };
 
   return (
-    <div className={cn("relative h-full min-h-0 w-full overflow-hidden bg-[#e8ecf1]", className)}>
-      {shots.map((shot, i) => (
-        <div
-          key={shot.src}
-          className={cn(
-            "absolute inset-0 flex items-center justify-center p-3 transition-opacity duration-700 sm:p-5",
-            tile && "pb-28 sm:pb-32",
-            i === index ? "opacity-100" : "pointer-events-none opacity-0",
-          )}
-        >
-          <img
-            src={shot.src}
-            alt={i === index ? shot.alt : ""}
-            className="max-h-full max-w-full rounded-xl object-contain shadow-[0_16px_40px_rgba(15,23,42,0.12)]"
-          />
-        </div>
-      ))}
-      {!tile && shots.length > 1 ? (
-        <div className="pointer-events-none absolute bottom-4 left-0 right-0 flex justify-center gap-1.5">
-          {shots.map((shot, i) => (
-            <span
-              key={shot.src}
-              className={cn(
-                "h-1.5 rounded-full",
-                i === index ? "w-6 bg-slate-900/80" : "w-1.5 bg-slate-900/30",
-              )}
+    <div
+      className={cn("relative h-full min-h-0 w-full overflow-hidden bg-[#e8ecf1]", className)}
+      onPointerDown={(event) => {
+        if (event.button !== 0) return;
+        if ((event.target as HTMLElement).closest("button")) return;
+        setDragX(event.clientX);
+      }}
+      onPointerUp={(event) => {
+        if (dragX == null) return;
+        const delta = event.clientX - dragX;
+        setDragX(null);
+        if (delta > 48) go(index - 1);
+        else if (delta < -48) go(index + 1);
+      }}
+      onPointerCancel={() => setDragX(null)}
+    >
+      <div
+        className={cn(
+          "flex h-full",
+          reduced ? "" : "transition-transform duration-700 ease-out",
+        )}
+        style={{ transform: `translateX(-${index * 100}%)` }}
+      >
+        {shots.map((shot, i) => (
+          <div
+            key={shot.src}
+            className={cn(
+              "flex h-full min-w-full items-center justify-center p-3 sm:p-5",
+              tile && "pb-28 sm:pb-32",
+            )}
+          >
+            <img
+              src={shot.src}
+              alt={i === index ? shot.alt : ""}
+              className="max-h-full max-w-full rounded-xl object-contain shadow-[0_16px_40px_rgba(15,23,42,0.12)]"
+              draggable={false}
             />
-          ))}
-        </div>
+          </div>
+        ))}
+      </div>
+      {count > 1 ? (
+        <>
+          <button
+            type="button"
+            className="absolute left-3 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-slate-900 shadow-sm hover:bg-white"
+            aria-label="이전 화면"
+            onClick={() => go(index - 1)}
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+          <button
+            type="button"
+            className="absolute right-3 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-slate-900 shadow-sm hover:bg-white"
+            aria-label="다음 화면"
+            onClick={() => go(index + 1)}
+          >
+            <ChevronRight className="h-5 w-5" />
+          </button>
+          <div className={cn(
+            "absolute left-0 right-0 z-20 flex justify-center gap-1.5",
+            tile ? "bottom-28 sm:bottom-32" : "bottom-4",
+          )}>
+            {shots.map((shot, i) => (
+              <button
+                key={shot.src}
+                type="button"
+                aria-label={`${i + 1}번째 화면`}
+                aria-current={i === index ? "true" : undefined}
+                className={cn(
+                  "h-1.5 rounded-full",
+                  i === index ? "w-6 bg-slate-900/80" : "w-1.5 bg-slate-900/30",
+                )}
+                onClick={() => go(i)}
+              />
+            ))}
+          </div>
+        </>
       ) : null}
     </div>
   );

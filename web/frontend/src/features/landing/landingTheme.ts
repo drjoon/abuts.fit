@@ -216,6 +216,9 @@ export const landingAudiences = [
   landingAudienceLab,
 ] as const;
 
+/** 랜딩·오퍼 본문. 넓은 화면에서는 가운데로 모은다. */
+export const landingContent = "mx-auto w-full max-w-6xl px-5 sm:px-8 lg:px-10";
+
 /** `/` 히어로. 네 메뉴 카피는 `landingOffers.ts`. */
 export const landingHome = {
   heroTitle: "심플웨이를 시작으로.",
