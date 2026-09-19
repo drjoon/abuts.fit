@@ -8959,7 +8959,9 @@ export const PracticeFileTransferPage = ({
   const practiceTransferFilePaneProps: PracticeTransferFilePaneProps = {
     acceptedHint: (
       <>
-        <span className="font-bold text-foreground">PLY · DCM (추천)</span>
+        <span className="font-bold text-foreground">DCM (제일 추천)</span>
+        {" · "}
+        <span className="font-semibold text-foreground">PLY(두번째 추천)</span>
         {" · STL · OBJ · 이미지"}
       </>
     ),
