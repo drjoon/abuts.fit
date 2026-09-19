@@ -325,10 +325,10 @@ export const landingOffers: LandingOffer[] = [
   {
     slug: "custom-abutment",
     navLabel: "커스텀어벗",
-    punch: "일정한 품질의 CNC 어벗.",
-    heroTitle: "일정한 CNC 품질.",
+    punch: "자동화로 균일한 고품질.",
+    heroTitle: "균일한 CNC 품질.",
     line: "디자인을 올리면 시작.",
-    lead: "건마다 같은 공정입니다.",
+    lead: "건마다 같은 공정, 같은 품질.",
     hero: "tile",
     tile: {
       kind: "slideshow",
@@ -356,8 +356,31 @@ export const landingOffers: LandingOffer[] = [
     stories: [
       {
         name: "같은 품질",
-        line: "건마다 같은 공정입니다.",
-        points: ["스캔이 올라오면 시작", "애크로덴트 CNC", "품질이 균일합니다"],
+        line: "어벗츠 자동화로 균일한 고품질.",
+        points: [
+          "스캔·디자인이 올라오면 시작",
+          "애크로덴트 CNC 동일 공정",
+          "자동화로 건마다 같은 품질",
+        ],
+        visual: {
+          kind: "photo",
+          src: LANDING_CUSTOM_ABUTMENT,
+          alt: "균일 품질의 커스텀 어벗 실물",
+        },
+      },
+      {
+        name: "같은 공정",
+        line: "사람 손보다 시스템이 맞춥니다.",
+        points: [
+          "접수부터 가공까지 한 흐름",
+          "툴패스·스펙이 건마다 동일",
+          "편차 없이 고품질로 마무리",
+        ],
+        visual: {
+          kind: "blank",
+          caption:
+            "애크로덴트 CNC 가공 라인 — 동일 툴패스·자동화로 건마다 같은 품질이 나오는 현장",
+        },
       },
       {
         name: "기공소로 도착",
@@ -381,7 +404,7 @@ export const landingOffers: LandingOffer[] = [
       },
       {
         q: "품질은 왜 일정한가요?",
-        a: "건마다 같은 CNC 공정이기 때문입니다. 제조는 (주)애크로덴트입니다.",
+        a: "어벗츠 자동화 시스템으로 건마다 같은 CNC 공정을 거치기 때문입니다. 제조는 (주)애크로덴트입니다.",
       },
       {
         q: "치과가 내는 금액은 무엇인가요?",
