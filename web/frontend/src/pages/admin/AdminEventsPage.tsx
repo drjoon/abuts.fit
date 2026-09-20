@@ -20,6 +20,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import {
   eventsApi,
   type EventApplication,
+  type EventApplicationStats,
   type MarketingEvent,
 } from "@/shared/events/eventsApi";
 import { cn } from "@/shared/ui/cn";
@@ -38,6 +39,17 @@ const EVENT_STATUS_LABEL: Record<MarketingEvent["status"], string> = {
   closed: "마감",
 };
 
+const EMPTY_STATS: EventApplicationStats = {
+  total: 0,
+  withDealer: 0,
+  oralScanYes: 0,
+  oralScanRate: 0,
+  practiceRegistered: 0,
+  practiceSignupRate: 0,
+  dealerRegistered: 0,
+  dealerSignupRate: 0,
+};
+
 function formatWhen(value?: string) {
   if (!value) return "-";
   const d = new Date(value);
@@ -52,12 +64,35 @@ function formatWhen(value?: string) {
   });
 }
 
+function StatCard({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+      <div className="text-[11px] font-medium text-muted-foreground">{label}</div>
+      <div className="mt-1 text-xl font-semibold tabular-nums text-slate-900">
+        {value}
+      </div>
+      {hint ? (
+        <div className="mt-0.5 text-[11px] text-muted-foreground">{hint}</div>
+      ) : null}
+    </div>
+  );
+}
+
 export default function AdminEventsPage() {
   const token = useAuthStore((s) => s.token);
   const { toast } = useToast();
   const [events, setEvents] = useState<MarketingEvent[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [applications, setApplications] = useState<EventApplication[]>([]);
+  const [stats, setStats] = useState<EventApplicationStats>(EMPTY_STATS);
   const [loadingEvents, setLoadingEvents] = useState(true);
   const [loadingApps, setLoadingApps] = useState(false);
   const [q, setQ] = useState("");
@@ -93,6 +128,7 @@ export default function AdminEventsPage() {
           status: statusFilter === "all" ? undefined : statusFilter,
         });
         setApplications(res.items || []);
+        setStats(res.stats || EMPTY_STATS);
       } catch (e) {
         toast({
           title: "신청 목록 실패",
@@ -113,6 +149,7 @@ export default function AdminEventsPage() {
   useEffect(() => {
     if (!selectedId) {
       setApplications([]);
+      setStats(EMPTY_STATS);
       return;
     }
     void loadApplications(selectedId);
@@ -220,173 +257,259 @@ export default function AdminEventsPage() {
             </div>
           </AdminPanel>
         ) : (
-          <AdminPanel
-            title={selected.title}
-            description={selected.summary || undefined}
-            bodyClassName="p-0 sm:p-0"
-            actions={
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="outline">
-                  {EVENT_STATUS_LABEL[selected.status]}
-                </Badge>
-                <Select
-                  value={selected.status}
-                  onValueChange={(v) =>
-                    void setEventStatus(v as MarketingEvent["status"])
+          <div className="space-y-4">
+            <AdminPanel
+              title="수집 · 통계"
+              description="신청 치과·재료상 · 가입률 · 구강스캔(디지털화)"
+              bodyClassName="p-3 sm:p-4"
+            >
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <StatCard
+                  label="신청 치과"
+                  value={`${stats.total}`}
+                  hint={`재료상 소개 ${stats.withDealer}건`}
+                />
+                <StatCard
+                  label="치과 가입률"
+                  value={`${stats.practiceSignupRate}%`}
+                  hint={`가입 ${stats.practiceRegistered} / ${stats.total}`}
+                />
+                <StatCard
+                  label="구강스캔 사용 비율"
+                  value={`${stats.oralScanRate}%`}
+                  hint={`사용 ${stats.oralScanYes} / ${stats.total}`}
+                />
+                <StatCard
+                  label="재료상 가입률"
+                  value={`${stats.dealerSignupRate}%`}
+                  hint={
+                    stats.withDealer > 0
+                      ? `가입 ${stats.dealerRegistered} / 소개 ${stats.withDealer}`
+                      : "소개 없음"
                   }
-                >
-                  <SelectTrigger className="h-8 w-[7.5rem]">
-                    <SelectValue />
+                />
+              </div>
+            </AdminPanel>
+
+            <AdminPanel
+              title={selected.title}
+              description={selected.summary || undefined}
+              bodyClassName="p-0 sm:p-0"
+              actions={
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="outline">
+                    {EVENT_STATUS_LABEL[selected.status]}
+                  </Badge>
+                  <Select
+                    value={selected.status}
+                    onValueChange={(v) =>
+                      void setEventStatus(v as MarketingEvent["status"])
+                    }
+                  >
+                    <SelectTrigger className="h-8 w-[7.5rem]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="draft">초안</SelectItem>
+                      <SelectItem value="open">모집 중</SelectItem>
+                      <SelectItem value="closed">마감</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button asChild size="sm" variant="outline" className="h-8">
+                    <a
+                      href={`/events/${encodeURIComponent(selected.slug)}`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      <ExternalLink className="mr-1 h-3.5 w-3.5" />
+                      신청 페이지
+                    </a>
+                  </Button>
+                </div>
+              }
+            >
+              <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-3 py-2">
+                <Input
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  placeholder="치과·재료상·전화 검색"
+                  className="h-8 max-w-xs"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && selectedId) {
+                      void loadApplications(selectedId);
+                    }
+                  }}
+                />
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="h-8 w-[7rem]">
+                    <SelectValue placeholder="상태" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="draft">초안</SelectItem>
-                    <SelectItem value="open">모집 중</SelectItem>
-                    <SelectItem value="closed">마감</SelectItem>
+                    <SelectItem value="all">전체</SelectItem>
+                    <SelectItem value="received">접수</SelectItem>
+                    <SelectItem value="reviewed">검토</SelectItem>
+                    <SelectItem value="fulfilled">완료</SelectItem>
+                    <SelectItem value="rejected">거절</SelectItem>
                   </SelectContent>
                 </Select>
-                <Button asChild size="sm" variant="outline" className="h-8">
-                  <a
-                    href={`/events/${encodeURIComponent(selected.slug)}`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    <ExternalLink className="mr-1 h-3.5 w-3.5" />
-                    신청 페이지
-                  </a>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  className="h-8"
+                  onClick={() =>
+                    selectedId && void loadApplications(selectedId)
+                  }
+                >
+                  검색
                 </Button>
               </div>
-            }
-          >
-            <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-3 py-2">
-              <Input
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="치과·재료상·전화 검색"
-                className="h-8 max-w-xs"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && selectedId) {
-                    void loadApplications(selectedId);
-                  }
-                }}
-              />
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="h-8 w-[7rem]">
-                  <SelectValue placeholder="상태" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">전체</SelectItem>
-                  <SelectItem value="received">접수</SelectItem>
-                  <SelectItem value="reviewed">검토</SelectItem>
-                  <SelectItem value="fulfilled">완료</SelectItem>
-                  <SelectItem value="rejected">거절</SelectItem>
-                </SelectContent>
-              </Select>
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                className="h-8"
-                onClick={() =>
-                  selectedId && void loadApplications(selectedId)
-                }
-              >
-                검색
-              </Button>
-            </div>
 
-            <div className="overflow-x-auto">
-              {loadingApps ? (
-                <div className="space-y-2 p-4">
-                  <Skeleton className="h-12 w-full" />
-                  <Skeleton className="h-12 w-full" />
-                </div>
-              ) : applications.length === 0 ? (
-                <p className="px-4 py-12 text-center text-sm text-muted-foreground">
-                  신청 내역이 없습니다.
-                </p>
-              ) : (
-                <table className="w-full min-w-[52rem] text-left text-sm">
-                  <thead className="border-b border-slate-100 bg-slate-50/80 text-xs text-muted-foreground">
-                    <tr>
-                      <th className="px-3 py-2 font-medium">신청시각</th>
-                      <th className="px-3 py-2 font-medium">치과 · 원장</th>
-                      <th className="px-3 py-2 font-medium">재료상</th>
-                      <th className="px-3 py-2 font-medium">연락처</th>
-                      <th className="px-3 py-2 font-medium">상태</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {applications.map((app) => (
-                      <tr
-                        key={app.id}
-                        className="border-b border-slate-50 align-top"
-                      >
-                        <td className="whitespace-nowrap px-3 py-2.5 text-xs text-muted-foreground">
-                          {formatWhen(app.createdAt)}
-                        </td>
-                        <td className="px-3 py-2.5">
-                          <div className="font-medium text-slate-900">
-                            {app.practice?.name || "-"}
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            원장 {app.directorName || "-"}
-                          </div>
-                          {app.practice?.address ? (
-                            <div className="mt-0.5 max-w-[14rem] truncate text-[11px] text-slate-500">
-                              {app.practice.address}
-                            </div>
-                          ) : null}
-                        </td>
-                        <td className="px-3 py-2.5">
-                          <div className="font-medium text-slate-900">
-                            {app.dealer?.name || "-"}
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            대표 {app.dealer?.representativeName || "-"}
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            {app.dealer?.phone || "-"}
-                          </div>
-                        </td>
-                        <td className="px-3 py-2.5 text-xs text-slate-600">
-                          <div>
-                            {app.applicantPhone || app.practice?.phone || "-"}
-                          </div>
-                          <div>{app.applicantEmail || "-"}</div>
-                        </td>
-                        <td className="px-3 py-2.5">
-                          <Select
-                            value={app.status}
-                            onValueChange={(v) =>
-                              void setAppStatus(
-                                app.id,
-                                v as EventApplication["status"],
-                              )
-                            }
-                          >
-                            <SelectTrigger className="h-8 w-[6.5rem]">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {(
-                                Object.keys(STATUS_LABEL) as Array<
-                                  EventApplication["status"]
-                                >
-                              ).map((s) => (
-                                <SelectItem key={s} value={s}>
-                                  {STATUS_LABEL[s]}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </td>
+              <div className="overflow-x-auto">
+                {loadingApps ? (
+                  <div className="space-y-2 p-4">
+                    <Skeleton className="h-12 w-full" />
+                    <Skeleton className="h-12 w-full" />
+                  </div>
+                ) : applications.length === 0 ? (
+                  <p className="px-4 py-12 text-center text-sm text-muted-foreground">
+                    신청 내역이 없습니다.
+                  </p>
+                ) : (
+                  <table className="w-full min-w-[64rem] text-left text-sm">
+                    <thead className="border-b border-slate-100 bg-slate-50/80 text-xs text-muted-foreground">
+                      <tr>
+                        <th className="px-3 py-2 font-medium">신청시각</th>
+                        <th className="px-3 py-2 font-medium">치과 · 원장</th>
+                        <th className="px-3 py-2 font-medium">재료상</th>
+                        <th className="px-3 py-2 font-medium">구강스캔</th>
+                        <th className="px-3 py-2 font-medium">가입</th>
+                        <th className="px-3 py-2 font-medium">연락처</th>
+                        <th className="px-3 py-2 font-medium">상태</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          </AdminPanel>
+                    </thead>
+                    <tbody>
+                      {applications.map((app) => (
+                        <tr
+                          key={app.id}
+                          className="border-b border-slate-50 align-top"
+                        >
+                          <td className="whitespace-nowrap px-3 py-2.5 text-xs text-muted-foreground">
+                            {formatWhen(app.createdAt)}
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <div className="font-medium text-slate-900">
+                              {app.practice?.name || "-"}
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              원장 {app.directorName || "-"}
+                            </div>
+                            {app.practice?.address ? (
+                              <div className="mt-0.5 max-w-[14rem] truncate text-[11px] text-slate-500">
+                                {app.practice.address}
+                              </div>
+                            ) : null}
+                          </td>
+                          <td className="px-3 py-2.5">
+                            {app.dealer?.name ? (
+                              <>
+                                <div className="font-medium text-slate-900">
+                                  {app.dealer.name}
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  대표 {app.dealer.representativeName || "-"}
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  {app.dealer.phone || "-"}
+                                </div>
+                              </>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">
+                                -
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <Badge
+                              variant="outline"
+                              className={
+                                app.usesOralScan
+                                  ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                                  : "text-muted-foreground"
+                              }
+                            >
+                              {app.usesOralScan ? "사용" : "미사용"}
+                            </Badge>
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <div className="flex flex-col gap-1">
+                              <Badge
+                                variant="outline"
+                                className={
+                                  app.practiceRegistered
+                                    ? "border-sky-200 bg-sky-50 text-sky-800"
+                                    : "text-muted-foreground"
+                                }
+                              >
+                                치과 {app.practiceRegistered ? "가입" : "미가입"}
+                              </Badge>
+                              {app.dealer?.name ? (
+                                <Badge
+                                  variant="outline"
+                                  className={
+                                    app.dealerRegistered
+                                      ? "border-sky-200 bg-sky-50 text-sky-800"
+                                      : "text-muted-foreground"
+                                  }
+                                >
+                                  재료상{" "}
+                                  {app.dealerRegistered ? "가입" : "미가입"}
+                                </Badge>
+                              ) : null}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2.5 text-xs text-slate-600">
+                            <div>
+                              휴대 {app.applicantPhone || "-"}
+                            </div>
+                            <div>
+                              치과 {app.practice?.phone || "-"}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <Select
+                              value={app.status}
+                              onValueChange={(v) =>
+                                void setAppStatus(
+                                  app.id,
+                                  v as EventApplication["status"],
+                                )
+                              }
+                            >
+                              <SelectTrigger className="h-8 w-[6.5rem]">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {(
+                                  Object.keys(STATUS_LABEL) as Array<
+                                    EventApplication["status"]
+                                  >
+                                ).map((s) => (
+                                  <SelectItem key={s} value={s}>
+                                    {STATUS_LABEL[s]}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </AdminPanel>
+          </div>
         )}
       </div>
     </AdminPageShell>

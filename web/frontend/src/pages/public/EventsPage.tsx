@@ -4,7 +4,7 @@
 // - web/frontend/src/App.tsx
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { CalendarDays, ChevronRight, Gift } from "lucide-react";
+import { CalendarDays, ChevronRight, Gift, Package } from "lucide-react";
 import {
   PublicPageLayout,
   PUBLIC_CARD_CLASS,
@@ -15,6 +15,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { eventsApi, type MarketingEvent } from "@/shared/events/eventsApi";
+import { SIMPLEWAY_SAMPLE_SLUG } from "@/shared/events/simplewaySampleCampaign";
+import { cn } from "@/shared/ui/cn";
 
 export default function EventsPage() {
   const [items, setItems] = useState<MarketingEvent[]>([]);
@@ -73,52 +75,71 @@ export default function EventsPage() {
           </Card>
         ) : (
           <ul className="space-y-3">
-            {items.map((ev) => (
-              <li key={ev.id}>
-                <Link
-                  to={`/events/${encodeURIComponent(ev.slug)}`}
-                  className="block rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
-                >
-                  <Card
-                    className={`${PUBLIC_CARD_CLASS} transition-colors hover:border-sky-200`}
+            {items.map((ev) => {
+              const isSimpleway = ev.slug === SIMPLEWAY_SAMPLE_SLUG;
+              return (
+                <li key={ev.id}>
+                  <Link
+                    to={`/events/${encodeURIComponent(ev.slug)}`}
+                    className="block rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
                   >
-                    <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0 pb-2">
-                      <div className="flex items-start gap-3">
-                        <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-50 text-sky-700">
-                          <Gift className="h-5 w-5" />
+                    <Card
+                      className={cn(
+                        PUBLIC_CARD_CLASS,
+                        "transition-all hover:-translate-y-0.5 hover:border-sky-200",
+                        isSimpleway &&
+                          "border-sky-200/80 bg-gradient-to-br from-white via-white to-sky-50/60",
+                      )}
+                    >
+                      <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0 pb-2">
+                        <div className="flex items-start gap-3">
+                          <div
+                            className={cn(
+                              "mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl",
+                              isSimpleway
+                                ? "bg-[#0b2a5c] text-white"
+                                : "bg-sky-50 text-sky-700",
+                            )}
+                          >
+                            {isSimpleway ? (
+                              <Package className="h-5 w-5" />
+                            ) : (
+                              <Gift className="h-5 w-5" />
+                            )}
+                          </div>
+                          <div className="min-w-0 space-y-1">
+                            <CardTitle className="text-lg leading-snug text-slate-900">
+                              {ev.title}
+                            </CardTitle>
+                            {ev.summary ? (
+                              <p className="text-sm leading-relaxed text-slate-600">
+                                {ev.summary}
+                              </p>
+                            ) : null}
+                          </div>
                         </div>
-                        <div className="min-w-0 space-y-1">
-                          <CardTitle className="text-lg leading-snug text-slate-900">
-                            {ev.title}
-                          </CardTitle>
-                          {ev.summary ? (
-                            <p className="text-sm leading-relaxed text-slate-600">
-                              {ev.summary}
-                            </p>
-                          ) : null}
-                        </div>
-                      </div>
-                      <Badge
-                        variant="outline"
-                        className="shrink-0 border-sky-200 bg-sky-50 text-sky-800"
-                      >
-                        신청 가능
-                      </Badge>
-                    </CardHeader>
-                    <CardContent className="flex items-center justify-between gap-2 pt-0 text-sm text-slate-500">
-                      <span className="inline-flex items-center gap-1.5">
-                        <CalendarDays className="h-3.5 w-3.5" />
-                        샘플 신청
-                      </span>
-                      <span className="inline-flex items-center gap-0.5 font-medium text-sky-700">
-                        신청하기
-                        <ChevronRight className="h-4 w-4" />
-                      </span>
-                    </CardContent>
-                  </Card>
-                </Link>
-              </li>
-            ))}
+                        <Badge
+                          variant="outline"
+                          className="shrink-0 border-sky-200 bg-sky-50 text-sky-800"
+                        >
+                          신청 가능
+                        </Badge>
+                      </CardHeader>
+                      <CardContent className="flex items-center justify-between gap-2 pt-0 text-sm text-slate-500">
+                        <span className="inline-flex items-center gap-1.5">
+                          <CalendarDays className="h-3.5 w-3.5" />
+                          {isSimpleway ? "화 · 수 이틀간 신청" : "샘플 신청"}
+                        </span>
+                        <span className="inline-flex items-center gap-0.5 font-medium text-sky-700">
+                          신청하기
+                          <ChevronRight className="h-4 w-4" />
+                        </span>
+                      </CardContent>
+                    </Card>
+                  </Link>
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>

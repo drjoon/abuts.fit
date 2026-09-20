@@ -28,8 +28,10 @@ const marketingEventApplicationSchema = new mongoose.Schema(
     practice: { type: placeSnapshotSchema, default: () => ({}) },
     /** 원장명 (치과 대표와 별도 기입) */
     directorName: { type: String, default: "", trim: true },
-    /** 지역 재료상 */
+    /** 지역 재료상 (옵션) */
     dealer: { type: placeSnapshotSchema, default: () => ({}) },
+    /** 구강 스캔 사용 여부 */
+    usesOralScan: { type: Boolean, default: false, index: true },
     applicantPhone: { type: String, default: "", trim: true },
     applicantEmail: { type: String, default: "", trim: true },
     memo: { type: String, default: "", trim: true },

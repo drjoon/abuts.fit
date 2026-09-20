@@ -73,13 +73,27 @@ export type EventApplication = {
   practice: EventPlaceFields;
   directorName: string;
   dealer: EventPlaceFields;
+  usesOralScan?: boolean;
   applicantPhone: string;
   applicantEmail: string;
   memo: string;
   status: "received" | "reviewed" | "fulfilled" | "rejected";
   adminNote: string;
+  practiceRegistered?: boolean;
+  dealerRegistered?: boolean;
   createdAt?: string;
   updatedAt?: string;
+};
+
+export type EventApplicationStats = {
+  total: number;
+  withDealer: number;
+  oralScanYes: number;
+  oralScanRate: number;
+  practiceRegistered: number;
+  practiceSignupRate: number;
+  dealerRegistered: number;
+  dealerSignupRate: number;
 };
 
 export const eventsApi = {
@@ -109,6 +123,7 @@ export const eventsApi = {
       applicantPhone?: string;
       applicantEmail?: string;
       memo?: string;
+      usesOralScan?: boolean;
     },
   ) =>
     eventsFetch<EventApplication>(
@@ -145,7 +160,11 @@ export const eventsApi = {
     if (params?.q) sp.set("q", params.q);
     if (params?.status) sp.set("status", params.status);
     const qs = sp.toString();
-    return eventsFetch<{ event: MarketingEvent; items: EventApplication[] }>(
+    return eventsFetch<{
+      event: MarketingEvent;
+      items: EventApplication[];
+      stats?: EventApplicationStats;
+    }>(
       `/api/admin/events/${encodeURIComponent(eventId)}/applications${
         qs ? `?${qs}` : ""
       }`,

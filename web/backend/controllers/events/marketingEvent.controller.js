@@ -6,12 +6,35 @@
 // - web/backend/modules/admin/admin.routes.js
 import MarketingEvent from "../../models/marketingEvent.model.js";
 import MarketingEventApplication from "../../models/marketingEventApplication.model.js";
+import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { searchKakaoPlaces } from "../../services/kakaoPlaceSearch.service.js";
 
 const SIMPLEWAY_SAMPLE_SLUG = "simpleway-sample-kit";
 
 const SIMPLEWAY_DEALER_HELP =
-  "거래하시는 지역 재료상을 통해 샘플을 잘 쓰실 수 있도록 안내드립니다. 재료상명·대표명·전화번호를 적어 주세요.";
+  "친한 로컬 재료상 사장님을 소개해주세요. 그 분께 지역 영업권을 드립니다.";
+
+const SIMPLEWAY_EVENT_COPY = {
+  title: "심플웨이 신제품 샘플 배포 행사",
+  summary:
+    "그리보 힐링H·어벗H(7M 각 1) + 드라이버(S) 샘플. 화·수 이틀간 신청 · 피드백 우선 선별 배포.",
+  description: [
+    "샘플 구성",
+    "· 그리보 힐링H 7M 1EA",
+    "· 그리보 어벗H 7M 1EA",
+    "· 그리보 드라이버(S) 1EA",
+    "",
+    "신청 기간: 화요일 · 수요일 (이틀)",
+    "피드백을 우선해 선별 배포합니다.",
+    "",
+    "신청 후 담당 영업자가 방문해 설명·전달합니다.",
+    "친한 로컬 재료상 사장님을 소개해 주시면 그 분께 지역 영업권을 드립니다. (옵션)",
+    "",
+    "추가 안내",
+    "· 거래 기공소에 그리보 힐링 스캔 라이브러리 설치 (기성·커스텀 어벗 모두 사용 가능)",
+    "· 구강 스캔 사용 치과에는 스캔바 소개",
+  ].join("\n"),
+};
 
 function trimStr(v, max = 200) {
   return String(v || "")
@@ -31,6 +54,24 @@ function normalizePlace(raw) {
     lat: Number.isFinite(lat) ? lat : null,
     lng: Number.isFinite(lng) ? lng : null,
   };
+}
+
+function normalizeMatchKey(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/주식회사|유한회사|\(주\)|\(유\)/g, "")
+    .replace(/치과의원|치과병원|치과$/g, "");
+}
+
+function normalizePhoneDigits(value) {
+  return String(value || "").replace(/\D+/g, "");
+}
+
+function dealerHasAny(dealer) {
+  return Boolean(
+    dealer?.name || dealer?.representativeName || dealer?.phone,
+  );
 }
 
 function toPublicEvent(doc) {
@@ -63,7 +104,7 @@ function toAdminEvent(doc, applicationCount = 0) {
   };
 }
 
-function toApplicationRow(doc) {
+function toApplicationRow(doc, extras = {}) {
   return {
     id: String(doc._id),
     eventId: String(doc.eventId),
@@ -71,6 +112,7 @@ function toApplicationRow(doc) {
     practice: doc.practice || {},
     directorName: doc.directorName || "",
     dealer: doc.dealer || {},
+    usesOralScan: Boolean(doc.usesOralScan),
     applicantPhone: doc.applicantPhone || "",
     applicantEmail: doc.applicantEmail || "",
     memo: doc.memo || "",
@@ -78,39 +120,218 @@ function toApplicationRow(doc) {
     adminNote: doc.adminNote || "",
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
+    practiceRegistered: Boolean(extras.practiceRegistered),
+    dealerRegistered: Boolean(extras.dealerRegistered),
   };
 }
 
-/** 첫 이벤트(심플웨이 신제품 샘플 배포)를 DB에 보장한다. */
+async function matchMembershipForApplications(apps) {
+  const practiceKeys = new Set();
+  const practicePhones = new Set();
+  const dealerKeys = new Set();
+  const dealerPhones = new Set();
+
+  for (const app of apps) {
+    const pKey = normalizeMatchKey(app.practice?.name);
+    if (pKey) practiceKeys.add(pKey);
+    const pPhone = normalizePhoneDigits(app.practice?.phone || app.applicantPhone);
+    if (pPhone.length >= 8) practicePhones.add(pPhone);
+    const dKey = normalizeMatchKey(app.dealer?.name);
+    if (dKey) dealerKeys.add(dKey);
+    const dPhone = normalizePhoneDigits(app.dealer?.phone);
+    if (dPhone.length >= 8) dealerPhones.add(dPhone);
+  }
+
+  if (
+    practiceKeys.size === 0 &&
+    practicePhones.size === 0 &&
+    dealerKeys.size === 0 &&
+    dealerPhones.size === 0
+  ) {
+    return {
+      byPractice: new Map(),
+      byDealer: new Map(),
+    };
+  }
+
+  const nameCandidates = [
+    ...new Set(
+      apps
+        .flatMap((app) => [app.practice?.name, app.dealer?.name])
+        .map((n) => trimStr(n, 120))
+        .filter(Boolean),
+    ),
+  ];
+  const phoneCandidates = [
+    ...new Set(
+      apps
+        .flatMap((app) => [
+          app.practice?.phone,
+          app.applicantPhone,
+          app.dealer?.phone,
+        ])
+        .map((p) => normalizePhoneDigits(p))
+        .filter((p) => p.length >= 8),
+    ),
+  ];
+
+  const or = [];
+  if (nameCandidates.length) {
+    or.push({ name: { $in: nameCandidates } });
+    for (const name of nameCandidates.slice(0, 40)) {
+      const key = normalizeMatchKey(name);
+      if (key.length < 2) continue;
+      const fragment = key.slice(0, Math.min(8, key.length));
+      or.push({
+        name: new RegExp(
+          fragment.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+          "i",
+        ),
+      });
+    }
+  }
+  if (phoneCandidates.length) {
+    for (const phone of phoneCandidates.slice(0, 40)) {
+      const tail = phone.slice(-8);
+      or.push({
+        "metadata.phoneNumber": new RegExp(
+          tail.split("").join("\\D*"),
+        ),
+      });
+    }
+  }
+
+  const anchors = or.length
+    ? await BusinessAnchor.find({
+        status: { $nin: ["merged", "inactive"] },
+        $or: or,
+      })
+        .select({
+          name: 1,
+          metadata: 1,
+          requestorCapabilities: 1,
+          businessType: 1,
+        })
+        .limit(400)
+        .lean()
+    : [];
+
+  const byPractice = new Map();
+  const byDealer = new Map();
+
+  for (const anchor of anchors) {
+    const key = normalizeMatchKey(anchor.name);
+    const phone = normalizePhoneDigits(anchor.metadata?.phoneNumber);
+    const caps = anchor.requestorCapabilities || {};
+    const isPracticeLike =
+      caps.practice === true ||
+      String(anchor.businessType || "") === "requestor" ||
+      String(anchor.businessType || "") === "practice";
+
+    if (key && practiceKeys.has(key) && isPracticeLike) {
+      byPractice.set(key, true);
+    }
+    if (phone && practicePhones.has(phone) && isPracticeLike) {
+      byPractice.set(`phone:${phone}`, true);
+    }
+    if (key && dealerKeys.has(key)) {
+      byDealer.set(key, true);
+    }
+    if (phone && dealerPhones.has(phone)) {
+      byDealer.set(`phone:${phone}`, true);
+    }
+  }
+
+  return { byPractice, byDealer };
+}
+
+function isPracticeRegistered(app, maps) {
+  const key = normalizeMatchKey(app.practice?.name);
+  if (key && maps.byPractice.has(key)) return true;
+  const phone = normalizePhoneDigits(app.practice?.phone || app.applicantPhone);
+  if (phone.length >= 8 && maps.byPractice.has(`phone:${phone}`)) return true;
+  return false;
+}
+
+function isDealerRegistered(app, maps) {
+  if (!dealerHasAny(app.dealer)) return false;
+  const key = normalizeMatchKey(app.dealer?.name);
+  if (key && maps.byDealer.has(key)) return true;
+  const phone = normalizePhoneDigits(app.dealer?.phone);
+  if (phone.length >= 8 && maps.byDealer.has(`phone:${phone}`)) return true;
+  return false;
+}
+
+function buildApplicationStats(items) {
+  const total = items.length;
+  const withDealer = items.filter((it) => dealerHasAny(it.dealer)).length;
+  const oralScanYes = items.filter((it) => it.usesOralScan).length;
+  const practiceRegistered = items.filter((it) => it.practiceRegistered).length;
+  const dealerRegistered = items.filter((it) => it.dealerRegistered).length;
+  const pct = (n, d) => (d > 0 ? Math.round((n / d) * 1000) / 10 : 0);
+  return {
+    total,
+    withDealer,
+    oralScanYes,
+    oralScanRate: pct(oralScanYes, total),
+    practiceRegistered,
+    practiceSignupRate: pct(practiceRegistered, total),
+    dealerRegistered,
+    dealerSignupRate: pct(dealerRegistered, withDealer),
+  };
+}
+
+/** 첫 이벤트(심플웨이 신제품 샘플 배포)를 DB에 보장·카피 동기화한다. */
 export async function ensureDefaultMarketingEvents() {
   const existing = await MarketingEvent.findOne({
     slug: SIMPLEWAY_SAMPLE_SLUG,
-  }).lean();
-  if (existing) return existing;
+  });
+  if (existing) {
+    let dirty = false;
+    if (existing.title !== SIMPLEWAY_EVENT_COPY.title) {
+      existing.title = SIMPLEWAY_EVENT_COPY.title;
+      dirty = true;
+    }
+    if (existing.summary !== SIMPLEWAY_EVENT_COPY.summary) {
+      existing.summary = SIMPLEWAY_EVENT_COPY.summary;
+      dirty = true;
+    }
+    if (existing.description !== SIMPLEWAY_EVENT_COPY.description) {
+      existing.description = SIMPLEWAY_EVENT_COPY.description;
+      dirty = true;
+    }
+    if (!existing.formConfig) existing.formConfig = {};
+    if (existing.formConfig.requirePractice !== true) {
+      existing.formConfig.requirePractice = true;
+      dirty = true;
+    }
+    if (existing.formConfig.requireDealer !== false) {
+      existing.formConfig.requireDealer = false;
+      dirty = true;
+    }
+    if (existing.formConfig.dealerHelpText !== SIMPLEWAY_DEALER_HELP) {
+      existing.formConfig.dealerHelpText = SIMPLEWAY_DEALER_HELP;
+      dirty = true;
+    }
+    if (dirty) await existing.save();
+    return existing.toObject();
+  }
 
   try {
-    return await MarketingEvent.create({
+    const created = await MarketingEvent.create({
       slug: SIMPLEWAY_SAMPLE_SLUG,
-      title: "심플웨이 신제품 샘플 배포 행사",
-      summary:
-        "심플웨이 신제품 샘플을 치과에 배포하는 행사입니다. 거래 지역 재료상 연락처를 함께 남겨 주세요.",
-      description: [
-        "심플웨이 신제품 샘플을 원장님께 전달해 드립니다.",
-        "",
-        "신청 시 치과·원장명과 함께, 거래하시는 지역 재료상(재료상명·대표명·전화번호)을 기입해 주세요.",
-        SIMPLEWAY_DEALER_HELP,
-      ].join("\n"),
-      status: "open",
+      ...SIMPLEWAY_EVENT_COPY,
+      status: "draft",
       sortOrder: 1,
       startsAt: new Date(),
       formConfig: {
         requirePractice: true,
-        requireDealer: true,
+        requireDealer: false,
         dealerHelpText: SIMPLEWAY_DEALER_HELP,
       },
     });
+    return created.toObject();
   } catch (err) {
-    // 동시 생성 race → 재조회
     if (err?.code === 11000) {
       return MarketingEvent.findOne({ slug: SIMPLEWAY_SAMPLE_SLUG }).lean();
     }
@@ -138,16 +359,16 @@ export async function listPublicEvents(req, res) {
   }
 }
 
-/** GET /api/events/:slug */
+/** GET /api/events/:slug — 초안/마감도 미리보기 가능 */
 export async function getPublicEvent(req, res) {
   try {
     await ensureDefaultMarketingEvents();
     const slug = trimStr(req.params.slug, 80).toLowerCase();
-    const doc = await MarketingEvent.findOne({ slug, status: "open" }).lean();
+    const doc = await MarketingEvent.findOne({ slug }).lean();
     if (!doc) {
       return res.status(404).json({
         success: false,
-        message: "이벤트를 찾을 수 없거나 신청이 마감되었습니다.",
+        message: "이벤트를 찾을 수 없습니다.",
       });
     }
     return res.json({ success: true, data: toPublicEvent(doc) });
@@ -187,13 +408,13 @@ export async function suggestEventPlaces(req, res) {
   }
 }
 
-/** POST /api/events/:slug/applications */
+/** POST /api/events/:slug/applications — draft|open 접수, closed만 거절 */
 export async function applyToEvent(req, res) {
   try {
     await ensureDefaultMarketingEvents();
     const slug = trimStr(req.params.slug, 80).toLowerCase();
     const event = await MarketingEvent.findOne({ slug }).lean();
-    if (!event || event.status !== "open") {
+    if (!event || event.status === "closed") {
       return res.status(404).json({
         success: false,
         message: "이벤트를 찾을 수 없거나 신청이 마감되었습니다.",
@@ -210,6 +431,7 @@ export async function applyToEvent(req, res) {
     );
     const applicantEmail = trimStr(body.applicantEmail, 120);
     const memo = trimStr(body.memo, 1000);
+    const usesOralScan = Boolean(body.usesOralScan);
 
     const needPractice = event.formConfig?.requirePractice !== false;
     const needDealer = Boolean(event.formConfig?.requireDealer);
@@ -229,11 +451,11 @@ export async function applyToEvent(req, res) {
       }
     }
 
-    if (needDealer) {
+    if (needDealer || dealerHasAny(dealer)) {
       if (!dealer.name) {
         return res.status(400).json({
           success: false,
-          message: "거래 지역 재료상명을 입력해 주세요.",
+          message: "재료상 회사명을 입력해 주세요.",
         });
       }
       if (!dealer.representativeName) {
@@ -245,12 +467,11 @@ export async function applyToEvent(req, res) {
       if (!dealer.phone) {
         return res.status(400).json({
           success: false,
-          message: "재료상 전화번호를 입력해 주세요.",
+          message: "재료상 휴대전화를 입력해 주세요.",
         });
       }
     }
 
-    // 동일 치과명+원장 중복 신청 가드(같은 이벤트)
     const dup = await MarketingEventApplication.findOne({
       eventId: event._id,
       "practice.name": practice.name,
@@ -271,7 +492,8 @@ export async function applyToEvent(req, res) {
       eventSlug: event.slug,
       practice,
       directorName,
-      dealer,
+      dealer: dealerHasAny(dealer) ? dealer : normalizePlace({}),
+      usesOralScan,
       applicantPhone,
       applicantEmail,
       memo,
@@ -401,15 +623,25 @@ export async function adminListApplications(req, res) {
         { applicantPhone: re },
       ];
     }
-    const items = await MarketingEventApplication.find(filter)
+    const rawItems = await MarketingEventApplication.find(filter)
       .sort({ createdAt: -1 })
       .limit(500)
       .lean();
+
+    const maps = await matchMembershipForApplications(rawItems);
+    const items = rawItems.map((doc) =>
+      toApplicationRow(doc, {
+        practiceRegistered: isPracticeRegistered(doc, maps),
+        dealerRegistered: isDealerRegistered(doc, maps),
+      }),
+    );
+
     return res.json({
       success: true,
       data: {
         event: toAdminEvent(event),
-        items: items.map(toApplicationRow),
+        items,
+        stats: buildApplicationStats(items),
       },
     });
   } catch (error) {

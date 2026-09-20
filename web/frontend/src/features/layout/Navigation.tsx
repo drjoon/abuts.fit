@@ -39,8 +39,8 @@ export const Navigation = ({ tone = "dark", overlay = false }: NavigationProps) 
   const isLandingWidth =
     location.pathname === "/" || location.pathname.startsWith("/offer/");
   const overlayClear = overlay && !scrolled && !isOpen;
-  /** 영상 히어로 위는 밝은 글자. 스크롤하면 라이트 바로 돌아온다. */
-  const isLight = tone === "light" && !overlayClear;
+  /** 라이트 톤은 오버레이여도 어두운 글자 유지(밝은 히어로 위). */
+  const isLight = tone === "light";
 
   const toNavItem = (offer: (typeof landingOffers)[number]): NavMenuItem => ({
     label: offer.navLabel,
