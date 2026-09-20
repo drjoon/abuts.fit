@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-20: 보철 유형별 부제 — 금액=견적 라인, 건수=의뢰(유형) 기준 안내.
 // - 2026-09-20: 유형별 막대 maxBarSize — 단일 유형이 차트 전체를 채우던 표시 수정.
 // - 2026-09-20: 요약 카드 행 여백 확대(overflow 밖 px-1.5 + 안쪽 p-1).
 // - 2026-09-20: 요약 카드 행 p-0.5 — 선택 ring이 overflow에 잘리지 않게.
@@ -927,7 +928,7 @@ export function CreditStatisticsTab() {
 
           <StatsPanel
             title="보철 유형별"
-            subtitle="견적 라인 기준 정산 적립"
+            subtitle="견적 라인 금액 · 의뢰당 유형 건수"
             icon={Layers3}
             onOpenDetail={() =>
               openDrillDown({
@@ -1091,7 +1092,7 @@ export function CreditStatisticsTab() {
 
         <StatsPanel
           title="보철 유형별"
-          subtitle="견적 라인 기준 공급가"
+          subtitle="견적 라인 금액 · 의뢰당 유형 건수"
           icon={Layers3}
           onOpenDetail={() =>
             openDrillDown({
