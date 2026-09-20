@@ -1,6 +1,7 @@
 // related files:
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // - web/frontend/src/shared/practice/practiceTransferFeeQuote.ts
+// - 2026-09-20: 바구니 번호표(basketTag)를 제목 옆에 크게 표시.
 // - 2026-08-28: 프린트에서 기공비 섹션 제거.
 // - 2026-08-28: 프린트 — 기본정보 2열·치식 밀집 표로 1페이지 맞춤.
 // - 2026-08-28: 기공소 의뢰상세 A5 프린트 — iframe(noopener 빈 탭 방지).
@@ -74,8 +75,15 @@ export function printPracticeTransferDetail(params: {
   summaryItems: PracticeTransferDetailPrintSummaryItem[];
   toothWorks?: ToothWorkSelection[];
   memo?: string;
+  /** 기공물 바구니 번호표 (A1–Z9) */
+  basketTag?: string | null;
 }): void {
   const title = String(params.title || "의뢰 상세").trim() || "의뢰 상세";
+  const basketTag = String(params.basketTag || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
+  const basketTagOk = /^[A-Z][1-9]?$/.test(basketTag);
   const summaryItems = params.summaryItems || [];
   const summaryCells = summaryItems
     .map(
@@ -89,6 +97,12 @@ export function printPracticeTransferDetail(params: {
     Array.isArray(params.toothWorks) ? params.toothWorks : [],
   );
   const memoText = String(params.memo || "").trim() || "-";
+  const titleBlock = basketTagOk
+    ? `<div class="title-row">
+        <h1>${escapeHtml(title)}</h1>
+        <div class="basket-tag" aria-label="바구니 번호표">${escapeHtml(basketTag)}</div>
+      </div>`
+    : `<h1>${escapeHtml(title)}</h1>`;
 
   // noopener면 window.open이 null을 반환하고 빈 탭만 남는다. iframe 인쇄로 우회.
   const html = `<!DOCTYPE html>
@@ -106,11 +120,33 @@ export function printPracticeTransferDetail(params: {
       font: 10px/1.35 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo",
         "Noto Sans KR", "Malgun Gothic", sans-serif;
     }
+    .title-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin: 0 0 6px;
+    }
+    .title-row h1 { margin: 0; }
     h1 {
       margin: 0 0 6px;
       font-size: 13px;
       font-weight: 700;
       letter-spacing: -0.02em;
+    }
+    .basket-tag {
+      flex-shrink: 0;
+      min-width: 2.4rem;
+      padding: 4px 8px;
+      border: 2px solid #0284c7;
+      border-radius: 6px;
+      background: #e0f2fe;
+      color: #0c4a6e;
+      font-size: 16px;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
     }
     h2 {
       margin: 8px 0 4px;
@@ -185,7 +221,7 @@ export function printPracticeTransferDetail(params: {
   </style>
 </head>
 <body>
-  <h1>${escapeHtml(title)}</h1>
+  ${titleBlock}
   <h2>기본 정보</h2>
   ${
     summaryCells

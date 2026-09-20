@@ -8720,6 +8720,10 @@ export function RequestorPracticeReceivePage({
         remakeChargeCancelBusy={remakeChargeCancelBusy}
         skipJig={Boolean(selectedTransfer?.production?.skipJig)}
         feeViewer="lab"
+        labBasketTagKey={
+          String(selectedTransfer?.transferId || selectedTransfer?._id || "").trim() ||
+          null
+        }
         labAnchorId={String(user?.businessAnchorId || "").trim() || null}
         labEffectiveStars={
           selectedTransfer?.labRatingSummary?.effectiveStars ??

@@ -16,6 +16,7 @@
 // - web/frontend/src/shared/files/fileBlobCache.ts
 // - web/frontend/src/shared/files/s3ImageThumb.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-20: 기공소 — 헤더에 의뢰정보 프린트·바구니 번호표(A1–Z9)·안내 복원.
 // - 2026-09-20: 작업 파일 전체 다운로드 — 어벗 디자인·보철물을 zip 하나로.
 // - 2026-09-16: 채팅 헤더 — 1줄=타이틀, 2줄=주문/도착·다음도착일, 경계선, 3줄=액션.
 // - 2026-09-16: 기공소 — 채팅 스크롤 상·하단 액션 CTA 제거. 지르 작업 시작은 헤더(acceptedWorkActions)만.
@@ -155,7 +156,6 @@ import {
   ArrowUp,
   ChevronDown,
   FileIcon,
-  Printer,
   RotateCcw,
   Trash2,
   UploadCloud,
@@ -260,6 +260,11 @@ import {
   normalizeLabFeeMultiplier,
 } from "@/shared/practice/labFeeSchedule";
 import { LabPendingAbutmentGuide } from "@/shared/components/practice/LabPendingAbutmentGuide";
+import {
+  LabBasketTagToolbar,
+  normalizeLabBasketTag,
+  readLabBasketTag,
+} from "@/shared/components/practice/LabBasketTagToolbar";
 import { LAB_RECEIVE_ABUTMENT_UPLOAD_HINT } from "@/shared/components/practice/PracticeLabReceiveWorkActionsBar";
 import {
   getPracticeTransferFileExtension,
@@ -451,6 +456,11 @@ type PracticeTransferDetailChatDialogProps = {
   remakeCharges?: import("@/shared/practice/practiceTransferLabReceive").PracticeTransferRemakeCharge[] | null;
   skipJig?: boolean;
   feeViewer?: PracticeTransferFeeQuoteViewer;
+  /**
+   * 기공소 바구니 번호표 localStorage 키(보통 transferId).
+   * feeViewer=lab 일 때만 사용.
+   */
+  labBasketTagKey?: string | null;
   /**
    * 열릴 때 스크롤 위치 힌트. detail=맨 위(의뢰), chat=맨 아래(진행).
    * 미지정 시 채팅 내역이 있으면 아래, 없으면 위.
@@ -681,6 +691,7 @@ export function PracticeTransferDetailChatDialog({
   remakeCharges = null,
   skipJig = false,
   feeViewer = "practice",
+  labBasketTagKey = null,
   initialPanelTab,
   labAnchorId = null,
   labEffectiveStars = null,
@@ -1980,6 +1991,16 @@ export function PracticeTransferDetailChatDialog({
     () => baseToothWorksForDetailChart(toothWorks),
     [toothWorks],
   );
+  const [labBasketTag, setLabBasketTag] = useState(() =>
+    feeViewer === "lab" ? readLabBasketTag(labBasketTagKey) : "",
+  );
+  useEffect(() => {
+    if (feeViewer !== "lab") {
+      setLabBasketTag("");
+      return;
+    }
+    setLabBasketTag(readLabBasketTag(labBasketTagKey));
+  }, [feeViewer, labBasketTagKey]);
   const identityChromeActions = (
     <div className="flex shrink-0 items-center gap-0.5" data-no-drag>
       {composerToolbarExtra}
@@ -1992,8 +2013,18 @@ export function PracticeTransferDetailChatDialog({
       summaryItems,
       toothWorks: printToothWorks,
       memo,
+      basketTag: labBasketTag,
     });
-  }, [title, summaryItems, printToothWorks, memo]);
+  }, [title, summaryItems, printToothWorks, memo, labBasketTag]);
+  const labBasketToolbar =
+    feeViewer === "lab" ? (
+      <LabBasketTagToolbar
+        storageKey={labBasketTagKey}
+        value={labBasketTag}
+        onChange={(tag) => setLabBasketTag(normalizeLabBasketTag(tag))}
+        onPrint={handlePrintDetail}
+      />
+    ) : null;
 
   const hasMeaningfulMemo = Boolean(String(memo || "").trim() && memo !== "-");
 
@@ -2865,6 +2896,12 @@ export function PracticeTransferDetailChatDialog({
 
               {renderHeaderActionRow()}
 
+              {labBasketToolbar ? (
+                <div className="flex shrink-0 items-center gap-2 border-b bg-background px-5 py-1.5">
+                  {labBasketToolbar}
+                </div>
+              ) : null}
+
               {nextStageSegments.length > 0 ? (
                 <div className="border-b bg-muted/25">
                   <div className="flex flex-wrap items-center gap-2 px-4 py-2 sm:px-5">
@@ -3036,19 +3073,6 @@ export function PracticeTransferDetailChatDialog({
                     </span>
                   </h3>
                   <div className="flex shrink-0 items-center gap-1.5">
-                    {feeViewer === "lab" ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-7 gap-1.5 px-2.5 text-xs"
-                        title="의뢰 상세 인쇄 (A5)"
-                        onClick={handlePrintDetail}
-                      >
-                        <Printer className="h-3.5 w-3.5" />
-                        프린트
-                      </Button>
-                    ) : null}
                     {files.length > 0 ? (
                       files.some((f) => isDcmFileName(f.fileName)) ? (
                         <DropdownMenu>
