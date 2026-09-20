@@ -5,7 +5,7 @@
 import { Router } from "express";
 const router = Router();
 
-import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
+import { authenticate, authenticateOptional, authorize } from "../../middlewares/auth.middleware.js";
 import {
   getMyCreditBalance,
   getMyCreditSpendInsights,
@@ -29,8 +29,8 @@ import {
 } from "../../controllers/auth/phoneVerification.controller.js";
 import { getPublicCreditSettings } from "../../controllers/admin/admin.settings.controller.js";
 
-// 공개 엔드포인트 (인증 불필요)
-router.get("/settings", getPublicCreditSettings);
+// 공개 조회. 로그인 의뢰자면 자기 BA 판매가 오버라이드를 반영한다.
+router.get("/settings", authenticateOptional, getPublicCreditSettings);
 
 router.use(authenticate);
 

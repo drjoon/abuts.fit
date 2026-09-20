@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-20: 커스텀어벗 가격 아래 의뢰자 BA 판매가 오버라이드 목록.
 // - 2026-09-20: 매입가 = 판매가의 50%(읽기 전용). 리메이크 매입가 입력 제거.
 // - 2026-08-24: 분배 비율 — 딜러사 포함 섹션·딜러사 비포함 안내문 제거(딜러 분배 중단).
 // - 2026-08-23: 제조사=일반과세. 매입 공급가로 잔여 분배(부가세 포함가는 표시·설정값).
@@ -56,7 +57,7 @@
 // - web/backend/models/systemSettings.model.js
 // - web/backend/utils/creditSettingsDefaults.js
 // - web/frontend/src/pages/admin/system/AdminRoundBarAbutmentTab.tsx
-import { useCallback, useState, useEffect, useRef, type ReactNode } from "react";
+import { useCallback, useState, useEffect, useRef, useMemo, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -75,6 +76,21 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { getRequestorRoleBadgeLabel } from "@/shared/business/requestorCapabilities";
 import {
   Tooltip,
   TooltipContent,
@@ -83,14 +99,16 @@ import {
 } from "@/components/ui/tooltip";
 import {
   Banknote,
+  Check,
   CircleHelp,
   CloudUpload,
   Gift,
   Loader2,
   Percent,
+  Plus,
+  Trash2,
   Truck,
   Zap,
-  Check,
 } from "lucide-react";
 import { AdminRoundBarAbutmentTab } from "@/pages/admin/system/AdminRoundBarAbutmentTab";
 
@@ -1180,6 +1198,274 @@ function SectionHeader({
   );
 }
 
+type PriceRequestorOption = {
+  id: string;
+  name: string;
+  requestorKind: string | null;
+  representativeName: string;
+  businessNumber: string;
+};
+
+function setOverrideSale(
+  item: SpecialRequestorPrice,
+  sale: number,
+): SpecialRequestorPrice {
+  const next = Math.max(0, Math.round(Number(sale) || 0));
+  return {
+    ...item,
+    amount: next,
+    productionPrice: next,
+    roundBarProductionPrice: next,
+  };
+}
+
+function RequestorSalePriceOverrideSection({
+  items,
+  disabled,
+  saveState,
+  token,
+  defaultSale,
+  fallbackSettings,
+  onChange,
+}: {
+  items: SpecialRequestorPrice[];
+  disabled?: boolean;
+  saveState: AutoSaveState;
+  token: string | null;
+  defaultSale: number;
+  fallbackSettings: CreditSettings;
+  onChange: (next: SpecialRequestorPrice[]) => void;
+}) {
+  const [requestors, setRequestors] = useState<PriceRequestorOption[]>([]);
+  const [loadingList, setLoadingList] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    setLoadingList(true);
+    void apiFetch<{
+      success?: boolean;
+      data?: { items?: PriceRequestorOption[] };
+    }>({
+      path: "/api/admin/settings/credits/requestors",
+      method: "GET",
+      token,
+    })
+      .then((res) => {
+        if (cancelled || !res.ok) return;
+        const rows = Array.isArray(res.data?.data?.items)
+          ? res.data.data.items
+          : [];
+        setRequestors(
+          rows.map((item) => ({
+            id: String(item.id || ""),
+            name: String(item.name || "").trim() || "이름 없는 의뢰자",
+            requestorKind: item.requestorKind || null,
+            representativeName: String(item.representativeName || ""),
+            businessNumber: String(item.businessNumber || ""),
+          })),
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingList(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  const byId = useMemo(() => {
+    const map = new Map<string, PriceRequestorOption>();
+    for (const row of requestors) {
+      if (row.id) map.set(row.id, row);
+    }
+    return map;
+  }, [requestors]);
+
+  const selectedIds = useMemo(
+    () => new Set(items.map((item) => item.requestorAnchorId)),
+    [items],
+  );
+
+  const sortedItems = useMemo(() => {
+    return [...items].sort((a, b) => {
+      const nameA = byId.get(a.requestorAnchorId)?.name || a.requestorAnchorId;
+      const nameB = byId.get(b.requestorAnchorId)?.name || b.requestorAnchorId;
+      return nameA.localeCompare(nameB, "ko");
+    });
+  }, [items, byId]);
+
+  const addRequestor = (id: string) => {
+    if (!id || selectedIds.has(id)) return;
+    const row = normalizeSpecialRequestorPrice(
+      {
+        requestorAnchorId: id,
+        productionPrice: defaultSale,
+        amount: defaultSale,
+        roundBarProductionPrice: defaultSale,
+        designAndProductionPrice: fallbackSettings.membershipDesignAndProductionPrice,
+        roundBarDesignAndProductionPrice:
+          fallbackSettings.membershipRoundBarDesignAndProductionPrice,
+      },
+      fallbackSettings,
+    );
+    onChange([...items, row]);
+  };
+
+  return (
+    <div className="space-y-3 border-t border-slate-200/80 pt-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 space-y-1">
+          <div className="flex items-center gap-2">
+            <h4 className="text-sm font-semibold text-slate-900">
+              의뢰자별 가격
+            </h4>
+            <AutoSaveIndicator state={saveState} />
+          </div>
+          <p className="text-[13px] leading-relaxed text-muted-foreground">
+            목록에 있는 의뢰자 BA만 아래 판매가를 씁니다. 없으면 위 기본
+            판매가입니다. 매입가는 각 판매가의 50%입니다.
+          </p>
+        </div>
+        <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={disabled || loadingList}
+              className="h-10 rounded-xl border-slate-200 bg-white"
+            >
+              <Plus className="h-4 w-4" />
+              의뢰자 추가
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent
+            className="w-[min(28rem,calc(100vw-2rem))] p-0"
+            align="end"
+          >
+            <Command>
+              <CommandInput placeholder="의뢰자 이름·사업자번호 검색" />
+              <CommandList>
+                <CommandEmpty>
+                  {loadingList
+                    ? "불러오는 중…"
+                    : requestors.some((row) => row.id && !selectedIds.has(row.id))
+                      ? "검색 결과가 없습니다."
+                      : requestors.length > 0
+                        ? "추가할 의뢰자가 없습니다."
+                        : "의뢰자가 없습니다."}
+                </CommandEmpty>
+                <CommandGroup>
+                  {requestors
+                    .filter((row) => row.id && !selectedIds.has(row.id))
+                    .map((row) => (
+                      <CommandItem
+                        key={row.id}
+                        value={`${row.name} ${row.representativeName} ${row.businessNumber} ${row.id}`}
+                        onSelect={() => {
+                          addRequestor(row.id);
+                          setPickerOpen(false);
+                        }}
+                      >
+                        <div className="min-w-0">
+                          <div className="truncate text-sm">{row.name}</div>
+                          <div className="truncate text-xs text-muted-foreground">
+                            {getRequestorRoleBadgeLabel(row.requestorKind)}
+                            {row.businessNumber ? ` · ${row.businessNumber}` : ""}
+                          </div>
+                        </div>
+                      </CommandItem>
+                    ))}
+                </CommandGroup>
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
+      </div>
+
+      {sortedItems.length === 0 ? (
+        <p className="rounded-2xl border border-dashed border-slate-200 bg-white/60 px-4 py-6 text-center text-[13px] text-muted-foreground">
+          오버라이드된 의뢰자가 없습니다.
+        </p>
+      ) : (
+        <ul className="space-y-2">
+          {sortedItems.map((item) => {
+            const meta = byId.get(item.requestorAnchorId);
+            const purchase = purchasePriceFromSale(item.productionPrice);
+            return (
+              <li
+                key={item.requestorAnchorId}
+                className="flex flex-col gap-3 rounded-2xl border border-slate-200/80 bg-white/80 p-4 sm:flex-row sm:items-center"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-medium text-slate-900">
+                    {meta?.name ||
+                      (loadingList ? "불러오는 중…" : "이름 없는 의뢰자")}
+                  </div>
+                  <div className="truncate text-xs text-muted-foreground">
+                    {getRequestorRoleBadgeLabel(meta?.requestorKind)}
+                    {meta?.businessNumber ? ` · ${meta.businessNumber}` : ""}
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="relative w-36 shrink-0">
+                    <Input
+                      type="number"
+                      min="0"
+                      step={AMOUNT_STEP}
+                      aria-label={`${meta?.name || "의뢰자"} 판매가`}
+                      className="h-11 rounded-xl border-slate-200 bg-slate-50/60 pr-9 text-right text-base font-semibold tabular-nums tracking-tight"
+                      value={item.productionPrice}
+                      disabled={disabled}
+                      onChange={(event) => {
+                        const sale = Math.max(0, Number(event.target.value));
+                        onChange(
+                          items.map((row) =>
+                            row.requestorAnchorId === item.requestorAnchorId
+                              ? setOverrideSale(row, sale)
+                              : row,
+                          ),
+                        );
+                      }}
+                    />
+                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-slate-400">
+                      원
+                    </span>
+                  </div>
+                  <div className="w-28 shrink-0 text-right text-xs text-slate-500">
+                    매입가{" "}
+                    <span className="font-semibold tabular-nums text-slate-800">
+                      {purchase.toLocaleString("ko-KR")}
+                    </span>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    disabled={disabled}
+                    aria-label="오버라이드 삭제"
+                    onClick={() =>
+                      onChange(
+                        items.filter(
+                          (row) =>
+                            row.requestorAnchorId !== item.requestorAnchorId,
+                        ),
+                      )
+                    }
+                  >
+                    <Trash2 className="h-4 w-4 text-slate-500" />
+                  </Button>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 export type AdminCreditSettingsVariant = "credits" | "customAbut";
 
 type AdminCreditSettingsTabProps = {
@@ -1417,6 +1703,19 @@ export const AdminCreditSettingsTab = ({
     [updateSharePercent],
   );
 
+  const commitRequestorOverrides = useCallback(
+    (next: SpecialRequestorPrice[]) => {
+      applySettingsUpdate((prev) => ({
+        ...prev,
+        specialRequestorPrices: next,
+      }));
+      scheduleItemSave("requestorOverrides", () => ({
+        specialRequestorPrices: settingsRef.current.specialRequestorPrices,
+      }));
+    },
+    [applySettingsUpdate, scheduleItemSave],
+  );
+
   const fetchSettings = useCallback(async () => {
     try {
       setLoading(true);
@@ -1465,7 +1764,8 @@ export const AdminCreditSettingsTab = ({
     if (snapshot === savedSnapshotRef.current) return;
 
     const timer = window.setTimeout(async () => {
-      const payload = settingsRef.current;
+      const { specialRequestorPrices: _requestorOverrides, ...payload } =
+        settingsRef.current;
       const payloadSnap = JSON.stringify(payload);
       if (payloadSnap === savedSnapshotRef.current) return;
 
@@ -1636,6 +1936,15 @@ export const AdminCreditSettingsTab = ({
                     help="박스당 제조사 배송 매입가(부가세 포함). 장부·미정산은 포함가, 지급 시 재가산 없음."
                   />
                 </div>
+                <RequestorSalePriceOverrideSection
+                  items={settings.specialRequestorPrices}
+                  disabled={loading}
+                  saveState={itemSaveStates.requestorOverrides ?? "idle"}
+                  token={token}
+                  defaultSale={settings.labProductionPrice}
+                  fallbackSettings={settings}
+                  onChange={commitRequestorOverrides}
+                />
               </CardContent>
             </Card>
 

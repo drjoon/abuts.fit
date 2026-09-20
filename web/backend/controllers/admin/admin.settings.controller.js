@@ -22,6 +22,7 @@ import {
 import {
   loadCreditSettingsDefaults,
   normalizeLoadedCreditSettings,
+  invalidateGlobalCreditSettingsCache,
 } from "../../utils/creditSettingsDefaults.js";
 import { normalizeAbutsAbutmentCreditPrices } from "../../utils/abutsAbutmentService.js";
 import { invalidatePracticeTransferQuoteCaches } from "../../services/practiceTransferBilling.service.js";
@@ -325,9 +326,21 @@ export async function getCreditSettings(req, res) {
 export async function getPublicCreditSettings(req, res) {
   try {
     const doc = await SystemSettings.findOne({ key: "global" }).lean();
-
-    const creditSettings = normalizeCreditSettings(doc?.creditSettings || {});
-    delete creditSettings.specialRequestorPrices;
+    const role = String(req.user?.role || "").trim();
+    const requestorOrgId = String(
+      req.user?.businessAnchorId?._id || req.user?.businessAnchorId || "",
+    ).trim();
+    let creditSettings =
+      role === "requestor" && requestorOrgId
+        ? await loadCreditSettingsDefaults({
+            requestorOrgId,
+            preloadedDoc: doc,
+          })
+        : normalizeCreditSettings(doc?.creditSettings || {});
+    if (creditSettings && typeof creditSettings === "object") {
+      creditSettings = { ...creditSettings };
+      delete creditSettings.specialRequestorPrices;
+    }
     res.status(200).json({
       success: true,
       data: {
@@ -761,6 +774,7 @@ export async function updateCreditSettings(req, res) {
       },
       { new: true, upsert: true, setDefaultsOnInsert: true },
     ).lean();
+    invalidateGlobalCreditSettingsCache();
 
     const creditSettings = normalizeCreditSettings(doc?.creditSettings || {});
     invalidatePracticeTransferQuoteCaches();

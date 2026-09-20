@@ -326,7 +326,10 @@ async function postSpendCommitGeneralLedger({
   const { loadCreditSettingsDefaults } = await import(
     "../../utils/creditSettingsDefaults.js"
   );
-  const creditSettings = await loadCreditSettingsDefaults();
+  const creditSettings = await loadCreditSettingsDefaults({
+    requestorOrgId: owners.requestorAnchorId,
+    requestorAnchor: { requestorKind: owners.requestorKind },
+  });
   const isShippingCommit =
     String(eventType || "") === "SHIPPING_SPEND_COMMIT" ||
     String(usageKind || "") === "shipping" ||

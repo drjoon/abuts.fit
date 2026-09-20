@@ -6,6 +6,7 @@
 // - web/backend/controllers/admin/admin.settings.controller.js
 // - web/frontend/src/features/settings/tabs/AdminCreditSettingsTab.tsx
 // change-log:
+// - 2026-09-20: 의뢰자 BA 판매가 오버라이드. 없으면 플랫폼 판매가. 매입가=그 판매가의 50%.
 // - 2026-09-20: 제조사 매입가(포함가) = 커스텀어벗 판매가의 50%.
 // - 2026-08-22: 제조사 고정단가(8,800) 선차감 후 잔여 비중 분배(딜러 30:개발 10:어벗츠 40 / 없으면 20:80).
 // - 2026-08-22: 치과 멤버십/일반 청구 이중가 제거. membership* 단일 고시. pricingTier 분기 삭제.
@@ -539,6 +540,51 @@ export function applySpecialRequestorPricesToCreditSettings(
   };
 }
 
+/**
+ * 플랫폼 판매가를 한 금액으로 맞춘다. 관리자 가격 카드와 같은 필드.
+ * 매입가(부가세 포함)는 이 판매가의 50%.
+ */
+export function overlayCustomAbutmentSalePrice(creditSettings, saleAmount) {
+  const sale = Math.max(0, Math.round(Number(saleAmount) || 0));
+  const purchase = manufacturerPurchaseFromSale(sale);
+  const overlaid = {
+    ...creditSettings,
+    labProductionPrice: sale,
+    labRoundBarProductionPrice: sale,
+    membershipProductionPrice: sale,
+    regularProductionPrice: sale,
+    membershipRoundBarProductionPrice: sale,
+    regularRoundBarProductionPrice: sale,
+    minCreditForRequest: sale,
+    manufacturerRequestUnitPrice: purchase,
+  };
+  const party = buildNormalizedTierPartyFields(overlaid, SCHEMA_DEFAULTS);
+  return {
+    ...overlaid,
+    ...party,
+    manufacturerRequestUnitPrice: purchase,
+    salesmanRequestUnitPrice: Number(
+      party.membershipProductionSalesmanUnitPrice || 0,
+    ),
+    devopsRequestUnitPrice: Number(
+      party.membershipProductionDevopsUnitPrice || 0,
+    ),
+  };
+}
+
+/** 의뢰자 BA 목록에 있으면 그 판매가, 없으면 그대로. 0원도 오버라이드다. */
+export function applyRequestorCustomAbutmentSaleOverride(
+  creditSettings,
+  requestorOrgId,
+) {
+  const special = findSpecialRequestorPrice(creditSettings, requestorOrgId);
+  if (!special) return creditSettings;
+  const raw = special.productionPrice ?? special.amount;
+  const sale = Math.round(Number(raw));
+  if (!Number.isFinite(sale) || sale < 0) return creditSettings;
+  return overlayCustomAbutmentSalePrice(creditSettings, sale);
+}
+
 export function normalizeLoadedCreditSettings(creditSettings = {}) {
   const abutmentPrices = normalizeAbutsAbutmentCreditPrices({
     ...SCHEMA_DEFAULTS,
@@ -669,6 +715,10 @@ export async function resolveRequestorAbutmentPricingTier(_requestorOrgId) {
 const GLOBAL_SETTINGS_CACHE_TTL_MS = 60 * 1000;
 let globalSettingsCache = { at: 0, value: null };
 
+export function invalidateGlobalCreditSettingsCache() {
+  globalSettingsCache = { at: 0, value: null };
+}
+
 async function loadCachedGlobalCreditSettingsDoc() {
   const now = Date.now();
   if (
@@ -708,23 +758,24 @@ export async function loadCreditSettingsDefaults(options = {}) {
   const priced = applyLabSupply
     ? applyLabSupplyPricesToCreditSettings(base)
     : base;
+  const overridden = applyRequestorCustomAbutmentSaleOverride(priced, id);
   // 치과 멤버십 폐지 — 청구·의뢰비는 플랫폼 고시(membership*) 단일가.
-  // manufacturer/salesman/devops*UnitPrice 의 membership vs regular 는 딜러 유무 분배용.
-  const picked = pickAbutsAbutmentCreditPrices(priced);
+  // 의뢰자 BA 오버라이드가 있으면 그 판매가. 매입가는 적용 판매가의 50%.
+  const picked = pickAbutsAbutmentCreditPrices(overridden);
   return {
-    ...priced,
+    ...overridden,
     minCreditForRequest: picked.productionPrice,
     designFee: picked.designFeePerTooth,
     abutmentPricingTier: "membership",
     requestorKind: requestorKind || null,
     manufacturerRequestUnitPrice: Number(
-      priced.membershipProductionManufacturerUnitPrice,
+      overridden.manufacturerRequestUnitPrice,
     ),
     salesmanRequestUnitPrice: Number(
-      priced.membershipProductionSalesmanUnitPrice,
+      overridden.membershipProductionSalesmanUnitPrice,
     ),
     devopsRequestUnitPrice: Number(
-      priced.membershipProductionDevopsUnitPrice,
+      overridden.membershipProductionDevopsUnitPrice,
     ),
   };
 }
