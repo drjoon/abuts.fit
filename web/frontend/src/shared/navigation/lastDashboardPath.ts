@@ -77,13 +77,13 @@ export function resolveEntryDashboardPath(user: {
   const last = normalizeLastDashboardPath(user?.lastDashboardPath);
   if (!last) return roleDefault;
 
-  // manufacturer/practice/devops/기공팀/영업본부/어벗츠기공소는 `/dashboard`에 콘텐츠가 없음.
+  // manufacturer/practice/devops/기공팀/어벗츠기공소는 `/dashboard`에 콘텐츠가 없음.
+  // salesTeam은 대시보드 페이지가 있어 bare `/dashboard`를 허용한다.
   if (
     (role === "manufacturer" ||
       role === "practice" ||
       role === "devops" ||
       role === "labTeam" ||
-      role === "salesTeam" ||
       role === "internalLab") &&
     (last === "/dashboard" || last === "/dashboard/")
   ) {

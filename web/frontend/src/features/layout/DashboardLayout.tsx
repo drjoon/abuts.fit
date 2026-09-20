@@ -16,6 +16,7 @@ import {
 } from "@/shared/layout/sidebarOpen";
 import { cn } from "@/shared/ui/cn";
 
+// - 2026-09-21: 딜러·영업팀 사이드 IA 통일(현장·성과·협업·지원). 소개·피치 상단, 대시보드·오늘·거래처 / 성과·요구사항·정산 / 문의·설정.
 // - 2026-09-18: 기본 기공수가 대기 카운트를 공유 스토어로 설정 허브 탭 배지와 동기화.
 // - 2026-09-16: 어벗츠기공소 사이드 — 크레딧·정산 이중 메뉴를「정산」(/dashboard/credits)로 통합. 지급은 크레딧「지급」탭.
 // - 2026-09-16: 기공소 통장사본 미등록 — 정산일 7일 전 일 1회 안내 모달.
@@ -175,6 +176,7 @@ import {
   Menu,
   X,
   Layers,
+  Monitor,
 } from "lucide-react";
 import { AbutsLogo } from "@/components/branding/AbutsLogo";
 import {
@@ -320,8 +322,20 @@ const buildRequestorSidebarItems = (
 const sidebarItems = {
   requestor: buildRequestorSidebarItems("practice"),
   salesman: [
-    { icon: Layers, label: "피치", href: "/dashboard/pitch" },
+    { icon: Layers, label: "소개·피치", href: "/dashboard/pitch" },
     { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
+    { icon: Monitor, label: "오늘", href: "/dashboard/sales" },
+    { icon: Building2, label: "거래처", href: "/dashboard/sales/accounts" },
+    {
+      icon: BarChart3,
+      label: "성과",
+      href: "/dashboard/sales/performance",
+    },
+    {
+      icon: ClipboardList,
+      label: "요구사항",
+      href: "/dashboard/sales/requirements",
+    },
     { icon: Wallet, label: "정산", href: "/dashboard/payments" },
     { icon: MessageSquare, label: "문의", href: "/dashboard/inquiries" },
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
@@ -373,13 +387,10 @@ const sidebarItems = {
   ],
   labTeam: [{ icon: Settings, label: "설정", href: "/dashboard/settings" }],
   salesTeam: [
-    { icon: LayoutDashboard, label: "오늘", href: "/dashboard/sales" },
+    { icon: Layers, label: "소개·피치", href: "/dashboard/sales/pitch" },
+    { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
+    { icon: Monitor, label: "오늘", href: "/dashboard/sales" },
     { icon: Building2, label: "거래처", href: "/dashboard/sales/accounts" },
-    {
-      icon: Layers,
-      label: "소개·피치",
-      href: "/dashboard/sales/pitch",
-    },
     {
       icon: BarChart3,
       label: "성과",
@@ -390,6 +401,7 @@ const sidebarItems = {
       label: "요구사항",
       href: "/dashboard/sales/requirements",
     },
+    { icon: Wallet, label: "정산", href: "/dashboard/payments" },
     { icon: MessageSquare, label: "문의", href: "/dashboard/inquiries" },
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
@@ -486,17 +498,17 @@ const adminSidebarSections: DashboardSidebarSection[] = [
   },
 ];
 
-const salesTeamMenuSections: DashboardSidebarSection[] = [
+/** 딜러(salesman)·영업팀(salesTeam) 공통 사이드 IA. 피치 경로만 역할별. */
+const buildFieldPartnerMenuSections = (
+  pitchHref: string,
+): DashboardSidebarSection[] => [
   {
     title: "현장",
     items: [
-      { icon: LayoutDashboard, label: "오늘", href: "/dashboard/sales" },
+      { icon: Layers, label: "소개·피치", href: pitchHref },
+      { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
+      { icon: Monitor, label: "오늘", href: "/dashboard/sales" },
       { icon: Building2, label: "거래처", href: "/dashboard/sales/accounts" },
-      {
-        icon: Layers,
-        label: "소개·피치",
-        href: "/dashboard/sales/pitch",
-      },
     ],
   },
   {
@@ -512,6 +524,7 @@ const salesTeamMenuSections: DashboardSidebarSection[] = [
         label: "요구사항",
         href: "/dashboard/sales/requirements",
       },
+      { icon: Wallet, label: "정산", href: "/dashboard/payments" },
     ],
   },
   {
@@ -1214,8 +1227,15 @@ export const DashboardLayout = () => {
       ),
     }));
   }, [abutsFeePendingCount, user.role]);
-  const salesTeamSections =
-    user.role === "salesTeam" ? salesTeamMenuSections : null;
+  const fieldPartnerSections = useMemo(() => {
+    if (user.role === "salesTeam") {
+      return buildFieldPartnerMenuSections("/dashboard/sales/pitch");
+    }
+    if (user.role === "salesman") {
+      return buildFieldPartnerMenuSections("/dashboard/pitch");
+    }
+    return null;
+  }, [user.role]);
   const accountMenuItems = accountMenuItemsByRole[displayRole] || [];
 
   const { getBadgeForHref, clearBadgeForPath } = useAdminCommBadges();
@@ -1731,7 +1751,7 @@ export const DashboardLayout = () => {
           <nav className="hover-scrollbar flex-1 overflow-y-auto p-3 lg:p-4">
             <DashboardSidebarNav
               items={resolvedMenuItems}
-              sections={adminMenuSections ?? salesTeamSections ?? undefined}
+              sections={adminMenuSections ?? fieldPartnerSections ?? undefined}
               isCollapsed={sidebarCollapsed}
               pathname={location.pathname}
               isCreditLow={isCreditLow}

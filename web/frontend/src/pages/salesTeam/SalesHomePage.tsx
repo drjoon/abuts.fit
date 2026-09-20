@@ -132,14 +132,16 @@ function buildVisitPlannedAtIso(
 
 export default function SalesHomePage() {
   const token = useAuthStore((s) => s.token);
+  const role = useAuthStore((s) => s.user?.role);
   const { toast } = useToast();
   const qc = useQueryClient();
+  const isSalesman = role === "salesman";
   const {
     data: noOrderAlertsData,
     isLoading: noOrderAlertsLoading,
   } = useNoOrderAlerts(
-    "/api/sales-team/no-order-alerts",
-    "sales-team-no-order-alerts",
+    isSalesman ? "/api/salesman/no-order-alerts" : "/api/sales-team/no-order-alerts",
+    isSalesman ? "salesman-no-order-alerts" : "sales-team-no-order-alerts",
   );
   const today = toKstYmd(new Date()) || "";
   const [searchParams, setSearchParams] = useSearchParams();

@@ -26,7 +26,7 @@ function normalizeTargetRoles(raw) {
 }
 
 function canManageAll(role) {
-  return role === "salesTeam" || role === "admin";
+  return role === "salesTeam" || role === "salesman" || role === "admin";
 }
 
 function visibilityFilter(user) {
@@ -97,7 +97,7 @@ export async function createCustomerRequirement(req, res) {
     if (!canManageAll(role)) {
       return res.status(403).json({
         success: false,
-        message: "영업본부 또는 관리자만 등록할 수 있습니다.",
+        message: "영업본부·딜러 또는 관리자만 등록할 수 있습니다.",
       });
     }
 
@@ -145,7 +145,7 @@ export async function updateCustomerRequirement(req, res) {
     if (!canManageAll(role)) {
       return res.status(403).json({
         success: false,
-        message: "영업본부 또는 관리자만 수정할 수 있습니다.",
+        message: "영업본부·딜러 또는 관리자만 수정할 수 있습니다.",
       });
     }
 
@@ -308,7 +308,7 @@ export async function deleteCustomerRequirement(req, res) {
     if (!canManageAll(role)) {
       return res.status(403).json({
         success: false,
-        message: "영업본부 또는 관리자만 삭제할 수 있습니다.",
+        message: "영업본부·딜러 또는 관리자만 삭제할 수 있습니다.",
       });
     }
     const id = oid(req.params.id);

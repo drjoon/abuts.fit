@@ -154,15 +154,6 @@ export const SalesmanDashboardPage = () => {
                 >
                   딜러십 정책
                 </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="h-8"
-                  onClick={() => openLedger("unpaid")}
-                >
-                  보유 크레딧 {formatMoney(payableGross)}원
-                </Button>
               </div>
             </div>
             <DealershipTermsCard

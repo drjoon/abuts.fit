@@ -1133,7 +1133,11 @@ export async function getSalesHome(req, res) {
         const me = await User.findById(userId)
           .select({ businessAnchorId: 1, role: 1 })
           .lean();
-        const anchorId = await resolveSalesTeamReferralAnchorId(me);
+        const role = String(me?.role || "");
+        const anchorId =
+          role === "salesman"
+            ? me?.businessAnchorId || null
+            : await resolveSalesTeamReferralAnchorId(me);
         if (!anchorId) return 0;
         return BusinessAnchor.countDocuments({
           referredByAnchorId: anchorId,
@@ -1840,7 +1844,11 @@ export async function getSalesStats(req, res) {
     const meLean = await User.findById(userId)
       .select({ businessAnchorId: 1, role: 1 })
       .lean();
-    const anchorId = await resolveSalesTeamReferralAnchorId(meLean);
+    const role = String(meLean?.role || "");
+    const anchorId =
+      role === "salesman"
+        ? meLean?.businessAnchorId || null
+        : await resolveSalesTeamReferralAnchorId(meLean);
 
     const [doneVisits, plannedDays, submittedReports, referralOrgs] =
       await Promise.all([
@@ -1937,8 +1945,19 @@ export async function getReferralInfo(req, res) {
     if (!me) {
       return res.status(404).json({ success: false, message: "사용자를 찾을 수 없습니다." });
     }
-    const referralCode = await ensureSalesTeamReferralCode(me);
-    const anchorId = await resolveSalesTeamReferralAnchorId(me);
+    const role = String(me.role || "");
+    let referralCode = String(me.referralCode || "")
+      .trim()
+      .toUpperCase();
+    let anchorId = null;
+    if (role === "salesTeam") {
+      referralCode = await ensureSalesTeamReferralCode(me);
+      anchorId = await resolveSalesTeamReferralAnchorId(me);
+    } else if (role === "salesman") {
+      anchorId = me.businessAnchorId || null;
+    } else {
+      anchorId = await resolveSalesTeamReferralAnchorId(me);
+    }
     const orgs = anchorId
       ? await BusinessAnchor.find({
           referredByAnchorId: anchorId,

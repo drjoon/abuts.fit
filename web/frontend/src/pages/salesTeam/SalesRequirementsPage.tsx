@@ -72,7 +72,7 @@ export default function SalesRequirementsPage() {
   const { toast } = useToast();
   const qc = useQueryClient();
   const role = String(user?.role || "");
-  const canCreate = role === "salesTeam" || role === "admin";
+  const canCreate = role === "salesTeam" || role === "salesman" || role === "admin";
 
   const [showForm, setShowForm] = useState(false);
   const [title, setTitle] = useState("");

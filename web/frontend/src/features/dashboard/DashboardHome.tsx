@@ -2,12 +2,14 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { RequestorDashboardPage } from "@/pages/requestor/dashboard/RequestorDashboardPage";
 import { AdminDashboardPage } from "@/pages/admin/dashboard/AdminDashboardPage";
 import { SalesmanDashboardPage } from "@/pages/salesman/SalesmanDashboardPage";
+import SalesTeamDashboardPage from "@/pages/salesTeam/SalesTeamDashboardPage";
 import { Navigate, useLocation } from "react-router-dom";
 import { BusinessPaidAccessGate } from "@/shared/business/BusinessPaidAccessGate";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
 // change-log:
+// - 2026-09-21: salesTeam `/dashboard` = SalesTeamDashboardPage (딜러·영업팀 사이드 대시보드 대칭).
 // - 2026-08-19: 기공소·어벗츠기공소 `/dashboard`는 기공의뢰수신으로. 제출 후 어벗생산의뢰. 대기보드 제거.
 // - 2026-08-18: 치과 `/dashboard`는 구강스캔(또는 제출 후 어벗디자인)으로 보냄. 대시보드 페이지 미사용.
 // - 2026-08-17: internalLab `/dashboard` = 대기보드(RequestorDashboardPage). 기본 랜딩은 lab-work 유지.
@@ -88,6 +90,10 @@ export const DashboardHome = () => {
 
   if (user.role === "salesman") {
     return <SalesmanDashboardPage />;
+  }
+
+  if (user.role === "salesTeam") {
+    return <SalesTeamDashboardPage />;
   }
 
   if (user.role === "admin") {

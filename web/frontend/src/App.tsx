@@ -38,6 +38,7 @@ import { getRoleDefaultDashboardPath } from "@/shared/navigation/lastDashboardPa
 // - web/frontend/src/pages/admin/AdminFinancePage.tsx
 // - web/frontend/src/pages/admin/AdminSettingsHubPage.tsx
 // change-log:
+// - 2026-09-21: 딜러·영업팀 사이드 IA 통일 — sales 라우트에 salesman, payments에 salesTeam.
 // - 2026-09-16: 기공소·어벗츠기공소 /payments → 크레딧「지급」탭(?tab=payout).
 // - 2026-09-06: 관리자 사이드 허브(회원·지원·채널·재무·설정) + 구 URL 리다이렉트.
 
@@ -140,6 +141,7 @@ import RequestorStoreOrdersPage, {
 } from "@/pages/requestor/store/RequestorStoreOrdersPage";
 import AdminStorePage from "@/pages/admin/system/AdminStorePage";
 import SalesmanPaymentsPage from "@/pages/salesman/SalesmanPaymentsPage";
+import SalesTeamPaymentsPage from "@/pages/salesTeam/SalesTeamPaymentsPage";
 import DevopsPaymentsPage from "@/pages/devops/DevopsPaymentsPage";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 const SalesmanPitchPage = lazy(
@@ -294,6 +296,7 @@ const PaymentsRoute = () => {
   if (!user) return <Navigate to="/dashboard" replace />;
   if (user.role === "manufacturer") return <ManufacturerPaymentPage />;
   if (user.role === "salesman") return <SalesmanPaymentsPage />;
+  if (user.role === "salesTeam") return <SalesTeamPaymentsPage />;
   if (user.role === "devops") return <DevopsPaymentsPage />;
   if (user.role === "admin") {
     return <Navigate to="/dashboard/finance?tab=payments" replace />;
@@ -684,7 +687,7 @@ const App = () => {
                   <Route
                     path="sales"
                     element={
-                      <RoleProtectedRoute roles={["salesTeam"]}>
+                      <RoleProtectedRoute roles={["salesTeam", "salesman"]}>
                         <SalesHomePage />
                       </RoleProtectedRoute>
                     }
@@ -692,7 +695,7 @@ const App = () => {
                   <Route
                     path="sales/accounts"
                     element={
-                      <RoleProtectedRoute roles={["salesTeam"]}>
+                      <RoleProtectedRoute roles={["salesTeam", "salesman"]}>
                         <SalesAccountsPage />
                       </RoleProtectedRoute>
                     }
@@ -700,7 +703,7 @@ const App = () => {
                   <Route
                     path="sales/pitch"
                     element={
-                      <RoleProtectedRoute roles={["salesTeam"]}>
+                      <RoleProtectedRoute roles={["salesTeam", "salesman"]}>
                         <SalesPlatformPitchPage />
                       </RoleProtectedRoute>
                     }
@@ -708,7 +711,7 @@ const App = () => {
                   <Route
                     path="sales/performance"
                     element={
-                      <RoleProtectedRoute roles={["salesTeam"]}>
+                      <RoleProtectedRoute roles={["salesTeam", "salesman"]}>
                         <SalesPerformancePage />
                       </RoleProtectedRoute>
                     }
@@ -716,7 +719,7 @@ const App = () => {
                   <Route
                     path="sales/schedule"
                     element={
-                      <RoleProtectedRoute roles={["salesTeam"]}>
+                      <RoleProtectedRoute roles={["salesTeam", "salesman"]}>
                         <Navigate to="/dashboard/sales?tab=schedule" replace />
                       </RoleProtectedRoute>
                     }
@@ -724,7 +727,7 @@ const App = () => {
                   <Route
                     path="sales/stats"
                     element={
-                      <RoleProtectedRoute roles={["salesTeam"]}>
+                      <RoleProtectedRoute roles={["salesTeam", "salesman"]}>
                         <Navigate
                           to="/dashboard/sales/performance"
                           replace
@@ -735,7 +738,7 @@ const App = () => {
                   <Route
                     path="sales/reports"
                     element={
-                      <RoleProtectedRoute roles={["salesTeam"]}>
+                      <RoleProtectedRoute roles={["salesTeam", "salesman"]}>
                         <Navigate to="/dashboard/sales?tab=report" replace />
                       </RoleProtectedRoute>
                     }
@@ -743,7 +746,7 @@ const App = () => {
                   <Route
                     path="sales/referral"
                     element={
-                      <RoleProtectedRoute roles={["salesTeam"]}>
+                      <RoleProtectedRoute roles={["salesTeam", "salesman"]}>
                         <Navigate
                           to="/dashboard/sales/performance?tab=referral"
                           replace
@@ -757,6 +760,7 @@ const App = () => {
                       <RoleProtectedRoute
                         roles={[
                           "salesTeam",
+                          "salesman",
                           "admin",
                           "internalLab",
                           "devops",
@@ -1060,6 +1064,7 @@ const App = () => {
                         roles={[
                           "manufacturer",
                           "salesman",
+                          "salesTeam",
                           "admin",
                           "devops",
                           "requestor",
@@ -1073,7 +1078,7 @@ const App = () => {
                   <Route
                     path="pitch"
                     element={
-                      <RoleProtectedRoute roles={["salesman"]}>
+                      <RoleProtectedRoute roles={["salesman", "salesTeam"]}>
                         <SalesmanPitchPage />
                       </RoleProtectedRoute>
                     }

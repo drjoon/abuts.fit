@@ -45,8 +45,8 @@ const router = Router();
 
 router.use(authenticate);
 
-const salesOpsRoles = ["salesTeam", "admin"];
-const requirementRoles = ["salesTeam", "admin", "internalLab", "devops"];
+const salesOpsRoles = ["salesTeam", "salesman", "admin"];
+const requirementRoles = ["salesTeam", "salesman", "admin", "internalLab", "devops"];
 
 router.get("/home", authorize(salesOpsRoles), getSalesHome);
 router.get("/no-order-alerts", authorize(salesOpsRoles), getSalesTeamNoOrderAlerts);
