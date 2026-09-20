@@ -3,11 +3,13 @@
 // - web/frontend/src/features/landing/landingOffers.ts
 // - web/frontend/src/features/landing/landingTheme.ts
 // - web/frontend/src/features/landing/OfferVisual.tsx
+// - web/frontend/src/shared/sales/PlatformPitchPanel.tsx
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useAuthStore } from "@/store/useAuthStore";
 import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath";
+import { PlatformPitchPanel } from "@/shared/sales/PlatformPitchPanel";
 import { cn } from "@/shared/ui/cn";
 import {
   LANDING_HERO_YOUTUBE_EMBED,
@@ -136,6 +138,19 @@ export function LandingHome() {
           </Link>
           );
         })}
+        </div>
+      </section>
+
+      {/* 영업팀·딜러 소개·피치와 동일 UI (공개 통계) */}
+      <section
+        id="pitch"
+        className="scroll-mt-20 border-t border-slate-200/80 bg-white sm:scroll-mt-24"
+      >
+        <div className={cn(landingContent, "py-10 sm:py-12 lg:py-14")}>
+          <PlatformPitchPanel
+            apiPath="/api/system/platform-pitch"
+            queryKey="public-platform-pitch"
+          />
         </div>
       </section>
     </div>

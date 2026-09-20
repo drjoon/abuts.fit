@@ -78,7 +78,7 @@ export default function SalesTeamPaymentsPage() {
                 title="소개 가입이 없습니다"
                 description="현장에서 소개코드를 공유하세요."
                 actionLabel="소개·피치"
-                actionTo="/dashboard/sales/pitch"
+                actionTo="/#pitch"
               />
             ) : (
               <ul className="space-y-2">

@@ -89,9 +89,6 @@ const SalesHomePage = lazy(() => import("./pages/salesTeam/SalesHomePage"));
 const SalesAccountsPage = lazy(
   () => import("./pages/salesTeam/SalesAccountsPage"),
 );
-const SalesPlatformPitchPage = lazy(
-  () => import("./pages/salesTeam/SalesPlatformPitchPage"),
-);
 const SalesPerformancePage = lazy(
   () => import("./pages/salesTeam/SalesPerformancePage"),
 );
@@ -144,9 +141,6 @@ import SalesmanPaymentsPage from "@/pages/salesman/SalesmanPaymentsPage";
 import SalesTeamPaymentsPage from "@/pages/salesTeam/SalesTeamPaymentsPage";
 import DevopsPaymentsPage from "@/pages/devops/DevopsPaymentsPage";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
-const SalesmanPitchPage = lazy(
-  () => import("./pages/salesman/SalesmanPitchPage"),
-);
 const CncDashboardPage = lazy(() =>
   import("./pages/manufacturer/equipment/EquipmentPage").then((m) => ({
     default: m.EquipmentPage,
@@ -702,11 +696,7 @@ const App = () => {
                   />
                   <Route
                     path="sales/pitch"
-                    element={
-                      <RoleProtectedRoute roles={["salesTeam", "salesman"]}>
-                        <SalesPlatformPitchPage />
-                      </RoleProtectedRoute>
-                    }
+                    element={<Navigate to="/#pitch" replace />}
                   />
                   <Route
                     path="sales/performance"
@@ -1077,11 +1067,7 @@ const App = () => {
                   />
                   <Route
                     path="pitch"
-                    element={
-                      <RoleProtectedRoute roles={["salesman", "salesTeam"]}>
-                        <SalesmanPitchPage />
-                      </RoleProtectedRoute>
-                    }
+                    element={<Navigate to="/#pitch" replace />}
                   />
                   <Route
                     path="wizard"
