@@ -13,16 +13,7 @@ export const LANDING_CUSTOM_ABUTMENT_CUTOUT =
 /** 커스텀어벗 — CNC 추적관리 (기공소·치과명 블러) */
 export const LANDING_CUSTOM_TRACKING = "/landing/custom-tracking.jpg";
 
-/** 히어로 — YouTube (Froncare BonePen) */
-export const LANDING_HERO_YOUTUBE_ID = "aYrX8J0o4ks";
-export const LANDING_HERO_YOUTUBE_POSTER =
-  `https://i.ytimg.com/vi/${LANDING_HERO_YOUTUBE_ID}/hqdefault.jpg`;
-export const LANDING_HERO_YOUTUBE_EMBED =
-  `https://www.youtube-nocookie.com/embed/${LANDING_HERO_YOUTUBE_ID}` +
-  `?autoplay=1&mute=1&controls=0&loop=1&playlist=${LANDING_HERO_YOUTUBE_ID}` +
-  `&playsinline=1&rel=0&modestbranding=1&iv_load_policy=3&disablekb=1&fs=0`;
-
-/** 오퍼 페이지 등 — ACRODENT TheSimple Implant 발췌 */
+/** 히어로 — ACRODENT TheSimple Implant 발췌 (키트 클로즈업 · 4키트 · Check) */
 export const LANDING_HERO_VIDEO = "/landing/hero-simple.mp4";
 export const LANDING_HERO_POSTER = "/landing/hero-poster.jpg";
 export const LANDING_SIMPLE_WAY_STILL = "/landing/simple-way-kits.jpg";

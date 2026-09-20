@@ -11,10 +11,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath";
 import { PlatformPitchPanel } from "@/shared/sales/PlatformPitchPanel";
 import { cn } from "@/shared/ui/cn";
-import {
-  LANDING_HERO_YOUTUBE_EMBED,
-  LANDING_HERO_YOUTUBE_POSTER,
-} from "./landingAssets";
+import { LANDING_HERO_POSTER, LANDING_HERO_VIDEO } from "./landingAssets";
 import { landingHome, landingContent } from "./landingTheme";
 import { landingOffers, offerPath } from "./landingOffers";
 import { OfferVisual } from "./OfferVisual";
@@ -51,23 +48,22 @@ export function LandingHome() {
       <section className="relative flex min-h-[calc(100svh-3.5rem)] items-end overflow-hidden bg-black sm:min-h-[calc(100svh-4rem)]">
         {reducedMotion ? (
           <img
-            src={LANDING_HERO_YOUTUBE_POSTER}
+            src={LANDING_HERO_POSTER}
             alt=""
             className="absolute inset-0 h-full w-full object-cover object-center"
           />
         ) : (
-          <div
-            className="pointer-events-none absolute inset-0 overflow-hidden"
-            aria-hidden
+          <video
+            className="absolute inset-0 h-full w-full object-cover object-center"
+            autoPlay
+            muted
+            loop
+            playsInline
+            poster={LANDING_HERO_POSTER}
+            aria-label="심플웨이 시술 키트 영상"
           >
-            <iframe
-              className="absolute left-1/2 top-1/2 h-[56.25vw] min-h-full w-[177.78vh] min-w-full -translate-x-1/2 -translate-y-1/2 border-0"
-              src={LANDING_HERO_YOUTUBE_EMBED}
-              title="Froncare BonePen"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-              referrerPolicy="strict-origin-when-cross-origin"
-            />
-          </div>
+            <source src={LANDING_HERO_VIDEO} type="video/mp4" />
+          </video>
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/15 to-black/25" />
         <div className={cn(landingContent, "relative z-10 pb-14 pt-24 sm:pb-20")}>
