@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-20: 지정 거래 안내 툴팁 제거. 보조 문구만 유지.
 // - 2026-09-20: 지정 거래 정책 1% · 이벤트 기본 off(0%). 추후 공지 후 부과 안내.
 // - 2026-09-20: 지정 거래 기본 on·1%. 「별도 공지까지 무료」카피 제거.
 // - 2026-08-21: 신속처리 할증(기공·어벗츠 배수) 설정 UI 제거.
@@ -21,12 +22,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { Info, Percent } from "lucide-react";
+import { Percent } from "lucide-react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
@@ -232,7 +228,7 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
               하청 수수료
             </Label>
             <p className="text-[12px] leading-snug text-muted-foreground">
-              수행 기공소 공제율. 정산에 즉시 반영됩니다.
+              어벗츠 의뢰건 하청시
             </p>
           </div>
         </div>
@@ -261,33 +257,16 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
             <Percent className="h-4 w-4 text-primary-strong" />
           </span>
           <div className="min-w-0">
-            <div className="flex items-center gap-1.5">
-              <Label
-                htmlFor="rate-direct"
-                className="text-sm font-semibold text-slate-900"
-              >
-                지정 거래
-              </Label>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    className="inline-flex text-slate-400 transition-colors hover:text-slate-600"
-                    aria-label="지정 거래 수수료 안내"
-                  >
-                    <Info className="h-3.5 w-3.5" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent className="max-w-[260px] text-[12px] leading-relaxed">
-                  정책 요율은 1%입니다. 끄면 이벤트 기간(실효 0%)으로 안내되고,
-                  추후 공지 후 켤 수 있습니다.
-                </TooltipContent>
-              </Tooltip>
-            </div>
+            <Label
+              htmlFor="rate-direct"
+              className="text-sm font-semibold text-slate-900"
+            >
+              지정 수수료
+            </Label>
             <p className="text-[12px] leading-snug text-muted-foreground">
               {directFeeEnabled
-                ? "지급 시 공제"
-                : "이벤트 기간 0%(추후 공지 후 1%)"}
+                ? "치과가 지정한 협력 기공소"
+                : "이벤트 기간 0%"}
             </p>
           </div>
         </div>
@@ -298,7 +277,7 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
             <Switch
               checked={directFeeEnabled}
               onCheckedChange={setDirectFeeEnabled}
-              aria-label="지정 거래 수수료 적용"
+              aria-label="지정 수수료 적용"
             />
             <Input
               id="rate-direct"
