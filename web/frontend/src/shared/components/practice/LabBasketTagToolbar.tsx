@@ -2,11 +2,19 @@
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // - web/frontend/src/shared/practice/practiceTransferDetailPrint.ts
 // - web/frontend/src/shared/practice/labBasketTagSheetPrint.ts
+// - 2026-09-20: 유실분 번호 그리드 — 드래그로 연속 선택/해제.
 // - 2026-09-20: 작업 중 번호 점유·완료 후 재사용. 픽커에서 사용중 비활성.
 // - 2026-09-20: 번호표 01–99. 전체·유실분 선택 후 인쇄(미리보기는 인쇄 대화상자).
 // - 2026-09-20: 프린트·번호표 — 아이콘+라벨 항상 표시(안내 Info만 아이콘).
 // - 2026-09-20: 기공소 의뢰상세 — 프린트·바구니 번호표·안내 모달.
-import { useMemo, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from "react";
 import { Info, Printer, Tags } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -360,6 +368,27 @@ function LabBasketTagPrintDialog({
 }) {
   const [scope, setScope] = useState<PrintScope>("full");
   const [selectedCustom, setSelectedCustom] = useState<string[]>([]);
+  /** 드래그 페인트: 시작 칸 기준으로 선택(add) 또는 해제(remove)를 유지 */
+  const dragSelectRef = useRef<{
+    mode: "add" | "remove";
+    visited: Set<string>;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!open) {
+      dragSelectRef.current = null;
+      return;
+    }
+    const endDrag = () => {
+      dragSelectRef.current = null;
+    };
+    window.addEventListener("pointerup", endDrag);
+    window.addEventListener("pointercancel", endDrag);
+    return () => {
+      window.removeEventListener("pointerup", endDrag);
+      window.removeEventListener("pointercancel", endDrag);
+    };
+  }, [open]);
 
   const tags = useMemo(() => {
     if (scope === "custom") return sortLabBasketTags(selectedCustom);
@@ -371,11 +400,41 @@ function LabBasketTagPrintDialog({
   );
   const canPrint = tags.length > 0;
 
+  const applyCustomTag = (code: string, mode: "add" | "remove") => {
+    setSelectedCustom((prev) => {
+      if (mode === "add") {
+        if (prev.includes(code)) return prev;
+        return sortLabBasketTags([...prev, code]);
+      }
+      if (!prev.includes(code)) return prev;
+      return prev.filter((t) => t !== code);
+    });
+  };
+
   const toggleCustomTag = (code: string) => {
     setSelectedCustom((prev) => {
       if (prev.includes(code)) return prev.filter((t) => t !== code);
       return sortLabBasketTags([...prev, code]);
     });
+  };
+
+  const beginCustomTagDrag = (
+    event: ReactPointerEvent<HTMLButtonElement>,
+    code: string,
+    currentlyActive: boolean,
+  ) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    const mode = currentlyActive ? "remove" : "add";
+    dragSelectRef.current = { mode, visited: new Set([code]) };
+    applyCustomTag(code, mode);
+  };
+
+  const paintCustomTagDrag = (code: string) => {
+    const drag = dragSelectRef.current;
+    if (!drag || drag.visited.has(code)) return;
+    drag.visited.add(code);
+    applyCustomTag(code, drag.mode);
   };
 
   return (
@@ -452,12 +511,12 @@ function LabBasketTagPrintDialog({
                 </div>
               ) : (
                 <p className="text-[11px] text-muted-foreground">
-                  아래에서 유실된 번호를 눌러 선택합니다.
+                  아래에서 유실된 번호를 누르거나 드래그해 선택합니다.
                 </p>
               )}
 
               <div className="max-h-[min(22rem,50vh)] overflow-y-auto">
-                <div className="grid grid-cols-10 gap-1">
+                <div className="grid touch-none select-none grid-cols-10 gap-1">
                   {ALL_TAGS.map((code) => {
                     const active = selectedCustom.includes(code);
                     return (
@@ -470,7 +529,15 @@ function LabBasketTagPrintDialog({
                             ? "bg-primary text-primary-foreground"
                             : "bg-muted/60 text-foreground hover:bg-muted",
                         )}
-                        onClick={() => toggleCustomTag(code)}
+                        onPointerDown={(event) =>
+                          beginCustomTagDrag(event, code, active)
+                        }
+                        onPointerEnter={() => paintCustomTagDrag(code)}
+                        onClick={(event) => {
+                          // 마우스는 pointerdown에서 이미 반영. detail===0은 키보드 활성화.
+                          if (event.detail !== 0) return;
+                          toggleCustomTag(code);
+                        }}
                       >
                         {code}
                       </button>
