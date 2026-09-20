@@ -7,6 +7,7 @@
  * - web/frontend/src/pages/practice/components/PracticeStatusFilterBadges.tsx
  * - web/frontend/src/shared/date/kst.ts
  * - web/frontend/src/shared/practice/labReceiveCalendarWeekGrid.ts
+ * - 2026-09-20: 기공소 바구니 번호표(basketTag) — 목록·주간 칩에 표시.
  * - 2026-08-28: 요일 헤더에 스크롤바 폭 패딩 동기화 + custom-scrollbar(빈 레일 열·railRef 제거).
  * - 2026-09-07: 오늘(KST) 포함 셀 클릭 → 신규 의뢰(도착일).
  * - 2026-08-28: onSelectFutureDay — 오늘 이후 셀 빈 영역 클릭(칩은 stopPropagation).
@@ -179,6 +180,8 @@ export type PracticeCalendarChipItem = {
   canDelete?: boolean;
   /** 커스텀 어벗 포함 — 목록·칩에 어벗 아이콘 */
   hasCustomAbutment?: boolean;
+  /** 기공소 바구니 번호표 (01–99). 없으면 미표시 */
+  basketTag?: string | null;
 };
 
 /**
@@ -393,6 +396,7 @@ export function expandPracticeCalendarChipsByArrivalDates(
         unreadCount: item.unreadCount,
         reviewHighlight: item.reviewHighlight,
         hasCustomAbutment: item.hasCustomAbutment,
+        basketTag: item.basketTag,
       });
     });
   }
@@ -1933,6 +1937,15 @@ export function PracticeRecentTransfersCalendar({
                                 onClick={() => selectListItem(item, ymd)}
                               >
                                 <span className="inline-flex max-w-full items-start gap-1">
+                                  {item.basketTag ? (
+                                    <span
+                                      className="mt-px inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded bg-primary/10 px-1 text-[10px] font-semibold tabular-nums leading-none text-primary"
+                                      title={`바구니 번호표 ${item.basketTag}`}
+                                      aria-label={`바구니 번호표 ${item.basketTag}`}
+                                    >
+                                      {item.basketTag}
+                                    </span>
+                                  ) : null}
                                   <PracticeCalendarChipHover
                                     item={item}
                                     labDot={labDot}
@@ -2184,6 +2197,15 @@ export function PracticeRecentTransfersCalendar({
                                 }}
                               >
                                 <span className="inline-flex max-w-full items-start gap-0.5">
+                                  {item.basketTag ? (
+                                    <span
+                                      className="mt-px inline-flex h-3.5 min-w-3.5 shrink-0 items-center justify-center rounded bg-primary/15 px-0.5 text-[9px] font-semibold tabular-nums leading-none text-primary"
+                                      title={`바구니 번호표 ${item.basketTag}`}
+                                      aria-label={`바구니 번호표 ${item.basketTag}`}
+                                    >
+                                      {item.basketTag}
+                                    </span>
+                                  ) : null}
                                   <PracticeCalendarChipHover
                                     item={item}
                                     labDot={labDot}

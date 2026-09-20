@@ -16,6 +16,7 @@
 // - web/frontend/src/shared/files/fileBlobCache.ts
 // - web/frontend/src/shared/files/s3ImageThumb.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-20: 기공소 — 번호표 occupiedTags·onLabBasketTagChange(목록 즉시 갱신).
 // - 2026-09-20: 기공소 — 프린트·번호표 아이콘+라벨 항상 표시.
 // - 2026-09-20: 기공소 — 프린트·번호표를 작업시작/취소와 같은 헤더 액션 줄로(별도 행 제거).
 // - 2026-09-20: 기공소 — 헤더에 의뢰정보 프린트·바구니 번호표(01–99)·안내 복원.
@@ -463,6 +464,10 @@ type PracticeTransferDetailChatDialogProps = {
    * feeViewer=lab 일 때만 사용.
    */
   labBasketTagKey?: string | null;
+  /** 다른 진행 중 의뢰가 쓰는 번호표 — 픽커 비활성 */
+  labBasketOccupiedTags?: ReadonlySet<string> | null;
+  /** 번호표 선택/해제 시(목록·달력 즉시 갱신용) */
+  onLabBasketTagChange?: (tag: string) => void;
   /**
    * 열릴 때 스크롤 위치 힌트. detail=맨 위(의뢰), chat=맨 아래(진행).
    * 미지정 시 채팅 내역이 있으면 아래, 없으면 위.
@@ -694,6 +699,8 @@ export function PracticeTransferDetailChatDialog({
   skipJig = false,
   feeViewer = "practice",
   labBasketTagKey = null,
+  labBasketOccupiedTags = null,
+  onLabBasketTagChange,
   initialPanelTab,
   labAnchorId = null,
   labEffectiveStars = null,
@@ -2023,7 +2030,12 @@ export function PracticeTransferDetailChatDialog({
       <LabBasketTagToolbar
         storageKey={labBasketTagKey}
         value={labBasketTag}
-        onChange={(tag) => setLabBasketTag(normalizeLabBasketTag(tag))}
+        occupiedTags={labBasketOccupiedTags}
+        onChange={(tag) => {
+          const next = normalizeLabBasketTag(tag);
+          setLabBasketTag(next);
+          onLabBasketTagChange?.(next);
+        }}
         onPrint={handlePrintDetail}
       />
     ) : null;

@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // - web/frontend/src/shared/practice/practiceTransferDetailPrint.ts
 // - web/frontend/src/shared/practice/labBasketTagSheetPrint.ts
+// - 2026-09-20: 작업 중 번호 점유·완료 후 재사용. 픽커에서 사용중 비활성.
 // - 2026-09-20: 번호표 01–99. 전체·유실분 선택 후 인쇄(미리보기는 인쇄 대화상자).
 // - 2026-09-20: 프린트·번호표 — 아이콘+라벨 항상 표시(안내 Info만 아이콘).
 // - 2026-09-20: 기공소 의뢰상세 — 프린트·바구니 번호표·안내 모달.
@@ -34,6 +35,10 @@ import {
   LAB_BASKET_TAG_RE,
   LAB_BASKET_TAGS_PER_PAGE,
 } from "@/shared/practice/labBasketTagSheetPrint";
+import {
+  isPracticeRecentCancelBadgeStatus,
+  isPracticeRecentFinishedBadgeStatus,
+} from "@/shared/practice/practiceRecentTransferList";
 
 const STORAGE_PREFIX = "lab_basket_tag_v1:";
 const ALL_TAGS = listLabBasketTags();
@@ -74,11 +79,53 @@ export function writeLabBasketTag(
   }
 }
 
+/** 완료·취소가 아니면 번호표를 점유(진행 중). 완료 건 표시값은 유지하되 점유 제외. */
+export function isLabBasketTagOccupyingTransfer(transfer: {
+  status?: unknown;
+  designFileCount?: unknown;
+  designFiles?: unknown;
+  designReadyAt?: unknown;
+}): boolean {
+  const status = String(transfer.status || "").trim();
+  if (!status) return false;
+  if (isPracticeRecentCancelBadgeStatus(status)) return false;
+  if (isPracticeRecentFinishedBadgeStatus(transfer)) return false;
+  return true;
+}
+
+export type LabBasketTagOccupyTransfer = {
+  transferId?: string | null;
+  _id?: string | null;
+  status?: unknown;
+  designFileCount?: unknown;
+  designFiles?: unknown;
+  designReadyAt?: unknown;
+};
+
+/** 진행 중 의뢰가 쓰는 번호표 Set. excludeTransferId는 현재 상세(자기 선택 유지). */
+export function collectOccupiedLabBasketTags(
+  transfers: ReadonlyArray<LabBasketTagOccupyTransfer>,
+  opts?: { excludeTransferId?: string | null },
+): Set<string> {
+  const exclude = String(opts?.excludeTransferId || "").trim();
+  const out = new Set<string>();
+  for (const transfer of transfers) {
+    const id = String(transfer.transferId || transfer._id || "").trim();
+    if (!id || (exclude && id === exclude)) continue;
+    if (!isLabBasketTagOccupyingTransfer(transfer)) continue;
+    const tag = readLabBasketTag(id);
+    if (tag) out.add(tag);
+  }
+  return out;
+}
+
 type LabBasketTagToolbarProps = {
   storageKey?: string | null;
   value: string;
   onChange: (tag: string) => void;
   onPrint: () => void;
+  /** 다른 진행 중 의뢰가 쓰는 번호 — 픽커에서 비활성 */
+  occupiedTags?: ReadonlySet<string> | null;
   className?: string;
 };
 
@@ -87,17 +134,22 @@ export function LabBasketTagToolbar({
   value,
   onChange,
   onPrint,
+  occupiedTags = null,
   className,
 }: LabBasketTagToolbarProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
 
   const selected = normalizeLabBasketTag(value);
+  const occupied = occupiedTags ?? EMPTY_OCCUPIED;
 
   const applyTag = (next: string) => {
     const normalized = normalizeLabBasketTag(next);
-    onChange(normalized);
+    if (normalized && occupied.has(normalized) && normalized !== selected) {
+      return;
+    }
     writeLabBasketTag(storageKey, normalized);
+    onChange(normalized);
   };
 
   const clearTag = () => {
@@ -173,24 +225,42 @@ export function LabBasketTagToolbar({
               </div>
               <div className="max-h-56 overflow-y-auto pr-0.5">
                 <div className="grid grid-cols-10 gap-1">
-                  {ALL_TAGS.map((code) => (
-                    <button
-                      key={code}
-                      type="button"
-                      className={cn(
-                        "inline-flex h-7 items-center justify-center rounded-md text-[11px] font-semibold tabular-nums transition-colors",
-                        selected === code
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-muted/60 text-foreground hover:bg-muted",
-                      )}
-                      onClick={() => {
-                        applyTag(code);
-                        setPickerOpen(false);
-                      }}
-                    >
-                      {code}
-                    </button>
-                  ))}
+                  {ALL_TAGS.map((code) => {
+                    const isSelected = selected === code;
+                    const isOccupied = occupied.has(code) && !isSelected;
+                    return (
+                      <button
+                        key={code}
+                        type="button"
+                        disabled={isOccupied}
+                        title={
+                          isOccupied
+                            ? "다른 진행 중 의뢰에서 사용 중"
+                            : undefined
+                        }
+                        aria-label={
+                          isOccupied
+                            ? `${code} (다른 진행 중 의뢰에서 사용 중)`
+                            : code
+                        }
+                        className={cn(
+                          "inline-flex h-7 items-center justify-center rounded-md text-[11px] font-semibold tabular-nums transition-colors",
+                          isSelected
+                            ? "bg-primary text-primary-foreground"
+                            : isOccupied
+                              ? "cursor-not-allowed bg-muted/40 text-muted-foreground/50"
+                              : "bg-muted/60 text-foreground hover:bg-muted",
+                        )}
+                        onClick={() => {
+                          if (isOccupied) return;
+                          applyTag(code);
+                          setPickerOpen(false);
+                        }}
+                      >
+                        {code}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -212,6 +282,8 @@ export function LabBasketTagToolbar({
     </>
   );
 }
+
+const EMPTY_OCCUPIED: ReadonlySet<string> = new Set();
 
 function LabBasketTagGuideDialog({
   open,
@@ -264,7 +336,7 @@ function LabBasketTagGuideDialog({
             <GuideStep
               step={3}
               title="의뢰에 선택"
-              body="헤더 번호표 = 바구니 번호. 프린트에도 표시"
+              body="헤더 번호표 = 바구니 번호. 프린트·목록에도 표시. 작업 중에는 번호를 겹쳐 쓰지 않으며, 완료 후 재사용"
             >
               <MatchIllustration />
             </GuideStep>

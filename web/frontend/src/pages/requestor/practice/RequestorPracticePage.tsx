@@ -1,4 +1,5 @@
 // related files:
+// - 2026-09-20: 바구니 번호표 — 목록/달력 표시·작업 중 중복 금지·완료 후 재사용.
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/shared/realtime/useAppEventListener.ts
@@ -269,6 +270,10 @@ import {
   type PracticeTransferDialogFileItem,
   type PracticeTransferDialogSummaryItem,
 } from "@/shared/components/PracticeTransferDetailChatDialog";
+import {
+  collectOccupiedLabBasketTags,
+  readLabBasketTag,
+} from "@/shared/components/practice/LabBasketTagToolbar";
 import {
   OPEN_PRACTICE_TRANSFER_CHAT_EVENT,
   type OpenPracticeTransferChatDetail,
@@ -912,6 +917,8 @@ export function RequestorPracticeReceivePage({
   const [abutmentRequestDetailBusy, setAbutmentRequestDetailBusy] =
     useState(false);
   const [selectedTransfer, setSelectedTransfer] = useState<ReceivedPracticeTransfer | null>(null);
+  /** 바구니 번호표 localStorage 변경 시 목록·달력 칩 즉시 갱신 */
+  const [labBasketTagRevision, setLabBasketTagRevision] = useState(0);
   const [bookmarkItems, setBookmarkItems] = useState<PracticeTransferBookmarkItem[]>(
     [],
   );
@@ -2643,6 +2650,7 @@ export function RequestorPracticeReceivePage({
           badgeClearedIds,
         ),
         hasCustomAbutment: Boolean(transfer.hasCustomAbutment),
+        basketTag: readLabBasketTag(transferId) || null,
       };
     });
     const expanded = expandPracticeCalendarChipsByArrivalDates(
@@ -2664,9 +2672,28 @@ export function RequestorPracticeReceivePage({
     badgeClearedIds,
     calendarDateKey,
     implantCatalog,
+    labBasketTagRevision,
     sortedFilteredTransfers,
     transferChatUnreadCount,
   ]);
+
+  const selectedLabBasketTransferId = String(
+    selectedTransfer?.transferId || selectedTransfer?._id || "",
+  ).trim();
+
+  const labBasketOccupiedTags = useMemo(() => {
+    void labBasketTagRevision;
+    return collectOccupiedLabBasketTags(
+      transfers.map((transfer) => ({
+        transferId: transfer.transferId || transfer._id,
+        status: getTransferDisplayStatus(transfer),
+        designFileCount: transfer.production?.designFileCount,
+        designFiles: transfer.production?.designFiles,
+        designReadyAt: transfer.production?.designReadyAt,
+      })),
+      { excludeTransferId: selectedLabBasketTransferId || null },
+    );
+  }, [labBasketTagRevision, selectedLabBasketTransferId, transfers]);
 
   const calendarTransferById = useMemo(() => {
     const map = new Map<string, ReceivedPracticeTransfer>();
@@ -8721,10 +8748,11 @@ export function RequestorPracticeReceivePage({
         remakeChargeCancelBusy={remakeChargeCancelBusy}
         skipJig={Boolean(selectedTransfer?.production?.skipJig)}
         feeViewer="lab"
-        labBasketTagKey={
-          String(selectedTransfer?.transferId || selectedTransfer?._id || "").trim() ||
-          null
-        }
+        labBasketTagKey={selectedLabBasketTransferId || null}
+        labBasketOccupiedTags={labBasketOccupiedTags}
+        onLabBasketTagChange={() => {
+          setLabBasketTagRevision((n) => n + 1);
+        }}
         labAnchorId={String(user?.businessAnchorId || "").trim() || null}
         labEffectiveStars={
           selectedTransfer?.labRatingSummary?.effectiveStars ??
