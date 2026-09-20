@@ -2,6 +2,9 @@
 // - web/frontend/src/pages/salesTeam/salesTeamApi.ts
 // - web/frontend/src/pages/salesTeam/salesUi.tsx
 // - web/frontend/src/pages/salesTeam/salesDay.ts
+// change-log:
+// - 2026-09-21: 딜러 일일보고 작성 모달에 대표·담당자만 열람 / 어벗츠 불가 안내.
+// - 2026-09-21: `?tab=report` 진입 시 일일보고 작성 모달 오픈(성과 딥링크).
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -59,6 +62,7 @@ import SalesPlaceSuggestInput from "./SalesPlaceSuggestInput";
 import SalesPlacePickerDrawer from "./SalesPlacePickerDrawer";
 import SalesRouteMap from "./SalesRouteMap";
 import {
+  SalesDailyReportPrivacyBanner,
   SalesDayPicker,
   SalesEmptyState,
   SalesPageShell,
@@ -148,7 +152,9 @@ export default function SalesHomePage() {
   const [ymd, setYmd] = useState(
     () => searchParams.get("ymd") || today,
   );
-  const [reportOpen, setReportOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(
+    () => searchParams.get("tab") === "report",
+  );
 
   const onYmdChange = (next: string) => {
     setYmd(next);
@@ -159,8 +165,11 @@ export default function SalesHomePage() {
     setSearchParams(nextParams, { replace: true });
   };
 
+  // 성과「일일보고 작성」→ `/dashboard/sales?tab=report` 진입 시 작성 모달 오픈.
   useEffect(() => {
-    if (!searchParams.has("tab")) return;
+    const tab = searchParams.get("tab");
+    if (!tab) return;
+    if (tab === "report") setReportOpen(true);
     const nextParams = new URLSearchParams(searchParams);
     nextParams.delete("tab");
     setSearchParams(nextParams, { replace: true });
@@ -1143,6 +1152,9 @@ export default function SalesHomePage() {
               오늘 방문과 남길 메모만 짧게 적습니다.
             </DialogDescription>
           </DialogHeader>
+          {isSalesman ? (
+            <SalesDailyReportPrivacyBanner compact className="mt-1" />
+          ) : null}
           {reportLoading ? (
             <p className="text-sm text-muted-foreground">불러오는 중…</p>
           ) : (

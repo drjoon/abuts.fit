@@ -60,6 +60,13 @@ export type SalesDailyReport = {
   issues?: string;
   tomorrowPlan?: string;
   submittedAt?: string;
+  authorUserId?: string;
+};
+
+export type DailyReportPrivacy = {
+  note: string;
+  viewersLabel: string;
+  hiddenFromLabel: string;
 };
 
 export type SalesPlaceSuggest = {
@@ -192,13 +199,16 @@ export const salesTeamApi = {
       report: SalesDailyReport | null;
       visits: SalesVisit[];
       reportYmd: string;
+      authorUserId?: string;
+      accessScope?: string | null;
+      dailyReportPrivacy?: DailyReportPrivacy | null;
     }>(token, `/api/sales-team/daily-reports/${ymd}`),
 
   listDailyReports: (token: string | null) =>
-    salesFetch<{ items: SalesDailyReport[] }>(
-      token,
-      "/api/sales-team/daily-reports",
-    ),
+    salesFetch<{
+      items: SalesDailyReport[];
+      dailyReportPrivacy?: DailyReportPrivacy | null;
+    }>(token, "/api/sales-team/daily-reports"),
 
   upsertDailyReport: (
     token: string | null,
@@ -224,6 +234,7 @@ export const salesTeamApi = {
       referralSignupCount: number;
       practiceSignupCount: number;
       labSignupCount: number;
+      dailyReportPrivacy?: DailyReportPrivacy | null;
       referralOrgs: Array<{
         _id: string;
         name?: string;

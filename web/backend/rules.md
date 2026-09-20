@@ -464,6 +464,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 
 - 의뢰자 역할·서비스 · 가입/온보딩 SSOT (2026-08, 루트 §2.4 상세)
   - `labTeam`(기공팀)·`salesTeam`(영업본부): 내부 직원. `/signup/staff`에서 가입. 사업영역 수익 분배 주체. `salesTeam`은 딜러와 별개. 영업본부 포털 `/api/sales-team` · FE `/dashboard/sales`. 소개코드 영문 3글자.
+  - 딜러 일일보고 ACL: `utils/salesDailyReportAccess.js` — 작성자(담당자)·같은 BA 대표만, 어벗츠 관계자 403. `GET|PUT /api/sales-team/daily-reports*`.
   - 필드 SSOT: `BusinessAnchor.requestorKind` (`practice|lab`) + `requestorServices` (paid-only). User 미러 동일.
   - 레거시 `requestorCapabilities`는 resolve/백필 폴백만. 신규 쓰기 금지.
   - `requestorServices.free` 폐기: 읽기 시 paid 승격, 쓰기는 `{free:false,paid:true}`.

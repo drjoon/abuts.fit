@@ -117,6 +117,7 @@
   - `internalLab`(어벗츠기공소): 어벗츠 기공소 직접 운영. 메뉴=기공의뢰(수신·어벗츠로 의뢰)·크레딧·정산·문의·설정. 하청 전환·30분 우선창·원청 수가·정산(`payments`)은 어벗츠 전용. 관리자 생성만(공개 가입 없음).
     - 동일 법인 BN을 `businessType`별로 공유 가능(`businessNumberNormalized`+`businessType` 복합 unique). 하위조직은 `parentBusinessAnchorId` → 예: admin「어벗츠 주식회사」←「기공사업부」.
   - `labTeam`(기공팀)·`salesTeam`(영업본부): 내부 직원. `/signup/staff`에서 가입. 사업영역 수익 분배 주체. `salesTeam`은 딜러(`salesman`)와 별개. 영업본부 포털=`/dashboard/sales` (거래처·일정·동선·실적·일일보고·소개). 소개코드=영문 3글자.
+  - 딜러(`salesman`) 일일보고: 딜러사 **대표·담당자만** 열람. **어벗츠 관계자**(admin/salesTeam/devops 등)는 조회 불가. SSOT `web/backend/utils/salesDailyReportAccess.js` · FE `SalesDailyReportPrivacyBanner`.
   - `practice` role은 제거. 기존 계정은 `requestor`+`requestorCapabilities.practice` 마이그레이션 대상(신규 생성 금지). 백필: `scripts/db/backfill-requestor-capabilities.js --apply`.
 
 ### 2.2 의뢰 생성/공정

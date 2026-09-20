@@ -3,6 +3,9 @@
 // - web/backend/models/sales/salesAccount.model.js
 // - web/backend/models/sales/salesVisit.model.js
 // - web/backend/models/sales/salesDailyReport.model.js
+// - web/backend/utils/salesDailyReportAccess.js
+// change-log:
+// - 2026-09-21: 딜러 일일보고 ACL — 대표·담당자만 열람, 어벗츠 관계자 차단 + privacy payload.
 import { Types } from "mongoose";
 import SalesAccount from "../../models/sales/salesAccount.model.js";
 import SalesVisit from "../../models/sales/salesVisit.model.js";
@@ -14,6 +17,12 @@ import {
   ensureSalesTeamReferralCode,
   resolveSalesTeamReferralAnchorId,
 } from "../../utils/salesTeamReferral.util.js";
+import {
+  canViewDailyReportAuthor,
+  dailyReportPrivacyPayload,
+  DEALER_DAILY_REPORT_PRIVACY_NOTE,
+  listVisibleDailyReportAuthorIds,
+} from "../../utils/salesDailyReportAccess.js";
 import { getPlatformSocialProof } from "../../services/platformGrowthStats.service.js";
 import { listNoOrderAlerts } from "../../services/noOrderAlerts.service.js";
 
@@ -1156,6 +1165,7 @@ export async function getSalesHome(req, res) {
         dailyReport: report || null,
         weekReferralSignups: weekSignups,
         referralCode: me?.referralCode || null,
+        dailyReportPrivacy: dailyReportPrivacyPayload(req.user?.role),
       },
     });
   } catch (error) {
@@ -1757,11 +1767,20 @@ export async function deleteVisit(req, res) {
 export async function listDailyReports(req, res) {
   try {
     const limit = Math.min(90, Math.max(1, Number(req.query.limit) || 30));
-    const items = await SalesDailyReport.find({ authorUserId: req.user._id })
+    const authorIds = await listVisibleDailyReportAuthorIds(req.user);
+    const items = await SalesDailyReport.find({
+      authorUserId: { $in: authorIds },
+    })
       .sort({ reportYmd: -1 })
       .limit(limit)
       .lean();
-    return res.json({ success: true, data: { items } });
+    return res.json({
+      success: true,
+      data: {
+        items,
+        dailyReportPrivacy: dailyReportPrivacyPayload(req.user?.role),
+      },
+    });
   } catch (error) {
     console.error("[salesTeam.listDailyReports]", error);
     return res.status(500).json({
@@ -1774,9 +1793,33 @@ export async function listDailyReports(req, res) {
 export async function getDailyReport(req, res) {
   try {
     const ymd = parseYmd(req.params.ymd) || toKstYmd(new Date());
+    const requestedAuthor =
+      oid(req.query.authorUserId) || oid(req.user._id);
+    const access = await canViewDailyReportAuthor({
+      viewer: req.user,
+      authorUserId: requestedAuthor,
+    });
+    if (!access.ok) {
+      const status =
+        access.code === "not_found"
+          ? 404
+          : access.code === "bad_request"
+            ? 400
+            : 403;
+      return res.status(status).json({
+        success: false,
+        message:
+          access.message ||
+          (access.code === "forbidden_abuts"
+            ? DEALER_DAILY_REPORT_PRIVACY_NOTE
+            : "일일보고를 열람할 권한이 없습니다."),
+        code: access.code,
+      });
+    }
+
     const [report, range] = await Promise.all([
       SalesDailyReport.findOne({
-        authorUserId: req.user._id,
+        authorUserId: requestedAuthor,
         reportYmd: ymd,
       }).lean(),
       Promise.resolve(kstYmdToUtcRange(ymd)),
@@ -1784,7 +1827,7 @@ export async function getDailyReport(req, res) {
     let visits = [];
     if (range) {
       visits = await SalesVisit.find({
-        assigneeUserId: req.user._id,
+        assigneeUserId: requestedAuthor,
         plannedAt: { $gte: range.start, $lt: range.end },
         status: { $ne: "canceled" },
       })
@@ -1794,7 +1837,14 @@ export async function getDailyReport(req, res) {
     }
     return res.json({
       success: true,
-      data: { report: report || null, visits, reportYmd: ymd },
+      data: {
+        report: report || null,
+        visits,
+        reportYmd: ymd,
+        authorUserId: String(requestedAuthor),
+        accessScope: access.scope || null,
+        dailyReportPrivacy: dailyReportPrivacyPayload(req.user?.role),
+      },
     });
   } catch (error) {
     console.error("[salesTeam.getDailyReport]", error);
@@ -1812,18 +1862,38 @@ export async function upsertDailyReport(req, res) {
     if (!ymd) {
       return res.status(400).json({ success: false, message: "날짜가 올바르지 않습니다." });
     }
+    // 제출은 담당자(본인)만. 대표가 타인 보고를 대신 쓸 수 없음.
+    const meLean =
+      req.user?.businessAnchorId !== undefined
+        ? req.user
+        : await User.findById(req.user._id).select({ businessAnchorId: 1 }).lean();
+    const baId = oid(meLean?.businessAnchorId);
     const payload = {
       visitSummary: String(body.visitSummary || "").trim(),
       issues: String(body.issues || "").trim(),
       tomorrowPlan: String(body.tomorrowPlan || "").trim(),
       submittedAt: new Date(),
+      ...(baId ? { businessAnchorId: baId } : {}),
     };
     const doc = await SalesDailyReport.findOneAndUpdate(
       { authorUserId: req.user._id, reportYmd: ymd },
-      { $set: payload, $setOnInsert: { authorUserId: req.user._id, reportYmd: ymd } },
+      {
+        $set: payload,
+        $setOnInsert: {
+          authorUserId: req.user._id,
+          reportYmd: ymd,
+          ...(baId ? {} : { businessAnchorId: null }),
+        },
+      },
       { upsert: true, new: true },
     ).lean();
-    return res.json({ success: true, data: doc });
+    return res.json({
+      success: true,
+      data: doc,
+      meta: {
+        dailyReportPrivacy: dailyReportPrivacyPayload(req.user?.role),
+      },
+    });
   } catch (error) {
     console.error("[salesTeam.upsertDailyReport]", error);
     return res.status(500).json({
@@ -1928,6 +1998,7 @@ export async function getSalesStats(req, res) {
         practiceSignupCount: practiceSignups,
         labSignupCount: labSignups,
         referralOrgs,
+        dailyReportPrivacy: dailyReportPrivacyPayload(role || req.user?.role),
       },
     });
   } catch (error) {

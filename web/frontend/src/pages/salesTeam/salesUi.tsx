@@ -3,10 +3,17 @@
 // - web/frontend/src/pages/salesTeam/salesDay.ts
 // - web/frontend/src/shared/settlement/settlementUi.tsx
 // - web/frontend/src/components/ui/calendar.tsx
+// change-log:
+// - 2026-09-21: 딜러 일일보고 열람 범위 안내 배너(대표·담당자만 / 어벗츠 불가).
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  Calendar as CalendarIcon,
+  ChevronLeft,
+  ChevronRight,
+  ShieldCheck,
+} from "lucide-react";
 import { Link } from "react-router-dom";
 import { ko } from "date-fns/locale";
 import { Button } from "@/components/ui/button";
@@ -19,6 +26,56 @@ import {
 import { cn } from "@/shared/ui/cn";
 import { kstStartOfMonth, toKstYmd, ymdToKstDate } from "@/shared/date/kst";
 import { addDaysYmd } from "./salesDay";
+
+/** 딜러 일일보고 열람 정책 — BE `salesDailyReportAccess.js` 와 동기 */
+export const DEALER_DAILY_REPORT_PRIVACY_NOTE =
+  "딜러 일일보고는 딜러사 대표·담당자만 열람할 수 있으며, 어벗츠 관계자는 조회할 수 없습니다.";
+
+/** 딜러(salesman) 화면에만 노출. 어벗츠 영업본부에는 숨김. */
+export function SalesDailyReportPrivacyBanner({
+  className,
+  compact,
+}: {
+  className?: string;
+  compact?: boolean;
+}) {
+  return (
+    <div
+      role="note"
+      className={cn(
+        "flex gap-2.5 rounded-xl border border-amber-300/80 bg-amber-50 px-3 py-2.5 text-amber-950 shadow-sm ring-1 ring-amber-200/60",
+        compact ? "items-start" : "items-center sm:items-start",
+        className,
+      )}
+    >
+      <ShieldCheck
+        className={cn(
+          "shrink-0 text-amber-700",
+          compact ? "mt-0.5 h-4 w-4" : "mt-0.5 h-5 w-5",
+        )}
+        aria-hidden
+      />
+      <div className="min-w-0 space-y-0.5">
+        <p
+          className={cn(
+            "font-semibold tracking-tight text-amber-950",
+            compact ? "text-xs" : "text-sm",
+          )}
+        >
+          열람 범위 · 대표 · 담당자만
+        </p>
+        <p
+          className={cn(
+            "leading-relaxed text-amber-900/90",
+            compact ? "text-[11px]" : "text-xs sm:text-sm",
+          )}
+        >
+          {DEALER_DAILY_REPORT_PRIVACY_NOTE}
+        </p>
+      </div>
+    </div>
+  );
+}
 
 function formatPickerLabel(ymd: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return ymd;
