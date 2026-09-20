@@ -96,6 +96,67 @@ export function formatCommissionRatePct(rate?: number | null): string {
   return `${pct}%`;
 }
 
+/** 딜러십 요율 사다리(관리자 선택지 10·15·20과 동일, 높은 순). */
+export const DEALERSHIP_COMMISSION_RATE_PCT_OPTIONS = [20, 15, 10] as const;
+
+export type DealershipRateBucket = {
+  pct: number;
+  orgCount: number;
+  commissionAmount: number;
+};
+
+export function summarizeDealershipRateBuckets(
+  organizations: CommissionOrgRow[] | undefined | null,
+): DealershipRateBucket[] {
+  const byPct = new Map<number, DealershipRateBucket>();
+  for (const pct of DEALERSHIP_COMMISSION_RATE_PCT_OPTIONS) {
+    byPct.set(pct, { pct, orgCount: 0, commissionAmount: 0 });
+  }
+  for (const org of organizations || []) {
+    const pct = Math.round(Number(org.commissionRate || 0) * 100);
+    const bucket = byPct.get(pct);
+    if (!bucket) continue;
+    bucket.orgCount += 1;
+    bucket.commissionAmount += Number(org.monthCommissionAmount || 0);
+  }
+  return DEALERSHIP_COMMISSION_RATE_PCT_OPTIONS.map(
+    (pct) => byPct.get(pct) as DealershipRateBucket,
+  );
+}
+
+export function dealershipRateBucketLabel(
+  pct: number,
+  opts: { eventPct: number; basePct: number; eventEnabled: boolean },
+): string {
+  const { eventPct, basePct, eventEnabled } = opts;
+  if (eventEnabled) {
+    if (pct === eventPct) return `현재 ${pct}%`;
+    if (pct === basePct) return `추후 ${pct}%`;
+    return `${pct}%`;
+  }
+  if (pct === basePct) return `현재 ${pct}%`;
+  if (pct === eventPct) return `요율 ${pct}%`;
+  return `${pct}%`;
+}
+
+export function dealershipRateBucketTip(
+  pct: number,
+  opts: { eventPct: number; basePct: number; eventEnabled: boolean },
+): string {
+  const { eventPct, basePct, eventEnabled } = opts;
+  if (pct === eventPct) {
+    return eventEnabled
+      ? "이벤트 기간인 지금 유치(가입)한 치과·기공소"
+      : "이벤트 기간에 유치한 치과·기공소";
+  }
+  if (pct === basePct) {
+    return eventEnabled
+      ? "이벤트 종료 후 적용될 표준 요율 · 기간 외 유치 고객"
+      : "현재 표준 요율로 유치한 치과·기공소";
+  }
+  return "이벤트 요율 단계 조정(20%→15%→10%) 시 적용되는 중간 요율";
+}
+
 export function requestorKindLabel(
   kind?: "practice" | "lab" | null,
 ): string {

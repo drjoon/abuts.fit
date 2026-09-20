@@ -670,8 +670,7 @@ export async function getMyReferralDirectMembers(req, res) {
         // 동일 사업자의 owner/member user를 동시에 읽으면 소개 사업자 수와 목록이
         // 모두 부풀어 보이므로, direct members는 항상 unique business anchor 기준이다.
         const leaderAnchorId = String(requestor?.businessAnchorId || "").trim();
-        const childBusinessTypes =
-          role === "salesman" ? ["requestor", "salesman"] : ["requestor"];
+        const childBusinessTypes = ["requestor"];
         const directChildAnchors =
           leaderAnchorId && Types.ObjectId.isValid(leaderAnchorId)
             ? await BusinessAnchor.find({
@@ -1799,8 +1798,7 @@ export async function getMyPricingReferralStats(req, res) {
           selfBusinessOrders = myLastMonthOrders;
         } else {
           const refBusinessAnchorId = String(me?.businessAnchorId || "").trim();
-          const directChildBusinessTypes =
-            role === "salesman" ? ["requestor", "salesman"] : ["requestor"];
+          const directChildBusinessTypes = ["requestor"];
           const directChildren =
             refBusinessAnchorId && Types.ObjectId.isValid(refBusinessAnchorId)
               ? await BusinessAnchor.find({

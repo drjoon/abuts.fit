@@ -87,7 +87,8 @@ function getAllowedSignupRolesForReferrerRole(referrerRole) {
     return ["requestor"];
   }
   if (normalizedReferrerRole === "salesman") {
-    return ["requestor", "salesman"];
+    // 딜러→딜러 소개 수수료 없음. 딜러 코드로는 의뢰자만 가입.
+    return ["requestor"];
   }
   if (normalizedReferrerRole === "salesTeam") {
     return ["requestor"];
@@ -106,10 +107,9 @@ function getReferralRoleMismatchMessage({ signupRole, referrerRole }) {
   }
   if (
     normalizedReferrerRole === "salesman" &&
-    normalizedSignupRole !== "requestor" &&
-    normalizedSignupRole !== "salesman"
+    normalizedSignupRole !== "requestor"
   ) {
-    return `${getUserRoleLabel("salesman")} 소개 링크로는 ${getUserRoleLabel("requestor")} 또는 ${getUserRoleLabel("salesman")}만 가입할 수 있습니다.`;
+    return `${getUserRoleLabel("salesman")} 소개 링크로는 ${getUserRoleLabel("requestor")}만 가입할 수 있습니다.`;
   }
   if (
     normalizedReferrerRole === "salesTeam" &&

@@ -30,6 +30,9 @@ import {
 import {
   useCommissionDashboard,
   formatMoney,
+  summarizeDealershipRateBuckets,
+  dealershipRateBucketLabel,
+  dealershipRateBucketTip,
 } from "@/features/commission/useCommissionDashboard";
 import {
   NoOrderAlertBanner,
@@ -95,12 +98,14 @@ export const SalesmanDashboardPage = () => {
       0,
   );
   const paidNet = Number(overview.paidNetCommissionAmount || 0);
-  const eventOrgCount = Number(overview.eventOrganizationCount || 0);
-  const baseOrgCount = Number(overview.baseOrganizationCount || 0);
-  const eventCommission = Number(overview.eventCommissionAmount || 0);
-  const baseCommission = Number(overview.baseCommissionAmount || 0);
   const practiceCount = Number(overview.practiceOrganizationCount || 0);
   const labCount = Number(overview.labOrganizationCount || 0);
+  const rateOpts = {
+    eventPct: eventPct || 20,
+    basePct: basePct || 10,
+    eventEnabled,
+  };
+  const rateBuckets = summarizeDealershipRateBuckets(data?.organizations);
 
   return (
     <TooltipProvider>
@@ -212,25 +217,12 @@ export const SalesmanDashboardPage = () => {
               hintTooltip="유치 당시 요율을 적용한 기간 수수료 합계"
               footer={
                 <div className="space-y-0.5 text-xs text-muted-foreground">
-                  {eventEnabled ? (
-                    <>
-                      <div>
-                        현재 {eventPct}% · {formatMoney(eventCommission)}원
-                      </div>
-                      <div>
-                        추후 {basePct}% · {formatMoney(baseCommission)}원
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div>
-                        현재 {basePct}% · {formatMoney(baseCommission)}원
-                      </div>
-                      <div>
-                        요율 {eventPct}% · {formatMoney(eventCommission)}원
-                      </div>
-                    </>
-                  )}
+                  {rateBuckets.map((b) => (
+                    <div key={b.pct}>
+                      {dealershipRateBucketLabel(b.pct, rateOpts)} ·{" "}
+                      {formatMoney(b.commissionAmount)}원
+                    </div>
+                  ))}
                 </div>
               }
             />
@@ -250,7 +242,7 @@ export const SalesmanDashboardPage = () => {
               data={noOrderAlertsData}
               loading={noOrderAlertsLoading}
             />
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <SummaryTile
                 icon={Building2}
                 label="소개 의뢰자"
@@ -258,32 +250,16 @@ export const SalesmanDashboardPage = () => {
                 secondary={`치과 ${practiceCount} · 기공소 ${labCount}`}
                 tip="내가 소개한 의뢰자 사업자(1단계)"
               />
-              <SummaryTile
-                icon={Percent}
-                label={
-                  eventEnabled ? `현재 ${eventPct}%` : `요율 ${eventPct}%`
-                }
-                primary={`${eventOrgCount.toLocaleString()}개소`}
-                secondary={`수수료 ${formatMoney(eventCommission)}원`}
-                tip={
-                  eventEnabled
-                    ? "이벤트 기간인 지금 유치(가입)한 치과·기공소"
-                    : "이벤트 기간에 유치한 치과·기공소"
-                }
-              />
-              <SummaryTile
-                icon={Percent}
-                label={
-                  eventEnabled ? `추후 ${basePct}%` : `현재 ${basePct}%`
-                }
-                primary={`${baseOrgCount.toLocaleString()}개소`}
-                secondary={`수수료 ${formatMoney(baseCommission)}원`}
-                tip={
-                  eventEnabled
-                    ? "이벤트 종료 후 적용될 표준 요율 · 기간 외 유치 고객"
-                    : "현재 표준 요율로 유치한 치과·기공소"
-                }
-              />
+              {rateBuckets.map((b) => (
+                <SummaryTile
+                  key={b.pct}
+                  icon={Percent}
+                  label={dealershipRateBucketLabel(b.pct, rateOpts)}
+                  primary={`${b.orgCount.toLocaleString()}개소`}
+                  secondary={`수수료 ${formatMoney(b.commissionAmount)}원`}
+                  tip={dealershipRateBucketTip(b.pct, rateOpts)}
+                />
+              ))}
             </div>
           </div>
         }

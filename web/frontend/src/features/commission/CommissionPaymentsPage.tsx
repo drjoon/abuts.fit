@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-20: 유료 미정산 — 20%·15%·10% 세로 3줄, 「현재/추후」 접두 제거.
 // - 2026-09-20: 딜러 정산 — 이벤트/기본 → 현재/추후 요율 라벨, 정책 카피 정리.
 // - 2026-09-06: 미정산=부가세 포함가. 지급 재가산 없음.
 // - 2026-08-17: 영업자·개발운영사 모두 지급 시 VAT·세금계산서. 관리자(어벗츠)만 면세.
@@ -20,6 +21,7 @@ import {
   formatMoney,
   formatCommissionRatePct,
   requestorKindLabel,
+  summarizeDealershipRateBuckets,
 } from "@/features/commission/useCommissionDashboard";
 import {
   SETTLEMENT_TAXABLE_INVOICE_LABEL,
@@ -67,10 +69,10 @@ export function CommissionPaymentsPage({
     () => (Array.isArray(data?.organizations) ? data.organizations : []),
     [data?.organizations],
   );
-  const eventOrgCount = Number(overview?.eventOrganizationCount || 0);
-  const baseOrgCount = Number(overview?.baseOrganizationCount || 0);
-  const eventCommission = Number(overview?.eventCommissionAmount || 0);
-  const baseCommission = Number(overview?.baseCommissionAmount || 0);
+  const rateBuckets = useMemo(
+    () => summarizeDealershipRateBuckets(organizations),
+    [organizations],
+  );
 
   const title = isSalesman ? "딜러 정산" : "개발운영사 정산";
 
@@ -93,30 +95,13 @@ export function CommissionPaymentsPage({
             hintTooltip={`${payoutPolicy} 공급가 ${payableSplit.supply.toLocaleString("ko-KR")}원 · VAT ${payableSplit.vat.toLocaleString("ko-KR")}원`}
             footer={
               isSalesman ? (
-                <div className="space-y-0.5 text-[11px] text-muted-foreground sm:text-xs">
-                  {data?.dealershipEventCommissionEnabled !== false ? (
-                    <>
-                      <div>
-                        현재 {eventPct}% · {eventOrgCount}개소 ·{" "}
-                        {formatMoney(eventCommission)}원
-                      </div>
-                      <div>
-                        추후 {basePct}% · {baseOrgCount}개소 ·{" "}
-                        {formatMoney(baseCommission)}원
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div>
-                        현재 {basePct}% · {baseOrgCount}개소 ·{" "}
-                        {formatMoney(baseCommission)}원
-                      </div>
-                      <div>
-                        요율 {eventPct}% · {eventOrgCount}개소 ·{" "}
-                        {formatMoney(eventCommission)}원
-                      </div>
-                    </>
-                  )}
+                <div className="space-y-0.5 text-[11px] tabular-nums text-muted-foreground sm:text-xs">
+                  {rateBuckets.map((b) => (
+                    <div key={b.pct}>
+                      {b.pct}% · {b.orgCount}개소 ·{" "}
+                      {formatMoney(b.commissionAmount)}원
+                    </div>
+                  ))}
                 </div>
               ) : undefined
             }

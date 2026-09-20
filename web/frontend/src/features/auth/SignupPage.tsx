@@ -1289,6 +1289,12 @@ export const SignupPage = () => {
                           </button>
                         </div>
                       )}
+                      {isSalesmanDisabled ? (
+                        <p className="text-sm text-white/55">
+                          소개 코드로는 의뢰자만 가입할 수 있습니다. 딜러 가입은
+                          소개 코드 없이 진행하세요.
+                        </p>
+                      ) : null}
                       {signupRole === "requestor" && (
                         <p className="text-sm text-white/70 text-left">
                           치과(기공실 포함) 또는 기공소
