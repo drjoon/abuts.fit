@@ -3,6 +3,7 @@
 // - web/backend/controllers/admin/admin.settings.controller.js
 // - web/backend/services/creditRevenuePolicy.service.js
 // change-log:
+// - 2026-09-20: 자동 저장 PATCH를 jsonBody로 수정(body 객체는 JSON 미전송 → 저장 실패).
 // - 2026-09-20: 유치 시점별 요율 — 이벤트 시작/종료일 + 기본/이벤트 %.
 // - 2026-09-20: 딜러십 영업 수수료 — 기본 10% · 이벤트 15%(on/off). 자동 저장.
 import { useEffect, useRef, useState } from "react";
@@ -190,7 +191,7 @@ export function AdminDealershipSettingsTab({
           path: "/api/admin/settings/credits",
           method: "PATCH",
           token,
-          body: payload,
+          jsonBody: payload,
         });
         if (!res.ok) {
           throw new Error(res.data?.message || "저장 실패");
