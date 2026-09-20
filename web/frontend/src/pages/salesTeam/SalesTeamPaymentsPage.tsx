@@ -37,7 +37,7 @@ export default function SalesTeamPaymentsPage() {
       subtitle="소개 실적을 확인합니다. 기공사업 인센티브는 관리자 사업영역에서 정산됩니다."
       actions={
         <Button asChild variant="outline" size="sm">
-          <Link to="/dashboard/sales/performance?tab=referral">성과 · 소개</Link>
+          <Link to="/dashboard/sales/performance">성과</Link>
         </Button>
       }
     >

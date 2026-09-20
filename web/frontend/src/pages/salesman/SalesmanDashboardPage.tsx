@@ -223,7 +223,7 @@ export const SalesmanDashboardPage = () => {
                   }}
                 >
                   <Copy className="h-3.5 w-3.5" />
-                  링크 복사
+                  가입 링크 복사
                 </Button>
               </div>
               <div className="flex flex-1 items-center justify-center font-mono text-5xl font-bold tracking-[0.2em] text-slate-900 sm:text-6xl">

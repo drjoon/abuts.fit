@@ -738,7 +738,7 @@ const App = () => {
                     element={
                       <RoleProtectedRoute roles={["salesTeam", "salesman"]}>
                         <Navigate
-                          to="/dashboard/sales/performance?tab=referral"
+                          to="/dashboard/sales/performance"
                           replace
                         />
                       </RoleProtectedRoute>

@@ -354,8 +354,8 @@ export default function SalesAccountsPage() {
         ) : null}
         {!detail.businessAnchorId ? (
           <p className="mt-3 text-xs text-muted-foreground">
-            플랫폼 미가입이면 판매·세금계산서가 불가합니다. 성과 → 소개 코드로
-            가입을 유도하세요.
+            플랫폼 미가입이면 판매·세금계산서가 불가합니다. 성과의 소개
+            코드로 가입을 유도하세요.
           </p>
         ) : null}
         <p className="mt-3 text-xs text-muted-foreground lg:hidden">

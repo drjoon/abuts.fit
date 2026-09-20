@@ -2,12 +2,16 @@
 // - web/frontend/src/pages/salesTeam/salesTeamApi.ts
 // - web/frontend/src/pages/salesTeam/salesUi.tsx
 // change-log:
+// - 2026-09-21: 가입 링크 복사를 코드 복사 버튼 아래로 배치.
+// - 2026-09-21: 소개코드 왼쪽 카드(통계·내 코드)를 활동실적으로 합치고 탭 제거.
+// - 2026-09-21: 소개 통계 카드에서 누적 라벨 제거, 숫자 가로·세로 가운데 정렬.
+// - 2026-09-21: 소개 가입 카드 아이콘 제거로 라벨 1줄 표시.
 // - 2026-09-21: 소개 탭 소개가입·치과·기공소 통계를 단일 카드로 합침.
 // - 2026-09-21: 성과 페이지 일일보고 열람 안내 카드 제거(작성 모달만 유지).
 // - 2026-09-21: 딜러 일일보고 제출률·현황에 대표·담당자만 / 어벗츠 불가 안내.
 // - 2026-09-20: 활동 요약 카드 그리드 p-0.5 — 선택 ring이 잘리지 않게.
 import { useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   BarChart3,
@@ -29,6 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { cn } from "@/shared/ui/cn";
 import { KIND_LABEL, salesTeamApi, visitAccountName } from "./salesTeamApi";
 import {
   SalesEmptyState,
@@ -36,37 +41,21 @@ import {
   SalesPageShell,
   SalesPanel,
   SalesProgressBar,
-  SalesSegmentTabs,
   SalesStatCard,
   SalesToolbar,
 } from "./salesUi";
 
-type PerfTab = "activity" | "referral";
-
-function parseTab(raw: string | null): PerfTab {
-  return raw === "referral" ? "referral" : "activity";
-}
-
 export default function SalesPerformancePage() {
   const token = useAuthStore((s) => s.token);
   const { toast } = useToast();
-  const [searchParams, setSearchParams] = useSearchParams();
   const [period, setPeriod] = useState("30d");
   const [drill, setDrill] = useState<"visits" | "reports" | "referrals">(
     "visits",
   );
-  const tab = parseTab(searchParams.get("tab"));
-
-  const setTab = (next: PerfTab) => {
-    const nextParams = new URLSearchParams(searchParams);
-    if (next === "activity") nextParams.delete("tab");
-    else nextParams.set("tab", next);
-    setSearchParams(nextParams, { replace: true });
-  };
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["sales-team-stats", period],
-    enabled: Boolean(token && tab === "activity"),
+    enabled: Boolean(token),
     queryFn: () => salesTeamApi.stats(token, period),
   });
 
@@ -76,20 +65,20 @@ export default function SalesPerformancePage() {
     error: referralError,
   } = useQuery({
     queryKey: ["sales-team-referral"],
-    enabled: Boolean(token && tab === "referral"),
+    enabled: Boolean(token),
     queryFn: () => salesTeamApi.referral(token),
   });
 
   const rate = data?.reportSubmitRate ?? 0;
   const visitDone = data?.visitDoneCount ?? 0;
-  const referralTotal = data?.referralSignupCount ?? 0;
 
   const code = String(referral?.referralCode || "")
     .trim()
     .toUpperCase();
+  const normalizedCode = /^[A-Z0-9]{3}$/.test(code) ? code : "";
   const link =
-    typeof window !== "undefined" && /^[A-Z]{3}$/.test(code)
-      ? `${window.location.origin}/signup/referral?ref=${encodeURIComponent(code)}`
+    typeof window !== "undefined" && normalizedCode
+      ? `${window.location.origin}/signup/referral?ref=${encodeURIComponent(normalizedCode)}`
       : "";
   const orgs = referral?.organizations || [];
   const practiceCount = orgs.filter(
@@ -108,48 +97,37 @@ export default function SalesPerformancePage() {
     }
   };
 
+  const pageLoading = isLoading || referralLoading;
+  const pageError = error || referralError;
+
   return (
     <SalesPageShell wide>
       <SalesToolbar className="w-full">
-        <div className="flex w-full flex-wrap items-center gap-x-2 gap-y-2">
-          <SalesSegmentTabs
-            fit
-            compact
-            value={tab}
-            onChange={setTab}
-            options={[
-              { value: "activity", label: "활동 실적" },
-              { value: "referral", label: "소개 코드" },
-            ]}
-          />
-          {tab === "activity" ? (
-            <div className="ml-auto shrink-0">
-              <Select value={period} onValueChange={setPeriod}>
-                <SelectTrigger className="h-8 w-[7.5rem]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="7d">7일</SelectItem>
-                  <SelectItem value="30d">30일</SelectItem>
-                  <SelectItem value="90d">90일</SelectItem>
-                  <SelectItem value="thisMonth">이번 달</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          ) : null}
+        <div className="ml-auto shrink-0">
+          <Select value={period} onValueChange={setPeriod}>
+            <SelectTrigger className="h-8 w-[7.5rem]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="7d">7일</SelectItem>
+              <SelectItem value="30d">30일</SelectItem>
+              <SelectItem value="90d">90일</SelectItem>
+              <SelectItem value="thisMonth">이번 달</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </SalesToolbar>
 
-      {tab === "activity" ? (
-        isLoading ? (
-          <div className="h-40 animate-pulse rounded-2xl bg-slate-100" />
-        ) : error ? (
-          <p className="text-sm text-destructive">
-            {(error as Error).message}
-          </p>
-        ) : (
-          <div className="grid gap-4 lg:grid-cols-[minmax(14rem,18rem)_minmax(0,1fr)] xl:grid-cols-[minmax(15rem,20rem)_minmax(0,1fr)] xl:gap-5">
-            <div className="grid grid-cols-1 gap-2.5 p-0.5 md:grid-cols-3 lg:sticky lg:top-4 lg:grid-cols-1 lg:self-start">
+      {pageLoading ? (
+        <div className="h-40 animate-pulse rounded-2xl bg-slate-100" />
+      ) : pageError ? (
+        <p className="text-sm text-destructive">
+          {(pageError as Error).message}
+        </p>
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-[minmax(14rem,18rem)_minmax(0,1fr)] xl:grid-cols-[minmax(15rem,20rem)_minmax(0,1fr)] xl:gap-5">
+          <div className="space-y-2.5 p-0.5 lg:sticky lg:top-4 lg:self-start">
+            <div className="grid grid-cols-1 gap-2.5 md:grid-cols-3 lg:grid-cols-1">
               <SalesStatCard
                 compact
                 label="방문 완료"
@@ -169,210 +147,96 @@ export default function SalesPerformancePage() {
                 onClick={() => setDrill("reports")}
                 tone={rate >= 80 ? "ok" : rate > 0 ? "default" : "alert"}
               />
-              <SalesStatCard
-                compact
-                label="소개 가입"
-                value={referralTotal}
-                hint={`치과 ${data?.practiceSignupCount ?? 0} · 기공소 ${data?.labSignupCount ?? 0}`}
-                icon={Share2}
-                selected={drill === "referrals"}
-                onClick={() => setDrill("referrals")}
-              />
             </div>
 
-            <div className="min-w-0">
-              {drill === "visits" ? (
-                <SalesPanel
-                  title="방문 완료 목록"
-                  description="선택한 기간의 완료 방문입니다."
-                  actions={
-                    <Badge variant="secondary" className="gap-1">
-                      <BarChart3 className="h-3 w-3" />
-                      {visitDone}건
-                    </Badge>
-                  }
-                  bodyClassName="lg:max-h-[min(70vh,42rem)] lg:overflow-y-auto"
-                >
-                  {(data?.visits || []).length === 0 ? (
-                    <SalesEmptyState
-                      icon={CheckCircle2}
-                      title="완료된 방문이 없습니다"
-                      description="오늘 메뉴에서 방문을 완료 처리하면 여기에 쌓입니다."
-                      actionLabel="오늘로 이동"
-                      actionTo="/dashboard/sales"
-                    />
-                  ) : (
-                    <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                      {(data?.visits || []).map((v) => (
-                        <SalesListRow
-                          key={v._id}
-                          title={visitAccountName(v)}
-                          meta={
-                            v.completedAt
-                              ? new Date(v.completedAt).toLocaleDateString(
-                                  "ko-KR",
-                                  { timeZone: "Asia/Seoul" },
-                                )
-                              : undefined
-                          }
-                          trailing={<Badge variant="secondary">완료</Badge>}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </SalesPanel>
-              ) : null}
-
-              {drill === "reports" ? (
-                <SalesPanel
-                  title="일일보고 제출 현황"
-                  description="근무일(일정이 있는 날) 대비 제출 비율입니다."
-                >
-                  <div className="mx-auto max-w-xl space-y-4">
-                    <SalesProgressBar value={rate} label="제출률" />
-                    <div className="rounded-xl border border-slate-100 bg-slate-50/80 px-4 py-3 text-sm text-slate-700">
-                      제출{" "}
-                      <strong className="tabular-nums">
-                        {data?.reportSubmittedCount ?? 0}
-                      </strong>
-                      일 / 근무일{" "}
-                      <strong className="tabular-nums">
-                        {data?.workDayCount ?? 0}
-                      </strong>
-                      일
-                    </div>
-                    <Button asChild size="sm" variant="outline">
-                      <Link to="/dashboard/sales?tab=report">
-                        일일보고 작성
-                      </Link>
-                    </Button>
-                  </div>
-                </SalesPanel>
-              ) : null}
-
-              {drill === "referrals" ? (
-                <SalesPanel
-                  title="소개 가입 목록"
-                  description="내 소개코드로 가입한 치과·기공소입니다."
-                  actions={
-                    <div className="flex gap-2">
-                      <Badge variant="secondary">
-                        <Building2 className="mr-1 h-3 w-3" />
-                        {referralTotal}
-                      </Badge>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setTab("referral")}
-                      >
-                        코드 보기
-                      </Button>
-                    </div>
-                  }
-                  bodyClassName="lg:max-h-[min(70vh,42rem)] lg:overflow-y-auto"
-                >
-                  {(data?.referralOrgs || []).length === 0 ? (
-                    <SalesEmptyState
-                      icon={Share2}
-                      title="소개 가입이 없습니다"
-                      description="소개 코드를 공유하면 가입 실적이 쌓입니다."
-                      actionLabel="소개 코드 보기"
-                      onAction={() => setTab("referral")}
-                    />
-                  ) : (
-                    <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                      {(data?.referralOrgs || []).map((o) => (
-                        <SalesListRow
-                          key={String(o._id)}
-                          title={o.name || "사업자"}
-                          trailing={
-                            <Badge variant="secondary">
-                              {KIND_LABEL[String(o.requestorKind || "")] ||
-                                o.requestorKind ||
-                                "의뢰자"}
-                            </Badge>
-                          }
-                        />
-                      ))}
-                    </div>
-                  )}
-                </SalesPanel>
-              ) : null}
-            </div>
-          </div>
-        )
-      ) : referralLoading ? (
-        <div className="h-40 animate-pulse rounded-2xl bg-slate-100" />
-      ) : referralError ? (
-        <p className="text-sm text-destructive">
-          {(referralError as Error).message}
-        </p>
-      ) : (
-        <div className="grid gap-4 lg:grid-cols-[minmax(18rem,24rem)_minmax(0,1fr)] xl:gap-5">
-          <div className="space-y-4 lg:sticky lg:top-4 lg:self-start">
-            <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-0.5 shadow-sm">
+            <button
+              type="button"
+              onClick={() => setDrill("referrals")}
+              className={cn(
+                "w-full rounded-2xl border text-left shadow-sm transition-colors",
+                drill === "referrals"
+                  ? "border-primary-muted bg-primary-soft/50 ring-1 ring-primary-muted/70"
+                  : "border-slate-200/80 bg-white/90 hover:border-slate-300 hover:bg-white",
+              )}
+            >
               <div className="grid grid-cols-3 divide-x divide-slate-100">
-                <div className="flex flex-col justify-between px-3.5 py-3 lg:px-4 lg:py-3.5">
-                  <div className="flex items-start justify-between gap-2">
-                    <span className="text-[13px] font-medium text-slate-500">
-                      소개 가입
-                    </span>
-                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 text-slate-500">
-                      <Share2 className="h-4 w-4" />
-                    </span>
-                  </div>
-                  <div className="mt-2 text-xl font-semibold tabular-nums tracking-tight text-slate-900 lg:text-2xl">
+                <div className="flex flex-col items-center justify-center px-3.5 py-3 text-center lg:px-4 lg:py-3.5">
+                  <span className="text-[13px] font-medium text-slate-500">
+                    소개 가입
+                  </span>
+                  <div
+                    className={cn(
+                      "mt-2 text-xl font-semibold tabular-nums tracking-tight lg:text-2xl",
+                      drill === "referrals"
+                        ? "text-primary-strong"
+                        : "text-slate-900",
+                    )}
+                  >
                     {orgs.length}
                   </div>
-                  <div className="mt-1 text-[11px] leading-relaxed text-slate-500 sm:text-xs">
-                    누적
-                  </div>
                 </div>
-                <div className="flex flex-col justify-between px-3.5 py-3 lg:px-4 lg:py-3.5">
+                <div className="flex flex-col items-center justify-center px-3.5 py-3 text-center lg:px-4 lg:py-3.5">
                   <span className="text-[13px] font-medium text-slate-500">
                     치과
                   </span>
-                  <div className="mt-2 text-xl font-semibold tabular-nums tracking-tight text-slate-900 lg:text-2xl">
+                  <div
+                    className={cn(
+                      "mt-2 text-xl font-semibold tabular-nums tracking-tight lg:text-2xl",
+                      drill === "referrals"
+                        ? "text-primary-strong"
+                        : "text-slate-900",
+                    )}
+                  >
                     {practiceCount}
                   </div>
                 </div>
-                <div className="flex flex-col justify-between px-3.5 py-3 lg:px-4 lg:py-3.5">
+                <div className="flex flex-col items-center justify-center px-3.5 py-3 text-center lg:px-4 lg:py-3.5">
                   <span className="text-[13px] font-medium text-slate-500">
                     기공소
                   </span>
-                  <div className="mt-2 text-xl font-semibold tabular-nums tracking-tight text-slate-900 lg:text-2xl">
+                  <div
+                    className={cn(
+                      "mt-2 text-xl font-semibold tabular-nums tracking-tight lg:text-2xl",
+                      drill === "referrals"
+                        ? "text-primary-strong"
+                        : "text-slate-900",
+                    )}
+                  >
                     {labCount}
                   </div>
                 </div>
               </div>
-            </div>
+            </button>
+
             <SalesPanel
               title="내 소개코드"
               description="현장에서 코드나 가입 링크를 공유하세요."
             >
               <div className="flex flex-col items-center gap-4 rounded-2xl border border-primary-muted/50 bg-gradient-to-br from-primary-soft/80 to-white px-4 py-8 text-center">
                 <div className="font-mono text-3xl font-semibold tracking-[0.2em] text-slate-900 sm:text-5xl sm:tracking-[0.35em]">
-                  {code || "—"}
+                  {normalizedCode || code || "—"}
                 </div>
-                {code ? (
-                  <div className="flex flex-wrap justify-center gap-2">
+                {normalizedCode || code ? (
+                  <div className="flex flex-col items-center gap-2">
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => copy(code, "소개코드")}
+                      onClick={() => copy(normalizedCode || code, "소개코드")}
                     >
                       <Copy className="mr-1.5 h-3.5 w-3.5" />
                       코드 복사
                     </Button>
-                    {link ? (
-                      <Button
-                        size="sm"
-                        onClick={() => copy(link, "가입 링크")}
-                      >
-                        <Link2 className="mr-1.5 h-3.5 w-3.5" />
-                        가입 링크 복사
-                      </Button>
-                    ) : null}
+                    <Button
+                      size="sm"
+                      disabled={!link}
+                      onClick={() => {
+                        if (!link) return;
+                        void copy(link, "가입 링크");
+                      }}
+                    >
+                      <Link2 className="mr-1.5 h-3.5 w-3.5" />
+                      가입 링크 복사
+                    </Button>
                   </div>
                 ) : (
                   <p className="text-sm text-muted-foreground">
@@ -393,42 +257,120 @@ export default function SalesPerformancePage() {
             </SalesPanel>
           </div>
 
-          <SalesPanel
-            title="소개로 가입한 거래처"
-            description="코드로 가입한 치과·기공소 목록입니다."
-            bodyClassName="lg:max-h-[min(74vh,46rem)] lg:overflow-y-auto"
-          >
-            {orgs.length === 0 ? (
-              <SalesEmptyState
-                icon={Share2}
-                title="아직 소개 가입이 없습니다"
-                description="코드를 공유하면 가입한 사업자가 여기에 표시됩니다."
-              />
-            ) : (
-              <div className="grid gap-2 sm:grid-cols-2">
-                {orgs.map((o) => (
-                  <SalesListRow
-                    key={String(o._id)}
-                    title={o.name || "사업자"}
-                    meta={
-                      o.createdAt
-                        ? new Date(o.createdAt).toLocaleDateString("ko-KR", {
-                            timeZone: "Asia/Seoul",
-                          })
-                        : undefined
-                    }
-                    trailing={
-                      <Badge variant="secondary">
-                        {KIND_LABEL[String(o.requestorKind || "")] ||
-                          o.requestorKind ||
-                          "의뢰자"}
-                      </Badge>
-                    }
+          <div className="min-w-0">
+            {drill === "visits" ? (
+              <SalesPanel
+                title="방문 완료 목록"
+                description="선택한 기간의 완료 방문입니다."
+                actions={
+                  <Badge variant="secondary" className="gap-1">
+                    <BarChart3 className="h-3 w-3" />
+                    {visitDone}건
+                  </Badge>
+                }
+                bodyClassName="lg:max-h-[min(70vh,42rem)] lg:overflow-y-auto"
+              >
+                {(data?.visits || []).length === 0 ? (
+                  <SalesEmptyState
+                    icon={CheckCircle2}
+                    title="완료된 방문이 없습니다"
+                    description="오늘 메뉴에서 방문을 완료 처리하면 여기에 쌓입니다."
+                    actionLabel="오늘로 이동"
+                    actionTo="/dashboard/sales"
                   />
-                ))}
-              </div>
-            )}
-          </SalesPanel>
+                ) : (
+                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                    {(data?.visits || []).map((v) => (
+                      <SalesListRow
+                        key={v._id}
+                        title={visitAccountName(v)}
+                        meta={
+                          v.completedAt
+                            ? new Date(v.completedAt).toLocaleDateString(
+                                "ko-KR",
+                                { timeZone: "Asia/Seoul" },
+                              )
+                            : undefined
+                        }
+                        trailing={<Badge variant="secondary">완료</Badge>}
+                      />
+                    ))}
+                  </div>
+                )}
+              </SalesPanel>
+            ) : null}
+
+            {drill === "reports" ? (
+              <SalesPanel
+                title="일일보고 제출 현황"
+                description="근무일(일정이 있는 날) 대비 제출 비율입니다."
+              >
+                <div className="mx-auto max-w-xl space-y-4">
+                  <SalesProgressBar value={rate} label="제출률" />
+                  <div className="rounded-xl border border-slate-100 bg-slate-50/80 px-4 py-3 text-sm text-slate-700">
+                    제출{" "}
+                    <strong className="tabular-nums">
+                      {data?.reportSubmittedCount ?? 0}
+                    </strong>
+                    일 / 근무일{" "}
+                    <strong className="tabular-nums">
+                      {data?.workDayCount ?? 0}
+                    </strong>
+                    일
+                  </div>
+                  <Button asChild size="sm" variant="outline">
+                    <Link to="/dashboard/sales?tab=report">일일보고 작성</Link>
+                  </Button>
+                </div>
+              </SalesPanel>
+            ) : null}
+
+            {drill === "referrals" ? (
+              <SalesPanel
+                title="소개로 가입한 거래처"
+                description="코드로 가입한 치과·기공소 목록입니다."
+                actions={
+                  <Badge variant="secondary">
+                    <Building2 className="mr-1 h-3 w-3" />
+                    {orgs.length}
+                  </Badge>
+                }
+                bodyClassName="lg:max-h-[min(70vh,42rem)] lg:overflow-y-auto"
+              >
+                {orgs.length === 0 ? (
+                  <SalesEmptyState
+                    icon={Share2}
+                    title="소개 가입이 없습니다"
+                    description="소개 코드를 공유하면 가입 실적이 쌓입니다."
+                  />
+                ) : (
+                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                    {orgs.map((o) => (
+                      <SalesListRow
+                        key={String(o._id)}
+                        title={o.name || "사업자"}
+                        meta={
+                          o.createdAt
+                            ? new Date(o.createdAt).toLocaleDateString(
+                                "ko-KR",
+                                { timeZone: "Asia/Seoul" },
+                              )
+                            : undefined
+                        }
+                        trailing={
+                          <Badge variant="secondary">
+                            {KIND_LABEL[String(o.requestorKind || "")] ||
+                              o.requestorKind ||
+                              "의뢰자"}
+                          </Badge>
+                        }
+                      />
+                    ))}
+                  </div>
+                )}
+              </SalesPanel>
+            ) : null}
+          </div>
         </div>
       )}
     </SalesPageShell>
