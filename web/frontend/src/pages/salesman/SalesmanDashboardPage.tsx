@@ -17,7 +17,6 @@ import {
   BadgeCheck,
   Percent,
   Truck,
-  Users,
   Building2,
 } from "lucide-react";
 import { SalesmanLedgerModal } from "@/shared/components/SalesmanLedgerModal";
@@ -96,11 +95,6 @@ export const SalesmanDashboardPage = () => {
       0,
   );
   const paidNet = Number(overview.paidNetCommissionAmount || 0);
-  const referralSalesmanCount = (data?.referralSalesmen || []).length;
-  const directOrders = (data?.organizations || []).reduce(
-    (sum, b) => sum + Number(b?.monthOrderCount || 0),
-    0,
-  );
   const eventOrgCount = Number(overview.eventOrganizationCount || 0);
   const baseOrgCount = Number(overview.baseOrganizationCount || 0);
   const eventCommission = Number(overview.eventCommissionAmount || 0);
@@ -172,7 +166,7 @@ export const SalesmanDashboardPage = () => {
                     </div>
                   </TooltipTrigger>
                   <TooltipContent>
-                    의뢰자·딜러 가입 시 입력하는 내 코드
+                    의뢰자 가입 시 입력하는 내 코드
                   </TooltipContent>
                 </Tooltip>
                 <Button
@@ -207,10 +201,6 @@ export const SalesmanDashboardPage = () => {
               <div className="font-mono text-3xl font-bold tracking-[0.2em] text-slate-900 sm:text-4xl">
                 {normalizedReferralCode || (loading ? "…" : "—")}
               </div>
-              <p className="mt-2 text-xs text-muted-foreground">
-                내 코드로 가입한 딜러사{" "}
-                {referralSalesmanCount.toLocaleString()}개소
-              </p>
             </div>
 
             <SettlementStatCard
@@ -219,15 +209,28 @@ export const SalesmanDashboardPage = () => {
               tone="primary"
               onClick={() => setCreditModalOpen(true)}
               hint="미정산"
-              hintTooltip="유치 시점별 요율(이벤트/기본)을 적용한 기간 수수료 합계"
+              hintTooltip="유치 당시 요율을 적용한 기간 수수료 합계"
               footer={
                 <div className="space-y-0.5 text-xs text-muted-foreground">
-                  <div>
-                    이벤트 {eventPct}% · {formatMoney(eventCommission)}원
-                  </div>
-                  <div>
-                    기본 {basePct}% · {formatMoney(baseCommission)}원
-                  </div>
+                  {eventEnabled ? (
+                    <>
+                      <div>
+                        현재 {eventPct}% · {formatMoney(eventCommission)}원
+                      </div>
+                      <div>
+                        추후 {basePct}% · {formatMoney(baseCommission)}원
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div>
+                        현재 {basePct}% · {formatMoney(baseCommission)}원
+                      </div>
+                      <div>
+                        요율 {eventPct}% · {formatMoney(eventCommission)}원
+                      </div>
+                    </>
+                  )}
                 </div>
               }
             />
@@ -247,7 +250,7 @@ export const SalesmanDashboardPage = () => {
               data={noOrderAlertsData}
               loading={noOrderAlertsLoading}
             />
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               <SummaryTile
                 icon={Building2}
                 label="소개 의뢰자"
@@ -257,24 +260,29 @@ export const SalesmanDashboardPage = () => {
               />
               <SummaryTile
                 icon={Percent}
-                label={`이벤트 ${eventPct}%`}
+                label={
+                  eventEnabled ? `현재 ${eventPct}%` : `요율 ${eventPct}%`
+                }
                 primary={`${eventOrgCount.toLocaleString()}개소`}
                 secondary={`수수료 ${formatMoney(eventCommission)}원`}
-                tip="이벤트 기간 내 유치(가입)한 치과·기공소"
+                tip={
+                  eventEnabled
+                    ? "이벤트 기간인 지금 유치(가입)한 치과·기공소"
+                    : "이벤트 기간에 유치한 치과·기공소"
+                }
               />
               <SummaryTile
                 icon={Percent}
-                label={`기본 ${basePct}%`}
+                label={
+                  eventEnabled ? `추후 ${basePct}%` : `현재 ${basePct}%`
+                }
                 primary={`${baseOrgCount.toLocaleString()}개소`}
                 secondary={`수수료 ${formatMoney(baseCommission)}원`}
-                tip="이벤트 기간 외 유치(가입)한 치과·기공소"
-              />
-              <SummaryTile
-                icon={Users}
-                label="소개 딜러사"
-                primary={`${referralSalesmanCount.toLocaleString()}개소`}
-                secondary={`기간 의뢰 ${directOrders.toLocaleString()}건`}
-                tip="내가 소개한 딜러사 수"
+                tip={
+                  eventEnabled
+                    ? "이벤트 종료 후 적용될 표준 요율 · 기간 외 유치 고객"
+                    : "현재 표준 요율로 유치한 치과·기공소"
+                }
               />
             </div>
           </div>
@@ -334,30 +342,20 @@ function DealershipTermsCard({
               <Percent className="h-3.5 w-3.5" />
             </span>
             <div className="min-w-0">
-              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-sm font-semibold">
-                {eventEnabled ? (
-                  <>
-                    <span className="text-white/45 line-through decoration-white/50">
-                      {basePct}%
-                    </span>
-                    <span>영업 수수료 {effectivePct}%</span>
-                  </>
-                ) : (
-                  <span>영업 수수료 {effectivePct}%</span>
-                )}
+              <div className="text-sm font-semibold">
+                영업 수수료 {effectivePct}%
               </div>
               <p className="mt-0.5 text-xs leading-relaxed text-white/70">
-                심플웨이 · 커스텀어벗 판매가 대비(10% · 15% · 20%). 배송비 제외.
+                심플웨이 · 커스텀어벗 판매가 대비({effectivePct}%). 배송비 제외.
               </p>
               {eventEnabled ? (
                 <p className="mt-1.5 text-[11px] leading-relaxed text-emerald-200/90">
-                  지금은 이벤트 기간이라 {eventPct}%. 이후 상황에 따라 15%·10%
-                  등으로 조정될 수 있으며, 의뢰자는 가입 당시 요율이 적용됩니다.
+                  이벤트 기간인 지금은 {eventPct}%. 추후 15%·10%으로 조정될 수
+                  있음.
                 </p>
               ) : (
                 <p className="mt-1.5 text-[11px] leading-relaxed text-white/65">
-                  의뢰자는 가입(유치) 당시 요율이 적용됩니다. 이벤트{" "}
-                  {eventPct}% / 기본 {basePct}%.
+                  현재 표준 요율 {basePct}%. 이벤트 유치 요율은 {eventPct}%.
                 </p>
               )}
             </div>

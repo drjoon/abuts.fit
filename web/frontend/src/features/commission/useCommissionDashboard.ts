@@ -79,11 +79,6 @@ export type CommissionDashboardData = {
   };
   businesses?: CommissionOrgRow[];
   organizations: CommissionOrgRow[];
-  /** 딜러만 사용. devops는 빈 배열 반환 */
-  referralSalesmen?: Array<{
-    userId: string;
-    name: string;
-  }>;
 };
 
 /** 원화 금액 포매터 */

@@ -66,7 +66,6 @@ export type SalesmanCreditRow = {
   role?: string;
   referralCode?: string;
   active: boolean;
-  referredSalesmanCount?: number;
   wallet: {
     earnedAmount: number;
     paidOutAmount: number;

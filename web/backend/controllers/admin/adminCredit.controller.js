@@ -2084,7 +2084,6 @@ export async function adminGetSalesmanCredits(req, res) {
         : null;
     const {
       directOrgIdsBySalesmanId,
-      referredSalesmanCountBySalesmanId,
       revenueByOrgId,
     } = await buildSalesmanReferralAggregation({
       salesmanIds,
@@ -2169,7 +2168,6 @@ export async function adminGetSalesmanCredits(req, res) {
               phoneNumber: String(anchor?.metadata?.phoneNumber || ""),
             }
           : null,
-        referredSalesmanCount: referredSalesmanCountBySalesmanId.get(sid) || 0,
         wallet: {
           earnedAmount: Math.round(Number(ledger.earn || 0)),
           paidOutAmount: Math.round(Number(ledger.payout || 0)),

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-20: 딜러 정산 — 이벤트/기본 → 현재/추후 요율 라벨, 정책 카피 정리.
 // - 2026-09-06: 미정산=부가세 포함가. 지급 재가산 없음.
 // - 2026-08-17: 영업자·개발운영사 모두 지급 시 VAT·세금계산서. 관리자(어벗츠)만 면세.
 // related files:
@@ -93,14 +94,29 @@ export function CommissionPaymentsPage({
             footer={
               isSalesman ? (
                 <div className="space-y-0.5 text-[11px] text-muted-foreground sm:text-xs">
-                  <div>
-                    이벤트 {eventPct}% · {eventOrgCount}개소 ·{" "}
-                    {formatMoney(eventCommission)}원
-                  </div>
-                  <div>
-                    기본 {basePct}% · {baseOrgCount}개소 ·{" "}
-                    {formatMoney(baseCommission)}원
-                  </div>
+                  {data?.dealershipEventCommissionEnabled !== false ? (
+                    <>
+                      <div>
+                        현재 {eventPct}% · {eventOrgCount}개소 ·{" "}
+                        {formatMoney(eventCommission)}원
+                      </div>
+                      <div>
+                        추후 {basePct}% · {baseOrgCount}개소 ·{" "}
+                        {formatMoney(baseCommission)}원
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div>
+                        현재 {basePct}% · {baseOrgCount}개소 ·{" "}
+                        {formatMoney(baseCommission)}원
+                      </div>
+                      <div>
+                        요율 {eventPct}% · {eventOrgCount}개소 ·{" "}
+                        {formatMoney(eventCommission)}원
+                      </div>
+                    </>
+                  )}
                 </div>
               ) : undefined
             }
@@ -144,7 +160,7 @@ export function CommissionPaymentsPage({
                 title={`${title} 규칙`}
                 description={
                   isSalesman
-                    ? `유치 시점별 이벤트 ${eventPct || 15}% / 기본 ${basePct || 10}% · 배송비 수신자 부담 · 부가세 포함·세금계산서`
+                    ? `현재 ${eventPct || 20}% · 추후 15%·10% 조정 가능 · 배송비 수신자 부담 · 부가세 포함·세금계산서`
                     : "잔여 분배 부가세 포함 · 세금계산서"
                 }
               >
@@ -154,13 +170,13 @@ export function CommissionPaymentsPage({
                     <p>
                       {isSalesman ? (
                         <>
-                          영업 수수료는 유치(가입) 시점에 따라 다릅니다.
-                          이벤트 기간 내 유치 고객은{" "}
-                          <span className="font-semibold">{eventPct || 15}%</span>
-                          , 그 외는{" "}
-                          <span className="font-semibold">{basePct || 10}%</span>
-                          (표준). 심플웨이·커스텀어벗 판매가(배송비 제외). 배송비는
-                          수신자(치과·기공소) 부담. 정산은 사업자 단위이며 매월{" "}
+                          영업 수수료는 심플웨이·커스텀어벗 판매가(배송비 제외)
+                          기준입니다. 이벤트 기간인 지금은{" "}
+                          <span className="font-semibold">{eventPct || 20}%</span>
+                          . 추후{" "}
+                          <span className="font-semibold">15%·10%</span>
+                          으로 조정될 수 있습니다. 배송비는 수신자(치과·기공소)
+                          부담. 정산은 사업자 단위이며 매월{" "}
                           {Number(data?.payoutDayOfMonth || 1)}일에 지급합니다.
                         </>
                       ) : (
@@ -237,7 +253,6 @@ export function CommissionPaymentsPage({
                                 : "shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600 ring-1 ring-slate-200"
                             }
                           >
-                            {tier === "event" ? "이벤트" : "기본"}{" "}
                             {formatCommissionRatePct(
                               org.commissionRate ?? ratePctForOrg / 100,
                             )}

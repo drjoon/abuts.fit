@@ -247,29 +247,19 @@ export const PricingPolicyDialog = ({
             <div className='space-y-3'>
               <PolicySection title='영업 수수료'>
                 <p>
-                  심플웨이·커스텀어벗 판매가(배송비 제외) 기준이며, 요율은{' '}
+                  심플웨이·커스텀어벗 판매가 대비(
                   <span className='font-semibold text-slate-900'>
-                    10% · 15% · 20%
-                  </span>{' '}
-                  중 플랫폼이 설정합니다. 의뢰자는{' '}
-                  <span className='font-semibold text-slate-900'>
-                    가입(유치) 당시 요율
+                    {eventOn ? eventPct : basePct}%
                   </span>
-                  이 적용됩니다.
+                  ). 배송비 제외.
                 </p>
                 <BulletList
                   items={[
                     eventOn
-                      ? `지금은 이벤트 기간 · 현재 유치 요율 ${eventPct}%`
-                      : `현재 표준(기본) 요율 ${basePct}%`,
-                    `이벤트 기간 내 유치: ${eventPct}%`,
-                    `이벤트 기간 외 유치(표준): ${basePct}%`,
-                    '이후 상황에 따라 15%·10% 등으로 조정될 수 있음(신규 유치부터)',
+                      ? `이벤트 기간인 지금은 ${eventPct}%. 추후 15%·10%으로 조정될 수 있음.`
+                      : `현재 표준 요율 ${basePct}%.`,
                     '대상: 심플웨이(스토어) · 커스텀어벗',
-                    '소개 관계: 의뢰자 가입 시 입력한 딜러 코드',
-                    eventOn
-                      ? `추후 공지 후 신규 유치는 ${basePct}%로 변경될 수 있음`
-                      : '이벤트 종료 · 기존 이벤트 유치 고객은 이벤트 요율 유지'
+                    '소개 관계: 의뢰자 가입 시 입력한 딜러 코드'
                   ]}
                 />
               </PolicySection>

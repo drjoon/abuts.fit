@@ -136,11 +136,6 @@ export const SalesmanReferralPage = () => {
     0,
   );
 
-  const salesmanChildren = (treeData?.children || []).filter(
-    (c) => c.role === "salesman",
-  );
-  const salesmanCount = salesmanChildren.length;
-
   return (
     <TooltipProvider>
       <div className="flex flex-col h-full min-h-0">
@@ -159,7 +154,7 @@ export const SalesmanReferralPage = () => {
                 <CardHeader className="pb-3">
                   <CardTitle className="text-xl">내 소개 링크</CardTitle>
                   <CardDescription>
-                    이 링크를 공유하고 새로운 사업자를 소개하세요
+                    이 링크를 공유하고 새로운 의뢰자를 소개하세요
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="flex flex-1 flex-col gap-4 pt-0">
@@ -220,7 +215,7 @@ export const SalesmanReferralPage = () => {
               <Card className="flex h-full flex-col xl:col-span-7">
                 <CardHeader className="pb-3">
                   <div className="flex items-center justify-between gap-3">
-                    <CardTitle className="text-xl">딜러 소개 통계</CardTitle>
+                    <CardTitle className="text-xl">소개 통계</CardTitle>
                     <Button
                       type="button"
                       variant="outline"
@@ -234,29 +229,16 @@ export const SalesmanReferralPage = () => {
                 </CardHeader>
                 <CardContent className="flex flex-1 flex-col pt-0">
                   {loadingRequestor || loadingDirectMembers || loadingTree ? (
-                    <div className="grid flex-1 gap-3 sm:grid-cols-2">
-                      <Skeleton className="h-full min-h-[96px]" />
-                      <Skeleton className="h-full min-h-[96px]" />
-                    </div>
+                    <Skeleton className="h-full min-h-[96px] flex-1" />
                   ) : (
-                    <div className="grid flex-1 gap-3 sm:grid-cols-2">
-                      <MetricCard
-                        title="소개 의뢰자"
-                        tooltip="내가 소개한 의뢰자 사업자 (10% 수수료 적용)"
-                        primaryLabel="의뢰자 수"
-                        primaryValue={`${directReferralBusinessCount.toLocaleString()}개소`}
-                        secondaryLabel="의뢰건수"
-                        secondaryValue={`${directReferralOrders.toLocaleString()}건`}
-                      />
-                      <MetricCard
-                        title="소개 딜러"
-                        tooltip="내가 소개한 딜러 수"
-                        primaryLabel="딜러"
-                        primaryValue={`${salesmanCount.toLocaleString()}개소`}
-                        secondaryLabel="소개 의뢰건수"
-                        secondaryValue={`${directReferralOrders.toLocaleString()}건`}
-                      />
-                    </div>
+                    <MetricCard
+                      title="소개 의뢰자"
+                      tooltip="내가 소개한 의뢰자 사업자"
+                      primaryLabel="의뢰자 수"
+                      primaryValue={`${directReferralBusinessCount.toLocaleString()}개소`}
+                      secondaryLabel="의뢰건수"
+                      secondaryValue={`${directReferralOrders.toLocaleString()}건`}
+                    />
                   )}
                 </CardContent>
               </Card>
@@ -278,8 +260,8 @@ export const SalesmanReferralPage = () => {
                     title="소개 네트워크"
                     mode="radial-tree"
                     currentBusinessAnchorId={user?.businessAnchorId || null}
-                    visibleRoles={["requestor", "salesman"]}
-                    legendRoles={["requestor", "salesman"]}
+                    visibleRoles={["requestor"]}
+                    legendRoles={["requestor"]}
                     chartHeight={560}
                   />
                 )}

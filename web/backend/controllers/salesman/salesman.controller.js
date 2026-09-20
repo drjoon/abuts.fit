@@ -523,17 +523,6 @@ export async function getSalesmanDashboard(req, res) {
       .select({ _id: 1, createdAt: 1, requestorKind: 1, name: 1 })
       .lean();
 
-    const referredSalesmen = await BusinessAnchor.find({
-      referredByAnchorId: myBusinessAnchorObjectId,
-      businessType: "salesman",
-    })
-      .select({ _id: 1, name: 1 })
-      .lean();
-
-    const referredSalesmanBusinessAnchorIds = (referredSalesmen || [])
-      .map((u) => u?._id)
-      .filter((id) => id && Types.ObjectId.isValid(String(id)));
-
     // 개발운영사: 소개 영업자가 없는 의뢰자(referredByAnchorId=null)도 수수료 대상
     // 영업자 소개가 없을 때 영업자 소개 수수료와 동일한 효과 (rules.md 2.4)
     const unaffiliatedRequestors = isDevops
@@ -547,12 +536,6 @@ export async function getSalesmanDashboard(req, res) {
           .select({ _id: 1, createdAt: 1, requestorKind: 1, name: 1 })
           .lean()
       : [];
-
-    const referralSalesmanCount = referredSalesmanBusinessAnchorIds.length;
-    const referralSalesmen = (referredSalesmen || []).map((u) => ({
-      userId: String(u?._id || ""),
-      name: String(u?.name || ""),
-    }));
 
     const requestorMetaById = new Map();
     for (const row of [
@@ -618,7 +601,6 @@ export async function getSalesmanDashboard(req, res) {
             freeNetRequestAmount,
             freeNetShippingAmount,
             freeNetAmount,
-            referralSalesmanCount,
             eventOrganizationCount: 0,
             baseOrganizationCount: 0,
             eventCommissionAmount: 0,
@@ -630,7 +612,6 @@ export async function getSalesmanDashboard(req, res) {
             practiceOrganizationCount: 0,
             labOrganizationCount: 0,
           },
-          referralSalesmen,
           organizations: [],
         },
       });
@@ -842,7 +823,6 @@ export async function getSalesmanDashboard(req, res) {
           practiceOrganizationCount,
           labOrganizationCount,
         },
-        referralSalesmen,
         organizations,
       },
     });

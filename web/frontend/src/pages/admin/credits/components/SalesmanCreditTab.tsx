@@ -257,10 +257,9 @@ export function SalesmanCreditTab({
 
                       <div className="mt-2 space-y-1 text-xs">
                         <div className="flex justify-between gap-2 text-muted-foreground">
-                          <span>소개 조직 / 딜러</span>
+                          <span>소개 조직</span>
                           <span className="font-medium text-slate-700">
-                            {Number(s.performance30d?.referredOrgCount || 0)} /{" "}
-                            {Number(s.referredSalesmanCount || 0)}
+                            {Number(s.performance30d?.referredOrgCount || 0)}
                           </span>
                         </div>
                         <div className="flex justify-between gap-2 text-muted-foreground">
