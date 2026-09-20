@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-20: 요약 카드 행 — -mx-1 제거·p-0.5(선택 border/ring overflow 클리핑 방지).
 // - 2026-09-16: 내역 로딩 스켈레톤 — 수식 카드 행·6열(결제 포함)·필터 행 정렬.
 // - 2026-09-08: 스토어 REFUND 행 결제상태「취소」(결제 완료 강제 표시 제거).
 // - 2026-09-08: 검색 — ImeSafeInput+debounce. 한글 조합 중·키마다 ledger API 호출 방지.
@@ -2687,8 +2688,8 @@ export const CreditLedgerModal = ({
         <>
           {currentBalanceSnapshot && !hideBalanceSummary ? (
             showPeriodSpendCard ? (
-              <div className="scroll-x-bar-top -mx-1 px-1">
-                <div className="flex min-w-max items-stretch gap-0.5 px-1 sm:gap-1">
+              <div className="scroll-x-bar-top p-0.5">
+                <div className="flex min-w-max items-stretch gap-0.5 px-0.5 sm:gap-1">
                   <SettlementStatCard
                     className="min-w-[9.5rem] flex-1 sm:min-w-[10.5rem]"
                     label="현재 잔액"
@@ -2762,7 +2763,7 @@ export const CreditLedgerModal = ({
                 </div>
               </div>
             ) : (
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="grid grid-cols-1 gap-3 p-0.5 sm:grid-cols-2 xl:grid-cols-4">
                 <SettlementStatCard
                   label="현재 잔액"
                   value={currentBalanceTotal}
@@ -3304,7 +3305,7 @@ export const CreditLedgerModal = ({
       {embedded ? (
         <div
           className={cn(
-            "flex h-full min-h-0 flex-col gap-3 overflow-hidden",
+            "flex h-full min-h-0 flex-col gap-3 overflow-hidden px-0.5",
             className,
           )}
         >

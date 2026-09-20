@@ -4,6 +4,7 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/backend/controllers/admin/adminTaxInvoice.controller.js
 // change-log:
+// - 2026-09-20: 상태 요약 카드 그리드 p-0.5 — 선택 border가 overflow에 잘리지 않게.
 // - 2026-09-20: 승인대기 탭·승인(승인 후 발행) 버튼.
 import React, { useCallback, useEffect, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -613,7 +614,7 @@ export const AdminTaxInvoices = ({
       </p>
 
       {/* Stats bar */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+      <div className="grid grid-cols-2 gap-2 p-0.5 sm:grid-cols-3 lg:grid-cols-6">
         {STATUS_TABS.map((s) => (
           <button
             key={s}

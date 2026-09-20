@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-20: 상단 스탯 그리드 p-0.5 — 카드 경계 overflow 클리핑 방지.
 // - 2026-08-13: 영업자 크레딧 탭 스타일·카피 모던화.
 // related files:
 // - web/frontend/rules.md
@@ -92,7 +93,7 @@ export function SalesmanCreditTab({
 
   return (
     <TabsContent value="salesman" className="space-y-4">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-3 p-0.5 sm:grid-cols-2 lg:grid-cols-5">
         <CreditStatTile
           label="딜러"
           value={loading ? "…" : summaryForView.totalSalesmen.toLocaleString()}

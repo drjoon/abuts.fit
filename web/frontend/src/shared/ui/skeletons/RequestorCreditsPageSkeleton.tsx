@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-09-20: 내역/지급 스켈레톤 요약 카드 — p-0.5(실 UI와 동일, overflow 클리핑 방지).
+// - 2026-09-20: 내역 필터 스켈레톤 — 결제(적립) 상태 Select 칸 추가.
 // - 2026-09-16: 기공소 탭 4칸(내역·통계·충전·지급). 내역 스켈레톤=수식 카드·6열·필터 행.
 // - 2026-08-14: 잔액 카드·테이블 스켈레톤을 최신 크레딧 UI(rounded-2xl)에 맞춤.
 // - 2026-08-11: 크레딧(내역/충전/정산) SettingsScaffold 레이아웃에 맞춘 페이지 스켈레톤 신설.
@@ -42,8 +44,8 @@ export const CreditLedgerTableSkeleton = ({
   showSettlement?: boolean;
 }) => (
   <div className="flex h-full min-h-0 flex-col gap-4 overflow-hidden">
-    <div className="scroll-x-bar-top -mx-1 px-1">
-      <div className="flex min-w-max items-stretch gap-0.5 px-1 sm:gap-1">
+    <div className="scroll-x-bar-top p-0.5">
+      <div className="flex min-w-max items-stretch gap-0.5 px-0.5 sm:gap-1">
         <BalanceCardSkeleton />
         <EquationOperatorSkeleton />
         <BalanceCardSkeleton />
@@ -58,6 +60,7 @@ export const CreditLedgerTableSkeleton = ({
       </div>
     </div>
     <div className="flex w-full min-w-0 flex-wrap items-center gap-2">
+      <Skeleton className="h-9 w-full rounded-xl sm:w-[130px]" />
       <Skeleton className="h-9 w-full rounded-xl sm:w-[130px]" />
       <Skeleton className="h-9 w-full rounded-xl sm:w-[130px]" />
       <Skeleton className="h-9 w-full rounded-xl sm:w-[280px]" />
@@ -100,7 +103,7 @@ export const LabSettlementPayoutTableSkeleton = ({
   rows?: number;
 }) => (
   <div className="flex h-full min-h-0 flex-col gap-3 overflow-hidden">
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+    <div className="grid grid-cols-1 gap-3 p-0.5 sm:grid-cols-2">
       {repeat(2).map((key) => (
         <div
           key={`payout-card-${key}`}

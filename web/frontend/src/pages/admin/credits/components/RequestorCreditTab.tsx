@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-20: 상단 스탯 그리드 p-0.5 — 카드 경계 overflow 클리핑 방지.
 // - 2026-09-05: 상단 스탯 순서 충전|사용|잔여.
 // - 2026-08-14: 스탯 라벨 「치과 · 기공소」로 표기.
 // - 2026-08-13: 무료(의뢰/배송) 통합 표시, 스탯·탭 스타일 모던화.
@@ -135,7 +136,7 @@ export function RequestorCreditTab(props: RequestorCreditTabProps) {
 
   return (
     <>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-3 p-0.5 sm:grid-cols-2 lg:grid-cols-5">
         <CreditStatTile
           label="치과 · 기공소"
           value={loading ? "…" : requestorBusinesses.length.toLocaleString()}

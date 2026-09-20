@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-20: 요약 카드 행 p-0.5 — 선택 ring이 overflow에 잘리지 않게.
 // - 2026-09-20: 정산 적립 안내 — 커스텀어벗은 STL·생산비 지급 뒤에만 포함.
 // - 2026-09-16: 통계 로딩 요약 스켈레톤 — 충전−소비|의뢰건수 3칸(구 4칸).
 // - 2026-09-05: 요약 충전 카드 라벨「충전」(치과·기공소 공통, 유료 접두 제거).
@@ -408,8 +409,8 @@ function SummaryCardsRow({
   cardCount: number;
 }) {
   return (
-    <div className="min-w-0 pb-1">
-      <div className="flex flex-col items-stretch gap-2 px-1 md:min-w-max md:flex-row md:items-stretch md:gap-1">
+    <div className="min-w-0 p-0.5 pb-1">
+      <div className="flex flex-col items-stretch gap-2 px-0.5 md:min-w-max md:flex-row md:items-stretch md:gap-1">
         {children}
       </div>
       <span className="sr-only">{cardCount}개 요약</span>
@@ -419,8 +420,8 @@ function SummaryCardsRow({
 
 function SummarySkeleton({ cardCount }: { cardCount: number }) {
   return (
-    <div className="min-w-0 pb-1">
-      <div className="flex flex-col items-stretch gap-2 px-1 md:min-w-max md:flex-row md:items-stretch md:gap-0.5">
+    <div className="min-w-0 p-0.5 pb-1">
+      <div className="flex flex-col items-stretch gap-2 px-0.5 md:min-w-max md:flex-row md:items-stretch md:gap-0.5">
         {Array.from({ length: cardCount }).map((_, i) => (
           <div
             key={i}

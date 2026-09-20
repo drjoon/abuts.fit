@@ -307,7 +307,7 @@ export default function SalesPerformancePage() {
       ) : (
         <div className="grid gap-4 lg:grid-cols-[minmax(18rem,24rem)_minmax(0,1fr)] xl:gap-5">
           <div className="space-y-4 lg:sticky lg:top-4 lg:self-start">
-            <div className="grid grid-cols-1 gap-2.5 md:grid-cols-3">
+            <div className="grid grid-cols-1 gap-2.5 p-0.5 md:grid-cols-3">
               <SalesStatCard
                 compact
                 label="소개 가입"

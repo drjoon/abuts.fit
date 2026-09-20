@@ -1246,7 +1246,7 @@ export default function AdminStorePage() {
           </Button>
         </header>
 
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 p-0.5 sm:grid-cols-2 lg:grid-cols-4">
           <CreditStatTile
             label="입금 대기"
             value={stats.pending}
