@@ -1,3 +1,4 @@
+// - 2026-09-20: 기공소 정책 안내 — 지정 거래 플랫폼 수수료(정책 1%·이벤트 0%).
 // - 2026-09-20: 기공소 정책 안내 — 커스텀어벗 정산은 STL·생산비 지급 뒤.
 // - 2026-09-12: 리메이크를 가격 카드(배송비 아래)로 이동. 치과로부터=무료, 어벗츠로=1만원.
 // - 2026-09-09: 리메이크 월 3건 무료 → 건당 10,000원 안내.
@@ -59,7 +60,10 @@ import {
   formatAbutsAbutmentServiceWon,
   formatAbutsManwon
 } from '@/shared/pricing/abutsAbutmentService';
-import { LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE } from '@/shared/settlement/labPayoutBankbook';
+import {
+  LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE,
+  LAB_DIRECT_PLATFORM_FEE_NOTICE,
+} from '@/shared/settlement/labPayoutBankbook';
 
 type Props = {
   open: boolean;
@@ -340,9 +344,14 @@ export const PricingPolicyDialog = ({
               </section>
 
               {isLab ? (
-                <PolicySection title='정산'>
-                  <p>{LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE}</p>
-                </PolicySection>
+                <>
+                  <PolicySection title='플랫폼 수수료'>
+                    <p>{LAB_DIRECT_PLATFORM_FEE_NOTICE}</p>
+                  </PolicySection>
+                  <PolicySection title='정산'>
+                    <p>{LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE}</p>
+                  </PolicySection>
+                </>
               ) : null}
 
               <PolicySection title='출고 방식'>

@@ -102,3 +102,8 @@ export const LAB_SETTLEMENT_PAYOUT_RESERVE_NOTICE =
 /** 커스텀어벗 치과→기공소 정산 — STL·생산비 지급 전 제외. */
 export const LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE =
   "커스텀어벗은 디자인 STL을 올리고 어벗츠에 생산비가 지급된 뒤에 정산·지급에 포함됩니다. 그 전에는 빠지며, 기간이 지나도 그때 정산됩니다.";
+
+/** 지정 거래 플랫폼 수수료 — 정책 1% · 이벤트 기간 실효 0%. */
+export const LAB_DIRECT_PLATFORM_FEE_POLICY_RATE_PCT = 1;
+export const LAB_DIRECT_PLATFORM_FEE_NOTICE =
+  `지정 기공소 의뢰의 플랫폼 수수료는 매출액의 ${LAB_DIRECT_PLATFORM_FEE_POLICY_RATE_PCT}%입니다. 이벤트 기간 동안은 0%이며, 추후 공지 후 부과될 수 있습니다.`;
