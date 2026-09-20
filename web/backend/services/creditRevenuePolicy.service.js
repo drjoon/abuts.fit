@@ -8,6 +8,7 @@
 // - 2026-09-20: 딜러십 요율 선택지 10/15/20%로 고정(관리자 스냅).
 // - 2026-09-20: 딜러십 영업 수수료 — 기본 10% · 이벤트 15%(기본 on). 관리자 플랫폼 설정.
 // - 2026-09-20: DEALERSHIP_SALES_COMMISSION_RATE 15%(심플웨이·커스텀어벗, 배송비 제외).
+// - 2026-09-20: 지정 거래 정책 요율 2% · 이벤트 off 시 직전 1%/레거시 5% 승격.
 // - 2026-09-20: 지정 거래 정책 요율 1% · 이벤트 기간 기본 off(실효 0%, 추후 공지 후 부과).
 // - 2026-09-20: 지정 거래 수수료 기본 on · 1%(directPlatformFeeEnabled/Rate).
 // - 2026-09-20: 제조사 매입가 = 판매가의 50%(포함가). 리메이크도 같은 매입가.
@@ -334,13 +335,15 @@ export const WITHOUT_SALESMAN_RATES = resolveRatesWithoutSalesman(WITH_SALESMAN_
 export const DEFAULT_PLATFORM_FEE_RATE = 0.1;
 /** 어벗츠 원청을 타 기공소가 하청 수행할 때 공제율(기본 15%, 수행 기공소 85%). */
 export const DEFAULT_SUBCONTRACT_FEE_RATE = 0.15;
-/** 지정 기공소(direct) 정책 요율 1%(적용 on일 때). */
-export const DEFAULT_DIRECT_PLATFORM_FEE_RATE = 0.01;
+/** 지정 기공소(direct) 정책 요율 2%(적용 on일 때). */
+export const DEFAULT_DIRECT_PLATFORM_FEE_RATE = 0.02;
+/** 직전 정책 요율(1%). 이벤트 off면 현행 기본(2%)로 승격. */
+export const PREV_DEFAULT_DIRECT_PLATFORM_FEE_RATE = 0.01;
 /** 구 스키마 기본(off + 5%). 마이그레이션·resolve에서 레거시로 취급. */
 export const LEGACY_DEFAULT_DIRECT_PLATFORM_FEE_RATE = 0.05;
 /**
  * 지정 거래 수수료 적용 기본값.
- * false = 이벤트 기간 실효 0%(정책 요율 1%는 유지, 추후 공지 후 on 가능).
+ * false = 이벤트 기간 실효 0%(정책 요율 2%는 유지, 추후 공지 후 on 가능).
  */
 export const DEFAULT_DIRECT_PLATFORM_FEE_ENABLED = false;
 /** @deprecated 등록/미등록 2단계 폐지. 읽기 fallback 전용. */
@@ -375,13 +378,16 @@ export function isDirectPlatformFeeEnabled(payoutRates) {
   return DEFAULT_DIRECT_PLATFORM_FEE_ENABLED;
 }
 
-/** 지정 거래 설정 요율(적용 off여도 저장값 유지). 레거시 off+5%는 1%로 승격. */
+/** 지정 거래 설정 요율(적용 off여도 저장값 유지). 레거시 off+5%·직전 1%는 2%로 승격. */
 export function resolveDirectPlatformFeeRateConfigured(payoutRates) {
   const raw = payoutRates?.directPlatformFeeRate;
   if (raw != null && Number.isFinite(Number(raw))) {
     const n = Math.min(1, Math.max(0, Number(raw)));
+    const isPrevOrLegacyPolicy =
+      Math.abs(n - LEGACY_DEFAULT_DIRECT_PLATFORM_FEE_RATE) < 1e-9 ||
+      Math.abs(n - PREV_DEFAULT_DIRECT_PLATFORM_FEE_RATE) < 1e-9;
     if (
-      Math.abs(n - LEGACY_DEFAULT_DIRECT_PLATFORM_FEE_RATE) < 1e-9 &&
+      isPrevOrLegacyPolicy &&
       payoutRates?.directPlatformFeeEnabled !== true
     ) {
       return DEFAULT_DIRECT_PLATFORM_FEE_RATE;

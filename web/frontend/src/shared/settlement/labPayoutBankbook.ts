@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/business/settings/LabPayoutAccountCard.tsx
 // - web/backend/jobs/monthlySettlementBatchWorker.js
 // change-log:
+// - 2026-09-20: 지정 수수료 기본 표시 2%. 이벤트 문구는 「2% → 0%」(취소선은 LabDirectPlatformFeeNotice).
 // - 2026-09-20: 지정 수수료 안내를 formatLabDirectPlatformFeeNotice(관리자 on/%)로 생성.
 // - 2026-09-16: 기공소 통장사본·정산일(1일) 리마인드 헬퍼. 미등록 시 지급 1개월 이월 안내. 월 지급 유보 50만원 상수.
 import { toKstYmd } from "@/shared/date/kst";
@@ -104,30 +105,34 @@ export const LAB_SETTLEMENT_PAYOUT_RESERVE_NOTICE =
 export const LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE =
   "커스텀어벗은 디자인 STL을 올리고 어벗츠에 생산비가 지급된 뒤에 정산·지급에 포함됩니다. 그 전에는 빠지며, 기간이 지나도 그때 정산됩니다.";
 
-/** 지정 수수료 기본 표시용(관리자 설정 미로드 시). 실효 문구는 formatLabDirectPlatformFeeNotice. */
-export const LAB_DIRECT_PLATFORM_FEE_POLICY_RATE_PCT = 1;
+/** 지정 수수료 기본 표시용(관리자 설정 미로드 시). 실효 UI는 LabDirectPlatformFeeNotice. */
+export const LAB_DIRECT_PLATFORM_FEE_POLICY_RATE_PCT = 2;
 
-/** 지정 수수료 안내 — 관리자 `directPlatformFeeEnabled` / `directPlatformFeeRate` 반영. */
+export function resolveLabDirectPlatformFeePct(ratePct?: number): number {
+  return Math.max(
+    0,
+    Math.round(
+      Number.isFinite(Number(ratePct))
+        ? Number(ratePct)
+        : LAB_DIRECT_PLATFORM_FEE_POLICY_RATE_PCT,
+    ),
+  );
+}
+
+/** 지정 수수료 안내(평문). UI는 LabDirectPlatformFeeNotice(취소선) 권장. */
 export function formatLabDirectPlatformFeeNotice(opts?: {
   enabled?: boolean;
   /** 0~100 퍼센트 포인트 */
   ratePct?: number;
 }): string {
   const enabled = opts?.enabled === true;
-  const pct = Math.max(
-    0,
-    Math.round(
-      Number.isFinite(Number(opts?.ratePct))
-        ? Number(opts?.ratePct)
-        : LAB_DIRECT_PLATFORM_FEE_POLICY_RATE_PCT,
-    ),
-  );
+  const pct = resolveLabDirectPlatformFeePct(opts?.ratePct);
   if (enabled) {
     return `지정 기공소 의뢰의 플랫폼 수수료는 매출액의 ${pct}%입니다.`;
   }
-  return "지정 기공소 의뢰의 플랫폼 수수료는 이벤트 기간 동안 0%입니다.";
+  return `지정 기공소 의뢰의 플랫폼 수수료는 ${pct}% → 0%입니다.`;
 }
 
-/** @deprecated 관리자 설정 반영 문구는 formatLabDirectPlatformFeeNotice 사용. */
+/** @deprecated UI는 LabDirectPlatformFeeNotice 사용. */
 export const LAB_DIRECT_PLATFORM_FEE_NOTICE =
   formatLabDirectPlatformFeeNotice({ enabled: false });

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-20: 지정 수수료 기본 표시 2%. 이벤트 시 ~~2%~~ → 0% 안내.
 // - 2026-09-20: 지정 거래 안내 툴팁 제거. 보조 문구만 유지.
 // - 2026-09-20: 지정 거래 정책 1% · 이벤트 기본 off(0%). 추후 공지 후 부과 안내.
 // - 2026-09-20: 지정 거래 기본 on·1%. 「별도 공지까지 무료」카피 제거.
@@ -27,6 +28,7 @@ import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { cn } from "@/shared/ui/cn";
+import { LabDirectPlatformFeeRateLabel } from "@/shared/settlement/LabDirectPlatformFeeNotice";
 
 type PlatformFeeSettings = {
   platformFeeRate?: number;
@@ -61,15 +63,15 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
   const queryClient = useQueryClient();
   const [loading, setLoading] = useState(Boolean(token));
   const [platformFeeRate, setPlatformFeeRate] = useState("15");
-  const [directFeeEnabled, setDirectFeeEnabled] = useState(true);
-  const [directFeeRate, setDirectFeeRate] = useState("1");
+  const [directFeeEnabled, setDirectFeeEnabled] = useState(false);
+  const [directFeeRate, setDirectFeeRate] = useState("2");
   const hydratedRef = useRef(false);
   const savedMatchRef = useRef("15");
-  const savedDirectEnabledRef = useRef(true);
-  const savedDirectRef = useRef("1");
+  const savedDirectEnabledRef = useRef(false);
+  const savedDirectRef = useRef("2");
   const matchRef = useRef("10");
-  const directEnabledRef = useRef(true);
-  const directRef = useRef("1");
+  const directEnabledRef = useRef(false);
+  const directRef = useRef("2");
   matchRef.current = platformFeeRate;
   directEnabledRef.current = directFeeEnabled;
   directRef.current = directFeeRate;
@@ -102,7 +104,7 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
         );
         const directPct = toPctString(
           Number(settings.directPlatformFeeRate),
-          0.01,
+          0.02,
         );
         const enabled = settings.directPlatformFeeEnabled === true;
         savedMatchRef.current = matchPct;
@@ -264,9 +266,16 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
               지정 수수료
             </Label>
             <p className="text-[12px] leading-snug text-muted-foreground">
-              {directFeeEnabled
-                ? "치과가 지정한 협력 기공소"
-                : "이벤트 기간 0%"}
+              {directFeeEnabled ? (
+                "치과가 지정한 협력 기공소"
+              ) : (
+                <>
+                  <LabDirectPlatformFeeRateLabel
+                    enabled={false}
+                    ratePct={Number(directFeeRate) || 2}
+                  />
+                </>
+              )}
             </p>
           </div>
         </div>

@@ -1,3 +1,4 @@
+// - 2026-09-20: 기공소 정책 안내 — 지정 수수료 ~~2%~~ → 0% 취소선 표시.
 // - 2026-09-20: 딜러십 요율 10/15/20% · 가입 당시 요율 적용 안내.
 // - 2026-09-20: 기공소 정책 안내 — 지정 수수료를 관리자 설정(on/% · 이벤트 0%)으로 표시.
 // - 2026-09-20: 기공소 정책 안내 — 지정 거래 플랫폼 수수료(정책 1%·이벤트 0%).
@@ -64,8 +65,9 @@ import {
 } from '@/shared/pricing/abutsAbutmentService';
 import {
   LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE,
-  formatLabDirectPlatformFeeNotice,
+  resolveLabDirectPlatformFeePct,
 } from '@/shared/settlement/labPayoutBankbook';
+import { LabDirectPlatformFeeNotice } from '@/shared/settlement/LabDirectPlatformFeeNotice';
 import { useLabTradingPartnerWindow } from '@/shared/lab/useLabTradingPartnerWindow';
 
 type Props = {
@@ -212,13 +214,11 @@ export const PricingPolicyDialog = ({
   );
   const directFeeEnabled =
     labFeeWindow?.feeRates?.directPlatformFeeEnabled === true;
-  const directFeePct = Math.round(
-    Number(labFeeWindow?.feeRates?.directPlatformFeeRate ?? 0.01) * 100,
+  const directFeePct = resolveLabDirectPlatformFeePct(
+    labFeeWindow?.feeRates?.directPlatformFeeRate != null
+      ? Number(labFeeWindow.feeRates.directPlatformFeeRate) * 100
+      : undefined,
   );
-  const directPlatformFeeNotice = formatLabDirectPlatformFeeNotice({
-    enabled: directFeeEnabled,
-    ratePct: directFeePct,
-  });
 
   useEffect(() => {
     if (!open) return;
@@ -272,7 +272,7 @@ export const PricingPolicyDialog = ({
                 <BulletList
                   items={[
                     eventOn
-                      ? `이벤트 기간인 지금은 ${eventPct}%. 추후 15%·10%으로 조정될 수 있음.`
+                      ? `이벤트 기간인 지금은 ${eventPct}%. 요율 변경 예약으로 15%·10% 조정이 가능합니다.`
                       : `현재 표준 요율 ${basePct}%.`,
                     '대상: 심플웨이(스토어) · 커스텀어벗',
                     '소개 관계: 의뢰자 가입 시 입력한 딜러 코드'
@@ -390,7 +390,12 @@ export const PricingPolicyDialog = ({
               {isLab ? (
                 <>
                   <PolicySection title='플랫폼 수수료'>
-                    <p>{directPlatformFeeNotice}</p>
+                    <p>
+                      <LabDirectPlatformFeeNotice
+                        enabled={directFeeEnabled}
+                        ratePct={directFeePct}
+                      />
+                    </p>
                   </PolicySection>
                   <PolicySection title='정산'>
                     <p>{LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE}</p>
