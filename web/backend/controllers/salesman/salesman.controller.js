@@ -20,6 +20,13 @@ import { getPlatformSocialProof } from "../../services/platformGrowthStats.servi
 import { listNoOrderAlerts } from "../../services/noOrderAlerts.service.js";
 import { resolveDealershipCommissionPolicy, resolveDealershipRateForAcquiredAt } from "../../services/creditRevenuePolicy.service.js";
 import { loadCreditSettingsDefaults } from "../../utils/creditSettingsDefaults.js";
+import {
+  ensureSalesTeamPersonalAnchor,
+  ensureSalesTeamReferralCode,
+  resolveSalesTeamReferralAnchorId,
+} from "../../utils/salesTeamReferral.util.js";
+
+const SALESMAN_DASHBOARD_ROLES = new Set(["salesman", "devops", "salesTeam"]);
 
 function parsePeriod(input) {
   const raw = String(input || "").trim();
@@ -148,7 +155,7 @@ export async function getSalesmanLedger(req, res) {
     res.set("x-abuts-handler", "salesman.getSalesmanLedger");
 
     const me = req.user;
-    if (!me || (me.role !== "salesman" && me.role !== "devops")) {
+    if (!me || !SALESMAN_DASHBOARD_ROLES.has(String(me.role || ""))) {
       return res.status(403).json({
         success: false,
         message: "접근 권한이 없습니다.",
@@ -156,7 +163,18 @@ export async function getSalesmanLedger(req, res) {
     }
 
     const ownerRole = me.role === "devops" ? "devops" : "salesman";
-    const ownerAnchorIdRaw = String(me?.businessAnchorId || "").trim();
+    let ownerAnchorIdRaw = String(me?.businessAnchorId || "").trim();
+    if (me.role === "salesTeam") {
+      const full = await User.findById(me._id);
+      if (full) {
+        await ensureSalesTeamPersonalAnchor(full);
+        ownerAnchorIdRaw = String(
+          (await resolveSalesTeamReferralAnchorId(full)) ||
+            full.businessAnchorId ||
+            "",
+        ).trim();
+      }
+    }
     if (!ownerAnchorIdRaw || !Types.ObjectId.isValid(ownerAnchorIdRaw)) {
       return res.status(400).json({
         success: false,
@@ -354,7 +372,7 @@ export async function getSalesmanDashboard(req, res) {
     res.set("x-abuts-handler", "salesman.getSalesmanDashboard");
 
     const me = req.user;
-    if (!me || (me.role !== "salesman" && me.role !== "devops")) {
+    if (!me || !SALESMAN_DASHBOARD_ROLES.has(String(me.role || ""))) {
       return res.status(403).json({
         success: false,
         message: "접근 권한이 없습니다.",
@@ -362,7 +380,15 @@ export async function getSalesmanDashboard(req, res) {
     }
 
     let effectiveReferralCode = String(me.referralCode || "").trim();
-    if (!/^[A-Z0-9]{3}$/.test(effectiveReferralCode)) {
+    if (me.role === "salesTeam") {
+      const full = await User.findById(me._id);
+      if (full) {
+        effectiveReferralCode = await ensureSalesTeamReferralCode(full);
+        me.businessAnchorId =
+          (await resolveSalesTeamReferralAnchorId(full)) ||
+          full.businessAnchorId;
+      }
+    } else if (!/^[A-Z0-9]{3}$/.test(effectiveReferralCode)) {
       try {
         effectiveReferralCode = await ensureUniqueReferralCode3();
         await User.updateOne(
@@ -848,7 +874,16 @@ export async function getSalesmanDashboard(req, res) {
 export async function getSalesmanNoOrderAlerts(req, res) {
   try {
     const me = req.user;
-    const myBusinessAnchorId = me?.businessAnchorId;
+    let myBusinessAnchorId = me?.businessAnchorId;
+    if (me?.role === "salesTeam") {
+      const full = await User.findById(me._id);
+      if (full) {
+        await ensureSalesTeamPersonalAnchor(full);
+        myBusinessAnchorId =
+          (await resolveSalesTeamReferralAnchorId(full)) ||
+          full.businessAnchorId;
+      }
+    }
     if (
       !myBusinessAnchorId ||
       !Types.ObjectId.isValid(String(myBusinessAnchorId))

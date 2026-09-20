@@ -3,7 +3,7 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 /**
- * 딜러(salesman) 대시보드에서 사용하는
+ * 딜러(salesman)·영업팀(salesTeam) 대시보드에서 사용하는
  * /api/salesman/dashboard 데이터 훅 + 타입 + 포매터.
  *
  * 역할별 UI 분기는 이 훅에 두지 않는다.

@@ -1,11 +1,13 @@
 /**
- * 딜러(salesman) 전용 대시보드.
+ * 딜러(salesman)·영업팀(salesTeam) 대시보드.
+ * 영업팀은 딜러 화면을 그대로 사용한다.
  *
  * 딜러십: 기본 10% · 이벤트 15/20%. 요율 변경 예약 시 해당일 0시(KST)부터 적용.
  * 의뢰자는 가입 당시 요율 적용. 배송비는 수신자(치과·기공소) 부담.
  */
 
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/shared/hooks/use-toast";
@@ -15,6 +17,7 @@ import {
   Copy,
   BadgeCheck,
   CalendarClock,
+  Layers,
   Percent,
   Truck,
   Building2,
@@ -136,6 +139,12 @@ export const SalesmanDashboardPage = () => {
                 useStoreCustomRange={false}
               />
               <div className="flex flex-wrap items-center gap-2">
+                <Button asChild size="sm" variant="outline" className="h-8">
+                  <Link to="/#pitch">
+                    <Layers className="mr-1.5 h-3.5 w-3.5" />
+                    소개·피치
+                  </Link>
+                </Button>
                 <Button
                   type="button"
                   size="sm"

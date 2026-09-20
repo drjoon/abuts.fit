@@ -14,7 +14,7 @@ import {
 const router = Router();
 
 router.use(authenticate);
-router.use(authorize(["salesman", "devops"]));
+router.use(authorize(["salesman", "devops", "salesTeam"]));
 
 router.get("/dashboard", getSalesmanDashboard);
 router.get("/no-order-alerts", getSalesmanNoOrderAlerts);

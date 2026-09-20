@@ -38,6 +38,13 @@ export function normalizeLastDashboardPath(
     ) {
       return null;
     }
+    // 소개·피치는 랜딩 `/#pitch`로 이전
+    if (
+      pathname === "/dashboard/pitch" ||
+      pathname === "/dashboard/sales/pitch"
+    ) {
+      return null;
+    }
     return `${pathname}${u.search || ""}`;
   } catch {
     return null;
@@ -58,7 +65,7 @@ export function getRoleDefaultDashboardPath(role: string | null | undefined): st
     case "labTeam":
       return "/dashboard/settings";
     case "salesTeam":
-      return "/dashboard/sales";
+      return "/dashboard";
     default:
       return "/dashboard";
   }
