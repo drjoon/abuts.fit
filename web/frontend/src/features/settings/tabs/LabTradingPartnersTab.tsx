@@ -7,6 +7,7 @@
 // - 2026-08-11: 「치과에 전달하기」중첩 카드 제거, 안내 문구 단순화.
 // - 2026-08-11: 목록 뱃지 — 가입 진행중(pending) / 등록 완료(active).
 // - 2026-08-11: 초대링크·안내문구 복사만으로는 목록 카드 미생성(가입 시작 시 표시).
+// - 2026-09-20: 지정 거래 정책 1% · 이벤트 기간 0%(추후 공지 후 부과 안내).
 // - 2026-09-20: 지정 거래 수수료 기본 1%(관리자 설정). 무료 안내 문구 제거.
 // - 2026-08-16: 지정 거래 수수료 — 별도 공지 시까지 무료 안내.
 // - 2026-08-12: 상단 수수료 안내 — 예시 매출·수수료 다이어그램(프로그레스바)으로 교체.
@@ -239,7 +240,7 @@ export const LabTradingPartnersTab = () => {
         0.1,
     ) * 100,
   );
-  const directFeeEnabled = windowInfo?.feeRates?.directPlatformFeeEnabled !== false;
+  const directFeeEnabled = windowInfo?.feeRates?.directPlatformFeeEnabled === true;
   const directFeePct = Math.round(
     Number(windowInfo?.feeRates?.directPlatformFeeRate ?? 0.01) * 100,
   );
@@ -264,7 +265,7 @@ export const LabTradingPartnersTab = () => {
             성공 수수료 {platformFeePct}%
             {directFeeEnabled
               ? ` · 지정 거래 수수료 ${directFeePct}%`
-              : " · 지정 거래 수수료 없음"}
+              : " · 지정 거래 수수료는 이벤트 기간 0%"}
             . 치과명·담당자명·기공소명 등 식별 정보는 비공개입니다.
           </CardDescription>
         </CardHeader>
@@ -272,9 +273,9 @@ export const LabTradingPartnersTab = () => {
           <div className="flex gap-3 rounded-2xl border border-dashed border-slate-200/90 bg-slate-50/60 px-4 py-3.5">
             <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
             <p className="text-[13px] leading-relaxed text-muted-foreground">
-              지정 기공소 의뢰의 플랫폼 수수료는 정산 지급 시 공제됩니다(기본{" "}
-              {directFeePct}%, 관리자 설정). 거래 치과 소개는 아래에서 계속할 수
-              있습니다.
+              {directFeeEnabled
+                ? `지정 기공소 의뢰의 플랫폼 수수료는 정산 지급 시 공제됩니다(${directFeePct}%). 거래 치과 소개는 아래에서 계속할 수 있습니다.`
+                : `지정 기공소 의뢰의 플랫폼 수수료(매출액의 ${directFeePct}%)는 이벤트 기간 동안 0%입니다. 추후 공지 후 부과될 수 있습니다. 거래 치과 소개는 아래에서 계속할 수 있습니다.`}
             </p>
           </div>
           <div className="flex gap-3 rounded-2xl border border-dashed border-slate-200/90 bg-slate-50/60 px-4 py-3.5">

@@ -5,6 +5,7 @@
 // - web/backend/scripts/db/migrate-legacy-creditledger-to-gl.js
 // - web/backend/scripts/db/rebalance-manufacturer-unit-price.js
 // change-log:
+// - 2026-09-20: 지정 거래 정책 요율 1% · 이벤트 기간 기본 off(실효 0%, 추후 공지 후 부과).
 // - 2026-09-20: 지정 거래 수수료 기본 on · 1%(directPlatformFeeEnabled/Rate).
 // - 2026-09-20: 제조사 매입가 = 판매가의 50%(포함가). 리메이크도 같은 매입가.
 // - 2026-09-09: 리메이크 제조사 지급 — 무료(0) → 건당 부가세 포함 6,600원(manufacturerRemakeUnitPrice).
@@ -216,15 +217,15 @@ export const WITHOUT_SALESMAN_RATES = resolveRatesWithoutSalesman(WITH_SALESMAN_
 export const DEFAULT_PLATFORM_FEE_RATE = 0.1;
 /** 어벗츠 원청을 타 기공소가 하청 수행할 때 공제율(기본 15%, 수행 기공소 85%). */
 export const DEFAULT_SUBCONTRACT_FEE_RATE = 0.15;
-/** 지정 기공소(direct) 성공 수수료 기본 1%(적용 on일 때). */
+/** 지정 기공소(direct) 정책 요율 1%(적용 on일 때). */
 export const DEFAULT_DIRECT_PLATFORM_FEE_RATE = 0.01;
 /** 구 스키마 기본(off + 5%). 마이그레이션·resolve에서 레거시로 취급. */
 export const LEGACY_DEFAULT_DIRECT_PLATFORM_FEE_RATE = 0.05;
 /**
  * 지정 거래 수수료 적용 기본값.
- * true = 기공소 지급 시 플랫폼 수수료 공제(관리자에서 off/요율 변경 가능).
+ * false = 이벤트 기간 실효 0%(정책 요율 1%는 유지, 추후 공지 후 on 가능).
  */
-export const DEFAULT_DIRECT_PLATFORM_FEE_ENABLED = true;
+export const DEFAULT_DIRECT_PLATFORM_FEE_ENABLED = false;
 /** @deprecated 등록/미등록 2단계 폐지. 읽기 fallback 전용. */
 export const DEFAULT_PARTNER_FEE_RATE = 0;
 export const DEFAULT_NON_PARTNER_FEE_RATE = DEFAULT_PLATFORM_FEE_RATE;
@@ -242,7 +243,7 @@ export function resolvePlatformFeeRate(payoutRates) {
     : DEFAULT_PLATFORM_FEE_RATE;
 }
 
-/** 지정 거래 수수료 적용 여부. 미설정·레거시(off+5%)는 기본 on, 커스텀 off만 무료. */
+/** 지정 거래 수수료 적용 여부. 미설정·레거시(off+5%)는 이벤트 기본(off). 명시 on만 부과. */
 export function isDirectPlatformFeeEnabled(payoutRates) {
   if (payoutRates?.directPlatformFeeEnabled === true) return true;
   if (payoutRates?.directPlatformFeeEnabled === false) {

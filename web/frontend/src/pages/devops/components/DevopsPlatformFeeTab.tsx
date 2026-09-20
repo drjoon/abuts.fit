@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-20: 지정 거래 정책 1% · 이벤트 기본 off(0%). 추후 공지 후 부과 안내.
 // - 2026-09-20: 지정 거래 기본 on·1%. 「별도 공지까지 무료」카피 제거.
 // - 2026-08-21: 신속처리 할증(기공·어벗츠 배수) 설정 UI 제거.
 // - 2026-08-17: 기공의뢰 신속처리 할증(배수) 설정 추가.
@@ -107,7 +108,7 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
           Number(settings.directPlatformFeeRate),
           0.01,
         );
-        const enabled = settings.directPlatformFeeEnabled !== false;
+        const enabled = settings.directPlatformFeeEnabled === true;
         savedMatchRef.current = matchPct;
         savedDirectEnabledRef.current = enabled;
         savedDirectRef.current = directPct;
@@ -191,7 +192,7 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
             )
           : String(match);
         savedDirectEnabledRef.current =
-          saved?.directPlatformFeeEnabled !== false;
+          saved?.directPlatformFeeEnabled === true;
         savedDirectRef.current = saved
           ? toPctString(Number(saved.directPlatformFeeRate), direct / 100)
           : String(direct);
@@ -277,13 +278,16 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
                     <Info className="h-3.5 w-3.5" />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent className="max-w-[240px] text-[12px] leading-relaxed">
-                  기공소 정산 지급 시 공제합니다. 끄면 실효 요율은 0%입니다.
+                <TooltipContent className="max-w-[260px] text-[12px] leading-relaxed">
+                  정책 요율은 1%입니다. 끄면 이벤트 기간(실효 0%)으로 안내되고,
+                  추후 공지 후 켤 수 있습니다.
                 </TooltipContent>
               </Tooltip>
             </div>
             <p className="text-[12px] leading-snug text-muted-foreground">
-              {directFeeEnabled ? "지급 시 공제" : "적용 안 함(0%)"}
+              {directFeeEnabled
+                ? "지급 시 공제"
+                : "이벤트 기간 0%(추후 공지 후 1%)"}
             </p>
           </div>
         </div>

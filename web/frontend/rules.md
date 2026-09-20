@@ -213,7 +213,7 @@ Notes:
     - `src/pages/requestor/dashboard/components/RequestorPolicyRemakeHeader.tsx`
     - `src/shared/ui/PricingPolicyDialog.tsx` — 치과=어벗디자인 생산 1.5만 · 구강스캔 디자인+생산 2.5만(구강지그 제외). 기공소=어벗생산의뢰/기공의뢰수신 동일 고시(디자인+생산도 구강지그 제외). 신속 +2,000 · 배송 3,500. 풀세트·환봉·디자인비+지그 행 없음. 멤버십/구독 UI 없음.
   - 수락 후 마감: `DevopsDesignDeadlineTab` — 디자인 클레임 후 작업 마감(`designDeadlineSettings.claimHours`, 기본 3시간). 파트너 **기공의뢰 자동매칭** 탭 상단
-  - 기공의뢰 자동매칭: `PracticeTransferAutoMatchTab`(카드·탭 **인증 기공소**) — 수수료 스트립(매칭%/지정 on·off·%/월) + 기공소별 인증 ON·기공 테스트·메모. 기공소 설정 탭은 없음. 관리자 테스트 통과/`enabled` 시 풀 참여. 매칭 성공 `platformFeeRate%` · 지정은 기본 **on·1%**(`directPlatformFeeEnabled` / `directPlatformFeeRate`). 관리자 플랫폼 설정「인증 기공소」탭
+  - 기공의뢰 자동매칭: `PracticeTransferAutoMatchTab`(카드·탭 **인증 기공소**) — 수수료 스트립(매칭%/지정 on·off·%/월) + 기공소별 인증 ON·기공 테스트·메모. 기공소 설정 탭은 없음. 관리자 테스트 통과/`enabled` 시 풀 참여. 매칭 성공 `platformFeeRate%` · 지정은 정책 **1%**·이벤트 기본 **off**(`directPlatformFeeEnabled` / `directPlatformFeeRate`). 관리자 플랫폼 설정「인증 기공소」탭
   - 기공소 어벗츠 인증: 가입 시 미신청 → 신청 → 기공 테스트 → 통과 시 인증. 상태·테스트·메모 SSOT `BusinessAnchor.abutsLabCertification` / `src/shared/practice/abutsLabCertification.ts`
   - 검증된 디자이너 지정: `DesignerAssignmentTab` / `BusinessAnchor.designAccessEnabled`(디자인 큐). API·게이트 유지, 파트너 탭 UI에서는 제거
   - 딜러사 없을 때 분배: 설정된 딜러사 분배비의 절반→제조사, 나머지 절반→어벗츠 (백엔드 `resolveRatesWithoutSalesman`와 동일 미리보기)
@@ -335,7 +335,7 @@ Notes:
 - 커스텀 어벗 의뢰 단가 표시 SSOT:
   - 치과 정책 안내·크레딧 차감은 관리자「플랫폼 설정 · 커스텀어벗」판매가(기본 15,000). 의뢰자 BA 오버라이드가 있으면 그 판매가. 신속은 +신속 의뢰비.
   - 기공소 커스텀어벗 안내도 치과와 동일 고시(`membershipProductionPrice` / `membershipDesignAndProductionPrice`). 라벨만 `어벗생산의뢰`·`기공의뢰수신`. 가입 90일 1만원 고정가 없음.
-  - 기공소 어벗츠 인증: 관리자 `PracticeTransferAutoMatchTab`에서 신청·테스트·상태 관리. **월 참여 수수료 0원**(정책). 매칭 성공 `platformFeeRate%` · 지정 거래 수수료는 **기본 1%**(`directPlatformFeeEnabled` 기본 on). 구 거래 치과 소개 UI는 제거(초대 API는 레거시 유지). 구 기공소 설정「어벗츠 인증」탭 제거.
+  - 기공소 어벗츠 인증: 관리자 `PracticeTransferAutoMatchTab`에서 신청·테스트·상태 관리. **월 참여 수수료 0원**(정책). 매칭 성공 `platformFeeRate%` · 지정 거래 수수료는 정책 **1%**·이벤트 기간 **0%**(`directPlatformFeeEnabled` 기본 off, 추후 공지 후 on). 구 거래 치과 소개 UI는 제거(초대 API는 레거시 유지). 구 기공소 설정「어벗츠 인증」탭 제거.
   - 치과향 지정 기공소 표시: `formatPracticeTargetLabLabel` → **「어벗츠 협력 · {이름}」**(어벗츠기공소·하청 마스킹 예외). 라우팅 `targetLab`은 현행 유지.
   - 기공소 사이드 설정과 계정 팝업 사이: 가입 이유 배너. 어벗생산의뢰 상단은 생산 현황 헤더(`[정책 안내]`·진행중·출고예정·완료·불완전가공).
   - 크레딧 잔액·장부 UI(`CreditLedgerModal` / 의뢰자 크레딧 페이지):

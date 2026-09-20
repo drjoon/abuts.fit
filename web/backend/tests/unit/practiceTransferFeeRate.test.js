@@ -13,31 +13,38 @@ import {
 } from "../../services/creditRevenuePolicy.service.js";
 
 describe("resolvePracticeTransferFeeRate", () => {
-  test("지정 거래 기본(미설정)은 on·1%", () => {
+  test("지정 거래 기본(미설정)은 이벤트 off·정책요율 1%(실효 0%)", () => {
     expect(
       resolvePracticeTransferFeeRate({
         matchingMode: "direct",
         payoutRates: {},
       }),
-    ).toBe(DEFAULT_DIRECT_PLATFORM_FEE_RATE);
-    expect(isDirectPlatformFeeEnabled({})).toBe(true);
-    expect(DEFAULT_DIRECT_PLATFORM_FEE_ENABLED).toBe(true);
+    ).toBe(0);
+    expect(isDirectPlatformFeeEnabled({})).toBe(false);
+    expect(DEFAULT_DIRECT_PLATFORM_FEE_ENABLED).toBe(false);
     expect(DEFAULT_DIRECT_PLATFORM_FEE_RATE).toBe(0.01);
+    expect(resolveDirectPlatformFeeRateConfigured({})).toBe(0.01);
   });
 
-  test("레거시 off+5% 저장분은 on·1%로 승격", () => {
+  test("레거시 off+5%는 요율만 1%로 승격·적용은 이벤트 off", () => {
     expect(
       isDirectPlatformFeeEnabled({
         directPlatformFeeEnabled: false,
         directPlatformFeeRate: 0.05,
       }),
-    ).toBe(true);
+    ).toBe(false);
+    expect(
+      resolveDirectPlatformFeeRateConfigured({
+        directPlatformFeeEnabled: false,
+        directPlatformFeeRate: 0.05,
+      }),
+    ).toBe(0.01);
     expect(
       resolveDirectPlatformFeeRate({
         directPlatformFeeEnabled: false,
         directPlatformFeeRate: 0.05,
       }),
-    ).toBe(0.01);
+    ).toBe(0);
   });
 
   test("지정 거래 명시적 off면 0(무료)", () => {

@@ -3,8 +3,8 @@
 // - web/backend/models/businessAnchor.model.js
 // - web/backend/rules.md
 //
-// 지정 거래 수수료: 레거시 기본(off + 5%) → on + 1%.
-// 관리자가 커스텀 요율을 넣고 의도적으로 off 한 경우(≠0.05)는 건드리지 않음.
+// 지정 거래 수수료: 정책 요율 1% 유지 + 이벤트 기간 적용 off(실효 0%).
+// 관리자가 커스텀 요율로 의도적으로 on 한 경우(≠0.01·≠0.05)는 건드리지 않음.
 //
 // Usage:
 //   cd web/backend && ENV_FILE=local.env NODE_ENV=test ABUTS_DB_FORCE=true \
@@ -19,10 +19,14 @@ import { connectDb, disconnectDb } from "./_mongo.js";
 
 const LEGACY_DEFAULT_RATE = 0.05;
 
-function isLegacyDefaultRate(rate) {
+function isPolicyOrLegacyRate(rate) {
   if (rate == null) return true;
   const n = Number(rate);
-  return Number.isFinite(n) && Math.abs(n - LEGACY_DEFAULT_RATE) < 1e-9;
+  if (!Number.isFinite(n)) return true;
+  return (
+    Math.abs(n - LEGACY_DEFAULT_RATE) < 1e-9 ||
+    Math.abs(n - DEFAULT_DIRECT_PLATFORM_FEE_RATE) < 1e-9
+  );
 }
 
 async function main() {
@@ -50,68 +54,46 @@ async function main() {
   const $set = {};
   let reason = "";
 
-  if (enabledRaw === true) {
-    if (isLegacyDefaultRate(rateRaw) || rateRaw == null) {
-      $set["payoutRates.directPlatformFeeRate"] =
-        DEFAULT_DIRECT_PLATFORM_FEE_RATE;
-      reason = "enabled_true_legacy_or_missing_rate→1pct";
-    } else {
-      reason = "skip_custom_enabled";
-    }
-  } else if (enabledRaw === false) {
-    if (isLegacyDefaultRate(rateRaw) || rateRaw == null) {
-      $set["payoutRates.directPlatformFeeEnabled"] =
-        DEFAULT_DIRECT_PLATFORM_FEE_ENABLED;
-      $set["payoutRates.directPlatformFeeRate"] =
-        DEFAULT_DIRECT_PLATFORM_FEE_RATE;
-      reason = "legacy_off_5pct→on_1pct";
-    } else {
-      reason = "skip_intentional_off_with_custom_rate";
-    }
+  if (enabledRaw === true && !isPolicyOrLegacyRate(rateRaw)) {
+    reason = "skip_intentional_on_with_custom_rate";
+  } else if (enabledRaw === false && !isPolicyOrLegacyRate(rateRaw)) {
+    reason = "skip_intentional_off_with_custom_rate";
   } else {
     $set["payoutRates.directPlatformFeeEnabled"] =
       DEFAULT_DIRECT_PLATFORM_FEE_ENABLED;
-    if (isLegacyDefaultRate(rateRaw) || rateRaw == null) {
-      $set["payoutRates.directPlatformFeeRate"] =
-        DEFAULT_DIRECT_PLATFORM_FEE_RATE;
-    }
-    reason = "unset→defaults";
+    $set["payoutRates.directPlatformFeeRate"] =
+      DEFAULT_DIRECT_PLATFORM_FEE_RATE;
+    $set["payoutRates.updatedAt"] = new Date();
+    reason =
+      enabledRaw === true
+        ? "policy_on_1pct→event_off_1pct"
+        : "unset_or_legacy→event_off_1pct";
   }
 
-  if (Object.keys($set).length === 0) {
-    console.log("[migrate-direct-platform-fee-1pct] no change", {
-      devopsId: String(devops._id),
-      reason,
-      enabledRaw,
-      rateRaw,
-    });
-    await disconnectDb();
-    return;
-  }
-
-  $set["payoutRates.updatedAt"] = new Date();
-
-  console.log("[migrate-direct-platform-fee-1pct] update", {
+  console.log("[migrate-direct-platform-fee-1pct] plan", {
     devopsId: String(devops._id),
+    name: devops.name,
+    before: {
+      directPlatformFeeEnabled: enabledRaw,
+      directPlatformFeeRate: rateRaw,
+    },
     reason,
-    before: { enabledRaw, rateRaw },
     $set,
   });
 
-  if (!dryRun) {
+  if (!dryRun && Object.keys($set).length > 0) {
     await BusinessAnchor.updateOne({ _id: devops._id }, { $set });
+    console.log("[migrate-direct-platform-fee-1pct] updated");
+  } else if (dryRun) {
+    console.log("[migrate-direct-platform-fee-1pct] dry-run only");
+  } else {
+    console.log("[migrate-direct-platform-fee-1pct] no changes");
   }
 
   await disconnectDb();
-  console.log("[migrate-direct-platform-fee-1pct] done", { dryRun });
 }
 
-main().catch(async (err) => {
+main().catch((err) => {
   console.error("[migrate-direct-platform-fee-1pct] failed", err);
-  try {
-    await disconnectDb();
-  } catch {
-    // ignore
-  }
-  process.exit(1);
+  process.exitCode = 1;
 });

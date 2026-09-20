@@ -48,7 +48,7 @@ export function PlatformBusinessTab() {
       if (fees?.platformFeeRate != null) {
         setMatchRatePct(Math.round(Number(fees.platformFeeRate) * 100));
       }
-      setDirectEnabled(fees?.directPlatformFeeEnabled !== false);
+      setDirectEnabled(fees?.directPlatformFeeEnabled === true);
       if (fees?.directPlatformFeeRate != null) {
         setDirectRatePct(Math.round(Number(fees.directPlatformFeeRate) * 100));
       } else {
