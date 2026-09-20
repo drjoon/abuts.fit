@@ -1,23 +1,24 @@
 /**
- * 딜러(salesman) 전용 대시보드 페이지.
+ * 딜러(salesman) 전용 대시보드.
  *
- * 공통 데이터 훅/타입은 features/commission/useCommissionDashboard.ts 참고.
+ * 딜러십: 기본 10%(추후 공지) · 이벤트 기간 가입 의뢰자 15%.
+ * 배송비는 수신자(치과·기공소) 부담.
  */
 
 import { useState } from "react";
-
-// related files:
-// - web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx
-import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/useAuthStore";
-import { apiFetch } from "@/shared/api/apiClient";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/shared/hooks/use-toast";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
-import { Copy, Wallet, Coins, BadgeCheck } from "lucide-react";
+import {
+  Copy,
+  BadgeCheck,
+  Percent,
+  Truck,
+  Users,
+  Building2,
+} from "lucide-react";
 import { SalesmanLedgerModal } from "@/shared/components/SalesmanLedgerModal";
 import { PricingPolicyDialog } from "@/shared/ui/PricingPolicyDialog";
 import {
@@ -30,14 +31,15 @@ import {
   useCommissionDashboard,
   formatMoney,
 } from "@/features/commission/useCommissionDashboard";
-import { PlatformPitchPanel } from "@/shared/sales/PlatformPitchPanel";
 import {
   NoOrderAlertBanner,
   useNoOrderAlerts,
 } from "@/shared/noOrderAlerts";
+import { SettlementStatCard } from "@/shared/settlement/settlementUi";
+import { cn } from "@/shared/ui/cn";
 
 export const SalesmanDashboardPage = () => {
-  const { user, token } = useAuthStore();
+  const { user } = useAuthStore();
   const { toast } = useToast();
 
   const [creditModalOpen, setCreditModalOpen] = useState(false);
@@ -53,27 +55,6 @@ export const SalesmanDashboardPage = () => {
     "/api/salesman/no-order-alerts",
     "salesman-no-order-alerts",
   );
-
-  const { data: unmachinableOverviewResponse } = useQuery({
-    queryKey: ["salesman-unmachinable-overview", period],
-    enabled: Boolean(token),
-    queryFn: async () => {
-      const res = await apiFetch<{
-        success?: boolean;
-        data?: {
-          counts?: Record<string, number>;
-          items?: Array<Record<string, unknown>>;
-        };
-      }>({
-        path: `/api/requests/unmachinable-overview?period=${period}&limit=6`,
-        method: "GET",
-        token,
-      });
-      if (!res.ok) throw new Error("불완전가공 현황 조회에 실패했습니다.");
-      return res.data;
-    },
-    retry: false,
-  });
 
   if (!user) return null;
 
@@ -92,12 +73,21 @@ export const SalesmanDashboardPage = () => {
     ReturnType<typeof useCommissionDashboard>["data"]
   >["overview"];
 
+  const basePct = Math.round(
+    Number(data?.dealershipBaseCommissionRate ?? 0.1) * 100,
+  );
+  const eventPct = Math.round(
+    Number(data?.dealershipEventCommissionRate ?? 0.15) * 100,
+  );
+  const eventEnabled = data?.dealershipEventCommissionEnabled !== false;
+  const effectivePct = Math.round(
+    Number(data?.commissionRate ?? (eventEnabled ? eventPct : basePct) / 100) *
+      100,
+  );
+
   const directBusinessCount = Number(
     overview.directBusinessCount || overview.directOrganizationCount || 0,
   );
-
-  const directCommission = Number(overview.directCommissionAmount || 0);
-
   const payableGross = Number(
     overview.payableGrossCommissionAmount ||
       overview.totalCommissionAmount ||
@@ -106,22 +96,16 @@ export const SalesmanDashboardPage = () => {
   );
   const paidNet = Number(overview.paidNetCommissionAmount || 0);
   const referralSalesmanCount = (data?.referralSalesmen || []).length;
-
   const directOrders = (data?.organizations || []).reduce(
     (sum, b) => sum + Number(b?.monthOrderCount || 0),
     0,
   );
-
-  const referralSalesmen = data?.referralSalesmen || [];
-
-  const unmachinableCounts = unmachinableOverviewResponse?.success
-    ? unmachinableOverviewResponse.data?.counts || {}
-    : {};
-  const unmachinableItems =
-    unmachinableOverviewResponse?.success &&
-    Array.isArray(unmachinableOverviewResponse.data?.items)
-      ? unmachinableOverviewResponse.data.items
-      : [];
+  const eventOrgCount = Number(overview.eventOrganizationCount || 0);
+  const baseOrgCount = Number(overview.baseOrganizationCount || 0);
+  const eventCommission = Number(overview.eventCommissionAmount || 0);
+  const baseCommission = Number(overview.baseCommissionAmount || 0);
+  const practiceCount = Number(overview.practiceOrganizationCount || 0);
+  const labCount = Number(overview.labOrganizationCount || 0);
 
   return (
     <TooltipProvider>
@@ -129,383 +113,172 @@ export const SalesmanDashboardPage = () => {
         title="딜러 대시보드"
         subtitle=""
         headerRight={
-          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-            <PeriodFilter value={period} onChange={setPeriod} useStoreCustomRange={false} />
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="h-8 w-full sm:w-auto"
-              onClick={() => setPolicyOpen(true)}
-            >
-              의뢰자 정책
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="h-8 w-full sm:w-auto"
-              onClick={() => setSalesmanPolicyOpen(true)}
-            >
-              딜러 정책
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="h-8 w-full sm:w-auto"
-              onClick={() => setCreditModalOpen(true)}
-            >
-              보유 크레딧: {formatMoney(payableGross)}원
-            </Button>
+          <div className="flex w-full flex-col gap-3">
+            <div className="flex w-full flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+              <PeriodFilter
+                value={period}
+                onChange={setPeriod}
+                useStoreCustomRange={false}
+              />
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8"
+                  onClick={() => setPolicyOpen(true)}
+                >
+                  의뢰자 정책
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8"
+                  onClick={() => setSalesmanPolicyOpen(true)}
+                >
+                  딜러십 정책
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8"
+                  onClick={() => setCreditModalOpen(true)}
+                >
+                  보유 크레딧 {formatMoney(payableGross)}원
+                </Button>
+              </div>
+            </div>
+            <DealershipTermsCard
+              basePct={basePct || 10}
+              eventPct={eventPct || 15}
+              eventEnabled={eventEnabled}
+              effectivePct={effectivePct || (eventEnabled ? 15 : 10)}
+            />
           </div>
         }
-        topSection={
-          <div className="mx-3 mt-3 space-y-3">
-            <PlatformPitchPanel
-              apiPath="/api/salesman/platform-pitch"
-              queryKey="salesman-platform-pitch"
+        statsGridClassName="grid grid-cols-1 gap-3 sm:grid-cols-3"
+        stats={
+          <>
+            <div className="rounded-2xl border-2 border-primary/60 bg-white p-4 shadow-sm">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="flex cursor-help items-center gap-1.5 text-sm font-semibold text-slate-900">
+                      <BadgeCheck className="h-4 w-4 text-primary" />
+                      내 소개 코드
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    의뢰자·딜러 가입 시 입력하는 내 코드
+                  </TooltipContent>
+                </Tooltip>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8 border-primary text-primary-strong hover:bg-primary-soft"
+                  disabled={!referralLink}
+                  onClick={async () => {
+                    try {
+                      if (!referralLink) return;
+                      await navigator.clipboard.writeText(referralLink);
+                      toast({
+                        title: "URL 복사됨",
+                        description: referralLink,
+                        duration: 2000,
+                      });
+                    } catch {
+                      toast({
+                        title: "복사 실패",
+                        description: "브라우저 권한을 확인해주세요.",
+                        variant: "destructive",
+                        duration: 3000,
+                      });
+                    }
+                  }}
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                  링크 복사
+                </Button>
+              </div>
+              <div className="font-mono text-3xl font-bold tracking-[0.2em] text-slate-900 sm:text-4xl">
+                {normalizedReferralCode || (loading ? "…" : "—")}
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">
+                내 코드로 가입한 딜러사{" "}
+                {referralSalesmanCount.toLocaleString()}개소
+              </p>
+            </div>
+
+            <SettlementStatCard
+              label="영업 수수료 합계"
+              value={payableGross}
+              tone="primary"
+              onClick={() => setCreditModalOpen(true)}
+              hint="미정산"
+              hintTooltip="유치 시점별 요율(이벤트/기본)을 적용한 기간 수수료 합계"
+              footer={
+                <div className="space-y-0.5 text-xs text-muted-foreground">
+                  <div>
+                    이벤트 {eventPct}% · {formatMoney(eventCommission)}원
+                  </div>
+                  <div>
+                    기본 {basePct}% · {formatMoney(baseCommission)}원
+                  </div>
+                </div>
+              }
             />
+
+            <SettlementStatCard
+              label="지급 완료"
+              value={paidNet}
+              onClick={() => setCreditModalOpen(true)}
+              hint="세후 입금"
+              hintTooltip="선택한 기간에 이미 지급된 수수료"
+            />
+          </>
+        }
+        topSection={
+          <div className="space-y-3 px-0.5">
             <NoOrderAlertBanner
               data={noOrderAlertsData}
               loading={noOrderAlertsLoading}
             />
-            <Card className="app-glass-card app-glass-card--lg">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-semibold">불완전가공 단계 현황</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <div className="grid grid-cols-1 gap-1.5 text-xs sm:grid-cols-3">
-                  <div>가능성 {Number(unmachinableCounts.potentialCount || 0).toLocaleString()}건</div>
-                  <div>판정 {Number(unmachinableCounts.judgedCount || 0).toLocaleString()}건</div>
-                  <div>확인 {Number(unmachinableCounts.confirmedCount || 0).toLocaleString()}건</div>
-                </div>
-                <div className="space-y-1 max-h-24 overflow-auto pr-1">
-                  {unmachinableItems.map((item, idx) => {
-                    const rid = String((item as Record<string, unknown>)?.requestId || "").trim();
-                    const key = String((item as Record<string, unknown>)?._id || rid || `unmach-${idx}`);
-                    const code = String(
-                      (item as Record<string, unknown>)?.unmachinableDetailCode || "",
-                    );
-                    return (
-                    <div
-                      key={key}
-                      className="flex items-center justify-between gap-2 rounded border px-2 py-1"
-                    >
-                      <span className="text-xs truncate">{rid || "-"}</span>
-                      <Badge variant="outline" className="text-[10px]">
-                        {code === "confirmed"
-                          ? "확인"
-                          : code === "judged"
-                            ? "판정"
-                            : code === "potential"
-                              ? "가능성"
-                              : "-"}
-                      </Badge>
-                    </div>
-                    );
-                  })}
-                  {unmachinableItems.length === 0 && (
-                    <div className="text-xs text-muted-foreground">
-                      표시할 불완전가공 의뢰가 없습니다.
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <SummaryTile
+                icon={Building2}
+                label="소개 의뢰자"
+                primary={`${directBusinessCount.toLocaleString()}개소`}
+                secondary={`치과 ${practiceCount} · 기공소 ${labCount}`}
+                tip="내가 소개한 의뢰자 사업자(1단계)"
+              />
+              <SummaryTile
+                icon={Percent}
+                label={`이벤트 ${eventPct}%`}
+                primary={`${eventOrgCount.toLocaleString()}개소`}
+                secondary={`수수료 ${formatMoney(eventCommission)}원`}
+                tip="이벤트 기간 내 유치(가입)한 치과·기공소"
+              />
+              <SummaryTile
+                icon={Percent}
+                label={`기본 ${basePct}%`}
+                primary={`${baseOrgCount.toLocaleString()}개소`}
+                secondary={`수수료 ${formatMoney(baseCommission)}원`}
+                tip="이벤트 기간 외 유치(가입)한 치과·기공소"
+              />
+              <SummaryTile
+                icon={Users}
+                label="소개 딜러사"
+                primary={`${referralSalesmanCount.toLocaleString()}개소`}
+                secondary={`기간 의뢰 ${directOrders.toLocaleString()}건`}
+                tip="내가 소개한 딜러사 수"
+              />
+            </div>
           </div>
         }
-        statsGridClassName="grid grid-cols-1 gap-2.5 p-3 sm:grid-cols-2 lg:grid-cols-3"
-        stats={
-          <>
-            {/* 내 소개 코드 — 딜러 전용 */}
-            <Card className="app-glass-card app-glass-card--lg border-2 border-primary/70 overflow-visible">
-              <CardHeader className="pb-2">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <CardTitle className="text-sm font-semibold cursor-help flex items-center gap-1">
-                      <BadgeCheck className="h-4 w-4" />내 소개 코드
-                    </CardTitle>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    의뢰자 가입시 기입하는 내 코드
-                  </TooltipContent>
-                </Tooltip>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="text-2xl font-mono font-bold tracking-wider sm:text-3xl sm:tracking-widest md:text-4xl">
-                    {normalizedReferralCode || (loading ? "..." : "-")}
-                  </div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="h-9 border border-primary text-primary-strong hover:bg-primary-soft hover:text-primary-strong hover:border-primary-strong"
-                    disabled={!referralLink}
-                    onClick={async () => {
-                      try {
-                        if (!referralLink) return;
-                        await navigator.clipboard.writeText(referralLink);
-                        toast({
-                          title: "URL 복사됨",
-                          description: referralLink,
-                          duration: 2000,
-                        });
-                      } catch {
-                        toast({
-                          title: "복사 실패",
-                          description: "브라우저 권한을 확인해주세요.",
-                          variant: "destructive",
-                          duration: 3000,
-                        });
-                      }
-                    }}
-                  >
-                    <Copy className="h-4 w-4" />
-                    링크 복사
-                  </Button>
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  내 소개 코드로 가입한 딜러사: {referralSalesmanCount}개소
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* 수수료 크레딧 — 1단계 소개 10% 단일 수수료 */}
-            <Card className="app-glass-card app-glass-card--lg overflow-visible">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <CardTitle className="text-sm font-semibold cursor-help flex items-center gap-1">
-                      <Coins className="h-4 w-4" />
-                      수수료 크레딧
-                    </CardTitle>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    필터 적용된 기간 동안 누적된 미지급 정산 금액
-                  </TooltipContent>
-                </Tooltip>
-              </CardHeader>
-              <CardContent className="space-y-1.5">
-                <div className="flex items-baseline justify-between gap-2 text-xs sm:text-sm">
-                  <div className="font-semibold">합계 수수료</div>
-                  <div className="text-sm sm:text-base font-bold">
-                    {formatMoney(payableGross)}원
-                  </div>
-                </div>
-                <div className="flex items-baseline justify-between gap-2 text-sm">
-                  <div className="text-muted-foreground">소개 수수료 (10%)</div>
-                  <div className="font-semibold">
-                    {formatMoney(directCommission)}원
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* 지급된 수수료 */}
-            <Card className="app-glass-card app-glass-card--lg overflow-visible">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <CardTitle className="text-sm font-semibold cursor-help flex items-center gap-1">
-                      <Wallet className="h-4 w-4" />
-                      지급된 수수료
-                    </CardTitle>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    필터 적용된 기간 동안, 이미 지급된 세후 수수료
-                  </TooltipContent>
-                </Tooltip>
-              </CardHeader>
-              <CardContent className="space-y-1.5">
-                <div className="flex items-baseline justify-between gap-2 text-sm">
-                  <div className="font-semibold">합계 수수료</div>
-                  <div className="text-base font-bold">
-                    {formatMoney(paidNet)}원
-                  </div>
-                </div>
-                <div className="flex items-baseline justify-between gap-2 text-sm">
-                  <div className="text-muted-foreground">소개 수수료 (10%)</div>
-                  <div className="font-semibold">0원</div>
-                </div>
-              </CardContent>
-            </Card>
-          </>
-        }
-        mainLeft={
-          <div className="space-y-3 p-3">
-            {/* 소개 통계 요약 3-card */}
-            <Card className="app-glass-card app-glass-card--lg">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-semibold">
-                  딜러 소개 통계
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {loading ? (
-                  <div className="grid gap-2 grid-cols-1 md:grid-cols-3">
-                    {[0, 1, 2].map((i) => (
-                      <div
-                        key={i}
-                        className="rounded-2xl border border-gray-200 bg-white/80 shadow-sm p-4 h-24 animate-pulse"
-                      />
-                    ))}
-                  </div>
-                ) : (
-                  <div className="grid gap-2 grid-cols-1 md:grid-cols-2">
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div className="rounded-2xl border border-gray-200 bg-white/80 shadow-sm p-4 cursor-help">
-                          <div className="text-xs font-medium text-muted-foreground mb-3">
-                            소개 의뢰자
-                          </div>
-                          <div className="space-y-1.5">
-                            <div className="flex items-baseline justify-between gap-2">
-                              <span className="text-xs text-muted-foreground">
-                                의뢰자 수
-                              </span>
-                              <span className="text-xl font-bold tabular-nums">
-                                {directBusinessCount.toLocaleString()}개소
-                              </span>
-                            </div>
-                            <div className="flex items-baseline justify-between gap-2">
-                              <span className="text-xs text-muted-foreground">
-                                의뢰건수
-                              </span>
-                              <span className="text-base font-semibold tabular-nums">
-                                {directOrders.toLocaleString()}건
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        내가 소개한 의뢰자 사업자 (1단계, 10% 수수료 적용)
-                      </TooltipContent>
-                    </Tooltip>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div className="rounded-2xl border border-gray-200 bg-white/80 shadow-sm p-4 cursor-help">
-                          <div className="text-xs font-medium text-muted-foreground mb-3">
-                            소개 딜러
-                          </div>
-                          <div className="space-y-1.5">
-                            <div className="flex items-baseline justify-between gap-2">
-                              <span className="text-xs text-muted-foreground">
-                                딜러사
-                              </span>
-                              <span className="text-xl font-bold tabular-nums">
-                                {referralSalesmanCount.toLocaleString()}개소
-                              </span>
-                            </div>
-                            <div className="flex items-baseline justify-between gap-2">
-                              <span className="text-xs text-muted-foreground">
-                                소개 의뢰건수
-                              </span>
-                              <span className="text-base font-semibold tabular-nums">
-                                {directOrders.toLocaleString()}건
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        내가 소개한 딜러사 수와 1단계 소개 의뢰건수
-                      </TooltipContent>
-                    </Tooltip>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* {loading ? (
-              <Card className="app-glass-card app-glass-card--lg">
-                <CardContent className="py-6 text-sm text-muted-foreground">
-                  불러오는 중...
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
-                <Card className="app-glass-card app-glass-card--lg">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold">
-                      내 소개 의뢰자 ({directBusinesses.length}개소)
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {directBusinesses.length === 0 ? (
-                      <div className="py-4 text-sm text-muted-foreground">
-                        내 소개 의뢰자가 없습니다.
-                      </div>
-                    ) : (
-                      <ul className="space-y-2">
-                        {directBusinesses.map((business) => (
-                          <li
-                            key={business.businessAnchorId || business.name}
-                            className="flex items-start gap-2"
-                          >
-                            <div className="mt-1 h-2 w-2 rounded-full bg-primary" />
-                            <div className="flex-1">
-                              <div className="font-semibold text-sm">
-                                {business.name || "의뢰자"}
-                              </div>
-                              <div className="mt-0.5 pl-3 border-l text-xs text-muted-foreground space-y-0.5">
-                                <div>
-                                  매출:{" "}
-                                  {formatMoney(business.monthRevenueAmount)}원
-                                </div>
-                                <div>
-                                  수수료:{" "}
-                                  {formatMoney(business.monthCommissionAmount)}
-                                  원
-                                </div>
-                                <div>
-                                  완료 건수: {business.monthOrderCount}건
-                                </div>
-                              </div>
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </CardContent>
-                </Card>
-
-                <Card className="app-glass-card app-glass-card--lg">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold">
-                      소개한 딜러 ({referralSalesmen.length}명)
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {referralSalesmen.length === 0 ? (
-                      <div className="py-4 text-sm text-muted-foreground">
-                        소개한 딜러가 없습니다.
-                      </div>
-                    ) : (
-                      <ul className="space-y-2">
-                        {referralSalesmen.map((salesman) => (
-                          <li
-                            key={salesman.userId}
-                            className="flex items-start gap-2"
-                          >
-                            <div className="mt-1 h-2 w-2 rounded-full bg-primary" />
-                            <div className="flex-1">
-                              <div className="font-semibold text-sm">
-                                {salesman.name || "딜러"}
-                              </div>
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
-            )} */}
-          </div>
-        }
+        mainLeft={null}
         mainRight={null}
       />
 
@@ -524,7 +297,119 @@ export const SalesmanDashboardPage = () => {
         open={salesmanPolicyOpen}
         onOpenChange={setSalesmanPolicyOpen}
         variant="salesman"
+        dealershipBasePct={basePct || 10}
+        dealershipEventPct={eventPct || 15}
+        dealershipEventEnabled={eventEnabled}
       />
     </TooltipProvider>
   );
 };
+
+function DealershipTermsCard({
+  basePct,
+  eventPct,
+  eventEnabled,
+  effectivePct,
+}: {
+  basePct: number;
+  eventPct: number;
+  eventEnabled: boolean;
+  effectivePct: number;
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-200/90 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 px-4 py-4 text-white shadow-sm sm:px-5">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:gap-4">
+        <div className="shrink-0 sm:w-[7.5rem]">
+          <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-white/55">
+            딜러십
+          </div>
+          <h2 className="mt-1 text-base font-semibold tracking-tight sm:text-lg">
+            파트너 조건
+          </h2>
+        </div>
+        <div className="grid min-w-0 flex-1 gap-3 sm:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
+          <div className="flex items-start gap-2.5 rounded-xl bg-white/5 px-3 py-2.5">
+            <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white/10">
+              <Percent className="h-3.5 w-3.5" />
+            </span>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-sm font-semibold">
+                {eventEnabled ? (
+                  <>
+                    <span className="text-white/45 line-through decoration-white/50">
+                      {basePct}%
+                    </span>
+                    <span>영업 수수료 {effectivePct}%</span>
+                  </>
+                ) : (
+                  <span>영업 수수료 {effectivePct}%</span>
+                )}
+              </div>
+              <p className="mt-0.5 text-xs leading-relaxed text-white/70">
+                심플웨이 · 커스텀어벗 (판매가, 배송비 제외)
+              </p>
+              {eventEnabled ? (
+                <p className="mt-1.5 text-[11px] leading-relaxed text-emerald-200/90 whitespace-nowrap">
+                  이벤트 기간 내 유치(가입) 고객 {eventPct}% · 추후 공지 후
+                  신규는 {basePct}%
+                </p>
+              ) : (
+                <p className="mt-1.5 text-[11px] leading-relaxed text-white/65">
+                  유치 시점에 따라 이벤트 {eventPct}% / 기본 {basePct}%가
+                  구분 적용됩니다
+                </p>
+              )}
+            </div>
+          </div>
+          <div className="flex items-start gap-2.5 rounded-xl bg-white/5 px-3 py-2.5">
+            <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white/10">
+              <Truck className="h-3.5 w-3.5" />
+            </span>
+            <div>
+              <div className="text-sm font-semibold">배송비 수신자 부담</div>
+              <p className="mt-0.5 text-xs leading-relaxed text-white/70">
+                치과 또는 기공소가 부담합니다
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SummaryTile({
+  icon: Icon,
+  label,
+  primary,
+  secondary,
+  tip,
+}: {
+  icon: typeof Building2;
+  label: string;
+  primary: string;
+  secondary: string;
+  tip: string;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div
+          className={cn(
+            "cursor-help rounded-2xl border border-slate-200/80 bg-white px-4 py-3.5 shadow-sm",
+          )}
+        >
+          <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+            <Icon className="h-3.5 w-3.5" />
+            {label}
+          </div>
+          <div className="mt-2 text-2xl font-bold tabular-nums text-slate-900">
+            {primary}
+          </div>
+          <div className="mt-1 text-xs text-muted-foreground">{secondary}</div>
+        </div>
+      </TooltipTrigger>
+      <TooltipContent>{tip}</TooltipContent>
+    </Tooltip>
+  );
+}
