@@ -2,6 +2,9 @@
 // - web/backend/rules.md
 // - web/backend/app.js
 // - web/backend/server.js
+// - web/backend/services/adminCommBadge.service.js
+// change-log:
+// - 2026-09-20: 승인대기 초안 승인 API(PENDING_APPROVAL→APPROVED)·배지 emit.
 import TaxInvoiceDraft from "../../models/taxInvoiceDraft.model.js";
 import AdminAuditLog from "../../models/adminAuditLog.model.js";
 import {
@@ -206,6 +209,49 @@ export async function adminUpdateTaxInvoiceDraft(req, res) {
 
   const updated = await TaxInvoiceDraft.findById(id).lean();
   return res.json({ success: true, data: updated });
+}
+
+export async function adminApproveTaxInvoiceDraft(req, res) {
+  try {
+    const id = String(req.params.id || "").trim();
+    const draft = await TaxInvoiceDraft.findById(id).lean();
+    if (!draft) {
+      return res.status(404).json({ success: false, message: "not_found" });
+    }
+    if (String(draft.status) !== "PENDING_APPROVAL") {
+      return res.status(400).json({
+        success: false,
+        message: "승인대기 상태의 문서만 승인할 수 있습니다.",
+      });
+    }
+
+    const now = new Date();
+    await TaxInvoiceDraft.updateOne(
+      { _id: id, status: "PENDING_APPROVAL" },
+      { $set: { status: "APPROVED", approvedAt: now, failReason: null } },
+    );
+    await writeAuditLog({
+      req,
+      action: "TAX_INVOICE_DRAFT_APPROVED",
+      refType: "TaxInvoiceDraft",
+      refId: id,
+      details: null,
+    });
+    scheduleTaxPendingBadgeEmit();
+    const updated = await TaxInvoiceDraft.findById(id).lean();
+    return res.json({
+      success: true,
+      message: "세금계산서 초안이 승인되었습니다.",
+      data: updated,
+    });
+  } catch (error) {
+    console.error("adminApproveTaxInvoiceDraft error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "세금계산서 승인 실패",
+      error: error.message,
+    });
+  }
 }
 
 export async function adminCancelTaxInvoiceDraft(req, res) {

@@ -144,6 +144,7 @@ import {
   adminListTaxInvoiceDrafts,
   adminGetTaxInvoiceDraft,
   adminUpdateTaxInvoiceDraft,
+  adminApproveTaxInvoiceDraft,
   adminCancelTaxInvoiceDraft,
   adminIssueTaxInvoice,
   adminGetTaxInvoiceStatus,
@@ -629,6 +630,7 @@ router.get("/tax-invoices/stats", adminGetTaxInvoiceStats);
 router.get("/tax-invoices/drafts", adminListTaxInvoiceDrafts);
 router.get("/tax-invoices/drafts/:id", adminGetTaxInvoiceDraft);
 router.patch("/tax-invoices/drafts/:id", adminUpdateTaxInvoiceDraft);
+router.post("/tax-invoices/drafts/:id/approve", adminApproveTaxInvoiceDraft);
 router.post("/tax-invoices/drafts/:id/cancel", adminCancelTaxInvoiceDraft);
 router.post("/tax-invoices/drafts/:id/issue", adminIssueTaxInvoice);
 router.get("/tax-invoices/status", adminGetTaxInvoiceStatus);

@@ -2,6 +2,9 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/backend/controllers/admin/adminTaxInvoice.controller.js
+// change-log:
+// - 2026-09-20: 승인대기 탭·승인(승인 후 발행) 버튼.
 import React, { useCallback, useEffect, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -102,7 +105,14 @@ type EditForm = {
 
 type ListTab = DraftStatus | "REVERSE";
 
-const STATUS_TABS: ListTab[] = ["SENT", "REVERSE", "FAILED", "CANCELLED"];
+const STATUS_TABS: ListTab[] = [
+  "PENDING_APPROVAL",
+  "APPROVED",
+  "SENT",
+  "REVERSE",
+  "FAILED",
+  "CANCELLED",
+];
 
 const STATUS_LABEL: Record<ListTab, string> = {
   PENDING_APPROVAL: "승인대기",
@@ -177,7 +187,7 @@ export const AdminTaxInvoices = ({
   const { token } = useAuthStore();
   const { toast } = useToast();
 
-  const [tab, setTab] = useState<ListTab>("SENT");
+  const [tab, setTab] = useState<ListTab>("PENDING_APPROVAL");
   const [items, setItems] = useState<TaxInvoiceDraft[]>([]);
   const [stats, setStats] = useState<Partial<Record<ListTab, number>>>({});
   const [loading, setLoading] = useState(false);
@@ -261,7 +271,9 @@ export const AdminTaxInvoices = ({
         qs.set("status", "SENT");
       } else {
         qs.set("status", tab);
-        if (tab === "SENT") qs.set("kind", "NORMAL");
+        if (tab === "SENT" || tab === "PENDING_APPROVAL" || tab === "APPROVED") {
+          qs.set("kind", "NORMAL");
+        }
       }
       if (debouncedSearch) qs.set("search", debouncedSearch);
       const res = await request<any>({
@@ -334,8 +346,64 @@ export const AdminTaxInvoices = ({
         const msgMap: Record<string, string> = {
           cancel: "마이너스 발행/취소 처리됨",
           issue: "팝빌 발행 완료",
+          approve: "승인 완료",
         };
         toast({ title: msgMap[action] || "처리 완료", duration: 3000 });
+        await reload();
+      } catch {
+        toast({
+          title: "처리 실패",
+          variant: "destructive",
+          duration: 4000,
+        });
+      } finally {
+        setActionLoadingId(null);
+      }
+    },
+    [token, toast, reload],
+  );
+
+  /** 승인대기 → 승인 후 팝빌 발행까지 한 번에 */
+  const approveAndIssue = useCallback(
+    async (id: string) => {
+      if (!token) return;
+      setActionLoadingId(id);
+      try {
+        const approveRes = await request<any>({
+          path: `/api/admin/tax-invoices/drafts/${id}/approve`,
+          method: "POST",
+          token,
+        });
+        if (!approveRes.ok) {
+          toast({
+            title: "승인 실패",
+            description:
+              (approveRes.data as any)?.message || "잠시 후 다시 시도해주세요.",
+            variant: "destructive",
+            duration: 5000,
+          });
+          return;
+        }
+
+        const issueRes = await request<any>({
+          path: `/api/admin/tax-invoices/drafts/${id}/issue`,
+          method: "POST",
+          token,
+        });
+        if (!issueRes.ok) {
+          toast({
+            title: "승인은 됐지만 발행 실패",
+            description:
+              (issueRes.data as any)?.message ||
+              "발행실패 탭에서 재발행할 수 있습니다.",
+            variant: "destructive",
+            duration: 6000,
+          });
+          await reload();
+          return;
+        }
+
+        toast({ title: "승인·발행 완료", duration: 3000 });
         await reload();
       } catch {
         toast({
@@ -545,7 +613,7 @@ export const AdminTaxInvoices = ({
       </p>
 
       {/* Stats bar */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
         {STATUS_TABS.map((s) => (
           <button
             key={s}
@@ -618,6 +686,7 @@ export const AdminTaxInvoices = ({
                   isLoading={actionLoadingId === d._id}
                   onCancel={() => postAction({ id: d._id, action: "cancel" })}
                   onIssue={() => postAction({ id: d._id, action: "issue" })}
+                  onApprove={() => approveAndIssue(d._id)}
                   onEdit={() => openEdit(d)}
                 />
               ))}
@@ -1014,12 +1083,14 @@ function DraftCard({
   isLoading,
   onCancel,
   onIssue,
+  onApprove,
   onEdit,
 }: {
   draft: TaxInvoiceDraft;
   isLoading: boolean;
   onCancel: () => void;
   onIssue: () => void;
+  onApprove: () => void;
   onEdit: () => void;
 }) {
   return (
@@ -1097,6 +1168,51 @@ function DraftCard({
             >
               수정
             </Button>
+          )}
+
+          {d.status === "PENDING_APPROVAL" && (
+            <>
+              <Button
+                size="sm"
+                className="h-7 text-xs"
+                disabled={isLoading}
+                onClick={onApprove}
+              >
+                {isLoading ? "처리 중..." : "승인"}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs"
+                disabled={isLoading}
+                onClick={onCancel}
+              >
+                취소
+              </Button>
+            </>
+          )}
+
+          {d.status === "APPROVED" && (
+            <>
+              <Button
+                size="sm"
+                className="h-7 text-xs"
+                disabled={isLoading}
+                onClick={onIssue}
+              >
+                <FileText className="h-3.5 w-3.5 mr-1" />
+                발행
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs"
+                disabled={isLoading}
+                onClick={onCancel}
+              >
+                취소
+              </Button>
+            </>
           )}
 
           {d.status === "FAILED" && (
