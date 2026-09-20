@@ -56,6 +56,7 @@ export const Navigation = ({ tone = "dark", overlay = false }: NavigationProps) 
   const menuItems: NavMenuItem[] = showConnectedNav
     ? []
     : landingOffers.map(toNavItem);
+  const eventsItem: NavMenuItem = { label: "이벤트", href: "/events" };
 
   useEffect(() => {
     if (!overlay) return;
@@ -120,8 +121,18 @@ export const Navigation = ({ tone = "dark", overlay = false }: NavigationProps) 
     setIsOpen(false);
   };
 
+  const isNavItemCurrent = (item: NavMenuItem) => {
+    if (item.href === "/events") {
+      return (
+        location.pathname === "/events" ||
+        location.pathname.startsWith("/events/")
+      );
+    }
+    return location.pathname === item.href;
+  };
+
   const renderDesktopItem = (item: NavMenuItem) => {
-    const current = location.pathname === item.href;
+    const current = isNavItemCurrent(item);
     return (
       <button
         key={item.href}
@@ -129,7 +140,7 @@ export const Navigation = ({ tone = "dark", overlay = false }: NavigationProps) 
         onClick={() => handleMenuClick(item.href)}
         aria-current={current ? "page" : undefined}
         className={cn(
-          "text-sm transition-colors",
+          "shrink-0 whitespace-nowrap text-sm transition-colors",
           isLight
             ? "text-[15px] font-semibold text-slate-900 hover:text-slate-600"
             : "text-white/55 hover:text-white",
@@ -145,7 +156,7 @@ export const Navigation = ({ tone = "dark", overlay = false }: NavigationProps) 
   };
 
   const renderMobileItem = (item: NavMenuItem) => {
-    const current = location.pathname === item.href;
+    const current = isNavItemCurrent(item);
     return (
       <button
         key={item.href}
@@ -225,11 +236,11 @@ export const Navigation = ({ tone = "dark", overlay = false }: NavigationProps) 
           isLandingWidth ? landingContent : "container px-4 sm:px-6",
         )}
       >
-        <div className="relative flex h-14 items-center justify-between sm:h-16">
+        <div className="relative flex h-14 items-center justify-between gap-3 sm:h-16">
           <button
             type="button"
             className={cn(
-              "flex min-w-0 items-center transition hover:opacity-90",
+              "flex shrink-0 items-center transition hover:opacity-90",
               isLight ? "text-slate-900" : "text-white",
             )}
             onClick={() => navigate("/")}
@@ -237,17 +248,18 @@ export const Navigation = ({ tone = "dark", overlay = false }: NavigationProps) 
             <AbutsLogo
               variant={isLight ? "light" : "dark"}
               iconClassName="h-10 w-10 sm:h-12 sm:w-12"
-              wordmarkClassName="truncate text-lg sm:text-2xl"
+              wordmarkClassName="text-lg sm:text-2xl"
             />
           </button>
 
-          <div className="hidden items-center gap-8 md:flex">
+          {/* lg 미만은 햄버거 — 중간 폭에서 메뉴·인사말이 줄바꿈/겹치지 않게 */}
+          <div className="hidden shrink-0 items-center gap-3 lg:flex xl:gap-6">
             {showConnectedNav && platformItem ? (
               <>
                 {renderDesktopItem(platformItem)}
                 <span
                   className={cn(
-                    "select-none text-xl font-medium leading-none",
+                    "shrink-0 select-none text-xl font-medium leading-none",
                     isLight ? "text-slate-900" : "text-white",
                   )}
                   aria-hidden
@@ -255,7 +267,7 @@ export const Navigation = ({ tone = "dark", overlay = false }: NavigationProps) 
                   +
                 </span>
                 <div
-                  className="flex items-center gap-4"
+                  className="flex items-center gap-3 xl:gap-4"
                   role="group"
                   aria-label="플랫폼이 연결하는 메뉴"
                 >
@@ -265,14 +277,24 @@ export const Navigation = ({ tone = "dark", overlay = false }: NavigationProps) 
             ) : (
               menuItems.map(renderDesktopItem)
             )}
+            <span
+              className={cn(
+                "shrink-0 select-none text-xl font-medium leading-none",
+                isLight ? "text-slate-900" : "text-white",
+              )}
+              aria-hidden
+            >
+              +
+            </span>
+            {renderDesktopItem(eventsItem)}
           </div>
 
-          <div className="hidden items-center space-x-4 md:flex">
+          <div className="hidden shrink-0 items-center gap-2 lg:flex xl:gap-4">
             {isAuthenticated ? (
               <>
                 <span
                   className={cn(
-                    "text-sm",
+                    "hidden whitespace-nowrap text-sm xl:inline",
                     isLight ? "text-slate-600" : "text-white/70",
                   )}
                 >
@@ -280,13 +302,16 @@ export const Navigation = ({ tone = "dark", overlay = false }: NavigationProps) 
                 </span>
                 <Button
                   variant="ghost"
-                  className={isLight ? "text-slate-700" : "text-white"}
+                  className={cn(
+                    "shrink-0 whitespace-nowrap",
+                    isLight ? "text-slate-700" : "text-white",
+                  )}
                   onClick={handleLoginClick}
                 >
                   대시보드
                 </Button>
                 <Button
-                  className="bg-gradient-to-r from-[#FF9D62] via-[#FF814A] to-[#FF6B4A] text-white shadow-[0_10px_30px_rgba(255,132,74,0.35)] hover:opacity-90"
+                  className="shrink-0 whitespace-nowrap bg-gradient-to-r from-[#FF9D62] via-[#FF814A] to-[#FF6B4A] text-white shadow-[0_10px_30px_rgba(255,132,74,0.35)] hover:opacity-90"
                   onClick={handleLogout}
                 >
                   로그아웃
@@ -296,17 +321,21 @@ export const Navigation = ({ tone = "dark", overlay = false }: NavigationProps) 
               <>
                 <Button
                   variant="ghost"
-                  className={isLight ? "text-slate-700" : "text-white"}
+                  className={cn(
+                    "shrink-0 whitespace-nowrap",
+                    isLight ? "text-slate-700" : "text-white",
+                  )}
                   onClick={handleLoginClick}
                 >
                   로그인
                 </Button>
                 <Button
-                  className={
+                  className={cn(
+                    "shrink-0 whitespace-nowrap",
                     isLight
                       ? "bg-[#2563eb] text-white hover:bg-[#1d4ed8]"
-                      : "bg-white text-slate-900 hover:bg-white/90"
-                  }
+                      : "bg-white text-slate-900 hover:bg-white/90",
+                  )}
                   onClick={handleSignupClick}
                 >
                   회원가입
@@ -318,7 +347,7 @@ export const Navigation = ({ tone = "dark", overlay = false }: NavigationProps) 
           <button
             type="button"
             className={cn(
-              "-mr-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-lg transition md:hidden",
+              "-mr-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-lg transition lg:hidden",
               isLight
                 ? "text-slate-700 hover:bg-slate-100"
                 : "text-white hover:bg-white/10",
@@ -337,10 +366,10 @@ export const Navigation = ({ tone = "dark", overlay = false }: NavigationProps) 
           <button
             type="button"
             aria-label="메뉴 닫기"
-            className="fixed inset-0 top-14 z-[55] bg-black/45 md:hidden"
+            className="fixed inset-0 top-14 z-[55] bg-black/45 lg:hidden"
             onClick={() => setIsOpen(false)}
           />
-          <div className="fixed inset-x-0 top-14 z-[60] border-b border-slate-200 bg-white px-4 pb-5 pt-4 shadow-[0_18px_40px_rgba(2,4,12,0.35)] md:hidden">
+          <div className="fixed inset-x-0 top-14 z-[60] border-b border-slate-200 bg-white px-4 pb-5 pt-4 shadow-[0_18px_40px_rgba(2,4,12,0.35)] lg:hidden">
             {showConnectedNav && platformItem ? (
               <>
                 {renderMobileItem(platformItem)}
@@ -358,6 +387,14 @@ export const Navigation = ({ tone = "dark", overlay = false }: NavigationProps) 
             ) : (
               menuItems.map(renderMobileItem)
             )}
+            <div
+              className="flex items-center gap-2 px-2 py-1 text-slate-400"
+              aria-hidden
+            >
+              <span className="text-base font-light leading-none">+</span>
+              <span className="h-px flex-1 bg-slate-200" />
+            </div>
+            {renderMobileItem(eventsItem)}
             <div className="space-y-2">{mobileAuthButtons}</div>
           </div>
         </>
