@@ -101,9 +101,9 @@ export const LAB_SETTLEMENT_PAYOUT_RESERVE_WON = 500_000;
 export const LAB_SETTLEMENT_PAYOUT_RESERVE_NOTICE =
   "다음 달 초 사용을 위해 기공크레딧 50만원은 남겨 두고, 나머지 잔액만 지급합니다.";
 
-/** 커스텀어벗 치과→기공소 정산 — STL·생산비 지급 전 제외. */
+/** 커스텀어벗 치과→기공소 정산 — 확정·지급만 STL·생산비 후. 적립 보류는 hold부터. */
 export const LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE =
-  "커스텀어벗은 디자인 STL을 올리고 어벗츠에 생산비가 지급된 뒤에 정산·지급에 포함됩니다. 그 전에는 빠지며, 기간이 지나도 그때 정산됩니다.";
+  "커스텀어벗은 디자인 STL을 올리고 어벗츠에 생산비가 지급된 뒤에 확정 정산·지급에 포함됩니다. 그 전에도 적립 보류는 보이며, 조건이 갖춰진 시점에 정산됩니다.";
 
 /** 지정 수수료 기본 표시용(관리자 설정 미로드 시). 실효 UI는 LabDirectPlatformFeeNotice. */
 export const LAB_DIRECT_PLATFORM_FEE_POLICY_RATE_PCT = 2;

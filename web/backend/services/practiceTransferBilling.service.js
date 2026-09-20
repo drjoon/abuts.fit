@@ -11,6 +11,8 @@
 // - web/backend/models/ledgerLine.model.js
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
+// - 2026-09-20: lab/remake/follow-up 플랫폼 수수료 pushRevenueLines에 creditSettings 전달(2% 적립 크래시 수정).
+// - 2026-09-20: 작업시작 시 hold 저널 생성 실패면 billed 처리 금지(heldAt만 남는 정산 누락 방지).
 // - 2026-09-20: 리메이크·후속 적립도 subcontracted 반영(하청 %).
 // - 2026-09-20: 비거래처 어벗 해제는 제조사 발송 유지. 가공 진입 이동 금지.
 // - 2026-09-20: blockedFromSettlement — labSettledAt 있으면 제외 안 함(확정 적립 통계·내역 누락 방지).
@@ -2527,8 +2529,23 @@ export async function adjustPracticeTransferHold({
       actorUserId,
       session: outerSession,
     });
+    const holdOk =
+      Boolean(holdResult.held) || holdResult.reason === "already_held";
+    if (!holdOk) {
+      const err = new Error(
+        holdResult.reason === "zero_fee"
+          ? "기공비가 없어 보류할 수 없습니다."
+          : "기공비 보류 저널을 만들지 못했습니다. 잠시 후 다시 작업시작해 주세요.",
+      );
+      err.statusCode = holdResult.reason === "zero_fee" ? 409 : 500;
+      err.payload = {
+        reason: "practice_transfer_hold_missing",
+        holdReason: holdResult.reason || null,
+      };
+      throw err;
+    }
     return {
-      adjusted: Boolean(holdResult.held || holdResult.reason === "already_held"),
+      adjusted: true,
       reason: holdResult.reason || null,
       billed: true,
       fees,
@@ -2991,9 +3008,9 @@ async function readPracticeToLabSettlementBlock(
 }
 
 /**
- * 정산 페이지·payout에서 기공 적립을 빼야 하는 PTX id.
+ * 정산 페이지·payout에서 기공 **확정** 적립을 빼야 하는 PTX id.
  * 커스텀어벗인데 디자인 STL이 없거나 어벗 생산비가 아직 어벗츠에 지급되지 않은 건.
- * 치과 결제 보류(SPEND_HOLD)·기간 소비는 제외 대상이 아니다(잔액 수식 유지).
+ * 치과 결제 보류(SPEND_HOLD)·기간 소비·기공소 적립 보류 미러는 제외 대상이 아니다.
  * 이미 labSettledAt(기공소 확정 적립)된 건은 빼지 않는다 — 통계·내역에서 확정분이 사라지면 안 됨.
  */
 export async function selectPracticeTransferIdsBlockedFromSettlement(
@@ -3517,6 +3534,8 @@ export async function releasePracticeTransferLabShare({
     ),
   );
 
+  const creditSettings = await loadCreditSettingsDefaults();
+
   const ownSession = !outerSession;
   const session = outerSession || (await mongoose.startSession());
   if (ownSession) session.startTransaction();
@@ -3645,6 +3664,7 @@ export async function releasePracticeTransferLabShare({
         fromFreeShipping: freeShipShareOfPlatformFee,
         refType: "PRACTICE_TRANSFER",
         refId: transferId,
+        creditSettings,
         meta: {
           source: "lab_platform_fee",
           displayKind: "platform_fee",
@@ -5187,6 +5207,8 @@ export async function releasePracticeTransferRemakeChargeCredits({
     ),
   );
 
+  const creditSettings = await loadCreditSettingsDefaults();
+
   const ownSession = !outerSession;
   const session = outerSession || (await mongoose.startSession());
   if (ownSession) session.startTransaction();
@@ -5320,6 +5342,7 @@ export async function releasePracticeTransferRemakeChargeCredits({
         fromFreeShipping: freeShipShareOfPlatformFee,
         refType: "PRACTICE_TRANSFER",
         refId: transferId,
+        creditSettings,
         meta: {
           source: "remake_charge_lab_platform_fee",
           displayKind: "platform_fee",
@@ -5671,6 +5694,8 @@ export async function releasePracticeTransferProsthesisFollowUpLabShare({
     ),
   );
 
+  const creditSettings = await loadCreditSettingsDefaults();
+
   const ownSession = !outerSession;
   const session = outerSession || (await mongoose.startSession());
   if (ownSession) session.startTransaction();
@@ -5804,6 +5829,7 @@ export async function releasePracticeTransferProsthesisFollowUpLabShare({
         fromFreeShipping: freeShipShareOfPlatformFee,
         refType: "PRACTICE_TRANSFER",
         refId: transferId,
+        creditSettings,
         meta: {
           source: "follow_up_lab_platform_fee",
           displayKind: "platform_fee",

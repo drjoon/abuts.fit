@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/practice/practiceTransferFeeQuote.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothWorkChartReadOnly.tsx
+// - 2026-09-20: 정산 상세(기공소) — 플랫폼 수수료·수령액 표시. 뱃지 적립보류/완료.
 // - 2026-09-07: 견적 툴팁 — 치아당 수가여도 상·하악 전체 동일 보철은 상악/하악 한 줄.
 // - 2026-09-07: 견적·툴팁 보철물 — 상·하악 전체 치아번호는 상악/하악(중복 (상악) 접미사면 번호 생략).
 // - 2026-09-05: revealAmounts — 가이드투어 견적 홀에서 hover 전 blur 숨김 해제.
@@ -177,8 +178,17 @@ type PracticeTransferFeeEstimateProps = {
 
 const formatCell = (value: number) => (value > 0 ? formatManWon(value) : "—");
 
-const creditShareSettlementLabel = (pending: boolean) =>
-  pending ? "결제보류" : "결제완료";
+const creditShareSettlementLabel = (
+  pending: boolean,
+  labFacing = false,
+) =>
+  pending
+    ? labFacing
+      ? "적립보류"
+      : "결제보류"
+    : labFacing
+      ? "적립완료"
+      : "결제완료";
 
 const creditShareSettlementClass = (pending: boolean) =>
   pending
@@ -189,6 +199,7 @@ const renderCreditShareHeader = (
   shareLabel: string,
   holdPending: boolean | null | undefined,
   className?: string,
+  labFacing = false,
 ) => (
   <span
     className={cn(
@@ -204,7 +215,7 @@ const renderCreditShareHeader = (
           creditShareSettlementClass(holdPending),
         )}
       >
-        {creditShareSettlementLabel(holdPending)}
+        {creditShareSettlementLabel(holdPending, labFacing)}
       </span>
     ) : null}
   </span>
@@ -643,12 +654,12 @@ function FeeBreakdownTable({
       </span>
       {showProsthesisColumn ? (
         <span className={cn(columnHeaderClass, "whitespace-normal")}>
-          {renderCreditShareHeader("보철기공비", labShareHoldPending)}
+          {renderCreditShareHeader("보철기공비", labShareHoldPending, undefined, labFacing)}
         </span>
       ) : null}
       {showLabAbutmentColumn ? (
         <span className={cn(columnHeaderClass, "whitespace-normal")}>
-          {renderCreditShareHeader("커스텀어벗", labShareHoldPending)}
+          {renderCreditShareHeader("커스텀어벗", labShareHoldPending, undefined, labFacing)}
         </span>
       ) : null}
       {showAbutmentColumn ? (
@@ -656,6 +667,8 @@ function FeeBreakdownTable({
           {renderCreditShareHeader(
             "어벗 디자인+생산비",
             abutmentShareHoldPending,
+            undefined,
+            labFacing,
           )}
         </span>
       ) : null}
@@ -755,7 +768,7 @@ function FeeBreakdownTable({
           >
             <span className="block whitespace-nowrap">{workTotalDisplay}</span>
             {labSettlementHint ? (
-              <span className="mt-0.5 block text-[10px] font-normal leading-snug text-muted-foreground">
+              <span className="mt-1 block space-y-0.5 text-[11px] font-normal leading-snug text-muted-foreground">
                 {labSettlementHint}
               </span>
             ) : null}
@@ -995,11 +1008,18 @@ export function PracticeTransferFeeEstimate({
       : confirmed
         ? String(confirmedFeeLabel || "").trim() || "확정 기공비"
         : "견적";
-  // 보철기공비 + 어벗 디자인+생산비 = 기공비. 하청만 수수료 차감 수령.
-  const labSettlementDisplay = Math.max(
+  // 보철기공비 + 어벗 디자인+생산비 = 기공비. 지정·하청 수수료 차감 수령.
+  const computedLabNet = Math.max(
     0,
     amount - Math.round(amount * feeRateApplied),
   );
+  const storedLabNet = Math.max(
+    0,
+    Math.round(Number(quote.labSettlementAmount || 0)),
+  );
+  const labSettlementDisplay =
+    feeRateApplied > 0 && storedLabNet > 0 ? storedLabNet : computedLabNet;
+  const platformFeeDisplay = Math.max(0, amount - labSettlementDisplay);
   const labSettlementDiffers =
     isLab && feeRateApplied > 0 && labSettlementDisplay !== amount;
   const simple = isLab
@@ -1130,6 +1150,24 @@ export function PracticeTransferFeeEstimate({
           labFacing={isLab}
           labTotalMinOverride={labTotalMinOverride}
           labTotalMaxOverride={labTotalMaxOverride}
+          labSettlementHint={
+            labSettlementDiffers ? (
+              <>
+                <span className="block">
+                  플랫폼 수수료 {formatFeeRatePct(feeRateApplied)}{" "}
+                  <span className="font-medium text-foreground">
+                    −{formatManWon(platformFeeDisplay)}
+                  </span>
+                </span>
+                <span className="block">
+                  수령{" "}
+                  <span className="font-medium text-foreground">
+                    {formatManWon(labSettlementDisplay)}
+                  </span>
+                </span>
+              </>
+            ) : null
+          }
           tempCreditLabFeeTotal={0}
           workTotalLabel={finalFeeLabel}
           workTotalOverride={amount}
@@ -1247,7 +1285,7 @@ export function PracticeTransferFeeEstimate({
                     creditShareSettlementClass(row.holdPending),
                   )}
                 >
-                  {creditShareSettlementLabel(row.holdPending)}
+                  {creditShareSettlementLabel(row.holdPending, isLab)}
                 </span>
               ) : null}
             </p>
@@ -1306,9 +1344,17 @@ export function PracticeTransferFeeEstimate({
             labSettlementHint={
               labSettlementDiffers ? (
                 <>
-                  수수료 {formatFeeRatePct(feeRateApplied)} 차감 후 수령{" "}
-                  <span className="font-medium text-foreground">
-                    {formatManWon(labSettlementDisplay)}
+                  <span className="block">
+                    플랫폼 수수료 {formatFeeRatePct(feeRateApplied)}{" "}
+                    <span className="font-medium text-foreground">
+                      −{formatManWon(platformFeeDisplay)}
+                    </span>
+                  </span>
+                  <span className="block">
+                    수령{" "}
+                    <span className="font-medium text-foreground">
+                      {formatManWon(labSettlementDisplay)}
+                    </span>
                   </span>
                 </>
               ) : null

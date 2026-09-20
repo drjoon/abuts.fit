@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-20: 정산 세부 내역 — 기공소 뷰로 플랫폼 수수료·수령액 표시.
 // - 2026-09-20: 소비·정산 적립 완료/보류 푸터 — 한 줄 줄바꿈 대신 항상 2줄.
 // - 2026-09-20: 기공소 정산 적립 카드 — 완료/보류 분리. 소비 완료/보류는 치과만(결제 HOLD).
 // - 2026-09-20: 요약 카드 — overflow 바깥 여백(px-1.5)+안쪽 p-1. 경계 클리핑 재수정.
@@ -3578,7 +3579,7 @@ export const CreditLedgerModal = ({
                     </p>
                     <PracticeTransferFeeEstimate
                       quote={feeQuoteDetail.originalQuote}
-                      viewer="practice"
+                      viewer={isLabViewer ? "lab" : "practice"}
                       density="detail"
                       skipJig={feeQuoteDetail.skipJig}
                       rushProcessing={feeQuoteDetail.rushProcessing}
@@ -3593,7 +3594,7 @@ export const CreditLedgerModal = ({
               ) : (
                 <PracticeTransferFeeEstimate
                   quote={feeQuoteDetail.quote}
-                  viewer="practice"
+                  viewer={isLabViewer ? "lab" : "practice"}
                   density="detail"
                   skipJig={feeQuoteDetail.skipJig}
                   rushProcessing={feeQuoteDetail.rushProcessing}

@@ -97,7 +97,7 @@ describe("practice to lab settlement gate", () => {
     expect(blocked.size).toBe(0);
   });
 
-  test("blocked CA keeps practice payment hold visible, hides lab earn", () => {
+  test("blocked CA keeps practice hold and lab pending mirror; hides lab confirmed earn", () => {
     const blockedId = "6aafda82fd1972681c88c344";
     const blocked = new Set([blockedId]);
     expect(
@@ -137,5 +137,21 @@ describe("practice to lab settlement gate", () => {
         blockedSettlementIds: blocked,
       }),
     ).toBe(true);
+    expect(
+      shouldHideBlockedPracticeTransferLedgerRow({
+        row: {
+          refType: "PRACTICE_TRANSFER",
+          refId: blockedId,
+          type: "LAB_SETTLEMENT_CHARGE",
+          practiceTransferLabPending: true,
+          excludeFromBalanceRunning: true,
+          uniqueKey: `gl:practice_transfer:${blockedId}:pending_lab_settlement`,
+          meta: { displayKind: "lab_credit_pending" },
+          amount: 98000,
+        },
+        requestorKind: "lab",
+        blockedSettlementIds: blocked,
+      }),
+    ).toBe(false);
   });
 });

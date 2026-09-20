@@ -25,8 +25,9 @@ export function awaitsAbutmentShareRelease(transfer) {
 }
 
 /**
- * 커스텀어벗 건의 치과→기공소 정산 보류 사유.
- * null이면 지금 정산해도 된다. 보철만(CA 없음)은 항상 null.
+ * 커스텀어벗 건의 치과→기공소 **확정** 정산 보류 사유.
+ * null이면 지금 확정 정산해도 된다. 보철만(CA 없음)은 항상 null.
+ * 적립 보류 UI는 이 게이트와 무관(hold면 노출).
  * @returns {"awaiting_abutment_design_stl"|"awaiting_abutment_production_payment"|null}
  */
 export function resolvePracticeToLabSettlementBlock({

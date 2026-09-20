@@ -1,8 +1,9 @@
 // change-log:
+// - 2026-09-20: CA 게이트 — 확정 정산·payout만 제외. 적립 보류 미러는 hold부터 노출.
 // - 2026-09-20: CA 게이트 — 치과 결제 보류·기간 소비는 유지. 기공소 적립/정산·payout만 제외.
 // - 2026-09-20: periodSpendSummary — PTX 소비 완료/보류=billing.settledAt(장부와 동일). Request만 convertedAt.
 // - 2026-09-20: periodSpendSummary — 기공소 적립 보류 합 분리 필드. 소비 완료·보류 공급가 분리.
-// - 2026-09-20: CA 디자인 STL 미업로드·생산비 미지급은 기공소 적립 보류·정산에서 제외.
+// - 2026-09-20: CA 디자인 STL 미업로드·생산비 미지급은 기공소 확정 정산·payout에서 제외(적립 보류는 노출).
 // - 2026-09-08: q 검색 — 환자명(files·transferMemo)·의뢰 caseInfos도 refId 매칭. 1글자 허용.
 // - 2026-09-02: 치과 휴지통(deleted|canceled) PTX도 장부 enrich에서 숨김(적립/결제 오인 방지).
 // - 2026-08-31: 수락 취소(workCanceledAt)·미정산 PTX는 장부 enrich에서 숨김(「적립/결제 완료」 오인 방지).

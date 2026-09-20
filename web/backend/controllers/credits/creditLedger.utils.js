@@ -11,8 +11,11 @@
 // - 2026-09-20: 기간 소비 완료/보류 — PTX는 billing.settledAt(장부 결제상태와 동일). Request만 convertedAt.
 // - 2026-09-20: 기간 요약 — 기공소 적립 보류 합(totalSettlementEarnPendingSupply) 분리(확정 합·잔액 미포함).
 // - 2026-09-20: 기간 소비 요약 — 결제(적립) 완료·보류 공급가 분리(convertedAt 없는 HOLD).
+// - 2026-09-20: 적립 보류 미러 — HOLD 저널 유실·heldAt만 남은 건도 활성 전송이면 표시.
+// - 2026-09-20: 적립 보류 금액 = labSettlementAmount(플랫폼 수수료 차감 수령액). heldLabTotal은 총액.
+// - 2026-09-20: CA 게이트 — 확정 정산·payout만 제외. 적립 보류 미러는 hold부터 노출(STL 무관).
 // - 2026-09-20: CA 게이트 — 기공소 적립 보류/정산·payout만 제외. 치과 결제 보류·기간 소비는 유지.
-// - 2026-09-20: CA 디자인 STL 미업로드·생산비 미지급 PTX는 적립 보류 미러에서 제외.
+// - 2026-09-20: CA 디자인 STL 미업로드·생산비 미지급 PTX는 적립 보류 미러에서 제외. → 보류 미러는 재노출.
 // - 2026-09-05: 정산 적립 집계 — PRACTICE_TRANSFER_ESCROW_RELEASE(+LAB_SETTLEMENT_CREDIT) 포함. 내역 행 타입과 동일.
 // - 2026-09-02: 적립 보류 미러 — deleted/canceled 제외 + HOLD 저널 없으면 스킵(치과 취소 후 heldAt 잔여 방어).
 // - 2026-08-31: 적립 보류 미러 — workCanceledAt 수락 취소 건 제외.
@@ -84,10 +87,19 @@ export function isPracticeTransferPaymentHoldLedgerRow(row) {
   );
 }
 
+/** 기공소 장부 — lab-share HOLD 미러(잔액 미반영 「적립 보류」). */
+export function isPendingLabSettlementMirrorRow(row) {
+  if (row?.practiceTransferLabPending === true) return true;
+  if (String(row?.meta?.displayKind || "").trim() === "lab_credit_pending") {
+    return true;
+  }
+  return String(row?.uniqueKey || "").includes(":pending_lab_settlement");
+}
+
 /**
  * CA 미충족 PTX를 장부/집계에서 뺄지.
  * - 치과: 결제 보류·소비(HOLD/ADJUST/COMMIT)는 유지. 정산 적립만 가림(보통 아직 없음).
- * - 기공소: 해당 PTX 행 전부 가림(적립 보류 미러는 listPending…에서 별도 제외).
+ * - 기공소: 확정 적립 등 원장 행은 가림. 적립 보류 미러는 노출(확정·payout만 STL·생산비 후).
  */
 export function shouldHideBlockedPracticeTransferLedgerRow({
   row,
@@ -109,7 +121,11 @@ export function shouldHideBlockedPracticeTransferLedgerRow({
     return false;
   }
   const kind = String(requestorKind || "").trim().toLowerCase();
-  if (kind !== "practice") return true;
+  if (kind !== "practice") {
+    // 기공소: 적립 보류 미러는 작업시작(hold)부터 보이게 둔다.
+    if (isPendingLabSettlementMirrorRow(row)) return false;
+    return true;
+  }
   if (isPracticeTransferPaymentHoldLedgerRow(row)) return false;
   const et = String(row?.eventType || "").trim().toUpperCase();
   if (
@@ -1984,15 +2000,9 @@ export async function listPendingLabSettlementLedgerRows({
     .lean();
   if (!transfers.length) return [];
 
-  const { selectPracticeTransferIdsBlockedFromSettlement } = await import(
-    "../../services/practiceTransferBilling.service.js"
-  );
-  const blockedFromSettlement =
-    await selectPracticeTransferIdsBlockedFromSettlement(transfers);
-  const visibleTransfers = transfers.filter(
-    (row) => !blockedFromSettlement.has(String(row?._id || "")),
-  );
-  if (!visibleTransfers.length) return [];
+  // CA settlement gate(STL·생산비)는 확정 적립·payout만 막는다.
+  // 적립 보류 미러는 hold 중이면 보철만과 같이 노출(작업시작 후에도 CA 업로드 전 표시).
+  const visibleTransfers = transfers;
 
   const transferIds = visibleTransfers.map((t) => t._id);
   const practiceIds = [
@@ -2123,22 +2133,38 @@ export async function listPendingLabSettlementLedgerRows({
   for (const doc of visibleTransfers) {
     const id = String(doc._id);
     const billing = doc.billing || {};
-    const heldLabTotal = Math.max(
+    // heldLabTotal = 기공비 총액(에스크로). 적립 보류 표시는 확정 적립과 같이
+    // 플랫폼 수수료 차감 후 수령액(labSettlementAmount).
+    const heldLabGross = Math.max(
       0,
       Math.round(
-        Number(
-          billing.heldLabTotal ??
-            billing.labSettlementAmount ??
-            billing.labFeeTotal ??
-            0,
-        ),
+        Number(billing.heldLabTotal ?? billing.labFeeTotal ?? 0),
       ),
     );
-    if (heldLabTotal <= 0) continue;
+    if (heldLabGross <= 0) continue;
 
-    // heldAt만 있고 HOLD 저널이 없으면(치과 취소 rollback 잔여 등) 미러하지 않음
+    const feeRateRaw = Number(billing.feeRateApplied || 0);
+    const feeRateApplied = Number.isFinite(feeRateRaw)
+      ? Math.min(1, Math.max(0, feeRateRaw))
+      : 0;
+    const storedNet = Math.max(
+      0,
+      Math.round(Number(billing.labSettlementAmount || 0)),
+    );
+    const pendingLabAmount =
+      storedNet > 0
+        ? storedNet
+        : Math.max(
+            0,
+            heldLabGross - Math.round(heldLabGross * feeRateApplied),
+          );
+    if (pendingLabAmount <= 0) continue;
+
+    // HOLD 저널이 있으면 그걸 쓰고, 없어도 heldAt+활성 건이면 미러한다.
+    // (저널만 유실되고 billing.heldAt이 남은 경우 정산에서 빠지지 않게)
     const holdMeta = holdMetaByRef.get(id) || {};
-    if (!holdMeta.journalId) continue;
+    const mirrorJournalId =
+      holdMeta.journalId || `pending_lab_settlement:${id}`;
 
     const fromPaid = Math.max(
       0,
@@ -2172,11 +2198,12 @@ export async function listPendingLabSettlementLedgerRows({
       doc.createdAt ||
       new Date();
 
+    const platformFee = Math.max(0, heldLabGross - pendingLabAmount);
     const row = {
-      _id: holdMeta.journalId || `pending_lab_settlement:${id}`,
-      journalId: holdMeta.journalId || `pending_lab_settlement:${id}`,
+      _id: mirrorJournalId,
+      journalId: mirrorJournalId,
       type: "LAB_SETTLEMENT_CHARGE",
-      amount: heldLabTotal,
+      amount: pendingLabAmount,
       spentPaidAmount: fromPaid,
       spentFreeAmount: fromFree,
       refType: "PRACTICE_TRANSFER",
@@ -2191,6 +2218,10 @@ export async function listPendingLabSettlementLedgerRows({
         displayLabel: "기공크레딧 적립",
         displayKind: "lab_credit_pending",
         fundedByDemoCredit,
+        feeRateApplied,
+        labFee: heldLabGross,
+        platformFee,
+        labSettlementAmount: pendingLabAmount,
       },
       fundedByDemoCredit,
       isDemoUsage: fundedByDemoCredit,

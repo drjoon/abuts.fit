@@ -782,6 +782,9 @@ export function resolveResidualRatesFromCreditSettings(
       };
     }
   } else {
+    if (!creditSettings || typeof creditSettings !== "object") {
+      return null;
+    }
     const devops = Math.max(
       0,
       Number(creditSettings.regularDevopsSharePercent) || 0,
