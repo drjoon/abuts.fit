@@ -1,6 +1,6 @@
 // related files:
 // - web/frontend/src/features/landing/LandingHome.tsx
-// - web/frontend/src/features/landing/LandingAboutSection.tsx
+// - web/frontend/src/features/landing/OfferVisual.tsx
 // - web/frontend/src/pages/practice/components/PracticeRecentTransfersCalendar.tsx
 import { CalendarDays, MessageSquare } from "lucide-react";
 import { cn } from "@/shared/ui/cn";

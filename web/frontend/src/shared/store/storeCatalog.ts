@@ -12,7 +12,6 @@
 // - web/frontend/src/shared/store/storeProductContent.ts
 // - web/frontend/src/pages/requestor/store/RequestorStorePage.tsx
 // - web/frontend/src/pages/requestor/store/RequestorStoreProductPage.tsx
-// - web/frontend/src/features/landing/LandingStoreShowcase.tsx
 // - web/backend/constants/storeCatalog.js
 
 export type StoreProductSpec = {

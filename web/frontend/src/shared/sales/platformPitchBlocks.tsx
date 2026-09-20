@@ -1,6 +1,6 @@
 // related files:
 // - web/frontend/src/shared/sales/PlatformPitchPanel.tsx
-// - web/frontend/src/features/landing/LandingAudienceSection.tsx
+// - web/frontend/src/features/landing/LandingHome.tsx
 // - web/frontend/src/features/landing/landingTheme.ts
 import {
   Building2,

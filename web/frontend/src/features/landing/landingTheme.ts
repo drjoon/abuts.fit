@@ -1,12 +1,9 @@
 // related files:
-// - web/frontend/src/features/landing/LandingAboutSection.tsx
 // - web/frontend/src/features/landing/LandingHome.tsx
-// - web/frontend/src/features/landing/LandingPlatformIntro.tsx
-// - web/frontend/src/features/landing/LandingAudienceSection.tsx
-// - web/frontend/src/features/landing/LandingPlatformSection.tsx
+// - web/frontend/src/features/landing/LandingOfferPage.tsx
 // - web/frontend/src/pages/public/Index.tsx
-// - web/frontend/src/pages/public/PlatformPage.tsx
 // - web/frontend/src/pages/public/components/PublicPageLayout.tsx
+// - web/frontend/src/shared/sales/platformPitchBlocks.tsx
 
 /** 랜딩 UI 토큰 — 라이트 톤. 페이지 배경은 PublicPageLayout tone="light" */
 export const landingTheme = {
@@ -64,96 +61,6 @@ export const landingIdentity = {
   pitch30s:
     "어벗츠.핏은 치과와 기공소가 커스텀 어벗·보철을 의뢰부터 제작·배송·정산까지 한곳에서 처리하는 디지털 제작 플랫폼입니다. 놓치던 진행과 돈이 같은 기록·같은 화면으로 정리됩니다.",
 } as const;
-
-/** 공개 랜딩 About 스토리 (어벗츠 소개) */
-export const landingAbout = {
-  eyebrow: "ABOUT ABUTS",
-  headline: "진료실에서 느낀 불편을,\n직접 바꾸기 시작했습니다.",
-  body: "임플란트 시술을 더 편하게, 진료실 업무를 더 단순하게.\n치과의사가 현장에서 직접 만든 솔루션입니다.",
-  origin: "어벗츠는 치과의사가 진료 현장에서 시작한 브랜드입니다.",
-  problemHeadline:
-    "진료 중에도, 진료가 끝난 뒤에도\n개선하고 싶은 일이 있었습니다.",
-  problems: [
-    {
-      step: "01",
-      label: "시술의 불편",
-      title: "매일 반복되는 임플란트 시술에서",
-      body: "더 편한 방법을 찾고 싶었습니다.",
-    },
-    {
-      step: "02",
-      label: "업무의 번거로움",
-      title: "수기 장부와 정산 업무에서",
-      body: "더 단순한 방식이 필요했습니다.",
-    },
-  ],
-  philosophyHeadline: "시술의 불편은 제품으로.\n업무의 번거로움은 플랫폼으로.",
-  philosophyBody: "실제로 사용하는 사람의 관점에서 문제를 정의하고 해결합니다.",
-  casesHeadline: "현장의 고민이 실제 개발로 이어집니다.",
-  cases: [
-    {
-      id: "product" as const,
-      label: "제품 개발 사례",
-      title: "시술 편의에서 출발한 제품",
-      body: "진료실에서 느낀 불편을 기구·키트·어벗먼트 디자인으로 풀었습니다.",
-    },
-    {
-      id: "platform" as const,
-      label: "플랫폼 개발 사례",
-      title: "의뢰·진행·정산을 한 흐름으로",
-      body: "장부와 메신저로 흩어지던 업무를 같은 화면의 제작 워크스페이스로 모았습니다. 치과는 의뢰 캘린더와 기공소 채팅을 한곳에서 봅니다.",
-    },
-  ],
-  identityEyebrow: "직접 사용하며 개선합니다",
-  identityHeadline: "만드는 사람이,\n매일 사용하는 사람이기도 합니다.",
-  identityBody:
-    "어벗츠의 제품과 플랫폼은 개발자의 치과에서 매일 사용됩니다.\n직접 쓰고, 바로 고치고, 다시 현장에 적용합니다.",
-  growthEyebrow: "함께 넓혀가는 경험",
-  growthHeadline: "한 치과에서 시작한 경험이,\n동료 치과로 이어졌습니다.",
-  growthBody:
-    "현장에서 검증된 방식이 동료 치과의 긍정적인 반응으로 이어졌고,\n그 피드백이 다시 제품과 플랫폼을 다듬는 동력이 되었습니다.",
-  ctaHeadline: "치과의사가 만들고,\n진료 현장에서 함께 다듬는 어벗츠.",
-  ctaBody: "실제 경험을 바탕으로 더 편한 방법을 찾아갑니다.",
-  ctaPlatform: "플랫폼 알아보기",
-  ctaProduct: "제품 알아보기",
-} as const;
-
-/** 플랫폼 섹션 퀵 메뉴 (공개 랜딩) */
-export const landingQuickMenus = [
-  { id: "request", label: "제작 의뢰", href: "/signup" },
-  { id: "progress", label: "진행 조회", href: "/login" },
-  { id: "shipping", label: "배송 조회", href: "/login" },
-  { id: "store", label: "제품 구매", href: "/signup" },
-  { id: "orders", label: "주문 내역", href: "/login" },
-  { id: "settlement", label: "정산 내역", href: "/login" },
-] as const;
-
-export const workflowSteps = [
-  "주문",
-  "생산",
-  "추적",
-  "결제",
-  "계산서",
-] as const;
-
-/** 랜딩 본문용 — 짧은 한 줄 (중복 최소화) */
-export const landingFlowSteps = [
-  {
-    step: "01",
-    title: "파일 등록",
-    body: "스캔·디자인·의뢰 정보를 한곳에서 등록",
-  },
-  {
-    step: "02",
-    title: "제작 진행",
-    body: "기공·CNC 스테이지가 같은 타임라인으로",
-  },
-  {
-    step: "03",
-    title: "완료 및 배송",
-    body: "출고 추적과 크레딧·계산서까지 이어짐",
-  },
-] as const;
 
 export const whyAbutsPoints = [
   "스테이지 가시성으로 납기·우선순위를 같은 화면에서 조율",

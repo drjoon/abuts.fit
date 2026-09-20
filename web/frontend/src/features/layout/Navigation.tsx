@@ -35,7 +35,8 @@ export const Navigation = ({ tone = "dark", overlay = false }: NavigationProps) 
   const navigate = useNavigate();
   const location = useLocation();
   const { isAuthenticated, user, logout } = useAuthStore();
-  const isOfferNav =
+  /** `/` · `/offer/*` 만 랜딩 본문 폭. 메뉴는 공개 페이지 공통. */
+  const isLandingWidth =
     location.pathname === "/" || location.pathname.startsWith("/offer/");
   const overlayClear = overlay && !scrolled && !isOpen;
   /** 영상 히어로 위는 밝은 글자. 스크롤하면 라이트 바로 돌아온다. */
@@ -45,26 +46,16 @@ export const Navigation = ({ tone = "dark", overlay = false }: NavigationProps) 
     label: offer.navLabel,
     href: offerPath(offer.slug),
   });
-  const platformOffer = isOfferNav
-    ? landingOffers.find((offer) => offer.slug === "platform")
-    : undefined;
-  const connectedItems = isOfferNav
-    ? landingOffers
-        .filter((offer) => offer.slug !== "platform")
-        .map(toNavItem)
-    : [];
+  const platformOffer = landingOffers.find((offer) => offer.slug === "platform");
+  const connectedItems = landingOffers
+    .filter((offer) => offer.slug !== "platform")
+    .map(toNavItem);
   /** 플랫폼이 심플웨이·커스텀어벗·기공사업부를 연결한다. */
-  const showConnectedNav = Boolean(platformOffer) && connectedItems.length > 0;
   const platformItem = platformOffer ? toNavItem(platformOffer) : null;
+  const showConnectedNav = Boolean(platformItem) && connectedItems.length > 0;
   const menuItems: NavMenuItem[] = showConnectedNav
     ? []
-    : isOfferNav
-      ? landingOffers.map(toNavItem)
-      : [
-          { label: "어벗츠 소개", href: "/" },
-          { label: "플랫폼과 제품", href: "/platform" },
-          { label: "이벤트", href: "/events" },
-        ];
+    : landingOffers.map(toNavItem);
 
   useEffect(() => {
     if (!overlay) return;
@@ -76,7 +67,7 @@ export const Navigation = ({ tone = "dark", overlay = false }: NavigationProps) 
 
   useEffect(() => {
     if (!location.hash) return;
-    if (location.pathname !== "/" && location.pathname !== "/platform") return;
+    if (location.pathname !== "/") return;
     const id = location.hash.replace(/^#/, "");
     if (!id) return;
     const timer = window.setTimeout(() => {
@@ -231,7 +222,7 @@ export const Navigation = ({ tone = "dark", overlay = false }: NavigationProps) 
       <div
         className={cn(
           "relative z-10 mx-auto w-full",
-          isOfferNav ? landingContent : "container px-4 sm:px-6",
+          isLandingWidth ? landingContent : "container px-4 sm:px-6",
         )}
       >
         <div className="relative flex h-14 items-center justify-between sm:h-16">

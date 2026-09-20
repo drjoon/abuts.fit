@@ -94,19 +94,16 @@ Notes:
   - `src/features/layout/DashboardLayout.tsx`
   - `src/features/layout/AccountSwitcher.tsx` (사이드바 계정 팝업 · 같은 사업자 계정 전환)
   - `src/store/useAuthStore.ts` (`switchAccount`)
-- 공개 랜딩 (`/`)
-  - `src/pages/public/Index.tsx` — 브랜드/스토리 감성 랜딩(첨1)
-  - `src/pages/public/PlatformPage.tsx` — 서비스 홈(첨2) `/platform`: 의뢰·퀵메뉴·제품 둘러보기
+- 공개 랜딩 (`/` · `/offer/:slug`)
+  - `src/pages/public/Index.tsx` — 홈 히어로 + 오퍼 타일 + 피치
+  - `src/pages/public/OfferPage.tsx` — 오퍼 상세 (`landingOffers` · `LandingOfferPage`)
+  - `src/pages/public/PlatformPage.tsx` — 레거시 `/platform` → `/offer/platform` 리다이렉트
   - `src/pages/public/AboutPage.tsx` — 레거시 `/about` → `/` 리다이렉트
   - `PublicPageLayout` 기본 `tone="light"` (랜딩·도움말·약관·문의 등 공개 안내 공통)
   - 카드/타이포 SSOT: `PUBLIC_CARD_CLASS` · `PUBLIC_PAGE_EYEBROW` · `PUBLIC_PAGE_TITLE` · `PUBLIC_PAGE_SUBTITLE`
-  - 카피 SSOT: `src/features/landing/landingTheme.ts`
-  - `LandingBrandStory`(랜딩) · `LandingPlatformIntro` · `LandingStoreShowcase` ·
-    `LandingAboutSection`(`/platform`→`/` 스트립) · `LandingMobileTabBar` ·
-    `LandingPracticeWorkspacePreview` · `Footer`
-  - `/platform` 게스트: 이용 내역 로그인 CTA / 회원: 의뢰·주문·정산 바로가기
-  - 영업 피치 패널은 `LandingAudienceSection` + `platformPitchBlocks` 유지
-  - `LandingPlatformSection`은 레거시(랜딩 Index에서 미사용)
+  - 카피 SSOT: `src/features/landing/landingTheme.ts` · `landingOffers.ts`
+  - `LandingHome` · `LandingOfferPage` · `LandingPracticeWorkspacePreview` · `Footer`
+  - 영업 피치 패널: `PlatformPitchPanel` + `platformPitchBlocks` (`/` · 영업팀/딜러)
 - 공용 타입(역할 SSOT)
   - `src/shared/types/role.ts`
   - `src/shared/components/RoleSelect.tsx` (역할 Select. 사업영역 주체 등)
@@ -211,7 +208,7 @@ Notes:
       - `src/features/platform/PlatformBenefitsShareButtons.tsx` (안내+링크 클립보드 복사)
   - 의뢰자(치과) 설정: 구독 탭 없음. 구 `?tab=subscription` → 계정. 대시보드 헤더는 `[정책 안내]`만.
     - `src/pages/requestor/dashboard/components/RequestorPolicyRemakeHeader.tsx`
-    - `src/shared/ui/PricingPolicyDialog.tsx` — 치과=어벗디자인 생산 1.5만 · 구강스캔 디자인+생산 2.5만(구강지그 제외). 기공소=어벗생산의뢰/기공의뢰수신 동일 고시(디자인+생산도 구강지그 제외). 신속 +2,000 · 배송 3,500. 풀세트·환봉·디자인비+지그 행 없음. 멤버십/구독 UI 없음.
+    - `src/shared/ui/PricingPolicyDialog.tsx` — 치과=어벗디자인 생산 1.5만 · 구강스캔 디자인+생산 2.5만(구강지그 제외). 기공소=어벗생산의뢰/기공의뢰수신 동일 고시(디자인+생산도 구강지그 제외). 신속 +2,000 · 배송 3,500. 풀세트·환봉·디자인비+지그 행 없음. 멤버십/구독 UI 없음. **딜러(`variant=salesman`)**: 90일 무주문 시 소개 귀속 리셋 조항(`dealershipPolicyCopy.ts`). `SalesmanDashboardPage` `DealershipTermsCard`·이용약관 제6조④·영업본부 `policyNote` 동일.
   - 수락 후 마감: `DevopsDesignDeadlineTab` — 디자인 클레임 후 작업 마감(`designDeadlineSettings.claimHours`, 기본 3시간). 파트너 **기공의뢰 자동매칭** 탭 상단
   - 기공의뢰 자동매칭: `PracticeTransferAutoMatchTab`(카드·탭 **인증 기공소**) — 수수료 스트립(매칭%/지정 on·off·%/월) + 기공소별 인증 ON·기공 테스트·메모. 기공소 설정 탭은 없음. 관리자 테스트 통과/`enabled` 시 풀 참여. 매칭 성공 `platformFeeRate%` · 지정은 정책 **1%**·이벤트 기본 **off**(`directPlatformFeeEnabled` / `directPlatformFeeRate`). 관리자 플랫폼 설정「인증 기공소」탭
   - 기공소 어벗츠 인증: 가입 시 미신청 → 신청 → 기공 테스트 → 통과 시 인증. 상태·테스트·메모 SSOT `BusinessAnchor.abutsLabCertification` / `src/shared/practice/abutsLabCertification.ts`
