@@ -1,6 +1,7 @@
 // related files:
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // - web/frontend/src/shared/practice/practiceTransferDetailPrint.ts
+// - 2026-09-20: 부모 @container ≥24rem이면 라벨, 좁으면 아이콘(iconOnly면 항상 아이콘).
 // - 2026-09-20: iconOnly — 프린트·번호표 아이콘만(좁은 상세 패널).
 // - 2026-09-20: nowrap·축약 — 헤더 작업시작/취소와 한 줄.
 // - 2026-09-20: 번호표 — 글자만(A–Z) 또는 글자+숫자(A1–Z9). 숫자는 옵션.
@@ -72,7 +73,10 @@ type LabBasketTagToolbarProps = {
   value: string;
   onChange: (tag: string) => void;
   onPrint: () => void;
-  /** true면 프린트·미선택 번호표를 아이콘만(선택 시 태그 문자는 유지) */
+  /**
+   * true면 항상 아이콘만.
+   * false(기본)면 부모 `@container` 폭 ≥24rem일 때 라벨 표시.
+   */
   iconOnly?: boolean;
   className?: string;
 };
@@ -144,6 +148,11 @@ export function LabBasketTagToolbar({
     setPickerOpen(next);
   };
 
+  const labelVisibleClass = iconOnly ? "hidden" : "hidden @[24rem]:inline";
+  const iconFallbackClass = iconOnly
+    ? "inline"
+    : "inline @[24rem]:hidden";
+
   return (
     <>
       <div
@@ -159,14 +168,16 @@ export function LabBasketTagToolbar({
           size="sm"
           className={cn(
             "h-7 text-xs",
-            iconOnly ? "w-7 gap-0 px-0" : "gap-1 px-2",
+            iconOnly
+              ? "w-7 gap-0 px-0"
+              : "w-7 gap-0 px-0 @[24rem]:w-auto @[24rem]:gap-1 @[24rem]:px-2",
           )}
           title="의뢰 상세 인쇄 (A5)"
           aria-label="의뢰 상세 인쇄 (A5)"
           onClick={onPrint}
         >
-          <Printer className="h-3.5 w-3.5" />
-          {iconOnly ? null : "프린트"}
+          <Printer className="h-3.5 w-3.5 shrink-0" />
+          <span className={labelVisibleClass}>프린트</span>
         </Button>
 
         <Popover open={pickerOpen} onOpenChange={handlePickerOpenChange}>
@@ -177,23 +188,36 @@ export function LabBasketTagToolbar({
               size="sm"
               className={cn(
                 "h-7 text-xs tabular-nums",
-                iconOnly && !selected
-                  ? "w-7 gap-0 px-0"
-                  : "max-w-[4.75rem] gap-0.5 px-1.5",
-                selected ? "border-primary/40 bg-primary/5 font-semibold text-primary" : "",
+                selected
+                  ? "max-w-[4.75rem] gap-0.5 px-1.5 border-primary/40 bg-primary/5 font-semibold text-primary"
+                  : iconOnly
+                    ? "w-7 gap-0 px-0"
+                    : "w-7 gap-0 px-0 @[24rem]:w-auto @[24rem]:max-w-[4.75rem] @[24rem]:gap-0.5 @[24rem]:px-1.5",
               )}
               title="기공물 바구니 번호표"
               aria-label="기공물 바구니 번호표 선택"
             >
               {selected ? (
                 <span className="min-w-0 truncate">{selected}</span>
-              ) : iconOnly ? (
-                <Tags className="h-3.5 w-3.5" />
               ) : (
-                <span className="min-w-0 truncate">번호표</span>
+                <>
+                  <Tags
+                    className={cn("h-3.5 w-3.5 shrink-0", iconFallbackClass)}
+                  />
+                  <span className={cn("min-w-0 truncate", labelVisibleClass)}>
+                    번호표
+                  </span>
+                </>
               )}
-              {iconOnly && !selected ? null : (
+              {selected ? (
                 <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-70" />
+              ) : iconOnly ? null : (
+                <ChevronDown
+                  className={cn(
+                    "h-3.5 w-3.5 shrink-0 opacity-70",
+                    "hidden @[24rem]:inline",
+                  )}
+                />
               )}
             </Button>
           </PopoverTrigger>

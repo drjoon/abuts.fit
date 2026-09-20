@@ -16,6 +16,7 @@
 // - web/frontend/src/shared/files/fileBlobCache.ts
 // - web/frontend/src/shared/files/s3ImageThumb.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-20: 기공소 — 프린트·번호표는 액션 행 폭≥24rem일 때 라벨(좁으면 아이콘).
 // - 2026-09-20: 기공소 — 프린트·번호표를 작업시작/취소와 같은 헤더 액션 줄로(별도 행 제거).
 // - 2026-09-20: 기공소 — 헤더에 의뢰정보 프린트·바구니 번호표(A1–Z9)·안내 복원.
 // - 2026-09-20: 작업 파일 전체 다운로드 — 어벗 디자인·보철물을 zip 하나로.
@@ -2024,7 +2025,6 @@ export function PracticeTransferDetailChatDialog({
         value={labBasketTag}
         onChange={(tag) => setLabBasketTag(normalizeLabBasketTag(tag))}
         onPrint={handlePrintDetail}
-        iconOnly
       />
     ) : null;
 
@@ -2438,7 +2438,7 @@ export function PracticeTransferDetailChatDialog({
   const renderHeaderActionRow = () => {
     if (!headerActionButtons && !labBasketToolbar) return null;
     return (
-      <div className="flex min-w-0 flex-nowrap items-center gap-1.5 overflow-x-auto border-b bg-background px-5 py-1.5">
+      <div className="@container flex min-w-0 flex-nowrap items-center gap-1.5 overflow-x-auto border-b bg-background px-5 py-1.5">
         {labBasketToolbar}
         {headerActionButtons ? (
           <div className="ml-auto flex min-w-0 shrink-0 items-center justify-end">
