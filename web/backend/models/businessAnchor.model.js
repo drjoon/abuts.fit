@@ -285,6 +285,15 @@ const businessAnchorSchema = new mongoose.Schema(
         uploadedAt: { type: Date, default: null },
       },
     },
+    /**
+     * (세금)계산서 발행 선호.
+     * trusteeIssueEnabled=true(기본): 어벗츠가 위수탁으로 대신 발행.
+     * false: 상대가 직접 발행(정산 배치 확정 시 Draft 미생성).
+     */
+    taxInvoice: {
+      trusteeIssueEnabled: { type: Boolean, default: true },
+      updatedAt: { type: Date, default: null },
+    },
     payoutRates: {
       manufacturerRate: { type: Number, default: 0, min: 0, max: 1 },
       devopsRate: { type: Number, default: 0.1, min: 0, max: 1 },

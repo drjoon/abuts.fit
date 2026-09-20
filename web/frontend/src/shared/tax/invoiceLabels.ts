@@ -1,5 +1,6 @@
 // change-log:
 // - 2026-08-23: 겸영사업자 — 과세=세금계산서, 면세=계산서. 스토어 포함가 분해 헬퍼.
+// - 2026-09-20: 발행 방향 라벨(어벗츠→고객 / 기공소→치과 / 관계사→어벗츠).
 // related files:
 // - rules.md §2.3
 // - web/frontend/src/shared/settlement/affiliateVat.ts
@@ -12,6 +13,18 @@ import {
 } from "@/shared/settlement/affiliateVat";
 
 export type InvoiceTaxType = "과세" | "면세";
+
+export type TaxInvoiceDirection =
+  | "ABUTS_TO_CUSTOMER"
+  | "LAB_TO_PRACTICE"
+  | "AFFILIATE_TO_ABUTS";
+
+export const TAX_INVOICE_DIRECTION_LABEL: Record<TaxInvoiceDirection, string> =
+  {
+    ABUTS_TO_CUSTOMER: "어벗츠 → 고객",
+    LAB_TO_PRACTICE: "기공소 → 치과",
+    AFFILIATE_TO_ABUTS: "관계사 → 어벗츠",
+  };
 
 /** taxType → 문서 라벨 (세금계산서 | 계산서). */
 export function invoiceDocumentLabel(

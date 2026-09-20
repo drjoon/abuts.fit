@@ -17,6 +17,7 @@ import { Landmark } from "lucide-react";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
+import { TrusteeIssueSettingCard } from "@/shared/components/business/settings/TrusteeIssueSettingCard";
 
 type PayoutAccount = {
   bankName: string;
@@ -214,6 +215,7 @@ export const DevopsDepositAccountTab = () => {
   }
 
   return (
+    <div className="space-y-4">
     <Card className="app-glass-card app-glass-card--lg">
       <CardHeader className="pb-4">
         <CardTitle className="flex items-center gap-2 text-lg">
@@ -286,5 +288,7 @@ export const DevopsDepositAccountTab = () => {
         </div>
       </CardContent>
     </Card>
+    <TrusteeIssueSettingCard businessTypeOverride="devops" />
+    </div>
   );
 };

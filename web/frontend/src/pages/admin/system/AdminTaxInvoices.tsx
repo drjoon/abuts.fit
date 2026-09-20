@@ -5,8 +5,11 @@
 // - web/backend/controllers/admin/adminTaxInvoice.controller.js
 // change-log:
 // - 2026-09-20: 상태 요약 카드 그리드 p-0.5 — 선택 border가 overflow에 잘리지 않게.
+// - 2026-09-20: 재무 허브 embedded 스크롤(overflow-auto) — 목록이 잘리지 않게.
 // - 2026-09-20: 승인대기 탭·승인(승인 후 발행) 버튼.
-import React, { useCallback, useEffect, useState } from "react";
+// - 2026-09-20: 월정산 콘솔 — 기간·방향·월합 초안 생성·메타 표시.
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,6 +24,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/shared/hooks/use-toast";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -42,7 +52,9 @@ import {
 import {
   invoiceTaxTypeBadge,
   toInclusiveVat,
+  TAX_INVOICE_DIRECTION_LABEL,
   type InvoiceTaxType,
+  type TaxInvoiceDirection,
 } from "@/shared/tax/invoiceLabels";
 import { LEDGER_TAX_LANE_NOTICE } from "@/shared/tax/ledgerTaxLanes";
 
@@ -59,7 +71,7 @@ type TaxInvoiceDraft = {
   chargeOrderId: string;
   businessAnchorId?: string;
   status: DraftStatus;
-  direction?: "ABUTS_TO_CUSTOMER" | "LAB_TO_PRACTICE" | "AFFILIATE_TO_ABUTS";
+  direction?: TaxInvoiceDirection;
   issuanceMode?: "SELF" | "TRUSTEE";
   taxType?: "과세" | "면세";
   kind?: "NORMAL" | "REVERSE";
@@ -85,9 +97,46 @@ type TaxInvoiceDraft = {
   failReason?: string | null;
   approvedAt?: string | null;
   sentAt?: string | null;
+  writeDate?: string | null;
+  periodStart?: string | null;
+  periodEnd?: string | null;
+  itemName?: string | null;
   createdAt?: string;
   updatedAt?: string;
 };
+
+type DirectionFilter = "ALL" | TaxInvoiceDirection;
+
+function kstMonthKey(d = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+  }).format(d);
+}
+
+/** 지난달 KST YYYY-MM */
+function previousKstMonthKey(d = new Date()): string {
+  const [y, m] = kstMonthKey(d).split("-").map(Number);
+  const prev = m === 1 ? { y: y - 1, m: 12 } : { y, m: m - 1 };
+  return `${prev.y}-${String(prev.m).padStart(2, "0")}`;
+}
+
+function monthRangeYmd(ym: string): { periodStart: string; periodEnd: string } {
+  const [y, m] = ym.split("-").map(Number);
+  const nextY = m === 12 ? y + 1 : y;
+  const nextM = m === 12 ? 1 : m + 1;
+  return {
+    periodStart: `${y}-${String(m).padStart(2, "0")}-01`,
+    periodEnd: `${nextY}-${String(nextM).padStart(2, "0")}-01`,
+  };
+}
+
+function fmtWriteDate(writeDate?: string | null) {
+  const raw = String(writeDate || "").replace(/\D/g, "");
+  if (raw.length !== 8) return "-";
+  return `${raw.slice(0, 4)}.${raw.slice(4, 6)}.${raw.slice(6, 8)}`;
+}
 
 type EditForm = {
   bizNo: string;
@@ -194,6 +243,13 @@ export const AdminTaxInvoices = ({
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [directionFilter, setDirectionFilter] =
+    useState<DirectionFilter>("ALL");
+  const [periodMonth, setPeriodMonth] = useState(previousKstMonthKey);
+  const [filterByPeriod, setFilterByPeriod] = useState(false);
+  const [generating, setGenerating] = useState<
+    null | "customer" | "lab" | "both"
+  >(null);
 
   const [editOpen, setEditOpen] = useState(false);
   const [editDraft, setEditDraft] = useState<TaxInvoiceDraft | null>(null);
@@ -276,6 +332,8 @@ export const AdminTaxInvoices = ({
           qs.set("kind", "NORMAL");
         }
       }
+      if (directionFilter !== "ALL") qs.set("direction", directionFilter);
+      if (filterByPeriod && periodMonth) qs.set("periodMonth", periodMonth);
       if (debouncedSearch) qs.set("search", debouncedSearch);
       const res = await request<any>({
         path: `/api/admin/tax-invoices/drafts?${qs}`,
@@ -301,7 +359,30 @@ export const AdminTaxInvoices = ({
     } finally {
       setLoading(false);
     }
-  }, [token, tab, debouncedSearch, toast]);
+  }, [
+    token,
+    tab,
+    debouncedSearch,
+    directionFilter,
+    filterByPeriod,
+    periodMonth,
+    toast,
+  ]);
+
+  const periodOptions = useMemo(() => {
+    const keys: string[] = [];
+    let [y, m] = previousKstMonthKey().split("-").map(Number);
+    for (let i = 0; i < 12; i++) {
+      keys.push(`${y}-${String(m).padStart(2, "0")}`);
+      if (m === 1) {
+        y -= 1;
+        m = 12;
+      } else {
+        m -= 1;
+      }
+    }
+    return keys;
+  }, []);
 
   useEffect(() => {
     loadStats();
@@ -314,6 +395,74 @@ export const AdminTaxInvoices = ({
   const reload = useCallback(async () => {
     await Promise.all([loadStats(), loadItems()]);
   }, [loadStats, loadItems]);
+
+  const generateMonthlyDrafts = useCallback(
+    async (scope: "customer" | "lab" | "both") => {
+      if (!token) return;
+      setGenerating(scope);
+      try {
+        const range = monthRangeYmd(periodMonth);
+        const jobs: Array<Promise<any>> = [];
+        if (scope === "customer" || scope === "both") {
+          jobs.push(
+            request({
+              path: "/api/admin/tax-invoices/customer-monthly/generate",
+              method: "POST",
+              token,
+              jsonBody: range,
+            }),
+          );
+        }
+        if (scope === "lab" || scope === "both") {
+          jobs.push(
+            request({
+              path: "/api/admin/tax-invoices/lab-to-practice/generate",
+              method: "POST",
+              token,
+              jsonBody: range,
+            }),
+          );
+        }
+        const results = await Promise.all(jobs);
+        const failed = results.find((r) => !r.ok);
+        if (failed) {
+          toast({
+            title: "초안 생성 실패",
+            description:
+              (failed.data as any)?.message || "잠시 후 다시 시도해주세요.",
+            variant: "destructive",
+            duration: 5000,
+          });
+          return;
+        }
+        const summaries = results.map((r) => (r.data as any)?.data || {});
+        toast({
+          title: `${periodMonth} 월합 초안 생성`,
+          description: summaries
+            .map((s) => {
+              if (s.exempt || s.taxable) {
+                return `고객: 면세 ${s.exempt?.created ?? 0} · 과세 ${s.taxable?.created ?? 0}`;
+              }
+              return `기공소→치과: ${s.created ?? 0}건`;
+            })
+            .join(" / "),
+          duration: 5000,
+        });
+        setFilterByPeriod(true);
+        setTab("PENDING_APPROVAL");
+        await reload();
+      } catch {
+        toast({
+          title: "초안 생성 실패",
+          variant: "destructive",
+          duration: 4000,
+        });
+      } finally {
+        setGenerating(null);
+      }
+    },
+    [token, periodMonth, toast, reload],
+  );
 
   const postAction = useCallback(
     async ({
@@ -593,25 +742,113 @@ export const AdminTaxInvoices = ({
   };
 
   return (
-    <div className={embedded ? "space-y-4 p-0 pt-2" : "space-y-4 p-4"}>
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => setManualOpen(true)}
-        >
-          <Plus className="h-4 w-4 mr-1" />
-          수동 생성
-        </Button>
-        <Button size="sm" variant="ghost" onClick={reload} disabled={loading}>
-          <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-        </Button>
+    <div
+      className={
+        embedded
+          ? "custom-scrollbar workspace-nested-scroll h-full min-h-0 overflow-auto pt-2"
+          : "custom-scrollbar workspace-nested-scroll h-full min-h-0 overflow-auto p-4"
+      }
+    >
+      <div className="space-y-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="space-y-2 min-w-0">
+          <p className="text-xs text-muted-foreground leading-relaxed max-w-2xl">
+            {LEDGER_TAX_LANE_NOTICE} 월합 작성연월일=해당 월 말일. 익월 1일
+            초안 생성 후 여기서 검토·발행하고, 관계사 입금은 발행완료 뒤에
+            합니다. 관계사→어벗츠 초안은{" "}
+            <Link
+              to="/dashboard/finance?tab=payments"
+              className="underline underline-offset-2"
+            >
+              정산 탭
+            </Link>
+            에서 배치 확정 시 생성됩니다.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Select value={periodMonth} onValueChange={setPeriodMonth}>
+              <SelectTrigger className="h-8 w-[140px] text-xs">
+                <SelectValue placeholder="정산월" />
+              </SelectTrigger>
+              <SelectContent>
+                {periodOptions.map((ym) => (
+                  <SelectItem key={ym} value={ym} className="text-xs">
+                    {ym.replace("-", "년 ")}월
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 text-xs"
+              disabled={Boolean(generating)}
+              onClick={() => void generateMonthlyDrafts("both")}
+            >
+              {generating === "both" ? "생성 중…" : "고객·기공 월합 초안"}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-8 text-xs"
+              disabled={Boolean(generating)}
+              onClick={() => void generateMonthlyDrafts("customer")}
+            >
+              고객만
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-8 text-xs"
+              disabled={Boolean(generating)}
+              onClick={() => void generateMonthlyDrafts("lab")}
+            >
+              기공소→치과만
+            </Button>
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+              <input
+                type="checkbox"
+                className="rounded border-border"
+                checked={filterByPeriod}
+                onChange={(e) => setFilterByPeriod(e.target.checked)}
+              />
+              목록을 이 정산월로 필터
+            </label>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <Select
+            value={directionFilter}
+            onValueChange={(v) => setDirectionFilter(v as DirectionFilter)}
+          >
+            <SelectTrigger className="h-8 w-[160px] text-xs">
+              <SelectValue placeholder="발행 방향" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL" className="text-xs">
+                전체 방향
+              </SelectItem>
+              {(
+                Object.keys(TAX_INVOICE_DIRECTION_LABEL) as TaxInvoiceDirection[]
+              ).map((key) => (
+                <SelectItem key={key} value={key} className="text-xs">
+                  {TAX_INVOICE_DIRECTION_LABEL[key]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setManualOpen(true)}
+          >
+            <Plus className="h-4 w-4 mr-1" />
+            수동 생성
+          </Button>
+          <Button size="sm" variant="ghost" onClick={reload} disabled={loading}>
+            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+          </Button>
+        </div>
       </div>
-
-      <p className="text-xs text-muted-foreground leading-relaxed">
-        {LEDGER_TAX_LANE_NOTICE} 발행완료 원본은 유지하고, 상계는「마이너스 발행」탭의
-        REVERSE 문서로 남깁니다.
-      </p>
 
       {/* Stats bar */}
       <div className="grid grid-cols-2 gap-2 p-0.5 sm:grid-cols-3 lg:grid-cols-6">
@@ -1075,6 +1312,7 @@ export const AdminTaxInvoices = ({
           </div>
         </DialogContent>
       </Dialog>
+      </div>
     </div>
   );
 };
@@ -1101,6 +1339,11 @@ function DraftCard({
           <div className="space-y-1 min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
               <StatusBadge status={d.status} />
+              {d.direction ? (
+                <Badge variant="outline" className="text-xs">
+                  {TAX_INVOICE_DIRECTION_LABEL[d.direction] || d.direction}
+                </Badge>
+              ) : null}
               <Badge variant="outline" className="text-xs">
                 {invoiceTaxTypeBadge(d.taxType)} ·{" "}
                 {d.issuanceMode === "TRUSTEE" ? "위수탁" : "정발행"}
@@ -1126,9 +1369,19 @@ function DraftCard({
               )}
             </div>
             <div className="flex items-center gap-3 flex-wrap text-xs text-muted-foreground">
+              {d.itemName ? <span>{d.itemName}</span> : null}
               {d.buyer?.bizNo && <span>사업자: {d.buyer.bizNo}</span>}
               {d.seller?.corpName && <span>공급자: {d.seller.corpName}</span>}
               {d.buyer?.ceoName && <span>대표: {d.buyer.ceoName}</span>}
+              {d.writeDate ? (
+                <span>작성일: {fmtWriteDate(d.writeDate)}</span>
+              ) : null}
+              {d.periodStart ? (
+                <span>
+                  기간: {fmtDate(d.periodStart)}
+                  {d.periodEnd ? ` ~ ${fmtDate(d.periodEnd)}` : ""}
+                </span>
+              ) : null}
               {d.sentAt && <span>발행일: {fmtDate(d.sentAt)}</span>}
               <span className="opacity-60">생성: {fmtDate(d.createdAt)}</span>
             </div>

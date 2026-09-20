@@ -533,6 +533,11 @@ export async function getMyBusiness(req, res) {
         metadata, // SSOT
         businessLicense: anchor?.businessLicense || null,
         payoutAccount: anchor?.payoutAccount || {},
+        taxInvoice: {
+          trusteeIssueEnabled:
+            anchor?.taxInvoice?.trusteeIssueEnabled !== false,
+          updatedAt: anchor?.taxInvoice?.updatedAt || null,
+        },
         shippingPolicy: anchor?.shippingPolicy || null,
         pricingBaseDate: pricingBaseDate || null,
         ...requestorProfileResponseFields(requestorProfile),

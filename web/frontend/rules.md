@@ -492,7 +492,7 @@ Notes:
   - **관리자 (세금)계산서**: 과세/면세 라벨 구분, 마이너스 발행은 원본 SENT 유지 + REVERSE 탭. `AdminTaxInvoices.tsx`.
   - 공통 UI: `src/shared/settlement/settlementUi.tsx`, VAT 카피 `src/shared/settlement/affiliateVat.ts`
   - 크레딧 충전 UI: 결제·입금 금액 = 공급가. `vatAmount` 표시·가산 금지.
-    화면 제목/안내: **크레딧(거래 선수금)** — 선불페이가 아니라 B2B 계약 물품·용역 예치금. 충전 시 계산서 없음, 사용분 월말 면세/과세 각각 발행.
+    화면 제목/안내: **크레딧(거래 선수금)** — 선불페이가 아니라 B2B 계약 물품·용역 예치금. 충전 시 계산서 없음, 사용분 월합·익월 초 면세/과세 각각 발행.
     카피 SSOT: `src/shared/legal/creditPrepaidCopy.ts`
     구현: `src/features/settings/tabs/CreditPaymentTab.tsx`
     FAQ: `src/pages/public/HelpPage.tsx`, 의뢰자 문의 `InquiriesPage`
@@ -608,7 +608,7 @@ Notes:
   - 일별 카드 컬럼(daily-summary): `의뢰/배송/환불·지급·조정/지급 순액`.
   - 의뢰/배송 **건수**는 백엔드 유니크 건수 SSOT. (`machining_spend`+`express_surcharge`를 프론트에서 각각 세지 않음.)
   - 일별 목록은 KST **오늘 이후(미도래 일자)를 표시하지 않는다**. `이번달` 프리셋 종료일도 오늘이다.
-  - 제조사 지급 대상은 **약정 하청비 전액**(부가세 포함가 · 세금계산서÷1.1). 리메이크·무료 크레딧 포함 약정 단가를 지급한다. 매달 말일 일괄 지급 전까지 상단「미정산」에 쌓인다. 지급 완료분은「전월 지급」.
+  - 제조사 지급 대상은 **약정 하청비 전액**(부가세 포함가 · 세금계산서÷1.1). 리메이크·무료 크레딧 포함 약정 단가를 지급한다. 월중 「미정산」에 쌓인 뒤 **익월 초 발행·입금**. 지급 완료분은「전월 지급」.
   - 상단 합계는 2칸(`미정산` · `전월 지급`). `DashboardShell.statsGridClassName`을 `sm:grid-cols-2`로 두고 카드 높이는 compact.
 
 - 관리자 정산(`AdminPaymentsPage`) 표시 정책:

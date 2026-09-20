@@ -16,6 +16,7 @@ import BusinessAnchor from "../models/businessAnchor.model.js";
 import User from "../models/user.model.js";
 import TaxInvoiceDraft from "../models/taxInvoiceDraft.model.js";
 import { buildPartySnapshotFromAnchor } from "../utils/taxInvoiceParty.util.js";
+import { writeDateFromPeriodEnd } from "../utils/taxInvoicePeriod.util.js";
 
 function isDuplicateKeyError(err) {
   const code = err?.code;
@@ -136,6 +137,7 @@ export async function generateMonthlyLabToPracticeInvoiceDrafts({
         supplyAmount: totalAmount,
         vatAmount: 0,
         totalAmount,
+        writeDate: writeDateFromPeriodEnd(periodEnd),
         periodStart,
         periodEnd,
         sourceRefType: "PRACTICE_TRANSFER",

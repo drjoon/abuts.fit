@@ -868,7 +868,7 @@ export default function AdminPaymentsPage({
                 <CreditSectionHeader
                   icon={Factory}
                   title="커스텀 어벗 · 제조사 하청"
-                  description="원청(어벗츠)–하청(애크로덴트) 고정 매입가(부가세 포함). 고객 유료·무료 크레딧과 무관하게 모든 의뢰에 약정 단가를 지급하며, 말일 일괄 지급 전까지 미정산으로 적립(과세 · 세금계산서)."
+                  description="원청(어벗츠)–하청(애크로덴트) 고정 매입가(부가세 포함). 고객 유료·무료 크레딧과 무관하게 모든 의뢰에 약정 단가를 지급하며, 월중 미정산 적립 후 익월 초 (세금)계산서 발행·입금(과세 · 세금계산서)."
                 />
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                   <CreditStatTile

@@ -1,8 +1,10 @@
 // change-log:
+// - 2026-09-20: 월합 writeDate=기간 말일(KST).
 // - 2026-08-23: 고객향 ABUTS_TO_CUSTOMER 월합 — 면세(기공·어벗) / 과세(스토어) 분리.
 // related files:
 // - web/backend/services/practiceLabInvoice.service.js
 // - web/backend/jobs/monthlyCustomerInvoiceWorker.js
+// - web/backend/utils/taxInvoicePeriod.util.js
 // - rules.md §2.3
 import { Types } from "mongoose";
 import LedgerLine from "../models/ledgerLine.model.js";
@@ -11,6 +13,7 @@ import BusinessAnchor from "../models/businessAnchor.model.js";
 import User from "../models/user.model.js";
 import TaxInvoiceDraft from "../models/taxInvoiceDraft.model.js";
 import { buildPartySnapshotFromAnchor } from "../utils/taxInvoiceParty.util.js";
+import { writeDateFromPeriodEnd } from "../utils/taxInvoicePeriod.util.js";
 import { resolvePreviousKstMonthRange } from "./practiceLabInvoice.service.js";
 
 export { resolvePreviousKstMonthRange };
@@ -72,6 +75,7 @@ async function createCustomerMonthlyDraft({
       totalAmount,
       itemName,
       buyer,
+      writeDate: writeDateFromPeriodEnd(periodEnd),
       periodStart,
       periodEnd,
       sourceRefType,

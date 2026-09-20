@@ -145,6 +145,13 @@ export async function adminListTaxInvoiceDrafts(req, res) {
     if (to) match.createdAt.$lte = to;
   }
 
+  const periodMonth = String(req.query.periodMonth || "").trim();
+  if (/^\d{4}-\d{2}$/.test(periodMonth)) {
+    const [y, m] = periodMonth.split("-").map(Number);
+    match.periodStart = new Date(Date.UTC(y, m - 1, 1, -9, 0, 0, 0));
+    match.periodEnd = new Date(Date.UTC(y, m, 1, -9, 0, 0, 0));
+  }
+
   if (search) {
     const re = new RegExp(search.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&"), "i");
     match.$or = [{ "buyer.corpName": re }, { "buyer.bizNo": re }];

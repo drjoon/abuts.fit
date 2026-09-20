@@ -264,6 +264,8 @@ export async function updateMyBusiness(req, res) {
     const payoutAccountInput = payoutAccountProvided
       ? req.body?.payoutAccount
       : null;
+    const taxInvoiceProvided = hasOwnKey(req.body, "taxInvoice");
+    const taxInvoiceInput = taxInvoiceProvided ? req.body?.taxInvoice : null;
 
     const representativeNameProvided = hasOwnKey(
       req.body,
@@ -354,6 +356,7 @@ export async function updateMyBusiness(req, res) {
         startDateProvided ||
         hasOwnKey(req.body, "businessLicense") ||
         payoutAccountProvided ||
+        taxInvoiceProvided ||
         requestorProfileProvided;
       if (!canEdit && (nonShippingProvided || !shippingPolicyProvided)) {
         return res.status(403).json({
@@ -736,6 +739,42 @@ export async function updateMyBusiness(req, res) {
             ? new Date()
             : null,
         bankbook: nextBankbook,
+      };
+    }
+
+    if (taxInvoiceProvided) {
+      const trusteeRoles = new Set([
+        "manufacturer",
+        "salesman",
+        "devops",
+        "requestor",
+      ]);
+      if (!trusteeRoles.has(businessType)) {
+        return res.status(400).json({
+          success: false,
+          message: "이 역할에서는 위수탁 발행 설정을 변경할 수 없습니다.",
+        });
+      }
+      if (
+        businessType === "requestor" &&
+        String(businessAnchor?.requestorKind || "").trim() !== "lab" &&
+        String(freshUser?.role || "").trim() !== "internalLab"
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "기공소만 위수탁 발행 설정을 변경할 수 있습니다.",
+        });
+      }
+      const enabled = taxInvoiceInput?.trusteeIssueEnabled;
+      if (typeof enabled !== "boolean") {
+        return res.status(400).json({
+          success: false,
+          message: "taxInvoice.trusteeIssueEnabled(boolean)이 필요합니다.",
+        });
+      }
+      patch.taxInvoice = {
+        trusteeIssueEnabled: enabled,
+        updatedAt: new Date(),
       };
     }
 

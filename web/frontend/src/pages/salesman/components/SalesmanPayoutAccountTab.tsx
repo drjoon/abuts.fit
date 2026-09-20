@@ -11,6 +11,7 @@ import { Landmark } from "lucide-react";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
+import { TrusteeIssueSettingCard } from "@/shared/components/business/settings/TrusteeIssueSettingCard";
 
 type PayoutAccount = {
   bankName: string;
@@ -175,6 +176,7 @@ export const SalesmanPayoutAccountTab = () => {
   }
 
   return (
+    <div className="space-y-4">
     <Card className="app-glass-card app-glass-card--lg">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
@@ -232,5 +234,7 @@ export const SalesmanPayoutAccountTab = () => {
         </div>
       </CardContent>
     </Card>
+    <TrusteeIssueSettingCard businessTypeOverride="salesman" />
+    </div>
   );
 };

@@ -1,12 +1,16 @@
 // change-log:
+// - 2026-09-20: TAX_INVOICE_AUTO_ISSUE_ON_DAY1 시 초안 자동 발행(1B 훅).
 // - 2026-08-23: 고객향 월합 (세금)계산서 크론 (KST 매월 1일 전월분).
 // related files:
 // - web/backend/services/customerMonthlyInvoice.service.js
+// - web/backend/services/taxInvoiceAutoIssue.service.js
 // - web/backend/server.js
 import {
   generateMonthlyCustomerInvoiceDrafts,
   resolvePreviousKstMonthRange,
 } from "../services/customerMonthlyInvoice.service.js";
+import { maybeAutoIssuePendingDraftsForPeriod } from "../services/taxInvoiceAutoIssue.service.js";
+import { scheduleTaxPendingBadgeEmit } from "../services/adminCommBadge.service.js";
 
 let timerHandle = null;
 let running = false;
@@ -30,11 +34,19 @@ async function tick() {
   );
   const key = `${year}-${month}`;
   if (Number(day) !== runDay || lastRunKey === key) return;
-  const result = await generateMonthlyCustomerInvoiceDrafts(
-    resolvePreviousKstMonthRange(),
-  );
+  const range = resolvePreviousKstMonthRange();
+  const result = await generateMonthlyCustomerInvoiceDrafts(range);
+  const autoIssue = await maybeAutoIssuePendingDraftsForPeriod({
+    ...range,
+    directions: ["ABUTS_TO_CUSTOMER"],
+  });
+  scheduleTaxPendingBadgeEmit();
   lastRunKey = key;
-  console.log("[monthlyCustomerInvoice] completed", { key, ...result });
+  console.log("[monthlyCustomerInvoice] completed", {
+    key,
+    ...result,
+    autoIssue,
+  });
 }
 
 async function loop() {

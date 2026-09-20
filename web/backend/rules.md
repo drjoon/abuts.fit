@@ -871,7 +871,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     프론트 카피: `web/frontend/src/shared/legal/creditPrepaidCopy.ts`
     입금 매칭 알림: `utils/creditBPlanMatching.js` `notifyChargePrepaidApplied` / 템플릿 `ats_credit_charged`
   - 충전 주문(`ChargeOrder`): `vatAmount = 0`, `amountTotal = supplyAmount`. **충전 확정 시 TaxInvoiceDraft 생성·발행 금지.**
-  - 월말 고객 증빙: `services/customerMonthlyInvoice.service.js` — 전월 사용분 `ABUTS_TO_CUSTOMER` 면세/과세 각각 합산. 크론 `jobs/monthlyCustomerInvoiceWorker.js`.
+  - 월말 고객 증빙: `services/customerMonthlyInvoice.service.js` — 전월 사용분 `ABUTS_TO_CUSTOMER` 면세/과세 각각 합산. **작성연월일=`writeDate`=전월 말일(KST)**. 크론 `jobs/monthlyCustomerInvoiceWorker.js`(KST 익월 1일 초안). 관리자 발행은 재무→세금계산서. `TAX_INVOICE_AUTO_ISSUE_ON_DAY1=true`면 1B 자동 발행.
   - 충전 단위: `utils/creditChargeUnit.js` — 기공소 50만원, 치과(practice) 100만원. 절대 상한 5,000만원.
     주문 검증 `creditBPlan.controller.js`, insights(월사용량/3·한 달분) `credit.controller.js`.
     UI 2회차 기본 배수 3은 프론트(`CreditPaymentTab`). 잔액 < 50만원 시 사이드바 충전 뱃지는 `DashboardLayout`.
@@ -882,17 +882,19 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 고객향 계산서 직접발행 세액 기본 0(면세). 정산 배치 Draft: 기공소=면세, 제조사·딜러사·개발운영사=과세 10%.
 
 - (세금)계산서 발행 방향/위수탁 정책(강제, `TaxInvoiceDraft.direction`):
+  - 파이프라인: 월중 적립·소비 → **KST 익월 1일 초안**(PENDING_APPROVAL, writeDate=전월 말일) → 관리자 재무 콘솔 검토·발행 → 관계사 입금. 연결 draft가 있으면 **SENT 후에만** mark-paid.
   - `ABUTS_TO_CUSTOMER`: 사용분 월합(기공·어벗=면세, 스토어=과세). `issuanceMode="SELF"`. 충전(ChargeOrder) 시점 발행 금지. 과거 충전 건별 draft는 유지.
   - `LAB_TO_PRACTICE`(①치과→기공소 기공의뢰비의 반대방향, 월합계): `taxType="면세"`, `issuanceMode="TRUSTEE"`. 실제 공급자는 기공소이지만 기공소는 팝빌 회원가입/인증서가 불필요하고, 어벗츠가 수탁자로 위수탁발행한다(치과·기공소·어벗츠 3자 모두 부가세 면세 원칙 — 어벗츠 공동대표가 기공사라 기공소로 간주).
-  - `AFFILIATE_TO_ABUTS`(어벗츠→딜러사·개발운영사·제조사·기공소 정산의 반대방향): 제조사·딜러사·개발운영사는 `taxType="과세"`(부가세 10%), 기공소는 `taxType="면세"`. 모두 `issuanceMode="TRUSTEE"`. 실제 공급자(기공소·제조사·딜러사·개발운영사)는 팝빌 회원 불필요, 어벗츠가 수탁자로 위수탁발행.
-  - 정산 배치 확정(`adminConfirmSettlementBatch`) 시 위 역할별 Draft 자동 생성. SSOT: `resolveSettlementInvoiceDraftSpec` in `services/settlement.service.js`.
+  - `AFFILIATE_TO_ABUTS`(어벗츠→딜러사·개발운영사·제조사·기공소 정산의 반대방향): 제조사·딜러사·개발운영사는 `taxType="과세"`(부가세 10%), 기공소는 `taxType="면세"`. 기본 `issuanceMode="TRUSTEE"`. BA.`taxInvoice.trusteeIssueEnabled`(default true)가 false면 정산 확정 시 Draft 미생성(상대 직접 발행).
+  - 정산 배치: 익월 1일 DRAFT(`monthlySettlementBatchWorker`) → 관리자 확정 시 Draft(위수탁 ON만). SSOT: `resolveSettlementInvoiceDraftSpec` in `services/settlement.service.js`.
   - 위수탁발행(`issueType:"위수탁"` + `trusteeCorpNum` 등)은 팝빌 `TaxinvoiceService`가 과세/면세 모두 동일하게 지원한다(별도 서비스 아님). 수탁자(어벗츠)만 팝빌 회원/인증서가 필요하고, 위탁자(실제 공급자)는 회원가입이 불필요하다.
-  - 구현: `utils/popbill.util.js`(`buildTaxinvoiceObject`의 `issuanceMode`/`seller`/`taxType`), `models/taxInvoiceDraft.model.js`.
+  - 작성연월일 헬퍼: `utils/taxInvoicePeriod.util.js` `writeDateFromPeriodEnd`. 1B 훅: `services/taxInvoiceAutoIssue.service.js`.
+  - 구현: `utils/popbill.util.js`(`buildTaxinvoiceObject`의 `issuanceMode`/`seller`/`taxType`), `models/taxInvoiceDraft.model.js`, FE `AdminTaxInvoices.tsx`.
 
 - 정산/지급 정책:
   - 관리자 3사업 축 집계: `GET /api/admin/credits/settlement-business-overview` (`adminGetSettlementBusinessOverview`). 기간은 `period` 또는 `startDate`/`endDate`.
   - 유료/무료 모두 `REV_*` 수익 라인은 기록해 확인 가능해야 합니다.
-  - **제조사(하청)**: 고정 매입가(부가세 포함) — `creditSettings.manufacturerRequestUnitPrice`(기본 8,800, **어벗 1개당**)·`manufacturerRemakeUnitPrice`(기본 6,600, 리메이크)·`manufacturerShippingUnitPrice`(기본 3,500, 박스당). 장부·미정산·지급=포함가(재가산 없음)·세금계산서(÷1.1). 리메이크도 제조사 지급(6,600). 그 외(무료 크레딧 결제 포함)는 약정 단가 전액 지급. 매달 말일 일괄 지급 전까지 미정산 잔액. 제조사=일반과세사업자.
+  - **제조사(하청)**: 고정 매입가(부가세 포함) — `creditSettings.manufacturerRequestUnitPrice`(기본 8,800, **어벗 1개당**)·`manufacturerRemakeUnitPrice`(기본 6,600, 리메이크)·`manufacturerShippingUnitPrice`(기본 3,500, 박스당). 장부·미정산·지급=포함가(재가산 없음)·세금계산서(÷1.1). 리메이크도 제조사 지급(6,600). 그 외(무료 크레딧 결제 포함)는 약정 단가 전액 지급. 월중 미정산 적립 → **익월 초 (세금)계산서 발행 후 지급**. 제조사=일반과세사업자.
   - **딜러사·개발운영사**: 장부 적립·미정산=포함가(`affiliateVatRate`로 earn 시 VAT 기록). 지급=잔액 그대로·세금계산서(÷1.1). 구현: `services/settlement.service.js`(`TAXABLE_SETTLEMENT_ROLES` / `resolveSettlementPayoutAmounts` / `postSettlementPayoutJournal`). 배치 항목 `amount`=입금=잔액, `supplyAmount`/`vatAmount`=포함가 분해.
   - **어벗츠·기공소**: 정산 지급(PAYOUT)은 유료 수익만(면세 계산서). `EARN/ADJUST`는 `creditKind=PAID|null`만 포함.
   - **제조사**: 정산 지급(PAYOUT)은 유료·무료 수익 전액(과세·세금계산서). `computeAffiliateSettlementBalance`가 manufacturer는 creditKind를 가리지 않음.

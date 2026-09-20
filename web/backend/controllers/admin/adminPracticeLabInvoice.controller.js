@@ -6,6 +6,7 @@ import {
   generateMonthlyLabToPracticeInvoiceDrafts,
   resolvePreviousKstMonthRange,
 } from "../../services/practiceLabInvoice.service.js";
+import { scheduleTaxPendingBadgeEmit } from "../../services/adminCommBadge.service.js";
 
 /**
  * ①치과→기공소 기공의뢰비 반대방향 계산서(면세, 위수탁) 월 합계 생성을
@@ -41,6 +42,7 @@ export async function adminGenerateLabToPracticeInvoiceDrafts(req, res) {
       periodStart,
       periodEnd,
     });
+    scheduleTaxPendingBadgeEmit();
 
     return res.json({
       success: true,

@@ -6,6 +6,7 @@ import {
   generateMonthlyCustomerInvoiceDrafts,
   resolvePreviousKstMonthRange,
 } from "../../services/customerMonthlyInvoice.service.js";
+import { scheduleTaxPendingBadgeEmit } from "../../services/adminCommBadge.service.js";
 
 /**
  * body: { periodStart?: "YYYY-MM-DD", periodEnd?: "YYYY-MM-DD" } — 미지정 시 지난달(KST)
@@ -39,6 +40,7 @@ export async function adminGenerateCustomerMonthlyInvoiceDrafts(req, res) {
       periodStart,
       periodEnd,
     });
+    scheduleTaxPendingBadgeEmit();
 
     return res.json({
       success: true,

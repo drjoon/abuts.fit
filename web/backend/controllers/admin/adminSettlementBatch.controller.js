@@ -3,6 +3,12 @@
 // - web/backend/models/settlementBatchItem.model.js
 // - web/backend/services/settlement.service.js
 // - web/backend/models/taxInvoiceDraft.model.js
+// - web/backend/utils/taxInvoicePeriod.util.js
+// change-log:
+// - 2026-09-20: 위수탁 옵트아웃(BA.taxInvoice.trusteeIssueEnabled)·writeDate·지급 SENT 가드.
+// - 2026-08-23: 정산 배치 확정 시 제조사=과세·기공소=면세 Draft 자동 생성.
+// - 2026-08-18: 정산 배치 확정 시 관계사 Draft 자동 생성.
+// - 2026-08-17: 영업자·개발운영사 지급액=공급가+VAT. 세금계산서는 분해 필드 SSOT(제조사 이중 VAT 방지).
 import { Types } from "mongoose";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import SettlementBatch from "../../models/settlementBatch.model.js";
@@ -17,11 +23,8 @@ import {
   resolveSettlementInvoiceDraftSpec,
 } from "../../services/settlement.service.js";
 import { buildPartySnapshotFromAnchor } from "../../utils/taxInvoiceParty.util.js";
-
-// change-log:
-// - 2026-08-23: 정산 배치 확정 시 제조사=과세·기공소=면세 Draft 자동 생성.
-// - 2026-08-18: 정산 배치 확정 시 관계사 Draft 자동 생성.
-// - 2026-08-17: 영업자·개발운영사 지급액=공급가+VAT. 세금계산서는 분해 필드 SSOT(제조사 이중 VAT 방지).
+import { writeDateFromPeriodEnd } from "../../utils/taxInvoicePeriod.util.js";
+import { scheduleTaxPendingBadgeEmit } from "../../services/adminCommBadge.service.js";
 
 const ROLE_FILTERS = [
   {
@@ -195,7 +198,9 @@ export async function adminConfirmSettlementBatch(req, res) {
         role: item.role,
         breakdown,
       });
-      if (invoiceSpec) {
+      const trusteeEnabled =
+        anchor?.taxInvoice?.trusteeIssueEnabled !== false;
+      if (invoiceSpec && trusteeEnabled) {
         const seller = buildPartySnapshotFromAnchor(anchor);
         const buyer = abuts ? buildPartySnapshotFromAnchor(abuts) : {};
         const draft = await TaxInvoiceDraft.create({
@@ -211,6 +216,7 @@ export async function adminConfirmSettlementBatch(req, res) {
           supplyAmount: invoiceSpec.supplyAmount,
           vatAmount: invoiceSpec.vatAmount,
           totalAmount: invoiceSpec.totalAmount,
+          writeDate: writeDateFromPeriodEnd(batch.periodEnd),
           periodStart: batch.periodStart,
           periodEnd: batch.periodEnd,
           sourceRefType: "SETTLEMENT_BATCH_ITEM",
@@ -225,6 +231,7 @@ export async function adminConfirmSettlementBatch(req, res) {
     batch.confirmedBy = req.user?._id || null;
     batch.totalAmount = totalAmount;
     await batch.save();
+    scheduleTaxPendingBadgeEmit();
     return res.json({ success: true, data: batch });
   } catch (error) {
     if (error?.code === 11000) {
@@ -238,6 +245,16 @@ export async function adminConfirmSettlementBatch(req, res) {
 async function markItemPaid({ item, actorUserId }) {
   if (item.status !== "CONFIRMED") {
     throw new Error("확정(CONFIRMED) 상태인 항목만 지급완료 처리할 수 있습니다.");
+  }
+  if (item.invoiceDraftId) {
+    const draft = await TaxInvoiceDraft.findById(item.invoiceDraftId)
+      .select({ status: 1 })
+      .lean();
+    if (!draft || String(draft.status) !== "SENT") {
+      throw new Error(
+        "연결된 (세금)계산서가 발행완료(SENT)된 뒤에만 지급할 수 있습니다.",
+      );
+    }
   }
   const journal = await postSettlementPayoutJournal({ item, actorUserId });
   item.status = "PAID";
