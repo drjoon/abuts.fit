@@ -1,6 +1,8 @@
 // change-log:
+// - 2026-09-20: 보철유형 건수 — 견적 라인 수가 아니라 의뢰당 유형 1건(요약 의뢰건수와 단위 맞춤).
+// - 2026-09-20: CA 게이트 — 치과 소비(HOLD)는 통계 유지. 기공소 정산 적립·미정산 CA만 제외.
 // - 2026-09-20: 정산 제외는 미정산 CA만(listBlocked). 확정 적립(labSettledAt)은 통계에 유지.
-// - 2026-09-20: CA 디자인 STL 미업로드·생산비 미지급 PTX는 정산 통계에서 제외.
+// - 2026-09-20: CA 디자인 STL 미업로드·생산비 미지급 PTX는 기공소 정산 통계에서 제외.
 // - 2026-08-31: 기공소 통계 — 치과→기공(정산)·기공→어벗츠(충전/소비) 건수·파트너·보철 분리.
 // - 2026-08-31: usageScope(real|demo|all) — 데모/실사용 통계 필터. hasDemoUsage 응답.
 // - 2026-09-11: 기공소 정산 적립·파트너·보철·의뢰건수 — 확정만(적립 보류 제외).
@@ -31,6 +33,7 @@ import {
   matchesCreditUsageScope,
   parseCreditUsageScope,
   resolvePracticeTransferDemoFundingByIds,
+  shouldHideBlockedPracticeTransferLedgerRow,
 } from "./creditLedger.utils.js";
 import {
   isCustomAbutmentLabFeeLineType,
@@ -232,7 +235,11 @@ function buildProsthesisAllocations({ quote, toothWorks, fallbackAmount }) {
       const type = normalizeProsthesisStatsLabel(line?.prosthesisType);
       const amt = lineRetailAmount(line);
       if (amt <= 0) continue;
-      bumpMap(byType, type, { amount: amt, count: 1 });
+      // 금액은 라인 합산, 건수는 의뢰당 유형 1회(라인 개수로 부풀리지 않음)
+      bumpMap(byType, type, { amount: amt, count: 0 });
+    }
+    for (const row of byType.values()) {
+      row.count = 1;
     }
     const entries = [...byType.entries()];
     // 견적 라인 공급가 그대로(장부 소비액 비례배분 금지 → 천원 단위 유지)
@@ -524,7 +531,7 @@ export async function getMyCreditLedgerStats(req, res) {
         })
       : new Map();
 
-  // 내역 탭과 동일 — 미정산·미충족 CA만 제외. 확정 적립(labSettledAt)은 포함.
+  // 내역 탭과 동일 — 미정산 CA의 기공 적립만 제외. 치과 결제 보류(소비)는 포함.
   const blockedSettlementIds = await listPracticeTransferIdsBlockedFromSettlement({
     practiceAnchorId: !isLab ? anchorObjectId : null,
     labAnchorId: isLab ? anchorObjectId : null,
@@ -556,9 +563,11 @@ export async function getMyCreditLedgerStats(req, res) {
     const refType = String(row?.refType || "");
     const refId = row?.refId ? String(row.refId) : "";
     if (
-      blockedSettlementIds.size &&
-      refType.trim().toUpperCase() === "PRACTICE_TRANSFER" &&
-      blockedSettlementIds.has(refId)
+      shouldHideBlockedPracticeTransferLedgerRow({
+        row: { refType, refId, eventType, accountCode: row?.accountCode, amount: row?.amount },
+        requestorKind: isLab ? "lab" : "practice",
+        blockedSettlementIds,
+      })
     ) {
       continue;
     }

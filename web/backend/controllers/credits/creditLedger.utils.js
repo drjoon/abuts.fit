@@ -11,6 +11,7 @@
 // - 2026-09-20: 기간 소비 완료/보류 — PTX는 billing.settledAt(장부 결제상태와 동일). Request만 convertedAt.
 // - 2026-09-20: 기간 요약 — 기공소 적립 보류 합(totalSettlementEarnPendingSupply) 분리(확정 합·잔액 미포함).
 // - 2026-09-20: 기간 소비 요약 — 결제(적립) 완료·보류 공급가 분리(convertedAt 없는 HOLD).
+// - 2026-09-20: CA 게이트 — 기공소 적립 보류/정산·payout만 제외. 치과 결제 보류·기간 소비는 유지.
 // - 2026-09-20: CA 디자인 STL 미업로드·생산비 미지급 PTX는 적립 보류 미러에서 제외.
 // - 2026-09-05: 정산 적립 집계 — PRACTICE_TRANSFER_ESCROW_RELEASE(+LAB_SETTLEMENT_CREDIT) 포함. 내역 행 타입과 동일.
 // - 2026-09-02: 적립 보류 미러 — deleted/canceled 제외 + HOLD 저널 없으면 스킵(치과 취소 후 heldAt 잔여 방어).
@@ -67,6 +68,58 @@ export function isLabSettlementEarnEvent({
     return true;
   }
   return false;
+}
+
+/**
+ * 치과 결제 보류 행 — CA settlement gate로도 숨기지 않는다(잔액에 이미 잡혀 있음).
+ * type(SPEND_HOLD) 또는 eventType(PRACTICE_TRANSFER_SPEND_HOLD|HOLD_ADJUST).
+ */
+export function isPracticeTransferPaymentHoldLedgerRow(row) {
+  const type = String(row?.type || "").trim().toUpperCase();
+  if (type === "SPEND_HOLD") return true;
+  const et = String(row?.eventType || "").trim().toUpperCase();
+  return (
+    et === "PRACTICE_TRANSFER_SPEND_HOLD" ||
+    et === "PRACTICE_TRANSFER_HOLD_ADJUST"
+  );
+}
+
+/**
+ * CA 미충족 PTX를 장부/집계에서 뺄지.
+ * - 치과: 결제 보류·소비(HOLD/ADJUST/COMMIT)는 유지. 정산 적립만 가림(보통 아직 없음).
+ * - 기공소: 해당 PTX 행 전부 가림(적립 보류 미러는 listPending…에서 별도 제외).
+ */
+export function shouldHideBlockedPracticeTransferLedgerRow({
+  row,
+  requestorKind,
+  blockedSettlementIds,
+} = {}) {
+  const blocked =
+    blockedSettlementIds instanceof Set
+      ? blockedSettlementIds
+      : new Set(
+          (Array.isArray(blockedSettlementIds) ? blockedSettlementIds : [])
+            .map((id) => String(id || "").trim())
+            .filter(Boolean),
+        );
+  if (!blocked.size) return false;
+  const refType = String(row?.refType || "").trim().toUpperCase();
+  const refId = String(row?.refId || "").trim();
+  if (refType !== "PRACTICE_TRANSFER" || !refId || !blocked.has(refId)) {
+    return false;
+  }
+  const kind = String(requestorKind || "").trim().toLowerCase();
+  if (kind !== "practice") return true;
+  if (isPracticeTransferPaymentHoldLedgerRow(row)) return false;
+  const et = String(row?.eventType || "").trim().toUpperCase();
+  if (
+    et === "PRACTICE_TRANSFER_SPEND_HOLD" ||
+    et === "PRACTICE_TRANSFER_HOLD_ADJUST" ||
+    et === "PRACTICE_TRANSFER_SPEND_COMMIT"
+  ) {
+    return false;
+  }
+  return true;
 }
 
 /** Mongo $expr — creditLedgerStatsCategoryExpr / 드릴다운과 공유 */
@@ -1688,9 +1741,12 @@ export async function aggregateRequestorPeriodLedgerSummary({
     const refId = row?.refId ? String(row.refId) : "";
     const refType = String(row?.refType || "").trim().toUpperCase();
     if (
-      excludedRefs.size &&
-      refType === "PRACTICE_TRANSFER" &&
-      excludedRefs.has(refId)
+      shouldHideBlockedPracticeTransferLedgerRow({
+        row: { refType, refId, eventType, accountCode, amount },
+        // 기간 요약은 치과·기공소 공용. 소비 HOLD는 유지하고 정산 적립만 가린다.
+        requestorKind: "practice",
+        blockedSettlementIds: excludedRefs,
+      })
     ) {
       continue;
     }

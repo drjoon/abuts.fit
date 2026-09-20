@@ -7,6 +7,7 @@ import {
   resolvePracticeToLabSettlementBlock,
 } from "../../services/practiceTransferLabSettlementGate.js";
 import { selectPracticeTransferIdsBlockedFromSettlement } from "../../services/practiceTransferBilling.service.js";
+import { shouldHideBlockedPracticeTransferLedgerRow } from "../../controllers/credits/creditLedger.utils.js";
 
 describe("practice to lab settlement gate", () => {
   test("prosthesis-only transfers are not blocked", () => {
@@ -94,5 +95,47 @@ describe("practice to lab settlement gate", () => {
     ]);
     expect(blocked.has(settledId)).toBe(false);
     expect(blocked.size).toBe(0);
+  });
+
+  test("blocked CA keeps practice payment hold visible, hides lab earn", () => {
+    const blockedId = "6aafda82fd1972681c88c344";
+    const blocked = new Set([blockedId]);
+    expect(
+      shouldHideBlockedPracticeTransferLedgerRow({
+        row: {
+          refType: "PRACTICE_TRANSFER",
+          refId: blockedId,
+          type: "SPEND_HOLD",
+          eventType: "PRACTICE_TRANSFER_SPEND_HOLD",
+          amount: -100000,
+        },
+        requestorKind: "practice",
+        blockedSettlementIds: blocked,
+      }),
+    ).toBe(false);
+    expect(
+      shouldHideBlockedPracticeTransferLedgerRow({
+        row: {
+          refType: "PRACTICE_TRANSFER",
+          refId: blockedId,
+          eventType: "PRACTICE_TRANSFER_ESCROW_RELEASE",
+          accountCode: "LAB_SETTLEMENT_CREDIT",
+          amount: 98000,
+        },
+        requestorKind: "lab",
+        blockedSettlementIds: blocked,
+      }),
+    ).toBe(true);
+    expect(
+      shouldHideBlockedPracticeTransferLedgerRow({
+        row: {
+          refType: "PRACTICE_TRANSFER",
+          refId: blockedId,
+          type: "SPEND_HOLD",
+        },
+        requestorKind: "lab",
+        blockedSettlementIds: blocked,
+      }),
+    ).toBe(true);
   });
 });

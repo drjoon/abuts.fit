@@ -2991,8 +2991,9 @@ async function readPracticeToLabSettlementBlock(
 }
 
 /**
- * 정산 페이지·payout에서 빼야 하는 PTX id.
+ * 정산 페이지·payout에서 기공 적립을 빼야 하는 PTX id.
  * 커스텀어벗인데 디자인 STL이 없거나 어벗 생산비가 아직 어벗츠에 지급되지 않은 건.
+ * 치과 결제 보류(SPEND_HOLD)·기간 소비는 제외 대상이 아니다(잔액 수식 유지).
  * 이미 labSettledAt(기공소 확정 적립)된 건은 빼지 않는다 — 통계·내역에서 확정분이 사라지면 안 됨.
  */
 export async function selectPracticeTransferIdsBlockedFromSettlement(
