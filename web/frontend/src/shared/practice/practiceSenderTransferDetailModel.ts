@@ -27,6 +27,7 @@ import {
   getPracticeAbutmentDeliveryLabel,
   practiceAbutmentProgressValueClassName,
 } from "@/shared/shipping/hanjinTrackingLabel";
+import { formatPracticeTargetLabLabel } from "@/shared/practice/practiceLabRating";
 import {
   currentStageOfPlan,
   nextStageOfPlan,
@@ -241,7 +242,7 @@ export function buildPracticeSenderTransferDetailModel(
             : transfer.id || "-",
       },
       { label: "전송시각", value: transfer.createdAt || "-" },
-      { label: "기공소", value: transfer.targetLab || "-" },
+      { label: "기공소", value: formatPracticeTargetLabLabel({ targetLab: transfer.targetLab }) },
       { label: "환자명", value: patientName || "-" },
       ...buildPracticeTransferDateSummaryItems(transfer),
       ...(workPeriodSummary

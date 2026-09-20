@@ -1,6 +1,7 @@
 // related files:
 // - web/backend/services/creditRevenuePolicy.service.js
 import {
+  DEFAULT_DIRECT_PLATFORM_FEE_ENABLED,
   DEFAULT_DIRECT_PLATFORM_FEE_RATE,
   DEFAULT_PLATFORM_FEE_RATE,
   isDirectPlatformFeeEnabled,
@@ -12,17 +13,48 @@ import {
 } from "../../services/creditRevenuePolicy.service.js";
 
 describe("resolvePracticeTransferFeeRate", () => {
-  test("지정 거래는 적용 off(기본)면 0(무료)", () => {
+  test("지정 거래 기본(미설정)은 on·1%", () => {
     expect(
       resolvePracticeTransferFeeRate({
         matchingMode: "direct",
-        payoutRates: { platformFeeRate: 0.2, directPlatformFeeRate: 0.05 },
+        payoutRates: {},
+      }),
+    ).toBe(DEFAULT_DIRECT_PLATFORM_FEE_RATE);
+    expect(isDirectPlatformFeeEnabled({})).toBe(true);
+    expect(DEFAULT_DIRECT_PLATFORM_FEE_ENABLED).toBe(true);
+    expect(DEFAULT_DIRECT_PLATFORM_FEE_RATE).toBe(0.01);
+  });
+
+  test("레거시 off+5% 저장분은 on·1%로 승격", () => {
+    expect(
+      isDirectPlatformFeeEnabled({
+        directPlatformFeeEnabled: false,
+        directPlatformFeeRate: 0.05,
+      }),
+    ).toBe(true);
+    expect(
+      resolveDirectPlatformFeeRate({
+        directPlatformFeeEnabled: false,
+        directPlatformFeeRate: 0.05,
+      }),
+    ).toBe(0.01);
+  });
+
+  test("지정 거래 명시적 off면 0(무료)", () => {
+    expect(
+      resolvePracticeTransferFeeRate({
+        matchingMode: "direct",
+        payoutRates: {
+          platformFeeRate: 0.2,
+          directPlatformFeeEnabled: false,
+          directPlatformFeeRate: 0.03,
+        },
       }),
     ).toBe(0);
     expect(
       isDirectPlatformFeeEnabled({
         directPlatformFeeEnabled: false,
-        directPlatformFeeRate: 0.05,
+        directPlatformFeeRate: 0.03,
       }),
     ).toBe(false);
   });
@@ -99,7 +131,12 @@ describe("resolvePracticeTransferFeeRate", () => {
     expect(resolveDirectPlatformFeeRateConfigured({})).toBe(
       DEFAULT_DIRECT_PLATFORM_FEE_RATE,
     );
-    expect(resolveDirectPlatformFeeRate({})).toBe(0);
+    expect(
+      resolveDirectPlatformFeeRate({
+        directPlatformFeeEnabled: false,
+        directPlatformFeeRate: 0.08,
+      }),
+    ).toBe(0);
     expect(
       resolveDirectPlatformFeeRate({
         directPlatformFeeEnabled: true,

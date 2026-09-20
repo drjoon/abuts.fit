@@ -16,12 +16,14 @@ import {
 // - web/frontend/rules.md (practice 최근 전송 기공소 SSOT)
 // - 2026-08-18: 치과 픽커 「자동 매칭」제거. 고정=어벗츠기공소, 최근=지정 기공소.
 // - 2026-08-20: 모바일 구강포토 동기화 후 로컬 파일만 키로 제거(removeFilesByKeys).
+// - 2026-09-20: 지정 기공소 픽커 표시「어벗츠 협력 · {이름}」(어벗츠기공소 제외).
 // - 2026-09-05: 기공소 미선택 시 테스트기공소 자동 선택(resolveTestLabByName).
 import {
   PRACTICE_ACCEPTED_HINT,
   PRACTICE_TRANSFER_IMAGE_EXTENSIONS,
   PRACTICE_TRANSFER_MODEL_EXTENSIONS,
 } from "@/shared/practice/practiceTransferAccept";
+import { formatPracticeTargetLabLabel } from "@/shared/practice/practiceLabRating";
 
 export { PRACTICE_ACCEPTED_HINT };
 
@@ -585,9 +587,10 @@ export const getBusinessLabel = (b: {
   name: string;
   businessNumber?: string;
 }) => {
-  const name = String(b?.name || "").trim();
-  const bn = String(b?.businessNumber || "").trim();
-  return bn ? `${name} (${bn})` : name;
+  // 사업자번호는 검색·메타용. 라벨에 넣으면 픽커가 잘린다.
+  return formatPracticeTargetLabLabel({
+    targetLab: String(b?.name || "").trim(),
+  });
 };
 
 export const usePracticeTransferStep1 = (options?: Options) => {

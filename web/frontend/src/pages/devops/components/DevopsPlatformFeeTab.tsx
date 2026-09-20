@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-20: 지정 거래 기본 on·1%. 「별도 공지까지 무료」카피 제거.
 // - 2026-08-21: 신속처리 할증(기공·어벗츠 배수) 설정 UI 제거.
 // - 2026-08-17: 기공의뢰 신속처리 할증(배수) 설정 추가.
 // - 2026-08-16: 지정 거래 카드 안에 적용 on/off + 툴팁. 별도 카드 제거.
@@ -63,15 +64,15 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
   const queryClient = useQueryClient();
   const [loading, setLoading] = useState(Boolean(token));
   const [platformFeeRate, setPlatformFeeRate] = useState("15");
-  const [directFeeEnabled, setDirectFeeEnabled] = useState(false);
-  const [directFeeRate, setDirectFeeRate] = useState("5");
+  const [directFeeEnabled, setDirectFeeEnabled] = useState(true);
+  const [directFeeRate, setDirectFeeRate] = useState("1");
   const hydratedRef = useRef(false);
   const savedMatchRef = useRef("15");
-  const savedDirectEnabledRef = useRef(false);
-  const savedDirectRef = useRef("5");
+  const savedDirectEnabledRef = useRef(true);
+  const savedDirectRef = useRef("1");
   const matchRef = useRef("10");
-  const directEnabledRef = useRef(false);
-  const directRef = useRef("5");
+  const directEnabledRef = useRef(true);
+  const directRef = useRef("1");
   matchRef.current = platformFeeRate;
   directEnabledRef.current = directFeeEnabled;
   directRef.current = directFeeRate;
@@ -104,9 +105,9 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
         );
         const directPct = toPctString(
           Number(settings.directPlatformFeeRate),
-          0.05,
+          0.01,
         );
-        const enabled = settings.directPlatformFeeEnabled === true;
+        const enabled = settings.directPlatformFeeEnabled !== false;
         savedMatchRef.current = matchPct;
         savedDirectEnabledRef.current = enabled;
         savedDirectRef.current = directPct;
@@ -190,7 +191,7 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
             )
           : String(match);
         savedDirectEnabledRef.current =
-          saved?.directPlatformFeeEnabled === true;
+          saved?.directPlatformFeeEnabled !== false;
         savedDirectRef.current = saved
           ? toPctString(Number(saved.directPlatformFeeRate), direct / 100)
           : String(direct);
@@ -277,12 +278,12 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
                   </button>
                 </TooltipTrigger>
                 <TooltipContent className="max-w-[240px] text-[12px] leading-relaxed">
-                  끄면 기공소·치과에 무료로 안내되고 실효 요율은 0%입니다.
+                  기공소 정산 지급 시 공제합니다. 끄면 실효 요율은 0%입니다.
                 </TooltipContent>
               </Tooltip>
             </div>
             <p className="text-[12px] leading-snug text-muted-foreground">
-              {directFeeEnabled ? "성공 수수료" : "별도 공지 시까지 무료"}
+              {directFeeEnabled ? "지급 시 공제" : "적용 안 함(0%)"}
             </p>
           </div>
         </div>

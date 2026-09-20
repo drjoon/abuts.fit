@@ -8,9 +8,9 @@
 import mongoose from "mongoose";
 
 // 계산서/세금계산서 발행 방향(반대방향 = 크레딧 흐름의 역방향).
-// - ABUTS_TO_CUSTOMER: 치과/기공소가 어벗츠에 결제한 사용분(기공·어벗=면세 계산서, 스토어=과세 세금계산서)의 반대방향. 어벗츠가 실제 공급자(SELF). buyerKind로 치과/기공소 구분.
-// - LAB_TO_PRACTICE: 치과→기공소 기공의뢰비(크레딧)의 반대방향. 기공소가 실제 공급자, 어벗츠는 수탁자(TRUSTEE). 면세 계산서만.
-// - AFFILIATE_TO_ABUTS: 어벗츠→관계사/파트너 정산(크레딧)의 반대방향. 공급자=기공소·제조사·딜러사·개발운영사, 어벗츠=수탁자(TRUSTEE). 과세/면세는 taxType.
+// - ABUTS_TO_CUSTOMER: 치과/기공소가 어벗츠에 결제한 사용분(기공·어벗=면세 계산서, 스토어=과세 세금계산서)의 반대방향. 어벗츠가 실제 공급자(SELF). buyerKind로 치과/기공소 구분. PTX 기공비 포함.
+// - LAB_TO_PRACTICE: (deprecated 2026-09-20) 기공소→치과 위수탁. 신규 생성 중단. 이력만.
+// - AFFILIATE_TO_ABUTS: 관계사→어벗츠 매입/정산(기공소=하청 매입 기공비 면세, 제조·딜러·개발운영=과세). 어벗츠=수탁자(TRUSTEE).
 export const TAX_INVOICE_DIRECTIONS = [
   "ABUTS_TO_CUSTOMER",
   "LAB_TO_PRACTICE",

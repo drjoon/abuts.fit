@@ -58,7 +58,7 @@ export const SETTLEMENT_INVOICE_DRAFT_ROLES = new Set([
 ]);
 
 const SETTLEMENT_INVOICE_ITEM_NAMES = {
-  lab: "기공 정산",
+  lab: "하청(매입) 기공비",
   manufacturer: "커스텀어벗 생산 하청 정산",
   salesman: "플랫폼 운영 수수료 정산",
   devops: "플랫폼 개발운영 정산",

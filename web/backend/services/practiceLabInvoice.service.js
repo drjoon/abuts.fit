@@ -8,6 +8,7 @@
 // - web/backend/jobs/monthlyPracticeLabInvoiceWorker.js
 //
 // ①치과→기공소 기공의뢰비(크레딧)의 반대방향 계산서(면세, 위수탁) 월 합계 발행.
+// 2026-09-20: 기공비는 어벗츠→치과(ABUTS_TO_CUSTOMER)로 통일. 이 경로 신규 draft는 중단(이력 유지).
 // 기공소가 실제 공급자, 치과가 공급받는자, 어벗츠는 팝빌 수탁자로 대리발행한다.
 import { Types } from "mongoose";
 import LedgerLine from "../models/ledgerLine.model.js";
@@ -17,6 +18,9 @@ import User from "../models/user.model.js";
 import TaxInvoiceDraft from "../models/taxInvoiceDraft.model.js";
 import { buildPartySnapshotFromAnchor } from "../utils/taxInvoiceParty.util.js";
 import { writeDateFromPeriodEnd } from "../utils/taxInvoicePeriod.util.js";
+
+/** 신규 LAB_TO_PRACTICE draft 생성 중단. 기존 draft·기간 조회 헬퍼는 유지. */
+export const LAB_TO_PRACTICE_INVOICE_GENERATION_ENABLED = false;
 
 function isDuplicateKeyError(err) {
   const code = err?.code;
@@ -47,6 +51,10 @@ export async function generateMonthlyLabToPracticeInvoiceDrafts({
 }) {
   if (!(periodStart instanceof Date) || !(periodEnd instanceof Date)) {
     throw new Error("periodStart/periodEnd(Date)가 필요합니다.");
+  }
+
+  if (!LAB_TO_PRACTICE_INVOICE_GENERATION_ENABLED) {
+    return { created: 0, skippedExisting: 0, groups: 0, disabled: true };
   }
 
   const rows = await LedgerLine.aggregate([

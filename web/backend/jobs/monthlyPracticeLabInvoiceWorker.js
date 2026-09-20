@@ -3,9 +3,11 @@
 // - web/backend/services/taxInvoiceAutoIssue.service.js
 // - web/backend/server.js
 // change-log:
+// - 2026-09-20: LAB_TO_PRACTICE 신규 draft 중단(기공비=ABUTS_TO_CUSTOMER). auto-issue도 스킵.
 // - 2026-09-20: TAX_INVOICE_AUTO_ISSUE_ON_DAY1 시 초안 자동 발행(1B 훅).
 import {
   generateMonthlyLabToPracticeInvoiceDrafts,
+  LAB_TO_PRACTICE_INVOICE_GENERATION_ENABLED,
   resolvePreviousKstMonthRange,
 } from "../services/practiceLabInvoice.service.js";
 import { maybeAutoIssuePendingDraftsForPeriod } from "../services/taxInvoiceAutoIssue.service.js";
@@ -35,10 +37,13 @@ async function tick() {
   if (Number(day) !== runDay || lastRunKey === key) return;
   const range = resolvePreviousKstMonthRange();
   const result = await generateMonthlyLabToPracticeInvoiceDrafts(range);
-  const autoIssue = await maybeAutoIssuePendingDraftsForPeriod({
-    ...range,
-    directions: ["LAB_TO_PRACTICE"],
-  });
+  let autoIssue = { skipped: true, reason: "LAB_TO_PRACTICE_DISABLED" };
+  if (LAB_TO_PRACTICE_INVOICE_GENERATION_ENABLED) {
+    autoIssue = await maybeAutoIssuePendingDraftsForPeriod({
+      ...range,
+      directions: ["LAB_TO_PRACTICE"],
+    });
+  }
   scheduleTaxPendingBadgeEmit();
   lastRunKey = key;
   console.log("[monthlyPracticeLabInvoice] completed", {

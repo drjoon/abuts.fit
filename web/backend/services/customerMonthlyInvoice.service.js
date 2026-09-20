@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-20: PTX 라이브 HOLD/HOLD_ADJUST를 면세 월합에 포함. LAB_TO_PRACTICE와 이중발행 금지.
 // - 2026-09-20: 월합 writeDate=기간 말일(KST).
 // - 2026-08-23: 고객향 ABUTS_TO_CUSTOMER 월합 — 면세(기공·어벗) / 과세(스토어) 분리.
 // related files:
@@ -22,6 +23,8 @@ const EXEMPT_SPEND_EVENTS = [
   "REQUEST_SPEND_COMMIT",
   "SHIPPING_SPEND_COMMIT",
   "PRACTICE_TRANSFER_SPEND_COMMIT",
+  "PRACTICE_TRANSFER_SPEND_HOLD",
+  "PRACTICE_TRANSFER_HOLD_ADJUST",
 ];
 
 function isDuplicateKeyError(err) {
@@ -102,7 +105,7 @@ async function generateExemptDrafts({ periodStart, periodEnd }) {
     {
       $match: {
         accountCode: "REQ_PAID_CREDIT",
-        amount: { $lt: 0 },
+        // 음수(소비)·양수(환급/조정) 모두 합산해 순액 월합. HOLD_ADJUST 상계 포함.
         occurredAt: { $gte: periodStart, $lt: periodEnd },
         refType: { $ne: "STORE_ORDER" },
       },

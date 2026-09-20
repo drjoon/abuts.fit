@@ -39,6 +39,7 @@ import {
 import {
   parsePracticeLabRatingPublic,
   formatPracticeTargetLabLabel,
+  stripPracticeTargetLabDisplayDecorations,
   type PracticeLabRatingPublic,
 } from "@/shared/practice/practiceLabRating";
 import {
@@ -1686,9 +1687,7 @@ export const groupPracticeRecentRequests = (
     if (req.handledByCertifiedPartner) {
       existing.handledByCertifiedPartner = true;
       existing.targetLab = formatPracticeTargetLabLabel({
-        targetLab: String(existing.targetLab || "")
-          .replace(/\s·\s인증 협력 기공소에서 처리$/, "")
-          .trim(),
+        targetLab: stripPracticeTargetLabDisplayDecorations(existing.targetLab),
         handledByCertifiedPartner: true,
       });
     }

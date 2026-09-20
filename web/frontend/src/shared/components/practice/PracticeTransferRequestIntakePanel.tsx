@@ -268,6 +268,7 @@ import {
 // - 2026-09-05: data-guide-tour=oral_memo — 가이드투어 메모 하이라이트.
 // - 2026-09-05: 가이드투어 — lab 검색 드롭다운 satellite(홀 확장) + z-430.
 // - 2026-09-05: 가이드투어 환자명 — 글자마다 즉시 진행 금지. 입력 멈춤(idle)·Enter만.
+// - 2026-09-20: 기공소 헤더 열 비율 확대(1.75fr). 지정 라벨 단축과 맞춤.
 // - 2026-09-05: 기공소 드롭다운 폭=트리거와 동일(min-w 제거).
 // - 2026-09-05: 플랫폼 투어 — 기공소 팝오버 강제오픈 안 함(위치 고정). 수동 오픈 시 z-430.
 // - 2026-09-05: 가이드투어 — 환자명에서 뒤로 시 기공소 팝오버 강제오픈·즉시 3 재진입 방지.
@@ -3490,7 +3491,7 @@ export const PracticeTransferRequestIntakePanel = ({
       ? "grid grid-cols-1 items-end gap-3 max-w-lg"
       : headerFieldCount === 2
         ? "grid grid-cols-1 items-end gap-3"
-        : "grid grid-cols-1 items-end gap-3 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,0.7fr)_minmax(0,0.95fr)]";
+        : "grid grid-cols-1 items-end gap-3 lg:grid-cols-[minmax(0,1.75fr)_minmax(0,0.6fr)_minmax(0,0.85fr)]";
 
   const isHeaderTourStep =
     toothWorkGuideTourStep != null && toothWorkGuideTourStepId === "header";

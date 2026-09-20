@@ -5,6 +5,7 @@
 // - web/backend/scripts/db/migrate-legacy-creditledger-to-gl.js
 // - web/backend/scripts/db/rebalance-manufacturer-unit-price.js
 // change-log:
+// - 2026-09-20: 지정 거래 수수료 기본 on · 1%(directPlatformFeeEnabled/Rate).
 // - 2026-09-20: 제조사 매입가 = 판매가의 50%(포함가). 리메이크도 같은 매입가.
 // - 2026-09-09: 리메이크 제조사 지급 — 무료(0) → 건당 부가세 포함 6,600원(manufacturerRemakeUnitPrice).
 // - 2026-09-06: allocateAffiliateVatAcrossSupplyParts — 분할 라인 VAT 합=전체 VAT(반올림 드리프트 방지).
@@ -215,13 +216,15 @@ export const WITHOUT_SALESMAN_RATES = resolveRatesWithoutSalesman(WITH_SALESMAN_
 export const DEFAULT_PLATFORM_FEE_RATE = 0.1;
 /** 어벗츠 원청을 타 기공소가 하청 수행할 때 공제율(기본 15%, 수행 기공소 85%). */
 export const DEFAULT_SUBCONTRACT_FEE_RATE = 0.15;
-/** 지정 기공소(direct) 성공 수수료 기본 5%(적용 on일 때만). */
-export const DEFAULT_DIRECT_PLATFORM_FEE_RATE = 0.05;
+/** 지정 기공소(direct) 성공 수수료 기본 1%(적용 on일 때). */
+export const DEFAULT_DIRECT_PLATFORM_FEE_RATE = 0.01;
+/** 구 스키마 기본(off + 5%). 마이그레이션·resolve에서 레거시로 취급. */
+export const LEGACY_DEFAULT_DIRECT_PLATFORM_FEE_RATE = 0.05;
 /**
  * 지정 거래 수수료 적용 기본값.
- * false = 별도 공지가 있을 때까지 무료(실효 요율 0).
+ * true = 기공소 지급 시 플랫폼 수수료 공제(관리자에서 off/요율 변경 가능).
  */
-export const DEFAULT_DIRECT_PLATFORM_FEE_ENABLED = false;
+export const DEFAULT_DIRECT_PLATFORM_FEE_ENABLED = true;
 /** @deprecated 등록/미등록 2단계 폐지. 읽기 fallback 전용. */
 export const DEFAULT_PARTNER_FEE_RATE = 0;
 export const DEFAULT_NON_PARTNER_FEE_RATE = DEFAULT_PLATFORM_FEE_RATE;
@@ -239,16 +242,33 @@ export function resolvePlatformFeeRate(payoutRates) {
     : DEFAULT_PLATFORM_FEE_RATE;
 }
 
-/** 지정 거래 수수료 적용 여부. 명시적 true만 on(미설정·false = 무료). */
+/** 지정 거래 수수료 적용 여부. 미설정·레거시(off+5%)는 기본 on, 커스텀 off만 무료. */
 export function isDirectPlatformFeeEnabled(payoutRates) {
-  return payoutRates?.directPlatformFeeEnabled === true;
+  if (payoutRates?.directPlatformFeeEnabled === true) return true;
+  if (payoutRates?.directPlatformFeeEnabled === false) {
+    const rate = payoutRates?.directPlatformFeeRate;
+    const isLegacyOffFivePct =
+      rate == null ||
+      (Number.isFinite(Number(rate)) &&
+        Math.abs(Number(rate) - LEGACY_DEFAULT_DIRECT_PLATFORM_FEE_RATE) < 1e-9);
+    if (isLegacyOffFivePct) return DEFAULT_DIRECT_PLATFORM_FEE_ENABLED;
+    return false;
+  }
+  return DEFAULT_DIRECT_PLATFORM_FEE_ENABLED;
 }
 
-/** 지정 거래 설정 요율(적용 off여도 저장값 유지). */
+/** 지정 거래 설정 요율(적용 off여도 저장값 유지). 레거시 off+5%는 1%로 승격. */
 export function resolveDirectPlatformFeeRateConfigured(payoutRates) {
   const raw = payoutRates?.directPlatformFeeRate;
   if (raw != null && Number.isFinite(Number(raw))) {
-    return Math.min(1, Math.max(0, Number(raw)));
+    const n = Math.min(1, Math.max(0, Number(raw)));
+    if (
+      Math.abs(n - LEGACY_DEFAULT_DIRECT_PLATFORM_FEE_RATE) < 1e-9 &&
+      payoutRates?.directPlatformFeeEnabled !== true
+    ) {
+      return DEFAULT_DIRECT_PLATFORM_FEE_RATE;
+    }
+    return n;
   }
   return DEFAULT_DIRECT_PLATFORM_FEE_RATE;
 }

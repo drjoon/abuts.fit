@@ -23,8 +23,8 @@ export function PlatformBusinessTab() {
   const { previewPool } = state.platform;
 
   const [matchRatePct, setMatchRatePct] = useState(10);
-  const [directEnabled, setDirectEnabled] = useState(false);
-  const [directRatePct, setDirectRatePct] = useState(5);
+  const [directEnabled, setDirectEnabled] = useState(true);
+  const [directRatePct, setDirectRatePct] = useState(1);
 
   useEffect(() => {
     if (!token) return;
@@ -48,9 +48,11 @@ export function PlatformBusinessTab() {
       if (fees?.platformFeeRate != null) {
         setMatchRatePct(Math.round(Number(fees.platformFeeRate) * 100));
       }
-      setDirectEnabled(fees?.directPlatformFeeEnabled === true);
+      setDirectEnabled(fees?.directPlatformFeeEnabled !== false);
       if (fees?.directPlatformFeeRate != null) {
         setDirectRatePct(Math.round(Number(fees.directPlatformFeeRate) * 100));
+      } else {
+        setDirectRatePct(1);
       }
     })();
   }, [token]);

@@ -60,6 +60,8 @@ import {
 } from "../../utils/requestorCapabilities.js";
 import {
   resolvePlatformFeeRate,
+  isDirectPlatformFeeEnabled,
+  resolveDirectPlatformFeeRateConfigured,
 } from "../../services/creditRevenuePolicy.service.js";
 import { invalidatePracticeTransferQuoteCaches } from "../../services/practiceTransferBilling.service.js";
 import {
@@ -121,10 +123,18 @@ async function resolvePlatformFeeRatesForDisplay() {
     .sort({ createdAt: 1 })
     .lean();
   const platformFeeRate = resolvePlatformFeeRate(devops?.payoutRates);
+  const directPlatformFeeEnabled = isDirectPlatformFeeEnabled(
+    devops?.payoutRates,
+  );
+  const directPlatformFeeRate = resolveDirectPlatformFeeRateConfigured(
+    devops?.payoutRates,
+  );
   return {
     platformFeeRate,
     partnerFeeRate: platformFeeRate,
     nonPartnerFeeRate: platformFeeRate,
+    directPlatformFeeEnabled,
+    directPlatformFeeRate,
   };
 }
 
