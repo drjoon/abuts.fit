@@ -1,19 +1,19 @@
 // related files:
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // - web/frontend/src/shared/practice/practiceTransferDetailPrint.ts
-// - 2026-09-20: 부모 @container ≥24rem이면 라벨, 좁으면 아이콘(iconOnly면 항상 아이콘).
-// - 2026-09-20: iconOnly — 프린트·번호표 아이콘만(좁은 상세 패널).
-// - 2026-09-20: nowrap·축약 — 헤더 작업시작/취소와 한 줄.
-// - 2026-09-20: 번호표 — 글자만(A–Z) 또는 글자+숫자(A1–Z9). 숫자는 옵션.
+// - web/frontend/src/shared/practice/labBasketTagSheetPrint.ts
+// - 2026-09-20: 번호표 01–99. 전체·유실분 선택 후 인쇄(미리보기는 인쇄 대화상자).
+// - 2026-09-20: 프린트·번호표 — 아이콘+라벨 항상 표시(안내 Info만 아이콘).
 // - 2026-09-20: 기공소 의뢰상세 — 프린트·바구니 번호표·안내 모달.
 import { useMemo, useState, type ReactNode } from "react";
-import { ChevronDown, Info, Printer, Tags } from "lucide-react";
+import { Info, Printer, Tags } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -22,20 +22,26 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Label } from "@/components/ui/label";
 import { cn } from "@/shared/ui/cn";
+import {
+  labBasketTagSheetCount,
+  listLabBasketTags,
+  normalizeLabBasketTagCode,
+  printLabBasketTagSheet,
+  sortLabBasketTags,
+  LAB_BASKET_TAG_RE,
+  LAB_BASKET_TAGS_PER_PAGE,
+} from "@/shared/practice/labBasketTagSheetPrint";
 
 const STORAGE_PREFIX = "lab_basket_tag_v1:";
-const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
-const NUMBERS = [1, 2, 3, 4, 5, 6, 7, 8, 9] as const;
+const ALL_TAGS = listLabBasketTags();
 
-/** A–Z 또는 A1–Z9 */
-export const LAB_BASKET_TAG_RE = /^[A-Z][1-9]?$/;
+export { LAB_BASKET_TAG_RE };
 
 export function normalizeLabBasketTag(value: unknown): string {
-  const raw = String(value || "")
-    .trim()
-    .toUpperCase();
-  return LAB_BASKET_TAG_RE.test(raw) ? raw : "";
+  return normalizeLabBasketTagCode(value);
 }
 
 export function readLabBasketTag(storageKey: string | null | undefined): string {
@@ -73,11 +79,6 @@ type LabBasketTagToolbarProps = {
   value: string;
   onChange: (tag: string) => void;
   onPrint: () => void;
-  /**
-   * true면 항상 아이콘만.
-   * false(기본)면 부모 `@container` 폭 ≥24rem일 때 라벨 표시.
-   */
-  iconOnly?: boolean;
   className?: string;
 };
 
@@ -86,38 +87,12 @@ export function LabBasketTagToolbar({
   value,
   onChange,
   onPrint,
-  iconOnly = false,
   className,
 }: LabBasketTagToolbarProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
-  const [draftLetter, setDraftLetter] = useState<string | null>(null);
 
   const selected = normalizeLabBasketTag(value);
-  const selectedLetter = selected ? selected[0] : null;
-  const selectedNumber =
-    selected.length === 2 ? Number(selected[1]) : null;
-  const activeLetter = draftLetter || selectedLetter;
-
-  const letterButtons = useMemo(
-    () =>
-      LETTERS.map((letter) => (
-        <button
-          key={letter}
-          type="button"
-          className={cn(
-            "inline-flex h-7 w-7 items-center justify-center rounded-md text-xs font-semibold tabular-nums transition-colors",
-            activeLetter === letter
-              ? "bg-primary text-primary-foreground"
-              : "bg-muted/60 text-foreground hover:bg-muted",
-          )}
-          onClick={() => setDraftLetter(letter)}
-        >
-          {letter}
-        </button>
-      )),
-    [activeLetter],
-  );
 
   const applyTag = (next: string) => {
     const normalized = normalizeLabBasketTag(next);
@@ -125,33 +100,10 @@ export function LabBasketTagToolbar({
     writeLabBasketTag(storageKey, normalized);
   };
 
-  const commitLetterAndNumber = (letter: string, num: number) => {
-    applyTag(`${letter}${num}`);
-    setDraftLetter(null);
-    setPickerOpen(false);
-  };
-
   const clearTag = () => {
     applyTag("");
-    setDraftLetter(null);
     setPickerOpen(false);
   };
-
-  const handlePickerOpenChange = (next: boolean) => {
-    if (!next) {
-      // 글자만 고르고 닫으면 A–Z로 확정(숫자는 옵션)
-      if (draftLetter) {
-        applyTag(draftLetter);
-      }
-      setDraftLetter(null);
-    }
-    setPickerOpen(next);
-  };
-
-  const labelVisibleClass = iconOnly ? "hidden" : "hidden @[24rem]:inline";
-  const iconFallbackClass = iconOnly
-    ? "inline"
-    : "inline @[24rem]:hidden";
 
   return (
     <>
@@ -166,33 +118,25 @@ export function LabBasketTagToolbar({
           type="button"
           variant="outline"
           size="sm"
-          className={cn(
-            "h-7 text-xs",
-            iconOnly
-              ? "w-7 gap-0 px-0"
-              : "w-7 gap-0 px-0 @[24rem]:w-auto @[24rem]:gap-1 @[24rem]:px-2",
-          )}
+          className="h-7 gap-1 px-2 text-xs"
           title="의뢰 상세 인쇄 (A5)"
           aria-label="의뢰 상세 인쇄 (A5)"
           onClick={onPrint}
         >
           <Printer className="h-3.5 w-3.5 shrink-0" />
-          <span className={labelVisibleClass}>프린트</span>
+          <span>프린트</span>
         </Button>
 
-        <Popover open={pickerOpen} onOpenChange={handlePickerOpenChange}>
+        <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
           <PopoverTrigger asChild>
             <Button
               type="button"
               variant="outline"
               size="sm"
               className={cn(
-                "h-7 text-xs tabular-nums",
-                selected
-                  ? "max-w-[4.75rem] gap-0.5 px-1.5 border-primary/40 bg-primary/5 font-semibold text-primary"
-                  : iconOnly
-                    ? "w-7 gap-0 px-0"
-                    : "w-7 gap-0 px-0 @[24rem]:w-auto @[24rem]:max-w-[4.75rem] @[24rem]:gap-0.5 @[24rem]:px-1.5",
+                "h-7 max-w-[5.5rem] gap-0.5 px-1.5 text-xs tabular-nums",
+                selected &&
+                  "border-primary/40 bg-primary/5 font-semibold text-primary",
               )}
               title="기공물 바구니 번호표"
               aria-label="기공물 바구니 번호표 선택"
@@ -201,35 +145,21 @@ export function LabBasketTagToolbar({
                 <span className="min-w-0 truncate">{selected}</span>
               ) : (
                 <>
-                  <Tags
-                    className={cn("h-3.5 w-3.5 shrink-0", iconFallbackClass)}
-                  />
-                  <span className={cn("min-w-0 truncate", labelVisibleClass)}>
-                    번호표
-                  </span>
+                  <Tags className="h-3.5 w-3.5 shrink-0" />
+                  <span className="min-w-0 truncate">번호표</span>
                 </>
-              )}
-              {selected ? (
-                <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-70" />
-              ) : iconOnly ? null : (
-                <ChevronDown
-                  className={cn(
-                    "h-3.5 w-3.5 shrink-0 opacity-70",
-                    "hidden @[24rem]:inline",
-                  )}
-                />
               )}
             </Button>
           </PopoverTrigger>
           <PopoverContent
             align="start"
-            className="z-[400] w-[17.5rem] p-3"
+            className="z-[400] w-[18.5rem] p-3"
             onOpenAutoFocus={(e) => e.preventDefault()}
           >
             <div className="space-y-2.5">
               <div className="flex items-center justify-between gap-2">
                 <p className="text-xs font-semibold text-foreground">
-                  바구니 번호표
+                  바구니 번호표 (01–99)
                 </p>
                 {selected ? (
                   <button
@@ -241,29 +171,27 @@ export function LabBasketTagToolbar({
                   </button>
                 ) : null}
               </div>
-              <div className="grid grid-cols-9 gap-1">{letterButtons}</div>
-              <div className="flex items-center gap-1 border-t border-border/70 pt-2">
-                {NUMBERS.map((num) => (
-                  <button
-                    key={num}
-                    type="button"
-                    disabled={!activeLetter}
-                    className={cn(
-                      "inline-flex h-8 flex-1 items-center justify-center rounded-md text-xs font-semibold tabular-nums transition-colors disabled:cursor-not-allowed disabled:opacity-40",
-                      selectedLetter === activeLetter &&
-                        selectedNumber === num &&
-                        !draftLetter
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted/60 text-foreground hover:bg-muted",
-                    )}
-                    onClick={() => {
-                      if (!activeLetter) return;
-                      commitLetterAndNumber(activeLetter, num);
-                    }}
-                  >
-                    {num}
-                  </button>
-                ))}
+              <div className="max-h-56 overflow-y-auto pr-0.5">
+                <div className="grid grid-cols-10 gap-1">
+                  {ALL_TAGS.map((code) => (
+                    <button
+                      key={code}
+                      type="button"
+                      className={cn(
+                        "inline-flex h-7 items-center justify-center rounded-md text-[11px] font-semibold tabular-nums transition-colors",
+                        selected === code
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-muted/60 text-foreground hover:bg-muted",
+                      )}
+                      onClick={() => {
+                        applyTag(code);
+                        setPickerOpen(false);
+                      }}
+                    >
+                      {code}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           </PopoverContent>
@@ -292,38 +220,245 @@ function LabBasketTagGuideDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const [printOpen, setPrintOpen] = useState(false);
+
+  return (
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent
+          className="z-[340] gap-0 overflow-hidden p-0 sm:max-w-md"
+          overlayClassName="z-[335]"
+        >
+          <DialogHeader className="space-y-1 border-b bg-slate-50 px-5 py-4 text-left">
+            <DialogTitle className="text-base">번호표 · 바구니</DialogTitle>
+            <DialogDescription className="text-xs leading-relaxed text-muted-foreground">
+              바구니에 번호표를 넣고, 화면에서 같은 번호를 고릅니다.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 px-5 py-4">
+            <GuideStep
+              step={1}
+              title="번호표 인쇄"
+              body="01–99"
+              titleAction={
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 gap-1 px-2 text-xs"
+                  onClick={() => setPrintOpen(true)}
+                >
+                  <Printer className="h-3.5 w-3.5 shrink-0" />
+                  프린트
+                </Button>
+              }
+            >
+              <NumberTagSheetIllustration />
+            </GuideStep>
+
+            <GuideStep step={2} title="바구니에 넣기" body="작업 바구니마다 하나씩">
+              <BasketWithTagIllustration />
+            </GuideStep>
+
+            <GuideStep
+              step={3}
+              title="의뢰에 선택"
+              body="헤더 번호표 = 바구니 번호. 프린트에도 표시"
+            >
+              <MatchIllustration />
+            </GuideStep>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <LabBasketTagPrintDialog open={printOpen} onOpenChange={setPrintOpen} />
+    </>
+  );
+}
+
+type PrintScope = "full" | "custom";
+
+function LabBasketTagPrintDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const [scope, setScope] = useState<PrintScope>("full");
+  const [selectedCustom, setSelectedCustom] = useState<string[]>([]);
+
+  const tags = useMemo(() => {
+    if (scope === "custom") return sortLabBasketTags(selectedCustom);
+    return listLabBasketTags();
+  }, [scope, selectedCustom]);
+  const titleLabel = scope === "custom" ? "유실분" : "01–99";
+  const fullPages = Math.ceil(
+    labBasketTagSheetCount() / LAB_BASKET_TAGS_PER_PAGE,
+  );
+  const canPrint = tags.length > 0;
+
+  const toggleCustomTag = (code: string) => {
+    setSelectedCustom((prev) => {
+      if (prev.includes(code)) return prev.filter((t) => t !== code);
+      return sortLabBasketTags([...prev, code]);
+    });
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="z-[340] gap-0 overflow-hidden p-0 sm:max-w-md"
-        overlayClassName="z-[335]"
+        className="z-[360] flex max-h-[90vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-lg"
+        overlayClassName="z-[355]"
       >
         <DialogHeader className="space-y-1 border-b bg-slate-50 px-5 py-4 text-left">
-          <DialogTitle className="text-base">번호표 · 바구니</DialogTitle>
+          <DialogTitle className="text-base">번호표 인쇄</DialogTitle>
           <DialogDescription className="text-xs leading-relaxed text-muted-foreground">
-            바구니에 번호표를 넣고, 화면에서 같은 번호를 고릅니다.
+            전체(01–99) 또는 유실된 번호만 고른 뒤 인쇄합니다. 미리보기는 인쇄
+            창에서 확인 · A4 · 점선 따라 자르기.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 px-5 py-4">
-          <GuideStep step={1} title="번호표 인쇄" body="A–Z 또는 A1–Z9">
-            <NumberTagSheetIllustration />
-          </GuideStep>
-
-          <GuideStep step={2} title="바구니에 넣기" body="작업 바구니마다 하나씩">
-            <BasketWithTagIllustration />
-          </GuideStep>
-
-          <GuideStep
-            step={3}
-            title="의뢰에 선택"
-            body="헤더 번호표 = 바구니 번호. 프린트에도 표시"
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-4">
+          <RadioGroup
+            value={scope}
+            onValueChange={(value) => {
+              if (value === "full" || value === "custom") setScope(value);
+            }}
+            className="grid gap-2"
           >
-            <MatchIllustration />
-          </GuideStep>
+            <ScopeOption
+              id="lab-basket-tag-mode-full"
+              value="full"
+              title="전체 (01–99)"
+              detail={`${labBasketTagSheetCount()}장 · 약 ${fullPages}페이지`}
+            />
+            <ScopeOption
+              id="lab-basket-tag-mode-custom"
+              value="custom"
+              title="유실분만 선택"
+              detail="잃어버린 번호만 골라 다시 출력"
+            />
+          </RadioGroup>
+
+          {scope === "custom" ? (
+            <div className="space-y-2.5 rounded-lg border border-border/80 bg-white p-3">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs font-semibold text-foreground">
+                  출력할 번호
+                  {selectedCustom.length > 0 ? (
+                    <span className="ml-1.5 font-normal tabular-nums text-muted-foreground">
+                      ({selectedCustom.length}장)
+                    </span>
+                  ) : null}
+                </p>
+                {selectedCustom.length > 0 ? (
+                  <button
+                    type="button"
+                    className="text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                    onClick={() => setSelectedCustom([])}
+                  >
+                    전체 해제
+                  </button>
+                ) : null}
+              </div>
+
+              {selectedCustom.length > 0 ? (
+                <div className="flex flex-wrap gap-1">
+                  {sortLabBasketTags(selectedCustom).map((code) => (
+                    <button
+                      key={code}
+                      type="button"
+                      className="inline-flex h-6 items-center rounded-md border border-primary/30 bg-primary/5 px-1.5 text-[11px] font-semibold tabular-nums text-primary"
+                      title="선택 해제"
+                      onClick={() => toggleCustomTag(code)}
+                    >
+                      {code}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[11px] text-muted-foreground">
+                  아래에서 유실된 번호를 눌러 선택합니다.
+                </p>
+              )}
+
+              <div className="max-h-[min(22rem,50vh)] overflow-y-auto">
+                <div className="grid grid-cols-10 gap-1">
+                  {ALL_TAGS.map((code) => {
+                    const active = selectedCustom.includes(code);
+                    return (
+                      <button
+                        key={code}
+                        type="button"
+                        className={cn(
+                          "inline-flex h-7 items-center justify-center rounded-md text-[11px] font-semibold tabular-nums transition-colors",
+                          active
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-muted/60 text-foreground hover:bg-muted",
+                        )}
+                        onClick={() => toggleCustomTag(code)}
+                      >
+                        {code}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          ) : null}
         </div>
+
+        <DialogFooter className="gap-2 border-t bg-background px-5 py-3 sm:justify-end">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+          >
+            취소
+          </Button>
+          <Button
+            type="button"
+            className="gap-1.5"
+            disabled={!canPrint}
+            onClick={() => {
+              printLabBasketTagSheet(tags, titleLabel);
+            }}
+          >
+            <Printer className="h-4 w-4 shrink-0" />
+            인쇄{canPrint ? ` (${tags.length})` : ""}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function ScopeOption({
+  id,
+  value,
+  title,
+  detail,
+}: {
+  id: string;
+  value: PrintScope;
+  title: string;
+  detail: string;
+}) {
+  return (
+    <Label
+      htmlFor={id}
+      className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-border/80 bg-white px-3 py-2.5 has-[:checked]:border-primary/50 has-[:checked]:bg-primary/5"
+    >
+      <RadioGroupItem id={id} value={value} className="mt-0.5" />
+      <span className="min-w-0 space-y-0.5">
+        <span className="block text-sm font-semibold text-foreground">
+          {title}
+        </span>
+        <span className="block text-[11px] text-muted-foreground">{detail}</span>
+      </span>
+    </Label>
   );
 }
 
@@ -331,11 +466,13 @@ function GuideStep({
   step,
   title,
   body,
+  titleAction,
   children,
 }: {
   step: number;
   title: string;
   body: string;
+  titleAction?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -344,11 +481,16 @@ function GuideStep({
         {step}
       </div>
       <div className="min-w-0 space-y-2">
-        <div>
-          <p className="text-sm font-semibold text-foreground">{title}</p>
-          <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">
-            {body}
-          </p>
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-foreground">{title}</p>
+            <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">
+              {body}
+            </p>
+          </div>
+          {titleAction ? (
+            <div className="shrink-0 pt-0.5">{titleAction}</div>
+          ) : null}
         </div>
         <div className="overflow-hidden rounded-lg border border-border/80 bg-gradient-to-br from-slate-50 to-white p-3">
           {children}
@@ -359,7 +501,7 @@ function GuideStep({
 }
 
 function NumberTagSheetIllustration() {
-  const samples = ["A", "B", "C3", "D", "E2", "F1"];
+  const samples = ["01", "02", "15", "23", "48", "99"];
   return (
     <div className="flex flex-wrap justify-center gap-2 py-1" aria-hidden>
       {samples.map((code) => (
@@ -391,7 +533,6 @@ function BasketWithTagIllustration() {
             <stop offset="100%" stopColor="#e2e8f0" />
           </linearGradient>
         </defs>
-        {/* basket */}
         <path
           d="M48 58 h124 l14 72 H34 Z"
           fill="url(#basketBody)"
@@ -412,11 +553,9 @@ function BasketWithTagIllustration() {
           strokeLinecap="round"
           fill="none"
         />
-        {/* work pieces */}
         <rect x="78" y="78" width="28" height="18" rx="3" fill="#bfdbfe" stroke="#60a5fa" />
         <rect x="114" y="74" width="24" height="22" rx="3" fill="#fda4af" stroke="#fb7185" />
         <circle cx="156" cy="92" r="11" fill="#86efac" stroke="#4ade80" />
-        {/* hanging tag */}
         <path d="M168 52 v18" stroke="#64748b" strokeWidth="1.5" strokeDasharray="2 2" />
         <rect
           x="156"
@@ -437,7 +576,7 @@ function BasketWithTagIllustration() {
           fontWeight="700"
           fontFamily="ui-sans-serif, system-ui, sans-serif"
         >
-          B3
+          15
         </text>
       </svg>
     </div>
@@ -449,7 +588,7 @@ function MatchIllustration() {
     <div className="flex items-center justify-center gap-3 py-1" aria-hidden>
       <div className="flex h-14 w-14 flex-col items-center justify-center rounded-lg border-2 border-sky-400 bg-sky-50 shadow-sm">
         <span className="text-[10px] text-sky-600/80">바구니</span>
-        <span className="text-sm font-bold tabular-nums text-sky-800">B3</span>
+        <span className="text-sm font-bold tabular-nums text-sky-800">15</span>
       </div>
       <svg width="36" height="20" viewBox="0 0 36 20" fill="none">
         <path
@@ -462,7 +601,7 @@ function MatchIllustration() {
       </svg>
       <div className="flex h-14 min-w-[7.5rem] flex-col justify-center rounded-lg border border-slate-200 bg-white px-3 shadow-sm">
         <span className="text-[10px] text-muted-foreground">의뢰 · 채팅</span>
-        <span className="text-xs font-semibold text-foreground">번호표 B3</span>
+        <span className="text-xs font-semibold text-foreground">번호표 15</span>
       </div>
     </div>
   );

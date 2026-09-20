@@ -16,9 +16,9 @@
 // - web/frontend/src/shared/files/fileBlobCache.ts
 // - web/frontend/src/shared/files/s3ImageThumb.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
-// - 2026-09-20: 기공소 — 프린트·번호표는 액션 행 폭≥24rem일 때 라벨(좁으면 아이콘).
+// - 2026-09-20: 기공소 — 프린트·번호표 아이콘+라벨 항상 표시.
 // - 2026-09-20: 기공소 — 프린트·번호표를 작업시작/취소와 같은 헤더 액션 줄로(별도 행 제거).
-// - 2026-09-20: 기공소 — 헤더에 의뢰정보 프린트·바구니 번호표(A1–Z9)·안내 복원.
+// - 2026-09-20: 기공소 — 헤더에 의뢰정보 프린트·바구니 번호표(01–99)·안내 복원.
 // - 2026-09-20: 작업 파일 전체 다운로드 — 어벗 디자인·보철물을 zip 하나로.
 // - 2026-09-16: 채팅 헤더 — 1줄=타이틀, 2줄=주문/도착·다음도착일, 경계선, 3줄=액션.
 // - 2026-09-16: 기공소 — 채팅 스크롤 상·하단 액션 CTA 제거. 지르 작업 시작은 헤더(acceptedWorkActions)만.
@@ -2438,7 +2438,7 @@ export function PracticeTransferDetailChatDialog({
   const renderHeaderActionRow = () => {
     if (!headerActionButtons && !labBasketToolbar) return null;
     return (
-      <div className="@container flex min-w-0 flex-nowrap items-center gap-1.5 overflow-x-auto border-b bg-background px-5 py-1.5">
+      <div className="flex min-w-0 flex-nowrap items-center gap-1.5 overflow-x-auto border-b bg-background px-5 py-1.5">
         {labBasketToolbar}
         {headerActionButtons ? (
           <div className="ml-auto flex min-w-0 shrink-0 items-center justify-end">

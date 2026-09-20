@@ -1,7 +1,7 @@
 // related files:
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // - web/frontend/src/shared/practice/practiceTransferFeeQuote.ts
-// - 2026-09-20: 바구니 번호표(basketTag)를 제목 옆에 크게 표시.
+// - 2026-09-20: 바구니 번호표(basketTag)를 제목 옆에 크게 표시(01–99).
 // - 2026-08-28: 프린트에서 기공비 섹션 제거.
 // - 2026-08-28: 프린트 — 기본정보 2열·치식 밀집 표로 1페이지 맞춤.
 // - 2026-08-28: 기공소 의뢰상세 A5 프린트 — iframe(noopener 빈 탭 방지).
@@ -75,15 +75,19 @@ export function printPracticeTransferDetail(params: {
   summaryItems: PracticeTransferDetailPrintSummaryItem[];
   toothWorks?: ToothWorkSelection[];
   memo?: string;
-  /** 기공물 바구니 번호표 (A1–Z9) */
+  /** 기공물 바구니 번호표 (01–99) */
   basketTag?: string | null;
 }): void {
   const title = String(params.title || "의뢰 상세").trim() || "의뢰 상세";
-  const basketTag = String(params.basketTag || "")
+  const basketRaw = String(params.basketTag || "")
     .trim()
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/g, "");
-  const basketTagOk = /^[A-Z][1-9]?$/.test(basketTag);
+    .toUpperCase();
+  const basketNum = /^\d{1,2}$/.test(basketRaw) ? Number(basketRaw) : NaN;
+  const basketTag =
+    basketNum >= 1 && basketNum <= 99
+      ? String(basketNum).padStart(2, "0")
+      : "";
+  const basketTagOk = Boolean(basketTag);
   const summaryItems = params.summaryItems || [];
   const summaryCells = summaryItems
     .map(
