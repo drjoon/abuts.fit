@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-20: 기공소 정산 적립 카드 — 완료/보류 분리. 소비 완료/보류는 치과만(결제 HOLD).
 // - 2026-09-20: 요약 카드 — overflow 바깥 여백(px-1.5)+안쪽 p-1. 경계 클리핑 재수정.
 // - 2026-09-20: 결제(적립) 완료·보류 필터 + 소비 카드 하단 완료/보류 금액.
 // - 2026-09-20: 요약 카드 행 — -mx-1 제거·p-0.5(선택 border/ring overflow 클리핑 방지).
@@ -398,6 +399,8 @@ type PeriodSpendSummary = {
   totalSpendSettledSupply?: number;
   totalSpendPendingSupply?: number;
   totalSettlementEarnSupply?: number;
+  /** 기공소 — 기간 적립 보류(잔액·정산 적립 확정 합에 미포함) */
+  totalSettlementEarnPendingSupply?: number;
 };
 
 type SummaryDrillDownState = {
@@ -2710,6 +2713,9 @@ export const CreditLedgerModal = ({
   const periodSettlementEarnTotal = Number(
     periodSpendSummary?.totalSettlementEarnSupply || 0,
   );
+  const periodSettlementEarnPendingTotal = Number(
+    periodSpendSummary?.totalSettlementEarnPendingSupply || 0,
+  );
 
   const showPeriodSpendCard =
     Boolean(currentBalanceSnapshot) && equationLedgerUi;
@@ -2723,7 +2729,7 @@ export const CreditLedgerModal = ({
   const balanceHintTooltip = isDemoMode
     ? resolveCreditLedgerDemoBalanceHint(demoKind)
     : showSettlementCredit
-      ? "충전과 기공 정산 적립(확정)에서 기공·스토어 소비를 뺀 잔여액입니다."
+      ? "충전과 기공 정산 적립(확정)에서 기공·스토어 소비를 뺀 잔여액입니다. 적립 보류는 아직 잔액에 포함되지 않습니다."
       : "충전에서 소비액(결제 보류·완료 포함)을 뺀 선불금 잔여액입니다.";
   const periodChargeLabel = CREDIT_LEDGER_CHARGE_LABEL;
   const periodChargeDetailTitle = CREDIT_LEDGER_CHARGE_DETAIL_TITLE;
@@ -2731,12 +2737,20 @@ export const CreditLedgerModal = ({
     ? CREDIT_LEDGER_DEMO_CHARGE_HINT
     : "선택한 기간에 충전된 금액 합계입니다.";
   const periodSettlementEarnTooltip =
-    `선택한 기간에 확정 적립된 기공 정산 합계입니다. 적립 보류는 포함하지 않습니다. ${LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE}`;
+    `선택한 기간의 기공 정산 적립입니다. 카드 금액은 확정(적립 완료)만이며, 적립 보류는 하단에 따로 표시합니다. ${LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE}`;
   const periodSpendTooltip = isDemoMode
     ? resolveCreditLedgerDemoPeriodSpendHint(demoKind)
     : showSettlementCredit
       ? "선택한 기간에 지출한 어벗 생산·배송·스토어 결제 합계입니다."
       : "선택한 기간에 지출한 기공료·스토어 결제 합계입니다. 결제 보류(잔액 차감분)를 포함합니다.";
+
+  const statusSplitFooter = (settled: number, pending: number) => (
+    <div className="mt-0.5 text-[10px] tabular-nums leading-snug text-slate-500 sm:text-[11px]">
+      <span className="text-emerald-700">완료 {formatWon(settled)}</span>
+      <span className="mx-1 text-slate-300">·</span>
+      <span className="text-amber-800">보류 {formatWon(pending)}</span>
+    </div>
+  );
 
   const body = (
     <div
@@ -2796,6 +2810,10 @@ export const CreditLedgerModal = ({
                         value={periodSettlementEarnTotal}
                         hint="안내"
                         hintTooltip={periodSettlementEarnTooltip}
+                        footer={statusSplitFooter(
+                          periodSettlementEarnTotal,
+                          periodSettlementEarnPendingTotal,
+                        )}
                         onClick={() =>
                           openSummaryDrillDown({
                             title: "정산 적립 내역",
@@ -2816,15 +2834,13 @@ export const CreditLedgerModal = ({
                     hint="안내"
                     hintTooltip={periodSpendTooltip}
                     footer={
-                      <div className="mt-0.5 text-[10px] tabular-nums leading-snug text-slate-500 sm:text-[11px]">
-                        <span className="text-emerald-700">
-                          완료 {formatWon(periodSpendSettledTotal)}
-                        </span>
-                        <span className="mx-1 text-slate-300">·</span>
-                        <span className="text-amber-800">
-                          보류 {formatWon(periodSpendPendingTotal)}
-                        </span>
-                      </div>
+                      // 치과: 결제 완료/보류(잔액 차감 HOLD). 기공소 소비는 어벗츠 쪽이라 적립 보류와 혼동 방지.
+                      !isLabViewer
+                        ? statusSplitFooter(
+                            periodSpendSettledTotal,
+                            periodSpendPendingTotal,
+                          )
+                        : undefined
                     }
                     onClick={() =>
                       openSummaryDrillDown({

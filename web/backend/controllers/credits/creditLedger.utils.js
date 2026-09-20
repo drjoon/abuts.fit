@@ -8,6 +8,7 @@
 // - web/backend/services/practiceTransferBilling.service.js
 // - web/backend/models/businessAnchor.model.js
 // - web/backend/services/requestCreditHold.service.js
+// - 2026-09-20: 기간 요약 — 기공소 적립 보류 합(totalSettlementEarnPendingSupply) 분리(확정 합·잔액 미포함).
 // - 2026-09-20: 기간 소비 요약 — 결제(적립) 완료·보류 공급가 분리(convertedAt 없는 HOLD).
 // - 2026-09-20: CA 디자인 STL 미업로드·생산비 미지급 PTX는 적립 보류 미러에서 제외.
 // - 2026-09-05: 정산 적립 집계 — PRACTICE_TRANSFER_ESCROW_RELEASE(+LAB_SETTLEMENT_CREDIT) 포함. 내역 행 타입과 동일.
@@ -1427,7 +1428,9 @@ export function parseCreditLedgerFacetResult(facetRaw, { pageSize } = {}) {
  * 의뢰자 정산 내역 상단 카드 — 필터 기간 유료/무료 충전·소비·(기공소) 정산 적립 공급가.
  * 소비는 REQ_* 실차감(HOLD 포함 — 잔액에서 이미 차감). 통계 탭과 동일 이벤트 기준.
  * 소비 완료/보류: convertedAt 없는 HOLD=보류, 그 외 소비·변환된 HOLD=완료.
- * 정산 적립은 확정(ESCROW_RELEASE 등)만. includePendingLabSettlement는 레거시 플래그(기본 false).
+ * 정산 적립(totalSettlementEarnSupply)은 확정만. 기공소 적립 보류는
+ * totalSettlementEarnPendingSupply(잔액·수식 미포함)로 분리.
+ * includePendingLabSettlement는 레거시(확정 합에 보류를 더함, 기본 false).
  * usageScope=real|demo 이면 합계(total*)만 해당 범위. byUsage 는 항상 실사용/데모 분리.
  */
 export async function aggregateRequestorPeriodLedgerSummary({
@@ -1435,6 +1438,8 @@ export async function aggregateRequestorPeriodLedgerSummary({
   occurredAt,
   journalCollectionName,
   includePendingLabSettlement = false,
+  /** 기공소 요약 — 적립 보류 합을 별도 필드로(확정 합에는 넣지 않음) */
+  settlementEarnPendingBreakdown = false,
   usageScope = "all",
   practiceDemoMode = false,
   excludeRefIds = null,
@@ -1456,6 +1461,7 @@ export async function aggregateRequestorPeriodLedgerSummary({
     totalSpendSettledSupply: 0,
     totalSpendPendingSupply: 0,
     totalSettlementEarnSupply: 0,
+    totalSettlementEarnPendingSupply: 0,
   });
   const real = emptyBucket();
   const demo = emptyBucket();
@@ -1627,7 +1633,7 @@ export async function aggregateRequestorPeriodLedgerSummary({
     );
   }
 
-  if (includePendingLabSettlement) {
+  if (includePendingLabSettlement || settlementEarnPendingBreakdown) {
     const pendingRows = await listPendingLabSettlementLedgerRows({
       labAnchorId: ownerObjectId,
       occurredAt:
@@ -1638,10 +1644,13 @@ export async function aggregateRequestorPeriodLedgerSummary({
     for (const row of pendingRows) {
       const amount = Number(row?.amount || 0);
       if (amount <= 0) continue;
-      if (Boolean(row?.fundedByDemoCredit)) {
-        bump(demo, "totalSettlementEarnSupply", amount);
-      } else {
-        bump(real, "totalSettlementEarnSupply", amount);
+      const bucket = Boolean(row?.fundedByDemoCredit) ? demo : real;
+      // 레거시: 확정 합에 보류를 섞음(수식·잔액과 불일치 — 기본 미사용).
+      if (includePendingLabSettlement) {
+        bump(bucket, "totalSettlementEarnSupply", amount);
+      }
+      if (settlementEarnPendingBreakdown) {
+        bump(bucket, "totalSettlementEarnPendingSupply", amount);
       }
     }
   }
@@ -1669,6 +1678,10 @@ export async function aggregateRequestorPeriodLedgerSummary({
         0,
         Math.round(bucket.totalSettlementEarnSupply),
       ),
+      totalSettlementEarnPendingSupply: Math.max(
+        0,
+        Math.round(bucket.totalSettlementEarnPendingSupply),
+      ),
     };
   };
 
@@ -1684,6 +1697,8 @@ export async function aggregateRequestorPeriodLedgerSummary({
       a.totalSpendPendingSupply + b.totalSpendPendingSupply,
     totalSettlementEarnSupply:
       a.totalSettlementEarnSupply + b.totalSettlementEarnSupply,
+    totalSettlementEarnPendingSupply:
+      a.totalSettlementEarnPendingSupply + b.totalSettlementEarnPendingSupply,
   });
 
   const totals =

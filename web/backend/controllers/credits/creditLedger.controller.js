@@ -1,5 +1,5 @@
 // change-log:
-// - 2026-09-20: periodSpendSummary — 소비 완료·보류 공급가 분리.
+// - 2026-09-20: periodSpendSummary — 기공소 적립 보류 합 분리 필드. 소비 완료·보류 공급가 분리.
 // - 2026-09-20: CA 디자인 STL 미업로드·생산비 미지급은 정산 내역·기간 소비에서 제외.
 // - 2026-09-08: q 검색 — 환자명(files·transferMemo)·의뢰 caseInfos도 refId 매칭. 1글자 허용.
 // - 2026-09-02: 치과 휴지통(deleted|canceled) PTX도 장부 enrich에서 숨김(적립/결제 오인 방지).
@@ -570,8 +570,9 @@ export async function listMyCreditLedger(req, res) {
           ownerObjectId: anchorObjectId,
           occurredAt: periodOccurredAt,
           journalCollectionName: LedgerJournal.collection.name,
-          // 정산 적립 카드=확정만. 적립 보류는 잔액 미반영·취소 가능 → 합산에서 제외.
+          // 정산 적립 카드=확정만. 적립 보류는 잔액 미반영·별도 필드로만 노출.
           includePendingLabSettlement: false,
+          settlementEarnPendingBreakdown: requestorKind === "lab",
           usageScope,
           practiceDemoMode,
           excludeRefIds: blockedSettlementIds,
@@ -1075,6 +1076,9 @@ export async function listMyCreditLedger(req, res) {
               ),
               totalSettlementEarnSupply: Number(
                 periodLedgerSummary.totalSettlementEarnSupply || 0,
+              ),
+              totalSettlementEarnPendingSupply: Number(
+                periodLedgerSummary.totalSettlementEarnPendingSupply || 0,
               ),
             }
           : null,
