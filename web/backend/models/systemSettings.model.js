@@ -50,6 +50,14 @@ const systemSettingsSchema = new mongoose.Schema(
       salesmanSharePercent: { type: Number, default: 30 },
       devopsSharePercent: { type: Number, default: 10 },
       abutsSharePercent: { type: Number, default: 40 },
+      // 딜러십 영업 수수료(심플웨이·커스텀어벗 판매가, 배송비 제외).
+      // 이벤트 on이면 eventRate, 추후 공지 후 off → baseRate(기본 10%).
+      dealershipBaseCommissionRate: { type: Number, default: 0.1, min: 0, max: 1 },
+      dealershipEventCommissionRate: { type: Number, default: 0.15, min: 0, max: 1 },
+      dealershipEventCommissionEnabled: { type: Boolean, default: true },
+      // 이벤트 유치 창: [startedAt, endedAt). endedAt=null이면 진행 중.
+      dealershipEventStartedAt: { type: Date, default: null },
+      dealershipEventEndedAt: { type: Date, default: null },
       regularManufacturerSharePercent: { type: Number, default: 0 },
       regularSalesmanSharePercent: { type: Number, default: 0 },
       regularDevopsSharePercent: { type: Number, default: 20 },

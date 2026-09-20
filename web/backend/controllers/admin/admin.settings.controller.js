@@ -57,6 +57,20 @@ function sanitizeSharePercent(value) {
   return Math.min(100, Math.round(n * 100) / 100);
 }
 
+function sanitizeCommissionRate(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.min(1, Math.round(n * 10000) / 10000);
+}
+
+function sanitizeOptionalDate(value) {
+  if (value === null) return null;
+  if (value === undefined || value === "") return undefined;
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return undefined;
+  return d;
+}
+
 function appendTierPartyFields(payload, sanitized) {
   for (const prefix of CNC_TIER_PARTY_PREFIXES) {
     for (const kind of PARTY_KINDS) {
@@ -429,6 +443,28 @@ export async function updateCreditSettings(req, res) {
     const regularAbutsSharePercent = sanitizeSharePercent(
       payload.regularAbutsSharePercent,
     );
+    const dealershipBaseCommissionRate = sanitizeCommissionRate(
+      payload.dealershipBaseCommissionRate,
+    );
+    const dealershipEventCommissionRate = sanitizeCommissionRate(
+      payload.dealershipEventCommissionRate,
+    );
+    const dealershipEventCommissionEnabled =
+      typeof payload.dealershipEventCommissionEnabled === "boolean"
+        ? payload.dealershipEventCommissionEnabled
+        : null;
+    const dealershipEventStartedAt = Object.prototype.hasOwnProperty.call(
+      payload,
+      "dealershipEventStartedAt",
+    )
+      ? sanitizeOptionalDate(payload.dealershipEventStartedAt)
+      : undefined;
+    const dealershipEventEndedAt = Object.prototype.hasOwnProperty.call(
+      payload,
+      "dealershipEventEndedAt",
+    )
+      ? sanitizeOptionalDate(payload.dealershipEventEndedAt)
+      : undefined;
     const specialRequestorPrices = Array.isArray(payload.specialRequestorPrices)
       ? payload.specialRequestorPrices
           .map((item) => {
@@ -689,6 +725,22 @@ export async function updateCreditSettings(req, res) {
     if (regularAbutsSharePercent != null) {
       sanitized.regularAbutsSharePercent = regularAbutsSharePercent;
     }
+    if (dealershipBaseCommissionRate != null) {
+      sanitized.dealershipBaseCommissionRate = dealershipBaseCommissionRate;
+    }
+    if (dealershipEventCommissionRate != null) {
+      sanitized.dealershipEventCommissionRate = dealershipEventCommissionRate;
+    }
+    if (dealershipEventCommissionEnabled != null) {
+      sanitized.dealershipEventCommissionEnabled =
+        dealershipEventCommissionEnabled;
+    }
+    if (dealershipEventStartedAt !== undefined) {
+      sanitized.dealershipEventStartedAt = dealershipEventStartedAt;
+    }
+    if (dealershipEventEndedAt !== undefined) {
+      sanitized.dealershipEventEndedAt = dealershipEventEndedAt;
+    }
     // 환영 배송 분리 지급 폐기. 레거시 필드는 항상 0으로 정규화.
     sanitized.defaultShippingFreeCredit = 0;
     if (specialRequestorPrices) {
@@ -700,6 +752,32 @@ export async function updateCreditSettings(req, res) {
     }
 
     const existing = await SystemSettings.findOne({ key: "global" }).lean();
+    // 이벤트 on/off 토글 시 유치 창 자동 보정(명시 날짜가 없을 때).
+    // on: endedAt 해제. startedAt 없으면 null 유지 → 진행 중엔 전원 이벤트 요율.
+    // off: endedAt=now. startedAt 없으면 과거 기본 시작일로 채워 기존 유치 고객은 이벤트 요율 유지.
+    const prevDealership = existing?.creditSettings || {};
+    if (
+      dealershipEventCommissionEnabled === true &&
+      dealershipEventEndedAt === undefined &&
+      !Object.prototype.hasOwnProperty.call(payload, "dealershipEventEndedAt")
+    ) {
+      sanitized.dealershipEventEndedAt = null;
+    }
+    if (
+      dealershipEventCommissionEnabled === false &&
+      dealershipEventEndedAt === undefined &&
+      !prevDealership.dealershipEventEndedAt
+    ) {
+      sanitized.dealershipEventEndedAt = new Date();
+      if (
+        !sanitized.dealershipEventStartedAt &&
+        !prevDealership.dealershipEventStartedAt
+      ) {
+        sanitized.dealershipEventStartedAt = new Date(
+          "2020-01-01T00:00:00+09:00",
+        );
+      }
+    }
     const mergedRaw = {
       ...(existing?.creditSettings || {}),
       ...sanitized,

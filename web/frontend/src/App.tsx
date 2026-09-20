@@ -142,6 +142,9 @@ import ReferralGroupsPage from "@/pages/requestor/referralGroups/ReferralGroupsP
 import SalesmanPaymentsPage from "@/pages/salesman/SalesmanPaymentsPage";
 import DevopsPaymentsPage from "@/pages/devops/DevopsPaymentsPage";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
+const SalesmanPitchPage = lazy(
+  () => import("./pages/salesman/SalesmanPitchPage"),
+);
 const CncDashboardPage = lazy(() =>
   import("./pages/manufacturer/equipment/EquipmentPage").then((m) => ({
     default: m.EquipmentPage,
@@ -1072,6 +1075,14 @@ const App = () => {
                     element={
                       <RoleProtectedRoute roles={["salesman"]}>
                         <ReferralGroupsRoute />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="pitch"
+                    element={
+                      <RoleProtectedRoute roles={["salesman"]}>
+                        <SalesmanPitchPage />
                       </RoleProtectedRoute>
                     }
                   />

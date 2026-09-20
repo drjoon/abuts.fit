@@ -17,6 +17,8 @@ import { CommissionLedgerInline } from "@/shared/components/CommissionLedgerInli
 import {
   useCommissionDashboard,
   formatMoney,
+  formatCommissionRatePct,
+  requestorKindLabel,
 } from "@/features/commission/useCommissionDashboard";
 import {
   SETTLEMENT_TAXABLE_INVOICE_LABEL,
@@ -50,6 +52,12 @@ export function CommissionPaymentsPage({
   const freeNet = Number(overview?.freeNetAmount || 0);
   const payableSplit = splitInclusiveVat(payableInclusive);
   const ratePct = Math.round(Number(data?.commissionRate || 0) * 100);
+  const basePct = Math.round(
+    Number(data?.dealershipBaseCommissionRate ?? 0.1) * 100,
+  );
+  const eventPct = Math.round(
+    Number(data?.dealershipEventCommissionRate ?? 0.15) * 100,
+  );
   const payoutPolicy = isSalesman
     ? SETTLEMENT_VAT_POLICY.salesmanPayout
     : SETTLEMENT_VAT_POLICY.devopsPayout;
@@ -58,6 +66,10 @@ export function CommissionPaymentsPage({
     () => (Array.isArray(data?.organizations) ? data.organizations : []),
     [data?.organizations],
   );
+  const eventOrgCount = Number(overview?.eventOrganizationCount || 0);
+  const baseOrgCount = Number(overview?.baseOrganizationCount || 0);
+  const eventCommission = Number(overview?.eventCommissionAmount || 0);
+  const baseCommission = Number(overview?.baseCommissionAmount || 0);
 
   const title = isSalesman ? "딜러 정산" : "개발운영사 정산";
 
@@ -78,6 +90,20 @@ export function CommissionPaymentsPage({
             onClick={() => setTab("businesses")}
             hint="부가세 포함"
             hintTooltip={`${payoutPolicy} 공급가 ${payableSplit.supply.toLocaleString("ko-KR")}원 · VAT ${payableSplit.vat.toLocaleString("ko-KR")}원`}
+            footer={
+              isSalesman ? (
+                <div className="space-y-0.5 text-[11px] text-muted-foreground sm:text-xs">
+                  <div>
+                    이벤트 {eventPct}% · {eventOrgCount}개소 ·{" "}
+                    {formatMoney(eventCommission)}원
+                  </div>
+                  <div>
+                    기본 {basePct}% · {baseOrgCount}개소 ·{" "}
+                    {formatMoney(baseCommission)}원
+                  </div>
+                </div>
+              ) : undefined
+            }
           />
           <SettlementStatCard
             label="지급 합계"
@@ -118,7 +144,7 @@ export function CommissionPaymentsPage({
                 title={`${title} 규칙`}
                 description={
                   isSalesman
-                    ? "소개 수수료 부가세 포함 · 세금계산서"
+                    ? `유치 시점별 이벤트 ${eventPct || 15}% / 기본 ${basePct || 10}% · 배송비 수신자 부담 · 부가세 포함·세금계산서`
                     : "잔여 분배 부가세 포함 · 세금계산서"
                 }
               >
@@ -126,9 +152,24 @@ export function CommissionPaymentsPage({
                   <div className="flex gap-2.5">
                     <Percent className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
                     <p>
-                      {isSalesman ? "소개 수수료" : "잔여 분배"} {ratePct}%. 정산은
-                      사업자(`businessAnchorId`) 단위이며 매월{" "}
-                      {Number(data?.payoutDayOfMonth || 1)}일에 지급합니다.
+                      {isSalesman ? (
+                        <>
+                          영업 수수료는 유치(가입) 시점에 따라 다릅니다.
+                          이벤트 기간 내 유치 고객은{" "}
+                          <span className="font-semibold">{eventPct || 15}%</span>
+                          , 그 외는{" "}
+                          <span className="font-semibold">{basePct || 10}%</span>
+                          (표준). 심플웨이·커스텀어벗 판매가(배송비 제외). 배송비는
+                          수신자(치과·기공소) 부담. 정산은 사업자 단위이며 매월{" "}
+                          {Number(data?.payoutDayOfMonth || 1)}일에 지급합니다.
+                        </>
+                      ) : (
+                        <>
+                          잔여 분배 {ratePct}%. 정산은 사업자(
+                          `businessAnchorId`) 단위이며 매월{" "}
+                          {Number(data?.payoutDayOfMonth || 1)}일에 지급합니다.
+                        </>
+                      )}
                     </p>
                   </div>
                 </SettlementPolicySection>
@@ -160,46 +201,83 @@ export function CommissionPaymentsPage({
                 </div>
               ) : (
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  {organizations.map((org) => (
-                    <div
-                      key={String(org.businessAnchorId || org.name)}
-                      className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm"
-                    >
-                      <div className="text-sm font-semibold text-slate-900">
-                        {org.name || "-"}
+                  {organizations.map((org) => {
+                    const tier = org.commissionTier === "event" ? "event" : "base";
+                    const ratePctForOrg = Math.round(
+                      Number(org.commissionRate ?? (tier === "event" ? eventPct : basePct) / 100) *
+                        100,
+                    );
+                    const acquiredLabel = org.acquiredAt
+                      ? new Intl.DateTimeFormat("ko-KR", {
+                          timeZone: "Asia/Seoul",
+                          year: "numeric",
+                          month: "2-digit",
+                          day: "2-digit",
+                        }).format(new Date(org.acquiredAt))
+                      : "-";
+                    return (
+                      <div
+                        key={String(org.businessAnchorId || org.name)}
+                        className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-semibold text-slate-900">
+                              {org.name || "-"}
+                            </div>
+                            <div className="mt-0.5 text-xs text-muted-foreground">
+                              {requestorKindLabel(org.requestorKind)} · 유치{" "}
+                              {acquiredLabel}
+                            </div>
+                          </div>
+                          <span
+                            className={
+                              tier === "event"
+                                ? "shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-200"
+                                : "shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600 ring-1 ring-slate-200"
+                            }
+                          >
+                            {tier === "event" ? "이벤트" : "기본"}{" "}
+                            {formatCommissionRatePct(
+                              org.commissionRate ?? ratePctForOrg / 100,
+                            )}
+                          </span>
+                        </div>
+                        <div className="mt-3 space-y-1.5 text-sm">
+                          <div className="flex justify-between gap-3">
+                            <span className="text-muted-foreground">소개 단계</span>
+                            <span>
+                              {org.referralLevel === "unaffiliated"
+                                ? "딜러사 미설정"
+                                : "소개"}
+                            </span>
+                          </div>
+                          <div className="flex justify-between gap-3">
+                            <span className="text-muted-foreground">기간 매출</span>
+                            <span className="tabular-nums">
+                              {formatMoney(org.monthRevenueAmount)}원
+                            </span>
+                          </div>
+                          <div className="flex justify-between gap-3">
+                            <span className="text-muted-foreground">기간 주문</span>
+                            <span className="tabular-nums">
+                              {Number(org.monthOrderCount || 0).toLocaleString()}건
+                            </span>
+                          </div>
+                          <div className="flex justify-between gap-3">
+                            <span className="text-muted-foreground">
+                              기간 수수료({formatCommissionRatePct(
+                                org.commissionRate ?? ratePctForOrg / 100,
+                              )})
+                            </span>
+                            <span className="font-semibold tabular-nums">
+                              {formatMoney(org.monthCommissionAmount)}원
+                            </span>
+                          </div>
+                        </div>
                       </div>
-                      <div className="mt-3 space-y-1.5 text-sm">
-                        <div className="flex justify-between gap-3">
-                          <span className="text-muted-foreground">소개 단계</span>
-                          <span>
-                            {org.referralLevel === "unaffiliated"
-                              ? "딜러사 미설정"
-                              : "소개"}
-                          </span>
-                        </div>
-                        <div className="flex justify-between gap-3">
-                          <span className="text-muted-foreground">기간 매출</span>
-                          <span className="tabular-nums">
-                            {formatMoney(org.monthRevenueAmount)}원
-                          </span>
-                        </div>
-                        <div className="flex justify-between gap-3">
-                          <span className="text-muted-foreground">기간 주문</span>
-                          <span className="tabular-nums">
-                            {Number(org.monthOrderCount || 0).toLocaleString()}건
-                          </span>
-                        </div>
-                        <div className="flex justify-between gap-3">
-                          <span className="text-muted-foreground">
-                            기간 수수료(추정)
-                          </span>
-                          <span className="font-semibold tabular-nums">
-                            {formatMoney(org.monthCommissionAmount)}원
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </TabsContent>

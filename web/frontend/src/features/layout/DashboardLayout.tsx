@@ -321,6 +321,7 @@ const buildRequestorSidebarItems = (
 const sidebarItems = {
   requestor: buildRequestorSidebarItems("practice"),
   salesman: [
+    { icon: Layers, label: "피치", href: "/dashboard/pitch" },
     { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
     { icon: Share2, label: "소개", href: "/dashboard/referral-groups" },
     { icon: Wallet, label: "정산", href: "/dashboard/payments" },

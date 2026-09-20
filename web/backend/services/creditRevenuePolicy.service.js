@@ -5,6 +5,8 @@
 // - web/backend/scripts/db/migrate-legacy-creditledger-to-gl.js
 // - web/backend/scripts/db/rebalance-manufacturer-unit-price.js
 // change-log:
+// - 2026-09-20: 딜러십 영업 수수료 — 기본 10% · 이벤트 15%(기본 on). 관리자 플랫폼 설정.
+// - 2026-09-20: DEALERSHIP_SALES_COMMISSION_RATE 15%(심플웨이·커스텀어벗, 배송비 제외).
 // - 2026-09-20: 지정 거래 정책 요율 1% · 이벤트 기간 기본 off(실효 0%, 추후 공지 후 부과).
 // - 2026-09-20: 지정 거래 수수료 기본 on · 1%(directPlatformFeeEnabled/Rate).
 // - 2026-09-20: 제조사 매입가 = 판매가의 50%(포함가). 리메이크도 같은 매입가.
@@ -21,6 +23,100 @@
 // - 2026-08-14: DEFAULT_PLATFORM_FEE_RATE 0.25 → 0.1 (자동매칭 성공 수수료).
 // - 2026-08-16: 지정 거래 directPlatformFeeRate 기본 5%(매칭 10%와 분리).
 // - 2026-08-16: 지정 거래 수수료 적용 on/off(기본 off=별도 공지 시까지 무료).
+
+/**
+ * 딜러십 영업 수수료 기본(추후 공지 후 적용). 심플웨이·커스텀어벗 판매가(배송비 제외).
+ * @deprecated 호환 alias — resolveDealershipCommissionPolicy().effectiveRate 사용.
+ */
+export const DEALERSHIP_SALES_COMMISSION_RATE = 0.15;
+/** 딜러십 표준 요율(추후 공지 후). */
+export const DEALERSHIP_BASE_COMMISSION_RATE = 0.1;
+/** 딜러십 이벤트 요율(이벤트 on 시 실효). */
+export const DEALERSHIP_EVENT_COMMISSION_RATE = 0.15;
+
+function clampCommissionRate(raw, fallback) {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) return fallback;
+  return Math.min(1, n);
+}
+
+/**
+ * 딜러십 영업 수수료 정책.
+ * - baseRate: 추후 공지 후 표준 요율
+ * - eventRate: 이벤트 기간 내 유치(가입) 고객 요율
+ * - 유치 시점이 [eventStartedAt, eventEndedAt) 이면 eventRate, 아니면 baseRate
+ * - 배송비는 수신자(치과·기공소) 부담 · 수수료 산정 제외
+ */
+export function resolveDealershipCommissionPolicy(creditSettings = {}) {
+  const baseRate = clampCommissionRate(
+    creditSettings?.dealershipBaseCommissionRate,
+    DEALERSHIP_BASE_COMMISSION_RATE,
+  );
+  const eventRate = clampCommissionRate(
+    creditSettings?.dealershipEventCommissionRate,
+    DEALERSHIP_EVENT_COMMISSION_RATE,
+  );
+  const eventEnabled = creditSettings?.dealershipEventCommissionEnabled !== false;
+  const eventStartedAt = parseDealershipEventBound(
+    creditSettings?.dealershipEventStartedAt,
+  );
+  const eventEndedAt = parseDealershipEventBound(
+    creditSettings?.dealershipEventEndedAt,
+  );
+  return {
+    baseRate,
+    eventRate,
+    eventEnabled,
+    eventStartedAt,
+    eventEndedAt,
+    /** @deprecated 단일 실효율 — 유치 시점별 resolveDealershipRateForAcquiredAt 사용 */
+    effectiveRate: eventEnabled ? eventRate : baseRate,
+  };
+}
+
+function parseDealershipEventBound(raw) {
+  if (!raw) return null;
+  const d = raw instanceof Date ? raw : new Date(raw);
+  if (Number.isNaN(d.getTime())) return null;
+  return d;
+}
+
+/**
+ * 유치(가입) 시점 기준 딜러십 요율.
+ * @returns {{ tier: "event"|"base", rate: number }}
+ */
+export function resolveDealershipRateForAcquiredAt(acquiredAt, policy = {}) {
+  const baseRate = clampCommissionRate(
+    policy.baseRate,
+    DEALERSHIP_BASE_COMMISSION_RATE,
+  );
+  const eventRate = clampCommissionRate(
+    policy.eventRate,
+    DEALERSHIP_EVENT_COMMISSION_RATE,
+  );
+  const at = parseDealershipEventBound(acquiredAt);
+  const startedAt = parseDealershipEventBound(policy.eventStartedAt);
+  const endedAt = parseDealershipEventBound(policy.eventEndedAt);
+
+  // 이벤트 창이 없으면: 이벤트 on이면 전원 event, off면 전원 base
+  if (!startedAt) {
+    if (policy.eventEnabled !== false) {
+      return { tier: "event", rate: eventRate };
+    }
+    return { tier: "base", rate: baseRate };
+  }
+
+  if (!at) {
+    return { tier: "base", rate: baseRate };
+  }
+
+  const afterStart = at.getTime() >= startedAt.getTime();
+  const beforeEnd = endedAt ? at.getTime() < endedAt.getTime() : true;
+  if (afterStart && beforeEnd) {
+    return { tier: "event", rate: eventRate };
+  }
+  return { tier: "base", rate: baseRate };
+}
 
 export const WITH_SALESMAN_DEFAULT_RATES = {
   manufacturerRate: 0,

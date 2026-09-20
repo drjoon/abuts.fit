@@ -69,6 +69,12 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   variant?: 'default' | 'devops' | 'salesman';
+  /** 딜러십 표준 요율 %(추후 공지 후). salesman variant. */
+  dealershipBasePct?: number;
+  /** 딜러십 이벤트 요율 %. salesman variant. */
+  dealershipEventPct?: number;
+  /** 이벤트 요율 적용 여부. salesman variant. */
+  dealershipEventEnabled?: boolean;
 };
 
 function PolicySection({
@@ -163,12 +169,19 @@ function BulletList({ items }: { items: ReactNode[] }) {
 export const PricingPolicyDialog = ({
   open,
   onOpenChange,
-  variant = 'default'
+  variant = 'default',
+  dealershipBasePct = 10,
+  dealershipEventPct = 15,
+  dealershipEventEnabled = true,
 }: Props) => {
   const { kind } = useRequestorBusinessAccess();
   const isLab = kind === 'lab';
   const { data: systemSettings, refetch: refetchSystemSettings } =
     useSystemSettings();
+  const basePct = Math.max(0, Math.round(Number(dealershipBasePct) || 10));
+  const eventPct = Math.max(0, Math.round(Number(dealershipEventPct) || 15));
+  const eventOn = dealershipEventEnabled !== false;
+  const effectivePct = eventOn ? eventPct : basePct;
   const productionPrice = Math.max(
     0,
     Number(
@@ -200,14 +213,14 @@ export const PricingPolicyDialog = ({
     variant === 'devops'
       ? '개발운영사 분배 기준'
       : variant === 'salesman'
-        ? '딜러사 수수료 정책'
+        ? '딜러십 정책'
         : '가격 · 출고 정책 안내';
 
   const subtitle =
     variant === 'devops'
       ? '유료의뢰비 정산 비율과 화면 안내를 확인하세요.'
       : variant === 'salesman'
-        ? '소개 수수료 지급 기준과 정산 주기를 확인하세요.'
+        ? '기본·이벤트 요율과 배송비 수신자 부담을 확인하세요.'
         : isLab
           ? ''
           : '기공소에 · 어벗츠에 단가와 출고 기준을 확인하세요.';
@@ -231,19 +244,35 @@ export const PricingPolicyDialog = ({
         <div className='min-h-0 flex-1 overflow-y-auto px-6 pt-5 pb-8'>
           {variant === 'salesman' ? (
             <div className='space-y-3'>
-              <PolicySection title='소개 수수료 (10%)'>
+              <PolicySection title='영업 수수료'>
                 <p>
-                  소개한 의뢰자의 유료의뢰비에서{' '}
-                  <span className='font-semibold text-slate-900'>10%</span>가
-                  수수료로 지급됩니다.
+                  심플웨이·커스텀어벗 판매가(배송비 제외) 기준이며,{' '}
+                  <span className='font-semibold text-slate-900'>
+                    유치(가입) 시점
+                  </span>
+                  에 따라 요율이 다릅니다.
                 </p>
                 <BulletList
                   items={[
-                    '소개 관계 기준: 의뢰자 가입 시 입력한 딜러 코드',
-                    '집계 범위: 1단계 소개만 포함',
-                    '유료 매출 기준: 의뢰 결제 완료 시점'
+                    `이벤트 기간 내 유치: ${eventPct}%`,
+                    `이벤트 기간 외 유치(표준): ${basePct}%`,
+                    '대상: 심플웨이(스토어) · 커스텀어벗',
+                    '소개 관계: 의뢰자 가입 시 입력한 딜러 코드',
+                    eventOn
+                      ? `현재 이벤트 진행 중 · 추후 공지 후 신규 유치는 ${basePct}%`
+                      : '이벤트 종료 · 기존 이벤트 유치 고객은 이벤트 요율 유지'
                   ]}
                 />
+              </PolicySection>
+
+              <PolicySection title='배송비'>
+                <p>
+                  배송비는{' '}
+                  <span className='font-semibold text-slate-900'>
+                    수신자(치과 또는 기공소)
+                  </span>
+                  가 부담합니다. 딜러 수수료 산정에서 배송비는 제외됩니다.
+                </p>
               </PolicySection>
 
               <PolicySection title='집계 및 지급'>
@@ -254,7 +283,7 @@ export const PricingPolicyDialog = ({
                       지급 계좌는 <b className='text-slate-800'>설정 &gt; 결제</b>
                       에서 관리
                     </>,
-                    '정산 원장은 사이드바 크레딧 페이지에서 확인 가능'
+                    '정산 원장은 사이드바 정산 페이지에서 확인'
                   ]}
                 />
               </PolicySection>

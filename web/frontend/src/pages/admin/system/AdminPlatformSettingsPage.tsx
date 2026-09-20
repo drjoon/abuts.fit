@@ -31,6 +31,7 @@ import {
   type SettingsTabDef,
 } from "@/features/components/SettingsScaffold";
 import { AdminCreditSettingsTab } from "@/features/settings/tabs/AdminCreditSettingsTab";
+import { AdminDealershipSettingsTab } from "@/features/settings/tabs/AdminDealershipSettingsTab";
 import { AdminLabFeeSchedulesTab } from "@/features/settings/tabs/AdminLabFeeSchedulesTab";
 import { AdminAbutsLabFeeScheduleTab } from "@/features/settings/tabs/AdminAbutsLabFeeScheduleTab";
 import { PracticeTransferAutoMatchTab } from "@/pages/devops/components/PracticeTransferAutoMatchTab";
@@ -39,6 +40,7 @@ import {
   Banknote,
   CreditCard,
   FlaskConical,
+  Handshake,
   Package,
 } from "lucide-react";
 import { request } from "@/shared/api/apiClient";
@@ -46,7 +48,13 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
 import { useAdminAbutsFeePendingStore } from "@/store/useAdminAbutsFeePendingStore";
 
-type TabKey = "credits" | "customAbut" | "autoMatch" | "abutsFees" | "labFees";
+type TabKey =
+  | "credits"
+  | "customAbut"
+  | "dealership"
+  | "autoMatch"
+  | "abutsFees"
+  | "labFees";
 
 const LEGACY_TAB_REDIRECT: Record<string, TabKey> = {
   design: "autoMatch",
@@ -140,6 +148,12 @@ export const AdminPlatformSettingsPage = ({
         label: "커스텀어벗",
         icon: Package,
         content: <AdminCreditSettingsTab variant="customAbut" />,
+      },
+      {
+        key: "dealership",
+        label: "딜러십",
+        icon: Handshake,
+        content: <AdminDealershipSettingsTab />,
       },
       {
         key: "autoMatch",

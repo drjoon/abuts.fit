@@ -6,6 +6,7 @@
 // - web/backend/controllers/admin/adminCredit.controller.js
 // - web/frontend/src/shared/components/CommissionLedgerInline.tsx
 // - web/frontend/src/shared/components/SalesmanLedgerModal.tsx
+import crypto from "node:crypto";
 import Request from "../../models/request.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import User from "../../models/user.model.js";
@@ -17,6 +18,8 @@ import {
 } from "../../utils/kstQueryBounds.js";
 import { getPlatformSocialProof } from "../../services/platformGrowthStats.service.js";
 import { listNoOrderAlerts } from "../../services/noOrderAlerts.service.js";
+import { resolveDealershipCommissionPolicy, resolveDealershipRateForAcquiredAt } from "../../services/creditRevenuePolicy.service.js";
+import { loadCreditSettingsDefaults } from "../../utils/creditSettingsDefaults.js";
 
 function parsePeriod(input) {
   const raw = String(input || "").trim();
@@ -54,9 +57,17 @@ function getMonthRangeKst({ year, month }) {
   return { start, end };
 }
 
+function toKstYmd(d = new Date()) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}
+
 function getPeriodRangeKst(period) {
   const now = new Date();
-  const { toKstYmd } = require("../requests/utils.js");
   const nowKst = toKstYmd(now);
   const [year, month] = nowKst.split("-").map(Number);
 
@@ -71,7 +82,6 @@ function getPeriodRangeKst(period) {
   }
 
   if (period === "30d") {
-    // KST 기준 30일 전
     const todayKst = new Date(`${nowKst}T00:00:00+09:00`);
     todayKst.setDate(todayKst.getDate() - 30);
     return { start: todayKst, end: now };
@@ -385,22 +395,28 @@ export async function getSalesmanDashboard(req, res) {
     }
 
     const isDevops = me.role === "devops";
-    let commissionRate = 0.1;
+    const creditDefaults = await loadCreditSettingsDefaults();
+    const dealershipPolicy = resolveDealershipCommissionPolicy(creditDefaults);
+    // 딜러십: 이벤트 on이면 eventRate(기본 15%), off면 baseRate(기본 10%). devops는 BA devopsRate.
+    let commissionRate = dealershipPolicy.effectiveRate;
     let unaffiliatedCommissionRate = 0;
+    const dealershipBaseCommissionRate = dealershipPolicy.baseRate;
+    const dealershipEventCommissionRate = dealershipPolicy.eventRate;
+    const dealershipEventCommissionEnabled = dealershipPolicy.eventEnabled;
 
     if (isDevops && me.businessAnchorId) {
       const devopsAnchor = await BusinessAnchor.findById(me.businessAnchorId)
         .select({ payoutRates: 1 })
         .lean();
       commissionRate = Number(devopsAnchor?.payoutRates?.devopsRate || 0.1);
-      // 영업자 소개 없는 의뢰도 개발운영사 10% 동일 적용
+      // 영업자 소개 없는 의뢰도 개발운영사 동일율 적용
       unaffiliatedCommissionRate = Number(
         devopsAnchor?.payoutRates?.devopsRate || 0.1,
       );
     }
     const payoutDayOfMonth = 1;
 
-    const { start, end } = getPeriodRangeUtc(period);
+    const { start, end } = getPeriodRangeKst(period);
 
     const myBusinessAnchorId = me?.businessAnchorId;
     if (
@@ -504,7 +520,7 @@ export async function getSalesmanDashboard(req, res) {
       referredByAnchorId: myBusinessAnchorObjectId,
       businessType: "requestor",
     })
-      .select({ _id: 1 })
+      .select({ _id: 1, createdAt: 1, requestorKind: 1, name: 1 })
       .lean();
 
     const referredSalesmen = await BusinessAnchor.find({
@@ -528,7 +544,7 @@ export async function getSalesmanDashboard(req, res) {
             { referredByAnchorId: { $exists: false } },
           ],
         })
-          .select({ _id: 1 })
+          .select({ _id: 1, createdAt: 1, requestorKind: 1, name: 1 })
           .lean()
       : [];
 
@@ -537,6 +553,23 @@ export async function getSalesmanDashboard(req, res) {
       userId: String(u?._id || ""),
       name: String(u?.name || ""),
     }));
+
+    const requestorMetaById = new Map();
+    for (const row of [
+      ...(referredRequestors || []),
+      ...(unaffiliatedRequestors || []),
+    ]) {
+      const idStr = row?._id ? String(row._id) : "";
+      if (!idStr) continue;
+      requestorMetaById.set(idStr, {
+        createdAt: row?.createdAt || null,
+        requestorKind:
+          row?.requestorKind === "lab" || row?.requestorKind === "practice"
+            ? row.requestorKind
+            : null,
+        name: String(row?.name || ""),
+      });
+    }
 
     const directOrgIdSet = new Set(
       (referredRequestors || [])
@@ -564,6 +597,11 @@ export async function getSalesmanDashboard(req, res) {
               : null,
           period: period || null,
           commissionRate,
+          dealershipBaseCommissionRate,
+          dealershipEventCommissionRate,
+          dealershipEventCommissionEnabled,
+          dealershipEventStartedAt: dealershipPolicy.eventStartedAt,
+          dealershipEventEndedAt: dealershipPolicy.eventEndedAt,
           payoutDayOfMonth,
           referralCode: effectiveReferralCode,
           overview: {
@@ -581,6 +619,16 @@ export async function getSalesmanDashboard(req, res) {
             freeNetShippingAmount,
             freeNetAmount,
             referralSalesmanCount,
+            eventOrganizationCount: 0,
+            baseOrganizationCount: 0,
+            eventCommissionAmount: 0,
+            baseCommissionAmount: 0,
+            eventRevenueAmount: 0,
+            baseRevenueAmount: 0,
+            eventOrderCount: 0,
+            baseOrderCount: 0,
+            practiceOrganizationCount: 0,
+            labOrganizationCount: 0,
           },
           referralSalesmen,
           organizations: [],
@@ -596,12 +644,27 @@ export async function getSalesmanDashboard(req, res) {
         name: 1,
         metadata: 1,
         verification: 1,
+        createdAt: 1,
+        requestorKind: 1,
       })
       .lean();
 
     const orgNameById = new Map(
       (orgDocs || []).map((o) => [String(o._id || ""), String(o.name || "")]),
     );
+    for (const o of orgDocs || []) {
+      const idStr = String(o?._id || "");
+      if (!idStr) continue;
+      const prev = requestorMetaById.get(idStr) || {};
+      requestorMetaById.set(idStr, {
+        createdAt: o?.createdAt || prev.createdAt || null,
+        requestorKind:
+          o?.requestorKind === "lab" || o?.requestorKind === "practice"
+            ? o.requestorKind
+            : prev.requestorKind || null,
+        name: String(o?.name || prev.name || ""),
+      });
+    }
 
     const orgObjectIds = organizationAnchorIds
       .filter((id) => Types.ObjectId.isValid(id))
@@ -646,18 +709,36 @@ export async function getSalesmanDashboard(req, res) {
         const idStr = String(id);
         const revenueAmount = roundMoney(revenueByOrgId.get(idStr) || 0);
         const orderCount = ordersByOrgId.get(idStr) || 0;
+        const meta = requestorMetaById.get(idStr) || {};
 
         const isDirect = directOrgIdSet.has(idStr);
         const isUnaffiliated = unaffiliatedOrgIdSet.has(idStr);
-        // 미설정 의뢰자(devops 전용): unaffiliatedCommissionRate, 일반 소개: commissionRate
-        const rate = isUnaffiliated
-          ? unaffiliatedCommissionRate
-          : commissionRate;
-        const commissionAmount = roundMoney(revenueAmount * rate);
+        let commissionRateForOrg = commissionRate;
+        let commissionTier = "base";
+        if (isUnaffiliated) {
+          commissionRateForOrg = unaffiliatedCommissionRate;
+          commissionTier = "base";
+        } else if (!isDevops) {
+          const resolved = resolveDealershipRateForAcquiredAt(
+            meta.createdAt,
+            dealershipPolicy,
+          );
+          commissionRateForOrg = resolved.rate;
+          commissionTier = resolved.tier;
+        }
+        const commissionAmount = roundMoney(
+          revenueAmount * commissionRateForOrg,
+        );
 
         return {
           businessAnchorId: idStr,
-          name: orgNameById.get(idStr) || "",
+          name: orgNameById.get(idStr) || meta.name || "",
+          requestorKind: meta.requestorKind || null,
+          acquiredAt: meta.createdAt
+            ? new Date(meta.createdAt).toISOString()
+            : null,
+          commissionTier,
+          commissionRate: commissionRateForOrg,
           monthRevenueAmount: revenueAmount,
           monthOrderCount: orderCount,
           monthCommissionAmount: commissionAmount,
@@ -674,23 +755,48 @@ export async function getSalesmanDashboard(req, res) {
     const unaffiliatedOrganizations = organizations.filter(
       (o) => o.referralLevel === "unaffiliated",
     );
-
-    const directCommissionAmount = directOrganizations.reduce(
-      (acc, o) => acc + Number(o.monthCommissionAmount || 0),
-      0,
+    const eventOrganizations = organizations.filter(
+      (o) => o.commissionTier === "event",
     );
-    const unaffiliatedCommissionAmount = unaffiliatedOrganizations.reduce(
-      (acc, o) => acc + Number(o.monthCommissionAmount || 0),
-      0,
+    const baseOrganizations = organizations.filter(
+      (o) => o.commissionTier !== "event",
+    );
+    const sumField = (rows, key) =>
+      rows.reduce((acc, o) => acc + Number(o[key] || 0), 0);
+
+    const directCommissionAmount = sumField(
+      directOrganizations,
+      "monthCommissionAmount",
+    );
+    const unaffiliatedCommissionAmount = sumField(
+      unaffiliatedOrganizations,
+      "monthCommissionAmount",
     );
     const totalCommissionAmount =
       directCommissionAmount + unaffiliatedCommissionAmount;
 
-    const monthRevenueAmount = organizations.reduce(
-      (acc, o) => acc + Number(o.monthRevenueAmount || 0),
-      0,
-    );
+    const monthRevenueAmount = sumField(organizations, "monthRevenueAmount");
     const monthCommissionAmount = totalCommissionAmount;
+    const eventCommissionAmount = roundMoney(
+      sumField(eventOrganizations, "monthCommissionAmount"),
+    );
+    const baseCommissionAmount = roundMoney(
+      sumField(baseOrganizations, "monthCommissionAmount"),
+    );
+    const eventRevenueAmount = roundMoney(
+      sumField(eventOrganizations, "monthRevenueAmount"),
+    );
+    const baseRevenueAmount = roundMoney(
+      sumField(baseOrganizations, "monthRevenueAmount"),
+    );
+    const eventOrderCount = sumField(eventOrganizations, "monthOrderCount");
+    const baseOrderCount = sumField(baseOrganizations, "monthOrderCount");
+    const practiceOrganizationCount = organizations.filter(
+      (o) => o.requestorKind === "practice",
+    ).length;
+    const labOrganizationCount = organizations.filter(
+      (o) => o.requestorKind === "lab",
+    ).length;
 
     return res.status(200).json({
       success: true,
@@ -701,6 +807,11 @@ export async function getSalesmanDashboard(req, res) {
             : null,
         period,
         commissionRate,
+        dealershipBaseCommissionRate,
+        dealershipEventCommissionRate,
+        dealershipEventCommissionEnabled,
+        dealershipEventStartedAt: dealershipPolicy.eventStartedAt,
+        dealershipEventEndedAt: dealershipPolicy.eventEndedAt,
         unaffiliatedCommissionRate,
         payoutDayOfMonth,
         referralCode: effectiveReferralCode,
@@ -720,6 +831,16 @@ export async function getSalesmanDashboard(req, res) {
           freeNetRequestAmount,
           freeNetShippingAmount,
           freeNetAmount,
+          eventOrganizationCount: eventOrganizations.length,
+          baseOrganizationCount: baseOrganizations.length,
+          eventCommissionAmount,
+          baseCommissionAmount,
+          eventRevenueAmount,
+          baseRevenueAmount,
+          eventOrderCount,
+          baseOrderCount,
+          practiceOrganizationCount,
+          labOrganizationCount,
         },
         referralSalesmen,
         organizations,

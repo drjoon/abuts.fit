@@ -55,6 +55,12 @@ export interface CreditSettings {
   labDesignAndProductionPrice: number;
   labRoundBarProductionPrice: number;
   labRoundBarDesignAndProductionPrice: number;
+  /** 딜러십 표준 요율(추후 공지 후). 0~1 */
+  dealershipBaseCommissionRate?: number;
+  /** 딜러십 이벤트 요율. 0~1 */
+  dealershipEventCommissionRate?: number;
+  /** 이벤트 요율 적용 on/off */
+  dealershipEventCommissionEnabled?: boolean;
 }
 
 export const CREDIT_SETTINGS_DEFAULTS: CreditSettings = {
@@ -94,6 +100,9 @@ export const CREDIT_SETTINGS_DEFAULTS: CreditSettings = {
   labRoundBarProductionPrice: ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
   labRoundBarDesignAndProductionPrice:
     ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE,
+  dealershipBaseCommissionRate: 0.1,
+  dealershipEventCommissionRate: 0.15,
+  dealershipEventCommissionEnabled: true,
 };
 
 export interface SystemSettingsData {
@@ -204,6 +213,28 @@ export const useSystemSettings = () => {
           if (Number.isFinite(rawVal) && rawVal > 0) return Math.round(rawVal);
           return abutmentPrices.membershipRoundBarDesignAndProductionPrice;
         })(),
+        dealershipBaseCommissionRate: (() => {
+          const n = Number(
+            raw.dealershipBaseCommissionRate ??
+              CREDIT_SETTINGS_DEFAULTS.dealershipBaseCommissionRate,
+          );
+          if (!Number.isFinite(n) || n < 0) {
+            return CREDIT_SETTINGS_DEFAULTS.dealershipBaseCommissionRate;
+          }
+          return Math.min(1, n);
+        })(),
+        dealershipEventCommissionRate: (() => {
+          const n = Number(
+            raw.dealershipEventCommissionRate ??
+              CREDIT_SETTINGS_DEFAULTS.dealershipEventCommissionRate,
+          );
+          if (!Number.isFinite(n) || n < 0) {
+            return CREDIT_SETTINGS_DEFAULTS.dealershipEventCommissionRate;
+          }
+          return Math.min(1, n);
+        })(),
+        dealershipEventCommissionEnabled:
+          raw.dealershipEventCommissionEnabled !== false,
       };
       return { creditSettings } as SystemSettingsData;
     },

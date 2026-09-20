@@ -319,6 +319,19 @@ const SCHEMA_DEFAULTS = (() => {
     salesmanSharePercent: pickDefault("creditSettings.salesmanSharePercent"),
     devopsSharePercent: pickDefault("creditSettings.devopsSharePercent"),
     abutsSharePercent: pickDefault("creditSettings.abutsSharePercent"),
+    dealershipBaseCommissionRate:
+      Number(
+        SystemSettings.schema.path("creditSettings.dealershipBaseCommissionRate")
+          ?.options?.default,
+      ) || 0.1,
+    dealershipEventCommissionRate:
+      Number(
+        SystemSettings.schema.path("creditSettings.dealershipEventCommissionRate")
+          ?.options?.default,
+      ) || 0.15,
+    dealershipEventCommissionEnabled: true,
+    dealershipEventStartedAt: null,
+    dealershipEventEndedAt: null,
     regularManufacturerSharePercent: pickDefault(
       "creditSettings.regularManufacturerSharePercent",
     ),
@@ -704,6 +717,40 @@ export function normalizeLoadedCreditSettings(creditSettings = {}) {
     regularManufacturerSharePercent: regularShares.manufacturer,
     regularSalesmanSharePercent: regularShares.salesman,
     regularDevopsSharePercent: regularShares.devops,
+    dealershipBaseCommissionRate: (() => {
+      const raw = Number(
+        creditSettings.dealershipBaseCommissionRate ??
+          SCHEMA_DEFAULTS.dealershipBaseCommissionRate,
+      );
+      if (!Number.isFinite(raw) || raw < 0) {
+        return SCHEMA_DEFAULTS.dealershipBaseCommissionRate;
+      }
+      return Math.min(1, raw);
+    })(),
+    dealershipEventCommissionRate: (() => {
+      const raw = Number(
+        creditSettings.dealershipEventCommissionRate ??
+          SCHEMA_DEFAULTS.dealershipEventCommissionRate,
+      );
+      if (!Number.isFinite(raw) || raw < 0) {
+        return SCHEMA_DEFAULTS.dealershipEventCommissionRate;
+      }
+      return Math.min(1, raw);
+    })(),
+    dealershipEventCommissionEnabled:
+      creditSettings.dealershipEventCommissionEnabled !== false,
+    dealershipEventStartedAt: (() => {
+      const raw = creditSettings.dealershipEventStartedAt;
+      if (!raw) return null;
+      const d = raw instanceof Date ? raw : new Date(raw);
+      return Number.isNaN(d.getTime()) ? null : d;
+    })(),
+    dealershipEventEndedAt: (() => {
+      const raw = creditSettings.dealershipEventEndedAt;
+      if (!raw) return null;
+      const d = raw instanceof Date ? raw : new Date(raw);
+      return Number.isNaN(d.getTime()) ? null : d;
+    })(),
     ...withRoundBar,
   };
 }

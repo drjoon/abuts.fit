@@ -16,11 +16,33 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import type { PeriodFilterValue } from "@/shared/ui/PeriodFilter";
 
+export type CommissionOrgRow = {
+  businessAnchorId?: string;
+  name: string;
+  monthRevenueAmount: number;
+  monthOrderCount: number;
+  monthCommissionAmount: number;
+  /** "direct"(소개됨) | "unaffiliated"(영업자 미설정) */
+  referralLevel?: "direct" | "unaffiliated";
+  requestorKind?: "practice" | "lab" | null;
+  acquiredAt?: string | null;
+  commissionTier?: "event" | "base";
+  commissionRate?: number;
+};
+
 // /api/salesman/dashboard 응답 스키마
 export type CommissionDashboardData = {
   ym: string;
   period?: PeriodFilterValue | null;
   commissionRate: number;
+  /** 딜러십 표준 요율(추후 공지 후). */
+  dealershipBaseCommissionRate?: number;
+  /** 딜러십 이벤트 요율. */
+  dealershipEventCommissionRate?: number;
+  /** 이벤트 요율 적용 여부. */
+  dealershipEventCommissionEnabled?: boolean;
+  dealershipEventStartedAt?: string | Date | null;
+  dealershipEventEndedAt?: string | Date | null;
   /** devops 전용: 영업자 미설정 의뢰자 분배율 */
   unaffiliatedCommissionRate?: number;
 
@@ -44,24 +66,19 @@ export type CommissionDashboardData = {
     freeNetRequestAmount?: number;
     freeNetShippingAmount?: number;
     freeNetAmount?: number;
+    eventOrganizationCount?: number;
+    baseOrganizationCount?: number;
+    eventCommissionAmount?: number;
+    baseCommissionAmount?: number;
+    eventRevenueAmount?: number;
+    baseRevenueAmount?: number;
+    eventOrderCount?: number;
+    baseOrderCount?: number;
+    practiceOrganizationCount?: number;
+    labOrganizationCount?: number;
   };
-  businesses?: Array<{
-    businessAnchorId?: string;
-    name: string;
-    monthRevenueAmount: number;
-    monthOrderCount: number;
-    monthCommissionAmount: number;
-    /** "direct"(소개됨) | "unaffiliated"(영업자 미설정) */
-    referralLevel?: "direct" | "unaffiliated";
-  }>;
-  organizations: Array<{
-    businessAnchorId?: string;
-    name: string;
-    monthRevenueAmount: number;
-    monthOrderCount: number;
-    monthCommissionAmount: number;
-    referralLevel?: "direct" | "unaffiliated";
-  }>;
+  businesses?: CommissionOrgRow[];
+  organizations: CommissionOrgRow[];
   /** 딜러만 사용. devops는 빈 배열 반환 */
   referralSalesmen?: Array<{
     userId: string;
@@ -78,6 +95,19 @@ export const formatMoney = (n?: number): string => {
     return String(v);
   }
 };
+
+export function formatCommissionRatePct(rate?: number | null): string {
+  const pct = Math.round(Number(rate || 0) * 100);
+  return `${pct}%`;
+}
+
+export function requestorKindLabel(
+  kind?: "practice" | "lab" | null,
+): string {
+  if (kind === "practice") return "치과";
+  if (kind === "lab") return "기공소";
+  return "의뢰자";
+}
 
 /**
  * 딜러 대시보드·정산 데이터 훅.
