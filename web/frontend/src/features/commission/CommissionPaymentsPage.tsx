@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-20: 지급 합계 — 20%·15%·10% 세로 3줄(대시보드 지급 완료와 동일).
 // - 2026-09-20: 유료 미정산 — 20%·15%·10% 세로 3줄, 「현재/추후」 접두 제거.
 // - 2026-09-20: 딜러 정산 — 이벤트/기본 → 현재/추후 요율 라벨, 정책 카피 정리.
 // - 2026-09-06: 미정산=부가세 포함가. 지급 재가산 없음.
@@ -22,6 +23,7 @@ import {
   formatCommissionRatePct,
   requestorKindLabel,
   summarizeDealershipRateBuckets,
+  DEALERSHIP_COMMISSION_RATE_PCT_OPTIONS,
 } from "@/features/commission/useCommissionDashboard";
 import {
   SETTLEMENT_TAXABLE_INVOICE_LABEL,
@@ -73,6 +75,14 @@ export function CommissionPaymentsPage({
     () => summarizeDealershipRateBuckets(organizations),
     [organizations],
   );
+  const paidRateBuckets = useMemo(
+    () =>
+      DEALERSHIP_COMMISSION_RATE_PCT_OPTIONS.map((pct) => ({
+        pct,
+        commissionAmount: 0,
+      })),
+    [],
+  );
 
   const title = isSalesman ? "딜러 정산" : "개발운영사 정산";
 
@@ -111,10 +121,21 @@ export function CommissionPaymentsPage({
             value={paidInclusive}
             selected={tab === "ledger"}
             onClick={() => setTab("ledger")}
+            hint={isSalesman ? SETTLEMENT_TAXABLE_INVOICE_LABEL : undefined}
             footer={
-              <div className="text-xs text-muted-foreground">
-                {SETTLEMENT_TAXABLE_INVOICE_LABEL}
-              </div>
+              isSalesman ? (
+                <div className="space-y-0.5 text-[11px] tabular-nums text-muted-foreground sm:text-xs">
+                  {paidRateBuckets.map((b) => (
+                    <div key={b.pct}>
+                      {b.pct}% · {formatMoney(b.commissionAmount)}원
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-xs text-muted-foreground">
+                  {SETTLEMENT_TAXABLE_INVOICE_LABEL}
+                </div>
+              )
             }
           />
           <SettlementStatCard
