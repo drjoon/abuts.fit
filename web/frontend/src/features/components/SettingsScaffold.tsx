@@ -3,6 +3,7 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // change-log:
+// - 2026-09-20: fillHeight 콘텐츠 px-1.5/2 — 요약 카드·표 경계가 작업영역 가장자리에 붙지 않게.
 // - 2026-08-26: tabsTrailing — 탭 바는 tabsMax, 뱃지만 contentMax 우측 끝.
 // - 2026-08-24: 작업영역 하단 여백 — 이중 그라데이션/패딩 제거, pb만 유지(레이아웃 스크롤 끝과 맞춤).
 // - 2026-08-11: tabsMaxClassName — 탭 바만 문의 페이지처럼 max-w-4xl·상단 고정, 콘텐츠는 별도 max-width.
@@ -200,7 +201,10 @@ export const SettingsScaffold = ({
             className={cn(
               "mx-auto w-full",
               fillHeight
-                ? cn("flex min-h-0 flex-1 flex-col", contentMaxClassName)
+                ? cn(
+                    "flex min-h-0 flex-1 flex-col px-1.5 sm:px-2",
+                    contentMaxClassName,
+                  )
                 : "contents",
             )}
           >

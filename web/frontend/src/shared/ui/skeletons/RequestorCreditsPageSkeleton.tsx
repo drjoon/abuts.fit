@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-20: 내역/지급 스켈레톤 — overflow 바깥 여백으로 카드 경계 클리핑 방지.
 // - 2026-09-20: 내역/지급 스켈레톤 요약 카드 — p-0.5(실 UI와 동일, overflow 클리핑 방지).
 // - 2026-09-20: 내역 필터 스켈레톤 — 결제(적립) 상태 Select 칸 추가.
 // - 2026-09-16: 기공소 탭 4칸(내역·통계·충전·지급). 내역 스켈레톤=수식 카드·6열·필터 행.
@@ -44,8 +45,9 @@ export const CreditLedgerTableSkeleton = ({
   showSettlement?: boolean;
 }) => (
   <div className="flex h-full min-h-0 flex-col gap-4 overflow-hidden">
-    <div className="scroll-x-bar-top p-0.5">
-      <div className="flex min-w-max items-stretch gap-0.5 px-0.5 sm:gap-1">
+    <div className="px-1 py-1.5 sm:px-1.5">
+      <div className="scroll-x-bar-top">
+        <div className="flex min-w-max items-stretch gap-1 p-1 sm:gap-1.5">
         <BalanceCardSkeleton />
         <EquationOperatorSkeleton />
         <BalanceCardSkeleton />
@@ -57,6 +59,7 @@ export const CreditLedgerTableSkeleton = ({
         ) : null}
         <EquationOperatorSkeleton />
         <BalanceCardSkeleton />
+        </div>
       </div>
     </div>
     <div className="flex w-full min-w-0 flex-wrap items-center gap-2">
@@ -103,7 +106,7 @@ export const LabSettlementPayoutTableSkeleton = ({
   rows?: number;
 }) => (
   <div className="flex h-full min-h-0 flex-col gap-3 overflow-hidden">
-    <div className="grid grid-cols-1 gap-3 p-0.5 sm:grid-cols-2">
+    <div className="grid grid-cols-1 gap-3 p-1.5 sm:grid-cols-2">
       {repeat(2).map((key) => (
         <div
           key={`payout-card-${key}`}

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-20: 요약 카드 — overflow 바깥 여백(px-1.5)+안쪽 p-1. 경계 클리핑 재수정.
 // - 2026-09-20: 결제(적립) 완료·보류 필터 + 소비 카드 하단 완료/보류 금액.
 // - 2026-09-20: 요약 카드 행 — -mx-1 제거·p-0.5(선택 border/ring overflow 클리핑 방지).
 // - 2026-09-16: 내역 로딩 스켈레톤 — 수식 카드 행·6열(결제 포함)·필터 행 정렬.
@@ -2750,8 +2751,10 @@ export const CreditLedgerModal = ({
         <>
           {currentBalanceSnapshot && !hideBalanceSummary ? (
             showPeriodSpendCard ? (
-              <div className="scroll-x-bar-top p-0.5">
-                <div className="flex min-w-max items-stretch gap-0.5 px-0.5 sm:gap-1">
+              <div className="px-1 py-1.5 sm:px-1.5">
+                {/* padding은 overflow(scroll-x-bar-top) 바깥 — 카드 border/shadow 클리핑 방지 */}
+                <div className="scroll-x-bar-top">
+                  <div className="flex min-w-max items-stretch gap-1 p-1 sm:gap-1.5">
                   <SettlementStatCard
                     className="min-w-[9.5rem] flex-1 sm:min-w-[10.5rem]"
                     label="현재 잔액"
@@ -2833,10 +2836,11 @@ export const CreditLedgerModal = ({
                       })
                     }
                   />
+                  </div>
                 </div>
               </div>
             ) : (
-              <div className="grid grid-cols-1 gap-3 p-0.5 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="grid grid-cols-1 gap-3 p-1.5 sm:grid-cols-2 xl:grid-cols-4">
                 <SettlementStatCard
                   label="현재 잔액"
                   value={currentBalanceTotal}
@@ -3402,7 +3406,7 @@ export const CreditLedgerModal = ({
       {embedded ? (
         <div
           className={cn(
-            "flex h-full min-h-0 flex-col gap-3 overflow-hidden px-0.5",
+            "flex h-full min-h-0 flex-col gap-3 overflow-hidden px-1.5 sm:px-2",
             className,
           )}
         >
