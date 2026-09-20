@@ -18,7 +18,10 @@ All colors MUST be HSL.
     --popover-foreground: 215 25% 15%;
 
     /* Semantic axes: Primary / Attention(=accent) / Danger / Neutral / Service
-       Same axis → brightness only (soft / muted / DEFAULT / glow). No extra hues. */
+       Same axis → brightness only (soft / muted / DEFAULT / glow). No extra hues.
+       accent-foreground is white for solid Attention fills only.
+       Light chrome hover (ghost/outline/menus) must use muted + foreground —
+       never pair accent-foreground with muted/soft backgrounds. */
 
     /* Primary — brand, CTA, process, normal shipping */
     --primary: 217 91% 59%;

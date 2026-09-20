@@ -175,8 +175,8 @@ export const AutocompleteInput: React.FC<AutocompleteInputProps> = ({
                 <button
                   type="button"
                   className={cn(
-                    "flex w-full cursor-pointer items-center px-2 py-1.5 text-left hover:bg-accent hover:text-accent-foreground",
-                    index === activeIndex && "bg-accent text-accent-foreground"
+                    "flex w-full cursor-pointer items-center px-2 py-1.5 text-left hover:bg-muted hover:text-foreground",
+                    index === activeIndex && "bg-muted text-foreground"
                   )}
                   tabIndex={-1}
                   onMouseDown={(e) => {
