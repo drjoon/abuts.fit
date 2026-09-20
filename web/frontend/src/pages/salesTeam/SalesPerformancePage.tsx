@@ -2,6 +2,7 @@
 // - web/frontend/src/pages/salesTeam/salesTeamApi.ts
 // - web/frontend/src/pages/salesTeam/salesUi.tsx
 // change-log:
+// - 2026-09-21: 소개 탭 소개가입·치과·기공소 통계를 단일 카드로 합침.
 // - 2026-09-21: 성과 페이지 일일보고 열람 안내 카드 제거(작성 모달만 유지).
 // - 2026-09-21: 딜러 일일보고 제출률·현황에 대표·담당자만 / 어벗츠 불가 안내.
 // - 2026-09-20: 활동 요약 카드 그리드 p-0.5 — 선택 ring이 잘리지 않게.
@@ -309,16 +310,41 @@ export default function SalesPerformancePage() {
       ) : (
         <div className="grid gap-4 lg:grid-cols-[minmax(18rem,24rem)_minmax(0,1fr)] xl:gap-5">
           <div className="space-y-4 lg:sticky lg:top-4 lg:self-start">
-            <div className="grid grid-cols-1 gap-2.5 p-0.5 md:grid-cols-3">
-              <SalesStatCard
-                compact
-                label="소개 가입"
-                value={orgs.length}
-                icon={Share2}
-                hint="누적"
-              />
-              <SalesStatCard compact label="치과" value={practiceCount} />
-              <SalesStatCard compact label="기공소" value={labCount} />
+            <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-0.5 shadow-sm">
+              <div className="grid grid-cols-3 divide-x divide-slate-100">
+                <div className="flex flex-col justify-between px-3.5 py-3 lg:px-4 lg:py-3.5">
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="text-[13px] font-medium text-slate-500">
+                      소개 가입
+                    </span>
+                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 text-slate-500">
+                      <Share2 className="h-4 w-4" />
+                    </span>
+                  </div>
+                  <div className="mt-2 text-xl font-semibold tabular-nums tracking-tight text-slate-900 lg:text-2xl">
+                    {orgs.length}
+                  </div>
+                  <div className="mt-1 text-[11px] leading-relaxed text-slate-500 sm:text-xs">
+                    누적
+                  </div>
+                </div>
+                <div className="flex flex-col justify-between px-3.5 py-3 lg:px-4 lg:py-3.5">
+                  <span className="text-[13px] font-medium text-slate-500">
+                    치과
+                  </span>
+                  <div className="mt-2 text-xl font-semibold tabular-nums tracking-tight text-slate-900 lg:text-2xl">
+                    {practiceCount}
+                  </div>
+                </div>
+                <div className="flex flex-col justify-between px-3.5 py-3 lg:px-4 lg:py-3.5">
+                  <span className="text-[13px] font-medium text-slate-500">
+                    기공소
+                  </span>
+                  <div className="mt-2 text-xl font-semibold tabular-nums tracking-tight text-slate-900 lg:text-2xl">
+                    {labCount}
+                  </div>
+                </div>
+              </div>
             </div>
             <SalesPanel
               title="내 소개코드"
