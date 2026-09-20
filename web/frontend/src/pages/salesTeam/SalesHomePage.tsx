@@ -1218,7 +1218,7 @@ export default function SalesHomePage() {
         }}
       >
         <DialogContent
-          className="flex max-h-[min(90vh,38rem)] flex-col gap-0 overflow-hidden rounded-2xl p-0 sm:max-w-xl"
+          className="flex max-h-[min(90vh,38rem)] flex-col gap-0 overflow-hidden rounded-2xl p-0 sm:max-w-2xl"
           closeClassName="z-50 right-3 top-3 flex h-10 w-10 items-center justify-center rounded-full bg-background opacity-100 shadow-sm ring-1 ring-slate-200/80 hover:bg-slate-50"
           closeIconClassName="h-5 w-5"
         >
@@ -1307,7 +1307,7 @@ export default function SalesHomePage() {
                     );
                   })}
                 </div>
-                <p className="text-xs text-muted-foreground sm:ml-auto">
+                <p className="shrink-0 whitespace-nowrap text-xs text-muted-foreground sm:ml-auto">
                   {formatDayLabel(ymd)} ·{" "}
                   {COMMITMENT_LABEL[commitment] || commitment}
                 </p>
