@@ -883,8 +883,8 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 
 - (세금)계산서 발행 방향/위수탁 정책(강제, `TaxInvoiceDraft.direction`):
   - 파이프라인: 월중 적립·소비 → **KST 익월 1일 초안**(PENDING_APPROVAL, writeDate=전월 말일) → 관리자 재무 콘솔 검토·발행 → 관계사 입금. 연결 draft가 있으면 **SENT 후에만** mark-paid.
-  - `ABUTS_TO_CUSTOMER`: 사용분 월합(기공·어벗=면세, 스토어=과세). `issuanceMode="SELF"`. 충전(ChargeOrder) 시점 발행 금지. 과거 충전 건별 draft는 유지.
-  - `LAB_TO_PRACTICE`(①치과→기공소 기공의뢰비의 반대방향, 월합계): `taxType="면세"`, `issuanceMode="TRUSTEE"`. 실제 공급자는 기공소이지만 기공소는 팝빌 회원가입/인증서가 불필요하고, 어벗츠가 수탁자로 위수탁발행한다(치과·기공소·어벗츠 3자 모두 부가세 면세 원칙 — 어벗츠 공동대표가 기공사라 기공소로 간주).
+  - `ABUTS_TO_CUSTOMER`: 사용분 월합. **기공·커스텀어벗=면세 계산서**, **스토어(심플웨이 포함)=과세 세금계산서** — taxType별로 별도 draft(사업자·기간당 각 1건). `buyerKind=lab|practice`로 어벗츠→기공소 / 어벗츠→치과 표시. `issuanceMode="SELF"`. 충전(ChargeOrder) 시점 발행 금지. 과거 충전 건별 draft는 유지.
+  - `LAB_TO_PRACTICE`(기공소→치과 기공의뢰비, 월합): `taxType="면세"` 계산서만, `issuanceMode="TRUSTEE"`. 실제 공급자는 기공소, 어벗츠가 수탁자(치과·기공소·어벗츠 3자 면세 원칙).
   - `AFFILIATE_TO_ABUTS`(어벗츠→딜러사·개발운영사·제조사·기공소 정산의 반대방향): 제조사·딜러사·개발운영사는 `taxType="과세"`(부가세 10%), 기공소는 `taxType="면세"`. 기본 `issuanceMode="TRUSTEE"`. BA.`taxInvoice.trusteeIssueEnabled`(default true)가 false면 정산 확정 시 Draft 미생성(상대 직접 발행).
   - 정산 배치: 익월 1일 DRAFT(`monthlySettlementBatchWorker`) → 관리자 확정 시 Draft(위수탁 ON만). SSOT: `resolveSettlementInvoiceDraftSpec` in `services/settlement.service.js`.
   - 위수탁발행(`issueType:"위수탁"` + `trusteeCorpNum` 등)은 팝빌 `TaxinvoiceService`가 과세/면세 모두 동일하게 지원한다(별도 서비스 아님). 수탁자(어벗츠)만 팝빌 회원/인증서가 필요하고, 위탁자(실제 공급자)는 회원가입이 불필요하다.

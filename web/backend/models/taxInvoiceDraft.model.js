@@ -8,8 +8,8 @@
 import mongoose from "mongoose";
 
 // 계산서/세금계산서 발행 방향(반대방향 = 크레딧 흐름의 역방향).
-// - ABUTS_TO_CUSTOMER: 치과/기공소의 크레딧 충전(어벗츠에게 결제)의 반대방향. 어벗츠가 실제 공급자(SELF).
-// - LAB_TO_PRACTICE: 치과→기공소 기공의뢰비(크레딧)의 반대방향. 기공소가 실제 공급자, 어벗츠는 수탁자(TRUSTEE).
+// - ABUTS_TO_CUSTOMER: 치과/기공소가 어벗츠에 결제한 사용분(기공·어벗=면세 계산서, 스토어=과세 세금계산서)의 반대방향. 어벗츠가 실제 공급자(SELF). buyerKind로 치과/기공소 구분.
+// - LAB_TO_PRACTICE: 치과→기공소 기공의뢰비(크레딧)의 반대방향. 기공소가 실제 공급자, 어벗츠는 수탁자(TRUSTEE). 면세 계산서만.
 // - AFFILIATE_TO_ABUTS: 어벗츠→관계사/파트너 정산(크레딧)의 반대방향. 공급자=기공소·제조사·딜러사·개발운영사, 어벗츠=수탁자(TRUSTEE). 과세/면세는 taxType.
 export const TAX_INVOICE_DIRECTIONS = [
   "ABUTS_TO_CUSTOMER",
@@ -74,6 +74,15 @@ const TaxInvoiceDraftSchema = new mongoose.Schema(
       type: String,
       enum: TAX_INVOICE_TAX_TYPES,
       default: "면세",
+    },
+    /**
+     * ABUTS_TO_CUSTOMER 월합용 구매자 유형.
+     * practice=어벗츠→치과, lab=어벗츠→기공소. LAB_TO_PRACTICE 등은 미설정.
+     */
+    buyerKind: {
+      type: String,
+      enum: ["practice", "lab"],
+      default: undefined,
     },
     kind: {
       type: String,

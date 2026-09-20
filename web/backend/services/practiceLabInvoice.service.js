@@ -132,7 +132,7 @@ export async function generateMonthlyLabToPracticeInvoiceDrafts({
         sellerAnchorId: labAnchorId,
         seller,
         buyer,
-        itemName: "기공의뢰비",
+        itemName: "기공의뢰비(월합·면세 계산서)",
         status: "PENDING_APPROVAL",
         supplyAmount: totalAmount,
         vatAmount: 0,

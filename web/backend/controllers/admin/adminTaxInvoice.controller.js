@@ -97,6 +97,7 @@ export async function adminListTaxInvoiceDrafts(req, res) {
   const direction = String(req.query.direction || "").trim().toUpperCase();
   const taxType = String(req.query.taxType || "").trim();
   const kind = String(req.query.kind || "").trim().toUpperCase();
+  const buyerKind = String(req.query.buyerKind || "").trim().toLowerCase();
   const from = req.query.from ? new Date(req.query.from) : null;
   const to = req.query.to ? new Date(req.query.to) : null;
 
@@ -123,6 +124,9 @@ export async function adminListTaxInvoiceDrafts(req, res) {
   }
   if (["과세", "면세"].includes(taxType)) {
     match.taxType = taxType;
+  }
+  if (buyerKind === "lab" || buyerKind === "practice") {
+    match.buyerKind = buyerKind;
   }
   if (kind === "REVERSE") {
     match.kind = "REVERSE";

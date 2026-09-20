@@ -52,9 +52,12 @@ import {
 import {
   invoiceTaxTypeBadge,
   toInclusiveVat,
-  TAX_INVOICE_DIRECTION_LABEL,
+  TAX_INVOICE_LANE_LABEL,
+  taxInvoiceLaneLabel,
+  CUSTOMER_TAX_LANE_ISSUE_NOTICE,
   type InvoiceTaxType,
   type TaxInvoiceDirection,
+  type TaxInvoiceLane,
 } from "@/shared/tax/invoiceLabels";
 import { LEDGER_TAX_LANE_NOTICE } from "@/shared/tax/ledgerTaxLanes";
 
@@ -72,6 +75,7 @@ type TaxInvoiceDraft = {
   businessAnchorId?: string;
   status: DraftStatus;
   direction?: TaxInvoiceDirection;
+  buyerKind?: "practice" | "lab" | null;
   issuanceMode?: "SELF" | "TRUSTEE";
   taxType?: "과세" | "면세";
   kind?: "NORMAL" | "REVERSE";
@@ -105,7 +109,22 @@ type TaxInvoiceDraft = {
   updatedAt?: string;
 };
 
-type DirectionFilter = "ALL" | TaxInvoiceDirection;
+type LaneFilter = "ALL" | TaxInvoiceLane;
+type TaxTypeFilter = "ALL" | InvoiceTaxType;
+
+function applyLaneToQuery(qs: URLSearchParams, lane: LaneFilter) {
+  if (lane === "ALL") return;
+  if (lane === "LAB_TO_PRACTICE") {
+    qs.set("direction", "LAB_TO_PRACTICE");
+    return;
+  }
+  if (lane === "AFFILIATE_TO_ABUTS") {
+    qs.set("direction", "AFFILIATE_TO_ABUTS");
+    return;
+  }
+  qs.set("direction", "ABUTS_TO_CUSTOMER");
+  qs.set("buyerKind", lane === "ABUTS_TO_LAB" ? "lab" : "practice");
+}
 
 function kstMonthKey(d = new Date()): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -244,7 +263,8 @@ export const AdminTaxInvoices = ({
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [directionFilter, setDirectionFilter] =
-    useState<DirectionFilter>("ALL");
+    useState<LaneFilter>("ALL");
+  const [taxTypeFilter, setTaxTypeFilter] = useState<TaxTypeFilter>("ALL");
   const [periodMonth, setPeriodMonth] = useState(previousKstMonthKey);
   const [filterByPeriod, setFilterByPeriod] = useState(false);
   const [generating, setGenerating] = useState<
@@ -332,7 +352,8 @@ export const AdminTaxInvoices = ({
           qs.set("kind", "NORMAL");
         }
       }
-      if (directionFilter !== "ALL") qs.set("direction", directionFilter);
+      if (directionFilter !== "ALL") applyLaneToQuery(qs, directionFilter);
+      if (taxTypeFilter !== "ALL") qs.set("taxType", taxTypeFilter);
       if (filterByPeriod && periodMonth) qs.set("periodMonth", periodMonth);
       if (debouncedSearch) qs.set("search", debouncedSearch);
       const res = await request<any>({
@@ -364,6 +385,7 @@ export const AdminTaxInvoices = ({
     tab,
     debouncedSearch,
     directionFilter,
+    taxTypeFilter,
     filterByPeriod,
     periodMonth,
     toast,
@@ -753,9 +775,9 @@ export const AdminTaxInvoices = ({
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="space-y-2 min-w-0">
           <p className="text-xs text-muted-foreground leading-relaxed max-w-2xl">
-            {LEDGER_TAX_LANE_NOTICE} 월합 작성연월일=해당 월 말일. 익월 1일
-            초안 생성 후 여기서 검토·발행하고, 관계사 입금은 발행완료 뒤에
-            합니다. 관계사→어벗츠 초안은{" "}
+            {LEDGER_TAX_LANE_NOTICE} {CUSTOMER_TAX_LANE_ISSUE_NOTICE} 월합
+            작성연월일=해당 월 말일. 익월 1일 초안 생성 후 여기서 검토·발행하고,
+            관계사 입금은 발행완료 뒤에 합니다. 관계사→어벗츠 초안은{" "}
             <Link
               to="/dashboard/finance?tab=payments"
               className="underline underline-offset-2"
@@ -818,22 +840,41 @@ export const AdminTaxInvoices = ({
         <div className="flex flex-wrap items-center justify-end gap-2">
           <Select
             value={directionFilter}
-            onValueChange={(v) => setDirectionFilter(v as DirectionFilter)}
+            onValueChange={(v) => setDirectionFilter(v as LaneFilter)}
           >
-            <SelectTrigger className="h-8 w-[160px] text-xs">
+            <SelectTrigger className="h-8 w-[168px] text-xs">
               <SelectValue placeholder="발행 방향" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="ALL" className="text-xs">
                 전체 방향
               </SelectItem>
-              {(
-                Object.keys(TAX_INVOICE_DIRECTION_LABEL) as TaxInvoiceDirection[]
-              ).map((key) => (
-                <SelectItem key={key} value={key} className="text-xs">
-                  {TAX_INVOICE_DIRECTION_LABEL[key]}
-                </SelectItem>
-              ))}
+              {(Object.keys(TAX_INVOICE_LANE_LABEL) as TaxInvoiceLane[]).map(
+                (key) => (
+                  <SelectItem key={key} value={key} className="text-xs">
+                    {TAX_INVOICE_LANE_LABEL[key]}
+                  </SelectItem>
+                ),
+              )}
+            </SelectContent>
+          </Select>
+          <Select
+            value={taxTypeFilter}
+            onValueChange={(v) => setTaxTypeFilter(v as TaxTypeFilter)}
+          >
+            <SelectTrigger className="h-8 w-[148px] text-xs">
+              <SelectValue placeholder="과세구분" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL" className="text-xs">
+                전체 과세구분
+              </SelectItem>
+              <SelectItem value="면세" className="text-xs">
+                면세 · 계산서
+              </SelectItem>
+              <SelectItem value="과세" className="text-xs">
+                과세 · 세금계산서
+              </SelectItem>
             </SelectContent>
           </Select>
           <Button
@@ -1341,7 +1382,7 @@ function DraftCard({
               <StatusBadge status={d.status} />
               {d.direction ? (
                 <Badge variant="outline" className="text-xs">
-                  {TAX_INVOICE_DIRECTION_LABEL[d.direction] || d.direction}
+                  {taxInvoiceLaneLabel(d)}
                 </Badge>
               ) : null}
               <Badge variant="outline" className="text-xs">

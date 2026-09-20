@@ -57,6 +57,8 @@ async function createCustomerMonthlyDraft({
 
   const contact = await resolveContactUserForAnchor(practice);
   const buyer = buildPartySnapshotFromAnchor(practice, contact);
+  const buyerKind =
+    String(practice.requestorKind || "").trim() === "lab" ? "lab" : "practice";
 
   try {
     await TaxInvoiceDraft.create({
@@ -68,6 +70,7 @@ async function createCustomerMonthlyDraft({
       issuanceMode: "SELF",
       taxType,
       kind: "NORMAL",
+      buyerKind,
       sellerAnchorId: null,
       status: "PENDING_APPROVAL",
       supplyAmount,
@@ -144,7 +147,7 @@ async function generateExemptDrafts({ periodStart, periodEnd }) {
       supplyAmount: totalAmount,
       vatAmount: 0,
       totalAmount,
-      itemName: "기공·커스텀어벗 대금(월합)",
+      itemName: "기공·커스텀어벗 대금(월합·면세 계산서)",
       periodStart,
       periodEnd,
       sourceRefType: "EXEMPT_SPEND",
@@ -221,7 +224,7 @@ async function generateTaxableStoreDrafts({ periodStart, periodEnd }) {
       supplyAmount,
       vatAmount,
       totalAmount,
-      itemName: "스토어 기성품(월합)",
+      itemName: "스토어·심플웨이 기성품(월합·과세 세금계산서)",
       periodStart,
       periodEnd,
       sourceRefType: "STORE_ORDER",
