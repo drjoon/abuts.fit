@@ -346,12 +346,12 @@ function DealershipTermsCard({
                 )}
               </div>
               <p className="mt-0.5 text-xs leading-relaxed text-white/70">
-                심플웨이 · 커스텀어벗 (판매가, 배송비 제외)
+                심플웨이 · 커스텀어벗 판매가 대비 비율. 배송비 제외.
               </p>
               {eventEnabled ? (
                 <p className="mt-1.5 text-[11px] leading-relaxed text-emerald-200/90 whitespace-nowrap">
-                  이벤트 기간 내 유치(가입) 고객 {eventPct}% · 추후 공지 후
-                  신규는 {basePct}%
+                  이벤트 기간 내 유치(가입) 고객 {eventPct}% · 추후 공지 후{" "}
+                  {basePct}%로 변경될 예정.
                 </p>
               ) : (
                 <p className="mt-1.5 text-[11px] leading-relaxed text-white/65">
