@@ -20,6 +20,8 @@ type EventPlaceSuggestInputProps = {
   inputClassName?: string;
   listMode?: "overlay" | "inline";
   maxItems?: number;
+  /** 값이 바뀔 때 다음 자동완성을 1회 억제(로그인 프리필 등). */
+  suppressSuggestToken?: number | string;
 };
 
 export default function EventPlaceSuggestInput({
@@ -32,11 +34,13 @@ export default function EventPlaceSuggestInput({
   inputClassName,
   listMode = "overlay",
   maxItems = 12,
+  suppressSuggestToken,
 }: EventPlaceSuggestInputProps) {
   const listId = useId();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLUListElement | null>(null);
   const suppressSuggestRef = useRef(false);
+  const lastSuppressTokenRef = useRef(suppressSuggestToken);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<EventPlaceSuggest[]>([]);
@@ -48,6 +52,10 @@ export default function EventPlaceSuggestInput({
     maxItems != null && maxItems > 0 ? items.slice(0, maxItems) : items;
 
   useEffect(() => {
+    if (suppressSuggestToken !== lastSuppressTokenRef.current) {
+      lastSuppressTokenRef.current = suppressSuggestToken;
+      suppressSuggestRef.current = true;
+    }
     if (suppressSuggestRef.current) {
       suppressSuggestRef.current = false;
       setItems([]);
@@ -87,7 +95,7 @@ export default function EventPlaceSuggestInput({
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [value, kind]);
+  }, [value, kind, suppressSuggestToken]);
 
   useEffect(() => {
     const onDoc = (e: MouseEvent) => {

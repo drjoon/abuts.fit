@@ -3,7 +3,8 @@
 // - web/frontend/src/shared/events/EventPlaceSuggestInput.tsx
 // - web/frontend/src/shared/events/simplewaySampleCampaign.ts
 // - web/frontend/src/pages/public/EventsPage.tsx
-import { useEffect, useState } from "react";
+// - web/frontend/src/store/useAuthStore.ts
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   ArrowDown,
@@ -46,6 +47,7 @@ import {
   SIMPLEWAY_SAMPLE_SLUG,
 } from "@/shared/events/simplewaySampleCampaign";
 import { cn } from "@/shared/ui/cn";
+import { useAuthStore, type User } from "@/store/useAuthStore";
 
 const emptyPlace = (): EventPlaceFields => ({
   name: "",
@@ -55,6 +57,42 @@ const emptyPlace = (): EventPlaceFields => ({
   lat: null,
   lng: null,
 });
+
+function isPracticeApplicant(user: User | null | undefined): boolean {
+  if (!user) return false;
+  if (user.requestorKind === "practice") return true;
+  if (user.role === "practice") return true;
+  if (user.requestorKind === "lab") return false;
+  return Boolean(user.requestorCapabilities?.practice);
+}
+
+function practicePrefillFromUser(user: User): {
+  practice: EventPlaceFields;
+  directorName: string;
+  applicantPhone: string;
+} {
+  const pp = user.practiceProfile || {};
+  const name = String(pp.clinicName || user.companyName || "").trim();
+  const directorName = String(pp.directorName || "").trim();
+  const clinicPhone = String(pp.clinicPhone || "").trim();
+  const mobile = String(pp.phone || "").trim();
+  const address = [pp.address, pp.addressDetail]
+    .map((s) => String(s || "").trim())
+    .filter(Boolean)
+    .join(" ");
+  return {
+    practice: {
+      name,
+      representativeName: directorName,
+      phone: clinicPhone || mobile,
+      address,
+      lat: null,
+      lng: null,
+    },
+    directorName,
+    applicantPhone: mobile || clinicPhone,
+  };
+}
 
 function applyPlacePick(
   prev: EventPlaceFields,
@@ -231,6 +269,8 @@ function ExtrasSection() {
 export default function EventApplyPage() {
   const { slug = "" } = useParams();
   const { toast } = useToast();
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const user = useAuthStore((s) => s.user);
   const [event, setEvent] = useState<MarketingEvent | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -242,6 +282,9 @@ export default function EventApplyPage() {
   const [dealer, setDealer] = useState<EventPlaceFields>(emptyPlace);
   const [applicantPhone, setApplicantPhone] = useState("");
   const [usesOralScan, setUsesOralScan] = useState(false);
+  const [suggestSuppressToken, setSuggestSuppressToken] = useState(0);
+  const [prefilledFromAccount, setPrefilledFromAccount] = useState(false);
+  const prefilledRef = useRef(false);
 
   const isSimpleway = slug === SIMPLEWAY_SAMPLE_SLUG;
   const canApply = event?.status !== "closed";
@@ -271,6 +314,34 @@ export default function EventApplyPage() {
       cancelled = true;
     };
   }, [slug]);
+
+  useEffect(() => {
+    if (prefilledRef.current) return;
+    if (!isAuthenticated || !isPracticeApplicant(user) || !user) return;
+    const next = practicePrefillFromUser(user);
+    if (
+      !next.practice.name &&
+      !next.directorName &&
+      !next.applicantPhone &&
+      !next.practice.phone &&
+      !next.practice.address
+    ) {
+      return;
+    }
+    prefilledRef.current = true;
+    setSuggestSuppressToken((t) => t + 1);
+    setPractice((prev) => ({
+      ...prev,
+      name: prev.name || next.practice.name,
+      phone: prev.phone || next.practice.phone,
+      address: prev.address || next.practice.address,
+      representativeName:
+        prev.representativeName || next.practice.representativeName,
+    }));
+    setDirectorName((prev) => prev || next.directorName);
+    setApplicantPhone((prev) => prev || next.applicantPhone);
+    setPrefilledFromAccount(true);
+  }, [isAuthenticated, user]);
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -417,6 +488,11 @@ export default function EventApplyPage() {
               정보를 남겨 주시면, 영업자가 방문해 설명 후 샘플을
               전달합니다.
             </p>
+            {prefilledFromAccount ? (
+              <p className="text-xs text-slate-500">
+                로그인 치과 정보로 미리 입력했습니다. 필요하면 수정하세요.
+              </p>
+            ) : null}
           </div>
 
           <form onSubmit={onSubmit} className="space-y-5">
@@ -438,6 +514,7 @@ export default function EventApplyPage() {
                       value={practice.name}
                       placeholder="치과명 검색 (예: 강남 미소)"
                       listMode="inline"
+                      suppressSuggestToken={suggestSuppressToken}
                       onChange={(name) =>
                         setPractice((p) => ({ ...p, name }))
                       }
