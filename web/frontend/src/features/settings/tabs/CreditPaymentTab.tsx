@@ -32,6 +32,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
+import {
+  SETTLEMENT_DEFAULT_PERIOD,
+  SETTLEMENT_PERIOD_PRESETS,
+} from "@/shared/ui/periodFilterValues";
 import { periodToRange } from "@/store/usePeriodStore";
 import { AlertTriangle, ChevronDown, ChevronUp, Copy, Wallet } from "lucide-react";
 import {
@@ -300,7 +304,9 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
 
   const [orders, setOrders] = useState<CreditOrderItem[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(false);
-  const [ordersPeriod, setOrdersPeriod] = useState<PeriodFilterValue>("30d");
+  const [ordersPeriod, setOrdersPeriod] = useState<PeriodFilterValue>(
+    SETTLEMENT_DEFAULT_PERIOD,
+  );
   const [ordersCustomStartDate, setOrdersCustomStartDate] = useState("");
   const [ordersCustomEndDate, setOrdersCustomEndDate] = useState("");
   const ordersRequestSequence = useRef(0);
@@ -1188,6 +1194,7 @@ export const CreditPaymentTab = ({ userData, compact = false }: Props) => {
             <PeriodFilter
               value={ordersPeriod}
               onChange={setOrdersPeriod}
+              presets={SETTLEMENT_PERIOD_PRESETS}
               useStoreCustomRange={false}
               customStartDate={ordersCustomStartDate}
               customEndDate={ordersCustomEndDate}

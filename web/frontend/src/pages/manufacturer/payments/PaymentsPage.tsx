@@ -35,6 +35,11 @@ import { usePeriodStore, periodToRange } from "@/store/usePeriodStore";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
+import {
+  isSettlementPeriodValue,
+  SETTLEMENT_DEFAULT_PERIOD,
+  SETTLEMENT_PERIOD_PRESETS,
+} from "@/shared/ui/periodFilterValues";
 import { Input } from "@/components/ui/input";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
@@ -402,6 +407,16 @@ export const ManufacturerPaymentPage = () => {
 
   const { period, setPeriod, customStartDate, customEndDate, setCustomDateRange } =
     usePeriodStore();
+
+  useEffect(() => {
+    if (!isSettlementPeriodValue(period)) {
+      setPeriod(SETTLEMENT_DEFAULT_PERIOD);
+    }
+  }, [period, setPeriod]);
+
+  const settlementPeriod = isSettlementPeriodValue(period)
+    ? period
+    : SETTLEMENT_DEFAULT_PERIOD;
   const { data: systemSettings } = useSystemSettings();
   const manufacturerRequestUnitPrice = Number(
     systemSettings?.creditSettings?.manufacturerRequestUnitPrice ??
@@ -457,7 +472,7 @@ export const ManufacturerPaymentPage = () => {
         page: String(p),
         limit: String(PAGE_SIZE),
       });
-      const range = periodToYmdRange(period);
+      const range = periodToYmdRange(settlementPeriod);
       if (range) {
         params.set("from", range.from);
         params.set("to", range.to);
@@ -465,7 +480,7 @@ export const ManufacturerPaymentPage = () => {
       if (q.trim()) params.set("q", q.trim());
       return params.toString();
     },
-    [period, q, customStartDate, customEndDate],
+    [settlementPeriod, q, customStartDate, customEndDate],
   );
 
   const buildLedgerParams = useCallback(
@@ -474,7 +489,7 @@ export const ManufacturerPaymentPage = () => {
         page: String(p),
         limit: String(PAGE_SIZE),
       });
-      const range = periodToYmdRange(period);
+      const range = periodToYmdRange(settlementPeriod);
       if (range) {
         params.set("from", range.from);
         params.set("to", range.to);
@@ -482,7 +497,7 @@ export const ManufacturerPaymentPage = () => {
       if (q.trim()) params.set("q", q.trim());
       return params.toString();
     },
-    [period, q, customStartDate, customEndDate],
+    [settlementPeriod, q, customStartDate, customEndDate],
   );
 
   const loadLedger = useCallback(
@@ -563,13 +578,13 @@ export const ManufacturerPaymentPage = () => {
 
   const buildSnapshotParams = useCallback(() => {
     const params = new URLSearchParams({ limit: "60" });
-    const range = periodToYmdRange(period);
+    const range = periodToYmdRange(settlementPeriod);
     if (range) {
       params.set("fromYmd", range.from);
       params.set("toYmd", range.to);
     }
     return params.toString();
-  }, [period, customStartDate, customEndDate]);
+  }, [settlementPeriod, customStartDate, customEndDate]);
 
   const loadSnapshots = useCallback(async () => {
     if (!token) return;
@@ -677,7 +692,7 @@ export const ManufacturerPaymentPage = () => {
   useEffect(() => {
     if (!isManufacturer) return;
     void loadSnapshots();
-  }, [isManufacturer, period, loadSnapshots]);
+  }, [isManufacturer, settlementPeriod, loadSnapshots]);
 
   useEffect(() => {
     if (!isManufacturer) return;
@@ -697,7 +712,7 @@ export const ManufacturerPaymentPage = () => {
   }, [
     isManufacturer,
     tab,
-    period,
+    settlementPeriod,
     q,
     loadPayments,
     loadLedger,
@@ -905,7 +920,11 @@ export const ManufacturerPaymentPage = () => {
             className="flex min-h-0 flex-1 flex-col gap-2"
           >
             <div className="flex shrink-0 flex-wrap items-center gap-2">
-              <PeriodFilter value={period} onChange={setPeriod} />
+              <PeriodFilter
+                value={settlementPeriod}
+                onChange={setPeriod}
+                presets={SETTLEMENT_PERIOD_PRESETS}
+              />
               <Input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}

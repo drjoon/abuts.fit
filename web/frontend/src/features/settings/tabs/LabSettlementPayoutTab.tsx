@@ -30,6 +30,11 @@ import { usePeriodStore, periodToRange } from "@/store/usePeriodStore";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
+import {
+  isSettlementPeriodValue,
+  SETTLEMENT_DEFAULT_PERIOD,
+  SETTLEMENT_PERIOD_PRESETS,
+} from "@/shared/ui/periodFilterValues";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
 import {
   Building2,
@@ -234,6 +239,16 @@ export const LabSettlementPayoutTab = () => {
 
   const [view, setView] = useState<ViewMode>("all");
   const { period, setPeriod, customStartDate, customEndDate } = usePeriodStore();
+
+  useEffect(() => {
+    if (!isSettlementPeriodValue(period)) {
+      setPeriod(SETTLEMENT_DEFAULT_PERIOD);
+    }
+  }, [period, setPeriod]);
+
+  const settlementPeriod = isSettlementPeriodValue(period)
+    ? period
+    : SETTLEMENT_DEFAULT_PERIOD;
   const [sort, setSort] = useState<{
     key: MonthlySortKey;
     direction: SortDirection;
@@ -294,13 +309,13 @@ export const LabSettlementPayoutTab = () => {
 
   const buildSnapshotParams = useCallback(() => {
     const params = new URLSearchParams({ limit: "366" });
-    const range = periodToYmdRange(period);
+    const range = periodToYmdRange(settlementPeriod);
     if (range) {
       params.set("fromYmd", range.from);
       params.set("toYmd", range.to);
     }
     return params.toString();
-  }, [period, customStartDate, customEndDate]);
+  }, [settlementPeriod, customStartDate, customEndDate]);
 
   const loadSnapshots = useCallback(async () => {
     if (!token) return;
@@ -460,7 +475,7 @@ export const LabSettlementPayoutTab = () => {
   }, [monthlyRows]);
 
   const sortedRows = useMemo(() => {
-    const range = periodToYmdRange(period);
+    const range = periodToYmdRange(settlementPeriod);
     const filtered = monthlyRows.filter((row) => {
       if (view === "payouts" && row.payoutAmount <= 0) return false;
       if (!range) return true;
@@ -490,7 +505,7 @@ export const LabSettlementPayoutTab = () => {
         ? av.localeCompare(bv, "ko")
         : bv.localeCompare(av, "ko");
     });
-  }, [monthlyRows, period, view, sort, customStartDate, customEndDate]);
+  }, [monthlyRows, settlementPeriod, view, sort, customStartDate, customEndDate]);
 
   const toggleSort = (key: MonthlySortKey) => {
     setSort((prev) =>
@@ -568,7 +583,11 @@ export const LabSettlementPayoutTab = () => {
         mainLeft={
           <div className="flex h-full min-h-0 min-w-0 flex-col gap-2">
             <div className="flex shrink-0 flex-wrap items-center gap-2">
-              <PeriodFilter value={period} onChange={setPeriod} />
+              <PeriodFilter
+                value={settlementPeriod}
+                onChange={setPeriod}
+                presets={SETTLEMENT_PERIOD_PRESETS}
+              />
               <SettlementPolicyDialog
                 title="기공크레딧 정산 규칙"
                 description="적립 · 지급 · 계산서 기준"

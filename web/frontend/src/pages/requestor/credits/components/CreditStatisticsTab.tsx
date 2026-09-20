@@ -56,6 +56,10 @@ import {
   type CreditLedgerStatsCategory,
 } from "@/shared/components/CreditLedgerModal";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
+import {
+  SETTLEMENT_DEFAULT_PERIOD,
+  SETTLEMENT_PERIOD_PRESETS,
+} from "@/shared/ui/periodFilterValues";
 import { appendPeriodQueryParams } from "@/store/usePeriodStore";
 import {
   SettlementEquationOperator,
@@ -603,7 +607,9 @@ function CategoryBarChart({
 export function CreditStatisticsTab() {
   const { demoMode } = useDemoMode();
   const accessKind = useAuthStore((s) => s.user?.requestorKind || null);
-  const [period, setPeriod] = useState<PeriodFilterValue>("30d");
+  const [period, setPeriod] = useState<PeriodFilterValue>(
+    SETTLEMENT_DEFAULT_PERIOD,
+  );
   const [customStartDate, setCustomStartDate] = useState("");
   const [customEndDate, setCustomEndDate] = useState("");
   const [loading, setLoading] = useState(true);
@@ -735,7 +741,7 @@ export function CreditStatisticsTab() {
           setCustomEndDate("");
         }}
         useStoreCustomRange={false}
-        presets={["30d", "90d", "thisMonth"]}
+        presets={SETTLEMENT_PERIOD_PRESETS}
       />
     </div>
   );

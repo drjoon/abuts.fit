@@ -14,6 +14,10 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
 import {
+  SETTLEMENT_DEFAULT_PERIOD,
+  SETTLEMENT_PERIOD_PRESETS,
+} from "@/shared/ui/periodFilterValues";
+import {
   Copy,
   BadgeCheck,
   CalendarClock,
@@ -53,7 +57,9 @@ export const SalesmanDashboardPage = () => {
   const [ledgerMode, setLedgerMode] = useState<"unpaid" | "paid">("unpaid");
   const [policyOpen, setPolicyOpen] = useState(false);
   const [salesmanPolicyOpen, setSalesmanPolicyOpen] = useState(false);
-  const [period, setPeriod] = useState<PeriodFilterValue>("30d");
+  const [period, setPeriod] = useState<PeriodFilterValue>(
+    SETTLEMENT_DEFAULT_PERIOD,
+  );
 
   const openLedger = (mode: "unpaid" | "paid") => {
     setLedgerMode(mode);
@@ -136,6 +142,7 @@ export const SalesmanDashboardPage = () => {
               <PeriodFilter
                 value={period}
                 onChange={setPeriod}
+                presets={SETTLEMENT_PERIOD_PRESETS}
                 useStoreCustomRange={false}
               />
               <div className="flex flex-wrap items-center gap-2">
