@@ -2,6 +2,7 @@
 // - web/frontend/src/pages/salesTeam/salesTeamApi.ts
 // - web/frontend/src/pages/salesTeam/salesUi.tsx
 // change-log:
+// - 2026-09-21: 성과 페이지 일일보고 열람 안내 카드 제거(작성 모달만 유지).
 // - 2026-09-21: 딜러 일일보고 제출률·현황에 대표·담당자만 / 어벗츠 불가 안내.
 // - 2026-09-20: 활동 요약 카드 그리드 p-0.5 — 선택 ring이 잘리지 않게.
 import { useState } from "react";
@@ -29,7 +30,6 @@ import {
 } from "@/components/ui/select";
 import { KIND_LABEL, salesTeamApi, visitAccountName } from "./salesTeamApi";
 import {
-  SalesDailyReportPrivacyBanner,
   SalesEmptyState,
   SalesListRow,
   SalesPageShell,
@@ -48,8 +48,6 @@ function parseTab(raw: string | null): PerfTab {
 
 export default function SalesPerformancePage() {
   const token = useAuthStore((s) => s.token);
-  const role = useAuthStore((s) => s.user?.role);
-  const isSalesman = role === "salesman";
   const { toast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const [period, setPeriod] = useState("30d");
@@ -151,9 +149,6 @@ export default function SalesPerformancePage() {
         ) : (
           <div className="grid gap-4 lg:grid-cols-[minmax(14rem,18rem)_minmax(0,1fr)] xl:grid-cols-[minmax(15rem,20rem)_minmax(0,1fr)] xl:gap-5">
             <div className="grid grid-cols-1 gap-2.5 p-0.5 md:grid-cols-3 lg:sticky lg:top-4 lg:grid-cols-1 lg:self-start">
-              {isSalesman ? (
-                <SalesDailyReportPrivacyBanner className="md:col-span-3 lg:col-span-1" />
-              ) : null}
               <SalesStatCard
                 compact
                 label="방문 완료"
