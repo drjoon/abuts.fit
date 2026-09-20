@@ -228,6 +228,12 @@ import {
   adminGetInboundEmailAttachment,
   adminGetInboundEmailStats,
 } from "../../controllers/admin/adminInboundEmail.controller.js";
+import {
+  adminListEvents,
+  adminUpdateEvent,
+  adminListApplications,
+  adminUpdateApplication,
+} from "../../controllers/events/marketingEvent.controller.js";
 
 // Brevo 인바운드 이메일 webhook (인증 불필요 - 미들웨어 전에 정의)
 router.post("/inbound-email/webhook", handleInboundEmailWebhook);
@@ -703,6 +709,15 @@ router.get(
   "/inbound-email/:id/attachments/:downloadToken",
   adminGetInboundEmailAttachment,
 );
+
+// 마케팅 이벤트(심플웨이 샘플 배포 등)
+router.get("/events", adminListEvents);
+router.patch(
+  "/events/applications/:applicationId",
+  adminUpdateApplication,
+);
+router.get("/events/:id/applications", adminListApplications);
+router.patch("/events/:id", adminUpdateEvent);
 
 // 마이그레이션: Machine manufacturer -> manufacturerBusinessId
 router.post(

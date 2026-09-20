@@ -63,6 +63,7 @@ export const Navigation = ({ tone = "dark", overlay = false }: NavigationProps) 
       : [
           { label: "어벗츠 소개", href: "/" },
           { label: "플랫폼과 제품", href: "/platform" },
+          { label: "이벤트", href: "/events" },
         ];
 
   useEffect(() => {

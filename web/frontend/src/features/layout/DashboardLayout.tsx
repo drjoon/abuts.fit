@@ -177,6 +177,7 @@ import {
   Menu,
   X,
   Monitor,
+  Gift,
 } from "lucide-react";
 import { AbutsLogo } from "@/components/branding/AbutsLogo";
 import {
@@ -379,6 +380,7 @@ const sidebarItems = {
     { icon: Users, label: "회원", href: "/dashboard/members" },
     { icon: FileText, label: "의뢰", href: "/dashboard/monitoring" },
     { icon: Store, label: "스토어", href: "/dashboard/store-admin" },
+    { icon: Gift, label: "이벤트", href: "/dashboard/events" },
     { icon: Headphones, label: "지원", href: "/dashboard/support" },
     { icon: MessageSquare, label: "채널", href: "/dashboard/channels" },
     { icon: Wallet, label: "재무", href: "/dashboard/finance" },
@@ -470,6 +472,7 @@ const adminSidebarSections: DashboardSidebarSection[] = [
       { icon: Users, label: "회원", href: "/dashboard/members" },
       { icon: FileText, label: "의뢰", href: "/dashboard/monitoring" },
       { icon: Store, label: "스토어", href: "/dashboard/store-admin" },
+      { icon: Gift, label: "이벤트", href: "/dashboard/events" },
     ],
   },
   {

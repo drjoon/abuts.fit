@@ -159,6 +159,9 @@ const ContactPage = lazy(() =>
     default: m.ContactPage,
   })),
 );
+const EventsPage = lazy(() => import("./pages/public/EventsPage"));
+const EventApplyPage = lazy(() => import("./pages/public/EventApplyPage"));
+const AdminEventsPage = lazy(() => import("./pages/admin/AdminEventsPage"));
 const OAuthCallbackPage = lazy(() =>
   import("./features/auth/OAuthCallbackPage").then((m) => ({
     default: m.OAuthCallbackPage,
@@ -572,6 +575,8 @@ const App = () => {
                 <Route path="/manual" element={<ManualPage />} />
                 <Route path="/help" element={<HelpPage />} />
                 <Route path="/contact" element={<ContactPage />} />
+                <Route path="/events" element={<EventsPage />} />
+                <Route path="/events/:slug" element={<EventApplyPage />} />
                 <Route path="/terms" element={<TermsPage />} />
                 <Route path="/privacy" element={<PrivacyPage />} />
                 <Route path="/security" element={<SecurityPage />} />
@@ -828,6 +833,14 @@ const App = () => {
                     element={
                       <RoleProtectedRoute roles={["admin"]}>
                         <AdminMembersPage />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="events"
+                    element={
+                      <RoleProtectedRoute roles={["admin"]}>
+                        <AdminEventsPage />
                       </RoleProtectedRoute>
                     }
                   />

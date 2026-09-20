@@ -30,6 +30,7 @@ export const Footer = ({ tone = "dark" }: FooterProps) => {
   const support = [
     { label: "어벗츠 소개", href: "/" },
     { label: "도움말 센터", href: "/help" },
+    { label: "이벤트", href: "/events" },
     { label: "문의하기", href: "/contact" },
     { label: "보안 정책", href: "/security" },
   ];
