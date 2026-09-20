@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/practice/practiceAbutmentShipYmd.ts
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // change-log:
+// - 2026-09-21: 계정 선호 −N 기본 재사용. 선택 시 beforeArrivalBusinessDays 함께 저장.
 // - 2026-09-16: 배치 — 어벗츠 생산의뢰 줄 오른쪽(업로드 행에서 이동).
 // - 2026-09-15: −n = 영업일. 안내·버튼 표기 영업일.
 // - 2026-09-14: 팝오버 — 출고일 지정 안내, 어벗츠 출고 / 치과 도착.
@@ -26,12 +27,12 @@ import {
 } from "@/components/ui/tooltip";
 import { formatKstYmdToKo } from "@/shared/date/kst";
 import {
-  PRACTICE_ABUTMENT_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS,
   abutmentShipYmdFromArrivalMinusN,
   clampAbutmentShipN,
   formatAbutmentShipButtonLabel,
   getAbutmentShipNPickerHintLines,
   getAbutmentShipNPickerTooltip,
+  normalizeAbutmentShipBeforeArrivalBusinessDays,
   resolveAbutmentShipBeforeArrivalN,
   resolveAbutmentShipNRange,
   resolveEffectiveAbutmentShipYmd,
@@ -49,7 +50,12 @@ export type PracticeAbutmentShipDateButtonProps = {
   disabled?: boolean;
   /** 묶음 출고 주간 요일(있으면 12시 이후 max n에 반영) */
   weeklyBatchDays?: unknown;
-  onSave?: (shipYmd: string) => void | Promise<void>;
+  /** 계정 선호 치과도착 − N영업일(미설정=3) */
+  preferredBeforeArrivalBusinessDays?: number | null;
+  onSave?: (
+    shipYmd: string,
+    beforeArrivalBusinessDays: number,
+  ) => void | Promise<void>;
   className?: string;
 };
 
@@ -61,12 +67,18 @@ export function PracticeAbutmentShipDateButton({
   busy = false,
   disabled = false,
   weeklyBatchDays,
+  preferredBeforeArrivalBusinessDays = null,
   onSave,
   className,
 }: PracticeAbutmentShipDateButtonProps) {
   const [open, setOpen] = useState(false);
+  const preferredN = normalizeAbutmentShipBeforeArrivalBusinessDays(
+    preferredBeforeArrivalBusinessDays,
+  );
   const arrivalYmd = resolvePracticeTransferArrivalYmd(transfer);
-  const effectiveShipYmd = resolveEffectiveAbutmentShipYmd(transfer);
+  const effectiveShipYmd = resolveEffectiveAbutmentShipYmd(transfer, {
+    beforeArrivalBusinessDays: preferredN,
+  });
   const range = resolveAbutmentShipNRange({
     arrivalYmd,
     weeklyBatchDays,
@@ -77,20 +89,21 @@ export function PracticeAbutmentShipDateButton({
       resolveAbutmentShipBeforeArrivalN({
         shipYmd: effectiveShipYmd,
         arrivalYmd,
-      }) ?? PRACTICE_ABUTMENT_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS,
+      }) ?? preferredN,
       range,
-    ) ?? PRACTICE_ABUTMENT_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS;
+      preferredN,
+    ) ?? preferredN;
 
   const handleSelectN = (event: MouseEvent, n: number) => {
     event.stopPropagation();
     if (busy || disabled || !onSave || !range.selectable) return;
     const shipYmd = abutmentShipYmdFromArrivalMinusN(arrivalYmd, n);
     if (!shipYmd) return;
-    if (shipYmd === effectiveShipYmd) {
+    if (shipYmd === effectiveShipYmd && n === currentN) {
       setOpen(false);
       return;
     }
-    void Promise.resolve(onSave(shipYmd)).then(() => setOpen(false));
+    void Promise.resolve(onSave(shipYmd, n)).then(() => setOpen(false));
   };
 
   const buttonLabel = formatAbutmentShipButtonLabel(effectiveShipYmd);

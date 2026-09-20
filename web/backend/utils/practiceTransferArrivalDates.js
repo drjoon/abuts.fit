@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-21: 기본 −N = User.preferences.abutmentShipBeforeArrivalBusinessDays(계정 재사용). 미설정=3.
 // - 2026-09-18: 어벗 출고 영업일 = 주말+한국 공휴일 제외(Nager 정적 폴백·추석 9/24–26).
 // - 2026-09-15: 어벗 출고일 기본/최소 = 치과도착일 − N영업일(월~금). 달력일 폐기.
 // - 2026-09-12: 어벗 출고일 최소=치과도착일 − 2달력일. 기본은 −3.
@@ -33,30 +34,57 @@ export const PRACTICE_ABUTMENT_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS = 3;
 /** 어벗 출고 = 치과도착일 − n일에서 n 최소(영업일). */
 export const PRACTICE_ABUTMENT_SHIP_MIN_BEFORE_ARRIVAL_BUSINESS_DAYS = 2;
 
+/** 계정 선호 −n 상한(영업일). UI 선택 범위는 건별 maxN이 더 좁을 수 있음. */
+export const PRACTICE_ABUTMENT_SHIP_MAX_BEFORE_ARRIVAL_BUSINESS_DAYS = 30;
+
 /**
- * @param {string|null|undefined} arrivalYmd
- * @returns {string|null}
+ * 계정 선호·요청 body의 −n 정규화. 미설정·비정상이면 기본 3.
+ * @param {unknown} raw
+ * @returns {number}
  */
-export function defaultAbutmentShipYmdFromArrival(arrivalYmd) {
-  return addBusinessDaysYmd(
-    arrivalYmd,
-    -PRACTICE_ABUTMENT_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS,
-  );
+export function normalizeAbutmentShipBeforeArrivalBusinessDays(raw) {
+  const n = Math.floor(Number(raw));
+  if (
+    !Number.isFinite(n) ||
+    n < PRACTICE_ABUTMENT_SHIP_MIN_BEFORE_ARRIVAL_BUSINESS_DAYS
+  ) {
+    return PRACTICE_ABUTMENT_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS;
+  }
+  return Math.min(PRACTICE_ABUTMENT_SHIP_MAX_BEFORE_ARRIVAL_BUSINESS_DAYS, n);
 }
 
 /**
- * 기공소 설정값 우선, 없으면 치과도착일 − 3영업일.
- * @param {{ production?: { abutmentShipYmd?: unknown }, arrivalDates?: unknown, transferMemo?: unknown, arrivalDate?: unknown } | null | undefined} doc
+ * @param {string|null|undefined} arrivalYmd
+ * @param {unknown} [beforeArrivalBusinessDays]
  * @returns {string|null}
  */
-export function resolveEffectiveAbutmentShipYmd(doc) {
+export function defaultAbutmentShipYmdFromArrival(
+  arrivalYmd,
+  beforeArrivalBusinessDays,
+) {
+  const n = normalizeAbutmentShipBeforeArrivalBusinessDays(
+    beforeArrivalBusinessDays,
+  );
+  return addBusinessDaysYmd(arrivalYmd, -n);
+}
+
+/**
+ * 기공소 설정값 우선, 없으면 치과도착일 − N영업일(계정 선호, 기본 3).
+ * @param {{ production?: { abutmentShipYmd?: unknown }, arrivalDates?: unknown, transferMemo?: unknown, arrivalDate?: unknown } | null | undefined} doc
+ * @param {{ beforeArrivalBusinessDays?: unknown } | null | undefined} [opts]
+ * @returns {string|null}
+ */
+export function resolveEffectiveAbutmentShipYmd(doc, opts = null) {
   const stored = String(doc?.production?.abutmentShipYmd || "").trim();
   if (YMD_RE.test(stored)) return stored;
   const direct = String(doc?.arrivalDate || "").trim();
   const arrival = YMD_RE.test(direct)
     ? direct
     : resolveCurrentArrivalYmd(resolvePracticeArrivalDates(doc));
-  return defaultAbutmentShipYmdFromArrival(arrival);
+  return defaultAbutmentShipYmdFromArrival(
+    arrival,
+    opts?.beforeArrivalBusinessDays,
+  );
 }
 
 /**

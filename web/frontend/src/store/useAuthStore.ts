@@ -10,11 +10,14 @@
 // - web/backend/utils/labReceiveCalendarHiddenWeekdays.util.js
 // - web/frontend/src/shared/practice/practiceStatusBadgeClearedTransferIds.ts
 // - web/backend/utils/practiceStatusBadgeClearedTransferIds.util.js
+// - web/frontend/src/shared/practice/practiceAbutmentShipYmd.ts
+// - web/backend/utils/practiceTransferArrivalDates.js
 // - web/backend/models/user.model.js
 // - web/backend/modules/auth/auth.routes.js
 // - web/backend/controllers/users/user.controller.js
 // - web/frontend/src/shared/layout/sidebarOpen.ts
 // - web/backend/utils/sidebarOpen.util.js
+// - 2026-09-21: 계정 preferences.abutmentShipBeforeArrivalBusinessDays (어벗 출고 −N 재사용)
 // - 2026-09-11: 계정 preferences.practiceStatusBadgeClearedTransferIds (완료·취소·어벗 열람 제외)
 // - 2026-08-28: /me 응답이 진행 중 토글한 sidebarOpen을 덮어쓰지 않게 epoch 가드
 // - 2026-08-27: 계정 preferences.sidebarOpen (데스크톱 사이드바 펼침, 기본 open)
@@ -43,6 +46,9 @@ import {
 } from "@/shared/practice/labReceiveCalendarDateKey";
 import { normalizeLabReceiveCalendarHiddenWeekdays } from "@/shared/practice/labReceiveCalendarHiddenWeekdays";
 import { normalizePracticeStatusBadgeClearedTransferIds } from "@/shared/practice/practiceStatusBadgeClearedTransferIds";
+import {
+  normalizeAbutmentShipBeforeArrivalBusinessDays,
+} from "@/shared/practice/practiceAbutmentShipYmd";
 
 const AUTH_TOKEN_KEY = "abuts_auth_token";
 const AUTH_REFRESH_TOKEN_KEY = "abuts_auth_refresh_token";
@@ -107,6 +113,8 @@ export interface User {
   labReceiveCalendarHiddenWeekdays?: number[];
   /** 완료·취소·어벗 뱃지에서 열람 후 본문 건수 제외할 transferId */
   practiceStatusBadgeClearedTransferIds?: string[];
+  /** 기공소 어벗 출고 = 치과도착 − N영업일. 기본 3 */
+  abutmentShipBeforeArrivalBusinessDays?: number;
 }
 
 const normalizeApiUser = (u: unknown): User | null => {
@@ -259,6 +267,16 @@ const normalizeApiUser = (u: unknown): User | null => {
           row.practiceStatusBadgeClearedTransferIds,
       );
     })(),
+    abutmentShipBeforeArrivalBusinessDays: (() => {
+      const prefs =
+        row.preferences && typeof row.preferences === "object"
+          ? (row.preferences as Record<string, unknown>)
+          : null;
+      return normalizeAbutmentShipBeforeArrivalBusinessDays(
+        prefs?.abutmentShipBeforeArrivalBusinessDays ??
+          row.abutmentShipBeforeArrivalBusinessDays,
+      );
+    })(),
   };
 };
 
@@ -299,6 +317,7 @@ interface AuthState {
   setLabReceiveCalendarDateKey: (dateKey: LabReceiveCalendarDateKey) => void;
   setLabReceiveCalendarHiddenWeekdays: (hiddenWeekdays: number[]) => void;
   setPracticeStatusBadgeClearedTransferIds: (transferIds: string[]) => void;
+  setAbutmentShipBeforeArrivalBusinessDays: (days: number) => void;
   logout: () => void;
 }
 
@@ -761,6 +780,22 @@ export const useAuthStore = create<AuthState>((set, get) => {
         ...current,
         practiceStatusBadgeClearedTransferIds:
           normalizePracticeStatusBadgeClearedTransferIds(transferIds),
+      };
+      try {
+        localStorage.setItem(AUTH_USER_KEY, JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      set({ user: next });
+    },
+    setAbutmentShipBeforeArrivalBusinessDays: (days: number) => {
+      if (isMemoryAuthStale(get().token)) return;
+      const current = get().user;
+      if (!current) return;
+      const next = {
+        ...current,
+        abutmentShipBeforeArrivalBusinessDays:
+          normalizeAbutmentShipBeforeArrivalBusinessDays(days),
       };
       try {
         localStorage.setItem(AUTH_USER_KEY, JSON.stringify(next));

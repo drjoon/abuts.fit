@@ -38,6 +38,19 @@ describe("practiceTransferArrivalDates", () => {
     ).toBe("2026-08-14");
   });
 
+  it("uses preferred before-arrival business days when ship ymd unset", () => {
+    // 목 8/20 − 4영업일 = 목 8/13
+    expect(defaultAbutmentShipYmdFromArrival("2026-08-20", 4)).toBe(
+      "2026-08-13",
+    );
+    expect(
+      resolveEffectiveAbutmentShipYmd(
+        { arrivalDate: "2026-08-20" },
+        { beforeArrivalBusinessDays: 4 },
+      ),
+    ).toBe("2026-08-13");
+  });
+
   it("seeds from memo when arrivalDates empty", () => {
     expect(
       resolvePracticeArrivalDates({

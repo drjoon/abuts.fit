@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/practice/practiceTransferLabReceive.ts
 // change-log:
+// - 2026-09-21: 어벗 출고 −N 계정 선호 전달·저장.
 // - 2026-09-20: abutmentLeadingActions — 어벗 건만 STL 업로드 왼쪽에 SW·아노 등.
 // - 2026-09-16: stickyTrailingActions — 어벗 완료 줄이 취소·리메이크를 맡아도 지르 작업 시작 유지.
 // - 2026-09-16: 출고일 버튼 — 어벗츠 생산의뢰 줄 오른쪽 끝(업로드·지르 행에서 이동).
@@ -67,9 +68,14 @@ export type PracticeLabReceiveWorkActionsBarProps = {
   onOpenAbutmentRemake?: (event: MouseEvent, teeth?: string[]) => void;
   /** 어벗 STL 파일창 — 작업 취소 옆 */
   onAbutmentStlUpload?: (event: MouseEvent) => void;
-  /** 어벗 출고일 저장(기공소) */
-  onAbutmentShipYmdSave?: (shipYmd: string) => void | Promise<void>;
+  /** 어벗 출고일 저장(기공소). n은 계정 선호로 재사용 */
+  onAbutmentShipYmdSave?: (
+    shipYmd: string,
+    beforeArrivalBusinessDays: number,
+  ) => void | Promise<void>;
   abutmentShipBusy?: boolean;
+  /** 계정 선호 치과도착 − N영업일 */
+  preferredAbutmentShipBeforeArrivalBusinessDays?: number | null;
   onDesignConfirm?: () => void;
   /**
    * 어벗 있는 의뢰만 — 어벗 STL 업로드 왼쪽(디자인SW·아노 등).
@@ -110,6 +116,7 @@ export function PracticeLabReceiveWorkActionsBar({
   onAbutmentStlUpload,
   onAbutmentShipYmdSave,
   abutmentShipBusy = false,
+  preferredAbutmentShipBeforeArrivalBusinessDays = null,
   onDesignConfirm,
   abutmentLeadingActions = null,
   stickyTrailingActions = null,
@@ -169,6 +176,9 @@ export function PracticeLabReceiveWorkActionsBar({
       transfer={transfer}
       busy={abutmentShipBusy}
       disabled={busy}
+      preferredBeforeArrivalBusinessDays={
+        preferredAbutmentShipBeforeArrivalBusinessDays
+      }
       onSave={onAbutmentShipYmdSave}
     />
   ) : null;

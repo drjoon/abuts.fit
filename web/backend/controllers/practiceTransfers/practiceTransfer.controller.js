@@ -100,6 +100,7 @@ import {
   revertPracticeArrivalAppend,
   resolveCurrentArrivalYmd,
   resolveCurrentOrderYmd,
+  normalizeAbutmentShipBeforeArrivalBusinessDays,
   resolveEffectiveAbutmentShipYmd,
   resolvePracticeArrivalDates,
   resolvePracticeOrderDates,
@@ -9017,7 +9018,9 @@ export async function restoreReceivedPracticeTransferRequestFiles(req, res) {
  */
 /**
  * 기공소 — 어벗 출고일(KST YMD) 설정.
- * 기본(미설정)은 치과도착일 − 3영업일. 연동 CA Request 스케줄은 응답 후 보정.
+ * 기본(미설정)은 계정 선호 −N(없으면 치과도착일 − 3영업일).
+ * 선택 n은 User.preferences.abutmentShipBeforeArrivalBusinessDays에 저장·재사용.
+ * 연동 CA Request 스케줄은 응답 후 보정.
  */
 export async function setPracticeTransferAbutmentShipYmd(req, res) {
   try {
@@ -9043,6 +9046,17 @@ export async function setPracticeTransferAbutmentShipYmd(req, res) {
         message: "어벗 출고일(YYYY-MM-DD)이 필요합니다.",
       });
     }
+
+    const rawPreferredBeforeArrival =
+      req.body?.beforeArrivalBusinessDays ??
+      req.body?.abutmentShipBeforeArrivalBusinessDays;
+    const hasPreferredBeforeArrival =
+      rawPreferredBeforeArrival !== undefined &&
+      rawPreferredBeforeArrival !== null &&
+      String(rawPreferredBeforeArrival).trim() !== "";
+    const preferredBeforeArrivalBusinessDays = hasPreferredBeforeArrival
+      ? normalizeAbutmentShipBeforeArrivalBusinessDays(rawPreferredBeforeArrival)
+      : null;
 
     const { scope, labAnchorId } = await buildReceivedScope(req);
     if (scope === null || !labAnchorId) {
@@ -9131,12 +9145,19 @@ export async function setPracticeTransferAbutmentShipYmd(req, res) {
       abutmentPastReady: false,
     });
     const effectiveShipYmd =
-      resolveEffectiveAbutmentShipYmd({
-        production,
-        arrivalDates: doc.arrivalDates,
-        transferMemo: doc.transferMemo,
-        arrivalDate: arrivalYmd,
-      }) || shipYmdRaw;
+      resolveEffectiveAbutmentShipYmd(
+        {
+          production,
+          arrivalDates: doc.arrivalDates,
+          transferMemo: doc.transferMemo,
+          arrivalDate: arrivalYmd,
+        },
+        preferredBeforeArrivalBusinessDays != null
+          ? {
+              beforeArrivalBusinessDays: preferredBeforeArrivalBusinessDays,
+            }
+          : null,
+      ) || shipYmdRaw;
 
     const now = new Date();
     const realtimePayload = {
@@ -9148,6 +9169,12 @@ export async function setPracticeTransferAbutmentShipYmd(req, res) {
       production: productionApi,
       abutmentShipYmd: shipYmdRaw,
       effectiveAbutmentShipYmd: effectiveShipYmd,
+      ...(preferredBeforeArrivalBusinessDays != null
+        ? {
+            abutmentShipBeforeArrivalBusinessDays:
+              preferredBeforeArrivalBusinessDays,
+          }
+        : {}),
       updatedAt: now,
     };
 
@@ -9167,6 +9194,24 @@ export async function setPracticeTransferAbutmentShipYmd(req, res) {
     }).catch((err) => {
       console.warn("[practiceTransfer] abutment-ship-ymd lab emit", err);
     });
+
+    const actorUserId = req.user?._id;
+    if (actorUserId && preferredBeforeArrivalBusinessDays != null) {
+      void User.updateOne(
+        { _id: actorUserId },
+        {
+          $set: {
+            "preferences.abutmentShipBeforeArrivalBusinessDays":
+              preferredBeforeArrivalBusinessDays,
+          },
+        },
+      ).catch((err) => {
+        console.warn(
+          "[practiceTransfer] abutment-ship-ymd preference save",
+          err,
+        );
+      });
+    }
 
     const relatedIds = Array.isArray(production.relatedRequestIds)
       ? production.relatedRequestIds
@@ -9192,6 +9237,12 @@ export async function setPracticeTransferAbutmentShipYmd(req, res) {
                 requestDoc,
                 transferDoc: transferForReprice,
                 scheduleMode: "holdFast",
+                ...(preferredBeforeArrivalBusinessDays != null
+                  ? {
+                      beforeArrivalBusinessDays:
+                        preferredBeforeArrivalBusinessDays,
+                    }
+                  : {}),
               });
               await requestDoc.save();
             }),
@@ -9212,6 +9263,12 @@ export async function setPracticeTransferAbutmentShipYmd(req, res) {
         production: productionApi,
         abutmentShipYmd: shipYmdRaw,
         effectiveAbutmentShipYmd: effectiveShipYmd,
+        ...(preferredBeforeArrivalBusinessDays != null
+          ? {
+              abutmentShipBeforeArrivalBusinessDays:
+                preferredBeforeArrivalBusinessDays,
+            }
+          : {}),
       },
     });
   } catch (error) {

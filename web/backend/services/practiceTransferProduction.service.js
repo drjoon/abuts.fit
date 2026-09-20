@@ -115,7 +115,11 @@ import { recomputeBulkShippingSnapshotForBusinessAnchorId } from "./bulkShipping
 import { releaseRequestCreditHoldsOnCancel } from "./requestCreditHold.service.js";
 import { updateReviewStatusByStage } from "../controllers/requests/common.review.controller.js";
 import { prevKoreanBusinessDayYmd } from "../utils/krBusinessDays.js";
-import { resolveEffectiveAbutmentShipYmd } from "../utils/practiceTransferArrivalDates.js";
+import {
+  normalizeAbutmentShipBeforeArrivalBusinessDays,
+  PRACTICE_ABUTMENT_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS,
+  resolveEffectiveAbutmentShipYmd,
+} from "../utils/practiceTransferArrivalDates.js";
 import { isPendingRoundBarAbutment, isSimpleAbutmentModeForFee } from "../utils/labFeeSchedule.js";
 import { emitAppEventToRoles, emitAppEventToUser } from "../socket.js";
 import {
@@ -619,19 +623,49 @@ export async function resolveManufacturerTargetShipYmd(arrivalYmd) {
 
 /**
  * PTX CA 출고 목표 SSOT.
- * 기공소 production.abutmentShipYmd 우선, 없으면 치과도착일 − 3영업일.
+ * 기공소 production.abutmentShipYmd 우선, 없으면 치과도착일 − N영업일
+ * (계정 선호 beforeArrivalBusinessDays, 기본 3).
  */
-export function resolvePtxCaTargetShipYmd(transferDoc, arrivalYmd = null) {
+export function resolvePtxCaTargetShipYmd(
+  transferDoc,
+  arrivalYmd = null,
+  opts = null,
+) {
   const arrival =
     String(arrivalYmd || "").trim() ||
     String(transferDoc?.arrivalDate || "").trim() ||
     null;
-  return resolveEffectiveAbutmentShipYmd({
-    production: transferDoc?.production,
-    arrivalDates: transferDoc?.arrivalDates,
-    transferMemo: transferDoc?.transferMemo,
-    arrivalDate: arrival,
-  });
+  return resolveEffectiveAbutmentShipYmd(
+    {
+      production: transferDoc?.production,
+      arrivalDates: transferDoc?.arrivalDates,
+      transferMemo: transferDoc?.transferMemo,
+      arrivalDate: arrival,
+    },
+    opts,
+  );
+}
+
+/**
+ * 작업시작/업로드 행위자 계정 선호 −N. 없으면 기본 3.
+ * @param {unknown} userId
+ * @returns {Promise<number>}
+ */
+async function loadAbutmentShipBeforeArrivalBusinessDaysForUser(userId) {
+  const id = String(userId || "").trim();
+  if (!id || !Types.ObjectId.isValid(id)) {
+    return PRACTICE_ABUTMENT_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS;
+  }
+  try {
+    const user = await User.findById(id)
+      .select({ "preferences.abutmentShipBeforeArrivalBusinessDays": 1 })
+      .lean();
+    return normalizeAbutmentShipBeforeArrivalBusinessDays(
+      user?.preferences?.abutmentShipBeforeArrivalBusinessDays,
+    );
+  } catch {
+    return PRACTICE_ABUTMENT_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS;
+  }
 }
 
 /**
@@ -1013,8 +1047,14 @@ export async function createAbutmentRequestsFromPracticeTransfer({
     String(scanFiles[0]?.patientName || "").trim() ||
     "환자";
   const arrivalYmd = parseArrivalYmdFromMemo(transferDoc?.transferMemo);
-  // 기공소 출고일 설정 또는 도착−3영업일(묶음 clamp 전 목표).
-  const targetShipYmd = resolvePtxCaTargetShipYmd(transferDoc, arrivalYmd);
+  // 기공소 출고일 설정 또는 계정 선호 −N(기본 도착−3영업일).
+  const beforeArrivalBusinessDays =
+    await loadAbutmentShipBeforeArrivalBusinessDaysForUser(
+      actorUserId || transferDoc?.requestorDownloadedBy,
+    );
+  const targetShipYmd = resolvePtxCaTargetShipYmd(transferDoc, arrivalYmd, {
+    beforeArrivalBusinessDays,
+  });
 
   const billing =
     transferDoc?.billing && typeof transferDoc.billing === "object"
@@ -2447,6 +2487,8 @@ export async function repriceAndReschedulePtxAbutmentRequest({
   labOrg: labOrgArg = null,
   scheduleMode = "full",
   forceRemake = false,
+  beforeArrivalBusinessDays = null,
+  actorUserId = null,
 }) {
   if (!requestDoc || !transferDoc) return requestDoc;
 
@@ -2567,7 +2609,17 @@ export async function repriceAndReschedulePtxAbutmentRequest({
   }
 
   const arrivalYmd = parseArrivalYmdFromMemo(transferDoc?.transferMemo);
-  const targetShipYmd = resolvePtxCaTargetShipYmd(transferDoc, arrivalYmd);
+  const resolvedBeforeArrival =
+    beforeArrivalBusinessDays != null
+      ? normalizeAbutmentShipBeforeArrivalBusinessDays(
+          beforeArrivalBusinessDays,
+        )
+      : await loadAbutmentShipBeforeArrivalBusinessDaysForUser(
+          actorUserId || transferDoc?.requestorDownloadedBy,
+        );
+  const targetShipYmd = resolvePtxCaTargetShipYmd(transferDoc, arrivalYmd, {
+    beforeArrivalBusinessDays: resolvedBeforeArrival,
+  });
 
   if (!requestDoc.caseInfos || typeof requestDoc.caseInfos !== "object") {
     requestDoc.caseInfos = {};

@@ -720,6 +720,12 @@ export function RequestorPracticeReceivePage({
   const setStoredHiddenWeekdays = useAuthStore(
     (s) => s.setLabReceiveCalendarHiddenWeekdays,
   );
+  const preferredAbutmentShipBeforeArrivalBusinessDays = useAuthStore(
+    (s) => s.user?.abutmentShipBeforeArrivalBusinessDays,
+  );
+  const setAbutmentShipBeforeArrivalBusinessDays = useAuthStore(
+    (s) => s.setAbutmentShipBeforeArrivalBusinessDays,
+  );
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const isMobile = useIsMobile();
@@ -4488,7 +4494,11 @@ export function RequestorPracticeReceivePage({
   );
 
   const saveAbutmentShipYmd = useCallback(
-    async (transfer: ReceivedPracticeTransfer, shipYmd: string) => {
+    async (
+      transfer: ReceivedPracticeTransfer,
+      shipYmd: string,
+      beforeArrivalBusinessDays?: number,
+    ) => {
       if (!token) return;
       const id = String(transfer.transferId || transfer._id || "").trim();
       const ymd = String(shipYmd || "").trim();
@@ -4524,6 +4534,15 @@ export function RequestorPracticeReceivePage({
         ? prevShipYmd
         : null;
 
+      const preferredN =
+        typeof beforeArrivalBusinessDays === "number" &&
+        Number.isFinite(beforeArrivalBusinessDays)
+          ? Math.floor(beforeArrivalBusinessDays)
+          : null;
+      if (preferredN != null) {
+        setAbutmentShipBeforeArrivalBusinessDays(preferredN);
+      }
+
       try {
         const res = await apiFetch<{
           success?: boolean;
@@ -4531,12 +4550,18 @@ export function RequestorPracticeReceivePage({
           data?: {
             production?: ReceivedPracticeTransfer["production"];
             abutmentShipYmd?: string;
+            abutmentShipBeforeArrivalBusinessDays?: number;
           };
         }>({
           path: `/api/practice/transfers/${encodeURIComponent(transfer.transferId)}/abutment-ship-ymd`,
           method: "POST",
           token,
-          jsonBody: { abutmentShipYmd: ymd },
+          jsonBody: {
+            abutmentShipYmd: ymd,
+            ...(preferredN != null
+              ? { beforeArrivalBusinessDays: preferredN }
+              : {}),
+          },
         });
         if (!res.ok) {
           const body =
@@ -4559,6 +4584,7 @@ export function RequestorPracticeReceivePage({
                 data?: {
                   production?: { abutmentShipYmd?: string | null };
                   abutmentShipYmd?: string;
+                  abutmentShipBeforeArrivalBusinessDays?: number;
                 };
               })
             : {};
@@ -4569,6 +4595,13 @@ export function RequestorPracticeReceivePage({
         ).trim();
         if (/^\d{4}-\d{2}-\d{2}$/.test(savedYmd) && savedYmd !== ymd) {
           applyShipYmd(savedYmd);
+        }
+        const savedPreferred = body.data?.abutmentShipBeforeArrivalBusinessDays;
+        if (
+          typeof savedPreferred === "number" &&
+          Number.isFinite(savedPreferred)
+        ) {
+          setAbutmentShipBeforeArrivalBusinessDays(savedPreferred);
         }
         toast({
           title: "출고일 설정 완료",
@@ -4588,7 +4621,12 @@ export function RequestorPracticeReceivePage({
         setAbutmentShipBusyId("");
       }
     },
-    [abutmentShipBusyId, toast, token],
+    [
+      abutmentShipBusyId,
+      setAbutmentShipBeforeArrivalBusinessDays,
+      toast,
+      token,
+    ],
   );
 
   const patchLabBasketTagLocal = useCallback(
@@ -9109,10 +9147,17 @@ export function RequestorPracticeReceivePage({
                   }
                 })();
               }}
-              onAbutmentShipYmdSave={(shipYmd) =>
-                void saveAbutmentShipYmd(selectedTransfer, shipYmd)
+              onAbutmentShipYmdSave={(shipYmd, beforeArrivalBusinessDays) =>
+                void saveAbutmentShipYmd(
+                  selectedTransfer,
+                  shipYmd,
+                  beforeArrivalBusinessDays,
+                )
               }
               abutmentShipBusy={abutmentShipBusyId === transferKey}
+              preferredAbutmentShipBeforeArrivalBusinessDays={
+                preferredAbutmentShipBeforeArrivalBusinessDays
+              }
               onDesignConfirm={() => {
                 void confirmAbutmentDesign(selectedTransfer);
               }}

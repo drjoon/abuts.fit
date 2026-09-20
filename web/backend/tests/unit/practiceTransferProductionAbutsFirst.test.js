@@ -52,6 +52,13 @@ describe("practiceTransferProduction Abuts-first helpers", () => {
         "2026-09-28",
       ),
     ).toBe("2026-09-21");
+    expect(
+      resolvePtxCaTargetShipYmd(
+        { transferMemo: "[치과도착일: 2026-08-20]" },
+        "2026-08-20",
+        { beforeArrivalBusinessDays: 4 },
+      ),
+    ).toBe("2026-08-13");
   });
 
   test("resolveShippingModeForPracticeTransferArrival: always 묶음 including ≤3 rush", async () => {

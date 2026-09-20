@@ -375,6 +375,16 @@ const userSchema = new mongoose.Schema(
         default: () => [0, 6],
       },
       /**
+       * 기공소 어벗 출고일 = 치과도착 − N영업일. 한 번 고르면 이후 건 기본값으로 재사용.
+       * 관련: practiceTransferArrivalDates.js · setPracticeTransferAbutmentShipYmd
+       */
+      abutmentShipBeforeArrivalBusinessDays: {
+        type: Number,
+        default: 3,
+        min: 2,
+        max: 30,
+      },
+      /**
        * 상단 상태 뱃지(완료·취소·어벗)에서 열람 후 본문 건수 제외할 transferId.
        * 의뢰·작업시작은 제외 대상이 아님(열람해도 건수 유지).
        */
