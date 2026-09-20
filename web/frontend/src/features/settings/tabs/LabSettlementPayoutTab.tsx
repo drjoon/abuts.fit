@@ -7,6 +7,7 @@
 // - web/backend/controllers/credits/credit.controller.js
 // change-log:
 // - 2026-09-16: 지급 표 로딩 — 텍스트 대신 4열 행 스켈레톤.
+// - 2026-09-20: 정산규칙 — 지정 수수료 안내를 관리자 설정값으로 표시.
 // - 2026-09-20: 정산규칙 — 지정 거래 플랫폼 수수료(정책 1%·이벤트 0%).
 // - 2026-09-20: 정산규칙 — 커스텀어벗은 STL·생산비 지급 뒤에만 적립·지급.
 // - 2026-09-16: 정산규칙 모달 — 작업완료 적립·통장사본 이월·월 지급 유보 50만원 기준 간단 정리.
@@ -60,12 +61,13 @@ import {
   LAB_PAYOUT_BANKBOOK_DELAY_NOTICE,
   LAB_PAYOUT_SETTINGS_PATH,
   LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE,
-  LAB_DIRECT_PLATFORM_FEE_NOTICE,
+  formatLabDirectPlatformFeeNotice,
   LAB_SETTLEMENT_PAYOUT_RESERVE_NOTICE,
   isLabPayoutReady,
   type LabPayoutAccountSnapshot,
 } from "@/shared/settlement/labPayoutBankbook";
 import { useLabPayoutBankbookReminder } from "@/shared/settlement/useLabPayoutBankbookReminder";
+import { useLabTradingPartnerWindow } from "@/shared/lab/useLabTradingPartnerWindow";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import {
@@ -213,6 +215,13 @@ export const LabSettlementPayoutTab = () => {
   const navigate = useNavigate();
   const { dialog: bankbookRemindDialog } = useLabPayoutBankbookReminder({
     forceOnMount: true,
+  });
+  const { windowInfo: labFeeWindow } = useLabTradingPartnerWindow();
+  const directPlatformFeeNotice = formatLabDirectPlatformFeeNotice({
+    enabled: labFeeWindow?.feeRates?.directPlatformFeeEnabled === true,
+    ratePct: Math.round(
+      Number(labFeeWindow?.feeRates?.directPlatformFeeRate ?? 0.01) * 100,
+    ),
   });
   const [payoutReady, setPayoutReady] = useState(true);
 
@@ -574,7 +583,7 @@ export const LabSettlementPayoutTab = () => {
                 <SettlementPolicySection title="플랫폼 수수료">
                   <div className="flex gap-2.5">
                     <Percent className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-                    <p>{LAB_DIRECT_PLATFORM_FEE_NOTICE}</p>
+                    <p>{directPlatformFeeNotice}</p>
                   </div>
                 </SettlementPolicySection>
                 <SettlementPolicySection title="사용 · 상계">

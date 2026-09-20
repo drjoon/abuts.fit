@@ -8,12 +8,21 @@ import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 
+export type LabPlatformFeeRates = {
+  platformFeeRate?: number;
+  partnerFeeRate?: number;
+  nonPartnerFeeRate?: number;
+  directPlatformFeeEnabled?: boolean;
+  directPlatformFeeRate?: number;
+};
+
 export type LabTradingPartnerWindow = {
   canInvite?: boolean;
   remainingDays?: number | null;
   elapsedDays?: number | null;
   windowDays?: number;
   pricingBaseDate?: string | null;
+  feeRates?: LabPlatformFeeRates;
 };
 
 export const useLabTradingPartnerWindow = () => {

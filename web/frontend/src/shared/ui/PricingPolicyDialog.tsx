@@ -1,4 +1,5 @@
 // - 2026-09-20: 딜러십 요율 10/15/20% · 가입 당시 요율 적용 안내.
+// - 2026-09-20: 기공소 정책 안내 — 지정 수수료를 관리자 설정(on/% · 이벤트 0%)으로 표시.
 // - 2026-09-20: 기공소 정책 안내 — 지정 거래 플랫폼 수수료(정책 1%·이벤트 0%).
 // - 2026-09-20: 기공소 정책 안내 — 커스텀어벗 정산은 STL·생산비 지급 뒤.
 // - 2026-09-12: 리메이크를 가격 카드(배송비 아래)로 이동. 치과로부터=무료, 어벗츠로=1만원.
@@ -63,8 +64,9 @@ import {
 } from '@/shared/pricing/abutsAbutmentService';
 import {
   LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE,
-  LAB_DIRECT_PLATFORM_FEE_NOTICE,
+  formatLabDirectPlatformFeeNotice,
 } from '@/shared/settlement/labPayoutBankbook';
+import { useLabTradingPartnerWindow } from '@/shared/lab/useLabTradingPartnerWindow';
 
 type Props = {
   open: boolean;
@@ -179,6 +181,10 @@ export const PricingPolicyDialog = ({
   const isLab = kind === 'lab';
   const { data: systemSettings, refetch: refetchSystemSettings } =
     useSystemSettings();
+  const {
+    windowInfo: labFeeWindow,
+    refresh: refreshLabFeeWindow,
+  } = useLabTradingPartnerWindow();
   const basePct = Math.max(0, Math.round(Number(dealershipBasePct) || 10));
   const eventPct = Math.max(0, Math.round(Number(dealershipEventPct) || 20));
   const eventOn = dealershipEventEnabled !== false;
@@ -204,11 +210,21 @@ export const PricingPolicyDialog = ({
         CREDIT_SETTINGS_DEFAULTS.expressFee
     ) || CREDIT_SETTINGS_DEFAULTS.expressFee
   );
+  const directFeeEnabled =
+    labFeeWindow?.feeRates?.directPlatformFeeEnabled === true;
+  const directFeePct = Math.round(
+    Number(labFeeWindow?.feeRates?.directPlatformFeeRate ?? 0.01) * 100,
+  );
+  const directPlatformFeeNotice = formatLabDirectPlatformFeeNotice({
+    enabled: directFeeEnabled,
+    ratePct: directFeePct,
+  });
 
   useEffect(() => {
     if (!open) return;
     void refetchSystemSettings();
-  }, [open, refetchSystemSettings]);
+    if (isLab) void refreshLabFeeWindow();
+  }, [open, isLab, refetchSystemSettings, refreshLabFeeWindow]);
 
   const title =
     variant === 'devops'
@@ -374,7 +390,7 @@ export const PricingPolicyDialog = ({
               {isLab ? (
                 <>
                   <PolicySection title='플랫폼 수수료'>
-                    <p>{LAB_DIRECT_PLATFORM_FEE_NOTICE}</p>
+                    <p>{directPlatformFeeNotice}</p>
                   </PolicySection>
                   <PolicySection title='정산'>
                     <p>{LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE}</p>
