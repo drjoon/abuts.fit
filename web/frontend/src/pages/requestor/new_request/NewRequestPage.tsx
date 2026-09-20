@@ -285,6 +285,7 @@ const NewRequestPageContent = () => {
     setAnodizingEnabled,
     retentionGrooveDefault,
     saveRetentionGroove,
+    saveAnodizingEnabled,
     anodizingSaving,
     designSoftwareSaving,
     settingsComplete,
@@ -1842,6 +1843,7 @@ const NewRequestPageContent = () => {
               anodizingSaving={anodizingSaving}
               onToggleAnodizing={handleToggleAnodizing}
               onRetentionGrooveAccountSave={saveRetentionGroove}
+              onAnodizingAccountSave={saveAnodizingEnabled}
               onShippingModeChange={handleShippingModeChange}
               defaultShippingMode={defaultShippingMode}
               expressSelectableGlobal={expressSelectableGlobal}

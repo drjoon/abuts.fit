@@ -668,26 +668,25 @@ export function useRequestorRequestSettings(
     token,
   ]);
 
-  const handleToggleAnodizing = useCallback(() => {
-    if (!token) {
-      toast({
-        title: "로그인이 필요합니다",
-        description: "아노다이징 설정을 저장하려면 로그인해주세요.",
-        variant: "destructive",
-      });
-      return;
-    }
-    if (anodizingSaving) return;
+  const saveAnodizingEnabled = useCallback(
+    async (next: boolean) => {
+      if (!token) {
+        toast({
+          title: "로그인이 필요합니다",
+          description: "아노다이징 설정을 저장하려면 로그인해주세요.",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (anodizingSaving) return;
 
-    const next = !anodizingEnabled;
-    const prev = anodizingEnabled;
-    anodizingTouchedRef.current = true;
-    setAnodizingEnabled(next);
-    anodizingEnabledRef.current = next;
-    onDefaultsChangeRef.current?.({ anodizingEnabled: next });
+      const prev = anodizingEnabledRef.current;
+      anodizingTouchedRef.current = true;
+      setAnodizingEnabled(next);
+      anodizingEnabledRef.current = next;
+      onDefaultsChangeRef.current?.({ anodizingEnabled: next });
 
-    setAnodizingSaving(true);
-    void (async () => {
+      setAnodizingSaving(true);
       try {
         const jsonBody: Record<string, boolean> = {};
         if (isPersonalRequestor) {
@@ -755,15 +754,19 @@ export function useRequestorRequestSettings(
       } finally {
         setAnodizingSaving(false);
       }
-    })();
-  }, [
-    anodizingEnabled,
-    anodizingSaving,
-    canEditBusinessAnodizing,
-    isPersonalRequestor,
-    toast,
-    token,
-  ]);
+    },
+    [
+      anodizingSaving,
+      canEditBusinessAnodizing,
+      isPersonalRequestor,
+      toast,
+      token,
+    ],
+  );
+
+  const handleToggleAnodizing = useCallback(() => {
+    void saveAnodizingEnabled(!anodizingEnabledRef.current);
+  }, [saveAnodizingEnabled]);
 
   const handleModalOpenChange = useCallback(
     (next: boolean) => {
@@ -795,6 +798,7 @@ export function useRequestorRequestSettings(
     setAnodizingEnabled,
     retentionGrooveDefault,
     saveRetentionGroove,
+    saveAnodizingEnabled,
     anodizingSaving,
     designSoftwareSaving,
     hasAnodizingSetting,

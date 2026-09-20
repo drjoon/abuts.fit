@@ -96,6 +96,8 @@ type Props = {
   anodizingSaving?: boolean;
   onToggleAnodizing?: () => void;
   onRetentionGrooveAccountSave?: (value: "none" | "deep") => void;
+  anodizingEnabled?: boolean;
+  onAnodizingAccountSave?: (value: boolean) => void;
   onShippingModeChange?: (
     fileKeys: string[],
     mode: "normal" | "express",
@@ -172,6 +174,7 @@ export function NewRequestDetailsSection({
   anodizingSaving,
   onToggleAnodizing,
   onRetentionGrooveAccountSave,
+  onAnodizingAccountSave,
   onShippingModeChange,
   defaultShippingMode = "normal",
   expressSelectableGlobal = true,
@@ -776,6 +779,8 @@ export function NewRequestDetailsSection({
         }}
         toast={toast}
         onRetentionGrooveAccountSave={onRetentionGrooveAccountSave}
+        defaultAnodizingEnabled={anodizingEnabled}
+        onAnodizingAccountSave={onAnodizingAccountSave}
         lockDesignProductMode={lockDesignProductMode}
         lockProductionProductMode={lockProductionProductMode}
         previewFileIndices={previewFileIndices}

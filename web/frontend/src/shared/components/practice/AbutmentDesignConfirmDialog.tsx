@@ -4,6 +4,7 @@
 // - web/frontend/src/shared/components/practice/RetentionGrooveField.tsx
 // - web/backend/controllers/requests/designHandoff.controller.js
 // change-log:
+// - 2026-09-20: 아노다이징 기본값·계정 저장(유지홈과 동일).
 // - 2026-09-04: 카탈로그 불일치 시 폴백 금지·확인 차단·관리자 alert. CNC 표 병합·미도입 환봉 제외.
 // - 2026-09-04: 핸드오프 카탈로그에 CNC 표 병합·미도입 환봉 제외. 임플란트 선택 오염(TS3→US) 방지.
 // - 2026-09-02: 확인 라벨「확인」/「다음」(사전 S3 업로드 완료 전제). 업로드 중 확인 버튼 비활성.
@@ -32,6 +33,7 @@ export type AbutmentDesignConfirmCaseInfos = {
   implantFamily?: string;
   implantType?: string;
   retentionGroove?: RetentionGrooveChoice | "shallow" | "";
+  anodizingEnabled?: boolean;
 };
 
 type Props = {
@@ -42,6 +44,9 @@ type Props = {
   /** 계정 유지홈 기본값(없으면 none) */
   defaultRetentionGroove?: RetentionGrooveChoice;
   onRetentionGrooveAccountSave?: (value: RetentionGrooveChoice) => void;
+  /** 계정 아노다이징 기본값(없으면 true) */
+  defaultAnodizingEnabled?: boolean;
+  onAnodizingAccountSave?: (value: boolean) => void;
   connections: Connection[];
   confirming?: boolean;
   /** 1-based index in multi-file queue */
@@ -67,6 +72,7 @@ const emptyOptions: { id: string; label: string }[] = [];
 
 const emptyCaseInfos = (
   retentionDefault: RetentionGrooveChoice = "none",
+  anodizingDefault = true,
 ): CaseInfos => ({
   clinicName: "",
   patientName: "",
@@ -76,6 +82,7 @@ const emptyCaseInfos = (
   implantFamily: "",
   implantType: "",
   retentionGroove: retentionDefault,
+  anodizingEnabled: anodizingDefault,
   productMode: "custom_abutment",
 });
 
@@ -88,6 +95,11 @@ const normalizeRetention = (
   return fallback;
 };
 
+const normalizeAnodizing = (value: unknown, fallback: boolean): boolean => {
+  if (typeof value === "boolean") return value;
+  return fallback;
+};
+
 export function AbutmentDesignConfirmDialog({
   open,
   onOpenChange,
@@ -95,6 +107,8 @@ export function AbutmentDesignConfirmDialog({
   initialCaseInfos,
   defaultRetentionGroove = "none",
   onRetentionGrooveAccountSave,
+  defaultAnodizingEnabled = true,
+  onAnodizingAccountSave,
   connections,
   confirming = false,
   queueCurrent,
@@ -111,7 +125,7 @@ export function AbutmentDesignConfirmDialog({
   const { toast } = useToast();
   const token = useAuthStore((s) => s.token);
   const [detailCaseInfos, setDetailCaseInfosState] = useState<CaseInfos>(() =>
-    emptyCaseInfos(defaultRetentionGroove),
+    emptyCaseInfos(defaultRetentionGroove, defaultAnodizingEnabled),
   );
   const [implantManufacturer, setImplantManufacturerState] = useState("");
   const [implantBrand, setImplantBrandState] = useState("");
@@ -172,8 +186,12 @@ export function AbutmentDesignConfirmDialog({
       initialCaseInfos?.retentionGroove,
       defaultRetentionGroove || "none",
     );
+    const anodizing = normalizeAnodizing(
+      initialCaseInfos?.anodizingEnabled,
+      defaultAnodizingEnabled !== false,
+    );
     const next: CaseInfos = {
-      ...emptyCaseInfos(retention),
+      ...emptyCaseInfos(retention, anodizing),
       clinicName: String(initialCaseInfos?.clinicName || "").trim(),
       patientName: String(initialCaseInfos?.patientName || "").trim(),
       tooth: String(initialCaseInfos?.tooth || "").trim(),
@@ -182,6 +200,7 @@ export function AbutmentDesignConfirmDialog({
       implantFamily: String(initialCaseInfos?.implantFamily || "").trim(),
       implantType: String(initialCaseInfos?.implantType || "").trim(),
       retentionGroove: retention,
+      anodizingEnabled: anodizing,
     };
     setDetailCaseInfosState(next);
     setImplantManufacturerState(String(next.implantManufacturer || ""));
@@ -190,7 +209,13 @@ export function AbutmentDesignConfirmDialog({
     setImplantTypeState(String(next.implantType || ""));
     setCatalogIssue(null);
     reportedIssueKeyRef.current = "";
-  }, [open, initialCaseInfos, file, defaultRetentionGroove]);
+  }, [
+    open,
+    initialCaseInfos,
+    file,
+    defaultRetentionGroove,
+    defaultAnodizingEnabled,
+  ]);
 
   const handleImplantCatalogIssue = useCallback(
     (
@@ -413,8 +438,12 @@ export function AbutmentDesignConfirmDialog({
       implantFamily: String(detailCaseInfos.implantFamily || "").trim(),
       implantType: String(detailCaseInfos.implantType || "").trim(),
       retentionGroove: rg === "deep" ? "deep" : "none",
+      anodizingEnabled:
+        typeof detailCaseInfos.anodizingEnabled === "boolean"
+          ? detailCaseInfos.anodizingEnabled
+          : defaultAnodizingEnabled !== false,
     });
-  }, [catalogIssue, detailCaseInfos, onConfirm, toast]);
+  }, [catalogIssue, defaultAnodizingEnabled, detailCaseInfos, onConfirm, toast]);
 
   return (
     <AbutmentModelConfirmDialog
@@ -464,6 +493,8 @@ export function AbutmentDesignConfirmDialog({
       fileUploadPercent={fileUploadPercent}
       fileUploadLabel={fileUploadLabel}
       onRetentionGrooveAccountSave={onRetentionGrooveAccountSave}
+      defaultAnodizingEnabled={defaultAnodizingEnabled}
+      onAnodizingAccountSave={onAnodizingAccountSave}
     />
   );
 }

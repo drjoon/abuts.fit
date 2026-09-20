@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-20: 유지홈 아래 아노다이징 ON/OFF(계정 기본값 저장).
 // - 2026-09-02: lab-handoff 기본 확인 라벨「확인」(S3는 모달 중 사전 업로드). confirmDisabled.
 // - 2026-08-28: 확인 중 버튼「처리 중…」(백그라운드 S3 완료 후 API 저장과 구분).
 // - 2026-08-28: lab-handoff — 현재 파일 S3 업로드 프로그레스바.
@@ -43,6 +44,7 @@ import type {
 import { NewRequestDesignAbutmentFields } from "@/pages/requestor/new_request/components/NewRequestDesignAbutmentFields";
 import { NewRequestPatientImplantFields } from "@/pages/requestor/new_request/components/NewRequestPatientImplantFields";
 import { RetentionGrooveField } from "@/shared/components/practice/RetentionGrooveField";
+import { AnodizingField } from "@/shared/components/practice/AnodizingField";
 
 export type AbutmentModelConfirmVariant = "new-request" | "lab-handoff";
 
@@ -122,6 +124,10 @@ export type AbutmentModelConfirmDialogProps = {
   lockProductionProductMode?: boolean;
   /** 계정 유지홈 기본값 변경 시 저장 */
   onRetentionGrooveAccountSave?: (value: "none" | "deep") => void;
+  /** 계정 아노다이징 기본값(미지정 시 ON) */
+  defaultAnodizingEnabled?: boolean;
+  /** 계정 아노다이징 기본값 변경 시 저장 */
+  onAnodizingAccountSave?: (value: boolean) => void;
   /** 프리뷰에서 전환 가능한 파일 인덱스(환자 케이스 멤버 등) */
   previewFileIndices?: number[];
   onSelectPreviewIndex?: (index: number) => void;
@@ -178,6 +184,8 @@ export function AbutmentModelConfirmDialog({
   onSkip,
   toast,
   onRetentionGrooveAccountSave,
+  defaultAnodizingEnabled = true,
+  onAnodizingAccountSave,
   lockDesignProductMode = false,
   lockProductionProductMode = false,
   previewFileIndices,
@@ -450,6 +458,20 @@ export function AbutmentModelConfirmDialog({
                         disabled={!detailFile || confirming}
                         idPrefix={retentionIdPrefix}
                         guideContentClassName="new-request-page w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] max-h-[90vh] overflow-y-auto p-6 sm:w-[1120px] sm:max-w-[1120px]"
+                      />
+
+                      <AnodizingField
+                        value={
+                          typeof detailCaseInfos?.anodizingEnabled === "boolean"
+                            ? detailCaseInfos.anodizingEnabled
+                            : defaultAnodizingEnabled
+                        }
+                        onChange={(next) => {
+                          setDetailCaseInfos({ anodizingEnabled: next });
+                          onAnodizingAccountSave?.(next);
+                        }}
+                        disabled={!detailFile || confirming}
+                        idPrefix={`${retentionIdPrefix}-ano`}
                       />
 
                       <div className="flex flex-col gap-2 rounded-lg border border-primary-soft bg-primary-soft/60 px-3 py-2">

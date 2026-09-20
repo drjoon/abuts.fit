@@ -1,3 +1,4 @@
+// - 2026-09-20: handoff — body.caseInfos.anodizingEnabled를 요청에 반영(계정 labMeta보다 우선).
 // - 2026-09-16: PTX mirror 실패 시 clearPtxDesignMirror 금지 — 형제 치아 designFiles 소실 방지. DB 재조회·재시도.
 // - 2026-09-12: handoff/cancel — partnerBilling 잔존(레이스 중복) CA도 relatedRequestIds와 함께 취소.
 // - 2026-09-12: handoff/cancel — body.tooth면 해당 치아 CA·미러만 취소(준비 단계).
@@ -878,6 +879,9 @@ export async function handoffDesignToProduction(req, res) {
       request.caseInfos.implantFamily = implantFamily;
       request.caseInfos.implantType = implantType;
       request.caseInfos.retentionGroove = retentionGroove;
+      if (typeof caseInfosPatchRaw?.anodizingEnabled === "boolean") {
+        request.caseInfos.anodizingEnabled = caseInfosPatchRaw.anodizingEnabled;
+      }
     }
 
     // 헥스·디자인SW 스탬프는 hold에 불필요 — 응답 후 labMeta로 처리(critical path ~1s 절감).
@@ -1128,8 +1132,11 @@ export async function handoffDesignToProduction(req, res) {
                 }
               }
               if (typeof labMeta.anodizingEnabled === "boolean") {
-                $set["caseInfos.anodizingEnabled"] = labMeta.anodizingEnabled;
-                request.caseInfos.anodizingEnabled = labMeta.anodizingEnabled;
+                // 확인 모달에서 보낸 caseInfos.anodizingEnabled가 있으면 유지
+                if (typeof request.caseInfos.anodizingEnabled !== "boolean") {
+                  $set["caseInfos.anodizingEnabled"] = labMeta.anodizingEnabled;
+                  request.caseInfos.anodizingEnabled = labMeta.anodizingEnabled;
+                }
               }
               if (
                 !normalizeRetentionGrooveOrNull(request.caseInfos.retentionGroove) &&

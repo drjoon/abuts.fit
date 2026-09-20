@@ -740,6 +740,7 @@ export function RequestorPracticeReceivePage({
     hasAnodizingSetting,
     retentionGrooveDefault,
     saveRetentionGroove,
+    saveAnodizingEnabled,
     modalOpen: requestSettingsModalOpen,
     designSoftwareMode,
     setDesignSoftwareMode,
@@ -6144,6 +6145,10 @@ export function RequestorPracticeReceivePage({
                 implantFamily: caseInfos.implantFamily,
                 implantType: caseInfos.implantType,
                 retentionGroove: caseInfos.retentionGroove,
+                anodizingEnabled:
+                  typeof caseInfos.anodizingEnabled === "boolean"
+                    ? caseInfos.anodizingEnabled
+                    : undefined,
               },
             },
           });
@@ -8308,6 +8313,8 @@ export function RequestorPracticeReceivePage({
         initialCaseInfos={designConfirmCaseInfos}
         defaultRetentionGroove={retentionGrooveDefault}
         onRetentionGrooveAccountSave={saveRetentionGroove}
+        defaultAnodizingEnabled={anodizingEnabled}
+        onAnodizingAccountSave={saveAnodizingEnabled}
         connections={implantCatalog}
         confirming={designConfirmBusy}
         teethOptions={designConfirmTeethOptions}
