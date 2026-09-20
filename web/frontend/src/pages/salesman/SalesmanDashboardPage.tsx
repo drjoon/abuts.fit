@@ -31,7 +31,6 @@ import {
   useCommissionDashboard,
   formatMoney,
   summarizeDealershipRateBuckets,
-  dealershipRateBucketLabel,
   dealershipRateBucketTip,
 } from "@/features/commission/useCommissionDashboard";
 import {
@@ -219,8 +218,7 @@ export const SalesmanDashboardPage = () => {
                 <div className="space-y-0.5 text-xs text-muted-foreground">
                   {rateBuckets.map((b) => (
                     <div key={b.pct}>
-                      {dealershipRateBucketLabel(b.pct, rateOpts)} ·{" "}
-                      {formatMoney(b.commissionAmount)}원
+                      {b.pct}% · {formatMoney(b.commissionAmount)}원
                     </div>
                   ))}
                 </div>
@@ -254,7 +252,7 @@ export const SalesmanDashboardPage = () => {
                 <SummaryTile
                   key={b.pct}
                   icon={Percent}
-                  label={dealershipRateBucketLabel(b.pct, rateOpts)}
+                  label={`${b.pct}%`}
                   primary={`${b.orgCount.toLocaleString()}개소`}
                   secondary={`수수료 ${formatMoney(b.commissionAmount)}원`}
                   tip={dealershipRateBucketTip(b.pct, rateOpts)}
