@@ -20,6 +20,7 @@ import { loadRulesFromBackend } from "@/shared/filename/filenameRules";
 import { useSocket } from "@/shared/hooks/useSocket";
 import { useChatMessageSound } from "@/shared/hooks/useChatMessageSound";
 import { useLabReceiveUnreadSound } from "@/shared/hooks/useLabReceiveUnreadSound";
+import { getRoleDefaultDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
 // related files:
 // - web/frontend/src/shared/types/role.ts
@@ -238,6 +239,14 @@ const queryClient = new QueryClient();
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { isAuthenticated } = useAuthStore();
   return isAuthenticated ? <>{children}</> : <Navigate to="/login" replace />;
+};
+
+/** 알 수 없는 /dashboard/* → 역할 기본 대시보드 */
+const DashboardUnknownRedirect = () => {
+  const { user } = useAuthStore();
+  return (
+    <Navigate to={getRoleDefaultDashboardPath(user?.role)} replace />
+  );
 };
 
 // Role-based Protected Route (예: manufacturer 전용)
@@ -1106,6 +1115,7 @@ const App = () => {
                       </RoleProtectedRoute>
                     }
                   />
+                  <Route path="*" element={<DashboardUnknownRedirect />} />
                 </Route>
                 <Route path="*" element={<NotFound />} />
               </Routes>

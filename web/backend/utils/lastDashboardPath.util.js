@@ -25,6 +25,13 @@ export function normalizeLastDashboardPath(raw) {
     // 온보딩/가입 완료 등 일회성 경로는 저장하지 않음
     if (pathname.startsWith("/dashboard/wizard")) return null;
     if (pathname.includes("social_complete")) return null;
+    // 제거된 딜러 소개 페이지 — 저장된 last path 호환
+    if (
+      pathname === "/dashboard/referral-groups" ||
+      pathname.startsWith("/dashboard/referral-groups/")
+    ) {
+      return null;
+    }
     return `${pathname}${u.search || ""}`;
   } catch {
     return null;

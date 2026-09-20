@@ -2,7 +2,7 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
-import { useLocation } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import { useEffect } from "react";
 import {
   PublicPageLayout,
@@ -11,9 +11,12 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
+import { useAuthStore } from "@/store/useAuthStore";
+import { getRoleDefaultDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
 const NotFound = () => {
   const location = useLocation();
+  const { isAuthenticated, user } = useAuthStore();
 
   useEffect(() => {
     console.error(
@@ -21,6 +24,12 @@ const NotFound = () => {
       location.pathname,
     );
   }, [location.pathname]);
+
+  if (isAuthenticated) {
+    return (
+      <Navigate to={getRoleDefaultDashboardPath(user?.role)} replace />
+    );
+  }
 
   return (
     <PublicPageLayout>
