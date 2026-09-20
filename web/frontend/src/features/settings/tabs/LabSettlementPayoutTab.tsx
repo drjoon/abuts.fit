@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/settlement/affiliateVat.ts
 // - web/backend/controllers/credits/credit.controller.js
 // change-log:
+// - 2026-09-20: 정산규칙 — 하청 % · 작업시작 적립 시 공제 안내.
 // - 2026-09-16: 지급 표 로딩 — 텍스트 대신 4열 행 스켈레톤.
 // - 2026-09-20: 정산규칙 — 지정 수수료 ~~2%~~ → 0% 취소선 표시.
 // - 2026-09-20: 정산규칙 — 지정 수수료 안내를 관리자 설정값으로 표시.
@@ -225,6 +226,9 @@ export const LabSettlementPayoutTab = () => {
     labFeeWindow?.feeRates?.directPlatformFeeRate != null
       ? Number(labFeeWindow.feeRates.directPlatformFeeRate) * 100
       : undefined,
+  );
+  const subcontractFeePct = Math.round(
+    Number(labFeeWindow?.feeRates?.subcontractFeeRate ?? 0.05) * 100,
   );
   const [payoutReady, setPayoutReady] = useState(true);
 
@@ -590,7 +594,12 @@ export const LabSettlementPayoutTab = () => {
                       <LabDirectPlatformFeeNotice
                         enabled={directFeeEnabled}
                         ratePct={directFeePct}
-                      />
+                      />{" "}
+                      하청 수행 의뢰는 작업시작 적립 시 매출액의{" "}
+                      <span className="font-semibold tabular-nums text-slate-900">
+                        {subcontractFeePct}%
+                      </span>
+                      가 공제됩니다.
                     </p>
                   </div>
                 </SettlementPolicySection>

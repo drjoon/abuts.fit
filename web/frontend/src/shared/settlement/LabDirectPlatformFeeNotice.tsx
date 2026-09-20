@@ -4,6 +4,7 @@
 // - web/frontend/src/features/settings/tabs/LabSettlementPayoutTab.tsx
 // - web/frontend/src/features/settings/tabs/LabTradingPartnersTab.tsx
 // change-log:
+// - 2026-09-20: 적용 on — 작업시작 적립 시 공제 안내.
 // - 2026-09-20: 이벤트 0% 안내에 정책 요율 취소선(예: ~~2%~~ → 0%) 표시.
 import type { ReactNode } from "react";
 import {
@@ -44,9 +45,9 @@ export function LabDirectPlatformFeeNotice({
   if (enabled === true) {
     return (
       <>
-        지정 기공소 의뢰의 플랫폼 수수료는 매출액의{" "}
+        지정 기공소 의뢰의 플랫폼 수수료는 작업시작 적립 시 매출액의{" "}
         <span className="font-semibold tabular-nums text-slate-900">{pct}%</span>
-        입니다.
+        가 공제됩니다.
         {suffix}
       </>
     );

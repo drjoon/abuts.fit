@@ -128,7 +128,7 @@ export function formatLabDirectPlatformFeeNotice(opts?: {
   const enabled = opts?.enabled === true;
   const pct = resolveLabDirectPlatformFeePct(opts?.ratePct);
   if (enabled) {
-    return `지정 기공소 의뢰의 플랫폼 수수료는 매출액의 ${pct}%입니다.`;
+    return `지정 기공소 의뢰의 플랫폼 수수료는 작업시작 적립 시 매출액의 ${pct}%가 공제됩니다.`;
   }
   return `지정 기공소 의뢰의 플랫폼 수수료는 ${pct}% → 0%입니다.`;
 }

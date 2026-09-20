@@ -10,6 +10,7 @@ import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusine
 
 export type LabPlatformFeeRates = {
   platformFeeRate?: number;
+  subcontractFeeRate?: number;
   partnerFeeRate?: number;
   nonPartnerFeeRate?: number;
   directPlatformFeeEnabled?: boolean;

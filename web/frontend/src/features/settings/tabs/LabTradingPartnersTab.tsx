@@ -7,6 +7,7 @@
 // - 2026-08-11: 「치과에 전달하기」중첩 카드 제거, 안내 문구 단순화.
 // - 2026-08-11: 목록 뱃지 — 가입 진행중(pending) / 등록 완료(active).
 // - 2026-08-11: 초대링크·안내문구 복사만으로는 목록 카드 미생성(가입 시작 시 표시).
+// - 2026-09-20: 하청 % 표시 · 지정 수수료는 작업시작 적립 시 공제 안내.
 // - 2026-09-20: 지정 수수료 안내 — ~~2%~~ → 0% 취소선(추후 적용 저항 완화).
 // - 2026-09-20: 지정 수수료 안내 — 관리자 on/% 반영 · 이벤트 0%(추후 공지 문구 삭제).
 // - 2026-09-20: 지정 거래 정책 1% · 이벤트 기간 0%(추후 공지 후 부과 안내).
@@ -240,11 +241,12 @@ export const LabTradingPartnersTab = () => {
   const remaining =
     windowInfo?.remainingDays == null ? null : Number(windowInfo.remainingDays);
   const windowDays = Number(windowInfo?.windowDays ?? 60);
-  const platformFeePct = Math.round(
+  const subcontractFeePct = Math.round(
     Number(
-      windowInfo?.feeRates?.platformFeeRate ??
+      windowInfo?.feeRates?.subcontractFeeRate ??
+        windowInfo?.feeRates?.platformFeeRate ??
         windowInfo?.feeRates?.nonPartnerFeeRate ??
-        0.1,
+        0.05,
     ) * 100,
   );
   const directFeeEnabled = windowInfo?.feeRates?.directPlatformFeeEnabled === true;
@@ -270,8 +272,8 @@ export const LabTradingPartnersTab = () => {
             자동 매칭
           </CardTitle>
           <CardDescription className="text-[13px] leading-relaxed">
-            인증 기공소는 치과의 자동 매칭 의뢰에 참여할 수 있습니다. 매칭 거래
-            성공 수수료 {platformFeePct}%
+            인증 기공소는 치과의 자동 매칭 의뢰에 참여할 수 있습니다. 하청
+            수수료 {subcontractFeePct}%
             {directFeeEnabled ? (
               <> · 지정 거래 수수료 {directFeePct}%</>
             ) : (
@@ -293,7 +295,7 @@ export const LabTradingPartnersTab = () => {
             <p className="text-[13px] leading-relaxed text-muted-foreground">
               {directFeeEnabled ? (
                 <>
-                  지정 기공소 의뢰의 플랫폼 수수료는 정산 지급 시 공제됩니다(
+                  지정 기공소 의뢰의 플랫폼 수수료는 작업시작 적립 시 공제됩니다(
                   {directFeePct}%). 거래 치과 소개는 아래에서 계속할 수
                   있습니다.
                 </>

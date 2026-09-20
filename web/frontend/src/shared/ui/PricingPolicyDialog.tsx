@@ -1,5 +1,6 @@
 // - 2026-09-20: 기공소 정책 안내 — 지정 수수료 ~~2%~~ → 0% 취소선 표시.
 // - 2026-09-20: 딜러십 요율 10/15/20% · 가입 당시 요율 적용 안내.
+// - 2026-09-20: 기공소 정책 안내 — 하청 % · 작업시작 적립 시 공제.
 // - 2026-09-20: 기공소 정책 안내 — 지정 수수료를 관리자 설정(on/% · 이벤트 0%)으로 표시.
 // - 2026-09-20: 기공소 정책 안내 — 지정 거래 플랫폼 수수료(정책 1%·이벤트 0%).
 // - 2026-09-20: 기공소 정책 안내 — 커스텀어벗 정산은 STL·생산비 지급 뒤.
@@ -219,6 +220,9 @@ export const PricingPolicyDialog = ({
       ? Number(labFeeWindow.feeRates.directPlatformFeeRate) * 100
       : undefined,
   );
+  const subcontractFeePct = Math.round(
+    Number(labFeeWindow?.feeRates?.subcontractFeeRate ?? 0.05) * 100,
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -394,7 +398,12 @@ export const PricingPolicyDialog = ({
                       <LabDirectPlatformFeeNotice
                         enabled={directFeeEnabled}
                         ratePct={directFeePct}
-                      />
+                      />{" "}
+                      하청 수행 의뢰는 작업시작 적립 시 매출액의{" "}
+                      <span className='font-semibold tabular-nums text-slate-900'>
+                        {subcontractFeePct}%
+                      </span>
+                      가 공제됩니다.
                     </p>
                   </PolicySection>
                   <PolicySection title='정산'>

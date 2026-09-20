@@ -4,6 +4,7 @@ import {
   DEFAULT_DIRECT_PLATFORM_FEE_ENABLED,
   DEFAULT_DIRECT_PLATFORM_FEE_RATE,
   DEFAULT_PLATFORM_FEE_RATE,
+  DEFAULT_SUBCONTRACT_FEE_RATE,
   isDirectPlatformFeeEnabled,
   resolveDirectPlatformFeeRate,
   resolveDirectPlatformFeeRateConfigured,
@@ -85,28 +86,30 @@ describe("resolvePracticeTransferFeeRate", () => {
     ).toBe(0.05);
   });
 
-  test("어벗츠 자체 수행(경로 B, 비해하청)은 0", () => {
+  test("하청이면 지정 on이어도 subcontractFeeRate", () => {
     expect(
       resolvePracticeTransferFeeRate({
-        matchingMode: "auto",
+        matchingMode: "direct",
+        subcontracted: true,
         payoutRates: {
           platformFeeRate: 0.2,
-          subcontractFeeRate: 0.15,
+          subcontractFeeRate: 0.05,
           directPlatformFeeEnabled: true,
-          directPlatformFeeRate: 0.05,
+          directPlatformFeeRate: 0.02,
         },
       }),
-    ).toBe(0);
+    ).toBe(0.05);
   });
 
-  test("하청 수행은 subcontractFeeRate(기본 15%)", () => {
+  test("하청 수행은 subcontractFeeRate(기본 5%)", () => {
+    expect(DEFAULT_SUBCONTRACT_FEE_RATE).toBe(0.05);
     expect(
       resolvePracticeTransferFeeRate({
         matchingMode: "auto",
         subcontracted: true,
         payoutRates: {},
       }),
-    ).toBe(0.15);
+    ).toBe(0.05);
     expect(
       resolvePracticeTransferFeeRate({
         matchingMode: "auto",
@@ -122,7 +125,7 @@ describe("resolvePracticeTransferFeeRate", () => {
         matchingMode: "auto",
         subcontracted: true,
         viewerIsPrimeContractor: true,
-        payoutRates: { subcontractFeeRate: 0.15 },
+        payoutRates: { subcontractFeeRate: 0.05 },
       }),
     ).toBe(0);
     expect(
@@ -130,9 +133,9 @@ describe("resolvePracticeTransferFeeRate", () => {
         matchingMode: "auto",
         subcontracted: true,
         viewerIsPrimeContractor: false,
-        payoutRates: { subcontractFeeRate: 0.15 },
+        payoutRates: { subcontractFeeRate: 0.05 },
       }),
-    ).toBe(0.15);
+    ).toBe(0.05);
   });
 
   test("platformFeeRate가 없으면 nonPartnerFeeRate로 fallback", () => {

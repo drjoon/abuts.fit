@@ -11,6 +11,7 @@
 // - web/backend/models/ledgerLine.model.js
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
+// - 2026-09-20: 리메이크·후속 적립도 subcontracted 반영(하청 %).
 // - 2026-09-20: 비거래처 어벗 해제는 제조사 발송 유지. 가공 진입 이동 금지.
 // - 2026-09-20: CA 치과→기공소 정산은 디자인 STL + 어벗 생산비 지급 후. 그 전 payout·정산 제외.
 // - 2026-09-15: 후속 보철 — labSettledAt 이후 hold는 즉시 기공소 적립(리메이크와 동일).
@@ -4588,6 +4589,7 @@ export async function buildPracticeTransferQuote({
   catalog: catalogInput = undefined,
   rushFeeMultiplier: rushFeeMultiplierInput = 1,
   skipJig = null,
+  subcontracted = false,
 }) {
   let schedule = labFeeSchedule;
   const labId = String(labAnchorId || "").trim();
@@ -4739,6 +4741,7 @@ export async function buildPracticeTransferQuote({
   const feeRateApplied = resolvePracticeTransferFeeRate({
     matchingMode: resolvedMatchingMode,
     payoutRates: rates,
+    subcontracted: Boolean(subcontracted),
   });
   const { abutsRevenueAmount, labSettlementAmount } =
     splitPracticeTransferSettlement({
@@ -5140,6 +5143,7 @@ export async function releasePracticeTransferRemakeChargeCredits({
     matchingMode:
       String(transfer?.matchingMode || "").trim() === "auto" ? "auto" : "direct",
     payoutRates,
+    subcontracted: isPracticeTransferSubcontracted(transfer),
   });
   const platformFee = Math.max(
     0,
@@ -5625,6 +5629,7 @@ export async function releasePracticeTransferProsthesisFollowUpLabShare({
     matchingMode:
       String(transfer?.matchingMode || "").trim() === "auto" ? "auto" : "direct",
     payoutRates,
+    subcontracted: isPracticeTransferSubcontracted(transfer),
   });
   const platformFee = Math.max(
     0,
@@ -6376,8 +6381,10 @@ export async function buildFeeQuotesForTransferDocs({
       viewerIsPrimeContractor: isViewerPrimeContractor(doc, viewerLabId),
     });
     const remakeFeeRateApplied = resolvePracticeTransferFeeRate({
-      matchingMode: "direct",
+      matchingMode:
+        String(matchingMode || "").trim() === "auto" ? "auto" : "direct",
       payoutRates,
+      subcontracted: isPracticeTransferSubcontracted(doc),
     });
     const remakeSplit = splitPracticeTransferSettlement({
       labFeeTotal: remakeFees.labFeeTotal,

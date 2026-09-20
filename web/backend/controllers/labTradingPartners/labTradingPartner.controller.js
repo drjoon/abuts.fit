@@ -60,6 +60,7 @@ import {
 } from "../../utils/requestorCapabilities.js";
 import {
   resolvePlatformFeeRate,
+  resolveSubcontractFeeRate,
   isDirectPlatformFeeEnabled,
   resolveDirectPlatformFeeRateConfigured,
 } from "../../services/creditRevenuePolicy.service.js";
@@ -123,6 +124,7 @@ async function resolvePlatformFeeRatesForDisplay() {
     .sort({ createdAt: 1 })
     .lean();
   const platformFeeRate = resolvePlatformFeeRate(devops?.payoutRates);
+  const subcontractFeeRate = resolveSubcontractFeeRate(devops?.payoutRates);
   const directPlatformFeeEnabled = isDirectPlatformFeeEnabled(
     devops?.payoutRates,
   );
@@ -131,6 +133,7 @@ async function resolvePlatformFeeRatesForDisplay() {
   );
   return {
     platformFeeRate,
+    subcontractFeeRate,
     partnerFeeRate: platformFeeRate,
     nonPartnerFeeRate: platformFeeRate,
     directPlatformFeeEnabled,
