@@ -10,6 +10,7 @@
  * - web/frontend/src/pages/practice/components/LabReceiveUnreadNotice.tsx
  * - web/frontend/src/shared/date/kst.ts
  * change-log:
+ * - 2026-09-20: alert 노출=1(캐러셀). 위/아래 순회는 LabReceiveUnreadNotice.
  * - 2026-09-11: 1순위 = 도착 3일 이내(포함). 미처리·의뢰 뱃지 순회.
  * - 2026-09-11: 미처리 작업큐·의뢰 뱃지 클릭 순 우선순위.
  */
@@ -22,8 +23,8 @@ import {
 /** 우선 1순위 — 오늘 기준 치과도착일까지 남은 일수가 이 값 이하(포함) */
 export const LAB_RECEIVE_PENDING_ARRIVAL_URGENT_DAYS = 3;
 
-/** alert에 번호로 노출하는 미처리 상위 건수 */
-export const LAB_RECEIVE_PENDING_WORK_ALERT_VISIBLE = 4;
+/** alert에 한 번에 노출하는 미처리 건수(나머지는 위/아래 순회) */
+export const LAB_RECEIVE_PENDING_WORK_ALERT_VISIBLE = 1;
 
 export type LabReceivePendingWorkPriorityInput = {
   arrivalDate?: unknown;

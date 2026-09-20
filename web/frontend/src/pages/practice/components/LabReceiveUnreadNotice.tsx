@@ -1,7 +1,7 @@
 /**
  * 기공의뢰수신 — 미처리(작업큐)·미확인(채팅) 상단 안내 바.
  * 상태 필터·캘린더 스크롤과 무관하게 알려 작업시작·채팅 확인 누락을 막는다.
- * 미처리 칩은 우선순위 순으로 최대 4건(1·2·3·4)만 번호로 노출하고 나머지는 … .
+ * 미처리는 1건만 노출 + 위/아래로 순회. 오른쪽 끝에 총 건수.
  *
  * related files:
  * - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
@@ -9,13 +9,23 @@
  * - web/frontend/src/shared/practice/labReceivePendingWorkPriority.ts
  * - web/frontend/src/shared/hooks/useLabReceiveUnreadSound.ts
  * change-log:
+ * - 2026-09-20: 메시지 칩 항상 표시·truncate — 헤더 남는 폭만큼 사용.
+ * - 2026-09-20: xl 미만 — 칩 라벨 숨김(아이콘·건수·순회만).
+ * - 2026-09-20: 1건 캐러셀 + 위/아래 순회·오른쪽 미처리 건수. 가로폭 확대.
+ * - 2026-09-20: 기공의뢰수신 헤더 왼쪽(구 디자인SW·아노 자리)로 이동.
  * - 2026-09-11: 안내 문장 제거 — 칩·알림음만(수직 높이 축소).
  * - 2026-09-11: 미처리 칩 우선순위 최대 4건(왼쪽=1순위) + … .
  * - 2026-09-11: 미처리(작업큐)·미확인(채팅) 분리 안내.
  * - 2026-09-08: 미확인 도착 알림음 on/off 아이콘.
  */
 import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, Volume2, VolumeX } from "lucide-react";
+import {
+  AlertCircle,
+  ChevronDown,
+  ChevronUp,
+  Volume2,
+  VolumeX,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -29,7 +39,6 @@ import {
   setLabReceiveSoundEnabled,
   type LabReceiveSoundPrefs,
 } from "@/shared/practice/labReceiveSoundPrefs";
-import { LAB_RECEIVE_PENDING_WORK_ALERT_VISIBLE } from "@/shared/practice/labReceivePendingWorkPriority";
 
 export type LabReceiveUnreadNoticeItem = {
   id: string;
@@ -109,7 +118,7 @@ export function LabReceiveUnreadNotice({
   const chatUnread = Math.max(0, Number(chatUnreadTotal || 0));
   const soundPrefs = useLabReceiveSoundPrefsState();
 
-  const { pendingVisible, pendingHidden, chatOnlyItems } = useMemo(() => {
+  const { pendingItems, chatOnlyItems } = useMemo(() => {
     const pending: LabReceiveUnreadNoticeItem[] = [];
     const chatOnly: LabReceiveUnreadNoticeItem[] = [];
     for (const item of items) {
@@ -117,14 +126,35 @@ export function LabReceiveUnreadNotice({
       if (item.pendingWork) pending.push(item);
       else if (chat > 0) chatOnly.push(item);
     }
-    const visible = pending.slice(0, LAB_RECEIVE_PENDING_WORK_ALERT_VISIBLE);
-    const hidden = Math.max(0, pending.length - visible.length);
-    return {
-      pendingVisible: visible,
-      pendingHidden: hidden,
-      chatOnlyItems: chatOnly,
-    };
+    return { pendingItems: pending, chatOnlyItems: chatOnly };
   }, [items]);
+
+  /** 미처리 우선. 없으면 미확인만 순회 */
+  const cycleItems = useMemo(
+    () => (pendingItems.length > 0 ? pendingItems : chatOnlyItems),
+    [pendingItems, chatOnlyItems],
+  );
+  const cycleMode: "pending" | "chat" =
+    pendingItems.length > 0 ? "pending" : "chat";
+
+  const [activeId, setActiveId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (cycleItems.length === 0) {
+      setActiveId(null);
+      return;
+    }
+    setActiveId((prev) => {
+      if (prev && cycleItems.some((row) => row.id === prev)) return prev;
+      return cycleItems[0]?.id ?? null;
+    });
+  }, [cycleItems]);
+
+  const activeIndex = Math.max(
+    0,
+    cycleItems.findIndex((row) => row.id === activeId),
+  );
+  const activeItem = cycleItems[activeIndex] ?? cycleItems[0] ?? null;
 
   if (pendingWork <= 0 && chatUnread <= 0) return null;
 
@@ -140,52 +170,41 @@ export function LabReceiveUnreadNotice({
     ? "미처리·미확인 도착 알림 끄기"
     : "미처리·미확인 도착 알림 켜기";
 
-  const renderChip = (
-    item: LabReceiveUnreadNoticeItem,
-    opts: { rank?: number; kindLabel: string },
-  ) => {
-    const chat = itemChatUnread(item);
-    const chatLabel = chat > 99 ? "99+" : String(chat);
-    const rankPrefix =
-      opts.rank != null ? `${opts.rank}. ` : "";
-    return (
-      <button
-        key={item.id}
-        type="button"
-        className="inline-flex max-w-full items-center gap-1 rounded-md border-[3px] border-double border-red-600 bg-white px-2 py-1 text-left text-[11px] leading-snug text-red-950 hover:bg-red-50"
-        title={`${rankPrefix}${opts.kindLabel} · ${item.label}`}
-        onClick={() => onSelectItem?.(item.id)}
-      >
-        {opts.rank != null ? (
-          <span className="shrink-0 text-[10px] font-bold tabular-nums text-red-700">
-            {opts.rank}
-          </span>
-        ) : null}
-        <span className="shrink-0 text-[10px] font-semibold text-red-700">
-          {opts.kindLabel}
-        </span>
-        <span className="min-w-0 truncate">{item.label}</span>
-        {chat > 0 ? (
-          <span
-            className="inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-white"
-            aria-label={`미확인(채팅) ${chatLabel}`}
-          >
-            {chatLabel}
-          </span>
-        ) : null}
-      </button>
-    );
+  const selectAt = (index: number) => {
+    if (cycleItems.length === 0) return;
+    const next =
+      ((index % cycleItems.length) + cycleItems.length) % cycleItems.length;
+    const item = cycleItems[next];
+    if (!item) return;
+    setActiveId(item.id);
+    onSelectItem?.(item.id);
   };
 
-  const hasChips =
-    pendingVisible.length > 0 ||
-    pendingHidden > 0 ||
-    chatOnlyItems.length > 0;
+  const kindLabelFor = (item: LabReceiveUnreadNoticeItem) => {
+    const chat = itemChatUnread(item);
+    if (item.pendingWork) return chat > 0 ? "미처리·미확인" : "미처리";
+    return "미확인";
+  };
+
+  const displayCount =
+    cycleMode === "pending"
+      ? Math.max(pendingWork, pendingItems.length)
+      : Math.max(chatOnlyItems.length, 1);
+  const countLabel = displayCount > 99 ? "99+" : String(displayCount);
+  const countAria =
+    cycleMode === "pending"
+      ? `미처리 ${displayCount}건`
+      : `미확인 ${displayCount}건`;
+  const canCycle = cycleItems.length > 1;
+  const prevLabel =
+    cycleMode === "pending" ? "이전 미처리" : "이전 미확인";
+  const nextLabel =
+    cycleMode === "pending" ? "다음 미처리" : "다음 미확인";
 
   return (
     <div
       className={cn(
-        "flex shrink-0 items-center gap-2 rounded-lg border border-red-200/90 bg-red-50/90 px-3 py-1.5 text-sm text-red-950",
+        "flex min-w-0 items-center gap-1.5 rounded-lg border border-red-200/90 bg-red-50/90 px-2 py-1 text-sm text-red-950",
         className,
       )}
       role="status"
@@ -193,39 +212,66 @@ export function LabReceiveUnreadNotice({
       aria-label={ariaLabel || undefined}
     >
       <AlertCircle className="h-4 w-4 shrink-0 text-red-600" aria-hidden />
-      {hasChips ? (
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
-          {pendingVisible.map((item, index) => {
-            const chat = itemChatUnread(item);
-            const kindLabel =
-              chat > 0 ? "미처리·미확인" : "미처리";
-            return renderChip(item, {
-              rank: index + 1,
-              kindLabel,
-            });
-          })}
-          {pendingHidden > 0 ? (
+      {activeItem ? (
+        <button
+          type="button"
+          className="inline-flex min-w-0 flex-1 items-center gap-1 rounded-md border-[3px] border-double border-red-600 bg-white px-2 py-1 text-left text-[11px] leading-snug text-red-950 hover:bg-red-50"
+          title={`${kindLabelFor(activeItem)} · ${activeItem.label}`}
+          onClick={() => onSelectItem?.(activeItem.id)}
+        >
+          <span className="shrink-0 text-[10px] font-semibold text-red-700">
+            {kindLabelFor(activeItem)}
+          </span>
+          <span className="min-w-0 truncate">{activeItem.label}</span>
+          {itemChatUnread(activeItem) > 0 ? (
             <span
-              className="self-center text-[11px] font-medium text-red-800/80"
-              title={`미처리 ${pendingHidden}건 더 있음`}
+              className="inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-white"
+              aria-label={`미확인(채팅) ${itemChatUnread(activeItem)}`}
             >
-              …
+              {itemChatUnread(activeItem) > 99
+                ? "99+"
+                : String(itemChatUnread(activeItem))}
             </span>
           ) : null}
-          {chatOnlyItems.slice(0, 6).map((item) =>
-            renderChip(item, { kindLabel: "미확인" }),
-          )}
-          {chatOnlyItems.length > 6 ? (
-            <span className="self-center text-[11px] text-red-800/80">
-              +{chatOnlyItems.length - 6}건
-            </span>
-          ) : null}
-        </div>
+        </button>
       ) : (
         <span className="min-w-0 flex-1 truncate text-xs font-medium">
           {ariaLabel}
         </span>
       )}
+      {canCycle ? (
+        <div className="flex shrink-0 flex-col">
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-3.5 w-6 p-0 text-red-800 hover:bg-red-100/80 hover:text-red-950"
+            aria-label={prevLabel}
+            title={prevLabel}
+            onClick={() => selectAt(activeIndex - 1)}
+          >
+            <ChevronUp className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-3.5 w-6 p-0 text-red-800 hover:bg-red-100/80 hover:text-red-950"
+            aria-label={nextLabel}
+            title={nextLabel}
+            onClick={() => selectAt(activeIndex + 1)}
+          >
+            <ChevronDown className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      ) : null}
+      <span
+        className="inline-flex h-6 min-w-6 shrink-0 items-center justify-center rounded-full bg-red-600 px-1.5 text-[11px] font-bold tabular-nums leading-none text-white"
+        title={countAria}
+        aria-label={countAria}
+      >
+        {countLabel}
+      </span>
       <Tooltip>
         <TooltipTrigger asChild>
           <Button

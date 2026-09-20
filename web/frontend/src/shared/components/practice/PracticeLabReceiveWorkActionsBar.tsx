@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/practice/practiceTransferLabReceive.ts
 // change-log:
+// - 2026-09-20: abutmentLeadingActions — 어벗 건만 STL 업로드 왼쪽에 SW·아노 등.
 // - 2026-09-16: stickyTrailingActions — 어벗 완료 줄이 취소·리메이크를 맡아도 지르 작업 시작 유지.
 // - 2026-09-16: 출고일 버튼 — 어벗츠 생산의뢰 줄 오른쪽 끝(업로드·지르 행에서 이동).
 // - 2026-09-12: 미업로드 잔여 시 pastReady=(전체리메이크) 대신 mixed(치아 리메이크만).
@@ -71,6 +72,11 @@ export type PracticeLabReceiveWorkActionsBarProps = {
   abutmentShipBusy?: boolean;
   onDesignConfirm?: () => void;
   /**
+   * 어벗 있는 의뢰만 — 어벗 STL 업로드 왼쪽(디자인SW·아노 등).
+   * 업로드 버튼이 없어도 어벗 가이드/취소 행에 같이 둔다.
+   */
+  abutmentLeadingActions?: ReactNode;
+  /**
    * 업로드·취소 옆 상시 CTA(지르 작업 시작 등).
    * 어벗 완료 줄이 취소·리메이크를 맡아도 숨기지 않는다.
    */
@@ -105,6 +111,7 @@ export function PracticeLabReceiveWorkActionsBar({
   onAbutmentShipYmdSave,
   abutmentShipBusy = false,
   onDesignConfirm,
+  abutmentLeadingActions = null,
   stickyTrailingActions = null,
   trailingActions = null,
   className,
@@ -122,6 +129,12 @@ export function PracticeLabReceiveWorkActionsBar({
   const hasAbutmentGuide = state.hasPendingLabCa || state.hasAbutsCa;
   const showAbutmentUpload =
     state.designStlUploadMode === "abutment" && Boolean(onAbutmentStlUpload);
+  const showAbutmentLeading =
+    Boolean(abutmentLeadingActions) &&
+    (hasAbutmentGuide ||
+      showAbutmentUpload ||
+      state.showAbutmentProductionCancel ||
+      state.abutmentCancelBlockedPastReady);
   if (
     !state.showWorkActions &&
     !state.showCompletedStageHeaderCancel &&
@@ -131,7 +144,8 @@ export function PracticeLabReceiveWorkActionsBar({
     !hasAbutmentGuide &&
     !uploadOverdue &&
     !showAbutmentUpload &&
-    !showAbutmentShip
+    !showAbutmentShip &&
+    !showAbutmentLeading
   ) {
     return null;
   }
@@ -322,13 +336,17 @@ export function PracticeLabReceiveWorkActionsBar({
   const hasEffectiveTrailing =
     hasStickyTrailing || Boolean(effectiveTrailing);
 
+  const abutmentLeading = showAbutmentLeading ? abutmentLeadingActions : null;
+
   const cancelCluster =
+    abutmentLeading ||
     abutmentUploadButton ||
     (shipInActionRow ? abutmentShipButton : null) ||
     productionCancelButton ||
     pastReadyRemakeButton ||
     hasEffectiveTrailing ? (
       <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+        {abutmentLeading}
         {abutmentUploadButton}
         {shipInActionRow ? abutmentShipButton : null}
         {productionCancelButton}

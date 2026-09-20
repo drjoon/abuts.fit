@@ -16,6 +16,7 @@
 // - web/frontend/src/shared/files/fileBlobCache.ts
 // - web/frontend/src/shared/files/s3ImageThumb.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-20: 기공소 — 프린트·번호표를 작업시작/취소와 같은 헤더 액션 줄로(별도 행 제거).
 // - 2026-09-20: 기공소 — 헤더에 의뢰정보 프린트·바구니 번호표(A1–Z9)·안내 복원.
 // - 2026-09-20: 작업 파일 전체 다운로드 — 어벗 디자인·보철물을 zip 하나로.
 // - 2026-09-16: 채팅 헤더 — 1줄=타이틀, 2줄=주문/도착·다음도착일, 경계선, 3줄=액션.
@@ -2023,6 +2024,7 @@ export function PracticeTransferDetailChatDialog({
         value={labBasketTag}
         onChange={(tag) => setLabBasketTag(normalizeLabBasketTag(tag))}
         onPrint={handlePrintDetail}
+        iconOnly
       />
     ) : null;
 
@@ -2303,7 +2305,7 @@ export function PracticeTransferDetailChatDialog({
   const labIdentityDateRowActions =
     acceptBarPrimaryActions || reacceptBarPrimaryAction || releaseAction ? (
       <div
-        className="flex shrink-0 flex-wrap items-center justify-end gap-2"
+        className="flex shrink-0 flex-nowrap items-center justify-end gap-1.5"
         data-no-drag
         {...(showAcceptBar ? { "data-guide-tour": "lab_accept" } : {})}
       >
@@ -2416,7 +2418,7 @@ export function PracticeTransferDetailChatDialog({
    * 헤더 1줄: 타이틀 + 아이콘
    * 2줄: 주문/도착(+다음도착일)
    * ─── 경계선
-   * 3줄: 작업시작·작업취소 / 제작변경·취소·지르 보철
+   * 3줄: 프린트·번호표 | 작업시작·작업취소(또는 제작변경·취소·지르)
    */
   const renderIdentityDateRow = (className?: string) => {
     if (!identityDateLabel && !rearrivalControl) return null;
@@ -2434,10 +2436,15 @@ export function PracticeTransferDetailChatDialog({
     );
   };
   const renderHeaderActionRow = () => {
-    if (!headerActionButtons) return null;
+    if (!headerActionButtons && !labBasketToolbar) return null;
     return (
-      <div className="flex min-w-0 items-center justify-end gap-2 border-b bg-background px-5 py-2">
-        {headerActionButtons}
+      <div className="flex min-w-0 flex-nowrap items-center gap-1.5 overflow-x-auto border-b bg-background px-5 py-1.5">
+        {labBasketToolbar}
+        {headerActionButtons ? (
+          <div className="ml-auto flex min-w-0 shrink-0 items-center justify-end">
+            {headerActionButtons}
+          </div>
+        ) : null}
       </div>
     );
   };
@@ -2895,12 +2902,6 @@ export function PracticeTransferDetailChatDialog({
             </div>
 
               {renderHeaderActionRow()}
-
-              {labBasketToolbar ? (
-                <div className="flex shrink-0 items-center gap-2 border-b bg-background px-5 py-1.5">
-                  {labBasketToolbar}
-                </div>
-              ) : null}
 
               {nextStageSegments.length > 0 ? (
                 <div className="border-b bg-muted/25">

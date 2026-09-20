@@ -1,5 +1,6 @@
 // change-log:
 // - 2026-09-14: 진행중 모달 — 모바일 채팅형 전체화면 시트(inProgressMobileSheet).
+// - 2026-09-20: policyInProgress — xl 미만 아이콘+건수만(기공의뢰수신 좁은 헤더).
 // - 2026-09-14: 진행중/어벗츠 생산중 버튼에 Factory 아이콘. iconOnly·좁은 폭은 건수 배지.
 // - 2026-09-03: 기공의뢰수신 — 어벗츠 생산중 라벨. 정책은 사이드바. 어벗 뱃지 왼쪽 간격 없음.
 // - 2026-09-03: 기공소 정책 안내는 사이드바(LabPricingPolicyBanner). 헤더는 치과만.
@@ -473,7 +474,9 @@ export const RequestorAbutmentPageHeader = ({
             ? inProgressCount > 0
               ? "px-2"
               : "w-8 px-0"
-            : "gap-1.5 px-2 sm:px-3",
+            : isPolicyInProgressOnly
+              ? "gap-1 px-2 xl:gap-1.5 xl:px-3"
+              : "gap-1.5 px-2 sm:px-3",
         )}
         onClick={() => setInProgressOpen(true)}
         aria-label={inProgressAria}
@@ -493,8 +496,19 @@ export const RequestorAbutmentPageHeader = ({
           )
         ) : (
           <>
-            <span className="hidden sm:inline">{inProgressLabel} </span>
-            <span className="sm:hidden" aria-hidden>
+            <span
+              className={cn(
+                isPolicyInProgressOnly ? "hidden xl:inline" : "hidden sm:inline",
+              )}
+            >
+              {inProgressLabel}{" "}
+            </span>
+            <span
+              className={cn(
+                isPolicyInProgressOnly ? "xl:hidden" : "sm:hidden",
+              )}
+              aria-hidden
+            >
               {inProgressCount > 0 ? (
                 <Badge
                   variant="secondary"
@@ -504,7 +518,13 @@ export const RequestorAbutmentPageHeader = ({
                 </Badge>
               ) : null}
             </span>
-            <span className="hidden sm:inline">{inProgressCountLabel}</span>
+            <span
+              className={cn(
+                isPolicyInProgressOnly ? "hidden xl:inline" : "hidden sm:inline",
+              )}
+            >
+              {inProgressCountLabel}
+            </span>
           </>
         )}
       </Button>

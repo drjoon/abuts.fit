@@ -1,10 +1,12 @@
 // related files:
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // - web/frontend/src/shared/practice/practiceTransferDetailPrint.ts
+// - 2026-09-20: iconOnly — 프린트·번호표 아이콘만(좁은 상세 패널).
+// - 2026-09-20: nowrap·축약 — 헤더 작업시작/취소와 한 줄.
 // - 2026-09-20: 번호표 — 글자만(A–Z) 또는 글자+숫자(A1–Z9). 숫자는 옵션.
 // - 2026-09-20: 기공소 의뢰상세 — 프린트·바구니 번호표·안내 모달.
 import { useMemo, useState, type ReactNode } from "react";
-import { ChevronDown, Info, Printer } from "lucide-react";
+import { ChevronDown, Info, Printer, Tags } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -70,6 +72,8 @@ type LabBasketTagToolbarProps = {
   value: string;
   onChange: (tag: string) => void;
   onPrint: () => void;
+  /** true면 프린트·미선택 번호표를 아이콘만(선택 시 태그 문자는 유지) */
+  iconOnly?: boolean;
   className?: string;
 };
 
@@ -78,6 +82,7 @@ export function LabBasketTagToolbar({
   value,
   onChange,
   onPrint,
+  iconOnly = false,
   className,
 }: LabBasketTagToolbarProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -143,7 +148,7 @@ export function LabBasketTagToolbar({
     <>
       <div
         className={cn(
-          "flex min-w-0 flex-wrap items-center gap-1.5",
+          "flex shrink-0 flex-nowrap items-center gap-1",
           className,
         )}
         data-no-drag
@@ -152,12 +157,16 @@ export function LabBasketTagToolbar({
           type="button"
           variant="outline"
           size="sm"
-          className="h-7 gap-1.5 px-2.5 text-xs"
+          className={cn(
+            "h-7 text-xs",
+            iconOnly ? "w-7 gap-0 px-0" : "gap-1 px-2",
+          )}
           title="의뢰 상세 인쇄 (A5)"
+          aria-label="의뢰 상세 인쇄 (A5)"
           onClick={onPrint}
         >
           <Printer className="h-3.5 w-3.5" />
-          프린트
+          {iconOnly ? null : "프린트"}
         </Button>
 
         <Popover open={pickerOpen} onOpenChange={handlePickerOpenChange}>
@@ -167,14 +176,25 @@ export function LabBasketTagToolbar({
               variant="outline"
               size="sm"
               className={cn(
-                "h-7 gap-1 px-2 text-xs tabular-nums",
+                "h-7 text-xs tabular-nums",
+                iconOnly && !selected
+                  ? "w-7 gap-0 px-0"
+                  : "max-w-[4.75rem] gap-0.5 px-1.5",
                 selected ? "border-primary/40 bg-primary/5 font-semibold text-primary" : "",
               )}
               title="기공물 바구니 번호표"
               aria-label="기공물 바구니 번호표 선택"
             >
-              {selected || "번호표"}
-              <ChevronDown className="h-3.5 w-3.5 opacity-70" />
+              {selected ? (
+                <span className="min-w-0 truncate">{selected}</span>
+              ) : iconOnly ? (
+                <Tags className="h-3.5 w-3.5" />
+              ) : (
+                <span className="min-w-0 truncate">번호표</span>
+              )}
+              {iconOnly && !selected ? null : (
+                <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-70" />
+              )}
             </Button>
           </PopoverTrigger>
           <PopoverContent
@@ -227,7 +247,7 @@ export function LabBasketTagToolbar({
 
         <button
           type="button"
-          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           title="번호표·바구니 안내"
           aria-label="번호표·바구니 안내"
           onClick={() => setGuideOpen(true)}

@@ -37,6 +37,9 @@
 // - 2026-09-13: 커스텀어벗 STL 첫 업로드·작업시작 — 디자인SW·아노 미설정 시 게이트 모달.
 // - 2026-09-13: 캘린더/목록 커서(YMD) localStorage 복원 — 릴로드 시 직전 위치 유지.
 // - 2026-09-12: 상세 드롭·클립 — 3D/이미지 의뢰 파일 append·삭제(X).
+// - 2026-09-20: 수신 헤더 xl 미만 — 배지·북마크·생산중 아이콘화. 상세 프린트·번호표 아이콘만.
+// - 2026-09-20: 수신 헤더 nowrap — 미처리 alert·배지·생산중이 두 줄로 밀리지 않게.
+// - 2026-09-20: SW·아노 → 채팅 어벗 STL 업로드 왼쪽(어벗 건만). 미처리 alert를 헤더 왼쪽·배지 오른쪽.
 // - 2026-09-12: 기공소 리메이크 — 원본 리드로 기본 도착일 · POST /received/remake.
 // - 2026-09-12: 어벗 출고일 설정(도착−3달력일 기본) — STL 업로드 옆 · 낙관적 패치.
 // - 2026-09-12: 채팅 없으면 상세 초기 스크롤=보철물(상단). 빈 목록 시 chatBottom 강제 스크롤 제거.
@@ -7759,8 +7762,8 @@ export function RequestorPracticeReceivePage({
               ? "px-2"
               : "w-8 px-0"
             : count === 0
-              ? "w-8 px-0 sm:w-auto sm:px-3"
-              : "px-2 sm:px-3",
+              ? "w-8 px-0 xl:w-auto xl:px-3"
+              : "px-2 xl:px-3",
           count > 0 && "border-sky-300 bg-sky-50/80",
         )}
         aria-label={aria}
@@ -7775,7 +7778,7 @@ export function RequestorPracticeReceivePage({
           )}
         />
         {!iconOnly ? (
-          <span className="hidden sm:inline">북마크</span>
+          <span className="hidden xl:inline">북마크</span>
         ) : null}
         {count > 0 ? (
           <Badge
@@ -7869,16 +7872,31 @@ export function RequestorPracticeReceivePage({
     />
   );
 
+  const labUnreadNotice = (
+    <LabReceiveUnreadNotice
+      pendingWorkTotal={Math.max(
+        pendingWorkNoticeTotal,
+        Math.max(0, Number(receivedTransferUnreadCount || 0)),
+      )}
+      chatUnreadTotal={chatUnreadNoticeTotal}
+      items={unreadNoticeItems}
+      onSelectItem={(id) => {
+        const transfer =
+          calendarTransferById.get(id) ||
+          baseFilteredTransfers.find(
+            (row) =>
+              String(row.transferId || row._id || "").trim() === id,
+          );
+        if (!transfer) return;
+        if (!isMobile) jumpCalendarToTransferDate(transfer);
+        selectTransferFromCalendar(transfer);
+      }}
+      className="min-w-0 flex-1"
+    />
+  );
+
   const labMobileHeaderActionButtons = (
     <>
-      <RequestSettingsToolbar
-        designSoftwareLabel={String(designSoftwareValue || "").trim()}
-        onOpenDesignSoftwareModal={openLabDesignSoftwareModal}
-        anodizingEnabled={anodizingEnabled}
-        anodizingSaving={anodizingSaving}
-        onToggleAnodizing={handleToggleAnodizing}
-        iconOnly
-      />
       {bookmarkNavigateButton({ iconOnly: true })}
       {labAbutmentInProgressTrigger}
     </>
@@ -7892,11 +7910,13 @@ export function RequestorPracticeReceivePage({
       gapBeforeKeys={PRACTICE_RECENT_STATUS_BADGE_GAP_BEFORE_KEYS}
       countSuffix="건"
       compact
+      iconAtNarrow
     />
   );
 
   const transferSearchAndBadges = isMobile ? (
     <div className="flex flex-col items-center gap-2">
+      {labUnreadNotice}
       <div className="flex flex-nowrap items-center justify-center gap-1.5">
         {labMobileHeaderActionButtons}
         <DemoModeBadge className="shrink-0" />
@@ -7904,22 +7924,16 @@ export function RequestorPracticeReceivePage({
       {labMobileStatusBadges}
     </div>
   ) : (
-    <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-      <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <RequestSettingsToolbar
-          designSoftwareLabel={String(designSoftwareValue || "").trim()}
-          onOpenDesignSoftwareModal={openLabDesignSoftwareModal}
-          anodizingEnabled={anodizingEnabled}
-          anodizingSaving={anodizingSaving}
-          onToggleAnodizing={handleToggleAnodizing}
-        />
-      </div>
+    <div className="flex min-w-0 flex-nowrap items-center gap-1.5 overflow-x-auto">
+      {labUnreadNotice}
       <PracticeStatusFilterBadges
-        className="min-w-0 flex-1 sm:justify-center"
+        className="ml-auto shrink-0 flex-nowrap justify-end gap-1.5"
         items={labStatusFilterBadgeItems}
         onUnreadNavigate={navigateNextUnreadForStatus}
         gapBeforeKeys={PRACTICE_RECENT_STATUS_BADGE_GAP_BEFORE_KEYS}
         countSuffix="건"
+        compact
+        iconAtNarrow
         trailing={
           <span className="contents">
             {bookmarkNavigateButton()}
@@ -7932,7 +7946,7 @@ export function RequestorPracticeReceivePage({
           </span>
         }
       />
-      <DemoModeBadge className="shrink-0 sm:ml-auto" />
+      <DemoModeBadge className="shrink-0" />
     </div>
   );
 
@@ -7960,26 +7974,6 @@ export function RequestorPracticeReceivePage({
       {!error && !loading ? (
         <>
           <LabReceiveFeeScheduleNotice className="shrink-0" />
-          <LabReceiveUnreadNotice
-            pendingWorkTotal={Math.max(
-              pendingWorkNoticeTotal,
-              Math.max(0, Number(receivedTransferUnreadCount || 0)),
-            )}
-            chatUnreadTotal={chatUnreadNoticeTotal}
-            items={unreadNoticeItems}
-            onSelectItem={(id) => {
-              const transfer =
-                calendarTransferById.get(id) ||
-                baseFilteredTransfers.find(
-                  (row) =>
-                    String(row.transferId || row._id || "").trim() === id,
-                );
-              if (!transfer) return;
-              if (!isMobile) jumpCalendarToTransferDate(transfer);
-              selectTransferFromCalendar(transfer);
-            }}
-            className="shrink-0"
-          />
           {isMobile ? (
             <div
               className="flex min-h-0 flex-1 flex-col"
@@ -8922,6 +8916,16 @@ export function RequestorPracticeReceivePage({
               busy={rowBusy}
               designConfirmBusy={designConfirmBusyId === transferKey}
               showProductionCancelInBar
+              abutmentLeadingActions={
+                <RequestSettingsToolbar
+                  designSoftwareLabel={String(designSoftwareValue || "").trim()}
+                  onOpenDesignSoftwareModal={openLabDesignSoftwareModal}
+                  anodizingEnabled={anodizingEnabled}
+                  anodizingSaving={anodizingSaving}
+                  onToggleAnodizing={handleToggleAnodizing}
+                  shortLabels
+                />
+              }
               stickyTrailingActions={labZirStartButton}
               trailingActions={releaseTrailingOnly}
               onAbutmentProductionCancel={(event) =>

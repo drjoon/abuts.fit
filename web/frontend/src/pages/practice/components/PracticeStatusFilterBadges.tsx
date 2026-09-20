@@ -3,6 +3,8 @@
  * 본문 숫자: 의뢰·작업시작=전체, 완료·취소·어벗=미열람. 빨간 점=미확인(채팅).
  * 클릭=미확인·미처리 우선으로 해당 상태 건을 하나씩 연다.
  * 캘린더·목록 칩 빨간 숫자=미확인(채팅)만. 빨간 테두리=미처리(작업큐)만(채팅만은 테두리 없음).
+ * 2026-09-20: xl 미만 — 아이콘+숫자만(라벨·「건」숨김). 툴팁에 전체 안내.
+ * 2026-09-20: className으로 flex-nowrap 넘기면 한 줄 유지(기공의뢰수신 헤더).
  * 2026-09-14: 북마크는 헤더 버튼(배지 행에서 분리).
  * 2026-09-14: 북마크 배지(전기간 순회). 클릭=북마크 컬렉션 순회.
  * 2026-09-11: 완료·취소·어벗 본문=미열람만(계정 preferences). 순서 의뢰→작업시작→완료→취소→어벗. 완료 앞 여백.
@@ -18,6 +20,16 @@
  * - web/frontend/src/pages/practice/components/PracticeRecentTransfersCalendar.tsx
  */
 import type { ReactNode } from "react";
+import type { LucideIcon } from "lucide-react";
+import {
+  CheckCircle2,
+  ClipboardList,
+  Hexagon,
+  MessageCircle,
+  Play,
+  Bookmark,
+  XCircle,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   Tooltip,
@@ -42,6 +54,16 @@ export type PracticeStatusFilterBadgeItem = {
   tooltip?: string;
 };
 
+const STATUS_BADGE_ICON: Record<PracticeCalendarStatusTone, LucideIcon> = {
+  sent: ClipboardList,
+  accepted: Play,
+  finished: CheckCircle2,
+  completed: Hexagon,
+  canceled: XCircle,
+  unread: MessageCircle,
+  bookmark: Bookmark,
+};
+
 type PracticeStatusFilterBadgesProps = {
   items: readonly PracticeStatusFilterBadgeItem[];
   /** 해당 상태 의뢰를 하나씩 연다(안읽음 우선). */
@@ -55,6 +77,11 @@ type PracticeStatusFilterBadgesProps = {
   /** true면 뱃지 안 빨간 unread 점 숨김(전용 미확인 뱃지 쓸 때) */
   hideNestedUnread?: boolean;
   compact?: boolean;
+  /**
+   * true면 xl 미만에서 아이콘+숫자만(라벨·접미사 숨김).
+   * 기공의뢰수신처럼 가로가 좁을 때 한 줄 유지.
+   */
+  iconAtNarrow?: boolean;
   className?: string;
 };
 
@@ -66,6 +93,7 @@ export function PracticeStatusFilterBadges({
   trailing,
   hideNestedUnread = false,
   compact = false,
+  iconAtNarrow = false,
   className,
 }: PracticeStatusFilterBadgesProps) {
   const gapKeySet = new Set(gapBeforeKeys || []);
@@ -96,6 +124,7 @@ export function PracticeStatusFilterBadges({
           ? `${actionHint}. ${item.tooltip}`
           : actionHint;
         const withGap = gapKeySet.has(item.key);
+        const Icon = STATUS_BADGE_ICON[item.tone] || ClipboardList;
 
         return (
           <Tooltip key={item.key}>
@@ -104,7 +133,7 @@ export function PracticeStatusFilterBadges({
                 type="button"
                 className={cn(
                   "relative shrink-0 rounded-full",
-                  withGap && "ml-5",
+                  withGap && (iconAtNarrow ? "ml-2 xl:ml-5" : "ml-5"),
                   !canNavigate && "cursor-default",
                 )}
                 onClick={() => {
@@ -119,12 +148,39 @@ export function PracticeStatusFilterBadges({
                   className={cn(
                     "whitespace-nowrap",
                     canNavigate ? "cursor-pointer" : "cursor-default opacity-50",
-                    compact && "h-8 px-2.5 text-xs",
+                    compact && "h-8 text-xs",
+                    iconAtNarrow
+                      ? compact
+                        ? "gap-1 px-2 xl:px-2.5"
+                        : "gap-1 px-2 xl:px-3"
+                      : compact
+                        ? "px-2.5"
+                        : null,
                     PRACTICE_STATUS_FILTER_BADGE_CLASS[item.tone].active,
                   )}
                 >
                   <span className="inline-flex items-center gap-1">
-                    {item.label} {countLabel}
+                    {iconAtNarrow ? (
+                      <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                    ) : null}
+                    <span
+                      className={cn(
+                        iconAtNarrow && "hidden xl:inline",
+                      )}
+                    >
+                      {item.label}
+                      {countSuffix ? " " : ""}
+                    </span>
+                    <span className="tabular-nums">
+                      {queueCount}
+                      {countSuffix ? (
+                        <span
+                          className={cn(iconAtNarrow && "hidden xl:inline")}
+                        >
+                          {countSuffix}
+                        </span>
+                      ) : null}
+                    </span>
                     {chatUnread > 0 ? (
                       <span
                         className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-destructive-foreground"
