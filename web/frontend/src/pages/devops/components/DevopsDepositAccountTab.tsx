@@ -1,7 +1,7 @@
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/pages/devops/DevopsSettingsPage.tsx
-// - web/frontend/src/pages/salesman/components/SalesmanPayoutAccountTab.tsx
+// - web/frontend/src/shared/components/business/settings/PayoutAccountCard.tsx
 import { useEffect, useRef, useState } from "react";
 import {
   Card,

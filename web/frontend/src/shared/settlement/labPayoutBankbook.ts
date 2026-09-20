@@ -1,8 +1,9 @@
 // related files:
 // - web/frontend/src/features/settings/tabs/LabSettlementPayoutTab.tsx
-// - web/frontend/src/shared/components/business/settings/LabPayoutAccountCard.tsx
+// - web/frontend/src/shared/components/business/settings/PayoutAccountCard.tsx
 // - web/backend/jobs/monthlySettlementBatchWorker.js
 // change-log:
+// - 2026-09-21: PAYOUT_ACCOUNT_CARD_ID 공통화(기공소·딜러사). LAB_* 별칭 유지.
 // - 2026-09-20: 지정 수수료 기본 표시 2%. 이벤트 문구는 「2% → 0%」(취소선은 LabDirectPlatformFeeNotice).
 // - 2026-09-20: 지정 수수료 안내를 formatLabDirectPlatformFeeNotice(관리자 on/%)로 생성.
 // - 2026-09-16: 기공소 통장사본·정산일(1일) 리마인드 헬퍼. 미등록 시 지급 1개월 이월 안내. 월 지급 유보 50만원 상수.
@@ -91,9 +92,13 @@ export const LAB_PAYOUT_BANKBOOK_DELAY_NOTICE =
   "정산 지급일까지 통장 사본을 등록하지 않으면, 이번 달 지급분은 1개월 후 다음 달에 지급됩니다.";
 
 /** 설정 · 사업자 탭의 통장 사본·입금 계좌 카드로 스크롤. */
-export const LAB_PAYOUT_ACCOUNT_CARD_ID = "lab-payout-account-card";
-export const LAB_PAYOUT_SETTINGS_PATH =
+export const PAYOUT_ACCOUNT_CARD_ID = "payout-account-card";
+/** @deprecated PAYOUT_ACCOUNT_CARD_ID 별칭. */
+export const LAB_PAYOUT_ACCOUNT_CARD_ID = PAYOUT_ACCOUNT_CARD_ID;
+export const PAYOUT_SETTINGS_PATH =
   "/dashboard/settings?tab=business&focus=payout";
+/** @deprecated PAYOUT_SETTINGS_PATH 별칭. */
+export const LAB_PAYOUT_SETTINGS_PATH = PAYOUT_SETTINGS_PATH;
 
 /** 월 지급 시 다음 달 초 사용을 위해 남기는 기공크레딧(원). BE `LAB_SETTLEMENT_PAYOUT_RESERVE_WON` 와 맞춤. */
 export const LAB_SETTLEMENT_PAYOUT_RESERVE_WON = 500_000;

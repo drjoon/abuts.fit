@@ -1,9 +1,9 @@
 // related files:
 // - web/frontend/src/shared/components/business/settings/BusinessTab.tsx
-// - web/frontend/src/pages/salesman/components/SalesmanPayoutAccountTab.tsx
 // - web/frontend/src/pages/devops/components/DevopsDepositAccountTab.tsx
 // - web/backend/controllers/businesses/business.update.controller.js
 // change-log:
+// - 2026-09-21: 딜러사(salesman) 위수탁 카드는 설정>사업자에서 PayoutAccountCard와 함께 노출.
 // - 2026-09-20: 위수탁 대신발행 옵트아웃 토글(기본 ON).
 import { useCallback, useEffect, useState } from "react";
 import { FileText, Loader2 } from "lucide-react";

@@ -69,7 +69,7 @@ import {
   resolveRequestorProfile,
   type RequestorProfile,
 } from "@/shared/business/requestorCapabilities";
-import { LabPayoutAccountCard } from "@/shared/components/business/settings/LabPayoutAccountCard";
+import { PayoutAccountCard } from "@/shared/components/business/settings/PayoutAccountCard";
 import { TrusteeIssueSettingCard } from "@/shared/components/business/settings/TrusteeIssueSettingCard";
 import { Building2 } from "lucide-react";
 
@@ -1027,8 +1027,16 @@ export const BusinessTab = ({
                 (requestorProfile.kind === "lab" ||
                   user?.role === "internalLab") ? (
                   <>
-                    <LabPayoutAccountCard canEdit />
+                    <PayoutAccountCard canEdit />
                     <TrusteeIssueSettingCard businessTypeOverride="requestor" />
+                  </>
+                ) : null}
+
+                {membershipMgmt.membership === "owner" &&
+                (user?.role === "salesman" || businessType === "salesman") ? (
+                  <>
+                    <PayoutAccountCard canEdit />
+                    <TrusteeIssueSettingCard businessTypeOverride="salesman" />
                   </>
                 ) : null}
 

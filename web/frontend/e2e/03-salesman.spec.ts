@@ -34,8 +34,12 @@ test.describe("Salesman – 전체 페이지", () => {
     await visitPage(page, "/dashboard/settings?tab=business", "설정 > 사업자");
   });
 
-  test("설정 탭 – 정산", async ({ page }) => {
-    await visitPage(page, "/dashboard/settings?tab=payout", "설정 > 정산");
+  test("설정 탭 – 사업자(입금 계좌)", async ({ page }) => {
+    await visitPage(
+      page,
+      "/dashboard/settings?tab=business&focus=payout",
+      "설정 > 사업자",
+    );
   });
 
   test("소개 페이지 접근 차단", async ({ page }) => {
