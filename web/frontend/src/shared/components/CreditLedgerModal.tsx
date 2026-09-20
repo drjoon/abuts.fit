@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-20: 결제(적립) 완료·보류 필터 + 소비 카드 하단 완료/보류 금액.
 // - 2026-09-20: 요약 카드 행 — -mx-1 제거·p-0.5(선택 border/ring overflow 클리핑 방지).
 // - 2026-09-16: 내역 로딩 스켈레톤 — 수식 카드 행·6열(결제 포함)·필터 행 정렬.
 // - 2026-09-08: 스토어 REFUND 행 결제상태「취소」(결제 완료 강제 표시 제거).
@@ -139,6 +140,7 @@ import {
   SettlementEquationOperator,
   SettlementStatCard,
 } from "@/shared/settlement/settlementUi";
+import { formatWon } from "@/shared/settlement/affiliateVat";
 import { LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE } from "@/shared/settlement/labPayoutBankbook";
 import {
   Tooltip,
@@ -199,6 +201,8 @@ type CreditLedgerType =
 
 type LedgerCreditKindFilter = "all" | "PAID" | "FREE" | "SETTLEMENT";
 type LedgerActionFilter = "all" | "CHARGE" | "SPEND" | "ADJUST";
+/** 결제·적립 진행 상태 필터(표시 뱃지와 동일) */
+type LedgerPayoutStatusFilter = "all" | "settled" | "hold";
 
 const SEARCH_DEBOUNCE_MS = 300;
 
@@ -219,6 +223,7 @@ export type CreditLedgerInitialFilters = {
   customEndDate?: string;
   creditKind?: LedgerCreditKindFilter;
   action?: LedgerActionFilter;
+  payoutStatus?: LedgerPayoutStatusFilter;
   q?: string;
   partnerName?: string;
   prosthesisType?: string;
@@ -233,6 +238,7 @@ type ResolvedLedgerFilters = {
   customEndDate: string;
   creditKind: LedgerCreditKindFilter;
   action: LedgerActionFilter;
+  payoutStatus: LedgerPayoutStatusFilter;
   q: string;
   partnerName: string;
   prosthesisType: string;
@@ -250,6 +256,7 @@ function resolveLedgerFilters(
     customEndDate: initial?.customEndDate ?? "",
     creditKind: initial?.creditKind ?? "all",
     action: initial?.action ?? "all",
+    payoutStatus: initial?.payoutStatus ?? "all",
     q: initial?.q ?? "",
     partnerName: initial?.partnerName ?? "",
     prosthesisType: initial?.prosthesisType ?? "",
@@ -387,6 +394,8 @@ type PeriodSpendSummary = {
   totalPaidChargeSupply?: number;
   totalFreeChargeSupply?: number;
   totalSpendSupply: number;
+  totalSpendSettledSupply?: number;
+  totalSpendPendingSupply?: number;
   totalSettlementEarnSupply?: number;
 };
 
@@ -1971,6 +1980,9 @@ export const CreditLedgerModal = ({
   const [action, setAction] = useState<LedgerActionFilter>(
     () => resolveLedgerFilters(initialFilters).action,
   );
+  const [payoutStatus, setPayoutStatus] = useState<LedgerPayoutStatusFilter>(
+    () => resolveLedgerFilters(initialFilters).payoutStatus,
+  );
   const [q, setQ] = useState(() => resolveLedgerFilters(initialFilters).q);
   const [debouncedQ, setDebouncedQ] = useState(
     () => resolveLedgerFilters(initialFilters).q.trim(),
@@ -2007,6 +2019,7 @@ export const CreditLedgerModal = ({
     setSpendCustomEndDate(next.customEndDate);
     setCreditKind(next.creditKind);
     setAction(next.action);
+    setPayoutStatus(next.payoutStatus);
     setQ(next.q);
     setDebouncedQ(next.q.trim());
     setPartnerName(next.partnerName);
@@ -2298,6 +2311,7 @@ export const CreditLedgerModal = ({
     ...(equationLedgerUi ? [] : [period, customStartDate, customEndDate]),
     creditKind,
     action,
+    payoutStatus,
     debouncedQ,
     partnerName,
     prosthesisType,
@@ -2382,6 +2396,24 @@ export const CreditLedgerModal = ({
     [items, isLabViewer],
   );
 
+  const matchesPayoutStatusFilter = (
+    status: PracticeTransferPayoutStatus | null,
+    filter: LedgerPayoutStatusFilter,
+  ) => {
+    if (filter === "all") return true;
+    if (!status || status === "canceled") return false;
+    if (filter === "settled") return status === "settled";
+    // 보류: 미완료(보류·일부)
+    return status === "hold" || status === "partial";
+  };
+
+  const filteredRows = useMemo(() => {
+    if (payoutStatus === "all") return rows;
+    return rows.filter((r) =>
+      matchesPayoutStatusFilter(r.practiceTransferPayoutStatus, payoutStatus),
+    );
+  }, [rows, payoutStatus]);
+
   const toggleSort = (key: LedgerSortKey) => {
     setSort((prev) =>
       prev.key === key
@@ -2400,7 +2432,7 @@ export const CreditLedgerModal = ({
   };
 
   const sortedRows = useMemo(() => {
-    return [...rows].sort((a, b) => {
+    return [...filteredRows].sort((a, b) => {
       if (sort.key === "createdAt") {
         const av = new Date(a.createdAt || 0).getTime();
         const bv = new Date(b.createdAt || 0).getTime();
@@ -2433,7 +2465,25 @@ export const CreditLedgerModal = ({
         ? av.localeCompare(bv, "ko")
         : bv.localeCompare(av, "ko");
     });
-  }, [rows, sort]);
+  }, [filteredRows, sort]);
+
+  // 결제·적립 상태 필터 시 페이지가 비면 다음 페이지를 이어서 채운다.
+  useEffect(() => {
+    if (!isOpen || payoutStatus === "all") return;
+    if (loadingRef.current || !hasMoreRef.current) return;
+    if (filteredRows.length >= PAGE_SIZE) return;
+    const nextPage = pageRef.current + 1;
+    setPage(nextPage);
+    void load(nextPage, false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    isOpen,
+    payoutStatus,
+    filteredRows.length,
+    hasMore,
+    items.length,
+    loading,
+  ]);
 
   const canCharge =
     chargeNavPath && (user?.role === "requestor" || user?.role === "admin");
@@ -2644,6 +2694,18 @@ export const CreditLedgerModal = ({
   const periodSpendTotal = Number(
     periodSpendSummary?.totalSpendSupply || 0,
   );
+  const periodSpendSettledTotal = Number(
+    periodSpendSummary?.totalSpendSettledSupply ??
+      Math.max(
+        0,
+        periodSpendTotal -
+          Number(periodSpendSummary?.totalSpendPendingSupply || 0),
+      ),
+  );
+  const periodSpendPendingTotal = Number(
+    periodSpendSummary?.totalSpendPendingSupply ??
+      Math.max(0, periodSpendTotal - periodSpendSettledTotal),
+  );
   const periodSettlementEarnTotal = Number(
     periodSpendSummary?.totalSettlementEarnSupply || 0,
   );
@@ -2750,6 +2812,17 @@ export const CreditLedgerModal = ({
                     value={periodSpendTotal}
                     hint="안내"
                     hintTooltip={periodSpendTooltip}
+                    footer={
+                      <div className="mt-0.5 text-[10px] tabular-nums leading-snug text-slate-500 sm:text-[11px]">
+                        <span className="text-emerald-700">
+                          완료 {formatWon(periodSpendSettledTotal)}
+                        </span>
+                        <span className="mx-1 text-slate-300">·</span>
+                        <span className="text-amber-800">
+                          보류 {formatWon(periodSpendPendingTotal)}
+                        </span>
+                      </div>
+                    }
                     onClick={() =>
                       openSummaryDrillDown({
                         title: "소비 내역",
@@ -2865,6 +2938,30 @@ export const CreditLedgerModal = ({
                   <SelectItem value="CHARGE">충전</SelectItem>
                   <SelectItem value="SPEND">소비</SelectItem>
                   <SelectItem value="ADJUST">조정</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="w-full min-w-0 sm:w-[130px]">
+              <Select
+                value={payoutStatus}
+                onValueChange={(v) =>
+                  setPayoutStatus(v as LedgerPayoutStatusFilter)
+                }
+              >
+                <SelectTrigger className="h-9 rounded-xl border-slate-200">
+                  <SelectValue placeholder="결제" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">
+                    {isLabViewer ? "전체 적립" : "전체 결제"}
+                  </SelectItem>
+                  <SelectItem value="settled">
+                    {isLabViewer ? "적립 완료" : "결제 완료"}
+                  </SelectItem>
+                  <SelectItem value="hold">
+                    {isLabViewer ? "적립 보류" : "결제 보류"}
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>

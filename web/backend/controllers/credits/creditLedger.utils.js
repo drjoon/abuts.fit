@@ -8,6 +8,7 @@
 // - web/backend/services/practiceTransferBilling.service.js
 // - web/backend/models/businessAnchor.model.js
 // - web/backend/services/requestCreditHold.service.js
+// - 2026-09-20: 기간 소비 요약 — 결제(적립) 완료·보류 공급가 분리(convertedAt 없는 HOLD).
 // - 2026-09-20: CA 디자인 STL 미업로드·생산비 미지급 PTX는 적립 보류 미러에서 제외.
 // - 2026-09-05: 정산 적립 집계 — PRACTICE_TRANSFER_ESCROW_RELEASE(+LAB_SETTLEMENT_CREDIT) 포함. 내역 행 타입과 동일.
 // - 2026-09-02: 적립 보류 미러 — deleted/canceled 제외 + HOLD 저널 없으면 스킵(치과 취소 후 heldAt 잔여 방어).
@@ -1198,6 +1199,21 @@ const CREDIT_LEDGER_STATS_SPEND_EVENT_TYPES = [
   "STORE_SALE",
 ];
 
+/** HOLD→COMMIT 전(meta.convertedAt 없음) = 결제·적립 보류. 장부 type SPEND_HOLD와 동일. */
+const CREDIT_LEDGER_SPEND_HOLD_EVENT_TYPES = [
+  "REQUEST_SPEND_HOLD",
+  "SHIPPING_SPEND_HOLD",
+  "PRACTICE_TRANSFER_SPEND_HOLD",
+  "PRACTICE_TRANSFER_HOLD_ADJUST",
+];
+
+function isPendingSpendHoldEvent(eventType, convertedAt) {
+  if (!CREDIT_LEDGER_SPEND_HOLD_EVENT_TYPES.includes(String(eventType || ""))) {
+    return false;
+  }
+  return convertedAt == null || convertedAt === "";
+}
+
 /** REFUND는 원본 소비/적립을 상계(기간 순소비). */
 
 /** 통계 탭 카테고리와 동일한 분류식(원장 드릴다운용) */
@@ -1410,6 +1426,7 @@ export function parseCreditLedgerFacetResult(facetRaw, { pageSize } = {}) {
 /**
  * 의뢰자 정산 내역 상단 카드 — 필터 기간 유료/무료 충전·소비·(기공소) 정산 적립 공급가.
  * 소비는 REQ_* 실차감(HOLD 포함 — 잔액에서 이미 차감). 통계 탭과 동일 이벤트 기준.
+ * 소비 완료/보류: convertedAt 없는 HOLD=보류, 그 외 소비·변환된 HOLD=완료.
  * 정산 적립은 확정(ESCROW_RELEASE 등)만. includePendingLabSettlement는 레거시 플래그(기본 false).
  * usageScope=real|demo 이면 합계(total*)만 해당 범위. byUsage 는 항상 실사용/데모 분리.
  */
@@ -1436,6 +1453,8 @@ export async function aggregateRequestorPeriodLedgerSummary({
     totalPaidChargeSupply: 0,
     totalFreeChargeSupply: 0,
     totalSpendSupply: 0,
+    totalSpendSettledSupply: 0,
+    totalSpendPendingSupply: 0,
     totalSettlementEarnSupply: 0,
   });
   const real = emptyBucket();
@@ -1445,7 +1464,7 @@ export async function aggregateRequestorPeriodLedgerSummary({
     bucket[field] += amount;
   };
 
-  const applyRow = (bucket, eventType, accountCode, amount) => {
+  const applyRow = (bucket, eventType, accountCode, amount, convertedAt) => {
     if (
       CREDIT_LEDGER_STATS_PAID_CHARGE_EVENT_TYPES.includes(eventType) &&
       amount > 0
@@ -1464,7 +1483,13 @@ export async function aggregateRequestorPeriodLedgerSummary({
       CREDIT_LEDGER_STATS_SPEND_EVENT_TYPES.includes(eventType) &&
       amount < 0
     ) {
-      bump(bucket, "totalSpendSupply", Math.abs(amount));
+      const abs = Math.abs(amount);
+      bump(bucket, "totalSpendSupply", abs);
+      if (isPendingSpendHoldEvent(eventType, convertedAt)) {
+        bump(bucket, "totalSpendPendingSupply", abs);
+      } else {
+        bump(bucket, "totalSpendSettledSupply", abs);
+      }
     } else if (eventType === "REFUND") {
       // 소비 취소(+REQ_*) → 기간 소비 감소. 적립 회수(-LAB_SETTLEMENT) → 정산 적립 감소.
       if (
@@ -1476,6 +1501,8 @@ export async function aggregateRequestorPeriodLedgerSummary({
         ].includes(accountCode)
       ) {
         bump(bucket, "totalSpendSupply", -amount);
+        // 환불은 확정 소비 상계로 본다.
+        bump(bucket, "totalSpendSettledSupply", -amount);
       } else if (amount < 0 && accountCode === "LAB_SETTLEMENT_CREDIT") {
         bump(bucket, "totalSettlementEarnSupply", amount);
       }
@@ -1531,6 +1558,9 @@ export async function aggregateRequestorPeriodLedgerSummary({
         _id: "$journalId",
         eventType: { $first: "$eventType" },
         accountCode: { $first: "$accountCode" },
+        convertedAt: {
+          $first: { $ifNull: ["$journalDoc.meta.convertedAt", null] },
+        },
         refType: {
           $first: { $ifNull: ["$refType", "$journalDoc.refType"] },
         },
@@ -1588,7 +1618,13 @@ export async function aggregateRequestorPeriodLedgerSummary({
     const isDemo =
       Boolean(row?.isDemoUsage) ||
       (isSettlementEarn && Boolean(demoFundingByPtx.get(refId)));
-    applyRow(isDemo ? demo : real, eventType, accountCode, amount);
+    applyRow(
+      isDemo ? demo : real,
+      eventType,
+      accountCode,
+      amount,
+      row?.convertedAt ?? null,
+    );
   }
 
   if (includePendingLabSettlement) {
@@ -1610,21 +1646,31 @@ export async function aggregateRequestorPeriodLedgerSummary({
     }
   }
 
-  const roundBucket = (bucket) => ({
-    totalPaidChargeSupply: Math.max(
-      0,
-      Math.round(bucket.totalPaidChargeSupply),
-    ),
-    totalFreeChargeSupply: Math.max(
-      0,
-      Math.round(bucket.totalFreeChargeSupply),
-    ),
-    totalSpendSupply: Math.max(0, Math.round(bucket.totalSpendSupply)),
-    totalSettlementEarnSupply: Math.max(
-      0,
-      Math.round(bucket.totalSettlementEarnSupply),
-    ),
-  });
+  const roundBucket = (bucket) => {
+    const totalSpendSupply = Math.max(0, Math.round(bucket.totalSpendSupply));
+    const pending = Math.min(
+      totalSpendSupply,
+      Math.max(0, Math.round(bucket.totalSpendPendingSupply)),
+    );
+    return {
+      totalPaidChargeSupply: Math.max(
+        0,
+        Math.round(bucket.totalPaidChargeSupply),
+      ),
+      totalFreeChargeSupply: Math.max(
+        0,
+        Math.round(bucket.totalFreeChargeSupply),
+      ),
+      totalSpendSupply,
+      // 반올림·환불 상계 후 완료+보류 = 총소비.
+      totalSpendSettledSupply: Math.max(0, totalSpendSupply - pending),
+      totalSpendPendingSupply: pending,
+      totalSettlementEarnSupply: Math.max(
+        0,
+        Math.round(bucket.totalSettlementEarnSupply),
+      ),
+    };
+  };
 
   const realRounded = roundBucket(real);
   const demoRounded = roundBucket(demo);
@@ -1632,6 +1678,10 @@ export async function aggregateRequestorPeriodLedgerSummary({
     totalPaidChargeSupply: a.totalPaidChargeSupply + b.totalPaidChargeSupply,
     totalFreeChargeSupply: a.totalFreeChargeSupply + b.totalFreeChargeSupply,
     totalSpendSupply: a.totalSpendSupply + b.totalSpendSupply,
+    totalSpendSettledSupply:
+      a.totalSpendSettledSupply + b.totalSpendSettledSupply,
+    totalSpendPendingSupply:
+      a.totalSpendPendingSupply + b.totalSpendPendingSupply,
     totalSettlementEarnSupply:
       a.totalSettlementEarnSupply + b.totalSettlementEarnSupply,
   });

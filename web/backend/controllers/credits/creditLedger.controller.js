@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-20: periodSpendSummary — 소비 완료·보류 공급가 분리.
 // - 2026-09-20: CA 디자인 STL 미업로드·생산비 미지급은 정산 내역·기간 소비에서 제외.
 // - 2026-09-08: q 검색 — 환자명(files·transferMemo)·의뢰 caseInfos도 refId 매칭. 1글자 허용.
 // - 2026-09-02: 치과 휴지통(deleted|canceled) PTX도 장부 enrich에서 숨김(적립/결제 오인 방지).
@@ -1065,6 +1066,12 @@ export async function listMyCreditLedger(req, res) {
               ),
               totalSpendSupply: Number(
                 periodLedgerSummary.totalSpendSupply || 0,
+              ),
+              totalSpendSettledSupply: Number(
+                periodLedgerSummary.totalSpendSettledSupply || 0,
+              ),
+              totalSpendPendingSupply: Number(
+                periodLedgerSummary.totalSpendPendingSupply || 0,
               ),
               totalSettlementEarnSupply: Number(
                 periodLedgerSummary.totalSettlementEarnSupply || 0,
