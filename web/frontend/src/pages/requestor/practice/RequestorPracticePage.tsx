@@ -1,5 +1,5 @@
 // related files:
-// - 2026-09-20: 바구니 번호표 — 목록/달력 표시·작업 중 중복 금지·완료 후 재사용.
+// - 2026-09-20: 바구니 번호표 — BA(PracticeTransfer.labBasketTag)만. localStorage 전량 폐기.
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/shared/realtime/useAppEventListener.ts
@@ -272,7 +272,8 @@ import {
 } from "@/shared/components/PracticeTransferDetailChatDialog";
 import {
   collectOccupiedLabBasketTags,
-  readLabBasketTag,
+  normalizeLabBasketTag,
+  purgeLegacyLabBasketTagStorage,
 } from "@/shared/components/practice/LabBasketTagToolbar";
 import {
   OPEN_PRACTICE_TRANSFER_CHAT_EVENT,
@@ -917,7 +918,7 @@ export function RequestorPracticeReceivePage({
   const [abutmentRequestDetailBusy, setAbutmentRequestDetailBusy] =
     useState(false);
   const [selectedTransfer, setSelectedTransfer] = useState<ReceivedPracticeTransfer | null>(null);
-  /** 바구니 번호표 localStorage 변경 시 목록·달력 칩 즉시 갱신 */
+  /** 바구니 번호표 BA 저장 직후 목록·달력 칩 즉시 갱신(낙관적) */
   const [labBasketTagRevision, setLabBasketTagRevision] = useState(0);
   const [bookmarkItems, setBookmarkItems] = useState<PracticeTransferBookmarkItem[]>(
     [],
@@ -1425,6 +1426,7 @@ export function RequestorPracticeReceivePage({
           practicePartnerMemo: parseLabPracticePartnerMemoPublic(
             r.practicePartnerMemo,
           ),
+          labBasketTag: normalizeLabBasketTag(r.labBasketTag) || null,
           isRemake: Boolean(
             r.isRemake ||
               (r.remake &&
@@ -1743,6 +1745,10 @@ export function RequestorPracticeReceivePage({
   const hasLoadedCalendarRef = useRef(false);
 
   useEffect(() => {
+    purgeLegacyLabBasketTagStorage();
+  }, []);
+
+  useEffect(() => {
     if (!token) {
       setTransfers([]);
       setError("로그인이 필요합니다.");
@@ -1865,6 +1871,20 @@ export function RequestorPracticeReceivePage({
       }
 
       if (type === "practice:transfer-updated" && transferId) {
+        if (action === "lab-basket-tag") {
+          const tag =
+            normalizeLabBasketTag(payload.labBasketTag) || null;
+          const patchTag = (
+            row: ReceivedPracticeTransfer,
+          ): ReceivedPracticeTransfer =>
+            row.transferId === transferId
+              ? { ...row, labBasketTag: tag }
+              : row;
+          setTransfers((prev) => prev.map(patchTag));
+          setSelectedTransfer((prev) => (prev ? patchTag(prev) : prev));
+          setLabBasketTagRevision((n) => n + 1);
+          return;
+        }
         if (isProsthesisFollowUpRealtimeAction(action)) {
           const patchFollowUp = (
             row: ReceivedPracticeTransfer,
@@ -2650,7 +2670,7 @@ export function RequestorPracticeReceivePage({
           badgeClearedIds,
         ),
         hasCustomAbutment: Boolean(transfer.hasCustomAbutment),
-        basketTag: readLabBasketTag(transferId) || null,
+        basketTag: normalizeLabBasketTag(transfer.labBasketTag) || null,
       };
     });
     const expanded = expandPracticeCalendarChipsByArrivalDates(
@@ -2690,6 +2710,7 @@ export function RequestorPracticeReceivePage({
         designFileCount: transfer.production?.designFileCount,
         designFiles: transfer.production?.designFiles,
         designReadyAt: transfer.production?.designReadyAt,
+        labBasketTag: transfer.labBasketTag,
       })),
       { excludeTransferId: selectedLabBasketTransferId || null },
     );
@@ -4568,6 +4589,90 @@ export function RequestorPracticeReceivePage({
       }
     },
     [abutmentShipBusyId, toast, token],
+  );
+
+  const patchLabBasketTagLocal = useCallback(
+    (transferKey: string, nextTag: string | null) => {
+      const key = String(transferKey || "").trim();
+      const normalized = normalizeLabBasketTag(nextTag) || null;
+      if (!key) return;
+      const patchRow = (
+        row: ReceivedPracticeTransfer,
+      ): ReceivedPracticeTransfer => {
+        if (
+          String(row.transferId || "").trim() !== key &&
+          String(row._id || "").trim() !== key
+        ) {
+          return row;
+        }
+        return { ...row, labBasketTag: normalized };
+      };
+      setTransfers((prev) => prev.map(patchRow));
+      setSelectedTransfer((prev) => (prev ? patchRow(prev) : prev));
+      setLabBasketTagRevision((n) => n + 1);
+    },
+    [],
+  );
+
+  const saveLabBasketTag = useCallback(
+    async (transfer: ReceivedPracticeTransfer, tag: string) => {
+      if (!token) return;
+      const id = String(transfer.transferId || "").trim();
+      if (!id) return;
+      const nextTag = normalizeLabBasketTag(tag);
+      const prevTag = normalizeLabBasketTag(transfer.labBasketTag);
+      if (prevTag === nextTag) return;
+
+      patchLabBasketTagLocal(id, nextTag);
+
+      try {
+        const res = await apiFetch<{
+          success?: boolean;
+          message?: string;
+          code?: string;
+          data?: { labBasketTag?: string | null };
+        }>({
+          path: `/api/practice/transfers/${encodeURIComponent(id)}/lab-basket-tag`,
+          method: "POST",
+          token,
+          jsonBody: { labBasketTag: nextTag },
+        });
+        if (!res.ok) {
+          const body =
+            res.data && typeof res.data === "object"
+              ? (res.data as Record<string, unknown>)
+              : {};
+          patchLabBasketTagLocal(id, prevTag || null);
+          toast({
+            title: "번호표 저장 실패",
+            description: String(
+              body.message || "바구니 번호표를 저장하지 못했습니다.",
+            ),
+            variant: "destructive",
+          });
+          return;
+        }
+        const body =
+          res.data && typeof res.data === "object"
+            ? (res.data as { data?: { labBasketTag?: string | null } })
+            : {};
+        const saved = normalizeLabBasketTag(body.data?.labBasketTag) || null;
+        if ((saved || "") !== nextTag) {
+          patchLabBasketTagLocal(id, saved);
+        }
+      } catch (error) {
+        patchLabBasketTagLocal(id, prevTag || null);
+        toast({
+          title: "번호표 저장 실패",
+          description:
+            error instanceof Error
+              ? error.message
+              : "바구니 번호표를 저장하지 못했습니다.",
+          variant: "destructive",
+        });
+      }
+    },
+    [patchLabBasketTagLocal, toast, token],
   );
 
   const confirmAbutmentDesign = useCallback(
@@ -8748,10 +8853,13 @@ export function RequestorPracticeReceivePage({
         remakeChargeCancelBusy={remakeChargeCancelBusy}
         skipJig={Boolean(selectedTransfer?.production?.skipJig)}
         feeViewer="lab"
-        labBasketTagKey={selectedLabBasketTransferId || null}
+        labBasketTag={
+          normalizeLabBasketTag(selectedTransfer?.labBasketTag) || null
+        }
         labBasketOccupiedTags={labBasketOccupiedTags}
-        onLabBasketTagChange={() => {
-          setLabBasketTagRevision((n) => n + 1);
+        onLabBasketTagChange={(tag) => {
+          if (!selectedTransfer) return;
+          void saveLabBasketTag(selectedTransfer, tag);
         }}
         labAnchorId={String(user?.businessAnchorId || "").trim() || null}
         labEffectiveStars={

@@ -197,6 +197,8 @@ export type PracticeTransferLabReceiveItem = {
   labRatingSummary?: LabRatingSummary | null;
   /** 기공소→치과 내부 메모(기공소만 조회) */
   practicePartnerMemo?: { memo: string; updatedAt?: string | null } | null;
+  /** 기공소 바구니 번호표(01–99). PracticeTransfer.labBasketTag */
+  labBasketTag?: string | null;
   isRemake?: boolean;
   remakeSourceTransferId?: string;
 };

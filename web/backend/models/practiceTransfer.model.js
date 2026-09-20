@@ -2,6 +2,7 @@
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
+// - 2026-09-20: labBasketTag — 기공소 바구니 번호표(01–99). 기공소 BA 내 진행 중 unique.
 // - 2026-09-12: trashedFiles — 의뢰 파일 soft-delete(휴지통)·복원.
 // - 2026-09-12: files.uploadBatchId·uploadedAt — 업로드 시점(웨이브) 클러스터.
 // - 2026-09-11: 수신 미처리(작업시작 전) 전 기간 OR용 targetLab+status+downloadedAt.
@@ -133,6 +134,15 @@ const practiceTransferSchema = new mongoose.Schema(
       },
     },
     transferMemo: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    /**
+     * 기공소 바구니 번호표(01–99). 수신 기공소 BA 기준 진행 중 의뢰끼리 unique.
+     * 완료·취소 후 값은 유지하되 점유에서 빠져 재사용 가능.
+     */
+    labBasketTag: {
       type: String,
       default: "",
       trim: true,
@@ -570,6 +580,15 @@ practiceTransferSchema.index({
 practiceTransferSchema.index({
   targetLabAnchorId: 1,
   arrivalDates: 1,
+});
+// 기공소 번호표 점유 조회(unique는 핸들러에서 진행 중만 강제)
+practiceTransferSchema.index({
+  targetLabAnchorId: 1,
+  labBasketTag: 1,
+});
+practiceTransferSchema.index({
+  assigneeLabAnchorId: 1,
+  labBasketTag: 1,
 });
 
 const PracticeTransfer = mongoose.model("PracticeTransfer", practiceTransferSchema);

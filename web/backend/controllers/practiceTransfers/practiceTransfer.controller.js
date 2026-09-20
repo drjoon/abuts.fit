@@ -223,6 +223,10 @@ import {
   practiceTransferNotDeletedMongoFilter,
   resolvePracticeTransferManufacturerStage,
 } from "../../utils/practiceTransferStage.js";
+import {
+  isLabBasketTagOccupyingDoc,
+  normalizeLabBasketTag,
+} from "../../utils/labBasketTag.js";
 import { resolvePracticeTransferSkipJig } from "../../utils/practiceTransferLabShipping.js";
 import { completePracticeTransferWork } from "../../services/practiceTransferComplete.service.js";
 // related files:
@@ -7438,6 +7442,7 @@ export async function getReceivedPracticeTransfers(req, res) {
               ),
             )
           : null,
+        labBasketTag: normalizeLabBasketTag(doc?.labBasketTag) || null,
         ...toRemakeApiFields(doc),
       };
     });
@@ -9214,6 +9219,160 @@ export async function setPracticeTransferAbutmentShipYmd(req, res) {
     return res.status(500).json({
       success: false,
       message: error?.message || "어벗 출고일 설정에 실패했습니다.",
+    });
+  }
+}
+
+/**
+ * 기공소 — 바구니 번호표(01–99) 설정.
+ * 기공소 BA(수신 스코프) 내 진행 중 의뢰끼리 unique. 완료·취소 후 재사용.
+ */
+export async function setPracticeTransferLabBasketTag(req, res) {
+  try {
+    const role = String(req.user?.role || "").trim();
+    if (!isPracticeTransferLabReceiverRole(role)) {
+      return res.status(403).json({ success: false, message: "권한이 없습니다." });
+    }
+
+    const transferIdFilter = buildTransferIdFilter(req.params?.transferId);
+    if (!transferIdFilter) {
+      return res.status(400).json({
+        success: false,
+        message: "transferId가 필요합니다.",
+      });
+    }
+
+    const nextTag = normalizeLabBasketTag(
+      req.body?.labBasketTag ?? req.body?.basketTag ?? "",
+    );
+    if (
+      String(req.body?.labBasketTag ?? req.body?.basketTag ?? "").trim() &&
+      !nextTag
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "번호표는 01–99만 사용할 수 있습니다.",
+      });
+    }
+
+    const { scope, labAnchorId } = await buildReceivedScope(req);
+    if (scope === null || !labAnchorId) {
+      return res
+        .status(404)
+        .json({ success: false, message: "전송 내역을 찾을 수 없습니다." });
+    }
+
+    const doc = await PracticeTransfer.findOne({
+      ...scope,
+      ...transferIdFilter,
+    });
+
+    if (!doc) {
+      return res
+        .status(404)
+        .json({ success: false, message: "전송 내역을 찾을 수 없습니다." });
+    }
+
+    if (isPracticeTransferDeletedStatus(doc.status)) {
+      return res.status(409).json({
+        success: false,
+        message: "삭제된 기공의뢰는 번호표를 변경할 수 없습니다.",
+      });
+    }
+
+    const prevTag = normalizeLabBasketTag(doc.labBasketTag);
+    if (prevTag === nextTag) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          transferId: String(doc.transferId || "").trim(),
+          labBasketTag: nextTag || null,
+        },
+      });
+    }
+
+    if (nextTag) {
+      const candidates = await PracticeTransfer.find({
+        $and: [
+          scope,
+          practiceTransferNotDeletedMongoFilter(),
+          { _id: { $ne: doc._id } },
+          { labBasketTag: nextTag },
+        ],
+      })
+        .select({
+          transferId: 1,
+          status: 1,
+          production: 1,
+          resultFiles: 1,
+          requestorDownloadedAt: 1,
+          requestorReadAt: 1,
+          workCanceledAt: 1,
+          labRejectedAt: 1,
+          labRejectedByLabAnchorId: 1,
+          arrivalDeadlineExpiredAt: 1,
+          matchingMode: 1,
+          autoMatch: 1,
+          targetLabAnchorId: 1,
+          assigneeLabAnchorId: 1,
+          labBasketTag: 1,
+        })
+        .lean();
+
+      const conflict = candidates.find((row) =>
+        isLabBasketTagOccupyingDoc(row, labAnchorId),
+      );
+      if (conflict) {
+        return res.status(409).json({
+          success: false,
+          code: "lab_basket_tag_occupied",
+          message: `번호표 ${nextTag}은(는) 다른 진행 중 의뢰에서 사용 중입니다.`,
+          data: {
+            labBasketTag: nextTag,
+            occupiedByTransferId: String(conflict.transferId || "").trim() || null,
+          },
+        });
+      }
+    }
+
+    await PracticeTransfer.updateOne(
+      { _id: doc._id },
+      { $set: { labBasketTag: nextTag } },
+    );
+
+    const transferIdText = String(doc.transferId || "").trim();
+    const realtimePayload = {
+      action: "lab-basket-tag",
+      transferId: transferIdText,
+      transferMongoId: String(doc._id || "").trim(),
+      targetLabAnchorId: labAnchorId,
+      labBasketTag: nextTag || null,
+      updatedAt: new Date(),
+    };
+
+    // 응답 먼저 — 소켓 fan-out은 부수 효과
+    res.status(200).json({
+      success: true,
+      data: {
+        transferId: transferIdText,
+        labBasketTag: nextTag || null,
+      },
+    });
+
+    emitAppEventToUser(req.user?._id, "practice:transfer-updated", realtimePayload);
+    void emitPracticeTransferEventToRequestorUsers({
+      targetLabAnchorId: labAnchorId,
+      type: "practice:transfer-updated",
+      payload: realtimePayload,
+    }).catch((err) => {
+      console.warn("[practiceTransfer] lab-basket-tag lab emit", err);
+    });
+    return;
+  } catch (error) {
+    console.error("setPracticeTransferLabBasketTag error:", error);
+    return res.status(500).json({
+      success: false,
+      message: error?.message || "번호표 설정에 실패했습니다.",
     });
   }
 }

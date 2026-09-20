@@ -195,6 +195,7 @@ export const PRACTICE_TRANSFER_CALENDAR_LIST_SELECT = {
   workCanceledAt: 1,
   labRejectedAt: 1,
   labRejectedByLabAnchorId: 1,
+  labBasketTag: 1,
   createdAt: 1,
   updatedAt: 1,
 };

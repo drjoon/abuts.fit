@@ -16,6 +16,7 @@
 // - web/frontend/src/shared/files/fileBlobCache.ts
 // - web/frontend/src/shared/files/s3ImageThumb.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-20: 기공소 — 번호표 BA(labBasketTag)·occupiedTags·목록 즉시 갱신.
 // - 2026-09-20: 기공소 — 번호표 occupiedTags·onLabBasketTagChange(목록 즉시 갱신).
 // - 2026-09-20: 기공소 — 프린트·번호표 아이콘+라벨 항상 표시.
 // - 2026-09-20: 기공소 — 프린트·번호표를 작업시작/취소와 같은 헤더 액션 줄로(별도 행 제거).
@@ -266,7 +267,6 @@ import { LabPendingAbutmentGuide } from "@/shared/components/practice/LabPending
 import {
   LabBasketTagToolbar,
   normalizeLabBasketTag,
-  readLabBasketTag,
 } from "@/shared/components/practice/LabBasketTagToolbar";
 import { LAB_RECEIVE_ABUTMENT_UPLOAD_HINT } from "@/shared/components/practice/PracticeLabReceiveWorkActionsBar";
 import {
@@ -460,13 +460,12 @@ type PracticeTransferDetailChatDialogProps = {
   skipJig?: boolean;
   feeViewer?: PracticeTransferFeeQuoteViewer;
   /**
-   * 기공소 바구니 번호표 localStorage 키(보통 transferId).
-   * feeViewer=lab 일 때만 사용.
+   * 기공소 바구니 번호표(01–99). BA(PracticeTransfer.labBasketTag) 값.
    */
-  labBasketTagKey?: string | null;
+  labBasketTag?: string | null;
   /** 다른 진행 중 의뢰가 쓰는 번호표 — 픽커 비활성 */
   labBasketOccupiedTags?: ReadonlySet<string> | null;
-  /** 번호표 선택/해제 시(목록·달력 즉시 갱신용) */
+  /** 번호표 선택/해제 시(목록·달력 즉시 갱신 + BA 저장) */
   onLabBasketTagChange?: (tag: string) => void;
   /**
    * 열릴 때 스크롤 위치 힌트. detail=맨 위(의뢰), chat=맨 아래(진행).
@@ -698,7 +697,7 @@ export function PracticeTransferDetailChatDialog({
   remakeCharges = null,
   skipJig = false,
   feeViewer = "practice",
-  labBasketTagKey = null,
+  labBasketTag: labBasketTagProp = null,
   labBasketOccupiedTags = null,
   onLabBasketTagChange,
   initialPanelTab,
@@ -2001,15 +2000,15 @@ export function PracticeTransferDetailChatDialog({
     [toothWorks],
   );
   const [labBasketTag, setLabBasketTag] = useState(() =>
-    feeViewer === "lab" ? readLabBasketTag(labBasketTagKey) : "",
+    feeViewer === "lab" ? normalizeLabBasketTag(labBasketTagProp) : "",
   );
   useEffect(() => {
     if (feeViewer !== "lab") {
       setLabBasketTag("");
       return;
     }
-    setLabBasketTag(readLabBasketTag(labBasketTagKey));
-  }, [feeViewer, labBasketTagKey]);
+    setLabBasketTag(normalizeLabBasketTag(labBasketTagProp));
+  }, [feeViewer, labBasketTagProp]);
   const identityChromeActions = (
     <div className="flex shrink-0 items-center gap-0.5" data-no-drag>
       {composerToolbarExtra}
@@ -2028,7 +2027,6 @@ export function PracticeTransferDetailChatDialog({
   const labBasketToolbar =
     feeViewer === "lab" ? (
       <LabBasketTagToolbar
-        storageKey={labBasketTagKey}
         value={labBasketTag}
         occupiedTags={labBasketOccupiedTags}
         onChange={(tag) => {

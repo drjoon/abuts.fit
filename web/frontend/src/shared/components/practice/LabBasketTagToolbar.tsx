@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // - web/frontend/src/shared/practice/practiceTransferDetailPrint.ts
 // - web/frontend/src/shared/practice/labBasketTagSheetPrint.ts
+// - 2026-09-20: 번호표는 PracticeTransfer.labBasketTag(기공소 BA)만 사용. localStorage 폐기.
 // - 2026-09-20: 유실분 번호 그리드 — 드래그로 연속 선택/해제.
 // - 2026-09-20: 작업 중 번호 점유·완료 후 재사용. 픽커에서 사용중 비활성.
 // - 2026-09-20: 번호표 01–99. 전체·유실분 선택 후 인쇄(미리보기는 인쇄 대화상자).
@@ -48,7 +49,6 @@ import {
   isPracticeRecentFinishedBadgeStatus,
 } from "@/shared/practice/practiceRecentTransferList";
 
-const STORAGE_PREFIX = "lab_basket_tag_v1:";
 const ALL_TAGS = listLabBasketTags();
 
 export { LAB_BASKET_TAG_RE };
@@ -57,30 +57,18 @@ export function normalizeLabBasketTag(value: unknown): string {
   return normalizeLabBasketTagCode(value);
 }
 
-export function readLabBasketTag(storageKey: string | null | undefined): string {
-  const key = String(storageKey || "").trim();
-  if (!key || typeof window === "undefined") return "";
+/** 브라우저에 남은 레거시 번호표 키(`lab_basket_tag_v1:*`)를 한 번 비운다. */
+export function purgeLegacyLabBasketTagStorage(): void {
+  if (typeof window === "undefined") return;
   try {
-    return normalizeLabBasketTag(
-      window.localStorage.getItem(`${STORAGE_PREFIX}${key}`),
-    );
-  } catch {
-    return "";
-  }
-}
-
-export function writeLabBasketTag(
-  storageKey: string | null | undefined,
-  tag: string,
-): void {
-  const key = String(storageKey || "").trim();
-  if (!key || typeof window === "undefined") return;
-  const next = normalizeLabBasketTag(tag);
-  try {
-    if (next) {
-      window.localStorage.setItem(`${STORAGE_PREFIX}${key}`, next);
-    } else {
-      window.localStorage.removeItem(`${STORAGE_PREFIX}${key}`);
+    const prefix = "lab_basket_tag_v1:";
+    const toRemove: string[] = [];
+    for (let i = 0; i < window.localStorage.length; i += 1) {
+      const key = window.localStorage.key(i);
+      if (key && key.startsWith(prefix)) toRemove.push(key);
+    }
+    for (const key of toRemove) {
+      window.localStorage.removeItem(key);
     }
   } catch {
     // ignore quota / private mode
@@ -108,6 +96,9 @@ export type LabBasketTagOccupyTransfer = {
   designFileCount?: unknown;
   designFiles?: unknown;
   designReadyAt?: unknown;
+  /** BA에 저장된 번호표 */
+  labBasketTag?: string | null;
+  basketTag?: string | null;
 };
 
 /** 진행 중 의뢰가 쓰는 번호표 Set. excludeTransferId는 현재 상세(자기 선택 유지). */
@@ -121,14 +112,15 @@ export function collectOccupiedLabBasketTags(
     const id = String(transfer.transferId || transfer._id || "").trim();
     if (!id || (exclude && id === exclude)) continue;
     if (!isLabBasketTagOccupyingTransfer(transfer)) continue;
-    const tag = readLabBasketTag(id);
+    const tag = normalizeLabBasketTag(
+      transfer.labBasketTag ?? transfer.basketTag ?? "",
+    );
     if (tag) out.add(tag);
   }
   return out;
 }
 
 type LabBasketTagToolbarProps = {
-  storageKey?: string | null;
   value: string;
   onChange: (tag: string) => void;
   onPrint: () => void;
@@ -138,7 +130,6 @@ type LabBasketTagToolbarProps = {
 };
 
 export function LabBasketTagToolbar({
-  storageKey = null,
   value,
   onChange,
   onPrint,
@@ -156,7 +147,6 @@ export function LabBasketTagToolbar({
     if (normalized && occupied.has(normalized) && normalized !== selected) {
       return;
     }
-    writeLabBasketTag(storageKey, normalized);
     onChange(normalized);
   };
 

@@ -51,6 +51,7 @@ import {
   updatePracticeTransferProsthesisFollowUp,
   acceptPracticeTransferProsthesisFollowUp,
   setPracticeTransferAbutmentShipYmd,
+  setPracticeTransferLabBasketTag,
   appendPracticeTransferRequestFiles,
   removePracticeTransferRequestFiles,
   restorePracticeTransferRequestFilesApi,
@@ -358,6 +359,13 @@ router.post(
   authenticate,
   receiveAuth,
   setPracticeTransferAbutmentShipYmd,
+);
+
+router.post(
+  "/:transferId/lab-basket-tag",
+  authenticate,
+  receiveAuth,
+  setPracticeTransferLabBasketTag,
 );
 
 router.post(
