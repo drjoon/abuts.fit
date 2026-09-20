@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-20: 유형별 막대 maxBarSize — 단일 유형이 차트 전체를 채우던 표시 수정.
 // - 2026-09-20: 요약 카드 행 여백 확대(overflow 밖 px-1.5 + 안쪽 p-1).
 // - 2026-09-20: 요약 카드 행 p-0.5 — 선택 ring이 overflow에 잘리지 않게.
 // - 2026-09-20: 정산 적립 안내 — 커스텀어벗은 STL·생산비 지급 뒤에만 포함.
@@ -575,6 +576,7 @@ function CategoryBarChart({
         <Bar
           dataKey="amountSupply"
           radius={[6, 6, 0, 0]}
+          maxBarSize={56}
           className="cursor-pointer"
           onClick={(barData, _index, event) => {
             event?.stopPropagation?.();

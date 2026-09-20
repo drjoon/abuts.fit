@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-20: 정산 제외는 미정산 CA만(listBlocked). 확정 적립(labSettledAt)은 통계에 유지.
 // - 2026-09-20: CA 디자인 STL 미업로드·생산비 미지급 PTX는 정산 통계에서 제외.
 // - 2026-08-31: 기공소 통계 — 치과→기공(정산)·기공→어벗츠(충전/소비) 건수·파트너·보철 분리.
 // - 2026-08-31: usageScope(real|demo|all) — 데모/실사용 통계 필터. hasDemoUsage 응답.
@@ -23,7 +24,7 @@ import PracticeTransfer from "../../models/practiceTransfer.model.js";
 import Request from "../../models/request.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { normalizeRequestorKind } from "../../utils/requestorCapabilities.js";
-import { buildFeeQuotesForTransferDocs, selectPracticeTransferIdsBlockedFromSettlement } from "../../services/practiceTransferBilling.service.js";
+import { buildFeeQuotesForTransferDocs, listPracticeTransferIdsBlockedFromSettlement } from "../../services/practiceTransferBilling.service.js";
 import { parseKstQueryBoundDate } from "../../utils/kstQueryBounds.js";
 import {
   isLabSettlementEarnEvent,
@@ -523,9 +524,11 @@ export async function getMyCreditLedgerStats(req, res) {
         })
       : new Map();
 
-  const blockedSettlementIds = await selectPracticeTransferIdsBlockedFromSettlement(
-    ptxDocs || [],
-  );
+  // 내역 탭과 동일 — 미정산·미충족 CA만 제외. 확정 적립(labSettledAt)은 포함.
+  const blockedSettlementIds = await listPracticeTransferIdsBlockedFromSettlement({
+    practiceAnchorId: !isLab ? anchorObjectId : null,
+    labAnchorId: isLab ? anchorObjectId : null,
+  });
 
   const byPeriodMap = new Map();
   const byCategoryMap = new Map();

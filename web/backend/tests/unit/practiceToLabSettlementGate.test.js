@@ -1,10 +1,12 @@
 // related files:
 // - web/backend/services/practiceTransferLabSettlementGate.js
+// - web/backend/services/practiceTransferBilling.service.js
 
 import {
   awaitsAbutmentShareRelease,
   resolvePracticeToLabSettlementBlock,
 } from "../../services/practiceTransferLabSettlementGate.js";
+import { selectPracticeTransferIdsBlockedFromSettlement } from "../../services/practiceTransferBilling.service.js";
 
 describe("practice to lab settlement gate", () => {
   test("prosthesis-only transfers are not blocked", () => {
@@ -73,5 +75,24 @@ describe("practice to lab settlement gate", () => {
         productionPaymentWaived: true,
       }),
     ).toBeNull();
+  });
+
+  test("already lab-settled transfers are not blocked from settlement stats", async () => {
+    const settledId = "6aa8f5b4036bb75124a2e6c8";
+    const blocked = await selectPracticeTransferIdsBlockedFromSettlement([
+      {
+        _id: settledId,
+        billing: { labSettledAt: new Date("2026-09-18T07:10:59.423Z") },
+        toothWorks: [
+          {
+            prosthesisType: "커스텀어벗먼트",
+            abutment: { enabled: true },
+          },
+        ],
+        production: { designFileCount: 0, relatedRequestIds: ["req1"] },
+      },
+    ]);
+    expect(blocked.has(settledId)).toBe(false);
+    expect(blocked.size).toBe(0);
   });
 });

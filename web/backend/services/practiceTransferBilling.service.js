@@ -13,6 +13,7 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
 // - 2026-09-20: 리메이크·후속 적립도 subcontracted 반영(하청 %).
 // - 2026-09-20: 비거래처 어벗 해제는 제조사 발송 유지. 가공 진입 이동 금지.
+// - 2026-09-20: blockedFromSettlement — labSettledAt 있으면 제외 안 함(확정 적립 통계·내역 누락 방지).
 // - 2026-09-20: CA 치과→기공소 정산은 디자인 STL + 어벗 생산비 지급 후. 그 전 payout·정산 제외.
 // - 2026-09-15: 후속 보철 — labSettledAt 이후 hold는 즉시 기공소 적립(리메이크와 동일).
 // - 2026-09-14: remakeFeeQuote — 원본 180일 창 밖이면 정가(리메이크 무료 미적용).
@@ -2992,6 +2993,7 @@ async function readPracticeToLabSettlementBlock(
 /**
  * 정산 페이지·payout에서 빼야 하는 PTX id.
  * 커스텀어벗인데 디자인 STL이 없거나 어벗 생산비가 아직 어벗츠에 지급되지 않은 건.
+ * 이미 labSettledAt(기공소 확정 적립)된 건은 빼지 않는다 — 통계·내역에서 확정분이 사라지면 안 됨.
  */
 export async function selectPracticeTransferIdsBlockedFromSettlement(
   transfers,
@@ -3007,6 +3009,8 @@ export async function selectPracticeTransferIdsBlockedFromSettlement(
   for (const transfer of Array.isArray(transfers) ? transfers : []) {
     const id = String(transfer?._id || "").trim();
     if (!id) continue;
+    // 확정 적립 완료 — STL/생산비 재검사로 통계·내역에서 지우지 않음
+    if (transfer?.billing?.labSettledAt) continue;
     const customAbutmentCount = listCustomAbutmentToothWorks(
       transfer?.toothWorks || [],
     ).length;
