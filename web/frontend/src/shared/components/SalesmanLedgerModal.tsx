@@ -48,6 +48,8 @@ export type SalesmanLedgerModalProps = {
   title?: string;
   titleSuffix?: string;
   mode?: "admin" | "self";
+  /** 모달 오픈 시 적용할 유형 필터 (미정산=EARN, 지급완료=PAYOUT). */
+  initialType?: "all" | SalesmanLedgerType;
 };
 
 type SalesmanLedgerListResponse = {
@@ -86,7 +88,7 @@ const formatShortCode = (value: string) => {
 
 const typeLabel = (t: SalesmanLedgerType) => {
   if (t === "EARN") return "적립";
-  if (t === "PAYOUT") return "정산";
+  if (t === "PAYOUT") return "지급";
   return "조정";
 };
 
@@ -106,6 +108,7 @@ export const SalesmanLedgerModal = ({
   title,
   titleSuffix,
   mode,
+  initialType = "all",
 }: SalesmanLedgerModalProps) => {
   const { token } = useAuthStore();
   const { toast } = useToast();
@@ -113,7 +116,7 @@ export const SalesmanLedgerModal = ({
   const [period, setPeriod] = useState<PeriodFilterValue>("30d");
   const [customStartDate, setCustomStartDate] = useState("");
   const [customEndDate, setCustomEndDate] = useState("");
-  const [type, setType] = useState<"all" | SalesmanLedgerType>("all");
+  const [type, setType] = useState<"all" | SalesmanLedgerType>(initialType);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [q, setQ] = useState("");
@@ -130,15 +133,20 @@ export const SalesmanLedgerModal = ({
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
-  const resetFilters = () => {
+  const resetFilters = useCallback(() => {
     setPeriod("30d");
     setCustomStartDate("");
     setCustomEndDate("");
-    setType("all");
+    setType(initialType);
     setFrom("");
     setTo("");
     setQ("");
-  };
+  }, [initialType]);
+
+  useEffect(() => {
+    if (!open) return;
+    setType(initialType);
+  }, [open, initialType]);
 
   const buildQs = useCallback((p: number) => {
     const qs = new URLSearchParams({
@@ -330,7 +338,7 @@ export const SalesmanLedgerModal = ({
                 >
                   <option value="all">전체</option>
                   <option value="EARN">적립</option>
-                  <option value="PAYOUT">정산</option>
+                  <option value="PAYOUT">지급</option>
                   <option value="ADJUST">조정</option>
                 </select>
               </div>

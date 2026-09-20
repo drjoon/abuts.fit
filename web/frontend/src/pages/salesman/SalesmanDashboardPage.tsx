@@ -32,6 +32,7 @@ import {
   formatMoney,
   summarizeDealershipRateBuckets,
   dealershipRateBucketTip,
+  DEALERSHIP_COMMISSION_RATE_PCT_OPTIONS,
 } from "@/features/commission/useCommissionDashboard";
 import {
   NoOrderAlertBanner,
@@ -45,9 +46,15 @@ export const SalesmanDashboardPage = () => {
   const { toast } = useToast();
 
   const [creditModalOpen, setCreditModalOpen] = useState(false);
+  const [ledgerMode, setLedgerMode] = useState<"unpaid" | "paid">("unpaid");
   const [policyOpen, setPolicyOpen] = useState(false);
   const [salesmanPolicyOpen, setSalesmanPolicyOpen] = useState(false);
   const [period, setPeriod] = useState<PeriodFilterValue>("30d");
+
+  const openLedger = (mode: "unpaid" | "paid") => {
+    setLedgerMode(mode);
+    setCreditModalOpen(true);
+  };
 
   const { data, loading } = useCommissionDashboard(period);
   const {
@@ -105,6 +112,10 @@ export const SalesmanDashboardPage = () => {
     eventEnabled,
   };
   const rateBuckets = summarizeDealershipRateBuckets(data?.organizations);
+  const paidRateBuckets = DEALERSHIP_COMMISSION_RATE_PCT_OPTIONS.map((pct) => ({
+    pct,
+    commissionAmount: 0,
+  }));
 
   return (
     <TooltipProvider>
@@ -143,7 +154,7 @@ export const SalesmanDashboardPage = () => {
                   size="sm"
                   variant="outline"
                   className="h-8"
-                  onClick={() => setCreditModalOpen(true)}
+                  onClick={() => openLedger("unpaid")}
                 >
                   보유 크레딧 {formatMoney(payableGross)}원
                 </Button>
@@ -160,8 +171,8 @@ export const SalesmanDashboardPage = () => {
         statsGridClassName="grid grid-cols-1 gap-3 sm:grid-cols-3"
         stats={
           <>
-            <div className="rounded-2xl border-2 border-primary/60 bg-white p-4 shadow-sm">
-              <div className="mb-3 flex items-center justify-between gap-2">
+            <div className="flex min-h-[7.25rem] flex-col rounded-2xl border-2 border-primary/60 bg-white p-4 shadow-sm">
+              <div className="flex items-center justify-between gap-2">
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <div className="flex cursor-help items-center gap-1.5 text-sm font-semibold text-slate-900">
@@ -202,18 +213,16 @@ export const SalesmanDashboardPage = () => {
                   링크 복사
                 </Button>
               </div>
-              <div className="font-mono text-3xl font-bold tracking-[0.2em] text-slate-900 sm:text-4xl">
+              <div className="flex flex-1 items-center justify-center font-mono text-5xl font-bold tracking-[0.2em] text-slate-900 sm:text-6xl">
                 {normalizedReferralCode || (loading ? "…" : "—")}
               </div>
             </div>
 
             <SettlementStatCard
-              label="영업 수수료 합계"
+              label="미정산 수수료"
               value={payableGross}
               tone="primary"
-              onClick={() => setCreditModalOpen(true)}
-              hint="미정산"
-              hintTooltip="유치 당시 요율을 적용한 기간 수수료 합계"
+              onClick={() => openLedger("unpaid")}
               footer={
                 <div className="space-y-0.5 text-xs text-muted-foreground">
                   {rateBuckets.map((b) => (
@@ -226,11 +235,18 @@ export const SalesmanDashboardPage = () => {
             />
 
             <SettlementStatCard
-              label="지급 완료"
+              label="지급 완료 수수료"
               value={paidNet}
-              onClick={() => setCreditModalOpen(true)}
-              hint="세후 입금"
-              hintTooltip="선택한 기간에 이미 지급된 수수료"
+              onClick={() => openLedger("paid")}
+              footer={
+                <div className="space-y-0.5 text-xs text-muted-foreground">
+                  {paidRateBuckets.map((b) => (
+                    <div key={b.pct}>
+                      {b.pct}% · {formatMoney(b.commissionAmount)}원
+                    </div>
+                  ))}
+                </div>
+              }
             />
           </>
         }
@@ -266,10 +282,12 @@ export const SalesmanDashboardPage = () => {
       />
 
       <SalesmanLedgerModal
+        key={ledgerMode}
         open={creditModalOpen}
         onOpenChange={setCreditModalOpen}
         mode="self"
-        titleSuffix="보유 크레딧 (미지급 수수료)"
+        title={ledgerMode === "paid" ? "지급 완료 수수료" : "미정산 수수료"}
+        initialType={ledgerMode === "paid" ? "PAYOUT" : "all"}
       />
       <PricingPolicyDialog
         open={policyOpen}

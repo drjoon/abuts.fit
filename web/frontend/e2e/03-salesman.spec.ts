@@ -9,7 +9,7 @@ const ACCOUNT = ACCOUNTS.salesman;
 
 const SALESMAN_PAGES = [
   { path: "/dashboard", label: "대시보드" },
-  { path: "/dashboard/referral-groups", label: "소개" },
+  { path: "/dashboard/pitch", label: "피치" },
   { path: "/dashboard/payments", label: "정산" },
   { path: "/dashboard/inquiries", label: "문의" },
   { path: "/dashboard/settings", label: "설정" },
@@ -38,11 +38,11 @@ test.describe("Salesman – 전체 페이지", () => {
     await visitPage(page, "/dashboard/settings?tab=payout", "설정 > 정산");
   });
 
-  test("소개 대시보드 – 통계 카드 존재", async ({ page }) => {
+  test("소개 페이지 접근 차단", async ({ page }) => {
     await page.goto("/dashboard/referral-groups");
     await page.waitForLoadState("networkidle");
-    const body = await page.evaluate(() => document.body?.innerText ?? "");
-    expect(body.length).toBeGreaterThan(10);
+    await page.waitForTimeout(500);
+    expect(page.url()).not.toContain("referral-groups");
   });
 
   test("타 롤 접근 차단 – requestor 전용 페이지", async ({ page }) => {

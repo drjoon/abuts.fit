@@ -138,7 +138,6 @@ import RequestorStoreOrdersPage, {
   RequestorStoreOrderDetailPage,
 } from "@/pages/requestor/store/RequestorStoreOrdersPage";
 import AdminStorePage from "@/pages/admin/system/AdminStorePage";
-import ReferralGroupsPage from "@/pages/requestor/referralGroups/ReferralGroupsPage";
 import SalesmanPaymentsPage from "@/pages/salesman/SalesmanPaymentsPage";
 import DevopsPaymentsPage from "@/pages/devops/DevopsPaymentsPage";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
@@ -276,14 +275,6 @@ const PracticeAccountProtectedRoute = ({
     return <>{children}</>;
   }
 
-  return <Navigate to="/dashboard" replace />;
-};
-
-const ReferralGroupsRoute = () => {
-  const { user } = useAuthStore();
-
-  if (!user) return <Navigate to="/dashboard" replace />;
-  if (user.role === "salesman") return <ReferralGroupsPage />;
   return <Navigate to="/dashboard" replace />;
 };
 
@@ -1067,14 +1058,6 @@ const App = () => {
                         ]}
                       >
                         <PaymentsRoute />
-                      </RoleProtectedRoute>
-                    }
-                  />
-                  <Route
-                    path="referral-groups"
-                    element={
-                      <RoleProtectedRoute roles={["salesman"]}>
-                        <ReferralGroupsRoute />
                       </RoleProtectedRoute>
                     }
                   />
