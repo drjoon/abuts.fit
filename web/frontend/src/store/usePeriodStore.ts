@@ -1,6 +1,7 @@
 // change-log:
+// - 2026-09-21: 지난달(lastMonth) 유지 — 정산 프리셋(이번달·지난달)과 공유 스토어 정합.
 // - 2026-08-23: periodToRangeQueryBounds — API용 KST YMD from/to (ISO + 타임존 URL 이슈 회피).
-// - 2026-08-20: 저장된 90일·지난달 선택은 30일·이번달로 승격.
+// - 2026-08-20: 저장된 90일 선택은 30일로 승격(대시보드 기본 프리셋).
 // - 2026-08-07: thisMonth 종료일을 월말이 아니라 오늘(KST)로 클램프
 // related files:
 // - web/frontend/rules.md
@@ -42,11 +43,9 @@ export const usePeriodStore = create<PeriodState>()(
       merge: (persisted, current) => {
         const raw = (persisted || {}) as Partial<PeriodState>;
         const nextPeriod = isPeriodFilterValue(raw.period)
-          ? raw.period === "90d"
+          ? raw.period === "90d" || raw.period === "180d"
             ? "30d"
-            : raw.period === "lastMonth"
-              ? "thisMonth"
-              : raw.period
+            : raw.period
           : current.period;
         return {
           ...current,

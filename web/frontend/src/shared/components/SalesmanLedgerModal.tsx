@@ -7,6 +7,10 @@ import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
+import {
+  SETTLEMENT_DEFAULT_PERIOD,
+  SETTLEMENT_PERIOD_PRESETS,
+} from "@/shared/ui/periodFilterValues";
 import { appendPeriodQueryParams } from "@/store/usePeriodStore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -113,7 +117,9 @@ export const SalesmanLedgerModal = ({
   const { token } = useAuthStore();
   const { toast } = useToast();
 
-  const [period, setPeriod] = useState<PeriodFilterValue>("30d");
+  const [period, setPeriod] = useState<PeriodFilterValue>(
+    SETTLEMENT_DEFAULT_PERIOD,
+  );
   const [customStartDate, setCustomStartDate] = useState("");
   const [customEndDate, setCustomEndDate] = useState("");
   const [type, setType] = useState<"all" | SalesmanLedgerType>(initialType);
@@ -134,7 +140,7 @@ export const SalesmanLedgerModal = ({
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
   const resetFilters = useCallback(() => {
-    setPeriod("30d");
+    setPeriod(SETTLEMENT_DEFAULT_PERIOD);
     setCustomStartDate("");
     setCustomEndDate("");
     setType(initialType);
@@ -313,6 +319,7 @@ export const SalesmanLedgerModal = ({
               <PeriodFilter
                 value={period}
                 onChange={setPeriod}
+                presets={SETTLEMENT_PERIOD_PRESETS}
                 useStoreCustomRange={false}
                 customStartDate={customStartDate}
                 customEndDate={customEndDate}

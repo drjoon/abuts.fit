@@ -131,6 +131,11 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { generateModelNumber } from "@/utils/modelNumber";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
+import {
+  SETTLEMENT_DEFAULT_PERIOD,
+  SETTLEMENT_PERIOD_PRESETS,
+  toSettlementPeriod,
+} from "@/shared/ui/periodFilterValues";
 import { appendPeriodQueryParams } from "@/store/usePeriodStore";
 import { cn } from "@/shared/ui/cn";
 import { RESPONSIVE } from "@/shared/ui/responsive";
@@ -255,7 +260,7 @@ function resolveLedgerFilters(
   initial?: CreditLedgerInitialFilters,
 ): ResolvedLedgerFilters {
   return {
-    period: initial?.period ?? "30d",
+    period: toSettlementPeriod(initial?.period ?? SETTLEMENT_DEFAULT_PERIOD),
     customStartDate: initial?.customStartDate ?? "",
     customEndDate: initial?.customEndDate ?? "",
     creditKind: initial?.creditKind ?? "all",
@@ -3012,6 +3017,7 @@ export const CreditLedgerModal = ({
                 <PeriodFilter
                   value={spendPeriod}
                   onChange={setSpendPeriod}
+                  presets={SETTLEMENT_PERIOD_PRESETS}
                   useStoreCustomRange={false}
                   customStartDate={spendCustomStartDate}
                   customEndDate={spendCustomEndDate}
@@ -3028,6 +3034,7 @@ export const CreditLedgerModal = ({
                 <PeriodFilter
                   value={period}
                   onChange={setPeriod}
+                  presets={SETTLEMENT_PERIOD_PRESETS}
                   useStoreCustomRange={false}
                   customStartDate={customStartDate}
                   customEndDate={customEndDate}

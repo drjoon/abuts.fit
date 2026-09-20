@@ -27,6 +27,11 @@ import { usePeriodStore, periodToRangeQuery } from "@/store/usePeriodStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
 import { PeriodFilter } from "@/shared/ui/PeriodFilter";
+import {
+  isSettlementPeriodValue,
+  SETTLEMENT_DEFAULT_PERIOD,
+  SETTLEMENT_PERIOD_PRESETS,
+} from "@/shared/ui/periodFilterValues";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
@@ -352,6 +357,16 @@ export default function AdminPaymentsPage({
   const { token, user } = useAuthStore();
   const { period, setPeriod, customStartDate, customEndDate } = usePeriodStore();
   const { toast } = useToast();
+
+  useEffect(() => {
+    if (!isSettlementPeriodValue(period)) {
+      setPeriod(SETTLEMENT_DEFAULT_PERIOD);
+    }
+  }, [period, setPeriod]);
+
+  const settlementPeriod = isSettlementPeriodValue(period)
+    ? period
+    : SETTLEMENT_DEFAULT_PERIOD;
   const [rows, setRows] = useState<SalesmanRow[]>([]);
   const [manufacturerSummary, setManufacturerSummary] =
     useState<ManufacturerSummary | null>(null);
@@ -376,7 +391,7 @@ export default function AdminPaymentsPage({
       if (!token) return;
       if (withLoading) setIsLoading(true);
 
-      const rangeQuery = periodToRangeQuery(period, {
+      const rangeQuery = periodToRangeQuery(settlementPeriod, {
         customStartDate,
         customEndDate,
       }).replace(/^\?/, "&");
@@ -395,7 +410,7 @@ export default function AdminPaymentsPage({
             success?: boolean;
             data?: ManufacturerSummary;
           }>({
-            path: `/api/admin/credits/manufacturer/summary?period=${encodeURIComponent(period)}${rangeQuery}`,
+            path: `/api/admin/credits/manufacturer/summary?period=${encodeURIComponent(settlementPeriod)}${rangeQuery}`,
             method: "GET",
             token,
           }),
@@ -411,7 +426,7 @@ export default function AdminPaymentsPage({
             success?: boolean;
             data?: SettlementBusinessOverview;
           }>({
-            path: `/api/admin/credits/settlement-business-overview?period=${encodeURIComponent(period)}${rangeQuery}`,
+            path: `/api/admin/credits/settlement-business-overview?period=${encodeURIComponent(settlementPeriod)}${rangeQuery}`,
             method: "GET",
             token,
           }),
@@ -448,7 +463,7 @@ export default function AdminPaymentsPage({
         if (withLoading) setIsLoading(false);
       }
     },
-    [customEndDate, customStartDate, period, toast, token],
+    [customEndDate, customStartDate, settlementPeriod, toast, token],
   );
 
   useEffect(() => {
@@ -797,7 +812,11 @@ export default function AdminPaymentsPage({
       title="정산"
       subtitle="어벗츠 3사업 · 기간 집계"
       headerRight={
-        <PeriodFilter value={period} onChange={setPeriod} />
+        <PeriodFilter
+          value={settlementPeriod}
+          onChange={setPeriod}
+          presets={SETTLEMENT_PERIOD_PRESETS}
+        />
       }
       statsGridClassName="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3"
       stats={

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-21: 메인 상단 VAT 안내 문구 제거(정산규칙 모달만 유지).
 // - 2026-09-20: 지급 합계 — 20%·15%·10% 세로 3줄(대시보드 지급 완료와 동일).
 // - 2026-09-20: 유료 미정산 — 20%·15%·10% 세로 3줄, 「현재/추후」 접두 제거.
 // - 2026-09-20: 딜러 정산 — 이벤트/기본 → 현재/추후 요율 라벨, 정책 카피 정리.
@@ -9,12 +10,17 @@
 // - web/frontend/src/pages/devops/DevopsPaymentsPage.tsx
 // - web/frontend/src/features/commission/useCommissionDashboard.ts
 // - web/frontend/src/shared/settlement/affiliateVat.ts
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Landmark, Percent, CalendarClock } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { usePeriodStore } from "@/store/usePeriodStore";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
 import { PeriodFilter } from "@/shared/ui/PeriodFilter";
+import {
+  isSettlementPeriodValue,
+  SETTLEMENT_DEFAULT_PERIOD,
+  SETTLEMENT_PERIOD_PRESETS,
+} from "@/shared/ui/periodFilterValues";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { CommissionLedgerInline } from "@/shared/components/CommissionLedgerInline";
 import {
@@ -28,14 +34,12 @@ import {
 import {
   SETTLEMENT_TAXABLE_INVOICE_LABEL,
   SETTLEMENT_VAT_POLICY,
-  SETTLEMENT_VAT_PAYOUT_NOTICE,
   splitInclusiveVat,
 } from "@/shared/settlement/affiliateVat";
 import {
   SettlementPolicyDialog,
   SettlementPolicySection,
   SettlementStatCard,
-  SettlementVatNotice,
 } from "@/shared/settlement/settlementUi";
 
 export type CommissionPaymentsVariant = "salesman" | "devops";
@@ -48,7 +52,17 @@ export function CommissionPaymentsPage({
   const { user } = useAuthStore();
   const { period, setPeriod } = usePeriodStore();
   const [tab, setTab] = useState<"businesses" | "ledger">("businesses");
-  const { data, loading } = useCommissionDashboard(period);
+
+  useEffect(() => {
+    if (!isSettlementPeriodValue(period)) {
+      setPeriod(SETTLEMENT_DEFAULT_PERIOD);
+    }
+  }, [period, setPeriod]);
+
+  const settlementPeriod = isSettlementPeriodValue(period)
+    ? period
+    : SETTLEMENT_DEFAULT_PERIOD;
+  const { data, loading } = useCommissionDashboard(settlementPeriod);
 
   const isSalesman = variant === "salesman";
   const overview = data?.overview;
@@ -160,8 +174,11 @@ export function CommissionPaymentsPage({
             }}
           >
             <div className="mb-2 flex flex-wrap items-center gap-2">
-              <PeriodFilter value={period} onChange={setPeriod} />
-              <SettlementVatNotice>{SETTLEMENT_VAT_PAYOUT_NOTICE}</SettlementVatNotice>
+              <PeriodFilter
+                value={settlementPeriod}
+                onChange={setPeriod}
+                presets={SETTLEMENT_PERIOD_PRESETS}
+              />
               <SettlementPolicyDialog
                 title={`${title} 규칙`}
                 description={
@@ -304,7 +321,7 @@ export function CommissionPaymentsPage({
             </TabsContent>
 
             <TabsContent value="ledger" className="mt-0">
-              <CommissionLedgerInline mode="self" period={period} />
+              <CommissionLedgerInline mode="self" period={settlementPeriod} />
             </TabsContent>
           </Tabs>
         </div>

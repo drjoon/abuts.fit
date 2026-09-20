@@ -7,6 +7,10 @@ import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
+import {
+  SETTLEMENT_DEFAULT_PERIOD,
+  SETTLEMENT_PERIOD_PRESETS,
+} from "@/shared/ui/periodFilterValues";
 import { appendPeriodQueryParams } from "@/store/usePeriodStore";
 import { Input } from "@/components/ui/input";
 import {
@@ -99,7 +103,7 @@ export const CommissionLedgerInline = ({
   const { toast } = useToast();
 
   const [internalPeriod, setInternalPeriod] =
-    useState<PeriodFilterValue>("30d");
+    useState<PeriodFilterValue>(SETTLEMENT_DEFAULT_PERIOD);
   const period = externalPeriod ?? internalPeriod;
   const [customStartDate, setCustomStartDate] = useState("");
   const [customEndDate, setCustomEndDate] = useState("");
@@ -263,6 +267,7 @@ export const CommissionLedgerInline = ({
             <PeriodFilter
               value={internalPeriod}
               onChange={setInternalPeriod}
+              presets={SETTLEMENT_PERIOD_PRESETS}
               useStoreCustomRange={false}
               customStartDate={customStartDate}
               customEndDate={customEndDate}
