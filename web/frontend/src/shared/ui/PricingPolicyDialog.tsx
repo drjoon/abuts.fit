@@ -1,3 +1,4 @@
+// - 2026-09-20: 딜러십 요율 10/15/20% · 가입 당시 요율 적용 안내.
 // - 2026-09-20: 기공소 정책 안내 — 지정 거래 플랫폼 수수료(정책 1%·이벤트 0%).
 // - 2026-09-20: 기공소 정책 안내 — 커스텀어벗 정산은 STL·생산비 지급 뒤.
 // - 2026-09-12: 리메이크를 가격 카드(배송비 아래)로 이동. 치과로부터=무료, 어벗츠로=1만원.
@@ -171,7 +172,7 @@ export const PricingPolicyDialog = ({
   onOpenChange,
   variant = 'default',
   dealershipBasePct = 10,
-  dealershipEventPct = 15,
+  dealershipEventPct = 20,
   dealershipEventEnabled = true,
 }: Props) => {
   const { kind } = useRequestorBusinessAccess();
@@ -179,7 +180,7 @@ export const PricingPolicyDialog = ({
   const { data: systemSettings, refetch: refetchSystemSettings } =
     useSystemSettings();
   const basePct = Math.max(0, Math.round(Number(dealershipBasePct) || 10));
-  const eventPct = Math.max(0, Math.round(Number(dealershipEventPct) || 15));
+  const eventPct = Math.max(0, Math.round(Number(dealershipEventPct) || 20));
   const eventOn = dealershipEventEnabled !== false;
   const effectivePct = eventOn ? eventPct : basePct;
   const productionPrice = Math.max(
@@ -246,20 +247,28 @@ export const PricingPolicyDialog = ({
             <div className='space-y-3'>
               <PolicySection title='영업 수수료'>
                 <p>
-                  심플웨이·커스텀어벗 판매가(배송비 제외) 기준이며,{' '}
+                  심플웨이·커스텀어벗 판매가(배송비 제외) 기준이며, 요율은{' '}
                   <span className='font-semibold text-slate-900'>
-                    유치(가입) 시점
+                    10% · 15% · 20%
+                  </span>{' '}
+                  중 플랫폼이 설정합니다. 의뢰자는{' '}
+                  <span className='font-semibold text-slate-900'>
+                    가입(유치) 당시 요율
                   </span>
-                  에 따라 요율이 다릅니다.
+                  이 적용됩니다.
                 </p>
                 <BulletList
                   items={[
+                    eventOn
+                      ? `지금은 이벤트 기간 · 현재 유치 요율 ${eventPct}%`
+                      : `현재 표준(기본) 요율 ${basePct}%`,
                     `이벤트 기간 내 유치: ${eventPct}%`,
                     `이벤트 기간 외 유치(표준): ${basePct}%`,
+                    '이후 상황에 따라 15%·10% 등으로 조정될 수 있음(신규 유치부터)',
                     '대상: 심플웨이(스토어) · 커스텀어벗',
                     '소개 관계: 의뢰자 가입 시 입력한 딜러 코드',
                     eventOn
-                      ? `현재 이벤트 진행 중 · 추후 공지 후 신규 유치는 ${basePct}%`
+                      ? `추후 공지 후 신규 유치는 ${basePct}%로 변경될 수 있음`
                       : '이벤트 종료 · 기존 이벤트 유치 고객은 이벤트 요율 유지'
                   ]}
                 />

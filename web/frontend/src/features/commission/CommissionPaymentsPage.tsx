@@ -56,7 +56,7 @@ export function CommissionPaymentsPage({
     Number(data?.dealershipBaseCommissionRate ?? 0.1) * 100,
   );
   const eventPct = Math.round(
-    Number(data?.dealershipEventCommissionRate ?? 0.15) * 100,
+    Number(data?.dealershipEventCommissionRate ?? 0.2) * 100,
   );
   const payoutPolicy = isSalesman
     ? SETTLEMENT_VAT_POLICY.salesmanPayout

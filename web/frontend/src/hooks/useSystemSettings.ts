@@ -101,7 +101,7 @@ export const CREDIT_SETTINGS_DEFAULTS: CreditSettings = {
   labRoundBarDesignAndProductionPrice:
     ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE,
   dealershipBaseCommissionRate: 0.1,
-  dealershipEventCommissionRate: 0.15,
+  dealershipEventCommissionRate: 0.2,
   dealershipEventCommissionEnabled: true,
 };
 

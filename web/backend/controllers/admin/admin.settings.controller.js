@@ -57,10 +57,23 @@ function sanitizeSharePercent(value) {
   return Math.min(100, Math.round(n * 100) / 100);
 }
 
+/** 딜러십 영업 수수료 — 관리자 선택 가능 요율(10% · 15% · 20%). */
+const DEALERSHIP_COMMISSION_RATE_OPTIONS = [0.1, 0.15, 0.2];
+
 function sanitizeCommissionRate(value) {
   const n = Number(value);
   if (!Number.isFinite(n) || n < 0) return null;
-  return Math.min(1, Math.round(n * 10000) / 10000);
+  const clamped = Math.min(1, n);
+  let best = DEALERSHIP_COMMISSION_RATE_OPTIONS[0];
+  let bestDist = Number.POSITIVE_INFINITY;
+  for (const option of DEALERSHIP_COMMISSION_RATE_OPTIONS) {
+    const dist = Math.abs(option - clamped);
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = option;
+    }
+  }
+  return best;
 }
 
 function sanitizeOptionalDate(value) {

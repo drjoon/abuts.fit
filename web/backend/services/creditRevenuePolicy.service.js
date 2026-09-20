@@ -5,6 +5,7 @@
 // - web/backend/scripts/db/migrate-legacy-creditledger-to-gl.js
 // - web/backend/scripts/db/rebalance-manufacturer-unit-price.js
 // change-log:
+// - 2026-09-20: 딜러십 요율 선택지 10/15/20%로 고정(관리자 스냅).
 // - 2026-09-20: 딜러십 영업 수수료 — 기본 10% · 이벤트 15%(기본 on). 관리자 플랫폼 설정.
 // - 2026-09-20: DEALERSHIP_SALES_COMMISSION_RATE 15%(심플웨이·커스텀어벗, 배송비 제외).
 // - 2026-09-20: 지정 거래 정책 요율 1% · 이벤트 기간 기본 off(실효 0%, 추후 공지 후 부과).
@@ -31,13 +32,33 @@
 export const DEALERSHIP_SALES_COMMISSION_RATE = 0.15;
 /** 딜러십 표준 요율(추후 공지 후). */
 export const DEALERSHIP_BASE_COMMISSION_RATE = 0.1;
-/** 딜러십 이벤트 요율(이벤트 on 시 실효). */
-export const DEALERSHIP_EVENT_COMMISSION_RATE = 0.15;
+/** 딜러십 이벤트 요율(이벤트 on 시 실효). 선택지: 10/15/20%. */
+export const DEALERSHIP_EVENT_COMMISSION_RATE = 0.2;
+/** 관리자·정책이 허용하는 딜러십 요율. */
+export const DEALERSHIP_COMMISSION_RATE_OPTIONS = [0.1, 0.15, 0.2];
 
 function clampCommissionRate(raw, fallback) {
   const n = Number(raw);
-  if (!Number.isFinite(n) || n < 0) return fallback;
-  return Math.min(1, n);
+  if (!Number.isFinite(n) || n < 0) {
+    return snapDealershipCommissionRate(fallback);
+  }
+  return snapDealershipCommissionRate(Math.min(1, n));
+}
+
+function snapDealershipCommissionRate(raw) {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) return DEALERSHIP_BASE_COMMISSION_RATE;
+  const clamped = Math.min(1, n);
+  let best = DEALERSHIP_COMMISSION_RATE_OPTIONS[0];
+  let bestDist = Number.POSITIVE_INFINITY;
+  for (const option of DEALERSHIP_COMMISSION_RATE_OPTIONS) {
+    const dist = Math.abs(option - clamped);
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = option;
+    }
+  }
+  return best;
 }
 
 /**

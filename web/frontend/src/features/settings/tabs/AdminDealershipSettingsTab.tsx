@@ -3,6 +3,7 @@
 // - web/backend/controllers/admin/admin.settings.controller.js
 // - web/backend/services/creditRevenuePolicy.service.js
 // change-log:
+// - 2026-09-20: 요율 10/15/20% 선택식. 유치 시점 요율 안내 카피.
 // - 2026-09-20: 자동 저장 PATCH를 jsonBody로 수정(body 객체는 JSON 미전송 → 저장 실패).
 // - 2026-09-20: 유치 시점별 요율 — 이벤트 시작/종료일 + 기본/이벤트 %.
 // - 2026-09-20: 딜러십 영업 수수료 — 기본 10% · 이벤트 15%(on/off). 자동 저장.
@@ -40,14 +41,25 @@ type CreditsApiResponse = {
 
 const AUTO_SAVE_DELAY_MS = 700;
 
-const toPctString = (rate: number, fallback: number) =>
-  String(Math.round((Number.isFinite(rate) ? rate : fallback) * 100));
+/** 관리자 선택 가능 요율(정수 %). */
+const DEALERSHIP_RATE_PCT_OPTIONS = [10, 15, 20] as const;
+type DealershipRatePct = (typeof DEALERSHIP_RATE_PCT_OPTIONS)[number];
 
-const toRate = (pct: string, fallback: number) => {
-  const n = Number(pct);
-  if (!Number.isFinite(n) || n < 0) return fallback;
-  return Math.min(1, Math.round(n) / 100);
+const snapPct = (rate: number, fallback: DealershipRatePct): DealershipRatePct => {
+  const pct = Math.round((Number.isFinite(rate) ? rate : fallback / 100) * 100);
+  let best: DealershipRatePct = fallback;
+  let bestDist = Number.POSITIVE_INFINITY;
+  for (const option of DEALERSHIP_RATE_PCT_OPTIONS) {
+    const dist = Math.abs(option - pct);
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = option;
+    }
+  }
+  return best;
 };
+
+const pctToRate = (pct: DealershipRatePct) => pct / 100;
 
 /** KST calendar date → input[type=date] value */
 function toDateInputValue(raw?: string | Date | null): string {
@@ -72,6 +84,54 @@ function dateInputToIsoEnd(ymd: string): string | null {
   return `${ymd}T00:00:00+09:00`;
 }
 
+function RatePctSelect({
+  id,
+  value,
+  onChange,
+  disabled,
+  emphasized,
+}: {
+  id: string;
+  value: DealershipRatePct;
+  onChange: (next: DealershipRatePct) => void;
+  disabled?: boolean;
+  emphasized?: boolean;
+}) {
+  return (
+    <div
+      id={id}
+      role="radiogroup"
+      aria-label="수수료 요율"
+      className="flex shrink-0 items-center gap-1 rounded-xl bg-slate-100/80 p-1"
+    >
+      {DEALERSHIP_RATE_PCT_OPTIONS.map((pct) => {
+        const selected = value === pct;
+        return (
+          <button
+            key={pct}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            disabled={disabled}
+            onClick={() => onChange(pct)}
+            className={cn(
+              "h-9 min-w-[3.25rem] rounded-lg px-2.5 text-sm font-semibold tabular-nums transition-colors",
+              selected
+                ? emphasized
+                  ? "bg-white text-primary-strong shadow-sm ring-1 ring-primary-muted/50"
+                  : "bg-white text-slate-900 shadow-sm ring-1 ring-slate-200"
+                : "text-slate-500 hover:text-slate-800",
+              disabled && "cursor-not-allowed opacity-60",
+            )}
+          >
+            {pct}%
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 /** 플랫폼 설정 · 딜러십 영업 수수료. */
 export function AdminDealershipSettingsTab({
   className,
@@ -82,16 +142,16 @@ export function AdminDealershipSettingsTab({
   const { token } = useAuthStore();
   const queryClient = useQueryClient();
   const [loading, setLoading] = useState(Boolean(token));
-  const [basePct, setBasePct] = useState("10");
-  const [eventPct, setEventPct] = useState("15");
+  const [basePct, setBasePct] = useState<DealershipRatePct>(10);
+  const [eventPct, setEventPct] = useState<DealershipRatePct>(20);
   const [eventEnabled, setEventEnabled] = useState(true);
   const [startedYmd, setStartedYmd] = useState("");
   const [endedYmd, setEndedYmd] = useState("");
   const hydratedRef = useRef(false);
   const savedSigRef = useRef("");
   const stateRef = useRef({
-    basePct: "10",
-    eventPct: "15",
+    basePct: 10 as DealershipRatePct,
+    eventPct: 20 as DealershipRatePct,
     eventEnabled: true,
     startedYmd: "",
     endedYmd: "",
@@ -130,13 +190,13 @@ export function AdminDealershipSettingsTab({
         });
         if (!res.ok || !mounted) return;
         const settings = res.data?.data?.creditSettings || {};
-        const nextBase = toPctString(
+        const nextBase = snapPct(
           Number(settings.dealershipBaseCommissionRate),
-          0.1,
+          10,
         );
-        const nextEvent = toPctString(
+        const nextEvent = snapPct(
           Number(settings.dealershipEventCommissionRate),
-          0.15,
+          20,
         );
         const nextEnabled = settings.dealershipEventCommissionEnabled !== false;
         const nextStart = toDateInputValue(settings.dealershipEventStartedAt);
@@ -177,8 +237,8 @@ export function AdminDealershipSettingsTab({
       try {
         const cur = stateRef.current;
         const payload: CreditSettingsPayload = {
-          dealershipBaseCommissionRate: toRate(cur.basePct, 0.1),
-          dealershipEventCommissionRate: toRate(cur.eventPct, 0.15),
+          dealershipBaseCommissionRate: pctToRate(cur.basePct),
+          dealershipEventCommissionRate: pctToRate(cur.eventPct),
           dealershipEventCommissionEnabled: cur.eventEnabled,
           dealershipEventStartedAt: cur.startedYmd
             ? dateInputToIsoStart(cur.startedYmd)
@@ -226,8 +286,11 @@ export function AdminDealershipSettingsTab({
       <div className="rounded-2xl border border-slate-200/80 bg-white px-4 py-4 shadow-sm">
         <h2 className="text-base font-semibold text-slate-900">딜러십 영업 수수료</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          심플웨이·커스텀어벗 판매가 기준(배송비 제외). 유치(가입) 시점이 이벤트
-          창 안이면 이벤트 요율, 아니면 기본 요율입니다.
+          심플웨이·커스텀어벗 판매가 기준(배송비 제외). 요율은{" "}
+          <span className="font-medium text-slate-700">10% · 15% · 20%</span>{" "}
+          중 선택합니다. 지금은 이벤트 기간이라 이벤트 요율로 유치하고, 이후
+          상황에 따라 낮출 수 있습니다. 의뢰자는 가입(유치) 당시 요율을
+          따릅니다.
         </p>
       </div>
 
@@ -245,26 +308,18 @@ export function AdminDealershipSettingsTab({
                 기본 요율
               </Label>
               <p className="text-[12px] leading-snug text-muted-foreground">
-                이벤트 기간 외 유치 고객
+                이벤트 종료 후 · 표준 유치 요율
               </p>
             </div>
           </div>
           {loading ? (
             <span className="text-sm text-muted-foreground">…</span>
           ) : (
-            <div className="flex items-center gap-2">
-              <Input
-                id="dealership-base"
-                type="number"
-                min={0}
-                max={100}
-                step={1}
-                value={basePct}
-                onChange={(e) => setBasePct(e.target.value)}
-                className="h-11 w-[4.5rem] rounded-xl text-center text-base font-semibold tabular-nums"
-              />
-              <span className="text-sm font-semibold text-slate-500">%</span>
-            </div>
+            <RatePctSelect
+              id="dealership-base"
+              value={basePct}
+              onChange={setBasePct}
+            />
           )}
         </div>
 
@@ -293,37 +348,31 @@ export function AdminDealershipSettingsTab({
                   </TooltipTrigger>
                   <TooltipContent className="max-w-xs">
                     이벤트 기간 내 유치(가입)한 치과·기공소에 적용됩니다. 종료
-                    후에도 해당 고객은 이벤트 요율을 유지합니다.
+                    후에도 해당 고객은 이벤트 요율을 유지합니다. 요율을 20%→15%→10%로
+                    단계 조정할 수 있습니다.
                   </TooltipContent>
                 </Tooltip>
               </div>
               <p className="text-[12px] leading-snug text-muted-foreground">
-                이벤트 기간 내 유치 고객
+                현재 유치에 쓰는 요율
               </p>
             </div>
           </div>
           {loading ? (
             <span className="text-sm text-muted-foreground">…</span>
           ) : (
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <Switch
                 checked={eventEnabled}
                 onCheckedChange={setEventEnabled}
                 aria-label="이벤트 진행"
               />
-              <div className="flex items-center gap-2">
-                <Input
-                  id="dealership-event"
-                  type="number"
-                  min={0}
-                  max={100}
-                  step={1}
-                  value={eventPct}
-                  onChange={(e) => setEventPct(e.target.value)}
-                  className="h-11 w-[4.5rem] rounded-xl border-primary-muted/40 bg-white text-center text-base font-semibold tabular-nums shadow-sm"
-                />
-                <span className="text-sm font-semibold text-slate-500">%</span>
-              </div>
+              <RatePctSelect
+                id="dealership-event"
+                value={eventPct}
+                onChange={setEventPct}
+                emphasized
+              />
             </div>
           )}
         </div>

@@ -1,7 +1,8 @@
 /**
  * 딜러(salesman) 전용 대시보드.
  *
- * 딜러십: 기본 10%(추후 공지) · 이벤트 기간 가입 의뢰자 15%.
+ * 딜러십: 요율 10/15/20% 중 플랫폼 설정. 지금은 이벤트(예: 20%),
+ * 이후 15%·10%로 조정 가능. 의뢰자는 가입 당시 요율 적용.
  * 배송비는 수신자(치과·기공소) 부담.
  */
 
@@ -77,7 +78,7 @@ export const SalesmanDashboardPage = () => {
     Number(data?.dealershipBaseCommissionRate ?? 0.1) * 100,
   );
   const eventPct = Math.round(
-    Number(data?.dealershipEventCommissionRate ?? 0.15) * 100,
+    Number(data?.dealershipEventCommissionRate ?? 0.2) * 100,
   );
   const eventEnabled = data?.dealershipEventCommissionEnabled !== false;
   const effectivePct = Math.round(
@@ -152,9 +153,9 @@ export const SalesmanDashboardPage = () => {
             </div>
             <DealershipTermsCard
               basePct={basePct || 10}
-              eventPct={eventPct || 15}
+              eventPct={eventPct || 20}
               eventEnabled={eventEnabled}
-              effectivePct={effectivePct || (eventEnabled ? 15 : 10)}
+              effectivePct={effectivePct || (eventEnabled ? 20 : 10)}
             />
           </div>
         }
@@ -298,7 +299,7 @@ export const SalesmanDashboardPage = () => {
         onOpenChange={setSalesmanPolicyOpen}
         variant="salesman"
         dealershipBasePct={basePct || 10}
-        dealershipEventPct={eventPct || 15}
+        dealershipEventPct={eventPct || 20}
         dealershipEventEnabled={eventEnabled}
       />
     </TooltipProvider>
@@ -346,17 +347,17 @@ function DealershipTermsCard({
                 )}
               </div>
               <p className="mt-0.5 text-xs leading-relaxed text-white/70">
-                심플웨이 · 커스텀어벗 판매가 대비 비율. 배송비 제외.
+                심플웨이 · 커스텀어벗 판매가 대비(10% · 15% · 20%). 배송비 제외.
               </p>
               {eventEnabled ? (
-                <p className="mt-1.5 text-[11px] leading-relaxed text-emerald-200/90 whitespace-nowrap">
-                  이벤트 기간 내 유치(가입) 고객 {eventPct}% · 추후 공지 후{" "}
-                  {basePct}%로 변경될 예정.
+                <p className="mt-1.5 text-[11px] leading-relaxed text-emerald-200/90">
+                  지금은 이벤트 기간이라 {eventPct}%. 이후 상황에 따라 15%·10%
+                  등으로 조정될 수 있으며, 의뢰자는 가입 당시 요율이 적용됩니다.
                 </p>
               ) : (
                 <p className="mt-1.5 text-[11px] leading-relaxed text-white/65">
-                  유치 시점에 따라 이벤트 {eventPct}% / 기본 {basePct}%가
-                  구분 적용됩니다
+                  의뢰자는 가입(유치) 당시 요율이 적용됩니다. 이벤트{" "}
+                  {eventPct}% / 기본 {basePct}%.
                 </p>
               )}
             </div>

@@ -3,6 +3,8 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // NOTE: Legacy mock header injection removed. Standard Authorization handling only.
+// change-log:
+// - 2026-09-20: fetch 옵션에서 body를 rest 뒤에 두어 jsonBody가 덮어씌워지지 않게 수정.
 
 const IN_FLIGHT = new Map<string, Promise<ApiResponse<any>>>();
 const SHORT_CACHE = new Map<string, { ts: number; value: ApiResponse<any> }>();
@@ -54,7 +56,16 @@ export interface ApiResponse<T = any> {
 export async function apiFetch<T = any>(
   options: ApiRequestOptions,
 ): Promise<ApiResponse<T>> {
-  const { path, method = "GET", token, jsonBody, headers, skipCache = false, ...rest } = options;
+  const {
+    path,
+    method = "GET",
+    token,
+    jsonBody,
+    headers,
+    skipCache = false,
+    body: rawBody,
+    ...rest
+  } = options;
 
   // path가 절대 URL이면 그대로 사용, 아니면 /api 접두사 추가
   const url = path.startsWith("http")
@@ -81,12 +92,28 @@ export async function apiFetch<T = any>(
     (finalHeaders as any)["Authorization"] = `Bearer ${effectiveToken}`;
   }
 
-  let body: BodyInit | undefined = rest.body as BodyInit | undefined;
+  // jsonBody가 있으면 JSON으로 보내고, 아니면 호출자가 넘긴 body를 사용.
+  // body는 rest에서 분리해 아래에서 마지막에 지정한다(...rest가 body를 덮어쓰지 않게).
+  let body: BodyInit | undefined = rawBody as BodyInit | undefined;
 
   if (jsonBody !== undefined) {
     (finalHeaders as any)["Content-Type"] =
       (finalHeaders as any)["Content-Type"] || "application/json";
     body = JSON.stringify(jsonBody);
+  } else if (
+    body != null &&
+    typeof body === "object" &&
+    !(typeof Blob !== "undefined" && body instanceof Blob) &&
+    !(typeof FormData !== "undefined" && body instanceof FormData) &&
+    !(typeof URLSearchParams !== "undefined" && body instanceof URLSearchParams) &&
+    !(typeof ArrayBuffer !== "undefined" && body instanceof ArrayBuffer) &&
+    !(typeof ArrayBuffer !== "undefined" && ArrayBuffer.isView(body)) &&
+    !(typeof ReadableStream !== "undefined" && body instanceof ReadableStream)
+  ) {
+    // 평문 객체를 body로 넘긴 호출 방어. fetch는 객체를 거절하거나 "[object Object]"로 깨진다.
+    (finalHeaders as any)["Content-Type"] =
+      (finalHeaders as any)["Content-Type"] || "application/json";
+    body = JSON.stringify(body);
   }
 
   const bodyKey =
@@ -113,11 +140,11 @@ export async function apiFetch<T = any>(
 
   const exec = (async () => {
     const response = await fetch(url, {
+      ...rest,
       method,
       headers: finalHeaders,
-      body,
       cache: rest.cache ?? "no-store",
-      ...rest,
+      body,
     });
 
     let data: any = null;
