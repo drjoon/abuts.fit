@@ -1,6 +1,8 @@
 // related files:
 // - web/frontend/src/pages/salesTeam/salesTeamApi.ts
 // - web/frontend/src/pages/salesTeam/salesUi.tsx
+// change-log:
+// - 2026-09-20: 활동 요약 카드 그리드 p-0.5 — 선택 ring이 잘리지 않게.
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -144,7 +146,7 @@ export default function SalesPerformancePage() {
           </p>
         ) : (
           <div className="grid gap-4 lg:grid-cols-[minmax(14rem,18rem)_minmax(0,1fr)] xl:grid-cols-[minmax(15rem,20rem)_minmax(0,1fr)] xl:gap-5">
-            <div className="grid grid-cols-1 gap-2.5 md:grid-cols-3 lg:grid-cols-1 lg:sticky lg:top-4 lg:self-start">
+            <div className="grid grid-cols-1 gap-2.5 p-0.5 md:grid-cols-3 lg:sticky lg:top-4 lg:grid-cols-1 lg:self-start">
               <SalesStatCard
                 compact
                 label="방문 완료"

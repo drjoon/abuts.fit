@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-20: 요약 카드 그리드에 p-0.5 — 선택 border/ring이 overflow에 잘리지 않게.
 // - 2026-09-16: R&D·불완전가공 탭 추가(제조사 워크시트와 동일 버킷).
 // - 2026-09-16: 불완전가공(rnd.unmachinableAt) 제외 — 제조사 일반 탭·불완전가공 탭과 맞춤.
 // - 2026-08-26: 제조사 준비 큐와 동일 범위 — PTX 디자인 미완료·레거시 디자인 mode 제외(BE monitoring 가드와 맞춤).
@@ -656,7 +657,7 @@ export const AdminRequestMonitoring = () => {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
+          <div className="grid grid-cols-2 gap-3 p-0.5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
             {statsCards.map((card) => {
               const Icon = card.icon;
               const active = selectedStatus === card.key;
