@@ -8,6 +8,7 @@
 // - web/backend/services/practiceTransferBilling.service.js
 // - web/backend/models/businessAnchor.model.js
 // - web/backend/services/requestCreditHold.service.js
+// - 2026-09-20: 기간 소비 완료/보류 — PTX는 billing.settledAt(장부 결제상태와 동일). Request만 convertedAt.
 // - 2026-09-20: 기간 요약 — 기공소 적립 보류 합(totalSettlementEarnPendingSupply) 분리(확정 합·잔액 미포함).
 // - 2026-09-20: 기간 소비 요약 — 결제(적립) 완료·보류 공급가 분리(convertedAt 없는 HOLD).
 // - 2026-09-20: CA 디자인 STL 미업로드·생산비 미지급 PTX는 적립 보류 미러에서 제외.
@@ -1200,7 +1201,9 @@ const CREDIT_LEDGER_STATS_SPEND_EVENT_TYPES = [
   "STORE_SALE",
 ];
 
-/** HOLD→COMMIT 전(meta.convertedAt 없음) = 결제·적립 보류. 장부 type SPEND_HOLD와 동일. */
+/** HOLD→COMMIT 전(meta.convertedAt 없음) = 결제·적립 보류. 장부 type SPEND_HOLD와 동일.
+ * PTX는 convertedAt을 쓰지 않음(ESCROW_RELEASE + billing.settledAt). 장부 enrich와 동일하게
+ * heldAt·settledAt·몫별 lab/abutmentSettledAt으로 판정한다. */
 const CREDIT_LEDGER_SPEND_HOLD_EVENT_TYPES = [
   "REQUEST_SPEND_HOLD",
   "SHIPPING_SPEND_HOLD",
@@ -1208,9 +1211,37 @@ const CREDIT_LEDGER_SPEND_HOLD_EVENT_TYPES = [
   "PRACTICE_TRANSFER_HOLD_ADJUST",
 ];
 
-function isPendingSpendHoldEvent(eventType, convertedAt) {
+const CREDIT_LEDGER_PTX_SPEND_HOLD_EVENT_TYPES = [
+  "PRACTICE_TRANSFER_SPEND_HOLD",
+  "PRACTICE_TRANSFER_HOLD_ADJUST",
+];
+
+function isPendingSpendHoldEvent(
+  eventType,
+  convertedAt,
+  { holdShare = "", ptxBilling = null } = {},
+) {
   if (!CREDIT_LEDGER_SPEND_HOLD_EVENT_TYPES.includes(String(eventType || ""))) {
     return false;
+  }
+  const et = String(eventType || "");
+  if (CREDIT_LEDGER_PTX_SPEND_HOLD_EVENT_TYPES.includes(et)) {
+    if (!ptxBilling) {
+      // PTX 문서 없음 → convertedAt 폴백(보통 null=보류로 남음)
+      return convertedAt == null || convertedAt === "";
+    }
+    const heldAt = ptxBilling.heldAt || null;
+    const settledAt = ptxBilling.settledAt || null;
+    const labSettledAt = ptxBilling.labSettledAt || null;
+    const abutmentSettledAt = ptxBilling.abutmentSettledAt || null;
+    const workCanceledAt = ptxBilling.workCanceledAt || null;
+    if (workCanceledAt) return false;
+    if (!heldAt || settledAt) return false;
+    const share = String(holdShare || "").trim();
+    if (share === "lab") return !labSettledAt;
+    if (share === "abutment") return !abutmentSettledAt;
+    // 몫 미표기(레거시 단일 hold): 전체 정산 전만 보류
+    return true;
   }
   return convertedAt == null || convertedAt === "";
 }
@@ -1427,7 +1458,8 @@ export function parseCreditLedgerFacetResult(facetRaw, { pageSize } = {}) {
 /**
  * 의뢰자 정산 내역 상단 카드 — 필터 기간 유료/무료 충전·소비·(기공소) 정산 적립 공급가.
  * 소비는 REQ_* 실차감(HOLD 포함 — 잔액에서 이미 차감). 통계 탭과 동일 이벤트 기준.
- * 소비 완료/보류: convertedAt 없는 HOLD=보류, 그 외 소비·변환된 HOLD=완료.
+ * 소비 완료/보류: Request HOLD는 convertedAt 없음=보류. PTX HOLD는 billing.settledAt
+ * (몫별 lab/abutmentSettledAt) — 장부「결제 완료/보류」와 동일. 그 외 소비=완료.
  * 정산 적립(totalSettlementEarnSupply)은 확정만. 기공소 적립 보류는
  * totalSettlementEarnPendingSupply(잔액·수식 미포함)로 분리.
  * includePendingLabSettlement는 레거시(확정 합에 보류를 더함, 기본 false).
@@ -1470,7 +1502,14 @@ export async function aggregateRequestorPeriodLedgerSummary({
     bucket[field] += amount;
   };
 
-  const applyRow = (bucket, eventType, accountCode, amount, convertedAt) => {
+  const applyRow = (
+    bucket,
+    eventType,
+    accountCode,
+    amount,
+    convertedAt,
+    pendingCtx = {},
+  ) => {
     if (
       CREDIT_LEDGER_STATS_PAID_CHARGE_EVENT_TYPES.includes(eventType) &&
       amount > 0
@@ -1491,7 +1530,7 @@ export async function aggregateRequestorPeriodLedgerSummary({
     ) {
       const abs = Math.abs(amount);
       bump(bucket, "totalSpendSupply", abs);
-      if (isPendingSpendHoldEvent(eventType, convertedAt)) {
+      if (isPendingSpendHoldEvent(eventType, convertedAt, pendingCtx)) {
         bump(bucket, "totalSpendPendingSupply", abs);
       } else {
         bump(bucket, "totalSpendSettledSupply", abs);
@@ -1567,6 +1606,9 @@ export async function aggregateRequestorPeriodLedgerSummary({
         convertedAt: {
           $first: { $ifNull: ["$journalDoc.meta.convertedAt", null] },
         },
+        holdShare: {
+          $first: { $ifNull: ["$journalDoc.meta.holdShare", ""] },
+        },
         refType: {
           $first: { $ifNull: ["$refType", "$journalDoc.refType"] },
         },
@@ -1590,18 +1632,54 @@ export async function aggregateRequestorPeriodLedgerSummary({
         );
 
   const settlementPtxIds = [];
+  const spendHoldPtxIds = [];
   for (const row of rows) {
     const eventType = String(row?.eventType || "");
     const accountCode = String(row?.accountCode || "");
     const amount = Number(row?.amount || 0);
-    if (!isLabSettlementEarnEvent({ eventType, accountCode, amount })) continue;
     const refId = row?.refId ? String(row.refId) : "";
-    if (refId && mongoose.Types.ObjectId.isValid(refId)) {
+    if (
+      isLabSettlementEarnEvent({ eventType, accountCode, amount }) &&
+      refId &&
+      mongoose.Types.ObjectId.isValid(refId)
+    ) {
       settlementPtxIds.push(refId);
+    }
+    if (
+      CREDIT_LEDGER_PTX_SPEND_HOLD_EVENT_TYPES.includes(eventType) &&
+      refId &&
+      mongoose.Types.ObjectId.isValid(refId)
+    ) {
+      spendHoldPtxIds.push(refId);
     }
   }
   const demoFundingByPtx =
     await resolvePracticeTransferDemoFundingByIds(settlementPtxIds);
+
+  const ptxBillingById = new Map();
+  const uniqueSpendHoldPtxIds = [...new Set(spendHoldPtxIds)];
+  if (uniqueSpendHoldPtxIds.length) {
+    const ptxDocs = await PracticeTransfer.find({
+      _id: {
+        $in: uniqueSpendHoldPtxIds.map((id) => new mongoose.Types.ObjectId(id)),
+      },
+    })
+      .select({
+        billing: 1,
+        workCanceledAt: 1,
+      })
+      .lean();
+    for (const doc of ptxDocs || []) {
+      if (!doc?._id) continue;
+      ptxBillingById.set(String(doc._id), {
+        heldAt: doc?.billing?.heldAt || null,
+        settledAt: doc?.billing?.settledAt || null,
+        labSettledAt: doc?.billing?.labSettledAt || null,
+        abutmentSettledAt: doc?.billing?.abutmentSettledAt || null,
+        workCanceledAt: doc?.workCanceledAt || null,
+      });
+    }
+  }
 
   for (const row of rows) {
     const eventType = String(row?.eventType || "");
@@ -1630,6 +1708,10 @@ export async function aggregateRequestorPeriodLedgerSummary({
       accountCode,
       amount,
       row?.convertedAt ?? null,
+      {
+        holdShare: String(row?.holdShare || ""),
+        ptxBilling: ptxBillingById.get(refId) || null,
+      },
     );
   }
 

@@ -61,6 +61,10 @@ export interface CreditSettings {
   dealershipEventCommissionRate?: number;
   /** 이벤트 요율 적용 on/off */
   dealershipEventCommissionEnabled?: boolean;
+  /** 요율 변경 예약일(KST 0시) */
+  dealershipRateChangeScheduledAt?: string | Date | null;
+  /** 예약 적용 요율 0~1 */
+  dealershipRateChangeScheduledRate?: number | null;
 }
 
 export const CREDIT_SETTINGS_DEFAULTS: CreditSettings = {
@@ -103,6 +107,8 @@ export const CREDIT_SETTINGS_DEFAULTS: CreditSettings = {
   dealershipBaseCommissionRate: 0.1,
   dealershipEventCommissionRate: 0.2,
   dealershipEventCommissionEnabled: true,
+  dealershipRateChangeScheduledAt: null,
+  dealershipRateChangeScheduledRate: null,
 };
 
 export interface SystemSettingsData {
@@ -235,6 +241,17 @@ export const useSystemSettings = () => {
         })(),
         dealershipEventCommissionEnabled:
           raw.dealershipEventCommissionEnabled !== false,
+        dealershipRateChangeScheduledAt: (() => {
+          const rawAt = raw.dealershipRateChangeScheduledAt;
+          if (!rawAt) return null;
+          const d = rawAt instanceof Date ? rawAt : new Date(rawAt);
+          return Number.isNaN(d.getTime()) ? null : d.toISOString();
+        })(),
+        dealershipRateChangeScheduledRate: (() => {
+          const n = Number(raw.dealershipRateChangeScheduledRate);
+          if (!Number.isFinite(n) || n < 0) return null;
+          return Math.min(1, n);
+        })(),
       };
       return { creditSettings } as SystemSettingsData;
     },

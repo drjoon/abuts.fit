@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-20: 소비·정산 적립 완료/보류 푸터 — 한 줄 줄바꿈 대신 항상 2줄.
 // - 2026-09-20: 기공소 정산 적립 카드 — 완료/보류 분리. 소비 완료/보류는 치과만(결제 HOLD).
 // - 2026-09-20: 요약 카드 — overflow 바깥 여백(px-1.5)+안쪽 p-1. 경계 클리핑 재수정.
 // - 2026-09-20: 결제(적립) 완료·보류 필터 + 소비 카드 하단 완료/보류 금액.
@@ -2745,9 +2746,8 @@ export const CreditLedgerModal = ({
       : "선택한 기간에 지출한 기공료·스토어 결제 합계입니다. 결제 보류(잔액 차감분)를 포함합니다.";
 
   const statusSplitFooter = (settled: number, pending: number) => (
-    <div className="mt-0.5 text-[10px] tabular-nums leading-snug text-slate-500 sm:text-[11px]">
+    <div className="mt-0.5 flex flex-col items-center gap-0.5 text-[10px] tabular-nums leading-snug sm:text-[11px]">
       <span className="text-emerald-700">완료 {formatWon(settled)}</span>
-      <span className="mx-1 text-slate-300">·</span>
       <span className="text-amber-800">보류 {formatWon(pending)}</span>
     </div>
   );

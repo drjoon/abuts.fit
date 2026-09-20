@@ -23,6 +23,7 @@ import {
   loadCreditSettingsDefaults,
   normalizeLoadedCreditSettings,
   invalidateGlobalCreditSettingsCache,
+  ensureDealershipRateChangeApplied,
 } from "../../utils/creditSettingsDefaults.js";
 import { normalizeAbutsAbutmentCreditPrices } from "../../utils/abutsAbutmentService.js";
 import { invalidatePracticeTransferQuoteCaches } from "../../services/practiceTransferBilling.service.js";
@@ -57,16 +58,21 @@ function sanitizeSharePercent(value) {
   return Math.min(100, Math.round(n * 100) / 100);
 }
 
-/** 딜러십 영업 수수료 — 관리자 선택 가능 요율(10% · 15% · 20%). */
-const DEALERSHIP_COMMISSION_RATE_OPTIONS = [0.1, 0.15, 0.2];
+/** 딜러십 기본 요율(고정 10%). */
+const DEALERSHIP_BASE_COMMISSION_RATE = 0.1;
+/** 딜러십 이벤트 요율 선택지(15% · 20%). */
+const DEALERSHIP_EVENT_COMMISSION_RATE_OPTIONS = [0.15, 0.2];
+/** 요율 변경 예약 선택지(10% · 15% · 20%). */
+const DEALERSHIP_SCHEDULED_COMMISSION_RATE_OPTIONS = [0.1, 0.15, 0.2];
 
-function sanitizeCommissionRate(value) {
+function snapRateToOptions(value, options, fallback) {
   const n = Number(value);
+  const list = Array.isArray(options) && options.length ? options : [fallback];
   if (!Number.isFinite(n) || n < 0) return null;
   const clamped = Math.min(1, n);
-  let best = DEALERSHIP_COMMISSION_RATE_OPTIONS[0];
+  let best = list[0];
   let bestDist = Number.POSITIVE_INFINITY;
-  for (const option of DEALERSHIP_COMMISSION_RATE_OPTIONS) {
+  for (const option of list) {
     const dist = Math.abs(option - clamped);
     if (dist < bestDist) {
       bestDist = dist;
@@ -76,12 +82,53 @@ function sanitizeCommissionRate(value) {
   return best;
 }
 
+function sanitizeBaseCommissionRate(value) {
+  if (value === undefined) return null;
+  return DEALERSHIP_BASE_COMMISSION_RATE;
+}
+
+function sanitizeEventCommissionRate(value) {
+  return snapRateToOptions(
+    value,
+    DEALERSHIP_EVENT_COMMISSION_RATE_OPTIONS,
+    0.2,
+  );
+}
+
+function sanitizeScheduledCommissionRate(value) {
+  if (value === null) return null;
+  if (value === undefined || value === "") return undefined;
+  return snapRateToOptions(
+    value,
+    DEALERSHIP_SCHEDULED_COMMISSION_RATE_OPTIONS,
+    DEALERSHIP_BASE_COMMISSION_RATE,
+  );
+}
+
 function sanitizeOptionalDate(value) {
   if (value === null) return null;
   if (value === undefined || value === "") return undefined;
   const d = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(d.getTime())) return undefined;
   return d;
+}
+
+/** YYYY-MM-DD 또는 Date → 해당일 KST 0시. */
+function sanitizeKstMidnightDate(value) {
+  if (value === null) return null;
+  if (value === undefined || value === "") return undefined;
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value.trim())) {
+    return new Date(`${value.trim()}T00:00:00+09:00`);
+  }
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return undefined;
+  const ymd = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+  return new Date(`${ymd}T00:00:00+09:00`);
 }
 
 function appendTierPartyFields(payload, sanitized) {
@@ -328,6 +375,7 @@ export async function updateSecuritySettings(req, res) {
 
 export async function getCreditSettings(req, res) {
   try {
+    await ensureDealershipRateChangeApplied();
     const doc = await SystemSettings.findOneAndUpdate(
       { key: "global" },
       { $setOnInsert: { key: "global" } },
@@ -456,10 +504,13 @@ export async function updateCreditSettings(req, res) {
     const regularAbutsSharePercent = sanitizeSharePercent(
       payload.regularAbutsSharePercent,
     );
-    const dealershipBaseCommissionRate = sanitizeCommissionRate(
-      payload.dealershipBaseCommissionRate,
-    );
-    const dealershipEventCommissionRate = sanitizeCommissionRate(
+    const dealershipBaseCommissionRate = Object.prototype.hasOwnProperty.call(
+      payload,
+      "dealershipBaseCommissionRate",
+    )
+      ? sanitizeBaseCommissionRate(payload.dealershipBaseCommissionRate)
+      : null;
+    const dealershipEventCommissionRate = sanitizeEventCommissionRate(
       payload.dealershipEventCommissionRate,
     );
     const dealershipEventCommissionEnabled =
@@ -478,6 +529,22 @@ export async function updateCreditSettings(req, res) {
     )
       ? sanitizeOptionalDate(payload.dealershipEventEndedAt)
       : undefined;
+    const dealershipRateChangeScheduledAt =
+      Object.prototype.hasOwnProperty.call(
+        payload,
+        "dealershipRateChangeScheduledAt",
+      )
+        ? sanitizeKstMidnightDate(payload.dealershipRateChangeScheduledAt)
+        : undefined;
+    const dealershipRateChangeScheduledRate =
+      Object.prototype.hasOwnProperty.call(
+        payload,
+        "dealershipRateChangeScheduledRate",
+      )
+        ? sanitizeScheduledCommissionRate(
+            payload.dealershipRateChangeScheduledRate,
+          )
+        : undefined;
     const specialRequestorPrices = Array.isArray(payload.specialRequestorPrices)
       ? payload.specialRequestorPrices
           .map((item) => {
@@ -753,6 +820,23 @@ export async function updateCreditSettings(req, res) {
     }
     if (dealershipEventEndedAt !== undefined) {
       sanitized.dealershipEventEndedAt = dealershipEventEndedAt;
+    }
+    if (dealershipRateChangeScheduledAt !== undefined) {
+      sanitized.dealershipRateChangeScheduledAt =
+        dealershipRateChangeScheduledAt;
+      if (dealershipRateChangeScheduledAt == null) {
+        sanitized.dealershipRateChangeScheduledRate = null;
+      }
+    }
+    if (dealershipRateChangeScheduledRate !== undefined) {
+      sanitized.dealershipRateChangeScheduledRate =
+        dealershipRateChangeScheduledRate;
+      if (
+        dealershipRateChangeScheduledRate == null &&
+        dealershipRateChangeScheduledAt === undefined
+      ) {
+        sanitized.dealershipRateChangeScheduledAt = null;
+      }
     }
     // 환영 배송 분리 지급 폐기. 레거시 필드는 항상 0으로 정규화.
     sanitized.defaultShippingFreeCredit = 0;

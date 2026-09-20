@@ -403,6 +403,10 @@ export async function getSalesmanDashboard(req, res) {
     const dealershipBaseCommissionRate = dealershipPolicy.baseRate;
     const dealershipEventCommissionRate = dealershipPolicy.eventRate;
     const dealershipEventCommissionEnabled = dealershipPolicy.eventEnabled;
+    const dealershipRateChangeScheduledAt =
+      dealershipPolicy.rateChangeScheduledAt;
+    const dealershipRateChangeScheduledRate =
+      dealershipPolicy.rateChangeScheduledRate;
 
     if (isDevops && me.businessAnchorId) {
       const devopsAnchor = await BusinessAnchor.findById(me.businessAnchorId)
@@ -585,6 +589,8 @@ export async function getSalesmanDashboard(req, res) {
           dealershipEventCommissionEnabled,
           dealershipEventStartedAt: dealershipPolicy.eventStartedAt,
           dealershipEventEndedAt: dealershipPolicy.eventEndedAt,
+          dealershipRateChangeScheduledAt,
+          dealershipRateChangeScheduledRate,
           payoutDayOfMonth,
           referralCode: effectiveReferralCode,
           overview: {
@@ -793,6 +799,8 @@ export async function getSalesmanDashboard(req, res) {
         dealershipEventCommissionEnabled,
         dealershipEventStartedAt: dealershipPolicy.eventStartedAt,
         dealershipEventEndedAt: dealershipPolicy.eventEndedAt,
+        dealershipRateChangeScheduledAt,
+        dealershipRateChangeScheduledRate,
         unaffiliatedCommissionRate,
         payoutDayOfMonth,
         referralCode: effectiveReferralCode,

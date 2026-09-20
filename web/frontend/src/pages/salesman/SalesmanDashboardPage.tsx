@@ -1,9 +1,8 @@
 /**
  * 딜러(salesman) 전용 대시보드.
  *
- * 딜러십: 요율 10/15/20% 중 플랫폼 설정. 지금은 이벤트(예: 20%),
- * 이후 15%·10%로 조정 가능. 의뢰자는 가입 당시 요율 적용.
- * 배송비는 수신자(치과·기공소) 부담.
+ * 딜러십: 기본 10% · 이벤트 15/20%. 요율 변경 예약 시 해당일 0시(KST)부터 적용.
+ * 의뢰자는 가입 당시 요율 적용. 배송비는 수신자(치과·기공소) 부담.
  */
 
 import { useState } from "react";
@@ -15,6 +14,7 @@ import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
 import {
   Copy,
   BadgeCheck,
+  CalendarClock,
   Percent,
   Truck,
   Building2,
@@ -40,6 +40,7 @@ import {
 } from "@/shared/noOrderAlerts";
 import { SettlementStatCard } from "@/shared/settlement/settlementUi";
 import { cn } from "@/shared/ui/cn";
+import { formatKstYmdToKo, toKstYmd } from "@/shared/date/kst";
 
 export const SalesmanDashboardPage = () => {
   const { user } = useAuthStore();
@@ -93,6 +94,10 @@ export const SalesmanDashboardPage = () => {
     Number(data?.commissionRate ?? (eventEnabled ? eventPct : basePct) / 100) *
       100,
   );
+  const rateChangeMessage = formatDealershipRateChangeMessage({
+    scheduledAt: data?.dealershipRateChangeScheduledAt,
+    scheduledRate: data?.dealershipRateChangeScheduledRate,
+  });
 
   const directBusinessCount = Number(
     overview.directBusinessCount || overview.directOrganizationCount || 0,
@@ -165,6 +170,7 @@ export const SalesmanDashboardPage = () => {
               eventPct={eventPct || 20}
               eventEnabled={eventEnabled}
               effectivePct={effectivePct || (eventEnabled ? 20 : 10)}
+              rateChangeMessage={rateChangeMessage}
             />
           </div>
         }
@@ -252,6 +258,21 @@ export const SalesmanDashboardPage = () => {
         }
         topSection={
           <div className="space-y-3 px-0.5">
+            {rateChangeMessage ? (
+              <div className="flex items-start gap-2.5 rounded-2xl border border-amber-200/80 bg-amber-50/60 px-3.5 py-3 shadow-sm sm:px-4">
+                <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
+                  <CalendarClock className="h-4 w-4" />
+                </span>
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-amber-950">
+                    요율 변경 예정
+                  </div>
+                  <p className="mt-0.5 text-sm leading-relaxed text-amber-900/80">
+                    {rateChangeMessage}
+                  </p>
+                </div>
+              </div>
+            ) : null}
             <NoOrderAlertBanner
               data={noOrderAlertsData}
               loading={noOrderAlertsLoading}
@@ -306,16 +327,38 @@ export const SalesmanDashboardPage = () => {
   );
 };
 
+function formatDealershipRateChangeMessage({
+  scheduledAt,
+  scheduledRate,
+}: {
+  scheduledAt?: string | Date | null;
+  scheduledRate?: number | null;
+}): string | null {
+  if (!scheduledAt || scheduledRate == null) return null;
+  const ymd = toKstYmd(scheduledAt);
+  if (!ymd) return null;
+  const applyAt = new Date(`${ymd}T00:00:00+09:00`);
+  if (Number.isNaN(applyAt.getTime()) || Date.now() >= applyAt.getTime()) {
+    return null;
+  }
+  const pct = Math.round(Number(scheduledRate) * 100);
+  if (!Number.isFinite(pct) || pct < 0) return null;
+  const dateLabel = formatKstYmdToKo(ymd).replace(/\.$/, "");
+  return `${dateLabel} 0시부터 영업 수수료가 ${pct}%로 변경됩니다.`;
+}
+
 function DealershipTermsCard({
   basePct,
   eventPct,
   eventEnabled,
   effectivePct,
+  rateChangeMessage,
 }: {
   basePct: number;
   eventPct: number;
   eventEnabled: boolean;
   effectivePct: number;
+  rateChangeMessage?: string | null;
 }) {
   return (
     <div className="rounded-2xl border border-slate-200/90 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 px-4 py-4 text-white shadow-sm sm:px-5">
@@ -340,7 +383,11 @@ function DealershipTermsCard({
               <p className="mt-0.5 text-xs leading-relaxed text-white/70">
                 심플웨이 · 커스텀어벗 판매가 대비({effectivePct}%). 배송비 제외.
               </p>
-              {eventEnabled ? (
+              {rateChangeMessage ? (
+                <p className="mt-1.5 text-[11px] leading-relaxed text-amber-200/95">
+                  {rateChangeMessage}
+                </p>
+              ) : eventEnabled ? (
                 <p className="mt-1.5 text-[11px] leading-relaxed text-emerald-200/90">
                   이벤트 기간인 지금은 {eventPct}%. 추후 15%·10%으로 조정될 수
                   있음.

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-20: periodSpendSummary — PTX 소비 완료/보류=billing.settledAt(장부와 동일). Request만 convertedAt.
 // - 2026-09-20: periodSpendSummary — 기공소 적립 보류 합 분리 필드. 소비 완료·보류 공급가 분리.
 // - 2026-09-20: CA 디자인 STL 미업로드·생산비 미지급은 정산 내역·기간 소비에서 제외.
 // - 2026-09-08: q 검색 — 환자명(files·transferMemo)·의뢰 caseInfos도 refId 매칭. 1글자 허용.

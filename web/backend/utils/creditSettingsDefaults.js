@@ -27,7 +27,10 @@ import {
   pickAbutsAbutmentCreditPrices,
   normalizeAbutsAbutmentCreditPrices,
 } from "./abutsAbutmentService.js";
-import { manufacturerPurchaseFromSale } from "../services/creditRevenuePolicy.service.js";
+import {
+  manufacturerPurchaseFromSale,
+  buildDealershipRateChangeApplyPatch,
+} from "../services/creditRevenuePolicy.service.js";
 
 const clampPracticeRushFeeMultiplier = (value, fallback = 1.2) => {
   const n = Number(value);
@@ -332,6 +335,8 @@ const SCHEMA_DEFAULTS = (() => {
     dealershipEventCommissionEnabled: true,
     dealershipEventStartedAt: null,
     dealershipEventEndedAt: null,
+    dealershipRateChangeScheduledAt: null,
+    dealershipRateChangeScheduledRate: null,
     regularManufacturerSharePercent: pickDefault(
       "creditSettings.regularManufacturerSharePercent",
     ),
@@ -751,6 +756,19 @@ export function normalizeLoadedCreditSettings(creditSettings = {}) {
       const d = raw instanceof Date ? raw : new Date(raw);
       return Number.isNaN(d.getTime()) ? null : d;
     })(),
+    dealershipRateChangeScheduledAt: (() => {
+      const raw = creditSettings.dealershipRateChangeScheduledAt;
+      if (!raw) return null;
+      const d = raw instanceof Date ? raw : new Date(raw);
+      return Number.isNaN(d.getTime()) ? null : d;
+    })(),
+    dealershipRateChangeScheduledRate: (() => {
+      const raw = creditSettings.dealershipRateChangeScheduledRate;
+      if (raw == null || raw === "") return null;
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n < 0) return null;
+      return Math.min(1, n);
+    })(),
     ...withRoundBar,
   };
 }
@@ -779,7 +797,33 @@ async function loadCachedGlobalCreditSettingsDoc() {
   return doc;
 }
 
+/**
+ * 요율 변경 예약이 도래하면 DB에 반영(해당일 0시 KST~).
+ * 미도래·미설정이면 no-op.
+ */
+export async function ensureDealershipRateChangeApplied(now = new Date()) {
+  const doc = await loadCachedGlobalCreditSettingsDoc();
+  if (!doc) return null;
+  const creditSettings = normalizeLoadedCreditSettings(doc.creditSettings || {});
+  const patch = buildDealershipRateChangeApplyPatch(creditSettings, now);
+  if (!patch) return creditSettings;
+
+  const set = {};
+  for (const [key, value] of Object.entries(patch)) {
+    set[`creditSettings.${key}`] = value;
+  }
+  await SystemSettings.updateOne({ key: "global" }, { $set: set });
+  invalidateGlobalCreditSettingsCache();
+  return normalizeLoadedCreditSettings({ ...creditSettings, ...patch });
+}
+
 export async function loadCreditSettingsDefaults(options = {}) {
+  if (
+    options?.applyDealershipRateChange !== false &&
+    options?.preloadedDoc === undefined
+  ) {
+    await ensureDealershipRateChangeApplied();
+  }
   const doc =
     options?.preloadedDoc !== undefined
       ? options.preloadedDoc

@@ -43,6 +43,10 @@ export type CommissionDashboardData = {
   dealershipEventCommissionEnabled?: boolean;
   dealershipEventStartedAt?: string | Date | null;
   dealershipEventEndedAt?: string | Date | null;
+  /** 요율 변경 예약일(KST 0시). */
+  dealershipRateChangeScheduledAt?: string | Date | null;
+  /** 예약 적용 요율. */
+  dealershipRateChangeScheduledRate?: number | null;
   /** devops 전용: 영업자 미설정 의뢰자 분배율 */
   unaffiliatedCommissionRate?: number;
 
@@ -154,7 +158,7 @@ export function dealershipRateBucketTip(
       ? "이벤트 종료 후 적용될 표준 요율 · 기간 외 유치 고객"
       : "현재 표준 요율로 유치한 치과·기공소";
   }
-  return "이벤트 요율 단계 조정(20%→15%→10%) 시 적용되는 중간 요율";
+  return "요율 변경 예약(20%→15%→10%)으로 적용되는 중간 요율";
 }
 
 export function requestorKindLabel(
