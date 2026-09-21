@@ -35,6 +35,10 @@ export const JoinRequestsSection = ({
     return null;
   }
 
+  const hasPending = myJoinRequests.some(
+    (row) => String(row.status) === "pending",
+  );
+
   return (
     <section className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5 space-y-3">
       <div className="flex items-center gap-2">
@@ -48,6 +52,12 @@ export const JoinRequestsSection = ({
           </p>
         </div>
       </div>
+
+      {hasPending ? (
+        <p className="text-[13px] leading-relaxed text-slate-700">
+          가입 신청이 접수되었습니다. 대표자 승인 후 이용할 수 있습니다.
+        </p>
+      ) : null}
 
       <div className="space-y-2">
         {myJoinRequests.map((r) => {
