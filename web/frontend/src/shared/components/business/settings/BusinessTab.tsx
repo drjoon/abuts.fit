@@ -1075,6 +1075,7 @@ export const BusinessTab = ({
               <>
                 {membershipMgmt.membership === "none" && (
                   <BusinessSearchSection
+                    businessType={businessType}
                     businessSearch={businessSearch.businessSearch}
                     setBusinessSearch={businessSearch.setBusinessSearch}
                     businessSearchResults={businessSearch.businessSearchResults}

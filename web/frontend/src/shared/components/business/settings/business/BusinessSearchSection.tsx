@@ -18,8 +18,10 @@ import {
 } from "@/components/ui/command";
 import { Check, ChevronsUpDown, Search, UserPlus } from "lucide-react";
 import { cn } from "@/shared/ui/cn";
+import { getBusinessTypeLabel } from "@/shared/types/role";
 
 interface BusinessSearchSectionProps {
+  businessType: string;
   businessSearch: string;
   setBusinessSearch: (value: string) => void;
   businessSearchResults: {
@@ -44,6 +46,7 @@ interface BusinessSearchSectionProps {
 }
 
 export const BusinessSearchSection = ({
+  businessType,
   businessSearch,
   setBusinessSearch,
   businessSearchResults,
@@ -54,6 +57,9 @@ export const BusinessSearchSection = ({
   joinLoading,
   onJoinRequest,
 }: BusinessSearchSectionProps) => {
+  const typeLabel = getBusinessTypeLabel(businessType);
+  const hasQuery = Boolean(businessSearch.trim());
+
   const getBusinessLabel = (b: { name: string; businessNumber?: string }) => {
     const name = String(b?.name || "").trim();
     const bn = String(b?.businessNumber || "").trim();
@@ -93,9 +99,10 @@ export const BusinessSearchSection = ({
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-[min(420px,calc(100vw-2rem))] p-0">
-          <Command>
+          {/* 서버가 businessType으로 이미 필터하므로 클라이언트 재필터 끔 */}
+          <Command shouldFilter={false}>
             <CommandInput
-              placeholder="사업자명/대표자명/주소 검색..."
+              placeholder="사업자명/대표자명 검색..."
               value={businessSearch}
               onValueChange={(v) => {
                 setBusinessSearch(v);
@@ -103,7 +110,22 @@ export const BusinessSearchSection = ({
               }}
             />
             <CommandList>
-              <CommandEmpty>검색 결과가 없습니다.</CommandEmpty>
+              <CommandEmpty className="px-3 py-4 text-left text-sm">
+                <p className="text-center text-muted-foreground">
+                  검색 결과가 없습니다.
+                </p>
+                {hasQuery ? (
+                  <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                    이 화면은{" "}
+                    <span className="font-medium text-foreground">
+                      {typeLabel}
+                    </span>{" "}
+                    사업자만 검색합니다. 치과·기공소 등 다른 유형으로 등록된
+                    사업자는 여기에 나오지 않습니다. 해당 유형 계정으로
+                    가입하거나, 사업자명·대표자명을 다시 확인해 주세요.
+                  </p>
+                ) : null}
+              </CommandEmpty>
               <CommandGroup>
                 {businessSearchResults.map((b) => {
                   const selected = selectedBusiness?._id === b._id;
