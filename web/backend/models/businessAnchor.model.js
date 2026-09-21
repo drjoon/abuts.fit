@@ -473,6 +473,11 @@ const businessAnchorSchema = new mongoose.Schema(
     // 마스터 active(기본 false)가 켜져야 설정 완료. 수가 디폴트는 기본값.
     labFeeSchedule: {
       active: { type: Boolean, default: false },
+      /**
+       * 치과→기공소 무료 리메이크 기간(년).
+       * null=미설정(유료·설정 유도), 0=항상 유료, 1+=N년 이내 무료.
+       */
+      freeRemakeYears: { type: Number, default: null, min: 0, max: 30 },
       crown: { type: Number, default: 60000, min: 0 },
       bridge: { type: Number, default: 60000, min: 0 },
       inlay: { type: Number, default: 50000, min: 0 },

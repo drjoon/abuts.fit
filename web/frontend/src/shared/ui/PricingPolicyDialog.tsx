@@ -2,6 +2,7 @@
 // - 2026-09-20: 기공소 정책 안내 — 지정 수수료 ~~2%~~ → 0% 취소선 표시.
 // - 2026-09-20: 딜러십 요율 10/15/20% · 가입 당시 요율 적용 안내.
 // - 2026-09-20: 기공소 정책 안내 — 하청 % · 작업시작 적립 시 공제.
+// - 2026-09-21: 치과→기공소 리메이크=기공소 freeRemakeYears 기간 내 무료.
 // - 2026-09-20: 기공소 정책 안내 — 지정 수수료를 관리자 설정(on/% · 이벤트 0%)으로 표시.
 // - 2026-09-20: 기공소 정책 안내 — 지정 거래 플랫폼 수수료(정책 1%·이벤트 0%).
 // - 2026-09-20: 기공소 정책 안내 — 커스텀어벗 정산은 STL·생산비 지급 뒤.
@@ -378,7 +379,7 @@ export const PricingPolicyDialog = ({
                         치과로부터 의뢰
                       </div>
                       <div className='shrink-0 text-base font-semibold tracking-tight tabular-nums text-slate-900'>
-                        무료
+                        기간 내 무료
                       </div>
                     </div>
                     <div className='flex items-baseline justify-between gap-3'>
@@ -390,7 +391,8 @@ export const PricingPolicyDialog = ({
                       </div>
                     </div>
                     <p className='text-xs leading-relaxed text-slate-500'>
-                      동일 치과·환자·치식, 최근 180일 조건 충족시 적용
+                      치과→기공소: 기공소 설정 무료 리메이크 기간(년) 이내.
+                      어벗츠: 동일 치과·환자·치식·최근 180일.
                     </p>
                   </div>
                 </div>

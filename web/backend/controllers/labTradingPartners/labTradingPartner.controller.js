@@ -49,11 +49,13 @@ import {
   toLabFeeSchedulePendingChangePublic,
   toLabPracticeSpecialSupplyPendingChangePublic,
   buildLabFeePendingPromotionSet,
+  readLabFeeFreeRemakeYears,
 } from "../../utils/labFeeSchedule.js";
 import {
   loadAbutsLabFeeSchedule,
   syncNewLabFeeItemsToAbutsCatalog,
 } from "../../utils/abutsLabFeeSchedule.js";
+import { parseFreeRemakeYearsInput } from "../../utils/remakePricingPolicy.js";
 import {
   normalizeRequestorKind,
   resolveRequestorProfile,
@@ -695,6 +697,7 @@ export async function getLabFeeSchedule(req, res) {
     const schedule = normalizeLabFeeSchedule(source);
     const remake = normalizeLabFeeRemakeSchedule(source);
     const enabled = normalizeLabFeeScheduleEnabled(source);
+    const freeRemakeYears = readLabFeeFreeRemakeYears(lab?.labFeeSchedule);
     return res.json({
       success: true,
       data: {
@@ -704,6 +707,7 @@ export async function getLabFeeSchedule(req, res) {
         enabled,
         active,
         configured,
+        freeRemakeYears,
         needSetupNames,
         updatedAt: lab?.labFeeSchedule?.updatedAt || null,
         pendingChange: toLabFeeSchedulePendingChangePublic(
@@ -760,6 +764,7 @@ export async function updateLabFeeSchedule(req, res) {
           enabled: normalizeLabFeeScheduleEnabled(updated?.labFeeSchedule),
           active: isLabFeeScheduleConfigured(updated?.labFeeSchedule),
           configured: isLabFeeScheduleReadyToCharge(updated?.labFeeSchedule),
+          freeRemakeYears: readLabFeeFreeRemakeYears(updated?.labFeeSchedule),
           updatedAt: updated?.labFeeSchedule?.updatedAt || null,
           pendingChange: null,
         },
@@ -796,6 +801,18 @@ export async function updateLabFeeSchedule(req, res) {
         ? req.body.active
         : isLabFeeScheduleConfigured(existing?.labFeeSchedule);
 
+    const freeRemakeYears = parseFreeRemakeYearsInput(
+      Object.prototype.hasOwnProperty.call(req.body || {}, "freeRemakeYears")
+        ? req.body.freeRemakeYears
+        : Object.prototype.hasOwnProperty.call(
+              req.body?.schedule || {},
+              "freeRemakeYears",
+            )
+          ? req.body.schedule.freeRemakeYears
+          : undefined,
+      existing?.labFeeSchedule?.freeRemakeYears,
+    );
+
     if (applyMode === "scheduled") {
       if (!isLabFeeScheduledYmdValid(req.body?.effectiveFromYmd)) {
         return res.status(400).json({
@@ -810,6 +827,7 @@ export async function updateLabFeeSchedule(req, res) {
           $set: {
             labFeeSchedule: {
               ...live,
+              freeRemakeYears,
               pendingChange: {
                 effectiveFromYmd: String(req.body.effectiveFromYmd).trim(),
                 items,
@@ -831,6 +849,7 @@ export async function updateLabFeeSchedule(req, res) {
           enabled: normalizeLabFeeScheduleEnabled(updated?.labFeeSchedule),
           active: isLabFeeScheduleConfigured(updated?.labFeeSchedule),
           configured: isLabFeeScheduleReadyToCharge(updated?.labFeeSchedule),
+          freeRemakeYears: readLabFeeFreeRemakeYears(updated?.labFeeSchedule),
           updatedAt: updated?.labFeeSchedule?.updatedAt || null,
           pendingChange: toLabFeeSchedulePendingChangePublic(
             updated?.labFeeSchedule?.pendingChange,
@@ -855,6 +874,7 @@ export async function updateLabFeeSchedule(req, res) {
             },
             items,
             active,
+            freeRemakeYears,
             updatedAt: new Date(),
             pendingChange: null,
           },
@@ -916,6 +936,7 @@ export async function updateLabFeeSchedule(req, res) {
         enabled: normalizeLabFeeScheduleEnabled(updated?.labFeeSchedule),
         active: activeFlag,
         configured,
+        freeRemakeYears: readLabFeeFreeRemakeYears(updated?.labFeeSchedule),
         updatedAt: updated?.labFeeSchedule?.updatedAt || null,
         pendingChange: null,
       },

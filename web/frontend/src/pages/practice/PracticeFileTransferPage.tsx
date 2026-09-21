@@ -1745,7 +1745,7 @@ export const PracticeFileTransferPage = ({
     labAnchorId: selectedLab?._id,
     toothWorks: syncToothWorks,
     implantFavorites,
-    // 원의뢰 180일 밖이면 정가(리메이크 플래그와 수가 분리)
+    // 원의뢰가 기공소 freeRemakeYears 밖이면 정가(리메이크 플래그와 수가 분리)
     remake:
       !linkedRemakeSource ||
       linkedRemakeSource.withinRemakePricingWindow !== false,
@@ -1816,7 +1816,8 @@ export const PracticeFileTransferPage = ({
           const qs = new URLSearchParams({
             patientName: normalizedPatientName,
             teeth: composeToothNumbersKey,
-            days: "180",
+            // 기공소 freeRemakeYears 상한(30년)까지 감지
+            days: String(365 * 30),
             limit: "5",
           });
           const excludeId = String(
@@ -8074,7 +8075,8 @@ export const PracticeFileTransferPage = ({
           const qs = new URLSearchParams({
             patientName: normalizedPatientName,
             teeth: composeToothNumbersKey,
-            days: "180",
+            // 기공소 freeRemakeYears 상한(30년)까지 감지
+            days: String(365 * 30),
             limit: "5",
           });
           const res = await apiFetch<{
@@ -11912,8 +11914,8 @@ export const PracticeFileTransferPage = ({
                   )}
                 </div>
                 <div className="text-muted-foreground">
-                  동일 치과·환자·치식·최근 180일 조건이면 치과→기공소 리메이크비는
-                  무료입니다. 기공소가 작업시작하면 반영됩니다.
+                  해당 기공소의 무료 리메이크 기간(년) 이내면 치과→기공소
+                  리메이크비는 무료입니다. 기공소가 작업시작하면 반영됩니다.
                 </div>
                 {remakePending.transfer.hasCustomAbutment ? (
                   <label className="flex cursor-pointer items-start gap-2 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2 text-[13px]">
@@ -11984,9 +11986,10 @@ export const PracticeFileTransferPage = ({
                 {PRE_PLATFORM_REMAKE_PRACTICE_SEND_HINT}
               </div>
               <div className="text-muted-foreground">
-                동일 치과·환자·치식·최근 180일이면 치과→기공소 리메이크비는
-                무료입니다. 커스텀어벗은 기본 제외이며, 작성 화면에서 넣으면
-                기공소→어벗츠 리메이크는 건당 10,000원(배송비 별도)입니다.
+                해당 기공소의 무료 리메이크 기간(년) 이내면 치과→기공소
+                리메이크비는 무료입니다. 커스텀어벗은 기본 제외이며, 작성
+                화면에서 넣으면 기공소→어벗츠 리메이크는 건당 10,000원(배송비
+                별도)입니다.
               </div>
               {composeRemakeIncludesCustomAbutment ? (
                 <div className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-[12px] text-amber-950">

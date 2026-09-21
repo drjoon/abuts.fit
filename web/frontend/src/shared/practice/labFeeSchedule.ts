@@ -231,6 +231,27 @@ export const LAB_FEE_CUSTOM_ABUTMENT_REMAKE_DEFAULT_PRICE = 0;
 /** 치과↔기공소 리메이크 기공비 무료(견적·청구·수락 공통). */
 export const LAB_FEE_REMAKE_FREE = true;
 
+/** labFeeSchedule.freeRemakeYears 상한(년). null=미설정, 0=유료, 1+=N년 무료. */
+export const FREE_REMAKE_YEARS_MAX = 30;
+
+export const normalizeFreeRemakeYears = (raw: unknown): number | null => {
+  if (raw == null || raw === "") return null;
+  const n = Math.trunc(Number(raw));
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.min(FREE_REMAKE_YEARS_MAX, n);
+};
+
+export const isLabFeeFreeRemakeYearsConfigured = (
+  schedule?: { freeRemakeYears?: unknown } | null,
+): boolean => normalizeFreeRemakeYears(schedule?.freeRemakeYears) != null;
+
+export const formatFreeRemakeYearsLabel = (years: unknown): string => {
+  const n = normalizeFreeRemakeYears(years);
+  if (n == null) return "미설정";
+  if (n <= 0) return "유료(무료 기간 없음)";
+  return `${n}년 이내 무료`;
+};
+
 export const isCustomAbutmentWithJigFeeName = (name: string) => {
   const compact = String(name || "")
     .trim()

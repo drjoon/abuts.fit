@@ -47,6 +47,7 @@
 // - 2026-09-07: 기공비·특별공급가 pendingChange(즉시/특정일) + 작업시작 시점 유효 수가.
 import { applyRushFeeMultiplierToFees } from "./practiceTransferRush.js";
 import { isFollowUpProsthesisPhase, isFinalProsthesisType, hasFollowUpProsthesisForTooth } from "./practiceTransferProsthesisFollowUp.js";
+import { normalizeFreeRemakeYears } from "./remakePricingPolicy.js";
 import {
   IMPLANT_ADD_REQUEST_OPTION,
   MANUFACTURER_ADD_REQUEST_BRAND,
@@ -338,6 +339,20 @@ export function isLabFeeScheduleConfigured(schedule) {
   if (!schedule || typeof schedule !== "object") return false;
   if (typeof schedule.active === "boolean") return schedule.active === true;
   return hasLabFeeUpdatedAt(schedule);
+}
+
+/**
+ * 무료 리메이크 기간(년). null=미설정.
+ * @param {unknown} schedule
+ * @returns {number|null}
+ */
+export function readLabFeeFreeRemakeYears(schedule) {
+  if (!schedule || typeof schedule !== "object") return null;
+  return normalizeFreeRemakeYears(schedule.freeRemakeYears);
+}
+
+export function isLabFeeFreeRemakeYearsConfigured(schedule) {
+  return readLabFeeFreeRemakeYears(schedule) != null;
 }
 
 /** 제공(on)이고 단가>0인 항목이 하나라도 있으면 true. */

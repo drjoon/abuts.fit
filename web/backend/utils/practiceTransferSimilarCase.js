@@ -3,17 +3,20 @@
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 // - web/frontend/src/shared/components/practice/PracticeSimilarCaseRemakeDialog.tsx
 // change-log:
+// - 2026-09-21: 감지 기본=무료기간 상한(년×365). 수가 창은 lab freeRemakeYears.
 // - 2026-09-14: 감지 창=리메이크 정책 창(180일) 통일.
 // - 2026-09-14: 신규 작성 시 동일 환자·치아 감지(리메이크 확인).
 
 import { toKstYmd } from "./krBusinessDays.js";
 import {
-  isWithinRemakePolicyWindow,
+  isWithinLabFreeRemakeWindow,
+  normalizeFreeRemakeYears,
   REMAKE_POLICY_WINDOW_DAYS,
+  FREE_REMAKE_YEARS_MAX,
 } from "./remakePricingPolicy.js";
 
-/** @deprecated 정책 창과 동일 — REMAKE_POLICY_WINDOW_DAYS 사용 */
-export const SIMILAR_CASE_DETECT_WINDOW_DAYS = REMAKE_POLICY_WINDOW_DAYS;
+/** 동일건 감지 기본 일수 — 기공소 무료기간 상한까지 커버 */
+export const SIMILAR_CASE_DETECT_WINDOW_DAYS = 365 * FREE_REMAKE_YEARS_MAX;
 
 export const patientNameFromTransferMemo = (memo) =>
   String(String(memo || "").match(/\[\s*환자명\s*:\s*([^\]]*)\]/)?.[1] || "")
@@ -80,7 +83,10 @@ export function similarCaseDetectCutoffDate(
   const cutoff = new Date(`${nowYmd}T00:00:00+09:00`);
   const n = Math.max(
     1,
-    Math.min(365, Math.floor(Number(days) || REMAKE_POLICY_WINDOW_DAYS)),
+    Math.min(
+      365 * FREE_REMAKE_YEARS_MAX,
+      Math.floor(Number(days) || REMAKE_POLICY_WINDOW_DAYS),
+    ),
   );
   cutoff.setDate(cutoff.getDate() - n);
   return cutoff;
@@ -92,6 +98,7 @@ export function escapePatientNameForMemoRegex(value) {
 
 /**
  * @param {object} doc
+ * @param {{ freeRemakeYears?: unknown }} [opts]
  * @returns {{
  *   _id: string,
  *   transferId: string,
@@ -100,10 +107,11 @@ export function escapePatientNameForMemoRegex(value) {
  *   targetLabName: string,
  *   createdAt: Date|null,
  *   orderYmd: string,
+ *   freeRemakeYears: number|null,
  *   withinRemakePricingWindow: boolean,
  * }}
  */
-export function toSimilarCaseMatchApi(doc) {
+export function toSimilarCaseMatchApi(doc, opts = {}) {
   const toothNumbers = collectToothNumbersFromToothWorks(doc?.toothWorks);
   const orderDates = Array.isArray(doc?.orderDates)
     ? doc.orderDates
@@ -111,6 +119,7 @@ export function toSimilarCaseMatchApi(doc) {
         .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
     : [];
   const createdAt = doc?.createdAt || null;
+  const freeRemakeYears = normalizeFreeRemakeYears(opts?.freeRemakeYears);
   return {
     _id: String(doc?._id || ""),
     transferId: String(doc?.transferId || "").trim(),
@@ -119,8 +128,10 @@ export function toSimilarCaseMatchApi(doc) {
     targetLabName: String(doc?.targetLabName || "").trim(),
     createdAt,
     orderYmd: orderDates[0] || toKstYmd(createdAt) || "",
-    withinRemakePricingWindow: isWithinRemakePolicyWindow(
+    freeRemakeYears,
+    withinRemakePricingWindow: isWithinLabFreeRemakeWindow(
       createdAt || orderDates[0] || null,
+      freeRemakeYears,
     ),
   };
 }

@@ -9,8 +9,11 @@ import BusinessAnchor from "../../models/businessAnchor.model.js";
 import {
   isLabFeeScheduleConfigured,
   normalizeLabFeeItems,
+  readLabFeeFreeRemakeYears,
 } from "../../utils/labFeeSchedule.js";
+import { parseFreeRemakeYearsInput } from "../../utils/remakePricingPolicy.js";
 import { requestorKindCapableAnchorFilter } from "../../utils/requestorCapabilities.js";
+import { invalidatePracticeTransferQuoteCaches } from "../../services/practiceTransferBilling.service.js";
 
 const PAGE_LIMIT_DEFAULT = 15;
 const PAGE_LIMIT_MAX = 50;
@@ -63,6 +66,7 @@ const toListRow = (row) => {
     verified: String(row.status || "").trim() === "verified",
     configured,
     active: configured,
+    freeRemakeYears: readLabFeeFreeRemakeYears(schedule),
     items,
     updatedAt: schedule?.updatedAt || null,
   };
@@ -167,4 +171,79 @@ export async function listLabFeeSchedules(req, res) {
       error: error.message,
     });
   }
-};
+}
+
+/**
+ * PATCH /api/admin/settings/lab-fee-schedules/:id
+ * body: { freeRemakeYears: null | 0 | 1..30 }
+ */
+export async function updateLabFeeScheduleFreeRemakeYears(req, res) {
+  try {
+    const id = String(req.params?.id || "").trim();
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: "기공소 ID가 필요합니다.",
+      });
+    }
+    if (!Object.prototype.hasOwnProperty.call(req.body || {}, "freeRemakeYears")) {
+      return res.status(400).json({
+        success: false,
+        message: "freeRemakeYears가 필요합니다.",
+      });
+    }
+    const freeRemakeYears = parseFreeRemakeYearsInput(req.body.freeRemakeYears);
+    const kindFilter = requestorKindCapableAnchorFilter("lab");
+    const lab = await BusinessAnchor.findOne({
+      _id: id,
+      businessType: "requestor",
+      status: { $ne: "merged" },
+      ...(kindFilter || {}),
+    })
+      .select({ labFeeSchedule: 1, name: 1, metadata: 1, businessNumberNormalized: 1, status: 1 })
+      .lean();
+    if (!lab) {
+      return res.status(404).json({
+        success: false,
+        message: "기공소를 찾을 수 없습니다.",
+      });
+    }
+    const live = lab.labFeeSchedule || {};
+    const updated = await BusinessAnchor.findByIdAndUpdate(
+      id,
+      {
+        $set: {
+          labFeeSchedule: {
+            ...live,
+            freeRemakeYears,
+          },
+        },
+      },
+      {
+        new: true,
+        select: {
+          name: 1,
+          businessNumberNormalized: 1,
+          status: 1,
+          labFeeSchedule: 1,
+          "metadata.companyName": 1,
+          "metadata.representativeName": 1,
+          "metadata.address": 1,
+          "metadata.addressDetail": 1,
+        },
+      },
+    ).lean();
+    invalidatePracticeTransferQuoteCaches(id);
+    return res.json({
+      success: true,
+      data: toListRow(updated),
+    });
+  } catch (error) {
+    console.error("[labFeeSchedules] update freeRemakeYears failed", error);
+    return res.status(500).json({
+      success: false,
+      message: "무료 리메이크 기간 저장 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}

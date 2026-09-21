@@ -169,7 +169,7 @@ export const PRACTICE_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   {
     id: "remake",
     title: "리메이크 의뢰",
-    hint: "이전 의뢰·가입 전 건도 리메이크할 수 있습니다. 동일 환자·치식·최근 180일이면 치과→기공소 기공비는 무료입니다.",
+    hint: "이전 의뢰·가입 전 건도 리메이크할 수 있습니다. 동일 환자·치식이고 기공소 무료 리메이크 기간(년) 이내면 치과→기공소 기공비는 무료입니다.",
     path: PRACTICE_ORAL_PATH,
     target: "practice_remake",
     advance: "next",
@@ -311,7 +311,7 @@ export const LAB_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   {
     id: "lab_remake",
     title: "리메이크 수신",
-    hint: "리메이크 의뢰는 뱃지로 표시됩니다.\n동일 환자·치식·최근 180일이면 리메이크 기공비는 무료입니다.\n플랫폼 가입 전 건은 별도 안내를 확인한 뒤 작업시작하세요.",
+    hint: "리메이크 의뢰는 뱃지로 표시됩니다.\n동일 환자·치식이고 기공소 무료 리메이크 기간(년) 이내면 리메이크 기공비는 무료입니다.\n플랫폼 가입 전 건은 별도 안내를 확인한 뒤 작업시작하세요.",
     path: LAB_RECEIVE_PATH,
     target: "lab_remake",
     advance: "next",

@@ -76,7 +76,10 @@ import {
 // - web/frontend/src/features/settings/tabs/AdminLabFeeSchedulesTab.tsx
 // - web/frontend/src/features/settings/tabs/AdminAbutsLabFeeScheduleTab.tsx
 // - web/backend/controllers/admin/admin.abutsLabFeeSchedule.controller.js
-import { listLabFeeSchedules } from "../../controllers/admin/admin.labFeeSchedules.controller.js";
+import {
+  listLabFeeSchedules,
+  updateLabFeeScheduleFreeRemakeYears,
+} from "../../controllers/admin/admin.labFeeSchedules.controller.js";
 import {
   approveProsthesisFeeItemRequest,
   dismissProsthesisFeeItemRequest,
@@ -274,6 +277,12 @@ router.get(
   authenticate,
   authorize(["admin", "devops"]),
   listLabFeeSchedules,
+);
+router.patch(
+  "/settings/lab-fee-schedules/:id",
+  authenticate,
+  authorize(["admin", "devops"]),
+  updateLabFeeScheduleFreeRemakeYears,
 );
 router.get(
   "/settings/abuts-lab-fee-schedule",

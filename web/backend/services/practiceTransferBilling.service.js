@@ -139,6 +139,7 @@ import {
   resolveEffectiveLabFeeLabDoc,
   stripCustomAbutmentFromToothWorks,
   countCustomAbutmentWorks,
+  readLabFeeFreeRemakeYears,
 } from "../utils/labFeeSchedule.js";
 import {
   normalizeConfiguredRushFeeMultiplier,
@@ -181,7 +182,7 @@ import {
 } from "../utils/practiceLabRating.js";
 import { shouldChargePracticeTransferLabShipping } from "../utils/practiceTransferLabShipping.js";
 import { SHIPPING_LEDGER_LABELS } from "../utils/shippingLedgerLabels.js";
-import { isWithinRemakePolicyWindow } from "../utils/remakePricingPolicy.js";
+import { isWithinLabFreeRemakeWindow } from "../utils/remakePricingPolicy.js";
 import {
   awaitsAbutmentShareRelease,
   requestMachiningSpendGlKey,
@@ -6338,8 +6339,13 @@ export async function buildFeeQuotesForTransferDocs({
           practiceId,
         );
     // 기본 리메이크 견적=보철만(CA 제외). CA 포함 견적은 별도 필드.
-    // 원본이 리메이크 정책 창(180일) 밖이면 정가(비-리메이크) 견적.
-    const remakePricingEligible = isWithinRemakePolicyWindow(doc?.createdAt);
+    // 기공소 freeRemakeYears 창 밖·미설정(null)·0이면 정가(비-리메이크) 견적.
+    const remakePricingEligible = isWithinLabFreeRemakeWindow(
+      doc?.createdAt,
+      readLabFeeFreeRemakeYears(
+        labDocById.get(quoteLabId)?.labFeeSchedule,
+      ),
+    );
     const remakeToothWorksProsthesisOnly =
       stripCustomAbutmentFromToothWorks(toothWorks);
     const remakeFees = computePracticeTransferRetailFees({

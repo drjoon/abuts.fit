@@ -1,10 +1,11 @@
 /**
- * 신규 기공의뢰 작성 중 — 최근 180일 동일 환자·치아 발견 시 리메이크 여부 확인.
+ * 신규 기공의뢰 작성 중 — 동일 환자·치아 발견 시 리메이크 여부 확인.
  * related files:
  * - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
  * - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
  * - web/backend/utils/practiceTransferSimilarCase.js
  * change-log:
+ * - 2026-09-21: 무료 창=기공소 freeRemakeYears(카피·뱃지).
  * - 2026-09-21: z-[460] — 작성 모달(z-320, 투어 z-410) 뒤에서 바깥클릭으로 전송 버튼을 삼키던 문제.
  * - 2026-09-14: 신규 작성·전송 전 리메이크/신규 분기 모달.
  */
@@ -20,6 +21,7 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { toStatusBadgeLabel } from "@/shared/practice/practiceRecentTransferList";
+import { formatFreeRemakeYearsLabel } from "@/shared/practice/labFeeSchedule";
 
 export type PracticeSimilarCaseMatch = {
   _id: string;
@@ -30,6 +32,7 @@ export type PracticeSimilarCaseMatch = {
   createdAt?: string | Date | null;
   orderYmd?: string;
   manufacturerStage?: string;
+  freeRemakeYears?: number | null;
   withinRemakePricingWindow?: boolean;
 };
 
@@ -75,8 +78,9 @@ export function PracticeSimilarCaseRemakeDialog({
             동일 환자·치아 의뢰가 있습니다
           </DialogTitle>
           <DialogDescription className="text-sm text-muted-foreground">
-            최근 180일 내 같은 환자·치아 의뢰입니다. 리메이크면 원의뢰에 연결되고
-            기공소에 「리메이크」로 표시됩니다.
+            같은 환자·치아 의뢰입니다. 리메이크면 원의뢰에 연결되고 기공소에
+            「리메이크」로 표시됩니다. 무료 여부는 해당 기공소의 무료 리메이크
+            기간(년) 설정에 따릅니다.
           </DialogDescription>
         </DialogHeader>
 
@@ -92,6 +96,17 @@ export function PracticeSimilarCaseRemakeDialog({
                 Array.isArray(match.toothNumbers) && match.toothNumbers.length
                   ? match.toothNumbers.join(", ")
                   : "—";
+              const yearsLabel = formatFreeRemakeYearsLabel(
+                match.freeRemakeYears,
+              );
+              const feeHint =
+                match.withinRemakePricingWindow === true
+                  ? " · 리메이크비 무료 가능"
+                  : match.freeRemakeYears == null
+                    ? " · 리메이크비 정가(기간 미설정)"
+                    : match.freeRemakeYears <= 0
+                      ? " · 리메이크비 유료"
+                      : " · 리메이크비 정가(무료 기간 초과)";
               return (
                 <button
                   key={match._id}
@@ -117,10 +132,8 @@ export function PracticeSimilarCaseRemakeDialog({
                   </div>
                   <div className="text-xs text-muted-foreground">
                     {match.orderYmd || "—"} ·{" "}
-                    {match.targetLabName || "기공소"}
-                    {match.withinRemakePricingWindow === false
-                      ? " · 리메이크비 정가(180일 초과)"
-                      : " · 리메이크비 무료 가능"}
+                    {match.targetLabName || "기공소"} ({yearsLabel})
+                    {feeHint}
                   </div>
                 </button>
               );
@@ -148,10 +161,9 @@ export function PracticeSimilarCaseRemakeDialog({
           <Button
             type="button"
             disabled={!canRemake || busy}
-            className="bg-amber-600 text-white hover:bg-amber-700"
             onClick={onConfirmRemake}
           >
-            {busy ? "처리 중…" : "리메이크로 처리"}
+            리메이크로 처리
           </Button>
         </DialogFooter>
       </DialogContent>

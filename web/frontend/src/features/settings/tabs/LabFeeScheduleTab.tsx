@@ -16,6 +16,7 @@
 // - 2026-08-24: need 강제 입력 시 커스텀어벗(지그포함/제외) 기본가 4만·3만 시드.
 // - 2026-08-21: need 강제 입력은 맨 아래에서 작업(입력 후 위치 점프 혼동 방지).
 // - 2026-08-29: 특별공급가는 별도 탭(LabPracticeSpecialSupplyTab)으로 분리.
+// - 2026-09-21: freeRemakeYears(년) 설정·미설정 하이라이트(from=freeRemake).
 // - 2026-09-07: 수가성 변경 시 즉시/특정일 적용 모달 + pendingChange 안내.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -50,6 +51,9 @@ import {
   MAX_LAB_FEE_ITEMS,
   normalizeLabFeeItem,
   normalizeLabFeeItems,
+  normalizeFreeRemakeYears,
+  FREE_REMAKE_YEARS_MAX,
+  formatFreeRemakeYearsLabel,
   labFeeItemMatchesNeedName,
   isCustomAbutmentLabFeeLineType,
   type LabFeeItem,
@@ -243,6 +247,7 @@ export const LabFeeScheduleTab = () => {
   const highlightSetup = searchParams.get("setup") === "1";
   const fromAccept = searchParams.get("from") === "accept";
   const fromCatalog = searchParams.get("from") === "catalog";
+  const fromFreeRemake = searchParams.get("from") === "freeRemake";
   const fromNeedGuide = fromAccept || fromCatalog;
   const needNames = useMemo(
     () => parseLabFeeNeedNames(searchParams.toString()),
@@ -252,6 +257,7 @@ export const LabFeeScheduleTab = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [active, setActive] = useState(false);
+  const [freeRemakeYears, setFreeRemakeYears] = useState<number | null>(null);
   const [items, setItems] = useState<LabFeeItem[]>([]);
   const [pendingChange, setPendingChange] = useState<LabFeePendingChange | null>(
     null,
@@ -261,14 +267,18 @@ export const LabFeeScheduleTab = () => {
   const hydratedRef = useRef(false);
   const savedSnapshotRef = useRef("");
   const savedChargeSnapshotRef = useRef("");
+  const savedFreeRemakeYearsRef = useRef<number | null>(null);
   const itemsRef = useRef(items);
   const activeRef = useRef(active);
+  const freeRemakeYearsRef = useRef(freeRemakeYears);
+  const freeRemakeHighlightRef = useRef<HTMLDivElement | null>(null);
   const pendingTimingPayloadRef = useRef<{
     items: LabFeeItem[];
     active: boolean;
   } | null>(null);
   itemsRef.current = items;
   activeRef.current = active;
+  freeRemakeYearsRef.current = freeRemakeYears;
 
   const patchItem = (id: string, patch: Partial<LabFeeItem>) => {
     setItems((prev) =>
@@ -309,6 +319,7 @@ export const LabFeeScheduleTab = () => {
           enabled?: Partial<Record<string, boolean>>;
           active?: boolean;
           configured?: boolean;
+          freeRemakeYears?: number | null;
           pendingChange?: LabFeePendingChange | null;
         };
         message?: string;
@@ -330,6 +341,12 @@ export const LabFeeScheduleTab = () => {
         ? payload.pendingChange
         : null;
       setPendingChange(pending);
+      const nextFreeRemakeYears = normalizeFreeRemakeYears(
+        payload?.freeRemakeYears,
+      );
+      setFreeRemakeYears(nextFreeRemakeYears);
+      freeRemakeYearsRef.current = nextFreeRemakeYears;
+      savedFreeRemakeYearsRef.current = nextFreeRemakeYears;
       const liveActive = Boolean(payload?.active ?? payload?.configured);
       const nextActive =
         pending && typeof pending.active === "boolean"
@@ -404,11 +421,19 @@ export const LabFeeScheduleTab = () => {
 
   const persist = useCallback(
     async (
-      next: { items: LabFeeItem[]; active: boolean },
+      next: {
+        items: LabFeeItem[];
+        active: boolean;
+        freeRemakeYears?: number | null;
+      },
       options?: LabFeeApplyTimingResult | { applyMode: "cancel_pending" },
     ) => {
       if (!token) return false;
       const applyMode = options?.applyMode || "immediate";
+      const freeRemakeYearsPayload =
+        next.freeRemakeYears !== undefined
+          ? next.freeRemakeYears
+          : freeRemakeYearsRef.current;
       try {
         const res = await request<{
           message?: string;
@@ -416,6 +441,7 @@ export const LabFeeScheduleTab = () => {
             items?: LabFeeItem[];
             active?: boolean;
             configured?: boolean;
+            freeRemakeYears?: number | null;
             pendingChange?: LabFeePendingChange | null;
           };
         }>({
@@ -425,6 +451,7 @@ export const LabFeeScheduleTab = () => {
           jsonBody: {
             items: next.items,
             active: next.active,
+            freeRemakeYears: freeRemakeYearsPayload,
             applyMode,
             ...(applyMode === "scheduled" &&
             options &&
@@ -445,6 +472,12 @@ export const LabFeeScheduleTab = () => {
           ? res.data.data.pendingChange
           : null;
         setPendingChange(pending);
+        const savedYears = normalizeFreeRemakeYears(
+          res.data?.data?.freeRemakeYears ?? freeRemakeYearsPayload,
+        );
+        setFreeRemakeYears(savedYears);
+        freeRemakeYearsRef.current = savedYears;
+        savedFreeRemakeYearsRef.current = savedYears;
         if (applyMode === "scheduled") {
           // live 응답이 아니라 방금 예약한 수가를 화면에 유지.
           const scheduledItems = Array.isArray(pending?.items)
@@ -572,7 +605,7 @@ export const LabFeeScheduleTab = () => {
       return;
     }
     if (nextActive) {
-      if (highlightSetup) {
+      if (highlightSetup && !fromFreeRemake) {
         const next = new URLSearchParams(searchParams);
         next.delete("setup");
         setSearchParams(next, { replace: true });
@@ -581,6 +614,36 @@ export const LabFeeScheduleTab = () => {
       return;
     }
     toast({ title: "기공비를 껐습니다." });
+  };
+
+  const saveFreeRemakeYears = async (nextYears: number | null) => {
+    const prev = freeRemakeYearsRef.current;
+    const normalized = normalizeFreeRemakeYears(nextYears);
+    freeRemakeYearsRef.current = normalized;
+    setFreeRemakeYears(normalized);
+    if (normalized === savedFreeRemakeYearsRef.current) return;
+    setSaving(true);
+    const ok = await persist({
+      items: itemsRef.current,
+      active: activeRef.current,
+      freeRemakeYears: normalized,
+    });
+    setSaving(false);
+    if (!ok) {
+      freeRemakeYearsRef.current = prev;
+      setFreeRemakeYears(prev);
+      return;
+    }
+    if (fromFreeRemake || highlightSetup) {
+      const next = new URLSearchParams(searchParams);
+      next.delete("from");
+      next.delete("setup");
+      setSearchParams(next, { replace: true });
+    }
+    toast({
+      title: "무료 리메이크 기간을 저장했습니다.",
+      description: formatFreeRemakeYearsLabel(normalized),
+    });
   };
 
   const focusNeedId = items.find(
@@ -597,6 +660,17 @@ export const LabFeeScheduleTab = () => {
     }, 80);
     return () => window.clearTimeout(timer);
   }, [loading, needKey, needNames.length]);
+
+  useEffect(() => {
+    if (loading || !(fromFreeRemake || freeRemakeYears == null)) return;
+    const timer = window.setTimeout(() => {
+      freeRemakeHighlightRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [loading, fromFreeRemake, freeRemakeYears]);
 
   // need 수가 입력이 끝나면 from/need/setup 쿼리를 지워 상단 안내·하이라이트를 끈다.
   useEffect(() => {
@@ -657,7 +731,12 @@ export const LabFeeScheduleTab = () => {
             />
           </div>
         </div>
-        {fromNeedGuide && needNames.length ? (
+        {fromFreeRemake && freeRemakeYears == null ? (
+          <p className="mt-2 text-[13px] font-medium text-red-600">
+            무료 리메이크 기간(년)을 설정해 주세요. 0년이면 유료, 1년 이상이면 그
+            기간 동안 무료입니다.
+          </p>
+        ) : fromNeedGuide && needNames.length ? (
           <p className="mt-2 text-[13px] font-medium text-red-600">
             {fromCatalog
               ? `치과에서 의뢰가 들어올 수 있습니다. 기공비를 정상적으로 받으려면 「${needNames.join("·")}」 수가를 켜고 설정하세요.`
@@ -673,9 +752,85 @@ export const LabFeeScheduleTab = () => {
           </p>
         ) : null}
         <p className="mt-2 text-[12px] leading-snug text-slate-500">
-          치과↔기공소 리메이크비는 무료입니다. 리메이크 단가 입력은 참고용이며
-          청구되지 않습니다.
+          무료 리메이크 기간(년) 이내면 치과→기공소 리메이크비는 무료입니다.
+          리메이크 단가 입력은 참고용이며 무료 기간 안에서는 청구되지 않습니다.
         </p>
+        <div
+          ref={freeRemakeHighlightRef}
+          className={cn(
+            "mt-3 rounded-2xl border px-3 py-3 transition-shadow",
+            freeRemakeYears == null || fromFreeRemake
+              ? "border-red-300 bg-red-50/80 ring-2 ring-red-500 ring-offset-2 ring-offset-white animate-pulse"
+              : "border-slate-200/80 bg-slate-50/60",
+          )}
+        >
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div className="min-w-0 space-y-1">
+              <Label
+                htmlFor="free-remake-years"
+                className={cn(
+                  "text-[13px] font-semibold",
+                  freeRemakeYears == null ? "text-red-700" : "text-slate-800",
+                )}
+              >
+                무료 리메이크 기간
+              </Label>
+              <p className="text-[12px] leading-snug text-slate-500">
+                0년=유료 · 1년 이상=해당 기간 무료 · 미설정이면 유료로 처리됩니다.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Input
+                id="free-remake-years"
+                type="number"
+                inputMode="numeric"
+                min={0}
+                max={FREE_REMAKE_YEARS_MAX}
+                step={1}
+                disabled={saving}
+                value={freeRemakeYears == null ? "" : String(freeRemakeYears)}
+                placeholder="설정"
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  if (raw === "") {
+                    setFreeRemakeYears(null);
+                    freeRemakeYearsRef.current = null;
+                    return;
+                  }
+                  const n = Math.max(
+                    0,
+                    Math.min(
+                      FREE_REMAKE_YEARS_MAX,
+                      Math.trunc(Number(raw) || 0),
+                    ),
+                  );
+                  setFreeRemakeYears(n);
+                  freeRemakeYearsRef.current = n;
+                }}
+                onBlur={() => {
+                  void saveFreeRemakeYears(freeRemakeYearsRef.current);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    e.currentTarget.blur();
+                  }
+                }}
+                className="h-10 w-[5.5rem] rounded-xl border-slate-200 bg-white text-center text-base font-semibold tabular-nums"
+              />
+              <span className="text-[13px] font-medium text-slate-600">년</span>
+            </div>
+          </div>
+          {freeRemakeYears == null ? (
+            <p className="mt-2 text-[12px] font-medium text-red-600">
+              기간을 입력해 주세요. (0=유료, 1 이상=무료 기간)
+            </p>
+          ) : (
+            <p className="mt-2 text-[12px] text-slate-600">
+              현재: {formatFreeRemakeYearsLabel(freeRemakeYears)}
+            </p>
+          )}
+        </div>
         {pendingChange?.effectiveFromYmd ? (
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200/90 bg-amber-50/90 px-3 py-2 text-[13px] text-amber-950">
             <p className="min-w-0 font-medium leading-snug">
