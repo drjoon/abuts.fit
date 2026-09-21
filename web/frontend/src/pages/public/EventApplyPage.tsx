@@ -468,17 +468,18 @@ export default function EventApplyPage() {
     return (
       <PublicPageLayout
         plain
-        contentClassName="relative z-10 mx-auto w-full max-w-2xl px-4 pt-24 pb-16 sm:px-6"
+        contentClassName="relative z-10 mx-auto w-full max-w-2xl px-4 pb-16 pt-28 sm:px-6 sm:pt-32"
       >
-        <Card className={PUBLIC_CARD_CLASS}>
-          <CardContent className="flex flex-col items-center gap-3 py-14 text-center">
-            <CheckCircle2 className="h-11 w-11 text-emerald-600" />
+        <Card className={cn(PUBLIC_CARD_CLASS, "rounded-3xl")}>
+          <CardContent className="flex flex-col items-center gap-3 px-6 pb-14 pt-14 text-center">
+            <CheckCircle2 className="h-11 w-11 shrink-0 text-emerald-600" />
             <h2 className="text-2xl font-semibold text-slate-900">
               신청이 완료되었습니다
             </h2>
             <p className="max-w-md text-sm leading-relaxed text-slate-600">
-              {event.title} 신청을 접수했습니다. 담당 영업자가 방문해
-              제품·사용 방법을 안내합니다.
+              {event.title} 신청을 접수했습니다.
+              <br />
+              담당 영업자가 방문해 제품·사용 방법을 안내합니다.
             </p>
             <Button asChild className="mt-3 rounded-full">
               <Link to="/dashboard/practice-transfers?mode=send">

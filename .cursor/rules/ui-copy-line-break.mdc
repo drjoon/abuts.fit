@@ -1,0 +1,40 @@
+---
+description: Long UI copy sentences use explicit <br /> line breaks (not soft wrap only).
+globs: web/frontend/**/*.{tsx,ts}
+alwaysApply: true
+---
+
+# UI copy line breaks (강제)
+
+## Policy
+
+- 안내·완료·설명처럼 **한 문장이 길어지면** 문장 단위로 **명시적 `<br />`** 를 넣는다.
+- 브라우저 자동 줄바꿈(soft wrap)·소스만 개행한 JSX 텍스트에 기대지 않는다. 의도한 줄 나눔은 마크업으로 고정한다.
+- 문장 경계(마침표 뒤)에서 끊는 것을 기본으로 한다.
+
+## Do / Don't
+
+```tsx
+// ❌ BAD — 긴 두 문장을 한 덩어리로 (뷰포트에 따라 어색하게 끊김)
+<p>
+  {title} 신청을 접수했습니다. 담당 영업자가 방문해 제품·사용 방법을 안내합니다.
+</p>
+
+// ❌ BAD — 소스 개행만 하고 DOM에서는 한 줄
+<p>
+  {title} 신청을 접수했습니다. 담당 영업자가 방문해
+  제품·사용 방법을 안내합니다.
+</p>
+
+// ✅ GOOD — 문장 단위 <br />
+<p>
+  {title} 신청을 접수했습니다.
+  <br />
+  담당 영업자가 방문해 제품·사용 방법을 안내합니다.
+</p>
+```
+
+## SSOT
+
+- `.cursor/rules/ui-copy-line-break.mdc`
+- `web/frontend/rules.md` — UI copy 줄바꿈
