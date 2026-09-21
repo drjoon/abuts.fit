@@ -54,7 +54,7 @@ export const SIMPLEWAY_SAMPLE_EXTRAS = [
 ] as const;
 
 export const SIMPLEWAY_DEALER_HELP =
-  "친한 로컬 재료상 사장님을 소개해주세요. 그 분께 지역 영업권을 드립니다.";
+  "친한 로컬 재료상 사장님을 소개해주세요. 그 분께 지역 영업권을 드립니다. (옵션)";
 
 export const SIMPLEWAY_HERO_SUB =
   "심플웨이의 신제품 그리보(Gribo) 출시 안내입니다. 그리보 힐링H · 그리보 어벗H · 그리보 커스텀어벗 · 그리보 드라이버 등 제품 라인업을 소개해 드립니다.";

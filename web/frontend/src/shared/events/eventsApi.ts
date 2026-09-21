@@ -123,7 +123,7 @@ export const eventsApi = {
       applicantPhone?: string;
       applicantEmail?: string;
       memo?: string;
-      usesOralScan?: boolean;
+      usesOralScan: boolean;
     },
     token?: string | null,
   ) =>

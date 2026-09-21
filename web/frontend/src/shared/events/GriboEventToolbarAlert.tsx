@@ -3,7 +3,6 @@
 // - web/frontend/src/shared/events/eventsApi.ts
 // - web/frontend/src/pages/practice/components/PracticeRecentTransfersCalendar.tsx
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import { CheckCircle2, Gift, ChevronRight } from "lucide-react";
 import { eventsApi } from "@/shared/events/eventsApi";
 import {
@@ -15,6 +14,7 @@ import { cn } from "@/shared/ui/cn";
 
 /**
  * 치과 발신(send) 캘린더 툴바 — 검색·필터 오른쪽 끝 그리보 이벤트 CTA.
+ * 클릭 시 이벤트 신청 페이지를 새 탭으로 연다.
  */
 export function GriboEventToolbarAlert({
   className,
@@ -54,8 +54,10 @@ export function GriboEventToolbarAlert({
   if (!visible || applied == null) return null;
 
   return (
-    <Link
-      to={GRIBO_EVENT_HREF}
+    <a
+      href={GRIBO_EVENT_HREF}
+      target="_blank"
+      rel="noopener noreferrer"
       className={cn(
         "group inline-flex min-w-0 max-w-full items-center gap-2 rounded-lg border px-3 py-1.5 text-left text-xs font-medium transition-colors sm:text-[13px]",
         applied
@@ -73,6 +75,6 @@ export function GriboEventToolbarAlert({
         {applied ? "그리보 이벤트 신청 완료" : "그리보 이벤트 신청하기"}
       </span>
       <ChevronRight className="ml-auto h-3.5 w-3.5 shrink-0 opacity-60 transition-transform group-hover:translate-x-0.5" />
-    </Link>
+    </a>
   );
 }

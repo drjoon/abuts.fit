@@ -28,7 +28,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useToast } from "@/shared/hooks/use-toast";
 import {
   eventsApi,
@@ -73,7 +73,6 @@ function practicePrefillFromUser(user: User): {
   practice: EventPlaceFields;
   directorName: string;
   applicantPhone: string;
-  usesOralScan: boolean;
 } {
   const pp = user.practiceProfile || {};
   const name = String(pp.clinicName || user.companyName || "").trim();
@@ -97,7 +96,6 @@ function practicePrefillFromUser(user: User): {
     },
     directorName,
     applicantPhone: mobile || clinicPhone,
-    usesOralScan: Boolean(pp.usesOralScan),
   };
 }
 
@@ -303,7 +301,8 @@ export default function EventApplyPage() {
   );
 
   const [dealer, setDealer] = useState<EventPlaceFields>(emptyPlace);
-  const [usesOralScan, setUsesOralScan] = useState(false);
+  /** null = 미선택(필수). 프로필 프리필이 있으면 yes/no로 채움 */
+  const [usesOralScan, setUsesOralScan] = useState<boolean | null>(null);
 
   const isSimpleway = slug === SIMPLEWAY_SAMPLE_SLUG;
   const canApply = event?.status !== "closed";
@@ -313,10 +312,6 @@ export default function EventApplyPage() {
     () => (user && practiceUser ? practicePrefillFromUser(user) : null),
     [user, practiceUser],
   );
-
-  useEffect(() => {
-    if (prefill) setUsesOralScan(Boolean(prefill.usesOralScan));
-  }, [prefill]);
 
   useEffect(() => {
     if (!slug) return;
@@ -397,6 +392,14 @@ export default function EventApplyPage() {
     e.preventDefault();
     if (!event || submitting || !canApply || !isAuthenticated || !prefill)
       return;
+    if (usesOralScan == null) {
+      toast({
+        title: "구강 스캔 사용 여부를 선택해 주세요",
+        description: "사용함 / 사용 안 함 중 하나를 선택해야 신청할 수 있습니다.",
+        variant: "destructive",
+      });
+      return;
+    }
     setSubmitting(true);
     try {
       await eventsApi.apply(
@@ -578,37 +581,79 @@ export default function EventApplyPage() {
             <form onSubmit={onSubmit} className="space-y-5">
               <Card className={cn(PUBLIC_CARD_CLASS, "rounded-3xl")}>
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-base text-slate-900">
+                  <CardTitle className="flex flex-wrap items-center gap-2 text-base text-slate-900">
                     <ScanLine className="h-4 w-4 text-sky-600" />
                     구강 스캔 사용 여부
+                    <Badge
+                      variant="secondary"
+                      className="rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-800 ring-1 ring-sky-100"
+                    >
+                      필수
+                    </Badge>
                   </CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3.5">
-                    <Checkbox
-                      className="mt-0.5"
-                      checked={usesOralScan}
-                      onCheckedChange={(v) => setUsesOralScan(v === true)}
-                      disabled={!canApply}
-                    />
-                    <span className="space-y-0.5">
-                      <span className="block text-sm font-medium text-slate-900">
-                        구강 스캐너를 사용하고 있습니다
+                <CardContent className="space-y-3">
+                  <p className="text-xs leading-relaxed text-slate-500">
+                    사용 중이시면 스캔바 등 디지털 지원을 안내해 드립니다.
+                  </p>
+                  <RadioGroup
+                    value={
+                      usesOralScan == null
+                        ? undefined
+                        : usesOralScan
+                          ? "yes"
+                          : "no"
+                    }
+                    onValueChange={(v) => setUsesOralScan(v === "yes")}
+                    disabled={!canApply}
+                    className="grid gap-3 sm:grid-cols-2"
+                  >
+                    <label
+                      htmlFor="event-oral-scan-yes"
+                      className={cn(
+                        "flex cursor-pointer items-center gap-3 rounded-2xl border bg-slate-50/70 px-4 py-3.5 transition-colors",
+                        usesOralScan === true
+                          ? "border-sky-300 bg-sky-50/80"
+                          : "border-slate-200",
+                        !canApply && "cursor-not-allowed opacity-60",
+                      )}
+                    >
+                      <RadioGroupItem value="yes" id="event-oral-scan-yes" />
+                      <span className="text-sm font-medium text-slate-900">
+                        사용함
                       </span>
-                      <span className="block text-xs leading-relaxed text-slate-500">
-                        사용 중이시면 스캔바 등 디지털 지원을 안내해 드립니다.
+                    </label>
+                    <label
+                      htmlFor="event-oral-scan-no"
+                      className={cn(
+                        "flex cursor-pointer items-center gap-3 rounded-2xl border bg-slate-50/70 px-4 py-3.5 transition-colors",
+                        usesOralScan === false
+                          ? "border-sky-300 bg-sky-50/80"
+                          : "border-slate-200",
+                        !canApply && "cursor-not-allowed opacity-60",
+                      )}
+                    >
+                      <RadioGroupItem value="no" id="event-oral-scan-no" />
+                      <span className="text-sm font-medium text-slate-900">
+                        사용 안 함
                       </span>
-                    </span>
-                  </label>
+                    </label>
+                  </RadioGroup>
                 </CardContent>
               </Card>
 
               {showDealer ? (
                 <Card className={cn(PUBLIC_CARD_CLASS, "rounded-3xl")}>
                   <CardHeader className="space-y-2">
-                    <CardTitle className="flex items-center gap-2 text-base text-slate-900">
+                    <CardTitle className="flex flex-wrap items-center gap-2 text-base text-slate-900">
                       <Truck className="h-4 w-4 text-sky-600" />
                       거래하시는 지역 재료상 입력
+                      <Badge
+                        variant="secondary"
+                        className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600 ring-1 ring-slate-200"
+                      >
+                        옵션
+                      </Badge>
                     </CardTitle>
                     <div className="flex gap-2 rounded-2xl border border-sky-100 bg-sky-50/80 px-3 py-2.5 text-sm leading-relaxed text-sky-900">
                       <Info className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" />

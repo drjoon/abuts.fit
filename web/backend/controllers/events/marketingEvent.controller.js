@@ -13,7 +13,7 @@ const SIMPLEWAY_SAMPLE_SLUG = "simpleway-gribo";
 const SIMPLEWAY_SAMPLE_SLUG_LEGACY = "simpleway-sample-kit";
 
 const SIMPLEWAY_DEALER_HELP =
-  "친한 로컬 재료상 사장님을 소개해주세요. 그 분께 지역 영업권을 드립니다.";
+  "친한 로컬 재료상 사장님을 소개해주세요. 그 분께 지역 영업권을 드립니다. (옵션)";
 
 /** 공개 카피 SSOT — 샘플 배포·피드백 조건부 편익 문구 금지(출시 행사·제품 소개) */
 const SIMPLEWAY_EVENT_COPY = {
@@ -479,10 +479,13 @@ export async function applyToEvent(req, res) {
       120,
     );
     const memo = trimStr(body.memo, 1000);
-    let usesOralScan =
-      body.usesOralScan != null
-        ? Boolean(body.usesOralScan)
-        : Boolean(authPp.usesOralScan);
+    if (typeof body.usesOralScan !== "boolean") {
+      return res.status(400).json({
+        success: false,
+        message: "구강 스캔 사용 여부를 선택해 주세요.",
+      });
+    }
+    const usesOralScan = body.usesOralScan;
 
     // 로그인 치과: 본문 미입력이면 프로필·계정으로 채움
     if (authUser) {
