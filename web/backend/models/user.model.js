@@ -54,6 +54,8 @@ const userSchema = new mongoose.Schema(
       address: { type: String, default: "", trim: true },
       addressDetail: { type: String, default: "", trim: true },
       zipCode: { type: String, default: "", trim: true },
+      /** 구강 스캐너 사용 여부 */
+      usesOralScan: { type: Boolean, default: false },
       createdAt: { type: Date, default: null },
       updatedAt: { type: Date, default: null },
     },

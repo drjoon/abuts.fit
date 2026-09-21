@@ -22,11 +22,21 @@ const resolvePostOnboardingPath = (user: {
   requestorCapabilities?: { practice?: boolean; lab?: boolean } | null;
   lastDashboardPath?: string | null;
 } | null) => {
-// practice + 유료 미가용도 대시보드 허용(게이트 비활성). lab도 동일.
+  const kind = normalizeRequestorKind(user?.requestorKind);
+  const isPracticeCapable =
+    user?.role === "practice" ||
+    kind === "practice" ||
+    Boolean(user?.requestorCapabilities?.practice);
+
+  if (isPracticeCapable && user?.role !== "labTeam") {
+    return "/dashboard/practice-transfers?mode=send";
+  }
+
+  // practice + 유료 미가용도 대시보드 허용(게이트 비활성). lab도 동일.
   if (
     user?.role === "requestor" &&
     shouldGatePaidRequestorAccess({
-      kind: normalizeRequestorKind(user?.requestorKind),
+      kind,
       canUsePaid: canUsePaidServices({
         businessVerified: Boolean(user?.businessVerified),
         services: user?.requestorServices,

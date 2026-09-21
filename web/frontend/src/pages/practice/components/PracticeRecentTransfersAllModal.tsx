@@ -192,6 +192,10 @@ type PracticeRecentTransfersAllModalProps = {
   /** 헤더 우측 — 임시저장·휴지통 등 */
   headerActions?: ReactNode;
   /**
+   * 캘린더 설정(숨길 요일)과 검색 사이 — 그리보 이벤트 CTA 등
+   */
+  calendarToolbarMiddle?: ReactNode;
+  /**
    * 오늘 이후(오늘 포함) 날짜 셀 → 신규 의뢰(도착일)
    */
   onSelectFutureDay?: (ymd: string) => void;
@@ -219,6 +223,7 @@ export function PracticeRecentTransfersAllModal({
   floatingDetailOpen = false,
   onDetailSlotEl,
   headerActions,
+  calendarToolbarMiddle,
   onSelectFutureDay,
   calendarRefreshNonce = 0,
   onSelectTransfer,
@@ -1158,6 +1163,7 @@ export function PracticeRecentTransfersAllModal({
                 search={search}
                 onSearchChange={handleSearchChange}
                 searchPlaceholder="환자명, 기공소명, 치아번호"
+                toolbarMiddle={calendarToolbarMiddle}
                 hiddenWeekdays={hiddenWeekdays}
                 onHiddenWeekdaysChange={handleHiddenWeekdaysChange}
                 alignEpoch={alignEpoch}

@@ -24,6 +24,13 @@ const marketingEventApplicationSchema = new mongoose.Schema(
       index: true,
     },
     eventSlug: { type: String, required: true, trim: true, index: true },
+    /** 로그인한 신청자(있으면) */
+    applicantUserId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+      index: true,
+    },
     /** 치과 */
     practice: { type: placeSnapshotSchema, default: () => ({}) },
     /** 원장명 (치과 대표와 별도 기입) */

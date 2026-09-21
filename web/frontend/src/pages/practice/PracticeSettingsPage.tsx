@@ -34,6 +34,7 @@ import {
   Building2,
   Users,
   CalendarDays,
+  ScanLine,
 } from "lucide-react";
 import { NotificationsTab } from "@/features/settings/tabs/NotificationsTab";
 import { RequestorSecurity as PracticeSecurity } from "@/pages/requestor/settings/Security";
@@ -42,11 +43,13 @@ import { StaffTab } from "@/features/settings/tabs/StaffTab";
 import { useAvatarCarousel } from "@/shared/hooks/useAvatarCarousel";
 import { avatarSeedFromUrl } from "@/shared/lib/avatarOptions";
 import { PracticeTransferArrivalSettingsTab } from "@/pages/practice/components/PracticeTransferArrivalSettingsTab";
+import { PracticeOralScanTab } from "@/features/settings/tabs/PracticeOralScanTab";
 
 type TabKey =
   | "account"
   | "business"
   | "staff"
+  | "oral-scan"
   | "transfer"
   | "notifications"
   | "security";
@@ -104,6 +107,7 @@ export const PracticeSettingsPage = () => {
       raw === "staff" ||
       raw === "account" ||
       raw === "business" ||
+      raw === "oral-scan" ||
       raw === "transfer"
     ) {
       return raw as TabKey;
@@ -241,6 +245,10 @@ export const PracticeSettingsPage = () => {
             address: toStringSafe(updatedProfile?.address || form.address),
             addressDetail: toStringSafe(updatedProfile?.addressDetail || form.addressDetail),
             zipCode: toStringSafe(updatedProfile?.zipCode || form.zipCode),
+            usesOralScan: Boolean(
+              updatedProfile?.usesOralScan ??
+                user.practiceProfile?.usesOralScan,
+            ),
             updatedAt: toStringSafe(updatedProfile?.updatedAt || new Date().toISOString()),
           },
         } as typeof user);
@@ -277,6 +285,7 @@ export const PracticeSettingsPage = () => {
               next === "account" ||
               next === "business" ||
               next === "staff" ||
+              next === "oral-scan" ||
               next === "transfer" ||
               next === "notifications" ||
               next === "security"
@@ -309,6 +318,13 @@ export const PracticeSettingsPage = () => {
             >
               <Users className="h-4 w-4" />
               임직원
+            </TabsTrigger>
+            <TabsTrigger
+              value="oral-scan"
+              className="flex min-w-[96px] flex-1 basis-0 items-center justify-center gap-2 px-3 py-2.5"
+            >
+              <ScanLine className="h-4 w-4" />
+              구강스캔
             </TabsTrigger>
             <TabsTrigger
               value="transfer"
@@ -522,6 +538,10 @@ export const PracticeSettingsPage = () => {
               }}
               businessTypeOverride="practice"
             />
+          </TabsContent>
+
+          <TabsContent value="oral-scan">
+            <PracticeOralScanTab />
           </TabsContent>
 
           <TabsContent value="transfer">

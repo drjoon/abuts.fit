@@ -14,25 +14,25 @@ const SIMPLEWAY_SAMPLE_SLUG = "simpleway-sample-kit";
 const SIMPLEWAY_DEALER_HELP =
   "친한 로컬 재료상 사장님을 소개해주세요. 그 분께 지역 영업권을 드립니다.";
 
+/** 공개 카피 SSOT — 샘플 배포·피드백 조건부 편익 문구 금지(출시 행사·제품 소개) */
 const SIMPLEWAY_EVENT_COPY = {
-  title: "심플웨이 신제품 샘플 배포 행사",
+  title: "심플웨이 신제품 - 그리보(Gribo) 출시 행사",
   summary:
-    "그리보 힐링H·어벗H(7M 각 1) + 드라이버(S) 샘플. 화·수 이틀간 신청 · 피드백 우선 선별 배포.",
+    "그리보 힐링H·어벗H(7M 각 1) · 드라이버(S) 제품 소개. 화·수 이틀간 신청 접수.",
   description: [
-    "샘플 구성",
+    "소개 제품",
     "· 그리보 힐링H 7M 1EA",
     "· 그리보 어벗H 7M 1EA",
     "· 그리보 드라이버(S) 1EA",
     "",
     "신청 기간: 화요일 · 수요일 (이틀)",
-    "피드백을 우선해 선별 배포합니다.",
     "",
-    "신청 후 담당 영업자가 방문해 설명·전달합니다.",
+    "신청 후 담당 영업자가 방문해 제품·사용 방법을 안내합니다.",
     "친한 로컬 재료상 사장님을 소개해 주시면 그 분께 지역 영업권을 드립니다. (옵션)",
     "",
     "추가 안내",
-    "· 거래 기공소에 그리보 힐링 스캔 라이브러리 설치 (기성·커스텀 어벗 모두 사용 가능)",
-    "· 구강 스캔 사용 치과에는 스캔바 소개",
+    "· 거래 기공소에 그리보 힐링 스캔 라이브러리 설치 안내 (그리보 어벗H·그리보 커스텀어벗)",
+    "· 구강 스캐너 사용 치과에는 스캔바 제품 소개",
   ].join("\n"),
 };
 
@@ -281,7 +281,7 @@ function buildApplicationStats(items) {
   };
 }
 
-/** 첫 이벤트(심플웨이 신제품 샘플 배포)를 DB에 보장·카피 동기화한다. */
+/** 첫 이벤트(그리보 출시 행사)를 DB에 보장·카피 동기화한다. */
 export async function ensureDefaultMarketingEvents() {
   const existing = await MarketingEvent.findOne({
     slug: SIMPLEWAY_SAMPLE_SLUG,
@@ -422,16 +422,57 @@ export async function applyToEvent(req, res) {
     }
 
     const body = req.body || {};
-    const practice = normalizePlace(body.practice);
-    const dealer = normalizePlace(body.dealer);
-    const directorName = trimStr(body.directorName, 80);
-    const applicantPhone = trimStr(
+    const authUser = req.user || null;
+    const authPp =
+      authUser?.practiceProfile && typeof authUser.practiceProfile === "object"
+        ? authUser.practiceProfile
+        : {};
+
+    let practice = normalizePlace(body.practice);
+    let directorName = trimStr(body.directorName, 80);
+    let applicantPhone = trimStr(
       body.applicantPhone || practice.phone,
       40,
     );
-    const applicantEmail = trimStr(body.applicantEmail, 120);
+    const dealer = normalizePlace(body.dealer);
+    const applicantEmail = trimStr(
+      body.applicantEmail || authUser?.email || "",
+      120,
+    );
     const memo = trimStr(body.memo, 1000);
-    const usesOralScan = Boolean(body.usesOralScan);
+    let usesOralScan =
+      body.usesOralScan != null
+        ? Boolean(body.usesOralScan)
+        : Boolean(authPp.usesOralScan);
+
+    // 로그인 치과: 본문 미입력이면 프로필로 채움
+    if (authUser) {
+      const profileName = trimStr(
+        authPp.clinicName || authUser.business || "",
+        120,
+      );
+      const profileDirector = trimStr(authPp.directorName, 80);
+      const profilePhone = trimStr(
+        authPp.phone || authPp.clinicPhone || authUser.phoneNumber || "",
+        40,
+      );
+      const profileAddress = trimStr(
+        [authPp.address, authPp.addressDetail].filter(Boolean).join(" "),
+        240,
+      );
+      if (!practice.name && profileName) {
+        practice = {
+          ...practice,
+          name: profileName,
+          representativeName:
+            practice.representativeName || profileDirector,
+          phone: practice.phone || profilePhone,
+          address: practice.address || profileAddress,
+        };
+      }
+      if (!directorName && profileDirector) directorName = profileDirector;
+      if (!applicantPhone && profilePhone) applicantPhone = profilePhone;
+    }
 
     const needPractice = event.formConfig?.requirePractice !== false;
     const needDealer = Boolean(event.formConfig?.requireDealer);
@@ -472,6 +513,24 @@ export async function applyToEvent(req, res) {
       }
     }
 
+    const applicantUserId = authUser?._id || null;
+
+    if (applicantUserId) {
+      const dupByUser = await MarketingEventApplication.findOne({
+        eventId: event._id,
+        applicantUserId,
+        status: { $ne: "rejected" },
+      })
+        .select({ _id: 1 })
+        .lean();
+      if (dupByUser) {
+        return res.status(409).json({
+          success: false,
+          message: "이미 신청하신 내역이 있습니다. 영업팀에 문의해 주세요.",
+        });
+      }
+    }
+
     const dup = await MarketingEventApplication.findOne({
       eventId: event._id,
       "practice.name": practice.name,
@@ -490,6 +549,7 @@ export async function applyToEvent(req, res) {
     const created = await MarketingEventApplication.create({
       eventId: event._id,
       eventSlug: event.slug,
+      applicantUserId,
       practice,
       directorName,
       dealer: dealerHasAny(dealer) ? dealer : normalizePlace({}),
@@ -510,6 +570,72 @@ export async function applyToEvent(req, res) {
     return res.status(500).json({
       success: false,
       message: error?.message || "신청에 실패했습니다.",
+    });
+  }
+}
+
+/** GET /api/events/:slug/my-application — 로그인 사용자 신청 여부 */
+export async function getMyEventApplication(req, res) {
+  try {
+    await ensureDefaultMarketingEvents();
+    const slug = trimStr(req.params.slug, 80).toLowerCase();
+    const event = await MarketingEvent.findOne({ slug }).lean();
+    if (!event) {
+      return res.status(404).json({
+        success: false,
+        message: "이벤트를 찾을 수 없습니다.",
+      });
+    }
+
+    const userId = req.user?._id;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "로그인이 필요합니다.",
+      });
+    }
+
+    let app = await MarketingEventApplication.findOne({
+      eventId: event._id,
+      applicantUserId: userId,
+      status: { $ne: "rejected" },
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    if (!app) {
+      const pp =
+        req.user?.practiceProfile &&
+        typeof req.user.practiceProfile === "object"
+          ? req.user.practiceProfile
+          : {};
+      const practiceName = trimStr(pp.clinicName || req.user.business || "", 120);
+      const directorName = trimStr(pp.directorName, 80);
+      if (practiceName && directorName) {
+        app = await MarketingEventApplication.findOne({
+          eventId: event._id,
+          "practice.name": practiceName,
+          directorName,
+          status: { $ne: "rejected" },
+        })
+          .sort({ createdAt: -1 })
+          .lean();
+      }
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        applied: Boolean(app),
+        application: app ? toApplicationRow(app) : null,
+        event: toPublicEvent(event),
+      },
+    });
+  } catch (error) {
+    console.error("[events.getMyApplication]", error);
+    return res.status(500).json({
+      success: false,
+      message: error?.message || "신청 조회에 실패했습니다.",
     });
   }
 }

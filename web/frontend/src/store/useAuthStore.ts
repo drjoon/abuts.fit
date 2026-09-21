@@ -95,6 +95,7 @@ export interface User {
     address?: string;
     addressDetail?: string;
     zipCode?: string;
+    usesOralScan?: boolean;
     updatedAt?: string | null;
   } | null;
   salesmanPayoutAccount?: {
@@ -206,6 +207,9 @@ const normalizeApiUser = (u: unknown): User | null => {
             ),
             zipCode: String(
               (row.practiceProfile as Record<string, unknown>)?.zipCode || "",
+            ),
+            usesOralScan: Boolean(
+              (row.practiceProfile as Record<string, unknown>)?.usesOralScan,
             ),
             updatedAt: (row.practiceProfile as Record<string, unknown>)?.updatedAt
               ? String((row.practiceProfile as Record<string, unknown>).updatedAt)

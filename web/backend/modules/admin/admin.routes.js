@@ -710,7 +710,7 @@ router.get(
   adminGetInboundEmailAttachment,
 );
 
-// 마케팅 이벤트(심플웨이 샘플 배포 등)
+// 마케팅 이벤트(그리보 출시 행사 등)
 router.get("/events", adminListEvents);
 router.patch(
   "/events/applications/:applicationId",

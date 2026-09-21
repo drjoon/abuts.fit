@@ -233,6 +233,7 @@ import {
   type SearchBusinessResult,
 } from "@/pages/practice/hooks/usePracticeTransferStep1";
 import { assignCalendarRainbowDotColors } from "@/pages/practice/components/PracticeRecentTransfersCalendar";
+import { GriboEventToolbarAlert } from "@/shared/events/GriboEventToolbarAlert";
 import {
   useChatRooms,
   requestChatRoomsRefresh,
@@ -10151,6 +10152,7 @@ export const PracticeFileTransferPage = ({
           initialLoading={recentRequestsLoading}
           initialError={recentRequestsError}
           headerActions={calendarHeaderActions}
+          calendarToolbarMiddle={<GriboEventToolbarAlert />}
           onSelectFutureDay={openComposeForArrival}
           calendarRefreshNonce={calendarRefreshNonce}
           onSelectTransfer={(transfer, options) => {

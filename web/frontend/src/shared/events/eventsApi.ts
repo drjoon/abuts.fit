@@ -125,11 +125,19 @@ export const eventsApi = {
       memo?: string;
       usesOralScan?: boolean;
     },
+    token?: string | null,
   ) =>
     eventsFetch<EventApplication>(
       `/api/events/${encodeURIComponent(slug)}/applications`,
-      { method: "POST", jsonBody: body },
+      { method: "POST", jsonBody: body, token },
     ),
+
+  myApplication: (slug: string, token: string | null) =>
+    eventsFetch<{
+      applied: boolean;
+      application: EventApplication | null;
+      event: MarketingEvent;
+    }>(`/api/events/${encodeURIComponent(slug)}/my-application`, { token }),
 
   adminList: (token: string | null) =>
     eventsFetch<{ items: MarketingEvent[] }>("/api/admin/events", { token }),

@@ -52,7 +52,7 @@ export default function EventsPage() {
           <p className={PUBLIC_PAGE_EYEBROW}>events</p>
           <h1 className={PUBLIC_PAGE_TITLE}>이벤트</h1>
           <p className="text-slate-600">
-            진행 중인 행사에 비회원으로도 신청할 수 있습니다.
+            진행 중인 행사에 회원가입 후 신청할 수 있습니다.
           </p>
         </div>
 
@@ -128,7 +128,7 @@ export default function EventsPage() {
                       <CardContent className="flex items-center justify-between gap-2 pt-0 text-sm text-slate-500">
                         <span className="inline-flex items-center gap-1.5">
                           <CalendarDays className="h-3.5 w-3.5" />
-                          {isSimpleway ? "화 · 수 이틀간 신청" : "샘플 신청"}
+                          {isSimpleway ? "화 · 수 이틀간 신청" : "행사 신청"}
                         </span>
                         <span className="inline-flex items-center gap-0.5 font-medium text-sky-700">
                           신청하기

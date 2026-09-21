@@ -799,6 +799,8 @@ type PracticeRecentTransfersCalendarProps = {
   search?: string;
   onSearchChange?: (value: string) => void;
   searchPlaceholder?: string;
+  /** 캘린더 설정(숨길 요일)과 검색 사이 슬롯 */
+  toolbarMiddle?: ReactNode;
   hiddenWeekdays: number[];
   onHiddenWeekdaysChange: (next: number[]) => void;
   alignEpoch?: number;
@@ -977,6 +979,7 @@ export function PracticeRecentTransfersCalendar({
   search,
   onSearchChange,
   searchPlaceholder = "환자명, 기공소명, 치아번호",
+  toolbarMiddle = null,
   hiddenWeekdays,
   onHiddenWeekdaysChange,
   alignEpoch = 0,
@@ -1627,6 +1630,11 @@ export function PracticeRecentTransfersCalendar({
                 {label}
               </button>
             ))}
+          </div>
+        ) : null}
+        {toolbarMiddle ? (
+          <div className="flex min-w-0 flex-1 items-center md:mx-2 md:max-w-sm lg:max-w-md">
+            {toolbarMiddle}
           </div>
         ) : null}
         <div className="flex w-full flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end md:ml-auto md:w-auto">

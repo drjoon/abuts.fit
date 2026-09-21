@@ -12,6 +12,7 @@ import { StaffTab } from "@/features/settings/tabs/StaffTab";
 import { NotificationsTab } from "@/features/settings/tabs/NotificationsTab";
 import { LabFeeScheduleTab } from "@/features/settings/tabs/LabFeeScheduleTab";
 import { LabPracticeSpecialSupplyTab } from "@/features/settings/tabs/LabPracticeSpecialSupplyTab";
+import { PracticeOralScanTab } from "@/features/settings/tabs/PracticeOralScanTab";
 import {
   User,
   Building2,
@@ -20,6 +21,7 @@ import {
   Shield,
   Banknote,
   Tag,
+  ScanLine,
 } from "lucide-react";
 import { RequestorSecurity } from "./Security";
 import { formatKstDateTimeToKo, toKstYmd } from "@/shared/date/kst";
@@ -40,11 +42,13 @@ import { InternalLabOrgBanner } from "@/features/settings/InternalLabOrgBanner";
 // 2026-08-18: 치과 「구독」탭 제거(월정 폐기). 구 `?tab=subscription` → 계정.
 // 2026-08-26: 「스캔·의뢰」탭 제거. 구 `?tab=scan-order`·`3shape` → 계정.
 // 2026-08-29: 기공소 「특별공급가」탭(기공비 오른쪽).
+// 2026-09-21: 치과 「구강스캔」탭 — 구강 스캐너 사용 여부.
 
 type TabKey =
   | "account"
   | "business"
   | "staff"
+  | "oral-scan"
   | "lab-fees"
   | "lab-special-supply"
   | "notifications"
@@ -66,6 +70,11 @@ export const RequestorSettingsPage = () => {
     kind === "lab" ||
     user?.role === "internalLab" ||
     user?.requestorKind === "lab";
+  const isPractice =
+    kind === "practice" ||
+    user?.role === "practice" ||
+    user?.requestorKind === "practice" ||
+    Boolean(user?.requestorCapabilities?.practice);
 
   const joinDate = user?.createdAt ? String(user.createdAt) : null;
 
@@ -140,6 +149,15 @@ export const RequestorSettingsPage = () => {
       },
     ];
 
+    if (isPractice) {
+      base.push({
+        key: "oral-scan",
+        label: "구강스캔",
+        icon: ScanLine,
+        content: <PracticeOralScanTab />,
+      });
+    }
+
     if (isLab) {
       base.push(
         {
@@ -173,7 +191,7 @@ export const RequestorSettingsPage = () => {
     );
 
     return base;
-  }, [isLab, joinDate, pricingElapsedDays, user]);
+  }, [isLab, isPractice, joinDate, pricingElapsedDays, user]);
 
   const rawTab = searchParams.get("tab");
   const mapped =
@@ -190,7 +208,7 @@ export const RequestorSettingsPage = () => {
       (tabs[0]?.key as TabKey);
 
   if (accessLoading) {
-    return <SettingsTabsSkeleton tabCount={isLab ? 7 : 5} />;
+    return <SettingsTabsSkeleton tabCount={isLab ? 7 : isPractice ? 6 : 5} />;
   }
 
   return (

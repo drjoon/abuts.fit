@@ -12,6 +12,7 @@ import {
 } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { BusinessAddressFields } from "@/shared/components/business/settings/business/BusinessAddressFields";
 import {
   formatPhoneNumberInput,
@@ -33,9 +34,10 @@ type PracticeForm = {
   address: string;
   addressDetail: string;
   zipCode: string;
+  usesOralScan: boolean;
 };
 
-type PracticeField = keyof PracticeForm;
+type PracticeField = Exclude<keyof PracticeForm, "usesOralScan">;
 
 interface PracticeBusinessProfileStepProps {
   registerGoNextAction?: (action: (() => Promise<boolean>) | null) => void;
@@ -55,6 +57,7 @@ const emptyForm = (): PracticeForm => ({
   address: "",
   addressDetail: "",
   zipCode: "",
+  usesOralScan: false,
 });
 
 /** E.164(+82) / 82 시작 번호를 국내 0 시작으로 맞춘 뒤 표시 포맷 */
@@ -163,6 +166,7 @@ export const PracticeBusinessProfileStep = ({
         let address = String(profile?.address || "").trim();
         let addressDetail = String(profile?.addressDetail || "").trim();
         let zipCode = String(profile?.zipCode || "").trim();
+        let usesOralScan = Boolean(profile?.usesOralScan);
 
         if (token) {
           const res = await request<{
@@ -203,6 +207,7 @@ export const PracticeBusinessProfileStep = ({
             address = String(pp.address || address).trim();
             addressDetail = String(pp.addressDetail || addressDetail).trim();
             zipCode = String(pp.zipCode || zipCode).trim();
+            usesOralScan = Boolean(pp.usesOralScan);
           }
         }
 
@@ -216,6 +221,7 @@ export const PracticeBusinessProfileStep = ({
             address,
             addressDetail,
             zipCode,
+            usesOralScan,
           });
         }
       } finally {
@@ -294,6 +300,7 @@ export const PracticeBusinessProfileStep = ({
       const address = form.address.trim();
       const addressDetail = form.addressDetail.trim();
       const zipCode = form.zipCode.trim();
+      const usesOralScan = Boolean(form.usesOralScan);
 
       const res = await request<{
         data?: Record<string, unknown>;
@@ -315,6 +322,7 @@ export const PracticeBusinessProfileStep = ({
             address,
             addressDetail,
             zipCode,
+            usesOralScan,
             updatedAt: new Date().toISOString(),
           },
         },
@@ -353,6 +361,9 @@ export const PracticeBusinessProfileStep = ({
               updatedProfile?.addressDetail || addressDetail,
             ),
             zipCode: String(updatedProfile?.zipCode || zipCode),
+            usesOralScan: Boolean(
+              updatedProfile?.usesOralScan ?? usesOralScan,
+            ),
             updatedAt: String(
               updatedProfile?.updatedAt || new Date().toISOString(),
             ),
@@ -505,6 +516,25 @@ export const PracticeBusinessProfileStep = ({
         zipCodeError={Boolean(errors.zipCode)}
         openMode="popup"
       />
+
+      <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3.5">
+        <Checkbox
+          className="mt-0.5"
+          checked={form.usesOralScan}
+          onCheckedChange={(v) =>
+            setForm((prev) => ({ ...prev, usesOralScan: v === true }))
+          }
+        />
+        <span className="space-y-0.5">
+          <span className="block text-sm font-medium text-slate-900">
+            구강 스캐너를 사용하고 있습니다
+          </span>
+          <span className="block text-xs leading-relaxed text-slate-500">
+            사용 중이시면 스캔바 등 디지털 지원을 안내해 드립니다. 설정에서 언제든
+            변경할 수 있습니다.
+          </span>
+        </span>
+      </label>
     </div>
   );
 };

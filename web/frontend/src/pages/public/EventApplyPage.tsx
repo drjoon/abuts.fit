@@ -4,12 +4,11 @@
 // - web/frontend/src/shared/events/simplewaySampleCampaign.ts
 // - web/frontend/src/pages/public/EventsPage.tsx
 // - web/frontend/src/store/useAuthStore.ts
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   ArrowDown,
   ArrowLeft,
-  Building2,
   CalendarDays,
   CheckCircle2,
   Gift,
@@ -28,17 +27,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/shared/hooks/use-toast";
-import EventPlaceSuggestInput from "@/shared/events/EventPlaceSuggestInput";
 import {
   eventsApi,
   type EventPlaceFields,
-  type EventPlaceSuggest,
   type MarketingEvent,
 } from "@/shared/events/eventsApi";
 import {
+  GRIBO_HERO_EYEBROW,
   SIMPLEWAY_DEALER_HELP,
   SIMPLEWAY_HERO_BADGE,
   SIMPLEWAY_HERO_SUB,
@@ -70,6 +67,8 @@ function practicePrefillFromUser(user: User): {
   practice: EventPlaceFields;
   directorName: string;
   applicantPhone: string;
+  usesOralScan: boolean;
+  complete: boolean;
 } {
   const pp = user.practiceProfile || {};
   const name = String(pp.clinicName || user.companyName || "").trim();
@@ -91,21 +90,8 @@ function practicePrefillFromUser(user: User): {
     },
     directorName,
     applicantPhone: mobile || clinicPhone,
-  };
-}
-
-function applyPlacePick(
-  prev: EventPlaceFields,
-  item: EventPlaceSuggest,
-): EventPlaceFields {
-  return {
-    ...prev,
-    name: item.name || prev.name,
-    phone: item.phone || prev.phone,
-    address: item.address || prev.address,
-    lat: item.lat ?? prev.lat,
-    lng: item.lng ?? prev.lng,
-    representativeName: item.representativeName || prev.representativeName,
+    usesOralScan: Boolean(pp.usesOralScan),
+    complete: Boolean(name && directorName),
   };
 }
 
@@ -119,10 +105,13 @@ function scrollToApply() {
 function SimplewayHero({
   event,
   canApply,
+  isAuthenticated,
 }: {
   event: MarketingEvent;
   canApply: boolean;
+  isAuthenticated: boolean;
 }) {
+  const guestCta = !isAuthenticated;
   return (
     <section className="relative overflow-hidden border-b border-slate-200/80">
       <div className="pointer-events-none absolute inset-0">
@@ -147,7 +136,7 @@ function SimplewayHero({
         </Link>
 
         <p className="animate-in fade-in slide-in-from-bottom-2 fill-mode-both text-xs font-semibold uppercase tracking-[0.28em] text-sky-700 duration-700">
-          Simpleway · Sample Kit
+          {GRIBO_HERO_EYEBROW}
         </p>
         <h1 className="animate-in fade-in slide-in-from-bottom-3 fill-mode-both mt-4 max-w-3xl text-[clamp(2.1rem,5.5vw,3.75rem)] font-semibold leading-[1.12] tracking-tight text-[#0b2a5c] duration-700 delay-100">
           {event.title}
@@ -157,16 +146,37 @@ function SimplewayHero({
         </p>
 
         <div className="animate-in fade-in slide-in-from-bottom-3 fill-mode-both mt-8 flex flex-wrap items-center gap-3 duration-700 delay-300">
-          <Button
-            type="button"
-            size="lg"
-            className="h-12 rounded-full bg-[#2563eb] px-7 text-base font-semibold text-white shadow-[0_12px_32px_rgba(37,99,235,0.28)] hover:bg-[#1d4ed8]"
-            onClick={scrollToApply}
-            disabled={!canApply}
-          >
-            {canApply ? "샘플 신청하기" : "신청 마감"}
-            {canApply ? <ArrowDown className="ml-2 h-4 w-4" /> : null}
-          </Button>
+          {guestCta ? (
+            canApply ? (
+              <Button
+                asChild
+                size="lg"
+                className="h-12 rounded-full bg-[#2563eb] px-7 text-base font-semibold text-white shadow-[0_12px_32px_rgba(37,99,235,0.28)] hover:bg-[#1d4ed8]"
+              >
+                <Link to="/signup">회원가입 후 신청하기</Link>
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                size="lg"
+                className="h-12 rounded-full bg-[#2563eb] px-7 text-base font-semibold text-white"
+                disabled
+              >
+                신청 마감
+              </Button>
+            )
+          ) : (
+            <Button
+              type="button"
+              size="lg"
+              className="h-12 rounded-full bg-[#2563eb] px-7 text-base font-semibold text-white shadow-[0_12px_32px_rgba(37,99,235,0.28)] hover:bg-[#1d4ed8]"
+              onClick={scrollToApply}
+              disabled={!canApply}
+            >
+              {canApply ? "출시 행사 신청하기" : "신청 마감"}
+              {canApply ? <ArrowDown className="ml-2 h-4 w-4" /> : null}
+            </Button>
+          )}
           <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/80 px-4 py-2 text-sm text-slate-600 backdrop-blur">
             <CalendarDays className="h-4 w-4 shrink-0 text-sky-600" />
             {SIMPLEWAY_HERO_BADGE}
@@ -184,10 +194,10 @@ function KitSection() {
         <div className="flex items-end justify-between gap-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-700">
-              Sample kit
+              Product lineup
             </p>
             <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
-              신청 시 받으시는 구성
+              행사에서 소개하는 제품
             </h2>
           </div>
           <Package className="hidden h-8 w-8 text-sky-500/80 sm:block" />
@@ -232,7 +242,7 @@ function ExtrasSection() {
           Also included
         </p>
         <h2 className="mt-2 max-w-xl text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
-          샘플과 함께 드리는 디지털 지원
+          함께 안내드리는 디지털 지원
         </h2>
         <div className="mt-10 grid gap-4 md:grid-cols-2">
           {SIMPLEWAY_SAMPLE_EXTRAS.map((extra) => (
@@ -270,24 +280,27 @@ export default function EventApplyPage() {
   const { slug = "" } = useParams();
   const { toast } = useToast();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const token = useAuthStore((s) => s.token);
   const user = useAuthStore((s) => s.user);
   const [event, setEvent] = useState<MarketingEvent | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
+  const [alreadyApplied, setAlreadyApplied] = useState(false);
+  const [applicationCheckLoading, setApplicationCheckLoading] = useState(
+    () => Boolean(isAuthenticated && isPracticeApplicant(user)),
+  );
 
-  const [practice, setPractice] = useState<EventPlaceFields>(emptyPlace);
-  const [directorName, setDirectorName] = useState("");
   const [dealer, setDealer] = useState<EventPlaceFields>(emptyPlace);
-  const [applicantPhone, setApplicantPhone] = useState("");
-  const [usesOralScan, setUsesOralScan] = useState(false);
-  const [suggestSuppressToken, setSuggestSuppressToken] = useState(0);
-  const [prefilledFromAccount, setPrefilledFromAccount] = useState(false);
-  const prefilledRef = useRef(false);
 
   const isSimpleway = slug === SIMPLEWAY_SAMPLE_SLUG;
   const canApply = event?.status !== "closed";
+  const practiceUser = isPracticeApplicant(user);
+  const prefill = useMemo(
+    () => (user && practiceUser ? practicePrefillFromUser(user) : null),
+    [user, practiceUser],
+  );
 
   useEffect(() => {
     if (!slug) return;
@@ -316,46 +329,56 @@ export default function EventApplyPage() {
   }, [slug]);
 
   useEffect(() => {
-    if (prefilledRef.current) return;
-    if (!isAuthenticated || !isPracticeApplicant(user) || !user) return;
-    const next = practicePrefillFromUser(user);
-    if (
-      !next.practice.name &&
-      !next.directorName &&
-      !next.applicantPhone &&
-      !next.practice.phone &&
-      !next.practice.address
-    ) {
+    if (!isAuthenticated || !token || !slug || !practiceUser) {
+      setAlreadyApplied(false);
+      setApplicationCheckLoading(false);
       return;
     }
-    prefilledRef.current = true;
-    setSuggestSuppressToken((t) => t + 1);
-    setPractice((prev) => ({
-      ...prev,
-      name: prev.name || next.practice.name,
-      phone: prev.phone || next.practice.phone,
-      address: prev.address || next.practice.address,
-      representativeName:
-        prev.representativeName || next.practice.representativeName,
-    }));
-    setDirectorName((prev) => prev || next.directorName);
-    setApplicantPhone((prev) => prev || next.applicantPhone);
-    setPrefilledFromAccount(true);
-  }, [isAuthenticated, user]);
+    let cancelled = false;
+    setApplicationCheckLoading(true);
+    void eventsApi
+      .myApplication(slug, token)
+      .then((res) => {
+        if (cancelled) return;
+        setAlreadyApplied(Boolean(res.applied));
+      })
+      .catch(() => {
+        if (!cancelled) setAlreadyApplied(false);
+      })
+      .finally(() => {
+        if (!cancelled) setApplicationCheckLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, token, slug, practiceUser]);
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!event || submitting || !canApply) return;
+    if (!event || submitting || !canApply || !isAuthenticated) return;
+    if (!prefill?.complete) {
+      toast({
+        title: "치과 정보가 필요합니다",
+        description: "설정에서 치과 프로필을 먼저 완료해 주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
     setSubmitting(true);
     try {
-      await eventsApi.apply(event.slug, {
-        practice,
-        directorName: directorName.trim(),
-        dealer,
-        applicantPhone: applicantPhone.trim() || practice.phone,
-        usesOralScan,
-      });
+      await eventsApi.apply(
+        event.slug,
+        {
+          practice: prefill.practice,
+          directorName: prefill.directorName,
+          dealer,
+          applicantPhone: prefill.applicantPhone || prefill.practice.phone,
+          usesOralScan: prefill.usesOralScan,
+        },
+        token,
+      );
       setDone(true);
+      setAlreadyApplied(true);
       toast({
         title: "신청이 접수되었습니다",
         description: "담당 영업자가 확인 후 방문·안내드리겠습니다.",
@@ -372,7 +395,7 @@ export default function EventApplyPage() {
     }
   };
 
-  if (loading) {
+  if (loading || applicationCheckLoading) {
     return (
       <PublicPageLayout
         plain
@@ -405,7 +428,7 @@ export default function EventApplyPage() {
     );
   }
 
-  if (done) {
+  if (done || alreadyApplied) {
     return (
       <PublicPageLayout
         plain
@@ -419,10 +442,12 @@ export default function EventApplyPage() {
             </h2>
             <p className="max-w-md text-sm leading-relaxed text-slate-600">
               {event.title} 신청을 접수했습니다. 담당 영업자가 방문해
-              설명·전달합니다.
+              제품·사용 방법을 안내합니다.
             </p>
             <Button asChild className="mt-3 rounded-full">
-              <Link to="/events">다른 이벤트 보기</Link>
+              <Link to="/dashboard/practice-transfers?mode=send">
+                대시보드로
+              </Link>
             </Button>
           </CardContent>
         </Card>
@@ -443,7 +468,11 @@ export default function EventApplyPage() {
     >
       {isSimpleway ? (
         <>
-          <SimplewayHero event={event} canApply={canApply} />
+          <SimplewayHero
+            event={event}
+            canApply={canApply}
+            isAuthenticated={isAuthenticated}
+          />
           <KitSection />
           <ExtrasSection />
         </>
@@ -482,167 +511,149 @@ export default function EventApplyPage() {
               Apply
             </p>
             <h2 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
-              샘플 신청
+              출시 행사 신청
             </h2>
             <p className="text-sm leading-relaxed text-slate-600">
-              정보를 남겨 주시면, 영업자가 방문해 설명 후 샘플을
-              전달합니다.
+              {isAuthenticated
+                ? "계정에 등록된 치과 정보로 신청합니다. 영업자가 방문해 제품·사용 방법을 안내합니다."
+                : "회원가입 후 치과 정보를 등록하면 바로 신청할 수 있습니다."}
             </p>
-            {prefilledFromAccount ? (
-              <p className="text-xs text-slate-500">
-                로그인 치과 정보로 미리 입력했습니다. 필요하면 수정하세요.
-              </p>
-            ) : null}
           </div>
 
-          <form onSubmit={onSubmit} className="space-y-5">
-            <Card className={cn(PUBLIC_CARD_CLASS, "rounded-3xl")}>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base text-slate-900">
-                  <Building2 className="h-4 w-4 text-sky-600" />
-                  치과 정보
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="practiceName">
-                      치과명 <span className="text-destructive">*</span>
-                    </Label>
-                    <EventPlaceSuggestInput
-                      kind="practice"
-                      value={practice.name}
-                      placeholder="치과명 검색 (예: 강남 미소)"
-                      listMode="inline"
-                      suppressSuggestToken={suggestSuppressToken}
-                      onChange={(name) =>
-                        setPractice((p) => ({ ...p, name }))
-                      }
-                      onPick={(item) =>
-                        setPractice((p) => applyPlacePick(p, item))
-                      }
-                    />
-                    {practice.address ? (
-                      <p className="text-xs text-slate-500">
-                        {practice.address}
-                        {practice.phone ? ` · ${practice.phone}` : ""}
-                      </p>
-                    ) : null}
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="directorName">
-                      원장님 성함 <span className="text-destructive">*</span>
-                    </Label>
-                    <Input
-                      id="directorName"
-                      value={directorName}
-                      onChange={(e) => setDirectorName(e.target.value)}
-                      placeholder="예: 김원장"
-                      required
-                      disabled={!canApply}
-                    />
-                  </div>
-                </div>
-
-                <div className="grid gap-4 sm:grid-cols-2 sm:items-end">
-                  <div className="space-y-2">
-                    <Label htmlFor="applicantPhone">휴대전화</Label>
-                    <Input
-                      id="applicantPhone"
-                      value={applicantPhone}
-                      onChange={(e) => setApplicantPhone(e.target.value)}
-                      placeholder="010-0000-0000"
-                      disabled={!canApply}
-                    />
-                  </div>
-                  <label className="flex h-10 cursor-pointer items-center gap-3 rounded-md border border-slate-200 bg-slate-50/60 px-3">
-                    <Checkbox
-                      checked={usesOralScan}
-                      onCheckedChange={(v) => setUsesOralScan(v === true)}
-                      disabled={!canApply}
-                    />
-                    <span className="text-sm font-medium text-slate-900">
-                      구강스캔 사용 중
-                    </span>
-                  </label>
-                </div>
-              </CardContent>
-            </Card>
-
-            {showDealer ? (
+          {!isAuthenticated ? (
+            <div className="space-y-4">
               <Card className={cn(PUBLIC_CARD_CLASS, "rounded-3xl")}>
-                <CardHeader className="space-y-2">
-                  <CardTitle className="flex items-center gap-2 text-base text-slate-900">
-                    <Truck className="h-4 w-4 text-sky-600" />
-                    거래하시는 지역 재료상 입력 (옵션)
-                  </CardTitle>
-                  <div className="flex gap-2 rounded-2xl border border-sky-100 bg-sky-50/80 px-3 py-2.5 text-sm leading-relaxed text-sky-900">
-                    <Info className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" />
-                    <p>{dealerHelp}</p>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid gap-4 sm:grid-cols-3">
-                    <div className="space-y-2">
-                      <Label htmlFor="dealerName">회사명</Label>
-                      <Input
-                        id="dealerName"
-                        value={dealer.name}
-                        onChange={(e) =>
-                          setDealer((d) => ({ ...d, name: e.target.value }))
-                        }
-                        placeholder="재료상 상호"
-                        disabled={!canApply}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="dealerRep">대표님 성함</Label>
-                      <Input
-                        id="dealerRep"
-                        value={dealer.representativeName}
-                        onChange={(e) =>
-                          setDealer((d) => ({
-                            ...d,
-                            representativeName: e.target.value,
-                          }))
-                        }
-                        placeholder="대표 성함"
-                        disabled={!canApply}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="dealerPhone">휴대전화</Label>
-                      <Input
-                        id="dealerPhone"
-                        value={dealer.phone}
-                        onChange={(e) =>
-                          setDealer((d) => ({
-                            ...d,
-                            phone: e.target.value,
-                          }))
-                        }
-                        placeholder="010-0000-0000"
-                        disabled={!canApply}
-                      />
-                    </div>
-                  </div>
+                <CardContent className="space-y-3 py-8 text-center">
+                  <p className="text-sm text-slate-600">
+                    비회원은 회원가입 후 신청해 주세요.
+                  </p>
+                  {canApply ? (
+                    <Button
+                      asChild
+                      className="h-12 rounded-full bg-[#2563eb] px-8 text-base font-semibold hover:bg-[#1d4ed8]"
+                      size="lg"
+                    >
+                      <Link to="/signup">회원가입 후 신청하기</Link>
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      className="h-12 rounded-full"
+                      size="lg"
+                      disabled
+                    >
+                      신청 마감
+                    </Button>
+                  )}
                 </CardContent>
               </Card>
-            ) : null}
+            </div>
+          ) : !practiceUser ? (
+            <Card className={cn(PUBLIC_CARD_CLASS, "rounded-3xl")}>
+              <CardContent className="py-8 text-center text-sm text-slate-600">
+                이 이벤트는 치과(의뢰 발신) 계정으로 신청할 수 있습니다.
+              </CardContent>
+            </Card>
+          ) : !prefill?.complete ? (
+            <Card className={cn(PUBLIC_CARD_CLASS, "rounded-3xl")}>
+              <CardContent className="space-y-3 py-8 text-center">
+                <p className="text-sm text-slate-600">
+                  치과 프로필(치과명·원장명)을 먼저 완료해 주세요.
+                </p>
+                <Button asChild variant="outline" className="rounded-full">
+                  <Link to="/dashboard/settings?tab=business">설정으로</Link>
+                </Button>
+              </CardContent>
+            </Card>
+          ) : (
+            <form onSubmit={onSubmit} className="space-y-5">
+              {prefill.practice.name ? (
+                <p className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+                  <span className="font-medium text-slate-900">
+                    {prefill.practice.name}
+                  </span>
+                  {prefill.directorName
+                    ? ` · ${prefill.directorName} 원장님`
+                    : ""}
+                  {prefill.usesOralScan ? " · 구강스캐너 사용" : ""}
+                </p>
+              ) : null}
 
-            <Button
-              type="submit"
-              className="h-12 w-full rounded-full bg-[#2563eb] text-base font-semibold hover:bg-[#1d4ed8]"
-              size="lg"
-              disabled={submitting || !canApply}
-            >
-              {!canApply
-                ? "신청 마감"
-                : submitting
-                  ? "처리 중…"
-                  : "신청하기"}
-            </Button>
-          </form>
+              {showDealer ? (
+                <Card className={cn(PUBLIC_CARD_CLASS, "rounded-3xl")}>
+                  <CardHeader className="space-y-2">
+                    <CardTitle className="flex items-center gap-2 text-base text-slate-900">
+                      <Truck className="h-4 w-4 text-sky-600" />
+                      거래하시는 지역 재료상 입력 (옵션)
+                    </CardTitle>
+                    <div className="flex gap-2 rounded-2xl border border-sky-100 bg-sky-50/80 px-3 py-2.5 text-sm leading-relaxed text-sky-900">
+                      <Info className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" />
+                      <p>{dealerHelp}</p>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid gap-4 sm:grid-cols-3">
+                      <div className="space-y-2">
+                        <Label htmlFor="dealerName">회사명</Label>
+                        <Input
+                          id="dealerName"
+                          value={dealer.name}
+                          onChange={(e) =>
+                            setDealer((d) => ({ ...d, name: e.target.value }))
+                          }
+                          placeholder="재료상 상호"
+                          disabled={!canApply}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="dealerRep">대표님 성함</Label>
+                        <Input
+                          id="dealerRep"
+                          value={dealer.representativeName}
+                          onChange={(e) =>
+                            setDealer((d) => ({
+                              ...d,
+                              representativeName: e.target.value,
+                            }))
+                          }
+                          placeholder="대표 성함"
+                          disabled={!canApply}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="dealerPhone">휴대전화</Label>
+                        <Input
+                          id="dealerPhone"
+                          value={dealer.phone}
+                          onChange={(e) =>
+                            setDealer((d) => ({
+                              ...d,
+                              phone: e.target.value,
+                            }))
+                          }
+                          placeholder="010-0000-0000"
+                          disabled={!canApply}
+                        />
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : null}
+
+              <Button
+                type="submit"
+                className="h-12 w-full rounded-full bg-[#2563eb] text-base font-semibold hover:bg-[#1d4ed8]"
+                size="lg"
+                disabled={submitting || !canApply}
+              >
+                {!canApply
+                  ? "신청 마감"
+                  : submitting
+                    ? "처리 중…"
+                    : "신청하기"}
+              </Button>
+            </form>
+          )}
         </div>
       </section>
     </PublicPageLayout>

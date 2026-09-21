@@ -601,16 +601,35 @@ async function updateProfile(req, res) {
           typeof updateData.practiceProfile === "object"
             ? updateData.practiceProfile
             : {};
+        const existingPp =
+          req.user?.practiceProfile &&
+          typeof req.user.practiceProfile === "object"
+            ? req.user.practiceProfile
+            : {};
         const clinicName = String(
-          pp.clinicName || updateData.business || "",
+          pp.clinicName || existingPp.clinicName || updateData.business || "",
         ).trim();
-        const directorName = String(pp.directorName || "").trim();
-        const staffName = String(pp.staffName || updateData.name || "").trim();
-        const phone = String(pp.phone || updateData.phoneNumber || "").trim();
-        const clinicPhone = String(pp.clinicPhone || "").trim();
-        const address = String(pp.address || "").trim();
-        const addressDetail = String(pp.addressDetail || "").trim();
-        const zipCode = String(pp.zipCode || "").trim();
+        const directorName = String(
+          pp.directorName || existingPp.directorName || "",
+        ).trim();
+        const staffName = String(
+          pp.staffName || existingPp.staffName || updateData.name || "",
+        ).trim();
+        const phone = String(
+          pp.phone || existingPp.phone || updateData.phoneNumber || "",
+        ).trim();
+        const clinicPhone = String(
+          pp.clinicPhone || existingPp.clinicPhone || "",
+        ).trim();
+        const address = String(pp.address || existingPp.address || "").trim();
+        const addressDetail = String(
+          pp.addressDetail || existingPp.addressDetail || "",
+        ).trim();
+        const zipCode = String(pp.zipCode || existingPp.zipCode || "").trim();
+        const usesOralScan =
+          typeof pp.usesOralScan === "boolean"
+            ? pp.usesOralScan
+            : Boolean(existingPp.usesOralScan);
 
         if (
           !clinicName ||
@@ -628,7 +647,7 @@ async function updateProfile(req, res) {
           });
         }
 
-        const existingCreatedAt = req.user?.practiceProfile?.createdAt;
+        const existingCreatedAt = existingPp.createdAt;
         updateData.practiceProfile = {
           clinicName,
           directorName,
@@ -638,6 +657,7 @@ async function updateProfile(req, res) {
           address,
           addressDetail,
           zipCode,
+          usesOralScan,
           createdAt: existingCreatedAt || new Date(),
           updatedAt: new Date(),
         };
