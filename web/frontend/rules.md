@@ -15,6 +15,7 @@
 이 문서는 `web/frontend` 폴더에서만 필요한 **구현 메모**만 남깁니다.
 
 - UI copy 줄바꿈(강제): 긴 안내·완료 문장은 문장 단위로 명시적 `<br />` — `.cursor/rules/ui-copy-line-break.mdc`
+- 영업 방문 주체 카피(강제): **영업 담당자** (not 담당 영업자) — `.cursor/rules/sales-rep-copy.mdc`
 - 최근 변경 목록 파일: `web/frontend/modified_prep_stage_changes_2026-08-03.txt` (작업 공정 변경 이력, 프론트 표시 레벨)
 
 Notes:

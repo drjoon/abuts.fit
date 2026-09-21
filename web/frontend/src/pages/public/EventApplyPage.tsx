@@ -2,6 +2,8 @@
 // - web/frontend/src/shared/events/eventsApi.ts
 // - web/frontend/src/shared/events/EventPlaceSuggestInput.tsx
 // - web/frontend/src/shared/events/simplewaySampleCampaign.ts
+// - web/frontend/src/shared/events/eventApplyLocalDraft.ts
+// - web/frontend/src/shared/components/business/settings/business/validations.ts
 // - web/frontend/src/pages/public/EventsPage.tsx
 // - web/frontend/src/store/useAuthStore.ts
 import { useEffect, useMemo, useState } from "react";
@@ -44,22 +46,22 @@ import {
   SIMPLEWAY_SAMPLE_KIT,
   SIMPLEWAY_SAMPLE_SLUG,
 } from "@/shared/events/simplewaySampleCampaign";
+import {
+  clearEventApplyLocalDraft,
+  emptyEventApplyDealer,
+  readEventApplyLocalDraft,
+  writeEventApplyLocalDraft,
+} from "@/shared/events/eventApplyLocalDraft";
 import { cn } from "@/shared/ui/cn";
 import { useAuthStore, type User } from "@/store/useAuthStore";
+import { formatPhoneNumberInput } from "@/shared/components/business/settings/business/validations";
 import {
   consumePostOnboardingReturn,
   eventApplySignupHref,
   peekPostOnboardingReturn,
 } from "@/shared/navigation/postOnboardingReturn";
 
-const emptyPlace = (): EventPlaceFields => ({
-  name: "",
-  representativeName: "",
-  phone: "",
-  address: "",
-  lat: null,
-  lng: null,
-});
+const emptyPlace = (): EventPlaceFields => emptyEventApplyDealer();
 
 function isPracticeApplicant(user: User | null | undefined): boolean {
   if (!user) return false;
@@ -300,9 +302,15 @@ export default function EventApplyPage() {
     () => Boolean(isAuthenticated && isPracticeApplicant(user)),
   );
 
-  const [dealer, setDealer] = useState<EventPlaceFields>(emptyPlace);
-  /** null = 미선택(필수). 프로필 프리필이 있으면 yes/no로 채움 */
-  const [usesOralScan, setUsesOralScan] = useState<boolean | null>(null);
+  const [dealer, setDealer] = useState<EventPlaceFields>(() => {
+    const draft = readEventApplyLocalDraft(slug, user?._id);
+    return draft?.dealer ?? emptyPlace();
+  });
+  /** null = 미선택(필수). 로컬 초안이 있으면 복원 */
+  const [usesOralScan, setUsesOralScan] = useState<boolean | null>(() => {
+    const draft = readEventApplyLocalDraft(slug, user?._id);
+    return draft ? draft.usesOralScan : null;
+  });
 
   const isSimpleway = slug === SIMPLEWAY_SAMPLE_SLUG;
   const canApply = event?.status !== "closed";
@@ -312,6 +320,49 @@ export default function EventApplyPage() {
     () => (user && practiceUser ? practicePrefillFromUser(user) : null),
     [user, practiceUser],
   );
+
+  useEffect(() => {
+    if (!slug) return;
+    const keyed = readEventApplyLocalDraft(slug, user?._id);
+    const anon =
+      user?._id && !keyed ? readEventApplyLocalDraft(slug, null) : null;
+    const draft = keyed || anon;
+    if (!draft) {
+      setDealer(emptyPlace());
+      setUsesOralScan(null);
+      return;
+    }
+    setDealer(draft.dealer);
+    setUsesOralScan(draft.usesOralScan);
+    if (user?._id && anon) {
+      writeEventApplyLocalDraft(slug, draft, user._id);
+      clearEventApplyLocalDraft(slug, null);
+    }
+  }, [slug, user?._id]);
+
+  useEffect(() => {
+    if (!slug || done || alreadyApplied) return;
+    const hasDealer =
+      Boolean(dealer.name) ||
+      Boolean(dealer.representativeName) ||
+      Boolean(dealer.phone);
+    if (usesOralScan == null && !hasDealer) {
+      clearEventApplyLocalDraft(slug, user?._id);
+      return;
+    }
+    writeEventApplyLocalDraft(
+      slug,
+      { usesOralScan, dealer },
+      user?._id,
+    );
+  }, [
+    alreadyApplied,
+    dealer,
+    done,
+    slug,
+    user?._id,
+    usesOralScan,
+  ]);
 
   useEffect(() => {
     if (!slug) return;
@@ -413,11 +464,12 @@ export default function EventApplyPage() {
         },
         token,
       );
+      clearEventApplyLocalDraft(event.slug, user?._id);
       setDone(true);
       setAlreadyApplied(true);
       toast({
         title: "신청이 접수되었습니다",
-        description: "담당 영업자가 확인 후 방문·안내드리겠습니다.",
+        description: "영업 담당자가 확인 후 방문·안내드리겠습니다.",
       });
     } catch (err) {
       toast({
@@ -479,7 +531,7 @@ export default function EventApplyPage() {
             <p className="max-w-md text-sm leading-relaxed text-slate-600">
               {event.title} 신청을 접수했습니다.
               <br />
-              담당 영업자가 방문해 제품·사용 방법을 안내합니다.
+              영업 담당자가 방문해 제품·사용 방법을 안내합니다.
             </p>
             <Button asChild className="mt-3 rounded-full">
               <Link to="/dashboard/practice-transfers?mode=send">
@@ -552,7 +604,7 @@ export default function EventApplyPage() {
             </h2>
             <p className="text-sm leading-relaxed text-slate-600">
               {isAuthenticated
-                ? "영업자가 방문해 제품·사용 방법을 안내합니다."
+                ? "영업 담당자가 방문해 제품·사용 방법을 안내합니다."
                 : "회원가입 후 치과 정보를 등록하면 바로 신청할 수 있습니다."}
             </p>
           </div>
@@ -698,9 +750,11 @@ export default function EventApplyPage() {
                           onChange={(e) =>
                             setDealer((d) => ({
                               ...d,
-                              phone: e.target.value,
+                              phone: formatPhoneNumberInput(e.target.value),
                             }))
                           }
+                          inputMode="tel"
+                          autoComplete="tel"
                           placeholder="010-0000-0000"
                           disabled={!canApply}
                         />

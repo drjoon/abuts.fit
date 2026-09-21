@@ -1,0 +1,29 @@
+---
+description: Event/sales visit copy uses 영업 담당자 (not 담당 영업자).
+globs: web/**/*.{tsx,ts,js,md}
+alwaysApply: true
+---
+
+# Naming: 담당 영업자 → 영업 담당자
+
+제품·이벤트·신청 안내에서 방문·안내 주체의 **UI·제품 카피 SSOT는 「영업 담당자」**다. 예전 「담당 영업자」/단독 「영업자」와 동일 의미.
+
+## UI 라벨 SSOT
+
+- 신청 완료·토스트·이벤트 description·폼 안내: **영업 담당자** (not 담당 영업자 / 영업자)
+- 예: `영업 담당자가 방문해 제품·사용 방법을 안내합니다.`
+
+## Do
+
+- 새로 쓰는 유저 문구·주석·문서에서 방문 안내 주체를 **영업 담당자**로 쓴다
+- 「담당 영업자」또는 문맥상 같은 의미의 단독 「영업자」가 보이면 같은 작업에서 **영업 담당자**로 고친다
+
+## Don't
+
+- 내부 역할·권한 식별자(`sales`, `salesTeam` 등)는 바꾸지 않는다(표시 문자열만)
+
+## SSOT
+
+- `.cursor/rules/sales-rep-copy.mdc`
+- `web/frontend/rules.md` — 영업 담당자 카피
+- 예: `web/frontend/src/pages/public/EventApplyPage.tsx`, `web/backend/controllers/events/marketingEvent.controller.js`
