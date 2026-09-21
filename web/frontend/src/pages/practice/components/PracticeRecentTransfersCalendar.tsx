@@ -44,6 +44,7 @@
  * - 2026-09-13: 목록 — lg 미만 미니달력은 목록 열 상단만(채팅 열 비침범).
  * - 2026-09-13: 목록 — 미니달력 상단 이동을 md(768)→lg(1024). 첨1 폭에서 위로.
  * - 2026-09-13: 목록 — md+는 좌측 미니달력 3열(첨1·첨2). md 미만(첨3)만 미니달력 본문 상단.
+ * - 2026-09-22: 목록 — 열기/전환 시 오늘(최신)으로 스크롤. 조회 창 밖이면 오늘 월로 커서 이동.
  * - 2026-09-13: 목록 — 초기/릴로드 시 커서 월로 스크롤(데이터 도착 전 force align 유지).
  * - 2026-09-13: 목록·캘린더 ↔ 채팅 — 모드별 분할 위치 localStorage 분리.
  * - 2026-09-13: 목록·캘린더 ↔ 채팅 — 드래그 가로 분할 + localStorage(autoSaveId).
@@ -1231,26 +1232,56 @@ export function PracticeRecentTransfersCalendar({
     }, 500);
   };
 
+  /** 목록 정렬 대상 — 없으면 같은 월·전체에서 preferred 이하 최신(또는 전체 최신) */
+  const resolveListAlignYmd = (preferred: string) => {
+    if (!preferred) return agendaDays[agendaDays.length - 1]?.ymd || "";
+    if (agendaDays.some((day) => day.ymd === preferred)) return preferred;
+    const preferredMonth = kstStartOfMonth(preferred) || preferred;
+    let bestInMonth = "";
+    let bestOverall = "";
+    for (const day of agendaDays) {
+      if (day.ymd <= preferred) {
+        bestOverall = day.ymd;
+        if ((kstStartOfMonth(day.ymd) || day.ymd) === preferredMonth) {
+          bestInMonth = day.ymd;
+        }
+      }
+    }
+    if (bestInMonth) return bestInMonth;
+    if (bestOverall) return bestOverall;
+    // preferred가 모든 데이터보다 이전 — 가장 오래된(첫) 날
+    return agendaDays[0]?.ymd || preferred;
+  };
+
   const scrollListToYmd = (ymd: string, behavior: ScrollBehavior = "auto") => {
     const el = listScrollRef.current;
     if (!el || !ymd) return;
     const targetMonth = kstStartOfMonth(ymd) || ymd;
     let target = dayElsRef.current.get(ymd) || null;
     if (!target) {
-      // 같은 월 안에서만 다음 일자로 스냅 — 빈 미래 월에서 이전 월로 튕기지 않음
+      // 같은 월: 다음 일자 → 없으면 이전(최신 ≤ ymd). 월 데이터 없으면 전체 최신.
+      let nextInMonth: HTMLDivElement | null = null;
+      let prevInMonth: HTMLDivElement | null = null;
       for (const day of agendaDays) {
         const dayMonth = kstStartOfMonth(day.ymd) || day.ymd;
         if (dayMonth !== targetMonth) continue;
+        const node = dayElsRef.current.get(day.ymd) || null;
+        if (!node) continue;
         if (day.ymd >= ymd) {
-          target = dayElsRef.current.get(day.ymd) || null;
+          nextInMonth = node;
           break;
         }
+        prevInMonth = node;
       }
+      target = nextInMonth || prevInMonth;
     }
     if (!target) {
-      // 해당 월 데이터 없음: 스크롤 유지(하단/상단 고정은 호출측)
-      return;
+      const fallbackYmd = resolveListAlignYmd(ymd);
+      target =
+        (fallbackYmd && dayElsRef.current.get(fallbackYmd)) ||
+        null;
     }
+    if (!target) return;
     skipScrollSyncRef.current = true;
     const nextTop =
       el.scrollTop +
@@ -1366,19 +1397,39 @@ export function PracticeRecentTransfersCalendar({
   useEffect(() => {
     if (viewMode !== "list") return;
     if (listForceAlignRef.current) {
-      const target =
-        listRestoreYmdRef.current || cursorYmd || captionMonth || todayYmd;
-      if (!target) return;
-      const targetMonth = kstStartOfMonth(target) || target;
+      // 월 이동·미니달력 선택은 restore 우선. 그 외(열기/보기 전환)=오늘(최신).
+      const preferred =
+        listRestoreYmdRef.current || todayYmd || cursorYmd || captionMonth;
+      if (!preferred) return;
+      // fetch 전 빈 목록에서 force를 소비하지 않음 — items 도착 후 맞춤.
+      if (agendaDays.length === 0) return;
+
+      const preferredMonth = kstStartOfMonth(preferred) || preferred;
       const monthHasDay = agendaDays.some(
-        (day) => (kstStartOfMonth(day.ymd) || day.ymd) === targetMonth,
+        (day) => (kstStartOfMonth(day.ymd) || day.ymd) === preferredMonth,
       );
-      // fetch 전 빈 목록에서 force를 소비하지 않음 — items 도착 후 커서 근처로 맞춤.
-      if (!monthHasDay && agendaDays.length === 0) return;
+      // 오늘이 조회 창(±2달) 밖이면 커서를 오늘 월로 옮기고 다음 fetch에서 재정렬.
+      if (
+        !monthHasDay &&
+        !listRestoreYmdRef.current &&
+        todayYmd &&
+        preferred === todayYmd
+      ) {
+        const todayMonth = kstStartOfMonth(todayYmd) || todayYmd;
+        const cursorMonth = kstStartOfMonth(cursorYmd) || cursorYmd;
+        if (todayMonth && todayMonth !== cursorMonth) {
+          listPinCursorRef.current = true;
+          listVisibleMonthRef.current = todayMonth;
+          onCursorChange(todayMonth);
+          return;
+        }
+      }
+
       listForceAlignRef.current = false;
       listRestoreYmdRef.current = null;
+      const alignYmd = resolveListAlignYmd(preferred);
       const id = window.requestAnimationFrame(() => {
-        scrollListToYmd(target, "auto");
+        scrollListToYmd(alignYmd, "auto");
         window.setTimeout(() => {
           listPinCursorRef.current = false;
         }, 480);
@@ -1389,7 +1440,7 @@ export function PracticeRecentTransfersCalendar({
       const anchor = listRestoreYmdRef.current;
       listRestoreYmdRef.current = null;
       const id = window.requestAnimationFrame(() => {
-        scrollListToYmd(anchor, "auto");
+        scrollListToYmd(resolveListAlignYmd(anchor), "auto");
         window.setTimeout(() => {
           listPinCursorRef.current = false;
         }, 480);
