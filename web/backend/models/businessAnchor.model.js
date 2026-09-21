@@ -724,6 +724,7 @@ const businessAnchorSchema = new mongoose.Schema(
       // - 2026-08-13: defaultAbutmentProductMode(커스텀어벗 모달 BA 기본=디자인+생산)
       // - 임플란트/어벗/직접입력·쉐이드·메모·보철형태 프리셋은 User가 아닌 BA practiceTransferSettings
       // - 2026-08-28: calendarNewRequestHintDismissedAt(도착일 클릭 신규의뢰 안내 닫음)
+      // - 2026-09-21: doctorNames(신규의뢰 원장님 성함 드롭다운 목록)
       arrivalDefaultDays: {
         type: Number,
         default: 7,
@@ -788,6 +789,11 @@ const businessAnchorSchema = new mongoose.Schema(
         default: undefined,
       },
       memoSnippets: {
+        type: [String],
+        default: [],
+      },
+      // 신규의뢰 「원장님 성함」드롭다운 목록(추가·수정·삭제). 의뢰건 값은 transferMemo [원장명].
+      doctorNames: {
         type: [String],
         default: [],
       },

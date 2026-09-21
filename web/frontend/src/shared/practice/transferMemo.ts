@@ -5,6 +5,7 @@
 // - web/backend/services/practiceTransferProduction.service.js
 // - web/backend/controllers/practiceTransfers/practiceTransferSettings.controller.js
 // change-log:
+// - 2026-09-21: [원장명] 메타 — 신규의뢰 원장님 성함(BA doctorNames 목록과 별도 의뢰값).
 // - 2026-09-14: 임플란트 칩 — CNC 6메이저(첨1) 하드코딩 기본 + 사용자 추가분 병합.
 // - 2026-09-14: 임플란트 칩 UI용 list/merge/remove/rename/reorder(제조사·브랜드·패밀리·타입).
 // - 2026-09-11: toothWorks.shade — Vita 프리셋(A2·A3·A1·A3.5) + 직접 입력. 메모 직렬화 `#A2`.
@@ -1894,6 +1895,8 @@ export type ParsedPracticeTransferMemoMeta = {
   prosthesisTypes: string[];
   toothWorks: ToothWorkSelection[];
   patientName: string;
+  /** 신규의뢰에서 선택한 원장님 성함 */
+  doctorName: string;
   memo: string;
   /** 레거시. 신규는 항상 생략(true) */
   skipDesignConfirm: boolean;
@@ -2657,6 +2660,7 @@ export const parsePracticeTransferMemoMeta = (rawMemo: string): ParsedPracticeTr
   let prosthesisTypes: string[] = [];
   let toothWorks: ToothWorkSelection[] = [];
   let patientName = "";
+  let doctorName = "";
   let skipDesignConfirm = true;
   let skipJig = true;
 
@@ -2690,6 +2694,12 @@ export const parsePracticeTransferMemoMeta = (rawMemo: string): ParsedPracticeTr
     const patientNameMatch = trimmed.match(/^\[\s*환자명\s*:\s*(.*)\]$/);
     if (patientNameMatch) {
       patientName = String(patientNameMatch[1] || "").trim();
+      continue;
+    }
+
+    const doctorNameMatch = trimmed.match(/^\[\s*원장명\s*:\s*(.*)\]$/);
+    if (doctorNameMatch) {
+      doctorName = String(doctorNameMatch[1] || "").trim();
       continue;
     }
 
@@ -2748,6 +2758,7 @@ export const parsePracticeTransferMemoMeta = (rawMemo: string): ParsedPracticeTr
     prosthesisTypes: normalizeProsthesisTypes(prosthesisTypes),
     toothWorks: normalizeToothWorksForSync(toothWorks),
     patientName,
+    doctorName,
     memo: memoLines.join("\n").replace(/^\s+|\s+$/g, ""),
     skipDesignConfirm,
     skipJig,
@@ -2762,6 +2773,7 @@ export const buildPracticeTransferMemo = (params: {
   prosthesisTypes: string[];
   toothWorks: ToothWorkSelection[];
   patientName?: string;
+  doctorName?: string;
   skipDesignConfirm?: boolean;
   skipJig?: boolean;
 }) => {
@@ -2770,6 +2782,7 @@ export const buildPracticeTransferMemo = (params: {
     `[치과도착일: ${String(params.arrivalDate || "").trim()}]`,
     `[도착기본일수: ${normalizeArrivalDefaultDays(params.arrivalDefaultDays)}]`,
     `[환자명: ${String(params.patientName || "").trim()}]`,
+    `[원장명: ${String(params.doctorName || "").trim()}]`,
     `[보철물형태목록: ${normalizeProsthesisTypes(params.prosthesisTypes).join(", ")}]`,
     `[치아보철: ${serializeToothWorksForSync(params.toothWorks)}]`,
     `[디자인컨펌생략: Y]`,
@@ -2791,7 +2804,7 @@ export const formatPracticeTransferMemoDetail = (
   if (!source) return "";
 
   const hasKnownMeta =
-    /\[\s*(주문일|치과도착일|도착일|도착기본일수|환자명|보철물형태목록|보철물형태|치아보철|디자인컨펌생략|지그제작생략)\s*:/i.test(
+    /\[\s*(주문일|치과도착일|도착일|도착기본일수|환자명|원장명|보철물형태목록|보철물형태|치아보철|디자인컨펌생략|지그제작생략)\s*:/i.test(
       source,
     );
   if (!hasKnownMeta) return formatTransferMemoForDisplay(source);
@@ -2813,6 +2826,10 @@ export const formatPracticeTransferMemoDetail = (
 
   if (includePatientName && parsed.patientName) {
     summarySections.push(`환자명 ${parsed.patientName}`);
+  }
+
+  if (parsed.doctorName) {
+    summarySections.push(`원장명 ${parsed.doctorName}`);
   }
 
   if (includeToothWorks) {

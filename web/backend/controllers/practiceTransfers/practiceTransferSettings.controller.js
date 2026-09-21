@@ -29,11 +29,14 @@ import { loadStarBandEligibleLabAnchorIds } from "../../utils/practiceTransferAu
 // - 2026-08-28: calendarNewRequestHintDismissedAt(도착일 클릭 신규의뢰 안내 닫음).
 // - 2026-09-07: archBulkProsthesisTypes(전체치열 모달 좌측 목록·순서).
 // - 2026-09-07: requestStagePresets(다단계 기공의뢰 단계 프리셋).
+// - 2026-09-21: doctorNames(신규의뢰 원장님 성함 드롭다운 목록).
 import {
   normalizeRequestStagePresets,
 } from "../../utils/practiceRequestStagePresets.js";
 const DEFAULT_ARRIVAL_DEFAULT_DAYS = 7;
 const MAX_LAB_ARRIVAL_DEFAULTS = 80;
+const MAX_DOCTOR_NAMES = 40;
+const MAX_DOCTOR_NAME_LENGTH = 40;
 const ABUTMENT_PRODUCT_MODE_PRODUCTION = "custom_abutment";
 const ABUTMENT_PRODUCT_MODE_DESIGN_AND_PRODUCTION = "design_custom_abutment";
 const DEFAULT_ABUTMENT_PRODUCT_MODE = ABUTMENT_PRODUCT_MODE_PRODUCTION;
@@ -102,6 +105,20 @@ const normalizeMemoSnippets = (items) => {
   }
 
   return Array.from(dedup.values()).slice(0, MAX_MEMO_SNIPPETS);
+};
+
+const normalizeDoctorNames = (items) => {
+  const list = Array.isArray(items) ? items : [];
+  const dedup = new Map();
+
+  for (const item of list) {
+    const trimmed = String(item || "").trim().slice(0, MAX_DOCTOR_NAME_LENGTH);
+    if (!trimmed) continue;
+    const key = trimmed.toLowerCase();
+    if (!dedup.has(key)) dedup.set(key, trimmed);
+  }
+
+  return Array.from(dedup.values()).slice(0, MAX_DOCTOR_NAMES);
 };
 
 const SHADE_PRESET_KEYS = new Set(["a2", "a3", "a1", "a3.5"]);
@@ -372,6 +389,7 @@ const toSettingsResponse = async (anchor, { persistHydrated = false } = {}) => {
       settings?.requestStagePresets,
     ),
     memoSnippets: normalizeMemoSnippets(settings?.memoSnippets),
+    doctorNames: normalizeDoctorNames(settings?.doctorNames),
     shadeFavorites: normalizeShadeFavorites(settings?.shadeFavorites),
     implantFavorites,
     abutmentFavorites: normalizeAbutmentFavorites(settings?.abutmentFavorites),
@@ -469,6 +487,7 @@ export async function upsertPracticeTransferSettings(req, res) {
       "requestStagePresets",
     );
     const hasMemoSnippets = Object.prototype.hasOwnProperty.call(body, "memoSnippets");
+    const hasDoctorNames = Object.prototype.hasOwnProperty.call(body, "doctorNames");
     const hasShadeFavorites = Object.prototype.hasOwnProperty.call(body, "shadeFavorites");
     const hasImplantFavorites = Object.prototype.hasOwnProperty.call(body, "implantFavorites");
     const hasAbutmentFavorites = Object.prototype.hasOwnProperty.call(body, "abutmentFavorites");
@@ -539,6 +558,9 @@ export async function upsertPracticeTransferSettings(req, res) {
     }
     if (hasMemoSnippets) {
       setPatch["practiceTransferSettings.memoSnippets"] = normalizeMemoSnippets(body.memoSnippets);
+    }
+    if (hasDoctorNames) {
+      setPatch["practiceTransferSettings.doctorNames"] = normalizeDoctorNames(body.doctorNames);
     }
     if (hasShadeFavorites) {
       setPatch["practiceTransferSettings.shadeFavorites"] = normalizeShadeFavorites(

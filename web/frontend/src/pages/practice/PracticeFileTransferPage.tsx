@@ -27,6 +27,7 @@
  * - web/frontend/src/shared/practice/openPracticeTransferChat.ts
  * - web/frontend/src/shared/components/practice/PracticeLabRatingControl.tsx
  * - web/frontend/src/shared/practice/practiceLabRating.ts
+ * - 2026-09-21: 신규의뢰 헤더 — 원장님 성함 드롭다운(BA doctorNames 추가·수정·삭제).
  * - 2026-09-21: 동일 환자·치아 확인 모달 z-[460] — 작성 화면 뒤에서 전송 클릭을 삼키던 문제.
  * - 2026-09-20: 작업 파일 전체 다운로드 — 어벗 디자인·보철물을 zip 하나로.
  * - 2026-09-16: 의뢰 파일 append — S3 병렬 후 낙관 패치·저장 API(기공소 수신과 동일 패턴).
@@ -339,6 +340,7 @@ import {
   type PracticeSimilarCaseMatch,
 } from "@/shared/components/practice/PracticeSimilarCaseRemakeDialog";
 import { normalizeMemoSnippets } from "@/shared/components/practice/PracticeTransferRequestIntakePanel";
+import { normalizeDoctorNames } from "@/shared/components/practice/PracticeDoctorNameField";
 import {
   ARCH_BULK_PROSTHESIS_PRESETS,
   normalizeArchBulkProsthesisTypes,
@@ -682,6 +684,7 @@ type ParsedPracticeTransferMemoMeta = {
   prosthesisTypes: string[];
   toothWorks: ToothWorkSelection[];
   patientName: string;
+  doctorName: string;
   memo: string;
   skipDesignConfirm: boolean;
   skipJig: boolean;
@@ -743,6 +746,7 @@ type PracticeTransferSettingsPayload = {
   archBulkProsthesisTypes?: string[];
   requestStagePresets?: PracticeRequestStagePreset[];
   memoSnippets?: string[];
+  doctorNames?: string[];
   shadeFavorites?: string[];
   implantFavorites?: PracticeImplantFavorite[];
   abutmentFavorites?: PracticeAbutmentFavorite[];
@@ -1073,6 +1077,7 @@ const parsePracticeTransferMemoMeta = (rawMemo: string): ParsedPracticeTransferM
     prosthesisTypes: [...PRESET_PROSTHESIS_TYPES],
     toothWorks: [],
     patientName: "",
+    doctorName: "",
     memo: source,
     skipDesignConfirm: true,
     skipJig: true,
@@ -1091,6 +1096,7 @@ const parsePracticeTransferMemoMeta = (rawMemo: string): ParsedPracticeTransferM
     prosthesisTypes: ensurePresetProsthesisTypes(parsed.prosthesisTypes),
     toothWorks: normalizeToothWorksForSync(parsed.toothWorks),
     patientName: String(parsed.patientName || "").trim(),
+    doctorName: String(parsed.doctorName || "").trim(),
     memo: String(parsed.memo || ""),
     // 디자인 컨펌은 항상 생략
     skipDesignConfirm: true,
@@ -1106,6 +1112,7 @@ const buildPracticeTransferMemo = (params: {
   prosthesisTypes: string[];
   toothWorks: ToothWorkSelection[];
   patientName?: string;
+  doctorName?: string;
   skipDesignConfirm?: boolean;
   skipJig?: boolean;
 }) =>
@@ -1721,6 +1728,8 @@ export const PracticeFileTransferPage = ({
 
   const [toothWorks, setToothWorks] = useState<ToothWorkSelection[]>([]);
   const [patientName, setPatientName] = useState("");
+  const [doctorName, setDoctorName] = useState("");
+  const [doctorNames, setDoctorNames] = useState<string[]>([]);
 
   const normalizedProsthesisTypes = useMemo(
     () => ensurePresetProsthesisTypes(prosthesisTypeCatalog),
@@ -1869,6 +1878,7 @@ export const PracticeFileTransferPage = ({
         targetLabAnchorId: selectedLab?._id,
         targetLabName: selectedLab?.name,
         patientName: normalizedPatientName,
+        doctorName,
         orderDate,
         arrivalDate,
         arrivalDefaultDays,
@@ -1880,6 +1890,7 @@ export const PracticeFileTransferPage = ({
       selectedLab?._id,
       selectedLab?.name,
       normalizedPatientName,
+      doctorName,
       orderDate,
       arrivalDate,
       arrivalDefaultDays,
@@ -2328,6 +2339,7 @@ export const PracticeFileTransferPage = ({
       Array.isArray(payload.prosthesisTypes) ? payload.prosthesisTypes : [...PRESET_PROSTHESIS_TYPES],
     );
     const nextMemoSnippets = normalizeMemoSnippets(payload.memoSnippets);
+    const nextDoctorNames = normalizeDoctorNames(payload.doctorNames);
     const nextShadeFavorites = normalizeShadeFavorites(payload.shadeFavorites);
     const hasArchBulkProsthesisTypes = Object.prototype.hasOwnProperty.call(
       payload,
@@ -2421,6 +2433,7 @@ export const PracticeFileTransferPage = ({
     setProsthesisTypeCatalog(nextProsthesisTypes);
     setProsthesisTypeCatalogDraft(nextProsthesisTypes);
     setMemoSnippets(nextMemoSnippets);
+    setDoctorNames(nextDoctorNames);
     setShadeFavorites(nextShadeFavorites);
     if (nextArchBulkProsthesisTypes) {
       setArchBulkProsthesisTypes(nextArchBulkProsthesisTypes);
@@ -2488,6 +2501,7 @@ export const PracticeFileTransferPage = ({
       const hasArchBulkProsthesisTypes = Array.isArray(params.archBulkProsthesisTypes);
       const hasRequestStagePresets = Array.isArray(params.requestStagePresets);
       const hasMemoSnippets = Array.isArray(params.memoSnippets);
+      const hasDoctorNames = Array.isArray(params.doctorNames);
       const hasShadeFavorites = Array.isArray(params.shadeFavorites);
       const hasImplantFavorites = Array.isArray(params.implantFavorites);
       const hasAbutmentFavorites = Array.isArray(params.abutmentFavorites);
@@ -2549,6 +2563,9 @@ export const PracticeFileTransferPage = ({
       }
       if (hasMemoSnippets) {
         jsonBody.memoSnippets = normalizeMemoSnippets(params.memoSnippets || []);
+      }
+      if (hasDoctorNames) {
+        jsonBody.doctorNames = normalizeDoctorNames(params.doctorNames || []);
       }
       if (hasShadeFavorites) {
         jsonBody.shadeFavorites = normalizeShadeFavorites(params.shadeFavorites || []);
@@ -2668,6 +2685,9 @@ export const PracticeFileTransferPage = ({
         if (hasMemoSnippets) {
           setMemoSnippets(normalizeMemoSnippets(payload.memoSnippets));
         }
+        if (hasDoctorNames) {
+          setDoctorNames(normalizeDoctorNames(payload.doctorNames));
+        }
         if (hasShadeFavorites) {
           setShadeFavorites(normalizeShadeFavorites(payload.shadeFavorites));
         }
@@ -2743,6 +2763,13 @@ export const PracticeFileTransferPage = ({
               ? {
                   memoSnippets: normalizeMemoSnippets(
                     payload?.memoSnippets ?? params.memoSnippets,
+                  ),
+                }
+              : {}),
+            ...(hasDoctorNames
+              ? {
+                  doctorNames: normalizeDoctorNames(
+                    payload?.doctorNames ?? params.doctorNames,
                   ),
                 }
               : {}),
@@ -3012,6 +3039,7 @@ export const PracticeFileTransferPage = ({
         targetLabAnchorId: payload.targetLabAnchorId,
         targetLabName: payload.targetLabName,
         patientName: parsed.patientName,
+        doctorName: parsed.doctorName,
         orderDate: parsed.orderDate,
         arrivalDate: parsed.arrivalDate,
         arrivalDefaultDays: parsed.arrivalDefaultDays,
@@ -3143,6 +3171,7 @@ export const PracticeFileTransferPage = ({
           setProsthesisTypeCatalogDraft(types);
         }
         setPatientName(String(parsed.patientName || "").normalize("NFC"));
+        setDoctorName(String(parsed.doctorName || "").trim());
         setRequestMemo(String(parsed.memo || ""));
 
         const prosthesisTypesForRestore = ensurePresetProsthesisTypes(parsed.prosthesisTypes);
@@ -3169,6 +3198,7 @@ export const PracticeFileTransferPage = ({
           targetLabAnchorId: payload.targetLabAnchorId,
           targetLabName: payload.targetLabName,
           patientName: String(parsed.patientName || "").normalize("NFC"),
+          doctorName: String(parsed.doctorName || "").trim(),
           orderDate: parsed.orderDate,
           arrivalDate: parsed.arrivalDate,
           arrivalDefaultDays: parsed.arrivalDefaultDays,
@@ -3388,6 +3418,7 @@ export const PracticeFileTransferPage = ({
       } else if (payload) {
         // 폼 로컬값이 있어도 BA 세팅(문장·프리셋·지그생략·커스텀어벗 기본모드·자동매칭 예산·최소 별)은 서버를 우선 반영
         setMemoSnippets(normalizeMemoSnippets(payload.memoSnippets));
+        setDoctorNames(normalizeDoctorNames(payload.doctorNames));
         setShadeFavorites(normalizeShadeFavorites(payload.shadeFavorites));
         setArchBulkProsthesisTypes(
           normalizeArchBulkProsthesisTypes(payload.archBulkProsthesisTypes),
@@ -3487,6 +3518,9 @@ export const PracticeFileTransferPage = ({
             ),
             memoSnippets: normalizeMemoSnippets(
               Array.isArray(payload?.memoSnippets) ? payload?.memoSnippets : [],
+            ),
+            doctorNames: normalizeDoctorNames(
+              Array.isArray(payload?.doctorNames) ? payload?.doctorNames : [],
             ),
             shadeFavorites: normalizeShadeFavorites(
               Array.isArray(payload?.shadeFavorites) ? payload?.shadeFavorites : [],
@@ -3745,6 +3779,7 @@ export const PracticeFileTransferPage = ({
       );
       const restoredMemo = String(parsed.requestMemo || "");
       const restoredPatientName = String(parsed.patientName || "");
+      const restoredDoctorName = String(parsed.doctorName || "").trim();
       const restoredActiveDraftId = String(parsed.activeDraftId || "").trim();
 
       if (import.meta.env.DEV) {
@@ -3780,6 +3815,7 @@ export const PracticeFileTransferPage = ({
       setProsthesisTypeCatalogDraft(restoredProsthesisTypes);
       setRequestMemo(restoredMemo);
       setPatientName(restoredPatientName);
+      setDoctorName(restoredDoctorName);
       if (restoredActiveDraftId) {
         setActiveDraftId(restoredActiveDraftId);
       }
@@ -3847,6 +3883,7 @@ export const PracticeFileTransferPage = ({
       prosthesisTypes: normalizedProsthesisTypes,
       requestMemo,
       patientName,
+      doctorName,
       selectedLab: selectedLab
         ? {
             _id: isAutoMatchLab(selectedLab)
@@ -3901,6 +3938,7 @@ export const PracticeFileTransferPage = ({
     arrivalDate,
     arrivalDefaultDays,
     currentFormFingerprint,
+    doctorName,
     localFormHydrated,
     normalizedProsthesisTypes,
     orderDate,
@@ -3928,6 +3966,7 @@ export const PracticeFileTransferPage = ({
         prosthesisTypes: normalizedProsthesisTypes,
         toothWorks: syncToothWorks,
         patientName: normalizedPatientName,
+        doctorName,
         skipDesignConfirm: true,
         skipJig: effectiveSkipJig,
       });
@@ -4109,6 +4148,7 @@ export const PracticeFileTransferPage = ({
       loadPracticeTransferDraftList,
       buildOwnDraftSummary,
       normalizedPatientName,
+      doctorName,
       normalizedProsthesisTypes,
       syncToothWorks,
       orderDate,
@@ -4220,6 +4260,7 @@ export const PracticeFileTransferPage = ({
     lastAutoSelectedTestLabIdRef.current = "";
     setSelectedLab(null);
     setPatientName("");
+    setDoctorName("");
     setRequestMemo("");
     arrivalDatePinnedRef.current = false;
     setOrderDate(todayDate);
@@ -4258,6 +4299,7 @@ export const PracticeFileTransferPage = ({
           prosthesisTypes: [],
           requestMemo: "",
           patientName: "",
+          doctorName: "",
           selectedLab: null,
           toothWorks: [],
           rushProcessing: nextRush,
@@ -4284,6 +4326,7 @@ export const PracticeFileTransferPage = ({
           prosthesisTypes: [],
           requestMemo: "",
           patientName: "",
+          doctorName: "",
           selectedLab: null,
           toothWorks: [],
           rushProcessing: nextRush,
@@ -5284,6 +5327,7 @@ export const PracticeFileTransferPage = ({
       const labName = String(draft.targetLabName || "").trim();
       // transferMemo가 SSOT. 목록 카드의 patientName은 stale일 수 있어 memo 빈 값에 fallback하지 않는다.
       const nextPatientName = String(parsed.patientName || "").trim().normalize("NFC");
+      const nextDoctorName = String(parsed.doctorName || "").trim();
 
       skipNextArrivalAutoSyncRef.current = true;
 
@@ -5361,6 +5405,7 @@ export const PracticeFileTransferPage = ({
       setProsthesisTypeCatalog(prosthesisTypesForRestore);
       setProsthesisTypeCatalogDraft(prosthesisTypesForRestore);
       setPatientName(nextPatientName);
+      setDoctorName(nextDoctorName);
       setRequestMemo(String(parsed.memo || ""));
 
       const fallbackToothRow = {
@@ -5396,6 +5441,7 @@ export const PracticeFileTransferPage = ({
         targetLabAnchorId: labId,
         targetLabName: labName,
         patientName: nextPatientName,
+        doctorName: nextDoctorName,
         orderDate: parsed.orderDate,
         arrivalDate: parsed.arrivalDate,
         arrivalDefaultDays: parsed.arrivalDefaultDays,
@@ -6617,6 +6663,7 @@ export const PracticeFileTransferPage = ({
       prosthesisTypes: normalizedProsthesisTypes,
       toothWorks: syncToothWorks,
       patientName: normalizedPatientName,
+      doctorName,
       skipDesignConfirm: true,
       skipJig: effectiveSkipJig,
     });
@@ -7655,6 +7702,7 @@ export const PracticeFileTransferPage = ({
                 : null,
             targetLabName: eventLabName,
             patientName: parsedEventMemo.patientName,
+            doctorName: parsedEventMemo.doctorName,
             orderDate: parsedEventMemo.orderDate,
             arrivalDate: parsedEventMemo.arrivalDate,
             arrivalDefaultDays: parsedEventMemo.arrivalDefaultDays,
@@ -8182,6 +8230,7 @@ export const PracticeFileTransferPage = ({
         prosthesisTypes: normalizedProsthesisTypes,
         toothWorks: syncToothWorks,
         patientName: normalizedPatientName,
+        doctorName,
         skipDesignConfirm: true,
         skipJig: effectiveSkipJig,
       });
@@ -8506,6 +8555,7 @@ export const PracticeFileTransferPage = ({
     lastAutoSelectedTestLabIdRef.current = "";
     setSelectedLab(null);
     setPatientName("");
+    setDoctorName("");
     setRequestMemo("");
     // 마운트 시점 todayDate가 자정을 넘긴 탭에서도 캘린더 클릭일과 맞게 비교한다.
     const orderYmdNow = toKstDateInputValue(new Date()) || todayDate;
@@ -8579,6 +8629,7 @@ export const PracticeFileTransferPage = ({
       targetLabAnchorId: undefined,
       targetLabName: undefined,
       patientName: "",
+      doctorName: "",
       orderDate: nextOrderDate,
       arrivalDate: nextArrivalDate,
       arrivalDefaultDays: nextArrivalDefaultDays,
@@ -9642,6 +9693,32 @@ export const PracticeFileTransferPage = ({
                   onTogglePinLab: togglePinLab,
                   patientName,
                   setPatientName,
+                  doctorName,
+                  setDoctorName,
+                  doctorNames,
+                  onDoctorNamesChange: async (next) => {
+                    const normalized = normalizeDoctorNames(next);
+                    setDoctorNames(normalized);
+                    try {
+                      const existingRaw = localStorage.getItem(
+                        PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY,
+                      );
+                      const existing =
+                        existingRaw && typeof existingRaw === "string"
+                          ? (JSON.parse(existingRaw) as PracticeTransferSettingsPayload)
+                          : {};
+                      localStorage.setItem(
+                        PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY,
+                        JSON.stringify({
+                          ...existing,
+                          doctorNames: normalized,
+                        }),
+                      );
+                    } catch {
+                      // ignore
+                    }
+                    await savePracticeTransferSettingsToServer({ doctorNames: normalized });
+                  },
                   orderDate,
                   setOrderDate,
                   arrivalDate,

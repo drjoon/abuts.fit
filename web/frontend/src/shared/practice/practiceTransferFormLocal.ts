@@ -32,6 +32,8 @@ export type PracticeTransferFormLocalDraft = {
   prosthesisTypes?: string[];
   requestMemo?: string;
   patientName?: string;
+  /** 원장님 성함(선택). BA 목록과 별도 의뢰값 */
+  doctorName?: string;
   selectedLab?: PracticeTransferFormLocalLab | null;
   toothWorks?: ToothWorkSelection[];
   /** 레거시. 신규는 항상 생략(true) */
@@ -126,6 +128,7 @@ export const syncIntakeFieldsToTransferFormLocal = (fields: {
   prosthesisTypes: string[];
   requestMemo: string;
   patientName: string;
+  doctorName?: string;
   selectedLab: PracticeTransferFormLocalLab | null;
   toothWorks: ToothWorkSelection[];
   skipDesignConfirm?: boolean;
@@ -140,6 +143,7 @@ export const syncIntakeFieldsToTransferFormLocal = (fields: {
     prosthesisTypes: fields.prosthesisTypes,
     requestMemo: fields.requestMemo,
     patientName: fields.patientName,
+    doctorName: String(fields.doctorName || "").trim(),
     selectedLab: fields.selectedLab,
     toothWorks: fields.toothWorks,
     skipDesignConfirm: true,

@@ -70,6 +70,7 @@ import {
 import { cn } from "@/shared/ui/cn";
 import { armPointerClickThroughGuard } from "@/shared/dom/armPointerClickThroughGuard";
 import { PracticeOrderArrivalDateRangeField } from "@/shared/components/practice/PracticeOrderArrivalDateRangeField";
+import { PracticeDoctorNameField } from "@/shared/components/practice/PracticeDoctorNameField";
 import {
   ABUTS_PINNED_LAB_NAME,
   getBusinessLabel,
@@ -277,6 +278,7 @@ import {
 // - 2026-09-07: 전체치열 좌측 목록 — 호버 편집/삭제·드래그 정렬·계정 저장.
 // - 2026-09-07: 전체치열 편집/삭제 — group-focus-within 제거(모달 오픈 시 첫 항목 포커스로 아이콘 상시 노출 방지).
 // - 2026-09-05: 전체 선택 모달 — 악궁 좌·타입 우 한 줄씩, + 추가, 악궁 내 + 연결.
+// - 2026-09-21: 헤더 날짜 옆 「원장님 성함」드롭다운(BA doctorNames 추가·수정·삭제).
 // - 2026-09-05: 전체 선택 모달 — 고정 폭·높이, 커스텀 입력 X 인라인, Enter 적용.
 // - 2026-08-25: 기공소·환자·날짜 투어 카드 — 헤더 버튼~입력 행 세로 맞춤, 폭=주문-치과도착 열.
 // - 2026-08-25: 가이드투어 스텝 상위로 제어 가능.
@@ -845,6 +847,12 @@ export type PracticeTransferRequestIntakePanelProps = {
   onTogglePinLab?: (lab: SearchBusinessResult) => void;
   patientName: string;
   setPatientName: (value: string) => void;
+  /** 이번 의뢰에 선택한 원장님 성함 */
+  doctorName?: string;
+  setDoctorName?: (value: string) => void;
+  /** BA practiceTransferSettings.doctorNames */
+  doctorNames?: string[];
+  onDoctorNamesChange?: (next: string[]) => void | Promise<void>;
   orderDate: string;
   setOrderDate: (value: string) => void;
   arrivalDate: string;
@@ -1010,6 +1018,10 @@ export const PracticeTransferRequestIntakePanel = ({
   onTogglePinLab,
   patientName,
   setPatientName,
+  doctorName = "",
+  setDoctorName,
+  doctorNames: doctorNamesProp = [],
+  onDoctorNamesChange,
   orderDate,
   setOrderDate,
   arrivalDate,
@@ -3484,14 +3496,22 @@ export const PracticeTransferRequestIntakePanel = ({
     showMemoSection && !showHeaderFields && !showProsthesisSection;
 
   const showAnyHeaderFields = showLabField || showPatientField || showDateFields;
+  const showDoctorField =
+    Boolean(showDateFields && setDoctorName && onDoctorNamesChange);
   const headerFieldCount =
-    Number(showLabField) + Number(showPatientField) + Number(showDateFields);
+    Number(showLabField) +
+    Number(showPatientField) +
+    Number(showDateFields) +
+    Number(showDoctorField);
   const headerGridClassName =
     headerFieldCount <= 1
       ? "grid grid-cols-1 items-end gap-3 max-w-lg"
       : headerFieldCount === 2
         ? "grid grid-cols-1 items-end gap-3"
-        : "grid grid-cols-1 items-end gap-3 lg:grid-cols-[minmax(0,1.75fr)_minmax(0,0.6fr)_minmax(0,0.85fr)]";
+        : headerFieldCount === 3
+          ? "grid grid-cols-1 items-end gap-3 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,0.9fr)_minmax(0,1.1fr)]"
+          : // 기공소 | 환자명 | 주문-치과도착 | 원장님 — 환자·원장 동일 폭
+            "grid grid-cols-1 items-end gap-3 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,0.9fr)_minmax(0,1.15fr)_minmax(0,0.9fr)]";
 
   const isHeaderTourStep =
     toothWorkGuideTourStep != null && toothWorkGuideTourStepId === "header";
@@ -3990,6 +4010,20 @@ export const PracticeTransferRequestIntakePanel = ({
             setArrivalDate(next.arrivalDate);
           }}
         />
+        ) : null}
+
+        {showDoctorField ? (
+          <PracticeDoctorNameField
+            value={doctorName}
+            onChange={setDoctorName!}
+            doctorNames={doctorNamesProp}
+            onDoctorNamesChange={onDoctorNamesChange!}
+            triggerClassName={
+              isOralSpotlight("oral_header")
+                ? "practice-tooth-guide-pulse"
+                : undefined
+            }
+          />
         ) : null}
       </div>
               ) : null}
