@@ -39,3 +39,13 @@ export const avatarSeedFromUrl = (url: string) => {
   const match = String(url || "").match(/\/avatars\/(\d+)\.webp(?:\?|$)/i);
   return match?.[1] || "user";
 };
+
+/** Stable default from the local pack. Same hash as backend defaultProfileImageForSeed. */
+export const defaultAvatarUrlFromSeed = (seed: string) => {
+  const s = String(seed || "user");
+  let hash = 0;
+  for (let i = 0; i < s.length; i += 1) {
+    hash = (Math.imul(hash, 31) + s.charCodeAt(i)) >>> 0;
+  }
+  return getLocalAvatarUrl((hash % DEFAULT_AVATAR_TOTAL) + 1);
+};

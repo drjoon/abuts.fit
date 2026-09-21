@@ -233,6 +233,11 @@ const businessAnchorSchema = new mongoose.Schema(
       default: null,
       index: true,
     },
+    /** 소개 코드가 귀속된 시각. 90일 무주문 시계의 시작. */
+    referralAssignedAt: {
+      type: Date,
+      default: null,
+    },
     defaultReferralAnchorId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "BusinessAnchor",

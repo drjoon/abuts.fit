@@ -664,7 +664,10 @@ export const handleJoinRequest = async (params: HandleJoinRequestParams) => {
       return;
     }
 
-    toast({ title: "소속 신청이 접수되었습니다" });
+    toast({
+      title: "가입 신청이 접수되었습니다",
+      description: "대표자 승인 후 이용할 수 있습니다.",
+    });
     setBusinessSearch("");
     setBusinessSearchResults([]);
     setSelectedBusiness(null);

@@ -18,7 +18,6 @@ interface BusinessMemberViewProps {
 }
 
 export const BusinessMemberView = ({
-  currentBusinessName,
   licenseStatus,
   isVerified,
   metadata,
@@ -40,13 +39,11 @@ export const BusinessMemberView = ({
             <Clock className="h-[18px] w-[18px] text-amber-700" />
           </span>
           <div className="min-w-0 space-y-1.5">
-            <p className="text-sm font-semibold text-amber-900">승인 대기 중</p>
-            <p className="text-[13px] leading-relaxed text-slate-700">
-              <span className="font-medium">{currentBusinessName || "사업자"}</span>
-              의 대표자 승인을 기다리고 있습니다.
+            <p className="text-sm font-semibold text-amber-900">
+              가입 신청이 접수되었습니다
             </p>
-            <p className="text-xs text-muted-foreground">
-              승인 후 플랫폼을 정상적으로 이용할 수 있습니다.
+            <p className="text-[13px] leading-relaxed text-slate-700">
+              대표자 승인 후 이용할 수 있습니다.
             </p>
           </div>
         </div>

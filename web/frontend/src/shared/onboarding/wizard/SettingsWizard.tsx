@@ -9,8 +9,9 @@ import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/shared/ui/cn";
+import { request } from "@/shared/api/apiClient";
+import { defaultAvatarUrlFromSeed } from "@/shared/lib/avatarOptions";
 
-import { ProfileStep } from "./steps/ProfileStep";
 import { PhoneStep } from "./steps/PhoneStep";
 import { RoleStep } from "./steps/RoleStep";
 import { BusinessStep } from "./steps/BusinessStep";
@@ -25,12 +26,7 @@ interface SettingsWizardProps {
 
 export type WizardStepId = "profile" | "phone" | "role" | "business";
 
-const FULL_STEP_ORDER: WizardStepId[] = [
-  "profile",
-  "phone",
-  "role",
-  "business",
-];
+const FULL_STEP_ORDER: WizardStepId[] = ["phone", "role", "business"];
 
 const createStepCompletionState = (): Record<WizardStepId, boolean> => ({
   profile: false,
@@ -137,12 +133,12 @@ export const SettingsWizard = ({
       return null;
     }
 
-    // fallback보다 identity 키를 우선해 다른 세션/유저 진행 상태를 물려받지 않음
-    const raw =
+    const storedRaw =
       window.localStorage.getItem(stepStorageKey) ||
       window.localStorage.getItem(legacyStepStorageKey) ||
       window.localStorage.getItem(fallbackStepStorageKey) ||
       "";
+    const raw = storedRaw === "profile" ? "phone" : storedRaw;
 
     console.log("[wizard-readStoredStep] reading from localStorage:", {
       fallbackStepStorageKey,
@@ -189,7 +185,7 @@ export const SettingsWizard = ({
   const [currentStep, setCurrentStep] = useState<WizardStepId | null>(() => {
     // DB 버전 체크 후 localStorage에 저장된 단계 또는 첫 단계부터 시작
     const stored = readStoredStep();
-    const initial = stored || "profile";
+    const initial = stored || "phone";
     console.log("[wizard-init] currentStep:", {
       stored,
       initial,
@@ -242,6 +238,30 @@ export const SettingsWizard = ({
   const validateActionRef = useRef<(() => void) | null>(null);
   /** requestor practice-only: 사업자등록증 건너뛴 뒤 필수 치과정보 단계 */
   const [practiceProfilePhase, setPracticeProfilePhase] = useState(false);
+  const avatarAssignedRef = useRef(false);
+
+  useEffect(() => {
+    if (!token || avatarAssignedRef.current) return;
+    const profileUser = user as {
+      _id?: string;
+      id?: string;
+      email?: string;
+      profileImage?: string;
+    } | null;
+    const existing = String(profileUser?.profileImage || "").trim();
+    if (existing) return;
+    const seed = String(
+      profileUser?._id || profileUser?.id || profileUser?.email || "",
+    ).trim();
+    if (!seed) return;
+    avatarAssignedRef.current = true;
+    void request({
+      path: "/api/users/profile",
+      method: "PUT",
+      token,
+      jsonBody: { profileImage: defaultAvatarUrlFromSeed(seed) },
+    }).catch(() => {});
+  }, [token, user]);
 
   const handlePracticeProfilePhaseChange = useCallback((active: boolean) => {
     setPracticeProfilePhase(active);
@@ -351,7 +371,6 @@ export const SettingsWizard = ({
   const handleNext = useCallback(async () => {
     if (!currentStep) return;
     if (
-      currentStep === "profile" ||
       currentStep === "phone" ||
       currentStep === "business"
     ) {
@@ -407,7 +426,7 @@ export const SettingsWizard = ({
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       if (event.key !== "Enter") return;
-      if (!currentStep || !["profile", "phone"].includes(currentStep)) {
+      if (!currentStep || currentStep !== "phone") {
         return;
       }
       const target = event.target as HTMLElement | null;
@@ -437,8 +456,6 @@ export const SettingsWizard = ({
 
   const stepTitle = useMemo(() => {
     switch (currentStep) {
-      case "profile":
-        return "프로필 설정";
       case "phone":
         return "휴대전화 인증";
       case "role":
@@ -458,8 +475,6 @@ export const SettingsWizard = ({
 
   const cardMaxWidth = useMemo(() => {
     switch (currentStep) {
-      case "profile":
-        return "max-w-md";
       case "phone":
         return "max-w-md";
       case "role":
@@ -495,13 +510,6 @@ export const SettingsWizard = ({
             </CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-5 pt-5 sm:px-8 sm:pb-6 sm:pt-6 md:px-12">
-            {currentStep === "profile" && (
-              <ProfileStep
-                defaultCompleted={stepCompleted.profile}
-                onComplete={() => handleStepComplete("profile")}
-                registerGoNextAction={registerGoNextAction}
-              />
-            )}
             {currentStep === "phone" && (
               <PhoneStep
                 defaultCompleted={stepCompleted.phone}
@@ -534,7 +542,6 @@ export const SettingsWizard = ({
             )}
 
             {(STEP_ORDER.indexOf(currentStep) > 0 ||
-              currentStep === "profile" ||
               currentStep === "phone") && (
               <div className="mt-6 flex flex-col-reverse gap-3 sm:mt-8 sm:flex-row sm:justify-between">
                 {STEP_ORDER.indexOf(currentStep) > 0 ? (
@@ -552,8 +559,7 @@ export const SettingsWizard = ({
                   <div className="hidden sm:block" />
                 )}
                 <div className="flex gap-3 sm:ml-auto">
-                  {(currentStep === "profile" ||
-                    currentStep === "phone" ||
+                  {(currentStep === "phone" ||
                     currentStep === "role" ||
                     currentStep === "business") && (
                     <Button

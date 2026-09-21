@@ -71,6 +71,7 @@ import {
 } from "@/shared/business/requestorCapabilities";
 import { PayoutAccountCard } from "@/shared/components/business/settings/PayoutAccountCard";
 import { TrusteeIssueSettingCard } from "@/shared/components/business/settings/TrusteeIssueSettingCard";
+import { ReferralCodeCard } from "@/shared/components/business/settings/ReferralCodeCard";
 import { Building2 } from "lucide-react";
 
 interface BusinessTabProps {
@@ -156,6 +157,8 @@ export const BusinessTab = ({
 
   const licenseUploadRef = useRef<BusinessLicenseUploadHandle | null>(null);
   const isRequestorBusiness = businessType === "requestor";
+  const canEditSalesReferral =
+    businessType === "requestor" || businessType === "practice";
 
   const markOnboardingWizardCompleted = useCallback(async () => {
     if (!token || !user) return false;
@@ -884,6 +887,12 @@ export const BusinessTab = ({
             />
             </div>
           )}
+
+        {!isOnboarding &&
+        canEditSalesReferral &&
+        membershipMgmt.membership === "owner" ? (
+          <ReferralCodeCard businessType={businessType} />
+        ) : null}
 
         {/* 온보딩에서만 표시. 설정 화면은 RoleStep에서 이미 등록/가입을 선택했으므로 숨김. */}
         {isOnboarding &&

@@ -244,8 +244,8 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - 당일 완료 마커: `worker:daily-referral-snapshot:done:<ymd>` (TTL ~48h)
   - **영업 소개 귀속 90일 리셋**: `jobs/dailyReferralOwnershipResetWorker.js` + `services/referralOwnershipReset.service.js`
     - 대상: `businessType=requestor` 이고 추천인 BA가 `salesman|salesTeam`
-    - 시계: `max(BA.createdAt, 최근 Request.createdAt)` < KST 오늘 자정−90일 → `referredByAnchorId=null` (+ 멤버 User 미러)
-    - 재영업: `POST /api/businesses/me/apply-referral` (귀속 null일 때만)
+    - 시계: `max(referralAssignedAt || BA.createdAt, 최근 Request.createdAt, 최근 크레딧 소비 COMMIT occurredAt)` < KST 오늘 자정−90일 → `referredByAnchorId=null` (+ 멤버 User 미러)
+    - 코드 없이 가입하면 귀속은 null. 대표만 `POST /api/businesses/me/apply-referral` (영업자·딜러 코드, 귀속 null 또는 개발운영사 기본 귀속일 때)
     - 락: `worker:daily-referral-ownership-reset` / done `…:done:<ymd>`
     - FE 카피: `PricingPolicyDialog`(salesman) · `DealershipTermsCard` · 영업본부 `policyNote`
   - 가격 SSOT 자동 점검(`runPricingSsotConsistencyCheck`)은 워커/관리자 대시보드/CI 스케줄에서 제외

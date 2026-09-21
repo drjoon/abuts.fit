@@ -520,6 +520,26 @@ export async function getMyBusiness(req, res) {
       }
     }
 
+    const isRequestorRole =
+      businessType === "requestor" || businessType === "practice";
+    let referrerBusinessType = null;
+    if (
+      isRequestorRole &&
+      anchor?.referredByAnchorId &&
+      Types.ObjectId.isValid(String(anchor.referredByAnchorId))
+    ) {
+      const referrerAnchor = await BusinessAnchor.findById(
+        anchor.referredByAnchorId,
+      )
+        .select({ businessType: 1 })
+        .lean();
+      referrerBusinessType = String(referrerAnchor?.businessType || "") || null;
+    }
+    const referralCanRegister =
+      isRequestorRole &&
+      membership === "owner" &&
+      (!anchor?.referredByAnchorId || referrerBusinessType === "devops");
+
     const responseData = {
       success: true,
       data: {
@@ -582,6 +602,17 @@ export async function getMyBusiness(req, res) {
           ),
           updatedAt: anchor?.requestSettings?.updatedAt || null,
         },
+        referralOwnership: isRequestorRole
+            ? {
+                canRegister: referralCanRegister,
+                assigned:
+                  Boolean(anchor?.referredByAnchorId) &&
+                  referrerBusinessType !== "devops",
+                salesAssigned:
+                  referrerBusinessType === "salesman" ||
+                  referrerBusinessType === "salesTeam",
+              }
+            : null,
       },
     };
 
@@ -1901,7 +1932,7 @@ export async function applyMyReferralCode(req, res) {
     if (!roleCheck) return;
 
     const freshUser = await User.findById(req.user._id)
-      .select({ businessAnchorId: 1, role: 1 })
+      .select({ businessAnchorId: 1, role: 1, subRole: 1 })
       .lean();
     const businessAnchorId =
       freshUser?.businessAnchorId || req.user.businessAnchorId;
@@ -1909,6 +1940,26 @@ export async function applyMyReferralCode(req, res) {
       return res.status(400).json({
         success: false,
         message: "사업자 정보가 설정되지 않았습니다.",
+      });
+    }
+
+    const anchor = await BusinessAnchor.findById(businessAnchorId)
+      .select({
+        businessType: 1,
+        owners: 1,
+        primaryContactUserId: 1,
+      })
+      .lean();
+    const meId = String(req.user._id);
+    const isOwner =
+      String(anchor?.primaryContactUserId || "") === meId ||
+      (Array.isArray(anchor?.owners) &&
+        anchor.owners.some((id) => String(id) === meId)) ||
+      String(freshUser?.subRole || "") === "owner";
+    if (!isOwner) {
+      return res.status(403).json({
+        success: false,
+        message: "영업자 코드는 대표만 등록할 수 있습니다.",
       });
     }
 

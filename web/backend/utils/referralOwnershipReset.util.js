@@ -31,10 +31,16 @@ export function isSalesReferrerBusinessType(businessType) {
   );
 }
 
-export function resolveLastActivityAt({ createdAt, lastRequestAt }) {
-  const createdMs = createdAt ? new Date(createdAt).getTime() : NaN;
-  const requestMs = lastRequestAt ? new Date(lastRequestAt).getTime() : NaN;
-  const candidates = [createdMs, requestMs].filter((n) => Number.isFinite(n));
+export function resolveLastActivityAt({
+  createdAt,
+  lastRequestAt,
+  referralAssignedAt,
+  lastCreditSpendAt,
+}) {
+  const start = referralAssignedAt || createdAt;
+  const candidates = [start, lastRequestAt, lastCreditSpendAt]
+    .map((value) => (value ? new Date(value).getTime() : NaN))
+    .filter((n) => Number.isFinite(n));
   if (!candidates.length) return null;
   return new Date(Math.max(...candidates));
 }

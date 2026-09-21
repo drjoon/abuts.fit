@@ -27,6 +27,7 @@ import {
 import { Types } from "mongoose";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
+import { defaultProfileImageForSeed } from "../../utils/defaultProfileImage.js";
 import {
   assertSignupVerifications,
   consumeSignupVerifications,
@@ -120,41 +121,6 @@ function getReferralRoleMismatchMessage({ signupRole, referrerRole }) {
   return "소개 링크와 가입 역할이 맞지 않습니다.";
 }
 
-async function resolveDefaultDevopsReferrer() {
-  const defaultDevopsUser = await User.findOne({
-    role: "devops",
-    active: true,
-    businessAnchorId: { $ne: null },
-  })
-    .select({ _id: 1, businessAnchorId: 1, createdAt: 1 })
-    .sort({ createdAt: 1, _id: 1 })
-    .lean();
-
-  if (!defaultDevopsUser) {
-    throw new Error(
-      "기본 소개 개발운영사 계정을 찾을 수 없습니다. 개발운영사 사업자를 먼저 준비해주세요.",
-    );
-  }
-
-  const businessAnchorId = String(
-    defaultDevopsUser.businessAnchorId || "",
-  ).trim();
-  if (!Types.ObjectId.isValid(businessAnchorId)) {
-    throw new Error("기본 소개 개발운영사 사업자 정보가 올바르지 않습니다.");
-  }
-
-  const anchorExists = await BusinessAnchor.exists({
-    _id: new Types.ObjectId(businessAnchorId),
-  });
-  if (!anchorExists) {
-    throw new Error("기본 소개 개발운영사 사업자를 찾을 수 없습니다.");
-  }
-
-  return {
-    referredByAnchorId: new Types.ObjectId(businessAnchorId),
-  };
-}
-
 async function resolveReferrerTargets({
   referredByEmail,
   referredByReferralCode,
@@ -183,9 +149,6 @@ async function resolveReferrerTargets({
   const normalizedSignupRole = String(signupRole || "").trim();
 
   if (!resolvedReferralCode && !resolvedReferralEmail) {
-    if (normalizedSignupRole === "requestor" || normalizedSignupRole === "practice") {
-      return resolveDefaultDevopsReferrer();
-    }
     return {
       referredByAnchorId: null,
       referrerRole: null,
@@ -800,6 +763,7 @@ async function register(req, res) {
       onboardingWizardCompleted: false, // 모든 역할 온보딩 필요
       approvedAt: isInstantApprove ? new Date() : null,
       active: isInstantApprove,
+      profileImage: defaultProfileImageForSeed(normalizedEmail),
       ...(!socialProvider ? { isVerified: true } : {}),
     };
 
@@ -1310,6 +1274,7 @@ async function practiceRegister(req, res) {
       approvedAt: new Date(),
       active: true,
       isVerified: true,
+      profileImage: defaultProfileImageForSeed(normalizedEmail),
       phoneNumber: phone,
       phoneVerifiedAt: new Date(),
       practiceProfile: {

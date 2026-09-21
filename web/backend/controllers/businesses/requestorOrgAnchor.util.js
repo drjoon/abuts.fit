@@ -166,6 +166,7 @@ export async function ensureRequestorOrgAnchor({ user } = {}) {
     },
     referredByAnchorId: user.referredByAnchorId || null,
     defaultReferralAnchorId: user.referredByAnchorId || null,
+    referralAssignedAt: user.referredByAnchorId ? new Date() : null,
   });
 
   await User.findByIdAndUpdate(user._id, {

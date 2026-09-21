@@ -5,6 +5,7 @@
 import crypto from "crypto";
 import User from "../../models/user.model.js";
 import { generateToken, generateRefreshToken } from "../../utils/jwt.util.js";
+import { defaultProfileImageForSeed } from "../../utils/defaultProfileImage.js";
 
 function getFrontendBaseUrl(req) {
   const configured = String(
@@ -218,6 +219,7 @@ async function findOrCreateUserFromSocial({
       referralCode,
       approvedAt: new Date(),
       active: true,
+      profileImage: defaultProfileImageForSeed(normalizedEmail),
       business: "",
       phoneNumber: "",
       preferences: { language: "ko" },
@@ -251,6 +253,7 @@ async function findOrCreateUserFromSocial({
     referralCode,
     approvedAt: new Date(),
     active: true,
+    profileImage: defaultProfileImageForSeed(normalizedEmail),
     business: "",
     phoneNumber: "",
     preferences: { language: "ko" },

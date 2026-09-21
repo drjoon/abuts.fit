@@ -9,7 +9,7 @@
  * 영업(딜러·영업본부) 소개 귀속 90일 비활성 리셋.
  *
  * - SSOT 쓰기: BusinessAnchor.referredByAnchorId (의뢰자)
- * - 비활성 시계: max(BA.createdAt, 해당 BA의 최근 Request.createdAt)
+ * - 비활성 시계: max(referralAssignedAt || BA.createdAt, 최근 Request.createdAt, 최근 크레딧 소비 COMMIT)
  * - 대상 추천인: businessType salesman | salesTeam 만 (peer/devops 유지)
  * - 과거 REV_SALESMAN 장부는 건드리지 않음
  */
@@ -17,6 +17,7 @@ import { Types } from "mongoose";
 import BusinessAnchor from "../models/businessAnchor.model.js";
 import Request from "../models/request.model.js";
 import User from "../models/user.model.js";
+import LedgerJournal from "../models/ledgerJournal.model.js";
 import { emitReferralMembershipChanged } from "./requestSnapshotTriggers.service.js";
 import {
   ensureSalesTeamPersonalAnchor,
@@ -39,6 +40,44 @@ export {
   resolveReferralOwnershipCutoffAt,
   shouldResetReferralOwnership,
 };
+
+const CREDIT_SPEND_EVENT_TYPES = [
+  "REQUEST_SPEND_COMMIT",
+  "SHIPPING_SPEND_COMMIT",
+  "PRACTICE_TRANSFER_SPEND_COMMIT",
+  "PRACTICE_MEMBERSHIP_SPEND",
+  "STORE_SALE",
+];
+
+async function loadLastCreditSpendAtMap(anchorIds) {
+  const ids = (anchorIds || [])
+    .map((id) => String(id || "").trim())
+    .filter((id) => Types.ObjectId.isValid(id))
+    .map((id) => new Types.ObjectId(id));
+  if (!ids.length) return new Map();
+
+  const rows = await LedgerJournal.aggregate([
+    {
+      $match: {
+        businessAnchorId: { $in: ids },
+        eventType: { $in: CREDIT_SPEND_EVENT_TYPES },
+      },
+    },
+    {
+      $group: {
+        _id: "$businessAnchorId",
+        lastSpendAt: { $max: "$occurredAt" },
+      },
+    },
+  ]);
+
+  return new Map(
+    rows.map((row) => [
+      String(row?._id || "").trim(),
+      row?.lastSpendAt ? new Date(row.lastSpendAt) : null,
+    ]),
+  );
+}
 
 async function loadLastRequestAtMap(anchorIds) {
   const ids = (anchorIds || [])
@@ -101,7 +140,12 @@ export async function resetExpiredReferralOwnerships({
   }
 
   const candidates = await BusinessAnchor.find(filter)
-    .select({ _id: 1, createdAt: 1, referredByAnchorId: 1 })
+    .select({
+      _id: 1,
+      createdAt: 1,
+      referredByAnchorId: 1,
+      referralAssignedAt: 1,
+    })
     .sort({ _id: 1 })
     .limit(batchLimit)
     .lean();
@@ -145,6 +189,9 @@ export async function resetExpiredReferralOwnerships({
   const lastRequestMap = await loadLastRequestAtMap(
     salesCandidates.map((row) => row._id),
   );
+  const lastSpendMap = await loadLastCreditSpendAtMap(
+    salesCandidates.map((row) => row._id),
+  );
 
   for (const row of salesCandidates) {
     const anchorId = String(row._id);
@@ -152,7 +199,9 @@ export async function resetExpiredReferralOwnerships({
     try {
       const lastActivityAt = resolveLastActivityAt({
         createdAt: row.createdAt,
+        referralAssignedAt: row.referralAssignedAt || null,
         lastRequestAt: lastRequestMap.get(anchorId) || null,
+        lastCreditSpendAt: lastSpendMap.get(anchorId) || null,
       });
       if (
         !shouldResetReferralOwnership({
@@ -176,7 +225,7 @@ export async function resetExpiredReferralOwnerships({
           businessType: "requestor",
           referredByAnchorId: row.referredByAnchorId,
         },
-        { $set: { referredByAnchorId: null } },
+        { $set: { referredByAnchorId: null, referralAssignedAt: null } },
         { new: true },
       ).select({ _id: 1 });
 
@@ -213,8 +262,8 @@ export async function resetExpiredReferralOwnerships({
 }
 
 /**
- * 소개 귀속이 비어 있는 의뢰자 BA에 소개코드를 재귀속한다.
- * (90일 리셋 후 재영업 경로)
+ * 소개 귀속이 비어 있거나 기본 개발운영사 귀속인 의뢰자 BA에 영업자 코드를 적용한다.
+ * (코드 없이 가입한 뒤 설정-사업자에서 등록, 또는 90일 리셋 후 재영업)
  */
 export async function applyReferralCodeToUnownedRequestor({
   requestorBusinessAnchorId,
@@ -229,17 +278,32 @@ export async function applyReferralCodeToUnownedRequestor({
     throw new Error("의뢰자 사업자 정보가 올바르지 않습니다.");
   }
   if (!code) {
-    throw new Error("소개 코드를 입력해주세요.");
+    throw new Error("영업자 코드를 입력해주세요.");
   }
 
   const requestorAnchor = await BusinessAnchor.findById(anchorId)
     .select({ _id: 1, businessType: 1, referredByAnchorId: 1 })
     .lean();
-  if (!requestorAnchor || requestorAnchor.businessType !== "requestor") {
-    throw new Error("의뢰자 사업자만 소개 코드를 적용할 수 있습니다.");
+  const anchorType = String(requestorAnchor?.businessType || "");
+  if (
+    !requestorAnchor ||
+    (anchorType !== "requestor" && anchorType !== "practice")
+  ) {
+    throw new Error("의뢰자 사업자만 영업자 코드를 등록할 수 있습니다.");
   }
-  if (requestorAnchor.referredByAnchorId) {
-    throw new Error("이미 소개 귀속이 있습니다. 90일 비활성 리셋 후에만 재적용할 수 있습니다.");
+
+  const currentReferrerId = String(requestorAnchor.referredByAnchorId || "").trim();
+  let replaceable = !currentReferrerId;
+  if (currentReferrerId && Types.ObjectId.isValid(currentReferrerId)) {
+    const parent = await BusinessAnchor.findById(currentReferrerId)
+      .select({ businessType: 1 })
+      .lean();
+    replaceable = String(parent?.businessType || "") === "devops";
+  }
+  if (!replaceable) {
+    throw new Error(
+      "이미 영업자 코드가 등록되어 있습니다. 90일간 주문이 없으면 자동으로 해제된 뒤 다시 등록할 수 있습니다.",
+    );
   }
 
   const escaped = code.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -251,12 +315,12 @@ export async function applyReferralCodeToUnownedRequestor({
     .lean();
 
   if (!refUser) {
-    throw new Error("유효하지 않은 소개 코드입니다.");
+    throw new Error("유효하지 않은 영업자 코드입니다.");
   }
 
   const role = String(refUser.role || "").trim();
-  if (!["salesman", "salesTeam", "requestor", "devops"].includes(role)) {
-    throw new Error("이 소개 코드는 적용할 수 없습니다.");
+  if (!["salesman", "salesTeam"].includes(role)) {
+    throw new Error("영업자 또는 딜러 코드만 등록할 수 있습니다.");
   }
 
   let referrerAnchorId = String(refUser.businessAnchorId || "").trim();
@@ -273,34 +337,44 @@ export async function applyReferralCodeToUnownedRequestor({
     throw new Error("추천인 사업자 정보가 없습니다.");
   }
   if (referrerAnchorId === anchorId) {
-    throw new Error("본인 소개 코드는 적용할 수 없습니다.");
+    throw new Error("본인 코드는 등록할 수 없습니다.");
   }
 
+  const assignedAt = new Date();
+  const currentFilterId =
+    currentReferrerId && Types.ObjectId.isValid(currentReferrerId)
+      ? new Types.ObjectId(currentReferrerId)
+      : null;
   const updated = await BusinessAnchor.findOneAndUpdate(
     {
       _id: new Types.ObjectId(anchorId),
-      businessType: "requestor",
-      referredByAnchorId: null,
+      businessType: anchorType,
+      referredByAnchorId: currentFilterId,
     },
     {
       $set: {
         referredByAnchorId: new Types.ObjectId(referrerAnchorId),
         defaultReferralAnchorId: new Types.ObjectId(referrerAnchorId),
+        referralAssignedAt: assignedAt,
       },
     },
     { new: true },
   ).select({ _id: 1, referredByAnchorId: 1 });
 
   if (!updated) {
-    throw new Error("소개 귀속 적용에 실패했습니다. 이미 귀속이 있을 수 있습니다.");
+    throw new Error("영업자 코드 등록에 실패했습니다. 이미 등록되어 있을 수 있습니다.");
   }
 
-  const userFilter = actorUserId
-    ? { _id: actorUserId, businessAnchorId: anchorId }
-    : { businessAnchorId: anchorId };
-  await User.updateMany(userFilter, {
-    $set: { referredByAnchorId: new Types.ObjectId(referrerAnchorId) },
-  });
+  await User.updateMany(
+    { businessAnchorId: anchorId },
+    { $set: { referredByAnchorId: new Types.ObjectId(referrerAnchorId) } },
+  );
+  if (actorUserId && Types.ObjectId.isValid(String(actorUserId))) {
+    await User.updateOne(
+      { _id: actorUserId },
+      { $set: { referredByAnchorId: new Types.ObjectId(referrerAnchorId) } },
+    );
+  }
 
   emitReferralMembershipChanged(anchorId, "referral-ownership-reclaim");
   emitReferralMembershipChanged(
@@ -312,5 +386,6 @@ export async function applyReferralCodeToUnownedRequestor({
     businessAnchorId: anchorId,
     referredByAnchorId: referrerAnchorId,
     referrerRole: role,
+    referralAssignedAt: assignedAt,
   };
 }

@@ -1700,15 +1700,9 @@ export const DashboardLayout = () => {
             </div>
           </div>
           <div className="space-y-2">
-            <h2 className="text-xl font-semibold">승인 대기 중</h2>
+            <h2 className="text-xl font-semibold">가입 신청이 접수되었습니다</h2>
             <p className="text-sm text-muted-foreground">
-              <span className="font-medium text-foreground">
-                {pendingBusinessName}
-              </span>
-              의 대표자 승인을 기다리고 있습니다.
-            </p>
-            <p className="text-sm text-muted-foreground">
-              승인이 완료되면 플랫폼을 정상적으로 이용하실 수 있습니다.
+              대표자 승인 후 이용할 수 있습니다.
             </p>
           </div>
           <Button variant="outline" onClick={handleLogout}>

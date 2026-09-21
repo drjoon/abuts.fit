@@ -187,6 +187,7 @@ export async function ensureBusinessAnchor({
       $setOnInsert: {
         referredByAnchorId: referredByAnchorId || null,
         defaultReferralAnchorId: referredByAnchorId || null,
+        referralAssignedAt: referredByAnchorId ? new Date() : null,
         ...(businessType === "requestor"
           ? { demoMode: true, demoModeStartedAt: new Date() }
           : {}),
@@ -228,6 +229,7 @@ export async function ensureBusinessAnchor({
         $set: {
           referredByAnchorId,
           defaultReferralAnchorId: referredByAnchorId,
+          referralAssignedAt: new Date(),
         },
       },
     );
@@ -1076,6 +1078,7 @@ export async function updateMyBusiness(req, res) {
           },
           referredByAnchorId: freshUser?.referredByAnchorId || null,
           defaultReferralAnchorId: freshUser?.referredByAnchorId || null,
+          referralAssignedAt: freshUser?.referredByAnchorId ? new Date() : null,
         });
 
         await User.findByIdAndUpdate(

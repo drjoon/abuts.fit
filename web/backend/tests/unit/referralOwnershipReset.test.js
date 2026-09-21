@@ -39,6 +39,19 @@ describe("referral ownership reset helpers", () => {
     ).toBe(createdAt.getTime());
   });
 
+  test("code entry restarts the clock ahead of business createdAt", () => {
+    const createdAt = new Date("2026-01-01T00:00:00+09:00");
+    const referralAssignedAt = new Date("2026-09-01T00:00:00+09:00");
+    const lastCreditSpendAt = new Date("2026-08-01T00:00:00+09:00");
+    expect(
+      resolveLastActivityAt({
+        createdAt,
+        referralAssignedAt,
+        lastCreditSpendAt,
+      }).getTime(),
+    ).toBe(referralAssignedAt.getTime());
+  });
+
   test("should reset only when last activity is strictly before cutoff", () => {
     const cutoff = new Date("2026-06-23T00:00:00+09:00");
     expect(
