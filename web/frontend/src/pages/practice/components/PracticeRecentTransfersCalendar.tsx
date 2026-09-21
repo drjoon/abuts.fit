@@ -799,7 +799,7 @@ type PracticeRecentTransfersCalendarProps = {
   search?: string;
   onSearchChange?: (value: string) => void;
   searchPlaceholder?: string;
-  /** 캘린더 설정(숨길 요일)과 검색 사이 슬롯 */
+  /** 툴바 오른쪽 끝 슬롯 — 그리보 이벤트 CTA 등 */
   toolbarMiddle?: ReactNode;
   hiddenWeekdays: number[];
   onHiddenWeekdaysChange: (next: number[]) => void;
@@ -1632,12 +1632,14 @@ export function PracticeRecentTransfersCalendar({
             ))}
           </div>
         ) : null}
-        {toolbarMiddle ? (
-          <div className="flex min-w-0 flex-1 items-center md:mx-2 md:max-w-sm lg:max-w-md">
-            {toolbarMiddle}
-          </div>
-        ) : null}
-        <div className="flex w-full flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end md:ml-auto md:w-auto">
+        <div
+          className={cn(
+            "flex w-full flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center md:w-auto",
+            toolbarMiddle
+              ? "md:mx-2 md:min-w-0 md:flex-1 md:justify-center"
+              : "sm:justify-end md:ml-auto",
+          )}
+        >
           {onSearchChange ? (
             <div className="relative w-full max-w-full shrink-0 md:w-64 lg:w-72">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -1738,6 +1740,11 @@ export function PracticeRecentTransfersCalendar({
             </div>
           </div>
         </div>
+        {toolbarMiddle ? (
+          <div className="flex min-w-0 shrink-0 items-center md:ml-auto md:max-w-sm lg:max-w-md">
+            {toolbarMiddle}
+          </div>
+        ) : null}
       </div>
 
       {isListMode ? (

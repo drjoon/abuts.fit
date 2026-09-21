@@ -14,7 +14,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { cn } from "@/shared/ui/cn";
 
 /**
- * 치과 발신(send) 캘린더 툴바 — 숨길 요일과 검색 사이 그리보 이벤트 CTA.
+ * 치과 발신(send) 캘린더 툴바 — 검색·필터 오른쪽 끝 그리보 이벤트 CTA.
  */
 export function GriboEventToolbarAlert({
   className,
@@ -57,7 +57,7 @@ export function GriboEventToolbarAlert({
     <Link
       to={GRIBO_EVENT_HREF}
       className={cn(
-        "group inline-flex min-w-0 max-w-full flex-1 items-center gap-2 rounded-lg border px-3 py-1.5 text-left text-xs font-medium transition-colors sm:text-[13px]",
+        "group inline-flex min-w-0 max-w-full items-center gap-2 rounded-lg border px-3 py-1.5 text-left text-xs font-medium transition-colors sm:text-[13px]",
         applied
           ? "border-emerald-200 bg-emerald-50/90 text-emerald-900 hover:bg-emerald-100/80"
           : "border-sky-200 bg-sky-50/90 text-sky-950 hover:bg-sky-100/80",

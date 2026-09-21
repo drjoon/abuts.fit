@@ -192,7 +192,7 @@ type PracticeRecentTransfersAllModalProps = {
   /** 헤더 우측 — 임시저장·휴지통 등 */
   headerActions?: ReactNode;
   /**
-   * 캘린더 설정(숨길 요일)과 검색 사이 — 그리보 이벤트 CTA 등
+   * 캘린더 툴바 오른쪽 끝 — 그리보 이벤트 CTA 등
    */
   calendarToolbarMiddle?: ReactNode;
   /**
