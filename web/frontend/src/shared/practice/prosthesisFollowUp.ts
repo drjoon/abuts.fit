@@ -13,6 +13,7 @@
 // - 2026-09-15: followUps 배열 없이도 toothWorks 후속 행이 있으면 focus=null → -1(원 스냅샷 보호).
 // - 2026-09-15: 후속-only(지르 다이얼로그 초안·채팅)는 focus=null 유지 — 원 행이 있을 때만 -1.
 // - 2026-09-15: toothWorksForFinalProsthesisFeeQuote — 최종(지르+CA). followUp phase 제거·원 CA 병합.
+// - 2026-09-21: 보철 종류 변경 리메이크(인레이→크라운) — 임시치아→지르와 동일 최고가 청구.
 import {
   type ToothWorkSelection,
   isCustomAbutmentProsthesisType,
@@ -30,9 +31,12 @@ export type ProsthesisFollowUpEligibility = {
   ok: boolean;
   reason?: string;
   message?: string;
+  /** temp=지르 후속, typeChange=보철 종류 변경 */
+  followUpKind?: "temp" | "typeChange";
 };
 
 const FOLLOW_UP_PHASE = "followUp";
+const TYPE_CHANGE_SOURCE_FINAL_TYPES = new Set(["인레이", "크라운", "브리지"]);
 
 export const isFollowUpProsthesisPhase = (
   row?: Partial<ToothWorkSelection> & { prosthesisPhase?: string },
@@ -41,6 +45,16 @@ export const isFollowUpProsthesisPhase = (
 export const isFinalProsthesisType = (prosthesisType: string) => {
   const type = String(prosthesisType || "").trim();
   return type === "크라운" || type === "브리지" || type === "인레이";
+};
+
+export const isTypeChangeSourceProsthesisType = (prosthesisType: string) =>
+  TYPE_CHANGE_SOURCE_FINAL_TYPES.has(String(prosthesisType || "").trim());
+
+export const isFollowUpCreditSourceProsthesisType = (prosthesisType: string) => {
+  const type = String(prosthesisType || "").trim();
+  return (
+    isTemporaryToothProsthesisType(type) || isTypeChangeSourceProsthesisType(type)
+  );
 };
 
 const toToothDecadeSortNumber = (toothNumber: string) => {
@@ -293,7 +307,41 @@ export const listPendingFollowUpTempSpans = (
   );
 };
 
-/** 일부만 후속 지르·아직 임시치아 스팬 남음(기공비=변경, 지르 CTA 유지) */
+export const listPendingFollowUpFinalSpans = (
+  toothWorks: Partial<ToothWorkSelection>[],
+) => {
+  const finalRows = toothWorks.filter(
+    (row) =>
+      isTypeChangeSourceProsthesisType(String(row.prosthesisType || "")) &&
+      !isFollowUpProsthesisPhase(row) &&
+      String(row.toothNumber || "").trim(),
+  );
+  return buildConnectedTempSpans(finalRows).filter(
+    ({ teeth }) => !teeth.some((t) => hasFollowUpProsthesisForTooth(toothWorks, t)),
+  );
+};
+
+export type FollowUpSourceSpan = {
+  teeth: string[];
+  sourceRow: Partial<ToothWorkSelection>;
+  kind: "temp" | "typeChange";
+};
+
+/** 임시치아 후속 우선, 없으면 보철 종류 변경 후보 */
+export const listPendingFollowUpSourceSpans = (
+  toothWorks: Partial<ToothWorkSelection>[],
+): FollowUpSourceSpan[] => {
+  const temp = listPendingFollowUpTempSpans(toothWorks);
+  if (temp.length > 0) {
+    return temp.map((span) => ({ ...span, kind: "temp" as const }));
+  }
+  return listPendingFollowUpFinalSpans(toothWorks).map((span) => ({
+    ...span,
+    kind: "typeChange" as const,
+  }));
+};
+
+/** 일부만 후속·아직 대상 스팬 남음(기공비=변경, CTA 유지) */
 export const hasPartialProsthesisFollowUp = (
   toothWorks: ReadonlyArray<Partial<ToothWorkSelection>> | null | undefined,
 ) => {
@@ -304,7 +352,7 @@ export const hasPartialProsthesisFollowUp = (
       isFinalProsthesisType(String(row.prosthesisType || "")),
   );
   if (!hasFollowUp) return false;
-  return listPendingFollowUpTempSpans(rows).length > 0;
+  return listPendingFollowUpSourceSpans(rows).length > 0;
 };
 
 const cloneRowForFollowUp = (
@@ -333,15 +381,30 @@ const cloneRowForFollowUp = (
   };
 };
 
-/** 임시치아 → 후속 크라운/브리지 초안 */
+/** 임시치아 → 지르 초안, 또는 최종 보철 종류 변경 초안(원 형태 유지) */
 export const buildFollowUpToothWorksDraft = (
   toothWorks: Partial<ToothWorkSelection>[],
 ): Array<ToothWorkSelection & { prosthesisPhase: string }> => {
-  const pending = listPendingFollowUpTempSpans(toothWorks);
-  return pending.map(({ teeth, sourceRow }) => {
-    const prosthesisType = teeth.length >= 2 ? "브리지" : "크라운";
+  const pending = listPendingFollowUpSourceSpans(toothWorks);
+  return pending.map(({ teeth, sourceRow, kind }) => {
+    const prosthesisType =
+      kind === "typeChange"
+        ? String(sourceRow?.prosthesisType || "").trim() || "크라운"
+        : teeth.length >= 2
+          ? "브리지"
+          : "크라운";
     return cloneRowForFollowUp(sourceRow, prosthesisType, teeth);
   });
+};
+
+export const resolveFollowUpKind = (
+  toothWorks?: Partial<ToothWorkSelection>[] | null,
+): "temp" | "typeChange" | null => {
+  const pending = listPendingFollowUpSourceSpans(
+    Array.isArray(toothWorks) ? toothWorks : [],
+  );
+  if (pending.length === 0) return null;
+  return pending[0]?.kind === "typeChange" ? "typeChange" : "temp";
 };
 
 export const summarizeFollowUpToothWorks = (
@@ -388,46 +451,60 @@ export const canAppendProsthesisFollowUp = (input: {
     return {
       ok: false,
       reason: "not_accepted",
-      message: "기공소 작업시작 후에 최종 보철 제작을 의뢰할 수 있습니다.",
+      message: "기공소 작업시작 후에 후속·보철 종류 변경을 의뢰할 수 있습니다.",
     };
   }
 
   let toothWorks = Array.isArray(input.toothWorks) ? input.toothWorks : [];
   if (toothWorks.length === 0 && input.toothWorksSummary) {
-    // summary-only fallback — eligibility only checks temp presence loosely
     const summary = String(input.toothWorksSummary || "");
-    if (!summary.includes("임시치아")) {
+    const hasTempSummary = summary.includes("임시치아");
+    const hasFinalSummary =
+      summary.includes("인레이") ||
+      summary.includes("크라운") ||
+      summary.includes("브리지");
+    if (!hasTempSummary && !hasFinalSummary) {
       return {
         ok: false,
-        reason: "no_temp_teeth",
-        message: "임시치아 의뢰가 없어 후속 보철을 추가할 수 없습니다.",
+        reason: "no_changeable_teeth",
+        message:
+          "임시치아 또는 인레이·크라운·브리지 의뢰가 없어 후속·종류 변경을 할 수 없습니다.",
       };
     }
-  }
-
-  const hasTemp = toothWorks.some((row) =>
-    isTemporaryToothProsthesisType(String(row.prosthesisType || "")),
-  );
-  if (toothWorks.length > 0 && !hasTemp) {
     return {
-      ok: false,
-      reason: "no_temp_teeth",
-      message: "임시치아 의뢰가 없어 후속 보철을 추가할 수 없습니다.",
+      ok: true,
+      followUpKind: hasTempSummary ? "temp" : "typeChange",
     };
   }
 
   if (toothWorks.length > 0) {
-    const pending = listPendingFollowUpTempSpans(toothWorks);
+    const pending = listPendingFollowUpSourceSpans(toothWorks);
     if (pending.length === 0) {
+      const hasSource = toothWorks.some((row) =>
+        isFollowUpCreditSourceProsthesisType(String(row.prosthesisType || "")),
+      );
+      if (!hasSource) {
+        return {
+          ok: false,
+          reason: "no_changeable_teeth",
+          message:
+            "임시치아 또는 인레이·크라운·브리지 의뢰가 없어 후속·종류 변경을 할 수 없습니다.",
+        };
+      }
       return {
         ok: false,
         reason: "already_appended",
-        message: "이미 모든 임시치아에 대한 후속 보철이 의뢰되었습니다.",
+        message: "이미 모든 대상 치아에 대한 후속 보철이 의뢰되었습니다.",
       };
     }
+    return {
+      ok: true,
+      followUpKind:
+        pending[0]?.kind === "typeChange" ? "typeChange" : "temp",
+    };
   }
 
-  return { ok: true };
+  return { ok: true, followUpKind: "temp" };
 };
 
 export const buildFollowUpSummaryFromTransfer = (input: {

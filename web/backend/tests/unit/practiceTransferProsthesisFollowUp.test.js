@@ -104,6 +104,116 @@ describe("practiceTransferProsthesisFollowUp", () => {
     ).toBe(true);
   });
 
+  test("canAppendProsthesisFollowUp allows inlay→crown type-change remake", () => {
+    const transfer = {
+      status: "active",
+      requestorDownloadedAt: new Date(),
+      toothWorks: [
+        {
+          toothNumber: "36",
+          prosthesisType: "인레이",
+          bridgeLinkedTeeth: ["36"],
+        },
+      ],
+    };
+    const gate = canAppendProsthesisFollowUp(transfer);
+    expect(gate.ok).toBe(true);
+    expect(gate.followUpKind).toBe("typeChange");
+  });
+
+  test("inlay→crown credits prior fee so only max stage is billed", () => {
+    const source = [
+      {
+        toothNumber: "36",
+        prosthesisType: "인레이",
+        bridgeLinkedTeeth: ["36"],
+      },
+    ];
+    const followUp = [
+      {
+        toothNumber: "36",
+        prosthesisType: "크라운",
+        prosthesisPhase: "followUp",
+        bridgeLinkedTeeth: ["36"],
+      },
+    ];
+    const validated = validateFollowUpToothWorksAgainstSource(source, followUp);
+    expect(validated.ok).toBe(true);
+    expect(validated.followUpKind).toBe("typeChange");
+
+    const schedule = {
+      ...LAB_FEE_SCHEDULE_SAMPLE,
+      active: true,
+      items: [
+        {
+          id: "inlay",
+          name: "인레이",
+          unit: "perTooth",
+          price: 50000,
+          remake: 0,
+          enabled: true,
+        },
+        {
+          id: "crown",
+          name: "크라운",
+          unit: "perTooth",
+          price: 60000,
+          remake: 0,
+          enabled: true,
+        },
+      ],
+    };
+    const inlayFees = computePracticeTransferRetailFees({
+      toothWorks: source,
+      labFeeSchedule: schedule,
+      skipAbutmentFees: true,
+    });
+    const crownFees = computePracticeTransferRetailFees({
+      toothWorks: followUp,
+      labFeeSchedule: schedule,
+      skipAbutmentFees: true,
+    });
+    expect(inlayFees.labFeeTotal).toBe(50000);
+    expect(crownFees.labFeeTotal).toBe(60000);
+
+    const creditRows = pickSourceTempRowsForFollowUpCredit(source, followUp);
+    expect(creditRows).toHaveLength(1);
+    expect(creditRows[0].prosthesisType).toBe("인레이");
+
+    const credited = applyProsthesisFollowUpTempCredit({
+      finalLabFeeTotal: crownFees.labFeeTotal,
+      finalTotal: crownFees.total,
+      tempCreditLabFeeTotal: inlayFees.labFeeTotal,
+    });
+    expect(credited.tempCreditLabFeeTotal).toBe(50000);
+    expect(credited.labFeeTotal).toBe(10000);
+    expect(credited.finalLabFeeTotal).toBe(60000);
+
+    // 원 인레이+후속 크라운 live quote는 최고가(크라운)만
+    const mergedFees = computePracticeTransferRetailFees({
+      toothWorks: [...source, ...followUp],
+      labFeeSchedule: schedule,
+      skipAbutmentFees: true,
+    });
+    expect(mergedFees.labFeeTotal).toBe(60000);
+  });
+
+  test("type-change remake rejects same prosthesis type", () => {
+    const source = [
+      { toothNumber: "36", prosthesisType: "인레이", bridgeLinkedTeeth: ["36"] },
+    ];
+    const same = [
+      {
+        toothNumber: "36",
+        prosthesisType: "인레이",
+        prosthesisPhase: "followUp",
+        bridgeLinkedTeeth: ["36"],
+      },
+    ];
+    const validated = validateFollowUpToothWorksAgainstSource(source, same);
+    expect(validated.ok).toBe(false);
+  });
+
   test("listPendingFollowUpTempSpans excludes teeth with follow-up already", () => {
     const toothWorks = [
       { toothNumber: "34", prosthesisType: "임시치아", bridgeLinkedTeeth: ["34"] },

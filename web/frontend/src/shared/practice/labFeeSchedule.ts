@@ -1717,6 +1717,27 @@ export const computePracticeTransferRetailFees = (params: {
       }
 
       const split = abutmentSplitForRow(row);
+      // 후속이 있으면 원 인레이/크라운 기공비는 제외(원 hold + 후속 순증분 = 최고가).
+      if (hasFollowUpProsthesisForTooth(rows, toothNumber)) {
+        addAbutment(split);
+        if (
+          split.abuts > 0 ||
+          split.lab > 0 ||
+          split.pending ||
+          split.quote
+        ) {
+          lines.push({
+            toothNumber,
+            prosthesisType: abutmentLineType(split),
+            labFee: 0,
+            labAbutmentFee: split.lab,
+            labAbutmentPending: split.pending,
+            abutmentRetail: split.abuts,
+            abutmentRetailNote: retailNote(split),
+          });
+        }
+        continue;
+      }
       labFeeTotal += unitLabFee;
       addAbutment(split);
       // 수가표와 같이 보철기공비·커스텀어벗을 별도 줄로 표기

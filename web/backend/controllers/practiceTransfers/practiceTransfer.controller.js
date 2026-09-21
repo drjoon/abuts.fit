@@ -139,10 +139,13 @@ import {
   baseToothWorksWithoutFollowUp,
   buildFollowUpToothWorksDraft,
   buildProsthesisFeeStageRecord,
+  baseProsthesisFeeStageTitle,
   canAppendProsthesisFollowUp,
   canLabStartProsthesisFollowUpWork,
   canManagePendingProsthesisFollowUp,
+  followUpProsthesisFeeStageTitle,
   getPendingProsthesisFollowUps,
+  hasBaseProsthesisStageRows,
   hasTemporaryProsthesisRows,
   isPendingProsthesisFollowUpRecord,
   hydrateProsthesisFeeStages,
@@ -4632,7 +4635,8 @@ export async function appendPracticeTransferArrival(req, res) {
 
 /**
  * 임시치아 배송 후 동일 건에 크라운/브리지 후속 추가.
- * 어벗 재청구 없음 — 크라운/브리지 기공비만 증분 hold.
+ * 또는 인레이→크라운 등 보철 종류 변경 리메이크 — 단계 최고가만 증분 hold.
+ * 어벗 재청구 없음.
  */
 export async function appendPracticeTransferProsthesis(req, res) {
   try {
@@ -4706,6 +4710,8 @@ export async function appendPracticeTransferProsthesis(req, res) {
     }
 
     const followUpRows = validated.rows;
+    const followUpKind =
+      validated.followUpKind === "typeChange" ? "typeChange" : "temp";
     try {
       assertAbutmentPresetsComplete(followUpRows);
     } catch (presetErr) {
@@ -4899,13 +4905,14 @@ export async function appendPracticeTransferProsthesis(req, res) {
       canceledBy: null,
     };
 
-    /** 단계별 불변 스냅샷 — 기존 temp/지르를 덮어쓰지 않고 이번 지르만 추가 */
+    /** 단계별 불변 스냅샷 — 기존 temp/지르·인레이를 덮어쓰지 않고 이번 후속만 추가 */
     let nextProsthesisFeeStages = listProsthesisFeeStages(doc.prosthesisFeeStages);
-    const hasTempStage = nextProsthesisFeeStages.some(
+    const hasBaseStage = nextProsthesisFeeStages.some(
       (row) => String(row?.key || "").trim() === PROSTHESIS_FEE_STAGE_TEMP_KEY,
     );
     const tempRowsForStage = baseToothWorksWithoutFollowUp(sourceToothWorks);
-    if (!hasTempStage && hasTemporaryProsthesisRows(sourceToothWorks)) {
+    const baseStageTitle = baseProsthesisFeeStageTitle(sourceToothWorks);
+    if (!hasBaseStage && hasBaseProsthesisStageRows(sourceToothWorks)) {
       try {
         const tempQuote = await buildPracticeTransferQuote({
           practiceAnchorId,
@@ -4921,7 +4928,7 @@ export async function appendPracticeTransferProsthesis(req, res) {
           buildProsthesisFeeStageRecord({
             key: PROSTHESIS_FEE_STAGE_TEMP_KEY,
             followUpIndex: -1,
-            title: "임시치아 단계",
+            title: baseStageTitle,
             toothWorks: tempRowsForStage,
             fees: tempQuote?.fees || null,
             orderYmd: String(appended.previousOrderYmd || "").trim(),
@@ -4930,7 +4937,7 @@ export async function appendPracticeTransferProsthesis(req, res) {
         );
       } catch (tempSnapErr) {
         console.warn(
-          "[appendPracticeTransferProsthesis] temp fee stage snapshot failed",
+          "[appendPracticeTransferProsthesis] base fee stage snapshot failed",
           String(doc?._id || ""),
           tempSnapErr?.message || tempSnapErr,
         );
@@ -4939,7 +4946,7 @@ export async function appendPracticeTransferProsthesis(req, res) {
           buildProsthesisFeeStageRecord({
             key: PROSTHESIS_FEE_STAGE_TEMP_KEY,
             followUpIndex: -1,
-            title: "임시치아 단계",
+            title: baseStageTitle,
             toothWorks: tempRowsForStage,
             fees: { labFeeTotal: 0, total: 0, lines: [] },
             orderYmd: String(appended.previousOrderYmd || "").trim(),
@@ -4947,8 +4954,8 @@ export async function appendPracticeTransferProsthesis(req, res) {
           }),
         );
       }
-    } else if (hasTempStage) {
-      // 기존 temp에 toothWorks가 없으면 1회만 채움(견적·key는 덮지 않음)
+    } else if (hasBaseStage) {
+      // 기존 base에 toothWorks가 없으면 1회만 채움(견적·key는 덮지 않음)
       nextProsthesisFeeStages = hydrateProsthesisFeeStages({
         prosthesisFeeStages: nextProsthesisFeeStages,
         prosthesisFollowUps: followUps,
@@ -4958,15 +4965,16 @@ export async function appendPracticeTransferProsthesis(req, res) {
       });
     }
     const grossFees = feeQuote?.grossFees || {};
+    const followUpStageTitle = followUpProsthesisFeeStageTitle(
+      followUpRows,
+      followUpIndex,
+    );
     nextProsthesisFeeStages = upsertProsthesisFeeStage(
       nextProsthesisFeeStages,
       buildProsthesisFeeStageRecord({
         key: zirconiaProsthesisFeeStageKey(followUpIndex),
         followUpIndex,
-        title:
-          followUpIndex > 0
-            ? `지르 보철 단계 ${followUpIndex + 1}`
-            : "지르 보철 단계",
+        title: followUpStageTitle,
         toothWorks: followUpRows,
         fees: {
           labFeeTotal: billingDelta.finalLabFeeTotal ?? grossFees.labFeeTotal,
@@ -5036,6 +5044,8 @@ export async function appendPracticeTransferProsthesis(req, res) {
     }
 
     const targetLabAnchorIdText = String(updated.targetLabAnchorId || "").trim();
+    const chatTitle =
+      followUpKind === "typeChange" ? "보철 종류 변경 리메이크" : "후속 보철 추가";
 
     runProsthesisFollowUpSideEffectsInBackground({
       practiceBusinessAnchorId: req.user?.businessAnchorId,
@@ -5046,11 +5056,12 @@ export async function appendPracticeTransferProsthesis(req, res) {
       fetchUnreadCount: Boolean(targetLabAnchorIdText),
       chat: {
         senderUserId: req.user?._id,
-        content: `후속 보철 추가\n치과도착일 ${rawYmd}`,
+        content: `${chatTitle}\n치과도착일 ${rawYmd}`,
         systemEvent: "practice_transfer_prosthesis_follow_up",
         systemPayload: {
           arrivalYmd: rawYmd,
           followUpIndex,
+          followUpKind,
           stageKey: zirconiaProsthesisFeeStageKey(followUpIndex),
           billingDelta: followUpRecord.billingDelta || null,
           toothWorks: serializeFollowUpToothWorksForChatPayload(followUpRows),
@@ -5058,7 +5069,11 @@ export async function appendPracticeTransferProsthesis(req, res) {
       },
       realtimePayload: {
         source: "appendPracticeTransferProsthesis",
-        action: "prosthesis-follow-up",
+        action:
+          followUpKind === "typeChange"
+            ? "prosthesis-type-change"
+            : "prosthesis-follow-up",
+        followUpKind,
         transferId: String(updated.transferId || "").trim(),
         transferMongoId: String(updated._id || ""),
         targetLabAnchorId: targetLabAnchorIdText || null,

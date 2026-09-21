@@ -1,13 +1,18 @@
-// related files:
-// - web/frontend/src/shared/practice/prosthesisFollowUp.ts
-// - web/frontend/src/shared/components/practice/PracticeToothWorkChartReadOnly.tsx
-// - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
-// - 2026-09-01: 임시치아 → 최종 보철 후속 제작 확인 다이얼로그.
-// - 2026-09-01: 크라운·브리지 단위 선택(부분 제작) — 보철물 카드에서 체크.
-// - 2026-09-01: 재도착일 적용 시 계정·기공소 기본 소요일 서버 저장.
-// - 2026-09-15: 제작 의뢰 시 도착일 팝오버를 먼저 열어 확정하게 함.
-// - 2026-09-15: 제작 변경 — pending 후속 지르 표시(단계 포커스 필터 없음).
-// - 2026-09-15: 지르 제작·변경 모달 — 이번 단계 견적만(최종 기공비 숨김).
+/**
+ * 임시치아 → 지르 후속, 또는 보철 종류 변경 리메이크(인레이→크라운 등).
+ * related files:
+ * - web/frontend/src/shared/practice/prosthesisFollowUp.ts
+ * - web/frontend/src/shared/components/practice/PracticeToothWorkChartReadOnly.tsx
+ * - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
+ * change-log:
+ * - 2026-09-21: 보철 종류 변경 리메이크(인레이→크라운) — 단계 최고가만 청구 안내·형태 선택.
+ * - 2026-09-01: 임시치아 → 최종 보철 후속 제작 확인 다이얼로그.
+ * - 2026-09-01: 크라운·브리지 단위 선택(부분 제작) — 보철물 카드에서 체크.
+ * - 2026-09-01: 재도착일 적용 시 계정·기공소 기본 소요일 서버 저장.
+ * - 2026-09-15: 제작 의뢰 시 도착일 팝오버를 먼저 열어 확정하게 함.
+ * - 2026-09-15: 제작 변경 — pending 후속 지르 표시(단계 포커스 필터 없음).
+ * - 2026-09-15: 지르 제작·변경 모달 — 이번 단계 견적만(최종 기공비 숨김).
+ */
 import { useEffect, useMemo, useState } from "react";
 import { CalendarClock } from "lucide-react";
 import {
@@ -24,11 +29,22 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { PracticeToothWorkChartReadOnly } from "@/shared/components/practice/PracticeToothWorkChartReadOnly";
 import {
   buildFollowUpToothWorksDraft,
   followUpRowSpanKey,
+  formatFollowUpRowLabel,
+  isFinalProsthesisType,
   listEditablePendingFollowUpToothWorks,
+  listPendingFollowUpSourceSpans,
+  resolveFollowUpKind,
   type ProsthesisFollowUpRecord,
 } from "@/shared/practice/prosthesisFollowUp";
 import { toKstYmd, ymdToKstDate } from "@/shared/date/kst";
@@ -37,6 +53,8 @@ import { useResizableDialogWidth } from "@/shared/hooks/useResizableDialogWidth"
 import type { ToothWorkSelection } from "@/shared/practice/transferMemo";
 
 type FollowUpRow = ToothWorkSelection & { prosthesisPhase: string };
+
+const TYPE_CHANGE_OPTIONS = ["인레이", "크라운", "브리지"] as const;
 
 type Props = {
   open: boolean;
@@ -82,7 +100,18 @@ export function PracticeProsthesisFollowUpDialog({
     { storageKey: "abuts.prosthesisFollowUpDialog.width.v1" },
   );
   const isEdit = mode === "edit";
-  const availableRows = useMemo(
+  const followUpKind = useMemo(
+    () =>
+      isEdit
+        ? "temp"
+        : resolveFollowUpKind(
+            Array.isArray(toothWorks) ? toothWorks : [],
+          ) || "temp",
+    [isEdit, toothWorks],
+  );
+  const isTypeChange = followUpKind === "typeChange";
+
+  const draftRows = useMemo(
     () =>
       isEdit
         ? listEditablePendingFollowUpToothWorks(
@@ -90,18 +119,47 @@ export function PracticeProsthesisFollowUpDialog({
             prosthesisFollowUps,
             requestorDownloadedAt,
           )
-        : buildFollowUpToothWorksDraft(Array.isArray(toothWorks) ? toothWorks : []),
+        : buildFollowUpToothWorksDraft(
+            Array.isArray(toothWorks) ? toothWorks : [],
+          ),
     [isEdit, prosthesisFollowUps, requestorDownloadedAt, toothWorks],
+  );
+
+  const sourceTypeBySpan = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const span of listPendingFollowUpSourceSpans(
+      Array.isArray(toothWorks) ? toothWorks : [],
+    )) {
+      map.set(
+        span.teeth.join("-"),
+        String(span.sourceRow?.prosthesisType || "").trim(),
+      );
+    }
+    return map;
+  }, [toothWorks]);
+
+  const [rowBySpanKey, setRowBySpanKey] = useState<Map<string, FollowUpRow>>(
+    () => new Map(),
   );
   const [selectedSpanKeys, setSelectedSpanKeys] = useState<Set<string>>(
     () => new Set(),
   );
-  const [arrivalDate, setArrivalDate] = useState(String(defaultArrivalYmd || "").trim());
+  const [arrivalDate, setArrivalDate] = useState(
+    String(defaultArrivalYmd || "").trim(),
+  );
   const [arrivalPickerOpen, setArrivalPickerOpen] = useState(false);
   const [arrivalDraft, setArrivalDraft] = useState<Date | undefined>(undefined);
 
   const todayYmd = useMemo(() => toKstYmd(new Date()) || "", []);
   const orderYmd = String(orderDate || "").trim() || todayYmd;
+
+  const availableRows = useMemo(() => {
+    if (rowBySpanKey.size === 0) return draftRows;
+    return draftRows.map((row) => {
+      const key = followUpRowSpanKey(row);
+      return rowBySpanKey.get(key) || row;
+    });
+  }, [draftRows, rowBySpanKey]);
 
   const selectedRows = useMemo(
     () =>
@@ -113,21 +171,36 @@ export function PracticeProsthesisFollowUpDialog({
     [availableRows, isEdit, selectedSpanKeys],
   );
 
+  const typeChangeValid = useMemo(() => {
+    if (!isTypeChange || isEdit) return true;
+    return selectedRows.every((row) => {
+      const key = followUpRowSpanKey(row);
+      const sourceType = sourceTypeBySpan.get(key) || "";
+      const nextType = String(row.prosthesisType || "").trim();
+      return isFinalProsthesisType(nextType) && nextType !== sourceType;
+    });
+  }, [isEdit, isTypeChange, selectedRows, sourceTypeBySpan]);
+
   useEffect(() => {
     if (!open) return;
     setArrivalDate(String(defaultArrivalYmd || "").trim());
-    // 제작 의뢰: 도착일을 먼저 고르도록 팝오버를 연다(기본 내일로만 두고 넘어가지 않음).
     setArrivalPickerOpen(!isEdit);
+    const nextMap = new Map<string, FollowUpRow>();
+    for (const row of draftRows) {
+      nextMap.set(followUpRowSpanKey(row), row);
+    }
+    setRowBySpanKey(nextMap);
     if (!isEdit) {
       setSelectedSpanKeys(
-        new Set(availableRows.map((row) => followUpRowSpanKey(row))),
+        new Set(draftRows.map((row) => followUpRowSpanKey(row))),
       );
     }
-  }, [open, defaultArrivalYmd, isEdit, availableRows]);
+  }, [open, defaultArrivalYmd, isEdit, draftRows]);
 
   useEffect(() => {
     if (!arrivalPickerOpen) return;
-    const seedYmd = String(arrivalDate || "").trim() || defaultArrivalYmd || todayYmd;
+    const seedYmd =
+      String(arrivalDate || "").trim() || defaultArrivalYmd || todayYmd;
     setArrivalDraft(ymdToKstDate(seedYmd) || undefined);
   }, [arrivalPickerOpen, arrivalDate, defaultArrivalYmd, todayYmd]);
 
@@ -153,9 +226,20 @@ export function PracticeProsthesisFollowUpDialog({
     });
   };
 
+  const setRowProsthesisType = (spanKey: string, prosthesisType: string) => {
+    setRowBySpanKey((prev) => {
+      const copy = new Map(prev);
+      const current = copy.get(spanKey);
+      if (!current) return prev;
+      copy.set(spanKey, { ...current, prosthesisType });
+      return copy;
+    });
+  };
+
   const canSubmit =
     !busy &&
     selectedRows.length > 0 &&
+    typeChangeValid &&
     /^\d{4}-\d{2}-\d{2}$/.test(String(arrivalDate || "").trim());
 
   return (
@@ -163,7 +247,9 @@ export function PracticeProsthesisFollowUpDialog({
       <DialogContent
         overlayClassName="z-[310]"
         className="z-[320] flex max-h-[min(92vh,860px)] translate-x-[-50%] translate-y-[-50%] flex-col gap-0 overflow-hidden p-0 sm:max-w-none sm:rounded-xl sm:p-0"
-        style={isMobile ? undefined : { width: dialogWidth, maxWidth: dialogWidth }}
+        style={
+          isMobile ? undefined : { width: dialogWidth, maxWidth: dialogWidth }
+        }
       >
         {!isMobile && !busy ? (
           <>
@@ -191,15 +277,29 @@ export function PracticeProsthesisFollowUpDialog({
         ) : null}
         <DialogHeader className="border-b px-5 py-4 text-left">
           <DialogTitle>
-            {isEdit ? "최종 보철 제작 변경" : "지르 보철 제작"}
+            {isEdit
+              ? "최종 보철 제작 변경"
+              : isTypeChange
+                ? "보철 종류 변경 리메이크"
+                : "지르 보철 제작"}
           </DialogTitle>
           {!isEdit ? (
             <p className="pt-1 text-sm font-normal leading-relaxed text-muted-foreground">
-              임시치아를 지르 최종 보철로 바꿉니다. 이번 단계 기공비는
-              브리지·크라운 수가입니다. 모든 임시치아를 지르로 바꾼 뒤에만
-              최종 기공비(처음부터 지르·커스텀어벗으로 제작한 합계)가
-              표시됩니다. 지금은 임시치아로 계속하려면 이 창을 닫고
-              「다음 도착일」만 지정하면 됩니다.
+              {isTypeChange ? (
+                <>
+                  인레이·크라운·브리지 등 보철 종류를 바꿉니다. 기공비는
+                  임시치아→지르와 같이 모든 단계 중 가장 비싼 금액만
+                  청구합니다(예: 인레이 5만 + 크라운 6만 → 6만 한 번).
+                </>
+              ) : (
+                <>
+                  임시치아를 지르 최종 보철로 바꿉니다. 이번 단계 기공비는
+                  브리지·크라운 수가입니다. 모든 임시치아를 지르로 바꾼 뒤에만
+                  최종 기공비(처음부터 지르·커스텀어벗으로 제작한 합계)가
+                  표시됩니다. 지금은 임시치아로 계속하려면 이 창을 닫고
+                  「다음 도착일」만 지정하면 됩니다.
+                </>
+              )}
             </p>
           ) : null}
         </DialogHeader>
@@ -225,7 +325,10 @@ export function PracticeProsthesisFollowUpDialog({
                       <p className="text-sm font-medium leading-snug text-foreground">
                         {arrivalDate || "-"}
                       </p>
-                      <Popover open={arrivalPickerOpen} onOpenChange={setArrivalPickerOpen}>
+                      <Popover
+                        open={arrivalPickerOpen}
+                        onOpenChange={setArrivalPickerOpen}
+                      >
                         <PopoverTrigger asChild>
                           <Button
                             type="button"
@@ -257,7 +360,9 @@ export function PracticeProsthesisFollowUpDialog({
                             defaultMonth={arrivalDraft}
                             disabled={(date) => {
                               const ymd = toKstYmd(date) || "";
-                              return !ymd || Boolean(todayYmd && ymd < todayYmd);
+                              return (
+                                !ymd || Boolean(todayYmd && ymd < todayYmd)
+                              );
                             }}
                             initialFocus
                           />
@@ -287,6 +392,79 @@ export function PracticeProsthesisFollowUpDialog({
               </dl>
             </section>
 
+            {isTypeChange && !isEdit && availableRows.length > 0 ? (
+              <section className="space-y-2">
+                <p className="text-[13px] font-medium text-slate-700">
+                  변경할 보철 종류
+                </p>
+                <ul className="space-y-2">
+                  {availableRows.map((row) => {
+                    const key = followUpRowSpanKey(row);
+                    const sourceType = sourceTypeBySpan.get(key) || "";
+                    const selected = selectedSpanKeys.has(key);
+                    return (
+                      <li
+                        key={key}
+                        className="flex flex-wrap items-center gap-2 rounded-md border border-slate-200 px-3 py-2"
+                      >
+                        <label className="flex min-w-0 flex-1 items-center gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4"
+                            checked={selected}
+                            disabled={busy}
+                            onChange={(e) =>
+                              toggleSpanKey(key, e.target.checked)
+                            }
+                          />
+                          <span className="truncate">
+                            {formatFollowUpRowLabel({
+                              ...row,
+                              prosthesisType: sourceType || row.prosthesisType,
+                            })}
+                            {sourceType ? (
+                              <span className="text-muted-foreground">
+                                {" "}
+                                →
+                              </span>
+                            ) : null}
+                          </span>
+                        </label>
+                        <Select
+                          value={String(row.prosthesisType || "").trim() || undefined}
+                          disabled={busy || !selected}
+                          onValueChange={(value) =>
+                            setRowProsthesisType(key, value)
+                          }
+                        >
+                          <SelectTrigger className="h-8 w-[7.5rem] text-xs">
+                            <SelectValue placeholder="종류" />
+                          </SelectTrigger>
+                          <SelectContent className="z-[330]">
+                            {TYPE_CHANGE_OPTIONS.map((opt) => (
+                              <SelectItem
+                                key={opt}
+                                value={opt}
+                                disabled={opt === sourceType}
+                              >
+                                {opt}
+                                {opt === sourceType ? " (현재)" : ""}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </li>
+                    );
+                  })}
+                </ul>
+                {!typeChangeValid && selectedRows.length > 0 ? (
+                  <p className="text-[12px] text-amber-700">
+                    현재와 다른 보철 종류를 선택해 주세요.
+                  </p>
+                ) : null}
+              </section>
+            ) : null}
+
             <div className="space-y-2 overflow-visible pb-1">
               {availableRows.length > 0 ? (
                 <PracticeToothWorkChartReadOnly
@@ -296,31 +474,27 @@ export function PracticeProsthesisFollowUpDialog({
                   feeViewer="practice"
                   skipAbutmentFees
                   embedded
-                  selectable={!isEdit}
+                  selectable={!isEdit && !isTypeChange}
                   selectedSpanKeys={selectedSpanKeys}
                   onToggleSpanKey={toggleSpanKey}
-                  spanKeyOf={followUpRowSpanKey}
-                  selectionDisabled={busy}
-                  showHeader
-                  showFinalFee={false}
-                  enlargeOverlayClassName="z-[350]"
-                  enlargeDialogClassName="z-[360]"
                 />
               ) : (
-                <p className="rounded-lg border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
+                <p className="py-6 text-center text-sm text-muted-foreground">
                   {isEdit
                     ? "변경할 후속 보철이 없습니다. 기공소 작업시작 전 건만 변경할 수 있습니다."
-                    : "제작할 보철 치식이 없습니다."}
+                    : isTypeChange
+                      ? "변경할 보철이 없습니다."
+                      : "제작할 임시치아가 없습니다."}
                 </p>
               )}
             </div>
           </div>
         </div>
 
-        <DialogFooter className="gap-2 border-t bg-background px-5 py-4 sm:justify-end">
+        <DialogFooter className="shrink-0 gap-2 border-t px-5 py-3 sm:justify-end">
           <Button
             type="button"
-            variant="outline"
+            variant="ghost"
             disabled={busy}
             onClick={() => handleOpenChange(false)}
           >
@@ -332,11 +506,17 @@ export function PracticeProsthesisFollowUpDialog({
             onClick={() =>
               void onConfirm({
                 arrivalYmd: String(arrivalDate || "").trim(),
-                toothWorks: selectedRows as FollowUpRow[],
+                toothWorks: selectedRows,
               })
             }
           >
-            {busy ? (isEdit ? "변경 저장 중…" : "제작 의뢰 중…") : isEdit ? "변경 저장" : "제작 의뢰"}
+            {busy
+              ? "처리 중…"
+              : isEdit
+                ? "변경 적용"
+                : isTypeChange
+                  ? "종류 변경 의뢰"
+                  : "지르 제작 의뢰"}
           </Button>
         </DialogFooter>
       </DialogContent>

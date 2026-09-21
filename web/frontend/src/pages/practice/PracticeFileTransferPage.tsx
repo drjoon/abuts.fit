@@ -11126,9 +11126,7 @@ export const PracticeFileTransferPage = ({
             selectedTransfer.transferId !== "-" &&
             selectedTransfer.status !== "취소" &&
             selectedTransfer.status !== "작업취소" &&
-            (selectedTransferDetailModel?.toothWorks || []).some((row) =>
-              String(row.prosthesisType || "").includes("임시"),
-            )
+            prosthesisFollowUpEligibility.ok
               ? () => {
                   if (!prosthesisFollowUpEligibility.ok) {
                     toast({
@@ -11157,6 +11155,11 @@ export const PracticeFileTransferPage = ({
           }
           appendProsthesisDisabled={!prosthesisFollowUpEligibility.ok}
           appendProsthesisBusy={appendProsthesisBusy}
+          appendProsthesisLabel={
+            prosthesisFollowUpEligibility.followUpKind === "typeChange"
+              ? "보철 종류 변경"
+              : "지르 보철"
+          }
           appendProsthesisHint={
             prosthesisFollowUpEligibility.ok
               ? null
@@ -11445,22 +11448,44 @@ export const PracticeFileTransferPage = ({
 
         <ConfirmDialog
           open={followUpOfferOpen}
-          title="지르 보철로 변경할까요?"
-          description={
-            <>
-              예: 이번 단계에 브리지·크라운 기공비가 추가됩니다. 남은
-              임시치아가 있으면 이번 단계 기공비만 보이고, 전부 지르로 바꾼
-              뒤에 최종 기공비(처음부터 지르·커스텀어벗 합계)가 표시됩니다.
-              <br />
-              아니오: 임시치아로 계속 진행합니다(다음 도착일만 반영, 추가 과금
-              없음). 임시치아를 한 번 더 만든 뒤에도, 다음 도착일을 지정할 때
-              다시 물어볼 수 있습니다.
-              <br />
-              지르로 바꾸지 않으면 견적은 임시치아 비용으로 유지됩니다.
-            </>
+          title={
+            prosthesisFollowUpEligibility.followUpKind === "typeChange"
+              ? "보철 종류를 변경할까요?"
+              : "지르 보철로 변경할까요?"
           }
-          confirmLabel="지르로 변경"
-          cancelLabel="임시치아로 계속"
+          description={
+            prosthesisFollowUpEligibility.followUpKind === "typeChange" ? (
+              <>
+                예: 인레이→크라운처럼 보철 종류를 바꿉니다. 기공비는 모든
+                단계 중 가장 비싼 금액만 청구합니다.
+                <br />
+                아니오: 현재 보철로 계속합니다(다음 도착일만 반영, 추가 과금
+                없음).
+              </>
+            ) : (
+              <>
+                예: 이번 단계에 브리지·크라운 기공비가 추가됩니다. 남은
+                임시치아가 있으면 이번 단계 기공비만 보이고, 전부 지르로 바꾼
+                뒤에 최종 기공비(처음부터 지르·커스텀어벗 합계)가 표시됩니다.
+                <br />
+                아니오: 임시치아로 계속 진행합니다(다음 도착일만 반영, 추가 과금
+                없음). 임시치아를 한 번 더 만든 뒤에도, 다음 도착일을 지정할 때
+                다시 물어볼 수 있습니다.
+                <br />
+                지르로 바꾸지 않으면 견적은 임시치아 비용으로 유지됩니다.
+              </>
+            )
+          }
+          confirmLabel={
+            prosthesisFollowUpEligibility.followUpKind === "typeChange"
+              ? "종류 변경"
+              : "지르로 변경"
+          }
+          cancelLabel={
+            prosthesisFollowUpEligibility.followUpKind === "typeChange"
+              ? "현재 보철로 계속"
+              : "임시치아로 계속"
+          }
           confirmTone="primary"
           onConfirm={() => {
             const ymd = String(followUpOfferArrivalYmd || "").trim();
