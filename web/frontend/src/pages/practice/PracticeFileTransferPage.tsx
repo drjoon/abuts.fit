@@ -27,6 +27,7 @@
  * - web/frontend/src/shared/practice/openPracticeTransferChat.ts
  * - web/frontend/src/shared/components/practice/PracticeLabRatingControl.tsx
  * - web/frontend/src/shared/practice/practiceLabRating.ts
+ * - 2026-09-21: 동일 환자·치아 확인 모달 z-[460] — 작성 화면 뒤에서 전송 클릭을 삼키던 문제.
  * - 2026-09-20: 작업 파일 전체 다운로드 — 어벗 디자인·보철물을 zip 하나로.
  * - 2026-09-16: 의뢰 파일 append — S3 병렬 후 낙관 패치·저장 API(기공소 수신과 동일 패턴).
  * - 2026-09-15: 어벗/스캔바디 설정 모달 z-[340] — compose(z-320) 뒤에 가려지던 문제.
@@ -10391,9 +10392,13 @@ export const PracticeFileTransferPage = ({
                     type="button"
                     className="bg-primary-strong text-white hover:bg-primary-strong disabled:pointer-events-none disabled:opacity-40"
                     onClick={() => void handleSubmitPracticeRequest()}
-                    disabled={requestSubmitting || !hasRequiredSubmitFields}
+                    disabled={
+                      requestSubmitting ||
+                      similarCaseBusy ||
+                      !hasRequiredSubmitFields
+                    }
                   >
-                    {requestSubmitting
+                    {requestSubmitting || similarCaseBusy
                       ? editingSentTransfer
                         ? "수정 저장 중..."
                         : composeRemakeMode
@@ -10410,7 +10415,7 @@ export const PracticeFileTransferPage = ({
               <TooltipContent
                 side="top"
                 align="end"
-                className="max-w-xs border-slate-200 bg-white px-3 py-2 text-sm font-medium leading-snug text-slate-900 shadow-lg"
+                className="pointer-events-none max-w-xs border-slate-200 bg-white px-3 py-2 text-sm font-medium leading-snug text-slate-900 shadow-lg"
               >
                 {requestSubmitting ? (
                   <p>{editingSentTransfer ? "수정 저장 중…" : "전송 중…"}</p>

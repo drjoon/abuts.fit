@@ -5,6 +5,7 @@
  * - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
  * - web/backend/utils/practiceTransferSimilarCase.js
  * change-log:
+ * - 2026-09-21: z-[460] — 작성 모달(z-320, 투어 z-410) 뒤에서 바깥클릭으로 전송 버튼을 삼키던 문제.
  * - 2026-09-14: 신규 작성·전송 전 리메이크/신규 분기 모달.
  */
 import { Repeat } from "lucide-react";
@@ -64,7 +65,10 @@ export function PracticeSimilarCaseRemakeDialog({
         if (!next && !busy) onCancel();
       }}
     >
-      <DialogContent className="flex max-h-[90vh] w-full max-w-lg flex-col gap-0 overflow-hidden p-0 sm:max-w-xl">
+      <DialogContent
+        overlayClassName="z-[459]"
+        className="z-[460] flex max-h-[90vh] w-full max-w-lg flex-col gap-0 overflow-hidden p-0 sm:max-w-xl"
+      >
         <DialogHeader className="shrink-0 space-y-1 border-b px-5 py-4 text-left">
           <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
             <Repeat className="h-5 w-5 text-amber-600" />
