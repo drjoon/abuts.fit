@@ -292,6 +292,7 @@ import { printPracticeTransferDetail } from "@/shared/practice/practiceTransferD
 import {
   baseToothWorksForDetailChart,
   listCompletedFollowUpToothWorks,
+  shouldShowConfirmedFollowUpProsthesis,
 } from "@/shared/practice/prosthesisFollowUp";
 import {
   nextStageOfPlan,
@@ -3414,8 +3415,7 @@ export function PracticeTransferDetailChatDialog({
                       {!chatLoading &&
                       !visibleChatError &&
                       prosthesisFollowUpComplete &&
-                      Array.isArray(toothWorks) &&
-                      toothWorks.length > 0 ? (
+                      shouldShowConfirmedFollowUpProsthesis(toothWorks) ? (
                         <div className="relative z-[2] mt-2 w-full min-w-0 max-w-full px-1 text-left">
                           <p className="mb-1.5 text-center text-[11px] font-medium text-foreground">
                             {feeViewer === "lab"

@@ -145,14 +145,18 @@ import {
   canLabStartProsthesisFollowUpWork,
   canManagePendingProsthesisFollowUp,
   followUpProsthesisFeeStageTitle,
+  followUpRowSpanKey,
   getPendingProsthesisFollowUps,
   hasBaseProsthesisStageRows,
   hasTemporaryProsthesisRows,
+  isFinalProsthesisType,
+  isFollowUpProsthesisPhase,
   isPendingProsthesisFollowUpRecord,
   hydrateProsthesisFeeStages,
   listProsthesisFeeStages,
   markPendingProsthesisFollowUpsAccepted,
   mergeFollowUpToothWorks,
+  normalizeFollowUpToothWorksInput,
   normalizeProsthesisFeeLines,
   patchProsthesisFeeStageArrivalYmd,
   PROSTHESIS_FEE_STAGE_TEMP_KEY,
@@ -5342,7 +5346,7 @@ export async function cancelPracticeTransferProsthesisFollowUp(req, res) {
   }
 }
 
-/** 기공소 수락 전 후속 크라운/브리지 — 치과도착일 변경 */
+/** 기공소 작업시작 전 후속 보철 — 치과도착일·종류 변경(원본과 동일 종류 되돌리기 허용) */
 export async function updatePracticeTransferProsthesisFollowUp(req, res) {
   try {
     const role = String(req.user?.role || "").trim();
@@ -5368,6 +5372,7 @@ export async function updatePracticeTransferProsthesisFollowUp(req, res) {
     }
 
     const { scope } = await buildPracticeOwnedScope(req);
+    const practiceAnchorId = req.user?.businessAnchorId || null;
     const doc = await PracticeTransfer.findOne({
       ...scope,
       ...transferIdFilter,
@@ -5426,32 +5431,456 @@ export async function updatePracticeTransferProsthesisFollowUp(req, res) {
         Number(row?.followUpIndex || 0) === followUpIndex &&
         isPendingProsthesisFollowUpRecord(row, doc.requestorDownloadedAt),
     );
-    if (idx >= 0) {
+    if (idx < 0) {
+      return res.status(409).json({
+        success: false,
+        message: "변경할 후속 제작을 찾을 수 없습니다.",
+      });
+    }
+
+    let nextToothWorks = Array.isArray(doc.toothWorks)
+      ? doc.toothWorks.map((row) =>
+          row && typeof row.toObject === "function" ? row.toObject() : { ...row },
+        )
+      : [];
+    let typesChanged = false;
+    let specsChanged = false;
+    let updatedFollowUpRows = [];
+    let nextBilling =
+      doc.billing && typeof doc.billing === "object" ? { ...doc.billing } : {};
+    let nextProsthesisFeeStages = patchProsthesisFeeStageArrivalYmd(
+      doc.prosthesisFeeStages,
+      followUpIndex,
+      rawYmd,
+    );
+
+    const requestedRows = normalizeFollowUpToothWorksInput(req.body?.toothWorks);
+    if (requestedRows.length > 0) {
+      const targetLabAnchorId = doc.targetLabAnchorId || null;
+      const pendingTeeth = new Set(
+        (Array.isArray(target.toothNumbers) ? target.toothNumbers : [])
+          .map((t) => String(t || "").trim())
+          .filter(Boolean),
+      );
+      const currentFollowUpRows = nextToothWorks.filter((row) => {
+        if (
+          !isFollowUpProsthesisPhase(row) ||
+          !isFinalProsthesisType(row?.prosthesisType)
+        ) {
+          return false;
+        }
+        const anchor = String(row?.toothNumber || "").trim();
+        if (anchor && pendingTeeth.has(anchor)) return true;
+        const linked = Array.isArray(row?.bridgeLinkedTeeth)
+          ? row.bridgeLinkedTeeth
+          : [];
+        return linked.some((t) => pendingTeeth.has(String(t || "").trim()));
+      });
+
+      const requestedByKey = new Map(
+        requestedRows.map((row) => [followUpRowSpanKey(row), row]),
+      );
+
+      for (const current of currentFollowUpRows) {
+        const key = followUpRowSpanKey(current);
+        const requested = requestedByKey.get(key);
+        if (!requested) continue;
+        const nextType = String(requested.prosthesisType || "").trim();
+        const prevType = String(current.prosthesisType || "").trim();
+        if (!isFinalProsthesisType(nextType)) {
+          return res.status(400).json({
+            success: false,
+            message: "변경할 보철 종류는 인레이·크라운·브리지만 가능합니다.",
+          });
+        }
+        // edit: pending 후속(prev) 기준. 원본(base)과 같아도 허용(크라운→인레이 되돌리기).
+        if (prevType !== nextType) typesChanged = true;
+        const nextShade = String(requested.shade || "").trim();
+        const prevShade = String(current.shade || "").trim();
+        if (nextShade !== prevShade) specsChanged = true;
+        if (Boolean(requested.customAbutment) !== Boolean(current.customAbutment)) {
+          specsChanged = true;
+        }
+        if (
+          String(requested.customAbutmentSelection || "").trim() !==
+          String(current.customAbutmentSelection || "").trim()
+        ) {
+          specsChanged = true;
+        }
+      }
+
+      if (typesChanged || specsChanged) {
+        nextToothWorks = nextToothWorks.map((row) => {
+          if (
+            !isFollowUpProsthesisPhase(row) ||
+            !isFinalProsthesisType(row?.prosthesisType)
+          ) {
+            return row;
+          }
+          const key = followUpRowSpanKey(row);
+          const requested = requestedByKey.get(key);
+          if (!requested) return row;
+          const nextType = String(requested.prosthesisType || "").trim();
+          if (!isFinalProsthesisType(nextType)) return row;
+          return {
+            ...row,
+            prosthesisType: nextType,
+            shade: String(requested.shade || "").trim(),
+            customAbutment: Boolean(requested.customAbutment),
+            customAbutmentSelection: requested.customAbutmentSelection,
+            abutmentProductMode: requested.abutmentProductMode,
+            implantManufacturer: requested.implantManufacturer,
+            implantBrand: requested.implantBrand,
+            implantFamily: requested.implantFamily,
+            implantType: requested.implantType,
+            implantAddRequest: Boolean(requested.implantAddRequest),
+            abutmentManufacturer: requested.abutmentManufacturer,
+            abutmentDiameter: requested.abutmentDiameter,
+            abutmentHeight: requested.abutmentHeight,
+          };
+        });
+        updatedFollowUpRows = nextToothWorks.filter((row) => {
+          if (
+            !isFollowUpProsthesisPhase(row) ||
+            !isFinalProsthesisType(row?.prosthesisType)
+          ) {
+            return false;
+          }
+          const anchor = String(row?.toothNumber || "").trim();
+          if (anchor && pendingTeeth.has(anchor)) return true;
+          const linked = Array.isArray(row?.bridgeLinkedTeeth)
+            ? row.bridgeLinkedTeeth
+            : [];
+          return linked.some((t) => pendingTeeth.has(String(t || "").trim()));
+        });
+      }
+
+      if (typesChanged) {
+        if (!targetLabAnchorId || !practiceAnchorId) {
+          return res.status(400).json({
+            success: false,
+            message: "기공소가 지정되지 않은 의뢰입니다.",
+          });
+        }
+
+        const oldDeltaLab = Math.max(
+          0,
+          Math.round(Number(followUps[idx]?.billingDelta?.labFeeTotal || 0)),
+        );
+        const oldDeltaTotal = Math.max(
+          0,
+          Math.round(
+            Number(
+              followUps[idx]?.billingDelta?.total != null
+                ? followUps[idx].billingDelta.total
+                : oldDeltaLab,
+            ),
+          ),
+        );
+
+        const feeQuote = await quoteProsthesisFollowUpFees({
+          practiceAnchorId,
+          labAnchorId: targetLabAnchorId,
+          toothWorks: updatedFollowUpRows,
+          sourceToothWorks: nextToothWorks.filter(
+            (row) => !isFollowUpProsthesisPhase(row),
+          ),
+          transferDoc: doc,
+        });
+        const billingDelta = feeQuote?.billingDelta || {};
+        const deltaLabFee = Math.max(
+          0,
+          Math.round(Number(billingDelta.labFeeTotal || 0)),
+        );
+        const deltaTotal = Math.max(
+          0,
+          Math.round(Number(billingDelta.total || deltaLabFee)),
+        );
+        const finalLabFee = Math.max(
+          0,
+          Math.round(
+            Number(
+              billingDelta.finalLabFeeTotal != null
+                ? billingDelta.finalLabFeeTotal
+                : feeQuote?.grossFees?.labFeeTotal || 0,
+            ),
+          ),
+        );
+        if (finalLabFee <= 0) {
+          return res.status(409).json({
+            success: false,
+            message: "기공소 수가가 설정되지 않아 종류를 변경할 수 없습니다.",
+            reason: "lab_fee_unconfigured",
+            missingFeeNames: feeQuote?.missingFeeNames || [],
+          });
+        }
+
+        try {
+          await assertPracticeTransferPaidCreditSufficient({
+            practiceAnchorId,
+            labAnchorId: targetLabAnchorId,
+            toothWorks: updatedFollowUpRows,
+            skipAbutmentFees: true,
+            fees: feeQuote?.fees || { labFeeTotal: deltaLabFee, total: deltaTotal },
+          });
+        } catch (creditErr) {
+          const status = Number(creditErr?.statusCode || 500);
+          return res.status(status >= 400 && status < 600 ? status : 500).json({
+            success: false,
+            message:
+              creditErr?.message ||
+              "종류 변경 전 유료크레딧 확인에 실패했습니다.",
+            ...(creditErr?.payload || {}),
+          });
+        }
+
+        const cancelGl = await releasePracticeTransferProsthesisFollowUpCredits({
+          transfer: doc,
+          followUpIndex,
+        });
+        const releasedLabNet = cancelGl?.hadRelease ? oldDeltaLab : 0;
+        nextBilling = {
+          ...nextBilling,
+          labFeeTotal: Math.max(
+            0,
+            Math.round(Number(nextBilling.labFeeTotal || 0)) - oldDeltaLab,
+          ),
+          total: Math.max(
+            0,
+            Math.round(Number(nextBilling.total || 0)) - oldDeltaTotal,
+          ),
+          heldTotal: Math.max(
+            0,
+            Math.round(Number(nextBilling.heldTotal || 0)) - oldDeltaTotal,
+          ),
+          heldLabTotal: Math.max(
+            0,
+            Math.round(Number(nextBilling.heldLabTotal || 0)) - oldDeltaLab,
+          ),
+          labSettlementAmount: Math.max(
+            0,
+            Math.round(Number(nextBilling.labSettlementAmount || 0)) -
+              releasedLabNet,
+          ),
+        };
+
+        const holdResult = await holdPracticeTransferProsthesisFollowUpCredits({
+          transfer: doc,
+          followUpIndex,
+          deltaFees: feeQuote?.fees || {
+            labFeeTotal: deltaLabFee,
+            total: deltaTotal,
+          },
+          actorUserId: req.user?._id,
+        });
+        if (
+          !holdResult.held &&
+          holdResult.reason !== "already_held" &&
+          holdResult.reason !== "zero_fee"
+        ) {
+          return res.status(402).json({
+            success: false,
+            message: "크레딧 보류에 실패했습니다.",
+            reason: holdResult.reason || "hold_failed",
+          });
+        }
+
+        let followUpLabRelease = null;
+        if (doc.billing?.labSettledAt && deltaLabFee > 0) {
+          try {
+            followUpLabRelease =
+              await releasePracticeTransferProsthesisFollowUpLabShare({
+                transfer: doc,
+                followUpIndex,
+                deltaFees: feeQuote?.fees || {
+                  labFeeTotal: deltaLabFee,
+                  total: deltaTotal,
+                },
+                holdMeta: holdResult,
+                actorUserId: req.user?._id,
+                displayLabel: "보철 종류 변경",
+              });
+          } catch (releaseErr) {
+            console.error(
+              "[updatePracticeTransferProsthesisFollowUp] lab release failed",
+              String(doc?._id || ""),
+              releaseErr?.message || releaseErr,
+            );
+            return res.status(Number(releaseErr?.statusCode || 500)).json({
+              success: false,
+              message:
+                releaseErr?.message ||
+                "종류 변경 보류 후 기공소 정산에 실패했습니다.",
+              ...(releaseErr?.payload || {}),
+            });
+          }
+        }
+
+        nextBilling = {
+          ...nextBilling,
+          labFeeTotal:
+            Math.max(0, Math.round(Number(nextBilling.labFeeTotal || 0))) +
+            deltaLabFee,
+          total:
+            Math.max(0, Math.round(Number(nextBilling.total || 0))) + deltaTotal,
+          heldTotal:
+            Math.max(0, Math.round(Number(nextBilling.heldTotal || 0))) +
+            Math.max(0, Math.round(Number(holdResult.heldTotal || deltaTotal))),
+          heldLabTotal:
+            Math.max(0, Math.round(Number(nextBilling.heldLabTotal || 0))) +
+            Math.max(
+              0,
+              Math.round(Number(holdResult.heldLabTotal || deltaLabFee)),
+            ),
+          holdFromPaid:
+            Math.max(0, Math.round(Number(nextBilling.holdFromPaid || 0))) +
+            Math.max(0, Math.round(Number(holdResult.fromPaid || 0))),
+          holdFromFreeRequest:
+            Math.max(0, Math.round(Number(nextBilling.holdFromFreeRequest || 0))) +
+            Math.max(0, Math.round(Number(holdResult.fromFreeRequest || 0))),
+          holdFromFreeShipping:
+            Math.max(
+              0,
+              Math.round(Number(nextBilling.holdFromFreeShipping || 0)),
+            ) + Math.max(0, Math.round(Number(holdResult.fromFreeShipping || 0))),
+          labSettlementAmount:
+            Math.max(0, Math.round(Number(nextBilling.labSettlementAmount || 0))) +
+            Math.max(
+              0,
+              Math.round(Number(followUpLabRelease?.labSettlementAmount || 0)),
+            ),
+        };
+
+        followUps[idx] = {
+          ...followUps[idx],
+          arrivalYmd: rawYmd,
+          billingDelta: {
+            labFeeTotal: deltaLabFee,
+            total: deltaTotal,
+            finalLabFeeTotal: Math.max(
+              0,
+              Math.round(Number(billingDelta.finalLabFeeTotal || finalLabFee)),
+            ),
+            finalTotal: Math.max(
+              0,
+              Math.round(
+                Number(
+                  billingDelta.finalTotal != null
+                    ? billingDelta.finalTotal
+                    : billingDelta.finalLabFeeTotal || finalLabFee,
+                ),
+              ),
+            ),
+            tempCreditLabFeeTotal: Math.max(
+              0,
+              Math.round(Number(billingDelta.tempCreditLabFeeTotal || 0)),
+            ),
+            lines: normalizeProsthesisFeeLines(
+              billingDelta.lines || feeQuote?.grossFees?.lines,
+            ),
+          },
+        };
+
+        const followUpStageTitle = followUpProsthesisFeeStageTitle(
+          updatedFollowUpRows,
+          followUpIndex,
+        );
+        const grossFees = feeQuote?.grossFees || {};
+        nextProsthesisFeeStages = upsertProsthesisFeeStage(
+          nextProsthesisFeeStages,
+          buildProsthesisFeeStageRecord({
+            key: zirconiaProsthesisFeeStageKey(followUpIndex),
+            followUpIndex,
+            title: followUpStageTitle,
+            toothWorks: updatedFollowUpRows,
+            fees: {
+              labFeeTotal: billingDelta.finalLabFeeTotal ?? grossFees.labFeeTotal,
+              total: billingDelta.finalTotal ?? grossFees.total,
+              lines: billingDelta.lines || grossFees.lines,
+            },
+            netLabFeeTotal: deltaLabFee,
+            netTotal: deltaTotal,
+            tempCreditLabFeeTotal: billingDelta.tempCreditLabFeeTotal || 0,
+            orderYmd: String(followUps[idx]?.orderYmd || "").trim(),
+            arrivalYmd: rawYmd,
+            previousOrderYmd: String(followUps[idx]?.previousOrderYmd || "").trim(),
+            previousArrivalYmd: String(
+              followUps[idx]?.previousArrivalYmd || "",
+            ).trim(),
+          }),
+          { force: true },
+        );
+      } else if (specsChanged && updatedFollowUpRows.length > 0) {
+        const stageKey = zirconiaProsthesisFeeStageKey(followUpIndex);
+        const existingStage =
+          listProsthesisFeeStages(nextProsthesisFeeStages).find(
+            (row) => String(row?.key || "").trim() === stageKey,
+          ) || null;
+        nextProsthesisFeeStages = upsertProsthesisFeeStage(
+          nextProsthesisFeeStages,
+          buildProsthesisFeeStageRecord({
+            key: stageKey,
+            followUpIndex,
+            title: followUpProsthesisFeeStageTitle(
+              updatedFollowUpRows,
+              followUpIndex,
+            ),
+            toothWorks: updatedFollowUpRows,
+            fees: {
+              labFeeTotal: existingStage?.labFeeTotal ?? 0,
+              total: existingStage?.total ?? existingStage?.labFeeTotal ?? 0,
+              lines: existingStage?.lines || [],
+            },
+            netLabFeeTotal: existingStage?.netLabFeeTotal ?? 0,
+            netTotal: existingStage?.netTotal ?? existingStage?.netLabFeeTotal ?? 0,
+            tempCreditLabFeeTotal: existingStage?.tempCreditLabFeeTotal || 0,
+            orderYmd: String(followUps[idx]?.orderYmd || "").trim(),
+            arrivalYmd: rawYmd,
+            previousOrderYmd: String(followUps[idx]?.previousOrderYmd || "").trim(),
+            previousArrivalYmd: String(
+              followUps[idx]?.previousArrivalYmd || "",
+            ).trim(),
+          }),
+          { force: true },
+        );
+        if (idx >= 0) {
+          followUps[idx] = {
+            ...followUps[idx],
+            arrivalYmd: rawYmd,
+          };
+        }
+      } else if (idx >= 0) {
+        followUps[idx] = {
+          ...followUps[idx],
+          arrivalYmd: rawYmd,
+        };
+      }
+    } else if (idx >= 0) {
       followUps[idx] = {
         ...followUps[idx],
         arrivalYmd: rawYmd,
       };
     }
 
-    const nextProsthesisFeeStages = patchProsthesisFeeStageArrivalYmd(
-      doc.prosthesisFeeStages,
-      followUpIndex,
-      rawYmd,
-    );
+    const setPayload = {
+      transferMemo: appended.transferMemo,
+      arrivalDates: appended.arrivalDates,
+      orderDates: appended.orderDates,
+      prosthesisFollowUps: followUps,
+      prosthesisFeeStages: nextProsthesisFeeStages,
+      requestorReadAt: null,
+      requestorReadBy: null,
+    };
+    if (typesChanged || specsChanged) {
+      setPayload.toothWorks = nextToothWorks;
+    }
+    if (typesChanged) {
+      setPayload.billing = nextBilling;
+    }
 
     const updated = await PracticeTransfer.findOneAndUpdate(
       { _id: doc._id, ...practiceTransferNotDeletedMongoFilter() },
-      {
-        $set: {
-          transferMemo: appended.transferMemo,
-          arrivalDates: appended.arrivalDates,
-          orderDates: appended.orderDates,
-          prosthesisFollowUps: followUps,
-          prosthesisFeeStages: nextProsthesisFeeStages,
-          requestorReadAt: null,
-          requestorReadBy: null,
-        },
-      },
+      { $set: setPayload },
       { new: true },
     );
     if (!updated) {
@@ -5468,18 +5897,33 @@ export async function updatePracticeTransferProsthesisFollowUp(req, res) {
       practiceUserId: req.user?._id,
       targetLabAnchorIdText,
       transferMongoId: String(updated._id),
+      emitCreditBalance: typesChanged,
       chat: {
         senderUserId: req.user?._id,
-        content: `후속 최종 보철 제작 치과도착일 변경: ${rawYmd}`,
+        content: typesChanged
+          ? `보철 종류 변경 리메이크 수정\n치과도착일 ${rawYmd}`
+          : specsChanged
+            ? `후속 보철 스펙 변경\n치과도착일 ${rawYmd}`
+            : `후속 최종 보철 제작 치과도착일 변경: ${rawYmd}`,
         systemEvent: "practice_transfer_prosthesis_follow_up_update",
       },
       realtimePayload: {
         source: "updatePracticeTransferProsthesisFollowUp",
-        action: "prosthesis-follow-up-update",
+        action: typesChanged
+          ? "prosthesis-type-change-update"
+          : specsChanged
+            ? "prosthesis-follow-up-specs-update"
+            : "prosthesis-follow-up-update",
         transferId: String(updated.transferId || "").trim(),
         transferMongoId: String(updated._id || ""),
         targetLabAnchorId: targetLabAnchorIdText || null,
         practiceUserId: String(req.user?._id || ""),
+        ...(typesChanged || specsChanged
+          ? {
+              toothWorks: nextToothWorks,
+              ...(typesChanged ? { billing: nextBilling } : {}),
+            }
+          : {}),
         prosthesisFollowUps: updated.prosthesisFollowUps || [],
         prosthesisFeeStages: serializeProsthesisFeeStagesForApi(
           updated.prosthesisFeeStages || nextProsthesisFeeStages,
@@ -5494,8 +5938,16 @@ export async function updatePracticeTransferProsthesisFollowUp(req, res) {
 
     return res.status(200).json({
       success: true,
-      message: "최종 보철 제작 도착일을 변경했습니다.",
+      message: typesChanged
+        ? "최종 보철 종류·도착일을 변경했습니다."
+        : "최종 보철 제작 도착일을 변경했습니다.",
       data: {
+        ...(typesChanged
+          ? {
+              toothWorks: nextToothWorks,
+              billing: nextBilling,
+            }
+          : {}),
         prosthesisFollowUps: serializeProsthesisFollowUpsForApi(
           updated.prosthesisFollowUps,
         ),

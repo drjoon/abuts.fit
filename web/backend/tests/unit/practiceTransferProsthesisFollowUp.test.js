@@ -651,6 +651,49 @@ describe("practiceTransferProsthesisFollowUp", () => {
     );
     expect(stages[0].total).toBe(150000);
 
+    // force=true — 종류 변경 시 기공비·라인 통째 교체(크라운 6만→인레이 5만)
+    stages = upsertProsthesisFeeStage(
+      stages,
+      buildProsthesisFeeStageRecord({
+        key: PROSTHESIS_FEE_STAGE_TEMP_KEY,
+        followUpIndex: -1,
+        title: "인레이 단계",
+        toothWorks: [
+          {
+            toothNumber: "36",
+            prosthesisType: "인레이",
+            bridgeLinkedTeeth: ["36"],
+          },
+        ],
+        fees: {
+          labFeeTotal: 50000,
+          total: 50000,
+          lines: [
+            {
+              toothNumber: "36",
+              prosthesisType: "인레이",
+              labFee: 50000,
+              labAbutmentFee: 0,
+              abutmentRetail: 0,
+            },
+          ],
+        },
+      }),
+      { force: true },
+    );
+    expect(stages[0].title).toBe("인레이 단계");
+    expect(stages[0].total).toBe(50000);
+    expect(stages[0].lines).toEqual([
+      {
+        toothNumber: "36",
+        prosthesisType: "인레이",
+        labFee: 50000,
+        labAbutmentFee: 0,
+        abutmentRetail: 0,
+      },
+    ]);
+    expect(stages[0].toothWorks?.[0]?.prosthesisType).toBe("인레이");
+
     stages = upsertProsthesisFeeStage(
       stages,
       buildProsthesisFeeStageRecord({

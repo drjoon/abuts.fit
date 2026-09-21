@@ -1062,7 +1062,9 @@ export const isProsthesisFollowUpRealtimeAction = (action: unknown): boolean => 
     normalized === "prosthesis-follow-up" ||
     normalized === "prosthesis-follow-up-cancel" ||
     normalized === "prosthesis-follow-up-update" ||
-    normalized === "prosthesis-follow-up-accept"
+    normalized === "prosthesis-follow-up-accept" ||
+    normalized === "prosthesis-type-change" ||
+    normalized === "prosthesis-type-change-update"
   );
 };
 

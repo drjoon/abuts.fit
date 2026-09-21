@@ -8,6 +8,12 @@
 // - 2026-08-19: 치아 옆 스크롤·R/M/L 제거. 견적 바에 << < > >>(1칸·5칸).
 // - 2026-09-02: 가로폭 부족 시 overflow-x 스크롤(<< < > >> 버튼 제거) + custom-scrollbar-x.
 // - 2026-09-01: 후속 제작 모달 — 보철물 카드에서 크라운·브리지 단위 선택.
+// - 2026-09-22: 보철 종류 변경 — 카드에서 직접 선택, 변경 전후를 카드 아래 기록.
+// - 2026-09-22: 종류 변경 전후 — 세로 표기(줄임 없음)·셀렉트/기록 경계선 정리.
+// - 2026-09-22: 원본 종류(현재)도 선택 가능 — 잘못 바꾼 뒤 적용 전 되돌리기.
+// - 2026-09-22: 제작 변경 — 카드에 어벗·쉐이드 선택(종류 변경과 함께).
+// - 2026-09-22: 신규의뢰와 동일 라디오·쉐이드·복사(공통 PracticeToothWorkCardFields).
+// - 2026-09-22: 어벗·스캔바디 → PracticeCustomAbutmentSpecsDialog 오픈 콜백.
 // - 2026-09-01: 컨테이너 폭에 따라 inline 칸 수 4~8, 카드 폭 5rem 고정(→ 2026-09-02 overflow-x 스크롤).
 // - 2026-09-02: 모바일 — 스팬 단위 세로 목록(전폭 균등 분할), 크게 보기 생략.
 // - 2026-09-02: 모바일 5연결+ 브리지 — 치아당 5rem 고정폭 + 가로 스와이프.
@@ -18,7 +24,8 @@
 // - 2026-09-15: 부분 후속(남은 임시치아) — 변경 기공비 라벨.
 // - 2026-09-15: 최종 기공비 — toothWorksForFinalProsthesisFeeQuote(followUp CA 스킵 우회).
 // - 2026-09-02: byTooth가 연결치에 첫 행을 덮어 13-12-11 브리지에서 11 연결·스펙이 끊기던 버그 수정.
-import { useMemo, useState } from "react";
+import { useMemo, useState, useRef, useEffect, type PointerEvent as ReactPointerEvent } from "react";
+import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -31,28 +38,30 @@ import {
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/shared/ui/cn";
 import {
   CUSTOM_ABUTMENT_SELECTION,
   formatAbutmentCompact,
-  formatAbutmentSummary,
   formatImplantCompact,
-  formatImplantSummary,
   formatToothNumbersForCard,
   LOWER_ARCH_TEETH,
   UPPER_ARCH_TEETH,
   normalizeToothShade,
   resolveCustomAbutmentSelection,
+  type CustomAbutmentSelection,
   type ToothWorkSelection,
 } from "@/shared/practice/transferMemo";
+import {
+  PracticeToothAbutmentRadios,
+  PracticeToothCardFooter,
+  PracticeToothTypeMenu,
+} from "@/shared/components/practice/PracticeToothWorkCardFields";
 import {
   collectAdjacentBridgeLinks,
   isCustomAbutmentSupportedProsthesisType,
   isMissingToothProsthesisType,
-  isTemporaryToothProsthesisType,
   NO_WORK_PROSTHESIS_TYPE,
   NO_WORK_PROSTHESIS_TOOLTIP,
 } from "@/shared/practice/usePracticeToothWorkEditor";
@@ -221,6 +230,21 @@ type PracticeToothWorkChartReadOnlyProps = {
   /** 선택 모드 — 견적·헤더 개수용 (미전달 시 선택된 스팬만 toothWorks에서 유도) */
   feeToothWorks?: ToothWorkSelection[];
   selectionDisabled?: boolean;
+  /** 보철 종류 변경 — 카드에서 직접 선택 */
+  prosthesisTypeOptions?: readonly string[] | null;
+  onChangeProsthesisType?: (spanKey: string, prosthesisType: string) => void;
+  /** 어벗·쉐이드 등 카드 스펙 패치(제작 변경 모달) */
+  onPatchToothWork?: (
+    spanKey: string,
+    patch: Partial<ToothWorkSelection>,
+  ) => void;
+  /** 어벗|스캔바디 선택·상세 클릭 → 규격 모달 */
+  onOpenCustomAbutmentSpecs?: (
+    spanKey: string,
+    selection: CustomAbutmentSelection,
+  ) => void;
+  /** 변경 전 종류(스팬키) — 카드 아래 전후 기록 */
+  sourceProsthesisTypeBySpanKey?: ReadonlyMap<string, string> | null;
   /** 후속 제작 기록 — 단계별 기공비 섹션 */
   prosthesisFollowUps?: ProsthesisFollowUpRecord[] | null;
   /** 저장된 단계별 견적 스냅샷(있으면 live 재계산보다 우선) */
@@ -262,6 +286,11 @@ export const PracticeToothWorkChartReadOnly = ({
   spanKeyOf,
   feeToothWorks,
   selectionDisabled = false,
+  prosthesisTypeOptions = null,
+  onChangeProsthesisType,
+  onPatchToothWork,
+  onOpenCustomAbutmentSpecs,
+  sourceProsthesisTypeBySpanKey = null,
   prosthesisFollowUps = null,
   prosthesisFeeStages = null,
   feeStageFocusIndex = null,
@@ -274,6 +303,212 @@ export const PracticeToothWorkChartReadOnly = ({
 
   const resolveSpanKey = (row: ToothWorkSelection) =>
     spanKeyOf?.(row) || String(row.toothNumber || "").trim();
+
+  const typeChangeEnabled = Boolean(
+    onChangeProsthesisType &&
+      Array.isArray(prosthesisTypeOptions) &&
+      prosthesisTypeOptions.length > 0,
+  );
+  const specsEditable = Boolean(onPatchToothWork);
+  const editableCardCount = useMemo(() => {
+    if (!specsEditable && !typeChangeEnabled) return 0;
+    const keys = new Set<string>();
+    for (const row of toothWorks) {
+      keys.add(resolveSpanKey(row));
+    }
+    return keys.size;
+  }, [specsEditable, typeChangeEnabled, toothWorks, spanKeyOf]);
+
+  const [copyDragSource, setCopyDragSource] = useState<string | null>(null);
+  const copyDragSourceRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!copyDragSource) return;
+    const onUp = (event: PointerEvent) => {
+      const sourceKey = copyDragSourceRef.current;
+      copyDragSourceRef.current = null;
+      setCopyDragSource(null);
+      if (!sourceKey || !onPatchToothWork) return;
+      const el = document.elementFromPoint(event.clientX, event.clientY);
+      const target = el?.closest?.("[data-tooth-copy-drop]") as HTMLElement | null;
+      const targetKey = String(target?.getAttribute("data-tooth-copy-drop") || "").trim();
+      if (!targetKey || targetKey === sourceKey) return;
+      const sourceRow = toothWorks.find((row) => resolveSpanKey(row) === sourceKey);
+      if (!sourceRow) return;
+      onPatchToothWork(targetKey, {
+        prosthesisType: sourceRow.prosthesisType,
+        shade: sourceRow.shade,
+        customAbutment: sourceRow.customAbutment,
+        customAbutmentSelection: sourceRow.customAbutmentSelection,
+        abutmentProductMode: sourceRow.abutmentProductMode,
+        implantManufacturer: sourceRow.implantManufacturer,
+        implantBrand: sourceRow.implantBrand,
+        implantFamily: sourceRow.implantFamily,
+        implantType: sourceRow.implantType,
+        implantAddRequest: sourceRow.implantAddRequest,
+        abutmentManufacturer: sourceRow.abutmentManufacturer,
+        abutmentDiameter: sourceRow.abutmentDiameter,
+        abutmentHeight: sourceRow.abutmentHeight,
+      });
+    };
+    window.addEventListener("pointerup", onUp, true);
+    window.addEventListener("pointercancel", onUp, true);
+    return () => {
+      window.removeEventListener("pointerup", onUp, true);
+      window.removeEventListener("pointercancel", onUp, true);
+    };
+  }, [
+    copyDragSource,
+    onChangeProsthesisType,
+    onPatchToothWork,
+    toothWorks,
+    typeChangeEnabled,
+    spanKeyOf,
+  ]);
+
+  const beginCopyDrag = (spanKey: string, event: ReactPointerEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (editableCardCount < 2) return;
+    copyDragSourceRef.current = spanKey;
+    setCopyDragSource(spanKey);
+  };
+
+  const renderProsthesisTypeControl = (
+    row: ToothWorkSelection,
+    spanKey: string,
+    opts?: { editable?: boolean },
+  ) => {
+    const currentType = String(row.prosthesisType || "").trim();
+    const editable = Boolean(opts?.editable) && typeChangeEnabled;
+    const spanSelected = isSpanSelected(row);
+    const selectDisabled =
+      selectionDisabled || (selectable && !spanSelected);
+
+    if (editable) {
+      return (
+        <PracticeToothTypeMenu
+          toothNumber={String(row.toothNumber || spanKey)}
+          value={currentType}
+          options={prosthesisTypeOptions || []}
+          disabled={selectDisabled}
+          onChange={(next) => onChangeProsthesisType?.(spanKey, next)}
+        />
+      );
+    }
+
+    return (
+      <div className="relative z-[1] mt-1.5 flex h-7 w-full min-w-0 max-w-full items-center justify-center self-stretch rounded-md border border-slate-300 bg-white px-0.5 text-center text-[11px] font-medium text-slate-700">
+        <span className="block w-full truncate px-0.5">
+          {currentType || "-"}
+        </span>
+      </div>
+    );
+  };
+
+  const renderEditableExtras = (
+    row: ToothWorkSelection,
+    spanKey: string,
+    opts?: { editable?: boolean },
+  ) => {
+    const editable = Boolean(opts?.editable) && specsEditable;
+    const isMissingTooth = isMissingToothProsthesisType(row.prosthesisType);
+    const spanSelected = isSpanSelected(row);
+    const disabled =
+      selectionDisabled || (selectable && !spanSelected) || !editable;
+    const toothNumber = String(row.toothNumber || spanKey).trim();
+
+    if (!editable) {
+      const canShowCustom =
+        !isMissingTooth &&
+        isCustomAbutmentSupportedProsthesisType(row.prosthesisType) &&
+        Boolean(row.customAbutment);
+      const shade = normalizeToothShade(row.shade);
+      const selectionKind = resolveCustomAbutmentSelection(row);
+      const implantCompact = formatImplantCompact(row);
+      const abutmentCompact = formatAbutmentCompact(row);
+      return (
+        <>
+          {canShowCustom ? (
+            <div className="mt-2 flex w-full flex-col items-center gap-0.5 leading-none">
+              <span className="inline-flex h-5 items-center text-[11px] leading-none text-primary-strong">
+                {selectionKind === CUSTOM_ABUTMENT_SELECTION.SCANBODY
+                  ? "스캔바디"
+                  : "어벗"}
+              </span>
+              <div className="flex w-full flex-col items-stretch gap-0.5 px-0.5">
+                <span className="min-h-5 w-full px-0.5 text-center text-[10px] leading-snug text-primary-strong [overflow-wrap:anywhere]">
+                  {implantCompact || "임플란트"}
+                </span>
+                <span className="min-h-5 w-full px-0.5 text-center text-[10px] leading-snug text-service-abut [overflow-wrap:anywhere]">
+                  {abutmentCompact ||
+                    (selectionKind === CUSTOM_ABUTMENT_SELECTION.ABUTMENT
+                      ? "직접 입력"
+                      : "스캔바디")}
+                </span>
+              </div>
+            </div>
+          ) : null}
+          {shade ? (
+            <span className="mt-auto mb-0.5 inline-flex max-w-full shrink-0 items-center justify-center rounded-full border border-amber-300/90 bg-amber-50 px-1.5 py-0.5 text-[11px] font-semibold leading-none tracking-tight text-amber-900">
+              <span className="truncate">{shade}</span>
+            </span>
+          ) : null}
+        </>
+      );
+    }
+
+    return (
+      <>
+        <PracticeToothAbutmentRadios
+          row={row}
+          toothNumber={toothNumber}
+          disabled={disabled}
+          onPatch={(patch) => onPatchToothWork?.(spanKey, patch)}
+          onOpenSpecs={
+            onOpenCustomAbutmentSpecs
+              ? (selection) => onOpenCustomAbutmentSpecs(spanKey, selection)
+              : undefined
+          }
+        />
+        <PracticeToothCardFooter
+          toothNumber={toothNumber}
+          shade={row.shade}
+          showShade={!isMissingTooth}
+          shadeDisabled={disabled}
+          onChangeShade={(shade) => onPatchToothWork?.(spanKey, { shade })}
+          canDragCopy={editableCardCount >= 2}
+          copyIsSource={copyDragSource === spanKey}
+          onCopyPointerDown={(event) => beginCopyDrag(spanKey, event)}
+        />
+      </>
+    );
+  };
+
+  const renderTypeChangeLog = (spanKey: string, currentType: string) => {
+    if (!typeChangeEnabled) return null;
+    const sourceType =
+      sourceProsthesisTypeBySpanKey?.get(spanKey)?.trim() || "";
+    const nextType = String(currentType || "").trim();
+    if (!sourceType || !nextType || sourceType === nextType) return null;
+    return (
+      <div
+        className="mt-1.5 flex w-full min-w-0 flex-col items-center gap-0.5 rounded-md border border-slate-200 bg-slate-50/90 px-1 py-1.5 text-center"
+        title={`${sourceType} → ${nextType}`}
+      >
+        <span className="w-full break-keep text-[10px] leading-tight text-slate-500">
+          {sourceType}
+        </span>
+        <ArrowRight
+          className="h-2.5 w-2.5 shrink-0 rotate-90 text-slate-400"
+          aria-hidden
+        />
+        <span className="w-full break-keep text-[10px] font-semibold leading-tight text-primary">
+          {nextType}
+        </span>
+      </div>
+    );
+  };
 
   const isSpanSelected = (row: ToothWorkSelection) => {
     if (!selectable) return true;
@@ -636,17 +871,12 @@ export const PracticeToothWorkChartReadOnly = ({
     const isFirst = spanIndex === 0;
     const isLast = spanIndex === spanLength - 1;
     const isLinked = spanLength > 1;
-
-    const canShowCustom =
-      !isMissingTooth &&
-      isCustomAbutmentSupportedProsthesisType(row.prosthesisType) &&
-      Boolean(row.customAbutment);
-    const implantCompact = formatImplantCompact(row);
-    const abutmentCompact = formatAbutmentCompact(row);
+    const extrasEditable = spanIndex === 0;
 
     return (
       <div key={`mobile-tooth-${spanKey}-${toothNumber}`} className={SCROLL_TOOTH_SLOT_CLASS}>
         <div
+          data-tooth-copy-drop={extrasEditable ? spanKey : undefined}
           className={cn(
             mobileToothCardShellClass,
             !spanSelected && selectable && "opacity-55 saturate-50",
@@ -722,44 +952,12 @@ export const PracticeToothWorkChartReadOnly = ({
               </TooltipContent>
             </Tooltip>
           ) : (
-            <div className="relative z-[1] mt-1.5 flex h-7 w-full min-w-0 items-center justify-center self-stretch rounded-md border border-primary-muted/80 bg-white/80 px-0.5 text-center text-[11px] text-slate-600">
-              <span className="block w-full truncate px-0.5">
-                {row.prosthesisType || "-"}
-              </span>
-            </div>
+            renderProsthesisTypeControl(row, spanKey, {
+              editable: extrasEditable,
+            })
           )}
 
-          {canShowCustom ? (
-            <div className="mt-2 flex w-full flex-col items-center gap-0.5 leading-none">
-              <span className="inline-flex h-5 items-center text-[11px] leading-none text-primary-strong">
-                {row.prosthesisType === "크라운" ||
-                row.prosthesisType === "브리지" ||
-                isTemporaryToothProsthesisType(row.prosthesisType)
-                  ? resolveCustomAbutmentSelection(row) ===
-                    CUSTOM_ABUTMENT_SELECTION.SCANBODY
-                    ? "스캔바디"
-                    : "어벗"
-                  : "커스텀"}
-              </span>
-              <div className="flex w-full flex-col items-stretch gap-0.5 px-0.5">
-                <span className="min-h-5 w-full px-0.5 text-center text-[10px] leading-snug text-primary-strong [overflow-wrap:anywhere]">
-                  {implantCompact || "임플란트"}
-                </span>
-                <span className="min-h-5 w-full px-0.5 text-center text-[10px] leading-snug text-service-abut [overflow-wrap:anywhere]">
-                  {abutmentCompact ||
-                    (resolveCustomAbutmentSelection(row) ===
-                    CUSTOM_ABUTMENT_SELECTION.ABUTMENT
-                      ? "직접 입력"
-                      : "스캔바디")}
-                </span>
-              </div>
-            </div>
-          ) : null}
-          {!isMissingTooth && normalizeToothShade(row.shade) ? (
-            <span className="mt-auto mb-0.5 inline-flex max-w-full shrink-0 items-center justify-center rounded-full border border-amber-300/90 bg-amber-50 px-1.5 py-0.5 text-[11px] font-semibold leading-none tracking-tight text-amber-900">
-              <span className="truncate">{normalizeToothShade(row.shade)}</span>
-            </span>
-          ) : null}
+          {renderEditableExtras(row, spanKey, { editable: extrasEditable })}
         </div>
       </div>
     );
@@ -777,43 +975,46 @@ export const PracticeToothWorkChartReadOnly = ({
     const displayTeeth = archLabel ? [teeth[0]] : teeth;
 
     return (
-      <div key={`mobile-span-${spanKey}`} className="flex items-stretch gap-2">
-        {selectable ? (
-          <div
-            className="flex shrink-0 items-start pt-2"
-            onClick={(event) => event.stopPropagation()}
+      <div key={`mobile-span-${spanKey}`} className="space-y-1">
+        <div className="flex items-stretch gap-2">
+          {selectable ? (
+            <div
+              className="flex shrink-0 items-start pt-2"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <Checkbox
+                checked={spanSelected}
+                disabled={selectionDisabled}
+                onCheckedChange={(checked) =>
+                  onToggleSpanKey?.(spanKey, checked === true)
+                }
+                aria-label={`${row.prosthesisType || "보철"} ${archLabel || spanKey} 선택`}
+              />
+            </div>
+          ) : null}
+          <PracticeToothChartHorizontalScroll
+            className="min-w-0 w-full max-w-full flex-1"
+            ariaLabel={`${archLabel || spanKey} 브리지 — 가로로 스크롤`}
           >
-            <Checkbox
-              checked={spanSelected}
-              disabled={selectionDisabled}
-              onCheckedChange={(checked) =>
-                onToggleSpanKey?.(spanKey, checked === true)
-              }
-              aria-label={`${row.prosthesisType || "보철"} ${archLabel || spanKey} 선택`}
-            />
-          </div>
-        ) : null}
-        <PracticeToothChartHorizontalScroll
-          className="min-w-0 w-full max-w-full flex-1"
-          ariaLabel={`${archLabel || spanKey} 브리지 — 가로로 스크롤`}
-        >
-          <div className="inline-flex w-max items-stretch">
-            {displayTeeth.map((toothNumber, index) => (
-              <div
-                key={`mobile-span-tooth-${spanKey}-${archLabel || toothNumber}`}
-                className="flex shrink-0 items-stretch"
-              >
-                {renderMobileToothCard(
-                  row,
-                  archLabel || toothNumber,
-                  index,
-                  displayTeeth.length,
-                )}
-                {index < displayTeeth.length - 1 ? renderMobileSpanBridgeGap() : null}
-              </div>
-            ))}
-          </div>
-        </PracticeToothChartHorizontalScroll>
+            <div className="inline-flex w-max items-stretch">
+              {displayTeeth.map((toothNumber, index) => (
+                <div
+                  key={`mobile-span-tooth-${spanKey}-${archLabel || toothNumber}`}
+                  className="flex shrink-0 items-stretch"
+                >
+                  {renderMobileToothCard(
+                    row,
+                    archLabel || toothNumber,
+                    index,
+                    displayTeeth.length,
+                  )}
+                  {index < displayTeeth.length - 1 ? renderMobileSpanBridgeGap() : null}
+                </div>
+              ))}
+            </div>
+          </PracticeToothChartHorizontalScroll>
+        </div>
+        {renderTypeChangeLog(spanKey, String(row.prosthesisType || ""))}
       </div>
     );
   };
@@ -949,14 +1150,6 @@ export const PracticeToothWorkChartReadOnly = ({
                 if (!canToggleSpan) return;
                 onToggleSpanKey?.(spanKey, !spanSelected);
               };
-              const canShowCustom =
-                !isMissingTooth &&
-                isCustomAbutmentSupportedProsthesisType(row.prosthesisType) &&
-                Boolean(row.customAbutment);
-              const implantSummary = formatImplantSummary(row);
-              const abutmentSummary = formatAbutmentSummary(row);
-              const implantCompact = formatImplantCompact(row);
-              const abutmentCompact = formatAbutmentCompact(row);
 
               return (
                 <div
@@ -980,6 +1173,11 @@ export const PracticeToothWorkChartReadOnly = ({
                     ) : null}
 
                     <div
+                      data-tooth-copy-drop={
+                        isAnchorTooth && (specsEditable || typeChangeEnabled)
+                          ? spanKey
+                          : undefined
+                      }
                       role={canToggleSpan ? "button" : undefined}
                       tabIndex={canToggleSpan ? 0 : undefined}
                       onClick={canToggleSpan ? toggleSpanSelection : undefined}
@@ -1082,80 +1280,21 @@ export const PracticeToothWorkChartReadOnly = ({
                           </TooltipContent>
                         </Tooltip>
                       ) : (
-                        <div className="relative z-[1] mt-1.5 flex h-7 w-full min-w-0 max-w-full items-center justify-center self-stretch rounded-md border border-primary-muted/80 bg-white/80 px-0.5 text-center text-[11px] text-slate-600">
-                          <span className="block w-full truncate px-0.5">
-                            {row.prosthesisType || "-"}
-                          </span>
-                        </div>
+                        renderProsthesisTypeControl(row, spanKey, {
+                          editable: isAnchorTooth,
+                        })
                       )}
 
-                      {canShowCustom ? (
-                        <div className="mt-2 flex w-full flex-col items-center gap-0.5 leading-none">
-                          <span className="inline-flex h-5 items-center text-[11px] leading-none text-primary-strong">
-                            {row.prosthesisType === "크라운" ||
-                            row.prosthesisType === "브리지" ||
-                            isTemporaryToothProsthesisType(row.prosthesisType)
-                              ? resolveCustomAbutmentSelection(row) ===
-                                CUSTOM_ABUTMENT_SELECTION.SCANBODY
-                                ? "스캔바디"
-                                : "어벗"
-                              : "커스텀"}
-                          </span>
-                          {embedded && !fullLayout ? (
-                            <div className="flex w-full flex-col items-stretch gap-0.5 px-0.5">
-                              <span className="h-5 w-full truncate px-0.5 text-center text-[10px] leading-none text-primary-strong">
-                                {implantCompact || "임플란트"}
-                              </span>
-                              <span className="h-5 w-full truncate px-0.5 text-center text-[10px] leading-none text-service-abut">
-                                {abutmentCompact ||
-                                  (resolveCustomAbutmentSelection(row) ===
-                                  CUSTOM_ABUTMENT_SELECTION.ABUTMENT
-                                    ? "직접 입력"
-                                    : "스캔바디")}
-                              </span>
-                            </div>
-                          ) : (
-                            <TooltipProvider>
-                              <div className="flex w-full flex-col items-stretch gap-0.5 px-0.5">
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <span className="h-5 w-full truncate px-0.5 text-center text-[10px] leading-none text-primary-strong">
-                                      {implantCompact || "임플란트"}
-                                    </span>
-                                  </TooltipTrigger>
-                                  <TooltipContent side="bottom" className="max-w-[16rem] text-xs">
-                                    {implantSummary || "임플란트"}
-                                  </TooltipContent>
-                                </Tooltip>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <span className="h-5 w-full truncate px-0.5 text-center text-[10px] leading-none text-service-abut">
-                                      {abutmentCompact ||
-                                        (resolveCustomAbutmentSelection(row) ===
-                                        CUSTOM_ABUTMENT_SELECTION.ABUTMENT
-                                          ? "직접 입력"
-                                          : "스캔바디")}
-                                    </span>
-                                  </TooltipTrigger>
-                                  <TooltipContent side="bottom" className="max-w-[16rem] text-xs">
-                                    {abutmentSummary ||
-                                      (resolveCustomAbutmentSelection(row) ===
-                                      CUSTOM_ABUTMENT_SELECTION.ABUTMENT
-                                        ? "직접 입력"
-                                        : "스캔바디")}
-                                  </TooltipContent>
-                                </Tooltip>
-                              </div>
-                            </TooltipProvider>
-                          )}
-                        </div>
-                      ) : null}
-                      {!isMissingTooth && normalizeToothShade(row.shade) ? (
-                        <span className="mt-auto mb-0.5 inline-flex max-w-full shrink-0 items-center justify-center rounded-full border border-amber-300/90 bg-amber-50 px-1.5 py-0.5 text-[11px] font-semibold leading-none tracking-tight text-amber-900">
-                          <span className="truncate">{normalizeToothShade(row.shade)}</span>
-                        </span>
-                      ) : null}
+                      {renderEditableExtras(row, spanKey, {
+                        editable: isAnchorTooth,
+                      })}
                     </div>
+                    {isAnchorTooth
+                      ? renderTypeChangeLog(
+                          spanKey,
+                          String(row.prosthesisType || ""),
+                        )
+                      : null}
                   </div>
                   {renderBridgeGap(
                     toothNumber,

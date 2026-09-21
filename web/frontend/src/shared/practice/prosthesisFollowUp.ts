@@ -14,6 +14,7 @@
 // - 2026-09-15: 후속-only(지르 다이얼로그 초안·채팅)는 focus=null 유지 — 원 행이 있을 때만 -1.
 // - 2026-09-15: toothWorksForFinalProsthesisFeeQuote — 최종(지르+CA). followUp phase 제거·원 CA 병합.
 // - 2026-09-21: 보철 종류 변경 리메이크(인레이→크라운) — 임시치아→지르와 동일 최고가 청구.
+// - 2026-09-22: 종류 변경만 있는 건 — 「확정 보철」카드 숨김(채팅 후속 카드와 중복 방지).
 import {
   type ToothWorkSelection,
   isCustomAbutmentProsthesisType,
@@ -231,15 +232,18 @@ export const mergeToothWorkRowsForChartDisplay = (
   const base = bases.length > 0 ? bases[bases.length - 1] : null;
 
   if (followUp && base) {
+    const preferFollowUpCa = Boolean(followUp.customAbutment);
     const merged: ToothWorkSelection = {
       ...(followUp as ToothWorkSelection),
       toothNumber: String(base.toothNumber || followUp.toothNumber || "").trim(),
     };
     for (const key of DISPLAY_ABUTMENT_SPEC_KEYS) {
       if (key === "customAbutment") {
-        merged.customAbutment = Boolean(base.customAbutment);
+        merged.customAbutment =
+          preferFollowUpCa || Boolean(base.customAbutment);
         continue;
       }
+      if (preferFollowUpCa) continue;
       const value = base[key as keyof ToothWorkSelection];
       if (value != null && String(value).trim() !== "") {
         (merged as Record<string, unknown>)[key] = value;
@@ -369,6 +373,8 @@ const cloneRowForFollowUp = (
     customAbutment: Boolean(sourceRow?.customAbutment),
     bridgeLinkedTeeth: sorted,
     prosthesisPhase: FOLLOW_UP_PHASE,
+    shade: String(sourceRow?.shade || "").trim() || undefined,
+    customAbutmentSelection: sourceRow?.customAbutmentSelection,
     abutmentProductMode: sourceRow?.abutmentProductMode,
     implantManufacturer: sourceRow?.implantManufacturer,
     implantBrand: sourceRow?.implantBrand,
@@ -1009,6 +1015,23 @@ export const listCompletedFollowUpToothWorks = <
     (row) =>
       isFollowUpProsthesisPhase(row) &&
       isFinalProsthesisType(String(row.prosthesisType || "")),
+  );
+};
+
+/**
+ * 「확정 보철 · 최종 기공비」표시 여부.
+ * 임시치아→지르 전환 완료에만 쓴다. 인레이→크라운 등 종류 변경만 있으면
+ * 채팅 후속 카드와 동일 크라운이 한 번 더 그려지므로 숨긴다.
+ */
+export const shouldShowConfirmedFollowUpProsthesis = (
+  toothWorks: ReadonlyArray<Partial<ToothWorkSelection>> | null | undefined,
+) => {
+  const rows = Array.isArray(toothWorks) ? toothWorks : [];
+  if (listCompletedFollowUpToothWorks(rows).length === 0) return false;
+  return rows.some(
+    (row) =>
+      isTemporaryToothProsthesisType(String(row.prosthesisType || "")) &&
+      !isFollowUpProsthesisPhase(row),
   );
 };
 

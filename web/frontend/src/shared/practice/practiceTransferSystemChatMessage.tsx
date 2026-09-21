@@ -7,6 +7,7 @@
 // - 2026-09-02: 후속 보철 차트 — 버블 밖 전폭(의뢰상세와 동일 레이아웃), embedded 제거.
 // - 2026-09-15: 후속 채팅 차트 — followUps 미전달(메인 1단계 포커스와 분리). 추가 치아만 표시.
 // - 2026-09-15: 후속 채팅 견적 — 해당 지르 단계 포커스·스냅샷. 최종 바는 숨김(부분 후속).
+// - 2026-09-22: 종류 변경 채팅 제목. 확정 보철은 임시치아→지르만(종류 변경 중복 카드 방지).
 import { cn } from "@/shared/ui/cn";
 import { PracticeToothWorkChartReadOnly } from "@/shared/components/practice/PracticeToothWorkChartReadOnly";
 import { compactRemakeSummaryLabel } from "@/features/chat/components/chatRemakeParts";
@@ -277,6 +278,22 @@ export function PracticeTransferSystemChatBody({
     const followUpIndex = Number.isFinite(followUpIndexRaw)
       ? Math.max(0, Math.floor(followUpIndexRaw))
       : 0;
+    const followUpKindFromPayload =
+      String(payload?.followUpKind || "").trim() === "typeChange"
+        ? "typeChange"
+        : String(payload?.followUpKind || "").trim() === "temp"
+          ? "temp"
+          : null;
+    const followUpKindFromContent = String(message.content || "").includes(
+      "보철 종류 변경",
+    )
+      ? "typeChange"
+      : "temp";
+    const followUpKind = followUpKindFromPayload || followUpKindFromContent;
+    const followUpChatTitle =
+      followUpKind === "typeChange"
+        ? "보철 종류 변경 리메이크"
+        : "후속 보철 추가";
     // 표시는 추가 지르만. 견적·부분후속 판별은 전체 toothWorks(남은 임시치아 포함).
     const feeToothWorks =
       Array.isArray(transferToothWorks) && transferToothWorks.length > 0
@@ -368,7 +385,7 @@ export function PracticeTransferSystemChatBody({
               compact ? "text-[11px] sm:text-xs" : "text-xs sm:text-sm",
             )}
           >
-            <p className="font-medium leading-snug">후속 보철 추가</p>
+            <p className="font-medium leading-snug">{followUpChatTitle}</p>
             {arrivalYmd ? (
               <p className="mt-1 leading-snug">치과도착일 {arrivalYmd}</p>
             ) : null}

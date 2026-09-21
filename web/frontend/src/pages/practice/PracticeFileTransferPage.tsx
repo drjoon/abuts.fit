@@ -5033,7 +5033,10 @@ export const PracticeFileTransferPage = ({
   }, [authToken, applyProsthesisFollowUpToRecentRequests, selectedTransfer, toast]);
 
   const handleUpdateProsthesisFollowUp = useCallback(
-    async (payload: { arrivalYmd: string }) => {
+    async (payload: {
+      arrivalYmd: string;
+      toothWorks?: ToothWorkSelection[];
+    }) => {
       if (!authToken || !selectedTransfer) return;
       const transferId = String(selectedTransfer.transferId || "").trim();
       if (!transferId || transferId === "-") return;
@@ -5042,7 +5045,10 @@ export const PracticeFileTransferPage = ({
         const res = await apiFetch<{
           message?: string;
           data?: {
+            toothWorks?: RecentTransferItem["toothWorks"];
+            billing?: RecentTransferItem["billing"];
             prosthesisFollowUps?: RecentTransferItem["prosthesisFollowUps"];
+            prosthesisFeeStages?: RecentTransferItem["prosthesisFeeStages"];
             arrivalDate?: string;
             arrivalDates?: string[];
             orderDate?: string;
@@ -5052,7 +5058,12 @@ export const PracticeFileTransferPage = ({
           path: `/api/practice/transfers/${encodeURIComponent(transferId)}/update-prosthesis-follow-up`,
           method: "POST",
           token: authToken,
-          jsonBody: { arrivalYmd: payload.arrivalYmd },
+          jsonBody: {
+            arrivalYmd: payload.arrivalYmd,
+            ...(Array.isArray(payload.toothWorks) && payload.toothWorks.length > 0
+              ? { toothWorks: payload.toothWorks }
+              : {}),
+          },
         });
         if (!res.ok) {
           const body = res.data && typeof res.data === "object" ? res.data : {};
@@ -5077,9 +5088,16 @@ export const PracticeFileTransferPage = ({
           if (!prev) return prev;
           return {
             ...prev,
+            ...(Array.isArray(data.toothWorks)
+              ? { toothWorks: data.toothWorks }
+              : {}),
+            ...(data.billing ? { billing: data.billing } : {}),
             prosthesisFollowUps: Array.isArray(data.prosthesisFollowUps)
               ? data.prosthesisFollowUps
               : prev.prosthesisFollowUps,
+            prosthesisFeeStages: Array.isArray(data.prosthesisFeeStages)
+              ? data.prosthesisFeeStages
+              : prev.prosthesisFeeStages,
             arrivalDate: String(data.arrivalDate || prev.arrivalDate || ""),
             arrivalDates: Array.isArray(data.arrivalDates)
               ? data.arrivalDates.map((d) => String(d || "").trim()).filter(Boolean)
@@ -5092,8 +5110,14 @@ export const PracticeFileTransferPage = ({
         });
         applyProsthesisFollowUpToRecentRequests({
           transferId,
+          toothWorks: Array.isArray(data.toothWorks)
+            ? data.toothWorks
+            : undefined,
           prosthesisFollowUps: Array.isArray(data.prosthesisFollowUps)
             ? data.prosthesisFollowUps
+            : undefined,
+          prosthesisFeeStages: Array.isArray(data.prosthesisFeeStages)
+            ? data.prosthesisFeeStages
             : undefined,
           arrivalDate: String(data.arrivalDate || "").trim() || undefined,
           arrivalDates: Array.isArray(data.arrivalDates)
@@ -5120,7 +5144,10 @@ export const PracticeFileTransferPage = ({
   const handleFollowUpDialogConfirm = useCallback(
     async (payload: { arrivalYmd: string; toothWorks: ToothWorkSelection[] }) => {
       if (followUpDialogMode === "edit") {
-        await handleUpdateProsthesisFollowUp({ arrivalYmd: payload.arrivalYmd });
+        await handleUpdateProsthesisFollowUp({
+          arrivalYmd: payload.arrivalYmd,
+          toothWorks: payload.toothWorks,
+        });
         return;
       }
       await handleAppendProsthesis(payload);
@@ -11500,8 +11527,14 @@ export const PracticeFileTransferPage = ({
             setFollowUpDialogOpen(open);
           }}
           mode={followUpDialogMode}
-          toothWorks={selectedTransferDetailModel?.toothWorks || []}
+          toothWorks={
+            (Array.isArray(selectedTransfer?.toothWorks) &&
+            selectedTransfer.toothWorks.length > 0
+              ? selectedTransfer.toothWorks
+              : selectedTransferDetailModel?.toothWorks) || []
+          }
           prosthesisFollowUps={selectedTransfer?.prosthesisFollowUps || null}
+          prosthesisFeeStages={selectedTransfer?.prosthesisFeeStages || null}
           requestorDownloadedAt={
             selectedTransfer?.requestorDownloadedAt ||
             selectedTransfer?.requestorAcceptedAt ||
@@ -11523,6 +11556,26 @@ export const PracticeFileTransferPage = ({
             });
           }}
           onConfirm={handleFollowUpDialogConfirm}
+          implantConnections={implantConnections}
+          implantFavorites={implantFavorites}
+          onImplantFavoritesChange={practiceTransferRequestIntakeProps.onImplantFavoritesChange}
+          abutmentFavorites={abutmentFavorites}
+          onAbutmentFavoritesChange={practiceTransferRequestIntakeProps.onAbutmentFavoritesChange}
+          directAbutmentFavorites={directAbutmentFavorites}
+          onDirectAbutmentFavoritesChange={
+            practiceTransferRequestIntakeProps.onDirectAbutmentFavoritesChange
+          }
+          simpleAbutmentOptions={simpleAbutmentOptions}
+          onSimpleAbutmentOptionsChange={
+            practiceTransferRequestIntakeProps.onSimpleAbutmentOptionsChange
+          }
+          simpleHealingOptions={simpleHealingOptions}
+          onSimpleHealingOptionsChange={
+            practiceTransferRequestIntakeProps.onSimpleHealingOptionsChange
+          }
+          onPresetEditorOpen={practiceTransferRequestIntakeProps.onPresetEditorOpen}
+          defaultAbutmentProductMode={defaultAbutmentProductMode}
+          onDefaultAbutmentProductModeChange={persistDefaultAbutmentProductModeSetting}
         />
 
         <ConfirmDialog

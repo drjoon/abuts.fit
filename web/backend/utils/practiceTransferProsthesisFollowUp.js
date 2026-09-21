@@ -215,6 +215,8 @@ export const listPendingFollowUpSourceSpans = (toothWorks) => {
 
 /** 후속 보철에 원 임시치아 임플란트·어벗 스펙 상속 */
 const FOLLOW_UP_SPEC_COPY_KEYS = [
+  "shade",
+  "customAbutmentSelection",
   "abutmentProductMode",
   "implantManufacturer",
   "implantBrand",
@@ -362,15 +364,18 @@ export const mergeToothWorkRowsForChartDisplay = (rows) => {
   const base = bases.length > 0 ? bases[bases.length - 1] : null;
 
   if (followUp && base) {
+    const preferFollowUpCa = Boolean(followUp.customAbutment);
     const merged = {
       ...followUp,
       toothNumber: String(base.toothNumber || followUp.toothNumber || "").trim(),
     };
     for (const key of DISPLAY_ABUTMENT_SPEC_KEYS) {
       if (key === "customAbutment") {
-        merged.customAbutment = Boolean(base.customAbutment);
+        merged.customAbutment =
+          preferFollowUpCa || Boolean(base.customAbutment);
         continue;
       }
+      if (preferFollowUpCa) continue;
       const value = base[key];
       if (value != null && String(value).trim() !== "") {
         merged[key] = value;
@@ -940,7 +945,7 @@ export const listProsthesisFeeStages = (stages) =>
     .map((row) => (row && typeof row.toObject === "function" ? row.toObject() : row))
     .filter((row) => row && typeof row === "object" && String(row.key || "").trim());
 
-/** 같은 key면 교체하지 않고 유지(이미 저장된 단계 덮어쓰기 방지). force=true면 교체. */
+/** 같은 key면 교체하지 않고 유지(이미 저장된 단계 덮어쓰기 방지). force=true면 통째 교체. */
 export const upsertProsthesisFeeStage = (
   stages,
   stage,
@@ -955,7 +960,8 @@ export const upsertProsthesisFeeStage = (
   if (idx >= 0) {
     if (!force) return list;
     const copy = [...list];
-    copy[idx] = { ...list[idx], ...nextStage, key };
+    // 종류 변경 등 — 얕은 merge면 구 기공비/라인이 남을 수 있어 통째 교체
+    copy[idx] = { ...nextStage, key };
     return copy;
   }
   return [...list, nextStage];
