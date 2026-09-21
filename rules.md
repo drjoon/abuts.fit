@@ -192,7 +192,7 @@
   - `REV_MANUFACTURER`, `REV_DEVOPS`, `REV_SALESMAN`, `REV_ADMIN`
   - **제조사(하청)**: % 분배 금지. **어벗 1개당** 고정 매입가(부가세 포함) — `creditSettings.manufacturerRequestUnitPrice`(기본 8,800)·`manufacturerRemakeUnitPrice`(기본 6,600, 리메이크)·`manufacturerShippingUnitPrice`(기본 3,500, 박스당). 장부·미정산·지급=포함가(재가산 없음)·세금계산서(÷1.1). **리메이크도 제조사 지급(기본 6,600)**. 그 외(무료 크레딧 결제 포함)는 **약정 단가 전액 지급**. 매달 말일 일괄 지급 전까지는 미정산 잔액으로 적립.
   - **어벗 생산 분배**: 판매가(배송비 제외)에서 제조사 매입 공급가(기본 8,000=포함 8,800÷1.1)를 선차감하고, 잔여를 딜러/개발운영/어벗츠 비중(기본 딜러 포함 30:10:40 · 없으면 20:80)으로 분배. 제조사·개발운영사·딜러사 장부=포함가·지급=잔액 그대로. 특별주문가는 주체별 배분액. 설정 UI: 관리자「플랫폼 설정 · 커스텀어벗」가격·분배 비율 / 「사업영역」어벗사업. 제조사 박스당 배송 지급은 장부 출고 룰이며 사업영역 분배 UI에는 기재하지 않음.
-  - **딜러십(salesman) 파트너 조건**: 영업 수수료=심플웨이·커스텀어벗. **유치(가입) 시점** 기준 — 이벤트 창 `[dealershipEventStartedAt, dealershipEventEndedAt)` 내 유치=**이벤트 요율(기본 15%)**, 그 외=**기본 요율(10%)**. 배송비=수신자(치과 또는 기공소) 부담. 관리자「플랫폼 설정 · 딜러십」·`resolveDealershipRateForAcquiredAt`. 대시보드·정산은 티어별 구분 표시.
+  - **딜러십(salesman) 파트너 조건**: 영업 수수료=심플웨이·커스텀어벗. **유치(가입) 시점** 기준 — 이벤트 창 `[dealershipEventStartedAt, dealershipEventEndedAt)` 내 유치=**이벤트 요율(기본 15%)**, 그 외=**기본 요율(10%)**. 배송비=수신자(치과 또는 기공소) 부담. 관리자「플랫폼 설정 · 딜러십」·`resolveDealershipRateForAcquiredAt`. 대시보드·정산은 티어별 구분 표시. **소개 귀속 90일**: 의뢰자 BA가 딜러(`salesman`)·영업본부(`salesTeam`)에 귀속된 뒤 **90일간 커스텀 어벗 의뢰(`Request`)가 없으면** `referredByAnchorId` 리셋(미귀속). 이후 누구든 다시 영업·소개코드 재적용(`POST /api/businesses/me/apply-referral`) 가능. 시계=`max(BA.createdAt, 최근 Request.createdAt)`, KST 일자. 잡=`jobs/dailyReferralOwnershipResetWorker.js`. 과거 `REV_SALESMAN` 불변.
   - **배송 분배**: 사업영역 분배 재원에서 제외. 매출에서 배송비를 먼저 차감한 나머지만 분배. 제조사 배송 매입가(부가세 포함)·고객 배송비 잔여는 출고 장부 흐름.
   - **플랫폼 분배**: 기공소 자동매칭 수수료·지정 수수료(정책 1%, 이벤트 기간 실효 0%)를 어벗츠 90% / 개발운영사 10%(비율 수정 가능). 개발운영사 장부=포함가·지급=잔액 그대로.
   - **기공(어벗츠기공소) 분배**: 내부기공소(기공사업부)에 배당된 건만, 배송비를 공통 지출로 먼저 차감한 뒤 나머지를 주체(role) 비율 → 주체 내 팀원 비율로 배분. 초기 주체 기공팀·영업팀·개발운영사. 설정 UI: 관리자「사업영역」기공사업.
@@ -301,7 +301,7 @@
   - **커스텀어벗 Abuts-first**: 작업시작 시 스캔 기반 Request 생성 → **작업시작 기공소가 디자인** → design-handoff 업로드 시 제조 자동 착수. 치과→기공소=`labFeeSchedule` 커스텀어벗 수가(기공비 정산). 기공소→어벗츠=생산비(플랫폼 1.5만, Request 과금). 레거시(치과 어벗츠 단가 선납)만 `abutmentDesignLabFee` 외주 지급. **생산 후 주문 기공소 수취**(치과 직납 아님). 제조사 출고 목표=`치과도착일 − 2영업일`(`resolveManufacturerTargetShipYmd`). 기공소 `mark-complete`는 크라운 업로드만(배송선택 없음). 어벗생산의뢰(직접 Request) 디자인 파트너 큐와 분리.
 - 제조사 워크시트 조회에서 practice 전송 태그 의뢰 제외
 - 크레딧/정산은 유료(검증된 수신자·lab) 경로에만 해당. 실 사업자등록번호가 없는 synthetic 앵커에는 환영 크레딧을 지급하지 않으며, synthetic→실BN 검증 승격 시 1회 지급
-- 소개(리퍼럴) 페이지·링크: 발신(practice) 포함 모든 requestor가 접근 가능. 소개 귀속(`referredByAnchorId`)·그룹 할인 적용은 추천인 사업자 앵커 기준. lab 체크·검증되면 유료 소개 혜택 경로로 이어짐
+- 소개(리퍼럴) 페이지·링크: 발신(practice) 포함 모든 requestor가 접근 가능. 소개 귀속(`referredByAnchorId`)·그룹 할인 적용은 추천인 사업자 앵커 기준. lab 체크·검증되면 유료 소개 혜택 경로로 이어짐. **영업(딜러·영업본부) 소개 귀속**은 의뢰자 90일 무주문 시 리셋(§2.3).
 - 공통 헬퍼/권한: `web/backend/utils/requestorCapabilities.js`, `web/frontend/src/shared/business/requestorCapabilities.ts`, `practiceTransferAuth.middleware.js`, `web/backend/controllers/businesses/requestorOrgAnchor.util.js`
 - 레거시 혼입 경로(예: `/api/requests/practice/*`)는 제거 대상으로 관리
 - 백필: `web/backend/scripts/db/backfill-requestor-capabilities.js` (`--apply`)

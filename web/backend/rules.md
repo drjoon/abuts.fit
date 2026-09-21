@@ -242,6 +242,12 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - 이벤트 기반 스냅샷이 있어도 일일 배치(정산/warmup 포함)는 건너뛰지 않음
     - 멀티 인스턴스 중복 방지: `worker:daily-referral-snapshot` JobLock
     - 당일 완료 마커: `worker:daily-referral-snapshot:done:<ymd>` (TTL ~48h)
+  - **영업 소개 귀속 90일 리셋**: `jobs/dailyReferralOwnershipResetWorker.js` + `services/referralOwnershipReset.service.js`
+    - 대상: `businessType=requestor` 이고 추천인 BA가 `salesman|salesTeam`
+    - 시계: `max(BA.createdAt, 최근 Request.createdAt)` < KST 오늘 자정−90일 → `referredByAnchorId=null` (+ 멤버 User 미러)
+    - 재영업: `POST /api/businesses/me/apply-referral` (귀속 null일 때만)
+    - 락: `worker:daily-referral-ownership-reset` / done `…:done:<ymd>`
+    - FE 카피: `PricingPolicyDialog`(salesman) · `DealershipTermsCard` · 영업본부 `policyNote`
   - 가격 SSOT 자동 점검(`runPricingSsotConsistencyCheck`)은 워커/관리자 대시보드/CI 스케줄에서 제외
   - 수동 점검은 `scripts/db/check-pricing-ssot-consistency.js` / `npm run db:check-pricing-ssot` 유지
   - 이벤트 기반 재계산: `services/requestSnapshotTriggers.service.js`
@@ -906,7 +912,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 수익 분배 계산 SSOT는 `services/creditRevenuePolicy.service.js`를 사용합니다.
     - 런타임 적재(`controllers/requests/common.review.helpers.js`)와 이관 스크립트는 동일 함수를 공유해 분배 정책 드리프트를 금지합니다.
     - 제조사 = 고정 공급가(어벗 1개당 / 배송 박스당). 잔여 = 소비 공급가 − 제조사 공급가 → 딜러사·개발운영사·어벗츠 상대비율(`BusinessAnchor.payoutRates`의 salesman/devops/admin). 딜러사 없으면 salesman 몫을 admin에 가산. 잔여 분배율은 추후 별도 확정.
-    - **딜러십 파트너 조건**: 영업 수수료=심플웨이·커스텀어벗. **유치(가입) 시점** 기준 이벤트 창 내=이벤트 요율(기본 15%), 외=기본 요율(10%). 배송비=수신자(치과·기공소) 부담. `resolveDealershipRateForAcquiredAt` · 관리자「플랫폼 설정 · 딜러십」. 루트 `rules.md` §2.3.
+    - **딜러십 파트너 조건**: 영업 수수료=심플웨이·커스텀어벗. **유치(가입) 시점** 기준 이벤트 창 내=이벤트 요율(기본 15%), 외=기본 요율(10%). 배송비=수신자(치과·기공소) 부담. `resolveDealershipRateForAcquiredAt` · 관리자「플랫폼 설정 · 딜러십」. **90일 무주문 시 소개 귀속 리셋**(루트 `rules.md` §2.3).
     - 기공의뢰 성공 수수료: 매칭 `platformFeeRate`(기본 10%) · 지정 `directPlatformFeeEnabled`(기본 **off**=이벤트 0%) / `directPlatformFeeRate`(정책 **1%**) · 월 참여 `autoMatchMonthlyFee`(**정책 0원**) — 관리자 플랫폼 설정「인증 기공소」. 루트 `rules.md` §2.3.
     - `machining_spend`+`express_surcharge`: 제조사 단가 1회만(`manufacturerUnitApplied` / 기존 의뢰 유니크와 정합).
 

@@ -2,6 +2,7 @@
 // - web/frontend/src/pages/salesTeam/salesTeamApi.ts
 // - web/frontend/src/pages/salesTeam/salesUi.tsx
 // change-log:
+// - 2026-09-21: 영업팀 기본 진입=성과. 소개코드·가입 SSOT.
 // - 2026-09-21: 가입 링크 복사를 코드 복사 버튼 아래로 배치.
 // - 2026-09-21: 소개코드 왼쪽 카드(통계·내 코드)를 활동실적으로 합치고 탭 제거.
 // - 2026-09-21: 소개 통계 카드에서 누적 라벨 제거, 숫자 가로·세로 가운데 정렬.

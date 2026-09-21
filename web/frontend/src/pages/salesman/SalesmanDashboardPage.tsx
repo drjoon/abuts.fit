@@ -1,9 +1,10 @@
 /**
- * 딜러(salesman)·영업팀(salesTeam) 대시보드.
- * 영업팀은 딜러 화면을 그대로 사용한다.
+ * 딜러(salesman) 대시보드 — 수수료·소개 코드·요율 티어.
+ * 영업팀(salesTeam)은 고정급이라 `/dashboard/sales/performance`로 보낸다(DashboardHome).
  *
  * 딜러십: 기본 10% · 이벤트 15/20%. 요율 변경 예약 시 해당일 0시(KST)부터 적용.
  * 의뢰자는 가입 당시 요율 적용. 배송비는 수신자(치과·기공소) 부담.
+ * 90일 무주문 시 소개 귀속 리셋(DealershipTermsCard · PricingPolicyDialog).
  */
 
 import { useState } from "react";
@@ -25,9 +26,13 @@ import {
   Percent,
   Truck,
   Building2,
+  RefreshCw,
 } from "lucide-react";
 import { SalesmanLedgerModal } from "@/shared/components/SalesmanLedgerModal";
 import { PricingPolicyDialog } from "@/shared/ui/PricingPolicyDialog";
+import {
+  REFERRAL_OWNERSHIP_RESET_POLICY_SHORT,
+} from "@/shared/sales/dealershipPolicyCopy";
 import {
   Tooltip,
   TooltipContent,
@@ -378,7 +383,7 @@ function DealershipTermsCard({
             파트너 조건
           </h2>
         </div>
-        <div className="grid min-w-0 flex-1 gap-3 sm:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
+        <div className="grid min-w-0 flex-1 gap-3 sm:grid-cols-3">
           <div className="flex items-start gap-2.5 rounded-xl bg-white/5 px-3 py-2.5">
             <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white/10">
               <Percent className="h-3.5 w-3.5" />
@@ -387,33 +392,51 @@ function DealershipTermsCard({
               <div className="text-sm font-semibold">
                 영업 수수료 {effectivePct}%
               </div>
-              <p className="mt-0.5 text-xs leading-relaxed text-white/70">
-                심플웨이 · 커스텀어벗 판매가 대비({effectivePct}%). 배송비 제외.
+              <p
+                className={`mt-0.5 truncate text-xs leading-snug ${
+                  rateChangeMessage
+                    ? "text-amber-200/95"
+                    : eventEnabled
+                      ? "text-emerald-200/90"
+                      : "text-white/70"
+                }`}
+                title={
+                  rateChangeMessage ||
+                  (eventEnabled
+                    ? `이벤트 ${eventPct}% · 추후 15·10%`
+                    : `표준 ${basePct}% · 이벤트 ${eventPct}%`)
+                }
+              >
+                {rateChangeMessage
+                  ? rateChangeMessage
+                  : eventEnabled
+                    ? `이벤트 ${eventPct}% · 추후 15·10%`
+                    : `표준 ${basePct}% · 이벤트 ${eventPct}%`}
               </p>
-              {rateChangeMessage ? (
-                <p className="mt-1.5 text-[11px] leading-relaxed text-amber-200/95">
-                  {rateChangeMessage}
-                </p>
-              ) : eventEnabled ? (
-                <p className="mt-1.5 text-[11px] leading-relaxed text-emerald-200/90">
-                  이벤트 기간인 지금은 {eventPct}%. 추후 15%·10%으로 조정될 수
-                  있음.
-                </p>
-              ) : (
-                <p className="mt-1.5 text-[11px] leading-relaxed text-white/65">
-                  현재 표준 요율 {basePct}%. 이벤트 유치 요율은 {eventPct}%.
-                </p>
-              )}
             </div>
           </div>
           <div className="flex items-start gap-2.5 rounded-xl bg-white/5 px-3 py-2.5">
             <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white/10">
               <Truck className="h-3.5 w-3.5" />
             </span>
-            <div>
+            <div className="min-w-0">
               <div className="text-sm font-semibold">배송비 수신자 부담</div>
-              <p className="mt-0.5 text-xs leading-relaxed text-white/70">
-                치과 또는 기공소가 부담합니다
+              <p className="mt-0.5 truncate text-xs leading-snug text-white/70">
+                치과 · 기공소 부담
+              </p>
+            </div>
+          </div>
+          <div className="flex items-start gap-2.5 rounded-xl bg-white/5 px-3 py-2.5">
+            <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white/10">
+              <RefreshCw className="h-3.5 w-3.5" />
+            </span>
+            <div className="min-w-0">
+              <div className="text-sm font-semibold">소개 귀속 90일</div>
+              <p
+                className="mt-0.5 truncate text-xs leading-snug text-white/70"
+                title={REFERRAL_OWNERSHIP_RESET_POLICY_SHORT}
+              >
+                {REFERRAL_OWNERSHIP_RESET_POLICY_SHORT}
               </p>
             </div>
           </div>

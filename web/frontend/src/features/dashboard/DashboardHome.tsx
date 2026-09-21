@@ -8,6 +8,8 @@ import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusine
 import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath";
 
 // change-log:
+// - 2026-09-21: salesTeam `/dashboard` → 성과(소개코드·가입 SSOT). 딜러 대시보드 미사용(고정급).
+// - 2026-09-21: salesTeam `/dashboard` = SalesmanDashboardPage. 딜러십 파트너 조건·정책은 숨김(고정급).
 // - 2026-09-21: salesTeam `/dashboard` = SalesmanDashboardPage (딜러 대시보드 그대로).
 // - 2026-08-19: 기공소·어벗츠기공소 `/dashboard`는 기공의뢰수신으로. 제출 후 어벗생산의뢰. 대기보드 제거.
 // - 2026-08-18: 치과 `/dashboard`는 구강스캔(또는 제출 후 어벗디자인)으로 보냄. 대시보드 페이지 미사용.
@@ -73,6 +75,15 @@ export const DashboardHome = () => {
     return <Navigate to={dest} replace />;
   }
 
+  // 영업팀: 고정급 — 딜러 수수료 대시보드 대신 성과(소개코드·가입)로
+  if (user.role === "salesTeam") {
+    const dest =
+      !entry || entry === "/dashboard" || entry === "/dashboard/"
+        ? "/dashboard/sales/performance"
+        : entry;
+    return <Navigate to={dest} replace />;
+  }
+
   // `/dashboard`는 진입 허브. 최근 메뉴(또는 역할 기본)가 다른면 그쪽으로 보낸다.
   // 단, 신규의뢰 제출 등 명시적 홈 이동(refreshDashboardAt)은 bounce 하지 않는다.
   if (!stayOnDashboardHome && entry !== "/dashboard") {
@@ -87,7 +98,7 @@ export const DashboardHome = () => {
     );
   }
 
-  if (user.role === "salesman" || user.role === "salesTeam") {
+  if (user.role === "salesman") {
     return <SalesmanDashboardPage />;
   }
 

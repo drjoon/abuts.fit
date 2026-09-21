@@ -3,6 +3,7 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/features/dashboard/DashboardHome.tsx
 // - web/frontend/src/store/useAuthStore.ts
+// - 2026-09-21: salesTeam 기본 랜딩·bare `/dashboard` → 성과(소개코드 SSOT). 딜러 수수료 대시보드 미사용.
 // - 2026-08-19: 기공소·어벗츠기공소 `/dashboard` last path는 기공의뢰수신으로 보정(대기보드 제거).
 // - 2026-08-18: 치과 requestor `/dashboard` last path는 구강스캔으로 보정(대시보드 메뉴 제거).
 // - 2026-08-17: internalLab `/dashboard` = 대기보드 허용(기본 랜딩은 lab-work).
@@ -65,7 +66,7 @@ export function getRoleDefaultDashboardPath(role: string | null | undefined): st
     case "labTeam":
       return "/dashboard/settings";
     case "salesTeam":
-      return "/dashboard";
+      return "/dashboard/sales/performance";
     default:
       return "/dashboard";
   }
@@ -84,14 +85,14 @@ export function resolveEntryDashboardPath(user: {
   const last = normalizeLastDashboardPath(user?.lastDashboardPath);
   if (!last) return roleDefault;
 
-  // manufacturer/practice/devops/기공팀/어벗츠기공소는 `/dashboard`에 콘텐츠가 없음.
-  // salesTeam은 대시보드 페이지가 있어 bare `/dashboard`를 허용한다.
+  // manufacturer/practice/devops/기공팀/어벗츠기공소/영업팀은 `/dashboard`에 콘텐츠가 없음.
   if (
     (role === "manufacturer" ||
       role === "practice" ||
       role === "devops" ||
       role === "labTeam" ||
-      role === "internalLab") &&
+      role === "internalLab" ||
+      role === "salesTeam") &&
     (last === "/dashboard" || last === "/dashboard/")
   ) {
     return roleDefault;

@@ -2045,7 +2045,7 @@ export async function getReferralInfo(req, res) {
       data: {
         referralCode,
         policyNote:
-          "판매·세금계산서는 플랫폼 가입 사업자만 가능합니다. 소개코드로 가입한 거래처가 담당 실적으로 집계됩니다.",
+          "판매·세금계산서는 플랫폼 가입 사업자만 가능합니다. 소개코드로 가입한 거래처가 담당 실적으로 집계됩니다. 의뢰자가 90일간 주문(커스텀 어벗 의뢰)이 없으면 소개 귀속이 리셋되어, 누구든 다시 영업할 수 있습니다.",
         organizations: orgs,
       },
     });

@@ -16,6 +16,7 @@ import {
 } from "@/shared/layout/sidebarOpen";
 import { cn } from "@/shared/ui/cn";
 
+// - 2026-09-21: 영업팀 사이드 — 대시보드 제거. 소개코드·가입은 성과. 딜러만 수수료 대시보드.
 // - 2026-09-21: 딜러·영업팀 사이드에서 소개·피치 제거. 피치는 대시보드 → 랜딩 `/#pitch`.
 // - 2026-09-21: 딜러·영업팀 사이드 IA 통일(현장·성과·협업·지원). 대시보드·오늘·거래처 / 성과·요구사항·정산 / 문의·설정.
 // - 2026-09-18: 기본 기공수가 대기 카운트를 공유 스토어로 설정 허브 탭 배지와 동기화.
@@ -388,7 +389,6 @@ const sidebarItems = {
   ],
   labTeam: [{ icon: Settings, label: "설정", href: "/dashboard/settings" }],
   salesTeam: [
-    { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
     { icon: Monitor, label: "오늘", href: "/dashboard/sales" },
     { icon: Building2, label: "거래처", href: "/dashboard/sales/accounts" },
     {
@@ -499,12 +499,46 @@ const adminSidebarSections: DashboardSidebarSection[] = [
   },
 ];
 
-/** 딜러(salesman)·영업팀(salesTeam) 공통 사이드 IA. 소개·피치는 랜딩 `/#pitch`. */
-const fieldPartnerMenuSections: DashboardSidebarSection[] = [
+/** 딜러(salesman) 사이드 IA. 소개·피치는 랜딩 `/#pitch`. */
+const salesmanMenuSections: DashboardSidebarSection[] = [
   {
     title: "현장",
     items: [
       { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
+      { icon: Monitor, label: "오늘", href: "/dashboard/sales" },
+      { icon: Building2, label: "거래처", href: "/dashboard/sales/accounts" },
+    ],
+  },
+  {
+    title: "성과 · 협업",
+    items: [
+      {
+        icon: BarChart3,
+        label: "성과",
+        href: "/dashboard/sales/performance",
+      },
+      {
+        icon: ClipboardList,
+        label: "요구사항",
+        href: "/dashboard/sales/requirements",
+      },
+      { icon: Wallet, label: "정산", href: "/dashboard/payments" },
+    ],
+  },
+  {
+    title: "지원",
+    items: [
+      { icon: MessageSquare, label: "문의", href: "/dashboard/inquiries" },
+      { icon: Settings, label: "설정", href: "/dashboard/settings" },
+    ],
+  },
+];
+
+/** 영업팀(salesTeam) — 고정급. 딜러 수수료 대시보드 없음. 소개코드·가입은 성과. */
+const salesTeamMenuSections: DashboardSidebarSection[] = [
+  {
+    title: "현장",
+    items: [
       { icon: Monitor, label: "오늘", href: "/dashboard/sales" },
       { icon: Building2, label: "거래처", href: "/dashboard/sales/accounts" },
     ],
@@ -1226,9 +1260,11 @@ export const DashboardLayout = () => {
     }));
   }, [abutsFeePendingCount, user.role]);
   const fieldPartnerSections =
-    user.role === "salesTeam" || user.role === "salesman"
-      ? fieldPartnerMenuSections
-      : null;
+    user.role === "salesTeam"
+      ? salesTeamMenuSections
+      : user.role === "salesman"
+        ? salesmanMenuSections
+        : null;
   const accountMenuItems = accountMenuItemsByRole[displayRole] || [];
 
   const { getBadgeForHref, clearBadgeForPath } = useAdminCommBadges();

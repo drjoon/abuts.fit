@@ -34,6 +34,7 @@ import {
   maybeAutoExitDemoModeIfExhausted,
   resolveDemoModeExpiresAt,
 } from "./business.demoMode.util.js";
+import { applyReferralCodeToUnownedRequestor } from "../../services/referralOwnershipReset.service.js";
 import { resolveRequestorPricingBaseDate } from "../requests/utils.js";
 import {
   isHexVerificationPending,
@@ -1888,3 +1889,44 @@ export async function exitMyDemoMode(req, res) {
   }
 }
 
+
+/**
+ * 소개 귀속이 비어 있을 때 소개코드 재적용 (90일 리셋 후 재영업).
+ * @route POST /api/businesses/me/apply-referral
+ */
+export async function applyMyReferralCode(req, res) {
+  try {
+    res.set("x-abuts-handler", "business.applyMyReferralCode");
+    const roleCheck = assertBusinessRole(req, res);
+    if (!roleCheck) return;
+
+    const freshUser = await User.findById(req.user._id)
+      .select({ businessAnchorId: 1, role: 1 })
+      .lean();
+    const businessAnchorId =
+      freshUser?.businessAnchorId || req.user.businessAnchorId;
+    if (!businessAnchorId) {
+      return res.status(400).json({
+        success: false,
+        message: "사업자 정보가 설정되지 않았습니다.",
+      });
+    }
+
+    const referralCode =
+      req.body?.referralCode || req.body?.ref || req.body?.code || "";
+    const data = await applyReferralCodeToUnownedRequestor({
+      requestorBusinessAnchorId: businessAnchorId,
+      referralCode,
+      actorUserId: req.user._id,
+    });
+    invalidateMyBusinessCache(businessAnchorId);
+
+    return res.json({ success: true, data });
+  } catch (error) {
+    const status = Number(error?.statusCode) || 400;
+    return res.status(status).json({
+      success: false,
+      message: error?.message || "소개 코드 적용에 실패했습니다.",
+    });
+  }
+}

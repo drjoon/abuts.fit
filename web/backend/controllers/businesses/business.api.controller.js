@@ -22,6 +22,7 @@ export const {
   getMyRequestSettings,
   updateMyRequestSettings,
   exitMyDemoMode,
+  applyMyReferralCode,
 } = businessController;
 
 export const {

@@ -1,3 +1,4 @@
+// - 2026-09-21: 딜러십 정책 — 90일 주문 없음 시 소개 귀속 리셋 조항.
 // - 2026-09-20: 기공소 정책 안내 — 지정 수수료 ~~2%~~ → 0% 취소선 표시.
 // - 2026-09-20: 딜러십 요율 10/15/20% · 가입 당시 요율 적용 안내.
 // - 2026-09-20: 기공소 정책 안내 — 하청 % · 작업시작 적립 시 공제.
@@ -70,6 +71,9 @@ import {
 } from '@/shared/settlement/labPayoutBankbook';
 import { LabDirectPlatformFeeNotice } from '@/shared/settlement/LabDirectPlatformFeeNotice';
 import { useLabTradingPartnerWindow } from '@/shared/lab/useLabTradingPartnerWindow';
+import {
+  REFERRAL_OWNERSHIP_RESET_POLICY_LINE,
+} from '@/shared/sales/dealershipPolicyCopy';
 
 type Props = {
   open: boolean;
@@ -279,7 +283,8 @@ export const PricingPolicyDialog = ({
                       ? `이벤트 기간인 지금은 ${eventPct}%. 요율 변경 예약으로 15%·10% 조정이 가능합니다.`
                       : `현재 표준 요율 ${basePct}%.`,
                     '대상: 심플웨이(스토어) · 커스텀어벗',
-                    '소개 관계: 의뢰자 가입 시 입력한 딜러 코드'
+                    '소개 관계: 의뢰자 가입 시 입력한 딜러 코드',
+                    REFERRAL_OWNERSHIP_RESET_POLICY_LINE,
                   ]}
                 />
               </PolicySection>

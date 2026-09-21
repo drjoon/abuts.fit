@@ -74,6 +74,12 @@ router.post(
   businessController.exitMyDemoMode,
 );
 
+router.post(
+  "/me/apply-referral",
+  authorize(["requestor", "practice"]),
+  businessController.applyMyReferralCode,
+);
+
 router.put(
   "/me/request-settings",
   authorize(BUSINESS_ACCOUNT_ROLES),
