@@ -6,8 +6,8 @@
 // - 「샘플 배포」「나눠드림」「피드백 시 우선 초대」 등 조건부 편익·판촉성 샘플 문구 금지.
 // - 공개 문구는 「출시 행사 / 제품 소개 / 방문 안내」로 유지.
 
-/** 심플웨이 신제품 — 그리보(Gribo) 출시 행사 (URL slug 유지) */
-export const SIMPLEWAY_SAMPLE_SLUG = "simpleway-sample-kit";
+/** 심플웨이 신제품 — 그리보(Gribo) 출시 행사 (URL slug) */
+export const SIMPLEWAY_SAMPLE_SLUG = "simpleway-gribo";
 export const GRIBO_SAMPLE_SLUG = SIMPLEWAY_SAMPLE_SLUG;
 export const GRIBO_EVENT_HREF = `/events/${SIMPLEWAY_SAMPLE_SLUG}`;
 

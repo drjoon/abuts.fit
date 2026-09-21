@@ -9,7 +9,8 @@ import MarketingEventApplication from "../../models/marketingEventApplication.mo
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { searchKakaoPlaces } from "../../services/kakaoPlaceSearch.service.js";
 
-const SIMPLEWAY_SAMPLE_SLUG = "simpleway-sample-kit";
+const SIMPLEWAY_SAMPLE_SLUG = "simpleway-gribo";
+const SIMPLEWAY_SAMPLE_SLUG_LEGACY = "simpleway-sample-kit";
 
 const SIMPLEWAY_DEALER_HELP =
   "친한 로컬 재료상 사장님을 소개해주세요. 그 분께 지역 영업권을 드립니다.";
@@ -283,9 +284,26 @@ function buildApplicationStats(items) {
 
 /** 첫 이벤트(그리보 출시 행사)를 DB에 보장·카피 동기화한다. */
 export async function ensureDefaultMarketingEvents() {
-  const existing = await MarketingEvent.findOne({
+  let existing = await MarketingEvent.findOne({
     slug: SIMPLEWAY_SAMPLE_SLUG,
   });
+
+  // 구 slug → 신규 slug 이전 (신청 이력 eventSlug도 맞춤)
+  if (!existing) {
+    const legacy = await MarketingEvent.findOne({
+      slug: SIMPLEWAY_SAMPLE_SLUG_LEGACY,
+    });
+    if (legacy) {
+      legacy.slug = SIMPLEWAY_SAMPLE_SLUG;
+      await legacy.save();
+      await MarketingEventApplication.updateMany(
+        { eventId: legacy._id },
+        { $set: { eventSlug: SIMPLEWAY_SAMPLE_SLUG } },
+      );
+      existing = legacy;
+    }
+  }
+
   if (existing) {
     let dirty = false;
     if (existing.title !== SIMPLEWAY_EVENT_COPY.title) {
@@ -445,13 +463,16 @@ export async function applyToEvent(req, res) {
         ? Boolean(body.usesOralScan)
         : Boolean(authPp.usesOralScan);
 
-    // 로그인 치과: 본문 미입력이면 프로필로 채움
+    // 로그인 치과: 본문 미입력이면 프로필·계정으로 채움
     if (authUser) {
       const profileName = trimStr(
         authPp.clinicName || authUser.business || "",
         120,
       );
-      const profileDirector = trimStr(authPp.directorName, 80);
+      const profileDirector = trimStr(
+        authPp.directorName || authPp.staffName || authUser.name || "",
+        80,
+      );
       const profilePhone = trimStr(
         authPp.phone || authPp.clinicPhone || authUser.phoneNumber || "",
         40,
@@ -464,11 +485,19 @@ export async function applyToEvent(req, res) {
         practice = {
           ...practice,
           name: profileName,
-          representativeName:
-            practice.representativeName || profileDirector,
-          phone: practice.phone || profilePhone,
-          address: practice.address || profileAddress,
         };
+      }
+      if (!practice.representativeName && profileDirector) {
+        practice = {
+          ...practice,
+          representativeName: profileDirector,
+        };
+      }
+      if (!practice.phone && profilePhone) {
+        practice = { ...practice, phone: profilePhone };
+      }
+      if (!practice.address && profileAddress) {
+        practice = { ...practice, address: profileAddress };
       }
       if (!directorName && profileDirector) directorName = profileDirector;
       if (!applicantPhone && profilePhone) applicantPhone = profilePhone;
@@ -483,6 +512,10 @@ export async function applyToEvent(req, res) {
           success: false,
           message: "치과명을 입력해 주세요.",
         });
+      }
+      // 로그인 신청: 원장명 미기재 시 담당자/계정명으로 대체한 뒤에도 없으면 치과명 사용
+      if (!directorName && authUser) {
+        directorName = trimStr(practice.name, 80);
       }
       if (!directorName) {
         return res.status(400).json({

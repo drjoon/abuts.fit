@@ -68,11 +68,12 @@ function practicePrefillFromUser(user: User): {
   directorName: string;
   applicantPhone: string;
   usesOralScan: boolean;
-  complete: boolean;
 } {
   const pp = user.practiceProfile || {};
   const name = String(pp.clinicName || user.companyName || "").trim();
-  const directorName = String(pp.directorName || "").trim();
+  const directorName = String(
+    pp.directorName || pp.staffName || user.name || name || "",
+  ).trim();
   const clinicPhone = String(pp.clinicPhone || "").trim();
   const mobile = String(pp.phone || "").trim();
   const address = [pp.address, pp.addressDetail]
@@ -91,7 +92,6 @@ function practicePrefillFromUser(user: User): {
     directorName,
     applicantPhone: mobile || clinicPhone,
     usesOralScan: Boolean(pp.usesOralScan),
-    complete: Boolean(name && directorName),
   };
 }
 
@@ -103,15 +103,12 @@ function scrollToApply() {
 }
 
 function SimplewayHero({
-  event,
   canApply,
-  isAuthenticated,
+  showSignupCta,
 }: {
-  event: MarketingEvent;
   canApply: boolean;
-  isAuthenticated: boolean;
+  showSignupCta: boolean;
 }) {
-  const guestCta = !isAuthenticated;
   return (
     <section className="relative overflow-hidden border-b border-slate-200/80">
       <div className="pointer-events-none absolute inset-0">
@@ -139,14 +136,16 @@ function SimplewayHero({
           {GRIBO_HERO_EYEBROW}
         </p>
         <h1 className="animate-in fade-in slide-in-from-bottom-3 fill-mode-both mt-4 max-w-3xl text-[clamp(2.1rem,5.5vw,3.75rem)] font-semibold leading-[1.12] tracking-tight text-[#0b2a5c] duration-700 delay-100">
-          {event.title}
+          심플웨이 신제품
+          <br />
+          그리보(Gribo) 출시 행사
         </h1>
         <p className="animate-in fade-in slide-in-from-bottom-3 fill-mode-both mt-5 max-w-xl text-base leading-relaxed text-slate-600 sm:text-lg duration-700 delay-200">
           {SIMPLEWAY_HERO_SUB}
         </p>
 
         <div className="animate-in fade-in slide-in-from-bottom-3 fill-mode-both mt-8 flex flex-wrap items-center gap-3 duration-700 delay-300">
-          {guestCta ? (
+          {showSignupCta ? (
             canApply ? (
               <Button
                 asChild
@@ -355,15 +354,8 @@ export default function EventApplyPage() {
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!event || submitting || !canApply || !isAuthenticated) return;
-    if (!prefill?.complete) {
-      toast({
-        title: "치과 정보가 필요합니다",
-        description: "설정에서 치과 프로필을 먼저 완료해 주세요.",
-        variant: "destructive",
-      });
+    if (!event || submitting || !canApply || !isAuthenticated || !prefill)
       return;
-    }
     setSubmitting(true);
     try {
       await eventsApi.apply(
@@ -469,9 +461,8 @@ export default function EventApplyPage() {
       {isSimpleway ? (
         <>
           <SimplewayHero
-            event={event}
             canApply={canApply}
-            isAuthenticated={isAuthenticated}
+            showSignupCta={!isAuthenticated || !practiceUser}
           />
           <KitSection />
           <ExtrasSection />
@@ -515,76 +506,40 @@ export default function EventApplyPage() {
             </h2>
             <p className="text-sm leading-relaxed text-slate-600">
               {isAuthenticated
-                ? "계정에 등록된 치과 정보로 신청합니다. 영업자가 방문해 제품·사용 방법을 안내합니다."
+                ? "영업자가 방문해 제품·사용 방법을 안내합니다."
                 : "회원가입 후 치과 정보를 등록하면 바로 신청할 수 있습니다."}
             </p>
           </div>
 
-          {!isAuthenticated ? (
-            <div className="space-y-4">
-              <Card className={cn(PUBLIC_CARD_CLASS, "rounded-3xl")}>
-                <CardContent className="space-y-3 py-8 text-center">
-                  <p className="text-sm text-slate-600">
-                    비회원은 회원가입 후 신청해 주세요.
-                  </p>
-                  {canApply ? (
-                    <Button
-                      asChild
-                      className="h-12 rounded-full bg-[#2563eb] px-8 text-base font-semibold hover:bg-[#1d4ed8]"
-                      size="lg"
-                    >
-                      <Link to="/signup">회원가입 후 신청하기</Link>
-                    </Button>
-                  ) : (
-                    <Button
-                      type="button"
-                      className="h-12 rounded-full"
-                      size="lg"
-                      disabled
-                    >
-                      신청 마감
-                    </Button>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-          ) : !practiceUser ? (
-            <Card className={cn(PUBLIC_CARD_CLASS, "rounded-3xl")}>
-              <CardContent className="py-8 text-center text-sm text-slate-600">
-                이 이벤트는 치과(의뢰 발신) 계정으로 신청할 수 있습니다.
-              </CardContent>
-            </Card>
-          ) : !prefill?.complete ? (
-            <Card className={cn(PUBLIC_CARD_CLASS, "rounded-3xl")}>
-              <CardContent className="space-y-3 py-8 text-center">
-                <p className="text-sm text-slate-600">
-                  치과 프로필(치과명·원장명)을 먼저 완료해 주세요.
-                </p>
-                <Button asChild variant="outline" className="rounded-full">
-                  <Link to="/dashboard/settings?tab=business">설정으로</Link>
+          {!isAuthenticated || !practiceUser ? (
+            <div className="flex justify-center py-2">
+              {canApply ? (
+                <Button
+                  asChild
+                  className="h-12 rounded-full bg-[#2563eb] px-8 text-base font-semibold hover:bg-[#1d4ed8]"
+                  size="lg"
+                >
+                  <Link to="/signup">회원가입 후 신청하기</Link>
                 </Button>
-              </CardContent>
-            </Card>
+              ) : (
+                <Button
+                  type="button"
+                  className="h-12 rounded-full"
+                  size="lg"
+                  disabled
+                >
+                  신청 마감
+                </Button>
+              )}
+            </div>
           ) : (
             <form onSubmit={onSubmit} className="space-y-5">
-              {prefill.practice.name ? (
-                <p className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
-                  <span className="font-medium text-slate-900">
-                    {prefill.practice.name}
-                  </span>
-                  {prefill.directorName
-                    ? ` · ${prefill.directorName} 원장님`
-                    : ""}
-                  {prefill.usesOralScan ? " · 구강스캐너 사용" : ""}
-                </p>
-              ) : null}
-
               {showDealer ? (
                 <Card className={cn(PUBLIC_CARD_CLASS, "rounded-3xl")}>
                   <CardHeader className="space-y-2">
                     <CardTitle className="flex items-center gap-2 text-base text-slate-900">
                       <Truck className="h-4 w-4 text-sky-600" />
-                      거래하시는 지역 재료상 입력 (옵션)
+                      거래하시는 지역 재료상 입력
                     </CardTitle>
                     <div className="flex gap-2 rounded-2xl border border-sky-100 bg-sky-50/80 px-3 py-2.5 text-sm leading-relaxed text-sky-900">
                       <Info className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" />
