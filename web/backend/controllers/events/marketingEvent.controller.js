@@ -302,6 +302,26 @@ export async function ensureDefaultMarketingEvents() {
       );
       existing = legacy;
     }
+  } else {
+    // 신규 slug가 이미 있으면 구 slug·구 제목 잔여 문서·신청 삭제
+    const legacyDocs = await MarketingEvent.find({
+      $or: [
+        { slug: SIMPLEWAY_SAMPLE_SLUG_LEGACY },
+        { title: "심플웨이 신제품 샘플 배포 행사" },
+        { title: "그리보 신제품 샘플 배포 행사" },
+      ],
+    })
+      .select({ _id: 1 })
+      .lean();
+    const legacyIds = legacyDocs
+      .map((d) => d._id)
+      .filter((id) => String(id) !== String(existing._id));
+    if (legacyIds.length) {
+      await MarketingEventApplication.deleteMany({
+        eventId: { $in: legacyIds },
+      });
+      await MarketingEvent.deleteMany({ _id: { $in: legacyIds } });
+    }
   }
 
   if (existing) {

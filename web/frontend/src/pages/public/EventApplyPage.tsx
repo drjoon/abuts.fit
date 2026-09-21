@@ -28,6 +28,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/shared/hooks/use-toast";
 import {
   eventsApi,
@@ -292,6 +293,7 @@ export default function EventApplyPage() {
   );
 
   const [dealer, setDealer] = useState<EventPlaceFields>(emptyPlace);
+  const [usesOralScan, setUsesOralScan] = useState(false);
 
   const isSimpleway = slug === SIMPLEWAY_SAMPLE_SLUG;
   const canApply = event?.status !== "closed";
@@ -300,6 +302,10 @@ export default function EventApplyPage() {
     () => (user && practiceUser ? practicePrefillFromUser(user) : null),
     [user, practiceUser],
   );
+
+  useEffect(() => {
+    if (prefill) setUsesOralScan(Boolean(prefill.usesOralScan));
+  }, [prefill]);
 
   useEffect(() => {
     if (!slug) return;
@@ -365,7 +371,7 @@ export default function EventApplyPage() {
           directorName: prefill.directorName,
           dealer,
           applicantPhone: prefill.applicantPhone || prefill.practice.phone,
-          usesOralScan: prefill.usesOralScan,
+          usesOralScan,
         },
         token,
       );
@@ -534,6 +540,33 @@ export default function EventApplyPage() {
             </div>
           ) : (
             <form onSubmit={onSubmit} className="space-y-5">
+              <Card className={cn(PUBLIC_CARD_CLASS, "rounded-3xl")}>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-base text-slate-900">
+                    <ScanLine className="h-4 w-4 text-sky-600" />
+                    구강 스캔 사용 여부
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3.5">
+                    <Checkbox
+                      className="mt-0.5"
+                      checked={usesOralScan}
+                      onCheckedChange={(v) => setUsesOralScan(v === true)}
+                      disabled={!canApply}
+                    />
+                    <span className="space-y-0.5">
+                      <span className="block text-sm font-medium text-slate-900">
+                        구강 스캐너를 사용하고 있습니다
+                      </span>
+                      <span className="block text-xs leading-relaxed text-slate-500">
+                        사용 중이시면 스캔바 등 디지털 지원을 안내해 드립니다.
+                      </span>
+                    </span>
+                  </label>
+                </CardContent>
+              </Card>
+
               {showDealer ? (
                 <Card className={cn(PUBLIC_CARD_CLASS, "rounded-3xl")}>
                   <CardHeader className="space-y-2">
