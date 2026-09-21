@@ -11,6 +11,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { Mail, Lock, Eye, EyeOff } from "lucide-react";
 import { useToast } from "@/shared/hooks/use-toast";
 import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath";
+import { landingPathIfOnboardingDone } from "@/shared/navigation/postOnboardingReturn";
 import { AuthMarketingPanel } from "@/features/auth/AuthMarketingPanel";
 
 type DevAccount = {
@@ -115,7 +116,11 @@ export const LoginPage = () => {
     try {
       const result = await login(credential, password);
       if (result.success) {
-        navigate(resolvePostLoginPath(), { replace: true });
+        const user = useAuthStore.getState().user;
+        navigate(
+          landingPathIfOnboardingDone(user, resolvePostLoginPath()),
+          { replace: true },
+        );
       } else {
         toast({
           title: "로그인 실패",

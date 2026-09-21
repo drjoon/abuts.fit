@@ -35,6 +35,7 @@ import { SignupWizardStep2 } from "./signup/SignupWizardStep2";
 import { SignupSocialWizardStep1 } from "./signup/SignupSocialWizardStep1";
 import { SignupWizardAccountStep } from "./signup/SignupWizardAccountStep";
 import { clearOnboardingLocalStorage } from "@/shared/onboarding/clearOnboardingLocalStorage";
+import { rememberPostOnboardingReturn } from "@/shared/navigation/postOnboardingReturn";
 
 const SIGNUP_PROGRESS_KEY = "signupWizardProgress";
 
@@ -138,6 +139,11 @@ export const SignupPage = () => {
     const ref = searchParams.get("ref");
     const code = ref && ref.trim().length > 0 ? ref.trim() : undefined;
     return code;
+  }, [searchParams]);
+
+  useEffect(() => {
+    const next = searchParams.get("next");
+    if (next) rememberPostOnboardingReturn(next);
   }, [searchParams]);
 
   const labPartnerToken = useMemo(() => {

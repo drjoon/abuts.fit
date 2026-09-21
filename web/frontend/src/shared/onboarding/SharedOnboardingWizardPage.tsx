@@ -13,6 +13,7 @@ import {
   shouldGatePaidRequestorAccess,
 } from "@/shared/business/requestorCapabilities";
 import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath";
+import { peekPostOnboardingReturn } from "@/shared/navigation/postOnboardingReturn";
 
 const resolvePostOnboardingPath = (user: {
   role?: string | null;
@@ -49,6 +50,10 @@ const resolvePostOnboardingPath = (user: {
   return resolveEntryDashboardPath(user);
 };
 
+const pathAfterOnboarding = (
+  user: Parameters<typeof resolvePostOnboardingPath>[0],
+) => peekPostOnboardingReturn() || resolvePostOnboardingPath(user);
+
 export const SharedOnboardingWizardPage = () => {
   const { user, token, setUser, loginWithToken } = useAuthStore();
   const navigate = useNavigate();
@@ -57,7 +62,7 @@ export const SharedOnboardingWizardPage = () => {
   useEffect(() => {
     if (!user) return;
     if (!user.role) {
-      navigate(resolvePostOnboardingPath(user), { replace: true });
+      navigate(pathAfterOnboarding(user), { replace: true });
     }
   }, [navigate, user]);
 
@@ -94,9 +99,10 @@ export const SharedOnboardingWizardPage = () => {
   };
 
   const handleComplete = () => {
+    const returnTo = peekPostOnboardingReturn();
     void markWizardCompleted().finally(() => {
       const latest = useAuthStore.getState().user;
-      navigate(resolvePostOnboardingPath(latest), { replace: true });
+      navigate(returnTo || resolvePostOnboardingPath(latest), { replace: true });
     });
   };
 
@@ -105,7 +111,7 @@ export const SharedOnboardingWizardPage = () => {
   }
 
   if (user?.onboardingWizardCompleted) {
-    return <Navigate to={resolvePostOnboardingPath(user)} replace />;
+    return <Navigate to={pathAfterOnboarding(user)} replace />;
   }
 
   return (

@@ -664,7 +664,7 @@ Notes:
     - 역할 라디오: `REQUESTOR_KIND_LABEL` — practice=`치과 (기공실 포함)`, lab=`기공소`
     - 서비스 선택 UI 없음. `requestorServices`는 paid-only(`{free:false,paid:true}`). 레거시 free는 읽기 시 paid 승격
     - 역할 선택 시 사업자등록증 등록·검증 필수
-  - 온보딩 완료 랜딩: `/dashboard`
+  - 온보딩 완료 랜딩: 기본 `/dashboard`. 행사 페이지 「회원가입 후 신청」으로 들어온 경우(`sessionStorage` `postOnboardingReturnTo`)는 해당 `/events/:slug#event-apply` 신청 폼.
   - 생산의뢰 게이트: `canUsePaidServices({ businessVerified, services })` = `paid && verified`
     - `BusinessPaidAccessGate`, 사이드바 `isPaidRequestorPath`, 설정 `PAID_REQUESTOR_SETTINGS_TABS`
     - 변경 후 `notifyRequestorAccessUpdated`

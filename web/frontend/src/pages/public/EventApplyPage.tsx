@@ -5,7 +5,7 @@
 // - web/frontend/src/pages/public/EventsPage.tsx
 // - web/frontend/src/store/useAuthStore.ts
 import { useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useLocation, useParams } from "react-router-dom";
 import {
   ArrowDown,
   ArrowLeft,
@@ -46,6 +46,11 @@ import {
 } from "@/shared/events/simplewaySampleCampaign";
 import { cn } from "@/shared/ui/cn";
 import { useAuthStore, type User } from "@/store/useAuthStore";
+import {
+  consumePostOnboardingReturn,
+  eventApplySignupHref,
+  peekPostOnboardingReturn,
+} from "@/shared/navigation/postOnboardingReturn";
 
 const emptyPlace = (): EventPlaceFields => ({
   name: "",
@@ -106,9 +111,11 @@ function scrollToApply() {
 function SimplewayHero({
   canApply,
   showSignupCta,
+  signupHref,
 }: {
   canApply: boolean;
   showSignupCta: boolean;
+  signupHref: string;
 }) {
   return (
     <section className="relative overflow-hidden border-b border-slate-200/80">
@@ -153,7 +160,7 @@ function SimplewayHero({
                 size="lg"
                 className="h-12 rounded-full bg-[#2563eb] px-7 text-base font-semibold text-white shadow-[0_12px_32px_rgba(37,99,235,0.28)] hover:bg-[#1d4ed8]"
               >
-                <Link to="/signup">회원가입 후 신청하기</Link>
+                <Link to={signupHref}>회원가입 후 신청하기</Link>
               </Button>
             ) : (
               <Button
@@ -278,6 +285,7 @@ function ExtrasSection() {
 
 export default function EventApplyPage() {
   const { slug = "" } = useParams();
+  const location = useLocation();
   const { toast } = useToast();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const token = useAuthStore((s) => s.token);
@@ -297,6 +305,7 @@ export default function EventApplyPage() {
 
   const isSimpleway = slug === SIMPLEWAY_SAMPLE_SLUG;
   const canApply = event?.status !== "closed";
+  const signupHref = eventApplySignupHref(slug);
   const practiceUser = isPracticeApplicant(user);
   const prefill = useMemo(
     () => (user && practiceUser ? practicePrefillFromUser(user) : null),
@@ -357,6 +366,30 @@ export default function EventApplyPage() {
       cancelled = true;
     };
   }, [isAuthenticated, token, slug, practiceUser]);
+
+  useEffect(() => {
+    if (loading || applicationCheckLoading) return;
+    const pending = peekPostOnboardingReturn();
+    const here = `${location.pathname}${location.hash}`;
+    const onboarded = Boolean(
+      user?.onboardingWizardCompleted || user?.businessVerified,
+    );
+    if (pending && onboarded && pending === here) {
+      consumePostOnboardingReturn();
+    }
+    if (location.hash !== "#event-apply") return;
+    document.getElementById("event-apply")?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  }, [
+    applicationCheckLoading,
+    loading,
+    location.hash,
+    location.pathname,
+    user?.businessVerified,
+    user?.onboardingWizardCompleted,
+  ]);
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -469,6 +502,7 @@ export default function EventApplyPage() {
           <SimplewayHero
             canApply={canApply}
             showSignupCta={!isAuthenticated || !practiceUser}
+            signupHref={signupHref}
           />
           <KitSection />
           <ExtrasSection />
@@ -525,7 +559,7 @@ export default function EventApplyPage() {
                   className="h-12 rounded-full bg-[#2563eb] px-8 text-base font-semibold hover:bg-[#1d4ed8]"
                   size="lg"
                 >
-                  <Link to="/signup">회원가입 후 신청하기</Link>
+                  <Link to={signupHref}>회원가입 후 신청하기</Link>
                 </Button>
               ) : (
                 <Button
