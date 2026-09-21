@@ -210,7 +210,7 @@ function KitSection() {
           <Package className="hidden h-8 w-8 text-sky-500/80 sm:block" />
         </div>
 
-        <ul className="mt-10 grid gap-4 sm:grid-cols-3">
+        <ul className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {SIMPLEWAY_SAMPLE_KIT.map((item, i) => (
             <li
               key={item.id}
@@ -228,9 +228,11 @@ function KitSection() {
                 <h3 className="mt-5 text-lg font-semibold text-slate-900">
                   {item.name}
                 </h3>
-                <p className="mt-1 text-sm font-medium tabular-nums text-sky-700">
-                  {item.spec}
-                </p>
+                {item.spec ? (
+                  <p className="mt-1 text-sm font-medium tabular-nums text-sky-700">
+                    {item.spec}
+                  </p>
+                ) : null}
                 <p className="mt-3 text-sm text-slate-500">{item.note}</p>
               </div>
             </li>
