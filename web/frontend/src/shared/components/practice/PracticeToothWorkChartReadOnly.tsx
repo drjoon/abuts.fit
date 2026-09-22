@@ -486,11 +486,16 @@ export const PracticeToothWorkChartReadOnly = ({
   };
 
   const renderTypeChangeLog = (spanKey: string, currentType: string) => {
-    if (!typeChangeEnabled) return null;
     const sourceType =
       sourceProsthesisTypeBySpanKey?.get(spanKey)?.trim() || "";
     const nextType = String(currentType || "").trim();
     if (!sourceType || !nextType || sourceType === nextType) return null;
+    if (
+      !typeChangeEnabled &&
+      !(sourceProsthesisTypeBySpanKey && sourceProsthesisTypeBySpanKey.size > 0)
+    ) {
+      return null;
+    }
     return (
       <div
         className="mt-1.5 flex w-full min-w-0 flex-col items-center gap-0.5 rounded-md border border-slate-200 bg-slate-50/90 px-1 py-1.5 text-center"

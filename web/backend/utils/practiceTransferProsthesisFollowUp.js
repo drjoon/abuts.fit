@@ -255,6 +255,45 @@ const cloneRowForFollowUp = (sourceRow, prosthesisType, bridgeLinkedTeeth) => {
  * 진행 탭 시스템 채팅용 toothWorks — 차트에 임플란트/어벗이 보이도록 스펙 포함.
  * (의뢰 탭은 transfer.toothWorks를 직접 읽으므로 별도.)
  */
+/** 보철 종류 변경 채팅 — 스팬별 변경 전 종류(모달 카드 아래 기록과 동일) */
+export const buildTypeChangeFromBySpanKeyOnAppend = (
+  sourceToothWorks,
+  followUpRows,
+) => {
+  const pending = listPendingFollowUpSourceSpans(sourceToothWorks);
+  const pendingByKey = new Map(
+    pending.map((span) => [spanKey(span.teeth), span]),
+  );
+  const out = {};
+  for (const row of normalizeFollowUpToothWorksInput(followUpRows)) {
+    const key = followUpRowSpanKey(row);
+    const span = pendingByKey.get(spanKey(linkedTeethOf(row)));
+    const from = String(span?.sourceRow?.prosthesisType || "").trim();
+    const to = String(row?.prosthesisType || "").trim();
+    if (from && to && from !== to) out[key] = from;
+  }
+  return Object.keys(out).length > 0 ? out : null;
+};
+
+export const buildTypeChangeFromBySpanKeyOnUpdate = (prevRows, nextRows) => {
+  const prevByKey = new Map(
+    (Array.isArray(prevRows) ? prevRows : []).map((row) => [
+      followUpRowSpanKey(row),
+      row,
+    ]),
+  );
+  const out = {};
+  for (const row of normalizeFollowUpToothWorksInput(nextRows)) {
+    const key = followUpRowSpanKey(row);
+    const prev = prevByKey.get(key);
+    if (!prev) continue;
+    const from = String(prev.prosthesisType || "").trim();
+    const to = String(row?.prosthesisType || "").trim();
+    if (from && to && from !== to) out[key] = from;
+  }
+  return Object.keys(out).length > 0 ? out : null;
+};
+
 export const serializeFollowUpToothWorksForChatPayload = (rows) => {
   const list = Array.isArray(rows) ? rows : [];
   return list.map((row) => {

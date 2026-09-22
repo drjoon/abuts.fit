@@ -16,6 +16,8 @@ import {
   pickSourceTempRowsForFollowUpCredit,
   PROSTHESIS_FEE_STAGE_TEMP_KEY,
   removeProsthesisFeeStagesByFollowUpIndexes,
+  buildTypeChangeFromBySpanKeyOnAppend,
+  buildTypeChangeFromBySpanKeyOnUpdate,
   serializeFollowUpToothWorksForChatPayload,
   serializeProsthesisFeeStagesForApi,
   stripFollowUpToothWorksForRecord,
@@ -52,6 +54,49 @@ describe("practiceTransferProsthesisFollowUp", () => {
     expect(draft[0].prosthesisPhase).toBe("followUp");
     expect(draft[0].customAbutment).toBe(true);
     expect(draft[0].implantManufacturer).toBe("Osstem");
+  });
+
+  test("buildTypeChangeFromBySpanKeyOnAppend records inlay to crown", () => {
+    const source = [
+      {
+        toothNumber: "36",
+        prosthesisType: "인레이",
+        bridgeLinkedTeeth: ["36"],
+      },
+    ];
+    const followUp = [
+      {
+        toothNumber: "36",
+        prosthesisType: "크라운",
+        bridgeLinkedTeeth: ["36"],
+        prosthesisPhase: "followUp",
+      },
+    ];
+    expect(buildTypeChangeFromBySpanKeyOnAppend(source, followUp)).toEqual({
+      "36": "인레이",
+    });
+  });
+
+  test("buildTypeChangeFromBySpanKeyOnUpdate records crown back to inlay", () => {
+    const prev = [
+      {
+        toothNumber: "36",
+        prosthesisType: "크라운",
+        bridgeLinkedTeeth: ["36"],
+        prosthesisPhase: "followUp",
+      },
+    ];
+    const next = [
+      {
+        toothNumber: "36",
+        prosthesisType: "인레이",
+        bridgeLinkedTeeth: ["36"],
+        prosthesisPhase: "followUp",
+      },
+    ];
+    expect(buildTypeChangeFromBySpanKeyOnUpdate(prev, next)).toEqual({
+      "36": "크라운",
+    });
   });
 
   test("serializeFollowUpToothWorksForChatPayload keeps implant/abutment specs", () => {

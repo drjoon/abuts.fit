@@ -1521,7 +1521,7 @@ export function PracticeTransferFeeEstimate({
                       <span className="font-medium text-slate-600">
                         {showFinalFeeBar && !currentStageSection
                           ? `${finalFeeLabel} `
-                          : "이번 단계 기공비 "}
+                          : `${title} `}
                       </span>
                       {formatManWon(currentStageAmount)}
                       {surchargeLabel ? (

@@ -161,6 +161,8 @@ import {
   patchProsthesisFeeStageArrivalYmd,
   PROSTHESIS_FEE_STAGE_TEMP_KEY,
   removeProsthesisFeeStagesByFollowUpIndexes,
+  buildTypeChangeFromBySpanKeyOnAppend,
+  buildTypeChangeFromBySpanKeyOnUpdate,
   serializeFollowUpToothWorksForChatPayload,
   serializeProsthesisFeeStagesForApi,
   stripFollowUpToothWorksForRecord,
@@ -5060,6 +5062,10 @@ export async function appendPracticeTransferProsthesis(req, res) {
     const targetLabAnchorIdText = String(updated.targetLabAnchorId || "").trim();
     const chatTitle =
       followUpKind === "typeChange" ? "보철 종류 변경 리메이크" : "후속 보철 추가";
+    const typeChangeFromBySpanKey =
+      followUpKind === "typeChange"
+        ? buildTypeChangeFromBySpanKeyOnAppend(sourceToothWorks, followUpRows)
+        : null;
 
     runProsthesisFollowUpSideEffectsInBackground({
       practiceBusinessAnchorId: req.user?.businessAnchorId,
@@ -5079,6 +5085,7 @@ export async function appendPracticeTransferProsthesis(req, res) {
           stageKey: zirconiaProsthesisFeeStageKey(followUpIndex),
           billingDelta: followUpRecord.billingDelta || null,
           toothWorks: serializeFollowUpToothWorksForChatPayload(followUpRows),
+          ...(typeChangeFromBySpanKey ? { typeChangeFromBySpanKey } : {}),
         },
       },
       realtimePayload: {
@@ -5445,6 +5452,7 @@ export async function updatePracticeTransferProsthesisFollowUp(req, res) {
       : [];
     let typesChanged = false;
     let specsChanged = false;
+    let typeChangeFromBySpanKey = null;
     let updatedFollowUpRows = [];
     let nextBilling =
       doc.billing && typeof doc.billing === "object" ? { ...doc.billing } : {};
@@ -5556,6 +5564,10 @@ export async function updatePracticeTransferProsthesisFollowUp(req, res) {
       }
 
       if (typesChanged) {
+        typeChangeFromBySpanKey = buildTypeChangeFromBySpanKeyOnUpdate(
+          currentFollowUpRows,
+          requestedRows,
+        );
         if (!targetLabAnchorId || !practiceAnchorId) {
           return res.status(400).json({
             success: false,
@@ -5906,6 +5918,21 @@ export async function updatePracticeTransferProsthesisFollowUp(req, res) {
             ? `후속 보철 스펙 변경\n치과도착일 ${rawYmd}`
             : `후속 최종 보철 제작 치과도착일 변경: ${rawYmd}`,
         systemEvent: "practice_transfer_prosthesis_follow_up_update",
+        ...(typesChanged
+          ? {
+              systemPayload: {
+                arrivalYmd: rawYmd,
+                followUpIndex,
+                followUpKind: "typeChange",
+                stageKey: zirconiaProsthesisFeeStageKey(followUpIndex),
+                billingDelta: followUps[idx]?.billingDelta || null,
+                toothWorks: serializeFollowUpToothWorksForChatPayload(
+                  updatedFollowUpRows,
+                ),
+                ...(typeChangeFromBySpanKey ? { typeChangeFromBySpanKey } : {}),
+              },
+            }
+          : {}),
       },
       realtimePayload: {
         source: "updatePracticeTransferProsthesisFollowUp",
