@@ -15,7 +15,7 @@ export function CreditSectionHeader({
 }: {
   icon: LucideIcon;
   title: string;
-  description?: string;
+  description?: ReactNode;
   trailing?: ReactNode;
 }) {
   return (

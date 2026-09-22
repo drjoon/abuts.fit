@@ -2685,10 +2685,10 @@ function resolveAdminCreditPeriodRange(req) {
 
 /**
  * 어벗츠 3사업 축 기간 집계 (관리자 정산 상단 SSOT).
- * 1) 커스텀 어벗: 의뢰자 유료 소비 + 제조사 하청
- * 2) 자동매칭 수수료: PRACTICE_TRANSFER_ESCROW_RELEASE.meta.abutsRevenueAmount
- * 3) 기공소 직접 운영: internalLab LAB_SETTLEMENT_CREDIT 적립
- * (레거시) 치과 월 구독료 PRACTICE_MEMBERSHIP_SPEND — 신규 과금 없음. 과거 장부만.
+ * 1) 스토어: STORE_SALE / REV_STORE_TAXABLE (과세 · 전액 어벗츠 · 분배 없음)
+ * 2) 커스텀어벗: 의뢰자 유료 소비 + 제조사 하청 + 잔여(딜러·개발운영·어벗츠)
+ * 3) 기공사업부: internalLab LAB_SETTLEMENT_CREDIT + 하청 수수료(subcontractFeeRate)
+ * (레거시) autoMatchFee·practiceMembership — 응답에 유지, UI 미노출.
  */
 export async function adminGetSettlementBusinessOverview(req, res) {
   try {
@@ -2702,17 +2702,65 @@ export async function adminGetSettlementBusinessOverview(req, res) {
 
     const occurredMatch = { occurredAt: { $gte: range.start, $lte: range.end } };
     const amountBaseExpr = { $ifNull: ["$amountExcludingVat", "$amount"] };
+    const amountInclusiveExpr = {
+      $ifNull: [
+        "$amountIncludingVat",
+        { $ifNull: ["$amount", "$amountExcludingVat"] },
+      ],
+    };
 
     const [
+      storeSaleRows,
       customAbutSpendRows,
       manufacturerPaidRows,
-      autoMatchFeeRows,
+      residualSplitRows,
+      subcontractFeeRows,
       internalLabAnchors,
       membershipSpendRows,
       activeMembershipCount,
       devopsAnchor,
       creditSettings,
     ] = await Promise.all([
+      LedgerLine.aggregate([
+        {
+          $match: {
+            accountCode: "REV_STORE_TAXABLE",
+            ownerRole: "admin",
+            ...occurredMatch,
+          },
+        },
+        {
+          $lookup: {
+            from: LedgerJournal.collection.name,
+            localField: "journalId",
+            foreignField: "journalId",
+            as: "journalDoc",
+          },
+        },
+        { $unwind: { path: "$journalDoc", preserveNullAndEmptyArrays: false } },
+        {
+          $match: {
+            "journalDoc.eventType": { $in: ["STORE_SALE", "REFUND"] },
+          },
+        },
+        {
+          $addFields: {
+            amountInclusive: amountInclusiveExpr,
+            amountSupply: amountBaseExpr,
+            vatAmount: { $ifNull: ["$vatAmount", 0] },
+            eventType: "$journalDoc.eventType",
+          },
+        },
+        {
+          $group: {
+            _id: "$eventType",
+            grossInclusive: { $sum: "$amountInclusive" },
+            supply: { $sum: "$amountSupply" },
+            vat: { $sum: "$vatAmount" },
+            count: { $sum: 1 },
+          },
+        },
+      ]),
       LedgerLine.aggregate([
         {
           $match: {
@@ -2778,14 +2826,43 @@ export async function adminGetSettlementBusinessOverview(req, res) {
         {
           $group: {
             _id: "$journalDoc.eventType",
-            amount: {
-              $sum: {
-                $ifNull: [
-                  "$amount",
-                  { $ifNull: ["$amountIncludingVat", "$amountExcludingVat"] },
-                ],
-              },
-            },
+            amount: { $sum: amountInclusiveExpr },
+            count: { $sum: 1 },
+          },
+        },
+      ]),
+      LedgerLine.aggregate([
+        {
+          $match: {
+            accountCode: { $in: ["REV_SALESMAN", "REV_DEVOPS", "REV_ADMIN"] },
+            ...occurredMatch,
+          },
+        },
+        {
+          $lookup: {
+            from: LedgerJournal.collection.name,
+            localField: "journalId",
+            foreignField: "journalId",
+            as: "journalDoc",
+          },
+        },
+        { $unwind: { path: "$journalDoc", preserveNullAndEmptyArrays: false } },
+        {
+          $match: {
+            "journalDoc.eventType": "REQUEST_SPEND_COMMIT",
+          },
+        },
+        {
+          $addFields: {
+            amountSupply: amountBaseExpr,
+            amountInclusive: amountInclusiveExpr,
+          },
+        },
+        {
+          $group: {
+            _id: "$accountCode",
+            supply: { $sum: "$amountSupply" },
+            inclusive: { $sum: "$amountInclusive" },
             count: { $sum: 1 },
           },
         },
@@ -2912,11 +2989,30 @@ export async function adminGetSettlementBusinessOverview(req, res) {
           ])
         : [];
 
+    const storeByType = new Map(
+      (storeSaleRows || []).map((r) => [String(r._id), r]),
+    );
+    const storeSale = storeByType.get("STORE_SALE");
+    const storeRefund = storeByType.get("REFUND");
+    const storeGrossInclusive = normalizeNumber(
+      Number(storeSale?.grossInclusive || 0) +
+        Number(storeRefund?.grossInclusive || 0),
+    );
+    const storeSupply = normalizeNumber(
+      Number(storeSale?.supply || 0) + Number(storeRefund?.supply || 0),
+    );
+    const storeVat = normalizeNumber(
+      Number(storeSale?.vat || 0) + Number(storeRefund?.vat || 0),
+    );
+
     const spendByType = new Map(
       (customAbutSpendRows || []).map((r) => [String(r._id), r]),
     );
     const mfgByType = new Map(
       (manufacturerPaidRows || []).map((r) => [String(r._id), r]),
+    );
+    const residualByCode = new Map(
+      (residualSplitRows || []).map((r) => [String(r._id), r]),
     );
 
     const paidSpendRequest = normalizeNumber(
@@ -2939,10 +3035,80 @@ export async function adminGetSettlementBusinessOverview(req, res) {
       Number(mfgByType.get("SHIPPING_SPEND_COMMIT")?.amount || 0),
     );
 
-    const { resolvePlatformFeeRate } = await import(
-      "../../services/creditRevenuePolicy.service.js"
+    const residualSalesmanSupply = normalizeNumber(
+      Number(residualByCode.get("REV_SALESMAN")?.supply || 0),
     );
+    const residualDevopsSupply = normalizeNumber(
+      Number(residualByCode.get("REV_DEVOPS")?.supply || 0),
+    );
+    const residualAdminSupply = normalizeNumber(
+      Number(residualByCode.get("REV_ADMIN")?.supply || 0),
+    );
+    const residualSalesmanInclusive = normalizeNumber(
+      Number(residualByCode.get("REV_SALESMAN")?.inclusive || 0),
+    );
+    const residualDevopsInclusive = normalizeNumber(
+      Number(residualByCode.get("REV_DEVOPS")?.inclusive || 0),
+    );
+
+    const {
+      resolvePlatformFeeRate,
+      resolveSubcontractFeeRate,
+    } = await import("../../services/creditRevenuePolicy.service.js");
     const platformFeeRate = resolvePlatformFeeRate(devopsAnchor?.payoutRates);
+    const subcontractFeeRate = resolveSubcontractFeeRate(
+      devopsAnchor?.payoutRates,
+    );
+
+    const subcontractFeeAmount = normalizeNumber(
+      Number(subcontractFeeRows?.[0]?.feeAmount || 0),
+    );
+    const subcontractFeeReleaseCount = normalizeNumber(
+      Number(subcontractFeeRows?.[0]?.releaseCount || 0),
+    );
+    const labSettlementEarn = normalizeNumber(
+      Number(internalLabEarnRows?.[0]?.settlementAmount || 0),
+    );
+    const labLineCount = normalizeNumber(
+      Number(internalLabEarnRows?.[0]?.lineCount || 0),
+    );
+
+    const customAbutPayload = {
+      periodPaidSpend: normalizeNumber(paidSpendRequest + paidSpendShipping),
+      periodPaidSpendRequest: paidSpendRequest,
+      periodPaidSpendShipping: paidSpendShipping,
+      periodPaidSpendRequestCount: paidSpendRequestCount,
+      periodPaidSpendShippingCount: paidSpendShippingCount,
+      manufacturerEarn: normalizeNumber(mfgPaidRequest + mfgPaidShipping),
+      manufacturerPaidEarn: normalizeNumber(mfgPaidRequest + mfgPaidShipping),
+      manufacturerPaidRequest: mfgPaidRequest,
+      manufacturerPaidShipping: mfgPaidShipping,
+      manufacturerRequestUnitPrice: Number(
+        creditSettings.manufacturerRequestUnitPrice || 8800,
+      ),
+      manufacturerShippingUnitPrice: Number(
+        creditSettings.manufacturerShippingUnitPrice || 3500,
+      ),
+      affiliateVatRate: Number(creditSettings.affiliateVatRate ?? 0.1),
+      residualSalesmanSupply,
+      residualDevopsSupply,
+      residualAdminSupply,
+      residualSalesmanInclusive,
+      residualDevopsInclusive,
+      residualTotalSupply: normalizeNumber(
+        residualSalesmanSupply + residualDevopsSupply + residualAdminSupply,
+      ),
+    };
+
+    const labDivisionPayload = {
+      periodSettlementEarn: labSettlementEarn,
+      periodLineCount: labLineCount,
+      anchorCount: internalLabIds.length,
+      subcontractFeeAmount,
+      subcontractFeeReleaseCount,
+      subcontractFeeRate,
+      periodRevenue: normalizeNumber(labSettlementEarn + subcontractFeeAmount),
+    };
 
     return res.json({
       success: true,
@@ -2951,40 +3117,25 @@ export async function adminGetSettlementBusinessOverview(req, res) {
           start: range.start.toISOString(),
           end: range.end.toISOString(),
         },
-        customAbut: {
-          periodPaidSpend: normalizeNumber(paidSpendRequest + paidSpendShipping),
-          periodPaidSpendRequest: paidSpendRequest,
-          periodPaidSpendShipping: paidSpendShipping,
-          periodPaidSpendRequestCount: paidSpendRequestCount,
-          periodPaidSpendShippingCount: paidSpendShippingCount,
-          manufacturerEarn: normalizeNumber(mfgPaidRequest + mfgPaidShipping),
-          manufacturerPaidEarn: normalizeNumber(mfgPaidRequest + mfgPaidShipping),
-          manufacturerPaidRequest: mfgPaidRequest,
-          manufacturerPaidShipping: mfgPaidShipping,
-          manufacturerRequestUnitPrice: Number(
-            creditSettings.manufacturerRequestUnitPrice || 8800,
-          ),
-          manufacturerShippingUnitPrice: Number(
-            creditSettings.manufacturerShippingUnitPrice || 3500,
-          ),
-          affiliateVatRate: Number(creditSettings.affiliateVatRate ?? 0.1),
+        store: {
+          periodGrossInclusive: storeGrossInclusive,
+          periodSupply: storeSupply,
+          periodVat: storeVat,
+          periodSaleCount: normalizeNumber(Number(storeSale?.count || 0)),
+          periodRefundCount: normalizeNumber(Number(storeRefund?.count || 0)),
         },
+        customAbut: customAbutPayload,
+        labDivision: labDivisionPayload,
+        // 레거시 키(구 UI·캐시 호환)
         autoMatchFee: {
-          periodFeeAmount: normalizeNumber(
-            Number(autoMatchFeeRows?.[0]?.feeAmount || 0),
-          ),
-          periodReleaseCount: normalizeNumber(
-            Number(autoMatchFeeRows?.[0]?.releaseCount || 0),
-          ),
+          periodFeeAmount: subcontractFeeAmount,
+          periodReleaseCount: subcontractFeeReleaseCount,
           platformFeeRate,
+          subcontractFeeRate,
         },
         internalLab: {
-          periodSettlementEarn: normalizeNumber(
-            Number(internalLabEarnRows?.[0]?.settlementAmount || 0),
-          ),
-          periodLineCount: normalizeNumber(
-            Number(internalLabEarnRows?.[0]?.lineCount || 0),
-          ),
+          periodSettlementEarn: labSettlementEarn,
+          periodLineCount: labLineCount,
           anchorCount: internalLabIds.length,
         },
         practiceMembership: {

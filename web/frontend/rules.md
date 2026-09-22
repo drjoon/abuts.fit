@@ -227,7 +227,7 @@ Notes:
   - 제조사: `src/pages/manufacturer/payments/PaymentsPage.tsx` — 거래 원장(일시·지급상태·금액·잔액·거래내역). 유형 열은 생략(모두 커스텀어벗 생산+배송비). **생산·배송은 KST 하루 1행**(의뢰 1건=어벗 1개라 기공의뢰처럼 못 묶음). 클릭 상세는 의뢰/배송을 별 섹션으로 나누고, 그 안에서 **배송자 BA**(requestor businessAnchor·우편함)별. PTX는 치과명이 아니라 기공소 BA로 표기. 장부·미정산=부가세 포함가(어벗 1개당 매입가 기본 8,800, 리메이크 6,600). 무료 크레딧 결제 포함 약정 단가가 미정산으로 쌓이며 말일 일괄 지급(재가산 없음·세금계산서÷1.1). 정산규칙 모달은 플랫폼 설정 매입가·배송단가를 표시.
   - 딜러: `src/pages/salesman/SalesmanPaymentsPage.tsx` — 부가세 포함가 장부·미정산, 지급=잔액 그대로·세금계산서(÷1.1)
   - 개발운영사: `src/pages/devops/DevopsPaymentsPage.tsx` — 부가세 포함가 장부·미정산, 지급=잔액 그대로·세금계산서(÷1.1)
-  - 관리자: `src/pages/admin/AdminPaymentsPage.tsx` — 어벗츠 3사업 축 + 관계사 잔여 분배(어벗츠 면세)
+  - 관리자: `src/pages/admin/AdminPaymentsPage.tsx` — 스토어·커스텀어벗·기공사업부 + 관계사 잔여 분배(커스텀어벗)
 
 ## 1. 구조
 
@@ -614,12 +614,12 @@ Notes:
   - 상단 합계는 2칸(`미정산` · `전월 지급`). `DashboardShell.statsGridClassName`을 `sm:grid-cols-2`로 두고 카드 높이는 compact.
 
 - 관리자 정산(`AdminPaymentsPage`) 표시 정책:
-  - 상단 3사업 축(선택형 카드): (1) 커스텀 어벗 생산·공급 — 기공소 디자인 → 애크로덴트 생산 → 치과 납품(하청 정산) (2) 자동매칭 수수료 (3) 기공소 직접 운영.
+  - 상단 3사업 축(선택형 카드): (1) 스토어 (2) 커스텀어벗 (3) 기공사업부. 각 축에 매출·지출·분배를 현재 룰대로 표시.
   - 집계 API: `GET /api/admin/credits/settlement-business-overview` (기간=`period`/`startDate`/`endDate`).
-    - (1) 의뢰자 유료 소비(`REQUEST_SPEND_COMMIT`/`SHIPPING_SPEND_COMMIT`) + 제조사 하청(유료·무료 약정 단가 전액)
-    - (2) `PRACTICE_TRANSFER_ESCROW_RELEASE.meta.abutsRevenueAmount`
-    - (3) `internalLab` `LAB_SETTLEMENT_CREDIT` 적립
-  - 카드 선택 시 해당 사업 상세 패널. 하단「관계사 잔여 분배」는 제조사·딜러사·개발운영사(과세·세금계산서)·어벗츠(면세·계산서).
+    - (1) 스토어: `REV_STORE_TAXABLE`(`STORE_SALE`/`REFUND`) 포함가·공급·VAT · 분배 없음
+    - (2) 커스텀어벗: 의뢰자 유료 소비 + 제조사 하청 + 잔여(`REV_SALESMAN`/`REV_DEVOPS`/`REV_ADMIN`, `REQUEST_SPEND_COMMIT`만)
+    - (3) 기공사업부: `internalLab` `LAB_SETTLEMENT_CREDIT` + 하청 수수료(`PRACTICE_TRANSFER_ESCROW_RELEASE.meta.abutsRevenueAmount`)
+  - 카드 선택 시 해당 사업 상세 패널. 커스텀어벗 선택 시「관계사 잔여 분배」(딜러·개발운영·어벗츠).
   - 기간 필터는 `PeriodFilter`(KST). `PricingPolicyDialog`는 가격·출고 안내만(사업 축 UI 아님).
   - UI: `creditPageUi` 패널/스탯 타일 + 선택형 사업 카드.
 
