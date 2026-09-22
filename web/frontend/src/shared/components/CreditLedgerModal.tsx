@@ -496,7 +496,7 @@ type LedgerDisplayRow = {
 
 /** 사이드바 SSOT: 치과 기공소에 ↔ 기공소 치과로부터 */
 const PRACTICE_TRANSFER_TYPE_LABEL = "기공의뢰-기공소에";
-const LAB_RECEIVE_TYPE_LABEL = "기공의뢰-치과로부터";
+const LAB_RECEIVE_TYPE_LABEL = "기공의뢰-어벗츠하청";
 const LAB_REMAKE_CHARGE_TYPE_LABEL = "리메이크 청구";
 /** 사이드바 SSOT: 치과 어벗츠에 ↔ 기공소 어벗츠로 */
 const ABUTMENT_DESIGN_TYPE_LABEL = "기공의뢰-어벗츠에";
@@ -743,7 +743,7 @@ const classifyPracticeTransferPart = (
 
 const settlementShippingRouteLabel = (route: PracticeTransferRoute) => {
   if (route === "abuts") return "기공소→어벗츠";
-  if (route === "lab") return "치과→기공소";
+  if (route === "lab") return "어벗츠→기공소";
   return "배송비";
 };
 

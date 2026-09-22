@@ -13,6 +13,7 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
 // - 2026-09-20: lab/remake/follow-up 플랫폼 수수료 pushRevenueLines에 creditSettings 전달(2% 적립 크래시 수정).
 // - 2026-09-20: 작업시작 시 hold 저널 생성 실패면 billed 처리 금지(heldAt만 남는 정산 누락 방지).
+// - 2026-09-23: 어벗츠 원청 정산 — gross→prime, 하청 매입→assignee. 장부 라벨 치과→어벗츠.
 // - 2026-09-20: 리메이크·후속 적립도 subcontracted 반영(하청 %).
 // - 2026-09-20: 비거래처 어벗 해제는 제조사 발송 유지. 가공 진입 이동 금지.
 // - 2026-09-20: blockedFromSettlement — labSettledAt 있으면 제외 안 함(확정 적립 통계·내역 누락 방지).
@@ -73,13 +74,14 @@ import mongoose, { Types } from "mongoose";
 
 /** 치과 크레딧 내역 유형 라벨 SSOT */
 export const PRACTICE_TRANSFER_LEDGER_LABELS = {
-  holdLab: "기공비 보류(치과→기공소)",
+  holdLab: "기공비 보류(치과→어벗츠)",
   holdAbutment: "기공비 보류(치과→어벗츠)",
   holdAdjust: "기공비 보류 조정",
   // 레거시: holdShippingLab / shippingLab(기공소→치과) 라벨 삭제 — 해당 방향 배송 무료.
   holdShippingAbutment: "배송비 보류(기공소→어벗츠)",
-  releaseLab: "기공비(치과→기공소)",
+  releaseLab: "기공비(치과→어벗츠)",
   releaseAbutment: "기공비(치과→어벗츠)",
+  subcontractPurchase: "하청(매입) 기공비(어벗츠→기공소)",
   shippingAbutment: "배송비(기공소→어벗츠)",
   shippingAbutsToManufacturer: "배송비(어벗츠→제조사)",
 };
@@ -166,6 +168,7 @@ import {
   isPracticeTransferSubcontracted,
   resolveFeeScheduleLabAnchorId,
   resolvePerformingLabAnchorId,
+  resolvePracticeTransferSettlementParties,
 } from "../utils/practiceTransferAutoMatch.js";
 import {
   assertLabWithinAutoMatchBudget,
@@ -3377,7 +3380,9 @@ export async function settlePracticeToLabShareIfReady({
 }
 
 /**
- * 기공소 발송(mark-complete): 기공소몫 에스크로 해제 → 기공크레딧 총액 적립 + 플랫폼 수수료 차감.
+ * 기공소 발송(mark-complete): 기공비 에스크로 해제.
+ * 어벗츠 원청: gross→internalLab, 하청 있으면 매입액→assignee, 잔여=플랫폼 수수료.
+ * 레거시 외부 직접 지정: performing lab에 전액(수수료 정책 그대로).
  * 커스텀어벗은 디자인 STL + 생산비 지급 전에는 released=false.
  */
 export async function releasePracticeTransferLabShare({
@@ -3389,7 +3394,8 @@ export async function releasePracticeTransferLabShare({
 }) {
   const transferId = transfer?._id;
   const practiceAnchorId = transfer?.practiceBusinessAnchorId;
-  const labAnchorId = resolvePerformingLabAnchorId(transfer) || transfer?.targetLabAnchorId;
+  const parties = resolvePracticeTransferSettlementParties(transfer);
+  const labAnchorId = parties.grossOwnerId;
   if (!transferId || !practiceAnchorId || !labAnchorId) {
     return { released: false, reason: "missing_anchors" };
   }
@@ -3499,7 +3505,13 @@ export async function releasePracticeTransferLabShare({
     0,
     Math.round(labFeeTotal * Number(feeRateApplied || 0)),
   );
-  const labNet = Math.max(0, labFeeTotal - platformFee);
+  const purchasePayeeId = parties.purchasePayeeId;
+  const purchaseAmount = purchasePayeeId
+    ? Math.max(0, labFeeTotal - platformFee)
+    : 0;
+  const labNet = purchasePayeeId
+    ? purchaseAmount
+    : Math.max(0, labFeeTotal - platformFee);
 
   const fromPaid = Math.max(
     0,
@@ -3589,9 +3601,57 @@ export async function releasePracticeTransferLabShare({
           itemLabel: PRACTICE_TRANSFER_LEDGER_LABELS.releaseLab,
           feeRateApplied,
           labFee: labFeeTotal,
+          abutsPrime: Boolean(parties.abutsPrime),
         },
       },
     ];
+
+    if (purchasePayeeId && purchaseAmount > 0) {
+      releaseLines.push(
+        {
+          accountCode: "LAB_SETTLEMENT_CREDIT",
+          ownerRole: "requestor",
+          ownerId: String(labAnchorId),
+          amount: -purchaseAmount,
+          amountExcludingVat: -purchaseAmount,
+          vatAmount: 0,
+          creditKind: "SETTLEMENT",
+          refType: "PRACTICE_TRANSFER",
+          refId: transferId,
+          meta: {
+            source: "practice_transfer_subcontract_purchase",
+            displayKind: "subcontract_purchase",
+            displayLabel: PRACTICE_TRANSFER_LEDGER_LABELS.subcontractPurchase,
+            itemLabel: PRACTICE_TRANSFER_LEDGER_LABELS.subcontractPurchase,
+            feeRateApplied,
+            labFee: labFeeTotal,
+            purchaseAmount,
+            purchasePayeeId: String(purchasePayeeId),
+          },
+        },
+        {
+          accountCode: "LAB_SETTLEMENT_CREDIT",
+          ownerRole: "requestor",
+          ownerId: String(purchasePayeeId),
+          amount: purchaseAmount,
+          amountExcludingVat: purchaseAmount,
+          vatAmount: 0,
+          creditKind: "SETTLEMENT",
+          refType: "PRACTICE_TRANSFER",
+          refId: transferId,
+          meta: {
+            source: "practice_transfer_subcontract_purchase",
+            displayKind: "lab_credit",
+            displayLabel: "기공크레딧 적립",
+            itemLabel: PRACTICE_TRANSFER_LEDGER_LABELS.subcontractPurchase,
+            feeRateApplied,
+            labFee: labFeeTotal,
+            purchaseAmount,
+            primeLabAnchorId: String(labAnchorId),
+          },
+        },
+      );
+    }
 
     const releaseJournal = await postGeneralLedgerJournal({
       idempotencyKey: releaseLabKey,
@@ -3603,11 +3663,14 @@ export async function releasePracticeTransferLabShare({
       meta: {
         holdShare: "lab",
         labAnchorId: String(labAnchorId),
+        purchasePayeeId: purchasePayeeId ? String(purchasePayeeId) : null,
         labFeeTotal,
         platformFee,
+        purchaseAmount,
         labSettlementAmount: labNet,
         feeRateApplied,
         relationshipKind: computed.relationshipKind,
+        abutsPrime: Boolean(parties.abutsPrime),
         fees,
       },
       lines: releaseLines,
@@ -3710,6 +3773,7 @@ export async function releasePracticeTransferLabShare({
       labFeeMultiplier: computed.labFeeMultiplier,
       labFeeTotal,
       platformFee,
+      purchaseAmount,
       labSettlementAmount: labNet,
       abutsRevenueAmount: platformFee + Number(fees.abutmentRetailTotal || 0),
       labTradingPartnerId: computed.partner?._id
@@ -5091,8 +5155,8 @@ export async function releasePracticeTransferRemakeChargeCredits({
 }) {
   const transferId = transfer?._id;
   const practiceAnchorId = transfer?.practiceBusinessAnchorId;
-  const labAnchorId =
-    resolvePerformingLabAnchorId(transfer) || transfer?.targetLabAnchorId;
+  const parties = resolvePracticeTransferSettlementParties(transfer);
+  const labAnchorId = parties.grossOwnerId;
   if (!transferId || !practiceAnchorId || !labAnchorId) {
     return { released: false, reason: "missing_anchors" };
   }
@@ -5175,7 +5239,13 @@ export async function releasePracticeTransferRemakeChargeCredits({
     0,
     Math.round(releaseAmount * Number(feeRateApplied || 0)),
   );
-  const labNet = Math.max(0, releaseAmount - platformFee);
+  const purchasePayeeId = parties.purchasePayeeId;
+  const purchaseAmount = purchasePayeeId
+    ? Math.max(0, releaseAmount - platformFee)
+    : 0;
+  const labNet = purchasePayeeId
+    ? purchaseAmount
+    : Math.max(0, releaseAmount - platformFee);
 
   const fromPaid = Math.max(
     0,
@@ -5266,9 +5336,55 @@ export async function releasePracticeTransferRemakeChargeCredits({
           feeRateApplied,
           labFee: releaseAmount,
           remakeChargeIndex: chargeIndex,
+          abutsPrime: Boolean(parties.abutsPrime),
         },
       },
     ];
+
+    if (purchasePayeeId && purchaseAmount > 0) {
+      releaseLines.push(
+        {
+          accountCode: "LAB_SETTLEMENT_CREDIT",
+          ownerRole: "requestor",
+          ownerId: String(labAnchorId),
+          amount: -purchaseAmount,
+          amountExcludingVat: -purchaseAmount,
+          vatAmount: 0,
+          creditKind: "SETTLEMENT",
+          refType: "PRACTICE_TRANSFER",
+          refId: transferId,
+          meta: {
+            source: "practice_transfer_subcontract_purchase",
+            displayKind: "subcontract_purchase",
+            displayLabel: PRACTICE_TRANSFER_LEDGER_LABELS.subcontractPurchase,
+            itemLabel: PRACTICE_TRANSFER_LEDGER_LABELS.subcontractPurchase,
+            remakeChargeIndex: chargeIndex,
+            purchaseAmount,
+            purchasePayeeId: String(purchasePayeeId),
+          },
+        },
+        {
+          accountCode: "LAB_SETTLEMENT_CREDIT",
+          ownerRole: "requestor",
+          ownerId: String(purchasePayeeId),
+          amount: purchaseAmount,
+          amountExcludingVat: purchaseAmount,
+          vatAmount: 0,
+          creditKind: "SETTLEMENT",
+          refType: "PRACTICE_TRANSFER",
+          refId: transferId,
+          meta: {
+            source: "practice_transfer_subcontract_purchase",
+            displayKind: "lab_credit",
+            displayLabel: "리메이크 청구",
+            itemLabel: PRACTICE_TRANSFER_LEDGER_LABELS.subcontractPurchase,
+            remakeChargeIndex: chargeIndex,
+            purchaseAmount,
+            primeLabAnchorId: String(labAnchorId),
+          },
+        },
+      );
+    }
 
     const releaseJournal = await postGeneralLedgerJournal({
       idempotencyKey: releaseKey,
@@ -5280,13 +5396,14 @@ export async function releasePracticeTransferRemakeChargeCredits({
       meta: {
         holdShare: "lab",
         labAnchorId: String(labAnchorId),
+        purchasePayeeId: purchasePayeeId ? String(purchasePayeeId) : null,
         labFeeTotal: releaseAmount,
         platformFee,
+        purchaseAmount,
         labSettlementAmount: labNet,
         feeRateApplied,
         remakeChargeIndex: chargeIndex,
-        displayLabel: "리메이크 청구",
-        itemLabel,
+        abutsPrime: Boolean(parties.abutsPrime),
       },
       lines: releaseLines,
       session,
@@ -5580,8 +5697,8 @@ export async function releasePracticeTransferProsthesisFollowUpLabShare({
 }) {
   const transferId = transfer?._id;
   const practiceAnchorId = transfer?.practiceBusinessAnchorId;
-  const labAnchorId =
-    resolvePerformingLabAnchorId(transfer) || transfer?.targetLabAnchorId;
+  const parties = resolvePracticeTransferSettlementParties(transfer);
+  const labAnchorId = parties.grossOwnerId;
   if (!transferId || !practiceAnchorId || !labAnchorId) {
     return { released: false, reason: "missing_anchors" };
   }
@@ -5664,7 +5781,13 @@ export async function releasePracticeTransferProsthesisFollowUpLabShare({
     0,
     Math.round(releaseAmount * Number(feeRateApplied || 0)),
   );
-  const labNet = Math.max(0, releaseAmount - platformFee);
+  const purchasePayeeId = parties.purchasePayeeId;
+  const purchaseAmount = purchasePayeeId
+    ? Math.max(0, releaseAmount - platformFee)
+    : 0;
+  const labNet = purchasePayeeId
+    ? purchaseAmount
+    : Math.max(0, releaseAmount - platformFee);
 
   const fromPaid = Math.max(
     0,
@@ -5753,9 +5876,55 @@ export async function releasePracticeTransferProsthesisFollowUpLabShare({
           feeRateApplied,
           labFee: releaseAmount,
           followUpIndex,
+          abutsPrime: Boolean(parties.abutsPrime),
         },
       },
     ];
+
+    if (purchasePayeeId && purchaseAmount > 0) {
+      releaseLines.push(
+        {
+          accountCode: "LAB_SETTLEMENT_CREDIT",
+          ownerRole: "requestor",
+          ownerId: String(labAnchorId),
+          amount: -purchaseAmount,
+          amountExcludingVat: -purchaseAmount,
+          vatAmount: 0,
+          creditKind: "SETTLEMENT",
+          refType: "PRACTICE_TRANSFER",
+          refId: transferId,
+          meta: {
+            source: "practice_transfer_subcontract_purchase",
+            displayKind: "subcontract_purchase",
+            displayLabel: PRACTICE_TRANSFER_LEDGER_LABELS.subcontractPurchase,
+            itemLabel: PRACTICE_TRANSFER_LEDGER_LABELS.subcontractPurchase,
+            followUpIndex,
+            purchaseAmount,
+            purchasePayeeId: String(purchasePayeeId),
+          },
+        },
+        {
+          accountCode: "LAB_SETTLEMENT_CREDIT",
+          ownerRole: "requestor",
+          ownerId: String(purchasePayeeId),
+          amount: purchaseAmount,
+          amountExcludingVat: purchaseAmount,
+          vatAmount: 0,
+          creditKind: "SETTLEMENT",
+          refType: "PRACTICE_TRANSFER",
+          refId: transferId,
+          meta: {
+            source: "practice_transfer_subcontract_purchase",
+            displayKind: "lab_credit",
+            displayLabel: itemLabel,
+            itemLabel: PRACTICE_TRANSFER_LEDGER_LABELS.subcontractPurchase,
+            followUpIndex,
+            purchaseAmount,
+            primeLabAnchorId: String(labAnchorId),
+          },
+        },
+      );
+    }
 
     const releaseJournal = await postGeneralLedgerJournal({
       idempotencyKey: releaseKey,
@@ -5767,11 +5936,14 @@ export async function releasePracticeTransferProsthesisFollowUpLabShare({
       meta: {
         holdShare: "lab",
         labAnchorId: String(labAnchorId),
+        purchasePayeeId: purchasePayeeId ? String(purchasePayeeId) : null,
         labFeeTotal: releaseAmount,
         platformFee,
+        purchaseAmount,
         labSettlementAmount: labNet,
         feeRateApplied,
         followUpIndex,
+        abutsPrime: Boolean(parties.abutsPrime),
         displayLabel: itemLabel,
         itemLabel,
       },

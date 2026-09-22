@@ -188,6 +188,8 @@ type SettlementBusinessOverview = {
     periodSettlementEarn?: number;
     periodLineCount?: number;
     anchorCount?: number;
+    subcontractPurchaseAmount?: number;
+    subcontractPurchaseLineCount?: number;
     subcontractFeeAmount?: number;
     subcontractFeeReleaseCount?: number;
     subcontractFeeRate?: number;
@@ -932,8 +934,8 @@ export default function AdminPaymentsPage({
 
   const labRevenue =
     labDivision?.periodRevenue ??
-    Number(labDivision?.periodSettlementEarn || 0) +
-      Number(labDivision?.subcontractFeeAmount || 0);
+    Number(labDivision?.periodSettlementEarn || 0) -
+      Number(labDivision?.subcontractPurchaseAmount || 0);
 
   const manufacturerEarn = Number(
     customAbut?.manufacturerEarn ?? customAbut?.manufacturerPaidEarn ?? 0,
@@ -1063,15 +1065,20 @@ export default function AdminPaymentsPage({
               value={dash ?? Number(labRevenue || 0)}
               selected={selectedAxis === "labDivision"}
               onClick={() => setSelectedAxis("labDivision")}
-              hint="기공료 · 하청 수수료"
-              hintTooltip="어벗츠기공소 기공료 + 하청 수수료. 면세 계산서."
+              hint="원청 기공료 · 하청 매입 · 수수료"
+              hintTooltip="어벗츠기공소 원청 기공료(매출) − 하청 매입 = 분배 재원. 하청 수수료는 매입 공제분. 면세 계산서."
               footer={
                 isLoading ? null : (
                   <div className="space-y-0.5 text-[11px] leading-relaxed text-slate-500 sm:text-xs">
                     <div className="tabular-nums">
-                      기공료{" "}
+                      원청{" "}
                       {formatWonWithUnit(labDivision?.periodSettlementEarn)} ·
-                      하청 {formatWonWithUnit(labDivision?.subcontractFeeAmount)}
+                      매입{" "}
+                      {formatWonWithUnit(
+                        labDivision?.subcontractPurchaseAmount,
+                      )}{" "}
+                      · 수수료{" "}
+                      {formatWonWithUnit(labDivision?.subcontractFeeAmount)}
                     </div>
                     <ShareRateHint
                       parts={[

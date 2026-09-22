@@ -834,10 +834,10 @@ export function CreditStatisticsTab() {
         label="의뢰건수"
         value={`${settlementOrderCount.toLocaleString("ko-KR")}건`}
         hint="안내"
-        hintTooltip="치과로부터 수신·정산 적립이 확정된 기공의뢰 건수입니다."
+        hintTooltip="어벗츠 하청·정산 적립이 확정된 기공의뢰 건수입니다."
         onClick={() =>
           openDrillDown({
-            title: "치과로부터 내역",
+            title: "어벗츠 하청 내역",
             filters: {
               ...filterBase,
               statsCategory: "settlement_earn",
@@ -853,8 +853,8 @@ export function CreditStatisticsTab() {
       {filterBar}
 
       <StatsFlowSection
-        title="치과로부터"
-        subtitle="치과 → 기공소 · 정산 적립"
+        title="어벗츠 하청"
+        subtitle="어벗츠 → 기공소 · 하청(매입) 정산"
         accent="기공"
         icon={Building2}
       >
@@ -918,7 +918,7 @@ export function CreditStatisticsTab() {
           >
             <HorizontalBarList
               rows={stats?.byPartner || []}
-              emptyHint="치과로부터 수신·정산 적립이 있을 때 치과별로 표시됩니다."
+              emptyHint="어벗츠 하청·정산 적립이 있을 때 병원별로 표시됩니다."
               onRowClick={(row) =>
                 openDrillDown({
                   title: `${row.label} 내역`,

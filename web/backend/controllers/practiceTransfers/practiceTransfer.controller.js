@@ -66,7 +66,10 @@ import {
   redactAutoMatchLabIdentity,
   redactAutoMatchPracticeIdentity,
   resolveAbutsPrimeLabFields,
+  resolveCreateMatchingTarget,
+  resolveFeeScheduleLabAnchorId,
   resolvePerformingLabAnchorId,
+  isLabPerformingOnTransfer,
   isPracticeTransferSubcontracted,
   assertLabAllowedAsDirectPracticeTarget,
   loadSubcontractDirectBlockedLabAnchorIds,
@@ -702,52 +705,7 @@ const normalizeEligibleLabAnchorIds = (raw) =>
     .map((id) => String(id || "").trim())
     .filter((id) => Types.ObjectId.isValid(id));
 
-/** 치과 픽커: 어벗츠/레거시 자동매칭 → 어벗츠기공소 지정(direct). 공개 풀 없음. */
-const resolveCreateMatchingTarget = async ({
-  matchingModeRaw,
-  autoMatchFlag,
-  rawAnchorId,
-  targetLabName,
-}) => {
-  const wantsAbuts = wantsAbutsPrimePool({
-    matchingModeRaw,
-    autoMatchFlag,
-    rawAnchorId,
-    targetLabName,
-  });
-
-  if (!wantsAbuts && Types.ObjectId.isValid(rawAnchorId)) {
-    const picked = await BusinessAnchor.findById(rawAnchorId)
-      .select({ businessType: 1, name: 1 })
-      .lean();
-    if (isInternalLabBusinessType(picked)) {
-      const prime = await resolveAbutsPrimeLabFields();
-      if (prime.error) return prime;
-      return prime;
-    }
-    return {
-      matchingMode: "direct",
-      targetLabAnchorId: new Types.ObjectId(rawAnchorId),
-      targetLabName:
-        String(targetLabName || "").trim() ||
-        String(picked?.name || "").trim(),
-    };
-  }
-
-  if (wantsAbuts) {
-    const prime = await resolveAbutsPrimeLabFields();
-    if (prime.error) return prime;
-    return prime;
-  }
-
-  return {
-    matchingMode: "direct",
-    targetLabAnchorId: Types.ObjectId.isValid(rawAnchorId)
-      ? new Types.ObjectId(rawAnchorId)
-      : null,
-    targetLabName: String(targetLabName || "").trim(),
-  };
-};
+/** 치과 픽커: 계약 상대=어벗츠기공소. 외부 선택은 assignee(사전 하청). → utils/practiceTransferAutoMatch.js */
 
 const rejectIfSubcontractDirectBlocked = async (
   res,
@@ -3126,6 +3084,9 @@ export async function createPracticeTransfer(req, res) {
     const matchingMode = resolvedTarget.matchingMode;
     const targetLabAnchorId = resolvedTarget.targetLabAnchorId;
     targetLabName = resolvedTarget.targetLabName;
+    const assigneeLabAnchorId = resolvedTarget.assigneeLabAnchorId || null;
+    const assigneeLabName = String(resolvedTarget.assigneeLabName || "").trim();
+    const performingLabAnchorId = assigneeLabAnchorId || targetLabAnchorId;
 
     if (matchingMode === "direct" && !targetLabName && targetLabAnchorId) {
       const anchor = await BusinessAnchor.findById(targetLabAnchorId)
@@ -3317,7 +3278,7 @@ export async function createPracticeTransfer(req, res) {
     const autoMatchPriorityLabAnchorIds = [];
     const autoMatchCatalog = null;
 
-    const [feeQuote, subcontractErr, starBandErr] = await Promise.all([
+    const [feeQuote, starBandErr] = await Promise.all([
       buildPracticeTransferQuote({
         practiceAnchorId,
         labAnchorId: targetLabAnchorId,
@@ -3327,18 +3288,11 @@ export async function createPracticeTransfer(req, res) {
         catalog: autoMatchCatalog,
         rushFeeMultiplier,
         remake: remakePricing,
+        subcontracted: Boolean(assigneeLabAnchorId),
       }),
-      String(matchingMode || "").trim() === "direct"
-        ? assertLabAllowedAsDirectPracticeTarget({
-            practiceAnchorId,
-            labAnchorId: targetLabAnchorId,
-          })
-            .then(() => null)
-            .catch((err) => err)
-        : Promise.resolve(null),
-      targetLabAnchorId
+      performingLabAnchorId
         ? assertLabWithinPracticeStarBand({
-            labAnchorId: targetLabAnchorId,
+            labAnchorId: performingLabAnchorId,
             minStars: starBand?.minStars,
             maxStars: starBand?.maxStars,
             practiceLabRatings,
@@ -3348,15 +3302,6 @@ export async function createPracticeTransfer(req, res) {
         : Promise.resolve(null),
     ]);
     __t = __mark("quote+gates", __t);
-    if (subcontractErr) {
-      const status = Number(subcontractErr?.statusCode || 409);
-      return res.status(status >= 400 && status < 600 ? status : 409).json({
-        success: false,
-        message:
-          subcontractErr?.message || SUBCONTRACT_DIRECT_BLOCKED_MESSAGE,
-        reason: subcontractErr?.code || SUBCONTRACT_DIRECT_BLOCKED_REASON,
-      });
-    }
     if (starBandErr) {
       const status = Number(starBandErr?.statusCode || 409);
       return res.status(status >= 400 && status < 600 ? status : 409).json({
@@ -3444,8 +3389,8 @@ export async function createPracticeTransfer(req, res) {
       practiceBusinessAnchorId: practiceAnchorId,
       targetLabAnchorId,
       targetLabName,
-      assigneeLabAnchorId: matchingMode === "auto" ? null : undefined,
-      assigneeLabName: matchingMode === "auto" ? "" : undefined,
+      assigneeLabAnchorId: assigneeLabAnchorId || null,
+      assigneeLabName: assigneeLabName || "",
       matchingMode,
       autoMatch: {
         minLabRating: starBand.minStars,
@@ -3832,6 +3777,9 @@ export async function updatePracticeTransferContent(req, res) {
       resolvedTarget.targetLabAnchorId ||
       (matchingMode === "direct" ? doc.targetLabAnchorId || null : null);
     targetLabName = resolvedTarget.targetLabName;
+    const assigneeLabAnchorId = resolvedTarget.assigneeLabAnchorId || null;
+    const assigneeLabName = String(resolvedTarget.assigneeLabName || "").trim();
+    const performingLabAnchorId = assigneeLabAnchorId || targetLabAnchorId;
 
     if (matchingMode === "direct" && !targetLabName && targetLabAnchorId) {
       const anchor = await BusinessAnchor.findById(targetLabAnchorId)
@@ -3886,15 +3834,6 @@ export async function updatePracticeTransferContent(req, res) {
         message: "대상 기공소를 선택해주세요.",
       });
     }
-    if (
-      await rejectIfSubcontractDirectBlocked(res, {
-        practiceAnchorId,
-        matchingMode,
-        labAnchorId: targetLabAnchorId,
-      })
-    ) {
-      return;
-    }
 
     const starBand = await loadStarBandForPracticeRequest({
       practiceAnchorId,
@@ -3904,7 +3843,7 @@ export async function updatePracticeTransferContent(req, res) {
     const practiceLabRatings = await loadPracticeLabRatings(practiceAnchorId);
     if (
       await rejectIfLabOutsideStarBand(res, {
-        labAnchorId: targetLabAnchorId,
+        labAnchorId: performingLabAnchorId,
         starBand,
         practiceLabRatings,
       })
@@ -4070,6 +4009,7 @@ export async function updatePracticeTransferContent(req, res) {
         autoMatchBudget,
         catalog: autoMatchCatalog,
         rushFeeMultiplier,
+        subcontracted: Boolean(assigneeLabAnchorId),
       });
       billingPreview = {
         ...toBillingPreviewFields(feeQuote),
@@ -4149,8 +4089,8 @@ export async function updatePracticeTransferContent(req, res) {
     const nextSet = {
       targetLabAnchorId,
       targetLabName,
-      assigneeLabAnchorId: null,
-      assigneeLabName: "",
+      assigneeLabAnchorId: assigneeLabAnchorId || null,
+      assigneeLabName: assigneeLabName || "",
       matchingMode,
       autoMatch: nextAutoMatch,
       transferMemo: transferMemoResolved,
@@ -8254,7 +8194,9 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
     const alreadyAcceptedDirect = Boolean(doc.requestorDownloadedAt);
     if (!isAuto && !subcontractClaim && !alreadyAcceptedDirect) {
       try {
-        await assertReceiverLabFeeConfigured(labAnchorId, doc.toothWorks);
+        const feeLabId =
+          resolveFeeScheduleLabAnchorId(doc) || labAnchorId;
+        await assertReceiverLabFeeConfigured(feeLabId, doc.toothWorks);
       } catch (feeErr) {
         return rejectLabFeeUnconfigured(res, feeErr);
       }
@@ -8793,7 +8735,7 @@ export async function markReceivedPracticeTransferComplete(req, res) {
       });
     }
 
-    if (String(doc.targetLabAnchorId || "").trim() !== labAnchorId) {
+    if (!isLabPerformingOnTransfer(doc, labAnchorId)) {
       return res.status(403).json({
         success: false,
         message: "작업을 시작한 기공소만 작업 완료할 수 있습니다.",
@@ -8919,7 +8861,7 @@ export async function appendReceivedPracticeTransferResultFiles(req, res) {
       });
     }
 
-    if (String(doc.targetLabAnchorId || "").trim() !== labAnchorId) {
+    if (!isLabPerformingOnTransfer(doc, labAnchorId)) {
       return res.status(403).json({
         success: false,
         message: "작업을 시작한 기공소만 결과 파일을 올릴 수 있습니다.",
@@ -9641,7 +9583,7 @@ export async function setPracticeTransferAbutmentShipYmd(req, res) {
     }
 
     if (
-      String(doc.targetLabAnchorId || "").trim() !== labAnchorId &&
+      !isLabPerformingOnTransfer(doc, labAnchorId) &&
       role !== "admin"
     ) {
       return res.status(403).json({
@@ -10031,7 +9973,7 @@ export async function confirmPracticeTransferAbutmentDesign(req, res) {
       });
     }
 
-    if (String(doc.targetLabAnchorId || "").trim() !== labAnchorId && role !== "admin") {
+    if (!isLabPerformingOnTransfer(doc, labAnchorId) && role !== "admin") {
       return res.status(403).json({
         success: false,
         message: "작업을 시작한 기공소만 어벗 디자인을 확인할 수 있습니다.",
@@ -10443,7 +10385,7 @@ export async function markReceivedPracticeTransferRelease(req, res) {
       });
     }
 
-    if (String(doc.targetLabAnchorId || "").trim() !== labAnchorId) {
+    if (!isLabPerformingOnTransfer(doc, labAnchorId)) {
       return res.status(403).json({
         success: false,
         message: "작업을 시작한 기공소만 작업 취소할 수 있습니다.",
@@ -11274,15 +11216,15 @@ export async function retargetPracticeTransferLab(req, res) {
     const matchingMode = resolvedTarget.matchingMode;
     let targetLabAnchorId = resolvedTarget.targetLabAnchorId;
     let targetLabName = resolvedTarget.targetLabName;
+    const assigneeLabAnchorId = resolvedTarget.assigneeLabAnchorId || null;
+    const assigneeLabName = String(resolvedTarget.assigneeLabName || "").trim();
+    const performingLabAnchorId = assigneeLabAnchorId || targetLabAnchorId;
     if (matchingMode === "direct") {
-      if (!Types.ObjectId.isValid(rawAnchorId) && !targetLabAnchorId) {
+      if (!targetLabAnchorId) {
         return res.status(400).json({
           success: false,
           message: "대상 기공소를 선택해주세요.",
         });
-      }
-      if (!targetLabAnchorId) {
-        targetLabAnchorId = new Types.ObjectId(rawAnchorId);
       }
       if (!targetLabName) {
         const anchor = await BusinessAnchor.findById(targetLabAnchorId)
@@ -11316,16 +11258,6 @@ export async function retargetPracticeTransferLab(req, res) {
       doc.billing && typeof doc.billing === "object" ? { ...doc.billing } : {};
     const now = new Date();
 
-    if (
-      await rejectIfSubcontractDirectBlocked(res, {
-        practiceAnchorId,
-        matchingMode,
-        labAnchorId: targetLabAnchorId,
-      })
-    ) {
-      return;
-    }
-
     const starBand = await loadStarBandForPracticeRequest({
       practiceAnchorId,
       body: req.body,
@@ -11334,7 +11266,7 @@ export async function retargetPracticeTransferLab(req, res) {
     const practiceLabRatings = await loadPracticeLabRatings(practiceAnchorId);
     if (
       await rejectIfLabOutsideStarBand(res, {
-        labAnchorId: targetLabAnchorId,
+        labAnchorId: performingLabAnchorId,
         starBand,
         practiceLabRatings,
       })
@@ -11383,6 +11315,7 @@ export async function retargetPracticeTransferLab(req, res) {
       matchingMode,
       autoMatchBudget,
       catalog: autoMatchCatalog,
+      subcontracted: Boolean(assigneeLabAnchorId),
     });
     const billingPreview = toBillingPreviewFields(feeQuote);
     const autoMatchPriorityFields =
@@ -11435,8 +11368,8 @@ export async function retargetPracticeTransferLab(req, res) {
 
     doc.targetLabAnchorId = targetLabAnchorId;
     doc.targetLabName = targetLabName;
-    doc.assigneeLabAnchorId = null;
-    doc.assigneeLabName = "";
+    doc.assigneeLabAnchorId = assigneeLabAnchorId || null;
+    doc.assigneeLabName = assigneeLabName || "";
     doc.matchingMode = matchingMode;
     doc.autoMatch = nextAutoMatch;
     doc.workCanceledAt = null;
@@ -11456,8 +11389,8 @@ export async function retargetPracticeTransferLab(req, res) {
         $set: {
           targetLabAnchorId,
           targetLabName,
-          assigneeLabAnchorId: null,
-          assigneeLabName: "",
+          assigneeLabAnchorId: assigneeLabAnchorId || null,
+          assigneeLabName: assigneeLabName || "",
           matchingMode,
           autoMatch: nextAutoMatch,
           workCanceledAt: null,

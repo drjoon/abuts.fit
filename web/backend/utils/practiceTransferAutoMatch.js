@@ -32,12 +32,14 @@ import {
   isAbutsPrimePracticeTransfer,
   getPrimeLabAnchorId,
   isLabIdBlockedAsDirectPracticeTarget,
+  isLabPerformingOnTransfer,
   isPracticeTransferSubcontracted,
   isSubcontractFeeScheduleContext,
   isSubcontractIdentityHiddenFromViewer,
   isSubcontractPoolOpen,
   resolveFeeScheduleLabAnchorId,
   resolvePerformingLabAnchorId,
+  resolvePracticeTransferSettlementParties,
   SUBCONTRACT_DIRECT_BLOCKED_MESSAGE,
   SUBCONTRACT_DIRECT_BLOCKED_REASON,
   SUBCONTRACT_PRACTICE_DISPLAY_NAME,
@@ -83,9 +85,11 @@ export {
   isSubcontractIdentityHiddenFromViewer,
   isSubcontractPoolOpen,
   isLabIdBlockedAsDirectPracticeTarget,
+  isLabPerformingOnTransfer,
   normalizeLabAnchorIdList,
   resolveFeeScheduleLabAnchorId,
   resolvePerformingLabAnchorId,
+  resolvePracticeTransferSettlementParties,
   SUBCONTRACT_DIRECT_BLOCKED_MESSAGE,
   SUBCONTRACT_DIRECT_BLOCKED_REASON,
   SUBCONTRACT_PRACTICE_DISPLAY_NAME,
@@ -95,27 +99,10 @@ export {
 export async function loadSubcontractDirectBlockedLabAnchorIds(
   practiceAnchorId,
 ) {
-  const practiceId = String(practiceAnchorId || "").trim();
-  if (!practiceId || !Types.ObjectId.isValid(practiceId)) return [];
-  const practiceOid = new Types.ObjectId(practiceId);
-  const [subcontractDocs, directTargetDocs] = await Promise.all([
-    PracticeTransfer.find({
-      practiceBusinessAnchorId: practiceOid,
-      assigneeLabAnchorId: { $exists: true, $ne: null },
-    })
-      .select({ assigneeLabAnchorId: 1, targetLabAnchorId: 1, createdAt: 1 })
-      .lean(),
-    PracticeTransfer.find({
-      practiceBusinessAnchorId: practiceOid,
-      matchingMode: "direct",
-      targetLabAnchorId: { $exists: true, $ne: null },
-    })
-      .select({ targetLabAnchorId: 1, matchingMode: 1, createdAt: 1 })
-      .lean(),
-  ]);
-  return collectSubcontractDirectBlockedLabIds(subcontractDocs, {
-    directTargetDocs,
-  });
+  // 2026-09-23: 신규 PTX는 계약=어벗츠·픽커=assignee(사전 하청).
+  // 하청 이력을 이유로 파트너 선택을 막지 않는다(레거시 직접 지정 차단 폐지).
+  void practiceAnchorId;
+  return [];
 }
 
 export async function assertLabAllowedAsDirectPracticeTarget({
@@ -536,8 +523,55 @@ export const wantsAbutsPrimePool = ({
 };
 
 /**
+ * 신규 PTX 계약 상대=항상 어벗츠기공소(원청).
+ * 치과 픽커에서 고른 외부 기공소 → assignee(사전 하청).
+ * 어벗츠/레거시 자동매칭 선택 → 원청만(자체 수행 또는 이후 하청 풀).
+ */
+export async function resolveCreateMatchingTarget({
+  matchingModeRaw,
+  autoMatchFlag,
+  rawAnchorId,
+  targetLabName,
+}) {
+  const prime = await resolveAbutsPrimeLabFields();
+  if (prime.error) return prime;
+
+  const wantsAbuts = wantsAbutsPrimePool({
+    matchingModeRaw,
+    autoMatchFlag,
+    rawAnchorId,
+    targetLabName,
+  });
+
+  if (!wantsAbuts && Types.ObjectId.isValid(String(rawAnchorId || "").trim())) {
+    const picked = await BusinessAnchor.findById(rawAnchorId)
+      .select({ businessType: 1, name: 1 })
+      .lean();
+    if (isInternalLabBusinessType(picked)) {
+      return {
+        ...prime,
+        assigneeLabAnchorId: null,
+        assigneeLabName: "",
+      };
+    }
+    const partnerName =
+      String(targetLabName || "").trim() || String(picked?.name || "").trim();
+    return {
+      ...prime,
+      assigneeLabAnchorId: new Types.ObjectId(rawAnchorId),
+      assigneeLabName: partnerName,
+    };
+  }
+
+  return {
+    ...prime,
+    assigneeLabAnchorId: null,
+    assigneeLabName: "",
+  };
+}
+
+/**
  * 경로 B 원청 필드. 실패 시 { error }.
- * 지정 기공소(direct)면 호출측에서 기존 앵커를 쓴다.
  */
 export async function resolveAbutsPrimeLabFields() {
   const internal = await resolveInternalLabAnchor();

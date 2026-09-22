@@ -3237,7 +3237,7 @@ export const PracticeTransferRequestIntakePanel = ({
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <Label className="text-sm">
-              기공소 <span className="text-destructive">*</span>
+              협력 기공소 <span className="text-destructive">*</span>
             </Label>
             {showAutoMatchMinLabRating &&
             (isPinnedAbutsRecentLab(selectedLab) ||
@@ -3250,6 +3250,11 @@ export const PracticeTransferRequestIntakePanel = ({
               />
             ) : null}
           </div>
+          <p className="text-xs text-muted-foreground leading-snug">
+            계약·결제는 어벗츠기공소입니다.
+            <br />
+            아래에서 작업할 협력 기공소를 고를 수 있습니다.
+          </p>
           {/*
             modal: Dialog RemoveScroll이 포털된 Popover 휠/터치를 막지 않게
             (스크롤바 드래그만 되고 터치·트랙패드가 안 되는 증상).
@@ -3271,7 +3276,7 @@ export const PracticeTransferRequestIntakePanel = ({
                     ? isAutoMatchLab(selectedLab)
                       ? ABUTS_PINNED_LAB_NAME
                       : getBusinessLabel(selectedLab)
-                    : "기공소 선택"}
+                    : "협력 기공소 선택"}
                 </span>
                 <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
               </Button>
@@ -3294,7 +3299,7 @@ export const PracticeTransferRequestIntakePanel = ({
             >
               <Command>
                 <CommandInput
-                  placeholder="기공소 검색"
+                  placeholder="협력 기공소 검색"
                   value={labSearch}
                   onValueChange={(v) => {
                     setLabSearch(v);

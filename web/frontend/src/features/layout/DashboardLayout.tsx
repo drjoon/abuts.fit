@@ -251,9 +251,9 @@ const buildLabGigongRequestSidebarGroup = (
   children: [
     {
       icon: Building2,
-      label: "치과로부터",
+      label: "어벗츠 하청",
       href: receiveHref,
-      tooltip: receiveTooltip,
+      tooltip: "어벗츠기공소 하청으로 받은 기공의뢰",
       accent: "기공",
       guideTourSatellite: "lab_calendar",
     },

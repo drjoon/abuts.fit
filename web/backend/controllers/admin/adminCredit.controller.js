@@ -2996,6 +2996,7 @@ export async function adminGetSettlementBusinessOverview(req, res) {
                 accountCode: "LAB_SETTLEMENT_CREDIT",
                 ownerRole: "requestor",
                 ownerId: { $in: internalLabIds },
+                "meta.source": "practice_transfer_lab_share_gross",
                 ...occurredMatch,
               },
             },
@@ -3009,6 +3010,34 @@ export async function adminGetSettlementBusinessOverview(req, res) {
               $group: {
                 _id: null,
                 settlementAmount: { $sum: "$amountBase" },
+                lineCount: { $sum: 1 },
+              },
+            },
+          ])
+        : [];
+
+    const subcontractPurchaseRows =
+      internalLabIds.length > 0
+        ? await LedgerLine.aggregate([
+            {
+              $match: {
+                accountCode: "LAB_SETTLEMENT_CREDIT",
+                ownerRole: "requestor",
+                ownerId: { $nin: internalLabIds },
+                "meta.source": "practice_transfer_subcontract_purchase",
+                ...occurredMatch,
+              },
+            },
+            {
+              $addFields: {
+                amountBase: amountBaseExpr,
+              },
+            },
+            { $match: { amountBase: { $gt: 0 } } },
+            {
+              $group: {
+                _id: null,
+                purchaseAmount: { $sum: "$amountBase" },
                 lineCount: { $sum: 1 },
               },
             },
@@ -3098,6 +3127,12 @@ export async function adminGetSettlementBusinessOverview(req, res) {
     const labLineCount = normalizeNumber(
       Number(internalLabEarnRows?.[0]?.lineCount || 0),
     );
+    const subcontractPurchaseAmount = normalizeNumber(
+      Number(subcontractPurchaseRows?.[0]?.purchaseAmount || 0),
+    );
+    const subcontractPurchaseLineCount = normalizeNumber(
+      Number(subcontractPurchaseRows?.[0]?.lineCount || 0),
+    );
 
     const customAbutPayload = {
       periodPaidSpend: normalizeNumber(paidSpendRequest + paidSpendShipping),
@@ -3130,10 +3165,15 @@ export async function adminGetSettlementBusinessOverview(req, res) {
       periodSettlementEarn: labSettlementEarn,
       periodLineCount: labLineCount,
       anchorCount: internalLabIds.length,
+      subcontractPurchaseAmount,
+      subcontractPurchaseLineCount,
       subcontractFeeAmount,
       subcontractFeeReleaseCount,
       subcontractFeeRate,
-      periodRevenue: normalizeNumber(labSettlementEarn + subcontractFeeAmount),
+      // 원청 매출 − 하청 매입 ≈ 자체수행분 + 하청 수수료 잔여
+      periodRevenue: normalizeNumber(
+        labSettlementEarn - subcontractPurchaseAmount,
+      ),
     };
 
     const clampSharePct = (raw, fallback) => {
@@ -3260,6 +3300,8 @@ export async function adminGetSettlementBusinessOverview(req, res) {
           periodSettlementEarn: labSettlementEarn,
           periodLineCount: labLineCount,
           anchorCount: internalLabIds.length,
+          subcontractPurchaseAmount,
+          subcontractPurchaseLineCount,
         },
         practiceMembership: {
           periodFeeAmount: normalizeNumber(

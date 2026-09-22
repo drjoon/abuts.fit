@@ -3,6 +3,7 @@
 // - web/backend/tests/unit/practiceTransferAutoMatchPriority.test.js
 //
 // 자동매칭 우선창·필터 순수 헬퍼 (Mongo 모델 import 없음).
+// - 2026-09-23: 신규 PTX 계약 상대=어벗츠기공소(원청). 픽커 파트너=assignee(사전 하청).
 // - 2026-08-21: 하청 전환은 어벗츠기공소(원청)만 — 타 기공소 지정 의뢰는 canOpenSubcontract=false.
 
 /** 어벗츠기공소(internalLab) 원청 우선 수락 창. 하청 전환 시 즉시 종료. */
@@ -143,13 +144,67 @@ export const isSubcontractFeeScheduleContext = (transfer) =>
   isPracticeTransferSubcontracted(transfer) ||
   isSubcontractPoolOpen(transfer);
 
+/** 원청이 어벗츠기공소(기공사업부)인지. 하청 전환·신규 정산 SSOT는 이 원청만. */
+export const isAbutsPrimePracticeTransfer = (transfer) => {
+  const name = String(transfer?.targetLabName || "").trim();
+  if (name === ABUTS_LAB_DISPLAY_NAME) return true;
+  // 레거시 matchingMode=auto — 원청은 항상 어벗츠
+  return isAutoMatchMode(transfer);
+};
+
+/**
+ * 수가표 앵커.
+ * 어벗츠 원청(신규 SSOT·하청·하청풀)은 항상 prime. 레거시 외부 직접 지정만 수행 기공소.
+ */
 export const resolveFeeScheduleLabAnchorId = (transfer) => {
-  if (isSubcontractFeeScheduleContext(transfer)) {
+  if (
+    isAbutsPrimePracticeTransfer(transfer) ||
+    isSubcontractFeeScheduleContext(transfer)
+  ) {
     return (
       getPrimeLabAnchorId(transfer) || resolvePerformingLabAnchorId(transfer)
     );
   }
   return resolvePerformingLabAnchorId(transfer);
+};
+
+/**
+ * 정산 당사자.
+ * 어벗츠 원청: gross→prime, 하청 매입→assignee.
+ * 레거시 외부 직접 지정: gross→performing(target), 매입 없음.
+ */
+export const resolvePracticeTransferSettlementParties = (transfer) => {
+  const primeId = getPrimeLabAnchorId(transfer);
+  const assigneeId = getAssigneeLabAnchorId(transfer);
+  const performingId = resolvePerformingLabAnchorId(transfer);
+  const abutsPrime = isAbutsPrimePracticeTransfer(transfer);
+  const subcontracted = isPracticeTransferSubcontracted(transfer);
+  const grossOwnerId = abutsPrime
+    ? primeId || performingId
+    : performingId || primeId;
+  const purchasePayeeId =
+    abutsPrime &&
+    subcontracted &&
+    assigneeId &&
+    assigneeId !== String(primeId || "").trim()
+      ? assigneeId
+      : null;
+  return {
+    primeId,
+    assigneeId,
+    performingId,
+    abutsPrime,
+    subcontracted: Boolean(purchasePayeeId),
+    grossOwnerId: String(grossOwnerId || "").trim() || null,
+    purchasePayeeId,
+  };
+};
+
+/** 작업완료·거부 등: 수행 기공소(assignee 우선)만. 원청 팀은 prime도 허용할 때 별도 검사. */
+export const isLabPerformingOnTransfer = (transfer, labAnchorId) => {
+  const labId = String(labAnchorId || "").trim();
+  if (!labId) return false;
+  return resolvePerformingLabAnchorId(transfer) === labId;
 };
 
 /** 어벗츠 원청 팀만 하청 상대(치과·수행 기공소) 식별 정보를 본다. */
@@ -168,8 +223,9 @@ export const isSubcontractIdentityHiddenFromViewer = (
 };
 
 export const SUBCONTRACT_DIRECT_BLOCKED_REASON = "subcontract_direct_blocked";
+/** @deprecated 신규는 계약 상대=어벗츠 고정·파트너=assignee. 레거시 API 호환용. */
 export const SUBCONTRACT_DIRECT_BLOCKED_MESSAGE =
-  "어벗츠기공소를 선택해 주세요.";
+  "계약·결제는 어벗츠기공소입니다. 협력 기공소를 다시 선택해 주세요.";
 
 /**
  * 하청 수행(assignee ≠ 원청) 이력이 있는 기공소 ID. 해당 치과는 지정 의뢰 불가.
@@ -208,14 +264,6 @@ export const isLabIdBlockedAsDirectPracticeTarget = (
   return (Array.isArray(blockedIds) ? blockedIds : []).some(
     (id) => String(id || "").trim() === labId,
   );
-};
-
-/** 원청이 어벗츠기공소(기공사업부)인지. 하청 전환은 이 원청만. */
-export const isAbutsPrimePracticeTransfer = (transfer) => {
-  const name = String(transfer?.targetLabName || "").trim();
-  if (name === ABUTS_LAB_DISPLAY_NAME) return true;
-  // 레거시 matchingMode=auto — 원청은 항상 어벗츠
-  return isAutoMatchMode(transfer);
 };
 
 /** 어벗츠 원청 팀원이 아직 하청을 안 연 지정 의뢰를 하청 풀로 열 수 있는지. */
