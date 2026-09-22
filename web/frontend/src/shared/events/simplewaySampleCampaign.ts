@@ -16,25 +16,25 @@ export const SIMPLEWAY_SAMPLE_KIT = [
     id: "healing-h",
     name: "그리보 힐링H",
     spec: "",
-    note: "힐링 어벗먼트",
+    note: "그립 힐링 어벗먼트",
   },
   {
     id: "abut-h",
     name: "그리보 어벗H",
     spec: "",
-    note: "기성 어벗먼트",
+    note: "그립 기성 어벗먼트",
   },
   {
     id: "custom-abut",
     name: "그리보 커스텀어벗",
     spec: "",
-    note: "커스텀 어벗먼트",
+    note: "그립 커스텀 어벗먼트",
   },
   {
     id: "driver",
     name: "그리보 드라이버",
     spec: "",
-    note: "드라이버",
+    note: "그립 헥스 드라이버",
   },
 ] as const;
 
