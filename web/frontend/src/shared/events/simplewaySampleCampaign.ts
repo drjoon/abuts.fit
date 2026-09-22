@@ -51,17 +51,25 @@ export const SIMPLEWAY_SAMPLE_EXTRAS = [
     body: "구강 스캐너를 사용 중인 치과에는 스캔바 제품 소개를 함께 안내해 드립니다.",
     tag: "구강 스캔 치과",
   },
+  {
+    id: "abuts-platform",
+    title: "어벗츠 플랫폼",
+    body: "구강스캔·석고모델 기반 커스텀어벗 디자인·생산 의뢰를 어벗츠 플랫폼에서 안내해 드립니다.",
+    tag: "치과·기공소",
+  },
 ] as const;
 
 export const SIMPLEWAY_DEALER_HELP =
   "친한 로컬 재료상 사장님을 소개해주세요. 그 분께 지역 영업권을 드립니다. (옵션)";
 
-export const SIMPLEWAY_HERO_SUB =
-  "심플웨이의 신제품 그리보(Gribo) 출시 안내입니다. 그리보 힐링H · 그리보 어벗H · 그리보 커스텀어벗 · 그리보 드라이버 등 제품 라인업을 소개해 드립니다.";
+export const SIMPLEWAY_HERO_SUB_LINES = [
+  "심플웨이의 신제품 그리보(Gribo) 출시 안내입니다.",
+  "그리보 힐링H · 그리보 어벗H · 그리보 커스텀어벗 · 그리보 드라이버 등 제품 라인업을 소개해 드립니다.",
+] as const;
 
-export const SIMPLEWAY_HERO_BADGE = "화 · 수 이틀간 신청 접수";
+export const SIMPLEWAY_HERO_SUB = SIMPLEWAY_HERO_SUB_LINES.join(" ");
 
-export const GRIBO_HERO_EYEBROW = "Simpleway · Gribo Launch";
+export const GRIBO_HERO_EYEBROW = "Gribo Launch";
 
 export const GRIBO_EVENT_TITLE =
   "심플웨이 신제품 - 그리보(Gribo) 출시 행사";

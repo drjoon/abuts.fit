@@ -16,7 +16,6 @@ import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   BarChart3,
-  Building2,
   CheckCircle2,
   Copy,
   FileText,
@@ -53,6 +52,9 @@ export default function SalesPerformancePage() {
   const [drill, setDrill] = useState<"visits" | "reports" | "referrals">(
     "visits",
   );
+  const [referralOrgFilter, setReferralOrgFilter] = useState<
+    "all" | "oralScan"
+  >("all");
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["sales-team-stats", period],
@@ -88,6 +90,11 @@ export default function SalesPerformancePage() {
   const labCount = orgs.filter(
     (o) => String(o.requestorKind || "") === "lab",
   ).length;
+  const oralScanCount = orgs.filter((o) => Boolean(o.usesOralScan)).length;
+  const visibleOrgs =
+    referralOrgFilter === "oralScan"
+      ? orgs.filter((o) => Boolean(o.usesOralScan))
+      : orgs;
 
   const copy = async (text: string, label: string) => {
     try {
@@ -331,22 +338,50 @@ export default function SalesPerformancePage() {
                 title="소개로 가입한 거래처"
                 description="코드로 가입한 치과·기공소 목록입니다."
                 actions={
-                  <Badge variant="secondary">
-                    <Building2 className="mr-1 h-3 w-3" />
-                    {orgs.length}
-                  </Badge>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={
+                        referralOrgFilter === "all" ? "default" : "outline"
+                      }
+                      className="h-7"
+                      onClick={() => setReferralOrgFilter("all")}
+                    >
+                      전체 {orgs.length}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={
+                        referralOrgFilter === "oralScan" ? "default" : "outline"
+                      }
+                      className="h-7"
+                      onClick={() => setReferralOrgFilter("oralScan")}
+                    >
+                      구강스캔 {oralScanCount}
+                    </Button>
+                  </div>
                 }
                 bodyClassName="lg:max-h-[min(70vh,42rem)] lg:overflow-y-auto"
               >
-                {orgs.length === 0 ? (
+                {visibleOrgs.length === 0 ? (
                   <SalesEmptyState
                     icon={Share2}
-                    title="소개 가입이 없습니다"
-                    description="소개 코드를 공유하면 가입 실적이 쌓입니다."
+                    title={
+                      referralOrgFilter === "oralScan"
+                        ? "구강스캔 사용 치과가 없습니다"
+                        : "소개 가입이 없습니다"
+                    }
+                    description={
+                      referralOrgFilter === "oralScan"
+                        ? "이벤트 신청·회원 설정에서 구강 스캔 사용으로 등록된 치과만 표시됩니다."
+                        : "소개 코드를 공유하면 가입 실적이 쌓입니다."
+                    }
                   />
                 ) : (
                   <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                    {orgs.map((o) => (
+                    {visibleOrgs.map((o) => (
                       <SalesListRow
                         key={String(o._id)}
                         title={o.name || "사업자"}
@@ -359,11 +394,18 @@ export default function SalesPerformancePage() {
                             : undefined
                         }
                         trailing={
-                          <Badge variant="secondary">
-                            {KIND_LABEL[String(o.requestorKind || "")] ||
-                              o.requestorKind ||
-                              "의뢰자"}
-                          </Badge>
+                          <div className="flex flex-wrap items-center justify-end gap-1">
+                            {o.usesOralScan ? (
+                              <Badge className="border-0 bg-sky-50 text-sky-800">
+                                구강스캔
+                              </Badge>
+                            ) : null}
+                            <Badge variant="secondary">
+                              {KIND_LABEL[String(o.requestorKind || "")] ||
+                                o.requestorKind ||
+                                "의뢰자"}
+                            </Badge>
+                          </div>
                         }
                       />
                     ))}

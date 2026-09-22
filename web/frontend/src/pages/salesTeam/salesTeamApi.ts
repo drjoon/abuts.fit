@@ -36,6 +36,8 @@ export type SalesAccount = {
   businessAnchorId?: string | null;
   ownerUserId?: string;
   teamVisible?: boolean;
+  /** BusinessAnchor.usesOralScan (가입 거래처) */
+  usesOralScan?: boolean;
   updatedAt?: string;
 };
 
@@ -103,12 +105,13 @@ export const salesTeamApi = {
 
   listAccounts: (
     token: string | null,
-    params?: { q?: string; kind?: string; join?: string },
+    params?: { q?: string; kind?: string; join?: string; usesOralScan?: boolean },
   ) => {
     const sp = new URLSearchParams();
     if (params?.q) sp.set("q", params.q);
     if (params?.kind) sp.set("kind", params.kind);
     if (params?.join) sp.set("join", params.join);
+    if (params?.usesOralScan) sp.set("usesOralScan", "1");
     const qs = sp.toString();
     return salesFetch<{ items: SalesAccount[] }>(
       token,
@@ -251,6 +254,7 @@ export const salesTeamApi = {
         _id: string;
         name?: string;
         requestorKind?: string;
+        usesOralScan?: boolean;
         createdAt?: string;
       }>;
     }>(token, "/api/sales-team/referral"),

@@ -100,6 +100,16 @@ const businessAnchorSchema = new mongoose.Schema(
       lab: { type: Boolean, default: false },
     },
     /**
+     * 구강 스캐너 사용 여부(의뢰자 치과 Org SSOT).
+     * 이벤트 신청·회원 설정에서 동기화. 영업팀/딜러/관리자 선별 필터.
+     * related: user.practiceProfile.usesOralScan · marketingEvent.controller apply
+     */
+    usesOralScan: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    /**
      * 데모 모드(의뢰자 치과·기공소). 신규 가입 시 true·크레딧 0원 시작(30일).
      * 치과=기공비, 기공소=어벗츠 생산·배송 마이너스 잔고 허용. 기간 만료·CHARGE_PAID/
      * 사용자·관리자 실사용 전환 시 false + demoModeExitedAt(+부채 0 리셋·레거시 잔여 회수).

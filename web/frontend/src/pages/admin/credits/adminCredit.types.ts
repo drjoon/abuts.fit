@@ -113,6 +113,8 @@ export type BusinessCredit = {
   _id: string;
   businessAnchorId?: string | null;
   businessType?: string;
+  requestorKind?: string | null;
+  usesOralScan?: boolean;
   name: string;
   companyName: string;
   businessNumber: string;

@@ -112,6 +112,9 @@ export async function ensureRequestorOrgAnchor({ user } = {}) {
           anchor.requestorKind = persist.requestorKind;
           anchor.requestorServices = persist.requestorServices;
         }
+        if (typeof practiceProfile.usesOralScan === "boolean") {
+          anchor.usesOralScan = practiceProfile.usesOralScan;
+        }
         const ownerIds = Array.isArray(anchor.owners) ? anchor.owners : [];
         if (!ownerIds.some((id) => String(id) === String(user._id))) {
           anchor.owners = [...ownerIds, user._id];
@@ -145,6 +148,7 @@ export async function ensureRequestorOrgAnchor({ user } = {}) {
     members: [user._id],
     demoMode: true,
     demoModeStartedAt: new Date(),
+    usesOralScan: Boolean(practiceProfile.usesOralScan),
     ...persist,
     metadata: {
       companyName: clinicName,
@@ -190,4 +194,66 @@ export async function ensureRequestorOrgAnchor({ user } = {}) {
   }
 
   return created;
+}
+
+/**
+ * 구강 스캔 사용 여부 → User.practiceProfile + BusinessAnchor(Org SSOT) 동기화.
+ * 이벤트 신청·회원 설정 공통.
+ */
+export async function syncPracticeUsesOralScan({
+  userId = null,
+  businessAnchorId = null,
+  usesOralScan,
+} = {}) {
+  if (typeof usesOralScan !== "boolean") return { updatedUser: false, updatedAnchor: false };
+
+  let anchorId = businessAnchorId || null;
+  const userOid =
+    userId && Types.ObjectId.isValid(String(userId))
+      ? new Types.ObjectId(String(userId))
+      : null;
+
+  if (!anchorId && userOid) {
+    const user = await User.findById(userOid)
+      .select({ businessAnchorId: 1 })
+      .lean();
+    anchorId = user?.businessAnchorId || null;
+  }
+
+  const now = new Date();
+  const ops = [];
+  let updatedUser = false;
+  let updatedAnchor = false;
+
+  if (userOid) {
+    ops.push(
+      User.updateOne(
+        { _id: userOid },
+        {
+          $set: {
+            "practiceProfile.usesOralScan": usesOralScan,
+            "practiceProfile.updatedAt": now,
+          },
+        },
+      ).then((r) => {
+        updatedUser = Number(r?.modifiedCount || r?.nModified || 0) > 0 || Number(r?.matchedCount || 0) > 0;
+      }),
+    );
+  }
+
+  if (anchorId && Types.ObjectId.isValid(String(anchorId))) {
+    ops.push(
+      BusinessAnchor.updateOne(
+        { _id: anchorId },
+        { $set: { usesOralScan } },
+      ).then((r) => {
+        updatedAnchor =
+          Number(r?.modifiedCount || r?.nModified || 0) > 0 ||
+          Number(r?.matchedCount || 0) > 0;
+      }),
+    );
+  }
+
+  if (ops.length) await Promise.all(ops);
+  return { updatedUser, updatedAnchor, businessAnchorId: anchorId || null };
 }

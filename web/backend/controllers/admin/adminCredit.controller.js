@@ -3294,6 +3294,8 @@ export async function adminGetBusinessCredits(req, res) {
         metadata: 1,
         businessAnchorId: 1,
         businessType: 1,
+        requestorKind: 1,
+        usesOralScan: 1,
       })
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -3658,6 +3660,8 @@ export async function adminGetBusinessCredits(req, res) {
         _id: org._id,
         businessAnchorId: anchorId,
         businessType,
+        requestorKind: String(org.requestorKind || "").trim() || null,
+        usesOralScan: Boolean(org.usesOralScan),
         ownerRole,
         isFreeCreditEligible,
         name: org.name,

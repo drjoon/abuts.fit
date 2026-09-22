@@ -13,7 +13,7 @@ import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { messageService } from "../../utils/popbill.util.js";
 import { Types } from "mongoose";
 import { toKstYmd } from "../../utils/krBusinessDays.js";
-import { ensureRequestorOrgAnchor } from "../businesses/requestorOrgAnchor.util.js";
+import { ensureRequestorOrgAnchor, syncPracticeUsesOralScan } from "../businesses/requestorOrgAnchor.util.js";
 import { resolvePlatformFeeRate } from "../../services/creditRevenuePolicy.service.js";
 import { normalizeLastDashboardPath } from "../../utils/lastDashboardPath.util.js";
 import { normalizeSidebarOpen } from "../../utils/sidebarOpen.util.js";
@@ -698,6 +698,22 @@ async function updateProfile(req, res) {
       await ensureRequestorOrgAnchor({ user: updatedUser.toObject() });
       const refreshed = await User.findById(updatedUser._id).select("-password");
       if (refreshed) responseUser = refreshed;
+
+      const pp =
+        refreshed?.practiceProfile &&
+        typeof refreshed.practiceProfile === "object"
+          ? refreshed.practiceProfile
+          : updatedUser.practiceProfile;
+      if (typeof pp?.usesOralScan === "boolean") {
+        void syncPracticeUsesOralScan({
+          userId: refreshed?._id || updatedUser._id,
+          businessAnchorId:
+            refreshed?.businessAnchorId || updatedUser.businessAnchorId || null,
+          usesOralScan: pp.usesOralScan,
+        }).catch((err) => {
+          console.error("[users.updateProfile] syncPracticeUsesOralScan", err);
+        });
+      }
     }
 
     res.status(200).json({

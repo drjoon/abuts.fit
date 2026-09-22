@@ -54,9 +54,12 @@ import {
   SalesToolbar,
 } from "./salesUi";
 
-type ListFilter = "all" | "practice" | "lab" | "unjoined" | "joined";
+type ListFilter = "all" | "practice" | "lab" | "unjoined" | "joined" | "oralScan";
 
 function listParams(filter: ListFilter) {
+  if (filter === "oralScan") {
+    return { usesOralScan: true as const };
+  }
   if (filter === "practice" || filter === "lab") {
     return { kind: filter };
   }
@@ -244,6 +247,11 @@ export default function SalesAccountsPage() {
                       좌표없음
                     </Badge>
                   ) : null}
+                  {item.usesOralScan ? (
+                    <Badge className="border-0 bg-sky-50 text-sky-800">
+                      구강스캔
+                    </Badge>
+                  ) : null}
                   {item.businessAnchorId ? (
                     <Badge>가입</Badge>
                   ) : (
@@ -267,7 +275,7 @@ export default function SalesAccountsPage() {
         title={detail.name}
         description={`${KIND_LABEL[detail.kind] || detail.kind}${
           detail.businessAnchorId ? " · 플랫폼 가입" : " · 플랫폼 미가입"
-        }`}
+        }${detail.usesOralScan ? " · 구강스캔" : ""}`}
         actions={
           <div className="flex gap-1">
             {!hasCoords(detail) ? (
@@ -388,6 +396,7 @@ export default function SalesAccountsPage() {
               <SelectItem value="all">전체</SelectItem>
               <SelectItem value="practice">치과</SelectItem>
               <SelectItem value="lab">기공소</SelectItem>
+              <SelectItem value="oralScan">구강스캔</SelectItem>
               <SelectItem value="unjoined">미가입</SelectItem>
               <SelectItem value="joined">가입</SelectItem>
             </SelectContent>

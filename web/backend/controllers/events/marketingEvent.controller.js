@@ -8,6 +8,7 @@ import MarketingEvent from "../../models/marketingEvent.model.js";
 import MarketingEventApplication from "../../models/marketingEventApplication.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { searchKakaoPlaces } from "../../services/kakaoPlaceSearch.service.js";
+import { syncPracticeUsesOralScan } from "../businesses/requestorOrgAnchor.util.js";
 
 const SIMPLEWAY_SAMPLE_SLUG = "simpleway-gribo";
 const SIMPLEWAY_SAMPLE_SLUG_LEGACY = "simpleway-sample-kit";
@@ -35,6 +36,7 @@ const SIMPLEWAY_EVENT_COPY = {
     "추가 안내",
     "· 거래 기공소에 그리보 힐링 스캔 라이브러리 설치 안내 (그리보 어벗H·그리보 커스텀어벗)",
     "· 구강 스캐너 사용 치과에는 스캔바 제품 소개",
+    "· 어벗츠 플랫폼 안내 (구강스캔·석고모델 기반 커스텀어벗 디자인·생산 의뢰)",
   ].join("\n"),
 };
 
@@ -616,6 +618,17 @@ export async function applyToEvent(req, res) {
       memo,
       status: "received",
     });
+
+    // 로그인 신청: 회원 프로필·BA Org에 구강 스캔 여부 동기화(응답 후 부수 효과)
+    if (applicantUserId) {
+      void syncPracticeUsesOralScan({
+        userId: applicantUserId,
+        businessAnchorId: authUser?.businessAnchorId || null,
+        usesOralScan,
+      }).catch((err) => {
+        console.error("[events.apply] syncPracticeUsesOralScan", err);
+      });
+    }
 
     return res.status(201).json({
       success: true,

@@ -449,11 +449,17 @@ export default function AdminBusinessPage({
   const filteredBusinesses = useMemo(() => {
     const q = search.trim().toLowerCase();
     return businesses.filter((business) => {
-      const matchesType =
-        typeFilter === "all" ||
-        normalizeBusinessType(business.businessType) ===
-          normalizeBusinessType(typeFilter);
-      if (!matchesType) return false;
+      if (typeFilter === "oralScan") {
+        if (!business.usesOralScan) return false;
+        const bt = normalizeBusinessType(business.businessType);
+        if (bt !== "requestor" && bt !== "practice") return false;
+      } else {
+        const matchesType =
+          typeFilter === "all" ||
+          normalizeBusinessType(business.businessType) ===
+            normalizeBusinessType(typeFilter);
+        if (!matchesType) return false;
+      }
       if (!q) return true;
       const hay = [
         business.name,
@@ -574,6 +580,7 @@ export default function AdminBusinessPage({
                   [
                     ["all", "전체"],
                     ["requestor", "의뢰자"],
+                    ["oralScan", "구강스캔"],
                     ["salesman", formatBusinessTypeLabel("salesman")],
                     ["manufacturer", "제조사"],
                     ["devops", "개발운영사"],
@@ -660,6 +667,11 @@ export default function AdminBusinessPage({
                             >
                               {getBusinessTypeLabel(business.businessType)}
                             </Badge>
+                            {business.usesOralScan ? (
+                              <Badge className="h-5 border-0 bg-sky-50 px-1.5 text-[10px] text-sky-800">
+                                구강스캔
+                              </Badge>
+                            ) : null}
                           </div>
                           {business.name &&
                           business.name !== business.companyName ? (
@@ -926,6 +938,14 @@ export default function AdminBusinessPage({
                   <div className="text-xs text-muted-foreground">사업자 유형</div>
                   <div className="mt-1 font-medium">
                     {getBusinessTypeLabel(detailDialog.business.businessType)}
+                  </div>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <div className="text-xs text-muted-foreground">
+                    구강 스캔 사용
+                  </div>
+                  <div className="mt-1 font-medium">
+                    {detailDialog.business.usesOralScan ? "사용" : "미사용·미등록"}
                   </div>
                 </div>
                 <div className="rounded-lg border p-3">

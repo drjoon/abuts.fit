@@ -1113,6 +1113,33 @@ function buildAccountListFilter(userId, role, { q, kind, join } = {}) {
   return nonempty.length === 1 ? nonempty[0] : { $and: nonempty };
 }
 
+async function enrichAccountsWithUsesOralScan(items) {
+  const list = Array.isArray(items) ? items : [];
+  const anchorIds = [
+    ...new Set(
+      list
+        .map((it) => String(it?.businessAnchorId || "").trim())
+        .filter((id) => id && Types.ObjectId.isValid(id)),
+    ),
+  ].map((id) => new Types.ObjectId(id));
+
+  if (!anchorIds.length) {
+    return list.map((it) => ({ ...it, usesOralScan: false }));
+  }
+
+  const anchors = await BusinessAnchor.find({ _id: { $in: anchorIds } })
+    .select({ usesOralScan: 1 })
+    .lean();
+  const byId = new Map(
+    (anchors || []).map((a) => [String(a._id), Boolean(a.usesOralScan)]),
+  );
+
+  return list.map((it) => ({
+    ...it,
+    usesOralScan: byId.get(String(it?.businessAnchorId || "")) === true,
+  }));
+}
+
 export async function getSalesHome(req, res) {
   try {
     const userId = req.user._id;
@@ -1207,18 +1234,51 @@ export async function listAccounts(req, res) {
     const q = String(req.query.q || "").trim();
     const kind = String(req.query.kind || "").trim();
     const join = String(req.query.join || "").trim();
+    const usesOralScanRaw = String(req.query.usesOralScan || "").trim();
+    const filterOralScan =
+      usesOralScanRaw === "1" ||
+      usesOralScanRaw === "true" ||
+      usesOralScanRaw === "yes";
+
     const filter = buildAccountListFilter(req.user._id, req.user.role, {
       q,
-      kind,
-      join,
+      kind: filterOralScan && !kind ? "practice" : kind,
+      join: filterOralScan && !join ? "joined" : join,
     });
+
+    if (filterOralScan) {
+      const oralAnchors = await BusinessAnchor.find({
+        usesOralScan: true,
+        businessType: "requestor",
+        $or: [{ requestorKind: "practice" }, { requestorKind: null }],
+      })
+        .select({ _id: 1 })
+        .lean();
+      const oralIds = (oralAnchors || []).map((a) => a._id);
+      const oralClause = { businessAnchorId: { $in: oralIds } };
+      const merged =
+        filter && Object.keys(filter).length
+          ? { $and: [filter, oralClause] }
+          : oralClause;
+      const items = await SalesAccount.find(merged)
+        .sort({ updatedAt: -1 })
+        .limit(200)
+        .lean();
+      return res.json({
+        success: true,
+        data: { items: await enrichAccountsWithUsesOralScan(items) },
+      });
+    }
 
     const items = await SalesAccount.find(filter)
       .sort({ updatedAt: -1 })
       .limit(200)
       .lean();
 
-    return res.json({ success: true, data: { items } });
+    return res.json({
+      success: true,
+      data: { items: await enrichAccountsWithUsesOralScan(items) },
+    });
   } catch (error) {
     console.error("[salesTeam.listAccounts]", error);
     return res.status(500).json({
@@ -1241,7 +1301,8 @@ export async function getAccount(req, res) {
     if (!item) {
       return res.status(404).json({ success: false, message: "거래처를 찾을 수 없습니다." });
     }
-    return res.json({ success: true, data: item });
+    const [enriched] = await enrichAccountsWithUsesOralScan([item]);
+    return res.json({ success: true, data: enriched });
   } catch (error) {
     console.error("[salesTeam.getAccount]", error);
     return res.status(500).json({
@@ -2034,7 +2095,7 @@ export async function getReferralInfo(req, res) {
           referredByAnchorId: anchorId,
           businessType: "requestor",
         })
-          .select({ name: 1, requestorKind: 1, createdAt: 1 })
+          .select({ name: 1, requestorKind: 1, usesOralScan: 1, createdAt: 1 })
           .sort({ createdAt: -1 })
           .limit(100)
           .lean()
@@ -2046,7 +2107,10 @@ export async function getReferralInfo(req, res) {
         referralCode,
         policyNote:
           "판매·세금계산서는 플랫폼 가입 사업자만 가능합니다. 소개코드로 가입한 거래처가 담당 실적으로 집계됩니다. 의뢰자가 90일간 주문(커스텀 어벗 의뢰)이 없으면 소개 귀속이 리셋되어, 누구든 다시 영업할 수 있습니다.",
-        organizations: orgs,
+        organizations: (orgs || []).map((o) => ({
+          ...o,
+          usesOralScan: Boolean(o.usesOralScan),
+        })),
       },
     });
   } catch (error) {

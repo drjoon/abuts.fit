@@ -11,10 +11,10 @@ import { Link, useLocation, useParams } from "react-router-dom";
 import {
   ArrowDown,
   ArrowLeft,
-  CalendarDays,
   CheckCircle2,
   Gift,
   Info,
+  LayoutGrid,
   Package,
   ScanLine,
   Sparkles,
@@ -40,8 +40,7 @@ import {
 import {
   GRIBO_HERO_EYEBROW,
   SIMPLEWAY_DEALER_HELP,
-  SIMPLEWAY_HERO_BADGE,
-  SIMPLEWAY_HERO_SUB,
+  SIMPLEWAY_HERO_SUB_LINES,
   SIMPLEWAY_SAMPLE_EXTRAS,
   SIMPLEWAY_SAMPLE_KIT,
   SIMPLEWAY_SAMPLE_SLUG,
@@ -143,13 +142,18 @@ function SimplewayHero({
         <p className="animate-in fade-in slide-in-from-bottom-2 fill-mode-both text-xs font-semibold uppercase tracking-[0.28em] text-sky-700 duration-700">
           {GRIBO_HERO_EYEBROW}
         </p>
-        <h1 className="animate-in fade-in slide-in-from-bottom-3 fill-mode-both mt-4 max-w-3xl text-[clamp(2.1rem,5.5vw,3.75rem)] font-semibold leading-[1.12] tracking-tight text-[#0b2a5c] duration-700 delay-100">
-          심플웨이 신제품
-          <br />
-          그리보(Gribo) 출시 행사
+        <h1 className="animate-in fade-in slide-in-from-bottom-3 fill-mode-both mt-4 max-w-3xl font-semibold leading-[1.12] tracking-tight text-[#0b2a5c] duration-700 delay-100">
+          <span className="block text-[clamp(0.95rem,2.2vw,1.2rem)] font-medium tracking-wide text-slate-500">
+            심플웨이 신제품
+          </span>
+          <span className="mt-2 block text-[clamp(2.1rem,5.5vw,3.75rem)]">
+            그리보(Gribo) 출시 행사
+          </span>
         </h1>
-        <p className="animate-in fade-in slide-in-from-bottom-3 fill-mode-both mt-5 max-w-xl text-base leading-relaxed text-slate-600 sm:text-lg duration-700 delay-200">
-          {SIMPLEWAY_HERO_SUB}
+        <p className="animate-in fade-in slide-in-from-bottom-3 fill-mode-both mt-5 max-w-3xl text-base leading-relaxed text-slate-600 sm:max-w-4xl sm:text-lg duration-700 delay-200">
+          {SIMPLEWAY_HERO_SUB_LINES[0]}
+          <br />
+          {SIMPLEWAY_HERO_SUB_LINES[1]}
         </p>
 
         <div className="animate-in fade-in slide-in-from-bottom-3 fill-mode-both mt-8 flex flex-wrap items-center gap-3 duration-700 delay-300">
@@ -184,10 +188,6 @@ function SimplewayHero({
               {canApply ? <ArrowDown className="ml-2 h-4 w-4" /> : null}
             </Button>
           )}
-          <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/80 px-4 py-2 text-sm text-slate-600 backdrop-blur">
-            <CalendarDays className="h-4 w-4 shrink-0 text-sky-600" />
-            {SIMPLEWAY_HERO_BADGE}
-          </div>
         </div>
       </div>
     </section>
@@ -253,7 +253,7 @@ function ExtrasSection() {
         <h2 className="mt-2 max-w-xl text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
           함께 안내드리는 디지털 지원
         </h2>
-        <div className="mt-10 grid gap-4 md:grid-cols-2">
+        <div className="mt-10 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {SIMPLEWAY_SAMPLE_EXTRAS.map((extra) => (
             <article
               key={extra.id}
@@ -262,6 +262,8 @@ function ExtrasSection() {
               <span className="mt-0.5 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/10 ring-1 ring-white/15">
                 {extra.id === "scanbar" ? (
                   <ScanLine className="h-5 w-5" />
+                ) : extra.id === "abuts-platform" ? (
+                  <LayoutGrid className="h-5 w-5" />
                 ) : (
                   <Sparkles className="h-5 w-5" />
                 )}
@@ -292,6 +294,7 @@ export default function EventApplyPage() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const token = useAuthStore((s) => s.token);
   const user = useAuthStore((s) => s.user);
+  const setUser = useAuthStore((s) => s.setUser);
   const [event, setEvent] = useState<MarketingEvent | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -465,6 +468,15 @@ export default function EventApplyPage() {
         token,
       );
       clearEventApplyLocalDraft(event.slug, user?._id);
+      if (user) {
+        setUser({
+          ...user,
+          practiceProfile: {
+            ...(user.practiceProfile || {}),
+            usesOralScan,
+          },
+        });
+      }
       setDone(true);
       setAlreadyApplied(true);
       toast({
