@@ -614,14 +614,14 @@ Notes:
   - 상단 합계는 2칸(`미정산` · `전월 지급`). `DashboardShell.statsGridClassName`을 `sm:grid-cols-2`로 두고 카드 높이는 compact.
 
 - 관리자 정산(`AdminPaymentsPage`) 표시 정책:
-  - 상단 3사업 축(선택형 카드): (1) 스토어 (2) 커스텀어벗 (3) 기공사업부. 각 축에 매출·지출·분배를 현재 룰대로 표시.
+  - 상단 3사업 축(선택형 `SettlementStatCard`): (1) 스토어 (2) 커스텀어벗 (3) 기공사업부. 각 축에 매출−지출=분배.
   - 집계 API: `GET /api/admin/credits/settlement-business-overview` (기간=`period`/`startDate`/`endDate`).
-    - (1) 스토어: `REV_STORE_TAXABLE`(`STORE_SALE`/`REFUND`) 포함가·공급·VAT · 분배 없음
-    - (2) 커스텀어벗: 의뢰자 유료 소비 + 제조사 하청 + 잔여(`REV_SALESMAN`/`REV_DEVOPS`/`REV_ADMIN`, `REQUEST_SPEND_COMMIT`만)
-    - (3) 기공사업부: `internalLab` `LAB_SETTLEMENT_CREDIT` + 하청 수수료(`PRACTICE_TRANSFER_ESCROW_RELEASE.meta.abutsRevenueAmount`)
-  - 카드 선택 시 해당 사업 상세 패널. 커스텀어벗 선택 시「관계사 잔여 분배」(딜러·개발운영·어벗츠).
-  - 기간 필터는 `PeriodFilter`(KST). `PricingPolicyDialog`는 가격·출고 안내만(사업 축 UI 아님).
-  - UI: `creditPageUi` 패널/스탯 타일 + 선택형 사업 카드.
+    - (1) 스토어: `REV_STORE_TAXABLE`(`STORE_SALE`/`REFUND`) 포함가·공급·VAT + `shareRates.store`·planned 몫(설정 분배비율 참고)
+    - (2) 커스텀어벗: 의뢰자 유료 소비 + 제조사 하청 + 잔여(`REV_SALESMAN`/`REV_DEVOPS`/`REV_ADMIN`, `REQUEST_SPEND_COMMIT`만) + `shareRates.customAbut`
+    - (3) 기공사업부: `internalLab` `LAB_SETTLEMENT_CREDIT` + 하청 수수료 + `shareRates.labDivision`·planned 몫
+  - 카드 선택 시 해당 사업 상세. 커스텀어벗만「관계사 잔여 분배」(딜러·개발운영·어벗츠).
+  - 긴 안내는 `SettlementPolicyDialog`(정산규칙). 기간=`PeriodFilter`(KST).
+  - UI: `settlementUi` 요약 카드·수식 부호 + `creditPageUi` 패널/타일.
 
 - 어벗츠기공소(`internalLab`) UI SSOT:
   - Role: top-level `User.role=internalLab`(제조사와 대칭). 공개 가입 없음·관리자 생성. UI 라벨 「어벗츠기공소」.

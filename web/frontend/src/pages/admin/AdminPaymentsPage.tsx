@@ -1,4 +1,7 @@
 // change-log:
+// - 2026-09-23: 제조사 월별=의뢰·배송 합산(마이그레이션 PAID fallback 오인 방지).
+// - 2026-09-23: 월별 내역에 유료 배송 열(제조사 periodPaidShipping*).
+// - 2026-09-23: SettlementStatCard·정산규칙 모달·분배비율(설정) 반영. 매출−지출=분배 UX.
 // - 2026-09-23: 3사업 축을 스토어·커스텀어벗·기공사업부로 재편(매출·지출·분배).
 // - 2026-09-20: 사업 축 요약 카드 여백 — DashboardShell stats p-0.5(선택 ring 클리핑 방지).
 // - 2026-09-01: fillHeight 작업영역 — workspace-nested-scroll로 카드 오른쪽 끝 수직 스크롤.
@@ -11,17 +14,11 @@
 // related files:
 // - web/frontend/rules.md
 // - web/backend/controllers/admin/adminCredit.controller.js
+// - web/frontend/src/shared/settlement/settlementUi.tsx
 // - web/frontend/src/pages/admin/credits/creditPageUi.tsx
 // - web/frontend/src/shared/ui/dashboard/DashboardShell.tsx
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import type { LucideIcon } from "lucide-react";
-import {
-  Factory,
-  FlaskConical,
-  HandCoins,
-  Search,
-  Store,
-} from "lucide-react";
+import { Factory, FlaskConical, HandCoins, Search, Store } from "lucide-react";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { usePeriodStore, periodToRangeQuery } from "@/store/usePeriodStore";
@@ -36,7 +33,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
-import { cn } from "@/shared/ui/cn";
 import {
   CreditPanel,
   CreditSectionHeader,
@@ -45,8 +41,15 @@ import {
 import {
   SETTLEMENT_EXEMPT_INVOICE_LABEL,
   SETTLEMENT_TAXABLE_INVOICE_LABEL,
+  formatWonWithUnit,
   splitInclusiveVat,
 } from "@/shared/settlement/affiliateVat";
+import {
+  SettlementEquationOperator,
+  SettlementPolicyDialog,
+  SettlementPolicySection,
+  SettlementStatCard,
+} from "@/shared/settlement/settlementUi";
 
 const HISTORY_MONTHS = 6;
 
@@ -85,11 +88,19 @@ type SalesmanRow = {
 type MonthlyHistoryRow = {
   label: string;
   paidAmount: number;
+  paidRequestCount: number;
+  paidShippingAmount: number;
+  paidShippingCount: number;
   freeRequestAmount: number;
   freeRequestCount: number;
   freeShippingAmount: number;
   freeShippingCount: number;
   freeTotalAmount: number;
+  /** 제조사: 유료/무료 합산(약정 단가 전액). */
+  requestSupplyAmount?: number;
+  requestCount?: number;
+  shippingSupplyAmount?: number;
+  shippingCount?: number;
 };
 
 type ManufacturerSummary = {
@@ -112,18 +123,46 @@ type ManufacturerSummary = {
   periodRequestVat?: number;
   periodShippingSupply?: number;
   periodShippingVat?: number;
+  periodRequestCount?: number;
+  periodShippingCount?: number;
   manufacturerRequestUnitPrice?: number;
   manufacturerShippingUnitPrice?: number;
   affiliateVatRate?: number;
 };
 
+type ShareRates = {
+  store?: {
+    manufacturerPercent?: number;
+    salesmanPercent?: number;
+    devopsPercent?: number;
+    abutsPercent?: number;
+  };
+  customAbut?: {
+    manufacturerPercent?: number;
+    salesmanPercent?: number;
+    devopsPercent?: number;
+    abutsPercent?: number;
+  };
+  labDivision?: {
+    bizPercent?: number;
+    salesTeamPercent?: number;
+    devopsPercent?: number;
+    abutsPercent?: number;
+  };
+};
+
 type SettlementBusinessOverview = {
+  shareRates?: ShareRates;
   store?: {
     periodGrossInclusive?: number;
     periodSupply?: number;
     periodVat?: number;
     periodSaleCount?: number;
     periodRefundCount?: number;
+    plannedManufacturerSupply?: number;
+    plannedSalesmanSupply?: number;
+    plannedDevopsSupply?: number;
+    plannedAbutsSupply?: number;
   };
   customAbut?: {
     periodPaidSpend?: number;
@@ -153,6 +192,10 @@ type SettlementBusinessOverview = {
     subcontractFeeReleaseCount?: number;
     subcontractFeeRate?: number;
     periodRevenue?: number;
+    plannedBizSupply?: number;
+    plannedSalesTeamSupply?: number;
+    plannedDevopsSupply?: number;
+    plannedAbutsSupply?: number;
   };
   /** @deprecated 레거시 키 — labDivision으로 대체 */
   autoMatchFee?: {
@@ -205,72 +248,46 @@ type AdminCreditRow = {
   };
 };
 
-const formatMoney = (value?: number) =>
-  typeof value === "number" && Number.isFinite(value)
-    ? value.toLocaleString("ko-KR")
-    : "0";
+function pctLabel(value?: number) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "—%";
+  return `${Math.round(n * 10) / 10}%`;
+}
 
-const formatWon = (value?: number) => `${formatMoney(value)}원`;
-
-function BusinessAxisCard({
-  index,
-  title,
-  value,
-  hints,
-  icon: Icon,
-  selected,
-  onSelect,
-  loading,
+function ShareRateHint({
+  parts,
 }: {
-  index: number;
-  title: string;
-  value: string;
-  hints: ReactNode;
-  icon: LucideIcon;
-  selected: boolean;
-  onSelect: () => void;
-  loading?: boolean;
+  parts: Array<{ label: string; pct?: number }>;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className={cn(
-        "group min-h-[132px] rounded-2xl border bg-white p-4 text-left shadow-sm transition-all",
-        selected
-          ? "border-slate-900 ring-2 ring-slate-900/10"
-          : "border-slate-200/80 hover:border-slate-300 hover:shadow-md",
-      )}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-2.5">
-          <span
-            className={cn(
-              "flex h-9 w-9 items-center justify-center rounded-xl ring-1",
-              selected
-                ? "bg-slate-900 text-white ring-slate-900"
-                : "bg-slate-50 text-slate-600 ring-slate-200",
-            )}
-          >
-            <Icon className="h-4 w-4" />
-          </span>
-          <div>
-            <div className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
-              {index}. 사업
-            </div>
-            <div className="text-sm font-semibold tracking-tight text-slate-900 break-keep">
-              {title}
-            </div>
-          </div>
-        </div>
-      </div>
-      <div className="mt-3 text-2xl font-bold tabular-nums tracking-tight text-slate-900">
-        {loading ? "—" : value}
-      </div>
-      <div className="mt-1.5 space-y-0.5 text-xs leading-relaxed text-muted-foreground">
-        {hints}
-      </div>
-    </button>
+    <div className="tabular-nums">
+      {parts.map((p, i) => (
+        <span key={p.label}>
+          {i > 0 ? " · " : null}
+          {p.label} {pctLabel(p.pct)}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function EquationRow({
+  revenue,
+  expense,
+  distribution,
+}: {
+  revenue: ReactNode;
+  expense: ReactNode;
+  distribution: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
+      <div className="min-w-0 flex-1">{revenue}</div>
+      <SettlementEquationOperator symbol="−" className="hidden sm:flex" />
+      <div className="min-w-0 flex-1">{expense}</div>
+      <SettlementEquationOperator symbol="=" className="hidden sm:flex" />
+      <div className="min-w-0 flex-1">{distribution}</div>
+    </div>
   );
 }
 
@@ -278,15 +295,24 @@ function MonthlyHistorySection({
   title,
   rows,
   isLoading,
+  variant = "affiliate",
 }: {
   title: string;
   rows: MonthlyHistoryRow[];
   isLoading: boolean;
+  /** manufacturer: 의뢰·배송 합산(유료/무료 구분 없음). */
+  variant?: "manufacturer" | "affiliate";
 }) {
+  const isManufacturer = variant === "manufacturer";
   return (
     <CreditPanel>
       <div className="border-b border-slate-100 px-4 py-3">
         <div className="text-sm font-semibold text-slate-900">{title}</div>
+        {isManufacturer ? (
+          <div className="mt-0.5 text-xs text-muted-foreground">
+            약정 단가 전액 · 유료/무료 구분 없음
+          </div>
+        ) : null}
       </div>
       <div className="min-w-0 p-4">
         {isLoading ? (
@@ -297,13 +323,46 @@ function MonthlyHistorySection({
           <div className="text-sm text-muted-foreground">
             표시할 월별 내역이 없습니다.
           </div>
-        ) : (
+        ) : isManufacturer ? (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[560px] text-left text-sm">
+            <table className="w-full min-w-[420px] text-left text-sm">
               <thead>
                 <tr className="border-b border-slate-100 text-xs text-slate-500">
                   <th className="pb-2 font-medium">월</th>
-                  <th className="pb-2 font-medium">유료</th>
+                  <th className="pb-2 font-medium">의뢰</th>
+                  <th className="pb-2 font-medium">배송</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr
+                    key={row.label}
+                    className="border-b border-slate-50 last:border-0"
+                  >
+                    <td className="py-2.5 font-medium tabular-nums text-slate-900">
+                      {row.label}
+                    </td>
+                    <td className="py-2.5 tabular-nums">
+                      {formatWonWithUnit(row.requestSupplyAmount)} (
+                      {Number(row.requestCount || 0).toLocaleString()})
+                    </td>
+                    <td className="py-2.5 tabular-nums">
+                      {formatWonWithUnit(row.shippingSupplyAmount)} (
+                      {Number(row.shippingCount || 0).toLocaleString()})
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[720px] text-left text-sm">
+              <thead>
+                <tr className="border-b border-slate-100 text-xs text-slate-500">
+                  <th className="pb-2 font-medium">월</th>
+                  <th className="pb-2 font-medium">유료 의뢰</th>
+                  <th className="pb-2 font-medium">유료 배송</th>
                   <th className="pb-2 font-medium">무료 의뢰</th>
                   <th className="pb-2 font-medium">무료 배송</th>
                 </tr>
@@ -318,14 +377,19 @@ function MonthlyHistorySection({
                       {row.label}
                     </td>
                     <td className="py-2.5 tabular-nums">
-                      {formatWon(row.paidAmount)}
+                      {formatWonWithUnit(row.paidAmount)} (
+                      {row.paidRequestCount.toLocaleString()})
+                    </td>
+                    <td className="py-2.5 tabular-nums">
+                      {formatWonWithUnit(row.paidShippingAmount)} (
+                      {row.paidShippingCount.toLocaleString()})
                     </td>
                     <td className="py-2.5 tabular-nums text-muted-foreground">
-                      {formatWon(row.freeRequestAmount)} (
+                      {formatWonWithUnit(row.freeRequestAmount)} (
                       {row.freeRequestCount.toLocaleString()})
                     </td>
                     <td className="py-2.5 tabular-nums text-muted-foreground">
-                      {formatWon(row.freeShippingAmount)} (
+                      {formatWonWithUnit(row.freeShippingAmount)} (
                       {row.freeShippingCount.toLocaleString()})
                     </td>
                   </tr>
@@ -356,12 +420,14 @@ function AffiliateGroupCard({ group }: { group: AnchorGroup }) {
         </div>
         <div className="flex justify-between gap-3">
           <span className="text-muted-foreground">기간 수수료</span>
-          <span className="tabular-nums">{formatWon(group.commissionAmount)}</span>
+          <span className="tabular-nums">
+            {formatWonWithUnit(group.commissionAmount)}
+          </span>
         </div>
         <div className="flex justify-between gap-3">
           <span className="text-muted-foreground">미정산 잔액</span>
           <span className="font-semibold tabular-nums text-slate-900">
-            {formatWon(group.balanceAmount)}
+            {formatWonWithUnit(group.balanceAmount)}
           </span>
         </div>
       </div>
@@ -394,8 +460,7 @@ export default function AdminPaymentsPage({
     useState<SettlementBusinessOverview | null>(null);
   const [adminRows, setAdminRows] = useState<AdminCreditRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [selectedAxis, setSelectedAxis] =
-    useState<BusinessAxisId>("store");
+  const [selectedAxis, setSelectedAxis] = useState<BusinessAxisId>("store");
   const [affiliateTab, setAffiliateTab] = useState("salesman");
   const [searchQuery, setSearchQuery] = useState("");
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -603,6 +668,9 @@ export default function AdminPaymentsPage({
               return {
                 label: month.label,
                 paidAmount,
+                paidRequestCount: 0,
+                paidShippingAmount: 0,
+                paidShippingCount: 0,
                 freeRequestAmount,
                 freeRequestCount,
                 freeShippingAmount,
@@ -644,7 +712,16 @@ export default function AdminPaymentsPage({
             return {
               manufacturer: {
                 label: month.label,
-                paidAmount: Number(manufacturer?.periodBalanceAmount || 0),
+                paidAmount: Number(manufacturer?.periodPaidRequestAmount || 0),
+                paidRequestCount: Number(
+                  manufacturer?.periodPaidRequestCount || 0,
+                ),
+                paidShippingAmount: Number(
+                  manufacturer?.periodPaidShippingAmount || 0,
+                ),
+                paidShippingCount: Number(
+                  manufacturer?.periodPaidShippingCount || 0,
+                ),
                 freeRequestAmount: Number(
                   manufacturer?.periodFreeRequestAmount || 0,
                 ),
@@ -658,12 +735,31 @@ export default function AdminPaymentsPage({
                   manufacturer?.periodFreeShippingCount || 0,
                 ),
                 freeTotalAmount: Number(manufacturer?.periodFreeAmount || 0),
+                requestSupplyAmount: Number(
+                  manufacturer?.periodRequestSupply || 0,
+                ),
+                requestCount: Number(
+                  manufacturer?.periodRequestCount ||
+                    Number(manufacturer?.periodPaidRequestCount || 0) +
+                      Number(manufacturer?.periodFreeRequestCount || 0),
+                ),
+                shippingSupplyAmount: Number(
+                  manufacturer?.periodShippingSupply || 0,
+                ),
+                shippingCount: Number(
+                  manufacturer?.periodShippingCount ||
+                    Number(manufacturer?.periodPaidShippingCount || 0) +
+                      Number(manufacturer?.periodFreeShippingCount || 0),
+                ),
               } satisfies MonthlyHistoryRow,
               salesman: buildFromSalesRows("salesman"),
               devops: buildFromSalesRows("devops"),
               admin: {
                 label: month.label,
                 paidAmount: adminPaidAmount,
+                paidRequestCount: 0,
+                paidShippingAmount: 0,
+                paidShippingCount: 0,
                 freeRequestAmount: adminFreeRequestAmount,
                 freeRequestCount: adminFreeRequestCount,
                 freeShippingAmount: adminFreeShippingAmount,
@@ -804,6 +900,7 @@ export default function AdminPaymentsPage({
 
   const store = businessOverview?.store;
   const customAbut = businessOverview?.customAbut;
+  const shareRates = businessOverview?.shareRates;
   const labDivision = businessOverview?.labDivision ?? {
     periodSettlementEarn: businessOverview?.internalLab?.periodSettlementEarn,
     periodLineCount: businessOverview?.internalLab?.periodLineCount,
@@ -829,7 +926,22 @@ export default function AdminPaymentsPage({
   );
   const devopsUnpaidSplit = splitInclusiveVat(devopsUnpaidInclusive);
 
+  const storeRates = shareRates?.store;
+  const customRates = shareRates?.customAbut;
+  const labRates = shareRates?.labDivision;
+
+  const labRevenue =
+    labDivision?.periodRevenue ??
+    Number(labDivision?.periodSettlementEarn || 0) +
+      Number(labDivision?.subcontractFeeAmount || 0);
+
+  const manufacturerEarn = Number(
+    customAbut?.manufacturerEarn ?? customAbut?.manufacturerPaidEarn ?? 0,
+  );
+
   if (!user || user.role !== "admin") return null;
+
+  const dash = isLoading ? "—" : undefined;
 
   return (
     <div
@@ -839,127 +951,214 @@ export default function AdminPaymentsPage({
           : "custom-scrollbar workspace-nested-scroll h-full min-h-0 overflow-auto"
       }
     >
-    <DashboardShell
-      title="정산"
-      subtitle="스토어 · 커스텀어벗 · 기공사업부"
-      headerRight={
-        <PeriodFilter
-          value={settlementPeriod}
-          onChange={setPeriod}
-          presets={SETTLEMENT_PERIOD_PRESETS}
-        />
-      }
-      statsGridClassName="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3"
-      stats={
-        <>
-          <BusinessAxisCard
-            index={1}
-            title="스토어"
-            icon={Store}
-            selected={selectedAxis === "store"}
-            onSelect={() => setSelectedAxis("store")}
-            loading={isLoading}
-            value={formatWon(store?.periodGrossInclusive)}
-            hints={
-              <>
-                <div>기성품 · 부가세 포함 · 전액 어벗츠</div>
-                <div className="tabular-nums">
-                  공급 {formatWon(store?.periodSupply)} · 주문{" "}
-                  {(store?.periodSaleCount || 0).toLocaleString()}건
-                </div>
-              </>
-            }
-          />
-          <BusinessAxisCard
-            index={2}
-            title="커스텀어벗"
-            icon={Factory}
-            selected={selectedAxis === "customAbut"}
-            onSelect={() => setSelectedAxis("customAbut")}
-            loading={isLoading}
-            value={formatWon(customAbut?.periodPaidSpend)}
-            hints={
-              <>
-                <div>기공소 디자인 → 애크로덴트 → 치과 납품</div>
-                <div className="tabular-nums">
-                  하청{" "}
-                  {formatWon(
-                    customAbut?.manufacturerEarn ??
-                      customAbut?.manufacturerPaidEarn,
-                  )}{" "}
-                  · 미정산 {formatWon(manufacturerSummary?.periodBalanceAmount)}
-                </div>
-              </>
-            }
-          />
-          <BusinessAxisCard
-            index={3}
-            title="기공사업부"
-            icon={FlaskConical}
-            selected={selectedAxis === "labDivision"}
-            onSelect={() => setSelectedAxis("labDivision")}
-            loading={isLoading}
-            value={formatWon(
-              labDivision?.periodRevenue ??
-                Number(labDivision?.periodSettlementEarn || 0) +
-                  Number(labDivision?.subcontractFeeAmount || 0),
-            )}
-            hints={
-              <>
-                <div>어벗츠기공소 기공료 · 하청 수수료</div>
-                <div className="tabular-nums">
-                  기공료 {formatWon(labDivision?.periodSettlementEarn)} · 하청수수료{" "}
-                  {formatWon(labDivision?.subcontractFeeAmount)}
-                </div>
-              </>
-            }
-          />
-        </>
-      }
-      mainLeft={
-        <div className="space-y-4">
-          {selectedAxis === "store" ? (
-            <CreditPanel>
-              <div className="space-y-4 p-4">
-                <CreditSectionHeader
-                  icon={Store}
-                  title="스토어 · 기성품"
-                  description={
-                    <>
-                      치과 공급 기성품(심플웨이 등) 과세 매출.
-                      <br />
-                      결제 확정 시 포함가 전액이 어벗츠에 귀속되며, 딜러·제조·개발운영
-                      분배는 없습니다. 월말 합산 세금계산서.
-                    </>
-                  }
+      <DashboardShell
+        title="정산"
+        subtitle="스토어 · 커스텀어벗 · 기공사업부"
+        headerRight={
+          <div className="flex w-full flex-wrap items-center gap-2">
+            <PeriodFilter
+              value={settlementPeriod}
+              onChange={setPeriod}
+              presets={SETTLEMENT_PERIOD_PRESETS}
+            />
+            <SettlementPolicyDialog
+              title="정산 규칙"
+              description="스토어 · 커스텀어벗 · 기공사업부"
+            >
+              <SettlementPolicySection title="스토어">
+                <p>
+                  기성품(심플웨이 등) 과세 매출입니다.
+                  <br />
+                  고객 표시는 부가세 포함가이며, 월말 합산 세금계산서입니다.
+                </p>
+                <p>
+                  분배는 재무 › 설정 › 분배비율(스토어) 기준입니다.
+                  <br />
+                  판매가 대비 제조사 · 딜러 · 개발운영 · 어벗츠 비율입니다.
+                </p>
+              </SettlementPolicySection>
+              <SettlementPolicySection title="커스텀어벗">
+                <p>
+                  기공소 디자인 → 애크로덴트 생산 → 치과 납품입니다.
+                  <br />
+                  매입가(부가세 포함)는 판매가 × 제조사 분배비율입니다.
+                </p>
+                <p>
+                  유료·무료와 무관하게 약정 단가를 지급하고, 잔여를 딜러 ·
+                  개발운영 · 어벗츠에 분배합니다.
+                  <br />
+                  배송비는 분배 재원에서 제외합니다.
+                </p>
+              </SettlementPolicySection>
+              <SettlementPolicySection title="기공사업부">
+                <p>
+                  어벗츠기공소 기공료와 인증 기공소 하청 수수료입니다.
+                  <br />
+                  면세 · 계산서입니다.
+                </p>
+                <p>
+                  배송비를 선차감한 뒤 기공사업부 · 영업팀 · 개발운영 · 어벗츠
+                  비율로 분배합니다.
+                  <br />
+                  지정·자동매칭 플랫폼 수수료는 없습니다.
+                </p>
+              </SettlementPolicySection>
+            </SettlementPolicyDialog>
+          </div>
+        }
+        statsGridClassName="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3"
+        stats={
+          <>
+            <SettlementStatCard
+              label="1. 스토어"
+              value={dash ?? Number(store?.periodGrossInclusive || 0)}
+              selected={selectedAxis === "store"}
+              onClick={() => setSelectedAxis("store")}
+              hint="기성품 · 과세"
+              hintTooltip="부가세 포함 매출. 분배는 설정 › 분배비율(스토어)."
+              footer={
+                <ShareRateHint
+                  parts={[
+                    { label: "제조", pct: storeRates?.manufacturerPercent },
+                    { label: "딜러", pct: storeRates?.salesmanPercent },
+                    { label: "개발", pct: storeRates?.devopsPercent },
+                    { label: "어벗츠", pct: storeRates?.abutsPercent },
+                  ]}
                 />
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                  <CreditStatTile
-                    label="매출(포함가)"
-                    value={formatWon(store?.periodGrossInclusive)}
-                    tone="accent"
-                    hint={`${SETTLEMENT_TAXABLE_INVOICE_LABEL} · 주문 ${(
-                      store?.periodSaleCount || 0
-                    ).toLocaleString()}건`}
+              }
+            />
+            <SettlementStatCard
+              label="2. 커스텀어벗"
+              value={dash ?? Number(customAbut?.periodPaidSpend || 0)}
+              selected={selectedAxis === "customAbut"}
+              onClick={() => setSelectedAxis("customAbut")}
+              hint="생산·공급"
+              hintTooltip="의뢰자 유료 소비. 하청은 제조사 약정 단가."
+              footer={
+                isLoading ? null : (
+                  <div className="space-y-0.5 text-[11px] leading-relaxed text-slate-500 sm:text-xs">
+                    <div className="tabular-nums">
+                      하청 {formatWonWithUnit(manufacturerEarn)} · 미정산{" "}
+                      {formatWonWithUnit(
+                        manufacturerSummary?.periodBalanceAmount,
+                      )}
+                    </div>
+                    <ShareRateHint
+                      parts={[
+                        {
+                          label: "제조",
+                          pct: customRates?.manufacturerPercent,
+                        },
+                        { label: "딜러", pct: customRates?.salesmanPercent },
+                        { label: "개발", pct: customRates?.devopsPercent },
+                        { label: "어벗츠", pct: customRates?.abutsPercent },
+                      ]}
+                    />
+                  </div>
+                )
+              }
+            />
+            <SettlementStatCard
+              label="3. 기공사업부"
+              value={dash ?? Number(labRevenue || 0)}
+              selected={selectedAxis === "labDivision"}
+              onClick={() => setSelectedAxis("labDivision")}
+              hint="기공료 · 하청 수수료"
+              hintTooltip="어벗츠기공소 기공료 + 하청 수수료. 면세 계산서."
+              footer={
+                isLoading ? null : (
+                  <div className="space-y-0.5 text-[11px] leading-relaxed text-slate-500 sm:text-xs">
+                    <div className="tabular-nums">
+                      기공료{" "}
+                      {formatWonWithUnit(labDivision?.periodSettlementEarn)} ·
+                      하청 {formatWonWithUnit(labDivision?.subcontractFeeAmount)}
+                    </div>
+                    <ShareRateHint
+                      parts={[
+                        { label: "기공", pct: labRates?.bizPercent },
+                        { label: "영업", pct: labRates?.salesTeamPercent },
+                        { label: "개발", pct: labRates?.devopsPercent },
+                        { label: "어벗츠", pct: labRates?.abutsPercent },
+                      ]}
+                    />
+                  </div>
+                )
+              }
+            />
+          </>
+        }
+        mainLeft={
+          <div className="space-y-4">
+            {selectedAxis === "store" ? (
+              <CreditPanel>
+                <div className="space-y-4 p-4">
+                  <CreditSectionHeader
+                    icon={Store}
+                    title="스토어 · 기성품"
+                    description="과세 매출 · 분배비율(판매가 대비)"
                   />
-                  <CreditStatTile
-                    label="공급가"
-                    value={formatWon(store?.periodSupply)}
-                    hint={`부가세 ${formatWon(store?.periodVat)}`}
+                  <EquationRow
+                    revenue={
+                      <SettlementStatCard
+                        label="매출"
+                        value={dash ?? Number(store?.periodGrossInclusive || 0)}
+                        tone="primary"
+                        hint={`${SETTLEMENT_TAXABLE_INVOICE_LABEL} · ${(
+                          store?.periodSaleCount || 0
+                        ).toLocaleString()}건`}
+                        hintTooltip="부가세 포함가. 공급가·VAT는 아래 타일."
+                        compact
+                      />
+                    }
+                    expense={
+                      <SettlementStatCard
+                        label="지출(제조사)"
+                        value={
+                          dash ?? Number(store?.plannedManufacturerSupply || 0)
+                        }
+                        hint={`${pctLabel(storeRates?.manufacturerPercent)} · 설정 기준`}
+                        hintTooltip="기간 공급가 × 스토어 제조사 분배비율(재무 › 설정 › 분배비율)."
+                        compact
+                      />
+                    }
+                    distribution={
+                      <SettlementStatCard
+                        label="분배"
+                        value={
+                          dash ??
+                          Number(store?.plannedSalesmanSupply || 0) +
+                            Number(store?.plannedDevopsSupply || 0) +
+                            Number(store?.plannedAbutsSupply || 0)
+                        }
+                        hint="딜러 · 개발운영 · 어벗츠"
+                        hintTooltip="판매가 대비 설정 비율. 장부 귀속은 월말 세금계산서(어벗츠)와 별도 확인."
+                        compact
+                      />
+                    }
                   />
-                  <CreditStatTile
-                    label="지출"
-                    value="—"
-                    hint="원가·물류 장부 미집계 · 정산 지출 없음"
-                  />
-                  <CreditStatTile
-                    label="분배"
-                    value="전액 어벗츠"
-                    hint="딜러·제조·개발운영 분배 없음"
-                  />
-                </div>
-                {(store?.periodRefundCount || 0) > 0 ? (
-                  <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <CreditStatTile
+                      label="공급가"
+                      value={formatWonWithUnit(store?.periodSupply)}
+                      hint={`부가세 ${formatWonWithUnit(store?.periodVat)}`}
+                    />
+                    <CreditStatTile
+                      label={`딜러 ${pctLabel(storeRates?.salesmanPercent)}`}
+                      value={formatWonWithUnit(store?.plannedSalesmanSupply)}
+                      hint="설정 분배(참고)"
+                    />
+                    <CreditStatTile
+                      label={`개발운영 ${pctLabel(storeRates?.devopsPercent)}`}
+                      value={formatWonWithUnit(store?.plannedDevopsSupply)}
+                      hint="설정 분배(참고)"
+                    />
+                    <CreditStatTile
+                      label={`어벗츠 ${pctLabel(storeRates?.abutsPercent)}`}
+                      value={formatWonWithUnit(store?.plannedAbutsSupply)}
+                      hint="설정 분배(참고)"
+                    />
+                  </div>
+                  {(store?.periodRefundCount || 0) > 0 ? (
                     <CreditStatTile
                       label="기간 취소(REFUND)"
                       value={`${Number(
@@ -967,386 +1166,410 @@ export default function AdminPaymentsPage({
                       ).toLocaleString()}건`}
                       hint="매출 합계에 상계 반영"
                     />
-                  </div>
-                ) : null}
-              </div>
-            </CreditPanel>
-          ) : null}
+                  ) : null}
+                </div>
+              </CreditPanel>
+            ) : null}
 
-          {selectedAxis === "customAbut" ? (
-            <CreditPanel>
-              <div className="space-y-4 p-4">
-                <CreditSectionHeader
-                  icon={Factory}
-                  title="커스텀어벗 · 생산·공급"
-                  description={
-                    <>
-                      원청(어벗츠)–하청(애크로덴트) 고정 매입가(부가세 포함).
-                      <br />
-                      고객 유료·무료와 무관하게 약정 단가를 지급하고, 판매가(배송
-                      제외)에서 매입 공급가를 뺀 잔여를 딜러·개발운영·어벗츠에
-                      분배합니다.
-                    </>
-                  }
-                />
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                  <CreditStatTile
-                    label="매출(의뢰자 유료)"
-                    value={formatWon(customAbut?.periodPaidSpend)}
-                    tone="accent"
-                    hint={
-                      <>
-                        <div>
-                          의뢰 {formatWon(customAbut?.periodPaidSpendRequest)} (
-                          {(
-                            customAbut?.periodPaidSpendRequestCount || 0
-                          ).toLocaleString()}
-                          )
-                        </div>
-                        <div>
-                          배송 {formatWon(customAbut?.periodPaidSpendShipping)} (
-                          {(
-                            customAbut?.periodPaidSpendShippingCount || 0
-                          ).toLocaleString()}
-                          )
-                        </div>
-                      </>
-                    }
+            {selectedAxis === "customAbut" ? (
+              <CreditPanel>
+                <div className="space-y-4 p-4">
+                  <CreditSectionHeader
+                    icon={Factory}
+                    title="커스텀어벗 · 생산·공급"
+                    description="고정 매입(제조사%) · 잔여 분배"
                   />
-                  <CreditStatTile
-                    label="지출(하청)"
-                    value={formatWon(
-                      customAbut?.manufacturerEarn ??
-                        customAbut?.manufacturerPaidEarn,
-                    )}
-                    hint={
-                      <>
-                        <div>
-                          단가{" "}
-                          {formatMoney(
-                            customAbut?.manufacturerRequestUnitPrice ??
-                              manufacturerSummary?.manufacturerRequestUnitPrice ??
-                              8800,
-                          )}{" "}
-                          /{" "}
-                          {formatMoney(
-                            customAbut?.manufacturerShippingUnitPrice ??
-                              manufacturerSummary?.manufacturerShippingUnitPrice ??
-                              3500,
-                          )}{" "}
-                          (어벗/박스)
-                        </div>
-                        <div>
-                          미정산{" "}
-                          {formatWon(manufacturerSummary?.periodBalanceAmount)} ·{" "}
-                          {SETTLEMENT_TAXABLE_INVOICE_LABEL}
-                        </div>
-                      </>
-                    }
-                  />
-                  <CreditStatTile
-                    label="분배(잔여 공급가)"
-                    value={formatWon(customAbut?.residualTotalSupply)}
-                    hint={
-                      <>
-                        <div>
-                          딜러 {formatWon(customAbut?.residualSalesmanSupply)} ·
-                          개발운영 {formatWon(customAbut?.residualDevopsSupply)}
-                        </div>
-                        <div>
-                          어벗츠 {formatWon(customAbut?.residualAdminSupply)} ·
-                          배송비 제외
-                        </div>
-                      </>
-                    }
-                  />
-                  <CreditStatTile
-                    label="하청 적립(공급가)"
-                    value={formatWon(
-                      Number(manufacturerSummary?.periodRequestSupply || 0) +
-                        Number(manufacturerSummary?.periodShippingSupply || 0),
-                    )}
-                    hint={
-                      <>
-                        <div>
-                          의뢰{" "}
-                          {formatWon(manufacturerSummary?.periodRequestSupply)} (
-                          {Number(
-                            manufacturerSummary?.periodPaidRequestCount || 0,
-                          ) +
-                            Number(
-                              manufacturerSummary?.periodFreeRequestCount || 0,
+                  <EquationRow
+                    revenue={
+                      <SettlementStatCard
+                        label="매출"
+                        value={dash ?? Number(customAbut?.periodPaidSpend || 0)}
+                        tone="primary"
+                        hint={
+                          <>
+                            의뢰{" "}
+                            {formatWonWithUnit(
+                              customAbut?.periodPaidSpendRequest,
+                            )}{" "}
+                            · 배송{" "}
+                            {formatWonWithUnit(
+                              customAbut?.periodPaidSpendShipping,
                             )}
-                          )
-                        </div>
-                        <div>
-                          배송{" "}
-                          {formatWon(manufacturerSummary?.periodShippingSupply)} (
-                          {Number(
-                            manufacturerSummary?.periodPaidShippingCount || 0,
-                          ) +
-                            Number(
-                              manufacturerSummary?.periodFreeShippingCount || 0,
-                            )}
-                          )
-                        </div>
-                      </>
+                          </>
+                        }
+                        hintTooltip="의뢰자 유료 소비(의뢰+배송). 잔여 분배는 배송 제외."
+                        compact
+                      />
+                    }
+                    expense={
+                      <SettlementStatCard
+                        label="지출(하청)"
+                        value={dash ?? manufacturerEarn}
+                        hint={`${pctLabel(
+                          customRates?.manufacturerPercent,
+                        )} · 미정산 ${formatWonWithUnit(
+                          manufacturerSummary?.periodBalanceAmount,
+                        )}`}
+                        hintTooltip={`단가 ${Number(
+                          customAbut?.manufacturerRequestUnitPrice ??
+                            manufacturerSummary?.manufacturerRequestUnitPrice ??
+                            8800,
+                        ).toLocaleString()} / ${Number(
+                          customAbut?.manufacturerShippingUnitPrice ??
+                            manufacturerSummary?.manufacturerShippingUnitPrice ??
+                            3500,
+                        ).toLocaleString()} (어벗/박스) · ${SETTLEMENT_TAXABLE_INVOICE_LABEL}`}
+                        compact
+                      />
+                    }
+                    distribution={
+                      <SettlementStatCard
+                        label="분배(잔여)"
+                        value={
+                          dash ?? Number(customAbut?.residualTotalSupply || 0)
+                        }
+                        hint={`딜러 ${pctLabel(
+                          customRates?.salesmanPercent,
+                        )} · 개발 ${pctLabel(
+                          customRates?.devopsPercent,
+                        )} · 어벗츠 ${pctLabel(customRates?.abutsPercent)}`}
+                        hintTooltip="판매가 − 매입 공급가 잔여. 장부 실적(공급가)."
+                        compact
+                      />
                     }
                   />
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <CreditStatTile
-                    label="의뢰 하청(공급가)"
-                    value={formatWon(manufacturerSummary?.periodRequestSupply)}
-                    hint={`${(
-                      Number(manufacturerSummary?.periodPaidRequestCount || 0) +
-                      Number(manufacturerSummary?.periodFreeRequestCount || 0)
-                    ).toLocaleString()}건 · ${SETTLEMENT_TAXABLE_INVOICE_LABEL}`}
-                  />
-                  <CreditStatTile
-                    label="배송 하청(공급가)"
-                    value={formatWon(manufacturerSummary?.periodShippingSupply)}
-                    hint={`${(
-                      Number(manufacturerSummary?.periodPaidShippingCount || 0) +
-                      Number(manufacturerSummary?.periodFreeShippingCount || 0)
-                    ).toLocaleString()}건 · ${SETTLEMENT_TAXABLE_INVOICE_LABEL}`}
-                  />
-                </div>
-                <MonthlyHistorySection
-                  title="월단위 과거 내역 (제조사)"
-                  rows={monthlyHistory.manufacturer}
-                  isLoading={historyLoading}
-                />
-              </div>
-            </CreditPanel>
-          ) : null}
-
-          {selectedAxis === "labDivision" ? (
-            <CreditPanel>
-              <div className="space-y-4 p-4">
-                <CreditSectionHeader
-                  icon={FlaskConical}
-                  title="기공사업부"
-                  description={
-                    <>
-                      어벗츠기공소(internalLab)가 수취한 기공료와, 인증 기공소
-                      하청 시 subcontractFeeRate 수수료.
-                      <br />
-                      배송비를 공통 지출로 차감한 뒤 기공팀·영업본부·개발운영사에
-                      분배합니다(설정: 사업영역 · 기공사업). 면세 · 계산서.
-                    </>
-                  }
-                />
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                  <CreditStatTile
-                    label="매출(기공료)"
-                    value={formatWon(labDivision?.periodSettlementEarn)}
-                    tone="accent"
-                    hint={`적립 ${(
-                      labDivision?.periodLineCount || 0
-                    ).toLocaleString()}건 · ${SETTLEMENT_EXEMPT_INVOICE_LABEL}`}
-                  />
-                  <CreditStatTile
-                    label="매출(하청 수수료)"
-                    value={formatWon(labDivision?.subcontractFeeAmount)}
-                    hint={`요율 ${subcontractFeePct}% · 해제 ${(
-                      labDivision?.subcontractFeeReleaseCount || 0
-                    ).toLocaleString()}건`}
-                  />
-                  <CreditStatTile
-                    label="지출"
-                    value="배송비 선차감"
-                    hint="분배 재원에서 배송비를 먼저 차감 · 사업영역 기공사업"
-                  />
-                  <CreditStatTile
-                    label="분배"
-                    value="기공·영업·개발운영"
-                    hint={`앵커 ${(
-                      labDivision?.anchorCount || 0
-                    ).toLocaleString()}곳 · 내부 면세 / 개발운영 +VAT`}
-                  />
-                </div>
-              </div>
-            </CreditPanel>
-          ) : null}
-
-          {selectedAxis === "customAbut" ? (
-          <CreditPanel>
-            <div className="space-y-4 p-4">
-              <CreditSectionHeader
-                icon={HandCoins}
-                title="관계사 잔여 분배"
-                description={
-                  <>
-                    커스텀어벗 잔여 분배.
-                    <br />
-                    제조사·딜러사·개발운영사 지급은 과세(세금계산서), 어벗츠는
-                    면세(계산서).
-                  </>
-                }
-                trailing={
-                  <div className="relative w-full sm:w-[260px]">
-                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="이름 / 대표자 / 연락처"
-                      className="h-9 rounded-xl pl-9"
-                    />
-                  </div>
-                }
-              />
-
-              <Tabs value={affiliateTab} onValueChange={setAffiliateTab}>
-                <TabsList className="h-11 rounded-xl bg-slate-100/80 p-1">
-                  <TabsTrigger value="salesman" className="rounded-lg px-4">
-                    딜러사
-                  </TabsTrigger>
-                  <TabsTrigger value="devops" className="rounded-lg px-4">
-                    개발운영사
-                  </TabsTrigger>
-                  <TabsTrigger value="admin" className="rounded-lg px-4">
-                    어벗츠
-                  </TabsTrigger>
-                </TabsList>
-
-                <TabsContent value="salesman" className="mt-4 space-y-4">
-                  <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                     <CreditStatTile
-                      label="사업자 수"
-                      value={`${filteredBySearch.salesman.length.toLocaleString()}곳`}
-                    />
-                    <CreditStatTile
-                      label="유료 미정산"
-                      value={formatWon(salesmanUnpaidInclusive)}
-                      tone="accent"
-                      hint={`부가세 포함 ${formatWon(salesmanUnpaidSplit.total)} · 공급 ${formatWon(salesmanUnpaidSplit.supply)} · ${SETTLEMENT_TAXABLE_INVOICE_LABEL}`}
-                    />
-                    <CreditStatTile
-                      label="무료(참고)"
-                      value={formatWon(
-                        roleFinanceRows.salesman.reduce(
-                          (sum, r) =>
-                            sum + Number(r.wallet?.freeAmountPeriod || 0),
-                          0,
-                        ),
-                      )}
-                    />
-                  </div>
-                  {filteredBySearch.salesman.length > 0 ? (
-                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                      {filteredBySearch.salesman.map((group) => (
-                        <AffiliateGroupCard
-                          key={group.businessAnchorId}
-                          group={group}
-                        />
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="rounded-xl border border-dashed border-slate-200 px-4 py-8 text-center text-sm text-muted-foreground">
-                      표시할 딜러사가 없습니다.
-                    </div>
-                  )}
-                  <MonthlyHistorySection
-                    title="월단위 과거 내역 (딜러사)"
-                    rows={monthlyHistory.salesman}
-                    isLoading={historyLoading}
-                  />
-                </TabsContent>
-
-                <TabsContent value="devops" className="mt-4 space-y-4">
-                  <div className="grid gap-3 sm:grid-cols-3">
-                    <CreditStatTile
-                      label="사업자 수"
-                      value={`${filteredBySearch.devops.length.toLocaleString()}곳`}
-                    />
-                    <CreditStatTile
-                      label="유료 미정산"
-                      value={formatWon(devopsUnpaidInclusive)}
-                      tone="accent"
-                      hint={`부가세 포함 ${formatWon(devopsUnpaidSplit.total)} · 공급 ${formatWon(devopsUnpaidSplit.supply)} · ${SETTLEMENT_TAXABLE_INVOICE_LABEL}`}
-                    />
-                    <CreditStatTile
-                      label="무료(참고)"
-                      value={formatWon(
-                        roleFinanceRows.devops.reduce(
-                          (sum, r) =>
-                            sum + Number(r.wallet?.freeAmountPeriod || 0),
-                          0,
-                        ),
-                      )}
-                    />
-                  </div>
-                  {filteredBySearch.devops.length > 0 ? (
-                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                      {filteredBySearch.devops.map((group) => (
-                        <AffiliateGroupCard
-                          key={group.businessAnchorId}
-                          group={group}
-                        />
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="rounded-xl border border-dashed border-slate-200 px-4 py-8 text-center text-sm text-muted-foreground">
-                      표시할 개발운영사가 없습니다.
-                    </div>
-                  )}
-                  <MonthlyHistorySection
-                    title="월단위 과거 내역 (개발운영사)"
-                    rows={monthlyHistory.devops}
-                    isLoading={historyLoading}
-                  />
-                </TabsContent>
-
-                <TabsContent value="admin" className="mt-4 space-y-4">
-                  <div className="grid gap-3 sm:grid-cols-3">
-                    <CreditStatTile
-                      label="기간 정산 완료"
-                      value={formatWon(
-                        adminFinanceRows.reduce(
-                          (sum, row) =>
-                            sum + Number(row.wallet?.paidOutAmountPeriod || 0),
-                          0,
-                        ),
-                      )}
-                    />
-                    <CreditStatTile
-                      label="유료 미정산"
-                      value={formatWon(
-                        adminFinanceRows.reduce(
-                          (sum, row) =>
-                            sum + Number(row.wallet?.balanceAmountPeriod || 0),
-                          0,
-                        ),
+                      label="딜러(잔여)"
+                      value={formatWonWithUnit(
+                        customAbut?.residualSalesmanSupply,
                       )}
                       tone="accent"
+                      hint={`${SETTLEMENT_TAXABLE_INVOICE_LABEL} · 포함 ${formatWonWithUnit(
+                        customAbut?.residualSalesmanInclusive,
+                      )}`}
+                    />
+                    <CreditStatTile
+                      label="개발운영(잔여)"
+                      value={formatWonWithUnit(
+                        customAbut?.residualDevopsSupply,
+                      )}
+                      hint={`${SETTLEMENT_TAXABLE_INVOICE_LABEL} · 포함 ${formatWonWithUnit(
+                        customAbut?.residualDevopsInclusive,
+                      )}`}
+                    />
+                    <CreditStatTile
+                      label="어벗츠(잔여)"
+                      value={formatWonWithUnit(customAbut?.residualAdminSupply)}
                       hint={`면세 · ${SETTLEMENT_EXEMPT_INVOICE_LABEL}`}
                     />
                     <CreditStatTile
-                      label="무료(참고)"
-                      value={formatWon(
-                        adminFinanceRows.reduce(
-                          (sum, row) =>
-                            sum + Number(row.wallet?.freeAmountPeriod || 0),
-                          0,
-                        ),
+                      label="하청 적립(공급가)"
+                      value={formatWonWithUnit(
+                        Number(manufacturerSummary?.periodRequestSupply || 0) +
+                          Number(manufacturerSummary?.periodShippingSupply || 0),
                       )}
+                      hint={
+                        <>
+                          의뢰{" "}
+                          {formatWonWithUnit(
+                            manufacturerSummary?.periodRequestSupply,
+                          )}{" "}
+                          · 배송{" "}
+                          {formatWonWithUnit(
+                            manufacturerSummary?.periodShippingSupply,
+                          )}
+                        </>
+                      }
                     />
                   </div>
                   <MonthlyHistorySection
-                    title="월단위 과거 내역 (어벗츠)"
-                    rows={monthlyHistory.admin}
+                    title="월단위 과거 내역 (제조사)"
+                    rows={monthlyHistory.manufacturer}
                     isLoading={historyLoading}
+                    variant="manufacturer"
                   />
-                </TabsContent>
-              </Tabs>
-            </div>
-          </CreditPanel>
-          ) : null}
-        </div>
-      }
-      mainRight={null}
-    />
+                </div>
+              </CreditPanel>
+            ) : null}
+
+            {selectedAxis === "labDivision" ? (
+              <CreditPanel>
+                <div className="space-y-4 p-4">
+                  <CreditSectionHeader
+                    icon={FlaskConical}
+                    title="기공사업부"
+                    description="기공료 · 하청 수수료 · 분배비율"
+                  />
+                  <EquationRow
+                    revenue={
+                      <SettlementStatCard
+                        label="매출"
+                        value={dash ?? Number(labRevenue || 0)}
+                        tone="primary"
+                        hint={`기공료 ${formatWonWithUnit(
+                          labDivision?.periodSettlementEarn,
+                        )} · 하청 ${formatWonWithUnit(
+                          labDivision?.subcontractFeeAmount,
+                        )}`}
+                        hintTooltip={`${SETTLEMENT_EXEMPT_INVOICE_LABEL} · 하청 요율 ${subcontractFeePct}%`}
+                        compact
+                      />
+                    }
+                    expense={
+                      <SettlementStatCard
+                        label="지출"
+                        value="배송비 선차감"
+                        hint="분배 재원에서 배송비 먼저 차감"
+                        hintTooltip="사업영역 · 기공사업 설정과 동일. 배송은 분배 UI에 기재하지 않습니다."
+                        compact
+                      />
+                    }
+                    distribution={
+                      <SettlementStatCard
+                        label="분배"
+                        value={
+                          dash ??
+                          Number(labDivision?.plannedBizSupply || 0) +
+                            Number(labDivision?.plannedSalesTeamSupply || 0) +
+                            Number(labDivision?.plannedDevopsSupply || 0) +
+                            Number(labDivision?.plannedAbutsSupply || 0)
+                        }
+                        hint="기공 · 영업 · 개발 · 어벗츠"
+                        hintTooltip="기공비 대비 설정 분배비율(참고). 내부 면세 / 개발운영 +VAT."
+                        compact
+                      />
+                    }
+                  />
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <CreditStatTile
+                      label={`기공사업부 ${pctLabel(labRates?.bizPercent)}`}
+                      value={formatWonWithUnit(labDivision?.plannedBizSupply)}
+                      tone="accent"
+                      hint={`적립 ${(
+                        labDivision?.periodLineCount || 0
+                      ).toLocaleString()}건`}
+                    />
+                    <CreditStatTile
+                      label={`영업팀 ${pctLabel(labRates?.salesTeamPercent)}`}
+                      value={formatWonWithUnit(
+                        labDivision?.plannedSalesTeamSupply,
+                      )}
+                      hint="설정 분배(참고)"
+                    />
+                    <CreditStatTile
+                      label={`개발운영 ${pctLabel(labRates?.devopsPercent)}`}
+                      value={formatWonWithUnit(
+                        labDivision?.plannedDevopsSupply,
+                      )}
+                      hint="설정 분배(참고) · +VAT"
+                    />
+                    <CreditStatTile
+                      label={`어벗츠 ${pctLabel(labRates?.abutsPercent)}`}
+                      value={formatWonWithUnit(labDivision?.plannedAbutsSupply)}
+                      hint={`앵커 ${(
+                        labDivision?.anchorCount || 0
+                      ).toLocaleString()}곳 · ${SETTLEMENT_EXEMPT_INVOICE_LABEL}`}
+                    />
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <CreditStatTile
+                      label="하청 수수료"
+                      value={formatWonWithUnit(
+                        labDivision?.subcontractFeeAmount,
+                      )}
+                      hint={`요율 ${subcontractFeePct}% · 해제 ${(
+                        labDivision?.subcontractFeeReleaseCount || 0
+                      ).toLocaleString()}건`}
+                    />
+                    <CreditStatTile
+                      label="기공료 수취"
+                      value={formatWonWithUnit(
+                        labDivision?.periodSettlementEarn,
+                      )}
+                      hint={`${SETTLEMENT_EXEMPT_INVOICE_LABEL}`}
+                    />
+                  </div>
+                </div>
+              </CreditPanel>
+            ) : null}
+
+            {selectedAxis === "customAbut" ? (
+              <CreditPanel>
+                <div className="space-y-4 p-4">
+                  <CreditSectionHeader
+                    icon={HandCoins}
+                    title="관계사 잔여 분배"
+                    description="커스텀어벗 잔여 · 과세(제조·딜러·개발) / 면세(어벗츠)"
+                    trailing={
+                      <div className="relative w-full sm:w-[260px]">
+                        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          placeholder="이름 / 대표자 / 연락처"
+                          className="h-9 rounded-xl pl-9"
+                        />
+                      </div>
+                    }
+                  />
+
+                  <Tabs value={affiliateTab} onValueChange={setAffiliateTab}>
+                    <TabsList className="h-11 rounded-xl bg-slate-100/80 p-1">
+                      <TabsTrigger value="salesman" className="rounded-lg px-4">
+                        딜러사
+                      </TabsTrigger>
+                      <TabsTrigger value="devops" className="rounded-lg px-4">
+                        개발운영사
+                      </TabsTrigger>
+                      <TabsTrigger value="admin" className="rounded-lg px-4">
+                        어벗츠
+                      </TabsTrigger>
+                    </TabsList>
+
+                    <TabsContent value="salesman" className="mt-4 space-y-4">
+                      <div className="grid gap-3 sm:grid-cols-3">
+                        <CreditStatTile
+                          label="사업자 수"
+                          value={`${filteredBySearch.salesman.length.toLocaleString()}곳`}
+                        />
+                        <CreditStatTile
+                          label="유료 미정산"
+                          value={formatWonWithUnit(salesmanUnpaidInclusive)}
+                          tone="accent"
+                          hint={`공급 ${formatWonWithUnit(
+                            salesmanUnpaidSplit.supply,
+                          )} · ${SETTLEMENT_TAXABLE_INVOICE_LABEL}`}
+                        />
+                        <CreditStatTile
+                          label="무료(참고)"
+                          value={formatWonWithUnit(
+                            roleFinanceRows.salesman.reduce(
+                              (sum, r) =>
+                                sum + Number(r.wallet?.freeAmountPeriod || 0),
+                              0,
+                            ),
+                          )}
+                        />
+                      </div>
+                      {filteredBySearch.salesman.length > 0 ? (
+                        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                          {filteredBySearch.salesman.map((group) => (
+                            <AffiliateGroupCard
+                              key={group.businessAnchorId}
+                              group={group}
+                            />
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="rounded-xl border border-dashed border-slate-200 px-4 py-8 text-center text-sm text-muted-foreground">
+                          표시할 딜러사가 없습니다.
+                        </div>
+                      )}
+                      <MonthlyHistorySection
+                        title="월단위 과거 내역 (딜러사)"
+                        rows={monthlyHistory.salesman}
+                        isLoading={historyLoading}
+                      />
+                    </TabsContent>
+
+                    <TabsContent value="devops" className="mt-4 space-y-4">
+                      <div className="grid gap-3 sm:grid-cols-3">
+                        <CreditStatTile
+                          label="사업자 수"
+                          value={`${filteredBySearch.devops.length.toLocaleString()}곳`}
+                        />
+                        <CreditStatTile
+                          label="유료 미정산"
+                          value={formatWonWithUnit(devopsUnpaidInclusive)}
+                          tone="accent"
+                          hint={`공급 ${formatWonWithUnit(
+                            devopsUnpaidSplit.supply,
+                          )} · ${SETTLEMENT_TAXABLE_INVOICE_LABEL}`}
+                        />
+                        <CreditStatTile
+                          label="무료(참고)"
+                          value={formatWonWithUnit(
+                            roleFinanceRows.devops.reduce(
+                              (sum, r) =>
+                                sum + Number(r.wallet?.freeAmountPeriod || 0),
+                              0,
+                            ),
+                          )}
+                        />
+                      </div>
+                      {filteredBySearch.devops.length > 0 ? (
+                        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                          {filteredBySearch.devops.map((group) => (
+                            <AffiliateGroupCard
+                              key={group.businessAnchorId}
+                              group={group}
+                            />
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="rounded-xl border border-dashed border-slate-200 px-4 py-8 text-center text-sm text-muted-foreground">
+                          표시할 개발운영사가 없습니다.
+                        </div>
+                      )}
+                      <MonthlyHistorySection
+                        title="월단위 과거 내역 (개발운영사)"
+                        rows={monthlyHistory.devops}
+                        isLoading={historyLoading}
+                      />
+                    </TabsContent>
+
+                    <TabsContent value="admin" className="mt-4 space-y-4">
+                      <div className="grid gap-3 sm:grid-cols-3">
+                        <CreditStatTile
+                          label="기간 정산 완료"
+                          value={formatWonWithUnit(
+                            adminFinanceRows.reduce(
+                              (sum, row) =>
+                                sum +
+                                Number(row.wallet?.paidOutAmountPeriod || 0),
+                              0,
+                            ),
+                          )}
+                        />
+                        <CreditStatTile
+                          label="유료 미정산"
+                          value={formatWonWithUnit(
+                            adminFinanceRows.reduce(
+                              (sum, row) =>
+                                sum +
+                                Number(row.wallet?.balanceAmountPeriod || 0),
+                              0,
+                            ),
+                          )}
+                          tone="accent"
+                          hint={`면세 · ${SETTLEMENT_EXEMPT_INVOICE_LABEL}`}
+                        />
+                        <CreditStatTile
+                          label="무료(참고)"
+                          value={formatWonWithUnit(
+                            adminFinanceRows.reduce(
+                              (sum, row) =>
+                                sum + Number(row.wallet?.freeAmountPeriod || 0),
+                              0,
+                            ),
+                          )}
+                        />
+                      </div>
+                      <MonthlyHistorySection
+                        title="월단위 과거 내역 (어벗츠)"
+                        rows={monthlyHistory.admin}
+                        isLoading={historyLoading}
+                      />
+                    </TabsContent>
+                  </Tabs>
+                </div>
+              </CreditPanel>
+            ) : null}
+          </div>
+        }
+        mainRight={null}
+      />
     </div>
   );
 }

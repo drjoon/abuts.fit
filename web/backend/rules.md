@@ -901,9 +901,9 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 
 - 정산/지급 정책:
   - 관리자 3사업 축 집계: `GET /api/admin/credits/settlement-business-overview` (`adminGetSettlementBusinessOverview`). 기간은 `period` 또는 `startDate`/`endDate`.
-    - **스토어**: `REV_STORE_TAXABLE` (`STORE_SALE`/`REFUND`) 포함가·공급·VAT. 분배 없음(전액 어벗츠).
-    - **커스텀어벗**: 의뢰자 유료 소비 + 제조사 하청 + 잔여(`REV_SALESMAN`/`REV_DEVOPS`/`REV_ADMIN`, 생산 `REQUEST_SPEND_COMMIT`만).
-    - **기공사업부**: `internalLab` `LAB_SETTLEMENT_CREDIT` + 하청 수수료(`PRACTICE_TRANSFER_ESCROW_RELEASE.meta.abutsRevenueAmount`). 레거시 `autoMatchFee`/`internalLab` 키는 호환용.
+    - **스토어**: `REV_STORE_TAXABLE` (`STORE_SALE`/`REFUND`) 포함가·공급·VAT. 장부 귀속은 전액 어벗츠. `shareRates.store`·planned 몫은 설정 분배비율 참고.
+    - **커스텀어벗**: 의뢰자 유료 소비 + 제조사 하청 + 잔여(`REV_SALESMAN`/`REV_DEVOPS`/`REV_ADMIN`, 생산 `REQUEST_SPEND_COMMIT`만) + `shareRates.customAbut`.
+    - **기공사업부**: `internalLab` `LAB_SETTLEMENT_CREDIT` + 하청 수수료 + `shareRates.labDivision`·planned 몫. 레거시 `autoMatchFee`/`internalLab` 키는 호환용.
   - 유료/무료 모두 `REV_*` 수익 라인은 기록해 확인 가능해야 합니다.
   - **제조사(하청)**: 고정 매입가(부가세 포함) — `creditSettings.manufacturerRequestUnitPrice`(기본 8,800, **어벗 1개당**)·`manufacturerRemakeUnitPrice`(기본 6,600, 리메이크)·`manufacturerShippingUnitPrice`(기본 3,500, 박스당). 장부·미정산·지급=포함가(재가산 없음)·세금계산서(÷1.1). 리메이크도 제조사 지급(6,600). 그 외(무료 크레딧 결제 포함)는 약정 단가 전액 지급. 월중 미정산 적립 → **익월 초 (세금)계산서 발행 후 지급**. 제조사=일반과세사업자.
   - **딜러사·개발운영사**: 장부 적립·미정산=포함가(`affiliateVatRate`로 earn 시 VAT 기록). 지급=잔액 그대로·세금계산서(÷1.1). 구현: `services/settlement.service.js`(`TAXABLE_SETTLEMENT_ROLES` / `resolveSettlementPayoutAmounts` / `postSettlementPayoutJournal`). 배치 항목 `amount`=입금=잔액, `supplyAmount`/`vatAmount`=포함가 분해.

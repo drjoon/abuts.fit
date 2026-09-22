@@ -174,7 +174,7 @@
   2. **커스텀어벗** — 기공소 디자인 → 애크로덴트 생산 → 치과 납품. 매출=의뢰자 유료 소비, 지출=제조사 고정 하청, 잔여=딜러·개발운영·어벗츠 분배(배송 제외).
   3. **기공사업부** — 어벗츠기공소(`internalLab`) 기공료 수취 + 인증 기공소 하청 수수료(`subcontractFeeRate`). 배송비 선차감 후 기공팀·영업본부·개발운영 분배. 지정·자동매칭 플랫폼 수수료는 없음(레거시).
   - 가격 안내 UI(`PricingPolicyDialog`)는 커스텀 어벗 단가·출고 정책 안내용이며, 사업 축 정의와 혼용하지 않는다.
-  - 관리자 정산 UI: `AdminPaymentsPage` 상단 3사업 축(선택형) · 집계 `GET /api/admin/credits/settlement-business-overview`. 분배 설정 UI: 관리자「사업영역」(`/dashboard/partners`, 기공·어벗·플랫폼).
+  - 관리자 정산 UI: `AdminPaymentsPage` 상단 3사업 축(선택형) · 집계 `GET /api/admin/credits/settlement-business-overview`(분배비율·planned 몫 포함). 분배 비율 설정: 재무 › 설정 › 분배비율. 사업영역(`/dashboard/partners`)은 팀원 배분.
 - **매칭 과금 SSOT(강제):**
   - 한 줄: **치과·기공소 플랫폼 사용료 없음. 기공소 월 참여 0원. 하청 수수료(`subcontractFeeRate` 기본 5%)만.**
   - 기공소(`lab`): 자동 매칭 **월 참여 수수료(`autoMatchMonthlyFee`)는 0원 고정(정책)**. 지정·자동매칭 **플랫폼 수수료 없음**(`directPlatformFeeEnabled` 기본 off · `directPlatformFeeRate` 기본 0). 어벗츠 원청 하청 수행 시에만 **`subcontractFeeRate`%(기본 5%)** 공제.

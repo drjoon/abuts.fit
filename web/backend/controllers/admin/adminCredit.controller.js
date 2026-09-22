@@ -2530,6 +2530,24 @@ export async function adminGetManufacturerSummary(req, res) {
                     ],
                   },
                 },
+                periodRequestCount: {
+                  $sum: {
+                    $cond: [
+                      { $eq: ["$eventType", "REQUEST_SPEND_COMMIT"] },
+                      1,
+                      0,
+                    ],
+                  },
+                },
+                periodShippingCount: {
+                  $sum: {
+                    $cond: [
+                      { $eq: ["$eventType", "SHIPPING_SPEND_COMMIT"] },
+                      1,
+                      0,
+                    ],
+                  },
+                },
               },
             },
           ])
@@ -2614,6 +2632,12 @@ export async function adminGetManufacturerSummary(req, res) {
     const periodShippingSupply = normalizeNumber(
       Number(periodFreeRows?.[0]?.periodShippingSupply || 0),
     );
+    const periodRequestCount = normalizeNumber(
+      Number(periodFreeRows?.[0]?.periodRequestCount || 0),
+    );
+    const periodShippingCount = normalizeNumber(
+      Number(periodFreeRows?.[0]?.periodShippingCount || 0),
+    );
 
     const { loadCreditSettingsDefaults } = await import(
       "../../utils/creditSettingsDefaults.js"
@@ -2642,6 +2666,8 @@ export async function adminGetManufacturerSummary(req, res) {
         periodRequestVat,
         periodShippingSupply,
         periodShippingVat,
+        periodRequestCount,
+        periodShippingCount,
         manufacturerRequestUnitPrice: Number(
           creditSettings.manufacturerRequestUnitPrice || 8800,
         ),
@@ -2685,9 +2711,9 @@ function resolveAdminCreditPeriodRange(req) {
 
 /**
  * 어벗츠 3사업 축 기간 집계 (관리자 정산 상단 SSOT).
- * 1) 스토어: STORE_SALE / REV_STORE_TAXABLE (과세 · 전액 어벗츠 · 분배 없음)
- * 2) 커스텀어벗: 의뢰자 유료 소비 + 제조사 하청 + 잔여(딜러·개발운영·어벗츠)
- * 3) 기공사업부: internalLab LAB_SETTLEMENT_CREDIT + 하청 수수료(subcontractFeeRate)
+ * 1) 스토어: STORE_SALE / REV_STORE_TAXABLE (과세) + 설정 분배비율(판매가 대비)
+ * 2) 커스텀어벗: 의뢰자 유료 소비 + 제조사 하청 + 잔여(딜러·개발운영·어벗츠) + 분배비율
+ * 3) 기공사업부: internalLab LAB_SETTLEMENT_CREDIT + 하청 수수료 + 기공 분배비율
  * (레거시) autoMatchFee·practiceMembership — 응답에 유지, UI 미노출.
  */
 export async function adminGetSettlementBusinessOverview(req, res) {
@@ -3110,6 +3136,73 @@ export async function adminGetSettlementBusinessOverview(req, res) {
       periodRevenue: normalizeNumber(labSettlementEarn + subcontractFeeAmount),
     };
 
+    const clampSharePct = (raw, fallback) => {
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n < 0) return fallback;
+      return Math.min(100, Math.round(n * 100) / 100);
+    };
+    const abutsFromParts = (mfr, dealer, devops) =>
+      Math.max(
+        0,
+        Math.round((100 - Number(mfr || 0) - Number(dealer || 0) - Number(devops || 0)) * 100) /
+          100,
+      );
+
+    const storeMfrPct = clampSharePct(
+      creditSettings.storeManufacturerSharePercent,
+      50,
+    );
+    const storeDealerPct = clampSharePct(
+      creditSettings.storeSalesmanSharePercent,
+      20,
+    );
+    const storeDevopsPct = clampSharePct(creditSettings.storeDevopsSharePercent, 5);
+    const storeAbutsPct = clampSharePct(
+      creditSettings.storeAbutsSharePercent,
+      abutsFromParts(storeMfrPct, storeDealerPct, storeDevopsPct),
+    );
+
+    const customMfrPct = clampSharePct(creditSettings.manufacturerSharePercent, 50);
+    const customDealerPct = clampSharePct(creditSettings.salesmanSharePercent, 20);
+    const customDevopsPct = clampSharePct(creditSettings.devopsSharePercent, 5);
+    const customAbutsPct = clampSharePct(
+      creditSettings.abutsSharePercent,
+      abutsFromParts(customMfrPct, customDealerPct, customDevopsPct),
+    );
+
+    const labBizPct = clampSharePct(creditSettings.labBizSharePercent, 50);
+    const labSalesTeamPct = clampSharePct(
+      creditSettings.labSalesTeamSharePercent,
+      20,
+    );
+    const labDevopsPct = clampSharePct(creditSettings.labDevopsSharePercent, 5);
+    const labAbutsPct = clampSharePct(
+      creditSettings.labAbutsSharePercent,
+      abutsFromParts(labBizPct, labSalesTeamPct, labDevopsPct),
+    );
+
+    const shareOf = (base, pct) =>
+      normalizeNumber(Math.round((Number(base || 0) * Number(pct || 0)) / 100));
+
+    // 스토어: 장부 귀속은 당분간 전액 어벗츠. 설정 분배비율로 기간 공급가 몫을 참고 표시.
+    const storeSharePlanned = {
+      manufacturerSupply: shareOf(storeSupply, storeMfrPct),
+      salesmanSupply: shareOf(storeSupply, storeDealerPct),
+      devopsSupply: shareOf(storeSupply, storeDevopsPct),
+      abutsSupply: shareOf(storeSupply, storeAbutsPct),
+    };
+
+    // 기공사업부: 기공료+하청수수료 합을 설정 비율로 참고 분배.
+    const labRevenueBase = normalizeNumber(
+      labSettlementEarn + subcontractFeeAmount,
+    );
+    const labSharePlanned = {
+      bizSupply: shareOf(labRevenueBase, labBizPct),
+      salesTeamSupply: shareOf(labRevenueBase, labSalesTeamPct),
+      devopsSupply: shareOf(labRevenueBase, labDevopsPct),
+      abutsSupply: shareOf(labRevenueBase, labAbutsPct),
+    };
+
     return res.json({
       success: true,
       data: {
@@ -3117,15 +3210,45 @@ export async function adminGetSettlementBusinessOverview(req, res) {
           start: range.start.toISOString(),
           end: range.end.toISOString(),
         },
+        shareRates: {
+          store: {
+            manufacturerPercent: storeMfrPct,
+            salesmanPercent: storeDealerPct,
+            devopsPercent: storeDevopsPct,
+            abutsPercent: storeAbutsPct,
+          },
+          customAbut: {
+            manufacturerPercent: customMfrPct,
+            salesmanPercent: customDealerPct,
+            devopsPercent: customDevopsPct,
+            abutsPercent: customAbutsPct,
+          },
+          labDivision: {
+            bizPercent: labBizPct,
+            salesTeamPercent: labSalesTeamPct,
+            devopsPercent: labDevopsPct,
+            abutsPercent: labAbutsPct,
+          },
+        },
         store: {
           periodGrossInclusive: storeGrossInclusive,
           periodSupply: storeSupply,
           periodVat: storeVat,
           periodSaleCount: normalizeNumber(Number(storeSale?.count || 0)),
           periodRefundCount: normalizeNumber(Number(storeRefund?.count || 0)),
+          plannedManufacturerSupply: storeSharePlanned.manufacturerSupply,
+          plannedSalesmanSupply: storeSharePlanned.salesmanSupply,
+          plannedDevopsSupply: storeSharePlanned.devopsSupply,
+          plannedAbutsSupply: storeSharePlanned.abutsSupply,
         },
         customAbut: customAbutPayload,
-        labDivision: labDivisionPayload,
+        labDivision: {
+          ...labDivisionPayload,
+          plannedBizSupply: labSharePlanned.bizSupply,
+          plannedSalesTeamSupply: labSharePlanned.salesTeamSupply,
+          plannedDevopsSupply: labSharePlanned.devopsSupply,
+          plannedAbutsSupply: labSharePlanned.abutsSupply,
+        },
         // 레거시 키(구 UI·캐시 호환)
         autoMatchFee: {
           periodFeeAmount: subcontractFeeAmount,
