@@ -251,7 +251,7 @@ function ExtrasSection() {
           Also included
         </p>
         <h2 className="mt-2 max-w-xl text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
-          함께 안내드리는 디지털 지원
+          함께 소개하는 디지털 지원
         </h2>
         <div className="mt-10 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {SIMPLEWAY_SAMPLE_EXTRAS.map((extra) => (
@@ -659,7 +659,7 @@ export default function EventApplyPage() {
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <p className="text-xs leading-relaxed text-slate-500">
-                    사용 중이시면 스캔바 등 디지털 지원을 안내해 드립니다.
+                    사용 중이면 스캔바 등도 함께 안내합니다.
                   </p>
                   <RadioGroup
                     value={
