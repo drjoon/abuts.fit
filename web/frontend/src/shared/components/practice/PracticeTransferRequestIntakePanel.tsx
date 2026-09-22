@@ -192,6 +192,7 @@ import {
 // - web/frontend/src/shared/components/practice/PracticeCustomAbutmentSpecsDialog.tsx
 // - web/frontend/src/shared/pricing/abutsAbutmentService.ts
 // - web/frontend/src/shared/components/practice/PracticeToothWorkCardFields.tsx
+// - 2026-09-23: 커스텀어벗 모달 취소 — dismissKind가 cancel로 남아 재오픈 후 취소/닫기가 무시되던 버그 수정.
 // - 2026-09-22: 치아 카드 형태·어벗·쉐이드·복사 → PracticeToothWorkCardFields 공용.
 // - 2026-09-22: 커스텀어벗 설정 모달 → PracticeCustomAbutmentSpecsDialog 공용(follow-up 공유).
 // - 2026-09-15: 확인 후 Windows 클릭 누수로 라디오 해제·규격 소실 방지 + 직전 선택 localStorage 기본값.
@@ -2700,6 +2701,8 @@ export const PracticeTransferRequestIntakePanel = ({
     if (toothWorkGuideTourStepId === "prosthesis") {
       return;
     }
+    // 이전 취소/확인 dismissKind가 남으면 재오픈 후 취소·닫기가 early-return으로 막힘
+    customSpecsModalDismissKindRef.current = null;
     // 오픈 직후 잔여 클릭이 푸터(다음 등)에 닿지 않게 — 다음 pointerdown에서 자동 해제
     armPointerClickThroughGuard();
     const current = toothWorks[index];
@@ -2834,8 +2837,12 @@ export const PracticeTransferRequestIntakePanel = ({
   };
 
   const cancelCustomSpecsModal = () => {
-    // onOpenChange(false)와 취소 버튼이 연달아 호출될 수 있음
-    if (customSpecsModalDismissKindRef.current === "cancel") return;
+    // onOpenChange(false)와 취소 버튼이 연달아 호출될 수 있음(스냅샷 이중 복원 방지)
+    if (customSpecsModalDismissKindRef.current === "cancel") {
+      // 종류만 남고 타깃이 다시 열린 경우에도 닫기 보장
+      if (customSpecsModalTarget !== null) closeCustomSpecsModal();
+      return;
+    }
     customSpecsModalDismissKindRef.current = "cancel";
     // 닫힘 직후 잔여 pointerup/click이 치아 라디오에 닿지 않게(ms 억제 아님)
     armPointerClickThroughGuard();
@@ -5282,7 +5289,13 @@ export const PracticeTransferRequestIntakePanel = ({
           customSpecsModalSnapshotRef.current = null;
           closeCustomSpecsModal();
         }}
-        onCancel={cancelCustomSpecsModal}
+        onCancel={() => {
+          cancelCustomSpecsModal();
+          // 버튼 경로는 Dialog onOpenChange를 안 타서 dismissKind가 남을 수 있음 → 다음 오픈 전 정리
+          if (customSpecsModalDismissKindRef.current === "cancel") {
+            customSpecsModalDismissKindRef.current = null;
+          }
+        }}
         onAbutmentProductModeChange={(alternateMode) => {
           if (typeof customSpecsModalTarget !== "number") return;
           const index = customSpecsModalTarget;

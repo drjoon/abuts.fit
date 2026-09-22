@@ -27,6 +27,7 @@
  * - web/frontend/src/shared/practice/openPracticeTransferChat.ts
  * - web/frontend/src/shared/components/practice/PracticeLabRatingControl.tsx
  * - web/frontend/src/shared/practice/practiceLabRating.ts
+ * - 2026-09-23: 채팅 헤더 — `기공소 · 환자명 · 원장명`(치식·슬래시 제거).
  * - 2026-09-21: 신규의뢰 헤더 — 원장님 성함 드롭다운(BA doctorNames 추가·수정·삭제).
  * - 2026-09-21: 동일 환자·치아 확인 모달 z-[460] — 작성 화면 뒤에서 전송 클릭을 삼키던 문제.
  * - 2026-09-20: 작업 파일 전체 다운로드 — 어벗 디자인·보철물을 zip 하나로.
@@ -332,6 +333,7 @@ import {
   normalizeAutoMatchMaxLabRating,
   normalizeAutoMatchMinLabRating,
   resolveAutoMatchEligibleStarBand,
+  stripPracticeTargetLabDisplayDecorations,
 } from "@/shared/practice/practiceLabRating";
 import { PracticeLabRejectedReselectDialog } from "@/shared/components/practice/PracticeLabRejectedReselectDialog";
 import { PracticeRemakeSearchDialog } from "@/shared/components/practice/PracticeRemakeSearchDialog";
@@ -384,7 +386,6 @@ import {
 import {
       buildPracticeTransferMemo as buildPracticeTransferMemoShared,
       formatPracticeTransferMemoDetail as formatPracticeTransferMemoDetailShared,
-      formatToothNumbersForCard,
       formatTransferMemoForDisplay as formatTransferMemoForDisplayShared,
       normalizeToothWorksForSync,
       emptyToothWorkCustomSpecs,
@@ -5198,11 +5199,12 @@ export const PracticeFileTransferPage = ({
 
   const selectedTransferCaseIdentity = useMemo(() => {
     if (!selectedTransfer || !selectedTransferDetailModel) return null;
-    const lab = String(selectedTransfer.targetLab || "").trim();
-    const patient = String(selectedTransferDetailModel.patientName || "").trim();
-    const teeth = formatToothNumbersForCard(
-      selectedTransferDetailModel.toothWorks || [],
+    // 채팅 헤더는 기공소 실명만(「어벗츠 협력 ·」접두 제거). 목록·픽커 표시는 유지.
+    const lab = stripPracticeTargetLabDisplayDecorations(
+      selectedTransfer.targetLab,
     );
+    const patient = String(selectedTransferDetailModel.patientName || "").trim();
+    const doctor = String(selectedTransferDetailModel.doctorName || "").trim();
     const transferId = String(
       selectedTransfer.transferId || selectedTransfer.id || "",
     ).trim();
@@ -5215,14 +5217,15 @@ export const PracticeFileTransferPage = ({
         "",
     ).trim();
     const arrival = String(selectedTransfer.arrivalDate || "").trim();
-    const primaryParts = [lab, patient].filter(Boolean);
-    if (!primaryParts.length && !transferId) return null;
-    const identity =
-      primaryParts.length === 0
-        ? transferId
-        : primaryParts.length === 2
-          ? `${primaryParts[0]} / ${primaryParts[1]}${teeth ? ` ${teeth}` : ""}`
-          : `${primaryParts[0]}${teeth ? ` ${teeth}` : ""}`;
+    const identityParts = [
+      lab === "-" ? "" : lab,
+      patient,
+      doctor,
+    ].filter(Boolean);
+    if (!identityParts.length && !transferId) return null;
+    const identity = identityParts.length
+      ? identityParts.join(" · ")
+      : transferId;
     const dateParts = [
       order ? `주문 ${order}` : "",
       arrival ? `도착 ${arrival}` : "",

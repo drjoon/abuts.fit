@@ -214,7 +214,6 @@ import {
 import { usePracticeTransferPanelLayout } from "@/shared/components/practice/usePracticeTransferPanelLayout";
 import { useIsMobile } from "@/shared/hooks/use-mobile";
 import {
-  formatToothNumbersForCard,
   type ToothWorkSelection,
 } from "@/shared/practice/transferMemo";
 import { toothArchFromNumber } from "@/shared/practice/labFeeSchedule";
@@ -1967,6 +1966,7 @@ export function PracticeTransferDetailChatDialog({
     const practiceName = summaryItemValue(summaryItems, "치과");
     const labName = summaryItemValue(summaryItems, "기공소");
     const patientName = summaryItemValue(summaryItems, "환자명");
+    const doctorName = summaryItemValue(summaryItems, "원장명");
     const transferId =
       summaryItemValue(summaryItems, "전송ID") ||
       summaryItemValue(summaryItems, "의뢰ID");
@@ -1976,15 +1976,11 @@ export function PracticeTransferDetailChatDialog({
       summaryItemValue(summaryItems, "치과도착일");
     const shipDate = summaryItemValue(summaryItems, "출고예정");
     const party = practiceName || labName;
-    const teeth = formatToothNumbersForCard(toothWorks);
-    const primaryParts = [party, patientName].filter(Boolean);
-    if (primaryParts.length === 0 && !transferId) return null;
-    const identity =
-      primaryParts.length === 0
-        ? transferId
-        : primaryParts.length === 2
-          ? `${primaryParts[0]} / ${primaryParts[1]}${teeth ? ` ${teeth}` : ""}`
-          : `${primaryParts[0]}${teeth ? ` ${teeth}` : ""}`;
+    const identityParts = [party, patientName, doctorName].filter(Boolean);
+    if (identityParts.length === 0 && !transferId) return null;
+    const identity = identityParts.length
+      ? identityParts.join(" · ")
+      : transferId;
     return {
       primary: identity,
       secondary: formatPracticeTransferIdentityDateLabel({
@@ -1996,7 +1992,7 @@ export function PracticeTransferDetailChatDialog({
       dotColor: undefined as string | undefined,
       dotStyle: undefined as CalendarLabDotStyle | undefined,
     };
-  }, [caseIdentity, orderDate, summaryItems, toothWorks]);
+  }, [caseIdentity, orderDate, summaryItems]);
   const identityDateLabel = String(caseIdentityStrip?.secondary || "").trim();
   const chartToothWorks = useMemo(
     () => (Array.isArray(toothWorks) ? toothWorks : []),

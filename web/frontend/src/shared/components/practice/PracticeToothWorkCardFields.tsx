@@ -4,6 +4,7 @@
  * - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
  * - web/frontend/src/shared/components/practice/PracticeToothWorkChartReadOnly.tsx
  * change-log:
+ * - 2026-09-23: 라디오 라벨 — 어벗→직접어벗, 스캔바디→간접어벗.
  * - 2026-09-22: 신규의뢰 intake 본문 이관 — 커스텀 형태 삭제·missing tooltip·어벗 상세 툴팁·즐겨찾기 삭제.
  * - 2026-09-22: 어벗·스캔바디 선택 시 onOpenSpecs(신규의뢰 규격 모달과 동일).
  * - 2026-09-22: 신규의뢰 카드 필드 공통화 — 라디오 형태·어벗·쉐이드·복사.
@@ -471,7 +472,7 @@ export function PracticeToothAbutmentRadios({
     <div
       data-no-tooth-marquee=""
       role="radiogroup"
-      aria-label="어벗 또는 스캔바디"
+      aria-label="직접어벗 또는 간접어벗"
       title={title}
       className={cn(
         "mt-1 flex shrink-0 flex-col items-stretch gap-0.5 px-0.5",
@@ -482,8 +483,8 @@ export function PracticeToothAbutmentRadios({
     >
       {(
         [
-          { value: CUSTOM_ABUTMENT_SELECTION.ABUTMENT, label: "어벗" },
-          { value: CUSTOM_ABUTMENT_SELECTION.SCANBODY, label: "스캔바디" },
+          { value: CUSTOM_ABUTMENT_SELECTION.ABUTMENT, label: "직접어벗" },
+          { value: CUSTOM_ABUTMENT_SELECTION.SCANBODY, label: "간접어벗" },
         ] as const
       ).map((option) => {
         const checked =

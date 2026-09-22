@@ -433,8 +433,8 @@ export const PracticeToothWorkChartReadOnly = ({
             <div className="mt-2 flex w-full flex-col items-center gap-0.5 leading-none">
               <span className="inline-flex h-5 items-center text-[11px] leading-none text-primary-strong">
                 {selectionKind === CUSTOM_ABUTMENT_SELECTION.SCANBODY
-                  ? "스캔바디"
-                  : "어벗"}
+                  ? "간접어벗"
+                  : "직접어벗"}
               </span>
               <div className="flex w-full flex-col items-stretch gap-0.5 px-0.5">
                 <span className="min-h-5 w-full px-0.5 text-center text-[10px] leading-snug text-primary-strong [overflow-wrap:anywhere]">

@@ -6,6 +6,7 @@
  * - web/frontend/src/shared/components/practice/PracticeCustomAbutmentSpecsDialog.tsx
  * - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
  * change-log:
+ * - 2026-09-23: 취소 후 dismissKind 잔존 → 재오픈 시 취소/닫기 무시 수정(intake와 동일).
  * - 2026-09-22: 어벗·스캔바디 → PracticeCustomAbutmentSpecsDialog(신규의뢰와 동일).
  * - 2026-09-22: 보철 종류 변경 — 목록 섹션 제거, 보철물 카드에서 직접 선택·전후 기록.
  * - 2026-09-22: 제작 변경(edit) — 종류 변경 건도 보철물 카드에서 종류 선택.
@@ -371,6 +372,7 @@ export function PracticeProsthesisFollowUpDialog({
     spanKey: string,
     selection?: CustomAbutmentSelection,
   ) => {
+    customSpecsDismissKindRef.current = null;
     const current =
       rowBySpanKey.get(spanKey) ||
       availableRows.find((row) => followUpRowSpanKey(row) === spanKey) ||
@@ -444,7 +446,10 @@ export function PracticeProsthesisFollowUpDialog({
   };
 
   const cancelCustomSpecsModal = () => {
-    if (customSpecsDismissKindRef.current === "cancel") return;
+    if (customSpecsDismissKindRef.current === "cancel") {
+      if (customSpecsSpanKey != null) closeCustomSpecsModal();
+      return;
+    }
     customSpecsDismissKindRef.current = "cancel";
     const snap = customSpecsSnapshotRef.current;
     customSpecsSnapshotRef.current = null;
@@ -760,7 +765,12 @@ export function PracticeProsthesisFollowUpDialog({
         selectionLock={customSpecsSelectionLock}
         onPatchSpecs={patchCustomSpecsOnSpan}
         onConfirm={confirmCustomSpecsModal}
-        onCancel={cancelCustomSpecsModal}
+        onCancel={() => {
+          cancelCustomSpecsModal();
+          if (customSpecsDismissKindRef.current === "cancel") {
+            customSpecsDismissKindRef.current = null;
+          }
+        }}
         onAbutmentProductModeChange={(alternateMode) => {
           if (!customSpecsSpanKey) return;
           setRowBySpanKey((prev) => {

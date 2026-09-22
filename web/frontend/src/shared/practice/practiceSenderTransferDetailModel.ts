@@ -7,6 +7,7 @@
  * 2026-08-21: 작업취소·휴지통 상태에서는 디자인 컨펌 CTA 숨김.
  * 2026-08-29: 요약 필드「어벗 진행상황」— 제조 공정 라벨 표시.
  * 2026-09-07: 기공의뢰 단계 — 현재·다음 공정 표시(틀니 등).
+ * 2026-09-23: 채팅 헤더용 doctorName 노출(환자명 옆).
  * 2026-09-07: 기공의뢰 단계 줄바꿈 구분(한 줄 장문 가독성).
  */
 import type {
@@ -156,6 +157,8 @@ export type PracticeSenderTransferDetailModel = {
   productionConfirmTitle: string;
   productionConfirmButtonLabel: string;
   patientName: string;
+  /** 신규의뢰에서 선택한 원장님 성함(없으면 빈 문자열) */
+  doctorName: string;
   downloadAllFiles: PracticeRecentTransferFileItem[];
 };
 
@@ -169,6 +172,7 @@ export function buildPracticeSenderTransferDetailModel(
   const patientName =
     String(parsed.patientName || "").trim() ||
     String(transfer.draftPatientName || "").trim();
+  const doctorName = String(parsed.doctorName || "").trim();
   // 상세 좌 메모: 메타 태그 원본에서 자유 입력 메모만 (환자명·보철물 요약 제외)
   const displayMemo = String(parsed.memo || "").trim() || "-";
   const orderDates = normalizeYmdList(transfer.orderDates, transfer.orderDate);
@@ -244,6 +248,7 @@ export function buildPracticeSenderTransferDetailModel(
       { label: "전송시각", value: transfer.createdAt || "-" },
       { label: "기공소", value: formatPracticeTargetLabLabel({ targetLab: transfer.targetLab }) },
       { label: "환자명", value: patientName || "-" },
+      ...(doctorName ? [{ label: "원장명", value: doctorName }] : []),
       ...buildPracticeTransferDateSummaryItems(transfer),
       ...(workPeriodSummary
         ? [workPeriodSummary as PracticeTransferDialogSummaryItem]
@@ -312,6 +317,7 @@ export function buildPracticeSenderTransferDetailModel(
       : "작업 결과를 확인한 뒤 생산을 진행하세요.",
     productionConfirmButtonLabel: isDesignConfirm ? "어벗 디자인 컨펌" : "생산 진행",
     patientName,
+    doctorName,
     downloadAllFiles: [
       ...(Array.isArray(transfer.files) ? transfer.files : []),
       ...(Array.isArray(transfer.designFiles) ? transfer.designFiles : []),

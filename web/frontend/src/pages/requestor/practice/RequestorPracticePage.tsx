@@ -2796,6 +2796,16 @@ export function RequestorPracticeReceivePage({
     return fromFiles || "";
   }, [selectedTransfer?.files, selectedTransfer?.rawTransferMemo]);
 
+  const selectedTransferDoctorName = useMemo(
+    () =>
+      String(
+        parsePracticeTransferMemoMetaShared(
+          String(selectedTransfer?.rawTransferMemo || ""),
+        ).doctorName || "",
+      ).trim(),
+    [selectedTransfer?.rawTransferMemo],
+  );
+
   const selectedTransferWorkPeriodSummary = useMemo(
     () =>
       buildPracticeWorkPeriodSummaryItem(
@@ -2908,7 +2918,7 @@ export function RequestorPracticeReceivePage({
     const patient =
       selectedTransferPatientName ||
       resolvePracticeTransferListPatientName(selectedTransfer);
-    const teeth = resolvePracticeTransferListToothNumbers(selectedTransfer);
+    const doctor = selectedTransferDoctorName;
     const transferId = String(selectedTransfer.transferId || "").trim();
     const order = String(
       (Array.isArray(selectedTransfer.orderDates) &&
@@ -2926,14 +2936,11 @@ export function RequestorPracticeReceivePage({
         selectedTransfer.arrivalDate ||
         "",
     ).trim();
-    const primaryParts = [clinic, patient].filter(Boolean);
-    if (!primaryParts.length && !transferId) return null;
-    const identity =
-      primaryParts.length === 0
-        ? transferId
-        : primaryParts.length === 2
-          ? `${primaryParts[0]} / ${primaryParts[1]}${teeth ? ` ${teeth}` : ""}`
-          : `${primaryParts[0]}${teeth ? ` ${teeth}` : ""}`;
+    const identityParts = [clinic, patient, doctor].filter(Boolean);
+    if (!identityParts.length && !transferId) return null;
+    const identity = identityParts.length
+      ? identityParts.join(" · ")
+      : transferId;
     const dateParts = [
       order ? `주문 ${order}` : "",
       arrival ? `도착 ${arrival}` : "",
@@ -2956,6 +2963,7 @@ export function RequestorPracticeReceivePage({
   }, [
     practiceColorDots,
     selectedTransfer,
+    selectedTransferDoctorName,
     selectedTransferPatientName,
     user?.role,
   ]);
@@ -8798,6 +8806,9 @@ export function RequestorPracticeReceivePage({
               ? "비공개"
               : selectedTransfer?.practice.userName || "-" },
           { label: "환자명", value: selectedTransferPatientName || "-" },
+          ...(selectedTransferDoctorName
+            ? [{ label: "원장명", value: selectedTransferDoctorName }]
+            : []),
           ...buildPracticeTransferDateSummaryItems({
             orderDate: selectedTransfer?.orderDate || "",
             arrivalDate: selectedTransfer?.arrivalDate || "",

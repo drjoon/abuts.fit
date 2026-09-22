@@ -499,7 +499,7 @@ export function PracticeCustomAbutmentSpecsDialog({
         <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
           <DialogHeader className="shrink-0 space-y-1 text-left">
             <DialogTitle className="text-lg">
-              {`${isAbutmentModal ? "직접 어벗" : "스캔바디"} 설정${toothLabel}`}
+              {`${isAbutmentModal ? "직접 어벗" : "간접 어벗"} 설정${toothLabel}`}
             </DialogTitle>
             <p className="text-sm text-slate-500" aria-live="polite">
               {stepSubtitle}
