@@ -106,6 +106,7 @@
  * - 2026-08-17: 리메이크=카드 Repeat 아이콘(툴팁)·단건 확인. 검색창 옆 선택 일괄 버튼 제거.
  * - 2026-08-16: 최근의뢰 카드=시각+상태 / 주문일 / 치과도착일 / 기공소 / 환자명(전송ID·파일·기간·메모 덤프 제거).
  * - 2026-08-18: 수락 전(의뢰) 전송건을 폼에 불러와 수정. 삭제 후 재작성 대체.
+ * - 2026-09-23: 의뢰 수정 저장/취소 후 원래 의뢰 상세·채팅으로 복귀.
  * - 2026-08-18: 의뢰 수정 저장 후 임시저장 목록 재조회를 기다리지 않음.
  * - 2026-08-18: 상세 「의뢰 수정」은 좌측 의뢰정보 상단. 목록 카드 메타는 1행 1항목.
  * - 2026-08-18: 기공의뢰 카드 외곽선 제거. 상단 버튼을 동기화 상태 행으로 이동.
@@ -1437,6 +1438,8 @@ export const PracticeFileTransferPage = ({
   const suppressLocalFormPersistRef = useRef(false);
   const skipFormAutosaveRef = useRef(false);
   const editingSentTransferRef = useRef<EditingSentTransfer | null>(null);
+  /** 의뢰 수정 진입 시 상세·채팅 복귀용(저장/취소 후 다시 연다). */
+  const editReturnTransferRef = useRef<RecentTransferItem | null>(null);
   const pendingLocalFormEditRef = useRef(false);
   const lastSavedFormFingerprintRef = useRef<string | null>(null);
   const currentFormFingerprintRef = useRef("");
@@ -4283,6 +4286,7 @@ export const PracticeFileTransferPage = ({
     autoJoinedDraftIdRef.current = "";
     setEditingSentTransfer(null);
     editingSentTransferRef.current = null;
+    editReturnTransferRef.current = null;
     lastSavedFormFingerprintRef.current = null;
     setLastSavedFormFingerprint(null);
     lastAppliedServerUpdatedAtRef.current = 0;
@@ -5583,6 +5587,7 @@ export const PracticeFileTransferPage = ({
       void clearLocalFilesWithCache();
       setEditingSentTransfer(null);
       editingSentTransferRef.current = null;
+      editReturnTransferRef.current = null;
       applyDraftSummaryToForm(draft);
       // 목록 카드보다 서버 최신 스냅샷을 우선해, 빈 기공소/환자명·파일도 정확히 맞춘다.
       void loadPracticeTransferDraft({ draftId: draft.id, forceResync: true });
@@ -5660,6 +5665,7 @@ export const PracticeFileTransferPage = ({
         transferMongoId,
         orderDate: String(transfer.orderDate || "").trim(),
       };
+      editReturnTransferRef.current = transfer;
       setEditingSentTransfer(nextEditing);
       editingSentTransferRef.current = nextEditing;
       applyDraftSummaryToForm(draft, {
@@ -8418,6 +8424,11 @@ export const PracticeFileTransferPage = ({
       similarCaseResolutionRef.current = null;
       similarCasePromptedFpRef.current = "";
       pendingSubmitAfterSimilarRef.current = false;
+      // 수정 저장 성공 — 작성 폼 닫고 원래 의뢰 상세·채팅으로 복귀.
+      const returnAfterEdit = editing
+        ? editReturnTransferRef.current
+        : null;
+      if (editing) editReturnTransferRef.current = null;
       setComposeOpen(false);
       void loadRecentRequests({ silent: true });
       setCalendarRefreshNonce((n) => n + 1);
@@ -8427,6 +8438,9 @@ export const PracticeFileTransferPage = ({
           draftListSeqRef.current += 1;
           await resetIntakeFormAfterTransfer();
           void loadPracticeTransferDraftList();
+          if (returnAfterEdit) {
+            void handleOpenTransferDialog(returnAfterEdit);
+          }
         } catch {
           // 전송은 이미 성공. 정리 실패는 무시.
         }
@@ -8640,6 +8654,7 @@ export const PracticeFileTransferPage = ({
     autoJoinedDraftIdRef.current = "";
     setEditingSentTransfer(null);
     editingSentTransferRef.current = null;
+    editReturnTransferRef.current = null;
     setToothChartResetNonce((n) => n + 1);
 
     // await 동안 기공소 자동선택·settings sync가 skip을 소비했을 수 있어 캘린더 도착일을 재적용.
@@ -10288,8 +10303,18 @@ export const PracticeFileTransferPage = ({
         onOpenChange={(open) => {
           // 투어 블러·코치마크가 Dialog 밖(higher z)이라 outside 클릭으로 닫힘 → 하이라이트 타깃 소실
           if (!open && guideTourWantsComposeOpen) return;
-          setComposeOpen(open);
           if (!open) {
+            // 수정 중 닫기(취소) — 저장 성공 경로는 ref를 먼저 비워 이중 복귀 방지.
+            const returnAfterEditCancel =
+              editingSentTransferRef.current && editReturnTransferRef.current
+                ? editReturnTransferRef.current
+                : null;
+            if (returnAfterEditCancel) {
+              editReturnTransferRef.current = null;
+              setEditingSentTransfer(null);
+              editingSentTransferRef.current = null;
+            }
+            setComposeOpen(false);
             setComposeRemakeMode(false);
             setComposeRemakeConfirmOpen(false);
             setLinkedRemakeSource(null);
@@ -10298,7 +10323,19 @@ export const PracticeFileTransferPage = ({
             similarCaseResolutionRef.current = null;
             similarCasePromptedFpRef.current = "";
             pendingSubmitAfterSimilarRef.current = false;
+            if (returnAfterEditCancel) {
+              void (async () => {
+                try {
+                  await resetIntakeFormAfterTransfer();
+                } catch {
+                  // ignore
+                }
+                void handleOpenTransferDialog(returnAfterEditCancel);
+              })();
+            }
+            return;
           }
+          setComposeOpen(open);
         }}
       >
         <DialogContent
@@ -11266,7 +11303,7 @@ export const PracticeFileTransferPage = ({
           appendProsthesisBusy={appendProsthesisBusy}
           appendProsthesisLabel={
             prosthesisFollowUpEligibility.followUpKind === "typeChange"
-              ? "보철 종류 변경"
+              ? "주문 변경"
               : "지르 보철"
           }
           appendProsthesisHint={
@@ -11585,14 +11622,15 @@ export const PracticeFileTransferPage = ({
           open={followUpOfferOpen}
           title={
             prosthesisFollowUpEligibility.followUpKind === "typeChange"
-              ? "보철 종류를 변경할까요?"
+              ? "주문을 변경할까요?"
               : "지르 보철로 변경할까요?"
           }
           description={
             prosthesisFollowUpEligibility.followUpKind === "typeChange" ? (
               <>
-                예: 인레이→크라운처럼 보철 종류를 바꿉니다. 기공비는 모든
-                단계 중 가장 비싼 금액만 청구합니다.
+                예: 인레이→크라운, 간접어벗→직접어벗, 쉐이드·임플란트 변경
+                등 주문을 바꿉니다. 기공비는 모든 단계 중 가장 비싼 금액만
+                청구합니다.
                 <br />
                 아니오: 현재 보철로 계속합니다(다음 도착일만 반영, 추가 과금
                 없음).
@@ -11613,7 +11651,7 @@ export const PracticeFileTransferPage = ({
           }
           confirmLabel={
             prosthesisFollowUpEligibility.followUpKind === "typeChange"
-              ? "종류 변경"
+              ? "주문 변경"
               : "지르로 변경"
           }
           cancelLabel={

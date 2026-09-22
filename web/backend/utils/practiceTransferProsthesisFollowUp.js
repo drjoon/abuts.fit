@@ -11,6 +11,7 @@
 // - 2026-09-08: 차트 표시 맵 — 후속+원 병존 시 형태는 후속, CA·스펙은 원 임시치아 행.
 // - 2026-09-01: 임시치아 배송 후 동일 건에 크라운/브리지 후속 추가(어벗 재청구 없음).
 // - 2026-09-21: 보철 종류 변경 리메이크(인레이→크라운 등) — 임시치아→지르와 동일, 단계 최고가만 청구.
+// - 2026-09-23: 주문 변경 — 동일 종류라도 어벗·쉐이드·임플란트 스펙 차이면 허용.
 import { isPracticeTransferDeletedStatus } from "./practiceTransferStage.js";
 
 const TEMP_TYPES = new Set(["임시치아", "가철성임시치아"]);
@@ -82,6 +83,30 @@ export const isTypeChangeSourceProsthesisType = (prosthesisType) => {
   const type = String(prosthesisType || "").trim();
   return TYPE_CHANGE_SOURCE_FINAL_TYPES.has(type);
 };
+
+/** 주문 변경 비교용 — 형태·쉐이드·어벗 선택·임플란트/어벗 스펙 */
+export const toothWorkOrderChangeFingerprint = (row) => {
+  const norm = (value) => String(value || "").trim().toLowerCase();
+  return [
+    norm(row?.prosthesisType),
+    norm(row?.shade),
+    Boolean(row?.customAbutment) ? "1" : "0",
+    norm(row?.customAbutmentSelection),
+    norm(row?.abutmentProductMode),
+    norm(row?.implantManufacturer),
+    norm(row?.implantBrand),
+    norm(row?.implantFamily),
+    norm(row?.implantType),
+    Boolean(row?.implantAddRequest) ? "1" : "0",
+    norm(row?.abutmentManufacturer),
+    norm(row?.abutmentDiameter),
+    norm(row?.abutmentHeight),
+  ].join("|");
+};
+
+export const hasToothWorkOrderChange = (sourceRow, nextRow) =>
+  toothWorkOrderChangeFingerprint(sourceRow) !==
+  toothWorkOrderChangeFingerprint(nextRow);
 
 const linkedTeethOf = (row) => {
   const self = String(row?.toothNumber || "").trim();
@@ -605,7 +630,7 @@ export const canAppendProsthesisFollowUp = (
     return {
       ok: false,
       reason: "not_accepted",
-      message: "기공소 작업시작 후에 후속·보철 종류 변경을 의뢰할 수 있습니다.",
+      message: "기공소 작업시작 후에 후속·주문 변경을 의뢰할 수 있습니다.",
     };
   }
 
@@ -625,7 +650,7 @@ export const canAppendProsthesisFollowUp = (
         ok: false,
         reason: "no_changeable_teeth",
         message:
-          "임시치아 또는 인레이·크라운·브리지 의뢰가 없어 후속·종류 변경을 할 수 없습니다.",
+          "임시치아 또는 인레이·크라운·브리지 의뢰가 없어 후속·주문 변경을 할 수 없습니다.",
       };
     }
     return {
@@ -677,7 +702,6 @@ export const validateFollowUpToothWorksAgainstSource = (
       };
     }
     if (sourceSpan.kind === "typeChange") {
-      const sourceType = String(sourceSpan.sourceRow?.prosthesisType || "").trim();
       const nextType = String(row?.prosthesisType || "").trim();
       if (!isFinalProsthesisType(nextType)) {
         return {
@@ -685,10 +709,10 @@ export const validateFollowUpToothWorksAgainstSource = (
           message: "변경할 보철 종류는 인레이·크라운·브리지만 가능합니다.",
         };
       }
-      if (sourceType && nextType && sourceType === nextType) {
+      if (!hasToothWorkOrderChange(sourceSpan.sourceRow, row)) {
         return {
           ok: false,
-          message: `${linked.join(", ")}은(는) 보철 종류가 동일합니다. 종류를 변경하거나 일반 리메이크를 이용하세요.`,
+          message: `${linked.join(", ")}은(는) 변경 사항이 없습니다. 형태·어벗·쉐이드 등을 바꾸거나 일반 리메이크를 이용하세요.`,
         };
       }
     }

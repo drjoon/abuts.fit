@@ -6,6 +6,9 @@
  * - web/frontend/src/shared/components/practice/PracticeCustomAbutmentSpecsDialog.tsx
  * - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
  * change-log:
+ * - 2026-09-23: UI 라벨 — 보철 종류 변경→주문 변경(버튼·모달 제목·의뢰 CTA).
+ * - 2026-09-23: 주문 변경 — 동일 종류라도 어벗·쉐이드·임플란트 스펙 변경 허용.
+ * - 2026-09-23: 주문 변경 — 카드 전 항목 변경·전후 기록(의뢰모드 잠금 해제 포함).
  * - 2026-09-23: 취소 후 dismissKind 잔존 → 재오픈 시 취소/닫기 무시 수정(intake와 동일).
  * - 2026-09-22: 어벗·스캔바디 → PracticeCustomAbutmentSpecsDialog(신규의뢰와 동일).
  * - 2026-09-22: 보철 종류 변경 — 목록 섹션 제거, 보철물 카드에서 직접 선택·전후 기록.
@@ -45,8 +48,8 @@ import { PracticeToothWorkChartReadOnly } from "@/shared/components/practice/Pra
 import {
   buildFollowUpToothWorksDraft,
   followUpRowSpanKey,
+  hasToothWorkOrderChange,
   isFinalProsthesisType,
-  isTypeChangeSourceProsthesisType,
   listEditablePendingFollowUpToothWorks,
   listPendingFollowUpSourceSpans,
   resolveFollowUpKind,
@@ -196,28 +199,33 @@ export function PracticeProsthesisFollowUpDialog({
 
   /**
    * 「현재」·변경 전후 기준.
-   * create: 원 의뢰 종류(인레이 등).
-   * edit: 이미 적용된 pending 후속 종류(크라운 등) — 원본이 아님.
+   * create: 원 의뢰 행(인레이 등).
+   * edit: 이미 적용된 pending 후속(크라운 등) — 원본이 아님.
    */
-  const sourceTypeBySpan = useMemo(() => {
-    const map = new Map<string, string>();
+  const sourceRowBySpan = useMemo(() => {
+    const map = new Map<string, Partial<ToothWorkSelection>>();
     const rows = Array.isArray(toothWorks) ? toothWorks : [];
     if (!isEdit) {
       for (const span of listPendingFollowUpSourceSpans(rows)) {
-        map.set(
-          span.teeth.join("-"),
-          String(span.sourceRow?.prosthesisType || "").trim(),
-        );
+        map.set(span.teeth.join("-"), span.sourceRow || {});
       }
       return map;
     }
     for (const draft of draftRows) {
       const key = followUpRowSpanKey(draft);
-      const sourceType = String(draft.prosthesisType || "").trim();
-      if (sourceType) map.set(key, sourceType);
+      map.set(key, draft);
     }
     return map;
   }, [draftRows, isEdit, toothWorks]);
+
+  const sourceTypeBySpan = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const [key, row] of sourceRowBySpan) {
+      const sourceType = String(row?.prosthesisType || "").trim();
+      if (sourceType) map.set(key, sourceType);
+    }
+    return map;
+  }, [sourceRowBySpan]);
 
   const [rowBySpanKey, setRowBySpanKey] = useState<Map<string, FollowUpRow>>(
     () => new Map(),
@@ -252,24 +260,18 @@ export function PracticeProsthesisFollowUpDialog({
     [availableRows, isEdit, selectedSpanKeys],
   );
 
-  const typeChangeValid = useMemo(() => {
+  const orderChangeValid = useMemo(() => {
     if (!isTypeChange) return true;
     return selectedRows.every((row) => {
       const key = followUpRowSpanKey(row);
-      const sourceType = sourceTypeBySpan.get(key) || "";
+      const sourceRow = sourceRowBySpan.get(key);
       const nextType = String(row.prosthesisType || "").trim();
       if (!isFinalProsthesisType(nextType)) return false;
-      // create만: 원본과 동일 종류 금지. edit는 pending 후속 기준이라 되돌리기·도착일만 변경 OK.
-      if (
-        !isEdit &&
-        isTypeChangeSourceProsthesisType(sourceType) &&
-        nextType === sourceType
-      ) {
-        return false;
-      }
+      // create만: 원본과 완전 동일하면 거부. edit는 도착일만 변경 OK.
+      if (!isEdit && !hasToothWorkOrderChange(sourceRow, row)) return false;
       return true;
     });
-  }, [isEdit, isTypeChange, selectedRows, sourceTypeBySpan]);
+  }, [isEdit, isTypeChange, selectedRows, sourceRowBySpan]);
 
   useEffect(() => {
     if (!open) return;
@@ -386,7 +388,10 @@ export function PracticeProsthesisFollowUpDialog({
     const requested = isCustomAbutmentSelection(selection) ? selection : null;
     const prepared = prepareCustomAbutmentSpecsOpenRow(current, {
       selection: requested,
-      lockedMode: ABUTMENT_PRODUCT_MODE.DESIGN_AND_PRODUCTION,
+      // 주문 변경: 의뢰모드 포함 전 항목 변경 가능. 지르 후속만 디자인+생산 고정.
+      lockedMode: isTypeChange
+        ? null
+        : ABUTMENT_PRODUCT_MODE.DESIGN_AND_PRODUCTION,
       defaultAbutmentProductMode,
     });
     setCustomSpecsSelectionLock(prepared.selection);
@@ -504,7 +509,7 @@ export function PracticeProsthesisFollowUpDialog({
   const canSubmit =
     !busy &&
     selectedRows.length > 0 &&
-    typeChangeValid &&
+    orderChangeValid &&
     /^\d{4}-\d{2}-\d{2}$/.test(String(arrivalDate || "").trim());
 
   return (
@@ -546,28 +551,16 @@ export function PracticeProsthesisFollowUpDialog({
             {isEdit
               ? "최종 보철 제작 변경"
               : isTypeChange
-                ? "보철 종류 변경 리메이크"
+                ? "주문 변경"
                 : "지르 보철 제작"}
           </DialogTitle>
-          {!isEdit ? (
+          {!isEdit && !isTypeChange ? (
             <p className="pt-1 text-sm font-normal leading-relaxed text-muted-foreground">
-              {isTypeChange ? (
-                <>
-                  보철물 카드에서 종류를 바꿉니다.
-                  <br />
-                  기공비는 모든 단계 중 가장 비싼 금액만 청구합니다.
-                  <br />
-                  예: 인레이 5만 + 크라운 6만 → 6만 한 번
-                </>
-              ) : (
-                <>
-                  임시치아를 지르 최종 보철로 바꿉니다. 이번 단계 기공비는
-                  브리지·크라운 수가입니다. 모든 임시치아를 지르로 바꾼 뒤에만
-                  최종 기공비(처음부터 지르·커스텀어벗으로 제작한 합계)가
-                  표시됩니다. 지금은 임시치아로 계속하려면 이 창을 닫고
-                  「다음 도착일」만 지정하면 됩니다.
-                </>
-              )}
+              임시치아를 지르 최종 보철로 바꿉니다. 이번 단계 기공비는
+              브리지·크라운 수가입니다. 모든 임시치아를 지르로 바꾼 뒤에만
+              최종 기공비(처음부터 지르·커스텀어벗으로 제작한 합계)가
+              표시됩니다. 지금은 임시치아로 계속하려면 이 창을 닫고
+              「다음 도착일」만 지정하면 됩니다.
             </p>
           ) : null}
         </DialogHeader>
@@ -689,12 +682,15 @@ export function PracticeProsthesisFollowUpDialog({
                     sourceProsthesisTypeBySpanKey={
                       isTypeChange ? sourceTypeBySpan : null
                     }
+                    sourceToothWorkBySpanKey={
+                      isTypeChange ? sourceRowBySpan : null
+                    }
                   />
                   {isTypeChange &&
-                  !typeChangeValid &&
+                  !orderChangeValid &&
                   selectedRows.length > 0 ? (
                     <p className="text-[12px] text-amber-700">
-                      보철물 카드에서 현재와 다른 종류를 선택해 주세요.
+                      보철물 카드에서 변경할 항목을 수정해 주세요.
                     </p>
                   ) : null}
                 </>
@@ -735,7 +731,7 @@ export function PracticeProsthesisFollowUpDialog({
               : isEdit
                 ? "변경 적용"
                 : isTypeChange
-                  ? "종류 변경 의뢰"
+                  ? "주문 변경 의뢰"
                   : "지르 제작 의뢰"}
           </Button>
         </DialogFooter>
@@ -788,9 +784,11 @@ export function PracticeProsthesisFollowUpDialog({
             void onDefaultAbutmentProductModeChange?.(alternateMode);
           }
         }}
-        lockedAbutmentProductMode={ABUTMENT_PRODUCT_MODE.DESIGN_AND_PRODUCTION}
+        lockedAbutmentProductMode={
+          isTypeChange ? null : ABUTMENT_PRODUCT_MODE.DESIGN_AND_PRODUCTION
+        }
         onAlternateAbutmentModeNavigate={() => {
-          /* follow-up은 디자인+생산 고정 — 잠금 시 취소만 */
+          /* 지르 후속만 디자인+생산 고정 — 잠금 시 취소만 */
         }}
         implantConnections={implantConnections}
         implantFavorites={implantFavorites}

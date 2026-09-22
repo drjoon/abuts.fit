@@ -171,6 +171,7 @@ import {
   stripFollowUpToothWorksForRecord,
   upsertProsthesisFeeStage,
   validateFollowUpToothWorksAgainstSource,
+  hasToothWorkOrderChange,
   zirconiaProsthesisFeeStageKey,
 } from "../../utils/practiceTransferProsthesisFollowUp.js";
 import {
@@ -5001,7 +5002,7 @@ export async function appendPracticeTransferProsthesis(req, res) {
 
     const targetLabAnchorIdText = String(updated.targetLabAnchorId || "").trim();
     const chatTitle =
-      followUpKind === "typeChange" ? "보철 종류 변경 리메이크" : "후속 보철 추가";
+      followUpKind === "typeChange" ? "주문 변경" : "후속 보철 추가";
     const typeChangeFromBySpanKey =
       followUpKind === "typeChange"
         ? buildTypeChangeFromBySpanKeyOnAppend(sourceToothWorks, followUpRows)
@@ -5443,15 +5444,12 @@ export async function updatePracticeTransferProsthesisFollowUp(req, res) {
         }
         // edit: pending 후속(prev) 기준. 원본(base)과 같아도 허용(크라운→인레이 되돌리기).
         if (prevType !== nextType) typesChanged = true;
-        const nextShade = String(requested.shade || "").trim();
-        const prevShade = String(current.shade || "").trim();
-        if (nextShade !== prevShade) specsChanged = true;
-        if (Boolean(requested.customAbutment) !== Boolean(current.customAbutment)) {
-          specsChanged = true;
-        }
+        // 형태 외 스펙(쉐이드·어벗·임플란트) — fingerprint에서 종류를 맞춘 뒤 비교
         if (
-          String(requested.customAbutmentSelection || "").trim() !==
-          String(current.customAbutmentSelection || "").trim()
+          hasToothWorkOrderChange(
+            { ...current, prosthesisType: nextType },
+            { ...requested, prosthesisType: nextType },
+          )
         ) {
           specsChanged = true;
         }
@@ -5581,7 +5579,7 @@ export async function updatePracticeTransferProsthesisFollowUp(req, res) {
             success: false,
             message:
               creditErr?.message ||
-              "종류 변경 전 유료크레딧 확인에 실패했습니다.",
+              "주문 변경 전 유료크레딧 확인에 실패했습니다.",
             ...(creditErr?.payload || {}),
           });
         }
@@ -5650,7 +5648,7 @@ export async function updatePracticeTransferProsthesisFollowUp(req, res) {
                 },
                 holdMeta: holdResult,
                 actorUserId: req.user?._id,
-                displayLabel: "보철 종류 변경",
+                displayLabel: "주문 변경",
               });
           } catch (releaseErr) {
             console.error(
@@ -5662,7 +5660,7 @@ export async function updatePracticeTransferProsthesisFollowUp(req, res) {
               success: false,
               message:
                 releaseErr?.message ||
-                "종류 변경 보류 후 기공소 정산에 실패했습니다.",
+                "주문 변경 보류 후 기공소 정산에 실패했습니다.",
               ...(releaseErr?.payload || {}),
             });
           }
@@ -5853,7 +5851,7 @@ export async function updatePracticeTransferProsthesisFollowUp(req, res) {
       chat: {
         senderUserId: req.user?._id,
         content: typesChanged
-          ? `보철 종류 변경 리메이크 수정\n치과도착일 ${rawYmd}`
+          ? `주문 변경 수정\n치과도착일 ${rawYmd}`
           : specsChanged
             ? `후속 보철 스펙 변경\n치과도착일 ${rawYmd}`
             : `후속 최종 보철 제작 치과도착일 변경: ${rawYmd}`,

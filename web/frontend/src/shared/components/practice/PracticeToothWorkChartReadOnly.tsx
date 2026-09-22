@@ -9,6 +9,7 @@
 // - 2026-09-02: 가로폭 부족 시 overflow-x 스크롤(<< < > >> 버튼 제거) + custom-scrollbar-x.
 // - 2026-09-01: 후속 제작 모달 — 보철물 카드에서 크라운·브리지 단위 선택.
 // - 2026-09-22: 보철 종류 변경 — 카드에서 직접 선택, 변경 전후를 카드 아래 기록.
+// - 2026-09-23: 주문 변경 — 카드 변경 가능 항목 전부 전후 기록(형태·어벗·의뢰모드·임플란트·어벗스펙·쉐이드).
 // - 2026-09-22: 종류 변경 전후 — 세로 표기(줄임 없음)·셀렉트/기록 경계선 정리.
 // - 2026-09-22: 원본 종류(현재)도 선택 가능 — 잘못 바꾼 뒤 적용 전 되돌리기.
 // - 2026-09-22: 제작 변경 — 카드에 어벗·쉐이드 선택(종류 변경과 함께).
@@ -66,6 +67,7 @@ import {
   NO_WORK_PROSTHESIS_TOOLTIP,
 } from "@/shared/practice/usePracticeToothWorkEditor";
 import {
+  buildOrderChangeLogEntries,
   buildToothWorkDisplayByTooth,
   hasPartialProsthesisFollowUp,
   toothWorksForFinalProsthesisFeeQuote,
@@ -243,8 +245,13 @@ type PracticeToothWorkChartReadOnlyProps = {
     spanKey: string,
     selection: CustomAbutmentSelection,
   ) => void;
-  /** 변경 전 종류(스팬키) — 카드 아래 전후 기록 */
+  /** 변경 전 종류(스팬키) — 카드 아래 전후 기록(레거시·채팅 type-only) */
   sourceProsthesisTypeBySpanKey?: ReadonlyMap<string, string> | null;
+  /** 변경 전 행(스팬키) — 형태·어벗·쉐이드·임플란트 전후 기록 */
+  sourceToothWorkBySpanKey?: ReadonlyMap<
+    string,
+    Partial<ToothWorkSelection>
+  > | null;
   /** 후속 제작 기록 — 단계별 기공비 섹션 */
   prosthesisFollowUps?: ProsthesisFollowUpRecord[] | null;
   /** 저장된 단계별 견적 스냅샷(있으면 live 재계산보다 우선) */
@@ -291,6 +298,7 @@ export const PracticeToothWorkChartReadOnly = ({
   onPatchToothWork,
   onOpenCustomAbutmentSpecs,
   sourceProsthesisTypeBySpanKey = null,
+  sourceToothWorkBySpanKey = null,
   prosthesisFollowUps = null,
   prosthesisFeeStages = null,
   feeStageFocusIndex = null,
@@ -485,32 +493,61 @@ export const PracticeToothWorkChartReadOnly = ({
     );
   };
 
-  const renderTypeChangeLog = (spanKey: string, currentType: string) => {
-    const sourceType =
+  const renderOrderChangeLog = (
+    spanKey: string,
+    currentRow: ToothWorkSelection,
+  ) => {
+    const sourceRow = sourceToothWorkBySpanKey?.get(spanKey) || null;
+    const sourceTypeOnly =
       sourceProsthesisTypeBySpanKey?.get(spanKey)?.trim() || "";
-    const nextType = String(currentType || "").trim();
-    if (!sourceType || !nextType || sourceType === nextType) return null;
+    const entries = sourceRow
+      ? buildOrderChangeLogEntries(sourceRow, currentRow)
+      : sourceTypeOnly
+        ? buildOrderChangeLogEntries(
+            { prosthesisType: sourceTypeOnly },
+            currentRow,
+          )
+        : [];
+    if (entries.length === 0) return null;
     if (
       !typeChangeEnabled &&
+      !specsEditable &&
+      !(sourceToothWorkBySpanKey && sourceToothWorkBySpanKey.size > 0) &&
       !(sourceProsthesisTypeBySpanKey && sourceProsthesisTypeBySpanKey.size > 0)
     ) {
       return null;
     }
+    const title = entries
+      .map((e) => `${e.label} ${e.from} → ${e.to}`)
+      .join(" · ");
     return (
       <div
-        className="mt-1.5 flex w-full min-w-0 flex-col items-center gap-0.5 rounded-md border border-slate-200 bg-slate-50/90 px-1 py-1.5 text-center"
-        title={`${sourceType} → ${nextType}`}
+        className="mt-1.5 flex w-full min-w-0 flex-col items-center gap-1 rounded-md border border-slate-200 bg-slate-50/90 px-1 py-1.5 text-center"
+        title={title}
       >
-        <span className="w-full break-keep text-[10px] leading-tight text-slate-500">
-          {sourceType}
-        </span>
-        <ArrowRight
-          className="h-2.5 w-2.5 shrink-0 rotate-90 text-slate-400"
-          aria-hidden
-        />
-        <span className="w-full break-keep text-[10px] font-semibold leading-tight text-primary">
-          {nextType}
-        </span>
+        {entries.map((entry, index) => (
+          <div
+            key={`${spanKey}-change-${index}-${entry.label}-${entry.from}-${entry.to}`}
+            className={cn(
+              "flex w-full flex-col items-center gap-0.5",
+              index > 0 ? "border-t border-slate-200/80 pt-1" : null,
+            )}
+          >
+            <span className="w-full text-[9px] font-medium leading-none tracking-tight text-slate-400">
+              {entry.label}
+            </span>
+            <span className="w-full break-keep text-[10px] leading-tight text-slate-500 [overflow-wrap:anywhere]">
+              {entry.from}
+            </span>
+            <ArrowRight
+              className="h-2.5 w-2.5 shrink-0 rotate-90 text-slate-400"
+              aria-hidden
+            />
+            <span className="w-full break-keep text-[10px] font-semibold leading-tight text-primary [overflow-wrap:anywhere]">
+              {entry.to}
+            </span>
+          </div>
+        ))}
       </div>
     );
   };
@@ -1019,7 +1056,7 @@ export const PracticeToothWorkChartReadOnly = ({
             </div>
           </PracticeToothChartHorizontalScroll>
         </div>
-        {renderTypeChangeLog(spanKey, String(row.prosthesisType || ""))}
+        {renderOrderChangeLog(spanKey, row)}
       </div>
     );
   };
@@ -1295,10 +1332,7 @@ export const PracticeToothWorkChartReadOnly = ({
                       })}
                     </div>
                     {isAnchorTooth
-                      ? renderTypeChangeLog(
-                          spanKey,
-                          String(row.prosthesisType || ""),
-                        )
+                      ? renderOrderChangeLog(spanKey, row)
                       : null}
                   </div>
                   {renderBridgeGap(

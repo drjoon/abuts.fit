@@ -628,12 +628,12 @@ type PracticeTransferDetailChatDialogProps = {
    * 재도착 반영 시 서버가 currentIndex를 올림.
    */
   labRequestStagePlans?: PracticeLabRequestStagePlan[] | null;
-  /** 치과: 임시치아→지르 후속, 또는 보철 종류 변경 리메이크 */
+  /** 치과: 임시치아→지르 후속, 또는 주문 변경 */
   onAppendProsthesis?: () => void;
   appendProsthesisDisabled?: boolean;
   appendProsthesisBusy?: boolean;
   appendProsthesisHint?: string | null;
-  /** CTA 라벨 — 기본 「지르 보철」, 종류 변경 시 「보철 종류 변경」 */
+  /** CTA 라벨 — 기본 「지르 보철」, 종류 변경 시 「주문 변경」 */
   appendProsthesisLabel?: string | null;
   /** 모든 임시치아 → 지르 완료 — 최종 보철 카드·최종 기공비 */
   prosthesisFollowUpComplete?: boolean;
@@ -1180,8 +1180,8 @@ export function PracticeTransferDetailChatDialog({
               <>
                 <br />
                 적용 시{" "}
-                {String(appendProsthesisLabel || "").trim() === "보철 종류 변경"
-                  ? "보철 종류를 바꿀지"
+                {String(appendProsthesisLabel || "").trim() === "주문 변경"
+                  ? "주문을 바꿀지"
                   : "지르 보철로 바꿀지"}{" "}
                 묻고, 아니면 현재 보철로 계속합니다(추가 과금 없음).
               </>

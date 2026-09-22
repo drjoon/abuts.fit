@@ -243,7 +243,7 @@ describe("practiceTransferProsthesisFollowUp", () => {
     expect(mergedFees.labFeeTotal).toBe(60000);
   });
 
-  test("type-change remake rejects same prosthesis type", () => {
+  test("type-change remake rejects identical order (same type and specs)", () => {
     const source = [
       { toothNumber: "36", prosthesisType: "인레이", bridgeLinkedTeeth: ["36"] },
     ];
@@ -257,6 +257,65 @@ describe("practiceTransferProsthesisFollowUp", () => {
     ];
     const validated = validateFollowUpToothWorksAgainstSource(source, same);
     expect(validated.ok).toBe(false);
+  });
+
+  test("type-change remake allows same type when abutment or shade changes", () => {
+    const source = [
+      {
+        toothNumber: "16",
+        prosthesisType: "크라운",
+        customAbutment: true,
+        customAbutmentSelection: "scanbody",
+        implantManufacturer: "OSSTEM",
+        shade: "A2",
+        bridgeLinkedTeeth: ["16"],
+      },
+    ];
+    const abutmentChange = [
+      {
+        toothNumber: "16",
+        prosthesisType: "크라운",
+        prosthesisPhase: "followUp",
+        customAbutment: true,
+        customAbutmentSelection: "abutment",
+        implantManufacturer: "OSSTEM",
+        shade: "A2",
+        bridgeLinkedTeeth: ["16"],
+      },
+    ];
+    const shadeChange = [
+      {
+        toothNumber: "16",
+        prosthesisType: "크라운",
+        prosthesisPhase: "followUp",
+        customAbutment: true,
+        customAbutmentSelection: "scanbody",
+        implantManufacturer: "OSSTEM",
+        shade: "A3",
+        bridgeLinkedTeeth: ["16"],
+      },
+    ];
+    const implantChange = [
+      {
+        toothNumber: "16",
+        prosthesisType: "크라운",
+        prosthesisPhase: "followUp",
+        customAbutment: true,
+        customAbutmentSelection: "scanbody",
+        implantManufacturer: "DIO",
+        shade: "A2",
+        bridgeLinkedTeeth: ["16"],
+      },
+    ];
+    expect(
+      validateFollowUpToothWorksAgainstSource(source, abutmentChange).ok,
+    ).toBe(true);
+    expect(validateFollowUpToothWorksAgainstSource(source, shadeChange).ok).toBe(
+      true,
+    );
+    expect(
+      validateFollowUpToothWorksAgainstSource(source, implantChange).ok,
+    ).toBe(true);
   });
 
   test("listPendingFollowUpTempSpans excludes teeth with follow-up already", () => {

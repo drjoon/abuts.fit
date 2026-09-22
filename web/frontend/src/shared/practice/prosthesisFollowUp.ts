@@ -15,10 +15,18 @@
 // - 2026-09-15: toothWorksForFinalProsthesisFeeQuote — 최종(지르+CA). followUp phase 제거·원 CA 병합.
 // - 2026-09-21: 보철 종류 변경 리메이크(인레이→크라운) — 임시치아→지르와 동일 최고가 청구.
 // - 2026-09-22: 종류 변경만 있는 건 — 「확정 보철」카드 숨김(채팅 후속 카드와 중복 방지).
+// - 2026-09-23: 주문 변경 — 동일 종류라도 어벗·쉐이드·임플란트 스펙 차이면 허용.
 import {
   type ToothWorkSelection,
+  ABUTMENT_PRODUCT_MODE_SHORT_LABEL,
+  CUSTOM_ABUTMENT_SELECTION,
+  formatAbutmentSummary,
+  formatImplantSummary,
   isCustomAbutmentProsthesisType,
   isTemporaryToothProsthesisType,
+  normalizeToothShade,
+  resolveCustomAbutmentSelection,
+  resolveToothAbutmentProductMode,
   serializeToothWorks,
 } from "./transferMemo";
 
@@ -32,7 +40,7 @@ export type ProsthesisFollowUpEligibility = {
   ok: boolean;
   reason?: string;
   message?: string;
-  /** temp=지르 후속, typeChange=보철 종류 변경 */
+  /** temp=지르 후속, typeChange=주문 변경(형태·어벗·쉐이드 등) */
   followUpKind?: "temp" | "typeChange";
 };
 
@@ -56,6 +64,109 @@ export const isFollowUpCreditSourceProsthesisType = (prosthesisType: string) => 
   return (
     isTemporaryToothProsthesisType(type) || isTypeChangeSourceProsthesisType(type)
   );
+};
+
+/** 주문 변경 비교용 — 형태·쉐이드·어벗 선택·임플란트/어벗 스펙 */
+export const toothWorkOrderChangeFingerprint = (
+  row?: Partial<ToothWorkSelection> | null,
+) => {
+  const norm = (value: unknown) => String(value || "").trim().toLowerCase();
+  return [
+    norm(row?.prosthesisType),
+    norm(row?.shade),
+    Boolean(row?.customAbutment) ? "1" : "0",
+    norm(row?.customAbutmentSelection),
+    norm(row?.abutmentProductMode),
+    norm(row?.implantManufacturer),
+    norm(row?.implantBrand),
+    norm(row?.implantFamily),
+    norm(row?.implantType),
+    Boolean(row?.implantAddRequest) ? "1" : "0",
+    norm(row?.abutmentManufacturer),
+    norm(row?.abutmentDiameter),
+    norm(row?.abutmentHeight),
+  ].join("|");
+};
+
+export const hasToothWorkOrderChange = (
+  sourceRow?: Partial<ToothWorkSelection> | null,
+  nextRow?: Partial<ToothWorkSelection> | null,
+) =>
+  toothWorkOrderChangeFingerprint(sourceRow) !==
+  toothWorkOrderChangeFingerprint(nextRow);
+
+export type OrderChangeLogEntry = {
+  label: string;
+  from: string;
+  to: string;
+};
+
+const abutmentKindLabel = (
+  row?: Partial<ToothWorkSelection> | null,
+): string => {
+  if (!Boolean(row?.customAbutment)) return "";
+  const selection = resolveCustomAbutmentSelection(row);
+  if (selection === CUSTOM_ABUTMENT_SELECTION.SCANBODY) return "간접어벗";
+  if (selection === CUSTOM_ABUTMENT_SELECTION.ABUTMENT) return "직접어벗";
+  return "커스텀어벗";
+};
+
+const abutmentProductModeLabel = (
+  row?: Partial<ToothWorkSelection> | null,
+): string => {
+  if (!Boolean(row?.customAbutment)) return "";
+  const mode = resolveToothAbutmentProductMode(row);
+  return ABUTMENT_PRODUCT_MODE_SHORT_LABEL[mode] || "";
+};
+
+/**
+ * 보철 카드 아래 전후 기록 — 카드에서 바꿀 수 있는 항목 전부
+ * (형태·어벗종류·의뢰모드·임플란트·어벗스펙·쉐이드).
+ */
+export const buildOrderChangeLogEntries = (
+  sourceRow?: Partial<ToothWorkSelection> | null,
+  nextRow?: Partial<ToothWorkSelection> | null,
+): OrderChangeLogEntry[] => {
+  const entries: OrderChangeLogEntry[] = [];
+  const pushIfChanged = (label: string, fromRaw: string, toRaw: string) => {
+    const from = String(fromRaw || "").trim();
+    const to = String(toRaw || "").trim();
+    if (!from && !to) return;
+    if (from === to) return;
+    entries.push({ label, from: from || "—", to: to || "—" });
+  };
+
+  pushIfChanged(
+    "형태",
+    String(sourceRow?.prosthesisType || ""),
+    String(nextRow?.prosthesisType || ""),
+  );
+  pushIfChanged(
+    "어벗",
+    abutmentKindLabel(sourceRow),
+    abutmentKindLabel(nextRow),
+  );
+  pushIfChanged(
+    "의뢰모드",
+    abutmentProductModeLabel(sourceRow),
+    abutmentProductModeLabel(nextRow),
+  );
+  pushIfChanged(
+    "임플란트",
+    formatImplantSummary(sourceRow),
+    formatImplantSummary(nextRow),
+  );
+  pushIfChanged(
+    "어벗스펙",
+    formatAbutmentSummary(sourceRow),
+    formatAbutmentSummary(nextRow),
+  );
+  pushIfChanged(
+    "쉐이드",
+    normalizeToothShade(sourceRow?.shade),
+    normalizeToothShade(nextRow?.shade),
+  );
+  return entries;
 };
 
 const toToothDecadeSortNumber = (toothNumber: string) => {
@@ -457,7 +568,7 @@ export const canAppendProsthesisFollowUp = (input: {
     return {
       ok: false,
       reason: "not_accepted",
-      message: "기공소 작업시작 후에 후속·보철 종류 변경을 의뢰할 수 있습니다.",
+      message: "기공소 작업시작 후에 후속·주문 변경을 의뢰할 수 있습니다.",
     };
   }
 
@@ -474,7 +585,7 @@ export const canAppendProsthesisFollowUp = (input: {
         ok: false,
         reason: "no_changeable_teeth",
         message:
-          "임시치아 또는 인레이·크라운·브리지 의뢰가 없어 후속·종류 변경을 할 수 없습니다.",
+          "임시치아 또는 인레이·크라운·브리지 의뢰가 없어 후속·주문 변경을 할 수 없습니다.",
       };
     }
     return {
@@ -494,7 +605,7 @@ export const canAppendProsthesisFollowUp = (input: {
           ok: false,
           reason: "no_changeable_teeth",
           message:
-            "임시치아 또는 인레이·크라운·브리지 의뢰가 없어 후속·종류 변경을 할 수 없습니다.",
+            "임시치아 또는 인레이·크라운·브리지 의뢰가 없어 후속·주문 변경을 할 수 없습니다.",
         };
       }
       return {

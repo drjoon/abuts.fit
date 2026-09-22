@@ -7,6 +7,7 @@
 // - 2026-09-02: 후속 보철 차트 — 버블 밖 전폭(의뢰상세와 동일 레이아웃), embedded 제거.
 // - 2026-09-15: 후속 채팅 차트 — followUps 미전달(메인 1단계 포커스와 분리). 추가 치아만 표시.
 // - 2026-09-15: 후속 채팅 견적 — 해당 지르 단계 포커스·스냅샷. 최종 바는 숨김(부분 후속).
+// - 2026-09-23: UI 라벨 — 보철 종류 변경→주문 변경(채팅 제목·레거시 content 감지 유지).
 // - 2026-09-22: 종류 변경 채팅 제목. 확정 보철은 임시치아→지르만(종류 변경 중복 카드 방지).
 import { cn } from "@/shared/ui/cn";
 import { PracticeToothWorkChartReadOnly } from "@/shared/components/practice/PracticeToothWorkChartReadOnly";
@@ -204,10 +205,15 @@ export const resolveProsthesisFollowUpChatPayload = (
       : legacyMatch?.[1]
         ? parseLegacyFollowUpToothWorks(legacyMatch[1])
         : [];
-  const toothWorks = enrichFollowUpChatToothWorksFromTransfer(
-    rawToothWorks,
-    transferToothWorks,
-  );
+  // 주문 변경(typeChange)은 payload 스펙(어벗·쉐이드·임플란트)을 유지. 원 행으로 덮지 않음.
+  const followUpKind = String(payload?.followUpKind || "").trim();
+  const toothWorks =
+    followUpKind === "typeChange" && fromPayload.length > 0
+      ? fromPayload
+      : enrichFollowUpChatToothWorksFromTransfer(
+          rawToothWorks,
+          transferToothWorks,
+        );
 
   if (!arrivalYmd && toothWorks.length === 0) return null;
   return { arrivalYmd, toothWorks };
@@ -248,6 +254,28 @@ const deriveTypeChangeFromTransfer = (
     const toType = String(row.prosthesisType || "").trim();
     const spanKey = followUpRowSpanKey(row);
     if (fromType && toType && fromType !== toType) map.set(spanKey, fromType);
+  }
+  return map.size > 0 ? map : null;
+};
+
+/** 주문 변경 채팅 — 원 행 전체(어벗·쉐이드 전후 기록용) */
+const deriveSourceToothWorkBySpanKeyFromTransfer = (
+  stageToothWorks: ToothWorkSelection[],
+  transferToothWorks?: Partial<ToothWorkSelection>[] | null,
+): ReadonlyMap<string, Partial<ToothWorkSelection>> | null => {
+  const transferRows = Array.isArray(transferToothWorks)
+    ? transferToothWorks
+    : [];
+  if (transferRows.length === 0 || stageToothWorks.length === 0) return null;
+  const map = new Map<string, Partial<ToothWorkSelection>>();
+  for (const row of stageToothWorks) {
+    const teeth = linkedTeethOfRow(row);
+    const baseRow = transferRows.find((candidate) => {
+      if (isFollowUpProsthesisPhase(candidate)) return false;
+      const tooth = String(candidate?.toothNumber || "").trim();
+      return tooth && teeth.includes(tooth);
+    });
+    if (baseRow) map.set(followUpRowSpanKey(row), baseRow);
   }
   return map.size > 0 ? map : null;
 };
@@ -305,9 +333,13 @@ export function PracticeTransferSystemChatBody({
   activeRemakeChargeIndexes = null,
 }: PracticeTransferSystemChatBodyProps): JSX.Element | null {
   const systemEvent = String(message.systemEvent || "").trim();
+  const contentText = String(message.content || "");
+  const isTypeChangeFollowUpContent =
+    contentText.includes("보철 종류 변경") ||
+    contentText.includes("주문 변경");
   const isTypeChangeFollowUpUpdate =
     systemEvent === "practice_transfer_prosthesis_follow_up_update" &&
-    String(message.content || "").includes("보철 종류 변경");
+    isTypeChangeFollowUpContent;
   const followUpPayload =
     systemEvent === "practice_transfer_prosthesis_follow_up" ||
     isTypeChangeFollowUpUpdate
@@ -330,17 +362,15 @@ export function PracticeTransferSystemChatBody({
         : String(payload?.followUpKind || "").trim() === "temp"
           ? "temp"
           : null;
-    const followUpKindFromContent = String(message.content || "").includes(
-      "보철 종류 변경",
-    )
+    const followUpKindFromContent = isTypeChangeFollowUpContent
       ? "typeChange"
       : "temp";
     const followUpKind = followUpKindFromPayload || followUpKindFromContent;
     const followUpChatTitle =
       followUpKind === "typeChange"
         ? isTypeChangeFollowUpUpdate
-          ? "보철 종류 변경 리메이크 수정"
-          : "보철 종류 변경 리메이크"
+          ? "주문 변경 수정"
+          : "주문 변경"
         : "후속 보철 추가";
     // 표시는 추가 지르만. 견적·부분후속 판별은 전체 toothWorks(남은 임시치아 포함).
     const feeToothWorks =
@@ -362,6 +392,13 @@ export function PracticeTransferSystemChatBody({
       (followUpKind === "typeChange"
         ? deriveTypeChangeFromTransfer(stageToothWorks, transferToothWorks)
         : null);
+    const sourceToothWorkBySpanKey =
+      followUpKind === "typeChange"
+        ? deriveSourceToothWorkBySpanKeyFromTransfer(
+            stageToothWorks,
+            transferToothWorks,
+          )
+        : null;
     const followUpRecord = (
       Array.isArray(transferProsthesisFollowUps)
         ? transferProsthesisFollowUps
@@ -457,6 +494,7 @@ export function PracticeTransferSystemChatBody({
               feeStageFocusIndex={followUpIndex}
               feeStageKey={stageKey}
               sourceProsthesisTypeBySpanKey={typeChangeFromBySpanKey}
+              sourceToothWorkBySpanKey={sourceToothWorkBySpanKey}
               // 단계 스냅샷 보호 — 최종 기공비는 완료 카드에서만
               showFinalFee={false}
               enlargeOverlayClassName="z-[350]"
