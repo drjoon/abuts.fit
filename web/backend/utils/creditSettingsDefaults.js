@@ -30,6 +30,12 @@ import {
 import {
   manufacturerPurchaseFromSale,
   buildDealershipRateChangeApplyPatch,
+  buildDevopsShareChangeApplyPatch,
+  buildManufacturerShareChangeApplyPatch,
+  buildStoreManufacturerShareChangeApplyPatch,
+  buildStoreDealerRateChangeApplyPatch,
+  buildStoreDevopsShareChangeApplyPatch,
+  buildLabShareChangeApplyPatch,
 } from "../services/creditRevenuePolicy.service.js";
 
 const clampPracticeRushFeeMultiplier = (value, fallback = 1.2) => {
@@ -68,15 +74,15 @@ function clampSharePercent(value, fallback = 0) {
 }
 
 const MEMBERSHIP_RESIDUAL_SHARE_PERCENTS = {
-  salesman: 30,
-  devops: 10,
-  abuts: 40,
+  salesman: 20,
+  devops: 5,
+  abuts: 25,
 };
 
 const REGULAR_RESIDUAL_SHARE_PERCENTS = {
   salesman: 0,
-  devops: 20,
-  abuts: 80,
+  devops: 5,
+  abuts: 95,
 };
 
 const DEFAULT_MANUFACTURER_REQUEST_UNIT_PRICE = 8800;
@@ -322,6 +328,20 @@ const SCHEMA_DEFAULTS = (() => {
     salesmanSharePercent: pickDefault("creditSettings.salesmanSharePercent"),
     devopsSharePercent: pickDefault("creditSettings.devopsSharePercent"),
     abutsSharePercent: pickDefault("creditSettings.abutsSharePercent"),
+    storeManufacturerSharePercent: pickDefault(
+      "creditSettings.storeManufacturerSharePercent",
+    ),
+    storeSalesmanSharePercent: pickDefault(
+      "creditSettings.storeSalesmanSharePercent",
+    ),
+    storeDevopsSharePercent: pickDefault("creditSettings.storeDevopsSharePercent"),
+    storeAbutsSharePercent: pickDefault("creditSettings.storeAbutsSharePercent"),
+    labBizSharePercent: pickDefault("creditSettings.labBizSharePercent"),
+    labSalesTeamSharePercent: pickDefault(
+      "creditSettings.labSalesTeamSharePercent",
+    ),
+    labDevopsSharePercent: pickDefault("creditSettings.labDevopsSharePercent"),
+    labAbutsSharePercent: pickDefault("creditSettings.labAbutsSharePercent"),
     dealershipBaseCommissionRate:
       Number(
         SystemSettings.schema.path("creditSettings.dealershipBaseCommissionRate")
@@ -337,6 +357,22 @@ const SCHEMA_DEFAULTS = (() => {
     dealershipEventEndedAt: null,
     dealershipRateChangeScheduledAt: null,
     dealershipRateChangeScheduledRate: null,
+    devopsShareChangeScheduledAt: null,
+    devopsShareChangeScheduledPercent: null,
+    manufacturerShareChangeScheduledAt: null,
+    manufacturerShareChangeScheduledPercent: null,
+    storeManufacturerShareChangeScheduledAt: null,
+    storeManufacturerShareChangeScheduledPercent: null,
+    storeDealerRateChangeScheduledAt: null,
+    storeDealerRateChangeScheduledRate: null,
+    storeDevopsShareChangeScheduledAt: null,
+    storeDevopsShareChangeScheduledPercent: null,
+    labBizShareChangeScheduledAt: null,
+    labBizShareChangeScheduledPercent: null,
+    labSalesTeamShareChangeScheduledAt: null,
+    labSalesTeamShareChangeScheduledPercent: null,
+    labDevopsShareChangeScheduledAt: null,
+    labDevopsShareChangeScheduledPercent: null,
     regularManufacturerSharePercent: pickDefault(
       "creditSettings.regularManufacturerSharePercent",
     ),
@@ -560,11 +596,11 @@ export function applySpecialRequestorPricesToCreditSettings(
 
 /**
  * 플랫폼 판매가를 한 금액으로 맞춘다. 관리자 가격 카드와 같은 필드.
- * 매입가(부가세 포함)는 이 판매가의 50%.
+ * 매입가(부가세 포함)는 판매가 × 제조사 비율(manufacturerSharePercent, 기본 50%).
  */
 export function overlayCustomAbutmentSalePrice(creditSettings, saleAmount) {
   const sale = Math.max(0, Math.round(Number(saleAmount) || 0));
-  const purchase = manufacturerPurchaseFromSale(sale);
+  const purchase = manufacturerPurchaseFromSale(sale, creditSettings);
   const overlaid = {
     ...creditSettings,
     labProductionPrice: sale,
@@ -630,7 +666,9 @@ export function normalizeLoadedCreditSettings(creditSettings = {}) {
     return 0;
   })();
   const derivedPurchase =
-    salePrice > 0 ? manufacturerPurchaseFromSale(salePrice) : null;
+    salePrice > 0
+      ? manufacturerPurchaseFromSale(salePrice, creditSettings)
+      : null;
   const partySource =
     derivedPurchase == null
       ? creditSettings
@@ -716,12 +754,135 @@ export function normalizeLoadedCreditSettings(creditSettings = {}) {
     ),
     // 환영 배송 분리 지급 폐기. 로드 시에도 0으로 정규화.
     defaultShippingFreeCredit: 0,
-    manufacturerSharePercent: membershipShares.manufacturer,
+    // 제조사 % = 판매가 대비 매입 비율(기본 50). 잔여 분배 비중과 별개.
+    manufacturerSharePercent: (() => {
+      const raw = creditSettings.manufacturerSharePercent;
+      if (raw == null || raw === "") {
+        return SCHEMA_DEFAULTS.manufacturerSharePercent ?? 50;
+      }
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n < 0) {
+        return SCHEMA_DEFAULTS.manufacturerSharePercent ?? 50;
+      }
+      return Math.min(100, Math.round(n * 100) / 100);
+    })(),
     salesmanSharePercent: membershipShares.salesman,
     devopsSharePercent: membershipShares.devops,
+    abutsSharePercent: Math.max(
+      0,
+      100 -
+        (() => {
+          const raw = creditSettings.manufacturerSharePercent;
+          if (raw == null || raw === "") return 50;
+          const n = Number(raw);
+          if (!Number.isFinite(n) || n < 0) return 50;
+          return Math.min(100, Math.round(n * 100) / 100);
+        })() -
+        membershipShares.salesman -
+        membershipShares.devops,
+    ),
+    storeManufacturerSharePercent: (() => {
+      const raw =
+        creditSettings.storeManufacturerSharePercent ??
+        creditSettings.manufacturerSharePercent;
+      if (raw == null || raw === "") {
+        return (
+          SCHEMA_DEFAULTS.storeManufacturerSharePercent ??
+          SCHEMA_DEFAULTS.manufacturerSharePercent ??
+          50
+        );
+      }
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n < 0) {
+        return (
+          SCHEMA_DEFAULTS.storeManufacturerSharePercent ??
+          SCHEMA_DEFAULTS.manufacturerSharePercent ??
+          50
+        );
+      }
+      return Math.min(100, Math.round(n * 100) / 100);
+    })(),
+    storeSalesmanSharePercent: clampSharePercent(
+      creditSettings.storeSalesmanSharePercent ??
+        creditSettings.salesmanSharePercent ??
+        SCHEMA_DEFAULTS.storeSalesmanSharePercent ??
+        MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.salesman,
+      MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.salesman,
+    ),
+    storeDevopsSharePercent: clampSharePercent(
+      creditSettings.storeDevopsSharePercent ??
+        creditSettings.devopsSharePercent ??
+        SCHEMA_DEFAULTS.storeDevopsSharePercent ??
+        MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.devops,
+      MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.devops,
+    ),
+    storeAbutsSharePercent: (() => {
+      const mfrRaw =
+        creditSettings.storeManufacturerSharePercent ??
+        creditSettings.manufacturerSharePercent;
+      let mfr = 50;
+      if (mfrRaw != null && mfrRaw !== "") {
+        const n = Number(mfrRaw);
+        if (Number.isFinite(n) && n >= 0) {
+          mfr = Math.min(100, Math.round(n * 100) / 100);
+        }
+      }
+      const dealer = clampSharePercent(
+        creditSettings.storeSalesmanSharePercent ??
+          creditSettings.salesmanSharePercent ??
+          SCHEMA_DEFAULTS.storeSalesmanSharePercent ??
+          MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.salesman,
+        MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.salesman,
+      );
+      const devops = clampSharePercent(
+        creditSettings.storeDevopsSharePercent ??
+          creditSettings.devopsSharePercent ??
+          SCHEMA_DEFAULTS.storeDevopsSharePercent ??
+          MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.devops,
+        MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.devops,
+      );
+      return Math.max(0, 100 - mfr - dealer - devops);
+    })(),
+    labBizSharePercent: (() => {
+      const raw = creditSettings.labBizSharePercent;
+      if (raw == null || raw === "") return 50;
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n < 0) return 50;
+      return Math.min(100, Math.round(n * 100) / 100);
+    })(),
+    labSalesTeamSharePercent: (() => {
+      const raw = creditSettings.labSalesTeamSharePercent;
+      if (raw == null || raw === "") return 20;
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n < 0) return 20;
+      return Math.min(100, Math.round(n * 100) / 100);
+    })(),
+    labDevopsSharePercent: (() => {
+      const raw = creditSettings.labDevopsSharePercent;
+      if (raw == null || raw === "") return 5;
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n < 0) return 5;
+      return Math.min(100, Math.round(n * 100) / 100);
+    })(),
+    labAbutsSharePercent: (() => {
+      const readPct = (raw, fallback) => {
+        if (raw == null || raw === "") return fallback;
+        const n = Number(raw);
+        if (!Number.isFinite(n) || n < 0) return fallback;
+        return Math.min(100, Math.round(n * 100) / 100);
+      };
+      const biz = readPct(creditSettings.labBizSharePercent, 50);
+      const salesTeam = readPct(creditSettings.labSalesTeamSharePercent, 20);
+      const devops = readPct(creditSettings.labDevopsSharePercent, 5);
+      return Math.max(0, 100 - biz - salesTeam - devops);
+    })(),
     regularManufacturerSharePercent: regularShares.manufacturer,
     regularSalesmanSharePercent: regularShares.salesman,
     regularDevopsSharePercent: regularShares.devops,
+    regularAbutsSharePercent: Math.max(
+      0,
+      100 - regularShares.salesman - regularShares.devops,
+    ),
     dealershipBaseCommissionRate: (() => {
       const raw = Number(
         creditSettings.dealershipBaseCommissionRate ??
@@ -769,6 +930,110 @@ export function normalizeLoadedCreditSettings(creditSettings = {}) {
       if (!Number.isFinite(n) || n < 0) return null;
       return Math.min(1, n);
     })(),
+    devopsShareChangeScheduledAt: (() => {
+      const raw = creditSettings.devopsShareChangeScheduledAt;
+      if (!raw) return null;
+      const d = raw instanceof Date ? raw : new Date(raw);
+      return Number.isNaN(d.getTime()) ? null : d;
+    })(),
+    devopsShareChangeScheduledPercent: (() => {
+      const raw = creditSettings.devopsShareChangeScheduledPercent;
+      if (raw == null || raw === "") return null;
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n < 0) return null;
+      return Math.min(100, Math.round(n * 100) / 100);
+    })(),
+    manufacturerShareChangeScheduledAt: (() => {
+      const raw = creditSettings.manufacturerShareChangeScheduledAt;
+      if (!raw) return null;
+      const d = raw instanceof Date ? raw : new Date(raw);
+      return Number.isNaN(d.getTime()) ? null : d;
+    })(),
+    manufacturerShareChangeScheduledPercent: (() => {
+      const raw = creditSettings.manufacturerShareChangeScheduledPercent;
+      if (raw == null || raw === "") return null;
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n < 0) return null;
+      return Math.min(100, Math.round(n * 100) / 100);
+    })(),
+    storeManufacturerShareChangeScheduledAt: (() => {
+      const raw = creditSettings.storeManufacturerShareChangeScheduledAt;
+      if (!raw) return null;
+      const d = raw instanceof Date ? raw : new Date(raw);
+      return Number.isNaN(d.getTime()) ? null : d;
+    })(),
+    storeManufacturerShareChangeScheduledPercent: (() => {
+      const raw = creditSettings.storeManufacturerShareChangeScheduledPercent;
+      if (raw == null || raw === "") return null;
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n < 0) return null;
+      return Math.min(100, Math.round(n * 100) / 100);
+    })(),
+    storeDealerRateChangeScheduledAt: (() => {
+      const raw = creditSettings.storeDealerRateChangeScheduledAt;
+      if (!raw) return null;
+      const d = raw instanceof Date ? raw : new Date(raw);
+      return Number.isNaN(d.getTime()) ? null : d;
+    })(),
+    storeDealerRateChangeScheduledRate: (() => {
+      const raw = creditSettings.storeDealerRateChangeScheduledRate;
+      if (raw == null || raw === "") return null;
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n < 0) return null;
+      return Math.min(1, n);
+    })(),
+    storeDevopsShareChangeScheduledAt: (() => {
+      const raw = creditSettings.storeDevopsShareChangeScheduledAt;
+      if (!raw) return null;
+      const d = raw instanceof Date ? raw : new Date(raw);
+      return Number.isNaN(d.getTime()) ? null : d;
+    })(),
+    storeDevopsShareChangeScheduledPercent: (() => {
+      const raw = creditSettings.storeDevopsShareChangeScheduledPercent;
+      if (raw == null || raw === "") return null;
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n < 0) return null;
+      return Math.min(100, Math.round(n * 100) / 100);
+    })(),
+    labBizShareChangeScheduledAt: (() => {
+      const raw = creditSettings.labBizShareChangeScheduledAt;
+      if (!raw) return null;
+      const d = raw instanceof Date ? raw : new Date(raw);
+      return Number.isNaN(d.getTime()) ? null : d;
+    })(),
+    labBizShareChangeScheduledPercent: (() => {
+      const raw = creditSettings.labBizShareChangeScheduledPercent;
+      if (raw == null || raw === "") return null;
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n < 0) return null;
+      return Math.min(100, Math.round(n * 100) / 100);
+    })(),
+    labSalesTeamShareChangeScheduledAt: (() => {
+      const raw = creditSettings.labSalesTeamShareChangeScheduledAt;
+      if (!raw) return null;
+      const d = raw instanceof Date ? raw : new Date(raw);
+      return Number.isNaN(d.getTime()) ? null : d;
+    })(),
+    labSalesTeamShareChangeScheduledPercent: (() => {
+      const raw = creditSettings.labSalesTeamShareChangeScheduledPercent;
+      if (raw == null || raw === "") return null;
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n < 0) return null;
+      return Math.min(100, Math.round(n * 100) / 100);
+    })(),
+    labDevopsShareChangeScheduledAt: (() => {
+      const raw = creditSettings.labDevopsShareChangeScheduledAt;
+      if (!raw) return null;
+      const d = raw instanceof Date ? raw : new Date(raw);
+      return Number.isNaN(d.getTime()) ? null : d;
+    })(),
+    labDevopsShareChangeScheduledPercent: (() => {
+      const raw = creditSettings.labDevopsShareChangeScheduledPercent;
+      if (raw == null || raw === "") return null;
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n < 0) return null;
+      return Math.min(100, Math.round(n * 100) / 100);
+    })(),
     ...withRoundBar,
   };
 }
@@ -804,9 +1069,54 @@ async function loadCachedGlobalCreditSettingsDoc() {
 export async function ensureDealershipRateChangeApplied(now = new Date()) {
   const doc = await loadCachedGlobalCreditSettingsDoc();
   if (!doc) return null;
-  const creditSettings = normalizeLoadedCreditSettings(doc.creditSettings || {});
-  const patch = buildDealershipRateChangeApplyPatch(creditSettings, now);
-  if (!patch) return creditSettings;
+  let creditSettings = normalizeLoadedCreditSettings(doc.creditSettings || {});
+  const manufacturerPatch = buildManufacturerShareChangeApplyPatch(
+    creditSettings,
+    now,
+  );
+  const mergedAfterMfr = { ...creditSettings, ...(manufacturerPatch || {}) };
+  const dealerPatch = buildDealershipRateChangeApplyPatch(mergedAfterMfr, now);
+  const mergedAfterDealer = { ...mergedAfterMfr, ...(dealerPatch || {}) };
+  const devopsPatch = buildDevopsShareChangeApplyPatch(mergedAfterDealer, now);
+  const mergedAfterCustom = {
+    ...mergedAfterDealer,
+    ...(devopsPatch || {}),
+  };
+  const storeManufacturerPatch = buildStoreManufacturerShareChangeApplyPatch(
+    mergedAfterCustom,
+    now,
+  );
+  const mergedAfterStoreMfr = {
+    ...mergedAfterCustom,
+    ...(storeManufacturerPatch || {}),
+  };
+  const storeDealerPatch = buildStoreDealerRateChangeApplyPatch(
+    mergedAfterStoreMfr,
+    now,
+  );
+  const mergedAfterStoreDealer = {
+    ...mergedAfterStoreMfr,
+    ...(storeDealerPatch || {}),
+  };
+  const storeDevopsPatch = buildStoreDevopsShareChangeApplyPatch(
+    mergedAfterStoreDealer,
+    now,
+  );
+  const mergedAfterStore = {
+    ...mergedAfterStoreDealer,
+    ...(storeDevopsPatch || {}),
+  };
+  const labPatch = buildLabShareChangeApplyPatch(mergedAfterStore, now);
+  const patch = {
+    ...(manufacturerPatch || {}),
+    ...(dealerPatch || {}),
+    ...(devopsPatch || {}),
+    ...(storeManufacturerPatch || {}),
+    ...(storeDealerPatch || {}),
+    ...(storeDevopsPatch || {}),
+    ...(labPatch || {}),
+  };
+  if (Object.keys(patch).length === 0) return creditSettings;
 
   const set = {};
   for (const [key, value] of Object.entries(patch)) {

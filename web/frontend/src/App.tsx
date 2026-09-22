@@ -38,6 +38,7 @@ import { getRoleDefaultDashboardPath } from "@/shared/navigation/lastDashboardPa
 // - web/frontend/src/pages/admin/AdminFinancePage.tsx
 // - web/frontend/src/pages/admin/AdminSettingsHubPage.tsx
 // change-log:
+// - 2026-09-23: 관리자 설정 평탄 탭 — /settings·/partners 구 URL을 account|business|platform… 로 전달.
 // - 2026-09-21: 딜러·영업팀 사이드 IA 통일 — sales 라우트에 salesman, payments에 salesTeam.
 // - 2026-09-16: 기공소·어벗츠기공소 /payments → 크레딧「지급」탭(?tab=payout).
 // - 2026-09-06: 관리자 사이드 허브(회원·지원·채널·재무·설정) + 구 URL 리다이렉트.
@@ -352,27 +353,28 @@ const SettingsRoute = () => {
     return <Navigate to="/practice/settings" replace />;
   }
   const tab = new URLSearchParams(location.search).get("tab");
-  // 구 북마크: 관리자 설정 결제 → 플랫폼 설정(크레딧)
+  // 구 북마크: 관리자 설정 결제 → 재무 설정(크레딧 요금)
   if (user.role === "admin" && tab === "payment") {
     return (
       <Navigate
-        to="/dashboard/admin-settings?tab=platform&platformTab=credits"
+        to="/dashboard/finance?tab=settings&platformTab=credits"
         replace
       />
     );
   }
   if (user.role === "admin") {
     const next = new URLSearchParams(location.search);
-    const accountTab = next.get("tab");
-    next.delete("tab");
-    next.set("tab", "account");
-    if (
-      accountTab &&
-      accountTab !== "payment" &&
-      ["account", "business", "staff", "notifications"].includes(accountTab)
-    ) {
-      next.set("accountTab", accountTab);
+    const settingsTab = next.get("tab");
+    const allowed = ["account", "business", "staff", "notifications"];
+    if (settingsTab === "platform") {
+      next.set("tab", "settings");
+      const qs = next.toString();
+      return <Navigate to={`/dashboard/finance?${qs}`} replace />;
     }
+    if (!settingsTab || !allowed.includes(settingsTab)) {
+      next.set("tab", "account");
+    }
+    next.delete("platformTab");
     const qs = next.toString();
     return (
       <Navigate
@@ -393,18 +395,10 @@ const SettingsRoute = () => {
 
 const LegacyPartnerRedirect = () => {
   const { user } = useAuthStore();
-  const location = useLocation();
+  // 사업영역 메뉴 제거 — 구 북마크는 관리자 설정(계정)으로.
   if (user?.role === "admin") {
-    const next = new URLSearchParams(location.search);
-    const partnersTab = next.get("tab");
-    next.delete("tab");
-    next.set("tab", "partners");
-    if (partnersTab) next.set("partnersTab", partnersTab);
     return (
-      <Navigate
-        to={`/dashboard/admin-settings?${next.toString()}`}
-        replace
-      />
+      <Navigate to="/dashboard/admin-settings?tab=account" replace />
     );
   }
   return <Navigate to="/dashboard" replace />;
@@ -415,10 +409,10 @@ const AdminPlatformSettingsRedirect = () => {
   const next = new URLSearchParams(location.search);
   const platformTab = next.get("tab");
   next.delete("tab");
-  next.set("tab", "platform");
+  next.set("tab", "settings");
   if (platformTab) next.set("platformTab", platformTab);
   return (
-    <Navigate to={`/dashboard/admin-settings?${next.toString()}`} replace />
+    <Navigate to={`/dashboard/finance?${next.toString()}`} replace />
   );
 };
 
@@ -797,7 +791,7 @@ const App = () => {
                     element={
                       <RoleProtectedRoute roles={["admin"]}>
                         <Navigate
-                          to="/dashboard/admin-settings?tab=partners"
+                          to="/dashboard/admin-settings?tab=account"
                           replace
                         />
                       </RoleProtectedRoute>

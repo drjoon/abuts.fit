@@ -44,13 +44,23 @@ const systemSettingsSchema = new mongoose.Schema(
       regularDesignAndProductionManufacturerUnitPrice: { type: Number, default: 8800 },
       regularDesignAndProductionSalesmanUnitPrice: { type: Number, default: 0 },
       regularDesignAndProductionDevopsUnitPrice: { type: Number, default: 6240 },
-      // CNC 잔여 분배 비중(%). 제조사는 manufacturerRequestUnitPrice 고정단가.
-      // manufacturerSharePercent는 레거시(미사용, 0). abutsSharePercent=잔여 어벗츠 비중.
-      manufacturerSharePercent: { type: Number, default: 0 },
-      salesmanSharePercent: { type: Number, default: 30 },
-      devopsSharePercent: { type: Number, default: 10 },
-      abutsSharePercent: { type: Number, default: 40 },
-      // 딜러십 영업 수수료(심플웨이·커스텀어벗 판매가, 배송비 제외).
+      // CNC 잔여 분배 비중(%). 제조사 매입=manufacturerSharePercent(판매가 대비, 기본 50).
+      // 어벗츠% = 100 − (제조사 + 딜러 + 개발운영사). (커스텀어벗)
+      manufacturerSharePercent: { type: Number, default: 50 },
+      salesmanSharePercent: { type: Number, default: 20 },
+      devopsSharePercent: { type: Number, default: 5 },
+      abutsSharePercent: { type: Number, default: 25 },
+      // 스토어 판매 분배(판매가 대비). 커스텀어벗과 독립.
+      storeManufacturerSharePercent: { type: Number, default: 50 },
+      storeSalesmanSharePercent: { type: Number, default: 20 },
+      storeDevopsSharePercent: { type: Number, default: 5 },
+      storeAbutsSharePercent: { type: Number, default: 25 },
+      // 기공 분배(기공비 대비). 기공사업부·영업팀·개발운영사·어벗츠.
+      labBizSharePercent: { type: Number, default: 50 },
+      labSalesTeamSharePercent: { type: Number, default: 20 },
+      labDevopsSharePercent: { type: Number, default: 5 },
+      labAbutsSharePercent: { type: Number, default: 25 },
+      // 딜러십 영업 수수료(스토어·커스텀어벗 판매가, 기공비·배송비 제외).
       // 기본 10% 고정. 이벤트 15% · 20%. 이벤트 on이면 eventRate, off → baseRate.
       dealershipBaseCommissionRate: { type: Number, default: 0.1, min: 0, max: 1 },
       dealershipEventCommissionRate: { type: Number, default: 0.2, min: 0, max: 1 },
@@ -59,12 +69,48 @@ const systemSettingsSchema = new mongoose.Schema(
       dealershipEventStartedAt: { type: Date, default: null },
       dealershipEventEndedAt: { type: Date, default: null },
       // 요율 변경 예약: 해당일 0시(KST)부터 적용. 딜러 대시보드에 안내 표시.
+      // (커스텀어벗 딜러%·딜러십 이벤트 요율)
       dealershipRateChangeScheduledAt: { type: Date, default: null },
       dealershipRateChangeScheduledRate: { type: Number, default: null, min: 0, max: 1 },
+      // 개발운영사 분배% 변경 예약(해당일 0시 KST~). 커스텀어벗.
+      devopsShareChangeScheduledAt: { type: Date, default: null },
+      devopsShareChangeScheduledPercent: { type: Number, default: null, min: 0, max: 100 },
+      // 제조사 분배% 변경 예약(해당일 0시 KST~). 커스텀어벗·스토어.
+      manufacturerShareChangeScheduledAt: { type: Date, default: null },
+      manufacturerShareChangeScheduledPercent: {
+        type: Number,
+        default: null,
+        min: 0,
+        max: 100,
+      },
+      storeManufacturerShareChangeScheduledAt: { type: Date, default: null },
+      storeManufacturerShareChangeScheduledPercent: {
+        type: Number,
+        default: null,
+        min: 0,
+        max: 100,
+      },
+      // 스토어 딜러·개발운영 분배% 변경 예약(해당일 0시 KST~).
+      storeDealerRateChangeScheduledAt: { type: Date, default: null },
+      storeDealerRateChangeScheduledRate: { type: Number, default: null, min: 0, max: 1 },
+      storeDevopsShareChangeScheduledAt: { type: Date, default: null },
+      storeDevopsShareChangeScheduledPercent: { type: Number, default: null, min: 0, max: 100 },
+      // 기공 분배% 변경 예약(해당일 0시 KST~).
+      labBizShareChangeScheduledAt: { type: Date, default: null },
+      labBizShareChangeScheduledPercent: { type: Number, default: null, min: 0, max: 100 },
+      labSalesTeamShareChangeScheduledAt: { type: Date, default: null },
+      labSalesTeamShareChangeScheduledPercent: {
+        type: Number,
+        default: null,
+        min: 0,
+        max: 100,
+      },
+      labDevopsShareChangeScheduledAt: { type: Date, default: null },
+      labDevopsShareChangeScheduledPercent: { type: Number, default: null, min: 0, max: 100 },
       regularManufacturerSharePercent: { type: Number, default: 0 },
       regularSalesmanSharePercent: { type: Number, default: 0 },
-      regularDevopsSharePercent: { type: Number, default: 20 },
-      regularAbutsSharePercent: { type: Number, default: 80 },
+      regularDevopsSharePercent: { type: Number, default: 5 },
+      regularAbutsSharePercent: { type: Number, default: 95 },
       membershipRoundBarProductionPrice: { type: Number, default: 15000 },
       regularRoundBarProductionPrice: { type: Number, default: 15000 },
       membershipRoundBarDesignAndProductionPrice: { type: Number, default: 25000 },

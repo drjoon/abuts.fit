@@ -187,6 +187,409 @@ export function buildDealershipRateChangeApplyPatch(
     }
   }
 
+  // 분배 비율 딜러%도 같은 예약일부터 맞춤.
+  const dealerPct = Math.round(rate * 100);
+  const mfrRaw = Number(creditSettings?.manufacturerSharePercent);
+  const mfr = Math.max(
+    0,
+    Math.min(100, Number.isFinite(mfrRaw) && mfrRaw >= 0 ? mfrRaw : 50),
+  );
+  const devopsRaw = Number(creditSettings?.devopsSharePercent);
+  const devops = Math.max(
+    0,
+    Math.min(
+      Number.isFinite(devopsRaw) ? devopsRaw : 5,
+      Math.max(0, 100 - mfr - dealerPct),
+    ),
+  );
+  patch.salesmanSharePercent = dealerPct;
+  patch.devopsSharePercent = devops;
+  patch.abutsSharePercent = Math.max(0, 100 - mfr - dealerPct - devops);
+  patch.regularSalesmanSharePercent = 0;
+  patch.regularDevopsSharePercent = devops;
+  patch.regularAbutsSharePercent = Math.max(0, 100 - devops);
+
+  return patch;
+}
+
+/**
+ * 개발운영사 분배% 예약이 도래했는지.
+ * @returns {{ due: boolean, applyAt: Date|null, percent: number|null }}
+ */
+export function resolveDueDevopsShareChange(creditSettings = {}, now = new Date()) {
+  const applyAt = parseDealershipEventBound(
+    creditSettings?.devopsShareChangeScheduledAt,
+  );
+  if (!applyAt) return { due: false, applyAt: null, percent: null };
+  const raw = Number(creditSettings?.devopsShareChangeScheduledPercent);
+  if (!Number.isFinite(raw) || raw < 0) {
+    return { due: false, applyAt, percent: null };
+  }
+  const percent = Math.min(100, Math.round(raw * 100) / 100);
+  const due = now.getTime() >= applyAt.getTime();
+  return { due, applyAt, percent };
+}
+
+/**
+ * 개발운영사 분배% 예약 적용 패치. due가 아니면 null.
+ */
+export function buildDevopsShareChangeApplyPatch(
+  creditSettings = {},
+  now = new Date(),
+) {
+  const { due, percent } = resolveDueDevopsShareChange(creditSettings, now);
+  if (!due || percent == null) return null;
+
+  const dealerRaw = Number(creditSettings?.salesmanSharePercent);
+  const dealer = Math.max(
+    0,
+    Math.min(100, Number.isFinite(dealerRaw) ? dealerRaw : 20),
+  );
+  const mfrRaw = Number(creditSettings?.manufacturerSharePercent);
+  const mfr = Math.max(
+    0,
+    Math.min(100, Number.isFinite(mfrRaw) && mfrRaw >= 0 ? mfrRaw : 50),
+  );
+  const devops = Math.min(percent, Math.max(0, 100 - mfr - dealer));
+  const abuts = Math.max(0, 100 - mfr - dealer - devops);
+
+  return {
+    devopsShareChangeScheduledAt: null,
+    devopsShareChangeScheduledPercent: null,
+    salesmanSharePercent: dealer,
+    devopsSharePercent: devops,
+    abutsSharePercent: abuts,
+    regularSalesmanSharePercent: 0,
+    regularDevopsSharePercent: devops,
+    regularAbutsSharePercent: Math.max(0, 100 - devops),
+  };
+}
+
+/**
+ * 제조사 분배% 예약이 도래했는지(커스텀어벗).
+ */
+export function resolveDueManufacturerShareChange(
+  creditSettings = {},
+  now = new Date(),
+) {
+  const applyAt = parseDealershipEventBound(
+    creditSettings?.manufacturerShareChangeScheduledAt,
+  );
+  if (!applyAt) return { due: false, applyAt: null, percent: null };
+  const raw = Number(creditSettings?.manufacturerShareChangeScheduledPercent);
+  if (!Number.isFinite(raw) || raw < 0) {
+    return { due: false, applyAt, percent: null };
+  }
+  const percent = Math.min(100, Math.round(raw * 100) / 100);
+  const due = now.getTime() >= applyAt.getTime();
+  return { due, applyAt, percent };
+}
+
+/**
+ * 제조사 분배% 예약 적용 패치(커스텀어벗). due가 아니면 null.
+ */
+export function buildManufacturerShareChangeApplyPatch(
+  creditSettings = {},
+  now = new Date(),
+) {
+  const { due, percent } = resolveDueManufacturerShareChange(
+    creditSettings,
+    now,
+  );
+  if (!due || percent == null) return null;
+
+  const dealerRaw = Number(creditSettings?.salesmanSharePercent);
+  const dealer = Math.max(
+    0,
+    Math.min(100, Number.isFinite(dealerRaw) ? dealerRaw : 20),
+  );
+  const devopsRaw = Number(creditSettings?.devopsSharePercent);
+  const devops = Math.max(
+    0,
+    Math.min(
+      Number.isFinite(devopsRaw) ? devopsRaw : 5,
+      Math.max(0, 100 - percent - dealer),
+    ),
+  );
+  const mfr = Math.min(percent, Math.max(0, 100 - dealer - devops));
+  const abuts = Math.max(0, 100 - mfr - dealer - devops);
+
+  const sale = Math.max(
+    0,
+    Math.round(
+      Number(
+        creditSettings?.labProductionPrice ??
+          creditSettings?.membershipProductionPrice ??
+          0,
+      ) || 0,
+    ),
+  );
+
+  return {
+    manufacturerShareChangeScheduledAt: null,
+    manufacturerShareChangeScheduledPercent: null,
+    manufacturerSharePercent: mfr,
+    devopsSharePercent: devops,
+    abutsSharePercent: abuts,
+    manufacturerRequestUnitPrice: Math.round((sale * mfr) / 100),
+  };
+}
+
+/**
+ * 스토어 제조사 분배% 예약이 도래했는지.
+ */
+export function resolveDueStoreManufacturerShareChange(
+  creditSettings = {},
+  now = new Date(),
+) {
+  const applyAt = parseDealershipEventBound(
+    creditSettings?.storeManufacturerShareChangeScheduledAt,
+  );
+  if (!applyAt) return { due: false, applyAt: null, percent: null };
+  const raw = Number(
+    creditSettings?.storeManufacturerShareChangeScheduledPercent,
+  );
+  if (!Number.isFinite(raw) || raw < 0) {
+    return { due: false, applyAt, percent: null };
+  }
+  const percent = Math.min(100, Math.round(raw * 100) / 100);
+  const due = now.getTime() >= applyAt.getTime();
+  return { due, applyAt, percent };
+}
+
+/**
+ * 스토어 제조사 분배% 예약 적용 패치. due가 아니면 null.
+ */
+export function buildStoreManufacturerShareChangeApplyPatch(
+  creditSettings = {},
+  now = new Date(),
+) {
+  const { due, percent } = resolveDueStoreManufacturerShareChange(
+    creditSettings,
+    now,
+  );
+  if (!due || percent == null) return null;
+
+  const dealerRaw = Number(creditSettings?.storeSalesmanSharePercent);
+  const dealer = Math.max(
+    0,
+    Math.min(100, Number.isFinite(dealerRaw) ? dealerRaw : 20),
+  );
+  const devopsRaw = Number(creditSettings?.storeDevopsSharePercent);
+  const devops = Math.max(
+    0,
+    Math.min(
+      Number.isFinite(devopsRaw) ? devopsRaw : 5,
+      Math.max(0, 100 - percent - dealer),
+    ),
+  );
+  const mfr = Math.min(percent, Math.max(0, 100 - dealer - devops));
+  const abuts = Math.max(0, 100 - mfr - dealer - devops);
+
+  return {
+    storeManufacturerShareChangeScheduledAt: null,
+    storeManufacturerShareChangeScheduledPercent: null,
+    storeManufacturerSharePercent: mfr,
+    storeDevopsSharePercent: devops,
+    storeAbutsSharePercent: abuts,
+  };
+}
+
+/**
+ * 스토어 딜러 분배% 예약이 도래했는지.
+ * @returns {{ due: boolean, applyAt: Date|null, rate: number|null }}
+ */
+export function resolveDueStoreDealerRateChange(
+  creditSettings = {},
+  now = new Date(),
+) {
+  const applyAt = parseDealershipEventBound(
+    creditSettings?.storeDealerRateChangeScheduledAt,
+  );
+  if (!applyAt) return { due: false, applyAt: null, rate: null };
+  const rateRaw = creditSettings?.storeDealerRateChangeScheduledRate;
+  if (rateRaw == null || rateRaw === "") {
+    return { due: false, applyAt, rate: null };
+  }
+  const rate = snapDealershipScheduledRate(rateRaw);
+  const due = now.getTime() >= applyAt.getTime();
+  return { due, applyAt, rate };
+}
+
+/**
+ * 스토어 딜러 분배% 예약 적용 패치. due가 아니면 null.
+ * (딜러십 이벤트 요율은 건드리지 않음 — 커스텀어벗 예약만 연동)
+ */
+export function buildStoreDealerRateChangeApplyPatch(
+  creditSettings = {},
+  now = new Date(),
+) {
+  const { due, rate } = resolveDueStoreDealerRateChange(creditSettings, now);
+  if (!due || rate == null) return null;
+
+  const dealerPct = Math.round(rate * 100);
+  const mfrRaw = Number(creditSettings?.storeManufacturerSharePercent);
+  const mfr = Math.max(
+    0,
+    Math.min(100, Number.isFinite(mfrRaw) && mfrRaw >= 0 ? mfrRaw : 50),
+  );
+  const devopsRaw = Number(creditSettings?.storeDevopsSharePercent);
+  const devops = Math.max(
+    0,
+    Math.min(
+      Number.isFinite(devopsRaw) ? devopsRaw : 5,
+      Math.max(0, 100 - mfr - dealerPct),
+    ),
+  );
+  return {
+    storeDealerRateChangeScheduledAt: null,
+    storeDealerRateChangeScheduledRate: null,
+    storeSalesmanSharePercent: dealerPct,
+    storeDevopsSharePercent: devops,
+    storeAbutsSharePercent: Math.max(0, 100 - mfr - dealerPct - devops),
+  };
+}
+
+/**
+ * 스토어 개발운영사 분배% 예약이 도래했는지.
+ */
+export function resolveDueStoreDevopsShareChange(
+  creditSettings = {},
+  now = new Date(),
+) {
+  const applyAt = parseDealershipEventBound(
+    creditSettings?.storeDevopsShareChangeScheduledAt,
+  );
+  if (!applyAt) return { due: false, applyAt: null, percent: null };
+  const raw = Number(creditSettings?.storeDevopsShareChangeScheduledPercent);
+  if (!Number.isFinite(raw) || raw < 0) {
+    return { due: false, applyAt, percent: null };
+  }
+  const percent = Math.min(100, Math.round(raw * 100) / 100);
+  const due = now.getTime() >= applyAt.getTime();
+  return { due, applyAt, percent };
+}
+
+/**
+ * 스토어 개발운영사 분배% 예약 적용 패치. due가 아니면 null.
+ */
+export function buildStoreDevopsShareChangeApplyPatch(
+  creditSettings = {},
+  now = new Date(),
+) {
+  const { due, percent } = resolveDueStoreDevopsShareChange(
+    creditSettings,
+    now,
+  );
+  if (!due || percent == null) return null;
+
+  const dealerRaw = Number(creditSettings?.storeSalesmanSharePercent);
+  const dealer = Math.max(
+    0,
+    Math.min(100, Number.isFinite(dealerRaw) ? dealerRaw : 20),
+  );
+  const mfrRaw = Number(creditSettings?.storeManufacturerSharePercent);
+  const mfr = Math.max(
+    0,
+    Math.min(100, Number.isFinite(mfrRaw) && mfrRaw >= 0 ? mfrRaw : 50),
+  );
+  const devops = Math.min(percent, Math.max(0, 100 - mfr - dealer));
+  const abuts = Math.max(0, 100 - mfr - dealer - devops);
+
+  return {
+    storeDevopsShareChangeScheduledAt: null,
+    storeDevopsShareChangeScheduledPercent: null,
+    storeSalesmanSharePercent: dealer,
+    storeDevopsSharePercent: devops,
+    storeAbutsSharePercent: abuts,
+  };
+}
+
+function resolveDueLabShareFieldChange(
+  creditSettings,
+  atKey,
+  pctKey,
+  now = new Date(),
+) {
+  const applyAt = parseDealershipEventBound(creditSettings?.[atKey]);
+  if (!applyAt) return { due: false, applyAt: null, percent: null };
+  const raw = Number(creditSettings?.[pctKey]);
+  if (!Number.isFinite(raw) || raw < 0) {
+    return { due: false, applyAt, percent: null };
+  }
+  const percent = Math.min(100, Math.round(raw * 100) / 100);
+  const due = now.getTime() >= applyAt.getTime();
+  return { due, applyAt, percent };
+}
+
+/**
+ * 기공 분배% 예약 적용 패치(기공사업부·영업팀·개발운영). due 없으면 null.
+ * 어벗츠 = 100 − (기공사업부 + 영업팀 + 개발운영사).
+ */
+export function buildLabShareChangeApplyPatch(
+  creditSettings = {},
+  now = new Date(),
+) {
+  const bizDue = resolveDueLabShareFieldChange(
+    creditSettings,
+    "labBizShareChangeScheduledAt",
+    "labBizShareChangeScheduledPercent",
+    now,
+  );
+  const salesDue = resolveDueLabShareFieldChange(
+    creditSettings,
+    "labSalesTeamShareChangeScheduledAt",
+    "labSalesTeamShareChangeScheduledPercent",
+    now,
+  );
+  const devopsDue = resolveDueLabShareFieldChange(
+    creditSettings,
+    "labDevopsShareChangeScheduledAt",
+    "labDevopsShareChangeScheduledPercent",
+    now,
+  );
+  if (!bizDue.due && !salesDue.due && !devopsDue.due) return null;
+
+  const readPct = (raw, fallback) => {
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n < 0) return fallback;
+    return Math.min(100, Math.round(n * 100) / 100);
+  };
+
+  let biz = readPct(creditSettings?.labBizSharePercent, 50);
+  let salesTeam = readPct(creditSettings?.labSalesTeamSharePercent, 20);
+  let devops = readPct(creditSettings?.labDevopsSharePercent, 5);
+
+  if (bizDue.due && bizDue.percent != null) biz = bizDue.percent;
+  if (salesDue.due && salesDue.percent != null) salesTeam = salesDue.percent;
+  if (devopsDue.due && devopsDue.percent != null) devops = devopsDue.percent;
+
+  // 합이 100 넘으면 어벗츠 0 기준으로 뒤에서부터 캡.
+  if (biz + salesTeam + devops > 100) {
+    devops = Math.min(devops, Math.max(0, 100 - biz - salesTeam));
+    salesTeam = Math.min(salesTeam, Math.max(0, 100 - biz - devops));
+    biz = Math.min(biz, Math.max(0, 100 - salesTeam - devops));
+  }
+  const abuts = Math.max(0, 100 - biz - salesTeam - devops);
+
+  const patch = {
+    labBizSharePercent: biz,
+    labSalesTeamSharePercent: salesTeam,
+    labDevopsSharePercent: devops,
+    labAbutsSharePercent: abuts,
+  };
+  if (bizDue.due) {
+    patch.labBizShareChangeScheduledAt = null;
+    patch.labBizShareChangeScheduledPercent = null;
+  }
+  if (salesDue.due) {
+    patch.labSalesTeamShareChangeScheduledAt = null;
+    patch.labSalesTeamShareChangeScheduledPercent = null;
+  }
+  if (devopsDue.due) {
+    patch.labDevopsShareChangeScheduledAt = null;
+    patch.labDevopsShareChangeScheduledPercent = null;
+  }
   return patch;
 }
 
@@ -517,9 +920,21 @@ export function isShippingSpendRevenueContext({ refType, freeAccountCode }) {
 }
 
 /** 판매가(부가세 면제) → 매입가(부가세 포함) = 50%. */
-export function manufacturerPurchaseFromSale(saleAmount) {
+export function manufacturerPurchaseFromSale(saleAmount, rateOrSettings) {
   const sale = Math.max(0, Math.round(Number(saleAmount) || 0));
-  return Math.round(sale * MANUFACTURER_PURCHASE_OF_SALE_RATE);
+  let rate = MANUFACTURER_PURCHASE_OF_SALE_RATE;
+  if (typeof rateOrSettings === "number") {
+    const pct = Number(rateOrSettings);
+    if (Number.isFinite(pct) && pct >= 0) {
+      rate = Math.min(1, pct > 1 ? pct / 100 : pct);
+    }
+  } else if (rateOrSettings && typeof rateOrSettings === "object") {
+    const pct = Number(rateOrSettings.manufacturerSharePercent);
+    if (Number.isFinite(pct) && pct >= 0) {
+      rate = Math.min(1, pct / 100);
+    }
+  }
+  return Math.round(sale * rate);
 }
 
 function readPositiveWon(...values) {
@@ -545,7 +960,7 @@ export function resolveManufacturerUnitSettings(creditSettings = {}) {
   const sale = readCustomAbutmentSalePrice(creditSettings);
   const requestInclusive =
     sale > 0
-      ? manufacturerPurchaseFromSale(sale)
+      ? manufacturerPurchaseFromSale(sale, creditSettings)
       : Math.max(
           0,
           Math.round(

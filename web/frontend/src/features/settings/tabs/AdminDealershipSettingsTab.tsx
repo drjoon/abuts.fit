@@ -3,6 +3,8 @@
 // - web/backend/controllers/admin/admin.settings.controller.js
 // - web/backend/services/creditRevenuePolicy.service.js
 // change-log:
+// - 2026-09-23: 적용 범위 카피 — 스토어·커스텀어벗(기공비·배송 제외). 분배 딜러%와 이벤트 요율 동기화.
+// - 2026-09-23: 플랫폼「분배비율」탭에 편입(독립 딜러십 탭 제거).
 // - 2026-09-20: 기본 10% 고정 · 이벤트 15/20% · 시작/종료일 제거 · 요율 변경 예약.
 // - 2026-09-20: 요율 10/15/20% 선택식. 유치 시점 요율 안내 카피.
 // - 2026-09-20: 자동 저장 PATCH를 jsonBody로 수정(body 객체는 JSON 미전송 → 저장 실패).
@@ -18,7 +20,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { CalendarClock, Info, Percent, Truck } from "lucide-react";
+import { CalendarClock, Info, Percent } from "lucide-react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
@@ -160,8 +162,11 @@ function RatePctSelect<T extends number>({
 /** 플랫폼 설정 · 딜러십 영업 수수료. */
 export function AdminDealershipSettingsTab({
   className,
+  onActiveDealerPctChange,
 }: {
   className?: string;
+  /** 분배 비율 딜러%와 동기화(이벤트 on→이벤트 요율, off→기본 10%). */
+  onActiveDealerPctChange?: (pct: number) => void;
 }) {
   const { toast } = useToast();
   const { token } = useAuthStore();
@@ -173,6 +178,8 @@ export function AdminDealershipSettingsTab({
   const [schedulePct, setSchedulePct] = useState<ScheduledRatePct>(15);
   const hydratedRef = useRef(false);
   const savedSigRef = useRef("");
+  const onActiveDealerPctChangeRef = useRef(onActiveDealerPctChange);
+  onActiveDealerPctChangeRef.current = onActiveDealerPctChange;
   const stateRef = useRef({
     eventPct: 20 as EventRatePct,
     eventEnabled: true,
@@ -190,6 +197,10 @@ export function AdminDealershipSettingsTab({
     [s.eventPct, String(s.eventEnabled), s.scheduleYmd, s.schedulePct].join(
       "|",
     );
+
+  const emitActiveDealerPct = (enabled: boolean, pct: number) => {
+    onActiveDealerPctChangeRef.current?.(enabled ? pct : BASE_PCT);
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -233,6 +244,7 @@ export function AdminDealershipSettingsTab({
           scheduleYmd: nextScheduleYmd,
           schedulePct: nextSchedulePct,
         });
+        // 초기 로드는 부모 분배%를 덮어쓰지 않음. 저장 후에만 동기화.
       } catch {
         // silent
       } finally {
@@ -280,6 +292,7 @@ export function AdminDealershipSettingsTab({
         savedSigRef.current = sig;
         void queryClient.invalidateQueries({ queryKey: ["system-settings"] });
         void queryClient.invalidateQueries({ queryKey: ["credit-settings"] });
+        emitActiveDealerPct(cur.eventEnabled, cur.eventPct);
       } catch {
         toast({
           title: "저장 실패",
@@ -308,12 +321,9 @@ export function AdminDealershipSettingsTab({
       <div className="rounded-2xl border border-slate-200/80 bg-white px-4 py-4 shadow-sm">
         <h2 className="text-base font-semibold text-slate-900">딜러십 영업 수수료</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          심플웨이·커스텀어벗 판매가 기준(배송비 제외). 기본 요율은{" "}
-          <span className="font-medium text-slate-700">10%</span>
-          , 이벤트는{" "}
-          <span className="font-medium text-slate-700">15% · 20%</span>
-          . 지금은 이벤트 기간이라 이벤트 요율로 유치하고, 이후 요율 변경 예약으로
-          단계 조정할 수 있습니다. 의뢰자는 가입(유치) 당시 요율을 따릅니다.
+          스토어·커스텀어벗 판매가 기준(기공비·배송 제외).
+          <br />
+          기본 10% · 이벤트 15%/20%. 유치 당시 요율을 따릅니다.
         </p>
       </div>
 
@@ -328,7 +338,7 @@ export function AdminDealershipSettingsTab({
                 기본 요율
               </Label>
               <p className="text-[12px] leading-snug text-muted-foreground">
-                이벤트 종료 후 · 표준 유치 요율
+                이벤트 종료 후
               </p>
             </div>
           </div>
@@ -365,14 +375,12 @@ export function AdminDealershipSettingsTab({
                     </button>
                   </TooltipTrigger>
                   <TooltipContent className="max-w-xs">
-                    이벤트 기간 내 유치(가입)한 치과·기공소에 적용됩니다. 종료
-                    후에도 해당 고객은 이벤트 요율을 유지합니다. 요율 변경
-                    예약으로 20%→15%→10% 단계 조정이 가능합니다.
+                    이벤트 중 유치한 고객에 적용됩니다. 종료 후에도 유지됩니다.
                   </TooltipContent>
                 </Tooltip>
               </div>
               <p className="text-[12px] leading-snug text-muted-foreground">
-                현재 유치에 쓰는 요율
+                현재 유치 요율
               </p>
             </div>
           </div>
@@ -411,8 +419,7 @@ export function AdminDealershipSettingsTab({
                 요율 변경 예약
               </Label>
               <p className="mt-0.5 text-[12px] leading-snug text-muted-foreground">
-                설정 시 딜러 대시보드에 안내가 표시되고, 해당일 0시(KST)부터
-                적용됩니다. 비우면 예약 없음.
+                해당일 0시(KST)부터 적용. 비우면 예약 없음.
               </p>
             </div>
           </div>
@@ -447,14 +454,6 @@ export function AdminDealershipSettingsTab({
             />
           </div>
         )}
-      </div>
-
-      <div className="flex items-start gap-2.5 rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-600">
-        <Truck className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-        <p>
-          배송비는 수신자(치과 또는 기공소) 부담이며 수수료 산정에서 제외됩니다.
-          대시보드·정산은 유치 고객별로 이벤트/기본 요율을 구분해 표시합니다.
-        </p>
       </div>
     </div>
   );

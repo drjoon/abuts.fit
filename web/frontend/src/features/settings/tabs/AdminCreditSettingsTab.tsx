@@ -1,4 +1,7 @@
 // change-log:
+// - 2026-09-23: 분배 비율 — 딜러 10/15/20% 선택·내일부터 적용 안내. 딜러십 섹션 제거.
+// - 2026-09-23: 분배 비율 — 딜러=이벤트 요율·개발운영 5%·어벗츠 나머지. 스토어·커스텀어벗만(기공비 제외).
+// - 2026-09-23: variant=shareRates — 분배 비율(공통)+딜러십. 커스텀어벗 탭에서 분배 카드 분리.
 // - 2026-09-20: 커스텀어벗 가격 아래 의뢰자 BA 판매가 오버라이드 목록.
 // - 2026-09-20: 매입가 = 판매가의 50%(읽기 전용). 리메이크 매입가 입력 제거.
 // - 2026-08-24: 분배 비율 — 딜러사 포함 섹션·딜러사 비포함 안내문 제거(딜러 분배 중단).
@@ -76,21 +79,6 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
-import { getRequestorRoleBadgeLabel } from "@/shared/business/requestorCapabilities";
 import {
   Tooltip,
   TooltipContent,
@@ -105,12 +93,12 @@ import {
   Gift,
   Loader2,
   Percent,
-  Plus,
-  Trash2,
   Truck,
   Zap,
 } from "lucide-react";
 import { AdminRoundBarAbutmentTab } from "@/pages/admin/system/AdminRoundBarAbutmentTab";
+import { cn } from "@/shared/ui/cn";
+import { kstAddCivilDays, toKstYmd } from "@/shared/date/kst";
 
 interface CreditSettings {
   minCreditForRequest: number;
@@ -153,16 +141,26 @@ interface CreditSettings {
   regularDesignAndProductionManufacturerUnitPrice: number;
   regularDesignAndProductionSalesmanUnitPrice: number;
   regularDesignAndProductionDevopsUnitPrice: number;
-  /** 레거시. 제조사는 고정단가(manufacturerRequestUnitPrice). 신규 분배에 사용하지 않음. */
+  /** 커스텀어벗 매입 = 판매가 × 이 비율(기본 50). */
   manufacturerSharePercent: number;
   salesmanSharePercent: number;
   devopsSharePercent: number;
-  /** 제조사 선차감 후 잔여분 중 어벗츠 비중(%). 딜러/개발운영과 합산해 정규화. */
+  /** 어벗츠% = 100 − (제조사 + 딜러 + 개발운영사). */
   abutsSharePercent: number;
   regularManufacturerSharePercent: number;
   regularSalesmanSharePercent: number;
   regularDevopsSharePercent: number;
   regularAbutsSharePercent: number;
+  /** 스토어 판매 분배(판매가 대비). */
+  storeManufacturerSharePercent: number;
+  storeSalesmanSharePercent: number;
+  storeDevopsSharePercent: number;
+  storeAbutsSharePercent: number;
+  /** 기공 분배(기공비 대비). 기공사업부·영업팀·개발운영사·어벗츠. */
+  labBizSharePercent: number;
+  labSalesTeamSharePercent: number;
+  labDevopsSharePercent: number;
+  labAbutsSharePercent: number;
 }
 
 type TierPartyPrefix =
@@ -213,25 +211,271 @@ const PERCENT_STEP = 5;
 
 type ShareKind = "membership" | "regular";
 
-/** 제조사 선차감 후 잔여 분배 비중(합계는 정규화). */
+/** 판매가 대비 분배 기본값. 제조사 50 + 딜러 20 + 개발운영 5 → 어벗츠 25. */
 const MEMBERSHIP_RESIDUAL_SHARE_PERCENTS = {
-  salesman: 30,
-  devops: 10,
-  abuts: 40,
+  salesman: 20,
+  devops: 5,
+  abuts: 25,
 };
 
+/** 기공 분배 기본값. 기공사업부 50 + 영업팀 20 + 개발운영 5 → 어벗츠 25. */
+const LAB_SHARE_PERCENTS = {
+  biz: 50,
+  salesTeam: 20,
+  devops: 5,
+  abuts: 25,
+};
+
+/** 딜러 없을 때: 개발운영사 5%, 어벗츠=나머지. */
 const REGULAR_RESIDUAL_SHARE_PERCENTS = {
   salesman: 0,
-  devops: 20,
-  abuts: 80,
+  devops: 5,
+  abuts: 95,
 };
+
+/** 어벗츠% = 100 − (제조사 + 딜러 + 개발운영사). */
+function abutsShareFromParts(
+  manufacturerPercent: number,
+  dealerPercent: number,
+  devopsPercent: number,
+): number {
+  return Math.max(
+    0,
+    Math.round(
+      (100 -
+        (Number(manufacturerPercent) || 0) -
+        (Number(dealerPercent) || 0) -
+        (Number(devopsPercent) || 0)) *
+        100,
+    ) / 100,
+  );
+}
+
+/** 딜러 분배·수수료 요율 선택지. */
+const DEALER_RATE_PCT_OPTIONS = [10, 15, 20] as const;
+type DealerRatePct = (typeof DEALER_RATE_PCT_OPTIONS)[number];
+
+function snapDealerPct(
+  value: number,
+  fallback: DealerRatePct = 20,
+): DealerRatePct {
+  const pct = Math.round(Number.isFinite(value) ? value : fallback);
+  let best: DealerRatePct = fallback;
+  let bestDist = Number.POSITIVE_INFINITY;
+  for (const option of DEALER_RATE_PCT_OPTIONS) {
+    const dist = Math.abs(option - pct);
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = option;
+    }
+  }
+  return best;
+}
+
+/** 딜러 요율 변경 예약 — 내일 0시(KST). */
+function tomorrowKstIsoStart(): string {
+  const today = toKstYmd(new Date()) || "";
+  const tomorrow = kstAddCivilDays(today, 1) || today;
+  return `${tomorrow}T00:00:00+09:00`;
+}
+
+function buildDealerSchedulePayload(pendingPct: DealerRatePct | null) {
+  if (pendingPct == null) {
+    return {
+      dealershipRateChangeScheduledAt: null as string | null,
+      dealershipRateChangeScheduledRate: null as number | null,
+    };
+  }
+  return {
+    dealershipRateChangeScheduledAt: tomorrowKstIsoStart(),
+    dealershipRateChangeScheduledRate: pendingPct / 100,
+  };
+}
+
+function buildStoreDealerSchedulePayload(pendingPct: DealerRatePct | null) {
+  if (pendingPct == null) {
+    return {
+      storeDealerRateChangeScheduledAt: null as string | null,
+      storeDealerRateChangeScheduledRate: null as number | null,
+    };
+  }
+  return {
+    storeDealerRateChangeScheduledAt: tomorrowKstIsoStart(),
+    storeDealerRateChangeScheduledRate: pendingPct / 100,
+  };
+}
+
+function buildDevopsSchedulePayload(pendingPct: number | null) {
+  if (pendingPct == null) {
+    return {
+      devopsShareChangeScheduledAt: null as string | null,
+      devopsShareChangeScheduledPercent: null as number | null,
+    };
+  }
+  const n = Number(pendingPct);
+  const pct =
+    !Number.isFinite(n) || n < 0 ? 5 : Math.min(100, Math.round(n * 100) / 100);
+  return {
+    devopsShareChangeScheduledAt: tomorrowKstIsoStart(),
+    devopsShareChangeScheduledPercent: pct,
+  };
+}
+
+function buildStoreDevopsSchedulePayload(pendingPct: number | null) {
+  if (pendingPct == null) {
+    return {
+      storeDevopsShareChangeScheduledAt: null as string | null,
+      storeDevopsShareChangeScheduledPercent: null as number | null,
+    };
+  }
+  const n = Number(pendingPct);
+  const pct =
+    !Number.isFinite(n) || n < 0 ? 5 : Math.min(100, Math.round(n * 100) / 100);
+  return {
+    storeDevopsShareChangeScheduledAt: tomorrowKstIsoStart(),
+    storeDevopsShareChangeScheduledPercent: pct,
+  };
+}
+
+function buildManufacturerSchedulePayload(pendingPct: number | null) {
+  if (pendingPct == null) {
+    return {
+      manufacturerShareChangeScheduledAt: null as string | null,
+      manufacturerShareChangeScheduledPercent: null as number | null,
+    };
+  }
+  const pct = readManufacturerSharePercent(pendingPct);
+  return {
+    manufacturerShareChangeScheduledAt: tomorrowKstIsoStart(),
+    manufacturerShareChangeScheduledPercent: pct,
+  };
+}
+
+function buildStoreManufacturerSchedulePayload(pendingPct: number | null) {
+  if (pendingPct == null) {
+    return {
+      storeManufacturerShareChangeScheduledAt: null as string | null,
+      storeManufacturerShareChangeScheduledPercent: null as number | null,
+    };
+  }
+  const pct = readManufacturerSharePercent(pendingPct);
+  return {
+    storeManufacturerShareChangeScheduledAt: tomorrowKstIsoStart(),
+    storeManufacturerShareChangeScheduledPercent: pct,
+  };
+}
+
+function buildLabPercentSchedulePayload(
+  field: "biz" | "salesTeam" | "devops",
+  pendingPct: number | null,
+) {
+  const atKey =
+    field === "biz"
+      ? "labBizShareChangeScheduledAt"
+      : field === "salesTeam"
+        ? "labSalesTeamShareChangeScheduledAt"
+        : "labDevopsShareChangeScheduledAt";
+  const pctKey =
+    field === "biz"
+      ? "labBizShareChangeScheduledPercent"
+      : field === "salesTeam"
+        ? "labSalesTeamShareChangeScheduledPercent"
+        : "labDevopsShareChangeScheduledPercent";
+  if (pendingPct == null) {
+    return {
+      [atKey]: null as string | null,
+      [pctKey]: null as number | null,
+    };
+  }
+  const n = Number(pendingPct);
+  const pct =
+    !Number.isFinite(n) || n < 0 ? 0 : Math.min(100, Math.round(n * 100) / 100);
+  return {
+    [atKey]: tomorrowKstIsoStart(),
+    [pctKey]: pct,
+  };
+}
+
+function ShareChangePendingBadge({ show }: { show: boolean }) {
+  if (!show) return null;
+  return (
+    <span className="text-[12px] font-medium text-amber-700">
+      내일부터 변경 적용
+    </span>
+  );
+}
+
+function DealerRatePctSelect({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: DealerRatePct;
+  onChange: (next: DealerRatePct) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div
+      role="radiogroup"
+      aria-label="딜러 분배율"
+      className="flex w-full items-center gap-1 rounded-xl bg-slate-100/80 p-1"
+    >
+      {DEALER_RATE_PCT_OPTIONS.map((pct) => {
+        const selected = value === pct;
+        return (
+          <button
+            key={pct}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            disabled={disabled}
+            onClick={() => onChange(pct)}
+            className={cn(
+              "h-9 flex-1 rounded-lg px-2 text-sm font-semibold tabular-nums transition-colors",
+              selected
+                ? "bg-white text-primary-strong shadow-sm ring-1 ring-primary-muted/50"
+                : "text-slate-500 hover:text-slate-800",
+              disabled && "cursor-not-allowed opacity-60",
+            )}
+          >
+            {pct}%
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 const DEFAULT_MANUFACTURER_REQUEST_UNIT_PRICE = 8800;
 const DEFAULT_MANUFACTURER_REMAKE_UNIT_PRICE = 6600;
+/** 커스텀어벗 매입가 = 판매가 × 제조사 비율. 기본 50%. */
+const DEFAULT_MANUFACTURER_PURCHASE_PERCENT = 50;
 
-/** 매입가(부가세 포함) = 판매가(부가세 면제)의 50%. */
-function purchasePriceFromSale(sale: number): number {
-  return Math.max(0, Math.round((Number(sale) || 0) * 0.5));
+/** 매입가(부가세 포함) = 판매가(부가세 면제) × 제조사 비율. 0% 허용. */
+function purchasePriceFromSale(
+  sale: number,
+  manufacturerPercent: number = DEFAULT_MANUFACTURER_PURCHASE_PERCENT,
+): number {
+  const n = Number(manufacturerPercent);
+  const pct = Math.max(
+    0,
+    Math.min(
+      100,
+      Number.isFinite(n) ? n : DEFAULT_MANUFACTURER_PURCHASE_PERCENT,
+    ),
+  );
+  return Math.max(0, Math.round(((Number(sale) || 0) * pct) / 100));
+}
+
+/** 제조사 분배%. 0 허용. null/NaN만 기본값. */
+function readManufacturerSharePercent(
+  value: unknown,
+  fallback: number = DEFAULT_MANUFACTURER_PURCHASE_PERCENT,
+): number {
+  if (value == null || value === "") return fallback;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return fallback;
+  return Math.min(100, Math.round(n * 100) / 100);
 }
 
 function clampSharePercent(value: number, fallback = 0): number {
@@ -537,17 +781,46 @@ function buildSharePercentSavePayload(
   settings: CreditSettings,
 ): Partial<CreditSettings> {
   const synced = syncComputedPartyFields(settings);
+  const customAbuts = abutsShareFromParts(
+    synced.manufacturerSharePercent,
+    synced.salesmanSharePercent,
+    synced.devopsSharePercent,
+  );
+  const storeAbuts = abutsShareFromParts(
+    synced.storeManufacturerSharePercent,
+    synced.storeSalesmanSharePercent,
+    synced.storeDevopsSharePercent,
+  );
   return {
-    manufacturerSharePercent: 0,
+    manufacturerSharePercent: synced.manufacturerSharePercent,
     salesmanSharePercent: synced.salesmanSharePercent,
     devopsSharePercent: synced.devopsSharePercent,
-    abutsSharePercent: synced.abutsSharePercent,
+    abutsSharePercent: customAbuts,
     regularManufacturerSharePercent: 0,
     regularSalesmanSharePercent: synced.regularSalesmanSharePercent,
     regularDevopsSharePercent: synced.regularDevopsSharePercent,
-    regularAbutsSharePercent: synced.regularAbutsSharePercent,
+    regularAbutsSharePercent: abutsShareFromParts(
+      0,
+      synced.regularSalesmanSharePercent,
+      synced.regularDevopsSharePercent,
+    ),
+    storeManufacturerSharePercent: synced.storeManufacturerSharePercent,
+    storeSalesmanSharePercent: synced.storeSalesmanSharePercent,
+    storeDevopsSharePercent: synced.storeDevopsSharePercent,
+    storeAbutsSharePercent: storeAbuts,
+    labBizSharePercent: synced.labBizSharePercent,
+    labSalesTeamSharePercent: synced.labSalesTeamSharePercent,
+    labDevopsSharePercent: synced.labDevopsSharePercent,
+    labAbutsSharePercent: abutsShareFromParts(
+      synced.labBizSharePercent,
+      synced.labSalesTeamSharePercent,
+      synced.labDevopsSharePercent,
+    ),
     ...buildNormalizedTierPartyFields(synced, synced),
-    manufacturerRequestUnitPrice: synced.manufacturerRequestUnitPrice,
+    manufacturerRequestUnitPrice: purchasePriceFromSale(
+      synced.labProductionPrice,
+      synced.manufacturerSharePercent,
+    ),
     manufacturerRemakeUnitPrice: synced.manufacturerRemakeUnitPrice,
     manufacturerShippingUnitPrice: synced.manufacturerShippingUnitPrice,
     salesmanRequestUnitPrice: synced.salesmanRequestUnitPrice,
@@ -564,6 +837,7 @@ function PercentField({
   disabled,
   readOnly = false,
   unitPrice,
+  previousPercent,
 }: {
   id: string;
   label: string;
@@ -573,12 +847,41 @@ function PercentField({
   readOnly?: boolean;
   /** 판매가−매입가 잔여 × 비중으로 산출한 개당 단가 */
   unitPrice?: number;
+  /** 변경 전(현재 적용) %. 라벨 오른쪽 끝에 표시. */
+  previousPercent?: number;
 }) {
+  const hasPrevious =
+    previousPercent != null && Number.isFinite(previousPercent);
+  const previousChanged =
+    hasPrevious && Math.abs(Number(previousPercent) - Number(value)) > 0.0001;
+  const previousLabel = hasPrevious
+    ? `${Number(previousPercent).toLocaleString("ko-KR", {
+        maximumFractionDigits: 1,
+      })}%`
+    : null;
+
   return (
     <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 shadow-sm">
-      <Label htmlFor={id} className="mb-3 block text-sm font-medium text-slate-800">
-        {label}
-      </Label>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <Label
+          htmlFor={id}
+          className="min-w-0 text-sm font-medium text-slate-800"
+        >
+          {label}
+        </Label>
+        {previousLabel ? (
+          <span
+            className={
+              previousChanged
+                ? "shrink-0 text-xs font-semibold tabular-nums tracking-tight text-amber-700"
+                : "shrink-0 text-xs font-medium tabular-nums tracking-tight text-slate-400"
+            }
+            title="변경 전(현재 적용)"
+          >
+            {previousLabel}
+          </span>
+        ) : null}
+      </div>
       <div className="flex items-center gap-2">
         {readOnly ? (
           <div className="relative min-w-0 flex-1">
@@ -622,45 +925,78 @@ function PercentField({
 
 function SharePercentRow({
   idPrefix,
+  rowLabel,
   shares,
-  unitPrices,
+  manufacturerPercent,
+  dealerSelectPct,
+  previousManufacturerPercent,
+  previousDealerPercent,
+  previousDevopsPercent,
+  previousAbutsPercent,
   disabled,
+  onManufacturerChange,
+  onDealerChange,
   onDevopsChange,
-  onAbutsChange,
 }: {
   idPrefix: string;
+  rowLabel: string;
   shares: ReturnType<typeof readResidualSharePercents>;
-  unitPrices: Pick<ResidualUnitPrices, "salesman" | "devops" | "abuts">;
+  manufacturerPercent: number;
+  dealerSelectPct: DealerRatePct;
+  previousManufacturerPercent: number;
+  previousDealerPercent: number;
+  previousDevopsPercent: number;
+  previousAbutsPercent: number;
   disabled?: boolean;
+  onManufacturerChange: (next: number) => void;
+  onDealerChange: (next: DealerRatePct) => void;
   onDevopsChange: (next: number) => void;
-  onAbutsChange: (next: number) => void;
 }) {
-  const weightSum = shares.devops + shares.abuts;
-  const overAllocated = weightSum <= 0;
-
   return (
-    <div className="space-y-3">
-      {overAllocated || weightSum !== 100 ? (
-        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-          {overAllocated ? (
-            <span className="text-[12px] font-medium text-amber-700">
-              잔여 분배 비중 합계가 0입니다
+    <div className="space-y-2">
+      <p className="text-sm font-semibold text-slate-800">{rowLabel}</p>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,24fr)_minmax(0,28fr)_minmax(0,24fr)_minmax(0,24fr)]">
+        <PercentField
+          id={`${idPrefix}-manufacturer`}
+          label="제조사"
+          value={manufacturerPercent}
+          previousPercent={previousManufacturerPercent}
+          disabled={disabled}
+          onChange={onManufacturerChange}
+        />
+        <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 shadow-sm">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <Label
+              htmlFor={`${idPrefix}-dealer`}
+              className="min-w-0 text-sm font-medium text-slate-800"
+            >
+              딜러
+            </Label>
+            <span
+              className={
+                Math.abs(previousDealerPercent - dealerSelectPct) > 0.0001
+                  ? "shrink-0 text-xs font-semibold tabular-nums tracking-tight text-amber-700"
+                  : "shrink-0 text-xs font-medium tabular-nums tracking-tight text-slate-400"
+              }
+              title="변경 전(현재 적용)"
+            >
+              {previousDealerPercent.toLocaleString("ko-KR", {
+                maximumFractionDigits: 1,
+              })}
+              %
             </span>
-          ) : (
-            <span className="text-[12px] text-slate-500">
-              비중 합{" "}
-              {weightSum.toLocaleString("ko-KR", { maximumFractionDigits: 1 })}%
-              (정규화)
-            </span>
-          )}
+          </div>
+          <DealerRatePctSelect
+            value={dealerSelectPct}
+            onChange={onDealerChange}
+            disabled={disabled}
+          />
         </div>
-      ) : null}
-      <div className="grid gap-3 sm:grid-cols-2">
         <PercentField
           id={`${idPrefix}-devops`}
           label="개발운영사"
           value={shares.devops}
-          unitPrice={unitPrices.devops}
+          previousPercent={previousDevopsPercent}
           disabled={disabled}
           onChange={onDevopsChange}
         />
@@ -668,56 +1004,83 @@ function SharePercentRow({
           id={`${idPrefix}-abuts`}
           label="어벗츠"
           value={shares.abuts}
-          unitPrice={unitPrices.abuts}
+          previousPercent={previousAbutsPercent}
           disabled={disabled}
-          onChange={onAbutsChange}
+          readOnly
         />
       </div>
     </div>
   );
 }
 
-function SharePercentPanel({
-  salePrice,
-  purchasePrice,
-  regularShares,
+/** 기공: 기공사업부 · 영업팀 · 개발운영사 · 어벗츠(나머지). */
+function LabSharePercentRow({
+  idPrefix,
+  bizPercent,
+  salesTeamPercent,
+  devopsPercent,
+  abutsPercent,
+  previousBizPercent,
+  previousSalesTeamPercent,
+  previousDevopsPercent,
+  previousAbutsPercent,
   disabled,
-  onRegularChange,
+  onBizChange,
+  onSalesTeamChange,
+  onDevopsChange,
 }: {
-  salePrice: number;
-  purchasePrice: number;
-  regularShares: ReturnType<typeof readResidualSharePercents>;
+  idPrefix: string;
+  bizPercent: number;
+  salesTeamPercent: number;
+  devopsPercent: number;
+  abutsPercent: number;
+  previousBizPercent: number;
+  previousSalesTeamPercent: number;
+  previousDevopsPercent: number;
+  previousAbutsPercent: number;
   disabled?: boolean;
-  onRegularChange: (
-    patch: Partial<
-      Pick<
-        CreditSettings,
-        | "regularSalesmanSharePercent"
-        | "regularDevopsSharePercent"
-        | "regularAbutsSharePercent"
-      >
-    >,
-  ) => void;
+  onBizChange: (next: number) => void;
+  onSalesTeamChange: (next: number) => void;
+  onDevopsChange: (next: number) => void;
 }) {
-  const regularUnits = allocateRevenueByFixedManufacturerAndResidualShares(
-    salePrice,
-    purchasePrice,
-    regularShares,
-  );
-
   return (
-    <SharePercentRow
-      idPrefix="regularShare"
-      shares={regularShares}
-      unitPrices={regularUnits}
-      disabled={disabled}
-      onDevopsChange={(regularDevopsSharePercent) =>
-        onRegularChange({ regularDevopsSharePercent })
-      }
-      onAbutsChange={(regularAbutsSharePercent) =>
-        onRegularChange({ regularAbutsSharePercent })
-      }
-    />
+    <div className="space-y-2">
+      <p className="text-sm font-semibold text-slate-800">기공</p>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+        <PercentField
+          id={`${idPrefix}-biz`}
+          label="기공사업부"
+          value={bizPercent}
+          previousPercent={previousBizPercent}
+          disabled={disabled}
+          onChange={onBizChange}
+        />
+        <PercentField
+          id={`${idPrefix}-salesTeam`}
+          label="영업팀"
+          value={salesTeamPercent}
+          previousPercent={previousSalesTeamPercent}
+          disabled={disabled}
+          onChange={onSalesTeamChange}
+        />
+        <PercentField
+          id={`${idPrefix}-devops`}
+          label="개발운영사"
+          value={devopsPercent}
+          previousPercent={previousDevopsPercent}
+          disabled={disabled}
+          onChange={onDevopsChange}
+        />
+        <PercentField
+          id={`${idPrefix}-abuts`}
+          label="어벗츠"
+          value={abutsPercent}
+          previousPercent={previousAbutsPercent}
+          disabled={disabled}
+          readOnly
+        />
+      </div>
+    </div>
   );
 }
 
@@ -907,13 +1270,9 @@ function normalizeCreditSettings(
       if (Number.isFinite(rawVal) && rawVal > 0) return Math.round(rawVal);
       return abutmentPrices.membershipRoundBarDesignAndProductionPrice;
     })(),
-    manufacturerSharePercent: clampSharePercent(
-      Number(
-        (raw as CreditSettings).manufacturerSharePercent ??
-          (fallback as CreditSettings).manufacturerSharePercent ??
-          0,
-      ),
-      0,
+    manufacturerSharePercent: readManufacturerSharePercent(
+      (raw as CreditSettings).manufacturerSharePercent ??
+        (fallback as CreditSettings).manufacturerSharePercent,
     ),
     salesmanSharePercent: clampSharePercent(
       Number(
@@ -971,6 +1330,65 @@ function normalizeCreditSettings(
       ),
       REGULAR_RESIDUAL_SHARE_PERCENTS.abuts,
     ),
+    storeManufacturerSharePercent: readManufacturerSharePercent(
+      (raw as CreditSettings).storeManufacturerSharePercent ??
+        (fallback as CreditSettings).storeManufacturerSharePercent ??
+        (raw as CreditSettings).manufacturerSharePercent ??
+        (fallback as CreditSettings).manufacturerSharePercent,
+    ),
+    storeSalesmanSharePercent: clampSharePercent(
+      Number(
+        (raw as CreditSettings).storeSalesmanSharePercent ??
+          (fallback as CreditSettings).storeSalesmanSharePercent ??
+          (raw as CreditSettings).salesmanSharePercent ??
+          (fallback as CreditSettings).salesmanSharePercent ??
+          MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.salesman,
+      ),
+      MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.salesman,
+    ),
+    storeDevopsSharePercent: clampSharePercent(
+      Number(
+        (raw as CreditSettings).storeDevopsSharePercent ??
+          (fallback as CreditSettings).storeDevopsSharePercent ??
+          (raw as CreditSettings).devopsSharePercent ??
+          (fallback as CreditSettings).devopsSharePercent ??
+          MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.devops,
+      ),
+      MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.devops,
+    ),
+    storeAbutsSharePercent: clampSharePercent(
+      Number(
+        (raw as CreditSettings).storeAbutsSharePercent ??
+          (fallback as CreditSettings).storeAbutsSharePercent ??
+          (raw as CreditSettings).abutsSharePercent ??
+          (fallback as CreditSettings).abutsSharePercent ??
+          MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.abuts,
+      ),
+      MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.abuts,
+    ),
+    labBizSharePercent: readManufacturerSharePercent(
+      (raw as CreditSettings).labBizSharePercent ??
+        (fallback as CreditSettings).labBizSharePercent,
+      LAB_SHARE_PERCENTS.biz,
+    ),
+    labSalesTeamSharePercent: readManufacturerSharePercent(
+      (raw as CreditSettings).labSalesTeamSharePercent ??
+        (fallback as CreditSettings).labSalesTeamSharePercent,
+      LAB_SHARE_PERCENTS.salesTeam,
+    ),
+    labDevopsSharePercent: readManufacturerSharePercent(
+      (raw as CreditSettings).labDevopsSharePercent ??
+        (fallback as CreditSettings).labDevopsSharePercent,
+      LAB_SHARE_PERCENTS.devops,
+    ),
+    labAbutsSharePercent: clampSharePercent(
+      Number(
+        (raw as CreditSettings).labAbutsSharePercent ??
+          (fallback as CreditSettings).labAbutsSharePercent ??
+          LAB_SHARE_PERCENTS.abuts,
+      ),
+      LAB_SHARE_PERCENTS.abuts,
+    ),
     ...buildNormalizedTierPartyFields({ ...fallback, ...raw, ...abutmentPrices }, {
       ...CREDIT_SETTINGS_DEFAULTS,
       ...fallback,
@@ -988,15 +1406,21 @@ function normalizeCreditSettings(
       ) || 0,
     ),
   );
-  // 레거시 %분배(제조사 비중 > 0) → 고정단가+잔여비중 기본값으로 승격.
+  // 레거시 잔여%분배(제조사 비중 > 0 · abuts 없음) → 매입 비율 50% + 잔여 비중 기본값.
   const legacyManufacturerShare = Number(
     (raw as CreditSettings).manufacturerSharePercent ??
       (fallback as CreditSettings).manufacturerSharePercent ??
       0,
   );
   const hasExplicitAbuts = (raw as CreditSettings).abutsSharePercent != null;
-  if (legacyManufacturerShare > 0 && !hasExplicitAbuts) {
-    withPrices.manufacturerSharePercent = 0;
+  const hasExplicitManufacturerPurchase =
+    (raw as CreditSettings).manufacturerSharePercent != null;
+  if (
+    legacyManufacturerShare > 0 &&
+    !hasExplicitAbuts &&
+    !hasExplicitManufacturerPurchase
+  ) {
+    withPrices.manufacturerSharePercent = DEFAULT_MANUFACTURER_PURCHASE_PERCENT;
     withPrices.salesmanSharePercent = MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.salesman;
     withPrices.devopsSharePercent = MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.devops;
     withPrices.abutsSharePercent = MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.abuts;
@@ -1027,8 +1451,29 @@ function normalizeCreditSettings(
         .map((item) => normalizeSpecialRequestorPrice(item, withPrices))
         .filter((item) => item.requestorAnchorId)
     : fallback.specialRequestorPrices;
+  withPrices.abutsSharePercent = abutsShareFromParts(
+    withPrices.manufacturerSharePercent,
+    withPrices.salesmanSharePercent,
+    withPrices.devopsSharePercent,
+  );
+  withPrices.storeAbutsSharePercent = abutsShareFromParts(
+    withPrices.storeManufacturerSharePercent,
+    withPrices.storeSalesmanSharePercent,
+    withPrices.storeDevopsSharePercent,
+  );
+  withPrices.labAbutsSharePercent = abutsShareFromParts(
+    withPrices.labBizSharePercent,
+    withPrices.labSalesTeamSharePercent,
+    withPrices.labDevopsSharePercent,
+  );
+  withPrices.regularAbutsSharePercent = abutsShareFromParts(
+    0,
+    withPrices.regularSalesmanSharePercent,
+    withPrices.regularDevopsSharePercent,
+  );
   withPrices.manufacturerRequestUnitPrice = purchasePriceFromSale(
     withPrices.labProductionPrice,
+    withPrices.manufacturerSharePercent,
   );
   return withPrices;
 }
@@ -1173,7 +1618,7 @@ function SectionHeader({
 }: {
   icon: typeof Gift;
   title: string;
-  description?: string;
+  description?: ReactNode;
   trailing?: ReactNode;
 }) {
   return (
@@ -1198,278 +1643,13 @@ function SectionHeader({
   );
 }
 
-type PriceRequestorOption = {
-  id: string;
-  name: string;
-  requestorKind: string | null;
-  representativeName: string;
-  businessNumber: string;
-};
-
-function setOverrideSale(
-  item: SpecialRequestorPrice,
-  sale: number,
-): SpecialRequestorPrice {
-  const next = Math.max(0, Math.round(Number(sale) || 0));
-  return {
-    ...item,
-    amount: next,
-    productionPrice: next,
-    roundBarProductionPrice: next,
-  };
-}
-
-function RequestorSalePriceOverrideSection({
-  items,
-  disabled,
-  saveState,
-  token,
-  defaultSale,
-  fallbackSettings,
-  onChange,
-}: {
-  items: SpecialRequestorPrice[];
-  disabled?: boolean;
-  saveState: AutoSaveState;
-  token: string | null;
-  defaultSale: number;
-  fallbackSettings: CreditSettings;
-  onChange: (next: SpecialRequestorPrice[]) => void;
-}) {
-  const [requestors, setRequestors] = useState<PriceRequestorOption[]>([]);
-  const [loadingList, setLoadingList] = useState(false);
-  const [pickerOpen, setPickerOpen] = useState(false);
-
-  useEffect(() => {
-    if (!token) return;
-    let cancelled = false;
-    setLoadingList(true);
-    void apiFetch<{
-      success?: boolean;
-      data?: { items?: PriceRequestorOption[] };
-    }>({
-      path: "/api/admin/settings/credits/requestors",
-      method: "GET",
-      token,
-    })
-      .then((res) => {
-        if (cancelled || !res.ok) return;
-        const rows = Array.isArray(res.data?.data?.items)
-          ? res.data.data.items
-          : [];
-        setRequestors(
-          rows.map((item) => ({
-            id: String(item.id || ""),
-            name: String(item.name || "").trim() || "이름 없는 의뢰자",
-            requestorKind: item.requestorKind || null,
-            representativeName: String(item.representativeName || ""),
-            businessNumber: String(item.businessNumber || ""),
-          })),
-        );
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingList(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [token]);
-
-  const byId = useMemo(() => {
-    const map = new Map<string, PriceRequestorOption>();
-    for (const row of requestors) {
-      if (row.id) map.set(row.id, row);
-    }
-    return map;
-  }, [requestors]);
-
-  const selectedIds = useMemo(
-    () => new Set(items.map((item) => item.requestorAnchorId)),
-    [items],
-  );
-
-  const sortedItems = useMemo(() => {
-    return [...items].sort((a, b) => {
-      const nameA = byId.get(a.requestorAnchorId)?.name || a.requestorAnchorId;
-      const nameB = byId.get(b.requestorAnchorId)?.name || b.requestorAnchorId;
-      return nameA.localeCompare(nameB, "ko");
-    });
-  }, [items, byId]);
-
-  const addRequestor = (id: string) => {
-    if (!id || selectedIds.has(id)) return;
-    const row = normalizeSpecialRequestorPrice(
-      {
-        requestorAnchorId: id,
-        productionPrice: defaultSale,
-        amount: defaultSale,
-        roundBarProductionPrice: defaultSale,
-        designAndProductionPrice: fallbackSettings.membershipDesignAndProductionPrice,
-        roundBarDesignAndProductionPrice:
-          fallbackSettings.membershipRoundBarDesignAndProductionPrice,
-      },
-      fallbackSettings,
-    );
-    onChange([...items, row]);
-  };
-
-  return (
-    <div className="space-y-3 border-t border-slate-200/80 pt-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 space-y-1">
-          <div className="flex items-center gap-2">
-            <h4 className="text-sm font-semibold text-slate-900">
-              의뢰자별 가격
-            </h4>
-            <AutoSaveIndicator state={saveState} />
-          </div>
-          <p className="text-[13px] leading-relaxed text-muted-foreground">
-            목록에 있는 의뢰자 BA만 아래 판매가를 씁니다. 없으면 위 기본
-            판매가입니다. 매입가는 각 판매가의 50%입니다.
-          </p>
-        </div>
-        <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
-          <PopoverTrigger asChild>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={disabled || loadingList}
-              className="h-10 rounded-xl border-slate-200 bg-white"
-            >
-              <Plus className="h-4 w-4" />
-              의뢰자 추가
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent
-            className="w-[min(28rem,calc(100vw-2rem))] p-0"
-            align="end"
-          >
-            <Command>
-              <CommandInput placeholder="의뢰자 이름·사업자번호 검색" />
-              <CommandList>
-                <CommandEmpty>
-                  {loadingList
-                    ? "불러오는 중…"
-                    : requestors.some((row) => row.id && !selectedIds.has(row.id))
-                      ? "검색 결과가 없습니다."
-                      : requestors.length > 0
-                        ? "추가할 의뢰자가 없습니다."
-                        : "의뢰자가 없습니다."}
-                </CommandEmpty>
-                <CommandGroup>
-                  {requestors
-                    .filter((row) => row.id && !selectedIds.has(row.id))
-                    .map((row) => (
-                      <CommandItem
-                        key={row.id}
-                        value={`${row.name} ${row.representativeName} ${row.businessNumber} ${row.id}`}
-                        onSelect={() => {
-                          addRequestor(row.id);
-                          setPickerOpen(false);
-                        }}
-                      >
-                        <div className="min-w-0">
-                          <div className="truncate text-sm">{row.name}</div>
-                          <div className="truncate text-xs text-muted-foreground">
-                            {getRequestorRoleBadgeLabel(row.requestorKind)}
-                            {row.businessNumber ? ` · ${row.businessNumber}` : ""}
-                          </div>
-                        </div>
-                      </CommandItem>
-                    ))}
-                </CommandGroup>
-              </CommandList>
-            </Command>
-          </PopoverContent>
-        </Popover>
-      </div>
-
-      {sortedItems.length === 0 ? (
-        <p className="rounded-2xl border border-dashed border-slate-200 bg-white/60 px-4 py-6 text-center text-[13px] text-muted-foreground">
-          오버라이드된 의뢰자가 없습니다.
-        </p>
-      ) : (
-        <ul className="space-y-2">
-          {sortedItems.map((item) => {
-            const meta = byId.get(item.requestorAnchorId);
-            const purchase = purchasePriceFromSale(item.productionPrice);
-            return (
-              <li
-                key={item.requestorAnchorId}
-                className="flex flex-col gap-3 rounded-2xl border border-slate-200/80 bg-white/80 p-4 sm:flex-row sm:items-center"
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-medium text-slate-900">
-                    {meta?.name ||
-                      (loadingList ? "불러오는 중…" : "이름 없는 의뢰자")}
-                  </div>
-                  <div className="truncate text-xs text-muted-foreground">
-                    {getRequestorRoleBadgeLabel(meta?.requestorKind)}
-                    {meta?.businessNumber ? ` · ${meta.businessNumber}` : ""}
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="relative w-36 shrink-0">
-                    <Input
-                      type="number"
-                      min="0"
-                      step={AMOUNT_STEP}
-                      aria-label={`${meta?.name || "의뢰자"} 판매가`}
-                      className="h-11 rounded-xl border-slate-200 bg-slate-50/60 pr-9 text-right text-base font-semibold tabular-nums tracking-tight"
-                      value={item.productionPrice}
-                      disabled={disabled}
-                      onChange={(event) => {
-                        const sale = Math.max(0, Number(event.target.value));
-                        onChange(
-                          items.map((row) =>
-                            row.requestorAnchorId === item.requestorAnchorId
-                              ? setOverrideSale(row, sale)
-                              : row,
-                          ),
-                        );
-                      }}
-                    />
-                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-slate-400">
-                      원
-                    </span>
-                  </div>
-                  <div className="w-28 shrink-0 text-right text-xs text-slate-500">
-                    매입가{" "}
-                    <span className="font-semibold tabular-nums text-slate-800">
-                      {purchase.toLocaleString("ko-KR")}
-                    </span>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    disabled={disabled}
-                    aria-label="오버라이드 삭제"
-                    onClick={() =>
-                      onChange(
-                        items.filter(
-                          (row) =>
-                            row.requestorAnchorId !== item.requestorAnchorId,
-                        ),
-                      )
-                    }
-                  >
-                    <Trash2 className="h-4 w-4 text-slate-500" />
-                  </Button>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-export type AdminCreditSettingsVariant = "credits" | "customAbut";
+export type AdminCreditSettingsVariant =
+  | "credits"
+  | "shareRates"
+  | "customAbut";
 
 type AdminCreditSettingsTabProps = {
-  /** credits: 환영 무료 크레딧·배송. customAbut: 생산 단가·분배·추가요청. */
+  /** credits: 환영 무료 크레딧·배송. shareRates: 분배 비율·딜러십. customAbut: 가격·추가요청. */
   variant?: AdminCreditSettingsVariant;
 };
 
@@ -1477,6 +1657,7 @@ export const AdminCreditSettingsTab = ({
   variant = "credits",
 }: AdminCreditSettingsTabProps) => {
   const showCredits = variant === "credits";
+  const showShareRates = variant === "shareRates";
   const showCustomAbut = variant === "customAbut";
   const { token } = useAuthStore();
   const { toast } = useToast();
@@ -1494,7 +1675,7 @@ export const AdminCreditSettingsTab = ({
         CREDIT_SETTINGS_DEFAULTS.labRoundBarProductionPrice,
       labRoundBarDesignAndProductionPrice:
         CREDIT_SETTINGS_DEFAULTS.labRoundBarDesignAndProductionPrice,
-      manufacturerSharePercent: 0,
+      manufacturerSharePercent: DEFAULT_MANUFACTURER_PURCHASE_PERCENT,
       salesmanSharePercent: MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.salesman,
       devopsSharePercent: MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.devops,
       abutsSharePercent: MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.abuts,
@@ -1502,6 +1683,14 @@ export const AdminCreditSettingsTab = ({
       regularSalesmanSharePercent: REGULAR_RESIDUAL_SHARE_PERCENTS.salesman,
       regularDevopsSharePercent: REGULAR_RESIDUAL_SHARE_PERCENTS.devops,
       regularAbutsSharePercent: REGULAR_RESIDUAL_SHARE_PERCENTS.abuts,
+      storeManufacturerSharePercent: DEFAULT_MANUFACTURER_PURCHASE_PERCENT,
+      storeSalesmanSharePercent: MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.salesman,
+      storeDevopsSharePercent: MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.devops,
+      storeAbutsSharePercent: MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.abuts,
+      labBizSharePercent: LAB_SHARE_PERCENTS.biz,
+      labSalesTeamSharePercent: LAB_SHARE_PERCENTS.salesTeam,
+      labDevopsSharePercent: LAB_SHARE_PERCENTS.devops,
+      labAbutsSharePercent: LAB_SHARE_PERCENTS.abuts,
     } as CreditSettings),
   );
   const [itemSaveStates, setItemSaveStates] = useState<
@@ -1641,6 +1830,10 @@ export const AdminCreditSettingsTab = ({
           | "regularSalesmanSharePercent"
           | "regularDevopsSharePercent"
           | "regularAbutsSharePercent"
+          | "storeManufacturerSharePercent"
+          | "storeSalesmanSharePercent"
+          | "storeDevopsSharePercent"
+          | "storeAbutsSharePercent"
         >
       >,
     ) => {
@@ -1655,13 +1848,338 @@ export const AdminCreditSettingsTab = ({
     [applySettingsUpdate, scheduleSharePercentSave],
   );
 
+  /** 커스텀어벗: 제조사·딜러·개발운영 변경은 내일부터 예약. */
+  const [effectiveManufacturerPct, setEffectiveManufacturerPct] = useState(
+    DEFAULT_MANUFACTURER_PURCHASE_PERCENT,
+  );
+  const [pendingManufacturerPct, setPendingManufacturerPct] = useState(
+    DEFAULT_MANUFACTURER_PURCHASE_PERCENT,
+  );
+  const [effectiveDealerPct, setEffectiveDealerPct] = useState<DealerRatePct>(
+    snapDealerPct(MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.salesman),
+  );
+  const [pendingDealerPct, setPendingDealerPct] = useState<DealerRatePct>(
+    snapDealerPct(MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.salesman),
+  );
+  const [effectiveDevopsPct, setEffectiveDevopsPct] = useState(
+    MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.devops,
+  );
+  const [pendingDevopsPct, setPendingDevopsPct] = useState(
+    MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.devops,
+  );
+  /** 스토어 분배 예약(제조사·딜러·개발운영). */
+  const [effectiveStoreManufacturerPct, setEffectiveStoreManufacturerPct] =
+    useState(DEFAULT_MANUFACTURER_PURCHASE_PERCENT);
+  const [pendingStoreManufacturerPct, setPendingStoreManufacturerPct] =
+    useState(DEFAULT_MANUFACTURER_PURCHASE_PERCENT);
+  const [effectiveStoreDealerPct, setEffectiveStoreDealerPct] =
+    useState<DealerRatePct>(
+      snapDealerPct(MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.salesman),
+    );
+  const [pendingStoreDealerPct, setPendingStoreDealerPct] =
+    useState<DealerRatePct>(
+      snapDealerPct(MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.salesman),
+    );
+  const [effectiveStoreDevopsPct, setEffectiveStoreDevopsPct] = useState(
+    MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.devops,
+  );
+  const [pendingStoreDevopsPct, setPendingStoreDevopsPct] = useState(
+    MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.devops,
+  );
+  /** 기공 분배 예약(기공사업부·영업팀·개발운영). */
+  const [effectiveLabBizPct, setEffectiveLabBizPct] = useState(
+    LAB_SHARE_PERCENTS.biz,
+  );
+  const [pendingLabBizPct, setPendingLabBizPct] = useState(LAB_SHARE_PERCENTS.biz);
+  const [effectiveLabSalesTeamPct, setEffectiveLabSalesTeamPct] = useState(
+    LAB_SHARE_PERCENTS.salesTeam,
+  );
+  const [pendingLabSalesTeamPct, setPendingLabSalesTeamPct] = useState(
+    LAB_SHARE_PERCENTS.salesTeam,
+  );
+  const [effectiveLabDevopsPct, setEffectiveLabDevopsPct] = useState(
+    LAB_SHARE_PERCENTS.devops,
+  );
+  const [pendingLabDevopsPct, setPendingLabDevopsPct] = useState(
+    LAB_SHARE_PERCENTS.devops,
+  );
+  const pendingManufacturerRef = useRef(pendingManufacturerPct);
+  const pendingDealerRef = useRef(pendingDealerPct);
+  const pendingDevopsRef = useRef(pendingDevopsPct);
+  const effectiveManufacturerRef = useRef(effectiveManufacturerPct);
+  const effectiveDealerRef = useRef(effectiveDealerPct);
+  const effectiveDevopsRef = useRef(effectiveDevopsPct);
+  const pendingStoreManufacturerRef = useRef(pendingStoreManufacturerPct);
+  const pendingStoreDealerRef = useRef(pendingStoreDealerPct);
+  const pendingStoreDevopsRef = useRef(pendingStoreDevopsPct);
+  const effectiveStoreManufacturerRef = useRef(effectiveStoreManufacturerPct);
+  const effectiveStoreDealerRef = useRef(effectiveStoreDealerPct);
+  const effectiveStoreDevopsRef = useRef(effectiveStoreDevopsPct);
+  const pendingLabBizRef = useRef(pendingLabBizPct);
+  const pendingLabSalesTeamRef = useRef(pendingLabSalesTeamPct);
+  const pendingLabDevopsRef = useRef(pendingLabDevopsPct);
+  const effectiveLabBizRef = useRef(effectiveLabBizPct);
+  const effectiveLabSalesTeamRef = useRef(effectiveLabSalesTeamPct);
+  const effectiveLabDevopsRef = useRef(effectiveLabDevopsPct);
+  pendingManufacturerRef.current = pendingManufacturerPct;
+  pendingDealerRef.current = pendingDealerPct;
+  pendingDevopsRef.current = pendingDevopsPct;
+  effectiveManufacturerRef.current = effectiveManufacturerPct;
+  effectiveDealerRef.current = effectiveDealerPct;
+  effectiveDevopsRef.current = effectiveDevopsPct;
+  pendingStoreManufacturerRef.current = pendingStoreManufacturerPct;
+  pendingStoreDealerRef.current = pendingStoreDealerPct;
+  pendingStoreDevopsRef.current = pendingStoreDevopsPct;
+  effectiveStoreManufacturerRef.current = effectiveStoreManufacturerPct;
+  effectiveStoreDealerRef.current = effectiveStoreDealerPct;
+  effectiveStoreDevopsRef.current = effectiveStoreDevopsPct;
+  pendingLabBizRef.current = pendingLabBizPct;
+  pendingLabSalesTeamRef.current = pendingLabSalesTeamPct;
+  pendingLabDevopsRef.current = pendingLabDevopsPct;
+  effectiveLabBizRef.current = effectiveLabBizPct;
+  effectiveLabSalesTeamRef.current = effectiveLabSalesTeamPct;
+  effectiveLabDevopsRef.current = effectiveLabDevopsPct;
+
+  const shareChangePending =
+    pendingManufacturerPct !== effectiveManufacturerPct ||
+    pendingDealerPct !== effectiveDealerPct ||
+    pendingDevopsPct !== effectiveDevopsPct ||
+    pendingStoreManufacturerPct !== effectiveStoreManufacturerPct ||
+    pendingStoreDealerPct !== effectiveStoreDealerPct ||
+    pendingStoreDevopsPct !== effectiveStoreDevopsPct ||
+    pendingLabBizPct !== effectiveLabBizPct ||
+    pendingLabSalesTeamPct !== effectiveLabSalesTeamPct ||
+    pendingLabDevopsPct !== effectiveLabDevopsPct;
+
+  const persistShareSchedules = useCallback(() => {
+    if (!hydratedRef.current || !token || loading) return;
+    const manufacturerPending =
+      pendingManufacturerRef.current !== effectiveManufacturerRef.current;
+    const dealerPending =
+      pendingDealerRef.current !== effectiveDealerRef.current;
+    const devopsPending =
+      pendingDevopsRef.current !== effectiveDevopsRef.current;
+    const storeManufacturerPending =
+      pendingStoreManufacturerRef.current !==
+      effectiveStoreManufacturerRef.current;
+    const storeDealerPending =
+      pendingStoreDealerRef.current !== effectiveStoreDealerRef.current;
+    const storeDevopsPending =
+      pendingStoreDevopsRef.current !== effectiveStoreDevopsRef.current;
+    const labBizPending =
+      pendingLabBizRef.current !== effectiveLabBizRef.current;
+    const labSalesTeamPending =
+      pendingLabSalesTeamRef.current !== effectiveLabSalesTeamRef.current;
+    const labDevopsPending =
+      pendingLabDevopsRef.current !== effectiveLabDevopsRef.current;
+    scheduleItemSave("sharePercents", () => ({
+      ...buildSharePercentSavePayload(settingsRef.current),
+      ...buildManufacturerSchedulePayload(
+        manufacturerPending ? pendingManufacturerRef.current : null,
+      ),
+      ...buildDealerSchedulePayload(
+        dealerPending ? pendingDealerRef.current : null,
+      ),
+      ...buildDevopsSchedulePayload(
+        devopsPending ? pendingDevopsRef.current : null,
+      ),
+      ...buildStoreManufacturerSchedulePayload(
+        storeManufacturerPending ? pendingStoreManufacturerRef.current : null,
+      ),
+      ...buildStoreDealerSchedulePayload(
+        storeDealerPending ? pendingStoreDealerRef.current : null,
+      ),
+      ...buildStoreDevopsSchedulePayload(
+        storeDevopsPending ? pendingStoreDevopsRef.current : null,
+      ),
+      ...buildLabPercentSchedulePayload(
+        "biz",
+        labBizPending ? pendingLabBizRef.current : null,
+      ),
+      ...buildLabPercentSchedulePayload(
+        "salesTeam",
+        labSalesTeamPending ? pendingLabSalesTeamRef.current : null,
+      ),
+      ...buildLabPercentSchedulePayload(
+        "devops",
+        labDevopsPending ? pendingLabDevopsRef.current : null,
+      ),
+    }));
+  }, [loading, scheduleItemSave, token]);
+
+  const scheduleManufacturerShareChange = useCallback(
+    (nextPercent: number) => {
+      const dealer = pendingDealerRef.current;
+      const devops = pendingDevopsRef.current;
+      const next = Math.min(
+        readManufacturerSharePercent(nextPercent),
+        Math.max(0, 100 - dealer - devops),
+      );
+      setPendingManufacturerPct(next);
+      pendingManufacturerRef.current = next;
+      const cappedDevops = Math.min(
+        devops,
+        Math.max(0, 100 - next - dealer),
+      );
+      if (cappedDevops !== pendingDevopsRef.current) {
+        setPendingDevopsPct(cappedDevops);
+        pendingDevopsRef.current = cappedDevops;
+      }
+      persistShareSchedules();
+    },
+    [persistShareSchedules],
+  );
+
+  const scheduleStoreManufacturerShareChange = useCallback(
+    (nextPercent: number) => {
+      const dealer = pendingStoreDealerRef.current;
+      const devops = pendingStoreDevopsRef.current;
+      const next = Math.min(
+        readManufacturerSharePercent(nextPercent),
+        Math.max(0, 100 - dealer - devops),
+      );
+      setPendingStoreManufacturerPct(next);
+      pendingStoreManufacturerRef.current = next;
+      const cappedDevops = Math.min(
+        devops,
+        Math.max(0, 100 - next - dealer),
+      );
+      if (cappedDevops !== pendingStoreDevopsRef.current) {
+        setPendingStoreDevopsPct(cappedDevops);
+        pendingStoreDevopsRef.current = cappedDevops;
+      }
+      persistShareSchedules();
+    },
+    [persistShareSchedules],
+  );
+
+  const scheduleDealerRateChange = useCallback(
+    (nextDealerPct: DealerRatePct) => {
+      const mfr = pendingManufacturerRef.current;
+      const cappedDevops = Math.min(
+        pendingDevopsRef.current,
+        Math.max(0, 100 - mfr - nextDealerPct),
+      );
+      setPendingDealerPct(nextDealerPct);
+      pendingDealerRef.current = nextDealerPct;
+      if (cappedDevops !== pendingDevopsRef.current) {
+        setPendingDevopsPct(cappedDevops);
+        pendingDevopsRef.current = cappedDevops;
+      }
+      persistShareSchedules();
+    },
+    [persistShareSchedules],
+  );
+
+  const scheduleStoreDealerRateChange = useCallback(
+    (nextDealerPct: DealerRatePct) => {
+      const mfr = pendingStoreManufacturerRef.current;
+      const cappedDevops = Math.min(
+        pendingStoreDevopsRef.current,
+        Math.max(0, 100 - mfr - nextDealerPct),
+      );
+      setPendingStoreDealerPct(nextDealerPct);
+      pendingStoreDealerRef.current = nextDealerPct;
+      if (cappedDevops !== pendingStoreDevopsRef.current) {
+        setPendingStoreDevopsPct(cappedDevops);
+        pendingStoreDevopsRef.current = cappedDevops;
+      }
+      persistShareSchedules();
+    },
+    [persistShareSchedules],
+  );
+
+  const scheduleDevopsShareChange = useCallback(
+    (nextDevopsPct: number) => {
+      const mfr = pendingManufacturerRef.current;
+      const next = clampSharePercent(
+        nextDevopsPct,
+        MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.devops,
+      );
+      const capped = Math.min(
+        next,
+        Math.max(0, 100 - mfr - pendingDealerRef.current),
+      );
+      setPendingDevopsPct(capped);
+      pendingDevopsRef.current = capped;
+      persistShareSchedules();
+    },
+    [persistShareSchedules],
+  );
+
+  const scheduleStoreDevopsShareChange = useCallback(
+    (nextDevopsPct: number) => {
+      const mfr = pendingStoreManufacturerRef.current;
+      const next = clampSharePercent(
+        nextDevopsPct,
+        MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.devops,
+      );
+      const capped = Math.min(
+        next,
+        Math.max(0, 100 - mfr - pendingStoreDealerRef.current),
+      );
+      setPendingStoreDevopsPct(capped);
+      pendingStoreDevopsRef.current = capped;
+      persistShareSchedules();
+    },
+    [persistShareSchedules],
+  );
+
+  const scheduleLabBizShareChange = useCallback(
+    (nextPct: number) => {
+      const salesTeam = pendingLabSalesTeamRef.current;
+      const devops = pendingLabDevopsRef.current;
+      const next = Math.min(
+        readManufacturerSharePercent(nextPct, LAB_SHARE_PERCENTS.biz),
+        Math.max(0, 100 - salesTeam - devops),
+      );
+      setPendingLabBizPct(next);
+      pendingLabBizRef.current = next;
+      persistShareSchedules();
+    },
+    [persistShareSchedules],
+  );
+
+  const scheduleLabSalesTeamShareChange = useCallback(
+    (nextPct: number) => {
+      const biz = pendingLabBizRef.current;
+      const devops = pendingLabDevopsRef.current;
+      const next = Math.min(
+        readManufacturerSharePercent(nextPct, LAB_SHARE_PERCENTS.salesTeam),
+        Math.max(0, 100 - biz - devops),
+      );
+      setPendingLabSalesTeamPct(next);
+      pendingLabSalesTeamRef.current = next;
+      persistShareSchedules();
+    },
+    [persistShareSchedules],
+  );
+
+  const scheduleLabDevopsShareChange = useCallback(
+    (nextPct: number) => {
+      const biz = pendingLabBizRef.current;
+      const salesTeam = pendingLabSalesTeamRef.current;
+      const next = Math.min(
+        readManufacturerSharePercent(nextPct, LAB_SHARE_PERCENTS.devops),
+        Math.max(0, 100 - biz - salesTeam),
+      );
+      setPendingLabDevopsPct(next);
+      pendingLabDevopsRef.current = next;
+      persistShareSchedules();
+    },
+    [persistShareSchedules],
+  );
+
   /** CNC·환봉 구분 없는 단일 판매가. 관련 고시·lab 생산가를 함께 맞춘다. */
   const updateSalePrice = useCallback(
     (next: number) => {
       const sale = Math.max(0, Math.round(Number(next) || 0));
-      const purchase = purchasePriceFromSale(sale);
-      applySettingsUpdate((prev) =>
-        syncComputedPartyFields({
+      applySettingsUpdate((prev) => {
+        const purchase = purchasePriceFromSale(
+          sale,
+          prev.manufacturerSharePercent,
+        );
+        return syncComputedPartyFields({
           ...prev,
           labProductionPrice: sale,
           labRoundBarProductionPrice: sale,
@@ -1671,8 +2189,8 @@ export const AdminCreditSettingsTab = ({
           regularRoundBarProductionPrice: sale,
           minCreditForRequest: sale,
           manufacturerRequestUnitPrice: purchase,
-        }),
-      );
+        });
+      });
       scheduleItemSave("salePrice", () => {
         const current = settingsRef.current;
         return {
@@ -1703,18 +2221,6 @@ export const AdminCreditSettingsTab = ({
     [updateSharePercent],
   );
 
-  const commitRequestorOverrides = useCallback(
-    (next: SpecialRequestorPrice[]) => {
-      applySettingsUpdate((prev) => ({
-        ...prev,
-        specialRequestorPrices: next,
-      }));
-      scheduleItemSave("requestorOverrides", () => ({
-        specialRequestorPrices: settingsRef.current.specialRequestorPrices,
-      }));
-    },
-    [applySettingsUpdate, scheduleItemSave],
-  );
 
   const fetchSettings = useCallback(async () => {
     try {
@@ -1735,6 +2241,224 @@ export const AdminCreditSettingsTab = ({
         ...CREDIT_SETTINGS_DEFAULTS,
         specialRequestorPrices: [],
       });
+
+      const effectiveMfr = readManufacturerSharePercent(
+        normalized.manufacturerSharePercent,
+      );
+      setEffectiveManufacturerPct(effectiveMfr);
+      const scheduledMfr = Number(
+        (data as { manufacturerShareChangeScheduledPercent?: number | null })
+          .manufacturerShareChangeScheduledPercent,
+      );
+      const scheduledMfrAt = (
+        data as { manufacturerShareChangeScheduledAt?: string | Date | null }
+      ).manufacturerShareChangeScheduledAt;
+      if (
+        scheduledMfrAt &&
+        Number.isFinite(scheduledMfr) &&
+        scheduledMfr >= 0
+      ) {
+        setPendingManufacturerPct(readManufacturerSharePercent(scheduledMfr));
+      } else {
+        setPendingManufacturerPct(effectiveMfr);
+      }
+
+      const eventRate = Number(
+        (data as { dealershipEventCommissionRate?: number })
+          .dealershipEventCommissionRate,
+      );
+      const eventOn =
+        (data as { dealershipEventCommissionEnabled?: boolean })
+          .dealershipEventCommissionEnabled !== false;
+      const fromShare = Number(normalized.salesmanSharePercent);
+      const fromEvent = eventOn
+        ? Math.round((Number.isFinite(eventRate) ? eventRate : 0.2) * 100)
+        : 10;
+      const effective = snapDealerPct(
+        Number.isFinite(fromShare) && fromShare > 0 ? fromShare : fromEvent,
+      );
+      setEffectiveDealerPct(effective);
+
+      const scheduledRate = Number(
+        (data as { dealershipRateChangeScheduledRate?: number | null })
+          .dealershipRateChangeScheduledRate,
+      );
+      const scheduledAt = (
+        data as { dealershipRateChangeScheduledAt?: string | Date | null }
+      ).dealershipRateChangeScheduledAt;
+      if (scheduledAt && Number.isFinite(scheduledRate) && scheduledRate > 0) {
+        setPendingDealerPct(snapDealerPct(Math.round(scheduledRate * 100)));
+      } else {
+        setPendingDealerPct(effective);
+      }
+
+      const effectiveDevops = clampSharePercent(
+        normalized.devopsSharePercent,
+        MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.devops,
+      );
+      setEffectiveDevopsPct(effectiveDevops);
+      const scheduledDevops = Number(
+        (data as { devopsShareChangeScheduledPercent?: number | null })
+          .devopsShareChangeScheduledPercent,
+      );
+      const scheduledDevopsAt = (
+        data as { devopsShareChangeScheduledAt?: string | Date | null }
+      ).devopsShareChangeScheduledAt;
+      if (
+        scheduledDevopsAt &&
+        Number.isFinite(scheduledDevops) &&
+        scheduledDevops >= 0
+      ) {
+        setPendingDevopsPct(
+          clampSharePercent(
+            scheduledDevops,
+            MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.devops,
+          ),
+        );
+      } else {
+        setPendingDevopsPct(effectiveDevops);
+      }
+
+      const storeEffectiveMfr = readManufacturerSharePercent(
+        normalized.storeManufacturerSharePercent,
+      );
+      setEffectiveStoreManufacturerPct(storeEffectiveMfr);
+      const storeScheduledMfr = Number(
+        (
+          data as {
+            storeManufacturerShareChangeScheduledPercent?: number | null;
+          }
+        ).storeManufacturerShareChangeScheduledPercent,
+      );
+      const storeScheduledMfrAt = (
+        data as {
+          storeManufacturerShareChangeScheduledAt?: string | Date | null;
+        }
+      ).storeManufacturerShareChangeScheduledAt;
+      if (
+        storeScheduledMfrAt &&
+        Number.isFinite(storeScheduledMfr) &&
+        storeScheduledMfr >= 0
+      ) {
+        setPendingStoreManufacturerPct(
+          readManufacturerSharePercent(storeScheduledMfr),
+        );
+      } else {
+        setPendingStoreManufacturerPct(storeEffectiveMfr);
+      }
+
+      const storeEffective = snapDealerPct(
+        Number.isFinite(normalized.storeSalesmanSharePercent) &&
+          normalized.storeSalesmanSharePercent > 0
+          ? normalized.storeSalesmanSharePercent
+          : effective,
+      );
+      setEffectiveStoreDealerPct(storeEffective);
+      const storeScheduledRate = Number(
+        (data as { storeDealerRateChangeScheduledRate?: number | null })
+          .storeDealerRateChangeScheduledRate,
+      );
+      const storeScheduledAt = (
+        data as { storeDealerRateChangeScheduledAt?: string | Date | null }
+      ).storeDealerRateChangeScheduledAt;
+      if (
+        storeScheduledAt &&
+        Number.isFinite(storeScheduledRate) &&
+        storeScheduledRate > 0
+      ) {
+        setPendingStoreDealerPct(
+          snapDealerPct(Math.round(storeScheduledRate * 100)),
+        );
+      } else {
+        setPendingStoreDealerPct(storeEffective);
+      }
+
+      const storeEffectiveDevops = clampSharePercent(
+        normalized.storeDevopsSharePercent,
+        MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.devops,
+      );
+      setEffectiveStoreDevopsPct(storeEffectiveDevops);
+      const storeScheduledDevops = Number(
+        (data as { storeDevopsShareChangeScheduledPercent?: number | null })
+          .storeDevopsShareChangeScheduledPercent,
+      );
+      const storeScheduledDevopsAt = (
+        data as { storeDevopsShareChangeScheduledAt?: string | Date | null }
+      ).storeDevopsShareChangeScheduledAt;
+      if (
+        storeScheduledDevopsAt &&
+        Number.isFinite(storeScheduledDevops) &&
+        storeScheduledDevops >= 0
+      ) {
+        setPendingStoreDevopsPct(
+          clampSharePercent(
+            storeScheduledDevops,
+            MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.devops,
+          ),
+        );
+      } else {
+        setPendingStoreDevopsPct(storeEffectiveDevops);
+      }
+
+      const hydrateLabPending = (
+        effectivePct: number,
+        scheduledPctRaw: unknown,
+        scheduledAtRaw: unknown,
+        setEffective: (n: number) => void,
+        setPending: (n: number) => void,
+        fallback: number,
+      ) => {
+        setEffective(effectivePct);
+        const scheduledPct = Number(scheduledPctRaw);
+        if (
+          scheduledAtRaw &&
+          Number.isFinite(scheduledPct) &&
+          scheduledPct >= 0
+        ) {
+          setPending(readManufacturerSharePercent(scheduledPct, fallback));
+        } else {
+          setPending(effectivePct);
+        }
+      };
+      hydrateLabPending(
+        readManufacturerSharePercent(
+          normalized.labBizSharePercent,
+          LAB_SHARE_PERCENTS.biz,
+        ),
+        (data as { labBizShareChangeScheduledPercent?: number | null })
+          .labBizShareChangeScheduledPercent,
+        (data as { labBizShareChangeScheduledAt?: string | Date | null })
+          .labBizShareChangeScheduledAt,
+        setEffectiveLabBizPct,
+        setPendingLabBizPct,
+        LAB_SHARE_PERCENTS.biz,
+      );
+      hydrateLabPending(
+        readManufacturerSharePercent(
+          normalized.labSalesTeamSharePercent,
+          LAB_SHARE_PERCENTS.salesTeam,
+        ),
+        (data as { labSalesTeamShareChangeScheduledPercent?: number | null })
+          .labSalesTeamShareChangeScheduledPercent,
+        (data as { labSalesTeamShareChangeScheduledAt?: string | Date | null })
+          .labSalesTeamShareChangeScheduledAt,
+        setEffectiveLabSalesTeamPct,
+        setPendingLabSalesTeamPct,
+        LAB_SHARE_PERCENTS.salesTeam,
+      );
+      hydrateLabPending(
+        readManufacturerSharePercent(
+          normalized.labDevopsSharePercent,
+          LAB_SHARE_PERCENTS.devops,
+        ),
+        (data as { labDevopsShareChangeScheduledPercent?: number | null })
+          .labDevopsShareChangeScheduledPercent,
+        (data as { labDevopsShareChangeScheduledAt?: string | Date | null })
+          .labDevopsShareChangeScheduledAt,
+        setEffectiveLabDevopsPct,
+        setPendingLabDevopsPct,
+        LAB_SHARE_PERCENTS.devops,
+      );
 
       setSettings(normalized);
       settingsRef.current = normalized;
@@ -1891,6 +2615,111 @@ export const AdminCreditSettingsTab = ({
           </>
         ) : null}
 
+        {showShareRates ? (
+          <Card className="app-glass-card app-glass-card--lg overflow-hidden">
+            <CardContent className="space-y-5 p-5 sm:p-6">
+              <SectionHeader
+                icon={Percent}
+                title="분배 비율"
+                description={
+                  <>
+                    배송비 제외.
+                    <br />
+                    변경 사항은 내일부터 적용
+                  </>
+                }
+                trailing={
+                  <div className="flex items-center gap-2">
+                    <ShareChangePendingBadge show={shareChangePending} />
+                    <AutoSaveIndicator
+                      state={itemSaveStates.sharePercents ?? "idle"}
+                    />
+                  </div>
+                }
+              />
+              <div className="space-y-6">
+                <SharePercentRow
+                  idPrefix="storeShareRates"
+                  rowLabel="스토어"
+                  shares={{
+                    salesman: pendingStoreDealerPct,
+                    devops: pendingStoreDevopsPct,
+                    abuts: abutsShareFromParts(
+                      pendingStoreManufacturerPct,
+                      pendingStoreDealerPct,
+                      pendingStoreDevopsPct,
+                    ),
+                  }}
+                  manufacturerPercent={pendingStoreManufacturerPct}
+                  dealerSelectPct={pendingStoreDealerPct}
+                  previousManufacturerPercent={effectiveStoreManufacturerPct}
+                  previousDealerPercent={effectiveStoreDealerPct}
+                  previousDevopsPercent={effectiveStoreDevopsPct}
+                  previousAbutsPercent={abutsShareFromParts(
+                    effectiveStoreManufacturerPct,
+                    effectiveStoreDealerPct,
+                    effectiveStoreDevopsPct,
+                  )}
+                  disabled={loading}
+                  onManufacturerChange={scheduleStoreManufacturerShareChange}
+                  onDealerChange={scheduleStoreDealerRateChange}
+                  onDevopsChange={scheduleStoreDevopsShareChange}
+                />
+                <SharePercentRow
+                  idPrefix="customAbutShareRates"
+                  rowLabel="커스텀어벗"
+                  shares={{
+                    salesman: pendingDealerPct,
+                    devops: pendingDevopsPct,
+                    abuts: abutsShareFromParts(
+                      pendingManufacturerPct,
+                      pendingDealerPct,
+                      pendingDevopsPct,
+                    ),
+                  }}
+                  manufacturerPercent={pendingManufacturerPct}
+                  dealerSelectPct={pendingDealerPct}
+                  previousManufacturerPercent={effectiveManufacturerPct}
+                  previousDealerPercent={effectiveDealerPct}
+                  previousDevopsPercent={effectiveDevopsPct}
+                  previousAbutsPercent={abutsShareFromParts(
+                    effectiveManufacturerPct,
+                    effectiveDealerPct,
+                    effectiveDevopsPct,
+                  )}
+                  disabled={loading}
+                  onManufacturerChange={scheduleManufacturerShareChange}
+                  onDealerChange={scheduleDealerRateChange}
+                  onDevopsChange={scheduleDevopsShareChange}
+                />
+                <LabSharePercentRow
+                  idPrefix="labShareRates"
+                  bizPercent={pendingLabBizPct}
+                  salesTeamPercent={pendingLabSalesTeamPct}
+                  devopsPercent={pendingLabDevopsPct}
+                  abutsPercent={abutsShareFromParts(
+                    pendingLabBizPct,
+                    pendingLabSalesTeamPct,
+                    pendingLabDevopsPct,
+                  )}
+                  previousBizPercent={effectiveLabBizPct}
+                  previousSalesTeamPercent={effectiveLabSalesTeamPct}
+                  previousDevopsPercent={effectiveLabDevopsPct}
+                  previousAbutsPercent={abutsShareFromParts(
+                    effectiveLabBizPct,
+                    effectiveLabSalesTeamPct,
+                    effectiveLabDevopsPct,
+                  )}
+                  disabled={loading}
+                  onBizChange={scheduleLabBizShareChange}
+                  onSalesTeamChange={scheduleLabSalesTeamShareChange}
+                  onDevopsChange={scheduleLabDevopsShareChange}
+                />
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
+
         {showCustomAbut ? (
           <>
             <Card className="app-glass-card app-glass-card--lg overflow-hidden">
@@ -1898,14 +2727,26 @@ export const AdminCreditSettingsTab = ({
                 <SectionHeader
                   icon={Banknote}
                   title="가격"
-                  description="커스텀어벗 판매가입니다. 매입가는 판매가의 50%로 자동 계산됩니다. CNC·환봉 구분 없이 동일 판매가를 적용합니다."
+                  description={
+                    pendingManufacturerPct !== effectiveManufacturerPct ? (
+                      <>
+                        커스텀어벗 판매가입니다. 매입가는 분배 비율의 제조사 %로
+                        계산됩니다.
+                        <br />
+                        제조사 % 변경은 내일부터 매입가에 반영됩니다.
+                      </>
+                    ) : (
+                      <>
+                        커스텀어벗 판매가입니다. 매입가는 분배 비율의 제조사 %로
+                        자동 계산됩니다.
+                        <br />
+                        CNC·환봉 구분 없이 동일 판매가를 적용합니다.
+                      </>
+                    )
+                  }
                   trailing={
                     <AutoSaveIndicator
-                      state={
-                        itemSaveStates.salePrice ??
-                        itemSaveStates.sharePercents ??
-                        "idle"
-                      }
+                      state={itemSaveStates.salePrice ?? "idle"}
                     />
                   }
                 />
@@ -1921,10 +2762,17 @@ export const AdminCreditSettingsTab = ({
                   <SalesAmountCard
                     id="customAbutPurchasePrice"
                     title="매입가(부가세 포함)"
-                    value={purchasePriceFromSale(settings.labProductionPrice)}
+                    value={purchasePriceFromSale(
+                      settings.labProductionPrice,
+                      pendingManufacturerPct,
+                    )}
                     disabled={loading}
                     readOnly
-                    help="판매가의 50%로 자동 계산됩니다. 장부·미정산은 이 포함가이며, 지급 시 재가산 없이 세금계산서만 ÷1.1로 분해합니다."
+                    help={
+                      pendingManufacturerPct !== effectiveManufacturerPct
+                        ? `판매가의 ${pendingManufacturerPct}%로 내일부터 적용됩니다. 현재 적용은 ${effectiveManufacturerPct}%(${purchasePriceFromSale(settings.labProductionPrice, effectiveManufacturerPct).toLocaleString("ko-KR")}원)입니다. 장부·미정산은 포함가이며, 지급 시 재가산 없이 세금계산서만 ÷1.1로 분해합니다.`
+                        : `판매가의 ${pendingManufacturerPct}%(제조사 분배 비율)로 자동 계산됩니다. 장부·미정산은 이 포함가이며, 지급 시 재가산 없이 세금계산서만 ÷1.1로 분해합니다.`
+                    }
                   />
                   <SalesAmountCard
                     id="customAbutShippingPurchasePrice"
@@ -1936,37 +2784,6 @@ export const AdminCreditSettingsTab = ({
                     help="박스당 제조사 배송 매입가(부가세 포함). 장부·미정산은 포함가, 지급 시 재가산 없음."
                   />
                 </div>
-                <RequestorSalePriceOverrideSection
-                  items={settings.specialRequestorPrices}
-                  disabled={loading}
-                  saveState={itemSaveStates.requestorOverrides ?? "idle"}
-                  token={token}
-                  defaultSale={settings.labProductionPrice}
-                  fallbackSettings={settings}
-                  onChange={commitRequestorOverrides}
-                />
-              </CardContent>
-            </Card>
-
-            <Card className="app-glass-card app-glass-card--lg overflow-hidden">
-              <CardContent className="space-y-5 p-5 sm:p-6">
-                <SectionHeader
-                  icon={Percent}
-                  title="분배 비율 (공통)"
-                  description="판매가에서 매입 공급가를 차감한 잔여를 비율로 나눕니다. 설정 비율 옆은 개당 단가입니다."
-                  trailing={
-                    <AutoSaveIndicator
-                      state={itemSaveStates.sharePercents ?? "idle"}
-                    />
-                  }
-                />
-                <SharePercentPanel
-                  salePrice={settings.labProductionPrice}
-                  purchasePrice={purchasePriceFromSale(settings.labProductionPrice)}
-                  regularShares={readResidualSharePercents(settings, "regular")}
-                  disabled={loading}
-                  onRegularChange={(patch) => updateSharePercent(patch)}
-                />
               </CardContent>
             </Card>
 

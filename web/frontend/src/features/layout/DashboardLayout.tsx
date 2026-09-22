@@ -1244,16 +1244,16 @@ export const DashboardLayout = () => {
     creditBalance < CREDIT_LOW_BALANCE_THRESHOLD;
 
   const displayRole = isPracticeUser ? "practice" : user.role;
-  // 검토 대기 배지가 있으면 설정 → 기본 기공수가로 바로 진입(링만 강조되고 크레딧이 보이던 혼동 방지).
+  // 검토 대기 배지가 있으면 재무 → 설정 → 기본 기공수가로 바로 진입.
   const adminMenuSections = useMemo(() => {
     if (user.role !== "admin") return null;
     if (abutsFeePendingCount <= 0) return adminSidebarSections;
     const settingsHref =
-      "/dashboard/admin-settings?tab=platform&platformTab=abutsFees";
+      "/dashboard/finance?tab=settings&platformTab=abutsFees";
     return adminSidebarSections.map((section) => ({
       ...section,
       items: section.items.map((item) =>
-        sidebarItemPath(item.href) === "/dashboard/admin-settings"
+        sidebarItemPath(item.href) === "/dashboard/finance"
           ? { ...item, href: settingsHref }
           : item,
       ),
@@ -1417,7 +1417,7 @@ export const DashboardLayout = () => {
             altText="기본 기공수가 열기"
             onClick={() => {
               navigate(
-                "/dashboard/admin-settings?tab=platform&platformTab=abutsFees",
+                "/dashboard/finance?tab=settings&platformTab=abutsFees",
               );
             }}
           >

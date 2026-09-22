@@ -492,6 +492,28 @@ export async function updateCreditSettings(req, res) {
     const salesmanSharePercent = sanitizeSharePercent(payload.salesmanSharePercent);
     const devopsSharePercent = sanitizeSharePercent(payload.devopsSharePercent);
     const abutsSharePercent = sanitizeSharePercent(payload.abutsSharePercent);
+    const storeManufacturerSharePercent = sanitizeSharePercent(
+      payload.storeManufacturerSharePercent,
+    );
+    const storeSalesmanSharePercent = sanitizeSharePercent(
+      payload.storeSalesmanSharePercent,
+    );
+    const storeDevopsSharePercent = sanitizeSharePercent(
+      payload.storeDevopsSharePercent,
+    );
+    const storeAbutsSharePercent = sanitizeSharePercent(
+      payload.storeAbutsSharePercent,
+    );
+    const labBizSharePercent = sanitizeSharePercent(payload.labBizSharePercent);
+    const labSalesTeamSharePercent = sanitizeSharePercent(
+      payload.labSalesTeamSharePercent,
+    );
+    const labDevopsSharePercent = sanitizeSharePercent(
+      payload.labDevopsSharePercent,
+    );
+    const labAbutsSharePercent = sanitizeSharePercent(
+      payload.labAbutsSharePercent,
+    );
     const regularManufacturerSharePercent = sanitizeSharePercent(
       payload.regularManufacturerSharePercent,
     );
@@ -544,6 +566,138 @@ export async function updateCreditSettings(req, res) {
         ? sanitizeScheduledCommissionRate(
             payload.dealershipRateChangeScheduledRate,
           )
+        : undefined;
+    const devopsShareChangeScheduledAt = Object.prototype.hasOwnProperty.call(
+      payload,
+      "devopsShareChangeScheduledAt",
+    )
+      ? sanitizeKstMidnightDate(payload.devopsShareChangeScheduledAt)
+      : undefined;
+    const devopsShareChangeScheduledPercent =
+      Object.prototype.hasOwnProperty.call(
+        payload,
+        "devopsShareChangeScheduledPercent",
+      )
+        ? payload.devopsShareChangeScheduledPercent === null
+          ? null
+          : sanitizeSharePercent(payload.devopsShareChangeScheduledPercent)
+        : undefined;
+    const manufacturerShareChangeScheduledAt =
+      Object.prototype.hasOwnProperty.call(
+        payload,
+        "manufacturerShareChangeScheduledAt",
+      )
+        ? sanitizeKstMidnightDate(payload.manufacturerShareChangeScheduledAt)
+        : undefined;
+    const manufacturerShareChangeScheduledPercent =
+      Object.prototype.hasOwnProperty.call(
+        payload,
+        "manufacturerShareChangeScheduledPercent",
+      )
+        ? payload.manufacturerShareChangeScheduledPercent === null
+          ? null
+          : sanitizeSharePercent(payload.manufacturerShareChangeScheduledPercent)
+        : undefined;
+    const storeManufacturerShareChangeScheduledAt =
+      Object.prototype.hasOwnProperty.call(
+        payload,
+        "storeManufacturerShareChangeScheduledAt",
+      )
+        ? sanitizeKstMidnightDate(
+            payload.storeManufacturerShareChangeScheduledAt,
+          )
+        : undefined;
+    const storeManufacturerShareChangeScheduledPercent =
+      Object.prototype.hasOwnProperty.call(
+        payload,
+        "storeManufacturerShareChangeScheduledPercent",
+      )
+        ? payload.storeManufacturerShareChangeScheduledPercent === null
+          ? null
+          : sanitizeSharePercent(
+              payload.storeManufacturerShareChangeScheduledPercent,
+            )
+        : undefined;
+    const storeDealerRateChangeScheduledAt =
+      Object.prototype.hasOwnProperty.call(
+        payload,
+        "storeDealerRateChangeScheduledAt",
+      )
+        ? sanitizeKstMidnightDate(payload.storeDealerRateChangeScheduledAt)
+        : undefined;
+    const storeDealerRateChangeScheduledRate =
+      Object.prototype.hasOwnProperty.call(
+        payload,
+        "storeDealerRateChangeScheduledRate",
+      )
+        ? sanitizeScheduledCommissionRate(
+            payload.storeDealerRateChangeScheduledRate,
+          )
+        : undefined;
+    const storeDevopsShareChangeScheduledAt =
+      Object.prototype.hasOwnProperty.call(
+        payload,
+        "storeDevopsShareChangeScheduledAt",
+      )
+        ? sanitizeKstMidnightDate(payload.storeDevopsShareChangeScheduledAt)
+        : undefined;
+    const storeDevopsShareChangeScheduledPercent =
+      Object.prototype.hasOwnProperty.call(
+        payload,
+        "storeDevopsShareChangeScheduledPercent",
+      )
+        ? payload.storeDevopsShareChangeScheduledPercent === null
+          ? null
+          : sanitizeSharePercent(payload.storeDevopsShareChangeScheduledPercent)
+        : undefined;
+    const labBizShareChangeScheduledAt = Object.prototype.hasOwnProperty.call(
+      payload,
+      "labBizShareChangeScheduledAt",
+    )
+      ? sanitizeKstMidnightDate(payload.labBizShareChangeScheduledAt)
+      : undefined;
+    const labBizShareChangeScheduledPercent =
+      Object.prototype.hasOwnProperty.call(
+        payload,
+        "labBizShareChangeScheduledPercent",
+      )
+        ? payload.labBizShareChangeScheduledPercent === null
+          ? null
+          : sanitizeSharePercent(payload.labBizShareChangeScheduledPercent)
+        : undefined;
+    const labSalesTeamShareChangeScheduledAt =
+      Object.prototype.hasOwnProperty.call(
+        payload,
+        "labSalesTeamShareChangeScheduledAt",
+      )
+        ? sanitizeKstMidnightDate(payload.labSalesTeamShareChangeScheduledAt)
+        : undefined;
+    const labSalesTeamShareChangeScheduledPercent =
+      Object.prototype.hasOwnProperty.call(
+        payload,
+        "labSalesTeamShareChangeScheduledPercent",
+      )
+        ? payload.labSalesTeamShareChangeScheduledPercent === null
+          ? null
+          : sanitizeSharePercent(
+              payload.labSalesTeamShareChangeScheduledPercent,
+            )
+        : undefined;
+    const labDevopsShareChangeScheduledAt =
+      Object.prototype.hasOwnProperty.call(
+        payload,
+        "labDevopsShareChangeScheduledAt",
+      )
+        ? sanitizeKstMidnightDate(payload.labDevopsShareChangeScheduledAt)
+        : undefined;
+    const labDevopsShareChangeScheduledPercent =
+      Object.prototype.hasOwnProperty.call(
+        payload,
+        "labDevopsShareChangeScheduledPercent",
+      )
+        ? payload.labDevopsShareChangeScheduledPercent === null
+          ? null
+          : sanitizeSharePercent(payload.labDevopsShareChangeScheduledPercent)
         : undefined;
     const specialRequestorPrices = Array.isArray(payload.specialRequestorPrices)
       ? payload.specialRequestorPrices
@@ -793,6 +947,30 @@ export async function updateCreditSettings(req, res) {
     if (abutsSharePercent != null) {
       sanitized.abutsSharePercent = abutsSharePercent;
     }
+    if (storeManufacturerSharePercent != null) {
+      sanitized.storeManufacturerSharePercent = storeManufacturerSharePercent;
+    }
+    if (storeSalesmanSharePercent != null) {
+      sanitized.storeSalesmanSharePercent = storeSalesmanSharePercent;
+    }
+    if (storeDevopsSharePercent != null) {
+      sanitized.storeDevopsSharePercent = storeDevopsSharePercent;
+    }
+    if (storeAbutsSharePercent != null) {
+      sanitized.storeAbutsSharePercent = storeAbutsSharePercent;
+    }
+    if (labBizSharePercent != null) {
+      sanitized.labBizSharePercent = labBizSharePercent;
+    }
+    if (labSalesTeamSharePercent != null) {
+      sanitized.labSalesTeamSharePercent = labSalesTeamSharePercent;
+    }
+    if (labDevopsSharePercent != null) {
+      sanitized.labDevopsSharePercent = labDevopsSharePercent;
+    }
+    if (labAbutsSharePercent != null) {
+      sanitized.labAbutsSharePercent = labAbutsSharePercent;
+    }
     if (regularManufacturerSharePercent != null) {
       sanitized.regularManufacturerSharePercent = regularManufacturerSharePercent;
     }
@@ -836,6 +1014,140 @@ export async function updateCreditSettings(req, res) {
         dealershipRateChangeScheduledAt === undefined
       ) {
         sanitized.dealershipRateChangeScheduledAt = null;
+      }
+    }
+    if (devopsShareChangeScheduledAt !== undefined) {
+      sanitized.devopsShareChangeScheduledAt = devopsShareChangeScheduledAt;
+      if (devopsShareChangeScheduledAt == null) {
+        sanitized.devopsShareChangeScheduledPercent = null;
+      }
+    }
+    if (devopsShareChangeScheduledPercent !== undefined) {
+      sanitized.devopsShareChangeScheduledPercent =
+        devopsShareChangeScheduledPercent;
+      if (
+        devopsShareChangeScheduledPercent == null &&
+        devopsShareChangeScheduledAt === undefined
+      ) {
+        sanitized.devopsShareChangeScheduledAt = null;
+      }
+    }
+    if (manufacturerShareChangeScheduledAt !== undefined) {
+      sanitized.manufacturerShareChangeScheduledAt =
+        manufacturerShareChangeScheduledAt;
+      if (manufacturerShareChangeScheduledAt == null) {
+        sanitized.manufacturerShareChangeScheduledPercent = null;
+      }
+    }
+    if (manufacturerShareChangeScheduledPercent !== undefined) {
+      sanitized.manufacturerShareChangeScheduledPercent =
+        manufacturerShareChangeScheduledPercent;
+      if (
+        manufacturerShareChangeScheduledPercent == null &&
+        manufacturerShareChangeScheduledAt === undefined
+      ) {
+        sanitized.manufacturerShareChangeScheduledAt = null;
+      }
+    }
+    if (storeManufacturerShareChangeScheduledAt !== undefined) {
+      sanitized.storeManufacturerShareChangeScheduledAt =
+        storeManufacturerShareChangeScheduledAt;
+      if (storeManufacturerShareChangeScheduledAt == null) {
+        sanitized.storeManufacturerShareChangeScheduledPercent = null;
+      }
+    }
+    if (storeManufacturerShareChangeScheduledPercent !== undefined) {
+      sanitized.storeManufacturerShareChangeScheduledPercent =
+        storeManufacturerShareChangeScheduledPercent;
+      if (
+        storeManufacturerShareChangeScheduledPercent == null &&
+        storeManufacturerShareChangeScheduledAt === undefined
+      ) {
+        sanitized.storeManufacturerShareChangeScheduledAt = null;
+      }
+    }
+    if (storeDealerRateChangeScheduledAt !== undefined) {
+      sanitized.storeDealerRateChangeScheduledAt =
+        storeDealerRateChangeScheduledAt;
+      if (storeDealerRateChangeScheduledAt == null) {
+        sanitized.storeDealerRateChangeScheduledRate = null;
+      }
+    }
+    if (storeDealerRateChangeScheduledRate !== undefined) {
+      sanitized.storeDealerRateChangeScheduledRate =
+        storeDealerRateChangeScheduledRate;
+      if (
+        storeDealerRateChangeScheduledRate == null &&
+        storeDealerRateChangeScheduledAt === undefined
+      ) {
+        sanitized.storeDealerRateChangeScheduledAt = null;
+      }
+    }
+    if (storeDevopsShareChangeScheduledAt !== undefined) {
+      sanitized.storeDevopsShareChangeScheduledAt =
+        storeDevopsShareChangeScheduledAt;
+      if (storeDevopsShareChangeScheduledAt == null) {
+        sanitized.storeDevopsShareChangeScheduledPercent = null;
+      }
+    }
+    if (storeDevopsShareChangeScheduledPercent !== undefined) {
+      sanitized.storeDevopsShareChangeScheduledPercent =
+        storeDevopsShareChangeScheduledPercent;
+      if (
+        storeDevopsShareChangeScheduledPercent == null &&
+        storeDevopsShareChangeScheduledAt === undefined
+      ) {
+        sanitized.storeDevopsShareChangeScheduledAt = null;
+      }
+    }
+    if (labBizShareChangeScheduledAt !== undefined) {
+      sanitized.labBizShareChangeScheduledAt = labBizShareChangeScheduledAt;
+      if (labBizShareChangeScheduledAt == null) {
+        sanitized.labBizShareChangeScheduledPercent = null;
+      }
+    }
+    if (labBizShareChangeScheduledPercent !== undefined) {
+      sanitized.labBizShareChangeScheduledPercent =
+        labBizShareChangeScheduledPercent;
+      if (
+        labBizShareChangeScheduledPercent == null &&
+        labBizShareChangeScheduledAt === undefined
+      ) {
+        sanitized.labBizShareChangeScheduledAt = null;
+      }
+    }
+    if (labSalesTeamShareChangeScheduledAt !== undefined) {
+      sanitized.labSalesTeamShareChangeScheduledAt =
+        labSalesTeamShareChangeScheduledAt;
+      if (labSalesTeamShareChangeScheduledAt == null) {
+        sanitized.labSalesTeamShareChangeScheduledPercent = null;
+      }
+    }
+    if (labSalesTeamShareChangeScheduledPercent !== undefined) {
+      sanitized.labSalesTeamShareChangeScheduledPercent =
+        labSalesTeamShareChangeScheduledPercent;
+      if (
+        labSalesTeamShareChangeScheduledPercent == null &&
+        labSalesTeamShareChangeScheduledAt === undefined
+      ) {
+        sanitized.labSalesTeamShareChangeScheduledAt = null;
+      }
+    }
+    if (labDevopsShareChangeScheduledAt !== undefined) {
+      sanitized.labDevopsShareChangeScheduledAt =
+        labDevopsShareChangeScheduledAt;
+      if (labDevopsShareChangeScheduledAt == null) {
+        sanitized.labDevopsShareChangeScheduledPercent = null;
+      }
+    }
+    if (labDevopsShareChangeScheduledPercent !== undefined) {
+      sanitized.labDevopsShareChangeScheduledPercent =
+        labDevopsShareChangeScheduledPercent;
+      if (
+        labDevopsShareChangeScheduledPercent == null &&
+        labDevopsShareChangeScheduledAt === undefined
+      ) {
+        sanitized.labDevopsShareChangeScheduledAt = null;
       }
     }
     // 환영 배송 분리 지급 폐기. 레거시 필드는 항상 0으로 정규화.

@@ -3007,7 +3007,7 @@ export const AdminDashboardPage = () => {
                 className="text-xs font-medium text-primary-strong hover:underline"
                 onClick={() =>
                   navigate(
-                    "/dashboard/admin-settings?tab=platform&platformTab=customAbut",
+                    "/dashboard/finance?tab=settings&platformTab=customAbut",
                   )
                 }
               >
@@ -3449,7 +3449,7 @@ export const AdminDashboardPage = () => {
             onClick: () => {
               setUnsupportedAbutmentDetailItem(null);
               navigate(
-                "/dashboard/admin-settings?tab=platform&platformTab=customAbut",
+                "/dashboard/finance?tab=settings&platformTab=customAbut",
               );
             },
           },

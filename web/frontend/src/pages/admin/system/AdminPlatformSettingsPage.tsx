@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-23: 크레딧 오른쪽에 분배비율 탭. 커스텀어벗 분배·딜러십 통합. 딜러십 탭 제거.
 // - 2026-09-18: 기공수가 대기 카운트를 공유 스토어에 반영(설정 허브 탭 배지).
 // - 2026-09-08: 검토 대기(pending) 있을 때 platformTab 미지정이면 기본 기공수가로 진입(하이라이트만 되고 크레딧 본문이 보이던 UX 수정).
 // - 2026-08-22: 작업 영역 가로폭을 사업영역과 동일하게 max-w-4xl로 축소.
@@ -31,7 +32,6 @@ import {
   type SettingsTabDef,
 } from "@/features/components/SettingsScaffold";
 import { AdminCreditSettingsTab } from "@/features/settings/tabs/AdminCreditSettingsTab";
-import { AdminDealershipSettingsTab } from "@/features/settings/tabs/AdminDealershipSettingsTab";
 import { AdminLabFeeSchedulesTab } from "@/features/settings/tabs/AdminLabFeeSchedulesTab";
 import { AdminAbutsLabFeeScheduleTab } from "@/features/settings/tabs/AdminAbutsLabFeeScheduleTab";
 import { PracticeTransferAutoMatchTab } from "@/pages/devops/components/PracticeTransferAutoMatchTab";
@@ -40,8 +40,8 @@ import {
   Banknote,
   CreditCard,
   FlaskConical,
-  Handshake,
   Package,
+  Percent,
 } from "lucide-react";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -50,8 +50,8 @@ import { useAdminAbutsFeePendingStore } from "@/store/useAdminAbutsFeePendingSto
 
 type TabKey =
   | "credits"
+  | "shareRates"
   | "customAbut"
-  | "dealership"
   | "autoMatch"
   | "abutsFees"
   | "labFees";
@@ -61,6 +61,7 @@ const LEGACY_TAB_REDIRECT: Record<string, TabKey> = {
   deadline: "autoMatch",
   payment: "autoMatch",
   roundBar: "customAbut",
+  dealership: "shareRates",
 };
 
 export const AdminPlatformSettingsPage = ({
@@ -144,16 +145,16 @@ export const AdminPlatformSettingsPage = ({
         content: <AdminCreditSettingsTab variant="credits" />,
       },
       {
+        key: "shareRates",
+        label: "분배비율",
+        icon: Percent,
+        content: <AdminCreditSettingsTab variant="shareRates" />,
+      },
+      {
         key: "customAbut",
         label: "커스텀어벗",
         icon: Package,
         content: <AdminCreditSettingsTab variant="customAbut" />,
-      },
-      {
-        key: "dealership",
-        label: "딜러십",
-        icon: Handshake,
-        content: <AdminDealershipSettingsTab />,
       },
       {
         key: "autoMatch",
@@ -207,7 +208,7 @@ export const AdminPlatformSettingsPage = ({
     if (searchParams.get(tabParamKey) === "abutsFees") return;
     const nextParams = new URLSearchParams(searchParams);
     nextParams.set(tabParamKey, "abutsFees");
-    if (embedded) nextParams.set("tab", "platform");
+    if (embedded) nextParams.set("tab", "settings");
     setSearchParams(nextParams, { replace: true });
   }, [
     abutsPendingCount,
@@ -225,7 +226,7 @@ export const AdminPlatformSettingsPage = ({
       onTabChange={(next) => {
         const nextParams = new URLSearchParams(searchParams);
         nextParams.set(tabParamKey, next);
-        if (embedded) nextParams.set("tab", "platform");
+        if (embedded) nextParams.set("tab", "settings");
         setSearchParams(nextParams, { replace: true });
       }}
       highlightTabKey={abutsPendingCount > 0 ? "abutsFees" : undefined}

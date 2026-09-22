@@ -1,65 +1,19 @@
 // related files:
 // - web/frontend/src/pages/admin/adminUi.tsx
-// - web/frontend/src/pages/admin/system/AdminPlatformSettingsPage.tsx
-// - web/frontend/src/pages/admin/partners/AdminPartnersPage.tsx
 // - web/frontend/src/pages/admin/settings/SettingsPage.tsx
-// - web/frontend/src/store/useAdminAbutsFeePendingStore.ts
+// - web/frontend/src/pages/admin/system/AdminPlatformSettingsPage.tsx
 // change-log:
+// - 2026-09-23: 플랫폼·사업영역·계정 세그먼트 제거. 계정·사업자·플랫폼·임직원·알림 평탄 탭은 AdminSettingsPage.
 // - 2026-09-18: 플랫폼 탭에 기본 기공수가 검토 대기 배지.
 // - 2026-09-06: 플랫폼·사업영역·계정설정 허브(?tab=platform|partners|account).
-import { useSearchParams } from "react-router-dom";
-import { AdminPlatformSettingsPage } from "@/pages/admin/system/AdminPlatformSettingsPage";
-import { AdminPartnersPage } from "@/pages/admin/partners/AdminPartnersPage";
 import { AdminSettingsPage } from "@/pages/admin/settings/SettingsPage";
-import { useAdminAbutsFeePendingStore } from "@/store/useAdminAbutsFeePendingStore";
-import {
-  AdminPageShell,
-  AdminSegmentTabs,
-  setHubTabParam,
-} from "@/pages/admin/adminUi";
-
-type SettingsHubTab = "platform" | "partners" | "account";
-
-function parseTab(raw: string | null): SettingsHubTab {
-  if (raw === "partners" || raw === "account") return raw;
-  return "platform";
-}
+import { AdminPageShell } from "@/pages/admin/adminUi";
 
 export default function AdminSettingsHubPage() {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const tab = parseTab(searchParams.get("tab"));
-  const abutsFeePendingCount = useAdminAbutsFeePendingStore((s) => s.count);
-
-  const setTab = (next: SettingsHubTab) => {
-    const nextParams = setHubTabParam(searchParams, next, "platform");
-    // Drop nested tab params when leaving a section.
-    if (next !== "platform") nextParams.delete("platformTab");
-    if (next !== "partners") nextParams.delete("partnersTab");
-    if (next !== "account") nextParams.delete("accountTab");
-    setSearchParams(nextParams, { replace: true });
-  };
-
   return (
     <AdminPageShell flush className="flex min-h-0 flex-1 flex-col">
-      <AdminSegmentTabs
-        value={tab}
-        onChange={setTab}
-        options={[
-          {
-            value: "platform",
-            label: "플랫폼",
-            badge: abutsFeePendingCount,
-          },
-          { value: "partners", label: "사업영역" },
-          { value: "account", label: "계정" },
-        ]}
-      />
       <div className="min-h-0 flex-1">
-        {tab === "platform" ? (
-          <AdminPlatformSettingsPage embedded />
-        ) : null}
-        {tab === "partners" ? <AdminPartnersPage embedded /> : null}
-        {tab === "account" ? <AdminSettingsPage embedded /> : null}
+        <AdminSettingsPage embedded />
       </div>
     </AdminPageShell>
   );
