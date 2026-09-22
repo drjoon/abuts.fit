@@ -54,13 +54,13 @@ export const SIMPLEWAY_SAMPLE_EXTRAS = [
   {
     id: "abuts-platform",
     title: "어벗츠 플랫폼",
-    body: "구강스캔·석고모델로 커스텀어벗 디자인·생산을 의뢰하는 방법을 어벗츠 플랫폼에서 안내합니다.",
+    body: "치과와 기공소가 온라인으로 기공을 의뢰하고, 어벗츠 커스텀어벗과도 바로 연동됩니다.",
     tag: "치과·기공소",
   },
 ] as const;
 
 export const SIMPLEWAY_DEALER_HELP =
-  "가까운 지역 재료상 사장님을 소개해 주세요. 그분께 지역 영업권을 드립니다. (옵션)";
+  "친한 재료 사장님을 소개해 주세요. 그분께 지역 영업권을 드립니다.";
 
 /** 히어로 — 제품 나열은 Product lineup과 중복되므로 방문·안내 가치만 적는다. */
 export const SIMPLEWAY_HERO_SUB_LINES = [

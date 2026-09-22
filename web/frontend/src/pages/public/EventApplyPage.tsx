@@ -645,7 +645,7 @@ export default function EventApplyPage() {
           ) : (
             <form onSubmit={onSubmit} className="space-y-5">
               <Card className={cn(PUBLIC_CARD_CLASS, "rounded-3xl")}>
-                <CardHeader>
+                <CardHeader className="space-y-2">
                   <CardTitle className="flex flex-wrap items-center gap-2 text-base text-slate-900">
                     <ScanLine className="h-4 w-4 text-sky-600" />
                     구강 스캔 사용 여부
@@ -656,11 +656,12 @@ export default function EventApplyPage() {
                       필수
                     </Badge>
                   </CardTitle>
+                  <div className="flex gap-2 rounded-2xl border border-sky-100 bg-sky-50/80 px-3 py-2.5 text-sm leading-relaxed text-sky-900">
+                    <Info className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" />
+                    <p>사용 중이면 스캔바도 함께 안내합니다.</p>
+                  </div>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  <p className="text-xs leading-relaxed text-slate-500">
-                    사용 중이면 스캔바 등도 함께 안내합니다.
-                  </p>
                   <RadioGroup
                     value={
                       usesOralScan == null
