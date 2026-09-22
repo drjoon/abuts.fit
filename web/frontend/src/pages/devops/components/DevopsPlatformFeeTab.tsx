@@ -1,20 +1,7 @@
 // change-log:
-// - 2026-09-20: 하청 기본 표시 5%. 지정 2%(이벤트 off).
-// - 2026-09-20: 지정 수수료 기본 표시 2%. 이벤트 시 ~~2%~~ → 0% 안내.
-// - 2026-09-20: 지정 거래 안내 툴팁 제거. 보조 문구만 유지.
-// - 2026-09-20: 지정 거래 정책 1% · 이벤트 기본 off(0%). 추후 공지 후 부과 안내.
-// - 2026-09-20: 지정 거래 기본 on·1%. 「별도 공지까지 무료」카피 제거.
-// - 2026-08-21: 신속처리 할증(기공·어벗츠 배수) 설정 UI 제거.
-// - 2026-08-17: 기공의뢰 신속처리 할증(배수) 설정 추가.
-// - 2026-08-16: 지정 거래 카드 안에 적용 on/off + 툴팁. 별도 카드 제거.
-// - 2026-08-16: 지정 거래 수수료 적용 on/off(기본 off=별도 공지 시까지 무료).
-// - 2026-08-16: 월 참여(정책 0원) 카드 제거. 매칭·지정 %만 표시.
-// - 2026-08-16: 매칭 10% / 지정 5% 성공 수수료 분리 입력.
-// - 2026-08-15: 기공소 월 참여 기본 0(정책). 성공 수수료율과 함께 저장.
-// - 2026-08-14: 기본 성공 수수료율 10%. 월 참여 수수료 기본 0.
-// - 2026-08-14: 월 참여 수수료(원) 입력 추가. 성공 수수료율(%)과 함께 저장.
-// - 2026-08-14: 카드 없이 인라인 수수료 입력만. 긴 안내 문구 제거.
-// - 2026-08-14: 등록/미등록 2단계 폐지. 자동 매칭 성공 시 단일 플랫폼 수수료율.
+// - 2026-09-22: 지정 수수료 UI 제거. 하청 %만.
+// - 2026-09-20: 하청 기본 표시 5%.
+// - 2026-08-16: 월 참여(정책 0원) 카드 제거.
 // related files:
 // - web/frontend/src/pages/devops/components/PracticeTransferAutoMatchTab.tsx
 // - web/frontend/src/pages/admin/system/AdminPlatformSettingsPage.tsx
@@ -23,19 +10,15 @@ import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { Percent } from "lucide-react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { cn } from "@/shared/ui/cn";
-import { LabDirectPlatformFeeRateLabel } from "@/shared/settlement/LabDirectPlatformFeeNotice";
 
 type PlatformFeeSettings = {
   platformFeeRate?: number;
   subcontractFeeRate?: number;
-  directPlatformFeeEnabled?: boolean;
-  directPlatformFeeRate?: number;
   nonPartnerFeeRate?: number;
   updatedAt?: string | null;
 };
@@ -57,25 +40,17 @@ type Props = {
   className?: string;
 };
 
-/** 기공소 매칭 카드 안에 넣는 수수료 입력(자동 저장). */
+/** 기공소 매칭 카드 안에 넣는 하청 수수료 입력(자동 저장). */
 export const DevopsPlatformFeeTab = ({ className }: Props) => {
   const { toast } = useToast();
   const { token } = useAuthStore();
   const queryClient = useQueryClient();
   const [loading, setLoading] = useState(Boolean(token));
-  const [platformFeeRate, setPlatformFeeRate] = useState("5");
-  const [directFeeEnabled, setDirectFeeEnabled] = useState(false);
-  const [directFeeRate, setDirectFeeRate] = useState("2");
+  const [subcontractFeeRate, setSubcontractFeeRate] = useState("5");
   const hydratedRef = useRef(false);
-  const savedMatchRef = useRef("5");
-  const savedDirectEnabledRef = useRef(false);
-  const savedDirectRef = useRef("2");
-  const matchRef = useRef("5");
-  const directEnabledRef = useRef(false);
-  const directRef = useRef("2");
-  matchRef.current = platformFeeRate;
-  directEnabledRef.current = directFeeEnabled;
-  directRef.current = directFeeRate;
+  const savedRef = useRef("5");
+  const rateRef = useRef("5");
+  rateRef.current = subcontractFeeRate;
 
   useEffect(() => {
     let mounted = true;
@@ -95,7 +70,7 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
         if (!res.ok || !mounted) return;
 
         const settings = res.data?.data?.platformFeeSettings || {};
-        const matchPct = toPctString(
+        const pct = toPctString(
           Number(
             settings.subcontractFeeRate ??
               settings.platformFeeRate ??
@@ -103,17 +78,8 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
           ),
           0.05,
         );
-        const directPct = toPctString(
-          Number(settings.directPlatformFeeRate),
-          0.02,
-        );
-        const enabled = settings.directPlatformFeeEnabled === true;
-        savedMatchRef.current = matchPct;
-        savedDirectEnabledRef.current = enabled;
-        savedDirectRef.current = directPct;
-        setPlatformFeeRate(matchPct);
-        setDirectFeeEnabled(enabled);
-        setDirectFeeRate(directPct);
+        savedRef.current = pct;
+        setSubcontractFeeRate(pct);
         hydratedRef.current = true;
       } finally {
         if (mounted) setLoading(false);
@@ -128,31 +94,22 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
 
   useEffect(() => {
     if (!hydratedRef.current || !token || loading) return;
-    if (
-      matchRef.current === savedMatchRef.current &&
-      directEnabledRef.current === savedDirectEnabledRef.current &&
-      directRef.current === savedDirectRef.current
-    ) {
-      return;
-    }
+    if (rateRef.current === savedRef.current) return;
 
     const timer = window.setTimeout(async () => {
-      const nextMatch = matchRef.current;
-      const nextDirectEnabled = directEnabledRef.current;
-      const nextDirect = directRef.current;
-      const match = Number(nextMatch);
-      const direct = Number(nextDirect);
-      if (!Number.isFinite(match) || !Number.isFinite(direct)) {
+      const next = rateRef.current;
+      const match = Number(next);
+      if (!Number.isFinite(match)) {
         toast({
-          title: "플랫폼 수수료율 오류",
+          title: "하청 수수료율 오류",
           description: "수수료율은 숫자여야 합니다.",
           variant: "destructive",
         });
         return;
       }
-      if (match < 0 || match > 100 || direct < 0 || direct > 100) {
+      if (match < 0 || match > 100) {
         toast({
-          title: "플랫폼 수수료율 오류",
+          title: "하청 수수료율 오류",
           description: "수수료율은 0~100% 범위여야 합니다.",
           variant: "destructive",
         });
@@ -166,8 +123,6 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
           token,
           jsonBody: {
             subcontractFeeRate: match / 100,
-            directPlatformFeeEnabled: nextDirectEnabled,
-            directPlatformFeeRate: direct / 100,
           },
         });
         if (!res.ok) {
@@ -180,7 +135,7 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
         }
 
         const saved = res.data?.data?.platformFeeSettings;
-        savedMatchRef.current = saved
+        savedRef.current = saved
           ? toPctString(
               Number(
                 saved.subcontractFeeRate ??
@@ -190,11 +145,6 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
               match / 100,
             )
           : String(match);
-        savedDirectEnabledRef.current =
-          saved?.directPlatformFeeEnabled === true;
-        savedDirectRef.current = saved
-          ? toPctString(Number(saved.directPlatformFeeRate), direct / 100)
-          : String(direct);
         void queryClient.invalidateQueries({ queryKey: ["credit-settings"] });
       } catch {
         toast({
@@ -206,15 +156,7 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
     }, AUTO_SAVE_DELAY_MS);
 
     return () => window.clearTimeout(timer);
-  }, [
-    platformFeeRate,
-    directFeeEnabled,
-    directFeeRate,
-    token,
-    loading,
-    toast,
-    queryClient,
-  ]);
+  }, [subcontractFeeRate, token, loading, toast, queryClient]);
 
   return (
     <div className={cn("grid gap-3 sm:grid-cols-2", className)}>
@@ -225,7 +167,7 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
           </span>
           <div className="min-w-0">
             <Label
-              htmlFor="rate-match"
+              htmlFor="rate-subcontract"
               className="text-sm font-semibold text-slate-900"
             >
               하청 수수료
@@ -240,63 +182,13 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
         ) : (
           <div className="flex items-center gap-2">
             <Input
-              id="rate-match"
+              id="rate-subcontract"
               type="number"
               min={0}
               max={100}
               step={1}
-              value={platformFeeRate}
-              onChange={(event) => setPlatformFeeRate(event.target.value)}
-              className="h-11 w-[4.5rem] rounded-xl border-primary-muted/40 bg-white text-center text-base font-semibold tabular-nums shadow-sm"
-            />
-            <span className="text-sm font-semibold text-slate-500">%</span>
-          </div>
-        )}
-      </div>
-
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary-muted/60 bg-primary-soft/30 px-4 py-3.5">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/90 ring-1 ring-primary-muted/50">
-            <Percent className="h-4 w-4 text-primary-strong" />
-          </span>
-          <div className="min-w-0">
-            <Label
-              htmlFor="rate-direct"
-              className="text-sm font-semibold text-slate-900"
-            >
-              지정 수수료
-            </Label>
-            <p className="text-[12px] leading-snug text-muted-foreground">
-              {directFeeEnabled ? (
-                "치과가 지정한 협력 기공소"
-              ) : (
-                <>
-                  <LabDirectPlatformFeeRateLabel
-                    enabled={false}
-                    ratePct={Number(directFeeRate) || 2}
-                  />
-                </>
-              )}
-            </p>
-          </div>
-        </div>
-        {loading ? (
-          <span className="text-sm text-muted-foreground">…</span>
-        ) : (
-          <div className="flex items-center gap-2.5">
-            <Switch
-              checked={directFeeEnabled}
-              onCheckedChange={setDirectFeeEnabled}
-              aria-label="지정 수수료 적용"
-            />
-            <Input
-              id="rate-direct"
-              type="number"
-              min={0}
-              max={100}
-              step={1}
-              value={directFeeRate}
-              onChange={(event) => setDirectFeeRate(event.target.value)}
+              value={subcontractFeeRate}
+              onChange={(event) => setSubcontractFeeRate(event.target.value)}
               className="h-11 w-[4.5rem] rounded-xl border-primary-muted/40 bg-white text-center text-base font-semibold tabular-nums shadow-sm"
             />
             <span className="text-sm font-semibold text-slate-500">%</span>

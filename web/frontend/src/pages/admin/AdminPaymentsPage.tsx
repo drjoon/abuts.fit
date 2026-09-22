@@ -1006,7 +1006,7 @@ export default function AdminPaymentsPage({
                 <CreditSectionHeader
                   icon={Percent}
                   title="자동매칭 수수료"
-                  description="자동 매칭 작업완료(에스크로 해제) 시 기공비에 platformFeeRate를 적용한 어벗츠 수수료. 치과–기공소–어벗츠 경로는 면세 · 계산서."
+                  description="레거시 자동매칭 수수료 축. 현재 지정·자동매칭 플랫폼 수수료는 없음(하청만). 치과–기공소–어벗츠 경로는 면세 · 계산서."
                 />
                 <div className="grid gap-3 sm:grid-cols-3">
                   <CreditStatTile
@@ -1023,7 +1023,7 @@ export default function AdminPaymentsPage({
                   <CreditStatTile
                     label="적용 요율"
                     value={`${feeRatePct}%`}
-                    hint="지정 거래는 directPlatformFeeEnabled + directPlatformFeeRate"
+                    hint="지정·자동매칭 플랫폼 수수료 없음 · 하청 subcontractFeeRate"
                   />
                 </div>
               </div>

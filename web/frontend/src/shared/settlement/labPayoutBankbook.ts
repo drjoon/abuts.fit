@@ -4,8 +4,6 @@
 // - web/backend/jobs/monthlySettlementBatchWorker.js
 // change-log:
 // - 2026-09-21: PAYOUT_ACCOUNT_CARD_ID 공통화(기공소·딜러사). LAB_* 별칭 유지.
-// - 2026-09-20: 지정 수수료 기본 표시 2%. 이벤트 문구는 「2% → 0%」(취소선은 LabDirectPlatformFeeNotice).
-// - 2026-09-20: 지정 수수료 안내를 formatLabDirectPlatformFeeNotice(관리자 on/%)로 생성.
 // - 2026-09-16: 기공소 통장사본·정산일(1일) 리마인드 헬퍼. 미등록 시 지급 1개월 이월 안내. 월 지급 유보 50만원 상수.
 import { toKstYmd } from "@/shared/date/kst";
 
@@ -109,35 +107,3 @@ export const LAB_SETTLEMENT_PAYOUT_RESERVE_NOTICE =
 /** 커스텀어벗 치과→기공소 정산 — 확정·지급만 STL·생산비 후. 적립 보류는 hold부터. */
 export const LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE =
   "커스텀어벗은 디자인 STL을 올리고 어벗츠에 생산비가 지급된 뒤에 확정 정산·지급에 포함됩니다. 그 전에도 적립 보류는 보이며, 조건이 갖춰진 시점에 정산됩니다.";
-
-/** 지정 수수료 기본 표시용(관리자 설정 미로드 시). 실효 UI는 LabDirectPlatformFeeNotice. */
-export const LAB_DIRECT_PLATFORM_FEE_POLICY_RATE_PCT = 2;
-
-export function resolveLabDirectPlatformFeePct(ratePct?: number): number {
-  return Math.max(
-    0,
-    Math.round(
-      Number.isFinite(Number(ratePct))
-        ? Number(ratePct)
-        : LAB_DIRECT_PLATFORM_FEE_POLICY_RATE_PCT,
-    ),
-  );
-}
-
-/** 지정 수수료 안내(평문). UI는 LabDirectPlatformFeeNotice(취소선) 권장. */
-export function formatLabDirectPlatformFeeNotice(opts?: {
-  enabled?: boolean;
-  /** 0~100 퍼센트 포인트 */
-  ratePct?: number;
-}): string {
-  const enabled = opts?.enabled === true;
-  const pct = resolveLabDirectPlatformFeePct(opts?.ratePct);
-  if (enabled) {
-    return `지정 기공소 의뢰의 플랫폼 수수료는 작업시작 적립 시 매출액의 ${pct}%가 공제됩니다.`;
-  }
-  return `지정 기공소 의뢰의 플랫폼 수수료는 ${pct}% → 0%입니다.`;
-}
-
-/** @deprecated UI는 LabDirectPlatformFeeNotice 사용. */
-export const LAB_DIRECT_PLATFORM_FEE_NOTICE =
-  formatLabDirectPlatformFeeNotice({ enabled: false });

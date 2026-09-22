@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-22: 지정·자동매칭 플랫폼 수수료 없음. 하청만 과금.
 // - 2026-08-17: 플랫폼사업 — 한 카드에 어벗츠/개발운영사 비율 분배.
 // related files:
 // - web/frontend/src/pages/admin/partners/AdminPartnersPage.tsx
@@ -22,9 +23,7 @@ export function PlatformBusinessTab() {
   const { state, setPreviewPool } = useBusinessAreaShare();
   const { previewPool } = state.platform;
 
-  const [matchRatePct, setMatchRatePct] = useState(10);
-  const [directEnabled, setDirectEnabled] = useState(true);
-  const [directRatePct, setDirectRatePct] = useState(1);
+  const [subcontractRatePct, setSubcontractRatePct] = useState(5);
 
   useEffect(() => {
     if (!token) return;
@@ -33,9 +32,8 @@ export function PlatformBusinessTab() {
         success?: boolean;
         data?: {
           platformFeeSettings?: {
+            subcontractFeeRate?: number;
             platformFeeRate?: number;
-            directPlatformFeeEnabled?: boolean;
-            directPlatformFeeRate?: number;
           };
         };
       }>({
@@ -45,14 +43,9 @@ export function PlatformBusinessTab() {
       });
       if (!res.ok) return;
       const fees = res.data?.data?.platformFeeSettings;
-      if (fees?.platformFeeRate != null) {
-        setMatchRatePct(Math.round(Number(fees.platformFeeRate) * 100));
-      }
-      setDirectEnabled(fees?.directPlatformFeeEnabled === true);
-      if (fees?.directPlatformFeeRate != null) {
-        setDirectRatePct(Math.round(Number(fees.directPlatformFeeRate) * 100));
-      } else {
-        setDirectRatePct(1);
+      const rate = fees?.subcontractFeeRate ?? fees?.platformFeeRate;
+      if (rate != null) {
+        setSubcontractRatePct(Math.round(Number(rate) * 100));
       }
     })();
   }, [token]);
@@ -63,7 +56,7 @@ export function PlatformBusinessTab() {
         <SectionHeader
           icon={Layers}
           title="플랫폼사업"
-          description={`자동매칭 ${formatPercent(matchRatePct)} · 지정 ${directEnabled ? formatPercent(directRatePct) : "무료"}. 어벗츠 면세, 개발운영사 +VAT.`}
+          description={`지정·자동매칭 플랫폼 수수료 없음 · 하청 ${formatPercent(subcontractRatePct)}. 어벗츠 면세, 개발운영사 +VAT.`}
           trailing={
             <div className="relative w-36">
               <Input

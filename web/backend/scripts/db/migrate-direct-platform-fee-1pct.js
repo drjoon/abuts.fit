@@ -3,8 +3,8 @@
 // - web/backend/models/businessAnchor.model.js
 // - web/backend/rules.md
 //
-// 지정 거래 수수료: 정책 요율 1% 유지 + 이벤트 기간 적용 off(실효 0%).
-// 관리자가 커스텀 요율로 의도적으로 on 한 경우(≠0.01·≠0.05)는 건드리지 않음.
+// 레거시: 지정 거래 수수료를 기본값(off · rate 0)으로 맞출 때 사용.
+// 관리자가 커스텀 요율로 의도적으로 on 한 경우(≠0 · ≠0.05)는 건드리지 않음.
 //
 // Usage:
 //   cd web/backend && ENV_FILE=local.env NODE_ENV=test ABUTS_DB_FORCE=true \
@@ -66,8 +66,8 @@ async function main() {
     $set["payoutRates.updatedAt"] = new Date();
     reason =
       enabledRaw === true
-        ? "policy_on_1pct→event_off_1pct"
-        : "unset_or_legacy→event_off_1pct";
+        ? "policy_on→off_rate_0"
+        : "unset_or_legacy→off_rate_0";
   }
 
   console.log("[migrate-direct-platform-fee-1pct] plan", {

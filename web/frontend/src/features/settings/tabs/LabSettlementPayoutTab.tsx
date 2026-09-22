@@ -6,11 +6,9 @@
 // - web/frontend/src/shared/settlement/affiliateVat.ts
 // - web/backend/controllers/credits/credit.controller.js
 // change-log:
+// - 2026-09-22: 정산규칙 — 지정 플랫폼 수수료 카피 제거. 하청만.
 // - 2026-09-20: 정산규칙 — 하청 % · 작업시작 적립 시 공제 안내.
 // - 2026-09-16: 지급 표 로딩 — 텍스트 대신 4열 행 스켈레톤.
-// - 2026-09-20: 정산규칙 — 지정 수수료 ~~2%~~ → 0% 취소선 표시.
-// - 2026-09-20: 정산규칙 — 지정 수수료 안내를 관리자 설정값으로 표시.
-// - 2026-09-20: 정산규칙 — 지정 거래 플랫폼 수수료(정책 1%·이벤트 0%).
 // - 2026-09-20: 정산규칙 — 커스텀어벗은 STL·생산비 지급 뒤에만 적립·지급.
 // - 2026-09-16: 정산규칙 모달 — 작업완료 적립·통장사본 이월·월 지급 유보 50만원 기준 간단 정리.
 // - 2026-09-16: 상태=지급+계산서. 통장사본 미등록 일 1회 안내·1개월 이월 강조.
@@ -69,11 +67,9 @@ import {
   LAB_PAYOUT_SETTINGS_PATH,
   LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE,
   LAB_SETTLEMENT_PAYOUT_RESERVE_NOTICE,
-  resolveLabDirectPlatformFeePct,
   isLabPayoutReady,
   type LabPayoutAccountSnapshot,
 } from "@/shared/settlement/labPayoutBankbook";
-import { LabDirectPlatformFeeNotice } from "@/shared/settlement/LabDirectPlatformFeeNotice";
 import { useLabPayoutBankbookReminder } from "@/shared/settlement/useLabPayoutBankbookReminder";
 import { useLabTradingPartnerWindow } from "@/shared/lab/useLabTradingPartnerWindow";
 import { useNavigate } from "react-router-dom";
@@ -225,13 +221,6 @@ export const LabSettlementPayoutTab = () => {
     forceOnMount: true,
   });
   const { windowInfo: labFeeWindow } = useLabTradingPartnerWindow();
-  const directFeeEnabled =
-    labFeeWindow?.feeRates?.directPlatformFeeEnabled === true;
-  const directFeePct = resolveLabDirectPlatformFeePct(
-    labFeeWindow?.feeRates?.directPlatformFeeRate != null
-      ? Number(labFeeWindow.feeRates.directPlatformFeeRate) * 100
-      : undefined,
-  );
   const subcontractFeePct = Math.round(
     Number(labFeeWindow?.feeRates?.subcontractFeeRate ?? 0.05) * 100,
   );
@@ -606,14 +595,10 @@ export const LabSettlementPayoutTab = () => {
                     </p>
                   </div>
                 </SettlementPolicySection>
-                <SettlementPolicySection title="플랫폼 수수료">
+                <SettlementPolicySection title="하청 수수료">
                   <div className="flex gap-2.5">
                     <Percent className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
                     <p>
-                      <LabDirectPlatformFeeNotice
-                        enabled={directFeeEnabled}
-                        ratePct={directFeePct}
-                      />{" "}
                       하청 수행 의뢰는 작업시작 적립 시 매출액의{" "}
                       <span className="font-semibold tabular-nums text-slate-900">
                         {subcontractFeePct}%

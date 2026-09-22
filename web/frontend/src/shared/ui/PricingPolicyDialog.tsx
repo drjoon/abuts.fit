@@ -1,10 +1,8 @@
+// - 2026-09-22: 기공소 정책 안내 — 지정 플랫폼 수수료 카피 제거. 하청만.
 // - 2026-09-21: 딜러십 정책 — 90일 주문 없음 시 소개 귀속 리셋 조항.
-// - 2026-09-20: 기공소 정책 안내 — 지정 수수료 ~~2%~~ → 0% 취소선 표시.
 // - 2026-09-20: 딜러십 요율 10/15/20% · 가입 당시 요율 적용 안내.
 // - 2026-09-20: 기공소 정책 안내 — 하청 % · 작업시작 적립 시 공제.
 // - 2026-09-21: 치과→기공소 리메이크=기공소 freeRemakeYears 기간 내 무료.
-// - 2026-09-20: 기공소 정책 안내 — 지정 수수료를 관리자 설정(on/% · 이벤트 0%)으로 표시.
-// - 2026-09-20: 기공소 정책 안내 — 지정 거래 플랫폼 수수료(정책 1%·이벤트 0%).
 // - 2026-09-20: 기공소 정책 안내 — 커스텀어벗 정산은 STL·생산비 지급 뒤.
 // - 2026-09-12: 리메이크를 가격 카드(배송비 아래)로 이동. 치과로부터=무료, 어벗츠로=1만원.
 // - 2026-09-09: 리메이크 월 3건 무료 → 건당 10,000원 안내.
@@ -66,11 +64,7 @@ import {
   formatAbutsAbutmentServiceWon,
   formatAbutsManwon
 } from '@/shared/pricing/abutsAbutmentService';
-import {
-  LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE,
-  resolveLabDirectPlatformFeePct,
-} from '@/shared/settlement/labPayoutBankbook';
-import { LabDirectPlatformFeeNotice } from '@/shared/settlement/LabDirectPlatformFeeNotice';
+import { LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE } from '@/shared/settlement/labPayoutBankbook';
 import { useLabTradingPartnerWindow } from '@/shared/lab/useLabTradingPartnerWindow';
 import {
   REFERRAL_OWNERSHIP_RESET_POLICY_LINE,
@@ -217,13 +211,6 @@ export const PricingPolicyDialog = ({
       systemSettings?.creditSettings?.expressFee ??
         CREDIT_SETTINGS_DEFAULTS.expressFee
     ) || CREDIT_SETTINGS_DEFAULTS.expressFee
-  );
-  const directFeeEnabled =
-    labFeeWindow?.feeRates?.directPlatformFeeEnabled === true;
-  const directFeePct = resolveLabDirectPlatformFeePct(
-    labFeeWindow?.feeRates?.directPlatformFeeRate != null
-      ? Number(labFeeWindow.feeRates.directPlatformFeeRate) * 100
-      : undefined,
   );
   const subcontractFeePct = Math.round(
     Number(labFeeWindow?.feeRates?.subcontractFeeRate ?? 0.05) * 100,
@@ -400,12 +387,8 @@ export const PricingPolicyDialog = ({
 
               {isLab ? (
                 <>
-                  <PolicySection title='플랫폼 수수료'>
+                  <PolicySection title='하청 수수료'>
                     <p>
-                      <LabDirectPlatformFeeNotice
-                        enabled={directFeeEnabled}
-                        ratePct={directFeePct}
-                      />{" "}
                       하청 수행 의뢰는 작업시작 적립 시 매출액의{" "}
                       <span className='font-semibold tabular-nums text-slate-900'>
                         {subcontractFeePct}%
