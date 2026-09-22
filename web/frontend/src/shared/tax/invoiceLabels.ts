@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-23: LAB_TO_PRACTICE 라벨·안내 — 이력. 기공비=어벗츠→고객 월합.
 // - 2026-09-20: 발행 레인 — 어벗츠→기공소/치과·기공소→치과. 면세=계산서·과세=세금계산서 분리.
 // - 2026-08-23: 겸영사업자 — 과세=세금계산서, 면세=계산서. 스토어 포함가 분해 헬퍼.
 // related files:
@@ -31,7 +32,7 @@ export type TaxInvoiceLane =
 export const TAX_INVOICE_LANE_LABEL: Record<TaxInvoiceLane, string> = {
   ABUTS_TO_LAB: "어벗츠 → 기공소",
   ABUTS_TO_PRACTICE: "어벗츠 → 치과",
-  LAB_TO_PRACTICE: "기공소 → 치과",
+  LAB_TO_PRACTICE: "기공소 → 치과(이력)",
   AFFILIATE_TO_ABUTS: "관계사 → 어벗츠",
 };
 
@@ -116,4 +117,4 @@ export const CUSTOM_ABUTMENT_TAX_NOTE = "면세 · 부가세 없음";
 
 /** 고객향 발행 레인 안내(재무 콘솔). */
 export const CUSTOMER_TAX_LANE_ISSUE_NOTICE =
-  "어벗츠→기공소·어벗츠→치과: 기공서비스·커스텀어벗은 면세 계산서, 심플웨이 포함 스토어 제품은 과세 세금계산서로 각각 별도 발행합니다. 기공소→치과 기공의뢰비는 면세 계산서(위수탁)입니다.";
+  "어벗츠→기공소·치과: 기공·커스텀어벗은 면세 계산서, 스토어는 과세 세금계산서로 각각 발행합니다.";

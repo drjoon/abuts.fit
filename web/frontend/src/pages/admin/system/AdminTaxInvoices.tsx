@@ -3,17 +3,17 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/backend/controllers/admin/adminTaxInvoice.controller.js
+// - web/frontend/src/pages/admin/credits/creditPageUi.tsx
 // change-log:
+// - 2026-09-23: 최신 발행 정책(기공비=어벗츠→고객)·CreditPanel UI·문구 정리. LAB_TO_PRACTICE 초안 생성 제거.
 // - 2026-09-20: 상태 요약 카드 그리드 p-0.5 — 선택 border가 overflow에 잘리지 않게.
 // - 2026-09-20: 재무 허브 embedded 스크롤(overflow-auto) — 목록이 잘리지 않게.
 // - 2026-09-20: 승인대기 탭·승인(승인 후 발행) 버튼.
 // - 2026-09-20: 월정산 콘솔 — 기간·방향·월합 초안 생성·메타 표시.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
@@ -48,18 +48,21 @@ import {
   type BizRegExtracted,
   type BizVerifyResult,
 } from "@/shared/components/business/BizRegOcrUploader";
+import {
+  CreditPanel,
+  CreditSectionHeader,
+} from "@/pages/admin/credits/creditPageUi";
+import { cn } from "@/shared/ui/cn";
 
 import {
   invoiceTaxTypeBadge,
   toInclusiveVat,
   TAX_INVOICE_LANE_LABEL,
   taxInvoiceLaneLabel,
-  CUSTOMER_TAX_LANE_ISSUE_NOTICE,
   type InvoiceTaxType,
   type TaxInvoiceDirection,
   type TaxInvoiceLane,
 } from "@/shared/tax/invoiceLabels";
-import { LEDGER_TAX_LANE_NOTICE } from "@/shared/tax/ledgerTaxLanes";
 
 type DraftStatus =
   | "PENDING_APPROVAL"
@@ -267,9 +270,7 @@ export const AdminTaxInvoices = ({
   const [taxTypeFilter, setTaxTypeFilter] = useState<TaxTypeFilter>("ALL");
   const [periodMonth, setPeriodMonth] = useState(previousKstMonthKey);
   const [filterByPeriod, setFilterByPeriod] = useState(false);
-  const [generating, setGenerating] = useState<
-    null | "customer" | "lab" | "both"
-  >(null);
+  const [generating, setGenerating] = useState(false);
 
   const [editOpen, setEditOpen] = useState(false);
   const [editDraft, setEditDraft] = useState<TaxInvoiceDraft | null>(null);
@@ -418,73 +419,46 @@ export const AdminTaxInvoices = ({
     await Promise.all([loadStats(), loadItems()]);
   }, [loadStats, loadItems]);
 
-  const generateMonthlyDrafts = useCallback(
-    async (scope: "customer" | "lab" | "both") => {
-      if (!token) return;
-      setGenerating(scope);
-      try {
-        const range = monthRangeYmd(periodMonth);
-        const jobs: Array<Promise<any>> = [];
-        if (scope === "customer" || scope === "both") {
-          jobs.push(
-            request({
-              path: "/api/admin/tax-invoices/customer-monthly/generate",
-              method: "POST",
-              token,
-              jsonBody: range,
-            }),
-          );
-        }
-        if (scope === "lab" || scope === "both") {
-          jobs.push(
-            request({
-              path: "/api/admin/tax-invoices/lab-to-practice/generate",
-              method: "POST",
-              token,
-              jsonBody: range,
-            }),
-          );
-        }
-        const results = await Promise.all(jobs);
-        const failed = results.find((r) => !r.ok);
-        if (failed) {
-          toast({
-            title: "초안 생성 실패",
-            description:
-              (failed.data as any)?.message || "잠시 후 다시 시도해주세요.",
-            variant: "destructive",
-            duration: 5000,
-          });
-          return;
-        }
-        const summaries = results.map((r) => (r.data as any)?.data || {});
-        toast({
-          title: `${periodMonth} 월합 초안 생성`,
-          description: summaries
-            .map((s) => {
-              if (s.exempt || s.taxable) {
-                return `고객: 면세 ${s.exempt?.created ?? 0} · 과세 ${s.taxable?.created ?? 0}`;
-              }
-              return `기공소→치과: ${s.created ?? 0}건`;
-            })
-            .join(" / "),
-          duration: 5000,
-        });
-        setFilterByPeriod(true);
-        setTab("PENDING_APPROVAL");
-        await reload();
-      } catch {
+  const generateMonthlyDrafts = useCallback(async () => {
+    if (!token) return;
+    setGenerating(true);
+    try {
+      const range = monthRangeYmd(periodMonth);
+      const res = await request({
+        path: "/api/admin/tax-invoices/customer-monthly/generate",
+        method: "POST",
+        token,
+        jsonBody: range,
+      });
+      if (!res.ok) {
         toast({
           title: "초안 생성 실패",
+          description:
+            (res.data as any)?.message || "잠시 후 다시 시도해주세요.",
           variant: "destructive",
-          duration: 4000,
+          duration: 5000,
         });
-      } finally {
-        setGenerating(null);
+        return;
       }
-    },
-    [token, periodMonth, toast, reload],
-  );
+      const s = (res.data as any)?.data || {};
+      toast({
+        title: `${periodMonth} 월합 초안`,
+        description: `면세 ${s.exempt?.created ?? 0} · 과세 ${s.taxable?.created ?? 0}`,
+        duration: 5000,
+      });
+      setFilterByPeriod(true);
+      setTab("PENDING_APPROVAL");
+      await reload();
+    } catch {
+      toast({
+        title: "초안 생성 실패",
+        variant: "destructive",
+        duration: 4000,
+      });
+    } finally {
+      setGenerating(false);
+    }
+  }, [token, periodMonth, toast, reload]);
 
   const postAction = useCallback(
     async ({
@@ -772,206 +746,195 @@ export const AdminTaxInvoices = ({
       }
     >
       <div className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="space-y-2 min-w-0">
-          <p className="text-xs text-muted-foreground leading-relaxed max-w-2xl">
-            {LEDGER_TAX_LANE_NOTICE} {CUSTOMER_TAX_LANE_ISSUE_NOTICE} 월합
-            작성연월일=해당 월 말일. 익월 1일 초안 생성 후 여기서 검토·발행하고,
-            관계사 입금은 발행완료 뒤에 합니다. 관계사→어벗츠 초안은{" "}
-            <Link
-              to="/dashboard/finance?tab=payments"
-              className="underline underline-offset-2"
-            >
-              정산 탭
-            </Link>
-            에서 배치 확정 시 생성됩니다.
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <Select value={periodMonth} onValueChange={setPeriodMonth}>
-              <SelectTrigger className="h-8 w-[140px] text-xs">
-                <SelectValue placeholder="정산월" />
-              </SelectTrigger>
-              <SelectContent>
-                {periodOptions.map((ym) => (
-                  <SelectItem key={ym} value={ym} className="text-xs">
-                    {ym.replace("-", "년 ")}월
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-8 text-xs"
-              disabled={Boolean(generating)}
-              onClick={() => void generateMonthlyDrafts("both")}
-            >
-              {generating === "both" ? "생성 중…" : "고객·기공 월합 초안"}
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-8 text-xs"
-              disabled={Boolean(generating)}
-              onClick={() => void generateMonthlyDrafts("customer")}
-            >
-              고객만
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-8 text-xs"
-              disabled={Boolean(generating)}
-              onClick={() => void generateMonthlyDrafts("lab")}
-            >
-              기공소→치과만
-            </Button>
-            <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
-              <input
-                type="checkbox"
-                className="rounded border-border"
-                checked={filterByPeriod}
-                onChange={(e) => setFilterByPeriod(e.target.checked)}
-              />
-              목록을 이 정산월로 필터
-            </label>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <Select
-            value={directionFilter}
-            onValueChange={(v) => setDirectionFilter(v as LaneFilter)}
-          >
-            <SelectTrigger className="h-8 w-[168px] text-xs">
-              <SelectValue placeholder="발행 방향" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ALL" className="text-xs">
-                전체 방향
-              </SelectItem>
-              {(Object.keys(TAX_INVOICE_LANE_LABEL) as TaxInvoiceLane[]).map(
-                (key) => (
-                  <SelectItem key={key} value={key} className="text-xs">
-                    {TAX_INVOICE_LANE_LABEL[key]}
-                  </SelectItem>
-                ),
-              )}
-            </SelectContent>
-          </Select>
-          <Select
-            value={taxTypeFilter}
-            onValueChange={(v) => setTaxTypeFilter(v as TaxTypeFilter)}
-          >
-            <SelectTrigger className="h-8 w-[148px] text-xs">
-              <SelectValue placeholder="과세구분" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ALL" className="text-xs">
-                전체 과세구분
-              </SelectItem>
-              <SelectItem value="면세" className="text-xs">
-                면세 · 계산서
-              </SelectItem>
-              <SelectItem value="과세" className="text-xs">
-                과세 · 세금계산서
-              </SelectItem>
-            </SelectContent>
-          </Select>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setManualOpen(true)}
-          >
-            <Plus className="h-4 w-4 mr-1" />
-            수동 생성
-          </Button>
-          <Button size="sm" variant="ghost" onClick={reload} disabled={loading}>
-            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-          </Button>
-        </div>
-      </div>
+        <CreditPanel>
+          <div className="space-y-4 p-4 sm:p-5">
+            <CreditSectionHeader
+              icon={FileText}
+              title="(세금)계산서"
+              description={
+                <>
+                  기공·커스텀어벗=면세 계산서, 스토어=과세 세금계산서.
+                  <br />
+                  익월 1일 초안 → 여기서 검토·발행. 관계사 입금은 발행 후.
+                  <br />
+                  관계사→어벗츠는{" "}
+                  <Link
+                    to="/dashboard/finance?tab=payments"
+                    className="underline underline-offset-2"
+                  >
+                    정산
+                  </Link>
+                  배치 확정 시 생성.
+                </>
+              }
+              trailing={
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setManualOpen(true)}
+                  >
+                    <Plus className="mr-1 h-4 w-4" />
+                    수동 발행
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => void reload()}
+                    disabled={loading}
+                  >
+                    <RefreshCw
+                      className={cn("h-4 w-4", loading && "animate-spin")}
+                    />
+                  </Button>
+                </div>
+              }
+            />
 
-      {/* Stats bar */}
-      <div className="grid grid-cols-2 gap-2 p-0.5 sm:grid-cols-3 lg:grid-cols-6">
-        {STATUS_TABS.map((s) => (
-          <button
-            key={s}
-            onClick={() => setTab(s)}
-            className={`rounded-lg border p-2 text-center cursor-pointer transition-colors ${
-              tab === s
-                ? "border-primary bg-primary/5"
-                : "hover:bg-muted/40 border-border"
-            }`}
-          >
-            <div className="text-lg font-bold leading-tight">
-              {stats[s] ?? 0}
-            </div>
-            <div className="text-xs text-muted-foreground mt-0.5">
-              {STATUS_LABEL[s]}
-            </div>
-          </button>
-        ))}
-      </div>
-
-      {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-        <Input
-          className="pl-9 placeholder:text-slate-300"
-          placeholder="상호명 또는 사업자번호로 검색"
-          value={search}
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-            setSearch(e.target.value)
-          }
-        />
-      </div>
-
-      {/* Status Tabs */}
-      <Tabs value={tab} onValueChange={(v) => setTab(v as ListTab)}>
-        <TabsList className="flex flex-wrap h-auto gap-0.5">
-          {STATUS_TABS.map((s) => (
-            <TabsTrigger key={s} value={s} className="text-xs px-3 py-1.5">
-              {STATUS_LABEL[s]}
-              {(stats[s] ?? 0) > 0 && (
-                <span className="ml-1.5 rounded-full bg-muted px-1.5 text-xs font-medium">
-                  {stats[s]}
-                </span>
-              )}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-
-        {STATUS_TABS.map((s) => (
-          <TabsContent key={s} value={s} className="space-y-2 pt-3">
-            {loading && (
-              <p className="text-center text-sm text-muted-foreground py-8">
-                불러오는 중...
-              </p>
-            )}
-            {!loading && items.length === 0 && (
-              <Card>
-                <CardContent className="p-6 text-center text-sm text-muted-foreground">
-                  {search
-                    ? `"${search}" 검색 결과가 없습니다.`
-                    : "데이터가 없습니다."}
-                </CardContent>
-              </Card>
-            )}
-            {!loading &&
-              items.map((d) => (
-                <DraftCard
-                  key={d._id}
-                  draft={d}
-                  isLoading={actionLoadingId === d._id}
-                  onCancel={() => postAction({ id: d._id, action: "cancel" })}
-                  onIssue={() => postAction({ id: d._id, action: "issue" })}
-                  onApprove={() => approveAndIssue(d._id)}
-                  onEdit={() => openEdit(d)}
+            <div className="flex flex-wrap items-center gap-2">
+              <Select value={periodMonth} onValueChange={setPeriodMonth}>
+                <SelectTrigger className="h-8 w-[140px] text-xs">
+                  <SelectValue placeholder="정산월" />
+                </SelectTrigger>
+                <SelectContent>
+                  {periodOptions.map((ym) => (
+                    <SelectItem key={ym} value={ym} className="text-xs">
+                      {ym.replace("-", "년 ")}월
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 text-xs"
+                disabled={generating}
+                onClick={() => void generateMonthlyDrafts()}
+              >
+                {generating ? "생성 중…" : "고객 월합 초안"}
+              </Button>
+              <label className="flex cursor-pointer select-none items-center gap-1.5 text-xs text-muted-foreground">
+                <input
+                  type="checkbox"
+                  className="rounded border-border"
+                  checked={filterByPeriod}
+                  onChange={(e) => setFilterByPeriod(e.target.checked)}
                 />
-              ))}
-          </TabsContent>
-        ))}
-      </Tabs>
+                이 정산월만
+              </label>
+            </div>
+          </div>
+        </CreditPanel>
+
+        <div className="grid grid-cols-2 gap-2 p-0.5 sm:grid-cols-3 lg:grid-cols-6">
+          {STATUS_TABS.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setTab(s)}
+              className={cn(
+                "cursor-pointer rounded-2xl border p-2.5 text-center transition-colors",
+                tab === s
+                  ? "border-primary bg-primary/5 shadow-sm"
+                  : "border-slate-200/80 bg-white/80 hover:bg-slate-50",
+              )}
+            >
+              <div className="text-lg font-bold tabular-nums leading-tight text-slate-900">
+                {stats[s] ?? 0}
+              </div>
+              <div className="mt-0.5 text-xs text-muted-foreground">
+                {STATUS_LABEL[s]}
+              </div>
+            </button>
+          ))}
+        </div>
+
+        <CreditPanel>
+          <div className="space-y-3 p-4 sm:p-5">
+            <div className="flex flex-wrap items-center gap-2">
+              <Select
+                value={directionFilter}
+                onValueChange={(v) => setDirectionFilter(v as LaneFilter)}
+              >
+                <SelectTrigger className="h-8 w-[168px] text-xs">
+                  <SelectValue placeholder="발행 방향" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL" className="text-xs">
+                    전체 방향
+                  </SelectItem>
+                  {(Object.keys(TAX_INVOICE_LANE_LABEL) as TaxInvoiceLane[]).map(
+                    (key) => (
+                      <SelectItem key={key} value={key} className="text-xs">
+                        {TAX_INVOICE_LANE_LABEL[key]}
+                      </SelectItem>
+                    ),
+                  )}
+                </SelectContent>
+              </Select>
+              <Select
+                value={taxTypeFilter}
+                onValueChange={(v) => setTaxTypeFilter(v as TaxTypeFilter)}
+              >
+                <SelectTrigger className="h-8 w-[148px] text-xs">
+                  <SelectValue placeholder="과세구분" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL" className="text-xs">
+                    전체 과세구분
+                  </SelectItem>
+                  <SelectItem value="면세" className="text-xs">
+                    면세 · 계산서
+                  </SelectItem>
+                  <SelectItem value="과세" className="text-xs">
+                    과세 · 세금계산서
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              <div className="relative min-w-[12rem] flex-1">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  className="h-8 pl-9 text-sm placeholder:text-slate-300"
+                  placeholder="상호 · 사업자번호"
+                  value={search}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                    setSearch(e.target.value)
+                  }
+                />
+              </div>
+            </div>
+
+            {loading ? (
+              <p className="py-10 text-center text-sm text-muted-foreground">
+                불러오는 중…
+              </p>
+            ) : null}
+
+            {!loading && items.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-10 text-center text-sm text-muted-foreground">
+                {search
+                  ? `"${search}" 검색 결과가 없습니다.`
+                  : "초안이 없습니다."}
+              </div>
+            ) : null}
+
+            {!loading && items.length > 0 ? (
+              <div className="space-y-2">
+                {items.map((d) => (
+                  <DraftCard
+                    key={d._id}
+                    draft={d}
+                    isLoading={actionLoadingId === d._id}
+                    onCancel={() => postAction({ id: d._id, action: "cancel" })}
+                    onIssue={() => postAction({ id: d._id, action: "issue" })}
+                    onApprove={() => approveAndIssue(d._id)}
+                    onEdit={() => openEdit(d)}
+                  />
+                ))}
+              </div>
+            ) : null}
+          </div>
+        </CreditPanel>
 
       {/* Edit Buyer Dialog */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
@@ -1374,181 +1337,169 @@ function DraftCard({
   onEdit: () => void;
 }) {
   return (
-    <Card>
-      <CardContent className="p-4 space-y-3">
-        <div className="flex items-start justify-between gap-3">
-          <div className="space-y-1 min-w-0 flex-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <StatusBadge status={d.status} />
-              {d.direction ? (
-                <Badge variant="outline" className="text-xs">
-                  {taxInvoiceLaneLabel(d)}
-                </Badge>
-              ) : null}
+    <div className="rounded-xl border border-slate-200/80 bg-white/90 p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1 space-y-1.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusBadge status={d.status} />
+            {d.direction ? (
               <Badge variant="outline" className="text-xs">
-                {invoiceTaxTypeBadge(d.taxType)} ·{" "}
-                {d.issuanceMode === "TRUSTEE" ? "위수탁" : "정발행"}
+                {taxInvoiceLaneLabel(d)}
               </Badge>
-              {d.kind === "REVERSE" && (
-                <Badge variant="secondary" className="text-xs">
-                  마이너스
-                </Badge>
-              )}
-              {d.reversedByDraftId && d.kind !== "REVERSE" && (
-                <Badge variant="secondary" className="text-xs">
-                  역발행됨
-                </Badge>
-              )}
-              {d.buyer?.corpName ? (
-                <span className="text-sm font-medium truncate">
-                  {d.buyer.corpName}
-                </span>
-              ) : (
-                <span className="text-sm text-muted-foreground italic">
-                  상호 미기재
-                </span>
-              )}
-            </div>
-            <div className="flex items-center gap-3 flex-wrap text-xs text-muted-foreground">
-              {d.itemName ? <span>{d.itemName}</span> : null}
-              {d.buyer?.bizNo && <span>사업자: {d.buyer.bizNo}</span>}
-              {d.seller?.corpName && <span>공급자: {d.seller.corpName}</span>}
-              {d.buyer?.ceoName && <span>대표: {d.buyer.ceoName}</span>}
-              {d.writeDate ? (
-                <span>작성일: {fmtWriteDate(d.writeDate)}</span>
-              ) : null}
-              {d.periodStart ? (
-                <span>
-                  기간: {fmtDate(d.periodStart)}
-                  {d.periodEnd ? ` ~ ${fmtDate(d.periodEnd)}` : ""}
-                </span>
-              ) : null}
-              {d.sentAt && <span>발행일: {fmtDate(d.sentAt)}</span>}
-              <span className="opacity-60">생성: {fmtDate(d.createdAt)}</span>
-            </div>
-            {d.failReason && (
-              <p className="text-xs text-destructive flex items-start gap-1">
-                <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />
-                {d.failReason}
-              </p>
+            ) : null}
+            <Badge variant="outline" className="text-xs">
+              {invoiceTaxTypeBadge(d.taxType)} ·{" "}
+              {d.issuanceMode === "TRUSTEE" ? "위수탁" : "정발행"}
+            </Badge>
+            {d.kind === "REVERSE" ? (
+              <Badge variant="secondary" className="text-xs">
+                마이너스
+              </Badge>
+            ) : null}
+            {d.reversedByDraftId && d.kind !== "REVERSE" ? (
+              <Badge variant="secondary" className="text-xs">
+                역발행됨
+              </Badge>
+            ) : null}
+            {d.buyer?.corpName ? (
+              <span className="truncate text-sm font-medium text-slate-900">
+                {d.buyer.corpName}
+              </span>
+            ) : (
+              <span className="text-sm italic text-muted-foreground">
+                상호 미기재
+              </span>
             )}
-            {d.hometaxTrxId && (
-              <p className="text-xs text-muted-foreground">
-                TrxID: {d.hometaxTrxId}
-              </p>
-            )}
-            <p className="text-xs text-muted-foreground opacity-50 truncate">
-              {d._id}
+          </div>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+            {d.itemName ? <span>{d.itemName}</span> : null}
+            {d.buyer?.bizNo ? <span>{d.buyer.bizNo}</span> : null}
+            {d.seller?.corpName ? (
+              <span>공급 {d.seller.corpName}</span>
+            ) : null}
+            {d.writeDate ? <span>작성 {fmtWriteDate(d.writeDate)}</span> : null}
+            {d.periodStart ? (
+              <span>
+                기간 {fmtDate(d.periodStart)}
+                {d.periodEnd ? ` ~ ${fmtDate(d.periodEnd)}` : ""}
+              </span>
+            ) : null}
+            {d.sentAt ? <span>발행 {fmtDate(d.sentAt)}</span> : null}
+          </div>
+          {d.failReason ? (
+            <p className="flex items-start gap-1 text-xs text-destructive">
+              <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+              {d.failReason}
             </p>
-          </div>
-
-          <div className="text-right shrink-0">
-            <div className="text-sm font-semibold">
-              {fmtMoney(d.totalAmount)}원
-            </div>
-            <div className="text-xs text-muted-foreground">
-              공급 {fmtMoney(d.supplyAmount)} · 세액 {fmtMoney(d.vatAmount)}
-            </div>
-          </div>
+          ) : null}
         </div>
 
-        <div className="flex flex-wrap gap-1.5 justify-end">
-          {d.status !== "SENT" && d.status !== "CANCELLED" && (
+        <div className="shrink-0 text-right">
+          <div className="text-sm font-semibold tabular-nums text-slate-900">
+            {fmtMoney(d.totalAmount)}원
+          </div>
+          <div className="text-xs tabular-nums text-muted-foreground">
+            공급 {fmtMoney(d.supplyAmount)} · 세액 {fmtMoney(d.vatAmount)}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3 flex flex-wrap justify-end gap-1.5">
+        {d.status !== "SENT" && d.status !== "CANCELLED" ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 text-xs"
+            disabled={isLoading}
+            onClick={onEdit}
+          >
+            수정
+          </Button>
+        ) : null}
+
+        {d.status === "PENDING_APPROVAL" ? (
+          <>
             <Button
               size="sm"
-              variant="ghost"
               className="h-7 text-xs"
               disabled={isLoading}
-              onClick={onEdit}
+              onClick={onApprove}
             >
-              수정
+              {isLoading ? "처리 중…" : "승인·발행"}
             </Button>
-          )}
-
-          {d.status === "PENDING_APPROVAL" && (
-            <>
-              <Button
-                size="sm"
-                className="h-7 text-xs"
-                disabled={isLoading}
-                onClick={onApprove}
-              >
-                {isLoading ? "처리 중..." : "승인"}
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 text-xs"
-                disabled={isLoading}
-                onClick={onCancel}
-              >
-                취소
-              </Button>
-            </>
-          )}
-
-          {d.status === "APPROVED" && (
-            <>
-              <Button
-                size="sm"
-                className="h-7 text-xs"
-                disabled={isLoading}
-                onClick={onIssue}
-              >
-                <FileText className="h-3.5 w-3.5 mr-1" />
-                발행
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 text-xs"
-                disabled={isLoading}
-                onClick={onCancel}
-              >
-                취소
-              </Button>
-            </>
-          )}
-
-          {d.status === "FAILED" && (
-            <>
-              <Button
-                size="sm"
-                className="h-7 text-xs"
-                disabled={isLoading}
-                onClick={onIssue}
-              >
-                <FileText className="h-3.5 w-3.5 mr-1" />
-                재발행
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 text-xs"
-                disabled={isLoading}
-                onClick={onCancel}
-              >
-                취소
-              </Button>
-            </>
-          )}
-
-          {d.status === "SENT" &&
-            d.kind !== "REVERSE" &&
-            !d.reversedByDraftId && (
             <Button
               size="sm"
               variant="outline"
-              className="h-7 text-xs text-destructive border-destructive/30 hover:bg-destructive/5"
+              className="h-7 text-xs"
               disabled={isLoading}
               onClick={onCancel}
             >
-              마이너스 발행
+              취소
             </Button>
-          )}
-        </div>
-      </CardContent>
-    </Card>
+          </>
+        ) : null}
+
+        {d.status === "APPROVED" ? (
+          <>
+            <Button
+              size="sm"
+              className="h-7 text-xs"
+              disabled={isLoading}
+              onClick={onIssue}
+            >
+              <FileText className="mr-1 h-3.5 w-3.5" />
+              발행
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs"
+              disabled={isLoading}
+              onClick={onCancel}
+            >
+              취소
+            </Button>
+          </>
+        ) : null}
+
+        {d.status === "FAILED" ? (
+          <>
+            <Button
+              size="sm"
+              className="h-7 text-xs"
+              disabled={isLoading}
+              onClick={onIssue}
+            >
+              <FileText className="mr-1 h-3.5 w-3.5" />
+              재발행
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs"
+              disabled={isLoading}
+              onClick={onCancel}
+            >
+              취소
+            </Button>
+          </>
+        ) : null}
+
+        {d.status === "SENT" &&
+        d.kind !== "REVERSE" &&
+        !d.reversedByDraftId ? (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs text-destructive border-destructive/30 hover:bg-destructive/5"
+            disabled={isLoading}
+            onClick={onCancel}
+          >
+            마이너스 발행
+          </Button>
+        ) : null}
+      </div>
+    </div>
   );
 }
 

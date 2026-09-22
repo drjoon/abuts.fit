@@ -2,6 +2,9 @@
 // - web/backend/rules.md
 // - web/backend/app.js
 // - web/backend/server.js
+// change-log:
+// - 2026-09-23: registIssue forceIssue — 작성일이 오늘(KST) 이전이면 지연발행 허용.
+// - 2026-09-23: formatDateYYYYMMDD — 이미 YYYYMMDD인 writeDate 문자열 통과(Invalid Date 방지).
 // - 2026-09-16: AccountCheckService 예금주 성명/실명조회 래퍼.
 import popbill from "popbill";
 
@@ -315,8 +318,22 @@ export const sendPopbillKakaoATS = async ({
 };
 
 function formatDateYYYYMMDD(d) {
-  // KST 기준 날짜 포맷 (YYYYMMDD)
-  const date = d ? new Date(d) : new Date();
+  // KST 기준 날짜 포맷 (YYYYMMDD). 이미 YYYYMMDD 문자열이면 그대로 사용.
+  if (typeof d === "string") {
+    const digits = String(d).replace(/\D/g, "");
+    if (digits.length === 8) return digits;
+  }
+  const date = d instanceof Date ? d : d ? new Date(d) : new Date();
+  if (Number.isNaN(date.getTime())) {
+    const now = new Date();
+    const kstNow = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Seoul",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(now);
+    return kstNow.replace(/-/g, "");
+  }
   const kstDate = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Seoul",
     year: "numeric",
@@ -481,14 +498,25 @@ export const getTaxinvoiceInfo = ({
   });
 };
 
-export const registIssueInvoice = ({ corpNum, taxinvoice }) => {
+export const registIssueInvoice = ({
+  corpNum,
+  taxinvoice,
+  forceIssue,
+}) => {
   const cleanCorpNum = String(corpNum || "").replace(/-/g, "");
+  // 월합 writeDate=전월 말일 → 익월 발행은 지연발행. 명시값이 없으면 작성일 기준으로 결정.
+  let force = forceIssue;
+  if (force === undefined || force === null) {
+    const writeDigits = String(taxinvoice?.writeDate || "").replace(/\D/g, "");
+    const todayKst = formatDateYYYYMMDD(new Date());
+    force = Boolean(writeDigits && writeDigits.length === 8 && writeDigits < todayKst);
+  }
   return new Promise((resolve, reject) => {
     taxinvoiceService.registIssue(
       cleanCorpNum,
       taxinvoice,
       false,
-      false,
+      Boolean(force),
       "",
       "",
       "",

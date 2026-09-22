@@ -6,6 +6,7 @@
 // - web/frontend/src/pages/admin/system/AdminPlatformSettingsPage.tsx
 // - web/frontend/src/shared/hooks/useAdminCommBadges.ts
 // change-log:
+// - 2026-09-23: 세금계산서 탭 라벨 → (세금)계산서.
 // - 2026-09-23: 설정(구 설정·플랫폼)을 크레딧 오른쪽 탭으로 이동.
 // - 2026-09-18: 크레딧·세금계산서 승인대기 탭 배지.
 // - 2026-09-06: 크레딧·정산·세금계산서 허브(?tab=credits|payments|tax).
@@ -58,7 +59,7 @@ export default function AdminFinancePage() {
             badge: abutsFeePendingCount,
           },
           { value: "payments", label: "정산" },
-          { value: "tax", label: "세금계산서", badge: counts.tax },
+          { value: "tax", label: "(세금)계산서", badge: counts.tax },
         ]}
       />
       <div className="min-h-0 flex-1 overflow-hidden">
