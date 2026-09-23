@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-23: 벽면 등반인데 반경이 일정한 경우(BKV 박영옥) — 연속 |Δz| 급변(dzMax)으로 검출.
 // - 2026-09-17: BKA 오탐 수정 — Z폭(벽면 등반) 없으면 희소 루프도 정상. BJZ만 불량.
 // - 2026-09-17: Rhino 피니시라인 points 기하로 불량(지그재그·반경 급변) 검출. BJZ 샘플 기준.
 // related files:
@@ -17,8 +18,10 @@ export type FinishLineQualityMetrics = {
   avgTurnDeg: number;
   /** 꺾임각 >45° 비율 */
   sharpTurnRate: number;
-  /** max_z - min_z (mm). 벽면 등반 불량의 핵심 신호 */
+  /** max_z - min_z (mm). 해부학적 스캘럽도 커질 수 있어 단독 불량 신호는 아님 */
   zRange: number;
+  /** 폐곡선 포함 연속 점 |Δz| 최댓값(mm). 벽면으로 튀면 급증 */
+  dzMax: number;
 };
 
 export type FinishLineQualityAssessment = {
@@ -30,6 +33,11 @@ export type FinishLineQualityAssessment = {
 const RADIUS_JUMP_MM = 0.25;
 /** 어깨 루프는 Z폭이 작다. 벽면으로 튀면 Z폭이 커진다(BJZ≈3.2, BKA≈0.07). */
 const DEFECT_MIN_Z_RANGE_MM = 1.0;
+/**
+ * 정상 스캘럽은 Z폭이 커도 연속 |Δz|가 완만(대개 <0.3mm).
+ * 벽면 등반은 한 구간에 수 mm 점프(BKV≈2.98, 윤정희≈4.1).
+ */
+const DEFECT_MIN_DZ_MAX_MM = 1.0;
 
 function toXyz(points: unknown): number[][] {
   if (!Array.isArray(points)) return [];
@@ -106,6 +114,14 @@ function computeMetrics(pts: number[][]): FinishLineQualityMetrics | null {
     if (ang > 45) sharp += 1;
   }
 
+  let dzMax = 0;
+  for (let i = 0; i < n; i += 1) {
+    const a = pts[i];
+    const b = pts[(i + 1) % n];
+    const dz = Math.abs(a[2] - b[2]);
+    if (dz > dzMax) dzMax = dz;
+  }
+
   return {
     pointCount: n,
     radiusCv,
@@ -113,6 +129,7 @@ function computeMetrics(pts: number[][]): FinishLineQualityMetrics | null {
     avgTurnDeg: turns ? turnSum / turns : 0,
     sharpTurnRate: turns ? sharp / turns : 0,
     zRange,
+    dzMax,
   };
 }
 
@@ -121,6 +138,7 @@ function computeMetrics(pts: number[][]): FinishLineQualityMetrics | null {
  * (썸네일/프리뷰의 빨간 FL 오버레이와 동일 소스)
  *
  * 희소 점(8점 등)만으로 정상 원형 루프를 그리는 경우(BKA)는 Z폭이 작아 제외한다.
+ * 해부학적 스캘럽은 Z폭이 커도 연속 |Δz|가 완만하다. 벽면 등반은 dzMax로 잡는다.
  */
 export function assessFinishLineQuality(
   points: unknown,
@@ -142,11 +160,17 @@ export function assessFinishLineQuality(
     sharpTurnRate,
     pointCount,
     zRange,
+    dzMax,
   } = metrics;
 
   // 벽면 등반 없이 Z가 평탄하면(정상 어깨) 희소/각진 루프라도 불량 아님.
   if (zRange < DEFECT_MIN_Z_RANGE_MM) {
     return { defective: false, reason: null, metrics };
+  }
+
+  // 원통 벽면 등반: XY 반경은 일정해도 연속 Z가 급변(BKV 등).
+  if (dzMax >= DEFECT_MIN_DZ_MAX_MM) {
+    return { defective: true, reason: "z_jump", metrics };
   }
 
   if (radiusJumpRate >= 0.2 && radiusCv >= 0.2) {
