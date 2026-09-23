@@ -39,6 +39,7 @@ import {
 import {
   parsePracticeLabRatingPublic,
   formatPracticeTargetLabLabel,
+  resolvePracticeTransferLabDisplayLabel,
   stripPracticeTargetLabDisplayDecorations,
   type PracticeLabRatingPublic,
 } from "@/shared/practice/practiceLabRating";
@@ -826,9 +827,11 @@ export const mapMyPracticeTransferApiRows = (
         matchingMode === "auto"
           ? "어벗츠기공소"
           : targetLabFromRouting || extractLabNameFromMessage(message) || "-";
-      const targetLab = formatPracticeTargetLabLabel({
+      const targetLab = resolvePracticeTransferLabDisplayLabel({
         targetLab: targetLabRaw,
         handledByCertifiedPartner,
+        assigneeKind,
+        assigneeLabName,
       });
       const createdAtRaw = String(r.createdAt || "");
       const strippedTransferMemo = stripPracticeTransferMessageEnvelope(message);

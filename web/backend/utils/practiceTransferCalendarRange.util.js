@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-23: CALENDAR_LIST_SELECT에 assigneeLab*·assigneeKind — 협력 표시「어벗츠 · 파트너」.
 // - 2026-09-15: CALENDAR_LIST_SELECT에 prosthesisFeeStages — 단계별 견적 스냅샷.
 // - 2026-09-12: CALENDAR_LIST_SELECT에 trashedFiles — 상세 모달 휴지통 타일 유지.
 // - 2026-09-11: 캘린더 창 ∪ 미확인·미처리(작업시작 전) 전 기간 OR.
@@ -171,6 +172,10 @@ export const PRACTICE_TRANSFER_CALENDAR_LIST_SELECT = {
   autoMatch: 1,
   targetLabAnchorId: 1,
   targetLabName: 1,
+  // 협력/하청 표시·수수료 — 누락 시 redact가 원청「어벗츠기공소」만 반환
+  assigneeLabAnchorId: 1,
+  assigneeLabName: 1,
+  assigneeKind: 1,
   practiceBusinessAnchorId: 1,
   practiceUserId: 1,
   orderDates: 1,

@@ -116,6 +116,10 @@ import {
   toStatusBadgeLabel,
 } from "@/shared/practice/practiceRecentTransferList";
 import {
+  resolvePracticeTransferLabColorKey,
+  resolvePracticeTransferLabDisplayLabel,
+} from "@/shared/practice/practiceLabRating";
+import {
   isPracticeNextArrivalOverdue,
   resolvePracticeNextArrivalReminder,
 } from "@/shared/practice/practiceNextArrivalReminder";
@@ -125,6 +129,7 @@ import {
   expandPracticeCalendarChipsByArrivalDates,
   resolvePracticeCalendarStatusTone,
   resolvePracticeStatusFilterBadgeTone,
+  type CalendarLabDotAssignment,
   type PracticeCalendarChipItem,
   type PracticeCalendarDateKey,
 } from "@/pages/practice/components/PracticeRecentTransfersCalendar";
@@ -207,6 +212,10 @@ type PracticeRecentTransfersAllModalProps = {
   ) => void;
   onDeleteTransfer: (transfer: PracticeRecentTransferItem) => void;
   onEditTransfer?: (transfer: PracticeRecentTransferItem) => void;
+  /** 범례 기공소 점 색 — 채팅 헤더 등과 동기화 */
+  onLabColorDotsChange?: (
+    dots: Map<string, CalendarLabDotAssignment>,
+  ) => void;
 };
 
 export function PracticeRecentTransfersAllModal({
@@ -228,6 +237,7 @@ export function PracticeRecentTransfersAllModal({
   calendarRefreshNonce = 0,
   onSelectTransfer,
   onDeleteTransfer,
+  onLabColorDotsChange,
 }: PracticeRecentTransfersAllModalProps) {
   const isPage = variant === "page";
   const open = isPage ? true : Boolean(openProp);
@@ -584,9 +594,12 @@ export function PracticeRecentTransfersAllModal({
   const calendarItems = useMemo((): PracticeCalendarChipItem[] => {
     const base = filteredTransfers.map((transfer) => {
       const lab =
-        String(transfer.targetLab || "-")
-          .replace(/\s*→.*$/g, "")
-          .trim() || "-";
+        resolvePracticeTransferLabDisplayLabel({
+          targetLab: transfer.targetLab,
+          handledByCertifiedPartner: transfer.handledByCertifiedPartner,
+          assigneeKind: transfer.assigneeKind,
+          assigneeLabName: transfer.assigneeLabName,
+        }) || "-";
       const patient = resolvePracticeTransferListPatientName(transfer);
       const teeth = resolvePracticeTransferListToothNumbers(transfer);
       const patientLine =
@@ -615,11 +628,15 @@ export function PracticeRecentTransfersAllModal({
         arrivalDate: transfer.arrivalDate,
         linkedArrivalDates,
         linkedOrderDates,
-        colorKey:
-          (transfer.assigneeKind === "cooperation" &&
-            String(transfer.assigneeLabAnchorId || "").trim()) ||
-          String(transfer.targetLabAnchorId || "").trim() ||
-          lab,
+        colorKey: resolvePracticeTransferLabColorKey({
+          assigneeKind: transfer.assigneeKind,
+          assigneeLabAnchorId: transfer.assigneeLabAnchorId,
+          targetLabAnchorId: transfer.targetLabAnchorId,
+          targetLab: transfer.targetLab,
+          performingLabAnchorId: transfer.performingLabAnchorId,
+          assigneeLabName: transfer.assigneeLabName,
+          handledByCertifiedPartner: transfer.handledByCertifiedPartner,
+        }),
         statusTone: resolvePracticeCalendarStatusTone(transfer.status, {
           designFileCount: transfer.designFileCount,
           designFiles: transfer.designFiles,
@@ -1185,6 +1202,7 @@ export function PracticeRecentTransfersAllModal({
                 }
                 abutmentUploadOverdueViewer="practice"
                 showLabColorLegend
+                onLabColorDotsChange={onLabColorDotsChange}
               />
             </>
           )}

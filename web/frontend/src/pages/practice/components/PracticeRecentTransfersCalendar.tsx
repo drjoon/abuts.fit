@@ -138,6 +138,10 @@ import {
   type PracticeAbutmentUploadOverdueViewer,
 } from "@/shared/practice/practiceAbutmentUploadOverdue";
 import { ABUTS_PINNED_LAB_NAME } from "@/pages/practice/hooks/usePracticeTransferStep1";
+import {
+  formatAbutsCooperationLabLabel,
+  normalizePracticePartnerLabCoreName,
+} from "@/shared/practice/practiceLabRating";
 
 export type PracticeCalendarDateKey = "orderDate" | "arrivalDate";
 
@@ -477,38 +481,90 @@ export const calendarGroupDotColor = (groupKey: string): string => {
 };
 
 /**
+ * 동일 표시명(정규화) 항목을 하나로 합친다. lab: ObjectId 키 우선.
+ * aliasToCanonical: 원본 colorKey → 대표 colorKey.
+ */
+export function collapsePracticeLabColorEntries(
+  entries: Array<{ colorKey: string; name?: string | null }>,
+): {
+  entries: Array<{ colorKey: string; name: string }>;
+  aliasToCanonical: Map<string, string>;
+} {
+  const byDisplayName = new Map<string, { colorKey: string; name: string }>();
+  const aliasToCanonical = new Map<string, string>();
+  for (const row of entries) {
+    const rawKey = String(row.colorKey || "").trim();
+    if (!rawKey) continue;
+    const rawName = String(row.name || "").trim() || rawKey;
+    const core = normalizePracticePartnerLabCoreName(rawName);
+    const displayName =
+      !core || core === "어벗츠기공소"
+        ? ABUTS_PINNED_LAB_NAME
+        : formatAbutsCooperationLabLabel(core);
+    const existing = byDisplayName.get(displayName);
+    if (!existing) {
+      byDisplayName.set(displayName, {
+        colorKey: rawKey,
+        name: displayName,
+      });
+      aliasToCanonical.set(rawKey, rawKey);
+      continue;
+    }
+    const preferIncoming =
+      rawKey.startsWith("lab:") && !existing.colorKey.startsWith("lab:");
+    const canonical = preferIncoming ? rawKey : existing.colorKey;
+    if (preferIncoming) {
+      byDisplayName.set(displayName, {
+        colorKey: canonical,
+        name: displayName,
+      });
+    }
+    aliasToCanonical.set(rawKey, canonical);
+    aliasToCanonical.set(existing.colorKey, canonical);
+  }
+  return {
+    entries: Array.from(byDisplayName.values()),
+    aliasToCanonical,
+  };
+}
+
+/**
  * 어벗츠 우선 → 이름순으로 무지개 원색·점 스타일을 순서대로 배정.
- * 같은 colorKey는 항상 같은 색·스타일(범례·목록·모달 일치).
+ * 같은 표시명(정규화)은 한 색. alias 키도 같은 배정으로 맵에 넣는다.
  */
 export function assignCalendarRainbowDotColors(
   entries: Array<{ colorKey: string; name?: string | null }>,
 ): Map<string, CalendarLabDotAssignment> {
-  const byKey = new Map<string, string>();
-  for (const row of entries) {
-    const key = String(row.colorKey || "").trim();
-    if (!key) continue;
-    const name = String(row.name || "").trim();
-    if (!byKey.has(key)) byKey.set(key, name || key);
-  }
-  const sorted = Array.from(byKey.entries()).sort(([keyA, nameA], [keyB, nameB]) => {
+  const { entries: collapsed, aliasToCanonical } =
+    collapsePracticeLabColorEntries(entries);
+  const sorted = collapsed.slice().sort((a, b) => {
     const aAbuts =
-      nameA === ABUTS_PINNED_LAB_NAME || keyA === ABUTS_PINNED_LAB_NAME;
+      a.name === ABUTS_PINNED_LAB_NAME || a.colorKey === ABUTS_PINNED_LAB_NAME;
     const bAbuts =
-      nameB === ABUTS_PINNED_LAB_NAME || keyB === ABUTS_PINNED_LAB_NAME;
+      b.name === ABUTS_PINNED_LAB_NAME || b.colorKey === ABUTS_PINNED_LAB_NAME;
     if (aAbuts && !bAbuts) return -1;
     if (!aAbuts && bAbuts) return 1;
-    return nameA.localeCompare(nameB, "ko") || keyA.localeCompare(keyB);
+    return (
+      a.name.localeCompare(b.name, "ko") ||
+      a.colorKey.localeCompare(b.colorKey)
+    );
   });
   const map = new Map<string, CalendarLabDotAssignment>();
-  sorted.forEach(([key], index) => {
-    map.set(key, {
+  sorted.forEach((row, index) => {
+    const assignment = {
       color:
         CALENDAR_RAINBOW_DOT_COLORS[
           index % CALENDAR_RAINBOW_DOT_COLORS.length
         ],
       style: calendarLabDotStyleForIndex(index),
-    });
+    };
+    map.set(row.colorKey, assignment);
+    if (row.name) map.set(row.name, assignment);
   });
+  for (const [alias, canonical] of aliasToCanonical) {
+    const assigned = map.get(canonical);
+    if (assigned && !map.has(alias)) map.set(alias, assigned);
+  }
   return map;
 }
 
@@ -845,6 +901,13 @@ type PracticeRecentTransfersCalendarProps = {
    * 치과→기공소 목록만 true. 기공소→치과 수신은 false.
    */
   pinAbutsInColorLegend?: boolean;
+  /**
+   * 범례와 동일한 기공소 점 색 맵(별칭·표시명 키 포함).
+   * 채팅 제목 점 등 목록 밖 UI를 범례와 맞출 때 사용.
+   */
+  onLabColorDotsChange?: (
+    dots: Map<string, CalendarLabDotAssignment>,
+  ) => void;
 };
 
 const agendaDateLabel = (ymd: string) => {
@@ -1003,6 +1066,7 @@ export function PracticeRecentTransfersCalendar({
   showLabColorLegend = false,
   colorLegendTitle = "기공소",
   pinAbutsInColorLegend = true,
+  onLabColorDotsChange,
 }: PracticeRecentTransfersCalendarProps) {
   const isGuideTourChip = (itemId: string) => {
     const want = String(guideTourItemId || "").trim();
@@ -1011,17 +1075,15 @@ export function PracticeRecentTransfersCalendar({
     return id === want || id.startsWith(`${want}:`);
   };
   const labColorLegend = useMemo(() => {
-    const byKey = new Map<string, string>();
-    for (const item of items) {
-      const key = String(item.colorKey || "").trim();
-      const name = String(item.sortLabel || "").trim();
-      if (!key || !name || name === "-") continue;
-      if (!byKey.has(key)) byKey.set(key, name);
-    }
-    const entries = Array.from(byKey.entries()).map(([colorKey, name]) => ({
-      colorKey,
-      name,
-    }));
+    const rawEntries = items
+      .map((item) => ({
+        colorKey: String(item.colorKey || "").trim(),
+        name: String(item.sortLabel || "").trim(),
+      }))
+      .filter((row) => row.colorKey && row.name && row.name !== "-");
+    const { entries: collapsed, aliasToCanonical } =
+      collapsePracticeLabColorEntries(rawEntries);
+    const entries = collapsed.slice();
     if (pinAbutsInColorLegend) {
       const hasAbuts = entries.some(
         (row) => row.name === ABUTS_PINNED_LAB_NAME,
@@ -1041,7 +1103,7 @@ export function PracticeRecentTransfersCalendar({
       entries.sort((a, b) => a.name.localeCompare(b.name, "ko"));
     }
     const colors = assignCalendarRainbowDotColors(entries);
-    return entries.map((row) => {
+    const legend = entries.map((row) => {
       const assigned =
         colors.get(row.colorKey) ||
         ({
@@ -1054,10 +1116,11 @@ export function PracticeRecentTransfersCalendar({
         style: assigned.style,
       };
     });
+    return { legend, aliasToCanonical };
   }, [items, pinAbutsInColorLegend]);
   const labDotByKey = useMemo(() => {
     const map = new Map<string, CalendarLabDotAssignment>();
-    for (const row of labColorLegend) {
+    for (const row of labColorLegend.legend) {
       map.set(row.colorKey, { color: row.color, style: row.style });
     }
     return map;
@@ -1067,13 +1130,32 @@ export function PracticeRecentTransfersCalendar({
     if (!key) {
       return { color: calendarGroupDotColor("-"), style: "filled" };
     }
+    const canonical =
+      labColorLegend.aliasToCanonical.get(key) || key;
     return (
+      labDotByKey.get(canonical) ||
       labDotByKey.get(key) || {
-        color: calendarGroupDotColor(key),
+        color: calendarGroupDotColor(canonical),
         style: "filled",
       }
     );
   };
+  const labColorDotsExport = useMemo(() => {
+    const map = new Map<string, CalendarLabDotAssignment>();
+    for (const row of labColorLegend.legend) {
+      const assigned = { color: row.color, style: row.style };
+      map.set(row.colorKey, assigned);
+      map.set(row.name, assigned);
+    }
+    for (const [alias, canonical] of labColorLegend.aliasToCanonical) {
+      const assigned = map.get(canonical);
+      if (assigned && !map.has(alias)) map.set(alias, assigned);
+    }
+    return map;
+  }, [labColorLegend]);
+  useEffect(() => {
+    onLabColorDotsChange?.(labColorDotsExport);
+  }, [labColorDotsExport, onLabColorDotsChange]);
   const todayYmd = toKstYmd(new Date()) || "";
   const originYmd = todayYmd || cursorYmd;
   const weeks = useMemo(() => buildWeeksFromOrigin(originYmd), [originYmd]);
@@ -1853,19 +1935,31 @@ export function PracticeRecentTransfersCalendar({
               canComposeArrival={Boolean(onSelectFutureDay)}
               onSelectDay={handleSideDaySelect}
             />
-            {showLabColorLegend && labColorLegend.length > 0 ? (
+            {showLabColorLegend && labColorLegend.legend.length > 0 ? (
               <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto rounded-md border border-slate-200/80 bg-white px-2 py-2 shadow-sm">
                 <p className="mb-1.5 px-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                   {colorLegendTitle}
                 </p>
                 <ul className="space-y-1">
-                  {labColorLegend
-                    .filter((row) =>
-                      items.some(
-                        (item) =>
-                          String(item.colorKey || "").trim() === row.colorKey,
-                      ),
-                    )
+                  {labColorLegend.legend
+                    .filter((row) => {
+                      // 치과 목록: 어벗츠기공소는 항상 범례 상단 고정
+                      if (
+                        pinAbutsInColorLegend &&
+                        row.name === ABUTS_PINNED_LAB_NAME
+                      ) {
+                        return true;
+                      }
+                      return items.some((item) => {
+                        const itemKey = String(item.colorKey || "").trim();
+                        const canonical =
+                          labColorLegend.aliasToCanonical.get(itemKey) ||
+                          itemKey;
+                        return (
+                          canonical === row.colorKey || itemKey === row.colorKey
+                        );
+                      });
+                    })
                     .map((row) => (
                     <li
                       key={row.colorKey}

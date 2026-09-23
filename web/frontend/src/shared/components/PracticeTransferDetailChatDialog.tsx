@@ -405,7 +405,7 @@ export type PracticeTransferWorkFileDropConfig = {
 };
 
 export type PracticeTransferDialogCaseIdentity = {
-  /** 예: 테스트기공소 / 테스트환자 15 */
+  /** 예: 테스트환자 · 원장명 (기공소명은 색 점으로만) */
   primary: string;
   /** 예: 주문 2026-09-10 · 도착 2026-09-13 — 다음 도착일과 한 줄 */
   secondary?: string;

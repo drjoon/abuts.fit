@@ -1083,10 +1083,12 @@ const toVirtualRequestRows = (transferDoc, { perFile = true } = {}) => {
     { transfer: transferDoc },
   );
   const targetLabName = labIdentity.targetLabName;
-  const assigneeLabName = isCooperationAssignee(transferDoc)
+  // 협력(또는 레거시 추론 협력)은 파트너 실명·앵커를 치과 API에 노출해 FE 닷/라벨 SSOT에 쓴다.
+  const exposeAssignee = isCooperationAssignee(transferDoc);
+  const assigneeLabName = exposeAssignee
     ? String(transferDoc?.assigneeLabName || "").trim()
     : "";
-  const assigneeLabAnchorId = isCooperationAssignee(transferDoc)
+  const assigneeLabAnchorId = exposeAssignee
     ? transferDoc?.assigneeLabAnchorId || null
     : null;
   const transferMemo = String(transferDoc?.transferMemo || "").trim();

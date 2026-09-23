@@ -44,10 +44,122 @@ const ABUTS_INTERNAL_LAB_DISPLAY_NAMES = new Set([
   "어벗츠 기공소",
 ]);
 
+/**
+ * 파트너 기공소 핵심 이름만.
+ * 「어벗츠 ·」「어벗츠 협력 ·」중첩 접두·인증 협력 접미를 반복 제거.
+ */
+export function normalizePracticePartnerLabCoreName(label: unknown): string {
+  let name = String(label || "").trim();
+  name = name.replace(/\s·\s인증 협력 기공소에서 처리$/, "").trim();
+  for (let i = 0; i < 6; i += 1) {
+    const next = name
+      .replace(new RegExp(`^${ABUTS_PARTNER_LAB_LABEL_PREFIX_LEGACY_B}\\s*·\\s*`), "")
+      .replace(new RegExp(`^${ABUTS_PARTNER_LAB_LABEL_PREFIX_LEGACY_A}\\s*·\\s*`), "")
+      .replace(new RegExp(`^${ABUTS_PARTNER_LAB_LABEL_PREFIX}\\s*·\\s*`), "")
+      .replace(/^어벗츠기공소\s*·\s*/, "")
+      .replace(/^어벗츠\s*기공소\s*·\s*/, "")
+      .trim();
+    if (next === name) break;
+    name = next;
+  }
+  if (!name || name === "-") return "";
+  if (ABUTS_INTERNAL_LAB_DISPLAY_NAMES.has(name) || name === "어벗츠") {
+    return "어벗츠기공소";
+  }
+  return name;
+}
+
 export function formatAbutsCooperationLabLabel(partnerName: unknown): string {
-  const partner = String(partnerName || "").trim();
-  if (!partner) return "어벗츠기공소";
-  return `${ABUTS_PARTNER_LAB_LABEL_PREFIX} · ${partner}`;
+  const core = normalizePracticePartnerLabCoreName(partnerName);
+  if (!core || core === "어벗츠기공소") return "어벗츠기공소";
+  return `${ABUTS_PARTNER_LAB_LABEL_PREFIX} · ${core}`;
+}
+
+/** 치과 목록·캘린더·채팅 헤더 기공소 표시. 협력은 「어벗츠 · 파트너」. */
+export function resolvePracticeTransferLabDisplayLabel({
+  targetLab,
+  handledByCertifiedPartner,
+  assigneeKind,
+  assigneeLabName,
+}: {
+  targetLab?: unknown;
+  handledByCertifiedPartner?: unknown;
+  assigneeKind?: unknown;
+  assigneeLabName?: unknown;
+} = {}): string {
+  const partner = normalizePracticePartnerLabCoreName(assigneeLabName);
+  const kind = String(assigneeKind || "").trim();
+  const raw = String(targetLab || "").trim();
+  if (!handledByCertifiedPartner && kind !== "subcontract" && partner) {
+    const rawCore = normalizePracticePartnerLabCoreName(raw);
+    const abutsOnly =
+      !raw ||
+      raw === "-" ||
+      ABUTS_INTERNAL_LAB_DISPLAY_NAMES.has(raw) ||
+      rawCore === "어벗츠기공소" ||
+      raw === "자동 매칭" ||
+      raw === "자동매칭";
+    if (kind === "cooperation" || abutsOnly) {
+      return formatAbutsCooperationLabLabel(partner);
+    }
+  }
+  return formatPracticeTargetLabLabel({
+    targetLab: raw,
+    handledByCertifiedPartner,
+  });
+}
+
+/**
+ * 캘린더/범례 색 키.
+ * 동일 파트너는 ObjectId(또는 정규화 표시명)로 하나로 합친다.
+ */
+export function resolvePracticeTransferLabColorKey({
+  assigneeKind,
+  assigneeLabAnchorId,
+  targetLabAnchorId,
+  targetLab,
+  performingLabAnchorId,
+  assigneeLabName,
+  handledByCertifiedPartner,
+}: {
+  assigneeKind?: unknown;
+  assigneeLabAnchorId?: unknown;
+  targetLabAnchorId?: unknown;
+  targetLab?: unknown;
+  performingLabAnchorId?: unknown;
+  assigneeLabName?: unknown;
+  handledByCertifiedPartner?: unknown;
+} = {}): string {
+  const display = resolvePracticeTransferLabDisplayLabel({
+    targetLab,
+    handledByCertifiedPartner,
+    assigneeKind,
+    assigneeLabName,
+  });
+  const core = normalizePracticePartnerLabCoreName(display);
+  if (!core || core === "어벗츠기공소") return "어벗츠기공소";
+
+  const kind = String(assigneeKind || "").trim();
+  const assigneeId = String(assigneeLabAnchorId || "").trim();
+  const performingId = String(performingLabAnchorId || "").trim();
+  const targetId = String(targetLabAnchorId || "").trim();
+
+  if (kind === "cooperation" && assigneeId) return `lab:${assigneeId}`;
+  if (assigneeId && assigneeId !== targetId) return `lab:${assigneeId}`;
+  if (performingId && performingId !== targetId) return `lab:${performingId}`;
+  // 레거시 직접 지정: target이 파트너 앵커
+  if (targetId && core !== "어벗츠기공소") {
+    const raw = String(targetLab || "").trim();
+    const rawIsAbuts =
+      ABUTS_INTERNAL_LAB_DISPLAY_NAMES.has(raw) ||
+      raw === "자동 매칭" ||
+      raw === "자동매칭";
+    if (!rawIsAbuts || kind === "cooperation") {
+      // cooperation인데 assigneeId 없으면 target은 보통 어벗츠 — name 키로
+      if (!rawIsAbuts) return `lab:${targetId}`;
+    }
+  }
+  return `name:${core}`;
 }
 
 export function formatPracticeTargetLabLabel({
@@ -59,46 +171,21 @@ export function formatPracticeTargetLabLabel({
 } = {}): string {
   const name = String(targetLab || "").trim() || "-";
   if (handledByCertifiedPartner) {
-    const base = ABUTS_INTERNAL_LAB_DISPLAY_NAMES.has(name)
-      ? name
-      : name.startsWith(`${ABUTS_PARTNER_LAB_LABEL_PREFIX} · `)
-        ? "어벗츠기공소"
-        : name;
+    const core = normalizePracticePartnerLabCoreName(name);
+    const base =
+      !core || core === "어벗츠기공소" ? "어벗츠기공소" : "어벗츠기공소";
     return `${base} · ${CERTIFIED_PARTNER_LAB_DISPLAY_NAME}에서 처리`;
   }
-  if (name === "-" || ABUTS_INTERNAL_LAB_DISPLAY_NAMES.has(name)) {
-    return name;
-  }
-  if (name.startsWith(`${ABUTS_PARTNER_LAB_LABEL_PREFIX} · `)) {
-    return name;
-  }
-  if (name.startsWith(`${ABUTS_PARTNER_LAB_LABEL_PREFIX_LEGACY_B} · `)) {
-    return formatAbutsCooperationLabLabel(
-      name.slice(`${ABUTS_PARTNER_LAB_LABEL_PREFIX_LEGACY_B} · `.length),
-    );
-  }
-  if (name.startsWith(`${ABUTS_PARTNER_LAB_LABEL_PREFIX_LEGACY_A} · `)) {
-    return formatAbutsCooperationLabLabel(
-      name.slice(`${ABUTS_PARTNER_LAB_LABEL_PREFIX_LEGACY_A} · `.length),
-    );
-  }
-  return formatAbutsCooperationLabLabel(name);
+  const core = normalizePracticePartnerLabCoreName(name);
+  if (!core || core === "어벗츠기공소") return "어벗츠기공소";
+  return formatAbutsCooperationLabLabel(core);
 }
 
-/** 목록 병합 시 표시 접미사/접두사 제거. 「어벗츠 ·」는 유지(표시 SSOT). */
+/** 목록 병합 시 표시 접미사/접두사 제거. 「어벗츠 · {핵심}」로 정규화. */
 export function stripPracticeTargetLabDisplayDecorations(label: unknown): string {
-  let name = String(label || "").trim();
-  name = name.replace(/\s·\s인증 협력 기공소에서 처리$/, "");
-  if (name.startsWith(`${ABUTS_PARTNER_LAB_LABEL_PREFIX_LEGACY_B} · `)) {
-    name = formatAbutsCooperationLabLabel(
-      name.slice(`${ABUTS_PARTNER_LAB_LABEL_PREFIX_LEGACY_B} · `.length),
-    );
-  } else if (name.startsWith(`${ABUTS_PARTNER_LAB_LABEL_PREFIX_LEGACY_A} · `)) {
-    name = formatAbutsCooperationLabLabel(
-      name.slice(`${ABUTS_PARTNER_LAB_LABEL_PREFIX_LEGACY_A} · `.length),
-    );
-  }
-  return name || "-";
+  const core = normalizePracticePartnerLabCoreName(label);
+  if (!core || core === "어벗츠기공소") return "어벗츠기공소";
+  return formatAbutsCooperationLabLabel(core);
 }
 
 export type PracticeLabRatingPublic = {

@@ -236,7 +236,10 @@ import {
   TEST_LAB_NAME,
   type SearchBusinessResult,
 } from "@/pages/practice/hooks/usePracticeTransferStep1";
-import { assignCalendarRainbowDotColors } from "@/pages/practice/components/PracticeRecentTransfersCalendar";
+import {
+  assignCalendarRainbowDotColors,
+  type CalendarLabDotAssignment,
+} from "@/pages/practice/components/PracticeRecentTransfersCalendar";
 import { GriboEventToolbarAlert } from "@/shared/events/GriboEventToolbarAlert";
 import {
   useChatRooms,
@@ -334,7 +337,8 @@ import {
   normalizeAutoMatchMaxLabRating,
   normalizeAutoMatchMinLabRating,
   resolveAutoMatchEligibleStarBand,
-  stripPracticeTargetLabDisplayDecorations,
+  resolvePracticeTransferLabColorKey,
+  resolvePracticeTransferLabDisplayLabel,
 } from "@/shared/practice/practiceLabRating";
 import { PracticeLabRejectedReselectDialog } from "@/shared/components/practice/PracticeLabRejectedReselectDialog";
 import { PracticeRemakeSearchDialog } from "@/shared/components/practice/PracticeRemakeSearchDialog";
@@ -5184,17 +5188,28 @@ export const PracticeFileTransferPage = ({
     [selectedTransfer],
   );
 
+  const [legendLabDots, setLegendLabDots] = useState<
+    Map<string, CalendarLabDotAssignment>
+  >(() => new Map());
+
   const practiceLabDots = useMemo(() => {
     const entries = recentRequests.map((row) => {
-      const lab = String(row.targetLab || "")
-        .replace(/\s*→.*$/g, "")
-        .trim();
-      const cooperationKey =
-        row.assigneeKind === "cooperation"
-          ? String(row.assigneeLabAnchorId || "").trim()
-          : "";
+      const lab = resolvePracticeTransferLabDisplayLabel({
+        targetLab: row.targetLab,
+        handledByCertifiedPartner: row.handledByCertifiedPartner,
+        assigneeKind: row.assigneeKind,
+        assigneeLabName: row.assigneeLabName,
+      });
       return {
-        colorKey: cooperationKey || String(row.targetLabAnchorId || "").trim() || lab,
+        colorKey: resolvePracticeTransferLabColorKey({
+          assigneeKind: row.assigneeKind,
+          assigneeLabAnchorId: row.assigneeLabAnchorId,
+          targetLabAnchorId: row.targetLabAnchorId,
+          targetLab: row.targetLab,
+          performingLabAnchorId: row.performingLabAnchorId,
+          assigneeLabName: row.assigneeLabName,
+          handledByCertifiedPartner: row.handledByCertifiedPartner,
+        }),
         name: lab,
       };
     });
@@ -5207,10 +5222,7 @@ export const PracticeFileTransferPage = ({
 
   const selectedTransferCaseIdentity = useMemo(() => {
     if (!selectedTransfer || !selectedTransferDetailModel) return null;
-    // 협력·하청 표시 SSOT 유지(「어벗츠 · 파트너」/인증 협력 접미사만 strip).
-    const lab = stripPracticeTargetLabDisplayDecorations(
-      selectedTransfer.targetLab,
-    );
+    // 기공소명은 색 점으로만 구분 — 제목 텍스트에는 환자·원장만
     const patient = String(selectedTransferDetailModel.patientName || "").trim();
     const doctor = String(selectedTransferDetailModel.doctorName || "").trim();
     const transferId = String(
@@ -5225,11 +5237,7 @@ export const PracticeFileTransferPage = ({
         "",
     ).trim();
     const arrival = String(selectedTransfer.arrivalDate || "").trim();
-    const identityParts = [
-      lab === "-" ? "" : lab,
-      patient,
-      doctor,
-    ].filter(Boolean);
+    const identityParts = [patient, doctor].filter(Boolean);
     if (!identityParts.length && !transferId) return null;
     const identity = identityParts.length
       ? identityParts.join(" · ")
@@ -5238,15 +5246,27 @@ export const PracticeFileTransferPage = ({
       order ? `주문 ${order}` : "",
       arrival ? `도착 ${arrival}` : "",
     ].filter(Boolean);
-    const cooperationKey =
-      selectedTransfer.assigneeKind === "cooperation"
-        ? String(selectedTransfer.assigneeLabAnchorId || "").trim()
-        : "";
-    const colorKey =
-      cooperationKey ||
-      String(selectedTransfer.targetLabAnchorId || "").trim() ||
-      lab;
-    const dot = practiceLabDots.get(colorKey);
+    const labLabel = resolvePracticeTransferLabDisplayLabel({
+      targetLab: selectedTransfer.targetLab,
+      handledByCertifiedPartner: selectedTransfer.handledByCertifiedPartner,
+      assigneeKind: selectedTransfer.assigneeKind,
+      assigneeLabName: selectedTransfer.assigneeLabName,
+    });
+    const colorKey = resolvePracticeTransferLabColorKey({
+      assigneeKind: selectedTransfer.assigneeKind,
+      assigneeLabAnchorId: selectedTransfer.assigneeLabAnchorId,
+      targetLabAnchorId: selectedTransfer.targetLabAnchorId,
+      targetLab: selectedTransfer.targetLab,
+      performingLabAnchorId: selectedTransfer.performingLabAnchorId,
+      assigneeLabName: selectedTransfer.assigneeLabName,
+      handledByCertifiedPartner: selectedTransfer.handledByCertifiedPartner,
+    });
+    // 범례 맵 우선(표시명·별칭 포함) — 목록 점과 채팅 점 일치
+    const dot =
+      legendLabDots.get(colorKey) ||
+      legendLabDots.get(labLabel) ||
+      practiceLabDots.get(colorKey) ||
+      practiceLabDots.get(labLabel);
     return {
       primary: identity,
       secondary: dateParts.length ? dateParts.join(" · ") : undefined,
@@ -5254,7 +5274,12 @@ export const PracticeFileTransferPage = ({
       dotColor: dot?.color || undefined,
       dotStyle: dot?.style || undefined,
     };
-  }, [practiceLabDots, selectedTransfer, selectedTransferDetailModel]);
+  }, [
+    legendLabDots,
+    practiceLabDots,
+    selectedTransfer,
+    selectedTransferDetailModel,
+  ]);
 
   const prosthesisFollowUpEligibility = useMemo(() => {
     if (!selectedTransfer) {
@@ -10280,6 +10305,7 @@ export const PracticeFileTransferPage = ({
           chatRooms={chatRooms}
           floatingDetailOpen={transferDialogOpen}
           onDetailSlotEl={isMobileViewport ? undefined : setDetailSlotEl}
+          onLabColorDotsChange={setLegendLabDots}
           initialPeriod={period}
           initialSearch=""
           initialRequests={recentRequests}

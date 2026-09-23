@@ -32,9 +32,31 @@ export const ASSIGNEE_KIND_SUBCONTRACT = "subcontract";
 /** 치과 UI: 「어벗츠 · {파트너}」 */
 export const ABUTS_COOPERATION_LABEL_PREFIX = "어벗츠";
 
+const stripPartnerLabDisplayPrefixes = (raw) => {
+  let name = String(raw || "").trim();
+  name = name.replace(/\s·\s인증 협력 기공소에서 처리$/, "").trim();
+  for (let i = 0; i < 6; i += 1) {
+    const next = name
+      .replace(/^어벗츠\s*협력\s*기공소\s*·\s*/, "")
+      .replace(/^어벗츠\s*협력\s*·\s*/, "")
+      .replace(/^어벗츠\s*·\s*/, "")
+      .replace(/^어벗츠기공소\s*·\s*/, "")
+      .trim();
+    if (next === name) break;
+    name = next;
+  }
+  return name;
+};
+
 export const formatAbutsCooperationLabLabel = (partnerName) => {
-  const partner = String(partnerName || "").trim();
-  if (!partner) return ABUTS_LAB_DISPLAY_NAME;
+  const partner = stripPartnerLabDisplayPrefixes(partnerName);
+  if (
+    !partner ||
+    partner === ABUTS_LAB_DISPLAY_NAME ||
+    partner === "어벗츠 기공소"
+  ) {
+    return ABUTS_LAB_DISPLAY_NAME;
+  }
   return `${ABUTS_COOPERATION_LABEL_PREFIX} · ${partner}`;
 };
 
