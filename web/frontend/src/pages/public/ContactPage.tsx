@@ -30,7 +30,6 @@ export const ContactPage = () => {
     name: "",
     email: "",
     phone: "",
-    subject: "",
     message: "",
   });
   const { toast } = useToast();
@@ -58,7 +57,6 @@ export const ContactPage = () => {
       name: "",
       email: "",
       phone: "",
-      subject: "",
       message: "",
     });
   };
@@ -162,13 +160,15 @@ export const ContactPage = () => {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="phone">연락처</Label>
+                    <Label htmlFor="phone">연락처 *</Label>
                     <Input
                       id="phone"
                       name="phone"
+                      type="tel"
                       value={formData.phone}
                       onChange={handleInputChange}
                       placeholder="연락처를 입력하세요"
+                      required
                     />
                   </div>
                 </div>
@@ -182,18 +182,6 @@ export const ContactPage = () => {
                     value={formData.email}
                     onChange={handleInputChange}
                     placeholder="이메일을 입력하세요"
-                    required
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="subject">제목 *</Label>
-                  <Input
-                    id="subject"
-                    name="subject"
-                    value={formData.subject}
-                    onChange={handleInputChange}
-                    placeholder="문의 제목을 입력하세요"
                     required
                   />
                 </div>

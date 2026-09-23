@@ -29,7 +29,12 @@ export function AuthMarketingPanel({
       </div>
       <div className="space-y-4">
         <h1 className="text-3xl font-semibold leading-tight text-white md:text-4xl">
-          {landingHome.heroTitle}
+          {landingHome.heroTitle.map((line, index) => (
+            <span key={line}>
+              {index > 0 ? <br /> : null}
+              {line}
+            </span>
+          ))}
         </h1>
         <p className="text-base text-white/80">
           {landingHome.heroBody}

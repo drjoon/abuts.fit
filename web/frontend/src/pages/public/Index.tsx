@@ -6,14 +6,13 @@
 import { PublicPageLayout } from "./components/PublicPageLayout";
 import { LandingHome } from "@/features/landing/LandingHome";
 
-/** `/` — 큰 이미지 4장. 상세는 `/offer/:slug` */
+/** `/` — Waveon 구조 랜딩. 상세는 `/offer/:slug` */
 const Index = () => {
   return (
     <PublicPageLayout
       tone="light"
       plain
-      navOverlay
-      contentClassName="relative z-10 w-full max-w-none px-0 py-0"
+      contentClassName="relative z-10 w-full max-w-none px-0 pb-0 pt-14 sm:pt-16"
     >
       <LandingHome />
     </PublicPageLayout>

@@ -1,45 +1,64 @@
 // related files:
 // - web/frontend/src/pages/public/Index.tsx
-// - web/frontend/src/features/landing/landingOffers.ts
 // - web/frontend/src/features/landing/landingTheme.ts
 // - web/frontend/src/features/landing/LandingEventsSection.tsx
-// - web/frontend/src/features/landing/OfferVisual.tsx
-import { useEffect, useState } from "react";
+// - web/frontend/src/features/layout/Navigation.tsx
+// - web/frontend/src/features/landing/landingAssets.ts
+import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 import { useAuthStore } from "@/store/useAuthStore";
 import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath";
 import { cn } from "@/shared/ui/cn";
-import { LANDING_HERO_POSTER, LANDING_HERO_VIDEO } from "./landingAssets";
+import { LANDING_WAVEON_HERO } from "./landingAssets";
 import {
   landingHome,
-  landingHomeStories,
+  landingHomeBusinessTabs,
+  landingHomeFaq,
+  landingHomeSteps,
   landingContent,
   landingSectionY,
 } from "./landingTheme";
-import { landingOffers, offerPath } from "./landingOffers";
-import { OfferVisual } from "./OfferVisual";
 import { LandingEventsSection } from "./LandingEventsSection";
-import { LandingSkyWash } from "./LandingSkyWash";
 
-/** `/` 둘러보기. 심플웨이 · 기공사업부 2열. 이벤트는 `#events`. */
-const TILE_FRAME = "min-h-[20rem] lg:min-h-[24rem]";
+type BusinessTabId = (typeof landingHomeBusinessTabs)[number]["id"];
 
-function usePrefersReducedMotion() {
-  const [reduced, setReduced] = useState(false);
-  useEffect(() => {
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const apply = () => setReduced(mq.matches);
-    apply();
-    mq.addEventListener("change", apply);
-    return () => mq.removeEventListener("change", apply);
-  }, []);
-  return reduced;
-}
+/** Waveon 대비 살짝만 작은 타이포 — 본문 15px대, h2 ~36–40px */
+const TYPO = {
+  eyebrow: "text-[11px] font-semibold tracking-[0.2em]",
+  h1: "text-[1.875rem] font-bold leading-tight tracking-tight sm:text-[2.5rem] lg:text-[3.25rem]",
+  h2: "break-keep text-[1.5rem] font-semibold leading-snug tracking-tight sm:text-[2rem] lg:text-[2.25rem]",
+  h3: "break-keep text-lg font-semibold tracking-tight sm:text-xl",
+  lead: "break-keep text-[14px] leading-6 text-slate-600 sm:text-[15px] sm:leading-6",
+  body: "break-keep text-[14px] leading-6 text-slate-600 sm:text-[15px] sm:leading-[1.65]",
+  link: "text-[14px] font-semibold sm:text-[15px]",
+} as const;
 
-function StoryBody({ lines }: { lines: string[] }) {
+const SKY = {
+  ink: "text-[#0b2a5c]",
+  accent: "text-sky-600",
+  accentStrong: "text-[#2563eb]",
+  band: "bg-[#eef6ff]",
+  card: "rounded-2xl border border-sky-100/80 bg-white shadow-[0_10px_32px_rgba(37,99,235,0.06)]",
+  pill:
+    "rounded-full bg-[#2563eb] text-white shadow-[0_8px_22px_rgba(37,99,235,0.25)] hover:bg-[#1d4ed8]",
+  pillGhost:
+    "rounded-full border border-sky-200 bg-white text-[#0b2a5c] hover:bg-sky-50",
+  /** 히어로 오버레이 — Waveon과 동일한 짙은 블루 */
+  heroWash:
+    "bg-[linear-gradient(rgba(7,25,55,0.62),rgba(7,25,55,0.65))]",
+} as const;
+
+function Lines({ lines, className }: { lines: string[]; className?: string }) {
   return (
-    <p className="mt-5 max-w-xl text-lg leading-relaxed text-slate-600 sm:text-xl sm:leading-8">
+    <p className={cn("break-keep", className)}>
       {lines.map((line, index) => (
         <span key={line}>
           {index > 0 ? <br /> : null}
@@ -50,12 +69,27 @@ function StoryBody({ lines }: { lines: string[] }) {
   );
 }
 
-/** `/` — 히어로 · 오퍼 타일 · 이벤트 · 스토리 밴드. 상세는 `/offer/:slug`. */
+function SectionEyebrow({
+  children,
+  className,
+}: {
+  children: string;
+  className?: string;
+}) {
+  return (
+    <p className={cn(TYPO.eyebrow, SKY.accent, className)}>{children}</p>
+  );
+}
+
+/** `/` — Waveon 구조 · 포토 히어로 · 작은 타이포 · 하늘색 · 둥근 모서리 */
 export function LandingHome() {
   const navigate = useNavigate();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const user = useAuthStore((s) => s.user);
-  const reducedMotion = usePrefersReducedMotion();
+  const [tabId, setTabId] = useState<BusinessTabId>("simple-way");
+  const activeTab =
+    landingHomeBusinessTabs.find((t) => t.id === tabId) ??
+    landingHomeBusinessTabs[0];
 
   const goStart = () => {
     navigate(isAuthenticated ? resolveEntryDashboardPath(user) : "/signup");
@@ -63,191 +97,271 @@ export function LandingHome() {
 
   return (
     <div className="bg-white text-slate-900">
-      {/* 풀블리드 영상 히어로. 상단 하늘색 워시로 라이트 네비와 맞춤. */}
-      <section className="relative flex min-h-[100svh] items-end overflow-hidden bg-black">
-        {reducedMotion ? (
-          <img
-            src={LANDING_HERO_POSTER}
-            alt=""
-            className="absolute inset-0 h-full w-full object-cover object-center"
-          />
-        ) : (
-          <video
-            className="absolute inset-0 h-full w-full object-cover object-center"
-            autoPlay
-            muted
-            loop
-            playsInline
-            poster={LANDING_HERO_POSTER}
-            aria-label="심플웨이 시술 키트 영상"
-          >
-            <source src={LANDING_HERO_VIDEO} type="video/mp4" />
-          </video>
-        )}
-        {/* 네비 구간 — 상단만 얇은 하늘색 워시 */}
-        <div className="pointer-events-none absolute inset-x-0 top-0 z-[1] h-24 sm:h-28 [mask-image:linear-gradient(to_bottom,black_55%,transparent)]">
-          <div className="absolute inset-0 bg-[#f8fafc]/88" />
-          <LandingSkyWash />
-        </div>
-        <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-black/15" />
+      {/* 풀블리드 포토 히어로 — Waveon 원본 색감 */}
+      <section className="relative flex min-h-[78svh] items-center justify-center overflow-hidden bg-[#071937] sm:min-h-[82svh]">
+        <img
+          src={LANDING_WAVEON_HERO}
+          alt=""
+          className="absolute inset-0 h-full w-full object-cover object-center"
+        />
+        <div className={cn("pointer-events-none absolute inset-0", SKY.heroWash)} />
+
         <div
           className={cn(
             landingContent,
-            "relative z-10 w-full pb-14 pt-28 sm:pb-20 sm:pt-32",
+            "relative z-10 flex w-full flex-col items-center px-5 py-28 text-center sm:py-32",
           )}
         >
-          <h1 className="max-w-3xl text-4xl font-semibold leading-[1.05] tracking-tight text-white drop-shadow-[0_2px_16px_rgba(0,0,0,0.45)] sm:text-6xl lg:text-7xl">
-            {landingHome.heroTitle}
+          <p className={cn(TYPO.eyebrow, "text-white/85")}>
+            {landingHome.heroEyebrow}
+          </p>
+          <h1 className={cn(TYPO.h1, "mt-3 max-w-2xl text-white")}>
+            {landingHome.heroTitle.map((line, index) => (
+              <span key={line}>
+                {index > 0 ? <br /> : null}
+                {line}
+              </span>
+            ))}
           </h1>
-          <p className="mt-4 max-w-xl text-2xl text-white drop-shadow-[0_1px_10px_rgba(0,0,0,0.4)] sm:mt-5 sm:text-3xl">
-            {landingHome.heroBody}
-          </p>
-          <p className="mt-2 max-w-xl text-lg text-white/90 drop-shadow-[0_1px_8px_rgba(0,0,0,0.35)] sm:text-xl">
-            {landingHome.heroSupport}
-          </p>
+          <Lines
+            lines={[landingHome.heroBody, landingHome.heroSupport]}
+            className="mt-4 max-w-xl text-[14px] leading-6 text-white/90 sm:mt-5 sm:text-[15px] sm:leading-6"
+          />
           <Button
             type="button"
-            className="mt-8 h-12 rounded-full bg-white px-7 text-base font-semibold text-slate-900 hover:bg-white/90"
+            className="mt-7 h-11 rounded-full bg-white px-6 text-[14px] font-semibold text-[#1e4a8c] hover:bg-white/95 sm:text-[15px]"
             onClick={goStart}
           >
-            {landingHome.ctaStart}
+            {landingHome.ctaHero}
+            <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
           </Button>
+        </div>
+
+        <div className="pointer-events-none absolute bottom-6 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-2">
+          <span className="text-[10px] font-semibold tracking-[0.28em] text-white/70">
+            SCROLL
+          </span>
+          <span className="h-8 w-px bg-white/50" />
         </div>
       </section>
 
+      {/* THE SIMPLE WAY — 탭 */}
       <section
-        id="browse"
-        className="bg-[#f3f4f6] pt-8 pb-12 sm:pt-10 sm:pb-14 lg:pt-12 lg:pb-16"
+        id="business"
+        className={cn("scroll-mt-20 bg-white", landingSectionY.bandTight)}
       >
-        <div
-          className={cn(
-            landingContent,
-            "grid grid-cols-1 gap-5 sm:gap-6 lg:grid-cols-2",
-          )}
-        >
-          {landingOffers.map((offer) => {
-            const frame = cn(
-              "group relative block overflow-hidden rounded-[1.5rem] bg-[#e7e9ee] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900",
-              TILE_FRAME,
-            );
-            return (
+        <div className={landingContent}>
+          <div className="mx-auto max-w-2xl text-center">
+            <SectionEyebrow>{landingHome.browseEyebrow}</SectionEyebrow>
+            <h2 className={cn(TYPO.h2, "mt-2.5", SKY.ink)}>
+              {landingHome.browseHeading}
+            </h2>
+            <p className={cn("mt-2.5", TYPO.lead)}>{landingHome.browseLead}</p>
+          </div>
+
+          <div
+            role="tablist"
+            aria-label="서비스 선택"
+            className="mt-8 grid gap-2.5 sm:mt-10 sm:grid-cols-3 sm:gap-3"
+          >
+            {landingHomeBusinessTabs.map((tab) => {
+              const selected = tab.id === tabId;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={selected}
+                  onClick={() => setTabId(tab.id)}
+                  className={cn(
+                    "flex h-12 items-center justify-between rounded-xl px-4 text-left text-[14px] font-semibold transition sm:px-5 sm:text-[15px]",
+                    selected
+                      ? "bg-[#2563eb] text-white shadow-[0_10px_24px_rgba(37,99,235,0.25)]"
+                      : "border border-sky-200/90 bg-white text-[#0b2a5c] hover:border-sky-300 hover:bg-sky-50/80",
+                  )}
+                >
+                  <span>{tab.label}</span>
+                  <ArrowRight className="h-3.5 w-3.5 shrink-0 opacity-80" />
+                </button>
+              );
+            })}
+          </div>
+
+          <div
+            className={cn(
+              "mt-5 grid items-stretch gap-0 overflow-hidden lg:mt-6 lg:grid-cols-2",
+              SKY.card,
+            )}
+          >
+            <div className="relative min-h-[14rem] overflow-hidden bg-[#e8f2ff] sm:min-h-[18rem] lg:min-h-[20rem]">
+              <img
+                src={activeTab.image.src}
+                alt={activeTab.image.alt}
+                className="h-full w-full object-cover object-center"
+              />
+              <div className="pointer-events-none absolute inset-0 bg-gradient-to-tr from-sky-500/15 via-transparent to-blue-500/10" />
+            </div>
+            <div className="flex flex-col justify-center px-5 py-7 sm:px-8 sm:py-9">
+              <p className={cn(TYPO.eyebrow, SKY.accent)}>{activeTab.eyebrow}</p>
+              <h3 className={cn(TYPO.h3, "mt-2", SKY.ink)}>{activeTab.title}</h3>
+              <Lines
+                lines={[...activeTab.body]}
+                className={cn("mt-3", TYPO.body)}
+              />
               <Link
-                key={offer.slug}
-                to={offerPath(offer.slug)}
-                className={frame}
+                to={activeTab.href}
+                className={cn(
+                  "mt-5 inline-flex items-center gap-1 underline-offset-4 hover:underline",
+                  TYPO.link,
+                  SKY.accentStrong,
+                )}
               >
-                <div className="absolute inset-0 transition duration-500 group-hover:scale-[1.02]">
-                  <OfferVisual
-                    visual={offer.tile}
-                    tile
-                    className="h-full min-h-0"
-                  />
-                </div>
-                <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-6 pb-6 pt-20 sm:px-8 sm:pb-7">
-                  <p className="text-base font-medium text-white/85 sm:text-lg">
-                    {offer.navLabel}
-                  </p>
-                  <h2 className="mt-2 text-3xl font-semibold tracking-tight text-white sm:text-4xl">
-                    {offer.punch}
-                  </h2>
-                  <p className="mt-2 max-w-md text-base leading-snug text-white/90 sm:text-lg">
-                    {offer.line}
-                  </p>
-                </div>
+                {activeTab.cta}
+                <ArrowRight className="h-3.5 w-3.5" />
               </Link>
-            );
-          })}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 연결 가치 + 진행 절차 — Why/Workflow/Pain 중복을 한 섹션으로 */}
+      <section
+        id="process"
+        className={cn("scroll-mt-20", SKY.band, landingSectionY.bandTight)}
+      >
+        <div className={landingContent}>
+          <div className="mx-auto max-w-2xl text-center">
+            <SectionEyebrow>{landingHome.stepsEyebrow}</SectionEyebrow>
+            <h2 className={cn(TYPO.h2, "mt-2.5", SKY.ink)}>
+              {landingHome.whyHeading}
+            </h2>
+            <p className={cn("mt-2.5", TYPO.lead)}>{landingHome.stepsLead}</p>
+          </div>
+
+          <div className="relative mt-8 overflow-hidden rounded-2xl sm:mt-10">
+            <img
+              src="/landing/waveon/partnership.jpg"
+              alt="치과·기공소 디지털 협업"
+              className="h-[12rem] w-full object-cover object-center sm:h-[16rem] lg:h-[18rem]"
+            />
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#071937]/45 via-sky-500/10 to-transparent" />
+          </div>
+
+          <ol className="mt-6 grid gap-3 sm:mt-8 sm:grid-cols-2 lg:grid-cols-4 lg:gap-4">
+            {landingHomeSteps.map((item, index) => (
+              <li
+                key={item.title}
+                className={cn(SKY.card, "px-4 py-5 sm:px-5 sm:py-6")}
+              >
+                <p className={cn("text-[13px] font-bold", SKY.accentStrong)}>
+                  {String(index + 1).padStart(2, "0")}
+                </p>
+                <h3
+                  className={cn(
+                    "mt-2 break-keep text-base font-semibold tracking-tight sm:text-lg",
+                    SKY.ink,
+                  )}
+                >
+                  {item.title}
+                </h3>
+                <p className={cn("mt-2", TYPO.body)}>{item.body}</p>
+              </li>
+            ))}
+          </ol>
+
+          <div className="mt-8 flex justify-center">
+            <Button
+              type="button"
+              className={cn("h-10 px-6 text-[14px] font-semibold", SKY.pillGhost)}
+              onClick={() => navigate("/contact")}
+            >
+              플랫폼 도입 상담
+              <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+            </Button>
+          </div>
         </div>
       </section>
 
       <LandingEventsSection />
 
+      {/* FAQ */}
       <section
-        id="stories"
-        className={cn("scroll-mt-20 bg-white", landingSectionY.bandLoose)}
+        id="faq"
+        className={cn("scroll-mt-20 bg-white", landingSectionY.bandTight)}
       >
-        <div className={landingContent}>
-          <h2 className="max-w-2xl text-[clamp(2rem,4.2vw,3.25rem)] font-semibold leading-tight tracking-tight text-slate-900">
-            {landingHome.storiesHeading}
-          </h2>
-          <p className="mt-3 max-w-xl text-xl text-slate-600 sm:text-2xl">
-            {landingHome.storiesLead}
-          </p>
-
-          <div className={cn("mt-14 flex flex-col sm:mt-16", landingSectionY.storyGap)}>
-            {landingHomeStories.map((story, index) => {
-              const media = (
-                <div
-                  className={cn(
-                    "overflow-hidden rounded-[1.75rem] bg-[#e7e9ee]",
-                    landingSectionY.media,
-                    index % 2 === 1 && "lg:order-2",
-                  )}
-                >
-                  <img
-                    src={story.image.src}
-                    alt={story.image.alt}
-                    className="h-full w-full object-cover object-center"
-                  />
-                </div>
-              );
-              const copy = (
-                <div
-                  className={cn(
-                    index % 2 === 1 ? "lg:pr-2" : "lg:pl-2",
-                  )}
-                >
-                  <h3 className="text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
-                    {story.title}
-                  </h3>
-                  <p className="mt-3 text-xl text-slate-600 sm:text-2xl">
-                    {story.line}
-                  </p>
-                  <StoryBody lines={story.body} />
-                  {story.href ? (
-                    <Link
-                      to={story.href}
-                      className="mt-6 inline-block text-base font-semibold text-[#1d4ed8] underline-offset-4 hover:underline sm:text-lg"
-                    >
-                      자세히 보기
-                    </Link>
-                  ) : null}
-                </div>
-              );
-              return (
-                <article
-                  key={story.title}
-                  className="grid items-center gap-8 lg:grid-cols-2 lg:gap-14"
-                >
-                  {media}
-                  {copy}
-                </article>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      <section className="bg-[#f3f4f6]">
         <div
           className={cn(
             landingContent,
-            "flex flex-col items-start py-16 sm:py-20 lg:flex-row lg:items-end lg:justify-between lg:gap-10",
+            "grid gap-6 lg:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)] lg:gap-10",
           )}
         >
-          <div className="max-w-xl">
-            <h2 className="text-[clamp(2rem,4vw,3rem)] font-semibold tracking-tight text-slate-900">
+          <div>
+            <SectionEyebrow>{landingHome.faqEyebrow}</SectionEyebrow>
+            <h2 className={cn(TYPO.h2, "mt-2.5", SKY.ink)}>
+              {landingHome.faqHeading}
+            </h2>
+          </div>
+          <Accordion
+            type="single"
+            collapsible
+            className={cn(SKY.card, "px-4 sm:px-5")}
+          >
+            {landingHomeFaq.map((item) => (
+              <AccordionItem
+                key={item.q}
+                value={item.q}
+                className="border-sky-100"
+              >
+                <AccordionTrigger className="py-4 text-left text-[15px] font-semibold text-[#0b2a5c] hover:no-underline sm:text-base">
+                  {item.q}
+                </AccordionTrigger>
+                <AccordionContent className={cn("pb-4", TYPO.body)}>
+                  {item.a}
+                </AccordionContent>
+              </AccordionItem>
+            ))}
+          </Accordion>
+        </div>
+      </section>
+
+      {/* CTA */}
+      <section id="contact" className={cn("scroll-mt-20", SKY.band)}>
+        <div
+          className={cn(
+            landingContent,
+            "flex flex-col items-start py-12 sm:py-14 lg:flex-row lg:items-end lg:justify-between lg:gap-8",
+          )}
+        >
+          <div className="max-w-lg">
+            <SectionEyebrow>START SIMPLE WAY</SectionEyebrow>
+            <h2 className={cn(TYPO.h2, "mt-2.5", SKY.ink)}>
               {landingHome.ctaBandTitle}
             </h2>
-            <StoryBody lines={[...landingHome.ctaBandBody]} />
+            <Lines
+              lines={[...landingHome.ctaBandBody]}
+              className={cn("mt-3", TYPO.lead)}
+            />
           </div>
-          <Button
-            type="button"
-            className="mt-8 h-12 shrink-0 rounded-full bg-[#2563eb] px-8 text-base font-semibold text-white hover:bg-[#1d4ed8] lg:mt-0"
-            onClick={goStart}
-          >
-            {landingHome.ctaStart}
-          </Button>
+          <div className="mt-6 flex flex-wrap gap-2.5 lg:mt-0">
+            <Button
+              type="button"
+              className={cn("h-10 shrink-0 px-6 text-[14px] font-semibold", SKY.pill)}
+              onClick={goStart}
+            >
+              {landingHome.ctaStart}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className={cn(
+                "h-10 shrink-0 px-6 text-[14px] font-semibold",
+                SKY.pillGhost,
+              )}
+              onClick={() => navigate("/contact")}
+            >
+              {landingHome.ctaConsult}
+            </Button>
+          </div>
         </div>
       </section>
     </div>

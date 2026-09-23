@@ -13,10 +13,17 @@ export const LANDING_CUSTOM_ABUTMENT_CUTOUT =
 /** 커스텀어벗 — CNC 추적관리 (기공소·치과명 블러) */
 export const LANDING_CUSTOM_TRACKING = "/landing/custom-tracking.jpg";
 
-/** 히어로 — ACRODENT TheSimple Implant 발췌 (키트 클로즈업 · 4키트 · Check) */
+/** 히어로 — Waveon 랩 포토 (브랜드 블루·바이올렛 색보정) */
+export const LANDING_HERO_PHOTO = "/landing/waveon/hero.jpg";
+/** @deprecated 키트 영상 — `/` 히어로는 LANDING_HERO_PHOTO 사용 */
 export const LANDING_HERO_VIDEO = "/landing/hero-simple.mp4";
-export const LANDING_HERO_POSTER = "/landing/hero-poster.jpg";
+export const LANDING_HERO_POSTER = "/landing/waveon/hero.jpg";
 export const LANDING_SIMPLE_WAY_STILL = "/landing/simple-way-kits.jpg";
+
+/** Waveon 랜딩 포토 — 블루·바이올렛 색보정본 */
+export const LANDING_WAVEON_HERO = "/landing/waveon/hero.jpg";
+export const LANDING_WAVEON_PARTNERSHIP = "/landing/waveon/partnership.jpg";
+export const LANDING_WAVEON_WORKFLOW = "/landing/waveon/workflow.jpg";
 
 /** 심플웨이 오퍼 — 카탈로그 발췌 (가이드·힐링·어벗·키트만) */
 export const LANDING_SW_HERO_KITS = "/landing/simpleway/hero-kits.jpg";

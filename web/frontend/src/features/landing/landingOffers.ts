@@ -4,9 +4,10 @@
 // - web/frontend/src/features/landing/landingAssets.ts
 // - rules.md §1.5–§2.6 · web/frontend/rules.md (기공의뢰·정산·스토어)
 //
-// 메뉴: 심플웨이 · 기공사업부. 이벤트는 랜딩 `#events`. 플랫폼·커스텀어벗은 두 오퍼에 섞어 넣는다.
-// 정가(판매가·배송비)는 심플웨이 제품 + 커스텀어벗(런칭/정상). 스토어 SSOT: storeCatalog.ts
-// · STORE_SHIPPING_FEE_INCLUSIVE 3,500 · 10만원↑무료. 기공사업부 본문은 금액을 적지 않는다.
+  // 메뉴: 심플웨이 · 기공사업부. 이벤트는 랜딩 `#events`. 플랫폼·커스텀어벗은 두 오퍼에 섞어 넣는다.
+  // `/` 카피 SSOT: landingTheme (Waveon 워크플로우 메시지 · 기존 섹션 디자인 유지)
+  // 정가(판매가·배송비)는 심플웨이 제품 + 커스텀어벗(런칭/정상). 스토어 SSOT: storeCatalog.ts
+  // · STORE_SHIPPING_FEE_INCLUSIVE 3,500 · 10만원↑무료. 기공사업부 본문은 금액을 적지 않는다.
 import {
   LANDING_CAD_PREVIEW,
   LANDING_CASE_ABUTMENT,
@@ -26,6 +27,8 @@ import {
   LANDING_SW_GUIDE_PEN_PIN,
   LANDING_SW_HERO_KITS,
   LANDING_SW_PROSTHETIC_KIT,
+  LANDING_WAVEON_PARTNERSHIP,
+  LANDING_WAVEON_WORKFLOW,
 } from "./landingAssets";
 
 export type OfferVisual =
@@ -145,26 +148,22 @@ const ABUTMENT_VISUAL: OfferVisual = {
   alt: "심플어벗",
 };
 
-const PAIR_VISUAL: OfferVisual = {
-  kind: "pair",
-  items: [
-    {
-      src: LANDING_CASE_HEALING,
-      alt: "심플 힐링 어벗",
-      caption: "심플 힐링",
-    },
-    {
-      src: LANDING_CASE_ABUTMENT,
-      alt: "심플어벗",
-      caption: "심플어벗",
-    },
-  ],
-};
-
 const HERO_KITS: OfferVisual = {
   kind: "photo",
   src: LANDING_SW_HERO_KITS,
   alt: "심플웨이 Guide · Check · Prosthetics 키트",
+};
+
+const WAVEON_WORKFLOW_TILE: OfferVisual = {
+  kind: "photo",
+  src: LANDING_WAVEON_WORKFLOW,
+  alt: "임플란트 어벗·보철 구성",
+};
+
+const WAVEON_PARTNERSHIP_TILE: OfferVisual = {
+  kind: "photo",
+  src: LANDING_WAVEON_PARTNERSHIP,
+  alt: "치과·기공소 디지털 협업",
 };
 
 /** 이벤트(`/events/simpleway-gribo` extras)와 동일 카피 — 심플웨이·기공사업부에 넣음 */
@@ -190,12 +189,12 @@ export const landingOffers: LandingOffer[] = [
   {
     slug: "simple-way",
     navLabel: "심플웨이",
-    punch: "색을 따르면 된다.",
-    heroTitle: "색을 따르면 된다.",
-    line: "가이드부터 힐링·어벗까지, 같은 직경 라인.",
-    lead: "색으로 직경을 맞추고, 심플 힐링과 심플어벗으로 보철까지.",
+    punch: "직관적인 수술과 보철의 시작",
+    heroTitle: "직관적인 수술과 보철의 시작",
+    line: "식립 위치와 어벗 선택을 간결한 흐름으로.",
+    lead: "심플웨이 툴과 재료로 이상적인 식립을 준비하고, 케이스에 맞는 어벗으로 보철까지 이어갑니다.",
     hero: "photo",
-    tile: PAIR_VISUAL,
+    tile: WAVEON_WORKFLOW_TILE,
     pageVisual: HERO_KITS,
     highlights: [
       { icon: "kit", label: "Guide", line: "가이드펜·핀으로 위치를" },
@@ -379,16 +378,16 @@ export const landingOffers: LandingOffer[] = [
   {
     slug: "lab",
     navLabel: "기공사업부",
-    punch: "보철을 이어서.",
-    heroTitle: "보철을 이어서.",
-    line: "커스텀어벗 다음, 같은 화면.",
-    lead: "심플어벗·커스텀어벗 다음 기공. 의뢰부터 출고·정산까지.",
+    punch: "디자인에서 생산까지",
+    heroTitle: "디자인에서 생산까지",
+    line: "의뢰·기공 협업·애크로덴트 납품을 한 흐름으로.",
+    lead: "스캔 의뢰부터 커스텀어벗 디자인, 애크로덴트 생산·납품까지 같은 플랫폼에서 이어집니다.",
     hero: "tile",
-    tile: { kind: "workspace" },
+    tile: WAVEON_PARTNERSHIP_TILE,
     pageVisual: {
       kind: "slideshow",
       shots: [
-        { src: LANDING_PLATFORM_BOARD, alt: "의뢰 진행" },
+        { src: LANDING_WAVEON_PARTNERSHIP, alt: "치과·기공소 디지털 협업" },
         { src: LANDING_CUSTOM_ABUTMENT, alt: "커스텀 어벗 실물" },
         { src: LANDING_CAD_PREVIEW, alt: "커스텀 어벗 CAD" },
         { src: LANDING_PLATFORM_STATS, alt: "정산 통계" },
