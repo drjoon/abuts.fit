@@ -132,7 +132,7 @@ function SimplewayHero({
 
       <div className="relative mx-auto flex min-h-[72vh] max-w-5xl flex-col justify-center px-4 pb-16 pt-20 sm:px-6 sm:pb-20 sm:pt-24 lg:px-8">
         <Link
-          to="/events"
+          to="/#events"
           className="mb-8 inline-flex w-fit items-center gap-1 text-sm text-slate-500 transition-colors hover:text-slate-800"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
@@ -520,7 +520,7 @@ export default function EventApplyPage() {
               {error || "이벤트를 찾을 수 없습니다."}
             </p>
             <Button asChild variant="outline">
-              <Link to="/events">목록으로</Link>
+              <Link to="/#events">목록으로</Link>
             </Button>
           </CardContent>
         </Card>
@@ -580,7 +580,7 @@ export default function EventApplyPage() {
       ) : (
         <section className="mx-auto max-w-2xl space-y-4 px-4 pt-20 pb-8 sm:px-6">
           <Link
-            to="/events"
+            to="/#events"
             className="inline-flex items-center gap-1 text-sm text-slate-500 transition-colors hover:text-slate-800"
           >
             <ArrowLeft className="h-3.5 w-3.5" />

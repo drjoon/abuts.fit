@@ -2,6 +2,7 @@
 // - web/frontend/src/pages/public/Index.tsx
 // - web/frontend/src/features/landing/landingOffers.ts
 // - web/frontend/src/features/landing/landingTheme.ts
+// - web/frontend/src/features/landing/LandingEventsSection.tsx
 // - web/frontend/src/features/landing/OfferVisual.tsx
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
@@ -18,8 +19,9 @@ import {
 } from "./landingTheme";
 import { landingOffers, offerPath } from "./landingOffers";
 import { OfferVisual } from "./OfferVisual";
+import { LandingEventsSection } from "./LandingEventsSection";
 
-/** `/` 둘러보기. 심플웨이 · 기공사업부 2열. */
+/** `/` 둘러보기. 심플웨이 · 기공사업부 2열. 이벤트는 `#events`. */
 const TILE_FRAME = "min-h-[20rem] lg:min-h-[24rem]";
 
 function usePrefersReducedMotion() {
@@ -47,7 +49,7 @@ function StoryBody({ lines }: { lines: string[] }) {
   );
 }
 
-/** `/` — 히어로 · 오퍼 타일 · 스토리 밴드. 상세는 `/offer/:slug`. */
+/** `/` — 히어로 · 오퍼 타일 · 이벤트 · 스토리 밴드. 상세는 `/offer/:slug`. */
 export function LandingHome() {
   const navigate = useNavigate();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -146,6 +148,8 @@ export function LandingHome() {
           })}
         </div>
       </section>
+
+      <LandingEventsSection />
 
       <section
         id="stories"

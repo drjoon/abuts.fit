@@ -4,7 +4,7 @@
 // - web/frontend/src/features/landing/landingAssets.ts
 // - rules.md §1.5–§2.6 · web/frontend/rules.md (기공의뢰·정산·스토어)
 //
-// 메뉴: 심플웨이 · 기공사업부 · 이벤트. 플랫폼·커스텀어벗은 두 오퍼에 섞어 넣는다.
+// 메뉴: 심플웨이 · 기공사업부. 이벤트는 랜딩 `#events`. 플랫폼·커스텀어벗은 두 오퍼에 섞어 넣는다.
 // 정가(판매가·배송비)는 심플웨이 제품 + 커스텀어벗(런칭/정상). 스토어 SSOT: storeCatalog.ts
 // · STORE_SHIPPING_FEE_INCLUSIVE 3,500 · 10만원↑무료. 기공사업부 본문은 금액을 적지 않는다.
 import {

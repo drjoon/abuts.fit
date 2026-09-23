@@ -136,7 +136,7 @@ export const landingSectionY = {
   sceneMin: "min-h-[56vh] sm:min-h-[62vh]",
 } as const;
 
-/** `/` 히어로. 메뉴 카피는 `landingOffers.ts`(심플웨이 · 기공사업부 · 이벤트). */
+/** `/` 히어로. 메뉴는 심플웨이 · 기공사업부. 이벤트는 `#events`. */
 export const landingHome = {
   heroTitle: "심플웨이를 시작으로.",
   heroBody: "의뢰하고, 깎고, 기공합니다.",
@@ -144,6 +144,12 @@ export const landingHome = {
   ctaStart: "시작하기",
   storiesHeading: "한 흐름으로.",
   storiesLead: "제품에서 의뢰, 가공, 기공까지.",
+  eventsHeading: "진행 중인 행사",
+  eventsLead: "직접 만져보고 신청하세요.",
+  eventsBody: [
+    "신청해 주시면 영업 담당자가 치과를 방문합니다.",
+    "제품과 사용 방법을 자리에서 안내해 드립니다.",
+  ],
   ctaBandTitle: "지금 시작해 보세요.",
   ctaBandBody: [
     "회원가입 후 의뢰서를 열면 됩니다.",

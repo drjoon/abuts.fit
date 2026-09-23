@@ -42,12 +42,11 @@ export const Navigation = ({ tone = "dark", overlay = false }: NavigationProps) 
   /** 라이트 톤은 오버레이여도 어두운 글자 유지(밝은 히어로 위). */
   const isLight = tone === "light";
 
-  /** 심플웨이 · 기공사업부 · 이벤트 */
+  /** 심플웨이 · 기공사업부. 이벤트는 랜딩 `#events`. */
   const menuItems: NavMenuItem[] = landingOffers.map((offer) => ({
     label: offer.navLabel,
     href: offerPath(offer.slug),
   }));
-  const eventsItem: NavMenuItem = { label: "이벤트", href: "/events" };
 
   useEffect(() => {
     if (!overlay) return;
@@ -113,12 +112,6 @@ export const Navigation = ({ tone = "dark", overlay = false }: NavigationProps) 
   };
 
   const isNavItemCurrent = (item: NavMenuItem) => {
-    if (item.href === "/events") {
-      return (
-        location.pathname === "/events" ||
-        location.pathname.startsWith("/events/")
-      );
-    }
     return location.pathname === item.href;
   };
 
@@ -261,16 +254,6 @@ export const Navigation = ({ tone = "dark", overlay = false }: NavigationProps) 
                 {renderDesktopItem(item)}
               </span>
             ))}
-            <span
-              className={cn(
-                "shrink-0 select-none text-xl font-medium leading-none",
-                isLight ? "text-slate-900" : "text-white",
-              )}
-              aria-hidden
-            >
-              +
-            </span>
-            {renderDesktopItem(eventsItem)}
           </div>
 
           <div className="hidden shrink-0 items-center gap-2 lg:flex xl:gap-4">
@@ -368,14 +351,6 @@ export const Navigation = ({ tone = "dark", overlay = false }: NavigationProps) 
                 {renderMobileItem(item)}
               </div>
             ))}
-            <div
-              className="flex items-center gap-2 px-2 py-1 text-slate-400"
-              aria-hidden
-            >
-              <span className="text-base font-light leading-none">+</span>
-              <span className="h-px flex-1 bg-slate-200" />
-            </div>
-            {renderMobileItem(eventsItem)}
             <div className="space-y-2">{mobileAuthButtons}</div>
           </div>
         </>
