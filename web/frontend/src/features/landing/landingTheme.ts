@@ -136,6 +136,13 @@ export const landingSectionY = {
   sceneMin: "min-h-[56vh] sm:min-h-[62vh]",
 } as const;
 
+/**
+ * 공개 히어로 하늘색 워시 — `LandingSkyWash` 와 동일 토큰.
+ * 이벤트(`/events/*`)·랜딩(`/`) 헤더 뒤 배경 SSOT.
+ */
+export const landingSkyWashClass =
+  "bg-[radial-gradient(ellipse_at_20%_0%,rgba(56,189,248,0.18),transparent_55%),radial-gradient(ellipse_at_90%_10%,rgba(37,99,235,0.14),transparent_50%),linear-gradient(180deg,#f8fafc_0%,#eef4fb_55%,#ffffff_100%)]";
+
 /** `/` 히어로. 메뉴는 심플웨이 · 기공사업부. 이벤트는 `#events`. */
 export const landingHome = {
   heroTitle: "심플웨이를 시작으로.",
@@ -169,14 +176,14 @@ export type LandingHomeStory = {
 export const landingHomeStories: LandingHomeStory[] = [
   {
     title: "심플웨이로 하루를 엽니다.",
-    line: "힐링을 심고, 스캔하면 보철·커스텀이 이어집니다.",
+    line: "색을 따르면 힐링·어벗이 같은 라인으로 이어집니다.",
     body: [
-      "식립 뒤 치은을 짧게 잡고, 구강 스캔을 올리면 됩니다.",
+      "가이드펜으로 직경을 정하고, 심플 힐링으로 치은을 잡습니다.",
       "심플어벗 규격을 고르거나, 필요하면 커스텀어벗으로 CNC가 이어집니다.",
       "아침에 올린 케이스가 저녁에도 어디쯤인지, 화면만 보면 압니다.",
     ],
     image: {
-      src: "/landing/simple-way-kits.jpg",
+      src: "/landing/simpleway/hero-kits.jpg",
       alt: "심플웨이 시술 키트",
     },
     href: "/offer/simple-way",

@@ -18,6 +18,18 @@ export const LANDING_HERO_VIDEO = "/landing/hero-simple.mp4";
 export const LANDING_HERO_POSTER = "/landing/hero-poster.jpg";
 export const LANDING_SIMPLE_WAY_STILL = "/landing/simple-way-kits.jpg";
 
+/** 심플웨이 오퍼 — 카탈로그 발췌 (가이드·힐링·어벗·키트만) */
+export const LANDING_SW_HERO_KITS = "/landing/simpleway/hero-kits.jpg";
+export const LANDING_SW_GUIDE_PEN_PIN = "/landing/simpleway/guide-pen-pin.jpg";
+export const LANDING_SW_BONE_SHAPER = "/landing/simpleway/bone-shaper.jpg";
+export const LANDING_SW_CHECK_PIN = "/landing/simpleway/check-pin.jpg";
+export const LANDING_SW_ABUTMENT_CROWN =
+  "/landing/simpleway/simple-abutment-crown.jpg";
+export const LANDING_SW_GUIDE_KIT = "/landing/simpleway/guide-kit.jpg";
+export const LANDING_SW_CHECK_KIT = "/landing/simpleway/check-kit.jpg";
+export const LANDING_SW_PROSTHETIC_KIT = "/landing/simpleway/prosthetic-kit.jpg";
+export const LANDING_SW_GUIDE_HOW_TO = "/landing/simpleway/guide-how-to.jpg";
+
 /** 플랫폼 화면. 이름·기공소·금액은 가림 */
 export const LANDING_PLATFORM_REQUEST = "/landing/platform-request.jpg";
 export const LANDING_PLATFORM_BOARD = "/landing/platform-board.jpg";

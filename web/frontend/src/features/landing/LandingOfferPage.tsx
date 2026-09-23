@@ -448,18 +448,20 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
   };
 
   const heroVisual = offer.pageVisual ?? offer.tile;
+  const fullBleedHero = offer.hero === "video" || offer.hero === "photo";
 
   return (
     <div className="bg-white text-slate-900">
-      {offer.hero === "video" ? (
+      {fullBleedHero ? (
         <section className="bg-black">
           <div className="h-14 bg-white sm:h-16" aria-hidden />
           <div className="relative min-h-[calc(100svh-3.5rem)] sm:min-h-[calc(100svh-4rem)]">
             <div className="absolute inset-0">
               <MediaFrame
                 visual={heroVisual}
-                video
+                video={offer.hero === "video"}
                 reduced={reduced}
+                drift={offer.hero === "photo"}
                 className="h-full"
               />
             </div>

@@ -11,13 +11,21 @@ import {
   LANDING_CAD_PREVIEW,
   LANDING_CASE_ABUTMENT,
   LANDING_CASE_HEALING,
-  LANDING_CASE_KIT,
   LANDING_CUSTOM_ABUTMENT,
   LANDING_CUSTOM_TRACKING,
   LANDING_PLATFORM_BOARD,
   LANDING_PLATFORM_LEDGER,
   LANDING_PLATFORM_REQUEST,
   LANDING_PLATFORM_STATS,
+  LANDING_SW_ABUTMENT_CROWN,
+  LANDING_SW_BONE_SHAPER,
+  LANDING_SW_CHECK_KIT,
+  LANDING_SW_CHECK_PIN,
+  LANDING_SW_GUIDE_HOW_TO,
+  LANDING_SW_GUIDE_KIT,
+  LANDING_SW_GUIDE_PEN_PIN,
+  LANDING_SW_HERO_KITS,
+  LANDING_SW_PROSTHETIC_KIT,
 } from "./landingAssets";
 
 export type OfferVisual =
@@ -99,7 +107,8 @@ export type LandingOffer = {
   heroTitle: string;
   line: string;
   lead: string;
-  hero: "video" | "tile";
+  /** video=키트 영상 · photo=풀블리드 스틸 · tile=텍스트+미디어 */
+  hero: "video" | "photo" | "tile";
   tile: OfferVisual;
   /** 오퍼 히어로. 없으면 tile. 홈 타일과 겹치지 않을 때. */
   pageVisual?: OfferVisual;
@@ -122,7 +131,6 @@ export const LEGACY_OFFER_REDIRECTS: Record<string, string> = {
   "custom-abutment": "lab",
 };
 
-const PROSTHETIC_KIT = "/store/acrodent/prosthetic-kit.jpg";
 const FULL_PACKAGE = "/store/acrodent/full-package.jpg";
 
 const HEALING_VISUAL: OfferVisual = {
@@ -135,12 +143,6 @@ const ABUTMENT_VISUAL: OfferVisual = {
   kind: "photo",
   src: LANDING_CASE_ABUTMENT,
   alt: "심플어벗",
-};
-
-const KIT_VISUAL: OfferVisual = {
-  kind: "photo",
-  src: LANDING_CASE_KIT,
-  alt: "Surgical Kit",
 };
 
 const PAIR_VISUAL: OfferVisual = {
@@ -159,27 +161,43 @@ const PAIR_VISUAL: OfferVisual = {
   ],
 };
 
+const HERO_KITS: OfferVisual = {
+  kind: "photo",
+  src: LANDING_SW_HERO_KITS,
+  alt: "심플웨이 Guide · Check · Prosthetics 키트",
+};
+
 export const landingOffers: LandingOffer[] = [
   {
     slug: "simple-way",
     navLabel: "심플웨이",
-    punch: "스캔하면 시작.",
-    heroTitle: "스캔하면 시작.",
-    line: "힐링에서 보철·커스텀까지.",
-    lead: "심플웨이로 보철이 이어지고, 의뢰·정산도 같은 화면에서.",
-    hero: "video",
+    punch: "색을 따르면 된다.",
+    heroTitle: "색을 따르면 된다.",
+    line: "가이드부터 힐링·어벗까지, 같은 직경 라인.",
+    lead: "색으로 직경을 맞추고, 심플 힐링과 심플어벗으로 보철까지.",
+    hero: "photo",
     tile: PAIR_VISUAL,
+    pageVisual: HERO_KITS,
     highlights: [
-      { icon: "healing", label: "힐링", line: "치은을 짧게 형성" },
-      { icon: "abutment", label: "심플어벗", line: "규격에서 바로 선택" },
-      { icon: "cnc", label: "커스텀", line: "디자인 올리면 CNC" },
-      { icon: "request", label: "의뢰서", line: "기공소·스캔·보철을 적습니다" },
-      { icon: "pay", label: "정산", line: "크레딧으로 내고 월말 계산서" },
+      { icon: "kit", label: "Guide", line: "가이드펜·핀으로 위치를" },
+      { icon: "scan", label: "Check", line: "체크핀으로 경로를 확인" },
+      { icon: "healing", label: "힐링", line: "이머전스 프로파일을 형성" },
+      { icon: "abutment", label: "심플어벗", line: "같은 직경으로 이어짐" },
+      { icon: "store", label: "스토어", line: "키트·제품을 바로 주문" },
     ],
+    scene: {
+      title: "탑다운으로 잡습니다.",
+      line: "가이드펜과 핀이 보철 직경을 먼저 정합니다.",
+      visual: {
+        kind: "photo",
+        src: LANDING_SW_GUIDE_HOW_TO,
+        alt: "가이드펜 직경 선택",
+      },
+    },
     products: [
       {
         name: "심플 힐링",
-        line: "식립 뒤 치은을 형성합니다.",
+        line: "가이드 직경과 맞는 치은을 형성합니다.",
         price: "₩16,500",
         priceNote: "부가세 포함 · 1EA",
         specs: ["Hex · Non-Hex", "직경 6 · 7 · 9", "제조 (주)애크로덴트"],
@@ -188,7 +206,7 @@ export const landingOffers: LandingOffer[] = [
       },
       {
         name: "심플어벗",
-        line: "보철 전에 규격을 고릅니다.",
+        line: "같은 색·같은 직경으로 보철을 올립니다.",
         price: "₩16,500",
         priceNote: "부가세 포함 · 1EA",
         specs: ["Hex · Non-Hex", "높이 XS–XL", "제조 (주)애크로덴트"],
@@ -198,82 +216,94 @@ export const landingOffers: LandingOffer[] = [
     ],
     stories: [
       {
-        name: "짧고 분명한 흐름.",
-        line: "힐링을 스캔하고, 어벗을 고릅니다.",
+        name: "가이드펜과 가이드핀.",
+        line: "보철 직경부터 정합니다.",
         body: [
-          "심플 힐링으로 치은을 잡은 뒤 구강 스캔을 올립니다.",
-          "심플어벗은 Hex·Non-Hex, 높이 XS–XL 중에서 고르면 됩니다.",
-          "선택한 규격 위에서 보철 의뢰가 같은 화면으로 이어집니다.",
-        ],
-        visual: PAIR_VISUAL,
-      },
-      {
-        name: "손으로 만져본 그 감각이, 그대로.",
-        line: "키트부터 제품까지 한 라인.",
-        body: [
-          "식립은 Surgical Kit, 치은 형성과 어벗 체결은 Prosthetic Kit로 이어집니다.",
-          "제품과 키트가 같은 제조 라인에 있어, 현장에서 손이 헷갈리지 않습니다.",
-          "스토어에서 주문하고, 같은 화면에서 보철까지 이으면 됩니다.",
-        ],
-        visual: KIT_VISUAL,
-      },
-      {
-        name: "규격이 아니면, 커스텀으로.",
-        line: "디자인을 올리면 CNC가 시작.",
-        body: [
-          "스캔과 디자인이 올라오면 가공이 시작됩니다.",
-          "애크로덴트 CNC가 같은 툴패스·같은 스펙으로 깎습니다.",
-          "건마다 사람이 달라도, 결과물의 편차는 작아집니다.",
+          "가이드펜으로 탑다운 위치를 잡고, 가이드핀으로 여러 부위를 나란히 맞춥니다.",
+          "심플 힐링은 같은 직경 라인으로 이어져, 이머전스 프로파일이 처음부터 맞습니다.",
         ],
         visual: {
           kind: "photo",
-          src: LANDING_CUSTOM_ABUTMENT,
-          alt: "균일 품질의 커스텀 어벗 실물",
+          src: LANDING_SW_GUIDE_PEN_PIN,
+          alt: "가이드펜과 가이드핀",
         },
       },
       {
-        name: "아침에 올리면, 저녁에도 보입니다.",
-        line: "의뢰·작업시작·출고가 한곳에.",
+        name: "본쉐이퍼.",
+        line: "힐링이 앉을 자리를 만듭니다.",
         body: [
-          "기공소를 고르고, 스캔 파일을 붙이고, 치아와 보철을 적습니다.",
-          "작업시작부터 디자인, 출고까지 같은 보드에 남습니다.",
-          "문의는 그 의뢰서 옆 채팅에서 합니다.",
+          "치조골이 막으면 심플 힐링이 끝까지 들어가지 않습니다.",
+          "본쉐이퍼는 힐링 프로파일에 맞춰 골을 성형해, 체결이 막히지 않게 합니다.",
         ],
         visual: {
           kind: "photo",
-          src: LANDING_PLATFORM_BOARD,
-          alt: "의뢰 진행",
+          src: LANDING_SW_BONE_SHAPER,
+          alt: "본쉐이퍼로 골 성형",
         },
       },
       {
-        name: "쓴 만큼, 월말에.",
-        line: "크레딧으로 결제합니다.",
+        name: "체크핀.",
+        line: "보철 경로를 다시 확인합니다.",
         body: [
-          "충전할 때는 계산서가 나오지 않습니다.",
-          "실제로 쓴 금액만 매월 말, 기공·커스텀어벗은 면세 계산서로 나갑니다.",
-          "진행과 돈이 같은 의뢰에 있어, 나중에 맞추느라 헤매지 않습니다.",
+          "체결 뒤 체크핀으로 위치와 각도를 봅니다.",
+          "다수치일수록 누적 오차를 줄이고, 이머전스도 함께 점검합니다.",
         ],
         visual: {
           kind: "photo",
-          src: LANDING_PLATFORM_LEDGER,
-          alt: "정산 내역",
+          src: LANDING_SW_CHECK_PIN,
+          alt: "체크핀으로 경로 확인",
+        },
+      },
+      {
+        name: "심플어벗으로 보철.",
+        line: "가이드와 같은 프로파일.",
+        body: [
+          "심플어벗은 가이드펜·핀·체크핀과 맞는 이머전스와 포스트를 갖습니다.",
+          "CAD/CAM 보철에 맞춰져 있고, 규격이 아니면 같은 화면에서 커스텀으로 넘깁니다.",
+        ],
+        visual: {
+          kind: "photo",
+          src: LANDING_SW_ABUTMENT_CROWN,
+          alt: "심플어벗 위 보철",
         },
       },
     ],
-    slideHeading: "키트도 함께.",
+    slideHeading: "색 · 키트.",
     slides: [
       {
-        title: "Surgical Kit.",
-        line: "식립에 쓰는 키트 · 판매가 ₩1,540,000.",
-        visual: KIT_VISUAL,
-      },
-      {
-        title: "Prosthetic Kit.",
-        line: "치은 형성·어벗 체결 · 판매가 ₩1,100,000.",
+        title: "직경은 색으로.",
+        line: "6 노랑 · 7 초록 · 8 보라 · 9 파랑 · 10 하늘.",
         visual: {
           kind: "photo",
-          src: PROSTHETIC_KIT,
-          alt: "Prosthetic Kit",
+          src: LANDING_SW_GUIDE_KIT,
+          alt: "Guide Kit 직경 색상",
+        },
+      },
+      {
+        title: "Guide Kit.",
+        line: "가이드펜 · 컵 · 가이드핀.",
+        visual: {
+          kind: "photo",
+          src: LANDING_SW_GUIDE_HOW_TO,
+          alt: "가이드펜 사용",
+        },
+      },
+      {
+        title: "Check Kit.",
+        line: "체크핀 · 본쉐이퍼.",
+        visual: {
+          kind: "photo",
+          src: LANDING_SW_CHECK_KIT,
+          alt: "Check Kit",
+        },
+      },
+      {
+        title: "Prosthetics Kit.",
+        line: "치은 형성 · 어벗 체결 · 판매가 ₩1,100,000.",
+        visual: {
+          kind: "photo",
+          src: LANDING_SW_PROSTHETIC_KIT,
+          alt: "Prosthetics Kit",
         },
       },
       {
@@ -287,44 +317,40 @@ export const landingOffers: LandingOffer[] = [
       },
     ],
     specs: [
+      { label: "직경 색", value: "6–10 · 노·녹·보·청·하늘" },
       { label: "힐링", value: "직경 6·7·9" },
-      { label: "심플어벗", value: "높이 5단" },
-      { label: "커스텀", value: "런칭 1만 · 정상 1.3만" },
-      { label: "키트", value: "식립 · 체결" },
+      { label: "심플어벗", value: "높이 XS–XL · Hex·Non-Hex" },
+      { label: "키트", value: "Guide · Check · Prosthetics" },
       { label: "제조", value: "(주)애크로덴트" },
     ],
     faq: [
       {
         q: "심플웨이는 어떤 흐름인가요?",
-        a: "심플 힐링을 구강 스캔해 올리고, 심플어벗 규격을 고른 뒤, 보철 의뢰로 이어집니다. 규격이 맞지 않으면 같은 화면에서 커스텀어벗으로 넘길 수 있습니다.",
+        a: "가이드펜·핀으로 보철 직경을 정한 뒤, 체크핀으로 확인하고, 심플 힐링과 심플어벗으로 이어집니다. 규격이 맞지 않으면 같은 화면에서 커스텀어벗으로 넘길 수 있습니다.",
+      },
+      {
+        q: "색상은 무엇을 뜻하나요?",
+        a: "직경 라인입니다. 6은 노랑, 7은 초록, 8은 보라, 9는 파랑, 10은 하늘입니다. 가이드·힐링·어벗이 같은 색을 따릅니다.",
       },
       {
         q: "힐링과 심플어벗은 어떻게 고르나요?",
         a: "둘 다 Hex · Non-Hex입니다. 힐링은 직경 6·7·9, 심플어벗은 높이 XS–XL입니다. 판매가는 각 ₩16,500, 부가세 포함, 1EA입니다.",
       },
       {
-        q: "커스텀어벗은 언제 쓰나요?",
-        a: "규격 어벗으로 맞추기 어려울 때입니다. 기공소가 작업시작한 뒤 디자인을 올리면 CNC 가공이 시작되고, 완성품은 주문한 기공소로 갑니다.",
-      },
-      {
-        q: "커스텀어벗 판매가는 얼마인가요?",
-        a: "런칭 이벤트 기간은 1만원 + 배송비입니다. 이벤트 종료 후 정상가는 1.3만원이며, 배송은 박스당입니다. 기공소는 FM덴탈 월정액 배송을 선택할 수 있습니다.",
-      },
-      {
-        q: "진행과 정산은 어디서 보나요?",
-        a: "의뢰, 작업시작, 디자인, 출고, 추적이 같은 화면입니다. 채팅도 그 의뢰서 옆에서 합니다. 월 이용료는 없고, 쓴 금액만 매월 말 계산서로 나갑니다.",
-      },
-      {
         q: "키트는 무엇이 필요한가요?",
-        a: "Surgical Kit는 식립, Prosthetic Kit는 치은 형성과 어벗 체결입니다.",
+        a: "Guide Kit는 위치·직경 가이드, Check Kit는 경로 확인과 본쉐이퍼, Prosthetics Kit는 치은 형성과 어벗 체결입니다.",
       },
       {
-        q: "보철은 어디서 만드나요?",
-        a: "어벗이 정해지면 같은 의뢰서에서 기공으로 이어집니다. 기공사업부나 지정 기공소에 맡깁니다.",
+        q: "커스텀어벗은 언제 쓰나요?",
+        a: "규격 어벗으로 맞추기 어려울 때입니다. 기공소가 작업시작한 뒤 디자인을 올리면 CNC 가공이 시작되고, 완성품은 주문한 기공소로 갑니다. 런칭가 1만원, 정상가 1.3만원입니다.",
       },
       {
         q: "스토어 배송비는요?",
         a: "상품 10만원 이상 배송비 무료, 미만은 ₩3,500(부가세 포함)입니다. 치과와 기공소 사이 기공 배송과는 별도입니다.",
+      },
+      {
+        q: "진행과 정산은 어디서 보나요?",
+        a: "의뢰, 작업시작, 디자인, 출고, 추적이 같은 화면입니다. 월 이용료는 없고, 쓴 금액만 매월 말 계산서로 나갑니다.",
       },
     ],
   },
