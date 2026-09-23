@@ -80,11 +80,13 @@ export type OfferScene = {
   visual: OfferVisual;
 };
 
-/** 가격 없는 설명. 화면이 하는 일과 맞춘다. */
+/** 가격 없는 설명. body는 문장 단위 → UI에서 `<br />`. */
 export type OfferStory = {
   name: string;
   line: string;
-  points: [string, string, string];
+  body: string[];
+  /** 스펙·체크리스트가 필요할 때만. */
+  points?: string[];
   visual?: OfferVisual;
 };
 
@@ -157,7 +159,7 @@ export const landingOffers: LandingOffer[] = [
     punch: "의뢰, 정산, 배송.",
     heroTitle: "의뢰, 정산, 배송.",
     line: "같은 화면에서 끝냅니다.",
-    lead: "의뢰서에서 출고까지.",
+    lead: "의뢰서에서 출고까지, 한곳에서.",
     hero: "tile",
     tile: {
       kind: "slideshow",
@@ -178,9 +180,13 @@ export const landingOffers: LandingOffer[] = [
     ],
     stories: [
       {
-        name: "신규 의뢰",
-        line: "스캔과 보철을 올립니다.",
-        points: ["기공소를 지정합니다", "스캔 파일을 붙입니다", "치아와 보철을 고릅니다"],
+        name: "아침에 올리면, 저녁에도 보입니다.",
+        line: "신규 의뢰는 스캔과 보철부터.",
+        body: [
+          "기공소를 고르고, 스캔 파일을 붙이고, 치아와 보철을 적습니다.",
+          "따로 메신저에 파일을 보낼 필요가 없습니다.",
+          "올린 순간부터 그 의뢰서가 기록이 됩니다.",
+        ],
         visual: {
           kind: "photo",
           src: LANDING_PLATFORM_REQUEST,
@@ -188,9 +194,13 @@ export const landingOffers: LandingOffer[] = [
         },
       },
       {
-        name: "진행",
-        line: "상태와 채팅이 한곳.",
-        points: ["의뢰에서 출고까지 남습니다", "도착일과 보철이 보입니다", "문의는 의뢰서 옆입니다"],
+        name: "‘어디까지 됐지?’를 묻지 않아도.",
+        line: "상태와 채팅이 한곳에.",
+        body: [
+          "작업시작부터 디자인, 출고까지 같은 보드에 남습니다.",
+          "도착일과 보철 내용이 보이고, 문의는 그 의뢰서 옆 채팅에서 합니다.",
+          "자리를 비워 전화할 일이 조금 줄어듭니다.",
+        ],
         visual: {
           kind: "photo",
           src: LANDING_PLATFORM_BOARD,
@@ -198,9 +208,13 @@ export const landingOffers: LandingOffer[] = [
         },
       },
       {
-        name: "정산",
-        line: "쓴 만큼, 월말에.",
-        points: ["크레딧(거래 선수금)으로 냅니다", "충전할 때 계산서는 없습니다", "기공·어벗은 면세 계산서"],
+        name: "쓴 만큼, 월말에.",
+        line: "크레딧으로 결제합니다.",
+        body: [
+          "충전할 때는 계산서가 나오지 않습니다.",
+          "실제로 쓴 금액만 매월 말, 기공·커스텀어벗은 면세 계산서로 나갑니다.",
+          "진행과 돈이 같은 의에 있어, 나중에 맞추느라 헤매지 않습니다.",
+        ],
         visual: {
           kind: "photo",
           src: LANDING_PLATFORM_LEDGER,
@@ -237,7 +251,7 @@ export const landingOffers: LandingOffer[] = [
     punch: "스캔하면 시작.",
     heroTitle: "스캔하면 시작.",
     line: "힐링에서 보철까지.",
-    lead: "스캔이 보철로 이어집니다.",
+    lead: "심플웨이로 보철이 이어집니다.",
     hero: "video",
     tile: PAIR_VISUAL,
     highlights: [
@@ -267,16 +281,38 @@ export const landingOffers: LandingOffer[] = [
         visual: ABUTMENT_VISUAL,
       },
     ],
+    stories: [
+      {
+        name: "짧고 분명한 흐름.",
+        line: "힐링을 스캔하고, 어벗을 고릅니다.",
+        body: [
+          "심플 힐링으로 치은을 잡은 뒤 구강 스캔을 올립니다.",
+          "심플어벗은 Hex·Non-Hex, 높이 XS–XL 중에서 고르면 됩니다.",
+          "선택한 규격 위에서 보철 의뢰가 같은 화면으로 이어집니다.",
+        ],
+        visual: PAIR_VISUAL,
+      },
+      {
+        name: "손으로 만져본 그 감각이, 그대로.",
+        line: "키트부터 제품까지 한 라인.",
+        body: [
+          "식립은 Surgical Kit, 치은 형성과 어벗 체결은 Prosthetic Kit로 이어집니다.",
+          "제품과 키트가 같은 제조 라인에 있어, 현장에서 손이 헷갈리지 않습니다.",
+          "스토어에서 주문하고, 플랫폼에서 보철까지 이으면 됩니다.",
+        ],
+        visual: KIT_VISUAL,
+      },
+    ],
     slideHeading: "키트도 함께.",
     slides: [
       {
         title: "Surgical Kit.",
-        line: "판매가 ₩1,540,000.",
+        line: "식립에 쓰는 키트 · 판매가 ₩1,540,000.",
         visual: KIT_VISUAL,
       },
       {
         title: "Prosthetic Kit.",
-        line: "판매가 ₩1,100,000.",
+        line: "치은 형성·어벗 체결 · 판매가 ₩1,100,000.",
         visual: {
           kind: "photo",
           src: PROSTHETIC_KIT,
@@ -285,7 +321,7 @@ export const landingOffers: LandingOffer[] = [
       },
       {
         title: "500만 패키지.",
-        line: "패키지 판매가 ₩5,000,000.",
+        line: "제품과 키트를 묶어 · 패키지 판매가 ₩5,000,000.",
         visual: {
           kind: "photo",
           src: FULL_PACKAGE,
@@ -355,12 +391,12 @@ export const landingOffers: LandingOffer[] = [
     },
     stories: [
       {
-        name: "같은 품질",
+        name: "손으로 맞추는 대신, 시스템으로.",
         line: "어벗츠 자동화로 균일한 고품질.",
-        points: [
-          "스캔·디자인이 올라오면 시작",
-          "애크로덴트 CNC 동일 공정",
-          "자동화로 건마다 같은 품질",
+        body: [
+          "스캔과 디자인이 올라오면 가공이 시작됩니다.",
+          "애크로덴트 CNC가 같은 툴패스·같은 스펙으로 깎습니다.",
+          "건마다 사람이 달라도, 결과물의 편차는 작아집니다.",
         ],
         visual: {
           kind: "photo",
@@ -369,36 +405,27 @@ export const landingOffers: LandingOffer[] = [
         },
       },
       {
-        name: "판매가",
-        line: "런칭 이벤트 1만원, 이후 1.3만원.",
-        points: [
-          "이벤트: 1만원 + 배송비",
-          "정상: 1.3만원 + 배송비",
-          "기공소: 1.3만원 + FM덴탈 월정액 배송 선택",
+        name: "런칭 1만원, 이후 1.3만원.",
+        line: "배송은 박스 단위.",
+        body: [
+          "런칭 이벤트 기간에는 1만원에 배송비가 더해집니다.",
+          "이벤트 이후 정상가는 1.3만원이며, 배송은 박스당입니다.",
+          "기공소는 FM덴탈 월정액 배송을 선택할 수 있습니다.",
         ],
         visual: {
-          kind: "blank",
-          caption: "런칭 이벤트 기간과 정상가 배송 선택",
+          kind: "photo",
+          src: LANDING_CAD_PREVIEW,
+          alt: "커스텀 어벗 CAD",
         },
       },
       {
-        name: "같은 공정",
-        line: "사람 손보다 시스템이 맞춥니다.",
-        points: [
-          "접수부터 가공까지 한 흐름",
-          "툴패스·스펙이 건마다 동일",
-          "편차 없이 고품질로 마무리",
+        name: "도착은 기공소로.",
+        line: "보철과 함께 치과로 이어집니다.",
+        body: [
+          "완성품은 치과로 바로 가지 않습니다.",
+          "주문한 기공소가 받고, 그 위에서 보철 기공이 이어집니다.",
+          "추적 화면에서 가공부터 출고까지 따라갈 수 있습니다.",
         ],
-        visual: {
-          kind: "blank",
-          caption:
-            "애크로덴트 CNC 가공 라인 — 동일 툴패스·자동화로 건마다 같은 품질이 나오는 현장",
-        },
-      },
-      {
-        name: "기공소로 도착",
-        line: "보철과 함께 옵니다.",
-        points: ["치과로 바로 가지 않음", "주문한 기공소가 받음", "보철 기공으로 이어짐"],
         visual: {
           kind: "photo",
           src: LANDING_CUSTOM_TRACKING,
@@ -451,15 +478,23 @@ export const landingOffers: LandingOffer[] = [
     ],
     stories: [
       {
-        name: "심플어벗 다음",
-        line: "고른 규격 위에 보철.",
-        points: ["힐링 스캔 다음", "규격 어벗을 고르면", "보철이 같은 의뢰"],
+        name: "심플어벗 위에 보철을.",
+        line: "고른 규격이 그대로 이어집니다.",
+        body: [
+          "힐링을 스캔하고 심플어벗 규격을 고르면, 보철이 같은 의뢰로 넘어옵니다.",
+          "어벗츠가 직접 운영하는 기공실에서 크라운·브리지를 만듭니다.",
+          "제품과 기공이 끊기지 않아, 환자에게 가는 날도 조금 더 분명해집니다.",
+        ],
         visual: ABUTMENT_VISUAL,
       },
       {
-        name: "커스텀어벗 다음",
-        line: "도착하면 보철로 넘깁니다.",
-        points: ["CNC가 기공소로", "보철과 함께 제작", "치과로 한 번에"],
+        name: "커스텀어벗이 도착하면.",
+        line: "보철과 함께 치과로.",
+        body: [
+          "CNC 어벗이 이 기공소로 들어오면, 그 위에서 보철을 이어 만듭니다.",
+          "따로 맞춰 보낼 필요 없이, 치과로 한 번에 출고합니다.",
+          "작업시작부터 출고까지 플랫폼 화면에 남습니다.",
+        ],
         visual: {
           kind: "photo",
           src: LANDING_CAD_PREVIEW,

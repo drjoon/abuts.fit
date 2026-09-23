@@ -3,16 +3,19 @@
 // - web/frontend/src/features/landing/landingOffers.ts
 // - web/frontend/src/features/landing/landingTheme.ts
 // - web/frontend/src/features/landing/OfferVisual.tsx
-// - web/frontend/src/shared/sales/PlatformPitchPanel.tsx
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useAuthStore } from "@/store/useAuthStore";
 import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath";
-import { PlatformPitchPanel } from "@/shared/sales/PlatformPitchPanel";
 import { cn } from "@/shared/ui/cn";
 import { LANDING_HERO_POSTER, LANDING_HERO_VIDEO } from "./landingAssets";
-import { landingHome, landingContent } from "./landingTheme";
+import {
+  landingHome,
+  landingHomeStories,
+  landingContent,
+  landingSectionY,
+} from "./landingTheme";
 import { landingOffers, offerPath } from "./landingOffers";
 import { OfferVisual } from "./OfferVisual";
 
@@ -31,7 +34,20 @@ function usePrefersReducedMotion() {
   return reduced;
 }
 
-/** `/` — 큰 이미지 4장. 설명은 `/offer/:slug`. */
+function StoryBody({ lines }: { lines: string[] }) {
+  return (
+    <p className="mt-5 max-w-xl text-lg leading-relaxed text-slate-600 sm:text-xl sm:leading-8">
+      {lines.map((line, index) => (
+        <span key={line}>
+          {index > 0 ? <br /> : null}
+          {line}
+        </span>
+      ))}
+    </p>
+  );
+}
+
+/** `/` — 히어로 · 오퍼 타일 · 스토리 밴드. 상세는 `/offer/:slug`. */
 export function LandingHome() {
   const navigate = useNavigate();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -86,67 +102,162 @@ export function LandingHome() {
         </div>
       </section>
 
-      <section id="browse" className="bg-[#f3f4f6] pt-4 pb-8 sm:pt-5 sm:pb-10 lg:pt-6 lg:pb-12">
-        <div className={cn(landingContent, "grid grid-cols-1 gap-4 sm:gap-5 lg:grid-cols-3")}>
-        {landingOffers.map((offer) => {
-          const frame = cn(
-            "group relative block overflow-hidden rounded-[1.5rem] bg-[#e7e9ee] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900",
-            TILE_FRAME,
-            offer.slug === "platform" && "lg:col-span-3 h-[22rem] sm:h-[26rem] lg:h-[32rem] lg:min-h-0",
-          );
-          const caption = (
-            <>
-              <p className="text-base font-medium text-white/85 sm:text-lg">
-                {offer.navLabel}
-              </p>
-              <h2 className="mt-2 text-3xl font-semibold tracking-tight text-white sm:text-4xl">
-                {offer.punch}
-              </h2>
-              <p className="mt-2 max-w-md text-base leading-snug text-white/90 sm:text-lg">
-                {offer.line}
-              </p>
-            </>
-          );
-          const captionClass =
-            "absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-6 pb-6 pt-20 sm:px-8 sm:pb-7";
-
-          if (offer.slug === "platform") {
-            return (
-              <div key={offer.slug} className={frame}>
-                <OfferVisual visual={offer.tile} tile className="h-full min-h-0" />
-                <Link to={offerPath(offer.slug)} className={captionClass}>
-                  {caption}
-                </Link>
-              </div>
+      <section
+        id="browse"
+        className="bg-[#f3f4f6] pt-8 pb-12 sm:pt-10 sm:pb-14 lg:pt-12 lg:pb-16"
+      >
+        <div
+          className={cn(
+            landingContent,
+            "grid grid-cols-1 gap-5 sm:gap-6 lg:grid-cols-3",
+          )}
+        >
+          {landingOffers.map((offer) => {
+            const frame = cn(
+              "group relative block overflow-hidden rounded-[1.5rem] bg-[#e7e9ee] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900",
+              TILE_FRAME,
+              offer.slug === "platform" &&
+                "lg:col-span-3 h-[22rem] sm:h-[26rem] lg:h-[32rem] lg:min-h-0",
             );
-          }
+            const caption = (
+              <>
+                <p className="text-base font-medium text-white/85 sm:text-lg">
+                  {offer.navLabel}
+                </p>
+                <h2 className="mt-2 text-3xl font-semibold tracking-tight text-white sm:text-4xl">
+                  {offer.punch}
+                </h2>
+                <p className="mt-2 max-w-md text-base leading-snug text-white/90 sm:text-lg">
+                  {offer.line}
+                </p>
+              </>
+            );
+            const captionClass =
+              "absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-6 pb-6 pt-20 sm:px-8 sm:pb-7";
 
-          return (
-          <Link
-            key={offer.slug}
-            to={offerPath(offer.slug)}
-            className={frame}
-          >
-            <div className="absolute inset-0 transition duration-500 group-hover:scale-[1.02]">
-              <OfferVisual visual={offer.tile} tile className="h-full min-h-0" />
-            </div>
-            <div className={cn(captionClass, "pointer-events-none")}>{caption}</div>
-          </Link>
-          );
-        })}
+            if (offer.slug === "platform") {
+              return (
+                <div key={offer.slug} className={frame}>
+                  <OfferVisual
+                    visual={offer.tile}
+                    tile
+                    className="h-full min-h-0"
+                  />
+                  <Link to={offerPath(offer.slug)} className={captionClass}>
+                    {caption}
+                  </Link>
+                </div>
+              );
+            }
+
+            return (
+              <Link
+                key={offer.slug}
+                to={offerPath(offer.slug)}
+                className={frame}
+              >
+                <div className="absolute inset-0 transition duration-500 group-hover:scale-[1.02]">
+                  <OfferVisual
+                    visual={offer.tile}
+                    tile
+                    className="h-full min-h-0"
+                  />
+                </div>
+                <div className={cn(captionClass, "pointer-events-none")}>
+                  {caption}
+                </div>
+              </Link>
+            );
+          })}
         </div>
       </section>
 
-      {/* 영업팀·딜러 소개·피치와 동일 UI (공개 통계) */}
       <section
-        id="pitch"
-        className="scroll-mt-20 border-t border-slate-200/80 bg-white sm:scroll-mt-24"
+        id="stories"
+        className={cn("scroll-mt-20 bg-white", landingSectionY.bandLoose)}
       >
-        <div className={cn(landingContent, "py-10 sm:py-12 lg:py-14")}>
-          <PlatformPitchPanel
-            apiPath="/api/system/platform-pitch"
-            queryKey="public-platform-pitch"
-          />
+        <div className={landingContent}>
+          <h2 className="max-w-2xl text-[clamp(2rem,4.2vw,3.25rem)] font-semibold leading-tight tracking-tight text-slate-900">
+            {landingHome.storiesHeading}
+          </h2>
+          <p className="mt-3 max-w-xl text-xl text-slate-600 sm:text-2xl">
+            {landingHome.storiesLead}
+          </p>
+
+          <div className={cn("mt-14 flex flex-col sm:mt-16", landingSectionY.storyGap)}>
+            {landingHomeStories.map((story, index) => {
+              const media = (
+                <div
+                  className={cn(
+                    "overflow-hidden rounded-[1.75rem] bg-[#e7e9ee]",
+                    landingSectionY.media,
+                    index % 2 === 1 && "lg:order-2",
+                  )}
+                >
+                  <img
+                    src={story.image.src}
+                    alt={story.image.alt}
+                    className="h-full w-full object-cover object-center"
+                  />
+                </div>
+              );
+              const copy = (
+                <div
+                  className={cn(
+                    index % 2 === 1 ? "lg:pr-2" : "lg:pl-2",
+                  )}
+                >
+                  <h3 className="text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
+                    {story.title}
+                  </h3>
+                  <p className="mt-3 text-xl text-slate-600 sm:text-2xl">
+                    {story.line}
+                  </p>
+                  <StoryBody lines={story.body} />
+                  {story.href ? (
+                    <Link
+                      to={story.href}
+                      className="mt-6 inline-block text-base font-semibold text-[#1d4ed8] underline-offset-4 hover:underline sm:text-lg"
+                    >
+                      자세히 보기
+                    </Link>
+                  ) : null}
+                </div>
+              );
+              return (
+                <article
+                  key={story.title}
+                  className="grid items-center gap-8 lg:grid-cols-2 lg:gap-14"
+                >
+                  {media}
+                  {copy}
+                </article>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      <section className="bg-[#f3f4f6]">
+        <div
+          className={cn(
+            landingContent,
+            "flex flex-col items-start py-16 sm:py-20 lg:flex-row lg:items-end lg:justify-between lg:gap-10",
+          )}
+        >
+          <div className="max-w-xl">
+            <h2 className="text-[clamp(2rem,4vw,3rem)] font-semibold tracking-tight text-slate-900">
+              {landingHome.ctaBandTitle}
+            </h2>
+            <StoryBody lines={[...landingHome.ctaBandBody]} />
+          </div>
+          <Button
+            type="button"
+            className="mt-8 h-12 shrink-0 rounded-full bg-[#2563eb] px-8 text-base font-semibold text-white hover:bg-[#1d4ed8] lg:mt-0"
+            onClick={goStart}
+          >
+            {landingHome.ctaStart}
+          </Button>
         </div>
       </section>
     </div>

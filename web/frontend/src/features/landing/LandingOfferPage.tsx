@@ -172,48 +172,97 @@ function ProductCards({
   );
 }
 
+function StoryBody({ lines }: { lines: string[] }) {
+  return (
+    <p
+      className={cn(
+        ONE,
+        "mt-5 max-w-xl text-lg leading-relaxed text-slate-600 sm:text-xl sm:leading-8",
+      )}
+    >
+      {lines.map((line, index) => (
+        <span key={line}>
+          {index > 0 ? <br /> : null}
+          {line}
+        </span>
+      ))}
+    </p>
+  );
+}
+
 function StoryRows({
   stories,
 }: {
   stories: NonNullable<LandingOffer["stories"]>;
 }) {
   return (
-    <section className={cn("bg-[#f3f4f6]", landingSectionY.bandTight)}>
+    <section className={cn("bg-[#f3f4f6]", landingSectionY.band)}>
       <div className={landingContent}>
         <div className={cn("flex flex-col", landingSectionY.storyGap)}>
-        {stories.map((story, index) => (
-          <article
-            key={story.name}
-            className="grid items-center gap-6 lg:grid-cols-2 lg:gap-12"
-          >
-            {story.visual ? (
+          {stories.map((story, index) => (
+            <article
+              key={story.name}
+              className="grid items-center gap-8 lg:grid-cols-2 lg:gap-14"
+            >
+              {story.visual ? (
+                <div
+                  className={cn(
+                    "overflow-hidden rounded-[1.75rem] bg-[#e7e9ee]",
+                    landingSectionY.media,
+                    index % 2 === 1 && "lg:order-2",
+                  )}
+                >
+                  <OfferVisual
+                    visual={story.visual}
+                    fill
+                    className="h-full min-h-0"
+                  />
+                </div>
+              ) : null}
               <div
                 className={cn(
-                  "overflow-hidden rounded-[1.75rem] bg-[#e7e9ee]",
-                  landingSectionY.media,
-                  index % 2 === 1 && "lg:order-2",
+                  story.visual
+                    ? index % 2 === 1
+                      ? "lg:pr-2"
+                      : "lg:pl-2"
+                    : "max-w-2xl lg:col-span-2",
                 )}
               >
-                <OfferVisual visual={story.visual} fill className="h-full min-h-0" />
+                <h3
+                  className={cn(
+                    ONE,
+                    "text-3xl font-semibold text-slate-900 sm:text-4xl",
+                  )}
+                >
+                  {story.name}
+                </h3>
+                <p
+                  className={cn(
+                    ONE,
+                    "mt-3 text-xl text-slate-600 sm:text-2xl",
+                  )}
+                >
+                  {story.line}
+                </p>
+                {story.body?.length ? <StoryBody lines={story.body} /> : null}
+                {story.points?.length ? (
+                  <ul className="mt-6 space-y-2.5">
+                    {story.points.map((point) => (
+                      <li
+                        key={point}
+                        className={cn(
+                          ONE,
+                          "text-base text-slate-700 sm:text-lg",
+                        )}
+                      >
+                        {point}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
               </div>
-            ) : null}
-            <div className={cn(story.visual ? (index % 2 === 1 ? "lg:pr-4" : "lg:pl-2") : "lg:col-span-2 max-w-2xl")}>
-              <h3 className={cn(ONE, "text-3xl font-semibold text-slate-900 sm:text-4xl")}>
-                {story.name}
-              </h3>
-              <p className={cn(ONE, "mt-2 text-lg text-slate-600 sm:text-xl")}>
-                {story.line}
-              </p>
-              <ul className="mt-6 space-y-2.5">
-                {story.points.map((point) => (
-                  <li key={point} className={cn(ONE, "text-lg text-slate-800 sm:text-xl")}>
-                    {point}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </article>
-        ))}
+            </article>
+          ))}
         </div>
       </div>
     </section>
@@ -304,16 +353,6 @@ function Slideshow({
       </div>
     </section>
   );
-}
-
-function highlightSpan(index: number, count: number) {
-  if (count >= 5) {
-    if (index === 0) return "lg:col-span-4";
-    return "lg:col-span-2";
-  }
-  if (index === 0 || index === 1) return "lg:col-span-3";
-  if (index === count - 1) return "lg:col-span-4";
-  return "lg:col-span-2";
 }
 
 function HeroCopy({
@@ -451,7 +490,7 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
       )}
 
       {offer.highlights ? (
-        <section className={cn("bg-white", landingSectionY.bandTight)}>
+        <section className={cn("bg-white", landingSectionY.band)}>
           <div className={landingContent}>
             <h2
               className={cn(
@@ -461,39 +500,23 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
             >
               {offer.lead}
             </h2>
-            <div className="mt-8 grid gap-3 sm:mt-10 sm:grid-cols-2 lg:grid-cols-6 lg:gap-4">
-              {offer.highlights.slice(0, 5).map((item, index) => {
+            <div className="mt-10 grid gap-x-6 gap-y-8 border-t border-slate-200/80 pt-10 sm:mt-12 sm:grid-cols-2 sm:pt-12 lg:grid-cols-5">
+              {offer.highlights.slice(0, 5).map((item) => {
                 const Icon = ICONS[item.icon];
-                const featured = index === 0;
                 return (
-                  <article
-                    key={item.label}
-                    className={cn(
-                      "rounded-[1.75rem] bg-[#f4f5f7]",
-                      featured ? "px-6 py-8 sm:col-span-2 sm:px-8 sm:py-10" : "px-5 py-6",
-                      highlightSpan(index, offer.highlights?.length ?? 0),
-                    )}
-                  >
-                    <span className="flex h-11 w-11 items-center justify-center rounded-full bg-white text-slate-900">
-                      <Icon className={featured ? "h-5 w-5" : "h-4 w-4"} aria-hidden />
+                  <article key={item.label} className="min-w-0">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#f4f5f7] text-slate-900">
+                      <Icon className="h-4 w-4" aria-hidden />
                     </span>
                     <h3
                       className={cn(
                         ONE,
-                        "mt-4 font-semibold text-slate-900",
-                        featured ? "text-2xl sm:text-3xl" : "text-xl",
+                        "mt-4 text-xl font-semibold text-slate-900",
                       )}
                     >
                       {item.label}
                     </h3>
-                    <p
-                      className={cn(
-                        ONE,
-                        featured
-                          ? "mt-2 text-lg text-slate-700"
-                          : "mt-1.5 text-base text-slate-600",
-                      )}
-                    >
+                    <p className={cn(ONE, "mt-1.5 text-base text-slate-600")}>
                       {item.line}
                     </p>
                   </article>

@@ -96,16 +96,17 @@ Notes:
   - `src/features/layout/DashboardLayout.tsx`
   - `src/features/layout/AccountSwitcher.tsx` (사이드바 계정 팝업 · 같은 사업자 계정 전환)
   - `src/store/useAuthStore.ts` (`switchAccount`)
-- 공개 랜딩 (`/` · `/offer/:slug`)
-  - `src/pages/public/Index.tsx` — 홈 히어로 + 오퍼 타일 + 피치
+- 공개 랜딩 (`/` · `/offer/:slug` · `/events`)
+  - `src/pages/public/Index.tsx` — 홈 히어로 + 오퍼 타일 + 스토리 밴드
   - `src/pages/public/OfferPage.tsx` — 오퍼 상세 (`landingOffers` · `LandingOfferPage`)
+  - `src/pages/public/EventsPage.tsx` — 이벤트 목록 (랜딩 톤)
   - `src/pages/public/PlatformPage.tsx` — 레거시 `/platform` → `/offer/platform` 리다이렉트
   - `src/pages/public/AboutPage.tsx` — 레거시 `/about` → `/` 리다이렉트
   - `PublicPageLayout` 기본 `tone="light"` (랜딩·도움말·약관·문의 등 공개 안내 공통)
   - 카드/타이포 SSOT: `PUBLIC_CARD_CLASS` · `PUBLIC_PAGE_EYEBROW` · `PUBLIC_PAGE_TITLE` · `PUBLIC_PAGE_SUBTITLE`
   - 카피 SSOT: `src/features/landing/landingTheme.ts` · `landingOffers.ts`
   - `LandingHome` · `LandingOfferPage` · `LandingPracticeWorkspacePreview` · `Footer`
-  - 영업 피치 패널: `PlatformPitchPanel` + `platformPitchBlocks` (`/` · 영업팀/딜러)
+  - 영업 피치 패널: `PlatformPitchPanel` + `platformPitchBlocks` (영업팀/딜러 — 공개 `/`에는 없음)
 - 공용 타입(역할 SSOT)
   - `src/shared/types/role.ts`
   - `src/shared/components/RoleSelect.tsx` (역할 Select. 사업영역 주체 등)
