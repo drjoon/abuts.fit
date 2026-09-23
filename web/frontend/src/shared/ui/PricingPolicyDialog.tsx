@@ -1,3 +1,4 @@
+// - 2026-09-23: 런칭 이벤트 중 — 정상가 취소선 + 이벤트가 · 「이벤트 중」.
 // - 2026-09-23: FM덴탈 월정액 가입 — 기공소만(치과 제외).
 // - 2026-09-23: 런칭 이벤트 1만 / 정상가 1.3만 · FM덴탈 월정액 배송 선택.
 // - 2026-09-22: 기공소 정책 안내 — 지정 플랫폼 수수료 카피 제거. 하청만.
@@ -211,14 +212,6 @@ export const PricingPolicyDialog = ({
       credit?.customAbutmentLaunchEventProductionPrice ??
       ABUTS_ABUTMENT_LAUNCH_EVENT_PRODUCTION_PRICE,
   });
-  const productionPrice = Math.max(
-    0,
-    Number(
-      credit?.effectiveProductionPrice ??
-        launchResolved.price ??
-        ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
-    ) || ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
-  );
   const regularPrice = Math.max(
     0,
     Number(
@@ -233,7 +226,19 @@ export const PricingPolicyDialog = ({
         ABUTS_ABUTMENT_LAUNCH_EVENT_PRODUCTION_PRICE,
     ) || ABUTS_ABUTMENT_LAUNCH_EVENT_PRODUCTION_PRICE,
   );
-  const isLaunchEvent = launchResolved.tier === 'event';
+  const isLaunchEvent =
+    credit?.customAbutmentPricingTier === 'event' ||
+    launchResolved.tier === 'event';
+  const productionPrice = isLaunchEvent
+    ? eventPrice
+    : Math.max(
+        0,
+        Number(
+          credit?.effectiveProductionPrice ??
+            launchResolved.price ??
+            regularPrice,
+        ) || regularPrice,
+      );
   const shippingFee = Math.max(
     0,
     Number(
@@ -483,10 +488,15 @@ export const PricingPolicyDialog = ({
                         : '어벗츠에 · 커스텀 어벗 생산'
                     }
                     value={formatAbutsManwon(productionPrice)}
+                    strikeValue={
+                      isLaunchEvent && regularPrice !== productionPrice
+                        ? formatAbutsManwon(regularPrice)
+                        : undefined
+                    }
                     unitLabel='1개당'
                     secondaryValue={
                       isLaunchEvent
-                        ? `런칭 이벤트 가격 (정상가는 ${formatAbutsManwon(regularPrice)})`
+                        ? '이벤트 중'
                         : eventPrice !== regularPrice
                           ? `이벤트 시 ${formatAbutsManwon(eventPrice)}`
                           : undefined

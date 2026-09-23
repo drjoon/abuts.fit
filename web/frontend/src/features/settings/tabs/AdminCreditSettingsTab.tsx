@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-23: 런칭 이벤트 on/off — 즉시 적용(분배 비율 예약과 분리).
 // - 2026-09-23: 런칭 이벤트 on/off — 내일부터 예약 적용(분배 비율과 동일).
 // - 2026-09-23: 가격 카드에서 매입가 제거(분배 비율)·4열.
 // - 2026-09-23: 런칭 이벤트 시작·종료일 UI 제거(on/off만).
@@ -362,16 +363,15 @@ function buildManufacturerSchedulePayload(pendingPct: number | null) {
   };
 }
 
-function buildLaunchEventSchedulePayload(pendingEnabled: boolean | null) {
-  if (pendingEnabled == null) {
-    return {
-      customAbutmentLaunchEventChangeScheduledAt: null as string | null,
-      customAbutmentLaunchEventChangeScheduledEnabled: null as boolean | null,
-    };
-  }
+function buildLaunchEventApplyPayload(enabled: boolean) {
   return {
-    customAbutmentLaunchEventChangeScheduledAt: tomorrowKstIsoStart(),
-    customAbutmentLaunchEventChangeScheduledEnabled: pendingEnabled,
+    customAbutmentLaunchEventEnabled: enabled,
+    customAbutmentLaunchEventStartedAt: null as string | null,
+    customAbutmentLaunchEventEndedAt: enabled
+      ? (null as string | null)
+      : new Date().toISOString(),
+    customAbutmentLaunchEventChangeScheduledAt: null as string | null,
+    customAbutmentLaunchEventChangeScheduledEnabled: null as boolean | null,
   };
 }
 
@@ -1905,9 +1905,7 @@ export const AdminCreditSettingsTab = ({
   const [pendingManufacturerPct, setPendingManufacturerPct] = useState(
     DEFAULT_MANUFACTURER_PURCHASE_PERCENT,
   );
-  /** 런칭 이벤트 on/off — 분배 비율과 같이 내일부터 예약. */
-  const [effectiveLaunchEventEnabled, setEffectiveLaunchEventEnabled] =
-    useState(true);
+  /** 런칭 이벤트 on/off — 즉시 적용. */
   const [pendingLaunchEventEnabled, setPendingLaunchEventEnabled] =
     useState(true);
   const [effectiveDealerPct, setEffectiveDealerPct] = useState<DealerRatePct>(
@@ -1963,7 +1961,6 @@ export const AdminCreditSettingsTab = ({
   const pendingDealerRef = useRef(pendingDealerPct);
   const pendingDevopsRef = useRef(pendingDevopsPct);
   const effectiveManufacturerRef = useRef(effectiveManufacturerPct);
-  const effectiveLaunchEventRef = useRef(effectiveLaunchEventEnabled);
   const effectiveDealerRef = useRef(effectiveDealerPct);
   const effectiveDevopsRef = useRef(effectiveDevopsPct);
   const pendingStoreManufacturerRef = useRef(pendingStoreManufacturerPct);
@@ -1983,7 +1980,6 @@ export const AdminCreditSettingsTab = ({
   pendingDealerRef.current = pendingDealerPct;
   pendingDevopsRef.current = pendingDevopsPct;
   effectiveManufacturerRef.current = effectiveManufacturerPct;
-  effectiveLaunchEventRef.current = effectiveLaunchEventEnabled;
   effectiveDealerRef.current = effectiveDealerPct;
   effectiveDevopsRef.current = effectiveDevopsPct;
   pendingStoreManufacturerRef.current = pendingStoreManufacturerPct;
@@ -2009,9 +2005,6 @@ export const AdminCreditSettingsTab = ({
     pendingLabBizPct !== effectiveLabBizPct ||
     pendingLabSalesTeamPct !== effectiveLabSalesTeamPct ||
     pendingLabDevopsPct !== effectiveLabDevopsPct;
-
-  const launchEventChangePending =
-    pendingLaunchEventEnabled !== effectiveLaunchEventEnabled;
 
   const persistShareSchedules = useCallback(() => {
     if (!hydratedRef.current || !token || loading) return;
@@ -2318,15 +2311,17 @@ export const AdminCreditSettingsTab = ({
     (enabled: boolean) => {
       setPendingLaunchEventEnabled(enabled);
       pendingLaunchEventRef.current = enabled;
-      scheduleItemSave("launchEventToggle", () => {
-        const pending =
-          pendingLaunchEventRef.current !== effectiveLaunchEventRef.current
-            ? pendingLaunchEventRef.current
-            : null;
-        return buildLaunchEventSchedulePayload(pending);
-      });
+      applySettingsUpdate((prev) => ({
+        ...prev,
+        customAbutmentLaunchEventEnabled: enabled,
+        customAbutmentLaunchEventStartedAt: null,
+        customAbutmentLaunchEventEndedAt: enabled ? null : new Date().toISOString(),
+      }));
+      scheduleItemSave("launchEventToggle", () =>
+        buildLaunchEventApplyPayload(pendingLaunchEventRef.current),
+      );
     },
-    [scheduleItemSave],
+    [applySettingsUpdate, scheduleItemSave],
   );
 
   const fetchSettings = useCallback(async () => {
@@ -2373,25 +2368,7 @@ export const AdminCreditSettingsTab = ({
       const effectiveLaunch =
         (data as { customAbutmentLaunchEventEnabled?: boolean })
           .customAbutmentLaunchEventEnabled !== false;
-      setEffectiveLaunchEventEnabled(effectiveLaunch);
-      const scheduledLaunchAt = (
-        data as {
-          customAbutmentLaunchEventChangeScheduledAt?: string | Date | null;
-        }
-      ).customAbutmentLaunchEventChangeScheduledAt;
-      const scheduledLaunchEnabled = (
-        data as {
-          customAbutmentLaunchEventChangeScheduledEnabled?: boolean | null;
-        }
-      ).customAbutmentLaunchEventChangeScheduledEnabled;
-      if (
-        scheduledLaunchAt &&
-        typeof scheduledLaunchEnabled === "boolean"
-      ) {
-        setPendingLaunchEventEnabled(scheduledLaunchEnabled);
-      } else {
-        setPendingLaunchEventEnabled(effectiveLaunch);
-      }
+      setPendingLaunchEventEnabled(effectiveLaunch);
 
       const eventRate = Number(
         (data as { dealershipEventCommissionRate?: number })
@@ -2871,11 +2848,10 @@ export const AdminCreditSettingsTab = ({
                     <p className="text-xs text-slate-500">
                       켜면 이벤트 단가, 끄면 정상가.
                       <br />
-                      변경 사항은 내일부터 적용
+                      변경은 즉시 적용됩니다.
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <ShareChangePendingBadge show={launchEventChangePending} />
                     <AutoSaveIndicator
                       state={itemSaveStates.launchEventToggle ?? "idle"}
                     />
