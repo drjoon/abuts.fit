@@ -167,6 +167,25 @@ const HERO_KITS: OfferVisual = {
   alt: "심플웨이 Guide · Check · Prosthetics 키트",
 };
 
+/** 이벤트(`/events/simpleway-gribo` extras)와 동일 카피 — 심플웨이·기공사업부에 넣음 */
+const PLATFORM_STORY: OfferStory = {
+  name: "어벗츠 플랫폼",
+  line: "치과·기공소",
+  body: [
+    "치과와 기공소가 온라인으로 기공을 의뢰하고, 어벗츠 커스텀어벗과도 바로 연동됩니다.",
+  ],
+  visual: {
+    kind: "photo",
+    src: LANDING_PLATFORM_BOARD,
+    alt: "어벗츠 플랫폼 의뢰 보드",
+  },
+};
+
+const PLATFORM_FAQ = {
+  q: "어벗츠 플랫폼은 무엇인가요?",
+  a: "치과와 기공소가 온라인으로 기공을 의뢰하고, 어벗츠 커스텀어벗과도 바로 연동됩니다.",
+};
+
 export const landingOffers: LandingOffer[] = [
   {
     slug: "simple-way",
@@ -183,6 +202,7 @@ export const landingOffers: LandingOffer[] = [
       { icon: "scan", label: "Check", line: "체크핀으로 경로를 확인" },
       { icon: "healing", label: "힐링", line: "이머전스 프로파일을 형성" },
       { icon: "abutment", label: "심플어벗", line: "같은 직경으로 이어짐" },
+      { icon: "request", label: "플랫폼", line: "치과·기공소 온라인 의뢰" },
       { icon: "store", label: "스토어", line: "키트·제품을 바로 주문" },
     ],
     scene: {
@@ -267,6 +287,7 @@ export const landingOffers: LandingOffer[] = [
           alt: "심플어벗 위 보철",
         },
       },
+      PLATFORM_STORY,
     ],
     slideHeading: "색 · 키트.",
     slides: [
@@ -328,6 +349,7 @@ export const landingOffers: LandingOffer[] = [
         q: "심플웨이는 어떤 흐름인가요?",
         a: "가이드펜·핀으로 보철 직경을 정한 뒤, 체크핀으로 확인하고, 심플 힐링과 심플어벗으로 이어집니다. 규격이 맞지 않으면 같은 화면에서 커스텀어벗으로 넘길 수 있습니다.",
       },
+      PLATFORM_FAQ,
       {
         q: "색상은 무엇을 뜻하나요?",
         a: "직경 라인입니다. 6은 노랑, 7은 초록, 8은 보라, 9는 파랑, 10은 하늘입니다. 가이드·힐링·어벗이 같은 색을 따릅니다.",
@@ -374,6 +396,7 @@ export const landingOffers: LandingOffer[] = [
     },
     cta: { kind: "start", label: "의뢰하기" },
     highlights: [
+      { icon: "request", label: "플랫폼", line: "치과·기공소 온라인 의뢰" },
       { icon: "lab", label: "기공실", line: "어벗츠가 직접 운영합니다" },
       { icon: "crown", label: "보철", line: "크라운과 브리지" },
       { icon: "cnc", label: "커스텀", line: "CNC 어벗이 이 기공소로" },
@@ -390,6 +413,7 @@ export const landingOffers: LandingOffer[] = [
       },
     },
     stories: [
+      PLATFORM_STORY,
       {
         name: "심플어벗 위에 보철을.",
         line: "고른 규격이 그대로 이어집니다.",
@@ -462,6 +486,7 @@ export const landingOffers: LandingOffer[] = [
         q: "기공사업부는 무엇인가요?",
         a: "어벗츠가 직접 운영하는 기공소입니다. 치과 의뢰를 받아 보철을 만듭니다.",
       },
+      PLATFORM_FAQ,
       {
         q: "무엇을 맡기나요?",
         a: "어벗츠 제품 다음의 보철입니다. 심플어벗을 고른 뒤나, 커스텀어벗이 도착한 뒤 이어집니다.",
