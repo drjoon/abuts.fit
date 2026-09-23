@@ -615,7 +615,11 @@ export function PracticeRecentTransfersAllModal({
         arrivalDate: transfer.arrivalDate,
         linkedArrivalDates,
         linkedOrderDates,
-        colorKey: String(transfer.targetLabAnchorId || "").trim() || lab,
+        colorKey:
+          (transfer.assigneeKind === "cooperation" &&
+            String(transfer.assigneeLabAnchorId || "").trim()) ||
+          String(transfer.targetLabAnchorId || "").trim() ||
+          lab,
         statusTone: resolvePracticeCalendarStatusTone(transfer.status, {
           designFileCount: transfer.designFileCount,
           designFiles: transfer.designFiles,

@@ -74,6 +74,20 @@ describe("resolvePracticeTransferFeeRate", () => {
     ).toBe(0.05);
   });
 
+  test("협력(subcontracted=false)은 지정 on이어도 0(direct off)·또는 direct rate", () => {
+    expect(
+      resolvePracticeTransferFeeRate({
+        matchingMode: "direct",
+        subcontracted: false,
+        payoutRates: {
+          subcontractFeeRate: 0.05,
+          directPlatformFeeEnabled: false,
+          directPlatformFeeRate: 0.02,
+        },
+      }),
+    ).toBe(0);
+  });
+
   test("하청 수행은 subcontractFeeRate(기본 5%)", () => {
     expect(DEFAULT_SUBCONTRACT_FEE_RATE).toBe(0.05);
     expect(

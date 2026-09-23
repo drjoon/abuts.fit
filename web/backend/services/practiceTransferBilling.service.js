@@ -81,6 +81,9 @@ export const PRACTICE_TRANSFER_LEDGER_LABELS = {
   holdShippingAbutment: "배송비 보류(기공소→어벗츠)",
   releaseLab: "기공비(치과→어벗츠)",
   releaseAbutment: "기공비(치과→어벗츠)",
+  /** 치과 직접 지정 협력 — 수수료 0%, 전액 통과 */
+  cooperationPurchase: "협력 기공비(어벗츠→기공소)",
+  /** 어벗츠 지정 후 하청 — subcontractFeeRate */
   subcontractPurchase: "하청(매입) 기공비(어벗츠→기공소)",
   shippingAbutment: "배송비(기공소→어벗츠)",
   shippingAbutsToManufacturer: "배송비(어벗츠→제조사)",
@@ -165,11 +168,18 @@ import {
   getAssigneeLabAnchorId,
   getPrimeLabAnchorId,
   isAutoMatchOpenPool,
+  isCooperationAssignee,
   isPracticeTransferSubcontracted,
+  isSubcontractFeeApplicable,
   resolveFeeScheduleLabAnchorId,
   resolvePerformingLabAnchorId,
   resolvePracticeTransferSettlementParties,
 } from "../utils/practiceTransferAutoMatch.js";
+
+const resolveAssigneePurchaseLedgerLabel = (transfer) =>
+  isCooperationAssignee(transfer)
+    ? PRACTICE_TRANSFER_LEDGER_LABELS.cooperationPurchase
+    : PRACTICE_TRANSFER_LEDGER_LABELS.subcontractPurchase;
 import {
   assertLabWithinAutoMatchBudget,
   buildScheduleFromAutoMatchBudget,
@@ -1029,7 +1039,7 @@ export async function commitPracticeTransferBilling({
   const feeRateApplied = resolvePracticeTransferFeeRate({
     matchingMode: isAutoMatch ? "auto" : "direct",
     payoutRates: devopsAnchorForFeeRate?.payoutRates,
-    subcontracted: isPracticeTransferSubcontracted(transfer),
+    subcontracted: isSubcontractFeeApplicable(transfer),
   });
 
   const { abutsRevenueAmount, labSettlementAmount } =
@@ -2434,7 +2444,7 @@ async function computeAcceptedPracticeTransferFees({
   const feeRateApplied = resolvePracticeTransferFeeRate({
     matchingMode: isAutoMatch ? "auto" : "direct",
     payoutRates: devopsAnchorForFeeRate?.payoutRates,
-    subcontracted: isPracticeTransferSubcontracted(transfer),
+    subcontracted: isSubcontractFeeApplicable(transfer),
   });
   const { abutsRevenueAmount, labSettlementAmount } =
     splitPracticeTransferSettlement({
@@ -3621,8 +3631,8 @@ export async function releasePracticeTransferLabShare({
           meta: {
             source: "practice_transfer_subcontract_purchase",
             displayKind: "subcontract_purchase",
-            displayLabel: PRACTICE_TRANSFER_LEDGER_LABELS.subcontractPurchase,
-            itemLabel: PRACTICE_TRANSFER_LEDGER_LABELS.subcontractPurchase,
+            displayLabel: resolveAssigneePurchaseLedgerLabel(transfer),
+            itemLabel: resolveAssigneePurchaseLedgerLabel(transfer),
             feeRateApplied,
             labFee: labFeeTotal,
             purchaseAmount,
@@ -3643,7 +3653,7 @@ export async function releasePracticeTransferLabShare({
             source: "practice_transfer_subcontract_purchase",
             displayKind: "lab_credit",
             displayLabel: "기공크레딧 적립",
-            itemLabel: PRACTICE_TRANSFER_LEDGER_LABELS.subcontractPurchase,
+            itemLabel: resolveAssigneePurchaseLedgerLabel(transfer),
             feeRateApplied,
             labFee: labFeeTotal,
             purchaseAmount,
@@ -5233,7 +5243,7 @@ export async function releasePracticeTransferRemakeChargeCredits({
     matchingMode:
       String(transfer?.matchingMode || "").trim() === "auto" ? "auto" : "direct",
     payoutRates,
-    subcontracted: isPracticeTransferSubcontracted(transfer),
+    subcontracted: isSubcontractFeeApplicable(transfer),
   });
   const platformFee = Math.max(
     0,
@@ -5356,8 +5366,8 @@ export async function releasePracticeTransferRemakeChargeCredits({
           meta: {
             source: "practice_transfer_subcontract_purchase",
             displayKind: "subcontract_purchase",
-            displayLabel: PRACTICE_TRANSFER_LEDGER_LABELS.subcontractPurchase,
-            itemLabel: PRACTICE_TRANSFER_LEDGER_LABELS.subcontractPurchase,
+            displayLabel: resolveAssigneePurchaseLedgerLabel(transfer),
+            itemLabel: resolveAssigneePurchaseLedgerLabel(transfer),
             remakeChargeIndex: chargeIndex,
             purchaseAmount,
             purchasePayeeId: String(purchasePayeeId),
@@ -5377,7 +5387,7 @@ export async function releasePracticeTransferRemakeChargeCredits({
             source: "practice_transfer_subcontract_purchase",
             displayKind: "lab_credit",
             displayLabel: "리메이크 청구",
-            itemLabel: PRACTICE_TRANSFER_LEDGER_LABELS.subcontractPurchase,
+            itemLabel: resolveAssigneePurchaseLedgerLabel(transfer),
             remakeChargeIndex: chargeIndex,
             purchaseAmount,
             primeLabAnchorId: String(labAnchorId),
@@ -5775,7 +5785,7 @@ export async function releasePracticeTransferProsthesisFollowUpLabShare({
     matchingMode:
       String(transfer?.matchingMode || "").trim() === "auto" ? "auto" : "direct",
     payoutRates,
-    subcontracted: isPracticeTransferSubcontracted(transfer),
+    subcontracted: isSubcontractFeeApplicable(transfer),
   });
   const platformFee = Math.max(
     0,
@@ -5896,8 +5906,8 @@ export async function releasePracticeTransferProsthesisFollowUpLabShare({
           meta: {
             source: "practice_transfer_subcontract_purchase",
             displayKind: "subcontract_purchase",
-            displayLabel: PRACTICE_TRANSFER_LEDGER_LABELS.subcontractPurchase,
-            itemLabel: PRACTICE_TRANSFER_LEDGER_LABELS.subcontractPurchase,
+            displayLabel: resolveAssigneePurchaseLedgerLabel(transfer),
+            itemLabel: resolveAssigneePurchaseLedgerLabel(transfer),
             followUpIndex,
             purchaseAmount,
             purchasePayeeId: String(purchasePayeeId),
@@ -5917,7 +5927,7 @@ export async function releasePracticeTransferProsthesisFollowUpLabShare({
             source: "practice_transfer_subcontract_purchase",
             displayKind: "lab_credit",
             displayLabel: itemLabel,
-            itemLabel: PRACTICE_TRANSFER_LEDGER_LABELS.subcontractPurchase,
+            itemLabel: resolveAssigneePurchaseLedgerLabel(transfer),
             followUpIndex,
             purchaseAmount,
             primeLabAnchorId: String(labAnchorId),
@@ -6586,14 +6596,14 @@ export async function buildFeeQuotesForTransferDocs({
     const feeRateApplied = resolvePracticeTransferFeeRateForViewer({
       matchingMode,
       payoutRates,
-      subcontracted: isPracticeTransferSubcontracted(doc),
+      subcontracted: isSubcontractFeeApplicable(doc),
       viewerIsPrimeContractor: isViewerPrimeContractor(doc, viewerLabId),
     });
     const remakeFeeRateApplied = resolvePracticeTransferFeeRate({
       matchingMode:
         String(matchingMode || "").trim() === "auto" ? "auto" : "direct",
       payoutRates,
-      subcontracted: isPracticeTransferSubcontracted(doc),
+      subcontracted: isSubcontractFeeApplicable(doc),
     });
     const remakeSplit = splitPracticeTransferSettlement({
       labFeeTotal: remakeFees.labFeeTotal,

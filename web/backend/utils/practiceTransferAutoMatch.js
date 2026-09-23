@@ -15,7 +15,10 @@ import {
   resolveRequestorProfile,
 } from "./requestorCapabilities.js";
 import {
+  ABUTS_COOPERATION_LABEL_PREFIX,
   ABUTS_LAB_DISPLAY_NAME,
+  ASSIGNEE_KIND_COOPERATION,
+  ASSIGNEE_KIND_SUBCONTRACT,
   AUTO_MATCH_LAB_DISPLAY_NAME,
   AUTO_MATCH_PRACTICE_DISPLAY_NAME,
   CERTIFIED_PARTNER_LAB_DISPLAY_NAME,
@@ -27,19 +30,25 @@ import {
   canAccessAutoMatchOpenPool,
   canOpenPracticeTransferSubcontract,
   collectSubcontractDirectBlockedLabIds,
+  formatAbutsCooperationLabLabel,
   getAssigneeLabAnchorId,
   getAutoMatchPriorityLabAnchorIds,
   isAbutsPrimePracticeTransfer,
   getPrimeLabAnchorId,
+  isCooperationAssignee,
   isLabIdBlockedAsDirectPracticeTarget,
   isLabPerformingOnTransfer,
   isPracticeTransferSubcontracted,
+  isSubcontractAssignee,
+  isSubcontractFeeApplicable,
   isSubcontractFeeScheduleContext,
   isSubcontractIdentityHiddenFromViewer,
   isSubcontractPoolOpen,
+  resolveAssigneeKind,
   resolveFeeScheduleLabAnchorId,
   resolvePerformingLabAnchorId,
   resolvePracticeTransferSettlementParties,
+  shouldHideAssigneeFromPractice,
   SUBCONTRACT_DIRECT_BLOCKED_MESSAGE,
   SUBCONTRACT_DIRECT_BLOCKED_REASON,
   SUBCONTRACT_PRACTICE_DISPLAY_NAME,
@@ -61,6 +70,9 @@ export {
   AUTO_MATCH_LAB_DISPLAY_NAME,
   AUTO_MATCH_PRACTICE_DISPLAY_NAME,
   ABUTS_LAB_DISPLAY_NAME,
+  ABUTS_COOPERATION_LABEL_PREFIX,
+  ASSIGNEE_KIND_COOPERATION,
+  ASSIGNEE_KIND_SUBCONTRACT,
   CERTIFIED_PARTNER_LAB_DISPLAY_NAME,
   PRACTICE_TRANSFER_AUTO_MATCH_CLAIM_HOURS,
   PRACTICE_TRANSFER_AUTO_MATCH_PRIORITY_MS,
@@ -68,6 +80,7 @@ export {
   buildAutoMatchPriorityUntil,
   canAccessAutoMatchOpenPool,
   canOpenPracticeTransferSubcontract,
+  formatAbutsCooperationLabLabel,
   getAssigneeLabAnchorId,
   getAutoMatchPriorityLabAnchorIds,
   getPrimeLabAnchorId,
@@ -78,18 +91,23 @@ export {
   isAutoMatchOpenPool,
   isAutoMatchPriorityActive,
   isAutoMatchPriorityLabAnchorId,
+  isCooperationAssignee,
   isInternalLabBusinessType,
   isPracticeTransferLabReceiverRole,
   isPracticeTransferSubcontracted,
+  isSubcontractAssignee,
+  isSubcontractFeeApplicable,
   isSubcontractFeeScheduleContext,
   isSubcontractIdentityHiddenFromViewer,
   isSubcontractPoolOpen,
   isLabIdBlockedAsDirectPracticeTarget,
   isLabPerformingOnTransfer,
   normalizeLabAnchorIdList,
+  resolveAssigneeKind,
   resolveFeeScheduleLabAnchorId,
   resolvePerformingLabAnchorId,
   resolvePracticeTransferSettlementParties,
+  shouldHideAssigneeFromPractice,
   SUBCONTRACT_DIRECT_BLOCKED_MESSAGE,
   SUBCONTRACT_DIRECT_BLOCKED_REASON,
   SUBCONTRACT_PRACTICE_DISPLAY_NAME,
@@ -121,17 +139,24 @@ export async function assertLabAllowedAsDirectPracticeTarget({
   throw err;
 }
 
-/** 하청 풀 open ~ assignee 확정 후까지 치과에 원청(어벗츠)+협력 라벨. 수행 기공소 실명 비공개. */
+/**
+ * 하청 풀·하청 assignee만 치과에 원청(어벗츠)만 노출.
+ * 협력(치과 직접 지정)은 실명 공개 — 표시는 「어벗츠 · {파트너}」로 합성.
+ */
 export const redactAutoMatchLabIdentity = (
   matchingMode,
   { targetLabName = "", targetLabAnchorId = null } = {},
   { reveal = false, transfer = null } = {},
 ) => {
   const hideSubcontractPartner =
-    Boolean(transfer) &&
-    !reveal &&
-    (isSubcontractPoolOpen(transfer) ||
-      isPracticeTransferSubcontracted(transfer));
+    Boolean(transfer) && !reveal && shouldHideAssigneeFromPractice(transfer);
+  if (transfer && !reveal && isCooperationAssignee(transfer)) {
+    const partner = String(transfer?.assigneeLabName || "").trim();
+    return {
+      targetLabName: formatAbutsCooperationLabLabel(partner),
+      targetLabAnchorId: transfer?.targetLabAnchorId || targetLabAnchorId || null,
+    };
+  }
   if (
     reveal ||
     (!isAutoMatchMode({ matchingMode }) && !hideSubcontractPartner)
@@ -524,8 +549,8 @@ export const wantsAbutsPrimePool = ({
 
 /**
  * 신규 PTX 계약 상대=항상 어벗츠기공소(원청).
- * 치과 픽커에서 고른 외부 기공소 → assignee(사전 하청).
- * 어벗츠/레거시 자동매칭 선택 → 원청만(자체 수행 또는 이후 하청 풀).
+ * 치과 픽커 외부 기공소 → assignee(협력, 0%).
+ * 어벗츠/레거시 자동매칭 선택 → 원청만(자체 수행 또는 이후 하청 풀 5%).
  */
 export async function resolveCreateMatchingTarget({
   matchingModeRaw,
@@ -552,6 +577,7 @@ export async function resolveCreateMatchingTarget({
         ...prime,
         assigneeLabAnchorId: null,
         assigneeLabName: "",
+        assigneeKind: null,
       };
     }
     const partnerName =
@@ -560,6 +586,7 @@ export async function resolveCreateMatchingTarget({
       ...prime,
       assigneeLabAnchorId: new Types.ObjectId(rawAnchorId),
       assigneeLabName: partnerName,
+      assigneeKind: ASSIGNEE_KIND_COOPERATION,
     };
   }
 
@@ -567,6 +594,7 @@ export async function resolveCreateMatchingTarget({
     ...prime,
     assigneeLabAnchorId: null,
     assigneeLabName: "",
+    assigneeKind: null,
   };
 }
 

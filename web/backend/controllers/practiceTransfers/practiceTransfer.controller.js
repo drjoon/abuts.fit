@@ -44,6 +44,8 @@ import {
 import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.js";
 import {
   ABUTS_LAB_DISPLAY_NAME,
+  ASSIGNEE_KIND_COOPERATION,
+  ASSIGNEE_KIND_SUBCONTRACT,
   AUTO_MATCH_LAB_DISPLAY_NAME,
   buildAutoMatchClaimableFilter,
   buildAutoMatchPriorityFields,
@@ -58,14 +60,18 @@ import {
   isSubcontractPoolOpen,
   isAutoMatchPriorityActive,
   isAutoMatchPriorityLabAnchorId,
+  isCooperationAssignee,
   isInternalLabBusinessType,
   isPracticeTransferLabReceiverRole,
   isLabAnchorAutoMatchEligible,
+  isSubcontractAssignee,
+  isSubcontractFeeApplicable,
   loadAutoMatchEligibleLabAnchors,
   loadCertifiedSubcontractLabAnchorIds,
   redactAutoMatchLabIdentity,
   redactAutoMatchPracticeIdentity,
   resolveAbutsPrimeLabFields,
+  resolveAssigneeKind,
   resolveCreateMatchingTarget,
   resolveFeeScheduleLabAnchorId,
   resolvePerformingLabAnchorId,
@@ -644,11 +650,13 @@ const clearAutoMatchClaimFields = (doc, { bumpRelease = true } = {}) => {
   if (keepPrime) {
     doc.assigneeLabAnchorId = null;
     doc.assigneeLabName = "";
+    doc.assigneeKind = null;
   } else {
     doc.targetLabAnchorId = null;
     doc.targetLabName = AUTO_MATCH_LAB_DISPLAY_NAME;
     doc.assigneeLabAnchorId = null;
     doc.assigneeLabName = "";
+    doc.assigneeKind = null;
   }
   doc.requestorReadAt = null;
   doc.requestorReadBy = null;
@@ -1063,9 +1071,9 @@ const serializeRemakeChargesForApi = (charges) =>
 const toVirtualRequestRows = (transferDoc, { perFile = true } = {}) => {
   const transferId = String(transferDoc?.transferId || "").trim();
   const matchingMode = isAutoMatchMode(transferDoc) ? "auto" : "direct";
+  const assigneeKind = resolveAssigneeKind(transferDoc);
   const handledByCertifiedPartner =
-    isSubcontractPoolOpen(transferDoc) ||
-    isPracticeTransferSubcontracted(transferDoc);
+    isSubcontractPoolOpen(transferDoc) || isSubcontractAssignee(transferDoc);
   const labIdentity = redactAutoMatchLabIdentity(
     matchingMode,
     {
@@ -1075,6 +1083,12 @@ const toVirtualRequestRows = (transferDoc, { perFile = true } = {}) => {
     { transfer: transferDoc },
   );
   const targetLabName = labIdentity.targetLabName;
+  const assigneeLabName = isCooperationAssignee(transferDoc)
+    ? String(transferDoc?.assigneeLabName || "").trim()
+    : "";
+  const assigneeLabAnchorId = isCooperationAssignee(transferDoc)
+    ? transferDoc?.assigneeLabAnchorId || null
+    : null;
   const transferMemo = String(transferDoc?.transferMemo || "").trim();
   const message = `[기공소: ${targetLabName}] ${transferMemo}\n[전송ID: ${transferId}]`;
   const files = Array.isArray(transferDoc?.files) ? transferDoc.files : [];
@@ -1160,6 +1174,9 @@ const toVirtualRequestRows = (transferDoc, { perFile = true } = {}) => {
     canRateLab: Boolean(String(performingLabAnchorId || "").trim()),
     performingLabAnchorId: performingLabAnchorId || null,
     handledByCertifiedPartner,
+    assigneeKind,
+    assigneeLabName: assigneeLabName || "",
+    assigneeLabAnchorId: assigneeLabAnchorId || null,
     labRating: null,
     caseInfos: {
       clinicName: "",
@@ -1181,6 +1198,9 @@ const toVirtualRequestRows = (transferDoc, { perFile = true } = {}) => {
         targetLabName,
         matchingMode,
         handledByCertifiedPartner,
+        assigneeKind,
+        assigneeLabName: assigneeLabName || "",
+        assigneeLabAnchorId: assigneeLabAnchorId || null,
       },
     },
   }));
@@ -3087,6 +3107,7 @@ export async function createPracticeTransfer(req, res) {
     targetLabName = resolvedTarget.targetLabName;
     const assigneeLabAnchorId = resolvedTarget.assigneeLabAnchorId || null;
     const assigneeLabName = String(resolvedTarget.assigneeLabName || "").trim();
+    const assigneeKind = resolvedTarget.assigneeKind || null;
     const performingLabAnchorId = assigneeLabAnchorId || targetLabAnchorId;
 
     if (matchingMode === "direct" && !targetLabName && targetLabAnchorId) {
@@ -3289,7 +3310,7 @@ export async function createPracticeTransfer(req, res) {
         catalog: autoMatchCatalog,
         rushFeeMultiplier,
         remake: remakePricing,
-        subcontracted: Boolean(assigneeLabAnchorId),
+        subcontracted: assigneeKind === "subcontract",
       }),
       performingLabAnchorId
         ? assertLabWithinPracticeStarBand({
@@ -3392,6 +3413,7 @@ export async function createPracticeTransfer(req, res) {
       targetLabName,
       assigneeLabAnchorId: assigneeLabAnchorId || null,
       assigneeLabName: assigneeLabName || "",
+      assigneeKind: assigneeKind || null,
       matchingMode,
       autoMatch: {
         minLabRating: starBand.minStars,
@@ -3780,6 +3802,7 @@ export async function updatePracticeTransferContent(req, res) {
     targetLabName = resolvedTarget.targetLabName;
     const assigneeLabAnchorId = resolvedTarget.assigneeLabAnchorId || null;
     const assigneeLabName = String(resolvedTarget.assigneeLabName || "").trim();
+    const assigneeKind = resolvedTarget.assigneeKind || null;
     const performingLabAnchorId = assigneeLabAnchorId || targetLabAnchorId;
 
     if (matchingMode === "direct" && !targetLabName && targetLabAnchorId) {
@@ -4010,7 +4033,7 @@ export async function updatePracticeTransferContent(req, res) {
         autoMatchBudget,
         catalog: autoMatchCatalog,
         rushFeeMultiplier,
-        subcontracted: Boolean(assigneeLabAnchorId),
+        subcontracted: assigneeKind === "subcontract",
       });
       billingPreview = {
         ...toBillingPreviewFields(feeQuote),
@@ -4092,6 +4115,7 @@ export async function updatePracticeTransferContent(req, res) {
       targetLabName,
       assigneeLabAnchorId: assigneeLabAnchorId || null,
       assigneeLabName: assigneeLabName || "",
+      assigneeKind: assigneeKind || null,
       matchingMode,
       autoMatch: nextAutoMatch,
       transferMemo: transferMemoResolved,
@@ -8312,6 +8336,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
           $set: {
             assigneeLabAnchorId: labOid,
             assigneeLabName,
+            assigneeKind: ASSIGNEE_KIND_SUBCONTRACT,
             requestorReadAt: now,
             requestorReadBy: req.user?._id || null,
             requestorDownloadedAt: now,
@@ -11216,6 +11241,7 @@ export async function retargetPracticeTransferLab(req, res) {
     let targetLabName = resolvedTarget.targetLabName;
     const assigneeLabAnchorId = resolvedTarget.assigneeLabAnchorId || null;
     const assigneeLabName = String(resolvedTarget.assigneeLabName || "").trim();
+    const assigneeKind = resolvedTarget.assigneeKind || null;
     const performingLabAnchorId = assigneeLabAnchorId || targetLabAnchorId;
     if (matchingMode === "direct") {
       if (!targetLabAnchorId) {
@@ -11313,7 +11339,7 @@ export async function retargetPracticeTransferLab(req, res) {
       matchingMode,
       autoMatchBudget,
       catalog: autoMatchCatalog,
-      subcontracted: Boolean(assigneeLabAnchorId),
+      subcontracted: assigneeKind === "subcontract",
     });
     const billingPreview = toBillingPreviewFields(feeQuote);
     const autoMatchPriorityFields =
@@ -11368,6 +11394,7 @@ export async function retargetPracticeTransferLab(req, res) {
     doc.targetLabName = targetLabName;
     doc.assigneeLabAnchorId = assigneeLabAnchorId || null;
     doc.assigneeLabName = assigneeLabName || "";
+    doc.assigneeKind = assigneeKind || null;
     doc.matchingMode = matchingMode;
     doc.autoMatch = nextAutoMatch;
     doc.workCanceledAt = null;
@@ -11389,6 +11416,7 @@ export async function retargetPracticeTransferLab(req, res) {
           targetLabName,
           assigneeLabAnchorId: assigneeLabAnchorId || null,
           assigneeLabName: assigneeLabName || "",
+          assigneeKind: assigneeKind || null,
           matchingMode,
           autoMatch: nextAutoMatch,
           workCanceledAt: null,

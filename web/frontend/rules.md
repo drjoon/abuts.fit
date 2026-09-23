@@ -337,7 +337,7 @@ Notes:
   - 치과 정책 안내·크레딧 차감은 관리자「플랫폼 설정 · 커스텀어벗」유효가(런칭 1만 / 정상 1.3만). 의뢰자 BA 오버라이드가 있으면 그 판매가. 신속은 +신속 의뢰비.
   - 기공소 커스텀어벗 안내도 치과와 동일 고시(`membershipProductionPrice` / `membershipDesignAndProductionPrice`). 라벨만 `어벗생산의뢰`·`기공의뢰수신`. 가입 90일 1만원 고정가 없음.
   - 기공소 어벗츠 인증: 관리자 `PracticeTransferAutoMatchTab`에서 신청·테스트·상태 관리. **월 참여 수수료 0원**(정책). 지정·자동매칭 플랫폼 수수료 없음. 하청 `subcontractFeeRate`(기본 5%). 구 거래 치과 소개 UI는 제거(초대 API는 레거시 유지). 구 기공소 설정「어벗츠 인증」탭 제거.
-  - 치과향 지정 기공소 표시: `formatPracticeTargetLabLabel` → **「어벗츠 협력 · {이름}」**(어벗츠기공소·하청 마스킹 예외). 라우팅 `targetLab`은 현행 유지.
+  - 치과향 지정 기공소 표시: `formatPracticeTargetLabLabel` → **「어벗츠 · {이름}」**(협력). 하청만 「어벗츠기공소 · 인증 협력 기공소에서 처리」. 라우팅 `targetLab`은 현행 유지.
   - 기공소 사이드 설정과 계정 팝업 사이: 가입 이유 배너. 어벗생산의뢰 상단은 생산 현황 헤더(`[정책 안내]`·진행중·출고예정·완료·불완전가공).
   - 크레딧 잔액·장부 UI(`CreditLedgerModal` / 의뢰자 크레딧 페이지):
     - 내역 상단 요약은 **수식 카드**(`현재 잔액 = 충전 [+ 정산 적립] − 소비`). 「무료 충전」카드 없음. 연산 부호만 카드 사이, 설명은 툴팁.
@@ -367,7 +367,7 @@ Notes:
   - 의미 단위 섹션 고정: **환자** → **임플란트** → **생산**(있을 때만).
   - 레이아웃: 카드는 `layout="stack"`(기본), PreviewModal은 `layout="row"`(가로 3열·섹션 라벨 인라인·환자 일정/신원 1줄)로 요약 높이를 줄여 STL 영역을 확보합니다. 열 너비를 넘는 문구는 다음 줄로 넘깁니다(1줄 nowrap 강제 금지).
   - STL 오버레이(`StlPreviewViewer`): 왼쪽=테이퍼·최대직경·전체길이·커넥션·헥스 회전, 오른쪽=FL max/min·경사축·프론트(높이 균형으로 모델 가림 축소).
-  - PLY/OBJ 프리뷰 칼라: 버텍스 컬러 또는 `TextureFile`/동반 JPG·PNG(`createModelPreviewMaterial` + `parseModelPreview`). SSOT `src/shared/files/modelPreviewFile.ts`.
+  - PLY/OBJ/DCM 프리뷰 칼라: 버텍스 컬러 또는 `TextureFile`/동반 JPG·PNG(`createModelPreviewMaterial` + `parseModelPreview`). 피니시라인 가독성은 sRGB **휘도 대비·약한 채도**만(잇몸 적색 hue 시프트 금지) + 스캔 칼라 `NoToneMapping`(`applyScanColorToneMapping`). SSOT `src/shared/files/modelPreviewFile.ts`.
   - PreviewModal 폭: `RESPONSIVE.dialogContentPreview` — Dialog 기본 `sm:max-w-lg`를 `sm:max-w-[min(1680px,…)]`로 덮어써야 PC에서 ~512px로 찌그러지지 않습니다. 폰 세로는 STL 세로 스택·스크롤, 폰 가로는 `landscape:grid-cols-2`.
   - 넓은 Dialog/모달은 반드시 `sm:max-w-*`(또는 `sm:max-w-none`)를 넣는다. unprefixed `max-w-2xl`/`max-w-none`만으로는 Dialog 기본 `sm:max-w-lg`가 남는다.
   - 중복 금지 / 배치:
@@ -688,8 +688,8 @@ Notes:
   - 의뢰자 치과 페이지 상태 배지 기준: `src/pages/requestor/practice/RequestorPracticePage.tsx` (`isRead/requestorReadAt`, `isAccepted`/`requestorDownloadedAt`=작업시작·레거시 필드명 의뢰수락). 기공의뢰수신 목록은 치과 최근의뢰와 같은 3주 캘린더(`PracticeRecentTransfersCalendar`, 칩=`치과/환자/치아`, 색=상단 뱃지 상태. 리메이크는 공정색+이중선. 치과 최근의뢰는 기공소 그룹색). 작업시작 후 어벗·보철 업로드 CTA는 상세 모달 채팅 상단 바(`PracticeLabReceiveWorkActionsBar`).
     - 자동매칭 공개 풀 상세 열람만으로는 `mark-read`/사이드바 안읽음 배지를 내리지 않는다(작업시작 시 갱신).
   - 기공소 작업시작: 상세 다이얼로그 왼쪽 「전체 다운로드」, 오른쪽 「치과와의 소통」 상단에 안내 문구+「작업시작」→ `POST .../mark-accepted`(과금·레거시 경로명). 파일 다운로드는 뱃지/과금과 무관. 작업시작 후 같은 자리 2단: 안내 문구 / `[어벗 업로드 & 생산의뢰]`·`[보철 업로드 & 작업완료]`·`[작업취소]`. 작업시작 시 `practice:transfer-updated`(action=`accepted`, `feeQuote` 확정)로 치과 UI가「확정 기공비」를 즉시 표시.
-  - **자동매칭(레거시)**: 치과 기공소 픽커의 「자동 매칭」항목은 제거. **신규 의뢰 계약 상대=어벗츠기공소(고정).** 픽커의 외부 기공소=협력(사전 하청 assignee). 기존 `matchingMode=auto` 건·공개 풀·우선창 엔진은 유지하되, 작성 UI에서는 쓰지 않는다. 레거시 draft는 어벗츠기공소로 복원. 표시명 마스킹·수신 뱃지 합산 규칙은 기존 건에 적용. UI: `PracticeTransferAutoMatchTab` (관리자 플랫폼 설정「인증 기공소」)
-  - 의뢰상세·채팅 우측 상단 평가: 치과=`PracticeLabRatingControl`(1~5점만, 수행 기공소·하청 포함, 기공비 할인/할증 없음). **1점=검색 가능·주문 불가**(지정·어벗츠 하청 수행 동일, 버튼 툴팁). 하청 시 치과 표시는 원청명 + 「인증 협력 기공소에서 처리」(실명 비공개·확정 후에도 동일). 기공소=`LabPracticeFeeSurchargeControl` variant=`evaluate`(별점 없음, 해당 치과 수가 할증·다음 지정 의뢰부터). 설정 탭 거래처 할증은 동일 컴포넌트 variant=`surcharge`.
+  - **자동매칭(레거시)**: 치과 기공소 픽커의 「자동 매칭」항목은 제거. **신규 의뢰 계약 상대=어벗츠기공소(고정).** 픽커의 외부 기공소=협력(`assigneeKind=cooperation`, 0%). 어벗츠 지정 후 풀/클레임=하청(`assigneeKind=subcontract`, 5%). 기존 `matchingMode=auto` 건·공개 풀·우선창 엔진은 유지하되, 작성 UI에서는 쓰지 않는다. 레거시 draft는 어벗츠기공소로 복원. 표시명 마스킹·수신 뱃지 합산 규칙은 하청·레거시 auto에 적용. UI: `PracticeTransferAutoMatchTab` (관리자 플랫폼 설정「인증 기공소」)
+  - 의뢰상세·채팅 우측 상단 평가: 치과=`PracticeLabRatingControl`(1~5점만, 수행 기공소·하청 포함, 기공비 할인/할증 없음). **1점=검색 가능·주문 불가**(지정·어벗츠 하청 수행 동일, 버튼 툴팁). **하청** 시 치과 표시는 원청명 + 「인증 협력 기공소에서 처리」(실명 비공개). **협력**은 「어벗츠 · {파트너}」. 기공소=`LabPracticeFeeSurchargeControl` variant=`evaluate`(별점 없음, 해당 치과 수가 할증·다음 지정 의뢰부터). 설정 탭 거래처 할증은 동일 컴포넌트 variant=`surcharge`.
   - 치과 작성 폼: 기공소 픽커 옆 **별점 하한·상한**(기본 3~4). 구간 밖 기공소(어벗츠 포함)는 픽커·생성·재지정에서 제외. 하청 풀도 동일 구간.
   - 기공소 수신(상태=의뢰수락/UI=작업시작): 상세 모달 상단 업로드 CTA. **커스텀어벗 배송선택 모달 없음.** CA면 작업시작 시 Request(`design_custom_abutment`) 조기 생성(생산·배송 크레딧 보류는 작업시작에서 잡지 않음). **작업시작 기공소가 디자인**해 STL 업로드(`design-handoff`) → 그때 생산·배송 크레딧 보류(부족 시 충전 안내)·제조 자동 주문·어벗디자인비 지급. **생산 후 주문 기공소 수취**(출고 목표=치과도착일−2영업일). 레거시 미컨펌 건만 「어벗 디자인 확인」 CTA.
   - **PTX 리메이크**: 목록「리메이크」확인은 **커스텀어벗 기본 제외**(체크 옵트인). 포함 시 기공소→어벗츠는 동일 **180일** 조건에서 건당 10,000원. 치과→기공소 리메이크비는 기공소 `freeRemakeYears` 이내면 무료(`LAB_FEE_REMAKE_FREE`). 목록 `remakeFeeQuote`=보철만, `remakeFeeQuoteWithCustomAbutment`=CA 포함.

@@ -215,7 +215,8 @@ describe("practiceTransferAutoMatch priority (core)", () => {
       targetLabAnchorId: OID_A,
       assigneeLabAnchorId: OID_B,
       assigneeLabName: "협력 기공소",
-      autoMatch: { subcontractPoolOpen: false },
+      assigneeKind: "subcontract",
+      autoMatch: { subcontractPoolOpen: false, claimedAt: new Date() },
     };
     expect(isSubcontractIdentityHiddenFromViewer(subcontracted, OID_B)).toBe(
       true,

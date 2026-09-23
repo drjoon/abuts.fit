@@ -286,7 +286,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - **주문 변경** 리메이크(`POST .../append-prosthesis`, 구 「보철 종류 변경」): 임시치아→지르와 동일 경로. 인레이·크라운·브리지에서 다른 최종 보철로 바꾸거나 **동일 형태라도 어벗·쉐이드·임플란트 스펙을 바꿀 때**. 형태가 바뀌면 **모든 단계 중 최고가만 청구**(예: 인레이 5만→크라운 6만 = 순증분 1만, 합계 6만). 원 단계 기공비 차감(`pickSourceTempRowsForFollowUpCredit`·`applyProsthesisFollowUpTempCredit`). 형태·스펙이 완전 동일하면 거부(일반 리메이크 사용).
   - **신규 작성 동일건 감지(`GET /api/practice/transfers/check-similar`)**: 환자명+치아(overlap)·감지 창 기본 **30년**(=`FREE_REMAKE_YEARS_MAX`). lean·견적 없음. 매치에 `freeRemakeYears`·`withinRemakePricingWindow`(기공소 설정 기준). 리메이크면 `POST /`에 `isRemake`+`remakeSourceTransferMongoId`로 원의뢰 연결·기공소 「리메이크」표시.
     - **자동 매칭 성공**(`matchingMode=auto`): 플랫폼 수수료 **0**(레거시 `platformFeeRate` 저장값과 무관).
-    - **지정 기공소**(`matchingMode=direct`): 플랫폼 수수료 **없음**(`directPlatformFeeEnabled` 기본 off · `directPlatformFeeRate` 기본 0). 하청 수행만 `subcontractFeeRate`(기본 5%).
+    - **지정 기공소**(`matchingMode=direct`): 플랫폼 수수료 **없음**(`directPlatformFeeEnabled` 기본 off · `directPlatformFeeRate` 기본 0). **하청**(`assigneeKind=subcontract`)만 `subcontractFeeRate`(기본 5%). **협력**(`assigneeKind=cooperation`, 치과 직접 지정)은 0% 전액 통과(어벗츠 gross→수행 기공소 매입).
     - 걷힌 수수료 금액의 잔여 분배: 제조사는 하청 고정단가 경로와 분리. 수수료 잔액은 딜러사·개발운영사·어벗츠 상대비율로 재분배(루트 `rules.md` §2.3).
     - 자동 매칭 식별 정보: 레거시 `matchingMode=auto` 건만 마스킹 유지. **신규 의뢰는 지정 기공소(어벗츠기공소 포함) 수가 + `labFeeMultiplier` 할증.** 치과 평가=별점만(기공비 할인/할증 없음, 수행 기공소·하청 포함). 하한·상한 설정으로 지정·하청 수신 게이트. 기공소「치과 평가」=할증. 자동매칭 신규 작성·별점 기공비 배수는 쓰지 않음.
   - `isTradingPartner`(boolean)는 `active` 관계에서만 true. 거래처(`active`)만 커스텀어벗 생산의뢰 시 기공소 **유료/무료크레딧**에서 생산단가 강제 차감(치과 재차감 금지); `referred`/그 외는 기존처럼 청구 총액에 생산원가가 포함된 것으로 보고 별도 차감 없음.
@@ -894,7 +894,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 파이프라인: 월중 적립·소비 → **KST 익월 1일 초안**(PENDING_APPROVAL, writeDate=전월 말일) → 관리자 재무 콘솔 검토·발행 → 관계사 입금. 연결 draft가 있으면 **SENT 후에만** mark-paid.
   - `ABUTS_TO_CUSTOMER`: 사용분 월합. **기공·커스텀어벗=면세 계산서**, **스토어(심플웨이 포함)=과세 세금계산서** — taxType별로 별도 draft(사업자·기간당 각 1건). `buyerKind=lab|practice`로 어벗츠→기공소 / 어벗츠→치과 표시. `issuanceMode="SELF"`. 충전(ChargeOrder) 시점 발행 금지. 과거 충전 건별 draft는 유지. 기공의뢰(PTX) 유료 소비는 `PRACTICE_TRANSFER_SPEND_HOLD` / `HOLD_ADJUST` / 레거시 `SPEND_COMMIT`을 면세 월합에 포함(어벗츠→치과 매출).
   - `LAB_TO_PRACTICE`(기공소→치과 기공의뢰비, 월합): **신규 생성 중단**(2026-09-20). 이력 draft만 유지. 기공비 증빙은 `ABUTS_TO_CUSTOMER`로 통일.
-  - `AFFILIATE_TO_ABUTS`(어벗츠→딜러사·개발운영사·제조사·기공소 정산의 반대방향): 제조사·딜러사·개발운영사는 `taxType="과세"`(부가세 10%), 기공소는 `taxType="면세"`(품목 **하청(매입) 기공비**). 기본 `issuanceMode="TRUSTEE"`. BA.`taxInvoice.trusteeIssueEnabled`(default true)가 false면 정산 확정 시 Draft 미생성(상대 직접 발행).
+  - `AFFILIATE_TO_ABUTS`(어벗츠→딜러사·개발운영사·제조사·기공소 정산의 반대방향): 제조사·딜러사·개발운영사는 `taxType="과세"`(부가세 10%), 기공소는 `taxType="면세"`(품목 **기공비 정산(매입)** — 협력·하청 합산). 기본 `issuanceMode="TRUSTEE"`. BA.`taxInvoice.trusteeIssueEnabled`(default true)가 false면 정산 확정 시 Draft 미생성(상대 직접 발행).
   - 정산 배치: 익월 1일 DRAFT(`monthlySettlementBatchWorker`) → 관리자 확정 시 Draft(위수탁 ON만). SSOT: `resolveSettlementInvoiceDraftSpec` in `services/settlement.service.js`.
   - 위수탁발행(`issueType:"위수탁"` + `trusteeCorpNum` 등)은 팝빌 `TaxinvoiceService`가 과세/면세 모두 동일하게 지원한다(별도 서비스 아님). 수탁자(어벗츠)만 팝빌 회원/인증서가 필요하고, 위탁자(실제 공급자)는 회원가입이 불필요하다.
   - 작성연월일 헬퍼: `utils/taxInvoicePeriod.util.js` `writeDateFromPeriodEnd`. 1B 훅: `services/taxInvoiceAutoIssue.service.js`.
@@ -918,7 +918,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - 런타임 적재(`controllers/requests/common.review.helpers.js`)와 이관 스크립트는 동일 함수를 공유해 분배 정책 드리프트를 금지합니다.
     - 제조사 = 고정 공급가(어벗 1개당 / 배송 박스당). 잔여 = 소비 공급가 − 제조사 공급가 → 딜러사·개발운영사·어벗츠 상대비율(`BusinessAnchor.payoutRates`의 salesman/devops/admin). 딜러사 없으면 salesman 몫을 admin에 가산. 잔여 분배율은 추후 별도 확정.
     - **딜러십 파트너 조건**: 영업 수수료=심플웨이·커스텀어벗. **유치(가입) 시점** 기준 이벤트 창 내=이벤트 요율(기본 15%), 외=기본 요율(10%). 배송비=수신자(치과·기공소) 부담. `resolveDealershipRateForAcquiredAt` · 관리자「플랫폼 설정 · 딜러십」. **90일 무주문 시 소개 귀속 리셋**(루트 `rules.md` §2.3).
-    - 기공의뢰 수수료: 지정·자동매칭 플랫폼 수수료 **없음**. 하청 `subcontractFeeRate`(기본 **5%**) · 월 참여 `autoMatchMonthlyFee`(**정책 0원**) — 관리자 플랫폼 설정「인증 기공소」. 루트 `rules.md` §2.3.
+    - 기공의뢰 수수료: 지정·자동매칭 플랫폼 수수료 **없음**. **하청** `subcontractFeeRate`(기본 **5%**) · **협력** 0% · 월 참여 `autoMatchMonthlyFee`(**정책 0원**) — 관리자 플랫폼 설정「인증 기공소」. 루트 `rules.md` §2.3.
     - `machining_spend`+`express_surcharge`: 제조사 단가 1회만(`manufacturerUnitApplied` / 기존 의뢰 유니크와 정합).
 
 - 관리자 credit-reconcile API 정책:

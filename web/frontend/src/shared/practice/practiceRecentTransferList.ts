@@ -134,6 +134,9 @@ export type PracticeRecentRequestItem = {
   labRating?: PracticeLabRatingPublic | null;
   performingLabAnchorId?: string | null;
   handledByCertifiedPartner?: boolean;
+  assigneeKind?: "cooperation" | "subcontract" | null;
+  assigneeLabAnchorId?: string | null;
+  assigneeLabName?: string | null;
   /** API toothWorks 스냅샷(후속 보철 append 등 memo보다 우선) */
   toothWorks?: Array<Record<string, unknown>>;
   prosthesisFollowUps?: import("@/shared/practice/prosthesisFollowUp").ProsthesisFollowUpRecord[];
@@ -227,6 +230,9 @@ export type PracticeRecentTransferItem = {
   labRating?: PracticeLabRatingPublic | null;
   performingLabAnchorId?: string | null;
   handledByCertifiedPartner?: boolean;
+  assigneeKind?: "cooperation" | "subcontract" | null;
+  assigneeLabAnchorId?: string | null;
+  assigneeLabName?: string | null;
   /** 임시저장 카드용(사이드바·휴지통) */
   practiceUserId?: string;
   practiceUserLabel?: string;
@@ -794,6 +800,28 @@ export const mapMyPracticeTransferApiRows = (
           (practiceRouting as { handledByCertifiedPartner?: unknown })
             .handledByCertifiedPartner,
       );
+      const assigneeKindRaw = String(
+        (r as { assigneeKind?: unknown }).assigneeKind ||
+          (practiceRouting as { assigneeKind?: unknown }).assigneeKind ||
+          "",
+      ).trim();
+      const assigneeKind =
+        assigneeKindRaw === "cooperation" || assigneeKindRaw === "subcontract"
+          ? assigneeKindRaw
+          : null;
+      const assigneeLabAnchorId =
+        String(
+          (r as { assigneeLabAnchorId?: unknown }).assigneeLabAnchorId ||
+            (practiceRouting as { assigneeLabAnchorId?: unknown })
+              .assigneeLabAnchorId ||
+            "",
+        ).trim() || null;
+      const assigneeLabName =
+        String(
+          (r as { assigneeLabName?: unknown }).assigneeLabName ||
+            (practiceRouting as { assigneeLabName?: unknown }).assigneeLabName ||
+            "",
+        ).trim() || null;
       const targetLabRaw =
         matchingMode === "auto"
           ? "어벗츠기공소"
@@ -978,6 +1006,9 @@ export const mapMyPracticeTransferApiRows = (
         performingLabAnchorId:
           String(r.performingLabAnchorId || "").trim() || null,
         handledByCertifiedPartner,
+        assigneeKind,
+        assigneeLabAnchorId,
+        assigneeLabName,
         toothWorks: toothWorksFromApi,
         prosthesisFollowUps: Array.isArray(r.prosthesisFollowUps)
           ? (r.prosthesisFollowUps as PracticeRecentRequestItem["prosthesisFollowUps"])
@@ -1500,6 +1531,9 @@ export const groupPracticeRecentRequests = (
         labRating: req.labRating || null,
         performingLabAnchorId: req.performingLabAnchorId || null,
         handledByCertifiedPartner: Boolean(req.handledByCertifiedPartner),
+        assigneeKind: req.assigneeKind || null,
+        assigneeLabAnchorId: req.assigneeLabAnchorId || null,
+        assigneeLabName: req.assigneeLabName || null,
         toothWorks: Array.isArray(req.toothWorks) ? [...req.toothWorks] : [],
         prosthesisFollowUps: Array.isArray(req.prosthesisFollowUps)
           ? [...req.prosthesisFollowUps]
@@ -1692,6 +1726,15 @@ export const groupPracticeRecentRequests = (
         targetLab: stripPracticeTargetLabDisplayDecorations(existing.targetLab),
         handledByCertifiedPartner: true,
       });
+    }
+    if (req.assigneeKind && !existing.assigneeKind) {
+      existing.assigneeKind = req.assigneeKind;
+    }
+    if (req.assigneeLabAnchorId && !existing.assigneeLabAnchorId) {
+      existing.assigneeLabAnchorId = req.assigneeLabAnchorId;
+    }
+    if (req.assigneeLabName && !existing.assigneeLabName) {
+      existing.assigneeLabName = req.assigneeLabName;
     }
     if (req.productionConfirmedAt) {
       existing.productionConfirmedAt = req.productionConfirmedAt;

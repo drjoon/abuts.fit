@@ -5189,8 +5189,12 @@ export const PracticeFileTransferPage = ({
       const lab = String(row.targetLab || "")
         .replace(/\s*→.*$/g, "")
         .trim();
+      const cooperationKey =
+        row.assigneeKind === "cooperation"
+          ? String(row.assigneeLabAnchorId || "").trim()
+          : "";
       return {
-        colorKey: String(row.targetLabAnchorId || "").trim() || lab,
+        colorKey: cooperationKey || String(row.targetLabAnchorId || "").trim() || lab,
         name: lab,
       };
     });
@@ -5203,7 +5207,7 @@ export const PracticeFileTransferPage = ({
 
   const selectedTransferCaseIdentity = useMemo(() => {
     if (!selectedTransfer || !selectedTransferDetailModel) return null;
-    // 채팅 헤더는 기공소 실명만(「어벗츠 협력 ·」접두 제거). 목록·픽커 표시는 유지.
+    // 협력·하청 표시 SSOT 유지(「어벗츠 · 파트너」/인증 협력 접미사만 strip).
     const lab = stripPracticeTargetLabDisplayDecorations(
       selectedTransfer.targetLab,
     );
@@ -5234,8 +5238,14 @@ export const PracticeFileTransferPage = ({
       order ? `주문 ${order}` : "",
       arrival ? `도착 ${arrival}` : "",
     ].filter(Boolean);
+    const cooperationKey =
+      selectedTransfer.assigneeKind === "cooperation"
+        ? String(selectedTransfer.assigneeLabAnchorId || "").trim()
+        : "";
     const colorKey =
-      String(selectedTransfer.targetLabAnchorId || "").trim() || lab;
+      cooperationKey ||
+      String(selectedTransfer.targetLabAnchorId || "").trim() ||
+      lab;
     const dot = practiceLabDots.get(colorKey);
     return {
       primary: identity,

@@ -926,8 +926,8 @@ export function resolveSubcontractFeeRate(payoutRates) {
 
 /**
  * 기공의뢰 플랫폼/하청 수수료율.
- * - 하청 수행(assignee ≠ 원청): subcontractFeeRate (기본 5%)
- * - 어벗츠 자체 수행·지정 거래: 지정 적용 on이면 directPlatformFeeRate, off면 0
+ * - 하청 수행(assigneeKind=subcontract): subcontractFeeRate (기본 5%)
+ * - 협력(assigneeKind=cooperation)·어벗츠 자체 수행·지정: 지정 적용 on이면 directPlatformFeeRate, off면 0
  */
 export function resolvePracticeTransferFeeRate({
   matchingMode,
@@ -944,7 +944,7 @@ export function resolvePracticeTransferFeeRate({
 /**
  * 견적 표시용 수수료율.
  * 원청(어벗츠 기공사업부)이 하청을 준 뒤 자기 화면을 보면 전액 수주이므로 0.
- * 하청 수행 기공소는 subcontractFeeRate.
+ * 하청 수행 기공소는 subcontractFeeRate. 협력은 0.
  */
 export function resolvePracticeTransferFeeRateForViewer({
   matchingMode,

@@ -14,7 +14,8 @@
 // - 2026-08-19: 별점 기공비 배수 폐지(항상 ×1). 할증은 기공소 치과별 labFeeMultiplier만.
 // - 2026-08-20: 치과 평가는 별점만. 자동매칭·별점 기공비 할인/할증 없음.
 // - 2026-08-20: 별점은 수행 기공소(하청 포함). 하한·상한은 지정·하청 수신 게이트.
-// - 2026-09-20: 지정 기공소 치과향 표시 =「어벗츠 협력 · {이름}」.
+// - 2026-09-23: 치과 직접 지정 표시 =「어벗츠 · {이름}」(협력 0%). 하청만 실명 비공개.
+// - 2026-09-20: 지정 기공소 치과향 표시 =「어벗츠 협력 · {이름}」(레거시 접두).
 // - 2026-08-23: 우리 치과 1점 → 검색 가능·주문 불가(지정·하청 수행 동일).
 
 export const PRACTICE_LAB_RATING_MIN = 1;
@@ -32,15 +33,22 @@ export const DEFAULT_EFFECTIVE_LAB_STARS = 3;
 /** 하청 수행 시 치과 표시(실명 비공개). */
 export const CERTIFIED_PARTNER_LAB_DISPLAY_NAME = "인증 협력 기공소";
 
-/** 지정 기공소 — 치과향 표시(계약 상대=어벗츠). 필드가 이미「기공소」라 짧게. */
-export const ABUTS_PARTNER_LAB_LABEL_PREFIX = "어벗츠 협력";
+/** 협력 기공소 — 치과향 표시 SSOT「어벗츠 · {이름}」. */
+export const ABUTS_PARTNER_LAB_LABEL_PREFIX = "어벗츠";
 /** 구 표시 접두(목록 병합 시 strip용). */
-const ABUTS_PARTNER_LAB_LABEL_PREFIX_LEGACY = "어벗츠 협력 기공소";
+const ABUTS_PARTNER_LAB_LABEL_PREFIX_LEGACY_A = "어벗츠 협력";
+const ABUTS_PARTNER_LAB_LABEL_PREFIX_LEGACY_B = "어벗츠 협력 기공소";
 
 const ABUTS_INTERNAL_LAB_DISPLAY_NAMES = new Set([
   "어벗츠기공소",
   "어벗츠 기공소",
 ]);
+
+export function formatAbutsCooperationLabLabel(partnerName: unknown): string {
+  const partner = String(partnerName || "").trim();
+  if (!partner) return "어벗츠기공소";
+  return `${ABUTS_PARTNER_LAB_LABEL_PREFIX} · ${partner}`;
+}
 
 export function formatPracticeTargetLabLabel({
   targetLab,
@@ -51,32 +59,44 @@ export function formatPracticeTargetLabLabel({
 } = {}): string {
   const name = String(targetLab || "").trim() || "-";
   if (handledByCertifiedPartner) {
-    return `${name} · ${CERTIFIED_PARTNER_LAB_DISPLAY_NAME}에서 처리`;
+    const base = ABUTS_INTERNAL_LAB_DISPLAY_NAMES.has(name)
+      ? name
+      : name.startsWith(`${ABUTS_PARTNER_LAB_LABEL_PREFIX} · `)
+        ? "어벗츠기공소"
+        : name;
+    return `${base} · ${CERTIFIED_PARTNER_LAB_DISPLAY_NAME}에서 처리`;
   }
   if (name === "-" || ABUTS_INTERNAL_LAB_DISPLAY_NAMES.has(name)) {
     return name;
   }
-  if (
-    name.startsWith(`${ABUTS_PARTNER_LAB_LABEL_PREFIX} · `) ||
-    name.startsWith(`${ABUTS_PARTNER_LAB_LABEL_PREFIX_LEGACY} · `)
-  ) {
-    return name.startsWith(`${ABUTS_PARTNER_LAB_LABEL_PREFIX_LEGACY} · `)
-      ? `${ABUTS_PARTNER_LAB_LABEL_PREFIX} · ${name.slice(
-          `${ABUTS_PARTNER_LAB_LABEL_PREFIX_LEGACY} · `.length,
-        )}`
-      : name;
+  if (name.startsWith(`${ABUTS_PARTNER_LAB_LABEL_PREFIX} · `)) {
+    return name;
   }
-  return `${ABUTS_PARTNER_LAB_LABEL_PREFIX} · ${name}`;
+  if (name.startsWith(`${ABUTS_PARTNER_LAB_LABEL_PREFIX_LEGACY_B} · `)) {
+    return formatAbutsCooperationLabLabel(
+      name.slice(`${ABUTS_PARTNER_LAB_LABEL_PREFIX_LEGACY_B} · `.length),
+    );
+  }
+  if (name.startsWith(`${ABUTS_PARTNER_LAB_LABEL_PREFIX_LEGACY_A} · `)) {
+    return formatAbutsCooperationLabLabel(
+      name.slice(`${ABUTS_PARTNER_LAB_LABEL_PREFIX_LEGACY_A} · `.length),
+    );
+  }
+  return formatAbutsCooperationLabLabel(name);
 }
 
-/** 목록 병합 시 표시 접미사/접두사 제거. */
+/** 목록 병합 시 표시 접미사/접두사 제거. 「어벗츠 ·」는 유지(표시 SSOT). */
 export function stripPracticeTargetLabDisplayDecorations(label: unknown): string {
   let name = String(label || "").trim();
   name = name.replace(/\s·\s인증 협력 기공소에서 처리$/, "");
-  if (name.startsWith(`${ABUTS_PARTNER_LAB_LABEL_PREFIX_LEGACY} · `)) {
-    name = name.slice(`${ABUTS_PARTNER_LAB_LABEL_PREFIX_LEGACY} · `.length);
-  } else if (name.startsWith(`${ABUTS_PARTNER_LAB_LABEL_PREFIX} · `)) {
-    name = name.slice(`${ABUTS_PARTNER_LAB_LABEL_PREFIX} · `.length);
+  if (name.startsWith(`${ABUTS_PARTNER_LAB_LABEL_PREFIX_LEGACY_B} · `)) {
+    name = formatAbutsCooperationLabLabel(
+      name.slice(`${ABUTS_PARTNER_LAB_LABEL_PREFIX_LEGACY_B} · `.length),
+    );
+  } else if (name.startsWith(`${ABUTS_PARTNER_LAB_LABEL_PREFIX_LEGACY_A} · `)) {
+    name = formatAbutsCooperationLabLabel(
+      name.slice(`${ABUTS_PARTNER_LAB_LABEL_PREFIX_LEGACY_A} · `.length),
+    );
   }
   return name || "-";
 }

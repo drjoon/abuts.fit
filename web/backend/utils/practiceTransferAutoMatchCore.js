@@ -3,7 +3,8 @@
 // - web/backend/tests/unit/practiceTransferAutoMatchPriority.test.js
 //
 // 자동매칭 우선창·필터 순수 헬퍼 (Mongo 모델 import 없음).
-// - 2026-09-23: 신규 PTX 계약 상대=어벗츠기공소(원청). 픽커 파트너=assignee(사전 하청).
+// - 2026-09-23: 치과 직접 지정=협력(assigneeKind=cooperation, 0%). 어벗츠 지정 후 풀/클레임=하청(subcontract, 5%).
+// - 2026-09-23: 신규 PTX 계약 상대=어벗츠기공소(원청). 픽커 파트너=assignee.
 // - 2026-08-21: 하청 전환은 어벗츠기공소(원청)만 — 타 기공소 지정 의뢰는 canOpenSubcontract=false.
 
 /** 어벗츠기공소(internalLab) 원청 우선 수락 창. 하청 전환 시 즉시 종료. */
@@ -19,10 +20,23 @@ export const PRACTICE_TRANSFER_AUTO_MATCH_CLAIM_HOURS = 3;
 export const AUTO_MATCH_LAB_DISPLAY_NAME = "자동 매칭";
 export const AUTO_MATCH_PRACTICE_DISPLAY_NAME = "자동 매칭";
 export const ABUTS_LAB_DISPLAY_NAME = "어벗츠기공소";
-/** 하청 수행 시 치과에 보이는 처리처 라벨(협력 기공소 실명 비공개) */
+/** 하청 수행 시 치과에 보이는 처리처 라벨(하청 기공소 실명 비공개) */
 export const CERTIFIED_PARTNER_LAB_DISPLAY_NAME = "인증 협력 기공소";
 /** 하청 풀·하청 수행 시 협력 기공소에 노출하는 치과 표시명 */
 export const SUBCONTRACT_PRACTICE_DISPLAY_NAME = "비공개";
+
+/** 치과 픽커 직접 지정 → 협력(수수료 0%). */
+export const ASSIGNEE_KIND_COOPERATION = "cooperation";
+/** 어벗츠기공사업부 지정 후 하청 풀/클레임 → 하청(수수료 subcontractFeeRate). */
+export const ASSIGNEE_KIND_SUBCONTRACT = "subcontract";
+/** 치과 UI: 「어벗츠 · {파트너}」 */
+export const ABUTS_COOPERATION_LABEL_PREFIX = "어벗츠";
+
+export const formatAbutsCooperationLabLabel = (partnerName) => {
+  const partner = String(partnerName || "").trim();
+  if (!partner) return ABUTS_LAB_DISPLAY_NAME;
+  return `${ABUTS_COOPERATION_LABEL_PREFIX} · ${partner}`;
+};
 
 const OBJECT_ID_RE = /^[a-fA-F0-9]{24}$/;
 
@@ -84,6 +98,37 @@ export const isPracticeTransferSubcontracted = (transfer) => {
   const assignee = getAssigneeLabAnchorId(transfer);
   return Boolean(prime && assignee && prime !== assignee);
 };
+
+/**
+ * 수행 종류. assignee 없으면 null.
+ * 레거시(assigneeKind 없음): autoMatch.claimedAt 있으면 하청, 없으면 협력(치과 사전 지정).
+ */
+export const resolveAssigneeKind = (transfer) => {
+  if (!isPracticeTransferSubcontracted(transfer)) return null;
+  const raw = String(transfer?.assigneeKind || "").trim();
+  if (
+    raw === ASSIGNEE_KIND_COOPERATION ||
+    raw === ASSIGNEE_KIND_SUBCONTRACT
+  ) {
+    return raw;
+  }
+  if (transfer?.autoMatch?.claimedAt) return ASSIGNEE_KIND_SUBCONTRACT;
+  return ASSIGNEE_KIND_COOPERATION;
+};
+
+export const isCooperationAssignee = (transfer) =>
+  resolveAssigneeKind(transfer) === ASSIGNEE_KIND_COOPERATION;
+
+export const isSubcontractAssignee = (transfer) =>
+  resolveAssigneeKind(transfer) === ASSIGNEE_KIND_SUBCONTRACT;
+
+/** 하청 수수료(5%) 적용 대상. 협력(0%)·자체 수행은 false. */
+export const isSubcontractFeeApplicable = (transfer) =>
+  isSubcontractAssignee(transfer);
+
+/** 치과에 수행 기공소 실명을 가릴지(하청 풀·하청만). 협력은 공개. */
+export const shouldHideAssigneeFromPractice = (transfer) =>
+  isSubcontractPoolOpen(transfer) || isSubcontractAssignee(transfer);
 
 /** 수행 기공소가 배정·미완료면 활성. 원청만 있고 미클레임이면 공개 풀. */
 export const isAutoMatchClaimActive = (transfer, _now = Date.now()) => {
@@ -207,17 +252,17 @@ export const isLabPerformingOnTransfer = (transfer, labAnchorId) => {
   return resolvePerformingLabAnchorId(transfer) === labId;
 };
 
-/** 어벗츠 원청 팀만 하청 상대(치과·수행 기공소) 식별 정보를 본다. */
+/** 어벗츠 원청 팀만 하청 상대(치과·수행 기공소) 식별 정보를 본다. 협력은 공개. */
 export const isSubcontractIdentityHiddenFromViewer = (
   transfer,
   viewerLabAnchorId = null,
 ) => {
-  if (!isSubcontractPoolOpen(transfer) && !isPracticeTransferSubcontracted(transfer)) {
+  if (!isSubcontractPoolOpen(transfer) && !isSubcontractAssignee(transfer)) {
     return false;
   }
   const viewerId = String(viewerLabAnchorId || "").trim();
   const primeId = getPrimeLabAnchorId(transfer);
-  // 원청(어벗츠)만 양쪽 실명 확인. 수행 기공소·그 외는 비공개.
+  // 원청(어벗츠)만 양쪽 실명 확인. 하청 수행 기공소·그 외는 비공개.
   if (viewerId && primeId && viewerId === primeId) return false;
   return true;
 };
@@ -415,7 +460,8 @@ export const toAutoMatchApiFieldsCore = (transfer, viewerLabAnchorId = null) => 
       priorityActive,
       priorityLabForMe,
       canOpenSubcontract,
-      subcontracted: isPracticeTransferSubcontracted(transfer),
+      subcontracted: isSubcontractAssignee(transfer),
+      assigneeKind: resolveAssigneeKind(transfer),
     },
   };
 };
