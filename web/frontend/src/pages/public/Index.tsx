@@ -12,6 +12,7 @@ const Index = () => {
     <PublicPageLayout
       tone="light"
       plain
+      navOverlay
       contentClassName="relative z-10 w-full max-w-none px-0 py-0"
     >
       <LandingHome />

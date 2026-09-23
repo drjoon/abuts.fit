@@ -11,7 +11,6 @@ import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath
 import { cn } from "@/shared/ui/cn";
 import { AbutsLogo } from "@/components/branding/AbutsLogo";
 import { landingOffers, offerPath } from "@/features/landing/landingOffers";
-import { landingContent } from "@/features/landing/landingTheme";
 
 function scrollToLandingSection(id: string) {
   const element = document.getElementById(id);
@@ -23,11 +22,14 @@ function scrollToLandingSection(id: string) {
 
 type NavigationProps = {
   tone?: "dark" | "light";
-  /** 랜딩 히어로 위. 맨 위에서는 배경을 비운다 */
+  /** 히어로 위. 맨 위에서는 배경을 비운다 — 이벤트·랜딩 공개 페이지 공통 */
   overlay?: boolean;
 };
 
 type NavMenuItem = { label: string; href: string };
+
+/** 공개 네비 본문 폭 SSOT — 이벤트 페이지와 동일 */
+const NAV_CONTENT = "container px-4 sm:px-6";
 
 export const Navigation = ({ tone = "dark", overlay = false }: NavigationProps) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -35,9 +37,6 @@ export const Navigation = ({ tone = "dark", overlay = false }: NavigationProps) 
   const navigate = useNavigate();
   const location = useLocation();
   const { isAuthenticated, user, logout } = useAuthStore();
-  /** `/` · `/offer/*` 만 랜딩 본문 폭. 메뉴는 공개 페이지 공통. */
-  const isLandingWidth =
-    location.pathname === "/" || location.pathname.startsWith("/offer/");
   const overlayClear = overlay && !scrolled && !isOpen;
   /** 라이트 톤은 오버레이여도 어두운 글자 유지(밝은 히어로 위). */
   const isLight = tone === "light";
@@ -214,12 +213,7 @@ export const Navigation = ({ tone = "dark", overlay = false }: NavigationProps) 
         <div className="pointer-events-none absolute inset-0 z-0 bg-[radial-gradient(circle_at_22%_-15%,rgba(59,130,246,0.25),transparent_58%),radial-gradient(circle_at_78%_-20%,rgba(147,51,234,0.22),transparent_60%),radial-gradient(circle_at_50%_25%,rgba(6,78,59,0.18),transparent_72%)] opacity-70" />
       ) : null}
 
-      <div
-        className={cn(
-          "relative z-10 mx-auto w-full",
-          isLandingWidth ? landingContent : "container px-4 sm:px-6",
-        )}
-      >
+      <div className={cn("relative z-10 mx-auto w-full", NAV_CONTENT)}>
         <div className="relative flex h-14 items-center justify-between gap-3 sm:h-16">
           <button
             type="button"

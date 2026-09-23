@@ -59,6 +59,7 @@ import {
   eventApplySignupHref,
   peekPostOnboardingReturn,
 } from "@/shared/navigation/postOnboardingReturn";
+import { LandingSkyWash } from "@/features/landing/LandingSkyWash";
 
 const emptyPlace = (): EventPlaceFields => emptyEventApplyDealer();
 
@@ -118,17 +119,7 @@ function SimplewayHero({
 }) {
   return (
     <section className="relative overflow-hidden border-b border-slate-200/80">
-      <div className="pointer-events-none absolute inset-0">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_20%_0%,rgba(56,189,248,0.18),transparent_55%),radial-gradient(ellipse_at_90%_10%,rgba(37,99,235,0.14),transparent_50%),linear-gradient(180deg,#f8fafc_0%,#eef4fb_55%,#ffffff_100%)]" />
-        <div
-          className="absolute inset-0 opacity-[0.35]"
-          style={{
-            backgroundImage:
-              "linear-gradient(rgba(15,23,42,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(15,23,42,0.04) 1px, transparent 1px)",
-            backgroundSize: "48px 48px",
-          }}
-        />
-      </div>
+      <LandingSkyWash />
 
       <div className="relative mx-auto flex min-h-[72vh] max-w-5xl flex-col justify-center px-4 pb-16 pt-20 sm:px-6 sm:pb-20 sm:pt-24 lg:px-8">
         <Link

@@ -20,6 +20,7 @@ import {
 import { landingOffers, offerPath } from "./landingOffers";
 import { OfferVisual } from "./OfferVisual";
 import { LandingEventsSection } from "./LandingEventsSection";
+import { LandingSkyWash } from "./LandingSkyWash";
 
 /** `/` 둘러보기. 심플웨이 · 기공사업부 2열. 이벤트는 `#events`. */
 const TILE_FRAME = "min-h-[20rem] lg:min-h-[24rem]";
@@ -62,8 +63,8 @@ export function LandingHome() {
 
   return (
     <div className="bg-white text-slate-900">
-      <div className="h-14 bg-white sm:h-16" aria-hidden />
-      <section className="relative flex min-h-[calc(100svh-3.5rem)] items-end overflow-hidden bg-black sm:min-h-[calc(100svh-4rem)]">
+      {/* 풀블리드 영상 히어로. 상단 하늘색 워시로 라이트 네비와 맞춤. */}
+      <section className="relative flex min-h-[100svh] items-end overflow-hidden bg-black">
         {reducedMotion ? (
           <img
             src={LANDING_HERO_POSTER}
@@ -83,15 +84,25 @@ export function LandingHome() {
             <source src={LANDING_HERO_VIDEO} type="video/mp4" />
           </video>
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/15 to-black/25" />
-        <div className={cn(landingContent, "relative z-10 pb-14 pt-24 sm:pb-20")}>
-          <h1 className="max-w-3xl text-4xl font-semibold leading-[1.05] tracking-tight text-white sm:text-6xl lg:text-7xl">
+        {/* 네비 구간 — 상단만 얇은 하늘색 워시 */}
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-[1] h-24 sm:h-28 [mask-image:linear-gradient(to_bottom,black_55%,transparent)]">
+          <div className="absolute inset-0 bg-[#f8fafc]/88" />
+          <LandingSkyWash />
+        </div>
+        <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-black/15" />
+        <div
+          className={cn(
+            landingContent,
+            "relative z-10 w-full pb-14 pt-28 sm:pb-20 sm:pt-32",
+          )}
+        >
+          <h1 className="max-w-3xl text-4xl font-semibold leading-[1.05] tracking-tight text-white drop-shadow-[0_2px_16px_rgba(0,0,0,0.45)] sm:text-6xl lg:text-7xl">
             {landingHome.heroTitle}
           </h1>
-          <p className="mt-4 max-w-xl text-2xl text-white/95 sm:mt-5 sm:text-3xl">
+          <p className="mt-4 max-w-xl text-2xl text-white drop-shadow-[0_1px_10px_rgba(0,0,0,0.4)] sm:mt-5 sm:text-3xl">
             {landingHome.heroBody}
           </p>
-          <p className="mt-2 max-w-xl text-lg text-white/75 sm:text-xl">
+          <p className="mt-2 max-w-xl text-lg text-white/90 drop-shadow-[0_1px_8px_rgba(0,0,0,0.35)] sm:text-xl">
             {landingHome.heroSupport}
           </p>
           <Button
