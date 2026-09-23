@@ -80,7 +80,7 @@ export default function RequestorStorePage() {
     applyStoreCatalogPrices(p, priceByProductId),
   );
 
-  if (!loading && kind === "lab") {
+  if (!loading && kind !== "practice" && kind !== "lab") {
     return <Navigate to="/dashboard/credits" replace />;
   }
 

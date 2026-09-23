@@ -275,6 +275,12 @@ const buildRequestorSidebarItems = (
     return [
       buildLabGigongRequestSidebarGroup(LAB_RECEIVE_HREF),
       {
+        icon: Store,
+        label: "스토어",
+        href: STORE_HREF,
+        guideTourSatellite: "store_workspace",
+      },
+      {
         icon: Wallet,
         label: "정산",
         href: CREDITS_HREF,

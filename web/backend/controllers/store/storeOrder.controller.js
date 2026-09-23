@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-23: 배송비=상품 10만원↑무료·미만 3,500. 기공물 동봉(lab_bundle) 폐지. 치과·기공소 스토어.
 // - 2026-09-13: 주문 생성·결제·취소 후 관리자 스토어 사이드바 배지 emit.
 // - 2026-09-13: 기공물 동봉=어벗츠 CA 제작 포함 + 1주일 이내(발송·도착).
 // - 2026-09-13: 기공물 동봉=1주일 이내 치과도착일. catalog에 nextClinicArrivalYmd.
@@ -31,9 +32,8 @@ import {
 } from "../../constants/storeCatalog.js";
 import { STORE_CART_MERGE_WITH_CREDIT_OR_CUSTOM_ABUTMENT } from "../../constants/ledgerTaxLanes.js";
 import {
+  STORE_FREE_SHIPPING_THRESHOLD_INCLUSIVE,
   STORE_SHIPPING_FEE_INCLUSIVE,
-  STORE_SHIPPING_MODE_DIRECT,
-  STORE_SHIPPING_MODE_LAB_BUNDLE,
   applyStoreShippingToOrderTotals,
 } from "../../constants/storeShipping.js";
 import { normalizeRequestorKind } from "../../utils/requestorCapabilities.js";
@@ -41,7 +41,6 @@ import {
   resolveStorePackageBuyer,
   storeItemsIncludeFullPackage,
 } from "../../utils/storePackagePricing.js";
-import { resolveStoreLabBundleEligibility } from "../../utils/storeLabBundleShipping.js";
 import {
   cancelStoreOrderByUser,
   finalizeStoreSale,
@@ -89,7 +88,7 @@ function assertPracticeRequestor(req) {
   return true;
 }
 
-async function assertPracticeKind(req, businessAnchorId) {
+async function assertRequestorStoreAccess(req, businessAnchorId) {
   const anchor = await BusinessAnchor.findById(businessAnchorId)
     .select({ requestorKind: 1 })
     .lean();
@@ -97,12 +96,14 @@ async function assertPracticeKind(req, businessAnchorId) {
     normalizeRequestorKind(anchor?.requestorKind) ||
     normalizeRequestorKind(req.user?.requestorKind) ||
     "";
-  if (kind === "lab") {
-    const err = new Error("스토어는 치과(의뢰 발신자) 계정만 이용할 수 있습니다.");
+  if (kind !== "practice" && kind !== "lab") {
+    const err = new Error(
+      "스토어는 치과·기공소(의뢰자) 계정만 이용할 수 있습니다.",
+    );
     err.statusCode = 403;
     throw err;
   }
-  return kind || "practice";
+  return kind;
 }
 
 function buildOrderItems(rawItems, { isPackageBuyer = false } = {}) {
@@ -221,18 +222,16 @@ export async function getStoreCatalog(req, res) {
         message: "사업자 정보가 없습니다.",
       });
     }
-    await assertPracticeKind(req, businessAnchorId);
+    await assertRequestorStoreAccess(req, businessAnchorId);
 
-    const [inventory, defaultShipping, packageBuyer, labBundle] =
-      await Promise.all([
-        getInventoryMap(),
-        resolveDefaultShipping({
-          userId: req.user?._id,
-          businessAnchorId,
-        }),
-        resolveStorePackageBuyer(businessAnchorId),
-        resolveStoreLabBundleEligibility(businessAnchorId),
-      ]);
+    const [inventory, defaultShipping, packageBuyer] = await Promise.all([
+      getInventoryMap(),
+      resolveDefaultShipping({
+        userId: req.user?._id,
+        businessAnchorId,
+      }),
+      resolveStorePackageBuyer(businessAnchorId),
+    ]);
     const products = listStoreProductIds().map((productId) => ({
       productId,
       name: getStoreProductName(productId),
@@ -258,20 +257,8 @@ export async function getStoreCatalog(req, res) {
         },
         shippingPolicy: {
           feeInclusive: STORE_SHIPPING_FEE_INCLUSIVE,
-          /** 기공물 동봉(무료, 어벗츠 CA 포함·1주일 이내) 또는 빠른 직송(유료). */
-          modes: {
-            [STORE_SHIPPING_MODE_LAB_BUNDLE]: {
-              label: "기공물 동봉",
-              feeInclusive: 0,
-            },
-            [STORE_SHIPPING_MODE_DIRECT]: {
-              label: "치과 직송",
-              feeInclusive: STORE_SHIPPING_FEE_INCLUSIVE,
-            },
-          },
-          labBundleEligible: labBundle.labBundleEligible,
-          labBundleWithinDays: labBundle.labBundleWithinDays,
-          nextClinicArrivalYmd: labBundle.nextClinicArrivalYmd,
+          freeShippingThresholdInclusive:
+            STORE_FREE_SHIPPING_THRESHOLD_INCLUSIVE,
         },
         // 장바구니 합치기 금지 SSOT (프론트 카피·가드용)
         cartMergeWithCreditOrCustomAbutment:
@@ -300,41 +287,15 @@ export async function createStoreOrder(req, res) {
         message: "사업자 정보가 없습니다.",
       });
     }
-    await assertPracticeKind(req, businessAnchorId);
+    await assertRequestorStoreAccess(req, businessAnchorId);
 
-    const [packageBuyer, labBundle] = await Promise.all([
-      resolveStorePackageBuyer(businessAnchorId),
-      resolveStoreLabBundleEligibility(businessAnchorId),
-    ]);
+    const packageBuyer = await resolveStorePackageBuyer(businessAnchorId);
     // 500만 패키지와 동시 담으면 같은 주문부터 pkg 단가.
     const isPackageBuyer =
       packageBuyer.isPackageBuyer ||
       storeItemsIncludeFullPackage(req.body?.items);
     const built = buildOrderItems(req.body?.items, { isPackageBuyer });
-    const requestedShippingMode =
-      req.body?.shippingMode ?? req.body?.shipping?.mode;
-    if (
-      String(requestedShippingMode || "")
-        .trim()
-        .toLowerCase() === STORE_SHIPPING_MODE_LAB_BUNDLE &&
-      !labBundle.labBundleEligible
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "어벗츠 커스텀어벗 제작이 포함된 1주일 이내 발송·도착건이 없어 기공물 동봉을 선택할 수 없습니다. 빠른 배송을 이용해 주세요.",
-        code: "STORE_LAB_BUNDLE_UNAVAILABLE",
-        payload: {
-          nextClinicArrivalYmd: labBundle.nextClinicArrivalYmd,
-          labBundleWithinDays: labBundle.labBundleWithinDays,
-        },
-      });
-    }
-    const totals = applyStoreShippingToOrderTotals({
-      ...built,
-      shippingMode: requestedShippingMode,
-      labBundleEligible: labBundle.labBundleEligible,
-    });
+    const totals = applyStoreShippingToOrderTotals(built);
     const items = built.items;
     const {
       itemsAmountTotal,

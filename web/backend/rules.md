@@ -871,7 +871,8 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - 어벗츠↔제조사·딜러사·개발운영사: 장부·미정산·지급=부가세 포함가(재가산 없음) · 세금계산서(÷1.1). 제조사=일반과세(기공소 전환 없음).
   - **마이너스 발행**: 전송 성공 후 상계는 원본 `SENT` 유지 + `kind=REVERSE` 별도 draft. 원본을 `CANCELLED`로 강등하지 않음.
   - 장부: `STORE_SALE` / `REV_STORE_TAXABLE` — 스토어 결제 확정 시 기록. **전액 어벗츠(admin, amount=포함가). 딜러/제조 분배 없음.** 면세 기공과 분리.
-  - 스토어 결제: 크레딧(유료) 또는 B-plan 입금 → 재고 차감 → `STORE_SALE` → `fulfillmentStatus=READY`. **건별 과세 draft 없음**(월말 합산). 출고 `SHIPPED`·배송완료 `DELIVERED`. 구현: `storeSale.service.js`, `modules/store/store.routes.js`.
+  - 스토어 결제: 크레딧(유료) 또는 B-plan 입금 → 재고 차감 → `STORE_SALE` → `fulfillmentStatus=READY`. **건별 과세 draft 없음**(월말 합산). 출고 `SHIPPED`·배송완료 `DELIVERED`. 구현: `storeSale.service.js`, `modules/store/store.routes.js`. 치과·기공소(의뢰자) 이용.
+  - **스토어 배송비**: 상품(부가세 포함) 합계 **10만원 이상 무료**, 미만 **₩3,500(부가세 포함)**. 기공물 동봉(`lab_bundle`, 치과 기공소 우회 무료 배송) **폐지**. SSOT: `constants/storeShipping.js`.
   - 스토어 단가: 판매가 기본. **BA.`storePackageBuyer`**(500만 패키지 `full-package` 결제 확정 시 자동 ON·관리자 수동)이면 pkg가. 장부 누적 재조회 없음. `storeCatalog.js` · `storePackagePricing.js`.
   - 장바구니 합치기 금지: 한 체크아웃에 기공+스토어 금지. 같은 선수금 잔액으로 각각 결제는 허용.
   - 팝빌: `POPBILL_IS_TEST=false`(prod)면 실홈택스 발행. local/test는 `true`.

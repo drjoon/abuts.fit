@@ -251,7 +251,7 @@ export const PRACTICE_GUIDE_TOUR_PROCESS_TOTAL = PRACTICE_GUIDE_TOUR_STEPS.filte
   (s) => s.chapter != null,
 ).length;
 
-/** 기공소 — 시작 + 첨1~3 (수신·정산·어벗). 스토어 없음 */
+/** 기공소 — 시작 + 첨1~3 (수신·정산·어벗). 스토어는 사이드바만(투어 생략) */
 export const LAB_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   {
     id: "intro",

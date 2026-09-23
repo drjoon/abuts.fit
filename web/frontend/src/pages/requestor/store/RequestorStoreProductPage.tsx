@@ -102,7 +102,7 @@ export default function RequestorStoreProductPage() {
     ? resolveStoreUnitPriceInclusive(pricedForDisplay, isPackageBuyer)
     : null;
 
-  if (!loading && kind === "lab") {
+  if (!loading && kind !== "practice" && kind !== "lab") {
     return <Navigate to="/dashboard/credits" replace />;
   }
 

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-23: 신규 배송=direct + 10만원↑무료·미만 3,500. lab_bundle은 레거시 표시만.
 // - 2026-09-13: shippingMode lab_bundle|direct (10만원 이하 동봉/유료직송).
 // - 2026-08-23: 배송·출고 풀필먼트 필드(fulfillmentStatus·shipping).
 // - 2026-08-23: 스토어 기성품 입금주문(과세). ChargeOrder와 분리.
@@ -64,7 +65,8 @@ const storeOrderSchema = new mongoose.Schema(
     },
     shipping: { type: storeShippingSchema, default: () => ({}) },
     /**
-     * lab_bundle=기공물 동봉(무료), direct=치과 직송(유료 빠른 배송).
+     * 신규: 항상 direct(상품 10만원↑무료·미만 배송비).
+     * lab_bundle=레거시 기공물 동봉(치과 기공소 우회 무료 배송, 폐지).
      */
     shippingMode: {
       type: String,
@@ -96,7 +98,7 @@ const storeOrderSchema = new mongoose.Schema(
     amountTotal: { type: Number, required: true, min: 0, index: true },
     /** 상품 합계(부가세 포함, 배송료 제외) */
     itemsAmountTotal: { type: Number, default: 0, min: 0 },
-    /** 부가세 포함 배송료(0 또는 3,300) */
+    /** 부가세 포함 배송료(0 또는 STORE_SHIPPING_FEE_INCLUSIVE) */
     shippingFeeInclusive: { type: Number, default: 0, min: 0 },
     shippingSupplyAmount: { type: Number, default: 0, min: 0 },
     shippingVatAmount: { type: Number, default: 0, min: 0 },

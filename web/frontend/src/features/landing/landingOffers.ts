@@ -5,7 +5,7 @@
 // - rules.md §1.5–§2.6 · web/frontend/rules.md (기공의뢰·정산·스토어)
 //
 // 정가(판매가·배송비)는 심플웨이만. 스토어 SSOT: storeCatalog.ts STORE_LIST_INCLUSIVE_PRICES
-// · STORE_SHIPPING_FEE_INCLUSIVE 3,300. 플랫폼·커스텀어벗·기공사업부는 금액을 적지 않는다.
+// · STORE_SHIPPING_FEE_INCLUSIVE 3,500 · 10만원↑무료. 플랫폼·커스텀어벗·기공사업부는 금액을 적지 않는다.
 import {
   LANDING_CAD_PREVIEW,
   LANDING_CASE_ABUTMENT,
@@ -227,7 +227,7 @@ export const landingOffers: LandingOffer[] = [
       },
       {
         q: "배송비는 있나요?",
-        a: "치과와 기공소 사이 기공 배송은 무료입니다. 스토어 기성품만 건당 ₩3,300, 부가세 포함입니다.",
+        a: "치과와 기공소 사이 기공 배송은 무료입니다. 스토어 기성품은 상품 10만원 이상 배송비 무료, 미만은 ₩3,500(부가세 포함)입니다.",
       },
     ],
   },
@@ -318,7 +318,7 @@ export const landingOffers: LandingOffer[] = [
       },
       {
         q: "스토어 배송비는요?",
-        a: "건당 ₩3,300, 부가세 포함입니다. 치과와 기공소 사이 기공 배송과는 별도입니다.",
+        a: "상품 10만원 이상 배송비 무료, 미만은 ₩3,500(부가세 포함)입니다. 치과와 기공소 사이 기공 배송과는 별도입니다.",
       },
     ],
   },

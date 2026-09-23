@@ -251,7 +251,7 @@ export async function adminListStorePackageBuyers(req, res) {
 
     /** @type {Record<string, unknown>} */
     let filter;
-    // 스토어는 치과(practice)만.
+    // 스토어는 치과·기공소(의뢰자). 패키지 구매자 검색은 기본적으로 practice만(기존 UX).
     const practiceOnly = { requestorKind: "practice" };
     if (!q) {
       filter = { ...practiceOnly, storePackageBuyer: true };

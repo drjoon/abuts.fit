@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-23: lab_bundle 동봉 자격 필드 제거(배송비=10만원 임계).
 // - 2026-09-13: catalog 동봉 가능·다음 치과 도착일.
 // - 2026-09-13: catalog products 단가 오버레이(관리자 가격 반영).
 // - 2026-09-13: BA.storePackageBuyer 플래그 조회(장부 누적 대신).
@@ -12,7 +13,10 @@ import {
   STORE_PACKAGE_PREPAID_THRESHOLD,
   type StoreProduct,
 } from "@/shared/store/storeCatalog";
-import { STORE_LAB_BUNDLE_WITHIN_CIVIL_DAYS } from "@/shared/store/storeShipping";
+import {
+  STORE_FREE_SHIPPING_THRESHOLD_INCLUSIVE,
+  STORE_SHIPPING_FEE_INCLUSIVE,
+} from "@/shared/store/storeShipping";
 
 export type StoreCatalogPriceRow = {
   listPriceInclusive: number | null;
@@ -25,10 +29,8 @@ export type StorePackagePricingState = {
   packageThreshold: number;
   /** productId → 유효 단가(서버 카탈로그) */
   priceByProductId: Record<string, StoreCatalogPriceRow>;
-  labBundleEligible: boolean;
-  labBundleWithinDays: number;
-  /** 오늘(KST) 포함 다음 치과 도착일 YYYY-MM-DD */
-  nextClinicArrivalYmd: string | null;
+  shippingFeeInclusive: number;
+  freeShippingThresholdInclusive: number;
 };
 
 const DEFAULT: StorePackagePricingState = {
@@ -36,9 +38,8 @@ const DEFAULT: StorePackagePricingState = {
   isPackageBuyer: false,
   packageThreshold: STORE_PACKAGE_PREPAID_THRESHOLD,
   priceByProductId: {},
-  labBundleEligible: false,
-  labBundleWithinDays: STORE_LAB_BUNDLE_WITHIN_CIVIL_DAYS,
-  nextClinicArrivalYmd: null,
+  shippingFeeInclusive: STORE_SHIPPING_FEE_INCLUSIVE,
+  freeShippingThresholdInclusive: STORE_FREE_SHIPPING_THRESHOLD_INCLUSIVE,
 };
 
 /**
@@ -69,9 +70,8 @@ export function useStorePackagePricing(): StorePackagePricingState {
           isPackageBuyer?: boolean;
         };
         shippingPolicy?: {
-          labBundleEligible?: boolean;
-          labBundleWithinDays?: number;
-          nextClinicArrivalYmd?: string | null;
+          feeInclusive?: number;
+          freeShippingThresholdInclusive?: number;
         };
       };
     }>({ path: "/api/store/catalog" })
@@ -94,7 +94,6 @@ export function useStorePackagePricing(): StorePackagePricingState {
                 : Math.round(Number(row.packagePriceInclusive)),
           };
         }
-        const nextYmd = String(ship?.nextClinicArrivalYmd || "").trim();
         setState({
           loading: false,
           isPackageBuyer: Boolean(pkg?.isPackageBuyer),
@@ -105,18 +104,21 @@ export function useStorePackagePricing(): StorePackagePricingState {
             ),
           ),
           priceByProductId,
-          labBundleEligible: Boolean(ship?.labBundleEligible),
-          labBundleWithinDays: Math.max(
-            1,
+          shippingFeeInclusive: Math.max(
+            0,
+            Math.round(
+              Number(ship?.feeInclusive ?? STORE_SHIPPING_FEE_INCLUSIVE),
+            ),
+          ),
+          freeShippingThresholdInclusive: Math.max(
+            0,
             Math.round(
               Number(
-                ship?.labBundleWithinDays || STORE_LAB_BUNDLE_WITHIN_CIVIL_DAYS,
+                ship?.freeShippingThresholdInclusive ??
+                  STORE_FREE_SHIPPING_THRESHOLD_INCLUSIVE,
               ),
             ),
           ),
-          nextClinicArrivalYmd: /^\d{4}-\d{2}-\d{2}$/.test(nextYmd)
-            ? nextYmd
-            : null,
         });
       })
       .catch(() => {

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-23: 상품 10만원 이상 무료 · 미만 3,500(부가세 포함). 기공물 동봉(lab_bundle) 폐지.
 // - 2026-09-13: 기공물 동봉은 어벗츠 CA 제작 포함 + 1주일 이내(발송·도착)만. 기본 직송은 유료.
 // - 2026-09-13: 기공물 동봉은 1주일 이내 치과 도착건이 있을 때만. 기본 직송은 유료.
 // - 2026-09-13: 10만원 임계 제거. 항상 기공물 동봉(무료) / 빠른 직송(+3,300).
@@ -9,16 +10,19 @@
 // - web/frontend/src/pages/requestor/store/RequestorStoreCartPage.tsx
 import { splitInclusiveVat } from "@/shared/tax/invoiceLabels";
 
-/** 부가세 포함 배송료(원) — 빠른 직송(direct) 선택 시. */
-export const STORE_SHIPPING_FEE_INCLUSIVE = 3_300;
+/** 부가세 포함 배송료(원) — 상품 합계가 무료 임계 미만일 때. */
+export const STORE_SHIPPING_FEE_INCLUSIVE = 3_500;
 
-/** 기공물 동봉(무료, 어벗츠 CA 포함·1주일 이내 발송·도착만) */
+/** 상품(부가세 포함) 합계가 이 금액 이상이면 배송비 무료. */
+export const STORE_FREE_SHIPPING_THRESHOLD_INCLUSIVE = 100_000;
+
+/**
+ * @deprecated 레거시 주문 표시용. 신규 주문은 동봉 모드를 쓰지 않음.
+ */
 export const STORE_SHIPPING_MODE_LAB_BUNDLE = "lab_bundle" as const;
 
-/** 치과 직송(유료 빠른 배송) */
+/** 치과·기공소 직송(유료, 임계 이상 시 무료) */
 export const STORE_SHIPPING_MODE_DIRECT = "direct" as const;
-
-export const STORE_LAB_BUNDLE_WITHIN_CIVIL_DAYS = 7;
 
 export type StoreShippingMode =
   | typeof STORE_SHIPPING_MODE_LAB_BUNDLE
@@ -39,54 +43,26 @@ export function normalizeStoreShippingModeInput(
   return "";
 }
 
-/** 요청 모드·동봉 가능 여부로 확정 배송 방식. */
+/** 신규 주문은 항상 direct. lab_bundle 요청은 무시(폐지). */
 export function resolveStoreShippingMode(
-  requestedMode?: unknown,
-  opts: { labBundleEligible?: boolean } = {},
+  _requestedMode?: unknown,
 ): StoreShippingMode {
-  const labBundleEligible = Boolean(opts.labBundleEligible);
-  const normalized = normalizeStoreShippingModeInput(requestedMode);
-  if (normalized === STORE_SHIPPING_MODE_LAB_BUNDLE) {
-    return labBundleEligible
-      ? STORE_SHIPPING_MODE_LAB_BUNDLE
-      : STORE_SHIPPING_MODE_DIRECT;
-  }
-  if (normalized === STORE_SHIPPING_MODE_DIRECT) {
-    return STORE_SHIPPING_MODE_DIRECT;
-  }
-  return labBundleEligible
-    ? STORE_SHIPPING_MODE_LAB_BUNDLE
-    : STORE_SHIPPING_MODE_DIRECT;
+  return STORE_SHIPPING_MODE_DIRECT;
 }
 
-export function computeStoreShippingFeeInclusive(
-  goodsTotalInclusive: number,
-  opts: { shippingMode?: unknown; labBundleEligible?: boolean } = {},
-) {
+/** 상품 합계 ≥ 10만원 → 0, 그 외 → STORE_SHIPPING_FEE_INCLUSIVE. */
+export function computeStoreShippingFeeInclusive(goodsTotalInclusive: number) {
   const goods = Math.max(0, Math.round(Number(goodsTotalInclusive || 0)));
   if (goods <= 0) return 0;
-  const mode = resolveStoreShippingMode(opts.shippingMode, {
-    labBundleEligible: opts.labBundleEligible,
-  });
-  if (mode === STORE_SHIPPING_MODE_DIRECT) return STORE_SHIPPING_FEE_INCLUSIVE;
-  return 0;
+  if (goods >= STORE_FREE_SHIPPING_THRESHOLD_INCLUSIVE) return 0;
+  return STORE_SHIPPING_FEE_INCLUSIVE;
 }
 
-export function buildStoreOrderTotalsWithShipping(
-  goodsTotalInclusive: number,
-  opts: { shippingMode?: unknown; labBundleEligible?: boolean } = {},
-) {
+export function buildStoreOrderTotalsWithShipping(goodsTotalInclusive: number) {
   const goodsSplit = splitInclusiveVat(goodsTotalInclusive);
-  const shippingMode = resolveStoreShippingMode(opts.shippingMode, {
-    labBundleEligible: opts.labBundleEligible,
-  });
-  const shippingFeeInclusive = computeStoreShippingFeeInclusive(
-    goodsTotalInclusive,
-    {
-      shippingMode,
-      labBundleEligible: opts.labBundleEligible,
-    },
-  );
+  const shippingMode = STORE_SHIPPING_MODE_DIRECT;
+  const shippingFeeInclusive =
+    computeStoreShippingFeeInclusive(goodsTotalInclusive);
   if (shippingFeeInclusive <= 0) {
     return {
       itemsAmountTotal: goodsSplit.total,
@@ -114,9 +90,21 @@ export function buildStoreOrderTotalsWithShipping(
 
 export function storeShippingModeLabel(mode?: unknown): string {
   const m = normalizeStoreShippingModeInput(mode);
-  if (m === STORE_SHIPPING_MODE_LAB_BUNDLE) return "기공물 동봉";
-  if (m === STORE_SHIPPING_MODE_DIRECT) return "치과 직송";
+  if (m === STORE_SHIPPING_MODE_LAB_BUNDLE) return "기공물 동봉(레거시)";
+  if (m === STORE_SHIPPING_MODE_DIRECT) return "직송";
   return "";
+}
+
+export function storeShippingPolicyHint(goodsTotalInclusive = 0): string {
+  const goods = Math.max(0, Math.round(Number(goodsTotalInclusive || 0)));
+  if (goods > 0 && goods < STORE_FREE_SHIPPING_THRESHOLD_INCLUSIVE) {
+    const remain = STORE_FREE_SHIPPING_THRESHOLD_INCLUSIVE - goods;
+    return `상품 ${STORE_FREE_SHIPPING_THRESHOLD_INCLUSIVE.toLocaleString("ko-KR")}원 이상 배송비 무료 · ${remain.toLocaleString("ko-KR")}원 더 담으면 무료`;
+  }
+  if (goods >= STORE_FREE_SHIPPING_THRESHOLD_INCLUSIVE) {
+    return `상품 ${STORE_FREE_SHIPPING_THRESHOLD_INCLUSIVE.toLocaleString("ko-KR")}원 이상 · 배송비 무료`;
+  }
+  return `상품 ${STORE_FREE_SHIPPING_THRESHOLD_INCLUSIVE.toLocaleString("ko-KR")}원 이상 배송비 무료 · 미만 ${STORE_SHIPPING_FEE_INCLUSIVE.toLocaleString("ko-KR")}원(부가세 포함)`;
 }
 
 export function resolveStoreOrderShippingFee(order: {

@@ -292,7 +292,7 @@ export default function RequestorStoreOrdersPage() {
     };
   }, [orders]);
 
-  if (!loading && kind === "lab") {
+  if (!loading && kind !== "practice" && kind !== "lab") {
     return <Navigate to="/dashboard/credits" replace />;
   }
 
@@ -438,7 +438,7 @@ export function RequestorStoreOrderDetailPage() {
     void load();
   }, [load]);
 
-  if (!loading && kind === "lab") {
+  if (!loading && kind !== "practice" && kind !== "lab") {
     return <Navigate to="/dashboard/credits" replace />;
   }
 
