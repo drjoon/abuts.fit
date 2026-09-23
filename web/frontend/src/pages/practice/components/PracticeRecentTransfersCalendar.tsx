@@ -16,6 +16,7 @@
  * - 2026-08-27: 캘린더 날짜키 뱃지 「도착일」(치과도착일) — 작은 글씨에서 치과의사 오인 방지.
  * - 2026-08-28: 누적 연결 칩 — 이전=↗(보냄)·최종=↙(받음) 표시.
  * - 2026-08-27: 누적 도착일 칩 — 이전 날짜 흐리게·연결 표시.
+ * - 2026-09-23: 숨길 요일 — 인라인 토글 → 버튼+팝오버.
  * - 2026-08-23: 숨길 요일 버튼·캘린더 열 일~토(일요일 시작) 통일.
  * - 2026-08-23: 숨길 요일 토글·열 정렬 불일치 수정 — 일요일 선택 시 토요일만 숨겨지던 현상.
  * - 2026-08-27: 미확인 칩=빨간 이중 외곽선(리메이크 슬레이트보다 우선).
@@ -83,6 +84,7 @@ import {
 } from "react";
 import {
   CalendarDays,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Hexagon,
@@ -100,6 +102,11 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   ResizableHandle,
   ResizablePanel,
@@ -1554,6 +1561,12 @@ export function PracticeRecentTransfersCalendar({
     onHiddenWeekdaysChange(next);
   };
 
+  const hiddenWeekdaySummary = LAB_RECEIVE_CALENDAR_WEEK_GRID_COLUMNS.filter(
+    ({ dow }) => hidden.has(dow),
+  )
+    .map(({ label }) => label)
+    .join("·");
+
   const selectListItem = (item: PracticeCalendarChipItem, ymd: string) => {
     onSelectItem(item, {
       ymd,
@@ -1660,28 +1673,60 @@ export function PracticeRecentTransfersCalendar({
           </div>
         </div>
         {!isListMode ? (
-          <div className="flex w-full flex-wrap items-center gap-1 md:w-auto">
-            <span className="mr-0.5 text-[11px] text-muted-foreground">숨길 요일</span>
-            {LAB_RECEIVE_CALENDAR_WEEK_GRID_COLUMNS.map(({ dow, label }) => (
+          <Popover>
+            <PopoverTrigger asChild>
               <button
-                key={`hide-${dow}`}
                 type="button"
-                className={cn(
-                  "h-7 min-w-7 rounded-md px-1.5 text-[11px] tabular-nums",
-                  hidden.has(dow)
-                    ? "bg-muted text-muted-foreground line-through"
-                    : "bg-background text-slate-700 ring-1 ring-inset ring-border hover:bg-muted/40",
-                )}
-                aria-pressed={hidden.has(dow)}
-                title={
-                  hidden.has(dow) ? `${label}요일 표시` : `${label}요일 숨김`
+                className="inline-flex h-7 items-center gap-1 rounded-md bg-background px-2 text-[11px] text-slate-700 ring-1 ring-inset ring-border hover:bg-muted/40"
+                aria-label={
+                  hiddenWeekdaySummary
+                    ? `숨길 요일, 현재 ${hiddenWeekdaySummary}`
+                    : "숨길 요일"
                 }
-                onClick={() => toggleHiddenDow(dow)}
               >
-                {label}
+                <span>숨길 요일</span>
+                {hiddenWeekdaySummary ? (
+                  <span className="tabular-nums text-muted-foreground">
+                    {hiddenWeekdaySummary}
+                  </span>
+                ) : null}
+                <ChevronDown className="h-3 w-3 opacity-70" />
               </button>
-            ))}
-          </div>
+            </PopoverTrigger>
+            <PopoverContent
+              align="start"
+              className="w-auto p-2"
+              sideOffset={6}
+              onOpenAutoFocus={(e) => e.preventDefault()}
+            >
+              <div className="mb-1.5 px-0.5 text-[11px] text-muted-foreground">
+                캘린더에서 숨길 요일을 선택하세요.
+              </div>
+              <div className="flex flex-wrap items-center gap-1">
+                {LAB_RECEIVE_CALENDAR_WEEK_GRID_COLUMNS.map(({ dow, label }) => (
+                  <button
+                    key={`hide-${dow}`}
+                    type="button"
+                    className={cn(
+                      "h-7 min-w-7 rounded-md px-1.5 text-[11px] tabular-nums",
+                      hidden.has(dow)
+                        ? "bg-muted text-muted-foreground line-through"
+                        : "bg-background text-slate-700 ring-1 ring-inset ring-border hover:bg-muted/40",
+                    )}
+                    aria-pressed={hidden.has(dow)}
+                    title={
+                      hidden.has(dow)
+                        ? `${label}요일 표시`
+                        : `${label}요일 숨김`
+                    }
+                    onClick={() => toggleHiddenDow(dow)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
         ) : null}
         <div
           className={cn(
