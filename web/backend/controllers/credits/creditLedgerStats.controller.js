@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-23: 치과 파트너 라벨 — 협력「어벗츠 · 파트너」(원청 target만 쓰지 않음).
 // - 2026-09-20: 보철유형 건수 — 견적 라인 수가 아니라 의뢰당 유형 1건(요약 의뢰건수와 단위 맞춤).
 // - 2026-09-20: CA 게이트 — 치과 소비(HOLD)는 통계 유지. 기공소 정산 적립·미정산 CA만 제외.
 // - 2026-09-20: 정산 제외는 미정산 CA만(listBlocked). 확정 적립(labSettledAt)은 통계에 유지.
@@ -28,6 +29,10 @@ import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { normalizeRequestorKind } from "../../utils/requestorCapabilities.js";
 import { buildFeeQuotesForTransferDocs, listPracticeTransferIdsBlockedFromSettlement } from "../../services/practiceTransferBilling.service.js";
 import { parseKstQueryBoundDate } from "../../utils/kstQueryBounds.js";
+import {
+  formatAbutsCooperationLabLabel,
+  redactAutoMatchLabIdentity,
+} from "../../utils/practiceTransferAutoMatch.js";
 import {
   isLabSettlementEarnEvent,
   matchesCreditUsageScope,
@@ -461,15 +466,17 @@ export async function getMyCreditLedgerStats(req, res) {
           .select({
             transferId: 1,
             targetLabName: 1,
-            assigneeLabName: 1,
-            practiceBusinessAnchorId: 1,
             targetLabAnchorId: 1,
+            assigneeLabName: 1,
+            assigneeLabAnchorId: 1,
+            assigneeKind: 1,
+            practiceBusinessAnchorId: 1,
+            matchingMode: 1,
             toothWorks: 1,
             billing: 1,
             "production.designFiles": 1,
             "production.designFileCount": 1,
             "production.relatedRequestIds": 1,
-            matchingMode: 1,
             createdAt: 1,
             remake: 1,
             "production.rushProcessing": 1,
@@ -675,8 +682,16 @@ export async function getMyCreditLedgerStats(req, res) {
         partnerLabel =
           practiceNameByAnchorId.get(practiceAnchorId) || "치과";
       } else {
+        const labIdentity = redactAutoMatchLabIdentity(
+          ptx?.matchingMode,
+          {
+            targetLabName: String(ptx?.targetLabName || "").trim(),
+            targetLabAnchorId: ptx?.targetLabAnchorId || null,
+          },
+          { transfer: ptx },
+        );
         partnerLabel =
-          String(ptx?.assigneeLabName || ptx?.targetLabName || "").trim() ||
+          formatAbutsCooperationLabLabel(labIdentity.targetLabName) ||
           "기공소";
       }
     } else if (!isLab && rt === "REQUEST" && requestById.has(refId)) {

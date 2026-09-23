@@ -31,6 +31,23 @@ describe("assigneeKind cooperation vs subcontract", () => {
     );
   });
 
+  test("ledger-style redact shows cooperation partner for practice", () => {
+    const t = {
+      targetLabAnchorId: abutsId,
+      targetLabName: "어벗츠기공소",
+      assigneeLabAnchorId: partnerId,
+      assigneeLabName: "우리치과기공소",
+      assigneeKind: ASSIGNEE_KIND_COOPERATION,
+      matchingMode: "direct",
+    };
+    // creditLedger uses redactAutoMatchLabIdentity — imported below via dynamic to keep this file core-focused
+    expect(formatAbutsCooperationLabLabel(t.assigneeLabName)).toBe(
+      "어벗츠 · 우리치과기공소",
+    );
+    expect(resolveAssigneeKind(t)).toBe(ASSIGNEE_KIND_COOPERATION);
+    expect(shouldHideAssigneeFromPractice(t)).toBe(false);
+  });
+
   test("explicit assigneeKind wins over claimedAt", () => {
     const t = {
       targetLabAnchorId: abutsId,

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-23: PTX 거래내역 labName — 협력은「어벗츠 · 파트너」(원청 target만 쓰지 않음). 기공소는 치과명.
 // - 2026-09-20: CA 게이트 — 확정 정산·payout만 제외. 적립 보류 미러는 hold부터 노출.
 // - 2026-09-20: CA 게이트 — 치과 결제 보류·기간 소비는 유지. 기공소 적립/정산·payout만 제외.
 // - 2026-09-20: periodSpendSummary — PTX 소비 완료/보류=billing.settledAt(장부와 동일). Request만 convertedAt.
@@ -54,6 +55,10 @@ import { normalizeRequestorKind } from "../../utils/requestorCapabilities.js";
 import { isCustomAbutmentLabFeeLineType } from "../../utils/labFeeSchedule.js";
 import { buildOccurredAtFromPeriodQuery } from "../../utils/kstQueryBounds.js";
 import { isPracticeTransferDeletedStatus } from "../../utils/practiceTransferStage.js";
+import {
+  formatAbutsCooperationLabLabel,
+  redactAutoMatchLabIdentity,
+} from "../../utils/practiceTransferAutoMatch.js";
 import {
   attachCreditLedgerRequestFields,
   buildAbutmentBoxGroupKey,
@@ -737,7 +742,9 @@ export async function listMyCreditLedger(req, res) {
               status: 1,
               targetLabName: 1,
               targetLabAnchorId: 1,
+              assigneeLabName: 1,
               assigneeLabAnchorId: 1,
+              assigneeKind: 1,
               practiceBusinessAnchorId: 1,
               matchingMode: 1,
               transferMemo: 1,
@@ -898,10 +905,22 @@ export async function listMyCreditLedger(req, res) {
       ptxAbutsBoxById.get(id)?.labBa ||
       "";
     const boxMeta = ptxAbutsBoxById.get(id) || null;
+    const labIdentity = redactAutoMatchLabIdentity(
+      doc.matchingMode,
+      {
+        targetLabName: String(doc.targetLabName || "").trim(),
+        targetLabAnchorId: doc.targetLabAnchorId || null,
+      },
+      { transfer: doc },
+    );
+    // 협력 redact는 이미「어벗츠 ·」. 레거시 target=파트너 실명도 동일 정규화.
+    const labName = formatAbutsCooperationLabLabel(labIdentity.targetLabName);
     practiceTransferIdById.set(id, String(doc.transferId || ""));
     practiceTransferMetaById.set(id, {
       patientName: memoPatient || filePatient,
-      labName: String(doc.targetLabName || "").trim(),
+      // 치과 거래내역: 협력「어벗츠 · 파트너」·하청은 원청만(실명 비공개)
+      labName,
+      practiceBusinessAnchorId: String(doc.practiceBusinessAnchorId || "").trim(),
       transferMemo: memo,
       practiceTransferCanceled,
       practiceTransferPending:
@@ -938,6 +957,35 @@ export async function listMyCreditLedger(req, res) {
           estimatedShipYmd: boxMeta?.estimatedShipYmd || "",
         }),
     });
+  }
+
+  const practiceAnchorIdsForLedger = [
+    ...new Set(
+      [...practiceTransferMetaById.values()]
+        .map((m) => String(m?.practiceBusinessAnchorId || "").trim())
+        .filter(Boolean),
+    ),
+  ].filter((id) => mongoose.Types.ObjectId.isValid(id));
+  const practiceNameByAnchorId = new Map();
+  if (practiceAnchorIdsForLedger.length) {
+    const practiceAnchors = await BusinessAnchor.find({
+      _id: { $in: toObjectIds(practiceAnchorIdsForLedger) },
+    })
+      .select({ name: 1, companyName: 1 })
+      .lean();
+    for (const row of practiceAnchors || []) {
+      if (!row?._id) continue;
+      practiceNameByAnchorId.set(
+        String(row._id),
+        String(row.companyName || row.name || "").trim() || "치과",
+      );
+    }
+  }
+  for (const meta of practiceTransferMetaById.values()) {
+    const practiceId = String(meta?.practiceBusinessAnchorId || "").trim();
+    meta.practiceName = practiceId
+      ? practiceNameByAnchorId.get(practiceId) || ""
+      : "";
   }
 
   const freeReasonByGrantId = new Map();
@@ -983,6 +1031,8 @@ export async function listMyCreditLedger(req, res) {
           : "",
         patientName: meta?.patientName || "",
         labName: meta?.labName || "",
+        clinicName: meta?.practiceName || "",
+        practiceName: meta?.practiceName || "",
         transferMemo: meta?.transferMemo || "",
         practiceTransferPending: Boolean(meta?.practiceTransferPending),
         practiceTransferLabPending: Boolean(meta?.practiceTransferLabPending),

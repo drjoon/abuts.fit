@@ -55,6 +55,7 @@
 // - 2026-08-17: 동일 PTX 기공의뢰 크레딧 행을 한 건으로 묶어 표시(세부 라벨·합계).
 // - 2026-08-17: PTX 묶음 행 — 치과→기공소/어벗츠 트리(기공비·디자인·어벗제작·배송).
 // - 2026-08-17: PTX 트리 — ASCII 이중선 제거, 인덴트·접기/펼치기.
+// - 2026-09-23: PTX 거래내역 — 치과=협력「어벗츠 · 파트너」(레거시 실명도 FE 정규화), 기공소=치과명/환자.
 // - 2026-08-17: 크레딧 기공의뢰 — 호버 툴팁에 기공비 내역. 거래내역은 기공소/환자명.
 // - 2026-08-15: 테이블 잔액 칼럼 라벨「잔액」(행 시점 총잔액=유료+무료+기공).
 // - 2026-08-15: 선입금 안내를 유료 카드 툴팁으로 이동. 현재잔액=유료+무료(+기공). 무료·기공 툴팁 추가.
@@ -175,6 +176,7 @@ import {
   LAB_FEE_SHIPPING_ITEM_NAME,
 } from "@/shared/practice/labFeeSchedule";
 import { parsePracticeTransferMemoMeta } from "@/shared/practice/transferMemo";
+import { formatAbutsCooperationLabLabel } from "@/shared/practice/practiceLabRating";
 import { compactRemakeSummaryLabel } from "@/features/chat/components/chatRemakeParts";
 import { formatKstYmdToKo } from "@/shared/date/kst";
 import {
@@ -293,6 +295,9 @@ type CreditLedgerItem = {
   balanceAfter?: number;
   patientName?: string;
   labName?: string;
+  /** 기공소 내역: 의뢰 치과명 */
+  practiceName?: string;
+  clinicName?: string;
   /** 기공의뢰 원본 메모(메타 포함) — 상세 모달 주문일·도착일·메모 파싱용 */
   transferMemo?: string | null;
   /** 기공의뢰 CA 디자인비 저널이 가리키는 PTX */
@@ -1831,10 +1836,12 @@ const formatRequestIdSafe = (requestId?: string, seed?: string) => {
 const renderTransactionDetail = ({
   item,
   safeRef,
+  isLabViewer = false,
   onOpenRequestDetail,
 }: {
   item: CreditLedgerItem;
   safeRef: string;
+  isLabViewer?: boolean;
   onOpenRequestDetail: () => void;
 }) => {
   const refType = String(item.refType || "");
@@ -1912,11 +1919,14 @@ const renderTransactionDetail = ({
   }
 
   if (refType === "PRACTICE_TRANSFER") {
-    const labName = String(item.labName || "").trim() || "-";
+    // 치과: 협력·레거시 지정 모두「어벗츠 · 파트너」. 기공소: 의뢰 치과명.
+    const counterpartyName = isLabViewer
+      ? String(item.practiceName || item.clinicName || "").trim() || "-"
+      : formatAbutsCooperationLabLabel(item.labName) || "-";
     const patientName = String(item.patientName || "").trim() || "-";
     return (
       <span className="pt-1 text-[11px] text-slate-700">
-        {labName} / {patientName}
+        {counterpartyName} / {patientName}
       </span>
     );
   }
@@ -3228,7 +3238,11 @@ export const CreditLedgerModal = ({
                             patientName:
                               String(r.item.patientName || "").trim() ||
                               String(memoMeta.patientName || "").trim(),
-                            labName: String(r.item.labName || "").trim(),
+                            labName: isLabViewer
+                              ? String(
+                                  r.item.practiceName || r.item.clinicName || "",
+                                ).trim()
+                              : formatAbutsCooperationLabLabel(r.item.labName),
                             orderDate: String(memoMeta.orderDate || "").trim(),
                             arrivalDate: String(memoMeta.arrivalDate || "").trim(),
                             memo: String(memoMeta.memo || "").trim(),
@@ -3270,7 +3284,11 @@ export const CreditLedgerModal = ({
                           patientName:
                             String(r.item.patientName || "").trim() ||
                             String(memoMeta.patientName || "").trim(),
-                          labName: String(r.item.labName || "").trim(),
+                          labName: isLabViewer
+                            ? String(
+                                r.item.practiceName || r.item.clinicName || "",
+                              ).trim()
+                            : formatAbutsCooperationLabLabel(r.item.labName),
                           orderDate: String(memoMeta.orderDate || "").trim(),
                           arrivalDate: String(memoMeta.arrivalDate || "").trim(),
                           memo: String(memoMeta.memo || "").trim(),
@@ -3382,6 +3400,7 @@ export const CreditLedgerModal = ({
                             renderTransactionDetail({
                               item: r.item,
                               safeRef,
+                              isLabViewer,
                               onOpenRequestDetail: () =>
                                 setSelectedDetail(toRequestDetail(r.item)),
                             })
