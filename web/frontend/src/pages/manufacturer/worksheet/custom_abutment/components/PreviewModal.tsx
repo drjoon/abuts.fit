@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-23: FL 반자동(시드 1클릭 전둘레) + 수동 ridge 스냅·모드 토글.
 // - 2026-09-17: FL 수동 UX — 한 번 클릭 픽·중간점 FL 스냅 해제·저장/실행취소 바·스냅 완화.
 // - 2026-09-17: Rhino FL points 불량 검출 → 「피니시라인 불량」뱃지·수동처리 안내(FL 강조).
 // - 2026-09-17: FL 수동 — 기존 FL 위 시작/끝점 스냅·자동 닫기, farthestPair→픽순서 패치, 저장 후 STL forceRefresh 제거.
@@ -622,9 +623,17 @@ export const PreviewModal = ({
   const [customReasonEditDraft, setCustomReasonEditDraft] = useState("");
   const [selectedReasonValues, setSelectedReasonValues] = useState<string[]>([]);
   const [guidedFinishLineMode, setGuidedFinishLineMode] = useState(false);
+  /** FL 편집 세션 내 반자동/수동. 기본 반자동. */
+  const [finishLineGuideKind, setFinishLineGuideKind] = useState<
+    "manual" | "semiAuto"
+  >("semiAuto");
   const [guidedFinishLinePoints, setGuidedFinishLinePoints] = useState<number[][]>(
     [],
   );
+  /** 반자동 추적 미리보기(저장 전). Esc/모드전환 시 폐기. */
+  const [semiAutoPendingPoints, setSemiAutoPendingPoints] = useState<
+    number[][] | null
+  >(null);
   const screwLotAutoAssignAttemptedRef = useRef<Set<string>>(new Set());
   const [guidedFinishLineSubmitting, setGuidedFinishLineSubmitting] = useState(false);
   const [guidedFinishLineOverridePoints, setGuidedFinishLineOverridePoints] =
@@ -1008,6 +1017,7 @@ export const PreviewModal = ({
       if (guidedFinishLineMode) {
         setGuidedFinishLineMode(false);
         setGuidedFinishLinePoints([]);
+        setSemiAutoPendingPoints(null);
       }
       if (guidedFrontPointMode) {
         setGuidedFrontPointMode(false);
@@ -1162,15 +1172,18 @@ export const PreviewModal = ({
     }
   };
 
-  const finishLinePoints = ((guidedFinishLineOverridePoints ??
+  const finishLinePoints = ((semiAutoPendingPoints ??
+    guidedFinishLineOverridePoints ??
     previewFiles.finishLinePoints ??
     activeReq?.caseInfos?.finishLine?.points ??
     stlMetadata?.finishLine?.points) ||
     null) as number[][] | null;
 
-  const overrideFinishLineMeta = guidedFinishLineOverridePoints
-    ? extremaFromPoints(guidedFinishLineOverridePoints)
-    : null;
+  const overrideFinishLineMeta = semiAutoPendingPoints
+    ? extremaFromPoints(semiAutoPendingPoints)
+    : guidedFinishLineOverridePoints
+      ? extremaFromPoints(guidedFinishLineOverridePoints)
+      : null;
 
   const toValidFrontPoint = (
     value: unknown,
@@ -1202,26 +1215,40 @@ export const PreviewModal = ({
     ? {
         ...stlMetadata,
         ...(effectiveFrontPoint ? { frontPoint: effectiveFrontPoint } : null),
-        ...(overrideFinishLineMeta || guidedFinishLineOverridePoints
+        ...(overrideFinishLineMeta ||
+        guidedFinishLineOverridePoints ||
+        semiAutoPendingPoints
           ? {
               finishLine: {
                 ...(stlMetadata.finishLine || {}),
-                ...(guidedFinishLineOverridePoints
-                  ? { points: guidedFinishLineOverridePoints }
+                ...(semiAutoPendingPoints || guidedFinishLineOverridePoints
+                  ? {
+                      points:
+                        semiAutoPendingPoints || guidedFinishLineOverridePoints,
+                    }
                   : null),
                 ...(overrideFinishLineMeta || null),
               },
             }
           : null),
       }
-    : effectiveFrontPoint || overrideFinishLineMeta || guidedFinishLineOverridePoints
+    : effectiveFrontPoint ||
+        overrideFinishLineMeta ||
+        guidedFinishLineOverridePoints ||
+        semiAutoPendingPoints
       ? {
           ...(effectiveFrontPoint ? { frontPoint: effectiveFrontPoint } : null),
-          ...(overrideFinishLineMeta || guidedFinishLineOverridePoints
+          ...(overrideFinishLineMeta ||
+          guidedFinishLineOverridePoints ||
+          semiAutoPendingPoints
             ? {
                 finishLine: {
-                  ...(guidedFinishLineOverridePoints
-                    ? { points: guidedFinishLineOverridePoints }
+                  ...(semiAutoPendingPoints || guidedFinishLineOverridePoints
+                    ? {
+                        points:
+                          semiAutoPendingPoints ||
+                          guidedFinishLineOverridePoints,
+                      }
                     : null),
                   ...(overrideFinishLineMeta || null),
                 },
@@ -1880,16 +1907,27 @@ export const PreviewModal = ({
 
     const basePoints = Array.isArray(finishLinePoints) ? finishLinePoints : [];
     // 시작/끝이 FL에 안 붙어 있어도 최근접 FL 점으로 스냅해 패치한다.
+    // semiAutoPending이 finishLinePoints에 섞이지 않도록 베이스는 override/원본만 사용.
+    const baseForPatch = Array.isArray(guidedFinishLineOverridePoints)
+      ? guidedFinishLineOverridePoints
+      : Array.isArray(previewFiles.finishLinePoints)
+        ? previewFiles.finishLinePoints
+        : Array.isArray(activeReq?.caseInfos?.finishLine?.points)
+          ? (activeReq.caseInfos.finishLine.points as number[][])
+          : Array.isArray(stlMetadata?.finishLine?.points)
+            ? (stlMetadata.finishLine.points as number[][])
+            : basePoints;
+
     const picksForPatch = (() => {
       const raw = normalizeXyzPoints(pickedPoints);
-      if (raw.length < 2 || basePoints.length < 3) return raw;
+      if (raw.length < 2 || baseForPatch.length < 3) return raw;
       const startSnap =
-        snapPointToFinishLine(raw[0], basePoints, FINISH_LINE_SNAP_MM * 2.5) ||
+        snapPointToFinishLine(raw[0], baseForPatch, FINISH_LINE_SNAP_MM * 2.5) ||
         null;
       const endSnap =
         snapPointToFinishLine(
           raw[raw.length - 1],
-          basePoints,
+          baseForPatch,
           FINISH_LINE_SNAP_MM * 2.5,
         ) || null;
       if (!startSnap && !endSnap) return raw;
@@ -1900,13 +1938,43 @@ export const PreviewModal = ({
     })();
 
     const patchedPoints = buildPatchedFinishLinePoints(
-      basePoints,
+      baseForPatch,
       picksForPatch,
     );
 
     if (patchedPoints.length < 3) {
       setGuidedFinishLineMode(false);
       setGuidedFinishLinePoints([]);
+      return;
+    }
+
+    await persistFinishLinePoints(patchedPoints, "FRONTEND_GUIDED_PATCH");
+  };
+
+  const persistFinishLinePoints = async (
+    pointsRaw: number[][],
+    strategyUsed: "FRONTEND_GUIDED_PATCH" | "FRONTEND_SEMI_AUTO_SEED",
+  ) => {
+    if (!canGuideFinishLine || guidedFinishLineSubmitting || isUploading) return;
+
+    const points = normalizeXyzPoints(pointsRaw);
+    if (points.length < 3) {
+      setGuidedFinishLineMode(false);
+      setGuidedFinishLinePoints([]);
+      setSemiAutoPendingPoints(null);
+      return;
+    }
+
+    if (
+      strategyUsed === "FRONTEND_SEMI_AUTO_SEED" &&
+      isFinishLineDefective(points)
+    ) {
+      toast({
+        title: "추적 실패",
+        description:
+          "피니시라인이 어깨를 따라가지 않습니다. 다른 점을 찍거나 수동 모드로 수정하세요.",
+        variant: "destructive",
+      });
       return;
     }
 
@@ -1920,7 +1988,8 @@ export const PreviewModal = ({
     }
 
     setGuidedFinishLineSubmitting(true);
-    setGuidedFinishLineOverridePoints(patchedPoints);
+    setGuidedFinishLineOverridePoints(points);
+    setSemiAutoPendingPoints(null);
 
     try {
       const res = await fetch("/api/rhino/finish-line/manual", {
@@ -1934,9 +2003,9 @@ export const PreviewModal = ({
           filePath: guidedFinishLineFilePath,
           finishLine: {
             version: 1,
-            sectionCount: patchedPoints.length,
-            points: patchedPoints,
-            strategyUsed: "FRONTEND_GUIDED_PATCH",
+            sectionCount: points.length,
+            points,
+            strategyUsed,
           },
         }),
       });
@@ -1979,6 +2048,7 @@ export const PreviewModal = ({
 
       setGuidedFinishLineMode(false);
       setGuidedFinishLinePoints([]);
+      setSemiAutoPendingPoints(null);
 
       // FP와 동일: DB 메타만 갱신. STL forceRefresh는 「STL 불러오는 중…」에 고정시킨다.
       // request:stl-metadata-updated(manual-finish-line)가 오버레이 min/max·points를 반영한다.
@@ -2000,6 +2070,7 @@ export const PreviewModal = ({
 
   const handleAddGuidedFinishLinePoint = (point: [number, number, number]) => {
     if (!guidedFinishLineMode || guidedFinishLineSubmitting || isUploading) return;
+    if (finishLineGuideKind !== "manual") return;
 
     const raw: [number, number, number] = [
       Number(point[0]),
@@ -2008,7 +2079,21 @@ export const PreviewModal = ({
     ];
     if (!raw.every((v) => Number.isFinite(v))) return;
 
-    const basePoints = Array.isArray(finishLinePoints) ? finishLinePoints : [];
+    const basePoints = (() => {
+      if (Array.isArray(guidedFinishLineOverridePoints)) {
+        return guidedFinishLineOverridePoints;
+      }
+      if (Array.isArray(previewFiles.finishLinePoints)) {
+        return previewFiles.finishLinePoints;
+      }
+      if (Array.isArray(activeReq?.caseInfos?.finishLine?.points)) {
+        return activeReq.caseInfos.finishLine.points as number[][];
+      }
+      if (Array.isArray(stlMetadata?.finishLine?.points)) {
+        return stlMetadata.finishLine.points as number[][];
+      }
+      return [] as number[][];
+    })();
     const prev = guidedFinishLinePoints;
     const exists = prev.some(
       (p) =>
@@ -2018,7 +2103,7 @@ export const PreviewModal = ({
     );
     if (exists || prev.length >= 24) return;
 
-    // 시작점만 기존 FL에 스냅(구간 패치 기준점). 중간점은 표면 좌표 유지 —
+    // 시작점만 기존 FL에 스냅(구간 패치 기준점). 중간점은 ridge 스냅된 표면 좌표 유지 —
     // 불량 FL 근처 클릭이 빨간 라인으로 빨려 들어가면 보정 경로가 망가진다.
     if (prev.length === 0) {
       const startSnap =
@@ -2052,6 +2137,37 @@ export const PreviewModal = ({
     setGuidedFinishLinePoints([...prev, raw]);
   };
 
+  const handleSemiAutoFinishLine = (points: number[][]) => {
+    if (!guidedFinishLineMode || guidedFinishLineSubmitting || isUploading) return;
+    if (finishLineGuideKind !== "semiAuto") return;
+
+    const normalized = normalizeXyzPoints(points);
+    if (normalized.length < 8) {
+      toast({
+        title: "추적 실패",
+        description:
+          "피니시라인을 찾지 못했습니다. 어깨 능선에 더 가깝게 클릭하거나 수동 모드를 사용하세요.",
+        variant: "destructive",
+      });
+      setSemiAutoPendingPoints(null);
+      return;
+    }
+
+    if (isFinishLineDefective(normalized)) {
+      toast({
+        title: "추적 실패",
+        description:
+          "피니시라인이 어깨를 따라가지 않습니다. 다른 점을 찍거나 수동 모드로 수정하세요.",
+        variant: "destructive",
+      });
+      setSemiAutoPendingPoints(null);
+      return;
+    }
+
+    setSemiAutoPendingPoints(normalized);
+    setGuidedFinishLinePoints([]);
+  };
+
   const handleSetGuidedFrontPoint = (point: [number, number, number]) => {
     const nextPoint: [number, number, number] = [
       Number(point[0]),
@@ -2064,6 +2180,10 @@ export const PreviewModal = ({
 
   const handleUndoGuidedFinishLinePoint = () => {
     if (!guidedFinishLineMode || guidedFinishLineSubmitting || isUploading) return;
+    if (finishLineGuideKind === "semiAuto") {
+      setSemiAutoPendingPoints(null);
+      return;
+    }
     setGuidedFinishLinePoints((prev) => prev.slice(0, -1));
   };
 
@@ -2074,6 +2194,18 @@ export const PreviewModal = ({
 
   const handleSubmitGuidedFinishLine = async () => {
     if (!canGuideFinishLine || guidedFinishLineSubmitting || isUploading) return;
+    if (finishLineGuideKind === "semiAuto") {
+      if (!semiAutoPendingPoints || semiAutoPendingPoints.length < 3) {
+        setGuidedFinishLineMode(false);
+        setSemiAutoPendingPoints(null);
+        return;
+      }
+      await persistFinishLinePoints(
+        semiAutoPendingPoints,
+        "FRONTEND_SEMI_AUTO_SEED",
+      );
+      return;
+    }
     await submitGuidedFinishLineWithPicks(guidedFinishLinePoints);
   };
 
@@ -2176,10 +2308,20 @@ export const PreviewModal = ({
       setGuidedFrontPointMode(false);
       setGuidedFrontPointPick(null);
       setGuidedFinishLinePoints([]);
+      setSemiAutoPendingPoints(null);
+      setFinishLineGuideKind("semiAuto");
       setGuidedFinishLineMode(true);
       return;
     }
     void handleSubmitGuidedFinishLine();
+  };
+
+  const handleSwitchFinishLineGuideKind = (kind: "manual" | "semiAuto") => {
+    if (!guidedFinishLineMode || guidedFinishLineSubmitting || isUploading) return;
+    if (kind === finishLineGuideKind) return;
+    setFinishLineGuideKind(kind);
+    setGuidedFinishLinePoints([]);
+    setSemiAutoPendingPoints(null);
   };
 
   const handleToggleFrontPointEdit = () => {
@@ -2187,6 +2329,7 @@ export const PreviewModal = ({
     if (!guidedFrontPointMode) {
       setGuidedFinishLineMode(false);
       setGuidedFinishLinePoints([]);
+      setSemiAutoPendingPoints(null);
       setGuidedFrontPointPick(null);
       setGuidedFrontPointMode(true);
       return;
@@ -3277,49 +3420,96 @@ export const PreviewModal = ({
               >
                 {guidedFinishLineMode && isCamStage ? (
                   <div
-                    className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-accent/50 bg-accent-soft px-2.5 py-1.5 text-[12px] font-semibold text-accent-strong"
+                    className="flex flex-col gap-1.5 rounded-md border border-accent/50 bg-accent-soft px-2.5 py-1.5 text-[12px] font-semibold text-accent-strong"
                     role="status"
                   >
-                    <span className="min-w-0">
-                      {guidedFinishLinePoints.length === 0
-                        ? "① 빨간 라인 위 시작점을 한 번 클릭"
-                        : guidedFinishLinePoints.length === 1
-                          ? "② 올바른 어깨를 따라 클릭한 뒤, 빨간 라인 위 끝점 클릭 또는 저장"
-                          : `② 경로 ${guidedFinishLinePoints.length}점 — 끝점 클릭 또는 저장`}
-                    </span>
-                    <div className="flex shrink-0 items-center gap-1.5">
-                      <button
-                        type="button"
-                        className="rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
-                        disabled={
-                          guidedFinishLinePoints.length === 0 ||
-                          guidedFinishLineSubmitting ||
-                          isUploading
-                        }
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          handleUndoGuidedFinishLinePoint();
-                        }}
-                      >
-                        실행취소
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded border border-accent/60 bg-white px-2 py-0.5 text-[11px] font-bold text-accent-strong hover:bg-accent-soft disabled:opacity-40"
-                        disabled={
-                          guidedFinishLinePoints.length < 2 ||
-                          guidedFinishLineSubmitting ||
-                          isUploading
-                        }
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          void handleSubmitGuidedFinishLine();
-                        }}
-                      >
-                        {guidedFinishLineSubmitting ? "저장 중…" : "저장"}
-                      </button>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                        <div className="inline-flex overflow-hidden rounded border border-accent/50 bg-white text-[11px] font-bold">
+                          <button
+                            type="button"
+                            className={`px-2 py-0.5 ${
+                              finishLineGuideKind === "semiAuto"
+                                ? "bg-accent text-white"
+                                : "text-accent-strong hover:bg-accent-soft"
+                            }`}
+                            disabled={guidedFinishLineSubmitting || isUploading}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              handleSwitchFinishLineGuideKind("semiAuto");
+                            }}
+                          >
+                            반자동
+                          </button>
+                          <button
+                            type="button"
+                            className={`px-2 py-0.5 ${
+                              finishLineGuideKind === "manual"
+                                ? "bg-accent text-white"
+                                : "text-accent-strong hover:bg-accent-soft"
+                            }`}
+                            disabled={guidedFinishLineSubmitting || isUploading}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              handleSwitchFinishLineGuideKind("manual");
+                            }}
+                          >
+                            수동
+                          </button>
+                        </div>
+                        <span className="min-w-0">
+                          {finishLineGuideKind === "semiAuto"
+                            ? semiAutoPendingPoints
+                              ? "미리보기 확인 후 저장 · 다시 찍으려면 실행취소"
+                              : "어깨 능선을 한 번 클릭하면 피니시라인을 찾습니다."
+                            : guidedFinishLinePoints.length === 0
+                              ? "① 빨간 라인 위 시작점을 한 번 클릭"
+                              : guidedFinishLinePoints.length === 1
+                                ? "② 올바른 어깨를 따라 클릭한 뒤, 빨간 라인 위 끝점 클릭 또는 저장"
+                                : `② 경로 ${guidedFinishLinePoints.length}점 — 끝점 클릭 또는 저장`}
+                        </span>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <button
+                          type="button"
+                          className="rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                          disabled={
+                            (finishLineGuideKind === "semiAuto"
+                              ? !semiAutoPendingPoints
+                              : guidedFinishLinePoints.length === 0) ||
+                            guidedFinishLineSubmitting ||
+                            isUploading
+                          }
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleUndoGuidedFinishLinePoint();
+                          }}
+                        >
+                          실행취소
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded border border-accent/60 bg-white px-2 py-0.5 text-[11px] font-bold text-accent-strong hover:bg-accent-soft disabled:opacity-40"
+                          disabled={
+                            (finishLineGuideKind === "semiAuto"
+                              ? !semiAutoPendingPoints ||
+                                semiAutoPendingPoints.length < 3
+                              : guidedFinishLinePoints.length < 2) ||
+                            guidedFinishLineSubmitting ||
+                            isUploading
+                          }
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            void handleSubmitGuidedFinishLine();
+                          }}
+                        >
+                          {guidedFinishLineSubmitting ? "저장 중…" : "저장"}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ) : isFinishLineCaptureBad && isCamStage ? (
@@ -3532,8 +3722,11 @@ export const PreviewModal = ({
                         (canGuideFinishLine && guidedFinishLineMode) ||
                         (canGuideFrontPoint && guidedFrontPointMode)
                       }
+                      finishLineGuideMode={
+                        guidedFinishLineMode ? finishLineGuideKind : null
+                      }
                       manualPickPoints={
-                        guidedFinishLineMode
+                        guidedFinishLineMode && finishLineGuideKind === "manual"
                           ? guidedFinishLinePoints
                           : guidedFrontPointMode && guidedFrontPointPick
                             ? [guidedFrontPointPick]
@@ -3544,6 +3737,7 @@ export const PreviewModal = ({
                           ? handleSetGuidedFrontPoint
                           : handleAddGuidedFinishLinePoint
                       }
+                      onSemiAutoFinishLine={handleSemiAutoFinishLine}
                       onManualUndo={
                         guidedFrontPointMode
                           ? handleUndoGuidedFrontPoint
@@ -3595,49 +3789,96 @@ export const PreviewModal = ({
               >
                 {guidedFinishLineMode && !isCamStage ? (
                   <div
-                    className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-accent/50 bg-accent-soft px-2.5 py-1.5 text-[12px] font-semibold text-accent-strong"
+                    className="flex flex-col gap-1.5 rounded-md border border-accent/50 bg-accent-soft px-2.5 py-1.5 text-[12px] font-semibold text-accent-strong"
                     role="status"
                   >
-                    <span className="min-w-0">
-                      {guidedFinishLinePoints.length === 0
-                        ? "① 빨간 라인 위 시작점을 한 번 클릭"
-                        : guidedFinishLinePoints.length === 1
-                          ? "② 올바른 어깨를 따라 클릭한 뒤, 빨간 라인 위 끝점 클릭 또는 저장"
-                          : `② 경로 ${guidedFinishLinePoints.length}점 — 끝점 클릭 또는 저장`}
-                    </span>
-                    <div className="flex shrink-0 items-center gap-1.5">
-                      <button
-                        type="button"
-                        className="rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
-                        disabled={
-                          guidedFinishLinePoints.length === 0 ||
-                          guidedFinishLineSubmitting ||
-                          isUploading
-                        }
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          handleUndoGuidedFinishLinePoint();
-                        }}
-                      >
-                        실행취소
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded border border-accent/60 bg-white px-2 py-0.5 text-[11px] font-bold text-accent-strong hover:bg-accent-soft disabled:opacity-40"
-                        disabled={
-                          guidedFinishLinePoints.length < 2 ||
-                          guidedFinishLineSubmitting ||
-                          isUploading
-                        }
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          void handleSubmitGuidedFinishLine();
-                        }}
-                      >
-                        {guidedFinishLineSubmitting ? "저장 중…" : "저장"}
-                      </button>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                        <div className="inline-flex overflow-hidden rounded border border-accent/50 bg-white text-[11px] font-bold">
+                          <button
+                            type="button"
+                            className={`px-2 py-0.5 ${
+                              finishLineGuideKind === "semiAuto"
+                                ? "bg-accent text-white"
+                                : "text-accent-strong hover:bg-accent-soft"
+                            }`}
+                            disabled={guidedFinishLineSubmitting || isUploading}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              handleSwitchFinishLineGuideKind("semiAuto");
+                            }}
+                          >
+                            반자동
+                          </button>
+                          <button
+                            type="button"
+                            className={`px-2 py-0.5 ${
+                              finishLineGuideKind === "manual"
+                                ? "bg-accent text-white"
+                                : "text-accent-strong hover:bg-accent-soft"
+                            }`}
+                            disabled={guidedFinishLineSubmitting || isUploading}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              handleSwitchFinishLineGuideKind("manual");
+                            }}
+                          >
+                            수동
+                          </button>
+                        </div>
+                        <span className="min-w-0">
+                          {finishLineGuideKind === "semiAuto"
+                            ? semiAutoPendingPoints
+                              ? "미리보기 확인 후 저장 · 다시 찍으려면 실행취소"
+                              : "어깨 능선을 한 번 클릭하면 피니시라인을 찾습니다."
+                            : guidedFinishLinePoints.length === 0
+                              ? "① 빨간 라인 위 시작점을 한 번 클릭"
+                              : guidedFinishLinePoints.length === 1
+                                ? "② 올바른 어깨를 따라 클릭한 뒤, 빨간 라인 위 끝점 클릭 또는 저장"
+                                : `② 경로 ${guidedFinishLinePoints.length}점 — 끝점 클릭 또는 저장`}
+                        </span>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <button
+                          type="button"
+                          className="rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                          disabled={
+                            (finishLineGuideKind === "semiAuto"
+                              ? !semiAutoPendingPoints
+                              : guidedFinishLinePoints.length === 0) ||
+                            guidedFinishLineSubmitting ||
+                            isUploading
+                          }
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleUndoGuidedFinishLinePoint();
+                          }}
+                        >
+                          실행취소
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded border border-accent/60 bg-white px-2 py-0.5 text-[11px] font-bold text-accent-strong hover:bg-accent-soft disabled:opacity-40"
+                          disabled={
+                            (finishLineGuideKind === "semiAuto"
+                              ? !semiAutoPendingPoints ||
+                                semiAutoPendingPoints.length < 3
+                              : guidedFinishLinePoints.length < 2) ||
+                            guidedFinishLineSubmitting ||
+                            isUploading
+                          }
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            void handleSubmitGuidedFinishLine();
+                          }}
+                        >
+                          {guidedFinishLineSubmitting ? "저장 중…" : "저장"}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ) : isFinishLineCaptureBad && !isTrackingStage && !isCamStage ? (
@@ -4108,8 +4349,11 @@ export const PreviewModal = ({
                         (canGuideFinishLine && guidedFinishLineMode) ||
                         (canGuideFrontPoint && guidedFrontPointMode)
                       }
+                      finishLineGuideMode={
+                        guidedFinishLineMode ? finishLineGuideKind : null
+                      }
                       manualPickPoints={
-                        guidedFinishLineMode
+                        guidedFinishLineMode && finishLineGuideKind === "manual"
                           ? guidedFinishLinePoints
                           : guidedFrontPointMode && guidedFrontPointPick
                             ? [guidedFrontPointPick]
@@ -4120,6 +4364,7 @@ export const PreviewModal = ({
                           ? handleSetGuidedFrontPoint
                           : handleAddGuidedFinishLinePoint
                       }
+                      onSemiAutoFinishLine={handleSemiAutoFinishLine}
                       onManualUndo={
                         guidedFrontPointMode
                           ? handleUndoGuidedFrontPoint

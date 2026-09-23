@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-23: FL 반자동/수동 — ridge 스냅·호버 고스트·시드 1클릭 전둘레 추적.
 // - 2026-09-17: 수동 픽 — 더블클릭→드래그 없는 한 번 클릭(오빗과 구분). crosshair 커서.
 // - 2026-09-17: FL max/min_z — points prop 우선(수동 보정 override 즉시 반영).
 // - 2026-09-14: Orthographic 카메라 — 교합면에서도 평행 어벗이 원근으로 어긋나지 않게.
@@ -61,6 +62,13 @@ import {
   resolveLotEngravingNcParams,
   type TaperDirectionGuide,
 } from "../utils/lotEngraving";
+import {
+  snapToLocalRidge,
+  traceFinishLineFromSeed,
+  type Xyz,
+} from "@/pages/manufacturer/worksheet/custom_abutment/utils/finishLineTrace";
+
+type FinishLineGuideMode = "manual" | "semiAuto";
 
 type Props = {
   file: File;
@@ -84,6 +92,10 @@ type Props = {
   finishLinePoints?: number[][] | null;
   enableManualPick?: boolean;
   manualPickPoints?: number[][] | null;
+  /** FL 편집 시 ridge 스냅·반자동 추적. null/undefined면 FP 등 일반 표면 픽. */
+  finishLineGuideMode?: FinishLineGuideMode | null;
+  /** 반자동: 시드 클릭 후 전둘레 추적 결과. */
+  onSemiAutoFinishLine?: (points: number[][]) => void;
   /** 표면 한 번 클릭(드래그 없음)으로 픽. FL/FP 수동 모드. */
   onSurfacePointPick?: (point: [number, number, number]) => void;
   /** @deprecated onSurfacePointPick 사용. 하위 호환용 별칭. */
@@ -123,6 +135,8 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
       finishLinePoints,
       enableManualPick = false,
       manualPickPoints,
+      finishLineGuideMode = null,
+      onSemiAutoFinishLine,
       onSurfacePointPick,
       onSurfacePointDoubleClick,
       onManualUndo,
@@ -157,10 +171,19 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
   const onSurfacePointPickRef = useRef(
     onSurfacePointPick || onSurfacePointDoubleClick,
   );
+  const onSemiAutoFinishLineRef = useRef(onSemiAutoFinishLine);
+  const finishLineGuideModeRef = useRef(finishLineGuideMode);
   const onManualUndoRef = useRef(onManualUndo);
   const enableManualPickRef = useRef(enableManualPick);
   const pickPointerDownPosRef = useRef<{ x: number; y: number } | null>(null);
   const manualPickMarkersRef = useRef<THREE.Mesh[]>([]);
+  const hoverSnapMarkerRef = useRef<THREE.Mesh | null>(null);
+  const pickHoverHandlerRef = useRef<((event: PointerEvent) => void) | null>(
+    null,
+  );
+  const pickLeaveHandlerRef = useRef<((event: PointerEvent) => void) | null>(
+    null,
+  );
   const lotEngravingGroupRef = useRef<THREE.Group | null>(null);
   const lotEngravingLineMatsRef = useRef<LineMaterial[]>([]);
   /** 메시 로드 시 계산된 taper 가이드 — lot 사이트 선정용 (metadata보다 최신일 수 있음). */
@@ -362,6 +385,14 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
   }, [onSurfacePointPick, onSurfacePointDoubleClick]);
 
   useEffect(() => {
+    onSemiAutoFinishLineRef.current = onSemiAutoFinishLine;
+  }, [onSemiAutoFinishLine]);
+
+  useEffect(() => {
+    finishLineGuideModeRef.current = finishLineGuideMode;
+  }, [finishLineGuideMode]);
+
+  useEffect(() => {
     onManualUndoRef.current = onManualUndo;
   }, [onManualUndo]);
 
@@ -370,6 +401,20 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
     const canvas = containerRef.current?.querySelector("canvas");
     if (canvas instanceof HTMLElement) {
       canvas.style.cursor = enableManualPick ? "crosshair" : "";
+    }
+    if (!enableManualPick) {
+      const marker = hoverSnapMarkerRef.current;
+      const pivot = modelPivotRef.current;
+      if (marker && pivot) {
+        pivot.remove(marker);
+        marker.geometry?.dispose?.();
+        if (Array.isArray(marker.material)) {
+          marker.material.forEach((mm) => mm.dispose());
+        } else {
+          marker.material.dispose();
+        }
+        hoverSnapMarkerRef.current = null;
+      }
     }
   }, [enableManualPick]);
 
@@ -1548,9 +1593,70 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
           const pointer = new THREE.Vector2();
           const PICK_MOVE_PX = 6;
 
+          const clearHoverSnap = () => {
+            const marker = hoverSnapMarkerRef.current;
+            if (!marker) return;
+            modelPivot.remove(marker);
+            marker.geometry?.dispose?.();
+            if (Array.isArray(marker.material)) {
+              marker.material.forEach((mm) => mm.dispose());
+            } else {
+              marker.material.dispose();
+            }
+            hoverSnapMarkerRef.current = null;
+          };
+
+          const ensureHoverSnap = (modelXyz: Xyz) => {
+            const diag = modelDiagRef.current > 0 ? modelDiagRef.current : 40;
+            const r = Math.max(diag * 0.008, 0.1);
+            let marker = hoverSnapMarkerRef.current;
+            if (!marker) {
+              const g = new THREE.SphereGeometry(r, 16, 16);
+              const m = new THREE.MeshBasicMaterial({
+                color: 0x22d3ee,
+                transparent: true,
+                opacity: 0.9,
+              });
+              m.depthTest = false;
+              m.depthWrite = false;
+              marker = new THREE.Mesh(g, m);
+              marker.renderOrder = 33;
+              modelPivot.add(marker);
+              hoverSnapMarkerRef.current = marker;
+            }
+            // scene coords: non-filled mesh is shifted by -center
+            if (isFilled) {
+              marker.position.set(modelXyz[0], modelXyz[1], modelXyz[2]);
+            } else {
+              marker.position.set(
+                modelXyz[0] - center.x,
+                modelXyz[1] - center.y,
+                modelXyz[2] - center.z,
+              );
+            }
+          };
+
+          const hitToModelPoint = (
+            hitPoint: THREE.Vector3,
+          ): Xyz => {
+            const modelPoint = hitPoint.clone();
+            if (!isFilled) modelPoint.add(center);
+            return [
+              Number(modelPoint.x),
+              Number(modelPoint.y),
+              Number(modelPoint.z),
+            ];
+          };
+
+          const resolvePickPoint = (raw: Xyz): Xyz => {
+            const guide = finishLineGuideModeRef.current;
+            if (!guide) return raw;
+            const geom = mesh.geometry as THREE.BufferGeometry;
+            return snapToLocalRidge(geom, raw);
+          };
+
           const pickFromClient = (clientX: number, clientY: number) => {
             if (!enableManualPickRef.current) return;
-            if (!onSurfacePointPickRef.current) return;
             try {
               const rect = renderer.domElement.getBoundingClientRect();
               const px =
@@ -1563,15 +1669,64 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
               if (!hits || hits.length === 0) return;
               const hit = hits[0]?.point;
               if (!hit) return;
-              const modelPoint = hit.clone();
-              if (!isFilled) modelPoint.add(center);
-              onSurfacePointPickRef.current?.([
-                Number(modelPoint.x),
-                Number(modelPoint.y),
-                Number(modelPoint.z),
+              const raw = hitToModelPoint(hit);
+              const snapped = resolvePickPoint(raw);
+              const guide = finishLineGuideModeRef.current;
+
+              if (guide === "semiAuto") {
+                const geom = mesh.geometry as THREE.BufferGeometry;
+                const loop = traceFinishLineFromSeed(geom, snapped);
+                if (loop.length >= 8) {
+                  onSemiAutoFinishLineRef.current?.(loop);
+                } else {
+                  // 추적 실패 시 시드만이라도 넘겨 상위가 토스트할 수 있게
+                  onSemiAutoFinishLineRef.current?.([]);
+                }
+                return;
+              }
+
+              if (!onSurfacePointPickRef.current) return;
+              onSurfacePointPickRef.current([
+                snapped[0],
+                snapped[1],
+                snapped[2],
               ]);
             } catch {
               // noop
+            }
+          };
+
+          const updateHoverFromClient = (clientX: number, clientY: number) => {
+            if (!enableManualPickRef.current) {
+              clearHoverSnap();
+              return;
+            }
+            if (!finishLineGuideModeRef.current) {
+              clearHoverSnap();
+              return;
+            }
+            try {
+              const rect = renderer.domElement.getBoundingClientRect();
+              const px =
+                ((clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1;
+              const py =
+                -((clientY - rect.top) / Math.max(1, rect.height)) * 2 + 1;
+              pointer.set(px, py);
+              raycaster.setFromCamera(pointer, camera);
+              const hits = raycaster.intersectObject(mesh, true);
+              if (!hits || hits.length === 0) {
+                clearHoverSnap();
+                return;
+              }
+              const hit = hits[0]?.point;
+              if (!hit) {
+                clearHoverSnap();
+                return;
+              }
+              const snapped = resolvePickPoint(hitToModelPoint(hit));
+              ensureHoverSnap(snapped);
+            } catch {
+              clearHoverSnap();
             }
           };
 
@@ -1598,6 +1753,17 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
             pickFromClient(event.clientX, event.clientY);
           };
 
+          const onPointerMove = (event: PointerEvent) => {
+            if (!enableManualPickRef.current) return;
+            if (pickPointerDownPosRef.current) return;
+            if (controls.lastGestureMoved) return;
+            updateHoverFromClient(event.clientX, event.clientY);
+          };
+
+          const onPointerLeave = () => {
+            clearHoverSnap();
+          };
+
           if (pickPointerDownHandlerRef.current) {
             renderer.domElement.removeEventListener(
               "pointerdown",
@@ -1610,6 +1776,18 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
               pickPointerUpHandlerRef.current,
             );
           }
+          if (pickHoverHandlerRef.current) {
+            renderer.domElement.removeEventListener(
+              "pointermove",
+              pickHoverHandlerRef.current,
+            );
+          }
+          if (pickLeaveHandlerRef.current) {
+            renderer.domElement.removeEventListener(
+              "pointerleave",
+              pickLeaveHandlerRef.current,
+            );
+          }
           if (dblClickHandlerRef.current) {
             renderer.domElement.removeEventListener(
               "dblclick",
@@ -1619,8 +1797,12 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
           }
           renderer.domElement.addEventListener("pointerdown", onPointerDown);
           renderer.domElement.addEventListener("pointerup", onPointerUp);
+          renderer.domElement.addEventListener("pointermove", onPointerMove);
+          renderer.domElement.addEventListener("pointerleave", onPointerLeave);
           pickPointerDownHandlerRef.current = onPointerDown;
           pickPointerUpHandlerRef.current = onPointerUp;
+          pickHoverHandlerRef.current = onPointerMove;
+          pickLeaveHandlerRef.current = onPointerLeave;
           renderer.domElement.style.cursor = enableManualPickRef.current
             ? "crosshair"
             : "";
@@ -2167,6 +2349,20 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
             pickPointerUpHandlerRef.current,
           );
           pickPointerUpHandlerRef.current = null;
+        }
+        if (pickHoverHandlerRef.current) {
+          renderer.domElement.removeEventListener(
+            "pointermove",
+            pickHoverHandlerRef.current,
+          );
+          pickHoverHandlerRef.current = null;
+        }
+        if (pickLeaveHandlerRef.current) {
+          renderer.domElement.removeEventListener(
+            "pointerleave",
+            pickLeaveHandlerRef.current,
+          );
+          pickLeaveHandlerRef.current = null;
         }
         if (dblClickHandlerRef.current) {
           renderer.domElement.removeEventListener("dblclick", dblClickHandlerRef.current);
