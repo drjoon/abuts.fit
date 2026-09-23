@@ -55,6 +55,7 @@ import {
   applyFmDentalShippingJoin,
   fmDentalShippingResponseFields,
   isFmDentalShippingJoinAllowed,
+  isFmDentalShippingLabEligible,
   resolveFmDentalMonthlyShippingFee,
 } from "../../services/fmDentalShippingSubscription.service.js";
 import { loadCreditSettingsDefaults } from "../../utils/creditSettingsDefaults.js";
@@ -1671,12 +1672,18 @@ export async function getMyFmDentalShipping(req, res) {
     }
 
     const creditSettings = await loadCreditSettingsDefaults();
-    const joinGate = isFmDentalShippingJoinAllowed(creditSettings);
+    const labEligible = isFmDentalShippingLabEligible(anchor, {
+      userRole: freshUser?.role || req.user.role,
+    });
+    const joinGate = labEligible
+      ? isFmDentalShippingJoinAllowed(creditSettings)
+      : { ok: false, reason: "lab_only" };
     return res.json({
       success: true,
       data: {
         ...fmDentalShippingResponseFields(anchor),
         monthlyFee: resolveFmDentalMonthlyShippingFee(creditSettings),
+        labEligible,
         joinAllowed: joinGate.ok,
         joinBlockedReason: joinGate.ok ? null : joinGate.reason,
         pricingTier: creditSettings.customAbutmentPricingTier || null,
@@ -1730,6 +1737,17 @@ export async function setMyFmDentalShipping(req, res) {
       return res.status(403).json({
         success: false,
         message: "대표자만 FM덴탈 월정액 배송을 변경할 수 있습니다.",
+      });
+    }
+
+    if (
+      !isFmDentalShippingLabEligible(anchor, {
+        userRole: freshUser?.role || req.user.role,
+      })
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "FM덴탈 월정액 배송은 기공소만 이용할 수 있습니다.",
       });
     }
 

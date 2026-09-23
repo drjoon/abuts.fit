@@ -1,3 +1,4 @@
+// - 2026-09-23: FM덴탈 월정액 가입 — 기공소만(치과 제외).
 // - 2026-09-23: 런칭 이벤트 1만 / 정상가 1.3만 · FM덴탈 월정액 배송 선택.
 // - 2026-09-22: 기공소 정책 안내 — 지정 플랫폼 수수료 카피 제거. 하청만.
 // - 2026-09-21: 딜러십 정책 — 90일 주문 없음 시 소개 귀속 리셋 조항.
@@ -277,7 +278,7 @@ export const PricingPolicyDialog = ({
   }, [open, isLab, refetchSystemSettings, refreshLabFeeWindow]);
 
   useEffect(() => {
-    if (!open || variant !== 'default' || !token) return;
+    if (!open || variant !== 'default' || !token || !isLab) return;
     let cancelled = false;
     void (async () => {
       const res = await apiFetch<{
@@ -308,10 +309,10 @@ export const PricingPolicyDialog = ({
     return () => {
       cancelled = true;
     };
-  }, [open, variant, token, fmMonthlyFee, isLaunchEvent]);
+  }, [open, variant, token, fmMonthlyFee, isLaunchEvent, isLab]);
 
   const setFmDentalShipping = async (active: boolean) => {
-    if (!token || fmState.busy) return;
+    if (!token || !isLab || fmState.busy) return;
     setFmState((prev) => ({ ...prev, busy: true }));
     try {
       const res = await apiFetch<{
@@ -419,9 +420,9 @@ export const PricingPolicyDialog = ({
                   <span className='font-semibold text-slate-900'>
                     수신자(치과 또는 기공소)
                   </span>
-                  가 부담합니다. 런칭 이벤트는 박스당 배송비, 정상가는 박스당 또는
-                  FM덴탈 월정액 배송 중 선택합니다. 딜러 수수료 산정에서 배송비·월정액은
-                  제외됩니다.
+                  가 부담합니다. 런칭 이벤트는 박스당 배송비입니다. 정상가에서
+                  기공소는 박스당 또는 월정액 배송 중 선택할 수 있습니다.
+                  딜러 수수료 산정에서 배송비·월정액은 제외됩니다.
                 </p>
               </PolicySection>
 
@@ -498,22 +499,24 @@ export const PricingPolicyDialog = ({
                     unitLabel='1개당'
                   />
                   <div className='h-px bg-slate-100' />
-                  {isLaunchEvent || fmState.active ? (
+                  {isLaunchEvent || (isLab && fmState.active) ? (
                     <PriceRow
                       label='배송비'
                       value={
-                        fmState.active
+                        isLab && fmState.active
                           ? '월정액 포함'
                           : formatAbutsAbutmentServiceWon(shippingFee)
                       }
-                      unitLabel={fmState.active ? undefined : '1박스당'}
+                      unitLabel={
+                        isLab && fmState.active ? undefined : '1박스당'
+                      }
                       note={
-                        fmState.active
-                          ? 'FM덴탈 월정액 배송 이용 중'
+                        isLab && fmState.active
+                          ? '월정액 배송 이용 중'
                           : '런칭 이벤트 기간 · 박스당 배송비'
                       }
                     />
-                  ) : (
+                  ) : isLab ? (
                     <div className='space-y-2'>
                       <div className='text-sm text-slate-600'>배송 (둘 중 선택)</div>
                       <PriceRow
@@ -522,16 +525,16 @@ export const PricingPolicyDialog = ({
                         unitLabel='1박스당'
                       />
                       <PriceRow
-                        label='FM덴탈 월정액 배송'
+                        label='월정액 배송'
                         value={
                           fmState.monthlyFee > 0
                             ? formatAbutsAbutmentServiceWon(fmState.monthlyFee)
-                            : '관리자 설정 후'
+                            : '추후 지원 예정'
                         }
                         unitLabel={fmState.monthlyFee > 0 ? '매월' : undefined}
-                        note='가입 시 박스 배송비 0원'
+                        note='가입 시 월 정액 배송비 0원'
                         noteAction={
-                          variant === 'default' && !isLab ? (
+                          variant === 'default' ? (
                             <Button
                               type='button'
                               size='sm'
@@ -556,6 +559,13 @@ export const PricingPolicyDialog = ({
                         }
                       />
                     </div>
+                  ) : (
+                    <PriceRow
+                      label='배송비'
+                      value={formatAbutsAbutmentServiceWon(shippingFee)}
+                      unitLabel='1박스당'
+                      note='박스당 배송비'
+                    />
                   )}
                   <div className='h-px bg-slate-100' />
                   <div className='space-y-1.5'>

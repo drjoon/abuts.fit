@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-23: FM덴탈 월정액 배송 — 기공소만(치과 제외).
 // - 2026-09-23: FM덴탈 월정액 배송. 유료 크레딧 차감 · 활성 시 박스 배송비 면제.
 // related files:
 // - web/backend/models/businessAnchor.model.js
@@ -20,12 +21,28 @@ import {
   resolveNextBillingAt,
   toMembershipDate,
 } from "./practiceMembership.helpers.js";
+import {
+  normalizeRequestorKind,
+  profileFromLegacyCapabilities,
+} from "../utils/requestorCapabilities.js";
 
 function toDate(value) {
   if (!value) return null;
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return null;
   return date;
+}
+
+/** FM덴탈 월정액 — 기공소(lab)만. 치과(practice) 제외. */
+export function isFmDentalShippingLabEligible(anchor, { userRole } = {}) {
+  if (String(userRole || "").trim() === "internalLab") return true;
+  const kind = normalizeRequestorKind(anchor?.requestorKind);
+  if (kind === "lab") return true;
+  if (kind === "practice") return false;
+  const legacy = profileFromLegacyCapabilities(anchor?.requestorCapabilities, {
+    businessVerified: String(anchor?.status || "").trim() === "verified",
+  });
+  return legacy.kind === "lab";
 }
 
 export function buildFmDentalShippingJoinSet(now = new Date()) {
@@ -133,10 +150,14 @@ export async function isFmDentalShippingActiveForAnchor(
   if (!id || !mongoose.Types.ObjectId.isValid(id)) return false;
   const query = BusinessAnchor.findById(id).select({
     fmDentalShippingActive: 1,
+    requestorKind: 1,
+    requestorCapabilities: 1,
+    status: 1,
   });
   if (session) query.session(session);
   const row = await query.lean();
-  return Boolean(row?.fmDentalShippingActive);
+  if (!row?.fmDentalShippingActive) return false;
+  return isFmDentalShippingLabEligible(row);
 }
 
 export async function applyFmDentalShippingJoin(anchor, { now = new Date() } = {}) {
@@ -397,6 +418,7 @@ export async function processDueFmDentalShippings({ now = new Date() } = {}) {
   let renewed = 0;
   let charged = 0;
   for (const row of due) {
+    if (!isFmDentalShippingLabEligible(row)) continue;
     const result = await processDueFmDentalShipping(row, {
       now,
       monthlyFee,

@@ -1,4 +1,7 @@
 // change-log:
+// - 2026-09-23: 런칭 이벤트 on/off — 내일부터 예약 적용(분배 비율과 동일).
+// - 2026-09-23: 가격 카드에서 매입가 제거(분배 비율)·4열.
+// - 2026-09-23: 런칭 이벤트 시작·종료일 UI 제거(on/off만).
 // - 2026-09-23: 런칭 이벤트 1만 / 정상가 1.3만 · FM덴탈 월정액 배송 설정.
 // - 2026-09-23: 분배 비율 — 딜러 10/15/20% 선택·내일부터 적용 안내. 딜러십 섹션 제거.
 // - 2026-09-23: 분배 비율 — 딜러=이벤트 요율·개발운영 5%·어벗츠 나머지. 스토어·커스텀어벗만(기공비 제외).
@@ -356,6 +359,19 @@ function buildManufacturerSchedulePayload(pendingPct: number | null) {
   return {
     manufacturerShareChangeScheduledAt: tomorrowKstIsoStart(),
     manufacturerShareChangeScheduledPercent: pct,
+  };
+}
+
+function buildLaunchEventSchedulePayload(pendingEnabled: boolean | null) {
+  if (pendingEnabled == null) {
+    return {
+      customAbutmentLaunchEventChangeScheduledAt: null as string | null,
+      customAbutmentLaunchEventChangeScheduledEnabled: null as boolean | null,
+    };
+  }
+  return {
+    customAbutmentLaunchEventChangeScheduledAt: tomorrowKstIsoStart(),
+    customAbutmentLaunchEventChangeScheduledEnabled: pendingEnabled,
   };
 }
 
@@ -1889,6 +1905,11 @@ export const AdminCreditSettingsTab = ({
   const [pendingManufacturerPct, setPendingManufacturerPct] = useState(
     DEFAULT_MANUFACTURER_PURCHASE_PERCENT,
   );
+  /** 런칭 이벤트 on/off — 분배 비율과 같이 내일부터 예약. */
+  const [effectiveLaunchEventEnabled, setEffectiveLaunchEventEnabled] =
+    useState(true);
+  const [pendingLaunchEventEnabled, setPendingLaunchEventEnabled] =
+    useState(true);
   const [effectiveDealerPct, setEffectiveDealerPct] = useState<DealerRatePct>(
     snapDealerPct(MEMBERSHIP_RESIDUAL_SHARE_PERCENTS.salesman),
   );
@@ -1938,9 +1959,11 @@ export const AdminCreditSettingsTab = ({
     LAB_SHARE_PERCENTS.devops,
   );
   const pendingManufacturerRef = useRef(pendingManufacturerPct);
+  const pendingLaunchEventRef = useRef(pendingLaunchEventEnabled);
   const pendingDealerRef = useRef(pendingDealerPct);
   const pendingDevopsRef = useRef(pendingDevopsPct);
   const effectiveManufacturerRef = useRef(effectiveManufacturerPct);
+  const effectiveLaunchEventRef = useRef(effectiveLaunchEventEnabled);
   const effectiveDealerRef = useRef(effectiveDealerPct);
   const effectiveDevopsRef = useRef(effectiveDevopsPct);
   const pendingStoreManufacturerRef = useRef(pendingStoreManufacturerPct);
@@ -1956,9 +1979,11 @@ export const AdminCreditSettingsTab = ({
   const effectiveLabSalesTeamRef = useRef(effectiveLabSalesTeamPct);
   const effectiveLabDevopsRef = useRef(effectiveLabDevopsPct);
   pendingManufacturerRef.current = pendingManufacturerPct;
+  pendingLaunchEventRef.current = pendingLaunchEventEnabled;
   pendingDealerRef.current = pendingDealerPct;
   pendingDevopsRef.current = pendingDevopsPct;
   effectiveManufacturerRef.current = effectiveManufacturerPct;
+  effectiveLaunchEventRef.current = effectiveLaunchEventEnabled;
   effectiveDealerRef.current = effectiveDealerPct;
   effectiveDevopsRef.current = effectiveDevopsPct;
   pendingStoreManufacturerRef.current = pendingStoreManufacturerPct;
@@ -1984,6 +2009,9 @@ export const AdminCreditSettingsTab = ({
     pendingLabBizPct !== effectiveLabBizPct ||
     pendingLabSalesTeamPct !== effectiveLabSalesTeamPct ||
     pendingLabDevopsPct !== effectiveLabDevopsPct;
+
+  const launchEventChangePending =
+    pendingLaunchEventEnabled !== effectiveLaunchEventEnabled;
 
   const persistShareSchedules = useCallback(() => {
     if (!hydratedRef.current || !token || loading) return;
@@ -2288,52 +2316,17 @@ export const AdminCreditSettingsTab = ({
 
   const updateLaunchEventEnabled = useCallback(
     (enabled: boolean) => {
-      applySettingsUpdate((prev) => ({
-        ...prev,
-        customAbutmentLaunchEventEnabled: enabled,
-        ...(enabled
-          ? { customAbutmentLaunchEventEndedAt: null }
-          : {
-              customAbutmentLaunchEventEndedAt: new Date().toISOString(),
-            }),
-      }));
+      setPendingLaunchEventEnabled(enabled);
+      pendingLaunchEventRef.current = enabled;
       scheduleItemSave("launchEventToggle", () => {
-        const current = settingsRef.current;
-        return {
-          customAbutmentLaunchEventEnabled:
-            current.customAbutmentLaunchEventEnabled !== false,
-          customAbutmentLaunchEventEndedAt:
-            current.customAbutmentLaunchEventEndedAt ?? null,
-          customAbutmentLaunchEventStartedAt:
-            current.customAbutmentLaunchEventStartedAt ?? null,
-        };
+        const pending =
+          pendingLaunchEventRef.current !== effectiveLaunchEventRef.current
+            ? pendingLaunchEventRef.current
+            : null;
+        return buildLaunchEventSchedulePayload(pending);
       });
     },
-    [applySettingsUpdate, scheduleItemSave],
-  );
-
-  const updateLaunchEventDate = useCallback(
-    (field: "startedAt" | "endedAt", ymd: string) => {
-      const iso = ymd
-        ? new Date(`${ymd}T00:00:00+09:00`).toISOString()
-        : null;
-      applySettingsUpdate((prev) => ({
-        ...prev,
-        ...(field === "startedAt"
-          ? { customAbutmentLaunchEventStartedAt: iso }
-          : { customAbutmentLaunchEventEndedAt: iso }),
-      }));
-      scheduleItemSave(`launchEvent${field}`, () => {
-        const current = settingsRef.current;
-        return {
-          customAbutmentLaunchEventStartedAt:
-            current.customAbutmentLaunchEventStartedAt ?? null,
-          customAbutmentLaunchEventEndedAt:
-            current.customAbutmentLaunchEventEndedAt ?? null,
-        };
-      });
-    },
-    [applySettingsUpdate, scheduleItemSave],
+    [scheduleItemSave],
   );
 
   const fetchSettings = useCallback(async () => {
@@ -2375,6 +2368,29 @@ export const AdminCreditSettingsTab = ({
         setPendingManufacturerPct(readManufacturerSharePercent(scheduledMfr));
       } else {
         setPendingManufacturerPct(effectiveMfr);
+      }
+
+      const effectiveLaunch =
+        (data as { customAbutmentLaunchEventEnabled?: boolean })
+          .customAbutmentLaunchEventEnabled !== false;
+      setEffectiveLaunchEventEnabled(effectiveLaunch);
+      const scheduledLaunchAt = (
+        data as {
+          customAbutmentLaunchEventChangeScheduledAt?: string | Date | null;
+        }
+      ).customAbutmentLaunchEventChangeScheduledAt;
+      const scheduledLaunchEnabled = (
+        data as {
+          customAbutmentLaunchEventChangeScheduledEnabled?: boolean | null;
+        }
+      ).customAbutmentLaunchEventChangeScheduledEnabled;
+      if (
+        scheduledLaunchAt &&
+        typeof scheduledLaunchEnabled === "boolean"
+      ) {
+        setPendingLaunchEventEnabled(scheduledLaunchEnabled);
+      } else {
+        setPendingLaunchEventEnabled(effectiveLaunch);
       }
 
       const eventRate = Number(
@@ -2841,13 +2857,6 @@ export const AdminCreditSettingsTab = ({
                 <SectionHeader
                   icon={Banknote}
                   title="가격"
-                  description={
-                    <>
-                      런칭 이벤트 중 1만원, 종료 후 정상가 1.3만원입니다.
-                      <br />
-                      매입가는 정상가 기준 제조사 %로 계산합니다. CNC·환봉 동일.
-                    </>
-                  }
                   trailing={
                     <AutoSaveIndicator
                       state={itemSaveStates.salePrice ?? "idle"}
@@ -2860,62 +2869,24 @@ export const AdminCreditSettingsTab = ({
                       런칭 이벤트
                     </p>
                     <p className="text-xs text-slate-500">
-                      켜면 이벤트 단가, 끄면 정상가. 창은 [시작, 종료).
+                      켜면 이벤트 단가, 끄면 정상가.
+                      <br />
+                      변경 사항은 내일부터 적용
                     </p>
                   </div>
-                  <Switch
-                    checked={settings.customAbutmentLaunchEventEnabled !== false}
-                    disabled={loading}
-                    onCheckedChange={updateLaunchEventEnabled}
-                  />
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="launchEventStartedAt" className="text-xs">
-                      이벤트 시작일 (KST)
-                    </Label>
-                    <Input
-                      id="launchEventStartedAt"
-                      type="date"
-                      disabled={loading}
-                      value={
-                        settings.customAbutmentLaunchEventStartedAt
-                          ? toKstYmd(
-                              new Date(
-                                settings.customAbutmentLaunchEventStartedAt,
-                              ),
-                            ) || ""
-                          : ""
-                      }
-                      onChange={(e) =>
-                        updateLaunchEventDate("startedAt", e.target.value)
-                      }
+                  <div className="flex items-center gap-2">
+                    <ShareChangePendingBadge show={launchEventChangePending} />
+                    <AutoSaveIndicator
+                      state={itemSaveStates.launchEventToggle ?? "idle"}
                     />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="launchEventEndedAt" className="text-xs">
-                      이벤트 종료일 (KST, 미입력=진행 중)
-                    </Label>
-                    <Input
-                      id="launchEventEndedAt"
-                      type="date"
+                    <Switch
+                      checked={pendingLaunchEventEnabled}
                       disabled={loading}
-                      value={
-                        settings.customAbutmentLaunchEventEndedAt
-                          ? toKstYmd(
-                              new Date(
-                                settings.customAbutmentLaunchEventEndedAt,
-                              ),
-                            ) || ""
-                          : ""
-                      }
-                      onChange={(e) =>
-                        updateLaunchEventDate("endedAt", e.target.value)
-                      }
+                      onCheckedChange={updateLaunchEventEnabled}
                     />
                   </div>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                   <SalesAmountCard
                     id="customAbutLaunchEventPrice"
                     title="이벤트가(부가세 면제)"
@@ -2936,28 +2907,13 @@ export const AdminCreditSettingsTab = ({
                     help="이벤트 종료 후 치과·기공소에 청구하는 커스텀어벗 1개당 단가입니다."
                   />
                   <SalesAmountCard
-                    id="customAbutPurchasePrice"
-                    title="매입가(부가세 포함)"
-                    value={purchasePriceFromSale(
-                      settings.labProductionPrice,
-                      pendingManufacturerPct,
-                    )}
-                    disabled={loading}
-                    readOnly
-                    help={
-                      pendingManufacturerPct !== effectiveManufacturerPct
-                        ? `정상가의 ${pendingManufacturerPct}%로 내일부터 적용됩니다. 현재 적용은 ${effectiveManufacturerPct}%(${purchasePriceFromSale(settings.labProductionPrice, effectiveManufacturerPct).toLocaleString("ko-KR")}원)입니다.`
-                        : `정상가의 ${pendingManufacturerPct}%(제조사 분배 비율)로 자동 계산됩니다.`
-                    }
-                  />
-                  <SalesAmountCard
                     id="customAbutShippingPurchasePrice"
-                    title="배송 매입가(부가세 포함)"
+                    title="배송비(부가세 포함)"
                     value={settings.manufacturerShippingUnitPrice}
                     disabled={loading}
                     step={PURCHASE_AMOUNT_STEP}
                     onChange={updateShippingPurchasePrice}
-                    help="박스당 제조사 배송 매입가(부가세 포함)."
+                    help="박스당 제조사 배송비(부가세 포함)."
                   />
                   <SalesAmountCard
                     id="fmDentalMonthlyShippingFee"
@@ -2965,7 +2921,7 @@ export const AdminCreditSettingsTab = ({
                     value={settings.fmDentalMonthlyShippingFee ?? 0}
                     disabled={loading}
                     onChange={updateFmDentalMonthlyFee}
-                    help="정상가 구간 선택지. 0원이면 가입 불가. 의뢰자 유료 크레딧에서 차감합니다."
+                    help="기공소만. 정상가 구간 선택지. 0원이면 가입 불가. 유료 크레딧에서 차감합니다."
                   />
                 </div>
               </CardContent>

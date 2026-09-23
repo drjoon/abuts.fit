@@ -6,6 +6,7 @@
 // - web/backend/controllers/admin/admin.settings.controller.js
 // - web/frontend/src/features/settings/tabs/AdminCreditSettingsTab.tsx
 // change-log:
+// - 2026-09-23: 런칭 이벤트 on/off 변경 예약(내일 0시 KST).
 // - 2026-09-23: 런칭 이벤트 1만 / 정상가 1.3만 · FM덴탈 월정액 배송 설정.
 // - 2026-09-20: 의뢰자 BA 판매가 오버라이드. 없으면 플랫폼 판매가. 매입가=그 판매가의 50%.
 // - 2026-09-20: 제조사 매입가(포함가) = 커스텀어벗 판매가의 50%.
@@ -36,6 +37,7 @@ import {
   buildDealershipRateChangeApplyPatch,
   buildDevopsShareChangeApplyPatch,
   buildManufacturerShareChangeApplyPatch,
+  buildCustomAbutmentLaunchEventChangeApplyPatch,
   buildStoreManufacturerShareChangeApplyPatch,
   buildStoreDealerRateChangeApplyPatch,
   buildStoreDevopsShareChangeApplyPatch,
@@ -303,6 +305,8 @@ const SCHEMA_DEFAULTS = (() => {
     customAbutmentLaunchEventEnabled: true,
     customAbutmentLaunchEventStartedAt: null,
     customAbutmentLaunchEventEndedAt: null,
+    customAbutmentLaunchEventChangeScheduledAt: null,
+    customAbutmentLaunchEventChangeScheduledEnabled: null,
     customAbutmentLaunchEventProductionPrice: pickDefault(
       "creditSettings.customAbutmentLaunchEventProductionPrice",
     ),
@@ -742,6 +746,14 @@ export function normalizeLoadedCreditSettings(creditSettings = {}) {
           ABUTS_ABUTMENT_LAUNCH_EVENT_PRODUCTION_PRICE,
       ) || 0,
     ),
+    customAbutmentLaunchEventChangeScheduledAt: parseOptionalDate(
+      creditSettings.customAbutmentLaunchEventChangeScheduledAt,
+    ),
+    customAbutmentLaunchEventChangeScheduledEnabled: (() => {
+      const raw = creditSettings.customAbutmentLaunchEventChangeScheduledEnabled;
+      if (typeof raw === "boolean") return raw;
+      return null;
+    })(),
     fmDentalMonthlyShippingFee: Math.max(
       0,
       Number(
@@ -1134,8 +1146,16 @@ export async function ensureDealershipRateChangeApplied(now = new Date()) {
     now,
   );
   const mergedAfterMfr = { ...creditSettings, ...(manufacturerPatch || {}) };
-  const dealerPatch = buildDealershipRateChangeApplyPatch(mergedAfterMfr, now);
-  const mergedAfterDealer = { ...mergedAfterMfr, ...(dealerPatch || {}) };
+  const launchEventPatch = buildCustomAbutmentLaunchEventChangeApplyPatch(
+    mergedAfterMfr,
+    now,
+  );
+  const mergedAfterLaunch = {
+    ...mergedAfterMfr,
+    ...(launchEventPatch || {}),
+  };
+  const dealerPatch = buildDealershipRateChangeApplyPatch(mergedAfterLaunch, now);
+  const mergedAfterDealer = { ...mergedAfterLaunch, ...(dealerPatch || {}) };
   const devopsPatch = buildDevopsShareChangeApplyPatch(mergedAfterDealer, now);
   const mergedAfterCustom = {
     ...mergedAfterDealer,
@@ -1168,6 +1188,7 @@ export async function ensureDealershipRateChangeApplied(now = new Date()) {
   const labPatch = buildLabShareChangeApplyPatch(mergedAfterStore, now);
   const patch = {
     ...(manufacturerPatch || {}),
+    ...(launchEventPatch || {}),
     ...(dealerPatch || {}),
     ...(devopsPatch || {}),
     ...(storeManufacturerPatch || {}),

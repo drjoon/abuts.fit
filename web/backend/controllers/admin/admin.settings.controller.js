@@ -474,6 +474,27 @@ export async function updateCreditSettings(req, res) {
     )
       ? sanitizeOptionalDate(payload.customAbutmentLaunchEventEndedAt)
       : undefined;
+    const customAbutmentLaunchEventChangeScheduledAt =
+      Object.prototype.hasOwnProperty.call(
+        payload,
+        "customAbutmentLaunchEventChangeScheduledAt",
+      )
+        ? sanitizeKstMidnightDate(
+            payload.customAbutmentLaunchEventChangeScheduledAt,
+          )
+        : undefined;
+    const customAbutmentLaunchEventChangeScheduledEnabled =
+      Object.prototype.hasOwnProperty.call(
+        payload,
+        "customAbutmentLaunchEventChangeScheduledEnabled",
+      )
+        ? typeof payload.customAbutmentLaunchEventChangeScheduledEnabled ===
+          "boolean"
+          ? payload.customAbutmentLaunchEventChangeScheduledEnabled
+          : payload.customAbutmentLaunchEventChangeScheduledEnabled == null
+            ? null
+            : undefined
+        : undefined;
     const fmDentalMonthlyShippingFee = Number(payload.fmDentalMonthlyShippingFee);
     const membershipDesignAndProductionPrice = Number(
       payload.membershipDesignAndProductionPrice,
@@ -885,6 +906,23 @@ export async function updateCreditSettings(req, res) {
     if (customAbutmentLaunchEventEndedAt !== undefined) {
       sanitized.customAbutmentLaunchEventEndedAt =
         customAbutmentLaunchEventEndedAt;
+    }
+    if (customAbutmentLaunchEventChangeScheduledAt !== undefined) {
+      sanitized.customAbutmentLaunchEventChangeScheduledAt =
+        customAbutmentLaunchEventChangeScheduledAt;
+      if (customAbutmentLaunchEventChangeScheduledAt == null) {
+        sanitized.customAbutmentLaunchEventChangeScheduledEnabled = null;
+      }
+    }
+    if (customAbutmentLaunchEventChangeScheduledEnabled !== undefined) {
+      sanitized.customAbutmentLaunchEventChangeScheduledEnabled =
+        customAbutmentLaunchEventChangeScheduledEnabled;
+      if (
+        customAbutmentLaunchEventChangeScheduledEnabled == null &&
+        customAbutmentLaunchEventChangeScheduledAt === undefined
+      ) {
+        sanitized.customAbutmentLaunchEventChangeScheduledAt = null;
+      }
     }
     if (
       !Number.isNaN(fmDentalMonthlyShippingFee) &&

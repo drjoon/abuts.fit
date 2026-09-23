@@ -35,6 +35,12 @@ const systemSettingsSchema = new mongoose.Schema(
       customAbutmentLaunchEventStartedAt: { type: Date, default: null },
       customAbutmentLaunchEventEndedAt: { type: Date, default: null },
       customAbutmentLaunchEventProductionPrice: { type: Number, default: 10000 },
+      // 런칭 이벤트 on/off 변경 예약(해당일 0시 KST~). 분배 비율과 동일.
+      customAbutmentLaunchEventChangeScheduledAt: { type: Date, default: null },
+      customAbutmentLaunchEventChangeScheduledEnabled: {
+        type: Boolean,
+        default: null,
+      },
       // FM덴탈 월정액 배송(정상가 구간). 0이면 가입 불가. 관리자 설정.
       fmDentalMonthlyShippingFee: { type: Number, default: 0 },
       // CNC 티어별 건당 분배(제조사·딜러사·개발운영사). 어벗츠=매출−합계.

@@ -5,6 +5,7 @@
 // - web/backend/scripts/db/migrate-legacy-creditledger-to-gl.js
 // - web/backend/scripts/db/rebalance-manufacturer-unit-price.js
 // change-log:
+// - 2026-09-23: 런칭 이벤트 on/off 변경 예약(내일 0시 KST, 분배 비율과 동일).
 // - 2026-09-22: 지정 플랫폼 수수료 없음(기본 rate 0·enabled false). 하청 5% 유지.
 // - 2026-09-20: 하청 기본 5%.
 // - 2026-09-20: 기본 10% 고정 · 이벤트 15/20% · 요율 변경 예약(KST 0시 적용).
@@ -332,6 +333,53 @@ export function buildManufacturerShareChangeApplyPatch(
     devopsSharePercent: devops,
     abutsSharePercent: abuts,
     manufacturerRequestUnitPrice: Math.round((sale * mfr) / 100),
+  };
+}
+
+/**
+ * 커스텀어벗 런칭 이벤트 on/off 예약이 도래했는지.
+ */
+export function resolveDueCustomAbutmentLaunchEventChange(
+  creditSettings = {},
+  now = new Date(),
+) {
+  const applyAt = parseDealershipEventBound(
+    creditSettings?.customAbutmentLaunchEventChangeScheduledAt,
+  );
+  if (!applyAt) return { due: false, applyAt: null, enabled: null };
+  if (
+    typeof creditSettings?.customAbutmentLaunchEventChangeScheduledEnabled !==
+    "boolean"
+  ) {
+    return { due: false, applyAt, enabled: null };
+  }
+  const due = now.getTime() >= applyAt.getTime();
+  return {
+    due,
+    applyAt,
+    enabled: creditSettings.customAbutmentLaunchEventChangeScheduledEnabled,
+  };
+}
+
+/**
+ * 런칭 이벤트 on/off 예약 적용 패치. due가 아니면 null.
+ */
+export function buildCustomAbutmentLaunchEventChangeApplyPatch(
+  creditSettings = {},
+  now = new Date(),
+) {
+  const { due, enabled, applyAt } = resolveDueCustomAbutmentLaunchEventChange(
+    creditSettings,
+    now,
+  );
+  if (!due || typeof enabled !== "boolean") return null;
+
+  return {
+    customAbutmentLaunchEventChangeScheduledAt: null,
+    customAbutmentLaunchEventChangeScheduledEnabled: null,
+    customAbutmentLaunchEventEnabled: enabled,
+    customAbutmentLaunchEventStartedAt: null,
+    customAbutmentLaunchEventEndedAt: enabled ? null : applyAt || now,
   };
 }
 

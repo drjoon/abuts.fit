@@ -70,13 +70,13 @@ router.post(
 
 router.get(
   "/me/fm-dental-shipping",
-  authorize(["requestor", "practice", "admin"]),
+  authorize(["requestor", "internalLab", "admin"]),
   businessController.getMyFmDentalShipping,
 );
 
 router.post(
   "/me/fm-dental-shipping",
-  authorize(["requestor", "practice", "admin"]),
+  authorize(["requestor", "internalLab", "admin"]),
   businessController.setMyFmDentalShipping,
 );
 
