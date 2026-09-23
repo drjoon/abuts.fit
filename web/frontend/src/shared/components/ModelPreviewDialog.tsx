@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-23: 3D 프리뷰 — 다운로드 옆 「이미지 저장」(현재 뷰 PNG).
 // - 2026-09-10: DCM 다운로드 시 원본/PLY(칼라) 선택 메뉴.
 // - 2026-09-05: z-[450]/overlay z-[445] — 가이드투어 코치(z-440)·플로팅 상세 위.
 // - 2026-08-31: 이미지 줌/팬 — ZoomableImagePreview 공통 컴포넌트 사용(중앙 기준 줌).
@@ -18,9 +19,18 @@
 // - web/frontend/src/features/chat/components/NewChatWidget.tsx
 // - web/frontend/src/shared/files/modelPreviewFile.ts
 // - web/frontend/src/shared/files/dcmDownloadFormat.ts
-import { useEffect, useState } from "react";
-import { ChevronDown, ChevronLeft, ChevronRight, Download } from "lucide-react";
-import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
+import { useEffect, useRef, useState } from "react";
+import {
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  ImageDown,
+} from "lucide-react";
+import {
+  StlPreviewViewer,
+  type StlPreviewViewerHandle,
+} from "@/features/requests/components/StlPreviewViewer";
 import { ZoomableImagePreview } from "@/shared/components/ZoomableImagePreview";
 import { Button } from "@/components/ui/button";
 import {
@@ -76,6 +86,23 @@ export type ModelPreviewDialogProps = {
   onConfirm?: () => void | Promise<void>;
 };
 
+function pngFileNameFromModel(fileName: string): string {
+  const base = String(fileName || "")
+    .trim()
+    .replace(/\.[^.]+$/, "");
+  return `${base || "preview"}.png`;
+}
+
+function triggerPngDownload(dataUrl: string, fileName: string) {
+  const a = document.createElement("a");
+  a.href = dataUrl;
+  a.download = fileName;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
 export function ModelPreviewDialog({
   open,
   onOpenChange,
@@ -103,12 +130,20 @@ export function ModelPreviewDialog({
     String(fileName || "").trim() || (isImage ? "이미지 미리보기" : "3D 미리보기");
   const pct = Math.max(0, Math.min(100, Number(progress) || 0));
   const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const viewerRef = useRef<StlPreviewViewerHandle | null>(null);
   const showNav = previewCount > 1 && previewIndex >= 0;
   const indexLabel = showNav ? `${previewIndex + 1} / ${previewCount}` : "";
   const confirmText = String(confirmMessage || "").trim();
   const confirmCta = String(confirmLabel || "").trim();
   const showConfirm = Boolean(onConfirm && confirmCta);
   const showFooter = !isImage || showConfirm;
+  const canSaveViewImage = !isImage && Boolean(file) && !loading;
+
+  const onSaveViewImage = () => {
+    const dataUrl = viewerRef.current?.capturePngDataUrl();
+    if (!dataUrl) return;
+    triggerPngDownload(dataUrl, pngFileNameFromModel(fileName));
+  };
 
   const renderDownloadControl = (opts?: {
     className?: string;
@@ -286,6 +321,7 @@ export function ModelPreviewDialog({
               </>
             ) : file && !loading ? (
               <StlPreviewViewer
+                ref={viewerRef}
                 file={file}
                 textureFile={textureFile}
                 companionFiles={companionFiles}
@@ -326,6 +362,20 @@ export function ModelPreviewDialog({
                     variant: showConfirm ? "outline" : "default",
                   })
                 : null}
+              {canSaveViewImage ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-9"
+                  disabled={confirmBusy}
+                  onClick={onSaveViewImage}
+                  title="현재 뷰를 PNG로 저장"
+                >
+                  <ImageDown className="mr-1.5 h-4 w-4" />
+                  이미지 저장
+                </Button>
+              ) : null}
               {showConfirm ? (
                 <Button
                   type="button"

@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-09-23: 스캔 칼라 — 적색 hue 시프트 제거, 휘도 대비·약한 채도만 (원본 핑크 유지).
+// - 2026-09-23: 스캔 칼라 콘트라스트·채도 보정 — 치아/잇몸 경계(피니시라인) 가독성.
 // - 2026-09-10: 3Shape/TRIOS HPS(.dcm) 메시 프리뷰 + 버텍스 칼라(텍스처 베이크).
 // - 2026-09-10: 3Shape/TRIOS HPS(.dcm) 메시 프리뷰 (parseHpsDcmGeometry).
 // - 2026-08-28: BiteScan 등 TextureFile·UV 대소문자·스캔토큰 매칭 강화. 스캔 칼라는 언릿(Basic)으로 밝게.
@@ -147,6 +149,128 @@ export function isScanColorPreview(
   texture?: THREE.Texture | null,
 ): boolean {
   return Boolean(texture) || geometryHasVertexColors(geometry);
+}
+
+/**
+ * 스캔 칼라 프리뷰용 렌더러 톤매핑.
+ * ACES는 중톤을 눌러 치아~잇몸 경계를 뭉개므로 NoToneMapping.
+ */
+export function applyScanColorToneMapping(renderer: THREE.WebGLRenderer) {
+  renderer.toneMapping = THREE.NoToneMapping;
+  renderer.toneMappingExposure = 1;
+}
+
+/** 피니시라인 가독성: 휘도 대비 위주 (hue는 원본 핑크 유지) */
+const SCAN_COLOR_CONTRAST = 1.28;
+const SCAN_COLOR_SATURATION = 1.1;
+
+function clamp01(v: number): number {
+  return v < 0 ? 0 : v > 1 ? 1 : v;
+}
+
+/** sRGB 한 픽셀(또는 버텍스) — 대비·약한 채도만 (적색 hue 시프트 금지) */
+function enhanceScanSrgbChannels(
+  r0: number,
+  g0: number,
+  b0: number,
+): [number, number, number] {
+  let r = clamp01(0.5 + (r0 - 0.5) * SCAN_COLOR_CONTRAST);
+  let g = clamp01(0.5 + (g0 - 0.5) * SCAN_COLOR_CONTRAST);
+  let b = clamp01(0.5 + (b0 - 0.5) * SCAN_COLOR_CONTRAST);
+
+  const luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  r = clamp01(luma + (r - luma) * SCAN_COLOR_SATURATION);
+  g = clamp01(luma + (g - luma) * SCAN_COLOR_SATURATION);
+  b = clamp01(luma + (b - luma) * SCAN_COLOR_SATURATION);
+
+  return [r, g, b];
+}
+
+/**
+ * 버텍스 컬러 콘트라스트 보정 (피니시라인 = 치아/잇몸 경계).
+ * normalizeVertexColorsIfNeeded 이후에 호출.
+ */
+function enhanceScanVertexColors(geometry: THREE.BufferGeometry) {
+  const color = geometry.getAttribute("color") as THREE.BufferAttribute | null;
+  if (!color || color.count <= 0) return;
+
+  const tmp = new THREE.Color();
+  for (let i = 0; i < color.count; i += 1) {
+    tmp.setRGB(
+      color.getX(i),
+      color.getY(i),
+      color.getZ(i),
+      THREE.LinearSRGBColorSpace,
+    );
+    tmp.convertLinearToSRGB();
+    const [r, g, b] = enhanceScanSrgbChannels(tmp.r, tmp.g, tmp.b);
+    tmp.setRGB(r, g, b, THREE.SRGBColorSpace);
+    color.setXYZ(i, tmp.r, tmp.g, tmp.b);
+  }
+  color.needsUpdate = true;
+}
+
+/** TextureFile/map_Kd 이미지 픽셀에 동일 콘트라스트 보정 */
+function enhanceScanTextureContrast(texture: THREE.Texture) {
+  const image = texture.image as
+    | HTMLImageElement
+    | ImageBitmap
+    | HTMLCanvasElement
+    | OffscreenCanvas
+    | undefined;
+  if (!image) return;
+  const w = Number((image as { width?: number }).width) || 0;
+  const h = Number((image as { height?: number }).height) || 0;
+  if (!(w > 0 && h > 0)) return;
+  if (typeof document === "undefined") return;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return;
+
+  try {
+    ctx.drawImage(image as CanvasImageSource, 0, 0);
+  } catch {
+    return;
+  }
+
+  let data: ImageData;
+  try {
+    data = ctx.getImageData(0, 0, w, h);
+  } catch {
+    // cross-origin / tainted — skip
+    return;
+  }
+
+  const px = data.data;
+  for (let i = 0; i < px.length; i += 4) {
+    const [r, g, b] = enhanceScanSrgbChannels(
+      px[i]! / 255,
+      px[i + 1]! / 255,
+      px[i + 2]! / 255,
+    );
+    px[i] = Math.round(r * 255);
+    px[i + 1] = Math.round(g * 255);
+    px[i + 2] = Math.round(b * 255);
+  }
+  ctx.putImageData(data, 0, 0);
+  texture.image = canvas;
+  texture.needsUpdate = true;
+}
+
+/** parse 직후 스캔 칼라(버텍스·텍스처) 피니시라인 가독성 보정 */
+function enhanceScanPreviewColors(
+  geometry: THREE.BufferGeometry,
+  texture?: THREE.Texture | null,
+) {
+  if (geometryHasVertexColors(geometry)) {
+    enhanceScanVertexColors(geometry);
+  }
+  if (texture) {
+    enhanceScanTextureContrast(texture);
+  }
 }
 
 export async function loadTextureFromFile(
@@ -473,6 +597,7 @@ export async function parseModelPreview(
 
   if (ext === ".dcm") {
     const geometry = await parseHpsDcmGeometry(buffer);
+    enhanceScanPreviewColors(geometry, null);
     if (import.meta.env.DEV) {
       console.info("[modelPreview][dcm]", {
         file: file.name,
@@ -503,6 +628,7 @@ export async function parseModelPreview(
         texture = null;
       }
     }
+    enhanceScanPreviewColors(geometry, texture);
 
     if (import.meta.env.DEV) {
       console.info("[modelPreview][ply]", {
@@ -630,6 +756,7 @@ export async function parseModelPreview(
     if (texture && !geometryHasUv(geometry)) {
       texture = null;
     }
+    enhanceScanPreviewColors(geometry, texture);
 
     if (import.meta.env.DEV) {
       console.info("[modelPreview][obj]", {

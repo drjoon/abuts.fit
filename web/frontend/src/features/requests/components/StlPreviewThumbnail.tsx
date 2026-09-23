@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-23: 스캔 칼라 피니시라인 가독성 — parseModelPreview 콘트라스트 + NoToneMapping.
 // - 2026-09-17: finishLinePoints — 준비 카드용 filled STL 썸네일에 FL(빨간 튜브) 오버레이.
 // - 2026-09-14: Orthographic 카메라 — 뷰어와 동일하게 평행 왜곡 없이 맞춤.
 // - 2026-08-23: 의뢰 상세 작업 파일 타일용 정적 3D 썸네일.
@@ -18,6 +19,7 @@ import { cn } from "@/shared/ui/cn";
 import {
   createModelPreviewMaterial,
   isScanColorPreview,
+  applyScanColorToneMapping,
   parseModelPreview,
 } from "@/shared/files/modelPreviewFile";
 
@@ -296,7 +298,7 @@ export function StlPreviewThumbnail({
 
         const material = createModelPreviewMaterial(geometry, previewTexture);
         if (isScanColorPreview(geometry, previewTexture)) {
-          renderer.toneMappingExposure = 1.35;
+          applyScanColorToneMapping(renderer);
         }
         mesh = new THREE.Mesh(geometry, material);
         scene?.add(mesh);

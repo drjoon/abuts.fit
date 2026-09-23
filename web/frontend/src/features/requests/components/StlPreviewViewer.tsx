@@ -12,6 +12,8 @@
 // - 2026-09-04: Lot 각인 — CNC X 직경→반경, 글자 축소·뒤집힘 교정, non-filled 센터 보정.
 // - 2026-09-04: Lot 각인 — StlFileProcessor 역산(Rotate90+W)으로 CNC→STL 매핑.
 // - 2026-08-28: 좌우 드래그=화면 Y축(카메라 local up) 회전 — 월드 Z 턴테이블 제거(스캔 수평 유지).
+// - 2026-09-23: capturePngDataUrl — 현재 뷰 PNG 캡처(이미지 저장).
+// - 2026-09-23: 스캔 칼라 피니시라인 가독성 — parseModelPreview 콘트라스트 + NoToneMapping.
 // - 2026-08-28: PLY TextureFile·버텍스 컬러 칼라 표시 (parseModelPreview). 스캔 칼라는 언릿+노출↑.
 // - 2026-08-28: 패닝(중클릭·우클릭·Shift+좌클릭) — ScreenSpaceOrbitControls. 우드래그 후 수동픽 undo 스킵.
 // - 2026-08-28: PLY/OBJ 버텍스 컬러는 createModelPreviewMaterial로 칼라 표시.
@@ -36,7 +38,7 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/shared/files/modelPreviewFile.ts
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from "react";
 import * as THREE from "three";
 import { ScreenSpaceOrbitControls } from "@/shared/three/screenSpaceOrbitControls";
 import { Line2 } from "three/examples/jsm/lines/Line2.js";
@@ -47,6 +49,7 @@ import { cn } from "@/shared/ui/cn";
 import {
   createModelPreviewMaterial,
   isScanColorPreview,
+  applyScanColorToneMapping,
   parseModelPreview,
 } from "@/shared/files/modelPreviewFile";
 import { useStlMetadata, type StlMetadata } from "../hooks/useStlMetadata";
@@ -102,34 +105,45 @@ type Props = {
   lotEngravingTarget?: "hex" | "post" | null;
 };
 
-export function StlPreviewViewer({
-  file,
-  textureFile = null,
-  companionFiles = null,
-  requestId,
-  onDiameterComputed,
-  showOverlay = true,
-  showGrid = true,
-  finishLinePoints,
-  enableManualPick = false,
-  manualPickPoints,
-  onSurfacePointPick,
-  onSurfacePointDoubleClick,
-  onManualUndo,
-  className,
-  metadata,
-  forceFilled = false,
-  showLotEngraving = false,
-  lotSerialCode = null,
-  lotEngravingNcText = null,
-  lotEngravingHexMode = null,
-  lotEngravingTarget = "hex",
-}: Props) {
+export type StlPreviewViewerHandle = {
+  /** 현재 카메라 뷰를 PNG data URL로. 미로드 시 null. */
+  capturePngDataUrl: () => string | null;
+};
+
+export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
+  function StlPreviewViewer(
+    {
+      file,
+      textureFile = null,
+      companionFiles = null,
+      requestId,
+      onDiameterComputed,
+      showOverlay = true,
+      showGrid = true,
+      finishLinePoints,
+      enableManualPick = false,
+      manualPickPoints,
+      onSurfacePointPick,
+      onSurfacePointDoubleClick,
+      onManualUndo,
+      className,
+      metadata,
+      forceFilled = false,
+      showLotEngraving = false,
+      lotSerialCode = null,
+      lotEngravingNcText = null,
+      lotEngravingHexMode = null,
+      lotEngravingTarget = "hex",
+    },
+    ref,
+  ) {
   const { metadata: fetchedMetadata, loading: fetchedMetadataLoading } =
     useStlMetadata(metadata ? undefined : requestId);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const onDiameterComputedRef = useRef(onDiameterComputed);
   const sceneRef = useRef<THREE.Scene | null>(null);
+  const cameraRef = useRef<THREE.Camera | null>(null);
+  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const modelPivotRef = useRef<THREE.Group | null>(null);
   const meshRef = useRef<THREE.Mesh | null>(null);
   const dblClickHandlerRef = useRef<((event: MouseEvent) => void) | null>(null);
@@ -183,6 +197,25 @@ export function StlPreviewViewer({
   const [error, setError] = useState<string | null>(null);
   const resolvedMetadata = metadata ?? fetchedMetadata;
   const shouldWaitForMetadata = showOverlay;
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      capturePngDataUrl: () => {
+        const renderer = rendererRef.current;
+        const scene = sceneRef.current;
+        const camera = cameraRef.current;
+        if (!renderer || !scene || !camera) return null;
+        renderer.render(scene, camera);
+        try {
+          return renderer.domElement.toDataURL("image/png");
+        } catch {
+          return null;
+        }
+      },
+    }),
+    [],
+  );
   const resolvedMetadataRef = useRef<StlMetadata | null | undefined>(
     resolvedMetadata,
   );
@@ -501,12 +534,17 @@ export function StlPreviewViewer({
     );
     camera.position.set(0, -60, 60);
     camera.up.set(0, 0, 1);
+    cameraRef.current = camera;
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    const renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      preserveDrawingBuffer: true,
+    });
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.0;
+    rendererRef.current = renderer;
 
     containerRef.current.innerHTML = "";
     containerRef.current.appendChild(renderer.domElement);
@@ -587,9 +625,9 @@ export function StlPreviewViewer({
           : center.clone();
 
         const material = createModelPreviewMaterial(geometry, previewTexture);
-        // 스캔 칼라/텍스처는 ACES가 뭉개지 않게 노출을 살짝 올린다.
+        // 스캔 칼라: ACES가 치아~잇몸 경계를 뭉개지 않게 NoToneMapping.
         if (isScanColorPreview(geometry, previewTexture)) {
-          renderer.toneMappingExposure = 1.35;
+          applyScanColorToneMapping(renderer);
         }
         mesh = new THREE.Mesh(geometry, material);
 
@@ -2259,6 +2297,8 @@ export function StlPreviewViewer({
       controls.dispose();
       renderer.dispose();
       sceneRef.current = null;
+      cameraRef.current = null;
+      rendererRef.current = null;
       modelPivotRef.current = null;
       lotEngravingGroupRef.current = null;
       centerRef.current = null;
@@ -2691,4 +2731,5 @@ export function StlPreviewViewer({
       )}
     </div>
   );
-}
+  },
+);
