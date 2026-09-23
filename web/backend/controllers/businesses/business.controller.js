@@ -26,6 +26,8 @@ import {
   updateMyBusiness,
   getMyAutoMatchParticipation,
   setMyAutoMatchParticipation,
+  getMyFmDentalShipping,
+  setMyFmDentalShipping,
   verifyMyPayoutAccount,
 } from "./business.update.controller.js";
 import {
@@ -51,7 +53,7 @@ import {
   ensureRequestorOrgAnchor,
   isSyntheticPracticeBusinessNumber,
 } from "./requestorOrgAnchor.util.js";
-export { updateMyBusiness, getMyAutoMatchParticipation, setMyAutoMatchParticipation, verifyMyPayoutAccount };
+export { updateMyBusiness, getMyAutoMatchParticipation, setMyAutoMatchParticipation, getMyFmDentalShipping, setMyFmDentalShipping, verifyMyPayoutAccount };
 
 export async function checkBusinessNumberDuplicate(req, res) {
   try {

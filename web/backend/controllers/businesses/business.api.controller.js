@@ -14,6 +14,8 @@ export const {
   updateMyBusiness,
   getMyAutoMatchParticipation,
   setMyAutoMatchParticipation,
+  getMyFmDentalShipping,
+  setMyFmDentalShipping,
   verifyMyPayoutAccount,
   clearMyBusinessLicense,
   checkBusinessNumberDuplicate,

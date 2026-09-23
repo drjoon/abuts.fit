@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - .cursor/rules/design-fee.mdc
 // change-log:
+// - 2026-09-23: 런칭 이벤트 1만 / 정상가 1.3만. resolveCustomAbutmentProductionPriceForAt.
 // - 2026-08-22: 환봉 생산가 미설정(0)·폴백을 CNC 고시 생산가와 동일하게.
 // - 2026-08-22: 치과 멤버십/일반 이중가 제거. 청구·안내는 membership* 단일 고시. pricingTier 분기 삭제.
 // - 2026-08-19: 치과·기공소 디자인+생산(2.5만) 구강지그 제외. 지르 보철은 보철기공비 6만.
@@ -19,8 +20,10 @@
 /**
  * 커스텀어벗 청구·안내 단가 SSOT (플랫폼 고시).
  * 설정 키는 레거시명 `membership*` 유지. `regular*` 는 관리자 딜러분배용(청구 분기 없음).
+ * 런칭 이벤트 중=`customAbutmentLaunchEventProductionPrice`(기본 1만).
  */
-export const ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE = 15_000;
+export const ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE = 13_000;
+export const ABUTS_ABUTMENT_LAUNCH_EVENT_PRODUCTION_PRICE = 10_000;
 export const ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE = 25_000;
 
 /** @deprecated 청구 단일가. MEMBERSHIP_PRODUCTION 과 동일(레거시 일반가 2만 폐기). */
@@ -47,6 +50,59 @@ export type AbutsAbutmentAdoptedKind = "cnc" | "round_bar";
 const toWon = (value: unknown, fallback: number) => {
   const n = Math.round(Number(value ?? fallback));
   return Number.isFinite(n) && n >= 0 ? n : fallback;
+};
+
+function parseLaunchEventBound(raw: unknown): Date | null {
+  if (!raw) return null;
+  const date = raw instanceof Date ? raw : new Date(String(raw));
+  if (Number.isNaN(date.getTime())) return null;
+  return date;
+}
+
+/**
+ * 플랫폼 런칭 이벤트 창 기준 생산 단가.
+ */
+export const resolveCustomAbutmentProductionPriceForAt = (
+  at: unknown,
+  creditSettings?: Partial<AbutsAbutmentCreditPrices> & {
+    minCreditForRequest?: number;
+    customAbutmentLaunchEventEnabled?: boolean;
+    customAbutmentLaunchEventStartedAt?: unknown;
+    customAbutmentLaunchEventEndedAt?: unknown;
+    customAbutmentLaunchEventProductionPrice?: number;
+  } | null,
+): { tier: "event" | "regular"; price: number } => {
+  const regularPrice = toWon(
+    creditSettings?.membershipProductionPrice ??
+      creditSettings?.minCreditForRequest,
+    ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
+  );
+  const eventPrice = toWon(
+    creditSettings?.customAbutmentLaunchEventProductionPrice,
+    ABUTS_ABUTMENT_LAUNCH_EVENT_PRODUCTION_PRICE,
+  );
+  const eventEnabled = creditSettings?.customAbutmentLaunchEventEnabled !== false;
+  const startedAt = parseLaunchEventBound(
+    creditSettings?.customAbutmentLaunchEventStartedAt,
+  );
+  const endedAt = parseLaunchEventBound(
+    creditSettings?.customAbutmentLaunchEventEndedAt,
+  );
+  const atDate = parseLaunchEventBound(at) || new Date();
+
+  if (!startedAt) {
+    if (eventEnabled) {
+      return { tier: "event", price: eventPrice };
+    }
+    return { tier: "regular", price: regularPrice };
+  }
+
+  const afterStart = atDate.getTime() >= startedAt.getTime();
+  const beforeEnd = endedAt ? atDate.getTime() < endedAt.getTime() : true;
+  if (eventEnabled && afterStart && beforeEnd) {
+    return { tier: "event", price: eventPrice };
+  }
+  return { tier: "regular", price: regularPrice };
 };
 
 export const normalizeAbutsAbutmentCreditPrices = (

@@ -4,8 +4,8 @@
 // - web/frontend/src/features/landing/landingAssets.ts
 // - rules.md §1.5–§2.6 · web/frontend/rules.md (기공의뢰·정산·스토어)
 //
-// 정가(판매가·배송비)는 심플웨이만. 스토어 SSOT: storeCatalog.ts STORE_LIST_INCLUSIVE_PRICES
-// · STORE_SHIPPING_FEE_INCLUSIVE 3,500 · 10만원↑무료. 플랫폼·커스텀어벗·기공사업부는 금액을 적지 않는다.
+// 정가(판매가·배송비)는 심플웨이 + 커스텀어벗(런칭/정상). 스토어 SSOT: storeCatalog.ts
+// · STORE_SHIPPING_FEE_INCLUSIVE 3,500 · 10만원↑무료. 플랫폼·기공사업부는 금액을 적지 않는다.
 import {
   LANDING_CAD_PREVIEW,
   LANDING_CASE_ABUTMENT,
@@ -369,6 +369,19 @@ export const landingOffers: LandingOffer[] = [
         },
       },
       {
+        name: "판매가",
+        line: "런칭 이벤트 1만원, 이후 1.3만원.",
+        points: [
+          "이벤트: 1만원 + 배송비",
+          "정상: 1.3만원 + 배송비",
+          "또는 1.3만원 + FM덴탈 월정액 배송",
+        ],
+        visual: {
+          kind: "blank",
+          caption: "런칭 이벤트 기간과 정상가 배송 선택",
+        },
+      },
+      {
         name: "같은 공정",
         line: "사람 손보다 시스템이 맞춥니다.",
         points: [
@@ -405,6 +418,10 @@ export const landingOffers: LandingOffer[] = [
       {
         q: "품질은 왜 일정한가요?",
         a: "어벗츠 자동화 시스템으로 건마다 같은 CNC 공정을 거치기 때문입니다. 제조는 (주)애크로덴트입니다.",
+      },
+      {
+        q: "판매가는 얼마인가요?",
+        a: "런칭 이벤트 기간은 1만원 + 배송비입니다. 이벤트 종료 후 정상가는 1.3만원이며, 박스당 배송비 또는 FM덴탈 월정액 배송 중 선택합니다.",
       },
       {
         q: "치과가 내는 금액은 무엇인가요?",

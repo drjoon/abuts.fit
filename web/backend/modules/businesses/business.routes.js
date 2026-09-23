@@ -68,6 +68,18 @@ router.post(
   businessController.setMyAutoMatchParticipation,
 );
 
+router.get(
+  "/me/fm-dental-shipping",
+  authorize(["requestor", "practice", "admin"]),
+  businessController.getMyFmDentalShipping,
+);
+
+router.post(
+  "/me/fm-dental-shipping",
+  authorize(["requestor", "practice", "admin"]),
+  businessController.setMyFmDentalShipping,
+);
+
 router.post(
   "/me/exit-demo",
   authorize(["requestor", "practice"]),

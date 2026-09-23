@@ -51,6 +51,14 @@ import {
   autoMatchParticipationResponseFields,
 } from "../../services/labAutoMatchParticipation.service.js";
 import {
+  applyFmDentalShippingCancel,
+  applyFmDentalShippingJoin,
+  fmDentalShippingResponseFields,
+  isFmDentalShippingJoinAllowed,
+  resolveFmDentalMonthlyShippingFee,
+} from "../../services/fmDentalShippingSubscription.service.js";
+import { loadCreditSettingsDefaults } from "../../utils/creditSettingsDefaults.js";
+import {
   canLabApplyAbutsCertification,
   isAbutsLabCertificationCertified,
   toAbutsLabCertificationApi,
@@ -1633,6 +1641,147 @@ export async function setMyAutoMatchParticipation(req, res) {
       message: wantActive
         ? "자동 매칭 참여 중 오류가 발생했습니다."
         : "자동 매칭 해지 중 오류가 발생했습니다.",
+    });
+  }
+}
+
+export async function getMyFmDentalShipping(req, res) {
+  try {
+    const roleCheck = assertBusinessRole(req, res);
+    if (!roleCheck) return;
+
+    const freshUser = await User.findById(req.user._id)
+      .select({ businessAnchorId: 1, role: 1 })
+      .lean();
+    const businessAnchorId =
+      freshUser?.businessAnchorId || req.user.businessAnchorId;
+    if (!businessAnchorId) {
+      return res.status(400).json({
+        success: false,
+        message: "사업자 등록 후 이용할 수 있습니다.",
+      });
+    }
+
+    const anchor = await BusinessAnchor.findById(businessAnchorId).lean();
+    if (!anchor) {
+      return res.status(404).json({
+        success: false,
+        message: "사업자 정보를 찾을 수 없습니다.",
+      });
+    }
+
+    const creditSettings = await loadCreditSettingsDefaults();
+    const joinGate = isFmDentalShippingJoinAllowed(creditSettings);
+    return res.json({
+      success: true,
+      data: {
+        ...fmDentalShippingResponseFields(anchor),
+        monthlyFee: resolveFmDentalMonthlyShippingFee(creditSettings),
+        joinAllowed: joinGate.ok,
+        joinBlockedReason: joinGate.ok ? null : joinGate.reason,
+        pricingTier: creditSettings.customAbutmentPricingTier || null,
+        effectiveProductionPrice:
+          creditSettings.effectiveProductionPrice ??
+          creditSettings.minCreditForRequest ??
+          null,
+      },
+    });
+  } catch (error) {
+    console.error("[getMyFmDentalShipping]", error);
+    return res.status(500).json({
+      success: false,
+      message: "FM덴탈 월정액 배송 정보를 불러오지 못했습니다.",
+    });
+  }
+}
+
+export async function setMyFmDentalShipping(req, res) {
+  const wantActive = req.body?.active !== false;
+  try {
+    const roleCheck = assertBusinessRole(req, res);
+    if (!roleCheck) return;
+
+    const freshUser = await User.findById(req.user._id)
+      .select({ businessAnchorId: 1, role: 1 })
+      .lean();
+    const businessAnchorId =
+      freshUser?.businessAnchorId || req.user.businessAnchorId;
+    if (!businessAnchorId) {
+      return res.status(400).json({
+        success: false,
+        message: "사업자 등록 후 이용할 수 있습니다.",
+      });
+    }
+
+    const anchor = await BusinessAnchor.findById(businessAnchorId).lean();
+    if (!anchor) {
+      return res.status(404).json({
+        success: false,
+        message: "사업자 정보를 찾을 수 없습니다.",
+      });
+    }
+
+    const meId = String(req.user._id);
+    const isOwner =
+      String(anchor.primaryContactUserId || "") === meId ||
+      (Array.isArray(anchor.owners) &&
+        anchor.owners.some((c) => String(c) === meId));
+    if (!isOwner) {
+      return res.status(403).json({
+        success: false,
+        message: "대표자만 FM덴탈 월정액 배송을 변경할 수 있습니다.",
+      });
+    }
+
+    const creditSettings = await loadCreditSettingsDefaults();
+
+    if (wantActive) {
+      const joinGate = isFmDentalShippingJoinAllowed(creditSettings);
+      if (!joinGate.ok) {
+        const message =
+          joinGate.reason === "launch_event_active"
+            ? "런칭 이벤트 기간에는 FM덴탈 월정액 배송에 가입할 수 없습니다."
+            : "월정액이 설정되지 않아 가입할 수 없습니다. 관리자에게 문의하세요.";
+        return res.status(409).json({
+          success: false,
+          reason: joinGate.reason,
+          message,
+        });
+      }
+      const next = await applyFmDentalShippingJoin(anchor);
+      return res.json({
+        success: true,
+        message: anchor.fmDentalShippingCancelAtPeriodEnd
+          ? "해지가 취소되었습니다."
+          : "FM덴탈 월정액 배송에 가입했습니다.",
+        data: {
+          ...fmDentalShippingResponseFields(next),
+          monthlyFee: joinGate.fee,
+        },
+      });
+    }
+
+    const { anchor: next, expiredNow } = await applyFmDentalShippingCancel(
+      anchor,
+    );
+    return res.json({
+      success: true,
+      message: expiredNow
+        ? "FM덴탈 월정액 배송이 종료되었습니다."
+        : "다음 결제일까지 유지 후 해지됩니다.",
+      data: {
+        ...fmDentalShippingResponseFields(next),
+        monthlyFee: resolveFmDentalMonthlyShippingFee(creditSettings),
+        expiredNow,
+      },
+    });
+  } catch (error) {
+    console.error("[setMyFmDentalShipping]", error);
+    return res.status(500).json({
+      success: false,
+      message: wantActive
+        ? "FM덴탈 월정액 배송 가입 중 오류가 발생했습니다."
+        : "FM덴탈 월정액 배송 해지 중 오류가 발생했습니다.",
     });
   }
 }

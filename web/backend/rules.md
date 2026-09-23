@@ -101,7 +101,7 @@
     - 지연/모드 전환 취소: `cancelExpressSurchargeIfShipDelayed` → `deleteExpressSurchargeAtomic` (표시 금액도 추가비 제외로 재동기화)
   - 디자인+생산 과금: `caseInfos.productMode === "design_custom_abutment"`일 때만
     - 공식: `(생산 단가 + designFee) × 어벗 수` — 1 STL에 여러 어벗 가능
-    - 단가: 치과 청구 SSOT=`creditSettings.membershipProductionPrice`(기본 15,000) / `membershipDesignAndProductionPrice`(기본 25,000). **단일 고시**(치과 멤버십/일반·`pricingTier` 청구 분기 없음). `designFee`는 디자인+생산 − 생산만과 동기화(기본 10,000, **1어벗당**). 배송비 별도·박스당 과금. 신속=`expressFee`(기본 +2,000). 치과 멤버십 월정·가입 90일 1만원 없음. 기공소 자동 매칭 **월 참여 수수료 0원**. 지정·자동매칭 플랫폼 수수료 없음 · 하청 5%. 루트 `rules.md` §2.3.
+    - 단가: 치과 청구 SSOT=`creditSettings.membershipProductionPrice`(정상가 기본 13,000) · 런칭 이벤트 10,000(`customAbutmentLaunchEvent*`, `resolveCustomAbutmentProductionPriceForAt`). `membershipDesignAndProductionPrice`(기본 25,000, 레거시). `designFee`는 디자인+생산 − 생산만과 동기화(기본 10,000, **1어벗당**). 배송: 이벤트=박스당 · 정상가=박스당 또는 FM덴탈 월정액(`fmDentalMonthlyShippingFee` · `FM_DENTAL_SHIPPING_SPEND`). 신속=`expressFee`(기본 +2,000). 치과 멤버십 월정 없음. 기공소 자동 매칭 **월 참여 수수료 0원**. 지정·자동매칭 플랫폼 수수료 없음 · 하청 5%. 루트 `rules.md` §2.3.
     - 의뢰자 BA 판매가 오버라이드: `creditSettings.specialRequestorPrices[]`. `productionPrice`=`amount`(레거시)가 그 BA의 커스텀어벗 판매가. 없으면 관리자「커스텀어벗 · 가격」판매가. 매입가는 적용 판매가의 50%. 배송 매입가는 전역.
     - 어벗 수: `designPrice.utils.js` `countDesignAbutmentQty` (`toothWorks` 커스텀어벗·임플란트만, Pontic·작업X 제외 → `tooth` → 1)
     - 견적/표시: `resolveQuotedPriceWithDesignFee`
@@ -262,8 +262,8 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - 관리자 문자/알림톡 발송은 큐가 아니라 팝빌 즉시 전송(`sendPopbillXMS` / `sendPopbillKakaoATS`)
 
 - 커스텀 어벗 의뢰 단가 SSOT:
-  - 관리자「플랫폼 설정 · 커스텀어벗」. 치과 고시·크레딧 차감=`membershipProductionPrice`(기본 15,000, 신속은 +`expressFee`). **청구 단일가** — `regular*`·「멤버/일반」은 딜러 유무 분배용.
-  - 기공소 어벗생산의뢰 안내는 치과와 동일 플랫폼 고시(`membershipProductionPrice` / `membershipDesignAndProductionPrice`). 가입 90일 1만원 런칭가 없음.
+  - 관리자「플랫폼 설정 · 커스텀어벗」. 정상가=`membershipProductionPrice`(기본 13,000) · 런칭 이벤트=`customAbutmentLaunchEventProductionPrice`(기본 10,000) + 창 on/off·시작·종료. FM덴탈 월정액=`fmDentalMonthlyShippingFee`(0이면 가입 불가). 신속은 +`expressFee`. `regular*`·「멤버/일반」은 딜러 유무 분배용.
+  - 기공소 어벗생산의뢰 안내는 치과와 동일 플랫폼 유효가. FM 월정액은 정상가 구간만.
   - 기준일 계산은 `resolveRequestorPricingBaseDate`를 사용하고, 신규 의뢰 견적/의뢰자 대시보드 집계가 동일 규칙명을 공유해야 합니다.
   - 관련 파일:
     - `controllers/requests/utils.js`

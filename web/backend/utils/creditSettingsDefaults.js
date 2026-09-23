@@ -6,6 +6,7 @@
 // - web/backend/controllers/admin/admin.settings.controller.js
 // - web/frontend/src/features/settings/tabs/AdminCreditSettingsTab.tsx
 // change-log:
+// - 2026-09-23: 런칭 이벤트 1만 / 정상가 1.3만 · FM덴탈 월정액 배송 설정.
 // - 2026-09-20: 의뢰자 BA 판매가 오버라이드. 없으면 플랫폼 판매가. 매입가=그 판매가의 50%.
 // - 2026-09-20: 제조사 매입가(포함가) = 커스텀어벗 판매가의 50%.
 // - 2026-08-22: 제조사 고정단가(8,800) 선차감 후 잔여 비중 분배(딜러 30:개발 10:어벗츠 40 / 없으면 20:80).
@@ -26,6 +27,9 @@ import BusinessAnchor from "../models/businessAnchor.model.js";
 import {
   pickAbutsAbutmentCreditPrices,
   normalizeAbutsAbutmentCreditPrices,
+  resolveCustomAbutmentProductionPriceForAt,
+  ABUTS_ABUTMENT_LAUNCH_EVENT_PRODUCTION_PRICE,
+  ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
 } from "./abutsAbutmentService.js";
 import {
   manufacturerPurchaseFromSale,
@@ -296,6 +300,15 @@ const SCHEMA_DEFAULTS = (() => {
       "creditSettings.membershipProductionPrice",
     ),
     regularProductionPrice: pickDefault("creditSettings.regularProductionPrice"),
+    customAbutmentLaunchEventEnabled: true,
+    customAbutmentLaunchEventStartedAt: null,
+    customAbutmentLaunchEventEndedAt: null,
+    customAbutmentLaunchEventProductionPrice: pickDefault(
+      "creditSettings.customAbutmentLaunchEventProductionPrice",
+    ),
+    fmDentalMonthlyShippingFee: pickDefault(
+      "creditSettings.fmDentalMonthlyShippingFee",
+    ),
     membershipDesignAndProductionPrice: pickDefault(
       "creditSettings.membershipDesignAndProductionPrice",
     ),
@@ -611,6 +624,8 @@ export function overlayCustomAbutmentSalePrice(creditSettings, saleAmount) {
     regularRoundBarProductionPrice: sale,
     minCreditForRequest: sale,
     manufacturerRequestUnitPrice: purchase,
+    /** 의뢰자 BA 오버라이드 — 런칭 이벤트 단가 리졸버를 건너뛴다. */
+    customAbutmentSaleLocked: true,
   };
   const party = buildNormalizedTierPartyFields(overlaid, SCHEMA_DEFAULTS);
   return {
@@ -688,8 +703,52 @@ export function normalizeLoadedCreditSettings(creditSettings = {}) {
         abutmentPrices.membershipRoundBarDesignAndProductionPrice,
     }),
   };
+  const launchResolved = resolveCustomAbutmentProductionPriceForAt(new Date(), {
+    ...creditSettings,
+    membershipProductionPrice: abutmentPrices.membershipProductionPrice,
+    customAbutmentLaunchEventProductionPrice:
+      creditSettings.customAbutmentLaunchEventProductionPrice ??
+      SCHEMA_DEFAULTS.customAbutmentLaunchEventProductionPrice ??
+      ABUTS_ABUTMENT_LAUNCH_EVENT_PRODUCTION_PRICE,
+    customAbutmentLaunchEventEnabled:
+      creditSettings.customAbutmentLaunchEventEnabled,
+    customAbutmentLaunchEventStartedAt:
+      creditSettings.customAbutmentLaunchEventStartedAt,
+    customAbutmentLaunchEventEndedAt:
+      creditSettings.customAbutmentLaunchEventEndedAt,
+  });
+  const parseOptionalDate = (raw) => {
+    if (!raw) return null;
+    const d = raw instanceof Date ? raw : new Date(raw);
+    return Number.isNaN(d.getTime()) ? null : d;
+  };
   return {
-    minCreditForRequest: membership.productionPrice,
+    minCreditForRequest: launchResolved.price,
+    effectiveProductionPrice: launchResolved.price,
+    customAbutmentPricingTier: launchResolved.tier,
+    customAbutmentLaunchEventEnabled:
+      creditSettings.customAbutmentLaunchEventEnabled !== false,
+    customAbutmentLaunchEventStartedAt: parseOptionalDate(
+      creditSettings.customAbutmentLaunchEventStartedAt,
+    ),
+    customAbutmentLaunchEventEndedAt: parseOptionalDate(
+      creditSettings.customAbutmentLaunchEventEndedAt,
+    ),
+    customAbutmentLaunchEventProductionPrice: Math.max(
+      0,
+      Number(
+        creditSettings.customAbutmentLaunchEventProductionPrice ??
+          SCHEMA_DEFAULTS.customAbutmentLaunchEventProductionPrice ??
+          ABUTS_ABUTMENT_LAUNCH_EVENT_PRODUCTION_PRICE,
+      ) || 0,
+    ),
+    fmDentalMonthlyShippingFee: Math.max(
+      0,
+      Number(
+        creditSettings.fmDentalMonthlyShippingFee ??
+          SCHEMA_DEFAULTS.fmDentalMonthlyShippingFee,
+      ) || 0,
+    ),
     specialRequestorPrices: Array.isArray(creditSettings.specialRequestorPrices)
       ? creditSettings.specialRequestorPrices
           .map((item) => normalizeSpecialRequestorPrice(item, withRoundBar))
@@ -1181,16 +1240,31 @@ export async function loadCreditSettingsDefaults(options = {}) {
   };
 }
 
-/** 어벗생산의뢰 1개당 기본 단가. loadCreditSettingsDefaults 이후 값을 쓴다. */
-export function resolveCustomAbutmentRequestUnitPrice(creditSettings = {}) {
-  const n = Math.round(
-    Number(
-      creditSettings?.minCreditForRequest ??
-        creditSettings?.membershipProductionPrice ??
-        SCHEMA_DEFAULTS.minCreditForRequest,
-    ) || 0,
-  );
-  return n >= 0 ? n : SCHEMA_DEFAULTS.minCreditForRequest;
+/** 어벗생산의뢰 1개당 기본 단가. loadCreditSettingsDefaults 이후 값을 쓴다.
+ * 의뢰 생성·hold 시점(`at`)의 런칭 이벤트 창을 반영한다.
+ * BA 판매가 오버라이드(`customAbutmentSaleLocked`)는 고정가.
+ */
+export function resolveCustomAbutmentRequestUnitPrice(
+  creditSettings = {},
+  at = new Date(),
+) {
+  if (creditSettings?.customAbutmentSaleLocked === true) {
+    const locked = Math.round(
+      Number(
+        creditSettings?.minCreditForRequest ??
+          creditSettings?.membershipProductionPrice ??
+          SCHEMA_DEFAULTS.minCreditForRequest,
+      ) || 0,
+    );
+    return locked >= 0 ? locked : SCHEMA_DEFAULTS.minCreditForRequest;
+  }
+  const resolved = resolveCustomAbutmentProductionPriceForAt(at, creditSettings);
+  const n = Math.round(Number(resolved.price) || 0);
+  return n >= 0
+    ? n
+    : SCHEMA_DEFAULTS.minCreditForRequest ||
+        ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE;
 }
 
 export { SCHEMA_DEFAULTS as CREDIT_SETTINGS_SCHEMA_DEFAULTS };
+export { resolveCustomAbutmentProductionPriceForAt };

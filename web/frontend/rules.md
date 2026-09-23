@@ -210,7 +210,8 @@ Notes:
       - `src/features/platform/PlatformBenefitsShareButtons.tsx` (안내+링크 클립보드 복사)
   - 의뢰자(치과) 설정: 구독 탭 없음. 구 `?tab=subscription` → 계정. 대시보드 헤더는 `[정책 안내]`만.
     - `src/pages/requestor/dashboard/components/RequestorPolicyRemakeHeader.tsx`
-    - `src/shared/ui/PricingPolicyDialog.tsx` — 치과=어벗디자인 생산 1.5만 · 구강스캔 디자인+생산 2.5만(구강지그 제외). 기공소=어벗생산의뢰/기공의뢰수신 동일 고시(디자인+생산도 구강지그 제외). 신속 +2,000 · 배송 3,500. 풀세트·환봉·디자인비+지그 행 없음. 멤버십/구독 UI 없음. **딜러(`variant=salesman`)**: 90일 무주문 시 소개 귀속 리셋 조항(`dealershipPolicyCopy.ts`). `SalesmanDashboardPage` `DealershipTermsCard`·이용약관 제6조④·영업본부 `policyNote` 동일.
+    - `src/shared/ui/PricingPolicyDialog.tsx` — 런칭 이벤트 1만(+배송) / 정상가 1.3만(+배송 또는 FM덴탈 월정액). 신속 +2,000 · 배송 3,500. FM 가입·해지(대표). **딜러(`variant=salesman`)**: 90일 무주문 시 소개 귀속 리셋 · 판매가 기준(배송·월정액 제외).
+    - 안내·청구 정가 SSOT (`creditSettings` + `src/shared/pricing/abutsAbutmentService.ts`): 정상가 **1.3만원** · 런칭 **1만원**(`resolveCustomAbutmentProductionPriceForAt`). 신속 `expressFee`(기본 +2,000). 배송 박스당 또는 FM덴탈 월정액. `regular*`는 관리자 딜러분배용. 기공소 매칭 월정 0·하청 5% — 루트 `rules.md` §2.3.
   - 수락 후 마감: `DevopsDesignDeadlineTab` — 디자인 클레임 후 작업 마감(`designDeadlineSettings.claimHours`, 기본 3시간). 파트너 **기공의뢰 자동매칭** 탭 상단
   - 기공의뢰 자동매칭: `PracticeTransferAutoMatchTab`(카드·탭 **인증 기공소**) — 하청 % 스트립 + 기공소별 인증 ON·기공 테스트·메모. 기공소 설정 탭은 없음. 관리자 테스트 통과/`enabled` 시 풀 참여. 지정·자동매칭 플랫폼 수수료 없음. 하청만 `subcontractFeeRate`(기본 5%). 관리자 플랫폼 설정「인증 기공소」탭
   - 기공소 어벗츠 인증: 가입 시 미신청 → 신청 → 기공 테스트 → 통과 시 인증. 상태·테스트·메모 SSOT `BusinessAnchor.abutsLabCertification` / `src/shared/practice/abutsLabCertification.ts`
@@ -266,7 +267,7 @@ Notes:
   - 신속 추가 의뢰크레딧 금액은 `creditSettings.expressFee`(기본 2,000원)를 사용합니다.
   - 디자인+생산(`design_custom_abutment`): `(생산 단가 + 디자인비) × 어벗 수`.
     - 디자인비는 디자인+생산 − 생산만. 어벗 수는 `toothWorks` 커스텀어벗·임플란트 치아(Pontic·작업X 제외).
-    - 안내·청구 정가 SSOT (`creditSettings` + `src/shared/pricing/abutsAbutmentService.ts`): 생산만 **1.5만원**, 디자인+생산 **2.5만원**(`membership*` 필드, **단일 고시**). 신속 `expressFee`(기본 +2,000). 배송비 별도·박스당 과금. 치과 멤버십 월정·가입 90일 1만원·멤버십/일반 청구 분기 없음. `regular*`는 관리자 딜러분배용. 기공소 매칭 월정 0·지정/자동매칭 플랫폼 수수료 없음 · 하청 5% — 루트 `rules.md` §2.3.
+    - 안내·청구 정가 SSOT (`creditSettings` + `src/shared/pricing/abutsAbutmentService.ts`): 정상가 **1.3만원** · 런칭 **1만원**(`resolveCustomAbutmentProductionPriceForAt`). 신속 `expressFee`(기본 +2,000). 배송 박스당 또는 FM덴탈 월정액. `regular*`는 관리자 딜러분배용. 기공소 매칭 월정 0·지정/자동매칭 플랫폼 수수료 없음 · 하청 5% — 루트 `rules.md` §2.3.
     - 생산(`custom_abutment`)은 Request/STL당 생산 1개. 신속비는 건당.
     - 디자인+생산 신속비는 **어벗 수 배수** (`expressFee × abutmentQty`).
     - 표시 라벨: `커스텀어벗 생산` / `커스텀어벗 디자인+생산` (생략 시 `생산` / `디자인+생산`).
@@ -333,7 +334,7 @@ Notes:
   - 재생목록 항목 클릭 → PreviewModal (코드 에디터는 프리뷰 내 버튼)
 
 - 커스텀 어벗 의뢰 단가 표시 SSOT:
-  - 치과 정책 안내·크레딧 차감은 관리자「플랫폼 설정 · 커스텀어벗」판매가(기본 15,000). 의뢰자 BA 오버라이드가 있으면 그 판매가. 신속은 +신속 의뢰비.
+  - 치과 정책 안내·크레딧 차감은 관리자「플랫폼 설정 · 커스텀어벗」유효가(런칭 1만 / 정상 1.3만). 의뢰자 BA 오버라이드가 있으면 그 판매가. 신속은 +신속 의뢰비.
   - 기공소 커스텀어벗 안내도 치과와 동일 고시(`membershipProductionPrice` / `membershipDesignAndProductionPrice`). 라벨만 `어벗생산의뢰`·`기공의뢰수신`. 가입 90일 1만원 고정가 없음.
   - 기공소 어벗츠 인증: 관리자 `PracticeTransferAutoMatchTab`에서 신청·테스트·상태 관리. **월 참여 수수료 0원**(정책). 지정·자동매칭 플랫폼 수수료 없음. 하청 `subcontractFeeRate`(기본 5%). 구 거래 치과 소개 UI는 제거(초대 API는 레거시 유지). 구 기공소 설정「어벗츠 인증」탭 제거.
   - 치과향 지정 기공소 표시: `formatPracticeTargetLabLabel` → **「어벗츠 협력 · {이름}」**(어벗츠기공소·하청 마스킹 예외). 라우팅 `targetLab`은 현행 유지.
@@ -505,7 +506,7 @@ Notes:
     잔액 < 50만원이면 사이드바 `크레딧`에 깜빡이는 충전 뱃지·클릭 시 `?tab=charge` (`DashboardLayout`).
     백엔드: `utils/creditChargeUnit.js`, `creditBPlan.controller.js`, `credit.controller.js` insights.
   - 공개 안내/약관: `ServicePage`, `TermsPage`, `HelpPage`, `InquiriesPage` — 크레딧=B2B 거래 선수금. 기공·어벗 경로는 면세, 스토어는 과세(월말 분리 발행). 회사=겸영. Terms: 기공회원(기공소·계산서)과 제조회원(일반과세·세금계산서) 분리.
-  - 가격 정책/대시보드: `PricingPolicyDialog` — 치과 고시 어벗디자인으로 생산 1.5만 · 구강스캔으로 디자인+생산 2.5만(구강지그 제외). 기공소는 어벗생산의뢰/기공의뢰수신 동일 고시. 신속 출고 +2,000(1개당) · 배송비 3,500(1박스당). 의뢰자 변형에 **부가세 없음 · 면세** 한 줄. 풀세트·환봉·디자인비+지그 행 없음. 멤버십/구독 행 없음.
+  - 가격 정책/대시보드: `PricingPolicyDialog` — 런칭 1만(+배송) / 정상 1.3만(+배송 또는 FM덴탈 월정액). 신속 +2,000 · 배송 3,500. 의뢰자 변형에 **부가세 없음 · 면세**. 딜러는 판매가 기준(배송·월정액 제외).
   - 관리자 플랫폼 설정「커스텀어벗」: 커스텀어벗 가격(CNC·환봉 생산 단가) + 분배 비율. 지정 기공소 디자인·어벗츠 생산만. 치과 공급·디자인+생산 카드 없음.
   - 제조사 정산규칙: 원청–하청 고정 매입가(의뢰·배송·리메이크, 부가세 포함)·장부·미정산 포함가·지급 재가산 없음·세금계산서. 리메이크 생산 기본 6,600. 무료 크레딧 포함 약정 단가 전액 · 말일 일괄 지급. % 분배 안내 금지.
   - 관리자 고객향 세금계산서 직접발행: 공급가 입력 시 세액 자동 10% 금지(기본 세액 0). 제조사·딜러사·개발운영사 `AFFILIATE_TO_ABUTS` 과세.

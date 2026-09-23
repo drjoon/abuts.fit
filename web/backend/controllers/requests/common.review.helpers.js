@@ -2019,6 +2019,13 @@ export async function commitShippingFeeForPackage({
     return null;
   }
 
+  const { isFmDentalShippingActiveForAnchor } = await import(
+    "../../services/fmDentalShippingSubscription.service.js"
+  );
+  if (await isFmDentalShippingActiveForAnchor(payerAnchorId, { session })) {
+    return { skipped: true, reason: "fm_dental_shipping" };
+  }
+
   const spendUniqueKey = `shippingPackage:${String(pkg._id)}:shipping_fee`;
   const representative = chargeable[0];
   const requestObjectIds = chargeable.map((row) => row?._id).filter(Boolean);

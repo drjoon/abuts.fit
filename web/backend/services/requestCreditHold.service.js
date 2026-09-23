@@ -30,6 +30,7 @@ import {
   allocateSpendFromCreditBuckets,
   computeBusinessCreditBalanceFromLedger,
 } from "./creditBalance.service.js";
+import { isFmDentalShippingActiveForAnchor } from "./fmDentalShippingSubscription.service.js";
 import {
   allowsDemoFreeRequestOverdraft,
   excludeDemoFreeRequestFromBalance,
@@ -155,10 +156,12 @@ export function shouldSkipMachiningHold(request) {
  * 배송비는 (의뢰 BA + 예정 출고일) 박스당 1회.
  * PTX CA도 Request 경로로 보류(구: PTX 건당 hold — 폐지).
  * 가입 무료 테스트는 배송비 0원(박스에 유료 형제가 있으면 그 형제가 hold).
+ * FM덴탈 월정액 배송 활성 BA는 박스 배송비 스킵.
  */
-export function shouldSkipShippingHold(request) {
+export function shouldSkipShippingHold(request, { fmDentalShippingActive } = {}) {
   if (isManufacturerSampleRequest(request)) return true;
   if (isSignupFreeTestRequest(request)) return true;
+  if (fmDentalShippingActive === true) return true;
   return false;
 }
 
@@ -969,6 +972,14 @@ export async function holdRequestCreditsOnSubmit({
       if (!shippingGroupHeld.has(groupKey)) {
         // 본인 shipping hold가 있으면 형제 검색(excludeSelf)만으로는 못 보고 중복 insert 위험이 있다.
         if (hasExistingHold(requestShippingHoldKey(request._id))) {
+          shippingGroupHeld.add(groupKey);
+          continue;
+        }
+        const fmActive = await isFmDentalShippingActiveForAnchor(
+          requestorAnchorId,
+          { session },
+        );
+        if (fmActive) {
           shippingGroupHeld.add(groupKey);
           continue;
         }

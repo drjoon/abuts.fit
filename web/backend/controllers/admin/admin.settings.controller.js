@@ -455,6 +455,26 @@ export async function updateCreditSettings(req, res) {
     const abutmentDesignLabFee = Number(payload.abutmentDesignLabFee);
     const membershipProductionPrice = Number(payload.membershipProductionPrice);
     const regularProductionPrice = Number(payload.regularProductionPrice);
+    const customAbutmentLaunchEventProductionPrice = Number(
+      payload.customAbutmentLaunchEventProductionPrice,
+    );
+    const customAbutmentLaunchEventEnabled =
+      typeof payload.customAbutmentLaunchEventEnabled === "boolean"
+        ? payload.customAbutmentLaunchEventEnabled
+        : null;
+    const customAbutmentLaunchEventStartedAt = Object.prototype.hasOwnProperty.call(
+      payload,
+      "customAbutmentLaunchEventStartedAt",
+    )
+      ? sanitizeOptionalDate(payload.customAbutmentLaunchEventStartedAt)
+      : undefined;
+    const customAbutmentLaunchEventEndedAt = Object.prototype.hasOwnProperty.call(
+      payload,
+      "customAbutmentLaunchEventEndedAt",
+    )
+      ? sanitizeOptionalDate(payload.customAbutmentLaunchEventEndedAt)
+      : undefined;
+    const fmDentalMonthlyShippingFee = Number(payload.fmDentalMonthlyShippingFee);
     const membershipDesignAndProductionPrice = Number(
       payload.membershipDesignAndProductionPrice,
     );
@@ -848,6 +868,31 @@ export async function updateCreditSettings(req, res) {
       sanitized.regularProductionPrice = regularProductionPrice;
     }
     if (
+      !Number.isNaN(customAbutmentLaunchEventProductionPrice) &&
+      customAbutmentLaunchEventProductionPrice >= 0
+    ) {
+      sanitized.customAbutmentLaunchEventProductionPrice =
+        customAbutmentLaunchEventProductionPrice;
+    }
+    if (customAbutmentLaunchEventEnabled != null) {
+      sanitized.customAbutmentLaunchEventEnabled =
+        customAbutmentLaunchEventEnabled;
+    }
+    if (customAbutmentLaunchEventStartedAt !== undefined) {
+      sanitized.customAbutmentLaunchEventStartedAt =
+        customAbutmentLaunchEventStartedAt;
+    }
+    if (customAbutmentLaunchEventEndedAt !== undefined) {
+      sanitized.customAbutmentLaunchEventEndedAt =
+        customAbutmentLaunchEventEndedAt;
+    }
+    if (
+      !Number.isNaN(fmDentalMonthlyShippingFee) &&
+      fmDentalMonthlyShippingFee >= 0
+    ) {
+      sanitized.fmDentalMonthlyShippingFee = fmDentalMonthlyShippingFee;
+    }
+    if (
       !Number.isNaN(membershipDesignAndProductionPrice) &&
       membershipDesignAndProductionPrice >= 0
     ) {
@@ -1183,6 +1228,32 @@ export async function updateCreditSettings(req, res) {
         !prevDealership.dealershipEventStartedAt
       ) {
         sanitized.dealershipEventStartedAt = new Date(
+          "2020-01-01T00:00:00+09:00",
+        );
+      }
+    }
+    // 커스텀어벗 런칭 이벤트 on/off — 딜러십과 동일 창 보정.
+    if (
+      customAbutmentLaunchEventEnabled === true &&
+      customAbutmentLaunchEventEndedAt === undefined &&
+      !Object.prototype.hasOwnProperty.call(
+        payload,
+        "customAbutmentLaunchEventEndedAt",
+      )
+    ) {
+      sanitized.customAbutmentLaunchEventEndedAt = null;
+    }
+    if (
+      customAbutmentLaunchEventEnabled === false &&
+      customAbutmentLaunchEventEndedAt === undefined &&
+      !prevDealership.customAbutmentLaunchEventEndedAt
+    ) {
+      sanitized.customAbutmentLaunchEventEndedAt = new Date();
+      if (
+        !sanitized.customAbutmentLaunchEventStartedAt &&
+        !prevDealership.customAbutmentLaunchEventStartedAt
+      ) {
+        sanitized.customAbutmentLaunchEventStartedAt = new Date(
           "2020-01-01T00:00:00+09:00",
         );
       }

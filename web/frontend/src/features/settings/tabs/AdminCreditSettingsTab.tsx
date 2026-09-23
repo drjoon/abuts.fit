@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-23: 런칭 이벤트 1만 / 정상가 1.3만 · FM덴탈 월정액 배송 설정.
 // - 2026-09-23: 분배 비율 — 딜러 10/15/20% 선택·내일부터 적용 안내. 딜러십 섹션 제거.
 // - 2026-09-23: 분배 비율 — 딜러=이벤트 요율·개발운영 5%·어벗츠 나머지. 스토어·커스텀어벗만(기공비 제외).
 // - 2026-09-23: variant=shareRates — 분배 비율(공통)+딜러십. 커스텀어벗 탭에서 분배 카드 분리.
@@ -71,6 +72,7 @@ import {
   splitInclusiveVat,
 } from "@/shared/settlement/affiliateVat";
 import {
+  ABUTS_ABUTMENT_LAUNCH_EVENT_PRODUCTION_PRICE,
   normalizeAbutsAbutmentCreditPrices,
 } from "@/shared/pricing/abutsAbutmentService";
 import {
@@ -79,6 +81,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Tooltip,
   TooltipContent,
@@ -119,6 +122,11 @@ interface CreditSettings {
   defaultShippingFreeCredit: number;
   membershipProductionPrice: number;
   regularProductionPrice: number;
+  customAbutmentLaunchEventEnabled?: boolean;
+  customAbutmentLaunchEventStartedAt?: string | Date | null;
+  customAbutmentLaunchEventEndedAt?: string | Date | null;
+  customAbutmentLaunchEventProductionPrice?: number;
+  fmDentalMonthlyShippingFee?: number;
   membershipDesignAndProductionPrice: number;
   regularDesignAndProductionPrice: number;
   membershipRoundBarProductionPrice: number;
@@ -446,8 +454,8 @@ function DealerRatePctSelect({
   );
 }
 
-const DEFAULT_MANUFACTURER_REQUEST_UNIT_PRICE = 8800;
-const DEFAULT_MANUFACTURER_REMAKE_UNIT_PRICE = 6600;
+const DEFAULT_MANUFACTURER_REQUEST_UNIT_PRICE = 6500;
+const DEFAULT_MANUFACTURER_REMAKE_UNIT_PRICE = 6500;
 /** 커스텀어벗 매입가 = 판매가 × 제조사 비율. 기본 50%. */
 const DEFAULT_MANUFACTURER_PURCHASE_PERCENT = 50;
 
@@ -1389,6 +1397,32 @@ function normalizeCreditSettings(
       ),
       LAB_SHARE_PERCENTS.abuts,
     ),
+    customAbutmentLaunchEventEnabled:
+      (raw as CreditSettings).customAbutmentLaunchEventEnabled !== false,
+    customAbutmentLaunchEventStartedAt:
+      (raw as CreditSettings).customAbutmentLaunchEventStartedAt ??
+      (fallback as CreditSettings).customAbutmentLaunchEventStartedAt ??
+      null,
+    customAbutmentLaunchEventEndedAt:
+      (raw as CreditSettings).customAbutmentLaunchEventEndedAt ??
+      (fallback as CreditSettings).customAbutmentLaunchEventEndedAt ??
+      null,
+    customAbutmentLaunchEventProductionPrice: Math.max(
+      0,
+      Number(
+        (raw as CreditSettings).customAbutmentLaunchEventProductionPrice ??
+          (fallback as CreditSettings).customAbutmentLaunchEventProductionPrice ??
+          ABUTS_ABUTMENT_LAUNCH_EVENT_PRODUCTION_PRICE,
+      ) || 0,
+    ),
+    fmDentalMonthlyShippingFee: Math.max(
+      0,
+      Number(
+        (raw as CreditSettings).fmDentalMonthlyShippingFee ??
+          (fallback as CreditSettings).fmDentalMonthlyShippingFee ??
+          0,
+      ) || 0,
+    ),
     ...buildNormalizedTierPartyFields({ ...fallback, ...raw, ...abutmentPrices }, {
       ...CREDIT_SETTINGS_DEFAULTS,
       ...fallback,
@@ -2221,6 +2255,86 @@ export const AdminCreditSettingsTab = ({
     [updateSharePercent],
   );
 
+  const updateLaunchEventPrice = useCallback(
+    (next: number) => {
+      const price = Math.max(0, Math.round(Number(next) || 0));
+      applySettingsUpdate((prev) => ({
+        ...prev,
+        customAbutmentLaunchEventProductionPrice: price,
+      }));
+      scheduleItemSave("launchEventPrice", () => ({
+        customAbutmentLaunchEventProductionPrice:
+          settingsRef.current.customAbutmentLaunchEventProductionPrice ??
+          ABUTS_ABUTMENT_LAUNCH_EVENT_PRODUCTION_PRICE,
+      }));
+    },
+    [applySettingsUpdate, scheduleItemSave],
+  );
+
+  const updateFmDentalMonthlyFee = useCallback(
+    (next: number) => {
+      const fee = Math.max(0, Math.round(Number(next) || 0));
+      applySettingsUpdate((prev) => ({
+        ...prev,
+        fmDentalMonthlyShippingFee: fee,
+      }));
+      scheduleItemSave("fmDentalMonthlyFee", () => ({
+        fmDentalMonthlyShippingFee:
+          settingsRef.current.fmDentalMonthlyShippingFee ?? 0,
+      }));
+    },
+    [applySettingsUpdate, scheduleItemSave],
+  );
+
+  const updateLaunchEventEnabled = useCallback(
+    (enabled: boolean) => {
+      applySettingsUpdate((prev) => ({
+        ...prev,
+        customAbutmentLaunchEventEnabled: enabled,
+        ...(enabled
+          ? { customAbutmentLaunchEventEndedAt: null }
+          : {
+              customAbutmentLaunchEventEndedAt: new Date().toISOString(),
+            }),
+      }));
+      scheduleItemSave("launchEventToggle", () => {
+        const current = settingsRef.current;
+        return {
+          customAbutmentLaunchEventEnabled:
+            current.customAbutmentLaunchEventEnabled !== false,
+          customAbutmentLaunchEventEndedAt:
+            current.customAbutmentLaunchEventEndedAt ?? null,
+          customAbutmentLaunchEventStartedAt:
+            current.customAbutmentLaunchEventStartedAt ?? null,
+        };
+      });
+    },
+    [applySettingsUpdate, scheduleItemSave],
+  );
+
+  const updateLaunchEventDate = useCallback(
+    (field: "startedAt" | "endedAt", ymd: string) => {
+      const iso = ymd
+        ? new Date(`${ymd}T00:00:00+09:00`).toISOString()
+        : null;
+      applySettingsUpdate((prev) => ({
+        ...prev,
+        ...(field === "startedAt"
+          ? { customAbutmentLaunchEventStartedAt: iso }
+          : { customAbutmentLaunchEventEndedAt: iso }),
+      }));
+      scheduleItemSave(`launchEvent${field}`, () => {
+        const current = settingsRef.current;
+        return {
+          customAbutmentLaunchEventStartedAt:
+            current.customAbutmentLaunchEventStartedAt ?? null,
+          customAbutmentLaunchEventEndedAt:
+            current.customAbutmentLaunchEventEndedAt ?? null,
+        };
+      });
+    },
+    [applySettingsUpdate, scheduleItemSave],
+  );
 
   const fetchSettings = useCallback(async () => {
     try {
@@ -2728,21 +2842,11 @@ export const AdminCreditSettingsTab = ({
                   icon={Banknote}
                   title="가격"
                   description={
-                    pendingManufacturerPct !== effectiveManufacturerPct ? (
-                      <>
-                        커스텀어벗 판매가입니다. 매입가는 분배 비율의 제조사 %로
-                        계산됩니다.
-                        <br />
-                        제조사 % 변경은 내일부터 매입가에 반영됩니다.
-                      </>
-                    ) : (
-                      <>
-                        커스텀어벗 판매가입니다. 매입가는 분배 비율의 제조사 %로
-                        자동 계산됩니다.
-                        <br />
-                        CNC·환봉 구분 없이 동일 판매가를 적용합니다.
-                      </>
-                    )
+                    <>
+                      런칭 이벤트 중 1만원, 종료 후 정상가 1.3만원입니다.
+                      <br />
+                      매입가는 정상가 기준 제조사 %로 계산합니다. CNC·환봉 동일.
+                    </>
                   }
                   trailing={
                     <AutoSaveIndicator
@@ -2750,14 +2854,86 @@ export const AdminCreditSettingsTab = ({
                     />
                   }
                 />
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-slate-50 px-4 py-3">
+                  <div className="min-w-0 space-y-0.5">
+                    <p className="text-sm font-semibold text-slate-900">
+                      런칭 이벤트
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      켜면 이벤트 단가, 끄면 정상가. 창은 [시작, 종료).
+                    </p>
+                  </div>
+                  <Switch
+                    checked={settings.customAbutmentLaunchEventEnabled !== false}
+                    disabled={loading}
+                    onCheckedChange={updateLaunchEventEnabled}
+                  />
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="launchEventStartedAt" className="text-xs">
+                      이벤트 시작일 (KST)
+                    </Label>
+                    <Input
+                      id="launchEventStartedAt"
+                      type="date"
+                      disabled={loading}
+                      value={
+                        settings.customAbutmentLaunchEventStartedAt
+                          ? toKstYmd(
+                              new Date(
+                                settings.customAbutmentLaunchEventStartedAt,
+                              ),
+                            ) || ""
+                          : ""
+                      }
+                      onChange={(e) =>
+                        updateLaunchEventDate("startedAt", e.target.value)
+                      }
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="launchEventEndedAt" className="text-xs">
+                      이벤트 종료일 (KST, 미입력=진행 중)
+                    </Label>
+                    <Input
+                      id="launchEventEndedAt"
+                      type="date"
+                      disabled={loading}
+                      value={
+                        settings.customAbutmentLaunchEventEndedAt
+                          ? toKstYmd(
+                              new Date(
+                                settings.customAbutmentLaunchEventEndedAt,
+                              ),
+                            ) || ""
+                          : ""
+                      }
+                      onChange={(e) =>
+                        updateLaunchEventDate("endedAt", e.target.value)
+                      }
+                    />
+                  </div>
+                </div>
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   <SalesAmountCard
+                    id="customAbutLaunchEventPrice"
+                    title="이벤트가(부가세 면제)"
+                    value={
+                      settings.customAbutmentLaunchEventProductionPrice ??
+                      ABUTS_ABUTMENT_LAUNCH_EVENT_PRODUCTION_PRICE
+                    }
+                    disabled={loading}
+                    onChange={updateLaunchEventPrice}
+                    help="런칭 이벤트 기간 커스텀어벗 1개당 단가입니다."
+                  />
+                  <SalesAmountCard
                     id="customAbutSalePrice"
-                    title="판매가(부가세 면제)"
+                    title="정상가(부가세 면제)"
                     value={settings.labProductionPrice}
                     disabled={loading}
                     onChange={updateSalePrice}
-                    help="치과·기공소에 청구하는 커스텀어벗 1개당 단가입니다."
+                    help="이벤트 종료 후 치과·기공소에 청구하는 커스텀어벗 1개당 단가입니다."
                   />
                   <SalesAmountCard
                     id="customAbutPurchasePrice"
@@ -2770,8 +2946,8 @@ export const AdminCreditSettingsTab = ({
                     readOnly
                     help={
                       pendingManufacturerPct !== effectiveManufacturerPct
-                        ? `판매가의 ${pendingManufacturerPct}%로 내일부터 적용됩니다. 현재 적용은 ${effectiveManufacturerPct}%(${purchasePriceFromSale(settings.labProductionPrice, effectiveManufacturerPct).toLocaleString("ko-KR")}원)입니다. 장부·미정산은 포함가이며, 지급 시 재가산 없이 세금계산서만 ÷1.1로 분해합니다.`
-                        : `판매가의 ${pendingManufacturerPct}%(제조사 분배 비율)로 자동 계산됩니다. 장부·미정산은 이 포함가이며, 지급 시 재가산 없이 세금계산서만 ÷1.1로 분해합니다.`
+                        ? `정상가의 ${pendingManufacturerPct}%로 내일부터 적용됩니다. 현재 적용은 ${effectiveManufacturerPct}%(${purchasePriceFromSale(settings.labProductionPrice, effectiveManufacturerPct).toLocaleString("ko-KR")}원)입니다.`
+                        : `정상가의 ${pendingManufacturerPct}%(제조사 분배 비율)로 자동 계산됩니다.`
                     }
                   />
                   <SalesAmountCard
@@ -2781,7 +2957,15 @@ export const AdminCreditSettingsTab = ({
                     disabled={loading}
                     step={PURCHASE_AMOUNT_STEP}
                     onChange={updateShippingPurchasePrice}
-                    help="박스당 제조사 배송 매입가(부가세 포함). 장부·미정산은 포함가, 지급 시 재가산 없음."
+                    help="박스당 제조사 배송 매입가(부가세 포함)."
+                  />
+                  <SalesAmountCard
+                    id="fmDentalMonthlyShippingFee"
+                    title="FM덴탈 월정액 배송"
+                    value={settings.fmDentalMonthlyShippingFee ?? 0}
+                    disabled={loading}
+                    onChange={updateFmDentalMonthlyFee}
+                    help="정상가 구간 선택지. 0원이면 가입 불가. 의뢰자 유료 크레딧에서 차감합니다."
                   />
                 </div>
               </CardContent>

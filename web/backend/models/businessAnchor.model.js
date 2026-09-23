@@ -94,6 +94,29 @@ const businessAnchorSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    // FM덴탈 월정액 배송(정상가 구간). 활성 시 박스 배송비(SHIPPING_SPEND_*) 스킵.
+    fmDentalShippingActive: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    fmDentalShippingCancelAtPeriodEnd: {
+      type: Boolean,
+      default: false,
+    },
+    fmDentalShippingNextBillingAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+    fmDentalShippingStartedAt: {
+      type: Date,
+      default: null,
+    },
+    fmDentalShippingCanceledAt: {
+      type: Date,
+      default: null,
+    },
     // 레거시 — normalize/백필·resolve 폴백만. 신규 쓰기 금지.
     requestorCapabilities: {
       practice: { type: Boolean, default: false },

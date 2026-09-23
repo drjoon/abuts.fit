@@ -28,6 +28,7 @@ import { startMonthlyPracticeLabInvoiceWorker } from "./jobs/monthlyPracticeLabI
 import { startMonthlyCustomerInvoiceWorker } from "./jobs/monthlyCustomerInvoiceWorker.js";
 import { startMonthlySettlementBatchWorker } from "./jobs/monthlySettlementBatchWorker.js";
 import { startLabAutoMatchParticipationBillingWorker } from "./jobs/labAutoMatchParticipationBillingWorker.js";
+import { startFmDentalShippingBillingWorker } from "./jobs/fmDentalShippingBillingWorker.js";
 import { startPracticeTransferArrivalAutoCompleteWorker } from "./jobs/practiceTransferArrivalAutoCompleteWorker.js";
 import { startDemoModeExpiryWorker } from "./jobs/demoModeExpiryWorker.js";
 import { startDailyReferralOwnershipResetWorker } from "./jobs/dailyReferralOwnershipResetWorker.js";
@@ -148,6 +149,7 @@ dbReady
     startMonthlyCustomerInvoiceWorker();
     startMonthlySettlementBatchWorker();
     startLabAutoMatchParticipationBillingWorker();
+    startFmDentalShippingBillingWorker();
     startPracticeTransferArrivalAutoCompleteWorker();
     startDemoModeExpiryWorker();
     startDailyReferralOwnershipResetWorker();

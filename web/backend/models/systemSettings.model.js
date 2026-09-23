@@ -23,25 +23,33 @@ const systemSettingsSchema = new mongoose.Schema(
       d12: { type: Number, default: 1 },
     },
     creditSettings: {
-      minCreditForRequest: { type: Number, default: 15000 },
-      // 청구 SSOT=membership*(단일 고시). regular*=딜러 없음 분배 매출키(치과 구독 단가 아님).
-      membershipProductionPrice: { type: Number, default: 15000 },
-      regularProductionPrice: { type: Number, default: 20000 },
+      minCreditForRequest: { type: Number, default: 13000 },
+      // 정상가 SSOT=membership*. 런칭 이벤트 중은 customAbutmentLaunchEventProductionPrice.
+      // regular*=딜러 없음 분배 매출키(치과 구독 단가 아님).
+      membershipProductionPrice: { type: Number, default: 13000 },
+      regularProductionPrice: { type: Number, default: 13000 },
       membershipDesignAndProductionPrice: { type: Number, default: 25000 },
-      regularDesignAndProductionPrice: { type: Number, default: 40000 },
+      regularDesignAndProductionPrice: { type: Number, default: 25000 },
+      // 런칭 이벤트 창: [startedAt, endedAt). 이벤트 중 판매가=launchEventProductionPrice.
+      customAbutmentLaunchEventEnabled: { type: Boolean, default: true },
+      customAbutmentLaunchEventStartedAt: { type: Date, default: null },
+      customAbutmentLaunchEventEndedAt: { type: Date, default: null },
+      customAbutmentLaunchEventProductionPrice: { type: Number, default: 10000 },
+      // FM덴탈 월정액 배송(정상가 구간). 0이면 가입 불가. 관리자 설정.
+      fmDentalMonthlyShippingFee: { type: Number, default: 0 },
       // CNC 티어별 건당 분배(제조사·딜러사·개발운영사). 어벗츠=매출−합계.
       // membership=딜러 있음, regular=딜러 없음. 치과 멤버십/일반 청구 이중가와 무관.
-      // 제조사=고정단가 선차감(기본 8,800). 잔여 비중 기본 딜러30:개발10:어벗츠40 / 없으면 20:80.
-      membershipProductionManufacturerUnitPrice: { type: Number, default: 8800 },
+      // 제조사=판매가×50%(부가세 포함). 정상가 13,000 → 6,500.
+      membershipProductionManufacturerUnitPrice: { type: Number, default: 6500 },
       membershipProductionSalesmanUnitPrice: { type: Number, default: 2325 },
       membershipProductionDevopsUnitPrice: { type: Number, default: 775 },
-      regularProductionManufacturerUnitPrice: { type: Number, default: 8800 },
+      regularProductionManufacturerUnitPrice: { type: Number, default: 6500 },
       regularProductionSalesmanUnitPrice: { type: Number, default: 0 },
       regularProductionDevopsUnitPrice: { type: Number, default: 2240 },
-      membershipDesignAndProductionManufacturerUnitPrice: { type: Number, default: 8800 },
+      membershipDesignAndProductionManufacturerUnitPrice: { type: Number, default: 6500 },
       membershipDesignAndProductionSalesmanUnitPrice: { type: Number, default: 6075 },
       membershipDesignAndProductionDevopsUnitPrice: { type: Number, default: 2025 },
-      regularDesignAndProductionManufacturerUnitPrice: { type: Number, default: 8800 },
+      regularDesignAndProductionManufacturerUnitPrice: { type: Number, default: 6500 },
       regularDesignAndProductionSalesmanUnitPrice: { type: Number, default: 0 },
       regularDesignAndProductionDevopsUnitPrice: { type: Number, default: 6240 },
       // CNC 잔여 분배 비중(%). 제조사 매입=manufacturerSharePercent(판매가 대비, 기본 50).
@@ -111,14 +119,14 @@ const systemSettingsSchema = new mongoose.Schema(
       regularSalesmanSharePercent: { type: Number, default: 0 },
       regularDevopsSharePercent: { type: Number, default: 5 },
       regularAbutsSharePercent: { type: Number, default: 95 },
-      membershipRoundBarProductionPrice: { type: Number, default: 15000 },
-      regularRoundBarProductionPrice: { type: Number, default: 15000 },
+      membershipRoundBarProductionPrice: { type: Number, default: 13000 },
+      regularRoundBarProductionPrice: { type: Number, default: 13000 },
       membershipRoundBarDesignAndProductionPrice: { type: Number, default: 25000 },
       regularRoundBarDesignAndProductionPrice: { type: Number, default: 25000 },
       // 레거시 기공소 어벗생산의뢰 오버레이. 공개 정책은 membership* 고시.
-      labProductionPrice: { type: Number, default: 15000 },
+      labProductionPrice: { type: Number, default: 13000 },
       labDesignAndProductionPrice: { type: Number, default: 25000 },
-      labRoundBarProductionPrice: { type: Number, default: 15000 },
+      labRoundBarProductionPrice: { type: Number, default: 13000 },
       labRoundBarDesignAndProductionPrice: { type: Number, default: 25000 },
       // 의뢰자 BA별 커스텀어벗 판매가 오버라이드. 없으면 플랫폼 판매가.
       // productionPrice=amount(레거시). 매입가는 이 판매가의 50%로 산출.
@@ -150,9 +158,9 @@ const systemSettingsSchema = new mongoose.Schema(
       },
       shippingFee: { type: Number, default: 3500 },
       // 제조사(일반과세) 하청 매입가. 저장값과 무관하게 로드 시 판매가의 50%(부가세 포함).
-      manufacturerRequestUnitPrice: { type: Number, default: 8800 },
+      manufacturerRequestUnitPrice: { type: Number, default: 6500 },
       // 레거시 저장 필드. 정산은 리메이크 구분 없이 판매가의 50%.
-      manufacturerRemakeUnitPrice: { type: Number, default: 6600 },
+      manufacturerRemakeUnitPrice: { type: Number, default: 6500 },
       // 개발운영사 어벗 생산 외주 공급가(1어벗당). 장부=포함가(지급 재가산 없음).
       devopsRequestUnitPrice: { type: Number, default: 775 },
       // 딜러사(salesman BA) 어벗 생산 수수료(1어벗당). 장부=포함가. 없으면 어벗츠 귀속.
@@ -164,7 +172,7 @@ const systemSettingsSchema = new mongoose.Schema(
       // 기공의뢰 신속처리 할증(기공비·어벗츠). 1 초과~2 이하.
       practiceRushFeeMultiplier: { type: Number, default: 1.2, min: 1, max: 2 },
       // 디자인비 (1어벗당). 플랫폼 고시 디자인+생산 − 생산만과 동기화.
-      // 청구 SSOT: membershipProductionPrice 15,000 / membershipDesignAndProductionPrice 25,000
+      // 정상가 SSOT: membershipProductionPrice 13,000 / 이벤트 10,000
       designFee: { type: Number, default: 10000 },
       // 기공의뢰(CA) 수락 기공소 어벗디자인비 지급(1어벗당). designFee(의뢰자 과금)와 분리.
       abutmentDesignLabFee: { type: Number, default: 10000 },

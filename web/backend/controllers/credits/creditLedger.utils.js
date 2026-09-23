@@ -970,6 +970,7 @@ function creditLedgerRowTypeExpr() {
                     "SHIPPING_SPEND_COMMIT",
                     "PRACTICE_TRANSFER_SPEND_COMMIT",
                     "PRACTICE_MEMBERSHIP_SPEND",
+                    "FM_DENTAL_SHIPPING_SPEND",
                   ],
                 ],
               },
@@ -1267,6 +1268,7 @@ const CREDIT_LEDGER_STATS_SPEND_EVENT_TYPES = [
   "PRACTICE_TRANSFER_SPEND_HOLD",
   "PRACTICE_TRANSFER_HOLD_ADJUST",
   "PRACTICE_MEMBERSHIP_SPEND",
+  "FM_DENTAL_SHIPPING_SPEND",
   "STORE_SALE",
 ];
 

@@ -1,3 +1,4 @@
+// - 2026-09-23: 런칭 이벤트 1만 / 정상가 1.3만 · FM덴탈 월정액 배송 선택.
 // - 2026-09-22: 기공소 정책 안내 — 지정 플랫폼 수수료 카피 제거. 하청만.
 // - 2026-09-21: 딜러십 정책 — 90일 주문 없음 시 소개 귀속 리셋 조항.
 // - 2026-09-20: 딜러십 요율 10/15/20% · 가입 당시 요율 적용 안내.
@@ -46,7 +47,7 @@
 // - web/backend/controllers/requests/common.requests.controller.js
 // - web/backend/utils/creditSettingsDefaults.js
 // - web/frontend/src/shared/pricing/abutsAbutmentService.ts
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -54,21 +55,27 @@ import {
   DialogTitle,
   DialogDescription
 } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
 import { useRequestorBusinessAccess } from '@/shared/business/useRequestorBusinessAccess';
 import {
   CREDIT_SETTINGS_DEFAULTS,
   useSystemSettings
 } from '@/hooks/useSystemSettings';
 import {
+  ABUTS_ABUTMENT_LAUNCH_EVENT_PRODUCTION_PRICE,
   ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
   formatAbutsAbutmentServiceWon,
-  formatAbutsManwon
+  formatAbutsManwon,
+  resolveCustomAbutmentProductionPriceForAt
 } from '@/shared/pricing/abutsAbutmentService';
 import { LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE } from '@/shared/settlement/labPayoutBankbook';
 import { useLabTradingPartnerWindow } from '@/shared/lab/useLabTradingPartnerWindow';
 import {
   REFERRAL_OWNERSHIP_RESET_POLICY_LINE,
 } from '@/shared/sales/dealershipPolicyCopy';
+import { apiFetch } from '@/shared/api/apiClient';
+import { useAuthStore } from '@/store/useAuthStore';
+import { useToast } from '@/shared/hooks/use-toast';
 
 type Props = {
   open: boolean;
@@ -191,36 +198,165 @@ export const PricingPolicyDialog = ({
   const eventPct = Math.max(0, Math.round(Number(dealershipEventPct) || 20));
   const eventOn = dealershipEventEnabled !== false;
   const effectivePct = eventOn ? eventPct : basePct;
+  const credit = systemSettings?.creditSettings;
+  const launchResolved = resolveCustomAbutmentProductionPriceForAt(new Date(), {
+    membershipProductionPrice:
+      credit?.membershipProductionPrice ??
+      ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
+    customAbutmentLaunchEventEnabled: credit?.customAbutmentLaunchEventEnabled,
+    customAbutmentLaunchEventStartedAt: credit?.customAbutmentLaunchEventStartedAt,
+    customAbutmentLaunchEventEndedAt: credit?.customAbutmentLaunchEventEndedAt,
+    customAbutmentLaunchEventProductionPrice:
+      credit?.customAbutmentLaunchEventProductionPrice ??
+      ABUTS_ABUTMENT_LAUNCH_EVENT_PRODUCTION_PRICE,
+  });
   const productionPrice = Math.max(
     0,
     Number(
-      systemSettings?.creditSettings?.membershipProductionPrice ??
-        ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE
-    ) || ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE
+      credit?.effectiveProductionPrice ??
+        launchResolved.price ??
+        ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
+    ) || ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
   );
+  const regularPrice = Math.max(
+    0,
+    Number(
+      credit?.membershipProductionPrice ??
+        ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
+    ) || ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
+  );
+  const eventPrice = Math.max(
+    0,
+    Number(
+      credit?.customAbutmentLaunchEventProductionPrice ??
+        ABUTS_ABUTMENT_LAUNCH_EVENT_PRODUCTION_PRICE,
+    ) || ABUTS_ABUTMENT_LAUNCH_EVENT_PRODUCTION_PRICE,
+  );
+  const isLaunchEvent = launchResolved.tier === 'event';
   const shippingFee = Math.max(
     0,
     Number(
-      systemSettings?.creditSettings?.shippingFee ??
-        CREDIT_SETTINGS_DEFAULTS.shippingFee
-    ) || CREDIT_SETTINGS_DEFAULTS.shippingFee
+      credit?.shippingFee ?? CREDIT_SETTINGS_DEFAULTS.shippingFee,
+    ) || CREDIT_SETTINGS_DEFAULTS.shippingFee,
   );
   const expressFee = Math.max(
     0,
     Number(
-      systemSettings?.creditSettings?.expressFee ??
-        CREDIT_SETTINGS_DEFAULTS.expressFee
-    ) || CREDIT_SETTINGS_DEFAULTS.expressFee
+      credit?.expressFee ?? CREDIT_SETTINGS_DEFAULTS.expressFee,
+    ) || CREDIT_SETTINGS_DEFAULTS.expressFee,
+  );
+  const fmMonthlyFee = Math.max(
+    0,
+    Number(credit?.fmDentalMonthlyShippingFee ?? 0) || 0,
   );
   const subcontractFeePct = Math.round(
     Number(labFeeWindow?.feeRates?.subcontractFeeRate ?? 0.05) * 100,
   );
+  const token = useAuthStore((s) => s.token);
+  const { toast } = useToast();
+  const [fmState, setFmState] = useState<{
+    active: boolean;
+    cancelAtPeriodEnd: boolean;
+    nextBillingAt: string | null;
+    monthlyFee: number;
+    joinAllowed: boolean;
+    busy: boolean;
+  }>({
+    active: false,
+    cancelAtPeriodEnd: false,
+    nextBillingAt: null,
+    monthlyFee: fmMonthlyFee,
+    joinAllowed: false,
+    busy: false,
+  });
 
   useEffect(() => {
     if (!open) return;
     void refetchSystemSettings();
     if (isLab) void refreshLabFeeWindow();
   }, [open, isLab, refetchSystemSettings, refreshLabFeeWindow]);
+
+  useEffect(() => {
+    if (!open || variant !== 'default' || !token) return;
+    let cancelled = false;
+    void (async () => {
+      const res = await apiFetch<{
+        success?: boolean;
+        data?: {
+          fmDentalShippingActive?: boolean;
+          fmDentalShippingCancelAtPeriodEnd?: boolean;
+          fmDentalShippingNextBillingAt?: string | null;
+          monthlyFee?: number;
+          joinAllowed?: boolean;
+        };
+      }>({
+        path: '/api/businesses/me/fm-dental-shipping',
+        method: 'GET',
+        token,
+      });
+      if (cancelled || !res.ok) return;
+      const data = res.data?.data;
+      setFmState((prev) => ({
+        ...prev,
+        active: Boolean(data?.fmDentalShippingActive),
+        cancelAtPeriodEnd: Boolean(data?.fmDentalShippingCancelAtPeriodEnd),
+        nextBillingAt: data?.fmDentalShippingNextBillingAt ?? null,
+        monthlyFee: Math.max(0, Number(data?.monthlyFee ?? fmMonthlyFee) || 0),
+        joinAllowed: data?.joinAllowed !== false && !isLaunchEvent,
+      }));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, variant, token, fmMonthlyFee, isLaunchEvent]);
+
+  const setFmDentalShipping = async (active: boolean) => {
+    if (!token || fmState.busy) return;
+    setFmState((prev) => ({ ...prev, busy: true }));
+    try {
+      const res = await apiFetch<{
+        success?: boolean;
+        message?: string;
+        data?: {
+          fmDentalShippingActive?: boolean;
+          fmDentalShippingCancelAtPeriodEnd?: boolean;
+          fmDentalShippingNextBillingAt?: string | null;
+          monthlyFee?: number;
+        };
+      }>({
+        path: '/api/businesses/me/fm-dental-shipping',
+        method: 'POST',
+        token,
+        body: { active },
+      });
+      if (!res.ok) {
+        toast({
+          title: active ? '가입 실패' : '해지 실패',
+          description:
+            (res.data as { message?: string } | undefined)?.message ||
+            '다시 시도해 주세요.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      const data = res.data?.data;
+      setFmState((prev) => ({
+        ...prev,
+        active: Boolean(data?.fmDentalShippingActive),
+        cancelAtPeriodEnd: Boolean(data?.fmDentalShippingCancelAtPeriodEnd),
+        nextBillingAt: data?.fmDentalShippingNextBillingAt ?? null,
+        monthlyFee: Math.max(
+          0,
+          Number(data?.monthlyFee ?? prev.monthlyFee) || 0,
+        ),
+      }));
+      toast({
+        title: res.data?.message || (active ? '가입했습니다.' : '해지 예약했습니다.'),
+      });
+    } finally {
+      setFmState((prev) => ({ ...prev, busy: false }));
+    }
+  };
 
   const title =
     variant === 'devops'
@@ -263,14 +399,14 @@ export const PricingPolicyDialog = ({
                   <span className='font-semibold text-slate-900'>
                     {eventOn ? eventPct : basePct}%
                   </span>
-                  ). 배송비 제외.
+                  ). 배송비·월정액 배송 제외.
                 </p>
                 <BulletList
                   items={[
                     eventOn
                       ? `이벤트 기간인 지금은 ${eventPct}%. 요율 변경 예약으로 15%·10% 조정이 가능합니다.`
                       : `현재 표준 요율 ${basePct}%.`,
-                    '대상: 심플웨이(스토어) · 커스텀어벗',
+                    '대상: 심플웨이(스토어) · 커스텀어벗(런칭 1만 / 정상 1.3만)',
                     '소개 관계: 의뢰자 가입 시 입력한 딜러 코드',
                     REFERRAL_OWNERSHIP_RESET_POLICY_LINE,
                   ]}
@@ -283,7 +419,9 @@ export const PricingPolicyDialog = ({
                   <span className='font-semibold text-slate-900'>
                     수신자(치과 또는 기공소)
                   </span>
-                  가 부담합니다. 딜러 수수료 산정에서 배송비는 제외됩니다.
+                  가 부담합니다. 런칭 이벤트는 박스당 배송비, 정상가는 박스당 또는
+                  FM덴탈 월정액 배송 중 선택합니다. 딜러 수수료 산정에서 배송비·월정액은
+                  제외됩니다.
                 </p>
               </PolicySection>
 
@@ -345,6 +483,13 @@ export const PricingPolicyDialog = ({
                     }
                     value={formatAbutsManwon(productionPrice)}
                     unitLabel='1개당'
+                    secondaryValue={
+                      isLaunchEvent
+                        ? `런칭 이벤트 가격 (정상가는 ${formatAbutsManwon(regularPrice)})`
+                        : eventPrice !== regularPrice
+                          ? `이벤트 시 ${formatAbutsManwon(eventPrice)}`
+                          : undefined
+                    }
                   />
                   <div className='h-px bg-slate-100' />
                   <PriceRow
@@ -353,11 +498,65 @@ export const PricingPolicyDialog = ({
                     unitLabel='1개당'
                   />
                   <div className='h-px bg-slate-100' />
-                  <PriceRow
-                    label='배송비'
-                    value={formatAbutsAbutmentServiceWon(shippingFee)}
-                    unitLabel='1박스당'
-                  />
+                  {isLaunchEvent || fmState.active ? (
+                    <PriceRow
+                      label='배송비'
+                      value={
+                        fmState.active
+                          ? '월정액 포함'
+                          : formatAbutsAbutmentServiceWon(shippingFee)
+                      }
+                      unitLabel={fmState.active ? undefined : '1박스당'}
+                      note={
+                        fmState.active
+                          ? 'FM덴탈 월정액 배송 이용 중'
+                          : '런칭 이벤트 기간 · 박스당 배송비'
+                      }
+                    />
+                  ) : (
+                    <div className='space-y-2'>
+                      <div className='text-sm text-slate-600'>배송 (둘 중 선택)</div>
+                      <PriceRow
+                        label='박스당 배송비'
+                        value={formatAbutsAbutmentServiceWon(shippingFee)}
+                        unitLabel='1박스당'
+                      />
+                      <PriceRow
+                        label='FM덴탈 월정액 배송'
+                        value={
+                          fmState.monthlyFee > 0
+                            ? formatAbutsAbutmentServiceWon(fmState.monthlyFee)
+                            : '관리자 설정 후'
+                        }
+                        unitLabel={fmState.monthlyFee > 0 ? '매월' : undefined}
+                        note='가입 시 박스 배송비 0원'
+                        noteAction={
+                          variant === 'default' && !isLab ? (
+                            <Button
+                              type='button'
+                              size='sm'
+                              variant={fmState.active ? 'outline' : 'default'}
+                              disabled={
+                                fmState.busy ||
+                                (!fmState.active &&
+                                  (!fmState.joinAllowed ||
+                                    fmState.monthlyFee <= 0))
+                              }
+                              onClick={() =>
+                                void setFmDentalShipping(!fmState.active)
+                              }
+                            >
+                              {fmState.active
+                                ? fmState.cancelAtPeriodEnd
+                                  ? '해지 예약됨'
+                                  : '해지 예약'
+                                : '가입'}
+                            </Button>
+                          ) : undefined
+                        }
+                      />
+                    </div>
+                  )}
                   <div className='h-px bg-slate-100' />
                   <div className='space-y-1.5'>
                     <div className='text-sm text-slate-600'>리메이크</div>
@@ -379,6 +578,7 @@ export const PricingPolicyDialog = ({
                     </div>
                     <p className='text-xs leading-relaxed text-slate-500'>
                       치과→기공소: 기공소 설정 무료 리메이크 기간(년) 이내.
+                      <br />
                       어벗츠: 동일 치과·환자·치식·최근 180일.
                     </p>
                   </div>
