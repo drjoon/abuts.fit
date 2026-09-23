@@ -42,20 +42,11 @@ export const Navigation = ({ tone = "dark", overlay = false }: NavigationProps) 
   /** 라이트 톤은 오버레이여도 어두운 글자 유지(밝은 히어로 위). */
   const isLight = tone === "light";
 
-  const toNavItem = (offer: (typeof landingOffers)[number]): NavMenuItem => ({
+  /** 심플웨이 · 기공사업부 · 이벤트 */
+  const menuItems: NavMenuItem[] = landingOffers.map((offer) => ({
     label: offer.navLabel,
     href: offerPath(offer.slug),
-  });
-  const platformOffer = landingOffers.find((offer) => offer.slug === "platform");
-  const connectedItems = landingOffers
-    .filter((offer) => offer.slug !== "platform")
-    .map(toNavItem);
-  /** 플랫폼이 심플웨이·커스텀어벗·기공사업부를 연결한다. */
-  const platformItem = platformOffer ? toNavItem(platformOffer) : null;
-  const showConnectedNav = Boolean(platformItem) && connectedItems.length > 0;
-  const menuItems: NavMenuItem[] = showConnectedNav
-    ? []
-    : landingOffers.map(toNavItem);
+  }));
   const eventsItem: NavMenuItem = { label: "이벤트", href: "/events" };
 
   useEffect(() => {
@@ -254,29 +245,22 @@ export const Navigation = ({ tone = "dark", overlay = false }: NavigationProps) 
 
           {/* lg 미만은 햄버거 — 중간 폭에서 메뉴·인사말이 줄바꿈/겹치지 않게 */}
           <div className="hidden shrink-0 items-center gap-3 lg:flex xl:gap-6">
-            {showConnectedNav && platformItem ? (
-              <>
-                {renderDesktopItem(platformItem)}
-                <span
-                  className={cn(
-                    "shrink-0 select-none text-xl font-medium leading-none",
-                    isLight ? "text-slate-900" : "text-white",
-                  )}
-                  aria-hidden
-                >
-                  +
-                </span>
-                <div
-                  className="flex items-center gap-3 xl:gap-4"
-                  role="group"
-                  aria-label="플랫폼이 연결하는 메뉴"
-                >
-                  {connectedItems.map(renderDesktopItem)}
-                </div>
-              </>
-            ) : (
-              menuItems.map(renderDesktopItem)
-            )}
+            {menuItems.map((item, index) => (
+              <span key={item.href} className="flex items-center gap-3 xl:gap-4">
+                {index > 0 ? (
+                  <span
+                    className={cn(
+                      "shrink-0 select-none text-xl font-medium leading-none",
+                      isLight ? "text-slate-900" : "text-white",
+                    )}
+                    aria-hidden
+                  >
+                    +
+                  </span>
+                ) : null}
+                {renderDesktopItem(item)}
+              </span>
+            ))}
             <span
               className={cn(
                 "shrink-0 select-none text-xl font-medium leading-none",
@@ -370,23 +354,20 @@ export const Navigation = ({ tone = "dark", overlay = false }: NavigationProps) 
             onClick={() => setIsOpen(false)}
           />
           <div className="fixed inset-x-0 top-14 z-[60] border-b border-slate-200 bg-white px-4 pb-5 pt-4 shadow-[0_18px_40px_rgba(2,4,12,0.35)] lg:hidden">
-            {showConnectedNav && platformItem ? (
-              <>
-                {renderMobileItem(platformItem)}
-                <div
-                  className="flex items-center gap-2 px-2 py-1 text-slate-400"
-                  aria-hidden
-                >
-                  <span className="text-base font-light leading-none">+</span>
-                  <span className="h-px flex-1 bg-slate-200" />
-                </div>
-                <div role="group" aria-label="플랫폼이 연결하는 메뉴">
-                  {connectedItems.map(renderMobileItem)}
-                </div>
-              </>
-            ) : (
-              menuItems.map(renderMobileItem)
-            )}
+            {menuItems.map((item, index) => (
+              <div key={item.href}>
+                {index > 0 ? (
+                  <div
+                    className="flex items-center gap-2 px-2 py-1 text-slate-400"
+                    aria-hidden
+                  >
+                    <span className="text-base font-light leading-none">+</span>
+                    <span className="h-px flex-1 bg-slate-200" />
+                  </div>
+                ) : null}
+                {renderMobileItem(item)}
+              </div>
+            ))}
             <div
               className="flex items-center gap-2 px-2 py-1 text-slate-400"
               aria-hidden

@@ -7,13 +7,13 @@ import { getLandingOffer } from "@/features/landing/landingOffers";
 import { landingHome } from "@/features/landing/landingTheme";
 import { cn } from "@/shared/ui/cn";
 
-/** 로그인·가입 왼쪽 안내. 카피는 랜딩 히어로·플랫폼 오퍼와 같게 둔다. */
+/** 로그인·가입 왼쪽 안내. 카피는 랜딩 히어로·심플웨이 오퍼와 같게 둔다. */
 export function AuthMarketingPanel({
   align = "left",
 }: {
   align?: "left" | "center";
 }) {
-  const platform = getLandingOffer("platform");
+  const simpleWay = getLandingOffer("simple-way");
 
   return (
     <section
@@ -37,16 +37,16 @@ export function AuthMarketingPanel({
           {landingHome.heroSupport}
         </p>
       </div>
-      {platform ? (
+      {simpleWay ? (
         <div className="hidden rounded-2xl border border-white/15 bg-white/5 p-6 backdrop-blur lg:block">
           <p className="text-xs tracking-[0.12em] text-white/60">
-            {platform.navLabel}
+            {simpleWay.navLabel}
           </p>
           <p className="mt-2 text-2xl font-semibold text-white">
-            {platform.punch}
+            {simpleWay.punch}
           </p>
           <p className="mt-2 text-sm leading-relaxed text-white/70">
-            {platform.line}
+            {simpleWay.line}
           </p>
         </div>
       ) : null}

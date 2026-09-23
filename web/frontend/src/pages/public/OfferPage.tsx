@@ -4,12 +4,20 @@
 // - web/frontend/src/features/landing/landingOffers.ts
 import { Navigate, useParams } from "react-router-dom";
 import { LandingOfferPage } from "@/features/landing/LandingOfferPage";
-import { getLandingOffer } from "@/features/landing/landingOffers";
+import {
+  getLandingOffer,
+  LEGACY_OFFER_REDIRECTS,
+  offerPath,
+} from "@/features/landing/landingOffers";
 import { PublicPageLayout } from "./components/PublicPageLayout";
 
-/** `/offer/:slug` — 헤더(플랫폼 + 연결 메뉴)의 상세 설명 */
+/** `/offer/:slug` — 헤더(심플웨이 · 기공사업부 · 이벤트)의 상세 설명 */
 const OfferPage = () => {
   const { slug } = useParams();
+  const legacyTarget = slug ? LEGACY_OFFER_REDIRECTS[slug] : undefined;
+  if (legacyTarget) {
+    return <Navigate to={offerPath(legacyTarget)} replace />;
+  }
   const offer = getLandingOffer(slug);
   if (!offer) return <Navigate to="/" replace />;
 

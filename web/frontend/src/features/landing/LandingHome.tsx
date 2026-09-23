@@ -19,7 +19,7 @@ import {
 import { landingOffers, offerPath } from "./landingOffers";
 import { OfferVisual } from "./OfferVisual";
 
-/** `/` 둘러보기. 플랫폼 1열, 나머지 3열. */
+/** `/` 둘러보기. 심플웨이 · 기공사업부 2열. */
 const TILE_FRAME = "min-h-[20rem] lg:min-h-[24rem]";
 
 function usePrefersReducedMotion() {
@@ -109,47 +109,14 @@ export function LandingHome() {
         <div
           className={cn(
             landingContent,
-            "grid grid-cols-1 gap-5 sm:gap-6 lg:grid-cols-3",
+            "grid grid-cols-1 gap-5 sm:gap-6 lg:grid-cols-2",
           )}
         >
           {landingOffers.map((offer) => {
             const frame = cn(
               "group relative block overflow-hidden rounded-[1.5rem] bg-[#e7e9ee] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900",
               TILE_FRAME,
-              offer.slug === "platform" &&
-                "lg:col-span-3 h-[22rem] sm:h-[26rem] lg:h-[32rem] lg:min-h-0",
             );
-            const caption = (
-              <>
-                <p className="text-base font-medium text-white/85 sm:text-lg">
-                  {offer.navLabel}
-                </p>
-                <h2 className="mt-2 text-3xl font-semibold tracking-tight text-white sm:text-4xl">
-                  {offer.punch}
-                </h2>
-                <p className="mt-2 max-w-md text-base leading-snug text-white/90 sm:text-lg">
-                  {offer.line}
-                </p>
-              </>
-            );
-            const captionClass =
-              "absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-6 pb-6 pt-20 sm:px-8 sm:pb-7";
-
-            if (offer.slug === "platform") {
-              return (
-                <div key={offer.slug} className={frame}>
-                  <OfferVisual
-                    visual={offer.tile}
-                    tile
-                    className="h-full min-h-0"
-                  />
-                  <Link to={offerPath(offer.slug)} className={captionClass}>
-                    {caption}
-                  </Link>
-                </div>
-              );
-            }
-
             return (
               <Link
                 key={offer.slug}
@@ -163,8 +130,16 @@ export function LandingHome() {
                     className="h-full min-h-0"
                   />
                 </div>
-                <div className={cn(captionClass, "pointer-events-none")}>
-                  {caption}
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-6 pb-6 pt-20 sm:px-8 sm:pb-7">
+                  <p className="text-base font-medium text-white/85 sm:text-lg">
+                    {offer.navLabel}
+                  </p>
+                  <h2 className="mt-2 text-3xl font-semibold tracking-tight text-white sm:text-4xl">
+                    {offer.punch}
+                  </h2>
+                  <p className="mt-2 max-w-md text-base leading-snug text-white/90 sm:text-lg">
+                    {offer.line}
+                  </p>
                 </div>
               </Link>
             );

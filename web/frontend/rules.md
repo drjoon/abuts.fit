@@ -100,7 +100,8 @@ Notes:
   - `src/pages/public/Index.tsx` — 홈 히어로 + 오퍼 타일 + 스토리 밴드
   - `src/pages/public/OfferPage.tsx` — 오퍼 상세 (`landingOffers` · `LandingOfferPage`)
   - `src/pages/public/EventsPage.tsx` — 이벤트 목록 (랜딩 톤)
-  - `src/pages/public/PlatformPage.tsx` — 레거시 `/platform` → `/offer/platform` 리다이렉트
+  - `src/pages/public/PlatformPage.tsx` — 레거시 `/platform` → `/offer/simple-way` 리다이렉트
+  - 메뉴: 심플웨이 · 기공사업부 · 이벤트 (`landingOffers` 2개 + `/events`). 플랫폼·커스텀어벗 내용은 두 오퍼에 합침. 레거시 `/offer/platform`→심플웨이, `/offer/custom-abutment`→기공사업부.
   - `src/pages/public/AboutPage.tsx` — 레거시 `/about` → `/` 리다이렉트
   - `PublicPageLayout` 기본 `tone="light"` (랜딩·도움말·약관·문의 등 공개 안내 공통)
   - 카드/타이포 SSOT: `PUBLIC_CARD_CLASS` · `PUBLIC_PAGE_EYEBROW` · `PUBLIC_PAGE_TITLE` · `PUBLIC_PAGE_SUBTITLE`

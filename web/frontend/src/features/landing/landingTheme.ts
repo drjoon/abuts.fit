@@ -136,11 +136,11 @@ export const landingSectionY = {
   sceneMin: "min-h-[56vh] sm:min-h-[62vh]",
 } as const;
 
-/** `/` 히어로. 네 메뉴 카피는 `landingOffers.ts`. */
+/** `/` 히어로. 메뉴 카피는 `landingOffers.ts`(심플웨이 · 기공사업부 · 이벤트). */
 export const landingHome = {
   heroTitle: "심플웨이를 시작으로.",
   heroBody: "의뢰하고, 깎고, 기공합니다.",
-  heroSupport: "플랫폼이 모두를 이어줍니다.",
+  heroSupport: "같은 화면이 모두를 이어줍니다.",
   ctaStart: "시작하기",
   storiesHeading: "한 흐름으로.",
   storiesLead: "제품에서 의뢰, 가공, 기공까지.",
@@ -163,10 +163,10 @@ export type LandingHomeStory = {
 export const landingHomeStories: LandingHomeStory[] = [
   {
     title: "심플웨이로 하루를 엽니다.",
-    line: "힐링을 심고, 스캔하면 보철이 이어집니다.",
+    line: "힐링을 심고, 스캔하면 보철·커스텀이 이어집니다.",
     body: [
       "식립 뒤 치은을 짧게 잡고, 구강 스캔을 올리면 됩니다.",
-      "심플어벗 규격을 고르면 같은 의뢰서에서 보철 기공으로 넘어갑니다.",
+      "심플어벗 규격을 고르거나, 필요하면 커스텀어벗으로 CNC가 이어집니다.",
       "아침에 올린 케이스가 저녁에도 어디쯤인지, 화면만 보면 압니다.",
     ],
     image: {
@@ -176,44 +176,16 @@ export const landingHomeStories: LandingHomeStory[] = [
     href: "/offer/simple-way",
   },
   {
-    title: "전화 대신, 같은 화면.",
-    line: "의뢰·작업시작·출고·정산이 한곳에 남습니다.",
-    body: [
-      "‘어디까지 됐지?’를 묻느라 자리를 비울 일이 줄어듭니다.",
-      "치과와 기공소가 같은 의뢰서를 보고, 채팅도 그 옆에서 합니다.",
-      "크레딧으로 결제하고, 쓴 만큼만 월말에 계산서가 나갑니다.",
-    ],
-    image: {
-      src: "/landing/platform-board.jpg",
-      alt: "플랫폼 의뢰 진행 화면",
-    },
-    href: "/offer/platform",
-  },
-  {
     title: "깎고, 이어서 기공합니다.",
-    line: "디자인이 올라오면 CNC가 돌고, 보철이 이어집니다.",
+    line: "커스텀어벗 다음, 기공사업부가 보철을 올립니다.",
     body: [
-      "커스텀어벗은 건마다 같은 자동화 공정을 거쳐 기공소로 도착합니다.",
+      "디자인이 올라오면 CNC가 돌고, 어벗이 기공소로 도착합니다.",
       "어벗츠 기공사업부가 그 위에 보철을 올리고, 치과로 한 번에 보냅니다.",
-      "만드는 손이 달라도, 흐름은 끊기지 않습니다.",
+      "의뢰·작업시작·출고·정산이 같은 화면에 남습니다.",
     ],
     image: {
       src: "/landing/custom-abutment-product.jpg",
       alt: "커스텀 어벗 실물",
-    },
-    href: "/offer/custom-abutment",
-  },
-  {
-    title: "모두가 이어집니다.",
-    line: "치과, 기공소, 제조가 한 네트워크에.",
-    body: [
-      "심플웨이 제품부터 커스텀어벗, 보철 기공까지 같은 플랫폼 위에 있습니다.",
-      "따로 쓰던 메신저와 엑셀을 줄이고, 진행과 돈이 같은 기록에 남습니다.",
-      "환자를 위한 하루가, 조금 더 조용해지도록.",
-    ],
-    image: {
-      src: "/landing/store-shelf.jpg",
-      alt: "어벗츠 스토어 제품",
     },
     href: "/offer/lab",
   },
