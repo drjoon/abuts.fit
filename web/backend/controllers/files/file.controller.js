@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-24: PracticeTransfer S3 ACL — 수행 기공소(assigneeLabAnchorId)도 허용(협력·하청).
 // - 2026-08-16: PracticeTransfer ACL — designFiles/resultFiles s3Key도 허용(구강스캔 lock은 files만).
 // - 2026-08-15: 기공소 CA — 어벗츠 디자인 전 PracticeTransfer 구강스캔 S3 다운로드 차단.
 // - 2026-08-10: 디자인 파트너가 Request caseInfos 파일 S3 키 다운로드 가능.
@@ -787,7 +788,7 @@ const canUserAccessS3Key = async (req, key) => {
 
   // PracticeTransfer 파일 접근 허용
   // - practice 전송자(작성자)
-  // - 전송 대상 기공소(동일 businessAnchor) — CA면 어벗츠 디자인 도착 후만 구강스캔(files만)
+  // - 원청(targetLab) · 수행 기공소(assigneeLab, 협력·하청) — CA면 어벗츠 디자인 도착 후만 구강스캔(files만)
   const practiceTransfer = await PracticeTransfer.findOne({
     $or: [
       { "files.file.s3Key": key },
@@ -799,6 +800,7 @@ const canUserAccessS3Key = async (req, key) => {
       practiceUserId: 1,
       practiceBusinessAnchorId: 1,
       targetLabAnchorId: 1,
+      assigneeLabAnchorId: 1,
       toothWorks: 1,
       production: 1,
       files: 1,
@@ -817,6 +819,11 @@ const canUserAccessS3Key = async (req, key) => {
       !!currentAnchorId &&
       currentAnchorId === String(practiceTransfer?.targetLabAnchorId || "").trim();
 
+    const isAssigneeLabMember =
+      !!currentAnchorId &&
+      currentAnchorId ===
+        String(practiceTransfer?.assigneeLabAnchorId || "").trim();
+
     const isPracticeBusinessMember =
       !!currentAnchorId &&
       currentAnchorId === String(practiceTransfer?.practiceBusinessAnchorId || "").trim();
@@ -824,7 +831,7 @@ const canUserAccessS3Key = async (req, key) => {
     if (isPracticeOwner || isPracticeBusinessMember) {
       return true;
     }
-    if (isTargetLabMember) {
+    if (isTargetLabMember || isAssigneeLabMember) {
       const isOralScanKey = (Array.isArray(practiceTransfer?.files)
         ? practiceTransfer.files
         : []
