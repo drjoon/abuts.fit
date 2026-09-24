@@ -8,11 +8,14 @@ import { useNavigate } from "react-router-dom";
 import {
   ArrowRight,
   Box,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Cpu,
   Crown,
   FileText,
+  HelpCircle,
+  MapPin,
   Play,
   Receipt,
   ScanLine,
@@ -20,6 +23,7 @@ import {
   ShoppingBag,
   Sparkles,
   Truck,
+  Waypoints,
   Wrench,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -45,6 +49,8 @@ import { OfferVisual } from "./OfferVisual";
 import {
   type LandingOffer,
   type OfferBuy,
+  type OfferGlance,
+  type OfferGlossary,
   type OfferIcon,
   type OfferVisual as OfferVisualModel,
 } from "./landingOffers";
@@ -170,6 +176,115 @@ function SectionEyebrow({
 }) {
   return (
     <p className={cn(TYPO.eyebrow, SKY.accent, className)}>{children}</p>
+  );
+}
+
+const GLANCE_ICONS = [HelpCircle, Waypoints, ShieldCheck] as const;
+
+function GlanceSection({ glance }: { glance: OfferGlance }) {
+  return (
+    <section className={cn(SKY.band, landingSectionY.bandTight)}>
+      <div className={landingContent}>
+        <div className="mx-auto max-w-2xl text-center">
+          <SectionEyebrow>AT A GLANCE</SectionEyebrow>
+          <h2 className={cn(TYPO.h2, "mt-2.5 break-keep", SKY.ink)}>
+            {glance.title}
+          </h2>
+          <Lines lines={glance.lead} className={cn("mt-2.5", TYPO.lead)} />
+        </div>
+        <ul className="mt-8 grid gap-3 sm:mt-10 sm:grid-cols-3 lg:gap-4">
+          {glance.items.map((item, index) => {
+            const Icon = GLANCE_ICONS[index] ?? HelpCircle;
+            return (
+              <li
+                key={item.label}
+                className={cn(SKY.card, "bg-white px-4 py-5 sm:px-5 sm:py-6")}
+              >
+                <span
+                  className={cn(
+                    "flex h-9 w-9 items-center justify-center rounded-full",
+                    "bg-[#eef6ff] text-[#2563eb]",
+                  )}
+                >
+                  <Icon className="h-4 w-4" aria-hidden />
+                </span>
+                <p className={cn("mt-4 text-[12px] font-semibold", SKY.accent)}>
+                  {item.label}
+                </p>
+                <h3
+                  className={cn(
+                    "mt-1.5 break-keep text-base font-semibold tracking-tight sm:text-lg",
+                    SKY.ink,
+                  )}
+                >
+                  {item.title}
+                </h3>
+                <p className={cn("mt-2", TYPO.body)}>{item.body}</p>
+              </li>
+            );
+          })}
+        </ul>
+        <div
+          className={cn(
+            "mt-4 flex items-start gap-3 rounded-2xl border border-sky-100 bg-white/80 px-4 py-4 sm:mt-5 sm:items-center sm:px-5",
+          )}
+        >
+          <MapPin
+            className={cn("mt-0.5 h-4 w-4 shrink-0 sm:mt-0", SKY.accentStrong)}
+            aria-hidden
+          />
+          <p className={cn("text-[14px] font-semibold tracking-tight", SKY.ink)}>
+            {glance.summary}
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function GlossarySection({ glossary }: { glossary: OfferGlossary }) {
+  return (
+    <section className={cn("bg-white", landingSectionY.bandTight)}>
+      <div className={landingContent}>
+        <div className="mx-auto max-w-2xl text-center">
+          <SectionEyebrow>GLOSSARY</SectionEyebrow>
+          <h2 className={cn(TYPO.h2, "mt-2.5 break-keep", SKY.ink)}>
+            {glossary.title}
+          </h2>
+          <p className={cn("mt-2.5", TYPO.lead)}>{glossary.lead}</p>
+        </div>
+        <ul className="mt-8 grid gap-3 sm:mt-10 sm:grid-cols-2 lg:grid-cols-3 lg:gap-4">
+          {glossary.items.map((item) => (
+            <li
+              key={item.term}
+              className={cn(SKY.card, "px-4 py-5 sm:px-5 sm:py-6")}
+            >
+              <div className="flex items-start gap-3">
+                <span
+                  className={cn(
+                    "mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full",
+                    "bg-[#eef6ff] text-[#2563eb]",
+                  )}
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
+                </span>
+                <div>
+                  <h3
+                    className={cn(
+                      "break-keep text-[15px] font-semibold tracking-tight sm:text-base",
+                      SKY.ink,
+                    )}
+                  >
+                    {item.term}
+                  </h3>
+                  <p className={cn("mt-1.5", TYPO.body)}>{item.line}</p>
+                </div>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
   );
 }
 
@@ -1010,6 +1125,7 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
         </section>
       )}
 
+      {offer.glance ? <GlanceSection glance={offer.glance} /> : null}
       {offer.guides ? <StoryRows stories={offer.guides} /> : null}
       {offer.flowChart ? <FlowChartSection chart={offer.flowChart} /> : null}
 
@@ -1119,6 +1235,8 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
           </div>
         </section>
       ) : null}
+
+      {offer.glossary ? <GlossarySection glossary={offer.glossary} /> : null}
 
       {offer.faq ? (
         <section
