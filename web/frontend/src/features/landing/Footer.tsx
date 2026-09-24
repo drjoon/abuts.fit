@@ -3,8 +3,16 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/features/landing/landingTheme.ts
+import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
-import { Mail, Phone, MapPin, Instagram, Facebook } from "lucide-react";
+import {
+  Mail,
+  Phone,
+  MapPin,
+  Instagram,
+  Facebook,
+  ChevronDown,
+} from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import {
   COMPANY_ADDRESS,
@@ -22,12 +30,74 @@ type FooterProps = {
   tone?: "dark" | "light";
 };
 
+type FooterLink = { label: string; href: string };
+
+function FooterLinkGroup({
+  title,
+  links,
+  isLight,
+}: {
+  title: string;
+  links: FooterLink[];
+  isLight: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div
+      className={cn(
+        "border-t md:border-t-0",
+        isLight ? "border-slate-200" : "border-white/10",
+      )}
+    >
+      <button
+        type="button"
+        className="flex w-full items-center justify-between py-3.5 text-left font-semibold md:mb-4 md:cursor-default md:pointer-events-none md:py-0"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+      >
+        <span>{title}</span>
+        <ChevronDown
+          className={cn(
+            "h-4 w-4 shrink-0 transition-transform duration-200 md:hidden",
+            isLight ? "text-slate-500" : "text-white/60",
+            open && "rotate-180",
+          )}
+          aria-hidden
+        />
+      </button>
+      <ul
+        className={cn(
+          "space-y-3 pb-3.5 md:pb-0",
+          open ? "block" : "hidden md:block",
+        )}
+      >
+        {links.map((link) => (
+          <li key={link.label}>
+            <Link
+              to={link.href}
+              className={cn(
+                "transition-colors",
+                isLight
+                  ? "text-slate-500 hover:text-slate-900"
+                  : "text-white/60 hover:text-white",
+              )}
+            >
+              {link.label}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export const Footer = ({ tone = "dark" }: FooterProps) => {
   const isLight = tone === "light";
   const { pathname } = useLocation();
   const landing = pathname === "/" || pathname.startsWith("/offer/");
 
-  const support = [
+  const support: FooterLink[] = [
     { label: "어벗츠 소개", href: "/" },
     { label: "도움말 센터", href: "/help" },
     { label: "이벤트", href: "/#events" },
@@ -35,7 +105,7 @@ export const Footer = ({ tone = "dark" }: FooterProps) => {
     { label: "보안 정책", href: "/security" },
   ];
 
-  const legal = [
+  const legal: FooterLink[] = [
     { label: "이용약관", href: "/terms" },
     { label: "개인정보처리방침", href: "/privacy" },
     { label: "쿠키 정책", href: "/cookies" },
@@ -63,14 +133,14 @@ export const Footer = ({ tone = "dark" }: FooterProps) => {
       <div
         className={cn(
           "mx-auto w-full",
-          landing ? "py-12 sm:py-14" : "py-16",
+          landing ? "py-10 sm:py-14" : "py-12 md:py-16",
           landing ? landingContent : "container px-6 sm:px-10 lg:px-16",
         )}
       >
-        <div className="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 md:gap-8 lg:grid-cols-4">
           <div className="lg:col-span-2">
             <div
-              className="mb-6 flex cursor-pointer items-center"
+              className="mb-4 flex cursor-pointer items-center md:mb-6"
               onClick={() => (window.location.href = "/")}
             >
               <AbutsLogo
@@ -82,7 +152,7 @@ export const Footer = ({ tone = "dark" }: FooterProps) => {
 
             <p
               className={cn(
-                "mb-6 leading-relaxed",
+                "mb-4 leading-relaxed md:mb-6",
                 isLight ? "text-slate-600" : "text-white/70",
               )}
             >
@@ -127,57 +197,18 @@ export const Footer = ({ tone = "dark" }: FooterProps) => {
               </div>
               <div
                 className={cn(
-                  "flex items-center",
+                  "flex items-start",
                   isLight ? "text-slate-600" : "text-white/70",
                 )}
               >
-                <MapPin className="mr-2 h-4 w-4" />
+                <MapPin className="mr-2 mt-0.5 h-4 w-4 shrink-0" />
                 <span>{COMPANY_ADDRESS}</span>
               </div>
             </div>
           </div>
 
-          <div>
-            <h3 className="mb-4 font-semibold">고객 지원</h3>
-            <ul className="space-y-3">
-              {support.map((link) => (
-                <li key={link.label}>
-                  <Link
-                    to={link.href}
-                    className={cn(
-                      "transition-colors",
-                      isLight
-                        ? "text-slate-500 hover:text-slate-900"
-                        : "text-white/60 hover:text-white",
-                    )}
-                  >
-                    {link.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <div>
-            <h3 className="mb-4 font-semibold">약관 및 정책</h3>
-            <ul className="space-y-3">
-              {legal.map((link) => (
-                <li key={link.label}>
-                  <Link
-                    to={link.href}
-                    className={cn(
-                      "transition-colors",
-                      isLight
-                        ? "text-slate-500 hover:text-slate-900"
-                        : "text-white/60 hover:text-white",
-                    )}
-                  >
-                    {link.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
+          <FooterLinkGroup title="고객 지원" links={support} isLight={isLight} />
+          <FooterLinkGroup title="약관 및 정책" links={legal} isLight={isLight} />
         </div>
 
         <div
