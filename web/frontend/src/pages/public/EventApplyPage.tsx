@@ -6,7 +6,7 @@
 // - web/frontend/src/shared/components/business/settings/business/validations.ts
 // - web/frontend/src/pages/public/EventsPage.tsx
 // - web/frontend/src/store/useAuthStore.ts
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import {
   ArrowDown,
@@ -412,6 +412,12 @@ export default function EventApplyPage() {
     user?.businessVerified,
     user?.onboardingWizardCompleted,
   ]);
+
+  // 신청 완료 UI는 짧아서, 폼이 있던 하단 스크롤을 그대로 두면 푸터만 보인다.
+  useLayoutEffect(() => {
+    if (!done && !alreadyApplied) return;
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, [done, alreadyApplied]);
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
