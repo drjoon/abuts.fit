@@ -863,7 +863,7 @@ type PracticeRecentTransfersCalendarProps = {
   search?: string;
   onSearchChange?: (value: string) => void;
   searchPlaceholder?: string;
-  /** 툴바 오른쪽 끝 슬롯 — 그리보 이벤트 CTA 등 */
+  /** 툴바 오른쪽 끝 슬롯 — 어벗츠 출시 행사 CTA 등 */
   toolbarMiddle?: ReactNode;
   hiddenWeekdays: number[];
   onHiddenWeekdaysChange: (next: number[]) => void;

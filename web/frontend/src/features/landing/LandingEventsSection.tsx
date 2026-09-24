@@ -9,7 +9,10 @@ import { Link } from "react-router-dom";
 import { CalendarDays, ChevronRight } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { eventsApi, type MarketingEvent } from "@/shared/events/eventsApi";
-import { SIMPLEWAY_SAMPLE_SLUG } from "@/shared/events/simplewaySampleCampaign";
+import {
+  SIMPLEWAY_EVENT_HEADLINE,
+  SIMPLEWAY_SAMPLE_SLUG,
+} from "@/shared/events/simplewaySampleCampaign";
 import {
   landingContent,
   landingHome,
@@ -17,7 +20,7 @@ import {
 } from "@/features/landing/landingTheme";
 import { cn } from "@/shared/ui/cn";
 
-/** `/` `#events` — 진행 중 행사 목록. 그리보 문구는 EventApplyPage SSOT. */
+/** `/` `#events` — 진행 중 행사 목록. 어벗츠 출시 문구는 simplewaySampleCampaign SSOT. */
 export function LandingEventsSection() {
   const [items, setItems] = useState<MarketingEvent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -73,7 +76,7 @@ export function LandingEventsSection() {
               {items.map((ev) => {
                 const isSimpleway = ev.slug === SIMPLEWAY_SAMPLE_SLUG;
                 const title = isSimpleway
-                  ? "그리보(Gribo) 출시 행사"
+                  ? SIMPLEWAY_EVENT_HEADLINE
                   : ev.title;
                 const meta = isSimpleway ? "출시 행사 신청" : "행사 신청";
                 return (

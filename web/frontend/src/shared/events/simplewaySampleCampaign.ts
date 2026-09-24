@@ -6,33 +6,44 @@
 // - 「샘플 배포」「나눠드림」「피드백 시 우선 초대」 등 조건부 편익·판촉성 샘플 문구 금지.
 // - 공개 문구는 「출시 행사 / 제품 소개 / 방문 안내」로 유지.
 
-/** 심플웨이 신제품 — 그리보(Gribo) 출시 행사 (URL slug) */
-export const SIMPLEWAY_SAMPLE_SLUG = "simpleway-gribo";
+/** 심플웨이 신제품 — 어벗츠 출시 행사 */
+export const SIMPLEWAY_SAMPLE_SLUG = "simpleway-abuts";
+/** 예전 공개 주소. 페이지는 새 slug로 바꾸고, 신청 이력은 서버가 새 slug로 옮긴다. */
+export const SIMPLEWAY_SAMPLE_SLUGS_LEGACY = [
+  "simpleway-gribo",
+  "simpleway-sample-kit",
+] as const;
 export const GRIBO_SAMPLE_SLUG = SIMPLEWAY_SAMPLE_SLUG;
 export const GRIBO_EVENT_HREF = `/events/${SIMPLEWAY_SAMPLE_SLUG}`;
+
+export function resolveSimplewayEventSlug(slug: string) {
+  return (SIMPLEWAY_SAMPLE_SLUGS_LEGACY as readonly string[]).includes(slug)
+    ? SIMPLEWAY_SAMPLE_SLUG
+    : slug;
+}
 
 export const SIMPLEWAY_SAMPLE_KIT = [
   {
     id: "healing-h",
-    name: "그리보 힐링H",
+    name: "어벗츠 힐링H",
     spec: "",
     note: "그립.스캔 힐링 어벗먼트",
   },
   {
     id: "abut-h",
-    name: "그리보 어벗H",
+    name: "어벗츠 어벗H",
     spec: "",
     note: "그립.스캔 기성 어벗먼트",
   },
   {
     id: "custom-abut",
-    name: "그리보 커스텀어벗",
+    name: "어벗츠 커스텀어벗",
     spec: "",
     note: "그립.스캔 커스텀 어벗먼트",
   },
   {
     id: "driver",
-    name: "그리보 드라이버",
+    name: "어벗츠 드라이버",
     spec: "",
     note: "그립 헥스 드라이버",
   },
@@ -42,7 +53,7 @@ export const SIMPLEWAY_SAMPLE_EXTRAS = [
   {
     id: "scan-library",
     title: "힐링 스캔 라이브러리",
-    body: "거래 기공소에 그리보 힐링 스캔 라이브러리를 설치해드립니다. 그리보 어벗H·커스텀어벗과 함께 사용할 수 있습니다.",
+    body: "거래 기공소에 어벗츠 힐링 스캔 라이브러리를 설치해드립니다.\n어벗츠 어벗H·커스텀어벗과 함께 사용할 수 있습니다.",
     tag: "기공소",
   },
   {
@@ -70,7 +81,10 @@ export const SIMPLEWAY_HERO_SUB_LINES = [
 
 export const SIMPLEWAY_HERO_SUB = SIMPLEWAY_HERO_SUB_LINES.join(" ");
 
-export const GRIBO_HERO_EYEBROW = "Gribo Launch";
+export const GRIBO_HERO_EYEBROW = "Abuts Launch";
+
+/** 행사 카드·히어로 큰 제목. 풀 타이틀은 `GRIBO_EVENT_TITLE`. */
+export const SIMPLEWAY_EVENT_HEADLINE = "어벗츠 출시 행사";
 
 export const GRIBO_EVENT_TITLE =
-  "심플웨이 신제품 - 그리보(Gribo) 출시 행사";
+  "심플웨이 신제품 - 어벗츠 출시 행사";

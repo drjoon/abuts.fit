@@ -13,7 +13,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { cn } from "@/shared/ui/cn";
 
 /**
- * 치과 발신(send) 캘린더 툴바 — 검색·필터 오른쪽 끝 그리보 이벤트 CTA.
+ * 치과 발신(send) 캘린더 툴바 — 검색·필터 오른쪽 끝 어벗츠 출시 행사 CTA.
  * 클릭 시 이벤트 신청 페이지를 새 탭으로 연다.
  */
 export function GriboEventToolbarAlert({
@@ -72,7 +72,7 @@ export function GriboEventToolbarAlert({
         <Gift className="h-3.5 w-3.5 shrink-0 text-sky-600" />
       )}
       <span className="min-w-0 truncate">
-        {applied ? "그리보 이벤트 신청 완료" : "그리보 이벤트 신청하기"}
+        {applied ? "어벗츠 이벤트 신청 완료" : "어벗츠 이벤트 신청하기"}
       </span>
       <ChevronRight className="ml-auto h-3.5 w-3.5 shrink-0 opacity-60 transition-transform group-hover:translate-x-0.5" />
     </a>

@@ -10,23 +10,23 @@ import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { searchKakaoPlaces } from "../../services/kakaoPlaceSearch.service.js";
 import { syncPracticeUsesOralScan } from "../businesses/requestorOrgAnchor.util.js";
 
-const SIMPLEWAY_SAMPLE_SLUG = "simpleway-gribo";
-const SIMPLEWAY_SAMPLE_SLUG_LEGACY = "simpleway-sample-kit";
+const SIMPLEWAY_SAMPLE_SLUG = "simpleway-abuts";
+const SIMPLEWAY_SAMPLE_SLUGS_LEGACY = ["simpleway-gribo", "simpleway-sample-kit"];
 
 const SIMPLEWAY_DEALER_HELP =
   "친한 재료 사장님을 소개해 주세요. 그분께 지역 영업권을 드립니다.";
 
 /** 공개 카피 SSOT — 샘플 배포·피드백 조건부 편익 문구 금지(출시 행사·제품 소개) */
 const SIMPLEWAY_EVENT_COPY = {
-  title: "심플웨이 신제품 - 그리보(Gribo) 출시 행사",
+  title: "심플웨이 신제품 - 어벗츠 출시 행사",
   summary:
     "신청 후 영업 담당자가 방문해 제품·사용 방법을 안내합니다. 화·수 이틀간 신청 접수.",
   description: [
     "소개 제품",
-    "· 그리보 힐링H",
-    "· 그리보 어벗H",
-    "· 그리보 커스텀어벗",
-    "· 그리보 드라이버",
+    "· 어벗츠 힐링H",
+    "· 어벗츠 어벗H",
+    "· 어벗츠 커스텀어벗",
+    "· 어벗츠 드라이버",
     "",
     "신청 기간: 화요일 · 수요일 (이틀)",
     "",
@@ -35,7 +35,7 @@ const SIMPLEWAY_EVENT_COPY = {
     "친한 재료 사장님을 소개해 주시면 그분께 지역 영업권을 드립니다.",
     "",
     "추가 안내",
-    "· 거래 기공소에 그리보 힐링 스캔 라이브러리 설치 (그리보 어벗H·커스텀어벗)",
+    "· 거래 기공소에 어벗츠 힐링 스캔 라이브러리 설치 (어벗츠 어벗H·커스텀어벗)",
     "· 구강 스캐너 사용 치과에는 스캔바 제품 소개",
     "· 어벗츠 플랫폼 안내 (온라인 기공의뢰 · 커스텀어벗 연동)",
   ].join("\n"),
@@ -286,7 +286,7 @@ function buildApplicationStats(items) {
   };
 }
 
-/** 첫 이벤트(그리보 출시 행사)를 DB에 보장·카피 동기화한다. */
+/** 첫 이벤트(어벗츠 출시 행사)를 DB에 보장·카피 동기화한다. */
 export async function ensureDefaultMarketingEvents() {
   let existing = await MarketingEvent.findOne({
     slug: SIMPLEWAY_SAMPLE_SLUG,
@@ -295,8 +295,8 @@ export async function ensureDefaultMarketingEvents() {
   // 구 slug → 신규 slug 이전 (신청 이력 eventSlug도 맞춤)
   if (!existing) {
     const legacy = await MarketingEvent.findOne({
-      slug: SIMPLEWAY_SAMPLE_SLUG_LEGACY,
-    });
+      slug: { $in: SIMPLEWAY_SAMPLE_SLUGS_LEGACY },
+    }).sort({ updatedAt: -1 });
     if (legacy) {
       legacy.slug = SIMPLEWAY_SAMPLE_SLUG;
       await legacy.save();
@@ -310,9 +310,10 @@ export async function ensureDefaultMarketingEvents() {
     // 신규 slug가 이미 있으면 구 slug·구 제목 잔여 문서·신청 삭제
     const legacyDocs = await MarketingEvent.find({
       $or: [
-        { slug: SIMPLEWAY_SAMPLE_SLUG_LEGACY },
+        { slug: { $in: SIMPLEWAY_SAMPLE_SLUGS_LEGACY } },
         { title: "심플웨이 신제품 샘플 배포 행사" },
         { title: "그리보 신제품 샘플 배포 행사" },
+        { title: "심플웨이 신제품 - 그리보(Gribo) 출시 행사" },
       ],
     })
       .select({ _id: 1 })

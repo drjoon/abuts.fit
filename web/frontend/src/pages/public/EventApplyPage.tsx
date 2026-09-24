@@ -7,7 +7,7 @@
 // - web/frontend/src/pages/public/EventsPage.tsx
 // - web/frontend/src/store/useAuthStore.ts
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
-import { Link, useLocation, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowDown,
   ArrowLeft,
@@ -39,9 +39,11 @@ import {
 import {
   GRIBO_HERO_EYEBROW,
   SIMPLEWAY_DEALER_HELP,
+  SIMPLEWAY_EVENT_HEADLINE,
   SIMPLEWAY_HERO_SUB_LINES,
   SIMPLEWAY_SAMPLE_EXTRAS,
   SIMPLEWAY_SAMPLE_KIT,
+  resolveSimplewayEventSlug,
   SIMPLEWAY_SAMPLE_SLUG,
 } from "@/shared/events/simplewaySampleCampaign";
 import {
@@ -137,7 +139,7 @@ function SimplewayHero({
             심플웨이 신제품
           </span>
           <span className="mt-2 block text-[clamp(2.1rem,5.5vw,3.75rem)]">
-            그리보(Gribo) 출시 행사
+            {SIMPLEWAY_EVENT_HEADLINE}
           </span>
         </h1>
         <p className="animate-in fade-in slide-in-from-bottom-3 fill-mode-both mt-5 max-w-3xl text-base leading-relaxed text-slate-600 sm:max-w-4xl sm:text-lg duration-700 delay-200">
@@ -266,7 +268,12 @@ function ExtrasSection() {
                   </Badge>
                 </div>
                 <p className="mt-2 text-sm leading-relaxed text-white/80">
-                  {extra.body}
+                  {extra.body.split("\n").map((line, index) => (
+                    <span key={line}>
+                      {index > 0 ? <br /> : null}
+                      {line}
+                    </span>
+                  ))}
                 </p>
               </div>
             </article>
@@ -278,8 +285,10 @@ function ExtrasSection() {
 }
 
 export default function EventApplyPage() {
-  const { slug = "" } = useParams();
+  const { slug: rawSlug = "" } = useParams();
+  const slug = resolveSimplewayEventSlug(rawSlug);
   const location = useLocation();
+  const navigate = useNavigate();
   const { toast } = useToast();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const token = useAuthStore((s) => s.token);
@@ -307,6 +316,18 @@ export default function EventApplyPage() {
     () => (user && practiceUser ? practicePrefillFromUser(user) : null),
     [user, practiceUser],
   );
+
+  useEffect(() => {
+    if (!rawSlug || rawSlug === slug) return;
+    navigate(
+      {
+        pathname: `/events/${slug}`,
+        search: location.search,
+        hash: location.hash,
+      },
+      { replace: true },
+    );
+  }, [rawSlug, slug, location.search, location.hash, navigate]);
 
   useEffect(() => {
     if (!slug) return;

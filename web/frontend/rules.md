@@ -672,7 +672,7 @@ Notes:
   - 온보딩(`/dashboard/wizard`): 프로필 → 휴대전화 → 역할 → 사업자.
     - **치과 대표(owner)**: 사업자등록(검증) 직후 **구강 스캔 사용 여부**(필수 예/아니오). 직원(member)·기공소는 생략.
     - SSOT: `PracticeOralScanStep` · `practiceProfile.usesOralScan` / `BusinessAnchor.usesOralScan`. 설정「구강스캔」탭에서 변경 가능.
-    - Gribo 등 행사 신청 폼에서는 구강 스캔을 받지 않음(신청 시 프로필 스냅샷).
+    - 어벗츠 출시 행사 신청 폼에서는 구강 스캔을 받지 않음(신청 시 프로필 스냅샷).
   - 사업자 단계(`BusinessTab` + `RequestorCapabilitiesPicker`):
     - 역할 라디오: `REQUESTOR_KIND_LABEL` — practice=`치과 (기공실 포함)`, lab=`기공소`
     - 서비스 선택 UI 없음. `requestorServices`는 paid-only(`{free:false,paid:true}`). 레거시 free는 읽기 시 paid 승격
