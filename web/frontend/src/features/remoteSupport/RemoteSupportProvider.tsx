@@ -35,6 +35,10 @@ import {
 } from "@/features/remoteSupport/remoteSupportApi";
 import { RemoteSupportChat } from "@/features/remoteSupport/RemoteSupportChat";
 import { useRemoteSupportPeer } from "@/features/remoteSupport/useRemoteSupportPeer";
+import {
+  isRemoteSupportStaffRequestOpen,
+  REMOTE_SUPPORT_STAFF_HOURS_MESSAGE,
+} from "@/features/remoteSupport/remoteSupportStaffHours";
 
 const STAFF_ROLES = new Set([
   "practice",
@@ -49,6 +53,8 @@ type Ctx = {
   activeSession: RemoteSupportSession | null;
   requestHelp: () => Promise<void>;
   requesting: boolean;
+  /** 치과·기공소 요청 가능 창(평일 10–18·공휴일 제외) */
+  withinStaffHours: boolean;
 };
 
 const RemoteSupportContext = createContext<Ctx | null>(null);
@@ -89,10 +95,20 @@ export function RemoteSupportProvider({ children }: Props) {
   const [notes, setNotes] = useState("");
   const [ideaTagsText, setIdeaTagsText] = useState("");
   const [chatOpen, setChatOpen] = useState(true);
+  const [withinStaffHours, setWithinStaffHours] = useState(() =>
+    isRemoteSupportStaffRequestOpen(),
+  );
   const [iceServers, setIceServers] = useState<RTCIceServer[]>([
     { urls: "stun:stun.l.google.com:19302" },
   ]);
   const shareStartedForRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const tick = () => setWithinStaffHours(isRemoteSupportStaffRequestOpen());
+    tick();
+    const id = window.setInterval(tick, 30_000);
+    return () => window.clearInterval(id);
+  }, []);
 
   // Admin WebRTC peer lives only on AdminRemoteSupportPage (video + control).
   // Enabling an admin peer here too steals the staff offer/answer, leaving the
@@ -260,6 +276,21 @@ export function RemoteSupportProvider({ children }: Props) {
 
   const requestHelp = useCallback(async () => {
     if (!token || !isStaff || requesting) return;
+    if (!isRemoteSupportStaffRequestOpen()) {
+      setWithinStaffHours(false);
+      toast({
+        title: "요청 불가",
+        description: (
+          <>
+            원격 지원 요청은 평일 오전 10시부터 오후 6시까지 가능합니다.
+            <br />
+            법정 공휴일은 제외됩니다.
+          </>
+        ),
+        variant: "destructive",
+      });
+      return;
+    }
     setRequesting(true);
     try {
       const session = await remoteSupportApi.createSession(token);
@@ -371,8 +402,9 @@ export function RemoteSupportProvider({ children }: Props) {
       activeSession,
       requestHelp,
       requesting,
+      withinStaffHours,
     }),
-    [activeSession, isAdmin, isStaff, requestHelp, requesting],
+    [activeSession, isAdmin, isStaff, requestHelp, requesting, withinStaffHours],
   );
 
   const showBanner =
@@ -531,6 +563,13 @@ export function RemoteSupportRequestButton({
       ctx.activeSession &&
         ["pending", "accepted", "active"].includes(ctx.activeSession.status),
     );
+  const outsideHours = !ctx.withinStaffHours;
+  const disabled = busy || outsideHours;
+  const label = busy
+    ? "지원 진행 중…"
+    : outsideHours
+      ? "근무시간 외"
+      : "원격 지원 요청";
   return (
     <Button
       type="button"
@@ -539,9 +578,11 @@ export function RemoteSupportRequestButton({
         "relative w-full text-sm font-semibold",
         collapsed ? "h-9 justify-center px-0" : "h-9 justify-center px-2.5",
       )}
-      disabled={busy}
+      disabled={disabled}
       onClick={() => void ctx.requestHelp()}
-      title="원격 지원 요청"
+      title={
+        outsideHours ? REMOTE_SUPPORT_STAFF_HOURS_MESSAGE : "원격 지원 요청"
+      }
     >
       <span
         className={cn(
@@ -551,7 +592,7 @@ export function RemoteSupportRequestButton({
       >
         <Headphones className="h-3.5 w-3.5" />
       </span>
-      {!collapsed ? (busy ? "지원 진행 중…" : "원격 지원 요청") : null}
+      {!collapsed ? label : null}
     </Button>
   );
 }

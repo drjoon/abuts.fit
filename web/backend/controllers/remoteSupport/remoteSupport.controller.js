@@ -11,6 +11,10 @@ import {
   emitAppEventToUser,
   emitAppEventToRoom,
 } from "../../socket.js";
+import {
+  isRemoteSupportStaffRequestOpen,
+  REMOTE_SUPPORT_STAFF_HOURS_MESSAGE,
+} from "../../utils/remoteSupportStaffHours.js";
 
 const STAFF_ROLES = new Set([
   "practice",
@@ -125,6 +129,13 @@ export async function createSession(req, res) {
       return res.status(403).json({
         success: false,
         message: "원격 지원을 요청할 수 없는 역할입니다.",
+      });
+    }
+
+    if (!(await isRemoteSupportStaffRequestOpen())) {
+      return res.status(403).json({
+        success: false,
+        message: REMOTE_SUPPORT_STAFF_HOURS_MESSAGE,
       });
     }
 
