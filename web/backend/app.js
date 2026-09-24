@@ -172,7 +172,12 @@ app.use(
           "https://t1.daumcdn.net",
           "https://dapi.kakao.com",
         ],
-        "frame-src": ["'self'", "https://postcode.map.kakao.com"],
+        // OSM: ContactPage · SalesRouteMap 카카오 폴백 iframe
+        "frame-src": [
+          "'self'",
+          "https://postcode.map.kakao.com",
+          "https://www.openstreetmap.org",
+        ],
         // S3 업로드/다운로드 허용
         "default-src": [
           "'self'",
