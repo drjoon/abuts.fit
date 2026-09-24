@@ -5,8 +5,9 @@
 // - web/backend/scripts/db/migrate-legacy-creditledger-to-gl.js
 // - web/backend/scripts/db/rebalance-manufacturer-unit-price.js
 // change-log:
+// - 2026-09-24: 지정 플랫폼 사용료 — 관리자 설정(초기 2% · 이벤트 off). 저장값 자동 승격 없음. 하청 5%.
 // - 2026-09-23: 런칭 이벤트 on/off 변경 예약(내일 0시 KST, 분배 비율과 동일).
-// - 2026-09-22: 지정 플랫폼 수수료 없음(기본 rate 0·enabled false). 하청 5% 유지.
+// - 2026-09-22: (일시) 지정 플랫폼 수수료 없음 — 9/24 복원.
 // - 2026-09-20: 하청 기본 5%.
 // - 2026-09-20: 기본 10% 고정 · 이벤트 15/20% · 요율 변경 예약(KST 0시 적용).
 // - 2026-09-20: 딜러십 요율 선택지 10/15/20%로 고정(관리자 스냅).
@@ -24,7 +25,7 @@
 // - 2026-08-15: 제조사 의뢰 공급가 기본 8,000 → 9,000.
 // - 2026-08-15: 제조사 %분배 → 하청 고정단가(의뢰/배송). 잔여는 salesman/devops/admin 재분배.
 // - 2026-08-14: DEFAULT_PLATFORM_FEE_RATE 0.25 → 0.1 (자동매칭 성공 수수료).
-// - 2026-08-16: 지정 거래 수수료 적용 on/off(기본 off).
+// - 2026-08-16: 지정 거래 수수료 적용 on/off(기본 off=이벤트 0%).
 
 /**
  * 딜러십 영업 수수료 기본(추후 공지 후 적용). 심플웨이·커스텀어벗 판매가(배송비 제외).
@@ -871,13 +872,16 @@ export const WITHOUT_SALESMAN_RATES = resolveRatesWithoutSalesman(WITH_SALESMAN_
 export const DEFAULT_PLATFORM_FEE_RATE = 0.1;
 /** 어벗츠 원청을 타 기공소가 하청 수행할 때 공제율(기본 5%, 수행 기공소 95%). */
 export const DEFAULT_SUBCONTRACT_FEE_RATE = 0.05;
-/** 지정 기공소(direct) 정책 요율. 없음(0). */
-export const DEFAULT_DIRECT_PLATFORM_FEE_RATE = 0;
-/** @deprecated 직전 정책 요율(1%). */
+/** 지정 기공소(direct/협력) 정책 요율 2%(적용 on일 때). */
+export const DEFAULT_DIRECT_PLATFORM_FEE_RATE = 0.02;
+/** 직전 정책 요율(1%). 마이그레이션 참고용. */
 export const PREV_DEFAULT_DIRECT_PLATFORM_FEE_RATE = 0.01;
-/** @deprecated 구 스키마 기본(off + 5%). */
+/** 구 스키마 기본(off + 5%). 마이그레이션 참고용. */
 export const LEGACY_DEFAULT_DIRECT_PLATFORM_FEE_RATE = 0.05;
-/** 지정 거래 수수료 적용 기본값. 정책상 없음(off). */
+/**
+ * 지정 거래 수수료 적용 기본값.
+ * false = 이벤트 기간 실효 0%(정책 요율 2%는 유지, 추후 공지 후 on 가능).
+ */
 export const DEFAULT_DIRECT_PLATFORM_FEE_ENABLED = false;
 /** @deprecated 등록/미등록 2단계 폐지. 읽기 fallback 전용. */
 export const DEFAULT_PARTNER_FEE_RATE = 0;
@@ -896,12 +900,15 @@ export function resolvePlatformFeeRate(payoutRates) {
     : DEFAULT_PLATFORM_FEE_RATE;
 }
 
-/** 지정 거래 수수료 적용 여부. 명시 on만 부과. */
+/** 지정 거래 수수료 적용 여부. 관리자 on만 부과(기본 off=이벤트 무료). */
 export function isDirectPlatformFeeEnabled(payoutRates) {
   return payoutRates?.directPlatformFeeEnabled === true;
 }
 
-/** 지정 거래 설정 요율(적용 off여도 저장값 유지). 미설정은 0. */
+/**
+ * 지정 거래 설정 요율(적용 off여도 저장값 유지).
+ * 미설정만 기본 2%. 저장된 값은 관리자 설정 그대로(자동 승격 없음).
+ */
 export function resolveDirectPlatformFeeRateConfigured(payoutRates) {
   const raw = payoutRates?.directPlatformFeeRate;
   if (raw != null && Number.isFinite(Number(raw))) {
@@ -927,7 +934,7 @@ export function resolveSubcontractFeeRate(payoutRates) {
 /**
  * 기공의뢰 플랫폼/하청 수수료율.
  * - 하청 수행(assigneeKind=subcontract): subcontractFeeRate (기본 5%)
- * - 협력(assigneeKind=cooperation)·어벗츠 자체 수행·지정: 지정 적용 on이면 directPlatformFeeRate, off면 0
+ * - 협력(assigneeKind=cooperation)·어벗츠 자체 수행·지정: 지정 적용 on이면 directPlatformFeeRate(기본 2%), off면 0(이벤트)
  */
 export function resolvePracticeTransferFeeRate({
   matchingMode,

@@ -1,7 +1,8 @@
 // - 2026-09-23: 런칭 이벤트 중 — 정상가 취소선 + 이벤트가 · 「이벤트 중」.
 // - 2026-09-23: FM덴탈 월정액 가입 — 기공소만(치과 제외).
 // - 2026-09-23: 런칭 이벤트 1만 / 정상가 1.3만 · FM덴탈 월정액 배송 선택.
-// - 2026-09-22: 기공소 정책 안내 — 지정 플랫폼 수수료 카피 제거. 하청만.
+// - 2026-09-24: 딜러「의뢰자 정책」variant=requestor — 단가·출고 + 기공소 플랫폼 사용료(~~2%~~→0%).
+// - 2026-09-24: 기공소 정책 안내 — 플랫폼 사용료 정책 2% · 이벤트 0% 복원.
 // - 2026-09-21: 딜러십 정책 — 90일 주문 없음 시 소개 귀속 리셋 조항.
 // - 2026-09-20: 딜러십 요율 10/15/20% · 가입 당시 요율 적용 안내.
 // - 2026-09-20: 기공소 정책 안내 — 하청 % · 작업시작 적립 시 공제.
@@ -70,7 +71,11 @@ import {
   formatAbutsManwon,
   resolveCustomAbutmentProductionPriceForAt
 } from '@/shared/pricing/abutsAbutmentService';
-import { LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE } from '@/shared/settlement/labPayoutBankbook';
+import {
+  LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE,
+  resolveLabDirectPlatformFeePct,
+} from '@/shared/settlement/labPayoutBankbook';
+import { LabDirectPlatformFeeNotice } from '@/shared/settlement/LabDirectPlatformFeeNotice';
 import { useLabTradingPartnerWindow } from '@/shared/lab/useLabTradingPartnerWindow';
 import {
   REFERRAL_OWNERSHIP_RESET_POLICY_LINE,
@@ -82,7 +87,11 @@ import { useToast } from '@/shared/hooks/use-toast';
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  variant?: 'default' | 'devops' | 'salesman';
+  /**
+   * default=본인(치과·기공소) · requestor=딜러가 보는 의뢰자 안내 ·
+   * salesman=딜러십 · devops=개발운영 분배
+   */
+  variant?: 'default' | 'devops' | 'salesman' | 'requestor';
   /** 딜러십 표준 요율 %(추후 공지 후). salesman variant. */
   dealershipBasePct?: number;
   /** 딜러십 이벤트 요율 %. salesman variant. */
@@ -190,6 +199,11 @@ export const PricingPolicyDialog = ({
 }: Props) => {
   const { kind } = useRequestorBusinessAccess();
   const isLab = kind === 'lab';
+  const isRequestorPreview = variant === 'requestor';
+  /** 기공소 본인 또는 딜러가 안내하는 의뢰자(기공소) 수수료 */
+  const showLabFeeSection = isLab || isRequestorPreview;
+  /** 월정액 가입 버튼은 기공소 본인만 */
+  const showFmJoin = isLab && variant === 'default';
   const { data: systemSettings, refetch: refetchSystemSettings } =
     useSystemSettings();
   const {
@@ -254,6 +268,13 @@ export const PricingPolicyDialog = ({
   const fmMonthlyFee = Math.max(
     0,
     Number(credit?.fmDentalMonthlyShippingFee ?? 0) || 0,
+  );
+  const directFeeEnabled =
+    labFeeWindow?.feeRates?.directPlatformFeeEnabled === true;
+  const directFeePct = resolveLabDirectPlatformFeePct(
+    labFeeWindow?.feeRates?.directPlatformFeeRate != null
+      ? Number(labFeeWindow.feeRates.directPlatformFeeRate) * 100
+      : undefined,
   );
   const subcontractFeePct = Math.round(
     Number(labFeeWindow?.feeRates?.subcontractFeeRate ?? 0.05) * 100,
@@ -369,16 +390,20 @@ export const PricingPolicyDialog = ({
       ? '개발운영사 분배 기준'
       : variant === 'salesman'
         ? '딜러십 정책'
-        : '가격 · 출고 정책 안내';
+        : variant === 'requestor'
+          ? '가격 · 출고 정책 안내'
+          : '가격 · 출고 정책 안내';
 
   const subtitle =
     variant === 'devops'
       ? '유료의뢰비 정산 비율과 화면 안내를 확인하세요.'
       : variant === 'salesman'
         ? '기본·이벤트 요율과 배송비 수신자 부담을 확인하세요.'
-        : isLab
-          ? ''
-          : '기공소에 · 어벗츠에 단가와 출고 기준을 확인하세요.';
+        : variant === 'requestor'
+          ? '소개한 치과·기공소에 안내할 단가와 출고 기준입니다.'
+          : isLab
+            ? ''
+            : '기공소에 · 어벗츠에 단가와 출고 기준을 확인하세요.';
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -483,9 +508,11 @@ export const PricingPolicyDialog = ({
                 <div className='space-y-3'>
                   <PriceRow
                     label={
-                      isLab
+                      isLab && !isRequestorPreview
                         ? '커스텀 어벗 생산'
-                        : '어벗츠에 · 커스텀 어벗 생산'
+                        : isRequestorPreview
+                          ? '커스텀 어벗 생산'
+                          : '어벗츠에 · 커스텀 어벗 생산'
                     }
                     value={formatAbutsManwon(productionPrice)}
                     strikeValue={
@@ -509,7 +536,32 @@ export const PricingPolicyDialog = ({
                     unitLabel='1개당'
                   />
                   <div className='h-px bg-slate-100' />
-                  {isLaunchEvent || (isLab && fmState.active) ? (
+                  {isRequestorPreview ? (
+                    <div className='space-y-2'>
+                      <PriceRow
+                        label='배송비'
+                        value={formatAbutsAbutmentServiceWon(shippingFee)}
+                        unitLabel='1박스당'
+                        secondaryValue={
+                          isLaunchEvent
+                            ? '런칭 이벤트 · 치과·기공소'
+                            : '치과는 박스당'
+                        }
+                      />
+                      {!isLaunchEvent ? (
+                        <PriceRow
+                          label='기공소 · 월정액 배송'
+                          value={
+                            fmMonthlyFee > 0
+                              ? formatAbutsAbutmentServiceWon(fmMonthlyFee)
+                              : '추후 지원 예정'
+                          }
+                          unitLabel={fmMonthlyFee > 0 ? '매월' : undefined}
+                          secondaryValue='정상가 · 박스당 대신 선택'
+                        />
+                      ) : null}
+                    </div>
+                  ) : isLaunchEvent || (isLab && fmState.active) ? (
                     <PriceRow
                       label='배송비'
                       value={
@@ -544,7 +596,7 @@ export const PricingPolicyDialog = ({
                         unitLabel={fmState.monthlyFee > 0 ? '매월' : undefined}
                         note='가입 시 월 정액 배송비 0원'
                         noteAction={
-                          variant === 'default' ? (
+                          showFmJoin ? (
                             <Button
                               type='button'
                               size='sm'
@@ -605,20 +657,33 @@ export const PricingPolicyDialog = ({
                 </div>
               </section>
 
-              {isLab ? (
+              {showLabFeeSection ? (
                 <>
-                  <PolicySection title='하청 수수료'>
+                  <PolicySection title='플랫폼 사용료 · 하청 수수료'>
                     <p>
+                      <LabDirectPlatformFeeNotice
+                        enabled={directFeeEnabled}
+                        ratePct={directFeePct}
+                      />{" "}
                       하청 수행 의뢰는 작업시작 적립 시 매출액의{" "}
                       <span className='font-semibold tabular-nums text-slate-900'>
                         {subcontractFeePct}%
                       </span>
                       가 공제됩니다.
+                      {isRequestorPreview ? (
+                        <>
+                          <br />
+                          기공소 의뢰자에 적용됩니다. 치과는 플랫폼 사용료가
+                          없습니다.
+                        </>
+                      ) : null}
                     </p>
                   </PolicySection>
-                  <PolicySection title='정산'>
-                    <p>{LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE}</p>
-                  </PolicySection>
+                  {isLab && !isRequestorPreview ? (
+                    <PolicySection title='정산'>
+                      <p>{LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE}</p>
+                    </PolicySection>
+                  ) : null}
                 </>
               ) : null}
 

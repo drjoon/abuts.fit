@@ -14,7 +14,7 @@ import {
 } from "../../services/creditRevenuePolicy.service.js";
 
 describe("resolvePracticeTransferFeeRate", () => {
-  test("지정 거래 기본(미설정)은 없음(실효 0%)", () => {
+  test("지정 거래 기본(미설정)은 이벤트 off·초기요율 2%(실효 0%)", () => {
     expect(
       resolvePracticeTransferFeeRate({
         matchingMode: "direct",
@@ -23,11 +23,38 @@ describe("resolvePracticeTransferFeeRate", () => {
     ).toBe(0);
     expect(isDirectPlatformFeeEnabled({})).toBe(false);
     expect(DEFAULT_DIRECT_PLATFORM_FEE_ENABLED).toBe(false);
-    expect(DEFAULT_DIRECT_PLATFORM_FEE_RATE).toBe(0);
-    expect(resolveDirectPlatformFeeRateConfigured({})).toBe(0);
+    expect(DEFAULT_DIRECT_PLATFORM_FEE_RATE).toBe(0.02);
+    expect(resolveDirectPlatformFeeRateConfigured({})).toBe(0.02);
   });
 
-  test("지정 거래 명시적 off면 0", () => {
+  test("저장된 요율은 그대로 유지(자동 승격 없음)·적용 off면 실효 0", () => {
+    expect(
+      resolveDirectPlatformFeeRateConfigured({
+        directPlatformFeeEnabled: false,
+        directPlatformFeeRate: 0.05,
+      }),
+    ).toBe(0.05);
+    expect(
+      resolveDirectPlatformFeeRateConfigured({
+        directPlatformFeeEnabled: false,
+        directPlatformFeeRate: 0.01,
+      }),
+    ).toBe(0.01);
+    expect(
+      resolveDirectPlatformFeeRateConfigured({
+        directPlatformFeeEnabled: false,
+        directPlatformFeeRate: 0,
+      }),
+    ).toBe(0);
+    expect(
+      resolveDirectPlatformFeeRate({
+        directPlatformFeeEnabled: false,
+        directPlatformFeeRate: 0.05,
+      }),
+    ).toBe(0);
+  });
+
+  test("지정 거래 명시적 off면 0(무료)", () => {
     expect(
       resolvePracticeTransferFeeRate({
         matchingMode: "direct",
@@ -137,6 +164,9 @@ describe("resolvePracticeTransferFeeRate", () => {
         directPlatformFeeRate: 0.08,
       }),
     ).toBe(0.08);
+    expect(resolveDirectPlatformFeeRateConfigured({})).toBe(
+      DEFAULT_DIRECT_PLATFORM_FEE_RATE,
+    );
     expect(
       resolveDirectPlatformFeeRate({
         directPlatformFeeEnabled: false,

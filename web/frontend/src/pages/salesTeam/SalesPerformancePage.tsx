@@ -2,6 +2,7 @@
 // - web/frontend/src/pages/salesTeam/salesTeamApi.ts
 // - web/frontend/src/pages/salesTeam/salesUi.tsx
 // change-log:
+// - 2026-09-24: 「의뢰자 정책」모달(PricingPolicyDialog requestor) — 단가·출고·기공소 플랫폼 사용료.
 // - 2026-09-21: 영업팀 기본 진입=성과. 소개코드·가입 SSOT.
 // - 2026-09-21: 가입 링크 복사를 코드 복사 버튼 아래로 배치.
 // - 2026-09-21: 소개코드 왼쪽 카드(통계·내 코드)를 활동실적으로 합치고 탭 제거.
@@ -26,6 +27,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PricingPolicyDialog } from "@/shared/ui/PricingPolicyDialog";
 import {
   Select,
   SelectContent,
@@ -49,6 +51,7 @@ export default function SalesPerformancePage() {
   const token = useAuthStore((s) => s.token);
   const { toast } = useToast();
   const [period, setPeriod] = useState("30d");
+  const [requestorPolicyOpen, setRequestorPolicyOpen] = useState(false);
   const [drill, setDrill] = useState<"visits" | "reports" | "referrals">(
     "visits",
   );
@@ -219,6 +222,17 @@ export default function SalesPerformancePage() {
             <SalesPanel
               title="내 소개코드"
               description="현장에서 코드나 가입 링크를 공유하세요."
+              actions={
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8"
+                  onClick={() => setRequestorPolicyOpen(true)}
+                >
+                  의뢰자 정책
+                </Button>
+              }
             >
               <div className="flex flex-col items-center gap-4 rounded-2xl border border-primary-muted/50 bg-gradient-to-br from-primary-soft/80 to-white px-4 py-8 text-center">
                 <div className="font-mono text-3xl font-semibold tracking-[0.2em] text-slate-900 sm:text-5xl sm:tracking-[0.35em]">
@@ -416,6 +430,12 @@ export default function SalesPerformancePage() {
           </div>
         </div>
       )}
+
+      <PricingPolicyDialog
+        open={requestorPolicyOpen}
+        onOpenChange={setRequestorPolicyOpen}
+        variant="requestor"
+      />
     </SalesPageShell>
   );
 }

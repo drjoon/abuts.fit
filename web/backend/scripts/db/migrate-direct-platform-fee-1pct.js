@@ -3,8 +3,8 @@
 // - web/backend/models/businessAnchor.model.js
 // - web/backend/rules.md
 //
-// 레거시: 지정 거래 수수료를 기본값(off · rate 0)으로 맞출 때 사용.
-// 관리자가 커스텀 요율로 의도적으로 on 한 경우(≠0 · ≠0.05)는 건드리지 않음.
+// 관리자 초기값 시드: 플랫폼 사용료 2% + 이벤트 off(실효 0%).
+// 이미 커스텀 %(≠0·≠0.01·≠0.02·≠0.05)로 저장한 경우(on/off 무관)는 건드리지 않음.
 //
 // Usage:
 //   cd web/backend && ENV_FILE=local.env NODE_ENV=test ABUTS_DB_FORCE=true \
@@ -24,6 +24,8 @@ function isPolicyOrLegacyRate(rate) {
   const n = Number(rate);
   if (!Number.isFinite(n)) return true;
   return (
+    Math.abs(n) < 1e-9 ||
+    Math.abs(n - 0.01) < 1e-9 ||
     Math.abs(n - LEGACY_DEFAULT_RATE) < 1e-9 ||
     Math.abs(n - DEFAULT_DIRECT_PLATFORM_FEE_RATE) < 1e-9
   );
@@ -66,8 +68,8 @@ async function main() {
     $set["payoutRates.updatedAt"] = new Date();
     reason =
       enabledRaw === true
-        ? "policy_on→off_rate_0"
-        : "unset_or_legacy→off_rate_0";
+        ? "seed_event_off_initial_2pct"
+        : "seed_event_off_initial_2pct";
   }
 
   console.log("[migrate-direct-platform-fee-1pct] plan", {

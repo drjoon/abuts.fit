@@ -7,7 +7,7 @@
 // - 2026-08-11: 「치과에 전달하기」중첩 카드 제거, 안내 문구 단순화.
 // - 2026-08-11: 목록 뱃지 — 가입 진행중(pending) / 등록 완료(active).
 // - 2026-08-11: 초대링크·안내문구 복사만으로는 목록 카드 미생성(가입 시작 시 표시).
-// - 2026-09-22: 지정 플랫폼 수수료 카피 제거. 하청 %만.
+// - 2026-09-24: 플랫폼 사용료 정책 2% · 이벤트 0% 안내 복원.
 // - 2026-09-20: 하청 % 표시.
 // - 2026-08-12: 상단 수수료 안내 — 예시 매출·수수료 다이어그램(프로그레스바)으로 교체.
 // - 2026-08-12: 200만 구간 확대 연결선 + 확대 영역 내부 배분 바로 조정.
@@ -41,6 +41,11 @@ import { cn } from "@/shared/ui/cn";
 import { Separator } from "@/components/ui/separator";
 import { LabPracticeFeeSurchargeControl } from "@/shared/components/practice/LabPracticeFeeSurchargeControl";
 import { normalizeLabFeeMultiplier } from "@/shared/practice/labFeeSchedule";
+import { resolveLabDirectPlatformFeePct } from "@/shared/settlement/labPayoutBankbook";
+import {
+  LabDirectPlatformFeeNotice,
+  LabDirectPlatformFeeRateLabel,
+} from "@/shared/settlement/LabDirectPlatformFeeNotice";
 
 type PartnerItem = {
   _id: string;
@@ -240,6 +245,12 @@ export const LabTradingPartnersTab = () => {
         0.05,
     ) * 100,
   );
+  const directFeeEnabled = windowInfo?.feeRates?.directPlatformFeeEnabled === true;
+  const directFeePct = resolveLabDirectPlatformFeePct(
+    windowInfo?.feeRates?.directPlatformFeeRate != null
+      ? Number(windowInfo.feeRates.directPlatformFeeRate) * 100
+      : undefined,
+  );
   const windowProgressPct =
     remaining == null || windowDays <= 0
       ? 0
@@ -258,15 +269,41 @@ export const LabTradingPartnersTab = () => {
           </CardTitle>
           <CardDescription className="text-[13px] leading-relaxed">
             인증 기공소는 치과의 자동 매칭 의뢰에 참여할 수 있습니다. 하청
-            수수료 {subcontractFeePct}%. 치과명·담당자명·기공소명 등 식별
-            정보는 비공개입니다.
+            수수료 {subcontractFeePct}%
+            {directFeeEnabled ? (
+              <> · 플랫폼 사용료 {directFeePct}%</>
+            ) : (
+              <>
+                {" "}
+                · 플랫폼 사용료는{" "}
+                <LabDirectPlatformFeeRateLabel
+                  enabled={false}
+                  ratePct={directFeePct}
+                />
+              </>
+            )}
+            . 치과명·담당자명·기공소명 등 식별 정보는 비공개입니다.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex gap-3 rounded-2xl border border-dashed border-slate-200/90 bg-slate-50/60 px-4 py-3.5">
             <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
             <p className="text-[13px] leading-relaxed text-muted-foreground">
-              거래 치과 소개는 아래에서 계속할 수 있습니다.
+              {directFeeEnabled ? (
+                <>
+                  지정 기공소 의뢰의 플랫폼 사용료는 작업시작 적립 시 공제됩니다(
+                  {directFeePct}%). 거래 치과 소개는 아래에서 계속할 수
+                  있습니다.
+                </>
+              ) : (
+                <>
+                  <LabDirectPlatformFeeNotice
+                    enabled={false}
+                    ratePct={directFeePct}
+                  />{" "}
+                  거래 치과 소개는 아래에서 계속할 수 있습니다.
+                </>
+              )}
             </p>
           </div>
           <div className="flex gap-3 rounded-2xl border border-dashed border-slate-200/90 bg-slate-50/60 px-4 py-3.5">

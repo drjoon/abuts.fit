@@ -5,6 +5,7 @@
  * 딜러십: 기본 10% · 이벤트 15/20%. 요율 변경 예약 시 해당일 0시(KST)부터 적용.
  * 의뢰자는 가입 당시 요율 적용. 배송비는 수신자(치과·기공소) 부담.
  * 90일 무주문 시 소개 귀속 리셋(DealershipTermsCard · PricingPolicyDialog).
+ * 「의뢰자 정책」= variant requestor(단가·출고 + 기공소 플랫폼 사용료 ~~2%~~→0%).
  */
 
 import { useState } from "react";
@@ -325,7 +326,7 @@ export const SalesmanDashboardPage = () => {
       <PricingPolicyDialog
         open={policyOpen}
         onOpenChange={setPolicyOpen}
-        variant="default"
+        variant="requestor"
       />
       <PricingPolicyDialog
         open={salesmanPolicyOpen}

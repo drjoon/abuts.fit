@@ -1002,7 +1002,8 @@ export default function AdminPaymentsPage({
                   배송비를 선차감한 뒤 기공사업부 · 영업팀 · 개발운영 · 어벗츠
                   비율로 분배합니다.
                   <br />
-                  지정·자동매칭 플랫폼 수수료는 없습니다.
+                  지정·협력 플랫폼 사용료는 정책 2%·이벤트 기간 0%입니다.
+                  하청 수행만 매출의 5%가 공제됩니다.
                 </p>
               </SettlementPolicySection>
             </SettlementPolicyDialog>
