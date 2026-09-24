@@ -364,7 +364,7 @@ function DealershipTermsCard({
             파트너 조건
           </h2>
         </div>
-        <div className="grid min-w-0 flex-1 gap-3 sm:grid-cols-3">
+        <div className="grid min-w-0 flex-1 gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.45fr)]">
           <div className="flex items-start gap-2.5 rounded-xl bg-white/5 px-3 py-2.5">
             <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white/10">
               <Percent className="h-3.5 w-3.5" />
@@ -379,14 +379,11 @@ function DealershipTermsCard({
                     ? "text-amber-200/95"
                     : "text-emerald-200/90"
                 }`}
-                title={
-                  rateChangeMessage ||
-                  "유치 당시 요율 고정 · 관리자 인하 시 신규만 적용"
-                }
+                title={rateChangeMessage || "유치 당시 요율 고정"}
               >
                 {rateChangeMessage
                   ? rateChangeMessage
-                  : "유치 당시 요율 고정 · 인하는 신규만"}
+                  : "유치 당시 요율 고정"}
               </p>
             </div>
           </div>
