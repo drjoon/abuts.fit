@@ -1,0 +1,16 @@
+{
+  "port": 8010,
+  "allowOrigin": "*",
+  "sharedSecret": "",
+  "exePaths": {
+    "3Shape": "",
+    "ExoCAD": "",
+    "custom": ""
+  },
+  "notes": [
+    "기공소: start.cmd 더블클릭(Node 불필요). PowerShell 5.1+.",
+    "exePaths가 비어 있으면 Windows 파일 연결(기본 앱)으로 연다.",
+    "3Shape 예: C:\\\\Program Files\\\\3Shape\\\\Dental Desktop\\\\DentalDesktop.exe",
+    "ExoCAD 예: C:\\\\Program Files\\\\exocad\\\\DentalCAD\\\\DentalCADApp.exe"
+  ]
+}

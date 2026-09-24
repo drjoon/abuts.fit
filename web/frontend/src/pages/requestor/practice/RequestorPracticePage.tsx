@@ -1,4 +1,6 @@
 // related files:
+// - 2026-09-24: 「열기」미연결 시 설치 모달(zip·더블클릭 1회·이후 자동).
+// - 2026-09-24: 의뢰 파일「열기」— 설정 디자인 SW + 로컬 lab-cad-helper.
 // - 2026-09-20: 바구니 번호표 — BA(PracticeTransfer.labBasketTag)만. localStorage 전량 폐기.
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
@@ -198,6 +200,7 @@ import { ChevronRight, Search, X, Bookmark } from "lucide-react";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
 import { DesignSoftwareSettingsDialog } from "@/features/requestSettings/DesignSoftwareSettingsDialog";
+import { LabCadHelperSetupDialog } from "@/shared/components/LabCadHelperSetupDialog";
 import { RequestSettingsToolbar } from "@/features/requestSettings/RequestSettingsToolbar";
 import { useRequestorRequestSettings } from "@/features/requestSettings/useRequestorRequestSettings";
 import {
@@ -734,6 +737,8 @@ export function RequestorPracticeReceivePage({
   const designSettingsGateTransferRef = useRef<ReceivedPracticeTransfer | null>(
     null,
   );
+  const [labCadHelperSetupOpen, setLabCadHelperSetupOpen] = useState(false);
+  const labCadOpenRetryRef = useRef<null | (() => void)>(null);
   const beginDesignUploadWithFilesRef = useRef<
     (
       transfer: ReceivedPracticeTransfer,
@@ -798,8 +803,10 @@ export function RequestorPracticeReceivePage({
     downloadingKeys,
     downloadProgressByKey,
     downloadAllBusy,
+    openInCadBusy,
     downloadS3File,
     downloadAll,
+    openInDesignSoftware,
     resetDownloads,
   } = useS3FileDownload(token);
 
@@ -7208,6 +7215,41 @@ export function RequestorPracticeReceivePage({
     [downloadAll, selectedTransfer],
   );
 
+  const handleOpenInDesignSoftware = useCallback(async () => {
+    const sw = String(designSoftwareValue || "").trim();
+    if (!sw) {
+      openDesignSoftwareModal();
+      toast({
+        title: "디자인 소프트웨어를 먼저 설정해 주세요",
+        description: "설정 후 다시「열기」를 누르면 해당 소프트웨어로 파일을 엽니다.",
+      });
+      return;
+    }
+    const files = Array.isArray(selectedTransfer?.files)
+      ? selectedTransfer.files
+      : [];
+    await openInDesignSoftware({
+      designSoftware: sw,
+      files: files.map((file) => ({
+        s3Key: String(file.s3Key || "").trim(),
+        fileName: String(file.originalName || "model.stl").trim() || "model.stl",
+        busyKey: String(file.s3Key || "").trim(),
+      })),
+      onNeedHelperSetup: () => {
+        labCadOpenRetryRef.current = () => {
+          void handleOpenInDesignSoftware();
+        };
+        setLabCadHelperSetupOpen(true);
+      },
+    });
+  }, [
+    designSoftwareValue,
+    openDesignSoftwareModal,
+    openInDesignSoftware,
+    selectedTransfer,
+    toast,
+  ]);
+
   const handleDownloadChatAttachment = useCallback(
     async (attachment: {
       fileId?: string;
@@ -8459,6 +8501,18 @@ export function RequestorPracticeReceivePage({
         }}
         forceRequired={requestSettingsForceRequired}
       />
+      <LabCadHelperSetupDialog
+        open={labCadHelperSetupOpen}
+        onOpenChange={(next) => {
+          setLabCadHelperSetupOpen(next);
+          if (!next) labCadOpenRetryRef.current = null;
+        }}
+        onConnected={() => {
+          const retry = labCadOpenRetryRef.current;
+          labCadOpenRetryRef.current = null;
+          retry?.();
+        }}
+      />
       <RequestorAbutmentPageHeader
         variant="policyInProgress"
         hideInProgressTrigger
@@ -8960,6 +9014,8 @@ export function RequestorPracticeReceivePage({
         downloadingFileKeys={downloadingKeys}
         downloadProgressByKey={downloadProgressByKey}
         downloadAllBusy={downloadAllBusy}
+        openInCadBusy={openInCadBusy}
+        onOpenInDesignSoftware={() => void handleOpenInDesignSoftware()}
         onDownloadAllFiles={(opts) => void handleDownloadAllFiles(opts)}
         onDownloadTransferFile={(file, opts) =>
           void handleDownload(

@@ -17,6 +17,10 @@ logs
 .eb_setenv_*.sha
 
 *.zip
+# lab CAD helper install package (웹「설치 파일 받기」)
+!web/frontend/public/downloads/
+!web/frontend/public/downloads/lab-cad-helper/
+!web/frontend/public/downloads/lab-cad-helper/*.zip
 # backend test artifacts
 web/backend/coverage/
 web/backend/.nyc_output/
@@ -37,3 +41,5 @@ __pycache__
 
 # local research/scratch workspace
 RnD/
+# lab CAD helper local paths
+bg/lab-cad-helper/config.json

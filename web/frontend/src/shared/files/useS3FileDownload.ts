@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-24: openInDesignSoftware — 로컬 CAD 헬퍼로 3D 모델 열기(3Shape/ExoCAD).
 // - 2026-09-20: downloadAsZip — 여러 S3 파일을 DEFLATE zip 하나로 저장.
 // - 2026-09-10: DCM 다운로드 시 PLY(칼라) 클라이언트 변환 옵션.
 // - 2026-08-16: IndexedDB(s3:key) 캐시 — 다운로드·프리뷰 공통.
@@ -8,6 +9,11 @@
 // - web/frontend/src/shared/files/s3BlobCache.ts
 // - web/frontend/src/shared/files/hpsDcmToPly.ts
 // - web/frontend/src/shared/files/dcmDownloadFormat.ts
+// - web/frontend/src/shared/files/labCadHelperClient.ts
+// - web/frontend/src/shared/files/modelPreviewFile.ts
+// - bg/lab-cad-helper/start.cmd
+// - bg/lab-cad-helper/lab-cad-helper.ps1
+// - bg/lab-cad-helper/app.js
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // - web/frontend/src/features/chat/components/ChatMessageBubble.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
@@ -27,6 +33,15 @@ import {
   convertHpsDcmBufferToPlyBlob,
   replaceExtWithPly,
 } from "@/shared/files/hpsDcmToPly";
+import {
+  dcmFormatForDesignSoftware,
+  ensureLabCadHelperReady,
+  openFilesWithLabCadHelper,
+} from "@/shared/files/labCadHelperClient";
+import {
+  getModelExtLower,
+  isModelPreviewExt,
+} from "@/shared/files/modelPreviewFile";
 
 export type S3DownloadTarget = {
   s3Key?: string;
@@ -114,7 +129,9 @@ export function useS3FileDownload(token?: string | null) {
   >({});
   const [downloadAllBusy, setDownloadAllBusy] = useState(false);
   const [downloadZipBusy, setDownloadZipBusy] = useState(false);
+  const [openInCadBusy, setOpenInCadBusy] = useState(false);
   const downloadZipBusyRef = useRef(false);
+  const openInCadBusyRef = useRef(false);
   const downloadingKeysRef = useRef<Set<string>>(new Set());
 
   const beginBusy = useCallback((busyKey: string) => {
@@ -268,6 +285,116 @@ export function useS3FileDownload(token?: string | null) {
     [downloadAllBusy, downloadS3File],
   );
 
+  /**
+   * 의뢰 3D 모델을 로컬 CAD 헬퍼로 연다.
+   * designSoftware: 설정값(3Shape/ExoCAD/커스텀). DCM은 SW에 맞춰 원본 또는 PLY.
+   * onNeedHelperSetup: 헬퍼 미설치·미실행 시 설치 안내(토스트 대신).
+   */
+  const openInDesignSoftware = useCallback(
+    async (opts: {
+      files: S3DownloadTarget[];
+      designSoftware: string;
+      onNeedHelperSetup?: () => void | Promise<void>;
+    }) => {
+      if (openInCadBusyRef.current) return;
+      const designSoftware = String(opts.designSoftware || "").trim();
+      const dcmFormat = dcmFormatForDesignSoftware(designSoftware);
+      const targets = (Array.isArray(opts.files) ? opts.files : []).filter(
+        (file) => {
+          const s3Key = String(file.s3Key || "").trim();
+          const fileName =
+            String(file.fileName || "model.stl").trim() || "model.stl";
+          return s3Key && isModelPreviewExt(getModelExtLower(fileName));
+        },
+      );
+      if (!targets.length) {
+        toast({
+          title: "열기 실패",
+          description: "열 수 있는 3D 모델(STL/PLY/OBJ/DCM)이 없습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (!token) {
+        toast({
+          title: "열기 실패",
+          description: "로그인이 필요합니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      openInCadBusyRef.current = true;
+      setOpenInCadBusy(true);
+      try {
+        const helperStatus = await ensureLabCadHelperReady({ timeoutMs: 4500 });
+        if (helperStatus === "need_setup") {
+          if (opts.onNeedHelperSetup) {
+            await opts.onNeedHelperSetup();
+          } else {
+            toast({
+              title: "처음 한 번만 설치가 필요합니다",
+              description:
+                "「열기」안내에서 설치 파일을 받아 「여기를_더블클릭_설치」를 실행해 주세요.",
+              variant: "destructive",
+            });
+          }
+          return;
+        }
+
+        const prepared = await Promise.all(
+          targets.map(async (file) => {
+            const fileName =
+              String(file.fileName || "model.stl").trim() || "model.stl";
+            const busyKey = String(file.busyKey || file.s3Key || "").trim();
+            beginBusy(busyKey);
+            try {
+              const blob = await loadCachedBlob(file);
+              if (isDcmFileName(fileName) && dcmFormat === "ply") {
+                const plyBlob = await convertHpsDcmBufferToPlyBlob(
+                  await blob.arrayBuffer(),
+                );
+                return {
+                  fileName: replaceExtWithPly(fileName),
+                  blob: plyBlob,
+                };
+              }
+              return { fileName, blob };
+            } finally {
+              endBusy(busyKey);
+            }
+          }),
+        );
+
+        const result = await openFilesWithLabCadHelper({
+          designSoftware,
+          files: prepared,
+        });
+        const swLabel = designSoftware || "기본 앱";
+        toast({
+          title: "디자인 소프트웨어로 열기",
+          description: result.hint
+            ? `${swLabel} · ${result.count}개. ${result.hint}`
+            : `${swLabel}에서 ${result.count}개 파일을 열었습니다.`,
+        });
+      } catch (err) {
+        if ((err as { name?: string })?.name === "AbortError") return;
+        toast({
+          title: "열기 실패",
+          description:
+            err instanceof Error
+              ? err.message
+              : "디자인 소프트웨어로 여는 중 오류가 발생했습니다.",
+          variant: "destructive",
+        });
+      } finally {
+        openInCadBusyRef.current = false;
+        setOpenInCadBusy(false);
+      }
+    },
+    [beginBusy, endBusy, loadCachedBlob, toast, token],
+  );
+
   const downloadAsZip = useCallback(
     async (opts: { groups: ZipDownloadGroup[]; zipFileName: string }) => {
       if (downloadZipBusyRef.current) return;
@@ -342,10 +469,12 @@ export function useS3FileDownload(token?: string | null) {
   const resetDownloads = useCallback(() => {
     downloadingKeysRef.current.clear();
     downloadZipBusyRef.current = false;
+    openInCadBusyRef.current = false;
     setDownloadingKeys([]);
     setDownloadProgressByKey({});
     setDownloadAllBusy(false);
     setDownloadZipBusy(false);
+    setOpenInCadBusy(false);
   }, []);
 
   return {
@@ -353,10 +482,12 @@ export function useS3FileDownload(token?: string | null) {
     downloadProgressByKey,
     downloadAllBusy,
     downloadZipBusy,
+    openInCadBusy,
     downloadS3File,
     fetchS3Blob,
     downloadAll,
     downloadAsZip,
+    openInDesignSoftware,
     resetDownloads,
   };
 }

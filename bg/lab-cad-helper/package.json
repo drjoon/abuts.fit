@@ -1,0 +1,11 @@
+{
+  "name": "abuts-lab-cad-helper",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Lab CAD helper. Production on Windows: start.cmd (PowerShell). Node app.js is optional for Mac/dev.",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "start:win": "cmd /c start.cmd"
+  }
+}

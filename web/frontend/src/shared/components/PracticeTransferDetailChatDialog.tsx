@@ -11,11 +11,18 @@
 // - web/frontend/src/shared/hooks/useBackgroundTempUpload.ts
 // - web/frontend/src/shared/components/ModelPreviewDialog.tsx
 // - web/frontend/src/shared/files/modelPreviewFile.ts
+// - web/frontend/src/shared/files/labCadHelperClient.ts
+// - web/frontend/src/shared/files/useS3FileDownload.ts
+// - bg/lab-cad-helper/start.cmd
+// - bg/lab-cad-helper/lab-cad-helper.ps1
+// - bg/lab-cad-helper/app.js
 // - web/frontend/src/shared/files/downloadWithProgress.ts
 // - web/frontend/src/shared/files/s3BlobCache.ts
 // - web/frontend/src/shared/files/fileBlobCache.ts
 // - web/frontend/src/shared/files/s3ImageThumb.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-24: 의뢰 파일「열기」— 설정 디자인 SW(3Shape/ExoCAD)로 로컬 CAD 헬퍼 경유.
+// - 2026-09-24: 할증 툴팁 — 협력=수행 기공소, 하청·어벗츠 지정=어벗츠기공소.
 // - 2026-09-20: 기공소 — 번호표 BA(labBasketTag)·occupiedTags·목록 즉시 갱신.
 // - 2026-09-20: 기공소 — 번호표 occupiedTags·onLabBasketTagChange(목록 즉시 갱신).
 // - 2026-09-20: 기공소 — 프린트·번호표 아이콘+라벨 항상 표시.
@@ -512,6 +519,12 @@ type PracticeTransferDetailChatDialogProps = {
   onDownloadAllFiles: (opts?: {
     dcmFormat?: DcmDownloadFormat;
   }) => void | Promise<void>;
+  /**
+   * 의뢰 3D를 설정 디자인 소프트웨어로 연다(로컬 CAD 헬퍼).
+   * 미전달 시「열기」숨김.
+   */
+  openInCadBusy?: boolean;
+  onOpenInDesignSoftware?: () => void | Promise<void>;
   onDownloadTransferFile: (
     file: PracticeTransferDialogFileItem,
     opts?: { dcmFormat?: DcmDownloadFormat },
@@ -727,6 +740,8 @@ export function PracticeTransferDetailChatDialog({
   downloadAllWorkFilesBusy = false,
   onDownloadAllWorkFiles,
   onDownloadAllFiles,
+  openInCadBusy = false,
+  onOpenInDesignSoftware,
   onDownloadTransferFile,
   acceptBusy = false,
   accepted = false,
@@ -1791,6 +1806,7 @@ export function PracticeTransferDetailChatDialog({
       const isBusy =
         downloadAllBusy ||
         downloadAllWorkFilesBusy ||
+        openInCadBusy ||
         (busyKey ? downloadingFileKeys.includes(busyKey) : false);
       if (isBusy) return;
 
@@ -1804,6 +1820,7 @@ export function PracticeTransferDetailChatDialog({
     [
       downloadAllBusy,
       downloadAllWorkFilesBusy,
+      openInCadBusy,
       downloadingFileKeys,
       onDownloadTransferFile,
       openFilePreview,
@@ -1912,6 +1929,7 @@ export function PracticeTransferDetailChatDialog({
     Boolean(previewBusyKey) &&
     (downloadAllBusy ||
       downloadAllWorkFilesBusy ||
+      openInCadBusy ||
       downloadingFileKeys.includes(previewBusyKey));
   const previewCount = previewableFiles.length;
   const canPreviewPrev = previewIndex > 0;
@@ -2286,8 +2304,9 @@ export function PracticeTransferDetailChatDialog({
               </span>
             </TooltipTrigger>
             <TooltipContent className="max-w-xs leading-relaxed">
-              이 치과는 어벗츠기공소 기준 할증 대상입니다. 견적·정산은 기본
-              기공수가(생성 시 스냅샷)를 따릅니다.
+              협력 건은 수행 기공소 수가·할증, 하청·어벗츠 지정은 어벗츠기공소 기준입니다.
+              <br />
+              견적·정산 금액은 생성 시 스냅샷을 따릅니다. 정산만 어벗츠를 경유합니다.
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
@@ -2487,6 +2506,7 @@ export function PracticeTransferDetailChatDialog({
     const isBusy =
       downloadAllBusy ||
       downloadAllWorkFilesBusy ||
+      openInCadBusy ||
       (busyKey ? downloadingFileKeys.includes(busyKey) : false);
     const isRemoving =
       Boolean(busyKey) && removingRequestFileKeys.includes(busyKey);
@@ -3089,6 +3109,25 @@ export function PracticeTransferDetailChatDialog({
                     </span>
                   </h3>
                   <div className="flex shrink-0 items-center gap-1.5">
+                    {onOpenInDesignSoftware &&
+                    files.some((f) =>
+                      isModelPreviewExt(getModelExtLower(f.fileName)),
+                    ) ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void onOpenInDesignSoftware()}
+                        disabled={
+                          openInCadBusy ||
+                          downloadAllBusy ||
+                          downloadAllWorkFilesBusy ||
+                          requestFilesDownloadLocked
+                        }
+                      >
+                        {openInCadBusy ? "여는 중..." : "열기"}
+                      </Button>
+                    ) : null}
                     {files.length > 0 ? (
                       files.some((f) => isDcmFileName(f.fileName)) ? (
                         <DropdownMenu>
@@ -3100,6 +3139,7 @@ export function PracticeTransferDetailChatDialog({
                               disabled={
                                 downloadAllBusy ||
                                 downloadAllWorkFilesBusy ||
+                                openInCadBusy ||
                                 requestFilesDownloadLocked
                               }
                             >
@@ -3133,6 +3173,7 @@ export function PracticeTransferDetailChatDialog({
                           disabled={
                             downloadAllBusy ||
                             downloadAllWorkFilesBusy ||
+                            openInCadBusy ||
                             requestFilesDownloadLocked
                           }
                         >
