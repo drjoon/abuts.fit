@@ -6,6 +6,7 @@
  * 자동매칭(공개 풀)은 공정상 의뢰 — 뱃지 집계·「의뢰」필터에 포함.
  * 기공소 수신은 거절·작업취소가 목록에서 빠져 취소/거절 뱃지 불필요 → 치과만 취소 포함 5뱃지.
  * 본문 건수: 의뢰·작업시작=전체. 완료·취소·어벗=미열람만(clearedIds 제외).
+ * 2026-09-25: 배지 간격 의뢰·작업시작 | 완료·취소 | 어벗 (취소|어벗 사이 여백).
  * 2026-09-15: 후속 보철 반영 시 feeQuote.lines 비움 — 확정 total과 낡은 라인 합(임시치아) 불일치 방지.
  * 2026-09-12: 치과 /my trashedFiles 병합 — 활성 files와 겹치면 휴지통에서 제거.
  * 2026-09-11: 배지 순서 의뢰→작업시작→완료→취소→어벗. 완료·취소·어벗 열람 시 본문 건수 감소.
@@ -483,8 +484,11 @@ export const PRACTICE_RECENT_STATUS_BADGES = [
   tooltip: string;
 }>;
 
-/** 완료 뱃지 앞 시각 간격 — 의뢰·작업시작 | 완료·취소·어벗 */
-export const PRACTICE_RECENT_STATUS_BADGE_GAP_BEFORE_KEYS = ["도착완료"] as const;
+/** 완료·어벗 뱃지 앞 시각 간격 — 의뢰·작업시작 | 완료·취소 | 어벗 */
+export const PRACTICE_RECENT_STATUS_BADGE_GAP_BEFORE_KEYS = [
+  "도착완료",
+  "작업완료",
+] as const;
 
 /** 완료·취소·어벗 — 상세를 한 번 열면 배지 본문 건수에서 제외. */
 export const practiceRecentStatusFilterClearsCountOnView = (
