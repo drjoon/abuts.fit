@@ -8,6 +8,11 @@ function normalizeBusinessNumberDigits(input) {
   return digits;
 }
 
+/** 홈택스 진위/상태가 어긋나도 등록 검증을 통과시킬 사업자번호(숫자 10자리) */
+const VERIFICATION_ALWAYS_PASS_BIZ_NOS = new Set([
+  "5028702617", // 저스트플러스
+]);
+
 const DEFAULT_BASE_URL = "https://api.odcloud.kr/api/nts-businessman";
 
 const MAX_VALIDATE_ATTEMPTS = 5;
@@ -132,6 +137,15 @@ export async function verifyBusinessNumber({
       verified: false,
       provider: "hometax",
       message: "유효한 사업자등록번호가 아닙니다.",
+    };
+  }
+
+  if (VERIFICATION_ALWAYS_PASS_BIZ_NOS.has(digits)) {
+    return {
+      verified: true,
+      provider: "allowlist",
+      message: "허용 목록 사업자로 검증을 통과했습니다.",
+      raw: { allowlisted: true },
     };
   }
 

@@ -75,6 +75,10 @@ export const SettingsWizard = ({
   }, [user?.role]);
   // auth store 역할도 함께 반영 (prop user 지연 대비)
   const authRole = useAuthStore((s) => s.user?.role);
+  const authRequestorKind = useAuthStore((s) => s.user?.requestorKind);
+  const authRequestorCapabilities = useAuthStore(
+    (s) => s.user?.requestorCapabilities,
+  );
   const effectiveBusinessType = useMemo(() => {
     if (authRole === "practice" || businessType === "practice") return "practice";
     return businessType;
@@ -524,12 +528,50 @@ export const SettingsWizard = ({
     }
   }, [currentStep]);
 
+  // 치과 대표는 사업자 등록 뒤 구강 스캔 단계가 추가되므로 진행 표시는 4단계.
+  // (레거시 practice 역할은 프로필에서 이미 답해 구강 스캔 단계를 생략)
+  const includesOralScanStep = useMemo(() => {
+    if (oralScanPhase) return true;
+    if (selectedRole !== "owner") return false;
+    const role = String(authRole || user?.role || "").trim();
+    if (role === "practice") return false;
+    const kind = String(
+      authRequestorKind || user?.requestorKind || "",
+    ).trim();
+    if (kind === "practice") return true;
+    if (kind === "lab") return false;
+    return Boolean(
+      authRequestorCapabilities?.practice ||
+        user?.requestorCapabilities?.practice,
+    );
+  }, [
+    oralScanPhase,
+    selectedRole,
+    authRole,
+    authRequestorKind,
+    authRequestorCapabilities,
+    user,
+  ]);
+
+  const stepProgress = useMemo(() => {
+    const baseIndex = currentStep ? STEP_ORDER.indexOf(currentStep) : -1;
+    const baseCurrent = Math.max(1, baseIndex + 1);
+    if (!includesOralScanStep) {
+      return { current: baseCurrent, total: STEP_ORDER.length };
+    }
+    const total = STEP_ORDER.length + 1;
+    return {
+      current: oralScanPhase ? total : baseCurrent,
+      total,
+    };
+  }, [STEP_ORDER, currentStep, includesOralScanStep, oralScanPhase]);
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#edf2ff] via-white to-[#f8fafc]">
       <div className="mx-auto flex min-h-screen w-full flex-col items-center justify-center px-4 py-8 sm:px-6 sm:py-12">
         <div className="mb-5 text-center sm:mb-6">
           <div className="inline-flex items-center gap-2 rounded-full border border-white/70 bg-white/70 px-4 py-1.5 text-sm font-semibold uppercase tracking-[0.2em] text-slate-500 shadow-sm">
-            {STEP_ORDER.indexOf(currentStep) + 1}/{STEP_ORDER.length}
+            {stepProgress.current}/{stepProgress.total}
           </div>
           <p className="mt-3 text-sm text-slate-500">
             기본 설정이 완료되면 플랫폼을 사용하실 수 있습니다.

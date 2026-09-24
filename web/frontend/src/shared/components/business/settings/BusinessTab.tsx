@@ -841,7 +841,6 @@ export const BusinessTab = ({
           (selectedRole === "owner" ||
             membershipMgmt.membership === "owner" ||
             membershipMgmt.membership === "none") && (
-            <div className="rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4 sm:p-5">
             <RequestorCapabilitiesPicker
               value={requestorProfile}
               onChange={handleCapabilitiesChange}
@@ -857,7 +856,6 @@ export const BusinessTab = ({
               }
               className="space-y-4"
             />
-            </div>
           )}
 
         {!isOnboarding &&

@@ -330,14 +330,10 @@ export const REQUESTOR_KIND_OPTIONS = [
   {
     key: "practice" as const,
     label: REQUESTOR_KIND_LABEL.practice,
-    description:
-      "치과에서 커스텀어벗 디자인 3d 모델로 어벗츠에 생산의뢰할 수 있습니다.",
   },
   {
     key: "lab" as const,
     label: REQUESTOR_KIND_LABEL.lab,
-    description:
-      "기공소에서 커스텀어벗 디자인 3d 모델로 어벗츠에 생산의뢰할 수 있습니다.",
   },
 ];
 
@@ -355,7 +351,6 @@ export const REQUESTOR_CAPABILITY_OPTIONS = REQUESTOR_KIND_OPTIONS.map(
   (opt) => ({
     key: opt.key,
     label: opt.label,
-    description: opt.description,
   }),
 );
 

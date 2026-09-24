@@ -104,6 +104,7 @@ export const BusinessAddressFields = ({
   const { toast } = useToast();
   const [addressPromptActive, setAddressPromptActive] = useState(false);
   const postcodeContainerRef = useRef<HTMLDivElement | null>(null);
+  const addressFieldsAnchorRef = useRef<HTMLDivElement | null>(null);
   const selectionHandlersRef = useRef({
     onChangeAddress,
     onChangeZipCode,
@@ -170,12 +171,31 @@ export const BusinessAddressFields = ({
     [onAddressSelected, onChangeAddress, onChangeZipCode, openMode, toast],
   );
 
+  const handleOpenAddressSearchRef = useRef(handleOpenAddressSearch);
+  handleOpenAddressSearchRef.current = handleOpenAddressSearch;
+
   useEffect(() => {
     if (!autoOpenAddressSearchSignal) return;
+    // signal 값 변경에만 반응. handleOpenAddressSearch 재생성으로 다시 열리면
+    // 주소 선택 직후 검색창이 다시 떠서 입력값이 가려진다.
     requestAnimationFrame(() => {
-      void handleOpenAddressSearch({ silent: true });
+      void handleOpenAddressSearchRef.current({ silent: true });
     });
-  }, [autoOpenAddressSearchSignal, handleOpenAddressSearch]);
+  }, [autoOpenAddressSearchSignal]);
+
+  const revealAddressFieldsAfterCloseRef = useRef<() => void>(() => {});
+  revealAddressFieldsAfterCloseRef.current = () => {
+    requestAnimationFrame(() => {
+      const detailEl = addressDetailInputRef?.current;
+      const addressEl = addressInputRef?.current;
+      const focusTarget = detailEl || addressEl;
+      focusTarget?.focus({ preventScroll: true });
+      (addressFieldsAnchorRef.current || focusTarget)?.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+      });
+    });
+  };
 
   useEffect(() => {
     if (!addressPromptActive) return;
@@ -198,6 +218,7 @@ export const BusinessAddressFields = ({
         if (nextAddress) handlers.onChangeAddress(nextAddress);
         if (nextZipCode) handlers.onChangeZipCode(nextZipCode);
         handlers.onAddressSelected?.();
+        revealAddressFieldsAfterCloseRef.current();
       },
       onclose: () => setAddressPromptActive(false),
     }) as { embed?: (element: HTMLElement) => void };
@@ -245,7 +266,7 @@ export const BusinessAddressFields = ({
       )}
 
       {rowLayout === "address-detail-zip" ? (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
+        <div ref={addressFieldsAnchorRef} className="grid grid-cols-1 gap-4 md:grid-cols-5">
           <Input
             id="address"
             ref={addressInputRef}
@@ -291,7 +312,7 @@ export const BusinessAddressFields = ({
           />
         </div>
       ) : (
-        <>
+        <div ref={addressFieldsAnchorRef} className="space-y-3">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             <Input
               id="address"
@@ -338,7 +359,7 @@ export const BusinessAddressFields = ({
             onKeyDown={onAddressDetailKeyDown}
             disabled={disabled}
           />
-        </>
+        </div>
       )}
     </div>
   );

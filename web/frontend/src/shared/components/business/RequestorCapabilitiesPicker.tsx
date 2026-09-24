@@ -67,7 +67,7 @@ export const RequestorCapabilitiesPicker = ({
                 key={opt.key}
                 htmlFor={id}
                 className={cn(
-                  "flex h-full cursor-pointer items-start gap-3 rounded-2xl border px-4 py-3.5 transition-all shadow-sm",
+                  "flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3.5 transition-all shadow-sm",
                   checked
                     ? "border-primary-muted/70 bg-primary-soft/35"
                     : "border-slate-200/80 bg-white/70 hover:border-primary-muted/50 hover:bg-primary-soft/10",
@@ -78,22 +78,16 @@ export const RequestorCapabilitiesPicker = ({
                   id={id}
                   type="radio"
                   name="requestor-kind"
-                  className="mt-1"
                   checked={checked}
                   disabled={disabled || optionLocked}
                   onChange={() => setKind(opt.key)}
                 />
-                <div className="min-w-0 flex-1 space-y-1.5">
-                  <Label
-                    htmlFor={id}
-                    className="cursor-pointer text-sm font-medium text-slate-900"
-                  >
-                    {opt.label}
-                  </Label>
-                  <p className="whitespace-pre-line text-xs leading-relaxed text-slate-500">
-                    {opt.description}
-                  </p>
-                </div>
+                <Label
+                  htmlFor={id}
+                  className="cursor-pointer text-sm font-medium text-slate-900"
+                >
+                  {opt.label}
+                </Label>
               </label>
             );
           })}
