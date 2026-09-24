@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-24: 스캔 칼라 — 핑크/화이트 보정 + 흰 배경.
 // - 2026-09-23: 스캔 칼라 피니시라인 가독성 — parseModelPreview 콘트라스트 + NoToneMapping.
 // - 2026-09-17: finishLinePoints — 준비 카드용 filled STL 썸네일에 FL(빨간 튜브) 오버레이.
 // - 2026-09-14: Orthographic 카메라 — 뷰어와 동일하게 평행 왜곡 없이 맞춤.
@@ -20,6 +21,7 @@ import {
   createModelPreviewMaterial,
   isScanColorPreview,
   applyScanColorToneMapping,
+  SCAN_COLOR_PREVIEW_BACKGROUND,
   parseModelPreview,
 } from "@/shared/files/modelPreviewFile";
 
@@ -299,6 +301,9 @@ export function StlPreviewThumbnail({
         const material = createModelPreviewMaterial(geometry, previewTexture);
         if (isScanColorPreview(geometry, previewTexture)) {
           applyScanColorToneMapping(renderer);
+          if (scene) {
+            scene.background = new THREE.Color(SCAN_COLOR_PREVIEW_BACKGROUND);
+          }
         }
         mesh = new THREE.Mesh(geometry, material);
         scene?.add(mesh);

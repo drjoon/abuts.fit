@@ -14,6 +14,8 @@
 // - 2026-09-04: Lot 각인 — StlFileProcessor 역산(Rotate90+W)으로 CNC→STL 매핑.
 // - 2026-08-28: 좌우 드래그=화면 Y축(카메라 local up) 회전 — 월드 Z 턴테이블 제거(스캔 수평 유지).
 // - 2026-09-23: capturePngDataUrl — 현재 뷰 PNG 캡처(이미지 저장).
+// - 2026-09-24: 스캔 칼라 매핑 ON/OFF 토글(뷰어 오버레이).
+// - 2026-09-24: 스캔 칼라 — 핑크 잇몸·화이트 치아 보정 + 흰 배경.
 // - 2026-09-23: 스캔 칼라 피니시라인 가독성 — parseModelPreview 콘트라스트 + NoToneMapping.
 // - 2026-08-28: PLY TextureFile·버텍스 컬러 칼라 표시 (parseModelPreview). 스캔 칼라는 언릿+노출↑.
 // - 2026-08-28: 패닝(중클릭·우클릭·Shift+좌클릭) — ScreenSpaceOrbitControls. 우드래그 후 수동픽 undo 스킵.
@@ -47,10 +49,12 @@ import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { cn } from "@/shared/ui/cn";
+import { Switch } from "@/components/ui/switch";
 import {
   createModelPreviewMaterial,
   isScanColorPreview,
   applyScanColorToneMapping,
+  SCAN_COLOR_PREVIEW_BACKGROUND,
   parseModelPreview,
 } from "@/shared/files/modelPreviewFile";
 import { useStlMetadata, type StlMetadata } from "../hooks/useStlMetadata";
@@ -115,6 +119,8 @@ type Props = {
   lotEngravingHexMode?: string | null;
   /** 헥스면(기본) | 포스트 측면. caseInfos.lotEngravingTarget. */
   lotEngravingTarget?: "hex" | "post" | null;
+  /** 스캔 칼라 매핑 토글 표시. 기본 true(칼라 있는 파일만 노출). */
+  showColorMappingToggle?: boolean;
 };
 
 export type StlPreviewViewerHandle = {
@@ -148,6 +154,7 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
       lotEngravingNcText = null,
       lotEngravingHexMode = null,
       lotEngravingTarget = "hex",
+      showColorMappingToggle = true,
     },
     ref,
   ) {
@@ -218,6 +225,12 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
     null,
   );
   const [error, setError] = useState<string | null>(null);
+  const [hasScanColor, setHasScanColor] = useState(false);
+  const [colorMappingEnabled, setColorMappingEnabled] = useState(true);
+  const previewTextureRef = useRef<THREE.Texture | null>(null);
+  const hasScanColorRef = useRef(false);
+  const colorMappingEnabledRef = useRef(true);
+  colorMappingEnabledRef.current = colorMappingEnabled;
   const resolvedMetadata = metadata ?? fetchedMetadata;
   const shouldWaitForMetadata = showOverlay;
 
@@ -331,6 +344,42 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
     }
   }
   const stableFileKey = fileKeyRef.current;
+
+  useEffect(() => {
+    setColorMappingEnabled(true);
+    setHasScanColor(false);
+    hasScanColorRef.current = false;
+    previewTextureRef.current = null;
+  }, [stableFileKey]);
+
+  useEffect(() => {
+    const mesh = meshRef.current;
+    const scene = sceneRef.current;
+    const renderer = rendererRef.current;
+    if (!mesh || !scene || !renderer || !hasScanColorRef.current) return;
+
+    const geometry = mesh.geometry as THREE.BufferGeometry;
+    const prev = mesh.material;
+    mesh.material = createModelPreviewMaterial(
+      geometry,
+      previewTextureRef.current,
+      { colorMapping: colorMappingEnabled },
+    );
+    if (Array.isArray(prev)) {
+      prev.forEach((m) => m.dispose());
+    } else {
+      prev.dispose();
+    }
+
+    if (colorMappingEnabled) {
+      applyScanColorToneMapping(renderer);
+      scene.background = new THREE.Color(SCAN_COLOR_PREVIEW_BACKGROUND);
+    } else {
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1;
+      scene.background = new THREE.Color(0xf9fafb);
+    }
+  }, [colorMappingEnabled]);
 
   const disposeFrontPointMesh = () => {
     const existing = frontPointMeshRef.current;
@@ -669,10 +718,17 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
           ? new THREE.Vector3(0, 0, 0)
           : center.clone();
 
-        const material = createModelPreviewMaterial(geometry, previewTexture);
-        // 스캔 칼라: ACES가 치아~잇몸 경계를 뭉개지 않게 NoToneMapping.
-        if (isScanColorPreview(geometry, previewTexture)) {
+        const material = createModelPreviewMaterial(geometry, previewTexture, {
+          colorMapping: colorMappingEnabledRef.current,
+        });
+        const scanColor = isScanColorPreview(geometry, previewTexture);
+        previewTextureRef.current = previewTexture;
+        hasScanColorRef.current = scanColor;
+        setHasScanColor(scanColor);
+        // 스캔 칼라 + 매핑 ON: Linear 노출 + 오프화이트 배경.
+        if (scanColor && colorMappingEnabledRef.current) {
           applyScanColorToneMapping(renderer);
+          scene.background = new THREE.Color(SCAN_COLOR_PREVIEW_BACKGROUND);
         }
         mesh = new THREE.Mesh(geometry, material);
 
@@ -2391,6 +2447,9 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
         }
       }
       meshRef.current = null;
+      hasScanColorRef.current = false;
+      previewTextureRef.current = null;
+      setHasScanColor(false);
       if (finishLine) {
         scene.remove(finishLine);
         if (finishLine instanceof THREE.Mesh) {
@@ -2817,6 +2876,20 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
       )}
     >
       <div ref={containerRef} className="absolute inset-0 h-full w-full" />
+      {showColorMappingToggle && hasScanColor && !error ? (
+        <label
+          className="absolute left-3 top-3 z-20 flex cursor-pointer items-center gap-2 rounded-md border border-slate-200 bg-white/95 px-2.5 py-1.5 text-[11px] font-medium text-slate-800 shadow-sm sm:text-xs"
+          title="스캔 칼라(텍스처·버텍스 컬러) 표시"
+        >
+          <Switch
+            checked={colorMappingEnabled}
+            onCheckedChange={setColorMappingEnabled}
+            className="h-5 w-9 data-[state=checked]:bg-primary [&>span]:h-4 [&>span]:w-4 data-[state=checked]:[&>span]:translate-x-4"
+            aria-label="칼라 매핑"
+          />
+          칼라 매핑
+        </label>
+      ) : null}
       {shouldBlockSceneForMetadata && (
         <div className="absolute inset-0 flex items-center justify-center rounded-md bg-white/70 text-sm text-slate-500">
           <div className="flex flex-col items-center gap-2">

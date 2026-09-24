@@ -370,7 +370,7 @@ Notes:
   - 의미 단위 섹션 고정: **환자** → **임플란트** → **생산**(있을 때만).
   - 레이아웃: 카드는 `layout="stack"`(기본), PreviewModal은 `layout="row"`(가로 3열·섹션 라벨 인라인·환자 일정/신원 1줄)로 요약 높이를 줄여 STL 영역을 확보합니다. 열 너비를 넘는 문구는 다음 줄로 넘깁니다(1줄 nowrap 강제 금지).
   - STL 오버레이(`StlPreviewViewer`): 왼쪽=테이퍼·최대직경·전체길이·커넥션·헥스 회전, 오른쪽=FL max/min·경사축·프론트(높이 균형으로 모델 가림 축소).
-  - PLY/OBJ/DCM 프리뷰 칼라: 버텍스 컬러 또는 `TextureFile`/동반 JPG·PNG(`createModelPreviewMaterial` + `parseModelPreview`). 피니시라인 가독성은 sRGB **휘도 대비·약한 채도**만(잇몸 적색 hue 시프트 금지) + 스캔 칼라 `NoToneMapping`(`applyScanColorToneMapping`). SSOT `src/shared/files/modelPreviewFile.ts`.
+  - PLY/OBJ/DCM 프리뷰 칼라: 버텍스 컬러 또는 `TextureFile`/동반 JPG·PNG(`createModelPreviewMaterial` + `parseModelPreview`). **MeshStandard(릿)** 로 칼라+음영을 같이 써서 외형선 유지(언릿 Basic 금지). 소프트 핑크 잇몸·진주 화이트 치아 블렌드(밝기↑) + `LinearToneMapping`(exposure 1.18, ACES 금지) + 배경 `SCAN_COLOR_PREVIEW_BACKGROUND`(흰색). 뷰어 좌상단 **칼라 매핑** 스위치로 ON/OFF. SSOT `src/shared/files/modelPreviewFile.ts` · `StlPreviewViewer`.
   - PreviewModal 폭: `RESPONSIVE.dialogContentPreview` — Dialog 기본 `sm:max-w-lg`를 `sm:max-w-[min(1680px,…)]`로 덮어써야 PC에서 ~512px로 찌그러지지 않습니다. 폰 세로는 STL 세로 스택·스크롤, 폰 가로는 `landscape:grid-cols-2`.
   - 넓은 Dialog/모달은 반드시 `sm:max-w-*`(또는 `sm:max-w-none`)를 넣는다. unprefixed `max-w-2xl`/`max-w-none`만으로는 Dialog 기본 `sm:max-w-lg`가 남는다.
   - 중복 금지 / 배치:

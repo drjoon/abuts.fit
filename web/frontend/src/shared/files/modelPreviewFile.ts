@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-09-24: 스캔 칼라 — Standard 릿 재질로 외형선 유지(언릿 Basic 폐기). colorMapping 옵션.
+// - 2026-09-24: 스캔 칼라 — 핑크/화이트 보정·오프화이트 배경·노출↓. createModelPreviewMaterial `colorMapping` 옵션.
 // - 2026-09-23: 스캔 칼라 — 적색 hue 시프트 제거, 휘도 대비·약한 채도만 (원본 핑크 유지).
 // - 2026-09-23: 스캔 칼라 콘트라스트·채도 보정 — 치아/잇몸 경계(피니시라인) 가독성.
 // - 2026-09-10: 3Shape/TRIOS HPS(.dcm) 메시 프리뷰 + 버텍스 칼라(텍스처 베이크).
@@ -121,19 +123,25 @@ export function geometryHasUv(
 /**
  * 썸네일·뷰어 공용 메시 머티리얼.
  * 우선순위: 텍스처 map → 버텍스 컬러 → STL 파란 틴트.
- * 스캔 칼라/텍스처는 조명에 어두워지지 않게 MeshBasic(언릿)으로 표시.
+ * 스캔 칼라도 Standard(릿)로 두어 외형·굴곡이 또렷하게 보이게 한다.
+ * colorMapping=false면 스캔 칼라/텍스처를 무시하고 기본 틴트.
  */
 export function createModelPreviewMaterial(
   geometry: THREE.BufferGeometry,
   texture?: THREE.Texture | null,
-): THREE.MeshStandardMaterial | THREE.MeshBasicMaterial {
-  const hasMap = Boolean(texture);
-  const hasColor = !hasMap && geometryHasVertexColors(geometry);
+  options?: { colorMapping?: boolean },
+): THREE.MeshStandardMaterial {
+  const colorMapping = options?.colorMapping !== false;
+  const hasMap = colorMapping && Boolean(texture);
+  const hasColor = colorMapping && !hasMap && geometryHasVertexColors(geometry);
   if (hasMap || hasColor) {
-    return new THREE.MeshBasicMaterial({
+    return new THREE.MeshStandardMaterial({
       color: 0xffffff,
       map: hasMap ? texture! : null,
       vertexColors: hasColor,
+      metalness: 0.04,
+      // 언릿(Basic)은 납작해 보이므로 릿 + 중간 roughness으로 음영·외형선 유지
+      roughness: 0.52,
     });
   }
   return new THREE.MeshStandardMaterial({
@@ -153,22 +161,38 @@ export function isScanColorPreview(
 
 /**
  * 스캔 칼라 프리뷰용 렌더러 톤매핑.
- * ACES는 중톤을 눌러 치아~잇몸 경계를 뭉개므로 NoToneMapping.
+ * ACES는 중톤을 눌러 치아~잇몸 경계를 뭉개므로 Linear만 쓰고,
+ * Standard 릿 재질 기준으로 노출을 맞춘다.
  */
 export function applyScanColorToneMapping(renderer: THREE.WebGLRenderer) {
-  renderer.toneMapping = THREE.NoToneMapping;
-  renderer.toneMappingExposure = 1;
+  renderer.toneMapping = THREE.LinearToneMapping;
+  renderer.toneMappingExposure = 1.18;
 }
 
-/** 피니시라인 가독성: 휘도 대비 위주 (hue는 원본 핑크 유지) */
-const SCAN_COLOR_CONTRAST = 1.28;
-const SCAN_COLOR_SATURATION = 1.1;
+/** 스캔 칼라(PLY/OBJ/DCM) 뷰어·썸네일 배경 */
+export const SCAN_COLOR_PREVIEW_BACKGROUND = 0xffffff;
+
+/** 피니시라인 가독성 + 소프트 핑크 잇몸 / 진주 화이트 치아 */
+const SCAN_COLOR_CONTRAST = 1.22;
+const SCAN_COLOR_SATURATION = 1.06;
+/** 치아·잇몸 전체 밝기 리프트 */
+const SCAN_COLOR_BRIGHTNESS = 1.12;
+
+/** 잇몸 타깃 — 밝은 dusty pink (#E8C4CC). 진홍/적색 금지. */
+const GUM_PINK_R = 0.91;
+const GUM_PINK_G = 0.769;
+const GUM_PINK_B = 0.8;
+
+/** 치아 타깃 — bright pearl (#FAF9F7) */
+const TOOTH_WHITE_R = 0.98;
+const TOOTH_WHITE_G = 0.976;
+const TOOTH_WHITE_B = 0.969;
 
 function clamp01(v: number): number {
   return v < 0 ? 0 : v > 1 ? 1 : v;
 }
 
-/** sRGB 한 픽셀(또는 버텍스) — 대비·약한 채도만 (적색 hue 시프트 금지) */
+/** sRGB 한 픽셀(또는 버텍스) — 대비 후 잇몸 핑크·치아 화이트로 소프트 블렌드 */
 function enhanceScanSrgbChannels(
   r0: number,
   g0: number,
@@ -182,6 +206,43 @@ function enhanceScanSrgbChannels(
   r = clamp01(luma + (r - luma) * SCAN_COLOR_SATURATION);
   g = clamp01(luma + (g - luma) * SCAN_COLOR_SATURATION);
   b = clamp01(luma + (b - luma) * SCAN_COLOR_SATURATION);
+
+  const maxc = Math.max(r, g, b);
+  const minc = Math.min(r, g, b);
+  const sat = maxc > 1e-5 ? (maxc - minc) / maxc : 0;
+
+  // 잇몸: 따뜻한 중톤(살구~분홍). 밝은 치아·녹빛은 제외.
+  const warm = clamp01((r - b) * 4.2);
+  const midLuma = clamp01(1 - Math.abs(luma - 0.48) / 0.34);
+  const notBrightTooth = luma < 0.7 ? 1 : clamp01((0.86 - luma) / 0.16);
+  let gumW = warm * midLuma * notBrightTooth;
+  if (r + 0.02 < g) gumW *= 0.3;
+  gumW = clamp01(gumW);
+
+  // 치아: 밝은 저채도·크림을 진주 화이트로.
+  let toothW = 0;
+  if (luma > 0.4) {
+    const bright = clamp01((luma - 0.4) / 0.38);
+    const lowSat = clamp01(1 - sat / 0.38);
+    toothW = bright * Math.max(lowSat, 0.4) * (1 - gumW * 0.9);
+  }
+
+  if (gumW > 0.02) {
+    const t = gumW * 0.52;
+    r = clamp01(r + (GUM_PINK_R - r) * t);
+    g = clamp01(g + (GUM_PINK_G - g) * t);
+    b = clamp01(b + (GUM_PINK_B - b) * t);
+  }
+  if (toothW > 0.02) {
+    const t = toothW * 0.68;
+    r = clamp01(r + (TOOTH_WHITE_R - r) * t);
+    g = clamp01(g + (TOOTH_WHITE_G - g) * t);
+    b = clamp01(b + (TOOTH_WHITE_B - b) * t);
+  }
+
+  r = clamp01(r * SCAN_COLOR_BRIGHTNESS);
+  g = clamp01(g * SCAN_COLOR_BRIGHTNESS);
+  b = clamp01(b * SCAN_COLOR_BRIGHTNESS);
 
   return [r, g, b];
 }
