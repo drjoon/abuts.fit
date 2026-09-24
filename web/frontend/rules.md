@@ -102,7 +102,7 @@ Notes:
   - `src/pages/public/EventsPage.tsx` — `/events` → `/#events` 리다이렉트
   - `src/pages/public/EventApplyPage.tsx` — 행사 신청 (`/events/:slug`)
   - `src/pages/public/PlatformPage.tsx` — 레거시 `/platform` → `/offer/simple-way` 리다이렉트
-  - 메뉴: 심플웨이 · 기공사업부 (`landingOffers` 2개). 이벤트는 랜딩 `#events` (`LandingEventsSection`). 플랫폼·커스텀어벗 내용은 두 오퍼에 합침. 레거시 `/offer/platform`→심플웨이, `/offer/custom-abutment`→기공사업부.
+  - 메뉴: 심플웨이 · 기공서비스 (`landingOffers` 2개). 이벤트는 랜딩 `#events` (`LandingEventsSection`). 플랫폼·커스텀어벗 내용은 두 오퍼에 합침. 레거시 `/offer/platform`→심플웨이, `/offer/custom-abutment`→기공서비스.
   - `src/pages/public/AboutPage.tsx` — 레거시 `/about` → `/` 리다이렉트
   - `PublicPageLayout` 기본 `tone="light"` (랜딩·도움말·약관·문의 등 공개 안내 공통)
   - 카드/타이포 SSOT: `PUBLIC_CARD_CLASS` · `PUBLIC_PAGE_EYEBROW` · `PUBLIC_PAGE_TITLE` · `PUBLIC_PAGE_SUBTITLE`

@@ -143,10 +143,10 @@ export const landingSectionY = {
 export const landingSkyWashClass =
   "bg-[radial-gradient(ellipse_at_20%_0%,rgba(56,189,248,0.18),transparent_55%),radial-gradient(ellipse_at_90%_10%,rgba(37,99,235,0.14),transparent_50%),linear-gradient(180deg,#f8fafc_0%,#eef4fb_55%,#ffffff_100%)]";
 
-/** `/` 히어로. 메뉴는 심플웨이 · 기공사업부. 이벤트는 `#events`. */
+/** `/` 히어로. 메뉴는 심플웨이 · 기공서비스. 이벤트는 `#events`. */
 export const landingHome = {
-  heroEyebrow: "ABUTS.FIT · IMPLANT WORKFLOW PLATFORM",
-  heroTitle: ["심플웨이로 시작하는", "정확한 임플란트 워크플로우"],
+  heroEyebrow: "IMPLANT WORKFLOW PLATFORM",
+  heroTitle: ["심플웨이로 시작하는", "간명하고 정확한 워크플로우"],
   heroBody: "식립부터 어벗 선택, 커스텀어벗 제작과 납품까지.",
   heroSupport: "치과·기공소·제조사를 하나의 흐름으로 연결합니다.",
   ctaStart: "시작하기",
@@ -186,10 +186,10 @@ export const landingHomeBusinessTabs = [
   {
     id: "simple-way" as const,
     label: "심플웨이",
-    eyebrow: "SIMPLE WAY",
-    title: "직관적인 수술과 보철의 시작",
+    eyebrow: "SIMPLEWAY",
+    title: "직관적인 수술과 보철",
     body: [
-      "심플웨이 툴과 재료를 기반으로 이상적인 위치에 임플란트를 식립하고, 케이스에 맞는 어벗을 선택해 다음 보철 단계를 편하게 준비합니다.",
+      "심플웨이 시스템 기반으로 이상적인 위치에 임플란트를 식립하고, 케이스에 맞는 어벗을 선택해 보철 단계를 편하게 준비합니다.",
     ],
     cta: "심플웨이 자세히 보기",
     href: "/offer/simple-way",
@@ -197,13 +197,14 @@ export const landingHomeBusinessTabs = [
   },
   {
     id: "custom" as const,
-    label: "커스텀어벗 의뢰",
-    eyebrow: "CUSTOM ABUTMENT",
+    label: "커스텀어벗 및 어벗츠기공",
+    eyebrow: "LAB SERVICE",
     title: "구강스캔 데이터를 빠르고 정확하게 전달",
     body: [
-      "기성 어벗만으로 해결하기 어려운 케이스는 구강스캔 데이터와 의뢰 내용을 어벗츠 플랫폼으로 전달해 기공서비스를 바로 시작할 수 있습니다.",
+      "기성 어벗 뿐만 아니라 커스텀 어벗도 자유롭게 선택하실 수 있습니다.",
+      "구강스캔 데이터와 의뢰 내용을 어벗츠 플랫폼으로 전달해 기공서비스를 바로 시작할 수 있습니다.",
     ],
-    cta: "기공사업부 자세히 보기",
+    cta: "기공서비스 자세히 보기",
     href: "/offer/lab",
     image: { src: "/landing/waveon/hero.jpg", alt: "커스텀어벗 검수" },
   },
@@ -213,7 +214,8 @@ export const landingHomeBusinessTabs = [
     eyebrow: "LAB PARTNERSHIP",
     title: "기존 기공소와도 함께",
     body: [
-      "가입 기공소는 거래 치과에 어벗츠 기공사업부와 동일한 통합 서비스를 제공할 수 있습니다.",
+      "거래하시던 기공소를 소개해주세요.",
+      "플랫폼 가입시 어벗츠 기공서비스와 동일한 통합 서비스를 제공받으실 수 있습니다.",
     ],
     cta: "플랫폼 도입 상담",
     href: "/contact",
@@ -263,7 +265,8 @@ export const landingHomeWhy = [
     eyebrow: "CONNECTED PARTNERS",
     title: "기존 기공소와도 함께",
     body: [
-      "가입 기공소는 거래 치과에 어벗츠 기공사업부와 동일한 통합 서비스를 제공할 수 있습니다.",
+      "거래하시던 기공소를 소개해주세요.",
+      "플랫폼 가입시 어벗츠 기공서비스와 동일한 통합 서비스를 제공받으실 수 있습니다.",
     ],
   },
 ] as const;
@@ -323,7 +326,7 @@ export const landingHomeFaq = [
   },
   {
     q: "기존에 거래하던 기공소도 이용할 수 있나요?",
-    a: "네. 기존 거래 기공소도 어벗츠 플랫폼에 가입하면 어벗츠 기공사업부와 동일한 통합 서비스를 거래 치과에 제공할 수 있습니다.",
+    a: "네. 거래하시던 기공소를 소개해주세요. 플랫폼 가입시 어벗츠 기공서비스와 동일한 통합 서비스를 제공받으실 수 있습니다.",
   },
   {
     q: "제조와 납품은 어떻게 진행되나요?",
@@ -342,10 +345,10 @@ export type LandingHomeStory = {
 
 export const landingHomeStories: LandingHomeStory[] = [
   {
-    title: "직관적인 수술과 보철의 시작",
+    title: "직관적인 수술과 보철",
     line: "심플웨이 툴과 재료로 식립과 어벗 선택을 이어갑니다.",
     body: [
-      "심플웨이 툴과 재료를 기반으로 이상적인 위치에 임플란트를 식립하고, 케이스에 맞는 어벗을 선택해 다음 보철 단계를 편하게 준비합니다.",
+      "심플웨이 시스템 기반으로 이상적인 위치에 임플란트를 식립하고, 케이스에 맞는 어벗을 선택해 보철 단계를 편하게 준비합니다.",
       "수술과 보철 사이의 복잡한 판단을 더 직관적인 흐름으로 줄입니다.",
     ],
     image: {
@@ -374,7 +377,8 @@ export const landingHomeStories: LandingHomeStory[] = [
     body: [
       "디자인 완료 후 제조까지 하나의 흐름으로 이어져야 납기와 품질을 안정적으로 관리할 수 있습니다.",
       "커스텀어벗 디자인이 등록되면 애크로덴트 통합 생산 시스템으로 실시간 연결되어 가공이 이어집니다.",
-      "가입 기공소는 거래 치과에 어벗츠 기공사업부와 동일한 통합 서비스를 제공할 수 있습니다.",
+      "거래하시던 기공소를 소개해주세요.",
+      "플랫폼 가입시 어벗츠 기공서비스와 동일한 통합 서비스를 제공받으실 수 있습니다.",
     ],
     image: {
       src: "/landing/waveon/hero.jpg",

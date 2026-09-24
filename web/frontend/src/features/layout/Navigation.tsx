@@ -41,7 +41,7 @@ export const Navigation = ({ tone = "dark", overlay = false }: NavigationProps) 
   /** 라이트 톤은 오버레이여도 어두운 글자 유지(밝은 히어로 위). */
   const isLight = tone === "light";
 
-  /** 심플웨이 · 기공사업부. 이벤트는 랜딩 `#events`. */
+  /** 심플웨이 · 기공서비스. 이벤트는 랜딩 `#events`. */
   const menuItems: NavMenuItem[] = landingOffers.map((offer) => ({
     label: offer.navLabel,
     href: offerPath(offer.slug),

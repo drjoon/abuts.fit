@@ -4,10 +4,10 @@
 // - web/frontend/src/features/landing/landingAssets.ts
 // - rules.md §1.5–§2.6 · web/frontend/rules.md (기공의뢰·정산·스토어)
 //
-  // 메뉴: 심플웨이 · 기공사업부. 이벤트는 랜딩 `#events`. 플랫폼·커스텀어벗은 두 오퍼에 섞어 넣는다.
+  // 메뉴: 심플웨이 · 기공서비스. 이벤트는 랜딩 `#events`. 플랫폼·커스텀어벗은 두 오퍼에 섞어 넣는다.
   // `/` 카피 SSOT: landingTheme (Waveon 워크플로우 메시지 · 기존 섹션 디자인 유지)
   // 정가(판매가·배송비)는 심플웨이 제품 + 커스텀어벗(런칭/정상). 스토어 SSOT: storeCatalog.ts
-  // · STORE_SHIPPING_FEE_INCLUSIVE 3,500 · 10만원↑무료. 기공사업부 본문은 금액을 적지 않는다.
+  // · STORE_SHIPPING_FEE_INCLUSIVE 3,500 · 10만원↑무료. 기공서비스 본문은 금액을 적지 않는다.
 import {
   LANDING_CAD_PREVIEW,
   LANDING_CASE_ABUTMENT,
@@ -166,7 +166,7 @@ const WAVEON_PARTNERSHIP_TILE: OfferVisual = {
   alt: "치과·기공소 디지털 협업",
 };
 
-/** 이벤트(`/events/simpleway-gribo` extras)와 동일 카피 — 심플웨이·기공사업부에 넣음 */
+/** 이벤트(`/events/simpleway-gribo` extras)와 동일 카피 — 심플웨이·기공서비스에 넣음 */
 const PLATFORM_STORY: OfferStory = {
   name: "어벗츠 플랫폼",
   line: "치과·기공소",
@@ -189,8 +189,8 @@ export const landingOffers: LandingOffer[] = [
   {
     slug: "simple-way",
     navLabel: "심플웨이",
-    punch: "직관적인 수술과 보철의 시작",
-    heroTitle: "직관적인 수술과 보철의 시작",
+    punch: "직관적인 수술과 보철",
+    heroTitle: "직관적인 수술과 보철",
     line: "식립 위치와 어벗 선택을 간결한 흐름으로.",
     lead: "심플웨이 툴과 재료로 이상적인 식립을 준비하고, 케이스에 맞는 어벗으로 보철까지 이어갑니다.",
     hero: "photo",
@@ -377,7 +377,7 @@ export const landingOffers: LandingOffer[] = [
   },
   {
     slug: "lab",
-    navLabel: "기공사업부",
+    navLabel: "기공서비스",
     punch: "디자인에서 생산까지",
     heroTitle: "디자인에서 생산까지",
     line: "의뢰·기공 협업·애크로덴트 납품을 한 흐름으로.",
@@ -482,7 +482,7 @@ export const landingOffers: LandingOffer[] = [
     ],
     faq: [
       {
-        q: "기공사업부는 무엇인가요?",
+        q: "기공서비스는 무엇인가요?",
         a: "어벗츠가 직접 운영하는 기공소입니다. 치과 의뢰를 받아 보철을 만듭니다.",
       },
       PLATFORM_FAQ,

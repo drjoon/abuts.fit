@@ -5,7 +5,7 @@
 import { Navigate } from "react-router-dom";
 import { offerPath } from "@/features/landing/landingOffers";
 
-/** 레거시 `/platform` → 심플웨이 오퍼(플랫폼 내용은 심플웨이·기공사업부에 합침) */
+/** 레거시 `/platform` → 심플웨이 오퍼(플랫폼 내용은 심플웨이·기공서비스에 합침) */
 export const PlatformPage = () => (
   <Navigate to={offerPath("simple-way")} replace />
 );

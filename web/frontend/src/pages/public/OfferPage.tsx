@@ -11,7 +11,7 @@ import {
 } from "@/features/landing/landingOffers";
 import { PublicPageLayout } from "./components/PublicPageLayout";
 
-/** `/offer/:slug` — 헤더(심플웨이 · 기공사업부 · 이벤트)의 상세 설명 */
+/** `/offer/:slug` — 헤더(심플웨이 · 기공서비스 · 이벤트)의 상세 설명 */
 const OfferPage = () => {
   const { slug } = useParams();
   const legacyTarget = slug ? LEGACY_OFFER_REDIRECTS[slug] : undefined;
