@@ -226,6 +226,8 @@ export const isAbutsPrimePracticeTransfer = (transfer) => {
  * 협력: 수행 기공소(치과↔지정 기공소와 동일). 정산만 어벗츠 경유.
  * 하청·하청풀·어벗츠 자체: 원청(어벗츠).
  * 레거시 외부 직접 지정: 수행 기공소.
+ * SSOT: `.cursor/rules/ptx-cooperation-fee-ssot.mdc` · 루트 `rules.md` §2.
+ * 주의: `isPracticeTransferSubcontracted`(prime≠assignee)만으로 협력에 원청 수가를 쓰지 말 것.
  */
 export const resolveFeeScheduleLabAnchorId = (transfer) => {
   if (isCooperationAssignee(transfer)) {
@@ -249,6 +251,7 @@ export const resolveFeeScheduleLabAnchorId = (transfer) => {
  * 협력(assigneeKind=cooperation): 수행 기공소(assignee).
  * 하청·어벗츠 자체 수행·하청풀: 원청(어벗츠).
  * 레거시 외부 직접 지정: 수행 기공소.
+ * SSOT: `.cursor/rules/ptx-cooperation-fee-ssot.mdc` (수가표 앵커와 동일 분기).
  */
 export const resolveLabFeeMultiplierLabAnchorId = (transfer) => {
   if (isCooperationAssignee(transfer)) {

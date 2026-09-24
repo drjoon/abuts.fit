@@ -173,9 +173,10 @@
   1. **스토어** — 기성품(심플웨이 등) 과세 매출. `STORE_SALE`/`REV_STORE_TAXABLE`. 포함가 전액 어벗츠 · 딜러/제조/개발운영 분배 없음 · 월말 세금계산서.
   2. **커스텀어벗** — 기공소 디자인 → 애크로덴트 생산 → 치과 납품. 매출=의뢰자 유료 소비, 지출=제조사 고정 하청, 잔여=딜러·개발운영·어벗츠 분배(배송 제외).
   3. **기공사업부** — 어벗츠기공소(`internalLab`)가 치과와 **직접 계약**(원청). 선수금·결제는 항상 어벗츠 서비스로 1차 결제 후 수행 기공소로 이체. 외부 수행은 두 종류:
-     - **협력**(`assigneeKind=cooperation`): 치과가 픽커에서 외부 기공소 직접 지정. 플랫폼 사용료는 관리자 설정(초기 **2%** · 이벤트 **off**=실효 0%, UI `~~2%~~ → 0%`). 이벤트 중 전액 통과. 치과 표시「어벗츠 · {파트너}」.
-     - **하청**(`assigneeKind=subcontract`): 치과가 어벗츠기공사업부 지정 후 하청 풀/클레임. `subcontractFeeRate`(기본 5%) 매입 공제. 치과에는 실명 비공개.
+     - **협력**(`assigneeKind=cooperation`): 치과가 픽커에서 외부 기공소 직접 지정. **수가표·할증=수행 기공소**(치과↔지정과 동일). 정산만 어벗츠 gross→수행 매입. 플랫폼 사용료는 관리자 설정(초기 **2%** · 이벤트 **off**=실효 0%, UI `~~2%~~ → 0%`). 이벤트 중 전액 통과. 치과 표시「어벗츠 · {파트너}」.
+     - **하청**(`assigneeKind=subcontract`): 치과가 어벗츠기공사업부 지정 후 하청 풀/클레임. **수가표·할증=어벗츠(원청).** `subcontractFeeRate`(기본 5%) 매입 공제. 치과에는 실명 비공개.
   - **신규 PTX SSOT(강제):** `targetLabAnchorId`=항상 `internalLab`. 치과 픽커 외부=`assigneeLabAnchorId` + `assigneeKind=cooperation`. 어벗츠만 선택 후 풀 클레임=`assigneeKind=subcontract`. 계약·결제·계산서=어벗츠→치과(`ABUTS_TO_CUSTOMER`). 수행 기공소 정산=기공소→어벗츠 매입(`AFFILIATE_TO_ABUTS`, 품목 협력/하청 기공비).
+  - **PTX 수가·할증 앵커(강제, 정산과 분리):** 협력=`resolveFeeScheduleLabAnchorId`/`resolveLabFeeMultiplierLabAnchorId` → **assignee**. 하청·어벗츠 자체 → **prime(어벗츠)**. `isPracticeTransferSubcontracted`(prime≠assignee)만으로 협력 수가를 어벗츠에 두지 말 것. 생성 스냅샷 소급 금지. Cursor: `.cursor/rules/ptx-cooperation-fee-ssot.mdc`.
   - 가격 안내 UI(`PricingPolicyDialog`)는 커스텀 어벗 단가·출고 정책 안내용이며, 사업 축 정의와 혼용하지 않는다.
   - 관리자 정산 UI: `AdminPaymentsPage` 상단 3사업 축(선택형) · 집계 `GET /api/admin/credits/settlement-business-overview`(분배비율·planned 몫 포함). 분배 비율 설정: 재무 › 설정 › 분배비율. 사업영역(`/dashboard/partners`)은 팀원 배분.
 - **매칭 과금 SSOT(강제):**
