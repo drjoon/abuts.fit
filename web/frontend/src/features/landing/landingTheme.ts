@@ -176,7 +176,7 @@ export const landingSkyWashClass =
 /** `/` 히어로. 메뉴는 심플웨이 · 기공서비스. 이벤트는 `#events`. */
 export const landingHome = {
   heroEyebrow: "DENTAL IMPLANT WORKFLOW",
-  heroTitle: ["심플웨이로 시작하는", "간단하고 정확한 워크플로우"],
+  heroTitle: ["어벗츠가 제공하는", "간단 명료한 워크플로우"],
   heroBody: "식립부터 어벗 선택, 기공 의뢰와 납품까지.",
   heroSupport: "치과·기공소·제조사를 하나의 흐름으로 연결합니다.",
 
