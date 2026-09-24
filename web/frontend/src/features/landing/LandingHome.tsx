@@ -5,7 +5,7 @@
 // - web/frontend/src/features/layout/Navigation.tsx
 // - web/frontend/src/features/landing/landingAssets.ts
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowDown, ArrowRight } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Accordion,
@@ -24,36 +24,16 @@ import {
   landingHomeSteps,
   landingContent,
   landingSectionY,
+  landingSky,
+  landingTypo,
 } from "./landingTheme";
 import { LandingEventsSection } from "./LandingEventsSection";
+import { LandingScrollCue } from "./LandingScrollCue";
 
 type BusinessTab = (typeof landingHomeBusinessTabs)[number];
 
-/** Waveon 대비 살짝만 작은 타이포 — 본문 15px대, h2 ~36–40px */
-const TYPO = {
-  eyebrow: "text-[11px] font-semibold tracking-[0.2em]",
-  h1: "text-[1.875rem] font-bold leading-tight tracking-tight sm:text-[2.5rem] lg:text-[3.25rem]",
-  h2: "break-keep text-[1.5rem] font-semibold leading-snug tracking-tight sm:text-[2rem] lg:text-[2.25rem]",
-  h3: "break-keep text-lg font-semibold tracking-tight sm:text-xl",
-  lead: "break-keep text-[14px] leading-6 text-slate-600 sm:text-[15px] sm:leading-6",
-  body: "break-keep text-[14px] leading-6 text-slate-600 sm:text-[15px] sm:leading-[1.65]",
-  link: "text-[14px] font-semibold sm:text-[15px]",
-} as const;
-
-const SKY = {
-  ink: "text-[#0b2a5c]",
-  accent: "text-sky-600",
-  accentStrong: "text-[#2563eb]",
-  band: "bg-[#eef6ff]",
-  card: "rounded-2xl border border-sky-100/80 bg-white shadow-[0_10px_32px_rgba(37,99,235,0.06)]",
-  pill:
-    "rounded-full bg-[#2563eb] text-white shadow-[0_8px_22px_rgba(37,99,235,0.25)] hover:bg-[#1d4ed8]",
-  pillGhost:
-    "rounded-full border border-sky-200 bg-white text-[#0b2a5c] hover:bg-sky-50",
-  /** 히어로 오버레이 — Waveon과 동일한 짙은 블루 */
-  heroWash:
-    "bg-[linear-gradient(rgba(7,25,55,0.62),rgba(7,25,55,0.65))]",
-} as const;
+const TYPO = landingTypo;
+const SKY = landingSky;
 
 function Lines({ lines, className }: { lines: string[]; className?: string }) {
   return (
@@ -127,13 +107,6 @@ export function LandingHome() {
     navigate(isAuthenticated ? resolveEntryDashboardPath(user) : "/signup");
   };
 
-  const scrollToBusiness = () => {
-    document.getElementById("business")?.scrollIntoView({
-      behavior: "smooth",
-      block: "start",
-    });
-  };
-
   return (
     <div className="bg-white text-slate-900">
       {/* 풀블리드 포토 히어로 — Waveon 원본 색감 */}
@@ -166,22 +139,9 @@ export function LandingHome() {
             lines={[landingHome.heroBody, landingHome.heroSupport]}
             className="mt-4 max-w-xl text-[14px] leading-6 text-white/90 sm:mt-5 sm:text-[15px] sm:leading-6"
           />
-          <Button
-            type="button"
-            className="mt-7 h-11 rounded-full bg-white px-6 text-[14px] font-semibold text-[#1e4a8c] hover:bg-white/95 sm:text-[15px]"
-            onClick={scrollToBusiness}
-          >
-            {landingHome.ctaHero}
-            <ArrowDown className="ml-1.5 h-3.5 w-3.5" />
-          </Button>
         </div>
 
-        <div className="pointer-events-none absolute bottom-6 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-2">
-          <span className="text-[10px] font-semibold tracking-[0.28em] text-white/70">
-            SCROLL
-          </span>
-          <span className="h-8 w-px bg-white/50" />
-        </div>
+        <LandingScrollCue />
       </section>
 
       {/* THE SIMPLE WAY — 좌우 파노라마 갤러리 (모바일·PC) */}

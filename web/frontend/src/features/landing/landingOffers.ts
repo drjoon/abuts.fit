@@ -11,7 +11,6 @@
 import {
   LANDING_CAD_PREVIEW,
   LANDING_CASE_ABUTMENT,
-  LANDING_CASE_HEALING,
   LANDING_CUSTOM_ABUTMENT,
   LANDING_CUSTOM_TRACKING,
   LANDING_PLATFORM_BOARD,
@@ -20,13 +19,19 @@ import {
   LANDING_PLATFORM_STATS,
   LANDING_SW_ABUTMENT_CROWN,
   LANDING_SW_BONE_SHAPER,
+  LANDING_SW_CATALOG_ASSEMBLY,
   LANDING_SW_CHECK_KIT,
   LANDING_SW_CHECK_PIN,
+  LANDING_SW_FLOW_DEFAULT_ROW_ID,
+  LANDING_SW_FLOW_ROWS,
   LANDING_SW_GUIDE_HOW_TO,
   LANDING_SW_GUIDE_KIT,
   LANDING_SW_GUIDE_PEN_PIN,
   LANDING_SW_HERO_KITS,
   LANDING_SW_PROSTHETIC_KIT,
+  LANDING_SW_YOUTUBE_ID,
+  LANDING_SW_YOUTUBE_POSTER,
+  LANDING_SW_YOUTUBE_SEGMENTS,
   LANDING_WAVEON_PARTNERSHIP,
   LANDING_WAVEON_WORKFLOW,
 } from "./landingAssets";
@@ -100,6 +105,17 @@ export type OfferStory = {
   /** 스펙·체크리스트가 필요할 때만. */
   points?: string[];
   visual?: OfferVisual;
+  /** full = 이미지 풀폭 위 + 카피 아래 (개념 다이어그램). */
+  layout?: "split" | "full";
+};
+
+export type OfferFlowChart = {
+  name: string;
+  line: string;
+  body: string[];
+  /** 위에서 아래(10→6). 기본은 defaultRowId만 노출. */
+  rows: Array<{ id: string; src: string; alt: string }>;
+  defaultRowId: string;
 };
 
 export type LandingOffer = {
@@ -107,16 +123,33 @@ export type LandingOffer = {
   navLabel: string;
   /** 홈 타일. 오퍼 히어로는 heroTitle. */
   punch: string;
+  /** 히어로 eyebrow — 없으면 navLabel 대문자화 */
+  heroEyebrow?: string;
   heroTitle: string;
+  /** 히어로 본문. 문장 단위 → UI에서 `<br />`. 없으면 line 한 줄. */
+  heroBody?: string[];
   line: string;
   lead: string;
-  /** video=키트 영상 · photo=풀블리드 스틸 · tile=텍스트+미디어 */
+  /** video=유튜브/키트 영상 · photo=풀블리드 스틸 · tile=텍스트+미디어 */
   hero: "video" | "photo" | "tile";
+  /** YouTube 히어로(짧은 루프). hero==="video" 일 때. */
+  youtube?: {
+    id: string;
+    startSec?: number;
+    endSec?: number;
+    /** 여러 구간을 순서대로 순환. 있으면 start/end 보다 우선. */
+    segments?: Array<{ startSec: number; endSec: number }>;
+    poster?: string;
+  };
   tile: OfferVisual;
   /** 오퍼 히어로. 없으면 tile. 홈 타일과 겹치지 않을 때. */
   pageVisual?: OfferVisual;
   /** 히어로 아래 시작 버튼. 상품 카드가 있으면 쓰지 않는다. */
   cta?: OfferBuy;
+  /** 히어로 직후 카탈로그 안내(구성). */
+  guides?: OfferStory[];
+  /** 심플웨이 Flow Chart — 기본 1라인, 클릭 시 전체. */
+  flowChart?: OfferFlowChart;
   highlights?: OfferHighlight[];
   scene?: OfferScene;
   /** 정가·배송·구매. 심플웨이만. */
@@ -135,12 +168,6 @@ export const LEGACY_OFFER_REDIRECTS: Record<string, string> = {
 };
 
 const FULL_PACKAGE = "/store/acrodent/full-package.jpg";
-
-const HEALING_VISUAL: OfferVisual = {
-  kind: "photo",
-  src: LANDING_CASE_HEALING,
-  alt: "심플 힐링 어벗",
-};
 
 const ABUTMENT_VISUAL: OfferVisual = {
   kind: "photo",
@@ -190,12 +217,45 @@ export const landingOffers: LandingOffer[] = [
     slug: "simple-way",
     navLabel: "심플웨이",
     punch: "직관적인 수술과 보철",
+    heroEyebrow: "SIMPLEWAY",
     heroTitle: "직관적인 수술과 보철",
+    heroBody: ["식립부터 보철까지, 간결하게."],
     line: "식립 위치와 어벗 선택을 간결한 흐름으로.",
-    lead: "심플웨이 툴과 재료로 이상적인 식립을 준비하고, 케이스에 맞는 어벗으로 보철까지 이어갑니다.",
-    hero: "photo",
+    lead: "식립부터 보철까지, 하나의 흐름으로.",
+    hero: "video",
+    youtube: {
+      id: LANDING_SW_YOUTUBE_ID,
+      segments: [...LANDING_SW_YOUTUBE_SEGMENTS],
+      poster: LANDING_SW_YOUTUBE_POSTER,
+    },
     tile: WAVEON_WORKFLOW_TILE,
     pageVisual: HERO_KITS,
+    guides: [
+      {
+        name: "픽스처 · 심플어벗 · 보철.",
+        line: "한 축으로 이어집니다.",
+        body: [
+          "식립할 공간의 중앙에 픽스쳐가 앉고, 그 위에 예쁜 이머전스 프로파일의 심플어벗과 보철이 올라갑니다.",
+        ],
+        layout: "split",
+        visual: {
+          kind: "photo",
+          src: LANDING_SW_CATALOG_ASSEMBLY,
+          alt: "픽스처·심플어벗·보철 조립도",
+        },
+      },
+    ],
+    flowChart: {
+      name: "Flow Chart.",
+      line: "칼라 밴드만 따라가세요.",
+      body: [
+        "인접치 근원심 거리를 기준으로 6mm ~ 10mm 중 맞는 서지컬펜을 씁니다.",
+        "정교한 첫 드릴링 이후 과정은 쉽습니다.",
+        "칼라 밴드를 따라가세요.",
+      ],
+      rows: LANDING_SW_FLOW_ROWS.map((row) => ({ ...row })),
+      defaultRowId: LANDING_SW_FLOW_DEFAULT_ROW_ID,
+    },
     highlights: [
       { icon: "kit", label: "Guide", line: "가이드펜·핀으로 위치를" },
       { icon: "scan", label: "Check", line: "체크핀으로 경로를 확인" },
@@ -213,26 +273,6 @@ export const landingOffers: LandingOffer[] = [
         alt: "가이드펜 직경 선택",
       },
     },
-    products: [
-      {
-        name: "심플 힐링",
-        line: "가이드 직경과 맞는 치은을 형성합니다.",
-        price: "₩16,500",
-        priceNote: "부가세 포함 · 1EA",
-        specs: ["Hex · Non-Hex", "직경 6 · 7 · 9", "제조 (주)애크로덴트"],
-        buy: { kind: "store", label: "구매하기", productId: "simple-healing-2" },
-        visual: HEALING_VISUAL,
-      },
-      {
-        name: "심플어벗",
-        line: "같은 색·같은 직경으로 보철을 올립니다.",
-        price: "₩16,500",
-        priceNote: "부가세 포함 · 1EA",
-        specs: ["Hex · Non-Hex", "높이 XS–XL", "제조 (주)애크로덴트"],
-        buy: { kind: "store", label: "구매하기", productId: "simple-abutment-2" },
-        visual: ABUTMENT_VISUAL,
-      },
-    ],
     stories: [
       {
         name: "가이드펜과 가이드핀.",
@@ -319,7 +359,7 @@ export const landingOffers: LandingOffer[] = [
       },
       {
         title: "Prosthetics Kit.",
-        line: "치은 형성 · 어벗 체결 · 판매가 ₩1,100,000.",
+        line: "치은 형성 · 어벗 체결.",
         visual: {
           kind: "photo",
           src: LANDING_SW_PROSTHETIC_KIT,
@@ -328,7 +368,7 @@ export const landingOffers: LandingOffer[] = [
       },
       {
         title: "500만 패키지.",
-        line: "제품과 키트를 묶어 · 패키지 판매가 ₩5,000,000.",
+        line: "제품과 키트를 한 번에.",
         visual: {
           kind: "photo",
           src: FULL_PACKAGE,
@@ -379,7 +419,12 @@ export const landingOffers: LandingOffer[] = [
     slug: "lab",
     navLabel: "기공서비스",
     punch: "디자인에서 생산까지",
+    heroEyebrow: "LAB SERVICE",
     heroTitle: "디자인에서 생산까지",
+    heroBody: [
+      "의뢰·기공 협업·애크로덴트 납품을 한 흐름으로.",
+      "스캔부터 커스텀어벗 생산까지 같은 플랫폼에서 이어집니다.",
+    ],
     line: "의뢰·기공 협업·애크로덴트 납품을 한 흐름으로.",
     lead: "스캔 의뢰부터 커스텀어벗 디자인, 애크로덴트 생산·납품까지 같은 플랫폼에서 이어집니다.",
     hero: "tile",

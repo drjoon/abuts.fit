@@ -137,6 +137,36 @@ export const landingSectionY = {
 } as const;
 
 /**
+ * `/` · `/offer/*` Waveon 타이포 SSOT.
+ * 본문 15px대, h2 ~36–40px — LandingHome 과 동일.
+ */
+export const landingTypo = {
+  eyebrow: "text-[11px] font-semibold tracking-[0.2em]",
+  h1: "text-[1.875rem] font-bold leading-tight tracking-tight sm:text-[2.5rem] lg:text-[3.25rem]",
+  h2: "break-keep text-[1.5rem] font-semibold leading-snug tracking-tight sm:text-[2rem] lg:text-[2.25rem]",
+  h3: "break-keep text-lg font-semibold tracking-tight sm:text-xl",
+  lead: "break-keep text-[14px] leading-6 text-slate-600 sm:text-[15px] sm:leading-6",
+  body: "break-keep text-[14px] leading-6 text-slate-600 sm:text-[15px] sm:leading-[1.65]",
+  link: "text-[14px] font-semibold sm:text-[15px]",
+} as const;
+
+/** `/` · `/offer/*` 하늘색·카드·히어로 워시 SSOT */
+export const landingSky = {
+  ink: "text-[#0b2a5c]",
+  accent: "text-sky-600",
+  accentStrong: "text-[#2563eb]",
+  band: "bg-[#eef6ff]",
+  card: "rounded-2xl border border-sky-100/80 bg-white shadow-[0_10px_32px_rgba(37,99,235,0.06)]",
+  pill:
+    "rounded-full bg-[#2563eb] text-white shadow-[0_8px_22px_rgba(37,99,235,0.25)] hover:bg-[#1d4ed8]",
+  pillGhost:
+    "rounded-full border border-sky-200 bg-white text-[#0b2a5c] hover:bg-sky-50",
+  /** 히어로 오버레이 — Waveon과 동일한 짙은 블루 */
+  heroWash:
+    "bg-[linear-gradient(rgba(7,25,55,0.62),rgba(7,25,55,0.65))]",
+} as const;
+
+/**
  * 공개 히어로 하늘색 워시 — `LandingSkyWash` 와 동일 토큰.
  * 이벤트(`/events/*`)·랜딩(`/`) 헤더 뒤 배경 SSOT.
  */
@@ -149,6 +179,7 @@ export const landingHome = {
   heroTitle: ["심플웨이로 시작하는", "간단하고 정확한 워크플로우"],
   heroBody: "식립부터 어벗 선택, 기공 의뢰와 납품까지.",
   heroSupport: "치과·기공소·제조사를 하나의 흐름으로 연결합니다.",
+
   ctaStart: "시작하기",
   browseEyebrow: "THE SIMPLE WAY",
   browseHeading: "식립부터 보철까지, 하나의 흐름으로.",

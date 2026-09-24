@@ -2,9 +2,11 @@
 // - web/frontend/src/pages/public/OfferPage.tsx
 // - web/frontend/src/features/landing/landingOffers.ts
 // - web/frontend/src/features/landing/OfferVisual.tsx
-import { useEffect, useState } from "react";
+// - web/frontend/src/features/landing/LandingHome.tsx
+import { useEffect, useId, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import {
+  ArrowRight,
   Box,
   ChevronLeft,
   ChevronRight,
@@ -30,8 +32,15 @@ import {
 import { useAuthStore } from "@/store/useAuthStore";
 import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath";
 import { cn } from "@/shared/ui/cn";
-import { landingContent, landingSectionY } from "./landingTheme";
+import {
+  landingContent,
+  landingHome,
+  landingSectionY,
+  landingSky,
+  landingTypo,
+} from "./landingTheme";
 import { LANDING_HERO_POSTER, LANDING_HERO_VIDEO } from "./landingAssets";
+import { LandingScrollCue } from "./LandingScrollCue";
 import { OfferVisual } from "./OfferVisual";
 import {
   type LandingOffer,
@@ -39,6 +48,9 @@ import {
   type OfferIcon,
   type OfferVisual as OfferVisualModel,
 } from "./landingOffers";
+
+const TYPO = landingTypo;
+const SKY = landingSky;
 
 const ICONS: Record<OfferIcon, typeof FileText> = {
   request: FileText,
@@ -57,7 +69,72 @@ const ICONS: Record<OfferIcon, typeof FileText> = {
   box: Box,
 };
 
-const ONE = "tracking-tight";
+type YtPlayer = {
+  destroy: () => void;
+  mute: () => void;
+  playVideo: () => void;
+  seekTo: (seconds: number, allowSeekAhead: boolean) => void;
+  getCurrentTime: () => number;
+  getPlayerState?: () => number;
+  isMuted?: () => boolean;
+  setVolume?: (volume: number) => void;
+  cueVideoById?: (args: {
+    videoId: string;
+    startSeconds?: number;
+    endSeconds?: number;
+  }) => void;
+  loadVideoById?: (args: {
+    videoId: string;
+    startSeconds?: number;
+    endSeconds?: number;
+  }) => void;
+};
+
+type YtNamespace = {
+  Player: new (
+    element: string | HTMLElement,
+    options: {
+      videoId: string;
+      width?: string | number;
+      height?: string | number;
+      playerVars?: Record<string, string | number>;
+      events?: {
+        onReady?: (e: { target: YtPlayer }) => void;
+        onStateChange?: (e: { data: number; target: YtPlayer }) => void;
+      };
+    },
+  ) => YtPlayer;
+  PlayerState: { ENDED: number; PLAYING: number };
+};
+
+declare global {
+  interface Window {
+    YT?: YtNamespace;
+    onYouTubeIframeAPIReady?: () => void;
+  }
+}
+
+let youtubeApiPromise: Promise<void> | null = null;
+
+function loadYoutubeApi(): Promise<void> {
+  if (typeof window === "undefined") return Promise.resolve();
+  if (window.YT?.Player) return Promise.resolve();
+  if (youtubeApiPromise) return youtubeApiPromise;
+  youtubeApiPromise = new Promise((resolve) => {
+    const prev = window.onYouTubeIframeAPIReady;
+    window.onYouTubeIframeAPIReady = () => {
+      prev?.();
+      resolve();
+    };
+    if (!document.querySelector('script[src="https://www.youtube.com/iframe_api"]')) {
+      const tag = document.createElement("script");
+      tag.src = "https://www.youtube.com/iframe_api";
+      tag.async = true;
+      document.head.appendChild(tag);
+    }
+  });
+  return youtubeApiPromise;
+}
 
 function usePrefersReducedMotion() {
   const [reduced, setReduced] = useState(false);
@@ -71,24 +148,263 @@ function usePrefersReducedMotion() {
   return reduced;
 }
 
+function Lines({ lines, className }: { lines: string[]; className?: string }) {
+  return (
+    <p className={cn("break-keep", className)}>
+      {lines.map((line, index) => (
+        <span key={line}>
+          {index > 0 ? <br /> : null}
+          {line}
+        </span>
+      ))}
+    </p>
+  );
+}
+
+function SectionEyebrow({
+  children,
+  className,
+}: {
+  children: string;
+  className?: string;
+}) {
+  return (
+    <p className={cn(TYPO.eyebrow, SKY.accent, className)}>{children}</p>
+  );
+}
+
+/** YouTube 짧은 구간 루프 — 풀블리드 커버 배경. segments면 순서 순환. */
+function YoutubeLoopBackground({
+  videoId,
+  startSec = 0,
+  endSec = 16,
+  segments,
+  poster,
+  reduced,
+}: {
+  videoId: string;
+  startSec?: number;
+  endSec?: number;
+  segments?: Array<{ startSec: number; endSec: number }>;
+  poster?: string;
+  reduced: boolean;
+}) {
+  const hostId = useId().replace(/:/g, "");
+  const hostRef = useRef<HTMLDivElement>(null);
+  const playerRef = useRef<YtPlayer | null>(null);
+  const segmentIndexRef = useRef(0);
+  const inClipStreakRef = useRef(0);
+  const [ready, setReady] = useState(false);
+  const posterSrc =
+    poster || `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
+
+  const clipList =
+    segments && segments.length > 0
+      ? segments
+      : [{ startSec, endSec }];
+
+  const clipKey = clipList.map((c) => `${c.startSec}-${c.endSec}`).join("|");
+
+  useEffect(() => {
+    if (reduced) return;
+    let cancelled = false;
+    let pollId = 0;
+    segmentIndexRef.current = 0;
+    inClipStreakRef.current = 0;
+    setReady(false);
+    const clips =
+      clipKey.split("|").map((part) => {
+        const [s, e] = part.split("-").map(Number);
+        return { startSec: s ?? 0, endSec: e ?? 16 };
+      });
+    const first = clips[0]!;
+    const inClip = (t: number, clip: { startSec: number; endSec: number }) =>
+      t >= clip.startSec - 0.25 && t < clip.endSec;
+
+    void loadYoutubeApi().then(() => {
+      if (cancelled || !window.YT?.Player || !hostRef.current) return;
+      const host = hostRef.current;
+      host.replaceChildren();
+      const mount = document.createElement("div");
+      mount.id = `yt-bg-${hostId}`;
+      host.appendChild(mount);
+      let lastForceSeekAt = 0;
+
+      const ensureMuted = (player: YtPlayer) => {
+        player.mute();
+        player.setVolume?.(0);
+      };
+
+      const seekClip = (player: YtPlayer, index: number) => {
+        inClipStreakRef.current = 0;
+        if (!cancelled) setReady(false);
+        const clip = clips[index] ?? clips[0]!;
+        const start = clip.startSec;
+        const end = clip.endSec;
+        if (player.loadVideoById) {
+          player.loadVideoById({
+            videoId,
+            startSeconds: start,
+            endSeconds: end,
+          });
+        } else {
+          player.seekTo(start, true);
+          player.playVideo();
+        }
+        ensureMuted(player);
+      };
+
+      const player = new window.YT.Player(mount, {
+        videoId,
+        width: "100%",
+        height: "100%",
+        playerVars: {
+          autoplay: 1,
+          mute: 1,
+          controls: 0,
+          disablekb: 1,
+          fs: 0,
+          iv_load_policy: 3,
+          modestbranding: 1,
+          playsinline: 1,
+          rel: 0,
+          start: Math.max(0, Math.floor(first.startSec)),
+        },
+        events: {
+          onReady: (e) => {
+            ensureMuted(e.target);
+            seekClip(e.target, 0);
+          },
+          onStateChange: (e) => {
+            ensureMuted(e.target);
+            if (e.data === window.YT?.PlayerState.ENDED) {
+              segmentIndexRef.current =
+                (segmentIndexRef.current + 1) % clips.length;
+              seekClip(e.target, segmentIndexRef.current);
+            }
+          },
+        },
+      });
+      playerRef.current = player;
+
+      pollId = window.setInterval(() => {
+        try {
+          ensureMuted(player);
+          const idx = segmentIndexRef.current;
+          const clip = clips[idx] ?? clips[0]!;
+          const t = player.getCurrentTime();
+          if (typeof t !== "number" || Number.isNaN(t)) return;
+
+          if (inClip(t, clip)) {
+            inClipStreakRef.current += 1;
+            // 시크 직후 잘못된 프레임이 잠깐 잡히지 않도록 연속 확인
+            if (inClipStreakRef.current >= 3 && !cancelled) {
+              setReady(true);
+            }
+          } else {
+            inClipStreakRef.current = 0;
+            if (!cancelled) setReady(false);
+            // 시크가 무시되면 Install 등 초반 프레임이 노출됨 → 재시크
+            const now = Date.now();
+            if (
+              (t < clip.startSec - 1.5 || t >= clip.endSec + 1) &&
+              now - lastForceSeekAt > 1500
+            ) {
+              lastForceSeekAt = now;
+              seekClip(player, idx);
+            }
+          }
+
+          if (t >= clip.endSec) {
+            segmentIndexRef.current = (idx + 1) % clips.length;
+            seekClip(player, segmentIndexRef.current);
+          }
+        } catch {
+          /* player torn down */
+        }
+      }, 200);
+    });
+
+    return () => {
+      cancelled = true;
+      if (pollId) window.clearInterval(pollId);
+      try {
+        playerRef.current?.destroy();
+      } catch {
+        /* ignore */
+      }
+      playerRef.current = null;
+    };
+  }, [videoId, reduced, hostId, clipKey]);
+
+  if (reduced) {
+    return (
+      <img
+        src={posterSrc}
+        alt=""
+        className="absolute inset-0 h-full w-full object-cover object-center"
+      />
+    );
+  }
+
+  return (
+    <div className="pointer-events-none absolute inset-0 overflow-hidden bg-white">
+      {/* 포스터는 항상 깔아 두고, 구간 진입 후에만 영상 표시 */}
+      <img
+        src={posterSrc}
+        alt=""
+        className="absolute inset-0 h-full w-full object-cover object-center"
+      />
+      <div
+        ref={hostRef}
+        className={cn(
+          "absolute left-1/2 top-1/2 aspect-video h-auto w-[max(100vw,177.78vh)] min-h-full min-w-full -translate-x-1/2 -translate-y-1/2 transition-opacity duration-300 [&_div]:!h-full [&_div]:!w-full [&_iframe]:!h-full [&_iframe]:!w-full",
+          ready ? "opacity-100" : "opacity-0",
+        )}
+        aria-hidden
+      />
+    </div>
+  );
+}
+
 function MediaFrame({
   visual,
   video,
+  youtube,
   reduced,
   drift,
   className,
 }: {
   visual: OfferVisualModel;
   video?: boolean;
+  youtube?: LandingOffer["youtube"];
   reduced: boolean;
   drift?: boolean;
   className?: string;
 }) {
   return (
-    <div className={cn("relative h-full w-full overflow-hidden bg-[#e7e9ee]", className)}>
-      {video && !reduced ? (
+    <div className={cn("relative h-full w-full overflow-hidden bg-[#e8f2ff]", className)}>
+      {youtube && !reduced ? (
+        <YoutubeLoopBackground
+          videoId={youtube.id}
+          startSec={youtube.startSec}
+          endSec={youtube.endSec}
+          segments={youtube.segments}
+          poster={youtube.poster}
+          reduced={reduced}
+        />
+      ) : youtube && reduced ? (
+        <img
+          src={
+            youtube.poster ||
+            `https://i.ytimg.com/vi/${youtube.id}/maxresdefault.jpg`
+          }
+          alt=""
+          className="absolute inset-0 h-full w-full object-cover object-center"
+        />
+      ) : video && !reduced ? (
         <video
-          className="absolute inset-0 h-full w-full object-cover object-top"
+          className="absolute inset-0 h-full w-full object-cover object-center"
           autoPlay
           muted
           loop
@@ -109,7 +425,7 @@ function MediaFrame({
             <img
               src={LANDING_HERO_POSTER}
               alt=""
-              className="h-full w-full object-cover object-top"
+              className="h-full w-full object-cover object-center"
             />
           ) : (
             <OfferVisual visual={visual} fill className="h-full min-h-0" />
@@ -122,44 +438,30 @@ function MediaFrame({
 
 function ProductCards({
   products,
-  onBuy,
 }: {
   products: NonNullable<LandingOffer["products"]>;
-  onBuy: (buy: OfferBuy) => void;
 }) {
   return (
-    <section id="buy" className={cn("scroll-mt-20 bg-[#f3f4f6]", landingSectionY.band)}>
-      <div className={cn(landingContent, "grid gap-6 md:grid-cols-2 lg:gap-8")}>
-        {products.map((product, index) => (
+    <section
+      id="products"
+      className={cn("scroll-mt-20", SKY.band, landingSectionY.bandTight)}
+    >
+      <div className={cn(landingContent, "grid gap-4 md:grid-cols-2 sm:gap-5")}>
+        {products.map((product) => (
           <article
             key={product.name}
-            className={cn(
-              "flex flex-col overflow-hidden rounded-[2rem] bg-white",
-              index === 0 && "md:mt-6",
-            )}
+            className={cn("flex flex-col overflow-hidden", SKY.card)}
           >
-            <div className="h-64 bg-[#eef1f6] sm:h-72">
+            <div className="relative min-h-[12.5rem] overflow-hidden bg-[#e8f2ff] sm:min-h-[16rem]">
               <OfferVisual visual={product.visual} fill className="h-full min-h-0" />
+              <div className="pointer-events-none absolute inset-0 bg-gradient-to-tr from-sky-500/10 via-transparent to-blue-500/10" />
             </div>
-            <div className="flex flex-1 flex-col px-7 pt-6 pb-8 sm:px-10 sm:pt-8 sm:pb-10">
-              <h2 className={cn(ONE, "text-4xl font-semibold text-slate-900")}>
-                {product.name}
-              </h2>
-              <p className={cn(ONE, "mt-2 text-xl text-slate-600")}>{product.line}</p>
-              <p className={cn(ONE, "mt-8 text-4xl font-semibold tabular-nums text-slate-900")}>
-                {product.price}
-              </p>
-              <p className={cn(ONE, "mt-1 text-base text-slate-500")}>{product.priceNote}</p>
-              <Button
-                type="button"
-                className="mt-6 h-12 w-full rounded-full bg-[#2563eb] text-base font-semibold text-white hover:bg-[#1d4ed8]"
-                onClick={() => onBuy(product.buy)}
-              >
-                {product.buy.label}
-              </Button>
-              <ul className="mt-8 space-y-3 border-t border-slate-100 pt-6">
+            <div className="flex flex-1 flex-col px-5 py-6 sm:px-7 sm:py-7">
+              <h2 className={cn(TYPO.h3, SKY.ink)}>{product.name}</h2>
+              <p className={cn("mt-2", TYPO.body)}>{product.line}</p>
+              <ul className="mt-5 space-y-2 border-t border-sky-100 pt-5">
                 {product.specs.map((spec) => (
-                  <li key={spec} className={cn(ONE, "text-lg text-slate-800")}>
+                  <li key={spec} className={cn(TYPO.body, "text-slate-700")}>
                     {spec}
                   </li>
                 ))}
@@ -172,98 +474,320 @@ function ProductCards({
   );
 }
 
-function StoryBody({ lines }: { lines: string[] }) {
-  return (
-    <p
-      className={cn(
-        ONE,
-        "mt-5 max-w-xl text-lg leading-relaxed text-slate-600 sm:text-xl sm:leading-8",
-      )}
-    >
-      {lines.map((line, index) => (
-        <span key={line}>
-          {index > 0 ? <br /> : null}
-          {line}
-        </span>
-      ))}
-    </p>
-  );
-}
-
 function StoryRows({
   stories,
 }: {
   stories: NonNullable<LandingOffer["stories"]>;
 }) {
   return (
-    <section className={cn("bg-[#f3f4f6]", landingSectionY.band)}>
+    <section className={cn("bg-white pb-4 pt-12 sm:pb-5 sm:pt-16")}>
       <div className={landingContent}>
-        <div className={cn("flex flex-col", landingSectionY.storyGap)}>
-          {stories.map((story, index) => (
-            <article
-              key={story.name}
-              className="grid items-center gap-8 lg:grid-cols-2 lg:gap-14"
-            >
-              {story.visual ? (
-                <div
-                  className={cn(
-                    "overflow-hidden rounded-[1.75rem] bg-[#e7e9ee]",
-                    landingSectionY.media,
-                    index % 2 === 1 && "lg:order-2",
-                  )}
+        <div className="flex flex-col gap-10 sm:gap-14">
+          {stories.map((story, index) => {
+            const full = story.layout === "full";
+            if (full) {
+              return (
+                <article
+                  key={story.name}
+                  className={cn("overflow-hidden", SKY.card)}
                 >
-                  <OfferVisual
-                    visual={story.visual}
-                    fill
-                    className="h-full min-h-0"
-                  />
-                </div>
-              ) : null}
-              <div
+                  {story.visual?.kind === "photo" ? (
+                    <div className="bg-white px-3 pt-3 sm:px-5 sm:pt-5">
+                      <img
+                        src={story.visual.src}
+                        alt={story.visual.alt}
+                        className="mx-auto h-auto w-full max-w-4xl object-contain"
+                      />
+                    </div>
+                  ) : story.visual ? (
+                    <div className="relative overflow-hidden bg-white">
+                      <OfferVisual
+                        visual={story.visual}
+                        className="h-auto w-full object-contain"
+                      />
+                    </div>
+                  ) : null}
+                  <div className="flex flex-col justify-center px-5 py-7 sm:px-8 sm:py-9">
+                    <SectionEyebrow>
+                      {String(index + 1).padStart(2, "0")}
+                    </SectionEyebrow>
+                    <h3 className={cn(TYPO.h3, "mt-2", SKY.ink)}>{story.name}</h3>
+                    <p
+                      className={cn(
+                        "mt-1.5 text-[14px] font-medium sm:text-[15px]",
+                        SKY.accentStrong,
+                      )}
+                    >
+                      {story.line}
+                    </p>
+                    {story.body?.length ? (
+                      <Lines
+                        lines={story.body}
+                        className={cn("mt-3", TYPO.body)}
+                      />
+                    ) : null}
+                    {story.points?.length ? (
+                      <ul className="mt-4 grid gap-2 sm:grid-cols-2">
+                        {story.points.map((point) => (
+                          <li key={point} className={TYPO.body}>
+                            {point}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </div>
+                </article>
+              );
+            }
+
+            return (
+              <article
+                key={story.name}
                 className={cn(
-                  story.visual
-                    ? index % 2 === 1
-                      ? "lg:pr-2"
-                      : "lg:pl-2"
-                    : "max-w-2xl lg:col-span-2",
+                  "grid items-center gap-0 overflow-hidden lg:grid-cols-2",
+                  SKY.card,
                 )}
               >
-                <h3
-                  className={cn(
-                    ONE,
-                    "text-3xl font-semibold text-slate-900 sm:text-4xl",
-                  )}
-                >
-                  {story.name}
-                </h3>
-                <p
-                  className={cn(
-                    ONE,
-                    "mt-3 text-xl text-slate-600 sm:text-2xl",
-                  )}
-                >
-                  {story.line}
-                </p>
-                {story.body?.length ? <StoryBody lines={story.body} /> : null}
-                {story.points?.length ? (
-                  <ul className="mt-6 space-y-2.5">
-                    {story.points.map((point) => (
-                      <li
-                        key={point}
-                        className={cn(
-                          ONE,
-                          "text-base text-slate-700 sm:text-lg",
-                        )}
-                      >
-                        {point}
-                      </li>
-                    ))}
-                  </ul>
+                {story.visual?.kind === "photo" ? (
+                  <div
+                    className={cn(
+                      "relative flex min-h-[18rem] items-center justify-center overflow-hidden bg-white px-5 py-7 sm:min-h-[20rem] sm:px-8 sm:py-9 lg:min-h-[22rem]",
+                      index % 2 === 1 && "lg:order-2",
+                    )}
+                  >
+                    <img
+                      src={`${story.visual.src}?v=4`}
+                      alt={story.visual.alt}
+                      className="h-auto max-h-[17rem] w-full object-contain object-center sm:max-h-[19rem] lg:max-h-[21rem]"
+                    />
+                  </div>
+                ) : story.visual ? (
+                  <div
+                    className={cn(
+                      "relative min-h-[12.5rem] overflow-hidden bg-white sm:min-h-[16rem] lg:min-h-[18rem]",
+                      index % 2 === 1 && "lg:order-2",
+                    )}
+                  >
+                    <OfferVisual
+                      visual={story.visual}
+                      fill
+                      className="h-full min-h-0 object-contain"
+                    />
+                  </div>
                 ) : null}
-              </div>
-            </article>
-          ))}
+                <div
+                  className={cn(
+                    "flex flex-col justify-center px-5 py-5 sm:px-8 sm:py-7",
+                    !story.visual && "lg:col-span-2",
+                  )}
+                >
+                  <SectionEyebrow>
+                    {String(index + 1).padStart(2, "0")}
+                  </SectionEyebrow>
+                  <h3 className={cn(TYPO.h3, "mt-2", SKY.ink)}>{story.name}</h3>
+                  <p
+                    className={cn(
+                      "mt-1.5 text-[14px] font-medium sm:text-[15px]",
+                      SKY.accentStrong,
+                    )}
+                  >
+                    {story.line}
+                  </p>
+                  {story.body?.length ? (
+                    <Lines
+                      lines={story.body}
+                      className={cn("mt-3", TYPO.body)}
+                    />
+                  ) : null}
+                  {story.points?.length ? (
+                    <ul className="mt-4 space-y-1.5">
+                      {story.points.map((point) => (
+                        <li key={point} className={TYPO.body}>
+                          {point}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
+              </article>
+            );
+          })}
         </div>
+      </div>
+    </section>
+  );
+}
+
+function FlowChartSection({ chart }: { chart: NonNullable<LandingOffer["flowChart"]> }) {
+  const [expanded, setExpanded] = useState(false);
+  const mediaRef = useRef<HTMLDivElement>(null);
+  const pinViewportTopRef = useRef<number | null>(null);
+  const fullChartSrc = "/landing/simpleway/catalog-flow-chart.png?v=9";
+  const collapsedRows = chart.rows.filter((row) => row.id === chart.defaultRowId);
+
+  const restoreScrollPin = () => {
+    const pin = pinViewportTopRef.current;
+    const el = mediaRef.current;
+    if (pin == null || !el) return;
+    const topAfter = el.getBoundingClientRect().top;
+    const delta = topAfter - pin;
+    if (Math.abs(delta) > 0.5) {
+      window.scrollBy({ top: delta, left: 0, behavior: "auto" });
+    }
+  };
+
+  useLayoutEffect(() => {
+    if (pinViewportTopRef.current == null || !mediaRef.current) return;
+
+    restoreScrollPin();
+
+    const el = mediaRef.current;
+    const imgs = [...el.querySelectorAll("img")];
+    const onImg = () => restoreScrollPin();
+    for (const img of imgs) {
+      if (!img.complete) {
+        img.addEventListener("load", onImg);
+        img.addEventListener("error", onImg);
+      }
+    }
+
+    const ro = new ResizeObserver(() => {
+      restoreScrollPin();
+    });
+    ro.observe(el);
+
+    // 이미지·레이아웃이 안정될 때까지 보정 후 핀 해제
+    let frames = 0;
+    let rafId = 0;
+    const tick = () => {
+      restoreScrollPin();
+      frames += 1;
+      if (frames < 8) {
+        rafId = window.requestAnimationFrame(tick);
+        return;
+      }
+      pinViewportTopRef.current = null;
+      ro.disconnect();
+      for (const img of imgs) {
+        img.removeEventListener("load", onImg);
+        img.removeEventListener("error", onImg);
+      }
+    };
+    rafId = window.requestAnimationFrame(tick);
+
+    const releaseId = window.setTimeout(() => {
+      restoreScrollPin();
+      pinViewportTopRef.current = null;
+      ro.disconnect();
+      for (const img of imgs) {
+        img.removeEventListener("load", onImg);
+        img.removeEventListener("error", onImg);
+      }
+    }, 500);
+
+    return () => {
+      window.clearTimeout(releaseId);
+      window.cancelAnimationFrame(rafId);
+      ro.disconnect();
+      for (const img of imgs) {
+        img.removeEventListener("load", onImg);
+        img.removeEventListener("error", onImg);
+      }
+    };
+  }, [expanded]);
+
+  // 펼침/접힘 시 높이 깜빡임 줄이려고 양쪽 이미지 미리 로드
+  useEffect(() => {
+    const urls = [
+      fullChartSrc,
+      ...chart.rows.map((row) => `${row.src}?v=9`),
+    ];
+    for (const src of urls) {
+      const img = new Image();
+      img.src = src;
+    }
+  }, [chart.rows, fullChartSrc]);
+
+  const toggleExpanded = () => {
+    pinViewportTopRef.current = mediaRef.current?.getBoundingClientRect().top ?? 0;
+    setExpanded((v) => !v);
+  };
+
+  /** 마우스 클릭 시 포커스 자체를 막아 큰 컨트롤 scrollIntoView 점프 방지 */
+  const suppressFocusScroll = (event: MouseEvent<HTMLElement>) => {
+    event.preventDefault();
+  };
+
+  return (
+    <section className="bg-white pb-12 pt-2 sm:pb-16 sm:pt-3 [overflow-anchor:none]">
+      <div className={landingContent}>
+        <article className={cn(SKY.card, "[overflow-anchor:none]")}>
+          <div className="rounded-t-2xl bg-white px-4 pt-5 sm:px-6 sm:pt-6">
+            <div
+              ref={mediaRef}
+              role="button"
+              tabIndex={0}
+              aria-expanded={expanded}
+              aria-label={
+                expanded
+                  ? "접어서 노랑(6) 라인만 보기"
+                  : "클릭하면 직경 10·9·8·7·6 전체 Flow Chart"
+              }
+              className="cursor-pointer rounded-xl border border-sky-100/70 bg-white px-2 py-3 outline-none transition-colors hover:bg-sky-50/40 focus-visible:ring-2 focus-visible:ring-sky-400 focus-visible:ring-offset-2 sm:px-3 sm:py-4 [overflow-anchor:none]"
+              onMouseDown={suppressFocusScroll}
+              onClick={toggleExpanded}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  toggleExpanded();
+                }
+              }}
+            >
+              {/* 양쪽 이미지를 항상 마운트해 디코드·높이 측정 지연을 줄임 */}
+              <img
+                src={fullChartSrc}
+                alt="Flow Chart 직경 10·9·8·7·6 전체"
+                className={cn(
+                  "block h-auto w-full object-contain",
+                  !expanded && "hidden",
+                )}
+              />
+              <div className={cn("flex flex-col gap-1", expanded && "hidden")}>
+                {collapsedRows.map((row) => (
+                  <img
+                    key={row.id}
+                    src={`${row.src}?v=9`}
+                    alt={row.alt}
+                    className="block h-auto w-full object-contain"
+                  />
+                ))}
+              </div>
+            </div>
+            <p className={cn("mt-2.5 pb-3 text-center text-[13px]", SKY.accent)}>
+              {expanded
+                ? "접어서 노랑(6) 라인만 보기"
+                : "클릭하면 직경 10·9·8·7·6 전체 Flow Chart"}
+            </p>
+          </div>
+          <div className="flex flex-col items-center justify-center border-t border-sky-100 px-5 py-6 text-center sm:px-8 sm:py-7">
+            <SectionEyebrow>02</SectionEyebrow>
+            <h3 className={cn(TYPO.h3, "mt-2", SKY.ink)}>{chart.name}</h3>
+            <p
+              className={cn(
+                "mt-1.5 text-[14px] font-medium sm:text-[15px]",
+                SKY.accentStrong,
+              )}
+            >
+              {chart.line}
+            </p>
+            {chart.body.length ? (
+              <Lines
+                lines={chart.body}
+                className={cn("mt-3 max-w-xl", TYPO.body)}
+              />
+            ) : null}
+          </div>
+        </article>
       </div>
     </section>
   );
@@ -303,39 +827,41 @@ function Slideshow({
   };
 
   return (
-    <section className={cn("bg-white", landingSectionY.bandLoose)} aria-roledescription="carousel">
+    <section className={cn(SKY.band, landingSectionY.bandTight)} aria-roledescription="carousel">
       <div className={landingContent}>
-        <h2 className={cn(ONE, "max-w-xl text-[clamp(2rem,4.2vw,3.25rem)] font-semibold leading-tight text-slate-900")}>
-          {heading}
-        </h2>
-        <div className="relative mt-8 overflow-hidden rounded-[2rem] bg-[#e7e9ee] sm:mt-10">
-          <div className={landingSectionY.media}>
+        <div className="mx-auto max-w-2xl text-center">
+          <SectionEyebrow>KITS & COLOR</SectionEyebrow>
+          <h2 className={cn(TYPO.h2, "mt-2.5", SKY.ink)}>{heading}</h2>
+        </div>
+        <div className={cn("relative mt-8 overflow-hidden sm:mt-10", SKY.card)}>
+          <div className="relative h-[16rem] sm:h-[20rem] lg:h-[24rem]">
             <MediaFrame visual={slide.visual} reduced={reduced} />
-          </div>
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/35 to-transparent px-6 pb-6 pt-20 sm:px-10 sm:pb-8">
-            <p className={cn(ONE, "text-2xl font-semibold text-white sm:text-4xl")}>
-              {slide.title}
-            </p>
-            <p className={cn(ONE, "mt-2 text-lg text-white/90 sm:text-xl")}>{slide.line}</p>
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#071937]/70 via-[#071937]/15 to-transparent" />
+            <div className="absolute inset-x-0 bottom-0 px-5 pb-5 sm:px-8 sm:pb-7">
+              <p className={cn(TYPO.h3, "text-white")}>{slide.title}</p>
+              <p className="mt-1.5 text-[14px] text-white/85 sm:text-[15px]">
+                {slide.line}
+              </p>
+            </div>
           </div>
           <button
             type="button"
-            className="absolute left-3 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-slate-900 shadow-sm hover:bg-white"
+            className="absolute left-3 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-sky-100 bg-white/95 text-[#0b2a5c] shadow-sm hover:bg-white"
             aria-label="이전 슬라이드"
             onClick={() => go(index - 1)}
           >
-            <ChevronLeft className="h-5 w-5" />
+            <ChevronLeft className="h-4 w-4" />
           </button>
           <button
             type="button"
-            className="absolute right-3 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-slate-900 shadow-sm hover:bg-white"
+            className="absolute right-3 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-sky-100 bg-white/95 text-[#0b2a5c] shadow-sm hover:bg-white"
             aria-label="다음 슬라이드"
             onClick={() => go(index + 1)}
           >
-            <ChevronRight className="h-5 w-5" />
+            <ChevronRight className="h-4 w-4" />
           </button>
         </div>
-        <div className="mt-5 flex justify-center gap-2">
+        <div className="mt-4 flex justify-center gap-2">
           {slides.map((item, dot) => (
             <button
               key={item.title}
@@ -343,8 +869,8 @@ function Slideshow({
               aria-label={`${dot + 1}번째 슬라이드`}
               aria-current={dot === index}
               className={cn(
-                "h-2.5 rounded-full transition-all",
-                dot === index ? "w-8 bg-slate-900" : "w-2.5 bg-slate-300",
+                "h-2 rounded-full transition-all",
+                dot === index ? "w-7 bg-[#2563eb]" : "w-2 bg-sky-200",
               )}
               onClick={() => setIndex(dot)}
             />
@@ -355,80 +881,7 @@ function Slideshow({
   );
 }
 
-function HeroCopy({
-  offer,
-  onBuy,
-  onDark = false,
-}: {
-  offer: LandingOffer;
-  onBuy: (buy: OfferBuy) => void;
-  onDark?: boolean;
-}) {
-  return (
-    <div>
-      <p
-        className={cn(
-          "text-2xl font-medium sm:text-3xl",
-          onDark ? "text-white/85" : "text-slate-500",
-        )}
-      >
-        {offer.navLabel}
-      </p>
-      <h1
-        className={cn(
-          ONE,
-          "mt-2 text-[clamp(2.6rem,5vw,4.25rem)] font-semibold leading-[1.08]",
-          onDark ? "text-white" : "text-slate-900",
-        )}
-      >
-        {offer.heroTitle}
-      </h1>
-      <p
-        className={cn(
-          ONE,
-          "mt-4 max-w-xl text-xl leading-snug sm:text-2xl",
-          onDark ? "text-white/90" : "text-slate-600",
-        )}
-      >
-        {offer.line}
-      </p>
-      {offer.cta ? (
-        <Button
-          type="button"
-          className={cn(
-            "mt-7 h-12 rounded-full px-8 text-base font-semibold",
-            onDark
-              ? "bg-white text-slate-900 hover:bg-white/90"
-              : "bg-[#2563eb] text-white hover:bg-[#1d4ed8]",
-          )}
-          onClick={() => {
-            if (offer.cta) onBuy(offer.cta);
-          }}
-        >
-          {offer.cta.label}
-        </Button>
-      ) : null}
-      {offer.products ? (
-        <div className="mt-8 flex flex-wrap gap-x-8 gap-y-2">
-          {offer.products.map((product) => (
-            <a
-              key={product.name}
-              href="#buy"
-              className={cn(
-                ONE,
-                "text-lg font-semibold underline-offset-4 hover:underline",
-                onDark ? "text-white" : "text-[#1d4ed8]",
-              )}
-            >
-              {product.name}
-            </a>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
+/** `/offer/*` — `/` Waveon 톤(타이포·하늘색·여백)과 동일 */
 export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
   const navigate = useNavigate();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -447,39 +900,105 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
     navigate(isAuthenticated ? resolveEntryDashboardPath(user) : "/signup");
   };
 
+  const goStart = () => {
+    navigate(isAuthenticated ? resolveEntryDashboardPath(user) : "/signup");
+  };
+
   const heroVisual = offer.pageVisual ?? offer.tile;
   const fullBleedHero = offer.hero === "video" || offer.hero === "photo";
+  const heroEyebrow =
+    offer.heroEyebrow ?? offer.navLabel.toUpperCase().replace(/\s+/g, "");
+  const heroLines = offer.heroBody?.length
+    ? offer.heroBody
+    : [offer.line];
 
   return (
     <div className="bg-white text-slate-900">
       {fullBleedHero ? (
-        <section className="bg-black">
-          <div className="h-14 bg-white sm:h-16" aria-hidden />
-          <div className="relative min-h-[calc(100svh-3.5rem)] sm:min-h-[calc(100svh-4rem)]">
+        <section className="bg-white">
+          {/* fixed 헤더(h-14/sm:h-16) 아래부터 히어로 */}
+          <div className="h-14 sm:h-16" aria-hidden />
+          <div className="relative min-h-[calc(100svh-3.5rem)] overflow-hidden sm:min-h-[calc(100svh-4rem)]">
             <div className="absolute inset-0">
               <MediaFrame
                 visual={heroVisual}
-                video={offer.hero === "video"}
+                video={offer.hero === "video" && !offer.youtube}
+                youtube={offer.hero === "video" ? offer.youtube : undefined}
                 reduced={reduced}
                 drift={offer.hero === "photo"}
                 className="h-full"
               />
             </div>
-            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-black/25" />
-            <div className={cn(landingContent, "relative flex min-h-[calc(100svh-3.5rem)] items-end pb-10 pt-8 sm:min-h-[calc(100svh-4rem)] sm:pb-14")}>
-              <HeroCopy offer={offer} onBuy={onBuy} onDark />
+
+            <div
+              className={cn(
+                landingContent,
+                "relative z-10 flex min-h-[calc(100svh-3.5rem)] items-end pb-16 pt-10 sm:min-h-[calc(100svh-4rem)] sm:pb-20",
+              )}
+            >
+              <div className="max-w-md text-left [text-shadow:0_1px_14px_rgba(255,255,255,0.9),0_1px_28px_rgba(255,255,255,0.7)]">
+                <p className={cn(TYPO.eyebrow, "text-[#0b2a5c]/80")}>
+                  {heroEyebrow}
+                </p>
+                <h1 className={cn(TYPO.h1, "mt-2 text-[#0b2a5c]")}>
+                  {offer.heroTitle}
+                </h1>
+                <Lines
+                  lines={heroLines}
+                  className="mt-3 text-[14px] leading-6 text-slate-700 sm:text-[15px]"
+                />
+                {offer.cta ? (
+                  <Button
+                    type="button"
+                    className={cn(
+                      "mt-6 h-10 px-5 text-[14px] font-semibold",
+                      SKY.pill,
+                    )}
+                    onClick={() => {
+                      if (offer.cta) onBuy(offer.cta);
+                    }}
+                  >
+                    {offer.cta.label}
+                    <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+                  </Button>
+                ) : null}
+              </div>
             </div>
+
+            <LandingScrollCue />
           </div>
         </section>
       ) : (
-        <section className="bg-[#f4f5f7]">
+        <section className={cn(SKY.band)}>
           <div className="h-14 sm:h-16" aria-hidden />
-          <div className={cn(landingContent, "grid items-center lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)] lg:gap-8")}>
-            <div className="flex flex-col pt-4 pb-6 lg:py-6">
-              <HeroCopy offer={offer} onBuy={onBuy} />
+          <div
+            className={cn(
+              landingContent,
+              "grid items-center gap-6 pb-10 pt-4 lg:grid-cols-2 lg:gap-10 lg:pb-14 lg:pt-6",
+            )}
+          >
+            <div className="text-center lg:text-left">
+              <p className={cn(TYPO.eyebrow, SKY.accent)}>{heroEyebrow}</p>
+              <h1 className={cn(TYPO.h1, "mt-3", SKY.ink)}>{offer.heroTitle}</h1>
+              <Lines lines={heroLines} className={cn("mt-4", TYPO.lead)} />
+              {offer.cta ? (
+                <Button
+                  type="button"
+                  className={cn(
+                    "mt-6 h-10 px-6 text-[14px] font-semibold",
+                    SKY.pill,
+                  )}
+                  onClick={() => {
+                    if (offer.cta) onBuy(offer.cta);
+                  }}
+                >
+                  {offer.cta.label}
+                  <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+                </Button>
+              ) : null}
             </div>
-            <div className="pb-4 lg:py-4">
-              <div className="h-[min(56vh,34rem)] w-full overflow-hidden rounded-[1.75rem] bg-[#e7e9ee] lg:h-[min(64vh,40rem)] lg:rounded-[2rem]">
+            <div className={cn("overflow-hidden", SKY.card)}>
+              <div className="h-[min(48vh,22rem)] w-full sm:h-[min(52vh,26rem)]">
                 <MediaFrame
                   visual={heroVisual}
                   reduced={reduced}
@@ -491,76 +1010,79 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
         </section>
       )}
 
+      {offer.guides ? <StoryRows stories={offer.guides} /> : null}
+      {offer.flowChart ? <FlowChartSection chart={offer.flowChart} /> : null}
+
       {offer.highlights ? (
-        <section className={cn("bg-white", landingSectionY.band)}>
+        <section
+          id="offer-content"
+          className={cn("scroll-mt-20 bg-white", landingSectionY.bandTight)}
+        >
           <div className={landingContent}>
-            <h2
-              className={cn(
-                ONE,
-                "max-w-3xl text-[clamp(2rem,4.5vw,3.5rem)] font-semibold leading-[1.1] text-slate-900",
-              )}
-            >
-              {offer.lead}
-            </h2>
-            <div className="mt-10 grid gap-x-6 gap-y-8 border-t border-slate-200/80 pt-10 sm:mt-12 sm:grid-cols-2 sm:pt-12 lg:grid-cols-5">
-              {offer.highlights.slice(0, 5).map((item) => {
+            <div className="mx-auto max-w-2xl text-center">
+              <SectionEyebrow>
+                {offer.slug === "simple-way" ? "THE SIMPLE WAY" : "OVERVIEW"}
+              </SectionEyebrow>
+              <h2 className={cn(TYPO.h2, "mt-2.5", SKY.ink)}>{offer.lead}</h2>
+              <p className={cn("mt-2.5", TYPO.lead)}>{offer.line}</p>
+            </div>
+            <ol className="mt-8 grid gap-3 sm:mt-10 sm:grid-cols-2 lg:grid-cols-3 lg:gap-4">
+              {offer.highlights.slice(0, 6).map((item, index) => {
                 const Icon = ICONS[item.icon];
                 return (
-                  <article key={item.label} className="min-w-0">
-                    <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#f4f5f7] text-slate-900">
-                      <Icon className="h-4 w-4" aria-hidden />
-                    </span>
+                  <li
+                    key={item.label}
+                    className={cn(SKY.card, "px-4 py-5 sm:px-5 sm:py-6")}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#eef6ff] text-[#2563eb]">
+                        <Icon className="h-4 w-4" aria-hidden />
+                      </span>
+                      <p className={cn("text-[13px] font-bold", SKY.accentStrong)}>
+                        {String(index + 1).padStart(2, "0")}
+                      </p>
+                    </div>
                     <h3
                       className={cn(
-                        ONE,
-                        "mt-4 text-xl font-semibold text-slate-900",
+                        "mt-3 break-keep text-base font-semibold tracking-tight sm:text-lg",
+                        SKY.ink,
                       )}
                     >
                       {item.label}
                     </h3>
-                    <p className={cn(ONE, "mt-1.5 text-base text-slate-600")}>
-                      {item.line}
-                    </p>
-                  </article>
+                    <p className={cn("mt-1.5", TYPO.body)}>{item.line}</p>
+                  </li>
                 );
               })}
-            </div>
+            </ol>
           </div>
         </section>
       ) : null}
 
       {offer.scene ? (
-        <section className={cn("relative bg-[#e7e9ee]", landingSectionY.sceneMin)}>
-          <div className="absolute inset-0">
+        <section className={cn("relative overflow-hidden bg-[#071937]", landingSectionY.bandTight)}>
+          <div className="absolute inset-0 opacity-50">
             <MediaFrame visual={offer.scene.visual} reduced={reduced} />
           </div>
-          <div className="absolute inset-0 bg-gradient-to-r from-black/75 via-black/35 to-transparent" />
-          <div className={cn("relative flex items-end pb-10 sm:pb-12", landingSectionY.sceneMin)}>
-            <div className={landingContent}>
-            <div className="max-w-xl">
-              <h2
-                className={cn(
-                  ONE,
-                  "text-[clamp(2.25rem,5vw,4rem)] font-semibold leading-[1.08] text-white",
-                )}
-              >
+          <div className={cn("pointer-events-none absolute inset-0", SKY.heroWash)} />
+          <div className={cn("relative", landingContent)}>
+            <div className="mx-auto max-w-2xl py-10 text-center sm:py-14">
+              <p className={cn(TYPO.eyebrow, "text-white/80")}>TOP-DOWN GUIDE</p>
+              <h2 className={cn(TYPO.h2, "mt-2.5 text-white")}>
                 {offer.scene.title}
               </h2>
-              <p className={cn(ONE, "mt-3 text-xl text-white/90 sm:text-2xl")}>
+              <p className="mt-2.5 text-[14px] leading-6 text-white/90 sm:text-[15px]">
                 {offer.scene.line}
               </p>
-            </div>
             </div>
           </div>
         </section>
       ) : null}
 
       {offer.products ? (
-        <ProductCards products={offer.products} onBuy={onBuy} />
+        <ProductCards products={offer.products} />
       ) : null}
-      {offer.stories ? (
-        <StoryRows stories={offer.stories} />
-      ) : null}
+      {offer.stories ? <StoryRows stories={offer.stories} /> : null}
       {offer.slides ? (
         <Slideshow
           heading={offer.slideHeading ?? "키트도 함께."}
@@ -571,21 +1093,24 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
       ) : null}
 
       {offer.specs ? (
-        <section className={cn("bg-[#f3f4f6]", landingSectionY.band)}>
+        <section className={cn("bg-white", landingSectionY.bandTight)}>
           <div className={landingContent}>
-            <h2
-              className={cn(
-                ONE,
-                "max-w-xl text-[clamp(2rem,4vw,3.25rem)] font-semibold text-slate-900",
-              )}
-            >
-              간단히 보는 스펙.
-            </h2>
-            <dl className="mt-8 grid gap-x-8 gap-y-8 sm:grid-cols-2 lg:mt-10 lg:grid-cols-4">
-              {offer.specs.map((spec, index) => (
-                <div key={spec.label} className={cn(index === 0 && "lg:pt-1")}>
-                  <dt className={cn(ONE, "text-base text-slate-500")}>{spec.label}</dt>
-                  <dd className={cn(ONE, "mt-1.5 text-2xl font-semibold text-slate-900")}>
+            <div className="mx-auto max-w-2xl text-center">
+              <SectionEyebrow>SPECS</SectionEyebrow>
+              <h2 className={cn(TYPO.h2, "mt-2.5", SKY.ink)}>간단히 보는 스펙.</h2>
+            </div>
+            <dl className="mt-8 grid gap-3 sm:mt-10 sm:grid-cols-2 lg:grid-cols-3 lg:gap-4">
+              {offer.specs.map((spec) => (
+                <div key={spec.label} className={cn(SKY.card, "px-4 py-5 sm:px-5")}>
+                  <dt className={cn("text-[13px] font-semibold", SKY.accent)}>
+                    {spec.label}
+                  </dt>
+                  <dd
+                    className={cn(
+                      "mt-1.5 text-base font-semibold tracking-tight sm:text-lg",
+                      SKY.ink,
+                    )}
+                  >
                     {spec.value}
                   </dd>
                 </div>
@@ -596,28 +1121,35 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
       ) : null}
 
       {offer.faq ? (
-        <section className={cn("bg-white", landingSectionY.bandLoose)}>
-          <div className={cn(landingContent, "grid gap-6 lg:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)] lg:gap-12")}>
+        <section
+          id="faq"
+          className={cn("scroll-mt-20", SKY.band, landingSectionY.bandTight)}
+        >
+          <div
+            className={cn(
+              landingContent,
+              "grid gap-6 lg:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)] lg:gap-10",
+            )}
+          >
             <div>
-              <h2
-                className={cn(
-                  ONE,
-                  "text-[clamp(2.5rem,5vw,4rem)] font-semibold text-slate-900",
-                )}
-              >
-                FAQ
-              </h2>
-              <p className="mt-3 max-w-xs text-lg leading-snug text-slate-600">
-                {offer.navLabel}에서 먼저 묻는 것만.
-              </p>
+              <SectionEyebrow>FAQ</SectionEyebrow>
+              <h2 className={cn(TYPO.h2, "mt-2.5", SKY.ink)}>자주 묻는 질문</h2>
             </div>
-            <Accordion type="single" collapsible>
+            <Accordion
+              type="single"
+              collapsible
+              className={cn(SKY.card, "px-4 sm:px-5")}
+            >
               {offer.faq.map((item) => (
-                <AccordionItem key={item.q} value={item.q} className="border-slate-200">
-                  <AccordionTrigger className="py-5 text-left text-lg font-semibold text-slate-900 hover:no-underline sm:text-xl">
+                <AccordionItem
+                  key={item.q}
+                  value={item.q}
+                  className="border-sky-100"
+                >
+                  <AccordionTrigger className="py-4 text-left text-[15px] font-semibold text-[#0b2a5c] hover:no-underline sm:text-base">
                     {item.q}
                   </AccordionTrigger>
-                  <AccordionContent className="pb-5 text-lg leading-8 text-slate-600">
+                  <AccordionContent className={cn("pb-4", TYPO.body)}>
                     {item.a}
                   </AccordionContent>
                 </AccordionItem>
@@ -626,6 +1158,46 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
           </div>
         </section>
       ) : null}
+
+      <section id="contact" className={cn("scroll-mt-20 bg-white")}>
+        <div
+          className={cn(
+            landingContent,
+            "flex flex-col items-start py-12 sm:py-14 lg:flex-row lg:items-end lg:justify-between lg:gap-8",
+          )}
+        >
+          <div className="max-w-lg">
+            <SectionEyebrow>START SIMPLE WAY</SectionEyebrow>
+            <h2 className={cn(TYPO.h2, "mt-2.5", SKY.ink)}>
+              {landingHome.ctaBandTitle}
+            </h2>
+            <Lines
+              lines={[...landingHome.ctaBandBody]}
+              className={cn("mt-3", TYPO.lead)}
+            />
+          </div>
+          <div className="mt-6 flex flex-wrap gap-2.5 lg:mt-0">
+            <Button
+              type="button"
+              className={cn("h-10 shrink-0 px-6 text-[14px] font-semibold", SKY.pill)}
+              onClick={goStart}
+            >
+              {landingHome.ctaStart}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className={cn(
+                "h-10 shrink-0 px-6 text-[14px] font-semibold",
+                SKY.pillGhost,
+              )}
+              onClick={() => navigate("/contact")}
+            >
+              {landingHome.ctaConsult}
+            </Button>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }

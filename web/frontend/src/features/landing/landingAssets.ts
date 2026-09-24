@@ -20,6 +20,50 @@ export const LANDING_HERO_VIDEO = "/landing/hero-simple.mp4";
 export const LANDING_HERO_POSTER = "/landing/waveon/hero.jpg";
 export const LANDING_SIMPLE_WAY_STILL = "/landing/simple-way-kits.jpg";
 
+/**
+ * 심플웨이 오퍼 히어로 — ACRODENT TheSimple Implant (YouTube).
+ * Initial 키트 → 모델 수술 → 본핀. (Install 14–40s 구간 제외)
+ */
+export const LANDING_SW_YOUTUBE_ID = "WYNPxDo-DP0";
+export const LANDING_SW_YOUTUBE_SEGMENTS = [
+  { startSec: 55, endSec: 72 }, // Initial kit
+  { startSec: 122, endSec: 152 }, // 모델 수술
+  { startSec: 165, endSec: 186 }, // 본핀·드릴 높이
+] as const;
+/** 시크 전 가림용 — Guide Kit 스틸 (Install 키트·챕터 타이틀 미포함) */
+export const LANDING_SW_YOUTUBE_POSTER = "/landing/simpleway/guide-kit.jpg";
+export const LANDING_SW_CATALOG_ASSEMBLY =
+  "/landing/simpleway/catalog-assembly.png";
+/** Flow Chart 직경 라인 (10→6, 맨 아래 6=노랑) */
+export const LANDING_SW_FLOW_ROWS = [
+  {
+    id: "10",
+    src: "/landing/simpleway/catalog-flow-row-10.png",
+    alt: "Flow Chart 직경 10",
+  },
+  {
+    id: "9",
+    src: "/landing/simpleway/catalog-flow-row-9.png",
+    alt: "Flow Chart 직경 9",
+  },
+  {
+    id: "8",
+    src: "/landing/simpleway/catalog-flow-row-8.png",
+    alt: "Flow Chart 직경 8",
+  },
+  {
+    id: "7",
+    src: "/landing/simpleway/catalog-flow-row-7.png",
+    alt: "Flow Chart 직경 7",
+  },
+  {
+    id: "6",
+    src: "/landing/simpleway/catalog-flow-row-6.png",
+    alt: "Flow Chart 직경 6 (노랑)",
+  },
+] as const;
+export const LANDING_SW_FLOW_DEFAULT_ROW_ID = "6";
+
 /** Waveon 랜딩 포토 — 블루·바이올렛 색보정본 */
 export const LANDING_WAVEON_HERO = "/landing/waveon/hero.jpg";
 export const LANDING_WAVEON_PARTNERSHIP = "/landing/waveon/partnership.jpg";
