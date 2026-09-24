@@ -46,6 +46,7 @@
 // - 2026-08-14: quote-context — 기공소/티어/단가/거래처/수수료율 parallel + 60s 캐시(5회 직렬 RTT 제거).
 // - 2026-08-14: 환봉 요청중 판별용 치과 implantFavorites를 견적·청구 계산에 전달.
 // - 2026-08-14: 치과별 기공수가 할증(labPracticeFeeMultipliers → labFeeMultiplier).
+// - 2026-09-24: 할증·수가표 앵커 — 협력=수행 기공소, 하청·어벗츠 자체=원청. 정산만 어벗츠 경유.
 // - 2026-08-29: 치과별 특별공급가(labPracticeSpecialSupplyPrices) 견적·청구 반영.
 // - 2026-08-31: 특별공급가 billing 스냅샷·as-of(기존 의뢰 소급 금지). 신규 견적·리메이크는 live.
 // - 2026-08-14: 지정 기공소: 생성 시 billing.labFeeMultiplier 스냅샷(할증 소급 금지).
@@ -172,6 +173,7 @@ import {
   isPracticeTransferSubcontracted,
   isSubcontractFeeApplicable,
   resolveFeeScheduleLabAnchorId,
+  resolveLabFeeMultiplierLabAnchorId,
   resolvePerformingLabAnchorId,
   resolvePracticeTransferSettlementParties,
 } from "../utils/practiceTransferAutoMatch.js";
@@ -253,16 +255,19 @@ function buildAutoMatchFeeScheduleForLab({
 async function loadLabAnchorsForFeeComputation({
   feeScheduleLabId,
   performingLabId,
+  multiplierLabId = null,
   session = null,
 }) {
   const ids = [
     ...new Set(
-      [feeScheduleLabId, performingLabId]
+      [feeScheduleLabId, performingLabId, multiplierLabId]
         .map((id) => String(id || "").trim())
         .filter(Boolean),
     ),
   ];
-  if (!ids.length) return { feeScheduleLab: null, performingLab: null };
+  if (!ids.length) {
+    return { feeScheduleLab: null, performingLab: null, multiplierLab: null };
+  }
   const docs = await BusinessAnchor.find({ _id: { $in: ids } })
     .select({
       labFeeSchedule: 1,
@@ -273,13 +278,17 @@ async function loadLabAnchorsForFeeComputation({
     .session(session || null)
     .lean();
   const byId = new Map(docs.map((doc) => [String(doc._id), doc]));
+  const feeScheduleLab = byId.get(String(feeScheduleLabId || "")) || null;
+  const performingLab = byId.get(String(performingLabId || "")) || null;
+  const multiplierKey = String(multiplierLabId || feeScheduleLabId || "");
   return {
-    feeScheduleLab: byId.get(String(feeScheduleLabId || "")) || null,
-    performingLab: byId.get(String(performingLabId || "")) || null,
+    feeScheduleLab,
+    performingLab,
+    multiplierLab: byId.get(multiplierKey) || feeScheduleLab || performingLab,
   };
 }
 
-/** 지정: 생성 스냅샷. 자동매칭: 수락 기공소의 치과별 할증(의뢰 생성 이후 변경분 제외). */
+/** 지정: 생성 스냅샷. 자동매칭: 할증 앵커(하청=원청) as-of(의뢰 생성 이후 변경분 제외). */
 function resolveBillingLabFeeMultiplier({
   isAutoMatch,
   lab,
@@ -937,6 +946,8 @@ export async function commitPracticeTransferBilling({
     resolvePerformingLabAnchorId(transfer) || transfer?.targetLabAnchorId;
   const feeScheduleLabId =
     resolveFeeScheduleLabAnchorId(transfer) || performingLabId;
+  const multiplierLabId =
+    resolveLabFeeMultiplierLabAnchorId(transfer) || feeScheduleLabId;
   if (!transferId || !practiceAnchorId || !performingLabId) {
     return { billed: false, reason: "missing_anchors" };
   }
@@ -962,6 +973,7 @@ export async function commitPracticeTransferBilling({
     loadLabAnchorsForFeeComputation({
       feeScheduleLabId,
       performingLabId,
+      multiplierLabId,
       session: outerSession,
     }),
     BusinessAnchor.findById(practiceAnchorId)
@@ -991,11 +1003,12 @@ export async function commitPracticeTransferBilling({
 
   const remake = isPracticeTransferRemake(transfer);
   const feeScheduleLab = labAnchors.feeScheduleLab;
+  const multiplierLab = labAnchors.multiplierLab || feeScheduleLab;
   // 지정: 생성 시 스냅샷 유지(할증 소급 금지).
-  // 하청: 원청(어벗츠) 수가표 + 생성 스냅샷 할증. 수행 기공소는 관리자 subcontractFeeRate 정산.
+  // 할증 앵커: 협력=수행 기공소, 하청·어벗츠 자체=원청. 수행 기공소는 subcontractFeeRate/협력 정산.
   const labFeeMultiplier = resolveBillingLabFeeMultiplier({
     isAutoMatch,
-    lab: feeScheduleLab,
+    lab: multiplierLab,
     practiceId: practiceAnchorId,
     createdAt: transfer?.createdAt,
     snapshot: transfer?.billing?.labFeeMultiplier,
@@ -2361,6 +2374,8 @@ async function computeAcceptedPracticeTransferFees({
     resolvePerformingLabAnchorId(transfer) || transfer?.targetLabAnchorId;
   const feeScheduleLabId =
     resolveFeeScheduleLabAnchorId(transfer) || performingLabId;
+  const multiplierLabId =
+    resolveLabFeeMultiplierLabAnchorId(transfer) || feeScheduleLabId;
   const isAutoMatch = String(transfer?.matchingMode || "").trim() === "auto";
 
   const [labAnchors, practice, abutmentPricingTier, abutmentPrices, partner, devopsAnchorForFeeRate] =
@@ -2368,6 +2383,7 @@ async function computeAcceptedPracticeTransferFees({
       loadLabAnchorsForFeeComputation({
         feeScheduleLabId,
         performingLabId,
+        multiplierLabId,
         session,
       }),
       BusinessAnchor.findById(practiceAnchorId)
@@ -2406,7 +2422,7 @@ async function computeAcceptedPracticeTransferFees({
   const remake = isPracticeTransferRemake(transfer);
   const labFeeMultiplier = resolveBillingLabFeeMultiplier({
     isAutoMatch,
-    lab: feeScheduleLab,
+    lab: labAnchors.multiplierLab || feeScheduleLab,
     practiceId: practiceAnchorId,
     createdAt: transfer?.createdAt,
     snapshot: transfer?.billing?.labFeeMultiplier,
@@ -4672,10 +4688,12 @@ export function invalidatePracticeTransferQuoteCaches(labAnchorId = null) {
 /**
  * 기공의뢰 견적(치과 크레딧 소비액 + 기공소 수령액).
  * labAnchorId 없으면 기본수가 없음(0원).
+ * labFeeMultiplierLabAnchorId: 할증 앵커(미지정 시 labAnchorId). 협력=수행, 하청=원청.
  */
 export async function buildPracticeTransferQuote({
   practiceAnchorId = null,
   labAnchorId = null,
+  labFeeMultiplierLabAnchorId = null,
   toothWorks,
   labFeeSchedule = undefined,
   abutmentRetailPrice: _abutmentRetailPrice = undefined,
@@ -4693,9 +4711,16 @@ export async function buildPracticeTransferQuote({
 }) {
   let schedule = labFeeSchedule;
   const labId = String(labAnchorId || "").trim();
+  const multiplierLabId = String(
+    labFeeMultiplierLabAnchorId || labAnchorId || "",
+  ).trim();
   const usedDefaultSchedule = !labId;
   const loadedFromDb = schedule == null;
   const needLab = loadedFromDb && labId && Types.ObjectId.isValid(labId);
+  const needMultiplierLab =
+    multiplierLabId &&
+    Types.ObjectId.isValid(multiplierLabId) &&
+    multiplierLabId !== labId;
   const needPartner = relationshipKind == null;
   const needRates = payoutRates == null;
 
@@ -4707,7 +4732,7 @@ export async function buildPracticeTransferQuote({
     (!labId || String(matchingMode || "").trim() === "auto");
   const needCatalog =
     catalogInput === undefined && (usedDefaultSchedule || needBudget);
-  const [lab, practice, abutmentPricingTier, abutmentPrices, partner, cachedRates, catalog] =
+  const [lab, multiplierLabDoc, practice, abutmentPricingTier, abutmentPrices, partner, cachedRates, catalog] =
     await Promise.all([
       needLab
         ? BusinessAnchor.findById(labId)
@@ -4716,6 +4741,13 @@ export async function buildPracticeTransferQuote({
               labPracticeFeeMultipliers: 1,
               labPracticeSpecialSupplyPrices: 1,
               labPracticeSpecialSupplyPendingChange: 1,
+            })
+            .lean()
+        : Promise.resolve(null),
+      needMultiplierLab
+        ? BusinessAnchor.findById(multiplierLabId)
+            .select({
+              labPracticeFeeMultipliers: 1,
             })
             .lean()
         : Promise.resolve(null),
@@ -4739,6 +4771,8 @@ export async function buildPracticeTransferQuote({
           ? loadAutoMatchBudgetCatalog()
           : Promise.resolve(null),
     ]);
+
+  const multiplierLab = multiplierLabDoc || lab;
 
   const resolvedBudgetRaw =
     autoMatchBudget !== undefined
@@ -4770,10 +4804,10 @@ export async function buildPracticeTransferQuote({
   const useRemake = Boolean(remake);
   const skipAbutmentFees =
     skipAbutmentFeesInput != null ? Boolean(skipAbutmentFeesInput) : useRemake;
-  // 기공소 없음(자동매칭 작성): 할증 없음. 기공소 지정·수신: 치과별 할증.
+  // 기공소 없음(자동매칭 작성): 할증 없음. 지정·수신: 할증 앵커(협력=수행, 하청=원청).
   const labFeeMultiplier = usedDefaultSchedule
     ? 1
-    : resolveLabPracticeFeeMultiplier(lab, practiceId);
+    : resolveLabPracticeFeeMultiplier(multiplierLab, practiceId);
   // 지정 기공소: 생성 시 스냅샷. 자동매칭(기공소 미정): 수락 시 live 후 billed 고정.
   const labPracticeSpecialSupply = usedDefaultSchedule
     ? null
@@ -6247,9 +6281,16 @@ export async function quoteProsthesisFollowUpFees({
   sourceToothWorks = null,
   transferDoc = null,
 }) {
+  const feeScheduleLabId = transferDoc
+    ? resolveFeeScheduleLabAnchorId(transferDoc) || labAnchorId
+    : labAnchorId;
+  const multiplierLabId = transferDoc
+    ? resolveLabFeeMultiplierLabAnchorId(transferDoc) || feeScheduleLabId
+    : labAnchorId;
   const quote = await buildPracticeTransferQuote({
     practiceAnchorId,
-    labAnchorId,
+    labAnchorId: feeScheduleLabId,
+    labFeeMultiplierLabAnchorId: multiplierLabId,
     toothWorks,
     skipAbutmentFees: true,
     remake: false,
@@ -6270,7 +6311,8 @@ export async function quoteProsthesisFollowUpFees({
   if (tempRows.length > 0) {
     const tempQuote = await buildPracticeTransferQuote({
       practiceAnchorId,
-      labAnchorId,
+      labAnchorId: feeScheduleLabId,
+      labFeeMultiplierLabAnchorId: multiplierLabId,
       toothWorks: tempRows,
       skipAbutmentFees: true,
       remake: false,
@@ -6320,6 +6362,8 @@ export async function loadPracticeTransferQuoteContext({
   labAnchorId = null,
   practiceAnchorId = null,
 }) {
+  // 협력 픽커: selectedLab=수행 기공소 → 수가·할증 모두 그 기공소(치과↔지정과 동일).
+  // 어벗츠/하청: labAnchorId=어벗츠.
   const cacheKey = `practice-transfer:quote-context:${String(labAnchorId || "none")}:${String(practiceAnchorId || "none")}`;
   const cached = getRequestPerfCacheValue(cacheKey);
   if (cached && typeof cached === "object") return cached;
@@ -6389,6 +6433,14 @@ export async function buildFeeQuotesForTransferDocs({
       doc?.targetLabAnchorId?._id || doc?.targetLabAnchorId || "",
     ).trim();
     if (labId && Types.ObjectId.isValid(labId)) labIds.add(labId);
+    const feeScheduleLabId = resolveFeeScheduleLabAnchorId(doc);
+    if (feeScheduleLabId && Types.ObjectId.isValid(feeScheduleLabId)) {
+      labIds.add(feeScheduleLabId);
+    }
+    const multiplierLabId = resolveLabFeeMultiplierLabAnchorId(doc);
+    if (multiplierLabId && Types.ObjectId.isValid(multiplierLabId)) {
+      labIds.add(multiplierLabId);
+    }
     const practiceId = String(
       doc?.practiceBusinessAnchorId?._id || doc?.practiceBusinessAnchorId || "",
     ).trim();
@@ -6471,7 +6523,11 @@ export async function buildFeeQuotesForTransferDocs({
       doc?.practiceBusinessAnchorId?._id || doc?.practiceBusinessAnchorId || "",
     ).trim();
     const openPool = isAutoMatchOpenPool(doc);
-    const quoteLabId = viewerLabId && (openPool || !targetLabId) ? viewerLabId : targetLabId;
+    // 공개풀: 뷰어 기공소 수가 미리보기. 그 외: 수가표 앵커(협력=수행, 하청=원청).
+    const quoteLabId =
+      viewerLabId && (openPool || !targetLabId)
+        ? viewerLabId
+        : resolveFeeScheduleLabAnchorId(doc) || targetLabId;
     const billing = doc?.billing && typeof doc.billing === "object" ? doc.billing : null;
     const billed = Boolean(billing?.billedAt);
     // 과금 완료만 금액 스냅샷 고정. 미청구는 현재 수가로 재계산.
@@ -6483,15 +6539,18 @@ export async function buildFeeQuotesForTransferDocs({
     const abutmentPricingTier = PLATFORM_ABUTMENT_PRICING_TIER;
     const implantFavorites = favoritesByPractice.get(practiceId) || [];
     // 지정·수락됨: billing 스냅샷(있으면). 공개풀·스냅 없는 자동매칭: as-of(history).
+    // 할증 앵커: 협력=수행 기공소, 하청·어벗츠 자체=원청.
     const snapLabFeeMultiplier = normalizeLabFeeMultiplier(
       billing?.labFeeMultiplier,
     );
+    const multiplierLabId =
+      resolveLabFeeMultiplierLabAnchorId(doc) || quoteLabId;
     const liveLabFeeMultiplier = resolveLabPracticeFeeMultiplier(
-      quoteLabId ? multiplierByLab.get(quoteLabId) : null,
+      multiplierLabId ? multiplierByLab.get(multiplierLabId) : null,
       practiceId,
     );
     const asOfLabFeeMultiplier = resolveLabPracticeFeeMultiplierAsOf(
-      quoteLabId ? multiplierByLab.get(quoteLabId) : null,
+      multiplierLabId ? multiplierByLab.get(multiplierLabId) : null,
       practiceId,
       doc?.createdAt,
     );

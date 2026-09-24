@@ -24,6 +24,7 @@ import {
   countCustomAbutmentWorks,
 } from "../utils/labFeeSchedule.js";
 import { practiceTransferNotDeletedMongoFilter } from "../utils/practiceTransferStage.js";
+import { resolveFeeScheduleLabAnchorId, resolveLabFeeMultiplierLabAnchorId } from "../utils/practiceTransferAutoMatch.js";
 
 /** FDI 10→20→30→40 — 18→11→21→28→38→31→41→48 (toToothDecadeSortNumber와 동일) */
 const REMAKE_ARCH_TOOTH_ORDER = [
@@ -428,9 +429,14 @@ export async function applyPracticeTransferRemakeCharge({
   }
 
   // 청구 금액만 필요 — partner/budget/catalog 조회 생략. hold가 잔액 SSOT.
+  // 협력: 수가·할증=수행 기공소. 하청·어벗츠: 원청. 정산은 어벗츠 경유.
+  const feeScheduleLabId =
+    resolveFeeScheduleLabAnchorId(doc) || labAnchorId;
   const quote = await buildPracticeTransferQuote({
     practiceAnchorId,
-    labAnchorId,
+    labAnchorId: feeScheduleLabId,
+    labFeeMultiplierLabAnchorId:
+      resolveLabFeeMultiplierLabAnchorId(doc) || feeScheduleLabId,
     toothWorks: works,
     remake: true,
     relationshipKind: "none",

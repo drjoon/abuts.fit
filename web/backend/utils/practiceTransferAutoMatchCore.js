@@ -3,6 +3,8 @@
 // - web/backend/tests/unit/practiceTransferAutoMatchPriority.test.js
 //
 // 자동매칭 우선창·필터 순수 헬퍼 (Mongo 모델 import 없음).
+// - 2026-09-24: 할증 labFeeMultiplier — 협력=수행 기공소, 하청·어벗츠 자체=원청(어벗츠).
+// - 2026-09-24: 수가표 — 협력=수행 기공소, 하청·어벗츠 자체=원청. 정산만 어벗츠 경유.
 // - 2026-09-23: 치과 직접 지정=협력(assigneeKind=cooperation, 0%). 어벗츠 지정 후 풀/클레임=하청(subcontract, 5%).
 // - 2026-09-23: 신규 PTX 계약 상대=어벗츠기공소(원청). 픽커 파트너=assignee.
 // - 2026-08-21: 하청 전환은 어벗츠기공소(원청)만 — 타 기공소 지정 의뢰는 canOpenSubcontract=false.
@@ -221,11 +223,42 @@ export const isAbutsPrimePracticeTransfer = (transfer) => {
 
 /**
  * 수가표 앵커.
- * 어벗츠 원청(신규 SSOT·하청·하청풀)은 항상 prime. 레거시 외부 직접 지정만 수행 기공소.
+ * 협력: 수행 기공소(치과↔지정 기공소와 동일). 정산만 어벗츠 경유.
+ * 하청·하청풀·어벗츠 자체: 원청(어벗츠).
+ * 레거시 외부 직접 지정: 수행 기공소.
  */
 export const resolveFeeScheduleLabAnchorId = (transfer) => {
+  if (isCooperationAssignee(transfer)) {
+    return (
+      getAssigneeLabAnchorId(transfer) || resolvePerformingLabAnchorId(transfer)
+    );
+  }
   if (
     isAbutsPrimePracticeTransfer(transfer) ||
+    isSubcontractFeeScheduleContext(transfer)
+  ) {
+    return (
+      getPrimeLabAnchorId(transfer) || resolvePerformingLabAnchorId(transfer)
+    );
+  }
+  return resolvePerformingLabAnchorId(transfer);
+};
+
+/**
+ * 기공수가 할증(labFeeMultiplier) 앵커.
+ * 협력(assigneeKind=cooperation): 수행 기공소(assignee).
+ * 하청·어벗츠 자체 수행·하청풀: 원청(어벗츠).
+ * 레거시 외부 직접 지정: 수행 기공소.
+ */
+export const resolveLabFeeMultiplierLabAnchorId = (transfer) => {
+  if (isCooperationAssignee(transfer)) {
+    return (
+      getAssigneeLabAnchorId(transfer) || resolvePerformingLabAnchorId(transfer)
+    );
+  }
+  if (
+    isAbutsPrimePracticeTransfer(transfer) ||
+    isSubcontractAssignee(transfer) ||
     isSubcontractFeeScheduleContext(transfer)
   ) {
     return (

@@ -74,6 +74,7 @@ import {
   resolveAssigneeKind,
   resolveCreateMatchingTarget,
   resolveFeeScheduleLabAnchorId,
+  resolveLabFeeMultiplierLabAnchorId,
   resolvePerformingLabAnchorId,
   isLabPerformingOnTransfer,
   isPracticeTransferSubcontracted,
@@ -3305,7 +3306,21 @@ export async function createPracticeTransfer(req, res) {
     const [feeQuote, starBandErr] = await Promise.all([
       buildPracticeTransferQuote({
         practiceAnchorId,
-        labAnchorId: targetLabAnchorId,
+        labAnchorId:
+          resolveFeeScheduleLabAnchorId({
+            targetLabAnchorId,
+            targetLabName,
+            assigneeLabAnchorId,
+            assigneeKind,
+            matchingMode,
+          }) || targetLabAnchorId,
+        labFeeMultiplierLabAnchorId: resolveLabFeeMultiplierLabAnchorId({
+          targetLabAnchorId,
+          targetLabName,
+          assigneeLabAnchorId,
+          assigneeKind,
+          matchingMode,
+        }),
         toothWorks: toothWorksRaw,
         matchingMode,
         autoMatchBudget,
@@ -3995,6 +4010,31 @@ export async function updatePracticeTransferContent(req, res) {
         );
       }
 
+      feeQuote = await buildPracticeTransferQuote({
+        practiceAnchorId,
+        labAnchorId:
+          resolveFeeScheduleLabAnchorId({
+            targetLabAnchorId,
+            targetLabName,
+            assigneeLabAnchorId,
+            assigneeKind,
+            matchingMode,
+          }) || targetLabAnchorId,
+        labFeeMultiplierLabAnchorId: resolveLabFeeMultiplierLabAnchorId({
+          targetLabAnchorId,
+          targetLabName,
+          assigneeLabAnchorId,
+          assigneeKind,
+          matchingMode,
+        }),
+        toothWorks: toothWorksRaw,
+        matchingMode,
+        autoMatchBudget,
+        catalog: autoMatchCatalog,
+        rushFeeMultiplier,
+        subcontracted: assigneeKind === "subcontract",
+      });
+
       try {
         await assertPracticeTransferPaidCreditSufficient({
           practiceAnchorId,
@@ -4004,6 +4044,7 @@ export async function updatePracticeTransferContent(req, res) {
           catalog: autoMatchCatalog,
           rushFeeMultiplier,
           skipJig,
+          fees: feeQuote.fees,
         });
       } catch (creditErr) {
         try {
@@ -4027,16 +4068,6 @@ export async function updatePracticeTransferContent(req, res) {
         });
       }
 
-      feeQuote = await buildPracticeTransferQuote({
-        practiceAnchorId,
-        labAnchorId: targetLabAnchorId,
-        toothWorks: toothWorksRaw,
-        matchingMode,
-        autoMatchBudget,
-        catalog: autoMatchCatalog,
-        rushFeeMultiplier,
-        subcontracted: assigneeKind === "subcontract",
-      });
       billingPreview = {
         ...toBillingPreviewFields(feeQuote),
         rushFeeMultiplier,
@@ -4899,7 +4930,9 @@ export async function appendPracticeTransferProsthesis(req, res) {
       try {
         const tempQuote = await buildPracticeTransferQuote({
           practiceAnchorId,
-          labAnchorId: targetLabAnchorId,
+          labAnchorId:
+            resolveFeeScheduleLabAnchorId(doc) || targetLabAnchorId,
+          labFeeMultiplierLabAnchorId: resolveLabFeeMultiplierLabAnchorId(doc),
           toothWorks: tempRowsForStage,
           skipAbutmentFees: false,
           remake: false,
@@ -11305,6 +11338,30 @@ export async function retargetPracticeTransferLab(req, res) {
     let autoMatchPriorityLabAnchorIds = [];
     let autoMatchCatalog = null;
 
+    const feeQuote = await buildPracticeTransferQuote({
+      practiceAnchorId,
+      labAnchorId:
+        resolveFeeScheduleLabAnchorId({
+          targetLabAnchorId,
+          targetLabName,
+          assigneeLabAnchorId,
+          assigneeKind,
+          matchingMode,
+        }) || targetLabAnchorId,
+      labFeeMultiplierLabAnchorId: resolveLabFeeMultiplierLabAnchorId({
+        targetLabAnchorId,
+        targetLabName,
+        assigneeLabAnchorId,
+        assigneeKind,
+        matchingMode,
+      }),
+      toothWorks,
+      matchingMode,
+      autoMatchBudget,
+      catalog: autoMatchCatalog,
+      subcontracted: assigneeKind === "subcontract",
+    });
+
     try {
       await assertPracticeTransferPaidCreditSufficient({
         practiceAnchorId,
@@ -11313,6 +11370,7 @@ export async function retargetPracticeTransferLab(req, res) {
         autoMatchBudget,
         catalog: autoMatchCatalog,
         skipJig: Boolean(doc?.production?.skipJig),
+        fees: feeQuote.fees,
       });
     } catch (creditErr) {
       const status = Number(creditErr?.statusCode || 500);
@@ -11334,15 +11392,6 @@ export async function retargetPracticeTransferLab(req, res) {
       );
     }
 
-    const feeQuote = await buildPracticeTransferQuote({
-      practiceAnchorId,
-      labAnchorId: targetLabAnchorId,
-      toothWorks,
-      matchingMode,
-      autoMatchBudget,
-      catalog: autoMatchCatalog,
-      subcontracted: assigneeKind === "subcontract",
-    });
     const billingPreview = toBillingPreviewFields(feeQuote);
     const autoMatchPriorityFields =
       matchingMode === "auto"
