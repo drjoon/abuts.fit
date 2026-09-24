@@ -1,4 +1,5 @@
 # change-log:
+# - 2026-09-24: exe 탐색 — 설치 폴더→실행 중 프로세스. 실패 시 EXE_NOT_FOUND.
 # - 2026-09-24: 설치(여기를_더블클릭_설치)·run-hidden·프로토콜 wake·중복 실행 시 조용히 종료.
 # - 2026-09-24: Windows 스탠드얼론 — Node 없이 HttpListener + Start-Process (start.cmd).
 # related files:
@@ -89,7 +90,7 @@ function Sanitize-FileName([string]$Name) {
   return $base
 }
 
-function Resolve-Exe([hashtable]$Cfg, [string]$DesignSoftware) {
+function Resolve-ConfiguredExe([hashtable]$Cfg, [string]$DesignSoftware) {
   $key = ([string]$DesignSoftware).Trim()
   if ($key -eq "3Shape") { return $Cfg.Exe3Shape }
   if ($key -eq "ExoCAD") { return $Cfg.ExeExoCad }
@@ -99,30 +100,209 @@ function Resolve-Exe([hashtable]$Cfg, [string]$DesignSoftware) {
   return ""
 }
 
+function Get-SearchRoots {
+  $roots = New-Object System.Collections.Generic.List[string]
+  foreach ($r in @(
+      ${env:ProgramFiles},
+      ${env:ProgramFiles(x86)},
+      (Join-Path $env:LOCALAPPDATA "Programs"),
+      "D:\Program Files",
+      "D:\Program Files (x86)"
+    )) {
+    if ($r -and (Test-Path -LiteralPath $r)) { $roots.Add($r) | Out-Null }
+  }
+  return $roots
+}
+
+function Find-ExeUnderDirs([string[]]$NamePatterns, [string[]]$FolderHints, [int]$MaxDepth = 5) {
+  $roots = Get-SearchRoots
+  foreach ($root in $roots) {
+    foreach ($hint in $FolderHints) {
+      $hintPath = Join-Path $root $hint
+      if (-not (Test-Path -LiteralPath $hintPath)) { continue }
+      foreach ($pat in $NamePatterns) {
+        try {
+          $hits = Get-ChildItem -LiteralPath $hintPath -Filter $pat -File -Recurse -ErrorAction SilentlyContinue |
+            Select-Object -First 8
+          foreach ($hit in $hits) {
+            if ($hit.FullName -and (Test-Path -LiteralPath $hit.FullName)) {
+              return $hit.FullName
+            }
+          }
+        } catch {}
+      }
+    }
+  }
+  # broader shallow search under Program Files\*hint*
+  foreach ($root in $roots) {
+    try {
+      $dirs = Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue |
+        Where-Object {
+          $n = $_.Name.ToLowerInvariant()
+          foreach ($h in $FolderHints) {
+            if ($n -like ("*" + $h.ToLowerInvariant().Split('\')[0] + "*")) { return $true }
+          }
+          return $false
+        }
+      foreach ($dir in $dirs) {
+        foreach ($pat in $NamePatterns) {
+          $hits = Get-ChildItem -LiteralPath $dir.FullName -Filter $pat -File -Recurse -Depth $MaxDepth -ErrorAction SilentlyContinue |
+            Select-Object -First 5
+          foreach ($hit in $hits) {
+            if ($hit.FullName) { return $hit.FullName }
+          }
+        }
+      }
+    } catch {}
+  }
+  return ""
+}
+
+function Find-ExeByRunningProcess([string[]]$ProcessNamePatterns) {
+  try {
+    $procs = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue
+  } catch {
+    try { $procs = Get-WmiObject Win32_Process -ErrorAction SilentlyContinue } catch { return "" }
+  }
+  if (-not $procs) { return "" }
+  foreach ($p in $procs) {
+    $name = [string]$p.Name
+    $path = [string]$p.ExecutablePath
+    if (-not $path) { continue }
+    $matched = $false
+    foreach ($pat in $ProcessNamePatterns) {
+      if ($name -like $pat) { $matched = $true; break }
+    }
+    if (-not $matched) { continue }
+    if (Test-Path -LiteralPath $path) { return $path }
+  }
+  return ""
+}
+
+function Discover-DesignExe([string]$DesignSoftware) {
+  $key = ([string]$DesignSoftware).Trim()
+  if ($key -eq "3Shape") {
+    $byDir = Find-ExeUnderDirs @(
+      "DentalDesktop.exe",
+      "DentalDesigner.exe",
+      "ThreeShape.DentalDesktop.exe"
+    ) @(
+      "3Shape",
+      "3shape"
+    )
+    if ($byDir) { return @{ exe = $byDir; source = "install_dir" } }
+    $byProc = Find-ExeByRunningProcess @(
+      "DentalDesktop.exe",
+      "DentalDesigner.exe",
+      "ThreeShape.DentalDesktop.exe",
+      "DentalDesktop*",
+      "DentalDesigner*"
+    )
+    if ($byProc) { return @{ exe = $byProc; source = "running_process" } }
+    return @{ exe = ""; source = "not_found" }
+  }
+  if ($key -eq "ExoCAD") {
+    $byDir = Find-ExeUnderDirs @(
+      "DentalCADApp.exe",
+      "DentalCAD.exe",
+      "DentalDB.exe"
+    ) @(
+      "exocad",
+      "ExoCAD",
+      "exocad GmbH"
+    )
+    if ($byDir) { return @{ exe = $byDir; source = "install_dir" } }
+    $byProc = Find-ExeByRunningProcess @(
+      "DentalCADApp.exe",
+      "DentalCAD.exe",
+      "DentalDB.exe",
+      "DentalCAD*"
+    )
+    if ($byProc) { return @{ exe = $byProc; source = "running_process" } }
+    return @{ exe = ""; source = "not_found" }
+  }
+  # custom: only running process by name guess is weak — skip dir scan
+  return @{ exe = ""; source = "not_found" }
+}
+
+function Save-DiscoveredExe([string]$DesignSoftware, [string]$ExePath) {
+  if (-not $ExePath) { return }
+  try {
+    Ensure-Config
+    $key = ([string]$DesignSoftware).Trim()
+    $obj = @{
+      port = 8010
+      allowOrigin = "*"
+      sharedSecret = ""
+      exePaths = @{
+        "3Shape" = ""
+        ExoCAD = ""
+        custom = ""
+      }
+    }
+    try {
+      $raw = Get-Content -LiteralPath $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
+      if ($raw.port) { $obj.port = [int]$raw.port }
+      if ($raw.allowOrigin) { $obj.allowOrigin = [string]$raw.allowOrigin }
+      if ($null -ne $raw.sharedSecret) { $obj.sharedSecret = [string]$raw.sharedSecret }
+      if ($raw.exePaths) {
+        if ($raw.exePaths."3Shape") { $obj.exePaths."3Shape" = [string]$raw.exePaths."3Shape" }
+        if ($raw.exePaths.ExoCAD) { $obj.exePaths.ExoCAD = [string]$raw.exePaths.ExoCAD }
+        if ($raw.exePaths.custom) { $obj.exePaths.custom = [string]$raw.exePaths.custom }
+      }
+    } catch {}
+    if ($key -eq "3Shape") { $obj.exePaths."3Shape" = $ExePath }
+    elseif ($key -eq "ExoCAD") { $obj.exePaths.ExoCAD = $ExePath }
+    else { $obj.exePaths.custom = $ExePath }
+    ($obj | ConvertTo-Json -Depth 6) | Set-Content -LiteralPath $ConfigPath -Encoding UTF8
+    Write-Log "saved discovered exe ($key): $ExePath"
+  } catch {
+    Write-Log ("save discovered exe failed: {0}" -f $_.Exception.Message)
+  }
+}
+
 function Launch-Files([hashtable]$Cfg, [string]$DesignSoftware, [string[]]$FilePaths) {
-  $exe = Resolve-Exe $Cfg $DesignSoftware
-  if ($exe -and (Test-Path -LiteralPath $exe)) {
-    Start-Process -FilePath $exe -ArgumentList $FilePaths -WindowStyle Normal | Out-Null
-    return @{
-      mode = "exe"
-      exe = $exe
-      count = $FilePaths.Count
-      hint = $null
+  $configured = Resolve-ConfiguredExe $Cfg $DesignSoftware
+  $exe = ""
+  $source = "config"
+  if ($configured -and (Test-Path -LiteralPath $configured)) {
+    $exe = $configured
+  } else {
+    $discovered = Discover-DesignExe $DesignSoftware
+    $exe = [string]$discovered.exe
+    $source = [string]$discovered.source
+    if ($exe) {
+      Save-DiscoveredExe $DesignSoftware $exe
+      # refresh in-memory cfg for this process
+      if (([string]$DesignSoftware).Trim() -eq "3Shape") { $Cfg.Exe3Shape = $exe }
+      elseif (([string]$DesignSoftware).Trim() -eq "ExoCAD") { $Cfg.ExeExoCad = $exe }
+      else { $Cfg.ExeCustom = $exe }
     }
   }
 
-  foreach ($fp in $FilePaths) {
-    Start-Process -FilePath $fp -WindowStyle Normal | Out-Null
+  if (-not $exe -or -not (Test-Path -LiteralPath $exe)) {
+    $sw = ([string]$DesignSoftware).Trim()
+    if (-not $sw) { $sw = "디자인 프로그램" }
+    return @{
+      ok = $false
+      code = "EXE_NOT_FOUND"
+      mode = "not_found"
+      exe = $null
+      count = 0
+      message = ("{0} 실행 파일을 찾지 못했습니다. PC에서 {0}을(를) 실행한 뒤, 웹에서 설치를 다시 진행해 주세요." -f $sw)
+    }
   }
-  $hint = "exePaths가 비어 OS 기본 앱으로 열었습니다. config.json에 3Shape/ExoCAD 경로를 넣으면 해당 SW로 실행합니다."
-  if ($exe -and -not (Test-Path -LiteralPath $exe)) {
-    $hint = "config.json exePaths에 지정한 경로가 없습니다: $exe"
-  }
+
+  Start-Process -FilePath $exe -ArgumentList $FilePaths -WindowStyle Normal | Out-Null
   return @{
-    mode = "shell"
-    exe = $null
+    ok = $true
+    code = $null
+    mode = "exe"
+    exe = $exe
+    source = $source
     count = $FilePaths.Count
-    hint = $hint
+    hint = $null
+    message = $null
   }
 }
 
@@ -339,12 +519,23 @@ try {
         }
         $fileArr = @($session.files.ToArray())
         $result = Launch-Files $Cfg $designSoftware $fileArr
-        Write-Log ("opened session={0} sw={1} mode={2} count={3}" -f $sessionId, ($(if ($designSoftware) { $designSoftware } else { "(default)" })), $result.mode, $result.count)
+        if (-not $result.ok) {
+          Write-Log ("open failed session={0} sw={1} code={2}" -f $sessionId, ($(if ($designSoftware) { $designSoftware } else { "(default)" })), $result.code)
+          Send-Json $res 422 @{
+            ok = $false
+            code = $result.code
+            message = $result.message
+            designSoftware = $(if ($designSoftware) { $designSoftware } else { $null })
+          } $AllowOrigin
+          continue
+        }
+        Write-Log ("opened session={0} sw={1} mode={2} source={3} count={4}" -f $sessionId, ($(if ($designSoftware) { $designSoftware } else { "(default)" })), $result.mode, $result.source, $result.count)
         $payload = @{
           ok = $true
           designSoftware = $(if ($designSoftware) { $designSoftware } else { $null })
           mode = $result.mode
           exe = $result.exe
+          source = $result.source
           count = $result.count
         }
         if ($result.hint) { $payload.hint = $result.hint }

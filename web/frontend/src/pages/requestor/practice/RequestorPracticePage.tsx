@@ -201,6 +201,12 @@ import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
 import { DesignSoftwareSettingsDialog } from "@/features/requestSettings/DesignSoftwareSettingsDialog";
 import { LabCadHelperSetupDialog } from "@/shared/components/LabCadHelperSetupDialog";
+import { LabCadOpenSoftwareConfirmDialog } from "@/shared/components/LabCadOpenSoftwareConfirmDialog";
+import {
+  needsDesignSoftwareOpenConfirm,
+  readLastConfirmedDesignSoftware,
+  writeLastConfirmedDesignSoftware,
+} from "@/shared/files/labCadHelperClient";
 import { RequestSettingsToolbar } from "@/features/requestSettings/RequestSettingsToolbar";
 import { useRequestorRequestSettings } from "@/features/requestSettings/useRequestorRequestSettings";
 import {
@@ -285,6 +291,7 @@ import {
 import { RequestDetailDialog } from "@/features/requests/components/RequestDetailDialog";
 import { LabPracticeFeeSurchargeControl } from "@/shared/components/practice/LabPracticeFeeSurchargeControl";
 import { PracticeTransferBookmarkControl } from "@/shared/components/practice/PracticeTransferBookmarkControl";
+import { PracticeTransferBookmarkNavigateButton } from "@/shared/components/practice/PracticeTransferBookmarkNavigateButton";
 import {
   bookmarkIdSetFromItems,
   fetchPracticeTransferBookmarks,
@@ -738,6 +745,11 @@ export function RequestorPracticeReceivePage({
     null,
   );
   const [labCadHelperSetupOpen, setLabCadHelperSetupOpen] = useState(false);
+  const [labCadHelperSetupVariant, setLabCadHelperSetupVariant] = useState<
+    "helper_missing" | "exe_not_found"
+  >("helper_missing");
+  const [labCadSoftwareConfirmOpen, setLabCadSoftwareConfirmOpen] =
+    useState(false);
   const labCadOpenRetryRef = useRef<null | (() => void)>(null);
   const beginDesignUploadWithFilesRef = useRef<
     (
@@ -7215,7 +7227,7 @@ export function RequestorPracticeReceivePage({
     [downloadAll, selectedTransfer],
   );
 
-  const handleOpenInDesignSoftware = useCallback(async () => {
+  const runOpenInDesignSoftware = useCallback(async () => {
     const sw = String(designSoftwareValue || "").trim();
     if (!sw) {
       openDesignSoftwareModal();
@@ -7235,10 +7247,11 @@ export function RequestorPracticeReceivePage({
         fileName: String(file.originalName || "model.stl").trim() || "model.stl",
         busyKey: String(file.s3Key || "").trim(),
       })),
-      onNeedHelperSetup: () => {
+      onNeedHelperSetup: (reason) => {
         labCadOpenRetryRef.current = () => {
-          void handleOpenInDesignSoftware();
+          void runOpenInDesignSoftware();
         };
+        setLabCadHelperSetupVariant(reason);
         setLabCadHelperSetupOpen(true);
       },
     });
@@ -7247,6 +7260,28 @@ export function RequestorPracticeReceivePage({
     openDesignSoftwareModal,
     openInDesignSoftware,
     selectedTransfer,
+    toast,
+  ]);
+
+  const handleOpenInDesignSoftware = useCallback(async () => {
+    const sw = String(designSoftwareValue || "").trim();
+    if (!sw) {
+      openDesignSoftwareModal();
+      toast({
+        title: "디자인 소프트웨어를 먼저 설정해 주세요",
+        description: "설정 후 다시「열기」를 누르면 해당 소프트웨어로 파일을 엽니다.",
+      });
+      return;
+    }
+    if (needsDesignSoftwareOpenConfirm(sw)) {
+      setLabCadSoftwareConfirmOpen(true);
+      return;
+    }
+    await runOpenInDesignSoftware();
+  }, [
+    designSoftwareValue,
+    openDesignSoftwareModal,
+    runOpenInDesignSoftware,
     toast,
   ]);
 
@@ -8503,6 +8538,8 @@ export function RequestorPracticeReceivePage({
       />
       <LabCadHelperSetupDialog
         open={labCadHelperSetupOpen}
+        variant={labCadHelperSetupVariant}
+        designSoftwareLabel={String(designSoftwareValue || "").trim()}
         onOpenChange={(next) => {
           setLabCadHelperSetupOpen(next);
           if (!next) labCadOpenRetryRef.current = null;
@@ -8512,6 +8549,19 @@ export function RequestorPracticeReceivePage({
           labCadOpenRetryRef.current = null;
           retry?.();
         }}
+      />
+      <LabCadOpenSoftwareConfirmDialog
+        open={labCadSoftwareConfirmOpen}
+        onOpenChange={setLabCadSoftwareConfirmOpen}
+        designSoftwareLabel={String(designSoftwareValue || "").trim()}
+        previousSoftwareLabel={readLastConfirmedDesignSoftware()}
+        onConfirm={() => {
+          writeLastConfirmedDesignSoftware(
+            String(designSoftwareValue || "").trim(),
+          );
+          void runOpenInDesignSoftware();
+        }}
+        onChangeSettings={() => openDesignSoftwareModal()}
       />
       <RequestorAbutmentPageHeader
         variant="policyInProgress"

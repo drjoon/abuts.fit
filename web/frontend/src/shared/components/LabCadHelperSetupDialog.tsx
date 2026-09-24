@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-24: variant=exe_not_found — 디자인 SW 실행 후 재설치 안내.
 // - 2026-09-24: 연결 확인 버튼에 5→1초 카운트다운 표시.
 // - 2026-09-24: 「설치 완료 — 열기」primary·연결 확인 5초.
 // - 2026-09-24: 설치 안내 카피 축약 — 받기 → 더블클릭 → 확인.
@@ -26,22 +27,31 @@ import { useEffect, useRef, useState } from "react";
 
 const CHECK_TIMEOUT_SEC = 5;
 
+export type LabCadHelperSetupVariant = "helper_missing" | "exe_not_found";
+
 type LabCadHelperSetupDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** 연결 확인 성공 시(열기 재시도) */
   onConnected: () => void;
+  variant?: LabCadHelperSetupVariant;
+  /** exe 미발견 안내에 표시할 SW 이름 */
+  designSoftwareLabel?: string;
 };
 
 export function LabCadHelperSetupDialog({
   open,
   onOpenChange,
   onConnected,
+  variant = "helper_missing",
+  designSoftwareLabel = "",
 }: LabCadHelperSetupDialogProps) {
   const { toast } = useToast();
   const [checking, setChecking] = useState(false);
   const [countdownSec, setCountdownSec] = useState<number | null>(null);
   const countdownTimerRef = useRef<number | null>(null);
+  const swLabel = String(designSoftwareLabel || "").trim() || "디자인 프로그램";
+  const isExeMissing = variant === "exe_not_found";
 
   const clearCountdown = () => {
     if (countdownTimerRef.current != null) {
@@ -100,7 +110,9 @@ export function LabCadHelperSetupDialog({
       }
       toast({
         title: "아직 연결되지 않았습니다",
-        description: "zip을 열고 「여기를_더블클릭_설치」를 실행했는지 확인해 주세요.",
+        description: isExeMissing
+          ? `${swLabel}을(를) 켠 뒤 「여기를_더블클릭_설치」를 다시 실행했는지 확인해 주세요.`
+          : "zip을 열고 「여기를_더블클릭_설치」를 실행했는지 확인해 주세요.",
         variant: "destructive",
       });
     } finally {
@@ -113,9 +125,19 @@ export function LabCadHelperSetupDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="z-[320] max-w-sm gap-0 p-0 sm:rounded-lg">
         <DialogHeader className="space-y-1.5 border-b px-5 py-4 text-left">
-          <DialogTitle className="text-base">처음 한 번만 설치</DialogTitle>
+          <DialogTitle className="text-base">
+            {isExeMissing ? `${swLabel} 경로를 찾지 못했습니다` : "처음 한 번만 설치"}
+          </DialogTitle>
           <DialogDescription className="text-sm text-muted-foreground">
-            이후에는 「열기」만 누르면 됩니다.
+            {isExeMissing ? (
+              <>
+                PC에서 {swLabel}을(를) 실행한 뒤,
+                <br />
+                아래 설치를 다시 진행해 주세요.
+              </>
+            ) : (
+              <>이후에는 「열기」만 누르면 됩니다.</>
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -134,10 +156,21 @@ export function LabCadHelperSetupDialog({
           <div className="space-y-1">
             <p className="font-medium">2. 설치</p>
             <p className="text-[13px] leading-relaxed text-muted-foreground">
-              받은 zip을 열고
-              <br />
-              <span className="text-foreground">여기를_더블클릭_설치</span>
-              를 실행하세요.
+              {isExeMissing ? (
+                <>
+                  {swLabel}을(를) 켠 상태에서
+                  <br />
+                  <span className="text-foreground">여기를_더블클릭_설치</span>
+                  를 다시 실행하세요.
+                </>
+              ) : (
+                <>
+                  받은 zip을 열고
+                  <br />
+                  <span className="text-foreground">여기를_더블클릭_설치</span>
+                  를 실행하세요.
+                </>
+              )}
             </p>
           </div>
           <div className="space-y-2">

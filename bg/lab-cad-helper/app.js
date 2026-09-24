@@ -151,40 +151,18 @@ function launchFiles(designSoftware, filePaths) {
       windowsHide: true,
     });
     child.unref();
-    return { mode: "exe", exe, count: filePaths.length };
+    return { ok: true, mode: "exe", exe, count: filePaths.length };
   }
 
-  // exe 미설정·없음 → OS 기본 연결로 각 파일 열기
-  for (const filePath of filePaths) {
-    if (process.platform === "win32") {
-      const child = spawn("cmd", ["/c", "start", "", filePath], {
-        detached: true,
-        stdio: "ignore",
-        windowsHide: true,
-      });
-      child.unref();
-    } else if (process.platform === "darwin") {
-      const child = spawn("open", [filePath], {
-        detached: true,
-        stdio: "ignore",
-      });
-      child.unref();
-    } else {
-      const child = spawn("xdg-open", [filePath], {
-        detached: true,
-        stdio: "ignore",
-      });
-      child.unref();
-    }
-  }
+  // 개발용(Mac): Windows 설치 폴더 탐색은 PS1 SSOT. 여기선 명시 실패.
+  const sw = String(designSoftware || "").trim() || "디자인 프로그램";
   return {
-    mode: "shell",
+    ok: false,
+    code: "EXE_NOT_FOUND",
+    mode: "not_found",
     exe: null,
-    count: filePaths.length,
-    hint:
-      exe && !fs.existsSync(exe)
-        ? `config.json exePaths에 지정한 경로가 없습니다: ${exe}`
-        : "exePaths가 비어 OS 기본 앱으로 열었습니다. config.json에 3Shape/ExoCAD 경로를 넣으면 해당 SW로 실행합니다.",
+    count: 0,
+    message: `${sw} 실행 파일을 찾지 못했습니다. PC에서 ${sw}을(를) 실행한 뒤, 웹에서 설치를 다시 진행해 주세요.`,
   };
 }
 
@@ -300,10 +278,21 @@ async function handleRequest(req, res) {
       ...result,
       files: session.files.map((f) => path.basename(f)),
     });
+    if (!result.ok) {
+      sendJson(res, 422, {
+        ok: false,
+        code: result.code || "EXE_NOT_FOUND",
+        message: result.message,
+        designSoftware: designSoftware || null,
+      });
+      return;
+    }
     sendJson(res, 200, {
       ok: true,
       designSoftware: designSoftware || null,
-      ...result,
+      mode: result.mode,
+      exe: result.exe,
+      count: result.count,
     });
     return;
   }

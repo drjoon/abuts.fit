@@ -36,7 +36,9 @@ import {
 import {
   dcmFormatForDesignSoftware,
   ensureLabCadHelperReady,
+  LabCadHelperOpenError,
   openFilesWithLabCadHelper,
+  writeLastConfirmedDesignSoftware,
 } from "@/shared/files/labCadHelperClient";
 import {
   getModelExtLower,
@@ -288,13 +290,13 @@ export function useS3FileDownload(token?: string | null) {
   /**
    * 의뢰 3D 모델을 로컬 CAD 헬퍼로 연다.
    * designSoftware: 설정값(3Shape/ExoCAD/커스텀). DCM은 SW에 맞춰 원본 또는 PLY.
-   * onNeedHelperSetup: 헬퍼 미설치·미실행 시 설치 안내(토스트 대신).
+   * onNeedHelperSetup: 헬퍼 미설치·미실행 또는 exe 미발견 시 설치 안내.
    */
   const openInDesignSoftware = useCallback(
     async (opts: {
       files: S3DownloadTarget[];
       designSoftware: string;
-      onNeedHelperSetup?: () => void | Promise<void>;
+      onNeedHelperSetup?: (reason: "helper_missing" | "exe_not_found") => void | Promise<void>;
     }) => {
       if (openInCadBusyRef.current) return;
       const designSoftware = String(opts.designSoftware || "").trim();
@@ -330,7 +332,7 @@ export function useS3FileDownload(token?: string | null) {
         const helperStatus = await ensureLabCadHelperReady({ timeoutMs: 4500 });
         if (helperStatus === "need_setup") {
           if (opts.onNeedHelperSetup) {
-            await opts.onNeedHelperSetup();
+            await opts.onNeedHelperSetup("helper_missing");
           } else {
             toast({
               title: "처음 한 번만 설치가 필요합니다",
@@ -370,6 +372,7 @@ export function useS3FileDownload(token?: string | null) {
           designSoftware,
           files: prepared,
         });
+        writeLastConfirmedDesignSoftware(designSoftware);
         const swLabel = designSoftware || "기본 앱";
         toast({
           title: "디자인 소프트웨어로 열기",
@@ -379,6 +382,14 @@ export function useS3FileDownload(token?: string | null) {
         });
       } catch (err) {
         if ((err as { name?: string })?.name === "AbortError") return;
+        if (
+          err instanceof LabCadHelperOpenError &&
+          err.code === "EXE_NOT_FOUND" &&
+          opts.onNeedHelperSetup
+        ) {
+          await opts.onNeedHelperSetup("exe_not_found");
+          return;
+        }
         toast({
           title: "열기 실패",
           description:

@@ -132,6 +132,49 @@ export type LabCadOpenFile = {
   blob: Blob;
 };
 
+export class LabCadHelperOpenError extends Error {
+  code: string;
+  constructor(message: string, code = "OPEN_FAILED") {
+    super(message);
+    this.name = "LabCadHelperOpenError";
+    this.code = code;
+  }
+}
+
+const LAST_CONFIRMED_SW_KEY = "abuts.labCadLastConfirmedSoftware";
+
+export function readLastConfirmedDesignSoftware(): string {
+  try {
+    return String(localStorage.getItem(LAST_CONFIRMED_SW_KEY) || "").trim();
+  } catch {
+    return "";
+  }
+}
+
+export function writeLastConfirmedDesignSoftware(value: string) {
+  try {
+    const next = String(value || "").trim();
+    if (!next) {
+      localStorage.removeItem(LAST_CONFIRMED_SW_KEY);
+      return;
+    }
+    localStorage.setItem(LAST_CONFIRMED_SW_KEY, next);
+  } catch {
+    // ignore
+  }
+}
+
+/** 플랫폼 설정 SW가 마지막으로 확인한 값과 다르면 true */
+export function needsDesignSoftwareOpenConfirm(
+  currentDesignSoftware: string,
+): boolean {
+  const current = String(currentDesignSoftware || "").trim();
+  if (!current) return false;
+  const last = readLastConfirmedDesignSoftware();
+  if (!last) return false;
+  return last !== current;
+}
+
 /**
  * 로컬 헬퍼에 파일을 올린 뒤 설정 디자인 SW로 연다.
  */
@@ -144,6 +187,7 @@ export async function openFilesWithLabCadHelper(opts: {
   exe: string | null;
   hint?: string;
   count: number;
+  source?: string;
 }> {
   const files = (opts.files || []).filter(
     (f) => f?.blob && String(f.fileName || "").trim(),
@@ -208,21 +252,31 @@ export async function openFilesWithLabCadHelper(opts: {
   const openBody = (await openRes.json().catch(() => null)) as {
     ok?: boolean;
     message?: string;
+    code?: string;
     mode?: string;
     exe?: string | null;
     hint?: string;
     count?: number;
+    source?: string;
   } | null;
   if (!openRes.ok || !openBody?.ok) {
-    throw new Error(
-      String(openBody?.message || `열기 실패 (${openRes.status})`),
+    const code = String(openBody?.code || "").trim() || "OPEN_FAILED";
+    throw new LabCadHelperOpenError(
+      String(
+        openBody?.message ||
+          (code === "EXE_NOT_FOUND"
+            ? "디자인 프로그램 실행 파일을 찾지 못했습니다."
+            : `열기 실패 (${openRes.status})`),
+      ),
+      code,
     );
   }
   return {
-    mode: String(openBody.mode || "shell"),
+    mode: String(openBody.mode || "exe"),
     exe: openBody.exe ?? null,
     hint: openBody.hint,
     count: Number(openBody.count || files.length) || files.length,
+    source: openBody.source,
   };
 }
 
