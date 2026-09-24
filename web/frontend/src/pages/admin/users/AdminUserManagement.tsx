@@ -4,6 +4,7 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // change-log:
+// - 2026-09-25: 요약 카드 전체·활성·승인대기(3열). 역할 필터 치과·기공소·…·영업본부(8열).
 // - 2026-08-19: 치과 멤버십 폐지. 사용자 상세 멤버십 on/off 제거.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -38,15 +39,10 @@ import {
   MoreHorizontal,
   UserCheck,
   UserX,
-  Shield,
   Users,
-  Briefcase,
-  Building2,
-  FileText,
   Eye,
   Trash2,
   Download,
-  FlaskConical,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -735,9 +731,26 @@ export const AdminUserManagement = ({
       ].join(" ");
 
       const matchesSearch = !q || hay.includes(q);
-      const matchesRole =
-        selectedRole === "all" ||
-        normalizeRole(user.role) === normalizeRole(selectedRole);
+      const role = normalizeRole(user.role);
+      const matchesRole = (() => {
+        if (selectedRole === "all") return true;
+        if (selectedRole === "practice") {
+          return (
+            role === "requestor" &&
+            resolveUserRequestorKind(user) === "practice"
+          );
+        }
+        if (selectedRole === "lab") {
+          return (
+            role === "requestor" && resolveUserRequestorKind(user) === "lab"
+          );
+        }
+        // 어벗츠기공팀 = 기공팀 + 어벗츠기공소 계정
+        if (selectedRole === "labTeam") {
+          return role === "labTeam" || role === "internalLab";
+        }
+        return role === normalizeRole(selectedRole);
+      })();
       const matchesStatus =
         selectedStatus === "all" || user.status === selectedStatus;
 
@@ -831,104 +844,34 @@ export const AdminUserManagement = ({
   );
 
   const totalUsers = totalCount || sourceUsers.length;
-  const totalRequestor = sourceUsers.filter(
-    (u) => normalizeRole(u.role) === "requestor",
-  ).length;
-  const totalSalesman = sourceUsers.filter(
-    (u) => normalizeRole(u.role) === "salesman",
-  ).length;
-  const totalDevops = sourceUsers.filter(
-    (u) => normalizeRole(u.role) === "devops",
-  ).length;
-  const totalManufacturer = sourceUsers.filter(
-    (u) => normalizeRole(u.role) === "manufacturer",
-  ).length;
-  const totalInternalLab = sourceUsers.filter(
-    (u) => normalizeRole(u.role) === "internalLab",
-  ).length;
-  const totalAdmin = sourceUsers.filter(
-    (u) => normalizeRole(u.role) === "admin",
-  ).length;
+  const totalActive = sourceUsers.filter((u) => u.status === "active").length;
   const totalPending = sourceUsers.filter((u) => u.status === "pending").length;
   const unresolvedUsers = sourceUsers.filter((u) => u.unresolvedBusiness);
 
   const statsCards = [
     {
       key: "all",
-      label: "총 사용자",
+      label: "전체",
       count: totalUsers,
       icon: Users,
       iconWrap: "bg-slate-100",
       iconClass: "text-slate-600",
-      onClick: () => {
-        setSelectedRole("all");
-        setSelectedStatus("all");
-      },
-      active: selectedRole === "all" && selectedStatus === "all",
+      onClick: () => setSelectedStatus("all"),
+      active: selectedStatus === "all",
     },
     {
-      key: "requestor",
-      label: "의뢰자",
-      count: totalRequestor,
-      icon: FileText,
+      key: "active",
+      label: "활성",
+      count: totalActive,
+      icon: UserCheck,
       iconWrap: "bg-primary-soft",
       iconClass: "text-primary-strong",
-      onClick: () => setSelectedRole("requestor"),
-      active: selectedRole === "requestor",
-    },
-    {
-      key: "salesman",
-      label: getAppUserRoleLabel("salesman"),
-      count: totalSalesman,
-      icon: Briefcase,
-      iconWrap: "bg-primary-soft",
-      iconClass: "text-primary-strong",
-      onClick: () => setSelectedRole("salesman"),
-      active: selectedRole === "salesman",
-    },
-    {
-      key: "devops",
-      label: "개발운영사",
-      count: totalDevops,
-      icon: Shield,
-      iconWrap: "bg-primary-soft",
-      iconClass: "text-primary-strong",
-      onClick: () => setSelectedRole("devops"),
-      active: selectedRole === "devops",
-    },
-    {
-      key: "manufacturer",
-      label: "제조사",
-      count: totalManufacturer,
-      icon: Building2,
-      iconWrap: "bg-primary-soft",
-      iconClass: "text-primary-strong",
-      onClick: () => setSelectedRole("manufacturer"),
-      active: selectedRole === "manufacturer",
-    },
-    {
-      key: "internalLab",
-      label: "어벗츠기공소",
-      count: totalInternalLab,
-      icon: FlaskConical,
-      iconWrap: "bg-primary-soft",
-      iconClass: "text-primary-strong",
-      onClick: () => setSelectedRole("internalLab"),
-      active: selectedRole === "internalLab",
-    },
-    {
-      key: "admin",
-      label: "관리자",
-      count: totalAdmin,
-      icon: Shield,
-      iconWrap: "bg-destructive-soft",
-      iconClass: "text-destructive",
-      onClick: () => setSelectedRole("admin"),
-      active: selectedRole === "admin",
+      onClick: () => setSelectedStatus("active"),
+      active: selectedStatus === "active",
     },
     {
       key: "pending",
-      label: "승인 대기",
+      label: "승인대기",
       count: totalPending,
       icon: UserCheck,
       iconWrap: "bg-accent-soft",
@@ -939,21 +882,14 @@ export const AdminUserManagement = ({
   ] as const;
 
   const roleFilters = [
-    ["all", "전체"],
-    ["requestor", "의뢰자"],
-    ["salesman", getAppUserRoleLabel("salesman")],
+    ["practice", "치과"],
+    ["lab", "기공소"],
+    ["salesman", "딜러"],
     ["devops", "개발운영사"],
-    ["manufacturer", "제조사"],
-    ["internalLab", "어벗츠기공소"],
     ["admin", "관리자"],
-    ["labTeam", "기공팀"],
+    ["manufacturer", "제조사"],
+    ["labTeam", "어벗츠기공팀"],
     ["salesTeam", "영업본부"],
-  ] as const;
-
-  const statusFilters = [
-    ["all", "전체 상태"],
-    ["active", "활성"],
-    ["pending", "승인대기"],
   ] as const;
 
   return (
@@ -965,7 +901,7 @@ export const AdminUserManagement = ({
       }
     >
       <div className="mx-auto flex w-full max-w-7xl flex-1 min-h-0 flex-col gap-4 overflow-y-auto">
-        <div className="grid grid-cols-1 gap-2.5 p-0.5 sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-7">
+        <div className="grid grid-cols-3 gap-2.5 p-0.5">
           {statsCards.map((card) => {
             const Icon = card.icon;
             return (
@@ -1036,7 +972,7 @@ export const AdminUserManagement = ({
         )}
 
         <div className="flex flex-wrap items-center gap-3 pl-1.5 pr-0.5 sm:pl-2">
-          <div className="relative min-w-0 w-full flex-1 sm:min-w-[160px]">
+          <div className="relative min-w-0 w-full flex-1 sm:min-w-[160px] sm:max-w-xs">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <Input
               placeholder="사용자 검색..."
@@ -1045,34 +981,17 @@ export const AdminUserManagement = ({
               className="h-9 rounded-lg border-slate-200 bg-white pl-9 text-sm shadow-sm"
             />
           </div>
-          <div className="inline-flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
+          <div className="grid min-w-0 flex-1 grid-cols-4 gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-sm xl:grid-cols-8">
             {roleFilters.map(([value, label]) => {
               const active = selectedRole === value;
               return (
                 <button
                   key={value}
                   type="button"
-                  onClick={() => setSelectedRole(value)}
-                  className={`rounded-md px-2.5 py-1.5 text-xs font-semibold transition-colors ${
-                    active
-                      ? "bg-slate-900 text-white"
-                      : "text-slate-600 hover:bg-slate-50"
-                  }`}
-                >
-                  {label}
-                </button>
-              );
-            })}
-          </div>
-          <div className="inline-flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
-            {statusFilters.map(([value, label]) => {
-              const active = selectedStatus === value;
-              return (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setSelectedStatus(value)}
-                  className={`rounded-md px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                  onClick={() =>
+                    setSelectedRole(active ? "all" : value)
+                  }
+                  className={`rounded-md px-2 py-1.5 text-xs font-semibold transition-colors ${
                     active
                       ? "bg-slate-900 text-white"
                       : "text-slate-600 hover:bg-slate-50"
