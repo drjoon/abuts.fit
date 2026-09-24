@@ -92,11 +92,15 @@ type Props = {
    * salesman=딜러십 · devops=개발운영 분배
    */
   variant?: 'default' | 'devops' | 'salesman' | 'requestor';
-  /** 딜러십 표준 요율 %(추후 공지 후). salesman variant. */
+  /** 지금 신규 유치 요율 %. salesman variant. */
+  dealershipActivePct?: number;
+  /** @deprecated */
+  dealershipCommissionTiers?: unknown;
+  /** @deprecated */
   dealershipBasePct?: number;
-  /** 딜러십 이벤트 요율 %. salesman variant. */
+  /** @deprecated */
   dealershipEventPct?: number;
-  /** 이벤트 요율 적용 여부. salesman variant. */
+  /** @deprecated */
   dealershipEventEnabled?: boolean;
 };
 
@@ -193,6 +197,7 @@ export const PricingPolicyDialog = ({
   open,
   onOpenChange,
   variant = 'default',
+  dealershipActivePct = 20,
   dealershipBasePct = 10,
   dealershipEventPct = 20,
   dealershipEventEnabled = true,
@@ -210,10 +215,23 @@ export const PricingPolicyDialog = ({
     windowInfo: labFeeWindow,
     refresh: refreshLabFeeWindow,
   } = useLabTradingPartnerWindow();
-  const basePct = Math.max(0, Math.round(Number(dealershipBasePct) || 10));
-  const eventPct = Math.max(0, Math.round(Number(dealershipEventPct) || 20));
-  const eventOn = dealershipEventEnabled !== false;
-  const effectivePct = eventOn ? eventPct : basePct;
+  const settingsActive =
+    Number(
+      (systemSettings?.creditSettings as
+        | { dealershipActiveCommissionRate?: number }
+        | undefined)?.dealershipActiveCommissionRate,
+    ) || 0;
+  const activePct = Math.max(
+    0,
+    Math.round(
+      Number(dealershipActivePct) ||
+        Number(dealershipEventPct) ||
+        settingsActive * 100 ||
+        20,
+    ),
+  );
+  void dealershipBasePct;
+  void dealershipEventEnabled;
   const credit = systemSettings?.creditSettings;
   const launchResolved = resolveCustomAbutmentProductionPriceForAt(new Date(), {
     membershipProductionPrice:
@@ -398,7 +416,7 @@ export const PricingPolicyDialog = ({
     variant === 'devops'
       ? '유료의뢰비 정산 비율과 화면 안내를 확인하세요.'
       : variant === 'salesman'
-        ? '기본·이벤트 요율과 배송비 수신자 부담을 확인하세요.'
+        ? '유치 시점 요율 고정과 배송비 수신자 부담을 확인하세요.'
         : variant === 'requestor'
           ? '소개한 치과·기공소에 안내할 단가와 출고 기준입니다.'
           : isLab
@@ -426,17 +444,17 @@ export const PricingPolicyDialog = ({
             <div className='space-y-3'>
               <PolicySection title='영업 수수료'>
                 <p>
-                  심플웨이·커스텀어벗 판매가 대비(
+                  심플웨이·커스텀어벗 판매가 기준(기공비·배송비·월정액 제외).
+                  <br />
+                  지금 신규 유치 요율은{' '}
                   <span className='font-semibold text-slate-900'>
-                    {eventOn ? eventPct : basePct}%
+                    {activePct}%
                   </span>
-                  ). 배송비·월정액 배송 제외.
+                  입니다. 유치한 의뢰자는 그 시점 요율이 계속 적용됩니다.
                 </p>
                 <BulletList
                   items={[
-                    eventOn
-                      ? `이벤트 기간인 지금은 ${eventPct}%. 요율 변경 예약으로 15%·10% 조정이 가능합니다.`
-                      : `현재 표준 요율 ${basePct}%.`,
+                    '관리자가 판단해 신규 유치 요율을 15%·10%로 인하할 수 있습니다(기존 유치 건 유지).',
                     '대상: 심플웨이(스토어) · 커스텀어벗(런칭 1만 / 정상 1.3만)',
                     '소개 관계: 의뢰자 가입 시 입력한 딜러 코드',
                     REFERRAL_OWNERSHIP_RESET_POLICY_LINE,

@@ -32,6 +32,9 @@ import {
   resolveDirectPlatformFeeRateConfigured,
   resolvePlatformFeeRate,
   resolveSubcontractFeeRate,
+  normalizeDealershipCommissionTiers,
+  DEALERSHIP_COMMISSION_RATE_OPTIONS,
+  DEALERSHIP_ACTIVE_COMMISSION_RATE,
 } from "../../services/creditRevenuePolicy.service.js";
 import { normalizeConfiguredRushFeeMultiplier } from "../../utils/practiceTransferRush.js";
 
@@ -58,12 +61,13 @@ function sanitizeSharePercent(value) {
   return Math.min(100, Math.round(n * 100) / 100);
 }
 
-/** 딜러십 기본 요율(고정 10%). */
+/** 딜러십 기본 요율(최종 10%). */
 const DEALERSHIP_BASE_COMMISSION_RATE = 0.1;
-/** 딜러십 이벤트 요율 선택지(15% · 20%). */
+/** 딜러십 신규 유치·예약 요율 선택지(20% · 15% · 10%). */
+const DEALERSHIP_SCHEDULED_COMMISSION_RATE_OPTIONS =
+  DEALERSHIP_COMMISSION_RATE_OPTIONS;
+/** @deprecated */
 const DEALERSHIP_EVENT_COMMISSION_RATE_OPTIONS = [0.15, 0.2];
-/** 요율 변경 예약 선택지(10% · 15% · 20%). */
-const DEALERSHIP_SCHEDULED_COMMISSION_RATE_OPTIONS = [0.1, 0.15, 0.2];
 
 function snapRateToOptions(value, options, fallback) {
   const n = Number(value);
@@ -87,12 +91,18 @@ function sanitizeBaseCommissionRate(value) {
   return DEALERSHIP_BASE_COMMISSION_RATE;
 }
 
-function sanitizeEventCommissionRate(value) {
+function sanitizeActiveCommissionRate(value) {
+  if (value === undefined) return undefined;
+  if (value === null || value === "") return null;
   return snapRateToOptions(
     value,
-    DEALERSHIP_EVENT_COMMISSION_RATE_OPTIONS,
-    0.2,
+    DEALERSHIP_SCHEDULED_COMMISSION_RATE_OPTIONS,
+    DEALERSHIP_ACTIVE_COMMISSION_RATE,
   );
+}
+
+function sanitizeEventCommissionRate(value) {
+  return sanitizeActiveCommissionRate(value);
 }
 
 function sanitizeScheduledCommissionRate(value) {
@@ -101,8 +111,16 @@ function sanitizeScheduledCommissionRate(value) {
   return snapRateToOptions(
     value,
     DEALERSHIP_SCHEDULED_COMMISSION_RATE_OPTIONS,
-    DEALERSHIP_BASE_COMMISSION_RATE,
+    DEALERSHIP_ACTIVE_COMMISSION_RATE,
   );
+}
+
+/** 딜러 사업자당 월 매출 누진 구간. */
+function sanitizeDealershipCommissionTiers(value) {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (!Array.isArray(value)) return undefined;
+  return normalizeDealershipCommissionTiers(value);
 }
 
 function sanitizeOptionalDate(value) {
@@ -573,8 +591,21 @@ export async function updateCreditSettings(req, res) {
     )
       ? sanitizeBaseCommissionRate(payload.dealershipBaseCommissionRate)
       : null;
+    const dealershipActiveCommissionRate = Object.prototype.hasOwnProperty.call(
+      payload,
+      "dealershipActiveCommissionRate",
+    )
+      ? sanitizeActiveCommissionRate(payload.dealershipActiveCommissionRate)
+      : undefined;
+    const dealershipCommissionTiers = Object.prototype.hasOwnProperty.call(
+      payload,
+      "dealershipCommissionTiers",
+    )
+      ? sanitizeDealershipCommissionTiers(payload.dealershipCommissionTiers)
+      : undefined;
     const dealershipEventCommissionRate = sanitizeEventCommissionRate(
-      payload.dealershipEventCommissionRate,
+      payload.dealershipEventCommissionRate ??
+        payload.dealershipActiveCommissionRate,
     );
     const dealershipEventCommissionEnabled =
       typeof payload.dealershipEventCommissionEnabled === "boolean"
@@ -1069,8 +1100,28 @@ export async function updateCreditSettings(req, res) {
     if (dealershipBaseCommissionRate != null) {
       sanitized.dealershipBaseCommissionRate = dealershipBaseCommissionRate;
     }
+    if (dealershipActiveCommissionRate !== undefined) {
+      if (dealershipActiveCommissionRate != null) {
+        sanitized.dealershipActiveCommissionRate =
+          dealershipActiveCommissionRate;
+        sanitized.dealershipEventCommissionRate =
+          dealershipActiveCommissionRate;
+        sanitized.dealershipEventCommissionEnabled = true;
+      }
+    }
+    if (dealershipCommissionTiers !== undefined) {
+      if (dealershipCommissionTiers == null) {
+        sanitized.dealershipCommissionTiers = [];
+      } else {
+        sanitized.dealershipCommissionTiers = dealershipCommissionTiers;
+      }
+    }
     if (dealershipEventCommissionRate != null) {
       sanitized.dealershipEventCommissionRate = dealershipEventCommissionRate;
+      if (dealershipActiveCommissionRate === undefined) {
+        sanitized.dealershipActiveCommissionRate =
+          dealershipEventCommissionRate;
+      }
     }
     if (dealershipEventCommissionEnabled != null) {
       sanitized.dealershipEventCommissionEnabled =

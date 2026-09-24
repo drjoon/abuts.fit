@@ -1,11 +1,8 @@
 /**
- * 딜러(salesman) 대시보드 — 수수료·소개 코드·요율 티어.
- * 영업팀(salesTeam)은 고정급이라 `/dashboard/sales/performance`로 보낸다(DashboardHome).
+ * 딜러(salesman) 대시보드 — 수수료·소개 코드·유치 시점 요율.
  *
- * 딜러십: 기본 10% · 이벤트 15/20%. 요율 변경 예약 시 해당일 0시(KST)부터 적용.
- * 의뢰자는 가입 당시 요율 적용. 배송비는 수신자(치과·기공소) 부담.
- * 90일 무주문 시 소개 귀속 리셋(DealershipTermsCard · PricingPolicyDialog).
- * 「의뢰자 정책」= variant requestor(단가·출고 + 기공소 플랫폼 사용료 ~~2%~~→0%).
+ * 딜러십: 신규 유치 요율(기본 20%). 관리자 예약으로 15%·10% 인하.
+ * 이미 유치한 의뢰자는 유치 당시 요율 유지. 3개월(90일) 무주문 리셋 후 재유치 시 당시 요율.
  */
 
 import { useState } from "react";
@@ -98,16 +95,13 @@ export const SalesmanDashboardPage = () => {
     ReturnType<typeof useCommissionDashboard>["data"]
   >["overview"];
 
-  const basePct = Math.round(
-    Number(data?.dealershipBaseCommissionRate ?? 0.1) * 100,
-  );
-  const eventPct = Math.round(
-    Number(data?.dealershipEventCommissionRate ?? 0.2) * 100,
-  );
-  const eventEnabled = data?.dealershipEventCommissionEnabled !== false;
-  const effectivePct = Math.round(
-    Number(data?.commissionRate ?? (eventEnabled ? eventPct : basePct) / 100) *
-      100,
+  const activePct = Math.round(
+    Number(
+      data?.dealershipActiveCommissionRate ??
+        data?.dealershipEventCommissionRate ??
+        data?.commissionRate ??
+        0.2,
+    ) * 100,
   );
   const rateChangeMessage = formatDealershipRateChangeMessage({
     scheduledAt: data?.dealershipRateChangeScheduledAt,
@@ -126,11 +120,6 @@ export const SalesmanDashboardPage = () => {
   const paidNet = Number(overview.paidNetCommissionAmount || 0);
   const practiceCount = Number(overview.practiceOrganizationCount || 0);
   const labCount = Number(overview.labOrganizationCount || 0);
-  const rateOpts = {
-    eventPct: eventPct || 20,
-    basePct: basePct || 10,
-    eventEnabled,
-  };
   const rateBuckets = summarizeDealershipRateBuckets(data?.organizations);
   const paidRateBuckets = DEALERSHIP_COMMISSION_RATE_PCT_OPTIONS.map((pct) => ({
     pct,
@@ -179,10 +168,7 @@ export const SalesmanDashboardPage = () => {
               </div>
             </div>
             <DealershipTermsCard
-              basePct={basePct || 10}
-              eventPct={eventPct || 20}
-              eventEnabled={eventEnabled}
-              effectivePct={effectivePct || (eventEnabled ? 20 : 10)}
+              activePct={activePct || 20}
               rateChangeMessage={rateChangeMessage}
             />
           </div>
@@ -278,7 +264,7 @@ export const SalesmanDashboardPage = () => {
                 </span>
                 <div className="min-w-0">
                   <div className="text-sm font-semibold text-amber-950">
-                    요율 변경 예정
+                    신규 유치 요율 변경 예정
                   </div>
                   <p className="mt-0.5 text-sm leading-relaxed text-amber-900/80">
                     {rateChangeMessage}
@@ -305,7 +291,9 @@ export const SalesmanDashboardPage = () => {
                   label={`${b.pct}%`}
                   primary={`${b.orgCount.toLocaleString()}개소`}
                   secondary={`수수료 ${formatMoney(b.commissionAmount)}원`}
-                  tip={dealershipRateBucketTip(b.pct, rateOpts)}
+                  tip={dealershipRateBucketTip(b.pct, {
+                    activePct: activePct || 20,
+                  })}
                 />
               ))}
             </div>
@@ -332,9 +320,7 @@ export const SalesmanDashboardPage = () => {
         open={salesmanPolicyOpen}
         onOpenChange={setSalesmanPolicyOpen}
         variant="salesman"
-        dealershipBasePct={basePct || 10}
-        dealershipEventPct={eventPct || 20}
-        dealershipEventEnabled={eventEnabled}
+        dealershipActivePct={activePct || 20}
       />
     </TooltipProvider>
   );
@@ -357,20 +343,14 @@ function formatDealershipRateChangeMessage({
   const pct = Math.round(Number(scheduledRate) * 100);
   if (!Number.isFinite(pct) || pct < 0) return null;
   const dateLabel = formatKstYmdToKo(ymd).replace(/\.$/, "");
-  return `${dateLabel} 0시부터 영업 수수료가 ${pct}%로 변경됩니다.`;
+  return `${dateLabel} 0시부터 신규 유치 요율이 ${pct}%로 변경됩니다. 이미 유치한 의뢰자는 기존 요율이 유지됩니다.`;
 }
 
 function DealershipTermsCard({
-  basePct,
-  eventPct,
-  eventEnabled,
-  effectivePct,
+  activePct,
   rateChangeMessage,
 }: {
-  basePct: number;
-  eventPct: number;
-  eventEnabled: boolean;
-  effectivePct: number;
+  activePct: number;
   rateChangeMessage?: string | null;
 }) {
   return (
@@ -391,28 +371,22 @@ function DealershipTermsCard({
             </span>
             <div className="min-w-0">
               <div className="text-sm font-semibold">
-                영업 수수료 {effectivePct}%
+                신규 유치 {activePct}%
               </div>
               <p
                 className={`mt-0.5 truncate text-xs leading-snug ${
                   rateChangeMessage
                     ? "text-amber-200/95"
-                    : eventEnabled
-                      ? "text-emerald-200/90"
-                      : "text-white/70"
+                    : "text-emerald-200/90"
                 }`}
                 title={
                   rateChangeMessage ||
-                  (eventEnabled
-                    ? `이벤트 ${eventPct}% · 추후 15·10%`
-                    : `표준 ${basePct}% · 이벤트 ${eventPct}%`)
+                  "유치 당시 요율 고정 · 관리자 인하 시 신규만 적용"
                 }
               >
                 {rateChangeMessage
                   ? rateChangeMessage
-                  : eventEnabled
-                    ? `이벤트 ${eventPct}% · 추후 15·10%`
-                    : `표준 ${basePct}% · 이벤트 ${eventPct}%`}
+                  : "유치 당시 요율 고정 · 인하는 신규만"}
               </p>
             </div>
           </div>
@@ -432,7 +406,7 @@ function DealershipTermsCard({
               <RefreshCw className="h-3.5 w-3.5" />
             </span>
             <div className="min-w-0">
-              <div className="text-sm font-semibold">소개 귀속 90일</div>
+              <div className="text-sm font-semibold">소개 귀속 3개월</div>
               <p
                 className="mt-0.5 truncate text-xs leading-snug text-white/70"
                 title={REFERRAL_OWNERSHIP_RESET_POLICY_SHORT}
@@ -457,28 +431,34 @@ function SummaryTile({
   icon: typeof Building2;
   label: string;
   primary: string;
-  secondary: string;
-  tip: string;
+  secondary?: string;
+  tip?: string;
 }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <div
           className={cn(
-            "cursor-help rounded-2xl border border-slate-200/80 bg-white px-4 py-3.5 shadow-sm",
+            "flex min-h-[5.5rem] cursor-help flex-col justify-between rounded-2xl border border-slate-200/90 bg-white p-4 shadow-sm",
           )}
         >
-          <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-            <Icon className="h-3.5 w-3.5" />
-            {label}
+          <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+            <Icon className="h-4 w-4 text-slate-500" />
+            <span className="min-w-0 truncate">{label}</span>
           </div>
-          <div className="mt-2 text-2xl font-bold tabular-nums text-slate-900">
-            {primary}
+          <div>
+            <div className="text-lg font-semibold tabular-nums text-slate-900">
+              {primary}
+            </div>
+            {secondary ? (
+              <div className="mt-0.5 text-xs text-muted-foreground">
+                {secondary}
+              </div>
+            ) : null}
           </div>
-          <div className="mt-1 text-xs text-muted-foreground">{secondary}</div>
         </div>
       </TooltipTrigger>
-      <TooltipContent>{tip}</TooltipContent>
+      {tip ? <TooltipContent className="max-w-xs">{tip}</TooltipContent> : null}
     </Tooltip>
   );
 }

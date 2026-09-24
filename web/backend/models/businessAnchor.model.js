@@ -266,10 +266,20 @@ const businessAnchorSchema = new mongoose.Schema(
       default: null,
       index: true,
     },
-    /** 소개 코드가 귀속된 시각. 90일 무주문 시계의 시작. */
+    /** 소개 코드가 귀속된 시각. 90일(약 3개월) 무주문 시계의 시작. */
     referralAssignedAt: {
       type: Date,
       default: null,
+    },
+    /**
+     * 유치(가입·재귀속) 당시 딜러십 영업 수수료율(0~1).
+     * 관리자가 이후 요율을 인하해도 이 값은 유지. 리셋 시 null.
+     */
+    dealershipCommissionRate: {
+      type: Number,
+      default: null,
+      min: 0,
+      max: 1,
     },
     defaultReferralAnchorId: {
       type: mongoose.Schema.Types.ObjectId,

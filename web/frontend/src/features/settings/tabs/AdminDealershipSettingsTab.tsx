@@ -1,26 +1,16 @@
 // related files:
 // - web/frontend/src/pages/admin/system/AdminPlatformSettingsPage.tsx
+// - web/frontend/src/features/settings/tabs/AdminCreditSettingsTab.tsx
 // - web/backend/controllers/admin/admin.settings.controller.js
 // - web/backend/services/creditRevenuePolicy.service.js
 // change-log:
-// - 2026-09-23: 적용 범위 카피 — 스토어·커스텀어벗(기공비·배송 제외). 분배 딜러%와 이벤트 요율 동기화.
-// - 2026-09-23: 플랫폼「분배비율」탭에 편입(독립 딜러십 탭 제거).
-// - 2026-09-20: 기본 10% 고정 · 이벤트 15/20% · 시작/종료일 제거 · 요율 변경 예약.
-// - 2026-09-20: 요율 10/15/20% 선택식. 유치 시점 요율 안내 카피.
-// - 2026-09-20: 자동 저장 PATCH를 jsonBody로 수정(body 객체는 JSON 미전송 → 저장 실패).
-// - 2026-09-20: 유치 시점별 요율 — 이벤트 시작/종료일 + 기본/이벤트 %.
-// - 2026-09-20: 딜러십 영업 수수료 — 기본 10% · 이벤트 15%(on/off). 자동 저장.
+// - 2026-09-24: 신규 유치 요율(기본 20%) + 예약 인하(15%/10%). 이미 유치한 의뢰자는 스탬프 유지.
+// - 2026-09-24: (철회) 월 매출 누진 구간.
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { CalendarClock, Info, Percent } from "lucide-react";
+import { CalendarClock, Percent } from "lucide-react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
@@ -28,7 +18,7 @@ import { cn } from "@/shared/ui/cn";
 import { kstAddCivilDays, toKstYmd } from "@/shared/date/kst";
 
 type CreditSettingsPayload = {
-  dealershipBaseCommissionRate?: number;
+  dealershipActiveCommissionRate?: number;
   dealershipEventCommissionRate?: number;
   dealershipEventCommissionEnabled?: boolean;
   dealershipRateChangeScheduledAt?: string | Date | null;
@@ -45,36 +35,15 @@ type CreditsApiResponse = {
 
 const AUTO_SAVE_DELAY_MS = 700;
 
-const BASE_PCT = 10 as const;
-/** 이벤트 요율 선택지. */
-const EVENT_RATE_PCT_OPTIONS = [15, 20] as const;
-type EventRatePct = (typeof EVENT_RATE_PCT_OPTIONS)[number];
-/** 요율 변경 예약 선택지(기본 포함). */
-const SCHEDULED_RATE_PCT_OPTIONS = [10, 15, 20] as const;
-type ScheduledRatePct = (typeof SCHEDULED_RATE_PCT_OPTIONS)[number];
+/** 신규 유치 요율 선택지(인하 사다리). */
+const RATE_PCT_OPTIONS = [20, 15, 10] as const;
+type RatePct = (typeof RATE_PCT_OPTIONS)[number];
 
-const snapEventPct = (rate: number, fallback: EventRatePct = 20): EventRatePct => {
+const snapRatePct = (rate: number, fallback: RatePct = 20): RatePct => {
   const pct = Math.round((Number.isFinite(rate) ? rate : fallback / 100) * 100);
-  let best: EventRatePct = fallback;
+  let best: RatePct = fallback;
   let bestDist = Number.POSITIVE_INFINITY;
-  for (const option of EVENT_RATE_PCT_OPTIONS) {
-    const dist = Math.abs(option - pct);
-    if (dist < bestDist) {
-      bestDist = dist;
-      best = option;
-    }
-  }
-  return best;
-};
-
-const snapScheduledPct = (
-  rate: number,
-  fallback: ScheduledRatePct = 15,
-): ScheduledRatePct => {
-  const pct = Math.round((Number.isFinite(rate) ? rate : fallback / 100) * 100);
-  let best: ScheduledRatePct = fallback;
-  let bestDist = Number.POSITIVE_INFINITY;
-  for (const option of SCHEDULED_RATE_PCT_OPTIONS) {
+  for (const option of RATE_PCT_OPTIONS) {
     const dist = Math.abs(option - pct);
     if (dist < bestDist) {
       bestDist = dist;
@@ -86,7 +55,6 @@ const snapScheduledPct = (
 
 const pctToRate = (pct: number) => pct / 100;
 
-/** KST calendar date → input[type=date] value */
 function toDateInputValue(raw?: string | Date | null): string {
   if (!raw) return "";
   const d = raw instanceof Date ? raw : new Date(raw);
@@ -109,7 +77,7 @@ function minScheduleYmd(): string {
   return kstAddCivilDays(today, 1) || today;
 }
 
-function RatePctSelect<T extends number>({
+function RatePctSelect({
   id,
   value,
   options,
@@ -118,9 +86,9 @@ function RatePctSelect<T extends number>({
   emphasized,
 }: {
   id: string;
-  value: T;
-  options: readonly T[];
-  onChange: (next: T) => void;
+  value: RatePct;
+  options: readonly RatePct[];
+  onChange: (next: RatePct) => void;
   disabled?: boolean;
   emphasized?: boolean;
 }) {
@@ -159,48 +127,30 @@ function RatePctSelect<T extends number>({
   );
 }
 
-/** 플랫폼 설정 · 딜러십 영업 수수료. */
+/** 플랫폼 설정 · 딜러십 영업 수수료(유치 시점 고정 + 예약 인하). */
 export function AdminDealershipSettingsTab({
   className,
-  onActiveDealerPctChange,
 }: {
   className?: string;
-  /** 분배 비율 딜러%와 동기화(이벤트 on→이벤트 요율, off→기본 10%). */
-  onActiveDealerPctChange?: (pct: number) => void;
 }) {
   const { toast } = useToast();
   const { token } = useAuthStore();
   const queryClient = useQueryClient();
   const [loading, setLoading] = useState(Boolean(token));
-  const [eventPct, setEventPct] = useState<EventRatePct>(20);
-  const [eventEnabled, setEventEnabled] = useState(true);
+  const [activePct, setActivePct] = useState<RatePct>(20);
   const [scheduleYmd, setScheduleYmd] = useState("");
-  const [schedulePct, setSchedulePct] = useState<ScheduledRatePct>(15);
+  const [schedulePct, setSchedulePct] = useState<RatePct>(15);
   const hydratedRef = useRef(false);
   const savedSigRef = useRef("");
-  const onActiveDealerPctChangeRef = useRef(onActiveDealerPctChange);
-  onActiveDealerPctChangeRef.current = onActiveDealerPctChange;
   const stateRef = useRef({
-    eventPct: 20 as EventRatePct,
-    eventEnabled: true,
+    activePct: 20 as RatePct,
     scheduleYmd: "",
-    schedulePct: 15 as ScheduledRatePct,
+    schedulePct: 15 as RatePct,
   });
-  stateRef.current = {
-    eventPct,
-    eventEnabled,
-    scheduleYmd,
-    schedulePct,
-  };
+  stateRef.current = { activePct, scheduleYmd, schedulePct };
 
   const buildSig = (s: typeof stateRef.current) =>
-    [s.eventPct, String(s.eventEnabled), s.scheduleYmd, s.schedulePct].join(
-      "|",
-    );
-
-  const emitActiveDealerPct = (enabled: boolean, pct: number) => {
-    onActiveDealerPctChangeRef.current?.(enabled ? pct : BASE_PCT);
-  };
+    [s.activePct, s.scheduleYmd, s.schedulePct].join("|");
 
   useEffect(() => {
     let mounted = true;
@@ -219,32 +169,31 @@ export function AdminDealershipSettingsTab({
         });
         if (!res.ok || !mounted) return;
         const settings = res.data?.data?.creditSettings || {};
-        const nextEvent = snapEventPct(
-          Number(settings.dealershipEventCommissionRate),
+        const nextActive = snapRatePct(
+          Number(
+            settings.dealershipActiveCommissionRate ??
+              settings.dealershipEventCommissionRate,
+          ),
           20,
         );
-        const nextEnabled = settings.dealershipEventCommissionEnabled !== false;
         const nextScheduleYmd = toDateInputValue(
           settings.dealershipRateChangeScheduledAt,
         );
         const nextSchedulePct =
           settings.dealershipRateChangeScheduledRate != null
-            ? snapScheduledPct(
+            ? snapRatePct(
                 Number(settings.dealershipRateChangeScheduledRate),
                 15,
               )
             : 15;
-        setEventPct(nextEvent);
-        setEventEnabled(nextEnabled);
+        setActivePct(nextActive);
         setScheduleYmd(nextScheduleYmd);
         setSchedulePct(nextSchedulePct);
         savedSigRef.current = buildSig({
-          eventPct: nextEvent,
-          eventEnabled: nextEnabled,
+          activePct: nextActive,
           scheduleYmd: nextScheduleYmd,
           schedulePct: nextSchedulePct,
         });
-        // 초기 로드는 부모 분배%를 덮어쓰지 않음. 저장 후에만 동기화.
       } catch {
         // silent
       } finally {
@@ -270,9 +219,9 @@ export function AdminDealershipSettingsTab({
         const cur = stateRef.current;
         const hasSchedule = Boolean(cur.scheduleYmd);
         const payload: CreditSettingsPayload = {
-          dealershipBaseCommissionRate: pctToRate(BASE_PCT),
-          dealershipEventCommissionRate: pctToRate(cur.eventPct),
-          dealershipEventCommissionEnabled: cur.eventEnabled,
+          dealershipActiveCommissionRate: pctToRate(cur.activePct),
+          dealershipEventCommissionRate: pctToRate(cur.activePct),
+          dealershipEventCommissionEnabled: true,
           dealershipRateChangeScheduledAt: hasSchedule
             ? dateInputToIsoStart(cur.scheduleYmd)
             : null,
@@ -292,7 +241,6 @@ export function AdminDealershipSettingsTab({
         savedSigRef.current = sig;
         void queryClient.invalidateQueries({ queryKey: ["system-settings"] });
         void queryClient.invalidateQueries({ queryKey: ["credit-settings"] });
-        emitActiveDealerPct(cur.eventEnabled, cur.eventPct);
       } catch {
         toast({
           title: "저장 실패",
@@ -303,106 +251,53 @@ export function AdminDealershipSettingsTab({
     }, AUTO_SAVE_DELAY_MS);
 
     return () => window.clearTimeout(timer);
-  }, [
-    eventPct,
-    eventEnabled,
-    scheduleYmd,
-    schedulePct,
-    token,
-    loading,
-    toast,
-    queryClient,
-  ]);
+  }, [activePct, scheduleYmd, schedulePct, token, loading, toast, queryClient]);
 
   const scheduleMin = minScheduleYmd();
+  const lowerOptions = RATE_PCT_OPTIONS.filter((p) => p < activePct);
 
   return (
     <div className={cn("space-y-4", className)}>
       <div className="rounded-2xl border border-slate-200/80 bg-white px-4 py-4 shadow-sm">
-        <h2 className="text-base font-semibold text-slate-900">딜러십 영업 수수료</h2>
+        <h2 className="text-base font-semibold text-slate-900">
+          딜러십 영업 수수료
+        </h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          스토어·커스텀어벗 판매가 기준(기공비·배송 제외).
+          심플웨이·커스텀어벗 판매가(기공비·배송 제외).
           <br />
-          기본 10% · 이벤트 15%/20%. 유치 당시 요율을 따릅니다.
+          신규 유치 요율은 지금 설정값. 이미 유치한 의뢰자는 유치 당시 요율을
+          유지합니다.
+          <br />
+          3개월(90일) 무주문으로 소개 귀속이 리셋된 뒤 재유치하면 그 시점
+          요율이 새로 적용됩니다.
         </p>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white px-4 py-3.5 shadow-sm">
-          <div className="flex min-w-0 items-center gap-3">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-50 ring-1 ring-slate-200">
-              <Percent className="h-4 w-4 text-slate-700" />
-            </span>
-            <div className="min-w-0">
-              <Label className="text-sm font-semibold text-slate-900">
-                기본 요율
-              </Label>
-              <p className="text-[12px] leading-snug text-muted-foreground">
-                이벤트 종료 후
-              </p>
-            </div>
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary-muted/60 bg-primary-soft/30 px-4 py-3.5">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/90 ring-1 ring-primary-muted/50">
+            <Percent className="h-4 w-4 text-primary-strong" />
+          </span>
+          <div className="min-w-0">
+            <Label className="text-sm font-semibold text-slate-900">
+              신규 유치 요율
+            </Label>
+            <p className="text-[12px] leading-snug text-muted-foreground">
+              지금 가입·재귀속하는 의뢰자
+            </p>
           </div>
-          {loading ? (
-            <span className="text-sm text-muted-foreground">…</span>
-          ) : (
-            <span className="text-sm font-semibold tabular-nums text-slate-900">
-              {BASE_PCT}%
-            </span>
-          )}
         </div>
-
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary-muted/60 bg-primary-soft/30 px-4 py-3.5">
-          <div className="flex min-w-0 items-center gap-3">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/90 ring-1 ring-primary-muted/50">
-              <Percent className="h-4 w-4 text-primary-strong" />
-            </span>
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5">
-                <Label
-                  htmlFor="dealership-event"
-                  className="text-sm font-semibold text-slate-900"
-                >
-                  이벤트 요율
-                </Label>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      className="inline-flex text-slate-400 transition-colors hover:text-slate-600"
-                      aria-label="이벤트 요율 안내"
-                    >
-                      <Info className="h-3.5 w-3.5" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent className="max-w-xs">
-                    이벤트 중 유치한 고객에 적용됩니다. 종료 후에도 유지됩니다.
-                  </TooltipContent>
-                </Tooltip>
-              </div>
-              <p className="text-[12px] leading-snug text-muted-foreground">
-                현재 유치 요율
-              </p>
-            </div>
-          </div>
-          {loading ? (
-            <span className="text-sm text-muted-foreground">…</span>
-          ) : (
-            <div className="flex flex-wrap items-center gap-3">
-              <Switch
-                checked={eventEnabled}
-                onCheckedChange={setEventEnabled}
-                aria-label="이벤트 진행"
-              />
-              <RatePctSelect
-                id="dealership-event"
-                value={eventPct}
-                options={EVENT_RATE_PCT_OPTIONS}
-                onChange={setEventPct}
-                emphasized
-              />
-            </div>
-          )}
-        </div>
+        {loading ? (
+          <span className="text-sm text-muted-foreground">…</span>
+        ) : (
+          <RatePctSelect
+            id="dealership-active"
+            value={activePct}
+            options={RATE_PCT_OPTIONS}
+            onChange={setActivePct}
+            emphasized
+          />
+        )}
       </div>
 
       <div className="rounded-2xl border border-slate-200/80 bg-white px-4 py-3.5 shadow-sm">
@@ -416,10 +311,11 @@ export function AdminDealershipSettingsTab({
                 htmlFor="dealership-rate-schedule"
                 className="text-sm font-semibold text-slate-900"
               >
-                요율 변경 예약
+                요율 인하 예약
               </Label>
               <p className="mt-0.5 text-[12px] leading-snug text-muted-foreground">
-                해당일 0시(KST)부터 적용. 비우면 예약 없음.
+                해당일 0시(KST)부터 신규 유치 요율만 변경. 기존 유치 건은
+                유지.
               </p>
             </div>
           </div>
@@ -448,7 +344,11 @@ export function AdminDealershipSettingsTab({
             <RatePctSelect
               id="dealership-rate-schedule-pct"
               value={schedulePct}
-              options={SCHEDULED_RATE_PCT_OPTIONS}
+              options={
+                lowerOptions.length
+                  ? (lowerOptions as unknown as readonly RatePct[])
+                  : RATE_PCT_OPTIONS
+              }
               onChange={setSchedulePct}
               disabled={!scheduleYmd}
             />

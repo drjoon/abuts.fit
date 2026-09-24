@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-24: 딜러 정산 — 월 매출 누진 슬라이스 footer.
 // - 2026-09-21: 메인 상단 VAT 안내 문구 제거(정산규칙 모달만 유지).
 // - 2026-09-20: 지급 합계 — 20%·15%·10% 세로 3줄(대시보드 지급 완료와 동일).
 // - 2026-09-20: 유료 미정산 — 20%·15%·10% 세로 3줄, 「현재/추후」 접두 제거.
@@ -71,12 +72,6 @@ export function CommissionPaymentsPage({
   const freeNet = Number(overview?.freeNetAmount || 0);
   const payableSplit = splitInclusiveVat(payableInclusive);
   const ratePct = Math.round(Number(data?.commissionRate || 0) * 100);
-  const basePct = Math.round(
-    Number(data?.dealershipBaseCommissionRate ?? 0.1) * 100,
-  );
-  const eventPct = Math.round(
-    Number(data?.dealershipEventCommissionRate ?? 0.2) * 100,
-  );
   const payoutPolicy = isSalesman
     ? SETTLEMENT_VAT_POLICY.salesmanPayout
     : SETTLEMENT_VAT_POLICY.devopsPayout;
@@ -94,6 +89,7 @@ export function CommissionPaymentsPage({
       DEALERSHIP_COMMISSION_RATE_PCT_OPTIONS.map((pct) => ({
         pct,
         commissionAmount: 0,
+        orgCount: 0,
       })),
     [],
   );
@@ -122,8 +118,7 @@ export function CommissionPaymentsPage({
                 <div className="space-y-0.5 text-[11px] tabular-nums text-muted-foreground sm:text-xs">
                   {rateBuckets.map((b) => (
                     <div key={b.pct}>
-                      {b.pct}% · {b.orgCount}개소 ·{" "}
-                      {formatMoney(b.commissionAmount)}원
+                      {b.pct}% · {formatMoney(b.commissionAmount)}원
                     </div>
                   ))}
                 </div>
@@ -183,7 +178,7 @@ export function CommissionPaymentsPage({
                 title={`${title} 규칙`}
                 description={
                   isSalesman
-                    ? `현재 ${eventPct || 20}% · 추후 15%·10% 조정 가능 · 배송비 수신자 부담 · 부가세 포함·세금계산서`
+                    ? "유치 시점 요율 고정(신규 기본 20% · 관리자 인하 15%/10%) · 배송비 수신자 부담 · 부가세 포함·세금계산서"
                     : "잔여 분배 부가세 포함 · 세금계산서"
                 }
               >
@@ -194,12 +189,11 @@ export function CommissionPaymentsPage({
                       {isSalesman ? (
                         <>
                           영업 수수료는 심플웨이·커스텀어벗 판매가(배송비 제외)
-                          기준입니다. 이벤트 기간인 지금은{" "}
-                          <span className="font-semibold">{eventPct || 20}%</span>
-                          . 추후{" "}
-                          <span className="font-semibold">15%·10%</span>
-                          으로 조정될 수 있습니다. 배송비는 수신자(치과·기공소)
-                          부담. 정산은 사업자 단위이며 매월{" "}
+                          기준입니다. 의뢰자 유치(가입·재귀속) 당시 요율이
+                          계속 적용됩니다. 관리자가 신규 유치 요율을 인하해도
+                          기존 유치 건은 유지됩니다. 3개월(90일) 무주문으로
+                          소개 귀속이 리셋된 뒤 재유치하면 그 시점 요율이
+                          새로 적용됩니다. 정산은 사업자 단위이며 매월{" "}
                           {Number(data?.payoutDayOfMonth || 1)}일에 지급합니다.
                         </>
                       ) : (
@@ -241,11 +235,10 @@ export function CommissionPaymentsPage({
               ) : (
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                   {organizations.map((org) => {
-                    const tier = org.commissionTier === "event" ? "event" : "base";
-                    const ratePctForOrg = Math.round(
-                      Number(org.commissionRate ?? (tier === "event" ? eventPct : basePct) / 100) *
-                        100,
-                    );
+                    const ratePctForOrg =
+                      org.commissionRate != null
+                        ? Math.round(Number(org.commissionRate) * 100)
+                        : null;
                     const acquiredLabel = org.acquiredAt
                       ? new Intl.DateTimeFormat("ko-KR", {
                           timeZone: "Asia/Seoul",
@@ -269,17 +262,11 @@ export function CommissionPaymentsPage({
                               {acquiredLabel}
                             </div>
                           </div>
-                          <span
-                            className={
-                              tier === "event"
-                                ? "shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-200"
-                                : "shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600 ring-1 ring-slate-200"
-                            }
-                          >
-                            {formatCommissionRatePct(
-                              org.commissionRate ?? ratePctForOrg / 100,
-                            )}
-                          </span>
+                          {ratePctForOrg != null ? (
+                            <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600 ring-1 ring-slate-200">
+                              {formatCommissionRatePct(org.commissionRate)}
+                            </span>
+                          ) : null}
                         </div>
                         <div className="mt-3 space-y-1.5 text-sm">
                           <div className="flex justify-between gap-3">
@@ -302,16 +289,26 @@ export function CommissionPaymentsPage({
                               {Number(org.monthOrderCount || 0).toLocaleString()}건
                             </span>
                           </div>
-                          <div className="flex justify-between gap-3">
-                            <span className="text-muted-foreground">
-                              기간 수수료({formatCommissionRatePct(
-                                org.commissionRate ?? ratePctForOrg / 100,
-                              )})
-                            </span>
-                            <span className="font-semibold tabular-nums">
-                              {formatMoney(org.monthCommissionAmount)}원
-                            </span>
-                          </div>
+                          {!isSalesman || org.monthCommissionAmount > 0 ? (
+                            <div className="flex justify-between gap-3">
+                              <span className="text-muted-foreground">
+                                기간 수수료(
+                                {formatCommissionRatePct(org.commissionRate)})
+                              </span>
+                              <span className="font-semibold tabular-nums">
+                                {formatMoney(org.monthCommissionAmount)}원
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="flex justify-between gap-3">
+                              <span className="text-muted-foreground">
+                                유치 요율
+                              </span>
+                              <span className="font-semibold tabular-nums">
+                                {formatCommissionRatePct(org.commissionRate)}
+                              </span>
+                            </div>
+                          )}
                         </div>
                       </div>
                     );

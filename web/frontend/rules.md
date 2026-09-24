@@ -194,6 +194,7 @@ Notes:
   - `src/pages/admin/partners/AdminPartnersPage.tsx` (사이드「사업영역」. 탭당 한 카드: 기공사업 · 어벗사업 · 플랫폼사업. 주체는 role Select(`RoleSelect`). 팀원 검색은 해당 주체 role만. 기공=기공팀·영업팀·개발운영사. 어벗=제조사·개발운영사·딜러사·어벗츠. 플랫폼=어벗츠·개발운영사. 구성원 분배액은 카드 안에서 수정. 분배는 매출에서 배송비를 먼저 차감한 잔여만(배송은 여기 미기재). 기공=내부기공소(기공사업부) 배당 건만 배송비 공통 지출 차감 후 내부 기공팀·영업팀 인센티브(면세)+개발운영사(+VAT). 어벗=매입가(기본 8,800 부가세 포함→공급가 선차감) 후 잔여를 딜러/개발운영/어벗츠 비중 분배(+VAT는 제조사·딜러·개발운영). 의뢰서 소개코드(딜러사) 있으면 딜러사·없으면 어벗츠. 특별주문가는 주체별 배분액. 플랫폼=하청·지정 사용료(현재 이벤트 무료)를 어벗츠 90%/개발운영사 10%
   - `src/features/settings/tabs/AdminAbutsLabFeeScheduleTab.tsx` (어벗츠 수가. 기공소 신규 항목은 Off·검토 대기; On=적용. 이벤트 `abuts-lab-fee:pending-items`)
   - `src/features/settings/tabs/AdminCreditSettingsTab.tsx` (`variant=credits`: 수동 무료크레딧 기본액·배송 / `variant=customAbut`: 판매가·매입가 50%·분배·의뢰자 BA 판매가 오버라이드 목록·환봉 추가요청)
+  - `src/features/settings/tabs/AdminDealershipSettingsTab.tsx` (`variant=shareRates` 하단) — 신규 유치 요율(20/15/10%) · 인하 예약(KST 0시, 신규만)
   - `src/pages/admin/system/AdminRoundBarAbutmentTab.tsx` (어벗 추가 요청. 도입 전 CNC어벗/환봉어벗 선택. 종류가 치과 단가에 반영. `GET|PATCH /api/admin/round-bar-requests`)
   - `src/pages/devops/components/DevopsPlatformFeeTab.tsx` (하청 % · 지정 사용료 적용 on/off + %. `PracticeTransferAutoMatchTab` 카드 안. SSOT `payoutRates.subcontractFeeRate` / `directPlatformFeeEnabled` / `directPlatformFeeRate`)
 - 개발·운영사 설정
@@ -213,7 +214,7 @@ Notes:
       - `src/features/platform/PlatformBenefitsShareButtons.tsx` (안내+링크 클립보드 복사)
   - 의뢰자(치과) 설정: 구독 탭 없음. 구 `?tab=subscription` → 계정. 대시보드 헤더는 `[정책 안내]`만.
     - `src/pages/requestor/dashboard/components/RequestorPolicyRemakeHeader.tsx`
-    - `src/shared/ui/PricingPolicyDialog.tsx` — 런칭 이벤트 1만(+배송) / 정상가 1.3만(+배송 또는 FM덴탈 월정액·기공소만). 신속 +2,000 · 배송 3,500. FM 가입·해지(대표·기공소). 기공소·딜러·영업팀 `requestor`: 플랫폼 사용료 관리자 %(초기 2%·이벤트 off UI `~~2%~~ → 0%`) · 하청 5%. **딜러(`variant=salesman`)**: 90일 무주문 시 소개 귀속 리셋 · 판매가 기준(배송·월정액 제외). **「의뢰자 정책」(`variant=requestor`)**: 딜러 대시보드·영업팀 성과 — 소개 치과·기공소 안내용 단가·출고·기공소 수수료.
+    - `src/shared/ui/PricingPolicyDialog.tsx` — 런칭 이벤트 1만(+배송) / 정상가 1.3만(+배송 또는 FM덴탈 월정액·기공소만). 신속 +2,000 · 배송 3,500. FM 가입·해지(대표·기공소). 기공소·딜러·영업팀 `requestor`: 플랫폼 사용료 관리자 %(초기 2%·이벤트 off UI `~~2%~~ → 0%`) · 하청 5%. **딜러(`variant=salesman`)**: 신규 유치 요율(기본 20%) · 유치 시점 고정 · 관리자 인하(15%/10%, 신규만) · 3개월(90일) 무주문 리셋 후 재유치 시 당시 요율 · 판매가 기준(배송·월정액 제외). **「의뢰자 정책」(`variant=requestor`)**: 딜러 대시보드·영업팀 성과 — 소개 치과·기공소 안내용 단가·출고·기공소 수수료.
     - 안내·청구 정가 SSOT (`creditSettings` + `src/shared/pricing/abutsAbutmentService.ts`): 정상가 **1.3만원** · 런칭 **1만원**(`resolveCustomAbutmentProductionPriceForAt`). 신속 `expressFee`(기본 +2,000). 배송 박스당 또는(기공소) FM덴탈 월정액. `regular*`는 관리자 딜러분배용. 기공소 매칭 월정 0·하청 5% — 루트 `rules.md` §2.3.
   - 수락 후 마감: `DevopsDesignDeadlineTab` — 디자인 클레임 후 작업 마감(`designDeadlineSettings.claimHours`, 기본 3시간). 파트너 **기공의뢰 자동매칭** 탭 상단
   - 기공의뢰 자동매칭: `PracticeTransferAutoMatchTab`(카드·탭 **인증 기공소**) — 수수료 스트립(하청%/지정 on·off·%) + 기공소별 인증 ON·기공 테스트·메모. 기공소 설정 탭은 없음. 관리자 테스트 통과/`enabled` 시 풀 참여. 지정·협력 플랫폼 사용료 정책 **2%** · 이벤트 기본 **off**(`directPlatformFeeEnabled` / `directPlatformFeeRate`). 하청 `subcontractFeeRate`(기본 5%). 관리자 플랫폼 설정「인증 기공소」탭
@@ -690,7 +691,7 @@ Notes:
   - practice 페이지 상태 정규화 기준: `src/pages/practice/PracticeFileTransferPage.tsx`의 `toStatusLabel`
   - 의뢰자 치과 페이지 상태 배지 기준: `src/pages/requestor/practice/RequestorPracticePage.tsx` (`isRead/requestorReadAt`, `isAccepted`/`requestorDownloadedAt`=작업시작·레거시 필드명 의뢰수락). 기공의뢰수신 목록은 치과 최근의뢰와 같은 3주 캘린더(`PracticeRecentTransfersCalendar`, 칩=`치과/환자/치아`, 색=상단 뱃지 상태. 리메이크는 공정색+이중선. 치과 최근의뢰는 기공소 그룹색). 작업시작 후 어벗·보철 업로드 CTA는 상세 모달 채팅 상단 바(`PracticeLabReceiveWorkActionsBar`).
     - 자동매칭 공개 풀 상세 열람만으로는 `mark-read`/사이드바 안읽음 배지를 내리지 않는다(작업시작 시 갱신).
-  - 기공소 작업시작: 상세 다이얼로그 왼쪽 「전체 다운로드」, 오른쪽 「치과와의 소통」 상단에 안내 문구+「작업시작」→ `POST .../mark-accepted`(과금·레거시 경로명). 파일 다운로드는 뱃지/과금과 무관. 작업시작 후 같은 자리 2단: 안내 문구 / `[어벗 업로드 & 생산의뢰]`·`[보철 업로드 & 작업완료]`·`[작업취소]`. 작업시작 시 `practice:transfer-updated`(action=`accepted`, `feeQuote` 확정)로 치과 UI가「확정 기공비」를 즉시 표시.
+  - 기공소 작업시작: 상세 다이얼로그 왼쪽 「열기」(설정 디자인 SW·로컬 `lab-cad-helper`=`start.cmd`/PowerShell, Node 불필요)·「전체 다운로드」, 오른쪽 「치과와의 소통」 상단에 안내 문구+「작업시작」→ `POST .../mark-accepted`(과금·레거시 경로명). 파일 다운로드·열기는 뱃지/과금과 무관. 작업시작 후 같은 자리 2단: 안내 문구 / `[어벗 업로드 & 생산의뢰]`·`[보철 업로드 & 작업완료]`·`[작업취소]`. 작업시작 시 `practice:transfer-updated`(action=`accepted`, `feeQuote` 확정)로 치과 UI가「확정 기공비」를 즉시 표시.
   - **자동매칭(레거시)**: 치과 기공소 픽커의 「자동 매칭」항목은 제거. **신규 의뢰 계약 상대=어벗츠기공소(고정).** 픽커의 외부 기공소=협력(`assigneeKind=cooperation`, 0%). 어벗츠 지정 후 풀/클레임=하청(`assigneeKind=subcontract`, 5%). 기존 `matchingMode=auto` 건·공개 풀·우선창 엔진은 유지하되, 작성 UI에서는 쓰지 않는다. 레거시 draft는 어벗츠기공소로 복원. 표시명 마스킹·수신 뱃지 합산 규칙은 하청·레거시 auto에 적용. UI: `PracticeTransferAutoMatchTab` (관리자 플랫폼 설정「인증 기공소」)
   - 의뢰상세·채팅 우측 상단 평가: 치과=`PracticeLabRatingControl`(1~5점만, 수행 기공소·하청 포함, 기공비 할인/할증 없음). **1점=검색 가능·주문 불가**(지정·어벗츠 하청 수행 동일, 버튼 툴팁). **하청** 시 치과 표시는 원청명 + 「인증 협력 기공소에서 처리」(실명 비공개). **협력**은 「어벗츠 · {파트너}」. 기공소=`LabPracticeFeeSurchargeControl` variant=`evaluate`(별점 없음, 해당 치과 수가 할증·다음 지정 의뢰부터). 설정 탭 거래처 할증은 동일 컴포넌트 variant=`surcharge`.
   - 치과 작성 폼: 기공소 픽커 옆 **별점 하한·상한**(기본 3~4). 구간 밖 기공소(어벗츠 포함)는 픽커·생성·재지정에서 제외. 하청 풀도 동일 구간.

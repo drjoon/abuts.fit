@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-24: 분배 비율 탭에 딜러십 월 매출 누진 구간 UI 마운트.
 // - 2026-09-23: 런칭 이벤트 on/off — 즉시 적용(분배 비율 예약과 분리).
 // - 2026-09-23: 런칭 이벤트 on/off — 내일부터 예약 적용(분배 비율과 동일).
 // - 2026-09-23: 가격 카드에서 매입가 제거(분배 비율)·4열.
@@ -104,6 +105,7 @@ import {
   Zap,
 } from "lucide-react";
 import { AdminRoundBarAbutmentTab } from "@/pages/admin/system/AdminRoundBarAbutmentTab";
+import { AdminDealershipSettingsTab } from "@/features/settings/tabs/AdminDealershipSettingsTab";
 import { cn } from "@/shared/ui/cn";
 import { kstAddCivilDays, toKstYmd } from "@/shared/date/kst";
 
@@ -2826,6 +2828,8 @@ export const AdminCreditSettingsTab = ({
             </CardContent>
           </Card>
         ) : null}
+
+        {showShareRates ? <AdminDealershipSettingsTab /> : null}
 
         {showCustomAbut ? (
           <>

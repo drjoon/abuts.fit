@@ -6,6 +6,7 @@
 // - web/backend/controllers/admin/admin.settings.controller.js
 // - web/frontend/src/features/settings/tabs/AdminCreditSettingsTab.tsx
 // change-log:
+// - 2026-09-24: 딜러십 월 매출 누진 구간(dealershipCommissionTiers).
 // - 2026-09-23: 런칭 이벤트 on/off 변경 예약(내일 0시 KST).
 // - 2026-09-23: 런칭 이벤트 1만 / 정상가 1.3만 · FM덴탈 월정액 배송 설정.
 // - 2026-09-20: 의뢰자 BA 판매가 오버라이드. 없으면 플랫폼 판매가. 매입가=그 판매가의 50%.
@@ -42,6 +43,8 @@ import {
   buildStoreDealerRateChangeApplyPatch,
   buildStoreDevopsShareChangeApplyPatch,
   buildLabShareChangeApplyPatch,
+  normalizeDealershipCommissionRateLog,
+  DEALERSHIP_ACTIVE_COMMISSION_RATE,
 } from "../services/creditRevenuePolicy.service.js";
 
 const clampPracticeRushFeeMultiplier = (value, fallback = 1.2) => {
@@ -359,6 +362,14 @@ const SCHEMA_DEFAULTS = (() => {
     ),
     labDevopsSharePercent: pickDefault("creditSettings.labDevopsSharePercent"),
     labAbutsSharePercent: pickDefault("creditSettings.labAbutsSharePercent"),
+    dealershipActiveCommissionRate: DEALERSHIP_ACTIVE_COMMISSION_RATE,
+    dealershipCommissionRateLog: [
+      {
+        effectiveFrom: new Date("2020-01-01T00:00:00+09:00"),
+        rate: DEALERSHIP_ACTIVE_COMMISSION_RATE,
+      },
+    ],
+    dealershipCommissionTiers: [],
     dealershipBaseCommissionRate:
       Number(
         SystemSettings.schema.path("creditSettings.dealershipBaseCommissionRate")
@@ -954,6 +965,28 @@ export function normalizeLoadedCreditSettings(creditSettings = {}) {
       0,
       100 - regularShares.salesman - regularShares.devops,
     ),
+    dealershipActiveCommissionRate: (() => {
+      const raw = Number(
+        creditSettings.dealershipActiveCommissionRate ??
+          creditSettings.dealershipEventCommissionRate ??
+          SCHEMA_DEFAULTS.dealershipActiveCommissionRate,
+      );
+      if (!Number.isFinite(raw) || raw < 0) {
+        return SCHEMA_DEFAULTS.dealershipActiveCommissionRate;
+      }
+      return Math.min(1, raw);
+    })(),
+    dealershipCommissionRateLog: normalizeDealershipCommissionRateLog(
+      creditSettings.dealershipCommissionRateLog,
+      creditSettings.dealershipActiveCommissionRate ??
+        creditSettings.dealershipEventCommissionRate ??
+        SCHEMA_DEFAULTS.dealershipActiveCommissionRate,
+    ),
+    dealershipCommissionTiers: Array.isArray(
+      creditSettings.dealershipCommissionTiers,
+    )
+      ? creditSettings.dealershipCommissionTiers
+      : [],
     dealershipBaseCommissionRate: (() => {
       const raw = Number(
         creditSettings.dealershipBaseCommissionRate ??
@@ -966,7 +999,8 @@ export function normalizeLoadedCreditSettings(creditSettings = {}) {
     })(),
     dealershipEventCommissionRate: (() => {
       const raw = Number(
-        creditSettings.dealershipEventCommissionRate ??
+        creditSettings.dealershipActiveCommissionRate ??
+          creditSettings.dealershipEventCommissionRate ??
           SCHEMA_DEFAULTS.dealershipEventCommissionRate,
       );
       if (!Number.isFinite(raw) || raw < 0) {

@@ -5,6 +5,8 @@
 // - web/backend/scripts/db/migrate-legacy-creditledger-to-gl.js
 // - web/backend/scripts/db/rebalance-manufacturer-unit-price.js
 // change-log:
+// - 2026-09-24: 딜러십 — 신규 유치 요율(기본 20%)·예약 인하(15/10)·유치 시점 스탬프. 월 매출 누진 철회.
+// - 2026-09-24: 딜러십 영업 수수료 — 딜러 BA당 월 매출 누진 구간(기본 ≤5천만 20%/≤1억 15%/초과 10%).
 // - 2026-09-24: 지정 플랫폼 사용료 — 관리자 설정(초기 2% · 이벤트 off). 저장값 자동 승격 없음. 하청 5%.
 // - 2026-09-23: 런칭 이벤트 on/off 변경 예약(내일 0시 KST, 분배 비율과 동일).
 // - 2026-09-22: (일시) 지정 플랫폼 수수료 없음 — 9/24 복원.
@@ -28,18 +30,27 @@
 // - 2026-08-16: 지정 거래 수수료 적용 on/off(기본 off=이벤트 0%).
 
 /**
- * 딜러십 영업 수수료 기본(추후 공지 후 적용). 심플웨이·커스텀어벗 판매가(배송비 제외).
- * @deprecated 호환 alias — resolveDealershipCommissionPolicy().effectiveRate 사용.
+ * 딜러십 영업 수수료 기본(호환 alias).
+ * @deprecated resolveDealershipCommissionPolicy().activeRate / resolveDealershipRateForAcquiredAt 사용.
  */
-export const DEALERSHIP_SALES_COMMISSION_RATE = 0.15;
-/** 딜러십 표준 요율(고정). */
+export const DEALERSHIP_SALES_COMMISSION_RATE = 0.2;
+/** 딜러십 최저(최종) 요율. */
 export const DEALERSHIP_BASE_COMMISSION_RATE = 0.1;
-/** 딜러십 이벤트 요율(이벤트 on 시 실효). 선택지: 15/20%. */
-export const DEALERSHIP_EVENT_COMMISSION_RATE = 0.2;
-/** 이벤트 요율 선택지. */
+/** 딜러십 신규 유치 기본 요율(초기 20%). */
+export const DEALERSHIP_ACTIVE_COMMISSION_RATE = 0.2;
+/** @deprecated DEALERSHIP_ACTIVE_COMMISSION_RATE */
+export const DEALERSHIP_EVENT_COMMISSION_RATE = DEALERSHIP_ACTIVE_COMMISSION_RATE;
+/** 요율 선택지(관리자 인하 사다리). */
+export const DEALERSHIP_COMMISSION_RATE_OPTIONS = [0.2, 0.15, 0.1];
+/** @deprecated */
 export const DEALERSHIP_EVENT_COMMISSION_RATE_OPTIONS = [0.15, 0.2];
-/** 요율 변경 예약·대시보드 버킷에 쓰는 전체 사다리. */
-export const DEALERSHIP_COMMISSION_RATE_OPTIONS = [0.1, 0.15, 0.2];
+
+/** @deprecated 월 매출 누진 — 유치시점 고정 요율로 대체. */
+export const DEFAULT_DEALERSHIP_COMMISSION_TIERS = Object.freeze([
+  Object.freeze({ upToAmount: 50_000_000, rate: 0.2 }),
+  Object.freeze({ upToAmount: 100_000_000, rate: 0.15 }),
+  Object.freeze({ upToAmount: null, rate: 0.1 }),
+]);
 
 function snapToOptions(raw, options, fallback) {
   const n = Number(raw);
@@ -58,47 +69,72 @@ function snapToOptions(raw, options, fallback) {
   return best;
 }
 
+function snapDealershipActiveRate(raw) {
+  return snapToOptions(
+    raw,
+    DEALERSHIP_COMMISSION_RATE_OPTIONS,
+    DEALERSHIP_ACTIVE_COMMISSION_RATE,
+  );
+}
+
 function snapDealershipBaseRate(_raw) {
   return DEALERSHIP_BASE_COMMISSION_RATE;
 }
 
 function snapDealershipEventRate(raw) {
-  return snapToOptions(
-    raw,
-    DEALERSHIP_EVENT_COMMISSION_RATE_OPTIONS,
-    DEALERSHIP_EVENT_COMMISSION_RATE,
-  );
+  return snapDealershipActiveRate(raw);
 }
 
 function snapDealershipScheduledRate(raw) {
-  return snapToOptions(
-    raw,
-    DEALERSHIP_COMMISSION_RATE_OPTIONS,
-    DEALERSHIP_BASE_COMMISSION_RATE,
-  );
+  return snapDealershipActiveRate(raw);
+}
+
+/**
+ * 요율 변경 이력 정규화.
+ * @returns {{ effectiveFrom: Date, rate: number }[]}
+ */
+export function normalizeDealershipCommissionRateLog(rawLog, activeRate) {
+  const fallbackRate = snapDealershipActiveRate(activeRate);
+  const rows = Array.isArray(rawLog) ? rawLog : [];
+  const parsed = [];
+  for (const row of rows) {
+    const at = parseDealershipEventBound(row?.effectiveFrom ?? row?.at);
+    if (!at) continue;
+    parsed.push({
+      effectiveFrom: at,
+      rate: snapDealershipActiveRate(row?.rate),
+    });
+  }
+  parsed.sort((a, b) => a.effectiveFrom.getTime() - b.effectiveFrom.getTime());
+  if (!parsed.length) {
+    return [
+      {
+        effectiveFrom: new Date("2020-01-01T00:00:00+09:00"),
+        rate: fallbackRate,
+      },
+    ];
+  }
+  return parsed;
 }
 
 /**
  * 딜러십 영업 수수료 정책.
- * - baseRate: 표준 요율(10% 고정)
- * - eventRate: 이벤트 기간 내 유치(가입) 고객 요율(15% · 20%)
- * - 유치 시점이 [eventStartedAt, eventEndedAt) 이면 eventRate, 아니면 baseRate
- * - rateChangeScheduledAt/Rate: 해당일 0시(KST)부터 적용 예약
- * - 배송비는 수신자(치과·기공소) 부담 · 수수료 산정 제외
+ * - activeRate: 지금 신규 유치(가입·재귀속)에 적용되는 요율(기본 20%)
+ * - 관리자가 예약하면 해당일 0시(KST)부터 activeRate를 15%·10%로 인하
+ * - 이미 유치한 의뢰자는 유치 시점 요율 유지(BA.dealershipCommissionRate / rateLog)
+ * - 90일(약 3개월) 무주문 리셋 후 재유치 시 그 당시 activeRate를 새로 스탬프
  */
 export function resolveDealershipCommissionPolicy(creditSettings = {}) {
+  const activeRate = snapDealershipActiveRate(
+    creditSettings?.dealershipActiveCommissionRate ??
+      creditSettings?.dealershipEventCommissionRate,
+  );
   const baseRate = snapDealershipBaseRate(
     creditSettings?.dealershipBaseCommissionRate,
   );
-  const eventRate = snapDealershipEventRate(
-    creditSettings?.dealershipEventCommissionRate,
-  );
-  const eventEnabled = creditSettings?.dealershipEventCommissionEnabled !== false;
-  const eventStartedAt = parseDealershipEventBound(
-    creditSettings?.dealershipEventStartedAt,
-  );
-  const eventEndedAt = parseDealershipEventBound(
-    creditSettings?.dealershipEventEndedAt,
+  const rateLog = normalizeDealershipCommissionRateLog(
+    creditSettings?.dealershipCommissionRateLog,
+    activeRate,
   );
   const rateChangeScheduledAt = parseDealershipEventBound(
     creditSettings?.dealershipRateChangeScheduledAt,
@@ -108,17 +144,39 @@ export function resolveDealershipCommissionPolicy(creditSettings = {}) {
         creditSettings?.dealershipRateChangeScheduledRate,
       )
     : null;
+  // 레거시 호환 필드
+  const eventRate = activeRate;
+  const eventEnabled = true;
+  const eventStartedAt = rateLog[0]?.effectiveFrom || null;
+  const eventEndedAt = null;
   return {
+    activeRate,
     baseRate,
+    rateLog,
     eventRate,
     eventEnabled,
     eventStartedAt,
     eventEndedAt,
     rateChangeScheduledAt,
     rateChangeScheduledRate,
-    /** @deprecated 단일 실효율 — 유치 시점별 resolveDealershipRateForAcquiredAt 사용 */
-    effectiveRate: eventEnabled ? eventRate : baseRate,
+    /** @deprecated 신규 유치 요율 = activeRate */
+    effectiveRate: activeRate,
+    /** @deprecated 누진 제거 — 빈 배열 유지(호환) */
+    tiers: [],
   };
+}
+
+/** @deprecated */
+export function normalizeDealershipCommissionTiers(_rawTiers) {
+  return DEFAULT_DEALERSHIP_COMMISSION_TIERS.map((t) => ({
+    upToAmount: t.upToAmount,
+    rate: t.rate,
+  }));
+}
+
+/** @deprecated */
+export function computeDealershipProgressiveCommission() {
+  return { commissionAmount: 0, slices: [] };
 }
 
 function parseDealershipEventBound(raw) {
@@ -148,7 +206,7 @@ export function resolveDueDealershipRateChange(creditSettings = {}, now = new Da
 
 /**
  * 예약 요율 적용 패치(저장용). due가 아니면 null.
- * 10% → 이벤트 off(기본). 15/20% → 이벤트 on + 해당 요율.
+ * activeRate를 예약 요율로 인하하고 rateLog에 기록. 이미 유치한 BA 스탬프는 불변.
  */
 export function buildDealershipRateChangeApplyPatch(
   creditSettings = {},
@@ -160,36 +218,33 @@ export function buildDealershipRateChangeApplyPatch(
   );
   if (!due || rate == null || !applyAt) return null;
 
+  const prevActive = snapDealershipActiveRate(
+    creditSettings?.dealershipActiveCommissionRate ??
+      creditSettings?.dealershipEventCommissionRate,
+  );
+  const rateLog = normalizeDealershipCommissionRateLog(
+    creditSettings?.dealershipCommissionRateLog,
+    prevActive,
+  );
+  const last = rateLog[rateLog.length - 1];
+  const nextLog =
+    last &&
+    Math.abs(last.rate - rate) < 1e-9 &&
+    last.effectiveFrom.getTime() === applyAt.getTime()
+      ? rateLog
+      : [...rateLog, { effectiveFrom: applyAt, rate }];
+
   const patch = {
     dealershipRateChangeScheduledAt: null,
     dealershipRateChangeScheduledRate: null,
+    dealershipActiveCommissionRate: rate,
+    dealershipEventCommissionRate: rate,
+    dealershipEventCommissionEnabled: true,
     dealershipBaseCommissionRate: DEALERSHIP_BASE_COMMISSION_RATE,
+    dealershipCommissionRateLog: nextLog,
   };
 
-  if (Math.abs(rate - DEALERSHIP_BASE_COMMISSION_RATE) < 1e-9) {
-    patch.dealershipEventCommissionEnabled = false;
-    if (!parseDealershipEventBound(creditSettings?.dealershipEventEndedAt)) {
-      patch.dealershipEventEndedAt = applyAt;
-    }
-    if (
-      !parseDealershipEventBound(creditSettings?.dealershipEventStartedAt) &&
-      !parseDealershipEventBound(patch.dealershipEventStartedAt)
-    ) {
-      patch.dealershipEventStartedAt = new Date("2020-01-01T00:00:00+09:00");
-    }
-  } else {
-    const wasEnabled =
-      creditSettings?.dealershipEventCommissionEnabled !== false;
-    patch.dealershipEventCommissionEnabled = true;
-    patch.dealershipEventCommissionRate = snapDealershipEventRate(rate);
-    if (!wasEnabled) {
-      // 이벤트 재개: 해당일 0시부터 새 유치 창.
-      patch.dealershipEventStartedAt = applyAt;
-      patch.dealershipEventEndedAt = null;
-    }
-  }
-
-  // 분배 비율 딜러%도 같은 예약일부터 맞춤.
+  // 분배 비율 딜러%도 같은 예약일부터 맞춤(신규 잔여 분배).
   const dealerPct = Math.round(rate * 100);
   const mfrRaw = Number(creditSettings?.manufacturerSharePercent);
   const mfr = Math.max(
@@ -643,38 +698,43 @@ export function buildLabShareChangeApplyPatch(
 }
 
 /**
- * 유치(가입) 시점 기준 딜러십 요율.
- * @returns {{ tier: "event"|"base", rate: number }}
+ * 유치(가입·재귀속) 시점 기준 딜러십 요율.
+ * stampedRate(BA.dealershipCommissionRate)가 있으면 우선.
+ * 없으면 rateLog에서 acquiredAt 이하 최신 요율.
+ * @returns {{ tier: "20"|"15"|"10"|"custom", rate: number }}
  */
-export function resolveDealershipRateForAcquiredAt(acquiredAt, policy = {}) {
-  const baseRate = snapDealershipBaseRate(
-    policy.baseRate ?? DEALERSHIP_BASE_COMMISSION_RATE,
+export function resolveDealershipRateForAcquiredAt(
+  acquiredAt,
+  policy = {},
+  stampedRate = null,
+) {
+  if (stampedRate != null && stampedRate !== "") {
+    const rate = snapDealershipActiveRate(stampedRate);
+    return { tier: String(Math.round(rate * 100)), rate };
+  }
+
+  const activeRate = snapDealershipActiveRate(
+    policy.activeRate ?? policy.eventRate ?? DEALERSHIP_ACTIVE_COMMISSION_RATE,
   );
-  const eventRate = snapDealershipEventRate(
-    policy.eventRate ?? DEALERSHIP_EVENT_COMMISSION_RATE,
+  const rateLog = normalizeDealershipCommissionRateLog(
+    policy.rateLog,
+    activeRate,
   );
   const at = parseDealershipEventBound(acquiredAt);
-  const startedAt = parseDealershipEventBound(policy.eventStartedAt);
-  const endedAt = parseDealershipEventBound(policy.eventEndedAt);
-
-  // 이벤트 창이 없으면: 이벤트 on이면 전원 event, off면 전원 base
-  if (!startedAt) {
-    if (policy.eventEnabled !== false) {
-      return { tier: "event", rate: eventRate };
-    }
-    return { tier: "base", rate: baseRate };
-  }
-
   if (!at) {
-    return { tier: "base", rate: baseRate };
+    return { tier: String(Math.round(activeRate * 100)), rate: activeRate };
   }
 
-  const afterStart = at.getTime() >= startedAt.getTime();
-  const beforeEnd = endedAt ? at.getTime() < endedAt.getTime() : true;
-  if (afterStart && beforeEnd) {
-    return { tier: "event", rate: eventRate };
+  let chosen = rateLog[0];
+  for (const row of rateLog) {
+    if (row.effectiveFrom.getTime() <= at.getTime()) {
+      chosen = row;
+    } else {
+      break;
+    }
   }
-  return { tier: "base", rate: baseRate };
+  const rate = chosen?.rate ?? activeRate;
+  return { tier: String(Math.round(rate * 100)), rate };
 }
 
 export const WITH_SALESMAN_DEFAULT_RATES = {

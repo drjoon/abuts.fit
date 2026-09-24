@@ -31,6 +31,8 @@ import {
   resolveReferralOwnershipCutoffAt,
   shouldResetReferralOwnership,
 } from "../utils/referralOwnershipReset.util.js";
+import { resolveDealershipCommissionPolicy } from "./creditRevenuePolicy.service.js";
+import { loadCreditSettingsDefaults } from "../utils/creditSettingsDefaults.js";
 
 export {
   REFERRAL_OWNERSHIP_INACTIVE_DAYS,
@@ -225,7 +227,7 @@ export async function resetExpiredReferralOwnerships({
           businessType: "requestor",
           referredByAnchorId: row.referredByAnchorId,
         },
-        { $set: { referredByAnchorId: null, referralAssignedAt: null } },
+        { $set: { referredByAnchorId: null, referralAssignedAt: null, dealershipCommissionRate: null } },
         { new: true },
       ).select({ _id: 1 });
 
@@ -341,6 +343,9 @@ export async function applyReferralCodeToUnownedRequestor({
   }
 
   const assignedAt = new Date();
+  const creditDefaults = await loadCreditSettingsDefaults();
+  const dealershipPolicy = resolveDealershipCommissionPolicy(creditDefaults);
+  const stampedRate = dealershipPolicy.activeRate;
   const currentFilterId =
     currentReferrerId && Types.ObjectId.isValid(currentReferrerId)
       ? new Types.ObjectId(currentReferrerId)
@@ -356,6 +361,7 @@ export async function applyReferralCodeToUnownedRequestor({
         referredByAnchorId: new Types.ObjectId(referrerAnchorId),
         defaultReferralAnchorId: new Types.ObjectId(referrerAnchorId),
         referralAssignedAt: assignedAt,
+        dealershipCommissionRate: stampedRate,
       },
     },
     { new: true },
@@ -387,5 +393,6 @@ export async function applyReferralCodeToUnownedRequestor({
     referredByAnchorId: referrerAnchorId,
     referrerRole: role,
     referralAssignedAt: assignedAt,
+    dealershipCommissionRate: stampedRate,
   };
 }

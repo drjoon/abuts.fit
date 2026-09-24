@@ -15,6 +15,8 @@ import {
 } from "../../utils/requestorCapabilities.js";
 import { emitReferralMembershipChanged } from "../../services/requestSnapshotTriggers.service.js";
 import { enableDemoModeAndGrantCreditIfEligible } from "./business.demoMode.util.js";
+import { resolveDealershipCommissionPolicy } from "../../services/creditRevenuePolicy.service.js";
+import { loadCreditSettingsDefaults } from "../../utils/creditSettingsDefaults.js";
 
 export const isSyntheticPracticeBusinessNumber = (value) => {
   const bn = String(value || "")
@@ -138,6 +140,17 @@ export async function ensureRequestorOrgAnchor({ user } = {}) {
     }
   }
 
+  let stampedDealershipRate = null;
+  if (user.referredByAnchorId) {
+    try {
+      const creditDefaults = await loadCreditSettingsDefaults();
+      stampedDealershipRate =
+        resolveDealershipCommissionPolicy(creditDefaults).activeRate;
+    } catch {
+      stampedDealershipRate = 0.2;
+    }
+  }
+
   const created = await BusinessAnchor.create({
     businessNumberNormalized: buildSyntheticBusinessNumber(),
     businessType: "requestor",
@@ -171,6 +184,7 @@ export async function ensureRequestorOrgAnchor({ user } = {}) {
     referredByAnchorId: user.referredByAnchorId || null,
     defaultReferralAnchorId: user.referredByAnchorId || null,
     referralAssignedAt: user.referredByAnchorId ? new Date() : null,
+    dealershipCommissionRate: stampedDealershipRate,
   });
 
   await User.findByIdAndUpdate(user._id, {

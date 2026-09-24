@@ -75,15 +75,46 @@ const systemSettingsSchema = new mongoose.Schema(
       labDevopsSharePercent: { type: Number, default: 5 },
       labAbutsSharePercent: { type: Number, default: 25 },
       // 딜러십 영업 수수료(스토어·커스텀어벗 판매가, 기공비·배송비 제외).
-      // 기본 10% 고정. 이벤트 15% · 20%. 이벤트 on이면 eventRate, off → baseRate.
+      // 신규 유치 요율(기본 20%). 관리자 예약으로 15%·10% 인하. 이미 유치한 의뢰자는 BA 스탬프 유지.
+      dealershipActiveCommissionRate: {
+        type: Number,
+        default: 0.2,
+        min: 0,
+        max: 1,
+      },
+      // 요율 변경 이력(effectiveFrom=KST 0시). 스탬프 없는 레거시 BA 해석용.
+      dealershipCommissionRateLog: {
+        type: [
+          {
+            effectiveFrom: { type: Date, required: true },
+            rate: { type: Number, required: true, min: 0, max: 1 },
+          },
+        ],
+        default: [
+          {
+            effectiveFrom: new Date("2020-01-01T00:00:00+09:00"),
+            rate: 0.2,
+          },
+        ],
+      },
+      // @deprecated 월 매출 누진 — 유치시점 고정 요율로 대체. 읽기 호환만.
+      dealershipCommissionTiers: {
+        type: [
+          {
+            upToAmount: { type: Number, default: null, min: 0 },
+            rate: { type: Number, required: true, min: 0, max: 1 },
+          },
+        ],
+        default: [],
+      },
+      // 레거시(유치시점 기본/이벤트). activeRate와 동기화 유지.
       dealershipBaseCommissionRate: { type: Number, default: 0.1, min: 0, max: 1 },
       dealershipEventCommissionRate: { type: Number, default: 0.2, min: 0, max: 1 },
       dealershipEventCommissionEnabled: { type: Boolean, default: true },
       // 이벤트 유치 창: [startedAt, endedAt). endedAt=null이면 진행 중. (토글 자동 기록)
       dealershipEventStartedAt: { type: Date, default: null },
       dealershipEventEndedAt: { type: Date, default: null },
-      // 요율 변경 예약: 해당일 0시(KST)부터 적용. 딜러 대시보드에 안내 표시.
-      // (커스텀어벗 딜러%·딜러십 이벤트 요율)
+      // 요율 변경 예약: 해당일 0시(KST)부터 신규 유치 요율 적용.
       dealershipRateChangeScheduledAt: { type: Date, default: null },
       dealershipRateChangeScheduledRate: { type: Number, default: null, min: 0, max: 1 },
       // 개발운영사 분배% 변경 예약(해당일 0시 KST~). 커스텀어벗.

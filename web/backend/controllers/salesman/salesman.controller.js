@@ -6,6 +6,9 @@
 // - web/backend/controllers/admin/adminCredit.controller.js
 // - web/frontend/src/shared/components/CommissionLedgerInline.tsx
 // - web/frontend/src/shared/components/SalesmanLedgerModal.tsx
+// change-log:
+// - 2026-09-24: 딜러 대시보드 — 유치 시점 요율 고정(신규 activeRate · BA 스탬프). 월 매출 누진 철회.
+// - 2026-09-24: 딜러 대시보드 — 딜러 BA당 월 매출 누진 수수료(commissionSlices).
 import crypto from "node:crypto";
 import Request from "../../models/request.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
@@ -423,12 +426,13 @@ export async function getSalesmanDashboard(req, res) {
     const isDevops = me.role === "devops";
     const creditDefaults = await loadCreditSettingsDefaults();
     const dealershipPolicy = resolveDealershipCommissionPolicy(creditDefaults);
-    // 딜러십: 이벤트 on이면 eventRate(기본 15%), off면 baseRate(기본 10%). devops는 BA devopsRate.
-    let commissionRate = dealershipPolicy.effectiveRate;
+    // 딜러: 유치 시점 요율(스탬프). devops: BA devopsRate.
+    let commissionRate = dealershipPolicy.activeRate;
     let unaffiliatedCommissionRate = 0;
+    const dealershipActiveCommissionRate = dealershipPolicy.activeRate;
     const dealershipBaseCommissionRate = dealershipPolicy.baseRate;
-    const dealershipEventCommissionRate = dealershipPolicy.eventRate;
-    const dealershipEventCommissionEnabled = dealershipPolicy.eventEnabled;
+    const dealershipEventCommissionRate = dealershipPolicy.activeRate;
+    const dealershipEventCommissionEnabled = true;
     const dealershipRateChangeScheduledAt =
       dealershipPolicy.rateChangeScheduledAt;
     const dealershipRateChangeScheduledRate =
@@ -439,7 +443,6 @@ export async function getSalesmanDashboard(req, res) {
         .select({ payoutRates: 1 })
         .lean();
       commissionRate = Number(devopsAnchor?.payoutRates?.devopsRate || 0.1);
-      // 영업자 소개 없는 의뢰도 개발운영사 동일율 적용
       unaffiliatedCommissionRate = Number(
         devopsAnchor?.payoutRates?.devopsRate || 0.1,
       );
@@ -550,7 +553,14 @@ export async function getSalesmanDashboard(req, res) {
       referredByAnchorId: myBusinessAnchorObjectId,
       businessType: "requestor",
     })
-      .select({ _id: 1, createdAt: 1, requestorKind: 1, name: 1 })
+      .select({
+        _id: 1,
+        createdAt: 1,
+        requestorKind: 1,
+        name: 1,
+        referralAssignedAt: 1,
+        dealershipCommissionRate: 1,
+      })
       .lean();
 
     // 개발운영사: 소개 영업자가 없는 의뢰자(referredByAnchorId=null)도 수수료 대상
@@ -563,7 +573,14 @@ export async function getSalesmanDashboard(req, res) {
             { referredByAnchorId: { $exists: false } },
           ],
         })
-          .select({ _id: 1, createdAt: 1, requestorKind: 1, name: 1 })
+          .select({
+            _id: 1,
+            createdAt: 1,
+            requestorKind: 1,
+            name: 1,
+            referralAssignedAt: 1,
+            dealershipCommissionRate: 1,
+          })
           .lean()
       : [];
 
@@ -576,6 +593,11 @@ export async function getSalesmanDashboard(req, res) {
       if (!idStr) continue;
       requestorMetaById.set(idStr, {
         createdAt: row?.createdAt || null,
+        referralAssignedAt: row?.referralAssignedAt || null,
+        dealershipCommissionRate:
+          row?.dealershipCommissionRate != null
+            ? Number(row.dealershipCommissionRate)
+            : null,
         requestorKind:
           row?.requestorKind === "lab" || row?.requestorKind === "practice"
             ? row.requestorKind
@@ -610,11 +632,10 @@ export async function getSalesmanDashboard(req, res) {
               : null,
           period: period || null,
           commissionRate,
+          dealershipActiveCommissionRate,
           dealershipBaseCommissionRate,
           dealershipEventCommissionRate,
           dealershipEventCommissionEnabled,
-          dealershipEventStartedAt: dealershipPolicy.eventStartedAt,
-          dealershipEventEndedAt: dealershipPolicy.eventEndedAt,
           dealershipRateChangeScheduledAt,
           dealershipRateChangeScheduledRate,
           payoutDayOfMonth,
@@ -727,14 +748,16 @@ export async function getSalesmanDashboard(req, res) {
         const isDirect = directOrgIdSet.has(idStr);
         const isUnaffiliated = unaffiliatedOrgIdSet.has(idStr);
         let commissionRateForOrg = commissionRate;
-        let commissionTier = "base";
+        let commissionTier = String(Math.round(commissionRate * 100));
         if (isUnaffiliated) {
           commissionRateForOrg = unaffiliatedCommissionRate;
-          commissionTier = "base";
+          commissionTier = String(Math.round(commissionRateForOrg * 100));
         } else if (!isDevops) {
+          const acquiredAt = meta.referralAssignedAt || meta.createdAt;
           const resolved = resolveDealershipRateForAcquiredAt(
-            meta.createdAt,
+            acquiredAt,
             dealershipPolicy,
+            meta.dealershipCommissionRate,
           );
           commissionRateForOrg = resolved.rate;
           commissionTier = resolved.tier;
@@ -747,8 +770,8 @@ export async function getSalesmanDashboard(req, res) {
           businessAnchorId: idStr,
           name: orgNameById.get(idStr) || meta.name || "",
           requestorKind: meta.requestorKind || null,
-          acquiredAt: meta.createdAt
-            ? new Date(meta.createdAt).toISOString()
+          acquiredAt: (meta.referralAssignedAt || meta.createdAt)
+            ? new Date(meta.referralAssignedAt || meta.createdAt).toISOString()
             : null,
           commissionTier,
           commissionRate: commissionRateForOrg,
@@ -768,42 +791,21 @@ export async function getSalesmanDashboard(req, res) {
     const unaffiliatedOrganizations = organizations.filter(
       (o) => o.referralLevel === "unaffiliated",
     );
-    const eventOrganizations = organizations.filter(
-      (o) => o.commissionTier === "event",
-    );
-    const baseOrganizations = organizations.filter(
-      (o) => o.commissionTier !== "event",
-    );
     const sumField = (rows, key) =>
       rows.reduce((acc, o) => acc + Number(o[key] || 0), 0);
 
-    const directCommissionAmount = sumField(
-      directOrganizations,
-      "monthCommissionAmount",
+    const directCommissionAmount = roundMoney(
+      sumField(directOrganizations, "monthCommissionAmount"),
     );
-    const unaffiliatedCommissionAmount = sumField(
-      unaffiliatedOrganizations,
-      "monthCommissionAmount",
+    const unaffiliatedCommissionAmount = roundMoney(
+      sumField(unaffiliatedOrganizations, "monthCommissionAmount"),
     );
     const totalCommissionAmount =
       directCommissionAmount + unaffiliatedCommissionAmount;
-
-    const monthRevenueAmount = sumField(organizations, "monthRevenueAmount");
+    const monthRevenueAmount = roundMoney(
+      sumField(organizations, "monthRevenueAmount"),
+    );
     const monthCommissionAmount = totalCommissionAmount;
-    const eventCommissionAmount = roundMoney(
-      sumField(eventOrganizations, "monthCommissionAmount"),
-    );
-    const baseCommissionAmount = roundMoney(
-      sumField(baseOrganizations, "monthCommissionAmount"),
-    );
-    const eventRevenueAmount = roundMoney(
-      sumField(eventOrganizations, "monthRevenueAmount"),
-    );
-    const baseRevenueAmount = roundMoney(
-      sumField(baseOrganizations, "monthRevenueAmount"),
-    );
-    const eventOrderCount = sumField(eventOrganizations, "monthOrderCount");
-    const baseOrderCount = sumField(baseOrganizations, "monthOrderCount");
     const practiceOrganizationCount = organizations.filter(
       (o) => o.requestorKind === "practice",
     ).length;
@@ -820,11 +822,10 @@ export async function getSalesmanDashboard(req, res) {
             : null,
         period,
         commissionRate,
+        dealershipActiveCommissionRate,
         dealershipBaseCommissionRate,
         dealershipEventCommissionRate,
         dealershipEventCommissionEnabled,
-        dealershipEventStartedAt: dealershipPolicy.eventStartedAt,
-        dealershipEventEndedAt: dealershipPolicy.eventEndedAt,
         dealershipRateChangeScheduledAt,
         dealershipRateChangeScheduledRate,
         unaffiliatedCommissionRate,
@@ -832,28 +833,18 @@ export async function getSalesmanDashboard(req, res) {
         referralCode: effectiveReferralCode,
         overview: {
           referredOrganizationCount: organizations.length,
-          monthRevenueAmount: roundMoney(monthRevenueAmount),
+          monthRevenueAmount,
           monthCommissionAmount: roundMoney(monthCommissionAmount),
           directOrganizationCount: directOrganizations.length,
           totalOrganizationCount: organizations.length,
-          directCommissionAmount: roundMoney(directCommissionAmount),
-          unaffiliatedCommissionAmount: roundMoney(
-            unaffiliatedCommissionAmount,
-          ),
+          directCommissionAmount,
+          unaffiliatedCommissionAmount,
           totalCommissionAmount: roundMoney(totalCommissionAmount),
           payableGrossCommissionAmount: roundMoney(totalCommissionAmount),
           paidNetCommissionAmount: 0,
           freeNetRequestAmount,
           freeNetShippingAmount,
           freeNetAmount,
-          eventOrganizationCount: eventOrganizations.length,
-          baseOrganizationCount: baseOrganizations.length,
-          eventCommissionAmount,
-          baseCommissionAmount,
-          eventRevenueAmount,
-          baseRevenueAmount,
-          eventOrderCount,
-          baseOrderCount,
           practiceOrganizationCount,
           labOrganizationCount,
         },

@@ -56,12 +56,19 @@ export interface CreditSettings {
   labDesignAndProductionPrice: number;
   labRoundBarProductionPrice: number;
   labRoundBarDesignAndProductionPrice: number;
+  /** 지금 신규 유치 요율. 0~1 */
+  dealershipActiveCommissionRate?: number;
   /** 딜러십 표준 요율(추후 공지 후). 0~1 */
   dealershipBaseCommissionRate?: number;
   /** 딜러십 이벤트 요율. 0~1 */
   dealershipEventCommissionRate?: number;
   /** 딜러십 이벤트 요율 적용 on/off */
   dealershipEventCommissionEnabled?: boolean;
+  /** @deprecated */
+  dealershipCommissionTiers?: Array<{
+    upToAmount: number | null;
+    rate: number;
+  }>;
   /** 요율 변경 예약일(KST 0시) */
   dealershipRateChangeScheduledAt?: string | Date | null;
   /** 예약 적용 요율 0~1 */
@@ -115,9 +122,11 @@ export const CREDIT_SETTINGS_DEFAULTS: CreditSettings = {
   labRoundBarProductionPrice: ABUTS_ABUTMENT_MEMBERSHIP_PRODUCTION_PRICE,
   labRoundBarDesignAndProductionPrice:
     ABUTS_ABUTMENT_MEMBERSHIP_DESIGN_AND_PRODUCTION_PRICE,
+  dealershipActiveCommissionRate: 0.2,
   dealershipBaseCommissionRate: 0.1,
   dealershipEventCommissionRate: 0.2,
   dealershipEventCommissionEnabled: true,
+  dealershipCommissionTiers: [],
   dealershipRateChangeScheduledAt: null,
   dealershipRateChangeScheduledRate: null,
   customAbutmentLaunchEventEnabled: true,
@@ -238,6 +247,17 @@ export const useSystemSettings = () => {
           if (Number.isFinite(rawVal) && rawVal > 0) return Math.round(rawVal);
           return abutmentPrices.membershipRoundBarDesignAndProductionPrice;
         })(),
+        dealershipActiveCommissionRate: (() => {
+          const n = Number(
+            raw.dealershipActiveCommissionRate ??
+              raw.dealershipEventCommissionRate ??
+              CREDIT_SETTINGS_DEFAULTS.dealershipActiveCommissionRate,
+          );
+          if (!Number.isFinite(n) || n < 0) {
+            return CREDIT_SETTINGS_DEFAULTS.dealershipActiveCommissionRate;
+          }
+          return Math.min(1, n);
+        })(),
         dealershipBaseCommissionRate: (() => {
           const n = Number(
             raw.dealershipBaseCommissionRate ??
@@ -250,7 +270,8 @@ export const useSystemSettings = () => {
         })(),
         dealershipEventCommissionRate: (() => {
           const n = Number(
-            raw.dealershipEventCommissionRate ??
+            raw.dealershipActiveCommissionRate ??
+              raw.dealershipEventCommissionRate ??
               CREDIT_SETTINGS_DEFAULTS.dealershipEventCommissionRate,
           );
           if (!Number.isFinite(n) || n < 0) {
@@ -260,6 +281,9 @@ export const useSystemSettings = () => {
         })(),
         dealershipEventCommissionEnabled:
           raw.dealershipEventCommissionEnabled !== false,
+        dealershipCommissionTiers: Array.isArray(raw.dealershipCommissionTiers)
+          ? raw.dealershipCommissionTiers
+          : [],
         dealershipRateChangeScheduledAt: (() => {
           const rawAt = raw.dealershipRateChangeScheduledAt;
           if (!rawAt) return null;

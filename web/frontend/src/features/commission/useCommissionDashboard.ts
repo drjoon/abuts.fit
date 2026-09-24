@@ -6,8 +6,8 @@
  * 딜러(salesman)·영업팀(salesTeam) 대시보드에서 사용하는
  * /api/salesman/dashboard 데이터 훅 + 타입 + 포매터.
  *
- * 역할별 UI 분기는 이 훅에 두지 않는다.
- * 역할 전용 렌더링은 SalesmanDashboardPage에서 담당한다.
+ * 딜러십 영업 수수료: 유치(가입·재귀속) 시점 요율 고정.
+ * 관리자가 신규 유치 요율을 20%→15%→10%로 인하해도 기존 유치 건은 유지.
  */
 
 import { useEffect, useState } from "react";
@@ -22,34 +22,25 @@ export type CommissionOrgRow = {
   monthRevenueAmount: number;
   monthOrderCount: number;
   monthCommissionAmount: number;
-  /** "direct"(소개됨) | "unaffiliated"(영업자 미설정) */
   referralLevel?: "direct" | "unaffiliated";
   requestorKind?: "practice" | "lab" | null;
   acquiredAt?: string | null;
-  commissionTier?: "event" | "base";
-  commissionRate?: number;
+  commissionTier?: string;
+  commissionRate?: number | null;
 };
 
-// /api/salesman/dashboard 응답 스키마
 export type CommissionDashboardData = {
   ym: string;
   period?: PeriodFilterValue | null;
   commissionRate: number;
-  /** 딜러십 표준 요율(추후 공지 후). */
+  /** 지금 신규 유치에 적용되는 요율 */
+  dealershipActiveCommissionRate?: number;
   dealershipBaseCommissionRate?: number;
-  /** 딜러십 이벤트 요율. */
   dealershipEventCommissionRate?: number;
-  /** 이벤트 요율 적용 여부. */
   dealershipEventCommissionEnabled?: boolean;
-  dealershipEventStartedAt?: string | Date | null;
-  dealershipEventEndedAt?: string | Date | null;
-  /** 요율 변경 예약일(KST 0시). */
   dealershipRateChangeScheduledAt?: string | Date | null;
-  /** 예약 적용 요율. */
   dealershipRateChangeScheduledRate?: number | null;
-  /** devops 전용: 영업자 미설정 의뢰자 분배율 */
   unaffiliatedCommissionRate?: number;
-
   payoutDayOfMonth: number;
   referralCode: string;
   overview: {
@@ -62,7 +53,6 @@ export type CommissionDashboardData = {
     directOrganizationCount?: number;
     totalOrganizationCount?: number;
     directCommissionAmount?: number;
-    /** devops 전용: 영업자 미설정 의뢰자 수수료 합계 */
     unaffiliatedCommissionAmount?: number;
     totalCommissionAmount?: number;
     payableGrossCommissionAmount?: number;
@@ -70,14 +60,6 @@ export type CommissionDashboardData = {
     freeNetRequestAmount?: number;
     freeNetShippingAmount?: number;
     freeNetAmount?: number;
-    eventOrganizationCount?: number;
-    baseOrganizationCount?: number;
-    eventCommissionAmount?: number;
-    baseCommissionAmount?: number;
-    eventRevenueAmount?: number;
-    baseRevenueAmount?: number;
-    eventOrderCount?: number;
-    baseOrderCount?: number;
     practiceOrganizationCount?: number;
     labOrganizationCount?: number;
   };
@@ -85,7 +67,6 @@ export type CommissionDashboardData = {
   organizations: CommissionOrgRow[];
 };
 
-/** 원화 금액 포매터 */
 export const formatMoney = (n?: number): string => {
   const v = Number(n || 0);
   try {
@@ -100,7 +81,6 @@ export function formatCommissionRatePct(rate?: number | null): string {
   return `${pct}%`;
 }
 
-/** 딜러십 요율 사다리(관리자 선택지 10·15·20과 동일, 높은 순). */
 export const DEALERSHIP_COMMISSION_RATE_PCT_OPTIONS = [20, 15, 10] as const;
 
 export type DealershipRateBucket = {
@@ -128,37 +108,17 @@ export function summarizeDealershipRateBuckets(
   );
 }
 
-export function dealershipRateBucketLabel(
-  pct: number,
-  opts: { eventPct: number; basePct: number; eventEnabled: boolean },
-): string {
-  const { eventPct, basePct, eventEnabled } = opts;
-  if (eventEnabled) {
-    if (pct === eventPct) return `현재 ${pct}%`;
-    if (pct === basePct) return `추후 ${pct}%`;
-    return `${pct}%`;
-  }
-  if (pct === basePct) return `현재 ${pct}%`;
-  if (pct === eventPct) return `요율 ${pct}%`;
-  return `${pct}%`;
-}
-
 export function dealershipRateBucketTip(
   pct: number,
-  opts: { eventPct: number; basePct: number; eventEnabled: boolean },
+  opts: { activePct: number },
 ): string {
-  const { eventPct, basePct, eventEnabled } = opts;
-  if (pct === eventPct) {
-    return eventEnabled
-      ? "이벤트 기간인 지금 유치(가입)한 치과·기공소"
-      : "이벤트 기간에 유치한 치과·기공소";
+  if (pct === opts.activePct) {
+    return "지금 신규 유치(가입·재귀속)에 적용되는 요율로 유치한 치과·기공소";
   }
-  if (pct === basePct) {
-    return eventEnabled
-      ? "이벤트 종료 후 적용될 표준 요율 · 기간 외 유치 고객"
-      : "현재 표준 요율로 유치한 치과·기공소";
+  if (pct > opts.activePct) {
+    return "이전에 더 높은 요율로 유치해 계속 유지되는 치과·기공소";
   }
-  return "요율 변경 예약(20%→15%→10%)으로 적용되는 중간 요율";
+  return "이후 인하된 요율로 유치한 치과·기공소";
 }
 
 export function requestorKindLabel(
@@ -169,10 +129,6 @@ export function requestorKindLabel(
   return "의뢰자";
 }
 
-/**
- * 딜러 대시보드·정산 데이터 훅.
- * /api/salesman/dashboard 엔드포인트가 반환한 값을 그대로 표시한다.
- */
 export function useCommissionDashboard(period: PeriodFilterValue) {
   const { token } = useAuthStore();
   const { toast } = useToast();
