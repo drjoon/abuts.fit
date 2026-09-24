@@ -177,7 +177,8 @@ export const landingHome = {
     "심플웨이 도입부터 치과·기공소 협업, 커스텀어벗 기공서비스까지 필요한 방향을 함께 안내해 드립니다.",
   ],
   ctaConsult: "상담 신청하기",
-  ctaHero: "시작하기",
+  /** 히어로 CTA — 가입이 아니라 다음 섹션으로 스크롤 (하단 `#contact`에서 가입) */
+  ctaHero: "더 알아보기",
 } as const;
 
 /** `/` 비즈니스 탭 (Waveon business) */

@@ -6,7 +6,7 @@
 // - web/frontend/src/features/landing/landingAssets.ts
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowRight } from "lucide-react";
+import { ArrowDown, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Accordion,
@@ -28,7 +28,8 @@ import {
 } from "./landingTheme";
 import { LandingEventsSection } from "./LandingEventsSection";
 
-type BusinessTabId = (typeof landingHomeBusinessTabs)[number]["id"];
+type BusinessTab = (typeof landingHomeBusinessTabs)[number];
+type BusinessTabId = BusinessTab["id"];
 
 /** Waveon 대비 살짝만 작은 타이포 — 본문 15px대, h2 ~36–40px */
 const TYPO = {
@@ -81,6 +82,43 @@ function SectionEyebrow({
   );
 }
 
+function BusinessFlowCard({ tab }: { tab: BusinessTab }) {
+  return (
+    <article
+      className={cn(
+        "grid h-full items-stretch gap-0 overflow-hidden lg:grid-cols-2",
+        SKY.card,
+      )}
+    >
+      <div className="relative min-h-[12.5rem] overflow-hidden bg-[#e8f2ff] sm:min-h-[18rem] lg:min-h-[20rem]">
+        <img
+          src={tab.image.src}
+          alt={tab.image.alt}
+          className="h-full w-full object-cover object-center"
+          draggable={false}
+        />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-tr from-sky-500/15 via-transparent to-blue-500/10" />
+      </div>
+      <div className="flex flex-col justify-center px-5 py-7 sm:px-8 sm:py-9">
+        <p className={cn(TYPO.eyebrow, SKY.accent)}>{tab.eyebrow}</p>
+        <h3 className={cn(TYPO.h3, "mt-2", SKY.ink)}>{tab.title}</h3>
+        <Lines lines={[...tab.body]} className={cn("mt-3", TYPO.body)} />
+        <Link
+          to={tab.href}
+          className={cn(
+            "mt-5 inline-flex items-center gap-1 underline-offset-4 hover:underline",
+            TYPO.link,
+            SKY.accentStrong,
+          )}
+        >
+          {tab.cta}
+          <ArrowRight className="h-3.5 w-3.5" />
+        </Link>
+      </div>
+    </article>
+  );
+}
+
 /** `/` — Waveon 구조 · 포토 히어로 · 작은 타이포 · 하늘색 · 둥근 모서리 */
 export function LandingHome() {
   const navigate = useNavigate();
@@ -93,6 +131,13 @@ export function LandingHome() {
 
   const goStart = () => {
     navigate(isAuthenticated ? resolveEntryDashboardPath(user) : "/signup");
+  };
+
+  const scrollToBusiness = () => {
+    document.getElementById("business")?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
   };
 
   return (
@@ -130,10 +175,10 @@ export function LandingHome() {
           <Button
             type="button"
             className="mt-7 h-11 rounded-full bg-white px-6 text-[14px] font-semibold text-[#1e4a8c] hover:bg-white/95 sm:text-[15px]"
-            onClick={goStart}
+            onClick={scrollToBusiness}
           >
             {landingHome.ctaHero}
-            <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+            <ArrowDown className="ml-1.5 h-3.5 w-3.5" />
           </Button>
         </div>
 
@@ -145,7 +190,7 @@ export function LandingHome() {
         </div>
       </section>
 
-      {/* THE SIMPLE WAY — 탭 */}
+      {/* THE SIMPLE WAY — 모바일: 가로 파노라마 / sm+: 탭 */}
       <section
         id="business"
         className={cn("scroll-mt-20 bg-white", landingSectionY.bandTight)}
@@ -159,66 +204,58 @@ export function LandingHome() {
             <p className={cn("mt-2.5", TYPO.lead)}>{landingHome.browseLead}</p>
           </div>
 
-          <div
-            role="tablist"
-            aria-label="서비스 선택"
-            className="mt-8 grid gap-2.5 sm:mt-10 sm:grid-cols-3 sm:gap-3"
-          >
-            {landingHomeBusinessTabs.map((tab) => {
-              const selected = tab.id === tabId;
-              return (
-                <button
+          {/* 모바일: 3장이 옆으로 이어지는 스냅 스크롤 (본문과 같은 좌우 여백) */}
+          <div className="mt-8 sm:hidden">
+            <div
+              className="flex snap-x snap-mandatory gap-3 overflow-x-auto overflow-y-hidden overscroll-x-contain touch-pan-x pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              aria-label="서비스 흐름"
+            >
+              {landingHomeBusinessTabs.map((tab, index) => (
+                <div
                   key={tab.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={selected}
-                  onClick={() => setTabId(tab.id)}
-                  className={cn(
-                    "flex h-12 items-center justify-between rounded-xl px-4 text-left text-[14px] font-semibold transition sm:px-5 sm:text-[15px]",
-                    selected
-                      ? "bg-[#2563eb] text-white shadow-[0_10px_24px_rgba(37,99,235,0.25)]"
-                      : "border border-sky-200/90 bg-white text-[#0b2a5c] hover:border-sky-300 hover:bg-sky-50/80",
-                  )}
+                  className="w-[min(100%,20.5rem)] shrink-0 snap-start"
                 >
-                  <span>{tab.label}</span>
-                  <ArrowRight className="h-3.5 w-3.5 shrink-0 opacity-80" />
-                </button>
-              );
-            })}
+                  <p className={cn("mb-2 text-[12px] font-semibold", SKY.accentStrong)}>
+                    {String(index + 1).padStart(2, "0")} · {tab.label}
+                  </p>
+                  <BusinessFlowCard tab={tab} />
+                </div>
+              ))}
+            </div>
           </div>
 
-          <div
-            className={cn(
-              "mt-5 grid items-stretch gap-0 overflow-hidden lg:mt-6 lg:grid-cols-2",
-              SKY.card,
-            )}
-          >
-            <div className="relative min-h-[14rem] overflow-hidden bg-[#e8f2ff] sm:min-h-[18rem] lg:min-h-[20rem]">
-              <img
-                src={activeTab.image.src}
-                alt={activeTab.image.alt}
-                className="h-full w-full object-cover object-center"
-              />
-              <div className="pointer-events-none absolute inset-0 bg-gradient-to-tr from-sky-500/15 via-transparent to-blue-500/10" />
+          {/* sm+: 탭 + 패널 */}
+          <div className="mt-10 hidden sm:block">
+            <div
+              role="tablist"
+              aria-label="서비스 선택"
+              className="grid grid-cols-3 gap-3"
+            >
+              {landingHomeBusinessTabs.map((tab) => {
+                const selected = tab.id === tabId;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={selected}
+                    onClick={() => setTabId(tab.id)}
+                    className={cn(
+                      "flex h-12 items-center justify-between rounded-xl px-5 text-left text-[15px] font-semibold transition",
+                      selected
+                        ? "bg-[#2563eb] text-white shadow-[0_10px_24px_rgba(37,99,235,0.25)]"
+                        : "border border-sky-200/90 bg-white text-[#0b2a5c] hover:border-sky-300 hover:bg-sky-50/80",
+                    )}
+                  >
+                    <span>{tab.label}</span>
+                    <ArrowRight className="h-3.5 w-3.5 shrink-0 opacity-80" />
+                  </button>
+                );
+              })}
             </div>
-            <div className="flex flex-col justify-center px-5 py-7 sm:px-8 sm:py-9">
-              <p className={cn(TYPO.eyebrow, SKY.accent)}>{activeTab.eyebrow}</p>
-              <h3 className={cn(TYPO.h3, "mt-2", SKY.ink)}>{activeTab.title}</h3>
-              <Lines
-                lines={[...activeTab.body]}
-                className={cn("mt-3", TYPO.body)}
-              />
-              <Link
-                to={activeTab.href}
-                className={cn(
-                  "mt-5 inline-flex items-center gap-1 underline-offset-4 hover:underline",
-                  TYPO.link,
-                  SKY.accentStrong,
-                )}
-              >
-                {activeTab.cta}
-                <ArrowRight className="h-3.5 w-3.5" />
-              </Link>
+
+            <div className="mt-6">
+              <BusinessFlowCard tab={activeTab} />
             </div>
           </div>
         </div>
