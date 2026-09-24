@@ -3,10 +3,12 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/shared/onboarding/wizard/steps/PracticeBusinessProfileStep.tsx
+// - web/frontend/src/shared/onboarding/wizard/steps/PracticeOralScanStep.tsx
 import { useEffect, useMemo } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { BusinessTab } from "@/shared/components/business/settings/BusinessTab";
 import { PracticeBusinessProfileStep } from "./PracticeBusinessProfileStep";
+import { PracticeOralScanStep } from "./PracticeOralScanStep";
 
 interface BusinessStepProps {
   role: "owner" | "member" | null;
@@ -16,6 +18,8 @@ interface BusinessStepProps {
   /** @deprecated requestor는 사업자등록증 필수 — 레거시 practice-only 우회 단계 */
   practiceProfilePhase?: boolean;
   onPracticeProfilePhaseChange?: (active: boolean) => void;
+  /** 치과 대표: 사업자등록 직후 구강 스캔 단계 */
+  oralScanPhase?: boolean;
   registerGoNextAction?: (action: (() => Promise<boolean>) | null) => void;
   registerBusyState?: (busy: boolean) => void;
   registerValidationState?: (state: {
@@ -30,6 +34,7 @@ export const BusinessStep = ({
   businessType,
   practiceProfilePhase = false,
   onPracticeProfilePhaseChange,
+  oralScanPhase = false,
   registerGoNextAction,
   registerBusyState,
   registerValidationState,
@@ -62,6 +67,16 @@ export const BusinessStep = ({
     isRequestorOwner,
     onPracticeProfilePhaseChange,
   ]);
+
+  if (oralScanPhase) {
+    return (
+      <PracticeOralScanStep
+        registerGoNextAction={registerGoNextAction}
+        registerBusyState={registerBusyState}
+        registerValidationState={registerValidationState}
+      />
+    );
+  }
 
   if (isPractice && !role) {
     return (

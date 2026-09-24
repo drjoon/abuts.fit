@@ -3,15 +3,15 @@
 // - web/frontend/src/shared/events/eventsApi.ts
 // - web/frontend/src/shared/components/business/settings/business/validations.ts
 //
-// 출시 행사 신청 폼(구강 스캔·재료상) 초안 — 새로고침 유지. 신청 성공 시 삭제.
+// 출시 행사 신청 폼(재료상) 초안 — 새로고침 유지. 신청 성공 시 삭제.
+// 구강 스캔 여부는 치과 대표 온보딩(사업자등록 후)에서만 수집.
 
 import type { EventPlaceFields } from "@/shared/events/eventsApi";
 import { formatPhoneNumberInput } from "@/shared/components/business/settings/business/validations";
 
-const STORAGE_PREFIX = "abutsfit:event-apply-draft:v1:";
+const STORAGE_PREFIX = "abutsfit:event-apply-draft:v2:";
 
 export type EventApplyLocalDraft = {
-  usesOralScan: boolean | null;
   dealer: EventPlaceFields;
   updatedAt: number;
 };
@@ -63,14 +63,7 @@ export function readEventApplyLocalDraft(
     const raw = window.localStorage.getItem(storageKey(slug, userId));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<EventApplyLocalDraft>;
-    const usesOralScan =
-      parsed.usesOralScan === true
-        ? true
-        : parsed.usesOralScan === false
-          ? false
-          : null;
     return {
-      usesOralScan,
       dealer: normalizeDealer(parsed.dealer),
       updatedAt: Number(parsed.updatedAt) || Date.now(),
     };
@@ -82,7 +75,6 @@ export function readEventApplyLocalDraft(
 export function writeEventApplyLocalDraft(
   slug: string,
   draft: {
-    usesOralScan: boolean | null;
     dealer: EventPlaceFields;
   },
   userId?: string | null,
@@ -90,12 +82,6 @@ export function writeEventApplyLocalDraft(
   if (typeof window === "undefined" || !slug) return;
   try {
     const payload: EventApplyLocalDraft = {
-      usesOralScan:
-        draft.usesOralScan === true
-          ? true
-          : draft.usesOralScan === false
-            ? false
-            : null,
       dealer: normalizeDealer(draft.dealer),
       updatedAt: Date.now(),
     };

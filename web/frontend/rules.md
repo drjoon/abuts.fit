@@ -130,6 +130,7 @@ Notes:
   - `src/shared/onboarding/wizard/SettingsWizard.tsx`
   - `src/shared/onboarding/wizard/steps/BusinessStep.tsx`
   - `src/shared/onboarding/wizard/steps/PracticeBusinessProfileStep.tsx`
+  - `src/shared/onboarding/wizard/steps/PracticeOralScanStep.tsx`
 - 의뢰자 신규의뢰/치과
   - `src/pages/requestor/new_request/NewRequestPage.tsx`
   - `src/pages/requestor/new_request/components/NewRequestShippingSection.tsx`
@@ -669,6 +670,9 @@ Notes:
   - 가입 role: `requestor` | `salesman`만. `practice` role **제거**.
   - 공개 가입(`/signup`): `requestor` | `salesman`. 복원 draft에 `practice`가 있으면 requestor로 전환.
   - 온보딩(`/dashboard/wizard`): 프로필 → 휴대전화 → 역할 → 사업자.
+    - **치과 대표(owner)**: 사업자등록(검증) 직후 **구강 스캔 사용 여부**(필수 예/아니오). 직원(member)·기공소는 생략.
+    - SSOT: `PracticeOralScanStep` · `practiceProfile.usesOralScan` / `BusinessAnchor.usesOralScan`. 설정「구강스캔」탭에서 변경 가능.
+    - Gribo 등 행사 신청 폼에서는 구강 스캔을 받지 않음(신청 시 프로필 스냅샷).
   - 사업자 단계(`BusinessTab` + `RequestorCapabilitiesPicker`):
     - 역할 라디오: `REQUESTOR_KIND_LABEL` — practice=`치과 (기공실 포함)`, lab=`기공소`
     - 서비스 선택 UI 없음. `requestorServices`는 paid-only(`{free:false,paid:true}`). 레거시 free는 읽기 시 paid 승격

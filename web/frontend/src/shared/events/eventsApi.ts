@@ -123,7 +123,8 @@ export const eventsApi = {
       applicantPhone?: string;
       applicantEmail?: string;
       memo?: string;
-      usesOralScan: boolean;
+      /** @deprecated 온보딩 프로필·BA에서 스냅샷. 본문 전달 불필요 */
+      usesOralScan?: boolean;
     },
     token?: string | null,
   ) =>

@@ -160,27 +160,6 @@ export const BusinessTab = ({
   const canEditSalesReferral =
     businessType === "requestor" || businessType === "practice";
 
-  const markOnboardingWizardCompleted = useCallback(async () => {
-    if (!token || !user) return false;
-
-    try {
-      const res = await request<any>({
-        path: "/api/users/profile",
-        method: "PUT",
-        token,
-        jsonBody: { onboardingWizardCompleted: true },
-      });
-
-      if (!res.ok) return false;
-
-      await loginWithToken(token);
-      return true;
-    } catch (error) {
-      console.error("[BusinessTab] failed to mark onboarding complete", error);
-      return false;
-    }
-  }, [loginWithToken, token, user]);
-
   // 파일 업로드 훅
   const { handleFileUpload, licenseDeleteLoading, setLicenseDeleteLoading } =
     useFileUpload(
@@ -603,14 +582,7 @@ export const BusinessTab = ({
       businessDataMgmt.setValidationSucceeded(true);
       setCardHighlight(true);
 
-      if (isOnboarding) {
-        const completed = await markOnboardingWizardCompleted();
-        if (!completed) {
-          console.warn(
-            "[BusinessTab] onboarding completion flag was not persisted",
-          );
-        }
-      }
+      // 온보딩 완료 플래그는 SettingsWizard 마지막(구강 스캔 포함)에서 설정
     } else {
       setShowInquiryCta(true);
     }

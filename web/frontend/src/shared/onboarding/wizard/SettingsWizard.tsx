@@ -238,6 +238,8 @@ export const SettingsWizard = ({
   const validateActionRef = useRef<(() => void) | null>(null);
   /** requestor practice-only: 사업자등록증 건너뛴 뒤 필수 치과정보 단계 */
   const [practiceProfilePhase, setPracticeProfilePhase] = useState(false);
+  /** 치과 대표: 사업자등록 직후 구강 스캔 사용 여부 */
+  const [oralScanPhase, setOralScanPhase] = useState(false);
   const avatarAssignedRef = useRef(false);
 
   useEffect(() => {
@@ -391,16 +393,41 @@ export const SettingsWizard = ({
     const currentIndex = STEP_ORDER.indexOf(currentStep);
     if (currentIndex < STEP_ORDER.length - 1) {
       setCurrentStep(STEP_ORDER[currentIndex + 1]);
-    } else if (currentIndex === STEP_ORDER.length - 1) {
-      // 마지막 단계 완료: 대시보드로 이동
-      onWizardComplete();
+      return;
     }
-  }, [currentStep, selectedRole, onWizardComplete, STEP_ORDER]);
+    if (currentIndex !== STEP_ORDER.length - 1) return;
+
+    // 사업자 단계 완료 후: 치과 대표만 구강 스캔 단계(이미 프로필 단계에서 답한 레거시 practice 제외)
+    if (currentStep === "business" && !oralScanPhase) {
+      const latest = useAuthStore.getState().user;
+      const isPracticeCapable =
+        latest?.requestorKind === "practice" ||
+        latest?.role === "practice" ||
+        Boolean(latest?.requestorCapabilities?.practice);
+      const answeredInLegacyPracticeForm = latest?.role === "practice";
+      if (
+        selectedRole === "owner" &&
+        isPracticeCapable &&
+        !answeredInLegacyPracticeForm
+      ) {
+        setOralScanPhase(true);
+        setValidationState({ passed: false, validating: false });
+        return;
+      }
+    }
+
+    onWizardComplete();
+  }, [currentStep, oralScanPhase, selectedRole, onWizardComplete, STEP_ORDER]);
 
   const canProceedBusinessStep = validationState.passed;
 
   const handlePrev = useCallback(() => {
     if (!currentStep) return;
+    if (currentStep === "business" && oralScanPhase) {
+      setOralScanPhase(false);
+      setValidationState({ passed: false, validating: false });
+      return;
+    }
     if (currentStep === "business" && practiceProfilePhase) {
       setPracticeProfilePhase(false);
       setValidationState({ passed: false, validating: false });
@@ -413,13 +440,15 @@ export const SettingsWizard = ({
     // 사업자 단계 떠날 때 검증 상태 리셋
     if (currentStep === "business") {
       setPracticeProfilePhase(false);
+      setOralScanPhase(false);
       setValidationState({ passed: false, validating: false });
     }
-  }, [practiceProfilePhase, currentStep, STEP_ORDER]);
+  }, [oralScanPhase, practiceProfilePhase, currentStep, STEP_ORDER]);
 
   // 역할 변경 시 검증 상태 리셋
   useEffect(() => {
     setPracticeProfilePhase(false);
+    setOralScanPhase(false);
     setValidationState({ passed: false, validating: false });
   }, [selectedRole]);
 
@@ -461,6 +490,9 @@ export const SettingsWizard = ({
       case "role":
         return "등록 방식 선택";
       case "business":
+        if (oralScanPhase) {
+          return "구강 스캔";
+        }
         if (
           practiceProfilePhase ||
           (effectiveBusinessType === "practice" && selectedRole === "owner")
@@ -471,7 +503,13 @@ export const SettingsWizard = ({
       default:
         return "";
     }
-  }, [practiceProfilePhase, currentStep, effectiveBusinessType, selectedRole]);
+  }, [
+    oralScanPhase,
+    practiceProfilePhase,
+    currentStep,
+    effectiveBusinessType,
+    selectedRole,
+  ]);
 
   const cardMaxWidth = useMemo(() => {
     switch (currentStep) {
@@ -534,6 +572,7 @@ export const SettingsWizard = ({
                 onComplete={() => handleStepComplete("business")}
                 practiceProfilePhase={practiceProfilePhase}
                 onPracticeProfilePhaseChange={handlePracticeProfilePhaseChange}
+                oralScanPhase={oralScanPhase}
                 registerGoNextAction={registerGoNextAction}
                 registerBusyState={registerStepBusyState}
                 registerValidationState={registerValidationState}

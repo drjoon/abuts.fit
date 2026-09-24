@@ -482,13 +482,13 @@ export async function applyToEvent(req, res) {
       120,
     );
     const memo = trimStr(body.memo, 1000);
-    if (typeof body.usesOralScan !== "boolean") {
-      return res.status(400).json({
-        success: false,
-        message: "구강 스캔 사용 여부를 선택해 주세요.",
-      });
-    }
-    const usesOralScan = body.usesOralScan;
+    // 구강 스캔 여부 SSOT: 치과 대표 온보딩(practiceProfile) · BA.
+    // 이벤트 폼에서는 더 이상 받지 않음. 신청 시 프로필 스냅샷.
+    const authUsesOralScan = Boolean(authPp.usesOralScan);
+    const usesOralScan =
+      typeof body.usesOralScan === "boolean"
+        ? body.usesOralScan
+        : authUsesOralScan;
 
     // 로그인 치과: 본문 미입력이면 프로필·계정으로 채움
     if (authUser) {
@@ -620,8 +620,8 @@ export async function applyToEvent(req, res) {
       status: "received",
     });
 
-    // 로그인 신청: 회원 프로필·BA Org에 구강 스캔 여부 동기화(응답 후 부수 효과)
-    if (applicantUserId) {
+    // 로그인 신청: 본문에 명시된 경우에만 프로필·BA 동기화(온보딩이 SSOT)
+    if (applicantUserId && typeof body.usesOralScan === "boolean") {
       void syncPracticeUsesOralScan({
         userId: applicantUserId,
         businessAnchorId: authUser?.businessAnchorId || null,

@@ -12,7 +12,8 @@ import {
 } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { BusinessAddressFields } from "@/shared/components/business/settings/business/BusinessAddressFields";
 import {
   formatPhoneNumberInput,
@@ -22,7 +23,7 @@ import {
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircle2, Info, ScanLine } from "lucide-react";
 import { cn } from "@/shared/ui/cn";
 
 type PracticeForm = {
@@ -34,7 +35,8 @@ type PracticeForm = {
   address: string;
   addressDetail: string;
   zipCode: string;
-  usesOralScan: boolean;
+  /** null = 미선택(필수). 대표(owner) 온보딩에서만 수집 */
+  usesOralScan: boolean | null;
 };
 
 type PracticeField = Exclude<keyof PracticeForm, "usesOralScan">;
@@ -57,7 +59,7 @@ const emptyForm = (): PracticeForm => ({
   address: "",
   addressDetail: "",
   zipCode: "",
-  usesOralScan: false,
+  usesOralScan: null,
 });
 
 /** E.164(+82) / 82 시작 번호를 국내 0 시작으로 맞춘 뒤 표시 포맷 */
@@ -126,7 +128,8 @@ const isFormComplete = (form: PracticeForm) => {
       clinicPhone &&
       isValidPhoneNumber(clinicPhone) &&
       address &&
-      zipCode,
+      zipCode &&
+      form.usesOralScan !== null,
   );
 };
 
@@ -166,7 +169,11 @@ export const PracticeBusinessProfileStep = ({
         let address = String(profile?.address || "").trim();
         let addressDetail = String(profile?.addressDetail || "").trim();
         let zipCode = String(profile?.zipCode || "").trim();
-        let usesOralScan = Boolean(profile?.usesOralScan);
+        // 저장된 프로필이 있으면 복원, 신규 온보딩은 null(미선택)
+        let usesOralScan: boolean | null =
+          profile?.updatedAt != null
+            ? Boolean(profile?.usesOralScan)
+            : null;
 
         if (token) {
           const res = await request<{
@@ -207,7 +214,11 @@ export const PracticeBusinessProfileStep = ({
             address = String(pp.address || address).trim();
             addressDetail = String(pp.addressDetail || addressDetail).trim();
             zipCode = String(pp.zipCode || zipCode).trim();
-            usesOralScan = Boolean(pp.usesOralScan);
+            if (pp.updatedAt != null || profile?.updatedAt != null) {
+              usesOralScan = Boolean(pp.usesOralScan);
+            } else if (typeof pp.usesOralScan === "boolean") {
+              usesOralScan = pp.usesOralScan;
+            }
           }
         }
 
@@ -284,7 +295,15 @@ export const PracticeBusinessProfileStep = ({
       toast({
         title: "필수값을 확인해주세요",
         description:
-          "치과명, 대표원장님 성함, 담당직원명, 치과 전화, 담당자 휴대폰, 주소, 우편번호는 필수입니다.",
+          "치과명, 대표원장님 성함, 담당직원명, 치과 전화, 담당자 휴대폰, 주소, 우편번호, 구강 스캔 사용 여부는 필수입니다.",
+        variant: "destructive",
+      });
+      return false;
+    }
+    if (form.usesOralScan == null) {
+      toast({
+        title: "구강 스캔 사용 여부를 선택해 주세요",
+        description: "사용함 / 사용 안 함 중 하나를 선택해야 합니다.",
         variant: "destructive",
       });
       return false;
@@ -300,7 +319,7 @@ export const PracticeBusinessProfileStep = ({
       const address = form.address.trim();
       const addressDetail = form.addressDetail.trim();
       const zipCode = form.zipCode.trim();
-      const usesOralScan = Boolean(form.usesOralScan);
+      const usesOralScan = form.usesOralScan;
 
       const res = await request<{
         data?: Record<string, unknown>;
@@ -517,24 +536,68 @@ export const PracticeBusinessProfileStep = ({
         openMode="popup"
       />
 
-      <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3.5">
-        <Checkbox
-          className="mt-0.5"
-          checked={form.usesOralScan}
-          onCheckedChange={(v) =>
-            setForm((prev) => ({ ...prev, usesOralScan: v === true }))
+      <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <ScanLine className="h-4 w-4 text-primary-strong" />
+          <span className="text-sm font-medium text-slate-900">
+            구강 스캔 사용 여부
+          </span>
+          <Badge
+            variant="secondary"
+            className="rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-800 ring-1 ring-sky-100"
+          >
+            필수
+          </Badge>
+        </div>
+        <div className="flex gap-2 rounded-xl border border-sky-100 bg-sky-50/80 px-3 py-2 text-sm leading-relaxed text-sky-900">
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" />
+          <p>
+            사용 중이면 스캔바 등 디지털 지원을 안내합니다.
+            <br />
+            설정에서 언제든 변경할 수 있습니다.
+          </p>
+        </div>
+        <RadioGroup
+          value={
+            form.usesOralScan == null
+              ? undefined
+              : form.usesOralScan
+                ? "yes"
+                : "no"
           }
-        />
-        <span className="space-y-0.5">
-          <span className="block text-sm font-medium text-slate-900">
-            구강 스캐너를 사용하고 있습니다
-          </span>
-          <span className="block text-xs leading-relaxed text-slate-500">
-            사용 중이시면 스캔바 등 디지털 지원을 안내해 드립니다. 설정에서 언제든
-            변경할 수 있습니다.
-          </span>
-        </span>
-      </label>
+          onValueChange={(v) =>
+            setForm((prev) => ({ ...prev, usesOralScan: v === "yes" }))
+          }
+          className="grid gap-3 sm:grid-cols-2"
+        >
+          <label
+            htmlFor="onboarding-oral-scan-yes"
+            className={cn(
+              "flex cursor-pointer items-center gap-3 rounded-2xl border bg-white px-4 py-3.5 transition-colors",
+              form.usesOralScan === true
+                ? "border-sky-300 bg-sky-50/80"
+                : "border-slate-200",
+            )}
+          >
+            <RadioGroupItem value="yes" id="onboarding-oral-scan-yes" />
+            <span className="text-sm font-medium text-slate-900">사용함</span>
+          </label>
+          <label
+            htmlFor="onboarding-oral-scan-no"
+            className={cn(
+              "flex cursor-pointer items-center gap-3 rounded-2xl border bg-white px-4 py-3.5 transition-colors",
+              form.usesOralScan === false
+                ? "border-sky-300 bg-sky-50/80"
+                : "border-slate-200",
+            )}
+          >
+            <RadioGroupItem value="no" id="onboarding-oral-scan-no" />
+            <span className="text-sm font-medium text-slate-900">
+              사용 안 함
+            </span>
+          </label>
+        </RadioGroup>
+      </div>
     </div>
   );
 };

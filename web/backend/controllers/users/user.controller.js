@@ -606,76 +606,92 @@ async function updateProfile(req, res) {
           typeof req.user.practiceProfile === "object"
             ? req.user.practiceProfile
             : {};
-        const clinicName = String(
-          pp.clinicName || existingPp.clinicName || updateData.business || "",
-        ).trim();
-        const directorName = String(
-          pp.directorName || existingPp.directorName || "",
-        ).trim();
-        const staffName = String(
-          pp.staffName || existingPp.staffName || updateData.name || "",
-        ).trim();
-        const phone = String(
-          pp.phone || existingPp.phone || updateData.phoneNumber || "",
-        ).trim();
-        const clinicPhone = String(
-          pp.clinicPhone || existingPp.clinicPhone || "",
-        ).trim();
-        const address = String(pp.address || existingPp.address || "").trim();
-        const addressDetail = String(
-          pp.addressDetail || existingPp.addressDetail || "",
-        ).trim();
-        const zipCode = String(pp.zipCode || existingPp.zipCode || "").trim();
-        const usesOralScan =
-          typeof pp.usesOralScan === "boolean"
-            ? pp.usesOralScan
-            : Boolean(existingPp.usesOralScan);
 
-        if (
-          !clinicName ||
-          !directorName ||
-          !staffName ||
-          !phone ||
-          !clinicPhone ||
-          !address ||
-          !zipCode
-        ) {
-          return res.status(400).json({
-            success: false,
-            message:
-              "치과명, 대표원장님 성함, 담당직원명, 치과 전화, 담당자 휴대폰, 주소, 우편번호는 필수입니다.",
-          });
-        }
+        // 온보딩 사업자등록 후: 구강 스캔만 부분 갱신(전체 치과프로필 필수 아님)
+        const ppKeys = Object.keys(pp).filter((k) => pp[k] !== undefined);
+        const isOralScanOnly =
+          typeof pp.usesOralScan === "boolean" &&
+          ppKeys.every((k) => k === "usesOralScan" || k === "updatedAt");
 
-        const existingCreatedAt = existingPp.createdAt;
-        updateData.practiceProfile = {
-          clinicName,
-          directorName,
-          staffName,
-          phone,
-          clinicPhone,
-          address,
-          addressDetail,
-          zipCode,
-          usesOralScan,
-          createdAt: existingCreatedAt || new Date(),
-          updatedAt: new Date(),
-        };
-        updateData.business = clinicName;
-        if (!String(updateData.name || "").trim()) {
-          updateData.name = staffName;
-        }
-        if (!String(updateData.phoneNumber || "").trim()) {
-          updateData.phoneNumber = phone;
-        }
+        if (isOralScanOnly) {
+          updateData.practiceProfile = {
+            ...existingPp,
+            usesOralScan: pp.usesOralScan,
+            updatedAt: new Date(),
+            createdAt: existingPp.createdAt || new Date(),
+          };
+        } else {
+          const clinicName = String(
+            pp.clinicName || existingPp.clinicName || updateData.business || "",
+          ).trim();
+          const directorName = String(
+            pp.directorName || existingPp.directorName || "",
+          ).trim();
+          const staffName = String(
+            pp.staffName || existingPp.staffName || updateData.name || "",
+          ).trim();
+          const phone = String(
+            pp.phone || existingPp.phone || updateData.phoneNumber || "",
+          ).trim();
+          const clinicPhone = String(
+            pp.clinicPhone || existingPp.clinicPhone || "",
+          ).trim();
+          const address = String(pp.address || existingPp.address || "").trim();
+          const addressDetail = String(
+            pp.addressDetail || existingPp.addressDetail || "",
+          ).trim();
+          const zipCode = String(pp.zipCode || existingPp.zipCode || "").trim();
+          const usesOralScan =
+            typeof pp.usesOralScan === "boolean"
+              ? pp.usesOralScan
+              : Boolean(existingPp.usesOralScan);
 
-        // 의뢰자 Org SSOT: practiceProfile 완료 시 BusinessAnchor 보장.
-        if (
-          (isRequestorPracticeProfile || isPracticeRole) &&
-          !req.user?.requestorKind
-        ) {
-          updateData.requestorKind = "practice";
-          updateData.requestorServices = { free: false, paid: true };
+          if (
+            !clinicName ||
+            !directorName ||
+            !staffName ||
+            !phone ||
+            !clinicPhone ||
+            !address ||
+            !zipCode
+          ) {
+            return res.status(400).json({
+              success: false,
+              message:
+                "치과명, 대표원장님 성함, 담당직원명, 치과 전화, 담당자 휴대폰, 주소, 우편번호는 필수입니다.",
+            });
+          }
+
+          const existingCreatedAt = existingPp.createdAt;
+          updateData.practiceProfile = {
+            clinicName,
+            directorName,
+            staffName,
+            phone,
+            clinicPhone,
+            address,
+            addressDetail,
+            zipCode,
+            usesOralScan,
+            createdAt: existingCreatedAt || new Date(),
+            updatedAt: new Date(),
+          };
+          updateData.business = clinicName;
+          if (!String(updateData.name || "").trim()) {
+            updateData.name = staffName;
+          }
+          if (!String(updateData.phoneNumber || "").trim()) {
+            updateData.phoneNumber = phone;
+          }
+
+          // 의뢰자 Org SSOT: practiceProfile 완료 시 BusinessAnchor 보장.
+          if (
+            (isRequestorPracticeProfile || isPracticeRole) &&
+            !req.user?.requestorKind
+          ) {
+            updateData.requestorKind = "practice";
+            updateData.requestorServices = { free: false, paid: true };
+          }
         }
       }
     }

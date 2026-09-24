@@ -30,7 +30,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useToast } from "@/shared/hooks/use-toast";
 import {
   eventsApi,
@@ -285,7 +284,6 @@ export default function EventApplyPage() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const token = useAuthStore((s) => s.token);
   const user = useAuthStore((s) => s.user);
-  const setUser = useAuthStore((s) => s.setUser);
   const [event, setEvent] = useState<MarketingEvent | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -299,11 +297,6 @@ export default function EventApplyPage() {
   const [dealer, setDealer] = useState<EventPlaceFields>(() => {
     const draft = readEventApplyLocalDraft(slug, user?._id);
     return draft?.dealer ?? emptyPlace();
-  });
-  /** null = 미선택(필수). 로컬 초안이 있으면 복원 */
-  const [usesOralScan, setUsesOralScan] = useState<boolean | null>(() => {
-    const draft = readEventApplyLocalDraft(slug, user?._id);
-    return draft ? draft.usesOralScan : null;
   });
 
   const isSimpleway = slug === SIMPLEWAY_SAMPLE_SLUG;
@@ -323,11 +316,9 @@ export default function EventApplyPage() {
     const draft = keyed || anon;
     if (!draft) {
       setDealer(emptyPlace());
-      setUsesOralScan(null);
       return;
     }
     setDealer(draft.dealer);
-    setUsesOralScan(draft.usesOralScan);
     if (user?._id && anon) {
       writeEventApplyLocalDraft(slug, draft, user._id);
       clearEventApplyLocalDraft(slug, null);
@@ -340,23 +331,12 @@ export default function EventApplyPage() {
       Boolean(dealer.name) ||
       Boolean(dealer.representativeName) ||
       Boolean(dealer.phone);
-    if (usesOralScan == null && !hasDealer) {
+    if (!hasDealer) {
       clearEventApplyLocalDraft(slug, user?._id);
       return;
     }
-    writeEventApplyLocalDraft(
-      slug,
-      { usesOralScan, dealer },
-      user?._id,
-    );
-  }, [
-    alreadyApplied,
-    dealer,
-    done,
-    slug,
-    user?._id,
-    usesOralScan,
-  ]);
+    writeEventApplyLocalDraft(slug, { dealer }, user?._id);
+  }, [alreadyApplied, dealer, done, slug, user?._id]);
 
   useEffect(() => {
     if (!slug) return;
@@ -437,14 +417,6 @@ export default function EventApplyPage() {
     e.preventDefault();
     if (!event || submitting || !canApply || !isAuthenticated || !prefill)
       return;
-    if (usesOralScan == null) {
-      toast({
-        title: "구강 스캔 사용 여부를 선택해 주세요",
-        description: "사용함 / 사용 안 함 중 하나를 선택해야 신청할 수 있습니다.",
-        variant: "destructive",
-      });
-      return;
-    }
     setSubmitting(true);
     try {
       await eventsApi.apply(
@@ -454,20 +426,10 @@ export default function EventApplyPage() {
           directorName: prefill.directorName,
           dealer,
           applicantPhone: prefill.applicantPhone || prefill.practice.phone,
-          usesOralScan,
         },
         token,
       );
       clearEventApplyLocalDraft(event.slug, user?._id);
-      if (user) {
-        setUser({
-          ...user,
-          practiceProfile: {
-            ...(user.practiceProfile || {}),
-            usesOralScan,
-          },
-        });
-      }
       setDone(true);
       setAlreadyApplied(true);
       toast({
@@ -635,70 +597,6 @@ export default function EventApplyPage() {
             </div>
           ) : (
             <form onSubmit={onSubmit} className="space-y-5">
-              <Card className={cn(PUBLIC_CARD_CLASS, "rounded-3xl")}>
-                <CardHeader className="space-y-2">
-                  <CardTitle className="flex flex-wrap items-center gap-2 text-base text-slate-900">
-                    <ScanLine className="h-4 w-4 text-sky-600" />
-                    구강 스캔 사용 여부
-                    <Badge
-                      variant="secondary"
-                      className="rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-800 ring-1 ring-sky-100"
-                    >
-                      필수
-                    </Badge>
-                  </CardTitle>
-                  <div className="flex gap-2 rounded-2xl border border-sky-100 bg-sky-50/80 px-3 py-2.5 text-sm leading-relaxed text-sky-900">
-                    <Info className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" />
-                    <p>사용 중이면 스캔바도 함께 안내합니다.</p>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <RadioGroup
-                    value={
-                      usesOralScan == null
-                        ? undefined
-                        : usesOralScan
-                          ? "yes"
-                          : "no"
-                    }
-                    onValueChange={(v) => setUsesOralScan(v === "yes")}
-                    disabled={!canApply}
-                    className="grid gap-3 sm:grid-cols-2"
-                  >
-                    <label
-                      htmlFor="event-oral-scan-yes"
-                      className={cn(
-                        "flex cursor-pointer items-center gap-3 rounded-2xl border bg-slate-50/70 px-4 py-3.5 transition-colors",
-                        usesOralScan === true
-                          ? "border-sky-300 bg-sky-50/80"
-                          : "border-slate-200",
-                        !canApply && "cursor-not-allowed opacity-60",
-                      )}
-                    >
-                      <RadioGroupItem value="yes" id="event-oral-scan-yes" />
-                      <span className="text-sm font-medium text-slate-900">
-                        사용함
-                      </span>
-                    </label>
-                    <label
-                      htmlFor="event-oral-scan-no"
-                      className={cn(
-                        "flex cursor-pointer items-center gap-3 rounded-2xl border bg-slate-50/70 px-4 py-3.5 transition-colors",
-                        usesOralScan === false
-                          ? "border-sky-300 bg-sky-50/80"
-                          : "border-slate-200",
-                        !canApply && "cursor-not-allowed opacity-60",
-                      )}
-                    >
-                      <RadioGroupItem value="no" id="event-oral-scan-no" />
-                      <span className="text-sm font-medium text-slate-900">
-                        사용 안 함
-                      </span>
-                    </label>
-                  </RadioGroup>
-                </CardContent>
-              </Card>
-
               {showDealer ? (
                 <Card className={cn(PUBLIC_CARD_CLASS, "rounded-3xl")}>
                   <CardHeader className="space-y-2">
