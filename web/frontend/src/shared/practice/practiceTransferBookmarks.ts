@@ -1,12 +1,19 @@
 // related files:
 // - web/frontend/src/shared/components/practice/PracticeTransferBookmarkControl.tsx
+// - web/frontend/src/shared/components/practice/PracticeTransferBookmarkNavigateButton.tsx
 // - web/frontend/src/pages/practice/components/PracticeStatusFilterBadges.tsx
 // - web/backend/controllers/practiceTransfers/practiceTransferBookmark.controller.js
 // - 2026-09-14: 북마크 목록·hydrate·순회 헬퍼(전기간, 별도 컬렉션).
 // - 2026-09-14: apiFetch 래퍼를 items로 잘못 파싱해 리프레시 후 북마크가 비던 버그 수정.
+// - 2026-09-24: 5건 이상 드롭다운 선택(10행 표시·초과 스크롤) 상수.
 import { request } from "@/shared/api/apiClient";
 
 export const PRACTICE_TRANSFER_BOOKMARK_BADGE_KEY = "bookmark" as const;
+
+/** 이 개수 이상이면 순회 대신 드롭다운에서 고른다. */
+export const PRACTICE_TRANSFER_BOOKMARK_DROPDOWN_MIN_COUNT = 5;
+/** 드롭다운에 한 번에 보이는 최대 행 수(초과 시 스크롤). */
+export const PRACTICE_TRANSFER_BOOKMARK_DROPDOWN_VISIBLE_COUNT = 10;
 
 export type PracticeTransferBookmarkSide = "send" | "receive";
 

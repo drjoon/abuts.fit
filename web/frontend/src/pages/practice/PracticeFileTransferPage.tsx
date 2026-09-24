@@ -159,7 +159,6 @@ import { useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import {
   Trash2,
   RotateCcw,
-  Bookmark,
   BookmarkPlus,
   ChevronsUpDown,
   Check,
@@ -271,6 +270,7 @@ import { PracticeProsthesisFollowUpDialog } from "@/shared/components/practice/P
 import { canAppendProsthesisFollowUp, canManagePendingProsthesisFollowUp, getLatestPendingProsthesisFollowUp } from "@/shared/practice/prosthesisFollowUp";
 import { PracticeLabRatingControl } from "@/shared/components/practice/PracticeLabRatingControl";
 import { PracticeTransferBookmarkControl } from "@/shared/components/practice/PracticeTransferBookmarkControl";
+import { PracticeTransferBookmarkNavigateButton } from "@/shared/components/practice/PracticeTransferBookmarkNavigateButton";
 import {
   bookmarkIdSetFromItems,
   fetchPracticeTransferBookmarks,
@@ -459,6 +459,7 @@ import {
 import {
   PracticeTransferRequestCardMeta,
   PracticeTransferListPatientArrivalRow,
+  formatPracticeTransferListPatientWithTeeth,
   practiceTransferStatusBadgeClass,
   resolvePracticeTransferListPatientName,
   resolvePracticeTransferListToothNumbers,
@@ -5982,6 +5983,19 @@ export const PracticeFileTransferPage = ({
     [],
   );
 
+  const openBookmarkedTransfer = useCallback(
+    async (transfer: RecentTransferItem) => {
+      const transferId = String(transfer.transferId || "").trim();
+      if (!transferId) return;
+      bookmarkNavigateLastIdRef.current = transferId;
+      void handleOpenTransferDialog(transfer, {
+        preferredDockSide: "right",
+        returnToAllModal: true,
+      });
+    },
+    [handleOpenTransferDialog],
+  );
+
   const navigateNextBookmark = useCallback(async () => {
     let cache = bookmarkedTransferCache;
     if (!cache.length && bookmarkItems.length > 0) {
@@ -6001,19 +6015,66 @@ export const PracticeFileTransferPage = ({
       }
       return;
     }
-    const transferId = String(next.transferId || "").trim();
-    bookmarkNavigateLastIdRef.current = transferId;
-    void handleOpenTransferDialog(next, {
-      preferredDockSide: "right",
-      returnToAllModal: true,
-    });
+    await openBookmarkedTransfer(next);
   }, [
     bookmarkItems.length,
     bookmarkedTransferCache,
-    handleOpenTransferDialog,
+    openBookmarkedTransfer,
     refreshPracticeBookmarks,
     toast,
   ]);
+
+  const navigateBookmarkById = useCallback(
+    async (transferIdRaw: string) => {
+      const transferId = String(transferIdRaw || "").trim();
+      if (!transferId) return;
+      let cache = bookmarkedTransferCache;
+      if (!cache.length && bookmarkItems.length > 0) {
+        cache = await refreshPracticeBookmarks();
+      }
+      const next =
+        cache.find(
+          (row) => String(row.transferId || "").trim() === transferId,
+        ) || null;
+      if (!next) {
+        toast({
+          title: "북마크한 의뢰를 열 수 없습니다",
+          description: "의뢰가 삭제되었거나 권한이 없을 수 있습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+      await openBookmarkedTransfer(next);
+    },
+    [
+      bookmarkItems.length,
+      bookmarkedTransferCache,
+      openBookmarkedTransfer,
+      refreshPracticeBookmarks,
+      toast,
+    ],
+  );
+
+  const bookmarkNavigateOptions = useMemo(
+    () =>
+      bookmarkedTransferCache
+        .map((row) => {
+          const transferId = String(row.transferId || "").trim();
+          if (!transferId) return null;
+          const label =
+            formatPracticeTransferListPatientWithTeeth(
+              resolvePracticeTransferListPatientName(row),
+              resolvePracticeTransferListToothNumbers(row),
+            ) ||
+            transferId ||
+            "—";
+          return { transferId, label };
+        })
+        .filter(
+          (row): row is { transferId: string; label: string } => Boolean(row),
+        ),
+    [bookmarkedTransferCache],
+  );
 
   useEffect(() => {
     const onOpen = (evt: Event) => {
@@ -9401,8 +9462,6 @@ export const PracticeFileTransferPage = ({
   const bookmarkNavigateButton = (opts?: { mobile?: boolean }) => {
     const mobile = Boolean(opts?.mobile);
     const count = bookmarkItems.length;
-    const aria =
-      count > 0 ? `북마크 ${count}건` : "북마크";
     const className = mobile
       ? cn(
           "h-9 shrink-0 gap-1 rounded-full border-slate-200 bg-white shadow-sm",
@@ -9415,46 +9474,22 @@ export const PracticeFileTransferPage = ({
             "w-9 px-0 group-data-[wide=true]/hdr-actions:w-auto group-data-[wide=true]/hdr-actions:px-3",
           count > 0 && "border-sky-300 bg-sky-50/80",
         );
-    const button = (
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className={className}
-        aria-label={aria}
-        title="북마크한 의뢰(전기간). 클릭하면 하나씩 열어 순회합니다."
-        disabled={count === 0}
-        onClick={() => void navigateNextBookmark()}
-      >
-        <Bookmark
-          className={cn(
-            "h-4 w-4 shrink-0",
-            count > 0 && "fill-sky-600 text-sky-700",
-          )}
-        />
-        {!mobile ? (
-          <span className="hidden group-data-[wide=true]/hdr-actions:inline">
-            북마크
-          </span>
-        ) : null}
-        {count > 0 ? (
-          <Badge
-            variant="outline"
-            className="h-4 min-w-4 justify-center rounded-full border-sky-200 bg-sky-100 px-1 text-[10px] leading-none text-sky-800"
-          >
-            {count}
-          </Badge>
-        ) : null}
-      </Button>
-    );
-    if (mobile) return button;
     return (
-      <Tooltip>
-        <TooltipTrigger asChild>{button}</TooltipTrigger>
-        <TooltipContent side="bottom" className="text-xs">
-          북마크한 의뢰(전기간). 클릭하면 하나씩 열어 순회합니다.
-        </TooltipContent>
-      </Tooltip>
+      <PracticeTransferBookmarkNavigateButton
+        count={count}
+        options={bookmarkNavigateOptions}
+        onCycle={() => void navigateNextBookmark()}
+        onSelect={(transferId) => void navigateBookmarkById(transferId)}
+        onOpenChange={(open) => {
+          if (open && !bookmarkedTransferCache.length && bookmarkItems.length) {
+            void refreshPracticeBookmarks();
+          }
+        }}
+        buttonClassName={className}
+        showLabel={!mobile}
+        labelClassName="hidden group-data-[wide=true]/hdr-actions:inline"
+        withTooltip={!mobile}
+      />
     );
   };
 

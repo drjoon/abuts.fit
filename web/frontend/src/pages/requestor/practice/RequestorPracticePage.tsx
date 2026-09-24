@@ -196,7 +196,7 @@ import {
   type MouseEvent,
 } from "react";
 import { createPortal } from "react-dom";
-import { ChevronRight, Search, X, Bookmark } from "lucide-react";
+import { ChevronRight, Search, X } from "lucide-react";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
 import { DesignSoftwareSettingsDialog } from "@/features/requestSettings/DesignSoftwareSettingsDialog";
@@ -7126,6 +7126,16 @@ export function RequestorPracticeReceivePage({
     [],
   );
 
+  const openBookmarkedTransfer = useCallback(
+    async (transfer: ReceivedPracticeTransfer) => {
+      const transferId = String(transfer.transferId || "").trim();
+      if (!transferId) return;
+      bookmarkNavigateLastIdRef.current = transferId;
+      void openTransferDialog(transfer, { preferredDockSide: "right" });
+    },
+    [openTransferDialog],
+  );
+
   const navigateNextBookmark = useCallback(async () => {
     let cache = bookmarkedTransferCache;
     if (!cache.length && bookmarkItems.length > 0) {
@@ -7145,16 +7155,71 @@ export function RequestorPracticeReceivePage({
       }
       return;
     }
-    const transferId = String(next.transferId || "").trim();
-    bookmarkNavigateLastIdRef.current = transferId;
-    void openTransferDialog(next, { preferredDockSide: "right" });
+    await openBookmarkedTransfer(next);
   }, [
     bookmarkItems.length,
     bookmarkedTransferCache,
-    openTransferDialog,
+    openBookmarkedTransfer,
     refreshLabBookmarks,
     toast,
   ]);
+
+  const navigateBookmarkById = useCallback(
+    async (transferIdRaw: string) => {
+      const transferId = String(transferIdRaw || "").trim();
+      if (!transferId) return;
+      let cache = bookmarkedTransferCache;
+      if (!cache.length && bookmarkItems.length > 0) {
+        cache = await refreshLabBookmarks();
+      }
+      const next =
+        cache.find(
+          (row) => String(row.transferId || "").trim() === transferId,
+        ) || null;
+      if (!next) {
+        toast({
+          title: "북마크한 의뢰를 열 수 없습니다",
+          description: "의뢰가 삭제되었거나 권한이 없을 수 있습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+      await openBookmarkedTransfer(next);
+    },
+    [
+      bookmarkItems.length,
+      bookmarkedTransferCache,
+      openBookmarkedTransfer,
+      refreshLabBookmarks,
+      toast,
+    ],
+  );
+
+  const bookmarkNavigateOptions = useMemo(
+    () =>
+      bookmarkedTransferCache
+        .map((row) => {
+          const transferId = String(row.transferId || "").trim();
+          if (!transferId) return null;
+          const clinic =
+            row.matchingMode === "auto"
+              ? "자동 매칭"
+              : String(row.practice?.businessName || "").trim();
+          const label =
+            formatPracticeTransferListPatientWithTeeth(
+              resolvePracticeTransferListPatientName(row),
+              resolvePracticeTransferListToothNumbers(row),
+            ) ||
+            clinic ||
+            transferId ||
+            "—";
+          return { transferId, label };
+        })
+        .filter(
+          (row): row is { transferId: string; label: string } => Boolean(row),
+        ),
+    [bookmarkedTransferCache],
+  );
 
   useEffect(() => {
     const onOpen = (evt: Event) => {
@@ -8009,13 +8074,18 @@ export function RequestorPracticeReceivePage({
   const bookmarkNavigateButton = (opts?: { iconOnly?: boolean }) => {
     const iconOnly = Boolean(opts?.iconOnly);
     const count = bookmarkItems.length;
-    const aria = count > 0 ? `북마크 ${count}건` : "북마크";
-    const button = (
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className={cn(
+    return (
+      <PracticeTransferBookmarkNavigateButton
+        count={count}
+        options={bookmarkNavigateOptions}
+        onCycle={() => void navigateNextBookmark()}
+        onSelect={(transferId) => void navigateBookmarkById(transferId)}
+        onOpenChange={(open) => {
+          if (open && !bookmarkedTransferCache.length && bookmarkItems.length) {
+            void refreshLabBookmarks();
+          }
+        }}
+        buttonClassName={cn(
           "h-8 shrink-0 gap-1 text-xs",
           iconOnly
             ? count > 0
@@ -8026,38 +8096,11 @@ export function RequestorPracticeReceivePage({
               : "px-2 xl:px-3",
           count > 0 && "border-sky-300 bg-sky-50/80",
         )}
-        aria-label={aria}
-        title="북마크한 의뢰(전기간). 클릭하면 하나씩 열어 순회합니다."
-        disabled={count === 0}
-        onClick={() => void navigateNextBookmark()}
-      >
-        <Bookmark
-          className={cn(
-            "h-3.5 w-3.5 shrink-0",
-            count > 0 && "fill-sky-600 text-sky-700",
-          )}
-        />
-        {!iconOnly ? (
-          <span className="hidden xl:inline">북마크</span>
-        ) : null}
-        {count > 0 ? (
-          <Badge
-            variant="outline"
-            className="h-4 min-w-4 justify-center rounded-full border-sky-200 bg-sky-100 px-1 text-[10px] leading-none text-sky-800"
-          >
-            {count}
-          </Badge>
-        ) : null}
-      </Button>
-    );
-    if (iconOnly) return button;
-    return (
-      <Tooltip>
-        <TooltipTrigger asChild>{button}</TooltipTrigger>
-        <TooltipContent side="bottom" className="text-xs">
-          북마크한 의뢰(전기간). 클릭하면 하나씩 열어 순회합니다.
-        </TooltipContent>
-      </Tooltip>
+        iconClassName="h-3.5 w-3.5"
+        showLabel={!iconOnly}
+        labelClassName="hidden xl:inline"
+        withTooltip={!iconOnly}
+      />
     );
   };
 
