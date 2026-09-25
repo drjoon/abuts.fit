@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Outlet, useNavigate, useLocation } from "react-router-dom";
+import { Link, Outlet, useNavigate, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/useAuthStore";
 import { usePeriodStore } from "@/store/usePeriodStore";
@@ -16,6 +16,7 @@ import {
 } from "@/shared/layout/sidebarOpen";
 import { cn } from "@/shared/ui/cn";
 
+// - 2026-09-25: 로그인 셸 로고(사이드·모바일 헤더) 클릭 시 랜딩 `/`.
 // - 2026-09-21: 영업팀 사이드 — 대시보드 제거. 소개코드·가입은 성과. 딜러만 수수료 대시보드.
 // - 2026-09-21: 딜러·영업팀 사이드에서 소개·피치 제거. 피치는 대시보드 → 랜딩 `/#pitch`.
 // - 2026-09-21: 딜러·영업팀 사이드 IA 통일(현장·성과·협업·지원). 대시보드·오늘·거래처 / 성과·요구사항·정산 / 문의·설정.
@@ -1755,13 +1756,19 @@ export const DashboardLayout = () => {
           )}
         >
           <div className="p-4 lg:p-6 border-b border-border">
-            <AbutsLogo
-              showWordmark={!sidebarCollapsed}
-              className="flex-1 min-w-0"
-              iconClassName="h-9 w-9 lg:h-12 lg:w-12 flex-shrink-0"
-              wordmarkClassName="text-lg lg:text-xl whitespace-nowrap"
-              variant="light"
-            />
+            <Link
+              to="/"
+              aria-label="랜딩 메인으로 이동"
+              className="flex min-w-0 items-center rounded-md transition hover:opacity-90"
+            >
+              <AbutsLogo
+                showWordmark={!sidebarCollapsed}
+                className="flex-1 min-w-0"
+                iconClassName="h-9 w-9 lg:h-12 lg:w-12 flex-shrink-0"
+                wordmarkClassName="text-lg lg:text-xl whitespace-nowrap"
+                variant="light"
+              />
+            </Link>
           </div>
 
           <button
@@ -1904,11 +1911,17 @@ export const DashboardLayout = () => {
               <Menu className="h-5 w-5" />
             </Button>
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-              <AbutsLogo
-                iconClassName="h-8 w-8"
-                wordmarkClassName="text-sm font-bold"
-                variant="light"
-              />
+              <Link
+                to="/"
+                aria-label="랜딩 메인으로 이동"
+                className="pointer-events-auto rounded-md transition hover:opacity-90"
+              >
+                <AbutsLogo
+                  iconClassName="h-8 w-8"
+                  wordmarkClassName="text-sm font-bold"
+                  variant="light"
+                />
+              </Link>
             </div>
           </div>
 
