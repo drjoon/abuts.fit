@@ -17,6 +17,7 @@ export const {
   getMyFmDentalShipping,
   setMyFmDentalShipping,
   setMyAiTrainingConsent,
+  markMyAiTrainingFirstWorkStart,
   verifyMyPayoutAccount,
   clearMyBusinessLicense,
   checkBusinessNumberDuplicate,

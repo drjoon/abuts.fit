@@ -27,6 +27,7 @@ type ConsentPayload = {
   allowed?: boolean;
   locked?: boolean;
   needsPrompt?: boolean;
+  needsFirstWorkStartConfirm?: boolean;
 };
 
 type MeResponse = {
@@ -44,6 +45,11 @@ export type LabAiTrainingConsentPromptHandle = {
   ensureChoice: () => Promise<boolean>;
   /** 허용 안 함이면 사용료 청구를 한 번 더 확인한다. 취소하면 false. */
   confirmDeclinedFee: () => Promise<boolean>;
+  /**
+   * 기능 도입 이후 첫 작업시작. 예전 의뢰와 관계없이 사업자에 확인을 남긴다.
+   * 취소하거나 저장에 실패하면 false.
+   */
+  guardFirstWorkStart: () => Promise<boolean>;
 };
 
 export const LabAiTrainingConsentPrompt = forwardRef<
@@ -58,6 +64,7 @@ export const LabAiTrainingConsentPrompt = forwardRef<
   const [feeOpen, setFeeOpen] = useState(false);
   const statusRef = useRef<PromptStatus>("loading");
   const allowedRef = useRef(true);
+  const needsFirstWorkStartRef = useRef(false);
   const loadWaitersRef = useRef<Array<() => void>>([]);
   const choiceWaitersRef = useRef<Array<(ok: boolean) => void>>([]);
   const feeWaitersRef = useRef<Array<(ok: boolean) => void>>([]);
@@ -76,6 +83,7 @@ export const LabAiTrainingConsentPrompt = forwardRef<
 
   useEffect(() => {
     if (!token || user?.role === "internalLab") {
+      needsFirstWorkStartRef.current = false;
       finishLoad("done");
       return;
     }
@@ -91,6 +99,9 @@ export const LabAiTrainingConsentPrompt = forwardRef<
       const consent = res.ok ? res.data?.data?.aiTrainingConsent : undefined;
       const needsPrompt = Boolean(consent?.needsPrompt);
       allowedRef.current = consent?.allowed !== false;
+      needsFirstWorkStartRef.current = Boolean(
+        consent?.needsFirstWorkStartConfirm,
+      );
       finishLoad(needsPrompt ? "needed" : "done");
       if (needsPrompt) setOpen(true);
     };
@@ -139,6 +150,41 @@ export const LabAiTrainingConsentPrompt = forwardRef<
       return new Promise<boolean>((resolve) => {
         feeWaitersRef.current.push(resolve);
       });
+    },
+    guardFirstWorkStart: async () => {
+      await whenLoaded();
+      if (!needsFirstWorkStartRef.current) return true;
+      if (statusRef.current === "needed") {
+        setRequired(true);
+        setOpen(true);
+        const chosen = await new Promise<boolean>((resolve) => {
+          choiceWaitersRef.current.push(resolve);
+        });
+        if (!chosen) return false;
+      }
+      if (allowedRef.current === false) {
+        setFeeOpen(true);
+        const feeOk = await new Promise<boolean>((resolve) => {
+          feeWaitersRef.current.push(resolve);
+        });
+        if (!feeOk) return false;
+      }
+      const res = await apiFetch<MeResponse>({
+        path: "/api/businesses/me/ai-training-first-work-start",
+        method: "POST",
+        token,
+      });
+      if (!res.ok) {
+        toast({
+          title: "저장 실패",
+          description:
+            res.data?.message || "첫 작업시작 확인을 저장하지 못했습니다.",
+          variant: "destructive",
+        });
+        return false;
+      }
+      needsFirstWorkStartRef.current = false;
+      return true;
     },
   }));
 

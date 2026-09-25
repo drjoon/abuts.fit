@@ -234,6 +234,11 @@ const businessAnchorSchema = new mongoose.Schema(
       updatedAt: { type: Date, default: null },
       /** 기공의뢰 진입 확인 모달 또는 설정에서 답을 한 시각. 없으면 다시 묻는다. */
       confirmedAt: { type: Date, default: null },
+      /**
+       * 이 기능 이후 첫 작업시작에서 허용 여부를 확인한 시각.
+       * 예전 의뢰가 있어도 없으면 다음 작업시작에서 다시 묻는다.
+       */
+      firstWorkStartConfirmedAt: { type: Date, default: null },
     },
     // 월 참여 구독(해지 예약·다음 결제일). 활성 여부는 practiceTransferAutoMatchEnabled.
     autoMatchParticipationCancelAtPeriodEnd: {

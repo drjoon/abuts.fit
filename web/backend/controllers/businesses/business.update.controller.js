@@ -1839,6 +1839,7 @@ export async function setMyAiTrainingConsent(req, res) {
           locked: true,
           confirmed: true,
           needsPrompt: false,
+          needsFirstWorkStartConfirm: false,
           updatedAt: null,
         },
       });
@@ -1880,8 +1881,11 @@ export async function setMyAiTrainingConsent(req, res) {
         locked: false,
         confirmed: true,
         needsPrompt: false,
+        needsFirstWorkStartConfirm: !anchor?.aiTrainingConsent?.firstWorkStartConfirmedAt,
         updatedAt: now,
         confirmedAt: now,
+        firstWorkStartConfirmedAt:
+          anchor?.aiTrainingConsent?.firstWorkStartConfirmedAt || null,
       },
     });
   } catch (error) {
@@ -1889,6 +1893,78 @@ export async function setMyAiTrainingConsent(req, res) {
     return res.status(500).json({
       success: false,
       message: "학습 이용 허용을 저장하지 못했습니다.",
+    });
+  }
+}
+
+/** 기능 도입 이후 첫 작업시작 확인을 사업자에 남긴다. 예전 의뢰와 따로다. */
+export async function markMyAiTrainingFirstWorkStart(req, res) {
+  try {
+    const roleCheck = assertBusinessRole(req, res);
+    if (!roleCheck) return;
+
+    const freshUser = await User.findById(req.user._id)
+      .select({ businessAnchorId: 1, role: 1 })
+      .lean();
+    const businessAnchorId =
+      freshUser?.businessAnchorId || req.user.businessAnchorId;
+    if (!businessAnchorId) {
+      return res.status(400).json({
+        success: false,
+        message: "사업자 등록 후 이용할 수 있습니다.",
+      });
+    }
+
+    const anchor = await BusinessAnchor.findById(businessAnchorId).lean();
+    if (!anchor) {
+      return res.status(404).json({
+        success: false,
+        message: "사업자 정보를 찾을 수 없습니다.",
+      });
+    }
+
+    if (isInternalLabBusinessType(anchor)) {
+      return res.json({
+        success: true,
+        data: { needsFirstWorkStartConfirm: false },
+      });
+    }
+
+    const profile = resolveRequestorProfile({
+      anchorKind: anchor?.requestorKind,
+      anchorServices: anchor?.requestorServices,
+      anchorCaps: anchor?.requestorCapabilities,
+      businessVerified: String(anchor?.status || "").trim() === "verified",
+    });
+    const kind = normalizeRequestorKind(anchor?.requestorKind || profile?.kind);
+    if (kind !== "lab" && !canReceivePracticeTransfer(profile)) {
+      return res.status(403).json({
+        success: false,
+        message: "학습 이용 허용은 기공소 계정에서만 바꿀 수 있습니다.",
+      });
+    }
+
+    const existing = anchor?.aiTrainingConsent?.firstWorkStartConfirmedAt;
+    const now = existing ? new Date(existing) : new Date();
+    if (!existing) {
+      await BusinessAnchor.updateOne(
+        { _id: anchor._id },
+        { $set: { "aiTrainingConsent.firstWorkStartConfirmedAt": now } },
+      );
+      invalidateMyBusinessCache(req.user._id);
+    }
+    return res.json({
+      success: true,
+      data: {
+        needsFirstWorkStartConfirm: false,
+        firstWorkStartConfirmedAt: now,
+      },
+    });
+  } catch (error) {
+    console.error("[markMyAiTrainingFirstWorkStart]", error);
+    return res.status(500).json({
+      success: false,
+      message: "첫 작업시작 확인을 저장하지 못했습니다.",
     });
   }
 }

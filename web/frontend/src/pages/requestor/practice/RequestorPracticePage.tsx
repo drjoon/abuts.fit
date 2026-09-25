@@ -5249,20 +5249,9 @@ export function RequestorPracticeReceivePage({
           selectedTransfer.isDownloaded ||
           selectedTransfer.requestorDownloadedAt,
       );
-    const createdTs = (row: ReceivedPracticeTransfer) => {
-      const ts = new Date(row.createdAt || "").getTime();
-      return Number.isFinite(ts) ? ts : Number.POSITIVE_INFINITY;
-    };
-    const selectedCreatedTs = createdTs(selectedTransfer);
-    const isFirstCase = transfers.every(
-      (row) => createdTs(row) >= selectedCreatedTs,
-    );
-    if (!alreadyStarted && isFirstCase) {
-      const prompt = aiTrainingConsentPromptRef.current;
-      const chosen = await prompt?.ensureChoice();
-      if (!chosen) return;
-      const feeOk = await prompt?.confirmDeclinedFee();
-      if (!feeOk) return;
+    if (!alreadyStarted) {
+      const ready = await aiTrainingConsentPromptRef.current?.guardFirstWorkStart();
+      if (!ready) return;
     }
     setAcceptBusy(true);
     try {
@@ -5283,7 +5272,6 @@ export function RequestorPracticeReceivePage({
     resolveTransferChatRoom,
     selectedTransfer,
     toast,
-    transfers,
   ]);
 
   const handleConfirmLabRemakeCreate = useCallback(
