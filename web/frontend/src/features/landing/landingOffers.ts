@@ -255,7 +255,7 @@ export const landingOffers: LandingOffer[] = [
     heroEyebrow: "SIMPLEWAY",
     heroTitle: "직관적인 수술과 보철",
     heroBody: [
-      "심플웨이로 원하는 자리에 픽스쳐를 심고,",
+      "심플웨이로 원하는 자리에 픽스쳐를 심으면,",
       "어벗츠 어벗과 어벗츠 보철이 편안하게 올라갑니다.",
     ],
     line: "식립 위치와 어벗 선택을 간결한 흐름으로.",
