@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/backend/controllers/practiceTransfers/practiceTransferSettings.controller.js
+// - 2026-09-26: 디자인+생산 이동 라벨 — 기공소 어벗츠로부터.
 // - 2026-09-05: 프리셋 삭제 — 로컬 dirty 중 서버 GET이 목록을 되살리지 않음.
 // - 2026-08-29: 디자인+생산 클릭 — 치과「구강스캔으로」·기공소「치과로부터 수신」.
 // - 2026-08-13: 어벗생산의뢰 모달=생산만 고정. 디자인+생산 클릭은 구강스캔/수신으로 이동.
@@ -102,7 +103,7 @@ export function NewRequestDesignAbutmentFields({
   const { kind: requestorKind } = useRequestorBusinessAccess();
   const isLabRequestor = requestorKind === "lab";
   const oralScanPageLabel = isLabRequestor
-    ? "치과로부터"
+    ? "어벗츠로부터"
     : "기공소에";
   const oralScanPageHref = isLabRequestor
     ? authUser?.role === "internalLab"

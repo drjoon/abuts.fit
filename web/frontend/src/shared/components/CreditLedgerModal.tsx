@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-26: 기공소 수신 유형 — 기공의뢰-어벗츠하청 → 기공의뢰-어벗츠로부터.
 // - 2026-09-20: 정산 세부 내역 — 기공소 뷰로 플랫폼 수수료·수령액 표시.
 // - 2026-09-20: 소비·정산 적립 완료/보류 푸터 — 한 줄 줄바꿈 대신 항상 2줄.
 // - 2026-09-20: 기공소 정산 적립 카드 — 완료/보류 분리. 소비 완료/보류는 치과만(결제 HOLD).
@@ -499,9 +500,9 @@ type LedgerDisplayRow = {
   item: CreditLedgerItem;
 };
 
-/** 사이드바 SSOT: 치과 기공소에 ↔ 기공소 치과로부터 */
+/** 사이드바 SSOT: 치과 기공소에 ↔ 기공소 어벗츠로부터 */
 const PRACTICE_TRANSFER_TYPE_LABEL = "기공의뢰-기공소에";
-const LAB_RECEIVE_TYPE_LABEL = "기공의뢰-어벗츠하청";
+const LAB_RECEIVE_TYPE_LABEL = "기공의뢰-어벗츠로부터";
 const LAB_REMAKE_CHARGE_TYPE_LABEL = "리메이크 청구";
 /** 사이드바 SSOT: 치과 어벗츠에 ↔ 기공소 어벗츠로 */
 const ABUTMENT_DESIGN_TYPE_LABEL = "기공의뢰-어벗츠에";

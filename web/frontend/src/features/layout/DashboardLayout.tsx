@@ -16,6 +16,7 @@ import {
 } from "@/shared/layout/sidebarOpen";
 import { cn } from "@/shared/ui/cn";
 
+// - 2026-09-26: 기공소 기공의뢰 하위 — 어벗츠 하청 → 어벗츠로부터.
 // - 2026-09-25: 로그인 셸 로고(사이드·모바일 헤더) 클릭 시 랜딩 `/`.
 // - 2026-09-21: 영업팀 사이드 — 대시보드 제거. 소개코드·가입은 성과. 딜러만 수수료 대시보드.
 // - 2026-09-21: 딜러·영업팀 사이드에서 소개·피치 제거. 피치는 대시보드 → 랜딩 `/#pitch`.
@@ -252,9 +253,9 @@ const buildLabGigongRequestSidebarGroup = (
   children: [
     {
       icon: Building2,
-      label: "어벗츠 하청",
+      label: "어벗츠로부터",
       href: receiveHref,
-      tooltip: "어벗츠기공소 하청으로 받은 기공의뢰",
+      tooltip: "어벗츠로부터 받은 기공의뢰",
       accent: "기공",
       guideTourSatellite: "lab_calendar",
     },

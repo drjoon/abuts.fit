@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-26: 기공소 구강스캔 안내 라벨 — 치과로부터 → 어벗츠로부터.
 // - 2026-08-21: 아노 토글 시 기존 첨부 카드에도 동기화(툴바 ON인데 제출 OFF race/혼선 방지). 첨부 시드는 툴바 값 우선.
 // - 2026-08-19: 기공소·어벗츠기공소도 상단 생산 현황 헤더(기간·출고·완료·불완전가공). 가입 배너는 수신 페이지.
 // - 2026-08-19: 의뢰하기 클릭 즉시 입력 중 중복 체크 무효화(성공 토스트+중복 모달 동시 표시 방지).
@@ -124,9 +125,9 @@ const NewRequestPageContent = () => {
   const guideTour = useGuideTour();
   const isLabRequestor = requestorKind === "lab";
   const isPracticeRequestor = requestorKind === "practice";
-  /** 사이드바 SSOT: 치과=기공소에, 기공소=치과로부터 */
+  /** 사이드바 SSOT: 치과=기공소에, 기공소=어벗츠로부터 */
   const oralScanPageLabel = isLabRequestor
-    ? "치과로부터"
+    ? "어벗츠로부터"
     : "기공소에";
   const oralScanPageHref = isLabRequestor
     ? authUser?.role === "internalLab"

@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/practice/PracticeToothWorkGuideTourBanner.tsx
 // - web/frontend/src/shared/guideTour/GuideTourProvider.tsx
 // change-log:
+// - 2026-09-26: lab_calendar — 제목 「기공의뢰 · 어벗츠로부터」.
 // - 2026-09-14: remake·lab_remake — 180일 동일건 치과↔기공소 무료·어벗츠 1만원.
 // - 2026-09-12: remake·lab_remake — 90일 동일건 치과↔기공소 무료·어벗츠 1만원 정책 반영.
 // - 2026-09-12: abutment·abutment_order 제목 「기공의뢰 · 어벗츠에/어벗츠로」·힌트·스토어 카피 갱신.
@@ -264,7 +265,7 @@ export const LAB_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   // —— 챕터1: 수신 캘린더(상세 전) ——
   {
     id: "lab_calendar",
-    title: "기공의뢰 · 치과로부터",
+    title: "기공의뢰 · 어벗츠로부터",
     hint: "오늘 날짜에 있는 치과 의뢰를 눌러 상세·작업시작·채팅을 이어갑니다.",
     path: LAB_RECEIVE_PATH,
     target: "lab_calendar_item",
@@ -343,7 +344,7 @@ export const LAB_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   {
     id: "credits_stats",
     title: "정산 · 통계",
-    hint: "치과로부터·어벗츠로 통계를 확인합니다.",
+    hint: "어벗츠로부터·어벗츠로 통계를 확인합니다.",
     path: `${CREDITS_PATH}?tab=stats`,
     target: "credits_stats",
     advance: "next",
@@ -384,7 +385,7 @@ export const LAB_GUIDE_TOUR_STEPS: readonly GuideTourStepDef[] = [
   {
     id: "complete",
     title: "가이드투어 완료",
-    hint: "투어를 모두 마쳤습니다. 확인하면 「치과로부터」로 이동합니다.",
+    hint: "투어를 모두 마쳤습니다. 확인하면 「어벗츠로부터」로 이동합니다.",
     target: null,
     advance: "next",
   },

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-26: 기공소 수신 구역 제목 — 어벗츠 하청 → 어벗츠로부터.
 // - 2026-09-20: 보철 유형별 부제 — 금액=견적 라인, 건수=의뢰(유형) 기준 안내.
 // - 2026-09-20: 유형별 막대 maxBarSize — 단일 유형이 차트 전체를 채우던 표시 수정.
 // - 2026-09-20: 요약 카드 행 여백 확대(overflow 밖 px-1.5 + 안쪽 p-1).
@@ -834,10 +835,10 @@ export function CreditStatisticsTab() {
         label="의뢰건수"
         value={`${settlementOrderCount.toLocaleString("ko-KR")}건`}
         hint="안내"
-        hintTooltip="어벗츠 하청·정산 적립이 확정된 기공의뢰 건수입니다."
+        hintTooltip="어벗츠로부터 받은 기공의뢰 중 정산 적립이 확정된 건수입니다."
         onClick={() =>
           openDrillDown({
-            title: "어벗츠 하청 내역",
+            title: "어벗츠로부터 내역",
             filters: {
               ...filterBase,
               statsCategory: "settlement_earn",
@@ -853,7 +854,7 @@ export function CreditStatisticsTab() {
       {filterBar}
 
       <StatsFlowSection
-        title="어벗츠 하청"
+        title="어벗츠로부터"
         subtitle="어벗츠 → 기공소 · 하청(매입) 정산"
         accent="기공"
         icon={Building2}
@@ -918,7 +919,7 @@ export function CreditStatisticsTab() {
           >
             <HorizontalBarList
               rows={stats?.byPartner || []}
-              emptyHint="어벗츠 하청·정산 적립이 있을 때 병원별로 표시됩니다."
+              emptyHint="어벗츠로부터 받은 기공의뢰의 정산 적립이 있을 때 병원별로 표시됩니다."
               onRowClick={(row) =>
                 openDrillDown({
                   title: `${row.label} 내역`,
