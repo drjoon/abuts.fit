@@ -5258,8 +5258,11 @@ export function RequestorPracticeReceivePage({
       (row) => createdTs(row) >= selectedCreatedTs,
     );
     if (!alreadyStarted && isFirstCase) {
-      const chosen = await aiTrainingConsentPromptRef.current?.ensureChoice();
+      const prompt = aiTrainingConsentPromptRef.current;
+      const chosen = await prompt?.ensureChoice();
       if (!chosen) return;
+      const feeOk = await prompt?.confirmDeclinedFee();
+      if (!feeOk) return;
     }
     setAcceptBusy(true);
     try {

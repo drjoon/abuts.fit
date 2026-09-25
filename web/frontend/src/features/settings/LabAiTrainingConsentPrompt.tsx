@@ -1,4 +1,4 @@
-// 기공의뢰 진입 확인은 닫기·나중에로 넘길 수 있다.
+// 기공의뢰 진입 확인은 오른쪽 위 X·바깥 클릭으로 넘길 수 있다.
 // 답을 하기 전에는 첫 의뢰 작업시작만 허용/허용 안 함을 강제한다.
 // 어벗츠기공본부는 항상 허용이라 묻지 않는다.
 import {
@@ -9,13 +9,13 @@ import {
   useState,
 } from "react";
 import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -40,8 +40,10 @@ type MeResponse = {
 type PromptStatus = "loading" | "needed" | "done";
 
 export type LabAiTrainingConsentPromptHandle = {
-  /** 아직 답을 안 했으면 닫기·나중에 없이 고를 때까지 기다린다. */
+  /** 아직 답을 안 했으면 X·바깥 클릭 없이 고를 때까지 기다린다. */
   ensureChoice: () => Promise<boolean>;
+  /** 허용 안 함이면 사용료 청구를 한 번 더 확인한다. 취소하면 false. */
+  confirmDeclinedFee: () => Promise<boolean>;
 };
 
 export const LabAiTrainingConsentPrompt = forwardRef<
@@ -53,9 +55,13 @@ export const LabAiTrainingConsentPrompt = forwardRef<
   const [open, setOpen] = useState(false);
   const [required, setRequired] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [feeOpen, setFeeOpen] = useState(false);
   const statusRef = useRef<PromptStatus>("loading");
+  const allowedRef = useRef(true);
   const loadWaitersRef = useRef<Array<() => void>>([]);
   const choiceWaitersRef = useRef<Array<(ok: boolean) => void>>([]);
+  const feeWaitersRef = useRef<Array<(ok: boolean) => void>>([]);
+  const allowButtonRef = useRef<HTMLButtonElement>(null);
   const pct = resolveLabDirectPlatformFeePct(
     windowInfo?.feeRates?.directPlatformFeeRate != null
       ? Number(windowInfo.feeRates.directPlatformFeeRate) * 100
@@ -82,9 +88,9 @@ export const LabAiTrainingConsentPrompt = forwardRef<
         skipCache: true,
       });
       if (!mounted) return;
-      const needsPrompt = Boolean(
-        res.ok && res.data?.data?.aiTrainingConsent?.needsPrompt,
-      );
+      const consent = res.ok ? res.data?.data?.aiTrainingConsent : undefined;
+      const needsPrompt = Boolean(consent?.needsPrompt);
+      allowedRef.current = consent?.allowed !== false;
       finishLoad(needsPrompt ? "needed" : "done");
       if (needsPrompt) setOpen(true);
     };
@@ -98,6 +104,8 @@ export const LabAiTrainingConsentPrompt = forwardRef<
     return () => {
       const waiters = choiceWaitersRef.current.splice(0);
       waiters.forEach((resolve) => resolve(false));
+      const feeWaiters = feeWaitersRef.current.splice(0);
+      feeWaiters.forEach((resolve) => resolve(false));
     };
   }, []);
 
@@ -108,6 +116,12 @@ export const LabAiTrainingConsentPrompt = forwardRef<
     });
   };
 
+  const settleFee = (ok: boolean) => {
+    setFeeOpen(false);
+    const waiters = feeWaitersRef.current.splice(0);
+    waiters.forEach((resolve) => resolve(ok));
+  };
+
   useImperativeHandle(ref, () => ({
     ensureChoice: async () => {
       await whenLoaded();
@@ -116,6 +130,14 @@ export const LabAiTrainingConsentPrompt = forwardRef<
       setOpen(true);
       return new Promise<boolean>((resolve) => {
         choiceWaitersRef.current.push(resolve);
+      });
+    },
+    confirmDeclinedFee: async () => {
+      await whenLoaded();
+      if (allowedRef.current !== false) return true;
+      setFeeOpen(true);
+      return new Promise<boolean>((resolve) => {
+        feeWaitersRef.current.push(resolve);
       });
     },
   }));
@@ -145,10 +167,13 @@ export const LabAiTrainingConsentPrompt = forwardRef<
         return;
       }
       statusRef.current = "done";
+      allowedRef.current = allowed;
+      const wasRequired = required;
       setOpen(false);
       setRequired(false);
       const waiters = choiceWaitersRef.current.splice(0);
       waiters.forEach((resolve) => resolve(true));
+      if (wasRequired && !allowed) return;
       toast({
         title: allowed ? "학습 이용을 허용했습니다" : "학습 이용을 껐습니다",
         description: allowed
@@ -167,27 +192,41 @@ export const LabAiTrainingConsentPrompt = forwardRef<
   };
 
   return (
-    <AlertDialog open={open} onOpenChange={(next) => {
-      if (!next) dismiss();
-    }}>
-      <AlertDialogContent
-        className="z-[400]"
+    <>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) dismiss();
+      }}
+    >
+      <DialogContent
+        className="z-[400] sm:max-w-[calc(32rem+2.5em)]"
         overlayClassName="z-[400]"
+        hideClose={required}
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          allowButtonRef.current?.focus();
+        }}
         onEscapeKeyDown={(event) => {
           if (required) event.preventDefault();
         }}
         onPointerDownOutside={(event) => {
           if (required) event.preventDefault();
         }}
+        onInteractOutside={(event) => {
+          if (required) event.preventDefault();
+        }}
       >
-        <AlertDialogHeader>
-          <AlertDialogTitle>보철 디자인 학습 이용</AlertDialogTitle>
-          <AlertDialogDescription asChild>
+        <DialogHeader className={required ? "space-y-0" : "space-y-0 pr-8"}>
+          <DialogTitle>AI 학습 이용 동의</DialogTitle>
+          <div className="h-[1lh]" aria-hidden />
+          <DialogDescription asChild>
             <p>
-              작업 완료 때 올리는 디자인 3d 모델을 학습에 써도 된다고
-              허용합니다.
+              작업 완료 때 올리는 3d 모델을 <strong className="font-semibold text-foreground">AI 학습</strong>에 사용하도록 허용합니다.
               <br />
               허용하면 플랫폼 사용료 {pct}%가 면제됩니다.
+              <br />
+              추후 <strong className="font-semibold text-foreground">설정-AI</strong>에서 변경할 수 있습니다.
               {required ? (
                 <>
                   <br />
@@ -195,31 +234,9 @@ export const LabAiTrainingConsentPrompt = forwardRef<
                 </>
               ) : null}
             </p>
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter className="flex-col gap-2 sm:flex-row sm:justify-between sm:space-x-0">
-          {required ? (
-            <span />
-          ) : (
-            <div className="flex gap-2">
-              <Button
-                type="button"
-                variant="ghost"
-                disabled={saving}
-                onClick={dismiss}
-              >
-                닫기
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={saving}
-                onClick={dismiss}
-              >
-                나중에
-              </Button>
-            </div>
-          )}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-end sm:space-x-0">
           <div className="flex justify-end gap-2">
             <Button
               type="button"
@@ -230,6 +247,7 @@ export const LabAiTrainingConsentPrompt = forwardRef<
               허용 안 함
             </Button>
             <Button
+              ref={allowButtonRef}
               type="button"
               disabled={saving}
               onClick={() => void choose(true)}
@@ -237,8 +255,44 @@ export const LabAiTrainingConsentPrompt = forwardRef<
               허용
             </Button>
           </div>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    <Dialog
+      open={feeOpen}
+      onOpenChange={(next) => {
+        if (!next) settleFee(false);
+      }}
+    >
+      <DialogContent
+        className="z-[400] sm:max-w-[calc(32rem+2.5em)]"
+        overlayClassName="z-[400]"
+      >
+        <DialogHeader className="space-y-0 pr-8">
+          <DialogTitle>AI 학습 이용 동의</DialogTitle>
+          <div className="h-[1lh]" aria-hidden />
+          <DialogDescription asChild>
+            <p>
+              AI 학습 이용 부동의시 플랫폼 사용료 {pct}%가 청구됩니다.
+            </p>
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-end sm:space-x-0">
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => settleFee(false)}
+            >
+              취소
+            </Button>
+            <Button type="button" onClick={() => settleFee(true)}>
+              확인
+            </Button>
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 });
