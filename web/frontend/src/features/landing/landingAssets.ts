@@ -36,7 +36,7 @@ export const LANDING_SW_CATALOG_ASSEMBLY =
   "/landing/simpleway/catalog-assembly.png";
 /** 히어로 — 어벗츠 커스텀어벗. 심플어벗 조립도에서 어벗만 바꾼 컷 */
 export const LANDING_SW_CUSTOM_ASSEMBLY =
-  "/landing/simpleway/gribo-custom-assembly.png?v=18";
+  "/landing/simpleway/gribo-custom-assembly.png?v=19";
 /** Flow Chart 직경 라인 (10→6, 맨 아래 6=노랑) */
 export const LANDING_SW_FLOW_ROWS = [
   {
