@@ -1058,7 +1058,7 @@ function FlowChartSection({ chart }: { chart: NonNullable<LandingOffer["flowChar
               aria-label={
                 expanded
                   ? "접어서 노랑(6) 라인만 보기"
-                  : "클릭하면 직경 10·9·8·7·6 전체 Flow Chart"
+                  : "클릭하면 직경 6·7·8·9·10 전체 표시"
               }
               className="mt-4 cursor-pointer rounded-xl bg-white px-2 py-3 outline-none transition-colors hover:bg-white focus-visible:ring-2 focus-visible:ring-sky-400 focus-visible:ring-offset-2 sm:px-3 sm:py-4 [overflow-anchor:none]"
               onMouseDown={suppressFocusScroll}
@@ -1093,7 +1093,7 @@ function FlowChartSection({ chart }: { chart: NonNullable<LandingOffer["flowChar
             <p className={cn("mt-2.5 pb-5 text-center text-[13px] sm:pb-6", SKY.accent)}>
               {expanded
                 ? "접어서 노랑(6) 라인만 보기"
-                : "클릭하면 직경 10·9·8·7·6 전체 Flow Chart"}
+                : "클릭하면 직경 6·7·8·9·10 전체 표시"}
             </p>
           </div>
         </article>
@@ -1219,7 +1219,7 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
                   />
                 </div>
               </div>
-              <LandingScrollCue />
+              <LandingScrollCue tone="onLight" />
             </div>
           ) : (
           <div className="relative min-h-[calc(100svh-3.5rem)] overflow-hidden sm:min-h-[calc(100svh-4rem)]">
@@ -1420,23 +1420,35 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
                     {spec.swatches?.length ? (
                       <DiameterDots swatches={spec.swatches} />
                     ) : Array.isArray(spec.value) ? (
-                      spec.value.map((line, index) => (
-                        <span key={typeof line === "string" ? line : line.lead}>
-                          {index > 0 ? <br /> : null}
-                          {typeof line === "string" ? (
-                            line
+                      <span className="flex flex-col items-center gap-2.5">
+                        {spec.value.map((line) =>
+                          typeof line === "string" ? (
+                            <span key={line}>{line}</span>
                           ) : (
-                            <span className="inline-flex flex-wrap items-center justify-center gap-1.5">
+                            <span
+                              key={line.lead}
+                              className="inline-flex flex-wrap items-center justify-center gap-1.5"
+                            >
                               {line.lead ? <span>{line.lead}</span> : null}
                               <DiameterDots swatches={line.swatches} />
                             </span>
-                          )}
-                        </span>
-                      ))
+                          ),
+                        )}
+                      </span>
                     ) : (
                       spec.value
                     )}
                   </dd>
+                  {spec.note?.length ? (
+                    <p className="mt-3 break-keep text-[12px] font-normal leading-snug text-slate-500">
+                      {spec.note.map((line, index) => (
+                        <span key={line}>
+                          {index > 0 ? <br /> : null}
+                          {line}
+                        </span>
+                      ))}
+                    </p>
+                  ) : null}
                 </div>
               ))}
             </dl>

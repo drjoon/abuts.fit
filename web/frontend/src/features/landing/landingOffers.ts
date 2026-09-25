@@ -200,11 +200,12 @@ export type LandingOffer = {
     endSec: number;
     playbackRate: number;
   };
-  /** value가 배열이면 문장·항목 단위로 줄을 나눈다. swatches·줄 안 swatches는 숫자 동그라미. */
+  /** value가 배열이면 문장·항목 단위로 줄을 나눈다. swatches·줄 안 swatches는 숫자 동그라미. note는 문장 단위. */
   specs?: Array<{
     label: string;
     value: string | SpecLine[];
     swatches?: SpecSwatch[];
+    note?: string[];
   }>;
   glossary?: OfferGlossary;
   faq?: Array<{ q: string; a: string | string[] }>;
@@ -310,6 +311,10 @@ export const landingOffers: LandingOffer[] = [
           diameterDot("8"),
           diameterDot("9"),
           diameterDot("10"),
+        ],
+        note: [
+          "위 숫자는 제품의 실직경이 아니라",
+          "최종 보철의 근원심경을 의미합니다.",
         ],
       },
       {
