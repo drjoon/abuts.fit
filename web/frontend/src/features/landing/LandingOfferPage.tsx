@@ -940,7 +940,7 @@ function FlowChartSection({ chart }: { chart: NonNullable<LandingOffer["flowChar
   const [expanded, setExpanded] = useState(false);
   const mediaRef = useRef<HTMLDivElement>(null);
   const pinViewportTopRef = useRef<number | null>(null);
-  const fullChartSrc = "/landing/simpleway/catalog-flow-chart.png?v=9";
+  const fullChartSrc = "/landing/simpleway/catalog-flow-chart.png?v=10";
   const collapsedRows = chart.rows.filter((row) => row.id === chart.defaultRowId);
 
   const restoreScrollPin = () => {
@@ -1018,7 +1018,7 @@ function FlowChartSection({ chart }: { chart: NonNullable<LandingOffer["flowChar
   useEffect(() => {
     const urls = [
       fullChartSrc,
-      ...chart.rows.map((row) => `${row.src}?v=9`),
+      ...chart.rows.map((row) => `${row.src}?v=10`),
     ];
     for (const src of urls) {
       const img = new Image();
@@ -1083,17 +1083,22 @@ function FlowChartSection({ chart }: { chart: NonNullable<LandingOffer["flowChar
                 {collapsedRows.map((row) => (
                   <img
                     key={row.id}
-                    src={`${row.src}?v=9`}
+                    src={`${row.src}?v=10`}
                     alt={row.alt}
                     className="block h-auto w-full object-contain"
                   />
                 ))}
               </div>
             </div>
-            <p className={cn("mt-2.5 pb-5 text-center text-[13px] sm:pb-6", SKY.accent)}>
+            <p className={cn("mt-2.5 text-center text-[13px]", SKY.accent)}>
               {expanded
                 ? "접어서 노랑(6) 라인만 보기"
                 : "클릭하면 직경 6·7·8·9·10 전체 표시"}
+            </p>
+            <p className="mt-1.5 break-keep pb-5 text-center text-[12px] font-normal leading-snug text-slate-500 sm:pb-6">
+              위 숫자는 제품의 실직경이 아니라
+              <br />
+              최종 보철의 근원심경을 의미합니다.
             </p>
           </div>
         </article>
