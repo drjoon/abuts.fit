@@ -139,6 +139,7 @@ const toDialogFiles = (
       uploadBatchId: file.uploadBatchId || null,
       uploadedAt: file.uploadedAt || null,
       trashedAt: file.trashedAt || null,
+      scanRole: file.scanRole || null,
     };
   });
 

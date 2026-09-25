@@ -3,6 +3,7 @@
 // - web/backend/jobs/practiceTransferArrivalAutoCompleteWorker.js
 // - web/backend/utils/practiceTransferArrivalDates.js
 // change-log:
+// - 2026-09-26: 보철 슬롯이 남으면 작업완료 거절. 파일에 prosthesisType을 남긴다.
 // - 2026-09-02: 작업완료 수동 CTA 폐지. 치과도착일 경과(당일 제외) 시 자동 완료. CA 미업로드는 기한만료.
 import { Types } from "mongoose";
 import PracticeTransfer from "../models/practiceTransfer.model.js";
@@ -34,6 +35,10 @@ import {
 } from "../utils/practiceTransferArrivalAutoComplete.js";
 import { expirePracticeTransfersPastArrivalDeadline } from "./practiceTransferArrivalExpire.service.js";
 import { getTodayYmdInKst } from "../utils/krBusinessDays.js";
+import {
+  attachProsthesisTypeToResultFiles,
+  listPendingProstheticSlots,
+} from "../utils/practiceTransferProstheticSlots.js";
 
 export {
   isPracticeArrivalDatePast,
@@ -173,7 +178,25 @@ export async function completePracticeTransferWork({
       ? normalizeResultFiles(doc.resultFiles)
       : normalizeResultFiles(rawResultFiles);
 
-  // CA Request는 어벗 STL handoff에서만 생성(complete에서 빈 준비 건 보정 금지).
+  const pendingProsthetic = listPendingProstheticSlots(
+    doc.toothWorks,
+    resultFiles,
+  );
+  if (pendingProsthetic.length > 0) {
+    const labels = pendingProsthetic.map((slot) => slot.label).join(", ");
+    return {
+      ok: false,
+      statusCode: 409,
+      message: labels
+        ? `보철 디자인 파일이 없어 작업 완료할 수 없습니다. ${labels}`
+        : "보철 디자인 파일이 없어 작업 완료할 수 없습니다.",
+      code: "missing_prosthetic_files",
+    };
+  }
+  const resultFilesForSave = attachProsthesisTypeToResultFiles(
+    doc.toothWorks,
+    resultFiles,
+  );
 
   const skipDesignConfirm = doc.production?.skipDesignConfirm !== false;
   let releaseResult = null;
@@ -284,7 +307,7 @@ export async function completePracticeTransferWork({
     };
   }
 
-  doc.resultFiles = resultFiles;
+  doc.resultFiles = resultFilesForSave;
   doc.autoMatch = {
     ...(doc.autoMatch && typeof doc.autoMatch === "object" ? doc.autoMatch : {}),
     completedAt: now,
@@ -313,7 +336,7 @@ export async function completePracticeTransferWork({
     status: String(doc.status || "active").trim(),
     manufacturerStage,
     updatedAt: doc.updatedAt || now,
-    resultFileCount: resultFiles.length,
+    resultFileCount: resultFilesForSave.length,
     hasCustomAbutment,
     production: toProductionApiFields(doc.production),
     completionReason: reason,
@@ -391,7 +414,7 @@ export async function completePracticeTransferWork({
     manufacturerStage,
     releaseResult,
     hasCustomAbutment,
-    resultFiles,
+    resultFiles: resultFilesForSave,
     realtimePayload,
   };
 }

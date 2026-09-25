@@ -56,6 +56,7 @@ import {
   removePracticeTransferRequestFiles,
   restorePracticeTransferRequestFilesApi,
   appendReceivedPracticeTransferRequestFiles,
+  setReceivedPracticeTransferScanRole,
   removeReceivedPracticeTransferRequestFiles,
   restoreReceivedPracticeTransferRequestFiles,
 } from "../../controllers/practiceTransfers/practiceTransfer.controller.js";
@@ -195,6 +196,13 @@ router.post(
   authenticate,
   receiveAuth,
   appendReceivedPracticeTransferRequestFiles,
+);
+
+router.post(
+  "/received/:transferId/request-files/scan-role",
+  authenticate,
+  receiveAuth,
+  setReceivedPracticeTransferScanRole,
 );
 
 router.post(

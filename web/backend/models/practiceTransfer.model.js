@@ -17,6 +17,22 @@ const practiceTransferFileSchema = new mongoose.Schema(
   {
     patientName: { type: String, default: "", trim: true },
     tooth: { type: String, default: "", trim: true },
+    /** 작업완료 보철 STL의 형태. 학습 쌍(치아·형태·파일)용 */
+    prosthesisType: { type: String, default: "", trim: true },
+    /** 의뢰 스캔 역할. 치과가 확인하고 기공소가 고칠 수 있다. */
+    scanRole: {
+      type: String,
+      enum: ["", "upper", "lower", "bite", "other"],
+      default: "",
+    },
+    scanRoleSetBy: {
+      type: String,
+      enum: ["", "practice", "lab"],
+      default: "",
+    },
+    /** 보철 메시가 구강스캔과 만나는 점. 결과 파일 좌표. */
+    marginArch: { type: String, default: "", trim: true },
+    marginPoints: { type: [mongoose.Schema.Types.Mixed], default: undefined },
     /** 같은 API 업로드(드롭·전송)끼리 묶는 웨이브 ID */
     uploadBatchId: { type: String, default: "", trim: true },
     /** 해당 웨이브가 transfer.files에 붙은 시각 */
@@ -198,6 +214,11 @@ const practiceTransferSchema = new mongoose.Schema(
       type: [practiceTransferFileSchema],
       default: [],
     },
+    /**
+     * 바이트 좌표계로 상악·하악을 보낸 4×4 (row-major).
+     * status native = 원본이 이미 같은 좌표.
+     */
+    scanAlignment: { type: mongoose.Schema.Types.Mixed, default: null },
     // 보철 치식(과금·표시). 전송 시점 스냅샷
     toothWorks: {
       type: [mongoose.Schema.Types.Mixed],

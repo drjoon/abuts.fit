@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/practice/practiceTransferLabReceive.ts
 // change-log:
+// - 2026-09-26: 보철 업로드 버튼 — 남은 보철 디자인 파일이 있을 때.
 // - 2026-09-21: 어벗 출고 −N 계정 선호 전달·저장.
 // - 2026-09-20: abutmentLeadingActions — 어벗 건만 STL 업로드 왼쪽에 SW·아노 등.
 // - 2026-09-16: stickyTrailingActions — 어벗 완료 줄이 취소·리메이크를 맡아도 지르 작업 시작 유지.
@@ -68,6 +69,8 @@ export type PracticeLabReceiveWorkActionsBarProps = {
   onOpenAbutmentRemake?: (event: MouseEvent, teeth?: string[]) => void;
   /** 어벗 STL 파일창 — 작업 취소 옆 */
   onAbutmentStlUpload?: (event: MouseEvent) => void;
+  /** 보철 디자인 파일창 — 올리면 작업완료 */
+  onProstheticUpload?: (event: MouseEvent) => void;
   /** 어벗 출고일 저장(기공소). n은 계정 선호로 재사용 */
   onAbutmentShipYmdSave?: (
     shipYmd: string,
@@ -114,6 +117,7 @@ export function PracticeLabReceiveWorkActionsBar({
   onAbutmentToothCancel,
   onOpenAbutmentRemake,
   onAbutmentStlUpload,
+  onProstheticUpload,
   onAbutmentShipYmdSave,
   abutmentShipBusy = false,
   preferredAbutmentShipBeforeArrivalBusinessDays = null,
@@ -130,12 +134,21 @@ export function PracticeLabReceiveWorkActionsBar({
     catalog,
   );
   const showAbutmentShip =
-    state.designStlUploadMode === "abutment" && Boolean(onAbutmentShipYmdSave);
+    (state.designStlUploadMode === "abutment" ||
+      state.designStlUploadMode === "dual") &&
+    Boolean(onAbutmentShipYmdSave);
   const hasStickyTrailing = Boolean(stickyTrailingActions);
   const hasTrailing = Boolean(trailingActions);
   const hasAbutmentGuide = state.hasPendingLabCa || state.hasAbutsCa;
   const showAbutmentUpload =
-    state.designStlUploadMode === "abutment" && Boolean(onAbutmentStlUpload);
+    state.designStlUploadMode === "abutment" ||
+    state.designStlUploadMode === "dual"
+      ? Boolean(onAbutmentStlUpload)
+      : false;
+  const showProstheticUpload =
+    (state.designStlUploadMode === "prosthetic" ||
+      state.designStlUploadMode === "dual") &&
+    Boolean(onProstheticUpload);
   const showAbutmentLeading =
     Boolean(abutmentLeadingActions) &&
     (hasAbutmentGuide ||
@@ -151,6 +164,7 @@ export function PracticeLabReceiveWorkActionsBar({
     !hasAbutmentGuide &&
     !uploadOverdue &&
     !showAbutmentUpload &&
+    !showProstheticUpload &&
     !showAbutmentShip &&
     !showAbutmentLeading
   ) {
@@ -285,6 +299,36 @@ export function PracticeLabReceiveWorkActionsBar({
     </Tooltip>
   ) : null;
 
+  const prostheticUploadButton = showProstheticUpload ? (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          size="sm"
+          variant="default"
+          disabled={busy}
+          className={cn(ctaButtonClass, "gap-1")}
+          onClick={(event) => {
+            event.stopPropagation();
+            onProstheticUpload?.(event);
+          }}
+        >
+          <Upload className="h-3.5 w-3.5" />
+          {busy
+            ? "처리 중..."
+            : state.pendingProstheticCount > 1
+              ? `보철 업로드 (${state.pendingProstheticCount})`
+              : "보철 업로드"}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-xs text-xs">
+        {state.prostheticSlotLabels
+          ? `${state.prostheticSlotLabels} 디자인 파일을 올리면 작업완료됩니다.`
+          : "보철 디자인 파일을 올리면 작업완료됩니다."}
+      </TooltipContent>
+    </Tooltip>
+  ) : null;
+
   // 부분 업로드(미완료)만 별도 버튼 — 완료 줄 클릭이 SSOT
   const productionCancelButton =
     showProductionCancelInBar &&
@@ -351,6 +395,7 @@ export function PracticeLabReceiveWorkActionsBar({
   const cancelCluster =
     abutmentLeading ||
     abutmentUploadButton ||
+    prostheticUploadButton ||
     (shipInActionRow ? abutmentShipButton : null) ||
     productionCancelButton ||
     pastReadyRemakeButton ||
@@ -358,6 +403,7 @@ export function PracticeLabReceiveWorkActionsBar({
       <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1.5">
         {abutmentLeading}
         {abutmentUploadButton}
+        {prostheticUploadButton}
         {shipInActionRow ? abutmentShipButton : null}
         {productionCancelButton}
         {pastReadyRemakeButton}

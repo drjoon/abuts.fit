@@ -67,6 +67,10 @@
 // - 2026-08-15: Abuts-first — 수락 시 스캔(files)로 Request 생성, 기일 기준 스케줄, 디자인 컨펌 후 생산.
 // - 2026-08-13: 치아별 abutmentProductMode(생산만/디자인+생산)를 어벗츠 의뢰 productMode로 전달.
 import { randomUUID } from "crypto";
+import {
+  normalizeOralScanRole,
+  normalizeOralScanRoleSetBy,
+} from "../utils/oralScanRole.js";
 import { Types } from "mongoose";
 import Request from "../models/request.model.js";
 import PracticeTransfer from "../models/practiceTransfer.model.js";
@@ -169,9 +173,30 @@ const normalizeResultFiles = (raw) => {
       const uploadBatchId = String(row?.uploadBatchId || "").trim();
       const uploadedAt = parseUploadedAt(row?.uploadedAt);
       const trashedAt = parseUploadedAt(row?.trashedAt);
+      const scanRole = normalizeOralScanRole(row?.scanRole);
+      const scanRoleSetBy = normalizeOralScanRoleSetBy(row?.scanRoleSetBy);
+      const marginArch = String(row?.marginArch || "").trim();
+      const marginPoints = Array.isArray(row?.marginPoints)
+        ? row.marginPoints
+            .map((point) => {
+              const x = Number(point?.x);
+              const y = Number(point?.y);
+              const z = Number(point?.z);
+              if (![x, y, z].every(Number.isFinite)) return null;
+              return { x, y, z };
+            })
+            .filter(Boolean)
+            .slice(0, 64)
+        : [];
       return {
         patientName: String(row?.patientName || "").trim(),
         tooth: String(row?.tooth || "").trim(),
+        prosthesisType: String(row?.prosthesisType || "").trim(),
+        ...(scanRole
+          ? { scanRole, scanRoleSetBy: scanRoleSetBy || "" }
+          : {}),
+        ...(marginArch ? { marginArch } : {}),
+        ...(marginPoints.length ? { marginPoints } : {}),
         ...(uploadBatchId ? { uploadBatchId } : {}),
         ...(uploadedAt ? { uploadedAt } : {}),
         ...(trashedAt ? { trashedAt } : {}),
@@ -225,6 +250,13 @@ export function mergePracticeTransferFilesByS3Key(existing, incoming) {
     const prev = byKey.get(key);
     byKey.set(key, {
       ...row,
+      prosthesisType: row.prosthesisType || prev?.prosthesisType || "",
+      scanRole: row.scanRole || prev?.scanRole || "",
+      scanRoleSetBy: row.scanRoleSetBy || prev?.scanRoleSetBy || "",
+      marginArch: row.marginArch || prev?.marginArch || "",
+      marginPoints: row.marginPoints?.length
+        ? row.marginPoints
+        : prev?.marginPoints,
       uploadBatchId: row.uploadBatchId || prev?.uploadBatchId,
       uploadedAt: row.uploadedAt || prev?.uploadedAt,
     });
@@ -232,6 +264,15 @@ export function mergePracticeTransferFilesByS3Key(existing, incoming) {
   return [...byKey.values()].map((row) => ({
     patientName: row.patientName,
     tooth: row.tooth,
+    ...(row.prosthesisType ? { prosthesisType: row.prosthesisType } : {}),
+    ...(row.scanRole
+      ? {
+          scanRole: row.scanRole,
+          scanRoleSetBy: row.scanRoleSetBy || "",
+        }
+      : {}),
+    ...(row.marginArch ? { marginArch: row.marginArch } : {}),
+    ...(row.marginPoints?.length ? { marginPoints: row.marginPoints } : {}),
     ...(row.uploadBatchId ? { uploadBatchId: row.uploadBatchId } : {}),
     ...(row.uploadedAt ? { uploadedAt: row.uploadedAt } : {}),
     ...(row.trashedAt ? { trashedAt: row.trashedAt } : {}),

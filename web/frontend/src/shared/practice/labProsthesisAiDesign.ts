@@ -45,7 +45,7 @@ export function oralScanFileKey(file: {
   return `${file.name}\0${file.size}\0${Number(file.lastModified || 0)}`;
 }
 
-/** Relu Crowns가 받는 고정성 보철 */
+/** 고정성 보철 학습·디자인 대상 */
 const DESIGNABLE_TYPES = new Set(["크라운", "인레이", "온레이", "브리지"]);
 
 const ROLE_ORDER: LabOralScanRole[] = ["upper", "lower", "bite", "other"];

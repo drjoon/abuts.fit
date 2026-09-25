@@ -433,6 +433,12 @@ import {
 } from "@/shared/practice/usePracticeTransferFeeQuote";
 import { kstAddBusinessDays, kstYmdDiffDays } from "@/shared/date/kst";
 import { PracticeRushConfirmDialog } from "@/shared/components/practice/PracticeRushConfirmDialog";
+import { OralScanRoleConfirmDialog } from "@/shared/components/practice/OralScanRoleConfirmDialog";
+import {
+  isOralScanMeshName,
+  oralScanFileKey,
+  type LabOralScanRole,
+} from "@/shared/practice/labProsthesisAiDesign";
 import { ZoomableImagePreview } from "@/shared/components/ZoomableImagePreview";
 import {
   PRACTICE_WORK_PERIOD_BLOCK_MESSAGE,
@@ -6462,14 +6468,27 @@ export const PracticeFileTransferPage = ({
           uploadBatchId: String(r.uploadBatchId || "").trim() || null,
           uploadedAt: String(r.uploadedAt || "").trim() || null,
           trashedAt: String(r.trashedAt || "").trim() || null,
+          scanRole: String(r.scanRole || "").trim() || null,
         } satisfies TransferFileItem;
       })
       .filter((row): row is TransferFileItem => Boolean(row));
   }, []);
 
+  const scanRoleAttachRef = useRef<Record<string, LabOralScanRole> | null>(null);
+  const [scanRoleAttachFiles, setScanRoleAttachFiles] = useState<File[] | null>(
+    null,
+  );
+
   const handleAttachRequestFiles = useCallback(
     (nextFiles: File[]) => {
       if (!nextFiles.length) return;
+      const meshFiles = nextFiles.filter((file) => isOralScanMeshName(file.name));
+      const confirmedRoles = scanRoleAttachRef.current;
+      if (meshFiles.length > 0 && !confirmedRoles) {
+        setScanRoleAttachFiles(nextFiles);
+        return;
+      }
+      scanRoleAttachRef.current = null;
       const transferId = String(selectedTransfer?.transferId || "").trim();
       if (!authToken || !transferId) {
         toast({
@@ -6489,13 +6508,20 @@ export const PracticeFileTransferPage = ({
             selectedTransferDetailModel?.patientName || "",
           ).trim();
           const payload = uploaded
-            .map((file) => {
+            .map((file, index) => {
               const originalName = String(file.originalName || "").trim();
               const s3Key = String(file.key || "").trim();
               if (!originalName || !s3Key) return null;
+              const source = nextFiles[index];
+              const scanRole = source
+                ? confirmedRoles?.[oralScanFileKey(source)]
+                : undefined;
               return {
                 patientName,
                 tooth: "",
+                ...(scanRole
+                  ? { scanRole, scanRoleSetBy: "practice" as const }
+                  : {}),
                 file: {
                   originalName,
                   mimetype: String(
@@ -6515,6 +6541,7 @@ export const PracticeFileTransferPage = ({
               size: number;
               s3Key: string;
             };
+            scanRole?: LabOralScanRole;
           }>;
           if (!payload.length) {
             throw new Error("파일 업로드에 실패했습니다.");
@@ -6524,6 +6551,7 @@ export const PracticeFileTransferPage = ({
               originalName: row.file.originalName,
               s3Key: row.file.s3Key,
               size: row.file.size,
+              scanRole: row.scanRole || null,
             })),
           );
           const optimisticKeys = new Set(
@@ -10713,6 +10741,23 @@ export const PracticeFileTransferPage = ({
             </DialogContent>
           </Dialog>
 
+          <OralScanRoleConfirmDialog
+            open={Boolean(scanRoleAttachFiles)}
+            files={(scanRoleAttachFiles || []).filter((file) =>
+              isOralScanMeshName(file.name),
+            ).map((file) => ({
+              key: oralScanFileKey(file),
+              fileName: file.name,
+            }))}
+            onCancel={() => setScanRoleAttachFiles(null)}
+            onConfirm={(roles) => {
+              const pending = scanRoleAttachFiles;
+              setScanRoleAttachFiles(null);
+              if (!pending) return;
+              scanRoleAttachRef.current = roles;
+              handleAttachRequestFiles(pending);
+            }}
+          />
           <PracticeRushConfirmDialog
             open={rushConfirmOpen}
             onOpenChange={(open) => {

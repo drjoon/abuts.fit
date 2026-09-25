@@ -2,6 +2,7 @@
 // - web/backend/services/practiceTransferComplete.service.js
 // - web/backend/utils/practiceTransferArrivalDates.js
 // change-log:
+// - 2026-09-26: 보철 슬롯이 남으면 도착일 자동 완료에서 제외.
 // - 2026-09-12: 비어벗 작업취소 — 도착일(포함) 이후 차단 헬퍼.
 // - 2026-09-02: 치과도착일 경과 — CA 어벗 미업로드는 자동완료 제외·기한만료 대상.
 import { isAutoMatchCompleted } from "./practiceTransferAutoMatchCore.js";
@@ -15,6 +16,7 @@ import {
   resolvePracticeArrivalDates,
 } from "./practiceTransferArrivalDates.js";
 import { getTodayYmdInKst } from "./krBusinessDays.js";
+import { listPendingProstheticSlots } from "./practiceTransferProstheticSlots.js";
 
 /**
  * 현재 치과도착일(YMD). arrivalDates 끝값 또는 메모 태그.
@@ -79,6 +81,11 @@ export function isPracticeTransferDueForArrivalAutoComplete(doc, todayYmd) {
   if (isAutoMatchCompleted(doc)) return false;
   if (doc.arrivalDeadlineExpiredAt) return false;
   if (practiceTransferNeedsMoreAbutmentDesigns(doc)) return false;
+  if (
+    listPendingProstheticSlots(doc.toothWorks, doc.resultFiles).length > 0
+  ) {
+    return false;
+  }
   const arrivalYmd = resolvePracticeTransferCurrentArrivalYmd(doc);
   return isPracticeArrivalDatePast(arrivalYmd, todayYmd);
 }

@@ -60,6 +60,8 @@ export type PracticeRecentTransferFileItem = {
   uploadBatchId?: string | null;
   /** 웨이브가 의뢰 파일에 붙은 시각(ISO) */
   uploadedAt?: string | null;
+  /** 의뢰 스캔 확정 역할 */
+  scanRole?: string | null;
   /** 휴지통 이동 시각(ISO). trashedFiles 전용 */
   trashedAt?: string | null;
 };
@@ -734,6 +736,7 @@ const mapApiFileItems = (raw: unknown): PracticeRecentTransferFileItem[] => {
         uploadBatchId: String(item.uploadBatchId || "").trim() || null,
         uploadedAt: String(item.uploadedAt || "").trim() || null,
         trashedAt: String(item.trashedAt || "").trim() || null,
+        scanRole: String(item.scanRole || "").trim() || null,
       };
     })
     .filter((f) => f.fileName && f.s3Key);

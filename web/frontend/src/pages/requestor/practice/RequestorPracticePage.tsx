@@ -43,6 +43,7 @@
 // - 2026-09-20: 수신 헤더 xl 미만 — 배지·북마크·생산중 아이콘화. 상세 프린트·번호표는 아이콘+라벨.
 // - 2026-09-20: 수신 헤더 nowrap — 미처리 alert·배지·생산중이 두 줄로 밀리지 않게.
 // - 2026-09-20: SW·아노 → 채팅 어벗 STL 업로드 왼쪽(어벗 건만). 미처리 alert를 헤더 왼쪽·배지 오른쪽.
+// - 2026-09-26: 보철 디자인 파일 필수 — 드롭·버튼으로 올리고 작업완료.
 // - 2026-09-12: 기공소 리메이크 — 원본 리드로 기본 도착일 · POST /received/remake.
 // - 2026-09-12: 어벗 출고일 설정(도착−3달력일 기본) — STL 업로드 옆 · 낙관적 패치.
 // - 2026-09-12: 채팅 없으면 상세 초기 스크롤=보철물(상단). 빈 목록 시 chatBottom 강제 스크롤 제거.
@@ -226,6 +227,13 @@ import {
   type LabReceiveUploadSlotOption,
   type LabReceiveWorkUploadAssignment,
 } from "@/shared/components/practice/LabReceiveWorkUploadDialog";
+import { LabReceiveDualRoleAssignDialog } from "@/shared/components/practice/LabReceiveDualRoleAssignDialog";
+import { OralScanRoleConfirmDialog } from "@/shared/components/practice/OralScanRoleConfirmDialog";
+import {
+  isOralScanMeshName,
+  oralScanFileKey,
+  type LabOralScanRole,
+} from "@/shared/practice/labProsthesisAiDesign";
 import { useImplantConnectionCatalog } from "@/shared/practice/useImplantConnectionCatalog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -1020,6 +1028,10 @@ export function RequestorPracticeReceivePage({
   }, [designConfirmPendingMetas, designConfirmTransfer?.toothWorksSummary]);
   const [workUploadState, setWorkUploadState] =
     useState<LabReceiveWorkUploadState | null>(null);
+  const [dualAssign, setDualAssign] = useState<{
+    transfer: ReceivedPracticeTransfer;
+    files: File[];
+  } | null>(null);
   const [workUploadBusy, setWorkUploadBusy] = useState(false);
   /** 어벗 디자인 업로드 가드 — 비STL·≥3MB(구강스캔 의심). 다시 올리기 유도 */
   const [designUploadGate, setDesignUploadGate] = useState<{
@@ -1183,6 +1195,7 @@ export function RequestorPracticeReceivePage({
             uploadBatchId: String(item.uploadBatchId || "").trim() || null,
             uploadedAt: String(item.uploadedAt || "").trim() || null,
             trashedAt: String(item.trashedAt || "").trim() || null,
+            scanRole: String(item.scanRole || "").trim() || null,
           };
         };
 
@@ -6559,7 +6572,11 @@ export function RequestorPracticeReceivePage({
         transfer,
         implantCatalog,
       );
-      if (!workState.showWorkActions || workState.designStlUploadMode !== "abutment") {
+      if (
+        !workState.showWorkActions ||
+        (workState.designStlUploadMode !== "abutment" &&
+          workState.designStlUploadMode !== "dual")
+      ) {
         toast({
           title: workState.showWorkActions
             ? "업로드할 어벗 없음"
@@ -6829,11 +6846,46 @@ export function RequestorPracticeReceivePage({
     ],
   );
 
+  const routeLabWorkFiles = useCallback(
+    (
+      transfer: ReceivedPracticeTransfer,
+      files: File[],
+      intent: "auto" | "abutment" | "prosthetic" = "auto",
+    ) => {
+      const workState = resolvePracticeLabReceiveWorkActionState(
+        transfer,
+        implantCatalog,
+      );
+      const mode = workState.designStlUploadMode;
+      if (!workState.showWorkActions || mode === "none") {
+        toast({
+          title: workState.showWorkActions
+            ? "업로드할 디자인 없음"
+            : "작업시작 후 업로드",
+          description: workState.showWorkActions
+            ? "더 올릴 어벗·보철 디자인이 없습니다."
+            : "작업을 시작한 뒤에 디자인 파일을 올릴 수 있습니다.",
+        });
+        return;
+      }
+      if (intent === "abutment" || (intent === "auto" && mode === "abutment")) {
+        void beginDesignStlUpload(transfer, files);
+        return;
+      }
+      if (intent === "prosthetic" || (intent === "auto" && mode === "prosthetic")) {
+        beginCompleteWithFiles(transfer, files);
+        return;
+      }
+      setDualAssign({ transfer, files });
+    },
+    [beginCompleteWithFiles, beginDesignStlUpload, implantCatalog, toast],
+  );
+
   const handleCardDropFiles = useCallback(
     (transfer: ReceivedPracticeTransfer, files: File[]) => {
-      void beginDesignStlUpload(transfer, files);
+      routeLabWorkFiles(transfer, files, "auto");
     },
-    [beginDesignStlUpload],
+    [routeLabWorkFiles],
   );
 
   const dialogWorkFileDrop = useMemo(() => {
@@ -6843,7 +6895,7 @@ export function RequestorPracticeReceivePage({
       implantCatalog,
     );
     // 카드 드롭과 동일 — 수락 전(거부/수락 버튼 단계)에는 어벗 STL 드롭 비활성
-    if (!workState.showWorkActions || workState.designStlUploadMode !== "abutment") {
+    if (!workState.showWorkActions || workState.designStlUploadMode === "none") {
       return null;
     }
     const transferKey = String(
@@ -6851,17 +6903,30 @@ export function RequestorPracticeReceivePage({
     ).trim();
     if (!transferKey) return null;
     const rowBusy = cardActionBusyId === transferKey || workUploadBusy;
+    const mode = workState.designStlUploadMode;
     const pendingSuffix =
       workState.needsAbutmentDesigns && workState.designFileCount > 0
         ? ` (${workState.pendingAbutmentCount})`
         : "";
+    const prostheticHint = workState.prostheticSlotLabels
+      ? `${workState.prostheticSlotLabels} 디자인 파일을 올리면 작업완료됩니다.`
+      : "보철 디자인 파일을 올리면 작업완료됩니다.";
+    const guideText =
+      mode === "prosthetic"
+        ? prostheticHint
+        : mode === "dual"
+          ? "어벗 STL과 보철 디자인 파일을 함께 올릴 수 있습니다."
+          : `어벗 디자인 STL을 업로드하세요.${pendingSuffix}`;
+    const dropHint =
+      mode === "prosthetic" ? "보철 디자인" : mode === "dual" ? "어벗·보철" : "어벗 STL";
     return {
       fileInputId: `practice-modal-work-drop-${transferKey}`,
       disabled: rowBusy,
       onFiles: (files: File[]) => handleCardDropFiles(selectedTransfer, files),
-      guideText: `어벗 디자인 STL을 업로드하세요.${pendingSuffix}`,
-      guideDetail: LAB_RECEIVE_ABUTMENT_UPLOAD_HINT,
-      dropHint: "어벗 STL",
+      guideText,
+      guideDetail:
+        mode === "abutment" ? LAB_RECEIVE_ABUTMENT_UPLOAD_HINT : prostheticHint,
+      dropHint,
       uploadProgressPercent: workUploadProgressSummary?.active
         ? workUploadProgressSummary.percent
         : null,
@@ -7447,6 +7512,7 @@ export function RequestorPracticeReceivePage({
             uploadBatchId: String(r.uploadBatchId || "").trim() || null,
             uploadedAt: String(r.uploadedAt || "").trim() || null,
             trashedAt: String(r.trashedAt || "").trim() || null,
+            scanRole: String(r.scanRole || "").trim() || null,
           };
         })
         .filter((row): row is NonNullable<typeof row> => Boolean(row));
@@ -7454,9 +7520,21 @@ export function RequestorPracticeReceivePage({
     [],
   );
 
+  const scanRoleAttachRef = useRef<Record<string, LabOralScanRole> | null>(null);
+  const [scanRoleAttachFiles, setScanRoleAttachFiles] = useState<File[] | null>(
+    null,
+  );
+
   const handleAttachRequestFiles = useCallback(
     (nextFiles: File[]) => {
       if (!nextFiles.length) return;
+      const meshFiles = nextFiles.filter((file) => isOralScanMeshName(file.name));
+      const confirmedRoles = scanRoleAttachRef.current;
+      if (meshFiles.length > 0 && !confirmedRoles) {
+        setScanRoleAttachFiles(nextFiles);
+        return;
+      }
+      scanRoleAttachRef.current = null;
       const transferId = String(selectedTransfer?.transferId || "").trim();
       if (!token || !transferId) {
         toast({
@@ -7475,13 +7553,20 @@ export function RequestorPracticeReceivePage({
             selectedTransfer?.files?.[0]?.patientName || "",
           ).trim();
           const payload = uploaded
-            .map((file) => {
+            .map((file, index) => {
               const originalName = String(file.originalName || "").trim();
               const s3Key = String(file.key || "").trim();
               if (!originalName || !s3Key) return null;
+              const source = nextFiles[index];
+              const scanRole = source
+                ? confirmedRoles?.[oralScanFileKey(source)]
+                : undefined;
               return {
                 patientName,
                 tooth: "",
+                ...(scanRole
+                  ? { scanRole, scanRoleSetBy: "lab" as const }
+                  : {}),
                 file: {
                   originalName,
                   mimetype: String(
@@ -7501,6 +7586,7 @@ export function RequestorPracticeReceivePage({
               size: number;
               s3Key: string;
             };
+            scanRole?: string;
           }>;
           if (!payload.length) {
             throw new Error("파일 업로드에 실패했습니다.");
@@ -7514,6 +7600,7 @@ export function RequestorPracticeReceivePage({
               size: row.file.size,
               patientName: row.patientName,
               tooth: row.tooth,
+              scanRole: row.scanRole || null,
             })),
             transferMongoId,
           );
@@ -7607,6 +7694,63 @@ export function RequestorPracticeReceivePage({
       if (chatFiles.length) chatUploads.addFiles(chatFiles);
     },
     [chatUploads.addFiles, handleAttachRequestFiles],
+  );
+
+  const handleChangeRequestScanRole = useCallback(
+    (
+      file: { s3Key: string; scanRole?: string | null },
+      role: LabOralScanRole,
+    ) => {
+      const transferId = String(selectedTransfer?.transferId || "").trim();
+      const mongoId = String(selectedTransfer?._id || "").trim();
+      const s3Key = String(file.s3Key || "").trim();
+      if (!token || !transferId || !s3Key || file.scanRole === role) return;
+      const previous = file.scanRole || null;
+      const patchFiles = (rows: ReceivedPracticeFile[] | undefined) =>
+        (rows || []).map((row) =>
+          row.s3Key === s3Key ? { ...row, scanRole: role } : row,
+        );
+      setSelectedTransfer((prev) =>
+        prev ? { ...prev, files: patchFiles(prev.files) } : prev,
+      );
+      setTransfers((prev) =>
+        prev.map((row) =>
+          String(row._id || "") === mongoId ||
+          String(row.transferId || "") === transferId
+            ? { ...row, files: patchFiles(row.files) }
+            : row,
+        ),
+      );
+      void (async () => {
+        const res = await apiFetch<unknown>({
+          path: `/api/practice/transfers/received/${encodeURIComponent(transferId)}/request-files/scan-role`,
+          method: "POST",
+          token,
+          jsonBody: { s3Key, scanRole: role },
+        });
+        if (res.ok) return;
+        const revert = (rows: ReceivedPracticeFile[] | undefined) =>
+          (rows || []).map((row) =>
+            row.s3Key === s3Key ? { ...row, scanRole: previous } : row,
+          );
+        setSelectedTransfer((prev) =>
+          prev ? { ...prev, files: revert(prev.files) } : prev,
+        );
+        setTransfers((prev) =>
+          prev.map((row) =>
+            String(row._id || "") === mongoId ||
+            String(row.transferId || "") === transferId
+              ? { ...row, files: revert(row.files) }
+              : row,
+          ),
+        );
+        toast({
+          title: "스캔 역할을 바꾸지 못했습니다",
+          variant: "destructive",
+        });
+      })();
+    },
+    [selectedTransfer?._id, selectedTransfer?.transferId, toast, token],
   );
 
   const handleRemoveRequestFile = useCallback(
@@ -8762,6 +8906,52 @@ export function RequestorPracticeReceivePage({
         splitMode={Boolean(workUploadState?.splitMode)}
         onConfirm={handleWorkUploadConfirm}
       />
+      <LabReceiveDualRoleAssignDialog
+        open={Boolean(dualAssign)}
+        onOpenChange={(open) => {
+          if (!open && !workUploadBusy && !designConfirmBusy) setDualAssign(null);
+        }}
+        files={dualAssign?.files || []}
+        abutmentCapacity={Math.max(
+          1,
+          dualAssign
+            ? resolvePracticeLabReceiveWorkActionState(
+                dualAssign.transfer,
+                implantCatalog,
+              ).pendingAbutmentCount
+            : 1,
+        )}
+        prostheticCapacity={Math.max(
+          1,
+          dualAssign
+            ? resolvePracticeLabReceiveWorkActionState(
+                dualAssign.transfer,
+                implantCatalog,
+              ).pendingProstheticCount
+            : 1,
+        )}
+        submitting={workUploadBusy || designConfirmBusy}
+        onConfirm={async ({ abutmentFiles, prostheticFiles }) => {
+          const state = dualAssign;
+          if (!state) return;
+          setDualAssign(null);
+          if (abutmentFiles.length > 0) {
+            if (prostheticFiles.length > 0) {
+              pendingProstheticAfterAbutmentRef.current = {
+                transferId: String(
+                  state.transfer.transferId || state.transfer._id || "",
+                ),
+                files: prostheticFiles,
+              };
+            }
+            await beginDesignUploadWithFiles(state.transfer, abutmentFiles);
+            return;
+          }
+          if (prostheticFiles.length > 0) {
+            beginCompleteWithFiles(state.transfer, prostheticFiles);
+          }
+        }}
+      />
       <div className="flex min-h-0 flex-1 flex-col gap-3">
         {showDesignQueue && !showTransfers ? (
           <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
@@ -8814,6 +9004,23 @@ export function RequestorPracticeReceivePage({
 
       {showTransfers ? (
       <>
+      <OralScanRoleConfirmDialog
+        open={Boolean(scanRoleAttachFiles)}
+        files={(scanRoleAttachFiles || [])
+          .filter((file) => isOralScanMeshName(file.name))
+          .map((file) => ({
+            key: oralScanFileKey(file),
+            fileName: file.name,
+          }))}
+        onCancel={() => setScanRoleAttachFiles(null)}
+        onConfirm={(roles) => {
+          const pending = scanRoleAttachFiles;
+          setScanRoleAttachFiles(null);
+          if (!pending) return;
+          scanRoleAttachRef.current = roles;
+          handleAttachRequestFiles(pending);
+        }}
+      />
       {(() => {
         const detailDialog = (
       <PracticeTransferDetailChatDialog
@@ -9049,6 +9256,7 @@ export function RequestorPracticeReceivePage({
         remakeChargeCancelBusy={remakeChargeCancelBusy}
         skipJig={Boolean(selectedTransfer?.production?.skipJig)}
         feeViewer="lab"
+        onChangeRequestScanRole={handleChangeRequestScanRole}
         labBasketTag={
           normalizeLabBasketTag(selectedTransfer?.labBasketTag) || null
         }
@@ -9072,6 +9280,7 @@ export function RequestorPracticeReceivePage({
             s3Key: String(file.s3Key || "").trim(),
             uploadBatchId: file.uploadBatchId || null,
             uploadedAt: file.uploadedAt || null,
+            scanRole: file.scanRole || null,
           })) satisfies PracticeTransferDialogFileItem[]
         }
         trashedFiles={
@@ -9303,7 +9512,18 @@ export function RequestorPracticeReceivePage({
                     multiple: true,
                   });
                   if (files.length) {
-                    handleCardDropFiles(selectedTransfer, files);
+                    routeLabWorkFiles(selectedTransfer, files, "abutment");
+                  }
+                })();
+              }}
+              onProstheticUpload={() => {
+                void (async () => {
+                  const files = await pickPracticeTransferFilesViaInput({
+                    accept: ".stl,.ply,.obj,.dcm,.STL,.PLY,.OBJ,.DCM",
+                    multiple: true,
+                  });
+                  if (files.length) {
+                    routeLabWorkFiles(selectedTransfer, files, "prosthetic");
                   }
                 })();
               }}

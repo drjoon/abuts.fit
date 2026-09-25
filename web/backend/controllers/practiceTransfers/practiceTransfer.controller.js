@@ -236,6 +236,14 @@ import {
   restorePracticeTransferRequestFiles,
   tryStartAbutmentProduction,
 } from "../../services/practiceTransferProduction.service.js";
+import {
+  schedulePracticeProsthesisMargin,
+  schedulePracticeScanAlignment,
+} from "../../services/oralScanPair.service.js";
+import {
+  normalizeOralScanRole,
+  normalizeOralScanRoleSetBy,
+} from "../../utils/oralScanRole.js";
 import Request from "../../models/request.model.js";
 import { assertAbutmentPresetsComplete } from "../../utils/practiceTransferAbutmentPresets.js";
 import {
@@ -878,9 +886,14 @@ const mapPracticeTransferFilesFromCaseInfos = (caseInfos) =>
       if (!originalName || !s3Key) return null;
       if (!isAllowedPracticeFile(originalName)) return null;
 
+      const scanRole = normalizeOralScanRole(ci?.scanRole);
+      const scanRoleSetBy = normalizeOralScanRoleSetBy(ci?.scanRoleSetBy);
       return {
         patientName: String(ci?.patientName || "").trim(),
         tooth: String(ci?.tooth || "").trim(),
+        ...(scanRole
+          ? { scanRole, scanRoleSetBy: scanRoleSetBy || "practice" }
+          : {}),
         file: {
           originalName,
           mimetype: String(file?.mimetype || "application/octet-stream").trim(),
@@ -981,6 +994,13 @@ const toTransferFilesApiFields = (transferDoc) => {
     id: `${transferMongoId}${prefix}::${idx + 1}`,
     patientName: String(item?.patientName || "").trim(),
     tooth: String(item?.tooth || "").trim(),
+    prosthesisType: String(item?.prosthesisType || "").trim(),
+    scanRole: normalizeOralScanRole(item?.scanRole) || null,
+    scanRoleSetBy: normalizeOralScanRoleSetBy(item?.scanRoleSetBy) || null,
+    marginArch: String(item?.marginArch || "").trim() || null,
+    marginPointCount: Array.isArray(item?.marginPoints)
+      ? item.marginPoints.length
+      : 0,
     originalName: String(item?.file?.originalName || "").trim(),
     mimetype: String(item?.file?.mimetype || "application/octet-stream").trim(),
     size: Number(item?.file?.size || 0),
@@ -1168,6 +1188,7 @@ const toVirtualRequestRows = (transferDoc, { perFile = true } = {}) => {
       id: `${String(transferDoc._id)}::result::${rfIdx + 1}`,
       patientName: String(rf?.patientName || "").trim(),
       tooth: String(rf?.tooth || "").trim(),
+      prosthesisType: String(rf?.prosthesisType || "").trim(),
       originalName: String(rf?.file?.originalName || "").trim(),
       mimetype: String(rf?.file?.mimetype || "application/octet-stream").trim(),
       size: Number(rf?.file?.size || 0),
@@ -3624,6 +3645,7 @@ export async function createPracticeTransfer(req, res) {
       });
     }
 
+    schedulePracticeScanAlignment(transferDoc._id);
     res.status(201).json({
       success: true,
       message:
@@ -3845,6 +3867,8 @@ export async function updatePracticeTransferContent(req, res) {
       if (prev?.uploadBatchId) {
         kept.push({
           ...row,
+          scanRole: row.scanRole || prev.scanRole || "",
+          scanRoleSetBy: row.scanRoleSetBy || prev.scanRoleSetBy || "",
           uploadBatchId: prev.uploadBatchId,
           uploadedAt: prev.uploadedAt || undefined,
         });
@@ -6857,6 +6881,7 @@ export async function remakePracticeTransfers(req, res) {
           abutmentProductionStartedAt: null,
         },
       });
+      schedulePracticeScanAlignment(transferDoc._id);
 
       const targetLabAnchorIdText = String(targetLabAnchorId || "").trim();
       if (targetLabAnchorIdText) {
@@ -8855,7 +8880,7 @@ export async function markReceivedPracticeTransferComplete(req, res) {
       });
     }
 
-    // 2026-09-02: 보철 파일 없이 작업 완료 허용. 기공소 정산은 수락 시점에 이미 처리.
+    // 보철 슬롯이 있으면 치아(또는 스팬)마다 디자인 파일이 있어야 작업 완료.
     const result = await completePracticeTransferWork({
       doc,
       actorUserId: req.user?._id || null,
@@ -8880,6 +8905,7 @@ export async function markReceivedPracticeTransferComplete(req, res) {
     }
 
     const resultFiles = result.resultFiles || [];
+    schedulePracticeProsthesisMargin(doc._id);
     return res.status(200).json({
       success: true,
       data: {
@@ -8890,6 +8916,7 @@ export async function markReceivedPracticeTransferComplete(req, res) {
           id: `${String(doc._id)}::result::${idx + 1}`,
           patientName: item.patientName,
           tooth: item.tooth,
+          prosthesisType: String(item.prosthesisType || "").trim(),
           originalName: item.file.originalName,
           mimetype: item.file.mimetype,
           size: item.file.size,
@@ -9001,6 +9028,7 @@ export async function appendReceivedPracticeTransferResultFiles(req, res) {
     const merged = [...byKey.values()];
     doc.resultFiles = merged;
     await doc.save();
+    schedulePracticeProsthesisMargin(doc._id);
 
     const hasCustomAbutment = hasCustomAbutmentToothWorks(doc.toothWorks);
     const now = new Date();
@@ -9152,6 +9180,9 @@ export async function appendPracticeTransferRequestFiles(req, res) {
     const incoming = stampPracticeTransferFileBatch(
       normalizeIncomingRequestFiles(req.body?.files),
     );
+    for (const row of incoming) {
+      if (row.scanRole && !row.scanRoleSetBy) row.scanRoleSetBy = "practice";
+    }
     if (incoming.length === 0) {
       return res.status(400).json({
         success: false,
@@ -9167,6 +9198,7 @@ export async function appendPracticeTransferRequestFiles(req, res) {
     });
     doc.files = mergePracticeTransferFilesByS3Key(existingStamped, incoming);
     await doc.save();
+    schedulePracticeScanAlignment(doc._id);
 
     const payload = await emitRequestFilesUpdated({
       doc,
@@ -9400,6 +9432,9 @@ export async function appendReceivedPracticeTransferRequestFiles(req, res) {
     const incoming = stampPracticeTransferFileBatch(
       normalizeIncomingRequestFiles(req.body?.files),
     );
+    for (const row of incoming) {
+      if (row.scanRole && !row.scanRoleSetBy) row.scanRoleSetBy = "lab";
+    }
     if (incoming.length === 0) {
       return res.status(400).json({
         success: false,
@@ -9414,6 +9449,7 @@ export async function appendReceivedPracticeTransferRequestFiles(req, res) {
     });
     doc.files = mergePracticeTransferFilesByS3Key(existingStamped, incoming);
     await doc.save();
+    schedulePracticeScanAlignment(doc._id);
 
     const payload = await emitRequestFilesUpdated({
       doc,
@@ -9435,6 +9471,93 @@ export async function appendReceivedPracticeTransferRequestFiles(req, res) {
     return res.status(500).json({
       success: false,
       message: "의뢰 파일 저장 중 오류가 발생했습니다.",
+      error: error?.message,
+    });
+  }
+}
+
+/**
+ * 기공소 — 잘못 확정된 스캔 역할(상악·하악·바이트)을 고친다.
+ * related: POST /api/practice/transfers/received/:transferId/request-files/scan-role
+ */
+export async function setReceivedPracticeTransferScanRole(req, res) {
+  try {
+    const role = String(req.user?.role || "").trim();
+    if (!isPracticeTransferLabReceiverRole(role)) {
+      return res.status(403).json({ success: false, message: "권한이 없습니다." });
+    }
+
+    const transferIdFilter = buildTransferIdFilter(req.params?.transferId);
+    const scanRole = normalizeOralScanRole(req.body?.scanRole);
+    const s3Key = String(req.body?.s3Key || "").trim();
+    if (!transferIdFilter || !s3Key || !scanRole) {
+      return res.status(400).json({
+        success: false,
+        message: "스캔 역할을 확인해 주세요.",
+      });
+    }
+
+    const { scope, labAnchorId } = await buildReceivedScope(req);
+    if (scope === null || !labAnchorId) {
+      return res.status(404).json({ success: false, message: "전송 내역을 찾을 수 없습니다." });
+    }
+
+    const doc = await PracticeTransfer.findOne({
+      ...scope,
+      ...transferIdFilter,
+    });
+    if (!doc) {
+      return res.status(404).json({ success: false, message: "전송 내역을 찾을 수 없습니다." });
+    }
+    if (isPracticeTransferDeletedStatus(doc.status)) {
+      return res.status(409).json({
+        success: false,
+        message: "삭제된 기공의뢰의 스캔 역할은 바꿀 수 없습니다.",
+      });
+    }
+
+    const files = normalizeResultFiles(doc.files);
+    const hit = files.find((row) => String(row?.file?.s3Key || "").trim() === s3Key);
+    if (!hit) {
+      return res.status(404).json({
+        success: false,
+        message: "의뢰 파일을 찾을 수 없습니다.",
+      });
+    }
+    hit.scanRole = scanRole;
+    hit.scanRoleSetBy = "lab";
+    doc.files = files;
+    doc.markModified("files");
+    doc.resultFiles = normalizeResultFiles(doc.resultFiles).map((row) => {
+      const next = { ...row };
+      delete next.marginPoints;
+      delete next.marginArch;
+      return next;
+    });
+    doc.markModified("resultFiles");
+    await doc.save();
+    schedulePracticeScanAlignment(doc._id);
+    schedulePracticeProsthesisMargin(doc._id);
+
+    const payload = await emitRequestFilesUpdated({
+      doc,
+      req,
+      action: "request-scan-role",
+      labAnchorId,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        transferId: String(doc.transferId || "").trim(),
+        ...toTransferFilesApiFields(doc),
+        updatedAt: payload.updatedAt,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "스캔 역할을 저장하지 못했습니다.",
       error: error?.message,
     });
   }
