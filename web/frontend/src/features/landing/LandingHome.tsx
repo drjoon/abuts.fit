@@ -144,7 +144,7 @@ export function LandingHome() {
         <LandingScrollCue />
       </section>
 
-      {/* THE SIMPLE WAY — 좌우 파노라마 갤러리 (모바일·PC) */}
+      {/* ABUTS WORKFLOW — 좌우 파노라마 갤러리 (모바일·PC) */}
       <section
         id="business"
         className={cn("scroll-mt-20 bg-white", landingSectionY.bandTight)}

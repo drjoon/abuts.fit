@@ -181,7 +181,7 @@ export const landingHome = {
   heroSupport: "치과·기공소·제조사를 하나의 흐름으로 연결합니다.",
 
   ctaStart: "시작하기",
-  browseEyebrow: "THE SIMPLE WAY",
+  browseEyebrow: "ABUTS WORKFLOW",
   browseHeading: "식립부터 보철까지, 하나의 흐름으로.",
   browseLead:
     "심플웨이와 어벗츠 플랫폼이 임플란트 수술·기공·생산의 단계를 더 명확하게 연결합니다.",
