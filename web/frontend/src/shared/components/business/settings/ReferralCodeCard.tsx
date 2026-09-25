@@ -107,7 +107,7 @@ export function ReferralCodeCard({
         <p className="text-sm font-semibold text-slate-900">영업자 코드</p>
         <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
           {ownership?.salesAssigned
-            ? "등록되어 있습니다. 90일간 주문이 없으면 자동으로 해제됩니다."
+            ? "등록되어 있습니다. 90일 무주문이면 소개가 리셋됩니다."
             : "등록되어 있습니다."}
         </p>
       </section>
@@ -122,8 +122,9 @@ export function ReferralCodeCard({
       <div>
         <p className="text-sm font-semibold text-slate-900">영업자 코드</p>
         <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
-          영업자에게 받은 코드를 등록합니다. 대표만 등록할 수 있고, 90일간
-          주문이 없으면 자동으로 해제됩니다.
+          영업자에게 받은 코드를 등록합니다.
+          <br />
+          대표만 등록할 수 있고, 90일 무주문이면 소개가 리셋됩니다.
         </p>
       </div>
       <div className="flex flex-col gap-2 sm:flex-row">

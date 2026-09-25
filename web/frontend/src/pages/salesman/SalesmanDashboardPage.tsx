@@ -2,7 +2,7 @@
  * 딜러(salesman) 대시보드 — 수수료·소개 코드·유치 시점 요율.
  *
  * 딜러십: 신규 유치 요율(기본 20%). 관리자 예약으로 15%·10% 인하.
- * 이미 유치한 의뢰자는 유치 당시 요율 유지. 3개월(90일) 무주문 리셋 후 재유치 시 당시 요율.
+ * 이미 유치한 의뢰자는 유치 당시 요율 유지. 90일 무주문이면 소개 리셋.
  */
 
 import { useState } from "react";
@@ -403,7 +403,7 @@ function DealershipTermsCard({
               <RefreshCw className="h-3.5 w-3.5" />
             </span>
             <div className="min-w-0">
-              <div className="text-sm font-semibold">소개 귀속 3개월</div>
+              <div className="text-sm font-semibold">소개 리셋</div>
               <p
                 className="mt-0.5 truncate text-xs leading-snug text-white/70"
                 title={REFERRAL_OWNERSHIP_RESET_POLICY_SHORT}

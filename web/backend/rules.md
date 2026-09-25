@@ -242,7 +242,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - 이벤트 기반 스냅샷이 있어도 일일 배치(정산/warmup 포함)는 건너뛰지 않음
     - 멀티 인스턴스 중복 방지: `worker:daily-referral-snapshot` JobLock
     - 당일 완료 마커: `worker:daily-referral-snapshot:done:<ymd>` (TTL ~48h)
-  - **영업 소개 귀속 90일 리셋**: `jobs/dailyReferralOwnershipResetWorker.js` + `services/referralOwnershipReset.service.js`
+  - **90일 무주문이면 소개 리셋**: `jobs/dailyReferralOwnershipResetWorker.js` + `services/referralOwnershipReset.service.js`
     - 대상: `businessType=requestor` 이고 추천인 BA가 `salesman|salesTeam`
     - 시계: `max(referralAssignedAt || BA.createdAt, 최근 Request.createdAt, 최근 크레딧 소비 COMMIT occurredAt)` < KST 오늘 자정−90일 → `referredByAnchorId=null` (+ 멤버 User 미러)
     - 코드 없이 가입하면 귀속은 null. 대표만 `POST /api/businesses/me/apply-referral` (영업자·딜러 코드, 귀속 null 또는 개발운영사 기본 귀속일 때)
@@ -922,7 +922,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 수익 분배 계산 SSOT는 `services/creditRevenuePolicy.service.js`를 사용합니다.
     - 런타임 적재(`controllers/requests/common.review.helpers.js`)와 이관 스크립트는 동일 함수를 공유해 분배 정책 드리프트를 금지합니다.
     - 제조사 = 고정 공급가(어벗 1개당 / 배송 박스당). 잔여 = 소비 공급가 − 제조사 공급가 → 딜러사·개발운영사·어벗츠 상대비율(`BusinessAnchor.payoutRates`의 salesman/devops/admin). 딜러사 없으면 salesman 몫을 admin에 가산. 잔여 분배율은 추후 별도 확정.
-    - **딜러십 파트너 조건**: 영업 수수료=심플웨이·커스텀어벗(기공·배송 제외). **신규 유치 요율**(기본 20%) · 관리자 예약 인하(15%/10%, 신규만). **유치 시점 요율 고정**(BA `dealershipCommissionRate`). **90일(약 3개월) 무주문 리셋 후 재유치 시 당시 요율 재스탬프**. `resolveDealershipRateForAcquiredAt` · 관리자「플랫폼 설정 · 분배 비율」딜러십. (루트 `rules.md` §2.3).
+    - **딜러십 파트너 조건**: 영업 수수료=심플웨이·커스텀어벗(기공·배송 제외). **신규 유치 요율**(기본 20%) · 관리자 예약 인하(15%/10%, 신규만). **유치 시점 요율 고정**(BA `dealershipCommissionRate`). **90일 무주문이면 소개 리셋**. 재유치 시 당시 요율 재스탬프. `resolveDealershipRateForAcquiredAt` · 관리자「플랫폼 설정 · 분배 비율」딜러십. (루트 `rules.md` §2.3).
     - 기공의뢰 수수료: 지정·협력 플랫폼 사용료 정책 **2%** · 이벤트 **0%**(`directPlatformFeeEnabled` / `directPlatformFeeRate`). **하청** `subcontractFeeRate`(기본 **10%**) · 월 참여 `autoMatchMonthlyFee`(**정책 0원**) — 관리자 플랫폼 설정「인증 기공소」. 루트 `rules.md` §2.3.
     - `machining_spend`+`express_surcharge`: 제조사 단가 1회만(`manufacturerUnitApplied` / 기존 의뢰 유니크와 정합).
 

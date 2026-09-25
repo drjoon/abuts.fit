@@ -304,7 +304,7 @@ export async function applyReferralCodeToUnownedRequestor({
   }
   if (!replaceable) {
     throw new Error(
-      "이미 영업자 코드가 등록되어 있습니다. 90일간 주문이 없으면 자동으로 해제된 뒤 다시 등록할 수 있습니다.",
+      "이미 영업자 코드가 등록되어 있습니다. 90일 무주문이면 소개가 리셋된 뒤 다시 등록할 수 있습니다.",
     );
   }
 

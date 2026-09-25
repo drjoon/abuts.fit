@@ -444,13 +444,13 @@ export const PricingPolicyDialog = ({
             <div className='space-y-3'>
               <PolicySection title='영업 수수료'>
                 <p>
-                  심플웨이·커스텀어벗 판매가 기준(기공비·배송비·월정액 제외).
-                  <br />
-                  지금 신규 유치 요율은{' '}
+                  심플웨이·커스텀어벗 매출액(기공 제외) 대비 수수료는{' '}
                   <span className='font-semibold text-slate-900'>
                     {activePct}%
                   </span>
-                  입니다. 유치한 의뢰자는 그 시점 요율이 계속 적용됩니다.
+                  입니다.
+                  <br />
+                  배송비·월정액은 수수료 산정에서 빠집니다.
                 </p>
                 <BulletList
                   items={[
