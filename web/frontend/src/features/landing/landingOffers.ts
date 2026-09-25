@@ -17,17 +17,13 @@ import {
   LANDING_PLATFORM_LEDGER,
   LANDING_PLATFORM_REQUEST,
   LANDING_PLATFORM_STATS,
-  LANDING_SW_ABUTMENT_CROWN,
-  LANDING_SW_BONE_SHAPER,
   LANDING_SW_CATALOG_ASSEMBLY,
   LANDING_SW_CHECK_KIT,
   LANDING_SW_CUSTOM_ASSEMBLY,
-  LANDING_SW_CHECK_PIN,
   LANDING_SW_FLOW_DEFAULT_ROW_ID,
   LANDING_SW_FLOW_ROWS,
   LANDING_SW_GUIDE_HOW_TO,
   LANDING_SW_GUIDE_KIT,
-  LANDING_SW_GUIDE_PEN_PIN,
   LANDING_SW_PROSTHETIC_KIT,
   LANDING_WAVEON_PARTNERSHIP,
   LANDING_WAVEON_WORKFLOW,
@@ -221,20 +217,6 @@ const WAVEON_PARTNERSHIP_TILE: OfferVisual = {
   alt: "치과·기공소 디지털 협업",
 };
 
-/** 이벤트(`/events/simpleway-gribo` extras)와 동일 카피 — 심플웨이·기공서비스에 넣음 */
-const PLATFORM_STORY: OfferStory = {
-  name: "어벗츠 플랫폼",
-  line: "치과·기공소",
-  body: [
-    "치과와 기공소가 온라인으로 기공을 의뢰하고, 어벗츠 커스텀어벗과도 바로 연동됩니다.",
-  ],
-  visual: {
-    kind: "photo",
-    src: LANDING_PLATFORM_BOARD,
-    alt: "어벗츠 플랫폼 의뢰 보드",
-  },
-};
-
 const PLATFORM_FAQ = {
   q: "어벗츠 플랫폼은 무엇인가요?",
   a: "치과와 기공소가 온라인으로 기공을 의뢰하고, 어벗츠 커스텀어벗과도 바로 연동됩니다.",
@@ -288,78 +270,6 @@ export const landingOffers: LandingOffer[] = [
       rows: LANDING_SW_FLOW_ROWS.map((row) => ({ ...row })),
       defaultRowId: LANDING_SW_FLOW_DEFAULT_ROW_ID,
     },
-    highlights: [
-      { icon: "kit", label: "Guide", line: "가이드펜·핀으로 위치를" },
-      { icon: "scan", label: "Check", line: "체크핀으로 경로를 확인" },
-      { icon: "healing", label: "힐링", line: "이머전스 프로파일을 형성" },
-      { icon: "abutment", label: "심플어벗", line: "같은 직경으로 이어짐" },
-      { icon: "request", label: "플랫폼", line: "치과·기공소 온라인 의뢰" },
-      { icon: "store", label: "스토어", line: "키트·제품을 바로 주문" },
-    ],
-    scene: {
-      title: "탑다운으로 잡습니다.",
-      line: "가이드펜과 핀이 보철 직경을 먼저 정합니다.",
-      visual: {
-        kind: "photo",
-        src: LANDING_SW_GUIDE_HOW_TO,
-        alt: "가이드펜 직경 선택",
-      },
-    },
-    stories: [
-      {
-        name: "가이드펜과 가이드핀.",
-        line: "보철 직경부터 정합니다.",
-        body: [
-          "가이드펜으로 탑다운 위치를 잡고, 가이드핀으로 여러 부위를 나란히 맞춥니다.",
-          "심플 힐링은 같은 직경 라인으로 이어져, 이머전스 프로파일이 처음부터 맞습니다.",
-        ],
-        visual: {
-          kind: "photo",
-          src: LANDING_SW_GUIDE_PEN_PIN,
-          alt: "가이드펜과 가이드핀",
-        },
-      },
-      {
-        name: "본쉐이퍼.",
-        line: "힐링이 앉을 자리를 만듭니다.",
-        body: [
-          "치조골이 막으면 심플 힐링이 끝까지 들어가지 않습니다.",
-          "본쉐이퍼는 힐링 프로파일에 맞춰 골을 성형해, 체결이 막히지 않게 합니다.",
-        ],
-        visual: {
-          kind: "photo",
-          src: LANDING_SW_BONE_SHAPER,
-          alt: "본쉐이퍼로 골 성형",
-        },
-      },
-      {
-        name: "체크핀.",
-        line: "보철 경로를 다시 확인합니다.",
-        body: [
-          "체결 뒤 체크핀으로 위치와 각도를 봅니다.",
-          "다수치일수록 누적 오차를 줄이고, 이머전스도 함께 점검합니다.",
-        ],
-        visual: {
-          kind: "photo",
-          src: LANDING_SW_CHECK_PIN,
-          alt: "체크핀으로 경로 확인",
-        },
-      },
-      {
-        name: "심플어벗으로 보철.",
-        line: "가이드와 같은 프로파일.",
-        body: [
-          "심플어벗은 가이드펜·핀·체크핀과 맞는 이머전스와 포스트를 갖습니다.",
-          "CAD/CAM 보철에 맞춰져 있고, 규격이 아니면 같은 화면에서 커스텀으로 넘깁니다.",
-        ],
-        visual: {
-          kind: "photo",
-          src: LANDING_SW_ABUTMENT_CROWN,
-          alt: "심플어벗 위 보철",
-        },
-      },
-      PLATFORM_STORY,
-    ],
     slideHeading: "색 · 키트.",
     slides: [
       {
