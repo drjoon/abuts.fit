@@ -28,6 +28,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/shared/hooks/use-toast";
@@ -134,11 +135,8 @@ function SimplewayHero({
         <p className="animate-in fade-in slide-in-from-bottom-2 fill-mode-both text-xs font-semibold uppercase tracking-[0.28em] text-sky-700 duration-700">
           {GRIBO_HERO_EYEBROW}
         </p>
-        <h1 className="animate-in fade-in slide-in-from-bottom-3 fill-mode-both mt-4 max-w-3xl font-semibold leading-[1.12] tracking-tight text-[#0b2a5c] duration-700 delay-100">
-          <span className="block text-[clamp(0.95rem,2.2vw,1.2rem)] font-medium tracking-wide text-slate-500">
-            심플웨이 신제품
-          </span>
-          <span className="mt-2 block text-[clamp(2.1rem,5.5vw,3.75rem)]">
+        <h1 className="animate-in fade-in slide-in-from-bottom-3 fill-mode-both mt-4 max-w-3xl break-keep font-semibold leading-[1.12] tracking-tight text-[#0b2a5c] duration-700 delay-100">
+          <span className="block text-[clamp(2.1rem,5.5vw,3.75rem)]">
             {SIMPLEWAY_EVENT_HEADLINE}
           </span>
         </h1>
@@ -202,7 +200,7 @@ function KitSection() {
           <Package className="hidden h-8 w-8 text-sky-500/80 sm:block" />
         </div>
 
-        <ul className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <ul className="mt-10 grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,4fr)_minmax(0,2fr)_minmax(0,2fr)_minmax(0,2fr)]">
           {SIMPLEWAY_SAMPLE_KIT.map((item, i) => (
             <li
               key={item.id}
@@ -217,7 +215,14 @@ function KitSection() {
                 <span className="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-sky-50 text-sky-700 ring-1 ring-sky-100">
                   <Gift className="h-4 w-4" />
                 </span>
-                <h3 className="mt-5 text-lg font-semibold text-slate-900">
+                <h3
+                  className={cn(
+                    "mt-5 font-semibold text-slate-900",
+                    i === 0
+                      ? "text-lg md:whitespace-nowrap"
+                      : "text-lg break-keep md:text-base md:whitespace-nowrap",
+                  )}
+                >
                   {item.name}
                 </h3>
                 {item.spec ? (
@@ -225,7 +230,7 @@ function KitSection() {
                     {item.spec}
                   </p>
                 ) : null}
-                <p className="mt-3 text-sm text-slate-500">{item.note}</p>
+                <p className="mt-3 break-keep text-sm text-slate-500">{item.note}</p>
               </div>
             </li>
           ))}
@@ -245,16 +250,14 @@ function ExtrasSection() {
         <h2 className="mt-2 max-w-xl text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
           함께 소개하는 디지털 지원
         </h2>
-        <div className="mt-10 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-10 grid gap-4 md:grid-cols-2">
           {SIMPLEWAY_SAMPLE_EXTRAS.map((extra) => (
             <article
               key={extra.id}
               className="flex gap-4 rounded-[1.75rem] border border-slate-200/90 bg-gradient-to-br from-[#0b2a5c] to-[#163a72] p-6 text-white sm:p-7"
             >
               <span className="mt-0.5 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/10 ring-1 ring-white/15">
-                {extra.id === "scanbar" ? (
-                  <ScanLine className="h-5 w-5" />
-                ) : extra.id === "abuts-platform" ? (
+                {extra.id === "abuts-platform" ? (
                   <LayoutGrid className="h-5 w-5" />
                 ) : (
                   <Sparkles className="h-5 w-5" />
@@ -293,12 +296,14 @@ export default function EventApplyPage() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const token = useAuthStore((s) => s.token);
   const user = useAuthStore((s) => s.user);
+  const setUser = useAuthStore((s) => s.setUser);
   const [event, setEvent] = useState<MarketingEvent | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
   const [alreadyApplied, setAlreadyApplied] = useState(false);
+  const [usesOralScan, setUsesOralScan] = useState<boolean | null>(null);
   const [applicationCheckLoading, setApplicationCheckLoading] = useState(
     () => Boolean(isAuthenticated && isPracticeApplicant(user)),
   );
@@ -388,6 +393,7 @@ export default function EventApplyPage() {
   useEffect(() => {
     if (!isAuthenticated || !token || !slug || !practiceUser) {
       setAlreadyApplied(false);
+      setUsesOralScan(null);
       setApplicationCheckLoading(false);
       return;
     }
@@ -398,9 +404,15 @@ export default function EventApplyPage() {
       .then((res) => {
         if (cancelled) return;
         setAlreadyApplied(Boolean(res.applied));
+        setUsesOralScan(
+          typeof res.usesOralScan === "boolean" ? res.usesOralScan : null,
+        );
       })
       .catch(() => {
-        if (!cancelled) setAlreadyApplied(false);
+        if (!cancelled) {
+          setAlreadyApplied(false);
+          setUsesOralScan(null);
+        }
       })
       .finally(() => {
         if (!cancelled) setApplicationCheckLoading(false);
@@ -444,6 +456,14 @@ export default function EventApplyPage() {
     e.preventDefault();
     if (!event || submitting || !canApply || !isAuthenticated || !prefill)
       return;
+    if (usesOralScan == null) {
+      toast({
+        title: "구강 스캔 사용 여부를 선택해 주세요",
+        description: "사용함 / 사용 안 함 중 하나를 선택해야 합니다.",
+        variant: "destructive",
+      });
+      return;
+    }
     setSubmitting(true);
     try {
       await eventsApi.apply(
@@ -453,9 +473,20 @@ export default function EventApplyPage() {
           directorName: prefill.directorName,
           dealer,
           applicantPhone: prefill.applicantPhone || prefill.practice.phone,
+          usesOralScan,
         },
         token,
       );
+      if (user) {
+        setUser({
+          ...user,
+          practiceProfile: {
+            ...(user.practiceProfile || {}),
+            usesOralScan,
+            updatedAt: new Date().toISOString(),
+          },
+        });
+      }
       clearEventApplyLocalDraft(event.slug, user?._id);
       setDone(true);
       setAlreadyApplied(true);
@@ -624,6 +655,67 @@ export default function EventApplyPage() {
             </div>
           ) : (
             <form onSubmit={onSubmit} className="space-y-5">
+              <Card className={cn(PUBLIC_CARD_CLASS, "rounded-3xl")}>
+                  <CardHeader className="space-y-2">
+                    <CardTitle className="flex flex-wrap items-center gap-2 text-base text-slate-900">
+                      <ScanLine className="h-4 w-4 text-sky-600" />
+                      구강 스캔 사용 여부
+                      <Badge
+                        variant="secondary"
+                        className="rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-800 ring-1 ring-sky-100"
+                      >
+                        필수
+                      </Badge>
+                    </CardTitle>
+                    <div className="flex gap-2 rounded-2xl border border-sky-100 bg-sky-50/80 px-3 py-2.5 text-sm leading-relaxed text-sky-900">
+                      <Info className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" />
+                      <p>사용 중이면 스캔바 등 디지털 지원을 안내합니다.</p>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <RadioGroup
+                      value={
+                        usesOralScan == null
+                          ? undefined
+                          : usesOralScan
+                            ? "yes"
+                            : "no"
+                      }
+                      onValueChange={(v) => setUsesOralScan(v === "yes")}
+                      className="grid gap-3 sm:grid-cols-2"
+                      disabled={!canApply}
+                    >
+                      <label
+                        htmlFor="event-oral-scan-yes"
+                        className={cn(
+                          "flex cursor-pointer items-center gap-3 rounded-2xl border bg-white px-4 py-3.5 transition-colors",
+                          usesOralScan === true
+                            ? "border-sky-300 bg-sky-50/80"
+                            : "border-slate-200",
+                        )}
+                      >
+                        <RadioGroupItem value="yes" id="event-oral-scan-yes" />
+                        <span className="text-sm font-medium text-slate-900">
+                          사용함
+                        </span>
+                      </label>
+                      <label
+                        htmlFor="event-oral-scan-no"
+                        className={cn(
+                          "flex cursor-pointer items-center gap-3 rounded-2xl border bg-white px-4 py-3.5 transition-colors",
+                          usesOralScan === false
+                            ? "border-sky-300 bg-sky-50/80"
+                            : "border-slate-200",
+                        )}
+                      >
+                        <RadioGroupItem value="no" id="event-oral-scan-no" />
+                        <span className="text-sm font-medium text-slate-900">
+                          사용 안 함
+                        </span>
+                      </label>
+                    </RadioGroup>
+                  </CardContent>
+                </Card>
               {showDealer ? (
                 <Card className={cn(PUBLIC_CARD_CLASS, "rounded-3xl")}>
                   <CardHeader className="space-y-2">
@@ -697,7 +789,7 @@ export default function EventApplyPage() {
                 type="submit"
                 className="h-12 w-full rounded-full bg-[#2563eb] text-base font-semibold hover:bg-[#1d4ed8]"
                 size="lg"
-                disabled={submitting || !canApply}
+                disabled={submitting || !canApply || usesOralScan == null}
               >
                 {!canApply
                   ? "신청 마감"

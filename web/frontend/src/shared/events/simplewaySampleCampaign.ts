@@ -6,10 +6,11 @@
 // - 「샘플 배포」「나눠드림」「피드백 시 우선 초대」 등 조건부 편익·판촉성 샘플 문구 금지.
 // - 공개 문구는 「출시 행사 / 제품 소개 / 방문 안내」로 유지.
 
-/** 심플웨이 신제품 — 어벗츠 출시 행사 */
-export const SIMPLEWAY_SAMPLE_SLUG = "simpleway-abuts";
+/** 어벗츠 신제품 출시 행사 */
+export const SIMPLEWAY_SAMPLE_SLUG = "abuts-launch";
 /** 예전 공개 주소. 페이지는 새 slug로 바꾸고, 신청 이력은 서버가 새 slug로 옮긴다. */
 export const SIMPLEWAY_SAMPLE_SLUGS_LEGACY = [
+  "simpleway-abuts",
   "simpleway-gribo",
   "simpleway-sample-kit",
 ] as const;
@@ -24,28 +25,28 @@ export function resolveSimplewayEventSlug(slug: string) {
 
 export const SIMPLEWAY_SAMPLE_KIT = [
   {
-    id: "healing-h",
-    name: "어벗츠 힐링H",
+    id: "abutments",
+    name: "어벗츠 힐링H, 어벗H, 커스텀어벗",
     spec: "",
-    note: "그립.스캔 힐링 어벗먼트",
-  },
-  {
-    id: "abut-h",
-    name: "어벗츠 어벗H",
-    spec: "",
-    note: "그립.스캔 기성 어벗먼트",
-  },
-  {
-    id: "custom-abut",
-    name: "어벗츠 커스텀어벗",
-    spec: "",
-    note: "그립.스캔 커스텀 어벗먼트",
+    note: "그립.스캔 힐링, 기성 및 커스텀 어벗먼트",
   },
   {
     id: "driver",
     name: "어벗츠 드라이버",
     spec: "",
     note: "그립 헥스 드라이버",
+  },
+  {
+    id: "scanbar",
+    name: "어벗츠 스캔바",
+    spec: "",
+    note: "구강스캔 인식 향상",
+  },
+  {
+    id: "package-500",
+    name: "어벗츠 패키지",
+    spec: "",
+    note: "올인원 500 패키지",
   },
 ] as const;
 
@@ -55,12 +56,6 @@ export const SIMPLEWAY_SAMPLE_EXTRAS = [
     title: "힐링 스캔 라이브러리",
     body: "거래 기공소에 어벗츠 힐링 스캔 라이브러리를 설치해드립니다.\n어벗츠 어벗H·커스텀어벗과 함께 사용할 수 있습니다.",
     tag: "기공소",
-  },
-  {
-    id: "scanbar",
-    title: "스캔바 소개",
-    body: "구강 스캐너를 사용 중인 치과에는 스캔바 제품도 함께 소개합니다.",
-    tag: "구강 스캔 치과",
   },
   {
     id: "abuts-platform",
@@ -83,8 +78,7 @@ export const SIMPLEWAY_HERO_SUB = SIMPLEWAY_HERO_SUB_LINES.join(" ");
 
 export const GRIBO_HERO_EYEBROW = "Abuts Launch";
 
-/** 행사 카드·히어로 큰 제목. 풀 타이틀은 `GRIBO_EVENT_TITLE`. */
-export const SIMPLEWAY_EVENT_HEADLINE = "어벗츠 출시 행사";
+/** 행사 카드·히어로 제목 */
+export const SIMPLEWAY_EVENT_HEADLINE = "어벗츠 신제품 출시 행사";
 
-export const GRIBO_EVENT_TITLE =
-  "심플웨이 신제품 - 어벗츠 출시 행사";
+export const GRIBO_EVENT_TITLE = SIMPLEWAY_EVENT_HEADLINE;

@@ -87,9 +87,11 @@ export function LandingEventsSection() {
                     >
                       <div className="flex flex-col gap-3 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-5 sm:py-5">
                         <div className="min-w-0 space-y-1.5">
-                          <p className="text-[12px] font-medium text-sky-600">
-                            {isSimpleway ? "심플웨이 신제품" : "행사"}
-                          </p>
+                          {!isSimpleway ? (
+                            <p className="text-[12px] font-medium text-sky-600">
+                              행사
+                            </p>
+                          ) : null}
                           <h3 className="break-keep text-lg font-semibold tracking-tight text-[#0b2a5c] sm:text-xl">
                             {title}
                           </h3>

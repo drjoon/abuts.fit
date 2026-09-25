@@ -271,3 +271,77 @@ export async function syncPracticeUsesOralScan({
   if (ops.length) await Promise.all(ops);
   return { updatedUser, updatedAnchor, businessAnchorId: anchorId || null };
 }
+
+function hasStoredUsesOralScan(doc) {
+  return Boolean(
+    doc &&
+      typeof doc === "object" &&
+      Object.prototype.hasOwnProperty.call(doc, "usesOralScan") &&
+      typeof doc.usesOralScan === "boolean",
+  );
+}
+
+function isPracticeRequestorUser(user) {
+  if (!user) return false;
+  if (user.requestorKind === "practice" || user.role === "practice") return true;
+  if (user.requestorKind === "lab") return false;
+  return Boolean(user.requestorCapabilities?.practice);
+}
+
+/**
+ * 스키마 default(false)는 미응답과 같다. lean 문서에 필드가 있을 때만 응답으로 본다.
+ * 유저 practiceProfile 또는 소속 사업자 중 하나라도 저장돼 있으면 다시 묻지 않는다.
+ */
+export async function readPracticeOralScanAnswer(userId) {
+  const empty = {
+    isPractice: false,
+    needsAnswer: false,
+    value: null,
+    anchorHas: false,
+    businessAnchorId: null,
+  };
+  if (!userId || !Types.ObjectId.isValid(String(userId))) return empty;
+
+  const user = await User.findById(userId)
+    .select({
+      practiceProfile: 1,
+      businessAnchorId: 1,
+      requestorKind: 1,
+      role: 1,
+      requestorCapabilities: 1,
+    })
+    .lean();
+  if (!user) return empty;
+
+  const isPractice = isPracticeRequestorUser(user);
+  const pp =
+    user.practiceProfile && typeof user.practiceProfile === "object"
+      ? user.practiceProfile
+      : null;
+  const userHas = hasStoredUsesOralScan(pp);
+
+  let anchorHas = false;
+  let anchorValue = null;
+  const anchorId = user.businessAnchorId || null;
+  if (anchorId && Types.ObjectId.isValid(String(anchorId))) {
+    const anchor = await BusinessAnchor.findById(anchorId)
+      .select({ usesOralScan: 1 })
+      .lean();
+    anchorHas = hasStoredUsesOralScan(anchor);
+    if (anchorHas) anchorValue = Boolean(anchor.usesOralScan);
+  }
+
+  const value = userHas
+    ? Boolean(pp.usesOralScan)
+    : anchorHas
+      ? anchorValue
+      : null;
+
+  return {
+    isPractice,
+    needsAnswer: isPractice && value == null,
+    value,
+    anchorHas,
+    businessAnchorId: anchorId,
+  };
+}

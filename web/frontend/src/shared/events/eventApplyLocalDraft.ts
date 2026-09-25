@@ -4,7 +4,7 @@
 // - web/frontend/src/shared/components/business/settings/business/validations.ts
 //
 // 출시 행사 신청 폼(재료상) 초안 — 새로고침 유지. 신청 성공 시 삭제.
-// 구강 스캔 여부는 치과 대표 온보딩(사업자등록 후)에서만 수집.
+// 구강 스캔 여부는 신청 폼에서 받는다. 저장된 값이 있으면 기본 선택.
 
 import type { EventPlaceFields } from "@/shared/events/eventsApi";
 import { formatPhoneNumberInput } from "@/shared/components/business/settings/business/validations";

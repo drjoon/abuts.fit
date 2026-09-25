@@ -8,25 +8,32 @@ import MarketingEvent from "../../models/marketingEvent.model.js";
 import MarketingEventApplication from "../../models/marketingEventApplication.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { searchKakaoPlaces } from "../../services/kakaoPlaceSearch.service.js";
-import { syncPracticeUsesOralScan } from "../businesses/requestorOrgAnchor.util.js";
+import {
+  readPracticeOralScanAnswer,
+  syncPracticeUsesOralScan,
+} from "../businesses/requestorOrgAnchor.util.js";
 
-const SIMPLEWAY_SAMPLE_SLUG = "simpleway-abuts";
-const SIMPLEWAY_SAMPLE_SLUGS_LEGACY = ["simpleway-gribo", "simpleway-sample-kit"];
+const SIMPLEWAY_SAMPLE_SLUG = "abuts-launch";
+const SIMPLEWAY_SAMPLE_SLUGS_LEGACY = [
+  "simpleway-abuts",
+  "simpleway-gribo",
+  "simpleway-sample-kit",
+];
 
 const SIMPLEWAY_DEALER_HELP =
   "친한 재료 사장님을 소개해 주세요. 그분께 지역 영업권을 드립니다.";
 
 /** 공개 카피 SSOT — 샘플 배포·피드백 조건부 편익 문구 금지(출시 행사·제품 소개) */
 const SIMPLEWAY_EVENT_COPY = {
-  title: "심플웨이 신제품 - 어벗츠 출시 행사",
+  title: "어벗츠 신제품 출시 행사",
   summary:
     "신청 후 영업 담당자가 방문해 제품·사용 방법을 안내합니다. 화·수 이틀간 신청 접수.",
   description: [
     "소개 제품",
-    "· 어벗츠 힐링H",
-    "· 어벗츠 어벗H",
-    "· 어벗츠 커스텀어벗",
+    "· 어벗츠 힐링H, 어벗H, 커스텀어벗",
     "· 어벗츠 드라이버",
+    "· 어벗츠 스캔바",
+    "· 어벗츠 패키지",
     "",
     "신청 기간: 화요일 · 수요일 (이틀)",
     "",
@@ -36,7 +43,6 @@ const SIMPLEWAY_EVENT_COPY = {
     "",
     "추가 안내",
     "· 거래 기공소에 어벗츠 힐링 스캔 라이브러리 설치 (어벗츠 어벗H·커스텀어벗)",
-    "· 구강 스캐너 사용 치과에는 스캔바 제품 소개",
     "· 어벗츠 플랫폼 안내 (온라인 기공의뢰 · 커스텀어벗 연동)",
   ].join("\n"),
 };
@@ -483,13 +489,27 @@ export async function applyToEvent(req, res) {
       120,
     );
     const memo = trimStr(body.memo, 1000);
-    // 구강 스캔 여부 SSOT: 치과 대표 온보딩(practiceProfile) · BA.
-    // 이벤트 폼에서는 더 이상 받지 않음. 신청 시 프로필 스냅샷.
-    const authUsesOralScan = Boolean(authPp.usesOralScan);
+    // 구강 스캔: 행사 신청은 항상 예/아니오를 받는다. 저장된 값이 있으면 기본값.
+    // 본문이 없으면 저장값 스냅샷. 미응답인데 본문도 없으면 거절.
+    const oralScan = authUser?._id
+      ? await readPracticeOralScanAnswer(authUser._id)
+      : {
+          isPractice: false,
+          needsAnswer: false,
+          value: null,
+          anchorHas: false,
+          businessAnchorId: null,
+        };
+    const bodyUsesOralScan =
+      typeof body.usesOralScan === "boolean" ? body.usesOralScan : null;
+    if (oralScan.needsAnswer && bodyUsesOralScan == null) {
+      return res.status(400).json({
+        success: false,
+        message: "구강 스캔 사용 여부를 선택해 주세요.",
+      });
+    }
     const usesOralScan =
-      typeof body.usesOralScan === "boolean"
-        ? body.usesOralScan
-        : authUsesOralScan;
+      bodyUsesOralScan != null ? bodyUsesOralScan : Boolean(oralScan.value);
 
     // 로그인 치과: 본문 미입력이면 프로필·계정으로 채움
     if (authUser) {
@@ -621,11 +641,15 @@ export async function applyToEvent(req, res) {
       status: "received",
     });
 
-    // 로그인 신청: 본문에 명시된 경우에만 프로필·BA 동기화(온보딩이 SSOT)
-    if (applicantUserId && typeof body.usesOralScan === "boolean") {
+    // 신청 본문에 답이 있거나, 프로필만 있고 사업자 필드가 비어 있으면 동기화.
+    const shouldSyncOralScan =
+      bodyUsesOralScan != null ||
+      (oralScan.value != null && !oralScan.anchorHas);
+    if (applicantUserId && shouldSyncOralScan) {
       void syncPracticeUsesOralScan({
         userId: applicantUserId,
-        businessAnchorId: authUser?.businessAnchorId || null,
+        businessAnchorId:
+          oralScan.businessAnchorId || authUser?.businessAnchorId || null,
         usesOralScan,
       }).catch((err) => {
         console.error("[events.apply] syncPracticeUsesOralScan", err);
@@ -695,12 +719,15 @@ export async function getMyEventApplication(req, res) {
       }
     }
 
+    const oralScan = await readPracticeOralScanAnswer(userId);
+
     return res.json({
       success: true,
       data: {
         applied: Boolean(app),
         application: app ? toApplicationRow(app) : null,
         event: toPublicEvent(event),
+        usesOralScan: oralScan.value,
       },
     });
   } catch (error) {

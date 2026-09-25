@@ -123,7 +123,10 @@ export const eventsApi = {
       applicantPhone?: string;
       applicantEmail?: string;
       memo?: string;
-      /** @deprecated 온보딩 프로필·BA에서 스냅샷. 본문 전달 불필요 */
+      /**
+       * 프로필·사업자에 구강 스캔 값이 없을 때만 전달.
+       * 있으면 신청 시 스냅샷.
+       */
       usesOralScan?: boolean;
     },
     token?: string | null,
@@ -138,6 +141,8 @@ export const eventsApi = {
       applied: boolean;
       application: EventApplication | null;
       event: MarketingEvent;
+      /** 저장된 구강 스캔 값. 없으면 null — 신청 폼은 항상 표시하고 이 값으로 기본 선택 */
+      usesOralScan?: boolean | null;
     }>(`/api/events/${encodeURIComponent(slug)}/my-application`, { token }),
 
   adminList: (token: string | null) =>
