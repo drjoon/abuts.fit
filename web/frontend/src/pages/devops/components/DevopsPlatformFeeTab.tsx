@@ -31,8 +31,6 @@ import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { cn } from "@/shared/ui/cn";
-import { LabDirectPlatformFeeRateLabel } from "@/shared/settlement/LabDirectPlatformFeeNotice";
-
 type PlatformFeeSettings = {
   platformFeeRate?: number;
   subcontractFeeRate?: number;
@@ -269,17 +267,11 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
               플랫폼 사용료
             </Label>
             <p className="text-[12px] leading-snug text-muted-foreground">
-              {directFeeEnabled ? (
-                "치과가 지정한 협력 기공소"
-              ) : (
-                <>
-                  이벤트 중{" "}
-                  <LabDirectPlatformFeeRateLabel
-                    enabled={false}
-                    ratePct={Number(directFeeRate) || 2}
-                  />
-                </>
-              )}
+              지정·협력은 이 요율입니다.
+              <br />
+              학습 이용을 허용하면 면제됩니다.
+              <br />
+              하청 수수료에 이 요율을 더하고, 허용하면 이 요율만 면제됩니다.
             </p>
           </div>
         </div>

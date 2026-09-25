@@ -42,10 +42,7 @@ import { Separator } from "@/components/ui/separator";
 import { LabPracticeFeeSurchargeControl } from "@/shared/components/practice/LabPracticeFeeSurchargeControl";
 import { normalizeLabFeeMultiplier } from "@/shared/practice/labFeeSchedule";
 import { resolveLabDirectPlatformFeePct } from "@/shared/settlement/labPayoutBankbook";
-import {
-  LabDirectPlatformFeeNotice,
-  LabDirectPlatformFeeRateLabel,
-} from "@/shared/settlement/LabDirectPlatformFeeNotice";
+import { LabDirectPlatformFeeNotice } from "@/shared/settlement/LabDirectPlatformFeeNotice";
 
 type PartnerItem = {
   _id: string;
@@ -245,7 +242,6 @@ export const LabTradingPartnersTab = () => {
         0.1,
     ) * 100,
   );
-  const directFeeEnabled = windowInfo?.feeRates?.directPlatformFeeEnabled === true;
   const directFeePct = resolveLabDirectPlatformFeePct(
     windowInfo?.feeRates?.directPlatformFeeRate != null
       ? Number(windowInfo.feeRates.directPlatformFeeRate) * 100
@@ -268,42 +264,22 @@ export const LabTradingPartnersTab = () => {
             자동 매칭
           </CardTitle>
           <CardDescription className="text-[13px] leading-relaxed">
-            인증 기공소는 치과의 자동 매칭 의뢰에 참여할 수 있습니다. 하청
-            수수료 {subcontractFeePct}%
-            {directFeeEnabled ? (
-              <> · 플랫폼 사용료 {directFeePct}%</>
-            ) : (
-              <>
-                {" "}
-                · 플랫폼 사용료는{" "}
-                <LabDirectPlatformFeeRateLabel
-                  enabled={false}
-                  ratePct={directFeePct}
-                />
-              </>
-            )}
-            . 치과명·담당자명·기공소명 등 식별 정보는 비공개입니다.
+            인증 기공소는 치과의 자동 매칭 의뢰에 참여할 수 있습니다.
+            <br />
+            하청 수수료 {subcontractFeePct}%에 플랫폼 사용료 {directFeePct}%를
+            더합니다.
+            <br />
+            학습 이용을 허용하면 플랫폼 사용료만 면제됩니다. 치과명·담당자명·기공소명은
+            비공개입니다.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex gap-3 rounded-2xl border border-dashed border-slate-200/90 bg-slate-50/60 px-4 py-3.5">
             <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
             <p className="text-[13px] leading-relaxed text-muted-foreground">
-              {directFeeEnabled ? (
-                <>
-                  지정 기공소 의뢰의 플랫폼 사용료는 작업시작 적립 시 공제됩니다(
-                  {directFeePct}%). 거래 치과 소개는 아래에서 계속할 수
-                  있습니다.
-                </>
-              ) : (
-                <>
-                  <LabDirectPlatformFeeNotice
-                    enabled={false}
-                    ratePct={directFeePct}
-                  />{" "}
-                  거래 치과 소개는 아래에서 계속할 수 있습니다.
-                </>
-              )}
+              <LabDirectPlatformFeeNotice ratePct={directFeePct} />
+              <br />
+              거래 치과 소개는 아래에서 계속할 수 있습니다.
             </p>
           </div>
           <div className="flex gap-3 rounded-2xl border border-dashed border-slate-200/90 bg-slate-50/60 px-4 py-3.5">

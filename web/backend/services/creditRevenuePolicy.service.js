@@ -8,6 +8,7 @@
 // - 2026-09-24: 딜러십 — 신규 유치 요율(기본 20%)·예약 인하(15/10)·유치 시점 스탬프. 월 매출 누진 철회.
 // - 2026-09-24: 딜러십 영업 수수료 — 딜러 BA당 월 매출 누진 구간(기본 ≤5천만 20%/≤1억 15%/초과 10%).
 // - 2026-09-25: 하청 기본 수수료 5% → 10%.
+// - 2026-09-26: 지정·협력 플랫폼 사용료 — 학습 이용 허용 스냅샷이면 0%, 아니면 정책 2%. 하청·본부는 이 거래 밖.
 // - 2026-09-24: 지정 플랫폼 사용료 — 관리자 설정(초기 2% · 이벤트 off). 저장값 자동 승격 없음. 하청 10%.
 // - 2026-09-23: 런칭 이벤트 on/off 변경 예약(내일 0시 KST, 분배 비율과 동일).
 // - 2026-09-22: (일시) 지정 플랫폼 수수료 없음 — 9/24 복원.
@@ -911,8 +912,8 @@ export const PREV_DEFAULT_DIRECT_PLATFORM_FEE_RATE = 0.01;
 /** 구 스키마 기본(off + 5%). 마이그레이션 참고용. */
 export const LEGACY_DEFAULT_DIRECT_PLATFORM_FEE_RATE = 0.05;
 /**
- * 지정 거래 수수료 적용 기본값.
- * false = 이벤트 기간 실효 0%(정책 요율 2%는 유지, 추후 공지 후 on 가능).
+ * 레거시 이벤트 스위치. aiTrainingConsent 스냅샷이 없는 기존 의뢰만 읽는다.
+ * false = 그 건은 실효 0%. 신규 지정·협력은 학습 이용 스냅샷으로 0% 또는 정책 2%.
  */
 export const DEFAULT_DIRECT_PLATFORM_FEE_ENABLED = false;
 /** @deprecated 등록/미등록 2단계 폐지. 읽기 fallback 전용. */
@@ -932,7 +933,7 @@ export function resolvePlatformFeeRate(payoutRates) {
     : DEFAULT_PLATFORM_FEE_RATE;
 }
 
-/** 지정 거래 수수료 적용 여부. 관리자 on만 부과(기본 off=이벤트 무료). */
+/** 레거시 이벤트 스위치. 스냅샷 없는 기존 의뢰만. */
 export function isDirectPlatformFeeEnabled(payoutRates) {
   return payoutRates?.directPlatformFeeEnabled === true;
 }
@@ -949,10 +950,22 @@ export function resolveDirectPlatformFeeRateConfigured(payoutRates) {
   return DEFAULT_DIRECT_PLATFORM_FEE_RATE;
 }
 
-/** 지정 거래(direct) 실효 수수료율. 적용 off면 0. */
+/**
+ * 레거시 지정 거래 실효율. 스냅샷 없는 의뢰만.
+ * 적용 off면 0, on이면 설정 요율.
+ */
 export function resolveDirectPlatformFeeRate(payoutRates) {
   if (!isDirectPlatformFeeEnabled(payoutRates)) return 0;
   return resolveDirectPlatformFeeRateConfigured(payoutRates);
+}
+
+/** billing.aiTrainingConsent 가 불리언으로 박혀 있으면 그 값. 없으면 undefined(레거시 이벤트). */
+export function platformFeeArgsFromBilling(billing) {
+  const raw = billing?.aiTrainingConsent;
+  return {
+    performerIsInternal: billing?.internalPerformer === true,
+    aiTrainingConsent: raw === true || raw === false ? raw : undefined,
+  };
 }
 
 export function resolveSubcontractFeeRate(payoutRates) {
@@ -963,39 +976,71 @@ export function resolveSubcontractFeeRate(payoutRates) {
   return DEFAULT_SUBCONTRACT_FEE_RATE;
 }
 
+function capFeeRate(rate) {
+  const n = Number(rate);
+  if (!Number.isFinite(n)) return 0;
+  return Math.min(1, Math.max(0, n));
+}
+
 /**
  * 기공의뢰 플랫폼/하청 수수료율.
- * - 하청 수행(assigneeKind=subcontract): subcontractFeeRate (기본 10%)
- * - 협력(assigneeKind=cooperation)·어벗츠 자체 수행·지정: 지정 적용 on이면 directPlatformFeeRate(기본 2%), off면 0(이벤트)
+ * - 하청: subcontractFeeRate(기본 10%)에 플랫폼 사용료(기본 2%)를 더한다.
+ *   학습 이용 스냅샷이 true이거나 어벗츠기공본부 수행이면 그 2%만 면제.
+ *   스냅샷이 없는 기존 하청은 10%만.
+ * - 지정·협력: 스냅샷 true 또는 본부 수행이면 0, false면 정책 요율(기본 2%).
+ * - 자동매칭(수행 미정): 0.
+ * - 스냅샷이 없는 기존 지정·협력: directPlatformFeeEnabled(이벤트 off=0).
+ * 본부는 항상 동의한 것으로 본다. 마진·스캔 품질로 요율을 바꾸지 않는다.
  */
 export function resolvePracticeTransferFeeRate({
   matchingMode,
   payoutRates,
   subcontracted = false,
+  performerIsInternal = false,
+  aiTrainingConsent,
 } = {}) {
-  if (subcontracted) return resolveSubcontractFeeRate(payoutRates);
+  const platform = resolveDirectPlatformFeeRateConfigured(payoutRates);
+  const waived = performerIsInternal || aiTrainingConsent === true;
+  if (subcontracted) {
+    const base = resolveSubcontractFeeRate(payoutRates);
+    if (!waived && aiTrainingConsent !== false) return base;
+    if (waived) return base;
+    return capFeeRate(base + platform);
+  }
   if (String(matchingMode || "").trim() === "auto") {
     return 0;
   }
+  if (waived) return 0;
+  if (aiTrainingConsent === false) return platform;
   return resolveDirectPlatformFeeRate(payoutRates);
 }
 
 /**
  * 견적 표시용 수수료율.
  * 원청(어벗츠 기공사업부)이 하청을 준 뒤 자기 화면을 보면 전액 수주이므로 0.
- * 하청 수행 기공소는 subcontractFeeRate. 협력은 0.
+ * billing이 있으면 생성 때 박힌 학습 동의·본부 수행을 쓴다.
  */
 export function resolvePracticeTransferFeeRateForViewer({
   matchingMode,
   payoutRates,
   subcontracted = false,
   viewerIsPrimeContractor = false,
+  performerIsInternal = false,
+  aiTrainingConsent,
+  billing,
 } = {}) {
   if (subcontracted && viewerIsPrimeContractor) return 0;
+  const snap = platformFeeArgsFromBilling(billing);
+  const consent =
+    aiTrainingConsent === true || aiTrainingConsent === false
+      ? aiTrainingConsent
+      : snap.aiTrainingConsent;
   return resolvePracticeTransferFeeRate({
     matchingMode,
     payoutRates,
     subcontracted,
+    performerIsInternal: performerIsInternal || snap.performerIsInternal,
+    aiTrainingConsent: consent,
   });
 }
 

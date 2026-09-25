@@ -443,6 +443,11 @@ export async function applyPracticeTransferRemakeCharge({
     labTradingPartnerId: null,
     autoMatchBudget: null,
     catalog: null,
+    feeSnapshot: {
+      frozen: true,
+      aiTrainingConsent: doc.billing?.aiTrainingConsent,
+      internalPerformer: doc.billing?.internalPerformer === true,
+    },
   });
   mark("quote");
   const fees = quote?.fees || {};

@@ -85,6 +85,7 @@ import {
   toAutoMatchApiFields,
   wantsAbutsPrimePool,
 } from "../../utils/practiceTransferAutoMatch.js";
+import { isLabAiTrainingConsentAllowed } from "../../utils/practiceTransferAiTraining.js";
 import { parseTransferMongoIdsQuery } from "./practiceTransferBookmark.controller.js";
 import {
   clearAutoMatchPriorityTimers,
@@ -3364,6 +3365,8 @@ export async function createPracticeTransfer(req, res) {
         rushFeeMultiplier,
         remake: remakePricing,
         subcontracted: assigneeKind === "subcontract",
+        consentLabAnchorId:
+          assigneeKind === "subcontract" ? assigneeLabAnchorId : null,
       }),
       performingLabAnchorId
         ? assertLabWithinPracticeStarBand({
@@ -4082,6 +4085,17 @@ export async function updatePracticeTransferContent(req, res) {
         catalog: autoMatchCatalog,
         rushFeeMultiplier,
         subcontracted: assigneeKind === "subcontract",
+        consentLabAnchorId:
+          assigneeKind === "subcontract" ? assigneeLabAnchorId : null,
+        feeSnapshot:
+          String(doc.assigneeLabAnchorId || doc.targetLabAnchorId || "") ===
+          String(assigneeLabAnchorId || targetLabAnchorId || "")
+            ? {
+                frozen: true,
+                aiTrainingConsent: doc.billing?.aiTrainingConsent,
+                internalPerformer: doc.billing?.internalPerformer === true,
+              }
+            : null,
       });
 
       try {
@@ -4987,6 +5001,11 @@ export async function appendPracticeTransferProsthesis(req, res) {
           remake: false,
           matchingMode: "direct",
           rushFeeMultiplier: Number(doc.billing?.rushFeeMultiplier || 1),
+          feeSnapshot: {
+            frozen: true,
+            aiTrainingConsent: doc.billing?.aiTrainingConsent,
+            internalPerformer: doc.billing?.internalPerformer === true,
+          },
         });
         nextProsthesisFeeStages = upsertProsthesisFeeStage(
           nextProsthesisFeeStages,
@@ -8432,7 +8451,9 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
         getPrimeLabAnchorId(doc) ||
         labAnchorId;
       const [claimingLab, feeLab] = await Promise.all([
-        BusinessAnchor.findById(labOid).select({ name: 1 }).lean(),
+        BusinessAnchor.findById(labOid)
+          .select({ name: 1, businessType: 1, aiTrainingConsent: 1 })
+          .lean(),
         BusinessAnchor.findById(feeLabId)
           .select({ name: 1, labFeeSchedule: 1 })
           .lean(),
@@ -8458,6 +8479,10 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
       const assigneeLabName =
         String(claimingLab?.name || "").trim() || ABUTS_LAB_DISPLAY_NAME;
       const wasUnread = !doc.requestorReadAt;
+      const claimingIsInternal = isInternalLabBusinessType(claimingLab);
+      const claimingConsentAllowed = claimingIsInternal
+        ? true
+        : isLabAiTrainingConsentAllowed(claimingLab?.aiTrainingConsent);
 
       const claimed = await PracticeTransfer.findOneAndUpdate(
         {
@@ -8483,6 +8508,8 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
             "autoMatch.claimHours": null,
             "autoMatch.completedAt": null,
             "autoMatch.completedBy": null,
+            "billing.aiTrainingConsent": claimingConsentAllowed,
+            "billing.internalPerformer": claimingIsInternal,
           },
         },
         { new: true },
@@ -8499,6 +8526,11 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
 
       doc = claimed;
       clearAutoMatchPriorityTimers(doc._id);
+      doc.billing = {
+        ...(doc.billing && typeof doc.billing === "object" ? doc.billing : {}),
+        aiTrainingConsent: claimingConsentAllowed,
+        internalPerformer: claimingIsInternal,
+      };
 
       let billingResult = null;
       try {
@@ -11653,6 +11685,8 @@ export async function retargetPracticeTransferLab(req, res) {
       autoMatchBudget,
       catalog: autoMatchCatalog,
       subcontracted: assigneeKind === "subcontract",
+      consentLabAnchorId:
+        assigneeKind === "subcontract" ? assigneeLabAnchorId : null,
     });
 
     try {

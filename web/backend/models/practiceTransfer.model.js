@@ -311,6 +311,13 @@ const practiceTransferSchema = new mongoose.Schema(
         default: "none",
       },
       feeRateApplied: { type: Number, default: 0 },
+      /**
+       * 수행 기공소의 학습 이용 허용. 생성 또는 하청 작업시작 때 스냅샷.
+       * 없으면 레거시 이벤트. 어벗츠기공본부는 true.
+       */
+      aiTrainingConsent: { type: Boolean },
+      /** 수행자가 어벗츠기공본부. 플랫폼 사용료 2%는 항상 면제. */
+      internalPerformer: { type: Boolean },
       // 기공수가 할증 배수(1=없음). 생성·수락 시점 스냅샷.
       labFeeMultiplier: { type: Number, default: 1, min: 1, max: 5 },
       // 치과별 특별공급가 생성 시점 스냅샷(capturedAt). 이후 설정 변경 소급 금지.

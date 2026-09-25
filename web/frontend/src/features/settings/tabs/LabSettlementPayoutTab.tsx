@@ -223,8 +223,6 @@ export const LabSettlementPayoutTab = () => {
     forceOnMount: true,
   });
   const { windowInfo: labFeeWindow } = useLabTradingPartnerWindow();
-  const directFeeEnabled =
-    labFeeWindow?.feeRates?.directPlatformFeeEnabled === true;
   const directFeePct = resolveLabDirectPlatformFeePct(
     labFeeWindow?.feeRates?.directPlatformFeeRate != null
       ? Number(labFeeWindow.feeRates.directPlatformFeeRate) * 100
@@ -608,15 +606,15 @@ export const LabSettlementPayoutTab = () => {
                   <div className="flex gap-2.5">
                     <Percent className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
                     <p>
-                      <LabDirectPlatformFeeNotice
-                        enabled={directFeeEnabled}
-                        ratePct={directFeePct}
-                      />{" "}
-                      하청 수행 의뢰는 작업시작 적립 시 매출액의{" "}
+                      <LabDirectPlatformFeeNotice ratePct={directFeePct} />
+                      <br />
+                      하청 수행은 하청 수수료{" "}
                       <span className="font-semibold tabular-nums text-slate-900">
                         {subcontractFeePct}%
                       </span>
-                      가 공제됩니다.
+                      에 같은 플랫폼 사용료를 더합니다.
+                      <br />
+                      학습 이용을 허용하면 플랫폼 사용료만 면제됩니다.
                     </p>
                   </div>
                 </SettlementPolicySection>

@@ -28,6 +28,7 @@ import {
   setMyAutoMatchParticipation,
   getMyFmDentalShipping,
   setMyFmDentalShipping,
+  setMyAiTrainingConsent,
   verifyMyPayoutAccount,
 } from "./business.update.controller.js";
 import {
@@ -53,7 +54,7 @@ import {
   ensureRequestorOrgAnchor,
   isSyntheticPracticeBusinessNumber,
 } from "./requestorOrgAnchor.util.js";
-export { updateMyBusiness, getMyAutoMatchParticipation, setMyAutoMatchParticipation, getMyFmDentalShipping, setMyFmDentalShipping, verifyMyPayoutAccount };
+export { updateMyBusiness, getMyAutoMatchParticipation, setMyAutoMatchParticipation, getMyFmDentalShipping, setMyFmDentalShipping, setMyAiTrainingConsent, verifyMyPayoutAccount };
 
 export async function checkBusinessNumberDuplicate(req, res) {
   try {
@@ -604,6 +605,24 @@ export async function getMyBusiness(req, res) {
           ),
           updatedAt: anchor?.requestSettings?.updatedAt || null,
         },
+        aiTrainingConsent: (() => {
+          const locked =
+            String(anchor?.businessType || "").trim() === "internalLab";
+          const stored = anchor?.aiTrainingConsent;
+          const confirmed =
+            locked ||
+            Boolean(stored?.confirmedAt) ||
+            Boolean(stored?.updatedAt);
+          return {
+            allowed:
+              locked || (confirmed ? stored?.allowed !== false : true),
+            locked,
+            confirmed,
+            needsPrompt: !locked && !confirmed,
+            updatedAt: stored?.updatedAt || null,
+            confirmedAt: stored?.confirmedAt || null,
+          };
+        })(),
         referralOwnership: isRequestorRole
             ? {
                 canRegister: referralCanRegister,

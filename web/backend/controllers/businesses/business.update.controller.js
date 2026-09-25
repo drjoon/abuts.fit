@@ -1804,6 +1804,95 @@ export async function setMyFmDentalShipping(req, res) {
   }
 }
 
+export async function setMyAiTrainingConsent(req, res) {
+  const allowed = req.body?.allowed === true;
+  try {
+    const roleCheck = assertBusinessRole(req, res);
+    if (!roleCheck) return;
+
+    const freshUser = await User.findById(req.user._id)
+      .select({ businessAnchorId: 1, role: 1 })
+      .lean();
+    const businessAnchorId =
+      freshUser?.businessAnchorId || req.user.businessAnchorId;
+    if (!businessAnchorId) {
+      return res.status(400).json({
+        success: false,
+        message: "사업자 등록 후 이용할 수 있습니다.",
+      });
+    }
+
+    const anchor = await BusinessAnchor.findById(businessAnchorId).lean();
+    if (!anchor) {
+      return res.status(404).json({
+        success: false,
+        message: "사업자 정보를 찾을 수 없습니다.",
+      });
+    }
+
+    if (isInternalLabBusinessType(anchor)) {
+      return res.json({
+        success: true,
+        message: "어벗츠기공본부는 학습에 항상 포함됩니다.",
+        data: {
+          allowed: true,
+          locked: true,
+          confirmed: true,
+          needsPrompt: false,
+          updatedAt: null,
+        },
+      });
+    }
+
+    const profile = resolveRequestorProfile({
+      anchorKind: anchor?.requestorKind,
+      anchorServices: anchor?.requestorServices,
+      anchorCaps: anchor?.requestorCapabilities,
+      businessVerified: String(anchor?.status || "").trim() === "verified",
+    });
+    const kind = normalizeRequestorKind(anchor?.requestorKind || profile?.kind);
+    if (kind !== "lab" && !canReceivePracticeTransfer(profile)) {
+      return res.status(403).json({
+        success: false,
+        message: "학습 이용 허용은 기공소 계정에서만 바꿀 수 있습니다.",
+      });
+    }
+
+    const now = new Date();
+    await BusinessAnchor.updateOne(
+      { _id: anchor._id },
+      {
+        $set: {
+          "aiTrainingConsent.allowed": allowed,
+          "aiTrainingConsent.updatedAt": now,
+          "aiTrainingConsent.confirmedAt": now,
+        },
+      },
+    );
+    invalidateMyBusinessCache(req.user._id);
+    return res.json({
+      success: true,
+      message: allowed
+        ? "학습 이용을 허용했습니다. 다음 주문부터 플랫폼 사용료 2%가 면제됩니다."
+        : "학습 이용을 끄셨습니다. 다음 주문부터 플랫폼 사용료 2%가 공제됩니다.",
+      data: {
+        allowed,
+        locked: false,
+        confirmed: true,
+        needsPrompt: false,
+        updatedAt: now,
+        confirmedAt: now,
+      },
+    });
+  } catch (error) {
+    console.error("[setMyAiTrainingConsent]", error);
+    return res.status(500).json({
+      success: false,
+      message: "학습 이용 허용을 저장하지 못했습니다.",
+    });
+  }
+}
+
 export async function verifyMyPayoutAccount(req, res) {
   try {
     const roleCheck = assertBusinessRole(req, res);

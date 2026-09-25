@@ -1,4 +1,8 @@
-import { buildAiTrainingRecord } from "../../utils/practiceTransferAiTraining.js";
+import {
+  buildAiTrainingRecord,
+  isLabAiTrainingConsentAllowed,
+  shouldIncludeInAiTraining,
+} from "../../utils/practiceTransferAiTraining.js";
 
 const scan = (role, name, key) => ({
   scanRole: role,
@@ -110,5 +114,52 @@ describe("buildAiTrainingRecord", () => {
     expect(record.missing).toEqual(
       expect.arrayContaining(["bite", "prosthesis", "alignment"]),
     );
+  });
+});
+
+describe("isLabAiTrainingConsentAllowed", () => {
+  test("없으면 허용이고, false만 거부한다", () => {
+    expect(isLabAiTrainingConsentAllowed(undefined)).toBe(true);
+    expect(isLabAiTrainingConsentAllowed({})).toBe(true);
+    expect(isLabAiTrainingConsentAllowed({ allowed: true })).toBe(true);
+    expect(isLabAiTrainingConsentAllowed({ allowed: false })).toBe(true);
+    expect(
+      isLabAiTrainingConsentAllowed({
+        allowed: false,
+        updatedAt: new Date(),
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("shouldIncludeInAiTraining", () => {
+  test("어벗츠기공본부는 동의 스냅샷이 없어도 포함한다", () => {
+    expect(
+      shouldIncludeInAiTraining(
+        { billing: {} },
+        { businessType: "internalLab" },
+      ),
+    ).toBe(true);
+    expect(
+      shouldIncludeInAiTraining({ billing: { internalPerformer: true } }, null),
+    ).toBe(true);
+  });
+
+  test("동의한 협력·하청만 포함하고, 끄면 넣지 않는다", () => {
+    expect(
+      shouldIncludeInAiTraining(
+        { billing: { aiTrainingConsent: true } },
+        { businessType: "requestor" },
+      ),
+    ).toBe(true);
+    expect(
+      shouldIncludeInAiTraining(
+        { billing: { aiTrainingConsent: false } },
+        { businessType: "requestor" },
+      ),
+    ).toBe(false);
+    expect(
+      shouldIncludeInAiTraining({ billing: {} }, { businessType: "requestor" }),
+    ).toBe(false);
   });
 });

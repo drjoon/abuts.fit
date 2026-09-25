@@ -287,8 +287,6 @@ export const PricingPolicyDialog = ({
     0,
     Number(credit?.fmDentalMonthlyShippingFee ?? 0) || 0,
   );
-  const directFeeEnabled =
-    labFeeWindow?.feeRates?.directPlatformFeeEnabled === true;
   const directFeePct = resolveLabDirectPlatformFeePct(
     labFeeWindow?.feeRates?.directPlatformFeeRate != null
       ? Number(labFeeWindow.feeRates.directPlatformFeeRate) * 100
@@ -678,15 +676,15 @@ export const PricingPolicyDialog = ({
                 <>
                   <PolicySection title='플랫폼 사용료 · 하청 수수료'>
                     <p>
-                      <LabDirectPlatformFeeNotice
-                        enabled={directFeeEnabled}
-                        ratePct={directFeePct}
-                      />{" "}
-                      하청 수행 의뢰는 작업시작 적립 시 매출액의{" "}
+                      <LabDirectPlatformFeeNotice ratePct={directFeePct} />
+                      <br />
+                      하청 수행은 하청 수수료{" "}
                       <span className='font-semibold tabular-nums text-slate-900'>
                         {subcontractFeePct}%
                       </span>
-                      가 공제됩니다.
+                      에 같은 플랫폼 사용료를 더합니다.
+                      <br />
+                      학습 이용을 허용하면 플랫폼 사용료만 면제됩니다.
                       {isRequestorPreview ? (
                         <>
                           <br />

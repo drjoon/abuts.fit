@@ -224,6 +224,17 @@ const businessAnchorSchema = new mongoose.Schema(
       certifiedAt: { type: Date, default: null },
       rejectedAt: { type: Date, default: null },
     },
+    /**
+     * 기공소 계정에서 한 번 고르는 학습 이용 허용.
+     * 허용하면 지정·협력 플랫폼 사용료와 하청에 더하는 2%가 면제된다.
+     * 어벗츠기공본부는 이 값과 관계없이 항상 허용.
+     */
+    aiTrainingConsent: {
+      allowed: { type: Boolean, default: true },
+      updatedAt: { type: Date, default: null },
+      /** 기공의뢰 진입 확인 모달 또는 설정에서 답을 한 시각. 없으면 다시 묻는다. */
+      confirmedAt: { type: Date, default: null },
+    },
     // 월 참여 구독(해지 예약·다음 결제일). 활성 여부는 practiceTransferAutoMatchEnabled.
     autoMatchParticipationCancelAtPeriodEnd: {
       type: Boolean,

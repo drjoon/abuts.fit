@@ -16,6 +16,7 @@ export const {
   setMyAutoMatchParticipation,
   getMyFmDentalShipping,
   setMyFmDentalShipping,
+  setMyAiTrainingConsent,
   verifyMyPayoutAccount,
   clearMyBusinessLicense,
   checkBusinessNumberDuplicate,

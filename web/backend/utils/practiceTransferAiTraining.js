@@ -1,6 +1,8 @@
 // 작업완료 보철 STL과 상악·하악·바이트를 학습 쌍으로 묶는다.
 // 마진·정합은 있으면 품질 표시. 파일 쌍이 있으면 ready.
+// 포함 여부는 요율 스냅샷과 같다. 품질이 나빠도 면제·포함을 깎지 않는다.
 import { resolveStoredScanRole } from "./oralScanRole.js";
+import { isInternalLabBusinessType } from "./practiceTransferAutoMatchCore.js";
 
 const DESIGNABLE = new Set(["크라운", "인레이", "온레이", "브리지"]);
 const MESH = /\.(stl|ply|obj)$/i;
@@ -14,6 +16,28 @@ function scanOf(row) {
     scanRoleSetBy: row?.scanRoleSetBy,
   });
   return { role: stored.scanRole, s3Key, fileName };
+}
+
+/** 계정 값이 없거나 아직 답을 안 했으면 허용(스위치 기본 on). 저장한 false만 거부. */
+export function isLabAiTrainingConsentAllowed(consent) {
+  if (consent?.allowed !== false) return true;
+  return !consent?.confirmedAt && !consent?.updatedAt;
+}
+
+/**
+ * 학습 묶음에 넣을지.
+ * 어벗츠기공본부는 항상 포함. 그 외는 생성·작업시작 때 박힌 동의만.
+ * 스냅샷이 없으면(예전 의뢰) 넣지 않는다.
+ */
+
+export function shouldIncludeInAiTraining(doc, performer) {
+  if (
+    doc?.billing?.internalPerformer === true ||
+    isInternalLabBusinessType(performer)
+  ) {
+    return true;
+  }
+  return doc?.billing?.aiTrainingConsent === true;
 }
 
 /**

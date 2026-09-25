@@ -18,45 +18,27 @@ type FeeOpts = {
   ratePct?: number;
 };
 
-/** 정책% 취소선 → 0% (이벤트). 적용 on이면 요율만. */
+/** 정책 요율. 학습 이용을 허용하면 면제. */
 export function LabDirectPlatformFeeRateLabel({
-  enabled,
   ratePct,
 }: FeeOpts): ReactNode {
   const pct = resolveLabDirectPlatformFeePct(ratePct);
-  if (enabled === true) {
-    return <span className="tabular-nums">{pct}%</span>;
-  }
-  return (
-    <>
-      <span className="tabular-nums text-slate-400 line-through">{pct}%</span>
-      <span className="tabular-nums"> → 0%</span>
-    </>
-  );
+  return <span className="tabular-nums">{pct}%</span>;
 }
 
-/** 지정 기공소 플랫폼 수수료 안내 문장. */
+/** 지정·협력 플랫폼 사용료와 학습 이용 면제. */
 export function LabDirectPlatformFeeNotice({
-  enabled,
   ratePct,
   suffix,
 }: FeeOpts & { suffix?: ReactNode }): ReactNode {
   const pct = resolveLabDirectPlatformFeePct(ratePct);
-  if (enabled === true) {
-    return (
-      <>
-        지정 기공소 의뢰의 플랫폼 사용료는 작업시작 적립 시 매출액의{" "}
-        <span className="font-semibold tabular-nums text-slate-900">{pct}%</span>
-        가 공제됩니다.
-        {suffix}
-      </>
-    );
-  }
   return (
     <>
-      지정 기공소 의뢰의 플랫폼 사용료는{" "}
-      <LabDirectPlatformFeeRateLabel enabled={false} ratePct={pct} />
+      지정·협력 의뢰의 플랫폼 사용료는 작업시작 적립 시 매출액의{" "}
+      <span className="font-semibold tabular-nums text-slate-900">{pct}%</span>
       입니다.
+      <br />
+      학습 이용을 허용하면 그 사용료는 면제됩니다.
       {suffix}
     </>
   );

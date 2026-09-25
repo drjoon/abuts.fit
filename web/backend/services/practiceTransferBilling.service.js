@@ -82,7 +82,7 @@ export const PRACTICE_TRANSFER_LEDGER_LABELS = {
   holdShippingAbutment: "배송비 보류(기공소→어벗츠)",
   releaseLab: "기공비(치과→어벗츠)",
   releaseAbutment: "기공비(치과→어벗츠)",
-  /** 치과 직접 지정 협력 — 수수료 0%, 전액 통과 */
+  /** 치과 직접 지정 협력 — 학습 이용 스냅샷이면 0%, 아니면 플랫폼 사용료 */
   cooperationPurchase: "협력 기공비(어벗츠→기공소)",
   /** 어벗츠 지정 후 하청 — subcontractFeeRate */
   subcontractPurchase: "하청(매입) 기공비(어벗츠→기공소)",
@@ -112,6 +112,7 @@ import {
   resolveRevenueOwnerBaseAllocation,
   splitRevenueByCreditKindProRata,
   resolveConfiguredRevenueRates,
+  platformFeeArgsFromBilling,
   resolvePracticeTransferFeeRate,
   resolvePracticeTransferFeeRateForViewer,
   resolveManufacturerUnitApply,
@@ -170,6 +171,7 @@ import {
   getPrimeLabAnchorId,
   isAutoMatchOpenPool,
   isCooperationAssignee,
+  isInternalLabBusinessType,
   isPracticeTransferSubcontracted,
   isSubcontractFeeApplicable,
   resolveFeeScheduleLabAnchorId,
@@ -177,6 +179,7 @@ import {
   resolvePerformingLabAnchorId,
   resolvePracticeTransferSettlementParties,
 } from "../utils/practiceTransferAutoMatch.js";
+import { isLabAiTrainingConsentAllowed } from "../utils/practiceTransferAiTraining.js";
 
 const resolveAssigneePurchaseLedgerLabel = (transfer) =>
   isCooperationAssignee(transfer)
@@ -1053,6 +1056,7 @@ export async function commitPracticeTransferBilling({
     matchingMode: isAutoMatch ? "auto" : "direct",
     payoutRates: devopsAnchorForFeeRate?.payoutRates,
     subcontracted: isSubcontractFeeApplicable(transfer),
+    ...platformFeeArgsFromBilling(transfer?.billing),
   });
 
   const { abutsRevenueAmount, labSettlementAmount } =
@@ -2461,6 +2465,7 @@ async function computeAcceptedPracticeTransferFees({
     matchingMode: isAutoMatch ? "auto" : "direct",
     payoutRates: devopsAnchorForFeeRate?.payoutRates,
     subcontracted: isSubcontractFeeApplicable(transfer),
+    ...platformFeeArgsFromBilling(transfer?.billing),
   });
   const { abutsRevenueAmount, labSettlementAmount } =
     splitPracticeTransferSettlement({
@@ -4589,6 +4594,10 @@ export function toBillingPreviewFields(quote) {
     isTradingPartner: api.relationshipKind === "active",
     relationshipKind: api.relationshipKind,
     feeRateApplied: api.feeRateApplied,
+    ...(quote?.aiTrainingConsent === true || quote?.aiTrainingConsent === false
+      ? { aiTrainingConsent: quote.aiTrainingConsent }
+      : {}),
+    ...(quote?.internalPerformer === true ? { internalPerformer: true } : {}),
     labFeeMultiplier: api.labFeeMultiplier,
     ...(specialSupply ? { labPracticeSpecialSupply: specialSupply } : {}),
     rushFeeMultiplier: api.rushFeeMultiplier,
@@ -4690,6 +4699,15 @@ export function invalidatePracticeTransferQuoteCaches(labAnchorId = null) {
  * labAnchorId 없으면 기본수가 없음(0원).
  * labFeeMultiplierLabAnchorId: 할증 앵커(미지정 시 labAnchorId). 협력=수행, 하청=원청.
  */
+function frozenPracticeTransferFeeSnapshot(billing) {
+  if (!billing || typeof billing !== "object") return undefined;
+  return {
+    frozen: true,
+    aiTrainingConsent: billing.aiTrainingConsent,
+    internalPerformer: billing.internalPerformer === true,
+  };
+}
+
 export async function buildPracticeTransferQuote({
   practiceAnchorId = null,
   labAnchorId = null,
@@ -4708,6 +4726,8 @@ export async function buildPracticeTransferQuote({
   rushFeeMultiplier: rushFeeMultiplierInput = 1,
   skipJig = null,
   subcontracted = false,
+  feeSnapshot = null,
+  consentLabAnchorId = null,
 }) {
   let schedule = labFeeSchedule;
   const labId = String(labAnchorId || "").trim();
@@ -4732,11 +4752,19 @@ export async function buildPracticeTransferQuote({
     (!labId || String(matchingMode || "").trim() === "auto");
   const needCatalog =
     catalogInput === undefined && (usedDefaultSchedule || needBudget);
-  const [lab, multiplierLabDoc, practice, abutmentPricingTier, abutmentPrices, partner, cachedRates, catalog] =
+  const consentLabId = String(consentLabAnchorId || "").trim();
+  const needConsentLab =
+    Boolean(subcontracted) &&
+    consentLabId &&
+    Types.ObjectId.isValid(consentLabId) &&
+    consentLabId !== labId;
+  const [lab, multiplierLabDoc, practice, abutmentPricingTier, abutmentPrices, partner, cachedRates, catalog, consentLab] =
     await Promise.all([
       needLab
         ? BusinessAnchor.findById(labId)
             .select({
+              businessType: 1,
+              aiTrainingConsent: 1,
               labFeeSchedule: 1,
               labPracticeFeeMultipliers: 1,
               labPracticeSpecialSupplyPrices: 1,
@@ -4770,6 +4798,11 @@ export async function buildPracticeTransferQuote({
         : needCatalog
           ? loadAutoMatchBudgetCatalog()
           : Promise.resolve(null),
+      needConsentLab
+        ? BusinessAnchor.findById(consentLabId)
+            .select({ businessType: 1, aiTrainingConsent: 1 })
+            .lean()
+        : Promise.resolve(null),
     ]);
 
   const multiplierLab = multiplierLabDoc || lab;
@@ -4872,10 +4905,40 @@ export async function buildPracticeTransferQuote({
       : matchingMode == null && !labId
         ? "auto"
         : "direct";
+  const frozenFee =
+    feeSnapshot && feeSnapshot.frozen === true ? feeSnapshot : null;
+  // 하청 수가 앵커는 원청(본부)이다. 동의는 보철을 올리는 수행 기공소 것.
+  const consentSubject = Boolean(subcontracted)
+    ? needConsentLab
+      ? consentLab
+      : consentLabId && consentLabId === labId
+        ? lab
+        : null
+    : lab;
+  const performerIsInternal = frozenFee
+    ? frozenFee.internalPerformer === true
+    : isInternalLabBusinessType(consentSubject);
+  const knowsPerformer = Boolean(subcontracted)
+    ? Boolean(consentSubject)
+    : resolvedMatchingMode === "direct" && Boolean(labId);
+  const snapConsent = frozenFee?.aiTrainingConsent;
+  const aiTrainingConsent = frozenFee
+    ? performerIsInternal
+      ? true
+      : snapConsent === true || snapConsent === false
+        ? snapConsent
+        : undefined
+    : performerIsInternal
+      ? true
+      : knowsPerformer
+        ? isLabAiTrainingConsentAllowed(consentSubject?.aiTrainingConsent)
+        : undefined;
   const feeRateApplied = resolvePracticeTransferFeeRate({
     matchingMode: resolvedMatchingMode,
     payoutRates: rates,
     subcontracted: Boolean(subcontracted),
+    performerIsInternal,
+    aiTrainingConsent,
   });
   const { abutsRevenueAmount, labSettlementAmount } =
     splitPracticeTransferSettlement({
@@ -4888,6 +4951,8 @@ export async function buildPracticeTransferQuote({
     fees,
     relationshipKind: kind === "active" || kind === "referred" ? kind : "none",
     feeRateApplied,
+    aiTrainingConsent,
+    internalPerformer: performerIsInternal,
     labFeeMultiplier,
     labPracticeSpecialSupply,
     rushFeeMultiplier,
@@ -5278,6 +5343,7 @@ export async function releasePracticeTransferRemakeChargeCredits({
       String(transfer?.matchingMode || "").trim() === "auto" ? "auto" : "direct",
     payoutRates,
     subcontracted: isSubcontractFeeApplicable(transfer),
+    ...platformFeeArgsFromBilling(transfer?.billing),
   });
   const platformFee = Math.max(
     0,
@@ -5820,6 +5886,7 @@ export async function releasePracticeTransferProsthesisFollowUpLabShare({
       String(transfer?.matchingMode || "").trim() === "auto" ? "auto" : "direct",
     payoutRates,
     subcontracted: isSubcontractFeeApplicable(transfer),
+    ...platformFeeArgsFromBilling(transfer?.billing),
   });
   const platformFee = Math.max(
     0,
@@ -6296,6 +6363,7 @@ export async function quoteProsthesisFollowUpFees({
     remake: false,
     matchingMode: "direct",
     rushFeeMultiplier: rushFeeMultiplierFromTransfer(transferDoc),
+    feeSnapshot: frozenPracticeTransferFeeSnapshot(transferDoc?.billing),
   });
 
   const tempRows = pickSourceTempRowsForFollowUpCredit(
@@ -6318,6 +6386,7 @@ export async function quoteProsthesisFollowUpFees({
       remake: false,
       matchingMode: "direct",
       rushFeeMultiplier: rushFeeMultiplierFromTransfer(transferDoc),
+      feeSnapshot: frozenPracticeTransferFeeSnapshot(transferDoc?.billing),
     });
     tempCreditLabFeeTotal = Math.max(
       0,
@@ -6657,12 +6726,14 @@ export async function buildFeeQuotesForTransferDocs({
       payoutRates,
       subcontracted: isSubcontractFeeApplicable(doc),
       viewerIsPrimeContractor: isViewerPrimeContractor(doc, viewerLabId),
+      billing: doc?.billing,
     });
     const remakeFeeRateApplied = resolvePracticeTransferFeeRate({
       matchingMode:
         String(matchingMode || "").trim() === "auto" ? "auto" : "direct",
       payoutRates,
       subcontracted: isSubcontractFeeApplicable(doc),
+      ...platformFeeArgsFromBilling(doc?.billing),
     });
     const remakeSplit = splitPracticeTransferSettlement({
       labFeeTotal: remakeFees.labFeeTotal,

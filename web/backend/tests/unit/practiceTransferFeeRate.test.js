@@ -152,6 +152,63 @@ describe("resolvePracticeTransferFeeRate", () => {
     ).toBe(0.05);
   });
 
+  test("지정·협력은 학습 동의가 없으면 정책 2%, 있으면 0", () => {
+    expect(
+      resolvePracticeTransferFeeRate({
+        matchingMode: "direct",
+        aiTrainingConsent: false,
+        payoutRates: { directPlatformFeeRate: 0.02 },
+      }),
+    ).toBe(0.02);
+    expect(
+      resolvePracticeTransferFeeRate({
+        matchingMode: "direct",
+        aiTrainingConsent: true,
+        payoutRates: { directPlatformFeeEnabled: true, directPlatformFeeRate: 0.02 },
+      }),
+    ).toBe(0);
+  });
+
+  test("하청은 10%에 플랫폼 사용료를 더하고, 동의하면 그 사용료만 면제", () => {
+    expect(
+      resolvePracticeTransferFeeRate({
+        matchingMode: "direct",
+        subcontracted: true,
+        aiTrainingConsent: false,
+        payoutRates: { subcontractFeeRate: 0.1, directPlatformFeeRate: 0.02 },
+      }),
+    ).toBeCloseTo(0.12);
+    expect(
+      resolvePracticeTransferFeeRate({
+        matchingMode: "direct",
+        subcontracted: true,
+        aiTrainingConsent: true,
+        payoutRates: { subcontractFeeRate: 0.1, directPlatformFeeRate: 0.02 },
+      }),
+    ).toBe(0.1);
+  });
+
+  test("어벗츠기공본부는 항상 면제. 하청 본문이 아니면 0", () => {
+    expect(
+      resolvePracticeTransferFeeRate({
+        matchingMode: "direct",
+        performerIsInternal: true,
+        aiTrainingConsent: false,
+        payoutRates: { directPlatformFeeRate: 0.02 },
+      }),
+    ).toBe(0);
+  });
+
+  test("스냅샷 없는 기존 하청은 하청 요율만", () => {
+    expect(
+      resolvePracticeTransferFeeRate({
+        matchingMode: "auto",
+        subcontracted: true,
+        payoutRates: { subcontractFeeRate: 0.1, directPlatformFeeRate: 0.02 },
+      }),
+    ).toBe(0.1);
+  });
+
   test("platformFeeRate가 없으면 nonPartnerFeeRate로 fallback", () => {
     expect(resolvePlatformFeeRate({ nonPartnerFeeRate: 0.3 })).toBe(0.3);
     expect(resolvePlatformFeeRate({})).toBe(DEFAULT_PLATFORM_FEE_RATE);

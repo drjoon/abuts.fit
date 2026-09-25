@@ -456,6 +456,7 @@ import {
   LAB_FEE_UNCONFIGURED_REASON,
   readLabFeeScheduleConfigured,
 } from "@/features/settings/LabFeeSetupPrompt";
+import { LabAiTrainingConsentPrompt } from "@/features/settings/LabAiTrainingConsentPrompt";
 import {
   PTX_CA_INSUFFICIENT_CREDIT_CONFIRM_LABEL,
   PTX_CA_INSUFFICIENT_CREDIT_DESCRIPTION_LINES,
@@ -8707,6 +8708,7 @@ export function RequestorPracticeReceivePage({
       className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden px-3 sm:px-4"
       data-guide-tour="lab_receive_workspace"
     >
+      <LabAiTrainingConsentPrompt />
       {showMobileActionChrome
         ? createPortal(
             <div

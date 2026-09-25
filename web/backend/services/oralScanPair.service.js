@@ -1,6 +1,8 @@
 // 의뢰 저장 이후 — 바이트 기준 상악·하악 겹침, 보철·스캔 접점 마진.
 // 응답은 기다리지 않는다. STL·PLY만 계산하고 실패는 로그만 남긴다.
 import PracticeTransfer from "../models/practiceTransfer.model.js";
+import BusinessAnchor from "../models/businessAnchor.model.js";
+import { resolvePerformingLabAnchorId } from "../utils/practiceTransferAutoMatchCore.js";
 import { getObjectBufferFromS3 } from "../utils/s3.utils.js";
 import { resolveStoredScanRole } from "../utils/oralScanRole.js";
 import {
@@ -9,7 +11,10 @@ import {
   sampleMeshPoints,
   sampleProsthesisMargin,
 } from "../utils/oralScanPairCore.js";
-import { buildAiTrainingRecord } from "../utils/practiceTransferAiTraining.js";
+import {
+  buildAiTrainingRecord,
+  shouldIncludeInAiTraining,
+} from "../utils/practiceTransferAiTraining.js";
 
 const MAX_BYTES = 60 * 1024 * 1024;
 
@@ -58,9 +63,27 @@ function enqueueScanJob(transferMongoId, job) {
 
 async function writePracticeAiTraining(id) {
   const doc = await PracticeTransfer.findById(id)
-    .select({ files: 1, resultFiles: 1, scanAlignment: 1, autoMatch: 1 })
+    .select({
+      files: 1,
+      resultFiles: 1,
+      scanAlignment: 1,
+      autoMatch: 1,
+      billing: 1,
+      assigneeLabAnchorId: 1,
+      targetLabAnchorId: 1,
+    })
     .lean();
   if (!doc) return;
+  const performerId = resolvePerformingLabAnchorId(doc);
+  const performer = performerId
+    ? await BusinessAnchor.findById(performerId)
+        .select({ businessType: 1 })
+        .lean()
+    : null;
+  if (!shouldIncludeInAiTraining(doc, performer)) {
+    await PracticeTransfer.updateOne({ _id: id }, { $unset: { aiTraining: "" } });
+    return;
+  }
   const record = buildAiTrainingRecord(doc);
   await PracticeTransfer.updateOne({ _id: id }, { $set: { aiTraining: record } });
 }
