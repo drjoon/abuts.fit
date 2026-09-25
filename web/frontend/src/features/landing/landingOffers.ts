@@ -262,8 +262,8 @@ export const landingOffers: LandingOffer[] = [
     flowChart: {
       name: "Flow Chart.",
       body: [
-        "타겟 보철 근원심 크기의 서지컬펜으로 정교한 첫 드릴링합니다.",
-        "이제 칼라 밴드를 따라가며 시술합니다.",
+        "보철의 근원심 크기 서지컬펜으로 드릴링한다.",
+        "칼라 밴드를 따라가며 시술한다.",
       ],
       rows: LANDING_SW_FLOW_ROWS.map((row) => ({ ...row })),
       defaultRowId: LANDING_SW_FLOW_DEFAULT_ROW_ID,
@@ -280,7 +280,7 @@ export const landingOffers: LandingOffer[] = [
       { label: "직경 색", value: "6–10 · 노·녹·보·청·하늘" },
       {
         label: "심플 힐링, 어벗",
-        value: ["직경 6·7·9", "높이 XS,S,M,L,XL", "회전방지 Hex·Non-Hex"],
+        value: ["직경 6·7·9", "높이 XS·S·M·L·XL", "회전방지 Hex·Non-Hex"],
       },
       { label: "키트", value: "Surgical · Prosthetics" },
       { label: "제조", value: "(주)애크로덴트" },

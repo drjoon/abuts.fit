@@ -1020,14 +1020,14 @@ function FlowChartSection({ chart }: { chart: NonNullable<LandingOffer["flowChar
     <section className="bg-white pb-12 pt-2 sm:pb-16 sm:pt-3 [overflow-anchor:none]">
       <div className={landingContent}>
         <article className={cn(SKY.card, "[overflow-anchor:none]")}>
-          <div className="rounded-t-2xl bg-white px-4 pt-5 sm:px-6 sm:pt-6">
+          <div className="rounded-t-2xl bg-white px-5 pt-8 sm:px-8 sm:pt-10">
             <p className={cn("text-center text-[12px] font-semibold", SKY.accent)}>
               FLOW CHART
             </p>
             {chart.body.length ? (
               <Lines
                 lines={chart.body}
-                className={cn("mx-auto mt-3 max-w-xl text-center", TYPO.body)}
+                className={cn("mx-auto mt-3 text-center", TYPO.h2, SKY.ink)}
               />
             ) : null}
             <div
