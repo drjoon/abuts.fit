@@ -195,7 +195,7 @@ Notes:
   - `src/pages/admin/partners/AdminPartnersPage.tsx` (사이드「사업영역」. 탭당 한 카드: 기공사업 · 어벗사업 · 플랫폼사업. 주체는 role Select(`RoleSelect`). 팀원 검색은 해당 주체 role만. 기공=기공팀·영업팀·개발운영사. 어벗=제조사·개발운영사·딜러사·어벗츠. 플랫폼=어벗츠·개발운영사. 구성원 분배액은 카드 안에서 수정. 분배는 매출에서 배송비를 먼저 차감한 잔여만(배송은 여기 미기재). 기공=내부기공소(기공사업부) 배당 건만 배송비 공통 지출 차감 후 내부 기공팀·영업팀 인센티브(면세)+개발운영사(+VAT). 어벗=매입가(기본 8,800 부가세 포함→공급가 선차감) 후 잔여를 딜러/개발운영/어벗츠 비중 분배(+VAT는 제조사·딜러·개발운영). 의뢰서 소개코드(딜러사) 있으면 딜러사·없으면 어벗츠. 특별주문가는 주체별 배분액. 플랫폼=하청·지정 사용료(현재 이벤트 무료)를 어벗츠 90%/개발운영사 10%
   - `src/features/settings/tabs/AdminAbutsLabFeeScheduleTab.tsx` (어벗츠 수가. 기공소 신규 항목은 Off·검토 대기; On=적용. 이벤트 `abuts-lab-fee:pending-items`)
   - `src/features/settings/tabs/AdminCreditSettingsTab.tsx` (`variant=credits`: 수동 무료크레딧 기본액·배송 / `variant=customAbut`: 판매가·매입가 50%·분배·의뢰자 BA 판매가 오버라이드 목록·환봉 추가요청)
-  - `src/features/settings/tabs/AdminDealershipSettingsTab.tsx` (`variant=shareRates` 하단) — 신규 유치 요율(20/15/10%) · 인하 예약(KST 0시, 신규만)
+  - `src/features/settings/tabs/AdminDealershipSettingsTab.tsx` (`variant=shareRates` 하단) — 신규 유치 요율 20% 고정
   - `src/pages/admin/system/AdminRoundBarAbutmentTab.tsx` (어벗 추가 요청. 도입 전 CNC어벗/환봉어벗 선택. 종류가 치과 단가에 반영. `GET|PATCH /api/admin/round-bar-requests`)
   - `src/pages/devops/components/DevopsPlatformFeeTab.tsx` (하청 % · 지정 사용료 적용 on/off + %. `PracticeTransferAutoMatchTab` 카드 안. SSOT `payoutRates.subcontractFeeRate` / `directPlatformFeeEnabled` / `directPlatformFeeRate`)
 - 개발·운영사 설정

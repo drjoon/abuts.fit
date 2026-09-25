@@ -121,6 +121,47 @@ export function dealershipRateBucketTip(
   return "이후 인하된 요율로 유치한 치과·기공소";
 }
 
+export type RequestorKindStat = {
+  count: number;
+  commissionAmount: number;
+};
+
+/** 소개 의뢰자를 치과·기공소·전체로 집계. */
+export function summarizeRequestorKindStats(
+  organizations: CommissionOrgRow[] | undefined | null,
+): {
+  practice: RequestorKindStat;
+  lab: RequestorKindStat;
+  total: RequestorKindStat;
+} {
+  const practice: RequestorKindStat = { count: 0, commissionAmount: 0 };
+  const lab: RequestorKindStat = { count: 0, commissionAmount: 0 };
+  let otherCount = 0;
+  let otherCommission = 0;
+  for (const org of organizations || []) {
+    const amount = Number(org.monthCommissionAmount || 0);
+    if (org.requestorKind === "lab") {
+      lab.count += 1;
+      lab.commissionAmount += amount;
+    } else if (org.requestorKind === "practice") {
+      practice.count += 1;
+      practice.commissionAmount += amount;
+    } else {
+      otherCount += 1;
+      otherCommission += amount;
+    }
+  }
+  return {
+    practice,
+    lab,
+    total: {
+      count: practice.count + lab.count + otherCount,
+      commissionAmount:
+        practice.commissionAmount + lab.commissionAmount + otherCommission,
+    },
+  };
+}
+
 export function requestorKindLabel(
   kind?: "practice" | "lab" | null,
 ): string {

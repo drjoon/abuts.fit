@@ -120,16 +120,13 @@ export function normalizeDealershipCommissionRateLog(rawLog, activeRate) {
 
 /**
  * 딜러십 영업 수수료 정책.
- * - activeRate: 지금 신규 유치(가입·재귀속)에 적용되는 요율(기본 20%)
- * - 관리자가 예약하면 해당일 0시(KST)부터 activeRate를 15%·10%로 인하
- * - 이미 유치한 의뢰자는 유치 시점 요율 유지(BA.dealershipCommissionRate / rateLog)
+ * - activeRate: 신규 유치(가입·재귀속) 요율은 20% 고정
+ * - 15%·10% 인하 예약은 적용하지 않는다
+ * - 이미 유치한 의뢰자의 스탬프(BA.dealershipCommissionRate)는 그대로 읽는다
  * - 90일(약 3개월) 무주문 리셋 후 재유치 시 그 당시 activeRate를 새로 스탬프
  */
 export function resolveDealershipCommissionPolicy(creditSettings = {}) {
-  const activeRate = snapDealershipActiveRate(
-    creditSettings?.dealershipActiveCommissionRate ??
-      creditSettings?.dealershipEventCommissionRate,
-  );
+  const activeRate = DEALERSHIP_ACTIVE_COMMISSION_RATE;
   const baseRate = snapDealershipBaseRate(
     creditSettings?.dealershipBaseCommissionRate,
   );
@@ -137,14 +134,8 @@ export function resolveDealershipCommissionPolicy(creditSettings = {}) {
     creditSettings?.dealershipCommissionRateLog,
     activeRate,
   );
-  const rateChangeScheduledAt = parseDealershipEventBound(
-    creditSettings?.dealershipRateChangeScheduledAt,
-  );
-  const rateChangeScheduledRate = rateChangeScheduledAt
-    ? snapDealershipScheduledRate(
-        creditSettings?.dealershipRateChangeScheduledRate,
-      )
-    : null;
+  const rateChangeScheduledAt = null;
+  const rateChangeScheduledRate = null;
   // 레거시 호환 필드
   const eventRate = activeRate;
   const eventEnabled = true;
@@ -191,18 +182,8 @@ function parseDealershipEventBound(raw) {
  * 예약 요율이 도래했는지. scheduledAt(KST 0시) ≤ now 이면 적용 대상.
  * @returns {{ due: boolean, applyAt: Date|null, rate: number|null }}
  */
-export function resolveDueDealershipRateChange(creditSettings = {}, now = new Date()) {
-  const applyAt = parseDealershipEventBound(
-    creditSettings?.dealershipRateChangeScheduledAt,
-  );
-  if (!applyAt) return { due: false, applyAt: null, rate: null };
-  const rateRaw = creditSettings?.dealershipRateChangeScheduledRate;
-  if (rateRaw == null || rateRaw === "") {
-    return { due: false, applyAt, rate: null };
-  }
-  const rate = snapDealershipScheduledRate(rateRaw);
-  const due = now.getTime() >= applyAt.getTime();
-  return { due, applyAt, rate };
+export function resolveDueDealershipRateChange(_creditSettings = {}, _now = new Date()) {
+  return { due: false, applyAt: null, rate: null };
 }
 
 /**
@@ -505,20 +486,10 @@ export function buildStoreManufacturerShareChangeApplyPatch(
  * @returns {{ due: boolean, applyAt: Date|null, rate: number|null }}
  */
 export function resolveDueStoreDealerRateChange(
-  creditSettings = {},
-  now = new Date(),
+  _creditSettings = {},
+  _now = new Date(),
 ) {
-  const applyAt = parseDealershipEventBound(
-    creditSettings?.storeDealerRateChangeScheduledAt,
-  );
-  if (!applyAt) return { due: false, applyAt: null, rate: null };
-  const rateRaw = creditSettings?.storeDealerRateChangeScheduledRate;
-  if (rateRaw == null || rateRaw === "") {
-    return { due: false, applyAt, rate: null };
-  }
-  const rate = snapDealershipScheduledRate(rateRaw);
-  const due = now.getTime() >= applyAt.getTime();
-  return { due, applyAt, rate };
+  return { due: false, applyAt: null, rate: null };
 }
 
 /**

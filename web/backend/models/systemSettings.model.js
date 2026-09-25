@@ -75,7 +75,7 @@ const systemSettingsSchema = new mongoose.Schema(
       labDevopsSharePercent: { type: Number, default: 5 },
       labAbutsSharePercent: { type: Number, default: 25 },
       // 딜러십 영업 수수료(스토어·커스텀어벗 판매가, 기공비·배송비 제외).
-      // 신규 유치 요율(기본 20%). 관리자 예약으로 15%·10% 인하. 이미 유치한 의뢰자는 BA 스탬프 유지.
+      // 신규 유치 요율은 20% 고정. 15%·10% 인하 예약은 쓰지 않는다.
       dealershipActiveCommissionRate: {
         type: Number,
         default: 0.2,

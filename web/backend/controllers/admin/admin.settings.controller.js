@@ -33,7 +33,6 @@ import {
   resolvePlatformFeeRate,
   resolveSubcontractFeeRate,
   normalizeDealershipCommissionTiers,
-  DEALERSHIP_COMMISSION_RATE_OPTIONS,
   DEALERSHIP_ACTIVE_COMMISSION_RATE,
 } from "../../services/creditRevenuePolicy.service.js";
 import { normalizeConfiguredRushFeeMultiplier } from "../../utils/practiceTransferRush.js";
@@ -61,13 +60,8 @@ function sanitizeSharePercent(value) {
   return Math.min(100, Math.round(n * 100) / 100);
 }
 
-/** 딜러십 기본 요율(최종 10%). */
+/** 딜러십 기본 요율(레거시 필드). */
 const DEALERSHIP_BASE_COMMISSION_RATE = 0.1;
-/** 딜러십 신규 유치·예약 요율 선택지(20% · 15% · 10%). */
-const DEALERSHIP_SCHEDULED_COMMISSION_RATE_OPTIONS =
-  DEALERSHIP_COMMISSION_RATE_OPTIONS;
-/** @deprecated */
-const DEALERSHIP_EVENT_COMMISSION_RATE_OPTIONS = [0.15, 0.2];
 
 function snapRateToOptions(value, options, fallback) {
   const n = Number(value);
@@ -94,11 +88,7 @@ function sanitizeBaseCommissionRate(value) {
 function sanitizeActiveCommissionRate(value) {
   if (value === undefined) return undefined;
   if (value === null || value === "") return null;
-  return snapRateToOptions(
-    value,
-    DEALERSHIP_SCHEDULED_COMMISSION_RATE_OPTIONS,
-    DEALERSHIP_ACTIVE_COMMISSION_RATE,
-  );
+  return DEALERSHIP_ACTIVE_COMMISSION_RATE;
 }
 
 function sanitizeEventCommissionRate(value) {
@@ -106,13 +96,8 @@ function sanitizeEventCommissionRate(value) {
 }
 
 function sanitizeScheduledCommissionRate(value) {
-  if (value === null) return null;
-  if (value === undefined || value === "") return undefined;
-  return snapRateToOptions(
-    value,
-    DEALERSHIP_SCHEDULED_COMMISSION_RATE_OPTIONS,
-    DEALERSHIP_ACTIVE_COMMISSION_RATE,
-  );
+  if (value === undefined) return undefined;
+  return null;
 }
 
 /** 딜러 사업자당 월 매출 누진 구간. */

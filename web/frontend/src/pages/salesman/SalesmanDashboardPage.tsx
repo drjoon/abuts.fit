@@ -1,8 +1,8 @@
 /**
  * 딜러(salesman) 대시보드 — 수수료·소개 코드·유치 시점 요율.
  *
- * 딜러십: 신규 유치 요율(기본 20%). 관리자 예약으로 15%·10% 인하.
- * 이미 유치한 의뢰자는 유치 당시 요율 유지. 90일 무주문이면 소개 리셋.
+ * 딜러십: 신규 유치 요율 20%. 소개 의뢰자는 치과·기공소·전체로 집계.
+ * 90일 무주문이면 소개 리셋.
  */
 
 import { useState } from "react";
@@ -24,6 +24,7 @@ import {
   Percent,
   Truck,
   Building2,
+  Factory,
   RefreshCw,
 } from "lucide-react";
 import { SalesmanLedgerModal } from "@/shared/components/SalesmanLedgerModal";
@@ -40,9 +41,7 @@ import {
 import {
   useCommissionDashboard,
   formatMoney,
-  summarizeDealershipRateBuckets,
-  dealershipRateBucketTip,
-  DEALERSHIP_COMMISSION_RATE_PCT_OPTIONS,
+  summarizeRequestorKindStats,
 } from "@/features/commission/useCommissionDashboard";
 import {
   NoOrderAlertBanner,
@@ -120,11 +119,14 @@ export const SalesmanDashboardPage = () => {
   const paidNet = Number(overview.paidNetCommissionAmount || 0);
   const practiceCount = Number(overview.practiceOrganizationCount || 0);
   const labCount = Number(overview.labOrganizationCount || 0);
-  const rateBuckets = summarizeDealershipRateBuckets(data?.organizations);
-  const paidRateBuckets = DEALERSHIP_COMMISSION_RATE_PCT_OPTIONS.map((pct) => ({
-    pct,
-    commissionAmount: 0,
-  }));
+  const kindStats = summarizeRequestorKindStats(data?.organizations);
+  const practiceTileCount = data?.organizations
+    ? kindStats.practice.count
+    : practiceCount;
+  const labTileCount = data?.organizations ? kindStats.lab.count : labCount;
+  const totalTileCount = data?.organizations
+    ? kindStats.total.count
+    : directBusinessCount;
 
   return (
     <TooltipProvider>
@@ -228,30 +230,12 @@ export const SalesmanDashboardPage = () => {
               value={payableGross}
               tone="primary"
               onClick={() => openLedger("unpaid")}
-              footer={
-                <div className="space-y-0.5 text-xs text-muted-foreground">
-                  {rateBuckets.map((b) => (
-                    <div key={b.pct}>
-                      {b.pct}% · {formatMoney(b.commissionAmount)}원
-                    </div>
-                  ))}
-                </div>
-              }
             />
 
             <SettlementStatCard
               label="지급 완료 수수료"
               value={paidNet}
               onClick={() => openLedger("paid")}
-              footer={
-                <div className="space-y-0.5 text-xs text-muted-foreground">
-                  {paidRateBuckets.map((b) => (
-                    <div key={b.pct}>
-                      {b.pct}% · {formatMoney(b.commissionAmount)}원
-                    </div>
-                  ))}
-                </div>
-              }
             />
           </>
         }
@@ -284,18 +268,27 @@ export const SalesmanDashboardPage = () => {
                 secondary={`치과 ${practiceCount} · 기공소 ${labCount}`}
                 tip="내가 소개한 의뢰자 사업자(1단계)"
               />
-              {rateBuckets.map((b) => (
-                <SummaryTile
-                  key={b.pct}
-                  icon={Percent}
-                  label={`${b.pct}%`}
-                  primary={`${b.orgCount.toLocaleString()}개소`}
-                  secondary={`수수료 ${formatMoney(b.commissionAmount)}원`}
-                  tip={dealershipRateBucketTip(b.pct, {
-                    activePct: activePct || 20,
-                  })}
-                />
-              ))}
+              <SummaryTile
+                icon={Building2}
+                label="치과"
+                primary={`${practiceTileCount.toLocaleString()}개소`}
+                secondary={`수수료 ${formatMoney(kindStats.practice.commissionAmount)}원`}
+                tip="내가 소개한 치과"
+              />
+              <SummaryTile
+                icon={Factory}
+                label="기공소"
+                primary={`${labTileCount.toLocaleString()}개소`}
+                secondary={`수수료 ${formatMoney(kindStats.lab.commissionAmount)}원`}
+                tip="내가 소개한 기공소"
+              />
+              <SummaryTile
+                icon={Layers}
+                label="전체"
+                primary={`${totalTileCount.toLocaleString()}개소`}
+                secondary={`수수료 ${formatMoney(kindStats.total.commissionAmount)}원`}
+                tip="소개한 치과·기공소 합계"
+              />
             </div>
           </div>
         }

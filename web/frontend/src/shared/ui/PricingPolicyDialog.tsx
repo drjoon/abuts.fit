@@ -454,7 +454,6 @@ export const PricingPolicyDialog = ({
                 </p>
                 <BulletList
                   items={[
-                    '관리자가 판단해 신규 유치 요율을 15%·10%로 인하할 수 있습니다(기존 유치 건 유지).',
                     '대상: 심플웨이(스토어) · 커스텀어벗(런칭 1만 / 정상 1.3만)',
                     '소개 관계: 의뢰자 가입 시 입력한 딜러 코드',
                     REFERRAL_OWNERSHIP_RESET_POLICY_LINE,

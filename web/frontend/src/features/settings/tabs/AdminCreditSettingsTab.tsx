@@ -265,25 +265,15 @@ function abutsShareFromParts(
   );
 }
 
-/** 딜러 분배·수수료 요율 선택지. */
-const DEALER_RATE_PCT_OPTIONS = [10, 15, 20] as const;
-type DealerRatePct = (typeof DEALER_RATE_PCT_OPTIONS)[number];
+/** 딜러 분배·수수료 요율은 20% 고정. */
+const DEALER_RATE_PCT = 20;
+type DealerRatePct = typeof DEALER_RATE_PCT;
 
 function snapDealerPct(
-  value: number,
-  fallback: DealerRatePct = 20,
+  _value?: number,
+  _fallback: DealerRatePct = DEALER_RATE_PCT,
 ): DealerRatePct {
-  const pct = Math.round(Number.isFinite(value) ? value : fallback);
-  let best: DealerRatePct = fallback;
-  let bestDist = Number.POSITIVE_INFINITY;
-  for (const option of DEALER_RATE_PCT_OPTIONS) {
-    const dist = Math.abs(option - pct);
-    if (dist < bestDist) {
-      bestDist = dist;
-      best = option;
-    }
-  }
-  return best;
+  return DEALER_RATE_PCT;
 }
 
 /** 딜러 요율 변경 예약 — 내일 0시(KST). */
@@ -431,43 +421,13 @@ function ShareChangePendingBadge({ show }: { show: boolean }) {
   );
 }
 
-function DealerRatePctSelect({
-  value,
-  onChange,
-  disabled,
-}: {
-  value: DealerRatePct;
-  onChange: (next: DealerRatePct) => void;
-  disabled?: boolean;
-}) {
+function DealerRateFixed() {
   return (
     <div
-      role="radiogroup"
       aria-label="딜러 분배율"
-      className="flex w-full items-center gap-1 rounded-xl bg-slate-100/80 p-1"
+      className="flex h-9 w-full items-center justify-center rounded-xl bg-slate-100/80 text-sm font-semibold tabular-nums text-slate-900"
     >
-      {DEALER_RATE_PCT_OPTIONS.map((pct) => {
-        const selected = value === pct;
-        return (
-          <button
-            key={pct}
-            type="button"
-            role="radio"
-            aria-checked={selected}
-            disabled={disabled}
-            onClick={() => onChange(pct)}
-            className={cn(
-              "h-9 flex-1 rounded-lg px-2 text-sm font-semibold tabular-nums transition-colors",
-              selected
-                ? "bg-white text-primary-strong shadow-sm ring-1 ring-primary-muted/50"
-                : "text-slate-500 hover:text-slate-800",
-              disabled && "cursor-not-allowed opacity-60",
-            )}
-          >
-            {pct}%
-          </button>
-        );
-      })}
+      {DEALER_RATE_PCT}%
     </div>
   );
 }
@@ -807,21 +767,15 @@ function buildSharePercentSavePayload(
   settings: CreditSettings,
 ): Partial<CreditSettings> {
   const synced = syncComputedPartyFields(settings);
-  const customAbuts = abutsShareFromParts(
-    synced.manufacturerSharePercent,
-    synced.salesmanSharePercent,
-    synced.devopsSharePercent,
-  );
-  const storeAbuts = abutsShareFromParts(
-    synced.storeManufacturerSharePercent,
-    synced.storeSalesmanSharePercent,
-    synced.storeDevopsSharePercent,
-  );
   return {
     manufacturerSharePercent: synced.manufacturerSharePercent,
-    salesmanSharePercent: synced.salesmanSharePercent,
+    salesmanSharePercent: DEALER_RATE_PCT,
     devopsSharePercent: synced.devopsSharePercent,
-    abutsSharePercent: customAbuts,
+    abutsSharePercent: abutsShareFromParts(
+      synced.manufacturerSharePercent,
+      DEALER_RATE_PCT,
+      synced.devopsSharePercent,
+    ),
     regularManufacturerSharePercent: 0,
     regularSalesmanSharePercent: synced.regularSalesmanSharePercent,
     regularDevopsSharePercent: synced.regularDevopsSharePercent,
@@ -831,9 +785,13 @@ function buildSharePercentSavePayload(
       synced.regularDevopsSharePercent,
     ),
     storeManufacturerSharePercent: synced.storeManufacturerSharePercent,
-    storeSalesmanSharePercent: synced.storeSalesmanSharePercent,
+    storeSalesmanSharePercent: DEALER_RATE_PCT,
     storeDevopsSharePercent: synced.storeDevopsSharePercent,
-    storeAbutsSharePercent: storeAbuts,
+    storeAbutsSharePercent: abutsShareFromParts(
+      synced.storeManufacturerSharePercent,
+      DEALER_RATE_PCT,
+      synced.storeDevopsSharePercent,
+    ),
     labBizSharePercent: synced.labBizSharePercent,
     labSalesTeamSharePercent: synced.labSalesTeamSharePercent,
     labDevopsSharePercent: synced.labDevopsSharePercent,
@@ -961,7 +919,6 @@ function SharePercentRow({
   previousAbutsPercent,
   disabled,
   onManufacturerChange,
-  onDealerChange,
   onDevopsChange,
 }: {
   idPrefix: string;
@@ -975,7 +932,6 @@ function SharePercentRow({
   previousAbutsPercent: number;
   disabled?: boolean;
   onManufacturerChange: (next: number) => void;
-  onDealerChange: (next: DealerRatePct) => void;
   onDevopsChange: (next: number) => void;
 }) {
   return (
@@ -1012,11 +968,7 @@ function SharePercentRow({
               %
             </span>
           </div>
-          <DealerRatePctSelect
-            value={dealerSelectPct}
-            onChange={onDealerChange}
-            disabled={disabled}
-          />
+          <DealerRateFixed />
         </div>
         <PercentField
           id={`${idPrefix}-devops`}
@@ -2110,42 +2062,6 @@ export const AdminCreditSettingsTab = ({
     [persistShareSchedules],
   );
 
-  const scheduleDealerRateChange = useCallback(
-    (nextDealerPct: DealerRatePct) => {
-      const mfr = pendingManufacturerRef.current;
-      const cappedDevops = Math.min(
-        pendingDevopsRef.current,
-        Math.max(0, 100 - mfr - nextDealerPct),
-      );
-      setPendingDealerPct(nextDealerPct);
-      pendingDealerRef.current = nextDealerPct;
-      if (cappedDevops !== pendingDevopsRef.current) {
-        setPendingDevopsPct(cappedDevops);
-        pendingDevopsRef.current = cappedDevops;
-      }
-      persistShareSchedules();
-    },
-    [persistShareSchedules],
-  );
-
-  const scheduleStoreDealerRateChange = useCallback(
-    (nextDealerPct: DealerRatePct) => {
-      const mfr = pendingStoreManufacturerRef.current;
-      const cappedDevops = Math.min(
-        pendingStoreDevopsRef.current,
-        Math.max(0, 100 - mfr - nextDealerPct),
-      );
-      setPendingStoreDealerPct(nextDealerPct);
-      pendingStoreDealerRef.current = nextDealerPct;
-      if (cappedDevops !== pendingStoreDevopsRef.current) {
-        setPendingStoreDevopsPct(cappedDevops);
-        pendingStoreDevopsRef.current = cappedDevops;
-      }
-      persistShareSchedules();
-    },
-    [persistShareSchedules],
-  );
-
   const scheduleDevopsShareChange = useCallback(
     (nextDevopsPct: number) => {
       const mfr = pendingManufacturerRef.current;
@@ -2771,7 +2687,6 @@ export const AdminCreditSettingsTab = ({
                   )}
                   disabled={loading}
                   onManufacturerChange={scheduleStoreManufacturerShareChange}
-                  onDealerChange={scheduleStoreDealerRateChange}
                   onDevopsChange={scheduleStoreDevopsShareChange}
                 />
                 <SharePercentRow
@@ -2798,7 +2713,6 @@ export const AdminCreditSettingsTab = ({
                   )}
                   disabled={loading}
                   onManufacturerChange={scheduleManufacturerShareChange}
-                  onDealerChange={scheduleDealerRateChange}
                   onDevopsChange={scheduleDevopsShareChange}
                 />
                 <LabSharePercentRow
