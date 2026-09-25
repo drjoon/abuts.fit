@@ -3,16 +3,37 @@
 // - web/frontend/src/pages/public/PrivacyPage.tsx
 // - web/frontend/src/pages/public/CookiesPage.tsx
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
+import {
+  DEFAULT_SIDEBAR_OPEN,
+  normalizeSidebarOpen,
+} from "@/shared/layout/sidebarOpen";
 import { cn } from "@/shared/ui/cn";
 
 const STORAGE_KEY = "abutsfit:cookie-consent:v1";
 
+/** Docked dashboard sidebar (xl+). Off-canvas drawers below xl do not consume layout width. */
+function hasDockedSidebar(pathname: string): boolean {
+  if (pathname.startsWith("/dashboard/wizard")) return false;
+  if (pathname.startsWith("/dashboard")) return true;
+  return (
+    pathname.startsWith("/practice/dashboard") ||
+    pathname.startsWith("/practice/inquiries") ||
+    pathname.startsWith("/practice/settings")
+  );
+}
+
 export function CookieConsentBanner() {
+  const { pathname } = useLocation();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  const role = useAuthStore((s) => s.user?.role);
+  const user = useAuthStore((s) => s.user);
+  const role = user?.role;
   const reserveChat = isAuthenticated && role !== "admin";
+  const dockedSidebar = isAuthenticated && hasDockedSidebar(pathname);
+  const sidebarOpen = normalizeSidebarOpen(
+    user?.sidebarOpen ?? DEFAULT_SIDEBAR_OPEN,
+  );
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
@@ -37,13 +58,23 @@ export function CookieConsentBanner() {
   };
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-[max(1rem,env(safe-area-inset-bottom))] z-40 px-3 sm:bottom-6 sm:px-6">
+    <div
+      className={cn(
+        "pointer-events-none fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-0 z-40 pl-3 sm:bottom-6 sm:pl-6",
+        reserveChat ? "pr-20 sm:pr-28" : "pr-3 sm:pr-6",
+        dockedSidebar
+          ? sidebarOpen
+            ? "left-0 xl:left-60"
+            : "left-0 xl:left-24"
+          : "left-0",
+      )}
+    >
       <div
         role="dialog"
         aria-label="쿠키 사용 안내"
         className={cn(
-          "pointer-events-auto flex w-full max-w-5xl flex-col gap-3 rounded-2xl bg-[#2c2c2c] px-5 py-4 text-white shadow-[0_8px_30px_rgba(0,0,0,0.35)] sm:flex-row sm:items-center sm:gap-6 sm:px-6",
-          reserveChat ? "mr-16 sm:mr-[5.25rem]" : "mx-auto",
+          "pointer-events-auto flex w-full flex-col gap-3 rounded-2xl bg-[#2c2c2c] px-5 py-4 text-white shadow-[0_8px_30px_rgba(0,0,0,0.35)] sm:flex-row sm:items-center sm:gap-6 sm:px-6",
+          dockedSidebar ? "max-w-none" : "mx-auto max-w-5xl",
         )}
       >
         <div className="min-w-0 flex-1">
