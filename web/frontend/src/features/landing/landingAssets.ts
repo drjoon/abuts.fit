@@ -33,10 +33,10 @@ export const LANDING_SW_YOUTUBE_SEGMENTS = [
 /** 시크 전 가림용 — Guide Kit 스틸 (Install 키트·챕터 타이틀 미포함) */
 export const LANDING_SW_YOUTUBE_POSTER = "/landing/simpleway/guide-kit.jpg";
 export const LANDING_SW_CATALOG_ASSEMBLY =
-  "/landing/simpleway/catalog-assembly.png";
-/** 히어로 — 어벗츠 커스텀어벗. 심플어벗 조립도에서 어벗만 바꾼 컷 */
+  "/landing/simpleway/catalog-assembly.png?v=20";
+/** 히어로 — 커스텀어벗. 픽스처는 흐리고 크라운은 진하게 */
 export const LANDING_SW_CUSTOM_ASSEMBLY =
-  "/landing/simpleway/gribo-custom-assembly.png?v=19";
+  "/landing/simpleway/gribo-custom-assembly.png?v=20";
 /** Flow Chart 직경 라인 (10→6, 맨 아래 6=노랑) */
 export const LANDING_SW_FLOW_ROWS = [
   {

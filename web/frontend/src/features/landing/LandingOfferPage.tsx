@@ -540,40 +540,13 @@ function YoutubeLoopBackground({
   );
 }
 
-/** 여백이 있는 PNG에서 제품이 놓인 가로 중심(0~1). 박스 중심과 다르다. */
-function visualCenterRatio(img: HTMLImageElement): number {
-  const w = img.naturalWidth;
-  const h = img.naturalHeight;
-  const canvas = document.createElement("canvas");
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  if (!ctx) return 0.5;
-  ctx.drawImage(img, 0, 0);
-  const data = ctx.getImageData(0, 0, w, h).data;
-  let minX = w;
-  let maxX = 0;
-  const step = 4;
-  for (let y = 0; y < h; y += step) {
-    for (let x = 0; x < w; x += step) {
-      const i = (y * w + x) * 4;
-      if (data[i] < 248 || data[i + 1] < 248 || data[i + 2] < 248) {
-        if (x < minX) minX = x;
-        if (x > maxX) maxX = x;
-      }
-    }
-  }
-  if (maxX <= minX) return 0.5;
-  return (minX + maxX) / 2 / w;
-}
-
 /** 소스보다 키우지 않는다. srcs가 둘이면 같은 높이로 한 줄에 둔다. */
 function NativeResolutionPhoto({
   srcs,
-  labels,
+  alts,
 }: {
   srcs: string[];
-  labels?: string[];
+  alts?: string[];
 }) {
   const frameRef = useRef<HTMLDivElement>(null);
   const imgRefs = useRef<Array<HTMLImageElement | null>>([]);
@@ -581,7 +554,6 @@ function NativeResolutionPhoto({
     width: number;
     height: number;
   }> | null>(null);
-  const [centers, setCenters] = useState<number[]>([]);
   const srcKey = srcs.join("|");
 
   const fit = useCallback(() => {
@@ -592,8 +564,7 @@ function NativeResolutionPhoto({
     if (!frame || imgs.length !== srcs.length) return;
     const dpr = window.devicePixelRatio || 1;
     const gap = Math.max(0, srcs.length - 1) * 40;
-    const labelReserve = labels?.some(Boolean) ? 32 : 0;
-    let height = Math.min(320, frame.clientHeight - labelReserve);
+    let height = Math.min(320, frame.clientHeight);
     for (const img of imgs) {
       height = Math.min(height, img.naturalHeight / dpr);
     }
@@ -608,8 +579,7 @@ function NativeResolutionPhoto({
       widths = widths.map((width) => width * scale);
     }
     setBoxes(widths.map((width) => ({ width, height })));
-    setCenters(imgs.map(visualCenterRatio));
-  }, [srcKey, srcs, labels]);
+  }, [srcKey, srcs]);
 
   useLayoutEffect(() => {
     fit();
@@ -636,7 +606,7 @@ function NativeResolutionPhoto({
               imgRefs.current[index] = node;
             }}
             src={src}
-            alt={labels?.[index] ?? ""}
+            alt={alts?.[index] ?? ""}
             draggable={false}
             onLoad={fit}
             className="max-w-none"
@@ -646,20 +616,6 @@ function NativeResolutionPhoto({
                 : { visibility: "hidden" }
             }
           />
-          {labels?.[index] ? (
-            <figcaption
-              className="mt-2 w-full text-center text-[13px] font-medium text-[#0b2a5c] sm:text-[14px]"
-              style={
-                boxes?.[index] && centers[index] != null
-                  ? {
-                      transform: `translateX(${(centers[index] - 0.5) * boxes[index].width}px)`,
-                    }
-                  : undefined
-              }
-            >
-              {labels[index]}
-            </figcaption>
-          ) : null}
         </figure>
       ))}
     </div>
@@ -674,7 +630,7 @@ function MediaFrame({
   drift,
   native,
   companionSrc,
-  labels,
+  companionAlt,
   className,
 }: {
   visual: OfferVisualModel;
@@ -686,7 +642,7 @@ function MediaFrame({
   native?: boolean;
   /** native 스틸 오른쪽 짝 */
   companionSrc?: string;
-  labels?: string[];
+  companionAlt?: string;
   className?: string;
 }) {
   return (
@@ -730,7 +686,11 @@ function MediaFrame({
       ) : visual.kind === "photo" && native ? (
         <NativeResolutionPhoto
           srcs={companionSrc ? [visual.src, companionSrc] : [visual.src]}
-          labels={labels}
+          alts={
+            visual.kind === "photo"
+              ? [visual.alt, companionAlt ?? ""]
+              : undefined
+          }
         />
       ) : (
         <div
@@ -1215,9 +1175,9 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
                         ? offer.heroCompanion.src
                         : undefined
                     }
-                    labels={
-                      offer.heroCompanion
-                        ? ["어벗츠 심플어벗", "어벗츠 커스텀어벗"]
+                    companionAlt={
+                      offer.heroCompanion?.kind === "photo"
+                        ? offer.heroCompanion.alt
                         : undefined
                     }
                     className="absolute inset-0 h-full"
