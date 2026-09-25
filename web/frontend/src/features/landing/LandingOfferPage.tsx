@@ -190,9 +190,18 @@ function GlanceSection({ glance }: { glance: OfferGlance }) {
           <h2 className={cn(TYPO.h2, "mt-2.5 break-keep", SKY.ink)}>
             {glance.title}
           </h2>
-          <Lines lines={glance.lead} className={cn("mt-2.5", TYPO.lead)} />
+          {glance.lead.length ? (
+            <Lines lines={glance.lead} className={cn("mt-2.5", TYPO.lead)} />
+          ) : null}
         </div>
-        <ul className="mt-8 grid gap-3 sm:mt-10 sm:grid-cols-3 lg:gap-4">
+        <ul
+          className={cn(
+            "mt-8 grid gap-3 sm:mt-10 lg:gap-4",
+            glance.columns === "3-7"
+              ? "sm:grid-cols-[3fr_7fr]"
+              : "sm:grid-cols-3",
+          )}
+        >
           {glance.items.map((item, index) => {
             const Icon = GLANCE_ICONS[index] ?? HelpCircle;
             return (
@@ -219,24 +228,30 @@ function GlanceSection({ glance }: { glance: OfferGlance }) {
                 >
                   {item.title}
                 </h3>
-                <p className={cn("mt-2", TYPO.body)}>{item.body}</p>
+                {Array.isArray(item.body) ? (
+                  <Lines lines={item.body} className={cn("mt-2", TYPO.body)} />
+                ) : (
+                  <p className={cn("mt-2", TYPO.body)}>{item.body}</p>
+                )}
               </li>
             );
           })}
         </ul>
-        <div
-          className={cn(
-            "mt-4 flex items-start gap-3 rounded-2xl border border-sky-100 bg-white/80 px-4 py-4 sm:mt-5 sm:items-center sm:px-5",
-          )}
-        >
-          <MapPin
-            className={cn("mt-0.5 h-4 w-4 shrink-0 sm:mt-0", SKY.accentStrong)}
-            aria-hidden
-          />
-          <p className={cn("text-[14px] font-semibold tracking-tight", SKY.ink)}>
-            {glance.summary}
-          </p>
-        </div>
+        {glance.summary ? (
+          <div
+            className={cn(
+              "mt-4 flex items-start gap-3 rounded-2xl border border-sky-100 bg-white/80 px-4 py-4 sm:mt-5 sm:items-center sm:px-5",
+            )}
+          >
+            <MapPin
+              className={cn("mt-0.5 h-4 w-4 shrink-0 sm:mt-0", SKY.accentStrong)}
+              aria-hidden
+            />
+            <p className={cn("text-[14px] font-semibold tracking-tight", SKY.ink)}>
+              {glance.summary}
+            </p>
+          </div>
+        ) : null}
       </div>
     </section>
   );
@@ -1030,16 +1045,17 @@ function FlowChartSection({ chart }: { chart: NonNullable<LandingOffer["flowChar
             </p>
           </div>
           <div className="flex flex-col items-center justify-center border-t border-sky-100 px-5 py-6 text-center sm:px-8 sm:py-7">
-            <SectionEyebrow>02</SectionEyebrow>
-            <h3 className={cn(TYPO.h3, "mt-2", SKY.ink)}>{chart.name}</h3>
-            <p
-              className={cn(
-                "mt-1.5 text-[14px] font-medium sm:text-[15px]",
-                SKY.accentStrong,
-              )}
-            >
-              {chart.line}
-            </p>
+            <h3 className={cn(TYPO.h3, SKY.ink)}>{chart.name}</h3>
+            {chart.line ? (
+              <p
+                className={cn(
+                  "mt-1.5 text-[14px] font-medium sm:text-[15px]",
+                  SKY.accentStrong,
+                )}
+              >
+                {chart.line}
+              </p>
+            ) : null}
             {chart.body.length ? (
               <Lines
                 lines={chart.body}

@@ -99,8 +99,10 @@ export type OfferGlance = {
   title: string;
   /** 문장 단위 → UI에서 `<br />`. */
   lead: string[];
-  items: Array<{ label: string; title: string; body: string }>;
-  summary: string;
+  items: Array<{ label: string; title: string; body: string | string[] }>;
+  /** sm 이상 카드 가로 비율. 없으면 균등. */
+  columns?: "3-7";
+  summary?: string;
 };
 
 /** 용어 한 줄 정리. */
@@ -124,7 +126,7 @@ export type OfferStory = {
 
 export type OfferFlowChart = {
   name: string;
-  line: string;
+  line?: string;
   body: string[];
   /** 위에서 아래(10→6). 기본은 defaultRowId만 노출. */
   rows: Array<{ id: string; src: string; alt: string }>;
@@ -256,47 +258,28 @@ export const landingOffers: LandingOffer[] = [
     pageVisual: HERO_ASSEMBLY,
     heroCompanion: HERO_CUSTOM_ASSEMBLY,
     glance: {
-      title: "심플웨이, 딱 세 가지만 기억하세요.",
-      lead: [
-        "어려운 용어는 잠시 잊고, 치과의사가 알아야 할 핵심만 짧게 정리했습니다.",
-      ],
+      title: "심플웨이, 딱 두 가지만 기억하세요.",
+      lead: [],
+      columns: "3-7",
       items: [
         {
           label: "무엇인가",
-          title: "심은 자리부터 크라운까지 한 줄로",
-          body: "임플란트를 심은 자리부터 크라운까지, 같은 직경 기준으로 이어지도록 만든 어벗츠의 진료 흐름입니다.",
+          title: "탑다운 컨셉을 심플하게 구현",
+          body: "임플란트를 보철의 중점에 심고, 대합치와의 거리를 확인해서 수술 단계에서 이미 보철을 프로비전합니다.",
         },
         {
           label: "어떻게",
-          title: "위치 잡기 → 확인 → 보철, 세 단계",
-          body: "가이드로 심을 자리를 잡고, 체크핀으로 방향을 확인한 뒤, 같은 직경의 심플어벗 위에 보철을 올립니다.",
-        },
-        {
-          label: "기대효과",
-          title: "고를 것이 줄고, 오차도 줄어듭니다",
-          body: "직경과 색만 맞추면 되기 때문에 어벗을 고르는 시간이 줄고, 여러 개를 심어도 방향이 어긋나기 어렵습니다.",
+          title: "수술 → 힐링 → 보철, 세 단계",
+          body: [
+            "1. 서지컬펜으로 심고, 서지컬핀으로 대합치 간격을 확인, 본쉐이퍼로 치조골 간섭을 제거합니다.",
+            "2. 그립·스캔 가능한 심플 힐링으로 골유착 기다린 뒤, 파우더 없이 구강스캔합니다.",
+            "3. 어벗츠 플랫폼으로 심플하게 보철 제작합니다.",
+          ],
         },
       ],
-      summary: "한 줄 요약 — 직경만 맞추면 이어지는 임플란트 보철 시스템",
     },
-    guides: [
-      {
-        name: "픽스처 · 심플어벗 · 보철.",
-        line: "한 축으로 이어집니다.",
-        body: [
-          "식립할 공간의 중앙에 픽스쳐가 앉고, 그 위에 예쁜 이머전스 프로파일의 심플어벗과 보철이 올라갑니다.",
-        ],
-        layout: "split",
-        visual: {
-          kind: "photo",
-          src: LANDING_SW_CATALOG_ASSEMBLY,
-          alt: "픽스처·심플어벗·보철 조립도",
-        },
-      },
-    ],
     flowChart: {
       name: "Flow Chart.",
-      line: "칼라 밴드만 따라가세요.",
       body: [
         "인접치 근원심 거리를 기준으로 6mm ~ 10mm 중 맞는 서지컬펜을 씁니다.",
         "정교한 첫 드릴링 이후 과정은 쉽습니다.",
