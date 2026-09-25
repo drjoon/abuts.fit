@@ -21,17 +21,14 @@ import {
   LANDING_SW_BONE_SHAPER,
   LANDING_SW_CATALOG_ASSEMBLY,
   LANDING_SW_CHECK_KIT,
+  LANDING_SW_CUSTOM_ASSEMBLY,
   LANDING_SW_CHECK_PIN,
   LANDING_SW_FLOW_DEFAULT_ROW_ID,
   LANDING_SW_FLOW_ROWS,
   LANDING_SW_GUIDE_HOW_TO,
   LANDING_SW_GUIDE_KIT,
   LANDING_SW_GUIDE_PEN_PIN,
-  LANDING_SW_HERO_KITS,
   LANDING_SW_PROSTHETIC_KIT,
-  LANDING_SW_YOUTUBE_ID,
-  LANDING_SW_YOUTUBE_POSTER,
-  LANDING_SW_YOUTUBE_SEGMENTS,
   LANDING_WAVEON_PARTNERSHIP,
   LANDING_WAVEON_WORKFLOW,
 } from "./landingAssets";
@@ -142,6 +139,8 @@ export type LandingOffer = {
   /** 히어로 eyebrow — 없으면 navLabel 대문자화 */
   heroEyebrow?: string;
   heroTitle: string;
+  /** 타이틀 바로 아래 한 줄 (선택) */
+  heroLead?: string;
   /** 히어로 본문. 문장 단위 → UI에서 `<br />`. 없으면 line 한 줄. */
   heroBody?: string[];
   line: string;
@@ -160,6 +159,8 @@ export type LandingOffer = {
   tile: OfferVisual;
   /** 오퍼 히어로. 없으면 tile. 홈 타일과 겹치지 않을 때. */
   pageVisual?: OfferVisual;
+  /** 히어로 스틸 오른쪽 짝. pageVisual 과 한 화면에 둔다. */
+  heroCompanion?: OfferVisual;
   /** 히어로 아래 시작 버튼. 상품 카드가 있으면 쓰지 않는다. */
   cta?: OfferBuy;
   /** 히어로 직후 카탈로그 안내(구성). */
@@ -194,10 +195,16 @@ const ABUTMENT_VISUAL: OfferVisual = {
   alt: "심플어벗",
 };
 
-const HERO_KITS: OfferVisual = {
+const HERO_ASSEMBLY: OfferVisual = {
   kind: "photo",
-  src: LANDING_SW_HERO_KITS,
-  alt: "심플웨이 Guide · Check · Prosthetics 키트",
+  src: LANDING_SW_CATALOG_ASSEMBLY,
+  alt: "픽스처·어벗츠 심플어벗·보철 조립도",
+};
+
+const HERO_CUSTOM_ASSEMBLY: OfferVisual = {
+  kind: "photo",
+  src: LANDING_SW_CUSTOM_ASSEMBLY,
+  alt: "픽스처·어벗츠 커스텀어벗·보철 조립도",
 };
 
 const WAVEON_WORKFLOW_TILE: OfferVisual = {
@@ -237,18 +244,17 @@ export const landingOffers: LandingOffer[] = [
     navLabel: "심플웨이",
     punch: "직관적인 수술과 보철",
     heroEyebrow: "SIMPLEWAY",
-    heroTitle: "직관적인 수술과 보철",
-    heroBody: ["식립부터 보철까지, 간결하게."],
+    heroTitle: "직관적인 수술과 보철.",
+    heroBody: [
+      "심플웨이로 원하는 자리에 픽스쳐를 심고,",
+      "어벗츠 어벗과 어벗츠 보철이 편안하게 올라갑니다.",
+    ],
     line: "식립 위치와 어벗 선택을 간결한 흐름으로.",
     lead: "식립부터 보철까지, 하나의 흐름으로.",
-    hero: "video",
-    youtube: {
-      id: LANDING_SW_YOUTUBE_ID,
-      segments: [...LANDING_SW_YOUTUBE_SEGMENTS],
-      poster: LANDING_SW_YOUTUBE_POSTER,
-    },
+    hero: "photo",
     tile: WAVEON_WORKFLOW_TILE,
-    pageVisual: HERO_KITS,
+    pageVisual: HERO_ASSEMBLY,
+    heroCompanion: HERO_CUSTOM_ASSEMBLY,
     glance: {
       title: "심플웨이, 딱 세 가지만 기억하세요.",
       lead: [

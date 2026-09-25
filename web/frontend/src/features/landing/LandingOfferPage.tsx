@@ -3,7 +3,7 @@
 // - web/frontend/src/features/landing/landingOffers.ts
 // - web/frontend/src/features/landing/OfferVisual.tsx
 // - web/frontend/src/features/landing/LandingHome.tsx
-import { useEffect, useId, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowRight,
@@ -482,12 +482,141 @@ function YoutubeLoopBackground({
   );
 }
 
+/** 여백이 있는 PNG에서 제품이 놓인 가로 중심(0~1). 박스 중심과 다르다. */
+function visualCenterRatio(img: HTMLImageElement): number {
+  const w = img.naturalWidth;
+  const h = img.naturalHeight;
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return 0.5;
+  ctx.drawImage(img, 0, 0);
+  const data = ctx.getImageData(0, 0, w, h).data;
+  let minX = w;
+  let maxX = 0;
+  const step = 4;
+  for (let y = 0; y < h; y += step) {
+    for (let x = 0; x < w; x += step) {
+      const i = (y * w + x) * 4;
+      if (data[i] < 248 || data[i + 1] < 248 || data[i + 2] < 248) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+      }
+    }
+  }
+  if (maxX <= minX) return 0.5;
+  return (minX + maxX) / 2 / w;
+}
+
+/** 소스보다 키우지 않는다. srcs가 둘이면 같은 높이로 한 줄에 둔다. */
+function NativeResolutionPhoto({
+  srcs,
+  labels,
+}: {
+  srcs: string[];
+  labels?: string[];
+}) {
+  const frameRef = useRef<HTMLDivElement>(null);
+  const imgRefs = useRef<Array<HTMLImageElement | null>>([]);
+  const [boxes, setBoxes] = useState<Array<{
+    width: number;
+    height: number;
+  }> | null>(null);
+  const [centers, setCenters] = useState<number[]>([]);
+  const srcKey = srcs.join("|");
+
+  const fit = useCallback(() => {
+    const frame = frameRef.current;
+    const imgs = srcs
+      .map((_, index) => imgRefs.current[index])
+      .filter((img): img is HTMLImageElement => !!img?.naturalWidth);
+    if (!frame || imgs.length !== srcs.length) return;
+    const dpr = window.devicePixelRatio || 1;
+    const gap = Math.max(0, srcs.length - 1) * 40;
+    const labelReserve = labels?.some(Boolean) ? 32 : 0;
+    let height = Math.min(320, frame.clientHeight - labelReserve);
+    for (const img of imgs) {
+      height = Math.min(height, img.naturalHeight / dpr);
+    }
+    let widths = imgs.map(
+      (img) => height * (img.naturalWidth / img.naturalHeight),
+    );
+    const maxTotal = frame.clientWidth * 0.86;
+    const total = widths.reduce((sum, width) => sum + width, 0) + gap;
+    if (total > maxTotal && maxTotal > gap) {
+      const scale = (maxTotal - gap) / (total - gap);
+      height *= scale;
+      widths = widths.map((width) => width * scale);
+    }
+    setBoxes(widths.map((width) => ({ width, height })));
+    setCenters(imgs.map(visualCenterRatio));
+  }, [srcKey, srcs, labels]);
+
+  useLayoutEffect(() => {
+    fit();
+    const frame = frameRef.current;
+    if (!frame) return;
+    const observer = new ResizeObserver(() => fit());
+    observer.observe(frame);
+    return () => observer.disconnect();
+  }, [fit]);
+
+  return (
+    <div
+      ref={frameRef}
+      className="absolute inset-0 flex items-end justify-center gap-8 bg-white"
+    >
+      {srcs.map((src, index) => (
+        <figure
+          key={src}
+          className="flex shrink-0 flex-col items-center"
+          style={boxes?.[index] ? { width: boxes[index].width } : undefined}
+        >
+          <img
+            ref={(node) => {
+              imgRefs.current[index] = node;
+            }}
+            src={src}
+            alt={labels?.[index] ?? ""}
+            draggable={false}
+            onLoad={fit}
+            className="max-w-none"
+            style={
+              boxes?.[index]
+                ? { width: boxes[index].width, height: boxes[index].height }
+                : { visibility: "hidden" }
+            }
+          />
+          {labels?.[index] ? (
+            <figcaption
+              className="mt-2 w-full text-center text-[13px] font-medium text-[#0b2a5c] sm:text-[14px]"
+              style={
+                boxes?.[index] && centers[index] != null
+                  ? {
+                      transform: `translateX(${(centers[index] - 0.5) * boxes[index].width}px)`,
+                    }
+                  : undefined
+              }
+            >
+              {labels[index]}
+            </figcaption>
+          ) : null}
+        </figure>
+      ))}
+    </div>
+  );
+}
+
 function MediaFrame({
   visual,
   video,
   youtube,
   reduced,
   drift,
+  native,
+  companionSrc,
+  labels,
   className,
 }: {
   visual: OfferVisualModel;
@@ -495,10 +624,21 @@ function MediaFrame({
   youtube?: LandingOffer["youtube"];
   reduced: boolean;
   drift?: boolean;
+  /** 히어로 스틸. 소스보다 키우지 않고 작게 둔다. */
+  native?: boolean;
+  /** native 스틸 오른쪽 짝 */
+  companionSrc?: string;
+  labels?: string[];
   className?: string;
 }) {
   return (
-    <div className={cn("relative h-full w-full overflow-hidden bg-[#e8f2ff]", className)}>
+    <div
+      className={cn(
+        "relative h-full w-full overflow-hidden",
+        native ? "bg-white" : "bg-[#e8f2ff]",
+        className,
+      )}
+    >
       {youtube && !reduced ? (
         <YoutubeLoopBackground
           videoId={youtube.id}
@@ -529,6 +669,11 @@ function MediaFrame({
         >
           <source src={LANDING_HERO_VIDEO} type="video/mp4" />
         </video>
+      ) : visual.kind === "photo" && native ? (
+        <NativeResolutionPhoto
+          srcs={companionSrc ? [visual.src, companionSrc] : [visual.src]}
+          labels={labels}
+        />
       ) : (
         <div
           className={cn(
@@ -1033,6 +1178,54 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
         <section className="bg-white">
           {/* fixed 헤더(h-14/sm:h-16) 아래부터 히어로 */}
           <div className="h-14 sm:h-16" aria-hidden />
+          {offer.hero === "photo" ? (
+            <div className="relative">
+              <div
+                className={cn(
+                  landingContent,
+                  "flex flex-col items-center gap-6 pt-8 pb-24 text-center sm:pt-10 sm:pb-32 lg:flex-row lg:items-end lg:justify-center lg:gap-12",
+                )}
+              >
+                <div className="max-w-lg text-center">
+                  <p className={cn(TYPO.eyebrow, "text-[#0b2a5c]/80")}>
+                    {heroEyebrow}
+                  </p>
+                  <h1 className={cn(TYPO.h1, "mt-2 text-[#0b2a5c]")}>
+                    {offer.heroTitle}
+                  </h1>
+                  {offer.heroLead ? (
+                    <p className="mt-3 break-keep text-[15px] font-medium leading-6 text-[#0b2a5c]/90 sm:text-[16px] sm:leading-7">
+                      {offer.heroLead}
+                    </p>
+                  ) : null}
+                  <Lines
+                    lines={heroLines}
+                    className="mt-3 text-[14px] leading-6 text-slate-700 sm:text-[15px]"
+                  />
+                </div>
+                <div className="relative h-[min(46vh,22rem)] w-full shrink-0 lg:w-[26rem]">
+                  <MediaFrame
+                    visual={heroVisual}
+                    reduced={reduced}
+                    drift={false}
+                    native
+                    companionSrc={
+                      offer.heroCompanion?.kind === "photo"
+                        ? offer.heroCompanion.src
+                        : undefined
+                    }
+                    labels={
+                      offer.heroCompanion
+                        ? ["어벗츠 심플어벗", "어벗츠 커스텀어벗"]
+                        : undefined
+                    }
+                    className="absolute inset-0 h-full"
+                  />
+                </div>
+              </div>
+              <LandingScrollCue atBoundary />
+            </div>
+          ) : (
           <div className="relative min-h-[calc(100svh-3.5rem)] overflow-hidden sm:min-h-[calc(100svh-4rem)]">
             <div className="absolute inset-0">
               <MediaFrame
@@ -1040,7 +1233,7 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
                 video={offer.hero === "video" && !offer.youtube}
                 youtube={offer.hero === "video" ? offer.youtube : undefined}
                 reduced={reduced}
-                drift={offer.hero === "photo"}
+                drift={false}
                 className="h-full"
               />
             </div>
@@ -1051,13 +1244,18 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
                 "relative z-10 flex min-h-[calc(100svh-3.5rem)] items-end pb-16 pt-10 sm:min-h-[calc(100svh-4rem)] sm:pb-20",
               )}
             >
-              <div className="max-w-md text-left [text-shadow:0_1px_14px_rgba(255,255,255,0.9),0_1px_28px_rgba(255,255,255,0.7)]">
+              <div className="max-w-lg text-left [text-shadow:0_1px_14px_rgba(255,255,255,0.9),0_1px_28px_rgba(255,255,255,0.7)]">
                 <p className={cn(TYPO.eyebrow, "text-[#0b2a5c]/80")}>
                   {heroEyebrow}
                 </p>
                 <h1 className={cn(TYPO.h1, "mt-2 text-[#0b2a5c]")}>
                   {offer.heroTitle}
                 </h1>
+                {offer.heroLead ? (
+                  <p className="mt-3 break-keep text-[15px] font-medium leading-6 text-[#0b2a5c]/90 sm:text-[16px] sm:leading-7">
+                    {offer.heroLead}
+                  </p>
+                ) : null}
                 <Lines
                   lines={heroLines}
                   className="mt-3 text-[14px] leading-6 text-slate-700 sm:text-[15px]"
@@ -1082,6 +1280,7 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
 
             <LandingScrollCue />
           </div>
+          )}
         </section>
       ) : (
         <section className={cn(SKY.band)}>
