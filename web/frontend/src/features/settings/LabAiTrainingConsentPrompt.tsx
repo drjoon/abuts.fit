@@ -1,6 +1,13 @@
-// 기공소 기공의뢰 첫 진입. 스위치를 기본 on으로 두고 허용 여부를 한 번 확인한다.
-// 답을 하면 confirmedAt이 남아 다시 묻지 않는다. 어벗츠기공본부는 항상 허용이라 묻지 않는다.
-import { useEffect, useState } from "react";
+// 기공의뢰 진입 확인은 닫기·나중에로 넘길 수 있다.
+// 답을 하기 전에는 첫 의뢰 작업시작만 허용/허용 안 함을 강제한다.
+// 어벗츠기공본부는 항상 허용이라 묻지 않는다.
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
 import {
   AlertDialog,
   AlertDialogContent,
@@ -30,20 +37,42 @@ type MeResponse = {
   };
 };
 
-export const LabAiTrainingConsentPrompt = () => {
+type PromptStatus = "loading" | "needed" | "done";
+
+export type LabAiTrainingConsentPromptHandle = {
+  /** 아직 답을 안 했으면 닫기·나중에 없이 고를 때까지 기다린다. */
+  ensureChoice: () => Promise<boolean>;
+};
+
+export const LabAiTrainingConsentPrompt = forwardRef<
+  LabAiTrainingConsentPromptHandle
+>(function LabAiTrainingConsentPrompt(_props, ref) {
   const { token, user } = useAuthStore();
   const { toast } = useToast();
   const { windowInfo } = useLabTradingPartnerWindow();
   const [open, setOpen] = useState(false);
+  const [required, setRequired] = useState(false);
   const [saving, setSaving] = useState(false);
+  const statusRef = useRef<PromptStatus>("loading");
+  const loadWaitersRef = useRef<Array<() => void>>([]);
+  const choiceWaitersRef = useRef<Array<(ok: boolean) => void>>([]);
   const pct = resolveLabDirectPlatformFeePct(
     windowInfo?.feeRates?.directPlatformFeeRate != null
       ? Number(windowInfo.feeRates.directPlatformFeeRate) * 100
       : undefined,
   );
 
+  const finishLoad = (status: PromptStatus) => {
+    statusRef.current = status;
+    const waiters = loadWaitersRef.current.splice(0);
+    waiters.forEach((resolve) => resolve());
+  };
+
   useEffect(() => {
-    if (!token || user?.role === "internalLab") return;
+    if (!token || user?.role === "internalLab") {
+      finishLoad("done");
+      return;
+    }
     let mounted = true;
     const load = async () => {
       const res = await apiFetch<MeResponse>({
@@ -52,14 +81,49 @@ export const LabAiTrainingConsentPrompt = () => {
         token,
         skipCache: true,
       });
-      if (!mounted || !res.ok) return;
-      if (res.data?.data?.aiTrainingConsent?.needsPrompt) setOpen(true);
+      if (!mounted) return;
+      const needsPrompt = Boolean(
+        res.ok && res.data?.data?.aiTrainingConsent?.needsPrompt,
+      );
+      finishLoad(needsPrompt ? "needed" : "done");
+      if (needsPrompt) setOpen(true);
     };
     void load();
     return () => {
       mounted = false;
     };
   }, [token, user?.role]);
+
+  useEffect(() => {
+    return () => {
+      const waiters = choiceWaitersRef.current.splice(0);
+      waiters.forEach((resolve) => resolve(false));
+    };
+  }, []);
+
+  const whenLoaded = () => {
+    if (statusRef.current !== "loading") return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      loadWaitersRef.current.push(resolve);
+    });
+  };
+
+  useImperativeHandle(ref, () => ({
+    ensureChoice: async () => {
+      await whenLoaded();
+      if (statusRef.current !== "needed") return true;
+      setRequired(true);
+      setOpen(true);
+      return new Promise<boolean>((resolve) => {
+        choiceWaitersRef.current.push(resolve);
+      });
+    },
+  }));
+
+  const dismiss = () => {
+    if (required || saving) return;
+    setOpen(false);
+  };
 
   const choose = async (allowed: boolean) => {
     if (saving) return;
@@ -80,7 +144,11 @@ export const LabAiTrainingConsentPrompt = () => {
         });
         return;
       }
+      statusRef.current = "done";
       setOpen(false);
+      setRequired(false);
+      const waiters = choiceWaitersRef.current.splice(0);
+      waiters.forEach((resolve) => resolve(true));
       toast({
         title: allowed ? "학습 이용을 허용했습니다" : "학습 이용을 껐습니다",
         description: allowed
@@ -99,12 +167,18 @@ export const LabAiTrainingConsentPrompt = () => {
   };
 
   return (
-    <AlertDialog open={open}>
+    <AlertDialog open={open} onOpenChange={(next) => {
+      if (!next) dismiss();
+    }}>
       <AlertDialogContent
         className="z-[400]"
         overlayClassName="z-[400]"
-        onEscapeKeyDown={(event) => event.preventDefault()}
-        onPointerDownOutside={(event) => event.preventDefault()}
+        onEscapeKeyDown={(event) => {
+          if (required) event.preventDefault();
+        }}
+        onPointerDownOutside={(event) => {
+          if (required) event.preventDefault();
+        }}
       >
         <AlertDialogHeader>
           <AlertDialogTitle>보철 디자인 학습 이용</AlertDialogTitle>
@@ -114,27 +188,57 @@ export const LabAiTrainingConsentPrompt = () => {
               허용합니다.
               <br />
               허용하면 플랫폼 사용료 {pct}%가 면제됩니다.
+              {required ? (
+                <>
+                  <br />
+                  작업시작 전에 선택해 주세요.
+                </>
+              ) : null}
             </p>
           </AlertDialogDescription>
         </AlertDialogHeader>
-        <AlertDialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            disabled={saving}
-            onClick={() => void choose(false)}
-          >
-            허용 안 함
-          </Button>
-          <Button
-            type="button"
-            disabled={saving}
-            onClick={() => void choose(true)}
-          >
-            허용
-          </Button>
+        <AlertDialogFooter className="flex-col gap-2 sm:flex-row sm:justify-between sm:space-x-0">
+          {required ? (
+            <span />
+          ) : (
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={saving}
+                onClick={dismiss}
+              >
+                닫기
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={saving}
+                onClick={dismiss}
+              >
+                나중에
+              </Button>
+            </div>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={saving}
+              onClick={() => void choose(false)}
+            >
+              허용 안 함
+            </Button>
+            <Button
+              type="button"
+              disabled={saving}
+              onClick={() => void choose(true)}
+            >
+              허용
+            </Button>
+          </div>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
   );
-};
+});

@@ -456,7 +456,10 @@ import {
   LAB_FEE_UNCONFIGURED_REASON,
   readLabFeeScheduleConfigured,
 } from "@/features/settings/LabFeeSetupPrompt";
-import { LabAiTrainingConsentPrompt } from "@/features/settings/LabAiTrainingConsentPrompt";
+import {
+  LabAiTrainingConsentPrompt,
+  type LabAiTrainingConsentPromptHandle,
+} from "@/features/settings/LabAiTrainingConsentPrompt";
 import {
   PTX_CA_INSUFFICIENT_CREDIT_CONFIRM_LABEL,
   PTX_CA_INSUFFICIENT_CREDIT_DESCRIPTION_LINES,
@@ -724,6 +727,8 @@ export function RequestorPracticeReceivePage({
 }) {
   const token = useAuthStore((s) => s.token);
   const user = useAuthStore((s) => s.user);
+  const aiTrainingConsentPromptRef =
+    useRef<LabAiTrainingConsentPromptHandle>(null);
   const platformGuideTour = useGuideTour();
   const queryClient = useQueryClient();
   const storedCalendarDateKey = useAuthStore(
@@ -5234,6 +5239,28 @@ export function RequestorPracticeReceivePage({
       });
       return;
     }
+    const alreadyStarted =
+      !(
+        selectedTransfer.matchingMode === "auto" &&
+        selectedTransfer.autoMatch?.openPool
+      ) &&
+      Boolean(
+        selectedTransfer.isAccepted ||
+          selectedTransfer.isDownloaded ||
+          selectedTransfer.requestorDownloadedAt,
+      );
+    const createdTs = (row: ReceivedPracticeTransfer) => {
+      const ts = new Date(row.createdAt || "").getTime();
+      return Number.isFinite(ts) ? ts : Number.POSITIVE_INFINITY;
+    };
+    const selectedCreatedTs = createdTs(selectedTransfer);
+    const isFirstCase = transfers.every(
+      (row) => createdTs(row) >= selectedCreatedTs,
+    );
+    if (!alreadyStarted && isFirstCase) {
+      const chosen = await aiTrainingConsentPromptRef.current?.ensureChoice();
+      if (!chosen) return;
+    }
     setAcceptBusy(true);
     try {
       const ok = await markTransferAccepted(selectedTransfer);
@@ -5253,6 +5280,7 @@ export function RequestorPracticeReceivePage({
     resolveTransferChatRoom,
     selectedTransfer,
     toast,
+    transfers,
   ]);
 
   const handleConfirmLabRemakeCreate = useCallback(
@@ -8708,7 +8736,7 @@ export function RequestorPracticeReceivePage({
       className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden px-3 sm:px-4"
       data-guide-tour="lab_receive_workspace"
     >
-      <LabAiTrainingConsentPrompt />
+      <LabAiTrainingConsentPrompt ref={aiTrainingConsentPromptRef} />
       {showMobileActionChrome
         ? createPortal(
             <div
