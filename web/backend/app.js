@@ -152,6 +152,8 @@ app.use(urlencoded({ extended: true, limit: "10mb" }));
 app.use(cors());
 app.use(
   helmet({
+    // 기본 no-referrer 는 YouTube 임베드가 출처를 확인하지 못해 재생을 거절한다.
+    referrerPolicy: { policy: "strict-origin-when-cross-origin" },
     contentSecurityPolicy: {
       directives: {
         ...helmet.contentSecurityPolicy.getDefaultDirectives(),
@@ -164,6 +166,8 @@ app.use(
           "https://cdn.jsdelivr.net",
           "https://dapi.kakao.com",
           "https://t1.daumcdn.net",
+          "https://www.youtube.com",
+          "https://s.ytimg.com",
         ],
         "script-src-elem": [
           "'self'",
@@ -171,12 +175,17 @@ app.use(
           "https://cdn.jsdelivr.net",
           "https://t1.daumcdn.net",
           "https://dapi.kakao.com",
+          "https://www.youtube.com",
+          "https://s.ytimg.com",
         ],
         // OSM: ContactPage · SalesRouteMap 카카오 폴백 iframe
+        // YouTube: 심플웨이 소개 영상 IFrame
         "frame-src": [
           "'self'",
           "https://postcode.map.kakao.com",
           "https://www.openstreetmap.org",
+          "https://www.youtube.com",
+          "https://www.youtube-nocookie.com",
         ],
         // S3 업로드/다운로드 허용
         "default-src": [
@@ -198,6 +207,7 @@ app.use(
           "https://dapi.kakao.com",
           "https://*.daumcdn.net",
           "https://*.kakaocdn.net",
+          "https://www.youtube.com",
           ...(process.env.NODE_ENV === "development"
             ? ["http://localhost:8080", "ws://localhost:8080"]
             : []),
@@ -213,6 +223,8 @@ app.use(
           "https://*.kakaocdn.net",
           "https://map.kakao.com",
           "https://*.map.kakao.com",
+          "https://i.ytimg.com",
+          "https://*.ytimg.com",
         ],
       },
     },
