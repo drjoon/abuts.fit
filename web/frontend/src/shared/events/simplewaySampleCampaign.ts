@@ -28,7 +28,7 @@ export const SIMPLEWAY_SAMPLE_KIT = [
     id: "abutments",
     name: "어벗츠 힐링H, 어벗H, 커스텀어벗",
     spec: "",
-    note: "그립.스캔 힐링, 기성 및 커스텀 어벗먼트",
+    note: "그립·스캔 힐링, 기성 및 커스텀 어벗먼트",
   },
   {
     id: "driver",
