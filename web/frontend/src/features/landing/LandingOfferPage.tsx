@@ -9,8 +9,6 @@ import {
   ArrowRight,
   Box,
   CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
   Cpu,
   Crown,
   FileText,
@@ -80,6 +78,8 @@ type YtPlayer = {
   mute: () => void;
   playVideo: () => void;
   seekTo: (seconds: number, allowSeekAhead: boolean) => void;
+  setPlaybackRate?: (rate: number) => void;
+  getPlaybackRate?: () => number;
   getCurrentTime: () => number;
   getPlayerState?: () => number;
   isMuted?: () => boolean;
@@ -310,6 +310,8 @@ function YoutubeLoopBackground({
   endSec = 16,
   segments,
   poster,
+  playbackRate = 1,
+  fit = "cover",
   reduced,
 }: {
   videoId: string;
@@ -317,6 +319,9 @@ function YoutubeLoopBackground({
   endSec?: number;
   segments?: Array<{ startSec: number; endSec: number }>;
   poster?: string;
+  playbackRate?: number;
+  /** cover=히어로 크롭 · frame=16:9 박스에 맞춤 */
+  fit?: "cover" | "frame";
   reduced: boolean;
 }) {
   const hostId = useId().replace(/:/g, "");
@@ -365,6 +370,17 @@ function YoutubeLoopBackground({
         player.setVolume?.(0);
       };
 
+      const ensureRate = (player: YtPlayer) => {
+        if (playbackRate === 1) return;
+        try {
+          if (player.getPlaybackRate?.() !== playbackRate) {
+            player.setPlaybackRate?.(playbackRate);
+          }
+        } catch {
+          /* rate list not ready yet */
+        }
+      };
+
       const seekClip = (player: YtPlayer, index: number) => {
         inClipStreakRef.current = 0;
         if (!cancelled) setReady(false);
@@ -382,6 +398,7 @@ function YoutubeLoopBackground({
           player.playVideo();
         }
         ensureMuted(player);
+        ensureRate(player);
       };
 
       const player = new window.YT.Player(mount, {
@@ -403,10 +420,12 @@ function YoutubeLoopBackground({
         events: {
           onReady: (e) => {
             ensureMuted(e.target);
+            ensureRate(e.target);
             seekClip(e.target, 0);
           },
           onStateChange: (e) => {
             ensureMuted(e.target);
+            ensureRate(e.target);
             if (e.data === window.YT?.PlayerState.ENDED) {
               segmentIndexRef.current =
                 (segmentIndexRef.current + 1) % clips.length;
@@ -420,6 +439,7 @@ function YoutubeLoopBackground({
       pollId = window.setInterval(() => {
         try {
           ensureMuted(player);
+          ensureRate(player);
           const idx = segmentIndexRef.current;
           const clip = clips[idx] ?? clips[0]!;
           const t = player.getCurrentTime();
@@ -465,7 +485,7 @@ function YoutubeLoopBackground({
       }
       playerRef.current = null;
     };
-  }, [videoId, reduced, hostId, clipKey]);
+  }, [videoId, reduced, hostId, clipKey, playbackRate]);
 
   if (reduced) {
     return (
@@ -488,7 +508,10 @@ function YoutubeLoopBackground({
       <div
         ref={hostRef}
         className={cn(
-          "absolute left-1/2 top-1/2 aspect-video h-auto w-[max(100vw,177.78vh)] min-h-full min-w-full -translate-x-1/2 -translate-y-1/2 transition-opacity duration-300 [&_div]:!h-full [&_div]:!w-full [&_iframe]:!h-full [&_iframe]:!w-full",
+          "transition-opacity duration-300 [&_div]:!h-full [&_div]:!w-full [&_iframe]:!h-full [&_iframe]:!w-full",
+          fit === "frame"
+            ? "absolute inset-0"
+            : "absolute left-1/2 top-1/2 aspect-video h-auto w-[max(100vw,177.78vh)] min-h-full min-w-full -translate-x-1/2 -translate-y-1/2",
           ready ? "opacity-100" : "opacity-0",
         )}
         aria-hidden
@@ -998,6 +1021,15 @@ function FlowChartSection({ chart }: { chart: NonNullable<LandingOffer["flowChar
       <div className={landingContent}>
         <article className={cn(SKY.card, "[overflow-anchor:none]")}>
           <div className="rounded-t-2xl bg-white px-4 pt-5 sm:px-6 sm:pt-6">
+            <p className={cn("text-center text-[12px] font-semibold", SKY.accent)}>
+              FLOW CHART
+            </p>
+            {chart.body.length ? (
+              <Lines
+                lines={chart.body}
+                className={cn("mx-auto mt-3 max-w-xl text-center", TYPO.body)}
+              />
+            ) : null}
             <div
               ref={mediaRef}
               role="button"
@@ -1008,7 +1040,7 @@ function FlowChartSection({ chart }: { chart: NonNullable<LandingOffer["flowChar
                   ? "접어서 노랑(6) 라인만 보기"
                   : "클릭하면 직경 10·9·8·7·6 전체 Flow Chart"
               }
-              className="cursor-pointer rounded-xl border border-sky-100/70 bg-white px-2 py-3 outline-none transition-colors hover:bg-sky-50/40 focus-visible:ring-2 focus-visible:ring-sky-400 focus-visible:ring-offset-2 sm:px-3 sm:py-4 [overflow-anchor:none]"
+              className="mt-4 cursor-pointer rounded-xl border border-sky-100/70 bg-white px-2 py-3 outline-none transition-colors hover:bg-sky-50/40 focus-visible:ring-2 focus-visible:ring-sky-400 focus-visible:ring-offset-2 sm:px-3 sm:py-4 [overflow-anchor:none]"
               onMouseDown={suppressFocusScroll}
               onClick={toggleExpanded}
               onKeyDown={(event) => {
@@ -1038,30 +1070,11 @@ function FlowChartSection({ chart }: { chart: NonNullable<LandingOffer["flowChar
                 ))}
               </div>
             </div>
-            <p className={cn("mt-2.5 pb-3 text-center text-[13px]", SKY.accent)}>
+            <p className={cn("mt-2.5 pb-5 text-center text-[13px] sm:pb-6", SKY.accent)}>
               {expanded
                 ? "접어서 노랑(6) 라인만 보기"
                 : "클릭하면 직경 10·9·8·7·6 전체 Flow Chart"}
             </p>
-          </div>
-          <div className="flex flex-col items-center justify-center border-t border-sky-100 px-5 py-6 text-center sm:px-8 sm:py-7">
-            <h3 className={cn(TYPO.h3, SKY.ink)}>{chart.name}</h3>
-            {chart.line ? (
-              <p
-                className={cn(
-                  "mt-1.5 text-[14px] font-medium sm:text-[15px]",
-                  SKY.accentStrong,
-                )}
-              >
-                {chart.line}
-              </p>
-            ) : null}
-            {chart.body.length ? (
-              <Lines
-                lines={chart.body}
-                className={cn("mt-3 max-w-xl", TYPO.body)}
-              />
-            ) : null}
           </div>
         </article>
       </div>
@@ -1069,88 +1082,35 @@ function FlowChartSection({ chart }: { chart: NonNullable<LandingOffer["flowChar
   );
 }
 
-function Slideshow({
-  heading,
-  slides,
-  slug,
+/** 소개 영상 — 1:32~2:11 구간을 무음·배속으로 반복. */
+function KitsColor({
+  clip,
   reduced,
 }: {
-  heading: string;
-  slides: NonNullable<LandingOffer["slides"]>;
-  slug: string;
+  clip: NonNullable<LandingOffer["kitsClip"]>;
   reduced: boolean;
 }) {
-  const [index, setIndex] = useState(0);
-  const count = slides.length;
-
-  useEffect(() => {
-    setIndex(0);
-  }, [slug]);
-
-  useEffect(() => {
-    if (reduced || count < 2) return;
-    const id = window.setInterval(() => {
-      setIndex((current) => (current + 1) % count);
-    }, 6500);
-    return () => window.clearInterval(id);
-  }, [reduced, count, slug]);
-
-  const slide = slides[index];
-  if (!slide) return null;
-
-  const go = (next: number) => {
-    setIndex((next + count) % count);
-  };
-
   return (
-    <section className={cn(SKY.band, landingSectionY.bandTight)} aria-roledescription="carousel">
+    <section className={cn(SKY.band, landingSectionY.bandTight)}>
       <div className={landingContent}>
         <div className="mx-auto max-w-2xl text-center">
-          <SectionEyebrow>KITS & COLOR</SectionEyebrow>
-          <h2 className={cn(TYPO.h2, "mt-2.5", SKY.ink)}>{heading}</h2>
+          <SectionEyebrow>{clip.eyebrow}</SectionEyebrow>
+          <h2 className={cn(TYPO.h2, "mt-2.5", SKY.ink)}>{clip.heading}</h2>
         </div>
-        <div className={cn("relative mt-8 overflow-hidden sm:mt-10", SKY.card)}>
-          <div className="relative h-[16rem] sm:h-[20rem] lg:h-[24rem]">
-            <MediaFrame visual={slide.visual} reduced={reduced} />
-            <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#071937]/70 via-[#071937]/15 to-transparent" />
-            <div className="absolute inset-x-0 bottom-0 px-5 pb-5 sm:px-8 sm:pb-7">
-              <p className={cn(TYPO.h3, "text-white")}>{slide.title}</p>
-              <p className="mt-1.5 text-[14px] text-white/85 sm:text-[15px]">
-                {slide.line}
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            className="absolute left-3 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-sky-100 bg-white/95 text-[#0b2a5c] shadow-sm hover:bg-white"
-            aria-label="이전 슬라이드"
-            onClick={() => go(index - 1)}
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            className="absolute right-3 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-sky-100 bg-white/95 text-[#0b2a5c] shadow-sm hover:bg-white"
-            aria-label="다음 슬라이드"
-            onClick={() => go(index + 1)}
-          >
-            <ChevronRight className="h-4 w-4" />
-          </button>
-        </div>
-        <div className="mt-4 flex justify-center gap-2">
-          {slides.map((item, dot) => (
-            <button
-              key={item.title}
-              type="button"
-              aria-label={`${dot + 1}번째 슬라이드`}
-              aria-current={dot === index}
-              className={cn(
-                "h-2 rounded-full transition-all",
-                dot === index ? "w-7 bg-[#2563eb]" : "w-2 bg-sky-200",
-              )}
-              onClick={() => setIndex(dot)}
-            />
-          ))}
+        <div
+          className={cn(
+            "relative mt-8 aspect-video overflow-hidden sm:mt-10",
+            SKY.card,
+          )}
+        >
+          <YoutubeLoopBackground
+            videoId={clip.id}
+            startSec={clip.startSec}
+            endSec={clip.endSec}
+            playbackRate={clip.playbackRate}
+            fit="frame"
+            reduced={reduced}
+          />
         </div>
       </div>
     </section>
@@ -1342,7 +1302,9 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
 
       {offer.glance ? <GlanceSection glance={offer.glance} /> : null}
       {offer.guides ? <StoryRows stories={offer.guides} /> : null}
-      {offer.flowChart ? <FlowChartSection chart={offer.flowChart} /> : null}
+      {offer.kitsClip ? (
+        <KitsColor clip={offer.kitsClip} reduced={reduced} />
+      ) : null}
 
       {offer.highlights ? (
         <section
@@ -1414,14 +1376,7 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
         <ProductCards products={offer.products} />
       ) : null}
       {offer.stories ? <StoryRows stories={offer.stories} /> : null}
-      {offer.slides ? (
-        <Slideshow
-          heading={offer.slideHeading ?? "키트도 함께."}
-          slides={offer.slides}
-          slug={offer.slug}
-          reduced={reduced}
-        />
-      ) : null}
+      {offer.flowChart ? <FlowChartSection chart={offer.flowChart} /> : null}
 
       {offer.specs ? (
         <section className={cn("bg-white", landingSectionY.bandTight)}>
@@ -1430,7 +1385,7 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
               <SectionEyebrow>SPECS</SectionEyebrow>
               <h2 className={cn(TYPO.h2, "mt-2.5", SKY.ink)}>간단히 보는 스펙.</h2>
             </div>
-            <dl className="mt-8 grid gap-3 sm:mt-10 sm:grid-cols-2 lg:grid-cols-3 lg:gap-4">
+            <dl className="mt-8 grid gap-3 sm:mt-10 sm:grid-cols-2 lg:grid-cols-4 lg:gap-4">
               {offer.specs.map((spec) => (
                 <div key={spec.label} className={cn(SKY.card, "px-4 py-5 sm:px-5")}>
                   <dt className={cn("text-[13px] font-semibold", SKY.accent)}>
@@ -1442,7 +1397,14 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
                       SKY.ink,
                     )}
                   >
-                    {spec.value}
+                    {Array.isArray(spec.value)
+                      ? spec.value.map((line, index) => (
+                          <span key={line}>
+                            {index > 0 ? <br /> : null}
+                            {line}
+                          </span>
+                        ))
+                      : spec.value}
                   </dd>
                 </div>
               ))}

@@ -18,13 +18,9 @@ import {
   LANDING_PLATFORM_REQUEST,
   LANDING_PLATFORM_STATS,
   LANDING_SW_CATALOG_ASSEMBLY,
-  LANDING_SW_CHECK_KIT,
   LANDING_SW_CUSTOM_ASSEMBLY,
   LANDING_SW_FLOW_DEFAULT_ROW_ID,
   LANDING_SW_FLOW_ROWS,
-  LANDING_SW_GUIDE_HOW_TO,
-  LANDING_SW_GUIDE_KIT,
-  LANDING_SW_PROSTHETIC_KIT,
   LANDING_WAVEON_PARTNERSHIP,
   LANDING_WAVEON_WORKFLOW,
 } from "./landingAssets";
@@ -75,12 +71,6 @@ export type OfferProductCard = {
   priceNote: string;
   specs: [string, string, string];
   buy: OfferBuy;
-  visual: OfferVisual;
-};
-
-export type OfferSlide = {
-  title: string;
-  line: string;
   visual: OfferVisual;
 };
 
@@ -153,6 +143,8 @@ export type LandingOffer = {
     /** 여러 구간을 순서대로 순환. 있으면 start/end 보다 우선. */
     segments?: Array<{ startSec: number; endSec: number }>;
     poster?: string;
+    /** 1이면 원본 속도. */
+    playbackRate?: number;
   };
   tile: OfferVisual;
   /** 오퍼 히어로. 없으면 tile. 홈 타일과 겹치지 않을 때. */
@@ -172,9 +164,18 @@ export type LandingOffer = {
   /** 정가·배송·구매. 심플웨이만. */
   products?: [OfferProductCard, OfferProductCard];
   stories?: OfferStory[];
-  slideHeading?: string;
-  slides?: OfferSlide[];
-  specs?: Array<{ label: string; value: string }>;
+  /** 소개 영상. 무음 루프. */
+  kitsClip?: {
+    eyebrow: string;
+    heading: string;
+    id: string;
+    startSec: number;
+    /** 영상 타임라인 끝(초). 2:11 = 131. */
+    endSec: number;
+    playbackRate: number;
+  };
+  /** value가 배열이면 문장·항목 단위로 줄을 나눈다. */
+  specs?: Array<{ label: string; value: string | string[] }>;
   glossary?: OfferGlossary;
   faq?: Array<{ q: string; a: string }>;
 };
@@ -184,8 +185,6 @@ export const LEGACY_OFFER_REDIRECTS: Record<string, string> = {
   platform: "simple-way",
   "custom-abutment": "lab",
 };
-
-const FULL_PACKAGE = "/store/acrodent/full-package.jpg";
 
 const ABUTMENT_VISUAL: OfferVisual = {
   kind: "photo",
@@ -263,66 +262,27 @@ export const landingOffers: LandingOffer[] = [
     flowChart: {
       name: "Flow Chart.",
       body: [
-        "인접치 근원심 거리를 기준으로 6mm ~ 10mm 중 맞는 서지컬펜을 씁니다.",
-        "정교한 첫 드릴링 이후 과정은 쉽습니다.",
-        "칼라 밴드를 따라가세요.",
+        "타겟 보철 근원심 크기의 서지컬펜으로 정교한 첫 드릴링합니다.",
+        "이제 칼라 밴드를 따라가며 시술합니다.",
       ],
       rows: LANDING_SW_FLOW_ROWS.map((row) => ({ ...row })),
       defaultRowId: LANDING_SW_FLOW_DEFAULT_ROW_ID,
     },
-    slideHeading: "색 · 키트.",
-    slides: [
-      {
-        title: "직경은 색으로.",
-        line: "6 노랑 · 7 초록 · 8 보라 · 9 파랑 · 10 하늘.",
-        visual: {
-          kind: "photo",
-          src: LANDING_SW_GUIDE_KIT,
-          alt: "Guide Kit 직경 색상",
-        },
-      },
-      {
-        title: "Guide Kit.",
-        line: "가이드펜 · 컵 · 가이드핀.",
-        visual: {
-          kind: "photo",
-          src: LANDING_SW_GUIDE_HOW_TO,
-          alt: "가이드펜 사용",
-        },
-      },
-      {
-        title: "Check Kit.",
-        line: "체크핀 · 본쉐이퍼.",
-        visual: {
-          kind: "photo",
-          src: LANDING_SW_CHECK_KIT,
-          alt: "Check Kit",
-        },
-      },
-      {
-        title: "Prosthetics Kit.",
-        line: "치은 형성 · 어벗 체결.",
-        visual: {
-          kind: "photo",
-          src: LANDING_SW_PROSTHETIC_KIT,
-          alt: "Prosthetics Kit",
-        },
-      },
-      {
-        title: "500만 패키지.",
-        line: "제품과 키트를 한 번에.",
-        visual: {
-          kind: "photo",
-          src: FULL_PACKAGE,
-          alt: "500만 패키지",
-        },
-      },
-    ],
+    kitsClip: {
+      eyebrow: "SIMPLEWAY PROTOCOL",
+      heading: "임플란트 수술 예시 영상",
+      id: "WYNPxDo-DP0",
+      startSec: 92,
+      endSec: 131,
+      playbackRate: 2,
+    },
     specs: [
       { label: "직경 색", value: "6–10 · 노·녹·보·청·하늘" },
-      { label: "힐링", value: "직경 6·7·9" },
-      { label: "심플어벗", value: "높이 XS–XL · Hex·Non-Hex" },
-      { label: "키트", value: "Guide · Check · Prosthetics" },
+      {
+        label: "심플 힐링, 어벗",
+        value: ["직경 6·7·9", "높이 XS,S,M,L,XL", "회전방지 Hex·Non-Hex"],
+      },
+      { label: "키트", value: "Surgical · Prosthetics" },
       { label: "제조", value: "(주)애크로덴트" },
     ],
     faq: [
