@@ -4,9 +4,9 @@
 // - web/frontend/src/features/landing/LandingEventsSection.tsx
 // - web/frontend/src/features/layout/Navigation.tsx
 // - web/frontend/src/features/landing/landingAssets.ts
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Accordion,
@@ -31,11 +31,9 @@ import {
 import { LandingEventsSection } from "./LandingEventsSection";
 import { LandingScrollCue } from "./LandingScrollCue";
 
-type BusinessTab = (typeof landingHomeBusinessTabs)[number];
-type BusinessTabId = BusinessTab["id"];
-
 const TYPO = landingTypo;
 const SKY = landingSky;
+const GALLERY_SLIDE_MS = 7000;
 
 function Lines({ lines, className }: { lines: string[]; className?: string }) {
   return (
@@ -62,40 +60,184 @@ function SectionEyebrow({
   );
 }
 
-function BusinessFlowCard({ tab }: { tab: BusinessTab }) {
+function usePrefersReducedMotion() {
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const apply = () => setReduced(mq.matches);
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
+  return reduced;
+}
+
+function WorkflowGallery() {
+  const slides = landingHomeBusinessTabs;
+  const count = slides.length;
+  const [index, setIndex] = useState(0);
+  const [paused, setPaused] = useState(false);
+  const reduced = usePrefersReducedMotion();
+  const dragX = useRef<number | null>(null);
+  const slide = slides[index] ?? slides[0];
+
+  const go = (next: number) => {
+    if (count < 1) return;
+    setIndex(((next % count) + count) % count);
+  };
+
+  useEffect(() => {
+    if (reduced || paused || count < 2) return;
+    let id = 0;
+    const arm = () => {
+      id = window.setTimeout(() => {
+        if (document.hidden) {
+          arm();
+          return;
+        }
+        setIndex((current) => (current + 1) % count);
+      }, GALLERY_SLIDE_MS);
+    };
+    arm();
+    return () => window.clearTimeout(id);
+  }, [count, index, paused, reduced]);
+
   return (
-    <article
+    <div
       className={cn(
-        "grid h-full items-stretch gap-0 overflow-hidden lg:grid-cols-2",
+        "mt-8 overflow-hidden outline-none focus-visible:ring-2 focus-visible:ring-[#2563eb] focus-visible:ring-offset-2 sm:mt-10",
         SKY.card,
       )}
+      role="region"
+      aria-roledescription="갤러리"
+      aria-label="서비스 흐름"
+      tabIndex={0}
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+      onFocusCapture={() => setPaused(true)}
+      onBlurCapture={(event) => {
+        const next = event.relatedTarget;
+        if (next instanceof Node && event.currentTarget.contains(next)) return;
+        setPaused(false);
+      }}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return;
+        if (event.key === "ArrowRight") {
+          event.preventDefault();
+          go(index + 1);
+        } else if (event.key === "ArrowLeft") {
+          event.preventDefault();
+          go(index - 1);
+        }
+      }}
     >
-      <div className="relative min-h-[12.5rem] overflow-hidden bg-[#e8f2ff] sm:min-h-[18rem] lg:min-h-[20rem]">
-        <img
-          src={tab.image.src}
-          alt={tab.image.alt}
-          className="h-full w-full object-cover object-center"
-          draggable={false}
-        />
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-tr from-sky-500/15 via-transparent to-blue-500/10" />
-      </div>
-      <div className="flex flex-col justify-center px-5 py-7 sm:px-8 sm:py-9">
-        <p className={cn(TYPO.eyebrow, SKY.accent)}>{tab.eyebrow}</p>
-        <h3 className={cn(TYPO.h3, "mt-2", SKY.ink)}>{tab.title}</h3>
-        <Lines lines={[...tab.body]} className={cn("mt-3", TYPO.body)} />
-        <Link
-          to={tab.href}
-          className={cn(
-            "mt-5 inline-flex items-center gap-1 underline-offset-4 hover:underline",
-            TYPO.link,
-            SKY.accentStrong,
-          )}
+      <div className="lg:grid lg:grid-cols-[minmax(0,1.45fr)_minmax(17.5rem,22.5rem)]">
+      <div
+        className={cn(
+          "relative aspect-[16/10] overflow-hidden sm:aspect-[16/8] lg:aspect-auto lg:min-h-[24rem]",
+          slide.id === "simple-way" ? "bg-white" : "bg-[#071937]",
+        )}
+        onPointerDown={(event) => {
+          if (event.button !== 0) return;
+          if ((event.target as HTMLElement).closest("button")) return;
+          dragX.current = event.clientX;
+          event.currentTarget.setPointerCapture(event.pointerId);
+        }}
+        onPointerUp={(event) => {
+          if (dragX.current == null) return;
+          const delta = event.clientX - dragX.current;
+          dragX.current = null;
+          if (delta > 48) go(index - 1);
+          else if (delta < -48) go(index + 1);
+        }}
+        onPointerCancel={() => {
+          dragX.current = null;
+        }}
+      >
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-20 h-[3px] bg-white/45">
+          <div
+            key={index}
+            className={cn(
+              "h-full bg-[#2563eb]",
+              reduced ? "w-full" : "workflow-gallery-progress",
+              paused && "is-paused",
+            )}
+            style={
+              reduced ? undefined : { animationDuration: `${GALLERY_SLIDE_MS}ms` }
+            }
+          />
+        </div>
+
+        {slides.map((item, itemIndex) => {
+          const active = itemIndex === index;
+          const diagram = item.id === "simple-way";
+          const zoom = !diagram;
+          return (
+            <img
+              key={item.id}
+              src={item.image.src}
+              alt={active ? item.image.alt : ""}
+              className={cn(
+                "absolute max-w-none object-center transition-opacity duration-700",
+                diagram
+                  ? "left-0 top-1/2 h-auto w-full -translate-y-1/2"
+                  : "inset-0 h-full w-full object-cover",
+                active ? "opacity-100" : "opacity-0",
+                active && !reduced && zoom && "workflow-gallery-zoom",
+                active && paused && "is-paused",
+              )}
+              style={
+                active && !reduced && zoom
+                  ? { animationDuration: `${GALLERY_SLIDE_MS}ms` }
+                  : undefined
+              }
+              draggable={false}
+            />
+          );
+        })}
+        <p className="absolute left-4 top-5 z-10 rounded-full bg-white/90 px-3 py-1 text-[11px] font-semibold tracking-[0.16em] text-[#0b2a5c] shadow-sm">
+          {String(index + 1).padStart(2, "0")}
+          <span className="text-sky-400"> / {String(count).padStart(2, "0")}</span>
+        </p>
+
+        <button
+          type="button"
+          aria-label="이전"
+          className="absolute left-3 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200/80 bg-white/90 text-[#0b2a5c] shadow-md backdrop-blur-sm transition hover:bg-white sm:left-4 sm:h-11 sm:w-11"
+          onClick={() => go(index - 1)}
         >
-          {tab.cta}
-          <ArrowRight className="h-3.5 w-3.5" />
-        </Link>
+          <ChevronLeft className="h-5 w-5" />
+        </button>
+        <button
+          type="button"
+          aria-label="다음"
+          className="absolute right-3 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200/80 bg-white/90 text-[#0b2a5c] shadow-md backdrop-blur-sm transition hover:bg-white sm:right-4 sm:h-11 sm:w-11"
+          onClick={() => go(index + 1)}
+        >
+          <ChevronRight className="h-5 w-5" />
+        </button>
       </div>
-    </article>
+
+      <div className="flex flex-col justify-center border-t border-sky-100 px-5 py-6 sm:px-8 sm:py-7 lg:border-l lg:border-t-0 lg:px-8 lg:py-8">
+        <div key={slide.id} className={reduced ? undefined : "workflow-gallery-fade"}>
+          <p className={cn(TYPO.eyebrow, SKY.accent)}>{slide.eyebrow}</p>
+          <h3 className={cn(TYPO.h3, "mt-2", SKY.ink)}>{slide.title}</h3>
+          <Lines lines={[...slide.body]} className={cn("mt-3", TYPO.body)} />
+          <Link
+            to={slide.href}
+            className={cn(
+              "mt-5 inline-flex items-center gap-1 underline-offset-4 hover:underline",
+              TYPO.link,
+              SKY.accentStrong,
+            )}
+          >
+            {slide.cta}
+            <ArrowRight className="h-3.5 w-3.5" />
+          </Link>
+        </div>
+      </div>
+      </div>
+    </div>
   );
 }
 
@@ -104,11 +246,6 @@ export function LandingHome() {
   const navigate = useNavigate();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const user = useAuthStore((s) => s.user);
-  const [tabId, setTabId] = useState<BusinessTabId>("simple-way");
-  const activeTab =
-    landingHomeBusinessTabs.find((t) => t.id === tabId) ??
-    landingHomeBusinessTabs[0];
-
   const goStart = () => {
     navigate(isAuthenticated ? resolveEntryDashboardPath(user) : "/signup");
   };
@@ -150,7 +287,7 @@ export function LandingHome() {
         <LandingScrollCue />
       </section>
 
-      {/* ABUTS WORKFLOW — 모바일: 가로 스크롤 / sm+: 탭 */}
+      {/* ABUTS WORKFLOW — 사진 갤러리 슬라이드쇼 */}
       <section
         id="business"
         className={cn("scroll-mt-20 bg-white", landingSectionY.bandTight)}
@@ -164,60 +301,7 @@ export function LandingHome() {
             <p className={cn("mt-2.5", TYPO.lead)}>{landingHome.browseLead}</p>
           </div>
 
-          {/* 모바일: 3장이 옆으로 이어지는 스냅 스크롤 */}
-          <div className="mt-8 sm:hidden">
-            <div
-              className="flex snap-x snap-mandatory gap-3 overflow-x-auto overflow-y-hidden overscroll-x-contain touch-pan-x pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-              aria-label="서비스 흐름"
-            >
-              {landingHomeBusinessTabs.map((tab, index) => (
-                <div
-                  key={tab.id}
-                  className="w-[min(100%,20.5rem)] shrink-0 snap-start"
-                >
-                  <p className={cn("mb-2 text-[12px] font-semibold", SKY.accentStrong)}>
-                    {String(index + 1).padStart(2, "0")} · {tab.label}
-                  </p>
-                  <BusinessFlowCard tab={tab} />
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* sm+: 탭 + 패널 */}
-          <div className="mt-10 hidden sm:block">
-            <div
-              role="tablist"
-              aria-label="서비스 선택"
-              className="grid grid-cols-3 gap-3"
-            >
-              {landingHomeBusinessTabs.map((tab) => {
-                const selected = tab.id === tabId;
-                return (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    role="tab"
-                    aria-selected={selected}
-                    onClick={() => setTabId(tab.id)}
-                    className={cn(
-                      "flex h-12 items-center justify-between rounded-xl px-5 text-left text-[15px] font-semibold transition",
-                      selected
-                        ? "bg-[#2563eb] text-white shadow-[0_10px_24px_rgba(37,99,235,0.25)]"
-                        : "border border-sky-200/90 bg-white text-[#0b2a5c] hover:border-sky-300 hover:bg-sky-50/80",
-                    )}
-                  >
-                    <span>{tab.label}</span>
-                    <ArrowRight className="h-3.5 w-3.5 shrink-0 opacity-80" />
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="mt-6">
-              <BusinessFlowCard tab={activeTab} />
-            </div>
-          </div>
+          <WorkflowGallery />
         </div>
       </section>
 

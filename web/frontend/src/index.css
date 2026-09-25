@@ -593,8 +593,69 @@ body:has(.guide-tour-root) .guide-tour-nested-dialog-overlay {
   animation: offer-hero-drift 18s ease-in-out infinite alternate;
 }
 
+@keyframes workflow-gallery-progress {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes workflow-gallery-zoom {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(1.07);
+  }
+}
+
+@keyframes workflow-gallery-fade {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.workflow-gallery-progress,
+.workflow-gallery-zoom,
+.workflow-gallery-fade {
+  animation-fill-mode: forwards;
+}
+
+.workflow-gallery-progress {
+  width: 100%;
+  transform-origin: left center;
+  animation-name: workflow-gallery-progress;
+  animation-timing-function: linear;
+}
+
+.workflow-gallery-zoom {
+  animation-name: workflow-gallery-zoom;
+  animation-timing-function: ease-out;
+}
+
+.workflow-gallery-fade {
+  animation-name: workflow-gallery-fade;
+  animation-duration: 480ms;
+  animation-timing-function: ease-out;
+}
+
+.workflow-gallery-progress.is-paused,
+.workflow-gallery-zoom.is-paused {
+  animation-play-state: paused;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .offer-hero-drift {
+  .offer-hero-drift,
+  .workflow-gallery-progress,
+  .workflow-gallery-zoom,
+  .workflow-gallery-fade {
     animation: none;
   }
 }

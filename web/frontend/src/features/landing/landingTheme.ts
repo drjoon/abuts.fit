@@ -224,7 +224,10 @@ export const landingHomeBusinessTabs = [
     ],
     cta: "심플웨이 자세히 보기",
     href: "/offer/simple-way",
-    image: { src: "/landing/waveon/workflow.jpg", alt: "심플웨이 어벗·보철" },
+    image: {
+      src: "/landing/simpleway-sequence.jpg",
+      alt: "심플웨이 수술 순서",
+    },
   },
   {
     id: "custom" as const,
