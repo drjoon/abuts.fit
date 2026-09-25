@@ -155,12 +155,7 @@ import {
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 import { kstAddBusinessDays, kstYmdDiffDays } from "@/shared/date/kst";
 import { PracticeRushConfirmDialog } from "@/shared/components/practice/PracticeRushConfirmDialog";
-import { OralScanRoleConfirmDialog } from "@/shared/components/practice/OralScanRoleConfirmDialog";
-import {
-  isOralScanMeshName,
-  oralScanFileKey,
-  type LabOralScanRole,
-} from "@/shared/practice/labProsthesisAiDesign";
+import { filenameScanRoleFields } from "@/shared/practice/labProsthesisAiDesign";
 import {
   PRACTICE_WORK_PERIOD_BLOCK_MESSAGE,
   PRACTICE_WORK_PERIOD_LATE_WARNING_MESSAGE,
@@ -1028,11 +1023,6 @@ export const PracticeDropzonePage = () => {
   }, [authToken]);
 
   const [rushConfirmOpen, setRushConfirmOpen] = useState(false);
-  const [scanRoleConfirm, setScanRoleConfirm] = useState<{
-    token: string;
-    options?: { skipSecondRequestGate?: boolean };
-    files: File[];
-  } | null>(null);
   const [pendingRushArrivalYmd, setPendingRushArrivalYmd] = useState("");
   const [prosthesisTypes, setProsthesisTypes] = useState<string[]>([...PRESET_PROSTHESIS_TYPES]);
   const [archBulkProsthesisTypes, setArchBulkProsthesisTypes] = useState<string[]>([
@@ -1961,7 +1951,6 @@ export const PracticeDropzonePage = () => {
     token: string,
     options?: {
       skipSecondRequestGate?: boolean;
-      scanRolesByKey?: Record<string, LabOralScanRole>;
     },
   ) => {
     if (missingStep1Fields.length > 0) {
@@ -1997,12 +1986,6 @@ export const PracticeDropzonePage = () => {
     if (!options?.skipSecondRequestGate) {
       const gated = await redirectToOnboardingIfSecondRequest(token);
       if (gated) return false;
-    }
-
-    const meshFiles = files.filter((file) => isOralScanMeshName(file.name));
-    if (meshFiles.length > 0 && !options?.scanRolesByKey) {
-      setScanRoleConfirm({ token, options, files: meshFiles });
-      return false;
     }
 
     setRequestSubmitting(true);
@@ -2044,7 +2027,7 @@ export const PracticeDropzonePage = () => {
           ? files.map((_file, index) => {
               const tempFile = uploadedTempFiles[index];
 
-              const scanRole = options?.scanRolesByKey?.[oralScanFileKey(_file)];
+              const namedRole = filenameScanRoleFields(_file.name);
               return {
                 clinicName: autoClinicName,
                 patientName: normalizedPatientName,
@@ -2055,9 +2038,7 @@ export const PracticeDropzonePage = () => {
                 }),
                 workType: "abutment",
                 designSoftware: "3Shape",
-                ...(scanRole
-                  ? { scanRole, scanRoleSetBy: "practice" as const }
-                  : {}),
+                ...(namedRole ? namedRole : {}),
                 file: {
                   originalName: tempFile.originalName,
                   size: tempFile.size,
@@ -3725,24 +3706,6 @@ export const PracticeDropzonePage = () => {
               </form>
             )}
 
-            <OralScanRoleConfirmDialog
-              open={Boolean(scanRoleConfirm)}
-              files={(scanRoleConfirm?.files || []).map((file) => ({
-                key: oralScanFileKey(file),
-                fileName: file.name,
-              }))}
-              onCancel={() => setScanRoleConfirm(null)}
-              onConfirm={(roles) => {
-                const pending = scanRoleConfirm;
-                setScanRoleConfirm(null);
-                if (!pending) return;
-                void submitPracticeRequest(pending.token, {
-                  ...pending.options,
-                  skipSecondRequestGate: true,
-                  scanRolesByKey: roles,
-                });
-              }}
-            />
             <PracticeRushConfirmDialog
               open={rushConfirmOpen}
               onOpenChange={(open) => {

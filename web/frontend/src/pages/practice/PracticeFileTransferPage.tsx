@@ -433,10 +433,8 @@ import {
 } from "@/shared/practice/usePracticeTransferFeeQuote";
 import { kstAddBusinessDays, kstYmdDiffDays } from "@/shared/date/kst";
 import { PracticeRushConfirmDialog } from "@/shared/components/practice/PracticeRushConfirmDialog";
-import { OralScanRoleConfirmDialog } from "@/shared/components/practice/OralScanRoleConfirmDialog";
 import {
-  isOralScanMeshName,
-  oralScanFileKey,
+  filenameScanRoleFields,
   type LabOralScanRole,
 } from "@/shared/practice/labProsthesisAiDesign";
 import { ZoomableImagePreview } from "@/shared/components/ZoomableImagePreview";
@@ -6469,26 +6467,15 @@ export const PracticeFileTransferPage = ({
           uploadedAt: String(r.uploadedAt || "").trim() || null,
           trashedAt: String(r.trashedAt || "").trim() || null,
           scanRole: String(r.scanRole || "").trim() || null,
+          scanRoleSetBy: String(r.scanRoleSetBy || "").trim() || null,
         } satisfies TransferFileItem;
       })
       .filter((row): row is TransferFileItem => Boolean(row));
   }, []);
 
-  const scanRoleAttachRef = useRef<Record<string, LabOralScanRole> | null>(null);
-  const [scanRoleAttachFiles, setScanRoleAttachFiles] = useState<File[] | null>(
-    null,
-  );
-
   const handleAttachRequestFiles = useCallback(
     (nextFiles: File[]) => {
       if (!nextFiles.length) return;
-      const meshFiles = nextFiles.filter((file) => isOralScanMeshName(file.name));
-      const confirmedRoles = scanRoleAttachRef.current;
-      if (meshFiles.length > 0 && !confirmedRoles) {
-        setScanRoleAttachFiles(nextFiles);
-        return;
-      }
-      scanRoleAttachRef.current = null;
       const transferId = String(selectedTransfer?.transferId || "").trim();
       if (!authToken || !transferId) {
         toast({
@@ -6513,15 +6500,13 @@ export const PracticeFileTransferPage = ({
               const s3Key = String(file.key || "").trim();
               if (!originalName || !s3Key) return null;
               const source = nextFiles[index];
-              const scanRole = source
-                ? confirmedRoles?.[oralScanFileKey(source)]
-                : undefined;
+              const namedRole = source
+                ? filenameScanRoleFields(source.name)
+                : null;
               return {
                 patientName,
                 tooth: "",
-                ...(scanRole
-                  ? { scanRole, scanRoleSetBy: "practice" as const }
-                  : {}),
+                ...(namedRole ? namedRole : {}),
                 file: {
                   originalName,
                   mimetype: String(
@@ -6541,7 +6526,8 @@ export const PracticeFileTransferPage = ({
               size: number;
               s3Key: string;
             };
-            scanRole?: LabOralScanRole;
+            scanRole?: string;
+            scanRoleSetBy?: "filename";
           }>;
           if (!payload.length) {
             throw new Error("파일 업로드에 실패했습니다.");
@@ -6552,6 +6538,7 @@ export const PracticeFileTransferPage = ({
               s3Key: row.file.s3Key,
               size: row.file.size,
               scanRole: row.scanRole || null,
+              scanRoleSetBy: row.scanRoleSetBy || null,
             })),
           );
           const optimisticKeys = new Set(
@@ -6626,6 +6613,69 @@ export const PracticeFileTransferPage = ({
       selectedTransfer?.trashedFiles,
       selectedTransfer?.transferId,
       selectedTransferDetailModel?.patientName,
+      toast,
+    ],
+  );
+
+  const handleChangeRequestScanRole = useCallback(
+    (
+      file: {
+        s3Key: string;
+        scanRole?: string | null;
+        scanRoleSetBy?: string | null;
+      },
+      role: LabOralScanRole,
+    ) => {
+      const transferId = String(selectedTransfer?.transferId || "").trim();
+      const s3Key = String(file.s3Key || "").trim();
+      if (
+        !authToken ||
+        !transferId ||
+        !s3Key ||
+        (file.scanRole === role && file.scanRoleSetBy === "practice")
+      ) {
+        return;
+      }
+      const previous = file.scanRole || null;
+      const previousSetBy = file.scanRoleSetBy || null;
+      const prevFiles = Array.isArray(selectedTransfer?.files)
+        ? (selectedTransfer.files as TransferFileItem[])
+        : [];
+      const prevTrash = Array.isArray(selectedTransfer?.trashedFiles)
+        ? (selectedTransfer.trashedFiles as TransferFileItem[])
+        : [];
+      const nextFiles = prevFiles.map((row) =>
+        row.s3Key === s3Key
+          ? { ...row, scanRole: role, scanRoleSetBy: "practice" as const }
+          : row,
+      );
+      patchTransferRequestFiles(transferId, nextFiles, prevTrash);
+      void (async () => {
+        const res = await apiFetch<unknown>({
+          path: `/api/practice/transfers/${encodeURIComponent(transferId)}/request-files/scan-role`,
+          method: "POST",
+          token: authToken,
+          jsonBody: { s3Key, scanRole: role },
+        });
+        if (res.ok) return;
+        const revert = prevFiles.map((row) =>
+          row.s3Key === s3Key
+            ? { ...row, scanRole: previous, scanRoleSetBy: previousSetBy }
+            : row,
+        );
+        patchTransferRequestFiles(transferId, revert, prevTrash);
+        toast({
+          title: "스캔 역할을 바꾸지 못했습니다",
+          variant: "destructive",
+        });
+      })();
+    },
+    [
+      authToken,
+      patchTransferRequestFiles,
+      selectedTransfer?.files,
+      selectedTransfer?.trashedFiles,
+      selectedTransfer?.transferId,
       toast,
     ],
   );
@@ -8428,6 +8478,7 @@ export const PracticeFileTransferPage = ({
                 }),
                 workType: "abutment",
                 designSoftware: "3Shape",
+                ...(filenameScanRoleFields(originalName) || {}),
                 file: {
                   originalName,
                   size: Number(tempFile.size || 0),
@@ -10741,23 +10792,6 @@ export const PracticeFileTransferPage = ({
             </DialogContent>
           </Dialog>
 
-          <OralScanRoleConfirmDialog
-            open={Boolean(scanRoleAttachFiles)}
-            files={(scanRoleAttachFiles || []).filter((file) =>
-              isOralScanMeshName(file.name),
-            ).map((file) => ({
-              key: oralScanFileKey(file),
-              fileName: file.name,
-            }))}
-            onCancel={() => setScanRoleAttachFiles(null)}
-            onConfirm={(roles) => {
-              const pending = scanRoleAttachFiles;
-              setScanRoleAttachFiles(null);
-              if (!pending) return;
-              scanRoleAttachRef.current = roles;
-              handleAttachRequestFiles(pending);
-            }}
-          />
           <PracticeRushConfirmDialog
             open={rushConfirmOpen}
             onOpenChange={(open) => {
@@ -11562,6 +11596,7 @@ export const PracticeFileTransferPage = ({
           remakeCharges={selectedTransfer?.remakeCharges || null}
           skipJig={Boolean(selectedTransferDetailModel?.skipJig)}
           feeViewer="practice"
+          onChangeRequestScanRole={handleChangeRequestScanRole}
           labAnchorId={selectedTransferDetailModel?.labAnchorId || null}
           filesLabel="의뢰 파일"
           files={selectedTransferDetailModel?.files || []}

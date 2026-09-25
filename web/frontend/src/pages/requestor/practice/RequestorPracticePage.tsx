@@ -228,10 +228,8 @@ import {
   type LabReceiveWorkUploadAssignment,
 } from "@/shared/components/practice/LabReceiveWorkUploadDialog";
 import { LabReceiveDualRoleAssignDialog } from "@/shared/components/practice/LabReceiveDualRoleAssignDialog";
-import { OralScanRoleConfirmDialog } from "@/shared/components/practice/OralScanRoleConfirmDialog";
 import {
-  isOralScanMeshName,
-  oralScanFileKey,
+  filenameScanRoleFields,
   type LabOralScanRole,
 } from "@/shared/practice/labProsthesisAiDesign";
 import { useImplantConnectionCatalog } from "@/shared/practice/useImplantConnectionCatalog";
@@ -1196,6 +1194,7 @@ export function RequestorPracticeReceivePage({
             uploadedAt: String(item.uploadedAt || "").trim() || null,
             trashedAt: String(item.trashedAt || "").trim() || null,
             scanRole: String(item.scanRole || "").trim() || null,
+            scanRoleSetBy: String(item.scanRoleSetBy || "").trim() || null,
           };
         };
 
@@ -7513,6 +7512,7 @@ export function RequestorPracticeReceivePage({
             uploadedAt: String(r.uploadedAt || "").trim() || null,
             trashedAt: String(r.trashedAt || "").trim() || null,
             scanRole: String(r.scanRole || "").trim() || null,
+            scanRoleSetBy: String(r.scanRoleSetBy || "").trim() || null,
           };
         })
         .filter((row): row is NonNullable<typeof row> => Boolean(row));
@@ -7520,21 +7520,9 @@ export function RequestorPracticeReceivePage({
     [],
   );
 
-  const scanRoleAttachRef = useRef<Record<string, LabOralScanRole> | null>(null);
-  const [scanRoleAttachFiles, setScanRoleAttachFiles] = useState<File[] | null>(
-    null,
-  );
-
   const handleAttachRequestFiles = useCallback(
     (nextFiles: File[]) => {
       if (!nextFiles.length) return;
-      const meshFiles = nextFiles.filter((file) => isOralScanMeshName(file.name));
-      const confirmedRoles = scanRoleAttachRef.current;
-      if (meshFiles.length > 0 && !confirmedRoles) {
-        setScanRoleAttachFiles(nextFiles);
-        return;
-      }
-      scanRoleAttachRef.current = null;
       const transferId = String(selectedTransfer?.transferId || "").trim();
       if (!token || !transferId) {
         toast({
@@ -7558,15 +7546,13 @@ export function RequestorPracticeReceivePage({
               const s3Key = String(file.key || "").trim();
               if (!originalName || !s3Key) return null;
               const source = nextFiles[index];
-              const scanRole = source
-                ? confirmedRoles?.[oralScanFileKey(source)]
-                : undefined;
+              const namedRole = source
+                ? filenameScanRoleFields(source.name)
+                : null;
               return {
                 patientName,
                 tooth: "",
-                ...(scanRole
-                  ? { scanRole, scanRoleSetBy: "lab" as const }
-                  : {}),
+                ...(namedRole ? namedRole : {}),
                 file: {
                   originalName,
                   mimetype: String(
@@ -7587,6 +7573,7 @@ export function RequestorPracticeReceivePage({
               s3Key: string;
             };
             scanRole?: string;
+            scanRoleSetBy?: "filename";
           }>;
           if (!payload.length) {
             throw new Error("파일 업로드에 실패했습니다.");
@@ -7601,6 +7588,7 @@ export function RequestorPracticeReceivePage({
               patientName: row.patientName,
               tooth: row.tooth,
               scanRole: row.scanRole || null,
+              scanRoleSetBy: row.scanRoleSetBy || null,
             })),
             transferMongoId,
           );
@@ -7698,17 +7686,31 @@ export function RequestorPracticeReceivePage({
 
   const handleChangeRequestScanRole = useCallback(
     (
-      file: { s3Key: string; scanRole?: string | null },
+      file: {
+        s3Key: string;
+        scanRole?: string | null;
+        scanRoleSetBy?: string | null;
+      },
       role: LabOralScanRole,
     ) => {
       const transferId = String(selectedTransfer?.transferId || "").trim();
       const mongoId = String(selectedTransfer?._id || "").trim();
       const s3Key = String(file.s3Key || "").trim();
-      if (!token || !transferId || !s3Key || file.scanRole === role) return;
+      if (
+        !token ||
+        !transferId ||
+        !s3Key ||
+        (file.scanRole === role && file.scanRoleSetBy === "lab")
+      ) {
+        return;
+      }
       const previous = file.scanRole || null;
+      const previousSetBy = file.scanRoleSetBy || null;
       const patchFiles = (rows: ReceivedPracticeFile[] | undefined) =>
         (rows || []).map((row) =>
-          row.s3Key === s3Key ? { ...row, scanRole: role } : row,
+          row.s3Key === s3Key
+            ? { ...row, scanRole: role, scanRoleSetBy: "lab" }
+            : row,
         );
       setSelectedTransfer((prev) =>
         prev ? { ...prev, files: patchFiles(prev.files) } : prev,
@@ -7731,7 +7733,9 @@ export function RequestorPracticeReceivePage({
         if (res.ok) return;
         const revert = (rows: ReceivedPracticeFile[] | undefined) =>
           (rows || []).map((row) =>
-            row.s3Key === s3Key ? { ...row, scanRole: previous } : row,
+            row.s3Key === s3Key
+              ? { ...row, scanRole: previous, scanRoleSetBy: previousSetBy }
+              : row,
           );
         setSelectedTransfer((prev) =>
           prev ? { ...prev, files: revert(prev.files) } : prev,
@@ -9004,23 +9008,6 @@ export function RequestorPracticeReceivePage({
 
       {showTransfers ? (
       <>
-      <OralScanRoleConfirmDialog
-        open={Boolean(scanRoleAttachFiles)}
-        files={(scanRoleAttachFiles || [])
-          .filter((file) => isOralScanMeshName(file.name))
-          .map((file) => ({
-            key: oralScanFileKey(file),
-            fileName: file.name,
-          }))}
-        onCancel={() => setScanRoleAttachFiles(null)}
-        onConfirm={(roles) => {
-          const pending = scanRoleAttachFiles;
-          setScanRoleAttachFiles(null);
-          if (!pending) return;
-          scanRoleAttachRef.current = roles;
-          handleAttachRequestFiles(pending);
-        }}
-      />
       {(() => {
         const detailDialog = (
       <PracticeTransferDetailChatDialog
@@ -9281,6 +9268,7 @@ export function RequestorPracticeReceivePage({
             uploadBatchId: file.uploadBatchId || null,
             uploadedAt: file.uploadedAt || null,
             scanRole: file.scanRole || null,
+            scanRoleSetBy: file.scanRoleSetBy || null,
           })) satisfies PracticeTransferDialogFileItem[]
         }
         trashedFiles={

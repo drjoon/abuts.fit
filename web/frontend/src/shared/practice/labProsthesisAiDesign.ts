@@ -91,6 +91,89 @@ export function oralScanRoleLabel(role: LabOralScanRole): string {
   return "그 외";
 }
 
+export function isOralScanRole(value: string | null | undefined): value is LabOralScanRole {
+  return (
+    value === "upper" ||
+    value === "lower" ||
+    value === "bite" ||
+    value === "other"
+  );
+}
+
+/** 메시 업로드에 실을 파일명 구분. 메시가 아니면 null. */
+export function filenameScanRoleFields(fileName: string): {
+  scanRole: LabOralScanRole;
+  scanRoleSetBy: "filename";
+} | null {
+  const name = String(fileName || "").trim();
+  if (!isOralScanMeshName(name)) return null;
+  return {
+    scanRole: classifyOralScanFileName(name),
+    scanRoleSetBy: "filename",
+  };
+}
+
+/** 저장된 역할. 없으면 파일명 구분. 메시가 아니면 null. */
+export function resolveOralScanRole(file: {
+  fileName?: string | null;
+  scanRole?: string | null;
+}): LabOralScanRole | null {
+  const stored = String(file.scanRole || "").trim();
+  if (isOralScanRole(stored)) return stored;
+  const fileName = String(file.fileName || "").trim();
+  if (!isOralScanMeshName(fileName)) return null;
+  return classifyOralScanFileName(fileName);
+}
+
+function oralScanSetByConfirmed(setBy: string | null | undefined): boolean {
+  return setBy === "lab" || setBy === "practice";
+}
+
+/**
+ * 기공소가 아직 확정하지 않았고, 파일명만으로 역할을 정하기 어려운 파일.
+ * 바이트가 둘(BiteScan·BiteScan2)인 경우는 보통 스캔이라 제외한다.
+ * 상악·하악이 겹치거나 그 외로 남은 파일을 반환한다.
+ */
+export function ambiguousOralScanFileKeys(
+  files: ReadonlyArray<{
+    s3Key?: string | null;
+    fileName?: string | null;
+    scanRole?: string | null;
+    scanRoleSetBy?: string | null;
+  }>,
+): Set<string> {
+  const rows = files
+    .map((file) => {
+      const key = String(file.s3Key || "").trim();
+      const role = resolveOralScanRole({
+        fileName: file.fileName,
+        scanRole: file.scanRole,
+      });
+      return {
+        key,
+        role,
+        confirmed: oralScanSetByConfirmed(file.scanRoleSetBy),
+      };
+    })
+    .filter((row) => row.key && row.role);
+  const counts = { upper: 0, lower: 0 };
+  for (const row of rows) {
+    if (row.role === "upper" || row.role === "lower") counts[row.role] += 1;
+  }
+  const ambiguous = new Set<string>();
+  for (const row of rows) {
+    if (!row.role || row.confirmed) continue;
+    if (row.role === "other") ambiguous.add(row.key);
+    if (
+      (row.role === "upper" || row.role === "lower") &&
+      counts[row.role] > 1
+    ) {
+      ambiguous.add(row.key);
+    }
+  }
+  return ambiguous;
+}
+
 function normalizeToothNumber(value: unknown): string {
   return String(value || "").trim();
 }

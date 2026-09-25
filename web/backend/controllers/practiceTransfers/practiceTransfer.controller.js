@@ -242,7 +242,7 @@ import {
 } from "../../services/oralScanPair.service.js";
 import {
   normalizeOralScanRole,
-  normalizeOralScanRoleSetBy,
+  resolveStoredScanRole,
 } from "../../utils/oralScanRole.js";
 import Request from "../../models/request.model.js";
 import { assertAbutmentPresetsComplete } from "../../utils/practiceTransferAbutmentPresets.js";
@@ -886,13 +886,19 @@ const mapPracticeTransferFilesFromCaseInfos = (caseInfos) =>
       if (!originalName || !s3Key) return null;
       if (!isAllowedPracticeFile(originalName)) return null;
 
-      const scanRole = normalizeOralScanRole(ci?.scanRole);
-      const scanRoleSetBy = normalizeOralScanRoleSetBy(ci?.scanRoleSetBy);
+      const storedRole = resolveStoredScanRole({
+        originalName,
+        scanRole: ci?.scanRole,
+        scanRoleSetBy: ci?.scanRoleSetBy,
+      });
       return {
         patientName: String(ci?.patientName || "").trim(),
         tooth: String(ci?.tooth || "").trim(),
-        ...(scanRole
-          ? { scanRole, scanRoleSetBy: scanRoleSetBy || "practice" }
+        ...(storedRole.scanRole
+          ? {
+              scanRole: storedRole.scanRole,
+              scanRoleSetBy: storedRole.scanRoleSetBy,
+            }
           : {}),
         file: {
           originalName,
@@ -995,8 +1001,17 @@ const toTransferFilesApiFields = (transferDoc) => {
     patientName: String(item?.patientName || "").trim(),
     tooth: String(item?.tooth || "").trim(),
     prosthesisType: String(item?.prosthesisType || "").trim(),
-    scanRole: normalizeOralScanRole(item?.scanRole) || null,
-    scanRoleSetBy: normalizeOralScanRoleSetBy(item?.scanRoleSetBy) || null,
+    ...(() => {
+      const storedRole = resolveStoredScanRole({
+        originalName: String(item?.file?.originalName || "").trim(),
+        scanRole: item?.scanRole,
+        scanRoleSetBy: item?.scanRoleSetBy,
+      });
+      return {
+        scanRole: storedRole.scanRole || null,
+        scanRoleSetBy: storedRole.scanRoleSetBy || null,
+      };
+    })(),
     marginArch: String(item?.marginArch || "").trim() || null,
     marginPointCount: Array.isArray(item?.marginPoints)
       ? item.marginPoints.length
@@ -3865,10 +3880,20 @@ export async function updatePracticeTransferContent(req, res) {
       const key = String(row?.file?.s3Key || "").trim();
       const prev = key ? existingByKey.get(key) : null;
       if (prev?.uploadBatchId) {
+        const incomingExplicit =
+          row.scanRoleSetBy === "lab" || row.scanRoleSetBy === "practice";
+        const prevHuman =
+          (prev.scanRoleSetBy === "lab" || prev.scanRoleSetBy === "practice") &&
+          prev.scanRole;
+        const keepPrev = Boolean(prevHuman) && !incomingExplicit;
         kept.push({
           ...row,
-          scanRole: row.scanRole || prev.scanRole || "",
-          scanRoleSetBy: row.scanRoleSetBy || prev.scanRoleSetBy || "",
+          scanRole: keepPrev
+            ? prev.scanRole
+            : row.scanRole || prev.scanRole || "",
+          scanRoleSetBy: keepPrev
+            ? prev.scanRoleSetBy
+            : row.scanRoleSetBy || prev.scanRoleSetBy || "",
           uploadBatchId: prev.uploadBatchId,
           uploadedAt: prev.uploadedAt || undefined,
         });
@@ -9181,7 +9206,14 @@ export async function appendPracticeTransferRequestFiles(req, res) {
       normalizeIncomingRequestFiles(req.body?.files),
     );
     for (const row of incoming) {
-      if (row.scanRole && !row.scanRoleSetBy) row.scanRoleSetBy = "practice";
+      const storedRole = resolveStoredScanRole({
+        originalName: row?.file?.originalName,
+        scanRole: row.scanRole,
+        scanRoleSetBy: row.scanRoleSetBy,
+      });
+      if (!storedRole.scanRole) continue;
+      row.scanRole = storedRole.scanRole;
+      row.scanRoleSetBy = storedRole.scanRoleSetBy;
     }
     if (incoming.length === 0) {
       return res.status(400).json({
@@ -9433,7 +9465,14 @@ export async function appendReceivedPracticeTransferRequestFiles(req, res) {
       normalizeIncomingRequestFiles(req.body?.files),
     );
     for (const row of incoming) {
-      if (row.scanRole && !row.scanRoleSetBy) row.scanRoleSetBy = "lab";
+      const storedRole = resolveStoredScanRole({
+        originalName: row?.file?.originalName,
+        scanRole: row.scanRole,
+        scanRoleSetBy: row.scanRoleSetBy,
+      });
+      if (!storedRole.scanRole) continue;
+      row.scanRole = storedRole.scanRole;
+      row.scanRoleSetBy = storedRole.scanRoleSetBy;
     }
     if (incoming.length === 0) {
       return res.status(400).json({
@@ -9471,6 +9510,91 @@ export async function appendReceivedPracticeTransferRequestFiles(req, res) {
     return res.status(500).json({
       success: false,
       message: "의뢰 파일 저장 중 오류가 발생했습니다.",
+      error: error?.message,
+    });
+  }
+}
+
+/**
+ * 치과 — 파일명으로 구분된 스캔 역할(상악·하악·바이트)을 고친다.
+ * related: POST /api/practice/transfers/:transferId/request-files/scan-role
+ */
+export async function setPracticeTransferScanRole(req, res) {
+  try {
+    const role = String(req.user?.role || "").trim();
+    if (!isPracticeTransferSenderRole(role)) {
+      return res.status(403).json({ success: false, message: "권한이 없습니다." });
+    }
+
+    const transferIdFilter = buildTransferIdFilter(req.params?.transferId);
+    const scanRole = normalizeOralScanRole(req.body?.scanRole);
+    const s3Key = String(req.body?.s3Key || "").trim();
+    if (!transferIdFilter || !s3Key || !scanRole) {
+      return res.status(400).json({
+        success: false,
+        message: "스캔 역할을 확인해 주세요.",
+      });
+    }
+
+    const { scope } = await buildPracticeOwnedScope(req);
+    const doc = await PracticeTransfer.findOne({
+      ...scope,
+      ...transferIdFilter,
+    });
+    if (!doc) {
+      return res.status(404).json({
+        success: false,
+        message: "전송 내역을 찾을 수 없습니다.",
+      });
+    }
+    if (isPracticeTransferDeletedStatus(doc.status)) {
+      return res.status(409).json({
+        success: false,
+        message: "삭제된 기공의뢰의 스캔 역할은 바꿀 수 없습니다.",
+      });
+    }
+
+    const files = normalizeResultFiles(doc.files);
+    const hit = files.find((row) => String(row?.file?.s3Key || "").trim() === s3Key);
+    if (!hit) {
+      return res.status(404).json({
+        success: false,
+        message: "의뢰 파일을 찾을 수 없습니다.",
+      });
+    }
+    hit.scanRole = scanRole;
+    hit.scanRoleSetBy = "practice";
+    doc.files = files;
+    doc.markModified("files");
+    doc.resultFiles = normalizeResultFiles(doc.resultFiles).map((row) => {
+      const next = { ...row };
+      delete next.marginPoints;
+      delete next.marginArch;
+      return next;
+    });
+    doc.markModified("resultFiles");
+    await doc.save();
+    schedulePracticeScanAlignment(doc._id);
+    schedulePracticeProsthesisMargin(doc._id);
+
+    const payload = await emitRequestFilesUpdated({
+      doc,
+      req,
+      action: "request-scan-role",
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        transferId: String(doc.transferId || "").trim(),
+        ...toTransferFilesApiFields(doc),
+        updatedAt: payload.updatedAt,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "스캔 역할을 저장하지 못했습니다.",
       error: error?.message,
     });
   }

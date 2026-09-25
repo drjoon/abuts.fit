@@ -140,6 +140,7 @@ const toDialogFiles = (
       uploadedAt: file.uploadedAt || null,
       trashedAt: file.trashedAt || null,
       scanRole: file.scanRole || null,
+      scanRoleSetBy: file.scanRoleSetBy || null,
     };
   });
 

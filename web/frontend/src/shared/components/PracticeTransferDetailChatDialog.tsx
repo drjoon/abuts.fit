@@ -21,6 +21,7 @@
 // - web/frontend/src/shared/files/fileBlobCache.ts
 // - web/frontend/src/shared/files/s3ImageThumb.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-26: 기공소 채팅 — 스캔 역할은 파일명 구분. 애매한 파일만 노란 표시로 확정.
 // - 2026-09-26: 기공소 헤더 — AI는 작업시작 오른쪽. 할증 뱃지는 상단 별 위 `1.1x`.
 // - 2026-09-24: 의뢰 파일「열기」— 설정 디자인 SW(3Shape/ExoCAD)로 로컬 CAD 헬퍼 경유.
 // - 2026-09-24: 할증 툴팁 — 협력=수행 기공소, 하청·어벗츠 지정=어벗츠기공소.
@@ -197,6 +198,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Popover,
   PopoverContent,
   PopoverTrigger,
@@ -271,8 +279,11 @@ import {
 import { LabProsthesisAiDesignButton } from "@/shared/components/practice/LabProsthesisAiDesignDialog";
 import {
   ORAL_SCAN_ROLE_OPTIONS,
+  ambiguousOralScanFileKeys,
   isOralScanMeshName,
+  isOralScanRole,
   oralScanRoleLabel,
+  resolveOralScanRole,
 } from "@/shared/practice/labProsthesisAiDesign";
 import { LabPendingAbutmentGuide } from "@/shared/components/practice/LabPendingAbutmentGuide";
 import {
@@ -397,8 +408,10 @@ export type PracticeTransferDialogFileItem = {
   uploadBatchId?: string | null;
   uploadedAt?: string | null;
   trashedAt?: string | null;
-  /** 의뢰 스캔 확정 역할. upper | lower | bite | other */
+  /** 의뢰 스캔 역할. upper | lower | bite | other */
   scanRole?: string | null;
+  /** filename=파일명 구분, lab=기공소 확정 */
+  scanRoleSetBy?: string | null;
 };
 
 /** 기공의뢰수신 — 수락 후 페이지 전체 파일 드롭(카드와 동일 라우팅) */
@@ -2494,6 +2507,9 @@ export function PracticeTransferDetailChatDialog({
   const showWorkFilesSection =
     designFileList.length > 0 || resultFileList.length > 0;
   const requestFileWaves = clusterPracticeTransferFileWaves(files);
+  const ambiguousScanKeys = onChangeRequestScanRole
+    ? ambiguousOralScanFileKeys(files)
+    : new Set<string>();
   const trashedFileList = Array.isArray(trashedFiles) ? trashedFiles : [];
   /** 휴지통에 파일이 있을 때만 썸네일 끝 타일 표시 */
   const showRequestFileTrash =
@@ -2533,11 +2549,20 @@ export function PracticeTransferDetailChatDialog({
         : isImage
           ? "클릭하여 이미지 미리보기"
           : "클릭하여 다운로드";
+    const scanRole = resolveOralScanRole(file);
+    const scanRoleNeedsReview =
+      Boolean(onChangeRequestScanRole) &&
+      isOralScanMeshName(file.fileName) &&
+      ambiguousScanKeys.has(busyKey);
 
     return (
       <div
         key={`${keyPrefix}:${busyKey || file.id || idx}`}
-        className="relative min-w-0 overflow-hidden rounded-md border bg-slate-50"
+        className={cn(
+          "relative min-w-0 overflow-hidden rounded-md border bg-slate-50",
+          scanRoleNeedsReview &&
+            "border-amber-500 bg-amber-50 ring-2 ring-amber-400",
+        )}
       >
         {canRemoveRequestFile ? (
           <button
@@ -2593,6 +2618,11 @@ export function PracticeTransferDetailChatDialog({
                 </span>
               </div>
             )}
+            {scanRoleNeedsReview ? (
+              <div className="absolute left-1 top-1 rounded bg-amber-500 px-1.5 py-0.5 text-[10px] font-semibold text-white shadow-sm">
+                확인
+              </div>
+            ) : null}
             {locked ? (
               <div className="absolute inset-0 flex items-center justify-center bg-slate-900/45 px-1">
                 <span className="text-center text-[10px] font-medium text-white">
@@ -2618,55 +2648,56 @@ export function PracticeTransferDetailChatDialog({
             {file.fileName}
           </p>
         </button>
-        {keyPrefix.startsWith("request") &&
-        isMesh &&
-        isOralScanMeshName(file.fileName) &&
-        (file.scanRole || onChangeRequestScanRole) ? (
+        {keyPrefix.startsWith("request") && isMesh && scanRole ? (
           <div
             className="px-1.5 pb-1.5"
             onClick={(event) => event.stopPropagation()}
             onPointerDown={(event) => event.stopPropagation()}
           >
             {onChangeRequestScanRole ? (
-              <select
-                className="h-7 w-full rounded-md border bg-white px-1 text-[11px]"
-                aria-label={`${file.fileName} 스캔 역할`}
+              <Select
                 value={
-                  file.scanRole === "upper" ||
-                  file.scanRole === "lower" ||
-                  file.scanRole === "bite" ||
-                  file.scanRole === "other"
-                    ? file.scanRole
-                    : "other"
+                  scanRoleNeedsReview && scanRole === "other"
+                    ? "__unset__"
+                    : scanRole
                 }
-                onChange={(event) => {
-                  const role = event.target.value;
-                  if (
-                    role === "upper" ||
-                    role === "lower" ||
-                    role === "bite" ||
-                    role === "other"
-                  ) {
+                onValueChange={(role) => {
+                  if (isOralScanRole(role)) {
                     onChangeRequestScanRole(file, role);
                   }
                 }}
               >
-                {ORAL_SCAN_ROLE_OPTIONS.map((role) => (
-                  <option key={role} value={role}>
-                    {oralScanRoleLabel(role)}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger
+                  className={cn(
+                    "h-7 px-2 py-0 text-[11px] shadow-none focus:ring-1 focus:ring-offset-0 [&>svg]:h-3 [&>svg]:w-3",
+                    scanRoleNeedsReview
+                      ? "border-amber-500 bg-amber-100 font-semibold text-amber-950"
+                      : "bg-white",
+                  )}
+                  aria-label={`${file.fileName} 스캔 역할`}
+                  title={
+                    scanRoleNeedsReview
+                      ? "파일명으로 구분하지 못했습니다. 역할을 골라 확정해주세요."
+                      : `${file.fileName} 스캔 역할`
+                  }
+                >
+                  <SelectValue placeholder="선택" />
+                </SelectTrigger>
+                <SelectContent className="min-w-[7.5rem]">
+                  {ORAL_SCAN_ROLE_OPTIONS.map((role) => (
+                    <SelectItem
+                      key={role}
+                      value={role}
+                      className="py-1.5 text-xs"
+                    >
+                      {oralScanRoleLabel(role)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             ) : (
               <p className="text-center text-[10px] text-slate-500">
-                {oralScanRoleLabel(
-                  file.scanRole === "upper" ||
-                    file.scanRole === "lower" ||
-                    file.scanRole === "bite" ||
-                    file.scanRole === "other"
-                    ? file.scanRole
-                    : "other",
-                )}
+                {oralScanRoleLabel(scanRole)}
               </p>
             )}
           </div>
@@ -3242,6 +3273,13 @@ export function PracticeTransferDetailChatDialog({
                 {requestFilesDownloadLocked && files.length > 0 ? (
                   <p className="text-xs leading-relaxed text-amber-800 dark:text-amber-200">
                     {requestFilesDownloadLockedReason}
+                  </p>
+                ) : null}
+                {ambiguousScanKeys.size > 0 ? (
+                  <p className="rounded-md bg-amber-100 px-3 py-2 text-xs font-medium leading-relaxed text-amber-950">
+                    파일명으로 상악·하악·바이트를 정하지 못한 파일이 있습니다.
+                    <br />
+                    노란 표시의 역할을 골라 확정해주세요.
                   </p>
                 ) : null}
                 {files.length ||

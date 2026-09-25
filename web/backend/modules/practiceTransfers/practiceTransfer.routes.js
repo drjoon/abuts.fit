@@ -53,6 +53,7 @@ import {
   setPracticeTransferAbutmentShipYmd,
   setPracticeTransferLabBasketTag,
   appendPracticeTransferRequestFiles,
+  setPracticeTransferScanRole,
   removePracticeTransferRequestFiles,
   restorePracticeTransferRequestFilesApi,
   appendReceivedPracticeTransferRequestFiles,
@@ -231,6 +232,13 @@ router.post(
   authenticate,
   sendAuth,
   appendPracticeTransferRequestFiles,
+);
+
+router.post(
+  "/:transferId/request-files/scan-role",
+  authenticate,
+  sendAuth,
+  setPracticeTransferScanRole,
 );
 
 router.post(

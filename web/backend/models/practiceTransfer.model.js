@@ -19,15 +19,16 @@ const practiceTransferFileSchema = new mongoose.Schema(
     tooth: { type: String, default: "", trim: true },
     /** 작업완료 보철 STL의 형태. 학습 쌍(치아·형태·파일)용 */
     prosthesisType: { type: String, default: "", trim: true },
-    /** 의뢰 스캔 역할. 치과가 확인하고 기공소가 고칠 수 있다. */
+    /** 의뢰 스캔 역할. 파일명으로 구분하고, 기공소가 채팅에서 확정한다. */
     scanRole: {
       type: String,
       enum: ["", "upper", "lower", "bite", "other"],
       default: "",
     },
+    /** filename=파일명 구분, practice=레거시 치과 확인, lab=기공소 확정 */
     scanRoleSetBy: {
       type: String,
-      enum: ["", "practice", "lab"],
+      enum: ["", "filename", "practice", "lab"],
       default: "",
     },
     /** 보철 메시가 구강스캔과 만나는 점. 결과 파일 좌표. */

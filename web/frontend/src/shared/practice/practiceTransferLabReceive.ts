@@ -86,6 +86,7 @@ export type PracticeTransferLabReceiveFile = {
   uploadedAt?: string | null;
   trashedAt?: string | null;
   scanRole?: string | null;
+  scanRoleSetBy?: string | null;
 };
 
 export type PracticeTransferRemakeCharge = {
