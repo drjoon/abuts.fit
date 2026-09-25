@@ -13,6 +13,8 @@
 // - 2026-08-20: 평가 모달 안내에서「고품질」삭제. 채팅 헤더는 할증율+「치과 평가」버튼.
 // - 2026-08-26: 할증 힌트 툴팁 — 포커스(모달 오픈)가 아닌 마우스 호버에서만 표시.
 // - 2026-08-28: evaluate — 별도「할증 없음」라벨 제거. 미설정=버튼라벨, 설정=배수만(1.2x).
+// - 2026-09-26: icon 트리거 — 배수>1이면 별 위에 `1.1x` 뱃지(할증 문구 없음).
+// - 2026-09-26: 치과 평가 안내 — 수가 할증 가능(하청 의뢰건 제외).
 import { useEffect, useState, type MouseEvent } from "react";
 import { Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -55,7 +57,7 @@ const SETTINGS_DESCRIPTION_LINES = [
 ] as const;
 
 const EVALUATE_DESCRIPTION_LINES = [
-  "세심한 작업을 요구하는 치과의 경우 수가 할증 가능합니다. (협력 의뢰건 제외)",
+  "세심한 작업이 요구되는 치과는 수가 할증 가능 (하청 의뢰건 제외)",
   SURCHARGE_NEXT_ORDER_HINT,
 ] as const;
 
@@ -232,6 +234,10 @@ export function LabPracticeFeeSurchargeControl({
     ? `현재 할증 ${multiplierLabel}. ${SURCHARGE_NEXT_ORDER_HINT}`
     : SURCHARGE_NEXT_ORDER_HINT;
 
+  const iconBadge =
+    triggerVariant === "icon" && active
+      ? `${Number.isInteger(current) ? String(current) : String(current)}x`
+      : null;
   const triggerButton =
     triggerVariant === "icon" ? (
       <Button
@@ -239,7 +245,7 @@ export function LabPracticeFeeSurchargeControl({
         variant="ghost"
         size="icon"
         className={cn(
-          "h-9 w-9 shrink-0",
+          "relative h-9 w-9 shrink-0 overflow-visible",
           active && "text-amber-500",
           className,
         )}
@@ -250,6 +256,11 @@ export function LabPracticeFeeSurchargeControl({
           className={cn("h-4 w-4", active && "fill-current")}
           strokeWidth={1.75}
         />
+        {iconBadge ? (
+          <span className="pointer-events-none absolute -top-1 left-1/2 z-[1] -translate-x-1/2 whitespace-nowrap rounded border border-amber-300 bg-amber-50 px-1 py-px text-[10px] font-semibold leading-none tabular-nums text-amber-900">
+            {iconBadge}
+          </span>
+        ) : null}
       </Button>
     ) : (
       <Button

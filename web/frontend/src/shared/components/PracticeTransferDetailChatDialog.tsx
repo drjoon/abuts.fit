@@ -21,6 +21,7 @@
 // - web/frontend/src/shared/files/fileBlobCache.ts
 // - web/frontend/src/shared/files/s3ImageThumb.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-26: 기공소 헤더 — AI는 작업시작 오른쪽. 할증 뱃지는 상단 별 위 `1.1x`.
 // - 2026-09-24: 의뢰 파일「열기」— 설정 디자인 SW(3Shape/ExoCAD)로 로컬 CAD 헬퍼 경유.
 // - 2026-09-24: 할증 툴팁 — 협력=수행 기공소, 하청·어벗츠 지정=어벗츠기공소.
 // - 2026-09-20: 기공소 — 번호표 BA(labBasketTag)·occupiedTags·목록 즉시 갱신.
@@ -264,11 +265,15 @@ import { fetchS3BlobCached } from "@/shared/files/s3BlobCache";
 import { loadS3ImageThumbUrlsParallel } from "@/shared/files/s3ImageThumb";
 import { useToast } from "@/shared/hooks/use-toast";
 import {
-  formatLabFeeMultiplierLabel,
   isPendingRoundBarAbutment,
   isSimpleAbutmentModeForFee,
-  normalizeLabFeeMultiplier,
 } from "@/shared/practice/labFeeSchedule";
+import { LabProsthesisAiDesignButton } from "@/shared/components/practice/LabProsthesisAiDesignDialog";
+import {
+  ORAL_SCAN_ROLE_OPTIONS,
+  isOralScanMeshName,
+  oralScanRoleLabel,
+} from "@/shared/practice/labProsthesisAiDesign";
 import { LabPendingAbutmentGuide } from "@/shared/components/practice/LabPendingAbutmentGuide";
 import {
   LabBasketTagToolbar,
@@ -392,6 +397,8 @@ export type PracticeTransferDialogFileItem = {
   uploadBatchId?: string | null;
   uploadedAt?: string | null;
   trashedAt?: string | null;
+  /** 의뢰 스캔 확정 역할. upper | lower | bite | other */
+  scanRole?: string | null;
 };
 
 /** 기공의뢰수신 — 수락 후 페이지 전체 파일 드롭(카드와 동일 라우팅) */
@@ -485,6 +492,11 @@ type PracticeTransferDetailChatDialogProps = {
   /** 예: 의뢰 파일 */
   filesLabel: string;
   files: PracticeTransferDialogFileItem[];
+  /** 기공소가 의뢰 스캔 역할을 고친다 */
+  onChangeRequestScanRole?: (
+    file: PracticeTransferDialogFileItem,
+    role: import("@/shared/practice/labProsthesisAiDesign").LabOralScanRole,
+  ) => void;
   /** 의뢰 파일 휴지통 */
   trashedFiles?: PracticeTransferDialogFileItem[];
   /** 수락 전 구강스캔 미첨부(CA). 자동매칭만 치과 필수 안내 */
@@ -720,6 +732,7 @@ export function PracticeTransferDetailChatDialog({
   labEffectiveStars = null,
   filesLabel,
   files,
+  onChangeRequestScanRole,
   trashedFiles = [],
   oralScanAttachMode = null,
   requestFilesDownloadLocked = false,
@@ -2255,11 +2268,6 @@ export function PracticeTransferDetailChatDialog({
       : "다시 작업시작";
   const releaseButtonLabel = releaseBusy ? "취소 중..." : "작업 취소";
   const acceptDisabled = acceptBusy || oralScanBlocksAccept;
-  const acceptBarSurchargeLabel = (() => {
-    const multiplier = normalizeLabFeeMultiplier(feeQuote?.labFeeMultiplier);
-    if (multiplier <= 1) return null;
-    return formatLabFeeMultiplierLabel(multiplier);
-  })();
   const releaseAction =
     showReleaseBar && onRelease ? (
       <TooltipProvider>
@@ -2295,22 +2303,6 @@ export function PracticeTransferDetailChatDialog({
           {openSubcontractBusy ? "전환 중..." : "하청 전환"}
         </Button>
       ) : null}
-      {acceptBarSurchargeLabel ? (
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="inline-flex shrink-0 items-center rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-900">
-                {acceptBarSurchargeLabel}
-              </span>
-            </TooltipTrigger>
-            <TooltipContent className="max-w-xs leading-relaxed">
-              협력 건은 수행 기공소 수가·할증, 하청·어벗츠 지정은 어벗츠기공소 기준입니다.
-              <br />
-              견적·정산 금액은 생성 시 스냅샷을 따릅니다. 정산만 어벗츠를 경유합니다.
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      ) : null}
       <Button
         type="button"
         size="sm"
@@ -2334,8 +2326,18 @@ export function PracticeTransferDetailChatDialog({
       {reacceptButtonLabel}
     </Button>
   ) : null;
+  const labAiDesignButton =
+    feeViewer === "lab" ? (
+      <LabProsthesisAiDesignButton
+        toothWorks={chartToothWorks}
+        files={files}
+      />
+    ) : null;
   const labIdentityDateRowActions =
-    acceptBarPrimaryActions || reacceptBarPrimaryAction || releaseAction ? (
+    acceptBarPrimaryActions ||
+    reacceptBarPrimaryAction ||
+    releaseAction ||
+    labAiDesignButton ? (
       <div
         className="flex shrink-0 flex-nowrap items-center justify-end gap-1.5"
         data-no-drag
@@ -2344,6 +2346,7 @@ export function PracticeTransferDetailChatDialog({
         {acceptBarPrimaryActions}
         {reacceptBarPrimaryAction}
         {releaseAction}
+        {labAiDesignButton}
       </div>
     ) : null;
   const practiceHeaderActionButtons = (() => {
@@ -2615,6 +2618,59 @@ export function PracticeTransferDetailChatDialog({
             {file.fileName}
           </p>
         </button>
+        {keyPrefix.startsWith("request") &&
+        isMesh &&
+        isOralScanMeshName(file.fileName) &&
+        (file.scanRole || onChangeRequestScanRole) ? (
+          <div
+            className="px-1.5 pb-1.5"
+            onClick={(event) => event.stopPropagation()}
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            {onChangeRequestScanRole ? (
+              <select
+                className="h-7 w-full rounded-md border bg-white px-1 text-[11px]"
+                aria-label={`${file.fileName} 스캔 역할`}
+                value={
+                  file.scanRole === "upper" ||
+                  file.scanRole === "lower" ||
+                  file.scanRole === "bite" ||
+                  file.scanRole === "other"
+                    ? file.scanRole
+                    : "other"
+                }
+                onChange={(event) => {
+                  const role = event.target.value;
+                  if (
+                    role === "upper" ||
+                    role === "lower" ||
+                    role === "bite" ||
+                    role === "other"
+                  ) {
+                    onChangeRequestScanRole(file, role);
+                  }
+                }}
+              >
+                {ORAL_SCAN_ROLE_OPTIONS.map((role) => (
+                  <option key={role} value={role}>
+                    {oralScanRoleLabel(role)}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <p className="text-center text-[10px] text-slate-500">
+                {oralScanRoleLabel(
+                  file.scanRole === "upper" ||
+                    file.scanRole === "lower" ||
+                    file.scanRole === "bite" ||
+                    file.scanRole === "other"
+                    ? file.scanRole
+                    : "other",
+                )}
+              </p>
+            )}
+          </div>
+        ) : null}
       </div>
     );
   };
