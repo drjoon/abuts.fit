@@ -3,6 +3,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AppLayout } from "@/features/layout/AppLayout";
+import { CookieConsentBanner } from "@/features/layout/CookieConsentBanner";
 import { ScrollToTop } from "@/features/layout/ScrollToTop";
 import { LoadingScreen } from "@/shared/ui/feedback/LoadingScreen";
 import {
@@ -38,6 +39,7 @@ import { getRoleDefaultDashboardPath } from "@/shared/navigation/lastDashboardPa
 // - web/frontend/src/pages/admin/AdminFinancePage.tsx
 // - web/frontend/src/pages/admin/AdminSettingsHubPage.tsx
 // change-log:
+// - 2026-09-26: 하단 쿠키 동의 배너 — 동의 후 localStorage로 재노출 생략.
 // - 2026-09-23: 관리자 설정 평탄 탭 — /settings·/partners 구 URL을 account|business|platform… 로 전달.
 // - 2026-09-21: 딜러·영업팀 사이드 IA 통일 — sales 라우트에 salesman, payments에 salesTeam.
 // - 2026-09-16: 기공소·어벗츠기공소 /payments → 크레딧「지급」탭(?tab=payout).
@@ -1118,6 +1120,7 @@ const App = () => {
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </Suspense>
+            <CookieConsentBanner />
             <NewChatWidget />
           </AppLayout>
         </BrowserRouter>
