@@ -1,4 +1,5 @@
 // related files:
+// - 2026-09-26: 보철 업로드는 치과 컨펌 없이 작업 완료. 학습 쌍은 서버가 남긴다.
 // - 2026-09-24: 「열기」미연결 시 설치 모달(zip·더블클릭 1회·이후 자동).
 // - 2026-09-24: 의뢰 파일「열기」— 설정 디자인 SW + 로컬 lab-cad-helper.
 // - 2026-09-20: 바구니 번호표 — BA(PracticeTransfer.labBasketTag)만. localStorage 전량 폐기.
@@ -3836,9 +3837,9 @@ export function RequestorPracticeReceivePage({
         const autoConfirmedAt = productionRawFromRes?.confirmedAt
           ? String(productionRawFromRes.confirmedAt)
           : null;
-        const skipDesignConfirm =
-          productionRawFromRes?.skipDesignConfirm !== false &&
-          transfer.production?.skipDesignConfirm !== false;
+        const skipDesignConfirm = productionRawFromRes
+          ? productionRawFromRes.skipDesignConfirm !== false
+          : transfer.production?.skipDesignConfirm !== false;
         // 보철 파일 업로드=작업완료(디자인). skip 자동 confirmedAt이어도 출고로 올리지 않음.
         const apiStage = String(data.manufacturerStage || "").trim();
         const manufacturerStage =
@@ -3923,9 +3924,14 @@ export function RequestorPracticeReceivePage({
 
         if (!silentUi) {
           toast({
-            title: autoConfirmedAt
-              ? "기공 디자인 완료 처리합니다. 생산 후 배송해주세요"
-              : "기공 디자인 완료. 치과의 컨펌을 기다리겠습니다.",
+            title: "작업 완료",
+            description: (
+              <>
+                보철 파일이 업로드되었습니다.
+                <br />
+                작업이 완료되었습니다.
+              </>
+            ),
           });
         }
         return true;
@@ -4241,6 +4247,11 @@ export function RequestorPracticeReceivePage({
                   remainingMs: null,
                 },
                 manufacturerStage: "작업완료",
+                production: {
+                  ...(row.production || {}),
+                  skipDesignConfirm: true,
+                  confirmedAt: nowIso,
+                },
                 resultFiles: optimisticResultFiles,
                 resultFileCount: optimisticResultFiles.length,
               };
@@ -4273,6 +4284,11 @@ export function RequestorPracticeReceivePage({
                 remainingMs: null,
               },
               manufacturerStage: "작업완료",
+              production: {
+                ...(prev.production || {}),
+                skipDesignConfirm: true,
+                confirmedAt: nowIso,
+              },
               resultFiles: optimisticResultFiles,
               resultFileCount: optimisticResultFiles.length,
             };
@@ -4329,12 +4345,16 @@ export function RequestorPracticeReceivePage({
         applyOptimistic();
         setWorkUploadState(null);
         toast({
-          title: shouldComplete
-            ? "기공 디자인 완료"
-            : "보철 일부 저장",
-          description: shouldComplete
-            ? "보철 파일이 업로드되었습니다. 치과의 컨펌을 기다리겠습니다."
-            : `${incoming.length}개 파일을 저장했습니다. 나머지 작업 후 이어서 올려주세요.`,
+          title: shouldComplete ? "작업 완료" : "보철 일부 저장",
+          description: shouldComplete ? (
+            <>
+              보철 파일이 업로드되었습니다.
+              <br />
+              작업이 완료되었습니다.
+            </>
+          ) : (
+            `${incoming.length}개 파일을 저장했습니다. 나머지 작업 후 이어서 올려주세요.`
+          ),
         });
 
         // S3·낙관 패치 끝 — 「처리 중」해제. 저장 API는 백그라운드.

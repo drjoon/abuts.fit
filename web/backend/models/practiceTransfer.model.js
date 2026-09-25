@@ -220,6 +220,11 @@ const practiceTransferSchema = new mongoose.Schema(
      * status native = 원본이 이미 같은 좌표.
      */
     scanAlignment: { type: mongoose.Schema.Types.Mixed, default: null },
+    /**
+     * 작업완료 보철과 상악·하악·바이트 학습 쌍.
+     * status pending|ready|incomplete. 보철 업로드로 작업완료된 뒤 정합·마진을 채운다.
+     */
+    aiTraining: { type: mongoose.Schema.Types.Mixed, default: undefined },
     // 보철 치식(과금·표시). 전송 시점 스냅샷
     toothWorks: {
       type: [mongoose.Schema.Types.Mixed],
@@ -605,6 +610,10 @@ practiceTransferSchema.index({
 practiceTransferSchema.index({
   targetLabAnchorId: 1,
   orderDates: 1,
+});
+practiceTransferSchema.index({
+  "aiTraining.status": 1,
+  "autoMatch.completedAt": 1,
 });
 practiceTransferSchema.index({
   targetLabAnchorId: 1,

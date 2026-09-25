@@ -8930,7 +8930,6 @@ export async function markReceivedPracticeTransferComplete(req, res) {
     }
 
     const resultFiles = result.resultFiles || [];
-    schedulePracticeProsthesisMargin(doc._id);
     return res.status(200).json({
       success: true,
       data: {

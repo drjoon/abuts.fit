@@ -3,6 +3,7 @@
 // - web/backend/jobs/practiceTransferArrivalAutoCompleteWorker.js
 // - web/backend/utils/practiceTransferArrivalDates.js
 // change-log:
+// - 2026-09-26: 치과 컨펌 없이 보철 업로드=작업완료. 학습 쌍 준비는 응답 뒤.
 // - 2026-09-26: 보철 슬롯이 남으면 작업완료 거절. 파일에 prosthesisType을 남긴다.
 // - 2026-09-02: 작업완료 수동 CTA 폐지. 치과도착일 경과(당일 제외) 시 자동 완료. CA 미업로드는 기한만료.
 import { Types } from "mongoose";
@@ -35,6 +36,7 @@ import {
 } from "../utils/practiceTransferArrivalAutoComplete.js";
 import { expirePracticeTransfersPastArrivalDeadline } from "./practiceTransferArrivalExpire.service.js";
 import { getTodayYmdInKst } from "../utils/krBusinessDays.js";
+import { schedulePracticeAiTrainingPrep } from "./oralScanPair.service.js";
 import {
   attachProsthesisTypeToResultFiles,
   listPendingProstheticSlots,
@@ -198,7 +200,8 @@ export async function completePracticeTransferWork({
     resultFiles,
   );
 
-  const skipDesignConfirm = doc.production?.skipDesignConfirm !== false;
+  // 치과 컨펌은 없다. 단계는 작업완료(디자인)에 두고, 출고로 올리지 않는다.
+  const skipDesignConfirm = true;
   let releaseResult = null;
   if (doc.billing?.labSettledAt) {
     releaseResult = { released: false, reason: "already_settled" };
@@ -249,11 +252,8 @@ export async function completePracticeTransferWork({
     };
   }
 
-  let confirmedAt = null;
+  const confirmedAt = now;
   const manufacturerStage = "작업완료";
-  if (skipDesignConfirm) {
-    confirmedAt = now;
-  }
 
   const relatedAfterEnsure = Array.isArray(doc.production?.relatedRequestIds)
     ? doc.production.relatedRequestIds
@@ -323,6 +323,7 @@ export async function completePracticeTransferWork({
     relatedRequestIds: relatedAfterEnsure,
   };
   await doc.save();
+  schedulePracticeAiTrainingPrep(doc._id);
 
   const labAnchorId = String(doc.targetLabAnchorId || "").trim();
   const isAuto = isAutoMatchMode(doc);
@@ -366,19 +367,7 @@ export async function completePracticeTransferWork({
       // best-effort
     }
 
-    if (!confirmedAt) {
-      emitJobs.push(
-        postPracticeTransferSystemChatMessage({
-          transferMongoId: doc._id,
-          senderUserId: actorUserId,
-          content:
-            reason === "arrival_auto"
-              ? "치과도착일이 지나 작업이 자동 완료되었습니다. 결과 파일을 확인한 뒤 「생산 진행」해 주세요."
-              : "작업이 완료되었습니다. 결과 파일을 확인한 뒤 「생산 진행」해 주세요.",
-          systemEvent: "awaiting_production_confirm",
-        }),
-      );
-    } else if (reason === "arrival_auto") {
+    if (reason === "arrival_auto") {
       emitJobs.push(
         postPracticeTransferSystemChatMessage({
           transferMongoId: doc._id,

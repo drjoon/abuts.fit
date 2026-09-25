@@ -2,13 +2,14 @@
 // 응답은 기다리지 않는다. STL·PLY만 계산하고 실패는 로그만 남긴다.
 import PracticeTransfer from "../models/practiceTransfer.model.js";
 import { getObjectBufferFromS3 } from "../utils/s3.utils.js";
-import { normalizeOralScanRole } from "../utils/oralScanRole.js";
+import { resolveStoredScanRole } from "../utils/oralScanRole.js";
 import {
   alignJawsToBite,
   archRoleFromTooth,
   sampleMeshPoints,
   sampleProsthesisMargin,
 } from "../utils/oralScanPairCore.js";
+import { buildAiTrainingRecord } from "../utils/practiceTransferAiTraining.js";
 
 const MAX_BYTES = 60 * 1024 * 1024;
 
@@ -27,20 +28,47 @@ async function loadPoints(row) {
 }
 
 function fileByRole(files, role) {
-  return (files || []).find(
-    (row) => normalizeOralScanRole(row?.scanRole) === role,
+  return (files || []).find((row) => {
+    const stored = resolveStoredScanRole({
+      originalName: row?.file?.originalName,
+      scanRole: row?.scanRole,
+      scanRoleSetBy: row?.scanRoleSetBy,
+    });
+    return stored.scanRole === role;
+  });
+}
+
+const scanJobTails = new Map();
+
+function enqueueScanJob(transferMongoId, job) {
+  const id = String(transferMongoId || "").trim();
+  if (!id) return;
+  const prev = scanJobTails.get(id) || Promise.resolve();
+  const run = prev.catch(() => {}).then(() => job(id));
+  const tracked = run.catch((err) => {
+    console.warn("[oral-scan] prep failed", id, err?.message || err);
+  });
+  scanJobTails.set(
+    id,
+    tracked.finally(() => {
+      if (scanJobTails.get(id) === tracked) scanJobTails.delete(id);
+    }),
   );
 }
 
+async function writePracticeAiTraining(id) {
+  const doc = await PracticeTransfer.findById(id)
+    .select({ files: 1, resultFiles: 1, scanAlignment: 1, autoMatch: 1 })
+    .lean();
+  if (!doc) return;
+  const record = buildAiTrainingRecord(doc);
+  await PracticeTransfer.updateOne({ _id: id }, { $set: { aiTraining: record } });
+}
+
 export function schedulePracticeScanAlignment(transferMongoId) {
-  const id = String(transferMongoId || "").trim();
-  if (!id) return;
-  void computeScanAlignment(id).catch((err) => {
-    console.warn(
-      "[oral-scan] alignment failed",
-      id,
-      err?.message || err,
-    );
+  enqueueScanJob(transferMongoId, async (id) => {
+    await computeScanAlignment(id);
+    await writePracticeAiTraining(id);
   });
 }
 
@@ -102,10 +130,18 @@ async function computeScanAlignment(id) {
 }
 
 export function schedulePracticeProsthesisMargin(transferMongoId) {
-  const id = String(transferMongoId || "").trim();
-  if (!id) return;
-  void computeMargins(id).catch((err) => {
-    console.warn("[oral-scan] margin failed", id, err?.message || err);
+  enqueueScanJob(transferMongoId, async (id) => {
+    await computeMargins(id);
+    await writePracticeAiTraining(id);
+  });
+}
+
+/** 작업완료 후 — 정합, 마진, 학습 쌍. 응답은 기다리지 않는다. */
+export function schedulePracticeAiTrainingPrep(transferMongoId) {
+  enqueueScanJob(transferMongoId, async (id) => {
+    await computeScanAlignment(id);
+    await computeMargins(id);
+    await writePracticeAiTraining(id);
   });
 }
 
