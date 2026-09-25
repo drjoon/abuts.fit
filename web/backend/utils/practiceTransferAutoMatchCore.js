@@ -5,7 +5,8 @@
 // 자동매칭 우선창·필터 순수 헬퍼 (Mongo 모델 import 없음).
 // - 2026-09-24: 할증 labFeeMultiplier — 협력=수행 기공소, 하청·어벗츠 자체=원청(어벗츠).
 // - 2026-09-24: 수가표 — 협력=수행 기공소, 하청·어벗츠 자체=원청. 정산만 어벗츠 경유.
-// - 2026-09-23: 치과 직접 지정=협력(assigneeKind=cooperation, 0%). 어벗츠 지정 후 풀/클레임=하청(subcontract, 5%).
+// - 2026-09-25: 하청 수수료 기본 10%. 하청 치과 청구 수가=원청(어벗츠).
+// - 2026-09-23: 치과 직접 지정=협력(assigneeKind=cooperation, 0%). 어벗츠 지정 후 풀/클레임=하청(subcontract, 10%).
 // - 2026-09-23: 신규 PTX 계약 상대=어벗츠기공소(원청). 픽커 파트너=assignee.
 // - 2026-08-21: 하청 전환은 어벗츠기공소(원청)만 — 타 기공소 지정 의뢰는 canOpenSubcontract=false.
 
@@ -146,7 +147,7 @@ export const isCooperationAssignee = (transfer) =>
 export const isSubcontractAssignee = (transfer) =>
   resolveAssigneeKind(transfer) === ASSIGNEE_KIND_SUBCONTRACT;
 
-/** 하청 수수료(5%) 적용 대상. 협력(0%)·자체 수행은 false. */
+/** 하청 수수료(기본 10%) 적용 대상. 협력(0%)·자체 수행은 false. */
 export const isSubcontractFeeApplicable = (transfer) =>
   isSubcontractAssignee(transfer);
 

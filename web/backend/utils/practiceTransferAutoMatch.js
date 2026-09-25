@@ -552,7 +552,7 @@ export const wantsAbutsPrimePool = ({
 /**
  * 신규 PTX 계약 상대=항상 어벗츠기공소(원청).
  * 치과 픽커 외부 기공소 → assignee(협력, 0%).
- * 어벗츠/레거시 자동매칭 선택 → 원청만(자체 수행 또는 이후 하청 풀 5%).
+ * 어벗츠/레거시 자동매칭 선택 → 원청만(자체 수행 또는 이후 하청 풀 10%).
  */
 export async function resolveCreateMatchingTarget({
   matchingModeRaw,

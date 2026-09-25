@@ -85,6 +85,7 @@ type ChatRemakePromptDialogProps = {
   open: boolean;
   toothWorks?: ToothWorkSelection[] | null;
   labAnchorId?: string | null;
+  transferMongoId?: string | null;
   remakeFeeLabel?: string;
   remakeFeeWithCaLabel?: string;
   busy?: boolean;
@@ -258,6 +259,7 @@ export function ChatRemakePromptDialog({
   open,
   toothWorks = null,
   labAnchorId = null,
+  transferMongoId = null,
   remakeFeeLabel,
   remakeFeeWithCaLabel,
   busy = false,
@@ -357,6 +359,7 @@ export function ChatRemakePromptDialog({
   const liveQuote = usePracticeTransferFeeQuote({
     enabled: open && step === "configure" && Boolean(labAnchorId),
     labAnchorId,
+    transferMongoId,
     toothWorks: selectedToothWorks,
     remake: true,
   });

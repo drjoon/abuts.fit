@@ -915,7 +915,7 @@ export default function AdminPaymentsPage({
   };
 
   const subcontractFeePct = Math.round(
-    Number(labDivision?.subcontractFeeRate ?? 0.05) * 100,
+    Number(labDivision?.subcontractFeeRate ?? 0.1) * 100,
   );
   const salesmanUnpaidInclusive = roleFinanceRows.salesman.reduce(
     (sum, r) => sum + Number(r.wallet?.balanceAmountPeriod || 0),
@@ -1003,7 +1003,8 @@ export default function AdminPaymentsPage({
                   비율로 분배합니다.
                   <br />
                   지정·협력 플랫폼 사용료는 정책 2%·이벤트 기간 0%입니다.
-                  하청 수행만 매출의 5%가 공제됩니다.
+                  <br />
+                  하청 수행만 매출의 {subcontractFeePct}%가 공제됩니다.
                 </p>
               </SettlementPolicySection>
             </SettlementPolicyDialog>

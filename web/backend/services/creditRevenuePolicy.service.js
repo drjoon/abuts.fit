@@ -7,10 +7,11 @@
 // change-log:
 // - 2026-09-24: 딜러십 — 신규 유치 요율(기본 20%)·예약 인하(15/10)·유치 시점 스탬프. 월 매출 누진 철회.
 // - 2026-09-24: 딜러십 영업 수수료 — 딜러 BA당 월 매출 누진 구간(기본 ≤5천만 20%/≤1억 15%/초과 10%).
-// - 2026-09-24: 지정 플랫폼 사용료 — 관리자 설정(초기 2% · 이벤트 off). 저장값 자동 승격 없음. 하청 5%.
+// - 2026-09-25: 하청 기본 수수료 5% → 10%.
+// - 2026-09-24: 지정 플랫폼 사용료 — 관리자 설정(초기 2% · 이벤트 off). 저장값 자동 승격 없음. 하청 10%.
 // - 2026-09-23: 런칭 이벤트 on/off 변경 예약(내일 0시 KST, 분배 비율과 동일).
 // - 2026-09-22: (일시) 지정 플랫폼 수수료 없음 — 9/24 복원.
-// - 2026-09-20: 하청 기본 5%.
+// - 2026-09-20: 하청 기본 5%(2026-09-25에 10%로 변경).
 // - 2026-09-20: 기본 10% 고정 · 이벤트 15/20% · 요율 변경 예약(KST 0시 적용).
 // - 2026-09-20: 딜러십 요율 선택지 10/15/20%로 고정(관리자 스냅).
 // - 2026-09-20: 딜러십 영업 수수료 — 기본 10% · 이벤트 15%(기본 on). 관리자 플랫폼 설정.
@@ -930,8 +931,8 @@ export function resolveResidualRatesWithoutSalesman(configuredRates) {
 export const WITHOUT_SALESMAN_RATES = resolveRatesWithoutSalesman(WITH_SALESMAN_DEFAULT_RATES);
 
 export const DEFAULT_PLATFORM_FEE_RATE = 0.1;
-/** 어벗츠 원청을 타 기공소가 하청 수행할 때 공제율(기본 5%, 수행 기공소 95%). */
-export const DEFAULT_SUBCONTRACT_FEE_RATE = 0.05;
+/** 어벗츠 원청을 타 기공소가 하청 수행할 때 공제율(기본 10%, 수행 기공소 90%). */
+export const DEFAULT_SUBCONTRACT_FEE_RATE = 0.1;
 /** 지정 기공소(direct/협력) 정책 요율 2%(적용 on일 때). */
 export const DEFAULT_DIRECT_PLATFORM_FEE_RATE = 0.02;
 /** 직전 정책 요율(1%). 마이그레이션 참고용. */
@@ -993,7 +994,7 @@ export function resolveSubcontractFeeRate(payoutRates) {
 
 /**
  * 기공의뢰 플랫폼/하청 수수료율.
- * - 하청 수행(assigneeKind=subcontract): subcontractFeeRate (기본 5%)
+ * - 하청 수행(assigneeKind=subcontract): subcontractFeeRate (기본 10%)
  * - 협력(assigneeKind=cooperation)·어벗츠 자체 수행·지정: 지정 적용 on이면 directPlatformFeeRate(기본 2%), off면 0(이벤트)
  */
 export function resolvePracticeTransferFeeRate({

@@ -7631,7 +7631,7 @@ export async function getPracticeTransferQuoteContext(req, res) {
       labAnchorId = selfAnchor;
     }
 
-    const practiceAnchorId = selfIsLab
+    let practiceAnchorId = selfIsLab
       ? String(req.query?.practiceAnchorId || "").trim() || null
       : canSend
         ? selfAnchor || null
@@ -7651,6 +7651,42 @@ export async function getPracticeTransferQuoteContext(req, res) {
         });
       }
       labAnchorId = selfAnchor;
+    }
+
+    // 하청 리메이크 미리보기: 치과 청구 수가=원청. 협력은 수행 기공소 수가 유지.
+    const transferMongoId = String(req.query?.transferMongoId || "").trim();
+    if (transferMongoId && Types.ObjectId.isValid(transferMongoId)) {
+      const transferDoc = await PracticeTransfer.findById(transferMongoId)
+        .select({
+          targetLabAnchorId: 1,
+          targetLabName: 1,
+          assigneeLabAnchorId: 1,
+          assigneeKind: 1,
+          matchingMode: 1,
+          autoMatch: 1,
+          practiceBusinessAnchorId: 1,
+        })
+        .lean();
+      if (transferDoc) {
+        const primeId = getPrimeLabAnchorId(transferDoc);
+        const performingId = resolvePerformingLabAnchorId(transferDoc);
+        const ownerPracticeId = String(
+          transferDoc.practiceBusinessAnchorId || "",
+        ).trim();
+        const callerIsParty =
+          role === "admin" ||
+          (selfAnchor &&
+            (selfAnchor === primeId ||
+              selfAnchor === performingId ||
+              (canSend && selfAnchor === ownerPracticeId)));
+        if (callerIsParty) {
+          const feeLabId = resolveFeeScheduleLabAnchorId(transferDoc);
+          if (feeLabId && Types.ObjectId.isValid(feeLabId)) {
+            labAnchorId = feeLabId;
+          }
+          if (ownerPracticeId) practiceAnchorId = ownerPracticeId;
+        }
+      }
     }
 
     const context = await loadPracticeTransferQuoteContext({
@@ -8340,17 +8376,28 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
         });
       }
 
-      const claimingLab = await BusinessAnchor.findById(labOid)
-        .select({ name: 1, labFeeSchedule: 1 })
-        .lean();
-      if (!isLabFeeScheduleReadyToCharge(claimingLab?.labFeeSchedule)) {
+      // 하청 치과 청구 수가=원청(어벗츠). 클레임 가드도 그 수가표.
+      const feeLabId =
+        resolveFeeScheduleLabAnchorId(doc) ||
+        getPrimeLabAnchorId(doc) ||
+        labAnchorId;
+      const [claimingLab, feeLab] = await Promise.all([
+        BusinessAnchor.findById(labOid).select({ name: 1 }).lean(),
+        BusinessAnchor.findById(feeLabId)
+          .select({ name: 1, labFeeSchedule: 1 })
+          .lean(),
+      ]);
+      if (!isLabFeeScheduleReadyToCharge(feeLab?.labFeeSchedule)) {
         const missing = missingLabFeeItemNames(
-          claimingLab?.labFeeSchedule,
+          feeLab?.labFeeSchedule,
           doc.toothWorks,
         );
+        const billingOwnSchedule = String(feeLabId) === String(labAnchorId);
         return rejectLabFeeUnconfigured(res, {
           statusCode: 409,
-          message: LAB_FEE_UNCONFIGURED_ACCEPT_MESSAGE,
+          message: billingOwnSchedule
+            ? LAB_FEE_UNCONFIGURED_ACCEPT_MESSAGE
+            : "어벗츠기공소 기공수가가 설정되어 있지 않아 작업시작할 수 없습니다.",
           code: LAB_FEE_UNCONFIGURED_REASON,
           missingFeeNames:
             missing.length > 0

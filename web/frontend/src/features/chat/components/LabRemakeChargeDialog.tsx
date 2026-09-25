@@ -62,6 +62,7 @@ type LabRemakeChargeDialogProps = {
   open: boolean;
   toothWorks?: ToothWorkSelection[] | null;
   labAnchorId?: string | null;
+  transferMongoId?: string | null;
   /** 현재 의뢰건 청구/견적 요약 */
   feeQuote?: PracticeTransferFeeQuote | null;
   remakeCharges?: RemakeChargeHistoryRow[] | null;
@@ -230,6 +231,7 @@ export function LabRemakeChargeDialog({
   open,
   toothWorks = null,
   labAnchorId = null,
+  transferMongoId = null,
   feeQuote = null,
   remakeCharges = null,
   busy = false,
@@ -303,12 +305,14 @@ export function LabRemakeChargeDialog({
   const liveQuote = usePracticeTransferFeeQuote({
     enabled: open && Boolean(labAnchorId),
     labAnchorId,
+    transferMongoId,
     toothWorks: selectedToothWorks,
     remake: true,
   });
   const catalogQuote = usePracticeTransferFeeQuote({
     enabled: open && Boolean(labAnchorId) && catalogToothWorks.length > 0,
     labAnchorId,
+    transferMongoId,
     toothWorks: catalogToothWorks,
     remake: true,
   });

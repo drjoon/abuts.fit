@@ -9405,6 +9405,7 @@ export function RequestorPracticeReceivePage({
         open={remakeChargeOpen && Boolean(selectedTransfer)}
         toothWorks={selectedTransferToothWorks}
         labAnchorId={String(user?.businessAnchorId || "").trim() || null}
+        transferMongoId={String(selectedTransfer?._id || "").trim() || null}
         feeQuote={selectedTransfer?.feeQuote || null}
         remakeCharges={selectedTransfer?.remakeCharges || null}
         busy={remakeChargeBusy}
@@ -9418,6 +9419,7 @@ export function RequestorPracticeReceivePage({
         open={labRemakeCreateOpen && Boolean(selectedTransfer)}
         toothWorks={selectedTransferToothWorks}
         labAnchorId={String(user?.businessAnchorId || "").trim() || null}
+        transferMongoId={String(selectedTransfer?._id || "").trim() || null}
         busy={labRemakeCreateBusy}
         initialStep="configure"
         actor="lab"

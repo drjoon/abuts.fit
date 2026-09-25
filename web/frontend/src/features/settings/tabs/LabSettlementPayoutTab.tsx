@@ -231,7 +231,7 @@ export const LabSettlementPayoutTab = () => {
       : undefined,
   );
   const subcontractFeePct = Math.round(
-    Number(labFeeWindow?.feeRates?.subcontractFeeRate ?? 0.05) * 100,
+    Number(labFeeWindow?.feeRates?.subcontractFeeRate ?? 0.1) * 100,
   );
   const [payoutReady, setPayoutReady] = useState(true);
 

@@ -58,7 +58,7 @@ describe("assigneeKind cooperation vs subcontract", () => {
     expect(resolveAssigneeKind(t)).toBe(ASSIGNEE_KIND_COOPERATION);
   });
 
-  test("pool claim (claimedAt, no kind) → subcontract 5%", () => {
+  test("pool claim (claimedAt, no kind) → subcontract 10%", () => {
     const t = {
       targetLabAnchorId: abutsId,
       assigneeLabAnchorId: partnerId,

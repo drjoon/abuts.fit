@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-25: 하청 기본 표시 10%.
 // - 2026-09-24: 지정 플랫폼 사용료 UI 복원(정책 2% · 이벤트 off=0%).
 // - 2026-09-20: 하청 기본 표시 5%. 지정 2%(이벤트 off).
 // - 2026-09-20: 지정 수수료 기본 표시 2%. 이벤트 시 ~~2%~~ → 0% 안내.
@@ -64,14 +65,14 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
   const { token } = useAuthStore();
   const queryClient = useQueryClient();
   const [loading, setLoading] = useState(Boolean(token));
-  const [platformFeeRate, setPlatformFeeRate] = useState("5");
+  const [platformFeeRate, setPlatformFeeRate] = useState("10");
   const [directFeeEnabled, setDirectFeeEnabled] = useState(false);
   const [directFeeRate, setDirectFeeRate] = useState("2");
   const hydratedRef = useRef(false);
-  const savedMatchRef = useRef("5");
+  const savedMatchRef = useRef("10");
   const savedDirectEnabledRef = useRef(false);
   const savedDirectRef = useRef("2");
-  const matchRef = useRef("5");
+  const matchRef = useRef("10");
   const directEnabledRef = useRef(false);
   const directRef = useRef("2");
   matchRef.current = platformFeeRate;
@@ -102,7 +103,7 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
               settings.platformFeeRate ??
               settings.nonPartnerFeeRate,
           ),
-          0.05,
+          0.1,
         );
         const directPct = toPctString(
           Number(settings.directPlatformFeeRate),

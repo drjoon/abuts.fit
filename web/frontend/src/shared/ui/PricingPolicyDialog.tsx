@@ -295,7 +295,7 @@ export const PricingPolicyDialog = ({
       : undefined,
   );
   const subcontractFeePct = Math.round(
-    Number(labFeeWindow?.feeRates?.subcontractFeeRate ?? 0.05) * 100,
+    Number(labFeeWindow?.feeRates?.subcontractFeeRate ?? 0.1) * 100,
   );
   const token = useAuthStore((s) => s.token);
   const { toast } = useToast();

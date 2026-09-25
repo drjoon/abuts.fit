@@ -12,7 +12,7 @@ alwaysApply: true
 | 구분 | `assigneeKind` | 수가표·할증 앵커 | 정산 |
 | --- | --- | --- | --- |
 | **협력** | `cooperation` | **수행 기공소** (`assignee`) — 치과↔지정 기공소와 동일 | 어벗츠 gross 1회 → 수행 기공소 매입 |
-| **하청** | `subcontract` | **원청 어벗츠** (`target` / prime) | 어벗츠 gross → 하청 매입(`subcontractFeeRate`) |
+| **하청** | `subcontract` | **원청 어벗츠** (`target` / prime) | 어벗츠 gross → 하청 매입(`subcontractFeeRate`, 기본 10%) |
 | **어벗츠 자체** | (assignee 없음) | **원청 어벗츠** | 어벗츠 전액 |
 
 - 헬퍼: `resolveFeeScheduleLabAnchorId` · `resolveLabFeeMultiplierLabAnchorId` (`practiceTransferAutoMatchCore.js`)

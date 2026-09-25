@@ -58,7 +58,7 @@ export const SETTLEMENT_INVOICE_DRAFT_ROLES = new Set([
 ]);
 
 const SETTLEMENT_INVOICE_ITEM_NAMES = {
-  // 월정산: 협력(0%)·하청(5%) 매입 합산 — 품목은 중립 라벨
+  // 월정산: 협력(0%)·하청(10%) 매입 합산 — 품목은 중립 라벨
   lab: "기공비 정산(매입)",
   manufacturer: "커스텀어벗 생산 하청 정산",
   salesman: "플랫폼 운영 수수료 정산",

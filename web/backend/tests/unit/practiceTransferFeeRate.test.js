@@ -115,15 +115,15 @@ describe("resolvePracticeTransferFeeRate", () => {
     ).toBe(0);
   });
 
-  test("하청 수행은 subcontractFeeRate(기본 5%)", () => {
-    expect(DEFAULT_SUBCONTRACT_FEE_RATE).toBe(0.05);
+  test("하청 수행은 subcontractFeeRate(기본 10%)", () => {
+    expect(DEFAULT_SUBCONTRACT_FEE_RATE).toBe(0.1);
     expect(
       resolvePracticeTransferFeeRate({
         matchingMode: "auto",
         subcontracted: true,
         payoutRates: {},
       }),
-    ).toBe(0.05);
+    ).toBe(0.1);
     expect(
       resolvePracticeTransferFeeRate({
         matchingMode: "auto",

@@ -242,7 +242,7 @@ export const LabTradingPartnersTab = () => {
       windowInfo?.feeRates?.subcontractFeeRate ??
         windowInfo?.feeRates?.platformFeeRate ??
         windowInfo?.feeRates?.nonPartnerFeeRate ??
-        0.05,
+        0.1,
     ) * 100,
   );
   const directFeeEnabled = windowInfo?.feeRates?.directPlatformFeeEnabled === true;

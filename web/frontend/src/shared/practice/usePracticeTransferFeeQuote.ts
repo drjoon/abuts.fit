@@ -48,7 +48,14 @@ const contextCache = new Map<
 >();
 const contextInflight = new Map<string, Promise<PracticeTransferQuoteContext>>();
 
-const cacheKeyForLab = (labAnchorId: string | null) => labAnchorId || "__default__";
+const cacheKeyForLab = (
+  labAnchorId: string | null,
+  transferMongoId?: string | null,
+) => {
+  const lab = labAnchorId || "__default__";
+  const transfer = String(transferMongoId || "").trim();
+  return transfer ? `${lab}:${transfer}` : lab;
+};
 
 const readCachedContext = (cacheKey: string) => {
   const hit = contextCache.get(cacheKey);
@@ -71,23 +78,35 @@ export function invalidatePracticeTransferQuoteContextCache(
     return;
   }
   const key = cacheKeyForLab(raw);
-  contextCache.delete(key);
-  contextInflight.delete(key);
+  for (const existing of [...contextCache.keys()]) {
+    if (existing === key || existing.startsWith(`${key}:`)) {
+      contextCache.delete(existing);
+    }
+  }
+  for (const existing of [...contextInflight.keys()]) {
+    if (existing === key || existing.startsWith(`${key}:`)) {
+      contextInflight.delete(existing);
+    }
+  }
 }
 
 const loadQuoteContext = (
   cacheKey: string,
   labAnchorId: string | null,
   token: string,
+  transferMongoId?: string | null,
 ): Promise<PracticeTransferQuoteContext> => {
   const cached = readCachedContext(cacheKey);
   if (cached) return Promise.resolve(cached);
   const pending = contextInflight.get(cacheKey);
   if (pending) return pending;
 
-  const query = labAnchorId
-    ? `?labAnchorId=${encodeURIComponent(labAnchorId)}`
-    : "";
+  const params = new URLSearchParams();
+  if (labAnchorId) params.set("labAnchorId", labAnchorId);
+  const transferId = String(transferMongoId || "").trim();
+  if (transferId) params.set("transferMongoId", transferId);
+  const qs = params.toString();
+  const query = qs ? `?${qs}` : "";
   const request = apiFetch<{ data?: unknown }>({
     path: `/api/practice/transfers/quote-context${query}`,
     method: "GET",
@@ -115,6 +134,8 @@ const loadQuoteContext = (
 export const usePracticeTransferFeeQuote = (params: {
   enabled?: boolean;
   labAnchorId?: string | null;
+  /** 있으면 하청은 원청 수가, 협력은 수행 기공소 수가로 견적 */
+  transferMongoId?: string | null;
   toothWorks?: ToothWorkSelection[] | null;
   implantFavorites?: ReadonlyArray<ImplantFavoriteForFee> | null;
   storedQuote?: PracticeTransferFeeQuote | null;
@@ -142,7 +163,11 @@ export const usePracticeTransferFeeQuote = (params: {
   const rawLabId = String(params.labAnchorId || "").trim();
   const labAnchorId =
     /^[a-fA-F0-9]{24}$/.test(rawLabId) ? rawLabId : null;
-  const cacheKey = cacheKeyForLab(labAnchorId);
+  const rawTransferId = String(params.transferMongoId || "").trim();
+  const transferMongoId = /^[a-fA-F0-9]{24}$/.test(rawTransferId)
+    ? rawTransferId
+    : null;
+  const cacheKey = cacheKeyForLab(labAnchorId, transferMongoId);
   const [context, setContext] = useState<PracticeTransferQuoteContext>(
     () => readCachedContext(cacheKey) || DEFAULT_QUOTE_CONTEXT,
   );
@@ -158,15 +183,17 @@ export const usePracticeTransferFeeQuote = (params: {
   useEffect(() => {
     if (!enabled || !token) return;
     let cancelled = false;
-    void loadQuoteContext(cacheKey, labAnchorId, token).then((parsed) => {
-      if (cancelled) return;
-      setContext(parsed);
-      setContextReady(true);
-    });
+    void loadQuoteContext(cacheKey, labAnchorId, token, transferMongoId).then(
+      (parsed) => {
+        if (cancelled) return;
+        setContext(parsed);
+        setContextReady(true);
+      },
+    );
     return () => {
       cancelled = true;
     };
-  }, [cacheKey, enabled, labAnchorId, token]);
+  }, [cacheKey, enabled, labAnchorId, token, transferMongoId]);
 
   useAppEventListener({
     enabled: enabled && Boolean(token) && Boolean(labAnchorId),
@@ -178,12 +205,13 @@ export const usePracticeTransferFeeQuote = (params: {
           ? (evt.data as { labAnchorId?: unknown })
           : null;
       const eventLabId = String(data?.labAnchorId || "").trim();
+      if (transferMongoId) return Boolean(eventLabId);
       return Boolean(eventLabId) && eventLabId === labAnchorId;
     },
     onMatch: () => {
       if (!token || !labAnchorId) return;
       invalidatePracticeTransferQuoteContextCache(labAnchorId);
-      void loadQuoteContext(cacheKey, labAnchorId, token).then((parsed) => {
+      void loadQuoteContext(cacheKey, labAnchorId, token, transferMongoId).then((parsed) => {
         setContext(parsed);
         setContextReady(true);
       });

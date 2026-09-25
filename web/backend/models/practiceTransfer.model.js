@@ -65,7 +65,7 @@ const practiceTransferSchema = new mongoose.Schema(
       trim: true,
     },
     // 경로 B 수행 기공소. 원청은 targetLab(어벗츠)로 고정.
-    // cooperation=치과 픽커 직접 지정(0%), subcontract=어벗츠 지정 후 하청 풀/클레임(5%).
+    // cooperation=치과 픽커 직접 지정(0%), subcontract=어벗츠 지정 후 하청 풀/클레임(10%).
     assigneeLabAnchorId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "BusinessAnchor",
