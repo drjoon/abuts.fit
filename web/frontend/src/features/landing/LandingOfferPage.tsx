@@ -25,12 +25,6 @@ import {
   Wrench,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
 import { useAuthStore } from "@/store/useAuthStore";
 import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath";
 import { cn } from "@/shared/ui/cn";
@@ -46,6 +40,7 @@ import { LandingScrollCue } from "./LandingScrollCue";
 import { OfferVisual } from "./OfferVisual";
 import {
   type LandingOffer,
+  type SpecSwatch,
   type OfferBuy,
   type OfferGlance,
   type OfferGlossary,
@@ -55,6 +50,28 @@ import {
 
 const TYPO = landingTypo;
 const SKY = landingSky;
+
+function DiameterDots({ swatches }: { swatches: SpecSwatch[] }) {
+  return (
+    <span className="inline-flex flex-wrap items-center justify-center gap-1.5">
+      {swatches.map((swatch) => (
+        <span
+          key={swatch.name}
+          role="img"
+          aria-label={swatch.name}
+          title={swatch.name}
+          className={cn(
+            "inline-flex h-7 items-center justify-center rounded-full text-[11px] font-bold leading-none ring-1 ring-inset ring-black/15 sm:h-8 sm:text-[12px]",
+            swatch.label.length <= 2 ? "w-7 sm:w-8" : "min-w-7 px-1.5 sm:min-w-8 sm:px-2",
+          )}
+          style={{ backgroundColor: swatch.color, color: swatch.ink }}
+        >
+          {swatch.label}
+        </span>
+      ))}
+    </span>
+  );
+}
 
 const ICONS: Record<OfferIcon, typeof FileText> = {
   request: FileText,
@@ -183,7 +200,10 @@ const GLANCE_ICONS = [HelpCircle, Waypoints, ShieldCheck] as const;
 
 function GlanceSection({ glance }: { glance: OfferGlance }) {
   return (
-    <section className={cn(SKY.band, landingSectionY.bandTight)}>
+    <section
+      id="after-hero"
+      className={cn("scroll-mt-20", SKY.band, landingSectionY.bandTight)}
+    >
       <div className={landingContent}>
         <div className="mx-auto max-w-2xl text-center">
           <SectionEyebrow>AT A GLANCE</SectionEyebrow>
@@ -1017,10 +1037,10 @@ function FlowChartSection({ chart }: { chart: NonNullable<LandingOffer["flowChar
   };
 
   return (
-    <section className="bg-white pb-12 pt-2 sm:pb-16 sm:pt-3 [overflow-anchor:none]">
+    <section className={cn(SKY.band, landingSectionY.bandTight, "[overflow-anchor:none]")}>
       <div className={landingContent}>
-        <article className={cn(SKY.card, "[overflow-anchor:none]")}>
-          <div className="rounded-t-2xl bg-white px-5 pt-8 sm:px-8 sm:pt-10">
+        <article className="[overflow-anchor:none]">
+          <div className="px-5 pt-8 sm:px-8 sm:pt-10">
             <p className={cn("text-center text-[12px] font-semibold", SKY.accent)}>
               FLOW CHART
             </p>
@@ -1040,7 +1060,7 @@ function FlowChartSection({ chart }: { chart: NonNullable<LandingOffer["flowChar
                   ? "접어서 노랑(6) 라인만 보기"
                   : "클릭하면 직경 10·9·8·7·6 전체 Flow Chart"
               }
-              className="mt-4 cursor-pointer rounded-xl border border-sky-100/70 bg-white px-2 py-3 outline-none transition-colors hover:bg-sky-50/40 focus-visible:ring-2 focus-visible:ring-sky-400 focus-visible:ring-offset-2 sm:px-3 sm:py-4 [overflow-anchor:none]"
+              className="mt-4 cursor-pointer rounded-xl bg-white px-2 py-3 outline-none transition-colors hover:bg-white focus-visible:ring-2 focus-visible:ring-sky-400 focus-visible:ring-offset-2 sm:px-3 sm:py-4 [overflow-anchor:none]"
               onMouseDown={suppressFocusScroll}
               onClick={toggleExpanded}
               onKeyDown={(event) => {
@@ -1091,7 +1111,7 @@ function KitsColor({
   reduced: boolean;
 }) {
   return (
-    <section className={cn(SKY.band, landingSectionY.bandTight)}>
+    <section className={cn("bg-white", landingSectionY.bandTight)}>
       <div className={landingContent}>
         <div className="mx-auto max-w-2xl text-center">
           <SectionEyebrow>{clip.eyebrow}</SectionEyebrow>
@@ -1155,11 +1175,11 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
           {/* fixed 헤더(h-14/sm:h-16) 아래부터 히어로 */}
           <div className="h-14 sm:h-16" aria-hidden />
           {offer.hero === "photo" ? (
-            <div className="relative">
+            <div className="relative flex min-h-[78svh] items-center pb-16 sm:min-h-[82svh]">
               <div
                 className={cn(
                   landingContent,
-                  "flex flex-col items-center gap-6 pt-8 pb-24 text-center sm:pt-10 sm:pb-32 lg:flex-row lg:items-end lg:justify-center lg:gap-12",
+                  "flex w-full flex-col items-center gap-6 py-8 text-center sm:py-10 lg:flex-row lg:items-end lg:justify-center lg:gap-12",
                 )}
               >
                 <div className="max-w-lg text-center">
@@ -1199,7 +1219,7 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
                   />
                 </div>
               </div>
-              <LandingScrollCue atBoundary />
+              <LandingScrollCue />
             </div>
           ) : (
           <div className="relative min-h-[calc(100svh-3.5rem)] overflow-hidden sm:min-h-[calc(100svh-4rem)]">
@@ -1383,11 +1403,11 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
           <div className={landingContent}>
             <div className="mx-auto max-w-2xl text-center">
               <SectionEyebrow>SPECS</SectionEyebrow>
-              <h2 className={cn(TYPO.h2, "mt-2.5", SKY.ink)}>간단히 보는 스펙.</h2>
+              <h2 className={cn(TYPO.h2, "mt-2.5", SKY.ink)}>간단히 보는 스펙</h2>
             </div>
             <dl className="mt-8 grid gap-3 sm:mt-10 sm:grid-cols-2 lg:grid-cols-4 lg:gap-4">
               {offer.specs.map((spec) => (
-                <div key={spec.label} className={cn(SKY.card, "px-4 py-5 sm:px-5")}>
+                <div key={spec.label} className={cn(SKY.card, "px-4 py-5 text-center sm:px-5")}>
                   <dt className={cn("text-[13px] font-semibold", SKY.accent)}>
                     {spec.label}
                   </dt>
@@ -1397,14 +1417,25 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
                       SKY.ink,
                     )}
                   >
-                    {Array.isArray(spec.value)
-                      ? spec.value.map((line, index) => (
-                          <span key={line}>
-                            {index > 0 ? <br /> : null}
-                            {line}
-                          </span>
-                        ))
-                      : spec.value}
+                    {spec.swatches?.length ? (
+                      <DiameterDots swatches={spec.swatches} />
+                    ) : Array.isArray(spec.value) ? (
+                      spec.value.map((line, index) => (
+                        <span key={typeof line === "string" ? line : line.lead}>
+                          {index > 0 ? <br /> : null}
+                          {typeof line === "string" ? (
+                            line
+                          ) : (
+                            <span className="inline-flex flex-wrap items-center justify-center gap-1.5">
+                              {line.lead ? <span>{line.lead}</span> : null}
+                              <DiameterDots swatches={line.swatches} />
+                            </span>
+                          )}
+                        </span>
+                      ))
+                    ) : (
+                      spec.value
+                    )}
                   </dd>
                 </div>
               ))}
@@ -1415,46 +1446,7 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
 
       {offer.glossary ? <GlossarySection glossary={offer.glossary} /> : null}
 
-      {offer.faq ? (
-        <section
-          id="faq"
-          className={cn("scroll-mt-20", SKY.band, landingSectionY.bandTight)}
-        >
-          <div
-            className={cn(
-              landingContent,
-              "grid gap-6 lg:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)] lg:gap-10",
-            )}
-          >
-            <div>
-              <SectionEyebrow>FAQ</SectionEyebrow>
-              <h2 className={cn(TYPO.h2, "mt-2.5", SKY.ink)}>자주 묻는 질문</h2>
-            </div>
-            <Accordion
-              type="single"
-              collapsible
-              className={cn(SKY.card, "px-4 sm:px-5")}
-            >
-              {offer.faq.map((item) => (
-                <AccordionItem
-                  key={item.q}
-                  value={item.q}
-                  className="border-sky-100"
-                >
-                  <AccordionTrigger className="py-4 text-left text-[15px] font-semibold text-[#0b2a5c] hover:no-underline sm:text-base">
-                    {item.q}
-                  </AccordionTrigger>
-                  <AccordionContent className={cn("pb-4", TYPO.body)}>
-                    {item.a}
-                  </AccordionContent>
-                </AccordionItem>
-              ))}
-            </Accordion>
-          </div>
-        </section>
-      ) : null}
-
-      <section id="contact" className={cn("scroll-mt-20 bg-white")}>
+      <section id="contact" className={cn("scroll-mt-20", SKY.band)}>
         <div
           className={cn(
             landingContent,

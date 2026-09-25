@@ -110,6 +110,32 @@ export type OfferStory = {
   layout?: "split" | "full";
 };
 
+/** 직경 색 동그라미. label이 점 안 숫자. */
+export type SpecSwatch = {
+  label: string;
+  name: string;
+  color: string;
+  ink: string;
+};
+
+export type SpecLine =
+  | string
+  | { lead?: string; swatches: SpecSwatch[] };
+
+const DIAMETER_DOT = {
+  "6": { name: "6 노랑", color: "#E0C850", ink: "#3d3410" },
+  "7": { name: "7 초록", color: "#4EAE82", ink: "#083528" },
+  "8": { name: "8 보라", color: "#7A3488", ink: "#ffffff" },
+  "9": { name: "9 파랑", color: "#3E92C4", ink: "#ffffff" },
+  "10": { name: "10 하늘", color: "#6AADC0", ink: "#0b2a5c" },
+} as const;
+
+function diameterDot(id: keyof typeof DIAMETER_DOT, label = id): SpecSwatch {
+  const dot = DIAMETER_DOT[id];
+  const colorName = dot.name.replace(/^\S+\s/, "");
+  return { label, color: dot.color, ink: dot.ink, name: `${label} ${colorName}` };
+}
+
 export type OfferFlowChart = {
   name: string;
   line?: string;
@@ -174,10 +200,14 @@ export type LandingOffer = {
     endSec: number;
     playbackRate: number;
   };
-  /** value가 배열이면 문장·항목 단위로 줄을 나눈다. */
-  specs?: Array<{ label: string; value: string | string[] }>;
+  /** value가 배열이면 문장·항목 단위로 줄을 나눈다. swatches·줄 안 swatches는 숫자 동그라미. */
+  specs?: Array<{
+    label: string;
+    value: string | SpecLine[];
+    swatches?: SpecSwatch[];
+  }>;
   glossary?: OfferGlossary;
-  faq?: Array<{ q: string; a: string }>;
+  faq?: Array<{ q: string; a: string | string[] }>;
 };
 
 /** 레거시 `/offer/platform` · `/offer/custom-abutment` → 새 메뉴 오퍼 */
@@ -216,18 +246,13 @@ const WAVEON_PARTNERSHIP_TILE: OfferVisual = {
   alt: "치과·기공소 디지털 협업",
 };
 
-const PLATFORM_FAQ = {
-  q: "어벗츠 플랫폼은 무엇인가요?",
-  a: "치과와 기공소가 온라인으로 기공을 의뢰하고, 어벗츠 커스텀어벗과도 바로 연동됩니다.",
-};
-
 export const landingOffers: LandingOffer[] = [
   {
     slug: "simple-way",
     navLabel: "심플웨이",
     punch: "직관적인 수술과 보철",
     heroEyebrow: "SIMPLEWAY",
-    heroTitle: "직관적인 수술과 보철.",
+    heroTitle: "직관적인 수술과 보철",
     heroBody: [
       "심플웨이로 원하는 자리에 픽스쳐를 심고,",
       "어벗츠 어벗과 어벗츠 보철이 편안하게 올라갑니다.",
@@ -262,58 +287,98 @@ export const landingOffers: LandingOffer[] = [
     flowChart: {
       name: "Flow Chart.",
       body: [
-        "보철의 근원심 크기 서지컬펜으로 드릴링한다.",
-        "칼라 밴드를 따라가며 시술한다.",
+        "시작은 근원심 크기 서지컬펜 드릴링",
       ],
       rows: LANDING_SW_FLOW_ROWS.map((row) => ({ ...row })),
       defaultRowId: LANDING_SW_FLOW_DEFAULT_ROW_ID,
     },
     kitsClip: {
       eyebrow: "SIMPLEWAY PROTOCOL",
-      heading: "임플란트 수술 예시 영상",
+      heading: "임플란트 수술 예시",
       id: "WYNPxDo-DP0",
       startSec: 92,
       endSec: 131,
       playbackRate: 2,
     },
     specs: [
-      { label: "직경 색", value: "6–10 · 노·녹·보·청·하늘" },
+      {
+        label: "직경 색",
+        value: "",
+        swatches: [
+          diameterDot("6"),
+          diameterDot("7"),
+          diameterDot("8"),
+          diameterDot("9"),
+          diameterDot("10"),
+        ],
+      },
       {
         label: "심플 힐링, 어벗",
-        value: ["직경 6·7·9", "높이 XS·S·M·L·XL", "회전방지 Hex·Non-Hex"],
+        value: [
+          {
+            lead: "직경",
+            swatches: [
+              diameterDot("6"),
+              diameterDot("7", "7·8"),
+              diameterDot("9", "9·10"),
+            ],
+          },
+          "높이 XS·S·M·L·XL",
+          "회전방지 Hex·Non-Hex",
+        ],
       },
       { label: "키트", value: "Surgical · Prosthetics" },
       { label: "제조", value: "(주)애크로덴트" },
     ],
     faq: [
       {
-        q: "심플웨이는 어떤 흐름인가요?",
-        a: "가이드펜·핀으로 보철 직경을 정한 뒤, 체크핀으로 확인하고, 심플 힐링과 심플어벗으로 이어집니다. 규격이 맞지 않으면 같은 화면에서 커스텀어벗으로 넘길 수 있습니다.",
-      },
-      PLATFORM_FAQ,
-      {
-        q: "색상은 무엇을 뜻하나요?",
-        a: "직경 라인입니다. 6은 노랑, 7은 초록, 8은 보라, 9는 파랑, 10은 하늘입니다. 가이드·힐링·어벗이 같은 색을 따릅니다.",
+        q: "심플웨이는 무엇인가요?",
+        a: [
+          "탑다운 컨셉을 심플하게 구현합니다.",
+          "임플란트를 보철의 중점에 심고, 대합치와의 거리를 확인해 수술 단계에서 보철을 프로비전합니다.",
+        ],
       },
       {
-        q: "힐링과 심플어벗은 어떻게 고르나요?",
-        a: "둘 다 Hex · Non-Hex입니다. 힐링은 직경 6·7·9, 심플어벗은 높이 XS–XL입니다. 판매가는 각 ₩16,500, 부가세 포함, 1EA입니다.",
+        q: "시술은 어디서 시작하나요?",
+        a: [
+          "시작은 근원심 크기 서지컬펜 드릴링입니다.",
+          "이후 힐링을 거쳐 어벗츠 플랫폼으로 보철을 만듭니다.",
+        ],
       },
       {
-        q: "키트는 무엇이 필요한가요?",
-        a: "Guide Kit는 위치·직경 가이드, Check Kit는 경로 확인과 본쉐이퍼, Prosthetics Kit는 치은 형성과 어벗 체결입니다.",
+        q: "색은 무엇을 뜻하나요?",
+        a: [
+          "직경입니다.",
+          "6은 노랑, 7은 초록, 8은 보라, 9는 파랑, 10은 하늘입니다.",
+        ],
+      },
+      {
+        q: "심플 힐링과 어벗은 어떻게 고르나요?",
+        a: [
+          "직경은 6, 7·8, 9·10입니다.",
+          "높이는 XS·S·M·L·XL이고, 회전방지는 Hex·Non-Hex입니다.",
+        ],
+      },
+      {
+        q: "키트는 무엇인가요?",
+        a: [
+          "Surgical과 Prosthetics입니다.",
+          "Surgical로 식립하고, Prosthetics로 힐링과 어벗을 체결합니다.",
+        ],
       },
       {
         q: "커스텀어벗은 언제 쓰나요?",
-        a: "규격 어벗으로 맞추기 어려울 때입니다. 기공소가 작업시작한 뒤 디자인을 올리면 CNC 가공이 시작되고, 완성품은 주문한 기공소로 갑니다. 런칭가 1만원, 정상가 1.3만원입니다.",
+        a: [
+          "규격 어벗으로 맞추기 어려울 때입니다.",
+          "같은 화면에서 커스텀어벗으로 넘길 수 있습니다.",
+        ],
       },
       {
-        q: "스토어 배송비는요?",
-        a: "상품 10만원 이상 배송비 무료, 미만은 ₩3,500(부가세 포함)입니다. 치과와 기공소 사이 기공 배송과는 별도입니다.",
-      },
-      {
-        q: "진행과 정산은 어디서 보나요?",
-        a: "의뢰, 작업시작, 디자인, 출고, 추적이 같은 화면입니다. 월 이용료는 없고, 쓴 금액만 매월 말 계산서로 나갑니다.",
+        q: "어벗츠 플랫폼은 무엇인가요?",
+        a: [
+          "치과와 기공소가 온라인으로 기공을 의뢰합니다.",
+          "심플어벗과 커스텀어벗 보철이 같은 흐름으로 이어집니다.",
+        ],
       },
     ],
   },
