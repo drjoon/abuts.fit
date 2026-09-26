@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-27: captureCanvas — 현재 줌·팬 뷰를 PNG용 캔버스로 캡처.
 // - 2026-08-31: 이미지 프리뷰 공통 — 휠·버튼 줌(화면 중앙 기준)·드래그 이동.
 // related files:
 // - web/frontend/src/shared/components/ModelPreviewDialog.tsx
@@ -6,8 +7,10 @@
 // - web/frontend/src/shared/components/upload/BackgroundUploadList.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 import {
+  forwardRef,
   useCallback,
   useEffect,
+  useImperativeHandle,
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
@@ -26,6 +29,11 @@ function clampScale(value: number): number {
   return Math.min(MAX_SCALE, Math.max(MIN_SCALE, value));
 }
 
+export type ZoomableImagePreviewHandle = {
+  /** 지금 보이는 이미지(줌·이동 포함)를 캔버스로 만든다. */
+  captureCanvas: () => HTMLCanvasElement | null;
+};
+
 export type ZoomableImagePreviewProps = {
   src: string;
   alt?: string;
@@ -39,14 +47,42 @@ export type ZoomableImagePreviewProps = {
  * 이미지 확대/축소·이동. 줌은 항상 화면(뷰포트) 중앙 기준 —
  * 줌할 때 이미지 가운데가 화면 가운데에 오도록 pan을 리셋한다.
  */
-export function ZoomableImagePreview({
-  src,
-  alt = "",
-  className,
-  fill = false,
-  showControls = true,
-}: ZoomableImagePreviewProps) {
+export const ZoomableImagePreview = forwardRef<
+  ZoomableImagePreviewHandle,
+  ZoomableImagePreviewProps
+>(function ZoomableImagePreview(
+  { src, alt = "", className, fill = false, showControls = true },
+  ref,
+) {
   const viewportRef = useRef<HTMLDivElement | null>(null);
+  const imageRef = useRef<HTMLImageElement | null>(null);
+
+  useImperativeHandle(ref, () => ({
+    captureCanvas: () => {
+      const viewport = viewportRef.current;
+      const image = imageRef.current;
+      if (!viewport || !image || image.naturalWidth <= 0) return null;
+      const view = viewport.getBoundingClientRect();
+      const box = image.getBoundingClientRect();
+      if (view.width <= 0 || view.height <= 0) return null;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(view.width * dpr));
+      canvas.height = Math.max(1, Math.round(view.height * dpr));
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return null;
+      ctx.fillStyle = "#f4f4f5";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(
+        image,
+        (box.left - view.left) * dpr,
+        (box.top - view.top) * dpr,
+        box.width * dpr,
+        box.height * dpr,
+      );
+      return canvas;
+    },
+  }));
   const [scale, setScale] = useState(1);
   const [pan, setPan] = useState<Pan>({ x: 0, y: 0 });
   const [dragging, setDragging] = useState(false);
@@ -177,6 +213,7 @@ export function ZoomableImagePreview({
       >
         <div className="flex h-full w-full items-center justify-center">
           <img
+            ref={imageRef}
             src={src}
             alt={alt}
             draggable={false}
@@ -235,4 +272,4 @@ export function ZoomableImagePreview({
       ) : null}
     </div>
   );
-}
+});
