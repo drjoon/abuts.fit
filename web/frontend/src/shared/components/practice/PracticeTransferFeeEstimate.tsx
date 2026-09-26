@@ -2,6 +2,8 @@
 // - web/frontend/src/shared/practice/practiceTransferFeeQuote.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothWorkChartReadOnly.tsx
+// - 2026-09-26: 견적 ? 아이콘을 기공비 금액 바로 오른쪽으로.
+// - 2026-09-26: 기공소 수수료 줄 옆에 「수수료 줄이기」. 클릭 시 AI 학습 이용 동의 모달.
 // - 2026-09-20: 정산 상세(기공소) — 플랫폼 수수료·수령액 표시. 뱃지 적립보류/완료.
 // - 2026-09-07: 견적 툴팁 — 치아당 수가여도 상·하악 전체 동일 보철은 상악/하악 한 줄.
 // - 2026-09-07: 견적·툴팁 보철물 — 상·하악 전체 치아번호는 상악/하악(중복 (상악) 접미사면 번호 생략).
@@ -80,6 +82,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/shared/ui/cn";
+import { openLabAiTrainingConsentPrompt } from "@/features/settings/LabAiTrainingConsentPrompt";
 import {
   labFeeSettingsFromAcceptPath,
   LAB_FEE_SETTINGS_PATH,
@@ -105,6 +108,15 @@ import {
   LOWER_ARCH_TEETH,
   UPPER_ARCH_TEETH,
 } from "@/shared/practice/transferMemo";
+
+function FeeQuoteHelpMark() {
+  return (
+    <CircleHelp
+      className="pointer-events-none h-3.5 w-3.5 shrink-0 text-muted-foreground/80"
+      aria-hidden
+    />
+  );
+}
 
 export type PracticeTransferSettlementShippingLine = {
   key: string;
@@ -153,6 +165,8 @@ type PracticeTransferFeeEstimateProps = {
   settlementShippingLines?: PracticeTransferSettlementShippingLine[] | null;
   /** 견적 상세 툴팁 open/close (가이드투어 등) */
   onBreakdownTooltipOpenChange?: (open: boolean) => void;
+  /** 수수료 줄이기 — 이 의뢰부터 동의를 다시 맞춘다 */
+  consentTransferId?: string | null;
   /** true면 금액 blur-until-hover 해제(가이드투어 견적 하이라이트 등) */
   revealAmounts?: boolean;
   /**
@@ -794,6 +808,7 @@ export function PracticeTransferFeeEstimate({
   creditAbutmentHoldPending = null,
   settlementShippingLines = null,
   onBreakdownTooltipOpenChange,
+  consentTransferId = null,
   revealAmounts = false,
   confirmedFeeLabel = null,
   feeStages = null,
@@ -1022,13 +1037,37 @@ export function PracticeTransferFeeEstimate({
   const platformFeeDisplay = Math.max(0, amount - labSettlementDisplay);
   const labSettlementDiffers =
     isLab && feeRateApplied > 0 && labSettlementDisplay !== amount;
-  const simple = isLab
-    ? labSettlementDiffers
-      ? `수령 ${formatManWon(labSettlementDisplay)} · 수수료 ${formatFeeRatePct(feeRateApplied)}`
-      : null
-    : quote.isRemake
+  const remakeSimple =
+    !isLab && quote.isRemake
       ? `리메이크 기공비 ${formatManWon(quote.total || quote.labFeeTotal)}`
       : null;
+  const labFeeSummaryClassName = cn(
+    "max-w-full flex-wrap items-center gap-x-1.5 gap-y-0.5 tabular-nums text-muted-foreground",
+    isCard
+      ? "inline-flex text-[12px]"
+      : "mt-0.5 flex w-full justify-center text-[11px]",
+  );
+  const labFeeSummary = labSettlementDiffers ? (
+    <span className={labFeeSummaryClassName}>
+      <span>
+        수령 {formatManWon(labSettlementDisplay)} · 수수료{" "}
+        {formatFeeRatePct(feeRateApplied)}
+      </span>
+      <button
+        type="button"
+        className="inline-flex h-[18px] shrink-0 items-center rounded border border-primary/35 bg-background px-1.5 text-[10px] font-semibold leading-none text-primary hover:bg-primary-soft"
+        onPointerDown={(event) => event.stopPropagation()}
+        onMouseDown={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          openLabAiTrainingConsentPrompt(consentTransferId);
+        }}
+      >
+        수수료 줄이기
+      </button>
+    </span>
+  ) : null;
   const labFeeUnset = quote.labFeeConfigured === false;
   const missingFeeNames = Array.isArray(quote.missingFeeNames)
     ? quote.missingFeeNames.map((name) => String(name || "").trim()).filter(Boolean)
@@ -1474,31 +1513,34 @@ export function PracticeTransferFeeEstimate({
           )}
         >
           {labFeeUnset ? (
-            <Tooltip onOpenChange={onBreakdownTooltipOpenChange}>
-              <TooltipTrigger asChild>
-                <div
-                  className={cn(
-                    "min-w-0 cursor-default font-semibold tabular-nums text-slate-800",
-                    isCard ? "text-sm" : "text-sm sm:text-base",
-                    amountBlurClass,
-                  )}
-                >
-                  <span className="font-medium text-slate-600">기공비 </span>
-                  <span className="text-accent-strong">미설정</span>
-                  {hasMissingFees ? (
-                    <span className="ml-1.5 text-[11px] font-medium text-amber-700">
-                      · {missingFeeLabel}
-                    </span>
-                  ) : null}
-                  {abutmentOnlyAmount > 0 ? (
-                    <span className="ml-1.5 font-semibold tabular-nums text-slate-800">
-                      · 어벗 디자인+생산비 {formatManWon(abutmentOnlyAmount)}
-                    </span>
-                  ) : null}
-                </div>
-              </TooltipTrigger>
-              {renderFeeTooltipContent(breakdownPanel)}
-            </Tooltip>
+            <span className="inline-flex min-w-0 items-center gap-1">
+              <Tooltip onOpenChange={onBreakdownTooltipOpenChange}>
+                <TooltipTrigger asChild>
+                  <div
+                    className={cn(
+                      "min-w-0 cursor-default font-semibold tabular-nums text-slate-800",
+                      isCard ? "text-sm" : "text-sm sm:text-base",
+                      amountBlurClass,
+                    )}
+                  >
+                    <span className="font-medium text-slate-600">기공비 </span>
+                    <span className="text-accent-strong">미설정</span>
+                    {hasMissingFees ? (
+                      <span className="ml-1.5 text-[11px] font-medium text-amber-700">
+                        · {missingFeeLabel}
+                      </span>
+                    ) : null}
+                    {abutmentOnlyAmount > 0 ? (
+                      <span className="ml-1.5 font-semibold tabular-nums text-slate-800">
+                        · 어벗 디자인+생산비 {formatManWon(abutmentOnlyAmount)}
+                      </span>
+                    ) : null}
+                  </div>
+                </TooltipTrigger>
+                {renderFeeTooltipContent(breakdownPanel)}
+              </Tooltip>
+              <FeeQuoteHelpMark />
+            </span>
           ) : currentStageAmount != null && currentStageTooltipPanel ? (
             <div
               className={cn(
@@ -1510,6 +1552,103 @@ export function PracticeTransferFeeEstimate({
               )}
             >
               {!finalFeeOnly ? (
+                <span className="inline-flex items-center gap-1">
+                  <Tooltip onOpenChange={onBreakdownTooltipOpenChange}>
+                    <TooltipTrigger asChild>
+                      <span
+                        className={cn(
+                          "cursor-default font-semibold tabular-nums text-slate-800",
+                          isCard ? "text-sm" : "text-sm sm:text-base",
+                        )}
+                      >
+                        <span className="font-medium text-slate-600">
+                          {showFinalFeeBar && !currentStageSection
+                            ? `${finalFeeLabel} `
+                            : `${title} `}
+                        </span>
+                        {formatManWon(currentStageAmount)}
+                        {surchargeLabel ? (
+                          <span className="ml-1.5 text-[11px] font-medium text-amber-700">
+                            {surchargeLabel}
+                          </span>
+                        ) : null}
+                        {rushLabel ? (
+                          <span className="ml-1.5 text-[11px] font-medium text-amber-700">
+                            {rushLabel}
+                          </span>
+                        ) : null}
+                      </span>
+                    </TooltipTrigger>
+                    {renderFeeTooltipContent(currentStageTooltipPanel)}
+                  </Tooltip>
+                  <FeeQuoteHelpMark />
+                </span>
+              ) : null}
+              {showFinalFeeBar && allStagesTooltipPanel ? (
+                <span className="inline-flex items-center gap-1">
+                  <Tooltip
+                    onOpenChange={
+                      finalFeeOnly ? onBreakdownTooltipOpenChange : undefined
+                    }
+                  >
+                    <TooltipTrigger asChild>
+                      <span
+                        className={cn(
+                          "cursor-default font-semibold tabular-nums text-slate-800",
+                          isCard ? "text-sm" : "text-sm sm:text-base",
+                        )}
+                      >
+                        <span className="font-medium text-slate-600">
+                          {finalFeeLabel}{" "}
+                        </span>
+                        {formatManWon(amount)}
+                        {hasMissingFees ? (
+                          <span className="ml-1.5 text-[11px] font-medium text-amber-700">
+                            · {missingFeeLabel} 미설정
+                          </span>
+                        ) : null}
+                        {finalFeeOnly && surchargeLabel ? (
+                          <span className="ml-1.5 text-[11px] font-medium text-amber-700">
+                            {surchargeLabel}
+                          </span>
+                        ) : null}
+                        {finalFeeOnly && rushLabel ? (
+                          <span className="ml-1.5 text-[11px] font-medium text-amber-700">
+                            {rushLabel}
+                          </span>
+                        ) : null}
+                      </span>
+                    </TooltipTrigger>
+                    {renderFeeTooltipContent(allStagesTooltipPanel)}
+                  </Tooltip>
+                  {finalFeeOnly ? <FeeQuoteHelpMark /> : null}
+                </span>
+              ) : null}
+              {labFeeSummary}
+              {remakeSimple ? (
+                <span
+                  className={cn(
+                    "tabular-nums text-muted-foreground",
+                    isCard
+                      ? "text-[12px]"
+                      : "mt-0.5 block truncate text-[11px]",
+                  )}
+                >
+                  {remakeSimple}
+                </span>
+              ) : null}
+            </div>
+          ) : (
+            <div
+              className={cn(
+                "min-w-0",
+                isCard
+                  ? "flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-sm"
+                  : "",
+                amountBlurClass,
+              )}
+            >
+              <span className="inline-flex items-center gap-1">
                 <Tooltip onOpenChange={onBreakdownTooltipOpenChange}>
                   <TooltipTrigger asChild>
                     <span
@@ -1518,12 +1657,15 @@ export function PracticeTransferFeeEstimate({
                         isCard ? "text-sm" : "text-sm sm:text-base",
                       )}
                     >
-                      <span className="font-medium text-slate-600">
-                        {showFinalFeeBar && !currentStageSection
-                          ? `${finalFeeLabel} `
-                          : `${title} `}
-                      </span>
-                      {formatManWon(currentStageAmount)}
+                      <span className="font-medium text-slate-600">{title} </span>
+                      {hasBudgetRange && !isLab
+                        ? formatWonRange(creditMin, amount)
+                        : formatManWon(amount)}
+                      {hasMissingFees ? (
+                        <span className="ml-1.5 text-[11px] font-medium text-amber-700">
+                          · {missingFeeLabel} 미설정
+                        </span>
+                      ) : null}
                       {surchargeLabel ? (
                         <span className="ml-1.5 text-[11px] font-medium text-amber-700">
                           {surchargeLabel}
@@ -1536,47 +1678,12 @@ export function PracticeTransferFeeEstimate({
                       ) : null}
                     </span>
                   </TooltipTrigger>
-                  {renderFeeTooltipContent(currentStageTooltipPanel)}
+                  {renderFeeTooltipContent(breakdownPanel)}
                 </Tooltip>
-              ) : null}
-              {showFinalFeeBar && allStagesTooltipPanel ? (
-                <Tooltip
-                  onOpenChange={
-                    finalFeeOnly ? onBreakdownTooltipOpenChange : undefined
-                  }
-                >
-                  <TooltipTrigger asChild>
-                    <span
-                      className={cn(
-                        "cursor-default font-semibold tabular-nums text-slate-800",
-                        isCard ? "text-sm" : "text-sm sm:text-base",
-                      )}
-                    >
-                      <span className="font-medium text-slate-600">
-                        {finalFeeLabel}{" "}
-                      </span>
-                      {formatManWon(amount)}
-                      {hasMissingFees ? (
-                        <span className="ml-1.5 text-[11px] font-medium text-amber-700">
-                          · {missingFeeLabel} 미설정
-                        </span>
-                      ) : null}
-                      {finalFeeOnly && surchargeLabel ? (
-                        <span className="ml-1.5 text-[11px] font-medium text-amber-700">
-                          {surchargeLabel}
-                        </span>
-                      ) : null}
-                      {finalFeeOnly && rushLabel ? (
-                        <span className="ml-1.5 text-[11px] font-medium text-amber-700">
-                          {rushLabel}
-                        </span>
-                      ) : null}
-                    </span>
-                  </TooltipTrigger>
-                  {renderFeeTooltipContent(allStagesTooltipPanel)}
-                </Tooltip>
-              ) : null}
-              {simple ? (
+                <FeeQuoteHelpMark />
+              </span>
+              {labFeeSummary}
+              {remakeSimple ? (
                 <span
                   className={cn(
                     "tabular-nums text-muted-foreground",
@@ -1585,69 +1692,11 @@ export function PracticeTransferFeeEstimate({
                       : "mt-0.5 block truncate text-[11px]",
                   )}
                 >
-                  {simple}
+                  {remakeSimple}
                 </span>
               ) : null}
             </div>
-          ) : (
-            <Tooltip onOpenChange={onBreakdownTooltipOpenChange}>
-              <TooltipTrigger asChild>
-                <div
-                  className={cn(
-                    "min-w-0 cursor-default",
-                    isCard
-                      ? "flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-sm"
-                      : "",
-                    amountBlurClass,
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "font-semibold tabular-nums text-slate-800",
-                      isCard ? "text-sm" : "text-sm sm:text-base",
-                    )}
-                  >
-                    <span className="font-medium text-slate-600">{title} </span>
-                    {hasBudgetRange && !isLab
-                      ? formatWonRange(creditMin, amount)
-                      : formatManWon(amount)}
-                    {hasMissingFees ? (
-                      <span className="ml-1.5 text-[11px] font-medium text-amber-700">
-                        · {missingFeeLabel} 미설정
-                      </span>
-                    ) : null}
-                    {surchargeLabel ? (
-                      <span className="ml-1.5 text-[11px] font-medium text-amber-700">
-                        {surchargeLabel}
-                      </span>
-                    ) : null}
-                    {rushLabel ? (
-                      <span className="ml-1.5 text-[11px] font-medium text-amber-700">
-                        {rushLabel}
-                      </span>
-                    ) : null}
-                  </span>
-                  {simple ? (
-                    <span
-                      className={cn(
-                        "tabular-nums text-muted-foreground",
-                        isCard
-                          ? "text-[12px]"
-                          : "mt-0.5 block truncate text-[11px]",
-                      )}
-                    >
-                      {simple}
-                    </span>
-                  ) : null}
-                </div>
-              </TooltipTrigger>
-              {renderFeeTooltipContent(breakdownPanel)}
-            </Tooltip>
           )}
-          <CircleHelp
-            className="pointer-events-none h-3.5 w-3.5 shrink-0 text-muted-foreground/80"
-            aria-hidden
-          />
           {isLab && (labFeeUnset || hasMissingFees) ? (
             <Link
               to={

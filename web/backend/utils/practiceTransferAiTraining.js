@@ -26,7 +26,8 @@ export function isLabAiTrainingConsentAllowed(consent) {
 
 /**
  * 작업시작 전 견적·적립 보류는 수행 기공소의 현재 동의.
- * 작업시작 이후는 그때 박힌 billing.aiTrainingConsent.
+ * 작업시작 이후는 billing.aiTrainingConsent.
+ * 동의 변경 시 미완료 의뢰는 그 스냅샷을 이번 건부터 다시 맞춘다.
  */
 export function resolveUnacceptedAiTrainingConsent(transfer, performer) {
   const started = Boolean(

@@ -87,8 +87,8 @@ export const LabAiTrainingConsentCard = () => {
       toast({
         title: next ? "학습 이용을 허용했습니다" : "학습 이용을 껐습니다",
         description: next
-          ? `다음 주문부터 플랫폼 사용료 ${pct}%가 면제됩니다.`
-          : `다음 주문부터 플랫폼 사용료 ${pct}%가 공제됩니다.`,
+          ? `이번 의뢰부터 플랫폼 사용료 ${pct}%가 면제됩니다.`
+          : `이번 의뢰부터 플랫폼 사용료 ${pct}%가 공제됩니다.`,
       });
     } catch {
       setAllowed(!next);

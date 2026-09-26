@@ -1,3 +1,5 @@
+// change-log:
+// - 2026-09-26: AI 학습 이용 동의 시 작업 완료 3D 모델 처리 목적·항목.
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
@@ -23,7 +25,7 @@ export const PrivacyPage = () => {
           <h1 className={PUBLIC_PAGE_TITLE}>
             개인정보처리방침
           </h1>
-          <p className="text-slate-600">최종 개정일: 2026년 3월 2일</p>
+          <p className="text-slate-600">최종 개정일: 2026년 9월 26일</p>
         </div>
 
         <div className="space-y-8">
@@ -52,6 +54,10 @@ export const PrivacyPage = () => {
                         <li>어벗먼트 매칭 서비스 제공</li>
                         <li>고객 상담 및 불만처리</li>
                         <li>서비스 개선 및 신규 서비스 개발</li>
+                        <li>
+                          기공회원이 AI 학습 이용에 동의한 경우, 작업 완료 때
+                          올린 3D 모델의 학습
+                        </li>
                         <li>법정 의무 이행</li>
                       </ul>
                     </>
@@ -77,6 +83,10 @@ export const PrivacyPage = () => {
                           <ul className="list-disc list-inside space-y-1 ml-4">
                             <li>프로필 사진, 회사 소개</li>
                             <li>마케팅 수신 동의 정보</li>
+                            <li>
+                              AI 학습 이용에 동의한 기공 의뢰의 작업 완료 3D
+                              모델
+                            </li>
                           </ul>
                         </div>
                       </div>

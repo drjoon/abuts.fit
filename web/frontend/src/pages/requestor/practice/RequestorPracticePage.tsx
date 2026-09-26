@@ -9294,6 +9294,9 @@ export function RequestorPracticeReceivePage({
         remakeChargeCancelBusy={remakeChargeCancelBusy}
         skipJig={Boolean(selectedTransfer?.production?.skipJig)}
         feeViewer="lab"
+        aiConsentTransferId={
+          String(selectedTransfer?._id || "").trim() || null
+        }
         onChangeRequestScanRole={handleChangeRequestScanRole}
         labBasketTag={
           normalizeLabBasketTag(selectedTransfer?.labBasketTag) || null

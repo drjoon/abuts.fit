@@ -1,6 +1,7 @@
 // 기공의뢰 진입 확인은 오른쪽 위 X·바깥 클릭으로 넘길 수 있다.
 // 답을 하기 전에는 첫 의뢰 작업시작만 허용/허용 안 함을 강제한다.
 // 어벗츠기공본부는 항상 허용이라 묻지 않는다.
+// 수수료 줄이기 버튼은 이미 답을 한 뒤에도 같은 동의 창을 다시 연다.
 import {
   forwardRef,
   useEffect,
@@ -22,6 +23,17 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useLabTradingPartnerWindow } from "@/shared/lab/useLabTradingPartnerWindow";
 import { resolveLabDirectPlatformFeePct } from "@/shared/settlement/labPayoutBankbook";
+
+export const OPEN_LAB_AI_TRAINING_CONSENT_EVENT =
+  "abuts:open-ai-training-consent";
+
+export function openLabAiTrainingConsentPrompt(transferId?: string | null) {
+  window.dispatchEvent(
+    new CustomEvent(OPEN_LAB_AI_TRAINING_CONSENT_EVENT, {
+      detail: { transferId: String(transferId || "").trim() },
+    }),
+  );
+}
 
 type ConsentPayload = {
   allowed?: boolean;
@@ -74,6 +86,7 @@ export const LabAiTrainingConsentPrompt = forwardRef<
   const feeWaitersRef = useRef<Array<(ok: boolean) => void>>([]);
   const allowButtonRef = useRef<HTMLButtonElement>(null);
   const agreeButtonRef = useRef<HTMLButtonElement>(null);
+  const focusTransferIdRef = useRef("");
   const pct = resolveLabDirectPlatformFeePct(
     windowInfo?.feeRates?.directPlatformFeeRate != null
       ? Number(windowInfo.feeRates.directPlatformFeeRate) * 100
@@ -108,7 +121,10 @@ export const LabAiTrainingConsentPrompt = forwardRef<
         consent?.needsFirstWorkStartConfirm,
       );
       finishLoad(needsPrompt ? "needed" : "done");
-      if (needsPrompt) setOpen(true);
+      if (needsPrompt) {
+        focusTransferIdRef.current = "";
+        setOpen(true);
+      }
     };
     void load();
     return () => {
@@ -122,6 +138,19 @@ export const LabAiTrainingConsentPrompt = forwardRef<
       waiters.forEach((resolve) => resolve(false));
       const feeWaiters = feeWaitersRef.current.splice(0);
       feeWaiters.forEach((resolve) => resolve(false));
+    };
+  }, []);
+
+  useEffect(() => {
+    const onOpen = (event: Event) => {
+      const detail = (event as CustomEvent<{ transferId?: string }>).detail;
+      focusTransferIdRef.current = String(detail?.transferId || "").trim();
+      setRequired(false);
+      setOpen(true);
+    };
+    window.addEventListener(OPEN_LAB_AI_TRAINING_CONSENT_EVENT, onOpen);
+    return () => {
+      window.removeEventListener(OPEN_LAB_AI_TRAINING_CONSENT_EVENT, onOpen);
     };
   }, []);
 
@@ -140,6 +169,7 @@ export const LabAiTrainingConsentPrompt = forwardRef<
 
   useImperativeHandle(ref, () => ({
     ensureChoice: async () => {
+      focusTransferIdRef.current = "";
       await whenLoaded();
       if (statusRef.current !== "needed") return true;
       setRequired(true);
@@ -195,6 +225,7 @@ export const LabAiTrainingConsentPrompt = forwardRef<
 
   const dismiss = () => {
     if (required || saving) return;
+    focusTransferIdRef.current = "";
     setOpen(false);
   };
 
@@ -203,7 +234,12 @@ export const LabAiTrainingConsentPrompt = forwardRef<
       path: "/api/businesses/me/ai-training-consent",
       method: "POST",
       token,
-      jsonBody: { allowed },
+      jsonBody: {
+        allowed,
+        ...(focusTransferIdRef.current
+          ? { transferId: focusTransferIdRef.current }
+          : {}),
+      },
     });
     if (!res.ok) {
       toast({
@@ -214,6 +250,7 @@ export const LabAiTrainingConsentPrompt = forwardRef<
       });
       return false;
     }
+    focusTransferIdRef.current = "";
     statusRef.current = "done";
     allowedRef.current = allowed;
     window.dispatchEvent(new CustomEvent("abuts:ai-training-consent-changed"));
@@ -235,8 +272,8 @@ export const LabAiTrainingConsentPrompt = forwardRef<
       toast({
         title: allowed ? "학습 이용을 허용했습니다" : "학습 이용을 껐습니다",
         description: allowed
-          ? `다음 주문부터 플랫폼 사용료 ${pct}%가 면제됩니다.`
-          : `다음 주문부터 플랫폼 사용료 ${pct}%가 공제됩니다.`,
+          ? `이번 의뢰부터 플랫폼 사용료 ${pct}%가 면제됩니다.`
+          : `이번 의뢰부터 플랫폼 사용료 ${pct}%가 공제됩니다.`,
       });
     } catch {
       toast({
@@ -258,8 +295,8 @@ export const LabAiTrainingConsentPrompt = forwardRef<
       toast({
         title: allowed ? "학습 이용을 허용했습니다" : "학습 이용을 껐습니다",
         description: allowed
-          ? `다음 주문부터 플랫폼 사용료 ${pct}%가 면제됩니다.`
-          : `다음 주문부터 플랫폼 사용료 ${pct}%가 공제됩니다.`,
+          ? `이번 의뢰부터 플랫폼 사용료 ${pct}%가 면제됩니다.`
+          : `이번 의뢰부터 플랫폼 사용료 ${pct}%가 공제됩니다.`,
       });
       settleFee(true);
     } catch {

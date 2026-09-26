@@ -487,6 +487,8 @@ type PracticeTransferDetailChatDialogProps = {
   remakeCharges?: import("@/shared/practice/practiceTransferLabReceive").PracticeTransferRemakeCharge[] | null;
   skipJig?: boolean;
   feeViewer?: PracticeTransferFeeQuoteViewer;
+  /** 수수료 줄이기 — 이 의뢰부터 동의를 맞춘다 */
+  aiConsentTransferId?: string | null;
   /**
    * 기공소 바구니 번호표(01–99). BA(PracticeTransfer.labBasketTag) 값.
    */
@@ -738,6 +740,7 @@ export function PracticeTransferDetailChatDialog({
   remakeCharges = null,
   skipJig = false,
   feeViewer = "practice",
+  aiConsentTransferId = null,
   labBasketTag: labBasketTagProp = null,
   labBasketOccupiedTags = null,
   onLabBasketTagChange,
@@ -3168,6 +3171,7 @@ export function PracticeTransferDetailChatDialog({
                     }
                     feeQuote={feeQuote}
                     feeViewer={feeViewer}
+                    consentTransferId={aiConsentTransferId}
                     labAnchorId={labAnchorId}
                     skipJig={skipJig}
                     labEffectiveStars={labEffectiveStars}
@@ -3571,6 +3575,7 @@ export function PracticeTransferDetailChatDialog({
                             showHeader={false}
                             labAnchorId={labAnchorId}
                             feeViewer={feeViewer}
+                    consentTransferId={aiConsentTransferId}
                             skipJig={skipJig}
                             labEffectiveStars={labEffectiveStars}
                             confirmedFeeLabel={

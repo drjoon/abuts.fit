@@ -69,6 +69,7 @@ import {
   toLabRatingSummaryApi,
 } from "../../utils/practiceLabRating.js";
 import { resolvePlatformFeeRate, resolveDirectPlatformFeeRateConfigured } from "../../services/creditRevenuePolicy.service.js";
+import { repriceOpenTransfersForAiTrainingConsent } from "../../services/practiceTransferBilling.service.js";
 import { verifyPayoutAccount } from "../../services/payoutAccountVerify.service.js";
 
 function resolveLabPartnerInviteToken(req) {
@@ -1871,11 +1872,19 @@ export async function setMyAiTrainingConsent(req, res) {
       },
     );
     invalidateMyBusinessCache(req.user._id);
+    const transferId = String(req.body?.transferId || "").trim();
+    await repriceOpenTransfersForAiTrainingConsent({
+      labAnchorId: String(anchor._id),
+      allowed,
+      transferId: transferId || null,
+      actorUserId: req.user?._id || null,
+      occurredAt: now,
+    });
     return res.json({
       success: true,
       message: allowed
-        ? "학습 이용을 허용했습니다. 다음 주문부터 플랫폼 사용료 2%가 면제됩니다."
-        : "학습 이용을 끄셨습니다. 다음 주문부터 플랫폼 사용료 2%가 공제됩니다.",
+        ? "학습 이용을 허용했습니다. 이번 의뢰부터 플랫폼 사용료 2%가 면제됩니다."
+        : "학습 이용을 끄셨습니다. 이번 의뢰부터 플랫폼 사용료 2%가 공제됩니다.",
       data: {
         allowed,
         locked: false,

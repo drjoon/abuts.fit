@@ -614,7 +614,8 @@ export const LabSettlementPayoutTab = () => {
                       </span>
                       에 같은 플랫폼 사용료를 더합니다.
                       <br />
-                      학습 이용을 허용하면 플랫폼 사용료만 면제됩니다.
+                      허용해도 하청 수수료는 그대로이고, 더한 플랫폼 사용료만
+                      면제됩니다.
                     </p>
                   </div>
                 </SettlementPolicySection>

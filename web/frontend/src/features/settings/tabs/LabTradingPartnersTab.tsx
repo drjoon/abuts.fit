@@ -269,8 +269,9 @@ export const LabTradingPartnersTab = () => {
             하청 수수료 {subcontractFeePct}%에 플랫폼 사용료 {directFeePct}%를
             더합니다.
             <br />
-            학습 이용을 허용하면 플랫폼 사용료만 면제됩니다. 치과명·담당자명·기공소명은
-            비공개입니다.
+            학습 이용을 허용하면 플랫폼 사용료만 면제됩니다.
+            <br />
+            치과명·담당자명·기공소명은 비공개입니다.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
