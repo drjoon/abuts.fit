@@ -4,7 +4,7 @@
 // - 2026-09-26: 열릴 때 의뢰 치아 교합면을 화면 중앙에 둔다. 치아번호 뱃지는 그 좌표에 붙는다.
 // - 2026-09-26: 파싱 결과는 메모리에 두고, 교합·언더컷 거리는 켤 때만 계산한다.
 // - 2026-09-26: 역할만 바뀌면 메시를 다시 읽지 않고 색·대합을 다시 계산한다.
-// - 2026-09-26: 삽입축은 화면과 수직으로 잡고, 화살표와 고리로 표시한다.
+// - 2026-09-26: 삽입축은 보철마다 화면과 수직으로 잡고, 화살표와 고리로 표시한다.
 // - 2026-09-26: 처음 카메라는 지대치 교합면과 인접치 하나씩. 그 자세를 초기 뷰로 둔다.
 import {
   forwardRef,
@@ -42,8 +42,11 @@ export type OralScanOverlayHandle = {
   /** 의뢰 치아 교합면을 화면 중앙에 다시 맞춘다. */
   focusTooth: (toothNumber: string) => void;
   saveImage: () => void;
-  /** 지금 화면과 수직인 방향을 삽입축으로 잡고 화살표를 켠다. */
-  resetInsertionFromView: () => void;
+  /**
+   * 지금 화면과 수직인 방향을 이 치아들의 삽입축으로 잡는다.
+   * 같은 치아 묶음이면 방향을 다시 잡고, 다른 보철 축은 유지한다.
+   */
+  setInsertionFromView: (toothNumbers: readonly string[]) => boolean;
   /** 모달을 열었을 때의 교합면 카메라로 되돌린다. */
   resetHomeView: () => void;
 };
@@ -453,20 +456,72 @@ function isGhostScanRole(
   return (role === "upper" || role === "lower") && role !== prepArch;
 }
 
+function undercutApplies(
+  role: LabOralScanRole,
+  prepArch: "upper" | "lower" | "both" | null | undefined,
+) {
+  return (
+    (role === "upper" && (prepArch === "upper" || prepArch === "both")) ||
+    (role === "lower" && (prepArch === "lower" || prepArch === "both"))
+  );
+}
+
 function insertionForRole(
   role: LabOralScanRole,
   prepArch: "upper" | "lower" | "both" | null | undefined,
   frame: DentalFrame | null,
   override: THREE.Vector3 | null = null,
 ): THREE.Vector3 | null {
-  const applies =
-    (role === "upper" && (prepArch === "upper" || prepArch === "both")) ||
-    (role === "lower" && (prepArch === "lower" || prepArch === "both"));
-  if (!applies) return null;
+  if (!undercutApplies(role, prepArch)) return null;
   if (override) return override.clone();
   if (!frame) return null;
   if (role === "upper") return frame.up.clone();
   return frame.up.clone().negate();
+}
+
+type InsertionAxis = {
+  key: string;
+  toothNumbers: string[];
+  dir: THREE.Vector3;
+};
+
+type InsertionAnchor = {
+  arch: "upper" | "lower";
+  x: number;
+  y: number;
+  z: number;
+  dir: THREE.Vector3;
+};
+
+function insertionAxisKey(toothNumbers: readonly string[]) {
+  return toothNumbers
+    .map((tooth) => fdiDigits(tooth))
+    .filter(Boolean)
+    .sort()
+    .join(",");
+}
+
+function nearestInsertionDir(
+  x: number,
+  y: number,
+  z: number,
+  anchors: InsertionAnchor[],
+  fallback: THREE.Vector3 | null,
+): THREE.Vector3 | null {
+  if (anchors.length === 0) return fallback;
+  let best = Infinity;
+  let dir = anchors[0]?.dir ?? fallback;
+  for (const anchor of anchors) {
+    const dx = anchor.x - x;
+    const dy = anchor.y - y;
+    const dz = anchor.z - z;
+    const dist = dx * dx + dy * dy + dz * dz;
+    if (dist < best) {
+      best = dist;
+      dir = anchor.dir;
+    }
+  }
+  return dir;
 }
 
 function antagonistRole(
@@ -486,7 +541,7 @@ async function fillDesignAnalysis(
   frame: DentalFrame | null,
   unitToMm: number,
   cancelled: () => boolean,
-  insertionOverride: THREE.Vector3 | null = null,
+  anchors: InsertionAnchor[] = [],
 ) {
   const indexes = new Map<
     LabOralScanRole,
@@ -510,23 +565,19 @@ async function fillDesignAnalysis(
 
   for (const entry of loaded) {
     const against = antagonistRole(entry.role, prepArch);
-    const insertion = insertionForRole(
-      entry.role,
-      prepArch,
-      frame,
-      insertionOverride,
-    );
+    const mine = anchors.filter((anchor) => anchor.arch === entry.role);
+    const insertion = insertionForRole(entry.role, prepArch, frame, null);
     const index = against ? indexes.get(against) : undefined;
     const pos = entry.geometry.getAttribute("position");
     const nor = entry.geometry.getAttribute("normal");
-    if (!pos || (!index && !insertion)) {
+    if (!pos || (!index && !insertion && mine.length === 0)) {
       entry.dist = null;
       entry.align = null;
       continue;
     }
     const count = pos.count;
     const dist = index ? new Float32Array(count) : null;
-    const align = insertion && nor ? new Float32Array(count) : null;
+    const align = (mine.length > 0 || insertion) && nor ? new Float32Array(count) : null;
     if (dist) dist.fill(Infinity);
     let budget = performance.now() + 6;
     for (let i = 0; i < count; i += 1) {
@@ -537,11 +588,18 @@ async function fillDesignAnalysis(
         if (cancelled()) return;
         budget = performance.now() + 6;
       }
-      if (align && insertion && nor) {
-        align[i] =
-          nor.getX(i) * insertion.x +
-          nor.getY(i) * insertion.y +
-          nor.getZ(i) * insertion.z;
+      if (align && nor) {
+        const dir = nearestInsertionDir(
+          pos.getX(i),
+          pos.getY(i),
+          pos.getZ(i),
+          mine,
+          insertion,
+        );
+        if (dir) {
+          align[i] =
+            nor.getX(i) * dir.x + nor.getY(i) * dir.y + nor.getZ(i) * dir.z;
+        }
       }
       if (dist && index) {
         dist[i] = index.nearest(pos.getX(i), pos.getY(i), pos.getZ(i));
@@ -832,6 +890,28 @@ function occlusalBand(
 function fdiDigits(raw: string) {
   const digits = String(raw || "").replace(/\D/g, "");
   return /^[1-4][1-8]$/.test(digits) ? digits : "";
+}
+
+function anchorsFromAxes(
+  axes: InsertionAxis[],
+  placements: ToothPlacement[],
+  groupPosition: THREE.Vector3,
+): InsertionAnchor[] {
+  const out: InsertionAnchor[] = [];
+  for (const axis of axes) {
+    for (const tooth of axis.toothNumbers) {
+      const place = placements.find((row) => row.toothNumber === tooth);
+      if (!place) continue;
+      out.push({
+        arch: place.arch,
+        x: place.center.x - groupPosition.x,
+        y: place.center.y - groupPosition.y,
+        z: place.center.z - groupPosition.z,
+        dir: axis.dir,
+      });
+    }
+  }
+  return out;
 }
 
 function locateToothPlacements(
@@ -1131,7 +1211,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   const onInsertionAxisChangeRef = useRef(onInsertionAxisChange);
   const itemsRef = useRef(items);
   const frameRef = useRef<DentalFrame | null>(null);
-  const insertionOverrideRef = useRef<THREE.Vector3 | null>(null);
+  const insertionAxesRef = useRef<InsertionAxis[]>([]);
   const initialPoseRef = useRef<{
     dir: THREE.Vector3;
     up: THREE.Vector3;
@@ -1476,7 +1556,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     };
 
     const sources = itemsRef.current;
-    insertionOverrideRef.current = null;
+    insertionAxesRef.current = [];
     syncInsertionMarkerRef.current();
     onInsertionAxisChangeRef.current?.(false);
     if (sources.length === 0) {
@@ -1592,7 +1672,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       frameCamera(HOME_DIR, HOME_UP, false);
       restyleLoaded();
       onScanColorChangeRef.current?.(loaded.some((entry) => entry.hasColor));
-      if (insertionOverrideRef.current) syncInsertionMarkerRef.current();
+      if (insertionAxesRef.current.length > 0) syncInsertionMarkerRef.current();
       setParseNote(
         failed.length ? `열지 못했습니다: ${failed.join(", ")}` : "",
       );
@@ -1640,7 +1720,11 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       return;
     }
     const frame = frameRef.current;
-    const insertionOverride = insertionOverrideRef.current;
+    const anchors = anchorsFromAxes(
+      insertionAxesRef.current,
+      placementsRef.current,
+      groupRef.current?.position ?? new THREE.Vector3(),
+    );
     const pending = loaded.some((entry) => {
       const needsDist =
         look.contactMap &&
@@ -1648,8 +1732,9 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         entry.dist == null;
       const needsAlign =
         look.undercutMap &&
-        insertionForRole(entry.role, prepArch, frame, insertionOverride) != null &&
-        entry.align == null;
+        entry.align == null &&
+        (anchors.some((anchor) => anchor.arch === entry.role) ||
+          insertionForRole(entry.role, prepArch, frame, null) != null);
       return needsDist || needsAlign;
     });
     if (!pending) {
@@ -1664,7 +1749,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       frame,
       unitToMmRef.current,
       () => cancelled,
-      insertionOverride,
+      anchors,
     ).then(() => {
       if (cancelled) return;
       setAnalyzing(false);
@@ -1782,39 +1867,41 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       disposeObject3D(prev);
     }
     insertionMarkerRef.current = null;
-    const dir = insertionOverrideRef.current;
-    if (!scene || !dir || dir.lengthSq() < 1e-8) return;
-    const focus = new Set(
-      (focusTeethRef.current || []).map((tooth) => fdiDigits(tooth)).filter(Boolean),
-    );
-    const places = placementsRef.current.filter(
-      (place) => focus.size === 0 || focus.has(place.toothNumber),
-    );
-    const anchored = places.length > 0 ? places : placementsRef.current;
-    const center = new THREE.Vector3();
-    let radius = 0;
-    if (anchored.length > 0) {
-      for (const place of anchored) {
+    const axes = insertionAxesRef.current;
+    if (!scene || axes.length === 0) return;
+    const layer = new THREE.Group();
+    for (const axis of axes) {
+      const wanted = new Set(axis.toothNumbers);
+      const places = placementsRef.current.filter((place) =>
+        wanted.has(place.toothNumber),
+      );
+      if (places.length === 0) continue;
+      const center = new THREE.Vector3();
+      let radius = 0;
+      for (const place of places) {
         center.add(place.center);
         radius = Math.max(radius, place.radius);
       }
-      center.multiplyScalar(1 / anchored.length);
-      if (anchored.length > 1) {
-        for (const place of anchored) {
-          radius = Math.max(radius, center.distanceTo(place.center) + place.radius * 0.35);
+      center.multiplyScalar(1 / places.length);
+      if (places.length > 1) {
+        for (const place of places) {
+          radius = Math.max(
+            radius,
+            center.distanceTo(place.center) + place.radius * 0.35,
+          );
         }
       }
-    } else {
-      center.copy(fitTargetRef.current);
-      radius = fitRadiusRef.current * 0.12;
+      layer.add(
+        buildInsertionMarker(
+          center,
+          Math.max(radius, fitRadiusRef.current * 0.04, 1),
+          axis.dir,
+        ),
+      );
     }
-    const marker = buildInsertionMarker(
-      center,
-      Math.max(radius, fitRadiusRef.current * 0.04, 1),
-      dir,
-    );
-    scene.add(marker);
-    insertionMarkerRef.current = marker;
+    if (layer.children.length === 0) return;
+    scene.add(layer);
+    insertionMarkerRef.current = layer;
   };
 
   resetHomeRef.current = () => {
@@ -1833,17 +1920,25 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       focusTooth: (toothNumber) => focusToothRef.current(toothNumber),
       saveImage: () => saveImageRef.current(),
       resetHomeView: () => resetHomeRef.current(),
-      resetInsertionFromView: () => {
+      setInsertionFromView: (toothNumbers) => {
         const camera = cameraRef.current;
         const look = new THREE.Vector3();
         camera?.getWorldDirection(look);
-        if (!camera || look.lengthSq() < 1e-8) return;
+        const key = insertionAxisKey(toothNumbers);
+        if (!camera || look.lengthSq() < 1e-8 || !key) return false;
         look.normalize();
-        insertionOverrideRef.current = look.clone();
+        const kept = insertionAxesRef.current.filter((axis) => axis.key !== key);
+        kept.push({
+          key,
+          toothNumbers: key.split(","),
+          dir: look.clone(),
+        });
+        insertionAxesRef.current = kept;
         for (const entry of loadedRef.current) entry.align = null;
         syncInsertionMarkerRef.current();
-        onInsertionAxisChangeRef.current?.(true);
+        onInsertionAxisChangeRef.current?.(kept.length > 0);
         setLoadVersion((v) => v + 1);
+        return true;
       },
     }),
     [],

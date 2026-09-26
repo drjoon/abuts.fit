@@ -3,8 +3,9 @@
 // - 2026-09-26: 스캔·마진·디자인 단계, 언더컷·교합 접촉, 치아별 생성.
 // - 2026-09-26: 언더컷·교합은 헤더 중앙. 치아 정보는 설측 아래 트리. 스캔 파일은 세션 캐시.
 // - 2026-09-26: 언더컷·교합·칼라·투명도는 작업영역 왼쪽 위. 파일명은 라벨로 끌어 역할을 바꾼다.
-// - 2026-09-26: 작업영역 위 버튼은 헤더와 같은 높이. 삽입축은 현재 뷰에 수직으로 잡는다.
-// - 2026-09-26: 마진·디자인은 카메라를 유지한다. 뷰 리셋은 처음 교합면으로 되돌린다.
+// - 2026-09-26: 작업영역 위 버튼은 헤더와 같은 높이.
+// - 2026-09-26: 마진·디자인은 카메라를 유지한다. 치아 이름을 누르면 그 치아 교합면.
+// - 2026-09-26: 삽입축은 치아 정보에서 보철마다. 브리지는 스팬당 하나.
 // - 2026-09-26: 투명 체크는 지대치 외 스캔을 20%로 비추고, 끄면 불투명하다.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -16,7 +17,6 @@ import {
   ImageDown,
   Paintbrush,
   Palette,
-  RotateCcw,
   Sparkles,
   TriangleAlert,
 } from "lucide-react";
@@ -250,7 +250,7 @@ function LabProsthesisAiDesignDialog({
   const [dragScanId, setDragScanId] = useState<string | null>(null);
   const [dropScanId, setDropScanId] = useState<string | null>(null);
   const [workWide, setWorkWide] = useState(false);
-  const [insertionAxis, setInsertionAxis] = useState(false);
+  const [insertionKeys, setInsertionKeys] = useState<string[]>([]);
   const viewerRef = useRef<OralScanOverlayHandle>(null);
   const workObserveRef = useRef<ResizeObserver | null>(null);
   const bindWorkArea = useCallback((node: HTMLDivElement | null) => {
@@ -293,7 +293,7 @@ function LabProsthesisAiDesignDialog({
       setSidebarOpen(true);
       setDragScanId(null);
       setDropScanId(null);
-      setInsertionAxis(false);
+      setInsertionKeys([]);
       genSeq.current += 1;
       return;
     }
@@ -568,6 +568,14 @@ function LabProsthesisAiDesignDialog({
     prepTeeth.length > 0 ? prepTeeth : plan.teeth
   ).map((tooth) => tooth.toothNumber);
 
+  const rememberInsertion = (toothNumbers: readonly string[]) => {
+    const ok = viewerRef.current?.setInsertionFromView(toothNumbers) === true;
+    if (!ok) return;
+    const key = insertionAxisKey(toothNumbers);
+    if (!key) return;
+    setInsertionKeys((prev) => (prev.includes(key) ? prev : [...prev, key]));
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
@@ -830,7 +838,11 @@ function LabProsthesisAiDesignDialog({
                       setStage("margin");
                       setUndercutMap(true);
                       setUndercutRange(40);
-                      viewerRef.current?.resetInsertionFromView();
+                      const span = insertionSpanForTooth(
+                        plan.teeth,
+                        activeTooth?.toothNumber,
+                      );
+                      if (span.length > 0) rememberInsertion(span);
                     }}
                   >
                     다시 표시
@@ -846,7 +858,7 @@ function LabProsthesisAiDesignDialog({
                   </Button>
                 </div>
                 <p className="text-[11px] leading-relaxed text-muted-foreground">
-                  화면을 맞춘 뒤 다시 표시하면 그 방향을 삽입축으로 잡습니다.
+                  화면을 맞춘 뒤 다시 표시하면 선택한 보철의 삽입축으로 잡습니다.
                   <br />
                   언더컷과 마진을 그 축으로 다시 칠합니다.
                 </p>
@@ -957,7 +969,9 @@ function LabProsthesisAiDesignDialog({
               busy={busy}
               busyLabel={busy ? `스캔을 불러오는 중 ${progress}%` : ""}
               onScanColorChange={setHasScanColor}
-              onInsertionAxisChange={setInsertionAxis}
+              onInsertionAxisChange={(active) => {
+                if (!active) setInsertionKeys([]);
+              }}
               className="absolute inset-0"
             />
             <div className="absolute left-3 top-3 z-10 flex max-w-[calc(100%-12rem)] flex-col items-start gap-1.5">
@@ -1046,40 +1060,8 @@ function LabProsthesisAiDesignDialog({
                   </TooltipContent>
                 </Tooltip>
               ) : null}
-              <Button
-                type="button"
-                size="sm"
-                variant={insertionAxis ? "default" : "outline"}
-                className={cn(
-                  "ml-5 h-8 shadow-sm [&_svg]:!size-3.5",
-                  workWide ? "gap-1 px-2.5" : "w-8 px-0",
-                )}
-                title="지금 화면과 수직인 방향으로 삽입축을 잡습니다"
-                aria-label="삽입축"
-                disabled={entries.length === 0}
-                onClick={() => viewerRef.current?.resetInsertionFromView()}
-              >
-                <ArrowDownToLine />
-                {workWide ? <span>삽입축</span> : null}
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className={cn(
-                  "h-8 shadow-sm [&_svg]:!size-3.5",
-                  workWide ? "gap-1 px-2.5" : "w-8 px-0",
-                )}
-                title="처음 교합면 카메라로 되돌립니다"
-                aria-label="뷰 리셋"
-                disabled={entries.length === 0}
-                onClick={() => viewerRef.current?.resetHomeView()}
-              >
-                <RotateCcw />
-                {workWide ? <span>뷰 리셋</span> : null}
-              </Button>
               </div>
-              {undercutMap || contactMap || insertionAxis ? (
+              {undercutMap || contactMap || insertionKeys.length > 0 ? (
                 <div className="pointer-events-none flex items-center gap-2 rounded-md bg-background/95 px-2 py-1 text-[10px] text-muted-foreground shadow-sm">
                   {undercutMap ? (
                     <span className="flex items-center gap-1">
@@ -1103,7 +1085,7 @@ function LabProsthesisAiDesignDialog({
                       </span>
                     </>
                   ) : null}
-                  {insertionAxis ? (
+                  {insertionKeys.length > 0 ? (
                     <span className="flex items-center gap-1">
                       <span className="h-2 w-2 rounded-full bg-amber-500" />
                       삽입축
@@ -1119,11 +1101,14 @@ function LabProsthesisAiDesignDialog({
               generating={generating}
               genLabel={genLabel}
               toothInfoOpen={toothInfoOpen}
+              insertionKeys={insertionKeys}
+              canSetInsertion={entries.length > 0}
               showGenerateAll={generateTargets.length >= 2}
               onSelectTooth={(toothNumber) => {
                 setSelectedTooth(toothNumber);
                 viewerRef.current?.focusTooth(toothNumber);
               }}
+              onSetInsertion={rememberInsertion}
               onToggleInfo={() => setToothInfoOpen((open) => !open)}
               onGenerateAll={() => void runGenerate(generateTargets)}
               onGenerateTooth={(toothNumber) => void runGenerate([toothNumber])}
@@ -1145,6 +1130,84 @@ function toothArchGroup(toothNumber: string): "upper" | "lower" | "other" {
   return "other";
 }
 
+function insertionAxisKey(toothNumbers: readonly string[]) {
+  return toothNumbers
+    .map((tooth) => String(tooth || "").replace(/\D/g, ""))
+    .filter((tooth) => /^[1-4][1-8]$/.test(tooth))
+    .sort()
+    .join(",");
+}
+
+/**
+ * 브리지는 연결된 치아를 한 스팬으로 묶는다.
+ * 키는 스팬을 대표하는 행의 치아번호, 값은 스팬 전체.
+ */
+function insertionSpansByOwner(
+  teeth: readonly LabProsthesisAiTooth[],
+): Map<string, string[]> {
+  const order = new Map<string, number>();
+  teeth.forEach((tooth, index) => order.set(tooth.toothNumber, index));
+  const parent = new Map<string, string>();
+  const find = (id: string): string => {
+    const current = parent.get(id) ?? id;
+    if (current === id) return id;
+    const root = find(current);
+    parent.set(id, root);
+    return root;
+  };
+  const union = (a: string, b: string) => {
+    const left = find(a);
+    const right = find(b);
+    if (left !== right) parent.set(right, left);
+  };
+  const ensure = (id: string) => {
+    if (!id) return;
+    if (!parent.has(id)) parent.set(id, id);
+  };
+  for (const tooth of teeth) {
+    ensure(tooth.toothNumber);
+    const bridged =
+      tooth.prosthesisType === "브리지" || tooth.linkedTeeth.length > 0;
+    if (!bridged) continue;
+    for (const linked of tooth.linkedTeeth) {
+      ensure(linked);
+      union(tooth.toothNumber, linked);
+    }
+  }
+  const members = new Map<string, string[]>();
+  for (const id of parent.keys()) {
+    const root = find(id);
+    const list = members.get(root) ?? [];
+    list.push(id);
+    members.set(root, list);
+  }
+  const owner = new Map<string, string[]>();
+  for (const list of members.values()) {
+    const rows = list
+      .filter((id) => order.has(id))
+      .sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0));
+    const lead = rows[0];
+    if (!lead) continue;
+    owner.set(lead, [...list].sort());
+  }
+  return owner;
+}
+
+function insertionSpanForTooth(
+  teeth: readonly LabProsthesisAiTooth[],
+  toothNumber: string | null | undefined,
+): string[] {
+  const digits = String(toothNumber || "").replace(/\D/g, "");
+  if (!/^[1-4][1-8]$/.test(digits)) return [];
+  const spans = insertionSpansByOwner(teeth);
+  const own = spans.get(digits);
+  if (own) return own;
+  for (const span of spans.values()) {
+    if (span.includes(digits)) return span;
+  }
+  return [digits];
+}
+
 function DesignViewerChrome({
   teeth,
   activeTooth,
@@ -1152,8 +1215,11 @@ function DesignViewerChrome({
   generating,
   genLabel,
   toothInfoOpen,
+  insertionKeys,
+  canSetInsertion,
   showGenerateAll,
   onSelectTooth,
+  onSetInsertion,
   onToggleInfo,
   onGenerateAll,
   onGenerateTooth,
@@ -1165,8 +1231,11 @@ function DesignViewerChrome({
   generating: boolean;
   genLabel: string;
   toothInfoOpen: boolean;
+  insertionKeys: readonly string[];
+  canSetInsertion: boolean;
   showGenerateAll: boolean;
   onSelectTooth: (toothNumber: string) => void;
+  onSetInsertion: (toothNumbers: readonly string[]) => void;
   onToggleInfo: () => void;
   onGenerateAll: () => void;
   onGenerateTooth: (toothNumber: string) => void;
@@ -1184,6 +1253,7 @@ function DesignViewerChrome({
       teeth: teeth.filter((tooth) => toothArchGroup(tooth.toothNumber) === group.id),
     }))
     .filter((group) => group.teeth.length > 0);
+  const spans = insertionSpansByOwner(teeth);
 
   return (
     <>
@@ -1193,7 +1263,7 @@ function DesignViewerChrome({
 
       <div className="absolute right-3 top-3 z-10 flex max-h-[calc(100%-1.5rem)] flex-col items-end gap-1">
         {teeth.length > 0 ? (
-          <div className="mt-1 w-40 overflow-hidden rounded-lg border bg-background/95 text-xs shadow-sm">
+          <div className="mt-1 w-44 overflow-hidden rounded-lg border bg-background/95 text-xs shadow-sm">
             <button
               type="button"
               className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-left"
@@ -1219,6 +1289,9 @@ function DesignViewerChrome({
                       {group.teeth.map((tooth, index) => {
                         const selected = activeTooth?.toothNumber === tooth.toothNumber;
                         const done = generated[tooth.toothNumber] === true;
+                        const span = spans.get(tooth.toothNumber);
+                        const spanKey = span ? insertionAxisKey(span) : "";
+                        const axisOn = Boolean(spanKey && insertionKeys.includes(spanKey));
                         return (
                           <li
                             key={`${tooth.toothNumber}-${tooth.prosthesisType}-${index}`}
@@ -1233,6 +1306,7 @@ function DesignViewerChrome({
                               <button
                                 type="button"
                                 className="min-w-0 flex-1 text-left"
+                                title="이 치아의 교합면을 봅니다"
                                 onClick={() => onSelectTooth(tooth.toothNumber)}
                               >
                                 <span className="block truncate">
@@ -1242,6 +1316,29 @@ function DesignViewerChrome({
                                   </span>
                                 </span>
                               </button>
+                              {span ? (
+                                <button
+                                  type="button"
+                                  className={cn(
+                                    "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded",
+                                    axisOn
+                                      ? "bg-primary text-primary-foreground"
+                                      : "text-foreground hover:bg-muted",
+                                    !canSetInsertion && "opacity-50",
+                                  )}
+                                  title={
+                                    span.length > 1
+                                      ? "지금 화면과 수직인 방향으로 스팬 전체의 삽입축을 잡습니다"
+                                      : "지금 화면과 수직인 방향으로 이 보철의 삽입축을 잡습니다"
+                                  }
+                                  aria-label={span.length > 1 ? "스팬 삽입축" : "삽입축"}
+                                  aria-pressed={axisOn}
+                                  disabled={!canSetInsertion}
+                                  onClick={() => onSetInsertion(span)}
+                                >
+                                  <ArrowDownToLine className="h-3 w-3" />
+                                </button>
+                              ) : null}
                               {done ? (
                                 <button
                                   type="button"
