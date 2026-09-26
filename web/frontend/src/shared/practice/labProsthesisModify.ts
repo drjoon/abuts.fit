@@ -151,6 +151,8 @@ export type ProsthesisDesignEdit = {
   activeTooth: string | null;
   bridges: Array<{ from: string; to: string }>;
   prepBackTransparent: boolean;
+  /** 마진 선. 끄면 점과 고리를 그리지 않는다. */
+  showMargin: boolean;
 };
 
 function ones(count: number) {

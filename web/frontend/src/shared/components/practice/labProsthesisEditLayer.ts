@@ -124,7 +124,7 @@ export function buildProsthesisEditLayer(args: {
     const active = args.spec.activeTooth === tooth;
     const generated = args.spec.generated[tooth] === true;
 
-    if (!edit.margin.deleted) {
+    if (args.spec.showMargin && !edit.margin.deleted) {
       const base = place.radius * 0.78;
       const extra = edit.margin.offsetMm / unit;
       const points: THREE.Vector3[] = [];

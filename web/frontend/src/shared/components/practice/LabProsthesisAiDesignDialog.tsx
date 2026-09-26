@@ -8,8 +8,9 @@
 // - 2026-09-26: 삽입축은 치아 정보에서 보철마다. 브리지는 스팬당 하나.
 // - 2026-09-26: 브리지 삽입축 버튼은 스팬 한가운데. 치아는 선으로 잇고 아래 번호는 없앤다.
 // - 2026-09-26: 브리지 연결선은 치아 중심에서 끝난다. 삽입축은 그 선 중심 왼쪽.
-// - 2026-09-26: 투명 체크는 지대치 외 스캔을 20%로 비추고, 끄면 불투명하다.
-// - 2026-09-26: 투명 오른쪽 삽입축 토글이 화살표를 보여 준다. 치아 정보에서 잡으면 화면 중앙 광선에 닿는다.
+// - 2026-09-26: 투명 체크는 지대치 외 스캔을 20%로 비추고, 끄면 불투명하다. 처음에는 꺼져 있다.
+// - 2026-09-27: 언더컷과 교합 접촉 사이 마진. 범례 왼쪽은 언더컷·삽입축, 오른쪽은 −0.5~+0.5mm 색 눈금.
+// - 2026-09-27: 정중앙은 버튼 줄 한가운데. 칼라는 교합 접촉, 투명 앞. 표시 쉐브론은 하나만.
 // - 2026-09-26: 치아 이름은 글자 너비. 삽입축은 파란 버튼. 치아를 누르면 잡은 카메라로.
 // - 2026-09-26: 작업영역 위 정중앙 버튼이 가로·세로 점선을 켠다.
 // - 2026-09-26: 마진·삽입·내면·형상·훅·컷백·홀·커넥터를 작업 영역에서 고친다.
@@ -30,19 +31,29 @@
 // - 2026-09-26: 카메라 각도·위치·줌이 바뀌면 작업 초안에 둔다.
 // - 2026-09-26: 닫기는 바로 하고, 작업 스캔 업로드·저장은 뒤에서 한다.
 // - 2026-09-26: 자동 맞춤·삽입축처럼 문서를 바꾸는 명령마다 작업 초안을 저장한다.
+// - 2026-09-27: 패널 닫기·열기 아이콘. 가로가 좁으면 헤더 버튼은 아이콘만.
+// - 2026-09-27: 패널은 열기·닫기·숨김. 헤더 날짜는 도착일만.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDownToLine,
   Blend,
   Crosshair,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   ImageDown,
   Paintbrush,
+  PanelLeftClose,
+  PanelLeftDashed,
+  PanelLeftOpen,
   Pencil,
+  Paperclip,
   Redo2,
+  Eraser,
   Undo2,
   Palette,
   Sparkles,
+  Spline,
   TriangleAlert,
 } from "lucide-react";
 
@@ -121,6 +132,7 @@ import {
   type WorkSessionDocument,
 } from "@/shared/practice/labProsthesisWorkDraft";
 import {
+  contactMapGradientCss,
   undercutLimitFromRange,
   type ContactPaintMode,
 } from "@/shared/practice/oralScanDesignAnalysis";
@@ -153,9 +165,18 @@ export type WorkingScansPersisted = {
 type LabProsthesisAiCaseHeader = {
   /** 예: 테스트치과 · 노해인4 */
   primary?: string | null;
-  /** 예: 주문 2026-09-26 · 도착 2026-10-07 */
+  /** 예: 주문 2026-09-26 · 도착 2026-10-07. 헤더에는 도착일만 쓴다. */
   dates?: string | null;
 };
+
+/** 열기=본문, 닫기=제목만, 숨김=패널 없음. 버튼은 다음 동작. */
+type PanelLayout = "open" | "closed" | "hidden";
+
+function panelLayoutAction(layout: PanelLayout): string {
+  if (layout === "open") return "패널 닫기";
+  if (layout === "closed") return "패널 숨김";
+  return "패널 열기";
+}
 
 type LabProsthesisAiBasketTag = {
   value: string;
@@ -214,6 +235,15 @@ type WorkCloseSnapshot = {
 
 type DesignStage = "scan" | "margin" | "design";
 
+function isOpposingOrBite(
+  role: AssignableScanRole,
+  prepArch: "upper" | "lower" | "both" | null,
+) {
+  if (role === "bite") return true;
+  if (prepArch !== "upper" && prepArch !== "lower") return false;
+  return (role === "upper" || role === "lower") && role !== prepArch;
+}
+
 const DESIGN_STAGES: Array<{ id: DesignStage; label: string }> = [
   { id: "scan", label: "스캔" },
   { id: "margin", label: "마진" },
@@ -248,7 +278,7 @@ export function LabProsthesisAiDesignButton({
         size="sm"
         className={cn("h-9 gap-1 px-3", className)}
         title="업로드 스캔으로 보철 디자인"
-        aria-label="AI 보철 디자인"
+        aria-label="AI 디자인"
         onClick={() => setOpen(true)}
       >
         <Sparkles className="h-3.5 w-3.5 shrink-0" />
@@ -373,7 +403,8 @@ function LabProsthesisAiDesignDialog({
   const [paintColor, setPaintColor] = useState<string>(VIEW_PAINT_COLORS[0]);
   const [paintInk, setPaintInk] = useState(false);
   const [hasScanColor, setHasScanColor] = useState(false);
-  const [ghostOn, setGhostOn] = useState(true);
+  const [ghostOn, setGhostOn] = useState(false);
+  const [marginShown, setMarginShown] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [progress, setProgress] = useState(0);
   const [fileState, setFileState] = useState<
@@ -388,16 +419,23 @@ function LabProsthesisAiDesignDialog({
   const [generated, setGenerated] = useState<Record<string, boolean>>({});
   const [generating, setGenerating] = useState(false);
   const [genLabel, setGenLabel] = useState("");
+  const [panelsHidden, setPanelsHidden] = useState(false);
   const [toothInfoOpen, setToothInfoOpen] = useState(true);
   const [roleOverride, setRoleOverride] = useState<
     Record<string, AssignableScanRole>
   >({});
   const [scanOrder, setScanOrder] = useState<string[]>([]);
   const [scanListOpen, setScanListOpen] = useState(true);
+  const [scanNamesOpen, setScanNamesOpen] = useState(true);
   const [modifyPanelOpen, setModifyPanelOpen] = useState(true);
   const [dragScanId, setDragScanId] = useState<string | null>(null);
   const [dropScanId, setDropScanId] = useState<string | null>(null);
-  const [workWide, setWorkWide] = useState(false);
+  const [workWide, setWorkWide] = useState(
+    () => typeof window !== "undefined" && window.innerWidth >= 720,
+  );
+  const [headerWide, setHeaderWide] = useState(
+    () => typeof window !== "undefined" && window.innerWidth >= 1280,
+  );
   const [insertionKeys, setInsertionKeys] = useState<string[]>([]);
   const [insertionShown, setInsertionShown] = useState(false);
   const [centerGuides, setCenterGuides] = useState(true);
@@ -446,6 +484,7 @@ function LabProsthesisAiDesignDialog({
     if (!node) return;
     const sync = () => {
       setWorkWide(node.clientWidth >= 720);
+      setHeaderWide(node.clientWidth >= 1280);
     };
     sync();
     const observer = new ResizeObserver(sync);
@@ -460,7 +499,8 @@ function LabProsthesisAiDesignDialog({
       setVisible({});
       setColorMapping(true);
       setHasScanColor(false);
-      setGhostOn(true);
+      setGhostOn(false);
+      setMarginShown(false);
       setLoadError("");
       setProgress(0);
       setFileState({});
@@ -474,9 +514,11 @@ function LabProsthesisAiDesignDialog({
       setGenerating(false);
       setGenLabel("");
       setToothInfoOpen(true);
+      setPanelsHidden(false);
       setRoleOverride({});
       setScanOrder([]);
       setScanListOpen(true);
+      setScanNamesOpen(true);
       setModifyPanelOpen(true);
       setDragScanId(null);
       setDropScanId(null);
@@ -723,13 +765,7 @@ function LabProsthesisAiDesignDialog({
   );
 
   const busy = scans.some((row) => fileState[row.id] === "loading");
-  const hasGhost = scans.some(
-    (row) =>
-      row.role === "bite" ||
-      ((prepArch === "upper" || prepArch === "lower") &&
-        (row.role === "upper" || row.role === "lower") &&
-        row.role !== prepArch),
-  );
+  const hasGhost = scans.some((row) => isOpposingOrBite(row.role, prepArch));
   const scanShown = (row: MeshSource) =>
     row.id in visible
       ? visible[row.id] !== false
@@ -786,6 +822,10 @@ function LabProsthesisAiDesignDialog({
   const undercutLimit = undercutLimitFromRange(40);
   const insertionAxisVisible = insertionShown && insertionKeys.length > 0;
   const paintUndercut = undercutMap || (insertionAxisVisible && canUndercut);
+  const viewToolBtn = cn(
+    "h-7 shadow-sm text-xs [&_svg]:!size-3",
+    workWide ? "gap-0.5 px-2" : "w-7 px-0",
+  );
   const activeNumber = activeTooth?.toothNumber ?? null;
   const activeEdit = activeNumber
     ? (edits[activeNumber] ?? createToothDesignEdit())
@@ -818,6 +858,7 @@ function LabProsthesisAiDesignDialog({
             activeTooth: activeNumber,
             bridges,
             prepBackTransparent,
+            showMargin: marginShown,
           },
     [
       activeNumber,
@@ -826,6 +867,7 @@ function LabProsthesisAiDesignDialog({
       edits,
       generated,
       marginMode,
+      marginShown,
       modifyTool,
       prepBackTransparent,
       stage,
@@ -987,6 +1029,7 @@ function LabProsthesisAiDesignDialog({
     genSeq.current = seq;
     const targets = toothNumbers.filter(Boolean);
     setGenerating(true);
+    setMarginShown(true);
     setStage("margin");
     if (canUndercut) setUndercutMap(true);
     setGenLabel("마진과 언더컷을 확인하는 중");
@@ -1038,6 +1081,7 @@ function LabProsthesisAiDesignDialog({
 
   const onStage = (next: DesignStage) => {
     setStage(next);
+    setMarginShown(next !== "scan");
     if (next !== "scan") {
       setAlignKind(null);
       setAlignArch(null);
@@ -1394,6 +1438,31 @@ function LabProsthesisAiDesignDialog({
     });
   };
 
+  const panelLayout: PanelLayout = panelsHidden
+    ? "hidden"
+    : scanListOpen || modifyPanelOpen || toothInfoOpen
+      ? "open"
+      : "closed";
+  const panelsShown = panelLayout !== "hidden";
+  const panelAction = panelLayoutAction(panelLayout);
+  const cyclePanelLayout = () => {
+    if (panelLayout === "open") {
+      setScanListOpen(false);
+      setModifyPanelOpen(false);
+      setToothInfoOpen(false);
+      return;
+    }
+    if (panelLayout === "closed") {
+      setPanelsHidden(true);
+      return;
+    }
+    setPanelsHidden(false);
+    setScanListOpen(true);
+    setScanNamesOpen(true);
+    setModifyPanelOpen(true);
+    setToothInfoOpen(true);
+  };
+
   return (
     <Dialog open={open} onOpenChange={requestOpenChange}>
       <DialogContent
@@ -1420,25 +1489,8 @@ function LabProsthesisAiDesignDialog({
         <DialogHeader className="relative shrink-0 flex-row items-center justify-between gap-3 space-y-0 border-b bg-white/95 py-2 pl-5 pr-3 text-left">
           <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-x-3 overflow-hidden">
             <DialogTitle className="shrink-0 text-base sm:text-lg">
-              AI 보철 디자인
+              AI 디자인
             </DialogTitle>
-            {plan.teeth.length > 0 ? (
-              <ul className="flex shrink-0 flex-nowrap gap-1.5">
-                {plan.teeth.map((tooth, index) => (
-                  <li
-                    key={`${tooth.toothNumber}-${tooth.prosthesisType}-${index}`}
-                    className={cn(
-                      "rounded-md px-2 py-1 text-xs font-medium",
-                      tooth.designable
-                        ? "bg-primary/10 text-primary"
-                        : "bg-muted text-muted-foreground",
-                    )}
-                  >
-                    {formatProsthesisAiToothLabel(tooth)}
-                  </li>
-                ))}
-              </ul>
-            ) : null}
             <CaseHeaderLines header={caseHeader} />
             {basketTag ? (
               <div className="flex shrink-0 items-center gap-0.5">
@@ -1452,9 +1504,33 @@ function LabProsthesisAiDesignDialog({
               </div>
             ) : null}
           </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className={cn(
+              "absolute left-1/2 top-1/2 z-10 h-8 -translate-x-1/2 -translate-y-1/2 [&_svg]:!size-3.5",
+              headerWide ? "gap-1 px-2.5" : "w-8 px-0",
+            )}
+            aria-label={panelAction}
+            title={panelAction}
+            onClick={cyclePanelLayout}
+          >
+            {panelLayout === "open" ? (
+              <PanelLeftClose />
+            ) : panelLayout === "closed" ? (
+              <PanelLeftDashed />
+            ) : (
+              <PanelLeftOpen />
+            )}
+            {headerWide ? <span>{panelAction}</span> : null}
+          </Button>
           <div className="flex shrink-0 items-center justify-end gap-1.5 pr-8">
-            <label className="mr-0.5 flex items-center gap-2 whitespace-nowrap text-xs font-medium text-foreground">
-              자동 저장
+            <label
+              className="mr-0.5 flex items-center gap-2 whitespace-nowrap text-xs font-medium text-foreground"
+              title="자동 저장"
+            >
+              {headerWide ? <span>자동 저장</span> : null}
               <Switch
                 checked={autoSave}
                 onCheckedChange={(on) => {
@@ -1498,14 +1574,43 @@ function LabProsthesisAiDesignDialog({
             <Button
               type="button"
               size="sm"
+              variant="outline"
+              className={cn(
+                "ml-4 h-8 [&_svg]:!size-3.5",
+                headerWide ? "gap-1 px-2.5" : "w-8 px-0",
+              )}
+              onClick={() => {
+                const base = viewerRef.current?.captureCanvas();
+                if (!base || !paintInk || !paintRef.current) {
+                  viewerRef.current?.saveImage();
+                  return;
+                }
+                void paintRef.current.compositePng(base).then((blob) => {
+                  if (!blob) return;
+                  downloadBlobFile(blob, paintNoteFileName("작업"));
+                });
+              }}
+              title="현재 뷰를 PNG로 저장"
+              aria-label="이미지 저장"
+            >
+              <ImageDown className="h-3.5 w-3.5" />
+              {headerWide ? <span>이미지 저장</span> : null}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
               variant={paintOn ? "default" : "outline"}
-              className="h-8 gap-1"
+              className={cn(
+                "h-8 [&_svg]:!size-3.5",
+                headerWide ? "gap-1 px-2.5" : "w-8 px-0",
+              )}
               aria-pressed={paintOn}
+              aria-label="페인트"
               onClick={() => setPaintOn((on) => !on)}
               title="화면 위에 표시를 그립니다"
             >
               <Pencil className="h-3.5 w-3.5" />
-              페인트
+              {headerWide ? <span>페인트</span> : null}
             </Button>
             {paintOn
               ? VIEW_PAINT_COLORS.map((swatch) => (
@@ -1527,38 +1632,26 @@ function LabProsthesisAiDesignDialog({
                 type="button"
                 size="sm"
                 variant="outline"
-                className="h-8"
+                className={cn(
+                  "h-8 [&_svg]:!size-3.5",
+                  headerWide ? "gap-1 px-2.5" : "w-8 px-0",
+                )}
+                title="표시 지우기"
+                aria-label="표시 지우기"
                 onClick={() => paintRef.current?.clear()}
               >
-                표시 지우기
+                <Eraser className="h-3.5 w-3.5" />
+                {headerWide ? <span>표시 지우기</span> : null}
               </Button>
             ) : null}
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="h-8 gap-1"
-              onClick={() => {
-                const base = viewerRef.current?.captureCanvas();
-                if (!base || !paintInk || !paintRef.current) {
-                  viewerRef.current?.saveImage();
-                  return;
-                }
-                void paintRef.current.compositePng(base).then((blob) => {
-                  if (!blob) return;
-                  downloadBlobFile(blob, paintNoteFileName("작업"));
-                });
-              }}
-              title="현재 뷰를 PNG로 저장"
-            >
-              <ImageDown className="h-3.5 w-3.5" />
-              이미지 저장
-            </Button>
             {onAttachChatFile ? (
               <Button
                 type="button"
                 size="sm"
-                className="h-8"
+                className={cn(
+                  "h-8 [&_svg]:!size-3.5",
+                  headerWide ? "gap-1 px-2.5" : "w-8 px-0",
+                )}
                 disabled={!paintInk}
                 onClick={() => {
                   const base = viewerRef.current?.captureCanvas();
@@ -1583,8 +1676,10 @@ function LabProsthesisAiDesignDialog({
                   });
                 }}
                 title="표시가 입혀진 이미지를 채팅에 첨부합니다"
+                aria-label="채팅 첨부"
               >
-                채팅 첨부
+                <Paperclip className="h-3.5 w-3.5" />
+                {headerWide ? <span>채팅 첨부</span> : null}
               </Button>
             ) : null}
           </div>
@@ -1671,100 +1766,15 @@ function LabProsthesisAiDesignDialog({
               onInkChange={setPaintInk}
             />
             <div className="pointer-events-none absolute left-1/2 top-3 z-10 flex w-max max-w-[calc(100%-2rem)] -translate-x-1/2 flex-col items-center gap-1.5">
-              <div className="pointer-events-auto flex flex-wrap items-center justify-center gap-1.5">
-              <Button
-                type="button"
-                size="sm"
-                variant={paintUndercut ? "default" : "outline"}
-                className={cn(
-                  "h-8 shadow-sm [&_svg]:!size-3.5",
-                  workWide ? "gap-1 px-2.5" : "w-8 px-0",
-                )}
-                title={canUndercut ? "언더컷" : "주문 치아의 악을 알 수 없습니다"}
-                aria-label="언더컷"
-                aria-pressed={paintUndercut}
-                disabled={!canUndercut}
-                onClick={() => {
-                  if (!canUndercut || insertionAxisVisible) return;
-                  setUndercutMap((on) => !on);
-                  setStage("margin");
-                }}
-              >
-                <TriangleAlert />
-                {workWide ? <span>언더컷</span> : null}
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant={contactMap ? "default" : "outline"}
-                className={cn(
-                  "h-8 shadow-sm [&_svg]:!size-3.5",
-                  workWide ? "gap-1 px-2.5" : "w-8 px-0",
-                )}
-                title={canContact ? "교합 접촉" : "대합 스캔이 없습니다"}
-                aria-label="교합 접촉"
-                disabled={!canContact}
-                onClick={() => {
-                  if (!canContact) return;
-                  setContactMap((on) => !on);
-                  setStage("design");
-                }}
-              >
-                <Palette />
-                {workWide ? <span>교합 접촉</span> : null}
-              </Button>
-              {hasScanColor ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={colorMapping ? "default" : "outline"}
-                  className={cn(
-                    "h-8 shadow-sm [&_svg]:!size-3.5",
-                    workWide ? "gap-1 px-2.5" : "w-8 px-0",
-                  )}
-                  title="스캔 칼라"
-                  aria-label="칼라"
-                  aria-pressed={colorMapping}
-                  onClick={() => setColorMapping((on) => !on)}
-                >
-                  <Paintbrush />
-                  {workWide ? <span>칼라</span> : null}
-                </Button>
-              ) : null}
-              {hasGhost ? (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant={ghostOn ? "default" : "outline"}
-                      className={cn(
-                        "h-8 shadow-sm [&_svg]:!size-3.5",
-                        workWide ? "gap-1 px-2.5" : "w-8 px-0",
-                      )}
-                      aria-label="투명"
-                      aria-pressed={ghostOn}
-                      onClick={() => setGhostOn((on) => !on)}
-                    >
-                      <Blend />
-                      {workWide ? <span>투명</span> : null}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" className="z-[520]">
-                    지대치 외 스캔을 비춥니다.
-                  </TooltipContent>
-                </Tooltip>
-              ) : null}
+              <div className="pointer-events-auto relative flex items-center justify-center">
+              <div className="absolute right-full mr-5 flex items-center gap-1">
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
                     type="button"
                     size="sm"
                     variant={insertionShown ? "default" : "outline"}
-                    className={cn(
-                      "h-8 shadow-sm [&_svg]:!size-3.5",
-                      workWide ? "gap-1 px-2.5" : "w-8 px-0",
-                    )}
+                    className={viewToolBtn}
                     title="삽입축"
                     aria-label="삽입축"
                     aria-pressed={insertionShown}
@@ -1778,16 +1788,53 @@ function LabProsthesisAiDesignDialog({
                   잡은 삽입축을 치아 위에 표시합니다.
                 </TooltipContent>
               </Tooltip>
+              <Button
+                type="button"
+                size="sm"
+                variant={paintUndercut ? "default" : "outline"}
+                className={viewToolBtn}
+                title={canUndercut ? "언더컷" : "주문 치아의 악을 알 수 없습니다"}
+                aria-label="언더컷"
+                aria-pressed={paintUndercut}
+                disabled={!canUndercut}
+                onClick={() => {
+                  if (!canUndercut || insertionAxisVisible) return;
+                  setUndercutMap((on) => !on);
+                }}
+              >
+                <TriangleAlert />
+                {workWide ? <span>언더컷</span> : null}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={marginShown ? "default" : "outline"}
+                className={viewToolBtn}
+                title="마진"
+                aria-label="마진"
+                aria-pressed={marginShown}
+                onClick={() => {
+                  const next = !marginShown;
+                  setMarginShown(next);
+                  if (next) {
+                    setStage("margin");
+                    setModifyTool("margin");
+                    setAlignKind(null);
+                    setAlignArch(null);
+                  }
+                }}
+              >
+                <Spline />
+                {workWide ? <span>마진</span> : null}
+              </Button>
+              </div>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
                     type="button"
                     size="sm"
                     variant={centerGuides ? "default" : "outline"}
-                    className={cn(
-                      "h-8 shadow-sm [&_svg]:!size-3.5",
-                      workWide ? "gap-1 px-2.5" : "w-8 px-0",
-                    )}
+                    className={viewToolBtn}
                     title="정중앙"
                     aria-label="정중앙"
                     aria-pressed={centerGuides}
@@ -1801,48 +1848,125 @@ function LabProsthesisAiDesignDialog({
                   화면 가운데 가로·세로 점선을 켭니다.
                 </TooltipContent>
               </Tooltip>
+              <div className="absolute left-full ml-5 flex items-center gap-1">
+              {hasScanColor ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={colorMapping ? "default" : "outline"}
+                  className={viewToolBtn}
+                  title="스캔 칼라"
+                  aria-label="칼라"
+                  aria-pressed={colorMapping}
+                  onClick={() => setColorMapping((on) => !on)}
+                >
+                  <Paintbrush />
+                  {workWide ? <span>칼라</span> : null}
+                </Button>
+              ) : null}
+              <Button
+                type="button"
+                size="sm"
+                variant={contactMap ? "default" : "outline"}
+                className={viewToolBtn}
+                title={canContact ? "교합 접촉" : "대합 스캔이 없습니다"}
+                aria-label="교합 접촉"
+                disabled={!canContact}
+                onClick={() => {
+                  if (!canContact) return;
+                  setContactMap((on) => !on);
+                  setMarginShown(true);
+                  setStage("design");
+                }}
+              >
+                <Palette />
+                {workWide ? <span>교합 접촉</span> : null}
+              </Button>
+              {hasGhost ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={ghostOn ? "default" : "outline"}
+                      className={viewToolBtn}
+                      aria-label="투명"
+                      aria-pressed={ghostOn}
+                      onClick={() => {
+                        const next = !ghostOn;
+                        setGhostOn(next);
+                        setVisible((prev) => {
+                          const out = { ...prev };
+                          for (const scan of scans) {
+                            if (!isOpposingOrBite(scan.role, prepArch)) continue;
+                            out[scan.id] = next;
+                          }
+                          return out;
+                        });
+                      }}
+                    >
+                      <Blend />
+                      {workWide ? <span>투명</span> : null}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="z-[520]">
+                    대합치와 바이트를 20%로 비춥니다.
+                  </TooltipContent>
+                </Tooltip>
+              ) : null}
               </div>
-              {paintUndercut || contactMap || insertionAxisVisible ? (
-                <div className="pointer-events-none flex w-max items-center gap-2 rounded-md bg-background/95 px-2 py-1 text-[10px] text-muted-foreground shadow-sm">
-                  {paintUndercut ? (
-                    <span className="flex items-center gap-1">
-                      <span className="h-2 w-2 rounded-full bg-red-700" />
-                      언더컷
-                    </span>
-                  ) : null}
+              </div>
+              {paintUndercut || contactMap || insertionShown || marginShown ? (
+                <div className="pointer-events-none relative h-5 w-full">
+                  <div className="absolute right-full mr-5 flex w-max items-center gap-2 whitespace-nowrap text-[10px] text-foreground">
+                    {insertionShown ? (
+                      <span className="flex shrink-0 items-center gap-1 whitespace-nowrap">
+                        <span className="h-2 w-2 rounded-full bg-amber-500" />
+                        삽입축
+                      </span>
+                    ) : null}
+                    {paintUndercut ? (
+                      <span className="flex shrink-0 items-center gap-1 whitespace-nowrap">
+                        <span className="h-2 w-2 rounded-full bg-red-700" />
+                        언더컷
+                      </span>
+                    ) : null}
+                    {marginShown ? (
+                      <span className="flex shrink-0 items-center gap-1 whitespace-nowrap">
+                        <span className="h-2 w-2 rounded-full bg-teal-500" />
+                        마진
+                      </span>
+                    ) : null}
+                  </div>
                   {contactMap ? (
-                    <>
-                      <span className="flex items-center gap-1">
-                        <span className="h-2 w-2 rounded-full bg-red-500" />
-                        밀착
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <span className="h-2 w-2 rounded-full bg-green-500" />
-                        목표
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <span className="h-2 w-2 rounded-full bg-blue-500" />
-                        틈
-                      </span>
-                    </>
-                  ) : null}
-                  {insertionAxisVisible ? (
-                    <span className="flex items-center gap-1">
-                      <span className="h-2 w-2 rounded-full bg-amber-500" />
-                      삽입축
-                    </span>
+                    <div
+                      className="absolute left-full ml-5 w-44 text-[10px] text-foreground"
+                      aria-label="교합 거리 -0.5mm부터 +0.5mm"
+                    >
+                      <div className="flex justify-between whitespace-nowrap tabular-nums leading-none">
+                        <span>-0.5mm</span>
+                        <span>0.0</span>
+                        <span>+0.5mm</span>
+                      </div>
+                      <div
+                        className="mt-0.5 h-2 rounded-sm"
+                        style={{ background: contactMapGradientCss() }}
+                      />
+                    </div>
                   ) : null}
                 </div>
               ) : null}
             </div>
+            {panelsShown ? (
+            <>
             <div className="absolute left-3 top-3 z-10 max-h-[calc(100%-5.5rem)]">
               <div
                 className={cn(
                   "flex min-h-0 max-h-[min(18rem,34vh)] flex-col overflow-hidden rounded-lg border bg-background/95 text-sm shadow-sm",
-                  scanListOpen ? "w-80" : "w-max",
+                  scanListOpen && scanNamesOpen ? "w-80" : "w-max",
                 )}
               >
-                <div className="flex shrink-0 items-center gap-2 px-3 py-2">
+                <div className="flex shrink-0 items-center gap-1.5 px-2.5 py-2">
                   <Checkbox
                     checked={allShown}
                     disabled={scans.length === 0}
@@ -1851,21 +1975,53 @@ function LabProsthesisAiDesignDialog({
                   />
                   <button
                     type="button"
-                    className={cn(
-                      "flex items-center gap-2 text-left",
-                      scanListOpen && "min-w-0 flex-1 justify-between",
-                    )}
+                    className="text-left"
                     onClick={() => setScanListOpen((open) => !open)}
                     aria-expanded={scanListOpen}
                   >
                     <span className="font-semibold text-foreground">표시</span>
-                    <ChevronDown
-                      className={cn(
-                        "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
-                        scanListOpen ? "rotate-180" : "",
-                      )}
-                    />
                   </button>
+                  <div className="ml-auto flex items-center">
+                    {scanNamesOpen ? (
+                      <button
+                        type="button"
+                        className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                        aria-label="파일명 숨기기"
+                        onClick={() => {
+                          setScanNamesOpen(false);
+                          setScanListOpen(true);
+                        }}
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                        aria-label="파일명 표시"
+                        onClick={() => {
+                          setScanNamesOpen(true);
+                          setScanListOpen(true);
+                        }}
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                      aria-label="표시 목록"
+                      aria-expanded={scanListOpen}
+                      onClick={() => setScanListOpen((open) => !open)}
+                    >
+                      <ChevronDown
+                        className={cn(
+                          "h-4 w-4 transition-transform",
+                          scanListOpen ? "rotate-180" : "",
+                        )}
+                      />
+                    </button>
+                  </div>
                 </div>
                 {scanListOpen ? (
                   <div className="min-h-0 flex-1 space-y-2 overflow-y-auto border-t px-3.5 py-2.5">
@@ -1935,23 +2091,25 @@ function LabProsthesisAiDesignDialog({
                               <span className="inline-flex h-5 w-12 shrink-0 items-center justify-center text-[11px] font-semibold text-primary">
                                 {oralScanRoleLabel(scan.role)}
                               </span>
-                              <span
-                                draggable
-                                title="끌어 다른 파일이나 상악·하악·바이트 위에 놓으면 서로 바뀝니다"
-                                className="min-w-0 flex-1 cursor-grab truncate text-xs text-foreground active:cursor-grabbing"
-                                onDragStart={(event) => {
-                                  event.dataTransfer.setData("text/plain", scan.id);
-                                  event.dataTransfer.effectAllowed = "move";
-                                  setDragScanId(scan.id);
-                                }}
-                                onDragEnd={() => {
-                                  setDragScanId(null);
-                                  setDropScanId(null);
-                                }}
-                              >
-                                {scan.fileName}
-                              </span>
-                              {state === "error" ? (
+                              {scanNamesOpen ? (
+                                <span
+                                  draggable
+                                  title="끌어 다른 파일이나 상악·하악·바이트 위에 놓으면 서로 바뀝니다"
+                                  className="min-w-0 flex-1 cursor-grab truncate text-xs text-foreground active:cursor-grabbing"
+                                  onDragStart={(event) => {
+                                    event.dataTransfer.setData("text/plain", scan.id);
+                                    event.dataTransfer.effectAllowed = "move";
+                                    setDragScanId(scan.id);
+                                  }}
+                                  onDragEnd={() => {
+                                    setDragScanId(null);
+                                    setDropScanId(null);
+                                  }}
+                                >
+                                  {scan.fileName}
+                                </span>
+                              ) : null}
+                              {scanNamesOpen && state === "error" ? (
                                 <span className="shrink-0 text-[10px] text-destructive">
                                   실패
                                 </span>
@@ -2327,7 +2485,9 @@ function LabProsthesisAiDesignDialog({
                               </span>
                             </TooltipTrigger>
                             <TooltipContent side="right" className="z-[520]">
-                              목표보다 가까운 면을 붉게 잡습니다.
+                              목표보다 가까운 면은 붉고,
+                              <br />
+                              먼 면은 파랗습니다.
                             </TooltipContent>
                           </Tooltip>
                           <Tooltip>
@@ -2355,12 +2515,15 @@ function LabProsthesisAiDesignDialog({
                 ) : null}
               </div>
             </div>
+            </>
+            ) : null}
             <DesignViewerChrome
               teeth={plan.teeth}
               activeTooth={activeTooth}
               generated={generated}
               generating={generating}
               genLabel={genLabel}
+              panelsShown={panelsShown}
               toothInfoOpen={toothInfoOpen}
               insertionKeys={insertionKeys}
               canSetInsertion={entries.length > 0}
@@ -2503,6 +2666,7 @@ function DesignViewerChrome({
   generated,
   generating,
   genLabel,
+  panelsShown,
   toothInfoOpen,
   insertionKeys,
   canSetInsertion,
@@ -2517,6 +2681,7 @@ function DesignViewerChrome({
   generated: Record<string, boolean>;
   generating: boolean;
   genLabel: string;
+  panelsShown: boolean;
   toothInfoOpen: boolean;
   insertionKeys: readonly string[];
   canSetInsertion: boolean;
@@ -2564,7 +2729,6 @@ function DesignViewerChrome({
       onClick={() => onSelectTooth(tooth.toothNumber)}
     >
       <span className="font-semibold">#{tooth.toothNumber}</span>
-      <span className="ml-1.5 text-muted-foreground">{tooth.prosthesisType}</span>
     </button>
   );
 
@@ -2620,7 +2784,7 @@ function DesignViewerChrome({
       </style>
 
       <div className="absolute right-3 top-3 z-10 flex max-h-[calc(100%-1.5rem)] w-fit max-w-[min(32rem,70vw)] flex-col items-end gap-1">
-        {teeth.length > 0 ? (
+        {panelsShown && teeth.length > 0 ? (
           <div className="mt-1 w-fit max-w-full overflow-hidden rounded-lg border bg-background/95 text-sm shadow-sm">
             <button
               type="button"
@@ -2738,7 +2902,7 @@ function CaseHeaderLines({
   header?: LabProsthesisAiCaseHeader | null;
 }) {
   const primary = String(header?.primary || "").trim();
-  const dates = String(header?.dates || "").trim();
+  const dates = arrivalOnlyLabel(String(header?.dates || "").trim());
   if (!primary && !dates) return null;
   return (
     <p className="flex min-w-0 flex-nowrap items-center gap-x-3 overflow-hidden text-xs text-muted-foreground">
@@ -2752,6 +2916,20 @@ function CaseHeaderLines({
       ) : null}
     </p>
   );
+}
+
+function arrivalOnlyLabel(dates: string): string {
+  const parts = dates
+    .split("·")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const arrival = parts.find((part) => part.startsWith("도착"));
+  if (arrival) return arrival;
+  const ship = parts.find((part) => part.startsWith("출고"));
+  if (ship) return ship;
+  return parts
+    .filter((part) => !part.startsWith("주문") && !part.startsWith("재주문"))
+    .join(" · ");
 }
 
 function collectMeshSources(
