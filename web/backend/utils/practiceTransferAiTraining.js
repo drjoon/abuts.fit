@@ -25,6 +25,26 @@ export function isLabAiTrainingConsentAllowed(consent) {
 }
 
 /**
+ * 작업시작 전 견적·적립 보류는 수행 기공소의 현재 동의.
+ * 작업시작 이후는 그때 박힌 billing.aiTrainingConsent.
+ */
+export function resolveUnacceptedAiTrainingConsent(transfer, performer) {
+  const started = Boolean(
+    transfer?.requestorDownloadedAt || transfer?.requestorAcceptedAt,
+  );
+  if (started) {
+    const raw = transfer?.billing?.aiTrainingConsent;
+    return raw === true || raw === false ? raw : undefined;
+  }
+  if (isInternalLabBusinessType(performer)) return true;
+  if (!performer) {
+    const raw = transfer?.billing?.aiTrainingConsent;
+    return raw === true || raw === false ? raw : undefined;
+  }
+  return isLabAiTrainingConsentAllowed(performer.aiTrainingConsent);
+}
+
+/**
  * 학습 묶음에 넣을지.
  * 어벗츠기공본부는 항상 포함. 그 외는 생성·작업시작 때 박힌 동의만.
  * 스냅샷이 없으면(예전 의뢰) 넣지 않는다.

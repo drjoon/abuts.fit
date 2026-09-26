@@ -43,11 +43,15 @@ type PromptStatus = "loading" | "needed" | "done";
 export type LabAiTrainingConsentPromptHandle = {
   /** 아직 답을 안 했으면 X·바깥 클릭 없이 고를 때까지 기다린다. */
   ensureChoice: () => Promise<boolean>;
-  /** 허용 안 함이면 사용료 청구를 한 번 더 확인한다. 취소하면 false. */
+  /**
+   * 허용 안 함이면 사용료를 안내하고 다시 묻는다.
+   * 동의함은 허용으로 저장하고, 동의 안 함은 부동의를 유지한다. 둘 다 작업시작은 진행한다.
+   * 닫으면 false.
+   */
   confirmDeclinedFee: () => Promise<boolean>;
   /**
    * 기능 도입 이후 첫 작업시작. 예전 의뢰와 관계없이 사업자에 확인을 남긴다.
-   * 취소하거나 저장에 실패하면 false.
+   * 창을 닫거나 저장에 실패하면 false.
    */
   guardFirstWorkStart: () => Promise<boolean>;
 };
@@ -69,6 +73,7 @@ export const LabAiTrainingConsentPrompt = forwardRef<
   const choiceWaitersRef = useRef<Array<(ok: boolean) => void>>([]);
   const feeWaitersRef = useRef<Array<(ok: boolean) => void>>([]);
   const allowButtonRef = useRef<HTMLButtonElement>(null);
+  const agreeButtonRef = useRef<HTMLButtonElement>(null);
   const pct = resolveLabDirectPlatformFeePct(
     windowInfo?.feeRates?.directPlatformFeeRate != null
       ? Number(windowInfo.feeRates.directPlatformFeeRate) * 100
@@ -193,27 +198,34 @@ export const LabAiTrainingConsentPrompt = forwardRef<
     setOpen(false);
   };
 
+  const persistConsent = async (allowed: boolean) => {
+    const res = await apiFetch<MeResponse>({
+      path: "/api/businesses/me/ai-training-consent",
+      method: "POST",
+      token,
+      jsonBody: { allowed },
+    });
+    if (!res.ok) {
+      toast({
+        title: "저장 실패",
+        description:
+          res.data?.message || "학습 이용 허용을 저장하지 못했습니다.",
+        variant: "destructive",
+      });
+      return false;
+    }
+    statusRef.current = "done";
+    allowedRef.current = allowed;
+    window.dispatchEvent(new CustomEvent("abuts:ai-training-consent-changed"));
+    return true;
+  };
+
   const choose = async (allowed: boolean) => {
     if (saving) return;
     setSaving(true);
     try {
-      const res = await apiFetch<MeResponse>({
-        path: "/api/businesses/me/ai-training-consent",
-        method: "POST",
-        token,
-        jsonBody: { allowed },
-      });
-      if (!res.ok) {
-        toast({
-          title: "저장 실패",
-          description:
-            res.data?.message || "학습 이용 허용을 저장하지 못했습니다.",
-          variant: "destructive",
-        });
-        return;
-      }
-      statusRef.current = "done";
-      allowedRef.current = allowed;
+      const saved = await persistConsent(allowed);
+      if (!saved) return;
       const wasRequired = required;
       setOpen(false);
       setRequired(false);
@@ -226,6 +238,30 @@ export const LabAiTrainingConsentPrompt = forwardRef<
           ? `다음 주문부터 플랫폼 사용료 ${pct}%가 면제됩니다.`
           : `다음 주문부터 플랫폼 사용료 ${pct}%가 공제됩니다.`,
       });
+    } catch {
+      toast({
+        title: "저장 실패",
+        description: "학습 이용 허용을 저장하지 못했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const answerFeeConsent = async (allowed: boolean) => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      const saved = await persistConsent(allowed);
+      if (!saved) return;
+      toast({
+        title: allowed ? "학습 이용을 허용했습니다" : "학습 이용을 껐습니다",
+        description: allowed
+          ? `다음 주문부터 플랫폼 사용료 ${pct}%가 면제됩니다.`
+          : `다음 주문부터 플랫폼 사용료 ${pct}%가 공제됩니다.`,
+      });
+      settleFee(true);
     } catch {
       toast({
         title: "저장 실패",
@@ -307,19 +343,25 @@ export const LabAiTrainingConsentPrompt = forwardRef<
     <Dialog
       open={feeOpen}
       onOpenChange={(next) => {
-        if (!next) settleFee(false);
+        if (!next && !saving) settleFee(false);
       }}
     >
       <DialogContent
         className="z-[400] sm:max-w-[calc(32rem+2.5em)]"
         overlayClassName="z-[400]"
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          agreeButtonRef.current?.focus();
+        }}
       >
         <DialogHeader className="space-y-0 pr-8">
           <DialogTitle>AI 학습 이용 동의</DialogTitle>
           <div className="h-[1lh]" aria-hidden />
           <DialogDescription asChild>
             <p>
-              AI 학습 이용 부동의시 플랫폼 사용료 {pct}%가 청구됩니다.
+              AI 학습 이용 부동의시 <strong className="font-semibold text-foreground">플랫폼 사용료 {pct}%</strong>가 청구됩니다.
+              <br />
+              AI 학습 이용에 동의하시겠습니까?
             </p>
           </DialogDescription>
         </DialogHeader>
@@ -328,12 +370,18 @@ export const LabAiTrainingConsentPrompt = forwardRef<
             <Button
               type="button"
               variant="outline"
-              onClick={() => settleFee(false)}
+              disabled={saving}
+              onClick={() => void answerFeeConsent(false)}
             >
-              취소
+              동의 안 함
             </Button>
-            <Button type="button" onClick={() => settleFee(true)}>
-              확인
+            <Button
+              ref={agreeButtonRef}
+              type="button"
+              disabled={saving}
+              onClick={() => void answerFeeConsent(true)}
+            >
+              동의함
             </Button>
           </div>
         </DialogFooter>

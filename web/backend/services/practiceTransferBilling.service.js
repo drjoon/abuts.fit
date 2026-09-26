@@ -179,7 +179,10 @@ import {
   resolvePerformingLabAnchorId,
   resolvePracticeTransferSettlementParties,
 } from "../utils/practiceTransferAutoMatch.js";
-import { isLabAiTrainingConsentAllowed } from "../utils/practiceTransferAiTraining.js";
+import {
+  isLabAiTrainingConsentAllowed,
+  resolveUnacceptedAiTrainingConsent,
+} from "../utils/practiceTransferAiTraining.js";
 
 const resolveAssigneePurchaseLedgerLabel = (transfer) =>
   isCooperationAssignee(transfer)
@@ -6510,6 +6513,10 @@ export async function buildFeeQuotesForTransferDocs({
     if (multiplierLabId && Types.ObjectId.isValid(multiplierLabId)) {
       labIds.add(multiplierLabId);
     }
+    const performerLabId = resolvePerformingLabAnchorId(doc);
+    if (performerLabId && Types.ObjectId.isValid(performerLabId)) {
+      labIds.add(performerLabId);
+    }
     const practiceId = String(
       doc?.practiceBusinessAnchorId?._id || doc?.practiceBusinessAnchorId || "",
     ).trim();
@@ -6525,6 +6532,8 @@ export async function buildFeeQuotesForTransferDocs({
       labIdList.length
         ? BusinessAnchor.find({ _id: { $in: labIdList } })
             .select({
+              businessType: 1,
+              aiTrainingConsent: 1,
               labFeeSchedule: 1,
               labPracticeFeeMultipliers: 1,
               labPracticeSpecialSupplyPrices: 1,
@@ -6721,12 +6730,22 @@ export async function buildFeeQuotesForTransferDocs({
       ? partnerByPair.get(pairKey(quoteLabId, practiceId))
       : null;
     const kind = relationshipKindFromPartner(partner);
+    const performerId = resolvePerformingLabAnchorId(doc);
+    const previewConsent = resolveUnacceptedAiTrainingConsent(
+      doc,
+      labDocById.get(performerId) || null,
+    );
+    const previewConsentArg =
+      previewConsent === true || previewConsent === false
+        ? { aiTrainingConsent: previewConsent }
+        : {};
     const feeRateApplied = resolvePracticeTransferFeeRateForViewer({
       matchingMode,
       payoutRates,
       subcontracted: isSubcontractFeeApplicable(doc),
       viewerIsPrimeContractor: isViewerPrimeContractor(doc, viewerLabId),
       billing: doc?.billing,
+      ...previewConsentArg,
     });
     const remakeFeeRateApplied = resolvePracticeTransferFeeRate({
       matchingMode:
@@ -6734,6 +6753,7 @@ export async function buildFeeQuotesForTransferDocs({
       payoutRates,
       subcontracted: isSubcontractFeeApplicable(doc),
       ...platformFeeArgsFromBilling(doc?.billing),
+      ...previewConsentArg,
     });
     const remakeSplit = splitPracticeTransferSettlement({
       labFeeTotal: remakeFees.labFeeTotal,

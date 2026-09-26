@@ -1810,6 +1810,16 @@ export function RequestorPracticeReceivePage({
     return () => window.clearTimeout(timer);
   }, [loadCalendarTransfers, token]);
 
+  useEffect(() => {
+    const onConsent = () => {
+      void loadCalendarTransfers({ silent: true });
+    };
+    window.addEventListener("abuts:ai-training-consent-changed", onConsent);
+    return () => {
+      window.removeEventListener("abuts:ai-training-consent-changed", onConsent);
+    };
+  }, [loadCalendarTransfers]);
+
   const removeLabReceiveTransferFromList = useCallback(
     (transfer: Pick<ReceivedPracticeTransfer, "_id" | "transferId">) => {
       const transferId = String(transfer.transferId || "").trim();

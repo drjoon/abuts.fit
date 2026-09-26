@@ -38,6 +38,13 @@ import LedgerJournal from "../../models/ledgerJournal.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import PracticeTransfer from "../../models/practiceTransfer.model.js";
 import { practiceTransferNotDeletedMongoFilter } from "../../utils/practiceTransferStage.js";
+import { resolvePracticeTransferFeeRate } from "../../services/creditRevenuePolicy.service.js";
+import {
+  isInternalLabBusinessType,
+  isSubcontractFeeApplicable,
+  resolvePerformingLabAnchorId,
+} from "../../utils/practiceTransferAutoMatchCore.js";
+import { isLabAiTrainingConsentAllowed } from "../../utils/practiceTransferAiTraining.js";
 // - 2026-08-17: PTX 디자인비(+지그) 원장을 기공의뢰(PRACTICE_TRANSFER)로 승격·묶음.
 // - 2026-08-15: 행 시점 잔액 = 유료+무료+기공 합산 러닝(버킷 분리 시 잔액이 리셋되어 보임).
 
@@ -1990,6 +1997,11 @@ export async function listPendingLabSettlementLedgerRows({
       _id: 1,
       transferId: 1,
       practiceBusinessAnchorId: 1,
+      matchingMode: 1,
+      assigneeKind: 1,
+      assigneeLabAnchorId: 1,
+      targetLabAnchorId: 1,
+      requestorDownloadedAt: 1,
       billing: 1,
       toothWorks: 1,
       createdAt: 1,
@@ -2015,7 +2027,7 @@ export async function listPendingLabSettlementLedgerRows({
     ),
   ];
 
-  const [holdJournals, practiceAnchors] = await Promise.all([
+  const [holdJournals, practiceAnchors, viewerLab] = await Promise.all([
     LedgerJournal.find({
       refType: "PRACTICE_TRANSFER",
       refId: { $in: transferIds },
@@ -2053,6 +2065,9 @@ export async function listPendingLabSettlementLedgerRows({
           .select({ demoMode: 1 })
           .lean()
       : Promise.resolve([]),
+    BusinessAnchor.findById(labOid)
+      .select({ businessType: 1, aiTrainingConsent: 1 })
+      .lean(),
   ]);
 
   const demoByPractice = new Map();
@@ -2153,13 +2168,30 @@ export async function listPendingLabSettlementLedgerRows({
       0,
       Math.round(Number(billing.labSettlementAmount || 0)),
     );
+    const performerId = resolvePerformingLabAnchorId(doc);
+    const liveConsentApplies =
+      !doc.requestorDownloadedAt &&
+      performerId &&
+      performerId === String(labOid);
+    const liveFeeRate = liveConsentApplies
+      ? resolvePracticeTransferFeeRate({
+          matchingMode: doc.matchingMode,
+          subcontracted: isSubcontractFeeApplicable(doc),
+          performerIsInternal: isInternalLabBusinessType(viewerLab),
+          aiTrainingConsent: isInternalLabBusinessType(viewerLab)
+            ? true
+            : isLabAiTrainingConsentAllowed(viewerLab?.aiTrainingConsent),
+        })
+      : null;
     const pendingLabAmount =
-      storedNet > 0
-        ? storedNet
-        : Math.max(
-            0,
-            heldLabGross - Math.round(heldLabGross * feeRateApplied),
-          );
+      liveFeeRate != null
+        ? Math.max(0, heldLabGross - Math.round(heldLabGross * liveFeeRate))
+        : storedNet > 0
+          ? storedNet
+          : Math.max(
+              0,
+              heldLabGross - Math.round(heldLabGross * feeRateApplied),
+            );
     if (pendingLabAmount <= 0) continue;
 
     // HOLD 저널이 있으면 그걸 쓰고, 없어도 heldAt+활성 건이면 미러한다.

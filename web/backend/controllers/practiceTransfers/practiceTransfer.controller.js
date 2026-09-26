@@ -8654,6 +8654,18 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
 
     if (!alreadyAccepted) {
       try {
+        const acceptingLab = await BusinessAnchor.findById(labAnchorId)
+          .select({ businessType: 1, aiTrainingConsent: 1 })
+          .lean();
+        const acceptingIsInternal = isInternalLabBusinessType(acceptingLab);
+        const acceptingConsentAllowed = acceptingIsInternal
+          ? true
+          : isLabAiTrainingConsentAllowed(acceptingLab?.aiTrainingConsent);
+        doc.billing = {
+          ...(doc.billing && typeof doc.billing === "object" ? doc.billing : {}),
+          aiTrainingConsent: acceptingConsentAllowed,
+          internalPerformer: acceptingIsInternal,
+        };
         billingResult = await adjustPracticeTransferHold({
           transfer: doc,
           toothWorks: Array.isArray(doc.toothWorks) ? doc.toothWorks : [],

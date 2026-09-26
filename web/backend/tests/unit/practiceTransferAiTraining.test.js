@@ -1,6 +1,7 @@
 import {
   buildAiTrainingRecord,
   isLabAiTrainingConsentAllowed,
+  resolveUnacceptedAiTrainingConsent,
   shouldIncludeInAiTraining,
 } from "../../utils/practiceTransferAiTraining.js";
 
@@ -128,6 +129,33 @@ describe("isLabAiTrainingConsentAllowed", () => {
         allowed: false,
         updatedAt: new Date(),
       }),
+    ).toBe(false);
+  });
+});
+
+describe("resolveUnacceptedAiTrainingConsent", () => {
+  test("작업시작 전에는 현재 동의를 쓰고, 이후에는 스냅샷을 쓴다", () => {
+    const declined = { allowed: false, confirmedAt: new Date() };
+    expect(
+      resolveUnacceptedAiTrainingConsent(
+        { billing: { aiTrainingConsent: false } },
+        { aiTrainingConsent: { allowed: true, confirmedAt: new Date() } },
+      ),
+    ).toBe(true);
+    expect(
+      resolveUnacceptedAiTrainingConsent(
+        {
+          requestorDownloadedAt: new Date(),
+          billing: { aiTrainingConsent: false },
+        },
+        { aiTrainingConsent: { allowed: true, confirmedAt: new Date() } },
+      ),
+    ).toBe(false);
+    expect(
+      resolveUnacceptedAiTrainingConsent(
+        { billing: { aiTrainingConsent: false } },
+        { aiTrainingConsent: declined },
+      ),
     ).toBe(false);
   });
 });
