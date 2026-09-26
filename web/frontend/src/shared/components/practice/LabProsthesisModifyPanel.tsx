@@ -148,17 +148,6 @@ export function LabProsthesisModifyPanel({
               aria-label="마진 간격"
             />
           </Row>
-          <label className="flex items-center justify-between gap-3 text-xs font-medium">
-            지대치 뒷면
-            <Switch
-              checked={edit.margin.showBack}
-              onCheckedChange={(showBack) =>
-                onEdit({ ...edit, margin: { ...edit.margin, showBack } })
-              }
-              aria-label="지대치 뒷면 투명"
-              className="h-5 w-9 data-[state=checked]:bg-primary [&>span]:h-4 [&>span]:w-4 data-[state=checked]:[&>span]:translate-x-4"
-            />
-          </label>
           <div className="flex gap-1">
             <Button
               type="button"
@@ -179,11 +168,6 @@ export function LabProsthesisModifyPanel({
               마진 삭제
             </Button>
           </div>
-          <p className="text-[11px] leading-relaxed text-muted-foreground">
-            점은 하나씩 옮기고, 펜은 주변을 같이 다시 그립니다.
-            <br />
-            왼쪽 클릭은 점을 더하고, 오른쪽 클릭은 그 점을 지웁니다.
-          </p>
         </div>
       ) : null}
 

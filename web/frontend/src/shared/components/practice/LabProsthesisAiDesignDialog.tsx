@@ -11,14 +11,14 @@
 // - 2026-09-26: 치아 이름은 글자 너비. 삽입축은 파란 버튼. 치아를 누르면 잡은 카메라로.
 // - 2026-09-26: 작업영역 위 정중앙 버튼이 가로·세로 점선을 켠다.
 // - 2026-09-26: 마진·삽입·내면·형상·훅·컷백·홀·커넥터를 작업 영역에서 고친다.
+// - 2026-09-26: 삽입축이 잡히고 화면에 보이면 언더컷도 같이 칠한다.
+// - 2026-09-26: 사이드바 제거. 표시는 위, 수정은 왼쪽 아래 패널. 작업영역 아래 생성 배지 제거.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDownToLine,
   Blend,
   Crosshair,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   ImageDown,
   Paintbrush,
   Palette,
@@ -253,7 +253,6 @@ function LabProsthesisAiDesignDialog({
   const [undercutMap, setUndercutMap] = useState(false);
   const [occlusalGap, setOcclusalGap] = useState(0.1);
   const [contactMode, setContactMode] = useState<ContactPaintMode>("cut");
-  const [undercutRange, setUndercutRange] = useState(40);
   const [selectedTooth, setSelectedTooth] = useState<string | null>(null);
   const [generated, setGenerated] = useState<Record<string, boolean>>({});
   const [generating, setGenerating] = useState(false);
@@ -263,7 +262,8 @@ function LabProsthesisAiDesignDialog({
     Record<string, AssignableScanRole>
   >({});
   const [scanOrder, setScanOrder] = useState<string[]>([]);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [scanListOpen, setScanListOpen] = useState(true);
+  const [modifyPanelOpen, setModifyPanelOpen] = useState(true);
   const [dragScanId, setDragScanId] = useState<string | null>(null);
   const [dropScanId, setDropScanId] = useState<string | null>(null);
   const [workWide, setWorkWide] = useState(false);
@@ -306,7 +306,6 @@ function LabProsthesisAiDesignDialog({
       setUndercutMap(false);
       setOcclusalGap(0.1);
       setContactMode("cut");
-      setUndercutRange(40);
       setSelectedTooth(null);
       setGenerated({});
       setGenerating(false);
@@ -555,7 +554,9 @@ function LabProsthesisAiDesignDialog({
     plan.teeth.find((tooth) => tooth.toothNumber === selectedTooth) ??
     plan.teeth[0] ??
     null;
-  const undercutLimit = undercutLimitFromRange(undercutRange);
+  const undercutLimit = undercutLimitFromRange(40);
+  const insertionAxisVisible = insertionShown && insertionKeys.length > 0;
+  const paintUndercut = undercutMap || (insertionAxisVisible && canUndercut);
   const activeNumber = activeTooth?.toothNumber ?? null;
   const activeEdit = activeNumber
     ? (edits[activeNumber] ?? createToothDesignEdit())
@@ -781,401 +782,7 @@ function LabProsthesisAiDesignDialog({
           </div>
         </DialogHeader>
 
-        <div className="flex min-h-0 flex-1">
-          <aside
-            className={cn(
-              "flex shrink-0 flex-col border-r bg-background",
-              sidebarOpen ? "w-[min(20rem,36vw)]" : "w-10",
-            )}
-          >
-            {sidebarOpen ? (
-            <>
-            <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3">
-            <section className="space-y-2">
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  checked={allShown}
-                  disabled={scans.length === 0}
-                  onCheckedChange={() => toggleAllShown()}
-                  aria-label="표시 전체 선택"
-                />
-                <p className="text-xs font-semibold text-foreground">표시</p>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  className="ml-auto h-7 w-7 px-0"
-                  aria-label="사이드바 접기"
-                  title="사이드바 접기"
-                  onClick={() => setSidebarOpen(false)}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-              </div>
-              {scans.length === 0 ? (
-                <p className="text-xs leading-relaxed text-muted-foreground">
-                  상악·하악·바이트 스캔이 없습니다.
-                </p>
-              ) : (
-                <ul className="space-y-1.5">
-                  {scans.map((scan) => {
-                    const state = fileState[scan.id];
-                    return (
-                      <li
-                        key={scan.id}
-                        className={cn(
-                          "flex min-w-0 items-center gap-2 rounded px-0.5",
-                          dropScanId === scan.id &&
-                            dragScanId &&
-                            dragScanId !== scan.id &&
-                            "bg-primary/10 ring-1 ring-primary",
-                        )}
-                        onDragOver={(event) => {
-                          if (dragScanId === scan.id) return;
-                          event.preventDefault();
-                          event.dataTransfer.dropEffect = "move";
-                          setDropScanId((prev) =>
-                            prev === scan.id ? prev : scan.id,
-                          );
-                        }}
-                        onDragLeave={(event) => {
-                          const next = event.relatedTarget;
-                          if (
-                            next instanceof Node &&
-                            event.currentTarget.contains(next)
-                          ) {
-                            return;
-                          }
-                          setDropScanId((prev) =>
-                            prev === scan.id ? null : prev,
-                          );
-                        }}
-                        onDrop={(event) => {
-                          event.preventDefault();
-                          const id = event.dataTransfer.getData("text/plain");
-                          setDropScanId(null);
-                          setDragScanId(null);
-                          if (id) swapScans(id, scan.id);
-                        }}
-                      >
-                        <Checkbox
-                          checked={scanShown(scan)}
-                          disabled={state === "loading" || state === "error"}
-                          onCheckedChange={(checked) => {
-                            setVisible((prev) => ({
-                              ...prev,
-                              [scan.id]: checked === true,
-                            }));
-                          }}
-                          aria-label={`${oralScanRoleLabel(scan.role)} 표시`}
-                        />
-                        <span
-                          className={cn(
-                            "h-2 w-2 shrink-0 rounded-full",
-                            ROLE_DOT[scan.role],
-                          )}
-                        />
-                        <span className="inline-flex h-5 w-12 shrink-0 items-center justify-center text-[11px] font-semibold text-primary">
-                          {oralScanRoleLabel(scan.role)}
-                        </span>
-                        <span
-                          draggable
-                          title="끌어 다른 파일이나 상악·하악·바이트 위에 놓으면 서로 바뀝니다"
-                          className="min-w-0 flex-1 cursor-grab truncate text-xs text-foreground active:cursor-grabbing"
-                          onDragStart={(event) => {
-                            event.dataTransfer.setData("text/plain", scan.id);
-                            event.dataTransfer.effectAllowed = "move";
-                            setDragScanId(scan.id);
-                          }}
-                          onDragEnd={() => {
-                            setDragScanId(null);
-                            setDropScanId(null);
-                          }}
-                        >
-                          {scan.fileName}
-                        </span>
-                        {state === "error" ? (
-                          <span className="shrink-0 text-[10px] text-destructive">
-                            실패
-                          </span>
-                        ) : null}
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-              {busy ? <Progress value={progress} className="h-1.5" /> : null}
-            </section>
-
-            {loadError ? (
-              <p className="text-xs leading-relaxed text-destructive">{loadError}</p>
-            ) : null}
-
-            <section className="mt-5 space-y-2">
-              <p className="text-xs font-semibold text-foreground">단계</p>
-              <div className="grid grid-cols-3 gap-1">
-                {DESIGN_STAGES.map((item) => (
-                  <Button
-                    key={item.id}
-                    type="button"
-                    size="sm"
-                    variant={stage === item.id ? "default" : "outline"}
-                    className="h-7 px-2 text-[11px]"
-                    onClick={() => {
-                      onStage(item.id);
-                      if (item.id === "margin") setModifyTool("margin");
-                      if (item.id === "design") setModifyTool("refine");
-                    }}
-                  >
-                    {item.label}
-                  </Button>
-                ))}
-              </div>
-            </section>
-
-            {stage !== "scan" ? (
-              <LabProsthesisModifyPanel
-                tool={modifyTool}
-                onTool={(next) => {
-                  setModifyTool(next);
-                  setEditBrush("none");
-                  setHoleNote("");
-                  if (next === "margin" || next === "insertion") onStage("margin");
-                  else onStage("design");
-                }}
-                marginMode={marginMode}
-                onMarginMode={setMarginMode}
-                brush={editBrush}
-                onBrush={setEditBrush}
-                edit={activeEdit}
-                onEdit={(next) => {
-                  if (!activeNumber) return;
-                  setEdits((prev) => {
-                    if (modifyTool !== "connector" || bridgeSpan.length < 2) {
-                      return { ...prev, [activeNumber]: next };
-                    }
-                    const out = { ...prev, [activeNumber]: next };
-                    for (const tooth of bridgeSpan) {
-                      const base = out[tooth] ?? createToothDesignEdit();
-                      out[tooth] =
-                        tooth === activeNumber
-                          ? next
-                          : { ...base, connector: next.connector };
-                    }
-                    return out;
-                  });
-                }}
-                toothLabel={
-                  activeTooth ? formatProsthesisAiToothLabel(activeTooth) : null
-                }
-                generated={activeNumber ? generated[activeNumber] === true : false}
-                isBridge={isBridgeSpan}
-                canMatchInsertion={entries.length > 0 && bridgeSpan.length > 0}
-                holeNote={holeNote}
-                onRedetect={() => {
-                  if (!activeNumber) return;
-                  setEdits((prev) => ({
-                    ...prev,
-                    [activeNumber]: redetectMargin(
-                      prev[activeNumber] ?? createToothDesignEdit(),
-                    ),
-                  }));
-                }}
-                onClearMargin={() => {
-                  if (!activeNumber) return;
-                  const current = edits[activeNumber] ?? createToothDesignEdit();
-                  setEdits((prev) => ({
-                    ...prev,
-                    [activeNumber]: {
-                      ...current,
-                      margin: { ...current.margin, deleted: true },
-                    },
-                  }));
-                }}
-                onMatchInsertion={() => {
-                  if (bridgeSpan.length === 0) return;
-                  rememberInsertion(bridgeSpan);
-                  setModifyTool("insertion");
-                }}
-                onApplyInner={() => {
-                  if (!activeNumber) return;
-                  setEdits((prev) => {
-                    const current = prev[activeNumber] ?? createToothDesignEdit();
-                    return {
-                      ...prev,
-                      [activeNumber]: {
-                        ...current,
-                        inner: { ...current.inner, applied: true },
-                      },
-                    };
-                  });
-                }}
-                onRemoveHook={() => {
-                  if (!activeNumber) return;
-                  setEdits((prev) => {
-                    const current = prev[activeNumber] ?? createToothDesignEdit();
-                    return {
-                      ...prev,
-                      [activeNumber]: {
-                        ...current,
-                        hook: { ...current.hook, on: false },
-                      },
-                    };
-                  });
-                }}
-              />
-            ) : null}
-
-            {stage === "margin" ? (
-              <section className="space-y-2">
-                <p className="text-xs font-semibold text-foreground">마진</p>
-                <label className="flex items-center justify-between gap-3 text-xs font-medium">
-                  언더컷
-                  <Switch
-                    checked={undercutMap}
-                    disabled={!canUndercut}
-                    onCheckedChange={setUndercutMap}
-                    aria-label="언더컷 표시"
-                    className="h-5 w-9 data-[state=checked]:bg-primary [&>span]:h-4 [&>span]:w-4 data-[state=checked]:[&>span]:translate-x-4"
-                  />
-                </label>
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between text-xs font-medium">
-                    <span>언더컷 범위</span>
-                    <span className="text-muted-foreground">
-                      {undercutRange < 35 ? "좁음" : undercutRange > 70 ? "넓음" : "보통"}
-                    </span>
-                  </div>
-                  <Slider
-                    min={0}
-                    max={100}
-                    step={5}
-                    value={[undercutRange]}
-                    disabled={!canUndercut}
-                    onValueChange={([value]) => setUndercutRange(value ?? 40)}
-                    aria-label="언더컷 범위"
-                  />
-                </div>
-                <div className="flex gap-1">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="h-7 flex-1 px-2 text-[11px]"
-                    disabled={!canUndercut || generating}
-                    onClick={() => {
-                      setStage("margin");
-                      setUndercutMap(true);
-                      setUndercutRange(40);
-                      const span = insertionSpanForTooth(
-                        plan.teeth,
-                        activeTooth?.toothNumber,
-                      );
-                      if (span.length > 0) rememberInsertion(span);
-                    }}
-                  >
-                    다시 표시
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="h-7 flex-1 px-2 text-[11px]"
-                    onClick={() => setUndercutMap(false)}
-                  >
-                    지우기
-                  </Button>
-                </div>
-                <p className="text-[11px] leading-relaxed text-muted-foreground">
-                  화면 중앙이 보철을 지나게 맞춥니다.
-                  <br />
-                  다시 표시하면 화면과 수직인 삽입축을 그 자리에 잡습니다.
-                  <br />
-                  언더컷과 마진을 그 축으로 다시 칠합니다.
-                </p>
-              </section>
-            ) : null}
-
-            {stage === "design" ? (
-              <section className="space-y-2">
-                <p className="text-xs font-semibold text-foreground">교합</p>
-                <label className="flex items-center justify-between gap-3 text-xs font-medium">
-                  접촉
-                  <Switch
-                    checked={contactMap}
-                    disabled={!canContact}
-                    onCheckedChange={setContactMap}
-                    aria-label="교합 접촉 표시"
-                    className="h-5 w-9 data-[state=checked]:bg-primary [&>span]:h-4 [&>span]:w-4 data-[state=checked]:[&>span]:translate-x-4"
-                  />
-                </label>
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between text-xs font-medium">
-                    <span>교합 거리</span>
-                    <span className="tabular-nums text-muted-foreground">
-                      {occlusalGap.toFixed(2)} mm
-                    </span>
-                  </div>
-                  <Slider
-                    min={0}
-                    max={50}
-                    step={5}
-                    value={[Math.round(occlusalGap * 100)]}
-                    disabled={!canContact}
-                    onValueChange={([value]) => setOcclusalGap((value ?? 10) / 100)}
-                    aria-label="교합 거리"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-1">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={contactMode === "cut" ? "default" : "outline"}
-                    className="h-7 px-2 text-[11px]"
-                    onClick={() => setContactMode("cut")}
-                  >
-                    절삭
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={contactMode === "keep" ? "default" : "outline"}
-                    className="h-7 px-2 text-[11px]"
-                    onClick={() => setContactMode("keep")}
-                  >
-                    형태 유지
-                  </Button>
-                </div>
-                {!canContact ? (
-                  <p className="text-[11px] leading-relaxed text-muted-foreground">
-                    대합 스캔이 있으면 접촉 색을 칠합니다.
-                  </p>
-                ) : (
-                  <p className="text-[11px] leading-relaxed text-muted-foreground">
-                    빨강은 목표보다 가깝고, 초록은 맞고, 파랑은 틈입니다.
-                    <br />
-                    절삭은 가까운 면을 더 붉게 잡습니다.
-                  </p>
-                )}
-              </section>
-            ) : null}
-            </div>
-            </>
-            ) : (
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                className="m-1 h-8 w-8 px-0"
-                aria-label="사이드바 펼치기"
-                title="사이드바 펼치기"
-                onClick={() => setSidebarOpen(true)}
-              >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            )}
-          </aside>
-          <div ref={bindWorkArea} className="relative min-w-0 flex-1">
+        <div ref={bindWorkArea} className="relative min-h-0 min-w-0 flex-1">
             <OralScanOverlayViewer
               ref={viewerRef}
               items={viewerItems}
@@ -1190,7 +797,7 @@ function LabProsthesisAiDesignDialog({
               }))}
               onSelectTooth={showTooth}
               contactMap={contactMap}
-              undercutMap={undercutMap}
+              undercutMap={paintUndercut}
               occlusalGapMm={occlusalGap}
               contactMode={contactMode}
               undercutLimit={undercutLimit}
@@ -1206,21 +813,22 @@ function LabProsthesisAiDesignDialog({
               onDesignGesture={onDesignGesture}
               className="absolute inset-0"
             />
-            <div className="absolute left-3 top-3 z-10 flex max-w-[calc(100%-12rem)] flex-col items-start gap-1.5">
+            <div className="absolute left-3 top-3 z-10 flex max-h-[calc(100%-5.5rem)] max-w-[calc(100%-12rem)] flex-col items-start gap-1.5">
               <div className="flex flex-wrap items-center gap-1.5">
               <Button
                 type="button"
                 size="sm"
-                variant={undercutMap ? "default" : "outline"}
+                variant={paintUndercut ? "default" : "outline"}
                 className={cn(
                   "h-8 shadow-sm [&_svg]:!size-3.5",
                   workWide ? "gap-1 px-2.5" : "w-8 px-0",
                 )}
                 title={canUndercut ? "언더컷" : "주문 치아의 악을 알 수 없습니다"}
                 aria-label="언더컷"
+                aria-pressed={paintUndercut}
                 disabled={!canUndercut}
                 onClick={() => {
-                  if (!canUndercut) return;
+                  if (!canUndercut || insertionAxisVisible) return;
                   setUndercutMap((on) => !on);
                   setStage("margin");
                 }}
@@ -1345,9 +953,9 @@ function LabProsthesisAiDesignDialog({
                 </TooltipContent>
               </Tooltip>
               </div>
-              {undercutMap || contactMap || (insertionShown && insertionKeys.length > 0) ? (
+              {paintUndercut || contactMap || insertionAxisVisible ? (
                 <div className="pointer-events-none flex items-center gap-2 rounded-md bg-background/95 px-2 py-1 text-[10px] text-muted-foreground shadow-sm">
-                  {undercutMap ? (
+                  {paintUndercut ? (
                     <span className="flex items-center gap-1">
                       <span className="h-2 w-2 rounded-full bg-red-700" />
                       언더컷
@@ -1369,7 +977,7 @@ function LabProsthesisAiDesignDialog({
                       </span>
                     </>
                   ) : null}
-                  {insertionShown && insertionKeys.length > 0 ? (
+                  {insertionAxisVisible ? (
                     <span className="flex items-center gap-1">
                       <span className="h-2 w-2 rounded-full bg-amber-500" />
                       삽입축
@@ -1398,7 +1006,6 @@ function LabProsthesisAiDesignDialog({
               }}
             />
           </div>
-        </div>
       </DialogContent>
     </Dialog>
   );
