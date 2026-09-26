@@ -33,6 +33,7 @@
 // - 2026-09-26: 닫기는 바로 하고, 작업 스캔 업로드·저장은 뒤에서 한다.
 // - 2026-09-26: 자동 맞춤·삽입축처럼 문서를 바꾸는 명령마다 작업 초안을 저장한다.
 // - 2026-09-27: 패널 닫기·열기 아이콘. 가로가 좁으면 헤더 버튼은 아이콘만.
+// - 2026-09-27: 가이드 버튼 라벨은 없음 → 중앙선 → 모눈종이.
 // - 2026-09-27: 모달을 닫으면 작업영역 위 토글을 남긴다. 정중앙은 모눈(2mm·10mm)까지 순환한다.
 // - 2026-09-27: 표시 패널은 파일명을 기본으로 숨긴다. 헤더에서 닫거나 숨긴 뒤 열면 직전 패널 열림을 되돌린다.
 // - 2026-09-27: 패널은 열기·닫기·숨김. 헤더 날짜는 도착일만.
@@ -381,6 +382,12 @@ function nextCenterGuide(mode: WorkSessionCenterGuide): WorkSessionCenterGuide {
   if (mode === "off") return "center";
   if (mode === "center") return "grid";
   return "off";
+}
+
+function centerGuideLabel(mode: WorkSessionCenterGuide): string {
+  if (mode === "center") return "중앙선";
+  if (mode === "grid") return "모눈종이";
+  return "없음";
 }
 
 function storedAutoSave() {
@@ -1973,20 +1980,18 @@ function LabProsthesisAiDesignDialog({
                     size="sm"
                     variant={centerGuide === "off" ? "outline" : "default"}
                     className={viewToolBtn}
-                    title={centerGuide === "grid" ? "모눈종이" : "정중앙"}
-                    aria-label={centerGuide === "grid" ? "모눈종이" : "정중앙"}
+                    title={centerGuideLabel(centerGuide)}
+                    aria-label={centerGuideLabel(centerGuide)}
                     aria-pressed={centerGuide !== "off"}
                     onClick={() => setCenterGuide((mode) => nextCenterGuide(mode))}
                   >
                     <Crosshair />
-                    {workWide ? (
-                      <span>{centerGuide === "grid" ? "모눈종이" : "정중앙"}</span>
-                    ) : null}
+                    {workWide ? <span>{centerGuideLabel(centerGuide)}</span> : null}
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent side="bottom" className="z-[520]">
                   {centerGuide === "off" ? (
-                    "화면 가운데 가로·세로 점선을 켭니다."
+                    "중앙선을 켭니다."
                   ) : centerGuide === "center" ? (
                     <>
                       2mm 간격 모눈을 켭니다.
@@ -1994,7 +1999,7 @@ function LabProsthesisAiDesignDialog({
                       10mm마다 더 진합니다.
                     </>
                   ) : (
-                    "정중앙과 모눈을 끕니다."
+                    "선을 끕니다."
                   )}
                 </TooltipContent>
               </Tooltip>
