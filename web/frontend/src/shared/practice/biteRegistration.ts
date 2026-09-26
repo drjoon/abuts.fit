@@ -1,4 +1,5 @@
 // 협측 바이트에 상악·하악을 붙인다. 바이트는 그대로 두고 악궁만 강체 변환한다.
+// 점 3개는 한 평면이라 세 번째 축이 비는데, 그 축을 0으로 두면 악궁이 평평해진다.
 // 바이트는 치아 일부만 겹치고 위·아래가 한 메시에 있다.
 // 어긋남이 크면 점쌍 특징(Drost PPF)으로 처음 자세를 잡고, 겹치는 면만 trimmed ICP로 다듬는다.
 import * as THREE from "three";
@@ -258,6 +259,60 @@ function det33(a: number[][]) {
   return a00 * (a11 * a22 - a12 * a21) - a01 * (a10 * a22 - a12 * a20) + a02 * (a10 * a21 - a11 * a20);
 }
 
+function column3(m: number[][], col: number) {
+  return [m[0]?.[col] ?? 0, m[1]?.[col] ?? 0, m[2]?.[col] ?? 0];
+}
+
+function writeColumn3(m: number[][], col: number, v: number[]) {
+  if (m[0]) m[0][col] = v[0] ?? 0;
+  if (m[1]) m[1][col] = v[1] ?? 0;
+  if (m[2]) m[2][col] = v[2] ?? 0;
+}
+
+function len3(v: number[]) {
+  return Math.hypot(v[0] ?? 0, v[1] ?? 0, v[2] ?? 0);
+}
+
+function dot3(a: number[], b: number[]) {
+  return (a[0] ?? 0) * (b[0] ?? 0) + (a[1] ?? 0) * (b[1] ?? 0) + (a[2] ?? 0) * (b[2] ?? 0);
+}
+
+function cross3(a: number[], b: number[]) {
+  return [
+    (a[1] ?? 0) * (b[2] ?? 0) - (a[2] ?? 0) * (b[1] ?? 0),
+    (a[2] ?? 0) * (b[0] ?? 0) - (a[0] ?? 0) * (b[2] ?? 0),
+    (a[0] ?? 0) * (b[1] ?? 0) - (a[1] ?? 0) * (b[0] ?? 0),
+  ];
+}
+
+/**
+ * 점 3개는 한 평면이라 세 번째 특이값이 0이다.
+ * 빈 열을 앞의 두 열의 외적으로 채워야 악궁 두께가 남고, 찍은 점도 맞는다.
+ */
+function completeWeakColumn(m: number[][]): number | null {
+  const cols = [0, 1, 2].map((col) => column3(m, col));
+  const lengths = cols.map(len3);
+  const strong = [0, 1, 2].filter((index) => (lengths[index] ?? 0) > 0.5);
+  const weak = [0, 1, 2].filter((index) => (lengths[index] ?? 0) <= 0.5);
+  if (strong.length < 2) return null;
+  const i = strong[0] ?? 0;
+  const j = strong[1] ?? 1;
+  const a = (cols[i] ?? [1, 0, 0]).map((value) => value / (lengths[i] || 1));
+  const bRaw = (cols[j] ?? [0, 1, 0]).map((value) => value / (lengths[j] || 1));
+  const along = dot3(a, bRaw);
+  let b = [bRaw[0] - a[0] * along, bRaw[1] - a[1] * along, bRaw[2] - a[2] * along];
+  const bLen = len3(b);
+  if (bLen < 1e-6) return null;
+  b = b.map((value) => value / bLen);
+  const c = cross3(a, b);
+  if (len3(c) < 1e-8) return null;
+  writeColumn3(m, i, a);
+  writeColumn3(m, j, b);
+  const k = weak[0] ?? strong[2] ?? 2;
+  writeColumn3(m, k, c);
+  return k;
+}
+
 function jacobiEigen3(source: number[][]) {
   const m = source.map((row) => [...row]);
   const v = [
@@ -384,34 +439,42 @@ function kabsch(
     [0, 0, 0],
     [0, 0, 0],
   ];
+  const sigmas = [0, 1, 2].map((col) => {
+    const srcCol = order[col] ?? col;
+    return Math.sqrt(Math.max(eigen.values[srcCol] ?? 0, 0));
+  });
+  const sigmaMax = Math.max(sigmas[0] ?? 0, sigmas[1] ?? 0, sigmas[2] ?? 0);
+  const sigmaFloor = Math.max(sigmaMax * 1e-4, 1e-8);
   for (let col = 0; col < 3; col += 1) {
     const srcCol = order[col] ?? col;
-    const sigma = Math.sqrt(Math.max(eigen.values[srcCol] ?? 0, 0));
+    const sigma = sigmas[col] ?? 0;
     for (let row = 0; row < 3; row += 1) {
       vMat[row][col] = eigen.vectors[row]?.[srcCol] ?? (row === srcCol ? 1 : 0);
     }
-    if (sigma > 1e-8) {
-      for (let row = 0; row < 3; row += 1) {
-        uMat[row][col] =
-          ((h[row]?.[0] ?? 0) * (vMat[0]?.[col] ?? 0) +
-            (h[row]?.[1] ?? 0) * (vMat[1]?.[col] ?? 0) +
-            (h[row]?.[2] ?? 0) * (vMat[2]?.[col] ?? 0)) /
-          sigma;
-      }
+    if (sigma <= sigmaFloor) continue;
+    for (let row = 0; row < 3; row += 1) {
+      uMat[row][col] =
+        ((h[row]?.[0] ?? 0) * (vMat[0]?.[col] ?? 0) +
+          (h[row]?.[1] ?? 0) * (vMat[1]?.[col] ?? 0) +
+          (h[row]?.[2] ?? 0) * (vMat[2]?.[col] ?? 0)) /
+        sigma;
+    }
+    const colLen = Math.hypot(uMat[0]?.[col] ?? 0, uMat[1]?.[col] ?? 0, uMat[2]?.[col] ?? 0);
+    if (colLen < 1e-8) {
+      if (uMat[0]) uMat[0][col] = 0;
+      if (uMat[1]) uMat[1][col] = 0;
+      if (uMat[2]) uMat[2][col] = 0;
+      continue;
+    }
+    for (let row = 0; row < 3; row += 1) {
+      if (uMat[row]) uMat[row][col] = (uMat[row][col] ?? 0) / colLen;
     }
   }
-  if ((uMat[0]?.[2] ?? 0) === 0 && (uMat[1]?.[2] ?? 0) === 0 && (uMat[2]?.[2] ?? 0) === 0) {
-    const c0 = [uMat[0]?.[0] ?? 1, uMat[1]?.[0] ?? 0, uMat[2]?.[0] ?? 0];
-    const c1 = [uMat[0]?.[1] ?? 0, uMat[1]?.[1] ?? 1, uMat[2]?.[1] ?? 0];
-    uMat[0][2] = (c0[1] ?? 0) * (c1[2] ?? 0) - (c0[2] ?? 0) * (c1[1] ?? 0);
-    uMat[1][2] = (c0[2] ?? 0) * (c1[0] ?? 0) - (c0[0] ?? 0) * (c1[2] ?? 0);
-    uMat[2][2] = (c0[0] ?? 0) * (c1[1] ?? 0) - (c0[1] ?? 0) * (c1[0] ?? 0);
-  }
+  const weakCol = completeWeakColumn(uMat);
+  if (weakCol == null) return null;
   let r = mul33(vMat, transpose33(uMat));
   if (det33(r) < 0) {
-    vMat[0][2] = -(vMat[0]?.[2] ?? 0);
-    vMat[1][2] = -(vMat[1]?.[2] ?? 0);
-    vMat[2][2] = -(vMat[2]?.[2] ?? 0);
+    writeColumn3(uMat, weakCol, column3(uMat, weakCol).map((value) => -value));
     r = mul33(vMat, transpose33(uMat));
   }
   const t0 =
@@ -446,6 +509,20 @@ function applyRigid(cloud: Cloud, rigid: Rigid) {
     cloud.nrm[i * 3 + 1] = nny / len;
     cloud.nrm[i * 3 + 2] = nnz / len;
   }
+}
+
+/** 열 길이·행렬식이 1에서 벗어나면 한 축이 사라진 변환이다. */
+function matrixKeepsVolume(matrix: THREE.Matrix4) {
+  const e = matrix.elements;
+  const col = (index: number) =>
+    Math.hypot(e[index] ?? 0, e[index + 1] ?? 0, e[index + 2] ?? 0);
+  const near = (value: number) => value > 0.92 && value < 1.08;
+  if (!near(col(0)) || !near(col(4)) || !near(col(8))) return false;
+  const det =
+    (e[0] ?? 0) * ((e[5] ?? 0) * (e[10] ?? 0) - (e[6] ?? 0) * (e[9] ?? 0)) -
+    (e[4] ?? 0) * ((e[1] ?? 0) * (e[10] ?? 0) - (e[2] ?? 0) * (e[9] ?? 0)) +
+    (e[8] ?? 0) * ((e[1] ?? 0) * (e[6] ?? 0) - (e[2] ?? 0) * (e[5] ?? 0));
+  return det > 0.85;
 }
 
 function compose(base: THREE.Matrix4, rigid: Rigid) {
@@ -1632,6 +1709,7 @@ export async function mergeArchToBiteByPoints(
   const local = cropNearPoints(posed, marks, mmToUnits(8, unitToMm));
   const matrix = new THREE.Matrix4();
   compose(matrix, rigid);
+  if (!matrixKeepsVolume(matrix)) return false;
   if (local.count >= 80) {
     const before = overlapFitness(
       local,
@@ -1651,6 +1729,7 @@ export async function mergeArchToBiteByPoints(
       matrix.premultiply(icp);
     }
   }
+  if (!matrixKeepsVolume(matrix)) return false;
   for (const geometry of arches) {
     geometry.applyMatrix4(matrix);
     geometry.computeVertexNormals();

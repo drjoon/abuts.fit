@@ -17,6 +17,7 @@
 // - 2026-09-26: 마진은 기본 원보다 바깥을, 삽입축으로 스캔 면에 붙여 잡는다.
 // - 2026-09-26: 바이트와 상·하악이 어긋나면 바이트에 맞춰 움직이고, 교합면 중심에 원점을 둔다.
 // - 2026-09-26: 수동 정렬은 고른 악과 바이트만 좌우로 두고, 점 3개씩으로 근처 대응점을 잡아 붙인다.
+// - 2026-09-26: 수동 정렬의 두 모델은 화면 가운데에 좁은 간격으로 나란히 둔다.
 // - 2026-09-26: 화면 오른쪽·앞쪽에 방향광을 더해 악궁 양쪽이 같이 밝다.
 import {
   forwardRef,
@@ -629,6 +630,16 @@ function reseatOcclusalOrigin(loaded: LoadedMesh[], frame: DentalFrame) {
     mean.z - up.z * shift,
   );
   const { right, anterior } = frame;
+  if (
+    Math.abs(right.dot(anterior)) > 0.02 ||
+    Math.abs(right.dot(up)) > 0.02 ||
+    Math.abs(anterior.dot(up)) > 0.02 ||
+    Math.abs(right.length() - 1) > 0.02 ||
+    Math.abs(anterior.length() - 1) > 0.02 ||
+    Math.abs(up.length() - 1) > 0.02
+  ) {
+    return;
+  }
   const matrix = new THREE.Matrix4().set(
     right.x,
     right.y,
@@ -2863,11 +2874,21 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     screenRight.normalize();
     const archCenter = archBox.getCenter(new THREE.Vector3());
     const biteCenter = biteBox.getCenter(new THREE.Vector3());
-    const archRadius = archBox.getSize(new THREE.Vector3()).length() * 0.5;
-    const biteRadius = biteBox.getSize(new THREE.Vector3()).length() * 0.5;
-    const span = archRadius + biteRadius + Math.max(archRadius, biteRadius) * 0.28;
-    const archOffset = screenRight.clone().multiplyScalar(-span).sub(archCenter);
-    const biteOffset = screenRight.clone().multiplyScalar(span).sub(biteCenter);
+    const halfAlong = (box: THREE.Box3) => {
+      const size = box.getSize(new THREE.Vector3());
+      return (
+        0.5 *
+        (Math.abs(size.x * screenRight.x) +
+          Math.abs(size.y * screenRight.y) +
+          Math.abs(size.z * screenRight.z))
+      );
+    };
+    const archHalf = halfAlong(archBox);
+    const biteHalf = halfAlong(biteBox);
+    const gap = Math.max(archHalf, biteHalf) * 0.16;
+    const halfSep = (archHalf + biteHalf + gap) * 0.5;
+    const archOffset = screenRight.clone().multiplyScalar(-halfSep).sub(archCenter);
+    const biteOffset = screenRight.clone().multiplyScalar(halfSep).sub(biteCenter);
     for (const entry of loaded) {
       if (entry.role === arch) entry.mesh.position.copy(archOffset);
       else if (entry.role === "bite") entry.mesh.position.copy(biteOffset);
