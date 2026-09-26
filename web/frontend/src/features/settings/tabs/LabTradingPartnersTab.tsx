@@ -266,11 +266,6 @@ export const LabTradingPartnersTab = () => {
           <CardDescription className="text-[13px] leading-relaxed">
             인증 기공소는 치과의 자동 매칭 의뢰에 참여할 수 있습니다.
             <br />
-            하청 수수료 {subcontractFeePct}%에 플랫폼 사용료 {directFeePct}%를
-            더합니다.
-            <br />
-            학습 이용을 허용하면 플랫폼 사용료만 면제됩니다.
-            <br />
             치과명·담당자명·기공소명은 비공개입니다.
           </CardDescription>
         </CardHeader>
@@ -278,7 +273,10 @@ export const LabTradingPartnersTab = () => {
           <div className="flex gap-3 rounded-2xl border border-dashed border-slate-200/90 bg-slate-50/60 px-4 py-3.5">
             <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
             <p className="text-[13px] leading-relaxed text-muted-foreground">
-              <LabDirectPlatformFeeNotice ratePct={directFeePct} />
+              <LabDirectPlatformFeeNotice
+                ratePct={directFeePct}
+                subcontractRatePct={subcontractFeePct}
+              />
               <br />
               거래 치과 소개는 아래에서 계속할 수 있습니다.
             </p>

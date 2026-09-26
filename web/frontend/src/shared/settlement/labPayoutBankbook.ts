@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/business/settings/PayoutAccountCard.tsx
 // - web/backend/jobs/monthlySettlementBatchWorker.js
 // change-log:
+// - 2026-09-26: 플랫폼 사용료·하청 영업 수수료 평문 안내를 정책 문장과 맞춤.
 // - 2026-09-24: 지정 수수료 기본 표시 2%. 이벤트 문구는 「2% → 0%」(취소선은 LabDirectPlatformFeeNotice).
 // - 2026-09-21: PAYOUT_ACCOUNT_CARD_ID 공통화(기공소·딜러사). LAB_* 별칭 유지.
 // - 2026-09-16: 기공소 통장사본·정산일(1일) 리마인드 헬퍼. 미등록 시 지급 1개월 이월 안내. 월 지급 유보 50만원 상수.
@@ -109,8 +110,11 @@ export const LAB_SETTLEMENT_PAYOUT_RESERVE_NOTICE =
 export const LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE =
   "커스텀어벗은 디자인 STL을 올리고 어벗츠에 생산비가 지급된 뒤에 확정 정산·지급에 포함됩니다. 그 전에도 적립 보류는 보이며, 조건이 갖춰진 시점에 정산됩니다.";
 
-/** 지정 수수료 기본 표시용(관리자 설정 미로드 시). 실효 UI는 LabDirectPlatformFeeNotice(~~N%~~ → 0%). */
+/** 플랫폼 사용료 기본 표시용(관리자 설정 미로드 시). */
 export const LAB_DIRECT_PLATFORM_FEE_POLICY_RATE_PCT = 2;
+
+/** 하청 영업 수수료 기본 표시용(관리자 설정 미로드 시). */
+export const LAB_SUBCONTRACT_SALES_FEE_POLICY_RATE_PCT = 10;
 
 export function resolveLabDirectPlatformFeePct(ratePct?: number): number {
   if (ratePct == null || !Number.isFinite(Number(ratePct))) {
@@ -119,18 +123,22 @@ export function resolveLabDirectPlatformFeePct(ratePct?: number): number {
   return Math.max(0, Math.round(Number(ratePct)));
 }
 
-/** 지정 수수료 안내(평문). UI는 LabDirectPlatformFeeNotice(취소선) 권장. */
+export function resolveLabSubcontractSalesFeePct(ratePct?: number): number {
+  if (ratePct == null || !Number.isFinite(Number(ratePct))) {
+    return LAB_SUBCONTRACT_SALES_FEE_POLICY_RATE_PCT;
+  }
+  return Math.max(0, Math.round(Number(ratePct)));
+}
+
+/** 플랫폼 사용료·영업 수수료 안내(평문). UI는 LabDirectPlatformFeeNotice. */
 export function formatLabDirectPlatformFeeNotice(opts?: {
-  enabled?: boolean;
   /** 0~100 퍼센트 포인트 */
   ratePct?: number;
+  subcontractRatePct?: number;
 }): string {
-  const enabled = opts?.enabled === true;
   const pct = resolveLabDirectPlatformFeePct(opts?.ratePct);
-  if (enabled) {
-    return `지정 기공소 의뢰의 플랫폼 사용료는 작업시작 적립 시 매출액의 ${pct}%가 공제됩니다.`;
-  }
-  return `지정 기공소 의뢰의 플랫폼 사용료는 ${pct}% → 0%입니다.`;
+  const salesPct = resolveLabSubcontractSalesFeePct(opts?.subcontractRatePct);
+  return `기공소의 플랫폼 사용료는 매출액의 ${pct}%입니다. 협력건이나 하청건 모두 플랫폼 사용료를 차감하고 크레딧 적립됩니다. 협력건은 별도의 영업 수수료가 없으며, 하청건은 ${salesPct}%의 영업 수수료가 추가됩니다. 작업 결과를 AI 학습에 이용할 수 있도록 동의하면, 플랫폼 사용료(${pct}%)가 면제됩니다.`;
 }
 
 /** @deprecated UI는 LabDirectPlatformFeeNotice 사용. */

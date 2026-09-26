@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-26: 플랫폼사업 설명 — 협력·하청 사용료, 하청 영업 수수료, 학습 동의 면제.
 // - 2026-09-24: 플랫폼 사용료 정책 2% · 이벤트 off 표시 복원. 하청 % 유지.
 // - 2026-08-17: 플랫폼사업 — 한 카드에 어벗츠/개발운영사 비율 분배.
 // related files:
@@ -24,7 +25,6 @@ export function PlatformBusinessTab() {
   const { previewPool } = state.platform;
 
   const [subcontractRatePct, setSubcontractRatePct] = useState(5);
-  const [directEnabled, setDirectEnabled] = useState(false);
   const [directRatePct, setDirectRatePct] = useState(2);
 
   useEffect(() => {
@@ -51,7 +51,6 @@ export function PlatformBusinessTab() {
       if (rate != null) {
         setSubcontractRatePct(Math.round(Number(rate) * 100));
       }
-      setDirectEnabled(fees?.directPlatformFeeEnabled === true);
       if (fees?.directPlatformFeeRate != null) {
         setDirectRatePct(Math.round(Number(fees.directPlatformFeeRate) * 100));
       } else {
@@ -60,9 +59,7 @@ export function PlatformBusinessTab() {
     })();
   }, [token]);
 
-  const directLabel = directEnabled
-    ? formatPercent(directRatePct)
-    : `이벤트 무료(정책 ${formatPercent(directRatePct)})`;
+  const directLabel = formatPercent(directRatePct);
 
   return (
     <Card className="app-glass-card app-glass-card--lg overflow-hidden">
@@ -70,7 +67,7 @@ export function PlatformBusinessTab() {
         <SectionHeader
           icon={Layers}
           title="플랫폼사업"
-          description={`하청 ${formatPercent(subcontractRatePct)} · 플랫폼 사용료 ${directLabel}. 어벗츠 면세, 개발운영사 +VAT.`}
+          description={`플랫폼 사용료 ${directLabel} · 하청 영업 수수료 ${formatPercent(subcontractRatePct)}. 학습 이용 동의 시 사용료 면제. 어벗츠 면세, 개발운영사 +VAT.`}
           trailing={
             <div className="relative w-36">
               <Input

@@ -1,3 +1,4 @@
+// - 2026-09-26: 기공소 정책 — 플랫폼 사용료·영업 수수료 안내를 단축.
 // - 2026-09-23: 런칭 이벤트 중 — 정상가 취소선 + 이벤트가 · 「이벤트 중」.
 // - 2026-09-23: FM덴탈 월정액 가입 — 기공소만(치과 제외).
 // - 2026-09-23: 런칭 이벤트 1만 / 정상가 1.3만 · FM덴탈 월정액 배송 선택.
@@ -205,8 +206,8 @@ export const PricingPolicyDialog = ({
   const { kind } = useRequestorBusinessAccess();
   const isLab = kind === 'lab';
   const isRequestorPreview = variant === 'requestor';
-  /** 기공소 본인 또는 딜러가 안내하는 의뢰자(기공소) 수수료 */
-  const showLabFeeSection = isLab || isRequestorPreview;
+  /** 가격 안내(치과·기공소)와 딜러·영업팀 의뢰자 정책 */
+  const showLabFeeSection = variant === 'default' || isRequestorPreview;
   /** 월정액 가입 버튼은 기공소 본인만 */
   const showFmJoin = isLab && variant === 'default';
   const { data: systemSettings, refetch: refetchSystemSettings } =
@@ -676,20 +677,18 @@ export const PricingPolicyDialog = ({
                 <>
                   <PolicySection title='플랫폼 사용료 · 하청 수수료'>
                     <p>
-                      <LabDirectPlatformFeeNotice ratePct={directFeePct} />
-                      <br />
-                      하청 수행은 하청 수수료{" "}
-                      <span className='font-semibold tabular-nums text-slate-900'>
-                        {subcontractFeePct}%
-                      </span>
-                      에 같은 플랫폼 사용료를 더합니다.
-                      <br />
-                      허용해도 하청 수수료는 그대로이고, 더한 플랫폼 사용료만
-                      면제됩니다.
+                      <LabDirectPlatformFeeNotice
+                        ratePct={directFeePct}
+                        subcontractRatePct={subcontractFeePct}
+                      />
                       {isRequestorPreview ? (
                         <>
                           <br />
                           기공소 의뢰자에게 적용됩니다.
+                        </>
+                      ) : null}
+                      {isRequestorPreview || !isLab ? (
+                        <>
                           <br />
                           치과는 플랫폼 사용료가 없습니다.
                         </>

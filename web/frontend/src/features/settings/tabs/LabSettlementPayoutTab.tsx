@@ -606,16 +606,10 @@ export const LabSettlementPayoutTab = () => {
                   <div className="flex gap-2.5">
                     <Percent className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
                     <p>
-                      <LabDirectPlatformFeeNotice ratePct={directFeePct} />
-                      <br />
-                      하청 수행은 하청 수수료{" "}
-                      <span className="font-semibold tabular-nums text-slate-900">
-                        {subcontractFeePct}%
-                      </span>
-                      에 같은 플랫폼 사용료를 더합니다.
-                      <br />
-                      허용해도 하청 수수료는 그대로이고, 더한 플랫폼 사용료만
-                      면제됩니다.
+                      <LabDirectPlatformFeeNotice
+                        ratePct={directFeePct}
+                        subcontractRatePct={subcontractFeePct}
+                      />
                     </p>
                   </div>
                 </SettlementPolicySection>

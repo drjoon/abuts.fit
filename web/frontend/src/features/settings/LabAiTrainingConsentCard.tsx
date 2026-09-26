@@ -110,9 +110,7 @@ export const LabAiTrainingConsentCard = () => {
             보철 디자인 학습 이용
           </p>
           <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
-            작업 완료 때 올리는 디자인 3d 모델을 학습에 써도 된다고 허용합니다.
-            <br />
-            허용하면 플랫폼 사용료 {pct}%가 면제됩니다.
+            작업 결과를 AI 학습에 이용할 수 있도록 동의하면, 플랫폼 사용료({pct}%)가 면제됩니다.
           </p>
         </div>
         <Switch

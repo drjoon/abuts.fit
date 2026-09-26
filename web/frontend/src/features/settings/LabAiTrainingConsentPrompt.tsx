@@ -341,9 +341,7 @@ export const LabAiTrainingConsentPrompt = forwardRef<
           <div className="h-[1lh]" aria-hidden />
           <DialogDescription asChild>
             <p>
-              작업 완료 때 올리는 3d 모델을 <strong className="font-semibold text-foreground">AI 학습</strong>에 사용하도록 허용합니다.
-              <br />
-              허용하면 플랫폼 사용료 {pct}%가 면제됩니다.
+              작업 결과를 AI 학습에 이용할 수 있도록 동의하면, 플랫폼 사용료(<strong className="font-semibold text-foreground">{pct}%</strong>)가 면제됩니다.
               <br />
               추후 <strong className="font-semibold text-foreground">설정-AI</strong>에서 변경할 수 있습니다.
               {required ? (
@@ -396,7 +394,7 @@ export const LabAiTrainingConsentPrompt = forwardRef<
           <div className="h-[1lh]" aria-hidden />
           <DialogDescription asChild>
             <p>
-              AI 학습 이용 부동의시 <strong className="font-semibold text-foreground">플랫폼 사용료 {pct}%</strong>가 청구됩니다.
+              동의하지 않으면 플랫폼 사용료(<strong className="font-semibold text-foreground">{pct}%</strong>)가 공제됩니다.
               <br />
               AI 학습 이용에 동의하시겠습니까?
             </p>

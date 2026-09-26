@@ -1,5 +1,6 @@
 // change-log:
 // - 2026-09-25: 하청 기본 표시 10%.
+// - 2026-09-26: 하청은 영업 수수료, 플랫폼 사용료는 협력·하청 공통·학습 동의 시 면제.
 // - 2026-09-24: 지정 플랫폼 사용료 UI 복원(정책 2% · 이벤트 off=0%).
 // - 2026-09-20: 하청 기본 표시 5%. 지정 2%(이벤트 off).
 // - 2026-09-20: 지정 수수료 기본 표시 2%. 이벤트 시 ~~2%~~ → 0% 안내.
@@ -231,7 +232,9 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
               하청 수수료
             </Label>
             <p className="text-[12px] leading-snug text-muted-foreground">
-              어벗츠 의뢰건 하청시
+              하청건에 더하는 영업 수수료입니다.
+              <br />
+              협력건에는 없습니다.
             </p>
           </div>
         </div>
@@ -267,11 +270,9 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
               플랫폼 사용료
             </Label>
             <p className="text-[12px] leading-snug text-muted-foreground">
-              지정·협력은 이 요율입니다.
+              협력건·하청건 매출에서 이 요율을 차감합니다.
               <br />
-              학습 이용을 허용하면 면제됩니다.
-              <br />
-              하청 수수료에 이 요율을 더하고, 허용하면 이 요율만 면제됩니다.
+              학습 이용에 동의하면 이 요율은 면제됩니다.
             </p>
           </div>
         </div>

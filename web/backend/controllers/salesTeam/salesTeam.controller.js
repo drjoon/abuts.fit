@@ -5,6 +5,7 @@
 // - web/backend/models/sales/salesDailyReport.model.js
 // - web/backend/utils/salesDailyReportAccess.js
 // change-log:
+// - 2026-09-26: 소개 정책 안내 — 플랫폼 사용료·영업 수수료 문장.
 // - 2026-09-21: 딜러 일일보고 ACL — 대표·담당자만 열람, 어벗츠 관계자 차단 + privacy payload.
 import { Types } from "mongoose";
 import SalesAccount from "../../models/sales/salesAccount.model.js";
@@ -2106,7 +2107,7 @@ export async function getReferralInfo(req, res) {
       data: {
         referralCode,
         policyNote:
-          "판매·세금계산서는 플랫폼 가입 사업자만 가능합니다. 커스텀어벗은 런칭 이벤트 1만원·정상가 1.3만원(배송비, 기공소는 FM덴탈 월정액 배송 선택 가능). 기공소 플랫폼 사용료는 지정·협력 2%이고, 학습 이용을 허용하면 면제됩니다. 하청은 10%에 같은 2%를 더하며, 허용하면 그 2%만 면제됩니다. 어벗츠기공본부는 학습에 항상 포함됩니다. 소개코드로 가입한 거래처가 담당 실적으로 집계됩니다. 90일 무주문이면 소개가 리셋됩니다.",
+          "판매·세금계산서는 플랫폼 가입 사업자만 가능합니다. 커스텀어벗은 런칭 이벤트 1만원·정상가 1.3만원(배송비, 기공소는 FM덴탈 월정액 배송 선택 가능). 기공소의 플랫폼 사용료는 매출액의 2%입니다. 협력건이나 하청건 모두 플랫폼 사용료를 차감하고 크레딧 적립됩니다. 협력건은 별도의 영업 수수료가 없으며, 하청건은 10%의 영업 수수료가 추가됩니다. 작업 결과를 AI 학습에 이용할 수 있도록 동의하면, 플랫폼 사용료(2%)가 면제됩니다. 소개코드로 가입한 거래처가 담당 실적으로 집계됩니다. 90일 무주문이면 소개가 리셋됩니다.",
         organizations: (orgs || []).map((o) => ({
           ...o,
           usesOralScan: Boolean(o.usesOralScan),

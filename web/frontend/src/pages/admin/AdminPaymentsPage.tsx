@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-26: 기공사업부 정산 규칙 — 플랫폼 사용료·영업 수수료 안내.
 // - 2026-09-23: 제조사 월별=의뢰·배송 합산(마이그레이션 PAID fallback 오인 방지).
 // - 2026-09-23: 월별 내역에 유료 배송 열(제조사 periodPaidShipping*).
 // - 2026-09-23: SettlementStatCard·정산규칙 모달·분배비율(설정) 반영. 매출−지출=분배 UX.
@@ -1002,9 +1003,16 @@ export default function AdminPaymentsPage({
                   배송비를 선차감한 뒤 기공사업부 · 영업팀 · 개발운영 · 어벗츠
                   비율로 분배합니다.
                   <br />
-                  지정·협력 플랫폼 사용료는 정책 2%·이벤트 기간 0%입니다.
+                  기공소의 플랫폼 사용료는 매출액의 2%입니다.
                   <br />
-                  하청 수행만 매출의 {subcontractFeePct}%가 공제됩니다.
+                  협력건이나 하청건 모두 플랫폼 사용료를 차감하고 크레딧
+                  적립됩니다.
+                  <br />
+                  협력건은 별도의 영업 수수료가 없으며, 하청건은{" "}
+                  {subcontractFeePct}%의 영업 수수료가 추가됩니다.
+                  <br />
+                  작업 결과를 AI 학습에 이용할 수 있도록 동의하면, 플랫폼
+                  사용료(2%)가 면제됩니다.
                 </p>
               </SettlementPolicySection>
             </SettlementPolicyDialog>
