@@ -220,6 +220,7 @@ import {
 import { invalidateChatPerfForUsers } from "../chats/chat.controller.js";
 import {
   assertOralScanFilesForCreate,
+  ORAL_SCAN_REQUIRED_TO_SEND,
   canStartAbutmentProduction,
   clearRelatedAbutmentProductionOnRelease,
   hasCustomAbutmentToothWorks,
@@ -316,6 +317,7 @@ import { completePracticeTransferWork } from "../../services/practiceTransferCom
 // - 2026-08-17: trash/empty — 하드삭제 전 rollbackPracticeTransferBilling(배송·디자인비 포함).
 // - 2026-08-21: trash/empty — billing rollback 병렬 + 잔액 sync/emit·기공소 unread emit 1회/병렬.
 // - 2026-08-16: 어벗 가공(준비 아님)이면 mark-release 거부·목록 abutmentPastReady.
+// - 2026-09-26: 생성·수정 전송은 3D 스캔(DCM/PLY/STL/OBJ) 필수. 이미지·빈 첨부는 거부.
 // - 2026-08-19: 생성 시 구강스캔은 선택(어벗츠기공소/자동매칭 포함).
 // - 2026-08-15: 구강스캔 — 자동매칭 CA는 치과 필수, 지정은 수락 시 기공소 업로드 허용.
 // - 2026-08-19: 경로 B — 어벗츠 원청 고정·하청 assignee·30분 우선창·하청 전환.
@@ -3280,10 +3282,8 @@ export async function createPracticeTransfer(req, res) {
       const status = Number(scanErr?.statusCode || 400);
       return res.status(status >= 400 && status < 600 ? status : 400).json({
         success: false,
-        message:
-          scanErr?.message ||
-          "자동매칭 의뢰는 구강스캔 파일이 필요합니다.",
-        reason: scanErr?.code || "oral_scan_required_for_auto_match",
+        message: scanErr?.message || ORAL_SCAN_REQUIRED_TO_SEND,
+        reason: scanErr?.code || "oral_scan_required",
       });
     }
 
@@ -4012,10 +4012,8 @@ export async function updatePracticeTransferContent(req, res) {
       const status = Number(scanErr?.statusCode || 400);
       return res.status(status >= 400 && status < 600 ? status : 400).json({
         success: false,
-        message:
-          scanErr?.message ||
-          "자동매칭 의뢰는 구강스캔 파일이 필요합니다.",
-        reason: scanErr?.code || "oral_scan_required_for_auto_match",
+        message: scanErr?.message || ORAL_SCAN_REQUIRED_TO_SEND,
+        reason: scanErr?.code || "oral_scan_required",
       });
     }
 

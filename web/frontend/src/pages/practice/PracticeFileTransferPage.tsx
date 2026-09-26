@@ -27,6 +27,7 @@
  * - web/frontend/src/shared/practice/openPracticeTransferChat.ts
  * - web/frontend/src/shared/components/practice/PracticeLabRatingControl.tsx
  * - web/frontend/src/shared/practice/practiceLabRating.ts
+ * - 2026-09-26: 기공소 전송은 3D 스캔(DCM·PLY·STL·OBJ) 필수. 이미지·빈 첨부는 전송 버튼 비활성.
  * - 2026-09-23: 채팅 헤더 — `기공소 · 환자명 · 원장명`(치식·슬래시 제거).
  * - 2026-09-21: 신규의뢰 헤더 — 원장님 성함 드롭다운(BA doctorNames 추가·수정·삭제).
  * - 2026-09-21: 동일 환자·치아 확인 모달 z-[460] — 작성 화면 뒤에서 전송 클릭을 삼키던 문제.
@@ -219,9 +220,11 @@ import { useS3FileDownload, buildS3ProxyDownloadUrl } from "@/shared/files/useS3
 import { fetchS3BlobCached } from "@/shared/files/s3BlobCache";
 import { type TempUploadedFile } from "@/shared/hooks/useS3TempUpload";
 import {
+  isPracticeTransferModelFileName,
   partitionDetailAttachFiles,
   PRACTICE_TRANSFER_IMAGE_EXTENSIONS,
 } from "@/shared/practice/practiceTransferAccept";
+import { ORAL_SCAN_REQUIRED_TO_SEND } from "@/shared/practice/oralScanRequirement";
 import { useAuthStore } from "@/store/useAuthStore";
 import {
   coerceAutoMatchLab,
@@ -8502,6 +8505,18 @@ export const PracticeFileTransferPage = ({
         seenIdentity.add(ident);
         return true;
       });
+      if (
+        !transferFiles.some((row) =>
+          isPracticeTransferModelFileName(String(row.originalName || "")),
+        )
+      ) {
+        toast({
+          title: "3D 스캔 파일을 첨부해주세요",
+          description: ORAL_SCAN_REQUIRED_TO_SEND,
+          variant: "destructive",
+        });
+        return;
+      }
       const clinicName = autoClinicName;
       const editing = editingSentTransferRef.current;
       const transferId = editing?.transferId || makeTransferId();
@@ -8738,11 +8753,26 @@ export const PracticeFileTransferPage = ({
     [normalizedToothWorks],
   );
 
+  const hasOralScanModelFile = useMemo(
+    () =>
+      files.some(
+        (file) =>
+          !isGuideTourDemoFile(file) && isPracticeTransferModelFileName(file.name),
+      ) ||
+      draftFiles.some(
+        (file) =>
+          !isLeakedGuideTourDemoDraft(file) &&
+          isPracticeTransferModelFileName(file.originalName),
+      ),
+    [draftFiles, files],
+  );
+
   const missingRequiredFields = useMemo(() => {
     const missing: string[] = [];
     if (!String(selectedLab?._id || "").trim()) missing.push("기공소");
     if (!normalizedPatientName) missing.push("환자명");
     if (normalizedToothWorks.length === 0) missing.push("보철물");
+    if (!hasOralScanModelFile) missing.push("3D 스캔 파일");
     if (missingAbutmentPresetTeeth.length > 0) {
       missing.push(`어벗 프리셋 (#${missingAbutmentPresetTeeth.join(", #")})`);
     }
@@ -8751,6 +8781,7 @@ export const PracticeFileTransferPage = ({
     selectedLab,
     normalizedPatientName,
     normalizedToothWorks,
+    hasOralScanModelFile,
     missingAbutmentPresetTeeth,
   ]);
 
@@ -9348,6 +9379,7 @@ export const PracticeFileTransferPage = ({
                     fileInputId: "practice-file-transfer-input",
                     requirementNote:
                       "모바일에서 환자 사진 찍어 첨부할 수 있어요.",
+                    requirementNoteExtra: ORAL_SCAN_REQUIRED_TO_SEND,
                     files: combinedDisplayFiles.map((file) => {
                       const localFile =
                         file.kind === "local" ? files[file.localIndex] : null;
@@ -10802,6 +10834,7 @@ export const PracticeFileTransferPage = ({
                         { key: "기공소", ok: Boolean(String(selectedLab?._id || "").trim()) },
                         { key: "환자명", ok: Boolean(normalizedPatientName) },
                         { key: "보철물", ok: normalizedToothWorks.length > 0 },
+                        { key: "3D 스캔 파일", ok: hasOralScanModelFile },
                         ...(missingAbutmentPresetTeeth.length > 0 ||
                         normalizedToothWorks.some((row) => row.customAbutment)
                           ? [

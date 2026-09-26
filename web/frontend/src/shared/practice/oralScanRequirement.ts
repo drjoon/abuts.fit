@@ -1,3 +1,4 @@
+// - 2026-09-26: 기공의뢰 전송은 3D 스캔(DCM·PLY·STL·OBJ) 필수. 이미지·빈 첨부는 전송 불가.
 // - 2026-08-21: 수락·어벗 업로드 — 구강스캔 선택(자동매칭 포함). CA Request는 스캔 없이 생성.
 // - 2026-08-19: 치과 전송 시 구강스캔은 선택(어벗츠기공소 포함).
 // - 2026-08-15: 수락 기공소 CA 디자인 — 기공소 구강스캔 업로드 UI 제거. 지정은 스캔 없이 수락.
@@ -7,7 +8,11 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 
-/** @deprecated 생성 시 구강스캔은 선택. 레거시 토스트 문구 */
+/** 기공의뢰 전송 — 3D 스캔(DCM·PLY·STL·OBJ)이 없으면 생성·수정 거부 */
+export const ORAL_SCAN_REQUIRED_TO_SEND =
+  "DCM, PLY, STL, OBJ 중 하나 이상을 첨부해야 기공소로 전송할 수 있습니다.";
+
+/** @deprecated 생성 시 구강스캔은 선택이었던 문구. 레거시 토스트 문구 */
 export const ORAL_SCAN_REQUIRED_FOR_AUTO_MATCH_CREATE =
   "자동매칭으로 보낼 때는 구강스캔 파일을 첨부해주세요.";
 

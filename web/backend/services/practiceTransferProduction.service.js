@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
 // - 2026-09-12: PTX→어벗츠 리메이크 — CA 재업로드 forceRemakePricing(1만). 미매칭 시 정가 생산 견적.
+// - 2026-09-26: 기공의뢰 생성·수정 전송은 3D 스캔(DCM/PLY/STL/OBJ) 필수. 이미지·빈 첨부는 거부.
 // - 2026-09-26: 같은 파일명·용량의 의뢰 스캔은 1벌만 유지(재업로드 중복·확인 배지 방지).
 // - 2026-09-12: normalizeResultFiles — uploadBatchId·uploadedAt 보존. stampPracticeTransferFileBatch.
 // - 2026-09-12: 가공 진입 — abutmentPastReadyTeeth + 기공소 practice:transfer-updated(abutment-production-started).
@@ -374,7 +375,35 @@ export function restorePracticeTransferRequestFiles(doc, restoreKeysInput) {
   return restored.length;
 }
 
-/** @deprecated 생성 시 구강스캔은 선택. 메시지·코드는 레거시 클라이언트용 */
+const ORAL_SCAN_MODEL_EXTENSIONS = new Set([".stl", ".ply", ".obj", ".dcm"]);
+
+const oralScanFileName = (row) => {
+  if (!row || typeof row !== "object") return "";
+  const file = row.file && typeof row.file === "object" ? row.file : null;
+  return String(
+    file?.originalName || file?.name || row.originalName || row.name || "",
+  ).trim();
+};
+
+const oralScanFileExt = (name) => {
+  const raw = String(name || "").trim().toLowerCase();
+  const idx = raw.lastIndexOf(".");
+  if (idx < 0) return "";
+  return raw.slice(idx);
+};
+
+/** 기공의뢰 전송 — 3D 스캔(DCM·PLY·STL·OBJ)이 없으면 생성·수정 거부 */
+export const ORAL_SCAN_REQUIRED_TO_SEND =
+  "DCM, PLY, STL, OBJ 중 하나 이상을 첨부해야 기공소로 전송할 수 있습니다.";
+
+export function hasOralScanModelFile(files) {
+  const list = Array.isArray(files) ? files : [];
+  return list.some((row) =>
+    ORAL_SCAN_MODEL_EXTENSIONS.has(oralScanFileExt(oralScanFileName(row))),
+  );
+}
+
+/** @deprecated 생성 시 구강스캔은 선택이었던 문구. 레거시 클라이언트용 */
 export const ORAL_SCAN_REQUIRED_FOR_AUTO_MATCH_CREATE =
   "자동매칭으로 보낼 때는 구강스캔 파일을 첨부해주세요.";
 
@@ -415,9 +444,13 @@ export function resolveOralScanFilesForAccept({
   return { files: incoming, attachedByLab: true };
 }
 
-/** 생성 시 구강스캔은 선택. 어벗츠기공소(auto)·지정 모두 첨부 없이 전송 가능. */
-export function assertOralScanFilesForCreate() {
-  return;
+/** 생성·수정 전송은 3D 스캔 필수. 사진만 있거나 첨부가 없으면 거부. */
+export function assertOralScanFilesForCreate({ files } = {}) {
+  if (hasOralScanModelFile(files)) return;
+  const err = new Error(ORAL_SCAN_REQUIRED_TO_SEND);
+  err.statusCode = 400;
+  err.code = "oral_scan_required";
+  throw err;
 }
 
 const parsePatientNameFromMemo = (memo) => {

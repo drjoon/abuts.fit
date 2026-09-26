@@ -26,6 +26,7 @@
  * - web/frontend/src/shared/onboarding/wizard/SettingsWizard.tsx
  * - web/frontend/src/shared/hooks/useS3TempUpload.ts
  * - web/frontend/src/shared/hooks/useFilePreUpload.ts
+ * - 2026-09-26: 기공의뢰 전송은 3D 스캔(DCM·PLY·STL·OBJ) 필수. 이미지·빈 첨부는 전송 불가.
  * - 2026-08-13: 파일카드에 사전 업로드 프로그레스바.
  * - 2026-08-13: 전송 시 사전 업로드 재사용·미완료만 대기. 재업로드 토스트 없음.
  * - 2026-08-13: 커스텀어벗 설정 모달 기본=디자인+생산. 로그인 후 계정 설정으로 저장.
@@ -123,6 +124,8 @@ import {
   usePracticeTransferStep1,
 } from "@/pages/practice/hooks/usePracticeTransferStep1";
 import { PracticeTransferIntakeSection } from "@/shared/components/practice/PracticeTransferIntakeSection";
+import { isPracticeTransferModelFile } from "@/shared/practice/practiceTransferAccept";
+import { ORAL_SCAN_REQUIRED_TO_SEND } from "@/shared/practice/oralScanRequirement";
 import { restoreToothWorksFromDraft } from "@/shared/practice/toothWorkDraft";
 import {
   buildPracticeTransferMemo as buildPracticeTransferMemoShared,
@@ -1145,6 +1148,9 @@ export const PracticeDropzonePage = () => {
     if (!selectedLab?._id) missing.push("기공소");
     if (!normalizedPatientName) missing.push("환자명");
     if (normalizedToothWorks.length === 0) missing.push("보철물");
+    if (!files.some((file) => isPracticeTransferModelFile(file))) {
+      missing.push("3D 스캔 파일");
+    }
     if (missingAbutmentPresetTeeth.length > 0) {
       missing.push(`어벗 프리셋 (#${missingAbutmentPresetTeeth.join(", #")})`);
     }
@@ -1153,6 +1159,7 @@ export const PracticeDropzonePage = () => {
     selectedLab?._id,
     normalizedPatientName,
     normalizedToothWorks.length,
+    files,
     missingAbutmentPresetTeeth,
   ]);
 
@@ -2910,6 +2917,7 @@ export const PracticeDropzonePage = () => {
                 <PracticeTransferIntakeSection
                   filePaneProps={{
                     acceptedHint: PRACTICE_ACCEPTED_HINT,
+                    requirementNoteExtra: ORAL_SCAN_REQUIRED_TO_SEND,
                     fileInputId: "practice-scan-file-input",
                     files: files.map((file, index) => {
                       const progress = uploadProgress[toTempUploadFileKey(file)];

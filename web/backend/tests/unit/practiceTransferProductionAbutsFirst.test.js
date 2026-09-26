@@ -284,14 +284,31 @@ describe("oral scan requirement for CA accept/create", () => {
     file: { originalName: "scan.stl", s3Key: "scan-key", size: 100 },
   };
 
-  test("assertOralScanFilesForCreate — auto and direct may omit files", () => {
-    expect(() =>
-      assertOralScanFilesForCreate({
-        matchingMode: "auto",
-        toothWorks: caTooth,
-        files: [],
-      }),
-    ).not.toThrow();
+  test("assertOralScanFilesForCreate — requires a 3D scan file", () => {
+    const reject = (files) => {
+      try {
+        assertOralScanFilesForCreate({
+          matchingMode: "direct",
+          toothWorks: caTooth,
+          files,
+        });
+        return null;
+      } catch (err) {
+        return err;
+      }
+    };
+
+    const empty = reject([]);
+    expect(empty).toBeInstanceOf(Error);
+    expect(empty.message).toMatch(/DCM, PLY, STL, OBJ/);
+    expect(empty.statusCode).toBe(400);
+    expect(empty.code).toBe("oral_scan_required");
+
+    const photoOnly = reject([
+      { file: { originalName: "shade.jpg", s3Key: "photo", size: 10 } },
+    ]);
+    expect(photoOnly).toBeInstanceOf(Error);
+    expect(photoOnly.code).toBe("oral_scan_required");
 
     expect(() =>
       assertOralScanFilesForCreate({
@@ -299,15 +316,17 @@ describe("oral scan requirement for CA accept/create", () => {
         toothWorks: [{ customAbutment: false, toothNumber: "21" }],
         files: [],
       }),
-    ).not.toThrow();
+    ).toThrow(/DCM, PLY, STL, OBJ/);
 
-    expect(() =>
-      assertOralScanFilesForCreate({
-        matchingMode: "direct",
-        toothWorks: caTooth,
-        files: [],
-      }),
-    ).not.toThrow();
+    for (const name of ["scan.stl", "scan.ply", "scan.obj", "scan.DCM"]) {
+      expect(() =>
+        assertOralScanFilesForCreate({
+          matchingMode: "direct",
+          toothWorks: caTooth,
+          files: [{ file: { originalName: name, s3Key: "scan-key", size: 100 } }],
+        }),
+      ).not.toThrow();
+    }
   });
 
   test("resolveOralScanFilesForAccept — existing files win", () => {
