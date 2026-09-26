@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
 // - 2026-09-12: PTX→어벗츠 리메이크 — CA 재업로드 forceRemakePricing(1만). 미매칭 시 정가 생산 견적.
+// - 2026-09-26: 같은 파일명·용량의 의뢰 스캔은 1벌만 유지(재업로드 중복·확인 배지 방지).
 // - 2026-09-12: normalizeResultFiles — uploadBatchId·uploadedAt 보존. stampPracticeTransferFileBatch.
 // - 2026-09-12: 가공 진입 — abutmentPastReadyTeeth + 기공소 practice:transfer-updated(abutment-production-started).
 // - 2026-09-12: GET /received 캘린더 목록도 pastReadyTeeth enrich(리프레시 후 준비 취소선 오표시 방지).
@@ -236,6 +237,36 @@ export function stampPracticeTransferFileBatch(
   });
 }
 
+/** 파일명+용량. 크기 0·이름 없음은 키를 만들지 않는다. */
+export function practiceTransferFileContentKey(row) {
+  const file = row?.file && typeof row.file === "object" ? row.file : row;
+  const name = String(file?.originalName || file?.name || row?.originalName || "")
+    .trim()
+    .normalize("NFC")
+    .toLowerCase();
+  const size = Number(file?.size || row?.size || 0) || 0;
+  if (!name || size <= 0) return "";
+  return `${name}\0${size}`;
+}
+
+/**
+ * 같은 파일명·용량은 먼저 온 1건만 남긴다.
+ * 재드롭·임시저장 append가 s3Key만 다른 복사본을 만들면
+ * 상악·하악이 2벌이 되어 채팅에 「확인」이 붙는다.
+ */
+export function dedupePracticeTransferFilesByNameSize(files) {
+  const list = normalizeResultFiles(files);
+  const seen = new Set();
+  const kept = [];
+  for (const row of list) {
+    const ident = practiceTransferFileContentKey(row);
+    if (ident && seen.has(ident)) continue;
+    if (ident) seen.add(ident);
+    kept.push(row);
+  }
+  return kept;
+}
+
 /** s3Key 기준 merge. incoming이 stamp를 가지면 그대로, 없으면 기존 stamp 유지. */
 export function mergePracticeTransferFilesByS3Key(existing, incoming) {
   const byKey = new Map(
@@ -261,7 +292,7 @@ export function mergePracticeTransferFilesByS3Key(existing, incoming) {
       uploadedAt: row.uploadedAt || prev?.uploadedAt,
     });
   }
-  return [...byKey.values()].map((row) => ({
+  const merged = [...byKey.values()].map((row) => ({
     patientName: row.patientName,
     tooth: row.tooth,
     ...(row.prosthesisType ? { prosthesisType: row.prosthesisType } : {}),
@@ -278,6 +309,7 @@ export function mergePracticeTransferFilesByS3Key(existing, incoming) {
     ...(row.trashedAt ? { trashedAt: row.trashedAt } : {}),
     file: row.file,
   }));
+  return dedupePracticeTransferFilesByNameSize(merged);
 }
 
 /** files → trashedFiles 이동(soft-delete). 이동된 행 수 반환 */

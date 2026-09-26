@@ -232,6 +232,8 @@ import {
   resolveOralScanFilesForAccept,
   shouldLockLabOralScanDownload,
   stampPracticeTransferFileBatch,
+  dedupePracticeTransferFilesByNameSize,
+  practiceTransferFileContentKey,
   mergePracticeTransferFilesByS3Key,
   softDeletePracticeTransferRequestFiles,
   restorePracticeTransferRequestFiles,
@@ -994,7 +996,7 @@ const toProductionApiFields = (production, { abutmentPastReady, abutmentPastRead
 };
 
 const toTransferFilesApiFields = (transferDoc) => {
-  const files = normalizeResultFiles(transferDoc?.files);
+  const files = dedupePracticeTransferFilesByNameSize(transferDoc?.files);
   const trashedFiles = normalizeResultFiles(transferDoc?.trashedFiles);
   const transferMongoId = String(transferDoc?._id || "").trim();
   const mapFileRow = (item, idx, prefix = "") => ({
@@ -1721,16 +1723,33 @@ const patientNameFromTransferMemo = (memo) =>
     .normalize("NFC");
 
 const mergeDraftFileRows = (existing, incoming) => {
-  const byId = new Map();
-  for (const row of Array.isArray(existing) ? existing : []) {
+  const rows = [];
+  const indexById = new Map();
+  const indexByIdentity = new Map();
+  const consider = (row, replaceSameId) => {
     const id = String(row?.fileId || "").trim();
-    if (id) byId.set(id, row);
-  }
-  for (const row of Array.isArray(incoming) ? incoming : []) {
-    const id = String(row?.fileId || "").trim();
-    if (id) byId.set(id, row);
-  }
-  return Array.from(byId.values());
+    if (!id) return;
+    const ident = practiceTransferFileContentKey(row);
+    if (replaceSameId && indexById.has(id)) {
+      const idx = indexById.get(id);
+      const prevIdent = practiceTransferFileContentKey(rows[idx]);
+      if (prevIdent && indexByIdentity.get(prevIdent) === idx) {
+        indexByIdentity.delete(prevIdent);
+      }
+      rows[idx] = row;
+      if (ident) indexByIdentity.set(ident, idx);
+      return;
+    }
+    if (indexById.has(id)) return;
+    if (ident && indexByIdentity.has(ident)) return;
+    const idx = rows.length;
+    rows.push(row);
+    indexById.set(id, idx);
+    if (ident) indexByIdentity.set(ident, idx);
+  };
+  for (const row of Array.isArray(existing) ? existing : []) consider(row, false);
+  for (const row of Array.isArray(incoming) ? incoming : []) consider(row, true);
+  return rows;
 };
 
 /** draft-upserted 실시간 이벤트에 폼 스냅샷을 실어 수신측 GET RTT를 제거한다. */
@@ -3160,8 +3179,10 @@ export async function createPracticeTransfer(req, res) {
     const transferMemo =
       String(req.body?.transferMemo || "").trim() || extractTransferMemoFromMessage(message);
 
-    const files = stampPracticeTransferFileBatch(
-      mapPracticeTransferFilesFromCaseInfos(caseInfos),
+    const files = dedupePracticeTransferFilesByNameSize(
+      stampPracticeTransferFileBatch(
+        mapPracticeTransferFilesFromCaseInfos(caseInfos),
+      ),
     );
 
     const toothWorksRaw =
@@ -3904,10 +3925,10 @@ export async function updatePracticeTransferContent(req, res) {
         fresh.push(row);
       }
     }
-    const files = [
+    const files = dedupePracticeTransferFilesByNameSize([
       ...kept,
       ...stampPracticeTransferFileBatch(fresh),
-    ];
+    ]);
     const toothWorksRaw =
       (Array.isArray(req.body?.toothWorks) && req.body.toothWorks) ||
       (Array.isArray(first?.toothWorks) && first.toothWorks) ||
@@ -6803,12 +6824,11 @@ export async function remakePracticeTransfers(req, res) {
         continue;
       }
 
-      const copiedFiles = stampPracticeTransferFileBatch(
-        normalizeResultFiles(source.files),
-        {
+      const copiedFiles = dedupePracticeTransferFilesByNameSize(
+        stampPracticeTransferFileBatch(normalizeResultFiles(source.files), {
           uploadedAt: source.createdAt || new Date(),
           force: false,
-        },
+        }),
       );
       const files =
         extraFilesNormalized.length > 0
@@ -7928,7 +7948,7 @@ export async function getReceivedPracticeTransfers(req, res) {
         typeof practiceUser.practiceProfile === "object"
           ? practiceUser.practiceProfile
           : null;
-      const files = Array.isArray(doc?.files) ? doc.files : [];
+      const files = dedupePracticeTransferFilesByNameSize(doc?.files);
       const trashedFiles = Array.isArray(doc?.trashedFiles) ? doc.trashedFiles : [];
       const resultFiles = Array.isArray(doc?.resultFiles) ? doc.resultFiles : [];
       const toothWorks = Array.isArray(doc?.toothWorks) ? doc.toothWorks : [];
@@ -8047,36 +8067,54 @@ export async function getReceivedPracticeTransfers(req, res) {
             )
           : 1,
         fileCount: files.length,
-        files: files.map((item, idx) => ({
-          id: `${String(doc?._id || "")}::${idx + 1}`,
-          patientName: String(item?.patientName || "").trim(),
-          tooth: String(item?.tooth || "").trim(),
-          originalName: String(item?.file?.originalName || "").trim(),
-          mimetype: String(item?.file?.mimetype || "application/octet-stream").trim(),
-          size: Number(item?.file?.size || 0),
-          s3Key: String(item?.file?.s3Key || "").trim(),
-          uploadBatchId: String(item?.uploadBatchId || "").trim() || null,
-          uploadedAt: item?.uploadedAt
-            ? new Date(item.uploadedAt).toISOString()
-            : null,
-        })),
+        files: files.map((item, idx) => {
+          const storedRole = resolveStoredScanRole({
+            originalName: String(item?.file?.originalName || "").trim(),
+            scanRole: item?.scanRole,
+            scanRoleSetBy: item?.scanRoleSetBy,
+          });
+          return {
+            id: `${String(doc?._id || "")}::${idx + 1}`,
+            patientName: String(item?.patientName || "").trim(),
+            tooth: String(item?.tooth || "").trim(),
+            originalName: String(item?.file?.originalName || "").trim(),
+            mimetype: String(item?.file?.mimetype || "application/octet-stream").trim(),
+            size: Number(item?.file?.size || 0),
+            s3Key: String(item?.file?.s3Key || "").trim(),
+            uploadBatchId: String(item?.uploadBatchId || "").trim() || null,
+            uploadedAt: item?.uploadedAt
+              ? new Date(item.uploadedAt).toISOString()
+              : null,
+            scanRole: storedRole.scanRole || null,
+            scanRoleSetBy: storedRole.scanRoleSetBy || null,
+          };
+        }),
         trashedFileCount: trashedFiles.length,
-        trashedFiles: trashedFiles.map((item, idx) => ({
-          id: `${String(doc?._id || "")}::trash::${idx + 1}`,
-          patientName: String(item?.patientName || "").trim(),
-          tooth: String(item?.tooth || "").trim(),
-          originalName: String(item?.file?.originalName || "").trim(),
-          mimetype: String(item?.file?.mimetype || "application/octet-stream").trim(),
-          size: Number(item?.file?.size || 0),
-          s3Key: String(item?.file?.s3Key || "").trim(),
-          uploadBatchId: String(item?.uploadBatchId || "").trim() || null,
-          uploadedAt: item?.uploadedAt
-            ? new Date(item.uploadedAt).toISOString()
-            : null,
-          trashedAt: item?.trashedAt
-            ? new Date(item.trashedAt).toISOString()
-            : null,
-        })),
+        trashedFiles: trashedFiles.map((item, idx) => {
+          const storedRole = resolveStoredScanRole({
+            originalName: String(item?.file?.originalName || "").trim(),
+            scanRole: item?.scanRole,
+            scanRoleSetBy: item?.scanRoleSetBy,
+          });
+          return {
+            id: `${String(doc?._id || "")}::trash::${idx + 1}`,
+            patientName: String(item?.patientName || "").trim(),
+            tooth: String(item?.tooth || "").trim(),
+            originalName: String(item?.file?.originalName || "").trim(),
+            mimetype: String(item?.file?.mimetype || "application/octet-stream").trim(),
+            size: Number(item?.file?.size || 0),
+            s3Key: String(item?.file?.s3Key || "").trim(),
+            uploadBatchId: String(item?.uploadBatchId || "").trim() || null,
+            uploadedAt: item?.uploadedAt
+              ? new Date(item.uploadedAt).toISOString()
+              : null,
+            trashedAt: item?.trashedAt
+              ? new Date(item.trashedAt).toISOString()
+              : null,
+            scanRole: storedRole.scanRole || null,
+            scanRoleSetBy: storedRole.scanRoleSetBy || null,
+          };
+        }),
         oralScanDownloadLocked,
         resultFileCount: resultFiles.length,
         resultFiles: resultFiles.map((item, idx) => ({

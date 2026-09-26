@@ -21,6 +21,7 @@
 // - web/frontend/src/shared/files/fileBlobCache.ts
 // - web/frontend/src/shared/files/s3ImageThumb.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-26: 노란 스캔 — 이미 고른 역할을 다시 눌러도 확정(노란 표시 해제).
 // - 2026-09-26: 기공소 채팅 — 스캔 역할은 파일명 구분. 애매한 파일만 노란 표시로 확정.
 // - 2026-09-26: 기공소 헤더 — AI는 작업시작 오른쪽. 할증 뱃지는 상단 별 위 `1.1x`.
 // - 2026-09-24: 의뢰 파일「열기」— 설정 디자인 SW(3Shape/ExoCAD)로 로컬 CAD 헬퍼 경유.
@@ -2618,11 +2619,6 @@ export function PracticeTransferDetailChatDialog({
                 </span>
               </div>
             )}
-            {scanRoleNeedsReview ? (
-              <div className="absolute left-1 top-1 rounded bg-amber-500 px-1.5 py-0.5 text-[10px] font-semibold text-white shadow-sm">
-                확인
-              </div>
-            ) : null}
             {locked ? (
               <div className="absolute inset-0 flex items-center justify-center bg-slate-900/45 px-1">
                 <span className="text-center text-[10px] font-medium text-white">
@@ -2648,6 +2644,24 @@ export function PracticeTransferDetailChatDialog({
             {file.fileName}
           </p>
         </button>
+        {scanRoleNeedsReview ? (
+          <button
+            type="button"
+            className="absolute left-1 top-1 z-10 rounded bg-amber-500 px-1.5 py-0.5 text-[10px] font-semibold text-white shadow-sm"
+            title="이 표시를 누르면 역할 목록이 열립니다."
+            aria-label={`${file.fileName} 역할 선택`}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              const trigger = event.currentTarget.parentElement?.querySelector(
+                'button[aria-label$="스캔 역할"]',
+              );
+              if (trigger instanceof HTMLButtonElement) trigger.click();
+            }}
+          >
+            확인
+          </button>
+        ) : null}
         {keyPrefix.startsWith("request") && isMesh && scanRole ? (
           <div
             className="px-1.5 pb-1.5"
@@ -2656,11 +2670,7 @@ export function PracticeTransferDetailChatDialog({
           >
             {onChangeRequestScanRole ? (
               <Select
-                value={
-                  scanRoleNeedsReview && scanRole === "other"
-                    ? "__unset__"
-                    : scanRole
-                }
+                value={scanRoleNeedsReview ? "__unset__" : scanRole}
                 onValueChange={(role) => {
                   if (isOralScanRole(role)) {
                     onChangeRequestScanRole(file, role);
@@ -2677,19 +2687,17 @@ export function PracticeTransferDetailChatDialog({
                   aria-label={`${file.fileName} 스캔 역할`}
                   title={
                     scanRoleNeedsReview
-                      ? "파일명으로 구분하지 못했습니다. 역할을 골라 확정해주세요."
+                      ? "이 목록에서 역할을 고르면 노란 표시가 꺼집니다."
                       : `${file.fileName} 스캔 역할`
                   }
                 >
-                  <SelectValue placeholder="선택" />
+                  <SelectValue
+                    placeholder={scanRoleNeedsReview ? "역할 선택" : "선택"}
+                  />
                 </SelectTrigger>
                 <SelectContent className="min-w-[7.5rem]">
                   {ORAL_SCAN_ROLE_OPTIONS.map((role) => (
-                    <SelectItem
-                      key={role}
-                      value={role}
-                      className="py-1.5 text-xs"
-                    >
+                    <SelectItem key={role} value={role} className="py-1.5 text-xs">
                       {oralScanRoleLabel(role)}
                     </SelectItem>
                   ))}
@@ -3277,9 +3285,9 @@ export function PracticeTransferDetailChatDialog({
                 ) : null}
                 {ambiguousScanKeys.size > 0 ? (
                   <p className="rounded-md bg-amber-100 px-3 py-2 text-xs font-medium leading-relaxed text-amber-950">
-                    파일명으로 상악·하악·바이트를 정하지 못한 파일이 있습니다.
+                    확인을 누르거나, 썸네일 아래 목록에서 역할을 고르세요.
                     <br />
-                    노란 표시의 역할을 골라 확정해주세요.
+                    상악·하악·바이트를 고르면 노란 표시가 꺼집니다.
                   </p>
                 ) : null}
                 {files.length ||

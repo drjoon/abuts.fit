@@ -210,6 +210,7 @@ import { usePeriodStore } from "@/store/usePeriodStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { apiFetch, invalidateApiGetCache, request } from "@/shared/api/apiClient";
 import { toTempUploadFileKey, useFilePreUpload } from "@/shared/hooks/useFilePreUpload";
+import { practiceTransferFileContentKey } from "@/shared/practice/practiceTransferFileIdentity";
 import {
   toChatMessageAttachments,
   useBackgroundTempUpload,
@@ -586,12 +587,36 @@ const mergeDraftTransferFileItems = (
   existing: DraftTransferFileItem[],
   incoming: DraftTransferFileItem[],
 ): DraftTransferFileItem[] => {
-  const byId = new Map<string, DraftTransferFileItem>();
-  for (const row of [...existing, ...incoming]) {
+  const rows: DraftTransferFileItem[] = [];
+  const indexById = new Map<string, number>();
+  const indexByIdentity = new Map<string, number>();
+  const consider = (row: DraftTransferFileItem, replaceSameId: boolean) => {
     const fileId = String(row.fileId || "").trim();
-    if (fileId) byId.set(fileId, row);
-  }
-  return Array.from(byId.values());
+    if (!fileId) return;
+    const ident = practiceTransferFileContentKey(row.originalName, row.size);
+    if (replaceSameId && indexById.has(fileId)) {
+      const idx = indexById.get(fileId)!;
+      const prevIdent = practiceTransferFileContentKey(
+        rows[idx]?.originalName,
+        rows[idx]?.size,
+      );
+      if (prevIdent && indexByIdentity.get(prevIdent) === idx) {
+        indexByIdentity.delete(prevIdent);
+      }
+      rows[idx] = row;
+      if (ident) indexByIdentity.set(ident, idx);
+      return;
+    }
+    if (indexById.has(fileId)) return;
+    if (ident && indexByIdentity.has(ident)) return;
+    const idx = rows.length;
+    rows.push(row);
+    indexById.set(fileId, idx);
+    if (ident) indexByIdentity.set(ident, idx);
+  };
+  for (const row of existing) consider(row, false);
+  for (const row of incoming) consider(row, true);
+  return rows;
 };
 
 const logPracticeFileSync = (
@@ -1517,6 +1542,30 @@ export const PracticeFileTransferPage = ({
     starBandEligibleLabIds,
     ownOneStarBlockedLabIds,
   });
+
+  const handleComposeIncomingFiles = useCallback((selectedFiles: File[]) => {
+    const blocked = new Set(
+      draftFilesRef.current
+        .map((row) =>
+          practiceTransferFileContentKey(row.originalName, row.size),
+        )
+        .filter(Boolean),
+    );
+    const incoming = Array.from(selectedFiles || []);
+    const next = incoming.filter((file) => {
+      const ident = practiceTransferFileContentKey(file.name, file.size);
+      return !ident || !blocked.has(ident);
+    });
+    const skipped = incoming.length - next.length;
+    if (skipped > 0) {
+      toast({
+        title: "중복 파일 제외",
+        description: `이미 첨부된 파일 ${skipped}건은 다시 올리지 않았습니다.`,
+        duration: 2200,
+      });
+    }
+    if (next.length) handleIncomingFiles(next);
+  }, [handleIncomingFiles, toast]);
 
   const applyArrivalDefaultForLabIdRef = useRef<
     (labId: string | null | undefined, labName?: string | null) => void
@@ -3767,8 +3816,8 @@ export const PracticeFileTransferPage = ({
 
     if (incomingFiles.length === 0) return;
 
-    handleIncomingFiles(incomingFiles);
-  }, [handleIncomingFiles, location.key, location.state]);
+    handleComposeIncomingFiles(incomingFiles);
+  }, [handleComposeIncomingFiles, location.key, location.state]);
 
   useEffect(() => {
     try {
@@ -6971,7 +7020,21 @@ export const PracticeFileTransferPage = ({
       try {
         // peek만 하다 uploadProgress 재실행을 놓치면(iOS 카메라 복귀 스로틀) PC에 안 간다.
         // ensure로 업로드를 끝까지 기다린 뒤 같은 turn에서 draft append 한다.
-        const uploaded = await ensureFilesUploaded(snapshotFiles);
+        // 임시저장에 같은 파일명·용량이 있으면 다시 올리지 않는다(복사본 2벌 방지).
+        const draftIdentities = new Set(
+          draftFilesRef.current
+            .map((row) =>
+              practiceTransferFileContentKey(row.originalName, row.size),
+            )
+            .filter(Boolean),
+        );
+        const filesToUpload = snapshotFiles.filter((file) => {
+          const ident = practiceTransferFileContentKey(file.name, file.size);
+          return !ident || !draftIdentities.has(ident);
+        });
+        const uploaded = filesToUpload.length
+          ? await ensureFilesUploaded(filesToUpload)
+          : [];
         if (seq !== mobileFilePromoteSeqRef.current) return;
 
         const localTempFiles = uploaded
@@ -6995,10 +7058,16 @@ export const PracticeFileTransferPage = ({
         const seen = new Set(
           draftFilesRef.current.map((row) => String(row.s3Key || "").trim()),
         );
-        const additions = localTempFiles.filter(
-          (row) => row.s3Key && !seen.has(row.s3Key),
-        );
-        snapshotFiles.forEach((file, index) => {
+        const seenIdentity = new Set(draftIdentities);
+        const additions = localTempFiles.filter((row) => {
+          if (!row.s3Key || seen.has(row.s3Key)) return false;
+          const ident = practiceTransferFileContentKey(row.originalName, row.size);
+          if (ident && seenIdentity.has(ident)) return false;
+          if (ident) seenIdentity.add(ident);
+          seen.add(row.s3Key);
+          return true;
+        });
+        filesToUpload.forEach((file, index) => {
           const uploadedRow = uploaded[index];
           const s3Key = String(uploadedRow?.key || "").trim();
           if (
@@ -8419,13 +8488,20 @@ export const PracticeFileTransferPage = ({
           .map((row) => String(row.s3Key || "").trim())
           .filter(Boolean),
       );
+      const seenIdentity = new Set<string>();
       const transferFiles = [
         ...draftSnapshot,
         ...localTempFiles.filter((row) => {
           const key = String(row.s3Key || "").trim();
           return Boolean(key) && !seenS3.has(key);
         }),
-      ];
+      ].filter((row) => {
+        const ident = practiceTransferFileContentKey(row.originalName, row.size);
+        if (!ident) return true;
+        if (seenIdentity.has(ident)) return false;
+        seenIdentity.add(ident);
+        return true;
+      });
       const clinicName = autoClinicName;
       const editing = editingSentTransferRef.current;
       const transferId = editing?.transferId || makeTransferId();
@@ -9303,7 +9379,7 @@ export const PracticeFileTransferPage = ({
                       };
                     }),
                     totalSizeMb: combinedFilesSizeMb,
-                    onPickFiles: handleIncomingFiles,
+                    onPickFiles: handleComposeIncomingFiles,
                     onRemoveFile: (key) => {
                       const target = combinedDisplayFiles.find((file) => file.key === key);
                       if (!target) return;
@@ -10591,7 +10667,7 @@ export const PracticeFileTransferPage = ({
             {showComposeHeaderToolbar ? practiceWorkspaceToolbar : null}
           </DialogHeader>
           <PageFileDropZone
-            onFiles={handleIncomingFiles}
+            onFiles={handleComposeIncomingFiles}
             activeClassName="ring-2 ring-primary/30"
             guideTourScroll
             className={cn(
@@ -10629,7 +10705,7 @@ export const PracticeFileTransferPage = ({
                   requestIntakeProps={practiceTransferRequestIntakeProps}
                   canCapture={hasSubstantialContentForNewDraft}
                   photos={mobileOralPhotos}
-                  onPickPhotos={handleIncomingFiles}
+                  onPickPhotos={handleComposeIncomingFiles}
                   onRemovePhoto={(key) => {
                     const target = combinedDisplayFiles.find((file) => file.key === key);
                     if (!target) return;
