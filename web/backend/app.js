@@ -260,7 +260,7 @@ const limiter = rateLimit({
 
 // API 요청에 Rate Limiting 적용
 app.use("/api", limiter);
-// 동일 콜 과도 반복 차단 (최근 100개, 5초 내 동일 콜 5회 이상)
+// 동일 사용자·동일 콜 반복 차단 (10초 내 40회). 인증 전이라 토큰 userId로 구분한다.
 app.use("/api", requestFloodBlocker);
 
 // 정적 파일 제공 (업로드된 파일 등)

@@ -165,7 +165,7 @@ export async function apiFetch<T = any>(
       raw: response,
     };
 
-    if (method === "GET") {
+    if (method === "GET" && response.ok) {
       SHORT_CACHE.set(requestKey, {
         ts: Date.now(),
         value: out as ApiResponse<any>,

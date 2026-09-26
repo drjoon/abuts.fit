@@ -337,6 +337,9 @@ export const useSystemSettings = () => {
       return { creditSettings } as SystemSettingsData;
     },
     retry: false,
-    staleTime: 60 * 1000,
+    staleTime: 5 * 60 * 1000,
+    // 실패(429) 쿼리는 stale로 남아 포커스·재연결마다 다시 칠 수 있다.
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 };

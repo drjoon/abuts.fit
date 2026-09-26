@@ -2,11 +2,41 @@
 // - web/backend/rules.md
 // - web/backend/app.js
 // - web/backend/server.js
-const MAX_RECENT = 300;
+// - web/backend/utils/jwt.utils.js
+import { verifyToken } from "../utils/jwt.utils.js";
+
+const MAX_RECENT = 800;
 const WINDOW_MS = 10000; // 10초
-const MAX_REPEAT = 12; // 동일 요청은 10초 내 12회까지 허용
+// 같은 계정으로 여러 탭이 대시보드를 동시에 열면 엔드포인트당 10회를 넘긴다.
+// 40이면 탭 폭주는 통과하고, 초당 4회를 넘는 반복만 막는다.
+const MAX_REPEAT = 40;
 
 const recentCalls = [];
+
+/**
+ * 이 미들웨어는 라우트 `authenticate`보다 앞에 붙어 req.user가 비어 있다.
+ * IP만 쓰면 로컬·같은 NAT의 여러 계정이 한 버킷을 공유해
+ * GET /api/credits/settings 같은 대시보드 조회가 429가 된다.
+ */
+function resolveRequesterId(req) {
+  if (req.user?._id) return String(req.user._id);
+
+  const authHeader = req.headers?.authorization;
+  if (typeof authHeader === "string" && authHeader.startsWith("Bearer ")) {
+    const token = authHeader.slice("Bearer ".length).trim();
+    if (token) {
+      try {
+        const decoded = verifyToken(token);
+        const userId = decoded?.userId || decoded?.id;
+        if (userId && !Array.isArray(userId)) return String(userId);
+      } catch {
+        // 서명 실패·만료는 익명(IP) 버킷으로 센다.
+      }
+    }
+  }
+
+  return String(req.ip || "anonymous");
+}
 
 function buildNormalizedQueryKey(req) {
   if (req.method !== "GET") return "";
@@ -27,7 +57,7 @@ function buildNormalizedQueryKey(req) {
  */
 export function requestFloodBlocker(req, res, next) {
   const now = Date.now();
-  const requester = String(req.user?._id || req.ip || "anonymous");
+  const requester = resolveRequesterId(req);
   const queryKey = buildNormalizedQueryKey(req);
   const key = `${requester}:${req.method}:${req.path}:${queryKey}`;
 
@@ -41,7 +71,7 @@ export function requestFloodBlocker(req, res, next) {
     (item) => item.key === key && now - item.ts <= WINDOW_MS,
   );
 
-  if (recentSame.length >= MAX_REPEAT - 1) {
+  if (recentSame.length >= MAX_REPEAT) {
     return res.status(429).json({
       message: "동일 요청이 과도하게 발생했습니다. 잠시 후 다시 시도해주세요.",
     });
