@@ -254,7 +254,7 @@ export function applyMarginRadius(
   const radii = edit.margin.radii.slice();
   const count = radii.length || MARGIN_POINT_COUNT;
   while (radii.length < count) radii.push(1);
-  const next = clamp(radius, 0.62, 1.45);
+  const next = clamp(radius, 0.45, 2.85);
   const paint = (slot: number, weight: number) => {
     const key = ((slot % count) + count) % count;
     const current = radii[key] ?? 1;
@@ -299,7 +299,7 @@ export function insertMarginPoint(
   const depths = (edit.margin.depths ?? []).slice();
   while (depths.length < radii.length) depths.push(0);
   const at = Math.min(radii.length, Math.max(0, index));
-  radii.splice(at, 0, clamp(radius, 0.62, 1.45));
+  radii.splice(at, 0, clamp(radius, 0.45, 2.85));
   const before = depths[at - 1] ?? depths[at] ?? 0;
   const after = depths[at] ?? before;
   depths.splice(at, 0, (before + after) / 2);

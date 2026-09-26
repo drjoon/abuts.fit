@@ -12,6 +12,7 @@
 // - 2026-09-26: 삽입축은 치아에서 2mm 띄운다. 치아번호는 윗단 고리 중심에 둔다.
 // - 2026-09-26: 처음 카메라는 지대치 교합면과 인접치 하나씩. 그 자세를 초기 뷰로 둔다.
 // - 2026-09-26: 삽입축을 잡으면 치아·잇몸 색이 갈라지는 곳을 마진으로 잡는다.
+// - 2026-09-26: 마진은 기본 원보다 바깥을, 삽입축으로 스캔 면에 붙여 잡는다.
 import {
   forwardRef,
   useEffect,
@@ -43,7 +44,10 @@ import type {
   DesignGesture,
   ProsthesisDesignEdit,
 } from "@/shared/practice/labProsthesisModify";
-import { detectColorMarginEitherWay } from "@/shared/practice/detectColorMargin";
+import {
+  detectProjectedColorMargin,
+  PROJECTED_MARGIN_TRIANGLE_STRIDE,
+} from "@/shared/practice/detectColorMargin";
 import {
   buildProsthesisEditLayer,
   readEditHit,
@@ -71,7 +75,7 @@ export type OralScanOverlayHandle = {
   setInsertionFromView: (toothNumbers: readonly string[]) => boolean;
   /**
    * 이 치아들의 스캔 칼라에서 마진을 고른다.
-   * 삽입축이 있으면 그 방향, 없으면 악 위쪽. 색 경계가 없으면 빈 배열.
+   * 기본 원보다 넓은 고리를 삽입축으로 스캔 면에 붙여 본다. 색 경계가 없으면 빈 배열.
    */
   detectColorMargins: (
     toothNumbers: readonly string[],
@@ -710,8 +714,11 @@ function marginFrameAxes(normal: THREE.Vector3, rightHint: THREE.Vector3) {
   return { x, y, z };
 }
 
-/** 치아 주변 버텍스의 원래 스캔 칼라. 언더컷·접촉으로 칠한 색은 쓰지 않는다. */
-function collectColorMarginSamples(
+/**
+ * 치아 주변 삼각형을 삽입축 프레임으로 옮긴다.
+ * 칼라는 로드 때 스캔 색이다. 언더컷·접촉으로 칠한 색은 쓰지 않는다.
+ */
+function collectProjectedMarginTriangles(
   entries: LoadedMesh[],
   center: THREE.Vector3,
   normal: THREE.Vector3,
@@ -719,46 +726,125 @@ function collectColorMarginSamples(
   toothRadius: number,
 ) {
   const axes = marginFrameAxes(normal, right);
-  const reach = Math.max(toothRadius * 1.75, 1);
-  const reachSq = reach * reach;
-  const axialLimit = toothRadius * 1.7;
-  const samples: Array<{
-    x: number;
-    z: number;
-    axial: number;
-    r: number;
-    g: number;
-    b: number;
-  }> = [];
+  const outer = toothRadius * 2.7;
+  const outerSq = outer * outer;
+  const yMin = -toothRadius * 1.6;
+  const yMax = toothRadius * 2.8;
   const world = new THREE.Vector3();
+  let packed = new Float32Array(2048 * PROJECTED_MARGIN_TRIANGLE_STRIDE);
+  let count = 0;
+  const push = (
+    ax: number,
+    ay: number,
+    az: number,
+    bx: number,
+    by: number,
+    bz: number,
+    cx: number,
+    cy: number,
+    cz: number,
+    ar: number,
+    ag: number,
+    ab: number,
+    br: number,
+    bg: number,
+    bb: number,
+    cr: number,
+    cg: number,
+    cb: number,
+  ) => {
+    if ((count + 1) * PROJECTED_MARGIN_TRIANGLE_STRIDE > packed.length) {
+      const next = new Float32Array(packed.length * 2);
+      next.set(packed);
+      packed = next;
+    }
+    const offset = count * PROJECTED_MARGIN_TRIANGLE_STRIDE;
+    packed[offset] = ax;
+    packed[offset + 1] = ay;
+    packed[offset + 2] = az;
+    packed[offset + 3] = bx;
+    packed[offset + 4] = by;
+    packed[offset + 5] = bz;
+    packed[offset + 6] = cx;
+    packed[offset + 7] = cy;
+    packed[offset + 8] = cz;
+    packed[offset + 9] = ar;
+    packed[offset + 10] = ag;
+    packed[offset + 11] = ab;
+    packed[offset + 12] = br;
+    packed[offset + 13] = bg;
+    packed[offset + 14] = bb;
+    packed[offset + 15] = cr;
+    packed[offset + 16] = cg;
+    packed[offset + 17] = cb;
+    count += 1;
+  };
+
   for (const entry of entries) {
     const color = entry.scanColor;
     const pos = entry.geometry.getAttribute("position");
     if (!color || !pos || color.count !== pos.count) continue;
     entry.mesh.updateWorldMatrix(true, false);
     const matrix = entry.mesh.matrixWorld;
-    const stride = pos.count > 220000 ? 2 : 1;
-    for (let i = 0; i < pos.count; i += stride) {
+    const fx = new Float32Array(pos.count);
+    const fy = new Float32Array(pos.count);
+    const fz = new Float32Array(pos.count);
+    for (let i = 0; i < pos.count; i += 1) {
       world.fromBufferAttribute(pos, i).applyMatrix4(matrix);
       const dx = world.x - center.x;
       const dy = world.y - center.y;
       const dz = world.z - center.z;
-      const axial = dx * axes.y.x + dy * axes.y.y + dz * axes.y.z;
-      if (axial < -axialLimit || axial > axialLimit) continue;
-      const x = dx * axes.x.x + dy * axes.x.y + dz * axes.x.z;
-      const z = dx * axes.z.x + dy * axes.z.y + dz * axes.z.z;
-      if (x * x + z * z > reachSq) continue;
-      samples.push({
-        x,
-        z,
-        axial,
-        r: color.getX(i),
-        g: color.getY(i),
-        b: color.getZ(i),
-      });
+      fx[i] = dx * axes.x.x + dy * axes.x.y + dz * axes.x.z;
+      fy[i] = dx * axes.y.x + dy * axes.y.y + dz * axes.y.z;
+      fz[i] = dx * axes.z.x + dy * axes.z.y + dz * axes.z.z;
+    }
+    const index = entry.geometry.index;
+    const triCount = index ? Math.floor(index.count / 3) : Math.floor(pos.count / 3);
+    for (let tri = 0; tri < triCount; tri += 1) {
+      const ia = index ? index.getX(tri * 3) : tri * 3;
+      const ib = index ? index.getX(tri * 3 + 1) : tri * 3 + 1;
+      const ic = index ? index.getX(tri * 3 + 2) : tri * 3 + 2;
+      const ax = fx[ia] ?? 0;
+      const ay = fy[ia] ?? 0;
+      const az = fz[ia] ?? 0;
+      const bx = fx[ib] ?? 0;
+      const by = fy[ib] ?? 0;
+      const bz = fz[ib] ?? 0;
+      const cx = fx[ic] ?? 0;
+      const cy = fy[ic] ?? 0;
+      const cz = fz[ic] ?? 0;
+      if (ay < yMin && by < yMin && cy < yMin) continue;
+      if (ay > yMax && by > yMax && cy > yMax) continue;
+      if (
+        ax * ax + az * az > outerSq &&
+        bx * bx + bz * bz > outerSq &&
+        cx * cx + cz * cz > outerSq
+      ) {
+        continue;
+      }
+      push(
+        ax,
+        ay,
+        az,
+        bx,
+        by,
+        bz,
+        cx,
+        cy,
+        cz,
+        color.getX(ia),
+        color.getY(ia),
+        color.getZ(ia),
+        color.getX(ib),
+        color.getY(ib),
+        color.getZ(ib),
+        color.getX(ic),
+        color.getY(ic),
+        color.getZ(ic),
+      );
     }
   }
-  return samples;
+  return packed.subarray(0, count * PROJECTED_MARGIN_TRIANGLE_STRIDE);
 }
 
 function nearestInsertionDir(
@@ -1878,7 +1964,10 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       const base = frame.place.radius * 0.78;
       if (base < 1e-6) return null;
       const offset = edit.margin.offsetMm / unit;
-      return (point.distanceTo(frame.place.center) - offset) / base;
+      const delta = point.clone().sub(frame.place.center);
+      const axial = delta.dot(frame.normal);
+      const radial = Math.sqrt(Math.max(0, delta.lengthSq() - axial * axial));
+      return (radial - offset) / base;
     };
 
     const onEditPointerDown = (event: PointerEvent) => {
@@ -2651,6 +2740,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         return true;
       },
       detectColorMargins: (toothNumbers) => {
+        groupRef.current?.updateWorldMatrix(true, true);
         const right = frameRef.current?.right ?? new THREE.Vector3(1, 0, 0);
         const fallback = frameRef.current?.up ?? new THREE.Vector3(0, 0, 1);
         const loaded = loadedRef.current;
@@ -2668,14 +2758,14 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
             (entry) => entry.role === place.arch && entry.scanColor,
           );
           if (entries.length === 0) continue;
-          const samples = collectColorMarginSamples(
+          const triangles = collectProjectedMarginTriangles(
             entries,
             place.center,
             normal,
             right,
             place.radius,
           );
-          const line = detectColorMarginEitherWay(samples, place.radius);
+          const line = detectProjectedColorMargin(triangles, place.radius);
           if (!line) continue;
           out.push({ tooth: raw, radii: line.radii, depths: line.depths });
         }
