@@ -316,8 +316,13 @@ const practiceTransferSchema = new mongoose.Schema(
        * 없으면 레거시 이벤트. 어벗츠기공본부는 true.
        */
       aiTrainingConsent: { type: Boolean },
-      /** 수행자가 어벗츠기공본부. 플랫폼 사용료 2%는 항상 면제. */
+      /** 수행자가 어벗츠기공본부. 학습에 포함한다. */
       internalPerformer: { type: Boolean },
+      /**
+       * 생성 시점 치과 설정. true·없음 = 최종 보철 업로드가 작업완료 조건.
+       * false = 비CA는 작업시작, CA는 모델 STL 충족 때 완료. 이후 설정 변경 소급 금지.
+       */
+      requireLabProsthesisUpload: { type: Boolean, default: true },
       // 기공수가 할증 배수(1=없음). 생성·수락 시점 스냅샷.
       labFeeMultiplier: { type: Number, default: 1, min: 1, max: 5 },
       // 치과별 특별공급가 생성 시점 스냅샷(capturedAt). 이후 설정 변경 소급 금지.

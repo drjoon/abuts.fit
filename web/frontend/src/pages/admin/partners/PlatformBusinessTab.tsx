@@ -24,8 +24,7 @@ export function PlatformBusinessTab() {
   const { state, setPreviewPool } = useBusinessAreaShare();
   const { previewPool } = state.platform;
 
-  const [subcontractRatePct, setSubcontractRatePct] = useState(5);
-  const [directRatePct, setDirectRatePct] = useState(2);
+  const [subcontractRatePct, setSubcontractRatePct] = useState(10);
 
   useEffect(() => {
     if (!token) return;
@@ -51,15 +50,8 @@ export function PlatformBusinessTab() {
       if (rate != null) {
         setSubcontractRatePct(Math.round(Number(rate) * 100));
       }
-      if (fees?.directPlatformFeeRate != null) {
-        setDirectRatePct(Math.round(Number(fees.directPlatformFeeRate) * 100));
-      } else {
-        setDirectRatePct(2);
-      }
     })();
   }, [token]);
-
-  const directLabel = formatPercent(directRatePct);
 
   return (
     <Card className="app-glass-card app-glass-card--lg overflow-hidden">
@@ -67,7 +59,7 @@ export function PlatformBusinessTab() {
         <SectionHeader
           icon={Layers}
           title="플랫폼사업"
-          description={`플랫폼 사용료 ${directLabel} · 하청 영업 수수료 ${formatPercent(subcontractRatePct)}. 학습 이용 동의 시 사용료 면제. 어벗츠 면세, 개발운영사 +VAT.`}
+          description={`하청 영업 수수료 ${formatPercent(subcontractRatePct)}. 협력건은 전액 적립. 어벗츠 면세, 개발운영사 +VAT.`}
           trailing={
             <div className="relative w-36">
               <Input

@@ -1883,8 +1883,8 @@ export async function setMyAiTrainingConsent(req, res) {
     return res.json({
       success: true,
       message: allowed
-        ? "학습 이용을 허용했습니다. 이번 의뢰부터 플랫폼 사용료 2%가 면제됩니다."
-        : "학습 이용을 끄셨습니다. 이번 의뢰부터 플랫폼 사용료 2%가 공제됩니다.",
+        ? "학습 이용을 허용했습니다."
+        : "학습 이용을 끄셨습니다.",
       data: {
         allowed,
         locked: false,

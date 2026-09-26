@@ -11,6 +11,7 @@ import {
   resolvePlatformFeeRate,
   resolvePracticeTransferFeeRate,
   resolvePracticeTransferFeeRateForViewer,
+  snapshottedPracticeTransferFeeRate,
 } from "../../services/creditRevenuePolicy.service.js";
 
 describe("resolvePracticeTransferFeeRate", () => {
@@ -73,7 +74,7 @@ describe("resolvePracticeTransferFeeRate", () => {
     ).toBe(false);
   });
 
-  test("지정 거래 적용 on이면 directPlatformFeeRate", () => {
+  test("지정 거래는 플랫폼 사용료를 매기지 않는다", () => {
     expect(
       resolvePracticeTransferFeeRate({
         matchingMode: "direct",
@@ -83,7 +84,7 @@ describe("resolvePracticeTransferFeeRate", () => {
           directPlatformFeeRate: 0.05,
         },
       }),
-    ).toBe(0.05);
+    ).toBe(0);
   });
 
   test("하청이면 지정 on이어도 subcontractFeeRate", () => {
@@ -152,14 +153,14 @@ describe("resolvePracticeTransferFeeRate", () => {
     ).toBe(0.05);
   });
 
-  test("지정·협력은 학습 동의가 없으면 정책 2%, 있으면 0", () => {
+  test("지정·협력은 학습 동의와 무관하게 0", () => {
     expect(
       resolvePracticeTransferFeeRate({
         matchingMode: "direct",
         aiTrainingConsent: false,
         payoutRates: { directPlatformFeeRate: 0.02 },
       }),
-    ).toBe(0.02);
+    ).toBe(0);
     expect(
       resolvePracticeTransferFeeRate({
         matchingMode: "direct",
@@ -169,7 +170,7 @@ describe("resolvePracticeTransferFeeRate", () => {
     ).toBe(0);
   });
 
-  test("하청은 10%에 플랫폼 사용료를 더하고, 동의하면 그 사용료만 면제", () => {
+  test("하청은 학습 동의와 무관하게 하청 요율만", () => {
     expect(
       resolvePracticeTransferFeeRate({
         matchingMode: "direct",
@@ -177,7 +178,7 @@ describe("resolvePracticeTransferFeeRate", () => {
         aiTrainingConsent: false,
         payoutRates: { subcontractFeeRate: 0.1, directPlatformFeeRate: 0.02 },
       }),
-    ).toBeCloseTo(0.12);
+    ).toBe(0.1);
     expect(
       resolvePracticeTransferFeeRate({
         matchingMode: "direct",
@@ -207,6 +208,19 @@ describe("resolvePracticeTransferFeeRate", () => {
         payoutRates: { subcontractFeeRate: 0.1, directPlatformFeeRate: 0.02 },
       }),
     ).toBe(0.1);
+  });
+
+  test("작업시작으로 박힌 요율은 견적 뷰어가 다시 계산하지 않는다", () => {
+    const billing = { billedAt: new Date(), feeRateApplied: 0.02 };
+    expect(snapshottedPracticeTransferFeeRate(billing)).toBe(0.02);
+    expect(
+      resolvePracticeTransferFeeRateForViewer({
+        matchingMode: "direct",
+        subcontracted: false,
+        billing,
+        payoutRates: { directPlatformFeeRate: 0.02 },
+      }),
+    ).toBe(0.02);
   });
 
   test("platformFeeRate가 없으면 nonPartnerFeeRate로 fallback", () => {

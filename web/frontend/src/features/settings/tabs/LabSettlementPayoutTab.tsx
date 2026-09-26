@@ -67,7 +67,6 @@ import {
   LAB_PAYOUT_SETTINGS_PATH,
   LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE,
   LAB_SETTLEMENT_PAYOUT_RESERVE_NOTICE,
-  resolveLabDirectPlatformFeePct,
   isLabPayoutReady,
   type LabPayoutAccountSnapshot,
 } from "@/shared/settlement/labPayoutBankbook";
@@ -223,11 +222,6 @@ export const LabSettlementPayoutTab = () => {
     forceOnMount: true,
   });
   const { windowInfo: labFeeWindow } = useLabTradingPartnerWindow();
-  const directFeePct = resolveLabDirectPlatformFeePct(
-    labFeeWindow?.feeRates?.directPlatformFeeRate != null
-      ? Number(labFeeWindow.feeRates.directPlatformFeeRate) * 100
-      : undefined,
-  );
   const subcontractFeePct = Math.round(
     Number(labFeeWindow?.feeRates?.subcontractFeeRate ?? 0.1) * 100,
   );
@@ -602,12 +596,11 @@ export const LabSettlementPayoutTab = () => {
                     </p>
                   </div>
                 </SettlementPolicySection>
-                <SettlementPolicySection title="플랫폼 사용료 · 하청 수수료">
+                <SettlementPolicySection title="하청 수수료">
                   <div className="flex gap-2.5">
                     <Percent className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
                     <p>
                       <LabDirectPlatformFeeNotice
-                        ratePct={directFeePct}
                         subcontractRatePct={subcontractFeePct}
                       />
                     </p>

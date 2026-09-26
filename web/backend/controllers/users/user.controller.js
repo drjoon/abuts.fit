@@ -607,16 +607,28 @@ async function updateProfile(req, res) {
             ? req.user.practiceProfile
             : {};
 
-        // 온보딩 사업자등록 후: 구강 스캔만 부분 갱신(전체 치과프로필 필수 아님)
+        // 디지털 탭: 구강 스캐너·보철 요구만 부분 갱신(전체 치과프로필 필수 아님)
         const ppKeys = Object.keys(pp).filter((k) => pp[k] !== undefined);
-        const isOralScanOnly =
-          typeof pp.usesOralScan === "boolean" &&
-          ppKeys.every((k) => k === "usesOralScan" || k === "updatedAt");
+        const digitalKeys = new Set([
+          "usesOralScan",
+          "requireLabProsthesisUpload",
+          "updatedAt",
+        ]);
+        const isDigitalOnly =
+          ppKeys.length > 0 &&
+          ppKeys.every((k) => digitalKeys.has(k)) &&
+          (typeof pp.usesOralScan === "boolean" ||
+            typeof pp.requireLabProsthesisUpload === "boolean");
 
-        if (isOralScanOnly) {
+        if (isDigitalOnly) {
           updateData.practiceProfile = {
             ...existingPp,
-            usesOralScan: pp.usesOralScan,
+            ...(typeof pp.usesOralScan === "boolean"
+              ? { usesOralScan: pp.usesOralScan }
+              : {}),
+            ...(typeof pp.requireLabProsthesisUpload === "boolean"
+              ? { requireLabProsthesisUpload: pp.requireLabProsthesisUpload }
+              : {}),
             updatedAt: new Date(),
             createdAt: existingPp.createdAt || new Date(),
           };
@@ -645,6 +657,10 @@ async function updateProfile(req, res) {
             typeof pp.usesOralScan === "boolean"
               ? pp.usesOralScan
               : Boolean(existingPp.usesOralScan);
+          const requireLabProsthesisUpload =
+            typeof pp.requireLabProsthesisUpload === "boolean"
+              ? pp.requireLabProsthesisUpload
+              : existingPp.requireLabProsthesisUpload !== false;
 
           if (
             !clinicName ||
@@ -673,6 +689,7 @@ async function updateProfile(req, res) {
             addressDetail,
             zipCode,
             usesOralScan,
+            requireLabProsthesisUpload,
             createdAt: existingCreatedAt || new Date(),
             updatedAt: new Date(),
           };
@@ -720,12 +737,19 @@ async function updateProfile(req, res) {
         typeof refreshed.practiceProfile === "object"
           ? refreshed.practiceProfile
           : updatedUser.practiceProfile;
+      const digitalSync = {};
       if (typeof pp?.usesOralScan === "boolean") {
+        digitalSync.usesOralScan = pp.usesOralScan;
+      }
+      if (typeof pp?.requireLabProsthesisUpload === "boolean") {
+        digitalSync.requireLabProsthesisUpload = pp.requireLabProsthesisUpload;
+      }
+      if (Object.keys(digitalSync).length) {
         void syncPracticeUsesOralScan({
           userId: refreshed?._id || updatedUser._id,
           businessAnchorId:
             refreshed?.businessAnchorId || updatedUser.businessAnchorId || null,
-          usesOralScan: pp.usesOralScan,
+          ...digitalSync,
         }).catch((err) => {
           console.error("[users.updateProfile] syncPracticeUsesOralScan", err);
         });

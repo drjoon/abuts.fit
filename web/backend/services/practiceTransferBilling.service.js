@@ -83,7 +83,7 @@ export const PRACTICE_TRANSFER_LEDGER_LABELS = {
   holdShippingAbutment: "배송비 보류(기공소→어벗츠)",
   releaseLab: "기공비(치과→어벗츠)",
   releaseAbutment: "기공비(치과→어벗츠)",
-  /** 치과 직접 지정 협력 — 학습 이용 스냅샷이면 0%, 아니면 플랫폼 사용료 */
+  /** 치과 직접 지정 협력 — 플랫폼 사용료 없음, 전액 이관 */
   cooperationPurchase: "협력 기공비(어벗츠→기공소)",
   /** 어벗츠 지정 후 하청 — subcontractFeeRate */
   subcontractPurchase: "하청(매입) 기공비(어벗츠→기공소)",
@@ -116,6 +116,7 @@ import {
   platformFeeArgsFromBilling,
   resolvePracticeTransferFeeRate,
   resolvePracticeTransferFeeRateForViewer,
+  snapshottedPracticeTransferFeeRate,
   resolveManufacturerUnitApply,
   resolveManufacturerUnitQty,
   normalizeAffiliateVatRate,
@@ -2467,12 +2468,14 @@ async function computeAcceptedPracticeTransferFees({
 
   const relationshipKind = relationshipKindFromPartner(partner);
   const isPartner = relationshipKind === "active";
-  const feeRateApplied = resolvePracticeTransferFeeRate({
-    matchingMode: isAutoMatch ? "auto" : "direct",
-    payoutRates: devopsAnchorForFeeRate?.payoutRates,
-    subcontracted: isSubcontractFeeApplicable(transfer),
-    ...platformFeeArgsFromBilling(transfer?.billing),
-  });
+  const feeRateApplied =
+    snapshottedPracticeTransferFeeRate(transfer?.billing) ??
+    resolvePracticeTransferFeeRate({
+      matchingMode: isAutoMatch ? "auto" : "direct",
+      payoutRates: devopsAnchorForFeeRate?.payoutRates,
+      subcontracted: isSubcontractFeeApplicable(transfer),
+      ...platformFeeArgsFromBilling(transfer?.billing),
+    });
   const { abutsRevenueAmount, labSettlementAmount } =
     splitPracticeTransferSettlement({
       labFeeTotal: fees.labFeeTotal,
@@ -2980,6 +2983,10 @@ async function readPracticeToLabSettlementBlock(
   if (practiceTransferNeedsMoreAbutmentDesigns(transfer)) {
     return "awaiting_abutment_design_stl";
   }
+  const { isLabProsthesisUploadRequired } = await import(
+    "../utils/practiceProsthesisUploadRequirement.js"
+  );
+  if (!isLabProsthesisUploadRequired(transfer)) return null;
 
   const awaitShare = awaitsAbutmentShareRelease(transfer);
   if (awaitShare) {
@@ -5344,13 +5351,17 @@ export async function releasePracticeTransferRemakeChargeCredits({
     };
   }
 
-  const feeRateApplied = resolvePracticeTransferFeeRate({
-    matchingMode:
-      String(transfer?.matchingMode || "").trim() === "auto" ? "auto" : "direct",
-    payoutRates,
-    subcontracted: isSubcontractFeeApplicable(transfer),
-    ...platformFeeArgsFromBilling(transfer?.billing),
-  });
+  const feeRateApplied =
+    snapshottedPracticeTransferFeeRate(transfer?.billing) ??
+    resolvePracticeTransferFeeRate({
+      matchingMode:
+        String(transfer?.matchingMode || "").trim() === "auto"
+          ? "auto"
+          : "direct",
+      payoutRates,
+      subcontracted: isSubcontractFeeApplicable(transfer),
+      ...platformFeeArgsFromBilling(transfer?.billing),
+    });
   const platformFee = Math.max(
     0,
     Math.round(releaseAmount * Number(feeRateApplied || 0)),
@@ -5887,13 +5898,17 @@ export async function releasePracticeTransferProsthesisFollowUpLabShare({
     };
   }
 
-  const feeRateApplied = resolvePracticeTransferFeeRate({
-    matchingMode:
-      String(transfer?.matchingMode || "").trim() === "auto" ? "auto" : "direct",
-    payoutRates,
-    subcontracted: isSubcontractFeeApplicable(transfer),
-    ...platformFeeArgsFromBilling(transfer?.billing),
-  });
+  const feeRateApplied =
+    snapshottedPracticeTransferFeeRate(transfer?.billing) ??
+    resolvePracticeTransferFeeRate({
+      matchingMode:
+        String(transfer?.matchingMode || "").trim() === "auto"
+          ? "auto"
+          : "direct",
+      payoutRates,
+      subcontracted: isSubcontractFeeApplicable(transfer),
+      ...platformFeeArgsFromBilling(transfer?.billing),
+    });
   const platformFee = Math.max(
     0,
     Math.round(releaseAmount * Number(feeRateApplied || 0)),
@@ -7725,21 +7740,17 @@ export async function revokeAbutmentDesignLabFee({
 }
 
 /**
- * 학습 동의 변경 뒤, 아직 끝나지 않은 수행 의뢰의 플랫폼 수수료를 맞춘다.
- * transferId가 있으면 그 건과 그 시각 이후 작업시작한 미완료 의뢰.
- * 없으면 수행 중인 미완료 의뢰 전부. 완료·취소 건은 스냅샷을 유지한다.
+ * 학습 동의 변경 뒤, 아직 끝나지 않은 수행 의뢰의 학습 포함 스냅샷만 맞춘다.
+ * 요율(feeRateApplied)은 바꾸지 않는다. 완료·취소 건은 그대로 둔다.
  */
 export async function repriceOpenTransfersForAiTrainingConsent({
   labAnchorId,
   allowed,
   transferId = null,
-  actorUserId = null,
-  occurredAt = null,
 } = {}) {
   const labId = String(labAnchorId || "").trim();
   if (!labId || !Types.ObjectId.isValid(labId)) return { updated: 0 };
   const consentAllowed = allowed === true;
-  const when = occurredAt instanceof Date ? occurredAt : new Date();
   const focusId = String(transferId || "").trim();
   const labOid = new Types.ObjectId(labId);
 
@@ -7787,16 +7798,12 @@ export async function repriceOpenTransfersForAiTrainingConsent({
     }
   }
 
-  const payoutRates = await loadCachedDevopsPayoutRates();
   let updated = 0;
   for (const doc of openDocs) {
     try {
       const changed = await repriceOneTransferPlatformFeeForConsent({
         doc,
         consentAllowed,
-        payoutRates,
-        actorUserId,
-        occurredAt: when,
       });
       if (changed) updated += 1;
     } catch (error) {
@@ -7813,221 +7820,12 @@ export async function repriceOpenTransfersForAiTrainingConsent({
 async function repriceOneTransferPlatformFeeForConsent({
   doc,
   consentAllowed,
-  payoutRates,
-  actorUserId,
-  occurredAt,
 }) {
-  const labFeeTotal = Math.max(
-    0,
-    Math.round(
-      Number(doc?.billing?.labFeeTotal ?? doc?.billing?.heldLabTotal ?? 0),
-    ),
-  );
-  if (labFeeTotal <= 0) return false;
-  const oldRateRaw = Number(doc?.billing?.feeRateApplied || 0);
-  const oldRate = Number.isFinite(oldRateRaw)
-    ? Math.min(1, Math.max(0, oldRateRaw))
-    : 0;
-  const newRate = resolvePracticeTransferFeeRate({
-    matchingMode: doc.matchingMode,
-    payoutRates,
-    subcontracted: isSubcontractFeeApplicable(doc),
-    performerIsInternal: false,
-    aiTrainingConsent: consentAllowed,
-  });
-  const oldPlatform = Math.round(labFeeTotal * oldRate);
-  const newPlatform = Math.round(labFeeTotal * newRate);
-  const delta = oldPlatform - newPlatform;
-  const sameConsent = doc?.billing?.aiTrainingConsent === consentAllowed;
-  if (sameConsent && delta === 0) return false;
-
-  const abutmentRetailTotal = Math.max(
-    0,
-    Math.round(Number(doc?.billing?.abutmentRetailTotal || 0)),
-  );
-  const newSplit = splitPracticeTransferSettlement({
-    labFeeTotal,
-    abutmentRetailTotal,
-    feeRateApplied: newRate,
-  });
-
-  if (doc?.billing?.labSettledAt && delta !== 0) {
-    const posted = await postAiConsentPlatformFeeAdjust({
-      doc,
-      delta,
-      oldRate,
-      newRate,
-      labFeeTotal,
-      actorUserId,
-      occurredAt,
-    });
-    if (!posted) return false;
-  }
-
+  if (doc?.billing?.aiTrainingConsent === consentAllowed) return false;
   await PracticeTransfer.updateOne(
     { _id: doc._id },
-    {
-      $set: {
-        "billing.aiTrainingConsent": consentAllowed,
-        "billing.feeRateApplied": newRate,
-        "billing.labSettlementAmount": newSplit.labSettlementAmount,
-        "billing.abutsRevenueAmount": newSplit.abutsRevenueAmount,
-      },
-    },
+    { $set: { "billing.aiTrainingConsent": consentAllowed } },
   );
-  return true;
-}
-
-async function postAiConsentPlatformFeeAdjust({
-  doc,
-  delta,
-  oldRate,
-  newRate,
-  labFeeTotal,
-  actorUserId,
-  occurredAt,
-}) {
-  const parties = resolvePracticeTransferSettlementParties(doc);
-  const payeeId = String(
-    parties.purchasePayeeId || parties.grossOwnerId || "",
-  ).trim();
-  if (!payeeId || !doc?.practiceBusinessAnchorId) return false;
-  const practiceAnchorId = doc.practiceBusinessAnchorId;
-  const amount = Math.abs(Math.round(Number(delta) || 0));
-  if (amount <= 0) return false;
-  const refunding = delta > 0;
-  const when = occurredAt instanceof Date ? occurredAt : new Date();
-  const idempotencyKey = `practice_transfer:${String(doc._id)}:ai_consent_fee:${
-    refunding ? "off" : "on"
-  }:${when.getTime()}`;
-
-  const revenueOwners = await resolveRevenueOwners({ practiceAnchorId });
-  const creditSettings = await loadCreditSettingsDefaults();
-  const heldTotal = Math.max(
-    0,
-    Math.round(Number(doc?.billing?.heldTotal || labFeeTotal || 0)) ||
-      labFeeTotal,
-  );
-  const fromFreeRequest = Math.max(
-    0,
-    Math.round(Number(doc?.billing?.holdFromFreeRequest || 0)),
-  );
-  const fromFreeShipping = Math.max(
-    0,
-    Math.round(Number(doc?.billing?.holdFromFreeShipping || 0)),
-  );
-  const freeShare =
-    heldTotal > 0
-      ? Math.round(
-          (amount * (fromFreeRequest + fromFreeShipping)) / heldTotal,
-        )
-      : 0;
-  const fromFree = fromFreeRequest + fromFreeShipping;
-  const freeReqShare =
-    fromFree > 0 ? Math.round((freeShare * fromFreeRequest) / fromFree) : 0;
-  const freeShipShare = Math.max(0, freeShare - freeReqShare);
-
-  const revenueLines = [];
-  pushRevenueLines({
-    lines: revenueLines,
-    owners: revenueOwners,
-    spendAmount: amount,
-    isRemake: isPracticeTransferRemake(doc),
-    freeAmount: freeShare,
-    fromFreeRequest: freeReqShare,
-    fromFreeShipping: freeShipShare,
-    refType: "PRACTICE_TRANSFER",
-    refId: doc._id,
-    creditSettings,
-    meta: {
-      source: "ai_training_consent_platform_fee",
-      displayKind: "platform_fee",
-      displayLabel: refunding ? "플랫폼 수수료 면제" : "플랫폼 수수료",
-      feeRateApplied: newRate,
-      feeTotal: labFeeTotal,
-    },
-  });
-  const signedRevenue = refunding
-    ? revenueLines.map((line) => ({
-        ...line,
-        amount: -Number(line.amount || 0),
-        amountExcludingVat: -Number(line.amountExcludingVat || 0),
-        vatAmount: -Number(line.vatAmount || 0),
-        amountIncludingVat:
-          line.amountIncludingVat == null
-            ? line.amountIncludingVat
-            : -Number(line.amountIncludingVat || 0),
-      }))
-    : revenueLines;
-
-  const lines = [
-    {
-      accountCode: "LAB_SETTLEMENT_CREDIT",
-      ownerRole: "requestor",
-      ownerId: payeeId,
-      amount: refunding ? amount : -amount,
-      amountExcludingVat: refunding ? amount : -amount,
-      vatAmount: 0,
-      creditKind: "SETTLEMENT",
-      refType: "PRACTICE_TRANSFER",
-      refId: doc._id,
-      meta: {
-        source: "ai_training_consent_platform_fee",
-        displayKind: "platform_fee",
-        displayLabel: refunding ? "플랫폼 수수료 면제" : "플랫폼 수수료",
-        feeRateApplied: newRate,
-        previousFeeRateApplied: oldRate,
-        labFee: labFeeTotal,
-      },
-    },
-    ...signedRevenue,
-  ];
-
-  const journal = await postGeneralLedgerJournal({
-    idempotencyKey,
-    eventType: "ADJUST",
-    businessAnchorId: payeeId,
-    refType: "PRACTICE_TRANSFER",
-    refId: doc._id,
-    createdBy: actorUserId || null,
-    occurredAt: when,
-    meta: {
-      source: "ai_training_consent_platform_fee",
-      displayLabel: refunding ? "플랫폼 수수료 면제" : "플랫폼 수수료",
-      delta,
-      oldRate,
-      newRate,
-      labFeeTotal,
-      payeeId,
-    },
-    lines,
-  });
-  if (!journal?.posted && !journal?.idempotent) return false;
-
-  const ownerIds = new Set([payeeId]);
-  for (const line of lines) {
-    const ownerId = String(line.ownerId || "").trim();
-    if (ownerId) ownerIds.add(ownerId);
-  }
-  await Promise.all(
-    [...ownerIds].map((ownerId) =>
-      upsertBusinessCreditBalanceFromLedger({ businessAnchorId: ownerId }),
-    ),
-  );
-  try {
-    const { emitCreditBalanceUpdatedToBusiness } = await import(
-      "../utils/creditRealtime.js"
-    );
-    await emitCreditBalanceUpdatedToBusiness({
-      businessAnchorId: payeeId,
-      balanceDelta: refunding ? amount : -amount,
-      reason: "ai_training_consent_platform_fee",
-      refId: String(doc._id),
-      forceEmit: true,
-    });
-  } catch {
-    // best-effort
-  }
   return true;
 }
 

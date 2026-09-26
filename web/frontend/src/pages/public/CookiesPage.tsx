@@ -93,6 +93,12 @@ export const CookiesPage = () => {
           </p>
           <ul className="list-disc list-inside space-y-1 ml-4 text-slate-600">
             <li>민감한 정보는 쿠키에 저장하지 않습니다</li>
+            <li>
+              구강 스캔·임상 사진 등 의뢰 파일은 쿠키에 저장하지 않습니다.
+              <br />
+              AI 학습에는 환자 성명·차트·연락처를 분리한 가명처리 작업 결과물과
+              스캔 형상만 사용합니다.
+            </li>
             <li>암호화된 연결을 통해서만 쿠키를 전송합니다</li>
             <li>쿠키 만료 시간을 적절히 설정합니다</li>
             <li>정기적으로 쿠키 사용을 검토합니다</li>

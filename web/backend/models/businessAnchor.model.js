@@ -133,6 +133,15 @@ const businessAnchorSchema = new mongoose.Schema(
       index: true,
     },
     /**
+     * 보철 작업물 업로드 요구(의뢰자 치과 Org SSOT).
+     * 없음·true = 최종 보철이 작업완료 조건. false = 작업시작·모델 STL에서 완료.
+     * related: user.practiceProfile.requireLabProsthesisUpload
+     */
+    requireLabProsthesisUpload: {
+      type: Boolean,
+      default: true,
+    },
+    /**
      * 데모 모드(의뢰자 치과·기공소). 신규 가입 시 true·크레딧 0원 시작(30일).
      * 치과=기공비, 기공소=어벗츠 생산·배송 마이너스 잔고 허용. 기간 만료·CHARGE_PAID/
      * 사용자·관리자 실사용 전환 시 false + demoModeExitedAt(+부채 0 리셋·레거시 잔여 회수).
@@ -226,7 +235,7 @@ const businessAnchorSchema = new mongoose.Schema(
     },
     /**
      * 기공소 계정에서 한 번 고르는 학습 이용 허용.
-     * 허용하면 지정·협력 플랫폼 사용료와 하청에 더하는 2%가 면제된다.
+     * 작업 결과를 가명처리한 뒤 AI 학습에 넣을지. 요율과 무관하다.
      * 어벗츠기공본부는 이 값과 관계없이 항상 허용.
      */
     aiTrainingConsent: {

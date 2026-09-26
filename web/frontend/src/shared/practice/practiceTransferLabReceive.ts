@@ -192,6 +192,8 @@ export type PracticeTransferLabReceiveItem = {
   resultFileCount?: number;
   resultFiles?: PracticeTransferLabReceiveFile[];
   feeQuote?: PracticeTransferFeeQuote | null;
+  /** 생성 스냅샷. false만 보철 업로드를 완료 조건에서 뺀다. */
+  requireLabProsthesisUpload?: boolean;
   /** 기공소 동일 PTX 리메이크 청구 이력 */
   remakeCharges?: PracticeTransferRemakeCharge[];
   /** 자동매칭 — 우리 별점(수가)보다 의뢰 별점(수가)이 낮을 때 */

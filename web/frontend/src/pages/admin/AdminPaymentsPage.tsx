@@ -1003,16 +1003,10 @@ export default function AdminPaymentsPage({
                   배송비를 선차감한 뒤 기공사업부 · 영업팀 · 개발운영 · 어벗츠
                   비율로 분배합니다.
                   <br />
-                  기공소의 플랫폼 사용료는 매출액의 2%입니다.
+                  협력건은 기공비 전액을 크레딧으로 적립합니다.
                   <br />
-                  협력건이나 하청건 모두 플랫폼 사용료를 차감하고 크레딧
-                  적립됩니다.
-                  <br />
-                  협력건은 별도의 영업 수수료가 없으며, 하청건은{" "}
-                  {subcontractFeePct}%의 영업 수수료가 추가됩니다.
-                  <br />
-                  작업 결과를 AI 학습에 이용할 수 있도록 동의하면, 플랫폼
-                  사용료(2%)가 면제됩니다.
+                  하청건은 {subcontractFeePct}%의 영업 수수료를 차감하고
+                  나머지를 크레딧으로 적립합니다.
                 </p>
               </SettlementPolicySection>
             </SettlementPolicyDialog>

@@ -72,10 +72,7 @@ import {
   formatAbutsManwon,
   resolveCustomAbutmentProductionPriceForAt
 } from '@/shared/pricing/abutsAbutmentService';
-import {
-  LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE,
-  resolveLabDirectPlatformFeePct,
-} from '@/shared/settlement/labPayoutBankbook';
+import { LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE } from '@/shared/settlement/labPayoutBankbook';
 import { LabDirectPlatformFeeNotice } from '@/shared/settlement/LabDirectPlatformFeeNotice';
 import { useLabTradingPartnerWindow } from '@/shared/lab/useLabTradingPartnerWindow';
 import {
@@ -287,11 +284,6 @@ export const PricingPolicyDialog = ({
   const fmMonthlyFee = Math.max(
     0,
     Number(credit?.fmDentalMonthlyShippingFee ?? 0) || 0,
-  );
-  const directFeePct = resolveLabDirectPlatformFeePct(
-    labFeeWindow?.feeRates?.directPlatformFeeRate != null
-      ? Number(labFeeWindow.feeRates.directPlatformFeeRate) * 100
-      : undefined,
   );
   const subcontractFeePct = Math.round(
     Number(labFeeWindow?.feeRates?.subcontractFeeRate ?? 0.1) * 100,
@@ -675,22 +667,15 @@ export const PricingPolicyDialog = ({
 
               {showLabFeeSection ? (
                 <>
-                  <PolicySection title='플랫폼 사용료 · 하청 수수료'>
+                  <PolicySection title='하청 수수료'>
                     <p>
                       <LabDirectPlatformFeeNotice
-                        ratePct={directFeePct}
                         subcontractRatePct={subcontractFeePct}
                       />
                       {isRequestorPreview ? (
                         <>
                           <br />
                           기공소 의뢰자에게 적용됩니다.
-                        </>
-                      ) : null}
-                      {isRequestorPreview || !isLab ? (
-                        <>
-                          <br />
-                          치과는 플랫폼 사용료가 없습니다.
                         </>
                       ) : null}
                     </p>

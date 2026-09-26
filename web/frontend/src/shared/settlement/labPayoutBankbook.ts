@@ -130,15 +130,14 @@ export function resolveLabSubcontractSalesFeePct(ratePct?: number): number {
   return Math.max(0, Math.round(Number(ratePct)));
 }
 
-/** 플랫폼 사용료·영업 수수료 안내(평문). UI는 LabDirectPlatformFeeNotice. */
+/** 하청 영업 수수료 안내(평문). UI는 LabDirectPlatformFeeNotice. */
 export function formatLabDirectPlatformFeeNotice(opts?: {
-  /** 0~100 퍼센트 포인트 */
+  /** @deprecated 플랫폼 사용료는 폐지 */
   ratePct?: number;
   subcontractRatePct?: number;
 }): string {
-  const pct = resolveLabDirectPlatformFeePct(opts?.ratePct);
   const salesPct = resolveLabSubcontractSalesFeePct(opts?.subcontractRatePct);
-  return `기공소의 플랫폼 사용료는 매출액의 ${pct}%입니다. 협력건이나 하청건 모두 플랫폼 사용료를 차감하고 크레딧 적립됩니다. 협력건은 별도의 영업 수수료가 없으며, 하청건은 ${salesPct}%의 영업 수수료가 추가됩니다. 작업 결과를 AI 학습에 이용할 수 있도록 동의하면, 플랫폼 사용료(${pct}%)가 면제됩니다.`;
+  return `협력건은 기공비 전액을 크레딧으로 적립합니다. 하청건은 매출액의 ${salesPct}%를 영업 수수료로 차감하고, 나머지를 크레딧으로 적립합니다.`;
 }
 
 /** @deprecated UI는 LabDirectPlatformFeeNotice 사용. */

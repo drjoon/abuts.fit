@@ -117,6 +117,10 @@ export async function ensureRequestorOrgAnchor({ user } = {}) {
         if (typeof practiceProfile.usesOralScan === "boolean") {
           anchor.usesOralScan = practiceProfile.usesOralScan;
         }
+        if (typeof practiceProfile.requireLabProsthesisUpload === "boolean") {
+          anchor.requireLabProsthesisUpload =
+            practiceProfile.requireLabProsthesisUpload;
+        }
         const ownerIds = Array.isArray(anchor.owners) ? anchor.owners : [];
         if (!ownerIds.some((id) => String(id) === String(user._id))) {
           anchor.owners = [...ownerIds, user._id];
@@ -162,6 +166,8 @@ export async function ensureRequestorOrgAnchor({ user } = {}) {
     demoMode: true,
     demoModeStartedAt: new Date(),
     usesOralScan: Boolean(practiceProfile.usesOralScan),
+    requireLabProsthesisUpload:
+      practiceProfile.requireLabProsthesisUpload !== false,
     ...persist,
     metadata: {
       companyName: clinicName,
@@ -211,15 +217,30 @@ export async function ensureRequestorOrgAnchor({ user } = {}) {
 }
 
 /**
- * 구강 스캔 사용 여부 → User.practiceProfile + BusinessAnchor(Org SSOT) 동기화.
- * 이벤트 신청·회원 설정 공통.
+ * 디지털 설정 → User.practiceProfile + BusinessAnchor(Org SSOT) 동기화.
+ * 넘긴 boolean만 갱신한다. 이벤트 신청·회원 설정 공통.
  */
 export async function syncPracticeUsesOralScan({
   userId = null,
   businessAnchorId = null,
   usesOralScan,
+  requireLabProsthesisUpload,
 } = {}) {
-  if (typeof usesOralScan !== "boolean") return { updatedUser: false, updatedAnchor: false };
+  const userSet = {};
+  const anchorSet = {};
+  if (typeof usesOralScan === "boolean") {
+    userSet["practiceProfile.usesOralScan"] = usesOralScan;
+    anchorSet.usesOralScan = usesOralScan;
+  }
+  if (typeof requireLabProsthesisUpload === "boolean") {
+    userSet["practiceProfile.requireLabProsthesisUpload"] =
+      requireLabProsthesisUpload;
+    anchorSet.requireLabProsthesisUpload = requireLabProsthesisUpload;
+  }
+  if (!Object.keys(anchorSet).length) {
+    return { updatedUser: false, updatedAnchor: false };
+  }
+  userSet["practiceProfile.updatedAt"] = new Date();
 
   let anchorId = businessAnchorId || null;
   const userOid =
@@ -234,7 +255,6 @@ export async function syncPracticeUsesOralScan({
     anchorId = user?.businessAnchorId || null;
   }
 
-  const now = new Date();
   const ops = [];
   let updatedUser = false;
   let updatedAnchor = false;
@@ -243,12 +263,7 @@ export async function syncPracticeUsesOralScan({
     ops.push(
       User.updateOne(
         { _id: userOid },
-        {
-          $set: {
-            "practiceProfile.usesOralScan": usesOralScan,
-            "practiceProfile.updatedAt": now,
-          },
-        },
+        { $set: userSet },
       ).then((r) => {
         updatedUser = Number(r?.modifiedCount || r?.nModified || 0) > 0 || Number(r?.matchedCount || 0) > 0;
       }),
@@ -259,7 +274,7 @@ export async function syncPracticeUsesOralScan({
     ops.push(
       BusinessAnchor.updateOne(
         { _id: anchorId },
-        { $set: { usesOralScan } },
+        { $set: anchorSet },
       ).then((r) => {
         updatedAnchor =
           Number(r?.modifiedCount || r?.nModified || 0) > 0 ||

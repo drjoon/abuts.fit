@@ -26,7 +26,6 @@ import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { Percent } from "lucide-react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -65,18 +64,10 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
   const queryClient = useQueryClient();
   const [loading, setLoading] = useState(Boolean(token));
   const [platformFeeRate, setPlatformFeeRate] = useState("10");
-  const [directFeeEnabled, setDirectFeeEnabled] = useState(false);
-  const [directFeeRate, setDirectFeeRate] = useState("2");
   const hydratedRef = useRef(false);
   const savedMatchRef = useRef("10");
-  const savedDirectEnabledRef = useRef(false);
-  const savedDirectRef = useRef("2");
   const matchRef = useRef("10");
-  const directEnabledRef = useRef(false);
-  const directRef = useRef("2");
   matchRef.current = platformFeeRate;
-  directEnabledRef.current = directFeeEnabled;
-  directRef.current = directFeeRate;
 
   useEffect(() => {
     let mounted = true;
@@ -104,17 +95,8 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
           ),
           0.1,
         );
-        const directPct = toPctString(
-          Number(settings.directPlatformFeeRate),
-          0.02,
-        );
-        const enabled = settings.directPlatformFeeEnabled === true;
         savedMatchRef.current = matchPct;
-        savedDirectEnabledRef.current = enabled;
-        savedDirectRef.current = directPct;
         setPlatformFeeRate(matchPct);
-        setDirectFeeEnabled(enabled);
-        setDirectFeeRate(directPct);
         hydratedRef.current = true;
       } finally {
         if (mounted) setLoading(false);
@@ -129,31 +111,22 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
 
   useEffect(() => {
     if (!hydratedRef.current || !token || loading) return;
-    if (
-      matchRef.current === savedMatchRef.current &&
-      directEnabledRef.current === savedDirectEnabledRef.current &&
-      directRef.current === savedDirectRef.current
-    ) {
-      return;
-    }
+    if (matchRef.current === savedMatchRef.current) return;
 
     const timer = window.setTimeout(async () => {
       const nextMatch = matchRef.current;
-      const nextDirectEnabled = directEnabledRef.current;
-      const nextDirect = directRef.current;
       const match = Number(nextMatch);
-      const direct = Number(nextDirect);
-      if (!Number.isFinite(match) || !Number.isFinite(direct)) {
+      if (!Number.isFinite(match)) {
         toast({
-          title: "플랫폼 수수료율 오류",
+          title: "하청 수수료율 오류",
           description: "수수료율은 숫자여야 합니다.",
           variant: "destructive",
         });
         return;
       }
-      if (match < 0 || match > 100 || direct < 0 || direct > 100) {
+      if (match < 0 || match > 100) {
         toast({
-          title: "플랫폼 수수료율 오류",
+          title: "하청 수수료율 오류",
           description: "수수료율은 0~100% 범위여야 합니다.",
           variant: "destructive",
         });
@@ -167,8 +140,6 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
           token,
           jsonBody: {
             subcontractFeeRate: match / 100,
-            directPlatformFeeEnabled: nextDirectEnabled,
-            directPlatformFeeRate: direct / 100,
           },
         });
         if (!res.ok) {
@@ -191,11 +162,6 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
               match / 100,
             )
           : String(match);
-        savedDirectEnabledRef.current =
-          saved?.directPlatformFeeEnabled === true;
-        savedDirectRef.current = saved
-          ? toPctString(Number(saved.directPlatformFeeRate), direct / 100)
-          : String(direct);
         void queryClient.invalidateQueries({ queryKey: ["credit-settings"] });
       } catch {
         toast({
@@ -207,18 +173,10 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
     }, AUTO_SAVE_DELAY_MS);
 
     return () => window.clearTimeout(timer);
-  }, [
-    platformFeeRate,
-    directFeeEnabled,
-    directFeeRate,
-    token,
-    loading,
-    toast,
-    queryClient,
-  ]);
+  }, [platformFeeRate, token, loading, toast, queryClient]);
 
   return (
-    <div className={cn("grid gap-3 sm:grid-cols-2", className)}>
+    <div className={cn("grid gap-3", className)}>
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary-muted/60 bg-primary-soft/30 px-4 py-3.5">
         <div className="flex min-w-0 items-center gap-3">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/90 ring-1 ring-primary-muted/50">
@@ -250,49 +208,6 @@ export const DevopsPlatformFeeTab = ({ className }: Props) => {
               step={1}
               value={platformFeeRate}
               onChange={(event) => setPlatformFeeRate(event.target.value)}
-              className="h-11 w-[4.5rem] rounded-xl border-primary-muted/40 bg-white text-center text-base font-semibold tabular-nums shadow-sm"
-            />
-            <span className="text-sm font-semibold text-slate-500">%</span>
-          </div>
-        )}
-      </div>
-
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary-muted/60 bg-primary-soft/30 px-4 py-3.5">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/90 ring-1 ring-primary-muted/50">
-            <Percent className="h-4 w-4 text-primary-strong" />
-          </span>
-          <div className="min-w-0">
-            <Label
-              htmlFor="rate-direct"
-              className="text-sm font-semibold text-slate-900"
-            >
-              플랫폼 사용료
-            </Label>
-            <p className="text-[12px] leading-snug text-muted-foreground">
-              협력건·하청건 매출에서 이 요율을 차감합니다.
-              <br />
-              학습 이용에 동의하면 이 요율은 면제됩니다.
-            </p>
-          </div>
-        </div>
-        {loading ? (
-          <span className="text-sm text-muted-foreground">…</span>
-        ) : (
-          <div className="flex items-center gap-2.5">
-            <Switch
-              checked={directFeeEnabled}
-              onCheckedChange={setDirectFeeEnabled}
-              aria-label="플랫폼 사용료 적용"
-            />
-            <Input
-              id="rate-direct"
-              type="number"
-              min={0}
-              max={100}
-              step={1}
-              value={directFeeRate}
-              onChange={(event) => setDirectFeeRate(event.target.value)}
               className="h-11 w-[4.5rem] rounded-xl border-primary-muted/40 bg-white text-center text-base font-semibold tabular-nums shadow-sm"
             />
             <span className="text-sm font-semibold text-slate-500">%</span>

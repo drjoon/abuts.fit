@@ -1464,6 +1464,7 @@ export function RequestorPracticeReceivePage({
           resultFileCount: Number(r.resultFileCount || resultFiles.length || 0),
           resultFiles,
           feeQuote: parsePracticeTransferFeeQuote(r.feeQuote),
+          requireLabProsthesisUpload: r.requireLabProsthesisUpload !== false,
           remakeCharges: parsePracticeTransferRemakeCharges(r.remakeCharges),
           starDowngrade: parseStarDowngrade(r.starDowngrade),
           labRatingSummary: parseLabRatingSummary(r.labRatingSummary),
@@ -4217,7 +4218,9 @@ export function RequestorPracticeReceivePage({
         }
 
         const remainingAfter = pendingSlotCount - assignments.length;
-        const shouldComplete = !splitMode || remainingAfter <= 0;
+        const prosthesisRequired = transfer.requireLabProsthesisUpload !== false;
+        const shouldComplete =
+          prosthesisRequired && (!splitMode || remainingAfter <= 0);
         const incomingKeys = new Set(
           incoming.map((row) => String(row.file.s3Key || "").trim()).filter(Boolean),
         );
@@ -4361,15 +4364,25 @@ export function RequestorPracticeReceivePage({
         applyOptimistic();
         setWorkUploadState(null);
         toast({
-          title: shouldComplete ? "작업 완료" : "보철 일부 저장",
+          title: shouldComplete
+            ? "작업 완료"
+            : prosthesisRequired
+              ? "보철 일부 저장"
+              : "보철 파일 저장",
           description: shouldComplete ? (
             <>
               보철 파일이 업로드되었습니다.
               <br />
               작업이 완료되었습니다.
             </>
-          ) : (
+          ) : prosthesisRequired ? (
             `${incoming.length}개 파일을 저장했습니다. 나머지 작업 후 이어서 올려주세요.`
+          ) : (
+            <>
+              보철 파일을 저장했습니다.
+              <br />
+              치과에서 기공물 데이터를 미리볼 수 있습니다.
+            </>
           ),
         });
 

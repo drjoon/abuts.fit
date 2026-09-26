@@ -20,6 +20,7 @@ import {
   practiceTransferNeedsMoreAbutmentDesigns,
 } from "./practiceTransferProduction.service.js";
 import { postPracticeTransferSystemChatMessage } from "./chatSystemMessage.service.js";
+import { isLabProsthesisUploadRequired } from "../utils/practiceProsthesisUploadRequirement.js";
 import { emitCreditBalanceUpdatedToBusiness } from "../utils/creditRealtime.js";
 import {
   isAutoMatchCompleted,
@@ -180,10 +181,11 @@ export async function completePracticeTransferWork({
       ? normalizeResultFiles(doc.resultFiles)
       : normalizeResultFiles(rawResultFiles);
 
-  const pendingProsthetic = listPendingProstheticSlots(
-    doc.toothWorks,
-    resultFiles,
-  );
+  const hasCustomAbutment = hasCustomAbutmentToothWorks(doc.toothWorks);
+  const existingRelated = [];
+  const pendingProsthetic = isLabProsthesisUploadRequired(doc)
+    ? listPendingProstheticSlots(doc.toothWorks, resultFiles)
+    : [];
   if (pendingProsthetic.length > 0) {
     const labels = pendingProsthetic.map((slot) => slot.label).join(", ");
     return {

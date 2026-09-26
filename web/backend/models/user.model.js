@@ -54,8 +54,10 @@ const userSchema = new mongoose.Schema(
       address: { type: String, default: "", trim: true },
       addressDetail: { type: String, default: "", trim: true },
       zipCode: { type: String, default: "", trim: true },
-      /** 구강 스캐너 사용 여부 */
+      /** 디지털 · 구강 스캐너 사용 여부 */
       usesOralScan: { type: Boolean, default: false },
+      /** 디지털 · 보철 작업물. 켬 = 최종 보철 업로드가 작업완료 조건. 없음 = 요구 */
+      requireLabProsthesisUpload: { type: Boolean, default: true },
       createdAt: { type: Date, default: null },
       updatedAt: { type: Date, default: null },
     },

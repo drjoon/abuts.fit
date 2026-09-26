@@ -41,7 +41,6 @@ import { cn } from "@/shared/ui/cn";
 import { Separator } from "@/components/ui/separator";
 import { LabPracticeFeeSurchargeControl } from "@/shared/components/practice/LabPracticeFeeSurchargeControl";
 import { normalizeLabFeeMultiplier } from "@/shared/practice/labFeeSchedule";
-import { resolveLabDirectPlatformFeePct } from "@/shared/settlement/labPayoutBankbook";
 import { LabDirectPlatformFeeNotice } from "@/shared/settlement/LabDirectPlatformFeeNotice";
 
 type PartnerItem = {
@@ -242,11 +241,6 @@ export const LabTradingPartnersTab = () => {
         0.1,
     ) * 100,
   );
-  const directFeePct = resolveLabDirectPlatformFeePct(
-    windowInfo?.feeRates?.directPlatformFeeRate != null
-      ? Number(windowInfo.feeRates.directPlatformFeeRate) * 100
-      : undefined,
-  );
   const windowProgressPct =
     remaining == null || windowDays <= 0
       ? 0
@@ -274,7 +268,6 @@ export const LabTradingPartnersTab = () => {
             <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
             <p className="text-[13px] leading-relaxed text-muted-foreground">
               <LabDirectPlatformFeeNotice
-                ratePct={directFeePct}
                 subcontractRatePct={subcontractFeePct}
               />
               <br />

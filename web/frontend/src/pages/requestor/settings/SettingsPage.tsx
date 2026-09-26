@@ -49,7 +49,7 @@ type TabKey =
   | "account"
   | "business"
   | "staff"
-  | "oral-scan"
+  | "digital"
   | "lab-fees"
   | "lab-special-supply"
   | "notifications"
@@ -62,6 +62,7 @@ const LEGACY_TAB_REDIRECT: Partial<Record<string, TabKey>> = {
   "auto-match": "account",
   "trading-partners": "account",
   ai: "account",
+  "oral-scan": "digital",
 };
 
 export const RequestorSettingsPage = () => {
@@ -153,8 +154,8 @@ export const RequestorSettingsPage = () => {
 
     if (isPractice) {
       base.push({
-        key: "oral-scan",
-        label: "구강스캔",
+        key: "digital",
+        label: "디지털",
         icon: ScanLine,
         content: <PracticeOralScanTab />,
       });

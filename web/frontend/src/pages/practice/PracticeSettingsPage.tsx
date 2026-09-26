@@ -49,7 +49,7 @@ type TabKey =
   | "account"
   | "business"
   | "staff"
-  | "oral-scan"
+  | "digital"
   | "transfer"
   | "notifications"
   | "security";
@@ -101,13 +101,14 @@ export const PracticeSettingsPage = () => {
   const activeTab = (() => {
     const raw = String(searchParams.get("tab") || "account");
     if (raw === "3shape" || raw === "scan-order") return "account" as TabKey;
+    if (raw === "oral-scan") return "digital" as TabKey;
     if (
       raw === "notifications" ||
       raw === "security" ||
       raw === "staff" ||
       raw === "account" ||
       raw === "business" ||
-      raw === "oral-scan" ||
+      raw === "digital" ||
       raw === "transfer"
     ) {
       return raw as TabKey;
@@ -285,7 +286,7 @@ export const PracticeSettingsPage = () => {
               next === "account" ||
               next === "business" ||
               next === "staff" ||
-              next === "oral-scan" ||
+              next === "digital" ||
               next === "transfer" ||
               next === "notifications" ||
               next === "security"
@@ -320,11 +321,11 @@ export const PracticeSettingsPage = () => {
               임직원
             </TabsTrigger>
             <TabsTrigger
-              value="oral-scan"
+              value="digital"
               className="flex min-w-[96px] flex-1 basis-0 items-center justify-center gap-2 px-3 py-2.5"
             >
               <ScanLine className="h-4 w-4" />
-              구강스캔
+              디지털
             </TabsTrigger>
             <TabsTrigger
               value="transfer"
@@ -540,7 +541,7 @@ export const PracticeSettingsPage = () => {
             />
           </TabsContent>
 
-          <TabsContent value="oral-scan">
+          <TabsContent value="digital">
             <PracticeOralScanTab />
           </TabsContent>
 

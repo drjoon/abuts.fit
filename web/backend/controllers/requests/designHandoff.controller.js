@@ -72,6 +72,7 @@ import {
   loadLabRequestMetaForProduction,
   resolveRelatedAbutmentPastReady,
   mirrorDesignFileToPracticeTransfer,
+  practiceTransferNeedsMoreAbutmentDesigns,
   repriceAndReschedulePtxAbutmentRequest,
   resolveHexRotationByDesignSoftware,
   resolveLabManufacturerHexForImplant,
@@ -93,6 +94,9 @@ import {
   revokeAbutmentDesignLabFee,
   settlePracticeToLabShareIfReady,
 } from "../../services/practiceTransferBilling.service.js";
+import { completePracticeTransferWork } from "../../services/practiceTransferComplete.service.js";
+import { isLabProsthesisUploadRequired } from "../../utils/practiceProsthesisUploadRequirement.js";
+import { isAutoMatchCompleted } from "../../utils/practiceTransferAutoMatchCore.js";
 import {
   applyCaReuploadRemakeCharge,
   bumpCaDesignUploadCount,
@@ -1247,16 +1251,52 @@ export async function handoffDesignToProduction(req, res) {
           }
 
           if (transferDoc && isAcceptingLab) {
-            // 디자인비·치과→기공소 정산은 생산비 지급 후에만. 지금은 조건 미달이면 no-op.
-            void settlePracticeToLabShareIfReady({
-              transferId: relatedTransferId,
-              actorUserId: userId,
-            }).catch((settleErr) => {
-              console.error(
-                "[DESIGN_HANDOFF] practice-to-lab settlement failed",
-                settleErr,
-              );
-            });
+            const prosthesisRequired = isLabProsthesisUploadRequired(
+              mirroredDoc || transferDoc,
+            );
+            const stlStillNeeded = practiceTransferNeedsMoreAbutmentDesigns(
+              mirroredDoc || transferDoc,
+            );
+            if (!prosthesisRequired && !stlStillNeeded) {
+              try {
+                const fresh = await PracticeTransfer.findById(relatedTransferId);
+                if (
+                  fresh &&
+                  !isLabProsthesisUploadRequired(fresh) &&
+                  fresh.requestorDownloadedAt &&
+                  !isAutoMatchCompleted(fresh) &&
+                  !practiceTransferNeedsMoreAbutmentDesigns(fresh)
+                ) {
+                  const completed = await completePracticeTransferWork({
+                    doc: fresh,
+                    actorUserId: userId,
+                    reason: "abutment_design_stl",
+                  });
+                  if (!completed?.ok && !completed?.alreadyCompleted) {
+                    console.error(
+                      "[DESIGN_HANDOFF] practice transfer complete failed",
+                      completed?.message || completed,
+                    );
+                  }
+                }
+              } catch (completeErr) {
+                console.error(
+                  "[DESIGN_HANDOFF] practice transfer complete failed",
+                  completeErr,
+                );
+              }
+            } else {
+              // 디자인비·치과→기공소 정산은 생산비 지급 후에만. 지금은 조건 미달이면 no-op.
+              void settlePracticeToLabShareIfReady({
+                transferId: relatedTransferId,
+                actorUserId: userId,
+              }).catch((settleErr) => {
+                console.error(
+                  "[DESIGN_HANDOFF] practice-to-lab settlement failed",
+                  settleErr,
+                );
+              });
+            }
           }
 
           const bumpTooth = mirrorTooth;

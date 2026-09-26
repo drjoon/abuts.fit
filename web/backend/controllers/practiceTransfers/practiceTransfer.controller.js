@@ -239,7 +239,12 @@ import {
   softDeletePracticeTransferRequestFiles,
   restorePracticeTransferRequestFiles,
   tryStartAbutmentProduction,
+  practiceTransferNeedsMoreAbutmentDesigns,
 } from "../../services/practiceTransferProduction.service.js";
+import {
+  isLabProsthesisUploadRequired,
+  readRequireLabProsthesisUpload,
+} from "../../utils/practiceProsthesisUploadRequirement.js";
 import {
   schedulePracticeProsthesisMargin,
   schedulePracticeScanAlignment,
@@ -1039,6 +1044,7 @@ const toTransferFilesApiFields = (transferDoc) => {
       mapFileRow(item, idx, "::trash"),
     ),
     oralScanDownloadLocked: shouldLockLabOralScanDownload(transferDoc),
+    requireLabProsthesisUpload: isLabProsthesisUploadRequired(transferDoc),
   };
 };
 
@@ -1583,6 +1589,39 @@ const settleLabShareOnAccept = async (doc, actorUserId) => {
     throw err;
   }
   return releaseResult;
+};
+
+/**
+ * 보철 업로드 요구가 꺼진 스냅샷.
+ * 비CA·이미 STL이 충분한 CA는 작업시작 때, 아직 STL이 부족한 CA는 여기서 건너뛴다.
+ * @returns {Promise<boolean>} 이번 호출에서 작업완료가 되었으면 true
+ */
+const maybeCompletePracticeTransferWithoutProsthesisUpload = async (
+  doc,
+  actorUserId,
+) => {
+  if (!doc || isLabProsthesisUploadRequired(doc)) return false;
+  if (!doc.requestorDownloadedAt) return false;
+  if (isAutoMatchCompleted(doc)) return false;
+  if (
+    hasCustomAbutmentToothWorks(doc.toothWorks) &&
+    practiceTransferNeedsMoreAbutmentDesigns(doc)
+  ) {
+    return false;
+  }
+  const result = await completePracticeTransferWork({
+    doc,
+    actorUserId,
+    reason: hasCustomAbutmentToothWorks(doc.toothWorks)
+      ? "abutment_design_stl"
+      : "work_start",
+  });
+  if (!result?.ok && !result?.alreadyCompleted) {
+    const err = new Error(result?.message || "작업 완료에 실패했습니다.");
+    err.statusCode = result?.statusCode || 409;
+    throw err;
+  }
+  return Boolean(result?.ok && !result.alreadyCompleted);
 };
 
 const scheduleAcceptSideEffects = ({
@@ -3293,7 +3332,7 @@ export async function createPracticeTransfer(req, res) {
       isRemakeRequest &&
       remakeSourceMongoIdRaw &&
       Types.ObjectId.isValid(remakeSourceMongoIdRaw);
-    const [starBand, arrivalPolicy, practiceLabRatings, remakeSourceDoc, targetLabFeeDoc] =
+    const [starBand, arrivalPolicy, practiceLabRatings, remakeSourceDoc, targetLabFeeDoc, practiceAnchorDoc] =
       await Promise.all([
         loadStarBandForPracticeRequest({
           practiceAnchorId,
@@ -3318,6 +3357,11 @@ export async function createPracticeTransfer(req, res) {
         targetLabAnchorId && Types.ObjectId.isValid(String(targetLabAnchorId))
           ? BusinessAnchor.findById(targetLabAnchorId)
               .select({ labFeeSchedule: 1 })
+              .lean()
+          : Promise.resolve(null),
+        practiceAnchorId && Types.ObjectId.isValid(String(practiceAnchorId))
+          ? BusinessAnchor.findById(practiceAnchorId)
+              .select({ requireLabProsthesisUpload: 1 })
               .lean()
           : Promise.resolve(null),
       ]);
@@ -3445,6 +3489,7 @@ export async function createPracticeTransfer(req, res) {
       ...toBillingPreviewFields(feeQuote),
       rushFeeMultiplier,
       abutmentPricingTier: feeQuote?.abutmentPricingTier || "membership",
+      requireLabProsthesisUpload: readRequireLabProsthesisUpload(practiceAnchorDoc),
       ...(isRemakeRequest ? { isRemake: true } : {}),
     };
 
@@ -4153,6 +4198,10 @@ export async function updatePracticeTransferContent(req, res) {
       billingPreview = {
         ...toBillingPreviewFields(feeQuote),
         rushFeeMultiplier,
+        requireLabProsthesisUpload:
+          typeof previousBilling?.requireLabProsthesisUpload === "boolean"
+            ? previousBilling.requireLabProsthesisUpload
+            : true,
       };
     }
 
@@ -8114,6 +8163,7 @@ export async function getReceivedPracticeTransfers(req, res) {
           };
         }),
         oralScanDownloadLocked,
+        requireLabProsthesisUpload: isLabProsthesisUploadRequired(doc),
         resultFileCount: resultFiles.length,
         resultFiles: resultFiles.map((item, idx) => ({
           id: `${String(doc?._id || "")}::result::${idx + 1}`,
@@ -8447,6 +8497,18 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
           Boolean(doc.autoMatch?.claimedAt) &&
           performingId === labAnchorId);
       if (isAutoMatchClaimActive(doc, now.getTime()) && claimIsMine) {
+        try {
+          await maybeCompletePracticeTransferWithoutProsthesisUpload(
+            doc,
+            req.user?._id,
+          );
+        } catch (completeErr) {
+          const status = Number(completeErr?.statusCode || 500);
+          return res.status(status >= 400 && status < 600 ? status : 500).json({
+            success: false,
+            message: completeErr?.message || "작업 완료에 실패했습니다.",
+          });
+        }
         // CA Request는 어벗 STL handoff에서 생성(수락 시 빈 준비 건 금지).
         await ensurePracticeTransferChatRoomOnAccept({
           transferDoc: doc,
@@ -8613,6 +8675,22 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
         });
       }
 
+      let acceptedStage = "의뢰수락";
+      try {
+        const completedNow =
+          await maybeCompletePracticeTransferWithoutProsthesisUpload(
+            doc,
+            req.user?._id,
+          );
+        if (completedNow || isAutoMatchCompleted(doc)) acceptedStage = "작업완료";
+      } catch (completeErr) {
+        const status = Number(completeErr?.statusCode || 500);
+        return res.status(status >= 400 && status < 600 ? status : 500).json({
+          success: false,
+          message: completeErr?.message || "작업 완료에 실패했습니다.",
+        });
+      }
+
       // CA Request는 어벗 STL handoff에서 생성(수락 시 빈 준비 건 금지).
       const unreadCount =
         resolveUnreadCountForAccept(labAnchorId, { wasUnread }) ?? 0;
@@ -8630,7 +8708,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
         requestorAcceptedAt: doc.requestorDownloadedAt,
         unreadCount,
         status: String(doc.status || "active").trim(),
-        manufacturerStage: "의뢰수락",
+        manufacturerStage: acceptedStage,
         billing: doc.billing || null,
         feeQuote: buildAcceptedFeeQuotePayload(billingResult, doc),
         production: toProductionApiFields(doc.production),
@@ -8819,6 +8897,22 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
       }
     }
 
+    let acceptedStage = "의뢰수락";
+    try {
+      const completedNow =
+        await maybeCompletePracticeTransferWithoutProsthesisUpload(
+          doc,
+          req.user?._id,
+        );
+      if (completedNow || isAutoMatchCompleted(doc)) acceptedStage = "작업완료";
+    } catch (completeErr) {
+      const status = Number(completeErr?.statusCode || 500);
+      return res.status(status >= 400 && status < 600 ? status : 500).json({
+        success: false,
+        message: completeErr?.message || "작업 완료에 실패했습니다.",
+      });
+    }
+
     // 최초 수락 시점에만 pending 후속 제작을 함께 수락 처리한다.
     // 이미 수락된 건에 후속 추가된 뒤 재다운로드·재수락 시 pending을 지우지 않는다.
     if (!alreadyAccepted) {
@@ -8856,7 +8950,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
       requestorAcceptedAt: doc.requestorDownloadedAt,
       unreadCount,
       status: String(doc.status || "active").trim(),
-      manufacturerStage: "의뢰수락",
+      manufacturerStage: acceptedStage,
       billing: doc.billing || null,
       feeQuote: buildAcceptedFeeQuotePayload(billingResult, doc),
       production: toProductionApiFields(doc.production),

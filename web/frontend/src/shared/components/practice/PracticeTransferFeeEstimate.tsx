@@ -1047,27 +1047,32 @@ export function PracticeTransferFeeEstimate({
       ? "inline-flex text-[12px]"
       : "mt-0.5 flex w-full justify-center text-[11px]",
   );
-  const labFeeSummary = labSettlementDiffers ? (
-    <span className={labFeeSummaryClassName}>
-      <span>
-        수령 {formatManWon(labSettlementDisplay)} · 수수료{" "}
-        {formatFeeRatePct(feeRateApplied)}
+  const labFeeSummary =
+    isLab && (labSettlementDiffers || consentTransferId) ? (
+      <span className={labFeeSummaryClassName}>
+        {labSettlementDiffers ? (
+          <span>
+            수령 {formatManWon(labSettlementDisplay)} · 수수료{" "}
+            {formatFeeRatePct(feeRateApplied)}
+          </span>
+        ) : null}
+        {consentTransferId ? (
+          <button
+            type="button"
+            className="inline-flex h-[18px] shrink-0 items-center rounded border border-primary/35 bg-background px-1.5 text-[10px] font-semibold leading-none text-primary hover:bg-primary-soft"
+            onPointerDown={(event) => event.stopPropagation()}
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              openLabAiTrainingConsentPrompt(consentTransferId);
+            }}
+          >
+            학습 이용
+          </button>
+        ) : null}
       </span>
-      <button
-        type="button"
-        className="inline-flex h-[18px] shrink-0 items-center rounded border border-primary/35 bg-background px-1.5 text-[10px] font-semibold leading-none text-primary hover:bg-primary-soft"
-        onPointerDown={(event) => event.stopPropagation()}
-        onMouseDown={(event) => event.stopPropagation()}
-        onClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          openLabAiTrainingConsentPrompt(consentTransferId);
-        }}
-      >
-        수수료 줄이기
-      </button>
-    </span>
-  ) : null;
+    ) : null;
   const labFeeUnset = quote.labFeeConfigured === false;
   const missingFeeNames = Array.isArray(quote.missingFeeNames)
     ? quote.missingFeeNames.map((name) => String(name || "").trim()).filter(Boolean)
@@ -1193,7 +1198,7 @@ export function PracticeTransferFeeEstimate({
             labSettlementDiffers ? (
               <>
                 <span className="block">
-                  플랫폼 수수료 {formatFeeRatePct(feeRateApplied)}{" "}
+                  수수료 {formatFeeRatePct(feeRateApplied)}{" "}
                   <span className="font-medium text-foreground">
                     −{formatManWon(platformFeeDisplay)}
                   </span>
@@ -1384,7 +1389,7 @@ export function PracticeTransferFeeEstimate({
               labSettlementDiffers ? (
                 <>
                   <span className="block">
-                    플랫폼 수수료 {formatFeeRatePct(feeRateApplied)}{" "}
+                    수수료 {formatFeeRatePct(feeRateApplied)}{" "}
                     <span className="font-medium text-foreground">
                       −{formatManWon(platformFeeDisplay)}
                     </span>

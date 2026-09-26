@@ -17,6 +17,7 @@ import {
 } from "./practiceTransferArrivalDates.js";
 import { getTodayYmdInKst } from "./krBusinessDays.js";
 import { listPendingProstheticSlots } from "./practiceTransferProstheticSlots.js";
+import { isLabProsthesisUploadRequired } from "./practiceProsthesisUploadRequirement.js";
 
 /**
  * 현재 치과도착일(YMD). arrivalDates 끝값 또는 메모 태그.
@@ -82,6 +83,7 @@ export function isPracticeTransferDueForArrivalAutoComplete(doc, todayYmd) {
   if (doc.arrivalDeadlineExpiredAt) return false;
   if (practiceTransferNeedsMoreAbutmentDesigns(doc)) return false;
   if (
+    isLabProsthesisUploadRequired(doc) &&
     listPendingProstheticSlots(doc.toothWorks, doc.resultFiles).length > 0
   ) {
     return false;

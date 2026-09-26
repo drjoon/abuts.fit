@@ -976,49 +976,31 @@ export function resolveSubcontractFeeRate(payoutRates) {
   return DEFAULT_SUBCONTRACT_FEE_RATE;
 }
 
-function capFeeRate(rate) {
-  const n = Number(rate);
-  if (!Number.isFinite(n)) return 0;
+/** 작업시작으로 박힌 요율. 없으면 null(아직 스냅샷 전). */
+export function snapshottedPracticeTransferFeeRate(billing) {
+  if (!billing?.billedAt) return null;
+  const n = Number(billing.feeRateApplied);
+  if (!Number.isFinite(n)) return null;
   return Math.min(1, Math.max(0, n));
 }
 
 /**
- * 기공의뢰 플랫폼/하청 수수료율.
- * - 하청: subcontractFeeRate(기본 10%)에 플랫폼 사용료(기본 2%)를 더한다.
- *   학습 이용 스냅샷이 true이거나 어벗츠기공본부 수행이면 그 2%만 면제.
- *   스냅샷이 없는 기존 하청은 10%만.
- * - 지정·협력: 스냅샷 true 또는 본부 수행이면 0, false면 정책 요율(기본 2%).
- * - 자동매칭(수행 미정): 0.
- * - 스냅샷이 없는 기존 지정·협력: directPlatformFeeEnabled(이벤트 off=0).
- * 본부는 항상 동의한 것으로 본다. 마진·스캔 품질로 요율을 바꾸지 않는다.
+ * 기공의뢰 수수료율.
+ * 플랫폼 사용료는 폐지(지정·협력·본부 수행 0). 학습 이용 동의는 요율에 반영하지 않는다.
+ * 하청만 subcontractFeeRate(기본 10%). 이미 billing.feeRateApplied에 박힌 건은 호출부에서 유지한다.
  */
 export function resolvePracticeTransferFeeRate({
-  matchingMode,
   payoutRates,
   subcontracted = false,
-  performerIsInternal = false,
-  aiTrainingConsent,
 } = {}) {
-  const platform = resolveDirectPlatformFeeRateConfigured(payoutRates);
-  const waived = performerIsInternal || aiTrainingConsent === true;
-  if (subcontracted) {
-    const base = resolveSubcontractFeeRate(payoutRates);
-    if (!waived && aiTrainingConsent !== false) return base;
-    if (waived) return base;
-    return capFeeRate(base + platform);
-  }
-  if (String(matchingMode || "").trim() === "auto") {
-    return 0;
-  }
-  if (waived) return 0;
-  if (aiTrainingConsent === false) return platform;
-  return resolveDirectPlatformFeeRate(payoutRates);
+  if (subcontracted) return resolveSubcontractFeeRate(payoutRates);
+  return 0;
 }
 
 /**
  * 견적 표시용 수수료율.
  * 원청(어벗츠 기공사업부)이 하청을 준 뒤 자기 화면을 보면 전액 수주이므로 0.
- * billing이 있으면 생성 때 박힌 학습 동의·본부 수행을 쓴다.
+ * 작업시작으로 박힌 billing.feeRateApplied가 있으면 그 값을 쓴다.
  */
 export function resolvePracticeTransferFeeRateForViewer({
   matchingMode,
@@ -1030,17 +1012,14 @@ export function resolvePracticeTransferFeeRateForViewer({
   billing,
 } = {}) {
   if (subcontracted && viewerIsPrimeContractor) return 0;
-  const snap = platformFeeArgsFromBilling(billing);
-  const consent =
-    aiTrainingConsent === true || aiTrainingConsent === false
-      ? aiTrainingConsent
-      : snap.aiTrainingConsent;
+  const stored = snapshottedPracticeTransferFeeRate(billing);
+  if (stored != null) return stored;
   return resolvePracticeTransferFeeRate({
     matchingMode,
     payoutRates,
     subcontracted,
-    performerIsInternal: performerIsInternal || snap.performerIsInternal,
-    aiTrainingConsent: consent,
+    performerIsInternal,
+    aiTrainingConsent,
   });
 }
 

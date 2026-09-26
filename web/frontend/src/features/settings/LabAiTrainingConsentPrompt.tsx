@@ -21,8 +21,6 @@ import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
-import { useLabTradingPartnerWindow } from "@/shared/lab/useLabTradingPartnerWindow";
-import { resolveLabDirectPlatformFeePct } from "@/shared/settlement/labPayoutBankbook";
 
 export const OPEN_LAB_AI_TRAINING_CONSENT_EVENT =
   "abuts:open-ai-training-consent";
@@ -56,9 +54,7 @@ export type LabAiTrainingConsentPromptHandle = {
   /** 아직 답을 안 했으면 X·바깥 클릭 없이 고를 때까지 기다린다. */
   ensureChoice: () => Promise<boolean>;
   /**
-   * 허용 안 함이면 사용료를 안내하고 다시 묻는다.
-   * 동의함은 허용으로 저장하고, 동의 안 함은 부동의를 유지한다. 둘 다 작업시작은 진행한다.
-   * 닫으면 false.
+   * 학습 이용과 수수료는 분리되어 있다. 작업시작은 그대로 진행한다.
    */
   confirmDeclinedFee: () => Promise<boolean>;
   /**
@@ -73,7 +69,6 @@ export const LabAiTrainingConsentPrompt = forwardRef<
 >(function LabAiTrainingConsentPrompt(_props, ref) {
   const { token, user } = useAuthStore();
   const { toast } = useToast();
-  const { windowInfo } = useLabTradingPartnerWindow();
   const [open, setOpen] = useState(false);
   const [required, setRequired] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -87,11 +82,6 @@ export const LabAiTrainingConsentPrompt = forwardRef<
   const allowButtonRef = useRef<HTMLButtonElement>(null);
   const agreeButtonRef = useRef<HTMLButtonElement>(null);
   const focusTransferIdRef = useRef("");
-  const pct = resolveLabDirectPlatformFeePct(
-    windowInfo?.feeRates?.directPlatformFeeRate != null
-      ? Number(windowInfo.feeRates.directPlatformFeeRate) * 100
-      : undefined,
-  );
 
   const finishLoad = (status: PromptStatus) => {
     statusRef.current = status;
@@ -178,14 +168,7 @@ export const LabAiTrainingConsentPrompt = forwardRef<
         choiceWaitersRef.current.push(resolve);
       });
     },
-    confirmDeclinedFee: async () => {
-      await whenLoaded();
-      if (allowedRef.current !== false) return true;
-      setFeeOpen(true);
-      return new Promise<boolean>((resolve) => {
-        feeWaitersRef.current.push(resolve);
-      });
-    },
+    confirmDeclinedFee: async () => true,
     guardFirstWorkStart: async () => {
       await whenLoaded();
       if (!needsFirstWorkStartRef.current) return true;
@@ -196,13 +179,6 @@ export const LabAiTrainingConsentPrompt = forwardRef<
           choiceWaitersRef.current.push(resolve);
         });
         if (!chosen) return false;
-      }
-      if (allowedRef.current === false) {
-        setFeeOpen(true);
-        const feeOk = await new Promise<boolean>((resolve) => {
-          feeWaitersRef.current.push(resolve);
-        });
-        if (!feeOk) return false;
       }
       const res = await apiFetch<MeResponse>({
         path: "/api/businesses/me/ai-training-first-work-start",
@@ -272,8 +248,8 @@ export const LabAiTrainingConsentPrompt = forwardRef<
       toast({
         title: allowed ? "학습 이용을 허용했습니다" : "학습 이용을 껐습니다",
         description: allowed
-          ? `이번 의뢰부터 플랫폼 사용료 ${pct}%가 면제됩니다.`
-          : `이번 의뢰부터 플랫폼 사용료 ${pct}%가 공제됩니다.`,
+          ? "이번 의뢰부터 가명처리한 작업 결과를 학습에 넣습니다."
+          : "이번 의뢰부터 작업 결과는 학습에 넣지 않습니다.",
       });
     } catch {
       toast({
@@ -295,8 +271,8 @@ export const LabAiTrainingConsentPrompt = forwardRef<
       toast({
         title: allowed ? "학습 이용을 허용했습니다" : "학습 이용을 껐습니다",
         description: allowed
-          ? `이번 의뢰부터 플랫폼 사용료 ${pct}%가 면제됩니다.`
-          : `이번 의뢰부터 플랫폼 사용료 ${pct}%가 공제됩니다.`,
+          ? "이번 의뢰부터 가명처리한 작업 결과를 학습에 넣습니다."
+          : "이번 의뢰부터 작업 결과는 학습에 넣지 않습니다.",
       });
       settleFee(true);
     } catch {
@@ -341,9 +317,12 @@ export const LabAiTrainingConsentPrompt = forwardRef<
           <div className="h-[1lh]" aria-hidden />
           <DialogDescription asChild>
             <p>
-              작업 결과를 AI 학습에 이용할 수 있도록 동의하면, 플랫폼 사용료(<strong className="font-semibold text-foreground">{pct}%</strong>)가 면제됩니다.
+              환자 이름·차트·연락처를 분리한 작업 완료 3D 모델과 스캔 형상만
+              AI 학습에 이용합니다.
               <br />
-              이후에는 기공의뢰의 <strong className="font-semibold text-foreground">수수료 줄이기</strong>에서 변경할 수 있습니다.
+              허용하지 않으면 이 계정의 작업 결과는 학습에 넣지 않습니다.
+              <br />
+              이후에는 기공의뢰의 <strong className="font-semibold text-foreground">학습 이용</strong>에서 변경할 수 있습니다.
               {required ? (
                 <>
                   <br />
@@ -394,7 +373,7 @@ export const LabAiTrainingConsentPrompt = forwardRef<
           <div className="h-[1lh]" aria-hidden />
           <DialogDescription asChild>
             <p>
-              동의하지 않으면 플랫폼 사용료(<strong className="font-semibold text-foreground">{pct}%</strong>)가 공제됩니다.
+              허용하지 않으면 이 계정의 작업 결과는 학습에 넣지 않습니다.
               <br />
               AI 학습 이용에 동의하시겠습니까?
             </p>

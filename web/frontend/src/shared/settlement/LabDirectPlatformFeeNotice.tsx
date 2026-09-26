@@ -29,7 +29,7 @@ function FeePct({ children }: { children: ReactNode }) {
   );
 }
 
-/** 정책 요율. 학습 이용을 허용하면 면제. */
+/** @deprecated 플랫폼 사용료는 폐지. 표시는 하청 수수료만. */
 export function LabDirectPlatformFeeRateLabel({
   ratePct,
 }: Pick<FeeOpts, "ratePct">): ReactNode {
@@ -37,28 +37,18 @@ export function LabDirectPlatformFeeRateLabel({
   return <span className="tabular-nums">{pct}%</span>;
 }
 
-/** 기공소 플랫폼 사용료·하청 영업 수수료·학습 이용 면제. */
+/** 협력은 전액 적립. 하청만 영업 수수료를 차감. */
 export function LabDirectPlatformFeeNotice({
-  ratePct,
   subcontractRatePct,
   suffix,
 }: FeeOpts & { suffix?: ReactNode }): ReactNode {
-  const pct = resolveLabDirectPlatformFeePct(ratePct);
   const salesPct = resolveLabSubcontractSalesFeePct(subcontractRatePct);
   return (
     <>
-      기공소의 플랫폼 사용료는 매출액의 <FeePct>{pct}%</FeePct>
-      입니다.
+      협력건은 기공비 전액을 크레딧으로 적립합니다.
       <br />
-      협력건이나 하청건 모두 플랫폼 사용료를 차감하고 크레딧 적립됩니다.
-      <br />
-      협력건은 별도의 영업 수수료가 없으며, 하청건은 <FeePct>{salesPct}%</FeePct>
-      의 영업 수수료가 추가됩니다.
-      <br />
-      <br />
-      작업 결과를 AI 학습에 이용할 수 있도록 동의하면, 플랫폼 사용료(
-      <FeePct>{pct}%</FeePct>
-      )가 면제됩니다.
+      하청건은 매출액의 <FeePct>{salesPct}%</FeePct>를 영업 수수료로 차감하고,
+      나머지를 크레딧으로 적립합니다.
       {suffix}
     </>
   );

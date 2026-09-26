@@ -96,6 +96,8 @@ export interface User {
     addressDetail?: string;
     zipCode?: string;
     usesOralScan?: boolean;
+    /** 없음·true = 보철 업로드 요구. false = 요구하지 않음 */
+    requireLabProsthesisUpload?: boolean;
     updatedAt?: string | null;
   } | null;
   salesmanPayoutAccount?: {
@@ -211,6 +213,9 @@ const normalizeApiUser = (u: unknown): User | null => {
             usesOralScan: Boolean(
               (row.practiceProfile as Record<string, unknown>)?.usesOralScan,
             ),
+            requireLabProsthesisUpload:
+              (row.practiceProfile as Record<string, unknown>)
+                ?.requireLabProsthesisUpload !== false,
             updatedAt: (row.practiceProfile as Record<string, unknown>)?.updatedAt
               ? String((row.practiceProfile as Record<string, unknown>).updatedAt)
               : null,
