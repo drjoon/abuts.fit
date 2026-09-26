@@ -200,7 +200,9 @@ export function LabProsthesisModifyPanel({
             화면 각도로 맞추기
           </Button>
           <p className="text-[11px] leading-relaxed text-muted-foreground">
-            화면을 맞춘 뒤 화면 각도로 맞추면 그 보철의 삽입축이 됩니다.
+            화면 중앙이 보철을 지나게 맞춥니다.
+            <br />
+            화면 각도로 맞추면 화면과 수직인 삽입축이 그 자리에 됩니다.
             <br />
             화살표 끝을 끌면 방향을 바꿉니다.
           </p>

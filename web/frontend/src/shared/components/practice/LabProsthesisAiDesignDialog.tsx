@@ -7,13 +7,15 @@
 // - 2026-09-26: 마진·디자인은 카메라를 유지한다. 치아 이름을 누르면 그 치아 교합면.
 // - 2026-09-26: 삽입축은 치아 정보에서 보철마다. 브리지는 스팬당 하나.
 // - 2026-09-26: 투명 체크는 지대치 외 스캔을 20%로 비추고, 끄면 불투명하다.
-// - 2026-09-26: 투명 오른쪽 삽입축 토글이 화살표를 보여 준다. 치아 정보에서 잡으면 그 치아 위에 닿는다.
+// - 2026-09-26: 투명 오른쪽 삽입축 토글이 화살표를 보여 준다. 치아 정보에서 잡으면 화면 중앙 광선에 닿는다.
 // - 2026-09-26: 치아 이름은 글자 너비. 삽입축은 파란 버튼. 치아를 누르면 잡은 카메라로.
+// - 2026-09-26: 작업영역 위 정중앙 버튼이 가로·세로 점선을 켠다.
 // - 2026-09-26: 마진·삽입·내면·형상·훅·컷백·홀·커넥터를 작업 영역에서 고친다.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDownToLine,
   Blend,
+  Crosshair,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -267,6 +269,7 @@ function LabProsthesisAiDesignDialog({
   const [workWide, setWorkWide] = useState(false);
   const [insertionKeys, setInsertionKeys] = useState<string[]>([]);
   const [insertionShown, setInsertionShown] = useState(false);
+  const [centerGuides, setCenterGuides] = useState(true);
   const [modifyTool, setModifyTool] = useState<ModifyTool>("margin");
   const [marginMode, setMarginMode] = useState<MarginEditMode>("point");
   const [editBrush, setEditBrush] = useState<EditBrush>("none");
@@ -316,6 +319,7 @@ function LabProsthesisAiDesignDialog({
       setDropScanId(null);
       setInsertionKeys([]);
       setInsertionShown(false);
+      setCenterGuides(true);
       setModifyTool("margin");
       setMarginMode("point");
       setEditBrush("none");
@@ -1083,7 +1087,9 @@ function LabProsthesisAiDesignDialog({
                   </Button>
                 </div>
                 <p className="text-[11px] leading-relaxed text-muted-foreground">
-                  화면을 맞춘 뒤 다시 표시하면 선택한 보철의 삽입축으로 잡습니다.
+                  화면 중앙이 보철을 지나게 맞춥니다.
+                  <br />
+                  다시 표시하면 화면과 수직인 삽입축을 그 자리에 잡습니다.
                   <br />
                   언더컷과 마진을 그 축으로 다시 칠합니다.
                 </p>
@@ -1195,6 +1201,7 @@ function LabProsthesisAiDesignDialog({
                 if (!active) setInsertionKeys([]);
               }}
               showInsertionAxis={insertionShown}
+              showCenterGuides={centerGuides}
               designEdit={designEdit}
               onDesignGesture={onDesignGesture}
               className="absolute inset-0"
@@ -1305,9 +1312,36 @@ function LabProsthesisAiDesignDialog({
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent side="bottom" className="z-[520]">
-                  잡은 삽입축을 치아 위쪽에 표시합니다.
+                  잡은 삽입축을 치아에서 2mm 띄워 표시합니다.
                   <br />
-                  화살표 끝은 치아에 닿고, 끄면 숨깁니다.
+                  치아번호는 윗단 고리 중심에 있습니다.
+                  <br />
+                  끄면 숨깁니다.
+                </TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={centerGuides ? "default" : "outline"}
+                    className={cn(
+                      "h-8 shadow-sm [&_svg]:!size-3.5",
+                      workWide ? "gap-1 px-2.5" : "w-8 px-0",
+                    )}
+                    title="정중앙"
+                    aria-label="정중앙"
+                    aria-pressed={centerGuides}
+                    onClick={() => setCenterGuides((on) => !on)}
+                  >
+                    <Crosshair />
+                    {workWide ? <span>정중앙</span> : null}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="z-[520]">
+                  화면 정중앙에 가로·세로 점선을 표시합니다.
+                  <br />
+                  끄면 점선을 숨깁니다.
                 </TooltipContent>
               </Tooltip>
               </div>
@@ -1575,8 +1609,8 @@ function DesignViewerChrome({
                                   )}
                                   title={
                                     span.length > 1
-                                      ? "화면과 수직인 삽입축을 스팬 위쪽에 잡고, 화살표가 치아에 닿습니다"
-                                      : "화면과 수직인 삽입축을 이 보철 위쪽에 잡고, 화살표가 치아에 닿습니다"
+                                      ? "화면 중앙을 지나 화면과 수직인 삽입축을 스팬에 잡습니다. 화살표는 치아에서 2mm 떨어집니다"
+                                      : "화면 중앙을 지나 화면과 수직인 삽입축을 잡습니다. 화살표는 치아에서 2mm 떨어집니다"
                                   }
                                   aria-label={span.length > 1 ? "스팬 삽입축" : "삽입축"}
                                   aria-pressed={axisOn}

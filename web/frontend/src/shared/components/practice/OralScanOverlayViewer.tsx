@@ -6,6 +6,10 @@
 // - 2026-09-26: 역할만 바뀌면 메시를 다시 읽지 않고 색·대합을 다시 계산한다.
 // - 2026-09-26: 삽입축은 보철마다 화면과 수직으로 잡고, 화살표와 고리로 표시한다.
 // - 2026-09-26: 삽입축 표시는 토글. 새로 잡으면 치아 위쪽에 두고 화살표 끝이 표면에 닿는다.
+// - 2026-09-26: 삽입축은 화면 중앙 광선이다. 치아 추정 좌표가 아니라 그 광선이 닿는 면에 둔다.
+// - 2026-09-26: 삽입축을 잡으면 그 보철의 치아 추정 좌표를 같은 점으로 옮긴다.
+// - 2026-09-26: 정중앙 점선은 토글로 켠다. 가로·세로는 화면 한가운데를 지난다.
+// - 2026-09-26: 삽입축은 치아에서 2mm 띄운다. 치아번호는 윗단 고리 중심에 둔다.
 // - 2026-09-26: 처음 카메라는 지대치 교합면과 인접치 하나씩. 그 자세를 초기 뷰로 둔다.
 import {
   forwardRef,
@@ -58,8 +62,8 @@ export type OralScanOverlayHandle = {
   restoreInsertionView: (toothNumbers: readonly string[]) => boolean;
   saveImage: () => void;
   /**
-   * 화면과 수직인 방향을 이 치아들의 삽입축으로 잡는다.
-   * 화살표는 치아 위쪽에 두고 끝이 표면에 닿는다.
+   * 화면 중앙을 지나는, 화면과 수직인 방향을 이 치아들의 삽입축으로 잡는다.
+   * 화살표 끝은 그 광선이 닿는 면에서 2mm 띄우고, 치아 추정 좌표는 그 면에 둔다.
    * 같은 치아 묶음이면 방향을 다시 잡고, 다른 보철 축은 유지한다.
    */
   setInsertionFromView: (toothNumbers: readonly string[]) => boolean;
@@ -109,6 +113,8 @@ type Props = {
   onInsertionAxisChange?: (active: boolean) => void;
   /** 잡은 삽입축을 작업 영역에 그릴지. */
   showInsertionAxis?: boolean;
+  /** 화면 정중앙의 가로·세로 점선. */
+  showCenterGuides?: boolean;
   /** 마진·보철 수정. 없으면 그리지 않는다. */
   designEdit?: ProsthesisDesignEdit | null;
   onDesignGesture?: (gesture: DesignGesture) => void;
@@ -175,6 +181,8 @@ const HOME_UP = new THREE.Vector3(0, 0, 1);
 const FIT_MARGIN = 1.03;
 /** 삽입축 화살표·레전드. amber-500 */
 const INSERTION_AXIS_COLOR = 0xf59e0b;
+/** 화살표 끝과 치아 표면 사이. */
+const INSERTION_CLEARANCE_MM = 2;
 
 function disposeObject3D(root: THREE.Object3D) {
   const materials = new Set<THREE.Material>();
@@ -191,22 +199,52 @@ function disposeObject3D(root: THREE.Object3D) {
   for (const material of materials) material.dispose();
 }
 
+function mmToGeometry(mm: number, unitToMm: number) {
+  return mm / Math.max(unitToMm, 1e-9);
+}
+
+function insertionMarkerMetrics(radius: number) {
+  const span = Math.max(radius, 1);
+  const length = span * 2.15;
+  const headLen = length * 0.34;
+  return {
+    span,
+    length,
+    headLen,
+    shaftLen: length - headLen,
+    shaftR: Math.max(span * 0.07, length * 0.02),
+  };
+}
+
+/** 윗단 고리 중심. 화살표 끝은 표면에서 2mm, 고리는 그 위쪽이다. */
+function insertionRingCenter(
+  origin: THREE.Vector3,
+  dir: THREE.Vector3,
+  radius: number,
+  unitToMm: number,
+) {
+  const direction = dir.clone().normalize();
+  const { length } = insertionMarkerMetrics(radius);
+  const clearance = mmToGeometry(INSERTION_CLEARANCE_MM, unitToMm);
+  return origin.clone().addScaledVector(direction, -(clearance + length));
+}
+
 /**
  * 삽입 방향으로 화살표와, 그 축에 수직인 고리.
- * `contact`는 화살표 끝이 닿는 치아 표면. 몸통은 그 반대쪽(화면 쪽)에 둔다.
+ * `contact`는 치아 표면. 화살표 끝은 거기서 화면 쪽으로 2mm 떨어진다.
  */
 function buildInsertionMarker(
   contact: THREE.Vector3,
   radius: number,
   dir: THREE.Vector3,
   key: string,
+  unitToMm: number,
 ) {
   const direction = dir.clone().normalize();
-  const span = Math.max(radius, 1);
-  const length = span * 2.15;
-  const headLen = length * 0.34;
-  const shaftLen = length - headLen;
-  const shaftR = Math.max(span * 0.07, length * 0.02);
+  const { span, length, headLen, shaftLen, shaftR } = insertionMarkerMetrics(radius);
+  const tip = contact
+    .clone()
+    .addScaledVector(direction, -mmToGeometry(INSERTION_CLEARANCE_MM, unitToMm));
   const material = new THREE.MeshBasicMaterial({
     color: INSERTION_AXIS_COLOR,
     side: THREE.DoubleSide,
@@ -226,7 +264,7 @@ function buildInsertionMarker(
     material,
   );
   head.quaternion.copy(align);
-  head.position.copy(contact).addScaledVector(direction, -headLen / 2);
+  head.position.copy(tip).addScaledVector(direction, -headLen / 2);
   head.userData.editHit = { kind: "insertion", key } satisfies EditHit;
   const shaft = new THREE.Mesh(
     new THREE.CylinderGeometry(shaftR, shaftR, shaftLen, 16),
@@ -234,13 +272,13 @@ function buildInsertionMarker(
   );
   shaft.quaternion.copy(align);
   shaft.position
-    .copy(contact)
+    .copy(tip)
     .addScaledVector(direction, -(headLen + shaftLen / 2));
   const ring = new THREE.Mesh(
     new THREE.RingGeometry(span * 0.72, span * 0.98, 48),
     material,
   );
-  ring.position.copy(contact).addScaledVector(direction, -length);
+  ring.position.copy(tip).addScaledVector(direction, -length);
   ring.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), direction);
   for (const mesh of [shaft, head, ring]) {
     mesh.renderOrder = 20;
@@ -248,6 +286,23 @@ function buildInsertionMarker(
   }
   group.add(shaft, head, ring);
   return group;
+}
+
+/** 화면 정중앙 광선. 방향은 카메라가 보는 쪽이고, 점은 처음 닿는 표면. */
+function viewCenterHit(
+  camera: THREE.Camera,
+  meshes: THREE.Object3D[],
+): { dir: THREE.Vector3; point: THREE.Vector3 | null } {
+  const raycaster = new THREE.Raycaster();
+  raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+  const dir = raycaster.ray.direction.clone();
+  if (dir.lengthSq() < 1e-8) dir.set(0, 0, -1);
+  else dir.normalize();
+  const point =
+    meshes.length > 0
+      ? (raycaster.intersectObjects(meshes, false)[0]?.point.clone() ?? null)
+      : null;
+  return { dir, point };
 }
 
 /** 화면 쪽에서 치아 중심으로 쏴, 카메라가 보는 표면점을 고른다. */
@@ -560,7 +615,7 @@ type InsertionAxis = {
   key: string;
   toothNumbers: string[];
   dir: THREE.Vector3;
-  /** 화살표 끝이 닿는 치아 표면. */
+  /** 화살표가 향한 치아 표면. 표시는 여기서 2mm 띄운다. */
   origin: THREE.Vector3;
   /** 치아 크기에 맞춘 화살표 크기. */
   radius: number;
@@ -582,6 +637,53 @@ function insertionAxisKey(toothNumbers: readonly string[]) {
     .filter(Boolean)
     .sort()
     .join(",");
+}
+
+/** 삽입축이 닿은 점으로 그 보철 치아들의 추정 중심을 옮긴다. 상대 간격은 유지한다. */
+function alignPlacementsToPoint(
+  placements: ToothPlacement[],
+  toothNumbers: readonly string[],
+  point: THREE.Vector3,
+  fallbackRadius: number,
+): ToothPlacement[] {
+  const wanted = toothNumbers.filter(Boolean);
+  if (wanted.length === 0) return placements;
+  const next = placements.map((row) => ({
+    ...row,
+    center: row.center.clone(),
+  }));
+  const matched = next.filter((row) => wanted.includes(row.toothNumber));
+  const radius = Math.max(matched[0]?.radius ?? fallbackRadius, 1);
+  if (matched.length === 0) {
+    for (const tooth of wanted) {
+      const parsed = parseFdi(tooth);
+      if (!parsed) continue;
+      next.push({
+        toothNumber: tooth,
+        center: point.clone(),
+        radius,
+        arch: parsed.arch,
+      });
+    }
+    return next;
+  }
+  const centroid = new THREE.Vector3();
+  for (const row of matched) centroid.add(row.center);
+  centroid.multiplyScalar(1 / matched.length);
+  const delta = point.clone().sub(centroid);
+  for (const row of matched) row.center.add(delta);
+  for (const tooth of wanted) {
+    if (matched.some((row) => row.toothNumber === tooth)) continue;
+    const parsed = parseFdi(tooth);
+    if (!parsed) continue;
+    next.push({
+      toothNumber: tooth,
+      center: point.clone(),
+      radius,
+      arch: parsed.arch,
+    });
+  }
+  return next;
 }
 
 function nearestInsertionDir(
@@ -1257,6 +1359,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       onScanColorChange,
       onInsertionAxisChange,
       showInsertionAxis = false,
+      showCenterGuides = false,
       designEdit = null,
       onDesignGesture,
       className,
@@ -2248,25 +2351,69 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
 
   syncBadgesRef.current = () => {
     const layer = badgeLayerRef.current;
-    const frame = frameRef.current;
     if (!layer) return;
     for (const child of [...layer.children]) {
       (child as CSS2DObject).element.remove();
       layer.remove(child);
     }
+    const frame = frameRef.current;
+    const used = new Set<string>();
+    const placeOnRing = (button: HTMLButtonElement, parent: HTMLElement) => {
+      button.type = "button";
+      button.addEventListener("pointerdown", (event) => {
+        event.stopPropagation();
+      });
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onSelectToothRef.current?.(button.textContent ?? "");
+      });
+      parent.appendChild(button);
+    };
+    if (showInsertionRef.current) {
+      for (const axis of insertionAxesRef.current) {
+        const rows = badgesRef.current.filter((badge) =>
+          axis.toothNumbers.includes(fdiDigits(badge.toothNumber)),
+        );
+        if (rows.length === 0 || !axis.origin) continue;
+        const wrap = document.createElement("div");
+        wrap.className = "pointer-events-auto flex items-center justify-center";
+        for (const badge of rows) {
+          const button = document.createElement("button");
+          button.textContent = badge.toothNumber;
+          button.className = badge.active
+            ? "rounded-full bg-primary px-1.5 py-0.5 text-[11px] font-semibold leading-none text-primary-foreground"
+            : "rounded-full bg-background/95 px-1.5 py-0.5 text-[11px] font-semibold leading-none text-foreground shadow-sm";
+          placeOnRing(button, wrap);
+          used.add(fdiDigits(badge.toothNumber));
+        }
+        const label = new CSS2DObject(wrap);
+        label.position.copy(
+          insertionRingCenter(
+            axis.origin,
+            axis.dir,
+            axis.radius,
+            unitToMmRef.current,
+          ),
+        );
+        label.center.set(0.5, 0.5);
+        layer.add(label);
+      }
+    }
     if (!frame) return;
     for (const badge of badgesRef.current) {
       const digits = fdiDigits(badge.toothNumber);
+      if (!digits || used.has(digits)) continue;
       const place = placementsRef.current.find((row) => row.toothNumber === digits);
       if (!place) continue;
       const pose = occlusalCamera(frame, place.arch);
       const lift = Math.max(place.radius * 0.2, fitRadiusRef.current * 0.008);
       const button = document.createElement("button");
-      button.type = "button";
       button.textContent = badge.toothNumber;
       button.className = badge.active
         ? "pointer-events-auto rounded-md bg-primary px-2 py-1 text-xs font-semibold text-primary-foreground shadow-sm"
         : "pointer-events-auto rounded-md border border-border bg-background/95 px-2 py-1 text-xs font-semibold text-foreground shadow-sm";
+      button.type = "button";
       button.addEventListener("pointerdown", (event) => {
         event.stopPropagation();
       });
@@ -2288,7 +2435,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
 
   useEffect(() => {
     syncBadgesRef.current();
-  }, [badgeKey, loadVersion]);
+  }, [badgeKey, loadVersion, showInsertionAxis]);
 
   syncInsertionMarkerRef.current = () => {
     const scene = sceneRef.current;
@@ -2308,7 +2455,15 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
           ? axis.radius
           : Math.max(fitRadiusRef.current * 0.08, 1);
       if (!origin) continue;
-      layer.add(buildInsertionMarker(origin, radius, axis.dir, axis.key));
+      layer.add(
+        buildInsertionMarker(
+          origin,
+          radius,
+          axis.dir,
+          axis.key,
+          unitToMmRef.current,
+        ),
+      );
     }
     if (layer.children.length === 0) return;
     scene.add(layer);
@@ -2340,11 +2495,11 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       setInsertionFromView: (toothNumbers) => {
         const camera = cameraRef.current;
         const controls = controlsRef.current;
-        const look = new THREE.Vector3();
-        camera?.getWorldDirection(look);
         const key = insertionAxisKey(toothNumbers);
-        if (!camera || !controls || look.lengthSq() < 1e-8 || !key) return false;
-        look.normalize();
+        if (!camera || !controls || !key) return false;
+        camera.updateProjectionMatrix();
+        camera.updateMatrixWorld(true);
+        groupRef.current?.updateWorldMatrix(true, true);
         const places: ToothPlacement[] = [];
         for (const tooth of key.split(",")) {
           const place = placementsRef.current.find(
@@ -2366,7 +2521,6 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
           radius = Math.max(height * 0.06, 1);
         }
         const toothRadius = radius;
-        groupRef.current?.updateWorldMatrix(true, true);
         const arch = places[0]?.arch;
         const loaded = loadedRef.current.filter((entry) => entry.mesh.visible);
         const scoped = arch
@@ -2375,15 +2529,19 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         const meshes = (scoped.length > 0 ? scoped : loaded).map(
           (entry) => entry.mesh,
         );
-        let contact = rayToothContact(center, look, toothRadius, meshes);
+        const view = viewCenterHit(camera, meshes);
+        const look = view.dir;
+        if (look.lengthSq() < 1e-8) return false;
+        let contact = view.point;
+        if (!contact) contact = rayToothContact(center, look, toothRadius, meshes);
         if (!contact && places.length > 0) contact = center.clone();
-        if (!contact) {
-          const raycaster = new THREE.Raycaster();
-          raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
-          contact =
-            raycaster.intersectObjects(meshes, false)[0]?.point.clone() ??
-            center.clone();
-        }
+        if (!contact) contact = controls.target.clone();
+        placementsRef.current = alignPlacementsToPoint(
+          placementsRef.current,
+          key.split(","),
+          contact,
+          toothRadius,
+        );
         const framed = fitExtentRef.current.halfH;
         radius = Math.max(Math.min(toothRadius * 0.48, framed * 0.2), 0.6);
         const kept = insertionAxesRef.current.filter((axis) => axis.key !== key);
@@ -2407,6 +2565,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         insertionAxesRef.current = kept;
         for (const entry of loadedRef.current) entry.align = null;
         syncInsertionMarkerRef.current();
+        syncBadgesRef.current();
         onInsertionAxisChangeRef.current?.(kept.length > 0);
         setLoadVersion((v) => v + 1);
         return true;
@@ -2453,6 +2612,15 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   return (
     <div className={cn("relative h-full min-h-0 w-full", className)}>
       <div ref={containerRef} className="absolute inset-0" />
+      {showCenterGuides ? (
+        <div
+          className="pointer-events-none absolute inset-0 z-[4]"
+          aria-hidden
+        >
+          <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 border-t border-dashed border-slate-900/75" />
+          <div className="absolute bottom-0 left-1/2 top-0 -translate-x-1/2 border-l border-dashed border-slate-900/75" />
+        </div>
+      ) : null}
 
       {busy && items.length === 0 ? (
         <div className="pointer-events-none absolute inset-0 z-[5] flex items-center justify-center">
