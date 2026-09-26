@@ -343,7 +343,7 @@ export const LabAiTrainingConsentPrompt = forwardRef<
             <p>
               작업 결과를 AI 학습에 이용할 수 있도록 동의하면, 플랫폼 사용료(<strong className="font-semibold text-foreground">{pct}%</strong>)가 면제됩니다.
               <br />
-              추후 <strong className="font-semibold text-foreground">설정-AI</strong>에서 변경할 수 있습니다.
+              이후에는 기공의뢰의 <strong className="font-semibold text-foreground">수수료 줄이기</strong>에서 변경할 수 있습니다.
               {required ? (
                 <>
                   <br />
