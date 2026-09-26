@@ -1,6 +1,6 @@
 // 협측 바이트에 상악·하악을 붙인다. 바이트는 그대로 두고 악궁만 강체 변환한다.
-// 바이트는 치아의 일부만 겹치므로, 가까운 대응만 남기는 trimmed ICP로 맞춘다.
-// 어긋남이 크면 FPFH 특징 + RANSAC으로 처음 자세를 잡고, point-to-plane으로 다듬는다.
+// 바이트는 치아 일부만 겹치고 위·아래가 한 메시에 있다.
+// 어긋남이 크면 점쌍 특징(Drost PPF)으로 처음 자세를 잡고, 겹치는 면만 trimmed ICP로 다듬는다.
 import * as THREE from "three";
 
 type Cloud = {
@@ -13,9 +13,6 @@ type Rigid = {
   r: number[][];
   t: [number, number, number];
 };
-
-const FEATURE_BINS = 11;
-const FEATURE_LEN = FEATURE_BINS * 3;
 
 function mmToUnits(mm: number, unitToMm: number) {
   return mm / (unitToMm > 0 ? unitToMm : 1);
@@ -112,6 +109,7 @@ function cloneCloud(cloud: Cloud): Cloud {
 type Grid = {
   nearest: (x: number, y: number, z: number, maxDist: number) => number;
   around: (x: number, y: number, z: number, radius: number, limit: number) => number[];
+  band: (x: number, y: number, z: number, minDist: number, maxDist: number, limit: number) => number[];
 };
 
 function cellKey(ix: number, iy: number, iz: number) {
@@ -189,7 +187,37 @@ function buildGrid(cloud: Cloud, cell: number): Grid {
     found.sort((a, b) => a.dist2 - b.dist2);
     return found.slice(0, limit).map((row) => row.index);
   };
-  return { nearest, around };
+  const band = (
+    x: number,
+    y: number,
+    z: number,
+    minDist: number,
+    maxDist: number,
+    limit: number,
+  ) => {
+    const inner: number[] = [];
+    const outer: number[] = [];
+    const mid2 = ((minDist + maxDist) * 0.5) ** 2;
+    const min2 = minDist * minDist;
+    const max2 = maxDist * maxDist;
+    visit(x, y, z, maxDist, (index, dist2) => {
+      if (dist2 < min2 || dist2 > max2) return;
+      if (dist2 <= mid2) {
+        if (inner.length < limit) inner.push(index);
+      } else if (outer.length < limit) outer.push(index);
+    });
+    const mixed: number[] = [];
+    const span = Math.max(inner.length, outer.length);
+    for (let i = 0; i < span && mixed.length < limit; i += 1) {
+      const near = inner[i];
+      const far = outer[i];
+      if (near != null) mixed.push(near);
+      if (mixed.length >= limit) break;
+      if (far != null) mixed.push(far);
+    }
+    return mixed;
+  };
+  return { nearest, around, band };
 }
 
 function mul33(a: number[][], b: number[][]) {
@@ -563,9 +591,9 @@ function pointToPlane(
   return { r: rodrigues(rx, ry, rz), t: [tx, ty, tz] };
 }
 
-type Fitness = { mean: number; inliers: number; coverage: number };
+type Fitness = { mean: number; inliers: number; coverage: number; sideMean: number };
 
-/** 가장 가까운 일부만 본다. 바이트는 악궁 전체와 겹치지 않는다. */
+/** 바이트 점 중 악궁에 붙은 비율과, 더 가까운 40%의 거리. 바이트 절반은 반대 악궁이다. */
 function overlapFitness(
   source: Cloud,
   target: Cloud,
@@ -573,7 +601,8 @@ function overlapFitness(
   unitToMm: number,
 ): Fitness {
   const limit = mmToUnits(14, unitToMm);
-  const tight = mmToUnits(0.4, unitToMm);
+  const tight = mmToUnits(0.45, unitToMm);
+  const wide = mmToUnits(6, unitToMm);
   const dists: number[] = [];
   let inliers = 0;
   let inlierSum = 0;
@@ -599,61 +628,43 @@ function overlapFitness(
       inlierSum += d;
     }
   }
-  if (dists.length === 0) return { mean: limit, inliers: 0, coverage: 0 };
+  if (dists.length === 0) return { mean: limit, inliers: 0, coverage: 0, sideMean: limit };
   const sourceGrid = buildGrid(source, mmToUnits(1.1, unitToMm));
   let covered = 0;
   const step = Math.max(1, Math.floor(target.count / 500));
-  let seen = 0;
+  const targetDists: number[] = [];
   for (let i = 0; i < target.count; i += step) {
     const hit = sourceGrid.nearest(
       target.xyz[i * 3] ?? 0,
       target.xyz[i * 3 + 1] ?? 0,
       target.xyz[i * 3 + 2] ?? 0,
-      tight,
+      wide,
     );
-    seen += 1;
-    if (hit < 0) continue;
+    if (hit < 0) {
+      targetDists.push(wide);
+      continue;
+    }
     const d = Math.hypot(
       (target.xyz[i * 3] ?? 0) - (source.xyz[hit * 3] ?? 0),
       (target.xyz[i * 3 + 1] ?? 0) - (source.xyz[hit * 3 + 1] ?? 0),
       (target.xyz[i * 3 + 2] ?? 0) - (source.xyz[hit * 3 + 2] ?? 0),
     );
+    targetDists.push(Math.min(d, wide));
     if (d <= tight) covered += 1;
   }
+  const seen = targetDists.length;
   const coverage = seen > 0 ? covered / seen : 0;
-  if (inliers >= 20) return { mean: inlierSum / inliers, inliers, coverage };
+  targetDists.sort((a, b) => a - b);
+  const sideN = Math.max(12, Math.floor(seen * 0.4));
+  let sideSum = 0;
+  for (let i = 0; i < sideN; i += 1) sideSum += targetDists[i] ?? wide;
+  const sideMean = sideN > 0 ? sideSum / sideN : wide;
+  if (inliers >= 20) return { mean: inlierSum / inliers, inliers, coverage, sideMean };
   dists.sort((a, b) => a - b);
   const keep = Math.max(24, Math.floor(dists.length * 0.08));
   let sum = 0;
   for (let i = 0; i < keep; i += 1) sum += dists[i] ?? 0;
-  return { mean: sum / keep, inliers, coverage };
-}
-
-function sameSurfaceFraction(a: Cloud, b: Cloud, unitToMm: number) {
-  if (a.count < 20 || b.count < 20) return 0;
-  const grid = buildGrid(b, mmToUnits(1.2, unitToMm));
-  const tight = mmToUnits(0.45, unitToMm);
-  const limit = mmToUnits(2, unitToMm);
-  let close = 0;
-  const step = Math.max(1, Math.floor(a.count / 400));
-  let seen = 0;
-  for (let i = 0; i < a.count; i += step) {
-    const hit = grid.nearest(
-      a.xyz[i * 3] ?? 0,
-      a.xyz[i * 3 + 1] ?? 0,
-      a.xyz[i * 3 + 2] ?? 0,
-      limit,
-    );
-    seen += 1;
-    if (hit < 0) continue;
-    const d = Math.hypot(
-      (a.xyz[i * 3] ?? 0) - (b.xyz[hit * 3] ?? 0),
-      (a.xyz[i * 3 + 1] ?? 0) - (b.xyz[hit * 3 + 1] ?? 0),
-      (a.xyz[i * 3 + 2] ?? 0) - (b.xyz[hit * 3 + 2] ?? 0),
-    );
-    if (d <= tight) close += 1;
-  }
-  return seen > 0 ? close / seen : 0;
+  return { mean: sum / keep, inliers, coverage, sideMean };
 }
 
 function orientNormals(source: Cloud, target: Cloud, grid: Grid, unitToMm: number) {
@@ -728,7 +739,7 @@ function refineToTarget(source: Cloud, target: Cloud, unitToMm: number, tightSta
   const grid = buildGrid(target, cell);
   orientNormals(source, target, grid, unitToMm);
   const gates = tightStart
-    ? [2.2, 1.5, 1, 0.7, 0.5]
+    ? [4.5, 3, 2, 1.3, 0.8, 0.5]
     : [12, 8, 5, 3.5, 2.4, 1.6, 1.1, 0.75, 0.55];
   for (let iter = 0; iter < gates.length; iter += 1) {
     const gate = mmToUnits(gates[iter] ?? 1, unitToMm);
@@ -740,6 +751,7 @@ function refineToTarget(source: Cloud, target: Cloud, unitToMm: number, tightSta
       : kabsch(source.xyz, target.xyz, pairs);
     if (!rigid) break;
     const move = Math.hypot(rigid.t[0], rigid.t[1], rigid.t[2]);
+    if (move > gate) continue;
     if (move > mmToUnits(18, unitToMm)) continue;
     applyRigid(source, rigid);
     compose(total, rigid);
@@ -747,221 +759,418 @@ function refineToTarget(source: Cloud, target: Cloud, unitToMm: number, tightSta
   return total;
 }
 
-function histBin(value: number, min: number, max: number) {
-  const t = (value - min) / (max - min);
-  return Math.min(FEATURE_BINS - 1, Math.max(0, Math.floor(t * FEATURE_BINS)));
+const PPF_ANGLE_BINS = 15;
+const PPF_ALPHA_BINS = 30;
+
+function clampUnit(value: number) {
+  return Math.max(-1, Math.min(1, value));
 }
 
-function neighborIds(cloud: Cloud, grid: Grid, index: number, radius: number, limit: number) {
-  return grid.around(
-    cloud.xyz[index * 3] ?? 0,
-    cloud.xyz[index * 3 + 1] ?? 0,
-    cloud.xyz[index * 3 + 2] ?? 0,
-    radius,
-    limit,
-  );
-}
-
-function featureCloud(cloud: Cloud, unitToMm: number, indices: number[]) {
-  const radius = mmToUnits(6.5, unitToMm);
-  const grid = buildGrid(cloud, mmToUnits(1.6, unitToMm));
-  const out: Float32Array[] = [];
-  for (const i of indices) {
-    const ids = neighborIds(cloud, grid, i, radius, 16);
-    const hist = new Float32Array(FEATURE_LEN);
-    const nx = cloud.nrm[i * 3] ?? 0;
-    const ny = cloud.nrm[i * 3 + 1] ?? 0;
-    const nz = cloud.nrm[i * 3 + 2] ?? 0;
-    for (const j of ids) {
-      let dx = (cloud.xyz[j * 3] ?? 0) - (cloud.xyz[i * 3] ?? 0);
-      let dy = (cloud.xyz[j * 3 + 1] ?? 0) - (cloud.xyz[i * 3 + 1] ?? 0);
-      let dz = (cloud.xyz[j * 3 + 2] ?? 0) - (cloud.xyz[i * 3 + 2] ?? 0);
-      const len = Math.hypot(dx, dy, dz);
-      if (len < 1e-6) continue;
-      dx /= len;
-      dy /= len;
-      dz /= len;
-      const n2x = cloud.nrm[j * 3] ?? 0;
-      const n2y = cloud.nrm[j * 3 + 1] ?? 0;
-      const n2z = cloud.nrm[j * 3 + 2] ?? 0;
-      let vx = dy * nz - dz * ny;
-      let vy = dz * nx - dx * nz;
-      let vz = dx * ny - dy * nx;
-      const vlen = Math.hypot(vx, vy, vz);
-      if (vlen < 1e-6) continue;
-      vx /= vlen;
-      vy /= vlen;
-      vz /= vlen;
-      const wx = ny * vz - nz * vy;
-      const wy = nz * vx - nx * vz;
-      const wz = nx * vy - ny * vx;
-      const f1 = vx * n2x + vy * n2y + vz * n2z;
-      const f2 = nx * dx + ny * dy + nz * dz;
-      const f3 = Math.atan2(wx * n2x + wy * n2y + wz * n2z, nx * n2x + ny * n2y + nz * n2z);
-      hist[histBin(f1, -1, 1)] += 1;
-      hist[FEATURE_BINS + histBin(f2, -1, 1)] += 1;
-      hist[FEATURE_BINS * 2 + histBin(f3, -Math.PI, Math.PI)] += 1;
+/** 법선을 +X 로 보내는 회전. */
+function rotationToX(nx: number, ny: number, nz: number) {
+  const vy = nz;
+  const vz = -ny;
+  const s2 = vy * vy + vz * vz;
+  const c = nx;
+  if (s2 < 1e-12) {
+    if (c > 0) {
+      return [
+        [1, 0, 0],
+        [0, 1, 0],
+        [0, 0, 1],
+      ];
     }
-    let sum = 0;
-    for (let k = 0; k < FEATURE_LEN; k += 1) sum += hist[k] ?? 0;
-    if (sum > 0) {
-      for (let k = 0; k < FEATURE_LEN; k += 1) hist[k] = (hist[k] ?? 0) / sum;
+    return [
+      [-1, 0, 0],
+      [0, 1, 0],
+      [0, 0, -1],
+    ];
+  }
+  const k = (1 - c) / s2;
+  const skew = [
+    [0, -vz, vy],
+    [vz, 0, 0],
+    [-vy, 0, 0],
+  ];
+  const out = [
+    [0, 0, 0],
+    [0, 0, 0],
+    [0, 0, 0],
+  ];
+  for (let row = 0; row < 3; row += 1) {
+    for (let col = 0; col < 3; col += 1) {
+      const ident = row === col ? 1 : 0;
+      const vx = row === 0 ? 0 : row === 1 ? vy : vz;
+      const ux = col === 0 ? 0 : col === 1 ? vy : vz;
+      out[row][col] =
+        ident + (skew[row]?.[col] ?? 0) + k * (vx * ux - (row === col ? s2 : 0));
     }
-    out.push(hist);
   }
   return out;
 }
 
-function featureDistance(a: Float32Array, b: Float32Array) {
-  let sum = 0;
-  for (let i = 0; i < FEATURE_LEN; i += 1) {
-    const av = a[i] ?? 0;
-    const bv = b[i] ?? 0;
-    const den = av + bv + 1e-4;
-    const diff = av - bv;
-    sum += (diff * diff) / den;
-  }
-  return sum;
+function rotationX(alpha: number) {
+  const c = Math.cos(alpha);
+  const s = Math.sin(alpha);
+  return [
+    [1, 0, 0],
+    [0, c, -s],
+    [0, s, c],
+  ];
 }
 
-function salientIds(cloud: Cloud, unitToMm: number, cap: number) {
-  const grid = buildGrid(cloud, mmToUnits(1.4, unitToMm));
-  const radius = mmToUnits(2.4, unitToMm);
-  const step = Math.max(1, Math.floor(cloud.count / 700));
-  const scores: Array<{ index: number; bend: number }> = [];
-  for (let i = 0; i < cloud.count; i += step) {
-    const ids = grid.around(
-      cloud.xyz[i * 3] ?? 0,
-      cloud.xyz[i * 3 + 1] ?? 0,
-      cloud.xyz[i * 3 + 2] ?? 0,
-      radius,
-      12,
+function pairAlpha(
+  rot: number[][],
+  ax: number,
+  ay: number,
+  az: number,
+  bx: number,
+  by: number,
+  bz: number,
+) {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const dz = bz - az;
+  const y =
+    (rot[1]?.[0] ?? 0) * dx + (rot[1]?.[1] ?? 1) * dy + (rot[1]?.[2] ?? 0) * dz;
+  const z =
+    (rot[2]?.[0] ?? 0) * dx + (rot[2]?.[1] ?? 0) * dy + (rot[2]?.[2] ?? 1) * dz;
+  return Math.atan2(z, y);
+}
+
+function strideIds(count: number, cap: number) {
+  const stride = Math.max(1, Math.ceil(count / Math.max(cap, 1)));
+  const ids: number[] = [];
+  for (let i = 0; i < count; i += stride) ids.push(i);
+  return ids;
+}
+
+function pointPair(cloud: Cloud, i: number, j: number) {
+  const ax = cloud.xyz[i * 3] ?? 0;
+  const ay = cloud.xyz[i * 3 + 1] ?? 0;
+  const az = cloud.xyz[i * 3 + 2] ?? 0;
+  const bx = cloud.xyz[j * 3] ?? 0;
+  const by = cloud.xyz[j * 3 + 1] ?? 0;
+  const bz = cloud.xyz[j * 3 + 2] ?? 0;
+  const dx = bx - ax;
+  const dy = by - ay;
+  const dz = bz - az;
+  const dist = Math.hypot(dx, dy, dz);
+  if (dist < 1e-8) return null;
+  const inv = 1 / dist;
+  const ux = dx * inv;
+  const uy = dy * inv;
+  const uz = dz * inv;
+  const nix = cloud.nrm[i * 3] ?? 0;
+  const niy = cloud.nrm[i * 3 + 1] ?? 0;
+  const niz = cloud.nrm[i * 3 + 2] ?? 0;
+  const njx = cloud.nrm[j * 3] ?? 0;
+  const njy = cloud.nrm[j * 3 + 1] ?? 0;
+  const njz = cloud.nrm[j * 3 + 2] ?? 0;
+  return {
+    dist,
+    a1: Math.acos(clampUnit(nix * ux + niy * uy + niz * uz)),
+    a2: Math.acos(clampUnit(njx * ux + njy * uy + njz * uz)),
+    a3: Math.acos(clampUnit(nix * njx + niy * njy + niz * njz)),
+  };
+}
+
+function angleBin(angle: number) {
+  let bin = Math.floor((angle / Math.PI) * PPF_ANGLE_BINS);
+  if (bin < 0) bin = 0;
+  if (bin >= PPF_ANGLE_BINS) bin = PPF_ANGLE_BINS - 1;
+  return bin;
+}
+
+function featureKey(dist: number, a1: number, a2: number, a3: number, distStep: number) {
+  const d = Math.max(0, Math.round(dist / distStep));
+  const bins = PPF_ANGLE_BINS;
+  return ((d * bins + angleBin(a1)) * bins + angleBin(a2)) * bins + angleBin(a3);
+}
+
+function flipCloudNormals(cloud: Cloud): Cloud {
+  const nrm = new Float32Array(cloud.nrm.length);
+  for (let i = 0; i < nrm.length; i += 1) nrm[i] = -(cloud.nrm[i] ?? 0);
+  return { xyz: cloud.xyz, nrm, count: cloud.count };
+}
+
+type PpfEntry = { ref: number; alpha: number };
+
+function buildPpfHash(
+  model: Cloud,
+  ids: number[],
+  minD: number,
+  maxD: number,
+  distStep: number,
+) {
+  const grid = buildGrid(model, Math.max(maxD / 5, 1e-4));
+  const hash = new Map<number, PpfEntry[]>();
+  const rots: Array<number[][] | undefined> = [];
+  for (const ref of ids) {
+    const rot = rotationToX(
+      model.nrm[ref * 3] ?? 0,
+      model.nrm[ref * 3 + 1] ?? 0,
+      model.nrm[ref * 3 + 2] ?? 0,
     );
-    if (ids.length < 4) continue;
-    const nx = cloud.nrm[i * 3] ?? 0;
-    const ny = cloud.nrm[i * 3 + 1] ?? 0;
-    const nz = cloud.nrm[i * 3 + 2] ?? 0;
-    let bend = 0;
-    for (const j of ids) {
-      bend +=
-        1 -
-        ((nx * (cloud.nrm[j * 3] ?? 0)) +
-          (ny * (cloud.nrm[j * 3 + 1] ?? 0)) +
-          (nz * (cloud.nrm[j * 3 + 2] ?? 0)));
-    }
-    scores.push({ index: i, bend: bend / ids.length });
-  }
-  scores.sort((a, b) => b.bend - a.bend);
-  const keep = scores.slice(0, cap);
-  // 언덕만 모이면 한 교두에 몰린다. 점수 큰 쪽을 띄엄띄엄 고른다.
-  const picked: number[] = [];
-  const minDist = mmToUnits(3.5, unitToMm);
-  for (const row of keep) {
-    let close = false;
-    for (const index of picked) {
-      const d = Math.hypot(
-        (cloud.xyz[row.index * 3] ?? 0) - (cloud.xyz[index * 3] ?? 0),
-        (cloud.xyz[row.index * 3 + 1] ?? 0) - (cloud.xyz[index * 3 + 1] ?? 0),
-        (cloud.xyz[row.index * 3 + 2] ?? 0) - (cloud.xyz[index * 3 + 2] ?? 0),
+    rots[ref] = rot;
+    const mates = grid.band(
+      model.xyz[ref * 3] ?? 0,
+      model.xyz[ref * 3 + 1] ?? 0,
+      model.xyz[ref * 3 + 2] ?? 0,
+      minD,
+      maxD,
+      18,
+    );
+    for (const other of mates) {
+      const pair = pointPair(model, ref, other);
+      if (!pair || pair.dist < minD || pair.dist > maxD) continue;
+      const key = featureKey(pair.dist, pair.a1, pair.a2, pair.a3, distStep);
+      const alpha = pairAlpha(
+        rot,
+        model.xyz[ref * 3] ?? 0,
+        model.xyz[ref * 3 + 1] ?? 0,
+        model.xyz[ref * 3 + 2] ?? 0,
+        model.xyz[other * 3] ?? 0,
+        model.xyz[other * 3 + 1] ?? 0,
+        model.xyz[other * 3 + 2] ?? 0,
       );
-      if (d < minDist) {
-        close = true;
-        break;
+      const bucket = hash.get(key);
+      if (bucket) {
+        if (bucket.length < 48) bucket.push({ ref, alpha });
+      } else hash.set(key, [{ ref, alpha }]);
+    }
+  }
+  return { hash, rots };
+}
+
+function poseFromAlignment(
+  model: Cloud,
+  modelRef: number,
+  modelRot: number[][],
+  scene: Cloud,
+  sceneRef: number,
+  alpha: number,
+): Rigid {
+  const sceneRot = rotationToX(
+    scene.nrm[sceneRef * 3] ?? 0,
+    scene.nrm[sceneRef * 3 + 1] ?? 0,
+    scene.nrm[sceneRef * 3 + 2] ?? 0,
+  );
+  const r = mul33(transpose33(sceneRot), mul33(rotationX(alpha), modelRot));
+  const mx = model.xyz[modelRef * 3] ?? 0;
+  const my = model.xyz[modelRef * 3 + 1] ?? 0;
+  const mz = model.xyz[modelRef * 3 + 2] ?? 0;
+  const sx = scene.xyz[sceneRef * 3] ?? 0;
+  const sy = scene.xyz[sceneRef * 3 + 1] ?? 0;
+  const sz = scene.xyz[sceneRef * 3 + 2] ?? 0;
+  return {
+    r,
+    t: [
+      sx - ((r[0]?.[0] ?? 1) * mx + (r[0]?.[1] ?? 0) * my + (r[0]?.[2] ?? 0) * mz),
+      sy - ((r[1]?.[0] ?? 0) * mx + (r[1]?.[1] ?? 1) * my + (r[1]?.[2] ?? 0) * mz),
+      sz - ((r[2]?.[0] ?? 0) * mx + (r[2]?.[1] ?? 0) * my + (r[2]?.[2] ?? 1) * mz),
+    ],
+  };
+}
+
+function poseTightness(model: Cloud, scene: Cloud, rigid: Rigid, unitToMm: number) {
+  const moved = cloneCloud(model);
+  applyRigid(moved, rigid);
+  const tight = mmToUnits(4, unitToMm);
+  const grid = buildGrid(moved, mmToUnits(1.1, unitToMm));
+  const step = Math.max(1, Math.floor(scene.count / 420));
+  const dists: number[] = [];
+  let covered = 0;
+  for (let i = 0; i < scene.count; i += step) {
+    const index = grid.nearest(
+      scene.xyz[i * 3] ?? 0,
+      scene.xyz[i * 3 + 1] ?? 0,
+      scene.xyz[i * 3 + 2] ?? 0,
+      tight,
+    );
+    if (index < 0) {
+      dists.push(tight);
+      continue;
+    }
+    const d = Math.hypot(
+      (scene.xyz[i * 3] ?? 0) - (moved.xyz[index * 3] ?? 0),
+      (scene.xyz[i * 3 + 1] ?? 0) - (moved.xyz[index * 3 + 1] ?? 0),
+      (scene.xyz[i * 3 + 2] ?? 0) - (moved.xyz[index * 3 + 2] ?? 0),
+    );
+    dists.push(Math.min(d, tight));
+    if (d <= mmToUnits(1.2, unitToMm)) covered += 1;
+  }
+  dists.sort((a, b) => a - b);
+  const sideN = Math.max(8, Math.floor(dists.length * 0.4));
+  let sum = 0;
+  for (let i = 0; i < sideN; i += 1) sum += dists[i] ?? tight;
+  return {
+    side: dists.length ? sum / sideN : tight,
+    cover: dists.length ? covered / dists.length : 0,
+  };
+}
+
+function rotationVector(r: number[][]) {
+  const trace = (r[0]?.[0] ?? 1) + (r[1]?.[1] ?? 1) + (r[2]?.[2] ?? 1);
+  const angle = Math.acos(Math.max(-1, Math.min(1, (trace - 1) / 2)));
+  if (angle < 1e-5) return [0, 0, 0];
+  const scale = angle / (2 * Math.sin(angle));
+  return [
+    ((r[2]?.[1] ?? 0) - (r[1]?.[2] ?? 0)) * scale,
+    ((r[0]?.[2] ?? 0) - (r[2]?.[0] ?? 0)) * scale,
+    ((r[1]?.[0] ?? 0) - (r[0]?.[1] ?? 0)) * scale,
+  ];
+}
+
+function cloudCentroid(cloud: Cloud): [number, number, number] {
+  let x = 0;
+  let y = 0;
+  let z = 0;
+  for (let i = 0; i < cloud.count; i += 1) {
+    x += cloud.xyz[i * 3] ?? 0;
+    y += cloud.xyz[i * 3 + 1] ?? 0;
+    z += cloud.xyz[i * 3 + 2] ?? 0;
+  }
+  const n = Math.max(cloud.count, 1);
+  return [x / n, y / n, z / n];
+}
+
+function ppfSearch(model: Cloud, scene: Cloud, unitToMm: number): Rigid | null {
+  if (model.count < 40 || scene.count < 40) return null;
+  const minD = mmToUnits(3.2, unitToMm);
+  const maxD = mmToUnits(14, unitToMm);
+  const distStep = mmToUnits(2.4, unitToMm);
+  const modelIds = strideIds(model.count, 900);
+  const sceneIds = strideIds(scene.count, 220);
+  const { hash, rots } = buildPpfHash(model, modelIds, minD, maxD, distStep);
+  const sceneGrid = buildGrid(scene, Math.max(maxD / 5, 1e-4));
+  const votes = new Int32Array(model.count * PPF_ALPHA_BINS);
+  const clustered = new Map<string, { votes: number; peak: number; rigid: Rigid }>();
+  const clusterStep = Math.max(mmToUnits(3.5, unitToMm), 1e-4);
+  const centroid = cloudCentroid(model);
+
+  for (const ref of sceneIds) {
+    votes.fill(0);
+    const mates = sceneGrid.band(
+      scene.xyz[ref * 3] ?? 0,
+      scene.xyz[ref * 3 + 1] ?? 0,
+      scene.xyz[ref * 3 + 2] ?? 0,
+      minD,
+      maxD,
+      16,
+    );
+    const sceneRot = rotationToX(
+      scene.nrm[ref * 3] ?? 0,
+      scene.nrm[ref * 3 + 1] ?? 0,
+      scene.nrm[ref * 3 + 2] ?? 0,
+    );
+    for (const other of mates) {
+      const pair = pointPair(scene, ref, other);
+      if (!pair || pair.dist < minD || pair.dist > maxD) continue;
+      const key = featureKey(pair.dist, pair.a1, pair.a2, pair.a3, distStep);
+      const bucket = hash.get(key);
+      if (!bucket) continue;
+      const alphaS = pairAlpha(
+        sceneRot,
+        scene.xyz[ref * 3] ?? 0,
+        scene.xyz[ref * 3 + 1] ?? 0,
+        scene.xyz[ref * 3 + 2] ?? 0,
+        scene.xyz[other * 3] ?? 0,
+        scene.xyz[other * 3 + 1] ?? 0,
+        scene.xyz[other * 3 + 2] ?? 0,
+      );
+      for (const entry of bucket) {
+        let delta = alphaS - entry.alpha;
+        delta %= Math.PI * 2;
+        if (delta < 0) delta += Math.PI * 2;
+        const bin = Math.round((delta / (Math.PI * 2)) * PPF_ALPHA_BINS) % PPF_ALPHA_BINS;
+        votes[entry.ref * PPF_ALPHA_BINS + bin] += 1;
       }
     }
-    if (close) continue;
-    picked.push(row.index);
-    if (picked.length >= cap) break;
+    let bestVotes = 0;
+    let bestIndex = -1;
+    let bestBin = 0;
+    for (let m = 0; m < model.count; m += 1) {
+      const base = m * PPF_ALPHA_BINS;
+      for (let bin = 0; bin < PPF_ALPHA_BINS; bin += 1) {
+        const prev = votes[base + ((bin + PPF_ALPHA_BINS - 1) % PPF_ALPHA_BINS)] ?? 0;
+        const cur = votes[base + bin] ?? 0;
+        const next = votes[base + ((bin + 1) % PPF_ALPHA_BINS)] ?? 0;
+        const score = prev + cur + next;
+        if (score > bestVotes) {
+          bestVotes = score;
+          bestIndex = m;
+          bestBin = bin;
+        }
+      }
+    }
+    if (bestVotes < 4 || bestIndex < 0) continue;
+    const modelRot = rots[bestIndex];
+    if (!modelRot) continue;
+    const alpha = (bestBin / PPF_ALPHA_BINS) * Math.PI * 2;
+    const rigid = poseFromAlignment(model, bestIndex, modelRot, scene, ref, alpha);
+    const rv = rotationVector(rigid.r);
+    const mx = centroid[0];
+    const my = centroid[1];
+    const mz = centroid[2];
+    const px =
+      (rigid.r[0]?.[0] ?? 1) * mx +
+      (rigid.r[0]?.[1] ?? 0) * my +
+      (rigid.r[0]?.[2] ?? 0) * mz +
+      rigid.t[0];
+    const py =
+      (rigid.r[1]?.[0] ?? 0) * mx +
+      (rigid.r[1]?.[1] ?? 1) * my +
+      (rigid.r[1]?.[2] ?? 0) * mz +
+      rigid.t[1];
+    const pz =
+      (rigid.r[2]?.[0] ?? 0) * mx +
+      (rigid.r[2]?.[1] ?? 0) * my +
+      (rigid.r[2]?.[2] ?? 1) * mz +
+      rigid.t[2];
+    const cell = [
+      Math.round(px / clusterStep),
+      Math.round(py / clusterStep),
+      Math.round(pz / clusterStep),
+      Math.round((rv[0] ?? 0) / 0.2),
+      Math.round((rv[1] ?? 0) / 0.2),
+      Math.round((rv[2] ?? 0) / 0.2),
+    ].join(":");
+    const prev = clustered.get(cell);
+    if (!prev || bestVotes > prev.peak) {
+      clustered.set(cell, { votes: (prev?.votes ?? 0) + bestVotes, peak: bestVotes, rigid });
+    } else {
+      prev.votes += bestVotes;
+    }
   }
-  return picked.length >= 12 ? picked : scores.slice(0, cap).map((row) => row.index);
+
+  const ranked = [...clustered.values()].sort((a, b) => b.votes - a.votes).slice(0, 20);
+  let best: Rigid | null = null;
+  let bestSide = mmToUnits(1.15, unitToMm);
+  for (const row of ranked) {
+    const quality = poseTightness(model, scene, row.rigid, unitToMm);
+    if (quality.cover < 0.1) continue;
+    if (quality.side < bestSide) {
+      bestSide = quality.side;
+      best = row.rigid;
+    }
+  }
+  return best;
 }
 
-/** 대응 특징 3점으로 처음 자세를 고른다. 겹치는 영역만 맞아도 된다. */
+/** 악궁을 바이트 위로 보내는 처음 자세. 법선이 뒤집혀 있으면 한 번 더 본다. */
 function globalPose(source: Cloud, target: Cloud, unitToMm: number) {
-  if (source.count < 40 || target.count < 40) return null;
-  const srcIds = salientIds(source, unitToMm, 140);
-  const dstIds = salientIds(target, unitToMm, 140);
-  const srcFeat = featureCloud(source, unitToMm, srcIds);
-  const dstFeat = featureCloud(target, unitToMm, dstIds);
-  const matches: Array<{ s: number; d: number }> = [];
-  for (let i = 0; i < srcIds.length; i += 1) {
-    const feat = srcFeat[i];
-    const srcIndex = srcIds[i];
-    if (!feat || srcIndex == null) continue;
-    let best = Infinity;
-    let second = Infinity;
-    let bestJ = -1;
-    for (let j = 0; j < dstIds.length; j += 1) {
-      const other = dstFeat[j];
-      if (!other) continue;
-      const dist = featureDistance(feat, other);
-      if (dist < best) {
-        second = best;
-        best = dist;
-        bestJ = dstIds[j] ?? -1;
-      } else if (dist < second) second = dist;
-    }
-    if (bestJ >= 0 && best < second * 0.9) matches.push({ s: srcIndex, d: bestJ });
+  const first = ppfSearch(source, target, unitToMm);
+  const firstQ = first ? poseTightness(source, target, first, unitToMm) : null;
+  if (first && firstQ && firstQ.side <= mmToUnits(0.8, unitToMm) && firstQ.cover >= 0.14) {
+    return first;
   }
-  if (matches.length < 12) {
-    return null;
-  }
-  const gate = mmToUnits(1.6, unitToMm);
-  const grid = buildGrid(source, mmToUnits(1.2, unitToMm));
-  let bestInliers = 0;
-  let bestRigid: Rigid | null = null;
-  const step = Math.max(1, Math.floor(target.count / 160));
-  const trials = Math.min(420, Math.max(matches.length, 1) * 6);
-  for (let trial = 0; trial < trials; trial += 1) {
-    const a = matches[(trial * 17) % matches.length];
-    const b = matches[(trial * 29 + 3) % matches.length];
-    const c = matches[(trial * 43 + 11) % matches.length];
-    if (!a || !b || !c || a.s === b.s || a.s === c.s || b.s === c.s) continue;
-    const rigid = kabsch(source.xyz, target.xyz, [
-      { s: a.s, d: a.d },
-      { s: b.s, d: b.d },
-      { s: c.s, d: c.d },
-    ]);
-    if (!rigid) continue;
-    const ax = source.xyz[a.s * 3] ?? 0;
-    const ay = source.xyz[a.s * 3 + 1] ?? 0;
-    const az = source.xyz[a.s * 3 + 2] ?? 0;
-    const landed =
-      Math.hypot(
-        (rigid.r[0]?.[0] ?? 1) * ax + (rigid.r[0]?.[1] ?? 0) * ay + (rigid.r[0]?.[2] ?? 0) * az + rigid.t[0] - (target.xyz[a.d * 3] ?? 0),
-        (rigid.r[1]?.[0] ?? 0) * ax + (rigid.r[1]?.[1] ?? 1) * ay + (rigid.r[1]?.[2] ?? 0) * az + rigid.t[1] - (target.xyz[a.d * 3 + 1] ?? 0),
-        (rigid.r[2]?.[0] ?? 0) * ax + (rigid.r[2]?.[1] ?? 0) * ay + (rigid.r[2]?.[2] ?? 1) * az + rigid.t[2] - (target.xyz[a.d * 3 + 2] ?? 0),
-      );
-    if (landed > mmToUnits(4, unitToMm)) continue;
-    let inliers = 0;
-    for (let i = 0; i < target.count; i += step) {
-      const qx = (target.xyz[i * 3] ?? 0) - rigid.t[0];
-      const qy = (target.xyz[i * 3 + 1] ?? 0) - rigid.t[1];
-      const qz = (target.xyz[i * 3 + 2] ?? 0) - rigid.t[2];
-      const px =
-        (rigid.r[0]?.[0] ?? 1) * qx + (rigid.r[1]?.[0] ?? 0) * qy + (rigid.r[2]?.[0] ?? 0) * qz;
-      const py =
-        (rigid.r[0]?.[1] ?? 0) * qx + (rigid.r[1]?.[1] ?? 1) * qy + (rigid.r[2]?.[1] ?? 0) * qz;
-      const pz =
-        (rigid.r[0]?.[2] ?? 0) * qx + (rigid.r[1]?.[2] ?? 0) * qy + (rigid.r[2]?.[2] ?? 1) * qz;
-      const hit = grid.nearest(px, py, pz, gate);
-      if (hit < 0) continue;
-      const d = Math.hypot(
-        px - (source.xyz[hit * 3] ?? 0),
-        py - (source.xyz[hit * 3 + 1] ?? 0),
-        pz - (source.xyz[hit * 3 + 2] ?? 0),
-      );
-      if (d <= gate) inliers += 1;
-    }
-    if (inliers > bestInliers) {
-      bestInliers = inliers;
-      bestRigid = rigid;
-    }
-  }
-  if (!bestRigid || bestInliers < 10) return null;
-  return bestRigid;
+  const flipped = ppfSearch(flipCloudNormals(source), target, unitToMm);
+  if (!flipped) return first;
+  const flippedQ = poseTightness(source, target, flipped, unitToMm);
+  if (!firstQ || flippedQ.side < firstQ.side) return flipped;
+  return first;
 }
-
 function excludeMatched(target: Cloud, aligned: Cloud, unitToMm: number): Cloud {
   const thresh = mmToUnits(0.7, unitToMm);
   const grid = buildGrid(aligned, mmToUnits(1, unitToMm));
@@ -1006,13 +1215,20 @@ type ArchFit = {
   inliers: number;
   aligned: Cloud;
   original: Cloud;
+  seated: boolean;
+  side: number;
 };
 
+
+function seatedFit(fit: Fitness, unitToMm: number) {
+  // 바이트의 가까운 40%가 붙으면 그 악궁 쪽이다. 반대 악궁이 나머지 절반이라 전체를 요구하지 않는다.
+  return fit.sideMean <= mmToUnits(0.72, unitToMm) && fit.coverage >= 0.05;
+}
 
 function alignArch(source: Cloud, target: Cloud, unitToMm: number) {
   const grid = buildGrid(target, mmToUnits(1.2, unitToMm));
   const before = overlapFitness(source, target, grid, unitToMm);
-  const already = before.coverage >= 0.55 && before.mean <= mmToUnits(0.3, unitToMm);
+  const already = seatedFit(before, unitToMm) && before.sideMean <= mmToUnits(0.32, unitToMm);
   if (already) {
     return {
       matrix: new THREE.Matrix4(),
@@ -1020,6 +1236,8 @@ function alignArch(source: Cloud, target: Cloud, unitToMm: number) {
       after: before.mean,
       inliers: before.inliers,
       cloud: source,
+      seated: true,
+      side: before.sideMean,
     };
   }
   const local = cloneCloud(source);
@@ -1033,25 +1251,39 @@ function alignArch(source: Cloud, target: Cloud, unitToMm: number) {
   let bestCloud = local;
   let bestMatrix = localMatrix;
   let bestFit = localFit;
-  const deepEnough = localFit.coverage >= 0.62 && localFit.mean < mmToUnits(0.3, unitToMm);
-  if (!deepEnough && bestFit.coverage < 0.5) {
+  const deepEnough = localFit.coverage >= 0.28 && localFit.sideMean < mmToUnits(0.28, unitToMm);
+  if (!deepEnough) {
     const pose = globalPose(source, target, unitToMm);
     if (pose) {
-      const globalCloud = cloneCloud(source);
+      let globalCloud = cloneCloud(source);
       applyRigid(globalCloud, pose);
-      const matrix = new THREE.Matrix4();
+      let matrix = new THREE.Matrix4();
       compose(matrix, pose);
-      const refined = refineToTarget(globalCloud, target, unitToMm, true);
-      matrix.premultiply(refined);
-      const fit = overlapFitness(
+      const coarse = overlapFitness(
         globalCloud,
         target,
         buildGrid(target, mmToUnits(1.2, unitToMm)),
         unitToMm,
       );
+      const refined = refineToTarget(globalCloud, target, unitToMm, true);
+      matrix.premultiply(refined);
+      let fit = overlapFitness(
+        globalCloud,
+        target,
+        buildGrid(target, mmToUnits(1.2, unitToMm)),
+        unitToMm,
+      );
+      if (coarse.sideMean + mmToUnits(0.05, unitToMm) < fit.sideMean) {
+        const posed = cloneCloud(source);
+        applyRigid(posed, pose);
+        globalCloud = posed;
+        matrix = new THREE.Matrix4();
+        compose(matrix, pose);
+        fit = coarse;
+      }
       if (
-        fit.coverage > bestFit.coverage + 0.08 ||
-        (fit.coverage >= bestFit.coverage - 0.02 && fit.mean < bestFit.mean)
+        fit.coverage > bestFit.coverage + 0.05 ||
+        (fit.coverage >= bestFit.coverage - 0.02 && fit.sideMean < bestFit.sideMean)
       ) {
         bestCloud = globalCloud;
         bestMatrix = matrix;
@@ -1059,17 +1291,18 @@ function alignArch(source: Cloud, target: Cloud, unitToMm: number) {
       }
     }
   }
-  const accept =
-    bestFit.coverage >= 0.5 &&
-    bestFit.mean < mmToUnits(0.35, unitToMm) &&
-    bestFit.coverage > before.coverage + 0.12;
-  if (!accept) {
+  const improved =
+    bestFit.coverage > before.coverage + 0.08 ||
+    bestFit.sideMean + mmToUnits(0.15, unitToMm) < before.sideMean;
+  if (!seatedFit(bestFit, unitToMm) || !improved) {
     return {
       matrix: new THREE.Matrix4(),
       before: before.mean,
       after: before.mean,
       inliers: before.inliers,
       cloud: source,
+      seated: false,
+      side: before.sideMean,
     };
   }
   return {
@@ -1078,6 +1311,8 @@ function alignArch(source: Cloud, target: Cloud, unitToMm: number) {
     after: bestFit.mean,
     inliers: bestFit.inliers,
     cloud: bestCloud,
+    seated: true,
+    side: bestFit.sideMean,
   };
 }
 
@@ -1091,6 +1326,30 @@ function mergeGeometries(geometries: THREE.BufferGeometry[]) {
       xyz.push(cloud.xyz[i * 3] ?? 0, cloud.xyz[i * 3 + 1] ?? 0, cloud.xyz[i * 3 + 2] ?? 0);
       nrm.push(cloud.nrm[i * 3] ?? 0, cloud.nrm[i * 3 + 1] ?? 0, cloud.nrm[i * 3 + 2] ?? 0);
     }
+  }
+  return { xyz: Float32Array.from(xyz), nrm: Float32Array.from(nrm), count: xyz.length / 3 };
+}
+
+function cropNear(cloud: Cloud, ref: Cloud, thresh: number): Cloud {
+  const grid = buildGrid(ref, Math.max(thresh * 0.75, 1e-4));
+  const xyz: number[] = [];
+  const nrm: number[] = [];
+  for (let i = 0; i < cloud.count; i += 1) {
+    const hit = grid.nearest(
+      cloud.xyz[i * 3] ?? 0,
+      cloud.xyz[i * 3 + 1] ?? 0,
+      cloud.xyz[i * 3 + 2] ?? 0,
+      thresh,
+    );
+    if (hit < 0) continue;
+    const d = Math.hypot(
+      (cloud.xyz[i * 3] ?? 0) - (ref.xyz[hit * 3] ?? 0),
+      (cloud.xyz[i * 3 + 1] ?? 0) - (ref.xyz[hit * 3 + 1] ?? 0),
+      (cloud.xyz[i * 3 + 2] ?? 0) - (ref.xyz[hit * 3 + 2] ?? 0),
+    );
+    if (d > thresh) continue;
+    xyz.push(cloud.xyz[i * 3] ?? 0, cloud.xyz[i * 3 + 1] ?? 0, cloud.xyz[i * 3 + 2] ?? 0);
+    nrm.push(cloud.nrm[i * 3] ?? 0, cloud.nrm[i * 3 + 1] ?? 0, cloud.nrm[i * 3 + 2] ?? 0);
   }
   return { xyz: Float32Array.from(xyz), nrm: Float32Array.from(nrm), count: xyz.length / 3 };
 }
@@ -1143,25 +1402,42 @@ export async function registerJawsToBite(
       inliers: aligned.inliers,
       aligned: aligned.cloud,
       original: source,
+      seated: aligned.seated,
+      side: aligned.side,
     });
-    if (aligned.after + mmToUnits(0.08, unitToMm) < aligned.before) {
+    if (aligned.seated) {
       target = excludeMatched(target, aligned.cloud, unitToMm);
     }
     await yieldFrame();
   }
-  const uppers = fitted.filter((row) => row.role === "upper" && row.after < row.before);
-  const lowers = fitted.filter((row) => row.role === "lower" && row.after < row.before);
-  if (uppers.length && lowers.length) {
-    const upperCloud = uppers[0]?.aligned;
-    const lowerCloud = lowers[0]?.aligned;
-    const upperWas = uppers[0]?.original;
-    const lowerWas = lowers[0]?.original;
-    if (upperCloud && lowerCloud && upperWas && lowerWas) {
-      const after = sameSurfaceFraction(lowerCloud, upperCloud, unitToMm);
-      const before = sameSurfaceFraction(lowerWas, upperWas, unitToMm);
-      if (after > 0.32 && after > before + 0.12) {
-        const drop = (uppers[0]?.after ?? 0) > (lowers[0]?.after ?? 0) ? uppers[0] : lowers[0];
-        if (drop) drop.matrix.identity();
+  const upperRow = fitted.find((row) => row.role === "upper" && row.seated);
+  const lowerRow = fitted.find((row) => row.role === "lower" && row.seated);
+  if (upperRow && lowerRow) {
+    const near = mmToUnits(1.2, unitToMm);
+    const upperOnBite = cropNear(upperRow.aligned, biteCloud, near);
+    const lowerOnBite = cropNear(lowerRow.aligned, biteCloud, near);
+    const uc = cloudCentroid(upperOnBite);
+    const lc = cloudCentroid(lowerOnBite);
+    const gap = Math.hypot(uc[0] - lc[0], uc[1] - lc[1], uc[2] - lc[2]);
+    if (gap < mmToUnits(4, unitToMm)) {
+      const drop = upperRow.side > lowerRow.side + mmToUnits(0.05, unitToMm) ? upperRow : lowerRow;
+      const keep = drop === upperRow ? lowerRow : upperRow;
+      const remain = excludeMatched(biteCloud, keep.aligned, unitToMm);
+      const again = alignArch(drop.original, remain, unitToMm);
+      const againOnBite = cropNear(again.cloud, biteCloud, near);
+      const keepOnBite = cropNear(keep.aligned, biteCloud, near);
+      const ac = cloudCentroid(againOnBite);
+      const kc = cloudCentroid(keepOnBite);
+      const againGap = Math.hypot(ac[0] - kc[0], ac[1] - kc[1], ac[2] - kc[2]);
+      if (again.seated && againOnBite.count > 30 && againGap >= mmToUnits(4, unitToMm)) {
+        drop.matrix.copy(again.matrix);
+        drop.aligned = again.cloud;
+        drop.side = again.side;
+        drop.after = again.after;
+        drop.inliers = again.inliers;
+        drop.seated = true;
+      } else {
+        drop.matrix.identity();
       }
     }
   }
