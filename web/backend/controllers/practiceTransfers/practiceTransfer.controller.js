@@ -9703,23 +9703,29 @@ export async function appendReceivedPracticeTransferWorkScanFiles(req, res) {
     }
     await doc.save();
 
-    const payload = await emitRequestFilesUpdated({
-      doc,
-      req,
-      action: "work-scan-files-saved",
-      labAnchorId,
-    });
-
-    return res.status(200).json({
+    const updatedAt = doc.updatedAt || new Date();
+    res.status(200).json({
       success: true,
       data: {
         transferId: String(doc.transferId || "").trim(),
         ...toTransferFilesApiFields(doc),
         production: toProductionApiFields(doc.production),
-        updatedAt: payload.updatedAt,
+        updatedAt,
         ...toAutoMatchApiFields(doc, labAnchorId),
       },
     });
+    void emitRequestFilesUpdated({
+      doc,
+      req,
+      action: "work-scan-files-saved",
+      labAnchorId,
+    }).catch((error) => {
+      console.error(
+        "[work-scan-files] realtime emit failed",
+        error?.message || error,
+      );
+    });
+    return;
   } catch (error) {
     return res.status(500).json({
       success: false,

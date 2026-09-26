@@ -2373,6 +2373,9 @@ export function PracticeTransferDetailChatDialog({
           uploadedAt: file.uploadedAt,
         }))}
         onWorkingScansPersisted={onWorkingScansPersisted}
+        onAttachChatFile={
+          onAttachChatFiles ? (file) => onAttachChatFiles([file]) : undefined
+        }
         caseHeader={{
           primary: caseIdentityStrip?.primary,
           dates: identityDateLabel,
@@ -3617,6 +3620,11 @@ export function PracticeTransferDetailChatDialog({
                             onToggleReaction={onToggleReaction}
                             onDeleteMessage={onDeleteMessage}
                             onOpenRequestId={onOpenRequestId}
+                            onAttachChatFile={
+                              onAttachChatFiles
+                                ? (file) => onAttachChatFiles([file])
+                                : undefined
+                            }
                             onOpenAttachment={(file) =>
                               void onDownloadChatAttachment({
                                 fileId: file.fileId,
@@ -3814,6 +3822,7 @@ export function PracticeTransferDetailChatDialog({
           ? () => void handleConfirmFromPreview()
           : undefined
       }
+      onAttachChatFile={onAttachChatFiles ? (file) => onAttachChatFiles([file]) : undefined}
     />
   );
 

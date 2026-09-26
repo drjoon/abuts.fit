@@ -111,6 +111,8 @@ type ChatMessageBubbleProps = {
   onCancelRemakeCharge?: (chargeIndex: number | null) => void;
   remakeChargeCancelBusy?: boolean;
   activeRemakeChargeIndexes?: ReadonlySet<number> | null;
+  /** 3D 프리뷰에서 그린 표시를 채팅 첨부로 넘긴다. */
+  onAttachChatFile?: (file: File) => void;
 };
 
 export function chatAttachmentBusyKey(file: {
@@ -341,6 +343,7 @@ export function ChatMessageBubble({
   onDeleteMessage,
   reactionUserNameById = {},
   onOpenAttachment,
+  onAttachChatFile,
   onOpenRequestId,
   formatFileSize,
   downloadingFileKeys = [],
@@ -1173,6 +1176,7 @@ export function ChatMessageBubble({
             ? () => void onOpenAttachment(previewMeta)
             : undefined
         }
+        onAttachChatFile={onAttachChatFile}
         previewIndex={previewItems.length > 1 ? previewIndex : -1}
         previewCount={previewItems.length}
         onPrev={

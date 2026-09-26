@@ -21,6 +21,7 @@
 // - 2026-09-26: 화면 오른쪽·앞쪽에 방향광을 더해 악궁 양쪽이 같이 밝다.
 // - 2026-09-26: 바이트에 맞추는 중 취소하면 좌표를 바꾸지 않고 이전 위치로 둔다.
 // - 2026-09-26: 바뀐 스캔의 짧은 지문을 좌표 사본 없이 낸다.
+// - 2026-09-26: 카메라 각도·위치·줌이 바뀌면 알리고, 저장한 뷰를 다시 깐다.
 // - 2026-09-26: 바이트 맞춤은 연 파일과 좌표가 다르면 작업 DCM이다. 작업 DCM은 맞춤을 다시 하지 않는다.
 import {
   forwardRef,
@@ -45,7 +46,10 @@ import {
   isAbutsWorkScanFileName,
   type LabOralScanRole,
 } from "@/shared/practice/labProsthesisAiDesign";
-import type { WorkSessionAxis } from "@/shared/practice/labProsthesisWorkDraft";
+import type {
+  WorkSessionAxis,
+  WorkSessionView,
+} from "@/shared/practice/labProsthesisWorkDraft";
 import {
   contactColorRgb,
   createScanPointIndex,
@@ -85,6 +89,8 @@ export type OralScanOverlayHandle = {
    */
   restoreInsertionView: (toothNumbers: readonly string[]) => boolean;
   saveImage: () => void;
+  /** 표시를 겹치기 위한 현재 프레임 캔버스. */
+  captureCanvas: () => HTMLCanvasElement | null;
   /**
    * 화면 중앙을 지나는, 화면과 수직인 방향을 이 치아들의 삽입축으로 잡는다.
    * 화살표 끝은 그 광선이 닿는 면에서 2mm 띄우고, 치아 추정 좌표는 그 면에 둔다.
@@ -123,6 +129,10 @@ export type OralScanOverlayHandle = {
   exportInsertionAxes: () => WorkSessionAxis[];
   /** 저장했던 삽입축을 다시 켠다. */
   restoreInsertionAxes: (axes: readonly WorkSessionAxis[]) => void;
+  /** 지금 카메라. 각도·위치·줌. */
+  exportCamera: () => WorkSessionView | null;
+  /** 저장한 카메라를 그대로 둔다. 뷰 저장은 부르지 않는다. */
+  restoreCamera: (view: WorkSessionView) => void;
 };
 
 export type WorkingScanMesh = {
@@ -192,8 +202,10 @@ type Props = {
   onAlignFailed?: () => void;
   /** 맞추는 중 취소. 점과 좌표는 그대로 둔다. */
   onAlignCancelled?: () => void;
-  /** 스캔을 화면에 올린 뒤. restore면 저장된 삽입축을 다시 깐다. */
+  /** 스캔을 화면에 올린 뒤. restore면 저장된 삽입축·카메라를 다시 깐다. */
   onMeshesReady?: (info: { deformed: boolean; restore: boolean }) => void;
+  /** 돌리기·이동·줌·시점 전환이 멈추면. */
+  onViewSettled?: () => void;
   className?: string;
 };
 
@@ -236,6 +248,8 @@ type SnapAnim = {
   toTop?: number;
   fromBottom?: number;
   toBottom?: number;
+  /** 애니메이션이 끝나면 뷰 저장을 알린다. */
+  save?: boolean;
 };
 
 type SavedCameraView = {
@@ -1989,6 +2003,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       onAlignFailed,
       onAlignCancelled,
       onMeshesReady,
+      onViewSettled,
       className,
     },
     ref,
@@ -2067,6 +2082,9 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   const onAlignFailedRef = useRef(onAlignFailed);
   const onAlignCancelledRef = useRef(onAlignCancelled);
   const onMeshesReadyRef = useRef(onMeshesReady);
+  const onViewSettledRef = useRef(onViewSettled);
+  const viewTimerRef = useRef(0);
+  const viewArmedRef = useRef(false);
   const layoutSplitRef = useRef<(arch: "upper" | "lower") => void>(() => {});
   const clearAlignMarksRef = useRef<() => void>(() => {});
   const exitAlignViewRef = useRef<() => void>(() => {});
@@ -2082,6 +2100,16 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   onAlignFailedRef.current = onAlignFailed;
   onAlignCancelledRef.current = onAlignCancelled;
   onMeshesReadyRef.current = onMeshesReady;
+  onViewSettledRef.current = onViewSettled;
+  const scheduleViewSettledRef = useRef(() => {});
+  scheduleViewSettledRef.current = () => {
+    if (!viewArmedRef.current) return;
+    window.clearTimeout(viewTimerRef.current);
+    viewTimerRef.current = window.setTimeout(() => {
+      if (!viewArmedRef.current) return;
+      onViewSettledRef.current?.();
+    }, 320);
+  };
   const setViewRef = useRef<(preset: OralScanViewPreset) => void>(() => {});
   const saveImageRef = useRef<() => void>(() => {});
   const [parseNote, setParseNote] = useState("");
@@ -2137,6 +2165,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     dir: THREE.Vector3,
     up: THREE.Vector3,
     animate: boolean,
+    save = false,
   ) => {
     const camera = cameraRef.current;
     const controls = controlsRef.current;
@@ -2159,6 +2188,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       camera.lookAt(controls.target);
       camera.updateProjectionMatrix();
       controls.syncFromCamera();
+      if (save) scheduleViewSettledRef.current();
       return;
     }
     snapRef.current = {
@@ -2172,6 +2202,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       toTarget,
       fromZoom: camera.zoom,
       toZoom: 1,
+      save,
     };
   };
 
@@ -2367,6 +2398,10 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       snapRef.current = null;
     };
     controls.addEventListener("start", cancelSnap);
+    const onControlChange = () => {
+      scheduleViewSettledRef.current();
+    };
+    controls.addEventListener("change", onControlChange);
 
     const placeViewLight = (
       light: THREE.DirectionalLight,
@@ -2413,8 +2448,10 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         camera.lookAt(controls.target);
         camera.updateProjectionMatrix();
         if (k >= 1) {
+          const finished = snap;
           snapRef.current = null;
           controls.syncFromCamera();
+          if (finished.save) scheduleViewSettledRef.current();
         }
       }
       camera.updateMatrixWorld();
@@ -2727,6 +2764,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     renderer.domElement.addEventListener("pointerup", onAlignPointerUp);
 
     return () => {
+      window.clearTimeout(viewTimerRef.current);
       window.cancelAnimationFrame(raf);
       ro.disconnect();
       renderer.domElement.removeEventListener("pointerdown", onEditPointerDown, true);
@@ -2737,6 +2775,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       renderer.domElement.removeEventListener("pointerdown", onAlignPointerDown);
       renderer.domElement.removeEventListener("pointerup", onAlignPointerUp);
       controls.removeEventListener("start", cancelSnap);
+      controls.removeEventListener("change", onControlChange);
       controls.dispose();
       for (const entry of loadedRef.current) {
         group.remove(entry.mesh);
@@ -2838,6 +2877,8 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   useEffect(() => {
     const group = groupRef.current;
     if (!group) return;
+    viewArmedRef.current = false;
+    window.clearTimeout(viewTimerRef.current);
     let cancelled = false;
     const gen = ++layoutGenRef.current;
 
@@ -2973,6 +3014,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         deformed: dirtyScanRoles(loaded).size > 0,
         restore: true,
       });
+      viewArmedRef.current = true;
     })();
 
     return () => {
@@ -3459,18 +3501,18 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   setViewRef.current = (preset) => {
     const frame = frameRef.current;
     if (preset === "fit" || !frame) {
-      frameCamera(HOME_DIR, HOME_UP, true);
+      frameCamera(HOME_DIR, HOME_UP, true, true);
       return;
     }
     if (preset === "occlusal") {
-      frameCamera(HOME_DIR, HOME_UP, true);
+      frameCamera(HOME_DIR, HOME_UP, true, true);
       return;
     }
     if (preset === "buccal") {
-      frameCamera(frame.anterior, frame.up, true);
+      frameCamera(frame.anterior, frame.up, true, true);
       return;
     }
-    frameCamera(frame.anterior.clone().negate(), frame.up, true);
+    frameCamera(frame.anterior.clone().negate(), frame.up, true, true);
   };
 
   focusToothRef.current = (raw) => {
@@ -3485,7 +3527,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     HOME_DIR.copy(pose.dir);
     HOME_UP.copy(pose.up);
     applyFitFrustum();
-    frameCamera(pose.dir, pose.up, true);
+    frameCamera(pose.dir, pose.up, true, true);
   };
 
   restoreInsertionViewRef.current = (toothNumbers) => {
@@ -3520,6 +3562,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       toTop: view.top,
       fromBottom: camera.bottom,
       toBottom: view.bottom,
+      save: true,
     };
     return true;
   };
@@ -3656,7 +3699,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     fitExtentRef.current = { halfW: pose.halfW, halfH: pose.halfH };
     fitTargetRef.current.copy(pose.target);
     applyFitFrustum();
-    frameCamera(pose.dir, pose.up, true);
+    frameCamera(pose.dir, pose.up, true, true);
   };
 
   useImperativeHandle(
@@ -3667,6 +3710,14 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       restoreInsertionView: (toothNumbers) =>
         restoreInsertionViewRef.current(toothNumbers),
       saveImage: () => saveImageRef.current(),
+      captureCanvas: () => {
+        const renderer = rendererRef.current;
+        const scene = sceneRef.current;
+        const camera = cameraRef.current;
+        if (!renderer || !scene || !camera) return null;
+        renderer.render(scene, camera);
+        return renderer.domElement;
+      },
       resetHomeView: () => resetHomeRef.current(),
       alignToBiteAuto: () => alignAutoRef.current(),
       cancelAlign: () => cancelAlignRef.current(),
@@ -3709,6 +3760,39 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
             bottom: axis.view.bottom,
           },
         })),
+      exportCamera: () => {
+        const camera = cameraRef.current;
+        const controls = controlsRef.current;
+        if (!camera || !controls) return null;
+        return {
+          position: [camera.position.x, camera.position.y, camera.position.z],
+          target: [controls.target.x, controls.target.y, controls.target.z],
+          up: [camera.up.x, camera.up.y, camera.up.z],
+          zoom: camera.zoom,
+          left: camera.left,
+          right: camera.right,
+          top: camera.top,
+          bottom: camera.bottom,
+        };
+      },
+      restoreCamera: (view) => {
+        const camera = cameraRef.current;
+        const controls = controlsRef.current;
+        if (!camera || !controls) return;
+        snapRef.current = null;
+        controls.target.set(view.target[0], view.target[1], view.target[2]);
+        fitTargetRef.current.copy(controls.target);
+        camera.position.set(view.position[0], view.position[1], view.position[2]);
+        camera.up.set(view.up[0], view.up[1], view.up[2]);
+        camera.zoom = view.zoom;
+        camera.left = view.left;
+        camera.right = view.right;
+        camera.top = view.top;
+        camera.bottom = view.bottom;
+        camera.lookAt(controls.target);
+        camera.updateProjectionMatrix();
+        controls.syncFromCamera();
+      },
       restoreInsertionAxes: (axes) => {
         const restored: InsertionAxis[] = [];
         for (const axis of axes) {

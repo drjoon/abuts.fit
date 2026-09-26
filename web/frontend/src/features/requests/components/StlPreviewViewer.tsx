@@ -13,6 +13,7 @@
 // - 2026-09-04: Lot 각인 — CNC X 직경→반경, 글자 축소·뒤집힘 교정, non-filled 센터 보정.
 // - 2026-09-04: Lot 각인 — StlFileProcessor 역산(Rotate90+W)으로 CNC→STL 매핑.
 // - 2026-08-28: 좌우 드래그=화면 Y축(카메라 local up) 회전 — 월드 Z 턴테이블 제거(스캔 수평 유지).
+// - 2026-09-26: 조명은 AI 보철과 같이 화면을 따라가는 키·필·림.
 // - 2026-09-23: capturePngDataUrl — 현재 뷰 PNG 캡처(이미지 저장).
 // - 2026-09-24: 스캔 칼라 매핑 ON/OFF 토글(뷰어 오버레이).
 // - 2026-09-24: 스캔 칼라 — 핑크 잇몸·화이트 치아 보정 + 흰 배경.
@@ -126,6 +127,8 @@ type Props = {
 export type StlPreviewViewerHandle = {
   /** 현재 카메라 뷰를 PNG data URL로. 미로드 시 null. */
   capturePngDataUrl: () => string | null;
+  /** 표시를 겹치기 위한 현재 프레임 캔버스. */
+  captureCanvas: () => HTMLCanvasElement | null;
 };
 
 export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
@@ -248,6 +251,14 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
         } catch {
           return null;
         }
+      },
+      captureCanvas: () => {
+        const renderer = rendererRef.current;
+        const scene = sceneRef.current;
+        const camera = cameraRef.current;
+        if (!renderer || !scene || !camera) return null;
+        renderer.render(scene, camera);
+        return renderer.domElement;
       },
     }),
     [],
@@ -645,22 +656,22 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
 
     // 형태 인식: ambient를 낮추고 key/fill 대비로 굴곡을 살린다.
     // (너무 균등한 랩어라운드는 스캔이 납작해 보임)
-    const hemi = new THREE.HemisphereLight(0xf7fafc, 0xc5d0de, 0.5);
+    const hemi = new THREE.HemisphereLight(0xf8fafc, 0xcbd5e1, 0.55);
     scene.add(hemi);
 
-    const ambient = new THREE.AmbientLight(0xffffff, 0.18);
+    const ambient = new THREE.AmbientLight(0xffffff, 0.22);
     scene.add(ambient);
 
     const keyLight = new THREE.DirectionalLight(0xffffff, 0.9);
-    keyLight.position.set(35, -55, 95);
+    keyLight.position.set(40, -60, 90);
     scene.add(keyLight);
 
-    const fillLight = new THREE.DirectionalLight(0xeaf2ff, 0.4);
-    fillLight.position.set(-70, 45, 50);
+    const fillLight = new THREE.DirectionalLight(0xe8eef8, 0.4);
+    fillLight.position.set(-70, 40, 40);
     scene.add(fillLight);
 
-    const rimLight = new THREE.DirectionalLight(0xffffff, 0.3);
-    rimLight.position.set(15, 90, -60);
+    const rimLight = new THREE.DirectionalLight(0xffffff, 0.28);
+    rimLight.position.set(10, 80, -50);
     scene.add(rimLight);
 
     const modelPivot = new THREE.Group();
@@ -668,6 +679,32 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
     modelPivotRef.current = modelPivot;
 
     const controls = new ScreenSpaceOrbitControls(camera, renderer.domElement);
+
+    const viewRight = new THREE.Vector3();
+    const viewUp = new THREE.Vector3();
+    const viewToward = new THREE.Vector3();
+    const addViewLight = (color: number, intensity: number) => {
+      const light = new THREE.DirectionalLight(color, intensity);
+      scene.add(light);
+      scene.add(light.target);
+      return light;
+    };
+    const rightKey = addViewLight(0xfff6ee, 0.68);
+    const rightLow = addViewLight(0xeaf0ff, 0.4);
+    const rightFront = addViewLight(0xffffff, 0.34);
+    const placeViewLight = (
+      light: THREE.DirectionalLight,
+      rightAmt: number,
+      upAmt: number,
+      towardAmt: number,
+    ) => {
+      light.position
+        .copy(controls.target)
+        .addScaledVector(viewRight, rightAmt)
+        .addScaledVector(viewUp, upAmt)
+        .addScaledVector(viewToward, towardAmt);
+      light.target.position.copy(controls.target);
+    };
 
     if (showGrid) {
       const grid = new THREE.GridHelper(60, 12, 0xaaaaaa, 0xe5e7eb);
@@ -2383,6 +2420,15 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
     let frameId: number;
     const animate = () => {
       controls.update();
+      camera.updateMatrixWorld();
+      viewRight.setFromMatrixColumn(camera.matrixWorld, 0).normalize();
+      viewUp.setFromMatrixColumn(camera.matrixWorld, 1).normalize();
+      viewToward.copy(camera.position).sub(controls.target);
+      if (viewToward.lengthSq() < 1e-8) viewToward.set(0, 0, 1);
+      else viewToward.normalize();
+      placeViewLight(rightKey, 52, 24, 34);
+      placeViewLight(rightLow, 44, -30, 22);
+      placeViewLight(rightFront, 20, 6, 72);
       renderer.render(scene, camera);
       frameId = requestAnimationFrame(animate);
     };

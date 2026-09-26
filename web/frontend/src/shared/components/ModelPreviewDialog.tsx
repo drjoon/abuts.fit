@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-26: 페인트로 표시한 뒤 채팅에 첨부.
 // - 2026-09-23: 3D 프리뷰 — 다운로드 옆 「이미지 저장」(현재 뷰 PNG).
 // - 2026-09-10: DCM 다운로드 시 원본/PLY(칼라) 선택 메뉴.
 // - 2026-09-05: z-[450]/overlay z-[445] — 가이드투어 코치(z-440)·플로팅 상세 위.
@@ -26,6 +27,7 @@ import {
   ChevronRight,
   Download,
   ImageDown,
+  Pencil,
 } from "lucide-react";
 import {
   StlPreviewViewer,
@@ -54,6 +56,15 @@ import {
   isDcmFileName,
   type DcmDownloadFormat,
 } from "@/shared/files/dcmDownloadFormat";
+import { useToast } from "@/shared/hooks/use-toast";
+import {
+  VIEW_PAINT_COLORS,
+  ViewPaintSurface,
+  downloadBlobFile,
+  paintNoteFileName,
+  viewPaintColorLabel,
+  type ViewPaintHandle,
+} from "@/shared/components/practice/ViewPaintSurface";
 
 export type ModelPreviewKind = "model" | "image";
 
@@ -84,6 +95,8 @@ export type ModelPreviewDialogProps = {
   confirmLabel?: string;
   confirmBusy?: boolean;
   onConfirm?: () => void | Promise<void>;
+  /** 표시가 입혀진 현재 뷰를 채팅 첨부로 넘긴다. */
+  onAttachChatFile?: (file: File) => void;
 };
 
 function pngFileNameFromModel(fileName: string): string {
@@ -123,7 +136,9 @@ export function ModelPreviewDialog({
   confirmLabel,
   confirmBusy = false,
   onConfirm,
+  onAttachChatFile,
 }: ModelPreviewDialogProps) {
+  const { toast } = useToast();
   const isImage = kind === "image";
   const isDcm = isDcmFileName(fileName);
   const title =
@@ -131,6 +146,12 @@ export function ModelPreviewDialog({
   const pct = Math.max(0, Math.min(100, Number(progress) || 0));
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const viewerRef = useRef<StlPreviewViewerHandle | null>(null);
+  const paintRef = useRef<ViewPaintHandle | null>(null);
+  const [paintOn, setPaintOn] = useState(false);
+  const [paintColor, setPaintColor] = useState<string>(VIEW_PAINT_COLORS[0]);
+  const [paintInk, setPaintInk] = useState(false);
+  const canPaint = !isImage && Boolean(file) && !loading;
+  const canAttachPaint = Boolean(onAttachChatFile) && canPaint && paintInk;
   const showNav = previewCount > 1 && previewIndex >= 0;
   const indexLabel = showNav ? `${previewIndex + 1} / ${previewCount}` : "";
   const confirmText = String(confirmMessage || "").trim();
@@ -140,10 +161,50 @@ export function ModelPreviewDialog({
   const canSaveViewImage = !isImage && Boolean(file) && !loading;
 
   const onSaveViewImage = () => {
-    const dataUrl = viewerRef.current?.capturePngDataUrl();
-    if (!dataUrl) return;
-    triggerPngDownload(dataUrl, pngFileNameFromModel(fileName));
+    const base = viewerRef.current?.captureCanvas();
+    if (!base || !paintRef.current) {
+      const dataUrl = viewerRef.current?.capturePngDataUrl();
+      if (!dataUrl) return;
+      triggerPngDownload(dataUrl, pngFileNameFromModel(fileName));
+      return;
+    }
+    void paintRef.current.compositePng(base).then((blob) => {
+      if (!blob) return;
+      downloadBlobFile(blob, pngFileNameFromModel(fileName));
+    });
   };
+
+  const attachPaintToChat = async () => {
+    const base = viewerRef.current?.captureCanvas();
+    const blob = base ? await paintRef.current?.compositePng(base) : null;
+    if (!blob || !onAttachChatFile) return;
+    onAttachChatFile(
+      new File([blob], paintNoteFileName(fileName), { type: "image/png" }),
+    );
+    toast({
+      title: "채팅에 첨부했습니다.",
+      description: (
+        <>
+          표시가 입혀진 이미지가 대화 입력에 있습니다.
+          <br />
+          미리보기를 닫고 보내기를 누르면 상대에게 전달됩니다.
+        </>
+      ),
+    });
+    onOpenChange(false);
+  };
+
+  useEffect(() => {
+    if (open) return;
+    setPaintOn(false);
+    setPaintInk(false);
+    paintRef.current?.clear();
+  }, [open]);
+
+  useEffect(() => {
+    setPaintOn(false);
+    setPaintInk(false);
+  }, [fileName]);
 
   const renderDownloadControl = (opts?: {
     className?: string;
@@ -320,15 +381,24 @@ export function ModelPreviewDialog({
                 ) : null}
               </>
             ) : file && !loading ? (
-              <StlPreviewViewer
-                ref={viewerRef}
-                file={file}
-                textureFile={textureFile}
-                companionFiles={companionFiles}
-                showOverlay={false}
-                showGrid={false}
-                className="absolute inset-0 h-full min-h-0 w-full"
-              />
+              <>
+                <StlPreviewViewer
+                  ref={viewerRef}
+                  file={file}
+                  textureFile={textureFile}
+                  companionFiles={companionFiles}
+                  showOverlay={false}
+                  showGrid={false}
+                  className="absolute inset-0 h-full min-h-0 w-full"
+                />
+                <ViewPaintSurface
+                  key={fileName}
+                  ref={paintRef}
+                  enabled={paintOn}
+                  color={paintColor}
+                  onInkChange={setPaintInk}
+                />
+              </>
             ) : !loading ? (
               <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
                 미리볼 파일이 없습니다.
@@ -362,6 +432,47 @@ export function ModelPreviewDialog({
                     variant: showConfirm ? "outline" : "default",
                   })
                 : null}
+              {canPaint ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={paintOn ? "default" : "outline"}
+                  className="h-9"
+                  disabled={confirmBusy}
+                  aria-pressed={paintOn}
+                  onClick={() => setPaintOn((on) => !on)}
+                  title="화면 위에 표시를 그립니다"
+                >
+                  <Pencil className="mr-1.5 h-4 w-4" />
+                  페인트
+                </Button>
+              ) : null}
+              {paintOn
+                ? VIEW_PAINT_COLORS.map((swatch) => (
+                    <button
+                      key={swatch}
+                      type="button"
+                      className={cn(
+                        "h-6 w-6 rounded-full border border-black/10",
+                        paintColor === swatch && "ring-2 ring-primary ring-offset-2",
+                      )}
+                      style={{ backgroundColor: swatch }}
+                      aria-label={viewPaintColorLabel(swatch)}
+                      onClick={() => setPaintColor(swatch)}
+                    />
+                  ))
+                : null}
+              {paintOn && paintInk ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-9"
+                  onClick={() => paintRef.current?.clear()}
+                >
+                  표시 지우기
+                </Button>
+              ) : null}
               {canSaveViewImage ? (
                 <Button
                   type="button"
@@ -374,6 +485,18 @@ export function ModelPreviewDialog({
                 >
                   <ImageDown className="mr-1.5 h-4 w-4" />
                   이미지 저장
+                </Button>
+              ) : null}
+              {onAttachChatFile && canPaint ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-9"
+                  disabled={!canAttachPaint || confirmBusy}
+                  onClick={() => void attachPaintToChat()}
+                  title="표시가 입혀진 이미지를 채팅에 첨부합니다"
+                >
+                  채팅 첨부
                 </Button>
               ) : null}
               {showConfirm ? (

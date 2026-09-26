@@ -26,6 +26,9 @@
 // - 2026-09-26: 작업 저장·전체 생성은 없앤다. 작업은 IndexedDB에 두고 닫을 때 서버에 올린다.
 // - 2026-09-26: 작업 스캔은 의뢰 파일이 아니라 채팅 작업 파일에 둔다.
 // - 2026-09-26: 헤더에 자동 저장 스위치와 실행 취소·다시 실행.
+// - 2026-09-26: 페인트로 표시한 뒤 채팅에 첨부.
+// - 2026-09-26: 카메라 각도·위치·줌이 바뀌면 작업 초안에 둔다.
+// - 2026-09-26: 닫기는 바로 하고, 작업 스캔 업로드·저장은 뒤에서 한다.
 // - 2026-09-26: 자동 맞춤·삽입축처럼 문서를 바꾸는 명령마다 작업 초안을 저장한다.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -35,6 +38,7 @@ import {
   ChevronDown,
   ImageDown,
   Paintbrush,
+  Pencil,
   Redo2,
   Undo2,
   Palette,
@@ -60,7 +64,11 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/shared/ui/cn";
 import { apiFetch } from "@/shared/api/apiClient";
-import { fetchS3BlobCached } from "@/shared/files/s3BlobCache";
+import { setFileBlob } from "@/shared/files/fileBlobCache";
+import {
+  fetchS3BlobCached,
+  s3FileBlobCacheKey,
+} from "@/shared/files/s3BlobCache";
 import { useS3TempUpload } from "@/shared/hooks/useS3TempUpload";
 import { useToast } from "@/shared/hooks/use-toast";
 import {
@@ -78,6 +86,14 @@ import {
   type OralScanOverlaySource,
 } from "@/shared/components/practice/OralScanOverlayViewer";
 import { LabProsthesisModifyPanel } from "@/shared/components/practice/LabProsthesisModifyPanel";
+import {
+  VIEW_PAINT_COLORS,
+  ViewPaintSurface,
+  downloadBlobFile,
+  paintNoteFileName,
+  viewPaintColorLabel,
+  type ViewPaintHandle,
+} from "@/shared/components/practice/ViewPaintSurface";
 import {
   buildLabProsthesisAiPlan,
   isOralScanMeshName,
@@ -101,6 +117,7 @@ import {
   writeWorkDraftMeshes,
   writeWorkSession,
   writeWorkSessionDocument,
+  type WorkDraftMesh,
   type WorkSessionDocument,
 } from "@/shared/practice/labProsthesisWorkDraft";
 import {
@@ -159,6 +176,8 @@ type LabProsthesisAiDesignButtonProps = {
   /** 채팅 작업 파일의 작업 스캔. 의뢰 파일보다 나중이면 이걸 연다. */
   workScanFiles?: ReadonlyArray<AiDesignFile> | null;
   onWorkingScansPersisted?: (data: WorkingScansPersisted) => void;
+  /** 표시가 입혀진 현재 뷰를 채팅 첨부로 넘긴다. */
+  onAttachChatFile?: (file: File) => void;
   caseHeader?: LabProsthesisAiCaseHeader | null;
   /** 채팅 헤더와 같은 바구니 번호표 */
   basketTag?: LabProsthesisAiBasketTag | null;
@@ -184,6 +203,15 @@ const ROLE_DOT: Record<LabOralScanRole, string> = {
   other: "bg-slate-400",
 };
 
+type WorkCloseSnapshot = {
+  id: string;
+  token: string;
+  dirty: WorkDraftMesh[];
+  document: WorkSessionDocument;
+  pendingRoles: WorkScanRole[];
+  serverAt: ReadonlyMap<WorkScanRole, number>;
+};
+
 type DesignStage = "scan" | "margin" | "design";
 
 const DESIGN_STAGES: Array<{ id: DesignStage; label: string }> = [
@@ -205,6 +233,7 @@ export function LabProsthesisAiDesignButton({
   transferId,
   workScanFiles,
   onWorkingScansPersisted,
+  onAttachChatFile,
   caseHeader,
   basketTag,
   className,
@@ -234,6 +263,7 @@ export function LabProsthesisAiDesignButton({
         transferId={transferId}
         workScanFiles={workScanFiles}
         onWorkingScansPersisted={onWorkingScansPersisted}
+        onAttachChatFile={onAttachChatFile}
         caseHeader={caseHeader}
         basketTag={basketTag}
       />
@@ -263,6 +293,7 @@ function workDocumentSignature(document: WorkSessionDocument): string {
     edits: document.edits,
     generated: document.generated,
     insertionAxes: document.insertionAxes,
+    camera: document.camera,
   });
 }
 
@@ -283,6 +314,7 @@ function LabProsthesisAiDesignDialog({
   transferId,
   workScanFiles,
   onWorkingScansPersisted,
+  onAttachChatFile,
   caseHeader,
   basketTag,
 }: LabProsthesisAiDesignButtonProps & {
@@ -336,6 +368,10 @@ function LabProsthesisAiDesignDialog({
   const [entries, setEntries] = useState<OralScanOverlaySource[]>([]);
   const [visible, setVisible] = useState<Record<string, boolean>>({});
   const [colorMapping, setColorMapping] = useState(true);
+  const paintRef = useRef<ViewPaintHandle | null>(null);
+  const [paintOn, setPaintOn] = useState(false);
+  const [paintColor, setPaintColor] = useState<string>(VIEW_PAINT_COLORS[0]);
+  const [paintInk, setPaintInk] = useState(false);
   const [hasScanColor, setHasScanColor] = useState(false);
   const [ghostOn, setGhostOn] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -1083,6 +1119,10 @@ function LabProsthesisAiDesignDialog({
       edits: editsRef.current,
       generated: generatedRef.current,
       insertionAxes: axes,
+      camera:
+        viewerRef.current?.exportCamera() ??
+        sessionDocRef.current?.camera ??
+        null,
       savedAt: Date.now(),
     };
   }, []);
@@ -1136,44 +1176,20 @@ function LabProsthesisAiDesignDialog({
     };
   }, [flushWorkDraft, open]);
 
-  const persistWorkingScans = useCallback(async (): Promise<boolean> => {
-    if (saveLockRef.current) return false;
-    if (!autoSaveRef.current) {
-      window.clearTimeout(draftTimerRef.current);
-      return true;
-    }
-    if (alignBusy) {
-      window.clearTimeout(draftTimerRef.current);
-      suspendDraftRef.current = true;
-      return true;
-    }
-    const id = String(transferId || "").trim();
-    if (!id || !authToken) return true;
-    window.clearTimeout(draftTimerRef.current);
-    suspendDraftRef.current = true;
-    saveLockRef.current = true;
-    let ok = true;
+  const persistWorkingScans = useCallback(async (snapshot: WorkCloseSnapshot) => {
+    const { id, token, dirty, document, pendingRoles, serverAt } = snapshot;
     try {
       await enqueueDraft(async () => {
         try {
-          const dirtyStamp = viewerRef.current?.changedScanSignature() ?? "";
-          const dirty = viewerRef.current?.exportChangedScans() ?? [];
           const encoded =
             dirty.length > 0 ? await writeWorkDraftMeshes(id, dirty) : [];
-          if (dirty.length > 0 && dirtyStamp) {
-            lastDraftSigRef.current = dirtyStamp;
-          }
-          const document = currentWorkDocument();
           await writeWorkSessionDocument(id, document);
-          lastDocSigRef.current = workDocumentSignature(document);
-          sessionDocRef.current = document;
           const draft = await readWorkDraft(id);
-          const serverAt = newestWorkScanUploadedAtMs(filesRef.current || []);
           const dirtyRoles = new Set(dirty.map((row) => row.role));
           const wanted = new Set<WorkScanRole>([
             ...newerDraftRoles(draft, serverAt),
             ...dirtyRoles,
-            ...pendingDraftRolesRef.current,
+            ...pendingRoles,
           ]);
           if (wanted.size === 0) return;
 
@@ -1204,36 +1220,54 @@ function LabProsthesisAiDesignDialog({
           if (blobs.length === 0) return;
 
           const uploaded = await uploadFiles(blobs);
-          const payload = uploaded
-            .map((file, index) => {
-              const originalName = String(
-                file.originalName || blobs[index]?.name || "",
-              ).trim();
-              const s3Key = String(file.key || "").trim();
-              const role = roles[index];
-              if (!originalName || !s3Key || !role) return null;
-              return {
-                patientName: "",
-                tooth: "",
-                scanRole: role,
-                scanRoleSetBy: "lab" as const,
-                file: {
-                  originalName,
-                  mimetype: "application/octet-stream",
-                  size: Number(file.size || blobs[index]?.size || 0) || 0,
-                  s3Key,
-                },
-              };
-            })
-            .filter((row) => row != null);
+          const mapped = uploaded.map((file, index) => {
+            const originalName = String(
+              file.originalName || blobs[index]?.name || "",
+            ).trim();
+            const s3Key = String(file.key || "").trim();
+            const role = roles[index];
+            const local = blobs[index];
+            if (!originalName || !s3Key || !role || !local) return null;
+            sessionScanFileCache.set(s3Key, local);
+            return {
+              local,
+              patientName: "",
+              tooth: "",
+              scanRole: role,
+              scanRoleSetBy: "lab" as const,
+              file: {
+                originalName,
+                mimetype: "application/octet-stream",
+                size: Number(file.size || local.size || 0) || 0,
+                s3Key,
+              },
+            };
+          });
+          const payload = mapped.filter((row) => row != null);
           if (!payload.length) {
             throw new Error("작업 스캔 업로드에 실패했습니다.");
           }
+          const cacheReady = Promise.all(
+            payload.map((row) =>
+              setFileBlob(s3FileBlobCacheKey(row.file.s3Key), row.local),
+            ),
+          ).then(
+            () => undefined,
+            () => undefined,
+          );
           const appended = await apiFetch({
             path: `/api/practice/transfers/received/${encodeURIComponent(id)}/work-scan-files`,
             method: "POST",
-            token: authToken,
-            jsonBody: { files: payload },
+            token,
+            jsonBody: {
+              files: payload.map((row) => ({
+                patientName: row.patientName,
+                tooth: row.tooth,
+                scanRole: row.scanRole,
+                scanRoleSetBy: row.scanRoleSetBy,
+                file: row.file,
+              })),
+            },
           });
           if (!appended.ok) {
             throw new Error(
@@ -1256,10 +1290,10 @@ function LabProsthesisAiDesignDialog({
           if (stamp > 0) {
             await stampWorkDraftSavedAt(id, [...savedRoles], stamp);
           }
-          await dropWorkDraftRoles(id, [...savedRoles]);
-          const pending = new Set(pendingDraftRolesRef.current);
-          for (const role of savedRoles) pending.delete(role);
-          pendingDraftRolesRef.current = pending;
+          await Promise.all([
+            dropWorkDraftRoles(id, [...savedRoles]),
+            cacheReady,
+          ]);
           onWorkingScansPersisted?.({
             files: data.files,
             trashedFiles: data.trashedFiles,
@@ -1277,7 +1311,6 @@ function LabProsthesisAiDesignDialog({
             ),
           });
         } catch (error) {
-          ok = false;
           suspendDraftRef.current = false;
           toast({
             title: "작업 스캔 저장 실패",
@@ -1292,17 +1325,7 @@ function LabProsthesisAiDesignDialog({
     } finally {
       saveLockRef.current = false;
     }
-    return ok;
-  }, [
-    alignBusy,
-    authToken,
-    enqueueDraft,
-    onWorkingScansPersisted,
-    toast,
-    transferId,
-    uploadFiles,
-    currentWorkDocument,
-  ]);
+  }, [enqueueDraft, onWorkingScansPersisted, toast, uploadFiles]);
 
   const undoWorkRef = useRef(undoWork);
   const redoWorkRef = useRef(redoWork);
@@ -1348,10 +1371,27 @@ function LabProsthesisAiDesignDialog({
       return;
     }
     if (saveLockRef.current) return;
-    void (async () => {
-      const ok = await persistWorkingScans();
-      if (ok) onOpenChange(false);
-    })();
+    window.clearTimeout(draftTimerRef.current);
+    const id = String(transferId || "").trim();
+    if (!autoSaveRef.current || alignBusy || !id || !authToken) {
+      if (alignBusy) suspendDraftRef.current = true;
+      onOpenChange(false);
+      return;
+    }
+    const snapshot: WorkCloseSnapshot = {
+      id,
+      token: authToken,
+      dirty: viewerRef.current?.exportChangedScans() ?? [],
+      document: currentWorkDocument(),
+      pendingRoles: [...pendingDraftRolesRef.current],
+      serverAt: newestWorkScanUploadedAtMs(filesRef.current || []),
+    };
+    suspendDraftRef.current = true;
+    saveLockRef.current = true;
+    onOpenChange(false);
+    window.requestAnimationFrame(() => {
+      void persistWorkingScans(snapshot);
+    });
   };
 
   return (
@@ -1458,14 +1498,95 @@ function LabProsthesisAiDesignDialog({
             <Button
               type="button"
               size="sm"
+              variant={paintOn ? "default" : "outline"}
+              className="h-8 gap-1"
+              aria-pressed={paintOn}
+              onClick={() => setPaintOn((on) => !on)}
+              title="화면 위에 표시를 그립니다"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              페인트
+            </Button>
+            {paintOn
+              ? VIEW_PAINT_COLORS.map((swatch) => (
+                  <button
+                    key={swatch}
+                    type="button"
+                    className={cn(
+                      "h-5 w-5 rounded-full border border-black/10",
+                      paintColor === swatch && "ring-2 ring-primary ring-offset-1",
+                    )}
+                    style={{ backgroundColor: swatch }}
+                    aria-label={viewPaintColorLabel(swatch)}
+                    onClick={() => setPaintColor(swatch)}
+                  />
+                ))
+              : null}
+            {paintOn && paintInk ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8"
+                onClick={() => paintRef.current?.clear()}
+              >
+                표시 지우기
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              size="sm"
               variant="outline"
               className="h-8 gap-1"
-              onClick={() => viewerRef.current?.saveImage()}
+              onClick={() => {
+                const base = viewerRef.current?.captureCanvas();
+                if (!base || !paintInk || !paintRef.current) {
+                  viewerRef.current?.saveImage();
+                  return;
+                }
+                void paintRef.current.compositePng(base).then((blob) => {
+                  if (!blob) return;
+                  downloadBlobFile(blob, paintNoteFileName("작업"));
+                });
+              }}
               title="현재 뷰를 PNG로 저장"
             >
               <ImageDown className="h-3.5 w-3.5" />
               이미지 저장
             </Button>
+            {onAttachChatFile ? (
+              <Button
+                type="button"
+                size="sm"
+                className="h-8"
+                disabled={!paintInk}
+                onClick={() => {
+                  const base = viewerRef.current?.captureCanvas();
+                  if (!base) return;
+                  void paintRef.current?.compositePng(base).then((blob) => {
+                    if (!blob) return;
+                    onAttachChatFile(
+                      new File([blob], paintNoteFileName("작업"), {
+                        type: "image/png",
+                      }),
+                    );
+                    toast({
+                      title: "채팅에 첨부했습니다.",
+                      description: (
+                        <>
+                          표시가 입혀진 이미지가 대화 입력에 있습니다.
+                          <br />
+                          디자인을 닫고 보내기를 누르면 상대에게 전달됩니다.
+                        </>
+                      ),
+                    });
+                  });
+                }}
+                title="표시가 입혀진 이미지를 채팅에 첨부합니다"
+              >
+                채팅 첨부
+              </Button>
+            ) : null}
           </div>
         </DialogHeader>
 
@@ -1529,14 +1650,25 @@ function LabProsthesisAiDesignDialog({
                 discardJawCheckpoint(alignBeforeSigRef.current);
                 setAlignBusy(false);
               }}
+              onViewSettled={() => {
+                queueSaveWorkRef.current();
+              }}
               onMeshesReady={({ deformed, restore }) => {
                 if (restore) {
-                  const axes = sessionDocRef.current?.insertionAxes ?? [];
+                  const saved = sessionDocRef.current;
+                  const axes = saved?.insertionAxes ?? [];
                   if (axes.length > 0) viewerRef.current?.restoreInsertionAxes(axes);
+                  if (saved?.camera) viewerRef.current?.restoreCamera(saved.camera);
                 }
                 if (deformed) queueSaveWorkRef.current();
               }}
               className="absolute inset-0"
+            />
+            <ViewPaintSurface
+              ref={paintRef}
+              enabled={paintOn}
+              color={paintColor}
+              onInkChange={setPaintInk}
             />
             <div className="pointer-events-none absolute left-1/2 top-3 z-10 flex w-max max-w-[calc(100%-2rem)] -translate-x-1/2 flex-col items-center gap-1.5">
               <div className="pointer-events-auto flex flex-wrap items-center justify-center gap-1.5">

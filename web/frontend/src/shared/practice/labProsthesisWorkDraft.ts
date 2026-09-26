@@ -24,29 +24,33 @@ export type WorkDraftFile = {
   bytes: ArrayBuffer;
 };
 
+/** 직교 카메라. 방향은 position·up, 보는 점은 target, 크기는 zoom과 프러스텀. */
+export type WorkSessionView = {
+  position: [number, number, number];
+  target: [number, number, number];
+  up: [number, number, number];
+  zoom: number;
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+};
+
 export type WorkSessionAxis = {
   key: string;
   toothNumbers: string[];
   dir: [number, number, number];
   origin: [number, number, number];
   radius: number;
-  view: {
-    position: [number, number, number];
-    target: [number, number, number];
-    up: [number, number, number];
-    zoom: number;
-    left: number;
-    right: number;
-    top: number;
-    bottom: number;
-  };
+  view: WorkSessionView;
 };
 
-/** 스캔 좌표 외에 마진·생성·삽입축. 창을 다시 열면 이 문서를 복원한다. */
+/** 스캔 좌표 외에 마진·생성·삽입축·카메라. 창을 다시 열면 이 문서를 복원한다. */
 export type WorkSessionDocument = {
   edits: Record<string, ToothDesignEdit>;
   generated: Record<string, boolean>;
   insertionAxes: WorkSessionAxis[];
+  camera: WorkSessionView | null;
   savedAt: number;
 };
 
@@ -93,18 +97,32 @@ function tuple3(value: unknown): [number, number, number] | null {
   return [x, y, z];
 }
 
+export function viewOf(value: unknown): WorkSessionView | null {
+  if (!value || typeof value !== "object") return null;
+  const view = value as WorkSessionView;
+  const position = tuple3(view.position);
+  const target = tuple3(view.target);
+  const up = tuple3(view.up);
+  if (!position || !target || !up) return null;
+  const zoom = Number(view.zoom);
+  const left = Number(view.left);
+  const right = Number(view.right);
+  const top = Number(view.top);
+  const bottom = Number(view.bottom);
+  if (![zoom, left, right, top, bottom].every((n) => Number.isFinite(n))) return null;
+  if (zoom <= 0) return null;
+  if (Math.abs(right - left) < 1e-6 || Math.abs(top - bottom) < 1e-6) return null;
+  return { position, target, up, zoom, left, right, top, bottom };
+}
+
 function axisOf(value: unknown): WorkSessionAxis | null {
   if (!value || typeof value !== "object") return null;
   const row = value as WorkSessionAxis;
   const dir = tuple3(row.dir);
   const origin = tuple3(row.origin);
-  const view = row.view;
-  if (!dir || !origin || !view || typeof view !== "object") return null;
-  const position = tuple3(view.position);
-  const target = tuple3(view.target);
-  const up = tuple3(view.up);
+  const view = viewOf(row.view);
   const key = String(row.key || "").trim();
-  if (!position || !target || !up || !key) return null;
+  if (!dir || !origin || !view || !key) return null;
   const toothNumbers = Array.isArray(row.toothNumbers)
     ? row.toothNumbers.map((tooth) => String(tooth || "").trim()).filter(Boolean)
     : [];
@@ -114,16 +132,7 @@ function axisOf(value: unknown): WorkSessionAxis | null {
     dir,
     origin,
     radius: Number(row.radius) || 0,
-    view: {
-      position,
-      target,
-      up,
-      zoom: Number(view.zoom) || 1,
-      left: Number(view.left) || 0,
-      right: Number(view.right) || 0,
-      top: Number(view.top) || 0,
-      bottom: Number(view.bottom) || 0,
-    },
+    view,
   };
 }
 
@@ -145,6 +154,7 @@ function documentOf(row: unknown): WorkSessionDocument | null {
     edits,
     generated,
     insertionAxes,
+    camera: viewOf((body as { camera?: unknown }).camera),
     savedAt: Number(body.savedAt) || 0,
   };
 }
