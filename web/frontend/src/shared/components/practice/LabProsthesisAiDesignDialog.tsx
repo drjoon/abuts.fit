@@ -9,10 +9,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDownToLine,
+  Blend,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   ImageDown,
+  Paintbrush,
   Palette,
   RotateCcw,
   Sparkles,
@@ -1001,42 +1003,41 @@ function LabProsthesisAiDesignDialog({
                 {workWide ? <span>교합 접촉</span> : null}
               </Button>
               {hasScanColor ? (
-                <label
-                  className="flex h-8 cursor-pointer items-center gap-2 rounded-md border bg-background/95 px-2 text-xs font-medium shadow-sm"
-                  onClick={(event) => {
-                    if (event.target instanceof Element && event.target.closest("button")) {
-                      return;
-                    }
-                    setColorMapping((on) => !on);
-                  }}
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={colorMapping ? "default" : "outline"}
+                  className={cn(
+                    "h-8 shadow-sm [&_svg]:!size-3.5",
+                    workWide ? "gap-1 px-2.5" : "w-8 px-0",
+                  )}
+                  title="스캔 칼라"
+                  aria-label="칼라"
+                  aria-pressed={colorMapping}
+                  onClick={() => setColorMapping((on) => !on)}
                 >
-                  <Checkbox
-                    checked={colorMapping}
-                    onCheckedChange={(checked) => setColorMapping(checked === true)}
-                    aria-label="칼라"
-                  />
-                  칼라
-                </label>
+                  <Paintbrush />
+                  {workWide ? <span>칼라</span> : null}
+                </Button>
               ) : null}
               {hasGhost ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <label
-                      className="flex h-8 cursor-pointer items-center gap-2 rounded-md border bg-background/95 px-2 text-xs font-medium shadow-sm"
-                      onClick={(event) => {
-                        if (event.target instanceof Element && event.target.closest("button")) {
-                          return;
-                        }
-                        setGhostOn((on) => !on);
-                      }}
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={ghostOn ? "default" : "outline"}
+                      className={cn(
+                        "h-8 shadow-sm [&_svg]:!size-3.5",
+                        workWide ? "gap-1 px-2.5" : "w-8 px-0",
+                      )}
+                      aria-label="투명"
+                      aria-pressed={ghostOn}
+                      onClick={() => setGhostOn((on) => !on)}
                     >
-                      <Checkbox
-                        checked={ghostOn}
-                        onCheckedChange={(checked) => setGhostOn(checked === true)}
-                        aria-label="투명"
-                      />
-                      투명
-                    </label>
+                      <Blend />
+                      {workWide ? <span>투명</span> : null}
+                    </Button>
                   </TooltipTrigger>
                   <TooltipContent side="bottom" className="z-[520]">
                     지대치를 제외한 대합과 바이트를 유리처럼 비춥니다.
@@ -1050,7 +1051,7 @@ function LabProsthesisAiDesignDialog({
                 size="sm"
                 variant={insertionAxis ? "default" : "outline"}
                 className={cn(
-                  "ml-2 h-8 shadow-sm [&_svg]:!size-3.5",
+                  "ml-5 h-8 shadow-sm [&_svg]:!size-3.5",
                   workWide ? "gap-1 px-2.5" : "w-8 px-0",
                 )}
                 title="지금 화면과 수직인 방향으로 삽입축을 잡습니다"
