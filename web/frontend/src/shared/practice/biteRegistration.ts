@@ -1361,19 +1361,19 @@ function cropNear(cloud: Cloud, ref: Cloud, thresh: number): Cloud {
 export async function registerJawsToBite(
   entries: Array<{ role: string; geometry: THREE.BufferGeometry }>,
   options?: { cancelled?: () => boolean },
-) {
+): Promise<boolean> {
   const bite = entries.filter((entry) => entry.role === "bite");
   const arches = entries.filter(
     (entry) => entry.role === "upper" || entry.role === "lower",
   );
-  if (bite.length === 0 || arches.length === 0) return;
+  if (bite.length === 0 || arches.length === 0) return false;
   for (const entry of entries) {
     if (!entry.geometry.getAttribute("normal")) entry.geometry.computeVertexNormals();
   }
   await yieldFrame();
-  if (options?.cancelled?.()) return;
+  if (options?.cancelled?.()) return false;
   const biteCloud = mergeGeometries(bite.map((entry) => entry.geometry));
-  if (biteCloud.count < 80) return;
+  if (biteCloud.count < 80) return false;
   const unitToMm = geometryUnits(biteCloud, arches.map((entry) => entry.geometry));
   const order = [...arches].sort((a, b) => {
     const af = roughGap(a.geometry, biteCloud, unitToMm);
@@ -1383,7 +1383,7 @@ export async function registerJawsToBite(
   let target = biteCloud;
   const fitted: ArchFit[] = [];
   for (const entry of order) {
-    if (options?.cancelled?.()) return;
+    if (options?.cancelled?.()) return false;
     const source = sampleGeometry(entry.geometry, mmToUnits(0.95, unitToMm), 2400);
     if (source.count < 80) continue;
     const radius = cloudRadius(source);
@@ -1441,7 +1441,9 @@ export async function registerJawsToBite(
       }
     }
   }
+  let seated = false;
   for (const row of fitted) {
+    if (row.seated) seated = true;
     if (row.matrix.equals(new THREE.Matrix4())) continue;
     row.geometry.applyMatrix4(row.matrix);
     row.geometry.computeVertexNormals();
@@ -1453,6 +1455,7 @@ export async function registerJawsToBite(
       inliers: row.inliers,
     });
   }
+  return seated;
 }
 
 function geometryUnits(bite: Cloud, arches: THREE.BufferGeometry[]) {
@@ -1470,4 +1473,189 @@ function roughGap(geometry: THREE.BufferGeometry, target: Cloud, unitToMm: numbe
   const source = sampleGeometry(geometry, mmToUnits(1.4, unitToMm), 600);
   const grid = buildGrid(target, mmToUnits(1.4, unitToMm));
   return overlapFitness(source, target, grid, unitToMm).mean;
+}
+
+type Xyz = [number, number, number];
+
+function rigidPoint(rigid: Rigid, point: Xyz): Xyz {
+  const r = rigid.r;
+  const x = point[0];
+  const y = point[1];
+  const z = point[2];
+  return [
+    (r[0]?.[0] ?? 1) * x + (r[0]?.[1] ?? 0) * y + (r[0]?.[2] ?? 0) * z + rigid.t[0],
+    (r[1]?.[0] ?? 0) * x + (r[1]?.[1] ?? 1) * y + (r[1]?.[2] ?? 0) * z + rigid.t[1],
+    (r[2]?.[0] ?? 0) * x + (r[2]?.[1] ?? 0) * y + (r[2]?.[2] ?? 1) * z + rigid.t[2],
+  ];
+}
+
+function pairCloud(points: Xyz[]): Cloud {
+  const xyz = new Float32Array(points.length * 3);
+  const nrm = new Float32Array(points.length * 3);
+  points.forEach((point, index) => {
+    xyz[index * 3] = point[0];
+    xyz[index * 3 + 1] = point[1];
+    xyz[index * 3 + 2] = point[2];
+    nrm[index * 3 + 2] = 1;
+  });
+  return { xyz, nrm, count: points.length };
+}
+
+function cloudPoint(cloud: Cloud, index: number): Xyz {
+  return [
+    cloud.xyz[index * 3] ?? 0,
+    cloud.xyz[index * 3 + 1] ?? 0,
+    cloud.xyz[index * 3 + 2] ?? 0,
+  ];
+}
+
+/**
+ * 찍은 바이트 점 근처에서, 악궁 조각과 가장 맞는 대응점을 고른다.
+ */
+function correlateNearClick(
+  patch: Xyz[],
+  moved: Xyz,
+  userBite: Xyz,
+  bite: Cloud,
+  biteGrid: Grid,
+  unitToMm: number,
+): Xyz {
+  const search = mmToUnits(3.2, unitToMm);
+  const gate = mmToUnits(2.6, unitToMm);
+  const candidates = biteGrid.around(userBite[0], userBite[1], userBite[2], search, 56);
+  const score = (target: Xyz) => {
+    const dx = target[0] - moved[0];
+    const dy = target[1] - moved[1];
+    const dz = target[2] - moved[2];
+    let sum = 0;
+    for (const point of patch) {
+      const hit = biteGrid.nearest(point[0] + dx, point[1] + dy, point[2] + dz, gate);
+      if (hit < 0) {
+        sum += gate;
+        continue;
+      }
+      sum += Math.hypot(
+        point[0] + dx - (bite.xyz[hit * 3] ?? 0),
+        point[1] + dy - (bite.xyz[hit * 3 + 1] ?? 0),
+        point[2] + dz - (bite.xyz[hit * 3 + 2] ?? 0),
+      );
+    }
+    return sum / Math.max(patch.length, 1);
+  };
+  let best = userBite;
+  let bestScore = score(userBite);
+  for (const index of candidates) {
+    const point = cloudPoint(bite, index);
+    const next = score(point);
+    if (next + mmToUnits(0.02, unitToMm) < bestScore) {
+      bestScore = next;
+      best = point;
+    }
+  }
+  return best;
+}
+
+function cropNearPoints(cloud: Cloud, points: Xyz[], radius: number): Cloud {
+  const xyz: number[] = [];
+  const nrm: number[] = [];
+  for (let i = 0; i < cloud.count; i += 1) {
+    const p = cloudPoint(cloud, i);
+    let near = false;
+    for (const point of points) {
+      if (Math.hypot(p[0] - point[0], p[1] - point[1], p[2] - point[2]) <= radius) {
+        near = true;
+        break;
+      }
+    }
+    if (!near) continue;
+    xyz.push(p[0], p[1], p[2]);
+    nrm.push(
+      cloud.nrm[i * 3] ?? 0,
+      cloud.nrm[i * 3 + 1] ?? 0,
+      cloud.nrm[i * 3 + 2] ?? 0,
+    );
+  }
+  return { xyz: Float32Array.from(xyz), nrm: Float32Array.from(nrm), count: xyz.length / 3 };
+}
+
+/**
+ * 모델 점 3개와 바이트 점 3개로 강체를 잡고, 각 점 근처에서 대응점을 고쳐 맞춘다.
+ * 바이트는 그대로 두고 악궁 기하에만 변환을 쓴다.
+ */
+export async function mergeArchToBiteByPoints(
+  arches: THREE.BufferGeometry[],
+  bites: THREE.BufferGeometry[],
+  archPoints: Xyz[],
+  bitePoints: Xyz[],
+): Promise<boolean> {
+  if (arches.length === 0 || bites.length === 0) return false;
+  if (archPoints.length < 3 || bitePoints.length < 3) return false;
+  for (const geometry of [...arches, ...bites]) {
+    if (!geometry.getAttribute("normal")) geometry.computeVertexNormals();
+  }
+  await yieldFrame();
+  const archCloud = mergeGeometries(arches);
+  const biteCloud = mergeGeometries(bites);
+  if (archCloud.count < 40 || biteCloud.count < 40) return false;
+  const unitToMm = geometryUnits(biteCloud, arches);
+  const src = archPoints.slice(0, 3);
+  const dst = bitePoints.slice(0, 3);
+  const rough = kabsch(pairCloud(src).xyz, pairCloud(dst).xyz, [
+    { s: 0, d: 0 },
+    { s: 1, d: 1 },
+    { s: 2, d: 2 },
+  ]);
+  if (!rough) return false;
+  const archGrid = buildGrid(archCloud, mmToUnits(1.1, unitToMm));
+  const biteGrid = buildGrid(biteCloud, mmToUnits(1.1, unitToMm));
+  const patchR = mmToUnits(2.4, unitToMm);
+  const refined: Xyz[] = [];
+  for (let i = 0; i < 3; i += 1) {
+    const origin = src[i] ?? [0, 0, 0];
+    const userBite = dst[i] ?? origin;
+    const moved = rigidPoint(rough, origin);
+    const around = archGrid.around(origin[0], origin[1], origin[2], patchR, 80);
+    const patch = around.map((index) => rigidPoint(rough, cloudPoint(archCloud, index)));
+    patch.push(moved);
+    refined.push(correlateNearClick(patch, moved, userBite, biteCloud, biteGrid, unitToMm));
+    await yieldFrame();
+  }
+  const rigid = kabsch(pairCloud(src).xyz, pairCloud(refined).xyz, [
+    { s: 0, d: 0 },
+    { s: 1, d: 1 },
+    { s: 2, d: 2 },
+  ]);
+  if (!rigid) return false;
+  const posed = cloneCloud(archCloud);
+  applyRigid(posed, rigid);
+  const marks = src.map((point) => rigidPoint(rigid, point));
+  const local = cropNearPoints(posed, marks, mmToUnits(8, unitToMm));
+  const matrix = new THREE.Matrix4();
+  compose(matrix, rigid);
+  if (local.count >= 80) {
+    const before = overlapFitness(
+      local,
+      biteCloud,
+      buildGrid(biteCloud, mmToUnits(1.2, unitToMm)),
+      unitToMm,
+    );
+    const seated = cloneCloud(local);
+    const icp = refineToTarget(seated, biteCloud, unitToMm, true);
+    const after = overlapFitness(
+      seated,
+      biteCloud,
+      buildGrid(biteCloud, mmToUnits(1.2, unitToMm)),
+      unitToMm,
+    );
+    if (after.sideMean <= before.sideMean + mmToUnits(0.04, unitToMm)) {
+      matrix.premultiply(icp);
+    }
+  }
+  for (const geometry of arches) {
+    geometry.applyMatrix4(matrix);
+    geometry.computeVertexNormals();
+    geometry.computeBoundingBox();
+    geometry.computeBoundingSphere();
+  }
+  return true;
 }

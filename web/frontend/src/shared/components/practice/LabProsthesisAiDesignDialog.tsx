@@ -19,6 +19,7 @@
 // - 2026-09-26: 마진은 기본 원보다 바깥을, 삽입축으로 스캔 면에 붙여 잡는다.
 // - 2026-09-26: 표시 패널은 맨 위. 닫으면 글자 너비. 단계 접기는 패널 위.
 // - 2026-09-26: 언더컷부터 정중앙은 작업영역 위 중앙. 색 범례는 그 배지 바로 아래.
+// - 2026-09-26: 스캔 단계에 모델 정렬. 수동은 고른 악과 바이트만 좌우로 두고 점 3개로 붙인다.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDownToLine,
@@ -282,6 +283,11 @@ function LabProsthesisAiDesignDialog({
   const [editBrush, setEditBrush] = useState<EditBrush>("none");
   const [edits, setEdits] = useState<Record<string, ToothDesignEdit>>({});
   const [holeNote, setHoleNote] = useState("");
+  const [alignKind, setAlignKind] = useState<"auto" | "manual" | null>(null);
+  const [alignArch, setAlignArch] = useState<"upper" | "lower" | null>(null);
+  const [alignPicks, setAlignPicks] = useState({ model: 0, bite: 0 });
+  const [alignNote, setAlignNote] = useState("");
+  const [alignBusy, setAlignBusy] = useState(false);
   const viewerRef = useRef<OralScanOverlayHandle>(null);
   const workObserveRef = useRef<ResizeObserver | null>(null);
   const bindWorkArea = useCallback((node: HTMLDivElement | null) => {
@@ -332,6 +338,11 @@ function LabProsthesisAiDesignDialog({
       setEditBrush("none");
       setEdits({});
       setHoleNote("");
+      setAlignKind(null);
+      setAlignArch(null);
+      setAlignPicks({ model: 0, bite: 0 });
+      setAlignNote("");
+      setAlignBusy(false);
       genSeq.current += 1;
       return;
     }
@@ -701,9 +712,34 @@ function LabProsthesisAiDesignDialog({
 
   const onStage = (next: DesignStage) => {
     setStage(next);
+    if (next !== "scan") {
+      setAlignKind(null);
+      setAlignArch(null);
+    }
     if (next === "scan") return;
     if (canUndercut) setUndercutMap(true);
     if (next === "design" && canContact) setContactMap(true);
+  };
+
+  const hasUpperScan = scans.some((row) => row.role === "upper");
+  const hasLowerScan = scans.some((row) => row.role === "lower");
+  const hasBiteScan = scans.some((row) => row.role === "bite");
+  const canAlignModels = hasBiteScan && (hasUpperScan || hasLowerScan) && entries.length > 0;
+
+  const runAutoAlign = async () => {
+    setAlignKind("auto");
+    setAlignArch(null);
+    setAlignPicks({ model: 0, bite: 0 });
+    setAlignNote("");
+    setAlignBusy(true);
+    const ok = await viewerRef.current?.alignToBiteAuto();
+    setAlignBusy(false);
+    setAlignKind(null);
+    setAlignNote(
+      ok
+        ? "상악과 하악을 바이트에 맞췄습니다."
+        : "자동으로 붙이지 못했습니다. 수동으로 점을 찍어 주세요.",
+    );
   };
 
   const generateTargets = (
@@ -850,6 +886,23 @@ function LabProsthesisAiDesignDialog({
               showCenterGuides={centerGuides}
               designEdit={designEdit}
               onDesignGesture={onDesignGesture}
+              manualAlignArch={alignKind === "manual" ? alignArch : null}
+              onAlignProgress={setAlignPicks}
+              onAlignMerged={(arch) => {
+                setAlignArch(null);
+                setAlignPicks({ model: 0, bite: 0 });
+                setAlignNote(
+                  arch === "upper"
+                    ? "상악을 바이트에 붙였습니다."
+                    : "하악을 바이트에 붙였습니다.",
+                );
+              }}
+              onAlignFailed={() => {
+                setAlignPicks({ model: 0, bite: 0 });
+                setAlignNote(
+                  "근처에서 대응점을 찾지 못했습니다. 점을 다시 찍어 주세요.",
+                );
+              }}
               className="absolute inset-0"
             />
             <div className="pointer-events-none absolute left-1/2 top-3 z-10 flex w-max max-w-[calc(100%-2rem)] -translate-x-1/2 flex-col items-center gap-1.5">
@@ -1202,6 +1255,139 @@ function LabProsthesisAiDesignDialog({
                         ))}
                       </div>
                     </section>
+                    {stage === "scan" ? (
+                      <section className="space-y-2">
+                        <p className="text-xs font-semibold text-foreground">모델 정렬</p>
+                        <div className="grid grid-cols-2 gap-1">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={alignBusy ? "default" : "outline"}
+                            className="h-7 px-2 text-[11px]"
+                            disabled={!canAlignModels || alignBusy}
+                            onClick={() => void runAutoAlign()}
+                          >
+                            자동
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={alignKind === "manual" ? "default" : "outline"}
+                            className="h-7 px-2 text-[11px]"
+                            disabled={!canAlignModels || alignBusy}
+                            onClick={() => {
+                              if (alignKind === "manual") {
+                                setAlignKind(null);
+                                setAlignArch(null);
+                                setAlignNote("");
+                                return;
+                              }
+                              setAlignKind("manual");
+                              setAlignArch(null);
+                              setAlignPicks({ model: 0, bite: 0 });
+                              setAlignNote("");
+                            }}
+                          >
+                            수동
+                          </Button>
+                        </div>
+                        {alignKind === "manual" ? (
+                          <>
+                            <p className="text-[11px] font-medium text-foreground">
+                              바이트에 붙일 모델
+                            </p>
+                            <div className="grid grid-cols-2 gap-1">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant={alignArch === "upper" ? "default" : "outline"}
+                                className="h-7 px-2 text-[11px]"
+                                disabled={!hasUpperScan || alignBusy}
+                                onClick={() => {
+                                  if (alignArch === "upper") {
+                                    viewerRef.current?.clearAlignPicks();
+                                    setAlignPicks({ model: 0, bite: 0 });
+                                    setAlignNote("");
+                                    return;
+                                  }
+                                  setAlignArch("upper");
+                                  setAlignPicks({ model: 0, bite: 0 });
+                                  setAlignNote("");
+                                }}
+                              >
+                                상악
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant={alignArch === "lower" ? "default" : "outline"}
+                                className="h-7 px-2 text-[11px]"
+                                disabled={!hasLowerScan || alignBusy}
+                                onClick={() => {
+                                  if (alignArch === "lower") {
+                                    viewerRef.current?.clearAlignPicks();
+                                    setAlignPicks({ model: 0, bite: 0 });
+                                    setAlignNote("");
+                                    return;
+                                  }
+                                  setAlignArch("lower");
+                                  setAlignPicks({ model: 0, bite: 0 });
+                                  setAlignNote("");
+                                }}
+                              >
+                                하악
+                              </Button>
+                            </div>
+                            {alignArch ? (
+                              <>
+                                <p className="text-[11px] leading-relaxed text-muted-foreground">
+                                  왼쪽 모델과 오른쪽 바이트에 같은 순서의 점 3개를 찍습니다.
+                                  <br />
+                                  찍은 점 근처에서 대응점을 찾아 붙입니다.
+                                </p>
+                                <p className="text-[11px] font-medium text-foreground">
+                                  모델 {alignPicks.model}/3 · 바이트 {alignPicks.bite}/3
+                                </p>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 w-full px-2 text-[11px]"
+                                  disabled={
+                                    alignBusy ||
+                                    (alignPicks.model === 0 && alignPicks.bite === 0)
+                                  }
+                                  onClick={() => {
+                                    viewerRef.current?.clearAlignPicks();
+                                    setAlignPicks({ model: 0, bite: 0 });
+                                    setAlignNote("");
+                                  }}
+                                >
+                                  점 지우기
+                                </Button>
+                              </>
+                            ) : (
+                              <p className="text-[11px] leading-relaxed text-muted-foreground">
+                                상악 또는 하악을 고르면 그 모델과 바이트만 좌우로 보입니다.
+                                <br />
+                                나머지 모델은 숨깁니다.
+                              </p>
+                            )}
+                          </>
+                        ) : (
+                          <p className="text-[11px] leading-relaxed text-muted-foreground">
+                            자동은 파일 위치에서 상악과 하악을 바이트에 맞춥니다.
+                            <br />
+                            수동은 붙일 악을 고른 뒤 점 3개씩을 찍습니다.
+                          </p>
+                        )}
+                        {alignNote ? (
+                          <p className="text-[11px] leading-relaxed text-muted-foreground">
+                            {alignNote}
+                          </p>
+                        ) : null}
+                      </section>
+                    ) : null}
                     {stage !== "scan" ? (
                       <LabProsthesisModifyPanel
                         tool={modifyTool}

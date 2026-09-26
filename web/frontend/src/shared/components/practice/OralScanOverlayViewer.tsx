@@ -16,6 +16,7 @@
 // - 2026-09-26: 삽입축을 잡으면 치아·잇몸 색이 갈라지는 곳을 마진으로 잡는다.
 // - 2026-09-26: 마진은 기본 원보다 바깥을, 삽입축으로 스캔 면에 붙여 잡는다.
 // - 2026-09-26: 바이트와 상·하악이 어긋나면 바이트에 맞춰 움직이고, 교합면 중심에 원점을 둔다.
+// - 2026-09-26: 수동 정렬은 고른 악과 바이트만 좌우로 두고, 점 3개씩으로 근처 대응점을 잡아 붙인다.
 import {
   forwardRef,
   useEffect,
@@ -43,7 +44,10 @@ import {
   UNDERCUT_RGB,
   type ContactPaintMode,
 } from "@/shared/practice/oralScanDesignAnalysis";
-import { registerJawsToBite } from "@/shared/practice/biteRegistration";
+import {
+  mergeArchToBiteByPoints,
+  registerJawsToBite,
+} from "@/shared/practice/biteRegistration";
 import type {
   DesignGesture,
   ProsthesisDesignEdit,
@@ -86,6 +90,10 @@ export type OralScanOverlayHandle = {
   ) => Array<{ tooth: string; radii: number[]; depths: number[] }>;
   /** 모달을 열었을 때의 교합면 카메라로 되돌린다. */
   resetHomeView: () => void;
+  /** 파일 좌표에서 상악·하악을 바이트에 다시 맞춘다. 붙으면 true. */
+  alignToBiteAuto: () => Promise<boolean>;
+  /** 수동 정렬에서 찍은 점을 지운다. */
+  clearAlignPicks: () => void;
 };
 
 export type OralScanToothBadge = {
@@ -137,6 +145,14 @@ type Props = {
   /** 마진·보철 수정. 없으면 그리지 않는다. */
   designEdit?: ProsthesisDesignEdit | null;
   onDesignGesture?: (gesture: DesignGesture) => void;
+  /**
+   * 수동 정렬. 이 악과 바이트만 좌우로 보여 점을 찍는다.
+   * 없으면 평소 뷰.
+   */
+  manualAlignArch?: "upper" | "lower" | null;
+  onAlignProgress?: (picks: { model: number; bite: number }) => void;
+  onAlignMerged?: (arch: "upper" | "lower") => void;
+  onAlignFailed?: () => void;
   className?: string;
 };
 
@@ -156,6 +172,8 @@ type LoadedMesh = {
   analysisColor: THREE.BufferAttribute | null;
   /** 스캔 파일 좌표. 역할을 바꾸면 여기로 되돌린 뒤 다시 맞춘다. */
   basePositions: Float32Array;
+  /** 파일을 열었을 때의 좌표. 자동 정렬은 여기로 되돌린 뒤 다시 맞춘다. */
+  filePositions: Float32Array;
 };
 
 type SnapAnim = {
@@ -548,6 +566,25 @@ function captureBasePositions(geometry: THREE.BufferGeometry) {
     out[i * 3 + 2] = pos.getZ(i);
   }
   return out;
+}
+
+function restoreFilePositions(entry: LoadedMesh) {
+  const pos = entry.geometry.getAttribute("position");
+  const file = entry.filePositions;
+  if (!pos || file.length < pos.count * 3) return;
+  for (let i = 0; i < pos.count; i += 1) {
+    pos.setXYZ(i, file[i * 3] ?? 0, file[i * 3 + 1] ?? 0, file[i * 3 + 2] ?? 0);
+  }
+  pos.needsUpdate = true;
+  entry.geometry.computeVertexNormals();
+  entry.geometry.computeBoundingBox();
+  entry.dist = null;
+  entry.align = null;
+  entry.analysisColor = null;
+}
+
+function rememberPositions(entry: LoadedMesh) {
+  entry.basePositions = captureBasePositions(entry.geometry);
 }
 
 function restoreBasePositions(entry: LoadedMesh) {
@@ -1069,9 +1106,9 @@ function measureMeshFit(
     const stride = pos.count > 250000 ? Math.ceil(pos.count / 250000) : 1;
     for (let i = 0; i < pos.count; i += stride) {
       point.set(
-        pos.getX(i) + groupPosition.x,
-        pos.getY(i) + groupPosition.y,
-        pos.getZ(i) + groupPosition.z,
+        pos.getX(i) + entry.mesh.position.x + groupPosition.x,
+        pos.getY(i) + entry.mesh.position.y + groupPosition.y,
+        pos.getZ(i) + entry.mesh.position.z + groupPosition.z,
       );
       xs.push(point.dot(right));
       ys.push(point.dot(screenUp));
@@ -1776,6 +1813,10 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       showCenterGuides = false,
       designEdit = null,
       onDesignGesture,
+      manualAlignArch = null,
+      onAlignProgress,
+      onAlignMerged,
+      onAlignFailed,
       className,
     },
     ref,
@@ -1835,8 +1876,36 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   const designEditRef = useRef<ProsthesisDesignEdit | null>(null);
   const onDesignGestureRef = useRef(onDesignGesture);
   const editLayerRef = useRef<THREE.Group | null>(null);
+  const manualRef = useRef<{
+    arch: "upper" | "lower" | null;
+    model: THREE.Vector3[];
+    bite: THREE.Vector3[];
+    merging: boolean;
+    skipLayout: boolean;
+  }>({
+    arch: null,
+    model: [],
+    bite: [],
+    merging: false,
+    skipLayout: false,
+  });
+  const alignWatchRef = useRef<"upper" | "lower" | null>(null);
+  const onAlignProgressRef = useRef(onAlignProgress);
+  const onAlignMergedRef = useRef(onAlignMerged);
+  const onAlignFailedRef = useRef(onAlignFailed);
+  const layoutSplitRef = useRef<(arch: "upper" | "lower") => void>(() => {});
+  const clearAlignMarksRef = useRef<() => void>(() => {});
+  const exitAlignViewRef = useRef<() => void>(() => {});
+  const alignApiRef = useRef<{ pick: (event: PointerEvent) => void }>({
+    pick: () => {},
+  });
+  const alignAutoRef = useRef<() => Promise<boolean>>(async () => false);
+  const clearPicksRef = useRef<() => void>(() => {});
   designEditRef.current = designEdit;
   onDesignGestureRef.current = onDesignGesture;
+  onAlignProgressRef.current = onAlignProgress;
+  onAlignMergedRef.current = onAlignMerged;
+  onAlignFailedRef.current = onAlignFailed;
   const setViewRef = useRef<(preset: OralScanViewPreset) => void>(() => {});
   const saveImageRef = useRef<() => void>(() => {});
   const [parseNote, setParseNote] = useState("");
@@ -1991,7 +2060,19 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       entry.mesh.renderOrder = ghost ? 2 : 0;
       const list = Array.isArray(prev) ? prev : [prev];
       for (const old of list) old.dispose();
-      entry.mesh.visible = !ghostOff && visibleRef.current[entry.id] !== false;
+      const split = manualRef.current.arch;
+      const forced =
+        split != null && (entry.role === split || entry.role === "bite");
+      const hiddenByAlign =
+        split != null && entry.role !== split && entry.role !== "bite";
+      if (forced) {
+        mat.transparent = false;
+        mat.opacity = 1;
+        mat.depthWrite = true;
+      }
+      entry.mesh.visible =
+        !hiddenByAlign && !ghostOff && visibleRef.current[entry.id] !== false;
+      if (forced) entry.mesh.visible = true;
     }
     if (scene && renderer) {
       if (mapping && anyColor) {
@@ -2400,6 +2481,24 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     renderer.domElement.addEventListener("pointercancel", endEditDrag, true);
     renderer.domElement.addEventListener("contextmenu", onEditContext, true);
 
+    let alignDown: { x: number; y: number } | null = null;
+    const onAlignPointerDown = (event: PointerEvent) => {
+      if (!manualRef.current.arch || manualRef.current.merging || event.button !== 0) {
+        return;
+      }
+      alignDown = { x: event.clientX, y: event.clientY };
+    };
+    const onAlignPointerUp = (event: PointerEvent) => {
+      const start = alignDown;
+      alignDown = null;
+      if (!start || !manualRef.current.arch || manualRef.current.merging) return;
+      if (event.button !== 0) return;
+      if (Math.hypot(event.clientX - start.x, event.clientY - start.y) > 6) return;
+      alignApiRef.current.pick(event);
+    };
+    renderer.domElement.addEventListener("pointerdown", onAlignPointerDown);
+    renderer.domElement.addEventListener("pointerup", onAlignPointerUp);
+
     return () => {
       window.cancelAnimationFrame(raf);
       ro.disconnect();
@@ -2408,6 +2507,8 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       renderer.domElement.removeEventListener("pointerup", endEditDrag, true);
       renderer.domElement.removeEventListener("pointercancel", endEditDrag, true);
       renderer.domElement.removeEventListener("contextmenu", onEditContext, true);
+      renderer.domElement.removeEventListener("pointerdown", onAlignPointerDown);
+      renderer.domElement.removeEventListener("pointerup", onAlignPointerUp);
       controls.removeEventListener("start", cancelSnap);
       controls.dispose();
       for (const entry of loadedRef.current) {
@@ -2583,6 +2684,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
               align: null,
               analysisColor: null,
               basePositions: captureBasePositions(parsed.geometry),
+              filePositions: captureBasePositions(parsed.geometry),
             });
           } catch {
             failed.push(source.fileName);
@@ -2622,7 +2724,8 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       if (seated) reseatOcclusalOrigin(loaded, seated);
       for (const entry of loaded) group.add(entry.mesh);
       loadedRef.current = loaded;
-      placeLoadedRef.current(Boolean(seated));
+      if (manualRef.current.arch) layoutSplitRef.current(manualRef.current.arch);
+      else placeLoadedRef.current(Boolean(seated));
       setAligning(false);
       onScanColorChangeRef.current?.(loaded.some((entry) => entry.hasColor));
       setParseNote(
@@ -2638,6 +2741,320 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
 
   const restyleRef = useRef(restyleLoaded);
   restyleRef.current = restyleLoaded;
+
+  const clearAlignMarks = () => {
+    for (const entry of loadedRef.current) {
+      const marks = entry.mesh.children.filter((child) => child.userData.alignPick);
+      for (const child of marks) {
+        child.traverse((obj) => {
+          const label = obj as CSS2DObject;
+          if (label.element?.isConnected) label.element.remove();
+        });
+        entry.mesh.remove(child);
+        disposeObject3D(child);
+      }
+    }
+  };
+  clearAlignMarksRef.current = clearAlignMarks;
+
+  const roleBounds = (role: string) => {
+    const box = new THREE.Box3();
+    let any = false;
+    for (const entry of loadedRef.current) {
+      if (entry.role !== role) continue;
+      entry.geometry.computeBoundingBox();
+      const bounds = entry.geometry.boundingBox;
+      if (!bounds || bounds.isEmpty()) continue;
+      box.union(bounds);
+      any = true;
+    }
+    return any ? box : null;
+  };
+
+  const finishAlignedView = () => {
+    const loaded = loadedRef.current;
+    for (const entry of loaded) {
+      entry.mesh.position.set(0, 0, 0);
+      entry.dist = null;
+      entry.align = null;
+      rememberPositions(entry);
+    }
+    const seated = estimateDentalFrame(loaded);
+    if (seated) {
+      reseatOcclusalOrigin(loaded, seated);
+      for (const entry of loaded) rememberPositions(entry);
+    }
+    manualRef.current.arch = null;
+    manualRef.current.model = [];
+    manualRef.current.bite = [];
+    manualRef.current.skipLayout = true;
+    placeLoadedRef.current(Boolean(seated));
+    syncBadgesRef.current();
+    setLoadVersion((value) => value + 1);
+  };
+
+  const layoutSplit = (arch: "upper" | "lower") => {
+    const group = groupRef.current;
+    const loaded = loadedRef.current;
+    if (!group || loaded.length === 0) return;
+    clearAlignMarks();
+    manualRef.current.model = [];
+    manualRef.current.bite = [];
+    manualRef.current.arch = arch;
+    for (const entry of loaded) entry.mesh.position.set(0, 0, 0);
+    group.position.set(0, 0, 0);
+    const archBox = roleBounds(arch);
+    const biteBox = roleBounds("bite");
+    if (!archBox || !biteBox) {
+      restyleLoaded();
+      return;
+    }
+    const frame = estimateDentalFrame(loaded);
+    if (frame) applyDentalFrame(frame);
+    frameRef.current = frame
+      ? {
+          up: frame.up.clone(),
+          anterior: frame.anterior.clone(),
+          right: frame.right.clone(),
+        }
+      : null;
+    const viewDir = HOME_DIR.clone().normalize();
+    const up = HOME_UP.clone();
+    if (Math.abs(up.dot(viewDir)) > 0.92) up.set(0, 0, 1);
+    up.normalize();
+    const screenRight = new THREE.Vector3().crossVectors(viewDir, up);
+    if (screenRight.lengthSq() < 1e-8) screenRight.set(1, 0, 0);
+    screenRight.normalize();
+    const archCenter = archBox.getCenter(new THREE.Vector3());
+    const biteCenter = biteBox.getCenter(new THREE.Vector3());
+    const archRadius = archBox.getSize(new THREE.Vector3()).length() * 0.5;
+    const biteRadius = biteBox.getSize(new THREE.Vector3()).length() * 0.5;
+    const span = archRadius + biteRadius + Math.max(archRadius, biteRadius) * 0.28;
+    const archOffset = screenRight.clone().multiplyScalar(-span).sub(archCenter);
+    const biteOffset = screenRight.clone().multiplyScalar(span).sub(biteCenter);
+    for (const entry of loaded) {
+      if (entry.role === arch) entry.mesh.position.copy(archOffset);
+      else if (entry.role === "bite") entry.mesh.position.copy(biteOffset);
+    }
+    group.updateWorldMatrix(true, true);
+    const bounds = new THREE.Box3();
+    for (const entry of loaded) {
+      if (entry.role !== arch && entry.role !== "bite") continue;
+      entry.mesh.updateWorldMatrix(true, false);
+      bounds.expandByObject(entry.mesh);
+    }
+    if (!bounds.isEmpty()) {
+      const center = bounds.getCenter(new THREE.Vector3());
+      group.position.sub(center);
+      fitRadiusRef.current = Math.max(bounds.getBoundingSphere(new THREE.Sphere()).radius, 1);
+    }
+    unitToMmRef.current = geometryUnitsToMm(fitRadiusRef.current);
+    const shown = loaded.filter((entry) => entry.role === arch || entry.role === "bite");
+    const fit = measureMeshFit(shown, group.position, HOME_DIR, HOME_UP);
+    fitExtentRef.current = { halfW: fit.halfW, halfH: fit.halfH };
+    fitTargetRef.current.copy(fit.target);
+    applyFitFrustum();
+    frameCamera(HOME_DIR, HOME_UP, false);
+    restyleLoaded();
+    syncBadgesRef.current();
+  };
+  layoutSplitRef.current = layoutSplit;
+
+  const addAlignMark = (entry: LoadedMesh, local: THREE.Vector3, index: number) => {
+    const radius = Math.max(fitRadiusRef.current * 0.014, 0.35);
+    const colors = [0xef4444, 0x22c55e, 0xf59e0b];
+    const sphere = new THREE.Mesh(
+      new THREE.SphereGeometry(radius, 16, 12),
+      new THREE.MeshBasicMaterial({
+        color: colors[index] ?? 0xffffff,
+        depthTest: false,
+      }),
+    );
+    sphere.position.copy(local);
+    sphere.renderOrder = 8;
+    sphere.userData.alignPick = true;
+    const tag = document.createElement("div");
+    tag.textContent = String(index + 1);
+    tag.style.cssText = [
+      "width:16px",
+      "height:16px",
+      "margin-top:-8px",
+      "border-radius:999px",
+      "display:flex",
+      "align-items:center",
+      "justify-content:center",
+      "font:700 10px/1 sans-serif",
+      "color:#fff",
+      "background:rgba(15,23,42,0.78)",
+      "pointer-events:none",
+    ].join(";");
+    const label = new CSS2DObject(tag);
+    label.position.set(0, radius * 2.1, 0);
+    label.userData.alignPick = true;
+    sphere.add(label);
+    entry.mesh.add(sphere);
+  };
+
+  const runManualMerge = async () => {
+    const arch = manualRef.current.arch;
+    if (!arch || manualRef.current.merging) return;
+    if (manualRef.current.model.length < 3 || manualRef.current.bite.length < 3) return;
+    const loaded = loadedRef.current;
+    const arches = loaded.filter((entry) => entry.role === arch);
+    const bites = loaded.filter((entry) => entry.role === "bite");
+    manualRef.current.merging = true;
+    setAligning(true);
+    const model = manualRef.current.model.map(
+      (point) => [point.x, point.y, point.z] as [number, number, number],
+    );
+    const bite = manualRef.current.bite.map(
+      (point) => [point.x, point.y, point.z] as [number, number, number],
+    );
+    let ok = false;
+    try {
+      ok = await mergeArchToBiteByPoints(
+        arches.map((entry) => entry.geometry),
+        bites.map((entry) => entry.geometry),
+        model,
+        bite,
+      );
+    } catch (error) {
+      console.info("[oral-scan] bite-points failed", error);
+      ok = false;
+    }
+    clearAlignMarks();
+    manualRef.current.merging = false;
+    setAligning(false);
+    if (!ok) {
+      manualRef.current.model = [];
+      manualRef.current.bite = [];
+      onAlignProgressRef.current?.({ model: 0, bite: 0 });
+      onAlignFailedRef.current?.();
+      return;
+    }
+    for (const entry of loaded) entry.mesh.position.set(0, 0, 0);
+    finishAlignedView();
+    onAlignProgressRef.current?.({ model: 0, bite: 0 });
+    onAlignMergedRef.current?.(arch);
+  };
+
+  alignApiRef.current.pick = (event) => {
+    const arch = manualRef.current.arch;
+    const renderer = rendererRef.current;
+    const camera = cameraRef.current;
+    if (!arch || !renderer || !camera || manualRef.current.merging) return;
+    groupRef.current?.updateWorldMatrix(true, true);
+    const rect = renderer.domElement.getBoundingClientRect();
+    const ndc = new THREE.Vector2(
+      ((event.clientX - rect.left) / Math.max(rect.width, 1)) * 2 - 1,
+      -((event.clientY - rect.top) / Math.max(rect.height, 1)) * 2 + 1,
+    );
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(ndc, camera);
+    const meshes = loadedRef.current
+      .filter((entry) => entry.mesh.visible)
+      .map((entry) => entry.mesh);
+    const hit = raycaster.intersectObjects(meshes, false)[0];
+    if (!hit) return;
+    const entry = loadedRef.current.find((row) => row.mesh === hit.object);
+    if (!entry) return;
+    const side = entry.role === "bite" ? "bite" : entry.role === arch ? "model" : null;
+    if (!side) return;
+    const list = manualRef.current[side];
+    if (list.length >= 3) return;
+    const local = entry.mesh.worldToLocal(hit.point.clone());
+    list.push(local);
+    addAlignMark(entry, local, list.length - 1);
+    onAlignProgressRef.current?.({
+      model: manualRef.current.model.length,
+      bite: manualRef.current.bite.length,
+    });
+    if (manualRef.current.model.length >= 3 && manualRef.current.bite.length >= 3) {
+      void runManualMerge();
+    }
+  };
+
+  alignAutoRef.current = async () => {
+    const loaded = loadedRef.current;
+    if (loaded.length === 0) return false;
+    manualRef.current.merging = true;
+    manualRef.current.skipLayout = true;
+    clearAlignMarks();
+    manualRef.current.model = [];
+    manualRef.current.bite = [];
+    manualRef.current.arch = null;
+    for (const entry of loaded) {
+      entry.mesh.position.set(0, 0, 0);
+      restoreFilePositions(entry);
+    }
+    setAligning(true);
+    let ok = false;
+    try {
+      ok = await registerJawsToBite(loaded);
+      const seated = estimateDentalFrame(loaded);
+      if (seated) reseatOcclusalOrigin(loaded, seated);
+      for (const entry of loaded) {
+        entry.dist = null;
+        entry.align = null;
+        rememberPositions(entry);
+      }
+      placeLoadedRef.current(Boolean(seated));
+      syncBadgesRef.current();
+      setLoadVersion((value) => value + 1);
+      return ok;
+    } catch (error) {
+      console.info("[oral-scan] bite-fit failed", error);
+      return false;
+    } finally {
+      manualRef.current.merging = false;
+      manualRef.current.skipLayout = false;
+      setAligning(false);
+    }
+  };
+
+  clearPicksRef.current = () => {
+    if (manualRef.current.merging) return;
+    clearAlignMarks();
+    manualRef.current.model = [];
+    manualRef.current.bite = [];
+    onAlignProgressRef.current?.({ model: 0, bite: 0 });
+  };
+
+  exitAlignViewRef.current = () => {
+    clearAlignMarks();
+    manualRef.current.model = [];
+    manualRef.current.bite = [];
+    manualRef.current.arch = null;
+    for (const entry of loadedRef.current) entry.mesh.position.set(0, 0, 0);
+    if (loadedRef.current.length > 0) {
+      const seated = estimateDentalFrame(loadedRef.current);
+      placeLoadedRef.current(Boolean(seated));
+    }
+    syncBadgesRef.current();
+  };
+
+  useEffect(() => {
+    const next = manualAlignArch ?? null;
+    const prev = alignWatchRef.current;
+    alignWatchRef.current = next;
+    if (manualRef.current.skipLayout) {
+      manualRef.current.skipLayout = false;
+      manualRef.current.arch = next;
+      return;
+    }
+    if (next === prev) return;
+    manualRef.current.arch = next;
+    manualRef.current.model = [];
+    manualRef.current.bite = [];
+    clearAlignMarksRef.current();
+    onAlignProgressRef.current?.({ model: 0, bite: 0 });
+    if (loadedRef.current.length === 0) return;
+    if (!next) {
+      exitAlignViewRef.current();
+      return;
+    }
+    layoutSplitRef.current(next);
+  }, [manualAlignArch]);
 
   useEffect(() => {
     const loaded = loadedRef.current;
@@ -2665,7 +3082,8 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         if (gen !== layoutGenRef.current) return;
         const seated = estimateDentalFrame(loaded);
         if (seated) reseatOcclusalOrigin(loaded, seated);
-        placeLoadedRef.current(Boolean(seated));
+        if (manualRef.current.arch) layoutSplitRef.current(manualRef.current.arch);
+        else placeLoadedRef.current(Boolean(seated));
         setLoadVersion((version) => version + 1);
       } finally {
         if (gen === layoutGenRef.current) setAligning(false);
@@ -2724,11 +3142,17 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   useEffect(() => {
     const opacity = lookRef.current.ghostOpacity;
     const prep = lookRef.current.prepArch;
+    const split = manualRef.current.arch;
     for (const entry of loadedRef.current) {
       const ghostOff = isGhostScanRole(entry.role, prep) && opacity <= 0.001;
-      entry.mesh.visible = !ghostOff && visible[entry.id] !== false;
+      const hidden =
+        split != null && entry.role !== split && entry.role !== "bite";
+      const forced = split != null && (entry.role === split || entry.role === "bite");
+      entry.mesh.visible = forced
+        ? true
+        : !hidden && !ghostOff && visible[entry.id] !== false;
     }
-  }, [visible, loadVersion, ghostOpacity, prepArch]);
+  }, [visible, loadVersion, ghostOpacity, prepArch, manualAlignArch]);
 
   useEffect(() => {
     restyleLoaded();
@@ -2820,6 +3244,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       (child as CSS2DObject).element.remove();
       layer.remove(child);
     }
+    if (manualRef.current.arch) return;
     const frame = frameRef.current;
     const used = new Set<string>();
     const placeOnRing = (button: HTMLButtonElement, parent: HTMLElement) => {
@@ -2956,6 +3381,8 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         restoreInsertionViewRef.current(toothNumbers),
       saveImage: () => saveImageRef.current(),
       resetHomeView: () => resetHomeRef.current(),
+      alignToBiteAuto: () => alignAutoRef.current(),
+      clearAlignPicks: () => clearPicksRef.current(),
       setInsertionFromView: (toothNumbers) => {
         const camera = cameraRef.current;
         const controls = controlsRef.current;
