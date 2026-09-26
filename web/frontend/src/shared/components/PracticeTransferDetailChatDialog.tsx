@@ -21,6 +21,7 @@
 // - web/frontend/src/shared/files/fileBlobCache.ts
 // - web/frontend/src/shared/files/s3ImageThumb.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-26: AI 보철 프리뷰 — 스캔 파일 키·로그인 토큰 전달.
 // - 2026-09-26: 노란 스캔 — 이미 고른 역할을 다시 눌러도 확정(노란 표시 해제).
 // - 2026-09-26: 기공소 채팅 — 스캔 역할은 파일명 구분. 애매한 파일만 노란 표시로 확정.
 // - 2026-09-26: 기공소 헤더 — AI는 작업시작 오른쪽. 할증 뱃지는 상단 별 위 `1.1x`.
@@ -2348,6 +2349,7 @@ export function PracticeTransferDetailChatDialog({
       <LabProsthesisAiDesignButton
         toothWorks={chartToothWorks}
         files={files}
+        authToken={authToken}
       />
     ) : null;
   const labIdentityDateRowActions =
