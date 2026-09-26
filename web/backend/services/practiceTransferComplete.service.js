@@ -73,6 +73,20 @@ function toProductionApiFields(production) {
       size: Number(item?.file?.size || 0),
       s3Key: String(item?.file?.s3Key || "").trim(),
     })),
+    labWorkScanFiles: normalizeResultFiles(p.labWorkScanFiles).map((item, idx) => ({
+      id: `work-scan::${idx + 1}`,
+      patientName: String(item?.patientName || "").trim(),
+      tooth: String(item?.tooth || "").trim(),
+      originalName: String(item?.file?.originalName || "").trim(),
+      mimetype: String(item?.file?.mimetype || "application/octet-stream").trim(),
+      size: Number(item?.file?.size || 0),
+      s3Key: String(item?.file?.s3Key || "").trim(),
+      scanRole: String(item?.scanRole || "").trim() || null,
+      scanRoleSetBy: String(item?.scanRoleSetBy || "").trim() || null,
+      uploadedAt: item?.uploadedAt
+        ? new Date(item.uploadedAt).toISOString()
+        : null,
+    })),
     labDesignConfirmedAt: p.labDesignConfirmedAt || null,
     practiceDesignConfirmedAt: p.practiceDesignConfirmedAt || null,
     abutmentProductionStartedAt: p.abutmentProductionStartedAt || null,

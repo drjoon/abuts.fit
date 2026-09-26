@@ -100,6 +100,8 @@ export type PracticeRecentRequestItem = {
   trashedFiles?: PracticeRecentTransferFileItem[];
   resultFiles?: PracticeRecentTransferFileItem[];
   designFiles?: PracticeRecentTransferFileItem[];
+  /** AI 작업 스캔. 채팅 작업 파일. */
+  workScanFiles?: PracticeRecentTransferFileItem[];
   hasCustomAbutment?: boolean;
   productionConfirmedAt?: string | null;
   /** 연동 커스텀어벗 Request 한진 배송 요약 */
@@ -188,6 +190,7 @@ export type PracticeRecentTransferItem = {
   trashedFiles?: PracticeRecentTransferFileItem[];
   resultFiles?: PracticeRecentTransferFileItem[];
   designFiles?: PracticeRecentTransferFileItem[];
+  workScanFiles?: PracticeRecentTransferFileItem[];
   hasCustomAbutment?: boolean;
   productionConfirmedAt?: string | null;
   /** 연동 커스텀어벗 Request 한진 배송 요약 */
@@ -914,6 +917,7 @@ export const mapMyPracticeTransferApiRows = (
           ? (r.production as Record<string, unknown>)
           : null;
       const designFiles = mapApiFileItems(productionRaw?.designFiles);
+      const workScanFiles = mapApiFileItems(productionRaw?.labWorkScanFiles);
 
       return {
         id: requestId,
@@ -956,6 +960,7 @@ export const mapMyPracticeTransferApiRows = (
         trashedFiles,
         resultFiles,
         designFiles,
+        workScanFiles,
         hasCustomAbutment: Boolean(r.hasCustomAbutment),
         productionConfirmedAt: productionRaw?.confirmedAt
           ? String(productionRaw.confirmedAt)

@@ -23,6 +23,9 @@
 // - 2026-09-26: 수동 정렬의 두 모델은 화면 가운데에 좁은 간격으로 나란히 둔다.
 // - 2026-09-26: 정렬 안내 문장은 버튼 툴팁으로만.
 // - 2026-09-26: 모델 정렬이 돌아가는 동안 취소할 수 있다.
+// - 2026-09-26: 작업 저장·전체 생성은 없앤다. 작업은 IndexedDB에 두고 닫을 때 서버에 올린다.
+// - 2026-09-26: 작업 스캔은 의뢰 파일이 아니라 채팅 작업 파일에 둔다.
+// - 2026-09-26: 헤더에 자동 저장 스위치와 실행 취소·다시 실행.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDownToLine,
@@ -31,7 +34,8 @@ import {
   ChevronDown,
   ImageDown,
   Paintbrush,
-  Save,
+  Redo2,
+  Undo2,
   Palette,
   Sparkles,
   TriangleAlert,
@@ -55,7 +59,6 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/shared/ui/cn";
 import { apiFetch } from "@/shared/api/apiClient";
-import { encodeHpsCaDcm } from "@/shared/files/hpsDcmWrite";
 import { fetchS3BlobCached } from "@/shared/files/s3BlobCache";
 import { useS3TempUpload } from "@/shared/hooks/useS3TempUpload";
 import { useToast } from "@/shared/hooks/use-toast";
@@ -72,15 +75,13 @@ import {
   OralScanOverlayViewer,
   type OralScanOverlayHandle,
   type OralScanOverlaySource,
-  type WorkingScanMesh,
 } from "@/shared/components/practice/OralScanOverlayViewer";
 import { LabProsthesisModifyPanel } from "@/shared/components/practice/LabProsthesisModifyPanel";
 import {
-  abutsWorkScanFileName,
   buildLabProsthesisAiPlan,
-  isAbutsWorkScanFileName,
   isOralScanMeshName,
   oralScanRoleLabel,
+  newestWorkScanUploadedAtMs,
   preferWorkingOralScanFiles,
   initialLabOralScanVisible,
   prepArchFromProsthesisTeeth,
@@ -88,7 +89,16 @@ import {
   formatProsthesisAiToothLabel,
   type LabOralScanRole,
   type LabProsthesisAiTooth,
+  type WorkScanRole,
 } from "@/shared/practice/labProsthesisAiDesign";
+import {
+  assignNewerDraftFiles,
+  dropWorkDraftRoles,
+  newerDraftRoles,
+  readWorkDraft,
+  stampWorkDraftSavedAt,
+  writeWorkDraftMeshes,
+} from "@/shared/practice/labProsthesisWorkDraft";
 import {
   undercutLimitFromRange,
   type ContactPaintMode,
@@ -116,6 +126,7 @@ type AiDesignFile = {
 export type WorkingScansPersisted = {
   files?: unknown;
   trashedFiles?: unknown;
+  workScanFiles?: unknown;
 };
 
 type LabProsthesisAiCaseHeader = {
@@ -139,8 +150,10 @@ type LabProsthesisAiDesignButtonProps = {
   }> | null;
   files?: ReadonlyArray<AiDesignFile> | null;
   authToken?: string | null;
-  /** 기공소 수신 의뢰. 작업 DCM을 이 의뢰 파일에 붙인다. */
+  /** 기공소 수신 의뢰. 작업 DCM은 이 의뢰의 작업 파일에 붙인다. */
   transferId?: string | null;
+  /** 채팅 작업 파일의 작업 스캔. 의뢰 파일보다 나중이면 이걸 연다. */
+  workScanFiles?: ReadonlyArray<AiDesignFile> | null;
   onWorkingScansPersisted?: (data: WorkingScansPersisted) => void;
   caseHeader?: LabProsthesisAiCaseHeader | null;
   /** 채팅 헤더와 같은 바구니 번호표 */
@@ -186,6 +199,7 @@ export function LabProsthesisAiDesignButton({
   files,
   authToken,
   transferId,
+  workScanFiles,
   onWorkingScansPersisted,
   caseHeader,
   basketTag,
@@ -214,12 +228,38 @@ export function LabProsthesisAiDesignButton({
         files={files}
         authToken={authToken}
         transferId={transferId}
+        workScanFiles={workScanFiles}
         onWorkingScansPersisted={onWorkingScansPersisted}
         caseHeader={caseHeader}
         basketTag={basketTag}
       />
     </>
   );
+}
+
+const AUTO_SAVE_PREF_KEY = "abuts.labProsthesis.autoSave";
+const UNDO_LIMIT = 30;
+
+type WorkUndoSnap = {
+  edits: Record<string, ToothDesignEdit>;
+  generated: Record<string, boolean>;
+  jaws: Array<{ id: string; positions: Float32Array }> | null;
+};
+
+type WorkUndoBook = {
+  past: WorkUndoSnap[];
+  future: WorkUndoSnap[];
+  stroke: boolean;
+  strokeKey: string;
+  closeTimer: number;
+};
+
+function storedAutoSave() {
+  try {
+    return window.localStorage.getItem(AUTO_SAVE_PREF_KEY) !== "0";
+  } catch {
+    return true;
+  }
 }
 
 function LabProsthesisAiDesignDialog({
@@ -229,6 +269,7 @@ function LabProsthesisAiDesignDialog({
   files,
   authToken,
   transferId,
+  workScanFiles,
   onWorkingScansPersisted,
   caseHeader,
   basketTag,
@@ -236,14 +277,21 @@ function LabProsthesisAiDesignDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const plan = useMemo(
-    () => buildLabProsthesisAiPlan({ toothWorks, files }),
-    [files, toothWorks],
+  const listedScanFiles = useMemo(
+    () => [...(files || []), ...(workScanFiles || [])],
+    [files, workScanFiles],
   );
-  const filesRef = useRef(files);
-  filesRef.current = files;
+  const plan = useMemo(
+    () => buildLabProsthesisAiPlan({ toothWorks, files: listedScanFiles }),
+    [listedScanFiles, toothWorks],
+  );
+  const filesRef = useRef(listedScanFiles);
+  filesRef.current = listedScanFiles;
 
-  const meshSources = useMemo(() => collectMeshSources(files), [files]);
+  const meshSources = useMemo(
+    () => collectMeshSources(listedScanFiles),
+    [listedScanFiles],
+  );
   const meshKey = meshSources
     .map((row) => `${row.id}\0${row.role}\0${row.fileName}`)
     .join("|");
@@ -314,10 +362,30 @@ function LabProsthesisAiDesignDialog({
   const [alignArch, setAlignArch] = useState<"upper" | "lower" | null>(null);
   const [alignPicks, setAlignPicks] = useState({ model: 0, bite: 0 });
   const [alignBusy, setAlignBusy] = useState(false);
+  const [autoSave, setAutoSave] = useState(storedAutoSave);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
   const viewerRef = useRef<OralScanOverlayHandle>(null);
-  const lastSavedSigRef = useRef("");
+  const autoSaveRef = useRef(autoSave);
+  autoSaveRef.current = autoSave;
+  const editsRef = useRef(edits);
+  editsRef.current = edits;
+  const generatedRef = useRef(generated);
+  generatedRef.current = generated;
+  const historyRef = useRef<WorkUndoBook>({
+    past: [],
+    future: [],
+    stroke: false,
+    strokeKey: "",
+    closeTimer: 0,
+  });
+  const alignBeforeSigRef = useRef("");
   const saveLockRef = useRef(false);
-  const [saving, setSaving] = useState(false);
+  const pendingDraftRolesRef = useRef<Set<WorkScanRole>>(new Set());
+  const lastDraftSigRef = useRef("");
+  const suspendDraftRef = useRef(false);
+  const draftTimerRef = useRef(0);
+  const draftQueueRef = useRef(Promise.resolve());
   const { toast } = useToast();
   const { uploadFiles } = useS3TempUpload({ token: authToken });
   const workObserveRef = useRef<ResizeObserver | null>(null);
@@ -373,9 +441,23 @@ function LabProsthesisAiDesignDialog({
       setAlignArch(null);
       setAlignPicks({ model: 0, bite: 0 });
       setAlignBusy(false);
+      pendingDraftRolesRef.current = new Set();
+      lastDraftSigRef.current = "";
+      suspendDraftRef.current = false;
+      window.clearTimeout(draftTimerRef.current);
+      window.clearTimeout(historyRef.current.closeTimer);
+      historyRef.current.closeTimer = 0;
+      historyRef.current.past = [];
+      historyRef.current.future = [];
+      historyRef.current.stroke = false;
+      historyRef.current.strokeKey = "";
+      historyRef.current.closeTimer = 0;
+      setCanUndo(false);
+      setCanRedo(false);
       genSeq.current += 1;
       return;
     }
+    suspendDraftRef.current = false;
 
     const ac = new AbortController();
     const sources = collectMeshSources(filesRef.current);
@@ -417,6 +499,25 @@ function LabProsthesisAiDesignDialog({
     );
 
     void (async () => {
+      let localFiles = new Map<string, File>();
+      const caseId = String(transferId || "").trim();
+      if (caseId) {
+        try {
+          const draft = await readWorkDraft(caseId);
+          if (ac.signal.aborted) return;
+          const assigned = assignNewerDraftFiles(
+            sources,
+            draft,
+            newestWorkScanUploadedAtMs(filesRef.current || []),
+          );
+          localFiles = assigned.byId;
+          pendingDraftRolesRef.current = new Set(assigned.roles);
+        } catch {
+          localFiles = new Map();
+        }
+      }
+      if (ac.signal.aborted) return;
+
       const companions: File[] = [];
       const wantsTexture = sources.some((row) =>
         /\.(ply|obj)$/i.test(row.fileName),
@@ -455,6 +556,20 @@ function LabProsthesisAiDesignDialog({
       await Promise.all(
         sources.map(async (source) => {
           percents.set(source.id, 0);
+          const localFile = localFiles.get(source.id);
+          if (localFile) {
+            loaded.push({
+              id: source.id,
+              fileName: localFile.name,
+              role: source.role,
+              file: localFile,
+              companionFiles: companions,
+            });
+            nextState[source.id] = "ready";
+            percents.set(source.id, 100);
+            report();
+            return;
+          }
           const cachedFile = sessionScanFileCache.get(source.id);
           if (cachedFile) {
             loaded.push({
@@ -518,7 +633,7 @@ function LabProsthesisAiDesignDialog({
     return () => {
       ac.abort();
     };
-  }, [authToken, imageKey, meshKey, open, prepArch]);
+  }, [authToken, imageKey, meshKey, open, prepArch, transferId]);
 
   const scans = useMemo(() => {
     const byId = new Map(meshSources.map((row) => [row.id, row]));
@@ -666,12 +781,123 @@ function LabProsthesisAiDesignDialog({
     });
   }, [open, plan.teeth, stage]);
 
+  const publishHistory = () => {
+    const book = historyRef.current;
+    setCanUndo(book.past.length > 0);
+    setCanRedo(book.future.length > 0);
+  };
+
+  const workSnapshotKey = () =>
+    `${JSON.stringify(editsRef.current)}\n${JSON.stringify(generatedRef.current)}`;
+
+  const takeSnap = (withJaws: boolean): WorkUndoSnap => ({
+    edits: structuredClone(editsRef.current),
+    generated: { ...generatedRef.current },
+    jaws: withJaws ? (viewerRef.current?.captureJawPositions() ?? []) : null,
+  });
+
+  const applySnap = (snap: WorkUndoSnap) => {
+    setEdits(snap.edits);
+    setGenerated(snap.generated);
+    if (snap.jaws) viewerRef.current?.restoreJawPositions(snap.jaws);
+  };
+
+  const finishDesignStroke = () => {
+    const book = historyRef.current;
+    window.clearTimeout(book.closeTimer);
+    book.closeTimer = 0;
+    if (!book.stroke) return;
+    const key = book.strokeKey;
+    book.stroke = false;
+    book.strokeKey = "";
+    book.closeTimer = window.setTimeout(() => {
+      const current = historyRef.current;
+      current.closeTimer = 0;
+      if (current.stroke || workSnapshotKey() !== key) return;
+      const last = current.past[current.past.length - 1];
+      if (!last || last.jaws) return;
+      current.past.pop();
+      publishHistory();
+    }, 0);
+  };
+
+  const beginEditUndo = () => {
+    if (alignBusy) return;
+    const book = historyRef.current;
+    if (!book.stroke) {
+      book.past.push(takeSnap(false));
+      if (book.past.length > UNDO_LIMIT) book.past.shift();
+      book.future = [];
+      book.stroke = true;
+      book.strokeKey = workSnapshotKey();
+      publishHistory();
+    }
+    window.clearTimeout(book.closeTimer);
+    book.closeTimer = window.setTimeout(finishDesignStroke, 400);
+  };
+
+  const pushJawCheckpoint = () => {
+    const book = historyRef.current;
+    window.clearTimeout(book.closeTimer);
+    book.closeTimer = 0;
+    if (book.stroke) {
+      if (workSnapshotKey() === book.strokeKey) book.past.pop();
+      book.stroke = false;
+      book.strokeKey = "";
+    }
+    book.past.push(takeSnap(true));
+    if (book.past.length > UNDO_LIMIT) book.past.shift();
+    book.future = [];
+    publishHistory();
+  };
+
+  const discardJawCheckpoint = (beforeSig: string) => {
+    const book = historyRef.current;
+    const last = book.past[book.past.length - 1];
+    if (!last?.jaws) return;
+    const sig = viewerRef.current?.changedScanSignature() ?? "";
+    if (sig !== beforeSig) return;
+    book.past.pop();
+    publishHistory();
+  };
+
+  const undoWork = () => {
+    if (alignBusy) return;
+    const book = historyRef.current;
+    window.clearTimeout(book.closeTimer);
+    book.closeTimer = 0;
+    book.stroke = false;
+    book.strokeKey = "";
+    const snap = book.past.pop();
+    if (!snap) return;
+    book.future.push(takeSnap(snap.jaws != null));
+    if (book.future.length > UNDO_LIMIT) book.future.shift();
+    applySnap(snap);
+    publishHistory();
+  };
+
+  const redoWork = () => {
+    if (alignBusy) return;
+    const book = historyRef.current;
+    window.clearTimeout(book.closeTimer);
+    book.closeTimer = 0;
+    book.stroke = false;
+    book.strokeKey = "";
+    const snap = book.future.pop();
+    if (!snap) return;
+    book.past.push(takeSnap(snap.jaws != null));
+    if (book.past.length > UNDO_LIMIT) book.past.shift();
+    applySnap(snap);
+    publishHistory();
+  };
+
   const onDesignGesture = (gesture: DesignGesture) => {
     if (gesture.type === "hole-reject") {
       setHoleNote("교합면이 아닙니다. 다른 위치를 고르세요.");
       return;
     }
     setHoleNote("");
+    beginEditUndo();
     setEdits((prev) => {
       const current = prev[gesture.tooth] ?? createToothDesignEdit();
       const next = reduceDesignGesture(current, gesture, marginMode === "pen");
@@ -712,6 +938,7 @@ function LabProsthesisAiDesignDialog({
     setGenerating(false);
     setGenLabel("");
     if (targets.length === 0) return;
+    beginEditUndo();
     setGenerated((prev) => {
       const next = { ...prev };
       for (const number of targets) next[number] = true;
@@ -757,18 +984,17 @@ function LabProsthesisAiDesignDialog({
   const canAlignModels = hasBiteScan && (hasUpperScan || hasLowerScan) && entries.length > 0;
 
   const runAutoAlign = async () => {
+    const before = viewerRef.current?.changedScanSignature() ?? "";
+    pushJawCheckpoint();
     setAlignKind("auto");
     setAlignArch(null);
     setAlignPicks({ model: 0, bite: 0 });
     setAlignBusy(true);
-    await viewerRef.current?.alignToBiteAuto();
+    const fitted = await viewerRef.current?.alignToBiteAuto();
+    if (fitted !== true) discardJawCheckpoint(before);
     setAlignBusy(false);
     setAlignKind(null);
   };
-
-  const generateTargets = (
-    prepTeeth.length > 0 ? prepTeeth : plan.teeth
-  ).map((tooth) => tooth.toothNumber);
 
   const showTooth = (toothNumber: string) => {
     setSelectedTooth(toothNumber);
@@ -783,6 +1009,7 @@ function LabProsthesisAiDesignDialog({
     detected: ReadonlyArray<{ tooth: string; radii: number[]; depths: number[] }>,
   ) => {
     if (detected.length === 0) return;
+    beginEditUndo();
     setEdits((prev) => {
       const next = { ...prev };
       for (const row of detected) {
@@ -803,155 +1030,262 @@ function LabProsthesisAiDesignDialog({
     applyColorDetections(viewerRef.current?.detectColorMargins(toothNumbers) ?? []);
   };
 
-  const persistWorkingScans = useCallback(
-    async (reason: "button" | "close"): Promise<boolean> => {
-      if (saveLockRef.current) return false;
-      if (alignBusy) {
-        if (reason === "button") {
-          toast({ title: "정렬이 끝난 뒤에 저장할 수 있습니다." });
-        }
-        return reason === "close";
-      }
-      const changed = viewerRef.current?.exportChangedScans() ?? [];
-      const sig = changedScanSignature(changed);
-      if (changed.length === 0 || sig === lastSavedSigRef.current) {
-        if (reason === "button") {
-          toast({
-            title:
-              changed.length === 0
-                ? "바뀐 스캔이 없습니다."
-                : "이미 저장했습니다.",
-          });
-        }
-        return true;
-      }
-      const id = String(transferId || "").trim();
-      if (!id || !authToken) {
-        if (reason === "button") {
-          toast({
-            title: "의뢰를 연 뒤에 저장할 수 있습니다.",
-            variant: "destructive",
-          });
-        }
-        return reason === "close";
-      }
-      saveLockRef.current = true;
-      setSaving(true);
-      try {
-        const grouped = new Map<WorkingScanMesh["role"], WorkingScanMesh[]>();
-        for (const row of changed) {
-          const list = grouped.get(row.role) ?? [];
-          list.push(row);
-          grouped.set(row.role, list);
-        }
-        const blobs: File[] = [];
-        const roles: WorkingScanMesh["role"][] = [];
-        for (const [role, rows] of grouped) {
-          rows.forEach((row, index) => {
-            const name = abutsWorkScanFileName(role, index);
+  const enqueueDraft = useCallback((task: () => Promise<void>) => {
+    const run = draftQueueRef.current.then(task, task);
+    draftQueueRef.current = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }, []);
+
+  const flushDirtyDraft = useCallback(() => {
+    if (!autoSaveRef.current) return Promise.resolve();
+    const id = String(transferId || "").trim();
+    if (!id) return Promise.resolve();
+    return enqueueDraft(async () => {
+      if (saveLockRef.current || suspendDraftRef.current || alignBusy) return;
+      const sig = viewerRef.current?.changedScanSignature() ?? "";
+      if (!sig || sig === lastDraftSigRef.current) return;
+      const meshes = viewerRef.current?.exportChangedScans() ?? [];
+      if (meshes.length === 0) return;
+      await writeWorkDraftMeshes(id, meshes);
+      lastDraftSigRef.current = sig;
+    });
+  }, [alignBusy, enqueueDraft, transferId]);
+
+  useEffect(() => {
+    if (!open) return;
+    let seen = "";
+    const poll = window.setInterval(() => {
+      if (!autoSaveRef.current) return;
+      if (saveLockRef.current || suspendDraftRef.current || alignBusy) return;
+      const sig = viewerRef.current?.changedScanSignature() ?? "";
+      if (!sig || sig === seen || sig === lastDraftSigRef.current) return;
+      seen = sig;
+      window.clearTimeout(draftTimerRef.current);
+      draftTimerRef.current = window.setTimeout(() => {
+        void flushDirtyDraft();
+      }, 1200);
+    }, 1000);
+    const onHide = () => {
+      window.clearTimeout(draftTimerRef.current);
+      if (!autoSaveRef.current) return;
+      void flushDirtyDraft();
+    };
+    const onHidden = () => {
+      if (document.visibilityState === "hidden") onHide();
+    };
+    window.addEventListener("pagehide", onHide);
+    document.addEventListener("visibilitychange", onHidden);
+    return () => {
+      window.clearInterval(poll);
+      window.clearTimeout(draftTimerRef.current);
+      window.removeEventListener("pagehide", onHide);
+      document.removeEventListener("visibilitychange", onHidden);
+    };
+  }, [alignBusy, flushDirtyDraft, open]);
+
+  const persistWorkingScans = useCallback(async (): Promise<boolean> => {
+    if (saveLockRef.current) return false;
+    if (!autoSaveRef.current) {
+      window.clearTimeout(draftTimerRef.current);
+      return true;
+    }
+    if (alignBusy) {
+      window.clearTimeout(draftTimerRef.current);
+      suspendDraftRef.current = true;
+      return true;
+    }
+    const id = String(transferId || "").trim();
+    if (!id || !authToken) return true;
+    window.clearTimeout(draftTimerRef.current);
+    suspendDraftRef.current = true;
+    saveLockRef.current = true;
+    let ok = true;
+    try {
+      await enqueueDraft(async () => {
+        try {
+          const dirtyStamp = viewerRef.current?.changedScanSignature() ?? "";
+          const dirty = viewerRef.current?.exportChangedScans() ?? [];
+          const encoded =
+            dirty.length > 0 ? await writeWorkDraftMeshes(id, dirty) : [];
+          if (dirty.length > 0 && dirtyStamp) {
+            lastDraftSigRef.current = dirtyStamp;
+          }
+          const draft = await readWorkDraft(id);
+          const serverAt = newestWorkScanUploadedAtMs(filesRef.current || []);
+          const dirtyRoles = new Set(dirty.map((row) => row.role));
+          const wanted = new Set<WorkScanRole>([
+            ...newerDraftRoles(draft, serverAt),
+            ...dirtyRoles,
+            ...pendingDraftRolesRef.current,
+          ]);
+          if (wanted.size === 0) return;
+
+          const blobs: File[] = [];
+          const roles: WorkScanRole[] = [];
+          for (const file of encoded) {
+            if (!wanted.has(file.role)) continue;
             blobs.push(
-              new File([encodeHpsCaDcm(row)], name, {
+              new File([file.bytes], file.fileName, {
                 type: "application/octet-stream",
               }),
             );
-            roles.push(role);
-          });
-        }
-        const uploaded = await uploadFiles(blobs);
-        const payload = uploaded
-          .map((file, index) => {
-            const originalName = String(
-              file.originalName || blobs[index]?.name || "",
-            ).trim();
-            const s3Key = String(file.key || "").trim();
-            const role = roles[index];
-            if (!originalName || !s3Key || !role) return null;
-            return {
-              patientName: "",
-              tooth: "",
-              scanRole: role,
-              scanRoleSetBy: "lab" as const,
-              file: {
-                originalName,
-                mimetype: "application/octet-stream",
-                size: Number(file.size || blobs[index]?.size || 0) || 0,
-                s3Key,
-              },
-            };
-          })
-          .filter((row) => row != null);
-        if (!payload.length) {
-          throw new Error("작업 스캔 업로드에 실패했습니다.");
-        }
-        const appended = await apiFetch({
-          path: `/api/practice/transfers/received/${encodeURIComponent(id)}/request-files`,
-          method: "POST",
-          token: authToken,
-          jsonBody: { files: payload },
-        });
-        if (!appended.ok) {
-          throw new Error(
-            apiMessage(appended.data) || "작업 스캔 저장에 실패했습니다.",
-          );
-        }
-        const savedRoles = new Set(roles);
-        const stale = (filesRef.current || [])
-          .filter((file) => {
-            if (!isAbutsWorkScanFileName(String(file.fileName || ""))) {
-              return false;
+            roles.push(file.role);
+          }
+          // 이번 세션에서 움직이지 않은 초안은 IndexedDB 바이트를 올린다.
+          // 화면 배치까지 파일에 넣으면 다음에 열 때 배치가 두 번 적용된다.
+          for (const file of draft?.files || []) {
+            if (!wanted.has(file.role) || dirtyRoles.has(file.role) || !file.bytes) {
+              continue;
             }
-            const role = resolveOralScanRole(file);
-            return (
-              (role === "upper" || role === "lower" || role === "bite") &&
-              savedRoles.has(role)
+            blobs.push(
+              new File([file.bytes], file.fileName, {
+                type: "application/octet-stream",
+              }),
             );
-          })
-          .map((file) => String(file.s3Key || "").trim())
-          .filter(Boolean);
-        let data = unwrapApiData(appended.data);
-        if (stale.length > 0) {
-          const removed = await apiFetch({
-            path: `/api/practice/transfers/received/${encodeURIComponent(id)}/request-files/remove`,
+            roles.push(file.role);
+          }
+          if (blobs.length === 0) return;
+
+          const uploaded = await uploadFiles(blobs);
+          const payload = uploaded
+            .map((file, index) => {
+              const originalName = String(
+                file.originalName || blobs[index]?.name || "",
+              ).trim();
+              const s3Key = String(file.key || "").trim();
+              const role = roles[index];
+              if (!originalName || !s3Key || !role) return null;
+              return {
+                patientName: "",
+                tooth: "",
+                scanRole: role,
+                scanRoleSetBy: "lab" as const,
+                file: {
+                  originalName,
+                  mimetype: "application/octet-stream",
+                  size: Number(file.size || blobs[index]?.size || 0) || 0,
+                  s3Key,
+                },
+              };
+            })
+            .filter((row) => row != null);
+          if (!payload.length) {
+            throw new Error("작업 스캔 업로드에 실패했습니다.");
+          }
+          const appended = await apiFetch({
+            path: `/api/practice/transfers/received/${encodeURIComponent(id)}/work-scan-files`,
             method: "POST",
             token: authToken,
-            jsonBody: { s3Keys: stale },
+            jsonBody: { files: payload },
           });
-          if (removed.ok) data = unwrapApiData(removed.data);
+          if (!appended.ok) {
+            throw new Error(
+              apiMessage(appended.data) || "작업 스캔 저장에 실패했습니다.",
+            );
+          }
+          const savedRoles = new Set(roles);
+          const data = unwrapApiData(appended.data);
+          const production =
+            data.production && typeof data.production === "object"
+              ? (data.production as Record<string, unknown>)
+              : {};
+          const synced = newestWorkScanUploadedAtMs(
+            filesOfApi(production.labWorkScanFiles),
+          );
+          let stamp = 0;
+          for (const role of savedRoles) {
+            stamp = Math.max(stamp, synced.get(role) ?? 0);
+          }
+          if (stamp > 0) {
+            await stampWorkDraftSavedAt(id, [...savedRoles], stamp);
+          }
+          await dropWorkDraftRoles(id, [...savedRoles]);
+          const pending = new Set(pendingDraftRolesRef.current);
+          for (const role of savedRoles) pending.delete(role);
+          pendingDraftRolesRef.current = pending;
+          onWorkingScansPersisted?.({
+            files: data.files,
+            trashedFiles: data.trashedFiles,
+            workScanFiles: production.labWorkScanFiles,
+          });
+          const labels = [...savedRoles].map((role) => oralScanRoleLabel(role));
+          toast({
+            title: "작업 스캔을 저장했습니다.",
+            description: (
+              <>
+                {labels.join(", ")} DCM이 작업 파일에 추가됐습니다.
+                <br />
+                AI를 다시 열면 이 파일을 읽고, 목록에서 다운로드할 수 있습니다.
+              </>
+            ),
+          });
+        } catch (error) {
+          ok = false;
+          suspendDraftRef.current = false;
+          toast({
+            title: "작업 스캔 저장 실패",
+            description:
+              error instanceof Error
+                ? error.message
+                : "작업 스캔을 저장하지 못했습니다.",
+            variant: "destructive",
+          });
         }
-        lastSavedSigRef.current = sig;
-        onWorkingScansPersisted?.({
-          files: data.files,
-          trashedFiles: data.trashedFiles,
-        });
-        const labels = [...savedRoles].map((role) => oralScanRoleLabel(role));
-        toast({
-          title: "작업 스캔을 저장했습니다.",
-          description: (
-            <>
-              {labels.join(", ")} DCM이 의뢰 파일에 추가됐습니다.
-              <br />
-              AI를 다시 열면 이 파일을 읽고, 목록에서 다운로드할 수 있습니다.
-            </>
-          ),
-        });
-        return true;
-      } catch (error) {
-        toast({
-          title: "작업 스캔 저장 실패",
-          description:
-            error instanceof Error
-              ? error.message
-              : "작업 스캔을 저장하지 못했습니다.",
-          variant: "destructive",
-        });
-        return false;
-      } finally {
-        saveLockRef.current = false;
-        setSaving(false);
+      });
+    } finally {
+      saveLockRef.current = false;
+    }
+    return ok;
+  }, [
+    alignBusy,
+    authToken,
+    enqueueDraft,
+    onWorkingScansPersisted,
+    toast,
+    transferId,
+    uploadFiles,
+  ]);
+
+  const undoWorkRef = useRef(undoWork);
+  const redoWorkRef = useRef(redoWork);
+  const finishStrokeRef = useRef(finishDesignStroke);
+  undoWorkRef.current = undoWork;
+  redoWorkRef.current = redoWork;
+  finishStrokeRef.current = finishDesignStroke;
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable)
+      ) {
+        return;
       }
-    },
-    [alignBusy, authToken, onWorkingScansPersisted, toast, transferId, uploadFiles],
-  );
+      if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
+      const key = event.key.toLowerCase();
+      if (key === "z" && !event.shiftKey) {
+        event.preventDefault();
+        undoWorkRef.current();
+      } else if ((key === "z" && event.shiftKey) || key === "y") {
+        event.preventDefault();
+        redoWorkRef.current();
+      }
+    };
+    const onUp = () => finishStrokeRef.current();
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("pointerup", onUp);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("pointerup", onUp);
+    };
+  }, [open]);
 
   const requestOpenChange = (next: boolean) => {
     if (next) {
@@ -960,7 +1294,7 @@ function LabProsthesisAiDesignDialog({
     }
     if (saveLockRef.current) return;
     void (async () => {
-      const ok = await persistWorkingScans("close");
+      const ok = await persistWorkingScans();
       if (ok) onOpenChange(false);
     })();
   };
@@ -1024,17 +1358,47 @@ function LabProsthesisAiDesignDialog({
             ) : null}
           </div>
           <div className="flex shrink-0 items-center justify-end gap-1.5 pr-8">
+            <label className="mr-0.5 flex items-center gap-2 whitespace-nowrap text-xs font-medium text-foreground">
+              자동 저장
+              <Switch
+                checked={autoSave}
+                onCheckedChange={(on) => {
+                  setAutoSave(on);
+                  autoSaveRef.current = on;
+                  try {
+                    window.localStorage.setItem(AUTO_SAVE_PREF_KEY, on ? "1" : "0");
+                  } catch {
+                    /* 저장 설정은 이 탭에서만 유지한다. */
+                  }
+                  if (!on) window.clearTimeout(draftTimerRef.current);
+                }}
+                aria-label="자동 저장"
+                className="h-5 w-9 data-[state=checked]:bg-primary [&>span]:h-4 [&>span]:w-4 data-[state=checked]:[&>span]:translate-x-4"
+              />
+            </label>
             <Button
               type="button"
               size="sm"
               variant="outline"
-              className="h-8 gap-1"
-              disabled={saving || alignBusy || entries.length === 0}
-              onClick={() => void persistWorkingScans("button")}
-              title="바뀐 스캔을 원본과 따로 DCM으로 저장합니다. 의뢰 파일에서 다운로드할 수 있습니다."
+              className="h-8 w-8 px-0"
+              disabled={!canUndo || alignBusy}
+              onClick={undoWork}
+              title="실행 취소"
+              aria-label="실행 취소"
             >
-              <Save className="h-3.5 w-3.5" />
-              {saving ? "저장 중…" : "작업 저장"}
+              <Undo2 className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 w-8 px-0"
+              disabled={!canRedo || alignBusy}
+              onClick={redoWork}
+              title="다시 실행"
+              aria-label="다시 실행"
+            >
+              <Redo2 className="h-3.5 w-3.5" />
             </Button>
             <Button
               type="button"
@@ -1087,7 +1451,12 @@ function LabProsthesisAiDesignDialog({
               manualAlignArch={alignKind === "manual" ? alignArch : null}
               onAlignProgress={(picks) => {
                 setAlignPicks(picks);
-                if (picks.model >= 3 && picks.bite >= 3) setAlignBusy(true);
+                if (picks.model >= 3 && picks.bite >= 3) {
+                  alignBeforeSigRef.current =
+                    viewerRef.current?.changedScanSignature() ?? "";
+                  pushJawCheckpoint();
+                  setAlignBusy(true);
+                }
               }}
               onAlignMerged={() => {
                 setAlignBusy(false);
@@ -1095,10 +1464,14 @@ function LabProsthesisAiDesignDialog({
                 setAlignPicks({ model: 0, bite: 0 });
               }}
               onAlignFailed={() => {
+                discardJawCheckpoint(alignBeforeSigRef.current);
                 setAlignBusy(false);
                 setAlignPicks({ model: 0, bite: 0 });
               }}
-              onAlignCancelled={() => setAlignBusy(false)}
+              onAlignCancelled={() => {
+                discardJawCheckpoint(alignBeforeSigRef.current);
+                setAlignBusy(false);
+              }}
               className="absolute inset-0"
             />
             <div className="pointer-events-none absolute left-1/2 top-3 z-10 flex w-max max-w-[calc(100%-2rem)] -translate-x-1/2 flex-col items-center gap-1.5">
@@ -1612,6 +1985,7 @@ function LabProsthesisAiDesignDialog({
                         edit={activeEdit}
                         onEdit={(next) => {
                           if (!activeNumber) return;
+                          beginEditUndo();
                           setEdits((prev) => {
                             if (modifyTool !== "connector" || bridgeSpan.length < 2) {
                               return { ...prev, [activeNumber]: next };
@@ -1640,6 +2014,7 @@ function LabProsthesisAiDesignDialog({
                         holeNote={holeNote}
                         onRedetect={() => {
                           if (!activeNumber) return;
+                          beginEditUndo();
                           const detected =
                             viewerRef.current?.detectColorMargins([activeNumber]) ?? [];
                           const hit = detected[0];
@@ -1658,6 +2033,7 @@ function LabProsthesisAiDesignDialog({
                         }}
                         onClearMargin={() => {
                           if (!activeNumber) return;
+                          beginEditUndo();
                           const current = edits[activeNumber] ?? createToothDesignEdit();
                           setEdits((prev) => ({
                             ...prev,
@@ -1674,6 +2050,7 @@ function LabProsthesisAiDesignDialog({
                         }}
                         onApplyInner={() => {
                           if (!activeNumber) return;
+                          beginEditUndo();
                           setEdits((prev) => {
                             const current = prev[activeNumber] ?? createToothDesignEdit();
                             return {
@@ -1687,6 +2064,7 @@ function LabProsthesisAiDesignDialog({
                         }}
                         onRemoveHook={() => {
                           if (!activeNumber) return;
+                          beginEditUndo();
                           setEdits((prev) => {
                             const current = prev[activeNumber] ?? createToothDesignEdit();
                             return {
@@ -1785,13 +2163,12 @@ function LabProsthesisAiDesignDialog({
               toothInfoOpen={toothInfoOpen}
               insertionKeys={insertionKeys}
               canSetInsertion={entries.length > 0}
-              showGenerateAll={generateTargets.length >= 2}
               onSelectTooth={showTooth}
               onSetInsertion={rememberInsertion}
               onToggleInfo={() => setToothInfoOpen((open) => !open)}
-              onGenerateAll={() => void runGenerate(generateTargets)}
               onGenerateTooth={(toothNumber) => void runGenerate([toothNumber])}
               onClearTooth={(toothNumber) => {
+                beginEditUndo();
                 setGenerated((prev) => ({ ...prev, [toothNumber]: false }));
               }}
             />
@@ -1927,11 +2304,9 @@ function DesignViewerChrome({
   toothInfoOpen,
   insertionKeys,
   canSetInsertion,
-  showGenerateAll,
   onSelectTooth,
   onSetInsertion,
   onToggleInfo,
-  onGenerateAll,
   onGenerateTooth,
   onClearTooth,
 }: {
@@ -1943,11 +2318,9 @@ function DesignViewerChrome({
   toothInfoOpen: boolean;
   insertionKeys: readonly string[];
   canSetInsertion: boolean;
-  showGenerateAll: boolean;
   onSelectTooth: (toothNumber: string) => void;
   onSetInsertion: (toothNumbers: readonly string[]) => void;
   onToggleInfo: () => void;
-  onGenerateAll: () => void;
   onGenerateTooth: (toothNumber: string) => void;
   onClearTooth: (toothNumber: string) => void;
 }) {
@@ -2147,24 +2520,11 @@ function DesignViewerChrome({
             style={{ animation: "aiScanLine 1.15s ease-in-out infinite" }}
           />
           {genLabel ? (
-            <p className="pointer-events-none absolute bottom-16 left-1/2 z-10 -translate-x-1/2 rounded-md bg-background/95 px-3 py-1.5 text-xs text-foreground shadow-sm">
+            <p className="pointer-events-none absolute bottom-4 left-1/2 z-10 -translate-x-1/2 rounded-md bg-background/95 px-3 py-1.5 text-xs text-foreground shadow-sm">
               {genLabel}
             </p>
           ) : null}
         </>
-      ) : null}
-
-      {showGenerateAll ? (
-        <div className="absolute bottom-3 left-1/2 z-10 -translate-x-1/2">
-          <button
-            type="button"
-            className="rounded-full bg-primary px-3 py-1 text-[11px] font-medium text-primary-foreground shadow-sm disabled:opacity-50"
-            disabled={generating}
-            onClick={onGenerateAll}
-          >
-            전체 생성
-          </button>
-        </div>
       ) : null}
     </>
   );
@@ -2211,18 +2571,16 @@ function collectMeshSources(
   return out;
 }
 
-function changedScanSignature(rows: readonly WorkingScanMesh[]): string {
-  return rows
-    .map((row) => {
-      const values = row.positions;
-      let acc = values.length;
-      const step = Math.max(1, Math.floor(values.length / 64));
-      for (let i = 0; i < values.length; i += step) {
-        acc = Math.imul(acc, 31) + Math.round((values[i] ?? 0) * 1000);
-      }
-      return `${row.role}:${acc}`;
-    })
-    .join("|");
+function filesOfApi(raw: unknown) {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(
+    (row): row is {
+      fileName?: string | null;
+      originalName?: string | null;
+      scanRole?: string | null;
+      uploadedAt?: string | null;
+    } => Boolean(row) && typeof row === "object",
+  );
 }
 
 function unwrapApiData(raw: unknown): Record<string, unknown> {

@@ -983,6 +983,20 @@ const toProductionApiFields = (production, { abutmentPastReady, abutmentPastRead
       size: Number(item?.file?.size || 0),
       s3Key: String(item?.file?.s3Key || "").trim(),
     })),
+    labWorkScanFiles: normalizeResultFiles(p.labWorkScanFiles).map((item, idx) => ({
+      id: `work-scan::${idx + 1}`,
+      patientName: String(item?.patientName || "").trim(),
+      tooth: String(item?.tooth || "").trim(),
+      originalName: String(item?.file?.originalName || "").trim(),
+      mimetype: String(item?.file?.mimetype || "application/octet-stream").trim(),
+      size: Number(item?.file?.size || 0),
+      s3Key: String(item?.file?.s3Key || "").trim(),
+      scanRole: String(item?.scanRole || "").trim() || null,
+      scanRoleSetBy: String(item?.scanRoleSetBy || "").trim() || null,
+      uploadedAt: item?.uploadedAt
+        ? new Date(item.uploadedAt).toISOString()
+        : null,
+    })),
     labDesignConfirmedAt: p.labDesignConfirmedAt || null,
     practiceDesignConfirmedAt: p.practiceDesignConfirmedAt || null,
     abutmentProductionStartedAt: p.abutmentProductionStartedAt || null,
@@ -9591,6 +9605,125 @@ export async function restorePracticeTransferRequestFilesApi(req, res) {
     return res.status(500).json({
       success: false,
       message: "의뢰 파일 복원 중 오류가 발생했습니다.",
+      error: error?.message,
+    });
+  }
+}
+
+const WORK_SCAN_FILE_NAME = /(?:^|[-_])작업(?:-\d+)?\.dcm$/i;
+
+const isWorkScanJawRole = (role) =>
+  role === "upper" || role === "lower" || role === "bite";
+
+/**
+ * 기공소 — AI 작업 스캔을 의뢰 파일이 아닌 작업 파일로 저장.
+ * 같은 역할의 이전 작업 스캔은 바꾼다. 의뢰 파일에 있던 작업 DCM은 뺀다.
+ * related: POST /api/practice/transfers/received/:transferId/work-scan-files
+ */
+export async function appendReceivedPracticeTransferWorkScanFiles(req, res) {
+  try {
+    const role = String(req.user?.role || "").trim();
+    if (!isPracticeTransferLabReceiverRole(role)) {
+      return res.status(403).json({ success: false, message: "권한이 없습니다." });
+    }
+
+    const transferIdFilter = buildTransferIdFilter(req.params?.transferId);
+    if (!transferIdFilter) {
+      return res.status(400).json({
+        success: false,
+        message: "transferId가 필요합니다.",
+      });
+    }
+
+    const { scope, labAnchorId } = await buildReceivedScope(req);
+    if (scope === null || !labAnchorId) {
+      return res.status(404).json({ success: false, message: "전송 내역을 찾을 수 없습니다." });
+    }
+
+    const doc = await PracticeTransfer.findOne({
+      ...scope,
+      ...transferIdFilter,
+    });
+    if (!doc) {
+      return res.status(404).json({ success: false, message: "전송 내역을 찾을 수 없습니다." });
+    }
+    if (isPracticeTransferDeletedStatus(doc.status)) {
+      return res.status(409).json({
+        success: false,
+        message: "삭제된 기공의뢰에는 파일을 추가할 수 없습니다.",
+      });
+    }
+
+    const incoming = stampPracticeTransferFileBatch(
+      normalizeIncomingRequestFiles(req.body?.files),
+    );
+    const savedRoles = new Set();
+    for (const row of incoming) {
+      const originalName = String(row?.file?.originalName || "").trim();
+      if (!WORK_SCAN_FILE_NAME.test(originalName)) continue;
+      const storedRole = resolveStoredScanRole({
+        originalName,
+        scanRole: row.scanRole,
+        scanRoleSetBy: row.scanRoleSetBy,
+      });
+      if (!isWorkScanJawRole(storedRole.scanRole)) continue;
+      row.scanRole = storedRole.scanRole;
+      row.scanRoleSetBy = storedRole.scanRoleSetBy || "lab";
+      savedRoles.add(storedRole.scanRole);
+    }
+    const nextIncoming = incoming.filter((row) =>
+      savedRoles.has(String(row?.scanRole || "").trim()),
+    );
+    if (nextIncoming.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "작업 스캔을 1개 이상 업로드해주세요.",
+      });
+    }
+
+    const previous = normalizeResultFiles(doc.production?.labWorkScanFiles);
+    const kept = previous.filter(
+      (row) => !savedRoles.has(String(row?.scanRole || "").trim()),
+    );
+    doc.set("production.labWorkScanFiles", [...kept, ...nextIncoming]);
+
+    const requestFiles = normalizeResultFiles(doc.files);
+    const withoutRequestWorkScans = requestFiles.filter((row) => {
+      const originalName = String(row?.file?.originalName || "").trim();
+      if (!WORK_SCAN_FILE_NAME.test(originalName)) return true;
+      const storedRole = resolveStoredScanRole({
+        originalName,
+        scanRole: row.scanRole,
+        scanRoleSetBy: row.scanRoleSetBy,
+      });
+      return !savedRoles.has(storedRole.scanRole);
+    });
+    if (withoutRequestWorkScans.length !== requestFiles.length) {
+      doc.files = withoutRequestWorkScans;
+    }
+    await doc.save();
+
+    const payload = await emitRequestFilesUpdated({
+      doc,
+      req,
+      action: "work-scan-files-saved",
+      labAnchorId,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        transferId: String(doc.transferId || "").trim(),
+        ...toTransferFilesApiFields(doc),
+        production: toProductionApiFields(doc.production),
+        updatedAt: payload.updatedAt,
+        ...toAutoMatchApiFields(doc, labAnchorId),
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "작업 스캔 저장 중 오류가 발생했습니다.",
       error: error?.message,
     });
   }

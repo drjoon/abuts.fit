@@ -20,6 +20,7 @@
 // - 2026-09-26: 수동 정렬의 두 모델은 화면 가운데에 좁은 간격으로 나란히 둔다.
 // - 2026-09-26: 화면 오른쪽·앞쪽에 방향광을 더해 악궁 양쪽이 같이 밝다.
 // - 2026-09-26: 바이트에 맞추는 중 취소하면 좌표를 바꾸지 않고 이전 위치로 둔다.
+// - 2026-09-26: 바뀐 스캔의 짧은 지문을 좌표 사본 없이 낸다.
 import {
   forwardRef,
   useEffect,
@@ -105,6 +106,14 @@ export type OralScanOverlayHandle = {
    * 같은 역할의 스캔은 같이 낸다. 화면 배치(좌우 분리)는 포함하지 않는다.
    */
   exportChangedScans: () => WorkingScanMesh[];
+  /** 바뀐 스캔이 없으면 빈 문자열. 좌표 사본은 만들지 않는다. */
+  changedScanSignature: () => string;
+  /** 상악·하악·바이트 정점. 실행 취소용이며 화면 배치는 넣지 않는다. */
+  captureJawPositions: () => Array<{ id: string; positions: Float32Array }>;
+  /** 저장해 둔 정점으로 되돌린다. 카메라는 그대로 둔다. */
+  restoreJawPositions: (
+    rows: ReadonlyArray<{ id: string; positions: Float32Array }>,
+  ) => void;
 };
 
 export type WorkingScanMesh = {
@@ -637,24 +646,56 @@ function positionsDiffer(
   return false;
 }
 
-function exportChangedScanMeshes(loaded: readonly LoadedMesh[]): WorkingScanMesh[] {
-  const jaws = loaded.filter(
+function jawEntries(loaded: readonly LoadedMesh[]) {
+  return loaded.filter(
     (entry): entry is LoadedMesh & { role: WorkingScanMesh["role"] } =>
       entry.role === "upper" || entry.role === "lower" || entry.role === "bite",
   );
-  const dirtyRoles = new Set<WorkingScanMesh["role"]>();
-  for (const entry of jaws) {
+}
+
+function dirtyScanRoles(loaded: readonly LoadedMesh[]) {
+  const dirty = new Set<WorkingScanMesh["role"]>();
+  for (const entry of jawEntries(loaded)) {
     const pos = entry.geometry.getAttribute("position");
     if (!pos || pos.count === 0) continue;
-    const baseline = entry.openedPositions.length > 0
-      ? entry.openedPositions
-      : entry.filePositions;
-    if (positionsDiffer(pos, baseline)) dirtyRoles.add(entry.role);
+    const baseline =
+      entry.openedPositions.length > 0
+        ? entry.openedPositions
+        : entry.filePositions;
+    if (positionsDiffer(pos, baseline)) dirty.add(entry.role);
   }
-  if (dirtyRoles.size === 0) return [];
+  return dirty;
+}
+
+function changedScanStamp(loaded: readonly LoadedMesh[]): string {
+  const dirty = dirtyScanRoles(loaded);
+  if (dirty.size === 0) return "";
+  const parts: string[] = [];
+  for (const entry of jawEntries(loaded)) {
+    if (!dirty.has(entry.role)) continue;
+    const pos = entry.geometry.getAttribute("position");
+    if (!pos || pos.count === 0) continue;
+    let acc = pos.count;
+    const step = Math.max(1, Math.floor(pos.count / 64));
+    for (let i = 0; i < pos.count; i += step) {
+      acc = Math.imul(acc, 31) + Math.round(pos.getX(i) * 1000);
+      acc = Math.imul(acc, 31) + Math.round(pos.getY(i) * 1000);
+      acc = Math.imul(acc, 31) + Math.round(pos.getZ(i) * 1000);
+    }
+    parts.push(`${entry.role}:${acc}`);
+  }
+  return parts.join("|");
+}
+
+function exportScanMeshes(
+  loaded: readonly LoadedMesh[],
+  onlyRoles: ReadonlySet<WorkingScanMesh["role"]> | null,
+): WorkingScanMesh[] {
+  const roles = onlyRoles ?? dirtyScanRoles(loaded);
+  if (roles.size === 0) return [];
   const out: WorkingScanMesh[] = [];
-  for (const entry of jaws) {
-    if (!dirtyRoles.has(entry.role)) continue;
+  for (const entry of jawEntries(loaded)) {
+    if (!roles.has(entry.role)) continue;
     const pos = entry.geometry.getAttribute("position");
     if (!pos || pos.count === 0) continue;
     const positions = new Float32Array(pos.count * 3);
@@ -3592,7 +3633,26 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       alignToBiteAuto: () => alignAutoRef.current(),
       cancelAlign: () => cancelAlignRef.current(),
       clearAlignPicks: () => clearPicksRef.current(),
-      exportChangedScans: () => exportChangedScanMeshes(loadedRef.current),
+      exportChangedScans: () => exportScanMeshes(loadedRef.current, null),
+      changedScanSignature: () => changedScanStamp(loadedRef.current),
+      captureJawPositions: () =>
+        jawEntries(loadedRef.current).map((entry) => ({
+          id: entry.id,
+          positions: captureBasePositions(entry.geometry),
+        })),
+      restoreJawPositions: (rows) => {
+        const byId = new Map(rows.map((row) => [row.id, row.positions]));
+        let changed = false;
+        for (const entry of jawEntries(loadedRef.current)) {
+          const snap = byId.get(entry.id);
+          if (!snap) continue;
+          applyCapturedPositions(entry, snap);
+          changed = true;
+        }
+        if (!changed) return;
+        syncBadgesRef.current();
+        setLoadVersion((value) => value + 1);
+      },
       setInsertionFromView: (toothNumbers) => {
         const camera = cameraRef.current;
         const controls = controlsRef.current;

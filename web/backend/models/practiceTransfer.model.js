@@ -249,6 +249,11 @@ const practiceTransferSchema = new mongoose.Schema(
         type: [practiceTransferFileSchema],
         default: [],
       },
+      /** 기공소 AI 작업 스캔(상악·하악·바이트 DCM). 채팅「작업 파일」. 단계 판정에 쓰지 않는다. */
+      labWorkScanFiles: {
+        type: [practiceTransferFileSchema],
+        default: [],
+      },
       /**
        * 치아별 CA STL 업로드 횟수. cancel로 designFiles를 비워도 유지.
        * 2회차부터 리메이크(치과 CA 리메이크비 + 기공소→어벗츠 1만) 적용.

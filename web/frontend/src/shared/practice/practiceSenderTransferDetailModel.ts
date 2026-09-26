@@ -152,6 +152,7 @@ export type PracticeSenderTransferDetailModel = {
   files: PracticeTransferDialogFileItem[];
   trashedFiles: PracticeTransferDialogFileItem[];
   designFiles: PracticeTransferDialogFileItem[];
+  workScanFiles: PracticeTransferDialogFileItem[];
   resultFiles: PracticeTransferDialogFileItem[];
   skipJig: boolean;
   labAnchorId: string | null;
@@ -318,6 +319,7 @@ export function buildPracticeSenderTransferDetailModel(
     files: toDialogFiles(transfer.files, "request"),
     trashedFiles: toDialogFiles(transfer.trashedFiles, "trash"),
     designFiles: toDialogFiles(transfer.designFiles, "design"),
+    workScanFiles: toDialogFiles(transfer.workScanFiles, "work-scan"),
     resultFiles: toDialogFiles(transfer.resultFiles, "result"),
     skipJig: Boolean(transfer.skipJig),
     labAnchorId: transfer.targetLabAnchorId || null,
@@ -330,6 +332,7 @@ export function buildPracticeSenderTransferDetailModel(
     doctorName,
     downloadAllFiles: [
       ...(Array.isArray(transfer.files) ? transfer.files : []),
+      ...(Array.isArray(transfer.workScanFiles) ? transfer.workScanFiles : []),
       ...(Array.isArray(transfer.designFiles) ? transfer.designFiles : []),
       ...(Array.isArray(transfer.resultFiles) ? transfer.resultFiles : []),
     ],

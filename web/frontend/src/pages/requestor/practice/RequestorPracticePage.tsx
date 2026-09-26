@@ -1292,6 +1292,31 @@ export function RequestorPracticeReceivePage({
                     })
                     .filter(Boolean) as ReceivedPracticeFile[]
                 : [],
+              labWorkScanFiles: Array.isArray(productionRaw.labWorkScanFiles)
+                ? (productionRaw.labWorkScanFiles as unknown[])
+                    .map((row, idx) => {
+                      if (!row || typeof row !== "object") return null;
+                      const f = row as Record<string, unknown>;
+                      const s3Key = String(f.s3Key || "").trim();
+                      const originalName = String(f.originalName || "").trim();
+                      if (!s3Key || !originalName) return null;
+                      return {
+                        id: String(f.id || `work-scan-${idx + 1}`),
+                        patientName: String(f.patientName || "").trim(),
+                        tooth: String(f.tooth || "").trim(),
+                        originalName,
+                        mimetype: String(
+                          f.mimetype || "application/octet-stream",
+                        ).trim(),
+                        size: Number(f.size || 0),
+                        s3Key,
+                        scanRole: String(f.scanRole || "").trim() || null,
+                        scanRoleSetBy: String(f.scanRoleSetBy || "").trim() || null,
+                        uploadedAt: String(f.uploadedAt || "").trim() || null,
+                      };
+                    })
+                    .filter(Boolean) as ReceivedPracticeFile[]
+                : [],
               labDesignConfirmedAt: productionRaw.labDesignConfirmedAt
                 ? String(productionRaw.labDesignConfirmedAt)
                 : null,
@@ -9295,13 +9320,34 @@ export function RequestorPracticeReceivePage({
         transferId={String(selectedTransfer?.transferId || "").trim()}
         onWorkingScansPersisted={(data) => {
           const transferId = String(selectedTransfer?.transferId || "").trim();
-          if (!transferId || !Array.isArray(data.files)) return;
+          if (!transferId) return;
           const mongoId = String(selectedTransfer?._id || "");
-          patchReceivedRequestFiles(
-            transferId,
-            mapApiReceivedRequestFiles(data.files, mongoId),
-            mapApiReceivedRequestFiles(data.trashedFiles, mongoId),
+          if (Array.isArray(data.files)) {
+            patchReceivedRequestFiles(
+              transferId,
+              mapApiReceivedRequestFiles(data.files, mongoId),
+              mapApiReceivedRequestFiles(data.trashedFiles, mongoId),
+            );
+          }
+          if (!Array.isArray(data.workScanFiles)) return;
+          const workScanFiles = mapApiReceivedRequestFiles(
+            data.workScanFiles,
+            mongoId,
           );
+          const patchWorkScans = (
+            row: ReceivedPracticeTransfer,
+          ): ReceivedPracticeTransfer =>
+            String(row.transferId || "").trim() === transferId
+              ? {
+                  ...row,
+                  production: {
+                    ...(row.production || {}),
+                    labWorkScanFiles: workScanFiles,
+                  },
+                }
+              : row;
+          setSelectedTransfer((prev) => (prev ? patchWorkScans(prev) : prev));
+          setTransfers((prev) => prev.map(patchWorkScans));
         }}
         files={
           (selectedTransfer?.files || []).map((file) => ({
@@ -9334,6 +9380,17 @@ export function RequestorPracticeReceivePage({
             fileName: file.originalName,
             size: Number(file.size || 0),
             s3Key: String(file.s3Key || "").trim(),
+          })) satisfies PracticeTransferDialogFileItem[]
+        }
+        workScanFiles={
+          (selectedTransfer?.production?.labWorkScanFiles || []).map((file) => ({
+            id: file.id,
+            fileName: file.originalName,
+            size: Number(file.size || 0),
+            s3Key: String(file.s3Key || "").trim(),
+            scanRole: file.scanRole || null,
+            scanRoleSetBy: file.scanRoleSetBy || null,
+            uploadedAt: file.uploadedAt || null,
           })) satisfies PracticeTransferDialogFileItem[]
         }
         resultFilesLabel="보철물"

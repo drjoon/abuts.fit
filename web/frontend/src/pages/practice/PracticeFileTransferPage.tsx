@@ -6344,6 +6344,10 @@ export const PracticeFileTransferPage = ({
       zipFileName: patient ? `${patient}_작업파일` : "작업파일",
       groups: [
         {
+          folder: "작업 스캔",
+          files: (model.workScanFiles || []).map(toTarget),
+        },
+        {
           folder: "어벗 디자인",
           files: (model.designFiles || []).map(toTarget),
         },
@@ -11712,6 +11716,7 @@ export const PracticeFileTransferPage = ({
           trashedFiles={selectedTransferDetailModel?.trashedFiles || []}
           designFilesLabel="어벗 디자인"
           designFiles={selectedTransferDetailModel?.designFiles || []}
+          workScanFiles={selectedTransferDetailModel?.workScanFiles || []}
           resultFilesLabel="보철물"
           resultFiles={selectedTransferDetailModel?.resultFiles || []}
           showProductionConfirm={Boolean(

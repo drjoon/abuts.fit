@@ -25,6 +25,7 @@
 // - 2026-09-26: 노란 스캔 — 이미 고른 역할을 다시 눌러도 확정(노란 표시 해제).
 // - 2026-09-26: 기공소 채팅 — 스캔 역할은 파일명 구분. 애매한 파일만 노란 표시로 확정.
 // - 2026-09-26: 기공소 헤더 — AI는 작업시작 오른쪽. 할증 뱃지는 상단 별 위 `1.1x`.
+// - 2026-09-26: 작업 스캔은 의뢰 파일 아래 작업 파일에 둔다.
 // - 2026-09-24: 의뢰 파일「열기」— 설정 디자인 SW(3Shape/ExoCAD)로 로컬 CAD 헬퍼 경유.
 // - 2026-09-24: 할증 툴팁 — 협력=수행 기공소, 하청·어벗츠 지정=어벗츠기공소.
 // - 2026-09-20: 기공소 — 번호표 BA(labBasketTag)·occupiedTags·목록 즉시 갱신.
@@ -531,6 +532,9 @@ type PracticeTransferDetailChatDialogProps = {
   requestFilesDownloadLockedReason?: string;
   /** 어벗 디자인·보철물을 묶는 섹션 제목 */
   workFilesLabel?: string;
+  /** AI 작업 스캔. 작업 파일 맨 위. */
+  workScanFilesLabel?: string;
+  workScanFiles?: PracticeTransferDialogFileItem[];
   designFilesLabel?: string;
   designFiles?: PracticeTransferDialogFileItem[];
   /** 보철물(작업완료 결과). 있을 때만 표시 */
@@ -762,6 +766,8 @@ export function PracticeTransferDetailChatDialog({
   requestFilesDownloadLocked = false,
   requestFilesDownloadLockedReason = ORAL_SCAN_DOWNLOAD_LOCKED_UNTIL_ABUTS_DESIGN,
   workFilesLabel = "작업 파일",
+  workScanFilesLabel = "작업 스캔",
+  workScanFiles = [],
   designFilesLabel = "어벗 디자인",
   designFiles = [],
   resultFilesLabel = "보철물",
@@ -1341,10 +1347,11 @@ export function PracticeTransferDetailChatDialog({
       }
     };
     append(files, requestFilesDownloadLocked);
+    append(workScanFiles, false);
     append(designFiles, false);
     append(resultFiles, false);
     return out;
-  }, [designFiles, files, requestFilesDownloadLocked, resultFiles]);
+  }, [designFiles, files, requestFilesDownloadLocked, resultFiles, workScanFiles]);
 
   const collectModelThumbFiles = useCallback(() => {
     const out: PracticeTransferDialogFileItem[] = [];
@@ -1363,10 +1370,11 @@ export function PracticeTransferDetailChatDialog({
       }
     };
     append(files, requestFilesDownloadLocked);
+    append(workScanFiles, false);
     append(designFiles, false);
     append(resultFiles, false);
     return out;
-  }, [designFiles, files, requestFilesDownloadLocked, resultFiles]);
+  }, [designFiles, files, requestFilesDownloadLocked, resultFiles, workScanFiles]);
 
   const fileImageThumbKey = useMemo(() => {
     if (!open) return "";
@@ -1634,10 +1642,11 @@ export function PracticeTransferDetailChatDialog({
       }
     };
     append(Array.isArray(files) ? files : [], requestFilesDownloadLocked);
+    append(Array.isArray(workScanFiles) ? workScanFiles : [], false);
     append(Array.isArray(designFiles) ? designFiles : [], false);
     append(Array.isArray(resultFiles) ? resultFiles : [], false);
     return out;
-  }, [designFiles, files, requestFilesDownloadLocked, resultFiles]);
+  }, [designFiles, files, requestFilesDownloadLocked, resultFiles, workScanFiles]);
 
   const previewIndex = useMemo(() => {
     if (!previewMeta) return -1;
@@ -2357,6 +2366,12 @@ export function PracticeTransferDetailChatDialog({
         files={files}
         authToken={authToken}
         transferId={transferId}
+        workScanFiles={(workScanFiles || []).map((file) => ({
+          fileName: file.fileName,
+          scanRole: file.scanRole,
+          s3Key: file.s3Key,
+          uploadedAt: file.uploadedAt,
+        }))}
         onWorkingScansPersisted={onWorkingScansPersisted}
         caseHeader={{
           primary: caseIdentityStrip?.primary,
@@ -2529,11 +2544,31 @@ export function PracticeTransferDetailChatDialog({
     typeof acceptedWorkActions === "function"
       ? acceptedWorkActions({ releaseAction: null })
       : acceptedWorkActions;
+  const requestFilesShown = (files || []).filter(
+    (file) => !isAbutsWorkScanFileName(file.fileName),
+  );
+  const workScanFileList = (() => {
+    const seen = new Set<string>();
+    const out: PracticeTransferDialogFileItem[] = [];
+    const push = (file: PracticeTransferDialogFileItem) => {
+      const key = String(file.s3Key || file.fileName || "").trim();
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      out.push(file);
+    };
+    for (const file of workScanFiles || []) push(file);
+    for (const file of files || []) {
+      if (isAbutsWorkScanFileName(file.fileName)) push(file);
+    }
+    return out;
+  })();
   const designFileList = Array.isArray(designFiles) ? designFiles : [];
   const resultFileList = Array.isArray(resultFiles) ? resultFiles : [];
   const showWorkFilesSection =
-    designFileList.length > 0 || resultFileList.length > 0;
-  const requestFileWaves = clusterPracticeTransferFileWaves(files);
+    workScanFileList.length > 0 ||
+    designFileList.length > 0 ||
+    resultFileList.length > 0;
+  const requestFileWaves = clusterPracticeTransferFileWaves(requestFilesShown);
   const ambiguousScanKeys = onChangeRequestScanRole
     ? ambiguousOralScanFileKeys(files)
     : new Set<string>();
@@ -3231,7 +3266,7 @@ export function PracticeTransferDetailChatDialog({
                   <h3 className="text-[13px] font-semibold text-foreground">
                     {filesLabel}{" "}
                     <span className="font-normal text-muted-foreground">
-                      ({files.length + requestFilePendingUploads.length}개)
+                      ({requestFilesShown.length + requestFilePendingUploads.length}개)
                     </span>
                   </h3>
                   <div className="flex shrink-0 items-center gap-1.5">
@@ -3254,7 +3289,7 @@ export function PracticeTransferDetailChatDialog({
                         {openInCadBusy ? "여는 중..." : "열기"}
                       </Button>
                     ) : null}
-                    {files.length > 0 ? (
+                    {requestFilesShown.length > 0 ? (
                       files.some((f) => isDcmFileName(f.fileName)) ? (
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
@@ -3309,7 +3344,7 @@ export function PracticeTransferDetailChatDialog({
                     ) : null}
                   </div>
                 </div>
-                {requestFilesDownloadLocked && files.length > 0 ? (
+                {requestFilesDownloadLocked && requestFilesShown.length > 0 ? (
                   <p className="text-xs leading-relaxed text-amber-800 dark:text-amber-200">
                     {requestFilesDownloadLockedReason}
                   </p>
@@ -3321,7 +3356,7 @@ export function PracticeTransferDetailChatDialog({
                     상악·하악·바이트를 고르면 노란 표시가 꺼집니다.
                   </p>
                 ) : null}
-                {files.length ||
+                {requestFilesShown.length ||
                 requestFilePendingUploads.length ||
                 showRequestFileTrash ? (
                   <div className="space-y-3">
@@ -3419,6 +3454,19 @@ export function PracticeTransferDetailChatDialog({
                       </Button>
                     ) : null}
                   </div>
+                  {workScanFileList.length > 0 ? (
+                    <div className="space-y-1.5">
+                      <p className="text-[13px] text-muted-foreground">
+                        {workScanFilesLabel}{" "}
+                        <span>({workScanFileList.length}개)</span>
+                      </p>
+                      <div className="grid grid-cols-4 gap-2">
+                        {workScanFileList.map((file, idx) =>
+                          renderFileTile(file, idx, "work-scan"),
+                        )}
+                      </div>
+                    </div>
+                  ) : null}
                   {designFileList.length > 0 ? (
                     <div className="space-y-1.5">
                       <p className="text-[13px] text-muted-foreground">

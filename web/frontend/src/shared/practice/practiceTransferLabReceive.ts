@@ -166,6 +166,8 @@ export type PracticeTransferLabReceiveItem = {
     designReadyAt?: string | null;
     designFileCount?: number;
     designFiles?: PracticeTransferLabReceiveFile[];
+    /** AI 작업 스캔. 채팅 작업 파일. 단계 판정에 쓰지 않는다. */
+    labWorkScanFiles?: PracticeTransferLabReceiveFile[];
     labDesignConfirmedAt?: string | null;
     practiceDesignConfirmedAt?: string | null;
     abutmentProductionStartedAt?: string | null;

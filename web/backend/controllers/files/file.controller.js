@@ -793,6 +793,7 @@ const canUserAccessS3Key = async (req, key) => {
     $or: [
       { "files.file.s3Key": key },
       { "production.designFiles.file.s3Key": key },
+      { "production.labWorkScanFiles.file.s3Key": key },
       { "resultFiles.file.s3Key": key },
     ],
   })

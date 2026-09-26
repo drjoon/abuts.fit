@@ -51,6 +51,38 @@ export function abutsWorkScanFileName(
   return `${label}-작업-${index + 1}.dcm`;
 }
 
+export type WorkScanRole = Exclude<LabOralScanRole, "other">;
+
+function listedFileName(file: {
+  fileName?: string | null;
+  originalName?: string | null;
+}): string {
+  return String(file.fileName || file.originalName || "").trim();
+}
+
+/** 역할별 최신 작업 DCM의 uploadedAt(ms). 없으면 그 역할은 맵에 없다. */
+export function newestWorkScanUploadedAtMs(
+  files: readonly {
+    fileName?: string | null;
+    originalName?: string | null;
+    scanRole?: string | null;
+    uploadedAt?: string | null;
+  }[],
+): Map<WorkScanRole, number> {
+  const newest = new Map<WorkScanRole, number>();
+  for (const file of files) {
+    const fileName = listedFileName(file);
+    if (!isAbutsWorkScanFileName(fileName)) continue;
+    const role = resolveOralScanRole({ ...file, fileName });
+    if (role !== "upper" && role !== "lower" && role !== "bite") continue;
+    const at = Date.parse(String(file.uploadedAt || ""));
+    const ms = Number.isFinite(at) ? at : 0;
+    const prev = newest.get(role) ?? -1;
+    if (ms >= prev) newest.set(role, ms);
+  }
+  return newest;
+}
+
 /**
  * 같은 역할에 작업 DCM이 있으면 원본 대신 그 배치만 남긴다.
  * 이미지 등 스캔이 아닌 파일은 그대로 둔다.
