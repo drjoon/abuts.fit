@@ -94,10 +94,10 @@ const collectTransferDesignLabAnchorIds = (transferLabs) => {
 };
 
 /**
- * PTX 연동 디자인+생산: 작업을 시작한 기공소만 디자인 가능.
- * - Request.businessAnchorId (생성 시점 소유. 협력·하청은 보통 원청)
- * - PracticeTransfer.targetLabAnchorId (원청. 작업취소 후 재수락 시 소유가 어긋날 수 있음)
- * - PracticeTransfer.assigneeLabAnchorId (수행 기공소. 협력·하청이 실제로 작업시작)
+ * PTX 연동 디자인+생산: 수행 기공소만 디자인한다.
+ * assignee가 있으면 그 기공소만. Request.businessAnchorId가 원청으로 남아 있어도
+ * 원청은 통과시키지 않는다(계약·매출 주체일 뿐 실무 주체가 아님).
+ * assignee가 없으면 원청(자체 수행) 또는 전달된 현재 수락 기공소.
  */
 export const isAcceptingLabForPtxDesignRequest = (
   user,
@@ -108,6 +108,16 @@ export const isAcceptingLabForPtxDesignRequest = (
   if (!isPtxLinkedDesignRequest(request)) return false;
   const myAnchor = normalizeAnchorId(user.businessAnchorId);
   if (!myAnchor) return false;
+  const assigneeFromLabs =
+    transferLabs &&
+    typeof transferLabs === "object" &&
+    !Array.isArray(transferLabs)
+      ? normalizeAnchorId(
+          transferLabs.assigneeLabAnchorId ||
+            transferLabs.performingLabAnchorId,
+        )
+      : "";
+  if (assigneeFromLabs) return myAnchor === assigneeFromLabs;
   const ownerAnchor = normalizeAnchorId(request.businessAnchorId);
   if (ownerAnchor && myAnchor === ownerAnchor) return true;
   return collectTransferDesignLabAnchorIds(transferLabs).some(

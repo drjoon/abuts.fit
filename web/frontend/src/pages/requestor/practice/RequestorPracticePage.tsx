@@ -448,6 +448,11 @@ import {
   PracticeStatusFilterBadges,
   type PracticeStatusFilterBadgeItem,
 } from "@/pages/practice/components/PracticeStatusFilterBadges";
+import {
+  LabReceiveRoleFilterButtons,
+  labReceiveRoleOfTransfer,
+  type LabReceiveRoleFilterKey,
+} from "@/pages/practice/components/LabReceiveRoleFilterButtons";
 import { RequestorAbutmentPageHeader } from "@/pages/requestor/new_request/components/RequestorAbutmentPageHeader";
 import { LabReceiveUnreadNotice } from "@/pages/practice/components/LabReceiveUnreadNotice";
 import { LabReceiveFeeScheduleNotice } from "@/pages/practice/components/LabReceiveFeeScheduleNotice";
@@ -834,6 +839,13 @@ export function RequestorPracticeReceivePage({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
+  const viewerIsPrimeLab = String(user?.role || "").trim() === "internalLab";
+  const [roleVisible, setRoleVisible] = useState<
+    Record<LabReceiveRoleFilterKey, boolean>
+  >({ prime: true, cooperation: true, subcontract: true });
+  const toggleReceiveRole = (key: LabReceiveRoleFilterKey) => {
+    setRoleVisible((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
   const badgeClearedTransferIds = useAuthStore(
     (s) => s.user?.practiceStatusBadgeClearedTransferIds,
   );
@@ -2397,7 +2409,7 @@ export function RequestorPracticeReceivePage({
     chatBottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [dialogOpen, messages]);
 
-  const baseFilteredTransfers = useMemo(() => {
+  const searchedTransfers = useMemo(() => {
     const guideTourLabReceiveActive =
       platformGuideTour.kind === "lab" &&
       platformGuideTour.active &&
@@ -2458,6 +2470,26 @@ export function RequestorPracticeReceivePage({
     platformGuideTour.active,
     platformGuideTour.stepId,
   ]);
+
+  const roleFilterCounts = useMemo(() => {
+    const counts: Record<LabReceiveRoleFilterKey, number> = {
+      prime: 0,
+      cooperation: 0,
+      subcontract: 0,
+    };
+    if (!viewerIsPrimeLab) return counts;
+    for (const transfer of searchedTransfers) {
+      counts[labReceiveRoleOfTransfer(transfer)] += 1;
+    }
+    return counts;
+  }, [searchedTransfers, viewerIsPrimeLab]);
+
+  const baseFilteredTransfers = useMemo(() => {
+    if (!viewerIsPrimeLab) return searchedTransfers;
+    return searchedTransfers.filter(
+      (transfer) => roleVisible[labReceiveRoleOfTransfer(transfer)] !== false,
+    );
+  }, [roleVisible, searchedTransfers, viewerIsPrimeLab]);
 
   const guideTourWantsReceiveDetail =
     platformGuideTour.kind === "lab" &&
@@ -8416,6 +8448,15 @@ export function RequestorPracticeReceivePage({
     </>
   );
 
+  const labRoleFilterButtons = viewerIsPrimeLab ? (
+    <LabReceiveRoleFilterButtons
+      visible={roleVisible}
+      counts={roleFilterCounts}
+      onToggle={toggleReceiveRole}
+      compact
+    />
+  ) : null;
+
   const labMobileStatusBadges = (
     <PracticeStatusFilterBadges
       className="justify-center"
@@ -8495,7 +8536,9 @@ export function RequestorPracticeReceivePage({
                 ? {}
                 : { "data-guide-tour": "lab_calendar" })}
             >
-              <div className="relative shrink-0 px-1 py-1">
+              <div className="flex shrink-0 items-center gap-1.5 px-1 py-1">
+                {labRoleFilterButtons}
+                <div className="relative min-w-0 flex-1">
                 <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   value={search}
@@ -8513,6 +8556,7 @@ export function RequestorPracticeReceivePage({
                     <X className="h-3.5 w-3.5" />
                   </button>
                 ) : null}
+                </div>
               </div>
               <p className="shrink-0 px-0.5 text-xs font-medium text-slate-500">
                 치과에서 수신한 의뢰
@@ -8711,6 +8755,7 @@ export function RequestorPracticeReceivePage({
                 }
               }}
               search={search}
+              searchLeading={labRoleFilterButtons}
               onSearchChange={setSearch}
               searchPlaceholder="환자명, 치과명, 치아번호"
               hiddenWeekdays={calendarHiddenWeekdays}

@@ -297,6 +297,7 @@ export const buildReceivedScopeWithAutoMatch = ({
   if (!labId || !Types.ObjectId.isValid(labId)) return null;
 
   const labOid = new Types.ObjectId(labId);
+  // 원청은 자기에게 들어온 건(직접 수행·협력·하청)을 모두 본다. 표시는 UI 토글.
   const mine = {
     $and: [
       {

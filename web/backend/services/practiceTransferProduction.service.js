@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-09-27: PTX CA 주문 기공소 = 수행 기공소(assignee). 원청 잔액으로 생산 hold 하지 않음.
 // - 2026-09-12: PTX→어벗츠 리메이크 — CA 재업로드 forceRemakePricing(1만). 미매칭 시 정가 생산 견적.
 // - 2026-09-26: 기공의뢰 생성·수정 전송은 3D 스캔(DCM/PLY/STL/OBJ) 필수. 이미지·빈 첨부는 거부.
 // - 2026-09-26: 같은 파일명·용량의 의뢰 스캔은 1벌만 유지(재업로드 중복·확인 배지 방지).
@@ -111,6 +112,7 @@ import {
   pickAbutsAbutmentCreditPrices,
 } from "../utils/abutsAbutmentService.js";
 import { checkCreditLock } from "../utils/creditLock.util.js";
+import { resolvePerformingLabAnchorId } from "../utils/practiceTransferAutoMatchCore.js";
 import {
   isPracticeTransferRushProcessing,
   normalizeConfiguredRushFeeMultiplier,
@@ -484,7 +486,7 @@ const resolveLabRequestorUserId = async ({ transferDoc, fallbackUserId }) => {
   const acceptedBy = String(transferDoc?.requestorDownloadedBy || "").trim();
   if (acceptedBy && Types.ObjectId.isValid(acceptedBy)) return acceptedBy;
 
-  const labAnchorId = String(transferDoc?.targetLabAnchorId || "").trim();
+  const labAnchorId = resolvePerformingLabAnchorId(transferDoc);
   if (labAnchorId && Types.ObjectId.isValid(labAnchorId)) {
     const owner = await User.findOne({
       role: "requestor",
@@ -1076,7 +1078,7 @@ export async function createAbutmentRequestsFromPracticeTransfer({
   // 구강스캔은 선택 — 없어도 CA Request 생성(어벗 STL 핸드오프용 relatedRequestIds).
   const scanFiles = normalizeResultFiles(transferDoc?.files);
 
-  const labAnchorId = String(transferDoc?.targetLabAnchorId || "").trim();
+  const labAnchorId = resolvePerformingLabAnchorId(transferDoc);
   if (!labAnchorId || !Types.ObjectId.isValid(labAnchorId)) {
     throw new Error("기공소 정보가 없어 어벗츠 의뢰를 생성할 수 없습니다.");
   }
@@ -1509,7 +1511,7 @@ export async function createAbutmentRequestsFromPracticeTransfer({
 /**
  * CA 포함이면 Request 생성(이미 있으면 no-op) 후 production.relatedRequestIds·shippingMode 갱신.
  * 어벗 STL design-handoff 직전에만 호출한다(수락 시 빈 준비 건 금지).
- * 이미 생성된 Request는 현재 수락 기공소(targetLabAnchorId)로 소유를 맞춘다.
+ * 이미 생성된 Request는 수행 기공소(assignee, 없으면 원청)로 소유를 맞춘다.
  * relatedRequestIds에는 헥스 확인 샘플을 넣지 않는다(레거시 혼입분도 정리).
  */
 export async function ensureAbutmentRequestsForHandoff({
@@ -2009,7 +2011,7 @@ export async function clearRelatedAbutmentProductionOnRelease(
 
     // 어벗츠로의뢰 헤더 건수·진행중 목록이 PTX 작업취소 후에도 맞도록 갱신.
     if (canceledRequestCount > 0) {
-      const labAnchorId = String(transferDoc?.targetLabAnchorId || "").trim();
+      const labAnchorId = resolvePerformingLabAnchorId(transferDoc);
       const canceledRows = await Request.find({ _id: { $in: objectIds } })
         .select({
           _id: 1,
@@ -2259,7 +2261,7 @@ async function emitPracticeTransferAbutmentMachiningStartedRealtime({
     updatedAt: transfer.updatedAt || at,
   };
 
-  const labAnchorId = String(transfer.targetLabAnchorId || "").trim();
+  const labAnchorId = resolvePerformingLabAnchorId(transfer);
   const practiceAnchorId = String(
     transfer.practiceBusinessAnchorId || "",
   ).trim();
@@ -2304,10 +2306,11 @@ export async function clearPracticeTransferAbutmentMachiningStarted(
 
 /**
  * 재수락 등으로 relatedRequestIds는 유지됐지만 Request.businessAnchorId가
- * 이전 기공소로 남은 경우, 현재 targetLabAnchorId로 맞춘다.
+ * 이전 기공소로 남은 경우, 현재 수행 기공소로 맞춘다.
+ * 협력·하청은 assignee가 생산비를 내고 어벗을 수취한다. 원청 잔액으로 잡지 않는다.
  */
 export async function syncRelatedRequestOwnershipToAcceptingLab(transferDoc) {
-  const labAnchorId = String(transferDoc?.targetLabAnchorId || "").trim();
+  const labAnchorId = resolvePerformingLabAnchorId(transferDoc);
   if (!labAnchorId || !Types.ObjectId.isValid(labAnchorId)) {
     return { updated: 0 };
   }

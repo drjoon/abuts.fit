@@ -17,6 +17,7 @@ alwaysApply: true
 
 - 헬퍼: `resolveFeeScheduleLabAnchorId` · `resolveLabFeeMultiplierLabAnchorId` (`practiceTransferAutoMatchCore.js`)
 - 정산 당사자: `resolvePracticeTransferSettlementParties` — `grossOwnerId`=어벗츠(prime), `purchasePayeeId`=수행(assignee) when prime≠assignee
+- **실무:** 원청도 기공을 한다. 어벗츠기공소 주문은 원청이 직접 하거나 하청으로 넘긴다. 수신함은 원청·협력·하청을 모두 포함하고, 표시/숨김은 UI 토글. assignee가 있으면 디자인·생산비·수취·채팅은 `resolvePerformingLabAnchorId`. 수가 앵커(협력=수행, 하청=원청)와 섞지 말 것.
 - 생성 시 `billing.labFeeMultiplier`(및 견적 금액) **스냅샷** — 이후 할증 변경 소급 금지
 - `quote-context`: 픽커가 고른 기공소 = 그 기공소 수가·할증(협력=파트너, 어벗츠=어벗츠)
 

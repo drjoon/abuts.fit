@@ -19,9 +19,9 @@ export const isSameObjectIdText = (a, b) => {
 };
 
 /**
- * 지정된 기공소(requestor businessAnchor) 구성원이면 primaryContact 해석 실패해도 채팅 참여 가능.
- * - 수행 기공소(하청 assignee) 또는 원청(targetLab, 어벗츠)
- * - internalLab(어벗츠기공소) 팀원도 원청으로 참여
+ * 실무 기공소 구성원만 의뢰 채팅에 참여한다.
+ * assignee가 있으면 그 기공소만. 없으면 원청(자체 수행).
+ * 원청은 계약·매출 경유이지, 협력·하청 실무 채팅 당사자가 아니다.
  */
 export const canJoinPracticeTransferAsLabPeer = ({
   currentUserId,
@@ -43,7 +43,7 @@ export const canJoinPracticeTransferAsLabPeer = ({
     transferDoc?.assigneeLabAnchorId || "",
   ).trim();
   if (assigneeLabAnchorId && Types.ObjectId.isValid(assigneeLabAnchorId)) {
-    if (userAnchorId === assigneeLabAnchorId) return true;
+    return userAnchorId === assigneeLabAnchorId;
   }
   if (!targetLabAnchorId || !Types.ObjectId.isValid(targetLabAnchorId)) {
     return false;

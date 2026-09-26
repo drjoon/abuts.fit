@@ -103,7 +103,21 @@ describe("practiceTransferChatAccess", () => {
     ).toBe(true);
   });
 
-  test("internalLab 원청 팀원은 lab peer", () => {
+  test("협력·하청이 있으면 원청은 실무 채팅 당사자가 아님", () => {
+    expect(
+      canJoinPracticeTransferAsLabPeer({
+        currentUserId: labStaffId,
+        currentUserRole: "internalLab",
+        currentUserBusinessAnchorId: labAnchorId,
+        transferDoc: {
+          ...transferDoc,
+          assigneeLabAnchorId: "64a000000000000000000099",
+        },
+      }),
+    ).toBe(false);
+  });
+
+  test("internalLab 원청 팀원은 자체 수행일 때 lab peer", () => {
     expect(
       canJoinPracticeTransferAsLabPeer({
         currentUserId: labStaffId,

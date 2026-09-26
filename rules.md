@@ -176,6 +176,7 @@
      - **협력**(`assigneeKind=cooperation`): 치과가 픽커에서 외부 기공소 직접 지정. **수가표·할증=수행 기공소**(치과↔지정과 동일). 정산만 어벗츠 gross→수행 매입. 플랫폼 사용료 없음(전액 이관). 치과 표시「어벗츠 · {파트너}」.
      - **하청**(`assigneeKind=subcontract`): 치과가 어벗츠기공사업부 지정 후 하청 풀/클레임. **수가표·할증=어벗츠(원청).** `subcontractFeeRate`(기본 10%) 매입 공제. 치과에는 실명 비공개.
   - **신규 PTX SSOT(강제):** `targetLabAnchorId`=항상 `internalLab`. 치과 픽커 외부=`assigneeLabAnchorId` + `assigneeKind=cooperation`. 어벗츠만 선택 후 풀 클레임=`assigneeKind=subcontract`. 계약·결제·계산서=어벗츠→치과(`ABUTS_TO_CUSTOMER`). 수행 기공소 정산=기공소→어벗츠 매입(`AFFILIATE_TO_ABUTS`, 품목 협력/하청 기공비).
+  - **원청 vs 수행(강제):** 원청(어벗츠기공소)은 치과와 직계약하는 법률·정산 주체이고, 동시에 기공도 한다. 어벗츠기공소로 들어온 주문은 원청이 직접 하거나 하청으로 넘긴다. 협력은 치과가 파트너를 지정한 건이다. 수신함은 세 종류를 모두 보여 주고, 어벗츠기공소 화면에서 원청·협력·하청 표시/숨김으로 거른다. 매출 크레딧은 원청에 잠깐 찍힌 뒤 수행 기공소 매입으로 넘어간다. assignee가 생기면 그 기공소가 디자인·생산비 크레딧·수취·의뢰 채팅을 한다. 수가표는 이와 별개다(협력=수행, 하청=원청 수가).
   - **PTX 수가·할증 앵커(강제, 정산과 분리):** 협력=`resolveFeeScheduleLabAnchorId`/`resolveLabFeeMultiplierLabAnchorId` → **assignee**. 하청·어벗츠 자체 → **prime(어벗츠)**. `isPracticeTransferSubcontracted`(prime≠assignee)만으로 협력 수가를 어벗츠에 두지 말 것. 생성 스냅샷 소급 금지. Cursor: `.cursor/rules/ptx-cooperation-fee-ssot.mdc`.
   - 가격 안내 UI(`PricingPolicyDialog`)는 커스텀 어벗 단가·출고 정책 안내용이며, 사업 축 정의와 혼용하지 않는다.
   - 관리자 정산 UI: `AdminPaymentsPage` 상단 3사업 축(선택형) · 집계 `GET /api/admin/credits/settlement-business-overview`(분배비율·planned 몫 포함). 분배 비율 설정: 재무 › 설정 › 분배비율. 사업영역(`/dashboard/partners`)은 팀원 배분.
@@ -302,7 +303,7 @@
   - 조회(발신): `GET /api/practice/transfers/my`
   - 조회(수신): `GET /api/practice/transfers/received`
   - 취소: `POST /api/practice/transfers/cancel-batch`
-  - **커스텀어벗 Abuts-first**: 작업시작 시 스캔 기반 Request 생성 → **작업시작 기공소가 디자인** → design-handoff 업로드 시 제조 자동 착수. 치과→기공소=`labFeeSchedule` 커스텀어벗 수가(기공비 정산). 기공소→어벗츠=생산비(플랫폼 1.5만, Request 과금). 레거시(치과 어벗츠 단가 선납)만 `abutmentDesignLabFee` 외주 지급. **생산 후 주문 기공소 수취**(치과 직납 아님). 제조사 출고 목표=`치과도착일 − 2영업일`(`resolveManufacturerTargetShipYmd`). 기공소 `mark-complete`는 크라운 업로드만(배송선택 없음). 어벗생산의뢰(직접 Request) 디자인 파트너 큐와 분리.
+  - **커스텀어벗 Abuts-first**: 작업시작 시 스캔 기반 Request 생성 → **작업시작 기공소가 디자인** → design-handoff 업로드 시 제조 자동 착수. 치과→기공소=`labFeeSchedule` 커스텀어벗 수가(기공비 정산). 기공소→어벗츠=생산비(플랫폼 1.5만, Request 과금). 레거시(치과 어벗츠 단가 선납)만 `abutmentDesignLabFee` 외주 지급. **생산 후 수행 기공소 수취**(치과 직납 아님. assignee가 있으면 그 기공소, 없으면 원청). 제조사 출고 목표=`치과도착일 − 2영업일`(`resolveManufacturerTargetShipYmd`). 기공소 `mark-complete`는 크라운 업로드만(배송선택 없음). 어벗생산의뢰(직접 Request) 디자인 파트너 큐와 분리.
 - 제조사 워크시트 조회에서 practice 전송 태그 의뢰 제외
 - 크레딧/정산은 유료(검증된 수신자·lab) 경로에만 해당. 실 사업자등록번호가 없는 synthetic 앵커에는 환영 크레딧을 지급하지 않으며, synthetic→실BN 검증 승격 시 1회 지급
 - 소개(리퍼럴) 페이지·링크: 발신(practice) 포함 모든 requestor가 접근 가능. 소개 귀속(`referredByAnchorId`)·그룹 할인 적용은 추천인 사업자 앵커 기준. lab 체크·검증되면 유료 소개 혜택 경로로 이어짐. **영업(딜러·영업본부) 소개 귀속**은 의뢰자 90일 무주문 시 리셋(§2.3).

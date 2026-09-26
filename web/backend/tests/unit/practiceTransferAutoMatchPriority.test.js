@@ -234,6 +234,16 @@ describe("practiceTransferAutoMatch priority (core)", () => {
     expect(fieldsForPrime.assigneeLabName).toBe("협력 기공소");
   });
 
+  test("협력·하청 생산 크레딧은 수행 기공소(원청 잔액 아님)", () => {
+    expect(
+      resolvePerformingLabAnchorId({
+        targetLabAnchorId: OID_A,
+        assigneeLabAnchorId: OID_B,
+        assigneeKind: "cooperation",
+      }),
+    ).toBe(OID_B);
+  });
+
   test("하청 수행 시 수행 기공소·치과 표시 상수", () => {
     expect(
       resolvePerformingLabAnchorId({

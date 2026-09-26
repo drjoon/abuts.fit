@@ -1,3 +1,4 @@
+// - 2026-09-27: PTX CA 생산 hold — 수행 기공소(assignee) 잔액. 원청(target)으로 소유를 되돌리지 않음.
 // - 2026-09-27: PTX 어벗 STL 업로드 — 협력·하청 수행 기공소(assignee)도 작업시작 기공소로 허용.
 // - 2026-09-20: handoff — body.caseInfos.anodizingEnabled를 요청에 반영(계정 labMeta보다 우선).
 // - 2026-09-16: PTX mirror 실패 시 clearPtxDesignMirror 금지 — 형제 치아 designFiles 소실 방지. DB 재조회·재시도.
@@ -390,8 +391,13 @@ const ptxDesignLabAnchors = (transferDoc, fallbackTarget = "") => ({
   assigneeLabAnchorId: getAssigneeLabAnchorId(transferDoc),
 });
 
-const healRequestOwnershipToAcceptingLab = (request, transferTargetLabAnchorId) => {
-  const transferLab = String(transferTargetLabAnchorId || "").trim();
+/** 생산비·수취 기공소. 협력·하청은 수행 기공소, 자체 수행은 원청. */
+const ptxOrderingLabAnchorId = (transferDoc, fallbackTarget = "") =>
+  resolvePerformingLabAnchorId(transferDoc) ||
+  String(fallbackTarget || "").trim();
+
+const healRequestOwnershipToAcceptingLab = (request, orderingLabAnchorId) => {
+  const transferLab = String(orderingLabAnchorId || "").trim();
   if (!transferLab || !Types.ObjectId.isValid(transferLab)) return false;
   const current = String(request?.businessAnchorId || "").trim();
   if (current === transferLab) return false;
@@ -754,7 +760,10 @@ export async function handoffDesignToProduction(req, res) {
       ptxDesignLabAnchors(transferDocEarly, transferTargetLabAnchorId),
     );
     if (acceptingLabPtx) {
-      healRequestOwnershipToAcceptingLab(request, transferTargetLabAnchorId);
+      healRequestOwnershipToAcceptingLab(
+        request,
+        ptxOrderingLabAnchorId(transferDocEarly, transferTargetLabAnchorId),
+      );
     }
     const claimerId = request?.designClaim?.claimedBy
       ? String(request.designClaim.claimedBy)
@@ -901,11 +910,10 @@ export async function handoffDesignToProduction(req, res) {
     }
 
     // 헥스·디자인SW 스탬프는 hold에 불필요 — 응답 후 labMeta로 처리(critical path ~1s 절감).
-    const stampLabAnchorIdForLater =
-      acceptingLabPtx
-        ? String(transferTargetLabAnchorId || "").trim() ||
-          String(request.businessAnchorId || "").trim()
-        : "";
+    const stampLabAnchorIdForLater = acceptingLabPtx
+      ? ptxOrderingLabAnchorId(transferDocEarly, transferTargetLabAnchorId) ||
+        String(request.businessAnchorId || "").trim()
+      : "";
 
     const prevPrimary = toStoredFileMeta(request.caseInfos.file);
     const prevExtras = Array.isArray(request.caseInfos.files)
@@ -1594,7 +1602,10 @@ export async function cancelDesignHandoff(req, res) {
         message: "작업을 시작한 기공소만 디자인을 취소할 수 있습니다.",
       });
     }
-    healRequestOwnershipToAcceptingLab(request, transferTargetLabAnchorId);
+    healRequestOwnershipToAcceptingLab(
+      request,
+      ptxOrderingLabAnchorId(transferDoc, transferTargetLabAnchorId),
+    );
 
     // 전체 취소: 연동 CA 중 하나라도 준비 이후면 불가.
     // 치아 단위 취소는 해당 Request만 아래에서 검사(형제 가공 중이어도 준비 치아는 취소 가능).
@@ -1920,15 +1931,9 @@ export async function handoffPracticeTransferAbutmentDesign(req, res) {
     }
 
     const labAnchorId = String(req.user?.businessAnchorId || "").trim();
-    const targetLab = String(transferDoc.targetLabAnchorId || "").trim();
-    const assigneeLab = getAssigneeLabAnchorId(transferDoc);
     const performingLab = resolvePerformingLabAnchorId(transferDoc);
     const isAcceptingLab =
-      role === "admin" ||
-      (labAnchorId &&
-        (labAnchorId === targetLab ||
-          labAnchorId === assigneeLab ||
-          labAnchorId === performingLab));
+      role === "admin" || (labAnchorId && labAnchorId === performingLab);
     if (!isAcceptingLab) {
       return res.status(403).json({
         success: false,

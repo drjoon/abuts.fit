@@ -96,7 +96,7 @@ describe("designAccess PTX lab designer helpers", () => {
     ).toBe(true);
     expect(
       isAcceptingLabForPtxDesignRequest(labUser, cooperationRequest, labs),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       isAcceptingLabForPtxDesignRequest(
         { role: "requestor", businessAnchorId: "dddddddddddddddddddddddd" },

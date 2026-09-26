@@ -859,6 +859,8 @@ type PracticeRecentTransfersCalendarProps = {
   onDeleteItem?: (item: PracticeCalendarChipItem) => void;
   /** 오늘(KST) 포함·이후 날짜 셀 빈 영역 클릭. 과거는 호출하지 않음. */
   onSelectFutureDay?: (ymd: string) => void;
+  /** 검색 입력 바로 왼쪽. 어벗츠기공소 원청·협력·하청 표시 토글. */
+  searchLeading?: ReactNode;
   /** 「주문일」뱃지 왼쪽 — 전송 검색(헤더와 위치 교환) */
   search?: string;
   onSearchChange?: (value: string) => void;
@@ -1048,6 +1050,7 @@ export function PracticeRecentTransfersCalendar({
   onDeleteItem,
   onSelectFutureDay,
   search,
+  searchLeading,
   onSearchChange,
   searchPlaceholder = "환자명, 기공소명, 치아번호",
   toolbarMiddle = null,
@@ -1818,6 +1821,9 @@ export function PracticeRecentTransfersCalendar({
               : "sm:justify-end md:ml-auto",
           )}
         >
+          {searchLeading || onSearchChange ? (
+            <div className="flex min-w-0 items-center gap-1.5">
+              {searchLeading}
           {onSearchChange ? (
             <div className="relative w-full max-w-full shrink-0 md:w-64 lg:w-72">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -1838,6 +1844,8 @@ export function PracticeRecentTransfersCalendar({
                   <X className="h-3.5 w-3.5" />
                 </button>
               ) : null}
+            </div>
+          ) : null}
             </div>
           ) : null}
           <div className="flex flex-wrap items-center gap-1.5">
