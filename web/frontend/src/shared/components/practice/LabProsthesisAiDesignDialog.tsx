@@ -22,6 +22,7 @@
 // - 2026-09-26: 스캔 단계에 모델 정렬. 수동은 고른 악과 바이트만 좌우로 두고 점 3개로 붙인다.
 // - 2026-09-26: 수동 정렬의 두 모델은 화면 가운데에 좁은 간격으로 나란히 둔다.
 // - 2026-09-26: 정렬 안내 문장은 버튼 툴팁으로만.
+// - 2026-09-26: 모델 정렬이 돌아가는 동안 취소할 수 있다.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDownToLine,
@@ -30,6 +31,7 @@ import {
   ChevronDown,
   ImageDown,
   Paintbrush,
+  Save,
   Palette,
   Sparkles,
   TriangleAlert,
@@ -52,7 +54,11 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/shared/ui/cn";
+import { apiFetch } from "@/shared/api/apiClient";
+import { encodeHpsCaDcm } from "@/shared/files/hpsDcmWrite";
 import { fetchS3BlobCached } from "@/shared/files/s3BlobCache";
+import { useS3TempUpload } from "@/shared/hooks/useS3TempUpload";
+import { useToast } from "@/shared/hooks/use-toast";
 import {
   fileFromImageBlob,
   fileFromModelBlob,
@@ -66,12 +72,16 @@ import {
   OralScanOverlayViewer,
   type OralScanOverlayHandle,
   type OralScanOverlaySource,
+  type WorkingScanMesh,
 } from "@/shared/components/practice/OralScanOverlayViewer";
 import { LabProsthesisModifyPanel } from "@/shared/components/practice/LabProsthesisModifyPanel";
 import {
+  abutsWorkScanFileName,
   buildLabProsthesisAiPlan,
+  isAbutsWorkScanFileName,
   isOralScanMeshName,
   oralScanRoleLabel,
+  preferWorkingOralScanFiles,
   initialLabOralScanVisible,
   prepArchFromProsthesisTeeth,
   resolveOralScanRole,
@@ -100,6 +110,12 @@ type AiDesignFile = {
   fileName?: string | null;
   scanRole?: string | null;
   s3Key?: string | null;
+  uploadedAt?: string | null;
+};
+
+export type WorkingScansPersisted = {
+  files?: unknown;
+  trashedFiles?: unknown;
 };
 
 type LabProsthesisAiCaseHeader = {
@@ -123,6 +139,9 @@ type LabProsthesisAiDesignButtonProps = {
   }> | null;
   files?: ReadonlyArray<AiDesignFile> | null;
   authToken?: string | null;
+  /** 기공소 수신 의뢰. 작업 DCM을 이 의뢰 파일에 붙인다. */
+  transferId?: string | null;
+  onWorkingScansPersisted?: (data: WorkingScansPersisted) => void;
   caseHeader?: LabProsthesisAiCaseHeader | null;
   /** 채팅 헤더와 같은 바구니 번호표 */
   basketTag?: LabProsthesisAiBasketTag | null;
@@ -166,6 +185,8 @@ export function LabProsthesisAiDesignButton({
   toothWorks,
   files,
   authToken,
+  transferId,
+  onWorkingScansPersisted,
   caseHeader,
   basketTag,
   className,
@@ -192,6 +213,8 @@ export function LabProsthesisAiDesignButton({
         toothWorks={toothWorks}
         files={files}
         authToken={authToken}
+        transferId={transferId}
+        onWorkingScansPersisted={onWorkingScansPersisted}
         caseHeader={caseHeader}
         basketTag={basketTag}
       />
@@ -205,6 +228,8 @@ function LabProsthesisAiDesignDialog({
   toothWorks,
   files,
   authToken,
+  transferId,
+  onWorkingScansPersisted,
   caseHeader,
   basketTag,
 }: LabProsthesisAiDesignButtonProps & {
@@ -290,6 +315,11 @@ function LabProsthesisAiDesignDialog({
   const [alignPicks, setAlignPicks] = useState({ model: 0, bite: 0 });
   const [alignBusy, setAlignBusy] = useState(false);
   const viewerRef = useRef<OralScanOverlayHandle>(null);
+  const lastSavedSigRef = useRef("");
+  const saveLockRef = useRef(false);
+  const [saving, setSaving] = useState(false);
+  const { toast } = useToast();
+  const { uploadFiles } = useS3TempUpload({ token: authToken });
   const workObserveRef = useRef<ResizeObserver | null>(null);
   const bindWorkArea = useCallback((node: HTMLDivElement | null) => {
     workObserveRef.current?.disconnect();
@@ -773,8 +803,170 @@ function LabProsthesisAiDesignDialog({
     applyColorDetections(viewerRef.current?.detectColorMargins(toothNumbers) ?? []);
   };
 
+  const persistWorkingScans = useCallback(
+    async (reason: "button" | "close"): Promise<boolean> => {
+      if (saveLockRef.current) return false;
+      if (alignBusy) {
+        if (reason === "button") {
+          toast({ title: "정렬이 끝난 뒤에 저장할 수 있습니다." });
+        }
+        return reason === "close";
+      }
+      const changed = viewerRef.current?.exportChangedScans() ?? [];
+      const sig = changedScanSignature(changed);
+      if (changed.length === 0 || sig === lastSavedSigRef.current) {
+        if (reason === "button") {
+          toast({
+            title:
+              changed.length === 0
+                ? "바뀐 스캔이 없습니다."
+                : "이미 저장했습니다.",
+          });
+        }
+        return true;
+      }
+      const id = String(transferId || "").trim();
+      if (!id || !authToken) {
+        if (reason === "button") {
+          toast({
+            title: "의뢰를 연 뒤에 저장할 수 있습니다.",
+            variant: "destructive",
+          });
+        }
+        return reason === "close";
+      }
+      saveLockRef.current = true;
+      setSaving(true);
+      try {
+        const grouped = new Map<WorkingScanMesh["role"], WorkingScanMesh[]>();
+        for (const row of changed) {
+          const list = grouped.get(row.role) ?? [];
+          list.push(row);
+          grouped.set(row.role, list);
+        }
+        const blobs: File[] = [];
+        const roles: WorkingScanMesh["role"][] = [];
+        for (const [role, rows] of grouped) {
+          rows.forEach((row, index) => {
+            const name = abutsWorkScanFileName(role, index);
+            blobs.push(
+              new File([encodeHpsCaDcm(row)], name, {
+                type: "application/octet-stream",
+              }),
+            );
+            roles.push(role);
+          });
+        }
+        const uploaded = await uploadFiles(blobs);
+        const payload = uploaded
+          .map((file, index) => {
+            const originalName = String(
+              file.originalName || blobs[index]?.name || "",
+            ).trim();
+            const s3Key = String(file.key || "").trim();
+            const role = roles[index];
+            if (!originalName || !s3Key || !role) return null;
+            return {
+              patientName: "",
+              tooth: "",
+              scanRole: role,
+              scanRoleSetBy: "lab" as const,
+              file: {
+                originalName,
+                mimetype: "application/octet-stream",
+                size: Number(file.size || blobs[index]?.size || 0) || 0,
+                s3Key,
+              },
+            };
+          })
+          .filter((row) => row != null);
+        if (!payload.length) {
+          throw new Error("작업 스캔 업로드에 실패했습니다.");
+        }
+        const appended = await apiFetch({
+          path: `/api/practice/transfers/received/${encodeURIComponent(id)}/request-files`,
+          method: "POST",
+          token: authToken,
+          jsonBody: { files: payload },
+        });
+        if (!appended.ok) {
+          throw new Error(
+            apiMessage(appended.data) || "작업 스캔 저장에 실패했습니다.",
+          );
+        }
+        const savedRoles = new Set(roles);
+        const stale = (filesRef.current || [])
+          .filter((file) => {
+            if (!isAbutsWorkScanFileName(String(file.fileName || ""))) {
+              return false;
+            }
+            const role = resolveOralScanRole(file);
+            return (
+              (role === "upper" || role === "lower" || role === "bite") &&
+              savedRoles.has(role)
+            );
+          })
+          .map((file) => String(file.s3Key || "").trim())
+          .filter(Boolean);
+        let data = unwrapApiData(appended.data);
+        if (stale.length > 0) {
+          const removed = await apiFetch({
+            path: `/api/practice/transfers/received/${encodeURIComponent(id)}/request-files/remove`,
+            method: "POST",
+            token: authToken,
+            jsonBody: { s3Keys: stale },
+          });
+          if (removed.ok) data = unwrapApiData(removed.data);
+        }
+        lastSavedSigRef.current = sig;
+        onWorkingScansPersisted?.({
+          files: data.files,
+          trashedFiles: data.trashedFiles,
+        });
+        const labels = [...savedRoles].map((role) => oralScanRoleLabel(role));
+        toast({
+          title: "작업 스캔을 저장했습니다.",
+          description: (
+            <>
+              {labels.join(", ")} DCM이 의뢰 파일에 추가됐습니다.
+              <br />
+              AI를 다시 열면 이 파일을 읽고, 목록에서 다운로드할 수 있습니다.
+            </>
+          ),
+        });
+        return true;
+      } catch (error) {
+        toast({
+          title: "작업 스캔 저장 실패",
+          description:
+            error instanceof Error
+              ? error.message
+              : "작업 스캔을 저장하지 못했습니다.",
+          variant: "destructive",
+        });
+        return false;
+      } finally {
+        saveLockRef.current = false;
+        setSaving(false);
+      }
+    },
+    [alignBusy, authToken, onWorkingScansPersisted, toast, transferId, uploadFiles],
+  );
+
+  const requestOpenChange = (next: boolean) => {
+    if (next) {
+      onOpenChange(true);
+      return;
+    }
+    if (saveLockRef.current) return;
+    void (async () => {
+      const ok = await persistWorkingScans("close");
+      if (ok) onOpenChange(false);
+    })();
+  };
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={requestOpenChange}>
       <DialogContent
         className={cn(
           "inset-0 left-0 top-0 z-[480] flex h-[100dvh] max-h-[100dvh] w-screen max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-0 p-0",
@@ -837,6 +1029,18 @@ function LabProsthesisAiDesignDialog({
               size="sm"
               variant="outline"
               className="h-8 gap-1"
+              disabled={saving || alignBusy || entries.length === 0}
+              onClick={() => void persistWorkingScans("button")}
+              title="바뀐 스캔을 원본과 따로 DCM으로 저장합니다. 의뢰 파일에서 다운로드할 수 있습니다."
+            >
+              <Save className="h-3.5 w-3.5" />
+              {saving ? "저장 중…" : "작업 저장"}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 gap-1"
               onClick={() => viewerRef.current?.saveImage()}
               title="현재 뷰를 PNG로 저장"
             >
@@ -881,14 +1085,20 @@ function LabProsthesisAiDesignDialog({
               designEdit={designEdit}
               onDesignGesture={onDesignGesture}
               manualAlignArch={alignKind === "manual" ? alignArch : null}
-              onAlignProgress={setAlignPicks}
+              onAlignProgress={(picks) => {
+                setAlignPicks(picks);
+                if (picks.model >= 3 && picks.bite >= 3) setAlignBusy(true);
+              }}
               onAlignMerged={() => {
+                setAlignBusy(false);
                 setAlignArch(null);
                 setAlignPicks({ model: 0, bite: 0 });
               }}
               onAlignFailed={() => {
+                setAlignBusy(false);
                 setAlignPicks({ model: 0, bite: 0 });
               }}
+              onAlignCancelled={() => setAlignBusy(false)}
               className="absolute inset-0"
             />
             <div className="pointer-events-none absolute left-1/2 top-3 z-10 flex w-max max-w-[calc(100%-2rem)] -translate-x-1/2 flex-col items-center gap-1.5">
@@ -1285,6 +1495,17 @@ function LabProsthesisAiDesignDialog({
                             </TooltipContent>
                           </Tooltip>
                         </div>
+                        {alignBusy ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-7 w-full px-2 text-[11px]"
+                            onClick={() => viewerRef.current?.cancelAlign()}
+                          >
+                            취소
+                          </Button>
+                        ) : null}
                         {alignKind === "manual" ? (
                           <>
                             <div className="grid grid-cols-2 gap-1">
@@ -1976,7 +2197,7 @@ function collectMeshSources(
 ): MeshSource[] {
   const out: MeshSource[] = [];
   const seen = new Set<string>();
-  for (const file of files || []) {
+  for (const file of preferWorkingOralScanFiles(files || [])) {
     const fileName = String(file?.fileName || "").trim();
     const id = String(file?.s3Key || "").trim();
     if (!fileName || !id || seen.has(id) || !isOralScanMeshName(fileName)) {
@@ -1988,6 +2209,34 @@ function collectMeshSources(
     out.push({ id, fileName, role });
   }
   return out;
+}
+
+function changedScanSignature(rows: readonly WorkingScanMesh[]): string {
+  return rows
+    .map((row) => {
+      const values = row.positions;
+      let acc = values.length;
+      const step = Math.max(1, Math.floor(values.length / 64));
+      for (let i = 0; i < values.length; i += step) {
+        acc = Math.imul(acc, 31) + Math.round((values[i] ?? 0) * 1000);
+      }
+      return `${row.role}:${acc}`;
+    })
+    .join("|");
+}
+
+function unwrapApiData(raw: unknown): Record<string, unknown> {
+  const body =
+    raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const data = body.data;
+  if (data && typeof data === "object") return data as Record<string, unknown>;
+  return body;
+}
+
+function apiMessage(raw: unknown): string {
+  const body =
+    raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  return String(body.message || "").trim();
 }
 
 function collectImageSources(

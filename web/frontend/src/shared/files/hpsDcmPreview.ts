@@ -467,6 +467,8 @@ export type HpsDcmMeshData = {
   indices: Uint32Array;
   /** Per-vertex RGB 0..255. null이면 무색. */
   colors: Uint8Array | null;
+  /** 기공소 AI에서 저장한 작업 스캔. 색 보정을 한 번 더 하지 않는다. */
+  workCopy: boolean;
 };
 
 function attrIntOptional(el: Element | null, name: string): number | null {
@@ -899,7 +901,12 @@ export async function parseHpsDcmMeshData(
     facetsEl,
   });
 
-  return { positions, indices, colors };
+  return {
+    positions,
+    indices,
+    colors,
+    workCopy: properties["abuts.work"] === "1",
+  };
 }
 
 /** 3Shape/TRIOS HPS DCM → indexed BufferGeometry (+ vertex colors when present). */
@@ -913,6 +920,7 @@ export async function parseHpsDcmGeometry(
   if (mesh.colors) {
     geometry.setAttribute("color", colorsToThreeAttribute(mesh.colors));
   }
+  if (mesh.workCopy) geometry.userData.abutsWork = true;
   geometry.computeVertexNormals();
   return geometry;
 }

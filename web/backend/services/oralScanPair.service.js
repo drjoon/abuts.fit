@@ -4,7 +4,10 @@ import PracticeTransfer from "../models/practiceTransfer.model.js";
 import BusinessAnchor from "../models/businessAnchor.model.js";
 import { resolvePerformingLabAnchorId } from "../utils/practiceTransferAutoMatchCore.js";
 import { getObjectBufferFromS3 } from "../utils/s3.utils.js";
-import { resolveStoredScanRole } from "../utils/oralScanRole.js";
+import {
+  isAbutsWorkScanFileName,
+  resolveStoredScanRole,
+} from "../utils/oralScanRole.js";
 import {
   alignJawsToBite,
   archRoleFromTooth,
@@ -34,6 +37,7 @@ async function loadPoints(row) {
 
 function fileByRole(files, role) {
   return (files || []).find((row) => {
+    if (isAbutsWorkScanFileName(meshName(row))) return false;
     const stored = resolveStoredScanRole({
       originalName: row?.file?.originalName,
       scanRole: row?.scanRole,

@@ -9292,6 +9292,17 @@ export function RequestorPracticeReceivePage({
           null
         }
         filesLabel="의뢰 파일"
+        transferId={String(selectedTransfer?.transferId || "").trim()}
+        onWorkingScansPersisted={(data) => {
+          const transferId = String(selectedTransfer?.transferId || "").trim();
+          if (!transferId || !Array.isArray(data.files)) return;
+          const mongoId = String(selectedTransfer?._id || "");
+          patchReceivedRequestFiles(
+            transferId,
+            mapApiReceivedRequestFiles(data.files, mongoId),
+            mapApiReceivedRequestFiles(data.trashedFiles, mongoId),
+          );
+        }}
         files={
           (selectedTransfer?.files || []).map((file) => ({
             id: file.id,

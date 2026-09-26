@@ -278,10 +278,14 @@ import {
   isPendingRoundBarAbutment,
   isSimpleAbutmentModeForFee,
 } from "@/shared/practice/labFeeSchedule";
-import { LabProsthesisAiDesignButton } from "@/shared/components/practice/LabProsthesisAiDesignDialog";
+import {
+  LabProsthesisAiDesignButton,
+  type WorkingScansPersisted,
+} from "@/shared/components/practice/LabProsthesisAiDesignDialog";
 import {
   ORAL_SCAN_ROLE_OPTIONS,
   ambiguousOralScanFileKeys,
+  isAbutsWorkScanFileName,
   isOralScanMeshName,
   isOralScanRole,
   oralScanRoleLabel,
@@ -507,6 +511,9 @@ type PracticeTransferDetailChatDialogProps = {
   /** 예: 의뢰 파일 */
   filesLabel: string;
   files: PracticeTransferDialogFileItem[];
+  /** 기공소 AI가 작업 DCM을 붙일 수신 의뢰 */
+  transferId?: string | null;
+  onWorkingScansPersisted?: (data: WorkingScansPersisted) => void;
   /** 기공소가 의뢰 스캔 역할을 고친다 */
   onChangeRequestScanRole?: (
     file: PracticeTransferDialogFileItem,
@@ -747,6 +754,8 @@ export function PracticeTransferDetailChatDialog({
   labEffectiveStars = null,
   filesLabel,
   files,
+  transferId = null,
+  onWorkingScansPersisted,
   onChangeRequestScanRole,
   trashedFiles = [],
   oralScanAttachMode = null,
@@ -2347,6 +2356,8 @@ export function PracticeTransferDetailChatDialog({
         toothWorks={chartToothWorks}
         files={files}
         authToken={authToken}
+        transferId={transferId}
+        onWorkingScansPersisted={onWorkingScansPersisted}
         caseHeader={{
           primary: caseIdentityStrip?.primary,
           dates: identityDateLabel,
@@ -2609,6 +2620,11 @@ export function PracticeTransferDetailChatDialog({
               FILE_TILE_THUMB_ASPECT_CLASS,
             )}
           >
+            {isAbutsWorkScanFileName(file.fileName) ? (
+              <span className="absolute left-1 top-1 z-10 rounded bg-primary px-1.5 py-0.5 text-[10px] font-semibold text-primary-foreground">
+                작업
+              </span>
+            ) : null}
             {isMesh && modelThumbFile ? (
               <StlPreviewThumbnail
                 file={modelThumbFile}

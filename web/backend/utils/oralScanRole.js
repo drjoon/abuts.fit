@@ -2,6 +2,11 @@ export const ORAL_SCAN_ROLES = new Set(["upper", "lower", "bite", "other"]);
 
 const MESH_EXT = /\.(stl|ply|obj|dcm)$/i;
 
+/** 기공소 AI가 원본과 따로 저장한 작업 스캔. 상악-작업.dcm · 상악-작업-2.dcm */
+export function isAbutsWorkScanFileName(fileName) {
+  return /(?:^|[-_])작업(?:-\d+)?\.dcm$/i.test(String(fileName || "").trim());
+}
+
 export function normalizeOralScanRole(value) {
   const role = String(value || "").trim();
   return ORAL_SCAN_ROLES.has(role) ? role : "";

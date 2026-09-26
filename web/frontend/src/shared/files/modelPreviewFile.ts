@@ -658,7 +658,9 @@ export async function parseModelPreview(
 
   if (ext === ".dcm") {
     const geometry = await parseHpsDcmGeometry(buffer);
-    enhanceScanPreviewColors(geometry, null);
+    if (!geometry.userData.abutsWork) {
+      enhanceScanPreviewColors(geometry, null);
+    }
     if (import.meta.env.DEV) {
       console.info("[modelPreview][dcm]", {
         file: file.name,

@@ -37,6 +37,58 @@ export function isOralScanMeshName(fileName: string): boolean {
   return MESH_EXT.test(String(fileName || "").trim());
 }
 
+/** 원본 스캔과 따로 저장한 작업 DCM. `상악-작업.dcm`, `상악-작업-2.dcm` */
+export function isAbutsWorkScanFileName(fileName: string): boolean {
+  return /(?:^|[-_])작업(?:-\d+)?\.dcm$/i.test(String(fileName || "").trim());
+}
+
+export function abutsWorkScanFileName(
+  role: Exclude<LabOralScanRole, "other">,
+  index = 0,
+): string {
+  const label = oralScanRoleLabel(role);
+  if (index <= 0) return `${label}-작업.dcm`;
+  return `${label}-작업-${index + 1}.dcm`;
+}
+
+/**
+ * 같은 역할에 작업 DCM이 있으면 원본 대신 그 배치만 남긴다.
+ * 이미지 등 스캔이 아닌 파일은 그대로 둔다.
+ */
+export function preferWorkingOralScanFiles<
+  T extends {
+    fileName?: string | null;
+    scanRole?: string | null;
+    uploadedAt?: string | null;
+  },
+>(files: readonly T[]): T[] {
+  const newestByRole = new Map<Exclude<LabOralScanRole, "other">, string>();
+  for (const file of files) {
+    if (!isAbutsWorkScanFileName(String(file.fileName || ""))) continue;
+    const role = resolveOralScanRole(file);
+    if (role !== "upper" && role !== "lower" && role !== "bite") continue;
+    const at = String(file.uploadedAt || "");
+    const prev = newestByRole.get(role) ?? "";
+    if (at >= prev) newestByRole.set(role, at);
+  }
+  if (newestByRole.size === 0) return [...files];
+  return files.filter((file) => {
+    const role = resolveOralScanRole(file);
+    const work = isAbutsWorkScanFileName(String(file.fileName || ""));
+    if (work) {
+      if (role !== "upper" && role !== "lower" && role !== "bite") return false;
+      return String(file.uploadedAt || "") === (newestByRole.get(role) ?? "");
+    }
+    if (
+      (role === "upper" || role === "lower" || role === "bite") &&
+      newestByRole.has(role)
+    ) {
+      return false;
+    }
+    return true;
+  });
+}
+
 export function oralScanFileKey(file: {
   name: string;
   size: number;
@@ -143,6 +195,7 @@ export function ambiguousOralScanFileKeys(
   }>,
 ): Set<string> {
   const rows = files
+    .filter((file) => !isAbutsWorkScanFileName(String(file.fileName || "")))
     .map((file) => {
       const key = String(file.s3Key || "").trim();
       const role = resolveOralScanRole({
