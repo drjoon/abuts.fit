@@ -1,3 +1,4 @@
+// - 2026-09-27: PTX 어벗 STL 업로드 — 협력·하청 수행 기공소(assignee)도 작업시작 기공소로 허용.
 // - 2026-09-20: handoff — body.caseInfos.anodizingEnabled를 요청에 반영(계정 labMeta보다 우선).
 // - 2026-09-16: PTX mirror 실패 시 clearPtxDesignMirror 금지 — 형제 치아 designFiles 소실 방지. DB 재조회·재시도.
 // - 2026-09-12: handoff/cancel — partnerBilling 잔존(레이스 중복) CA도 relatedRequestIds와 함께 취소.
@@ -381,6 +382,14 @@ const seedPrcFieldsAfterHandoff = async (request) => {
   return false;
 };
 
+/** 원청 + 수행 기공소. 협력·하청은 assignee가 작업시작한다. */
+const ptxDesignLabAnchors = (transferDoc, fallbackTarget = "") => ({
+  targetLabAnchorId: String(
+    transferDoc?.targetLabAnchorId || fallbackTarget || "",
+  ).trim(),
+  assigneeLabAnchorId: getAssigneeLabAnchorId(transferDoc),
+});
+
 const healRequestOwnershipToAcceptingLab = (request, transferTargetLabAnchorId) => {
   const transferLab = String(transferTargetLabAnchorId || "").trim();
   if (!transferLab || !Types.ObjectId.isValid(transferLab)) return false;
@@ -699,7 +708,10 @@ export async function handoffDesignToProduction(req, res) {
       req.user,
       request,
       relatedTransferIdEarly && Types.ObjectId.isValid(relatedTransferIdEarly)
-        ? { transferTargetLabAnchorId }
+        ? {
+            transferTargetLabAnchorId,
+            assigneeLabAnchorId: getAssigneeLabAnchorId(transferDocEarly),
+          }
         : {},
     );
     if (!allowed) {
@@ -739,7 +751,7 @@ export async function handoffDesignToProduction(req, res) {
     const acceptingLabPtx = isAcceptingLabForPtxDesignRequest(
       req.user,
       request,
-      transferTargetLabAnchorId,
+      ptxDesignLabAnchors(transferDocEarly, transferTargetLabAnchorId),
     );
     if (acceptingLabPtx) {
       healRequestOwnershipToAcceptingLab(request, transferTargetLabAnchorId);
@@ -946,7 +958,10 @@ export async function handoffDesignToProduction(req, res) {
       const isAcceptingLab = isAcceptingLabForPtxDesignRequest(
         req.user,
         request,
-        transferDoc?.targetLabAnchorId || transferTargetLabAnchorId,
+        ptxDesignLabAnchors(
+          transferDoc,
+          transferDoc?.targetLabAnchorId || transferTargetLabAnchorId,
+        ),
       );
       const now = new Date();
 
@@ -1546,6 +1561,7 @@ export async function cancelDesignHandoff(req, res) {
     const transferDoc = await PracticeTransfer.findById(relatedTransferId)
       .select({
         targetLabAnchorId: 1,
+        assigneeLabAnchorId: 1,
         "production.designFiles": 1,
         "production.designReadyAt": 1,
         "production.confirmedAt": 1,
@@ -1569,7 +1585,7 @@ export async function cancelDesignHandoff(req, res) {
       !isAcceptingLabForPtxDesignRequest(
         req.user,
         request,
-        transferTargetLabAnchorId,
+        ptxDesignLabAnchors(transferDoc, transferTargetLabAnchorId),
       ) &&
       role !== "admin"
     ) {

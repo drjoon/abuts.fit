@@ -79,4 +79,46 @@ describe("designAccess PTX lab designer helpers", () => {
       }),
     ).toBe(false);
   });
+
+  test("cooperation assignee can handoff when the request is owned by the prime", async () => {
+    const primeId = labUser.businessAnchorId;
+    const assigneeId = otherLab.businessAnchorId;
+    const cooperationRequest = {
+      ...ptxRequest,
+      businessAnchorId: primeId,
+    };
+    const labs = {
+      targetLabAnchorId: primeId,
+      assigneeLabAnchorId: assigneeId,
+    };
+    expect(
+      isAcceptingLabForPtxDesignRequest(otherLab, cooperationRequest, labs),
+    ).toBe(true);
+    expect(
+      isAcceptingLabForPtxDesignRequest(labUser, cooperationRequest, labs),
+    ).toBe(true);
+    expect(
+      isAcceptingLabForPtxDesignRequest(
+        { role: "requestor", businessAnchorId: "dddddddddddddddddddddddd" },
+        cooperationRequest,
+        labs,
+      ),
+    ).toBe(false);
+    expect(
+      await canClaimOrHandoffDesignRequest(otherLab, cooperationRequest, {
+        transferTargetLabAnchorId: primeId,
+        assigneeLabAnchorId: assigneeId,
+      }),
+    ).toBe(true);
+    expect(
+      await canClaimOrHandoffDesignRequest(
+        { role: "requestor", businessAnchorId: "dddddddddddddddddddddddd" },
+        cooperationRequest,
+        {
+          transferTargetLabAnchorId: primeId,
+          assigneeLabAnchorId: assigneeId,
+        },
+      ),
+    ).toBe(false);
+  });
 });
