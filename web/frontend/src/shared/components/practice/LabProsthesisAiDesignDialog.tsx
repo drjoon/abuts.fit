@@ -7,7 +7,9 @@
 // - 2026-09-26: 마진·디자인은 카메라를 유지한다. 치아 이름을 누르면 그 치아 교합면.
 // - 2026-09-26: 삽입축은 치아 정보에서 보철마다. 브리지는 스팬당 하나.
 // - 2026-09-26: 투명 체크는 지대치 외 스캔을 20%로 비추고, 끄면 불투명하다.
-// - 2026-09-26: 투명 오른쪽 삽입축 토글이 화살표를 보여 준다. 치아 정보에서 다시 잡으면 화면 중앙이다.
+// - 2026-09-26: 투명 오른쪽 삽입축 토글이 화살표를 보여 준다. 치아 정보에서 잡으면 그 치아 위에 닿는다.
+// - 2026-09-26: 치아 이름은 글자 너비. 삽입축은 파란 버튼. 치아를 누르면 잡은 카메라로.
+// - 2026-09-26: 마진·삽입·내면·형상·훅·컷백·홀·커넥터를 작업 영역에서 고친다.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDownToLine,
@@ -54,6 +56,7 @@ import {
   type OralScanOverlayHandle,
   type OralScanOverlaySource,
 } from "@/shared/components/practice/OralScanOverlayViewer";
+import { LabProsthesisModifyPanel } from "@/shared/components/practice/LabProsthesisModifyPanel";
 import {
   buildLabProsthesisAiPlan,
   isOralScanMeshName,
@@ -69,6 +72,17 @@ import {
   undercutLimitFromRange,
   type ContactPaintMode,
 } from "@/shared/practice/oralScanDesignAnalysis";
+import {
+  createToothDesignEdit,
+  marginUntouched,
+  redetectMargin,
+  reduceDesignGesture,
+  type DesignGesture,
+  type EditBrush,
+  type MarginEditMode,
+  type ModifyTool,
+  type ToothDesignEdit,
+} from "@/shared/practice/labProsthesisModify";
 
 type AiDesignFile = {
   fileName?: string | null;
@@ -253,6 +267,11 @@ function LabProsthesisAiDesignDialog({
   const [workWide, setWorkWide] = useState(false);
   const [insertionKeys, setInsertionKeys] = useState<string[]>([]);
   const [insertionShown, setInsertionShown] = useState(false);
+  const [modifyTool, setModifyTool] = useState<ModifyTool>("margin");
+  const [marginMode, setMarginMode] = useState<MarginEditMode>("point");
+  const [editBrush, setEditBrush] = useState<EditBrush>("none");
+  const [edits, setEdits] = useState<Record<string, ToothDesignEdit>>({});
+  const [holeNote, setHoleNote] = useState("");
   const viewerRef = useRef<OralScanOverlayHandle>(null);
   const workObserveRef = useRef<ResizeObserver | null>(null);
   const bindWorkArea = useCallback((node: HTMLDivElement | null) => {
@@ -296,6 +315,12 @@ function LabProsthesisAiDesignDialog({
       setDragScanId(null);
       setDropScanId(null);
       setInsertionKeys([]);
+      setInsertionShown(false);
+      setModifyTool("margin");
+      setMarginMode("point");
+      setEditBrush("none");
+      setEdits({});
+      setHoleNote("");
       genSeq.current += 1;
       return;
     }
@@ -527,6 +552,87 @@ function LabProsthesisAiDesignDialog({
     plan.teeth[0] ??
     null;
   const undercutLimit = undercutLimitFromRange(undercutRange);
+  const activeNumber = activeTooth?.toothNumber ?? null;
+  const activeEdit = activeNumber
+    ? (edits[activeNumber] ?? createToothDesignEdit())
+    : createToothDesignEdit();
+  const bridgeSpan = insertionSpanForTooth(plan.teeth, activeNumber);
+  const isBridgeSpan = bridgeSpan.length > 1 || activeTooth?.prosthesisType === "브리지";
+  const bridges = useMemo(() => {
+    const pairs: Array<{ from: string; to: string }> = [];
+    for (const span of insertionSpansByOwner(plan.teeth).values()) {
+      if (span.length < 2) continue;
+      for (let index = 0; index < span.length - 1; index += 1) {
+        const from = span[index];
+        const to = span[index + 1];
+        if (from && to) pairs.push({ from, to });
+      }
+    }
+    return pairs;
+  }, [plan.teeth]);
+  const prepBackTransparent = Boolean(activeNumber && edits[activeNumber]?.margin.showBack);
+  const designEdit = useMemo(
+    () =>
+      stage === "scan"
+        ? null
+        : {
+            tool: modifyTool,
+            marginMode,
+            brush: editBrush,
+            edits,
+            generated,
+            activeTooth: activeNumber,
+            bridges,
+            prepBackTransparent,
+          },
+    [
+      activeNumber,
+      bridges,
+      editBrush,
+      edits,
+      generated,
+      marginMode,
+      modifyTool,
+      prepBackTransparent,
+      stage,
+    ],
+  );
+
+  useEffect(() => {
+    if (!open || stage === "scan" || plan.teeth.length === 0) return;
+    setEdits((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const tooth of plan.teeth) {
+        if (next[tooth.toothNumber]) continue;
+        next[tooth.toothNumber] = createToothDesignEdit();
+        changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [open, plan.teeth, stage]);
+
+  const onDesignGesture = (gesture: DesignGesture) => {
+    if (gesture.type === "hole-reject") {
+      setHoleNote("교합면이 아닙니다. 다른 위치를 고르세요.");
+      return;
+    }
+    setHoleNote("");
+    setEdits((prev) => {
+      const current = prev[gesture.tooth] ?? createToothDesignEdit();
+      const next = reduceDesignGesture(current, gesture, marginMode === "pen");
+      if (gesture.type !== "connector") {
+        return { ...prev, [gesture.tooth]: next };
+      }
+      const span = insertionSpanForTooth(plan.teeth, gesture.tooth);
+      const out = { ...prev, [gesture.tooth]: next };
+      for (const tooth of span) {
+        const base = out[tooth] ?? createToothDesignEdit();
+        out[tooth] = { ...base, connector: next.connector };
+      }
+      return out;
+    });
+  };
 
   const runGenerate = async (toothNumbers: string[]) => {
     const seq = genSeq.current + 1;
@@ -557,6 +663,16 @@ function LabProsthesisAiDesignDialog({
       for (const number of targets) next[number] = true;
       return next;
     });
+    setEdits((prev) => {
+      const next = { ...prev };
+      for (const number of targets) {
+        const current = next[number] ?? createToothDesignEdit();
+        next[number] = marginUntouched(current) ? redetectMargin(current) : current;
+      }
+      return next;
+    });
+    setModifyTool("refine");
+    setStage("design");
   };
 
   const onStage = (next: DesignStage) => {
@@ -569,6 +685,15 @@ function LabProsthesisAiDesignDialog({
   const generateTargets = (
     prepTeeth.length > 0 ? prepTeeth : plan.teeth
   ).map((tooth) => tooth.toothNumber);
+
+  const showTooth = (toothNumber: string) => {
+    setSelectedTooth(toothNumber);
+    const span = insertionSpanForTooth(plan.teeth, toothNumber);
+    const restored =
+      span.length > 0 &&
+      viewerRef.current?.restoreInsertionView(span) === true;
+    if (!restored) viewerRef.current?.focusTooth(toothNumber);
+  };
 
   const rememberInsertion = (toothNumbers: readonly string[]) => {
     const ok = viewerRef.current?.setInsertionFromView(toothNumbers) === true;
@@ -792,13 +917,110 @@ function LabProsthesisAiDesignDialog({
                     size="sm"
                     variant={stage === item.id ? "default" : "outline"}
                     className="h-7 px-2 text-[11px]"
-                    onClick={() => onStage(item.id)}
+                    onClick={() => {
+                      onStage(item.id);
+                      if (item.id === "margin") setModifyTool("margin");
+                      if (item.id === "design") setModifyTool("refine");
+                    }}
                   >
                     {item.label}
                   </Button>
                 ))}
               </div>
             </section>
+
+            {stage !== "scan" ? (
+              <LabProsthesisModifyPanel
+                tool={modifyTool}
+                onTool={(next) => {
+                  setModifyTool(next);
+                  setEditBrush("none");
+                  setHoleNote("");
+                  if (next === "margin" || next === "insertion") onStage("margin");
+                  else onStage("design");
+                }}
+                marginMode={marginMode}
+                onMarginMode={setMarginMode}
+                brush={editBrush}
+                onBrush={setEditBrush}
+                edit={activeEdit}
+                onEdit={(next) => {
+                  if (!activeNumber) return;
+                  setEdits((prev) => {
+                    if (modifyTool !== "connector" || bridgeSpan.length < 2) {
+                      return { ...prev, [activeNumber]: next };
+                    }
+                    const out = { ...prev, [activeNumber]: next };
+                    for (const tooth of bridgeSpan) {
+                      const base = out[tooth] ?? createToothDesignEdit();
+                      out[tooth] =
+                        tooth === activeNumber
+                          ? next
+                          : { ...base, connector: next.connector };
+                    }
+                    return out;
+                  });
+                }}
+                toothLabel={
+                  activeTooth ? formatProsthesisAiToothLabel(activeTooth) : null
+                }
+                generated={activeNumber ? generated[activeNumber] === true : false}
+                isBridge={isBridgeSpan}
+                canMatchInsertion={entries.length > 0 && bridgeSpan.length > 0}
+                holeNote={holeNote}
+                onRedetect={() => {
+                  if (!activeNumber) return;
+                  setEdits((prev) => ({
+                    ...prev,
+                    [activeNumber]: redetectMargin(
+                      prev[activeNumber] ?? createToothDesignEdit(),
+                    ),
+                  }));
+                }}
+                onClearMargin={() => {
+                  if (!activeNumber) return;
+                  const current = edits[activeNumber] ?? createToothDesignEdit();
+                  setEdits((prev) => ({
+                    ...prev,
+                    [activeNumber]: {
+                      ...current,
+                      margin: { ...current.margin, deleted: true },
+                    },
+                  }));
+                }}
+                onMatchInsertion={() => {
+                  if (bridgeSpan.length === 0) return;
+                  rememberInsertion(bridgeSpan);
+                  setModifyTool("insertion");
+                }}
+                onApplyInner={() => {
+                  if (!activeNumber) return;
+                  setEdits((prev) => {
+                    const current = prev[activeNumber] ?? createToothDesignEdit();
+                    return {
+                      ...prev,
+                      [activeNumber]: {
+                        ...current,
+                        inner: { ...current.inner, applied: true },
+                      },
+                    };
+                  });
+                }}
+                onRemoveHook={() => {
+                  if (!activeNumber) return;
+                  setEdits((prev) => {
+                    const current = prev[activeNumber] ?? createToothDesignEdit();
+                    return {
+                      ...prev,
+                      [activeNumber]: {
+                        ...current,
+                        hook: { ...current.hook, on: false },
+                      },
+                    };
+                  });
+                }}
+              />
+            ) : null}
 
             {stage === "margin" ? (
               <section className="space-y-2">
@@ -960,10 +1182,7 @@ function LabProsthesisAiDesignDialog({
                 toothNumber: tooth.toothNumber,
                 active: activeTooth?.toothNumber === tooth.toothNumber,
               }))}
-              onSelectTooth={(toothNumber) => {
-                setSelectedTooth(toothNumber);
-                viewerRef.current?.focusTooth(toothNumber);
-              }}
+              onSelectTooth={showTooth}
               contactMap={contactMap}
               undercutMap={undercutMap}
               occlusalGapMm={occlusalGap}
@@ -976,6 +1195,8 @@ function LabProsthesisAiDesignDialog({
                 if (!active) setInsertionKeys([]);
               }}
               showInsertionAxis={insertionShown}
+              designEdit={designEdit}
+              onDesignGesture={onDesignGesture}
               className="absolute inset-0"
             />
             <div className="absolute left-3 top-3 z-10 flex max-w-[calc(100%-12rem)] flex-col items-start gap-1.5">
@@ -1084,9 +1305,9 @@ function LabProsthesisAiDesignDialog({
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent side="bottom" className="z-[520]">
-                  잡은 삽입축을 작업 영역에 표시합니다.
+                  잡은 삽입축을 치아 위쪽에 표시합니다.
                   <br />
-                  끄면 화살표와 고리를 숨깁니다.
+                  화살표 끝은 치아에 닿고, 끄면 숨깁니다.
                 </TooltipContent>
               </Tooltip>
               </div>
@@ -1133,10 +1354,7 @@ function LabProsthesisAiDesignDialog({
               insertionKeys={insertionKeys}
               canSetInsertion={entries.length > 0}
               showGenerateAll={generateTargets.length >= 2}
-              onSelectTooth={(toothNumber) => {
-                setSelectedTooth(toothNumber);
-                viewerRef.current?.focusTooth(toothNumber);
-              }}
+              onSelectTooth={showTooth}
               onSetInsertion={rememberInsertion}
               onToggleInfo={() => setToothInfoOpen((open) => !open)}
               onGenerateAll={() => void runGenerate(generateTargets)}
@@ -1284,7 +1502,7 @@ function DesignViewerChrome({
     .filter((group) => group.teeth.length > 0);
   const spans = insertionSpansByOwner(teeth);
   const toothActionClass =
-    "inline-flex h-5 w-8 shrink-0 items-center justify-center rounded px-1.5 text-[10px] font-medium leading-none disabled:opacity-50";
+    "inline-flex h-7 shrink-0 items-center justify-center rounded-md px-2 text-xs font-medium leading-none disabled:opacity-50";
 
   return (
     <>
@@ -1292,31 +1510,31 @@ function DesignViewerChrome({
         {`@keyframes aiScanLine { 0% { transform: translateY(0); opacity: .25; } 50% { opacity: 1; } 100% { transform: translateY(58vh); opacity: .2; } }`}
       </style>
 
-      <div className="absolute right-3 top-3 z-10 flex max-h-[calc(100%-1.5rem)] flex-col items-end gap-1">
+      <div className="absolute right-3 top-3 z-10 flex max-h-[calc(100%-1.5rem)] w-fit max-w-[min(22rem,42vw)] flex-col items-end gap-1">
         {teeth.length > 0 ? (
-          <div className="mt-1 w-44 overflow-hidden rounded-lg border bg-background/95 text-xs shadow-sm">
+          <div className="mt-1 w-fit max-w-full overflow-hidden rounded-lg border bg-background/95 text-sm shadow-sm">
             <button
               type="button"
-              className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-left"
+              className="flex w-full items-center justify-between gap-3 px-3.5 py-2.5 text-left"
               onClick={onToggleInfo}
               aria-expanded={toothInfoOpen}
             >
               <span className="font-semibold text-foreground">치아 정보</span>
               <ChevronDown
                 className={cn(
-                  "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
+                  "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
                   toothInfoOpen ? "rotate-180" : "",
                 )}
               />
             </button>
             {toothInfoOpen ? (
-              <div className="max-h-[min(22rem,46vh)] overflow-y-auto border-t px-2 py-1.5">
+              <div className="max-h-[min(24rem,52vh)] overflow-y-auto border-t px-3.5 py-2.5">
                 {archGroups.map((group) => (
-                  <div key={group.id} className="mb-1.5 last:mb-0">
-                    <p className="text-[11px] font-medium text-muted-foreground">
+                  <div key={group.id} className="mb-2.5 last:mb-0">
+                    <p className="text-xs font-medium text-muted-foreground">
                       {group.label}
                     </p>
-                    <ul className="ml-1.5 border-l border-border pl-2">
+                    <ul className="ml-2 mt-1 border-l border-border pl-3">
                       {group.teeth.map((tooth, index) => {
                         const selected = activeTooth?.toothNumber === tooth.toothNumber;
                         const done = generated[tooth.toothNumber] === true;
@@ -1326,25 +1544,25 @@ function DesignViewerChrome({
                         return (
                           <li
                             key={`${tooth.toothNumber}-${tooth.prosthesisType}-${index}`}
-                            className="py-0.5"
+                            className="py-1"
                           >
-                            <div
-                              className={cn(
-                                "flex items-center gap-1 rounded-md px-1 py-0.5",
-                                selected ? "bg-primary/10" : "hover:bg-muted",
-                              )}
-                            >
+                            <div className="flex w-fit items-center gap-1.5 py-0.5">
                               <button
                                 type="button"
-                                className="min-w-0 flex-1 text-left"
-                                title="이 치아의 교합면을 봅니다"
+                                className={cn(
+                                  "w-fit shrink-0 whitespace-nowrap rounded-md px-1 py-0.5 text-left",
+                                  selected ? "bg-primary/10" : "hover:bg-muted",
+                                )}
+                                title={
+                                  axisOn
+                                    ? "삽입축을 잡았던 방향·각도·줌으로 봅니다"
+                                    : "이 치아의 교합면을 봅니다"
+                                }
                                 onClick={() => onSelectTooth(tooth.toothNumber)}
                               >
-                                <span className="block truncate">
-                                  <span className="font-semibold">#{tooth.toothNumber}</span>
-                                  <span className="ml-1.5 text-muted-foreground">
-                                    {tooth.prosthesisType}
-                                  </span>
+                                <span className="font-semibold">#{tooth.toothNumber}</span>
+                                <span className="ml-1.5 text-muted-foreground">
+                                  {tooth.prosthesisType}
                                 </span>
                               </button>
                               {span ? (
@@ -1352,22 +1570,20 @@ function DesignViewerChrome({
                                   type="button"
                                   className={cn(
                                     toothActionClass,
-                                    axisOn
-                                      ? "bg-primary text-primary-foreground"
-                                      : "text-foreground hover:bg-muted",
+                                    "bg-primary text-primary-foreground",
                                     !canSetInsertion && "opacity-50",
                                   )}
                                   title={
                                     span.length > 1
-                                      ? "작업 영역 중앙에 화면과 수직인 삽입축을 스팬 전체에 잡습니다"
-                                      : "작업 영역 중앙에 화면과 수직인 삽입축을 이 보철에 잡습니다"
+                                      ? "화면과 수직인 삽입축을 스팬 위쪽에 잡고, 화살표가 치아에 닿습니다"
+                                      : "화면과 수직인 삽입축을 이 보철 위쪽에 잡고, 화살표가 치아에 닿습니다"
                                   }
                                   aria-label={span.length > 1 ? "스팬 삽입축" : "삽입축"}
                                   aria-pressed={axisOn}
                                   disabled={!canSetInsertion}
                                   onClick={() => onSetInsertion(span)}
                                 >
-                                  <ArrowDownToLine className="h-3.5 w-3.5" />
+                                  삽입축
                                 </button>
                               ) : null}
                               {done ? (
@@ -1400,7 +1616,7 @@ function DesignViewerChrome({
                                 {tooth.linkedTeeth.map((linked) => (
                                   <li
                                     key={linked}
-                                    className="py-0.5 text-[10px] text-muted-foreground"
+                                    className="py-0.5 text-xs text-muted-foreground"
                                   >
                                     #{linked}
                                   </li>
