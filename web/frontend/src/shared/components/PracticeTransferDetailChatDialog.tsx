@@ -2350,6 +2350,19 @@ export function PracticeTransferDetailChatDialog({
         toothWorks={chartToothWorks}
         files={files}
         authToken={authToken}
+        caseHeader={{
+          primary: caseIdentityStrip?.primary,
+          dates: identityDateLabel,
+        }}
+        basketTag={{
+          value: labBasketTag,
+          occupiedTags: labBasketOccupiedTags,
+          onChange: (tag) => {
+            const next = normalizeLabBasketTag(tag);
+            setLabBasketTag(next);
+            onLabBasketTagChange?.(next);
+          },
+        }}
       />
     ) : null;
   const labIdentityDateRowActions =

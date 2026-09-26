@@ -236,6 +236,44 @@ export function buildLabProsthesisAiPlan(input: {
   return { teeth, scans, designableTeeth, missingRoles };
 }
 
+export type LabJawArch = "upper" | "lower";
+
+/** FDI 1·2 / 상악 → 상악, 3·4 / 하악 → 하악. */
+export function labJawArchFromToothNumber(toothNumber: string): LabJawArch | null {
+  const raw = String(toothNumber || "").trim();
+  if (raw === "상악" || /^[12]/.test(raw)) return "upper";
+  if (raw === "하악" || /^[34]/.test(raw)) return "lower";
+  return null;
+}
+
+/** 주문 치아(지대치)가 있는 악. 상·하악이 함께 있으면 both. */
+export function prepArchFromProsthesisTeeth(
+  teeth: ReadonlyArray<Pick<LabProsthesisAiTooth, "toothNumber" | "linkedTeeth">>,
+): LabJawArch | "both" | null {
+  const arches = new Set<LabJawArch>();
+  for (const tooth of teeth) {
+    const own = labJawArchFromToothNumber(tooth.toothNumber);
+    if (own) arches.add(own);
+    for (const linked of tooth.linkedTeeth) {
+      const arch = labJawArchFromToothNumber(linked);
+      if (arch) arches.add(arch);
+    }
+  }
+  if (arches.size === 0) return null;
+  if (arches.size > 1) return "both";
+  return arches.has("upper") ? "upper" : "lower";
+}
+
+/** 모달을 열 때 지대치 악만 켠다. 대합악·바이트는 숨긴다. */
+export function initialLabOralScanVisible(
+  role: LabOralScanRole,
+  prepArch: LabJawArch | "both" | null,
+): boolean {
+  if (role !== "upper" && role !== "lower") return false;
+  if (prepArch === "upper" || prepArch === "lower") return role === prepArch;
+  return true;
+}
+
 export function formatProsthesisAiToothLabel(tooth: LabProsthesisAiTooth): string {
   const base = `#${tooth.toothNumber} ${tooth.prosthesisType}`;
   if (tooth.prosthesisType !== "브리지" || tooth.linkedTeeth.length === 0) {

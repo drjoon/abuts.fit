@@ -121,25 +121,26 @@ export function collectOccupiedLabBasketTags(
   return out;
 }
 
-type LabBasketTagToolbarProps = {
+type LabBasketTagPickerButtonProps = {
   value: string;
   onChange: (tag: string) => void;
-  onPrint: () => void;
   /** 다른 진행 중 의뢰가 쓰는 번호 — 픽커에서 비활성 */
   occupiedTags?: ReadonlySet<string> | null;
   className?: string;
+  /** 전체 화면 다이얼로그 위에서 열 때 z-index */
+  popoverClassName?: string;
 };
 
-export function LabBasketTagToolbar({
+/** 채팅 헤더와 같은 바구니 번호표 버튼. */
+export function LabBasketTagPickerButton({
   value,
   onChange,
-  onPrint,
   occupiedTags = null,
   className,
-}: LabBasketTagToolbarProps) {
+  popoverClassName,
+}: LabBasketTagPickerButtonProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [guideOpen, setGuideOpen] = useState(false);
-
+  const wheelCleanupRef = useRef<(() => void) | null>(null);
   const selected = normalizeLabBasketTag(value);
   const occupied = occupiedTags ?? EMPTY_OCCUPIED;
 
@@ -156,57 +157,62 @@ export function LabBasketTagToolbar({
     setPickerOpen(false);
   };
 
+  const setListNode = (node: HTMLDivElement | null) => {
+    wheelCleanupRef.current?.();
+    wheelCleanupRef.current = null;
+    if (!node) return;
+    // 전체 화면 다이얼로그의 스크롤 잠금이 휠 기본 동작을 막는다.
+    const onWheel = (event: WheelEvent) => {
+      const max = node.scrollHeight - node.clientHeight;
+      if (max <= 0) return;
+      const line = node.clientHeight || 16;
+      const delta =
+        event.deltaMode === 1
+          ? event.deltaY * 16
+          : event.deltaMode === 2
+            ? event.deltaY * line
+            : event.deltaY;
+      const next = Math.min(max, Math.max(0, node.scrollTop + delta));
+      if (next === node.scrollTop) return;
+      event.preventDefault();
+      event.stopPropagation();
+      node.scrollTop = next;
+    };
+    node.addEventListener("wheel", onWheel, { passive: false });
+    wheelCleanupRef.current = () => node.removeEventListener("wheel", onWheel);
+  };
+
   return (
-    <>
-      <div
-        className={cn(
-          "flex shrink-0 flex-nowrap items-center gap-1",
-          className,
-        )}
-        data-no-drag
-      >
+    <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
+      <PopoverTrigger asChild>
         <Button
           type="button"
           variant="outline"
           size="sm"
-          className="h-7 gap-1 px-2 text-xs"
-          title="의뢰 상세 인쇄 (A5)"
-          aria-label="의뢰 상세 인쇄 (A5)"
-          onClick={onPrint}
+          className={cn(
+            "h-7 max-w-[5.5rem] shrink-0 gap-0.5 px-1.5 text-xs tabular-nums",
+            selected &&
+              "border-primary/40 bg-primary/5 font-semibold text-primary",
+            className,
+          )}
+          title="기공물 바구니 번호표"
+          aria-label="기공물 바구니 번호표 선택"
         >
-          <Printer className="h-3.5 w-3.5 shrink-0" />
-          <span>프린트</span>
+          {selected ? (
+            <span className="min-w-0 truncate">{selected}</span>
+          ) : (
+            <>
+              <Tags className="h-3.5 w-3.5 shrink-0" />
+              <span className="min-w-0 truncate">번호표</span>
+            </>
+          )}
         </Button>
-
-        <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
-          <PopoverTrigger asChild>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className={cn(
-                "h-7 max-w-[5.5rem] gap-0.5 px-1.5 text-xs tabular-nums",
-                selected &&
-                  "border-primary/40 bg-primary/5 font-semibold text-primary",
-              )}
-              title="기공물 바구니 번호표"
-              aria-label="기공물 바구니 번호표 선택"
-            >
-              {selected ? (
-                <span className="min-w-0 truncate">{selected}</span>
-              ) : (
-                <>
-                  <Tags className="h-3.5 w-3.5 shrink-0" />
-                  <span className="min-w-0 truncate">번호표</span>
-                </>
-              )}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent
-            align="start"
-            className="z-[400] w-[18.5rem] p-3"
-            onOpenAutoFocus={(e) => e.preventDefault()}
-          >
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        className={cn("z-[400] w-[18.5rem] p-3", popoverClassName)}
+        onOpenAutoFocus={(e) => e.preventDefault()}
+      >
             <div className="space-y-2.5">
               <div className="flex items-center justify-between gap-2">
                 <p className="text-xs font-semibold text-foreground">
@@ -222,7 +228,10 @@ export function LabBasketTagToolbar({
                   </button>
                 ) : null}
               </div>
-              <div className="max-h-56 overflow-y-auto pr-0.5">
+              <div
+                ref={setListNode}
+                className="max-h-56 overflow-y-auto overscroll-contain pr-0.5"
+              >
                 <div className="grid grid-cols-10 gap-1">
                   {ALL_TAGS.map((code) => {
                     const isSelected = selected === code;
@@ -264,21 +273,87 @@ export function LabBasketTagToolbar({
               </div>
             </div>
           </PopoverContent>
-        </Popover>
+    </Popover>
+  );
+}
 
-        <button
-          type="button"
-          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          title="번호표·바구니 안내"
-          aria-label="번호표·바구니 안내"
-          onClick={() => setGuideOpen(true)}
-        >
-          <Info className="h-3.5 w-3.5" />
-        </button>
-      </div>
+type LabBasketTagToolbarProps = {
+  value: string;
+  onChange: (tag: string) => void;
+  onPrint: () => void;
+  /** 다른 진행 중 의뢰가 쓰는 번호 — 픽커에서 비활성 */
+  occupiedTags?: ReadonlySet<string> | null;
+  className?: string;
+};
 
-      <LabBasketTagGuideDialog open={guideOpen} onOpenChange={setGuideOpen} />
+export function LabBasketTagGuideButton({
+  elevated = false,
+  className,
+}: {
+  /** AI 보철 전체 화면 위에서 열 때 */
+  elevated?: boolean;
+  className?: string;
+}) {
+  const [guideOpen, setGuideOpen] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        className={cn(
+          "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+          className,
+        )}
+        title="번호표·바구니 안내"
+        aria-label="번호표·바구니 안내"
+        onClick={() => setGuideOpen(true)}
+      >
+        <Info className="h-3.5 w-3.5" />
+      </button>
+      <LabBasketTagGuideDialog
+        open={guideOpen}
+        onOpenChange={setGuideOpen}
+        elevated={elevated}
+      />
     </>
+  );
+}
+
+export function LabBasketTagToolbar({
+  value,
+  onChange,
+  onPrint,
+  occupiedTags = null,
+  className,
+}: LabBasketTagToolbarProps) {
+  return (
+    <div
+      className={cn(
+        "flex shrink-0 flex-nowrap items-center gap-1",
+        className,
+      )}
+      data-no-drag
+    >
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="h-7 gap-1 px-2 text-xs"
+        title="의뢰 상세 인쇄 (A5)"
+        aria-label="의뢰 상세 인쇄 (A5)"
+        onClick={onPrint}
+      >
+        <Printer className="h-3.5 w-3.5 shrink-0" />
+        <span>프린트</span>
+      </Button>
+
+      <LabBasketTagPickerButton
+        value={value}
+        onChange={onChange}
+        occupiedTags={occupiedTags}
+      />
+
+      <LabBasketTagGuideButton />
+    </div>
   );
 }
 
@@ -287,9 +362,11 @@ const EMPTY_OCCUPIED: ReadonlySet<string> = new Set();
 function LabBasketTagGuideDialog({
   open,
   onOpenChange,
+  elevated = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  elevated?: boolean;
 }) {
   const [printOpen, setPrintOpen] = useState(false);
 
@@ -297,8 +374,15 @@ function LabBasketTagGuideDialog({
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent
-          className="z-[340] gap-0 overflow-hidden p-0 sm:max-w-md"
-          overlayClassName="z-[335]"
+          data-lab-basket-layer=""
+          className={cn(
+            "gap-0 overflow-hidden p-0 sm:max-w-md",
+            elevated ? "z-[560]" : "z-[340]",
+          )}
+          overlayClassName={cn(
+            "lab-basket-layer-overlay",
+            elevated ? "z-[555]" : "z-[335]",
+          )}
         >
           <DialogHeader className="space-y-1 border-b bg-slate-50 px-5 py-4 text-left">
             <DialogTitle className="text-base">번호표 · 바구니</DialogTitle>
@@ -343,7 +427,11 @@ function LabBasketTagGuideDialog({
         </DialogContent>
       </Dialog>
 
-      <LabBasketTagPrintDialog open={printOpen} onOpenChange={setPrintOpen} />
+      <LabBasketTagPrintDialog
+        open={printOpen}
+        onOpenChange={setPrintOpen}
+        elevated={elevated}
+      />
     </>
   );
 }
@@ -353,7 +441,9 @@ type PrintScope = "full" | "custom";
 function LabBasketTagPrintDialog({
   open,
   onOpenChange,
+  elevated = false,
 }: {
+  elevated?: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -431,8 +521,15 @@ function LabBasketTagPrintDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="z-[360] flex max-h-[90vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-lg"
-        overlayClassName="z-[355]"
+        data-lab-basket-layer=""
+        className={cn(
+          "flex max-h-[90vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-lg",
+          elevated ? "z-[580]" : "z-[360]",
+        )}
+        overlayClassName={cn(
+          "lab-basket-layer-overlay",
+          elevated ? "z-[575]" : "z-[355]",
+        )}
       >
         <DialogHeader className="space-y-1 border-b bg-slate-50 px-5 py-4 text-left">
           <DialogTitle className="text-base">번호표 인쇄</DialogTitle>
