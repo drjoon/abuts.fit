@@ -29,6 +29,36 @@ function yieldFrame() {
   });
 }
 
+type AlignOptions = { cancelled?: () => boolean };
+
+class BiteAlignCancelled extends Error {
+  constructor() {
+    super("bite-align-cancelled");
+    this.name = "BiteAlignCancelled";
+  }
+}
+
+let nextYieldAt = 0;
+
+function resetYieldClock() {
+  nextYieldAt = 0;
+}
+
+/** 계산이 길어져도 취소 클릭이 들어가게 프레임을 양보한다. */
+async function pause(options?: AlignOptions) {
+  if (options?.cancelled?.()) throw new BiteAlignCancelled();
+  await yieldFrame();
+  nextYieldAt = performance.now() + 48;
+  if (options?.cancelled?.()) throw new BiteAlignCancelled();
+}
+
+/** 빠른 경로는 기다리지 않는다. 시간이 되었을 때만 프레임을 비운다. */
+function checkpoint(options?: AlignOptions): Promise<void> | void {
+  if (options?.cancelled?.()) throw new BiteAlignCancelled();
+  if (performance.now() < nextYieldAt) return;
+  return pause(options);
+}
+
 function cloudRadius(cloud: Cloud) {
   let cx = 0;
   let cy = 0;
@@ -810,7 +840,13 @@ function collectPairs(
 }
 
 /** 겹치는 쪽만 남겨 가며 바이트 표면에 붙인다. */
-function refineToTarget(source: Cloud, target: Cloud, unitToMm: number, tightStart = false) {
+async function refineToTarget(
+  source: Cloud,
+  target: Cloud,
+  unitToMm: number,
+  tightStart = false,
+  options?: AlignOptions,
+) {
   const total = new THREE.Matrix4();
   const cell = mmToUnits(1.1, unitToMm);
   const grid = buildGrid(target, cell);
@@ -819,6 +855,8 @@ function refineToTarget(source: Cloud, target: Cloud, unitToMm: number, tightSta
     ? [4.5, 3, 2, 1.3, 0.8, 0.5]
     : [12, 8, 5, 3.5, 2.4, 1.6, 1.1, 0.75, 0.55];
   for (let iter = 0; iter < gates.length; iter += 1) {
+    const gap = checkpoint(options);
+    if (gap) await gap;
     const gate = mmToUnits(gates[iter] ?? 1, unitToMm);
     const pairs = collectPairs(source, target, grid, gate, iter < 4 ? 0.15 : 0.45, 0.22);
     if (pairs.length < 30) break;
@@ -973,17 +1011,20 @@ function flipCloudNormals(cloud: Cloud): Cloud {
 
 type PpfEntry = { ref: number; alpha: number };
 
-function buildPpfHash(
+async function buildPpfHash(
   model: Cloud,
   ids: number[],
   minD: number,
   maxD: number,
   distStep: number,
+  options?: AlignOptions,
 ) {
   const grid = buildGrid(model, Math.max(maxD / 5, 1e-4));
   const hash = new Map<number, PpfEntry[]>();
   const rots: Array<number[][] | undefined> = [];
   for (const ref of ids) {
+    const gap = checkpoint(options);
+    if (gap) await gap;
     const rot = rotationToX(
       model.nrm[ref * 3] ?? 0,
       model.nrm[ref * 3 + 1] ?? 0,
@@ -1112,14 +1153,19 @@ function cloudCentroid(cloud: Cloud): [number, number, number] {
   return [x / n, y / n, z / n];
 }
 
-function ppfSearch(model: Cloud, scene: Cloud, unitToMm: number): Rigid | null {
+async function ppfSearch(
+  model: Cloud,
+  scene: Cloud,
+  unitToMm: number,
+  options?: AlignOptions,
+): Promise<Rigid | null> {
   if (model.count < 40 || scene.count < 40) return null;
   const minD = mmToUnits(3.2, unitToMm);
   const maxD = mmToUnits(14, unitToMm);
   const distStep = mmToUnits(2.4, unitToMm);
   const modelIds = strideIds(model.count, 900);
   const sceneIds = strideIds(scene.count, 220);
-  const { hash, rots } = buildPpfHash(model, modelIds, minD, maxD, distStep);
+  const { hash, rots } = await buildPpfHash(model, modelIds, minD, maxD, distStep, options);
   const sceneGrid = buildGrid(scene, Math.max(maxD / 5, 1e-4));
   const votes = new Int32Array(model.count * PPF_ALPHA_BINS);
   const clustered = new Map<string, { votes: number; peak: number; rigid: Rigid }>();
@@ -1127,6 +1173,8 @@ function ppfSearch(model: Cloud, scene: Cloud, unitToMm: number): Rigid | null {
   const centroid = cloudCentroid(model);
 
   for (const ref of sceneIds) {
+    const gap = checkpoint(options);
+    if (gap) await gap;
     votes.fill(0);
     const mates = sceneGrid.band(
       scene.xyz[ref * 3] ?? 0,
@@ -1225,6 +1273,8 @@ function ppfSearch(model: Cloud, scene: Cloud, unitToMm: number): Rigid | null {
   let best: Rigid | null = null;
   let bestSide = mmToUnits(1.15, unitToMm);
   for (const row of ranked) {
+    const gap = checkpoint(options);
+    if (gap) await gap;
     const quality = poseTightness(model, scene, row.rigid, unitToMm);
     if (quality.cover < 0.1) continue;
     if (quality.side < bestSide) {
@@ -1236,13 +1286,18 @@ function ppfSearch(model: Cloud, scene: Cloud, unitToMm: number): Rigid | null {
 }
 
 /** 악궁을 바이트 위로 보내는 처음 자세. 법선이 뒤집혀 있으면 한 번 더 본다. */
-function globalPose(source: Cloud, target: Cloud, unitToMm: number) {
-  const first = ppfSearch(source, target, unitToMm);
+async function globalPose(
+  source: Cloud,
+  target: Cloud,
+  unitToMm: number,
+  options?: AlignOptions,
+) {
+  const first = await ppfSearch(source, target, unitToMm, options);
   const firstQ = first ? poseTightness(source, target, first, unitToMm) : null;
   if (first && firstQ && firstQ.side <= mmToUnits(0.8, unitToMm) && firstQ.cover >= 0.14) {
     return first;
   }
-  const flipped = ppfSearch(flipCloudNormals(source), target, unitToMm);
+  const flipped = await ppfSearch(flipCloudNormals(source), target, unitToMm, options);
   if (!flipped) return first;
   const flippedQ = poseTightness(source, target, flipped, unitToMm);
   if (!firstQ || flippedQ.side < firstQ.side) return flipped;
@@ -1302,7 +1357,12 @@ function seatedFit(fit: Fitness, unitToMm: number) {
   return fit.sideMean <= mmToUnits(0.72, unitToMm) && fit.coverage >= 0.05;
 }
 
-function alignArch(source: Cloud, target: Cloud, unitToMm: number) {
+async function alignArch(
+  source: Cloud,
+  target: Cloud,
+  unitToMm: number,
+  options?: AlignOptions,
+) {
   const grid = buildGrid(target, mmToUnits(1.2, unitToMm));
   const before = overlapFitness(source, target, grid, unitToMm);
   const already = seatedFit(before, unitToMm) && before.sideMean <= mmToUnits(0.32, unitToMm);
@@ -1318,7 +1378,7 @@ function alignArch(source: Cloud, target: Cloud, unitToMm: number) {
     };
   }
   const local = cloneCloud(source);
-  const localMatrix = refineToTarget(local, target, unitToMm);
+  const localMatrix = await refineToTarget(local, target, unitToMm, false, options);
   const localFit = overlapFitness(
     local,
     target,
@@ -1330,7 +1390,7 @@ function alignArch(source: Cloud, target: Cloud, unitToMm: number) {
   let bestFit = localFit;
   const deepEnough = localFit.coverage >= 0.28 && localFit.sideMean < mmToUnits(0.28, unitToMm);
   if (!deepEnough) {
-    const pose = globalPose(source, target, unitToMm);
+    const pose = await globalPose(source, target, unitToMm, options);
     if (pose) {
       let globalCloud = cloneCloud(source);
       applyRigid(globalCloud, pose);
@@ -1342,7 +1402,7 @@ function alignArch(source: Cloud, target: Cloud, unitToMm: number) {
         buildGrid(target, mmToUnits(1.2, unitToMm)),
         unitToMm,
       );
-      const refined = refineToTarget(globalCloud, target, unitToMm, true);
+      const refined = await refineToTarget(globalCloud, target, unitToMm, true, options);
       matrix.premultiply(refined);
       let fit = overlapFitness(
         globalCloud,
@@ -1437,7 +1497,19 @@ function cropNear(cloud: Cloud, ref: Cloud, thresh: number): Cloud {
  */
 export async function registerJawsToBite(
   entries: Array<{ role: string; geometry: THREE.BufferGeometry }>,
-  options?: { cancelled?: () => boolean },
+  options?: AlignOptions,
+): Promise<boolean> {
+  try {
+    return await registerJawsToBiteWork(entries, options);
+  } catch (error) {
+    if (error instanceof BiteAlignCancelled) return false;
+    throw error;
+  }
+}
+
+async function registerJawsToBiteWork(
+  entries: Array<{ role: string; geometry: THREE.BufferGeometry }>,
+  options?: AlignOptions,
 ): Promise<boolean> {
   const bite = entries.filter((entry) => entry.role === "bite");
   const arches = entries.filter(
@@ -1447,8 +1519,8 @@ export async function registerJawsToBite(
   for (const entry of entries) {
     if (!entry.geometry.getAttribute("normal")) entry.geometry.computeVertexNormals();
   }
-  await yieldFrame();
-  if (options?.cancelled?.()) return false;
+  resetYieldClock();
+  await pause(options);
   const biteCloud = mergeGeometries(bite.map((entry) => entry.geometry));
   if (biteCloud.count < 80) return false;
   const unitToMm = geometryUnits(biteCloud, arches.map((entry) => entry.geometry));
@@ -1460,7 +1532,7 @@ export async function registerJawsToBite(
   let target = biteCloud;
   const fitted: ArchFit[] = [];
   for (const entry of order) {
-    if (options?.cancelled?.()) return false;
+    await pause(options);
     const source = sampleGeometry(entry.geometry, mmToUnits(0.95, unitToMm), 2400);
     if (source.count < 80) continue;
     const radius = cloudRadius(source);
@@ -1469,7 +1541,7 @@ export async function registerJawsToBite(
       const ratio = radius / biteRadius;
       if (ratio > 8 || ratio < 0.05) continue;
     }
-    const aligned = alignArch(source, target, unitToMm);
+    const aligned = await alignArch(source, target, unitToMm, options);
     fitted.push({
       geometry: entry.geometry,
       role: entry.role,
@@ -1485,7 +1557,6 @@ export async function registerJawsToBite(
     if (aligned.seated) {
       target = excludeMatched(target, aligned.cloud, unitToMm);
     }
-    await yieldFrame();
   }
   const upperRow = fitted.find((row) => row.role === "upper" && row.seated);
   const lowerRow = fitted.find((row) => row.role === "lower" && row.seated);
@@ -1500,7 +1571,7 @@ export async function registerJawsToBite(
       const drop = upperRow.side > lowerRow.side + mmToUnits(0.05, unitToMm) ? upperRow : lowerRow;
       const keep = drop === upperRow ? lowerRow : upperRow;
       const remain = excludeMatched(biteCloud, keep.aligned, unitToMm);
-      const again = alignArch(drop.original, remain, unitToMm);
+      const again = await alignArch(drop.original, remain, unitToMm, options);
       const againOnBite = cropNear(again.cloud, biteCloud, near);
       const keepOnBite = cropNear(keep.aligned, biteCloud, near);
       const ac = cloudCentroid(againOnBite);
@@ -1518,6 +1589,7 @@ export async function registerJawsToBite(
       }
     }
   }
+  await pause(options);
   let seated = false;
   for (const row of fitted) {
     if (row.seated) seated = true;
@@ -1664,13 +1736,36 @@ export async function mergeArchToBiteByPoints(
   bites: THREE.BufferGeometry[],
   archPoints: Xyz[],
   bitePoints: Xyz[],
+  options?: AlignOptions,
+): Promise<boolean> {
+  try {
+    return await mergeArchToBiteByPointsWork(
+      arches,
+      bites,
+      archPoints,
+      bitePoints,
+      options,
+    );
+  } catch (error) {
+    if (error instanceof BiteAlignCancelled) return false;
+    throw error;
+  }
+}
+
+async function mergeArchToBiteByPointsWork(
+  arches: THREE.BufferGeometry[],
+  bites: THREE.BufferGeometry[],
+  archPoints: Xyz[],
+  bitePoints: Xyz[],
+  options?: AlignOptions,
 ): Promise<boolean> {
   if (arches.length === 0 || bites.length === 0) return false;
   if (archPoints.length < 3 || bitePoints.length < 3) return false;
   for (const geometry of [...arches, ...bites]) {
     if (!geometry.getAttribute("normal")) geometry.computeVertexNormals();
   }
-  await yieldFrame();
+  resetYieldClock();
+  await pause(options);
   const archCloud = mergeGeometries(arches);
   const biteCloud = mergeGeometries(bites);
   if (archCloud.count < 40 || biteCloud.count < 40) return false;
@@ -1695,7 +1790,7 @@ export async function mergeArchToBiteByPoints(
     const patch = around.map((index) => rigidPoint(rough, cloudPoint(archCloud, index)));
     patch.push(moved);
     refined.push(correlateNearClick(patch, moved, userBite, biteCloud, biteGrid, unitToMm));
-    await yieldFrame();
+    await pause(options);
   }
   const rigid = kabsch(pairCloud(src).xyz, pairCloud(refined).xyz, [
     { s: 0, d: 0 },
@@ -1718,7 +1813,7 @@ export async function mergeArchToBiteByPoints(
       unitToMm,
     );
     const seated = cloneCloud(local);
-    const icp = refineToTarget(seated, biteCloud, unitToMm, true);
+    const icp = await refineToTarget(seated, biteCloud, unitToMm, true, options);
     const after = overlapFitness(
       seated,
       biteCloud,
@@ -1730,6 +1825,7 @@ export async function mergeArchToBiteByPoints(
     }
   }
   if (!matrixKeepsVolume(matrix)) return false;
+  await pause(options);
   for (const geometry of arches) {
     geometry.applyMatrix4(matrix);
     geometry.computeVertexNormals();
