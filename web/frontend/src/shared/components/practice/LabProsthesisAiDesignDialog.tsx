@@ -7,6 +7,7 @@
 // - 2026-09-26: 마진·디자인은 카메라를 유지한다. 치아 이름을 누르면 그 치아 교합면.
 // - 2026-09-26: 삽입축은 치아 정보에서 보철마다. 브리지는 스팬당 하나.
 // - 2026-09-26: 투명 체크는 지대치 외 스캔을 20%로 비추고, 끄면 불투명하다.
+// - 2026-09-26: 투명 오른쪽 삽입축 토글이 화살표를 보여 준다. 치아 정보에서 다시 잡으면 화면 중앙이다.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDownToLine,
@@ -251,6 +252,7 @@ function LabProsthesisAiDesignDialog({
   const [dropScanId, setDropScanId] = useState<string | null>(null);
   const [workWide, setWorkWide] = useState(false);
   const [insertionKeys, setInsertionKeys] = useState<string[]>([]);
+  const [insertionShown, setInsertionShown] = useState(false);
   const viewerRef = useRef<OralScanOverlayHandle>(null);
   const workObserveRef = useRef<ResizeObserver | null>(null);
   const bindWorkArea = useCallback((node: HTMLDivElement | null) => {
@@ -574,6 +576,7 @@ function LabProsthesisAiDesignDialog({
     const key = insertionAxisKey(toothNumbers);
     if (!key) return;
     setInsertionKeys((prev) => (prev.includes(key) ? prev : [...prev, key]));
+    setInsertionShown(true);
   };
 
   return (
@@ -972,6 +975,7 @@ function LabProsthesisAiDesignDialog({
               onInsertionAxisChange={(active) => {
                 if (!active) setInsertionKeys([]);
               }}
+              showInsertionAxis={insertionShown}
               className="absolute inset-0"
             />
             <div className="absolute left-3 top-3 z-10 flex max-w-[calc(100%-12rem)] flex-col items-start gap-1.5">
@@ -1060,8 +1064,33 @@ function LabProsthesisAiDesignDialog({
                   </TooltipContent>
                 </Tooltip>
               ) : null}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={insertionShown ? "default" : "outline"}
+                    className={cn(
+                      "h-8 shadow-sm [&_svg]:!size-3.5",
+                      workWide ? "gap-1 px-2.5" : "w-8 px-0",
+                    )}
+                    title="삽입축"
+                    aria-label="삽입축"
+                    aria-pressed={insertionShown}
+                    onClick={() => setInsertionShown((on) => !on)}
+                  >
+                    <ArrowDownToLine />
+                    {workWide ? <span>삽입축</span> : null}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="z-[520]">
+                  잡은 삽입축을 작업 영역에 표시합니다.
+                  <br />
+                  끄면 화살표와 고리를 숨깁니다.
+                </TooltipContent>
+              </Tooltip>
               </div>
-              {undercutMap || contactMap || insertionKeys.length > 0 ? (
+              {undercutMap || contactMap || (insertionShown && insertionKeys.length > 0) ? (
                 <div className="pointer-events-none flex items-center gap-2 rounded-md bg-background/95 px-2 py-1 text-[10px] text-muted-foreground shadow-sm">
                   {undercutMap ? (
                     <span className="flex items-center gap-1">
@@ -1085,7 +1114,7 @@ function LabProsthesisAiDesignDialog({
                       </span>
                     </>
                   ) : null}
-                  {insertionKeys.length > 0 ? (
+                  {insertionShown && insertionKeys.length > 0 ? (
                     <span className="flex items-center gap-1">
                       <span className="h-2 w-2 rounded-full bg-amber-500" />
                       삽입축
@@ -1254,6 +1283,8 @@ function DesignViewerChrome({
     }))
     .filter((group) => group.teeth.length > 0);
   const spans = insertionSpansByOwner(teeth);
+  const toothActionClass =
+    "inline-flex h-5 w-8 shrink-0 items-center justify-center rounded px-1.5 text-[10px] font-medium leading-none disabled:opacity-50";
 
   return (
     <>
@@ -1320,7 +1351,7 @@ function DesignViewerChrome({
                                 <button
                                   type="button"
                                   className={cn(
-                                    "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded",
+                                    toothActionClass,
                                     axisOn
                                       ? "bg-primary text-primary-foreground"
                                       : "text-foreground hover:bg-muted",
@@ -1328,21 +1359,24 @@ function DesignViewerChrome({
                                   )}
                                   title={
                                     span.length > 1
-                                      ? "지금 화면과 수직인 방향으로 스팬 전체의 삽입축을 잡습니다"
-                                      : "지금 화면과 수직인 방향으로 이 보철의 삽입축을 잡습니다"
+                                      ? "작업 영역 중앙에 화면과 수직인 삽입축을 스팬 전체에 잡습니다"
+                                      : "작업 영역 중앙에 화면과 수직인 삽입축을 이 보철에 잡습니다"
                                   }
                                   aria-label={span.length > 1 ? "스팬 삽입축" : "삽입축"}
                                   aria-pressed={axisOn}
                                   disabled={!canSetInsertion}
                                   onClick={() => onSetInsertion(span)}
                                 >
-                                  <ArrowDownToLine className="h-3 w-3" />
+                                  <ArrowDownToLine className="h-3.5 w-3.5" />
                                 </button>
                               ) : null}
                               {done ? (
                                 <button
                                   type="button"
-                                  className="shrink-0 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground hover:bg-muted"
+                                  className={cn(
+                                    toothActionClass,
+                                    "text-muted-foreground hover:bg-muted",
+                                  )}
                                   onClick={() => onClearTooth(tooth.toothNumber)}
                                 >
                                   삭제
@@ -1350,7 +1384,10 @@ function DesignViewerChrome({
                               ) : (
                                 <button
                                   type="button"
-                                  className="shrink-0 rounded bg-primary px-1.5 py-0.5 text-[10px] font-medium text-primary-foreground disabled:opacity-50"
+                                  className={cn(
+                                    toothActionClass,
+                                    "bg-primary text-primary-foreground",
+                                  )}
                                   disabled={generating || !tooth.designable}
                                   onClick={() => onGenerateTooth(tooth.toothNumber)}
                                 >

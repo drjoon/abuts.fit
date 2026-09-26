@@ -5,6 +5,7 @@
 // - 2026-09-26: 파싱 결과는 메모리에 두고, 교합·언더컷 거리는 켤 때만 계산한다.
 // - 2026-09-26: 역할만 바뀌면 메시를 다시 읽지 않고 색·대합을 다시 계산한다.
 // - 2026-09-26: 삽입축은 보철마다 화면과 수직으로 잡고, 화살표와 고리로 표시한다.
+// - 2026-09-26: 삽입축 표시는 토글. 새로 잡으면 작업 영역 중앙에 화면과 수직이다.
 // - 2026-09-26: 처음 카메라는 지대치 교합면과 인접치 하나씩. 그 자세를 초기 뷰로 둔다.
 import {
   forwardRef,
@@ -43,7 +44,7 @@ export type OralScanOverlayHandle = {
   focusTooth: (toothNumber: string) => void;
   saveImage: () => void;
   /**
-   * 지금 화면과 수직인 방향을 이 치아들의 삽입축으로 잡는다.
+   * 지금 작업 영역 중앙에, 화면과 수직인 방향을 이 치아들의 삽입축으로 잡는다.
    * 같은 치아 묶음이면 방향을 다시 잡고, 다른 보철 축은 유지한다.
    */
   setInsertionFromView: (toothNumbers: readonly string[]) => boolean;
@@ -91,6 +92,8 @@ type Props = {
   onScanColorChange?: (hasScanColor: boolean) => void;
   /** 삽입축 화살표가 켜지거나 꺼질 때. */
   onInsertionAxisChange?: (active: boolean) => void;
+  /** 잡은 삽입축을 작업 영역에 그릴지. */
+  showInsertionAxis?: boolean;
   className?: string;
 };
 
@@ -483,6 +486,10 @@ type InsertionAxis = {
   key: string;
   toothNumbers: string[];
   dir: THREE.Vector3;
+  /** 축을 잡은 순간의 화면 중앙. */
+  origin: THREE.Vector3;
+  /** 그 화면 높이에 맞춘 화살표 크기. */
+  radius: number;
 };
 
 type InsertionAnchor = {
@@ -1173,6 +1180,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       busyLabel = "",
       onScanColorChange,
       onInsertionAxisChange,
+      showInsertionAxis = false,
       className,
     },
     ref,
@@ -1209,6 +1217,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   const syncBadgesRef = useRef<() => void>(() => {});
   const onScanColorChangeRef = useRef(onScanColorChange);
   const onInsertionAxisChangeRef = useRef(onInsertionAxisChange);
+  const showInsertionRef = useRef(showInsertionAxis);
   const itemsRef = useRef(items);
   const frameRef = useRef<DentalFrame | null>(null);
   const insertionAxesRef = useRef<InsertionAxis[]>([]);
@@ -1245,6 +1254,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   onSelectToothRef.current = onSelectTooth;
   onScanColorChangeRef.current = onScanColorChange;
   onInsertionAxisChangeRef.current = onInsertionAxisChange;
+  showInsertionRef.current = showInsertionAxis;
   itemsRef.current = items;
 
   const itemsKey = items
@@ -1868,41 +1878,25 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     }
     insertionMarkerRef.current = null;
     const axes = insertionAxesRef.current;
-    if (!scene || axes.length === 0) return;
+    if (!scene || !showInsertionRef.current || axes.length === 0) return;
     const layer = new THREE.Group();
     for (const axis of axes) {
-      const wanted = new Set(axis.toothNumbers);
-      const places = placementsRef.current.filter((place) =>
-        wanted.has(place.toothNumber),
-      );
-      if (places.length === 0) continue;
-      const center = new THREE.Vector3();
-      let radius = 0;
-      for (const place of places) {
-        center.add(place.center);
-        radius = Math.max(radius, place.radius);
-      }
-      center.multiplyScalar(1 / places.length);
-      if (places.length > 1) {
-        for (const place of places) {
-          radius = Math.max(
-            radius,
-            center.distanceTo(place.center) + place.radius * 0.35,
-          );
-        }
-      }
-      layer.add(
-        buildInsertionMarker(
-          center,
-          Math.max(radius, fitRadiusRef.current * 0.04, 1),
-          axis.dir,
-        ),
-      );
+      const origin = axis.origin?.clone() ?? null;
+      const radius =
+        axis.radius > 0
+          ? axis.radius
+          : Math.max(fitRadiusRef.current * 0.08, 1);
+      if (!origin) continue;
+      layer.add(buildInsertionMarker(origin, radius, axis.dir));
     }
     if (layer.children.length === 0) return;
     scene.add(layer);
     insertionMarkerRef.current = layer;
   };
+
+  useEffect(() => {
+    syncInsertionMarkerRef.current();
+  }, [showInsertionAxis]);
 
   resetHomeRef.current = () => {
     const pose = initialPoseRef.current;
@@ -1922,16 +1916,21 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       resetHomeView: () => resetHomeRef.current(),
       setInsertionFromView: (toothNumbers) => {
         const camera = cameraRef.current;
+        const controls = controlsRef.current;
         const look = new THREE.Vector3();
         camera?.getWorldDirection(look);
         const key = insertionAxisKey(toothNumbers);
-        if (!camera || look.lengthSq() < 1e-8 || !key) return false;
+        if (!camera || !controls || look.lengthSq() < 1e-8 || !key) return false;
         look.normalize();
+        const height =
+          Math.abs(camera.top - camera.bottom) / Math.max(camera.zoom, 1e-6);
         const kept = insertionAxesRef.current.filter((axis) => axis.key !== key);
         kept.push({
           key,
           toothNumbers: key.split(","),
           dir: look.clone(),
+          origin: controls.target.clone(),
+          radius: Math.max(height * 0.085, 1),
         });
         insertionAxesRef.current = kept;
         for (const entry of loadedRef.current) entry.align = null;
