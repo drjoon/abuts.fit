@@ -399,7 +399,7 @@ export const PricingPolicyDialog = ({
     variant === 'devops'
       ? '유료의뢰비 정산 비율과 화면 안내를 확인하세요.'
       : variant === 'salesman'
-        ? `심플웨이 ${DEALERSHIP_SIMPLEWAY_COMMISSION_PCT}% · 커스텀어벗 ${DEALERSHIP_CUSTOM_ABUTMENT_COMMISSION_PCT}% · 기공 제외 · 90일 무주문이면 소개 코드 리셋.`
+        ? `심플웨이 ${DEALERSHIP_SIMPLEWAY_COMMISSION_PCT}% · 커스텀어벗 ${DEALERSHIP_CUSTOM_ABUTMENT_COMMISSION_PCT}% · 90일 무주문이면 소개 코드 리셋.`
         : variant === 'requestor'
           ? '소개한 치과·기공소에 안내할 단가와 출고 기준입니다.'
           : isLab
@@ -438,8 +438,6 @@ export const PricingPolicyDialog = ({
                     {DEALERSHIP_CUSTOM_ABUTMENT_COMMISSION_PCT}%
                   </span>
                   입니다.
-                  <br />
-                  기공은 제외됩니다.
                   <br />
                   배송비·월정액은 수수료 산정에서 빠집니다.
                   <br />

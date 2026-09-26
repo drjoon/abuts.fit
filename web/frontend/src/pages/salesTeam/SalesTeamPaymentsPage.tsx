@@ -2,6 +2,8 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/pages/salesman/SalesmanPaymentsPage.tsx
 // - web/frontend/src/pages/salesTeam/salesTeamApi.ts
+// change-log:
+// - 2026-09-27: 소개 거래처 패널의 옛 policyNote 설명 제거.
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Building2, Wallet } from "lucide-react";
@@ -66,10 +68,7 @@ export default function SalesTeamPaymentsPage() {
             />
           </div>
 
-          <SalesPanel
-            title="소개 거래처"
-            description={data?.policyNote}
-          >
+          <SalesPanel title="소개 거래처">
             {isLoading ? (
               <p className="text-sm text-muted-foreground">불러오는 중…</p>
             ) : orgs.length === 0 ? (

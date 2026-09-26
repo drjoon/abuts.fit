@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-27: 정산 카드 하단 — 20%·15%·10% 대신 심플웨이 10% · 커스텀어벗 20%.
 // - 2026-09-27: 딜러 정산 규칙 — 심플웨이 10% · 커스텀어벗 20% · 기공 제외 · 소개 코드 리셋.
 // - 2026-09-24: 딜러 정산 — 월 매출 누진 슬라이스 footer.
 // - 2026-09-21: 메인 상단 VAT 안내 문구 제거(정산규칙 모달만 유지).
@@ -87,19 +88,10 @@ export function CommissionPaymentsPage({
     () => (Array.isArray(data?.organizations) ? data.organizations : []),
     [data?.organizations],
   );
-  const productCommission = useMemo(() => {
-    let simpleway = 0;
-    let customAbutment = 0;
-    for (const org of organizations) {
-      simpleway += Number(org.monthSimplewayCommissionAmount || 0);
-      customAbutment += Number(
-        org.monthCustomAbutmentCommissionAmount ??
-          org.monthCommissionAmount ??
-          0,
-      );
-    }
-    return { simpleway, customAbutment };
-  }, [organizations]);
+  const simplewayCommission = Number(overview?.simplewayCommissionAmount || 0);
+  const customAbutmentCommission = Number(
+    overview?.customAbutmentCommissionAmount || 0,
+  );
 
   const title = isSalesman ? "딜러 정산" : "개발운영사 정산";
 
@@ -123,8 +115,8 @@ export function CommissionPaymentsPage({
             footer={
               isSalesman ? (
                 <ProductCommissionLines
-                  simpleway={productCommission.simpleway}
-                  customAbutment={productCommission.customAbutment}
+                  simpleway={simplewayCommission}
+                  customAbutment={customAbutmentCommission}
                   className="text-[11px] text-muted-foreground sm:text-xs"
                 />
               ) : undefined
@@ -137,11 +129,17 @@ export function CommissionPaymentsPage({
             onClick={() => setTab("ledger")}
             hint={isSalesman ? SETTLEMENT_TAXABLE_INVOICE_LABEL : undefined}
             footer={
-              !isSalesman ? (
+              isSalesman ? (
+                <ProductCommissionLines
+                  simpleway={0}
+                  customAbutment={0}
+                  className="text-[11px] text-muted-foreground sm:text-xs"
+                />
+              ) : (
                 <div className="text-xs text-muted-foreground">
                   {SETTLEMENT_TAXABLE_INVOICE_LABEL}
                 </div>
-              ) : undefined
+              )
             }
           />
           <SettlementStatCard
@@ -175,7 +173,7 @@ export function CommissionPaymentsPage({
                 title={`${title} 규칙`}
                 description={
                   isSalesman
-                    ? `심플웨이 매출액 대비 ${DEALERSHIP_SIMPLEWAY_COMMISSION_PCT}% · 커스텀어벗 매출액 대비 ${DEALERSHIP_CUSTOM_ABUTMENT_COMMISSION_PCT}% · 기공 제외 · ${REFERRAL_OWNERSHIP_INACTIVE_DAYS}일 무주문이면 소개 코드 리셋 · 부가세 포함·세금계산서`
+                    ? `심플웨이 매출액 대비 ${DEALERSHIP_SIMPLEWAY_COMMISSION_PCT}% · 커스텀어벗 매출액 대비 ${DEALERSHIP_CUSTOM_ABUTMENT_COMMISSION_PCT}% · ${REFERRAL_OWNERSHIP_INACTIVE_DAYS}일 무주문이면 소개 코드 리셋 · 부가세 포함·세금계산서`
                     : "잔여 분배 부가세 포함 · 세금계산서"
                 }
               >
@@ -190,8 +188,6 @@ export function CommissionPaymentsPage({
                           <br />
                           커스텀어벗 매출액 대비 수수료는{" "}
                           {DEALERSHIP_CUSTOM_ABUTMENT_COMMISSION_PCT}%입니다.
-                          <br />
-                          기공은 제외됩니다.
                           <br />
                           배송비·월정액은 수수료 산정에서 빠집니다.
                           <br />
@@ -241,10 +237,6 @@ export function CommissionPaymentsPage({
               ) : (
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                   {organizations.map((org) => {
-                    const ratePctForOrg =
-                      org.commissionRate != null
-                        ? Math.round(Number(org.commissionRate) * 100)
-                        : null;
                     const acquiredLabel = org.acquiredAt
                       ? new Intl.DateTimeFormat("ko-KR", {
                           timeZone: "Asia/Seoul",
@@ -268,11 +260,6 @@ export function CommissionPaymentsPage({
                               {acquiredLabel}
                             </div>
                           </div>
-                          {ratePctForOrg != null ? (
-                            <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600 ring-1 ring-slate-200">
-                              {formatCommissionRatePct(org.commissionRate)}
-                            </span>
-                          ) : null}
                         </div>
                         <div className="mt-3 space-y-1.5 text-sm">
                           <div className="flex justify-between gap-3">

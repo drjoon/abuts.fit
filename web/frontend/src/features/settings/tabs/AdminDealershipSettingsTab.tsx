@@ -155,8 +155,6 @@ export function AdminDealershipSettingsTab({
           <br />
           커스텀어벗 매출액 대비 {ABUTMENT_SHARE_PCT}%입니다.
           <br />
-          기공은 제외됩니다.
-          <br />
           배송비·월정액은 빠집니다.
           <br />
           90일 무주문이면 소개 코드가 리셋됩니다.

@@ -2,6 +2,7 @@
 // - web/frontend/src/pages/salesTeam/salesTeamApi.ts
 // - web/frontend/src/pages/salesTeam/salesUi.tsx
 // change-log:
+// - 2026-09-27: 소개코드 카드의 옛 정책 안내 문단 제거.
 // - 2026-09-24: 「의뢰자 정책」모달(PricingPolicyDialog requestor) — 단가·출고·기공소 플랫폼 사용료.
 // - 2026-09-21: 영업팀 기본 진입=성과. 소개코드·가입 SSOT.
 // - 2026-09-21: 가입 링크 복사를 코드 복사 버튼 아래로 배치.
@@ -269,11 +270,6 @@ export default function SalesPerformancePage() {
                   <code className="max-w-full truncate rounded-lg bg-white/80 px-3 py-1.5 text-xs text-slate-600 ring-1 ring-slate-200/80">
                     {link}
                   </code>
-                ) : null}
-                {referral?.policyNote ? (
-                  <p className="max-w-md text-xs leading-relaxed text-muted-foreground">
-                    {referral.policyNote}
-                  </p>
                 ) : null}
               </div>
             </SalesPanel>

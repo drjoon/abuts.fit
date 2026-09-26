@@ -249,7 +249,6 @@ export const salesTeamApi = {
   referral: (token: string | null) =>
     salesFetch<{
       referralCode: string;
-      policyNote: string;
       organizations: Array<{
         _id: string;
         name?: string;
