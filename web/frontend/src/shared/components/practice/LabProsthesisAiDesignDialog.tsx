@@ -13,6 +13,7 @@
 // - 2026-09-26: 마진·삽입·내면·형상·훅·컷백·홀·커넥터를 작업 영역에서 고친다.
 // - 2026-09-26: 삽입축이 잡히고 화면에 보이면 언더컷도 같이 칠한다.
 // - 2026-09-26: 사이드바 제거. 표시는 위, 수정은 왼쪽 아래 패널. 작업영역 아래 생성 배지 제거.
+// - 2026-09-26: 삽입축을 잡으면 치아·잇몸 색이 갈라지는 곳을 마진으로 다시 잡는다.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDownToLine,
@@ -75,6 +76,7 @@ import {
   type ContactPaintMode,
 } from "@/shared/practice/oralScanDesignAnalysis";
 import {
+  applyDetectedMargin,
   createToothDesignEdit,
   marginUntouched,
   redetectMargin,
@@ -313,7 +315,8 @@ function LabProsthesisAiDesignDialog({
       setToothInfoOpen(true);
       setRoleOverride({});
       setScanOrder([]);
-      setSidebarOpen(true);
+      setScanListOpen(true);
+      setModifyPanelOpen(true);
       setDragScanId(null);
       setDropScanId(null);
       setInsertionKeys([]);
@@ -670,9 +673,20 @@ function LabProsthesisAiDesignDialog({
     });
     setEdits((prev) => {
       const next = { ...prev };
+      const detected = new Map(
+        (viewerRef.current?.detectColorMargins(targets) ?? []).map((row) => [
+          row.tooth,
+          row,
+        ]),
+      );
       for (const number of targets) {
         const current = next[number] ?? createToothDesignEdit();
-        next[number] = marginUntouched(current) ? redetectMargin(current) : current;
+        const hit = detected.get(number);
+        if (hit && marginUntouched(current)) {
+          next[number] = applyDetectedMargin(current, hit.radii, hit.depths);
+        } else {
+          next[number] = marginUntouched(current) ? redetectMargin(current) : current;
+        }
       }
       return next;
     });
@@ -700,6 +714,20 @@ function LabProsthesisAiDesignDialog({
     if (!restored) viewerRef.current?.focusTooth(toothNumber);
   };
 
+  const applyColorDetections = (
+    detected: ReadonlyArray<{ tooth: string; radii: number[]; depths: number[] }>,
+  ) => {
+    if (detected.length === 0) return;
+    setEdits((prev) => {
+      const next = { ...prev };
+      for (const row of detected) {
+        const current = next[row.tooth] ?? createToothDesignEdit();
+        next[row.tooth] = applyDetectedMargin(current, row.radii, row.depths);
+      }
+      return next;
+    });
+  };
+
   const rememberInsertion = (toothNumbers: readonly string[]) => {
     const ok = viewerRef.current?.setInsertionFromView(toothNumbers) === true;
     if (!ok) return;
@@ -707,6 +735,7 @@ function LabProsthesisAiDesignDialog({
     if (!key) return;
     setInsertionKeys((prev) => (prev.includes(key) ? prev : [...prev, key]));
     setInsertionShown(true);
+    applyColorDetections(viewerRef.current?.detectColorMargins(toothNumbers) ?? []);
   };
 
   return (
@@ -806,6 +835,11 @@ function LabProsthesisAiDesignDialog({
               onScanColorChange={setHasScanColor}
               onInsertionAxisChange={(active) => {
                 if (!active) setInsertionKeys([]);
+              }}
+              onInsertionAxisAimed={(toothNumbers) => {
+                applyColorDetections(
+                  viewerRef.current?.detectColorMargins(toothNumbers) ?? [],
+                );
               }}
               showInsertionAxis={insertionShown}
               showCenterGuides={centerGuides}
@@ -985,6 +1019,345 @@ function LabProsthesisAiDesignDialog({
                   ) : null}
                 </div>
               ) : null}
+              <div className="flex w-[min(20rem,100%)] min-h-0 max-h-[min(18rem,34vh)] flex-col overflow-hidden rounded-lg border bg-background/95 text-sm shadow-sm">
+                <div className="flex shrink-0 items-center gap-2 px-3.5 py-2.5">
+                  <Checkbox
+                    checked={allShown}
+                    disabled={scans.length === 0}
+                    onCheckedChange={() => toggleAllShown()}
+                    aria-label="표시 전체 선택"
+                  />
+                  <button
+                    type="button"
+                    className="flex min-w-0 flex-1 items-center justify-between gap-3 text-left"
+                    onClick={() => setScanListOpen((open) => !open)}
+                    aria-expanded={scanListOpen}
+                  >
+                    <span className="font-semibold text-foreground">표시</span>
+                    <ChevronDown
+                      className={cn(
+                        "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
+                        scanListOpen ? "rotate-180" : "",
+                      )}
+                    />
+                  </button>
+                </div>
+                {scanListOpen ? (
+                  <div className="min-h-0 flex-1 space-y-2 overflow-y-auto border-t px-3.5 py-2.5">
+                    {scans.length === 0 ? (
+                      <p className="text-xs leading-relaxed text-muted-foreground">
+                        상악·하악·바이트 스캔이 없습니다.
+                      </p>
+                    ) : (
+                      <ul className="space-y-1.5">
+                        {scans.map((scan) => {
+                          const state = fileState[scan.id];
+                          return (
+                            <li
+                              key={scan.id}
+                              className={cn(
+                                "flex min-w-0 items-center gap-2 rounded px-0.5",
+                                dropScanId === scan.id &&
+                                  dragScanId &&
+                                  dragScanId !== scan.id &&
+                                  "bg-primary/10 ring-1 ring-primary",
+                              )}
+                              onDragOver={(event) => {
+                                if (dragScanId === scan.id) return;
+                                event.preventDefault();
+                                event.dataTransfer.dropEffect = "move";
+                                setDropScanId((prev) =>
+                                  prev === scan.id ? prev : scan.id,
+                                );
+                              }}
+                              onDragLeave={(event) => {
+                                const next = event.relatedTarget;
+                                if (
+                                  next instanceof Node &&
+                                  event.currentTarget.contains(next)
+                                ) {
+                                  return;
+                                }
+                                setDropScanId((prev) =>
+                                  prev === scan.id ? null : prev,
+                                );
+                              }}
+                              onDrop={(event) => {
+                                event.preventDefault();
+                                const id = event.dataTransfer.getData("text/plain");
+                                setDropScanId(null);
+                                setDragScanId(null);
+                                if (id) swapScans(id, scan.id);
+                              }}
+                            >
+                              <Checkbox
+                                checked={scanShown(scan)}
+                                disabled={state === "loading" || state === "error"}
+                                onCheckedChange={(checked) => {
+                                  setVisible((prev) => ({
+                                    ...prev,
+                                    [scan.id]: checked === true,
+                                  }));
+                                }}
+                                aria-label={`${oralScanRoleLabel(scan.role)} 표시`}
+                              />
+                              <span
+                                className={cn(
+                                  "h-2 w-2 shrink-0 rounded-full",
+                                  ROLE_DOT[scan.role],
+                                )}
+                              />
+                              <span className="inline-flex h-5 w-12 shrink-0 items-center justify-center text-[11px] font-semibold text-primary">
+                                {oralScanRoleLabel(scan.role)}
+                              </span>
+                              <span
+                                draggable
+                                title="끌어 다른 파일이나 상악·하악·바이트 위에 놓으면 서로 바뀝니다"
+                                className="min-w-0 flex-1 cursor-grab truncate text-xs text-foreground active:cursor-grabbing"
+                                onDragStart={(event) => {
+                                  event.dataTransfer.setData("text/plain", scan.id);
+                                  event.dataTransfer.effectAllowed = "move";
+                                  setDragScanId(scan.id);
+                                }}
+                                onDragEnd={() => {
+                                  setDragScanId(null);
+                                  setDropScanId(null);
+                                }}
+                              >
+                                {scan.fileName}
+                              </span>
+                              {state === "error" ? (
+                                <span className="shrink-0 text-[10px] text-destructive">
+                                  실패
+                                </span>
+                              ) : null}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                    {busy ? <Progress value={progress} className="h-1.5" /> : null}
+                    {loadError ? (
+                      <p className="text-xs leading-relaxed text-destructive">
+                        {loadError}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+            <div className="absolute bottom-3 left-3 z-20 flex max-h-[min(36rem,62vh)] w-[min(20rem,36vw)] flex-col">
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border bg-background/95 text-sm shadow-sm">
+                {modifyPanelOpen ? (
+                  <div className="min-h-0 flex-1 space-y-3 overflow-y-auto border-b px-3.5 py-2.5">
+                    <section className="space-y-2">
+                      <p className="text-xs font-semibold text-foreground">단계</p>
+                      <div className="grid grid-cols-3 gap-1">
+                        {DESIGN_STAGES.map((item) => (
+                          <Button
+                            key={item.id}
+                            type="button"
+                            size="sm"
+                            variant={stage === item.id ? "default" : "outline"}
+                            className="h-7 px-2 text-[11px]"
+                            onClick={() => {
+                              onStage(item.id);
+                              if (item.id === "margin") setModifyTool("margin");
+                              if (item.id === "design") setModifyTool("refine");
+                            }}
+                          >
+                            {item.label}
+                          </Button>
+                        ))}
+                      </div>
+                    </section>
+                    {stage !== "scan" ? (
+                      <LabProsthesisModifyPanel
+                        tool={modifyTool}
+                        onTool={(next) => {
+                          setModifyTool(next);
+                          setEditBrush("none");
+                          setHoleNote("");
+                          if (next === "margin" || next === "insertion") onStage("margin");
+                          else onStage("design");
+                        }}
+                        marginMode={marginMode}
+                        onMarginMode={setMarginMode}
+                        brush={editBrush}
+                        onBrush={setEditBrush}
+                        edit={activeEdit}
+                        onEdit={(next) => {
+                          if (!activeNumber) return;
+                          setEdits((prev) => {
+                            if (modifyTool !== "connector" || bridgeSpan.length < 2) {
+                              return { ...prev, [activeNumber]: next };
+                            }
+                            const out = { ...prev, [activeNumber]: next };
+                            for (const tooth of bridgeSpan) {
+                              const base = out[tooth] ?? createToothDesignEdit();
+                              out[tooth] =
+                                tooth === activeNumber
+                                  ? next
+                                  : { ...base, connector: next.connector };
+                            }
+                            return out;
+                          });
+                        }}
+                        toothLabel={
+                          activeTooth
+                            ? formatProsthesisAiToothLabel(activeTooth)
+                            : null
+                        }
+                        generated={
+                          activeNumber ? generated[activeNumber] === true : false
+                        }
+                        isBridge={isBridgeSpan}
+                        canMatchInsertion={entries.length > 0 && bridgeSpan.length > 0}
+                        holeNote={holeNote}
+                        onRedetect={() => {
+                          if (!activeNumber) return;
+                          const detected =
+                            viewerRef.current?.detectColorMargins([activeNumber]) ?? [];
+                          const hit = detected[0];
+                          setEdits((prev) => ({
+                            ...prev,
+                            [activeNumber]: hit
+                              ? applyDetectedMargin(
+                                  prev[activeNumber] ?? createToothDesignEdit(),
+                                  hit.radii,
+                                  hit.depths,
+                                )
+                              : redetectMargin(
+                                  prev[activeNumber] ?? createToothDesignEdit(),
+                                ),
+                          }));
+                        }}
+                        onClearMargin={() => {
+                          if (!activeNumber) return;
+                          const current = edits[activeNumber] ?? createToothDesignEdit();
+                          setEdits((prev) => ({
+                            ...prev,
+                            [activeNumber]: {
+                              ...current,
+                              margin: { ...current.margin, deleted: true },
+                            },
+                          }));
+                        }}
+                        onMatchInsertion={() => {
+                          if (bridgeSpan.length === 0) return;
+                          rememberInsertion(bridgeSpan);
+                          setModifyTool("insertion");
+                        }}
+                        onApplyInner={() => {
+                          if (!activeNumber) return;
+                          setEdits((prev) => {
+                            const current = prev[activeNumber] ?? createToothDesignEdit();
+                            return {
+                              ...prev,
+                              [activeNumber]: {
+                                ...current,
+                                inner: { ...current.inner, applied: true },
+                              },
+                            };
+                          });
+                        }}
+                        onRemoveHook={() => {
+                          if (!activeNumber) return;
+                          setEdits((prev) => {
+                            const current = prev[activeNumber] ?? createToothDesignEdit();
+                            return {
+                              ...prev,
+                              [activeNumber]: {
+                                ...current,
+                                hook: { ...current.hook, on: false },
+                              },
+                            };
+                          });
+                        }}
+                      />
+                    ) : null}
+                    {stage === "design" ? (
+                      <section className="space-y-2">
+                        <p className="text-xs font-semibold text-foreground">교합</p>
+                        <label className="flex items-center justify-between gap-3 text-xs font-medium">
+                          접촉
+                          <Switch
+                            checked={contactMap}
+                            disabled={!canContact}
+                            onCheckedChange={setContactMap}
+                            aria-label="교합 접촉 표시"
+                            className="h-5 w-9 data-[state=checked]:bg-primary [&>span]:h-4 [&>span]:w-4 data-[state=checked]:[&>span]:translate-x-4"
+                          />
+                        </label>
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between text-xs font-medium">
+                            <span>교합 거리</span>
+                            <span className="tabular-nums text-muted-foreground">
+                              {occlusalGap.toFixed(2)} mm
+                            </span>
+                          </div>
+                          <Slider
+                            min={0}
+                            max={50}
+                            step={5}
+                            value={[Math.round(occlusalGap * 100)]}
+                            disabled={!canContact}
+                            onValueChange={([value]) =>
+                              setOcclusalGap((value ?? 10) / 100)
+                            }
+                            aria-label="교합 거리"
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-1">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={contactMode === "cut" ? "default" : "outline"}
+                            className="h-7 px-2 text-[11px]"
+                            onClick={() => setContactMode("cut")}
+                          >
+                            절삭
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={contactMode === "keep" ? "default" : "outline"}
+                            className="h-7 px-2 text-[11px]"
+                            onClick={() => setContactMode("keep")}
+                          >
+                            형태 유지
+                          </Button>
+                        </div>
+                        {!canContact ? (
+                          <p className="text-[11px] leading-relaxed text-muted-foreground">
+                            대합 스캔이 있으면 접촉 색을 칠합니다.
+                          </p>
+                        ) : (
+                          <p className="text-[11px] leading-relaxed text-muted-foreground">
+                            빨강은 목표보다 가깝고, 초록은 맞고, 파랑은 틈입니다.
+                            <br />
+                            절삭은 가까운 면을 더 붉게 잡습니다.
+                          </p>
+                        )}
+                      </section>
+                    ) : null}
+                  </div>
+                ) : null}
+                <button
+                  type="button"
+                  className="flex w-full shrink-0 items-center justify-between gap-3 px-3.5 py-2.5 text-left"
+                  onClick={() => setModifyPanelOpen((open) => !open)}
+                  aria-expanded={modifyPanelOpen}
+                >
+                  <span className="font-semibold text-foreground">수정</span>
+                  <ChevronDown
+                    className={cn(
+                      "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
+                      modifyPanelOpen ? "" : "rotate-180",
+                    )}
+                  />
+                </button>
+              </div>
             </div>
             <DesignViewerChrome
               teeth={plan.teeth}
@@ -1290,37 +1663,16 @@ function DesignViewerChrome({
         </>
       ) : null}
 
-      {activeTooth || showGenerateAll ? (
-        <div className="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-1.5">
-          {showGenerateAll ? (
-            <button
-              type="button"
-              className="rounded-full bg-primary px-3 py-1 text-[11px] font-medium text-primary-foreground shadow-sm disabled:opacity-50"
-              disabled={generating}
-              onClick={onGenerateAll}
-            >
-              전체 생성
-            </button>
-          ) : null}
-          {activeTooth ? (
-            <div className="flex items-center gap-2 rounded-full border bg-background/95 px-3 py-1 shadow-sm">
-              <span className="text-xs font-medium">
-                {formatProsthesisAiToothLabel(activeTooth)}
-              </span>
-              {generated[activeTooth.toothNumber] ? (
-                <span className="text-[11px] font-medium text-primary">생성됨</span>
-              ) : (
-                <button
-                  type="button"
-                  className="rounded-full bg-primary px-2 py-0.5 text-[11px] font-medium text-primary-foreground disabled:opacity-50"
-                  disabled={generating || !activeTooth.designable}
-                  onClick={() => onGenerateTooth(activeTooth.toothNumber)}
-                >
-                  생성
-                </button>
-              )}
-            </div>
-          ) : null}
+      {showGenerateAll ? (
+        <div className="absolute bottom-3 left-1/2 z-10 -translate-x-1/2">
+          <button
+            type="button"
+            className="rounded-full bg-primary px-3 py-1 text-[11px] font-medium text-primary-foreground shadow-sm disabled:opacity-50"
+            disabled={generating}
+            onClick={onGenerateAll}
+          >
+            전체 생성
+          </button>
         </div>
       ) : null}
     </>

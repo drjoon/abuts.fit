@@ -188,6 +188,8 @@ export function LabProsthesisModifyPanel({
             <br />
             화면 각도로 맞추면 화면과 수직인 삽입축이 그 자리에 됩니다.
             <br />
+            축을 잡으면 치아와 잇몸의 색이 갈라지는 선을 마진으로 다시 잡습니다.
+            <br />
             화살표 끝을 끌면 방향을 바꿉니다.
           </p>
         </div>

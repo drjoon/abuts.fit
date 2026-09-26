@@ -74,6 +74,8 @@ export const CONNECTOR_SHAPES: Array<{ id: ConnectorShape; label: string }> = [
 export type ToothDesignEdit = {
   margin: {
     radii: number[];
+    /** 삽입축 방향 오프셋. 기하 단위. 0이면 치아 중심 평면. */
+    depths: number[];
     offsetMm: number;
     showBack: boolean;
     deleted: boolean;
@@ -160,6 +162,7 @@ export function createToothDesignEdit(): ToothDesignEdit {
   return {
     margin: {
       radii: ones(MARGIN_POINT_COUNT),
+      depths: Array.from({ length: MARGIN_POINT_COUNT }, () => 0),
       offsetMm: 0,
       showBack: false,
       deleted: false,
@@ -201,7 +204,8 @@ export function marginUntouched(edit: ToothDesignEdit) {
   return (
     !edit.margin.deleted &&
     edit.margin.offsetMm === 0 &&
-    edit.margin.radii.every((radius) => radius === 1)
+    edit.margin.radii.every((radius) => radius === 1) &&
+    (edit.margin.depths ?? []).every((depth) => depth === 0)
   );
 }
 
@@ -211,7 +215,33 @@ export function redetectMargin(edit: ToothDesignEdit): ToothDesignEdit {
   });
   return {
     ...edit,
-    margin: { ...edit.margin, radii, offsetMm: 0, deleted: false },
+    margin: {
+      ...edit.margin,
+      radii,
+      depths: Array.from({ length: radii.length }, () => 0),
+      offsetMm: 0,
+      deleted: false,
+    },
+  };
+}
+
+/** 색 경계로 잡은 마진. 간격 오프셋은 다시 0이다. */
+export function applyDetectedMargin(
+  edit: ToothDesignEdit,
+  radii: number[],
+  depths: number[],
+): ToothDesignEdit {
+  const count = Math.min(radii.length, depths.length);
+  if (count < 8) return edit;
+  return {
+    ...edit,
+    margin: {
+      ...edit.margin,
+      radii: radii.slice(0, count),
+      depths: depths.slice(0, count),
+      offsetMm: 0,
+      deleted: false,
+    },
   };
 }
 
@@ -254,6 +284,7 @@ export function removeMarginPoint(edit: ToothDesignEdit, index: number): ToothDe
     margin: {
       ...edit.margin,
       radii: edit.margin.radii.filter((_, slot) => slot !== index),
+      depths: (edit.margin.depths ?? []).filter((_, slot) => slot !== index),
     },
   };
 }
@@ -265,11 +296,16 @@ export function insertMarginPoint(
 ): ToothDesignEdit {
   if (edit.margin.radii.length >= 32) return edit;
   const radii = edit.margin.radii.slice();
+  const depths = (edit.margin.depths ?? []).slice();
+  while (depths.length < radii.length) depths.push(0);
   const at = Math.min(radii.length, Math.max(0, index));
   radii.splice(at, 0, clamp(radius, 0.62, 1.45));
+  const before = depths[at - 1] ?? depths[at] ?? 0;
+  const after = depths[at] ?? before;
+  depths.splice(at, 0, (before + after) / 2);
   return {
     ...edit,
-    margin: { ...edit.margin, radii, deleted: false },
+    margin: { ...edit.margin, radii, depths, deleted: false },
   };
 }
 

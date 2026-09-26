@@ -11,6 +11,7 @@
 // - 2026-09-26: 정중앙 점선은 토글로 켠다. 가로·세로는 화면 한가운데를 지난다.
 // - 2026-09-26: 삽입축은 치아에서 2mm 띄운다. 치아번호는 윗단 고리 중심에 둔다.
 // - 2026-09-26: 처음 카메라는 지대치 교합면과 인접치 하나씩. 그 자세를 초기 뷰로 둔다.
+// - 2026-09-26: 삽입축을 잡으면 치아·잇몸 색이 갈라지는 곳을 마진으로 잡는다.
 import {
   forwardRef,
   useEffect,
@@ -42,6 +43,7 @@ import type {
   DesignGesture,
   ProsthesisDesignEdit,
 } from "@/shared/practice/labProsthesisModify";
+import { detectColorMarginEitherWay } from "@/shared/practice/detectColorMargin";
 import {
   buildProsthesisEditLayer,
   readEditHit,
@@ -67,6 +69,13 @@ export type OralScanOverlayHandle = {
    * 같은 치아 묶음이면 방향을 다시 잡고, 다른 보철 축은 유지한다.
    */
   setInsertionFromView: (toothNumbers: readonly string[]) => boolean;
+  /**
+   * 이 치아들의 스캔 칼라에서 마진을 고른다.
+   * 삽입축이 있으면 그 방향, 없으면 악 위쪽. 색 경계가 없으면 빈 배열.
+   */
+  detectColorMargins: (
+    toothNumbers: readonly string[],
+  ) => Array<{ tooth: string; radii: number[]; depths: number[] }>;
   /** 모달을 열었을 때의 교합면 카메라로 되돌린다. */
   resetHomeView: () => void;
 };
@@ -111,6 +120,8 @@ type Props = {
   onScanColorChange?: (hasScanColor: boolean) => void;
   /** 삽입축 화살표가 켜지거나 꺼질 때. */
   onInsertionAxisChange?: (active: boolean) => void;
+  /** 삽입축 방향을 손보고 손을 뗐을 때. 그 치아 번호. */
+  onInsertionAxisAimed?: (toothNumbers: readonly string[]) => void;
   /** 잡은 삽입축을 작업 영역에 그릴지. */
   showInsertionAxis?: boolean;
   /** 화면 정중앙의 가로·세로 점선. */
@@ -684,6 +695,70 @@ function alignPlacementsToPoint(
     });
   }
   return next;
+}
+
+function marginFrameAxes(normal: THREE.Vector3, rightHint: THREE.Vector3) {
+  const y = normal.clone().normalize();
+  const x = rightHint.clone().addScaledVector(y, -rightHint.dot(y));
+  if (x.lengthSq() < 1e-8) {
+    const fallback =
+      Math.abs(y.z) > 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 0, 1);
+    x.crossVectors(y, fallback);
+  }
+  x.normalize();
+  const z = new THREE.Vector3().crossVectors(x, y).normalize();
+  return { x, y, z };
+}
+
+/** 치아 주변 버텍스의 원래 스캔 칼라. 언더컷·접촉으로 칠한 색은 쓰지 않는다. */
+function collectColorMarginSamples(
+  entries: LoadedMesh[],
+  center: THREE.Vector3,
+  normal: THREE.Vector3,
+  right: THREE.Vector3,
+  toothRadius: number,
+) {
+  const axes = marginFrameAxes(normal, right);
+  const reach = Math.max(toothRadius * 1.75, 1);
+  const reachSq = reach * reach;
+  const axialLimit = toothRadius * 1.7;
+  const samples: Array<{
+    x: number;
+    z: number;
+    axial: number;
+    r: number;
+    g: number;
+    b: number;
+  }> = [];
+  const world = new THREE.Vector3();
+  for (const entry of entries) {
+    const color = entry.scanColor;
+    const pos = entry.geometry.getAttribute("position");
+    if (!color || !pos || color.count !== pos.count) continue;
+    entry.mesh.updateWorldMatrix(true, false);
+    const matrix = entry.mesh.matrixWorld;
+    const stride = pos.count > 220000 ? 2 : 1;
+    for (let i = 0; i < pos.count; i += stride) {
+      world.fromBufferAttribute(pos, i).applyMatrix4(matrix);
+      const dx = world.x - center.x;
+      const dy = world.y - center.y;
+      const dz = world.z - center.z;
+      const axial = dx * axes.y.x + dy * axes.y.y + dz * axes.y.z;
+      if (axial < -axialLimit || axial > axialLimit) continue;
+      const x = dx * axes.x.x + dy * axes.x.y + dz * axes.x.z;
+      const z = dx * axes.z.x + dy * axes.z.y + dz * axes.z.z;
+      if (x * x + z * z > reachSq) continue;
+      samples.push({
+        x,
+        z,
+        axial,
+        r: color.getX(i),
+        g: color.getY(i),
+        b: color.getZ(i),
+      });
+    }
+  }
+  return samples;
 }
 
 function nearestInsertionDir(
@@ -1358,6 +1433,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       busyLabel = "",
       onScanColorChange,
       onInsertionAxisChange,
+      onInsertionAxisAimed,
       showInsertionAxis = false,
       showCenterGuides = false,
       designEdit = null,
@@ -1402,6 +1478,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   const syncBadgesRef = useRef<() => void>(() => {});
   const onScanColorChangeRef = useRef(onScanColorChange);
   const onInsertionAxisChangeRef = useRef(onInsertionAxisChange);
+  const onInsertionAxisAimedRef = useRef(onInsertionAxisAimed);
   const showInsertionRef = useRef(showInsertionAxis);
   const itemsRef = useRef(items);
   const frameRef = useRef<DentalFrame | null>(null);
@@ -1445,6 +1522,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   onSelectToothRef.current = onSelectTooth;
   onScanColorChangeRef.current = onScanColorChange;
   onInsertionAxisChangeRef.current = onInsertionAxisChange;
+  onInsertionAxisAimedRef.current = onInsertionAxisAimed;
   showInsertionRef.current = showInsertionAxis;
   itemsRef.current = items;
 
@@ -1954,8 +2032,10 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     const endEditDrag = (event: PointerEvent) => {
       if (!drag) return;
       if (drag.kind === "insertion") {
+        const aimed = insertionAxesRef.current.find((row) => row.key === drag.key);
         for (const entry of loadedRef.current) entry.align = null;
         setLoadVersion((value) => value + 1);
+        if (aimed) onInsertionAxisAimedRef.current?.(aimed.toothNumbers);
       }
       drag = null;
       event.stopPropagation();
@@ -2569,6 +2649,37 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         onInsertionAxisChangeRef.current?.(kept.length > 0);
         setLoadVersion((v) => v + 1);
         return true;
+      },
+      detectColorMargins: (toothNumbers) => {
+        const right = frameRef.current?.right ?? new THREE.Vector3(1, 0, 0);
+        const fallback = frameRef.current?.up ?? new THREE.Vector3(0, 0, 1);
+        const loaded = loadedRef.current;
+        const out: Array<{ tooth: string; radii: number[]; depths: number[] }> = [];
+        for (const raw of toothNumbers) {
+          const tooth = fdiDigits(raw);
+          if (!tooth) continue;
+          const place = placementsRef.current.find((row) => row.toothNumber === tooth);
+          if (!place || !(place.radius > 0)) continue;
+          const axis = insertionAxesRef.current.find((row) =>
+            row.toothNumbers.includes(tooth),
+          );
+          const normal = axis?.dir ?? fallback;
+          const entries = loaded.filter(
+            (entry) => entry.role === place.arch && entry.scanColor,
+          );
+          if (entries.length === 0) continue;
+          const samples = collectColorMarginSamples(
+            entries,
+            place.center,
+            normal,
+            right,
+            place.radius,
+          );
+          const line = detectColorMarginEitherWay(samples, place.radius);
+          if (!line) continue;
+          out.push({ tooth: raw, radii: line.radii, depths: line.depths });
+        }
+        return out;
       },
     }),
     [],

@@ -130,8 +130,13 @@ export function buildProsthesisEditLayer(args: {
       const points: THREE.Vector3[] = [];
       edit.margin.radii.forEach((ratio, index) => {
         const angle = marginPointAngle(index, edit.margin.radii.length);
-        const local = new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle))
-          .multiplyScalar(base * ratio + extra)
+        const radial = base * ratio + extra;
+        const axial = edit.margin.depths?.[index] ?? 0;
+        const local = new THREE.Vector3(
+          Math.cos(angle) * radial,
+          axial,
+          Math.sin(angle) * radial,
+        )
           .applyQuaternion(quat)
           .add(place.center);
         points.push(local);
