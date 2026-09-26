@@ -195,7 +195,7 @@ Notes:
   - `src/pages/admin/partners/AdminPartnersPage.tsx` (사이드「사업영역」. 탭당 한 카드: 기공사업 · 어벗사업 · 플랫폼사업. 주체는 role Select(`RoleSelect`). 팀원 검색은 해당 주체 role만. 기공=기공팀·영업팀·개발운영사. 어벗=제조사·개발운영사·딜러사·어벗츠. 플랫폼=어벗츠·개발운영사. 구성원 분배액은 카드 안에서 수정. 분배는 매출에서 배송비를 먼저 차감한 잔여만(배송은 여기 미기재). 기공=내부기공소(기공사업부) 배당 건만 배송비 공통 지출 차감 후 내부 기공팀·영업팀 인센티브(면세)+개발운영사(+VAT). 어벗=매입가(기본 8,800 부가세 포함→공급가 선차감) 후 잔여를 딜러/개발운영/어벗츠 비중 분배(+VAT는 제조사·딜러·개발운영). 의뢰서 소개코드(딜러사) 있으면 딜러사·없으면 어벗츠. 특별주문가는 주체별 배분액. 플랫폼=하청·지정 사용료(현재 이벤트 무료)를 어벗츠 90%/개발운영사 10%
   - `src/features/settings/tabs/AdminAbutsLabFeeScheduleTab.tsx` (어벗츠 수가. 기공소 신규 항목은 Off·검토 대기; On=적용. 이벤트 `abuts-lab-fee:pending-items`)
   - `src/features/settings/tabs/AdminCreditSettingsTab.tsx` (`variant=credits`: 수동 무료크레딧 기본액·배송 / `variant=customAbut`: 판매가·매입가 50%·분배·의뢰자 BA 판매가 오버라이드 목록·환봉 추가요청)
-  - `src/features/settings/tabs/AdminDealershipSettingsTab.tsx` (`variant=shareRates` 하단) — 신규 유치 요율 20% 고정
+  - `src/features/settings/tabs/AdminDealershipSettingsTab.tsx` (`variant=shareRates` 하단) — 심플웨이 10% · 커스텀어벗 20% 고정
   - `src/pages/admin/system/AdminRoundBarAbutmentTab.tsx` (어벗 추가 요청. 도입 전 CNC어벗/환봉어벗 선택. 종류가 치과 단가에 반영. `GET|PATCH /api/admin/round-bar-requests`)
   - `src/pages/devops/components/DevopsPlatformFeeTab.tsx` (하청 %만. `PracticeTransferAutoMatchTab` 카드 안. SSOT `payoutRates.subcontractFeeRate`. 플랫폼 사용료 UI는 폐지)
 - 개발·운영사 설정
@@ -215,7 +215,7 @@ Notes:
       - `src/features/platform/PlatformBenefitsShareButtons.tsx` (안내+링크 클립보드 복사)
   - 의뢰자(치과) 설정: 구독 탭 없음. 구 `?tab=subscription` → 계정. 대시보드 헤더는 `[정책 안내]`만.
     - `src/pages/requestor/dashboard/components/RequestorPolicyRemakeHeader.tsx`
-    - `src/shared/ui/PricingPolicyDialog.tsx` — 런칭 이벤트 1만(+배송) / 정상가 1.3만(+배송 또는 FM덴탈 월정액·기공소만). 신속 +2,000 · 배송 3,500. FM 가입·해지(대표·기공소). 치과·기공소·딜러·영업팀 `requestor`: 플랫폼 사용료 없음. 협력은 전액 적립, 하청은 10% 차감. **딜러(`variant=salesman`)**: 심플웨이·커스텀어벗 매출(기공 제외) 20% · 90일 무주문이면 소개 리셋. **「의뢰자 정책」(`variant=requestor`)**: 딜러 대시보드·영업팀 성과 — 소개 치과·기공소 안내용 단가·출고·기공소 수수료.
+    - `src/shared/ui/PricingPolicyDialog.tsx` — 런칭 이벤트 1만(+배송) / 정상가 1.3만(+배송 또는 FM덴탈 월정액·기공소만). 신속 +2,000 · 배송 3,500. FM 가입·해지(대표·기공소). 치과·기공소·딜러·영업팀 `requestor`: 플랫폼 사용료 없음. 협력은 전액 적립, 하청은 10% 차감. **딜러(`variant=salesman`)**: 심플웨이 매출액 대비 10% · 커스텀어벗 매출액 대비 20% · 기공 제외 · 90일 무주문이면 소개 코드 리셋(누구든 다시 영업 가능). **「의뢰자 정책」(`variant=requestor`)**: 딜러 대시보드·영업팀 성과 — 소개 치과·기공소 안내용 단가·출고·기공소 수수료.
     - 안내·청구 정가 SSOT (`creditSettings` + `src/shared/pricing/abutsAbutmentService.ts`): 정상가 **1.3만원** · 런칭 **1만원**(`resolveCustomAbutmentProductionPriceForAt`). 신속 `expressFee`(기본 +2,000). 배송 박스당 또는(기공소) FM덴탈 월정액. `regular*`는 관리자 딜러분배용. 기공소 매칭 월정 0·하청 10% — 루트 `rules.md` §2.3.
   - 수락 후 마감: `DevopsDesignDeadlineTab` — 디자인 클레임 후 작업 마감(`designDeadlineSettings.claimHours`, 기본 3시간). 파트너 **기공의뢰 자동매칭** 탭 상단
   - 기공의뢰 자동매칭: `PracticeTransferAutoMatchTab`(카드·탭 **인증 기공소**) — 수수료 스트립(하청 %) + 기공소별 인증 ON·기공 테스트·메모. 기공소 설정 탭은 없음. 관리자 테스트 통과/`enabled` 시 풀 참여. 지정·협력 플랫폼 사용료 **0%**. 하청 `subcontractFeeRate`(기본 10%)만. 학습 이용은 기본 허용이고 요율과 무관. 기공소 설정 「AI」탭·기공의뢰 동의 버튼·모달은 없다. 안내는 약관·개인정보. 관리자 플랫폼 설정「인증 기공소」탭

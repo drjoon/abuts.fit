@@ -7,10 +7,12 @@
 // - web/frontend/src/shared/components/CommissionLedgerInline.tsx
 // - web/frontend/src/shared/components/SalesmanLedgerModal.tsx
 // change-log:
+// - 2026-09-27: 딜러 대시보드 — 심플웨이(배송비 제외 10%)·커스텀어벗 수수료를 나눠 반환.
 // - 2026-09-24: 딜러 대시보드 — 유치 시점 요율 고정(신규 activeRate · BA 스탬프). 월 매출 누진 철회.
 // - 2026-09-24: 딜러 대시보드 — 딜러 BA당 월 매출 누진 수수료(commissionSlices).
 import crypto from "node:crypto";
 import Request from "../../models/request.model.js";
+import StoreOrder from "../../models/storeOrder.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import User from "../../models/user.model.js";
 import LedgerLine from "../../models/ledgerLine.model.js";
@@ -21,7 +23,11 @@ import {
 } from "../../utils/kstQueryBounds.js";
 import { getPlatformSocialProof } from "../../services/platformGrowthStats.service.js";
 import { listNoOrderAlerts } from "../../services/noOrderAlerts.service.js";
-import { resolveDealershipCommissionPolicy, resolveDealershipRateForAcquiredAt } from "../../services/creditRevenuePolicy.service.js";
+import {
+  DEALERSHIP_SIMPLEWAY_COMMISSION_RATE,
+  resolveDealershipCommissionPolicy,
+  resolveDealershipRateForAcquiredAt,
+} from "../../services/creditRevenuePolicy.service.js";
 import { loadCreditSettingsDefaults } from "../../utils/creditSettingsDefaults.js";
 import {
   ensureSalesTeamPersonalAnchor,
@@ -704,25 +710,70 @@ export async function getSalesmanDashboard(req, res) {
       .filter((id) => Types.ObjectId.isValid(id))
       .map((id) => new Types.ObjectId(id));
 
-    const revenueRows = await Request.aggregate([
-      {
-        $match: {
-          businessAnchorId: { $in: orgObjectIds },
-          manufacturerStage: "추적관리",
-          createdAt: { $gte: start, $lt: end },
-        },
-      },
-      {
-        $group: {
-          _id: "$businessAnchorId",
-          revenueAmount: {
-            $sum: {
-              $ifNull: ["$price.paidAmount", { $ifNull: ["$price.amount", 0] }],
-            },
+    const [revenueRows, storeRows] = await Promise.all([
+      Request.aggregate([
+        {
+          $match: {
+            businessAnchorId: { $in: orgObjectIds },
+            manufacturerStage: "추적관리",
+            createdAt: { $gte: start, $lt: end },
           },
-          orderCount: { $sum: 1 },
         },
-      },
+        {
+          $group: {
+            _id: "$businessAnchorId",
+            revenueAmount: {
+              $sum: {
+                $ifNull: ["$price.paidAmount", { $ifNull: ["$price.amount", 0] }],
+              },
+            },
+            orderCount: { $sum: 1 },
+          },
+        },
+      ]),
+      isDevops || !orgObjectIds.length
+        ? Promise.resolve([])
+        : StoreOrder.aggregate([
+            {
+              $match: {
+                businessAnchorId: { $in: orgObjectIds },
+                status: "PAID",
+                paidAt: { $gte: start, $lt: end },
+              },
+            },
+            {
+              $group: {
+                _id: "$businessAnchorId",
+                revenueAmount: {
+                  $sum: {
+                    $let: {
+                      vars: {
+                        itemsAmount: { $ifNull: ["$itemsAmountTotal", 0] },
+                        netOfShipping: {
+                          $max: [
+                            0,
+                            {
+                              $subtract: [
+                                { $ifNull: ["$amountTotal", 0] },
+                                { $ifNull: ["$shippingFeeInclusive", 0] },
+                              ],
+                            },
+                          ],
+                        },
+                      },
+                      in: {
+                        $cond: [
+                          { $gt: ["$$itemsAmount", 0] },
+                          "$$itemsAmount",
+                          "$$netOfShipping",
+                        ],
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          ]),
     ]);
 
     const revenueByOrgId = new Map(
@@ -730,6 +781,9 @@ export async function getSalesmanDashboard(req, res) {
         String(r._id),
         Number(r.revenueAmount || 0),
       ]),
+    );
+    const storeRevenueByOrgId = new Map(
+      (storeRows || []).map((r) => [String(r._id), Number(r.revenueAmount || 0)]),
     );
     const ordersByOrgId = new Map(
       (revenueRows || []).map((r) => [
@@ -765,6 +819,14 @@ export async function getSalesmanDashboard(req, res) {
         const commissionAmount = roundMoney(
           revenueAmount * commissionRateForOrg,
         );
+        const simplewayRevenueAmount = roundMoney(
+          storeRevenueByOrgId.get(idStr) || 0,
+        );
+        const simplewayCommissionAmount = isDevops
+          ? 0
+          : roundMoney(
+              simplewayRevenueAmount * DEALERSHIP_SIMPLEWAY_COMMISSION_RATE,
+            );
 
         return {
           businessAnchorId: idStr,
@@ -776,8 +838,11 @@ export async function getSalesmanDashboard(req, res) {
           commissionTier,
           commissionRate: commissionRateForOrg,
           monthRevenueAmount: revenueAmount,
+          monthSimplewayRevenueAmount: simplewayRevenueAmount,
           monthOrderCount: orderCount,
           monthCommissionAmount: commissionAmount,
+          monthCustomAbutmentCommissionAmount: commissionAmount,
+          monthSimplewayCommissionAmount: simplewayCommissionAmount,
           referralLevel: isDirect ? "direct" : "unaffiliated",
         };
       })
@@ -805,7 +870,16 @@ export async function getSalesmanDashboard(req, res) {
     const monthRevenueAmount = roundMoney(
       sumField(organizations, "monthRevenueAmount"),
     );
+    const simplewayCommissionAmount = roundMoney(
+      sumField(organizations, "monthSimplewayCommissionAmount"),
+    );
+    const customAbutmentCommissionAmount = roundMoney(
+      sumField(organizations, "monthCustomAbutmentCommissionAmount"),
+    );
     const monthCommissionAmount = totalCommissionAmount;
+    const payableGrossCommissionAmount = roundMoney(
+      customAbutmentCommissionAmount + simplewayCommissionAmount,
+    );
     const practiceOrganizationCount = organizations.filter(
       (o) => o.requestorKind === "practice",
     ).length;
@@ -835,12 +909,14 @@ export async function getSalesmanDashboard(req, res) {
           referredOrganizationCount: organizations.length,
           monthRevenueAmount,
           monthCommissionAmount: roundMoney(monthCommissionAmount),
+          simplewayCommissionAmount,
+          customAbutmentCommissionAmount,
           directOrganizationCount: directOrganizations.length,
           totalOrganizationCount: organizations.length,
           directCommissionAmount,
           unaffiliatedCommissionAmount,
           totalCommissionAmount: roundMoney(totalCommissionAmount),
-          payableGrossCommissionAmount: roundMoney(totalCommissionAmount),
+          payableGrossCommissionAmount,
           paidNetCommissionAmount: 0,
           freeNetRequestAmount,
           freeNetShippingAmount,

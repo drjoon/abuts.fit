@@ -38,8 +38,10 @@
 export const DEALERSHIP_SALES_COMMISSION_RATE = 0.2;
 /** 딜러십 최저(최종) 요율. */
 export const DEALERSHIP_BASE_COMMISSION_RATE = 0.1;
-/** 딜러십 신규 유치 기본 요율(초기 20%). */
+/** 딜러십 신규 유치 기본 요율(커스텀어벗 매출 대비, 초기 20%). */
 export const DEALERSHIP_ACTIVE_COMMISSION_RATE = 0.2;
+/** 심플웨이(스토어) 영업 수수료. 상품 매출액(배송비 제외) 대비. */
+export const DEALERSHIP_SIMPLEWAY_COMMISSION_RATE = 0.1;
 /** @deprecated DEALERSHIP_ACTIVE_COMMISSION_RATE */
 export const DEALERSHIP_EVENT_COMMISSION_RATE = DEALERSHIP_ACTIVE_COMMISSION_RATE;
 /** 요율 선택지(관리자 인하 사다리). */
@@ -460,7 +462,7 @@ export function buildStoreManufacturerShareChangeApplyPatch(
   const dealerRaw = Number(creditSettings?.storeSalesmanSharePercent);
   const dealer = Math.max(
     0,
-    Math.min(100, Number.isFinite(dealerRaw) ? dealerRaw : 20),
+    Math.min(100, Number.isFinite(dealerRaw) ? dealerRaw : 10),
   );
   const devopsRaw = Number(creditSettings?.storeDevopsSharePercent);
   const devops = Math.max(
@@ -563,7 +565,7 @@ export function buildStoreDevopsShareChangeApplyPatch(
   const dealerRaw = Number(creditSettings?.storeSalesmanSharePercent);
   const dealer = Math.max(
     0,
-    Math.min(100, Number.isFinite(dealerRaw) ? dealerRaw : 20),
+    Math.min(100, Number.isFinite(dealerRaw) ? dealerRaw : 10),
   );
   const mfrRaw = Number(creditSettings?.storeManufacturerSharePercent);
   const mfr = Math.max(

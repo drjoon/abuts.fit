@@ -1,3 +1,4 @@
+// - 2026-09-27: 딜러십 정책 — 심플웨이 10% · 커스텀어벗 20% · 기공 제외 · 소개 코드 리셋.
 // - 2026-09-26: 기공소 정책 — 수수료 제목·협력·하청 문장.
 // - 2026-09-26: 기공소 정책 — 플랫폼 사용료·영업 수수료 안내를 단축.
 // - 2026-09-23: 런칭 이벤트 중 — 정상가 취소선 + 이벤트가 · 「이벤트 중」.
@@ -77,6 +78,9 @@ import { LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE } from '@/shared/settlement/labPa
 import { LabDirectPlatformFeeNotice } from '@/shared/settlement/LabDirectPlatformFeeNotice';
 import { useLabTradingPartnerWindow } from '@/shared/lab/useLabTradingPartnerWindow';
 import {
+  DEALERSHIP_CUSTOM_ABUTMENT_COMMISSION_PCT,
+  DEALERSHIP_SIMPLEWAY_COMMISSION_PCT,
+  REFERRAL_OWNERSHIP_RESET_ANYONE_LINE,
   REFERRAL_OWNERSHIP_RESET_POLICY_LINE,
 } from '@/shared/sales/dealershipPolicyCopy';
 import { apiFetch } from '@/shared/api/apiClient';
@@ -214,22 +218,9 @@ export const PricingPolicyDialog = ({
     windowInfo: labFeeWindow,
     refresh: refreshLabFeeWindow,
   } = useLabTradingPartnerWindow();
-  const settingsActive =
-    Number(
-      (systemSettings?.creditSettings as
-        | { dealershipActiveCommissionRate?: number }
-        | undefined)?.dealershipActiveCommissionRate,
-    ) || 0;
-  const activePct = Math.max(
-    0,
-    Math.round(
-      Number(dealershipActivePct) ||
-        Number(dealershipEventPct) ||
-        settingsActive * 100 ||
-        20,
-    ),
-  );
+  void dealershipActivePct;
   void dealershipBasePct;
+  void dealershipEventPct;
   void dealershipEventEnabled;
   const credit = systemSettings?.creditSettings;
   const launchResolved = resolveCustomAbutmentProductionPriceForAt(new Date(), {
@@ -408,7 +399,7 @@ export const PricingPolicyDialog = ({
     variant === 'devops'
       ? '유료의뢰비 정산 비율과 화면 안내를 확인하세요.'
       : variant === 'salesman'
-        ? '유치 시점 요율 고정과 배송비 수신자 부담을 확인하세요.'
+        ? `심플웨이 ${DEALERSHIP_SIMPLEWAY_COMMISSION_PCT}% · 커스텀어벗 ${DEALERSHIP_CUSTOM_ABUTMENT_COMMISSION_PCT}% · 기공 제외 · 90일 무주문이면 소개 코드 리셋.`
         : variant === 'requestor'
           ? '소개한 치과·기공소에 안내할 단가와 출고 기준입니다.'
           : isLab
@@ -436,19 +427,30 @@ export const PricingPolicyDialog = ({
             <div className='space-y-3'>
               <PolicySection title='영업 수수료'>
                 <p>
-                  심플웨이·커스텀어벗 매출액(기공 제외) 대비 수수료는{' '}
+                  심플웨이 매출액 대비 수수료는{' '}
                   <span className='font-semibold text-slate-900'>
-                    {activePct}%
+                    {DEALERSHIP_SIMPLEWAY_COMMISSION_PCT}%
                   </span>
                   입니다.
                   <br />
+                  커스텀어벗 매출액 대비 수수료는{' '}
+                  <span className='font-semibold text-slate-900'>
+                    {DEALERSHIP_CUSTOM_ABUTMENT_COMMISSION_PCT}%
+                  </span>
+                  입니다.
+                  <br />
+                  기공은 제외됩니다.
+                  <br />
                   배송비·월정액은 수수료 산정에서 빠집니다.
+                  <br />
+                  {REFERRAL_OWNERSHIP_RESET_POLICY_LINE}
+                  <br />
+                  {REFERRAL_OWNERSHIP_RESET_ANYONE_LINE}
                 </p>
                 <BulletList
                   items={[
                     '대상: 심플웨이(스토어) · 커스텀어벗(런칭 1만 / 정상 1.3만)',
                     '소개 관계: 의뢰자 가입 시 입력한 딜러 코드',
-                    REFERRAL_OWNERSHIP_RESET_POLICY_LINE,
                   ]}
                 />
               </PolicySection>

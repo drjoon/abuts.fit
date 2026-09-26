@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-27: 딜러 정산 규칙 — 심플웨이 10% · 커스텀어벗 20% · 기공 제외 · 소개 코드 리셋.
 // - 2026-09-24: 딜러 정산 — 월 매출 누진 슬라이스 footer.
 // - 2026-09-21: 메인 상단 VAT 안내 문구 제거(정산규칙 모달만 유지).
 // - 2026-09-20: 지급 합계 — 20%·15%·10% 세로 3줄(대시보드 지급 완료와 동일).
@@ -29,14 +30,20 @@ import {
   formatMoney,
   formatCommissionRatePct,
   requestorKindLabel,
-  summarizeDealershipRateBuckets,
-  DEALERSHIP_COMMISSION_RATE_PCT_OPTIONS,
 } from "@/features/commission/useCommissionDashboard";
+import { ProductCommissionLines } from "@/features/commission/ProductCommissionLines";
 import {
   SETTLEMENT_TAXABLE_INVOICE_LABEL,
   SETTLEMENT_VAT_POLICY,
   splitInclusiveVat,
 } from "@/shared/settlement/affiliateVat";
+import {
+  DEALERSHIP_CUSTOM_ABUTMENT_COMMISSION_PCT,
+  DEALERSHIP_SIMPLEWAY_COMMISSION_PCT,
+  REFERRAL_OWNERSHIP_INACTIVE_DAYS,
+  REFERRAL_OWNERSHIP_RESET_ANYONE_LINE,
+  REFERRAL_OWNERSHIP_RESET_POLICY_LINE,
+} from "@/shared/sales/dealershipPolicyCopy";
 import {
   SettlementPolicyDialog,
   SettlementPolicySection,
@@ -80,19 +87,19 @@ export function CommissionPaymentsPage({
     () => (Array.isArray(data?.organizations) ? data.organizations : []),
     [data?.organizations],
   );
-  const rateBuckets = useMemo(
-    () => summarizeDealershipRateBuckets(organizations),
-    [organizations],
-  );
-  const paidRateBuckets = useMemo(
-    () =>
-      DEALERSHIP_COMMISSION_RATE_PCT_OPTIONS.map((pct) => ({
-        pct,
-        commissionAmount: 0,
-        orgCount: 0,
-      })),
-    [],
-  );
+  const productCommission = useMemo(() => {
+    let simpleway = 0;
+    let customAbutment = 0;
+    for (const org of organizations) {
+      simpleway += Number(org.monthSimplewayCommissionAmount || 0);
+      customAbutment += Number(
+        org.monthCustomAbutmentCommissionAmount ??
+          org.monthCommissionAmount ??
+          0,
+      );
+    }
+    return { simpleway, customAbutment };
+  }, [organizations]);
 
   const title = isSalesman ? "딜러 정산" : "개발운영사 정산";
 
@@ -115,13 +122,11 @@ export function CommissionPaymentsPage({
             hintTooltip={`${payoutPolicy} 공급가 ${payableSplit.supply.toLocaleString("ko-KR")}원 · VAT ${payableSplit.vat.toLocaleString("ko-KR")}원`}
             footer={
               isSalesman ? (
-                <div className="space-y-0.5 text-[11px] tabular-nums text-muted-foreground sm:text-xs">
-                  {rateBuckets.map((b) => (
-                    <div key={b.pct}>
-                      {b.pct}% · {formatMoney(b.commissionAmount)}원
-                    </div>
-                  ))}
-                </div>
+                <ProductCommissionLines
+                  simpleway={productCommission.simpleway}
+                  customAbutment={productCommission.customAbutment}
+                  className="text-[11px] text-muted-foreground sm:text-xs"
+                />
               ) : undefined
             }
           />
@@ -132,19 +137,11 @@ export function CommissionPaymentsPage({
             onClick={() => setTab("ledger")}
             hint={isSalesman ? SETTLEMENT_TAXABLE_INVOICE_LABEL : undefined}
             footer={
-              isSalesman ? (
-                <div className="space-y-0.5 text-[11px] tabular-nums text-muted-foreground sm:text-xs">
-                  {paidRateBuckets.map((b) => (
-                    <div key={b.pct}>
-                      {b.pct}% · {formatMoney(b.commissionAmount)}원
-                    </div>
-                  ))}
-                </div>
-              ) : (
+              !isSalesman ? (
                 <div className="text-xs text-muted-foreground">
                   {SETTLEMENT_TAXABLE_INVOICE_LABEL}
                 </div>
-              )
+              ) : undefined
             }
           />
           <SettlementStatCard
@@ -178,7 +175,7 @@ export function CommissionPaymentsPage({
                 title={`${title} 규칙`}
                 description={
                   isSalesman
-                    ? `심플웨이·커스텀어벗 매출(기공 제외) ${ratePct || 20}% · 90일 무주문이면 소개 리셋 · 부가세 포함·세금계산서`
+                    ? `심플웨이 매출액 대비 ${DEALERSHIP_SIMPLEWAY_COMMISSION_PCT}% · 커스텀어벗 매출액 대비 ${DEALERSHIP_CUSTOM_ABUTMENT_COMMISSION_PCT}% · 기공 제외 · ${REFERRAL_OWNERSHIP_INACTIVE_DAYS}일 무주문이면 소개 코드 리셋 · 부가세 포함·세금계산서`
                     : "잔여 분배 부가세 포함 · 세금계산서"
                 }
               >
@@ -188,12 +185,19 @@ export function CommissionPaymentsPage({
                     <p>
                       {isSalesman ? (
                         <>
-                          영업 수수료는 심플웨이·커스텀어벗 매출액(기공 제외)의{" "}
-                          {ratePct || 20}%입니다.
+                          심플웨이 매출액 대비 수수료는{" "}
+                          {DEALERSHIP_SIMPLEWAY_COMMISSION_PCT}%입니다.
+                          <br />
+                          커스텀어벗 매출액 대비 수수료는{" "}
+                          {DEALERSHIP_CUSTOM_ABUTMENT_COMMISSION_PCT}%입니다.
+                          <br />
+                          기공은 제외됩니다.
                           <br />
                           배송비·월정액은 수수료 산정에서 빠집니다.
                           <br />
-                          90일 무주문이면 소개가 리셋됩니다.
+                          {REFERRAL_OWNERSHIP_RESET_POLICY_LINE}
+                          <br />
+                          {REFERRAL_OWNERSHIP_RESET_ANYONE_LINE}
                           <br />
                           정산은 사업자 단위이며 매월{" "}
                           {Number(data?.payoutDayOfMonth || 1)}일에 지급합니다.
@@ -291,7 +295,17 @@ export function CommissionPaymentsPage({
                               {Number(org.monthOrderCount || 0).toLocaleString()}건
                             </span>
                           </div>
-                          {!isSalesman || org.monthCommissionAmount > 0 ? (
+                          {isSalesman ? (
+                            <ProductCommissionLines
+                              simpleway={Number(org.monthSimplewayCommissionAmount || 0)}
+                              customAbutment={Number(
+                                org.monthCustomAbutmentCommissionAmount ??
+                                  org.monthCommissionAmount ??
+                                  0,
+                              )}
+                              className="pt-1 text-sm text-slate-900"
+                            />
+                          ) : (
                             <div className="flex justify-between gap-3">
                               <span className="text-muted-foreground">
                                 기간 수수료(
@@ -299,15 +313,6 @@ export function CommissionPaymentsPage({
                               </span>
                               <span className="font-semibold tabular-nums">
                                 {formatMoney(org.monthCommissionAmount)}원
-                              </span>
-                            </div>
-                          ) : (
-                            <div className="flex justify-between gap-3">
-                              <span className="text-muted-foreground">
-                                유치 요율
-                              </span>
-                              <span className="font-semibold tabular-nums">
-                                {formatCommissionRatePct(org.commissionRate)}
                               </span>
                             </div>
                           )}

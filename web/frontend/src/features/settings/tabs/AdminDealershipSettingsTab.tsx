@@ -4,6 +4,7 @@
 // - web/backend/controllers/admin/admin.settings.controller.js
 // - web/backend/services/creditRevenuePolicy.service.js
 // change-log:
+// - 2026-09-27: 심플웨이 딜러 10% · 커스텀어벗 딜러 20%. 기공 제외.
 // - 2026-09-25: 신규 유치 요율 20% 고정. 15%/10% 선택·인하 예약 제거.
 // - 2026-09-24: (철회) 월 매출 누진 구간.
 import { useEffect, useRef } from "react";
@@ -13,8 +14,11 @@ import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { cn } from "@/shared/ui/cn";
 
-/** 딜러십 영업 수수료는 20% 단일. */
-const FIXED_RATE = 0.2;
+/** 커스텀어벗 영업 수수료. 대시보드 스탬프와 잔여 분배 딜러%. */
+const ABUTMENT_SHARE_PCT = 20;
+const ABUTMENT_RATE = ABUTMENT_SHARE_PCT / 100;
+/** 심플웨이(스토어) 영업 수수료. 판매가 대비 딜러 분배%. */
+const STORE_SHARE_PCT = 10;
 
 type CreditSettingsPayload = {
   dealershipActiveCommissionRate?: number | null;
@@ -49,16 +53,16 @@ function needsLock(settings: CreditSettingsPayload): boolean {
   if (settings.dealershipRateChangeScheduledRate != null) return true;
   if (settings.storeDealerRateChangeScheduledAt) return true;
   if (settings.storeDealerRateChangeScheduledRate != null) return true;
-  if (Number.isFinite(active) && Math.abs(active - FIXED_RATE) > 0.0001) {
+  if (Number.isFinite(active) && Math.abs(active - ABUTMENT_RATE) > 0.0001) {
     return true;
   }
-  const dealerShares = [
-    settings.salesmanSharePercent,
-    settings.storeSalesmanSharePercent,
+  const dealerShares: Array<[number | null | undefined, number]> = [
+    [settings.salesmanSharePercent, ABUTMENT_SHARE_PCT],
+    [settings.storeSalesmanSharePercent, STORE_SHARE_PCT],
   ];
-  return dealerShares.some((value) => {
+  return dealerShares.some(([value, expected]) => {
     const n = Number(value);
-    return Number.isFinite(n) && Math.abs(n - 20) > 0.001;
+    return Number.isFinite(n) && Math.abs(n - expected) > 0.001;
   });
 }
 
@@ -67,15 +71,16 @@ function abutsAfterDealer(
   devops: number | null | undefined,
   manufacturerFallback: number,
   devopsFallback: number,
+  dealerPct: number,
 ): number {
   const mfr = Number.isFinite(Number(manufacturer))
     ? Number(manufacturer)
     : manufacturerFallback;
   const ops = Number.isFinite(Number(devops)) ? Number(devops) : devopsFallback;
-  return Math.max(0, Math.round((100 - mfr - 20 - ops) * 100) / 100);
+  return Math.max(0, Math.round((100 - mfr - dealerPct - ops) * 100) / 100);
 }
 
-/** 플랫폼 설정 · 딜러십 영업 수수료(20% 고정). */
+/** 플랫폼 설정 · 딜러십 영업 수수료(심플웨이 10% · 커스텀어벗 20%). */
 export function AdminDealershipSettingsTab({
   className,
 }: {
@@ -104,26 +109,28 @@ export function AdminDealershipSettingsTab({
         method: "PATCH",
         token,
         jsonBody: {
-          dealershipActiveCommissionRate: FIXED_RATE,
-          dealershipEventCommissionRate: FIXED_RATE,
+          dealershipActiveCommissionRate: ABUTMENT_RATE,
+          dealershipEventCommissionRate: ABUTMENT_RATE,
           dealershipEventCommissionEnabled: true,
           dealershipRateChangeScheduledAt: null,
           dealershipRateChangeScheduledRate: null,
           storeDealerRateChangeScheduledAt: null,
           storeDealerRateChangeScheduledRate: null,
-          salesmanSharePercent: 20,
-          storeSalesmanSharePercent: 20,
+          salesmanSharePercent: ABUTMENT_SHARE_PCT,
+          storeSalesmanSharePercent: STORE_SHARE_PCT,
           abutsSharePercent: abutsAfterDealer(
             settings.manufacturerSharePercent,
             settings.devopsSharePercent,
             50,
             5,
+            ABUTMENT_SHARE_PCT,
           ),
           storeAbutsSharePercent: abutsAfterDealer(
             settings.storeManufacturerSharePercent,
             settings.storeDevopsSharePercent,
             50,
             5,
+            STORE_SHARE_PCT,
           ),
         },
       });
@@ -144,33 +151,44 @@ export function AdminDealershipSettingsTab({
           딜러십 영업 수수료
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          심플웨이·커스텀어벗 매출액(기공 제외) 대비 수수료.
+          심플웨이 매출액 대비 {STORE_SHARE_PCT}%입니다.
+          <br />
+          커스텀어벗 매출액 대비 {ABUTMENT_SHARE_PCT}%입니다.
+          <br />
+          기공은 제외됩니다.
           <br />
           배송비·월정액은 빠집니다.
           <br />
-          요율은 20%입니다.
+          90일 무주문이면 소개 코드가 리셋됩니다.
           <br />
-          90일 무주문이면 소개가 리셋됩니다.
+          누구든 다시 영업할 수 있습니다.
         </p>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary-muted/60 bg-primary-soft/30 px-4 py-3.5">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/90 ring-1 ring-primary-muted/50">
-            <Percent className="h-4 w-4 text-primary-strong" />
-          </span>
-          <div className="min-w-0">
-            <div className="text-sm font-semibold text-slate-900">
-              신규 유치 요율
-            </div>
-            <p className="text-[12px] leading-snug text-muted-foreground">
-              지금 가입·재귀속하는 의뢰자
-            </p>
-          </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <RateLock label="심플웨이" pct={STORE_SHARE_PCT} />
+        <RateLock label="커스텀어벗" pct={ABUTMENT_SHARE_PCT} />
+      </div>
+    </div>
+  );
+}
+
+function RateLock({ label, pct }: { label: string; pct: number }) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary-muted/60 bg-primary-soft/30 px-4 py-3.5">
+      <div className="flex min-w-0 items-center gap-3">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/90 ring-1 ring-primary-muted/50">
+          <Percent className="h-4 w-4 text-primary-strong" />
+        </span>
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-slate-900">{label}</div>
+          <p className="text-[12px] leading-snug text-muted-foreground">
+            매출액 대비
+          </p>
         </div>
-        <div className="flex h-9 min-w-[3.25rem] items-center justify-center rounded-lg bg-white px-2.5 text-sm font-semibold tabular-nums text-primary-strong shadow-sm ring-1 ring-primary-muted/50">
-          20%
-        </div>
+      </div>
+      <div className="flex h-9 min-w-[3.25rem] items-center justify-center rounded-lg bg-white px-2.5 text-sm font-semibold tabular-nums text-primary-strong shadow-sm ring-1 ring-primary-muted/50">
+        {pct}%
       </div>
     </div>
   );

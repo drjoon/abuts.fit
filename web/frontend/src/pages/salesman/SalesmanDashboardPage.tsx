@@ -1,11 +1,11 @@
 /**
- * 딜러(salesman) 대시보드 — 수수료·소개 코드·유치 시점 요율.
+ * 딜러(salesman) 대시보드 — 수수료·소개 코드.
  *
- * 딜러십: 신규 유치 요율 20%. 소개 의뢰자는 치과·기공소·전체로 집계.
- * 90일 무주문이면 소개 리셋.
+ * 딜러십 영업 수수료: 심플웨이 매출액 대비 10% · 커스텀어벗 매출액 대비 20% · 기공 제외.
+ * 90일 무주문이면 소개 코드 리셋. 누구든 다시 영업 가능.
  */
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
 import { Button } from "@/components/ui/button";
@@ -22,7 +22,6 @@ import {
   CalendarClock,
   Layers,
   Percent,
-  Truck,
   Building2,
   Factory,
   RefreshCw,
@@ -30,6 +29,9 @@ import {
 import { SalesmanLedgerModal } from "@/shared/components/SalesmanLedgerModal";
 import { PricingPolicyDialog } from "@/shared/ui/PricingPolicyDialog";
 import {
+  DEALERSHIP_CUSTOM_ABUTMENT_COMMISSION_LINE,
+  DEALERSHIP_SIMPLEWAY_COMMISSION_LINE,
+  REFERRAL_OWNERSHIP_RESET_ANYONE_SHORT,
   REFERRAL_OWNERSHIP_RESET_POLICY_SHORT,
 } from "@/shared/sales/dealershipPolicyCopy";
 import {
@@ -40,7 +42,6 @@ import {
 } from "@/components/ui/tooltip";
 import {
   useCommissionDashboard,
-  formatMoney,
   summarizeRequestorKindStats,
 } from "@/features/commission/useCommissionDashboard";
 import {
@@ -48,6 +49,7 @@ import {
   useNoOrderAlerts,
 } from "@/shared/noOrderAlerts";
 import { SettlementStatCard } from "@/shared/settlement/settlementUi";
+import { ProductCommissionLines } from "@/features/commission/ProductCommissionLines";
 import { cn } from "@/shared/ui/cn";
 import { formatKstYmdToKo, toKstYmd } from "@/shared/date/kst";
 
@@ -169,10 +171,7 @@ export const SalesmanDashboardPage = () => {
                 </Button>
               </div>
             </div>
-            <DealershipTermsCard
-              activePct={activePct || 20}
-              rateChangeMessage={rateChangeMessage}
-            />
+            <DealershipTermsCard />
           </div>
         }
         statsGridClassName="grid grid-cols-1 gap-3 sm:grid-cols-3"
@@ -230,6 +229,13 @@ export const SalesmanDashboardPage = () => {
               value={payableGross}
               tone="primary"
               onClick={() => openLedger("unpaid")}
+              footer={
+                <ProductCommissionLines
+                  simpleway={kindStats.total.simplewayCommissionAmount}
+                  customAbutment={kindStats.total.customAbutmentCommissionAmount}
+                  className="text-[11px] text-muted-foreground sm:text-xs"
+                />
+              }
             />
 
             <SettlementStatCard
@@ -272,22 +278,37 @@ export const SalesmanDashboardPage = () => {
                 icon={Building2}
                 label="치과"
                 primary={`${practiceTileCount.toLocaleString()}개소`}
-                secondary={`수수료 ${formatMoney(kindStats.practice.commissionAmount)}원`}
-                tip="내가 소개한 치과"
+                secondary={
+                  <ProductCommissionLines
+                    simpleway={kindStats.practice.simplewayCommissionAmount}
+                    customAbutment={kindStats.practice.customAbutmentCommissionAmount}
+                  />
+                }
+                tip="내가 소개한 치과의 심플웨이·커스텀어벗 수수료"
               />
               <SummaryTile
                 icon={Factory}
                 label="기공소"
                 primary={`${labTileCount.toLocaleString()}개소`}
-                secondary={`수수료 ${formatMoney(kindStats.lab.commissionAmount)}원`}
-                tip="내가 소개한 기공소"
+                secondary={
+                  <ProductCommissionLines
+                    simpleway={kindStats.lab.simplewayCommissionAmount}
+                    customAbutment={kindStats.lab.customAbutmentCommissionAmount}
+                  />
+                }
+                tip="내가 소개한 기공소의 심플웨이·커스텀어벗 수수료"
               />
               <SummaryTile
                 icon={Layers}
                 label="전체"
                 primary={`${totalTileCount.toLocaleString()}개소`}
-                secondary={`수수료 ${formatMoney(kindStats.total.commissionAmount)}원`}
-                tip="소개한 치과·기공소 합계"
+                secondary={
+                  <ProductCommissionLines
+                    simpleway={kindStats.total.simplewayCommissionAmount}
+                    customAbutment={kindStats.total.customAbutmentCommissionAmount}
+                  />
+                }
+                tip="소개한 치과·기공소의 심플웨이·커스텀어벗 수수료 합계"
               />
             </div>
           </div>
@@ -339,13 +360,7 @@ function formatDealershipRateChangeMessage({
   return `${dateLabel} 0시부터 신규 유치 요율이 ${pct}%로 변경됩니다. 이미 유치한 의뢰자는 기존 요율이 유지됩니다.`;
 }
 
-function DealershipTermsCard({
-  activePct,
-  rateChangeMessage,
-}: {
-  activePct: number;
-  rateChangeMessage?: string | null;
-}) {
+function DealershipTermsCard() {
   return (
     <div className="rounded-2xl border border-slate-200/90 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 px-4 py-4 text-white shadow-sm sm:px-5">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:gap-4">
@@ -354,58 +369,49 @@ function DealershipTermsCard({
             딜러십
           </div>
           <h2 className="mt-1 text-base font-semibold tracking-tight sm:text-lg">
-            파트너 조건
+            영업 수수료
           </h2>
         </div>
-        <div className="grid min-w-0 flex-1 gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.45fr)]">
-          <div className="flex items-start gap-2.5 rounded-xl bg-white/5 px-3 py-2.5">
-            <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white/10">
-              <Percent className="h-3.5 w-3.5" />
-            </span>
-            <div className="min-w-0">
-              <div className="text-sm font-semibold">
-                신규 유치 {activePct}%
-              </div>
-              <p
-                className={`mt-0.5 truncate text-xs leading-snug ${
-                  rateChangeMessage
-                    ? "text-amber-200/95"
-                    : "text-emerald-200/90"
-                }`}
-                title={rateChangeMessage || "유치 당시 요율 고정"}
-              >
-                {rateChangeMessage
-                  ? rateChangeMessage
-                  : "유치 당시 요율 고정"}
-              </p>
-            </div>
-          </div>
-          <div className="flex items-start gap-2.5 rounded-xl bg-white/5 px-3 py-2.5">
-            <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white/10">
-              <Truck className="h-3.5 w-3.5" />
-            </span>
-            <div className="min-w-0">
-              <div className="text-sm font-semibold">배송비 수신자 부담</div>
-              <p className="mt-0.5 truncate text-xs leading-snug text-white/70">
-                치과 · 기공소 부담
-              </p>
-            </div>
-          </div>
-          <div className="flex items-start gap-2.5 rounded-xl bg-white/5 px-3 py-2.5">
-            <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white/10">
-              <RefreshCw className="h-3.5 w-3.5" />
-            </span>
-            <div className="min-w-0">
-              <div className="text-sm font-semibold">소개 리셋</div>
-              <p
-                className="mt-0.5 truncate text-xs leading-snug text-white/70"
-                title={REFERRAL_OWNERSHIP_RESET_POLICY_SHORT}
-              >
+        <div className="grid min-w-0 flex-1 gap-3 sm:grid-cols-3">
+          <TermsItem title="심플웨이" body={DEALERSHIP_SIMPLEWAY_COMMISSION_LINE} />
+          <TermsItem
+            title="커스텀어벗"
+            body={DEALERSHIP_CUSTOM_ABUTMENT_COMMISSION_LINE}
+          />
+          <TermsItem
+            icon={RefreshCw}
+            title="소개 리셋"
+            body={
+              <>
                 {REFERRAL_OWNERSHIP_RESET_POLICY_SHORT}
-              </p>
-            </div>
-          </div>
+                <br />
+                {REFERRAL_OWNERSHIP_RESET_ANYONE_SHORT}
+              </>
+            }
+          />
         </div>
+      </div>
+    </div>
+  );
+}
+
+function TermsItem({
+  icon: Icon = Percent,
+  title,
+  body,
+}: {
+  icon?: typeof Percent;
+  title: string;
+  body: ReactNode;
+}) {
+  return (
+    <div className="flex items-start gap-2.5 rounded-xl bg-white/5 px-3 py-2.5">
+      <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white/10">
+        <Icon className="h-3.5 w-3.5" />
+      </span>
+      <div className="min-w-0">
+        <div className="text-sm font-semibold">{title}</div>
+        <p className="mt-0.5 text-xs leading-snug text-white/70">{body}</p>
       </div>
     </div>
   );
@@ -421,7 +427,7 @@ function SummaryTile({
   icon: typeof Building2;
   label: string;
   primary: string;
-  secondary?: string;
+  secondary?: ReactNode;
   tip?: string;
 }) {
   return (

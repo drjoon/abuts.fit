@@ -22,6 +22,11 @@ export type CommissionOrgRow = {
   monthRevenueAmount: number;
   monthOrderCount: number;
   monthCommissionAmount: number;
+  /** 심플웨이 상품 매출(배송비 제외) */
+  monthSimplewayRevenueAmount?: number;
+  monthSimplewayCommissionAmount?: number;
+  /** 커스텀어벗 매출에 대한 수수료. 없으면 monthCommissionAmount. */
+  monthCustomAbutmentCommissionAmount?: number;
   referralLevel?: "direct" | "unaffiliated";
   requestorKind?: "practice" | "lab" | null;
   acquiredAt?: string | null;
@@ -56,6 +61,8 @@ export type CommissionDashboardData = {
     unaffiliatedCommissionAmount?: number;
     totalCommissionAmount?: number;
     payableGrossCommissionAmount?: number;
+    simplewayCommissionAmount?: number;
+    customAbutmentCommissionAmount?: number;
     paidNetCommissionAmount?: number;
     freeNetRequestAmount?: number;
     freeNetShippingAmount?: number;
@@ -124,7 +131,29 @@ export function dealershipRateBucketTip(
 export type RequestorKindStat = {
   count: number;
   commissionAmount: number;
+  simplewayCommissionAmount: number;
+  customAbutmentCommissionAmount: number;
 };
+
+function emptyKindStat(): RequestorKindStat {
+  return {
+    count: 0,
+    commissionAmount: 0,
+    simplewayCommissionAmount: 0,
+    customAbutmentCommissionAmount: 0,
+  };
+}
+
+function addKindStat(stat: RequestorKindStat, org: CommissionOrgRow) {
+  const simpleway = Number(org.monthSimplewayCommissionAmount || 0);
+  const custom = Number(
+    org.monthCustomAbutmentCommissionAmount ?? org.monthCommissionAmount ?? 0,
+  );
+  stat.count += 1;
+  stat.simplewayCommissionAmount += simpleway;
+  stat.customAbutmentCommissionAmount += custom;
+  stat.commissionAmount += simpleway + custom;
+}
 
 /** 소개 의뢰자를 치과·기공소·전체로 집계. */
 export function summarizeRequestorKindStats(
@@ -134,30 +163,29 @@ export function summarizeRequestorKindStats(
   lab: RequestorKindStat;
   total: RequestorKindStat;
 } {
-  const practice: RequestorKindStat = { count: 0, commissionAmount: 0 };
-  const lab: RequestorKindStat = { count: 0, commissionAmount: 0 };
-  let otherCount = 0;
-  let otherCommission = 0;
+  const practice = emptyKindStat();
+  const lab = emptyKindStat();
+  const other = emptyKindStat();
   for (const org of organizations || []) {
-    const amount = Number(org.monthCommissionAmount || 0);
-    if (org.requestorKind === "lab") {
-      lab.count += 1;
-      lab.commissionAmount += amount;
-    } else if (org.requestorKind === "practice") {
-      practice.count += 1;
-      practice.commissionAmount += amount;
-    } else {
-      otherCount += 1;
-      otherCommission += amount;
-    }
+    if (org.requestorKind === "lab") addKindStat(lab, org);
+    else if (org.requestorKind === "practice") addKindStat(practice, org);
+    else addKindStat(other, org);
   }
   return {
     practice,
     lab,
     total: {
-      count: practice.count + lab.count + otherCount,
+      count: practice.count + lab.count + other.count,
       commissionAmount:
-        practice.commissionAmount + lab.commissionAmount + otherCommission,
+        practice.commissionAmount + lab.commissionAmount + other.commissionAmount,
+      simplewayCommissionAmount:
+        practice.simplewayCommissionAmount +
+        lab.simplewayCommissionAmount +
+        other.simplewayCommissionAmount,
+      customAbutmentCommissionAmount:
+        practice.customAbutmentCommissionAmount +
+        lab.customAbutmentCommissionAmount +
+        other.customAbutmentCommissionAmount,
     },
   };
 }
