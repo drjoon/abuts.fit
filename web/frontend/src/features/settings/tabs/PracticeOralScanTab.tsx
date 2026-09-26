@@ -124,6 +124,7 @@ export function PracticeOralScanTab() {
   };
 
   return (
+    <div className="space-y-3">
     <div className="grid gap-4 md:grid-cols-2">
       <Card className="border-slate-200/80 shadow-none">
         <CardHeader className="space-y-1">
@@ -165,34 +166,23 @@ export function PracticeOralScanTab() {
             치과에서 기공물 데이터를 미리볼 수 있습니다.
           </p>
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent>
           <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3.5">
             <Checkbox
               className="mt-0.5"
               checked={requireUpload}
               onCheckedChange={(v) => setRequireUpload(v === true)}
             />
-            <span className="space-y-0.5">
-              <span className="block text-sm font-medium text-slate-900">
-                보철 작업물 업로드를 요청합니다
-              </span>
-              <span className="block text-xs leading-relaxed text-slate-500">
-                협력 기공소 의뢰만 이 설정을 따릅니다.
-                <br />
-                끄면 보철 파일 없이도 작업이 완료됩니다.
-                <br />
-                어벗츠기공본부로 보낸 의뢰는 내부 처리·하청 모두 완성 보철을
-                올립니다.
-                <br />
-                이미 보낸 협력 의뢰에는 적용되지 않습니다.
-              </span>
+            <span className="block text-sm font-medium text-slate-900">
+              보철 작업물 업로드를 요청합니다
             </span>
           </label>
-          <p className="text-xs text-slate-400">
-            {saving ? "저장 중…" : savedTick > 0 ? "저장되었습니다" : ""}
-          </p>
         </CardContent>
       </Card>
+    </div>
+      <p className="min-h-4 text-xs text-slate-400">
+        {saving ? "저장 중…" : savedTick > 0 ? "저장되었습니다" : "\u00a0"}
+      </p>
     </div>
   );
 }
