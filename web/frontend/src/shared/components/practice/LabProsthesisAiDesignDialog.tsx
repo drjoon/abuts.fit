@@ -14,6 +14,8 @@
 // - 2026-09-26: 삽입축이 잡히고 화면에 보이면 언더컷도 같이 칠한다.
 // - 2026-09-26: 사이드바 제거. 표시는 위, 수정은 왼쪽 아래 패널. 작업영역 아래 생성 배지 제거.
 // - 2026-09-26: 삽입축을 잡으면 치아·잇몸 색이 갈라지는 곳을 마진으로 다시 잡는다.
+// - 2026-09-26: 표시 패널은 맨 위. 닫으면 글자 너비. 단계 접기는 패널 위.
+// - 2026-09-26: 언더컷부터 정중앙은 작업영역 위 중앙. 색 범례는 그 배지 바로 아래.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDownToLine,
@@ -847,8 +849,8 @@ function LabProsthesisAiDesignDialog({
               onDesignGesture={onDesignGesture}
               className="absolute inset-0"
             />
-            <div className="absolute left-3 top-3 z-10 flex max-h-[calc(100%-5.5rem)] max-w-[calc(100%-12rem)] flex-col items-start gap-1.5">
-              <div className="flex flex-wrap items-center gap-1.5">
+            <div className="pointer-events-none absolute left-1/2 top-3 z-10 flex w-max max-w-[calc(100%-2rem)] -translate-x-1/2 flex-col items-center gap-1.5">
+              <div className="pointer-events-auto flex flex-wrap items-center justify-center gap-1.5">
               <Button
                 type="button"
                 size="sm"
@@ -988,7 +990,7 @@ function LabProsthesisAiDesignDialog({
               </Tooltip>
               </div>
               {paintUndercut || contactMap || insertionAxisVisible ? (
-                <div className="pointer-events-none flex items-center gap-2 rounded-md bg-background/95 px-2 py-1 text-[10px] text-muted-foreground shadow-sm">
+                <div className="pointer-events-none flex w-max items-center gap-2 rounded-md bg-background/95 px-2 py-1 text-[10px] text-muted-foreground shadow-sm">
                   {paintUndercut ? (
                     <span className="flex items-center gap-1">
                       <span className="h-2 w-2 rounded-full bg-red-700" />
@@ -1019,8 +1021,15 @@ function LabProsthesisAiDesignDialog({
                   ) : null}
                 </div>
               ) : null}
-              <div className="flex w-[min(20rem,100%)] min-h-0 max-h-[min(18rem,34vh)] flex-col overflow-hidden rounded-lg border bg-background/95 text-sm shadow-sm">
-                <div className="flex shrink-0 items-center gap-2 px-3.5 py-2.5">
+            </div>
+            <div className="absolute left-3 top-3 z-10 max-h-[calc(100%-5.5rem)]">
+              <div
+                className={cn(
+                  "flex min-h-0 max-h-[min(18rem,34vh)] flex-col overflow-hidden rounded-lg border bg-background/95 text-sm shadow-sm",
+                  scanListOpen ? "w-80" : "w-max",
+                )}
+              >
+                <div className="flex shrink-0 items-center gap-2 px-3 py-2">
                   <Checkbox
                     checked={allShown}
                     disabled={scans.length === 0}
@@ -1029,7 +1038,10 @@ function LabProsthesisAiDesignDialog({
                   />
                   <button
                     type="button"
-                    className="flex min-w-0 flex-1 items-center justify-between gap-3 text-left"
+                    className={cn(
+                      "flex items-center gap-2 text-left",
+                      scanListOpen && "min-w-0 flex-1 justify-between",
+                    )}
                     onClick={() => setScanListOpen((open) => !open)}
                     aria-expanded={scanListOpen}
                   >
@@ -1148,10 +1160,26 @@ function LabProsthesisAiDesignDialog({
             </div>
             <div className="absolute bottom-3 left-3 z-20 flex max-h-[min(36rem,62vh)] w-[min(20rem,36vw)] flex-col">
               <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border bg-background/95 text-sm shadow-sm">
+                <button
+                  type="button"
+                  className={cn(
+                    "flex w-full shrink-0 items-center justify-between gap-3 px-3.5 py-2.5 text-left",
+                    modifyPanelOpen && "border-b",
+                  )}
+                  onClick={() => setModifyPanelOpen((open) => !open)}
+                  aria-expanded={modifyPanelOpen}
+                >
+                  <span className="font-semibold text-foreground">단계</span>
+                  <ChevronDown
+                    className={cn(
+                      "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
+                      modifyPanelOpen ? "rotate-180" : "",
+                    )}
+                  />
+                </button>
                 {modifyPanelOpen ? (
-                  <div className="min-h-0 flex-1 space-y-3 overflow-y-auto border-b px-3.5 py-2.5">
+                  <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3.5 py-2.5">
                     <section className="space-y-2">
-                      <p className="text-xs font-semibold text-foreground">단계</p>
                       <div className="grid grid-cols-3 gap-1">
                         {DESIGN_STAGES.map((item) => (
                           <Button
@@ -1343,20 +1371,6 @@ function LabProsthesisAiDesignDialog({
                     ) : null}
                   </div>
                 ) : null}
-                <button
-                  type="button"
-                  className="flex w-full shrink-0 items-center justify-between gap-3 px-3.5 py-2.5 text-left"
-                  onClick={() => setModifyPanelOpen((open) => !open)}
-                  aria-expanded={modifyPanelOpen}
-                >
-                  <span className="font-semibold text-foreground">수정</span>
-                  <ChevronDown
-                    className={cn(
-                      "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
-                      modifyPanelOpen ? "" : "rotate-180",
-                    )}
-                  />
-                </button>
               </div>
             </div>
             <DesignViewerChrome
