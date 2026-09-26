@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-09-26: 임시 업로드 presign·파트 URL·multer S3 업로드를 파일 단위로 동시에 처리.
+//   다운로드 권한 조회(File/Transfer/Request/Chat)도 겹쳐서 시작하고 판정은 기존 순서.
 // - 2026-09-24: PracticeTransfer S3 ACL — 수행 기공소(assigneeLabAnchorId)도 허용(협력·하청).
 // - 2026-08-16: PracticeTransfer ACL — designFiles/resultFiles s3Key도 허용(구강스캔 lock은 files만).
 // - 2026-08-15: 기공소 CA — 어벗츠 디자인 전 PracticeTransfer 구강스캔 S3 다운로드 차단.
@@ -32,6 +34,24 @@ import { resolveDesignAccessForUser } from "../../utils/designAccess.js";
 import {
   shouldLockLabOralScanDownload,
 } from "../../services/practiceTransferProduction.service.js";
+
+/** 순서 유지. 동시 개수만 제한한다. */
+const mapWithConcurrency = async (items, limit, fn) => {
+  const list = Array.isArray(items) ? items : [];
+  const results = new Array(list.length);
+  const width = Math.max(1, Math.min(limit, list.length || 1));
+  let cursor = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(width, list.length) }, async () => {
+      while (cursor < list.length) {
+        const index = cursor;
+        cursor += 1;
+        results[index] = await fn(list[index], index);
+      }
+    }),
+  );
+  return results;
+};
 
 const getFileType = (filename) => {
   const extension = filename.split(".").pop().toLowerCase();
@@ -71,9 +91,8 @@ export const uploadTempFiles = asyncHandler(async (req, res) => {
   }
 
   const uploadedBy = req.user._id;
-  const results = [];
 
-  for (const [index, file] of files.entries()) {
+  const results = await mapWithConcurrency(files, 6, async (file, index) => {
     const { mimetype, size, buffer } = file;
     const bodyNames = req.body?.originalNames;
     let rawName;
@@ -107,41 +126,8 @@ export const uploadTempFiles = asyncHandler(async (req, res) => {
 
       if (!existsInS3) {
         await File.findByIdAndDelete(existing._id);
-        const ext = originalname.includes(".")
-          ? `.${originalname.split(".").pop().toLowerCase()}`
-          : "";
-        const key = `uploads/users/${uploadedBy.toString()}/${Date.now()}-${Math.random()
-          .toString(36)
-          .slice(2, 10)}${ext}`;
-
-        const uploaded = await s3Utils.uploadFileToS3(buffer, key, mimetype);
-
-        if (!uploaded || !uploaded.location) {
-          throw new ApiError(500, "S3 업로드에 실패했습니다.");
-        }
-
-        const fileType =
-          s3Utils.getFileType(originalname) || getFileType(originalname);
-
-        const created = await File.create({
-          originalName: originalname,
-          encoding: file.encoding,
-          mimetype,
-          size,
-          bucket: process.env.AWS_S3_BUCKET_NAME || "abuts-fit",
-          key: uploaded.key || key,
-          location: uploaded.location,
-          contentType: mimetype,
-          uploadedBy,
-          fileType,
-          isPublic: false,
-        });
-
-        results.push(created.toObject());
-        continue;
       } else {
         // 중복 파일이 이미 존재하면 새로 업로드하지 않고 기존 문서를 그대로 반환한다.
-        // 이렇게 하면 프론트엔드 입장에서는 "업로드 성공"으로 동일하게 처리할 수 있다.
         console.log(
           "[uploadTempFiles] Duplicate file detected, returning existing",
           {
@@ -151,15 +137,14 @@ export const uploadTempFiles = asyncHandler(async (req, res) => {
             existingFileId: existing._id,
           },
         );
-        results.push(existing);
-        continue;
+        return existing;
       }
     }
 
     const ext = originalname.includes(".")
       ? `.${originalname.split(".").pop().toLowerCase()}`
       : "";
-    const key = `uploads/users/${uploadedBy.toString()}/${Date.now()}-${Math.random()
+    const key = `uploads/users/${uploadedBy.toString()}/${Date.now()}-${index}-${Math.random()
       .toString(36)
       .slice(2, 10)}${ext}`;
 
@@ -186,8 +171,8 @@ export const uploadTempFiles = asyncHandler(async (req, res) => {
       isPublic: false,
     });
 
-    results.push(created.toObject());
-  }
+    return created.toObject();
+  });
 
   return res
     .status(201)
@@ -205,63 +190,67 @@ export const createTempUploadPresign = asyncHandler(async (req, res) => {
     throw new ApiError(400, "하나 이상의 파일 메타 정보가 필요합니다.");
   }
 
-  const results = [];
-  for (const item of bodyFiles) {
-    const originalName = normalizeOriginalName(item?.originalName || "");
-    const mimetype = String(item?.mimetype || "").trim();
-    const size = Number(item?.size || 0);
-    const contentEncoding = String(item?.contentEncoding || "")
-      .trim()
-      .toLowerCase();
-    const encoding = contentEncoding === "gzip" ? "gzip" : "";
-    if (!originalName || !mimetype || !Number.isFinite(size) || size <= 0) {
-      throw new ApiError(400, "파일 메타 정보가 올바르지 않습니다.");
-    }
+  const results = await Promise.all(
+    bodyFiles.map(async (item, index) => {
+      const originalName = normalizeOriginalName(item?.originalName || "");
+      const mimetype = String(item?.mimetype || "").trim();
+      const size = Number(item?.size || 0);
+      const contentEncoding = String(item?.contentEncoding || "")
+        .trim()
+        .toLowerCase();
+      const encoding = contentEncoding === "gzip" ? "gzip" : "";
+      if (!originalName || !mimetype || !Number.isFinite(size) || size <= 0) {
+        throw new ApiError(400, "파일 메타 정보가 올바르지 않습니다.");
+      }
 
-    const ext = getExtFromName(originalName);
-    const key = `uploads/users/${uploadedBy.toString()}/${Date.now()}-${Math.random()
-      .toString(36)
-      .slice(2, 10)}${ext}`;
+      const ext = getExtFromName(originalName);
+      const key = `uploads/users/${uploadedBy.toString()}/${Date.now()}-${index}-${Math.random()
+        .toString(36)
+        .slice(2, 10)}${ext}`;
 
-    const bucket = process.env.AWS_S3_BUCKET_NAME || "abuts-fit";
-    const region = process.env.AWS_REGION || "ap-northeast-2";
-    const location = `https://${bucket}.s3.${region}.amazonaws.com/${key}`;
+      const bucket = process.env.AWS_S3_BUCKET_NAME || "abuts-fit";
+      const region = process.env.AWS_REGION || "ap-northeast-2";
+      const location = `https://${bucket}.s3.${region}.amazonaws.com/${key}`;
 
-    const fileType =
-      s3Utils.getFileType(originalName) || getFileType(originalName);
+      const fileType =
+        s3Utils.getFileType(originalName) || getFileType(originalName);
 
-    const created = await File.create({
-      originalName,
-      encoding: encoding || "",
-      mimetype,
-      size,
-      bucket,
-      key,
-      location,
-      contentType: mimetype,
-      uploadedBy,
-      fileType,
-      isPublic: false,
-      ...(encoding
-        ? {
-            metadata: {
-              contentEncoding: encoding,
-              uncompressedSize: String(item?.uncompressedSize || ""),
-            },
-          }
-        : {}),
-    });
+      const fileDoc = {
+        originalName,
+        encoding: encoding || "",
+        mimetype,
+        size,
+        bucket,
+        key,
+        location,
+        contentType: mimetype,
+        uploadedBy,
+        fileType,
+        isPublic: false,
+        ...(encoding
+          ? {
+              metadata: {
+                contentEncoding: encoding,
+                uncompressedSize: String(item?.uncompressedSize || ""),
+              },
+            }
+          : {}),
+      };
 
-    const uploadUrl = await s3Utils.getUploadSignedUrl(key, mimetype, 900, {
-      contentEncoding: encoding || undefined,
-    });
+      const [created, uploadUrl] = await Promise.all([
+        File.create(fileDoc),
+        s3Utils.getUploadSignedUrl(key, mimetype, 900, {
+          contentEncoding: encoding || undefined,
+        }),
+      ]);
 
-    results.push({
-      uploadUrl,
-      file: created.toObject(),
-      contentEncoding: encoding || undefined,
-    });
-  }
+      return {
+        uploadUrl,
+        file: created.toObject(),
+        contentEncoding: encoding || undefined,
+      };
+    }),
+  );
 
   return res
     .status(201)
@@ -329,16 +318,18 @@ export const createTempMultipartUpload = asyncHandler(async (req, res) => {
     contentEncoding: encoding || undefined,
   });
 
-  const partUrls = [];
-  for (let partNumber = 1; partNumber <= partCount; partNumber += 1) {
-    const uploadUrl = await s3Utils.getUploadPartSignedUrl(
-      key,
-      uploadId,
-      partNumber,
-      3600,
-    );
-    partUrls.push({ partNumber, uploadUrl });
-  }
+  const partUrls = await Promise.all(
+    Array.from({ length: partCount }, async (_, index) => {
+      const partNumber = index + 1;
+      const uploadUrl = await s3Utils.getUploadPartSignedUrl(
+        key,
+        uploadId,
+        partNumber,
+        3600,
+      );
+      return { partNumber, uploadUrl };
+    }),
+  );
 
   return res.status(201).json(
     new ApiResponse(
@@ -766,30 +757,17 @@ const canUserAccessS3Key = async (req, key) => {
     return true;
   }
 
-  // Check if file exists in DB and user is uploader
-  const file = await File.findOne({ key }).populate("uploadedBy", "_id");
-  if (file && file.uploadedBy?._id.toString() === req.user._id.toString()) {
-    return true;
-  }
-
-  // Check if user is organization owner and file belongs to their organization
-  if (req.user?.businessAnchorId) {
-    const BusinessAnchor = (
-      await import("../../models/businessAnchor.model.js")
-    ).default;
-    const org = await BusinessAnchor.findById(req.user.businessAnchorId).select(
-      "businessLicense",
-    );
-
-    if (org?.businessLicense?.s3Key === key) {
-      return true;
-    }
-  }
-
-  // PracticeTransfer 파일 접근 허용
-  // - practice 전송자(작성자)
-  // - 원청(targetLab) · 수행 기공소(assigneeLab, 협력·하청) — CA면 어벗츠 디자인 도착 후만 구강스캔(files만)
-  const practiceTransfer = await PracticeTransfer.findOne({
+  // 독립 조회는 바로 겹쳐서 시작한다. 판정 순서는 그대로다.
+  const fileP = File.findOne({ key }).populate("uploadedBy", "_id").exec();
+  const orgP = req.user?.businessAnchorId
+    ? import("../../models/businessAnchor.model.js").then((mod) =>
+        mod.default
+          .findById(req.user.businessAnchorId)
+          .select("businessLicense")
+          .exec(),
+      )
+    : Promise.resolve(null);
+  const practiceTransferP = PracticeTransfer.findOne({
     $or: [
       { "files.file.s3Key": key },
       { "production.designFiles.file.s3Key": key },
@@ -806,7 +784,47 @@ const canUserAccessS3Key = async (req, key) => {
       production: 1,
       files: 1,
     })
-    .lean();
+    .lean()
+    .exec();
+  const requestP = Request.findOne({
+    $or: [
+      { "caseInfos.file.s3Key": key },
+      { "caseInfos.files.s3Key": key },
+    ],
+  })
+    .select({
+      businessAnchorId: 1,
+      requestor: 1,
+      "caseInfos.productMode": 1,
+    })
+    .lean()
+    .exec();
+  const chatP = Chat.findOne({
+    isDeleted: false,
+    "attachments.s3Key": key,
+  })
+    .select({ roomId: 1 })
+    .lean()
+    .exec();
+
+  for (const pending of [fileP, orgP, practiceTransferP, requestP, chatP]) {
+    void Promise.resolve(pending).catch(() => null);
+  }
+
+  const file = await fileP;
+  if (file && file.uploadedBy?._id.toString() === req.user._id.toString()) {
+    return true;
+  }
+
+  const org = await orgP;
+  if (org?.businessLicense?.s3Key === key) {
+    return true;
+  }
+
+  // PracticeTransfer 파일 접근 허용
+  // - practice 전송자(작성자)
+  // - 원청(targetLab) · 수행 기공소(assigneeLab, 협력·하청) — CA면 어벗츠 디자인 도착 후만 구강스캔(files만)
+  const practiceTransfer = await practiceTransferP;
 
   if (practiceTransfer) {
     const currentUserId = String(req.user?._id || "").trim();
@@ -846,18 +864,7 @@ const canUserAccessS3Key = async (req, key) => {
 
   // Request caseInfos 파일 (원본 STL / 추가 첨부)
   // - 의뢰 소유 사업자 / 제조사·관리자 / 디자인 파트너
-  const requestWithFile = await Request.findOne({
-    $or: [
-      { "caseInfos.file.s3Key": key },
-      { "caseInfos.files.s3Key": key },
-    ],
-  })
-    .select({
-      businessAnchorId: 1,
-      requestor: 1,
-      "caseInfos.productMode": 1,
-    })
-    .lean();
+  const requestWithFile = await requestP;
 
   if (requestWithFile) {
     const role = String(req.user?.role || "").trim();
@@ -888,12 +895,7 @@ const canUserAccessS3Key = async (req, key) => {
 
   // 채팅 첨부파일 접근 허용
   // - 첨부가 포함된 채팅방 참여자라면 다운로드 허용
-  const chatMsg = await Chat.findOne({
-    isDeleted: false,
-    "attachments.s3Key": key,
-  })
-    .select({ roomId: 1 })
-    .lean();
+  const chatMsg = await chatP;
 
   if (chatMsg?.roomId) {
     const room = await ChatRoom.findById(chatMsg.roomId)

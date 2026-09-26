@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/hooks/useUploadWithProgressToast.ts
 // - web/backend/controllers/files/file.controller.js
 // - web/backend/utils/s3.utils.js
+// - 2026-09-26: 작은 파일은 presign 1회 후 S3 PUT을 동시에. 대용량은 multipart와 겹쳐서 진행.
 // - 2026-08-13: 진행률 키에 lastModified 포함(파일카드·토스트 공통).
 // - 2026-08-21: gzip 업로드 후 UI size는 uncompressedSize(원본) 표시.
 import { useCallback } from "react";
@@ -394,22 +395,81 @@ export function useS3TempUpload(options: UseS3TempUploadOptions) {
       }
       onProgress?.({ ...progressMap });
 
-      return runWithConcurrency(
-        preparedList,
-        UPLOAD_CONCURRENCY,
-        async (prepared) => {
-          const uploaded = await uploadSinglePrepared(prepared, (loaded, total) => {
-            const pct = total > 0 ? Math.round((loaded / total) * 100) : 0;
-            progressMap[prepared.progressKey] = Math.max(0, Math.min(100, pct));
-            onProgress?.({ ...progressMap });
+      const report = (prepared: PreparedFile, loaded: number, total: number) => {
+        const pct = total > 0 ? Math.round((loaded / total) * 100) : 0;
+        progressMap[prepared.progressKey] = Math.max(0, Math.min(100, pct));
+        onProgress?.({ ...progressMap });
+      };
+
+      const small: Array<{ prepared: PreparedFile; index: number }> = [];
+      const large: Array<{ prepared: PreparedFile; index: number }> = [];
+      preparedList.forEach((prepared, index) => {
+        if (prepared.blob.size >= MULTIPART_THRESHOLD_BYTES) {
+          large.push({ prepared, index });
+        } else {
+          small.push({ prepared, index });
+        }
+      });
+
+      const slots = new Array<TempUploadedFile>(preparedList.length);
+
+      const uploadSmall = async () => {
+        if (!small.length) return;
+        const res = await apiFetch<any>({
+          path: "/api/files/temp/presign",
+          method: "POST",
+          token,
+          jsonBody: {
+            files: small.map(({ prepared }) => ({
+              originalName: prepared.originalName,
+              mimetype: prepared.mimetype,
+              size: prepared.blob.size,
+              contentEncoding: prepared.contentEncoding,
+              uncompressedSize: prepared.uncompressedSize,
+            })),
+          },
+        });
+        if (!res.ok) {
+          throw new Error("업로드 URL 생성에 실패했습니다.");
+        }
+        const data = (res.data as any)?.data;
+        const items = Array.isArray(data) ? (data as PresignResponseItem[]) : [];
+        if (items.length !== small.length) {
+          throw new Error("업로드 URL 생성에 실패했습니다.");
+        }
+        await runWithConcurrency(small, UPLOAD_CONCURRENCY, async (row, jobIndex) => {
+          const item = items[jobIndex];
+          if (!item?.uploadUrl || !item?.file) {
+            throw new Error("업로드 URL 생성에 실패했습니다.");
+          }
+          await putBlobWithRetry({
+            url: item.uploadUrl,
+            blob: row.prepared.blob,
+            contentType: row.prepared.mimetype,
+            contentEncoding: row.prepared.contentEncoding,
+            onProgress: (loaded, total) => report(row.prepared, loaded, total),
           });
-          progressMap[prepared.progressKey] = 100;
+          progressMap[row.prepared.progressKey] = 100;
           onProgress?.({ ...progressMap });
-          return uploaded;
-        },
-      );
+          slots[row.index] = withDisplaySize(item.file, row.prepared);
+        });
+      };
+
+      const uploadLarge = async () => {
+        await runWithConcurrency(large, UPLOAD_CONCURRENCY, async (row) => {
+          const uploaded = await uploadSinglePrepared(row.prepared, (loaded, total) =>
+            report(row.prepared, loaded, total),
+          );
+          progressMap[row.prepared.progressKey] = 100;
+          onProgress?.({ ...progressMap });
+          slots[row.index] = uploaded;
+        });
+      };
+
+      await Promise.all([uploadSmall(), uploadLarge()]);
+      return slots;
     },
-    [uploadSinglePrepared],
+    [token, uploadSinglePrepared],
   );
 
   return { uploadFiles };
