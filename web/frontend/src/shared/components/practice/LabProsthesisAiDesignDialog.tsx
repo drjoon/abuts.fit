@@ -1,11 +1,11 @@
 // 기공소 채팅 헤더 — 작업시작 오른쪽 AI.
 // - 2026-09-26: 헤더 의뢰 정보는 한 줄.
 // - 2026-09-26: 스캔·마진·디자인 단계, 언더컷·교합 접촉, 치아별 생성.
+// - 2026-09-26: 언더컷·교합은 헤더 중앙. 치아 정보는 설측 아래 트리. 스캔 파일은 세션 캐시.
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  ChevronDown,
   ImageDown,
-  Link2,
-  LocateFixed,
   Palette,
   Sparkles,
   TriangleAlert,
@@ -96,6 +96,8 @@ type MeshSource = {
 
 const IMAGE_EXT = /\.(png|jpe?g|webp|bmp|gif)$/i;
 const GHOST_OPACITY_DEFAULT = 0.3;
+/** 같은 세션에서 다시 열면 IndexedDB·네트워크 대신 이 파일을 쓴다. */
+const sessionScanFileCache = new Map<string, File>();
 const ROLE_DOT: Record<LabOralScanRole, string> = {
   upper: "bg-blue-500",
   lower: "bg-amber-500",
@@ -305,6 +307,12 @@ function LabProsthesisAiDesignDialog({
       if (wantsTexture) {
         await Promise.all(
           images.map(async (image) => {
+            const cacheKey = `img:${image.id}`;
+            const hit = sessionScanFileCache.get(cacheKey);
+            if (hit) {
+              companions.push(hit);
+              return;
+            }
             try {
               const blob = await fetchS3BlobCached({
                 s3Key: image.id,
@@ -314,7 +322,9 @@ function LabProsthesisAiDesignDialog({
                 signal: ac.signal,
               });
               if (ac.signal.aborted) return;
-              companions.push(fileFromImageBlob(blob, image.fileName));
+              const file = fileFromImageBlob(blob, image.fileName);
+              sessionScanFileCache.set(cacheKey, file);
+              companions.push(file);
             } catch (err) {
               if ((err as { name?: string })?.name === "AbortError") return;
             }
@@ -328,6 +338,20 @@ function LabProsthesisAiDesignDialog({
       await Promise.all(
         sources.map(async (source) => {
           percents.set(source.id, 0);
+          const cachedFile = sessionScanFileCache.get(source.id);
+          if (cachedFile) {
+            loaded.push({
+              id: source.id,
+              fileName: source.fileName,
+              role: source.role,
+              file: cachedFile,
+              companionFiles: companions,
+            });
+            nextState[source.id] = "ready";
+            percents.set(source.id, 100);
+            report();
+            return;
+          }
           try {
             const blob = await fetchS3BlobCached({
               s3Key: source.id,
@@ -341,11 +365,13 @@ function LabProsthesisAiDesignDialog({
               },
             });
             if (ac.signal.aborted) return;
+            const file = fileFromModelBlob(blob, source.fileName);
+            sessionScanFileCache.set(source.id, file);
             loaded.push({
               id: source.id,
               fileName: source.fileName,
               role: source.role,
-              file: fileFromModelBlob(blob, source.fileName),
+              file,
               companionFiles: companions,
             });
             nextState[source.id] = "ready";
@@ -471,8 +497,8 @@ function LabProsthesisAiDesignDialog({
           }
         }}
       >
-        <DialogHeader className="shrink-0 flex-row items-center gap-3 space-y-0 border-b bg-white/95 py-2 pl-5 pr-3 text-left">
-          <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-x-3 overflow-hidden">
+        <DialogHeader className="relative shrink-0 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 space-y-0 border-b bg-white/95 py-2 pl-5 pr-3 text-left">
+          <div className="flex min-w-0 flex-nowrap items-center gap-x-3 overflow-hidden">
             <DialogTitle className="shrink-0 text-base sm:text-lg">
               AI 보철 디자인
             </DialogTitle>
@@ -506,17 +532,41 @@ function LabProsthesisAiDesignDialog({
               </div>
             ) : null}
           </div>
-          <div className="flex shrink-0 items-center gap-1.5 pr-8">
+          <div className="flex shrink-0 items-center gap-1">
             <Button
               type="button"
               size="sm"
-              variant="outline"
-              className="h-8 gap-1"
-              onClick={() => viewerRef.current?.setView("fit")}
+              variant={undercutMap ? "default" : "outline"}
+              className="h-8 w-8 px-0"
+              title={canUndercut ? "언더컷" : "주문 치아의 악을 알 수 없습니다"}
+              aria-label="언더컷"
+              disabled={!canUndercut}
+              onClick={() => {
+                if (!canUndercut) return;
+                setUndercutMap((on) => !on);
+                setStage("margin");
+              }}
             >
-              <LocateFixed className="h-3.5 w-3.5" />
-              맞춤
+              <TriangleAlert className="h-3.5 w-3.5" />
             </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={contactMap ? "default" : "outline"}
+              className="h-8 w-8 px-0"
+              title={canContact ? "교합 접촉" : "대합 스캔이 없습니다"}
+              aria-label="교합 접촉"
+              disabled={!canContact}
+              onClick={() => {
+                if (!canContact) return;
+                setContactMap((on) => !on);
+                setStage("design");
+              }}
+            >
+              <Palette className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+          <div className="flex shrink-0 items-center justify-end gap-1.5 pr-8">
             <Button
               type="button"
               size="sm"
@@ -828,6 +878,14 @@ function LabProsthesisAiDesignDialog({
               ghostOpacity={ghostOpacity}
               prepArch={prepArch}
               focusToothNumbers={focusToothNumbers}
+              toothBadges={plan.teeth.map((tooth) => ({
+                toothNumber: tooth.toothNumber,
+                active: activeTooth?.toothNumber === tooth.toothNumber,
+              }))}
+              onSelectTooth={(toothNumber) => {
+                setSelectedTooth(toothNumber);
+                viewerRef.current?.focusTooth(toothNumber);
+              }}
               contactMap={contactMap}
               undercutMap={undercutMap}
               occlusalGapMm={occlusalGap}
@@ -847,20 +905,11 @@ function LabProsthesisAiDesignDialog({
               toothInfoOpen={toothInfoOpen}
               contactMap={contactMap}
               undercutMap={undercutMap}
-              canContact={canContact}
-              canUndercut={canUndercut}
-              onSelectTooth={setSelectedTooth}
+              onSelectTooth={(toothNumber) => {
+                setSelectedTooth(toothNumber);
+                viewerRef.current?.focusTooth(toothNumber);
+              }}
               onToggleInfo={() => setToothInfoOpen((open) => !open)}
-              onToggleContact={() => {
-                if (!canContact) return;
-                setContactMap((on) => !on);
-                setStage("design");
-              }}
-              onToggleUndercut={() => {
-                if (!canUndercut) return;
-                setUndercutMap((on) => !on);
-                setStage("margin");
-              }}
               onView={(preset) => viewerRef.current?.setView(preset)}
               onGenerateTooth={(toothNumber) => void runGenerate([toothNumber])}
               onClearTooth={(toothNumber) => {
@@ -874,6 +923,13 @@ function LabProsthesisAiDesignDialog({
   );
 }
 
+function toothArchGroup(toothNumber: string): "upper" | "lower" | "other" {
+  const quadrant = String(toothNumber || "").replace(/\D/g, "")[0];
+  if (quadrant === "1" || quadrant === "2") return "upper";
+  if (quadrant === "3" || quadrant === "4") return "lower";
+  return "other";
+}
+
 function DesignViewerChrome({
   teeth,
   activeTooth,
@@ -883,12 +939,8 @@ function DesignViewerChrome({
   toothInfoOpen,
   contactMap,
   undercutMap,
-  canContact,
-  canUndercut,
   onSelectTooth,
   onToggleInfo,
-  onToggleContact,
-  onToggleUndercut,
   onView,
   onGenerateTooth,
   onClearTooth,
@@ -901,69 +953,32 @@ function DesignViewerChrome({
   toothInfoOpen: boolean;
   contactMap: boolean;
   undercutMap: boolean;
-  canContact: boolean;
-  canUndercut: boolean;
   onSelectTooth: (toothNumber: string) => void;
   onToggleInfo: () => void;
-  onToggleContact: () => void;
-  onToggleUndercut: () => void;
   onView: (preset: OralScanViewPreset) => void;
   onGenerateTooth: (toothNumber: string) => void;
   onClearTooth: (toothNumber: string) => void;
 }) {
+  const archGroups = (
+    [
+      { id: "upper" as const, label: "상악" },
+      { id: "lower" as const, label: "하악" },
+      { id: "other" as const, label: "기타" },
+    ] as const
+  )
+    .map((group) => ({
+      ...group,
+      teeth: teeth.filter((tooth) => toothArchGroup(tooth.toothNumber) === group.id),
+    }))
+    .filter((group) => group.teeth.length > 0);
+
   return (
     <>
       <style>
         {`@keyframes aiScanLine { 0% { transform: translateY(0); opacity: .25; } 50% { opacity: 1; } 100% { transform: translateY(58vh); opacity: .2; } }`}
       </style>
-      {teeth.length > 0 ? (
-        <div className="absolute left-1/2 top-3 z-10 flex max-w-[46%] -translate-x-1/2 flex-wrap justify-center gap-1">
-          {teeth.map((tooth, index) => {
-            const selected = activeTooth?.toothNumber === tooth.toothNumber;
-            return (
-              <button
-                key={`${tooth.toothNumber}-${index}`}
-                type="button"
-                className={cn(
-                  "rounded-md px-2 py-1 text-xs font-semibold shadow-sm",
-                  selected
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-background/95 text-foreground",
-                )}
-                onClick={() => onSelectTooth(tooth.toothNumber)}
-              >
-                {tooth.toothNumber}
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
 
-      <div className="absolute right-3 top-3 z-10 flex flex-col gap-1">
-        <Button
-          type="button"
-          size="sm"
-          variant={contactMap ? "default" : "secondary"}
-          className="h-8 w-8 px-0 shadow-sm"
-          title={canContact ? "교합 접촉" : "대합 스캔이 없습니다"}
-          aria-label="교합 접촉"
-          disabled={!canContact}
-          onClick={onToggleContact}
-        >
-          <Palette className="h-3.5 w-3.5" />
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant={undercutMap ? "default" : "secondary"}
-          className="h-8 w-8 px-0 shadow-sm"
-          title={canUndercut ? "언더컷" : "주문 치아의 악을 알 수 없습니다"}
-          aria-label="언더컷"
-          disabled={!canUndercut}
-          onClick={onToggleUndercut}
-        >
-          <TriangleAlert className="h-3.5 w-3.5" />
-        </Button>
+      <div className="absolute right-3 top-3 z-10 flex max-h-[calc(100%-1.5rem)] flex-col items-end gap-1">
         {DESIGN_VIEWS.map((view) => (
           <Button
             key={view.id}
@@ -976,81 +991,96 @@ function DesignViewerChrome({
             {view.label}
           </Button>
         ))}
-      </div>
-
-      {toothInfoOpen && teeth.length > 0 ? (
-        <div className="absolute right-14 top-3 z-10 w-56 rounded-lg border bg-background/95 p-2 text-xs shadow-sm">
-          <div className="mb-1.5 flex items-center justify-between gap-2">
-            <p className="font-semibold text-foreground">치아 정보</p>
+        {teeth.length > 0 ? (
+          <div className="mt-1 w-56 overflow-hidden rounded-lg border bg-background/95 text-xs shadow-sm">
             <button
               type="button"
-              className="text-[11px] text-muted-foreground"
+              className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-left"
               onClick={onToggleInfo}
+              aria-expanded={toothInfoOpen}
             >
-              닫기
+              <span className="font-semibold text-foreground">치아 정보</span>
+              <ChevronDown
+                className={cn(
+                  "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
+                  toothInfoOpen ? "rotate-180" : "",
+                )}
+              />
             </button>
-          </div>
-          <ul className="max-h-52 space-y-1 overflow-y-auto">
-            {teeth.map((tooth, index) => {
-              const selected = activeTooth?.toothNumber === tooth.toothNumber;
-              const done = generated[tooth.toothNumber] === true;
-              return (
-                <li key={`${tooth.toothNumber}-${tooth.prosthesisType}-${index}`}>
-                  <div
-                    className={cn(
-                      "flex items-center gap-1 rounded-md px-1.5 py-1",
-                      selected ? "bg-primary/10" : "hover:bg-muted",
-                    )}
-                  >
-                    <button
-                      type="button"
-                      className="min-w-0 flex-1 text-left"
-                      onClick={() => onSelectTooth(tooth.toothNumber)}
-                    >
-                      <span className="font-semibold">#{tooth.toothNumber}</span>
-                      <span className="ml-1.5 text-muted-foreground">
-                        {tooth.prosthesisType}
-                      </span>
-                      {tooth.linkedTeeth.length > 0 ? (
-                        <span className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
-                          <Link2 className="h-3 w-3 shrink-0" />
-                          {tooth.linkedTeeth.join(" · ")}
-                        </span>
-                      ) : null}
-                    </button>
-                    {done ? (
-                      <button
-                        type="button"
-                        className="shrink-0 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground hover:bg-muted"
-                        onClick={() => onClearTooth(tooth.toothNumber)}
-                      >
-                        삭제
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        className="shrink-0 rounded bg-primary px-1.5 py-0.5 text-[10px] font-medium text-primary-foreground disabled:opacity-50"
-                        disabled={generating || !tooth.designable}
-                        onClick={() => onGenerateTooth(tooth.toothNumber)}
-                      >
-                        생성
-                      </button>
-                    )}
+            {toothInfoOpen ? (
+              <div className="max-h-[min(22rem,46vh)] overflow-y-auto border-t px-2 py-1.5">
+                {archGroups.map((group) => (
+                  <div key={group.id} className="mb-1.5 last:mb-0">
+                    <p className="text-[11px] font-medium text-muted-foreground">
+                      {group.label}
+                    </p>
+                    <ul className="ml-1.5 border-l border-border pl-2">
+                      {group.teeth.map((tooth, index) => {
+                        const selected = activeTooth?.toothNumber === tooth.toothNumber;
+                        const done = generated[tooth.toothNumber] === true;
+                        return (
+                          <li
+                            key={`${tooth.toothNumber}-${tooth.prosthesisType}-${index}`}
+                            className="py-0.5"
+                          >
+                            <div
+                              className={cn(
+                                "flex items-center gap-1 rounded-md px-1 py-0.5",
+                                selected ? "bg-primary/10" : "hover:bg-muted",
+                              )}
+                            >
+                              <button
+                                type="button"
+                                className="min-w-0 flex-1 text-left"
+                                onClick={() => onSelectTooth(tooth.toothNumber)}
+                              >
+                                <span className="font-semibold">#{tooth.toothNumber}</span>
+                                <span className="ml-1.5 text-muted-foreground">
+                                  {tooth.prosthesisType}
+                                </span>
+                              </button>
+                              {done ? (
+                                <button
+                                  type="button"
+                                  className="shrink-0 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground hover:bg-muted"
+                                  onClick={() => onClearTooth(tooth.toothNumber)}
+                                >
+                                  삭제
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="shrink-0 rounded bg-primary px-1.5 py-0.5 text-[10px] font-medium text-primary-foreground disabled:opacity-50"
+                                  disabled={generating || !tooth.designable}
+                                  onClick={() => onGenerateTooth(tooth.toothNumber)}
+                                >
+                                  생성
+                                </button>
+                              )}
+                            </div>
+                            {tooth.linkedTeeth.length > 0 ? (
+                              <ul className="ml-2 border-l border-border pl-2">
+                                {tooth.linkedTeeth.map((linked) => (
+                                  <li
+                                    key={linked}
+                                    className="py-0.5 text-[10px] text-muted-foreground"
+                                  >
+                                    #{linked}
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : null}
+                          </li>
+                        );
+                      })}
+                    </ul>
                   </div>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      ) : teeth.length > 0 ? (
-        <button
-          type="button"
-          className="absolute right-14 top-3 z-10 rounded-md border bg-background/95 px-2 py-1 text-[11px] font-medium shadow-sm"
-          onClick={onToggleInfo}
-        >
-          치아 정보
-        </button>
-      ) : null}
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
 
       {contactMap || undercutMap ? (
         <div className="pointer-events-none absolute bottom-14 left-3 z-10 flex items-center gap-2 rounded-md bg-background/95 px-2 py-1 text-[10px] text-muted-foreground shadow-sm">
