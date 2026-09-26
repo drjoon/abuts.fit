@@ -20,6 +20,8 @@
 // - 2026-09-26: 표시 패널은 맨 위. 닫으면 글자 너비. 단계 접기는 패널 위.
 // - 2026-09-26: 언더컷부터 정중앙은 작업영역 위 중앙. 색 범례는 그 배지 바로 아래.
 // - 2026-09-26: 스캔 단계에 모델 정렬. 수동은 고른 악과 바이트만 좌우로 두고 점 3개로 붙인다.
+// - 2026-09-26: 수동 정렬의 두 모델은 화면 가운데에 좁은 간격으로 나란히 둔다.
+// - 2026-09-26: 정렬 안내 문장은 버튼 툴팁으로만.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDownToLine,
@@ -286,7 +288,6 @@ function LabProsthesisAiDesignDialog({
   const [alignKind, setAlignKind] = useState<"auto" | "manual" | null>(null);
   const [alignArch, setAlignArch] = useState<"upper" | "lower" | null>(null);
   const [alignPicks, setAlignPicks] = useState({ model: 0, bite: 0 });
-  const [alignNote, setAlignNote] = useState("");
   const [alignBusy, setAlignBusy] = useState(false);
   const viewerRef = useRef<OralScanOverlayHandle>(null);
   const workObserveRef = useRef<ResizeObserver | null>(null);
@@ -341,7 +342,6 @@ function LabProsthesisAiDesignDialog({
       setAlignKind(null);
       setAlignArch(null);
       setAlignPicks({ model: 0, bite: 0 });
-      setAlignNote("");
       setAlignBusy(false);
       genSeq.current += 1;
       return;
@@ -730,16 +730,10 @@ function LabProsthesisAiDesignDialog({
     setAlignKind("auto");
     setAlignArch(null);
     setAlignPicks({ model: 0, bite: 0 });
-    setAlignNote("");
     setAlignBusy(true);
-    const ok = await viewerRef.current?.alignToBiteAuto();
+    await viewerRef.current?.alignToBiteAuto();
     setAlignBusy(false);
     setAlignKind(null);
-    setAlignNote(
-      ok
-        ? "상악과 하악을 바이트에 맞췄습니다."
-        : "자동으로 붙이지 못했습니다. 수동으로 점을 찍어 주세요.",
-    );
   };
 
   const generateTargets = (
@@ -888,20 +882,12 @@ function LabProsthesisAiDesignDialog({
               onDesignGesture={onDesignGesture}
               manualAlignArch={alignKind === "manual" ? alignArch : null}
               onAlignProgress={setAlignPicks}
-              onAlignMerged={(arch) => {
+              onAlignMerged={() => {
                 setAlignArch(null);
                 setAlignPicks({ model: 0, bite: 0 });
-                setAlignNote(
-                  arch === "upper"
-                    ? "상악을 바이트에 붙였습니다."
-                    : "하악을 바이트에 붙였습니다.",
-                );
               }}
               onAlignFailed={() => {
                 setAlignPicks({ model: 0, bite: 0 });
-                setAlignNote(
-                  "근처에서 대응점을 찾지 못했습니다. 점을 다시 찍어 주세요.",
-                );
               }}
               className="absolute inset-0"
             />
@@ -986,9 +972,7 @@ function LabProsthesisAiDesignDialog({
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent side="bottom" className="z-[520]">
-                    지대치를 제외한 대합과 바이트를 유리처럼 비춥니다.
-                    <br />
-                    끄면 그 스캔을 불투명하게 보입니다.
+                    지대치 외 스캔을 비춥니다.
                   </TooltipContent>
                 </Tooltip>
               ) : null}
@@ -1012,11 +996,7 @@ function LabProsthesisAiDesignDialog({
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent side="bottom" className="z-[520]">
-                  잡은 삽입축을 치아에서 2mm 띄워 표시합니다.
-                  <br />
-                  치아번호는 윗단 고리 중심에 있습니다.
-                  <br />
-                  끄면 숨깁니다.
+                  잡은 삽입축을 치아 위에 표시합니다.
                 </TooltipContent>
               </Tooltip>
               <Tooltip>
@@ -1039,9 +1019,7 @@ function LabProsthesisAiDesignDialog({
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent side="bottom" className="z-[520]">
-                  화면 정중앙에 가로·세로 점선을 표시합니다.
-                  <br />
-                  끄면 점선을 숨깁니다.
+                  화면 가운데 가로·세로 점선을 켭니다.
                 </TooltipContent>
               </Tooltip>
               </div>
@@ -1259,92 +1237,118 @@ function LabProsthesisAiDesignDialog({
                       <section className="space-y-2">
                         <p className="text-xs font-semibold text-foreground">모델 정렬</p>
                         <div className="grid grid-cols-2 gap-1">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant={alignBusy ? "default" : "outline"}
-                            className="h-7 px-2 text-[11px]"
-                            disabled={!canAlignModels || alignBusy}
-                            onClick={() => void runAutoAlign()}
-                          >
-                            자동
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant={alignKind === "manual" ? "default" : "outline"}
-                            className="h-7 px-2 text-[11px]"
-                            disabled={!canAlignModels || alignBusy}
-                            onClick={() => {
-                              if (alignKind === "manual") {
-                                setAlignKind(null);
-                                setAlignArch(null);
-                                setAlignNote("");
-                                return;
-                              }
-                              setAlignKind("manual");
-                              setAlignArch(null);
-                              setAlignPicks({ model: 0, bite: 0 });
-                              setAlignNote("");
-                            }}
-                          >
-                            수동
-                          </Button>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="flex min-w-0">
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant={alignBusy ? "default" : "outline"}
+                                  className="h-7 w-full px-2 text-[11px]"
+                                  disabled={!canAlignModels || alignBusy}
+                                  onClick={() => void runAutoAlign()}
+                                >
+                                  자동
+                                </Button>
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent side="right" className="z-[520]">
+                              파일 위치에서 상악·하악을 바이트에 맞춥니다.
+                            </TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="flex min-w-0">
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant={alignKind === "manual" ? "default" : "outline"}
+                                  className="h-7 w-full px-2 text-[11px]"
+                                  disabled={!canAlignModels || alignBusy}
+                                  onClick={() => {
+                                    if (alignKind === "manual") {
+                                      setAlignKind(null);
+                                      setAlignArch(null);
+                                      return;
+                                    }
+                                    setAlignKind("manual");
+                                    setAlignArch(null);
+                                    setAlignPicks({ model: 0, bite: 0 });
+                                  }}
+                                >
+                                  수동
+                                </Button>
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent side="right" className="z-[520]">
+                              붙일 악을 고른 뒤 점 3개씩 찍습니다.
+                            </TooltipContent>
+                          </Tooltip>
                         </div>
                         {alignKind === "manual" ? (
                           <>
-                            <p className="text-[11px] font-medium text-foreground">
-                              바이트에 붙일 모델
-                            </p>
                             <div className="grid grid-cols-2 gap-1">
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant={alignArch === "upper" ? "default" : "outline"}
-                                className="h-7 px-2 text-[11px]"
-                                disabled={!hasUpperScan || alignBusy}
-                                onClick={() => {
-                                  if (alignArch === "upper") {
-                                    viewerRef.current?.clearAlignPicks();
-                                    setAlignPicks({ model: 0, bite: 0 });
-                                    setAlignNote("");
-                                    return;
-                                  }
-                                  setAlignArch("upper");
-                                  setAlignPicks({ model: 0, bite: 0 });
-                                  setAlignNote("");
-                                }}
-                              >
-                                상악
-                              </Button>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant={alignArch === "lower" ? "default" : "outline"}
-                                className="h-7 px-2 text-[11px]"
-                                disabled={!hasLowerScan || alignBusy}
-                                onClick={() => {
-                                  if (alignArch === "lower") {
-                                    viewerRef.current?.clearAlignPicks();
-                                    setAlignPicks({ model: 0, bite: 0 });
-                                    setAlignNote("");
-                                    return;
-                                  }
-                                  setAlignArch("lower");
-                                  setAlignPicks({ model: 0, bite: 0 });
-                                  setAlignNote("");
-                                }}
-                              >
-                                하악
-                              </Button>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="flex min-w-0">
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant={alignArch === "upper" ? "default" : "outline"}
+                                      className="h-7 w-full px-2 text-[11px]"
+                                      disabled={!hasUpperScan || alignBusy}
+                                      onClick={() => {
+                                        if (alignArch === "upper") {
+                                          viewerRef.current?.clearAlignPicks();
+                                          setAlignPicks({ model: 0, bite: 0 });
+                                          return;
+                                        }
+                                        setAlignArch("upper");
+                                        setAlignPicks({ model: 0, bite: 0 });
+                                      }}
+                                    >
+                                      상악
+                                    </Button>
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent side="right" className="z-[520]">
+                                  상악과 바이트만 화면 가운데에 나란히 보입니다.
+                                  <br />
+                                  같은 순서로 점 3개씩 찍습니다.
+                                </TooltipContent>
+                              </Tooltip>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="flex min-w-0">
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant={alignArch === "lower" ? "default" : "outline"}
+                                      className="h-7 w-full px-2 text-[11px]"
+                                      disabled={!hasLowerScan || alignBusy}
+                                      onClick={() => {
+                                        if (alignArch === "lower") {
+                                          viewerRef.current?.clearAlignPicks();
+                                          setAlignPicks({ model: 0, bite: 0 });
+                                          return;
+                                        }
+                                        setAlignArch("lower");
+                                        setAlignPicks({ model: 0, bite: 0 });
+                                      }}
+                                    >
+                                      하악
+                                    </Button>
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent side="right" className="z-[520]">
+                                  하악과 바이트만 화면 가운데에 나란히 보입니다.
+                                  <br />
+                                  같은 순서로 점 3개씩 찍습니다.
+                                </TooltipContent>
+                              </Tooltip>
                             </div>
                             {alignArch ? (
                               <>
-                                <p className="text-[11px] leading-relaxed text-muted-foreground">
-                                  왼쪽 모델과 오른쪽 바이트에 같은 순서의 점 3개를 찍습니다.
-                                  <br />
-                                  찍은 점 근처에서 대응점을 찾아 붙입니다.
-                                </p>
                                 <p className="text-[11px] font-medium text-foreground">
                                   모델 {alignPicks.model}/3 · 바이트 {alignPicks.bite}/3
                                 </p>
@@ -1360,31 +1364,13 @@ function LabProsthesisAiDesignDialog({
                                   onClick={() => {
                                     viewerRef.current?.clearAlignPicks();
                                     setAlignPicks({ model: 0, bite: 0 });
-                                    setAlignNote("");
                                   }}
                                 >
                                   점 지우기
                                 </Button>
                               </>
-                            ) : (
-                              <p className="text-[11px] leading-relaxed text-muted-foreground">
-                                상악 또는 하악을 고르면 그 모델과 바이트만 좌우로 보입니다.
-                                <br />
-                                나머지 모델은 숨깁니다.
-                              </p>
-                            )}
+                            ) : null}
                           </>
-                        ) : (
-                          <p className="text-[11px] leading-relaxed text-muted-foreground">
-                            자동은 파일 위치에서 상악과 하악을 바이트에 맞춥니다.
-                            <br />
-                            수동은 붙일 악을 고른 뒤 점 3개씩을 찍습니다.
-                          </p>
-                        )}
-                        {alignNote ? (
-                          <p className="text-[11px] leading-relaxed text-muted-foreground">
-                            {alignNote}
-                          </p>
                         ) : null}
                       </section>
                     ) : null}
@@ -1526,36 +1512,43 @@ function LabProsthesisAiDesignDialog({
                           />
                         </div>
                         <div className="grid grid-cols-2 gap-1">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant={contactMode === "cut" ? "default" : "outline"}
-                            className="h-7 px-2 text-[11px]"
-                            onClick={() => setContactMode("cut")}
-                          >
-                            절삭
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant={contactMode === "keep" ? "default" : "outline"}
-                            className="h-7 px-2 text-[11px]"
-                            onClick={() => setContactMode("keep")}
-                          >
-                            형태 유지
-                          </Button>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="flex min-w-0">
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant={contactMode === "cut" ? "default" : "outline"}
+                                  className="h-7 w-full px-2 text-[11px]"
+                                  onClick={() => setContactMode("cut")}
+                                >
+                                  절삭
+                                </Button>
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent side="right" className="z-[520]">
+                              목표보다 가까운 면을 붉게 잡습니다.
+                            </TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="flex min-w-0">
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant={contactMode === "keep" ? "default" : "outline"}
+                                  className="h-7 w-full px-2 text-[11px]"
+                                  onClick={() => setContactMode("keep")}
+                                >
+                                  형태 유지
+                                </Button>
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent side="right" className="z-[520]">
+                              초록 폭을 넓혀 형태를 남깁니다.
+                            </TooltipContent>
+                          </Tooltip>
                         </div>
-                        {!canContact ? (
-                          <p className="text-[11px] leading-relaxed text-muted-foreground">
-                            대합 스캔이 있으면 접촉 색을 칠합니다.
-                          </p>
-                        ) : (
-                          <p className="text-[11px] leading-relaxed text-muted-foreground">
-                            빨강은 목표보다 가깝고, 초록은 맞고, 파랑은 틈입니다.
-                            <br />
-                            절삭은 가까운 면을 더 붉게 잡습니다.
-                          </p>
-                        )}
                       </section>
                     ) : null}
                   </div>

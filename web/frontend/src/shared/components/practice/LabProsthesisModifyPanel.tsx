@@ -6,6 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   CONNECTOR_SHAPES,
   INNER_PRESETS,
   MODIFY_TOOLS,
@@ -91,24 +96,41 @@ export function LabProsthesisModifyPanel({
       <p className="text-xs font-semibold text-foreground">수정</p>
       {toothLabel ? (
         <p className="text-[11px] text-muted-foreground">{toothLabel}</p>
-      ) : (
-        <p className="text-[11px] leading-relaxed text-muted-foreground">
-          치아를 고르면 그 보철을 수정합니다.
-        </p>
-      )}
+      ) : null}
       <div className="grid grid-cols-4 gap-1">
-        {MODIFY_TOOLS.map((item) => (
-          <Button
-            key={item.id}
-            type="button"
-            size="sm"
-            variant={tool === item.id ? "default" : "outline"}
-            className="h-7 px-1 text-[11px]"
-            onClick={() => onTool(item.id)}
-          >
-            {item.label}
-          </Button>
-        ))}
+        {MODIFY_TOOLS.map((item) =>
+          item.id === "connector" && !isBridge ? (
+            <Tooltip key={item.id}>
+              <TooltipTrigger asChild>
+                <span className="flex min-w-0">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={tool === item.id ? "default" : "outline"}
+                    className="h-7 w-full px-1 text-[11px]"
+                    onClick={() => onTool(item.id)}
+                  >
+                    {item.label}
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="right" className="z-[520]">
+                브리지 스팬에서 조립합니다.
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <Button
+              key={item.id}
+              type="button"
+              size="sm"
+              variant={tool === item.id ? "default" : "outline"}
+              className="h-7 px-1 text-[11px]"
+              onClick={() => onTool(item.id)}
+            >
+              {item.label}
+            </Button>
+          ),
+        )}
       </div>
 
       {tool === "margin" ? (
@@ -173,27 +195,25 @@ export function LabProsthesisModifyPanel({
 
       {tool === "insertion" ? (
         <div className="space-y-2">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="h-7 w-full text-[11px]"
-            disabled={!canMatchInsertion}
-            onClick={onMatchInsertion}
-          >
-            화면 각도로 맞추기
-          </Button>
-          <p className="text-[11px] leading-relaxed text-muted-foreground">
-            화면 중앙이 보철을 지나게 맞춥니다.
-            <br />
-            화면 각도로 맞추면 화면과 수직인 삽입축이 그 자리에 됩니다.
-            <br />
-            축을 잡으면 지금 점보다 더 바깥을 봅니다.
-            <br />
-            삽입축으로 스캔 면에 붙인 색 경계를 마진으로 잡습니다.
-            <br />
-            화살표 끝을 끌면 방향을 바꿉니다.
-          </p>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="flex min-w-0">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-7 w-full text-[11px]"
+                  disabled={!canMatchInsertion}
+                  onClick={onMatchInsertion}
+                >
+                  화면 각도로 맞추기
+                </Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="right" className="z-[520]">
+              화면 중앙에 화면과 수직인 삽입축을 둡니다.
+            </TooltipContent>
+          </Tooltip>
         </div>
       ) : null}
 
@@ -273,20 +293,24 @@ export function LabProsthesisModifyPanel({
               aria-label="마진 테이퍼"
             />
           </Row>
-          <Button
-            type="button"
-            size="sm"
-            className="h-7 w-full text-[11px]"
-            disabled={!generated}
-            onClick={onApplyInner}
-          >
-            {edit.inner.applied ? "내면 적용됨" : "내면 적용"}
-          </Button>
-          {!generated ? (
-            <p className="text-[11px] leading-relaxed text-muted-foreground">
-              보철을 생성한 뒤 내면을 다시 적용합니다.
-            </p>
-          ) : null}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="flex min-w-0">
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-7 w-full text-[11px]"
+                  disabled={!generated}
+                  onClick={onApplyInner}
+                >
+                  {edit.inner.applied ? "내면 적용됨" : "내면 적용"}
+                </Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="right" className="z-[520]">
+              생성한 보철 내면에 갭을 적용합니다.
+            </TooltipContent>
+          </Tooltip>
         </div>
       ) : null}
 
@@ -402,26 +426,44 @@ export function LabProsthesisModifyPanel({
             />
           </label>
           <div className="grid grid-cols-3 gap-1">
-            <Button
-              type="button"
-              size="sm"
-              variant={brush === "sculpt" ? "default" : "outline"}
-              className="h-7 px-1 text-[11px]"
-              disabled={!generated}
-              onClick={() => onBrush(brush === "sculpt" ? "none" : "sculpt")}
-            >
-              스컬프트
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={brush === "erase" ? "default" : "outline"}
-              className="h-7 px-1 text-[11px]"
-              disabled={!generated}
-              onClick={() => onBrush(brush === "erase" ? "none" : "erase")}
-            >
-              매끈
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="flex min-w-0">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={brush === "sculpt" ? "default" : "outline"}
+                    className="h-7 w-full px-1 text-[11px]"
+                    disabled={!generated}
+                    onClick={() => onBrush(brush === "sculpt" ? "none" : "sculpt")}
+                  >
+                    스컬프트
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="right" className="z-[520]">
+                왼쪽은 덧대고 오른쪽은 깎습니다.
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="flex min-w-0">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={brush === "erase" ? "default" : "outline"}
+                    className="h-7 w-full px-1 text-[11px]"
+                    disabled={!generated}
+                    onClick={() => onBrush(brush === "erase" ? "none" : "erase")}
+                  >
+                    매끈
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="right" className="z-[520]">
+                형태를 완만하게 합니다.
+              </TooltipContent>
+            </Tooltip>
             <Button
               type="button"
               size="sm"
@@ -461,17 +503,14 @@ export function LabProsthesisModifyPanel({
           </Row>
           <p
             className={cn(
-              "text-[11px] leading-relaxed",
+              "text-[11px] font-medium",
               thin && !edit.refine.compensate
                 ? "text-destructive"
-                : "text-muted-foreground",
+                : "text-foreground",
             )}
           >
-            지금 외면은 {shellThicknessMm(edit).toFixed(2)} mm 입니다.
-            <br />
-            {thin && !edit.refine.compensate
-              ? "최소 두께보다 얇습니다. 두께 보상으로 올립니다."
-              : "왼쪽은 덧대고, 오른쪽은 깎습니다. 모서리 점을 끌면 크기가 바뀝니다."}
+            외면 {shellThicknessMm(edit).toFixed(2)} mm
+            {thin && !edit.refine.compensate ? " · 최소보다 얇음" : ""}
           </p>
         </div>
       ) : null}
@@ -479,17 +518,26 @@ export function LabProsthesisModifyPanel({
       {tool === "hook" ? (
         <div className="space-y-2">
           <div className="flex gap-1">
-            <Button
-              type="button"
-              size="sm"
-              className="h-7 flex-1 text-[11px]"
-              disabled={!generated}
-              onClick={() =>
-                onEdit({ ...edit, hook: { ...edit.hook, on: true } })
-              }
-            >
-              훅 놓기
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="flex min-w-0 flex-1">
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-7 w-full text-[11px]"
+                    disabled={!generated}
+                    onClick={() =>
+                      onEdit({ ...edit, hook: { ...edit.hook, on: true } })
+                    }
+                  >
+                    훅 놓기
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="right" className="z-[520]">
+                보철을 누르면 그 자리에 훅이 붙습니다.
+              </TooltipContent>
+            </Tooltip>
             <Button
               type="button"
               size="sm"
@@ -545,54 +593,76 @@ export function LabProsthesisModifyPanel({
               aria-label="훅 위치"
             />
           </Row>
-          <Button
-            type="button"
-            size="sm"
-            variant={brush === "erase" ? "default" : "outline"}
-            className="h-7 w-full text-[11px]"
-            onClick={() => onBrush(brush === "erase" ? "none" : "erase")}
-          >
-            지우개
-          </Button>
-          <p className="text-[11px] leading-relaxed text-muted-foreground">
-            보철을 누르면 그 자리에 훅이 붙습니다.
-            <br />
-            훅을 끌면 옮기고, 오른쪽 클릭이나 지우개로 없앱니다.
-          </p>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="flex min-w-0">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={brush === "erase" ? "default" : "outline"}
+                  className="h-7 w-full text-[11px]"
+                  onClick={() => onBrush(brush === "erase" ? "none" : "erase")}
+                >
+                  지우개
+                </Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="right" className="z-[520]">
+              훅을 없앱니다.
+            </TooltipContent>
+          </Tooltip>
         </div>
       ) : null}
 
       {tool === "cutback" ? (
         <div className="space-y-2">
           <div className="grid grid-cols-2 gap-1">
-            <Button
-              type="button"
-              size="sm"
-              variant={edit.cutback.region === "partial" ? "default" : "outline"}
-              className="h-7 text-[11px]"
-              onClick={() =>
-                onEdit({
-                  ...edit,
-                  cutback: { ...edit.cutback, region: "partial", on: true },
-                })
-              }
-            >
-              부분
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={edit.cutback.region === "full" ? "default" : "outline"}
-              className="h-7 text-[11px]"
-              onClick={() =>
-                onEdit({
-                  ...edit,
-                  cutback: { ...edit.cutback, region: "full", on: true },
-                })
-              }
-            >
-              전체
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="flex min-w-0">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={edit.cutback.region === "partial" ? "default" : "outline"}
+                    className="h-7 w-full text-[11px]"
+                    onClick={() =>
+                      onEdit({
+                        ...edit,
+                        cutback: { ...edit.cutback, region: "partial", on: true },
+                      })
+                    }
+                  >
+                    부분
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="right" className="z-[520]">
+                교합면만 얇게 합니다.
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="flex min-w-0">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={edit.cutback.region === "full" ? "default" : "outline"}
+                    className="h-7 w-full text-[11px]"
+                    onClick={() =>
+                      onEdit({
+                        ...edit,
+                        cutback: { ...edit.cutback, region: "full", on: true },
+                      })
+                    }
+                  >
+                    전체
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="right" className="z-[520]">
+                외면 전체를 얇게 합니다.
+              </TooltipContent>
+            </Tooltip>
           </div>
           <Row label="컷백 두께" value={`${edit.cutback.thicknessMm.toFixed(2)} mm`}>
             <Slider
@@ -613,16 +683,25 @@ export function LabProsthesisModifyPanel({
               aria-label="컷백 두께"
             />
           </Row>
-          <Button
-            type="button"
-            size="sm"
-            variant={brush === "minus" ? "default" : "outline"}
-            className="h-7 w-full text-[11px]"
-            disabled={!generated}
-            onClick={() => onBrush(brush === "minus" ? "none" : "minus")}
-          >
-            제외 브러시
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="flex min-w-0">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={brush === "minus" ? "default" : "outline"}
+                  className="h-7 w-full text-[11px]"
+                  disabled={!generated}
+                  onClick={() => onBrush(brush === "minus" ? "none" : "minus")}
+                >
+                  제외 브러시
+                </Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="right" className="z-[520]">
+              누른 자리는 컷백에서 뺍니다.
+            </TooltipContent>
+          </Tooltip>
           <Button
             type="button"
             size="sm"
@@ -637,25 +716,31 @@ export function LabProsthesisModifyPanel({
           >
             컷백 끄기
           </Button>
-          <p className="text-[11px] leading-relaxed text-muted-foreground">
-            부분 컷백은 교합면만, 전체는 외면 전체를 얇게 합니다.
-            <br />
-            제외 브러시로 누른 자리는 컷백에서 빼 둡니다.
-          </p>
         </div>
       ) : null}
 
       {tool === "hole" ? (
         <div className="space-y-2">
-          <Button
-            type="button"
-            size="sm"
-            className="h-7 w-full text-[11px]"
-            disabled={!generated}
-            onClick={() => onEdit({ ...edit, hole: { ...edit.hole, on: true } })}
-          >
-            {edit.hole.on ? "홀 있음" : "홀 만들기"}
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="flex min-w-0">
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-7 w-full text-[11px]"
+                  disabled={!generated}
+                  onClick={() => onEdit({ ...edit, hole: { ...edit.hole, on: true } })}
+                >
+                  {edit.hole.on ? "홀 있음" : "홀 만들기"}
+                </Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="right" className="z-[520]">
+              교합면을 누르면 위치가 잡힙니다.
+              <br />
+              기둥 끝을 끌면 기울기가 바뀝니다.
+            </TooltipContent>
+          </Tooltip>
           <Row label="반지름" value={`${edit.hole.radiusMm.toFixed(2)} mm`}>
             <Slider
               min={40}
@@ -705,13 +790,7 @@ export function LabProsthesisModifyPanel({
             <p className="text-[11px] leading-relaxed text-destructive">
               {issue || holeNote}
             </p>
-          ) : (
-            <p className="text-[11px] leading-relaxed text-muted-foreground">
-              교합면을 누르면 홀 위치가 잡힙니다.
-              <br />
-              기둥 끝을 끌면 기울기가 바뀝니다.
-            </p>
-          )}
+          ) : null}
         </div>
       ) : null}
 
@@ -775,20 +854,29 @@ export function LabProsthesisModifyPanel({
                 />
               </Row>
               <div className="flex gap-1">
-                <Button
-                  type="button"
-                  size="sm"
-                  className="h-7 flex-1 text-[11px]"
-                  disabled={!generated}
-                  onClick={() =>
-                    onEdit({
-                      ...edit,
-                      connector: { ...edit.connector, assembled: true },
-                    })
-                  }
-                >
-                  조립
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="flex min-w-0 flex-1">
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-7 w-full text-[11px]"
+                        disabled={!generated}
+                        onClick={() =>
+                          onEdit({
+                            ...edit,
+                            connector: { ...edit.connector, assembled: true },
+                          })
+                        }
+                      >
+                        조립
+                      </Button>
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" className="z-[520]">
+                    커넥터로 브리지를 한 덩어리로 잇습니다.
+                  </TooltipContent>
+                </Tooltip>
                 <Button
                   type="button"
                   size="sm"
@@ -804,21 +892,8 @@ export function LabProsthesisModifyPanel({
                   분리
                 </Button>
               </div>
-              <p className="text-[11px] leading-relaxed text-muted-foreground">
-                {edit.connector.assembled
-                  ? "커넥터가 브리지를 한 덩어리로 잇습니다."
-                  : "조립 전에는 치아와 커넥터가 떨어져 있습니다."}
-                <br />
-                커넥터를 끌면 스팬 위에서 위치를 옮깁니다.
-              </p>
             </>
-          ) : (
-            <p className="text-[11px] leading-relaxed text-muted-foreground">
-              브리지 스팬에서 커넥터를 두고 조립합니다.
-              <br />
-              역삼각, 원형, 삼각, 인접 병합 중 단면을 고릅니다.
-            </p>
-          )}
+          ) : null}
         </div>
       ) : null}
     </section>
