@@ -3,6 +3,7 @@
 // - 2026-09-26: 교합면·협측·설측, 대합 접촉 색, 삽입 방향 언더컷.
 // - 2026-09-26: 열릴 때 의뢰 치아 교합면을 화면 중앙에 둔다. 치아번호 뱃지는 그 좌표에 붙는다.
 // - 2026-09-26: 파싱 결과는 메모리에 두고, 교합·언더컷 거리는 켤 때만 계산한다.
+// - 2026-09-26: 역할만 바뀌면 메시를 다시 읽지 않고 색·대합을 다시 계산한다.
 import {
   forwardRef,
   useEffect,
@@ -39,6 +40,8 @@ export type OralScanOverlayHandle = {
   /** 의뢰 치아 교합면을 화면 중앙에 다시 맞춘다. */
   focusTooth: (toothNumber: string) => void;
   saveImage: () => void;
+  /** 지금 화면이 바라보는 방향을 삽입축으로 잡고 언더컷을 다시 계산한다. */
+  resetInsertionFromView: () => void;
 };
 
 export type OralScanToothBadge = {
@@ -382,15 +385,16 @@ function insertionForRole(
   role: LabOralScanRole,
   prepArch: "upper" | "lower" | "both" | null | undefined,
   frame: DentalFrame | null,
+  override: THREE.Vector3 | null = null,
 ): THREE.Vector3 | null {
+  const applies =
+    (role === "upper" && (prepArch === "upper" || prepArch === "both")) ||
+    (role === "lower" && (prepArch === "lower" || prepArch === "both"));
+  if (!applies) return null;
+  if (override) return override.clone();
   if (!frame) return null;
-  if (role === "upper" && (prepArch === "upper" || prepArch === "both")) {
-    return frame.up.clone();
-  }
-  if (role === "lower" && (prepArch === "lower" || prepArch === "both")) {
-    return frame.up.clone().negate();
-  }
-  return null;
+  if (role === "upper") return frame.up.clone();
+  return frame.up.clone().negate();
 }
 
 function antagonistRole(
@@ -410,6 +414,7 @@ async function fillDesignAnalysis(
   frame: DentalFrame | null,
   unitToMm: number,
   cancelled: () => boolean,
+  insertionOverride: THREE.Vector3 | null = null,
 ) {
   const indexes = new Map<
     LabOralScanRole,
@@ -433,7 +438,12 @@ async function fillDesignAnalysis(
 
   for (const entry of loaded) {
     const against = antagonistRole(entry.role, prepArch);
-    const insertion = insertionForRole(entry.role, prepArch, frame);
+    const insertion = insertionForRole(
+      entry.role,
+      prepArch,
+      frame,
+      insertionOverride,
+    );
     const index = against ? indexes.get(against) : undefined;
     const pos = entry.geometry.getAttribute("position");
     const nor = entry.geometry.getAttribute("normal");
@@ -1003,6 +1013,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   const onScanColorChangeRef = useRef(onScanColorChange);
   const itemsRef = useRef(items);
   const frameRef = useRef<DentalFrame | null>(null);
+  const insertionOverrideRef = useRef<THREE.Vector3 | null>(null);
   const unitToMmRef = useRef(1);
   const setViewRef = useRef<(preset: OralScanViewPreset) => void>(() => {});
   const saveImageRef = useRef<() => void>(() => {});
@@ -1030,6 +1041,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   const itemsKey = items
     .map((item) => `${item.id}:${item.file.size}:${item.file.lastModified}`)
     .join("|");
+  const roleKey = items.map((item) => `${item.id}:${item.role}`).join("|");
 
   const frameCamera = (
     dir: THREE.Vector3,
@@ -1328,6 +1340,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     };
 
     const sources = itemsRef.current;
+    insertionOverrideRef.current = null;
     if (sources.length === 0) {
       clearGroup();
       setParseNote("");
@@ -1385,6 +1398,13 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       }
       for (const entry of loaded) group.add(entry.mesh);
       loadedRef.current = loaded;
+      const latestRoles = new Map(
+        itemsRef.current.map((item) => [item.id, item.role]),
+      );
+      for (const entry of loaded) {
+        const nextRole = latestRoles.get(entry.id);
+        if (nextRole) entry.role = nextRole;
+      }
       const box = new THREE.Box3().setFromObject(group);
       if (!box.isEmpty()) {
         const center = box.getCenter(new THREE.Vector3());
@@ -1442,6 +1462,31 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   restyleRef.current = restyleLoaded;
 
   useEffect(() => {
+    const byId = new Map(itemsRef.current.map((item) => [item.id, item.role]));
+    let changed = false;
+    for (const entry of loadedRef.current) {
+      const next = byId.get(entry.id);
+      if (!next || next === entry.role) continue;
+      entry.role = next;
+      entry.dist = null;
+      entry.align = null;
+      changed = true;
+    }
+    if (!changed) return;
+    const loaded = loadedRef.current;
+    const frame = estimateDentalFrame(loaded);
+    frameRef.current = frame
+      ? {
+          up: frame.up.clone(),
+          anterior: frame.anterior.clone(),
+          right: frame.right.clone(),
+        }
+      : null;
+    restyleRef.current();
+    setLoadVersion((v) => v + 1);
+  }, [roleKey]);
+
+  useEffect(() => {
     const loaded = loadedRef.current;
     const look = lookRef.current;
     if (loaded.length === 0 || (!look.contactMap && !look.undercutMap)) {
@@ -1449,6 +1494,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       return;
     }
     const frame = frameRef.current;
+    const insertionOverride = insertionOverrideRef.current;
     const pending = loaded.some((entry) => {
       const needsDist =
         look.contactMap &&
@@ -1456,7 +1502,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         entry.dist == null;
       const needsAlign =
         look.undercutMap &&
-        insertionForRole(entry.role, prepArch, frame) != null &&
+        insertionForRole(entry.role, prepArch, frame, insertionOverride) != null &&
         entry.align == null;
       return needsDist || needsAlign;
     });
@@ -1472,6 +1518,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       frame,
       unitToMmRef.current,
       () => cancelled,
+      insertionOverride,
     ).then(() => {
       if (cancelled) return;
       setAnalyzing(false);
@@ -1584,6 +1631,16 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       setView: (preset) => setViewRef.current(preset),
       focusTooth: (toothNumber) => focusToothRef.current(toothNumber),
       saveImage: () => saveImageRef.current(),
+      resetInsertionFromView: () => {
+        const camera = cameraRef.current;
+        const look = new THREE.Vector3();
+        camera?.getWorldDirection(look);
+        if (!camera || look.lengthSq() < 1e-8) return;
+        look.normalize();
+        insertionOverrideRef.current = look.clone();
+        for (const entry of loadedRef.current) entry.align = null;
+        setLoadVersion((v) => v + 1);
+      },
     }),
     [],
   );
