@@ -21,6 +21,7 @@
 // - 2026-09-26: 화면 오른쪽·앞쪽에 방향광을 더해 악궁 양쪽이 같이 밝다.
 // - 2026-09-26: 바이트에 맞추는 중 취소하면 좌표를 바꾸지 않고 이전 위치로 둔다.
 // - 2026-09-26: 바뀐 스캔의 짧은 지문을 좌표 사본 없이 낸다.
+// - 2026-09-26: 바이트 맞춤은 연 파일과 좌표가 다르면 작업 DCM이다. 작업 DCM은 맞춤을 다시 하지 않는다.
 import {
   forwardRef,
   useEffect,
@@ -40,7 +41,11 @@ import {
   SCAN_COLOR_PREVIEW_BACKGROUND,
 } from "@/shared/files/modelPreviewFile";
 import { linearColorsToSrgbBytes } from "@/shared/files/hpsDcmWrite";
-import type { LabOralScanRole } from "@/shared/practice/labProsthesisAiDesign";
+import {
+  isAbutsWorkScanFileName,
+  type LabOralScanRole,
+} from "@/shared/practice/labProsthesisAiDesign";
+import type { WorkSessionAxis } from "@/shared/practice/labProsthesisWorkDraft";
 import {
   contactColorRgb,
   createScanPointIndex,
@@ -114,6 +119,10 @@ export type OralScanOverlayHandle = {
   restoreJawPositions: (
     rows: ReadonlyArray<{ id: string; positions: Float32Array }>,
   ) => void;
+  /** 잡혀 있는 삽입축. 작업 문서에 넣는다. */
+  exportInsertionAxes: () => WorkSessionAxis[];
+  /** 저장했던 삽입축을 다시 켠다. */
+  restoreInsertionAxes: (axes: readonly WorkSessionAxis[]) => void;
 };
 
 export type WorkingScanMesh = {
@@ -183,6 +192,8 @@ type Props = {
   onAlignFailed?: () => void;
   /** 맞추는 중 취소. 점과 좌표는 그대로 둔다. */
   onAlignCancelled?: () => void;
+  /** 스캔을 화면에 올린 뒤. restore면 저장된 삽입축을 다시 깐다. */
+  onMeshesReady?: (info: { deformed: boolean; restore: boolean }) => void;
   className?: string;
 };
 
@@ -202,10 +213,8 @@ type LoadedMesh = {
   analysisColor: THREE.BufferAttribute | null;
   /** 스캔 파일 좌표. 역할을 바꾸면 여기로 되돌린 뒤 다시 맞춘다. */
   basePositions: Float32Array;
-  /** 파일을 열었을 때의 좌표. 자동 정렬은 여기로 되돌린 뒤 다시 맞춘다. */
+  /** 파일을 열었을 때의 좌표. 여기와 다르면 작업 DCM으로 저장한다. */
   filePositions: Float32Array;
-  /** 처음 자동 정렬이 끝난 좌표. 이후 손본 스캔만 작업 DCM으로 저장한다. */
-  openedPositions: Float32Array;
 };
 
 type SnapAnim = {
@@ -646,6 +655,23 @@ function positionsDiffer(
   return false;
 }
 
+/** 상악·하악·바이트가 모두 저장된 작업 DCM이면 맞춤이 이미 들어 있다. */
+function jawsAlreadyStored(
+  sources: readonly { role: string; fileName: string }[],
+): boolean {
+  let arch = false;
+  let bite = false;
+  for (const source of sources) {
+    if (source.role !== "upper" && source.role !== "lower" && source.role !== "bite") {
+      continue;
+    }
+    if (!isAbutsWorkScanFileName(source.fileName)) return false;
+    if (source.role === "bite") bite = true;
+    else arch = true;
+  }
+  return arch && bite;
+}
+
 function jawEntries(loaded: readonly LoadedMesh[]) {
   return loaded.filter(
     (entry): entry is LoadedMesh & { role: WorkingScanMesh["role"] } =>
@@ -658,11 +684,7 @@ function dirtyScanRoles(loaded: readonly LoadedMesh[]) {
   for (const entry of jawEntries(loaded)) {
     const pos = entry.geometry.getAttribute("position");
     if (!pos || pos.count === 0) continue;
-    const baseline =
-      entry.openedPositions.length > 0
-        ? entry.openedPositions
-        : entry.filePositions;
-    if (positionsDiffer(pos, baseline)) dirty.add(entry.role);
+    if (positionsDiffer(pos, entry.filePositions)) dirty.add(entry.role);
   }
   return dirty;
 }
@@ -1966,6 +1988,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       onAlignMerged,
       onAlignFailed,
       onAlignCancelled,
+      onMeshesReady,
       className,
     },
     ref,
@@ -2043,6 +2066,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   const onAlignMergedRef = useRef(onAlignMerged);
   const onAlignFailedRef = useRef(onAlignFailed);
   const onAlignCancelledRef = useRef(onAlignCancelled);
+  const onMeshesReadyRef = useRef(onMeshesReady);
   const layoutSplitRef = useRef<(arch: "upper" | "lower") => void>(() => {});
   const clearAlignMarksRef = useRef<() => void>(() => {});
   const exitAlignViewRef = useRef<() => void>(() => {});
@@ -2057,6 +2081,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   onAlignMergedRef.current = onAlignMerged;
   onAlignFailedRef.current = onAlignFailed;
   onAlignCancelledRef.current = onAlignCancelled;
+  onMeshesReadyRef.current = onMeshesReady;
   const setViewRef = useRef<(preset: OralScanViewPreset) => void>(() => {});
   const saveImageRef = useRef<() => void>(() => {});
   const [parseNote, setParseNote] = useState("");
@@ -2887,7 +2912,6 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
               analysisColor: null,
               basePositions: captureBasePositions(parsed.geometry),
               filePositions: captureBasePositions(parsed.geometry),
-              openedPositions: new Float32Array(0),
             });
           } catch {
             failed.push(source.fileName);
@@ -2908,39 +2932,47 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         const nextRole = latestRoles.get(entry.id);
         if (nextRole) entry.role = nextRole;
       }
-      setAligning(true);
-      const job = startAlignJob();
-      try {
-        await registerJawsToBite(loaded, {
-          cancelled: () =>
-            cancelled || gen !== layoutGenRef.current || alignStopped(job),
-        });
-      } catch (error) {
-        console.info("[oral-scan] bite-fit failed", error);
-      }
-      if (cancelled || gen !== layoutGenRef.current) {
-        for (const entry of loaded) {
-          releaseSceneGeometry(entry.geometry);
-          releaseSceneTexture(entry.texture);
+      const storedWork = jawsAlreadyStored(itemsRef.current);
+      let seated = false;
+      if (storedWork) {
+        seated = estimateDentalFrame(loaded) != null;
+      } else {
+        setAligning(true);
+        const job = startAlignJob();
+        try {
+          await registerJawsToBite(loaded, {
+            cancelled: () =>
+              cancelled || gen !== layoutGenRef.current || alignStopped(job),
+          });
+        } catch (error) {
+          console.info("[oral-scan] bite-fit failed", error);
         }
-        return;
-      }
-      const userStopped = alignUserStopped(job);
-      const seated = userStopped ? null : estimateDentalFrame(loaded);
-      if (seated) reseatOcclusalOrigin(loaded, seated);
-      for (const entry of loaded) {
-        entry.openedPositions = captureBasePositions(entry.geometry);
+        if (cancelled || gen !== layoutGenRef.current) {
+          for (const entry of loaded) {
+            releaseSceneGeometry(entry.geometry);
+            releaseSceneTexture(entry.texture);
+          }
+          return;
+        }
+        const userStopped = alignUserStopped(job);
+        const frame = userStopped ? null : estimateDentalFrame(loaded);
+        if (frame) reseatOcclusalOrigin(loaded, frame);
+        seated = Boolean(frame);
+        if (alignEpochRef.current === job.epoch) setAligning(false);
       }
       for (const entry of loaded) group.add(entry.mesh);
       loadedRef.current = loaded;
       if (manualRef.current.arch) layoutSplitRef.current(manualRef.current.arch);
-      else placeLoadedRef.current(Boolean(seated));
-      if (alignEpochRef.current === job.epoch) setAligning(false);
+      else placeLoadedRef.current(seated);
       onScanColorChangeRef.current?.(loaded.some((entry) => entry.hasColor));
       setParseNote(
         failed.length ? `열지 못했습니다: ${failed.join(", ")}` : "",
       );
       setLoadVersion((v) => v + 1);
+      onMeshesReadyRef.current?.({
+        deformed: dirtyScanRoles(loaded).size > 0,
+        restore: true,
+      });
     })();
 
     return () => {
@@ -3332,6 +3364,12 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         if (manualRef.current.arch) layoutSplitRef.current(manualRef.current.arch);
         else placeLoadedRef.current(Boolean(seated));
         setLoadVersion((version) => version + 1);
+        if (!userStopped) {
+          onMeshesReadyRef.current?.({
+            deformed: dirtyScanRoles(loaded).size > 0,
+            restore: false,
+          });
+        }
       } finally {
         if (gen === layoutGenRef.current && alignEpochRef.current === job.epoch) {
           setAligning(false);
@@ -3651,6 +3689,62 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         }
         if (!changed) return;
         syncBadgesRef.current();
+        setLoadVersion((value) => value + 1);
+      },
+      exportInsertionAxes: () =>
+        insertionAxesRef.current.map((axis) => ({
+          key: axis.key,
+          toothNumbers: [...axis.toothNumbers],
+          dir: [axis.dir.x, axis.dir.y, axis.dir.z],
+          origin: [axis.origin.x, axis.origin.y, axis.origin.z],
+          radius: axis.radius,
+          view: {
+            position: [axis.view.position.x, axis.view.position.y, axis.view.position.z],
+            target: [axis.view.target.x, axis.view.target.y, axis.view.target.z],
+            up: [axis.view.up.x, axis.view.up.y, axis.view.up.z],
+            zoom: axis.view.zoom,
+            left: axis.view.left,
+            right: axis.view.right,
+            top: axis.view.top,
+            bottom: axis.view.bottom,
+          },
+        })),
+      restoreInsertionAxes: (axes) => {
+        const restored: InsertionAxis[] = [];
+        for (const axis of axes) {
+          const origin = new THREE.Vector3(...axis.origin);
+          const dir = new THREE.Vector3(...axis.dir);
+          if (dir.lengthSq() < 1e-8) continue;
+          dir.normalize();
+          placementsRef.current = alignPlacementsToPoint(
+            placementsRef.current,
+            axis.toothNumbers,
+            origin,
+            axis.radius,
+          );
+          restored.push({
+            key: axis.key,
+            toothNumbers: [...axis.toothNumbers],
+            dir,
+            origin,
+            radius: axis.radius,
+            view: {
+              position: new THREE.Vector3(...axis.view.position),
+              target: new THREE.Vector3(...axis.view.target),
+              up: new THREE.Vector3(...axis.view.up),
+              zoom: axis.view.zoom,
+              left: axis.view.left,
+              right: axis.view.right,
+              top: axis.view.top,
+              bottom: axis.view.bottom,
+            },
+          });
+        }
+        insertionAxesRef.current = restored;
+        for (const entry of loadedRef.current) entry.align = null;
+        syncInsertionMarkerRef.current();
+        syncBadgesRef.current();
+        onInsertionAxisChangeRef.current?.(restored.length > 0);
         setLoadVersion((value) => value + 1);
       },
       setInsertionFromView: (toothNumbers) => {

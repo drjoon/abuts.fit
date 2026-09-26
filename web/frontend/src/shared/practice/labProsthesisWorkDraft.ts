@@ -1,4 +1,4 @@
-// 기공소 AI 보철 — 작업 중 스캔은 IndexedDB에만 두고, 창을 닫을 때 서버로 올린다.
+// 기공소 AI 보철 — 문서를 바꾸는 명령마다 IndexedDB에 남기고, 창을 닫을 때 스캔을 서버로 올린다.
 // related files:
 // - web/frontend/src/shared/components/practice/LabProsthesisAiDesignDialog.tsx
 // - web/frontend/src/shared/files/hpsDcmWrite.ts
@@ -9,6 +9,7 @@ import {
   abutsWorkScanFileName,
   type WorkScanRole,
 } from "@/shared/practice/labProsthesisAiDesign";
+import type { ToothDesignEdit } from "@/shared/practice/labProsthesisModify";
 
 const DB_NAME = "abuts-lab-prosthesis-work";
 const STORE = "drafts";
@@ -23,9 +24,41 @@ export type WorkDraftFile = {
   bytes: ArrayBuffer;
 };
 
+export type WorkSessionAxis = {
+  key: string;
+  toothNumbers: string[];
+  dir: [number, number, number];
+  origin: [number, number, number];
+  radius: number;
+  view: {
+    position: [number, number, number];
+    target: [number, number, number];
+    up: [number, number, number];
+    zoom: number;
+    left: number;
+    right: number;
+    top: number;
+    bottom: number;
+  };
+};
+
+/** 스캔 좌표 외에 마진·생성·삽입축. 창을 다시 열면 이 문서를 복원한다. */
+export type WorkSessionDocument = {
+  edits: Record<string, ToothDesignEdit>;
+  generated: Record<string, boolean>;
+  insertionAxes: WorkSessionAxis[];
+  savedAt: number;
+};
+
 export type WorkDraftRecord = {
   transferId: string;
   files: WorkDraftFile[];
+  document: WorkSessionDocument | null;
+};
+
+type StoredDraft = {
+  files: WorkDraftFile[];
+  document: WorkSessionDocument | null;
 };
 
 const isBrowser = typeof window !== "undefined" && !!window.indexedDB;
@@ -51,10 +84,78 @@ function openDb(): Promise<IDBDatabase> {
   return dbPromise;
 }
 
-function filesOf(row: unknown): WorkDraftFile[] {
-  if (!row || typeof row !== "object") return [];
+function tuple3(value: unknown): [number, number, number] | null {
+  if (!Array.isArray(value) || value.length < 3) return null;
+  const x = Number(value[0]);
+  const y = Number(value[1]);
+  const z = Number(value[2]);
+  if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return null;
+  return [x, y, z];
+}
+
+function axisOf(value: unknown): WorkSessionAxis | null {
+  if (!value || typeof value !== "object") return null;
+  const row = value as WorkSessionAxis;
+  const dir = tuple3(row.dir);
+  const origin = tuple3(row.origin);
+  const view = row.view;
+  if (!dir || !origin || !view || typeof view !== "object") return null;
+  const position = tuple3(view.position);
+  const target = tuple3(view.target);
+  const up = tuple3(view.up);
+  const key = String(row.key || "").trim();
+  if (!position || !target || !up || !key) return null;
+  const toothNumbers = Array.isArray(row.toothNumbers)
+    ? row.toothNumbers.map((tooth) => String(tooth || "").trim()).filter(Boolean)
+    : [];
+  return {
+    key,
+    toothNumbers,
+    dir,
+    origin,
+    radius: Number(row.radius) || 0,
+    view: {
+      position,
+      target,
+      up,
+      zoom: Number(view.zoom) || 1,
+      left: Number(view.left) || 0,
+      right: Number(view.right) || 0,
+      top: Number(view.top) || 0,
+      bottom: Number(view.bottom) || 0,
+    },
+  };
+}
+
+function documentOf(row: unknown): WorkSessionDocument | null {
+  if (!row || typeof row !== "object") return null;
+  const doc = (row as { document?: unknown }).document;
+  if (!doc || typeof doc !== "object") return null;
+  const body = doc as WorkSessionDocument;
+  const edits = body.edits;
+  if (!edits || typeof edits !== "object" || Array.isArray(edits)) return null;
+  const generated =
+    body.generated && typeof body.generated === "object" && !Array.isArray(body.generated)
+      ? body.generated
+      : {};
+  const insertionAxes = Array.isArray(body.insertionAxes)
+    ? body.insertionAxes.map(axisOf).filter((axis): axis is WorkSessionAxis => axis != null)
+    : [];
+  return {
+    edits,
+    generated,
+    insertionAxes,
+    savedAt: Number(body.savedAt) || 0,
+  };
+}
+
+function storedOf(row: unknown): StoredDraft {
+  if (!row || typeof row !== "object") return { files: [], document: null };
   const files = (row as WorkDraftRecord).files;
-  return Array.isArray(files) ? files : [];
+  return {
+    files: Array.isArray(files) ? files : [],
+    document: documentOf(row),
+  };
 }
 
 function readRecord(transferId: string): Promise<WorkDraftRecord | null> {
@@ -66,8 +167,16 @@ function readRecord(transferId: string): Promise<WorkDraftRecord | null> {
         const tx = db.transaction(STORE, "readonly");
         const request = tx.objectStore(STORE).get(id);
         request.onsuccess = () => {
-          const files = filesOf(request.result);
-          resolve(files.length > 0 ? { transferId: id, files } : null);
+          const stored = storedOf(request.result);
+          if (stored.files.length === 0 && !stored.document) {
+            resolve(null);
+            return;
+          }
+          resolve({
+            transferId: id,
+            files: stored.files,
+            document: stored.document,
+          });
         };
         request.onerror = () => reject(request.error);
       }),
@@ -80,7 +189,7 @@ function readRecord(transferId: string): Promise<WorkDraftRecord | null> {
  */
 function updateRecord(
   transferId: string,
-  update: (files: WorkDraftFile[]) => WorkDraftFile[] | null,
+  update: (prev: StoredDraft) => StoredDraft | null,
 ): Promise<void> {
   const id = String(transferId || "").trim();
   if (!id || !isBrowser) return Promise.resolve();
@@ -91,10 +200,15 @@ function updateRecord(
         const store = tx.objectStore(STORE);
         const request = store.get(id);
         request.onsuccess = () => {
-          const next = update(filesOf(request.result));
+          const next = update(storedOf(request.result));
           if (next == null) return;
-          if (next.length === 0) store.delete(id);
-          else store.put({ transferId: id, files: next }, id);
+          if (next.files.length === 0 && !next.document) store.delete(id);
+          else {
+            store.put(
+              { transferId: id, files: next.files, document: next.document },
+              id,
+            );
+          }
         };
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
@@ -116,10 +230,13 @@ export function mergeWorkDraft(
 ): Promise<void> {
   if (files.length === 0) return Promise.resolve();
   const incoming = [...files];
-  return updateRecord(transferId, (prev) => [
-    ...prev.filter((file) => !incoming.some((next) => next.role === file.role)),
-    ...incoming,
-  ]);
+  return updateRecord(transferId, (prev) => ({
+    document: prev.document,
+    files: [
+      ...prev.files.filter((file) => !incoming.some((next) => next.role === file.role)),
+      ...incoming,
+    ],
+  }));
 }
 
 export function stampWorkDraftSavedAt(
@@ -130,10 +247,13 @@ export function stampWorkDraftSavedAt(
   if (roles.length === 0) return Promise.resolve();
   const roleSet = new Set(roles);
   return updateRecord(transferId, (prev) => {
-    if (prev.length === 0) return null;
-    return prev.map((file) =>
-      roleSet.has(file.role) ? { ...file, savedAt } : file,
-    );
+    if (prev.files.length === 0) return null;
+    return {
+      document: prev.document,
+      files: prev.files.map((file) =>
+        roleSet.has(file.role) ? { ...file, savedAt } : file,
+      ),
+    };
   });
 }
 
@@ -143,9 +263,10 @@ export function dropWorkDraftRoles(
 ): Promise<void> {
   if (roles.length === 0) return Promise.resolve();
   const roleSet = new Set(roles);
-  return updateRecord(transferId, (prev) =>
-    prev.filter((file) => !roleSet.has(file.role)),
-  );
+  return updateRecord(transferId, (prev) => ({
+    document: prev.document,
+    files: prev.files.filter((file) => !roleSet.has(file.role)),
+  }));
 }
 
 export async function writeWorkDraftMeshes(
@@ -174,6 +295,36 @@ export async function writeWorkDraftMeshes(
   }
   await mergeWorkDraft(transferId, files);
   return files;
+}
+
+/** 마진·삽입축 문서를 저장한다. 스캔 바이트는 그대로 둔다. */
+export function writeWorkSessionDocument(
+  transferId: string,
+  document: WorkSessionDocument,
+): Promise<void> {
+  return updateRecord(transferId, (prev) => ({
+    files: prev.files,
+    document,
+  }));
+}
+
+/**
+ * 이번에 넘긴 스캔과 작업 문서를 한 번에 넣는다.
+ * 스캔이 없으면 문서만 갱신한다.
+ */
+export async function writeWorkSession(
+  transferId: string,
+  input: {
+    meshes: readonly WorkDraftMesh[];
+    document: WorkSessionDocument;
+  },
+): Promise<WorkDraftFile[]> {
+  const encoded =
+    input.meshes.length > 0
+      ? await writeWorkDraftMeshes(transferId, input.meshes, input.document.savedAt)
+      : [];
+  await writeWorkSessionDocument(transferId, input.document);
+  return encoded;
 }
 
 function roleSavedAt(

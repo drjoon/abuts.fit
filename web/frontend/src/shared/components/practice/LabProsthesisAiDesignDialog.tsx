@@ -26,6 +26,7 @@
 // - 2026-09-26: 작업 저장·전체 생성은 없앤다. 작업은 IndexedDB에 두고 닫을 때 서버에 올린다.
 // - 2026-09-26: 작업 스캔은 의뢰 파일이 아니라 채팅 작업 파일에 둔다.
 // - 2026-09-26: 헤더에 자동 저장 스위치와 실행 취소·다시 실행.
+// - 2026-09-26: 자동 맞춤·삽입축처럼 문서를 바꾸는 명령마다 작업 초안을 저장한다.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDownToLine,
@@ -98,6 +99,9 @@ import {
   readWorkDraft,
   stampWorkDraftSavedAt,
   writeWorkDraftMeshes,
+  writeWorkSession,
+  writeWorkSessionDocument,
+  type WorkSessionDocument,
 } from "@/shared/practice/labProsthesisWorkDraft";
 import {
   undercutLimitFromRange,
@@ -254,6 +258,14 @@ type WorkUndoBook = {
   closeTimer: number;
 };
 
+function workDocumentSignature(document: WorkSessionDocument): string {
+  return JSON.stringify({
+    edits: document.edits,
+    generated: document.generated,
+    insertionAxes: document.insertionAxes,
+  });
+}
+
 function storedAutoSave() {
   try {
     return window.localStorage.getItem(AUTO_SAVE_PREF_KEY) !== "0";
@@ -383,9 +395,12 @@ function LabProsthesisAiDesignDialog({
   const saveLockRef = useRef(false);
   const pendingDraftRolesRef = useRef<Set<WorkScanRole>>(new Set());
   const lastDraftSigRef = useRef("");
+  const lastDocSigRef = useRef("");
+  const sessionDocRef = useRef<WorkSessionDocument | null>(null);
   const suspendDraftRef = useRef(false);
   const draftTimerRef = useRef(0);
   const draftQueueRef = useRef(Promise.resolve());
+  const queueSaveWorkRef = useRef<() => void>(() => {});
   const { toast } = useToast();
   const { uploadFiles } = useS3TempUpload({ token: authToken });
   const workObserveRef = useRef<ResizeObserver | null>(null);
@@ -443,6 +458,8 @@ function LabProsthesisAiDesignDialog({
       setAlignBusy(false);
       pendingDraftRolesRef.current = new Set();
       lastDraftSigRef.current = "";
+      lastDocSigRef.current = "";
+      sessionDocRef.current = null;
       suspendDraftRef.current = false;
       window.clearTimeout(draftTimerRef.current);
       window.clearTimeout(historyRef.current.closeTimer);
@@ -512,6 +529,18 @@ function LabProsthesisAiDesignDialog({
           );
           localFiles = assigned.byId;
           pendingDraftRolesRef.current = new Set(assigned.roles);
+          if (draft?.document) {
+            editsRef.current = draft.document.edits;
+            generatedRef.current = draft.document.generated;
+            sessionDocRef.current = draft.document;
+            lastDocSigRef.current = workDocumentSignature(draft.document);
+            setEdits(draft.document.edits);
+            setGenerated(draft.document.generated);
+            if (draft.document.insertionAxes.length > 0) {
+              setInsertionKeys(draft.document.insertionAxes.map((axis) => axis.key));
+              setInsertionShown(true);
+            }
+          }
         } catch {
           localFiles = new Map();
         }
@@ -810,6 +839,7 @@ function LabProsthesisAiDesignDialog({
     const key = book.strokeKey;
     book.stroke = false;
     book.strokeKey = "";
+    queueSaveWorkRef.current();
     book.closeTimer = window.setTimeout(() => {
       const current = historyRef.current;
       current.closeTimer = 0;
@@ -874,6 +904,7 @@ function LabProsthesisAiDesignDialog({
     if (book.future.length > UNDO_LIMIT) book.future.shift();
     applySnap(snap);
     publishHistory();
+    queueSaveWorkRef.current();
   };
 
   const redoWork = () => {
@@ -889,6 +920,7 @@ function LabProsthesisAiDesignDialog({
     if (book.past.length > UNDO_LIMIT) book.past.shift();
     applySnap(snap);
     publishHistory();
+    queueSaveWorkRef.current();
   };
 
   const onDesignGesture = (gesture: DesignGesture) => {
@@ -965,6 +997,7 @@ function LabProsthesisAiDesignDialog({
     });
     setModifyTool("refine");
     setStage("design");
+    queueSaveWorkRef.current();
   };
 
   const onStage = (next: DesignStage) => {
@@ -994,6 +1027,7 @@ function LabProsthesisAiDesignDialog({
     if (fitted !== true) discardJawCheckpoint(before);
     setAlignBusy(false);
     setAlignKind(null);
+    if (fitted === true) queueSaveWorkRef.current();
   };
 
   const showTooth = (toothNumber: string) => {
@@ -1028,6 +1062,7 @@ function LabProsthesisAiDesignDialog({
     setInsertionKeys((prev) => (prev.includes(key) ? prev : [...prev, key]));
     setInsertionShown(true);
     applyColorDetections(viewerRef.current?.detectColorMargins(toothNumbers) ?? []);
+    queueSaveWorkRef.current();
   };
 
   const enqueueDraft = useCallback((task: () => Promise<void>) => {
@@ -1039,39 +1074,55 @@ function LabProsthesisAiDesignDialog({
     return run;
   }, []);
 
-  const flushDirtyDraft = useCallback(() => {
+  const currentWorkDocument = useCallback((): WorkSessionDocument => {
+    const axes =
+      viewerRef.current?.exportInsertionAxes() ??
+      sessionDocRef.current?.insertionAxes ??
+      [];
+    return {
+      edits: editsRef.current,
+      generated: generatedRef.current,
+      insertionAxes: axes,
+      savedAt: Date.now(),
+    };
+  }, []);
+
+  const flushWorkDraft = useCallback(() => {
     if (!autoSaveRef.current) return Promise.resolve();
     const id = String(transferId || "").trim();
     if (!id) return Promise.resolve();
     return enqueueDraft(async () => {
-      if (saveLockRef.current || suspendDraftRef.current || alignBusy) return;
+      if (saveLockRef.current || suspendDraftRef.current) return;
+      const document = currentWorkDocument();
+      const docSig = workDocumentSignature(document);
       const sig = viewerRef.current?.changedScanSignature() ?? "";
-      if (!sig || sig === lastDraftSigRef.current) return;
-      const meshes = viewerRef.current?.exportChangedScans() ?? [];
-      if (meshes.length === 0) return;
-      await writeWorkDraftMeshes(id, meshes);
-      lastDraftSigRef.current = sig;
+      const meshes =
+        sig && sig !== lastDraftSigRef.current
+          ? (viewerRef.current?.exportChangedScans() ?? [])
+          : [];
+      if (docSig === lastDocSigRef.current && meshes.length === 0) return;
+      await writeWorkSession(id, { meshes, document });
+      if (meshes.length > 0 && sig) lastDraftSigRef.current = sig;
+      lastDocSigRef.current = docSig;
+      sessionDocRef.current = document;
     });
-  }, [alignBusy, enqueueDraft, transferId]);
+  }, [currentWorkDocument, enqueueDraft, transferId]);
+
+  const queueSaveWork = useCallback(() => {
+    if (!autoSaveRef.current) return;
+    window.clearTimeout(draftTimerRef.current);
+    draftTimerRef.current = window.setTimeout(() => {
+      void flushWorkDraft();
+    }, 0);
+  }, [flushWorkDraft]);
+  queueSaveWorkRef.current = queueSaveWork;
 
   useEffect(() => {
     if (!open) return;
-    let seen = "";
-    const poll = window.setInterval(() => {
-      if (!autoSaveRef.current) return;
-      if (saveLockRef.current || suspendDraftRef.current || alignBusy) return;
-      const sig = viewerRef.current?.changedScanSignature() ?? "";
-      if (!sig || sig === seen || sig === lastDraftSigRef.current) return;
-      seen = sig;
-      window.clearTimeout(draftTimerRef.current);
-      draftTimerRef.current = window.setTimeout(() => {
-        void flushDirtyDraft();
-      }, 1200);
-    }, 1000);
     const onHide = () => {
       window.clearTimeout(draftTimerRef.current);
       if (!autoSaveRef.current) return;
-      void flushDirtyDraft();
+      void flushWorkDraft();
     };
     const onHidden = () => {
       if (document.visibilityState === "hidden") onHide();
@@ -1079,12 +1130,11 @@ function LabProsthesisAiDesignDialog({
     window.addEventListener("pagehide", onHide);
     document.addEventListener("visibilitychange", onHidden);
     return () => {
-      window.clearInterval(poll);
       window.clearTimeout(draftTimerRef.current);
       window.removeEventListener("pagehide", onHide);
       document.removeEventListener("visibilitychange", onHidden);
     };
-  }, [alignBusy, flushDirtyDraft, open]);
+  }, [flushWorkDraft, open]);
 
   const persistWorkingScans = useCallback(async (): Promise<boolean> => {
     if (saveLockRef.current) return false;
@@ -1113,6 +1163,10 @@ function LabProsthesisAiDesignDialog({
           if (dirty.length > 0 && dirtyStamp) {
             lastDraftSigRef.current = dirtyStamp;
           }
+          const document = currentWorkDocument();
+          await writeWorkSessionDocument(id, document);
+          lastDocSigRef.current = workDocumentSignature(document);
+          sessionDocRef.current = document;
           const draft = await readWorkDraft(id);
           const serverAt = newestWorkScanUploadedAtMs(filesRef.current || []);
           const dirtyRoles = new Set(dirty.map((row) => row.role));
@@ -1247,6 +1301,7 @@ function LabProsthesisAiDesignDialog({
     toast,
     transferId,
     uploadFiles,
+    currentWorkDocument,
   ]);
 
   const undoWorkRef = useRef(undoWork);
@@ -1443,6 +1498,7 @@ function LabProsthesisAiDesignDialog({
                 applyColorDetections(
                   viewerRef.current?.detectColorMargins(toothNumbers) ?? [],
                 );
+                queueSaveWorkRef.current();
               }}
               showInsertionAxis={insertionShown}
               showCenterGuides={centerGuides}
@@ -1462,6 +1518,7 @@ function LabProsthesisAiDesignDialog({
                 setAlignBusy(false);
                 setAlignArch(null);
                 setAlignPicks({ model: 0, bite: 0 });
+                queueSaveWorkRef.current();
               }}
               onAlignFailed={() => {
                 discardJawCheckpoint(alignBeforeSigRef.current);
@@ -1471,6 +1528,13 @@ function LabProsthesisAiDesignDialog({
               onAlignCancelled={() => {
                 discardJawCheckpoint(alignBeforeSigRef.current);
                 setAlignBusy(false);
+              }}
+              onMeshesReady={({ deformed, restore }) => {
+                if (restore) {
+                  const axes = sessionDocRef.current?.insertionAxes ?? [];
+                  if (axes.length > 0) viewerRef.current?.restoreInsertionAxes(axes);
+                }
+                if (deformed) queueSaveWorkRef.current();
               }}
               className="absolute inset-0"
             />
@@ -2000,6 +2064,7 @@ function LabProsthesisAiDesignDialog({
                             }
                             return out;
                           });
+                          queueSaveWorkRef.current();
                         }}
                         toothLabel={
                           activeTooth
@@ -2030,6 +2095,7 @@ function LabProsthesisAiDesignDialog({
                                   prev[activeNumber] ?? createToothDesignEdit(),
                                 ),
                           }));
+                          queueSaveWorkRef.current();
                         }}
                         onClearMargin={() => {
                           if (!activeNumber) return;
@@ -2042,6 +2108,7 @@ function LabProsthesisAiDesignDialog({
                               margin: { ...current.margin, deleted: true },
                             },
                           }));
+                          queueSaveWorkRef.current();
                         }}
                         onMatchInsertion={() => {
                           if (bridgeSpan.length === 0) return;
@@ -2061,6 +2128,7 @@ function LabProsthesisAiDesignDialog({
                               },
                             };
                           });
+                          queueSaveWorkRef.current();
                         }}
                         onRemoveHook={() => {
                           if (!activeNumber) return;
@@ -2075,6 +2143,7 @@ function LabProsthesisAiDesignDialog({
                               },
                             };
                           });
+                          queueSaveWorkRef.current();
                         }}
                       />
                     ) : null}
@@ -2170,6 +2239,7 @@ function LabProsthesisAiDesignDialog({
               onClearTooth={(toothNumber) => {
                 beginEditUndo();
                 setGenerated((prev) => ({ ...prev, [toothNumber]: false }));
+                queueSaveWorkRef.current();
               }}
             />
           </div>

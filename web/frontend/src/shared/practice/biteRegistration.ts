@@ -1215,7 +1215,7 @@ async function ppfSearch(
     let bestVotes = 0;
     let bestIndex = -1;
     let bestBin = 0;
-    for (let m = 0; m < model.count; m += 1) {
+    for (const m of modelIds) {
       const base = m * PPF_ALPHA_BINS;
       for (let bin = 0; bin < PPF_ALPHA_BINS; bin += 1) {
         const prev = votes[base + ((bin + PPF_ALPHA_BINS - 1) % PPF_ALPHA_BINS)] ?? 0;
@@ -1388,7 +1388,8 @@ async function alignArch(
   let bestCloud = local;
   let bestMatrix = localMatrix;
   let bestFit = localFit;
-  const deepEnough = localFit.coverage >= 0.28 && localFit.sideMean < mmToUnits(0.28, unitToMm);
+  // 가까운 ICP로 이미 붙었으면 전역 점쌍 탐색은 하지 않는다.
+  const deepEnough = seatedFit(localFit, unitToMm);
   if (!deepEnough) {
     const pose = await globalPose(source, target, unitToMm, options);
     if (pose) {
