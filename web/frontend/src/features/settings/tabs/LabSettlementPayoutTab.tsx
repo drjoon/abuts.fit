@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/settlement/affiliateVat.ts
 // - web/backend/controllers/credits/credit.controller.js
 // change-log:
+// - 2026-09-26: 정산규칙 — 수수료 제목·협력·하청 문장.
 // - 2026-09-24: 정산규칙 — 플랫폼 사용료 정책 2% · 이벤트 0% 복원.
 // - 2026-09-20: 정산규칙 — 하청 % · 작업시작 적립 시 공제 안내.
 // - 2026-09-16: 지급 표 로딩 — 텍스트 대신 4열 행 스켈레톤.
@@ -596,7 +597,7 @@ export const LabSettlementPayoutTab = () => {
                     </p>
                   </div>
                 </SettlementPolicySection>
-                <SettlementPolicySection title="하청 수수료">
+                <SettlementPolicySection title="수수료">
                   <div className="flex gap-2.5">
                     <Percent className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
                     <p>

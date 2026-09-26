@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/business/settings/PayoutAccountCard.tsx
 // - web/backend/jobs/monthlySettlementBatchWorker.js
 // change-log:
+// - 2026-09-26: 수수료 평문 — 협력은 수수료 없이 전액, 하청은 영업 수수료를 제한 적립.
 // - 2026-09-26: 플랫폼 사용료·하청 영업 수수료 평문 안내를 정책 문장과 맞춤.
 // - 2026-09-24: 지정 수수료 기본 표시 2%. 이벤트 문구는 「2% → 0%」(취소선은 LabDirectPlatformFeeNotice).
 // - 2026-09-21: PAYOUT_ACCOUNT_CARD_ID 공통화(기공소·딜러사). LAB_* 별칭 유지.
@@ -137,7 +138,7 @@ export function formatLabDirectPlatformFeeNotice(opts?: {
   subcontractRatePct?: number;
 }): string {
   const salesPct = resolveLabSubcontractSalesFeePct(opts?.subcontractRatePct);
-  return `협력건은 기공비 전액을 크레딧으로 적립합니다. 하청건은 매출액의 ${salesPct}%를 영업 수수료로 차감하고, 나머지를 크레딧으로 적립합니다.`;
+  return `협력건은 수수료 없이 기공비 전액을 크레딧으로 적립합니다. 하청건은 ${salesPct}% 영업 수수료를 제한 나머지를 적립합니다.`;
 }
 
 /** @deprecated UI는 LabDirectPlatformFeeNotice 사용. */

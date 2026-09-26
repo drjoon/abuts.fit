@@ -1,3 +1,4 @@
+// - 2026-09-26: 기공소 정책 — 수수료 제목·협력·하청 문장.
 // - 2026-09-26: 기공소 정책 — 플랫폼 사용료·영업 수수료 안내를 단축.
 // - 2026-09-23: 런칭 이벤트 중 — 정상가 취소선 + 이벤트가 · 「이벤트 중」.
 // - 2026-09-23: FM덴탈 월정액 가입 — 기공소만(치과 제외).
@@ -667,7 +668,7 @@ export const PricingPolicyDialog = ({
 
               {showLabFeeSection ? (
                 <>
-                  <PolicySection title='하청 수수료'>
+                  <PolicySection title='수수료'>
                     <p>
                       <LabDirectPlatformFeeNotice
                         subcontractRatePct={subcontractFeePct}
