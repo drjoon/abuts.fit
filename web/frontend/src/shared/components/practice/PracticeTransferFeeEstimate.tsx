@@ -3,7 +3,7 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothWorkChartReadOnly.tsx
 // - 2026-09-26: 견적 ? 아이콘을 기공비 금액 바로 오른쪽으로.
-// - 2026-09-26: 기공소 수수료 줄 옆에 「수수료 줄이기」. 클릭 시 AI 학습 이용 동의 모달.
+// - 2026-09-26: 기공소 「학습 이용」버튼·동의 모달 제거. 안내는 약관·개인정보.
 // - 2026-09-20: 정산 상세(기공소) — 플랫폼 수수료·수령액 표시. 뱃지 적립보류/완료.
 // - 2026-09-07: 견적 툴팁 — 치아당 수가여도 상·하악 전체 동일 보철은 상악/하악 한 줄.
 // - 2026-09-07: 견적·툴팁 보철물 — 상·하악 전체 치아번호는 상악/하악(중복 (상악) 접미사면 번호 생략).
@@ -82,7 +82,6 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/shared/ui/cn";
-import { openLabAiTrainingConsentPrompt } from "@/features/settings/LabAiTrainingConsentPrompt";
 import {
   labFeeSettingsFromAcceptPath,
   LAB_FEE_SETTINGS_PATH,
@@ -165,8 +164,6 @@ type PracticeTransferFeeEstimateProps = {
   settlementShippingLines?: PracticeTransferSettlementShippingLine[] | null;
   /** 견적 상세 툴팁 open/close (가이드투어 등) */
   onBreakdownTooltipOpenChange?: (open: boolean) => void;
-  /** 수수료 줄이기 — 이 의뢰부터 동의를 다시 맞춘다 */
-  consentTransferId?: string | null;
   /** true면 금액 blur-until-hover 해제(가이드투어 견적 하이라이트 등) */
   revealAmounts?: boolean;
   /**
@@ -808,7 +805,6 @@ export function PracticeTransferFeeEstimate({
   creditAbutmentHoldPending = null,
   settlementShippingLines = null,
   onBreakdownTooltipOpenChange,
-  consentTransferId = null,
   revealAmounts = false,
   confirmedFeeLabel = null,
   feeStages = null,
@@ -1048,29 +1044,12 @@ export function PracticeTransferFeeEstimate({
       : "mt-0.5 flex w-full justify-center text-[11px]",
   );
   const labFeeSummary =
-    isLab && (labSettlementDiffers || consentTransferId) ? (
+    isLab && labSettlementDiffers ? (
       <span className={labFeeSummaryClassName}>
-        {labSettlementDiffers ? (
-          <span>
-            수령 {formatManWon(labSettlementDisplay)} · 수수료{" "}
-            {formatFeeRatePct(feeRateApplied)}
-          </span>
-        ) : null}
-        {consentTransferId ? (
-          <button
-            type="button"
-            className="inline-flex h-[18px] shrink-0 items-center rounded border border-primary/35 bg-background px-1.5 text-[10px] font-semibold leading-none text-primary hover:bg-primary-soft"
-            onPointerDown={(event) => event.stopPropagation()}
-            onMouseDown={(event) => event.stopPropagation()}
-            onClick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              openLabAiTrainingConsentPrompt(consentTransferId);
-            }}
-          >
-            학습 이용
-          </button>
-        ) : null}
+        <span>
+          수령 {formatManWon(labSettlementDisplay)} · 수수료{" "}
+          {formatFeeRatePct(feeRateApplied)}
+        </span>
       </span>
     ) : null;
   const labFeeUnset = quote.labFeeConfigured === false;

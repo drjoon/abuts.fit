@@ -205,7 +205,7 @@ Notes:
     - 기공의뢰 자동매칭: 상단 `DevopsDesignDeadlineTab`(수락 후 마감 요약) + `PracticeTransferAutoMatchTab`(인증 기공소). 구 `?tab=design|deadline` → `autoMatch`
   - 의뢰자(기공소) 설정: `requestorKind=lab`일 때 알림 **왼쪽**에 「기공비」 탭
     - `src/pages/requestor/settings/SettingsPage.tsx`
-    - 구 `?tab=auto-match`·`trading-partners` → 계정. 인증 신청 UI 제거(관리자 `PracticeTransferAutoMatchTab`). 구 `?tab=ai` → 계정. 학습 이용 변경은 기공의뢰 「학습 이용」
+    - 구 `?tab=auto-match`·`trading-partners` → 계정. 인증 신청 UI 제거(관리자 `PracticeTransferAutoMatchTab`). 구 `?tab=ai` → 계정. 학습 안내는 약관·개인정보. 기공의뢰에 동의 버튼·모달을 두지 않는다
     - `src/features/settings/tabs/LabFeeScheduleTab.tsx` — 항목 카드(이름·단위·수가/리메이크). 하단 저장 버튼 없음, 항목 변경은 디바운스 자동 저장. 제목 오른쪽 마스터 On/Off(기본 off, 켜면 설정 완료·즉시 저장). **무료 리메이크 기간(년)** `freeRemakeYears`(null 초기·하이라이트, 0=유료, 1+=N년 무료). 로그인 시 미설정이면 `LabFeeSetupPrompt` → `?tab=lab-fees&setup=1`로 스위치 하이라이트. **무료기간 null**이면 `from=freeRemake` 포워드. **작업시작 클릭 시 미설정이면** `?tab=lab-fees&setup=1&from=accept`로 포워드·안내 모달. 유지장치는 연결 스팬당 1세트(같은 악궁이어도 끊기면 별도). 임시치아는 카드 두 장(이름 모두 「임시치아」, 3치·6치 이하). 청구는 의뢰서 「임시치아」에 치아 수 구간으로 합산. **카탈로그에 없는 신규 항목 저장 시 어벗츠 수가에 Off로 동기화·관리자 알림.**
     - 가입 이유 배너: `LabDashboardTopBanners` — 기공소 사이드 설정과 계정 팝업 사이(짧은 카피).
       - 가입 이유 (`LabPlatformBenefitsBanner`) → 클릭 시 모달
@@ -218,7 +218,7 @@ Notes:
     - `src/shared/ui/PricingPolicyDialog.tsx` — 런칭 이벤트 1만(+배송) / 정상가 1.3만(+배송 또는 FM덴탈 월정액·기공소만). 신속 +2,000 · 배송 3,500. FM 가입·해지(대표·기공소). 치과·기공소·딜러·영업팀 `requestor`: 플랫폼 사용료 없음. 협력은 전액 적립, 하청은 10% 차감. **딜러(`variant=salesman`)**: 심플웨이·커스텀어벗 매출(기공 제외) 20% · 90일 무주문이면 소개 리셋. **「의뢰자 정책」(`variant=requestor`)**: 딜러 대시보드·영업팀 성과 — 소개 치과·기공소 안내용 단가·출고·기공소 수수료.
     - 안내·청구 정가 SSOT (`creditSettings` + `src/shared/pricing/abutsAbutmentService.ts`): 정상가 **1.3만원** · 런칭 **1만원**(`resolveCustomAbutmentProductionPriceForAt`). 신속 `expressFee`(기본 +2,000). 배송 박스당 또는(기공소) FM덴탈 월정액. `regular*`는 관리자 딜러분배용. 기공소 매칭 월정 0·하청 10% — 루트 `rules.md` §2.3.
   - 수락 후 마감: `DevopsDesignDeadlineTab` — 디자인 클레임 후 작업 마감(`designDeadlineSettings.claimHours`, 기본 3시간). 파트너 **기공의뢰 자동매칭** 탭 상단
-  - 기공의뢰 자동매칭: `PracticeTransferAutoMatchTab`(카드·탭 **인증 기공소**) — 수수료 스트립(하청 %) + 기공소별 인증 ON·기공 테스트·메모. 기공소 설정 탭은 없음. 관리자 테스트 통과/`enabled` 시 풀 참여. 지정·협력 플랫폼 사용료 **0%**. 하청 `subcontractFeeRate`(기본 10%)만. 학습 이용은 기본 허용이고 요율과 무관. 기공소 설정 「AI」탭은 제거했고, 변경은 기공의뢰 「학습 이용」. 기공의뢰 진입 확인은 오른쪽 위 X·바깥 클릭으로 넘길 수 있고, 첫 작업시작 확인은 사업자에 따로 저장한다. 관리자 플랫폼 설정「인증 기공소」탭
+  - 기공의뢰 자동매칭: `PracticeTransferAutoMatchTab`(카드·탭 **인증 기공소**) — 수수료 스트립(하청 %) + 기공소별 인증 ON·기공 테스트·메모. 기공소 설정 탭은 없음. 관리자 테스트 통과/`enabled` 시 풀 참여. 지정·협력 플랫폼 사용료 **0%**. 하청 `subcontractFeeRate`(기본 10%)만. 학습 이용은 기본 허용이고 요율과 무관. 기공소 설정 「AI」탭·기공의뢰 동의 버튼·모달은 없다. 안내는 약관·개인정보. 관리자 플랫폼 설정「인증 기공소」탭
   - 기공소 어벗츠 인증: 가입 시 미신청 → 신청 → 기공 테스트 → 통과 시 인증. 상태·테스트·메모 SSOT `BusinessAnchor.abutsLabCertification` / `src/shared/practice/abutsLabCertification.ts`
   - 검증된 디자이너 지정: `DesignerAssignmentTab` / `BusinessAnchor.designAccessEnabled`(디자인 큐). API·게이트 유지, 파트너 탭 UI에서는 제거
   - 딜러사 없을 때 분배: 설정된 딜러사 분배비의 절반→제조사, 나머지 절반→어벗츠 (백엔드 `resolveRatesWithoutSalesman`와 동일 미리보기)

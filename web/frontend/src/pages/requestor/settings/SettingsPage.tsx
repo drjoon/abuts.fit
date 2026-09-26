@@ -43,7 +43,7 @@ import { InternalLabOrgBanner } from "@/features/settings/InternalLabOrgBanner";
 // 2026-08-26: 「스캔·의뢰」탭 제거. 구 `?tab=scan-order`·`3shape` → 계정.
 // 2026-08-29: 기공소 「특별공급가」탭(기공비 오른쪽).
 // 2026-09-21: 치과 「구강스캔」탭 — 구강 스캐너 사용 여부.
-// 2026-09-26: 기공소 「AI」탭 제거. 구 `?tab=ai` → 계정. 학습 이용 변경은 기공의뢰 「수수료 줄이기」.
+// 2026-09-26: 기공소 「AI」탭 제거. 구 `?tab=ai` → 계정. 학습 안내는 약관·개인정보.
 
 type TabKey =
   | "account"

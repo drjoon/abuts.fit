@@ -210,8 +210,6 @@ type PracticeToothWorkChartReadOnlyProps = {
   feeQuote?: PracticeTransferFeeQuote | null;
   feeViewer?: PracticeTransferFeeQuoteViewer;
   labAnchorId?: string | null;
-  /** 수수료 줄이기 버튼이 이 의뢰부터 동의를 맞춘다 */
-  consentTransferId?: string | null;
   skipJig?: boolean;
   /** 후속 제작 등 — 어벗·디자인비 견적 제외 */
   skipAbutmentFees?: boolean;
@@ -281,7 +279,6 @@ export const PracticeToothWorkChartReadOnly = ({
   feeQuote: storedFeeQuote = null,
   feeViewer = "practice",
   labAnchorId = null,
-  consentTransferId = null,
   skipJig = false,
   skipAbutmentFees = false,
   creditToothWorks = null,
@@ -1393,7 +1390,6 @@ export const PracticeToothWorkChartReadOnly = ({
     <PracticeTransferFeeEstimate
       quote={feeQuoteForStages}
       viewer={feeViewer}
-      consentTransferId={consentTransferId}
       skipJig={skipJig}
       labEffectiveStars={labEffectiveStars}
       confirmedFeeLabel={confirmedFeeLabel}
@@ -1412,7 +1408,6 @@ export const PracticeToothWorkChartReadOnly = ({
       <PracticeTransferFeeEstimate
         quote={feeQuoteForStages}
         viewer={feeViewer}
-      consentTransferId={consentTransferId}
         skipJig={skipJig}
         labEffectiveStars={labEffectiveStars}
         confirmedFeeLabel={confirmedFeeLabel}
@@ -1441,7 +1436,6 @@ export const PracticeToothWorkChartReadOnly = ({
       <PracticeTransferFeeEstimate
         quote={feeQuoteForStages}
         viewer={feeViewer}
-      consentTransferId={consentTransferId}
         skipJig={skipJig}
         labEffectiveStars={labEffectiveStars}
         confirmedFeeLabel={confirmedFeeLabel}

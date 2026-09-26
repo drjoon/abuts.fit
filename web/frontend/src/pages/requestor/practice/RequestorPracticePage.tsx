@@ -457,10 +457,6 @@ import {
   readLabFeeScheduleConfigured,
 } from "@/features/settings/LabFeeSetupPrompt";
 import {
-  LabAiTrainingConsentPrompt,
-  type LabAiTrainingConsentPromptHandle,
-} from "@/features/settings/LabAiTrainingConsentPrompt";
-import {
   PTX_CA_INSUFFICIENT_CREDIT_CONFIRM_LABEL,
   PTX_CA_INSUFFICIENT_CREDIT_DESCRIPTION_LINES,
   PTX_CA_INSUFFICIENT_CREDIT_REASON,
@@ -727,8 +723,6 @@ export function RequestorPracticeReceivePage({
 }) {
   const token = useAuthStore((s) => s.token);
   const user = useAuthStore((s) => s.user);
-  const aiTrainingConsentPromptRef =
-    useRef<LabAiTrainingConsentPromptHandle>(null);
   const platformGuideTour = useGuideTour();
   const queryClient = useQueryClient();
   const storedCalendarDateKey = useAuthStore(
@@ -1810,16 +1804,6 @@ export function RequestorPracticeReceivePage({
     }, delayMs);
     return () => window.clearTimeout(timer);
   }, [loadCalendarTransfers, token]);
-
-  useEffect(() => {
-    const onConsent = () => {
-      void loadCalendarTransfers({ silent: true });
-    };
-    window.addEventListener("abuts:ai-training-consent-changed", onConsent);
-    return () => {
-      window.removeEventListener("abuts:ai-training-consent-changed", onConsent);
-    };
-  }, [loadCalendarTransfers]);
 
   const removeLabReceiveTransferFromList = useCallback(
     (transfer: Pick<ReceivedPracticeTransfer, "_id" | "transferId">) => {
@@ -5261,20 +5245,6 @@ export function RequestorPracticeReceivePage({
         description: "데모 의뢰입니다. 「다음」으로 진행하세요.",
       });
       return;
-    }
-    const alreadyStarted =
-      !(
-        selectedTransfer.matchingMode === "auto" &&
-        selectedTransfer.autoMatch?.openPool
-      ) &&
-      Boolean(
-        selectedTransfer.isAccepted ||
-          selectedTransfer.isDownloaded ||
-          selectedTransfer.requestorDownloadedAt,
-      );
-    if (!alreadyStarted) {
-      const ready = await aiTrainingConsentPromptRef.current?.guardFirstWorkStart();
-      if (!ready) return;
     }
     setAcceptBusy(true);
     try {
@@ -8750,7 +8720,6 @@ export function RequestorPracticeReceivePage({
       className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden px-3 sm:px-4"
       data-guide-tour="lab_receive_workspace"
     >
-      <LabAiTrainingConsentPrompt ref={aiTrainingConsentPromptRef} />
       {showMobileActionChrome
         ? createPortal(
             <div
@@ -9307,9 +9276,6 @@ export function RequestorPracticeReceivePage({
         remakeChargeCancelBusy={remakeChargeCancelBusy}
         skipJig={Boolean(selectedTransfer?.production?.skipJig)}
         feeViewer="lab"
-        aiConsentTransferId={
-          String(selectedTransfer?._id || "").trim() || null
-        }
         onChangeRequestScanRole={handleChangeRequestScanRole}
         labBasketTag={
           normalizeLabBasketTag(selectedTransfer?.labBasketTag) || null

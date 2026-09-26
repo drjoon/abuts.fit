@@ -181,7 +181,7 @@
   - 관리자 정산 UI: `AdminPaymentsPage` 상단 3사업 축(선택형) · 집계 `GET /api/admin/credits/settlement-business-overview`(분배비율·planned 몫 포함). 분배 비율 설정: 재무 › 설정 › 분배비율. 사업영역(`/dashboard/partners`)은 팀원 배분.
 - **매칭 과금 SSOT(강제):**
   - 한 줄: **플랫폼 사용료는 폐지(지정·협력 0%). 하청은 `subcontractFeeRate`(기본 10%)만. 학습 이용 동의는 요율과 무관. 이미 `billing.feeRateApplied`에 박힌 건은 소급하지 않는다. 기공소 월 참여 0원.**
-  - 기공소(`lab`): 자동 매칭 **월 참여 수수료(`autoMatchMonthlyFee`)는 0원 고정(정책)**. 지정·협력 플랫폼 사용료는 **0%**. `aiTrainingConsent`는 **기본 허용**이며 요율에 영향을 주지 않는다. 설정 「AI」탭은 없고, 변경은 기공의뢰 「학습 이용」. 아직 답을 안 한 기공소는 기공의뢰 진입 때 확인 모달로 묻는다. 오른쪽 위 X·바깥 클릭으로 넘길 수 있고, 첫 작업시작 확인은 사업자 `aiTrainingConsent.firstWorkStartConfirmedAt`에 따로 남긴다. 거부한 건은 학습에 넣지 않는다. **어벗츠기공본부는 항상 동의한 것으로 보고 학습에 포함한다.** 하청은 `subcontractFeeRate`(기본 **10%**)만. `directPlatformFeeRate`는 신규 요율에 쓰지 않는다.
+  - 기공소(`lab`): 자동 매칭 **월 참여 수수료(`autoMatchMonthlyFee`)는 0원 고정(정책)**. 지정·협력 플랫폼 사용료는 **0%**. `aiTrainingConsent`는 **기본 허용**이며 요율에 영향을 주지 않는다. 설정 「AI」탭·기공의뢰 「학습 이용」버튼·동의 모달은 없다. 안내는 약관·개인정보·서비스. 저장값이 `allowed: false`이고 확인된 건만 학습에서 뺀다. **어벗츠기공본부는 항상 동의한 것으로 보고 학습에 포함한다.** 하청은 `subcontractFeeRate`(기본 **10%**)만. `directPlatformFeeRate`는 신규 요율에 쓰지 않는다.
   - 치과(`practice`): 커스텀어벗은 플랫폼 고시 단가(**단일가**, `membership*` 키)만. 월 구독·가입 90일 1만원·멤버십/일반 청구 분기 없음.
   - 유료 크레딧 사용처: 기공물·어벗 주문 대금. 기공소 매칭 월정·플랫폼 SaaS 과금에는 쓰지 않는다. 선수금은 어벗츠가 제공하는 서비스 대금으로 1차 결제 후 수행 기공소로 이체.
   - 설정: 단가·신속비=`AdminCreditSettingsTab` / `PATCH /api/admin/settings/credits`. 하청 % = `DevopsPlatformFeeTab` / `PATCH /api/admin/settings/platform-fees`.

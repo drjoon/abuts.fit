@@ -244,7 +244,6 @@ export function PracticeTransferLabReceiveCard({
             <PracticeTransferFeeEstimate
               quote={transfer.feeQuote}
               viewer="lab"
-              consentTransferId={String(transfer._id || "").trim() || null}
               density="card"
               skipJig={Boolean(transfer.production?.skipJig)}
               rushProcessing={Boolean(transfer.production?.rushProcessing)}
