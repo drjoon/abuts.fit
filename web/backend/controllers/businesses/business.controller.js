@@ -55,6 +55,7 @@ import {
   ensureRequestorOrgAnchor,
   isSyntheticPracticeBusinessNumber,
 } from "./requestorOrgAnchor.util.js";
+import { isAbutsLabCertificationCertified } from "../../utils/abutsLabCertification.js";
 export { updateMyBusiness, getMyAutoMatchParticipation, setMyAutoMatchParticipation, getMyFmDentalShipping, setMyFmDentalShipping, setMyAiTrainingConsent, markMyAiTrainingFirstWorkStart, verifyMyPayoutAccount };
 
 export async function checkBusinessNumberDuplicate(req, res) {
@@ -270,6 +271,12 @@ export function invalidateMyBusinessCache(businessAnchorId) {
   return removed;
 }
 
+function abutsLabCertifiedPayload(anchor) {
+  return {
+    abutsLabCertified: isAbutsLabCertificationCertified(anchor),
+  };
+}
+
 export async function getMyBusiness(req, res) {
   try {
     res.set("x-abuts-handler", "business.getMyBusiness");
@@ -370,6 +377,7 @@ export async function getMyBusiness(req, res) {
           pricingBaseDate: pricingBaseDate || null,
           ...requestorProfileResponseFields(profile),
           designAccessEnabled: false,
+          ...abutsLabCertifiedPayload(null),
         },
       });
     }
@@ -441,6 +449,7 @@ export async function getMyBusiness(req, res) {
               businessVerified: false,
             }),
           ),
+          ...abutsLabCertifiedPayload(null),
         },
       });
     }
@@ -570,6 +579,7 @@ export async function getMyBusiness(req, res) {
           businessType === "requestor"
             ? Boolean(anchor?.designAccessEnabled)
             : false,
+        ...abutsLabCertifiedPayload(anchor),
         demoMode:
           businessType === "requestor" ? Boolean(anchor?.demoMode) : false,
         demoModeStartedAt:

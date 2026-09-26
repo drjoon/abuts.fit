@@ -23,6 +23,7 @@
 // - 2026-09-26: 바뀐 스캔의 짧은 지문을 좌표 사본 없이 낸다.
 // - 2026-09-26: 카메라 각도·위치·줌이 바뀌면 알리고, 저장한 뷰를 다시 깐다.
 // - 2026-09-26: 바이트 맞춤은 연 파일과 좌표가 다르면 작업 DCM이다. 작업 DCM은 맞춤을 다시 하지 않는다.
+// - 2026-09-27: 정중앙은 모눈까지. 2mm는 옅은 점선, 10mm는 더 진하고, 가운데는 더 굵다.
 // - 2026-09-27: 뷰를 줄이면 모델 배율은 처음 맞춘 그대로 두고 좌우를 자른다.
 import {
   forwardRef,
@@ -34,6 +35,7 @@ import {
 import * as THREE from "three";
 import { CSS2DObject, CSS2DRenderer } from "three/examples/jsm/renderers/CSS2DRenderer.js";
 
+import type { WorkSessionCenterGuide } from "@/shared/practice/labProsthesisWorkDraft";
 import { ScreenSpaceOrbitControls } from "@/shared/three/screenSpaceOrbitControls";
 import {
   applyScanColorToneMapping,
@@ -188,8 +190,8 @@ type Props = {
   onInsertionAxisAimed?: (toothNumbers: readonly string[]) => void;
   /** 잡은 삽입축을 작업 영역에 그릴지. */
   showInsertionAxis?: boolean;
-  /** 화면 정중앙의 가로·세로 점선. */
-  showCenterGuides?: boolean;
+  /** off, 가운데 점선, 2mm·10mm 모눈. 모눈일 때도 정중앙이 가장 굵다. */
+  centerGuide?: WorkSessionCenterGuide;
   /** 마진·보철 수정. 없으면 그리지 않는다. */
   designEdit?: ProsthesisDesignEdit | null;
   onDesignGesture?: (gesture: DesignGesture) => void;
@@ -307,6 +309,101 @@ function disposeObject3D(root: THREE.Object3D) {
 
 function mmToGeometry(mm: number, unitToMm: number) {
   return mm / Math.max(unitToMm, 1e-9);
+}
+
+function strokeGuide(
+  ctx: CanvasRenderingContext2D,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  color: string,
+  width: number,
+  dash: number[],
+) {
+  ctx.beginPath();
+  ctx.setLineDash(dash);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+}
+
+/** 화면 가운데 기준. 2mm는 옅고, 10mm는 더 진하며, 정중앙은 더 굵다. */
+function drawViewGuides(
+  canvas: HTMLCanvasElement,
+  camera: THREE.OrthographicCamera,
+  unitToMm: number,
+  mode: WorkSessionCenterGuide,
+) {
+  const cssW = Math.max(canvas.clientWidth, 1);
+  const cssH = Math.max(canvas.clientHeight, 1);
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const pxW = Math.round(cssW * dpr);
+  const pxH = Math.round(cssH * dpr);
+  if (canvas.width !== pxW || canvas.height !== pxH) {
+    canvas.width = pxW;
+    canvas.height = pxH;
+  }
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cssW, cssH);
+  if (mode === "off") return;
+
+  const cx = cssW / 2;
+  const cy = cssH / 2;
+  if (mode === "grid") {
+    const geoH =
+      Math.abs(camera.top - camera.bottom) / Math.max(camera.zoom, 1e-6);
+    const mmH = geoH * Math.max(unitToMm, 1e-9);
+    const pxPerMm = cssH / Math.max(mmH, 1e-6);
+    const faint = "rgba(15, 23, 42, 0.22)";
+    const strong = "rgba(15, 23, 42, 0.5)";
+    const drawStep = (stepMm: number, color: string, dash: number[]) => {
+      const step = pxPerMm * stepMm;
+      if (step < 4) return;
+      for (let i = 1; ; i += 1) {
+        const d = i * step;
+        if (d > cssW / 2 + step && d > cssH / 2 + step) break;
+        if (stepMm === 2 && i % 5 === 0) continue;
+        if (d <= cssW / 2 + 1) {
+          strokeGuide(ctx, cx - d, 0, cx - d, cssH, color, 1, dash);
+          strokeGuide(ctx, cx + d, 0, cx + d, cssH, color, 1, dash);
+        }
+        if (d <= cssH / 2 + 1) {
+          strokeGuide(ctx, 0, cy - d, cssW, cy - d, color, 1, dash);
+          strokeGuide(ctx, 0, cy + d, cssW, cy + d, color, 1, dash);
+        }
+      }
+    };
+    drawStep(2, faint, [2, 3]);
+    drawStep(10, strong, [5, 4]);
+  }
+
+  const centerWidth = mode === "grid" ? 2 : 1;
+  const centerDash = mode === "grid" ? [7, 4] : [4, 3];
+  strokeGuide(
+    ctx,
+    0,
+    cy,
+    cssW,
+    cy,
+    "rgba(15, 23, 42, 0.88)",
+    centerWidth,
+    centerDash,
+  );
+  strokeGuide(
+    ctx,
+    cx,
+    0,
+    cx,
+    cssH,
+    "rgba(15, 23, 42, 0.88)",
+    centerWidth,
+    centerDash,
+  );
 }
 
 function insertionMarkerMetrics(radius: number) {
@@ -2006,7 +2103,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       onInsertionAxisChange,
       onInsertionAxisAimed,
       showInsertionAxis = false,
-      showCenterGuides = false,
+      centerGuide = "off",
       designEdit = null,
       onDesignGesture,
       manualAlignArch = null,
@@ -2021,6 +2118,9 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     ref,
   ) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const guideCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const centerGuideRef = useRef(centerGuide);
+  centerGuideRef.current = centerGuide;
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.OrthographicCamera | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -2508,6 +2608,15 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       placeViewLight(rightFront, 20, 6, 72);
       renderer.render(scene, camera);
       labelRenderer.render(scene, camera);
+      const guide = guideCanvasRef.current;
+      if (guide) {
+        drawViewGuides(
+          guide,
+          camera,
+          unitToMmRef.current,
+          centerGuideRef.current,
+        );
+      }
     };
     loop();
 
@@ -4026,15 +4135,11 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   return (
     <div className={cn("relative h-full min-h-0 w-full", className)}>
       <div ref={containerRef} className="absolute inset-0" />
-      {showCenterGuides ? (
-        <div
-          className="pointer-events-none absolute inset-0 z-[4]"
-          aria-hidden
-        >
-          <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 border-t border-dashed border-slate-900/75" />
-          <div className="absolute bottom-0 left-1/2 top-0 -translate-x-1/2 border-l border-dashed border-slate-900/75" />
-        </div>
-      ) : null}
+      <canvas
+        ref={guideCanvasRef}
+        className="pointer-events-none absolute inset-0 z-[4] h-full w-full"
+        aria-hidden
+      />
 
       {busy && items.length === 0 ? (
         <div className="pointer-events-none absolute inset-0 z-[5] flex items-center justify-center">

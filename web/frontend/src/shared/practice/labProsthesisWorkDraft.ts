@@ -45,14 +45,49 @@ export type WorkSessionAxis = {
   view: WorkSessionView;
 };
 
-/** 스캔 좌표 외에 마진·생성·삽입축·카메라. 창을 다시 열면 이 문서를 복원한다. */
+/** 정중앙 토글. off → 가운데 점선 → 2mm·10mm 모눈. */
+export type WorkSessionCenterGuide = "off" | "center" | "grid";
+
+/** 작업영역 위 토글. 모달을 닫을 때 문서에 남긴다. */
+export type WorkSessionViewToggles = {
+  insertion: boolean;
+  undercut: boolean;
+  margin: boolean;
+  center: WorkSessionCenterGuide;
+  color: boolean;
+  contact: boolean;
+  ghost: boolean;
+};
+
+/** 스캔 좌표 외에 마진·생성·삽입축·카메라·화면 토글. 창을 다시 열면 이 문서를 복원한다. */
 export type WorkSessionDocument = {
   edits: Record<string, ToothDesignEdit>;
   generated: Record<string, boolean>;
   insertionAxes: WorkSessionAxis[];
   camera: WorkSessionView | null;
+  viewToggles: WorkSessionViewToggles | null;
   savedAt: number;
 };
+
+export function parseCenterGuide(value: unknown): WorkSessionCenterGuide {
+  const raw = String(value || "").trim();
+  if (raw === "off" || raw === "center" || raw === "grid") return raw;
+  return "center";
+}
+
+export function parseViewToggles(value: unknown): WorkSessionViewToggles | null {
+  if (!value || typeof value !== "object") return null;
+  const row = value as Partial<WorkSessionViewToggles>;
+  return {
+    insertion: Boolean(row.insertion),
+    undercut: Boolean(row.undercut),
+    margin: Boolean(row.margin),
+    center: parseCenterGuide(row.center),
+    color: row.color == null ? true : Boolean(row.color),
+    contact: Boolean(row.contact),
+    ghost: Boolean(row.ghost),
+  };
+}
 
 export type WorkDraftRecord = {
   transferId: string;
@@ -155,6 +190,9 @@ function documentOf(row: unknown): WorkSessionDocument | null {
     generated,
     insertionAxes,
     camera: viewOf((body as { camera?: unknown }).camera),
+    viewToggles: parseViewToggles(
+      (body as { viewToggles?: unknown }).viewToggles,
+    ),
     savedAt: Number(body.savedAt) || 0,
   };
 }

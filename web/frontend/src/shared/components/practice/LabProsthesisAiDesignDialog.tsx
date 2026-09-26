@@ -9,7 +9,8 @@
 // - 2026-09-26: 브리지 삽입축 버튼은 스팬 한가운데. 치아는 선으로 잇고 아래 번호는 없앤다.
 // - 2026-09-26: 브리지 연결선은 치아 중심에서 끝난다. 삽입축은 그 선 중심 왼쪽.
 // - 2026-09-26: 투명 체크는 지대치 외 스캔을 20%로 비추고, 끄면 불투명하다. 처음에는 꺼져 있다.
-// - 2026-09-27: 언더컷과 교합 접촉 사이 마진. 범례 왼쪽은 언더컷·삽입축, 오른쪽은 −0.5~+0.5mm 색 눈금.
+// - 2026-09-27: 언더컷과 교합 접촉 사이 마진.
+// - 2026-09-27: 삽입축·언더컷·마진·교합 접촉 범례는 각 토글 바로 아래.
 // - 2026-09-27: 정중앙은 버튼 줄 한가운데. 칼라는 교합 접촉, 투명 앞. 표시 쉐브론은 하나만.
 // - 2026-09-26: 치아 이름은 글자 너비. 삽입축은 파란 버튼. 치아를 누르면 잡은 카메라로.
 // - 2026-09-26: 작업영역 위 정중앙 버튼이 가로·세로 점선을 켠다.
@@ -32,6 +33,8 @@
 // - 2026-09-26: 닫기는 바로 하고, 작업 스캔 업로드·저장은 뒤에서 한다.
 // - 2026-09-26: 자동 맞춤·삽입축처럼 문서를 바꾸는 명령마다 작업 초안을 저장한다.
 // - 2026-09-27: 패널 닫기·열기 아이콘. 가로가 좁으면 헤더 버튼은 아이콘만.
+// - 2026-09-27: 모달을 닫으면 작업영역 위 토글을 남긴다. 정중앙은 모눈(2mm·10mm)까지 순환한다.
+// - 2026-09-27: 표시 패널은 파일명을 기본으로 숨긴다. 헤더에서 닫거나 숨긴 뒤 열면 직전 패널 열림을 되돌린다.
 // - 2026-09-27: 패널은 열기·닫기·숨김. 헤더 날짜는 도착일만.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -127,9 +130,12 @@ import {
   stampWorkDraftSavedAt,
   writeWorkDraftMeshes,
   writeWorkSession,
+  parseViewToggles,
   writeWorkSessionDocument,
   type WorkDraftMesh,
+  type WorkSessionCenterGuide,
   type WorkSessionDocument,
+  type WorkSessionViewToggles,
 } from "@/shared/practice/labProsthesisWorkDraft";
 import {
   contactMapGradientCss,
@@ -171,6 +177,49 @@ type LabProsthesisAiCaseHeader = {
 
 /** 열기=본문, 닫기=제목만, 숨김=패널 없음. 버튼은 다음 동작. */
 type PanelLayout = "open" | "closed" | "hidden";
+
+/** 헤더로 접기 전에 기억해 두는 패널 본문. 파일명은 기본 숨김. */
+type PanelOpenMemory = {
+  scanList: boolean;
+  scanNames: boolean;
+  modify: boolean;
+  toothInfo: boolean;
+};
+
+const defaultPanelOpenMemory = (): PanelOpenMemory => ({
+  scanList: true,
+  scanNames: false,
+  modify: true,
+  toothInfo: true,
+});
+
+function overlayLegend(colorClass: string, label: string) {
+  return (
+    <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-1.5 flex -translate-x-1/2 items-center gap-1 whitespace-nowrap text-[10px] text-foreground">
+      <span className={cn("h-2 w-2 shrink-0 rounded-full", colorClass)} />
+      {label}
+    </span>
+  );
+}
+
+function contactOverlayLegend() {
+  return (
+    <div
+      className="pointer-events-none absolute left-1/2 top-full z-10 mt-1.5 w-44 -translate-x-1/2 text-[10px] text-foreground"
+      aria-label="교합 거리 -0.5mm부터 +0.5mm"
+    >
+      <div className="flex justify-between whitespace-nowrap tabular-nums leading-none">
+        <span>-0.5mm</span>
+        <span>0.0</span>
+        <span>+0.5mm</span>
+      </div>
+      <div
+        className="mt-0.5 h-2 rounded-sm"
+        style={{ background: contactMapGradientCss() }}
+      />
+    </div>
+  );
+}
 
 function panelLayoutAction(layout: PanelLayout): string {
   if (layout === "open") return "패널 닫기";
@@ -324,7 +373,14 @@ function workDocumentSignature(document: WorkSessionDocument): string {
     generated: document.generated,
     insertionAxes: document.insertionAxes,
     camera: document.camera,
+    viewToggles: document.viewToggles,
   });
+}
+
+function nextCenterGuide(mode: WorkSessionCenterGuide): WorkSessionCenterGuide {
+  if (mode === "off") return "center";
+  if (mode === "center") return "grid";
+  return "off";
 }
 
 function storedAutoSave() {
@@ -426,8 +482,11 @@ function LabProsthesisAiDesignDialog({
   >({});
   const [scanOrder, setScanOrder] = useState<string[]>([]);
   const [scanListOpen, setScanListOpen] = useState(true);
-  const [scanNamesOpen, setScanNamesOpen] = useState(true);
+  const [scanNamesOpen, setScanNamesOpen] = useState(false);
   const [modifyPanelOpen, setModifyPanelOpen] = useState(true);
+  const panelOpenMemoryRef = useRef<PanelOpenMemory>(defaultPanelOpenMemory());
+  /** 헤더 「패널 닫기」가 본문을 접은 직후. 그 false 값으로 기억을 덮지 않는다. */
+  const panelHeaderFoldedRef = useRef(false);
   const [dragScanId, setDragScanId] = useState<string | null>(null);
   const [dropScanId, setDropScanId] = useState<string | null>(null);
   const [workWide, setWorkWide] = useState(
@@ -438,7 +497,17 @@ function LabProsthesisAiDesignDialog({
   );
   const [insertionKeys, setInsertionKeys] = useState<string[]>([]);
   const [insertionShown, setInsertionShown] = useState(false);
-  const [centerGuides, setCenterGuides] = useState(true);
+  const [centerGuide, setCenterGuide] = useState<WorkSessionCenterGuide>("center");
+  const viewTogglesRef = useRef<WorkSessionViewToggles>({
+    insertion: false,
+    undercut: false,
+    margin: false,
+    center: "center",
+    color: true,
+    contact: false,
+    ghost: false,
+  });
+  const restoreGhostVisibleRef = useRef(false);
   const [modifyTool, setModifyTool] = useState<ModifyTool>("margin");
   const [marginMode, setMarginMode] = useState<MarginEditMode>("point");
   const [editBrush, setEditBrush] = useState<EditBrush>("none");
@@ -518,13 +587,16 @@ function LabProsthesisAiDesignDialog({
       setRoleOverride({});
       setScanOrder([]);
       setScanListOpen(true);
-      setScanNamesOpen(true);
+      setScanNamesOpen(false);
       setModifyPanelOpen(true);
+      panelOpenMemoryRef.current = defaultPanelOpenMemory();
+      panelHeaderFoldedRef.current = false;
       setDragScanId(null);
       setDropScanId(null);
       setInsertionKeys([]);
       setInsertionShown(false);
-      setCenterGuides(true);
+      setCenterGuide("center");
+      restoreGhostVisibleRef.current = false;
       setModifyTool("margin");
       setMarginMode("point");
       setEditBrush("none");
@@ -617,6 +689,17 @@ function LabProsthesisAiDesignDialog({
             if (draft.document.insertionAxes.length > 0) {
               setInsertionKeys(draft.document.insertionAxes.map((axis) => axis.key));
               setInsertionShown(true);
+            }
+            const toggles = parseViewToggles(draft.document.viewToggles);
+            if (toggles) {
+              setInsertionShown(toggles.insertion);
+              setUndercutMap(toggles.undercut);
+              setMarginShown(toggles.margin);
+              setCenterGuide(toggles.center);
+              setColorMapping(toggles.color);
+              setContactMap(toggles.contact);
+              setGhostOn(toggles.ghost);
+              restoreGhostVisibleRef.current = toggles.ghost;
             }
           }
         } catch {
@@ -822,6 +905,27 @@ function LabProsthesisAiDesignDialog({
   const undercutLimit = undercutLimitFromRange(40);
   const insertionAxisVisible = insertionShown && insertionKeys.length > 0;
   const paintUndercut = undercutMap || (insertionAxisVisible && canUndercut);
+  viewTogglesRef.current = {
+    insertion: insertionShown,
+    undercut: undercutMap,
+    margin: marginShown,
+    center: centerGuide,
+    color: colorMapping,
+    contact: contactMap,
+    ghost: ghostOn,
+  };
+  useEffect(() => {
+    if (!restoreGhostVisibleRef.current || !ghostOn || scans.length === 0) return;
+    restoreGhostVisibleRef.current = false;
+    setVisible((prev) => {
+      const out = { ...prev };
+      for (const scan of scans) {
+        if (!isOpposingOrBite(scan.role, prepArch)) continue;
+        out[scan.id] = true;
+      }
+      return out;
+    });
+  }, [ghostOn, prepArch, scans]);
   const viewToolBtn = cn(
     "h-7 shadow-sm text-xs [&_svg]:!size-3",
     workWide ? "gap-0.5 px-2" : "w-7 px-0",
@@ -1167,6 +1271,7 @@ function LabProsthesisAiDesignDialog({
         viewerRef.current?.exportCamera() ??
         sessionDocRef.current?.camera ??
         null,
+      viewToggles: viewTogglesRef.current,
       savedAt: Date.now(),
     };
   }, []);
@@ -1445,8 +1550,30 @@ function LabProsthesisAiDesignDialog({
       : "closed";
   const panelsShown = panelLayout !== "hidden";
   const panelAction = panelLayoutAction(panelLayout);
+  if (
+    open &&
+    !panelsHidden &&
+    (panelHeaderFoldedRef.current
+      ? scanListOpen || modifyPanelOpen || toothInfoOpen
+      : true)
+  ) {
+    if (panelHeaderFoldedRef.current) panelHeaderFoldedRef.current = false;
+    panelOpenMemoryRef.current = {
+      scanList: scanListOpen,
+      scanNames: scanNamesOpen,
+      modify: modifyPanelOpen,
+      toothInfo: toothInfoOpen,
+    };
+  }
   const cyclePanelLayout = () => {
     if (panelLayout === "open") {
+      panelOpenMemoryRef.current = {
+        scanList: scanListOpen,
+        scanNames: scanNamesOpen,
+        modify: modifyPanelOpen,
+        toothInfo: toothInfoOpen,
+      };
+      panelHeaderFoldedRef.current = true;
       setScanListOpen(false);
       setModifyPanelOpen(false);
       setToothInfoOpen(false);
@@ -1456,11 +1583,13 @@ function LabProsthesisAiDesignDialog({
       setPanelsHidden(true);
       return;
     }
+    const remembered = panelOpenMemoryRef.current;
+    panelHeaderFoldedRef.current = false;
     setPanelsHidden(false);
-    setScanListOpen(true);
-    setScanNamesOpen(true);
-    setModifyPanelOpen(true);
-    setToothInfoOpen(true);
+    setScanListOpen(remembered.scanList);
+    setScanNamesOpen(remembered.scanNames);
+    setModifyPanelOpen(remembered.modify);
+    setToothInfoOpen(remembered.toothInfo);
   };
 
   return (
@@ -1717,7 +1846,7 @@ function LabProsthesisAiDesignDialog({
                 queueSaveWorkRef.current();
               }}
               showInsertionAxis={insertionShown}
-              showCenterGuides={centerGuides}
+              centerGuide={centerGuide}
               designEdit={designEdit}
               onDesignGesture={onDesignGesture}
               manualAlignArch={alignKind === "manual" ? alignArch : null}
@@ -1768,6 +1897,7 @@ function LabProsthesisAiDesignDialog({
             <div className="pointer-events-none absolute left-1/2 top-3 z-10 flex w-max max-w-[calc(100%-2rem)] -translate-x-1/2 flex-col items-center gap-1.5">
               <div className="pointer-events-auto relative flex items-center justify-center">
               <div className="absolute right-full mr-5 flex items-center gap-1">
+              <div className={cn("relative flex justify-center", insertionShown && "min-w-12")}>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
@@ -1784,10 +1914,13 @@ function LabProsthesisAiDesignDialog({
                     {workWide ? <span>삽입축</span> : null}
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="bottom" className="z-[520]">
+                <TooltipContent side="left" className="z-[520]">
                   잡은 삽입축을 치아 위에 표시합니다.
                 </TooltipContent>
               </Tooltip>
+              {insertionShown ? overlayLegend("bg-amber-500", "삽입축") : null}
+              </div>
+              <div className={cn("relative flex justify-center", paintUndercut && "min-w-12")}>
               <Button
                 type="button"
                 size="sm"
@@ -1805,6 +1938,9 @@ function LabProsthesisAiDesignDialog({
                 <TriangleAlert />
                 {workWide ? <span>언더컷</span> : null}
               </Button>
+              {paintUndercut ? overlayLegend("bg-red-700", "언더컷") : null}
+              </div>
+              <div className={cn("relative flex justify-center", marginShown && "min-w-12")}>
               <Button
                 type="button"
                 size="sm"
@@ -1827,25 +1963,39 @@ function LabProsthesisAiDesignDialog({
                 <Spline />
                 {workWide ? <span>마진</span> : null}
               </Button>
+              {marginShown ? overlayLegend("bg-teal-500", "마진") : null}
+              </div>
               </div>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
                     type="button"
                     size="sm"
-                    variant={centerGuides ? "default" : "outline"}
+                    variant={centerGuide === "off" ? "outline" : "default"}
                     className={viewToolBtn}
-                    title="정중앙"
-                    aria-label="정중앙"
-                    aria-pressed={centerGuides}
-                    onClick={() => setCenterGuides((on) => !on)}
+                    title={centerGuide === "grid" ? "모눈종이" : "정중앙"}
+                    aria-label={centerGuide === "grid" ? "모눈종이" : "정중앙"}
+                    aria-pressed={centerGuide !== "off"}
+                    onClick={() => setCenterGuide((mode) => nextCenterGuide(mode))}
                   >
                     <Crosshair />
-                    {workWide ? <span>정중앙</span> : null}
+                    {workWide ? (
+                      <span>{centerGuide === "grid" ? "모눈종이" : "정중앙"}</span>
+                    ) : null}
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent side="bottom" className="z-[520]">
-                  화면 가운데 가로·세로 점선을 켭니다.
+                  {centerGuide === "off" ? (
+                    "화면 가운데 가로·세로 점선을 켭니다."
+                  ) : centerGuide === "center" ? (
+                    <>
+                      2mm 간격 모눈을 켭니다.
+                      <br />
+                      10mm마다 더 진합니다.
+                    </>
+                  ) : (
+                    "정중앙과 모눈을 끕니다."
+                  )}
                 </TooltipContent>
               </Tooltip>
               <div className="absolute left-full ml-5 flex items-center gap-1">
@@ -1864,6 +2014,7 @@ function LabProsthesisAiDesignDialog({
                   {workWide ? <span>칼라</span> : null}
                 </Button>
               ) : null}
+              <div className="relative flex justify-center">
               <Button
                 type="button"
                 size="sm"
@@ -1882,6 +2033,8 @@ function LabProsthesisAiDesignDialog({
                 <Palette />
                 {workWide ? <span>교합 접촉</span> : null}
               </Button>
+              {contactMap ? contactOverlayLegend() : null}
+              </div>
               {hasGhost ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -1916,46 +2069,6 @@ function LabProsthesisAiDesignDialog({
               ) : null}
               </div>
               </div>
-              {paintUndercut || contactMap || insertionShown || marginShown ? (
-                <div className="pointer-events-none relative h-5 w-full">
-                  <div className="absolute right-full mr-5 flex w-max items-center gap-2 whitespace-nowrap text-[10px] text-foreground">
-                    {insertionShown ? (
-                      <span className="flex shrink-0 items-center gap-1 whitespace-nowrap">
-                        <span className="h-2 w-2 rounded-full bg-amber-500" />
-                        삽입축
-                      </span>
-                    ) : null}
-                    {paintUndercut ? (
-                      <span className="flex shrink-0 items-center gap-1 whitespace-nowrap">
-                        <span className="h-2 w-2 rounded-full bg-red-700" />
-                        언더컷
-                      </span>
-                    ) : null}
-                    {marginShown ? (
-                      <span className="flex shrink-0 items-center gap-1 whitespace-nowrap">
-                        <span className="h-2 w-2 rounded-full bg-teal-500" />
-                        마진
-                      </span>
-                    ) : null}
-                  </div>
-                  {contactMap ? (
-                    <div
-                      className="absolute left-full ml-5 w-44 text-[10px] text-foreground"
-                      aria-label="교합 거리 -0.5mm부터 +0.5mm"
-                    >
-                      <div className="flex justify-between whitespace-nowrap tabular-nums leading-none">
-                        <span>-0.5mm</span>
-                        <span>0.0</span>
-                        <span>+0.5mm</span>
-                      </div>
-                      <div
-                        className="mt-0.5 h-2 rounded-sm"
-                        style={{ background: contactMapGradientCss() }}
-                      />
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
             </div>
             {panelsShown ? (
             <>
