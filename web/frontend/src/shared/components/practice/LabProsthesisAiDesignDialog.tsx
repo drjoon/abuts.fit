@@ -5,7 +5,7 @@
 // - 2026-09-26: 언더컷·교합·칼라·투명도는 작업영역 왼쪽 위. 파일명은 라벨로 끌어 역할을 바꾼다.
 // - 2026-09-26: 작업영역 위 버튼은 헤더와 같은 높이. 삽입축은 현재 뷰에 수직으로 잡는다.
 // - 2026-09-26: 마진·디자인은 카메라를 유지한다. 뷰 리셋은 처음 교합면으로 되돌린다.
-// - 2026-09-26: 투명은 지대치를 제외한 스캔을 켜고 끄는 토글이다.
+// - 2026-09-26: 투명 체크는 지대치 외 스캔을 20%로 비추고, 끄면 불투명하다.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDownToLine,
@@ -109,7 +109,7 @@ type MeshSource = {
 };
 
 const IMAGE_EXT = /\.(png|jpe?g|webp|bmp|gif)$/i;
-const GHOST_OPACITY_DEFAULT = 0.3;
+const GHOST_OPACITY_ON = 0.2;
 /** 같은 세션에서 다시 열면 IndexedDB·네트워크 대신 이 파일을 쓴다. */
 const sessionScanFileCache = new Map<string, File>();
 const ROLE_DOT: Record<LabOralScanRole, string> = {
@@ -936,7 +936,7 @@ function LabProsthesisAiDesignDialog({
               items={viewerItems}
               visible={visible}
               colorMapping={colorMapping}
-              ghostOpacity={ghostOn ? GHOST_OPACITY_DEFAULT : 0}
+              ghostOpacity={ghostOn ? GHOST_OPACITY_ON : 1}
               prepArch={prepArch}
               focusToothNumbers={focusToothNumbers}
               toothBadges={plan.teeth.map((tooth) => ({
@@ -1000,12 +1000,57 @@ function LabProsthesisAiDesignDialog({
                 <Palette />
                 {workWide ? <span>교합 접촉</span> : null}
               </Button>
+              {hasScanColor ? (
+                <label
+                  className="flex h-8 cursor-pointer items-center gap-2 rounded-md border bg-background/95 px-2 text-xs font-medium shadow-sm"
+                  onClick={(event) => {
+                    if (event.target instanceof Element && event.target.closest("button")) {
+                      return;
+                    }
+                    setColorMapping((on) => !on);
+                  }}
+                >
+                  <Checkbox
+                    checked={colorMapping}
+                    onCheckedChange={(checked) => setColorMapping(checked === true)}
+                    aria-label="칼라"
+                  />
+                  칼라
+                </label>
+              ) : null}
+              {hasGhost ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <label
+                      className="flex h-8 cursor-pointer items-center gap-2 rounded-md border bg-background/95 px-2 text-xs font-medium shadow-sm"
+                      onClick={(event) => {
+                        if (event.target instanceof Element && event.target.closest("button")) {
+                          return;
+                        }
+                        setGhostOn((on) => !on);
+                      }}
+                    >
+                      <Checkbox
+                        checked={ghostOn}
+                        onCheckedChange={(checked) => setGhostOn(checked === true)}
+                        aria-label="투명"
+                      />
+                      투명
+                    </label>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="z-[520]">
+                    지대치를 제외한 대합과 바이트를 유리처럼 비춥니다.
+                    <br />
+                    끄면 그 스캔을 불투명하게 보입니다.
+                  </TooltipContent>
+                </Tooltip>
+              ) : null}
               <Button
                 type="button"
                 size="sm"
                 variant={insertionAxis ? "default" : "outline"}
                 className={cn(
-                  "h-8 shadow-sm [&_svg]:!size-3.5",
+                  "ml-2 h-8 shadow-sm [&_svg]:!size-3.5",
                   workWide ? "gap-1 px-2.5" : "w-8 px-0",
                 )}
                 title="지금 화면과 수직인 방향으로 삽입축을 잡습니다"
@@ -1016,39 +1061,6 @@ function LabProsthesisAiDesignDialog({
                 <ArrowDownToLine />
                 {workWide ? <span>삽입축</span> : null}
               </Button>
-              {hasScanColor ? (
-                <label className="flex h-8 items-center gap-2 rounded-md border bg-background/95 px-2 text-xs font-medium shadow-sm">
-                  칼라
-                  <Switch
-                    checked={colorMapping}
-                    onCheckedChange={setColorMapping}
-                    aria-label="칼라"
-                    className="h-5 w-9 data-[state=checked]:bg-primary [&>span]:h-4 [&>span]:w-4 data-[state=checked]:[&>span]:translate-x-4"
-                  />
-                </label>
-              ) : null}
-              {hasGhost ? (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant={ghostOn ? "default" : "outline"}
-                      className="h-8 px-2.5 shadow-sm"
-                      aria-label="투명"
-                      aria-pressed={ghostOn}
-                      onClick={() => setGhostOn((on) => !on)}
-                    >
-                      투명
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" className="z-[520]">
-                    지대치를 제외한 대합과 바이트를 켜고 끕니다.
-                    <br />
-                    켜면 그 스캔을 투명하게 보입니다.
-                  </TooltipContent>
-                </Tooltip>
-              ) : null}
               <Button
                 type="button"
                 size="sm"
