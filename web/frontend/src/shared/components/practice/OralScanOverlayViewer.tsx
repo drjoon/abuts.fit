@@ -23,6 +23,7 @@
 // - 2026-09-26: 바뀐 스캔의 짧은 지문을 좌표 사본 없이 낸다.
 // - 2026-09-26: 카메라 각도·위치·줌이 바뀌면 알리고, 저장한 뷰를 다시 깐다.
 // - 2026-09-26: 바이트 맞춤은 연 파일과 좌표가 다르면 작업 DCM이다. 작업 DCM은 맞춤을 다시 하지 않는다.
+// - 2026-09-27: 뷰를 줄이면 모델 배율은 처음 맞춘 그대로 두고 좌우를 자른다.
 import {
   forwardRef,
   useEffect,
@@ -273,6 +274,17 @@ const ROLE_COLOR: Record<LabOralScanRole, number> = {
 const HOME_DIR = new THREE.Vector3(0.42, -1, 0.68);
 const HOME_UP = new THREE.Vector3(0, 0, 1);
 const FIT_MARGIN = 1.03;
+
+type FitFrame = {
+  width: number;
+  height: number;
+  frustumH: number;
+};
+
+/** 전체 모델이 들어가는 세로 프러스텀. 가로가 더 넓으면 높이를 키워 양옆까지 담는다. */
+function containFrustumHeight(worldW: number, worldH: number, aspect: number) {
+  return worldW / worldH > aspect ? worldW / aspect : worldH;
+}
 /** 삽입축 화살표·레전드. amber-500 */
 const INSERTION_AXIS_COLOR = 0xf59e0b;
 /** 화살표 끝과 치아 표면 사이. */
@@ -2017,6 +2029,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   const loadedRef = useRef<LoadedMesh[]>([]);
   const fitRadiusRef = useRef(40);
   const fitExtentRef = useRef({ halfW: 40, halfH: 40 });
+  const fitFrameRef = useRef<FitFrame>({ width: 0, height: 0, frustumH: 0 });
   const fitTargetRef = useRef(new THREE.Vector3());
   const snapRef = useRef<SnapAnim | null>(null);
   const lookRef = useRef({
@@ -2206,17 +2219,9 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     };
   };
 
-  const applyFitFrustum = () => {
+  const writeFrustum = (frustumH: number, aspect: number) => {
     const camera = cameraRef.current;
-    const el = containerRef.current;
-    if (!camera || !el) return;
-    const width = Math.max(el.clientWidth, 1);
-    const height = Math.max(el.clientHeight, 1);
-    const aspect = width / height;
-    const { halfW, halfH } = fitExtentRef.current;
-    const worldW = Math.max(halfW * 2 * FIT_MARGIN, 1);
-    const worldH = Math.max(halfH * 2 * FIT_MARGIN, 1);
-    const frustumH = worldW / worldH > aspect ? worldW / aspect : worldH;
+    if (!camera) return;
     const frustumW = frustumH * aspect;
     camera.top = frustumH / 2;
     camera.bottom = -frustumH / 2;
@@ -2232,6 +2237,42 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       controls.minDistance = Math.max(radius * 0.15, 1);
       controls.maxDistance = Math.max(radius * 30, 80);
     }
+  };
+
+  const applyFitFrustum = () => {
+    const camera = cameraRef.current;
+    const el = containerRef.current;
+    if (!camera || !el) return;
+    const width = Math.max(el.clientWidth, 1);
+    const height = Math.max(el.clientHeight, 1);
+    const aspect = width / height;
+    const { halfW, halfH } = fitExtentRef.current;
+    const worldW = Math.max(halfW * 2 * FIT_MARGIN, 1);
+    const worldH = Math.max(halfH * 2 * FIT_MARGIN, 1);
+    const frustumH = containFrustumHeight(worldW, worldH, aspect);
+    fitFrameRef.current = { width, height, frustumH };
+    writeFrustum(frustumH, aspect);
+  };
+
+  /** 처음 맞춘 화면 배율을 유지한다. 줄어든 영역은 모델을 줄이지 않고 잘라 낸다. */
+  const cropFrustumToCanvas = () => {
+    const camera = cameraRef.current;
+    const el = containerRef.current;
+    if (!camera || !el) return;
+    const width = Math.max(el.clientWidth, 1);
+    const height = Math.max(el.clientHeight, 1);
+    const frame = fitFrameRef.current;
+    if (
+      frame.frustumH <= 0 ||
+      frame.height <= 0 ||
+      width > frame.width + 0.5 ||
+      height > frame.height + 0.5
+    ) {
+      applyFitFrustum();
+      return;
+    }
+    const worldPerPx = frame.frustumH / frame.height;
+    writeFrustum(worldPerPx * height, width / height);
   };
 
   const restyleLoaded = () => {
@@ -2311,6 +2352,8 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
 
   const applyFitFrustumRef = useRef(applyFitFrustum);
   applyFitFrustumRef.current = applyFitFrustum;
+  const cropFrustumToCanvasRef = useRef(cropFrustumToCanvas);
+  cropFrustumToCanvasRef.current = cropFrustumToCanvas;
 
   useEffect(() => {
     const el = containerRef.current;
@@ -2473,7 +2516,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       const h = Math.max(el.clientHeight, 1);
       renderer.setSize(w, h);
       labelRenderer.setSize(w, h);
-      applyFitFrustumRef.current();
+      cropFrustumToCanvasRef.current();
     };
     const ro = new ResizeObserver(onResize);
     ro.observe(el);
