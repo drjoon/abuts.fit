@@ -9,6 +9,7 @@
 // - 2026-09-15: 후속 채팅 견적 — 해당 지르 단계 포커스·스냅샷. 최종 바는 숨김(부분 후속).
 // - 2026-09-23: UI 라벨 — 보철 종류 변경→주문 변경(채팅 제목·레거시 content 감지 유지).
 // - 2026-09-22: 종류 변경 채팅 제목. 확정 보철은 임시치아→지르만(종류 변경 중복 카드 방지).
+// - 2026-09-27: 협력 작업시작 채팅 — 저장된 「어벗츠기공소」를 수행 기공소 실명으로 표시.
 import { cn } from "@/shared/ui/cn";
 import { PracticeToothWorkChartReadOnly } from "@/shared/components/practice/PracticeToothWorkChartReadOnly";
 import { compactRemakeSummaryLabel } from "@/features/chat/components/chatRemakeParts";
@@ -18,6 +19,7 @@ import {
   followUpRowSpanKey,
   isFollowUpProsthesisPhase,
 } from "@/shared/practice/prosthesisFollowUp";
+import { formatCooperationWorkActorChatPhrase } from "@/shared/practice/practiceLabRating";
 import {
   pickToothWorkAbutmentProductMode,
   pickToothWorkCustomSpecs,
@@ -63,9 +65,11 @@ const normalizeToothWorkRow = (
 /**
  * 레거시 시스템 채팅 문구 → 현재 UI 라벨(작업시작).
  * DB·구 클라이언트에 남은 「의뢰를 수락했습니다」 등을 표시만 교정한다.
+ * 협력 건의 「기공소「어벗츠기공소」」는 수행 기공소 실명으로 바꾼다.
  */
 export function normalizeLegacyPracticeTransferSystemChatContent(
   content: unknown,
+  cooperationPerformerLabName?: unknown,
 ): string {
   let text = String(content ?? "");
   if (!text) return text;
@@ -73,6 +77,10 @@ export function normalizeLegacyPracticeTransferSystemChatContent(
   text = text.replace(/의뢰를 수락할 수 없습니다/g, "작업을 시작할 수 없습니다");
   text = text.replace(/의뢰 수락/g, "작업시작");
   text = text.replace(/의뢰수락/g, "작업시작");
+  const actor = formatCooperationWorkActorChatPhrase(cooperationPerformerLabName);
+  if (actor) {
+    text = text.replace(/기공소「(?:어벗츠기공소|어벗츠 기공소)」/g, actor);
+  }
   return text;
 }
 

@@ -138,6 +138,9 @@ export type PracticeTransferLabReceiveItem = {
   arrivalDeadlineExpiredAt?: string | null;
   labRejected?: boolean;
   labRejectedAt?: string | null;
+  /** 협력/하청. 채팅 주체는 협력일 때만 수행 기공소 실명. */
+  assigneeKind?: "cooperation" | "subcontract" | null;
+  assigneeLabName?: string | null;
   matchingMode?: "direct" | "auto";
   autoMatch?: {
     claimedAt?: string | null;

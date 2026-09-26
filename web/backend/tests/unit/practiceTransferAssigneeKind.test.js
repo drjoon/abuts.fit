@@ -4,6 +4,8 @@ import {
   ASSIGNEE_KIND_COOPERATION,
   ASSIGNEE_KIND_SUBCONTRACT,
   formatAbutsCooperationLabLabel,
+  formatPracticeTransferWorkCanceledChat,
+  formatPracticeTransferWorkStartedChat,
   isCooperationAssignee,
   isSubcontractAssignee,
   isSubcontractFeeApplicable,
@@ -46,6 +48,35 @@ describe("assigneeKind cooperation vs subcontract", () => {
     );
     expect(resolveAssigneeKind(t)).toBe(ASSIGNEE_KIND_COOPERATION);
     expect(shouldHideAssigneeFromPractice(t)).toBe(false);
+  });
+
+  test("cooperation chat names abuts contract and performing lab", () => {
+    const t = {
+      targetLabAnchorId: abutsId,
+      targetLabName: "어벗츠기공소",
+      assigneeLabAnchorId: partnerId,
+      assigneeLabName: "테스트기공소",
+      assigneeKind: ASSIGNEE_KIND_COOPERATION,
+    };
+    expect(formatPracticeTransferWorkStartedChat(t)).toBe(
+      "어벗츠 협력 기공소 「테스트기공소」이(가) 작업을 시작했습니다.",
+    );
+    expect(formatPracticeTransferWorkCanceledChat(t)).toContain(
+      "어벗츠 협력 기공소 「테스트기공소」",
+    );
+  });
+
+  test("subcontract chat keeps prime lab name", () => {
+    const t = {
+      targetLabAnchorId: abutsId,
+      targetLabName: "어벗츠기공소",
+      assigneeLabAnchorId: partnerId,
+      assigneeLabName: "테스트기공소",
+      assigneeKind: ASSIGNEE_KIND_SUBCONTRACT,
+    };
+    expect(formatPracticeTransferWorkStartedChat(t)).toBe(
+      "기공소「어벗츠기공소」이(가) 작업을 시작했습니다.",
+    );
   });
 
   test("explicit assigneeKind wins over claimedAt", () => {

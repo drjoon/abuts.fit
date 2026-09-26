@@ -1362,6 +1362,11 @@ export function RequestorPracticeReceivePage({
           _id: String(r._id || "").trim(),
           transferId: String(r.transferId || "").trim(),
           targetLabName: String(r.targetLabName || "").trim(),
+          assigneeKind: (() => {
+            const kind = String(r.assigneeKind || "").trim();
+            return kind === "cooperation" || kind === "subcontract" ? kind : null;
+          })(),
+          assigneeLabName: String(r.assigneeLabName || "").trim() || null,
           transferMemo: parsedMemo.memo,
           rawTransferMemo: String(r.transferMemo || "").trim(),
           orderDate: String(r.orderDate || parsedMemo.orderDate || "").trim(),
@@ -9311,6 +9316,11 @@ export function RequestorPracticeReceivePage({
           void saveLabBasketTag(selectedTransfer, tag);
         }}
         labAnchorId={String(user?.businessAnchorId || "").trim() || null}
+        cooperationPerformerLabName={
+          selectedTransfer?.assigneeKind === "cooperation"
+            ? selectedTransfer.assigneeLabName
+            : null
+        }
         labEffectiveStars={
           selectedTransfer?.labRatingSummary?.effectiveStars ??
           selectedTransfer?.starDowngrade?.labEffectiveStars ??

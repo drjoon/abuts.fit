@@ -509,6 +509,11 @@ type PracticeTransferDetailChatDialogProps = {
    */
   initialPanelTab?: "detail" | "chat";
   labAnchorId?: string | null;
+  /**
+   * 협력 수행 기공소 실명.
+   * 이미 저장된 「기공소「어벗츠기공소」」 작업시작·취소·거부를 이 이름으로 표시한다.
+   */
+  cooperationPerformerLabName?: string | null;
   /** 기공소 뷰 — 자동매칭 기공비 별점 확정가 */
   labEffectiveStars?: number | null;
   /** 예: 의뢰 파일 */
@@ -757,6 +762,7 @@ export function PracticeTransferDetailChatDialog({
   onLabBasketTagChange,
   initialPanelTab,
   labAnchorId = null,
+  cooperationPerformerLabName = null,
   labEffectiveStars = null,
   filesLabel,
   files,
@@ -3608,6 +3614,7 @@ export function PracticeTransferDetailChatDialog({
                             compact
                             reactionUserNameById={reactionUserNameById}
                             practiceTransferLabAnchorId={labAnchorId}
+                            cooperationPerformerLabName={cooperationPerformerLabName}
                             practiceTransferProsthesisFollowUps={prosthesisFollowUps}
                             practiceTransferToothWorks={toothWorks}
                             practiceTransferFeeQuote={feeQuote}

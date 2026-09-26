@@ -69,6 +69,13 @@ export function normalizePracticePartnerLabCoreName(label: unknown): string {
   return name;
 }
 
+/** 협력 채팅 주체. 「」는 수행 기공소 실명만. */
+export function formatCooperationWorkActorChatPhrase(partnerName: unknown): string {
+  const partner = normalizePracticePartnerLabCoreName(partnerName);
+  if (!partner || partner === "어벗츠기공소") return "";
+  return `어벗츠 협력 기공소 「${partner}」`;
+}
+
 export function formatAbutsCooperationLabLabel(partnerName: unknown): string {
   const core = normalizePracticePartnerLabCoreName(partnerName);
   if (!core || core === "어벗츠기공소") return "어벗츠기공소";

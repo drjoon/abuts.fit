@@ -61,6 +61,9 @@ import {
   isAutoMatchPriorityActive,
   isAutoMatchPriorityLabAnchorId,
   isCooperationAssignee,
+  formatPracticeTransferWorkCanceledChat,
+  formatPracticeTransferWorkRejectedChat,
+  formatPracticeTransferWorkStartedChat,
   isInternalLabBusinessType,
   isPracticeTransferLabReceiverRole,
   isLabAnchorAutoMatchEligible,
@@ -348,6 +351,7 @@ import { completePracticeTransferWork } from "../../services/practiceTransferCom
 // - 2026-08-21: confirm-production·lab design-confirm — 게이트 저장·응답 후 생산 시작(CAM) 비동기.
 // - 2026-08-21: 치과 어벗 디자인 컨펌 시 기공소 채팅 안내(design_confirmed).
 // - 2026-08-21: mark-release — past-ready 1회·rollback∥clear·잔액 sync는 응답 후.
+// - 2026-09-27: 협력 작업시작·취소·거부 채팅 — 어벗츠 협력 기공소 「수행 기공소」.
 // - 2026-09-12: 작업시작(work_accept) 채팅 시스템 메시지 복구. 비어벗은 도착일(포함) 이후 mark-release 거부.
 // - 2026-08-21: 채팅 시스템 메시지는 치과 대응이 필요할 때만(취소·거부·생산진행/디자인컨펌 요청). 수락·업로드는 남기지 않음. → 2026-09-12 작업시작 복구.
 // - 2026-08-14: 수락도 작업취소와 같이 채팅 시스템 메시지(work_accept) 남김. → 2026-08-21 철회 → 2026-09-12 복구.
@@ -8071,6 +8075,8 @@ export async function getReceivedPracticeTransfers(req, res) {
         transferId: String(doc?.transferId || "").trim(),
         targetLabAnchorId: String(doc?.targetLabAnchorId || "").trim() || null,
         targetLabName: String(doc?.targetLabName || "").trim(),
+        assigneeKind: resolveAssigneeKind(doc),
+        assigneeLabName: String(doc?.assigneeLabName || "").trim(),
         transferMemo: String(doc?.transferMemo || "").trim(),
         orderDate: orderDate || null,
         orderDates,
@@ -8972,11 +8978,6 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
     };
 
     emitAppEventToUser(req.user?._id, "practice:transfer-updated", realtimePayload);
-    const labLabelForChat =
-      String(doc.targetLabName || "").trim() &&
-      String(doc.targetLabName || "").trim() !== AUTO_MATCH_LAB_DISPLAY_NAME
-        ? String(doc.targetLabName || "").trim()
-        : "기공소";
     scheduleAcceptSideEffects({
       doc,
       labAnchorId,
@@ -8989,7 +8990,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
       // 이미 작업시작한 건 재진입 시 시스템 메시지 중복 방지
       systemChatContent: alreadyAccepted
         ? ""
-        : `기공소「${labLabelForChat}」이(가) 작업을 시작했습니다.`,
+        : formatPracticeTransferWorkStartedChat(doc),
     });
 
     return res.status(200).json({
@@ -11208,13 +11209,9 @@ export async function markReceivedPracticeTransferRelease(req, res) {
 
     invalidateUnreadCountCache(labAnchorId);
 
-    const labLabel =
-      previousLabName && previousLabName !== AUTO_MATCH_LAB_DISPLAY_NAME
-        ? previousLabName
-        : "기공소";
     const systemChatContent = isAuto
       ? "작업을 취소했습니다. 자동 매칭으로 다른 기공소에 다시 공개됩니다."
-      : `기공소「${labLabel}」이(가) 작업을 취소했습니다. 다른 기공소를 지정하거나 휴지통으로 옮길 수 있습니다.`;
+      : formatPracticeTransferWorkCanceledChat(doc);
 
     const realtimePayload = {
       action: isAuto ? "auto-match-released" : "accept-released",
@@ -11721,11 +11718,6 @@ export async function markReceivedPracticeTransferReject(req, res) {
 
     const transferId = String(doc.transferId || "").trim();
     const transferMongoId = String(doc._id || "").trim();
-    const labLabel =
-      String(doc.targetLabName || "").trim() &&
-      String(doc.targetLabName || "").trim() !== AUTO_MATCH_LAB_DISPLAY_NAME
-        ? String(doc.targetLabName || "").trim()
-        : "기공소";
     const realtimePayload = {
       action: "lab-rejected",
       transferId,
@@ -11755,7 +11747,7 @@ export async function markReceivedPracticeTransferReject(req, res) {
           postPracticeTransferSystemChatMessage({
             transferMongoId: doc._id,
             senderUserId: req.user?._id,
-            content: `기공소「${labLabel}」이(가) 의뢰를 거부했습니다. 다른 기공소를 지정하거나 휴지통으로 옮길 수 있습니다.`,
+            content: formatPracticeTransferWorkRejectedChat(doc),
             systemEvent: "work_reject",
           }),
           emitPracticeTransferEventToPracticeUsers({

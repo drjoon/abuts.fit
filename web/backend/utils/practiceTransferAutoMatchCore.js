@@ -63,6 +63,38 @@ export const formatAbutsCooperationLabLabel = (partnerName) => {
   return `${ABUTS_COOPERATION_LABEL_PREFIX} · ${partner}`;
 };
 
+const isAbutsLabDisplayName = (name) => {
+  const label = String(name || "").trim();
+  return label === ABUTS_LAB_DISPLAY_NAME || label === "어벗츠 기공소";
+};
+
+/**
+ * 채팅 사건 주체.
+ * 협력은 계약 상대(어벗츠)와 수행 기공소 실명을 한 줄에 둔다.
+ * 「」는 등록 상호만. 하청·어벗츠 자체는 원청 표시명(실명 비공개).
+ */
+export const formatPracticeTransferChatActorPhrase = (transfer) => {
+  if (isCooperationAssignee(transfer)) {
+    const partner = stripPartnerLabDisplayPrefixes(transfer?.assigneeLabName);
+    if (partner && !isAbutsLabDisplayName(partner)) {
+      return `어벗츠 협력 기공소 「${partner}」`;
+    }
+  }
+  const raw = String(transfer?.targetLabName || "").trim();
+  const labLabel =
+    raw && raw !== AUTO_MATCH_LAB_DISPLAY_NAME ? raw : "기공소";
+  return `기공소「${labLabel}」`;
+};
+
+export const formatPracticeTransferWorkStartedChat = (transfer) =>
+  `${formatPracticeTransferChatActorPhrase(transfer)}이(가) 작업을 시작했습니다.`;
+
+export const formatPracticeTransferWorkCanceledChat = (transfer) =>
+  `${formatPracticeTransferChatActorPhrase(transfer)}이(가) 작업을 취소했습니다. 다른 기공소를 지정하거나 휴지통으로 옮길 수 있습니다.`;
+
+export const formatPracticeTransferWorkRejectedChat = (transfer) =>
+  `${formatPracticeTransferChatActorPhrase(transfer)}이(가) 의뢰를 거부했습니다. 다른 기공소를 지정하거나 휴지통으로 옮길 수 있습니다.`;
+
 const OBJECT_ID_RE = /^[a-fA-F0-9]{24}$/;
 
 const toMs = (value) => {

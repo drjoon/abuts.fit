@@ -100,6 +100,8 @@ type ChatMessageBubbleProps = {
   downloadProgressByKey?: Record<string, number>;
   /** 후속 보철 채팅 카드 견적용 */
   practiceTransferLabAnchorId?: string | null;
+  /** 협력 수행 기공소. 작업시작 시스템 채팅의 어벗츠기공소 표기를 바꾼다. */
+  cooperationPerformerLabName?: string | null;
   practiceTransferProsthesisFollowUps?: import("@/shared/practice/prosthesisFollowUp").ProsthesisFollowUpRecord[] | null;
   /** 레거시 후속 보철 채팅 — 임플란트·어벗 스펙 보강 */
   practiceTransferToothWorks?: import("@/shared/practice/transferMemo").ToothWorkSelection[] | null;
@@ -349,6 +351,7 @@ export function ChatMessageBubble({
   downloadingFileKeys = [],
   downloadProgressByKey = {},
   practiceTransferLabAnchorId = null,
+  cooperationPerformerLabName = null,
   practiceTransferProsthesisFollowUps = null,
   practiceTransferToothWorks = null,
   practiceTransferFeeQuote = null,
@@ -739,7 +742,10 @@ export function ChatMessageBubble({
           )}
         >
           <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] leading-snug">
-            {normalizeLegacyPracticeTransferSystemChatContent(message.content)}
+            {normalizeLegacyPracticeTransferSystemChatContent(
+              message.content,
+              cooperationPerformerLabName,
+            )}
           </p>
           <p className={cn("mt-0.5 opacity-70", compact ? "text-[10px]" : "text-[11px]")}>
             {formatTime(message.createdAt)}

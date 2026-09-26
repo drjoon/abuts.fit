@@ -11711,6 +11711,11 @@ export const PracticeFileTransferPage = ({
           feeViewer="practice"
           onChangeRequestScanRole={handleChangeRequestScanRole}
           labAnchorId={selectedTransferDetailModel?.labAnchorId || null}
+          cooperationPerformerLabName={
+            selectedTransfer?.assigneeKind === "cooperation"
+              ? selectedTransfer.assigneeLabName
+              : null
+          }
           filesLabel="의뢰 파일"
           files={selectedTransferDetailModel?.files || []}
           trashedFiles={selectedTransferDetailModel?.trashedFiles || []}
