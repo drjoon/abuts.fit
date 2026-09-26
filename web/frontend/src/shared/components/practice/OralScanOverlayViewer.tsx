@@ -677,6 +677,7 @@ function occlusalBand(
 function locateToothCenters(
   band: Array<[number, number, number]>,
   frame: DentalFrame,
+  arch: "upper" | "lower",
   teeth: Array<{ side: 1 | -1; pos: number }>,
 ) {
   if (band.length < 40 || teeth.length === 0) return [];
@@ -709,22 +710,36 @@ function locateToothCenters(
     const span = tooth.side > 0 ? spanR : spanL;
     const along = TOOTH_SPAN_T[tooth.pos] ?? 0.5;
     const ang = tooth.side * Math.min(span * 0.98, along * span);
-    let wedge = Math.max(0.18, span * 0.09);
+    let wedge = Math.max(0.22, span * 0.12);
     let picked = use.filter((p) => angleAbsDiff(p.ang, ang) <= wedge);
     if (picked.length < 12) {
-      wedge = Math.max(wedge, 0.45);
+      wedge = Math.max(wedge, 0.5);
       picked = use.filter((p) => angleAbsDiff(p.ang, ang) <= wedge);
     }
     if (picked.length < 8) continue;
+    const heights = picked.map(
+      (p) => p.x * frame.up.x + p.y * frame.up.y + p.z * frame.up.z,
+    );
+    const heightOrder = [...heights].sort((a, b) => a - b);
+    const cuspCut =
+      arch === "upper"
+        ? quantile(heightOrder, 0.4)
+        : quantile(heightOrder, 0.6);
+    const cusps = picked.filter((_, index) =>
+      arch === "upper"
+        ? (heights[index] ?? 0) <= cuspCut
+        : (heights[index] ?? 0) >= cuspCut,
+    );
+    const used = cusps.length >= 8 ? cusps : picked;
     let x = 0;
     let y = 0;
     let z = 0;
-    for (const p of picked) {
+    for (const p of used) {
       x += p.x;
       y += p.y;
       z += p.z;
     }
-    const n = picked.length;
+    const n = used.length;
     centers.push(new THREE.Vector3(x / n, y / n, z / n));
   }
   return centers;
@@ -781,10 +796,12 @@ function frameWorkOcclusal(args: {
   if (meshes.length === 0) return null;
   const world = sampleWorldPoints(meshes, args.groupPosition, 6000);
   if (world.length < 40) return null;
+  const band = occlusalBand(world, args.frame, arch);
   const pose = occlusalCamera(args.frame, arch);
   const centers = locateToothCenters(
-    occlusalBand(world, args.frame, arch),
+    band,
     args.frame,
+    arch,
     parsed.filter((row) => row.arch === arch),
   );
   if (centers.length === 0) {
@@ -797,23 +814,40 @@ function frameWorkOcclusal(args: {
       target: fit.target,
     };
   }
-  const target = new THREE.Vector3();
-  for (const center of centers) target.add(center);
-  target.multiplyScalar(1 / centers.length);
+  const jawRadius = robustRadius(world);
+  const reach = jawRadius * 0.2;
+  const near: Array<[number, number, number]> = [];
+  for (const point of band.length >= 24 ? band : world) {
+    for (const center of centers) {
+      const dx = point[0] - center.x;
+      const dy = point[1] - center.y;
+      const dz = point[2] - center.z;
+      if (dx * dx + dy * dy + dz * dz <= reach * reach) {
+        near.push(point);
+        break;
+      }
+    }
+  }
+  const cloud = near.length >= 16 ? near : centers.map((c) => [c.x, c.y, c.z] as [number, number, number]);
+  const target = meanVec(cloud) ?? centers[0]!.clone();
   const { right, screenUp } = viewBasis(pose.dir, pose.up);
-  const pad = robustRadius(world) * 0.36;
-  let maxR = 0;
-  let maxU = 0;
-  for (const center of centers) {
-    const delta = center.clone().sub(target);
-    maxR = Math.max(maxR, Math.abs(delta.dot(right)));
-    maxU = Math.max(maxU, Math.abs(delta.dot(screenUp)));
+  let maxR = jawRadius * 0.08;
+  let maxU = jawRadius * 0.08;
+  for (const point of cloud) {
+    const dx = point[0] - target.x;
+    const dy = point[1] - target.y;
+    const dz = point[2] - target.z;
+    maxR = Math.max(maxR, Math.abs(dx * right.x + dy * right.y + dz * right.z));
+    maxU = Math.max(
+      maxU,
+      Math.abs(dx * screenUp.x + dy * screenUp.y + dz * screenUp.z),
+    );
   }
   return {
     dir: pose.dir,
     up: pose.up,
-    halfW: maxR + pad,
-    halfH: maxU + pad,
+    halfW: maxR * 1.2,
+    halfH: maxU * 1.2,
     target,
   };
 }
