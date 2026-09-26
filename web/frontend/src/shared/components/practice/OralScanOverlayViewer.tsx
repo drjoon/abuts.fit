@@ -11,8 +11,11 @@
 // - 2026-09-26: 정중앙 점선은 토글로 켠다. 가로·세로는 화면 한가운데를 지난다.
 // - 2026-09-26: 삽입축은 치아에서 2mm 띄운다. 치아번호는 윗단 고리 중심에 둔다.
 // - 2026-09-26: 처음 카메라는 지대치 교합면과 인접치 하나씩. 그 자세를 초기 뷰로 둔다.
+// - 2026-09-26: 열릴 때 화면 중심은 모델 중심이다. 삽입축은 사용자가 맞춘 화면 중앙으로 잡는다.
+// - 2026-09-26: 양악이면 악궁 사이가 교합면이고, 한쪽만 있으면 바운딩박스에서 아이보리색 치아가 몰린 축에 수직으로 본다.
 // - 2026-09-26: 삽입축을 잡으면 치아·잇몸 색이 갈라지는 곳을 마진으로 잡는다.
 // - 2026-09-26: 마진은 기본 원보다 바깥을, 삽입축으로 스캔 면에 붙여 잡는다.
+// - 2026-09-26: 바이트와 상·하악이 어긋나면 바이트에 맞춰 움직이고, 교합면 중심에 원점을 둔다.
 import {
   forwardRef,
   useEffect,
@@ -40,6 +43,7 @@ import {
   UNDERCUT_RGB,
   type ContactPaintMode,
 } from "@/shared/practice/oralScanDesignAnalysis";
+import { registerJawsToBite } from "@/shared/practice/biteRegistration";
 import type {
   DesignGesture,
   ProsthesisDesignEdit,
@@ -150,6 +154,8 @@ type LoadedMesh = {
   /** 법선·삽입축. 지대치가 아니면 null. */
   align: Float32Array | null;
   analysisColor: THREE.BufferAttribute | null;
+  /** 스캔 파일 좌표. 역할을 바꾸면 여기로 되돌린 뒤 다시 맞춘다. */
+  basePositions: Float32Array;
 };
 
 type SnapAnim = {
@@ -530,6 +536,83 @@ function applyDentalFrame(frame: DentalFrame) {
   const { up, anterior } = frame;
   HOME_DIR.copy(anterior).multiplyScalar(-1).addScaledVector(up, 0.62).normalize();
   HOME_UP.copy(up);
+}
+
+function captureBasePositions(geometry: THREE.BufferGeometry) {
+  const pos = geometry.getAttribute("position");
+  if (!pos) return new Float32Array(0);
+  const out = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; i += 1) {
+    out[i * 3] = pos.getX(i);
+    out[i * 3 + 1] = pos.getY(i);
+    out[i * 3 + 2] = pos.getZ(i);
+  }
+  return out;
+}
+
+function restoreBasePositions(entry: LoadedMesh) {
+  const pos = entry.geometry.getAttribute("position");
+  const base = entry.basePositions;
+  if (!pos || base.length < pos.count * 3) return;
+  for (let i = 0; i < pos.count; i += 1) {
+    pos.setXYZ(i, base[i * 3] ?? 0, base[i * 3 + 1] ?? 0, base[i * 3 + 2] ?? 0);
+  }
+  pos.needsUpdate = true;
+  entry.geometry.computeVertexNormals();
+  entry.geometry.computeBoundingBox();
+  entry.dist = null;
+  entry.align = null;
+  entry.analysisColor = null;
+}
+
+/** 교합면 중심을 원점으로 두고, 위쪽이 상악, 앞이 전치가 되게 돌린다. */
+function reseatOcclusalOrigin(loaded: LoadedMesh[], frame: DentalFrame) {
+  const upperPts: Array<[number, number, number]> = [];
+  const lowerPts: Array<[number, number, number]> = [];
+  const archPts: Array<[number, number, number]> = [];
+  for (const entry of loaded) {
+    if (entry.role !== "upper" && entry.role !== "lower") continue;
+    const pts = samplePositions(entry.geometry, 1800);
+    archPts.push(...pts);
+    if (entry.role === "upper") upperPts.push(...pts);
+    else lowerPts.push(...pts);
+  }
+  const mean = meanVec(archPts);
+  if (!mean) return;
+  const upperC = meanVec(upperPts);
+  const lowerC = meanVec(lowerPts);
+  const mid = upperC && lowerC ? upperC.clone().add(lowerC).multiplyScalar(0.5) : mean;
+  const up = frame.up.clone().normalize();
+  const shift =
+    (mean.x - mid.x) * up.x + (mean.y - mid.y) * up.y + (mean.z - mid.z) * up.z;
+  const origin = new THREE.Vector3(
+    mean.x - up.x * shift,
+    mean.y - up.y * shift,
+    mean.z - up.z * shift,
+  );
+  const { right, anterior } = frame;
+  const matrix = new THREE.Matrix4().set(
+    right.x,
+    right.y,
+    right.z,
+    -right.dot(origin),
+    anterior.x,
+    anterior.y,
+    anterior.z,
+    -anterior.dot(origin),
+    up.x,
+    up.y,
+    up.z,
+    -up.dot(origin),
+    0,
+    0,
+    0,
+    1,
+  );
+  for (const entry of loaded) {
+    entry.geometry.applyMatrix4(matrix);
+    entry.geometry.computeBoundingBox();
+  }
 }
 
 type AnalysisLook = {
@@ -1304,21 +1387,26 @@ function locateToothPlacements(
     }
     if (picked.length < 8) continue;
     const dists = picked.map((p) => p.dist).sort((a, b) => a - b);
-    const rimCut = quantile(dists, 0.4);
-    const rim = picked.filter((p) => p.dist >= rimCut);
-    const row = rim.length >= 8 ? rim : picked;
-    const heights = row.map(
+    const inner = quantile(dists, 0.42);
+    const outer = quantile(dists, 0.78);
+    const crown = picked.filter((p) => p.dist >= inner && p.dist <= outer);
+    const row = crown.length >= 8 ? crown : picked;
+    const mesial = row.filter((p) => {
+      const delta = Math.abs(p.ang) - Math.abs(ang);
+      return delta <= 0.05 && delta >= -0.32;
+    });
+    const tableSrc = mesial.length >= 8 ? mesial : row;
+    const heights = tableSrc.map(
       (p) => p.x * frame.up.x + p.y * frame.up.y + p.z * frame.up.z,
     );
     const heightOrder = [...heights].sort((a, b) => a - b);
-    const cuspCut =
-      arch === "upper" ? quantile(heightOrder, 0.35) : quantile(heightOrder, 0.65);
-    const cusps = row.filter((_, index) =>
-      arch === "upper"
-        ? (heights[index] ?? 0) <= cuspCut
-        : (heights[index] ?? 0) >= cuspCut,
-    );
-    const used = cusps.length >= 6 ? cusps : row;
+    const low = quantile(heightOrder, arch === "upper" ? 0.08 : 0.52);
+    const high = quantile(heightOrder, arch === "upper" ? 0.42 : 0.9);
+    const table = tableSrc.filter((_, index) => {
+      const h = heights[index] ?? 0;
+      return h >= low && h <= high;
+    });
+    const used = table.length >= 6 ? table : tableSrc;
     let x = 0;
     let y = 0;
     let z = 0;
@@ -1350,6 +1438,200 @@ function occlusalCamera(frame: DentalFrame, arch: "upper" | "lower") {
   up.addScaledVector(dir, -up.dot(dir));
   if (up.lengthSq() < 1e-8) up.copy(frame.right);
   return { dir: dir.normalize(), up: up.normalize() };
+}
+
+function linearToSrgb(channel: number) {
+  const c = Math.min(1, Math.max(0, channel));
+  return c <= 0.0031308 ? c * 12.92 : 1.055 * c ** (1 / 2.4) - 0.055;
+}
+
+/** 치아는 양수, 잇몸은 음수. 아이보리는 밝고 붉은기가 약하다. */
+function toothVsGingiva(r: number, g: number, b: number) {
+  const sr = linearToSrgb(r);
+  const sg = linearToSrgb(g);
+  const sb = linearToSrgb(b);
+  const pink = sr - 0.5 * (sg + sb);
+  const luma = 0.299 * sr + 0.587 * sg + 0.114 * sb;
+  return luma * 0.45 - pink;
+}
+
+type ColoredSample = { x: number; y: number; z: number; score: number };
+
+function sampleArchColors(
+  entries: LoadedMesh[],
+  groupPosition: THREE.Vector3,
+  cap: number,
+) {
+  const out: ColoredSample[] = [];
+  const per = Math.max(600, Math.floor(cap / Math.max(entries.length, 1)));
+  for (const entry of entries) {
+    const pos = entry.geometry.getAttribute("position");
+    const color = entry.scanColor;
+    if (!pos || pos.count === 0) continue;
+    const colored = color != null && color.count === pos.count;
+    const stride = Math.max(1, Math.floor(pos.count / per));
+    const ox = groupPosition.x;
+    const oy = groupPosition.y;
+    const oz = groupPosition.z;
+    for (let i = 0; i < pos.count; i += stride) {
+      out.push({
+        x: pos.getX(i) + ox,
+        y: pos.getY(i) + oy,
+        z: pos.getZ(i) + oz,
+        score: colored
+          ? toothVsGingiva(color.getX(i), color.getY(i), color.getZ(i))
+          : 0,
+      });
+    }
+  }
+  return out;
+}
+
+/** 점구름 공분산의 세 축. 악궁 바운딩박스의 모서리 방향이다. */
+function cloudPrincipalAxes(
+  points: Array<[number, number, number]>,
+  mean: THREE.Vector3,
+) {
+  let xx = 0;
+  let yy = 0;
+  let zz = 0;
+  let xy = 0;
+  let xz = 0;
+  let yz = 0;
+  for (const p of points) {
+    const x = p[0] - mean.x;
+    const y = p[1] - mean.y;
+    const z = p[2] - mean.z;
+    xx += x * x;
+    yy += y * y;
+    zz += z * z;
+    xy += x * y;
+    xz += x * z;
+    yz += y * z;
+  }
+  const a = [
+    [xx, xy, xz],
+    [xy, yy, yz],
+    [xz, yz, zz],
+  ];
+  const v = [
+    [1, 0, 0],
+    [0, 1, 0],
+    [0, 0, 1],
+  ];
+  for (let iter = 0; iter < 12; iter += 1) {
+    let p = 0;
+    let q = 1;
+    let max = Math.abs(a[0]?.[1] ?? 0);
+    if (Math.abs(a[0]?.[2] ?? 0) > max) {
+      max = Math.abs(a[0]?.[2] ?? 0);
+      p = 0;
+      q = 2;
+    }
+    if (Math.abs(a[1]?.[2] ?? 0) > max) {
+      max = Math.abs(a[1]?.[2] ?? 0);
+      p = 1;
+      q = 2;
+    }
+    if (max < 1e-10) break;
+    const app = a[p]?.[p] ?? 0;
+    const aqq = a[q]?.[q] ?? 0;
+    const apq = a[p]?.[q] ?? 0;
+    if (Math.abs(apq) < 1e-15) break;
+    const tau = (aqq - app) / (2 * apq);
+    const tt = Math.sign(tau) / (Math.abs(tau) + Math.sqrt(1 + tau * tau));
+    const c = 1 / Math.sqrt(1 + tt * tt);
+    const s = tt * c;
+    for (let k = 0; k < 3; k += 1) {
+      if (k === p || k === q) continue;
+      const aik = a[k]?.[p] ?? 0;
+      const akq = a[k]?.[q] ?? 0;
+      const nip = c * aik - s * akq;
+      const niq = s * aik + c * akq;
+      if (a[k]) {
+        a[k][p] = nip;
+        a[k][q] = niq;
+      }
+      if (a[p]) a[p][k] = nip;
+      if (a[q]) a[q][k] = niq;
+    }
+    if (a[p]) a[p][p] = c * c * app - 2 * s * c * apq + s * s * aqq;
+    if (a[q]) a[q][q] = s * s * app + 2 * s * c * apq + c * c * aqq;
+    if (a[p]) a[p][q] = 0;
+    if (a[q]) a[q][p] = 0;
+    for (let k = 0; k < 3; k += 1) {
+      const vip = v[k]?.[p] ?? 0;
+      const viq = v[k]?.[q] ?? 0;
+      if (!v[k]) continue;
+      v[k][p] = c * vip - s * viq;
+      v[k][q] = s * vip + c * viq;
+    }
+  }
+  return [0, 1, 2].map((index) => ({
+    value: a[index]?.[index] ?? 0,
+    axis: new THREE.Vector3(
+      v[0]?.[index] ?? 0,
+      v[1]?.[index] ?? 0,
+      v[2]?.[index] ?? 0,
+    ),
+  }));
+}
+
+/**
+ * 교합면 법선. 카메라는 이 방향(교합면 쪽)에 둔다.
+ * 악궁 바운딩박스의 세 축 가운데, 아이보리색 치아 점수가 한 끝에 몰리는 축을 고른다.
+ */
+function occlusalNormalFromColor(
+  entries: LoadedMesh[],
+  groupPosition: THREE.Vector3,
+  fallback: THREE.Vector3,
+) {
+  const samples = sampleArchColors(entries, groupPosition, 9000);
+  if (samples.length < 40) return null;
+  const scored = samples.filter((sample) => sample.score !== 0 || entries.some((e) => e.scanColor));
+  const usable = scored.length > 40 ? scored : samples;
+  const points = usable.map(
+    (sample) => [sample.x, sample.y, sample.z] as [number, number, number],
+  );
+  const mean = meanVec(points);
+  if (!mean) return null;
+  const axes = cloudPrincipalAxes(points, mean).filter(
+    (row) => row.axis.lengthSq() > 1e-8,
+  );
+  if (axes.length === 0) return fallback.clone();
+  let best: THREE.Vector3 | null = null;
+  let bestGap = 0.015;
+  for (const row of axes) {
+    const axis = row.axis.clone().normalize();
+    const heightOf = (sample: ColoredSample) =>
+      (sample.x - mean.x) * axis.x +
+      (sample.y - mean.y) * axis.y +
+      (sample.z - mean.z) * axis.z;
+    const heights = usable.map(heightOf).sort((a, b) => a - b);
+    const lo = quantile(heights, 0.18);
+    const hi = quantile(heights, 0.82);
+    let hiSum = 0;
+    let hiCount = 0;
+    let loSum = 0;
+    let loCount = 0;
+    for (const sample of usable) {
+      const height = heightOf(sample);
+      if (height >= hi) {
+        hiSum += sample.score;
+        hiCount += 1;
+      } else if (height <= lo) {
+        loSum += sample.score;
+        loCount += 1;
+      }
+    }
+    const hiMean = hiCount > 0 ? hiSum / hiCount : 0;
+    const loMean = loCount > 0 ? loSum / loCount : 0;
+    const gap = hiMean - loMean;
+    if (Math.abs(gap) <= bestGap) continue;
+    bestGap = Math.abs(gap);
+    best = gap < 0 ? axis.negate() : axis;
+  }
+  return best ?? fallback.clone();
 }
 
 function pickCameraArch(
@@ -1391,7 +1673,7 @@ function adjacentFdi(toothNumber: string): string[] {
   return out;
 }
 
-/** 의뢰 치아 교합면을 화면 중앙에 둔다. 양옆 인접치가 들어가게 자른다. */
+/** 화면 한가운데에 모델 중심을 두고 교합면에서 본다. 삽입축은 이 화면을 옮긴 뒤 잡는다. */
 function frameWorkOcclusal(args: {
   loaded: LoadedMesh[];
   groupPosition: THREE.Vector3;
@@ -1432,59 +1714,29 @@ function frameWorkOcclusal(args: {
     arch,
     withNeighbors.filter((row) => row.arch === arch),
   );
-  const prepPlaces = placements.filter((place) => prepKeys.has(place.toothNumber));
-  const focus = prepPlaces.length > 0 ? prepPlaces : placements;
-  if (focus.length === 0) {
-    const fit = measureMeshFit(meshes, args.groupPosition, pose.dir, pose.up);
-    return {
-      dir: pose.dir,
-      up: pose.up,
-      halfW: fit.halfW,
-      halfH: fit.halfH,
-      target: fit.target,
-      placements,
-    };
-  }
-  const target = new THREE.Vector3();
-  for (const place of focus) target.add(place.center);
-  target.multiplyScalar(1 / focus.length);
-  const outward = target.clone();
-  const jaw = meanVec(world);
-  if (jaw) outward.sub(jaw);
-  else outward.copy(args.frame.right);
-  outward.addScaledVector(args.frame.up, -outward.dot(args.frame.up));
-  if (outward.lengthSq() < 1e-8) outward.copy(args.frame.right);
-  outward.normalize();
-  const tilt = 0.55;
-  const dir = pose.dir
-    .clone()
-    .multiplyScalar(Math.cos(tilt))
-    .addScaledVector(outward, Math.sin(tilt))
-    .normalize();
-  const up = pose.up.clone();
+  const colored = occlusalNormalFromColor(meshes, args.groupPosition, pose.dir);
+  const hasPair =
+    args.loaded.some((entry) => entry.role === "upper") &&
+    args.loaded.some((entry) => entry.role === "lower");
+  const dir = (() => {
+    if (hasPair) {
+      const jaw = pose.dir.clone();
+      if (colored && colored.dot(jaw) < 0) jaw.negate();
+      return jaw;
+    }
+    return colored ?? pose.dir.clone();
+  })();
+  const up = args.frame.anterior.clone();
   up.addScaledVector(dir, -up.dot(dir));
-  if (up.lengthSq() < 1e-8) up.copy(args.frame.anterior);
-  up.normalize();
-  const { right, screenUp } = viewBasis(dir, up);
-  let prepRadius = 0;
-  for (const place of focus) prepRadius = Math.max(prepRadius, place.radius);
-  prepRadius = Math.max(prepRadius, 1);
-  let maxR = 0;
-  let maxU = 0;
-  const framePlaces = placements.length > 0 ? placements : focus;
-  for (const place of framePlaces) {
-    const delta = place.center.clone().sub(target);
-    maxR = Math.max(maxR, Math.abs(delta.dot(right)) + place.radius);
-    maxU = Math.max(maxU, Math.abs(delta.dot(screenUp)) + place.radius);
-  }
-  const neighborFound = framePlaces.some((place) => !prepKeys.has(place.toothNumber));
-  const pitch = prepRadius * 2.35;
+  if (up.lengthSq() < 1e-8) up.copy(pose.up);
+  else up.normalize();
+  const fit = measureMeshFit(meshes, args.groupPosition, dir, up);
   return {
     dir,
     up,
-    halfW: (neighborFound ? maxR : Math.max(maxR, prepRadius * 1.45)) * 1.12,
-    halfH: (neighborFound ? maxU : Math.max(maxU, prepRadius + pitch)) * 1.12,
-    target,
+    halfW: fit.halfW,
+    halfH: fit.halfH,
+    target: fit.target,
     placements,
   };
 }
@@ -1590,6 +1842,9 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   const [parseNote, setParseNote] = useState("");
   const [loadVersion, setLoadVersion] = useState(0);
   const [analyzing, setAnalyzing] = useState(false);
+  const [aligning, setAligning] = useState(false);
+  const layoutGenRef = useRef(0);
+  const placeLoadedRef = useRef<(reseated: boolean) => void>(() => {});
 
   lookRef.current = {
     colorMapping,
@@ -2194,10 +2449,69 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     };
   }, []);
 
+  placeLoadedRef.current = (reseated) => {
+    const group = groupRef.current;
+    const loaded = loadedRef.current;
+    if (!group || loaded.length === 0) return;
+    group.position.set(0, 0, 0);
+    const box = new THREE.Box3().setFromObject(group);
+    if (!box.isEmpty()) {
+      if (!reseated) {
+        const center = box.getCenter(new THREE.Vector3());
+        group.position.sub(center);
+      }
+      const sphere = box.getBoundingSphere(new THREE.Sphere());
+      fitRadiusRef.current = Math.max(sphere.radius, 1);
+    }
+    const frame = estimateDentalFrame(loaded);
+    frameRef.current = frame
+      ? {
+          up: frame.up.clone(),
+          anterior: frame.anterior.clone(),
+          right: frame.right.clone(),
+        }
+      : null;
+    unitToMmRef.current = geometryUnitsToMm(fitRadiusRef.current);
+    const framed = frame
+      ? frameWorkOcclusal({
+          loaded,
+          groupPosition: group.position,
+          frame,
+          prepArch: lookRef.current.prepArch ?? null,
+          toothNumbers: focusTeethRef.current,
+        })
+      : null;
+    if (framed) {
+      HOME_DIR.copy(framed.dir);
+      HOME_UP.copy(framed.up);
+      fitExtentRef.current = { halfW: framed.halfW, halfH: framed.halfH };
+      fitTargetRef.current.copy(framed.target);
+      placementsRef.current = framed.placements;
+    } else {
+      if (frame) applyDentalFrame(frame);
+      const fit = measureMeshFit(loaded, group.position, HOME_DIR, HOME_UP);
+      fitExtentRef.current = { halfW: fit.halfW, halfH: fit.halfH };
+      fitTargetRef.current.copy(fit.target);
+      placementsRef.current = [];
+    }
+    initialPoseRef.current = {
+      dir: HOME_DIR.clone(),
+      up: HOME_UP.clone(),
+      target: fitTargetRef.current.clone(),
+      halfW: fitExtentRef.current.halfW,
+      halfH: fitExtentRef.current.halfH,
+    };
+    applyFitFrustum();
+    frameCamera(HOME_DIR, HOME_UP, false);
+    restyleLoaded();
+    if (insertionAxesRef.current.length > 0) syncInsertionMarkerRef.current();
+  };
+
   useEffect(() => {
     const group = groupRef.current;
     if (!group) return;
     let cancelled = false;
+    const gen = ++layoutGenRef.current;
 
     const clearGroup = () => {
       for (const entry of loadedRef.current) {
@@ -2229,6 +2543,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       clearGroup();
       setParseNote("");
       setAnalyzing(false);
+      setAligning(false);
       onScanColorChangeRef.current?.(false);
       setLoadVersion((v) => v + 1);
       return;
@@ -2267,6 +2582,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
               dist: null,
               align: null,
               analysisColor: null,
+              basePositions: captureBasePositions(parsed.geometry),
             });
           } catch {
             failed.push(source.fileName);
@@ -2280,8 +2596,6 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         }
         return;
       }
-      for (const entry of loaded) group.add(entry.mesh);
-      loadedRef.current = loaded;
       const latestRoles = new Map(
         itemsRef.current.map((item) => [item.id, item.role]),
       );
@@ -2289,56 +2603,28 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         const nextRole = latestRoles.get(entry.id);
         if (nextRole) entry.role = nextRole;
       }
-      const box = new THREE.Box3().setFromObject(group);
-      if (!box.isEmpty()) {
-        const center = box.getCenter(new THREE.Vector3());
-        group.position.sub(center);
-        const sphere = box.getBoundingSphere(new THREE.Sphere());
-        fitRadiusRef.current = Math.max(sphere.radius, 1);
+      setAligning(true);
+      try {
+        await registerJawsToBite(loaded, {
+          cancelled: () => cancelled || gen !== layoutGenRef.current,
+        });
+      } catch (error) {
+        console.info("[oral-scan] bite-fit failed", error);
       }
-      const frame = estimateDentalFrame(loaded);
-      frameRef.current = frame
-        ? {
-            up: frame.up.clone(),
-            anterior: frame.anterior.clone(),
-            right: frame.right.clone(),
-          }
-        : null;
-      unitToMmRef.current = geometryUnitsToMm(fitRadiusRef.current);
-      const framed = frame
-        ? frameWorkOcclusal({
-            loaded,
-            groupPosition: group.position,
-            frame,
-            prepArch: lookRef.current.prepArch ?? null,
-            toothNumbers: focusTeethRef.current,
-          })
-        : null;
-      if (framed) {
-        HOME_DIR.copy(framed.dir);
-        HOME_UP.copy(framed.up);
-        fitExtentRef.current = { halfW: framed.halfW, halfH: framed.halfH };
-        fitTargetRef.current.copy(framed.target);
-        placementsRef.current = framed.placements;
-      } else {
-        if (frame) applyDentalFrame(frame);
-        const fit = measureMeshFit(loaded, group.position, HOME_DIR, HOME_UP);
-        fitExtentRef.current = { halfW: fit.halfW, halfH: fit.halfH };
-        fitTargetRef.current.copy(fit.target);
-        placementsRef.current = [];
+      if (cancelled || gen !== layoutGenRef.current) {
+        for (const entry of loaded) {
+          releaseSceneGeometry(entry.geometry);
+          releaseSceneTexture(entry.texture);
+        }
+        return;
       }
-      initialPoseRef.current = {
-        dir: HOME_DIR.clone(),
-        up: HOME_UP.clone(),
-        target: fitTargetRef.current.clone(),
-        halfW: fitExtentRef.current.halfW,
-        halfH: fitExtentRef.current.halfH,
-      };
-      applyFitFrustum();
-      frameCamera(HOME_DIR, HOME_UP, false);
-      restyleLoaded();
+      const seated = estimateDentalFrame(loaded);
+      if (seated) reseatOcclusalOrigin(loaded, seated);
+      for (const entry of loaded) group.add(entry.mesh);
+      loadedRef.current = loaded;
+      placeLoadedRef.current(Boolean(seated));
+      setAligning(false);
       onScanColorChangeRef.current?.(loaded.some((entry) => entry.hasColor));
-      if (insertionAxesRef.current.length > 0) syncInsertionMarkerRef.current();
       setParseNote(
         failed.length ? `열지 못했습니다: ${failed.join(", ")}` : "",
       );
@@ -2354,28 +2640,37 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   restyleRef.current = restyleLoaded;
 
   useEffect(() => {
+    const loaded = loadedRef.current;
+    if (loaded.length === 0) return;
     const byId = new Map(itemsRef.current.map((item) => [item.id, item.role]));
     let changed = false;
-    for (const entry of loadedRef.current) {
+    for (const entry of loaded) {
       const next = byId.get(entry.id);
       if (!next || next === entry.role) continue;
-      entry.role = next;
-      entry.dist = null;
-      entry.align = null;
       changed = true;
     }
     if (!changed) return;
-    const loaded = loadedRef.current;
-    const frame = estimateDentalFrame(loaded);
-    frameRef.current = frame
-      ? {
-          up: frame.up.clone(),
-          anterior: frame.anterior.clone(),
-          right: frame.right.clone(),
-        }
-      : null;
-    restyleRef.current();
-    setLoadVersion((v) => v + 1);
+    const gen = ++layoutGenRef.current;
+    for (const entry of loaded) {
+      restoreBasePositions(entry);
+      const next = byId.get(entry.id);
+      if (next) entry.role = next;
+    }
+    setAligning(true);
+    void (async () => {
+      try {
+        await registerJawsToBite(loaded, {
+          cancelled: () => gen !== layoutGenRef.current,
+        });
+        if (gen !== layoutGenRef.current) return;
+        const seated = estimateDentalFrame(loaded);
+        if (seated) reseatOcclusalOrigin(loaded, seated);
+        placeLoadedRef.current(Boolean(seated));
+        setLoadVersion((version) => version + 1);
+      } finally {
+        if (gen === layoutGenRef.current) setAligning(false);
+      }
+    })();
   }, [roleKey]);
 
   useEffect(() => {
@@ -2837,7 +3132,11 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         </p>
       ) : null}
 
-      {analyzing && items.length > 0 ? (
+      {aligning && items.length > 0 ? (
+        <p className="pointer-events-none absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-md bg-background/90 px-3 py-1.5 text-xs text-muted-foreground shadow-sm">
+          바이트에 맞추는 중
+        </p>
+      ) : analyzing && items.length > 0 ? (
         <p className="pointer-events-none absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-md bg-background/90 px-3 py-1.5 text-xs text-muted-foreground shadow-sm">
           접촉과 언더컷을 계산하는 중
         </p>
