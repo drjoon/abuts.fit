@@ -17,6 +17,7 @@
 // - 2026-09-26: 마진은 기본 원보다 바깥을, 삽입축으로 스캔 면에 붙여 잡는다.
 // - 2026-09-26: 바이트와 상·하악이 어긋나면 바이트에 맞춰 움직이고, 교합면 중심에 원점을 둔다.
 // - 2026-09-26: 수동 정렬은 고른 악과 바이트만 좌우로 두고, 점 3개씩으로 근처 대응점을 잡아 붙인다.
+// - 2026-09-26: 화면 오른쪽·앞쪽에 방향광을 더해 악궁 양쪽이 같이 밝다.
 import {
   forwardRef,
   useEffect,
@@ -2149,6 +2150,18 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     const rim = new THREE.DirectionalLight(0xffffff, 0.28);
     rim.position.set(10, 80, -50);
     scene.add(rim);
+    const viewRight = new THREE.Vector3();
+    const viewUp = new THREE.Vector3();
+    const viewToward = new THREE.Vector3();
+    const addViewLight = (color: number, intensity: number) => {
+      const light = new THREE.DirectionalLight(color, intensity);
+      scene.add(light);
+      scene.add(light.target);
+      return light;
+    };
+    const rightKey = addViewLight(0xfff6ee, 0.68);
+    const rightLow = addViewLight(0xeaf0ff, 0.4);
+    const rightFront = addViewLight(0xffffff, 0.34);
 
     const group = new THREE.Group();
     scene.add(group);
@@ -2163,6 +2176,20 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       snapRef.current = null;
     };
     controls.addEventListener("start", cancelSnap);
+
+    const placeViewLight = (
+      light: THREE.DirectionalLight,
+      rightAmt: number,
+      upAmt: number,
+      towardAmt: number,
+    ) => {
+      light.position
+        .copy(controls.target)
+        .addScaledVector(viewRight, rightAmt)
+        .addScaledVector(viewUp, upAmt)
+        .addScaledVector(viewToward, towardAmt);
+      light.target.position.copy(controls.target);
+    };
 
     let raf = 0;
     const loop = () => {
@@ -2199,6 +2226,15 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
           controls.syncFromCamera();
         }
       }
+      camera.updateMatrixWorld();
+      viewRight.setFromMatrixColumn(camera.matrixWorld, 0).normalize();
+      viewUp.setFromMatrixColumn(camera.matrixWorld, 1).normalize();
+      viewToward.copy(camera.position).sub(controls.target);
+      if (viewToward.lengthSq() < 1e-8) viewToward.set(0, 0, 1);
+      else viewToward.normalize();
+      placeViewLight(rightKey, 52, 24, 34);
+      placeViewLight(rightLow, 44, -30, 22);
+      placeViewLight(rightFront, 20, 6, 72);
       renderer.render(scene, camera);
       labelRenderer.render(scene, camera);
     };
