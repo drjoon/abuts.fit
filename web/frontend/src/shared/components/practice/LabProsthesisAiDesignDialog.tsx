@@ -3,13 +3,18 @@
 // - 2026-09-26: 스캔·마진·디자인 단계, 언더컷·교합 접촉, 치아별 생성.
 // - 2026-09-26: 언더컷·교합은 헤더 중앙. 치아 정보는 설측 아래 트리. 스캔 파일은 세션 캐시.
 // - 2026-09-26: 언더컷·교합·칼라·투명도는 작업영역 왼쪽 위. 파일명은 라벨로 끌어 역할을 바꾼다.
+// - 2026-09-26: 작업영역 위 버튼은 헤더와 같은 높이. 삽입축은 현재 뷰에 수직으로 잡는다.
+// - 2026-09-26: 마진·디자인은 카메라를 유지한다. 뷰 리셋은 처음 교합면으로 되돌린다.
+// - 2026-09-26: 투명은 지대치를 제외한 스캔을 켜고 끄는 토글이다.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ArrowDownToLine,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   ImageDown,
   Palette,
+  RotateCcw,
   Sparkles,
   TriangleAlert,
 } from "lucide-react";
@@ -25,6 +30,11 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/shared/ui/cn";
 import { fetchS3BlobCached } from "@/shared/files/s3BlobCache";
 import {
@@ -213,7 +223,7 @@ function LabProsthesisAiDesignDialog({
   const [visible, setVisible] = useState<Record<string, boolean>>({});
   const [colorMapping, setColorMapping] = useState(true);
   const [hasScanColor, setHasScanColor] = useState(false);
-  const [ghostOpacity, setGhostOpacity] = useState(GHOST_OPACITY_DEFAULT);
+  const [ghostOn, setGhostOn] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [progress, setProgress] = useState(0);
   const [fileState, setFileState] = useState<
@@ -238,6 +248,7 @@ function LabProsthesisAiDesignDialog({
   const [dragScanId, setDragScanId] = useState<string | null>(null);
   const [dropScanId, setDropScanId] = useState<string | null>(null);
   const [workWide, setWorkWide] = useState(false);
+  const [insertionAxis, setInsertionAxis] = useState(false);
   const viewerRef = useRef<OralScanOverlayHandle>(null);
   const workObserveRef = useRef<ResizeObserver | null>(null);
   const bindWorkArea = useCallback((node: HTMLDivElement | null) => {
@@ -260,7 +271,7 @@ function LabProsthesisAiDesignDialog({
       setVisible({});
       setColorMapping(true);
       setHasScanColor(false);
-      setGhostOpacity(GHOST_OPACITY_DEFAULT);
+      setGhostOn(true);
       setLoadError("");
       setProgress(0);
       setFileState({});
@@ -280,6 +291,7 @@ function LabProsthesisAiDesignDialog({
       setSidebarOpen(true);
       setDragScanId(null);
       setDropScanId(null);
+      setInsertionAxis(false);
       genSeq.current += 1;
       return;
     }
@@ -548,7 +560,6 @@ function LabProsthesisAiDesignDialog({
     if (next === "scan") return;
     if (canUndercut) setUndercutMap(true);
     if (next === "design" && canContact) setContactMap(true);
-    viewerRef.current?.setView("occlusal");
   };
 
   const generateTargets = (
@@ -925,7 +936,7 @@ function LabProsthesisAiDesignDialog({
               items={viewerItems}
               visible={visible}
               colorMapping={colorMapping}
-              ghostOpacity={ghostOpacity}
+              ghostOpacity={ghostOn ? GHOST_OPACITY_DEFAULT : 0}
               prepArch={prepArch}
               focusToothNumbers={focusToothNumbers}
               toothBadges={plan.teeth.map((tooth) => ({
@@ -944,6 +955,7 @@ function LabProsthesisAiDesignDialog({
               busy={busy}
               busyLabel={busy ? `스캔을 불러오는 중 ${progress}%` : ""}
               onScanColorChange={setHasScanColor}
+              onInsertionAxisChange={setInsertionAxis}
               className="absolute inset-0"
             />
             <div className="absolute left-3 top-3 z-10 flex max-w-[calc(100%-12rem)] flex-col items-start gap-1.5">
@@ -953,8 +965,8 @@ function LabProsthesisAiDesignDialog({
                 size="sm"
                 variant={undercutMap ? "default" : "outline"}
                 className={cn(
-                  "h-11 shadow-sm [&_svg]:!size-6",
-                  workWide ? "gap-1.5 px-3" : "w-11 px-0",
+                  "h-8 shadow-sm [&_svg]:!size-3.5",
+                  workWide ? "gap-1 px-2.5" : "w-8 px-0",
                 )}
                 title={canUndercut ? "언더컷" : "주문 치아의 악을 알 수 없습니다"}
                 aria-label="언더컷"
@@ -966,15 +978,15 @@ function LabProsthesisAiDesignDialog({
                 }}
               >
                 <TriangleAlert />
-                {workWide ? <span className="text-sm">언더컷</span> : null}
+                {workWide ? <span>언더컷</span> : null}
               </Button>
               <Button
                 type="button"
                 size="sm"
                 variant={contactMap ? "default" : "outline"}
                 className={cn(
-                  "h-11 shadow-sm [&_svg]:!size-6",
-                  workWide ? "gap-1.5 px-3" : "w-11 px-0",
+                  "h-8 shadow-sm [&_svg]:!size-3.5",
+                  workWide ? "gap-1 px-2.5" : "w-8 px-0",
                 )}
                 title={canContact ? "교합 접촉" : "대합 스캔이 없습니다"}
                 aria-label="교합 접촉"
@@ -986,41 +998,75 @@ function LabProsthesisAiDesignDialog({
                 }}
               >
                 <Palette />
-                {workWide ? <span className="text-sm">교합 접촉</span> : null}
+                {workWide ? <span>교합 접촉</span> : null}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={insertionAxis ? "default" : "outline"}
+                className={cn(
+                  "h-8 shadow-sm [&_svg]:!size-3.5",
+                  workWide ? "gap-1 px-2.5" : "w-8 px-0",
+                )}
+                title="지금 화면과 수직인 방향으로 삽입축을 잡습니다"
+                aria-label="삽입축"
+                disabled={entries.length === 0}
+                onClick={() => viewerRef.current?.resetInsertionFromView()}
+              >
+                <ArrowDownToLine />
+                {workWide ? <span>삽입축</span> : null}
               </Button>
               {hasScanColor ? (
-                <label className="flex h-11 items-center gap-2 rounded-md border bg-background/95 px-2 text-xs font-medium shadow-sm">
-                  칼라 매핑
+                <label className="flex h-8 items-center gap-2 rounded-md border bg-background/95 px-2 text-xs font-medium shadow-sm">
+                  칼라
                   <Switch
                     checked={colorMapping}
                     onCheckedChange={setColorMapping}
-                    aria-label="칼라 매핑"
+                    aria-label="칼라"
                     className="h-5 w-9 data-[state=checked]:bg-primary [&>span]:h-4 [&>span]:w-4 data-[state=checked]:[&>span]:translate-x-4"
                   />
                 </label>
               ) : null}
               {hasGhost ? (
-                <div className="flex h-11 items-center gap-1.5 rounded-md border bg-background/95 px-2 text-xs font-medium shadow-sm">
-                  <span className="shrink-0">대합·바이트</span>
-                  <span className="w-8 shrink-0 text-right tabular-nums text-muted-foreground">
-                    {Math.round(ghostOpacity * 100)}%
-                  </span>
-                  <Slider
-                    min={10}
-                    max={100}
-                    step={10}
-                    value={[Math.round(ghostOpacity * 100)]}
-                    onValueChange={([value]) => {
-                      const stepped = Math.round((value ?? 30) / 10) * 10;
-                      setGhostOpacity(Math.min(100, Math.max(10, stepped)) / 100);
-                    }}
-                    aria-label="대합·바이트 불투명도"
-                    className="w-14"
-                  />
-                </div>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={ghostOn ? "default" : "outline"}
+                      className="h-8 px-2.5 shadow-sm"
+                      aria-label="투명"
+                      aria-pressed={ghostOn}
+                      onClick={() => setGhostOn((on) => !on)}
+                    >
+                      투명
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="z-[520]">
+                    지대치를 제외한 대합과 바이트를 켜고 끕니다.
+                    <br />
+                    켜면 그 스캔을 투명하게 보입니다.
+                  </TooltipContent>
+                </Tooltip>
               ) : null}
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className={cn(
+                  "h-8 shadow-sm [&_svg]:!size-3.5",
+                  workWide ? "gap-1 px-2.5" : "w-8 px-0",
+                )}
+                title="처음 교합면 카메라로 되돌립니다"
+                aria-label="뷰 리셋"
+                disabled={entries.length === 0}
+                onClick={() => viewerRef.current?.resetHomeView()}
+              >
+                <RotateCcw />
+                {workWide ? <span>뷰 리셋</span> : null}
+              </Button>
               </div>
-              {undercutMap || contactMap ? (
+              {undercutMap || contactMap || insertionAxis ? (
                 <div className="pointer-events-none flex items-center gap-2 rounded-md bg-background/95 px-2 py-1 text-[10px] text-muted-foreground shadow-sm">
                   {undercutMap ? (
                     <span className="flex items-center gap-1">
@@ -1043,6 +1089,12 @@ function LabProsthesisAiDesignDialog({
                         틈
                       </span>
                     </>
+                  ) : null}
+                  {insertionAxis ? (
+                    <span className="flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-amber-500" />
+                      삽입축
+                    </span>
                   ) : null}
                 </div>
               ) : null}

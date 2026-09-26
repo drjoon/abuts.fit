@@ -4,6 +4,8 @@
 // - 2026-09-26: 열릴 때 의뢰 치아 교합면을 화면 중앙에 둔다. 치아번호 뱃지는 그 좌표에 붙는다.
 // - 2026-09-26: 파싱 결과는 메모리에 두고, 교합·언더컷 거리는 켤 때만 계산한다.
 // - 2026-09-26: 역할만 바뀌면 메시를 다시 읽지 않고 색·대합을 다시 계산한다.
+// - 2026-09-26: 삽입축은 화면과 수직으로 잡고, 화살표와 고리로 표시한다.
+// - 2026-09-26: 처음 카메라는 지대치 교합면과 인접치 하나씩. 그 자세를 초기 뷰로 둔다.
 import {
   forwardRef,
   useEffect,
@@ -40,8 +42,10 @@ export type OralScanOverlayHandle = {
   /** 의뢰 치아 교합면을 화면 중앙에 다시 맞춘다. */
   focusTooth: (toothNumber: string) => void;
   saveImage: () => void;
-  /** 지금 화면이 바라보는 방향을 삽입축으로 잡고 언더컷을 다시 계산한다. */
+  /** 지금 화면과 수직인 방향을 삽입축으로 잡고 화살표를 켠다. */
   resetInsertionFromView: () => void;
+  /** 모달을 열었을 때의 교합면 카메라로 되돌린다. */
+  resetHomeView: () => void;
 };
 
 export type OralScanToothBadge = {
@@ -82,6 +86,8 @@ type Props = {
   busy?: boolean;
   busyLabel?: string;
   onScanColorChange?: (hasScanColor: boolean) => void;
+  /** 삽입축 화살표가 켜지거나 꺼질 때. */
+  onInsertionAxisChange?: (active: boolean) => void;
   className?: string;
 };
 
@@ -124,6 +130,72 @@ const ROLE_COLOR: Record<LabOralScanRole, number> = {
 const HOME_DIR = new THREE.Vector3(0.42, -1, 0.68);
 const HOME_UP = new THREE.Vector3(0, 0, 1);
 const FIT_MARGIN = 1.03;
+/** 삽입축 화살표·레전드. amber-500 */
+const INSERTION_AXIS_COLOR = 0xf59e0b;
+
+function disposeObject3D(root: THREE.Object3D) {
+  const materials = new Set<THREE.Material>();
+  const geometries = new Set<THREE.BufferGeometry>();
+  root.traverse((obj) => {
+    const mesh = obj as THREE.Mesh;
+    if (mesh.geometry) geometries.add(mesh.geometry);
+    const mat = mesh.material;
+    if (Array.isArray(mat)) {
+      for (const row of mat) materials.add(row);
+    } else if (mat) materials.add(mat);
+  });
+  for (const geometry of geometries) geometry.dispose();
+  for (const material of materials) material.dispose();
+}
+
+/** 삽입 방향으로 화살표와, 그 축에 수직인 고리. */
+function buildInsertionMarker(
+  center: THREE.Vector3,
+  radius: number,
+  dir: THREE.Vector3,
+) {
+  const direction = dir.clone().normalize();
+  const span = Math.max(radius, 1);
+  const length = span * 3.2;
+  const headLen = length * 0.28;
+  const shaftLen = length - headLen;
+  const shaftR = Math.max(span * 0.075, length * 0.018);
+  const material = new THREE.MeshBasicMaterial({
+    color: INSERTION_AXIS_COLOR,
+    side: THREE.DoubleSide,
+    depthTest: false,
+    depthWrite: false,
+    transparent: true,
+    opacity: 0.92,
+    toneMapped: false,
+  });
+  const group = new THREE.Group();
+  const shaft = new THREE.Mesh(
+    new THREE.CylinderGeometry(shaftR, shaftR, shaftLen, 16),
+    material,
+  );
+  shaft.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+  const origin = center.clone().addScaledVector(direction, -shaftLen * 0.35);
+  shaft.position.copy(origin).addScaledVector(direction, shaftLen / 2);
+  const head = new THREE.Mesh(
+    new THREE.ConeGeometry(shaftR * 2.5, headLen, 20),
+    material,
+  );
+  head.quaternion.copy(shaft.quaternion);
+  head.position.copy(origin).addScaledVector(direction, shaftLen + headLen / 2);
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(span * 1.05, span * 1.28, 48),
+    material,
+  );
+  ring.position.copy(center);
+  ring.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), direction);
+  for (const mesh of [shaft, head, ring]) {
+    mesh.renderOrder = 20;
+    mesh.frustumCulled = false;
+  }
+  group.add(shaft, head, ring);
+  return group;
+}
 
 type DentalFrame = {
   up: THREE.Vector3;
@@ -845,15 +917,6 @@ function locateToothPlacements(
   return placements;
 }
 
-function robustRadius(points: Array<[number, number, number]>) {
-  const center = meanVec(points);
-  if (!center || points.length === 0) return 1;
-  const dists = points
-    .map((p) => Math.hypot(p[0] - center.x, p[1] - center.y, p[2] - center.z))
-    .sort((a, b) => a - b);
-  return Math.max(quantile(dists, 0.9), 1e-3);
-}
-
 function occlusalCamera(frame: DentalFrame, arch: "upper" | "lower") {
   const dir = frame.up.clone();
   if (arch === "upper") dir.negate();
@@ -885,7 +948,24 @@ function toothWindowHalf(placements: ToothPlacement[], jawRadius: number) {
   return Math.max(spread * 2.6, jawRadius * 0.2);
 }
 
-/** 의뢰 치아 교합면을 화면 중앙에 둔다. 치아를 못 잡으면 그 악 전체. */
+/** 같은 악에서 근심·원심으로 한 치아씩. 중절치는 반대편 중절치가 근심이다. */
+function adjacentFdi(toothNumber: string): string[] {
+  const digits = fdiDigits(toothNumber);
+  const row = parseFdi(toothNumber);
+  if (!digits || !row) return [];
+  const quadrant = Number(digits[0]);
+  const out: string[] = [];
+  if (row.pos > 1) out.push(`${quadrant}${row.pos - 1}`);
+  else {
+    const across =
+      quadrant === 1 ? 2 : quadrant === 2 ? 1 : quadrant === 3 ? 4 : 3;
+    out.push(`${across}1`);
+  }
+  if (row.pos < 8) out.push(`${quadrant}${row.pos + 1}`);
+  return out;
+}
+
+/** 의뢰 치아 교합면을 화면 중앙에 둔다. 양옆 인접치가 들어가게 자른다. */
 function frameWorkOcclusal(args: {
   loaded: LoadedMesh[];
   groupPosition: THREE.Vector3;
@@ -899,6 +979,19 @@ function frameWorkOcclusal(args: {
     if (!row || !toothNumber) return [];
     return [{ ...row, toothNumber }];
   });
+  const prepKeys = new Set(parsed.map((row) => row.toothNumber));
+  const seen = new Set(prepKeys);
+  const withNeighbors = [...parsed];
+  for (const tooth of parsed) {
+    for (const neighbor of adjacentFdi(tooth.toothNumber)) {
+      if (seen.has(neighbor)) continue;
+      const row = parseFdi(neighbor);
+      const toothNumber = fdiDigits(neighbor);
+      if (!row || !toothNumber) continue;
+      seen.add(neighbor);
+      withNeighbors.push({ ...row, toothNumber });
+    }
+  }
   const arch = pickCameraArch(args.prepArch, parsed, args.loaded);
   if (!arch) return null;
   const meshes = args.loaded.filter((entry) => entry.role === arch);
@@ -911,9 +1004,11 @@ function frameWorkOcclusal(args: {
     band,
     args.frame,
     arch,
-    parsed.filter((row) => row.arch === arch),
+    withNeighbors.filter((row) => row.arch === arch),
   );
-  if (placements.length === 0) {
+  const prepPlaces = placements.filter((place) => prepKeys.has(place.toothNumber));
+  const focus = prepPlaces.length > 0 ? prepPlaces : placements;
+  if (focus.length === 0) {
     const fit = measureMeshFit(meshes, args.groupPosition, pose.dir, pose.up);
     return {
       dir: pose.dir,
@@ -924,24 +1019,45 @@ function frameWorkOcclusal(args: {
       placements,
     };
   }
-  const jawRadius = robustRadius(world);
   const target = new THREE.Vector3();
-  for (const place of placements) target.add(place.center);
-  target.multiplyScalar(1 / placements.length);
-  const { right, screenUp } = viewBasis(pose.dir, pose.up);
-  const tooth = toothWindowHalf(placements, jawRadius);
+  for (const place of focus) target.add(place.center);
+  target.multiplyScalar(1 / focus.length);
+  const outward = target.clone();
+  const jaw = meanVec(world);
+  if (jaw) outward.sub(jaw);
+  else outward.copy(args.frame.right);
+  outward.addScaledVector(args.frame.up, -outward.dot(args.frame.up));
+  if (outward.lengthSq() < 1e-8) outward.copy(args.frame.right);
+  outward.normalize();
+  const tilt = 0.55;
+  const dir = pose.dir
+    .clone()
+    .multiplyScalar(Math.cos(tilt))
+    .addScaledVector(outward, Math.sin(tilt))
+    .normalize();
+  const up = pose.up.clone();
+  up.addScaledVector(dir, -up.dot(dir));
+  if (up.lengthSq() < 1e-8) up.copy(args.frame.anterior);
+  up.normalize();
+  const { right, screenUp } = viewBasis(dir, up);
+  let prepRadius = 0;
+  for (const place of focus) prepRadius = Math.max(prepRadius, place.radius);
+  prepRadius = Math.max(prepRadius, 1);
   let maxR = 0;
   let maxU = 0;
-  for (const place of placements) {
+  const framePlaces = placements.length > 0 ? placements : focus;
+  for (const place of framePlaces) {
     const delta = place.center.clone().sub(target);
-    maxR = Math.max(maxR, Math.abs(delta.dot(right)));
-    maxU = Math.max(maxU, Math.abs(delta.dot(screenUp)));
+    maxR = Math.max(maxR, Math.abs(delta.dot(right)) + place.radius);
+    maxU = Math.max(maxU, Math.abs(delta.dot(screenUp)) + place.radius);
   }
+  const neighborFound = framePlaces.some((place) => !prepKeys.has(place.toothNumber));
+  const pitch = prepRadius * 2.35;
   return {
-    dir: pose.dir,
-    up: pose.up,
-    halfW: Math.max(maxR + tooth * 0.55, tooth),
-    halfH: Math.max(maxU + tooth * 0.55, tooth),
+    dir,
+    up,
+    halfW: (neighborFound ? maxR : Math.max(maxR, prepRadius * 1.45)) * 1.12,
+    halfH: (neighborFound ? maxU : Math.max(maxU, prepRadius + pitch)) * 1.12,
     target,
     placements,
   };
@@ -976,6 +1092,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       busy = false,
       busyLabel = "",
       onScanColorChange,
+      onInsertionAxisChange,
       className,
     },
     ref,
@@ -1011,9 +1128,20 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   const focusToothRef = useRef<(toothNumber: string) => void>(() => {});
   const syncBadgesRef = useRef<() => void>(() => {});
   const onScanColorChangeRef = useRef(onScanColorChange);
+  const onInsertionAxisChangeRef = useRef(onInsertionAxisChange);
   const itemsRef = useRef(items);
   const frameRef = useRef<DentalFrame | null>(null);
   const insertionOverrideRef = useRef<THREE.Vector3 | null>(null);
+  const initialPoseRef = useRef<{
+    dir: THREE.Vector3;
+    up: THREE.Vector3;
+    target: THREE.Vector3;
+    halfW: number;
+    halfH: number;
+  } | null>(null);
+  const resetHomeRef = useRef<() => void>(() => {});
+  const insertionMarkerRef = useRef<THREE.Group | null>(null);
+  const syncInsertionMarkerRef = useRef<() => void>(() => {});
   const unitToMmRef = useRef(1);
   const setViewRef = useRef<(preset: OralScanViewPreset) => void>(() => {});
   const saveImageRef = useRef<() => void>(() => {});
@@ -1036,6 +1164,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   badgesRef.current = toothBadges;
   onSelectToothRef.current = onSelectTooth;
   onScanColorChangeRef.current = onScanColorChange;
+  onInsertionAxisChangeRef.current = onInsertionAxisChange;
   itemsRef.current = items;
 
   const itemsKey = items
@@ -1142,10 +1271,11 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       mat.side = THREE.DoubleSide;
       if (!useScan && !analysis) mat.color.set(ROLE_COLOR[entry.role]);
       const ghost = isGhostScanRole(entry.role, prep);
-      const alpha = ghost ? Math.min(1, Math.max(0.08, opacity)) : 1;
+      const ghostOff = ghost && opacity <= 0.001;
+      const alpha = ghostOff ? 0 : ghost ? Math.min(1, Math.max(0.08, opacity)) : 1;
       mat.transparent = alpha < 0.995;
       mat.opacity = alpha;
-      mat.depthWrite = !ghost || alpha > 0.92;
+      mat.depthWrite = !ghostOff && (!ghost || alpha > 0.92);
       mat.polygonOffset = true;
       mat.polygonOffsetFactor = ghost ? 1 : -1;
       mat.polygonOffsetUnits = 1;
@@ -1154,7 +1284,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       entry.mesh.renderOrder = ghost ? 2 : 0;
       const list = Array.isArray(prev) ? prev : [prev];
       for (const old of list) old.dispose();
-      entry.mesh.visible = visibleRef.current[entry.id] !== false;
+      entry.mesh.visible = !ghostOff && visibleRef.current[entry.id] !== false;
     }
     if (scene && renderer) {
       if (mapping && anyColor) {
@@ -1302,6 +1432,12 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       renderer.dispose();
       renderer.domElement.remove();
       labelRenderer.domElement.remove();
+      const marker = insertionMarkerRef.current;
+      if (marker) {
+        scene.remove(marker);
+        disposeObject3D(marker);
+        insertionMarkerRef.current = null;
+      }
       sceneRef.current = null;
       cameraRef.current = null;
       rendererRef.current = null;
@@ -1341,6 +1477,8 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
 
     const sources = itemsRef.current;
     insertionOverrideRef.current = null;
+    syncInsertionMarkerRef.current();
+    onInsertionAxisChangeRef.current?.(false);
     if (sources.length === 0) {
       clearGroup();
       setParseNote("");
@@ -1443,10 +1581,18 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         fitTargetRef.current.copy(fit.target);
         placementsRef.current = [];
       }
+      initialPoseRef.current = {
+        dir: HOME_DIR.clone(),
+        up: HOME_UP.clone(),
+        target: fitTargetRef.current.clone(),
+        halfW: fitExtentRef.current.halfW,
+        halfH: fitExtentRef.current.halfH,
+      };
       applyFitFrustum();
       frameCamera(HOME_DIR, HOME_UP, false);
       restyleLoaded();
       onScanColorChangeRef.current?.(loaded.some((entry) => entry.hasColor));
+      if (insertionOverrideRef.current) syncInsertionMarkerRef.current();
       setParseNote(
         failed.length ? `열지 못했습니다: ${failed.join(", ")}` : "",
       );
@@ -1530,10 +1676,13 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   }, [prepArch, loadVersion, contactMap, undercutMap]);
 
   useEffect(() => {
+    const opacity = lookRef.current.ghostOpacity;
+    const prep = lookRef.current.prepArch;
     for (const entry of loadedRef.current) {
-      entry.mesh.visible = visible[entry.id] !== false;
+      const ghostOff = isGhostScanRole(entry.role, prep) && opacity <= 0.001;
+      entry.mesh.visible = !ghostOff && visible[entry.id] !== false;
     }
-  }, [visible, loadVersion]);
+  }, [visible, loadVersion, ghostOpacity, prepArch]);
 
   useEffect(() => {
     restyleLoaded();
@@ -1625,12 +1774,65 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     syncBadgesRef.current();
   }, [badgeKey, loadVersion]);
 
+  syncInsertionMarkerRef.current = () => {
+    const scene = sceneRef.current;
+    const prev = insertionMarkerRef.current;
+    if (prev && scene) {
+      scene.remove(prev);
+      disposeObject3D(prev);
+    }
+    insertionMarkerRef.current = null;
+    const dir = insertionOverrideRef.current;
+    if (!scene || !dir || dir.lengthSq() < 1e-8) return;
+    const focus = new Set(
+      (focusTeethRef.current || []).map((tooth) => fdiDigits(tooth)).filter(Boolean),
+    );
+    const places = placementsRef.current.filter(
+      (place) => focus.size === 0 || focus.has(place.toothNumber),
+    );
+    const anchored = places.length > 0 ? places : placementsRef.current;
+    const center = new THREE.Vector3();
+    let radius = 0;
+    if (anchored.length > 0) {
+      for (const place of anchored) {
+        center.add(place.center);
+        radius = Math.max(radius, place.radius);
+      }
+      center.multiplyScalar(1 / anchored.length);
+      if (anchored.length > 1) {
+        for (const place of anchored) {
+          radius = Math.max(radius, center.distanceTo(place.center) + place.radius * 0.35);
+        }
+      }
+    } else {
+      center.copy(fitTargetRef.current);
+      radius = fitRadiusRef.current * 0.12;
+    }
+    const marker = buildInsertionMarker(
+      center,
+      Math.max(radius, fitRadiusRef.current * 0.04, 1),
+      dir,
+    );
+    scene.add(marker);
+    insertionMarkerRef.current = marker;
+  };
+
+  resetHomeRef.current = () => {
+    const pose = initialPoseRef.current;
+    if (!pose) return;
+    fitExtentRef.current = { halfW: pose.halfW, halfH: pose.halfH };
+    fitTargetRef.current.copy(pose.target);
+    applyFitFrustum();
+    frameCamera(pose.dir, pose.up, true);
+  };
+
   useImperativeHandle(
     ref,
     () => ({
       setView: (preset) => setViewRef.current(preset),
       focusTooth: (toothNumber) => focusToothRef.current(toothNumber),
       saveImage: () => saveImageRef.current(),
+      resetHomeView: () => resetHomeRef.current(),
       resetInsertionFromView: () => {
         const camera = cameraRef.current;
         const look = new THREE.Vector3();
@@ -1639,6 +1841,8 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         look.normalize();
         insertionOverrideRef.current = look.clone();
         for (const entry of loadedRef.current) entry.align = null;
+        syncInsertionMarkerRef.current();
+        onInsertionAxisChangeRef.current?.(true);
         setLoadVersion((v) => v + 1);
       },
     }),
