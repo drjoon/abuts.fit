@@ -6,6 +6,8 @@
 // - 2026-09-26: 작업영역 위 버튼은 헤더와 같은 높이.
 // - 2026-09-26: 마진·디자인은 카메라를 유지한다. 치아 이름을 누르면 그 치아 교합면.
 // - 2026-09-26: 삽입축은 치아 정보에서 보철마다. 브리지는 스팬당 하나.
+// - 2026-09-26: 브리지 삽입축 버튼은 스팬 한가운데. 치아는 선으로 잇고 아래 번호는 없앤다.
+// - 2026-09-26: 브리지 연결선은 치아 중심에서 끝난다. 삽입축은 그 선 중심 왼쪽.
 // - 2026-09-26: 투명 체크는 지대치 외 스캔을 20%로 비추고, 끄면 불투명하다.
 // - 2026-09-26: 투명 오른쪽 삽입축 토글이 화살표를 보여 준다. 치아 정보에서 잡으면 화면 중앙 광선에 닿는다.
 // - 2026-09-26: 치아 이름은 글자 너비. 삽입축은 파란 버튼. 치아를 누르면 잡은 카메라로.
@@ -1484,6 +1486,38 @@ function insertionSpanForTooth(
   return [digits];
 }
 
+type ToothInfoBlock =
+  | { kind: "single"; tooth: LabProsthesisAiTooth }
+  | { kind: "bridge"; members: LabProsthesisAiTooth[]; span: string[] };
+
+/** 같은 악 안에서 브리지 스팬을 한 덩어리로 모은다. */
+function toothInfoBlocks(
+  teeth: readonly LabProsthesisAiTooth[],
+  spans: ReadonlyMap<string, string[]>,
+): ToothInfoBlock[] {
+  const spanOf = new Map<string, string[]>();
+  for (const span of spans.values()) {
+    if (span.length < 2) continue;
+    for (const id of span) spanOf.set(id, span);
+  }
+  const seen = new Set<string>();
+  const blocks: ToothInfoBlock[] = [];
+  for (const tooth of teeth) {
+    if (seen.has(tooth.toothNumber)) continue;
+    const span = spanOf.get(tooth.toothNumber);
+    const members = span
+      ? teeth.filter((row) => span.includes(row.toothNumber))
+      : [tooth];
+    for (const row of members) seen.add(row.toothNumber);
+    if (!span || members.length < 2) {
+      blocks.push({ kind: "single", tooth });
+      continue;
+    }
+    blocks.push({ kind: "bridge", members: [...members], span });
+  }
+  return blocks;
+}
+
 function DesignViewerChrome({
   teeth,
   activeTooth,
@@ -1533,13 +1567,84 @@ function DesignViewerChrome({
   const toothActionClass =
     "inline-flex h-7 shrink-0 items-center justify-center rounded-md px-2 text-xs font-medium leading-none disabled:opacity-50";
 
+  const axisState = (span: readonly string[]) => {
+    const spanKey = insertionAxisKey(span);
+    return Boolean(spanKey && insertionKeys.includes(spanKey));
+  };
+
+  const nameButton = (tooth: LabProsthesisAiTooth, axisOn: boolean) => (
+    <button
+      type="button"
+      className={cn(
+        "w-fit shrink-0 whitespace-nowrap rounded-md px-1 py-0.5 text-left",
+        activeTooth?.toothNumber === tooth.toothNumber
+          ? "bg-primary/10"
+          : "hover:bg-muted",
+      )}
+      title={
+        axisOn
+          ? "삽입축을 잡았던 방향·각도·줌으로 봅니다"
+          : "이 치아의 교합면을 봅니다"
+      }
+      onClick={() => onSelectTooth(tooth.toothNumber)}
+    >
+      <span className="font-semibold">#{tooth.toothNumber}</span>
+      <span className="ml-1.5 text-muted-foreground">{tooth.prosthesisType}</span>
+    </button>
+  );
+
+  const insertionButton = (span: readonly string[], shared: boolean) => {
+    const axisOn = axisState(span);
+    return (
+      <button
+        type="button"
+        className={cn(
+          toothActionClass,
+          "bg-primary text-primary-foreground",
+          !canSetInsertion && "opacity-50",
+        )}
+        title={
+          shared
+            ? "화면 중앙을 지나 화면과 수직인 삽입축을 브리지 전체에 잡습니다. 화살표는 치아에서 2mm 떨어집니다"
+            : "화면 중앙을 지나 화면과 수직인 삽입축을 잡습니다. 화살표는 치아에서 2mm 떨어집니다"
+        }
+        aria-label={shared ? "브리지 삽입축" : "삽입축"}
+        aria-pressed={axisOn}
+        disabled={!canSetInsertion}
+        onClick={() => onSetInsertion(span)}
+      >
+        삽입축
+      </button>
+    );
+  };
+
+  const generateButton = (tooth: LabProsthesisAiTooth) =>
+    generated[tooth.toothNumber] === true ? (
+      <button
+        type="button"
+        className={cn(toothActionClass, "text-muted-foreground hover:bg-muted")}
+        onClick={() => onClearTooth(tooth.toothNumber)}
+      >
+        삭제
+      </button>
+    ) : (
+      <button
+        type="button"
+        className={cn(toothActionClass, "bg-primary text-primary-foreground")}
+        disabled={generating || !tooth.designable}
+        onClick={() => onGenerateTooth(tooth.toothNumber)}
+      >
+        생성
+      </button>
+    );
+
   return (
     <>
       <style>
         {`@keyframes aiScanLine { 0% { transform: translateY(0); opacity: .25; } 50% { opacity: 1; } 100% { transform: translateY(58vh); opacity: .2; } }`}
       </style>
 
-      <div className="absolute right-3 top-3 z-10 flex max-h-[calc(100%-1.5rem)] w-fit max-w-[min(22rem,42vw)] flex-col items-end gap-1">
+      <div className="absolute right-3 top-3 z-10 flex max-h-[calc(100%-1.5rem)] w-fit max-w-[min(32rem,70vw)] flex-col items-end gap-1">
         {teeth.length > 0 ? (
           <div className="mt-1 w-fit max-w-full overflow-hidden rounded-lg border bg-background/95 text-sm shadow-sm">
             <button
@@ -1564,94 +1669,65 @@ function DesignViewerChrome({
                       {group.label}
                     </p>
                     <ul className="ml-2 mt-1 border-l border-border pl-3">
-                      {group.teeth.map((tooth, index) => {
-                        const selected = activeTooth?.toothNumber === tooth.toothNumber;
-                        const done = generated[tooth.toothNumber] === true;
-                        const span = spans.get(tooth.toothNumber);
-                        const spanKey = span ? insertionAxisKey(span) : "";
-                        const axisOn = Boolean(spanKey && insertionKeys.includes(spanKey));
+                      {toothInfoBlocks(group.teeth, spans).map((block) => {
+                        if (block.kind === "bridge") {
+                          const axisOn = axisState(block.span);
+                          const last = block.members.length - 1;
+                          return (
+                            <li
+                              key={`bridge-${block.span.join("-")}`}
+                              className="py-1"
+                            >
+                              <div className="flex items-center gap-2">
+                                {insertionButton(block.span, true)}
+                                <div className="flex flex-col gap-1">
+                                  {block.members.map((tooth, index) => (
+                                    <div
+                                      key={tooth.toothNumber}
+                                      className="flex items-stretch"
+                                    >
+                                      <div className="relative w-[3px] shrink-0">
+                                        {index > 0 ? (
+                                          <span
+                                            aria-hidden
+                                            className="absolute inset-x-0 top-0 h-1/2 bg-primary"
+                                          />
+                                        ) : null}
+                                        {index < last ? (
+                                          <span
+                                            aria-hidden
+                                            className="absolute inset-x-0 top-1/2 h-[calc(50%+0.25rem)] bg-primary"
+                                          />
+                                        ) : null}
+                                      </div>
+                                      <div className="flex items-center gap-1.5">
+                                        <span
+                                          aria-hidden
+                                          className="h-[3px] w-3 shrink-0 bg-primary"
+                                        />
+                                        {nameButton(tooth, axisOn)}
+                                        {generateButton(tooth)}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            </li>
+                          );
+                        }
+                        const tooth = block.tooth;
+                        const span = insertionSpanForTooth(teeth, tooth.toothNumber);
+                        const axisOn = axisState(span);
                         return (
                           <li
-                            key={`${tooth.toothNumber}-${tooth.prosthesisType}-${index}`}
+                            key={`${tooth.toothNumber}-${tooth.prosthesisType}`}
                             className="py-1"
                           >
                             <div className="flex w-fit items-center gap-1.5 py-0.5">
-                              <button
-                                type="button"
-                                className={cn(
-                                  "w-fit shrink-0 whitespace-nowrap rounded-md px-1 py-0.5 text-left",
-                                  selected ? "bg-primary/10" : "hover:bg-muted",
-                                )}
-                                title={
-                                  axisOn
-                                    ? "삽입축을 잡았던 방향·각도·줌으로 봅니다"
-                                    : "이 치아의 교합면을 봅니다"
-                                }
-                                onClick={() => onSelectTooth(tooth.toothNumber)}
-                              >
-                                <span className="font-semibold">#{tooth.toothNumber}</span>
-                                <span className="ml-1.5 text-muted-foreground">
-                                  {tooth.prosthesisType}
-                                </span>
-                              </button>
-                              {span ? (
-                                <button
-                                  type="button"
-                                  className={cn(
-                                    toothActionClass,
-                                    "bg-primary text-primary-foreground",
-                                    !canSetInsertion && "opacity-50",
-                                  )}
-                                  title={
-                                    span.length > 1
-                                      ? "화면 중앙을 지나 화면과 수직인 삽입축을 스팬에 잡습니다. 화살표는 치아에서 2mm 떨어집니다"
-                                      : "화면 중앙을 지나 화면과 수직인 삽입축을 잡습니다. 화살표는 치아에서 2mm 떨어집니다"
-                                  }
-                                  aria-label={span.length > 1 ? "스팬 삽입축" : "삽입축"}
-                                  aria-pressed={axisOn}
-                                  disabled={!canSetInsertion}
-                                  onClick={() => onSetInsertion(span)}
-                                >
-                                  삽입축
-                                </button>
-                              ) : null}
-                              {done ? (
-                                <button
-                                  type="button"
-                                  className={cn(
-                                    toothActionClass,
-                                    "text-muted-foreground hover:bg-muted",
-                                  )}
-                                  onClick={() => onClearTooth(tooth.toothNumber)}
-                                >
-                                  삭제
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  className={cn(
-                                    toothActionClass,
-                                    "bg-primary text-primary-foreground",
-                                  )}
-                                  disabled={generating || !tooth.designable}
-                                  onClick={() => onGenerateTooth(tooth.toothNumber)}
-                                >
-                                  생성
-                                </button>
-                              )}
+                              {nameButton(tooth, axisOn)}
+                              {span.length > 0 ? insertionButton(span, false) : null}
+                              {generateButton(tooth)}
                             </div>
-                            {tooth.linkedTeeth.length > 0 ? (
-                              <ul className="ml-2 border-l border-border pl-2">
-                                {tooth.linkedTeeth.map((linked) => (
-                                  <li
-                                    key={linked}
-                                    className="py-0.5 text-xs text-muted-foreground"
-                                  >
-                                    #{linked}
-                                  </li>
-                                ))}
-                              </ul>
-                            ) : null}
                           </li>
                         );
                       })}
