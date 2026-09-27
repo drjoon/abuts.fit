@@ -1,4 +1,7 @@
 // change-log:
+// - 2026-09-27: 지급 완료·적립 완료 옆 완료 뱃지 제거(원청·하청). 기공 지급 상세는 매출·하청 수수료·지급.
+// - 2026-09-27: 원청이 넘긴 완료 건은 한 줄. 금액란에 매출·지급을 같이 표시.
+// - 2026-09-27: 원청 장부 — 기공 매출·기공 지급을 분리. 지급 보류→지급 완료.
 // - 2026-09-26: 기공소 수신 유형 — 기공의뢰-어벗츠하청 → 기공의뢰-어벗츠로부터.
 // - 2026-09-20: 정산 세부 내역 — 기공소 뷰로 플랫폼 수수료·수령액 표시.
 // - 2026-09-20: 소비·정산 적립 완료/보류 푸터 — 한 줄 줄바꿈 대신 항상 2줄.
@@ -169,6 +172,7 @@ import {
   type AbutmentDesignLedgerDetail,
 } from "@/shared/components/AbutmentDesignLedgerDetailDialog";
 import {
+  formatFeeRatePct,
   parsePracticeTransferFeeQuote,
   type PracticeTransferFeeQuote,
 } from "@/shared/practice/practiceTransferFeeQuote";
@@ -491,6 +495,10 @@ type LedgerDisplayRow = {
   parts: LedgerDisplayPart[] | null;
   practiceTransferPending: boolean;
   practiceTransferPayoutStatus: PracticeTransferPayoutStatus | null;
+  /** 원청이 넘긴 매입. 적립이 아니라 지급 보류/완료. */
+  settlementSide: "earn" | "payout" | null;
+  /** 원청이 넘긴 완료 건 — 한 줄에 매출·지급을 같이 표시. */
+  forwardAmounts: { gross: number; payout: number } | null;
   isPracticeTransfer: boolean;
   isAbutmentDesign: boolean;
   requestCount: number;
@@ -517,8 +525,14 @@ const resolveAbutmentDesignTypeLabel = (isLabViewer: boolean) =>
 const practiceTransferPayoutStatusLabel = (
   status: PracticeTransferPayoutStatus,
   isLabViewer = false,
+  settlementSide: "earn" | "payout" | null = null,
 ) => {
   if (status === "canceled") return "취소";
+  if (settlementSide === "payout") {
+    if (status === "settled") return "지급 완료";
+    if (status === "partial") return "일부 지급";
+    return "지급 보류";
+  }
   if (isLabViewer) {
     if (status === "settled") return "적립 완료";
     if (status === "partial") return "일부 적립";
@@ -1080,6 +1094,88 @@ const formatSignedWon = (amount: number) => {
   return `0원`;
 };
 
+const quoteLabGrossWon = (quote: PracticeTransferFeeQuote) =>
+  Math.max(0, Math.round(Number(quote.labFeeTotal || quote.total || 0)));
+
+/** 원청 기공 지급: 장부 매출·지급이 있으면 그 금액. 없으면 견적 기공비와 행 금액. */
+const resolvePayoutLedgerFigures = ({
+  quote,
+  forwardGross,
+  forwardPayout,
+  ledgerAmount,
+}: {
+  quote: PracticeTransferFeeQuote;
+  forwardGross: number | null;
+  forwardPayout: number | null;
+  ledgerAmount: number;
+}) => {
+  const gross =
+    forwardGross != null
+      ? Math.abs(Math.round(forwardGross))
+      : quoteLabGrossWon(quote);
+  const payoutAbs =
+    forwardPayout != null
+      ? Math.abs(Math.round(forwardPayout))
+      : ledgerAmount < 0
+        ? Math.abs(Math.round(ledgerAmount))
+        : 0;
+  const fee = gross > 0 && payoutAbs > 0 ? Math.max(0, gross - payoutAbs) : 0;
+  return { gross, payoutAbs, fee };
+};
+
+function LedgerDetailMetaItem({
+  label,
+  value,
+  className,
+}: {
+  label: string;
+  value: string;
+  className?: string;
+}) {
+  return (
+    <div className={cn("min-w-0", className)}>
+      <p className="text-[10px] font-medium text-slate-400">{label}</p>
+      <p className="mt-0.5 whitespace-pre-wrap break-words text-[13px] font-medium leading-snug text-slate-800">
+        {value || "—"}
+      </p>
+    </div>
+  );
+}
+
+function LedgerAmountSummary({
+  rows,
+}: {
+  rows: Array<{
+    label: string;
+    value: string;
+    tone: "plus" | "minus" | "muted";
+  }>;
+}) {
+  if (rows.length === 0) return null;
+  return (
+    <div className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200/80 bg-white">
+      {rows.map((row) => (
+        <div
+          key={row.label}
+          className="flex items-center justify-between gap-3 px-3 py-2.5 text-[13px]"
+        >
+          <span className="text-slate-600">{row.label}</span>
+          <span
+            className={cn(
+              "tabular-nums font-semibold",
+              row.tone === "plus" && "text-primary-strong",
+              row.tone === "minus" && "text-destructive",
+              row.tone === "muted" && "text-slate-700",
+            )}
+          >
+            {row.value}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function PracticeTransferAmountHover({
   totalAmount,
   parts,
@@ -1414,6 +1510,7 @@ const practiceTransferGroupKey = (
   const refId = String(item.refId || "").trim();
   const ptx = String(item.refPracticeTransferId || "").trim();
   // mongo id 우선 — 보철기공비(refId)와 디자인비(relatedPracticeTransferId)를 같은 키로
+  // 원청 매출·지급도 같은 의뢰면 한 행.
   if (refType === "PRACTICE_TRANSFER" && refId) return `ptx:${refId}`;
   if (related) return `ptx:${related}`;
   if (ptx) return `ptx-human:${ptx}`;
@@ -1547,6 +1644,28 @@ const emptyDisplayRowExtras = {
   recipientName: "",
   mailboxAddress: "",
   members: [] as CreditLedgerItem[],
+  settlementSide: null as "earn" | "payout" | null,
+  forwardAmounts: null as { gross: number; payout: number } | null,
+};
+
+const resolvePrimeForwardLegs = (members: CreditLedgerItem[]) => {
+  let gross = 0;
+  let payout = 0;
+  let hasGross = false;
+  let hasPayout = false;
+  for (const member of members) {
+    const source = String(member.ledgerSource || "");
+    const amount = Number(member.amount || 0);
+    if (source === "practice_transfer_lab_share_gross" && amount > 0) {
+      hasGross = true;
+      gross += amount;
+    }
+    if (source === "practice_transfer_subcontract_purchase" && amount < 0) {
+      hasPayout = true;
+      payout += amount;
+    }
+  }
+  return { hasGross, hasPayout, gross, payout };
 };
 
 const isAbutmentDesignHoldLedgerItem = (item: CreditLedgerItem) =>
@@ -1653,20 +1772,44 @@ const groupLedgerItemsForDisplay = (
         members,
         labShareOnly,
       );
+      const legs = resolvePrimeForwardLegs(members);
+      const settlementSide: "earn" | "payout" | null = legs.hasPayout
+        ? "payout"
+        : legs.hasGross
+          ? "earn"
+          : null;
+      const forwardAmounts =
+        legs.hasGross && legs.hasPayout
+          ? { gross: legs.gross, payout: legs.payout }
+          : null;
+      const newest = members.reduce((best, member) => {
+        const bestAt = new Date(best.createdAt || 0).getTime();
+        const at = new Date(member.createdAt || 0).getTime();
+        if (at > bestAt) return member;
+        if (at < bestAt) return best;
+        return items.indexOf(member) < items.indexOf(best) ? member : best;
+      }, members[0]);
       out.push({
         key: ptxKey,
-        createdAt: String(latest.createdAt || ""),
+        createdAt: String(newest.createdAt || latest.createdAt || ""),
         amount,
-        balanceAfter: latest.balanceAfter,
+        balanceAfter: newest.balanceAfter,
         spentPaidAmount,
         spentFreeAmount,
         type: latest.type,
-        displayLabel: resolvePracticeTransferTypeLabel(isLabViewer),
+        displayLabel:
+          settlementSide === "payout"
+            ? "기공 지급"
+            : settlementSide === "earn"
+              ? "기공 매출"
+              : resolvePracticeTransferTypeLabel(isLabViewer),
         parts,
         practiceTransferPending: pending,
         practiceTransferPayoutStatus: payoutStatus,
         isPracticeTransfer: true,
         ...emptyDisplayRowExtras,
+        settlementSide,
+        forwardAmounts,
         members,
         item: representative,
       });
@@ -1955,6 +2098,255 @@ const renderTransactionDetail = ({
   );
 };
 
+type LedgerFeeQuoteDetail = {
+  quote: PracticeTransferFeeQuote;
+  originalQuote?: PracticeTransferFeeQuote | null;
+  remakeSummaryLabel?: string | null;
+  remakeChargedAt?: string | null;
+  skipJig: boolean;
+  rushProcessing: boolean;
+  title: string;
+  creditLabHoldPending: boolean;
+  creditAbutmentHoldPending: boolean;
+  patientName: string;
+  labName: string;
+  orderDate: string;
+  arrivalDate: string;
+  memo: string;
+  settlementShippingLines: PracticeTransferSettlementShippingLine[];
+  settlementSide: "earn" | "payout" | null;
+  payoutStatus: PracticeTransferPayoutStatus | null;
+  forwardGross: number | null;
+  forwardPayout: number | null;
+  ledgerAmount: number;
+};
+
+function PracticeTransferLedgerFeeDialog({
+  detail,
+  isLabViewer,
+  onOpenChange,
+}: {
+  detail: LedgerFeeQuoteDetail | null;
+  isLabViewer: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const counterpartyLabel = isLabViewer ? "치과" : "기공소";
+  const splitShareBadges = Boolean(
+    detail &&
+      detail.settlementSide !== "payout" &&
+      detail.creditAbutmentHoldPending !== detail.creditLabHoldPending,
+  );
+  const titleStatus =
+    detail?.payoutStatus && isLabViewer && !splitShareBadges
+      ? detail.payoutStatus
+      : null;
+  const isPayout = detail?.settlementSide === "payout";
+  const payoutFigures = detail
+    ? resolvePayoutLedgerFigures(detail)
+    : { gross: 0, payoutAbs: 0, fee: 0 };
+  const quoteGross = detail ? quoteLabGrossWon(detail.quote) : 0;
+  const receipt = Math.max(0, Math.round(Number(detail?.ledgerAmount || 0)));
+  const earnReceiptDiffers = Boolean(
+    detail &&
+      isLabViewer &&
+      !isPayout &&
+      receipt > 0 &&
+      quoteGross > 0 &&
+      receipt !== quoteGross,
+  );
+  const ownSettlementSummary = Boolean(isPayout || earnReceiptDiffers);
+  const shareHoldProps = titleStatus
+    ? { creditLabHoldPending: null, creditAbutmentHoldPending: null }
+    : {
+        creditLabHoldPending: detail?.creditLabHoldPending,
+        creditAbutmentHoldPending: detail?.creditAbutmentHoldPending,
+      };
+
+  const payoutRows =
+    isPayout && detail
+      ? [
+          ...(payoutFigures.gross > 0
+            ? [
+                {
+                  label: "매출",
+                  value: formatSignedWon(payoutFigures.gross),
+                  tone: "plus" as const,
+                },
+              ]
+            : []),
+          ...(payoutFigures.fee > 0
+            ? [
+                {
+                  label: `하청 수수료 ${formatFeeRatePct(
+                    payoutFigures.gross > 0
+                      ? payoutFigures.fee / payoutFigures.gross
+                      : 0,
+                  )}`,
+                  value: formatSignedWon(-payoutFigures.fee),
+                  tone: "muted" as const,
+                },
+              ]
+            : []),
+          ...(payoutFigures.payoutAbs > 0
+            ? [
+                {
+                  label: "지급",
+                  value: formatSignedWon(-payoutFigures.payoutAbs),
+                  tone: "minus" as const,
+                },
+              ]
+            : []),
+        ]
+      : [];
+
+  const earnRows = earnReceiptDiffers
+    ? [
+        {
+          label: "기공비",
+          value: formatSignedWon(quoteGross),
+          tone: "muted" as const,
+        },
+        {
+          label: "수령",
+          value: formatSignedWon(receipt),
+          tone: "plus" as const,
+        },
+      ]
+    : [];
+
+  return (
+    <Dialog open={Boolean(detail)} onOpenChange={onOpenChange}>
+      <DialogContent
+        className={cn(
+          "flex max-h-[85vh] flex-col gap-0 overflow-hidden rounded-2xl p-0 sm:rounded-2xl",
+          RESPONSIVE.dialogContentMd,
+        )}
+      >
+        <DialogHeader className="space-y-0 border-b border-slate-100 px-4 pb-4 pt-5 pr-12 sm:px-6 sm:pr-14">
+          {detail ? (
+            <DialogTitle className="flex flex-wrap items-center gap-2 text-base font-semibold tracking-tight text-slate-900">
+              <span>{detail.title || "기공의뢰 상세 내역"}</span>
+              {titleStatus ? (
+                <span
+                  className={cn(
+                    "inline-flex whitespace-nowrap rounded-md border px-1.5 py-0.5 text-[11px] font-medium leading-none",
+                    practiceTransferPayoutStatusClass(titleStatus),
+                  )}
+                >
+                  {practiceTransferPayoutStatusLabel(
+                    titleStatus,
+                    isLabViewer,
+                    detail.settlementSide,
+                  )}
+                </span>
+              ) : null}
+            </DialogTitle>
+          ) : (
+            <DialogTitle className="sr-only">기공의뢰 상세 내역</DialogTitle>
+          )}
+        </DialogHeader>
+        {detail ? (
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4 sm:px-6">
+            <div className="grid grid-cols-1 gap-x-4 gap-y-3 rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 py-3 sm:grid-cols-2">
+              <LedgerDetailMetaItem
+                label={counterpartyLabel}
+                value={detail.labName}
+              />
+              <LedgerDetailMetaItem label="환자명" value={detail.patientName} />
+              <LedgerDetailMetaItem
+                label="주문일"
+                value={
+                  detail.orderDate ? formatKstYmdToKo(detail.orderDate) : ""
+                }
+              />
+              <LedgerDetailMetaItem
+                label="치과도착일"
+                value={
+                  detail.arrivalDate ? formatKstYmdToKo(detail.arrivalDate) : ""
+                }
+              />
+              {detail.remakeChargedAt ? (
+                <LedgerDetailMetaItem
+                  className="sm:col-span-2"
+                  label="리메이크 청구일"
+                  value={formatDate(String(detail.remakeChargedAt))}
+                />
+              ) : null}
+              <LedgerDetailMetaItem
+                className="sm:col-span-2"
+                label="메모"
+                value={detail.memo}
+              />
+            </div>
+
+            {detail.originalQuote ? (
+              <div className="space-y-2">
+                <div className="rounded-xl border border-amber-200/80 bg-amber-50/60 px-3 py-2.5">
+                  <p className="text-[11px] font-semibold tracking-wide text-amber-800/80">
+                    이번 리메이크 청구
+                  </p>
+                  {detail.remakeSummaryLabel ? (
+                    <p className="mt-1 whitespace-pre-wrap break-words text-xs font-medium leading-snug text-amber-950">
+                      {detail.remakeSummaryLabel}
+                    </p>
+                  ) : null}
+                  <p className="mt-1 text-sm font-semibold tabular-nums text-amber-950">
+                    리메이크비{" "}
+                    {Math.max(
+                      0,
+                      Math.round(Number(detail.quote.total || 0)),
+                    ).toLocaleString("ko-KR")}
+                    원
+                  </p>
+                </div>
+                <div className="space-y-1.5 rounded-xl border border-slate-200/80 px-3 py-2.5">
+                  <p className="text-[11px] font-semibold text-slate-700">
+                    원청구 내역
+                  </p>
+                  <PracticeTransferFeeEstimate
+                    quote={detail.originalQuote}
+                    viewer={isLabViewer ? "lab" : "practice"}
+                    density="detail"
+                    skipJig={detail.skipJig}
+                    rushProcessing={detail.rushProcessing}
+                    creditLabHoldPending={detail.creditLabHoldPending}
+                    creditAbutmentHoldPending={
+                      detail.creditAbutmentHoldPending
+                    }
+                    settlementShippingLines={[]}
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-slate-200/80 px-3 py-2.5">
+                <PracticeTransferFeeEstimate
+                  quote={detail.quote}
+                  viewer={isLabViewer ? "lab" : "practice"}
+                  density="detail"
+                  skipJig={detail.skipJig}
+                  rushProcessing={detail.rushProcessing}
+                  creditLabHoldPending={shareHoldProps.creditLabHoldPending}
+                  creditAbutmentHoldPending={
+                    shareHoldProps.creditAbutmentHoldPending
+                  }
+                  settlementShippingLines={detail.settlementShippingLines}
+                  showColumnSubtotals={!ownSettlementSummary}
+                  hideLabSettlementHint={ownSettlementSummary}
+                />
+              </div>
+            )}
+
+            {isPayout ? <LedgerAmountSummary rows={payoutRows} /> : null}
+            {earnReceiptDiffers ? (
+              <LedgerAmountSummary rows={earnRows} />
+            ) : null}
+          </div>
+        ) : null}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export const CreditLedgerModal = ({
   open = false,
   onOpenChange,
@@ -2068,24 +2460,8 @@ export const CreditLedgerModal = ({
   });
   const [selectedDetail, setSelectedDetail] =
     useState<RequestDetailDialogRequest | null>(null);
-  const [feeQuoteDetail, setFeeQuoteDetail] = useState<{
-    quote: PracticeTransferFeeQuote;
-    /** 리메이크 행 — 원청구 견적(아래 섹션) */
-    originalQuote?: PracticeTransferFeeQuote | null;
-    remakeSummaryLabel?: string | null;
-    remakeChargedAt?: string | null;
-    skipJig: boolean;
-    rushProcessing: boolean;
-    title: string;
-    creditLabHoldPending: boolean;
-    creditAbutmentHoldPending: boolean;
-    patientName: string;
-    labName: string;
-    orderDate: string;
-    arrivalDate: string;
-    memo: string;
-    settlementShippingLines: PracticeTransferSettlementShippingLine[];
-  } | null>(null);
+  const [feeQuoteDetail, setFeeQuoteDetail] =
+    useState<LedgerFeeQuoteDetail | null>(null);
   const [abutmentDetail, setAbutmentDetail] =
     useState<AbutmentDesignLedgerDetail | null>(null);
   const [currentBalanceSnapshot, setCurrentBalanceSnapshot] =
@@ -2760,7 +3136,7 @@ export const CreditLedgerModal = ({
   const periodSpendTooltip = isDemoMode
     ? resolveCreditLedgerDemoPeriodSpendHint(demoKind)
     : showSettlementCredit
-      ? "선택한 기간에 지출한 어벗 생산·배송·스토어 결제 합계입니다."
+      ? "선택한 기간에 지출한 어벗 생산·배송·스토어와, 협력·하청으로 넘긴 기공 지급 합계입니다."
       : "선택한 기간에 지출한 기공료·스토어 결제 합계입니다. 결제 보류(잔액 차감분)를 포함합니다.";
 
   const statusSplitFooter = (settled: number, pending: number) => (
@@ -3248,6 +3624,11 @@ export const CreditLedgerModal = ({
                             arrivalDate: String(memoMeta.arrivalDate || "").trim(),
                             memo: String(memoMeta.memo || "").trim(),
                             settlementShippingLines: [],
+                            settlementSide: r.settlementSide,
+                            payoutStatus: r.practiceTransferPayoutStatus,
+                            forwardGross: r.forwardAmounts?.gross ?? null,
+                            forwardPayout: r.forwardAmounts?.payout ?? null,
+                            ledgerAmount: Number(r.amount || 0),
                           });
                           return;
                         }
@@ -3294,6 +3675,11 @@ export const CreditLedgerModal = ({
                           arrivalDate: String(memoMeta.arrivalDate || "").trim(),
                           memo: String(memoMeta.memo || "").trim(),
                           settlementShippingLines,
+                          settlementSide: r.settlementSide,
+                          payoutStatus: r.practiceTransferPayoutStatus,
+                          forwardGross: r.forwardAmounts?.gross ?? null,
+                          forwardPayout: r.forwardAmounts?.payout ?? null,
+                          ledgerAmount: Number(r.amount || 0),
                         });
                       }}
                     >
@@ -3307,16 +3693,19 @@ export const CreditLedgerModal = ({
                       </TableCell>
                       <TableCell className="text-center align-middle">
                         {payoutStatus ? (
-                          <span
-                            className={cn(
-                              "inline-flex whitespace-nowrap rounded-md border px-1.5 py-0.5 text-[11px] font-medium leading-none",
-                              practiceTransferPayoutStatusClass(payoutStatus),
-                            )}
-                          >
-                            {practiceTransferPayoutStatusLabel(
-                              payoutStatus,
-                              isLabViewer,
-                            )}
+                          <span className="inline-flex items-center justify-center gap-1">
+                            <span
+                              className={cn(
+                                "inline-flex whitespace-nowrap rounded-md border px-1.5 py-0.5 text-[11px] font-medium leading-none",
+                                practiceTransferPayoutStatusClass(payoutStatus),
+                              )}
+                            >
+                              {practiceTransferPayoutStatusLabel(
+                                payoutStatus,
+                                isLabViewer,
+                                r.settlementSide,
+                              )}
+                            </span>
                           </span>
                         ) : (
                           <span className="text-xs text-muted-foreground">—</span>
@@ -3325,15 +3714,28 @@ export const CreditLedgerModal = ({
                       <TableCell
                         className={cn(
                           "text-center font-medium tabular-nums align-middle",
-                          hasParts
-                            ? undefined
-                            : isMinus
+                          r.settlementSide
+                            ? isMinus
                               ? "text-destructive"
-                              : "text-primary-strong",
+                              : "text-primary-strong"
+                            : hasParts
+                              ? undefined
+                              : isMinus
+                                ? "text-destructive"
+                                : "text-primary-strong",
                         )}
                       >
                         <div className="flex flex-col items-center leading-4">
-                          {hasParts ? (
+                          {r.forwardAmounts ? (
+                            <div className="flex flex-col items-center gap-0.5 text-xs tabular-nums leading-snug">
+                              <span className="text-primary-strong">
+                                매출 {formatSignedWon(r.forwardAmounts.gross)}
+                              </span>
+                              <span className="text-destructive">
+                                지급 {formatSignedWon(r.forwardAmounts.payout)}
+                              </span>
+                            </div>
+                          ) : hasParts ? (
                             r.isAbutmentDesign ? (
                               <LedgerPartsAmountHover
                                 totalAmount={amount}
@@ -3517,128 +3919,13 @@ export const CreditLedgerModal = ({
         }}
       />
 
-      <Dialog
-        open={Boolean(feeQuoteDetail)}
+      <PracticeTransferLedgerFeeDialog
+        detail={feeQuoteDetail}
+        isLabViewer={isLabViewer}
         onOpenChange={(next) => {
           if (!next) setFeeQuoteDetail(null);
         }}
-      >
-        <DialogContent
-          className={cn(
-            "max-h-[85vh] overflow-y-auto rounded-2xl sm:rounded-2xl",
-            RESPONSIVE.dialogContentMd,
-          )}
-        >
-          <DialogHeader>
-            <DialogTitle className="text-base font-semibold tracking-tight text-slate-900">
-              {feeQuoteDetail?.title || "기공의뢰-기공소에 상세 내역"}
-            </DialogTitle>
-          </DialogHeader>
-          {feeQuoteDetail ? (
-            <div className="space-y-3">
-              <div className="grid grid-cols-1 gap-x-3 gap-y-1.5 rounded-xl border border-slate-200/80 bg-slate-50/70 px-3 py-2.5 text-xs leading-snug sm:grid-cols-2">
-                <p className="min-w-0">
-                  <span className="text-muted-foreground">환자명</span>{" "}
-                  <span className="font-medium text-slate-900">
-                    {feeQuoteDetail.patientName || "—"}
-                  </span>
-                </p>
-                <p className="min-w-0">
-                  <span className="text-muted-foreground">기공소</span>{" "}
-                  <span className="font-medium text-slate-900">
-                    {feeQuoteDetail.labName || "—"}
-                  </span>
-                </p>
-                <p className="min-w-0">
-                  <span className="text-muted-foreground">주문일</span>{" "}
-                  <span className="font-medium tabular-nums text-slate-900">
-                    {feeQuoteDetail.orderDate
-                      ? formatKstYmdToKo(feeQuoteDetail.orderDate)
-                      : "—"}
-                  </span>
-                </p>
-                <p className="min-w-0">
-                  <span className="text-muted-foreground">치과도착일</span>{" "}
-                  <span className="font-medium tabular-nums text-slate-900">
-                    {feeQuoteDetail.arrivalDate
-                      ? formatKstYmdToKo(feeQuoteDetail.arrivalDate)
-                      : "—"}
-                  </span>
-                </p>
-                {feeQuoteDetail.remakeChargedAt ? (
-                  <p className="min-w-0 sm:col-span-2">
-                    <span className="text-muted-foreground">리메이크 청구일</span>{" "}
-                    <span className="font-medium tabular-nums text-slate-900">
-                      {formatDate(String(feeQuoteDetail.remakeChargedAt))}
-                    </span>
-                  </p>
-                ) : null}
-                <p className="min-w-0 sm:col-span-2 whitespace-pre-wrap break-words">
-                  <span className="text-muted-foreground">메모</span>{" "}
-                  <span className="font-medium text-slate-900">
-                    {feeQuoteDetail.memo || "—"}
-                  </span>
-                </p>
-              </div>
-
-              {feeQuoteDetail.originalQuote ? (
-                <div className="space-y-2">
-                  <div className="rounded-xl border border-amber-200/80 bg-amber-50/60 px-3 py-2.5">
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-800/80">
-                      이번 리메이크 청구
-                    </p>
-                    {feeQuoteDetail.remakeSummaryLabel ? (
-                      <p className="mt-1 whitespace-pre-wrap break-words text-xs font-medium leading-snug text-amber-950">
-                        {feeQuoteDetail.remakeSummaryLabel}
-                      </p>
-                    ) : null}
-                    <p className="mt-1 text-sm font-semibold tabular-nums text-amber-950">
-                      리메이크비{" "}
-                      {Math.max(
-                        0,
-                        Math.round(Number(feeQuoteDetail.quote.total || 0)),
-                      ).toLocaleString("ko-KR")}
-                      원
-                    </p>
-                  </div>
-                  <div className="space-y-1.5">
-                    <p className="text-[11px] font-semibold text-slate-700">
-                      원청구 내역
-                    </p>
-                    <PracticeTransferFeeEstimate
-                      quote={feeQuoteDetail.originalQuote}
-                      viewer={isLabViewer ? "lab" : "practice"}
-                      density="detail"
-                      skipJig={feeQuoteDetail.skipJig}
-                      rushProcessing={feeQuoteDetail.rushProcessing}
-                      creditLabHoldPending={feeQuoteDetail.creditLabHoldPending}
-                      creditAbutmentHoldPending={
-                        feeQuoteDetail.creditAbutmentHoldPending
-                      }
-                      settlementShippingLines={[]}
-                    />
-                  </div>
-                </div>
-              ) : (
-                <PracticeTransferFeeEstimate
-                  quote={feeQuoteDetail.quote}
-                  viewer={isLabViewer ? "lab" : "practice"}
-                  density="detail"
-                  skipJig={feeQuoteDetail.skipJig}
-                  rushProcessing={feeQuoteDetail.rushProcessing}
-                  creditLabHoldPending={feeQuoteDetail.creditLabHoldPending}
-                  creditAbutmentHoldPending={
-                    feeQuoteDetail.creditAbutmentHoldPending
-                  }
-                  settlementShippingLines={
-                    feeQuoteDetail.settlementShippingLines
-                  }
-                />
-              )}
-            </div>
-          ) : null}
-        </DialogContent>
-      </Dialog>
+      />
     </>
   );
 };

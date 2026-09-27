@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/practice/practiceTransferFeeQuote.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothWorkChartReadOnly.tsx
+// - 2026-09-27: 장부 상세 — 자체 정산 요약이 있으면 열 소계·수수료 힌트를 숨긴다.
 // - 2026-09-26: 견적 ? 아이콘을 기공비 금액 바로 오른쪽으로.
 // - 2026-09-26: 기공소 「학습 이용」버튼·동의 모달 제거. 안내는 약관·개인정보.
 // - 2026-09-20: 정산 상세(기공소) — 플랫폼 수수료·수령액 표시. 뱃지 적립보류/완료.
@@ -162,6 +163,10 @@ type PracticeTransferFeeEstimateProps = {
   creditAbutmentHoldPending?: boolean | null;
   /** 크레딧 정산 상세 전용. 장부에 잡힌 배송비(견적 툴팁에는 전달하지 않음) */
   settlementShippingLines?: PracticeTransferSettlementShippingLine[] | null;
+  /** 장부 상세가 매출·지급·수령을 따로 보여줄 때 열 소계를 숨긴다 */
+  showColumnSubtotals?: boolean;
+  /** 장부 상세가 수수료·수령을 따로 보여줄 때 표 하단 힌트를 숨긴다 */
+  hideLabSettlementHint?: boolean;
   /** 견적 상세 툴팁 open/close (가이드투어 등) */
   onBreakdownTooltipOpenChange?: (open: boolean) => void;
   /** true면 금액 blur-until-hover 해제(가이드투어 견적 하이라이트 등) */
@@ -804,6 +809,8 @@ export function PracticeTransferFeeEstimate({
   creditLabHoldPending = null,
   creditAbutmentHoldPending = null,
   settlementShippingLines = null,
+  showColumnSubtotals = true,
+  hideLabSettlementHint = false,
   onBreakdownTooltipOpenChange,
   revealAmounts = false,
   confirmedFeeLabel = null,
@@ -1032,7 +1039,10 @@ export function PracticeTransferFeeEstimate({
     feeRateApplied > 0 && storedLabNet > 0 ? storedLabNet : computedLabNet;
   const platformFeeDisplay = Math.max(0, amount - labSettlementDisplay);
   const labSettlementDiffers =
-    isLab && feeRateApplied > 0 && labSettlementDisplay !== amount;
+    !hideLabSettlementHint &&
+    isLab &&
+    feeRateApplied > 0 &&
+    labSettlementDisplay !== amount;
   const remakeSimple =
     !isLab && quote.isRemake
       ? `리메이크 기공비 ${formatManWon(quote.total || quote.labFeeTotal)}`
@@ -1389,6 +1399,7 @@ export function PracticeTransferFeeEstimate({
               showCreditShareSettlement ? creditAbutmentHoldPending : null
             }
             tempCreditLabFeeTotal={0}
+            showColumnSubtotals={showColumnSubtotals}
           />
           {hasBudgetRange && !isLab ? (
             <p className="text-[11px] text-muted-foreground">
