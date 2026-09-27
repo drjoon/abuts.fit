@@ -1,6 +1,7 @@
 // 기공소 채팅 — 주문 치아와 확정된 스캔 역할로 보철 디자인 계획을 만든다.
 
 import { scanKindToken } from "@/shared/files/modelPreviewFile";
+import { sortByArch } from "@/shared/practice/toothArchOrder";
 
 export type LabOralScanRole = "upper" | "lower" | "bite" | "other";
 
@@ -364,5 +365,5 @@ export function formatProsthesisAiToothLabel(tooth: LabProsthesisAiTooth): strin
   if (tooth.prosthesisType !== "브리지" || tooth.linkedTeeth.length === 0) {
     return base;
   }
-  return `${base} (${tooth.linkedTeeth.join(", ")})`;
+  return `${base} (${sortByArch(tooth.linkedTeeth).join(", ")})`;
 }

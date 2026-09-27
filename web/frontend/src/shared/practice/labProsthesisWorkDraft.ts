@@ -10,12 +10,17 @@ import {
   type WorkScanRole,
 } from "@/shared/practice/labProsthesisAiDesign";
 import {
+  normalizeToothDesignEdits,
   parseDesignScope,
   parseMarginReviewMap,
   type DesignScope,
   type MarginReview,
   type ToothDesignEdit,
 } from "@/shared/practice/labProsthesisModify";
+import {
+  insertionAxisKey,
+  insertionAxisTeeth,
+} from "@/shared/practice/toothArchOrder";
 
 const DB_NAME = "abuts-lab-prosthesis-work";
 const STORE = "drafts";
@@ -166,11 +171,16 @@ function axisOf(value: unknown): WorkSessionAxis | null {
   const dir = tuple3(row.dir);
   const origin = tuple3(row.origin);
   const view = viewOf(row.view);
-  const key = String(row.key || "").trim();
-  if (!dir || !origin || !view || !key) return null;
-  const toothNumbers = Array.isArray(row.toothNumbers)
+  if (!dir || !origin || !view) return null;
+  const listed = Array.isArray(row.toothNumbers)
     ? row.toothNumbers.map((tooth) => String(tooth || "").trim()).filter(Boolean)
     : [];
+  // 예전 초안은 키를 문자열 순서로 저장했다. 악궁 순서로 다시 맞춘다.
+  const key = insertionAxisKey(
+    listed.length > 0 ? listed : insertionAxisTeeth(String(row.key || "")),
+  );
+  if (!key) return null;
+  const toothNumbers = insertionAxisTeeth(key);
   return {
     key,
     toothNumbers,
@@ -196,7 +206,7 @@ function documentOf(row: unknown): WorkSessionDocument | null {
     ? body.insertionAxes.map(axisOf).filter((axis): axis is WorkSessionAxis => axis != null)
     : [];
   return {
-    edits,
+    edits: normalizeToothDesignEdits(edits),
     generated,
     marginReview: parseMarginReviewMap(
       (body as { marginReview?: unknown }).marginReview,

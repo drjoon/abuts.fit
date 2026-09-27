@@ -38,6 +38,7 @@
 // - 2026-09-27: 모달을 닫으면 작업영역 위 토글을 남긴다. 정중앙은 모눈(2mm·10mm)까지 순환한다.
 // - 2026-09-27: 표시 패널은 파일명을 기본으로 숨긴다. 헤더에서 닫거나 숨긴 뒤 열면 직전 패널 열림을 되돌린다.
 // - 2026-09-27: 패널은 열기·닫기·숨김. 헤더 날짜는 도착일만.
+// - 2026-09-27: 브리지는 지대치·폰틱을 나누고, 커넥터마다 연결·모양·단면적을 고친다. 스팬 단위 생성·조립·분리.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDownToLine,
@@ -96,12 +97,23 @@ import {
   LabBasketTagGuideButton,
   LabBasketTagPickerButton,
 } from "@/shared/components/practice/LabBasketTagToolbar";
+import { ConnectorFocusView } from "@/shared/components/practice/ConnectorFocusView";
+import {
+  DesignExportDialog,
+  type DesignExportRestoration,
+  type DesignExportScan,
+  type DesignExportSelection,
+} from "@/shared/components/practice/DesignExportDialog";
 import {
   OralScanOverlayViewer,
+  type ConnectorSectionShot,
   type OralScanOverlayHandle,
   type OralScanOverlaySource,
 } from "@/shared/components/practice/OralScanOverlayViewer";
-import { LabProsthesisModifyPanel } from "@/shared/components/practice/LabProsthesisModifyPanel";
+import {
+  LabProsthesisModifyPanel,
+  type ConnectorRow,
+} from "@/shared/components/practice/LabProsthesisModifyPanel";
 import {
   VIEW_PAINT_COLORS,
   ViewPaintSurface,
@@ -149,6 +161,7 @@ import {
   applyDetectedMargin,
   applyInnerPreset,
   clinicKeyFromCasePrimary,
+  connectorIsWeak,
   createToothDesignEdit,
   INNER_PRESETS,
   materialSnapshot,
@@ -167,6 +180,12 @@ import {
   type ModifyTool,
   type ToothDesignEdit,
 } from "@/shared/practice/labProsthesisModify";
+import {
+  compareArch,
+  fdiToothDigits,
+  insertionAxisKey,
+  sortByArch,
+} from "@/shared/practice/toothArchOrder";
 
 type AiDesignFile = {
   fileName?: string | null;
@@ -558,6 +577,12 @@ function LabProsthesisAiDesignDialog({
   const [editBrush, setEditBrush] = useState<EditBrush>("none");
   const [edits, setEdits] = useState<Record<string, ToothDesignEdit>>({});
   const [holeNote, setHoleNote] = useState("");
+  const [connectorFrom, setConnectorFrom] = useState<string | null>(null);
+  const [focusViewOn, setFocusViewOn] = useState(true);
+  const [connectorShot, setConnectorShot] = useState<ConnectorSectionShot | null>(null);
+  const focusRowRef = useRef<ConnectorRow | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportBusy, setExportBusy] = useState(false);
   const [alignKind, setAlignKind] = useState<"auto" | "manual" | null>(null);
   const [alignArch, setAlignArch] = useState<"upper" | "lower" | null>(null);
   const [alignPicks, setAlignPicks] = useState({ model: 0, bite: 0 });
@@ -992,18 +1017,134 @@ function LabProsthesisAiDesignDialog({
     : createToothDesignEdit();
   const bridgeSpan = insertionSpanForTooth(plan.teeth, activeNumber);
   const isBridgeSpan = bridgeSpan.length > 1 || activeTooth?.prosthesisType === "브리지";
-  const bridges = useMemo(() => {
-    const pairs: Array<{ from: string; to: string }> = [];
-    for (const span of insertionSpansByOwner(plan.teeth).values()) {
-      if (span.length < 2) continue;
-      for (let index = 0; index < span.length - 1; index += 1) {
-        const from = span[index];
-        const to = span[index + 1];
-        if (from && to) pairs.push({ from, to });
-      }
+  const bridges = useMemo(() => bridgeLinks(plan.teeth), [plan.teeth]);
+  const spanConnectors: ConnectorRow[] = bridges
+    .filter((link) => bridgeSpan.includes(link.from) && bridgeSpan.includes(link.to))
+    .map((link) => ({
+      ...link,
+      edit: edits[link.from] ?? createToothDesignEdit(),
+    }));
+  const bridgeMembers = planSpanMembers(plan.teeth, bridgeSpan);
+  const bridgeReady =
+    bridgeMembers.length > 1 && bridgeMembers.every((tooth) => generated[tooth] === true);
+  const bridgeAssembled = spanAssembled(bridgeSpan, edits);
+  const activeConnectorFrom =
+    spanConnectors.find((row) => row.from === connectorFrom)?.from ??
+    spanConnectors.find((row) => row.from === activeNumber || row.to === activeNumber)
+      ?.from ??
+    spanConnectors[0]?.from ??
+    null;
+  const exportRestorations = useMemo(
+    () => designExportRestorations(plan.teeth, generated, edits),
+    [edits, generated, plan.teeth],
+  );
+  const exportScans = useMemo(() => {
+    const out: DesignExportScan[] = [];
+    for (const role of ["upper", "lower", "bite"] as const) {
+      if (!scans.some((row) => row.role === role)) continue;
+      const label = oralScanRoleLabel(role);
+      out.push({ role, label, fileName: `${label}.stl` });
     }
-    return pairs;
-  }, [plan.teeth]);
+    return out;
+  }, [scans]);
+
+  const buildExportFiles = (selection: DesignExportSelection) =>
+    (
+      viewerRef.current?.exportDesignStl({
+        groups: selection.restorations.map((row) => ({
+          fileName: row.fileName,
+          teeth: row.teeth,
+        })),
+        scans: selection.scans.map((row) => ({ fileName: row.fileName, role: row.role })),
+        camCoordinates: selection.camCoordinates,
+      }) ?? []
+    ).map((row) => new File([row.blob], row.fileName, { type: "model/stl" }));
+
+  const downloadExport = async (selection: DesignExportSelection) => {
+    setExportBusy(true);
+    try {
+      const files = buildExportFiles(selection);
+      if (files.length === 0) {
+        toast({ title: "내보낼 메시가 없습니다.", variant: "destructive" });
+        return;
+      }
+      if (files.length === 1) {
+        downloadBlobFile(files[0]!, files[0]!.name);
+      } else {
+        const { default: JSZip } = await import("jszip");
+        const zip = new JSZip();
+        for (const file of files) zip.file(file.name, file);
+        const blob = await zip.generateAsync({ type: "blob" });
+        downloadBlobFile(blob, `${exportBaseName(caseHeader?.primary)}.zip`);
+      }
+      setExportOpen(false);
+    } finally {
+      setExportBusy(false);
+    }
+  };
+
+  const attachExport = (selection: DesignExportSelection) => {
+    if (!onAttachChatFile) return;
+    const files = buildExportFiles(selection);
+    if (files.length === 0) {
+      toast({ title: "내보낼 메시가 없습니다.", variant: "destructive" });
+      return;
+    }
+    for (const file of files) onAttachChatFile(file);
+    setExportOpen(false);
+    toast({
+      title: "채팅에 첨부했습니다.",
+      description: (
+        <>
+          STL {files.length}개가 대화 입력에 있습니다.
+          <br />
+          디자인을 닫고 보내기를 누르면 상대에게 전달됩니다.
+        </>
+      ),
+    });
+  };
+
+  const focusRow =
+    spanConnectors.find((row) => row.from === activeConnectorFrom) ?? null;
+  focusRowRef.current = focusRow;
+  const focusShown =
+    focusViewOn &&
+    stage === "design" &&
+    modifyTool === "connector" &&
+    isBridgeSpan &&
+    focusRow != null &&
+    generated[focusRow.from] === true &&
+    generated[focusRow.to] === true;
+  // 단면 이미지는 커넥터를 빼고 그린다. 커넥터 값이 바뀌어도 다시 찍지 않는다.
+  const focusShotKey = focusShown && focusRow
+    ? JSON.stringify([
+        focusRow.from,
+        focusRow.to,
+        focusRow.edit.connector.along,
+        insertionKeys,
+        [focusRow.from, focusRow.to].map((tooth) => {
+          const { connector: _connector, ...rest } = edits[tooth] ?? createToothDesignEdit();
+          return rest;
+        }),
+      ])
+    : "";
+  useEffect(() => {
+    if (!focusShotKey) {
+      setConnectorShot(null);
+      return;
+    }
+    const row = focusRowRef.current;
+    if (!row) return;
+    const timer = window.setTimeout(() => {
+      setConnectorShot(
+        viewerRef.current?.captureConnectorSection(
+          { from: row.from, to: row.to },
+          row.edit.connector,
+        ) ?? null,
+      );
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [focusShotKey]);
   const prepBackTransparent = Boolean(activeNumber && edits[activeNumber]?.margin.showBack);
   const designEdit = useMemo(
     () =>
@@ -1181,20 +1322,71 @@ function LabProsthesisAiDesignDialog({
           : { ...prev, [gesture.tooth]: "confirmed" },
       );
     }
+    if (gesture.type === "connector") {
+      setConnectorFrom(gesture.tooth);
+      if (editsRef.current[gesture.tooth]?.connector.assembled) return;
+    }
     setEdits((prev) => {
       const current = prev[gesture.tooth] ?? createToothDesignEdit();
       const next = reduceDesignGesture(current, gesture, marginMode === "pen");
-      if (gesture.type !== "connector") {
-        return { ...prev, [gesture.tooth]: next };
-      }
-      const span = insertionSpanForTooth(plan.teeth, gesture.tooth);
-      const out = { ...prev, [gesture.tooth]: next };
-      for (const tooth of span) {
+      return { ...prev, [gesture.tooth]: next };
+    });
+  };
+
+  const setConnector = (from: string, connector: ToothDesignEdit["connector"]) => {
+    beginEditUndo();
+    setConnectorFrom(from);
+    setEdits((prev) => {
+      const base = prev[from] ?? createToothDesignEdit();
+      return { ...prev, [from]: { ...base, connector } };
+    });
+    queueSaveWorkRef.current();
+  };
+
+  /** 조립·분리는 스팬 전체에 같이 건다. */
+  const setSpanAssembled = (span: readonly string[], assembled: boolean) => {
+    const members = planSpanMembers(plan.teeth, span);
+    if (members.length < 2) return;
+    if (assembled && !members.every((tooth) => generatedRef.current[tooth] === true)) {
+      return;
+    }
+    beginEditUndo();
+    setEdits((prev) => {
+      const out = { ...prev };
+      for (const tooth of members) {
         const base = out[tooth] ?? createToothDesignEdit();
-        out[tooth] = { ...base, connector: next.connector };
+        out[tooth] = { ...base, connector: { ...base.connector, assembled } };
       }
       return out;
     });
+    queueSaveWorkRef.current();
+  };
+
+  /** 지대치 ↔ 폰틱. 스팬에 지대치가 하나는 남아야 한다. */
+  const togglePontic = (toothNumber: string) => {
+    const span = insertionSpanForTooth(plan.teeth, toothNumber);
+    const current = editsRef.current[toothNumber] ?? createToothDesignEdit();
+    const nextOn = !current.pontic.on;
+    if (nextOn) {
+      const abutments = span.filter(
+        (tooth) => tooth !== toothNumber && !editsRef.current[tooth]?.pontic.on,
+      );
+      if (abutments.length === 0) return;
+    }
+    beginEditUndo();
+    const out = {
+      ...editsRef.current,
+      [toothNumber]: { ...current, pontic: { ...current.pontic, on: nextOn } },
+    };
+    for (const tooth of span) {
+      const row = out[tooth] ?? createToothDesignEdit();
+      out[tooth] = { ...row, connector: { ...row.connector, assembled: false } };
+    }
+    editsRef.current = out;
+    setEdits(out);
+    setGenerated((prev) => ({ ...prev, [toothNumber]: false }));
+    if (!nextOn) runMarginDetect([toothNumber]);
+    queueSaveWorkRef.current();
   };
 
   const marginToothNumbersRef = useRef<string[]>([]);
@@ -1213,6 +1405,7 @@ function LabProsthesisAiDesignDialog({
       const review = marginReviewRef.current[number];
       if (review === "detected" || review === "confirmed") return false;
       if (editsRef.current[number]?.margin.deleted) return false;
+      if (editsRef.current[number]?.pontic.on) return false;
       return true;
     });
     if (targets.length === 0) return;
@@ -1246,7 +1439,10 @@ function LabProsthesisAiDesignDialog({
   const runGenerate = async (toothNumbers: string[]) => {
     if (designScopeRef.current !== "crown") return;
     const targets = toothNumbers.filter(
-      (number) => number && marginReviewRef.current[number] === "confirmed",
+      (number) =>
+        number &&
+        (editsRef.current[number]?.pontic.on === true ||
+          marginReviewRef.current[number] === "confirmed"),
     );
     if (targets.length === 0) return;
     const seq = genSeq.current + 1;
@@ -1855,9 +2051,24 @@ function LabProsthesisAiDesignDialog({
             <Button
               type="button"
               size="sm"
-              variant="outline"
               className={cn(
                 "ml-4 h-8 [&_svg]:!size-3.5",
+                headerWide ? "gap-1 px-2.5" : "w-8 px-0",
+              )}
+              disabled={exportScans.length === 0 && exportRestorations.length === 0}
+              onClick={() => setExportOpen(true)}
+              title="보철과 스캔을 STL로 내보냅니다"
+              aria-label="내보내기"
+            >
+              <ArrowDownToLine className="h-3.5 w-3.5" />
+              {headerWide ? <span>내보내기</span> : null}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className={cn(
+                "h-8 [&_svg]:!size-3.5",
                 headerWide ? "gap-1 px-2.5" : "w-8 px-0",
               )}
               onClick={() => {
@@ -2667,22 +2878,18 @@ function LabProsthesisAiDesignDialog({
                                 : { ...prev, [activeNumber]: "confirmed" },
                             );
                           }
-                          setEdits((prev) => {
-                            if (modifyTool !== "connector" || bridgeSpan.length < 2) {
-                              return { ...prev, [activeNumber]: next };
-                            }
-                            const out = { ...prev, [activeNumber]: next };
-                            for (const tooth of bridgeSpan) {
-                              const base = out[tooth] ?? createToothDesignEdit();
-                              out[tooth] =
-                                tooth === activeNumber
-                                  ? next
-                                  : { ...base, connector: next.connector };
-                            }
-                            return out;
-                          });
+                          setEdits((prev) => ({ ...prev, [activeNumber]: next }));
                           queueSaveWorkRef.current();
                         }}
+                        connectors={spanConnectors}
+                        connectorFrom={activeConnectorFrom}
+                        onConnectorFrom={setConnectorFrom}
+                        onConnector={setConnector}
+                        bridgeAssembled={bridgeAssembled}
+                        bridgeReady={bridgeReady}
+                        onAssemble={(assembled) => setSpanAssembled(bridgeSpan, assembled)}
+                        focusView={focusViewOn}
+                        onFocusView={setFocusViewOn}
                         toothLabel={
                           activeTooth
                             ? formatProsthesisAiToothLabel(activeTooth)
@@ -2921,6 +3128,23 @@ function LabProsthesisAiDesignDialog({
                 맞춤
               </Button>
             </div>
+            {focusShown && focusRow ? (
+              <div className="pointer-events-none absolute left-1/2 top-16 z-10 -translate-x-1/2">
+                <ConnectorFocusView
+                  shot={connectorShot}
+                  link={focusRow}
+                  edit={focusRow.edit}
+                  locked={bridgeAssembled}
+                  onShift={(shiftXMm, shiftYMm) =>
+                    setConnector(focusRow.from, {
+                      ...focusRow.edit.connector,
+                      shiftXMm,
+                      shiftYMm,
+                    })
+                  }
+                />
+              </div>
+            ) : null}
             <DesignViewerChrome
               teeth={plan.teeth}
               activeTooth={activeTooth}
@@ -2941,13 +3165,39 @@ function LabProsthesisAiDesignDialog({
               onConfirmMargin={confirmMargin}
               onApplyPreset={applyPresetToTooth}
               onGenerateTooth={(toothNumber) => void runGenerate([toothNumber])}
+              onGenerateSpan={(span) => void runGenerate([...span])}
+              onAssembleSpan={setSpanAssembled}
+              onTogglePontic={togglePontic}
               onClearTooth={(toothNumber) => {
                 beginEditUndo();
                 setGenerated((prev) => ({ ...prev, [toothNumber]: false }));
+                const span = insertionSpanForTooth(plan.teeth, toothNumber);
+                if (span.length > 1 && spanAssembled(span, editsRef.current)) {
+                  setEdits((prev) => {
+                    const out = { ...prev };
+                    for (const tooth of span) {
+                      const row = out[tooth] ?? createToothDesignEdit();
+                      out[tooth] = {
+                        ...row,
+                        connector: { ...row.connector, assembled: false },
+                      };
+                    }
+                    return out;
+                  });
+                }
                 queueSaveWorkRef.current();
               }}
             />
           </div>
+        <DesignExportDialog
+          open={exportOpen}
+          onOpenChange={setExportOpen}
+          restorations={exportRestorations}
+          scans={exportScans}
+          busy={exportBusy}
+          onDownload={(selection) => void downloadExport(selection)}
+          onAttach={onAttachChatFile ? attachExport : null}
+        />
       </DialogContent>
     </Dialog>
   );
@@ -2960,17 +3210,9 @@ function toothArchGroup(toothNumber: string): "upper" | "lower" | "other" {
   return "other";
 }
 
-function insertionAxisKey(toothNumbers: readonly string[]) {
-  return toothNumbers
-    .map((tooth) => String(tooth || "").replace(/\D/g, ""))
-    .filter((tooth) => /^[1-4][1-8]$/.test(tooth))
-    .sort()
-    .join(",");
-}
-
 /**
  * 브리지는 연결된 치아를 한 스팬으로 묶는다.
- * 키는 스팬을 대표하는 행의 치아번호, 값은 스팬 전체.
+ * 키는 스팬을 대표하는 행의 치아번호, 값은 스팬 전체(악궁 순서).
  */
 function insertionSpansByOwner(
   teeth: readonly LabProsthesisAiTooth[],
@@ -3018,17 +3260,25 @@ function insertionSpansByOwner(
       .sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0));
     const lead = rows[0];
     if (!lead) continue;
-    owner.set(lead, [...list].sort());
+    owner.set(lead, sortByArch(list));
   }
   return owner;
+}
+
+/** 스팬 중 주문에 있는 치아. 연결만 걸려 있고 주문 행이 없는 번호는 뺀다. */
+function planSpanMembers(
+  teeth: readonly LabProsthesisAiTooth[],
+  span: readonly string[],
+): string[] {
+  return span.filter((tooth) => teeth.some((row) => row.toothNumber === tooth));
 }
 
 function insertionSpanForTooth(
   teeth: readonly LabProsthesisAiTooth[],
   toothNumber: string | null | undefined,
 ): string[] {
-  const digits = String(toothNumber || "").replace(/\D/g, "");
-  if (!/^[1-4][1-8]$/.test(digits)) return [];
+  const digits = fdiToothDigits(String(toothNumber || ""));
+  if (!digits) return [];
   const spans = insertionSpansByOwner(teeth);
   const own = spans.get(digits);
   if (own) return own;
@@ -3036,6 +3286,74 @@ function insertionSpanForTooth(
     if (span.includes(digits)) return span;
   }
   return [digits];
+}
+
+/** 주문 치아만 악궁 순서로 이은 커넥터. 설정은 앞 치아(from)에 둔다. */
+function bridgeLinks(
+  teeth: readonly LabProsthesisAiTooth[],
+): Array<{ from: string; to: string }> {
+  const pairs: Array<{ from: string; to: string }> = [];
+  for (const span of insertionSpansByOwner(teeth).values()) {
+    const ordered = planSpanMembers(teeth, span);
+    for (let index = 0; index < ordered.length - 1; index += 1) {
+      const from = ordered[index];
+      const to = ordered[index + 1];
+      if (from && to) pairs.push({ from, to });
+    }
+  }
+  return pairs;
+}
+
+/** 내보내기 목록. 브리지는 스팬 하나가 파일 하나이고, 조립해야 낸다. */
+function designExportRestorations(
+  teeth: readonly LabProsthesisAiTooth[],
+  generated: Record<string, boolean>,
+  edits: Record<string, ToothDesignEdit>,
+): DesignExportRestoration[] {
+  const out: DesignExportRestoration[] = [];
+  for (const block of toothInfoBlocks(teeth, insertionSpansByOwner(teeth))) {
+    if (block.kind === "bridge") {
+      const numbers = block.members.map((tooth) => tooth.toothNumber);
+      const label = `브리지 ${numbers[0]}-${numbers[numbers.length - 1]}`;
+      const made = numbers.every((tooth) => generated[tooth] === true);
+      out.push({
+        id: `bridge:${numbers.join(",")}`,
+        label,
+        fileName: `${label}.stl`,
+        teeth: numbers,
+        blocked: !made ? "생성 전" : !spanAssembled(numbers, edits) ? "조립 전" : null,
+      });
+      continue;
+    }
+    const tooth = block.tooth;
+    if (!tooth.designable) continue;
+    const label = `#${tooth.toothNumber} ${tooth.prosthesisType}`;
+    out.push({
+      id: `tooth:${tooth.toothNumber}`,
+      label,
+      fileName: `${label}.stl`,
+      teeth: [tooth.toothNumber],
+      blocked: generated[tooth.toothNumber] === true ? null : "생성 전",
+    });
+  }
+  return out;
+}
+
+function exportBaseName(primary: string | null | undefined) {
+  const name = String(primary || "")
+    .replace(/\s*·\s*/g, "_")
+    .replace(/[\\/:*?"<>|]/g, "")
+    .trim();
+  return name ? `${name}_디자인` : "AI_디자인";
+}
+
+/** 수정값이 있는 스팬 치아가 모두 조립돼 있어야 조립된 브리지다. */
+function spanAssembled(
+  span: readonly string[],
+  edits: Record<string, ToothDesignEdit>,
+): boolean {
+  const rows = span.map((tooth) => edits[tooth]).filter(Boolean);
+  return rows.length > 1 && rows.every((edit) => edit!.connector.assembled);
 }
 
 type ToothInfoBlock =
@@ -3058,7 +3376,9 @@ function toothInfoBlocks(
     if (seen.has(tooth.toothNumber)) continue;
     const span = spanOf.get(tooth.toothNumber);
     const members = span
-      ? teeth.filter((row) => span.includes(row.toothNumber))
+      ? teeth
+          .filter((row) => span.includes(row.toothNumber))
+          .sort((a, b) => compareArch(a.toothNumber, b.toothNumber))
       : [tooth];
     for (const row of members) seen.add(row.toothNumber);
     if (!span || members.length < 2) {
@@ -3102,6 +3422,9 @@ function DesignViewerChrome({
   onConfirmMargin,
   onApplyPreset,
   onGenerateTooth,
+  onGenerateSpan,
+  onAssembleSpan,
+  onTogglePontic,
   onClearTooth,
 }: {
   teeth: LabProsthesisAiTooth[];
@@ -3123,6 +3446,9 @@ function DesignViewerChrome({
   onConfirmMargin: (toothNumber: string) => void;
   onApplyPreset: (toothNumber: string, presetId: InnerPresetId) => void;
   onGenerateTooth: (toothNumber: string) => void;
+  onGenerateSpan: (span: readonly string[]) => void;
+  onAssembleSpan: (span: readonly string[], assembled: boolean) => void;
+  onTogglePontic: (toothNumber: string) => void;
   onClearTooth: (toothNumber: string) => void;
 }) {
   const archGroups = (
@@ -3202,9 +3528,11 @@ function DesignViewerChrome({
     const thin = Boolean(made && edit && shellIsThin(edit));
     const label = made
       ? "생성됨"
-      : review === "detected" || review === "confirmed"
-        ? "검출됨"
-        : null;
+      : edit?.pontic.on
+        ? null
+        : review === "detected" || review === "confirmed"
+          ? "검출됨"
+          : null;
     return (
       <>
         {label ? (
@@ -3225,10 +3553,15 @@ function DesignViewerChrome({
     );
   };
 
-  const presetSelect = (tooth: LabProsthesisAiTooth) => {
-    if (designScope !== "crown" || generated[tooth.toothNumber] === true) return null;
-    if (!tooth.designable) return null;
-    const preset = toothEdit(tooth.toothNumber).inner.preset;
+  /** 브리지는 스팬 전체에 같은 재료를 건다. 커넥터 최소 면적도 이 재료를 따른다. */
+  const presetSelect = (members: readonly LabProsthesisAiTooth[], label: string) => {
+    if (designScope !== "crown") return null;
+    const open = members.filter(
+      (tooth) => tooth.designable && generated[tooth.toothNumber] !== true,
+    );
+    const lead = open[0];
+    if (!lead) return null;
+    const preset = toothEdit(lead.toothNumber).inner.preset;
     const value =
       preset === "clinic" && clinicPreset
         ? "clinic"
@@ -3238,11 +3571,12 @@ function DesignViewerChrome({
     return (
       <select
         className="h-7 max-w-[7.5rem] shrink-0 rounded-md border bg-background px-1 text-[11px]"
-        aria-label={`#${tooth.toothNumber} 재료`}
+        aria-label={`${label} 재료`}
         value={value}
-        onChange={(event) =>
-          onApplyPreset(tooth.toothNumber, event.target.value as InnerPresetId)
-        }
+        onChange={(event) => {
+          const next = event.target.value as InnerPresetId;
+          for (const tooth of open) onApplyPreset(tooth.toothNumber, next);
+        }}
       >
         {INNER_PRESETS.filter((row) => row.id !== "custom").map((row) => (
           <option key={row.id} value={row.id}>
@@ -3281,6 +3615,18 @@ function DesignViewerChrome({
         </button>
       );
     }
+    if (toothEdit(tooth.toothNumber).pontic.on) {
+      return (
+        <button
+          type="button"
+          className={cn(toothActionClass, "bg-primary text-primary-foreground")}
+          disabled={generating}
+          onClick={() => onGenerateTooth(tooth.toothNumber)}
+        >
+          생성
+        </button>
+      );
+    }
     const review = marginReview[tooth.toothNumber] ?? "none";
     const deleted = toothEdit(tooth.toothNumber).margin.deleted;
     if (review === "detected" && !deleted) {
@@ -3308,10 +3654,139 @@ function DesignViewerChrome({
     );
   };
 
+  const links = bridgeLinks(teeth);
+
+  const roleButton = (tooth: LabProsthesisAiTooth, span: readonly string[]) => {
+    const pontic = toothEdit(tooth.toothNumber).pontic.on;
+    const lastAbutment =
+      !pontic &&
+      span.every(
+        (number) => number === tooth.toothNumber || toothEdit(number).pontic.on,
+      );
+    return (
+      <button
+        type="button"
+        className={cn(
+          "inline-flex h-6 shrink-0 items-center rounded-full border px-2 text-[10px] font-medium leading-none disabled:opacity-50",
+          pontic
+            ? "border-violet-500/50 bg-violet-500/10 text-violet-700"
+            : "border-sky-500/50 bg-sky-500/10 text-sky-700",
+        )}
+        disabled={lastAbutment}
+        title={
+          lastAbutment
+            ? "브리지에는 지대치가 하나 이상 있어야 합니다."
+            : pontic
+              ? "지대치로 바꾸면 마진을 다시 검출합니다."
+              : "폰틱은 마진 없이 기저면으로 치조정에 얹습니다."
+        }
+        aria-pressed={pontic}
+        onClick={() => onTogglePontic(tooth.toothNumber)}
+      >
+        {pontic ? "폰틱" : "지대치"}
+      </button>
+    );
+  };
+
+  const bridgeHeader = (span: readonly string[], members: LabProsthesisAiTooth[]) => {
+    const ordered = sortByArch(span);
+    const label = `브리지 ${ordered[0]}-${ordered[ordered.length - 1]}`;
+    const allMade = members.every((tooth) => generated[tooth.toothNumber] === true);
+    const assembled = spanAssembled(span, edits);
+    const weak = links.some(
+      (link) =>
+        span.includes(link.from) &&
+        span.includes(link.to) &&
+        connectorIsWeak(toothEdit(link.from), [link.from, link.to]),
+    );
+    const pending = members.filter((tooth) => generated[tooth.toothNumber] !== true);
+    const spanReady = pending.every((tooth) => {
+      const edit = toothEdit(tooth.toothNumber);
+      if (edit.pontic.on) return true;
+      return (
+        tooth.designable &&
+        !edit.margin.deleted &&
+        marginReview[tooth.toothNumber] === "confirmed"
+      );
+    });
+    return (
+      <div className="mb-1 flex items-center gap-1.5">
+        <span className="whitespace-nowrap text-xs font-semibold text-foreground">
+          {label}
+        </span>
+        {allMade ? (
+          assembled ? (
+            <span className="shrink-0 text-[10px] font-medium text-emerald-600">
+              조립됨
+            </span>
+          ) : (
+            <span className="inline-flex shrink-0 items-center gap-0.5 text-[10px] font-medium text-amber-600">
+              <TriangleAlert className="h-3 w-3" />
+              조립 전
+            </span>
+          )
+        ) : null}
+        {allMade && weak ? (
+          <button
+            type="button"
+            className="shrink-0 text-[10px] font-semibold text-destructive"
+            onClick={() => {
+              const lead = members[0];
+              if (lead) onSelectTooth(lead.toothNumber);
+            }}
+          >
+            커넥터 약함
+          </button>
+        ) : null}
+        {presetSelect(members, label)}
+        {designScope === "crown" && !allMade ? (
+          <button
+            type="button"
+            className={cn(toothActionClass, "bg-primary text-primary-foreground")}
+            disabled={generating || !spanReady}
+            title={spanReady ? undefined : "지대치 마진을 모두 확인한 뒤 생성합니다."}
+            onClick={() => onGenerateSpan(pending.map((tooth) => tooth.toothNumber))}
+          >
+            브리지 생성
+          </button>
+        ) : null}
+        {allMade ? (
+          <button
+            type="button"
+            className={cn(
+              toothActionClass,
+              assembled
+                ? "bg-destructive text-destructive-foreground"
+                : "bg-primary text-primary-foreground",
+            )}
+            title={
+              assembled
+                ? "크라운이나 커넥터를 고치려면 분리합니다."
+                : "커넥터로 브리지를 한 덩어리로 잇습니다."
+            }
+            onClick={() => onAssembleSpan(span, !assembled)}
+          >
+            {assembled ? "분리" : "조립"}
+          </button>
+        ) : null}
+      </div>
+    );
+  };
+
   const thinTeeth = teeth.filter((tooth) => {
     if (generated[tooth.toothNumber] !== true) return false;
     const edit = edits[tooth.toothNumber];
     return Boolean(edit && shellIsThin(edit));
+  });
+
+  const unassembledSpan = [...spans.values()].find((span) => {
+    const rows = teeth.filter((tooth) => span.includes(tooth.toothNumber));
+    return (
+      span.length > 1 &&
+      rows.length > 1 &&
+      rows.every((tooth) => generated[tooth.toothNumber] === true) &&
+      !spanAssembled(span, edits)
+    );
   });
 
   return (
@@ -3348,16 +3823,18 @@ function DesignViewerChrome({
                       {toothInfoBlocks(group.teeth, spans).map((block) => {
                         if (block.kind === "bridge") {
                           const axisOn = axisState(block.span);
-                          const last = block.members.length - 1;
+                          const members = block.members;
+                          const last = members.length - 1;
                           return (
                             <li
                               key={`bridge-${block.span.join("-")}`}
                               className="py-1"
                             >
+                              {bridgeHeader(block.span, members)}
                               <div className="flex items-center gap-2">
                                 {insertionButton(block.span, true)}
                                 <div className="flex flex-col gap-1">
-                                  {block.members.map((tooth, index) => (
+                                  {members.map((tooth, index) => (
                                     <div
                                       key={tooth.toothNumber}
                                       className="flex items-stretch"
@@ -3382,8 +3859,8 @@ function DesignViewerChrome({
                                           className="h-[3px] w-3 shrink-0 bg-primary"
                                         />
                                         {nameButton(tooth, axisOn)}
+                                        {roleButton(tooth, block.span)}
                                         {statusBits(tooth)}
-                                        {presetSelect(tooth)}
                                         {generateButton(tooth)}
                                       </div>
                                     </div>
@@ -3404,7 +3881,7 @@ function DesignViewerChrome({
                             <div className="flex w-fit items-center gap-1.5 py-0.5">
                               {nameButton(tooth, axisOn)}
                               {statusBits(tooth)}
-                              {presetSelect(tooth)}
+                              {presetSelect([tooth], `#${tooth.toothNumber}`)}
                               {span.length > 0 ? insertionButton(span, false) : null}
                               {generateButton(tooth)}
                             </div>
@@ -3420,19 +3897,37 @@ function DesignViewerChrome({
         ) : null}
       </div>
 
-      {thinTeeth.length > 0 ? (
-        <button
-          type="button"
-          className="absolute bottom-16 left-1/2 z-10 max-w-xs -translate-x-1/2 rounded-md bg-background/95 px-3 py-2 text-center text-xs font-medium text-foreground shadow-sm"
-          onClick={() => {
-            const tooth = thinTeeth[0];
-            if (tooth) onSelectTooth(tooth.toothNumber);
-          }}
-        >
-          디자인에 최소 두께 미달이 있습니다.
-          <br />
-          치아 정보에서 해당 치아를 확인하세요.
-        </button>
+      {thinTeeth.length > 0 || unassembledSpan ? (
+        <div className="absolute bottom-16 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-1.5">
+          {unassembledSpan ? (
+            <button
+              type="button"
+              className="max-w-xs rounded-md bg-background/95 px-3 py-2 text-center text-xs font-medium text-foreground shadow-sm"
+              onClick={() => {
+                const lead = sortByArch(unassembledSpan)[0];
+                if (lead) onSelectTooth(lead);
+              }}
+            >
+              크라운·폰틱·커넥터를 만들었지만 아직 조립하지 않았습니다.
+              <br />
+              커넥터를 확인한 뒤 치아 정보에서 브리지를 조립하세요.
+            </button>
+          ) : null}
+          {thinTeeth.length > 0 ? (
+            <button
+              type="button"
+              className="max-w-xs rounded-md bg-background/95 px-3 py-2 text-center text-xs font-medium text-foreground shadow-sm"
+              onClick={() => {
+                const tooth = thinTeeth[0];
+                if (tooth) onSelectTooth(tooth.toothNumber);
+              }}
+            >
+              디자인에 최소 두께 미달이 있습니다.
+              <br />
+              치아 정보에서 해당 치아를 확인하세요.
+            </button>
+          ) : null}
+        </div>
       ) : null}
 
       {generating ? (

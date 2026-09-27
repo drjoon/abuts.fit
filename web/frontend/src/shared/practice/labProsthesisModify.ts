@@ -1,4 +1,6 @@
-// 기공소 AI 보철 — 마진·삽입·내면·형상·훅·컷백·홀·커넥터 수정값.
+// 기공소 AI 보철 — 마진·삽입·내면·형상·훅·컷백·홀·커넥터·폰틱 수정값.
+
+import { fdiToothDigits } from "@/shared/practice/toothArchOrder";
 
 export const MARGIN_POINT_COUNT = 16;
 
@@ -194,7 +196,103 @@ export const CONNECTOR_SHAPES: Array<{ id: ConnectorShape; label: string }> = [
   { id: "proximal", label: "인접 병합" },
 ];
 
+export type PonticBase = "ridgeLap" | "modifiedRidgeLap" | "ovate" | "sanitary" | "conical";
+
+export const PONTIC_BASES: Array<{ id: PonticBase; label: string; hint: string }> = [
+  { id: "modifiedRidgeLap", label: "변형 안장형", hint: "협측만 치조정에 닿습니다." },
+  { id: "ridgeLap", label: "안장형", hint: "치조정을 넓게 덮습니다." },
+  { id: "ovate", label: "난형", hint: "발치와에 볼록하게 들어갑니다." },
+  { id: "conical", label: "원추형", hint: "치조정에 점으로 닿습니다." },
+  { id: "sanitary", label: "위생형", hint: "치조정에서 띄워 청소가 쉽습니다." },
+];
+
+/**
+ * 가로·세로 1로 정규화한 단면 윤곽(x=협설, y=교합). 면적·3D 메시·단면 보기가 같이 쓴다.
+ * 원형은 타원, 삼각은 꼭짓점이 교합, 역삼각은 치은, 인접 병합은 모서리를 깎은 사각.
+ */
+export function connectorOutline(shape: ConnectorShape): Array<[number, number]> {
+  if (shape === "triangle") return [[-0.5, -0.5], [0.5, -0.5], [0, 0.5]];
+  if (shape === "inverted") return [[-0.5, 0.5], [0, -0.5], [0.5, 0.5]];
+  if (shape === "proximal") {
+    const c = 0.5;
+    const k = 0.16;
+    return [
+      [-c + k, -c], [c - k, -c], [c, -c + k], [c, c - k],
+      [c - k, c], [-c + k, c], [-c, c - k], [-c, -c + k],
+    ];
+  }
+  return Array.from({ length: 32 }, (_, index) => {
+    const angle = (index / 32) * Math.PI * 2;
+    return [Math.cos(angle) * 0.5, Math.sin(angle) * 0.5] as [number, number];
+  });
+}
+
+function outlineArea(points: ReadonlyArray<[number, number]>) {
+  let sum = 0;
+  for (let index = 0; index < points.length; index += 1) {
+    const [x1, y1] = points[index]!;
+    const [x2, y2] = points[(index + 1) % points.length]!;
+    sum += x1 * y2 - x2 * y1;
+  }
+  return Math.abs(sum) / 2;
+}
+
+/** 커넥터 단면 모양별 면적 계수. 가로×세로에 곱한다. */
+const CONNECTOR_AREA_FACTOR: Record<ConnectorShape, number> = {
+  round: Math.PI / 4,
+  inverted: outlineArea(connectorOutline("inverted")),
+  triangle: outlineArea(connectorOutline("triangle")),
+  proximal: outlineArea(connectorOutline("proximal")),
+};
+
+/** 재료별 커넥터 최소 단면적(mm²). 전치부·구치부. */
+const CONNECTOR_MIN_AREA: Record<InnerPresetId, { anterior: number; posterior: number }> = {
+  zirconia: { anterior: 7, posterior: 9 },
+  glass: { anterior: 12, posterior: 16 },
+  pmma: { anterior: 10, posterior: 12 },
+  print: { anterior: 10, posterior: 12 },
+  clinic: { anterior: 7, posterior: 9 },
+  custom: { anterior: 7, posterior: 9 },
+};
+
+/** 단면 이동 한계(mm). 치아 밖으로 빠지지 않게 한다. */
+export const CONNECTOR_SHIFT_LIMIT_MM = 2.5;
+
+export function clampConnectorShift(value: number) {
+  return Math.min(CONNECTOR_SHIFT_LIMIT_MM, Math.max(-CONNECTOR_SHIFT_LIMIT_MM, value));
+}
+
+export function connectorAreaMm2(connector: ToothDesignEdit["connector"]) {
+  return connector.transverseMm * connector.verticalMm * CONNECTOR_AREA_FACTOR[connector.shape];
+}
+
+/** 전치부(1~3번)가 하나라도 있으면 전치부 기준. */
+export function connectorMinAreaMm2(
+  preset: InnerPresetId,
+  toothNumbers: readonly string[],
+) {
+  const row = CONNECTOR_MIN_AREA[preset] ?? CONNECTOR_MIN_AREA.zirconia;
+  const anterior = toothNumbers.some((tooth) => /^[1-4][1-3]$/.test(fdiToothDigits(tooth)));
+  return anterior ? row.anterior : row.posterior;
+}
+
+export function connectorIsWeak(
+  edit: ToothDesignEdit,
+  toothNumbers: readonly string[],
+) {
+  if (!edit.connector.linked) return false;
+  return (
+    connectorAreaMm2(edit.connector) + 1e-4 <
+    connectorMinAreaMm2(edit.inner.preset, toothNumbers)
+  );
+}
+
 export type ToothDesignEdit = {
+  /** 브리지 폰틱. 마진 없이 기저면으로 치조정에 얹는다. */
+  pontic: {
+    on: boolean;
+    base: PonticBase;
+  };
   margin: {
     radii: number[];
     /** 삽입축 방향 오프셋. 기하 단위. 0이면 치아 중심 평면. */
@@ -246,6 +344,11 @@ export type ToothDesignEdit = {
     transverseMm: number;
     verticalMm: number;
     along: number;
+    /** 단면 안에서 옮긴 거리(mm). x=협설, y=교합(+)·치은(−). */
+    shiftXMm: number;
+    shiftYMm: number;
+    /** 이 치아와 다음 치아 사이 커넥터. 끄면 두 치아를 잇지 않는다. */
+    linked: boolean;
     assembled: boolean;
   };
 };
@@ -285,6 +388,7 @@ function ones(count: number) {
 export function createToothDesignEdit(): ToothDesignEdit {
   const preset = INNER_PRESETS[0]!;
   return {
+    pontic: { on: false, base: "modifiedRidgeLap" },
     margin: {
       radii: ones(MARGIN_POINT_COUNT),
       depths: Array.from({ length: MARGIN_POINT_COUNT }, () => 0),
@@ -317,12 +421,56 @@ export function createToothDesignEdit(): ToothDesignEdit {
     hole: { on: false, angle: 0, tiltDeg: 8, radiusMm: 1 },
     connector: {
       shape: "round",
-      transverseMm: 3.2,
-      verticalMm: 2.6,
+      transverseMm: 4,
+      verticalMm: 3.2,
       along: 0.5,
+      shiftXMm: 0,
+      shiftYMm: 0,
+      linked: true,
       assembled: false,
     },
   };
+}
+
+/** 예전 초안에 없는 항목은 기본값으로 채운다. */
+export function normalizeToothDesignEdit(raw: unknown): ToothDesignEdit {
+  const base = createToothDesignEdit();
+  if (!raw || typeof raw !== "object") return base;
+  const row = raw as Partial<ToothDesignEdit>;
+  const pontic = (row.pontic ?? {}) as Partial<ToothDesignEdit["pontic"]>;
+  const connector = (row.connector ?? {}) as Partial<ToothDesignEdit["connector"]>;
+  return {
+    ...base,
+    ...row,
+    pontic: {
+      on: pontic.on === true,
+      base: PONTIC_BASES.some((item) => item.id === pontic.base)
+        ? (pontic.base as PonticBase)
+        : base.pontic.base,
+    },
+    margin: { ...base.margin, ...(row.margin ?? {}) },
+    inner: { ...base.inner, ...(row.inner ?? {}) },
+    refine: { ...base.refine, ...(row.refine ?? {}) },
+    hook: { ...base.hook, ...(row.hook ?? {}) },
+    cutback: { ...base.cutback, ...(row.cutback ?? {}) },
+    hole: { ...base.hole, ...(row.hole ?? {}) },
+    connector: {
+      ...base.connector,
+      ...connector,
+      shiftXMm: Number(connector.shiftXMm) || 0,
+      shiftYMm: Number(connector.shiftYMm) || 0,
+      linked: connector.linked !== false,
+    },
+  };
+}
+
+export function normalizeToothDesignEdits(raw: unknown): Record<string, ToothDesignEdit> {
+  const out: Record<string, ToothDesignEdit> = {};
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+  for (const [tooth, edit] of Object.entries(raw as Record<string, unknown>)) {
+    out[tooth] = normalizeToothDesignEdit(edit);
+  }
+  return out;
 }
 
 export function marginUntouched(edit: ToothDesignEdit) {

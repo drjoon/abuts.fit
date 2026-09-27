@@ -1,6 +1,7 @@
 // 기공소 AI 보철 — 마진·삽입·내면·형상·훅·컷백·홀·커넥터 조작.
 
 import type { ReactNode } from "react";
+import { TriangleAlert } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
@@ -14,8 +15,12 @@ import {
   CONNECTOR_SHAPES,
   INNER_PRESETS,
   MODIFY_TOOLS,
+  PONTIC_BASES,
   adjustMarginOffset,
   applyInnerPreset,
+  connectorAreaMm2,
+  connectorIsWeak,
+  connectorMinAreaMm2,
   holeIssue,
   shellIsThin,
   shellThicknessMm,
@@ -50,7 +55,219 @@ type Props = {
   clinicSaved: boolean;
   onApplyClinic: () => void;
   onSaveClinic: () => void;
+  /** 이 브리지 스팬의 커넥터. 설정은 앞 치아(from) 수정값에 둔다. */
+  connectors: ConnectorRow[];
+  connectorFrom: string | null;
+  onConnectorFrom: (from: string) => void;
+  onConnector: (from: string, connector: ToothDesignEdit["connector"]) => void;
+  bridgeAssembled: boolean;
+  /** 스팬 치아가 모두 생성됐으면 조립할 수 있다. */
+  bridgeReady: boolean;
+  onAssemble: (assembled: boolean) => void;
+  /** 커넥터 단면 보기(양쪽 인접면). */
+  focusView: boolean;
+  onFocusView: (on: boolean) => void;
 };
+
+export type ConnectorRow = {
+  from: string;
+  to: string;
+  edit: ToothDesignEdit;
+};
+
+function ConnectorControls({
+  connectors,
+  row,
+  assembled,
+  ready,
+  onSelect,
+  onChange,
+  onAssemble,
+  focusView,
+  onFocusView,
+}: {
+  connectors: ConnectorRow[];
+  row: ConnectorRow;
+  assembled: boolean;
+  ready: boolean;
+  onSelect: (from: string) => void;
+  onChange: (connector: ToothDesignEdit["connector"]) => void;
+  onAssemble: (assembled: boolean) => void;
+  focusView: boolean;
+  onFocusView: (on: boolean) => void;
+}) {
+  const connector = row.edit.connector;
+  const area = connectorAreaMm2(connector);
+  const minArea = connectorMinAreaMm2(row.edit.inner.preset, [row.from, row.to]);
+  const weak = connectorIsWeak(row.edit, [row.from, row.to]);
+  const locked = assembled;
+  const set = (patch: Partial<ToothDesignEdit["connector"]>) =>
+    onChange({ ...connector, ...patch });
+
+  return (
+    <>
+      <Row label="커넥터">
+        <div className="flex flex-wrap gap-1">
+          {connectors.map((item) => {
+            const itemWeak = connectorIsWeak(item.edit, [item.from, item.to]);
+            return (
+              <Button
+                key={item.from}
+                type="button"
+                size="sm"
+                variant={item.from === row.from ? "default" : "outline"}
+                className={cn(
+                  "h-7 px-2 text-[11px] tabular-nums",
+                  !item.edit.connector.linked && "line-through opacity-70",
+                  itemWeak && item.from !== row.from && "border-destructive text-destructive",
+                )}
+                onClick={() => onSelect(item.from)}
+              >
+                {item.from}-{item.to}
+              </Button>
+            );
+          })}
+        </div>
+      </Row>
+      <label className="flex items-center justify-between gap-3 text-xs font-medium">
+        연결
+        <Switch
+          checked={connector.linked}
+          disabled={locked}
+          onCheckedChange={(linked) => set({ linked })}
+          aria-label={`${row.from}-${row.to} 커넥터 연결`}
+          className="h-5 w-9 data-[state=checked]:bg-primary [&>span]:h-4 [&>span]:w-4 data-[state=checked]:[&>span]:translate-x-4"
+        />
+      </label>
+      {connector.linked ? (
+        <>
+          <div className="grid grid-cols-2 gap-1">
+            {CONNECTOR_SHAPES.map((shape) => (
+              <Button
+                key={shape.id}
+                type="button"
+                size="sm"
+                variant={connector.shape === shape.id ? "default" : "outline"}
+                className="h-7 px-1 text-[11px]"
+                disabled={locked}
+                onClick={() => set({ shape: shape.id })}
+              >
+                {shape.label}
+              </Button>
+            ))}
+          </div>
+          <Row label="가로" value={`${connector.transverseMm.toFixed(1)} mm`}>
+            <Slider
+              min={16}
+              max={60}
+              step={1}
+              disabled={locked}
+              value={[Math.round(connector.transverseMm * 10)]}
+              onValueChange={([value]) => set({ transverseMm: (value ?? 40) / 10 })}
+              aria-label="커넥터 가로"
+            />
+          </Row>
+          <Row label="세로" value={`${connector.verticalMm.toFixed(1)} mm`}>
+            <Slider
+              min={12}
+              max={50}
+              step={1}
+              disabled={locked}
+              value={[Math.round(connector.verticalMm * 10)]}
+              onValueChange={([value]) => set({ verticalMm: (value ?? 32) / 10 })}
+              aria-label="커넥터 세로"
+            />
+          </Row>
+          <div
+            className={cn(
+              "flex items-center justify-between rounded-md border px-2 py-1.5 text-[11px] font-medium",
+              weak ? "border-destructive/40 bg-destructive/10 text-destructive" : "text-foreground",
+            )}
+          >
+            <span className="flex items-center gap-1">
+              {weak ? <TriangleAlert className="h-3 w-3" /> : null}
+              {weak ? "약함" : "충분"}
+            </span>
+            <span className="tabular-nums">
+              {area.toFixed(1)} / {minArea} mm²
+            </span>
+          </div>
+          <Row
+            label="위치"
+            value={`협설 ${connector.shiftXMm.toFixed(1)} · 교합 ${connector.shiftYMm.toFixed(1)} mm`}
+          >
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-7 w-full text-[11px]"
+              disabled={locked || (connector.shiftXMm === 0 && connector.shiftYMm === 0)}
+              onClick={() => set({ shiftXMm: 0, shiftYMm: 0 })}
+            >
+              가운데로
+            </Button>
+          </Row>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <label className="flex items-center justify-between gap-3 text-xs font-medium">
+                단면 보기
+                <Switch
+                  checked={focusView}
+                  onCheckedChange={onFocusView}
+                  aria-label="커넥터 단면 보기"
+                  className="h-5 w-9 data-[state=checked]:bg-primary [&>span]:h-4 [&>span]:w-4 data-[state=checked]:[&>span]:translate-x-4"
+                />
+              </label>
+            </TooltipTrigger>
+            <TooltipContent side="right" className="z-[520]">
+              양쪽 치아 인접면에 커넥터 단면을 겹쳐 봅니다.
+              <br />
+              노란 점을 끌면 커넥터 위치가 옮겨집니다.
+            </TooltipContent>
+          </Tooltip>
+        </>
+      ) : (
+        <p className="text-[11px] text-muted-foreground">
+          {row.from}번과 {row.to}번을 잇지 않습니다.
+        </p>
+      )}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="flex min-w-0">
+            {assembled ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="destructive"
+                className="h-7 w-full text-[11px]"
+                onClick={() => onAssemble(false)}
+              >
+                분리
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                size="sm"
+                className="h-7 w-full text-[11px]"
+                disabled={!ready}
+                onClick={() => onAssemble(true)}
+              >
+                조립
+              </Button>
+            )}
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="right" className="z-[520]">
+          {assembled
+            ? "크라운이나 커넥터를 고치려면 분리합니다."
+            : ready
+              ? "커넥터로 브리지를 한 덩어리로 잇습니다."
+              : "스팬의 치아를 모두 생성한 뒤 조립합니다."}
+        </TooltipContent>
+      </Tooltip>
+    </>
+  );
+}
 
 function Row({
   label,
@@ -97,9 +314,20 @@ export function LabProsthesisModifyPanel({
   clinicSaved,
   onApplyClinic,
   onSaveClinic,
+  connectors,
+  connectorFrom,
+  onConnectorFrom,
+  onConnector,
+  bridgeAssembled,
+  bridgeReady,
+  onAssemble,
+  focusView,
+  onFocusView,
 }: Props) {
   const thin = shellIsThin(edit);
   const issue = holeIssue(edit.hole);
+  const connectorRow =
+    connectors.find((row) => row.from === connectorFrom) ?? connectors[0] ?? null;
 
   return (
     <section className="space-y-2">
@@ -143,7 +371,15 @@ export function LabProsthesisModifyPanel({
         )}
       </div>
 
-      {tool === "margin" ? (
+      {tool === "margin" && edit.pontic.on ? (
+        <p className="text-[11px] leading-relaxed text-muted-foreground">
+          폰틱은 지대치가 없어 마진을 잡지 않습니다.
+          <br />
+          기저면은 형상에서 고릅니다.
+        </p>
+      ) : null}
+
+      {tool === "margin" && !edit.pontic.on ? (
         <div className="space-y-2">
           <div className="grid grid-cols-2 gap-1">
             <Button
@@ -394,6 +630,34 @@ export function LabProsthesisModifyPanel({
 
       {tool === "refine" ? (
         <div className="space-y-2">
+          {edit.pontic.on ? (
+            <Row label="폰틱 기저면">
+              <div className="grid grid-cols-3 gap-1">
+                {PONTIC_BASES.map((base) => (
+                  <Tooltip key={base.id}>
+                    <TooltipTrigger asChild>
+                      <span className="flex min-w-0">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={edit.pontic.base === base.id ? "default" : "outline"}
+                          className="h-7 w-full px-1 text-[11px]"
+                          onClick={() =>
+                            onEdit({ ...edit, pontic: { ...edit.pontic, base: base.id } })
+                          }
+                        >
+                          {base.label}
+                        </Button>
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="right" className="z-[520]">
+                      {base.hint}
+                    </TooltipContent>
+                  </Tooltip>
+                ))}
+              </div>
+            </Row>
+          ) : null}
           <Row label="크기" value={edit.refine.scale.toFixed(2)}>
             <Slider
               min={75}
@@ -877,103 +1141,18 @@ export function LabProsthesisModifyPanel({
 
       {tool === "connector" ? (
         <div className="space-y-2">
-          {isBridge ? (
-            <>
-              <div className="grid grid-cols-2 gap-1">
-                {CONNECTOR_SHAPES.map((shape) => (
-                  <Button
-                    key={shape.id}
-                    type="button"
-                    size="sm"
-                    variant={edit.connector.shape === shape.id ? "default" : "outline"}
-                    className="h-7 px-1 text-[11px]"
-                    onClick={() =>
-                      onEdit({
-                        ...edit,
-                        connector: { ...edit.connector, shape: shape.id },
-                      })
-                    }
-                  >
-                    {shape.label}
-                  </Button>
-                ))}
-              </div>
-              <Row label="가로" value={`${edit.connector.transverseMm.toFixed(1)} mm`}>
-                <Slider
-                  min={16}
-                  max={60}
-                  step={1}
-                  value={[Math.round(edit.connector.transverseMm * 10)]}
-                  onValueChange={([value]) =>
-                    onEdit({
-                      ...edit,
-                      connector: {
-                        ...edit.connector,
-                        transverseMm: (value ?? 32) / 10,
-                      },
-                    })
-                  }
-                  aria-label="커넥터 가로"
-                />
-              </Row>
-              <Row label="세로" value={`${edit.connector.verticalMm.toFixed(1)} mm`}>
-                <Slider
-                  min={12}
-                  max={50}
-                  step={1}
-                  value={[Math.round(edit.connector.verticalMm * 10)]}
-                  onValueChange={([value]) =>
-                    onEdit({
-                      ...edit,
-                      connector: {
-                        ...edit.connector,
-                        verticalMm: (value ?? 26) / 10,
-                      },
-                    })
-                  }
-                  aria-label="커넥터 세로"
-                />
-              </Row>
-              <div className="flex gap-1">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span className="flex min-w-0 flex-1">
-                      <Button
-                        type="button"
-                        size="sm"
-                        className="h-7 w-full text-[11px]"
-                        disabled={!generated}
-                        onClick={() =>
-                          onEdit({
-                            ...edit,
-                            connector: { ...edit.connector, assembled: true },
-                          })
-                        }
-                      >
-                        조립
-                      </Button>
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent side="right" className="z-[520]">
-                    커넥터로 브리지를 한 덩어리로 잇습니다.
-                  </TooltipContent>
-                </Tooltip>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="h-7 flex-1 text-[11px]"
-                  onClick={() =>
-                    onEdit({
-                      ...edit,
-                      connector: { ...edit.connector, assembled: false },
-                    })
-                  }
-                >
-                  분리
-                </Button>
-              </div>
-            </>
+          {isBridge && connectorRow ? (
+            <ConnectorControls
+              connectors={connectors}
+              row={connectorRow}
+              assembled={bridgeAssembled}
+              ready={bridgeReady}
+              onSelect={onConnectorFrom}
+              onChange={(connector) => onConnector(connectorRow.from, connector)}
+              onAssemble={onAssemble}
+              focusView={focusView}
+              onFocusView={onFocusView}
+            />
           ) : null}
         </div>
       ) : null}

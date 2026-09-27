@@ -68,13 +68,22 @@ import {
 import type {
   DesignGesture,
   ProsthesisDesignEdit,
+  ToothDesignEdit,
 } from "@/shared/practice/labProsthesisModify";
+import { encodeBinaryStl } from "@/shared/files/stlBinaryWrite";
 import {
+  fdiToothDigits,
+  insertionAxisKey,
+  insertionAxisTeeth,
+} from "@/shared/practice/toothArchOrder";
+import {
+  COLOR_MARGIN_POINT_COUNT,
   detectProjectedColorMargin,
   PROJECTED_MARGIN_TRIANGLE_STRIDE,
 } from "@/shared/practice/detectColorMargin";
 import {
   buildProsthesisEditLayer,
+  connectorFrame,
   readEditHit,
   type EditHit,
 } from "@/shared/components/practice/labProsthesisEditLayer";
@@ -139,6 +148,38 @@ export type OralScanOverlayHandle = {
   exportCamera: () => WorkSessionView | null;
   /** 저장한 카메라를 그대로 둔다. 뷰 저장은 부르지 않는다. */
   restoreCamera: (view: WorkSessionView) => void;
+  /**
+   * 커넥터 자리에서 양쪽 치아의 인접면을 본 단면 보기.
+   * 커넥터 메시는 빼고 그린다. 치아 위치를 모르면 null.
+   */
+  captureConnectorSection: (
+    link: { from: string; to: string },
+    connector: ToothDesignEdit["connector"],
+  ) => ConnectorSectionShot | null;
+  /**
+   * 생성한 보철(크라운·폰틱·커넥터·훅)과 고른 스캔을 STL로 낸다.
+   * CAM 좌표면 스캔 파일 좌표·단위 그대로, 아니면 보철 중심을 원점으로 mm로 낸다.
+   */
+  exportDesignStl: (input: DesignStlExportInput) => Array<{ fileName: string; blob: Blob }>;
+};
+
+export type DesignStlExportInput = {
+  /** 파일 하나에 묶을 치아. 브리지는 스팬 전체. */
+  groups: ReadonlyArray<{ fileName: string; teeth: readonly string[] }>;
+  scans: ReadonlyArray<{ fileName: string; role: WorkingScanMesh["role"] }>;
+  camCoordinates: boolean;
+};
+
+export type ConnectorSectionShot = {
+  /** 이미지 한 변의 절반(mm). 이미지 중심이 이동 전 커넥터 기준점이다. */
+  halfMm: number;
+  sides: Array<{
+    tooth: string;
+    /** PNG data URL. 위가 교합 방향. */
+    image: string;
+    /** 협설(+x)이 이미지 왼쪽이면 true. */
+    mirrored: boolean;
+  }>;
 };
 
 export type WorkingScanMesh = {
@@ -1178,12 +1219,44 @@ type InsertionAnchor = {
   dir: THREE.Vector3;
 };
 
-function insertionAxisKey(toothNumbers: readonly string[]) {
-  return toothNumbers
-    .map((tooth) => fdiDigits(tooth))
-    .filter(Boolean)
-    .sort()
-    .join(",");
+/** 월드 좌표 삼각형(비색인, 꼭짓점 3개씩). 행렬은 미리 갱신해 둔다. */
+function worldTriangles(meshes: readonly THREE.Mesh[]): Float32Array {
+  const chunks: Float32Array[] = [];
+  let total = 0;
+  const point = new THREE.Vector3();
+  for (const mesh of meshes) {
+    const geometry = mesh.geometry as THREE.BufferGeometry;
+    const pos = geometry.getAttribute("position");
+    if (!pos) continue;
+    const index = geometry.getIndex();
+    const count = index ? index.count : pos.count;
+    const out = new Float32Array(count * 3);
+    for (let i = 0; i < count; i += 1) {
+      point
+        .fromBufferAttribute(pos, index ? index.getX(i) : i)
+        .applyMatrix4(mesh.matrixWorld);
+      out[i * 3] = point.x;
+      out[i * 3 + 1] = point.y;
+      out[i * 3 + 2] = point.z;
+    }
+    chunks.push(out);
+    total += out.length;
+  }
+  const merged = new Float32Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return merged;
+}
+
+function insertionDirByTooth(axes: readonly InsertionAxis[]) {
+  const out = new Map<string, THREE.Vector3>();
+  for (const axis of axes) {
+    for (const tooth of axis.toothNumbers) out.set(tooth, axis.dir);
+  }
+  return out;
 }
 
 /** 삽입축이 닿은 점으로 그 보철 치아들의 추정 중심을 옮긴다. 상대 간격은 유지한다. */
@@ -1766,10 +1839,7 @@ function occlusalBand(
   return first.length >= 40 ? first : second;
 }
 
-function fdiDigits(raw: string) {
-  const digits = String(raw || "").replace(/\D/g, "");
-  return /^[1-4][1-8]$/.test(digits) ? digits : "";
-}
+const fdiDigits = fdiToothDigits;
 
 function anchorsFromAxes(
   axes: InsertionAxis[],
@@ -2974,7 +3044,8 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
           along: drag.along0 + (event.clientX - drag.x0) / 240,
         });
       } else if (drag.kind === "insertion") {
-        const axis = insertionAxesRef.current.find((row) => row.key === drag?.key);
+        const dragKey = drag.key;
+        const axis = insertionAxesRef.current.find((row) => row.key === dragKey);
         const rect = renderer.domElement.getBoundingClientRect();
         if (!axis) return;
         const dx = (event.clientX - lastPointer.x) / Math.max(rect.height, 1);
@@ -2993,7 +3064,8 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     const endEditDrag = (event: PointerEvent) => {
       if (!drag) return;
       if (drag.kind === "insertion") {
-        const aimed = insertionAxesRef.current.find((row) => row.key === drag.key);
+        const aimedKey = drag.key;
+        const aimed = insertionAxesRef.current.find((row) => row.key === aimedKey);
         for (const entry of loadedRef.current) entry.align = null;
         setLoadVersion((value) => value + 1);
         if (aimed) onInsertionAxisAimedRef.current?.(aimed.toothNumbers);
@@ -4003,6 +4075,151 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         renderer.render(scene, camera);
         return renderer.domElement;
       },
+      captureConnectorSection: (link, connector) => {
+        const renderer = rendererRef.current;
+        const scene = sceneRef.current;
+        const camera = cameraRef.current;
+        if (!renderer || !scene || !camera) return null;
+        const place = connectorFrame({
+          placements: placementsRef.current,
+          frame: frameRef.current,
+          insertionByTooth: insertionDirByTooth(insertionAxesRef.current),
+          unitToMm: unitToMmRef.current,
+          link,
+          connector: { ...connector, shiftXMm: 0, shiftYMm: 0 },
+        });
+        if (!place) return null;
+        const unit = unitToMmRef.current > 0 ? unitToMmRef.current : 1;
+        const half = place.radius * 1.35;
+        const size = renderer.getSize(new THREE.Vector2());
+        const ratio = renderer.getPixelRatio();
+        const px = Math.floor(Math.min(size.x, size.y, 320));
+        if (px < 32) return null;
+        const hidden: THREE.Object3D[] = [];
+        editLayerRef.current?.traverse((child) => {
+          const hit = child.userData.editHit as EditHit | undefined;
+          if (hit?.kind !== "connector" && hit?.kind !== "margin" && hit?.kind !== "margin-line") {
+            return;
+          }
+          if (!child.visible) return;
+          child.visible = false;
+          hidden.push(child);
+        });
+        const background = scene.background;
+        scene.background = new THREE.Color(0xe5e7eb);
+        const out: ConnectorSectionShot["sides"] = [];
+        try {
+          renderer.setScissorTest(true);
+          renderer.setViewport(0, 0, px, px);
+          renderer.setScissor(0, 0, px, px);
+          for (const side of [
+            { tooth: link.from, look: place.axis.clone().negate(), mirrored: true },
+            { tooth: link.to, look: place.axis.clone(), mirrored: false },
+          ]) {
+            const shot = new THREE.OrthographicCamera(
+              -half,
+              half,
+              half,
+              -half,
+              half * 0.02,
+              place.span * 2 + half * 4,
+            );
+            shot.position.copy(place.mid);
+            shot.up.copy(place.up);
+            shot.lookAt(place.mid.clone().add(side.look));
+            shot.updateProjectionMatrix();
+            shot.updateMatrixWorld(true);
+            renderer.render(scene, shot);
+            const canvas = document.createElement("canvas");
+            canvas.width = px * ratio;
+            canvas.height = px * ratio;
+            const ctx = canvas.getContext("2d");
+            if (!ctx) continue;
+            ctx.drawImage(
+              renderer.domElement,
+              0,
+              (size.y - px) * ratio,
+              px * ratio,
+              px * ratio,
+              0,
+              0,
+              canvas.width,
+              canvas.height,
+            );
+            out.push({
+              tooth: side.tooth,
+              image: canvas.toDataURL("image/png"),
+              mirrored: side.mirrored,
+            });
+          }
+        } finally {
+          renderer.setScissorTest(false);
+          renderer.setViewport(0, 0, size.x, size.y);
+          scene.background = background;
+          for (const child of hidden) child.visible = true;
+          renderer.render(scene, camera);
+        }
+        if (out.length === 0) return null;
+        return { halfMm: half * unit, sides: out };
+      },
+      exportDesignStl: ({ groups, scans, camCoordinates }) => {
+        const scene = sceneRef.current;
+        const group = groupRef.current;
+        if (!scene || !group) return [];
+        scene.updateMatrixWorld(true);
+        const exported = new Set<EditHit["kind"]>(["crown", "connector", "hook"]);
+        const restorations = groups.map((row) => {
+          const teeth = new Set(row.teeth);
+          const parts: THREE.Mesh[] = [];
+          editLayerRef.current?.traverse((child) => {
+            const hit = child.userData.editHit as EditHit | undefined;
+            if (!hit || !exported.has(hit.kind) || !("tooth" in hit)) return;
+            if (!teeth.has(hit.tooth) || !child.visible) return;
+            if ((child as THREE.Mesh).isMesh) parts.push(child as THREE.Mesh);
+          });
+          return { fileName: row.fileName, positions: worldTriangles(parts) };
+        });
+        const scanRows = scans.map((row) => ({
+          fileName: row.fileName,
+          positions: worldTriangles(
+            loadedRef.current
+              .filter((entry) => entry.role === row.role)
+              .map((entry) => entry.mesh),
+          ),
+        }));
+        const origin = new THREE.Vector3();
+        let scale = 1;
+        if (camCoordinates) {
+          origin.copy(group.position);
+        } else {
+          scale = unitToMmRef.current > 0 ? unitToMmRef.current : 1;
+          const pool = restorations.some((row) => row.positions.length > 0)
+            ? restorations
+            : scanRows;
+          let count = 0;
+          for (const row of pool) {
+            for (let i = 0; i < row.positions.length; i += 3) {
+              origin.x += row.positions[i]!;
+              origin.y += row.positions[i + 1]!;
+              origin.z += row.positions[i + 2]!;
+              count += 1;
+            }
+          }
+          if (count > 0) origin.multiplyScalar(1 / count);
+        }
+        const files: Array<{ fileName: string; blob: Blob }> = [];
+        for (const row of [...restorations, ...scanRows]) {
+          if (row.positions.length === 0) continue;
+          const out = row.positions;
+          for (let i = 0; i < out.length; i += 3) {
+            out[i] = (out[i]! - origin.x) * scale;
+            out[i + 1] = (out[i + 1]! - origin.y) * scale;
+            out[i + 2] = (out[i + 2]! - origin.z) * scale;
+          }
+          files.push({ fileName: row.fileName, blob: encodeBinaryStl(out) });
+        }
+        return files;
+      },
       resetHomeView: () => resetHomeRef.current(),
       alignToBiteAuto: () => alignAutoRef.current(),
       cancelAlign: () => cancelAlignRef.current(),
@@ -4085,15 +4302,20 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
           const dir = new THREE.Vector3(...axis.dir);
           if (dir.lengthSq() < 1e-8) continue;
           dir.normalize();
+          const key = insertionAxisKey(
+            axis.toothNumbers.length > 0 ? axis.toothNumbers : insertionAxisTeeth(axis.key),
+          );
+          if (!key) continue;
+          const keyTeeth = insertionAxisTeeth(key);
           placementsRef.current = alignPlacementsToPoint(
             placementsRef.current,
-            axis.toothNumbers,
+            keyTeeth,
             origin,
             axis.radius,
           );
           restored.push({
-            key: axis.key,
-            toothNumbers: [...axis.toothNumbers],
+            key,
+            toothNumbers: keyTeeth,
             dir,
             origin,
             radius: axis.radius,
@@ -4121,11 +4343,12 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         const controls = controlsRef.current;
         const key = insertionAxisKey(toothNumbers);
         if (!camera || !controls || !key) return false;
+        const keyTeeth = insertionAxisTeeth(key);
         camera.updateProjectionMatrix();
         camera.updateMatrixWorld(true);
         groupRef.current?.updateWorldMatrix(true, true);
         const places: ToothPlacement[] = [];
-        for (const tooth of key.split(",")) {
+        for (const tooth of keyTeeth) {
           const place = placementsRef.current.find(
             (row) => row.toothNumber === tooth,
           );
@@ -4162,7 +4385,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         if (!contact) contact = controls.target.clone();
         placementsRef.current = alignPlacementsToPoint(
           placementsRef.current,
-          key.split(","),
+          keyTeeth,
           contact,
           toothRadius,
         );
@@ -4171,7 +4394,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         const kept = insertionAxesRef.current.filter((axis) => axis.key !== key);
         kept.push({
           key,
-          toothNumbers: key.split(","),
+          toothNumbers: keyTeeth,
           dir: look.clone(),
           origin: contact,
           radius,
@@ -4295,14 +4518,10 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       editLayerRef.current = null;
     }
     if (!designEdit) return;
-    const insertionByTooth = new Map<string, THREE.Vector3>();
-    for (const axis of insertionAxesRef.current) {
-      for (const tooth of axis.toothNumbers) insertionByTooth.set(tooth, axis.dir);
-    }
     const layer = buildProsthesisEditLayer({
       placements: placementsRef.current,
       frame: frameRef.current,
-      insertionByTooth,
+      insertionByTooth: insertionDirByTooth(insertionAxesRef.current),
       unitToMm: unitToMmRef.current,
       spec: designEdit,
     });

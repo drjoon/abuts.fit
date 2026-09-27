@@ -3,11 +3,15 @@
 import * as THREE from "three";
 
 import {
+  connectorIsWeak,
+  connectorOutline,
   crownScale,
   holeIssue,
   localShellThicknessMm,
   marginPointAngle,
   thicknessAlertRgb,
+  type ConnectorShape,
+  type PonticBase,
   type ProsthesisDesignEdit,
   type ToothDesignEdit,
 } from "@/shared/practice/labProsthesisModify";
@@ -115,8 +119,28 @@ function paintThicknessColors(geometry: THREE.BufferGeometry, edit: ToothDesignE
   geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
 }
 
+/** 폰틱 기저면이 치조정 쪽으로 얼마나 내려오는지. 구의 극각 비율. */
+const PONTIC_BASE_THETA: Record<PonticBase, number> = {
+  ridgeLap: 0.9,
+  modifiedRidgeLap: 0.78,
+  ovate: 0.96,
+  conical: 0.84,
+  sanitary: 0.62,
+};
+
 function makeCrownGeometry(edit: ToothDesignEdit) {
-  const geometry = new THREE.SphereGeometry(1, 28, 16, 0, Math.PI * 2, 0, Math.PI * 0.58);
+  const theta = edit.pontic.on ? PONTIC_BASE_THETA[edit.pontic.base] : 0.58;
+  const geometry = new THREE.SphereGeometry(1, 28, 16, 0, Math.PI * 2, 0, Math.PI * theta);
+  if (edit.pontic.on && edit.pontic.base === "conical") {
+    const pos = geometry.getAttribute("position");
+    for (let i = 0; i < pos.count; i += 1) {
+      const y = pos.getY(i);
+      if (y >= 0) continue;
+      const pinch = 1 + y * 0.75;
+      pos.setX(i, pos.getX(i) * pinch);
+      pos.setZ(i, pos.getZ(i) * pinch);
+    }
+  }
   paintSculpt(geometry, edit);
   paintThicknessColors(geometry, edit);
   return geometry;
@@ -146,7 +170,7 @@ export function buildProsthesisEditLayer(args: {
     const active = args.spec.activeTooth === tooth;
     const generated = args.spec.generated[tooth] === true;
 
-    if (args.spec.showMargin && !edit.margin.deleted) {
+    if (args.spec.showMargin && !edit.margin.deleted && !edit.pontic.on) {
       const base = place.radius * 0.78;
       const extra = edit.margin.offsetMm / unit;
       const points: THREE.Vector3[] = [];
@@ -220,12 +244,14 @@ export function buildProsthesisEditLayer(args: {
     );
     crown.quaternion.copy(quat);
     crown.scale.set(width, height, depth);
-    crown.position.copy(place.center).addScaledVector(normal, height * 0.12);
+    const lift =
+      edit.pontic.on && edit.pontic.base === "sanitary" ? height * 0.4 : height * 0.12;
+    crown.position.copy(place.center).addScaledVector(normal, lift);
     crown.renderOrder = 4;
     tag(crown, { kind: "crown", tooth });
     root.add(crown);
 
-    if (edit.inner.applied) {
+    if (edit.inner.applied && !edit.pontic.on) {
       const gap = (edit.inner.cementGapMm + edit.inner.spacerMm * 0.35) / unit;
       const inner = new THREE.Mesh(
         new THREE.SphereGeometry(1, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.42),
@@ -339,43 +365,109 @@ export function buildProsthesisEditLayer(args: {
   }
 
   for (const link of args.spec.bridges) {
-    const from = byTooth.get(link.from);
-    const to = byTooth.get(link.to);
     const edit = args.spec.edits[link.from];
-    if (!from || !to || !edit) continue;
+    if (!edit || !edit.connector.linked) continue;
     if (args.spec.generated[link.from] !== true || args.spec.generated[link.to] !== true) {
       continue;
     }
-    const axis = to.center.clone().sub(from.center);
-    const span = axis.length();
-    if (span < 1e-4) continue;
-    axis.multiplyScalar(1 / span);
-    const along = edit.connector.along;
-    const mid = from.center.clone().lerp(to.center, along);
-    const reach = edit.connector.assembled ? span * 0.78 : span * 0.28;
-    const transverse = Math.max(edit.connector.transverseMm / unit, from.radius * 0.12);
-    const vertical = Math.max(edit.connector.verticalMm / unit, from.radius * 0.1);
+    const place = connectorFrame({ ...args, link, connector: edit.connector });
+    if (!place) continue;
+    const reach = edit.connector.assembled ? place.span * 0.78 : place.span * 0.28;
     const shape = edit.connector.shape;
-    const geometry =
-      shape === "triangle" || shape === "inverted"
-        ? new THREE.ConeGeometry(transverse * 0.55, reach, 3)
-        : new THREE.CylinderGeometry(transverse * 0.42, transverse * 0.42, reach, 18);
+    const weak = connectorIsWeak(edit, [link.from, link.to]);
     const mesh = new THREE.Mesh(
-      geometry,
+      connectorGeometry(shape),
       new THREE.MeshStandardMaterial({
-        color: edit.connector.assembled ? 0xf8f4ee : 0xe7c9a4,
+        color: weak ? 0xdb332e : edit.connector.assembled ? 0xf8f4ee : 0xe7c9a4,
         roughness: 0.42,
       }),
     );
-    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), axis);
-    if (shape === "inverted") mesh.rotateX(Math.PI);
-    mesh.scale.set(1, 1, vertical / Math.max(transverse, 1e-4));
-    mesh.position.copy(mid);
+    // 로컬 x=가로(협설), y=치아 사이, z=세로(교합-치은). 단면이 가로×세로 mm다.
+    mesh.quaternion.setFromRotationMatrix(
+      new THREE.Matrix4().makeBasis(place.lateral, place.axis, place.up),
+    );
+    mesh.scale.set(
+      edit.connector.transverseMm / unit,
+      reach,
+      edit.connector.verticalMm / unit,
+    );
+    mesh.position.copy(place.center);
     tag(mesh, { kind: "connector", tooth: link.from });
     root.add(mesh);
   }
 
   return root;
+}
+
+/** 단면 윤곽을 y축(치아 사이)으로 길이 1만큼 민 기둥. 윤곽 y는 로컬 z가 된다. */
+function connectorGeometry(shape: ConnectorShape) {
+  if (shape === "round") return new THREE.CylinderGeometry(0.5, 0.5, 1, 24);
+  const outline = new THREE.Shape(
+    connectorOutline(shape).map(([x, y]) => new THREE.Vector2(x, y)),
+  );
+  const geometry = new THREE.ExtrudeGeometry(outline, { depth: 1, bevelEnabled: false });
+  // 윤곽은 xy, 압출은 +z. 로컬 x=가로, y=치아 사이(−0.5~0.5), z=세로로 돌린다.
+  geometry.translate(0, 0, -0.5);
+  geometry.rotateX(Math.PI / 2);
+  return geometry;
+}
+
+export type ConnectorFrame = {
+  /** 두 치아 사이 커넥터 기준점(이동 전). */
+  mid: THREE.Vector3;
+  /** 이동을 더한 커넥터 중심. */
+  center: THREE.Vector3;
+  /** from → to 단위 벡터. */
+  axis: THREE.Vector3;
+  /** 치아 사이 축에 수직인 교합 방향. */
+  up: THREE.Vector3;
+  /** axis × up. 협설 방향. */
+  lateral: THREE.Vector3;
+  span: number;
+  radius: number;
+};
+
+/** 커넥터 단면 좌표계. 레이어와 단면 보기(Focus View)가 같이 쓴다. */
+export function connectorFrame(args: {
+  placements: Place[];
+  frame: Frame | null;
+  insertionByTooth: Map<string, THREE.Vector3>;
+  unitToMm: number;
+  link: { from: string; to: string };
+  connector: ToothDesignEdit["connector"];
+}): ConnectorFrame | null {
+  const from = args.placements.find((row) => row.toothNumber === args.link.from);
+  const to = args.placements.find((row) => row.toothNumber === args.link.to);
+  if (!from || !to) return null;
+  const axis = to.center.clone().sub(from.center);
+  const span = axis.length();
+  if (span < 1e-4) return null;
+  axis.multiplyScalar(1 / span);
+  const up = (args.insertionByTooth.get(args.link.from)?.clone() ?? new THREE.Vector3())
+    .add(args.insertionByTooth.get(args.link.to) ?? new THREE.Vector3());
+  if (up.lengthSq() < 1e-8) up.copy(args.frame?.up ?? new THREE.Vector3(0, 0, 1));
+  up.addScaledVector(axis, -up.dot(axis));
+  if (up.lengthSq() < 1e-8) {
+    up.set(0, 0, 1).addScaledVector(axis, -axis.z);
+    if (up.lengthSq() < 1e-8) up.set(1, 0, 0);
+  }
+  up.normalize();
+  const lateral = new THREE.Vector3().crossVectors(axis, up).normalize();
+  const unit = args.unitToMm > 0 ? args.unitToMm : 1;
+  const mid = from.center.clone().lerp(to.center, args.connector.along);
+  const center = mid
+    .clone()
+    .addScaledVector(lateral, args.connector.shiftXMm / unit)
+    .addScaledVector(up, args.connector.shiftYMm / unit);
+  return {
+    mid,
+    center,
+    axis,
+    up,
+    lateral,
+    span,
+    radius: Math.max(from.radius, to.radius),
+  };
 }
 
 export function readEditHit(object: THREE.Object3D | null): EditHit | null {
