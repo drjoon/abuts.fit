@@ -41,6 +41,8 @@
 // - 2026-09-27: 브리지는 지대치·폰틱을 나누고, 커넥터마다 연결·모양·단면적을 고친다. 스팬 단위 생성·조립·분리.
 // - 2026-09-27: 모델정렬 위저드. 바이트 정렬·삽입축이 안 끝났으면 작업영역 아래에 하나씩 안내하고, 끝나면 마진·디자인 짧은 안내로 이어간다.
 // - 2026-09-27: 바이트는 열 때 자동으로 맞으므로 위저드의 모델정렬 안내는 뺀다. 삽입축부터 안내한다.
+// - 2026-09-27: 작업영역 아래 안내 카드는 문장 너비. 뷰포트보다 길면 띄어쓰기에서만 줄바꿈한다.
+// - 2026-09-27: 위저드 카드의 삽입축 버튼은 없애고, 치아 정보의 해당 삽입축 버튼을 깜빡인다. 카드 좌우 화살표로 단계를 옮긴다.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDownToLine,
@@ -337,6 +339,11 @@ type WorkCloseSnapshot = {
 };
 
 type DesignStage = "scan" | "margin" | "design";
+
+type AlignWizardStep =
+  | { kind: "axis"; span: string[]; page: number; pages: number }
+  | { kind: "margin" }
+  | { kind: "design" };
 
 function isOpposingOrBite(
   role: AssignableScanRole,
@@ -1618,33 +1625,99 @@ function LabProsthesisAiDesignDialog({
     queueSaveWorkRef.current();
   };
 
-  /** 작업 위저드 — 삽입축을 스팬 순서대로 하나씩 안내한다. 바이트는 열 때 맞춰진다. */
+  /** 작업 위저드 — 삽입축을 스팬 순서대로 안내한 뒤 마진·디자인으로 이어간다. */
   const insertionWizardSpans = useMemo(
     () => [...insertionSpansByOwner(plan.teeth).values()],
     [plan.teeth],
   );
-  const pendingInsertionSpans = useMemo(
-    () =>
-      insertionWizardSpans.filter((span) => {
-        const key = insertionAxisKey(span);
-        return !key || !insertionKeys.includes(key);
-      }),
-    [insertionWizardSpans, insertionKeys],
-  );
-  const pendingInsertionSpan = pendingInsertionSpans[0] ?? null;
-  const alignWizardStep: "axis" | null = pendingInsertionSpan ? "axis" : null;
-  const pendingInsertionSpanKey = pendingInsertionSpan
-    ? insertionAxisKey(pendingInsertionSpan)
-    : "";
+  const wizardSteps = useMemo(() => {
+    const pages = insertionWizardSpans.length;
+    const steps: AlignWizardStep[] = insertionWizardSpans.map((span, index) => ({
+      kind: "axis",
+      span,
+      page: index + 1,
+      pages,
+    }));
+    steps.push({ kind: "margin" });
+    if (designScope !== "margin") steps.push({ kind: "design" });
+    return steps;
+  }, [designScope, insertionWizardSpans]);
+  const suggestedWizardIndex = useMemo(() => {
+    const pending = wizardSteps.findIndex((step) => {
+      if (step.kind !== "axis") return false;
+      const key = insertionAxisKey(step.span);
+      return !key || !insertionKeys.includes(key);
+    });
+    if (pending >= 0) return pending;
+    if (stage === "design") {
+      const designAt = wizardSteps.findIndex((step) => step.kind === "design");
+      if (designAt >= 0) return designAt;
+    }
+    const marginAt = wizardSteps.findIndex((step) => step.kind === "margin");
+    return marginAt >= 0 ? marginAt : 0;
+  }, [insertionKeys, stage, wizardSteps]);
+  const [wizardIndex, setWizardIndex] = useState<number | null>(null);
+  const activeWizardIndex =
+    wizardSteps.length === 0
+      ? 0
+      : Math.min(wizardIndex ?? suggestedWizardIndex, wizardSteps.length - 1);
+  const viewedWizardStep = wizardSteps[activeWizardIndex] ?? null;
+  const viewedAxisKey =
+    viewedWizardStep?.kind === "axis" ? insertionAxisKey(viewedWizardStep.span) : "";
+  const insertionKeysSeenRef = useRef(insertionKeys);
+
+  const goWizard = (index: number) => {
+    if (wizardSteps.length === 0) return;
+    const nextIndex = Math.max(0, Math.min(index, wizardSteps.length - 1));
+    setWizardIndex(nextIndex);
+    const step = wizardSteps[nextIndex];
+    if (!step || step.kind === "axis") return;
+    if (step.kind === "margin" && designScopeRef.current) {
+      onStage("margin");
+      setModifyTool("margin");
+      return;
+    }
+    if (step.kind === "design" && designScopeRef.current === "crown") {
+      onStage("design");
+      setModifyTool("refine");
+    }
+  };
 
   useEffect(() => {
-    if (busy || alignWizardStep !== "axis" || !pendingInsertionSpan) return;
-    const lead = pendingInsertionSpan[0];
+    const previous = insertionKeysSeenRef.current;
+    insertionKeysSeenRef.current = insertionKeys;
+    if (wizardIndex == null) return;
+    const step = wizardSteps[wizardIndex];
+    if (!step || step.kind !== "axis") return;
+    const key = insertionAxisKey(step.span);
+    if (!key || !insertionKeys.includes(key) || previous.includes(key)) return;
+    let nextIndex = -1;
+    for (let index = wizardIndex + 1; index < wizardSteps.length; index += 1) {
+      const candidate = wizardSteps[index];
+      if (!candidate) continue;
+      if (candidate.kind !== "axis") {
+        nextIndex = index;
+        break;
+      }
+      const spanKey = insertionAxisKey(candidate.span);
+      if (!spanKey || !insertionKeys.includes(spanKey)) {
+        nextIndex = index;
+        break;
+      }
+    }
+    if (nextIndex >= 0) setWizardIndex(nextIndex);
+  }, [insertionKeys, wizardIndex, wizardSteps]);
+
+  useEffect(() => {
+    if (busy || !viewedAxisKey || viewedWizardStep?.kind !== "axis") return;
+    const lead = viewedWizardStep.span[0];
     if (!lead) return;
     showTooth(lead);
     setCenterGuide((mode) => (mode === "off" ? "center" : mode));
+    setPanelsHidden(false);
+    setToothInfoOpen(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [alignWizardStep, pendingInsertionSpanKey, busy]);
+  }, [viewedAxisKey, busy]);
 
   const enqueueDraft = useCallback((task: () => Promise<void>) => {
     const run = draftQueueRef.current.then(task, task);
@@ -3211,6 +3284,7 @@ function LabProsthesisAiDesignDialog({
               panelsShown={panelsShown}
               toothInfoOpen={toothInfoOpen}
               insertionKeys={insertionKeys}
+              highlightInsertionKey={viewedAxisKey}
               canSetInsertion={entries.length > 0}
               onSelectTooth={showTooth}
               onSetInsertion={rememberInsertion}
@@ -3241,48 +3315,57 @@ function LabProsthesisAiDesignDialog({
                 queueSaveWorkRef.current();
               }}
             />
-            {!busy && entries.length > 0 ? (
-              <div className="pointer-events-none absolute inset-x-3 bottom-3 z-30 flex justify-center">
-                <div className="pointer-events-auto max-w-sm rounded-lg border bg-background/95 px-3.5 py-2.5 text-xs shadow-sm">
-                  {alignWizardStep === "axis" && pendingInsertionSpan ? (
+            {!busy && entries.length > 0 && viewedWizardStep ? (
+              <div className="pointer-events-none absolute inset-x-3 bottom-3 z-30 flex items-center justify-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="pointer-events-auto h-8 w-8 shrink-0 rounded-full bg-background/95 shadow-sm"
+                  aria-label="이전 단계"
+                  disabled={activeWizardIndex <= 0}
+                  onClick={() => goWizard(activeWizardIndex - 1)}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <div className="pointer-events-auto w-max max-w-full break-keep rounded-lg border bg-background/95 px-3.5 py-2.5 text-xs shadow-sm">
+                  {viewedWizardStep.kind === "axis" ? (
                     <>
                       <p className="font-semibold text-foreground">
-                        1. 모델정렬 ·{" "}
-                        {insertionWizardSpans.length - pendingInsertionSpans.length + 1}/
-                        {insertionWizardSpans.length}
+                        1. 모델정렬 · {viewedWizardStep.page}/{viewedWizardStep.pages}
                       </p>
                       <p className="mt-1 leading-relaxed text-muted-foreground">
-                        {pendingInsertionSpan.length > 1
-                          ? `브리지 ${pendingInsertionSpan[0]}-${pendingInsertionSpan[pendingInsertionSpan.length - 1]}의 삽입축을 설정해주세요.`
-                          : `#${pendingInsertionSpan[0]}의 삽입축을 설정해주세요.`}
+                        {viewedWizardStep.span.length > 1
+                          ? `브리지 ${viewedWizardStep.span[0]}-${viewedWizardStep.span[viewedWizardStep.span.length - 1]}의 삽입축을 설정해주세요.`
+                          : `#${viewedWizardStep.span[0]}의 삽입축을 설정해주세요.`}
                         <br />
                         해당 치아를 교합면에서 바라보고 중점을 중앙선에 맞추면 됩니다.
                       </p>
-                      <div className="mt-2">
-                        <Button
-                          type="button"
-                          size="sm"
-                          className="h-7 px-2 text-[11px]"
-                          disabled={entries.length === 0}
-                          onClick={() => rememberInsertion(pendingInsertionSpan)}
-                        >
-                          삽입축 설정
-                        </Button>
-                      </div>
                     </>
                   ) : (
                     <>
                       <p className="font-semibold text-foreground">
-                        {stage === "design" ? "3. 디자인" : "2. 마진"}
+                        {viewedWizardStep.kind === "design" ? "3. 디자인" : "2. 마진"}
                       </p>
                       <p className="mt-1 leading-relaxed text-muted-foreground">
-                        {stage === "design"
+                        {viewedWizardStep.kind === "design"
                           ? "확인한 마진으로 디자인을 생성해주세요."
                           : "자동 검출된 마진을 확인해주세요."}
                       </p>
                     </>
                   )}
                 </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="pointer-events-auto h-8 w-8 shrink-0 rounded-full bg-background/95 shadow-sm"
+                  aria-label="다음 단계"
+                  disabled={activeWizardIndex >= wizardSteps.length - 1}
+                  onClick={() => goWizard(activeWizardIndex + 1)}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
               </div>
             ) : null}
           </div>
@@ -3512,6 +3595,7 @@ function DesignViewerChrome({
   panelsShown,
   toothInfoOpen,
   insertionKeys,
+  highlightInsertionKey,
   canSetInsertion,
   onSelectTooth,
   onSetInsertion,
@@ -3536,6 +3620,7 @@ function DesignViewerChrome({
   panelsShown: boolean;
   toothInfoOpen: boolean;
   insertionKeys: readonly string[];
+  highlightInsertionKey: string;
   canSetInsertion: boolean;
   onSelectTooth: (toothNumber: string) => void;
   onSetInsertion: (toothNumbers: readonly string[]) => void;
@@ -3591,6 +3676,8 @@ function DesignViewerChrome({
 
   const insertionButton = (span: readonly string[], shared: boolean) => {
     const axisOn = axisState(span);
+    const spanKey = insertionAxisKey(span);
+    const highlighted = Boolean(highlightInsertionKey && spanKey === highlightInsertionKey);
     return (
       <button
         type="button"
@@ -3598,6 +3685,7 @@ function DesignViewerChrome({
           toothActionClass,
           "bg-primary text-primary-foreground",
           !canSetInsertion && "opacity-50",
+          highlighted && "practice-tooth-guide-pulse",
         )}
         title={
           shared
