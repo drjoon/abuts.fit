@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-27: 케이스 폴더 이름 — 「YYYYMMDD_치과명-환자명-치아번호」.
 // - 2026-09-27: 헬퍼 v2 — OS별 설치본(Windows/Mac), 버전 확인(need_update), 작업 폴더(로컬 저장·헬퍼 지정),
 //   케이스 폴더(날짜_환자명) 세션, 저장 후 폴더 열기(reveal)·디자인 SW 열기(open) 분리.
 //   3Shape·exocad는 파일 인자 열기를 지원하지 않아 open 결과의 guide로 가져오기 안내를 띄운다.
@@ -315,16 +316,26 @@ function sanitizeFolderSegment(value: string): string {
     .replace(/\.+$/, "");
 }
 
-/** 작업 폴더 안 케이스 폴더: 「YYYYMMDD_환자명」(주문일 KST). */
+/**
+ * 작업 폴더 안 케이스 폴더: 「YYYYMMDD_치과명-환자명-치아번호」(주문일 KST).
+ * 빈 항목은 빠진다. 환자명이 없으면 의뢰 ID 끝 6자리.
+ */
 export function buildLabCaseFolderName(opts: {
   orderDate?: string | null;
+  practiceName?: string | null;
   patientName?: string | null;
+  toothNumbers?: string | null;
   fallbackId?: string | null;
 }): string {
   const ymd = (toKstYmd(opts.orderDate || null) || toKstYmd(new Date()) || "").replace(/-/g, "");
-  const patient = sanitizeFolderSegment(String(opts.patientName || ""));
+  const practice = sanitizeFolderSegment(String(opts.practiceName || "")).slice(0, 30);
+  const patient = sanitizeFolderSegment(String(opts.patientName || "")).slice(0, 30);
+  const teeth = sanitizeFolderSegment(
+    String(opts.toothNumbers || "").replace(/\s*,\s*/g, ","),
+  ).slice(0, 40);
   const fallback = sanitizeFolderSegment(String(opts.fallbackId || "")).slice(-6);
-  const tail = patient || (fallback ? `의뢰${fallback}` : "의뢰");
+  const who = patient || (fallback ? `의뢰${fallback}` : "의뢰");
+  const tail = [practice, who, teeth].filter(Boolean).join("-");
   return `${ymd}_${tail}`;
 }
 

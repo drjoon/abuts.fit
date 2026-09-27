@@ -31,7 +31,7 @@
 - 웹 localStorage `abuts.labWorkFolder` + 헬퍼 `config.json.workFolder`. **저장 성공할 때마다 로컬 갱신.**
 - 우선순위: 로컬 저장값 → 헬퍼 설정값(폴더가 있을 때) → 없으면 `LabWorkFolderDialog`(폴더 고르기 창 또는 경로 붙여넣기, 예: `\\DESKTOP-HAQNS44\CAM-in`).
 - 저장 시 헬퍼가 폴더가 없다고 하면(`WORK_FOLDER_NOT_FOUND`) 로컬값을 지우고 다시 묻는다.
-- 케이스 폴더: `YYYYMMDD_환자명`(주문일 KST, `buildLabCaseFolderName`). 같은 이름 파일은 덮어쓴다.
+- 케이스 폴더: `YYYYMMDD_치과명-환자명-치아번호`(주문일 KST, `buildLabCaseFolderName`, 예: `20260927_서울치과-이재민-47`). 빈 항목은 빠지고, 환자명이 없으면 `의뢰{ID 끝 6자리}`. 같은 이름 파일은 덮어쓴다.
 - **작업 폴더 안 파일은 헬퍼가 절대 지우지 않는다.** 세션 만료 정리는 temp 폴더만.
 
 ## 3) 기공소 사용자 흐름

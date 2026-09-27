@@ -7592,16 +7592,14 @@ export function RequestorPracticeReceivePage({
     () =>
       buildLabCaseFolderName({
         orderDate: selectedTransfer?.orderDate || selectedTransfer?.createdAt,
+        practiceName: selectedTransfer?.practice?.businessName,
         patientName: selectedTransferPatientName,
+        toothNumbers: selectedTransfer
+          ? resolvePracticeTransferListToothNumbers(selectedTransfer)
+          : "",
         fallbackId: selectedTransfer?.transferId || selectedTransfer?._id,
       }),
-    [
-      selectedTransfer?._id,
-      selectedTransfer?.createdAt,
-      selectedTransfer?.orderDate,
-      selectedTransfer?.transferId,
-      selectedTransferPatientName,
-    ],
+    [selectedTransfer, selectedTransferPatientName],
   );
 
   const showLabHelperSetup = useCallback(
