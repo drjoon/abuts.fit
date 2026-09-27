@@ -48,6 +48,7 @@
 // - 2026-09-27: 마진을 잡으면 다이를 자동으로 만든다. 작업영역 위 다이 토글.
 // - 2026-09-27: 치아 정보의 상악·하악·치아 번호 왼쪽 체크로 화면 표시를 고른다. 다이 토글은 체크한 치아의 다이만. 치아 번호는 그 교합면으로만 옮긴다.
 // - 2026-09-27: 오른쪽 아래 교합면·협측·설측·맞춤 버튼은 없앤다. 삽입축을 잡으면 그 화면으로 X·Y·Z를 다시 잡는다.
+// - 2026-09-27: 내보내기·이미지 저장·페인트·채팅 첨부는 치아 정보 아래 패널. 페인트를 그린 뒤 포인터 옆에 이미지 저장·채팅 첨부 뱃지를 두고, 다른 곳을 누르면 뱃지만 없앤다.
 import {
   useCallback,
   useEffect,
@@ -633,6 +634,9 @@ function LabProsthesisAiDesignDialog({
   const [paintOn, setPaintOn] = useState(false);
   const [paintColor, setPaintColor] = useState<string>(VIEW_PAINT_COLORS[0]);
   const [paintInk, setPaintInk] = useState(false);
+  /** 한 획을 떼면 그 포인터 옆에 두는 저장·첨부 뱃지. 작업영역 기준 좌표. */
+  const [paintOffer, setPaintOffer] = useState<{ x: number; y: number } | null>(null);
+  const paintOfferRef = useRef<HTMLDivElement | null>(null);
   const [hasScanColor, setHasScanColor] = useState(false);
   const [ghostOn, setGhostOn] = useState(false);
   const [marginShown, setMarginShown] = useState(false);
@@ -2547,6 +2551,21 @@ function LabProsthesisAiDesignDialog({
     };
   }, [open]);
 
+  useEffect(() => {
+    if (!paintOn) setPaintOffer(null);
+  }, [paintOn]);
+
+  useEffect(() => {
+    if (!paintOffer) return;
+    const dismiss = (event: PointerEvent) => {
+      const node = paintOfferRef.current;
+      if (node && event.target instanceof Node && node.contains(event.target)) return;
+      setPaintOffer(null);
+    };
+    document.addEventListener("pointerdown", dismiss, true);
+    return () => document.removeEventListener("pointerdown", dismiss, true);
+  }, [paintOffer]);
+
   const requestOpenChange = (next: boolean) => {
     if (next) {
       onOpenChange(true);
@@ -2639,6 +2658,54 @@ function LabProsthesisAiDesignDialog({
     setModifyPanelOpen(remembered.modify);
     setToothInfoOpen(remembered.toothInfo);
   };
+
+  const saveViewImage = () => {
+    setPaintOffer(null);
+    const base = viewerRef.current?.captureCanvas();
+    if (!base || !paintRef.current?.hasInk()) {
+      viewerRef.current?.saveImage();
+      return;
+    }
+    void paintRef.current.compositePng(base).then((blob) => {
+      if (!blob) return;
+      downloadBlobFile(blob, paintNoteFileName("작업"));
+    });
+  };
+
+  const attachPaintToChat = () => {
+    setPaintOffer(null);
+    if (!onAttachChatFile) return;
+    const base = viewerRef.current?.captureCanvas();
+    if (!base) return;
+    void paintRef.current?.compositePng(base).then((blob) => {
+      if (!blob) return;
+      onAttachChatFile(
+        new File([blob], paintNoteFileName("작업"), {
+          type: "image/png",
+        }),
+      );
+      toast({
+        title: "채팅에 첨부했습니다.",
+        description: (
+          <>
+            표시가 입혀진 이미지가 대화 입력에 있습니다.
+            <br />
+            디자인을 닫고 보내기를 누르면 상대에게 전달됩니다.
+          </>
+        ),
+      });
+    });
+  };
+
+  const paintOfferStyle = (() => {
+    if (!paintOffer || !workArea) return null;
+    return paintOfferBox(
+      paintOffer,
+      workArea.clientWidth,
+      workArea.clientHeight,
+      onAttachChatFile ? 188 : 96,
+    );
+  })();
 
   return (
     <Dialog open={open} onOpenChange={requestOpenChange}>
@@ -2790,132 +2857,6 @@ function LabProsthesisAiDesignDialog({
             >
               <Redo2 className="h-3.5 w-3.5" />
             </Button>
-            <Button
-              type="button"
-              size="sm"
-              className={cn(
-                "ml-4 h-8 [&_svg]:!size-3.5",
-                headerWide ? "gap-1 px-2.5" : "w-8 px-0",
-              )}
-              disabled={exportScans.length === 0 && exportRows.length === 0}
-              onClick={() => setExportOpen(true)}
-              title="보철과 스캔을 STL로 내보냅니다"
-              aria-label="내보내기"
-            >
-              <ArrowDownToLine className="h-3.5 w-3.5" />
-              {headerWide ? <span>내보내기</span> : null}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className={cn(
-                "h-8 [&_svg]:!size-3.5",
-                headerWide ? "gap-1 px-2.5" : "w-8 px-0",
-              )}
-              onClick={() => {
-                const base = viewerRef.current?.captureCanvas();
-                if (!base || !paintInk || !paintRef.current) {
-                  viewerRef.current?.saveImage();
-                  return;
-                }
-                void paintRef.current.compositePng(base).then((blob) => {
-                  if (!blob) return;
-                  downloadBlobFile(blob, paintNoteFileName("작업"));
-                });
-              }}
-              title="현재 뷰를 PNG로 저장"
-              aria-label="이미지 저장"
-            >
-              <ImageDown className="h-3.5 w-3.5" />
-              {headerWide ? <span>이미지 저장</span> : null}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={paintOn ? "default" : "outline"}
-              className={cn(
-                "h-8 [&_svg]:!size-3.5",
-                headerWide ? "gap-1 px-2.5" : "w-8 px-0",
-              )}
-              aria-pressed={paintOn}
-              aria-label="페인트"
-              onClick={() => setPaintOn((on) => !on)}
-              title="화면 위에 표시를 그립니다"
-            >
-              <Pencil className="h-3.5 w-3.5" />
-              {headerWide ? <span>페인트</span> : null}
-            </Button>
-            {paintOn
-              ? VIEW_PAINT_COLORS.map((swatch) => (
-                  <button
-                    key={swatch}
-                    type="button"
-                    className={cn(
-                      "h-5 w-5 rounded-full border border-black/10",
-                      paintColor === swatch && "ring-2 ring-primary ring-offset-1",
-                    )}
-                    style={{ backgroundColor: swatch }}
-                    aria-label={viewPaintColorLabel(swatch)}
-                    onClick={() => setPaintColor(swatch)}
-                  />
-                ))
-              : null}
-            {paintOn && paintInk ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className={cn(
-                  "h-8 [&_svg]:!size-3.5",
-                  headerWide ? "gap-1 px-2.5" : "w-8 px-0",
-                )}
-                title="표시 지우기"
-                aria-label="표시 지우기"
-                onClick={() => paintRef.current?.clear()}
-              >
-                <Eraser className="h-3.5 w-3.5" />
-                {headerWide ? <span>표시 지우기</span> : null}
-              </Button>
-            ) : null}
-            {onAttachChatFile ? (
-              <Button
-                type="button"
-                size="sm"
-                className={cn(
-                  "h-8 [&_svg]:!size-3.5",
-                  headerWide ? "gap-1 px-2.5" : "w-8 px-0",
-                )}
-                disabled={!paintInk}
-                onClick={() => {
-                  const base = viewerRef.current?.captureCanvas();
-                  if (!base) return;
-                  void paintRef.current?.compositePng(base).then((blob) => {
-                    if (!blob) return;
-                    onAttachChatFile(
-                      new File([blob], paintNoteFileName("작업"), {
-                        type: "image/png",
-                      }),
-                    );
-                    toast({
-                      title: "채팅에 첨부했습니다.",
-                      description: (
-                        <>
-                          표시가 입혀진 이미지가 대화 입력에 있습니다.
-                          <br />
-                          디자인을 닫고 보내기를 누르면 상대에게 전달됩니다.
-                        </>
-                      ),
-                    });
-                  });
-                }}
-                title="표시가 입혀진 이미지를 채팅에 첨부합니다"
-                aria-label="채팅 첨부"
-              >
-                <Paperclip className="h-3.5 w-3.5" />
-                {headerWide ? <span>채팅 첨부</span> : null}
-              </Button>
-            ) : null}
           </div>
         </DialogHeader>
 
@@ -3014,7 +2955,40 @@ function LabProsthesisAiDesignDialog({
               enabled={paintOn}
               color={paintColor}
               onInkChange={setPaintInk}
+              onStrokeEnd={(point) => {
+                const area = workArea;
+                if (!area) return;
+                const rect = area.getBoundingClientRect();
+                setPaintOffer({
+                  x: point.clientX - rect.left,
+                  y: point.clientY - rect.top,
+                });
+              }}
             />
+            {paintOfferStyle ? (
+              <div
+                ref={paintOfferRef}
+                className="absolute z-20 flex items-center gap-1"
+                style={paintOfferStyle}
+              >
+                <button
+                  type="button"
+                  className="rounded-full border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground shadow-md hover:bg-muted"
+                  onClick={saveViewImage}
+                >
+                  이미지 저장
+                </button>
+                {onAttachChatFile ? (
+                  <button
+                    type="button"
+                    className="rounded-full bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground shadow-md hover:bg-primary/90"
+                    onClick={attachPaintToChat}
+                  >
+                    채팅 첨부
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
             <div className="pointer-events-none absolute left-1/2 top-3 z-10 flex w-max max-w-[calc(100%-2rem)] -translate-x-1/2 flex-col items-center gap-1.5">
               <div className="pointer-events-auto relative flex items-center justify-center">
               <div className="absolute right-full mr-5 flex items-center gap-1">
@@ -4167,6 +4141,25 @@ function LabProsthesisAiDesignDialog({
                 }
                 queueSaveWorkRef.current();
               }}
+              actionPanel={
+                <AiDesignViewActions
+                  exportDisabled={exportScans.length === 0 && exportRows.length === 0}
+                  onExport={() => setExportOpen(true)}
+                  onSaveImage={saveViewImage}
+                  paintOn={paintOn}
+                  paintColor={paintColor}
+                  paintInk={paintInk}
+                  onTogglePaint={() => setPaintOn((on) => !on)}
+                  onPaintColor={setPaintColor}
+                  onClearPaint={() => {
+                    paintRef.current?.clear();
+                    setPaintOffer(null);
+                  }}
+                  showChat={Boolean(onAttachChatFile)}
+                  chatDisabled={!paintInk}
+                  onAttachChat={attachPaintToChat}
+                />
+              }
             />
             {!busy && entries.length > 0 && viewedWizardStep && !toothCardFor && !libraryPickerFor ? (
               <LabCoachmark
@@ -4519,6 +4512,141 @@ function marginLineChanged(prev: ToothDesignEdit, next: ToothDesignEdit) {
   return before.some((depth, index) => depth !== after[index]);
 }
 
+/** 그린 점 옆에 뱃지가 들어가도록 화면 안으로 민다. */
+function paintOfferBox(
+  point: { x: number; y: number },
+  areaWidth: number,
+  areaHeight: number,
+  boxWidth: number,
+) {
+  const pad = 8;
+  const boxHeight = 32;
+  let left = point.x + 14;
+  let top = point.y - boxHeight / 2;
+  if (left + boxWidth > areaWidth - pad) left = point.x - 14 - boxWidth;
+  const maxLeft = Math.max(pad, areaWidth - boxWidth - pad);
+  const maxTop = Math.max(pad, areaHeight - boxHeight - pad);
+  left = Math.min(Math.max(pad, left), maxLeft);
+  top = Math.min(Math.max(pad, top), maxTop);
+  return { left, top };
+}
+
+function AiDesignViewActions({
+  exportDisabled,
+  onExport,
+  onSaveImage,
+  paintOn,
+  paintColor,
+  paintInk,
+  onTogglePaint,
+  onPaintColor,
+  onClearPaint,
+  showChat,
+  chatDisabled,
+  onAttachChat,
+}: {
+  exportDisabled: boolean;
+  onExport: () => void;
+  onSaveImage: () => void;
+  paintOn: boolean;
+  paintColor: string;
+  paintInk: boolean;
+  onTogglePaint: () => void;
+  onPaintColor: (color: string) => void;
+  onClearPaint: () => void;
+  showChat: boolean;
+  chatDisabled: boolean;
+  onAttachChat: () => void;
+}) {
+  const actionBtn = "h-8 justify-start gap-1.5 px-2.5 [&_svg]:!size-3.5";
+  return (
+    <div className="pointer-events-auto flex w-fit max-w-full shrink-0 flex-col items-stretch gap-1 rounded-lg border bg-background/95 p-1.5 shadow-sm">
+      <Button
+        type="button"
+        size="sm"
+        className={actionBtn}
+        disabled={exportDisabled}
+        onClick={onExport}
+        title="보철과 스캔을 STL로 내보냅니다"
+        aria-label="내보내기"
+      >
+        <ArrowDownToLine />
+        내보내기
+      </Button>
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        className={actionBtn}
+        onClick={onSaveImage}
+        title="현재 뷰를 PNG로 저장"
+        aria-label="이미지 저장"
+      >
+        <ImageDown />
+        이미지 저장
+      </Button>
+      <div className="flex flex-wrap items-center gap-1">
+        <Button
+          type="button"
+          size="sm"
+          variant={paintOn ? "default" : "outline"}
+          className={actionBtn}
+          aria-pressed={paintOn}
+          aria-label="페인트"
+          onClick={onTogglePaint}
+          title="화면 위에 표시를 그립니다"
+        >
+          <Pencil />
+          페인트
+        </Button>
+        {paintOn
+          ? VIEW_PAINT_COLORS.map((swatch) => (
+              <button
+                key={swatch}
+                type="button"
+                className={cn(
+                  "h-5 w-5 rounded-full border border-black/10",
+                  paintColor === swatch && "ring-2 ring-primary ring-offset-1",
+                )}
+                style={{ backgroundColor: swatch }}
+                aria-label={viewPaintColorLabel(swatch)}
+                onClick={() => onPaintColor(swatch)}
+              />
+            ))
+          : null}
+        {paintOn && paintInk ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className={actionBtn}
+            title="표시 지우기"
+            aria-label="표시 지우기"
+            onClick={onClearPaint}
+          >
+            <Eraser />
+            표시 지우기
+          </Button>
+        ) : null}
+      </div>
+      {showChat ? (
+        <Button
+          type="button"
+          size="sm"
+          className={actionBtn}
+          disabled={chatDisabled}
+          onClick={onAttachChat}
+          title="표시가 입혀진 이미지를 채팅에 첨부합니다"
+          aria-label="채팅 첨부"
+        >
+          <Paperclip />
+          채팅 첨부
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
 function DesignViewerChrome({
   teeth,
   activeTooth,
@@ -4551,6 +4679,7 @@ function DesignViewerChrome({
   libraryLabel,
   onPickLibrary,
   onToggleScrewHole,
+  actionPanel,
 }: {
   libraryLabel: (toothNumber: string) => string | null;
   onPickLibrary: (toothNumber: string) => void;
@@ -4583,6 +4712,7 @@ function DesignViewerChrome({
   onAssembleSpan: (span: readonly string[], assembled: boolean) => void;
   onTogglePontic: (toothNumber: string) => void;
   onClearTooth: (toothNumber: string) => void;
+  actionPanel?: ReactNode;
 }) {
   const archGroups = (
     [
@@ -5116,6 +5246,7 @@ function DesignViewerChrome({
             ) : null}
           </div>
         ) : null}
+        {actionPanel}
       </div>
 
       {thinTeeth.length > 0 || unassembledSpan ? (

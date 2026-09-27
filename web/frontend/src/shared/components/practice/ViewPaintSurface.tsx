@@ -54,11 +54,13 @@ type Props = {
   enabled: boolean;
   color: string;
   onInkChange?: (hasInk: boolean) => void;
+  /** 한 획을 떼면 포인터 화면 좌표를 넘긴다. */
+  onStrokeEnd?: (point: { clientX: number; clientY: number }) => void;
   className?: string;
 };
 
 export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
-  function ViewPaintSurface({ enabled, color, onInkChange, className }, ref) {
+  function ViewPaintSurface({ enabled, color, onInkChange, onStrokeEnd, className }, ref) {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const inkRef = useRef(false);
     const drawingRef = useRef(false);
@@ -66,6 +68,8 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
     colorRef.current = color;
     const onInkChangeRef = useRef(onInkChange);
     onInkChangeRef.current = onInkChange;
+    const onStrokeEndRef = useRef(onStrokeEnd);
+    onStrokeEndRef.current = onStrokeEnd;
 
     const markInk = () => {
       if (inkRef.current) return;
@@ -183,8 +187,13 @@ export const ViewPaintSurface = forwardRef<ViewPaintHandle, Props>(
           ctx.lineTo(point.x, point.y);
           ctx.stroke();
         }}
-        onPointerUp={() => {
+        onPointerUp={(event) => {
+          if (!drawingRef.current) return;
           drawingRef.current = false;
+          onStrokeEndRef.current?.({
+            clientX: event.clientX,
+            clientY: event.clientY,
+          });
         }}
         onPointerCancel={() => {
           drawingRef.current = false;
