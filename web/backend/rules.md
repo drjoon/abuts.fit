@@ -147,7 +147,7 @@
 
 ### 스캔바디 라이브러리 업로드 (보안)
 
-- 흐름: `POST /api/scanbody-libraries/uploads` → presigned PUT(`scanbody-library/quarantine/<id>.bin`) → `POST .../uploads/:id/complete` → GuardDuty 태그 확인 → 워커 해석 → `ScanbodyLibrary` 병합. 상태는 `ScanbodyLibraryUpload`(uploading·scanning·processing·done·rejected·failed).
+- 흐름: `POST /api/scanbody-libraries/uploads` → 크기가 고정된 presigned POST(`scanbody-library/quarantine/<id>.bin`) → `POST .../uploads/:id/complete` → GuardDuty 태그 확인 → 워커 해석 → `ScanbodyLibrary` 병합. 상태는 `ScanbodyLibraryUpload`(uploading·scanning·processing·done·rejected·failed). 오늘(KST) 용량·건수 추정이 $1을 넘으면 새 업로드를 받지 않는다(`SCAN_DAILY_USD`).
 - 검사 대기는 서버 타이머와 브라우저 폴링(`GET .../uploads?ids=`) 둘 다 진행시킨다. 처리 시작은 `status: scanning → processing` 원자 전환으로 한 번만.
 - 해석은 `worker_threads`(수십 MB면 CPU 수 초). 원본 바이트는 저장하지 않고, 검증한 좌표로 새로 만든 STL만 둔다. 병합은 `optimisticConcurrency` + 재시도.
 - 배포 전: 버킷 격리 prefix에 GuardDuty Malware Protection for S3를 켜고, 서버 IAM에 `s3:GetObjectTagging`을 준다. 켜기 전에는 `SCANBODY_MALWARE_SCAN=off`로만 테스트한다.

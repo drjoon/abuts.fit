@@ -1,5 +1,6 @@
 // 스캔바디 라이브러리 업로드 흐름(보안).
-// 1) 브라우저가 presigned PUT으로 원본을 S3 격리 경로(scanbody-library/quarantine/)에 올린다. API 서버를 거치지 않는다.
+// 1) 브라우저가 크기가 고정된 presigned POST로 원본을 S3 격리 경로에 올린다. API 서버를 거치지 않는다.
+//    오늘(KST) 검사 추정이 $1을 넘으면 여기서 막는다.
 // 2) GuardDuty Malware Protection for S3가 검사해 GuardDutyMalwareScanStatus 태그를 붙인다.
 //    NO_THREATS_FOUND만 연다. 위협·검사 불가는 거절하고 원본을 지운다.
 // 3) 워커 스레드가 압축을 제한 안에서 풀고 형상을 새로 만든다(scanbodyLibraryImport.service.js).
@@ -21,7 +22,7 @@ import {
   deleteFileFromS3,
   getObjectBufferFromS3,
   getObjectTagsFromS3,
-  getUploadSignedUrl,
+  createUploadPost,
   headObjectSizeInS3,
   objectExistsInS3,
   putObjectToS3,
@@ -34,6 +35,15 @@ const SCAN_TIMEOUT_MS = 20 * 60 * 1000;
 const PROCESS_STALE_MS = 15 * 60 * 1000;
 const WORKER_TIMEOUT_MS = 3 * 60 * 1000;
 const HOURLY_UPLOAD_LIMIT = 40;
+// GuardDuty Malware Protection for S3는 용량·건수로 과금되고 하루 한도가 없다.
+// us-east는 $0.09/GB·$0.215/1,000건(2025-02). ap-south-1이 더 비쌀 수 있어 단가를 높게 잡아
+// 오늘(KST) 추정이 $1을 넘기 전에 격리 경로 업로드를 막는다.
+const SCAN_DAILY_USD = 1;
+const SCAN_USD_PER_GB = 0.15;
+const SCAN_USD_PER_1000 = 0.3;
+/** presigned POST의 content-length-range는 파일+폼 전체라, 필드 여유분만큼만 더 허락한다. */
+const POST_SLACK_BYTES = 16 * 1024;
+const RESERVATION_MS = 20 * 60 * 1000;
 const TERMINAL = new Set(["done", "rejected", "failed"]);
 const SCAN_REJECT_MESSAGE = {
   THREATS_FOUND: "악성코드가 발견되어 거절했습니다. 원본은 지웠습니다.",
@@ -69,6 +79,70 @@ export function uploadView(job) {
   };
 }
 
+function kstDayStart() {
+  const ymd = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+  return new Date(`${ymd}T00:00:00+09:00`);
+}
+
+function scanCostUsd(bytes, objects) {
+  return (bytes / 1e9) * SCAN_USD_PER_GB + (objects / 1000) * SCAN_USD_PER_1000;
+}
+
+/** 신청만 하고 안 올린 건은 예약을 풀고, 실제로 올라간 건은 지운 뒤에도 오늘 용량에 남긴다. */
+async function settleStaleReservations() {
+  const stale = await ScanbodyLibraryUpload.find({
+    status: "uploading",
+    createdAt: { $lt: new Date(Date.now() - RESERVATION_MS) },
+  })
+    .select({ quarantineKey: 1 })
+    .limit(30)
+    .lean();
+  for (const row of stale) {
+    const size = (await headObjectSizeInS3(row.quarantineKey)) || 0;
+    const updated = await ScanbodyLibraryUpload.updateOne(
+      { _id: row._id, status: "uploading" },
+      {
+        $set: {
+          status: "failed",
+          size,
+          finishedAt: new Date(),
+          message: "업로드가 끝나지 않아 취소했습니다.",
+        },
+      },
+    );
+    if (updated.modifiedCount && size > 0) void deleteFileFromS3(row.quarantineKey);
+  }
+}
+
+async function assertDailyScanBudget(declaredSize) {
+  await settleStaleReservations();
+  const [used] = await ScanbodyLibraryUpload.aggregate([
+    { $match: { createdAt: { $gte: kstDayStart() } } },
+    {
+      $project: {
+        bytes: {
+          $cond: [
+            { $gt: ["$size", 0] },
+            "$size",
+            { $cond: [{ $eq: ["$status", "uploading"] }, "$declaredSize", 0] },
+          ],
+        },
+        hit: { $cond: [{ $or: [{ $gt: ["$size", 0] }, { $eq: ["$status", "uploading"] }] }, 1, 0] },
+      },
+    },
+    { $group: { _id: null, bytes: { $sum: "$bytes" }, count: { $sum: "$hit" } } },
+  ]);
+  const next = scanCostUsd((used?.bytes || 0) + declaredSize, (used?.count || 0) + 1);
+  if (next > SCAN_DAILY_USD) {
+    throw new ApiError(429, "오늘 악성코드 검사 한도(하루 $1)에 도달했습니다. 내일 다시 올려 주세요.");
+  }
+}
+
 export async function createScanbodyUpload({ ownerAnchorId, userId, fileName, size }) {
   const name = String(fileName || "").trim().slice(0, 200);
   if (!/\.(dme|zip)$/i.test(name)) throw new ApiError(400, ".dme 또는 .zip 파일만 올릴 수 있습니다.");
@@ -82,14 +156,16 @@ export async function createScanbodyUpload({ ownerAnchorId, userId, fileName, si
     createdAt: { $gte: new Date(Date.now() - 3600 * 1000) },
   });
   if (recent >= HOURLY_UPLOAD_LIMIT) throw new ApiError(429, "업로드가 너무 많습니다. 한 시간 뒤 다시 올려 주세요.");
+  if (scanbodyMalwareScanMode() === "guardduty") await assertDailyScanBudget(declaredSize);
 
   const _id = new Types.ObjectId();
   const quarantineKey = `${QUARANTINE_PREFIX}${_id}.bin`;
-  const [job, uploadUrl] = await Promise.all([
+  const contentType = "application/octet-stream";
+  const [{ url, fields }, job] = await Promise.all([
+    createUploadPost(quarantineKey, { contentType, contentLength: declaredSize, slackBytes: POST_SLACK_BYTES }),
     ScanbodyLibraryUpload.create({ _id, ownerAnchorId, uploadedBy: userId, fileName: name, declaredSize, quarantineKey }),
-    getUploadSignedUrl(quarantineKey, "application/octet-stream", 900),
   ]);
-  return { job, uploadUrl, contentType: "application/octet-stream" };
+  return { job, uploadUrl: url, fields };
 }
 
 async function finish(jobId, status, fields, quarantineKey) {
@@ -106,8 +182,8 @@ export async function completeScanbodyUpload(job) {
   if (job.status !== "uploading") return job;
   const size = await headObjectSizeInS3(job.quarantineKey);
   if (size == null) throw new ApiError(400, "파일이 올라가지 않았습니다. 다시 올려 주세요.");
-  if (size > SCANBODY_UPLOAD_LIMITS.maxUploadBytes) {
-    return finish(job._id, "rejected", { size, message: "파일이 너무 큽니다." }, job.quarantineKey);
+  if (size > SCANBODY_UPLOAD_LIMITS.maxUploadBytes || size > job.declaredSize + POST_SLACK_BYTES) {
+    return finish(job._id, "rejected", { size, message: "파일 크기가 신청과 다릅니다." }, job.quarantineKey);
   }
   const next = await ScanbodyLibraryUpload.findOneAndUpdate(
     { _id: job._id, status: "uploading" },

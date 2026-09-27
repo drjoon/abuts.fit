@@ -18,6 +18,7 @@ import {
 } from "@aws-sdk/client-s3";
 import { Upload } from "@aws-sdk/lib-storage";
 import { getSignedUrl as presignV3 } from "@aws-sdk/s3-request-presigner";
+import { createPresignedPost } from "@aws-sdk/s3-presigned-post";
 import multer from "multer";
 import { extname } from "path";
 import { randomBytes } from "crypto";
@@ -101,6 +102,23 @@ const fileFilter = (req, file, cb) => {
   } else {
     cb(new Error("Unsupported file type"), false);
   }
+};
+
+/** 크기가 고정된 presigned POST. content-length-range라 신청한 바이트와 다르면 S3가 거절한다. */
+export const createUploadPost = async (key, { contentType, contentLength, slackBytes = 0, expiresIn = 900 }) => {
+  const bytes = Math.floor(Number(contentLength) || 0);
+  const slack = Math.max(0, Math.floor(Number(slackBytes) || 0));
+  const type = String(contentType || "application/octet-stream");
+  return createPresignedPost(getS3Client(), {
+    Bucket: getBucket(),
+    Key: key,
+    Expires: expiresIn,
+    Fields: { "Content-Type": type },
+    Conditions: [
+      ["content-length-range", bytes, bytes + slack],
+      ["eq", "$Content-Type", type],
+    ],
+  });
 };
 
 // presigned PUT URL 생성 (백그라운드 앱이 직접 업로드하도록)

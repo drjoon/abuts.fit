@@ -155,18 +155,25 @@ export type ScanbodyUploadRow = {
 export const isUploadFinished = (status: ScanbodyUploadStatus) =>
   status === "done" || status === "rejected" || status === "failed";
 
-function putToS3(url: string, blob: Blob, contentType: string, onProgress: (ratio: number) => void) {
+function postToS3(
+  url: string,
+  fields: Record<string, string>,
+  blob: Blob,
+  onProgress: (ratio: number) => void,
+) {
   return new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open("PUT", url);
-    xhr.setRequestHeader("Content-Type", contentType);
+    xhr.open("POST", url);
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable) onProgress(event.loaded / event.total);
     };
     xhr.onload = () =>
       xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error("파일을 올리지 못했습니다."));
     xhr.onerror = () => reject(new Error("파일을 올리지 못했습니다."));
-    xhr.send(blob);
+    const form = new FormData();
+    for (const [key, value] of Object.entries(fields)) form.append(key, value);
+    form.append("file", blob);
+    xhr.send(form);
   });
 }
 
@@ -176,15 +183,15 @@ export async function uploadScanbodyBundle(
   onProgress: (ratio: number) => void,
 ): Promise<ScanbodyUploadRow> {
   const created = await apiFetch<{
-    data: { upload: ScanbodyUploadRow; uploadUrl: string; contentType: string };
+    data: { upload: ScanbodyUploadRow; uploadUrl: string; fields: Record<string, string> };
   }>({
     path: `${BASE}/uploads`,
     method: "POST",
     jsonBody: { fileName: bundle.fileName, size: bundle.blob.size },
   });
   if (!created.ok || !created.data?.data) return fail(created, "업로드를 시작하지 못했습니다.");
-  const { upload, uploadUrl, contentType } = created.data.data;
-  await putToS3(uploadUrl, bundle.blob, contentType, onProgress);
+  const { upload, uploadUrl, fields } = created.data.data;
+  await postToS3(uploadUrl, fields, bundle.blob, onProgress);
   const done = await apiFetch<{ data: ScanbodyUploadRow }>({
     path: `${BASE}/uploads/${upload.id}/complete`,
     method: "POST",

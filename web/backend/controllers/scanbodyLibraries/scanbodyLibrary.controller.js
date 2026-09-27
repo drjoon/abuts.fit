@@ -187,13 +187,13 @@ async function findOwnUpload(req) {
 // POST /api/scanbody-libraries/uploads  { fileName, size }
 export const createLibraryUpload = asyncHandler(async (req, res) => {
   const { ownerAnchorId } = await resolveOwner(req);
-  const { job, uploadUrl, contentType } = await createScanbodyUpload({
+  const { job, uploadUrl, fields } = await createScanbodyUpload({
     ownerAnchorId,
     userId: req.user._id,
     fileName: req.body?.fileName,
     size: req.body?.size,
   });
-  return res.status(201).json(new ApiResponse(201, { upload: uploadView(job), uploadUrl, contentType }));
+  return res.status(201).json(new ApiResponse(201, { upload: uploadView(job), uploadUrl, fields }));
 });
 
 // POST /api/scanbody-libraries/uploads/:uploadId/complete
