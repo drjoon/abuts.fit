@@ -103,6 +103,8 @@ import {
   buildProsthesisEditLayer,
   connectorFrame,
   implantPose,
+  screwHoleLine,
+  type ScrewHoleLine,
   marginWorldPoints,
   readEditHit,
   type EditHit,
@@ -153,6 +155,8 @@ export type OralScanOverlayHandle = {
    * 방향·각도·줌이 그때와 같다. 잡은 축이 없으면 false.
    */
   restoreInsertionView: (toothNumbers: readonly string[]) => boolean;
+  /** 이 치아 스크류홀 축을 따라 내려다본다. 홀이 없으면 false. */
+  viewHoleAxis: (toothNumber: string) => boolean;
   saveImage: () => void;
   /** 표시를 겹치기 위한 현재 프레임 캔버스. */
   captureCanvas: () => HTMLCanvasElement | null;
@@ -402,6 +406,8 @@ type Props = {
   onMarginSeedPick?: (tooth: string, point: { x: number; y: number; z: number }) => void;
   /** 선택 치아 마진 점 중 언더컷 면에 놓인 점 수. 마진을 안 그리면 null, 0. */
   onMarginUndercut?: (tooth: string | null, count: number) => void;
+  /** 홀 검사에 걸린 치아와 이유. 레이어를 그릴 때마다 부른다. */
+  onHoleIssues?: (issues: Record<string, string>) => void;
   /** 지운 마진을 새로 찍는 중인 점 수. 닫거나 그만두면 0. */
   onMarginTraceProgress?: (count: number) => void;
   className?: string;
@@ -1456,6 +1462,14 @@ function nearbyWorldTriangles(
   }
   return new Float32Array(out);
 }
+
+/** 한 치아의 스크류홀 좌표 변환. 치아 프레임 mm ↔ 월드. */
+type HoleTarget = {
+  edit: ToothDesignEdit;
+  toLocalMm: (world: THREE.Vector3) => [number, number, number];
+  toLocalDir: (dir: THREE.Vector3) => [number, number, number];
+  line: (hole?: Partial<ToothDesignEdit["hole"]>) => ScrewHoleLine;
+};
 
 function insertionDirByTooth(axes: readonly InsertionAxis[]) {
   const out = new Map<string, THREE.Vector3>();
@@ -2538,6 +2552,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       marginSeedPickTooth = null,
       onMarginSeedPick,
       onMarginUndercut,
+      onHoleIssues,
       onMarginTraceProgress,
       className,
     },
@@ -2582,6 +2597,8 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   const restoreInsertionViewRef = useRef<
     (toothNumbers: readonly string[]) => boolean
   >(() => false);
+  const holeTargetRef = useRef<(tooth: string) => HoleTarget | null>(() => null);
+  const viewHoleAxisRef = useRef<(toothNumber: string) => boolean>(() => false);
   const setInsertionFromViewRef = useRef<
     (toothNumbers: readonly string[], options?: { preview?: boolean }) => boolean
   >(() => false);
@@ -2685,6 +2702,8 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   onMarginSeedPickRef.current = onMarginSeedPick;
   const onMarginUndercutRef = useRef(onMarginUndercut);
   onMarginUndercutRef.current = onMarginUndercut;
+  const onHoleIssuesRef = useRef(onHoleIssues);
+  onHoleIssuesRef.current = onHoleIssues;
   const onMarginTraceProgressRef = useRef(onMarginTraceProgress);
   onMarginTraceProgressRef.current = onMarginTraceProgress;
   /** 마진을 지운 뒤 찍는 점(월드). 시작점을 다시 누르면 닫는다. */
@@ -3154,7 +3173,8 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         }
       | { kind: "transform"; tooth: string; scale0: number; x0: number }
       | { kind: "hook"; tooth: string }
-      | { kind: "hole"; tooth: string; tilt0: number; y0: number }
+      | { kind: "hole"; tooth: string }
+      | { kind: "hole-tip"; tooth: string; end: "top" | "bottom" }
       | { kind: "connector"; tooth: string; along0: number; x0: number }
       | { kind: "insertion"; key: string; at: number };
     let drag: EditDrag | null = null;
@@ -3238,6 +3258,21 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       }
       if (roots.length === 0) return null;
       const hits = raycaster.intersectObjects(roots, true);
+      // 홀 핸들은 비쳐 보이는 크라운 안쪽에 있어도 먼저 잡는다.
+      if (designEditRef.current?.tool === "hole") {
+        for (const kind of ["hole-tip", "hole"] as const) {
+          const handle = hits.find((hit) => readEditHit(hit.object)?.kind === kind);
+          const tag = handle ? readEditHit(handle.object) : null;
+          if (handle && tag) {
+            return {
+              tag,
+              point: handle.point.clone(),
+              marginPoints: undefined,
+              object: handle.object,
+            };
+          }
+        }
+      }
       for (const hit of hits) {
         const tag = readEditHit(hit.object);
         if (!tag) continue;
@@ -3363,9 +3398,15 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         send({ type: "hook-off", tooth: hit.tag.tooth });
       } else if (hit.tag.kind === "hook" && event.button === 0) {
         drag = { kind: "hook", tooth: hit.tag.tooth };
+      } else if (
+        (hit.tag.kind === "hole" || hit.tag.kind === "hole-tip") &&
+        (event.button === 2 || brush === "erase")
+      ) {
+        send({ type: "hole-remove", tooth: hit.tag.tooth });
+      } else if (hit.tag.kind === "hole-tip" && event.button === 0) {
+        drag = { kind: "hole-tip", tooth: hit.tag.tooth, end: hit.tag.end };
       } else if (hit.tag.kind === "hole" && event.button === 0) {
-        const tilt0 = designEditRef.current.edits[hit.tag.tooth]?.hole.tiltDeg ?? 0;
-        drag = { kind: "hole", tooth: hit.tag.tooth, tilt0, y0: event.clientY };
+        drag = { kind: "hole", tooth: hit.tag.tooth };
       } else if (hit.tag.kind === "connector" && event.button === 0) {
         const along0 =
           designEditRef.current.edits[hit.tag.tooth]?.connector.along ?? 0.5;
@@ -3383,16 +3424,13 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
             angle: ((angle * 180) / Math.PI + 360) % 360,
           });
         } else if (tool === "hole") {
-          if (designEditRef.current.edits[hit.tag.tooth]?.implant.on) return;
-          if (along < frame.place.radius * 0.08) {
-            send({ type: "hole-reject", tooth: hit.tag.tooth });
-          } else {
-            send({
-              type: "hole-angle",
-              tooth: hit.tag.tooth,
-              angle: ((angle * 180) / Math.PI + 360) % 360,
-            });
-          }
+          const target = holeTargetRef.current(hit.tag.tooth);
+          if (!target || target.edit.implant.on || target.edit.pontic.on) return;
+          const point = target.toLocalMm(hit.point);
+          const dir = target.edit.hole.on ? target.edit.hole.dir : ([0, 1, 0] as [number, number, number]);
+          const issue = target.line({ point, dir }).issue;
+          if (issue) send({ type: "hole-reject", tooth: hit.tag.tooth, reason: issue });
+          else send({ type: "hole-place", tooth: hit.tag.tooth, point, dir });
         } else if (tool === "cutback" && brush === "minus") {
           send({ type: "cutback-exclude", tooth: hit.tag.tooth, angle });
         } else if (tool === "refine" && brush === "sculpt") {
@@ -3476,11 +3514,35 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
           angle: ((placed.angle * 180) / Math.PI + 360) % 360,
         });
       } else if (drag.kind === "hole") {
-        send({
-          type: "hole-tilt",
-          tooth: drag.tooth,
-          tilt: drag.tilt0 + (drag.y0 - event.clientY) / 4,
+        const target = holeTargetRef.current(drag.tooth);
+        if (!target) return;
+        const line = target.line();
+        const holeTooth = drag.tooth;
+        const crowns: THREE.Object3D[] = [];
+        editLayerRef.current?.traverse((child) => {
+          const hit = child.userData.editHit as EditHit | undefined;
+          if (hit?.kind === "crown" && hit.tooth === holeTooth && !child.userData.holeWall) {
+            crowns.push(child);
+          }
         });
+        let world: THREE.Vector3 | null = raycaster.intersectObjects(crowns, false)[0]?.point ?? null;
+        if (!world) {
+          const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(line.dir, line.origin);
+          world = raycaster.ray.intersectPlane(plane, new THREE.Vector3());
+        }
+        if (!world) return;
+        send({ type: "hole-move", tooth: drag.tooth, point: target.toLocalMm(world) });
+      } else if (drag.kind === "hole-tip") {
+        const target = holeTargetRef.current(drag.tooth);
+        if (!target) return;
+        const line = target.line();
+        const facing = camera.getWorldDirection(new THREE.Vector3());
+        const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(facing, line.origin);
+        const at = raycaster.ray.intersectPlane(plane, new THREE.Vector3());
+        if (!at) return;
+        const dir = drag.end === "top" ? at.sub(line.origin) : line.origin.clone().sub(at);
+        if (dir.lengthSq() < 1e-10) return;
+        send({ type: "hole-dir", tooth: drag.tooth, dir: target.toLocalDir(dir) });
       } else if (drag.kind === "connector") {
         send({
           type: "connector",
@@ -4498,6 +4560,82 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     frameCamera(pose.dir, pose.up, true, true);
   };
 
+  holeTargetRef.current = (tooth) => {
+    const place = placementsRef.current.find((row) => row.toothNumber === tooth);
+    const edit = designEditRef.current?.edits[tooth];
+    if (!place || !edit) return null;
+    const up = frameRef.current?.up ?? new THREE.Vector3(0, 0, 1);
+    const normal = insertionDirByTooth(insertionAxesRef.current).get(tooth)?.clone() ?? up.clone();
+    if (normal.lengthSq() < 1e-8) normal.copy(up);
+    normal.normalize();
+    const right = frameRef.current?.right ?? new THREE.Vector3(1, 0, 0);
+    const unit = unitToMmRef.current > 0 ? unitToMmRef.current : 1;
+    const inverse = basisQuaternion(normal, right).invert();
+    const pose = edit.implant.on ? implantPose(place, normal, edit.implant) : null;
+    return {
+      edit,
+      toLocalMm: (world) => {
+        const v = world.clone().sub(place.center).applyQuaternion(inverse).multiplyScalar(unit);
+        return [v.x, v.y, v.z];
+      },
+      toLocalDir: (dir) => {
+        const v = dir.clone().applyQuaternion(inverse).normalize();
+        return [v.x, v.y, v.z];
+      },
+      line: (hole = {}) =>
+        screwHoleLine({
+          place,
+          normal,
+          right,
+          edit: { ...edit, hole: { ...edit.hole, ...hole } },
+          unitToMm: unit,
+          axis: pose ? { origin: pose.top, dir: pose.axis } : null,
+        }),
+    };
+  };
+
+  viewHoleAxisRef.current = (raw) => {
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    const target = holeTargetRef.current(fdiDigits(raw));
+    if (!camera || !controls || !target) return false;
+    if (!target.edit.hole.on && !(target.edit.implant.on && target.edit.implant.screwHole)) {
+      return false;
+    }
+    const line = target.line();
+    const focus = (line.top ?? line.origin).clone();
+    const distance = Math.max(camera.position.distanceTo(controls.target), 1);
+    const up = camera.up.clone().addScaledVector(line.dir, -camera.up.dot(line.dir));
+    if (up.lengthSq() < 1e-8) {
+      up.copy(frameRef.current?.anterior ?? new THREE.Vector3(0, 1, 0));
+      up.addScaledVector(line.dir, -up.dot(line.dir));
+    }
+    up.normalize();
+    fitTargetRef.current.copy(focus);
+    snapRef.current = {
+      start: performance.now(),
+      duration: 280,
+      fromPos: camera.position.clone(),
+      toPos: focus.clone().addScaledVector(line.dir, distance),
+      fromUp: camera.up.clone(),
+      toUp: up,
+      fromTarget: controls.target.clone(),
+      toTarget: focus,
+      fromZoom: camera.zoom,
+      toZoom: camera.zoom,
+      fromLeft: camera.left,
+      toLeft: camera.left,
+      fromRight: camera.right,
+      toRight: camera.right,
+      fromTop: camera.top,
+      toTop: camera.top,
+      fromBottom: camera.bottom,
+      toBottom: camera.bottom,
+      save: true,
+    };
+    return true;
+  };
+
   restoreInsertionViewRef.current = (toothNumbers) => {
     const camera = cameraRef.current;
     const controls = controlsRef.current;
@@ -4843,6 +4981,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       focusTooth: (toothNumber) => focusToothRef.current(toothNumber),
       restoreInsertionView: (toothNumbers) =>
         restoreInsertionViewRef.current(toothNumbers),
+      viewHoleAxis: (toothNumber) => viewHoleAxisRef.current(toothNumber),
       saveImage: () => saveImageRef.current(),
       captureCanvas: () => {
         const renderer = rendererRef.current;
@@ -5710,6 +5849,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     marginTraceApiRef.current.sync();
     if (!designEdit) {
       onMarginUndercutRef.current?.(null, 0);
+      onHoleIssuesRef.current?.({});
       return;
     }
     const hidden = hiddenKey ? hiddenKey.split(",") : [];
@@ -5729,6 +5869,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
           }
         : designEdit;
     let undercut: { tooth: string | null; count: number } = { tooth: null, count: 0 };
+    const holeIssues: Record<string, string> = {};
     const layer = buildProsthesisEditLayer({
       placements: placementsRef.current,
       frame: frameRef.current,
@@ -5741,10 +5882,14 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         undercut = { tooth, count: flags.filter(Boolean).length };
         return flags;
       },
+      onHoleIssue: (tooth, issue) => {
+        if (issue) holeIssues[tooth] = issue;
+      },
     });
     scene.add(layer);
     editLayerRef.current = layer;
     onMarginUndercutRef.current?.(undercut.tooth, undercut.count);
+    onHoleIssuesRef.current?.(holeIssues);
   }, [designEdit, loadVersion, showInsertionAxis, hiddenKey]);
 
   const clearStoneModel = (notify: boolean) => {

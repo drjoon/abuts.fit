@@ -18,6 +18,11 @@ import {
 
 export const MARGIN_POINT_COUNT = 16;
 
+/** 스크류홀 반지름(mm). Dentbird와 같은 범위·기본값. */
+export const HOLE_RADIUS_MIN_MM = 0.5;
+export const HOLE_RADIUS_MAX_MM = 2.5;
+export const HOLE_RADIUS_DEFAULT_MM = 1.25;
+
 export const MODIFY_TOOLS = [
   { id: "scanbody", label: "스캔바디" },
   { id: "margin", label: "마진" },
@@ -412,10 +417,19 @@ export type ToothDesignEdit = {
     thicknessMm: number;
     excluded: number[];
   };
+  /**
+   * 스크류홀. 좌표는 치아 프레임(치아 추정 중심 원점, +Y 삽입축) mm.
+   * 임플란트는 임플란트 축을 쓰고 `radiusMm`만 읽는다.
+   */
   hole: {
+    /** 교합면에 자리를 잡았다. */
     on: boolean;
-    angle: number;
-    tiltDeg: number;
+    /** 크라운을 뚫었다. 자리만 잡은 홀은 내보내지 않는다. */
+    applied: boolean;
+    /** 축 위 한 점. 처음 누른 교합면 자리이고 회전 중심이다. */
+    point: [number, number, number];
+    /** 교합면 쪽을 향하는 축 단위 벡터. */
+    dir: [number, number, number];
     radiusMm: number;
   };
   connector: {
@@ -443,9 +457,16 @@ export type DesignGesture =
   | { type: "margin-remove"; tooth: string; index: number }
   | { type: "hook-angle"; tooth: string; angle: number }
   | { type: "hook-off"; tooth: string }
-  | { type: "hole-angle"; tooth: string; angle: number }
-  | { type: "hole-tilt"; tooth: string; tilt: number }
-  | { type: "hole-reject"; tooth: string }
+  | {
+      type: "hole-place";
+      tooth: string;
+      point: [number, number, number];
+      dir: [number, number, number];
+    }
+  | { type: "hole-move"; tooth: string; point: [number, number, number] }
+  | { type: "hole-dir"; tooth: string; dir: [number, number, number] }
+  | { type: "hole-remove"; tooth: string }
+  | { type: "hole-reject"; tooth: string; reason: string }
   | { type: "sculpt"; tooth: string; angle: number; amount: number; width?: number }
   | { type: "smooth"; tooth: string }
   | { type: "flatten"; tooth: string; angle: number; width: number; strength: number }
@@ -586,7 +607,13 @@ export function createToothDesignEdit(): ToothDesignEdit {
     },
     hook: { on: false, angle: 40, radiusMm: 0.45, lengthMm: 2.4 },
     cutback: { on: false, region: "partial", thicknessMm: 0.4, excluded: [] },
-    hole: { on: false, angle: 0, tiltDeg: 8, radiusMm: 1 },
+    hole: {
+      on: false,
+      applied: false,
+      point: [0, 0, 0],
+      dir: [0, 1, 0],
+      radiusMm: HOLE_RADIUS_DEFAULT_MM,
+    },
     connector: {
       shape: "round",
       transverseMm: 4,
@@ -635,7 +662,7 @@ export function normalizeToothDesignEdit(raw: unknown): ToothDesignEdit {
     refine,
     hook: { ...base.hook, ...(row.hook ?? {}) },
     cutback: { ...base.cutback, ...(row.cutback ?? {}) },
-    hole: { ...base.hole, ...(row.hole ?? {}) },
+    hole: normalizeHole(row.hole, base.hole),
     connector: {
       ...base.connector,
       ...connector,
@@ -644,6 +671,46 @@ export function normalizeToothDesignEdit(raw: unknown): ToothDesignEdit {
       linked: connector.linked !== false,
     },
   };
+}
+
+/** 예전 홀은 크라운 중심을 지나는 각도·기울기였다. 켜져 있었으면 중심 삽입축으로 뚫는다. */
+function normalizeHole(raw: unknown, base: ToothDesignEdit["hole"]): ToothDesignEdit["hole"] {
+  if (!raw || typeof raw !== "object") return base;
+  const row = raw as Record<string, unknown>;
+  const on = row.on === true;
+  const radius = Number(row.radiusMm);
+  return {
+    on,
+    applied: on && ("applied" in row ? row.applied === true : true),
+    point: vec3OrNull(row.point) ?? base.point,
+    dir: clampHoleDir(vec3OrNull(row.dir) ?? base.dir),
+    radiusMm: Number.isFinite(radius)
+      ? clamp(radius, HOLE_RADIUS_MIN_MM, HOLE_RADIUS_MAX_MM)
+      : base.radiusMm,
+  };
+}
+
+/** 삽입축에서 이만큼까지만 기울인다. 더 누우면 교합면이 아니라 옆벽을 뚫는다. */
+export const HOLE_TILT_MAX_DEG = 45;
+
+export function clampHoleDir(dir: readonly number[]): [number, number, number] {
+  let [x, y, z] = [dir[0] ?? 0, dir[1] ?? 1, dir[2] ?? 0];
+  const length = Math.hypot(x, y, z);
+  if (length < 1e-9) return [0, 1, 0];
+  x /= length;
+  y /= length;
+  z /= length;
+  const minY = Math.cos((HOLE_TILT_MAX_DEG * Math.PI) / 180);
+  if (y >= minY) return [x, y, z];
+  const side = Math.hypot(x, z);
+  if (side < 1e-9) return [0, 1, 0];
+  const keep = Math.sqrt(1 - minY * minY) / side;
+  return [x * keep, minY, z * keep];
+}
+
+export function holeTiltDeg(dir: readonly number[]) {
+  const y = clamp(dir[1] ?? 1, -1, 1);
+  return (Math.acos(y) * 180) / Math.PI;
 }
 
 function vec3OrNull(value: unknown): [number, number, number] | null {
@@ -1038,17 +1105,6 @@ export function thicknessAlertRgb(
   ];
 }
 
-export function holeIssue(hole: ToothDesignEdit["hole"]): string | null {
-  if (!hole.on) return null;
-  if (hole.radiusMm > 2.2) {
-    return "홀이 교합면보다 큽니다. 반지름을 줄이세요.";
-  }
-  if (Math.abs(hole.tiltDeg) > 42) {
-    return "이 기울기는 교합면을 벗어납니다. 다른 각도를 고르세요.";
-  }
-  return null;
-}
-
 export function crownScale(edit: ToothDesignEdit) {
   let scale = clamp(edit.refine.scale, 0.75, 1.35);
   if (
@@ -1083,17 +1139,25 @@ export function reduceDesignGesture(
       };
     case "hook-off":
       return { ...edit, hook: { ...edit.hook, on: false } };
-    case "hole-angle":
-      return { ...edit, hole: { ...edit.hole, on: true, angle: gesture.angle } };
-    case "hole-tilt":
+    case "hole-place":
       return {
         ...edit,
         hole: {
           ...edit.hole,
           on: true,
-          tiltDeg: clamp(gesture.tilt, -50, 50),
+          applied: false,
+          point: gesture.point,
+          dir: clampHoleDir(gesture.dir),
         },
       };
+    case "hole-move":
+      if (!edit.hole.on) return edit;
+      return { ...edit, hole: { ...edit.hole, point: gesture.point } };
+    case "hole-dir":
+      if (!edit.hole.on) return edit;
+      return { ...edit, hole: { ...edit.hole, dir: clampHoleDir(gesture.dir) } };
+    case "hole-remove":
+      return { ...edit, hole: { ...edit.hole, on: false, applied: false } };
     case "sculpt": {
       const stamp =
         gesture.width != null

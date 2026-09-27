@@ -23,7 +23,9 @@ import {
   connectorAreaMm2,
   connectorIsWeak,
   connectorMinAreaMm2,
-  holeIssue,
+  HOLE_RADIUS_MAX_MM,
+  HOLE_RADIUS_MIN_MM,
+  holeTiltDeg,
   innerParamsOf,
   shellThicknessMm,
   type EditBrush,
@@ -100,6 +102,9 @@ type Props = {
   isBridge: boolean;
   canMatchInsertion: boolean;
   holeNote: string;
+  /** 뷰어가 잰 홀 검사 결과. 통과면 null. */
+  holeIssue: string | null;
+  onViewHoleAxis: () => void;
   onRedetect: () => void;
   /** 다시 검출 시작점을 찍는 중. */
   redetectPicking: boolean;
@@ -516,6 +521,8 @@ export function LabProsthesisModifyPanel({
   isBridge,
   canMatchInsertion,
   holeNote,
+  holeIssue,
+  onViewHoleAxis,
   onRedetect,
   redetectPicking,
   onClearMargin,
@@ -544,7 +551,24 @@ export function LabProsthesisModifyPanel({
   const thin = designIsThin(edit, cavity);
   const innerKind = innerKindOf(edit, cavity);
   const taper = cavity ? cavityTaperSummary(edit.margin.cavity) : null;
-  const issue = implant ? null : holeIssue(edit.hole);
+  const holeMessage = holeIssue || holeNote;
+  const holeRadiusRow = (
+    <Row label="반지름" value={`${edit.hole.radiusMm.toFixed(2)} mm`}>
+      <Slider
+        min={HOLE_RADIUS_MIN_MM * 100}
+        max={HOLE_RADIUS_MAX_MM * 100}
+        step={5}
+        value={[Math.round(edit.hole.radiusMm * 100)]}
+        onValueChange={([value]) =>
+          onEdit({
+            ...edit,
+            hole: { ...edit.hole, radiusMm: (value ?? 125) / 100 },
+          })
+        }
+        aria-label="홀 반지름"
+      />
+    </Row>
+  );
   const marginWord = implant ? "EPL" : "마진";
   const [stepDraft, setStepDraft] = useState(DEFAULT_MARGIN_STEP.toFixed(2));
   const parsedStep = Number(stepDraft);
@@ -1472,80 +1496,102 @@ export function LabProsthesisModifyPanel({
             <br />
             표시 목록에서 스크류 경로를 켜고 끕니다.
           </p>
+          {holeRadiusRow}
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-7 w-full text-[11px]"
+            disabled={!generated || !edit.implant.screwHole}
+            onClick={onViewHoleAxis}
+          >
+            홀 축으로 보기
+          </Button>
+          {edit.implant.screwHole && holeIssue ? (
+            <p className="text-[11px] leading-relaxed text-destructive">{holeIssue}</p>
+          ) : null}
         </div>
       ) : null}
 
-      {tool === "hole" && !implant ? (
+      {tool === "hole" && !implant && edit.pontic.on ? (
+        <p className="text-[11px] leading-relaxed text-muted-foreground">
+          폰틱에는 홀을 뚫지 않습니다.
+        </p>
+      ) : null}
+
+      {tool === "hole" && !implant && !edit.pontic.on ? (
         <div className="space-y-2">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="flex min-w-0">
-                <Button
-                  type="button"
-                  size="sm"
-                  className="h-7 w-full text-[11px]"
-                  disabled={!generated}
-                  onClick={() => onEdit({ ...edit, hole: { ...edit.hole, on: true } })}
-                >
-                  {edit.hole.on ? "홀 있음" : "홀 만들기"}
-                </Button>
+          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[11px]">
+            {[
+              ["추가", "교합면 클릭"],
+              ["삭제", "오른쪽 클릭"],
+              ["이동", "원기둥 끌기"],
+              ["회전", "끝 공 끌기"],
+            ].map(([key, value]) => (
+              <Fragment key={key}>
+                <dt className="font-medium">{key}</dt>
+                <dd className="text-muted-foreground">{value}</dd>
+              </Fragment>
+            ))}
+          </dl>
+          {holeRadiusRow}
+          {edit.hole.on ? (
+            <div className="flex items-center justify-between text-xs font-medium">
+              <span>기울기</span>
+              <span className="tabular-nums text-muted-foreground">
+                {Math.round(holeTiltDeg(edit.hole.dir))}°
               </span>
-            </TooltipTrigger>
-            <TooltipContent side="right" className="z-[520]">
-              교합면을 누르면 위치가 잡힙니다.
-              <br />
-              기둥 끝을 끌면 기울기가 바뀝니다.
-            </TooltipContent>
-          </Tooltip>
-          <Row label="반지름" value={`${edit.hole.radiusMm.toFixed(2)} mm`}>
-            <Slider
-              min={40}
-              max={240}
-              step={4}
-              value={[Math.round(edit.hole.radiusMm * 100)]}
-              onValueChange={([value]) =>
-                onEdit({
-                  ...edit,
-                  hole: { ...edit.hole, on: true, radiusMm: (value ?? 100) / 100 },
-                })
+            </div>
+          ) : null}
+          <div className="grid grid-cols-2 gap-1">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-7 px-1 text-[11px]"
+              disabled={!edit.hole.on}
+              onClick={onViewHoleAxis}
+            >
+              홀 축으로 보기
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-7 px-1 text-[11px]"
+              disabled={!edit.hole.on}
+              onClick={() =>
+                onEdit({ ...edit, hole: { ...edit.hole, on: false, applied: false } })
               }
-              aria-label="홀 반지름"
-            />
-          </Row>
-          <Row label="기울기" value={`${Math.round(edit.hole.tiltDeg)}°`}>
-            <Slider
-              min={-50}
-              max={50}
-              step={1}
-              value={[edit.hole.tiltDeg]}
-              onValueChange={([value]) =>
-                onEdit({
-                  ...edit,
-                  hole: { ...edit.hole, on: true, tiltDeg: value ?? 0 },
-                })
-              }
-              aria-label="홀 기울기"
-            />
-          </Row>
-          <Row label="위치" value={`${Math.round(edit.hole.angle)}°`}>
-            <Slider
-              min={0}
-              max={360}
-              step={2}
-              value={[edit.hole.angle]}
-              onValueChange={([value]) =>
-                onEdit({
-                  ...edit,
-                  hole: { ...edit.hole, on: true, angle: value ?? 0 },
-                })
-              }
-              aria-label="홀 위치"
-            />
-          </Row>
-          {issue || holeNote ? (
-            <p className="text-[11px] leading-relaxed text-destructive">
-              {issue || holeNote}
+            >
+              홀 지우기
+            </Button>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant={edit.hole.applied ? "outline" : "default"}
+            className="h-7 w-full text-[11px]"
+            disabled={!generated || !edit.hole.on || (!edit.hole.applied && Boolean(holeIssue))}
+            onClick={() =>
+              onEdit({ ...edit, hole: { ...edit.hole, applied: !edit.hole.applied } })
+            }
+          >
+            {edit.hole.applied ? "뚫은 홀 메우기" : "홀 뚫기"}
+          </Button>
+          {!generated ? (
+            <p className="text-[11px] leading-relaxed text-muted-foreground">
+              크라운을 생성한 뒤 홀 자리를 잡습니다.
             </p>
+          ) : !edit.hole.on ? (
+            <p className="text-[11px] leading-relaxed text-muted-foreground">
+              교합면을 누르면 삽입축 방향으로 홀 자리가 잡힙니다.
+              <br />
+              자리를 맞춘 뒤 홀 뚫기를 누르세요.
+            </p>
+          ) : null}
+          {edit.hole.on && holeMessage ? (
+            <p className="text-[11px] leading-relaxed text-destructive">{holeMessage}</p>
           ) : null}
         </div>
       ) : null}

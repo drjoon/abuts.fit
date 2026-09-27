@@ -786,6 +786,7 @@ function LabProsthesisAiDesignDialog({
   const [editBrush, setEditBrush] = useState<EditBrush>("none");
   const [edits, setEdits] = useState<Record<string, ToothDesignEdit>>({});
   const [holeNote, setHoleNote] = useState("");
+  const [holeIssues, setHoleIssues] = useState<Record<string, string>>({});
   const [connectorFrom, setConnectorFrom] = useState<string | null>(null);
   const [focusViewOn, setFocusViewOn] = useState(true);
   const [connectorShot, setConnectorShot] = useState<ConnectorSectionShot | null>(null);
@@ -1858,7 +1859,18 @@ function LabProsthesisAiDesignDialog({
 
   const onDesignGesture = (gesture: DesignGesture) => {
     if (gesture.type === "hole-reject") {
-      setHoleNote("교합면이 아닙니다. 다른 위치를 고르세요.");
+      setHoleNote(gesture.reason);
+      toast({
+        title: "홀 자리를 잡지 못했습니다.",
+        description: (
+          <>
+            {gesture.reason}
+            <br />
+            다른 위치를 누르세요.
+          </>
+        ),
+        variant: "destructive",
+      });
       return;
     }
     setHoleNote("");
@@ -3379,6 +3391,11 @@ function LabProsthesisAiDesignDialog({
                   prev.tooth === tooth && prev.count === count ? prev : { tooth, count },
                 )
               }
+              onHoleIssues={(issues) =>
+                setHoleIssues((prev) =>
+                  JSON.stringify(prev) === JSON.stringify(issues) ? prev : issues,
+                )
+              }
               onMarginTraceProgress={setMarginTracePoints}
               contactMap={contactMap}
               undercutMap={paintUndercut}
@@ -4389,6 +4406,10 @@ function LabProsthesisAiDesignDialog({
                         isBridge={isBridgeSpan}
                         canMatchInsertion={entries.length > 0 && bridgeSpan.length > 0}
                         holeNote={holeNote}
+                        holeIssue={activeNumber ? (holeIssues[activeNumber] ?? null) : null}
+                        onViewHoleAxis={() => {
+                          if (activeNumber) viewerRef.current?.viewHoleAxis(activeNumber);
+                        }}
                         onRedetect={() => {
                           if (activeNumber) startMarginRedetect(activeNumber);
                         }}

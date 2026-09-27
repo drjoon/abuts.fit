@@ -6,7 +6,6 @@ import {
   connectorIsWeak,
   connectorOutline,
   crownScale,
-  holeIssue,
   innerGapMm,
   localShellThicknessMm,
   marginPointAngle,
@@ -31,6 +30,7 @@ export type EditHit =
   | { kind: "transform"; tooth: string }
   | { kind: "hook"; tooth: string }
   | { kind: "hole"; tooth: string }
+  | { kind: "hole-tip"; tooth: string; end: "top" | "bottom" }
   | { kind: "connector"; tooth: string }
   | { kind: "scanbody"; tooth: string }
   | { kind: "insertion"; key: string };
@@ -228,9 +228,22 @@ const PONTIC_BASE_THETA: Record<PonticBase, number> = {
   sanitary: 0.62,
 };
 
-function makeCrownGeometry(edit: ToothDesignEdit) {
-  const theta = edit.pontic.on ? PONTIC_BASE_THETA[edit.pontic.base] : 0.58;
-  const geometry = new THREE.SphereGeometry(1, 28, 16, 0, Math.PI * 2, 0, Math.PI * theta);
+function crownTheta(edit: ToothDesignEdit) {
+  return edit.pontic.on ? PONTIC_BASE_THETA[edit.pontic.base] : 0.58;
+}
+
+/** 홀을 뚫는 크라운은 테두리가 매끈하도록 잘게 나눈다. */
+function makeCrownGeometry(edit: ToothDesignEdit, fine = false) {
+  const theta = crownTheta(edit);
+  const geometry = new THREE.SphereGeometry(
+    1,
+    fine ? 96 : 28,
+    fine ? 56 : 16,
+    0,
+    Math.PI * 2,
+    0,
+    Math.PI * theta,
+  );
   if (edit.pontic.on && edit.pontic.base === "conical") {
     const pos = geometry.getAttribute("position");
     for (let i = 0; i < pos.count; i += 1) {
@@ -246,6 +259,273 @@ function makeCrownGeometry(edit: ToothDesignEdit) {
   return geometry;
 }
 
+export type CrownPose = {
+  quat: THREE.Quaternion;
+  position: THREE.Vector3;
+  radius: number;
+  width: number;
+  height: number;
+  depth: number;
+  /** 크라운 구의 극각 비율. 아래 열린 테두리 높이. */
+  theta: number;
+};
+
+/** 생성 크라운 자리. 레이어와 홀 검사가 같이 쓴다. */
+export function crownPose(
+  place: { center: THREE.Vector3; radius: number },
+  normal: THREE.Vector3,
+  right: THREE.Vector3,
+  edit: ToothDesignEdit,
+): CrownPose {
+  const quat = basisQuaternion(normal, right);
+  const scale = crownScale(edit);
+  const radius = place.radius * 0.86 * scale;
+  const height =
+    place.radius *
+    0.62 *
+    scale *
+    (1 + edit.refine.cusp * 0.14) *
+    (edit.refine.occlusalTrim ? Math.max(0.72, 1 - edit.refine.occlusalClearanceMm * 0.35) : 1);
+  const width =
+    radius *
+    (edit.refine.proximalTrim
+      ? Math.max(0.78, 1 - edit.refine.proximalClearanceMm * 0.55)
+      : 1);
+  const depth = radius * (1 + edit.refine.ridge * 0.12);
+  const lift =
+    edit.pontic.on && edit.pontic.base === "sanitary" ? height * 0.4 : height * 0.12;
+  const position = place.center.clone().addScaledVector(normal.clone().normalize(), lift);
+  return { quat, position, radius, width, height, depth, theta: crownTheta(edit) };
+}
+
+export const HOLE_THROUGH_ISSUE = "홀이 보철 안쪽과 바깥쪽을 모두 지나야 합니다.";
+
+export type ScrewHoleLine = {
+  /** 축 위 한 점(월드). 회전 중심. */
+  origin: THREE.Vector3;
+  /** 교합면 쪽 단위 벡터(월드). */
+  dir: THREE.Vector3;
+  /** 월드 단위 반지름. */
+  radius: number;
+  /** 축이 바깥면을 나가는 점. 크라운을 비껴가면 null. */
+  top: THREE.Vector3 | null;
+  /** 축이 크라운 아래 열린 테두리 면을 지나는 점. */
+  bottom: THREE.Vector3 | null;
+  issue: string | null;
+};
+
+function crownToLocal(pose: CrownPose) {
+  return new THREE.Matrix4()
+    .compose(pose.position, pose.quat, new THREE.Vector3(pose.width, pose.height, pose.depth))
+    .invert();
+}
+
+/** 크라운 단위 구 공간의 직선 o + t·d 가 구를 지나는 t 두 개(작은 것부터). */
+function unitSphereHits(o: THREE.Vector3, d: THREE.Vector3): [number, number] | null {
+  const a = d.lengthSq();
+  if (a < 1e-12) return null;
+  const b = 2 * o.dot(d);
+  const c = o.lengthSq() - 1;
+  const disc = b * b - 4 * a * c;
+  if (disc < 0) return null;
+  const root = Math.sqrt(disc);
+  return [(-b - root) / (2 * a), (-b + root) / (2 * a)];
+}
+
+/**
+ * 직선이 크라운 바깥면(위)과 아래 열린 테두리 면을 지나는 t. t는 월드 방향 단위다.
+ * 테두리에 닿기 전에 옆벽으로 나가면 bottom은 null.
+ */
+function crownCrossing(toLocal: THREE.Matrix4, theta: number, origin: THREE.Vector3, dir: THREE.Vector3) {
+  const o = origin.clone().applyMatrix4(toLocal);
+  const d = origin.clone().add(dir).applyMatrix4(toLocal).sub(o);
+  const hits = unitSphereHits(o, d);
+  if (!hits || d.y <= 1e-9) return null;
+  const yBase = Math.cos(Math.PI * theta);
+  const top = hits[1];
+  const topY = o.y + d.y * top;
+  const lowY = o.y + d.y * hits[0];
+  const base = (yBase - o.y) / d.y;
+  const bottom = lowY > yBase + 1e-6 ? null : base;
+  const at = (t: number) => o.clone().addScaledVector(d, t);
+  const rim = bottom == null ? null : Math.hypot(at(bottom).x, at(bottom).z);
+  return { top, topY, bottom, rim, openRadius: Math.sin(Math.PI * theta) };
+}
+
+/**
+ * 스크류홀 축과 검사. 치아 프레임 mm 값을 월드로 옮긴다.
+ * `axis`를 주면(임플란트) 그 축을 쓴다.
+ */
+export function screwHoleLine(args: {
+  place: { center: THREE.Vector3; radius: number };
+  normal: THREE.Vector3;
+  right: THREE.Vector3;
+  edit: ToothDesignEdit;
+  unitToMm: number;
+  axis?: { origin: THREE.Vector3; dir: THREE.Vector3 } | null;
+}): ScrewHoleLine {
+  const unit = args.unitToMm > 0 ? args.unitToMm : 1;
+  const pose = crownPose(args.place, args.normal, args.right, args.edit);
+  const origin = args.axis
+    ? args.axis.origin.clone()
+    : new THREE.Vector3(...args.edit.hole.point)
+        .multiplyScalar(1 / unit)
+        .applyQuaternion(pose.quat)
+        .add(args.place.center);
+  const dir = (
+    args.axis
+      ? args.axis.dir.clone()
+      : new THREE.Vector3(...args.edit.hole.dir).applyQuaternion(pose.quat)
+  ).normalize();
+  const radius = args.edit.hole.radiusMm / unit;
+  const cross = crownCrossing(crownToLocal(pose), pose.theta, origin, dir);
+  const top = cross ? origin.clone().addScaledVector(dir, cross.top) : null;
+  const bottom =
+    cross?.bottom != null ? origin.clone().addScaledVector(dir, cross.bottom) : null;
+  const span = Math.min(pose.width, pose.depth);
+  let issue: string | null = null;
+  if (!cross || cross.topY < 0.3) {
+    issue = "교합면을 지나도록 자리를 옮기세요.";
+  } else if (cross.bottom == null || cross.rim == null) {
+    issue = HOLE_THROUGH_ISSUE;
+  } else if (radius > span * 0.42) {
+    issue = "홀이 교합면보다 큽니다. 반지름을 줄이세요.";
+  } else if ((cross.openRadius - cross.rim) * span < radius * 1.15) {
+    issue = "홀이 마진에 너무 가깝습니다. 안쪽으로 옮기거나 기울기를 줄이세요.";
+  }
+  return { origin, dir, radius, top, bottom, issue };
+}
+
+function perpendicular(dir: THREE.Vector3) {
+  const hint = Math.abs(dir.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+  return new THREE.Vector3().crossVectors(dir, hint).normalize();
+}
+
+/**
+ * 원기둥 안쪽 삼각형을 지우고, 걸친 삼각형의 안쪽 꼭짓점을 원기둥 면으로 민다.
+ * 좌표는 메시 로컬이고 `toWorld`로 월드에서 잰다.
+ */
+function cutScrewHole(
+  geometry: THREE.BufferGeometry,
+  toWorld: THREE.Matrix4,
+  line: ScrewHoleLine,
+): THREE.BufferGeometry {
+  const flat = geometry.index ? geometry.toNonIndexed() : geometry;
+  if (flat !== geometry) geometry.dispose();
+  const pos = flat.getAttribute("position") as THREE.BufferAttribute;
+  const fromWorld = toWorld.clone().invert();
+  const inside = new Uint8Array(pos.count);
+  const world = new THREE.Vector3();
+  const rel = new THREE.Vector3();
+  const spoke = perpendicular(line.dir);
+  for (let i = 0; i < pos.count; i += 1) {
+    world.fromBufferAttribute(pos, i).applyMatrix4(toWorld);
+    rel.copy(world).sub(line.origin);
+    const along = rel.dot(line.dir);
+    rel.addScaledVector(line.dir, -along);
+    if (rel.length() >= line.radius) continue;
+    inside[i] = 1;
+    if (rel.lengthSq() < 1e-12) rel.copy(spoke);
+    rel.normalize().multiplyScalar(line.radius);
+    world.copy(line.origin).addScaledVector(line.dir, along).add(rel).applyMatrix4(fromWorld);
+    pos.setXYZ(i, world.x, world.y, world.z);
+  }
+  const keep: number[] = [];
+  for (let tri = 0; tri < pos.count; tri += 3) {
+    if (inside[tri] && inside[tri + 1] && inside[tri + 2]) continue;
+    keep.push(tri, tri + 1, tri + 2);
+  }
+  const out = new THREE.BufferGeometry();
+  for (const [name, attr] of Object.entries(flat.attributes)) {
+    const src = attr as THREE.BufferAttribute;
+    const size = src.itemSize;
+    const data = new Float32Array(keep.length * size);
+    keep.forEach((index, row) => {
+      for (let k = 0; k < size; k += 1) data[row * size + k] = src.array[index * size + k]!;
+    });
+    out.setAttribute(name, new THREE.BufferAttribute(data, size));
+  }
+  flat.dispose();
+  return out;
+}
+
+/** 원기둥 벽. 모선마다 바깥면과 아래 테두리 면 사이를 잇는다. 월드 좌표. */
+function screwHoleWall(line: ScrewHoleLine, pose: CrownPose, segments = 48) {
+  if (!line.top || !line.bottom) return null;
+  const toLocal = crownToLocal(pose);
+  const u = perpendicular(line.dir);
+  const v = new THREE.Vector3().crossVectors(line.dir, u).normalize();
+  const topT = line.top.clone().sub(line.origin).dot(line.dir);
+  const bottomT = line.bottom.clone().sub(line.origin).dot(line.dir);
+  const positions: number[] = [];
+  for (let k = 0; k <= segments; k += 1) {
+    const angle = (k / segments) * Math.PI * 2;
+    const foot = line.origin
+      .clone()
+      .addScaledVector(u, Math.cos(angle) * line.radius)
+      .addScaledVector(v, Math.sin(angle) * line.radius);
+    const cross = crownCrossing(toLocal, pose.theta, foot, line.dir);
+    const high = cross ? cross.top : topT;
+    const low = cross?.bottom ?? bottomT;
+    const a = foot.clone().addScaledVector(line.dir, high);
+    const b = foot.clone().addScaledVector(line.dir, Math.min(low, high));
+    positions.push(a.x, a.y, a.z, b.x, b.y, b.z);
+  }
+  const index: number[] = [];
+  for (let k = 0; k < segments; k += 1) {
+    const a = k * 2;
+    index.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setIndex(index);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+const HOLE_OK = 0x22d3ee;
+const HOLE_TIP = 0x0d9488;
+const HOLE_BAD = 0xdc2626;
+
+/** 홀 편집 핸들. 원기둥은 이동, 양 끝 공은 회전. */
+function screwHoleHandles(root: THREE.Group, tooth: string, line: ScrewHoleLine, size: number) {
+  const bad = line.issue != null;
+  const top = line.top ?? line.origin.clone().addScaledVector(line.dir, size * 0.5);
+  const bottom = line.bottom ?? line.origin.clone().addScaledVector(line.dir, -size * 0.5);
+  const upper = top.clone().addScaledVector(line.dir, Math.max(line.radius * 2.6, size * 0.25));
+  const lower = bottom.clone().addScaledVector(line.dir, -line.radius * 0.6);
+  const length = upper.distanceTo(lower);
+  const body = new THREE.Mesh(
+    new THREE.CylinderGeometry(line.radius, line.radius, length, 32, 1, false),
+    new THREE.MeshBasicMaterial({
+      color: bad ? HOLE_BAD : HOLE_OK,
+      transparent: true,
+      opacity: 0.38,
+      depthTest: false,
+      depthWrite: false,
+    }),
+  );
+  body.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), line.dir);
+  body.position.copy(upper).lerp(lower, 0.5);
+  body.renderOrder = 15;
+  tag(body, { kind: "hole", tooth });
+  root.add(body);
+  const knob = Math.max(line.radius * 0.5, size * 0.06);
+  for (const [end, at] of [
+    ["top", upper],
+    ["bottom", lower],
+  ] as const) {
+    const ball = new THREE.Mesh(
+      new THREE.SphereGeometry(knob, 16, 12),
+      new THREE.MeshBasicMaterial({ color: bad ? HOLE_BAD : HOLE_TIP, depthTest: false }),
+    );
+    ball.position.copy(at);
+    ball.renderOrder = 16;
+    tag(ball, { kind: "hole-tip", tooth, end });
+    root.add(ball);
+  }
+}
+
 export function buildProsthesisEditLayer(args: {
   placements: Place[];
   frame: Frame | null;
@@ -255,6 +535,8 @@ export function buildProsthesisEditLayer(args: {
   probe?: ScanDistanceProbe | null;
   /** 선택 크라운 치아의 마진 점마다 스캔 언더컷 면 위인지. */
   marginUndercut?: ((tooth: string, points: readonly THREE.Vector3[]) => boolean[]) | null;
+  /** 홀을 켠 생성 치아마다 검사 결과. 통과면 null. */
+  onHoleIssue?: ((tooth: string, issue: string | null) => void) | null;
 }) {
   const root = new THREE.Group();
   root.name = "prosthesis-edit";
@@ -453,22 +735,35 @@ export function buildProsthesisEditLayer(args: {
       continue;
     }
 
-    const scale = crownScale(edit);
-    const radius = place.radius * 0.86 * scale;
-    const height =
-      place.radius *
-      0.62 *
-      scale *
-      (1 + edit.refine.cusp * 0.14) *
-      (edit.refine.occlusalTrim ? Math.max(0.72, 1 - edit.refine.occlusalClearanceMm * 0.35) : 1);
-    const width =
-      radius *
-      (edit.refine.proximalTrim
-        ? Math.max(0.78, 1 - edit.refine.proximalClearanceMm * 0.55)
-        : 1);
-    const depth = radius * (1 + edit.refine.ridge * 0.12);
+    const crownAt = crownPose(place, normal, right, edit);
+    const { width, height, depth } = crownAt;
+    const holeEditing = args.spec.tool === "hole" && active;
+    const holeLine = edit.pontic.on
+      ? null
+      : pose && edit.implant.screwHole
+        ? screwHoleLine({
+            place,
+            normal,
+            right,
+            edit,
+            unitToMm: unit,
+            axis: { origin: pose.top, dir: pose.axis },
+          })
+        : !edit.implant.on && edit.hole.on
+          ? screwHoleLine({ place, normal, right, edit, unitToMm: unit })
+          : null;
+    if (holeLine) args.onHoleIssue?.(tooth, holeLine.issue);
+    const cutHole =
+      holeLine && !holeLine.issue && (edit.implant.on || edit.hole.applied) ? holeLine : null;
+    const crownMatrix = new THREE.Matrix4().compose(
+      crownAt.position,
+      crownAt.quat,
+      new THREE.Vector3(width, height, depth),
+    );
     const crown = new THREE.Mesh(
-      makeCrownGeometry(edit),
+      cutHole
+        ? cutScrewHole(makeCrownGeometry(edit, true), crownMatrix, cutHole)
+        : makeCrownGeometry(edit),
       new THREE.MeshStandardMaterial({
         color: 0xffffff,
         vertexColors: true,
@@ -477,16 +772,39 @@ export function buildProsthesisEditLayer(args: {
         polygonOffset: true,
         polygonOffsetFactor: -2,
         polygonOffsetUnits: -2,
+        // 홀 자리를 잡는 동안 지대치와 원기둥이 비쳐 보이게 한다.
+        transparent: holeEditing,
+        opacity: holeEditing ? 0.62 : 1,
+        depthWrite: !holeEditing,
       }),
     );
-    crown.quaternion.copy(quat);
+    crown.quaternion.copy(crownAt.quat);
     crown.scale.set(width, height, depth);
-    const lift =
-      edit.pontic.on && edit.pontic.base === "sanitary" ? height * 0.4 : height * 0.12;
-    crown.position.copy(place.center).addScaledVector(normal, lift);
+    crown.position.copy(crownAt.position);
     crown.renderOrder = 4;
     tag(crown, { kind: "crown", tooth });
     root.add(crown);
+    const wallGeometry = cutHole ? screwHoleWall(cutHole, crownAt) : null;
+    if (wallGeometry) {
+      const wall = new THREE.Mesh(
+        wallGeometry,
+        new THREE.MeshStandardMaterial({
+          color: new THREE.Color(...CROWN_RGB).multiplyScalar(0.92),
+          roughness: 0.5,
+          side: THREE.DoubleSide,
+          transparent: holeEditing,
+          opacity: holeEditing ? 0.62 : 1,
+          depthWrite: !holeEditing,
+        }),
+      );
+      wall.renderOrder = 4;
+      wall.userData.holeWall = true;
+      tag(wall, { kind: "crown", tooth });
+      root.add(wall);
+    }
+    if (holeEditing && holeLine && !edit.implant.on) {
+      screwHoleHandles(root, tooth, holeLine, place.radius);
+    }
 
     if (args.spec.tool === "inner" && !edit.pontic.on) {
       const gap = innerGapMm(edit.inner) / unit;
@@ -601,20 +919,12 @@ export function buildProsthesisEditLayer(args: {
       root.add(shaft, knob);
     }
 
-    if (pose && edit.implant.screwHole) {
-      const holeRadius = Math.max(1.25 / unit, place.radius * 0.06);
+    if (pose && holeLine && edit.implant.screwHole) {
+      const holeRadius = holeLine.radius;
       const holeQuat = new THREE.Quaternion().setFromUnitVectors(
         new THREE.Vector3(0, 1, 0),
         pose.axis,
       );
-      const hole = new THREE.Mesh(
-        new THREE.CylinderGeometry(holeRadius, holeRadius, height * 1.4, 24),
-        new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.35, transparent: true, opacity: 0.9 }),
-      );
-      hole.quaternion.copy(holeQuat);
-      hole.position.copy(crown.position);
-      tag(hole, { kind: "hole", tooth });
-      root.add(hole);
       if (args.spec.showScrewPath) {
         const reach = height * 1.2 + 8 / unit;
         const path = new THREE.Mesh(
@@ -632,27 +942,6 @@ export function buildProsthesisEditLayer(args: {
         path.renderOrder = 15;
         root.add(path);
       }
-    } else if (edit.hole.on && !edit.implant.on) {
-      const angle = (edit.hole.angle * Math.PI) / 180;
-      const radiusMm = Math.max(edit.hole.radiusMm / unit, place.radius * 0.05);
-      const hole = new THREE.Mesh(
-        new THREE.CylinderGeometry(radiusMm, radiusMm, height * 1.35, 20),
-        new THREE.MeshStandardMaterial({
-          color: holeIssue(edit.hole) ? 0xb91c1c : 0x334155,
-          roughness: 0.35,
-          transparent: true,
-          opacity: holeIssue(edit.hole) ? 0.45 : 0.88,
-        }),
-      );
-      const tilt = new THREE.Quaternion().setFromAxisAngle(
-        new THREE.Vector3(1, 0, 0),
-        (edit.hole.tiltDeg * Math.PI) / 180,
-      );
-      const spin = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), angle);
-      hole.quaternion.copy(quat).multiply(spin).multiply(tilt);
-      hole.position.copy(crown.position);
-      tag(hole, { kind: "hole", tooth });
-      root.add(hole);
     }
   }
 
