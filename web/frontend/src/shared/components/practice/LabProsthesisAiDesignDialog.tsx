@@ -40,6 +40,7 @@
 // - 2026-09-27: 패널은 열기·닫기·숨김. 헤더 날짜는 도착일만.
 // - 2026-09-27: 브리지는 지대치·폰틱을 나누고, 커넥터마다 연결·모양·단면적을 고친다. 스팬 단위 생성·조립·분리.
 // - 2026-09-27: 모델정렬 위저드. 바이트 정렬·삽입축이 안 끝났으면 작업영역 아래에 하나씩 안내하고, 끝나면 마진·디자인 짧은 안내로 이어간다.
+// - 2026-09-27: 바이트는 열 때 자동으로 맞으므로 위저드의 모델정렬 안내는 뺀다. 삽입축부터 안내한다.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDownToLine,
@@ -1617,16 +1618,7 @@ function LabProsthesisAiDesignDialog({
     queueSaveWorkRef.current();
   };
 
-  /** 모델정렬 위저드 — 바이트 정렬 다음 삽입축을 스팬 순서대로 하나씩 안내한다. */
-  const alignArchesNeeded = useMemo(() => {
-    if (!hasBiteScan) return [];
-    const list: Array<"upper" | "lower"> = [];
-    if (hasUpperScan) list.push("upper");
-    if (hasLowerScan) list.push("lower");
-    return list;
-  }, [hasBiteScan, hasUpperScan, hasLowerScan]);
-  const pendingAlignArches = alignArchesNeeded.filter((arch) => !archAligned[arch]);
-  const biteAligned = pendingAlignArches.length === 0;
+  /** 작업 위저드 — 삽입축을 스팬 순서대로 하나씩 안내한다. 바이트는 열 때 맞춰진다. */
   const insertionWizardSpans = useMemo(
     () => [...insertionSpansByOwner(plan.teeth).values()],
     [plan.teeth],
@@ -1640,12 +1632,7 @@ function LabProsthesisAiDesignDialog({
     [insertionWizardSpans, insertionKeys],
   );
   const pendingInsertionSpan = pendingInsertionSpans[0] ?? null;
-  const modelAligned = biteAligned && pendingInsertionSpan == null;
-  const alignWizardStep: "bite" | "axis" | null = !biteAligned
-    ? "bite"
-    : pendingInsertionSpan
-      ? "axis"
-      : null;
+  const alignWizardStep: "axis" | null = pendingInsertionSpan ? "axis" : null;
   const pendingInsertionSpanKey = pendingInsertionSpan
     ? insertionAxisKey(pendingInsertionSpan)
     : "";
@@ -3257,34 +3244,7 @@ function LabProsthesisAiDesignDialog({
             {!busy && entries.length > 0 ? (
               <div className="pointer-events-none absolute inset-x-3 bottom-3 z-30 flex justify-center">
                 <div className="pointer-events-auto max-w-sm rounded-lg border bg-background/95 px-3.5 py-2.5 text-xs shadow-sm">
-                  {alignWizardStep === "bite" ? (
-                    <>
-                      <p className="font-semibold text-foreground">1. 모델정렬</p>
-                      <p className="mt-1 leading-relaxed text-muted-foreground">
-                        {pendingAlignArches.length === 2
-                          ? "상악·하악 스캔을 바이트에 맞춰주세요."
-                          : pendingAlignArches[0] === "upper"
-                            ? "상악 스캔을 바이트에 맞춰주세요."
-                            : "하악 스캔을 바이트에 맞춰주세요."}
-                        <br />
-                        아래 버튼을 누르면 자동으로 정렬합니다.
-                      </p>
-                      <div className="mt-2 flex items-center gap-1.5">
-                        <Button
-                          type="button"
-                          size="sm"
-                          className="h-7 px-2 text-[11px]"
-                          disabled={!canAlignModels || alignBusy}
-                          onClick={() => void runAutoAlign()}
-                        >
-                          자동 정렬
-                        </Button>
-                        <span className="text-[11px] text-muted-foreground">
-                          수동 정렬은 좌하단 「단계」 패널에서 할 수 있습니다.
-                        </span>
-                      </div>
-                    </>
-                  ) : alignWizardStep === "axis" && pendingInsertionSpan ? (
+                  {alignWizardStep === "axis" && pendingInsertionSpan ? (
                     <>
                       <p className="font-semibold text-foreground">
                         1. 모델정렬 ·{" "}
