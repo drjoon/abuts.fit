@@ -354,6 +354,7 @@ import { completePracticeTransferWork } from "../../services/practiceTransferCom
 // - 2026-08-21: 치과 어벗 디자인 컨펌 시 기공소 채팅 안내(design_confirmed).
 // - 2026-08-21: mark-release — past-ready 1회·rollback∥clear·잔액 sync는 응답 후.
 // - 2026-09-27: mark-accepted — 하청·자동매칭 공개 풀의 첫 작업시작은 수행 기공소 게이트를 타지 않는다.
+// - 2026-09-27: mark-accepted — 클레임 후 응답의 labName 미정의(500)를 assigneeLabName으로 수정.
 // - 2026-09-27: 협력 작업시작·취소·거부 채팅 — 어벗츠 협력 기공소 「수행 기공소」.
 // - 2026-09-12: 작업시작(work_accept) 채팅 시스템 메시지 복구. 비어벗은 도착일(포함) 이후 mark-release 거부.
 // - 2026-08-21: 채팅 시스템 메시지는 치과 대응이 필요할 때만(취소·거부·생산진행/디자인컨펌 요청). 수락·업로드는 남기지 않음. → 2026-09-12 작업시작 복구.
@@ -8753,8 +8754,8 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
         transferId: String(doc.transferId || "").trim(),
         transferMongoId: String(doc._id || "").trim(),
         targetLabAnchorId: labAnchorId,
-        targetLabName: labName,
-        matchingMode: "auto",
+        targetLabName: assigneeLabName,
+        matchingMode: isAuto ? "auto" : "direct",
         practiceUserId: String(doc.practiceUserId || "").trim() || null,
         requestorReadAt: doc.requestorReadAt,
         requestorDownloadedAt: doc.requestorDownloadedAt,
@@ -8770,10 +8771,10 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
       };
       const practiceRealtimePayload = {
         ...realtimePayload,
-        ...redactAutoMatchLabIdentity("auto", {
-          targetLabName: labName,
-          targetLabAnchorId: labAnchorId,
-        }),
+        ...redactAutoMatchLabIdentity(realtimePayload.matchingMode, {
+          targetLabName: assigneeLabName,
+          targetLabAnchorId: doc.targetLabAnchorId || labAnchorId,
+        }, { transfer: doc }),
       };
 
       emitAppEventToUser(req.user?._id, "practice:transfer-updated", realtimePayload);
@@ -9044,6 +9045,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
       },
     });
   } catch (error) {
+    console.error("[mark-accepted]", req.params?.transferId, error);
     return res.status(500).json({
       success: false,
       message: "기공의뢰 작업시작 처리 중 오류가 발생했습니다.",
