@@ -174,7 +174,7 @@
   2. **커스텀어벗** — 기공소 디자인 → 애크로덴트 생산 → 치과 납품. 매출=의뢰자 유료 소비, 지출=제조사 고정 하청, 잔여=딜러·개발운영·어벗츠 분배(배송 제외).
   3. **기공사업부** — 어벗츠기공소(`internalLab`)가 치과와 **직접 계약**(원청). 선수금·결제는 항상 어벗츠 서비스로 1차 결제 후 수행 기공소로 이체. 외부 수행은 두 종류:
      - **협력**(`assigneeKind=cooperation`): 치과가 픽커에서 외부 기공소 직접 지정. **수가표·할증=수행 기공소**(치과↔지정과 동일). 정산만 어벗츠 gross→수행 매입. 플랫폼 사용료 없음(전액 이관). 치과 표시「어벗츠 · {파트너}」.
-     - **하청**(`assigneeKind=subcontract`): 치과가 어벗츠기공사업부 지정 후 하청 풀/클레임. **수가표·할증=어벗츠(원청).** `subcontractFeeRate`(기본 10%) 매입 공제. 치과에는 실명 비공개.
+     - **하청**(`assigneeKind=subcontract`): 치과가 어벗츠기공사업부 지정 후 하청 풀/클레임. **수가표·할증=어벗츠(원청).** `subcontractFeeRate`(기본 10%) 매입 공제. 치과에는 하청 기공소 실명 비공개. 미배정 하청 풀(신규 하청)을 보는 기공소와, 작업을 맡은 하청 기공소는 원청과 같이 치과 실명·담당자를 본다. 배정이 끝난 뒤 그 외 기공소에는 치과가 비공개.
   - **신규 PTX SSOT(강제):** `targetLabAnchorId`=항상 `internalLab`. 치과 픽커 외부=`assigneeLabAnchorId` + `assigneeKind=cooperation`. 어벗츠만 선택 후 풀 클레임=`assigneeKind=subcontract`. 계약·결제·계산서=어벗츠→치과(`ABUTS_TO_CUSTOMER`). 수행 기공소 정산=기공소→어벗츠 매입(`AFFILIATE_TO_ABUTS`, 품목 협력/하청 기공비).
   - **원청 vs 수행(강제):** 원청(어벗츠기공소)은 치과와 직계약하는 법률·정산 주체이고, 동시에 기공도 한다. 어벗츠기공소로 들어온 주문은 원청이 직접 하거나 하청으로 넘긴다. 협력은 치과가 파트너를 지정한 건이다. 수신함은 세 종류를 모두 보여 주고, 어벗츠기공소 화면에서 원청·협력·하청 표시/숨김으로 거른다. 매출 크레딧은 원청에 잠깐 찍힌 뒤 수행 기공소 매입으로 넘어간다. **작업:** 협력은 수행 기공소만 하고 원청 화면에서는 작업 버튼(작업시작·취소·업로드)을 숨긴다. 하청·자체 수행은 원청도 작업을 대신할 수 있다. **채팅:** 협력·하청 모두 원청이 치과·수행 기공소와 함께 참여한다. 생산비 크레딧·수취는 수행 기공소(`resolvePerformingLabAnchorId`). 수가표는 이와 별개다(협력=수행, 하청=원청 수가).
   - **PTX 수가·할증 앵커(강제, 정산과 분리):** 협력=`resolveFeeScheduleLabAnchorId`/`resolveLabFeeMultiplierLabAnchorId` → **assignee**. 하청·어벗츠 자체 → **prime(어벗츠)**. `isPracticeTransferSubcontracted`(prime≠assignee)만으로 협력 수가를 어벗츠에 두지 말 것. 생성 스냅샷 소급 금지. Cursor: `.cursor/rules/ptx-cooperation-fee-ssot.mdc`.

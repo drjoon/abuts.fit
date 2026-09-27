@@ -1,7 +1,9 @@
 /**
- * 어벗츠기공소 수신함 — 원청(직접 수행) · 협력 · 하청 표시/숨김.
- * 기본은 모두 표시. 클릭하면 해당 구분만 캘린더·목록에서 뺀다.
+ * 기공의뢰수신 — 협력 · 하청 표시/숨김.
+ * 원청(직접 수행) 토글은 두지 않는다. 직접 수행 건은 항상 목록에 남긴다.
+ * 기본은 협력·하청 모두 표시. 클릭하면 해당 구분만 캘린더·목록에서 뺀다.
  * 협력·하청 건은 목록·캘린더·상세에 역할 뱃지. 원청 직접 수행은 뱃지 없음.
+ * - 2026-09-27: 상단 필터 왼쪽 협력·하청. 원청 토글 없음. 미배정 하청은 알림.
  * - 2026-09-27: 원청·하청 양쪽 목록·상세에 협력/하청 뱃지.
  */
 import { Badge } from "@/components/ui/badge";
@@ -46,12 +48,12 @@ export function labReceiveRoleOfTransfer(transfer: {
 }): LabReceiveRoleFilterKey {
   const kind = String(transfer.assigneeKind || "").trim();
   if (kind === "cooperation") return "cooperation";
-  if (kind === "subcontract" || isOpenSubcontractPool(transfer)) return "subcontract";
+  if (kind === "subcontract" || isUnclaimedSubcontractPoolTransfer(transfer)) return "subcontract";
   return "prime";
 }
 
 /** 수행 기공소 배정 전. 하청 풀만 연 상태. 레거시 자동매칭 공개 풀은 제외. */
-function isOpenSubcontractPool(transfer: {
+export function isUnclaimedSubcontractPoolTransfer(transfer: {
   assigneeKind?: string | null;
   matchingMode?: string | null;
   autoMatch?: {
@@ -90,7 +92,7 @@ export function resolveLabReceiveRoleMarker(
   opts: { viewerIsPrime: boolean },
 ): LabReceiveRoleMarker | null {
   const kind = String(transfer.assigneeKind || "").trim();
-  const poolOpen = isOpenSubcontractPool(transfer);
+  const poolOpen = isUnclaimedSubcontractPoolTransfer(transfer);
   const roleKind =
     kind === "cooperation" || kind === "subcontract"
       ? kind
@@ -169,6 +171,8 @@ type LabReceiveRoleFilterButtonsProps = {
   visible: Record<LabReceiveRoleFilterKey, boolean>;
   counts: Record<LabReceiveRoleFilterKey, number>;
   onToggle: (key: LabReceiveRoleFilterKey) => void;
+  /** 기본은 협력·하청. 원청 토글은 쓰지 않는다. */
+  keys?: readonly LabReceiveRoleFilterKey[];
   compact?: boolean;
 };
 
@@ -176,15 +180,18 @@ export function LabReceiveRoleFilterButtons({
   visible,
   counts,
   onToggle,
+  keys = ["cooperation", "subcontract"],
   compact = false,
 }: LabReceiveRoleFilterButtonsProps) {
+  const items = LAB_RECEIVE_ROLE_FILTERS.filter((item) => keys.includes(item.key));
+  if (!items.length) return null;
   return (
     <div
-      className="flex shrink-0 items-center gap-1"
+      className="mr-4 flex shrink-0 items-center gap-1"
       role="group"
-      aria-label="원청·협력·하청 표시"
+      aria-label="협력·하청 표시"
     >
-      {LAB_RECEIVE_ROLE_FILTERS.map((item) => {
+      {items.map((item) => {
         const shown = visible[item.key] !== false;
         const count = Math.max(0, Number(counts[item.key] || 0));
         const action = shown ? "숨기기" : "표시하기";

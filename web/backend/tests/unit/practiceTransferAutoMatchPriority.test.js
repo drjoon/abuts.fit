@@ -17,8 +17,10 @@ import {
   isSubcontractFeeScheduleContext,
   isSubcontractIdentityHiddenFromViewer,
   isSubcontractPoolOpen,
+  viewerSeesSubcontractPracticeIdentity,
   resolveFeeScheduleLabAnchorId,
   resolvePerformingLabAnchorId,
+  resolvePracticeIdentityForViewer,
   SUBCONTRACT_PRACTICE_DISPLAY_NAME,
   CERTIFIED_PARTNER_LAB_DISPLAY_NAME,
   toAutoMatchApiFieldsCore,
@@ -208,7 +210,7 @@ describe("practiceTransferAutoMatch priority (core)", () => {
     expect(resolveFeeScheduleLabAnchorId(subcontracted)).not.toBe(OID_B);
   });
 
-  test("하청 식별 정보 — 원청만 실명, 수행 기공소·그 외는 비공개", () => {
+  test("하청 식별 정보 — 수행 기공소 실명은 원청만, 치과 실명은 원청·수행 기공소", () => {
     const subcontracted = {
       matchingMode: "direct",
       status: "active",
@@ -224,6 +226,24 @@ describe("practiceTransferAutoMatch priority (core)", () => {
     expect(isSubcontractIdentityHiddenFromViewer(subcontracted, OID_A)).toBe(
       false,
     );
+    expect(viewerSeesSubcontractPracticeIdentity(subcontracted, OID_B)).toBe(
+      true,
+    );
+    expect(viewerSeesSubcontractPracticeIdentity(subcontracted, OID_A)).toBe(
+      true,
+    );
+
+    const practice = { businessName: "테스트치과", userName: "원장" };
+    expect(
+      resolvePracticeIdentityForViewer(subcontracted, practice, {
+        viewerLabAnchorId: OID_B,
+      }),
+    ).toEqual({ businessName: "테스트치과", userName: "원장" });
+    expect(
+      resolvePracticeIdentityForViewer(subcontracted, practice, {
+        viewerLabAnchorId: "cccccccccccccccccccccccc",
+      }),
+    ).toEqual({ businessName: "비공개", userName: "" });
 
     const fieldsForPartner = toAutoMatchApiFieldsCore(subcontracted, OID_B);
     expect(fieldsForPartner.assigneeLabAnchorId).toBeUndefined();
@@ -273,6 +293,15 @@ describe("practiceTransferAutoMatch priority (core)", () => {
     const fields = toAutoMatchApiFieldsCore(opened, OID_B);
     expect(fields.autoMatch?.openPool).toBe(true);
     expect(isSubcontractIdentityHiddenFromViewer(opened, OID_B)).toBe(true);
+    expect(viewerSeesSubcontractPracticeIdentity(opened, OID_B)).toBe(true);
+    expect(viewerSeesSubcontractPracticeIdentity(opened, OID_A)).toBe(true);
+    expect(
+      resolvePracticeIdentityForViewer(
+        opened,
+        { businessName: "테스트치과", userName: "원장" },
+        { viewerLabAnchorId: OID_B },
+      ),
+    ).toEqual({ businessName: "테스트치과", userName: "원장" });
     expect(SUBCONTRACT_PRACTICE_DISPLAY_NAME).toBe("비공개");
   });
 

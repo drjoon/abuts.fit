@@ -53,6 +53,7 @@ import {
   resolveFeeScheduleLabAnchorId,
   resolveLabFeeMultiplierLabAnchorId,
   resolvePerformingLabAnchorId,
+  resolvePracticeIdentityForViewer,
   resolvePracticeTransferSettlementParties,
   shouldHideAssigneeFromPractice,
   SUBCONTRACT_DIRECT_BLOCKED_MESSAGE,
@@ -192,28 +193,17 @@ export const redactAutoMatchLabIdentity = (
   };
 };
 
-/** 자동매칭·하청 풀 의뢰의 치과명·담당자명은 협력 기공소에 비공개. */
+/** 레거시 자동매칭은 치과명·담당자를 가린다. 미배정 하청 풀과 수행 기공소는 원청과 같이 실명. */
 export const redactAutoMatchPracticeIdentity = (
   matchingMode,
   practice = {},
   { reveal = false, transfer = null, viewerLabAnchorId = null } = {},
-) => {
-  const hideForSubcontract =
-    transfer &&
-    isSubcontractIdentityHiddenFromViewer(transfer, viewerLabAnchorId);
-  if (reveal || (!isAutoMatchMode({ matchingMode }) && !hideForSubcontract)) {
-    return {
-      businessName: String(practice?.businessName || "").trim(),
-      userName: String(practice?.userName || "").trim(),
-    };
-  }
-  return {
-    businessName: hideForSubcontract
-      ? SUBCONTRACT_PRACTICE_DISPLAY_NAME
-      : AUTO_MATCH_PRACTICE_DISPLAY_NAME,
-    userName: "",
-  };
-};
+) =>
+  resolvePracticeIdentityForViewer(transfer, practice, {
+    reveal,
+    viewerLabAnchorId,
+    matchingMode,
+  });
 
 export const isPracticeTransferAutoMatchEnabled = (anchor) =>
   Boolean(anchor?.practiceTransferAutoMatchEnabled);

@@ -1,4 +1,6 @@
 // related files:
+// - 2026-09-27: 수신 필터 왼쪽 협력·하청. 신규 하청은 알림에서 확인 후 선착순 진행.
+// - 2026-09-27: 하청 수행 기공소는 원청과 같이 치과명·담당자·채팅명을 본다.
 // - 2026-09-27: 협력·하청 수신 — 목록·상세에 역할 뱃지(원청·수행 기공소 양쪽).
 // - 2026-09-27: 원청 화면 협력 의뢰 — 작업 버튼 숨김, 채팅은 유지. 하청·자체는 작업+채팅.
 // - 2026-09-26: 보철 업로드는 치과 컨펌 없이 작업 완료. 학습 쌍은 서버가 남긴다.
@@ -259,7 +261,10 @@ import {
   markPracticeStatusBadgeTransfersCleared,
   migratePracticeStatusBadgeClearedFromLegacyLocalStorage,
 } from "@/shared/practice/practiceStatusBadgeReviewQueue";
-import { anonymizeAutoMatchChatSenderName } from "@/shared/practice/autoMatchIdentity";
+import {
+  anonymizeAutoMatchChatSenderName,
+  isRedactedPracticeDisplayName,
+} from "@/shared/practice/autoMatchIdentity";
 import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
 import { useFilePreUpload, toTempUploadFileKey } from "@/shared/hooks/useFilePreUpload";
 import type { PreUploadFileProgress } from "@/shared/hooks/useFilePreUpload";
@@ -452,12 +457,14 @@ import {
   type PracticeStatusFilterBadgeItem,
 } from "@/pages/practice/components/PracticeStatusFilterBadges";
 import {
+  isUnclaimedSubcontractPoolTransfer,
   LabReceiveRoleBadge,
   LabReceiveRoleFilterButtons,
   labReceiveRoleOfTransfer,
   resolveLabReceiveRoleMarker,
   type LabReceiveRoleFilterKey,
 } from "@/pages/practice/components/LabReceiveRoleFilterButtons";
+import { LabReceiveSubcontractPoolAlert } from "@/pages/practice/components/LabReceiveSubcontractPoolAlert";
 import { RequestorAbutmentPageHeader } from "@/pages/requestor/new_request/components/RequestorAbutmentPageHeader";
 import { LabReceiveUnreadNotice } from "@/pages/practice/components/LabReceiveUnreadNotice";
 import { LabReceiveFeeScheduleNotice } from "@/pages/practice/components/LabReceiveFeeScheduleNotice";
@@ -1121,6 +1128,9 @@ export function RequestorPracticeReceivePage({
     }
     const currentUserId = String(user?.id || "");
     const viewerIsInternalLab = String(user?.role || "").trim() === "internalLab";
+    const viewerIsPerformingLab =
+      Boolean(selectedTransfer?.autoMatch?.subcontracted) &&
+      !Boolean(selectedTransfer?.autoMatch?.openPool);
     return messages.map((message) => {
       const senderId = String(message.sender?._id || "");
       const name = anonymizeAutoMatchChatSenderName({
@@ -1129,6 +1139,7 @@ export function RequestorPracticeReceivePage({
         subcontracted: selectedTransfer?.autoMatch?.subcontracted,
         practiceBusinessName: selectedTransfer?.practice?.businessName,
         viewerIsInternalLab,
+        viewerIsPerformingLab,
         isOwn: senderId === currentUserId,
         counterpartLabel: "치과",
         name: String(message.sender?.name || ""),
@@ -2482,18 +2493,34 @@ export function RequestorPracticeReceivePage({
       cooperation: 0,
       subcontract: 0,
     };
-    if (!viewerIsPrimeLab) return counts;
     for (const transfer of searchedTransfers) {
+      if (!viewerIsPrimeLab && isUnclaimedSubcontractPoolTransfer(transfer)) {
+        continue;
+      }
       counts[labReceiveRoleOfTransfer(transfer)] += 1;
     }
     return counts;
   }, [searchedTransfers, viewerIsPrimeLab]);
 
+  const unclaimedSubcontractTransfers = useMemo(
+    () =>
+      viewerIsPrimeLab
+        ? []
+        : transfers.filter((transfer) =>
+            isUnclaimedSubcontractPoolTransfer(transfer),
+          ),
+    [transfers, viewerIsPrimeLab],
+  );
+
   const baseFilteredTransfers = useMemo(() => {
-    if (!viewerIsPrimeLab) return searchedTransfers;
-    return searchedTransfers.filter(
-      (transfer) => roleVisible[labReceiveRoleOfTransfer(transfer)] !== false,
-    );
+    return searchedTransfers.filter((transfer) => {
+      if (!viewerIsPrimeLab && isUnclaimedSubcontractPoolTransfer(transfer)) {
+        return false;
+      }
+      const role = labReceiveRoleOfTransfer(transfer);
+      if (role === "prime") return true;
+      return roleVisible[role] !== false;
+    });
   }, [roleVisible, searchedTransfers, viewerIsPrimeLab]);
 
   const guideTourWantsReceiveDetail =
@@ -3012,13 +3039,7 @@ export function RequestorPracticeReceivePage({
   }, [sortedFilteredTransfers]);
   const selectedTransferCaseIdentity = useMemo(() => {
     if (!selectedTransfer) return null;
-    const hidePractice =
-      String(user?.role || "").trim() !== "internalLab" &&
-      (Boolean(selectedTransfer.autoMatch?.openPool) ||
-        Boolean(selectedTransfer.autoMatch?.subcontracted));
-    const clinic = hidePractice
-      ? "비공개"
-      : String(selectedTransfer.practice?.businessName || "").trim();
+    const clinic = String(selectedTransfer.practice?.businessName || "").trim();
     const patient =
       selectedTransferPatientName ||
       resolvePracticeTransferListPatientName(selectedTransfer);
@@ -3072,7 +3093,6 @@ export function RequestorPracticeReceivePage({
     selectedTransfer,
     selectedTransferDoctorName,
     selectedTransferPatientName,
-    user?.role,
   ]);
   const markTransferRead = useCallback(
     async (transfer: ReceivedPracticeTransfer) => {
@@ -3263,6 +3283,9 @@ export function RequestorPracticeReceivePage({
     async (transfer: ReceivedPracticeTransfer) => {
       if (!token) return false;
 
+      const claimingSubcontractPool =
+        isUnclaimedSubcontractPoolTransfer(transfer);
+
       if (!settingsReady) {
         openGateModal();
         toast({
@@ -3274,6 +3297,7 @@ export function RequestorPracticeReceivePage({
         return false;
       }
 
+      if (!claimingSubcontractPool) {
       const feeScheduleRes = await apiFetch<{
         data?: { configured?: boolean; active?: boolean; items?: unknown[] };
         configured?: boolean;
@@ -3310,12 +3334,14 @@ export function RequestorPracticeReceivePage({
           return false;
         }
       }
+      }
 
       const isOpenPool =
         transfer.matchingMode === "auto" && Boolean(transfer.autoMatch?.openPool);
 
       if (
         !isOpenPool &&
+        !claimingSubcontractPool &&
         (transfer.isAccepted ||
           transfer.isDownloaded ||
           transfer.requestorDownloadedAt)
@@ -3336,6 +3362,7 @@ export function RequestorPracticeReceivePage({
           manufacturerStage: transfer.manufacturerStage,
           matchingMode: transfer.matchingMode,
           autoMatch: transfer.autoMatch,
+          assigneeKind: transfer.assigneeKind,
           targetLabName: transfer.targetLabName,
           files: transfer.files,
           fileCount: transfer.fileCount,
@@ -3350,9 +3377,12 @@ export function RequestorPracticeReceivePage({
           requestorAcceptedAt: acceptedAtIso,
           workCanceledAt: null,
           manufacturerStage: "의뢰수락",
+          assigneeKind: claimingSubcontractPool
+            ? "subcontract"
+            : transfer.assigneeKind,
           matchingMode: transfer.matchingMode === "auto" ? "auto" : "direct",
           autoMatch:
-            transfer.matchingMode === "auto"
+            isOpenPool || claimingSubcontractPool
               ? {
                   ...(transfer.autoMatch || {}),
                   claimedAt: acceptedAtIso,
@@ -3364,6 +3394,9 @@ export function RequestorPracticeReceivePage({
                   completed: false,
                   mine: true,
                   remainingMs: null,
+                  subcontracted: claimingSubcontractPool
+                    ? true
+                    : Boolean(transfer.autoMatch?.subcontracted),
                   releaseCount: Number(transfer.autoMatch?.releaseCount || 0),
                 }
               : transfer.autoMatch,
@@ -3381,9 +3414,10 @@ export function RequestorPracticeReceivePage({
 
         applyAcceptedLocalPatch(transfer, optimisticPatch);
         toast({
-          title: "작업시작 완료",
-          description:
-            transfer.matchingMode === "auto"
+          title: claimingSubcontractPool ? "하청 진행" : "작업시작 완료",
+          description: claimingSubcontractPool
+            ? "선착순으로 하청 의뢰를 진행합니다."
+            : transfer.matchingMode === "auto"
               ? "선착순으로 작업을 시작했습니다."
               : "기공의뢰 작업을 시작했습니다.",
         });
@@ -3474,6 +3508,9 @@ export function RequestorPracticeReceivePage({
                   claimActive: Boolean(autoMatchRaw.claimActive),
                   completed: Boolean(autoMatchRaw.completed),
                   mine: Boolean(autoMatchRaw.mine),
+                  subcontracted: claimingSubcontractPool
+                    ? true
+                    : Boolean(autoMatchRaw.subcontracted),
                   remainingMs:
                     autoMatchRaw.remainingMs != null
                       ? Number(autoMatchRaw.remainingMs)
@@ -8468,14 +8505,21 @@ export function RequestorPracticeReceivePage({
     </>
   );
 
-  const labRoleFilterButtons = viewerIsPrimeLab ? (
+  const labRoleFilterButtons = (
     <LabReceiveRoleFilterButtons
       visible={roleVisible}
       counts={roleFilterCounts}
       onToggle={toggleReceiveRole}
       compact
     />
-  ) : null;
+  );
+
+  const subcontractPoolAlert = viewerIsPrimeLab ? null : (
+    <LabReceiveSubcontractPoolAlert
+      transfers={unclaimedSubcontractTransfers}
+      onConfirm={markTransferAccepted}
+    />
+  );
 
   const labMobileStatusBadges = (
     <PracticeStatusFilterBadges
@@ -8557,8 +8601,9 @@ export function RequestorPracticeReceivePage({
                 : { "data-guide-tour": "lab_calendar" })}
             >
               <div className="flex shrink-0 items-center gap-1.5 px-1 py-1">
+                {subcontractPoolAlert}
                 {labRoleFilterButtons}
-                <div className="relative min-w-0 flex-1">
+                <div className="relative w-2/3 min-w-0 shrink-0">
                 <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   value={search}
@@ -8785,7 +8830,12 @@ export function RequestorPracticeReceivePage({
                 }
               }}
               search={search}
-              searchLeading={labRoleFilterButtons}
+              searchLeading={
+                <>
+                  {subcontractPoolAlert}
+                  {labRoleFilterButtons}
+                </>
+              }
               onSearchChange={setSearch}
               searchPlaceholder="환자명, 치과명, 치아번호"
               hiddenWeekdays={calendarHiddenWeekdays}
@@ -9272,18 +9322,18 @@ export function RequestorPracticeReceivePage({
         summaryItems={[
           { label: "전송ID", value: selectedTransfer?.transferId || "-" },
           { label: "전송시각", value: selectedTransfer ? formatDateTime(selectedTransfer.createdAt) : "-" },
-          { label: "치과", value:
-            String(user?.role || "").trim() !== "internalLab" &&
-            (selectedTransfer?.autoMatch?.openPool ||
-              selectedTransfer?.autoMatch?.subcontracted)
-              ? "비공개"
-              : selectedTransfer?.practice.businessName || "-" },
-          { label: "담당자", value:
-            String(user?.role || "").trim() !== "internalLab" &&
-            (selectedTransfer?.autoMatch?.openPool ||
-              selectedTransfer?.autoMatch?.subcontracted)
-              ? "비공개"
-              : selectedTransfer?.practice.userName || "-" },
+          {
+            label: "치과",
+            value: selectedTransfer?.practice.businessName || "-",
+          },
+          {
+            label: "담당자",
+            value:
+              selectedTransfer?.practice.userName ||
+              (isRedactedPracticeDisplayName(selectedTransfer?.practice.businessName)
+                ? "비공개"
+                : "-"),
+          },
           { label: "환자명", value: selectedTransferPatientName || "-" },
           ...(selectedTransferDoctorName
             ? [{ label: "원장명", value: selectedTransferDoctorName }]

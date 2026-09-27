@@ -1,7 +1,8 @@
 // related files:
 // - web/frontend/src/pages/practice/hooks/usePracticeTransferStep1.ts
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
-// - 2026-08-23: 하청 확정 후에도 치과↔협력 기공소 실명 비공개(어벗츠만 양쪽 확인).
+// - 2026-09-27: 미배정 하청 풀은 치과 실명을 공개. 채팅 가림은 배정 전 openPool·레거시 auto.
+// - 2026-08-23: 하청 확정 후에도 치과가 보는 하청 기공소 실명은 비공개(어벗츠만 확인).
 export const AUTO_MATCH_IDENTITY_LABEL = "어벗츠기공소";
 export const AUTO_MATCH_PRACTICE_LABEL = "자동 매칭";
 export const SUBCONTRACT_PRACTICE_LABEL = "비공개";
@@ -26,15 +27,18 @@ export const shouldAnonymizeLabViewClinicIdentity = ({
   openPool,
   practiceBusinessName,
   viewerIsInternalLab = false,
+  viewerIsPerformingLab = false,
   subcontracted = false,
 }: {
   matchingMode?: string | null;
   openPool?: boolean;
   practiceBusinessName?: string | null;
   viewerIsInternalLab?: boolean;
+  /** 하청을 맡은 기공소. 원청과 같이 치과 채팅명을 본다. */
+  viewerIsPerformingLab?: boolean;
   subcontracted?: boolean;
 }) => {
-  if (viewerIsInternalLab) return false;
+  if (viewerIsInternalLab || viewerIsPerformingLab) return false;
   if (Boolean(openPool) || Boolean(subcontracted)) return true;
   return (
     isAutoMatchModeValue(matchingMode) ||
@@ -65,6 +69,7 @@ export const anonymizeAutoMatchChatSenderName = ({
   subcontracted,
   practiceBusinessName,
   viewerIsInternalLab = false,
+  viewerIsPerformingLab = false,
   isOwn,
   counterpartLabel,
   name,
@@ -74,6 +79,7 @@ export const anonymizeAutoMatchChatSenderName = ({
   subcontracted?: boolean;
   practiceBusinessName?: string | null;
   viewerIsInternalLab?: boolean;
+  viewerIsPerformingLab?: boolean;
   isOwn: boolean;
   counterpartLabel: string;
   name: string;
@@ -87,6 +93,7 @@ export const anonymizeAutoMatchChatSenderName = ({
       openPool,
       practiceBusinessName,
       viewerIsInternalLab,
+      viewerIsPerformingLab,
       subcontracted,
     })
   ) {

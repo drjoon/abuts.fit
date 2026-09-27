@@ -3,6 +3,7 @@
 // - web/backend/tests/unit/practiceTransferAutoMatchPriority.test.js
 //
 // 자동매칭 우선창·필터 순수 헬퍼 (Mongo 모델 import 없음).
+// - 2026-09-27: 하청 수행 기공소는 원청과 같이 치과 실명·담당자를 본다. 미배정 풀은 비공개.
 // - 2026-09-24: 할증 labFeeMultiplier — 협력=수행 기공소, 하청·어벗츠 자체=원청(어벗츠).
 // - 2026-09-24: 수가표 — 협력=수행 기공소, 하청·어벗츠 자체=원청. 정산만 어벗츠 경유.
 // - 2026-09-25: 하청 수수료 기본 10%. 하청 치과 청구 수가=원청(어벗츠).
@@ -25,7 +26,7 @@ export const AUTO_MATCH_PRACTICE_DISPLAY_NAME = "자동 매칭";
 export const ABUTS_LAB_DISPLAY_NAME = "어벗츠기공소";
 /** 하청 수행 시 치과에 보이는 처리처 라벨(하청 기공소 실명 비공개) */
 export const CERTIFIED_PARTNER_LAB_DISPLAY_NAME = "인증 협력 기공소";
-/** 하청 풀·하청 수행 시 협력 기공소에 노출하는 치과 표시명 */
+/** 하청 풀을 보는 미배정 기공소에 노출하는 치과 표시명. 원청·수행 기공소는 실명. */
 export const SUBCONTRACT_PRACTICE_DISPLAY_NAME = "비공개";
 
 /** 치과 픽커 직접 지정 → 협력(수수료 0%). */
@@ -357,7 +358,11 @@ export const canLabOperatePracticeTransferWork = (transfer, labAnchorId) => {
   return Boolean(primeId) && primeId === labId;
 };
 
-/** 어벗츠 원청 팀만 하청 상대(치과·수행 기공소) 식별 정보를 본다. 협력은 공개. */
+/**
+ * 하청 수행 기공소 실명을 API 필드에서 가릴지.
+ * 원청만 assignee 식별을 받는다. 치과가 보는 하청 실명 가림은 `shouldHideAssigneeFromPractice`.
+ * 치과 실명(수행 기공소 공개)은 `viewerSeesSubcontractPracticeIdentity`.
+ */
 export const isSubcontractIdentityHiddenFromViewer = (
   transfer,
   viewerLabAnchorId = null,
@@ -367,9 +372,56 @@ export const isSubcontractIdentityHiddenFromViewer = (
   }
   const viewerId = String(viewerLabAnchorId || "").trim();
   const primeId = getPrimeLabAnchorId(transfer);
-  // 원청(어벗츠)만 양쪽 실명 확인. 하청 수행 기공소·그 외는 비공개.
   if (viewerId && primeId && viewerId === primeId) return false;
   return true;
+};
+
+/**
+ * 하청 건의 치과 실명·담당자.
+ * 미배정 하청 풀(신규 하청 미리보기)은 보는 기공소에 공개.
+ * 배정 후에는 원청과 수행 기공소만 본다.
+ */
+export const viewerSeesSubcontractPracticeIdentity = (
+  transfer,
+  viewerLabAnchorId = null,
+) => {
+  if (isSubcontractPoolOpen(transfer)) return true;
+  if (!isSubcontractAssignee(transfer)) return true;
+  const viewerId = String(viewerLabAnchorId || "").trim();
+  if (!viewerId) return false;
+  const primeId = getPrimeLabAnchorId(transfer);
+  if (primeId && viewerId === primeId) return true;
+  const assigneeId = getAssigneeLabAnchorId(transfer);
+  return Boolean(assigneeId && viewerId === assigneeId);
+};
+
+/** 수신 API에 넣을 치과 표시. 가리면 담당자명은 비운다. */
+export const resolvePracticeIdentityForViewer = (
+  transfer,
+  practice = {},
+  { reveal = false, viewerLabAnchorId = null, matchingMode } = {},
+) => {
+  const mode = matchingMode ?? transfer?.matchingMode;
+  const subcontractContext =
+    Boolean(transfer) &&
+    (isSubcontractPoolOpen(transfer) || isSubcontractAssignee(transfer));
+  const seesRealName =
+    Boolean(reveal) ||
+    (subcontractContext
+      ? viewerSeesSubcontractPracticeIdentity(transfer, viewerLabAnchorId)
+      : !isAutoMatchMode({ matchingMode: mode }));
+  if (seesRealName) {
+    return {
+      businessName: String(practice?.businessName || "").trim(),
+      userName: String(practice?.userName || "").trim(),
+    };
+  }
+  return {
+    businessName: subcontractContext
+      ? SUBCONTRACT_PRACTICE_DISPLAY_NAME
+      : AUTO_MATCH_PRACTICE_DISPLAY_NAME,
+    userName: "",
+  };
 };
 
 export const SUBCONTRACT_DIRECT_BLOCKED_REASON = "subcontract_direct_blocked";

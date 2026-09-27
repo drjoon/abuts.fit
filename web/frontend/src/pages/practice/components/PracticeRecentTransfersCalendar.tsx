@@ -1835,7 +1835,7 @@ export function PracticeRecentTransfersCalendar({
             <div className="flex min-w-0 items-center gap-1.5">
               {searchLeading}
           {onSearchChange ? (
-            <div className="relative w-full max-w-full shrink-0 md:w-64 lg:w-72">
+            <div className="relative w-2/3 max-w-full shrink-0 md:w-[10.667rem] lg:w-48">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={search ?? ""}
@@ -1899,7 +1899,7 @@ export function PracticeRecentTransfersCalendar({
               </Badge>
             </button>
             <div
-              className="hidden items-center rounded-md border border-slate-200 bg-white p-0.5 md:flex"
+              className="ml-4 hidden items-center rounded-md border border-slate-200 bg-white p-0.5 md:flex"
               role="group"
               aria-label="보기 전환"
             >
