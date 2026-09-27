@@ -21,6 +21,7 @@
 // - web/frontend/src/shared/files/fileBlobCache.ts
 // - web/frontend/src/shared/files/s3ImageThumb.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-27: 작업시작 후 그 자리에 파란 「작업열기」. 의뢰 파일 열기도 같은 버튼.
 // - 2026-09-27: 채팅 「완료」뱃지. 판정은 isPracticeRecentFinishedBadgeStatus.
 // - 2026-09-27: 협력·하청 헤더 뱃지 — 상대가 어벗츠기공소면 이름 생략.
 // - 2026-09-27: 채팅 AI 버튼 — 관리자가 인증 기공소로 켠 곳만.
@@ -578,7 +579,7 @@ type PracticeTransferDetailChatDialogProps = {
   }) => void | Promise<void>;
   /**
    * 의뢰 3D를 설정 디자인 소프트웨어로 연다(로컬 CAD 헬퍼).
-   * 미전달 시「열기」숨김.
+   * 미전달 시「작업열기」숨김. 작업시작 후에는 그 버튼 자리에도 둔다.
    */
   openInCadBusy?: boolean;
   onOpenInDesignSoftware?: () => void | Promise<void>;
@@ -2337,6 +2338,30 @@ export function PracticeTransferDetailChatDialog({
       : "다시 작업시작";
   const releaseButtonLabel = releaseBusy ? "취소 중..." : "작업 취소";
   const acceptDisabled = acceptBusy || oralScanBlocksAccept;
+  const canOpenInDesignSoftware =
+    Boolean(onOpenInDesignSoftware) &&
+    files.some((file) => isModelPreviewExt(getModelExtLower(file.fileName)));
+  const openWorkDisabled =
+    openInCadBusy ||
+    downloadAllBusy ||
+    downloadAllWorkFilesBusy ||
+    requestFilesDownloadLocked;
+  const openWorkLabel = openInCadBusy ? "여는 중..." : "작업열기";
+  /** 작업시작이 끝난 자리. 취소 후 다시 작업시작이 있는 동안은 두지 않는다. */
+  const showOpenWorkInAcceptSlot =
+    operateLabWork && accepted && !workCanceled && canOpenInDesignSoftware;
+  const openWorkButton = (slot: "header" | "files") =>
+    canOpenInDesignSoftware ? (
+      <Button
+        key={slot === "header" ? "open-work-header" : undefined}
+        type="button"
+        size="sm"
+        onClick={() => void onOpenInDesignSoftware?.()}
+        disabled={openWorkDisabled}
+      >
+        {openWorkLabel}
+      </Button>
+    ) : null;
   const releaseAction =
     showReleaseBar && onRelease ? (
       <TooltipProvider>
@@ -2430,6 +2455,7 @@ export function PracticeTransferDetailChatDialog({
   const labIdentityDateRowActions =
     acceptBarPrimaryActions ||
     reacceptBarPrimaryAction ||
+    showOpenWorkInAcceptSlot ||
     releaseAction ||
     labAiDesignButton ? (
       <div
@@ -2439,6 +2465,7 @@ export function PracticeTransferDetailChatDialog({
       >
         {acceptBarPrimaryActions}
         {reacceptBarPrimaryAction}
+        {showOpenWorkInAcceptSlot ? openWorkButton("header") : null}
         {releaseAction}
         {labAiDesignButton}
       </div>
@@ -3323,25 +3350,7 @@ export function PracticeTransferDetailChatDialog({
                     </span>
                   </h3>
                   <div className="flex shrink-0 items-center gap-1.5">
-                    {onOpenInDesignSoftware &&
-                    files.some((f) =>
-                      isModelPreviewExt(getModelExtLower(f.fileName)),
-                    ) ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => void onOpenInDesignSoftware()}
-                        disabled={
-                          openInCadBusy ||
-                          downloadAllBusy ||
-                          downloadAllWorkFilesBusy ||
-                          requestFilesDownloadLocked
-                        }
-                      >
-                        {openInCadBusy ? "여는 중..." : "열기"}
-                      </Button>
-                    ) : null}
+                    {openWorkButton("files")}
                     {requestFilesShown.length > 0 ? (
                       files.some((f) => isDcmFileName(f.fileName)) ? (
                         <DropdownMenu>
