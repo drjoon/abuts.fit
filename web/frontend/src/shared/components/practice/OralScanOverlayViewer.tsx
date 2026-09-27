@@ -31,8 +31,7 @@
 // - 2026-09-27: 삽입축을 잡으면 그 화면의 오른쪽·위·앞이 X·Y·Z가 되게 스캔을 돌린다.
 // - 2026-09-27: 마진 점·펜·새로 찍기는 스캔 면에 붙인다. 선택 치아 마진 점이 언더컷 면이면 빨갛게 칠하고 알린다.
 // - 2026-09-27: 스캔바디·심플어벗 실제 형상을 ICP로 맞춘다(fitScanbodyMesh). 후보가 여럿이면 가장 잘 맞는 것.
-// - 2026-09-27: 삽입축 자동 추천. 마진 안 지대치 벽이 가장 덜 가려지는 방향을 잡고 화면을 그 축으로 돌린다. 화살표를 끄는 동안 언더컷을 바로 칠한다.
-// - 2026-09-27: 자동 추천은 기존 축이 아니라 악 교합 방향·추정 치아 중심에서 다시 찾는다. 잘못 잡은 축에 끌려가지 않는다.
+// - 2026-09-27: 화살표를 끄는 동안 언더컷을 바로 칠한다. 삽입축은 수동으로만 잡는다. 미리보기(preview)는 스캔을 돌리지 않고 축·언더컷만 화면을 따라온다.
 import {
   forwardRef,
   useEffect,
@@ -66,7 +65,6 @@ import {
   createScanPointIndex,
   geometryUnitsToMm,
   isUndercutAlignment,
-  recommendInsertionDirection,
   UNDERCUT_RGB,
   type ContactPaintMode,
 } from "@/shared/practice/oralScanDesignAnalysis";
@@ -143,13 +141,6 @@ export type CavityMarginHit = {
   openSides: number;
 };
 
-/** 추천 전·후 언더컷 면 비율(0–1)과 원래 축에서 기울인 각도. */
-export type InsertionRecommendation = {
-  tiltDeg: number;
-  before: number;
-  after: number;
-};
-
 export type OralScanOverlayHandle = {
   setView: (preset: OralScanViewPreset) => void;
   /** 의뢰 치아 교합면을 화면 중앙에 다시 맞춘다. */
@@ -166,13 +157,12 @@ export type OralScanOverlayHandle = {
    * 화면 중앙을 지나는, 화면과 수직인 방향을 이 치아들의 삽입축으로 잡는다.
    * 화살표 끝은 그 광선이 닿는 면에서 2mm 띄우고, 치아 추정 좌표는 그 면에 둔다.
    * 같은 치아 묶음이면 방향을 다시 잡고, 다른 보철 축은 유지한다.
+   * `preview`면 스캔 좌표를 화면 축으로 돌리지 않는다. 화면을 돌리는 동안 축·언더컷만 따라온다.
    */
-  setInsertionFromView: (toothNumbers: readonly string[]) => boolean;
-  /**
-   * 지대치 벽이 가장 덜 가려지는 방향을 이 치아들의 삽입축으로 잡고, 화면을 그 축으로 돌린다.
-   * 마진이 있으면 마진 안쪽 면만 본다. 시작은 잡은 축, 없으면 교합면 방향.
-   */
-  recommendInsertion: (toothNumbers: readonly string[]) => InsertionRecommendation | null;
+  setInsertionFromView: (
+    toothNumbers: readonly string[],
+    options?: { preview?: boolean },
+  ) => boolean;
   /**
    * 이 치아들의 스캔 칼라에서 마진을 고른다.
    * 기본 원보다 넓은 고리를 삽입축으로 스캔 면에 붙여 본다. 색 경계 또는 기하 능선으로 검출한다.
@@ -1492,10 +1482,7 @@ function alignPlacementsToPoint(
   for (const row of matched) centroid.add(row.center);
   centroid.multiplyScalar(1 / matched.length);
   const delta = point.clone().sub(centroid);
-  for (const row of matched) {
-    if (!row.estimated) row.estimated = row.center.clone();
-    row.center.add(delta);
-  }
+  for (const row of matched) row.center.add(delta);
   for (const tooth of wanted) {
     if (matched.some((row) => row.toothNumber === tooth)) continue;
     const parsed = parseFdi(tooth);
@@ -1857,8 +1844,6 @@ type ToothPlacement = {
   center: THREE.Vector3;
   radius: number;
   arch: "upper" | "lower";
-  /** 삽입축 접점으로 옮기기 전 추정 중심. 잘못 잡은 축이 자동 추천을 끌고 가지 않게 한다. */
-  estimated?: THREE.Vector3;
 };
 
 type ParsedScanCache = {
@@ -2579,11 +2564,8 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     (toothNumbers: readonly string[]) => boolean
   >(() => false);
   const setInsertionFromViewRef = useRef<
-    (toothNumbers: readonly string[]) => boolean
+    (toothNumbers: readonly string[], options?: { preview?: boolean }) => boolean
   >(() => false);
-  const recommendInsertionRef = useRef<
-    (toothNumbers: readonly string[]) => InsertionRecommendation | null
-  >(() => null);
   const syncBadgesRef = useRef<() => void>(() => {});
   const onScanColorChangeRef = useRef(onScanColorChange);
   const onInsertionAxisChangeRef = useRef(onInsertionAxisChange);
@@ -4429,7 +4411,6 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     placementsRef.current = placementsRef.current.map((place) => ({
       ...place,
       center: turn(place.center.clone()),
-      estimated: place.estimated ? turn(place.estimated.clone()) : undefined,
     }));
     for (const axis of insertionAxesRef.current) {
       turn(axis.dir);
@@ -4696,7 +4677,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     return { place, normal, right, triangles };
   };
 
-  setInsertionFromViewRef.current = (toothNumbers) => {
+  setInsertionFromViewRef.current = (toothNumbers, options) => {
     const camera = cameraRef.current;
     const controls = controlsRef.current;
     const key = insertionAxisKey(toothNumbers);
@@ -4769,150 +4750,12 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     });
     insertionAxesRef.current = kept;
     for (const entry of loadedRef.current) entry.align = null;
-    turnWorldToViewRef.current();
+    if (!options?.preview) turnWorldToViewRef.current();
     syncInsertionMarkerRef.current();
     syncBadgesRef.current();
     onInsertionAxisChangeRef.current?.(kept.length > 0);
     setLoadVersion((v) => v + 1);
     return true;
-  };
-
-  recommendInsertionRef.current = (toothNumbers) => {
-    const camera = cameraRef.current;
-    const controls = controlsRef.current;
-    const key = insertionAxisKey(toothNumbers);
-    if (!camera || !controls || !key) return null;
-    const keyTeeth = insertionAxisTeeth(key);
-    const places = keyTeeth
-      .map((tooth) => placementsRef.current.find((row) => row.toothNumber === tooth))
-      .filter((row): row is ToothPlacement => row != null);
-    const arch = places[0]?.arch;
-    if (!arch) return null;
-    groupRef.current?.updateWorldMatrix(true, true);
-    camera.updateMatrixWorld(true);
-    const entries = loadedRef.current.filter(
-      (entry) => entry.role === arch && entry.mesh.visible,
-    );
-    if (entries.length === 0) return null;
-    const meshes = entries.map((entry) => entry.mesh);
-    const existing = insertionAxesRef.current.find((row) => row.key === key);
-    const frame = frameRef.current;
-    const start =
-      insertionForRole(arch, lookRef.current.prepArch, frame) ??
-      existing?.dir.clone() ??
-      viewCenterHit(camera, meshes).dir;
-    if (start.lengthSq() < 1e-8) return null;
-    start.normalize();
-
-    const unit = unitToMmRef.current > 0 ? unitToMmRef.current : 1;
-    const marginNormals = insertionDirByTooth(insertionAxesRef.current);
-    const edits = designEditRef.current?.edits ?? {};
-    const [su, sv] = (() => {
-      const pick =
-        Math.abs(start.x) < 0.8 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
-      const u = new THREE.Vector3().crossVectors(start, pick).normalize();
-      return [u, new THREE.Vector3().crossVectors(start, u)];
-    })();
-    const regions = places.map((place) => {
-      const edit = Object.entries(edits).find(([raw]) => fdiDigits(raw) === place.toothNumber)?.[1];
-      const margin = edit && !edit.margin.deleted && edit.margin.radii.length >= 3 ? edit.margin : null;
-      const normal = (marginNormals.get(place.toothNumber) ?? frame?.up ?? new THREE.Vector3(0, 0, 1))
-        .clone()
-        .normalize();
-      const points = margin
-        ? marginWorldPoints({
-            place,
-            normal,
-            right: frame?.right ?? new THREE.Vector3(1, 0, 0),
-            margin,
-            unitToMm: unit,
-          })
-        : [];
-      const seed = margin ? place.center : (place.estimated ?? place.center);
-      const top = rayToothContact(seed, start, place.radius, meshes) ?? seed.clone();
-      const ring = points.map((point) => {
-        const d = point.clone().sub(top);
-        return { x: d.dot(su), y: d.dot(sv), t: d.dot(start) };
-      });
-      const floor = ring.length > 0 ? Math.max(...ring.map((row) => row.t)) : place.radius * 2;
-      const reachSq =
-        ring.length > 0
-          ? Math.max(...ring.map((row) => row.x * row.x + row.y * row.y))
-          : (place.radius * 0.9) ** 2;
-      return { place, top, ring, floor, reachSq };
-    });
-
-    const inside = (ring: Array<{ x: number; y: number }>, x: number, y: number) => {
-      let hit = false;
-      for (let i = 0, j = ring.length - 1; i < ring.length; j = i, i += 1) {
-        const a = ring[i]!;
-        const b = ring[j]!;
-        if (a.y > y !== b.y > y && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) {
-          hit = !hit;
-        }
-      }
-      return hit;
-    };
-
-    const picked: number[] = [];
-    const world = new THREE.Vector3();
-    const normal = new THREE.Vector3();
-    const normalMatrix = new THREE.Matrix3();
-    for (const entry of entries) {
-      const pos = entry.geometry.getAttribute("position");
-      const nor = entry.geometry.getAttribute("normal");
-      if (!pos || !nor) continue;
-      entry.mesh.updateWorldMatrix(true, false);
-      const matrix = entry.mesh.matrixWorld;
-      normalMatrix.getNormalMatrix(matrix);
-      for (let i = 0; i < pos.count; i += 1) {
-        world.fromBufferAttribute(pos, i).applyMatrix4(matrix);
-        const keep = regions.some(({ place, top, ring, floor, reachSq }) => {
-          const dx = world.x - top.x;
-          const dy = world.y - top.y;
-          const dz = world.z - top.z;
-          const t = dx * start.x + dy * start.y + dz * start.z;
-          if (t < -place.radius * 0.5 || t > floor + place.radius * 0.15) return false;
-          const x = dx * su.x + dy * su.y + dz * su.z;
-          const y = dx * sv.x + dy * sv.y + dz * sv.z;
-          if (x * x + y * y > reachSq) return false;
-          return ring.length < 3 || inside(ring, x, y);
-        });
-        if (!keep) continue;
-        normal.fromBufferAttribute(nor, i).applyMatrix3(normalMatrix).normalize();
-        picked.push(normal.x, normal.y, normal.z);
-      }
-    }
-    const stride = Math.max(1, Math.ceil(picked.length / 3 / 30000));
-    const normals = new Float32Array(Math.ceil(picked.length / 3 / stride) * 3);
-    for (let i = 0, o = 0; i < picked.length / 3; i += stride, o += 3) {
-      normals[o] = picked[i * 3]!;
-      normals[o + 1] = picked[i * 3 + 1]!;
-      normals[o + 2] = picked[i * 3 + 2]!;
-    }
-    const best = recommendInsertionDirection(normals, [start.x, start.y, start.z], {
-      undercutLimit: lookRef.current.undercutLimit,
-    });
-    if (!best) return null;
-
-    const dir = new THREE.Vector3(...best.dir).normalize();
-    const target = regions
-      .reduce((sum, row) => sum.add(row.top), new THREE.Vector3())
-      .multiplyScalar(1 / regions.length);
-    const dist = Math.max(camera.position.distanceTo(controls.target), 1);
-    const up = camera.up.clone().addScaledVector(dir, -camera.up.dot(dir));
-    if (up.lengthSq() < 1e-6 && frame) up.copy(frame.anterior).addScaledVector(dir, -frame.anterior.dot(dir));
-    if (up.lengthSq() < 1e-6) up.copy(su);
-    snapRef.current = null;
-    controls.target.copy(target);
-    camera.position.copy(target).addScaledVector(dir, -dist);
-    camera.up.copy(up.normalize());
-    camera.lookAt(controls.target);
-    camera.updateProjectionMatrix();
-    camera.updateMatrixWorld(true);
-    controls.syncFromCamera();
-    if (!setInsertionFromViewRef.current(keyTeeth)) return null;
-    return { tiltDeg: best.tiltDeg, before: best.before, after: best.after };
   };
 
   useImperativeHandle(
@@ -5210,8 +5053,8 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         onInsertionAxisChangeRef.current?.(restored.length > 0);
         setLoadVersion((value) => value + 1);
       },
-      setInsertionFromView: (toothNumbers) => setInsertionFromViewRef.current(toothNumbers),
-      recommendInsertion: (toothNumbers) => recommendInsertionRef.current(toothNumbers),
+      setInsertionFromView: (toothNumbers, options) =>
+        setInsertionFromViewRef.current(toothNumbers, options),
       detectColorMargins: (toothNumbers, seedPoint = null) => {
         groupRef.current?.updateWorldMatrix(true, true);
         const out: Array<{ tooth: string; radii: number[]; depths: number[] }> = [];

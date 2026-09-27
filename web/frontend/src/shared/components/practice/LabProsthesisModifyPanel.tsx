@@ -92,9 +92,6 @@ type Props = {
   canUndercut: boolean;
   onUndercut: (on: boolean) => void;
   onMatchInsertion: () => void;
-  onRecommendInsertion: () => void;
-  /** 이 보철의 마지막 자동 추천. 못 찾았으면 "failed". */
-  insertionPick: { tiltDeg: number; before: number; after: number } | "failed" | null;
   onApplyInner: () => void;
   onRemoveHook: () => void;
   /** 의뢰 발신자(치과). 없으면 치과 프리셋을 두지 않는다. */
@@ -363,8 +360,6 @@ export function LabProsthesisModifyPanel({
   canUndercut,
   onUndercut,
   onMatchInsertion,
-  onRecommendInsertion,
-  insertionPick,
   onApplyInner,
   onRemoveHook,
   clinicLabel,
@@ -785,39 +780,6 @@ export function LabProsthesisModifyPanel({
                   size="sm"
                   className="h-7 w-full text-[11px]"
                   disabled={!canMatchInsertion}
-                  onClick={onRecommendInsertion}
-                >
-                  자동 추천
-                </Button>
-              </span>
-            </TooltipTrigger>
-            <TooltipContent side="right" className="z-[520]">
-              지대치 벽이 가장 덜 가려지는 방향으로 삽입축을 잡습니다.
-              <br />
-              화면도 그 축에서 내려다보게 돌립니다.
-            </TooltipContent>
-          </Tooltip>
-          {insertionPick === "failed" ? (
-            <p className="text-[11px] text-destructive">
-              지대치 면을 찾지 못했습니다.
-              <br />
-              교합면을 화면 가운데에 두고 화면 각도로 맞춰주세요.
-            </p>
-          ) : insertionPick ? (
-            <p className="text-[11px] tabular-nums text-muted-foreground">
-              언더컷 면 {Math.round(insertionPick.before * 100)}% →{" "}
-              {Math.round(insertionPick.after * 100)}% · {insertionPick.tiltDeg.toFixed(0)}° 기울임
-            </p>
-          ) : null}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="flex min-w-0">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="h-7 w-full text-[11px]"
-                  disabled={!canMatchInsertion}
                   onClick={onMatchInsertion}
                 >
                   화면 각도로 맞추기
@@ -825,7 +787,9 @@ export function LabProsthesisModifyPanel({
               </span>
             </TooltipTrigger>
             <TooltipContent side="right" className="z-[520]">
-              화면 중앙에 화면과 수직인 삽입축을 둡니다.
+              화면을 돌리면 삽입축이 화면과 수직으로 따라옵니다.
+              <br />
+              가운데 뱃지에서 확정합니다.
             </TooltipContent>
           </Tooltip>
           <p className="text-[11px] text-muted-foreground">

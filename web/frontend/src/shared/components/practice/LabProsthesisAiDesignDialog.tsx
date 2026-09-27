@@ -51,7 +51,7 @@
 // - 2026-09-27: 인레이·온레이는 와동 테두리를 마진으로 잡고, 와동만 채운 형상을 만든다. 와동 벽 테이퍼·언더컷, 전용 재료 숫자, 위저드 두께·내보내기 단계.
 // - 2026-09-27: 내보내기·이미지 저장·페인트·채팅 첨부는 치아 정보 아래 패널. 페인트를 그린 뒤 포인터 옆에 이미지 저장·채팅 첨부 뱃지를 두고, 다른 곳을 누르면 뱃지만 없앤다.
 // - 2026-09-27: 마진 수정. 점은 스캔 면을 따라 끌고, 펜은 그은 구간을 다시 그린다. 지우면 점을 찍어 닫고, 다시 검출은 찍은 시작점부터. 조정 간격·언더컷 토글, 언더컷을 지나면 경고.
-// - 2026-09-27: 수정 › 삽입 도구에 자동 추천. 언더컷 면 비율 전·후와 기울인 각도를 보여 준다.
+// - 2026-09-27: 삽입축은 수동으로 잡는다. 「삽입축 설정」 → 화면을 멈출 때마다 미리보기 → 「삽입축 확정」. 확정 전에는 저장하지 않는다.
 // - 2026-09-27: 위저드 말풍선은 버튼을 가려 없앤다. 삽입축을 안 잡은 보철이 있으면 작업영역 가운데에 자동·화면 각도 뱃지를 띄운다.
 // - 2026-09-27: 스캔을 열면 저장된 축이 없는 보철마다 삽입축을 자동으로 잡는다. 못 잡으면 교합면으로 보여 주고 뱃지에서 화면을 맞추라고 안내한다.
 import {
@@ -130,7 +130,6 @@ import {
 import {
   OralScanOverlayViewer,
   type ConnectorSectionShot,
-  type InsertionRecommendation,
   type OralScanOverlayHandle,
   type OralScanOverlaySource,
   type OralScanWorldTurn,
@@ -198,6 +197,7 @@ import {
   parseViewToggles,
   writeWorkSessionDocument,
   type WorkDraftMesh,
+  type WorkSessionAxis,
   type WorkSessionCenterGuide,
   type WorkSessionDocument,
   type WorkSessionViewToggles,
@@ -743,13 +743,16 @@ function LabProsthesisAiDesignDialog({
   );
   const [insertionKeys, setInsertionKeys] = useState<string[]>([]);
   const [insertionShown, setInsertionShown] = useState(false);
-  /** 마지막 자동 추천. 실패하면 result가 null. 손으로 다시 잡으면 지운다. */
-  const [insertionPick, setInsertionPick] = useState<{
-    key: string;
-    result: InsertionRecommendation | null;
+  /**
+   * 화면을 돌려 삽입축을 맞추는 중인 보철. 멈출 때마다 미리보기 축을 다시 잡고, 확정해야 저장한다.
+   * `before`는 시작 전 축 전체. 취소·저장 때 이것을 쓴다.
+   */
+  const [aiming, setAiming] = useState<{
+    span: string[];
+    before: WorkSessionAxis[];
   } | null>(null);
-  /** 스캔을 열 때 자동으로 못 잡은 보철 삽입축 키. */
-  const [axisMissed, setAxisMissed] = useState<string[]>([]);
+  const aimingRef = useRef(aiming);
+  aimingRef.current = aiming;
   const [centerGuide, setCenterGuide] = useState<WorkSessionCenterGuide>("center");
   const viewTogglesRef = useRef<WorkSessionViewToggles>({
     insertion: false,
@@ -893,8 +896,7 @@ function LabProsthesisAiDesignDialog({
       setDropScanId(null);
       setInsertionKeys([]);
       setInsertionShown(false);
-      setInsertionPick(null);
-      setAxisMissed([]);
+      setAiming(null);
       setCenterGuide("center");
       restoreGhostVisibleRef.current = false;
       setModifyTool("margin");
@@ -1219,7 +1221,7 @@ function LabProsthesisAiDesignDialog({
     plan.teeth[0] ??
     null;
   const undercutLimit = undercutLimitFromRange(40);
-  const insertionAxisVisible = insertionShown && insertionKeys.length > 0;
+  const insertionAxisVisible = insertionShown && (insertionKeys.length > 0 || aiming != null);
   const paintUndercut = undercutMap || (insertionAxisVisible && canUndercut);
   viewTogglesRef.current = {
     insertion: insertionShown,
@@ -2519,25 +2521,46 @@ function LabProsthesisAiDesignDialog({
   const insertionTaken = (toothNumbers: readonly string[]) => {
     const key = insertionAxisKey(toothNumbers);
     if (!key) return;
-    setAxisMissed((prev) => prev.filter((row) => row !== key));
     setInsertionKeys((prev) => (prev.includes(key) ? prev : [...prev, key]));
     setInsertionShown(true);
     applyAimedDetections(toothNumbers);
     queueSaveWorkRef.current();
   };
 
-  const rememberInsertion = (toothNumbers: readonly string[]) => {
-    const ok = viewerRef.current?.setInsertionFromView(toothNumbers) === true;
-    if (!ok) return;
-    setInsertionPick(null);
-    insertionTaken(toothNumbers);
+  const endAiming = () => {
+    aimingRef.current = null;
+    setAiming(null);
   };
 
-  /** 지대치 벽이 가장 덜 가려지는 방향으로 삽입축을 잡는다. */
-  const recommendInsertion = (toothNumbers: readonly string[]) => {
-    const picked = viewerRef.current?.recommendInsertion(toothNumbers) ?? null;
-    setInsertionPick({ key: insertionAxisKey(toothNumbers), result: picked });
-    if (picked) insertionTaken(toothNumbers);
+  /** 삽입축 맞추기를 시작한다. 지금 화면으로 바로 미리보기를 잡는다. */
+  const startAiming = (toothNumbers: readonly string[]) => {
+    const viewer = viewerRef.current;
+    const key = insertionAxisKey(toothNumbers);
+    if (!viewer || !key) return;
+    const prev = aimingRef.current;
+    const before = prev?.before ?? viewer.exportInsertionAxes();
+    if (prev && insertionAxisKey(prev.span) !== key) viewer.restoreInsertionAxes(before);
+    const next = { span: [...toothNumbers], before };
+    aimingRef.current = next;
+    setAiming(next);
+    setInsertionShown(true);
+    setCenterGuide((mode) => (mode === "off" ? "center" : mode));
+    viewer.setInsertionFromView(toothNumbers, { preview: true });
+  };
+
+  const confirmAiming = () => {
+    const current = aimingRef.current;
+    if (!current) return;
+    endAiming();
+    if (viewerRef.current?.setInsertionFromView(current.span) !== true) return;
+    insertionTaken(current.span);
+  };
+
+  const cancelAiming = () => {
+    const current = aimingRef.current;
+    if (!current) return;
+    endAiming();
+    viewerRef.current?.restoreInsertionAxes(current.before);
   };
 
   /** 작업 위저드 — 삽입축을 스팬 순서대로 안내한 뒤 마진·디자인으로 이어간다. */
@@ -2602,32 +2625,15 @@ function LabProsthesisAiDesignDialog({
     viewedWizardStep?.kind === "axis" && viewedAxisKey && !insertionKeys.includes(viewedAxisKey)
       ? viewedWizardStep.span
       : null;
+  const axisBadgeSpan = aiming?.span ?? pendingAxisSpan;
   const insertionKeysSeenRef = useRef(insertionKeys);
 
-  /** 스캔을 열면 저장된 축이 없는 보철마다 자동 추천을 돌린다. 못 잡은 보철은 교합면으로 보여 준다. */
-  const detectMissingAxes = (savedKeys: readonly string[]) => {
-    const taken: string[] = [];
-    const missed: string[] = [];
-    for (const span of insertionWizardSpans) {
+  /** 스캔을 열면 저장된 축이 없는 첫 보철을 교합면으로 보여 준다. 삽입축 설정 뱃지가 그 위에 뜬다. */
+  const showMissingAxis = (savedKeys: readonly string[]) => {
+    const lead = insertionWizardSpans.find((span) => {
       const key = insertionAxisKey(span);
-      if (!key || savedKeys.includes(key)) continue;
-      if (viewerRef.current?.recommendInsertion(span)) {
-        taken.push(key);
-        applyAimedDetections(span);
-      } else {
-        missed.push(key);
-      }
-    }
-    setAxisMissed(missed);
-    if (taken.length === 0 && missed.length === 0) return;
-    if (taken.length > 0) {
-      setInsertionKeys((prev) => [...new Set([...prev, ...taken])]);
-      setInsertionShown(true);
-      queueSaveWorkRef.current();
-    }
-    const lead =
-      insertionWizardSpans.find((span) => missed.includes(insertionAxisKey(span))) ??
-      insertionWizardSpans[0];
+      return Boolean(key && !savedKeys.includes(key));
+    });
     if (lead?.[0]) showTooth(lead[0]);
   };
 
@@ -2686,6 +2692,7 @@ function LabProsthesisAiDesignDialog({
 
   const currentWorkDocument = useCallback((): WorkSessionDocument => {
     const axes =
+      aimingRef.current?.before ??
       viewerRef.current?.exportInsertionAxes() ??
       sessionDocRef.current?.insertionAxes ??
       [];
@@ -3293,10 +3300,11 @@ function LabProsthesisAiDesignDialog({
               busyLabel={busy ? `스캔을 불러오는 중 ${progress}%` : ""}
               onScanColorChange={setHasScanColor}
               onInsertionAxisChange={(active) => {
-                if (!active) setInsertionKeys([]);
+                if (active) return;
+                setInsertionKeys([]);
+                endAiming();
               }}
               onInsertionAxisAimed={(toothNumbers) => {
-                setInsertionPick(null);
                 applyAimedDetections(toothNumbers);
                 queueSaveWorkRef.current();
               }}
@@ -3339,6 +3347,10 @@ function LabProsthesisAiDesignDialog({
                 setAlignBusy(false);
               }}
               onViewSettled={() => {
+                const current = aimingRef.current;
+                if (current) {
+                  viewerRef.current?.setInsertionFromView(current.span, { preview: true });
+                }
                 queueSaveWorkRef.current();
               }}
               onMeshesReady={({ deformed, restore }) => {
@@ -3350,7 +3362,7 @@ function LabProsthesisAiDesignDialog({
                     setInsertionKeys(axes.map((axis) => axis.key));
                   }
                   if (saved?.camera) viewerRef.current?.restoreCamera(saved.camera);
-                  detectMissingAxes(axes.map((axis) => axis.key));
+                  showMissingAxis(axes.map((axis) => axis.key));
                 }
                 if (deformed) queueSaveWorkRef.current();
               }}
@@ -4314,18 +4326,9 @@ function LabProsthesisAiDesignDialog({
                         }}
                         onMatchInsertion={() => {
                           if (bridgeSpan.length === 0) return;
-                          rememberInsertion(bridgeSpan);
+                          startAiming(bridgeSpan);
                           setModifyTool("insertion");
                         }}
-                        onRecommendInsertion={() => {
-                          if (bridgeSpan.length === 0) return;
-                          recommendInsertion(bridgeSpan);
-                        }}
-                        insertionPick={
-                          insertionPick && insertionPick.key === insertionAxisKey(bridgeSpan)
-                            ? insertionPick.result ?? "failed"
-                            : null
-                        }
                         onApplyInner={() => {
                           if (!activeNumber) return;
                           beginEditUndo();
@@ -4502,7 +4505,7 @@ function LabProsthesisAiDesignDialog({
               archShown={archShown}
               onToggleTooth={setToothShown}
               onToggleArch={setArchShown}
-              onSetInsertion={rememberInsertion}
+              onSetInsertion={startAiming}
               onToggleInfo={() => setToothInfoOpen((open) => !open)}
               onConfirmMargin={confirmMargin}
               onApplyPreset={applyPresetToTooth}
@@ -4563,42 +4566,54 @@ function LabProsthesisAiDesignDialog({
             />
             {!busy &&
             entries.length > 0 &&
-            pendingAxisSpan &&
+            axisBadgeSpan &&
             !toothCardFor &&
             !libraryPickerFor ? (
               <div className="absolute left-1/2 top-[calc(50%+4.5rem)] z-10 flex -translate-x-1/2 flex-col items-center gap-1">
                 <div className="flex items-center gap-1 rounded-full border bg-background/95 p-1 shadow-md">
                   <span className="px-2 text-xs font-semibold tabular-nums">
-                    {pendingAxisSpan.length > 1
-                      ? `브리지 ${pendingAxisSpan[0]}-${pendingAxisSpan[pendingAxisSpan.length - 1]}`
-                      : `#${pendingAxisSpan[0]}`}
+                    {axisBadgeSpan.length > 1
+                      ? `브리지 ${axisBadgeSpan[0]}-${axisBadgeSpan[axisBadgeSpan.length - 1]}`
+                      : `#${axisBadgeSpan[0]}`}
                   </span>
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="h-7 rounded-full px-3 text-xs"
-                    onClick={() => recommendInsertion(pendingAxisSpan)}
-                  >
-                    삽입축 자동
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="h-7 rounded-full px-3 text-xs"
-                    onClick={() => rememberInsertion(pendingAxisSpan)}
-                  >
-                    화면 각도로
-                  </Button>
+                  {aiming ? (
+                    <>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-7 rounded-full px-3 text-xs"
+                        onClick={confirmAiming}
+                      >
+                        삽입축 확정
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-7 rounded-full px-3 text-xs"
+                        onClick={cancelAiming}
+                      >
+                        취소
+                      </Button>
+                    </>
+                  ) : (
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-7 rounded-full px-3 text-xs"
+                      onClick={() => startAiming(axisBadgeSpan)}
+                    >
+                      삽입축 설정
+                    </Button>
+                  )}
                 </div>
-                {axisMissed.includes(insertionAxisKey(pendingAxisSpan)) ||
-                (insertionPick?.key === insertionAxisKey(pendingAxisSpan) && !insertionPick.result) ? (
-                  <p className="rounded-md bg-destructive/90 px-2 py-1 text-center text-[11px] leading-relaxed text-white">
-                    삽입축을 자동으로 잡지 못했습니다.
+                {aiming ? (
+                  <p className="rounded-md bg-slate-700/85 px-2 py-1 text-center text-[11px] leading-relaxed text-white">
+                    중앙선에 대상치 가운데를 맞추고
                     <br />
-                    {pendingAxisSpan.length > 1 ? "브리지" : `#${pendingAxisSpan[0]}`}의 중앙점을 교합면에서 보도록 화면을 돌려주세요.
+                    교합면에 수직으로 보도록 하세요.
                     <br />
-                    맞춘 뒤 「화면 각도로」를 누르면 됩니다.
+                    화면을 멈추면 삽입축과 언더컷이 따라옵니다.
                   </p>
                 ) : null}
               </div>
@@ -5162,8 +5177,8 @@ function DesignViewerChrome({
         )}
         title={
           shared
-            ? "화면 중앙을 지나 화면과 수직인 삽입축을 브리지 전체에 잡습니다. 화살표는 치아에서 2mm 떨어집니다"
-            : "화면 중앙을 지나 화면과 수직인 삽입축을 잡습니다. 화살표는 치아에서 2mm 떨어집니다"
+            ? "화면을 돌려 브리지 전체의 삽입축을 맞춘 뒤 가운데 뱃지에서 확정합니다"
+            : "화면을 돌려 삽입축을 맞춘 뒤 가운데 뱃지에서 확정합니다"
         }
         aria-label={shared ? "브리지 삽입축" : "삽입축"}
         aria-pressed={axisOn}
