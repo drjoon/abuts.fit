@@ -8,6 +8,7 @@ import {
   S3Client,
   DeleteObjectCommand,
   GetObjectCommand,
+  GetObjectTaggingCommand,
   HeadObjectCommand,
   PutObjectCommand,
   CreateMultipartUploadCommand,
@@ -255,6 +256,39 @@ export const objectExistsInS3 = async (key) => {
     if (code === "NotFound" || code === "NoSuchKey") return false;
     return false;
   }
+};
+
+/** 객체 크기. 없으면 null. */
+export const headObjectSizeInS3 = async (key) => {
+  try {
+    const resp = await getS3Client().send(new HeadObjectCommand({ Bucket: getBucket(), Key: key }));
+    return Number(resp?.ContentLength || 0);
+  } catch (e) {
+    const code = String(e?.Code || e?.name || "").trim();
+    if (code === "NotFound" || code === "NoSuchKey") return null;
+    throw e;
+  }
+};
+
+/** 객체 태그(GuardDuty 악성코드 검사 결과 GuardDutyMalwareScanStatus 등). */
+export const getObjectTagsFromS3 = async (key) => {
+  const resp = await getS3Client().send(new GetObjectTaggingCommand({ Bucket: getBucket(), Key: key }));
+  return Object.fromEntries((resp?.TagSet || []).map((tag) => [tag.Key, tag.Value]));
+};
+
+/** 작은 객체를 한 번에 올린다. gzip이면 받을 때 getObjectStreamFromS3가 풀어 준다. */
+export const putObjectToS3 = async (key, body, { contentType = "application/octet-stream", contentEncoding } = {}) => {
+  const encoding = normalizeContentEncoding(contentEncoding);
+  await getS3Client().send(
+    new PutObjectCommand({
+      Bucket: getBucket(),
+      Key: key,
+      Body: body,
+      ContentType: contentType,
+      ...(encoding ? { ContentEncoding: encoding } : {}),
+    }),
+  );
+  return { key };
 };
 
 // S3 직접 업로드 함수 (컨트롤러에서 호출)

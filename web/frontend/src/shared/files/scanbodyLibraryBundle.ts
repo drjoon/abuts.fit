@@ -1,0 +1,129 @@
+// 스캔바디 라이브러리 업로드 묶음. 해석은 서버가 하고, 브라우저는 필요한 파일만 골라 ZIP으로 묶는다.
+// - 3Shape `.dme`: 한 개면 그대로, 여러 개면 25MB 안팎으로 묶는다(이미 압축돼 STORE).
+// - exocad: config.xml과 .stl만 넣는다(.sdfa 등 암호화 형상은 서버도 못 읽어서 뺀다).
+//   폴더 안 .zip은 한 단계만 열어 같은 파일만 꺼낸다. config.xml 폴더 단위로 나눠 묶는다.
+// 서버는 이 규칙을 믿지 않고 다시 검사한다(scanbodyLibraryImport.service.js).
+// related files:
+// - web/frontend/src/shared/practice/scanbodyLibraryApi.ts
+// - web/backend/services/scanbodyLibraryImport.service.js
+
+export type ScanbodyUploadBundle = {
+  fileName: string;
+  blob: Blob;
+  /** 목록에 보여 줄 설명. */
+  label: string;
+};
+
+const BUNDLE_BYTES = 25 * 1024 * 1024;
+const MAX_NESTED_ZIP_BYTES = 400 * 1024 * 1024;
+
+type Entry = { path: string; data: Blob };
+
+const relPath = (file: File) =>
+  (file.webkitRelativePath || file.name).replace(/\\/g, "/").replace(/^\/+/, "");
+const dirOf = (path: string) => (path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "");
+const wanted = (path: string) => /(^|\/)config\.xml$/i.test(path) || /\.stl$/i.test(path);
+
+async function zipEntries(entries: readonly Entry[], compress: boolean): Promise<Blob> {
+  const { default: JSZip } = await import("jszip");
+  const zip = new JSZip();
+  for (const entry of entries) zip.file(entry.path, entry.data);
+  return zip.generateAsync({
+    type: "blob",
+    compression: compress ? "DEFLATE" : "STORE",
+    compressionOptions: { level: 6 },
+  });
+}
+
+/** 크기 합이 limit를 넘지 않게 순서대로 나눈다. 한 묶음이 limit보다 크면 혼자 간다. */
+function pack<T>(items: readonly T[], size: (item: T) => number, limit = BUNDLE_BYTES): T[][] {
+  const out: T[][] = [];
+  let cur: T[] = [];
+  let bytes = 0;
+  for (const item of items) {
+    const n = size(item);
+    if (cur.length > 0 && bytes + n > limit) {
+      out.push(cur);
+      cur = [];
+      bytes = 0;
+    }
+    cur.push(item);
+    bytes += n;
+  }
+  if (cur.length > 0) out.push(cur);
+  return out;
+}
+
+async function exocadEntriesFromZip(file: File, notes: string[]): Promise<Entry[]> {
+  if (file.size > MAX_NESTED_ZIP_BYTES) {
+    notes.push(`${file.name}: 너무 커서 건너뛰었습니다. 풀어서 폴더로 올려 주세요.`);
+    return [];
+  }
+  const { default: JSZip } = await import("jszip");
+  let zip: InstanceType<typeof JSZip>;
+  try {
+    zip = await JSZip.loadAsync(await file.arrayBuffer());
+  } catch {
+    notes.push(`${file.name}: 열지 못했습니다.`);
+    return [];
+  }
+  const prefix = relPath(file).replace(/\.zip$/i, "");
+  const out: Entry[] = [];
+  for (const key of Object.keys(zip.files)) {
+    const entry = zip.files[key]!;
+    const name = entry.name.replace(/\\/g, "/");
+    if (entry.dir || !wanted(name)) continue;
+    out.push({ path: `${prefix}/${name}`, data: await entry.async("blob") });
+  }
+  return out;
+}
+
+/** 고른 파일(또는 폴더)을 업로드 묶음으로 만든다. */
+export async function buildScanbodyUploadBundles(
+  files: readonly File[],
+): Promise<{ bundles: ScanbodyUploadBundle[]; notes: string[] }> {
+  const notes: string[] = [];
+  const bundles: ScanbodyUploadBundle[] = [];
+
+  const dmes = files.filter((file) => /\.dme$/i.test(file.name));
+  if (dmes.length === 1) {
+    bundles.push({ fileName: dmes[0]!.name, blob: dmes[0]!, label: dmes[0]!.name });
+  } else if (dmes.length > 1) {
+    const groups = pack(dmes, (file) => file.size);
+    for (const [i, group] of groups.entries()) {
+      bundles.push({
+        fileName: `3shape-${i + 1}.zip`,
+        blob: await zipEntries(
+          group.map((file) => ({ path: file.name, data: file })),
+          false,
+        ),
+        label: `3Shape .dme ${group.length}개${groups.length > 1 ? ` (${i + 1}/${groups.length})` : ""}`,
+      });
+    }
+  }
+
+  const entries: Entry[] = files
+    .filter((file) => wanted(relPath(file)))
+    .map((file) => ({ path: relPath(file), data: file }));
+  for (const file of files.filter((row) => /\.zip$/i.test(row.name))) {
+    entries.push(...(await exocadEntriesFromZip(file, notes)));
+  }
+  const configDirs = new Set(
+    entries.filter((entry) => /(^|\/)config\.xml$/i.test(entry.path)).map((entry) => dirOf(entry.path)),
+  );
+  if (configDirs.size > 0) {
+    const groups = [...configDirs].sort().map((dir) => entries.filter((entry) => dirOf(entry.path) === dir));
+    const packs = pack(groups, (group) => group.reduce((n, entry) => n + entry.data.size, 0));
+    for (const [i, group] of packs.entries()) {
+      bundles.push({
+        fileName: `exocad-${i + 1}.zip`,
+        blob: await zipEntries(group.flat(), true),
+        label: `exocad 라이브러리 ${group.length}개${packs.length > 1 ? ` (${i + 1}/${packs.length})` : ""}`,
+      });
+    }
+  }
+
+  const skipped = files.filter((file) => /\.(sdfa|ipflib)$/i.test(file.name)).length;
+  if (skipped > 0) notes.push(`암호화된 형상(.sdfa·.ipflib) ${skipped}개는 읽을 수 없어 뺐습니다.`);
+  return { bundles, notes };
+}

@@ -145,6 +145,14 @@
   - 우편함: 신속 건 포함 시 주간 묶음 요일 제한 무시. 미발송 배지 요일은 가장 빠른 `estimatedShipYmd`(모달 출고일과 동일). YMD 없을 때만 `weeklyBatchDays` 폴백 (`shipping.controller.js` / frontend `shippingDay.helpers.ts`)
   - 대시보드 토글: `PATCH /my/shipping-mode` → `shipping.Requestor.controller.js` `updateMyShippingMode`
 
+### 스캔바디 라이브러리 업로드 (보안)
+
+- 흐름: `POST /api/scanbody-libraries/uploads` → presigned PUT(`scanbody-library/quarantine/<id>.bin`) → `POST .../uploads/:id/complete` → GuardDuty 태그 확인 → 워커 해석 → `ScanbodyLibrary` 병합. 상태는 `ScanbodyLibraryUpload`(uploading·scanning·processing·done·rejected·failed).
+- 검사 대기는 서버 타이머와 브라우저 폴링(`GET .../uploads?ids=`) 둘 다 진행시킨다. 처리 시작은 `status: scanning → processing` 원자 전환으로 한 번만.
+- 해석은 `worker_threads`(수십 MB면 CPU 수 초). 원본 바이트는 저장하지 않고, 검증한 좌표로 새로 만든 STL만 둔다. 병합은 `optimisticConcurrency` + 재시도.
+- 배포 전: 버킷 격리 prefix에 GuardDuty Malware Protection for S3를 켜고, 서버 IAM에 `s3:GetObjectTagging`을 준다. 켜기 전에는 `SCANBODY_MALWARE_SCAN=off`로만 테스트한다.
+- SSOT: `services/scanbodyLibraryUpload.service.js`, `services/scanbodyLibraryImport.service.js`, `utils/safeUnzip.js`, `utils/scanbodyGeometry.js`.
+
 ### 디자인 파트너 클레임·마감
 
 - 접근: `BusinessAnchor.designAccessEnabled` (`/api/devops/design-access`). 제조사 큐 엔드포인트는

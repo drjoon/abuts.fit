@@ -8,19 +8,22 @@ import * as controller from "../../controllers/scanbodyLibraries/scanbodyLibrary
 
 const router = Router();
 
-const memory = multer({
+const templateUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 30 * 1024 * 1024, files: 200 },
+  limits: { fileSize: 30 * 1024 * 1024, files: 1 },
 });
 
 router.use(authenticate);
 
 router.get("/", controller.listScanbodyLibraries);
 router.get("/file", controller.downloadScanbodyGeometry);
-router.post("/dme", memory.array("files", 200), controller.importDmeLibrary);
-router.post("/templates", memory.single("file"), controller.upsertAbutmentTemplate);
+router.get("/uploads", controller.listLibraryUploads);
+router.post("/uploads", controller.createLibraryUpload);
+router.post("/uploads/:uploadId/complete", controller.completeLibraryUpload);
+router.post("/templates", templateUpload.single("file"), controller.upsertAbutmentTemplate);
 router.delete("/templates/:id", controller.deleteAbutmentTemplate);
 router.patch("/:id/kits/:kitId", controller.updateScanbodyKit);
+router.patch("/:id/visibility", controller.updateScanbodyVisibility);
 router.delete("/:id", controller.deleteScanbodyLibrary);
 
 export default router;

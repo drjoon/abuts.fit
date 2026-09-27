@@ -65,7 +65,8 @@
 - 환자·임플란트·보철·스캔 등 기공에 필요한 값은 기공의뢰에서 온다. 기공소가 같은 값을 다시 세팅하는 화면을 만들지 않고, 의뢰 필드를 디자인 입력에 그대로 연결한다. 없거나 불확실하면 추정값으로 채우지 말고 묻는다.
 - 디자인 도구의 기능을 전부 옮기지 않는다. 의뢰가 기공소에서 막힘 없이 끝나는 데 필요한 것만 UX·UI를 보고 고른다.
 - 이해 안 되는 부분은 질문한다. 분명한 부분은 이어서 만들고, 답을 받기 전에는 애매한 부분을 추정으로 채우지 않는다.
-- **스캔바디·심플어벗 형상**: 관리자가 올린 공용(`ownerAnchorId=null`)에 기공소가 추가 등록한다(설정 「스캔바디」). `.dme`는 브라우저가 풀어(`dmeLibrary.ts`) 부품 `.dcm`만 형상 해시 키로 S3(`scanbody-library/<hash>.dcm`)에 둔다. 연도별 호환 파일은 부품=해시·키트=이름으로 합친다. 키트↔임플란트 카탈로그 연결은 `kits[].catalogIds`(`implantLibraryId`). AI 디자인은 의뢰 임플란트 사양 → 연결 키트 스캔바디, 의뢰 심플어벗 규격(종류·직경) → 템플릿을 자동으로 고르고 ICP로 맞춘다(`scanbodyRegistration.ts`). 후보가 여럿이면 점수가 가장 좋은 것. 자체 등록이 공용보다 먼저.
+- **스캔바디·심플어벗 형상**: 관리자가 올린 공용(`ownerAnchorId=null`)에 기공소가 추가 등록한다(설정 「스캔바디」). 기공소 라이브러리는 그 기공소만 쓰고, 관리자가 검토해 `isPublic`으로 승격·해제한다(승격 후 기공소는 못 고치고, 다시 올리면 검토 대기로 돌아간다). 키트↔임플란트 카탈로그 연결은 `kits[].catalogIds`(`implantLibraryId`). AI 디자인은 의뢰 임플란트 사양 → 연결 키트 스캔바디, 의뢰 심플어벗 규격(종류·직경) → 템플릿을 자동으로 고르고 ICP로 맞춘다(`scanbodyRegistration.ts`). 후보가 여럿이면 점수가 가장 좋은 것. 자체 등록이 공용보다 먼저.
+- **스캔바디 업로드 보안**: 브라우저는 파일을 고르고 묶기만 한다(`scanbodyLibraryBundle.ts`). 원본은 presigned PUT으로 S3 격리 경로(`scanbody-library/quarantine/`)에 올리고, GuardDuty 태그 `GuardDutyMalwareScanStatus=NO_THREATS_FOUND`만 연다. 서버 워커가 항목 수·해제 크기 제한 안에서 풀고(`safeUnzip.js`), 3Shape `.dme`(Materials.xml·`.dcm` CA)와 exocad(`config.xml`·마커 `.stl`)를 해석해 **좌표·면으로 새로 만든 이진 STL만** 해시 키(`scanbody-library/<hash>.stl`, gzip)로 둔다. 원본 XML·STL 바이트는 저장하지 않고 처리 후 지운다. 암호화 형상(`.dcm` CE·`.sdfa`·`.ipflib`)은 읽지 않는다. 모델 좌표는 플랫폼 원점·+Y 임플란트 축이며 exocad는 +X=−`AxisAsymmetric`. `SCANBODY_MALWARE_SCAN=guardduty|off`(기본 production만 guardduty). SSOT: `web/backend/services/scanbodyLibraryUpload.service.js`.
 - 상세: `.cursor/rules/ai-design-transfer-data.mdc`
 
 ---

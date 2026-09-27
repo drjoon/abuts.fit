@@ -1,15 +1,16 @@
-// 스캔바디 라이브러리(.dme)·심플어벗 템플릿 API와 AI 디자인용 선택 규칙.
-// 같은 사양이 여러 곳에 있으면 기공소 자체 등록 → 어벗츠 공용 순으로 쓴다.
+// 스캔바디 라이브러리(3Shape .dme · exocad)·심플어벗 템플릿 API와 AI 디자인용 선택 규칙.
+// 같은 사양이 여러 곳에 있으면 기공소 자체 등록 → 어벗츠 공용(승격 포함) 순으로 쓴다.
+// 라이브러리 업로드: 묶음 → presigned PUT(S3 격리) → complete → 서버가 악성코드 검사·해석 → 폴링.
 // related files:
 // - web/backend/controllers/scanbodyLibraries/scanbodyLibrary.controller.js
-// - web/frontend/src/shared/files/dmeLibrary.ts
+// - web/frontend/src/shared/files/scanbodyLibraryBundle.ts
 // - web/frontend/src/shared/components/practice/ScanbodyLibraryManager.tsx
 // - web/frontend/src/shared/components/practice/LabProsthesisAiDesignDialog.tsx
 
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch, invalidateApiGetCache } from "@/shared/api/apiClient";
 import { parseHpsDcmMeshData } from "@/shared/files/hpsDcmPreview";
-import { dmeLibraryFormData, type DmeLibrary, type ScanbodyPartClass } from "@/shared/files/dmeLibrary";
+import type { ScanbodyUploadBundle } from "@/shared/files/scanbodyLibraryBundle";
 import {
   computeAbutmentTemplateFrame,
   toTemplateModel,
@@ -23,10 +24,22 @@ const BASE = "/api/scanbody-libraries";
 
 export type LibraryScope = "public" | "lab";
 
+export type ScanbodyPartClass =
+  | "scanAbutment"
+  | "implant"
+  | "screw"
+  | "base"
+  | "blank"
+  | "analogInterface"
+  | "interface"
+  | "other";
+
 export type ScanbodyLibraryPart = {
   partId: string;
   name: string;
   partClass: ScanbodyPartClass;
+  /** stl: 서버가 새로 만든 모델 좌표 STL. dcm: 예전 원본. */
+  format: "stl" | "dcm";
   hash: string;
   s3Key: string;
   size: number;
@@ -47,6 +60,11 @@ export type ScanbodyLibraryRow = {
   id: string;
   scope: LibraryScope;
   canEdit: boolean;
+  /** 기공소 라이브러리를 관리자가 공용으로 올렸다. */
+  isPublic: boolean;
+  /** 관리자 화면에서만 채워진다. */
+  ownerName: string;
+  source: "3shape" | "exocad";
   systemName: string;
   fileNames: string[];
   containerVersions: string[];
@@ -59,6 +77,7 @@ export type AbutmentTemplateRow = {
   id: string;
   scope: LibraryScope;
   canEdit: boolean;
+  ownerName: string;
   kind: SimpleAbutmentKind;
   diameter: string;
   height: string;
@@ -112,16 +131,86 @@ export function useScanbodyCatalog(enabled = true) {
   return { catalog, setCatalog, loading, reload };
 }
 
-export async function importDmeLibrary(
-  lib: DmeLibrary,
-  catalogIdsByKit: Record<string, string[]> = {},
-): Promise<ScanbodyLibraryRow> {
-  const res = await apiFetch<{ data: ScanbodyLibraryRow }>({
-    path: `${BASE}/dme`,
-    method: "POST",
-    body: dmeLibraryFormData(lib, catalogIdsByKit),
+export type ScanbodyUploadStatus = "uploading" | "scanning" | "processing" | "done" | "rejected" | "failed";
+
+export type ScanbodyUploadRow = {
+  id: string;
+  fileName: string;
+  size: number;
+  status: ScanbodyUploadStatus;
+  scanStatus: string;
+  message: string;
+  notes: string[];
+  libraries: {
+    libraryId: string | null;
+    systemName: string;
+    source: string;
+    kitCount: number;
+    partCount: number;
+  }[];
+  createdAt: string;
+  finishedAt: string | null;
+};
+
+export const isUploadFinished = (status: ScanbodyUploadStatus) =>
+  status === "done" || status === "rejected" || status === "failed";
+
+function putToS3(url: string, blob: Blob, contentType: string, onProgress: (ratio: number) => void) {
+  return new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", url);
+    xhr.setRequestHeader("Content-Type", contentType);
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress(event.loaded / event.total);
+    };
+    xhr.onload = () =>
+      xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error("파일을 올리지 못했습니다."));
+    xhr.onerror = () => reject(new Error("파일을 올리지 못했습니다."));
+    xhr.send(blob);
   });
-  if (!res.ok || !res.data?.data) return fail(res, "라이브러리를 올리지 못했습니다.");
+}
+
+/** 묶음 하나를 S3 격리 경로에 올리고 검사를 시작시킨다. 끝나면 서버 상태를 돌려준다. */
+export async function uploadScanbodyBundle(
+  bundle: ScanbodyUploadBundle,
+  onProgress: (ratio: number) => void,
+): Promise<ScanbodyUploadRow> {
+  const created = await apiFetch<{
+    data: { upload: ScanbodyUploadRow; uploadUrl: string; contentType: string };
+  }>({
+    path: `${BASE}/uploads`,
+    method: "POST",
+    jsonBody: { fileName: bundle.fileName, size: bundle.blob.size },
+  });
+  if (!created.ok || !created.data?.data) return fail(created, "업로드를 시작하지 못했습니다.");
+  const { upload, uploadUrl, contentType } = created.data.data;
+  await putToS3(uploadUrl, bundle.blob, contentType, onProgress);
+  const done = await apiFetch<{ data: ScanbodyUploadRow }>({
+    path: `${BASE}/uploads/${upload.id}/complete`,
+    method: "POST",
+  });
+  if (!done.ok || !done.data?.data) return fail(done, "업로드를 마치지 못했습니다.");
+  return done.data.data;
+}
+
+export async function fetchScanbodyUploads(ids: readonly string[] = []): Promise<ScanbodyUploadRow[]> {
+  const query = ids.length > 0 ? `?ids=${ids.map(encodeURIComponent).join(",")}` : "";
+  const res = await apiFetch<{ data: ScanbodyUploadRow[] }>({
+    path: `${BASE}/uploads${query}`,
+    skipCache: true,
+  });
+  if (!res.ok) return fail(res, "업로드 상태를 받지 못했습니다.");
+  return res.data?.data ?? [];
+}
+
+/** 관리자 검토: 기공소 라이브러리를 공용으로 올리거나 내린다. */
+export async function setScanbodyLibraryPublic(id: string, isPublic: boolean): Promise<ScanbodyLibraryRow> {
+  const res = await apiFetch<{ data: ScanbodyLibraryRow }>({
+    path: `${BASE}/${id}/visibility`,
+    method: "PATCH",
+    jsonBody: { isPublic },
+  });
+  if (!res.ok || !res.data?.data) return fail(res, "공용 설정을 바꾸지 못했습니다.");
   invalidateApiGetCache(BASE);
   return res.data.data;
 }
@@ -190,7 +279,34 @@ export async function deleteAbutmentTemplate(id: string) {
 
 const geometryCache = new Map<string, Promise<ScanbodyMesh>>();
 
-/** 부품 .dcm 메시(mm). 해시 키라 한 번 받으면 탭이 살아 있는 동안 다시 받지 않는다. */
+/** 서버가 만든 이진 STL → 같은 좌표 꼭짓점을 합친 인덱스 메시. */
+export function meshFromBinaryStl(buffer: ArrayBuffer): ScanbodyMesh {
+  const view = new DataView(buffer);
+  const count = buffer.byteLength >= 84 ? view.getUint32(80, true) : 0;
+  if (count === 0 || buffer.byteLength < 84 + count * 50) throw new Error("스캔바디 형상이 올바르지 않습니다.");
+  const index = new Map<string, number>();
+  const positions: number[] = [];
+  const indices = new Uint32Array(count * 3);
+  for (let i = 0; i < count; i += 1) {
+    for (let k = 0; k < 3; k += 1) {
+      const base = 84 + i * 50 + 12 + k * 12;
+      const x = view.getFloat32(base, true);
+      const y = view.getFloat32(base + 4, true);
+      const z = view.getFloat32(base + 8, true);
+      const key = `${x},${y},${z}`;
+      let id = index.get(key);
+      if (id === undefined) {
+        id = positions.length / 3;
+        index.set(key, id);
+        positions.push(x, y, z);
+      }
+      indices[i * 3 + k] = id;
+    }
+  }
+  return { positions: Float32Array.from(positions), indices };
+}
+
+/** 부품 형상(mm). 해시 키라 한 번 받으면 탭이 살아 있는 동안 다시 받지 않는다. */
 export function loadScanbodyGeometry(s3Key: string): Promise<ScanbodyMesh> {
   const cached = geometryCache.get(s3Key);
   if (cached) return cached;
@@ -200,7 +316,9 @@ export function loadScanbodyGeometry(s3Key: string): Promise<ScanbodyMesh> {
       skipCache: true,
     });
     if (!res.ok) throw new Error("스캔바디 형상을 받지 못했습니다.");
-    const mesh = await parseHpsDcmMeshData(await res.raw.arrayBuffer());
+    const buffer = await res.raw.arrayBuffer();
+    if (/\.stl$/i.test(s3Key)) return meshFromBinaryStl(buffer);
+    const mesh = await parseHpsDcmMeshData(buffer);
     return { positions: mesh.positions, indices: mesh.indices };
   })();
   geometryCache.set(s3Key, task);
