@@ -14,6 +14,7 @@
 // - 2026-09-26: 학습 동의 변경 — 미완료 의뢰는 이번 건부터 플랫폼 수수료를 다시 맞춘다.
 // - 2026-09-20: lab/remake/follow-up 플랫폼 수수료 pushRevenueLines에 creditSettings 전달(2% 적립 크래시 수정).
 // - 2026-09-20: 작업시작 시 hold 저널 생성 실패면 billed 처리 금지(heldAt만 남는 정산 누락 방지).
+// - 2026-09-27: 원청이 협력·하청으로 넘기면 수수료 잔여는 기공사업부 잔액에 남긴다.
 // - 2026-09-23: 어벗츠 원청 정산 — gross→prime, 하청 매입→assignee. 장부 라벨 치과→어벗츠.
 // - 2026-09-20: 리메이크·후속 적립도 subcontracted 반영(하청 %).
 // - 2026-09-20: 비거래처 어벗 해제는 제조사 발송 유지. 가공 진입 이동 금지.
@@ -192,6 +193,10 @@ const resolveAssigneePurchaseLedgerLabel = (transfer) =>
   isCooperationAssignee(transfer)
     ? PRACTICE_TRANSFER_LEDGER_LABELS.cooperationPurchase
     : PRACTICE_TRANSFER_LEDGER_LABELS.subcontractPurchase;
+
+/** 원청이 협력·하청으로 넘긴 차액(수수료)은 기공사업부 정산 잔액에 남긴다. */
+const primeKeepsForwardingMargin = (parties) =>
+  Boolean(parties?.abutsPrime && parties?.purchasePayeeId);
 import {
   assertLabWithinAutoMatchBudget,
   buildScheduleFromAutoMatchBudget,
@@ -3425,7 +3430,7 @@ export async function settlePracticeToLabShareIfReady({
 
 /**
  * 기공소 발송(mark-complete): 기공비 에스크로 해제.
- * 어벗츠 원청: gross→internalLab, 하청 있으면 매입액→assignee, 잔여=플랫폼 수수료.
+ * 어벗츠 원청: gross→internalLab, 하청·협력 매입→assignee, 잔여(수수료)는 원청 잔액.
  * 레거시 외부 직접 지정: performing lab에 전액(수수료 정책 그대로).
  * 커스텀어벗은 디자인 STL + 생산비 지급 전에는 released=false.
  */
@@ -3723,7 +3728,11 @@ export async function releasePracticeTransferLabShare({
     });
 
     let feeJournalId = existingFee?.journalId || null;
-    if (platformFee > 0 && !existingFee?.journalId) {
+    if (
+      platformFee > 0 &&
+      !existingFee?.journalId &&
+      !primeKeepsForwardingMargin(parties)
+    ) {
       const feeLines = [
         {
           accountCode: "LAB_SETTLEMENT_CREDIT",
@@ -5538,7 +5547,11 @@ export async function releasePracticeTransferRemakeChargeCredits({
     });
 
     let feeJournalId = existingFee?.journalId || null;
-    if (platformFee > 0 && !existingFee?.journalId) {
+    if (
+      platformFee > 0 &&
+      !existingFee?.journalId &&
+      !primeKeepsForwardingMargin(parties)
+    ) {
       const feeLines = [
         {
           accountCode: "LAB_SETTLEMENT_CREDIT",
@@ -6085,7 +6098,11 @@ export async function releasePracticeTransferProsthesisFollowUpLabShare({
     });
 
     let feeJournalId = existingFee?.journalId || null;
-    if (platformFee > 0 && !existingFee?.journalId) {
+    if (
+      platformFee > 0 &&
+      !existingFee?.journalId &&
+      !primeKeepsForwardingMargin(parties)
+    ) {
       const feeLines = [
         {
           accountCode: "LAB_SETTLEMENT_CREDIT",

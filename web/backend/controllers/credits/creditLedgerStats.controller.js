@@ -26,7 +26,6 @@ import LedgerJournal from "../../models/ledgerJournal.model.js";
 import PracticeTransfer from "../../models/practiceTransfer.model.js";
 import Request from "../../models/request.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
-import { normalizeRequestorKind } from "../../utils/requestorCapabilities.js";
 import { buildFeeQuotesForTransferDocs, listPracticeTransferIdsBlockedFromSettlement } from "../../services/practiceTransferBilling.service.js";
 import { parseKstQueryBoundDate } from "../../utils/kstQueryBounds.js";
 import {
@@ -37,6 +36,7 @@ import {
   isLabSettlementEarnEvent,
   matchesCreditUsageScope,
   parseCreditUsageScope,
+  resolveCreditLedgerRequestorKind,
   resolvePracticeTransferDemoFundingByIds,
   shouldHideBlockedPracticeTransferLedgerRow,
 } from "./creditLedger.utils.js";
@@ -303,11 +303,16 @@ export async function getMyCreditLedgerStats(req, res) {
   const usageScope = parseCreditUsageScope(req.query.usageScope);
 
   const anchor = await BusinessAnchor.findById(anchorObjectId)
-    .select({ requestorKind: 1, name: 1, companyName: 1, demoMode: 1 })
+    .select({
+      requestorKind: 1,
+      businessType: 1,
+      name: 1,
+      companyName: 1,
+      demoMode: 1,
+    })
     .lean();
   const requestorKind =
-    normalizeRequestorKind(anchor?.requestorKind) ||
-    normalizeRequestorKind(req.user?.requestorKind) ||
+    resolveCreditLedgerRequestorKind(anchor, req.user?.requestorKind) ||
     "practice";
   const isLab = requestorKind === "lab";
   const demoMode = Boolean(anchor?.demoMode);

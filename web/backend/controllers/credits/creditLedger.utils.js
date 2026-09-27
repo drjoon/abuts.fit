@@ -8,6 +8,7 @@
 // - web/backend/services/practiceTransferBilling.service.js
 // - web/backend/models/businessAnchor.model.js
 // - web/backend/services/requestCreditHold.service.js
+// - 2026-09-27: 어벗츠 원청 — 매출·하청/협력 지급을 따로 집계. internalLab은 기공소 장부.
 // - 2026-09-20: 기간 소비 완료/보류 — PTX는 billing.settledAt(장부 결제상태와 동일). Request만 convertedAt.
 // - 2026-09-20: 기간 요약 — 기공소 적립 보류 합(totalSettlementEarnPendingSupply) 분리(확정 합·잔액 미포함).
 // - 2026-09-20: 기간 소비 요약 — 결제(적립) 완료·보류 공급가 분리(convertedAt 없는 HOLD).
@@ -39,7 +40,10 @@ import BusinessAnchor from "../../models/businessAnchor.model.js";
 import PracticeTransfer from "../../models/practiceTransfer.model.js";
 import { practiceTransferNotDeletedMongoFilter } from "../../utils/practiceTransferStage.js";
 import { resolvePracticeTransferFeeRate } from "../../services/creditRevenuePolicy.service.js";
+import { normalizeRequestorKind } from "../../utils/requestorCapabilities.js";
 import {
+  getAssigneeLabAnchorId,
+  getPrimeLabAnchorId,
   isInternalLabBusinessType,
   isSubcontractFeeApplicable,
   resolvePerformingLabAnchorId,
@@ -55,6 +59,31 @@ const SETTLEMENT_LEDGER_TYPES = new Set([
 
 export function isSettlementLedgerType(type) {
   return SETTLEMENT_LEDGER_TYPES.has(String(type || "").trim().toUpperCase());
+}
+
+/** 원청 장부에서 매출과 하청·협력 지급을 한 저널 합으로 상쇄하지 않는다. */
+const PRIME_FORWARD_SPLIT_SOURCES = [
+  "practice_transfer_lab_share_gross",
+  "practice_transfer_subcontract_purchase",
+];
+
+export function resolveCreditLedgerRequestorKind(anchor, fallbackKind) {
+  if (isInternalLabBusinessType(anchor)) return "lab";
+  return (
+    normalizeRequestorKind(anchor?.requestorKind) ||
+    normalizeRequestorKind(fallbackKind) ||
+    null
+  );
+}
+
+function primeForwardSplitSourceExpr(sourceField = "$meta.source") {
+  return {
+    $cond: [
+      { $in: [{ $ifNull: [sourceField, ""] }, PRIME_FORWARD_SPLIT_SOURCES] },
+      { $ifNull: [sourceField, ""] },
+      "",
+    ],
+  };
 }
 
 /**
@@ -1125,7 +1154,7 @@ function journalLookupAndTypeStages(
     {
       $lookup: {
         from: journalCollectionName,
-        localField: "_id",
+        localField: "journalId",
         foreignField: "journalId",
         as: "journalDoc",
       },
@@ -1136,7 +1165,29 @@ function journalLookupAndTypeStages(
     {
       $addFields: {
         eventType: { $ifNull: ["$journalDoc.eventType", ""] },
-        uniqueKey: uniqueKeyFromJournalDocExpr(),
+        uniqueKey: {
+          $let: {
+            vars: { baseKey: uniqueKeyFromJournalDocExpr() },
+            in: {
+              $cond: [
+                {
+                  $in: [
+                    { $ifNull: ["$meta.source", ""] },
+                    PRIME_FORWARD_SPLIT_SOURCES,
+                  ],
+                },
+                {
+                  $concat: [
+                    "$$baseKey",
+                    "|",
+                    { $ifNull: ["$meta.source", ""] },
+                  ],
+                },
+                "$$baseKey",
+              ],
+            },
+          },
+        },
         requestIdMeta: { $ifNull: ["$journalDoc.meta.requestId", ""] },
         displayLabel: {
           $ifNull: [
@@ -1170,9 +1221,17 @@ function journalLookupAndTypeStages(
 
 function lineGroupStage() {
   const amountBase = { $ifNull: ["$amountExcludingVat", "$amount"] };
+  const splitSource = primeForwardSplitSourceExpr("$meta.source");
   return {
     $group: {
-      _id: "$journalId",
+      _id: {
+        $cond: [
+          { $eq: [splitSource, ""] },
+          "$journalId",
+          { $concat: ["$journalId", "|", splitSource] },
+        ],
+      },
+      journalId: { $first: "$journalId" },
       occurredAt: { $max: "$occurredAt" },
       createdAt: { $max: "$createdAt" },
       refType: { $first: "$refType" },
@@ -1613,6 +1672,15 @@ export async function aggregateRequestorPeriodLedgerSummary({
       } else {
         bump(bucket, "totalSpendSettledSupply", abs);
       }
+    } else if (
+      eventType === "PRACTICE_TRANSFER_ESCROW_RELEASE" &&
+      accountCode === "LAB_SETTLEMENT_CREDIT" &&
+      amount < 0
+    ) {
+      // 원청이 협력·하청으로 넘기는 매입. 매출과 따로 소비(지급)에 넣는다.
+      const abs = Math.abs(amount);
+      bump(bucket, "totalSpendSupply", abs);
+      bump(bucket, "totalSpendSettledSupply", abs);
     } else if (eventType === "REFUND") {
       // 소비 취소(+REQ_*) → 기간 소비 감소. 적립 회수(-LAB_SETTLEMENT) → 정산 적립 감소.
       if (
@@ -1678,7 +1746,10 @@ export async function aggregateRequestorPeriodLedgerSummary({
     },
     {
       $group: {
-        _id: "$journalId",
+        _id: {
+          journalId: "$journalId",
+          split: primeForwardSplitSourceExpr("$meta.source"),
+        },
         eventType: { $first: "$eventType" },
         accountCode: { $first: "$accountCode" },
         convertedAt: {
@@ -2194,6 +2265,17 @@ export async function listPendingLabSettlementLedgerRows({
             );
     if (pendingLabAmount <= 0) continue;
 
+    const viewerId = String(labOid);
+    const primeId = getPrimeLabAnchorId(doc);
+    const assigneeId = getAssigneeLabAnchorId(doc);
+    const viewerIsPrime = Boolean(primeId) && viewerId === primeId;
+    const forwarding =
+      viewerIsPrime && Boolean(assigneeId) && assigneeId !== primeId;
+    const viewerIsPerformer = performerId === viewerId;
+    // 수행 기공소만 적립 보류. 원청이 넘긴 건은 지급 보류(매입액).
+    if (!viewerIsPerformer && !forwarding) continue;
+    const primePayoutPending = forwarding && !viewerIsPerformer;
+
     // HOLD 저널이 있으면 그걸 쓰고, 없어도 heldAt+활성 건이면 미러한다.
     // (저널만 유실되고 billing.heldAt이 남은 경우 정산에서 빠지지 않게)
     const holdMeta = holdMetaByRef.get(id) || {};
@@ -2237,13 +2319,18 @@ export async function listPendingLabSettlementLedgerRows({
       _id: mirrorJournalId,
       journalId: mirrorJournalId,
       type: "LAB_SETTLEMENT_CHARGE",
-      amount: pendingLabAmount,
+      amount: primePayoutPending ? -pendingLabAmount : pendingLabAmount,
       spentPaidAmount: fromPaid,
       spentFreeAmount: fromFree,
       refType: "PRACTICE_TRANSFER",
       refId: doc._id,
-      uniqueKey: `gl:practice_transfer:${id}:pending_lab_settlement`,
-      displayLabel: "기공크레딧 적립",
+      uniqueKey: primePayoutPending
+        ? `gl:practice_transfer:${id}:pending_prime_payout`
+        : `gl:practice_transfer:${id}:pending_lab_settlement`,
+      displayLabel: primePayoutPending ? "기공 지급" : "기공크레딧 적립",
+      ledgerSource: primePayoutPending
+        ? "practice_transfer_subcontract_purchase"
+        : "",
       holdShare: "lab",
       occurredAt: occurredAtVal,
       createdAt: occurredAtVal,

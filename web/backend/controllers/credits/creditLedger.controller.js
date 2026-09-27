@@ -81,19 +81,16 @@ import {
   listPendingLabSettlementLedgerRows,
   mergeLabLedgerRowsWithPending,
   parseCreditUsageScope,
+  resolveCreditLedgerRequestorKind,
   shouldHideBlockedPracticeTransferLedgerRow,
 } from "./creditLedger.utils.js";
 
 
 async function resolveRequestorKindForAnchor(businessAnchorId, fallbackKind) {
   const anchor = await BusinessAnchor.findById(businessAnchorId)
-    .select({ requestorKind: 1 })
+    .select({ requestorKind: 1, businessType: 1 })
     .lean();
-  return (
-    normalizeRequestorKind(anchor?.requestorKind) ||
-    normalizeRequestorKind(fallbackKind) ||
-    null
-  );
+  return resolveCreditLedgerRequestorKind(anchor, fallbackKind);
 }
 
 function buildCurrentBalanceSnapshot(
