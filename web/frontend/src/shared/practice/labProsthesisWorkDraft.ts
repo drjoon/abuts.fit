@@ -16,9 +16,10 @@ import {
   parseDesignScope,
   parseMarginReviewMap,
   parseModelKind,
+  parseModelSettings,
   type DesignScope,
   type MarginReview,
-  type ModelKind,
+  type ModelSettings,
   type ToothDesignEdit,
 } from "@/shared/practice/labProsthesisModify";
 import {
@@ -75,6 +76,8 @@ export type WorkSessionViewToggles = {
   color: boolean;
   contact: boolean;
   ghost: boolean;
+  /** 마진으로 자른 다이를 지대치 악 대신 보인다. */
+  die: boolean;
 };
 
 /** 스캔 좌표 외에 마진·생성·삽입축·카메라·화면 토글. 창을 다시 열면 이 문서를 복원한다. */
@@ -85,8 +88,8 @@ export type WorkSessionDocument = {
   marginReview: Record<string, MarginReview>;
   /** 마진만 / 크라운까지 / 모델까지. 고르기 전이면 null. */
   designScope: DesignScope | null;
-  /** 모델까지일 때 낼 모델. */
-  modelKind: ModelKind;
+  /** 모델까지일 때 낼 모델의 종류·받침 높이·다이 분리·간격. */
+  modelSettings: ModelSettings;
   /** 케이스 메모. */
   note: string;
   /** 의뢰 치식 번호 → 작업영역에서 바꾼 번호·유형. */
@@ -121,6 +124,7 @@ export function parseViewToggles(value: unknown): WorkSessionViewToggles | null 
     color: row.color == null ? true : Boolean(row.color),
     contact: Boolean(row.contact),
     ghost: Boolean(row.ghost),
+    die: Boolean(row.die),
   };
 }
 
@@ -233,7 +237,7 @@ function documentOf(row: unknown): WorkSessionDocument | null {
       generated,
     ),
     designScope: parseDesignScope((body as { designScope?: unknown }).designScope),
-    modelKind: parseModelKind((body as { modelKind?: unknown }).modelKind),
+    modelSettings: modelSettingsOf(body),
     note: String((body as { note?: unknown }).note ?? "").slice(0, 2000),
     toothOverrides: parseToothOverrides(
       (body as { toothOverrides?: unknown }).toothOverrides,
@@ -246,6 +250,16 @@ function documentOf(row: unknown): WorkSessionDocument | null {
     ),
     savedAt: Number(body.savedAt) || 0,
   };
+}
+
+/** 예전 문서는 종류(`modelKind`)만 있다. */
+function modelSettingsOf(body: object): ModelSettings {
+  const row = body as { modelSettings?: unknown; modelKind?: unknown };
+  if (row.modelSettings && typeof row.modelSettings === "object") {
+    return parseModelSettings(row.modelSettings);
+  }
+  const settings = parseModelSettings(null);
+  return row.modelKind == null ? settings : { ...settings, kind: parseModelKind(row.modelKind) };
 }
 
 function storedOf(row: unknown): StoredDraft {

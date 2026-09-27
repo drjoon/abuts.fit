@@ -291,6 +291,7 @@ import {
 } from "@/shared/practice/labFeeSchedule";
 import {
   LabProsthesisAiDesignButton,
+  type LabProsthesisAiCaseNav,
   type WorkingScansPersisted,
 } from "@/shared/components/practice/LabProsthesisAiDesignDialog";
 import {
@@ -534,6 +535,8 @@ type PracticeTransferDetailChatDialogProps = {
   files: PracticeTransferDialogFileItem[];
   /** 기공소 AI가 작업 DCM을 붙일 수신 의뢰 */
   transferId?: string | null;
+  /** AI 디자인 헤더의 미완료 의뢰 이동 */
+  labAiCaseNav?: LabProsthesisAiCaseNav | null;
   onWorkingScansPersisted?: (data: WorkingScansPersisted) => void;
   /** 기공소가 의뢰 스캔 역할을 고친다 */
   onChangeRequestScanRole?: (
@@ -785,6 +788,7 @@ export function PracticeTransferDetailChatDialog({
   filesLabel,
   files,
   transferId = null,
+  labAiCaseNav = null,
   onWorkingScansPersisted,
   onChangeRequestScanRole,
   trashedFiles = [],
@@ -2427,6 +2431,7 @@ export function PracticeTransferDetailChatDialog({
         files={files}
         authToken={authToken}
         transferId={transferId}
+        caseNav={labAiCaseNav}
         workScanFiles={(workScanFiles || []).map((file) => ({
           fileName: file.fileName,
           scanRole: file.scanRole,

@@ -3030,6 +3030,35 @@ export function RequestorPracticeReceivePage({
     () => resolvePracticeTransferToothWorks(selectedTransfer, implantCatalog),
     [selectedTransfer, implantCatalog],
   );
+  /** AI 디자인 헤더에서 넘겨 가며 작업할 미완료 의뢰. 도착일이 이른 순. */
+  const labAiOpenCases = useMemo(() => {
+    const rows = transfers.filter((transfer) => {
+      if (isGuideTourDemoTransfer(transfer)) return false;
+      if (!viewerOperatesLabReceiveWork(transfer, user?.role)) return false;
+      const status = getTransferDisplayStatus(transfer);
+      if (isLabReceiveHiddenTerminalStatus(status) || status === "기한만료") return false;
+      return !isPracticeRecentFinishedBadgeStatus({
+        status,
+        designFileCount: transfer.production?.designFileCount,
+        designFiles: transfer.production?.designFiles,
+        designReadyAt: transfer.production?.designReadyAt,
+      });
+    });
+    const arrival = (transfer: ReceivedPracticeTransfer) =>
+      String(transfer.arrivalDate || "").trim() || "9999-99-99";
+    return rows.sort((a, b) => {
+      const byArrival = arrival(a).localeCompare(arrival(b));
+      if (byArrival !== 0) return byArrival;
+      return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+    });
+  }, [transfers, user?.role]);
+  const labAiCasePosition = useMemo(() => {
+    const id = String(selectedTransfer?.transferId || "").trim();
+    if (!id) return -1;
+    return labAiOpenCases.findIndex(
+      (transfer) => String(transfer.transferId || "").trim() === id,
+    );
+  }, [labAiOpenCases, selectedTransfer?.transferId]);
   const practiceColorDots = useMemo(() => {
     const entries = sortedFilteredTransfers.map((transfer) => {
       const clinic =
@@ -9471,6 +9500,21 @@ export function RequestorPracticeReceivePage({
         }
         filesLabel="의뢰 파일"
         transferId={String(selectedTransfer?.transferId || "").trim()}
+        labAiCaseNav={
+          labAiOpenCases.length > 0
+            ? {
+                count: labAiOpenCases.length,
+                position: labAiCasePosition >= 0 ? labAiCasePosition : null,
+                onMove: (step) => {
+                  const count = labAiOpenCases.length;
+                  const from =
+                    labAiCasePosition >= 0 ? labAiCasePosition : step > 0 ? -1 : 0;
+                  const target = labAiOpenCases[(from + step + count) % count];
+                  if (target) void openTransferDialog(target, { panel: "chat" });
+                },
+              }
+            : null
+        }
         onWorkingScansPersisted={(data) => {
           const transferId = String(selectedTransfer?.transferId || "").trim();
           if (!transferId) return;

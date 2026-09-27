@@ -469,6 +469,202 @@ function buildBitePosts(
   return concatTriangles(rows);
 }
 
+export type MarginDieInput = {
+  /** 월드 좌표 삼각형(비색인). 치아 주변만 넘겨도 된다. */
+  triangles: Float32Array;
+  /** 월드 좌표 마진 폐곡선. */
+  margin: readonly THREE.Vector3[];
+  /** 교합 쪽을 보는 삽입축. */
+  axis: THREE.Vector3;
+  unitToMm: number;
+  /** 교합면에서 볼 때 마진 바깥으로 넓히는 폭(mm). */
+  offsetMm?: number;
+  /** 마진 가장 낮은 점에서 다이 바닥까지(mm). */
+  baseMm?: number;
+};
+
+export const MARGIN_DIE_OFFSET_MM = 0.75;
+const MARGIN_DIE_BASE_MM = 4;
+
+/** 볼록하지 않아도 되는 폐곡선을 바깥으로 민다. 입력은 반시계. */
+function offsetPolygon(points: readonly THREE.Vector2[], distance: number) {
+  const n = points.length;
+  const out: THREE.Vector2[] = [];
+  for (let i = 0; i < n; i += 1) {
+    const prev = points[(i + n - 1) % n]!;
+    const cur = points[i]!;
+    const next = points[(i + 1) % n]!;
+    const e1 = cur.clone().sub(prev);
+    const e2 = next.clone().sub(cur);
+    const n1 = new THREE.Vector2(e1.y, -e1.x).normalize();
+    const n2 = new THREE.Vector2(e2.y, -e2.x).normalize();
+    const bisector = n1.clone().add(n2);
+    if (bisector.lengthSq() < 1e-12) bisector.copy(n1);
+    bisector.normalize();
+    const miter = distance / Math.max(0.4, bisector.dot(n1));
+    out.push(cur.clone().addScaledVector(bisector, miter));
+  }
+  return out;
+}
+
+/** 가장 많은 삼각형이 이어진 조각만 남긴다. */
+function largestComponent(index: Uint32Array, vertexCount: number): Uint8Array {
+  const parent = new Int32Array(vertexCount);
+  for (let i = 0; i < vertexCount; i += 1) parent[i] = i;
+  const find = (v: number) => {
+    let root = v;
+    while (parent[root] !== root) root = parent[root]!;
+    let cur = v;
+    while (parent[cur] !== root) {
+      const up = parent[cur]!;
+      parent[cur] = root;
+      cur = up;
+    }
+    return root;
+  };
+  const triCount = index.length / 3;
+  for (let t = 0; t < triCount; t += 1) {
+    const a = find(index[t * 3]!);
+    const b = find(index[t * 3 + 1]!);
+    const c = find(index[t * 3 + 2]!);
+    if (a !== b) parent[b] = a;
+    if (a !== c) parent[find(c)] = find(a);
+  }
+  const counts = new Map<number, number>();
+  let best = -1;
+  let bestCount = 0;
+  for (let t = 0; t < triCount; t += 1) {
+    const root = find(index[t * 3]!);
+    const count = (counts.get(root) ?? 0) + 1;
+    counts.set(root, count);
+    if (count > bestCount) {
+      bestCount = count;
+      best = root;
+    }
+  }
+  const mask = new Uint8Array(triCount);
+  for (let t = 0; t < triCount; t += 1) mask[t] = find(index[t * 3]!) === best ? 1 : 0;
+  return mask;
+}
+
+/**
+ * 마진으로 다이를 자른다.
+ * 교합면에서 본 마진을 조금 넓힌 폐곡선을 삽입축으로 내려, 그 안의 스캔 면만 남긴다.
+ * 경계에서 바닥까지 수직 벽을 내리고 바닥을 막는다. 결과는 월드 좌표 비색인 삼각형.
+ */
+export function buildMarginDie(input: MarginDieInput): Float32Array | null {
+  if (input.margin.length < 3 || input.triangles.length < 9) return null;
+  const unit = input.unitToMm > 0 ? input.unitToMm : 1;
+  const mm = (value: number) => value / unit;
+  const up = input.axis.clone().normalize();
+  if (up.lengthSq() < 1e-8) return null;
+  const basis = planeBasis(up);
+
+  let ring = input.margin.map((v) => new THREE.Vector2(v.dot(basis.e1), v.dot(basis.e2)));
+  if (polygonArea(ring) < 0) ring = [...ring].reverse();
+  const outline = offsetPolygon(ring, mm(input.offsetMm ?? MARGIN_DIE_OFFSET_MM));
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const p of outline) {
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.y > maxY) maxY = p.y;
+  }
+  let marginMean = 0;
+  for (const v of input.margin) marginMean += v.dot(up);
+  marginMean /= input.margin.length;
+
+  // 삽입축 부호는 믿지 않는다. 마진 안쪽 면이 몰린 쪽이 교합면이다.
+  const src = input.triangles;
+  const column: number[] = [];
+  const heights: number[] = [];
+  let lean = 0;
+  const centroid = new THREE.Vector2();
+  for (let i = 0; i + 8 < src.length; i += 9) {
+    const cx = (src[i]! + src[i + 3]! + src[i + 6]!) / 3;
+    const cy = (src[i + 1]! + src[i + 4]! + src[i + 7]!) / 3;
+    const cz = (src[i + 2]! + src[i + 5]! + src[i + 8]!) / 3;
+    centroid.set(
+      cx * basis.e1.x + cy * basis.e1.y + cz * basis.e1.z,
+      cx * basis.e2.x + cy * basis.e2.y + cz * basis.e2.z,
+    );
+    if (centroid.x < minX || centroid.x > maxX || centroid.y < minY || centroid.y > maxY) continue;
+    if (!insidePolygon(centroid, outline)) continue;
+    const h = cx * up.x + cy * up.y + cz * up.z;
+    column.push(i);
+    heights.push(h);
+    if (insidePolygon(centroid, ring)) lean += h - marginMean;
+  }
+  if (lean < 0) up.negate();
+  const sign = lean < 0 ? -1 : 1;
+  const down = up.clone().negate();
+  let marginLow = Infinity;
+  for (const v of input.margin) marginLow = Math.min(marginLow, v.dot(up));
+  const floor = marginLow - mm(2.5);
+
+  const kept = new TriangleWriter(Math.max(column.length, 64));
+  for (let k = 0; k < column.length; k += 1) {
+    if (heights[k]! * sign < floor) continue;
+    const i = column[k]!;
+    kept.push(src.subarray(i, i + 3), src.subarray(i + 3, i + 6), src.subarray(i + 6, i + 9));
+  }
+  const surface = kept.result();
+  if (surface.length < 27) return null;
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(surface, 3));
+  const welded = mergeVertices(geometry, 1e-3 / unit);
+  geometry.dispose();
+  const pos = welded.getAttribute("position");
+  const idx = welded.getIndex();
+  if (!pos || !idx) {
+    welded.dispose();
+    return null;
+  }
+  const positions = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; i += 1) {
+    positions[i * 3] = pos.getX(i);
+    positions[i * 3 + 1] = pos.getY(i);
+    positions[i * 3 + 2] = pos.getZ(i);
+  }
+  const index = new Uint32Array(idx.count - (idx.count % 3));
+  for (let i = 0; i < index.length; i += 1) index[i] = idx.getX(i);
+  welded.dispose();
+
+  const mask = largestComponent(index, pos.count);
+  let facing = 0;
+  let deepest = -Infinity;
+  for (let t = 0; t < mask.length; t += 1) {
+    if (!mask[t]) continue;
+    const a = index[t * 3]!;
+    const nrm = triangleNormal(positions, a, index[t * 3 + 1]!, index[t * 3 + 2]!);
+    facing += nrm[0] * up.x + nrm[1] * up.y + nrm[2] * up.z;
+    for (let k = 0; k < 3; k += 1) {
+      const v = index[t * 3 + k]!;
+      const s = positions[v * 3]! * down.x + positions[v * 3 + 1]! * down.y + positions[v * 3 + 2]! * down.z;
+      if (s > deepest) deepest = s;
+    }
+  }
+  if (facing < 0) {
+    for (let t = 0; t < index.length; t += 3) {
+      const b = index[t + 1]!;
+      index[t + 1] = index[t + 2]!;
+      index[t + 2] = b;
+    }
+  }
+  const bottom = Math.max(deepest + mm(1), -marginLow + mm(input.baseMm ?? MARGIN_DIE_BASE_MM));
+  return buildSolid({ arch: "lower", positions, index }, mask, {
+    down,
+    bottom,
+    up,
+    inset: null,
+    isSocket: () => false,
+  });
+}
+
 /**
  * 모델 종류대로 파트를 만든다.
  * 다이만 — 지대치 다이. 접촉 확인 — 지대치 악. 교합 확인 — 상·하악과 지주.

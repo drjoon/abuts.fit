@@ -98,6 +98,28 @@ function basisQuaternion(normal: THREE.Vector3, rightHint: THREE.Vector3) {
   return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z));
 }
 
+/** 마진 점의 월드 좌표. 선과 다이가 같은 곡선을 쓴다. */
+export function marginWorldPoints(args: {
+  place: { center: THREE.Vector3; radius: number };
+  normal: THREE.Vector3;
+  right: THREE.Vector3;
+  margin: ToothDesignEdit["margin"];
+  unitToMm: number;
+}): THREE.Vector3[] {
+  const unit = args.unitToMm > 0 ? args.unitToMm : 1;
+  const quat = basisQuaternion(args.normal, args.right);
+  const base = args.place.radius * 0.78;
+  const extra = args.margin.offsetMm / unit;
+  return args.margin.radii.map((ratio, index) => {
+    const angle = marginPointAngle(index, args.margin.radii.length);
+    const radial = base * ratio + extra;
+    const axial = args.margin.depths?.[index] ?? 0;
+    return new THREE.Vector3(Math.cos(angle) * radial, axial, Math.sin(angle) * radial)
+      .applyQuaternion(quat)
+      .add(args.place.center);
+  });
+}
+
 function tag(mesh: THREE.Object3D, hit: EditHit) {
   mesh.userData.editHit = hit;
   mesh.frustumCulled = false;
@@ -215,21 +237,14 @@ export function buildProsthesisEditLayer(args: {
     const generated = args.spec.generated[tooth] === true;
 
     if (args.spec.showMargin && !edit.margin.deleted && !edit.pontic.on) {
-      const base = place.radius * 0.78;
-      const extra = edit.margin.offsetMm / unit;
-      const points: THREE.Vector3[] = [];
-      edit.margin.radii.forEach((ratio, index) => {
-        const angle = marginPointAngle(index, edit.margin.radii.length);
-        const radial = base * ratio + extra;
-        const axial = edit.margin.depths?.[index] ?? 0;
-        const local = new THREE.Vector3(
-          Math.cos(angle) * radial,
-          axial,
-          Math.sin(angle) * radial,
-        )
-          .applyQuaternion(quat)
-          .add(place.center);
-        points.push(local);
+      const points = marginWorldPoints({
+        place,
+        normal,
+        right,
+        margin: edit.margin,
+        unitToMm: unit,
+      });
+      points.forEach((local, index) => {
         const dot = new THREE.Mesh(
           new THREE.SphereGeometry(Math.max(place.radius * 0.045, 0.15), 10, 8),
           new THREE.MeshBasicMaterial({

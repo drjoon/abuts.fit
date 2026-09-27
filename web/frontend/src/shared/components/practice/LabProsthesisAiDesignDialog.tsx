@@ -43,7 +43,17 @@
 // - 2026-09-27: 바이트는 열 때 자동으로 맞으므로 위저드의 모델정렬 안내는 뺀다. 삽입축부터 안내한다.
 // - 2026-09-27: 작업영역 아래 안내 카드는 문장 너비. 뷰포트보다 길면 띄어쓰기에서만 줄바꿈한다.
 // - 2026-09-27: 위저드 카드의 삽입축 버튼은 없애고, 치아 정보의 해당 삽입축 버튼을 깜빡인다. 카드 좌우 화살표로 단계를 옮긴다.
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+// - 2026-09-27: 헤더 치과·환자명 옆 `< # >`. #은 미완료 의뢰 건수, 화살표로 이전·다음 의뢰를 연다. 떠나는 의뢰는 닫기처럼 뒤에서 저장한다.
+// - 2026-09-27: 범위 모델까지면 「모델」 단계. 종류·받침 높이·다이 분리·간격을 고르고 buildStoneModel로 만든다. 모델을 보는 동안 스캔은 가린다.
+// - 2026-09-27: 마진을 잡으면 다이를 자동으로 만든다. 작업영역 위 다이 토글. 치아 정보에서 치아를 누르면 그 다이와 작업물만, 상악·하악을 누르면 그 악 모델 전부.
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   ArrowDownToLine,
   Blend,
@@ -51,6 +61,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Cylinder,
   ImageDown,
   Paintbrush,
   PanelLeftClose,
@@ -113,6 +124,7 @@ import {
   type ConnectorSectionShot,
   type OralScanOverlayHandle,
   type OralScanOverlaySource,
+  type StoneModelPartSummary,
 } from "@/shared/components/practice/OralScanOverlayViewer";
 import {
   LabProsthesisModifyPanel,
@@ -187,6 +199,9 @@ import {
   createToothDesignEdit,
   DEFAULT_SCULPT_BRUSH,
   INNER_PRESETS,
+  DEFAULT_MODEL_SETTINGS,
+  MODEL_DIE_GAP_RANGE_MM,
+  MODEL_HEIGHT_RANGE_MM,
   MODEL_KINDS,
   scopeMakesCrown,
   materialSnapshot,
@@ -202,7 +217,7 @@ import {
   type InnerPresetId,
   type MarginEditMode,
   type MarginReview,
-  type ModelKind,
+  type ModelSettings,
   type ModifyTool,
   type ScanbodyShape,
   type SculptBrush,
@@ -233,6 +248,14 @@ type LabProsthesisAiCaseHeader = {
   primary?: string | null;
   /** 예: 주문 2026-09-26 · 도착 2026-10-07. 헤더에는 도착일만 쓴다. */
   dates?: string | null;
+};
+
+/** 헤더 `< # >`. #은 미완료 의뢰 건수, 화살표는 이전·다음 의뢰. */
+export type LabProsthesisAiCaseNav = {
+  count: number;
+  /** 지금 의뢰의 순번(0부터). 미완료 목록에 없으면 null. */
+  position: number | null;
+  onMove: (step: -1 | 1) => void;
 };
 
 /** 열기=본문, 닫기=제목만, 숨김=패널 없음. 버튼은 다음 동작. */
@@ -336,6 +359,7 @@ type LabProsthesisAiDesignButtonProps = {
   caseHeader?: LabProsthesisAiCaseHeader | null;
   /** 채팅 헤더와 같은 바구니 번호표 */
   basketTag?: LabProsthesisAiBasketTag | null;
+  caseNav?: LabProsthesisAiCaseNav | null;
   className?: string;
 };
 
@@ -348,6 +372,8 @@ type MeshSource = {
 };
 
 const IMAGE_EXT = /\.(png|jpe?g|webp|bmp|gif)$/i;
+/** 내보내기 목록에서 모델 파트 행. 뒤는 StoneModelPart.id. */
+const STONE_ROW_PREFIX = "stone:";
 const GHOST_OPACITY_ON = 0.2;
 /** 같은 세션에서 다시 열면 IndexedDB·네트워크 대신 이 파일을 쓴다. */
 const sessionScanFileCache = new Map<string, File>();
@@ -367,7 +393,7 @@ type WorkCloseSnapshot = {
   serverAt: ReadonlyMap<WorkScanRole, number>;
 };
 
-type DesignStage = "scan" | "margin" | "design";
+type DesignStage = "scan" | "margin" | "design" | "model";
 
 type AlignWizardStep =
   | { kind: "axis"; span: string[]; page: number; pages: number }
@@ -389,7 +415,19 @@ const DESIGN_STAGES: Array<{ id: DesignStage; label: string }> = [
   { id: "scan", label: "스캔" },
   { id: "margin", label: "마진" },
   { id: "design", label: "디자인" },
+  { id: "model", label: "모델" },
 ];
+
+/** 다른 의뢰로 넘어간 직후. 버튼이 새로 그려져도 AI 창을 다시 연다. */
+let aiReopenUntil = 0;
+
+function markAiReopen() {
+  aiReopenUntil = Date.now() + 5000;
+}
+
+function wantsAiReopen() {
+  return Date.now() < aiReopenUntil;
+}
 
 function wait(ms: number) {
   return new Promise<void>((resolve) => {
@@ -407,9 +445,18 @@ export function LabProsthesisAiDesignButton({
   onAttachChatFile,
   caseHeader,
   basketTag,
+  caseNav,
   className,
 }: LabProsthesisAiDesignButtonProps) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(wantsAiReopen);
+  useEffect(() => {
+    if (!wantsAiReopen()) return;
+    const timer = window.setTimeout(() => {
+      aiReopenUntil = 0;
+    }, 0);
+    setOpen(true);
+    return () => window.clearTimeout(timer);
+  }, [transferId]);
 
   return (
     <>
@@ -426,8 +473,10 @@ export function LabProsthesisAiDesignButton({
         <span>AI</span>
       </Button>
       <LabProsthesisAiDesignDialog
+        key={String(transferId || "").trim() || "case"}
         open={open}
         onOpenChange={setOpen}
+        caseNav={caseNav}
         toothWorks={toothWorks}
         files={files}
         authToken={authToken}
@@ -469,7 +518,7 @@ function workDocumentSignature(document: WorkSessionDocument): string {
     generated: document.generated,
     marginReview: document.marginReview,
     designScope: document.designScope,
-    modelKind: document.modelKind,
+    modelSettings: document.modelSettings,
     note: document.note,
     toothOverrides: document.toothOverrides,
     insertionAxes: document.insertionAxes,
@@ -511,6 +560,7 @@ function LabProsthesisAiDesignDialog({
   onAttachChatFile,
   caseHeader,
   basketTag,
+  caseNav,
 }: LabProsthesisAiDesignButtonProps & {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -583,6 +633,10 @@ function LabProsthesisAiDesignDialog({
   const [hasScanColor, setHasScanColor] = useState(false);
   const [ghostOn, setGhostOn] = useState(false);
   const [marginShown, setMarginShown] = useState(false);
+  const [dieShown, setDieShown] = useState(false);
+  const [dieTeeth, setDieTeeth] = useState<readonly string[]>([]);
+  /** 치아 정보에서 누른 치아. 그 다이와 작업물만 보인다. */
+  const [isolatedTeeth, setIsolatedTeeth] = useState<string[] | null>(null);
   const [loadError, setLoadError] = useState("");
   const [progress, setProgress] = useState(0);
   const [fileState, setFileState] = useState<
@@ -597,7 +651,11 @@ function LabProsthesisAiDesignDialog({
   const [generated, setGenerated] = useState<Record<string, boolean>>({});
   const [marginReview, setMarginReview] = useState<Record<string, MarginReview>>({});
   const [designScope, setDesignScope] = useState<DesignScope | null>(null);
-  const [modelKind, setModelKind] = useState<ModelKind>("die");
+  const [modelSettings, setModelSettings] = useState<ModelSettings>(DEFAULT_MODEL_SETTINGS);
+  /** 「모델 생성」으로 만든 파트. 스캔이 움직이면 뷰어가 비운다. */
+  const [stoneParts, setStoneParts] = useState<StoneModelPartSummary[]>([]);
+  /** 모델을 만들 때의 설정·마진. 달라지면 다시 만들라고 알린다. */
+  const [stoneBuiltSig, setStoneBuiltSig] = useState("");
   const [caseNote, setCaseNote] = useState("");
   const [noteDraft, setNoteDraft] = useState<string | null>(null);
   const [sculptBrush, setSculptBrush] = useState<SculptBrush>(DEFAULT_SCULPT_BRUSH);
@@ -642,6 +700,7 @@ function LabProsthesisAiDesignDialog({
     color: true,
     contact: false,
     ghost: false,
+    die: false,
   });
   const restoreGhostVisibleRef = useRef(false);
   const [modifyTool, setModifyTool] = useState<ModifyTool>("margin");
@@ -677,8 +736,8 @@ function LabProsthesisAiDesignDialog({
   marginReviewRef.current = marginReview;
   const designScopeRef = useRef(designScope);
   designScopeRef.current = designScope;
-  const modelKindRef = useRef(modelKind);
-  modelKindRef.current = modelKind;
+  const modelSettingsRef = useRef(modelSettings);
+  modelSettingsRef.current = modelSettings;
   const caseNoteRef = useRef(caseNote);
   caseNoteRef.current = caseNote;
   const archAlignedRef = useRef(archAligned);
@@ -727,6 +786,9 @@ function LabProsthesisAiDesignDialog({
       setHasScanColor(false);
       setGhostOn(false);
       setMarginShown(false);
+      setDieShown(false);
+      setDieTeeth([]);
+      setIsolatedTeeth(null);
       setLoadError("");
       setProgress(0);
       setFileState({});
@@ -739,7 +801,9 @@ function LabProsthesisAiDesignDialog({
       setGenerated({});
       setMarginReview({});
       setDesignScope(null);
-      setModelKind("die");
+      setModelSettings(DEFAULT_MODEL_SETTINGS);
+      setStoneParts([]);
+      setStoneBuiltSig("");
       setCaseNote("");
       setNoteDraft(null);
       setToothOverrides({});
@@ -853,7 +917,7 @@ function LabProsthesisAiDesignDialog({
             generatedRef.current = draft.document.generated;
             marginReviewRef.current = draft.document.marginReview;
             designScopeRef.current = draft.document.designScope;
-            modelKindRef.current = draft.document.modelKind;
+            modelSettingsRef.current = draft.document.modelSettings;
             caseNoteRef.current = draft.document.note;
             toothOverridesRef.current = draft.document.toothOverrides;
             archAlignedRef.current = draft.document.archAligned;
@@ -863,7 +927,7 @@ function LabProsthesisAiDesignDialog({
             setGenerated(draft.document.generated);
             setMarginReview(draft.document.marginReview);
             setDesignScope(draft.document.designScope);
-            setModelKind(draft.document.modelKind);
+            setModelSettings(draft.document.modelSettings);
             setCaseNote(draft.document.note);
             setToothOverrides(draft.document.toothOverrides);
             setArchAligned(draft.document.archAligned);
@@ -880,6 +944,7 @@ function LabProsthesisAiDesignDialog({
               setColorMapping(toggles.color);
               setContactMap(toggles.contact);
               setGhostOn(toggles.ghost);
+              setDieShown(toggles.die);
               restoreGhostVisibleRef.current = toggles.ghost;
             }
           }
@@ -1094,6 +1159,7 @@ function LabProsthesisAiDesignDialog({
     color: colorMapping,
     contact: contactMap,
     ghost: ghostOn,
+    die: dieShown,
   };
   useEffect(() => {
     if (!restoreGhostVisibleRef.current || !ghostOn || scans.length === 0) return;
@@ -1134,22 +1200,10 @@ function LabProsthesisAiDesignDialog({
       ?.from ??
     spanConnectors[0]?.from ??
     null;
-  const exportRestorations = useMemo(() => {
-    const rows = designExportRestorations(plan.teeth, generated, edits);
-    if (designScope !== "model") return rows;
-    const kind = MODEL_KINDS.find((row) => row.id === modelKind) ?? MODEL_KINDS[0]!;
-    const prepNumbers = plan.teeth
-      .filter((tooth) => tooth.designable && !edits[tooth.toothNumber]?.pontic.on)
-      .map((tooth) => tooth.toothNumber);
-    rows.push({
-      id: `model:${kind.id}`,
-      label: kind.label,
-      fileName: `${kind.label}.stl`,
-      teeth: prepNumbers,
-      blocked: prepNumbers.length === 0 ? "지대치 없음" : null,
-    });
-    return rows;
-  }, [designScope, edits, generated, modelKind, plan.teeth]);
+  const exportRestorations = useMemo(
+    () => designExportRestorations(plan.teeth, generated, edits),
+    [edits, generated, plan.teeth],
+  );
   const exportScans = useMemo(() => {
     const out: DesignExportScan[] = [];
     for (const role of ["upper", "lower", "bite"] as const) {
@@ -1164,17 +1218,16 @@ function LabProsthesisAiDesignDialog({
     (
       viewerRef.current?.exportDesignStl({
         groups: selection.restorations
-          .filter((row) => !row.id.startsWith("model:"))
+          .filter((row) => !row.id.startsWith(STONE_ROW_PREFIX))
           .map((row) => ({
             fileName: row.fileName,
             teeth: row.teeth,
           })),
-        models: selection.restorations
-          .filter((row) => row.id.startsWith("model:"))
+        stoneParts: selection.restorations
+          .filter((row) => row.id.startsWith(STONE_ROW_PREFIX))
           .map((row) => ({
+            id: row.id.slice(STONE_ROW_PREFIX.length),
             fileName: row.fileName,
-            kind: row.id.slice("model:".length) as ModelKind,
-            teeth: row.teeth,
           })),
         scans: selection.scans.map((row) => ({ fileName: row.fileName, role: row.role })),
         camCoordinates: selection.camCoordinates,
@@ -1322,6 +1375,84 @@ function LabProsthesisAiDesignDialog({
       stage,
     ],
   );
+  /** 마진을 잡은 지대치. 뷰어가 이 마진으로 다이를 자른다. */
+  const dieMargins = useMemo(() => {
+    const out: Record<string, ToothDesignEdit["margin"]> = {};
+    for (const tooth of plan.teeth) {
+      if (tooth.implant || !tooth.designable) continue;
+      const number = tooth.toothNumber;
+      const review = marginReview[number] ?? "none";
+      const edit = edits[number];
+      if (review === "none" || !edit || edit.margin.deleted || edit.pontic.on) continue;
+      out[number] = edit.margin;
+    }
+    return out;
+  }, [edits, marginReview, plan.teeth]);
+  const stoneSig = useMemo(
+    () => JSON.stringify({ settings: modelSettings, dies: dieMargins }),
+    [dieMargins, modelSettings],
+  );
+  const stoneStale = stoneParts.length > 0 && stoneBuiltSig !== stoneSig;
+  const stoneDieCount = Object.keys(dieMargins).length;
+  const stoneBlocked =
+    modelSettings.kind === "die" && stoneDieCount === 0
+      ? "마진을 잡은 지대치가 없습니다."
+      : entries.length === 0
+        ? "스캔을 불러온 뒤에 만듭니다."
+        : null;
+  const exportRows = useMemo(() => {
+    if (designScope !== "model") return exportRestorations;
+    const kind =
+      MODEL_KINDS.find((row) => row.id === modelSettings.kind) ?? MODEL_KINDS[0]!;
+    const models: DesignExportRestoration[] =
+      stoneParts.length > 0
+        ? stoneParts.map((part) => ({
+            id: `${STONE_ROW_PREFIX}${part.id}`,
+            label: part.label,
+            fileName: part.fileName,
+            teeth: [],
+            blocked: stoneStale ? "다시 생성 필요" : null,
+          }))
+        : [
+            {
+              id: `${STONE_ROW_PREFIX}none`,
+              label: kind.label,
+              fileName: `${kind.label}.stl`,
+              teeth: [],
+              blocked: "모델 생성 전",
+            },
+          ];
+    return [...exportRestorations, ...models];
+  }, [designScope, exportRestorations, modelSettings.kind, stoneParts, stoneStale]);
+
+  const patchModelSettings = (patch: Partial<ModelSettings>) => {
+    const next = { ...modelSettingsRef.current, ...patch };
+    if (next.kind === "die") next.dieSplit = true;
+    modelSettingsRef.current = next;
+    setModelSettings(next);
+    queueSaveWorkRef.current();
+  };
+
+  const runStoneModel = () => {
+    if (stoneBlocked) return;
+    const dies = Object.entries(dieMargins).map(([tooth, margin]) => ({ tooth, margin }));
+    const parts =
+      viewerRef.current?.buildStoneModel({ settings: modelSettingsRef.current, dies }) ?? [];
+    setStoneBuiltSig(stoneSig);
+    if (parts.length === 0) {
+      toast({
+        title: "모델을 만들지 못했습니다.",
+        description: (
+          <>
+            지대치가 있는 악 스캔이 필요합니다.
+            <br />
+            교합 확인 모델은 상악과 하악이 모두 있어야 합니다.
+          </>
+        ),
+        variant: "destructive",
+      });
+    }
+  };
 
   useEffect(() => {
     if (!open || stage === "scan" || plan.teeth.length === 0) return;
@@ -1858,13 +1989,14 @@ function LabProsthesisAiDesignDialog({
   const onStage = (next: DesignStage) => {
     if (next !== "scan" && !designScopeRef.current) return;
     if (next === "design" && !scopeMakesCrown(designScopeRef.current)) return;
+    if (next === "model" && designScopeRef.current !== "model") return;
     setStage(next);
-    setMarginShown(next !== "scan");
+    setMarginShown(next === "margin" || next === "design");
     if (next !== "scan") {
       setAlignKind(null);
       setAlignArch(null);
     }
-    if (next === "scan") return;
+    if (next === "scan" || next === "model") return;
     if (canUndercut) setUndercutMap(true);
     if (next === "design" && canContact) setContactMap(true);
   };
@@ -1902,6 +2034,26 @@ function LabProsthesisAiDesignDialog({
       span.length > 0 &&
       viewerRef.current?.restoreInsertionView(span) === true;
     if (!restored) viewerRef.current?.focusTooth(toothNumber);
+  };
+
+  /** 그 치아(브리지는 스팬)의 다이와 작업물만 남긴다. */
+  const isolateTooth = (toothNumber: string) => {
+    const span = planSpanMembers(plan.teeth, insertionSpanForTooth(plan.teeth, toothNumber));
+    setIsolatedTeeth(span.length > 0 ? span : [toothNumber]);
+    showTooth(toothNumber);
+  };
+
+  /** 치아만 보기를 풀고 그 악 모델을 전부 보인다. */
+  const showArch = (arch: "upper" | "lower") => {
+    setIsolatedTeeth(null);
+    setDieShown(false);
+    setVisible((prev) => {
+      const out = { ...prev };
+      for (const scan of scans) {
+        if (scan.role === arch) out[scan.id] = true;
+      }
+      return out;
+    });
   };
 
   const applyColorDetections = (
@@ -2089,7 +2241,7 @@ function LabProsthesisAiDesignDialog({
       generated: generatedRef.current,
       marginReview: marginReviewRef.current,
       designScope: designScopeRef.current,
-      modelKind: modelKindRef.current,
+      modelSettings: modelSettingsRef.current,
       note: caseNoteRef.current,
       toothOverrides: toothOverridesRef.current,
       insertionAxes: axes,
@@ -2347,11 +2499,16 @@ function LabProsthesisAiDesignDialog({
       return;
     }
     if (saveLockRef.current) return;
+    leaveCase(() => onOpenChange(false));
+  };
+
+  /** 이 의뢰 작업을 뒤에서 저장하고 떠난다. 닫기와 의뢰 이동이 같이 쓴다. */
+  const leaveCase = (leave: () => void) => {
     window.clearTimeout(draftTimerRef.current);
     const id = String(transferId || "").trim();
     if (!autoSaveRef.current || alignBusy || !id || !authToken) {
       if (alignBusy) suspendDraftRef.current = true;
-      onOpenChange(false);
+      leave();
       return;
     }
     const snapshot: WorkCloseSnapshot = {
@@ -2364,9 +2521,19 @@ function LabProsthesisAiDesignDialog({
     };
     suspendDraftRef.current = true;
     saveLockRef.current = true;
-    onOpenChange(false);
+    leave();
     window.requestAnimationFrame(() => {
       void persistWorkingScans(snapshot);
+    });
+  };
+
+  const canMoveCase =
+    caseNav != null && caseNav.count > (caseNav.position != null ? 1 : 0);
+  const moveCase = (step: -1 | 1) => {
+    if (!caseNav || !canMoveCase || saveLockRef.current || alignBusy) return;
+    leaveCase(() => {
+      markAiReopen();
+      caseNav.onMove(step);
     });
   };
 
@@ -2447,7 +2614,49 @@ function LabProsthesisAiDesignDialog({
             <DialogTitle className="shrink-0 text-base sm:text-lg">
               AI 디자인
             </DialogTitle>
-            <CaseHeaderLines header={caseHeader} />
+            <CaseHeaderLines
+              header={caseHeader}
+              nav={
+                caseNav ? (
+                  <span className="flex shrink-0 items-center gap-0.5">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7 w-7 px-0 [&_svg]:!size-3.5"
+                      disabled={!canMoveCase || alignBusy}
+                      onClick={() => moveCase(-1)}
+                      title="이전 미완료 의뢰"
+                      aria-label="이전 미완료 의뢰"
+                    >
+                      <ChevronLeft />
+                    </Button>
+                    <span
+                      className="min-w-7 text-center text-xs font-semibold tabular-nums text-foreground"
+                      title={
+                        caseNav.position != null
+                          ? `미완료 ${caseNav.count}건 중 ${caseNav.position + 1}번째`
+                          : `미완료 ${caseNav.count}건`
+                      }
+                    >
+                      {caseNav.count}
+                    </span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7 w-7 px-0 [&_svg]:!size-3.5"
+                      disabled={!canMoveCase || alignBusy}
+                      onClick={() => moveCase(1)}
+                      title="다음 미완료 의뢰"
+                      aria-label="다음 미완료 의뢰"
+                    >
+                      <ChevronRight />
+                    </Button>
+                  </span>
+                ) : null
+              }
+            />
             {basketTag ? (
               <div className="flex shrink-0 items-center gap-0.5">
                 <LabBasketTagPickerButton
@@ -2534,7 +2743,7 @@ function LabProsthesisAiDesignDialog({
                 "ml-4 h-8 [&_svg]:!size-3.5",
                 headerWide ? "gap-1 px-2.5" : "w-8 px-0",
               )}
-              disabled={exportScans.length === 0 && exportRestorations.length === 0}
+              disabled={exportScans.length === 0 && exportRows.length === 0}
               onClick={() => setExportOpen(true)}
               title="보철과 스캔을 STL로 내보냅니다"
               aria-label="내보내기"
@@ -2698,6 +2907,12 @@ function LabProsthesisAiDesignDialog({
               centerGuide={centerGuide}
               designEdit={designEdit}
               onDesignGesture={onDesignGesture}
+              dieMargins={dieMargins}
+              showDies={dieShown}
+              isolateTeeth={isolatedTeeth}
+              onDiesChange={setDieTeeth}
+              showStoneModel={stage === "model"}
+              onStoneModelChange={setStoneParts}
               manualAlignArch={alignKind === "manual" ? alignArch : null}
               onAlignProgress={(picks) => {
                 setAlignPicks(picks);
@@ -2815,6 +3030,42 @@ function LabProsthesisAiDesignDialog({
                 {workWide ? <span>마진</span> : null}
               </Button>
               {marginShown ? overlayLegend("bg-teal-500", "마진") : null}
+              </div>
+              <div className={cn("relative flex justify-center", dieShown && "min-w-12")}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="flex">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={dieShown ? "default" : "outline"}
+                      className={viewToolBtn}
+                      aria-label="다이"
+                      aria-pressed={dieShown}
+                      disabled={dieTeeth.length === 0}
+                      onClick={() => {
+                        setIsolatedTeeth(null);
+                        setDieShown((on) => !on);
+                      }}
+                    >
+                      <Cylinder />
+                      {workWide ? <span>다이</span> : null}
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="z-[520]">
+                  {dieTeeth.length === 0 ? (
+                    "마진을 잡으면 다이를 만듭니다."
+                  ) : (
+                    <>
+                      마진을 0.75mm 넓혀 수직으로 자른 다이입니다.
+                      <br />
+                      다이가 있는 악 모델은 가립니다.
+                    </>
+                  )}
+                </TooltipContent>
+              </Tooltip>
+              {dieShown ? overlayLegend("bg-[#e6d7ad]", "다이") : null}
               </div>
               </div>
               <Tooltip>
@@ -3249,33 +3500,8 @@ function LabProsthesisAiDesignDialog({
                             );
                           })}
                         </div>
-                        {designScope === "model" ? (
-                          <div className="space-y-1 pt-1">
-                            <p className="text-xs font-semibold text-foreground">모델 종류</p>
-                            {MODEL_KINDS.map((kind) => (
-                              <label
-                                key={kind.id}
-                                className="flex cursor-pointer items-center gap-2 text-[11px]"
-                                title={kind.hint}
-                              >
-                                <input
-                                  type="radio"
-                                  name="lab-model-kind"
-                                  className="h-3.5 w-3.5 accent-primary"
-                                  checked={modelKind === kind.id}
-                                  onChange={() => {
-                                    modelKindRef.current = kind.id;
-                                    setModelKind(kind.id);
-                                    queueSaveWorkRef.current();
-                                  }}
-                                />
-                                {kind.label}
-                              </label>
-                            ))}
-                          </div>
-                        ) : null}
                       </div>
-                      <div className="grid grid-cols-3 gap-1">
+                      <div className="grid grid-cols-4 gap-1">
                         {DESIGN_STAGES.map((item) => (
                           <Button
                             key={item.id}
@@ -3286,14 +3512,17 @@ function LabProsthesisAiDesignDialog({
                             data-coach={`stage-${item.id}`}
                             disabled={
                               (item.id !== "scan" && designScope == null) ||
-                              (item.id === "design" && !scopeMakesCrown(designScope))
+                              (item.id === "design" && !scopeMakesCrown(designScope)) ||
+                              (item.id === "model" && designScope !== "model")
                             }
                             title={
                               item.id !== "scan" && designScope == null
                                 ? "범위를 먼저 고릅니다."
                                 : item.id === "design" && !scopeMakesCrown(designScope)
                                   ? "마진만 진행 중입니다."
-                                  : undefined
+                                  : item.id === "model" && designScope !== "model"
+                                    ? "범위를 모델까지로 고르면 엽니다."
+                                    : undefined
                             }
                             onClick={() => {
                               onStage(item.id);
@@ -3306,6 +3535,110 @@ function LabProsthesisAiDesignDialog({
                         ))}
                       </div>
                     </section>
+                    {stage === "model" ? (
+                      <section className="space-y-2.5" data-coach="model-settings">
+                        <div className="space-y-1">
+                          <p className="text-xs font-semibold text-foreground">모델 종류</p>
+                          {MODEL_KINDS.map((kind) => (
+                            <label
+                              key={kind.id}
+                              className="flex cursor-pointer items-center gap-2 text-[11px]"
+                              title={kind.hint}
+                            >
+                              <input
+                                type="radio"
+                                name="lab-model-kind"
+                                className="h-3.5 w-3.5 accent-primary"
+                                checked={modelSettings.kind === kind.id}
+                                onChange={() => patchModelSettings({ kind: kind.id })}
+                              />
+                              {kind.label}
+                            </label>
+                          ))}
+                        </div>
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between text-xs font-medium">
+                            <span>받침 높이</span>
+                            <span className="tabular-nums text-muted-foreground">
+                              {modelSettings.heightMm} mm
+                            </span>
+                          </div>
+                          <Slider
+                            min={MODEL_HEIGHT_RANGE_MM.min}
+                            max={MODEL_HEIGHT_RANGE_MM.max}
+                            step={1}
+                            value={[modelSettings.heightMm]}
+                            onValueChange={([value]) =>
+                              patchModelSettings({
+                                heightMm: value ?? DEFAULT_MODEL_SETTINGS.heightMm,
+                              })
+                            }
+                            aria-label="받침 높이"
+                          />
+                        </div>
+                        <label className="flex items-center justify-between gap-3 text-xs font-medium">
+                          다이 분리
+                          <Switch
+                            checked={modelSettings.kind === "die" || modelSettings.dieSplit}
+                            disabled={modelSettings.kind === "die"}
+                            onCheckedChange={(on) => patchModelSettings({ dieSplit: on })}
+                            aria-label="다이 분리"
+                            className="h-5 w-9 data-[state=checked]:bg-primary [&>span]:h-4 [&>span]:w-4 data-[state=checked]:[&>span]:translate-x-4"
+                          />
+                        </label>
+                        {modelSettings.kind === "die" || modelSettings.dieSplit ? (
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between text-xs font-medium">
+                              <span>다이 간격</span>
+                              <span className="tabular-nums text-muted-foreground">
+                                {modelSettings.dieGapMm.toFixed(2)} mm
+                              </span>
+                            </div>
+                            <Slider
+                              min={Math.round(MODEL_DIE_GAP_RANGE_MM.min * 100)}
+                              max={Math.round(MODEL_DIE_GAP_RANGE_MM.max * 100)}
+                              step={1}
+                              value={[Math.round(modelSettings.dieGapMm * 100)]}
+                              onValueChange={([value]) =>
+                                patchModelSettings({
+                                  dieGapMm: (value ?? DEFAULT_MODEL_SETTINGS.dieGapMm * 100) / 100,
+                                })
+                              }
+                              aria-label="다이 간격"
+                            />
+                          </div>
+                        ) : null}
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-8 w-full text-xs"
+                          disabled={Boolean(stoneBlocked)}
+                          title={stoneBlocked ?? undefined}
+                          onClick={runStoneModel}
+                        >
+                          {stoneParts.length > 0 ? "모델 다시 생성" : "모델 생성"}
+                        </Button>
+                        {stoneStale ? (
+                          <p className="text-[11px] leading-relaxed text-amber-700">
+                            설정이나 마진이 바뀌었습니다.
+                            <br />
+                            다시 생성해야 내보낼 수 있습니다.
+                          </p>
+                        ) : null}
+                        {stoneParts.length > 0 ? (
+                          <ul className="space-y-0.5 text-[11px] text-muted-foreground">
+                            {stoneParts.map((part) => (
+                              <li key={part.id} className="flex justify-between gap-3">
+                                <span className="font-medium text-foreground">{part.label}</span>
+                                <span className="tabular-nums">
+                                  {part.triangleCount.toLocaleString()} 면
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : null}
+                      </section>
+                    ) : null}
                     {stage === "scan" ? (
                       <section className="space-y-2">
                         <p className="text-xs font-semibold text-foreground">모델 정렬</p>
@@ -3458,7 +3791,7 @@ function LabProsthesisAiDesignDialog({
                         ) : null}
                       </section>
                     ) : null}
-                    {stage !== "scan" ? (
+                    {stage === "margin" || stage === "design" ? (
                       <LabProsthesisModifyPanel
                         tool={modifyTool}
                         onTool={(next) => {
@@ -3780,6 +4113,10 @@ function LabProsthesisAiDesignDialog({
               highlightInsertionKey={viewedAxisKey}
               canSetInsertion={entries.length > 0}
               onSelectTooth={showTooth}
+              isolatedTeeth={isolatedTeeth}
+              dieTeeth={dieTeeth}
+              onIsolateTooth={isolateTooth}
+              onShowArch={showArch}
               onSetInsertion={rememberInsertion}
               onToggleInfo={() => setToothInfoOpen((open) => !open)}
               onConfirmMargin={confirmMargin}
@@ -3896,7 +4233,7 @@ function LabProsthesisAiDesignDialog({
         <DesignExportDialog
           open={exportOpen}
           onOpenChange={setExportOpen}
-          restorations={exportRestorations}
+          restorations={exportRows}
           scans={exportScans}
           busy={exportBusy}
           onDownload={(selection) => void downloadExport(selection)}
@@ -4186,6 +4523,10 @@ function DesignViewerChrome({
   highlightInsertionKey,
   canSetInsertion,
   onSelectTooth,
+  isolatedTeeth,
+  dieTeeth,
+  onIsolateTooth,
+  onShowArch,
   onSetInsertion,
   onToggleInfo,
   onConfirmMargin,
@@ -4217,6 +4558,10 @@ function DesignViewerChrome({
   highlightInsertionKey: string;
   canSetInsertion: boolean;
   onSelectTooth: (toothNumber: string) => void;
+  isolatedTeeth: readonly string[] | null;
+  dieTeeth: readonly string[];
+  onIsolateTooth: (toothNumber: string) => void;
+  onShowArch: (arch: "upper" | "lower") => void;
   onSetInsertion: (toothNumbers: readonly string[]) => void;
   onToggleInfo: () => void;
   onConfirmMargin: (toothNumber: string) => void;
@@ -4253,16 +4598,21 @@ function DesignViewerChrome({
       type="button"
       className={cn(
         "w-fit shrink-0 whitespace-nowrap rounded-md px-1 py-0.5 text-left",
-        activeTooth?.toothNumber === tooth.toothNumber
-          ? "bg-primary/10"
-          : "hover:bg-muted",
+        isolatedTeeth?.includes(tooth.toothNumber)
+          ? "bg-primary text-primary-foreground"
+          : activeTooth?.toothNumber === tooth.toothNumber
+            ? "bg-primary/10"
+            : "hover:bg-muted",
       )}
       title={
-        axisOn
-          ? "삽입축을 잡았던 방향·각도·줌으로 봅니다"
-          : "이 치아의 교합면을 봅니다"
+        dieTeeth.includes(tooth.toothNumber)
+          ? "이 치아의 다이와 작업물만 봅니다"
+          : axisOn
+            ? "삽입축을 잡았던 방향·각도·줌으로 봅니다"
+            : "이 치아의 교합면을 봅니다"
       }
-      onClick={() => onSelectTooth(tooth.toothNumber)}
+      aria-pressed={Boolean(isolatedTeeth?.includes(tooth.toothNumber))}
+      onClick={() => onIsolateTooth(tooth.toothNumber)}
     >
       <span className="font-semibold">#{tooth.toothNumber}</span>
     </button>
@@ -4650,9 +5000,20 @@ function DesignViewerChrome({
               <div className="max-h-[min(24rem,52vh)] overflow-y-auto border-t px-3.5 py-2.5">
                 {archGroups.map((group) => (
                   <div key={group.id} className="mb-2.5 last:mb-0">
-                    <p className="text-xs font-medium text-muted-foreground">
-                      {group.label}
-                    </p>
+                    {group.id === "other" ? (
+                      <p className="text-xs font-medium text-muted-foreground">
+                        {group.label}
+                      </p>
+                    ) : (
+                      <button
+                        type="button"
+                        className="-mx-1 rounded-md px-1 py-0.5 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+                        title={`${group.label} 모델을 전부 봅니다`}
+                        onClick={() => onShowArch(group.id as "upper" | "lower")}
+                      >
+                        {group.label}
+                      </button>
+                    )}
                     <ul className="ml-2 mt-1 border-l border-border pl-3">
                       {toothInfoBlocks(group.teeth, spans).map((block) => {
                         if (block.kind === "bridge") {
@@ -4785,12 +5146,14 @@ function DesignViewerChrome({
 
 function CaseHeaderLines({
   header,
+  nav,
 }: {
   header?: LabProsthesisAiCaseHeader | null;
+  nav?: ReactNode;
 }) {
   const primary = String(header?.primary || "").trim();
   const dates = arrivalOnlyLabel(String(header?.dates || "").trim());
-  if (!primary && !dates) return null;
+  if (!primary && !dates && !nav) return null;
   return (
     <p className="flex min-w-0 flex-nowrap items-center gap-x-3 overflow-hidden text-xs text-muted-foreground">
       {primary ? (
@@ -4798,6 +5161,7 @@ function CaseHeaderLines({
           {primary}
         </span>
       ) : null}
+      {nav}
       {dates ? (
         <span className="shrink-0 tabular-nums">{dates}</span>
       ) : null}

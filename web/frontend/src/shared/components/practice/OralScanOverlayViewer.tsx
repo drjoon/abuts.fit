@@ -25,6 +25,9 @@
 // - 2026-09-26: 바이트 맞춤은 연 파일과 좌표가 다르면 작업 DCM이다. 작업 DCM은 맞춤을 다시 하지 않는다.
 // - 2026-09-27: 정중앙은 모눈까지. 2mm는 옅은 점선, 10mm는 더 진하고, 가운데는 더 굵다.
 // - 2026-09-27: 뷰를 줄이면 모델 배율은 처음 맞춘 그대로 두고 좌우를 자른다.
+// - 2026-09-27: 마진을 교합면에서 0.75mm 넓혀 삽입축으로 내려 다이를 자른다. 다이 보기는 다이가 있는 악 스캔을 숨긴다.
+// - 2026-09-27: 치아만 보기는 그 치아의 다이와 작업물만 그린다.
+// - 2026-09-27: 출력용 모델은 buildStoneModel로 만들어 들고 있다가 내보낸다. 보는 동안 스캔·다이는 가리고, 스캔 좌표가 바뀌면 버린다.
 import {
   forwardRef,
   useEffect,
@@ -68,7 +71,7 @@ import {
 import {
   sculptStampWidth,
   type DesignGesture,
-  type ModelKind,
+  type ModelSettings,
   type ProsthesisDesignEdit,
   type ToothDesignEdit,
 } from "@/shared/practice/labProsthesisModify";
@@ -84,8 +87,15 @@ import {
   PROJECTED_MARGIN_TRIANGLE_STRIDE,
 } from "@/shared/practice/detectColorMargin";
 import {
+  buildMarginDie,
+  buildStoneModel,
+  type StoneModelJaw,
+  type StoneModelPart,
+} from "@/shared/practice/labStoneModel";
+import {
   buildProsthesisEditLayer,
   connectorFrame,
+  marginWorldPoints,
   readEditHit,
   type EditHit,
   type ScanDistanceProbe,
@@ -93,6 +103,14 @@ import {
 import { cn } from "@/shared/ui/cn";
 
 export type OralScanViewPreset = "fit" | "occlusal" | "buccal" | "lingual";
+
+/** 석고 다이 색. */
+const DIE_RGB = 0xe6d7ad;
+const STONE_PART_RGB: Record<StoneModelPart["kind"], number> = {
+  arch: 0xd8c9a3,
+  die: DIE_RGB,
+  post: 0x9ca3af,
+};
 
 export type OralScanOverlayHandle = {
   setView: (preset: OralScanViewPreset) => void;
@@ -165,6 +183,15 @@ export type OralScanOverlayHandle = {
    */
   exportDesignStl: (input: DesignStlExportInput) => Array<{ fileName: string; blob: Blob }>;
   /**
+   * 모델 설정으로 출력용 모델을 만든다. 파트는 뷰어가 들고 있다가 내보낸다.
+   * 다이 절단 반지름은 마진 가장 바깥 반지름에 1.2mm를 더한다.
+   */
+  buildStoneModel: (input: {
+    settings: ModelSettings;
+    dies: ReadonlyArray<{ tooth: string; margin: ToothDesignEdit["margin"] }>;
+  }) => StoneModelPartSummary[];
+  clearStoneModel: () => void;
+  /**
    * 라이브러리 스캔바디를 스캔에 맞춘다. 윗면 중심과 축을 스캔 면에서 찾는다.
    * 치아 위치나 주변 스캔이 없으면 null.
    */
@@ -180,9 +207,13 @@ export type DesignStlExportInput = {
   /** 파일 하나에 묶을 치아. 브리지는 스팬 전체. */
   groups: ReadonlyArray<{ fileName: string; teeth: readonly string[] }>;
   scans: ReadonlyArray<{ fileName: string; role: WorkingScanMesh["role"] }>;
-  /** 다이·접촉 확인·교합 확인 모델. 치아는 지대치. */
-  models?: ReadonlyArray<{ fileName: string; kind: ModelKind; teeth: readonly string[] }>;
+  /** 「모델 생성」으로 만든 파트. id는 StoneModelPart.id. */
+  stoneParts?: ReadonlyArray<{ id: string; fileName: string }>;
   camCoordinates: boolean;
+};
+
+export type StoneModelPartSummary = Omit<StoneModelPart, "positions"> & {
+  triangleCount: number;
 };
 
 export type ConnectorSectionShot = {
@@ -256,6 +287,18 @@ type Props = {
   /** 마진·보철 수정. 없으면 그리지 않는다. */
   designEdit?: ProsthesisDesignEdit | null;
   onDesignGesture?: (gesture: DesignGesture) => void;
+  /** 마진을 잡은 치아. 이 마진을 넓혀 삽입축으로 내려 다이를 자른다. */
+  dieMargins?: Readonly<Record<string, ToothDesignEdit["margin"]>> | null;
+  /** 다이를 보이고, 다이가 있는 악 스캔은 숨긴다. */
+  showDies?: boolean;
+  /** 이 치아들의 다이와 작업물만 보인다. 다이가 아직 없으면 스캔은 그대로 둔다. */
+  isolateTeeth?: readonly string[] | null;
+  /** 다이를 만든 치아가 바뀔 때. */
+  onDiesChange?: (teeth: readonly string[]) => void;
+  /** 만든 모델을 보이고, 원래 스캔과 다이는 가린다. */
+  showStoneModel?: boolean;
+  /** 모델을 만들거나, 스캔 좌표가 바뀌어 모델을 버렸을 때. */
+  onStoneModelChange?: (parts: StoneModelPartSummary[]) => void;
   /**
    * 수동 정렬. 이 악과 바이트만 좌우로 보여 점을 찍는다.
    * 없으면 평소 뷰.
@@ -1269,6 +1312,47 @@ function worldTriangles(meshes: readonly THREE.Mesh[]): Float32Array {
     offset += chunk.length;
   }
   return merged;
+}
+
+/** 이 점에서 reach 안에 꼭짓점이 하나라도 있는 월드 삼각형. 행렬은 미리 갱신해 둔다. */
+function nearbyWorldTriangles(
+  meshes: readonly THREE.Mesh[],
+  center: THREE.Vector3,
+  reach: number,
+): Float32Array {
+  const reach2 = reach * reach;
+  const out: number[] = [];
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  for (const mesh of meshes) {
+    const geometry = mesh.geometry as THREE.BufferGeometry;
+    const pos = geometry.getAttribute("position");
+    if (!pos) continue;
+    const index = geometry.getIndex();
+    const count = index ? index.count : pos.count;
+    const inverse = mesh.matrixWorld.clone().invert();
+    const local = center.clone().applyMatrix4(inverse);
+    const scale = mesh.matrixWorld.getMaxScaleOnAxis() || 1;
+    const localReach2 = reach2 / (scale * scale);
+    for (let i = 0; i + 2 < count; i += 3) {
+      a.fromBufferAttribute(pos, index ? index.getX(i) : i);
+      b.fromBufferAttribute(pos, index ? index.getX(i + 1) : i + 1);
+      c.fromBufferAttribute(pos, index ? index.getX(i + 2) : i + 2);
+      if (
+        a.distanceToSquared(local) > localReach2 &&
+        b.distanceToSquared(local) > localReach2 &&
+        c.distanceToSquared(local) > localReach2
+      ) {
+        continue;
+      }
+      for (const v of [a, b, c]) {
+        v.applyMatrix4(mesh.matrixWorld);
+        out.push(v.x, v.y, v.z);
+      }
+    }
+  }
+  return new Float32Array(out);
 }
 
 function insertionDirByTooth(axes: readonly InsertionAxis[]) {
@@ -2316,6 +2400,12 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       centerGuide = "off",
       designEdit = null,
       onDesignGesture,
+      dieMargins = null,
+      showDies = false,
+      isolateTeeth = null,
+      onDiesChange,
+      showStoneModel = false,
+      onStoneModelChange,
       manualAlignArch = null,
       onAlignProgress,
       onAlignMerged,
@@ -2388,6 +2478,39 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   const designEditRef = useRef<ProsthesisDesignEdit | null>(null);
   const onDesignGestureRef = useRef(onDesignGesture);
   const editLayerRef = useRef<THREE.Group | null>(null);
+  const dieLayerRef = useRef<THREE.Group | null>(null);
+  const dieCacheRef = useRef(
+    new Map<string, { sig: string; arch: "upper" | "lower"; positions: Float32Array }>(),
+  );
+  const [dieReady, setDieReady] = useState<Array<{ tooth: string; arch: "upper" | "lower" }>>([]);
+  const dieMarginsRef = useRef(dieMargins);
+  dieMarginsRef.current = dieMargins;
+  const onDiesChangeRef = useRef(onDiesChange);
+  onDiesChangeRef.current = onDiesChange;
+  const isolateKey = (isolateTeeth ?? []).map((tooth) => fdiDigits(tooth)).filter(Boolean).join(",");
+  const dieReadyKey = dieReady.map((row) => `${row.tooth}:${row.arch}`).join(",");
+  /** 다이 보기·치아만 보기에서 숨길 스캔. 수동 정렬 중에는 쓰지 않는다. */
+  const stoneLayerRef = useRef<THREE.Group | null>(null);
+  const stonePartsRef = useRef<StoneModelPart[]>([]);
+  const [stoneVersion, setStoneVersion] = useState(0);
+  const onStoneModelChangeRef = useRef(onStoneModelChange);
+  onStoneModelChangeRef.current = onStoneModelChange;
+  const stoneShown = showStoneModel && manualAlignArch == null && stonePartsRef.current.length > 0;
+  const dieHideRef = useRef<(role: LabOralScanRole) => boolean>(() => false);
+  dieHideRef.current = (role) => {
+    if (stoneShown) return true;
+    const isolated = isolateKey ? isolateKey.split(",") : [];
+    if (isolated.length > 0 && dieReady.some((row) => isolated.includes(row.tooth))) {
+      return true;
+    }
+    if (!showDies) return false;
+    return dieReady.some((row) => row.arch === role);
+  };
+  const dieShownRef = useRef<(tooth: string) => boolean>(() => false);
+  dieShownRef.current = (tooth) => {
+    if (manualAlignArch != null || stoneShown) return false;
+    return isolateKey ? isolateKey.split(",").includes(tooth) : showDies;
+  };
   const manualRef = useRef<{
     arch: "upper" | "lower" | null;
     model: THREE.Vector3[];
@@ -2656,7 +2779,10 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         mat.depthWrite = true;
       }
       entry.mesh.visible =
-        !hiddenByAlign && !ghostOff && visibleRef.current[entry.id] !== false;
+        !hiddenByAlign &&
+        !ghostOff &&
+        visibleRef.current[entry.id] !== false &&
+        !dieHideRef.current(entry.role);
       if (forced) entry.mesh.visible = true;
     }
     if (scene && renderer) {
@@ -3898,9 +4024,27 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       const forced = split != null && (entry.role === split || entry.role === "bite");
       entry.mesh.visible = forced
         ? true
-        : !hidden && !ghostOff && visible[entry.id] !== false;
+        : !hidden &&
+          !ghostOff &&
+          visible[entry.id] !== false &&
+          !dieHideRef.current(entry.role);
     }
-  }, [visible, loadVersion, ghostOpacity, prepArch, manualAlignArch]);
+    for (const child of dieLayerRef.current?.children ?? []) {
+      child.visible = dieShownRef.current(String(child.userData.dieTooth || ""));
+    }
+    if (stoneLayerRef.current) stoneLayerRef.current.visible = stoneShown;
+  }, [
+    visible,
+    loadVersion,
+    ghostOpacity,
+    prepArch,
+    manualAlignArch,
+    showDies,
+    isolateKey,
+    dieReadyKey,
+    stoneShown,
+    stoneVersion,
+  ]);
 
   useEffect(() => {
     restyleLoaded();
@@ -4243,7 +4387,9 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         clearScanbodyMarksRef.current();
         onScanbodyPicksRef.current?.(0);
       },
-      exportDesignStl: ({ groups, scans, models = [], camCoordinates }) => {
+      buildStoneModel: (input) => buildStoneModelRef.current(input),
+      clearStoneModel: () => clearStoneModelRef.current(true),
+      exportDesignStl: ({ groups, scans, stoneParts = [], camCoordinates }) => {
         const scene = sceneRef.current;
         const group = groupRef.current;
         if (!scene || !group) return [];
@@ -4268,35 +4414,10 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
               .map((entry) => entry.mesh),
           ),
         }));
-        const modelRows = models.map((row) => {
-          const places = row.teeth
-            .map((tooth) => placementsRef.current.find((place) => place.toothNumber === tooth))
-            .filter((place): place is ToothPlacement => place != null);
-          const arches = new Set(places.map((place) => place.arch));
-          const roles =
-            row.kind === "bite"
-              ? new Set<LabOralScanRole>(["upper", "lower"])
-              : new Set<LabOralScanRole>(arches);
-          const all = worldTriangles(
-            loadedRef.current.filter((entry) => roles.has(entry.role)).map((entry) => entry.mesh),
-          );
-          if (row.kind !== "die") return { fileName: row.fileName, positions: all };
-          const kept: number[] = [];
-          for (let i = 0; i + 8 < all.length; i += 9) {
-            const cx = (all[i]! + all[i + 3]! + all[i + 6]!) / 3;
-            const cy = (all[i + 1]! + all[i + 4]! + all[i + 7]!) / 3;
-            const cz = (all[i + 2]! + all[i + 5]! + all[i + 8]!) / 3;
-            const inside = places.some((place) => {
-              const dx = cx - place.center.x;
-              const dy = cy - place.center.y;
-              const dz = cz - place.center.z;
-              const reach = place.radius * 1.25;
-              return dx * dx + dy * dy + dz * dz <= reach * reach;
-            });
-            if (!inside) continue;
-            for (let k = 0; k < 9; k += 1) kept.push(all[i + k]!);
-          }
-          return { fileName: row.fileName, positions: new Float32Array(kept) };
+        const partsById = new Map(stonePartsRef.current.map((part) => [part.id, part]));
+        const modelRows = stoneParts.flatMap((row) => {
+          const part = partsById.get(row.id);
+          return part ? [{ fileName: row.fileName, positions: part.positions.slice() }] : [];
         });
         const origin = new THREE.Vector3();
         let scale = 1;
@@ -4827,17 +4948,220 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       editLayerRef.current = null;
     }
     if (!designEdit) return;
+    const isolated = isolateKey ? isolateKey.split(",") : [];
+    const spec =
+      isolated.length > 0
+        ? {
+            ...designEdit,
+            edits: Object.fromEntries(
+              Object.entries(designEdit.edits).filter(([tooth]) =>
+                isolated.includes(fdiDigits(tooth)),
+              ),
+            ),
+            bridges: designEdit.bridges.filter(
+              (link) =>
+                isolated.includes(fdiDigits(link.from)) && isolated.includes(fdiDigits(link.to)),
+            ),
+          }
+        : designEdit;
     const layer = buildProsthesisEditLayer({
       placements: placementsRef.current,
       frame: frameRef.current,
       insertionByTooth: insertionDirByTooth(insertionAxesRef.current),
       unitToMm: unitToMmRef.current,
-      spec: designEdit,
+      spec,
       probe: (tooth, points, normals) => scanDistanceProbeRef.current(tooth, points, normals),
     });
     scene.add(layer);
     editLayerRef.current = layer;
-  }, [designEdit, loadVersion, showInsertionAxis]);
+  }, [designEdit, loadVersion, showInsertionAxis, isolateKey]);
+
+  const clearStoneModel = (notify: boolean) => {
+    const prev = stoneLayerRef.current;
+    if (prev) {
+      sceneRef.current?.remove(prev);
+      disposeObject3D(prev);
+    }
+    stoneLayerRef.current = null;
+    const had = stonePartsRef.current.length > 0;
+    stonePartsRef.current = [];
+    if (!had) return;
+    setStoneVersion((value) => value + 1);
+    if (notify) onStoneModelChangeRef.current?.([]);
+  };
+
+  const buildStoneModelLayer: OralScanOverlayHandle["buildStoneModel"] = ({ settings, dies }) => {
+    const scene = sceneRef.current;
+    const frame = frameRef.current;
+    clearStoneModel(false);
+    if (!scene || !frame) {
+      onStoneModelChangeRef.current?.([]);
+      return [];
+    }
+    groupRef.current?.updateWorldMatrix(true, true);
+    const unit = unitToMmRef.current > 0 ? unitToMmRef.current : 1;
+    const jaws: StoneModelJaw[] = [];
+    for (const arch of ["upper", "lower"] as const) {
+      const entry = loadedRef.current
+        .filter((row) => row.role === arch)
+        .sort(
+          (a, b) =>
+            (b.geometry.getAttribute("position")?.count ?? 0) -
+            (a.geometry.getAttribute("position")?.count ?? 0),
+        )[0];
+      if (!entry) continue;
+      jaws.push({ arch, geometry: entry.geometry, matrix: entry.mesh.matrixWorld.clone() });
+    }
+    const stoneDies = dies.flatMap(({ tooth, margin }) => {
+      const digits = fdiDigits(tooth);
+      const place = placementsRef.current.find((row) => row.toothNumber === digits);
+      if (!place || margin.deleted || margin.radii.length === 0) return [];
+      const widest = Math.max(...margin.radii);
+      return [
+        {
+          tooth: digits,
+          arch: place.arch,
+          center: place.center.clone(),
+          cutRadius: place.radius * 0.78 * widest + (margin.offsetMm + 1.2) / unit,
+        },
+      ];
+    });
+    const parts = buildStoneModel({
+      settings,
+      jaws,
+      dies: stoneDies,
+      up: frame.up.clone(),
+      right: frame.right.clone(),
+      anterior: frame.anterior.clone(),
+      unitToMm: unit,
+    });
+    if (parts.length > 0) {
+      const layer = new THREE.Group();
+      layer.name = "stone-model";
+      for (const part of parts) {
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute("position", new THREE.BufferAttribute(part.positions.slice(), 3));
+        geometry.computeVertexNormals();
+        const mesh = new THREE.Mesh(
+          geometry,
+          new THREE.MeshStandardMaterial({
+            color: STONE_PART_RGB[part.kind],
+            roughness: 0.75,
+            metalness: part.kind === "post" ? 0.2 : 0,
+            side: THREE.DoubleSide,
+          }),
+        );
+        mesh.frustumCulled = false;
+        mesh.userData.stonePart = part.id;
+        layer.add(mesh);
+      }
+      layer.visible = false;
+      scene.add(layer);
+      stoneLayerRef.current = layer;
+    }
+    stonePartsRef.current = parts;
+    setStoneVersion((value) => value + 1);
+    const summary = parts.map(({ positions, ...rest }) => ({
+      ...rest,
+      triangleCount: positions.length / 9,
+    }));
+    onStoneModelChangeRef.current?.(summary);
+    return summary;
+  };
+  const buildStoneModelRef = useRef(buildStoneModelLayer);
+  buildStoneModelRef.current = buildStoneModelLayer;
+  const clearStoneModelRef = useRef(clearStoneModel);
+  clearStoneModelRef.current = clearStoneModel;
+
+  useEffect(() => {
+    clearStoneModelRef.current(true);
+  }, [loadVersion]);
+
+  const dieMarginKey = dieMargins ? JSON.stringify(dieMargins) : "";
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const scene = sceneRef.current;
+      if (!scene) return;
+      const margins = dieMarginsRef.current ?? {};
+      const unit = unitToMmRef.current > 0 ? unitToMmRef.current : 1;
+      const frame = frameRef.current;
+      const up = frame?.up ?? new THREE.Vector3(0, 0, 1);
+      const right = frame?.right ?? new THREE.Vector3(1, 0, 0);
+      const axes = insertionDirByTooth(insertionAxesRef.current);
+      groupRef.current?.updateWorldMatrix(true, true);
+      const cache = dieCacheRef.current;
+      const next = new Map<string, { sig: string; arch: "upper" | "lower"; positions: Float32Array }>();
+      for (const [raw, margin] of Object.entries(margins)) {
+        const tooth = fdiDigits(raw);
+        const place = placementsRef.current.find((row) => row.toothNumber === tooth);
+        if (!place || margin.deleted || margin.radii.length < 3) continue;
+        const normal = axes.get(tooth)?.clone() ?? up.clone();
+        if (normal.lengthSq() < 1e-8) normal.copy(up);
+        normal.normalize();
+        const sig = [
+          loadVersion,
+          place.center.toArray().map((v) => v.toFixed(3)).join(","),
+          place.radius.toFixed(3),
+          normal.toArray().map((v) => v.toFixed(4)).join(","),
+          JSON.stringify(margin),
+        ].join("|");
+        const hit = cache.get(tooth);
+        if (hit && hit.sig === sig) {
+          next.set(tooth, hit);
+          continue;
+        }
+        const points = marginWorldPoints({ place, normal, right, margin, unitToMm: unit });
+        const reach = Math.max(place.radius * 2, 10 / unit);
+        const meshes = loadedRef.current
+          .filter((entry) => entry.role === place.arch)
+          .map((entry) => entry.mesh);
+        const positions = buildMarginDie({
+          triangles: nearbyWorldTriangles(meshes, place.center, reach),
+          margin: points,
+          axis: normal,
+          unitToMm: unit,
+        });
+        if (positions) next.set(tooth, { sig, arch: place.arch, positions });
+      }
+      dieCacheRef.current = next;
+
+      const prev = dieLayerRef.current;
+      if (prev) {
+        scene.remove(prev);
+        disposeObject3D(prev);
+        dieLayerRef.current = null;
+      }
+      const ready: Array<{ tooth: string; arch: "upper" | "lower" }> = [];
+      if (next.size > 0) {
+        const layer = new THREE.Group();
+        layer.name = "margin-dies";
+        for (const [tooth, row] of next) {
+          const geometry = new THREE.BufferGeometry();
+          geometry.setAttribute("position", new THREE.BufferAttribute(row.positions.slice(), 3));
+          geometry.computeVertexNormals();
+          const mesh = new THREE.Mesh(
+            geometry,
+            new THREE.MeshStandardMaterial({
+              color: DIE_RGB,
+              roughness: 0.72,
+              metalness: 0,
+              side: THREE.DoubleSide,
+            }),
+          );
+          mesh.userData.dieTooth = tooth;
+          mesh.visible = dieShownRef.current(tooth);
+          mesh.frustumCulled = false;
+          layer.add(mesh);
+          ready.push({ tooth, arch: row.arch });
+        }
+        scene.add(layer);
+        dieLayerRef.current = layer;
+      }
+      setDieReady(ready);
+      onDiesChangeRef.current?.(ready.map((row) => row.tooth));
+    }, 180);
+    return () => window.clearTimeout(timer);
+  }, [dieMarginKey, loadVersion, showInsertionAxis]);
 
   return (
     <div className={cn("relative h-full min-h-0 w-full", className)}>
