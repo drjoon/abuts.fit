@@ -51,6 +51,7 @@
 // - 2026-09-27: 인레이·온레이는 와동 테두리를 마진으로 잡고, 와동만 채운 형상을 만든다. 와동 벽 테이퍼·언더컷, 전용 재료 숫자, 위저드 두께·내보내기 단계.
 // - 2026-09-27: 내보내기·이미지 저장·페인트·채팅 첨부는 치아 정보 아래 패널. 페인트를 그린 뒤 포인터 옆에 이미지 저장·채팅 첨부 뱃지를 두고, 다른 곳을 누르면 뱃지만 없앤다.
 // - 2026-09-27: 마진 수정. 점은 스캔 면을 따라 끌고, 펜은 그은 구간을 다시 그린다. 지우면 점을 찍어 닫고, 다시 검출은 찍은 시작점부터. 조정 간격·언더컷 토글, 언더컷을 지나면 경고.
+// - 2026-09-27: 수정 › 삽입 도구에 자동 추천. 언더컷 면 비율 전·후와 기울인 각도를 보여 준다.
 import {
   useCallback,
   useEffect,
@@ -127,6 +128,7 @@ import {
 import {
   OralScanOverlayViewer,
   type ConnectorSectionShot,
+  type InsertionRecommendation,
   type OralScanOverlayHandle,
   type OralScanOverlaySource,
   type OralScanWorldTurn,
@@ -740,6 +742,11 @@ function LabProsthesisAiDesignDialog({
   );
   const [insertionKeys, setInsertionKeys] = useState<string[]>([]);
   const [insertionShown, setInsertionShown] = useState(false);
+  /** 마지막 자동 추천. 실패하면 result가 null. 손으로 다시 잡으면 지운다. */
+  const [insertionPick, setInsertionPick] = useState<{
+    key: string;
+    result: InsertionRecommendation | null;
+  } | null>(null);
   const [centerGuide, setCenterGuide] = useState<WorkSessionCenterGuide>("center");
   const viewTogglesRef = useRef<WorkSessionViewToggles>({
     insertion: false,
@@ -883,6 +890,7 @@ function LabProsthesisAiDesignDialog({
       setDropScanId(null);
       setInsertionKeys([]);
       setInsertionShown(false);
+      setInsertionPick(null);
       setCenterGuide("center");
       restoreGhostVisibleRef.current = false;
       setModifyTool("margin");
@@ -2504,15 +2512,27 @@ function LabProsthesisAiDesignDialog({
     });
   };
 
-  const rememberInsertion = (toothNumbers: readonly string[]) => {
-    const ok = viewerRef.current?.setInsertionFromView(toothNumbers) === true;
-    if (!ok) return;
+  const insertionTaken = (toothNumbers: readonly string[]) => {
     const key = insertionAxisKey(toothNumbers);
     if (!key) return;
     setInsertionKeys((prev) => (prev.includes(key) ? prev : [...prev, key]));
     setInsertionShown(true);
     applyAimedDetections(toothNumbers);
     queueSaveWorkRef.current();
+  };
+
+  const rememberInsertion = (toothNumbers: readonly string[]) => {
+    const ok = viewerRef.current?.setInsertionFromView(toothNumbers) === true;
+    if (!ok) return;
+    setInsertionPick(null);
+    insertionTaken(toothNumbers);
+  };
+
+  /** 지대치 벽이 가장 덜 가려지는 방향으로 삽입축을 잡는다. */
+  const recommendInsertion = (toothNumbers: readonly string[]) => {
+    const picked = viewerRef.current?.recommendInsertion(toothNumbers) ?? null;
+    setInsertionPick({ key: insertionAxisKey(toothNumbers), result: picked });
+    if (picked) insertionTaken(toothNumbers);
   };
 
   /** 작업 위저드 — 삽입축을 스팬 순서대로 안내한 뒤 마진·디자인으로 이어간다. */
@@ -3271,6 +3291,7 @@ function LabProsthesisAiDesignDialog({
                 if (!active) setInsertionKeys([]);
               }}
               onInsertionAxisAimed={(toothNumbers) => {
+                setInsertionPick(null);
                 applyAimedDetections(toothNumbers);
                 queueSaveWorkRef.current();
               }}
@@ -4287,6 +4308,15 @@ function LabProsthesisAiDesignDialog({
                           rememberInsertion(bridgeSpan);
                           setModifyTool("insertion");
                         }}
+                        onRecommendInsertion={() => {
+                          if (bridgeSpan.length === 0) return;
+                          recommendInsertion(bridgeSpan);
+                        }}
+                        insertionPick={
+                          insertionPick && insertionPick.key === insertionAxisKey(bridgeSpan)
+                            ? insertionPick.result ?? "failed"
+                            : null
+                        }
                         onApplyInner={() => {
                           if (!activeNumber) return;
                           beginEditUndo();

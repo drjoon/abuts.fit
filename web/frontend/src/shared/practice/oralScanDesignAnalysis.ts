@@ -85,6 +85,120 @@ export function isUndercutAlignment(align: number, limit: number): boolean {
   return Number.isFinite(align) && align > limit && align < 0.82;
 }
 
+type Vec3 = [number, number, number];
+
+/** 벽이 이만큼(약 4°) 보여야 벌점이 없다. 여러 방향이 똑같이 0이면 가운데로 간다. */
+const TAPER_SLACK = 0.07;
+const TILT_PULL = 0.02;
+
+function unit3(v: Vec3): Vec3 {
+  const len = Math.hypot(v[0], v[1], v[2]) || 1;
+  return [v[0] / len, v[1] / len, v[2] / len];
+}
+
+function tangentBasis(dir: Vec3): [Vec3, Vec3] {
+  const pick: Vec3 = Math.abs(dir[0]) < 0.8 ? [1, 0, 0] : [0, 1, 0];
+  const u = unit3([
+    dir[1] * pick[2] - dir[2] * pick[1],
+    dir[2] * pick[0] - dir[0] * pick[2],
+    dir[0] * pick[1] - dir[1] * pick[0],
+  ]);
+  const v: Vec3 = [
+    dir[1] * u[2] - dir[2] * u[1],
+    dir[2] * u[0] - dir[0] * u[2],
+    dir[0] * u[1] - dir[1] * u[0],
+  ];
+  return [u, v];
+}
+
+/**
+ * 지대치(와동) 면 법선만 보고, 시작 방향에서 `maxTiltDeg` 안에서 가려지는 벽이 가장 적은 삽입 방향.
+ * 방향은 카메라가 보는 쪽(치아로 들어가는 쪽)이다. `before`·`after`는 언더컷 면 비율.
+ */
+export function recommendInsertionDirection(
+  normals: Float32Array,
+  start: Vec3,
+  options: { undercutLimit: number; maxTiltDeg?: number },
+): { dir: Vec3; tiltDeg: number; before: number; after: number } | null {
+  const count = Math.floor(normals.length / 3);
+  if (count < 30) return null;
+  const origin = unit3(start);
+  const [u, v] = tangentBasis(origin);
+  const maxTilt = ((options.maxTiltDeg ?? 32) * Math.PI) / 180;
+
+  const score = (d: Vec3) => {
+    let sum = 0;
+    for (let i = 0; i < count; i += 1) {
+      const a = normals[i * 3]! * d[0] + normals[i * 3 + 1]! * d[1] + normals[i * 3 + 2]! * d[2];
+      if (a >= 0.82) continue;
+      if (a > -TAPER_SLACK) sum += a + TAPER_SLACK;
+    }
+    const cos = d[0] * origin[0] + d[1] * origin[1] + d[2] * origin[2];
+    return sum + count * TILT_PULL * (1 - cos);
+  };
+  const undercutShare = (d: Vec3) => {
+    let hit = 0;
+    for (let i = 0; i < count; i += 1) {
+      const a = normals[i * 3]! * d[0] + normals[i * 3 + 1]! * d[1] + normals[i * 3 + 2]! * d[2];
+      if (isUndercutAlignment(a, options.undercutLimit)) hit += 1;
+    }
+    return hit / count;
+  };
+  const tilted = (x: number, y: number): Vec3 | null => {
+    if (Math.hypot(x, y) > Math.tan(maxTilt)) return null;
+    return unit3([
+      origin[0] + u[0] * x + v[0] * y,
+      origin[1] + u[1] * x + v[1] * y,
+      origin[2] + u[2] * x + v[2] * y,
+    ]);
+  };
+
+  let bestX = 0;
+  let bestY = 0;
+  let best = score(origin);
+  const coarseStep = (4 * Math.PI) / 180;
+  for (let tilt = coarseStep; tilt <= maxTilt + 1e-6; tilt += coarseStep) {
+    for (let k = 0; k < 24; k += 1) {
+      const turn = (k / 24) * Math.PI * 2;
+      const x = Math.tan(tilt) * Math.cos(turn);
+      const y = Math.tan(tilt) * Math.sin(turn);
+      const d = tilted(x, y);
+      if (!d) continue;
+      const s = score(d);
+      if (s < best) {
+        best = s;
+        bestX = x;
+        bestY = y;
+      }
+    }
+  }
+  for (const stepDeg of [2, 0.75]) {
+    const step = Math.tan((stepDeg * Math.PI) / 180);
+    const cx = bestX;
+    const cy = bestY;
+    for (let i = -2; i <= 2; i += 1) {
+      for (let j = -2; j <= 2; j += 1) {
+        if (i === 0 && j === 0) continue;
+        const d = tilted(cx + i * step, cy + j * step);
+        if (!d) continue;
+        const s = score(d);
+        if (s < best) {
+          best = s;
+          bestX = cx + i * step;
+          bestY = cy + j * step;
+        }
+      }
+    }
+  }
+  const dir = tilted(bestX, bestY) ?? origin;
+  return {
+    dir,
+    tiltDeg: (Math.atan(Math.hypot(bestX, bestY)) * 180) / Math.PI,
+    before: undercutShare(origin),
+    after: undercutShare(dir),
+  };
+}
+
 /** 0(좁음) → 0.45, 100(넓음) → -0.08 */
 export function undercutLimitFromRange(range: number): number {
   const t = Math.min(100, Math.max(0, range)) / 100;
