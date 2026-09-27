@@ -79,7 +79,7 @@ import {
   resolveFeeScheduleLabAnchorId,
   resolveLabFeeMultiplierLabAnchorId,
   resolvePerformingLabAnchorId,
-  isLabPerformingOnTransfer,
+  canLabOperatePracticeTransferWork,
   isPracticeTransferSubcontracted,
   assertLabAllowedAsDirectPracticeTarget,
   loadSubcontractDirectBlockedLabAnchorIds,
@@ -1411,6 +1411,15 @@ const buildReceivedScope = async (req) => {
     labAnchorId: targetLabAnchorId,
     autoMatchEligible,
   };
+};
+
+/** null이면 작업 가능. 협력 원청은 작업 불가(채팅은 별도). */
+const labWorkOperationDeniedMessage = (doc, labAnchorId, fallbackMessage) => {
+  if (canLabOperatePracticeTransferWork(doc, labAnchorId)) return null;
+  if (isCooperationAssignee(doc)) {
+    return "협력 기공소가 수행하는 의뢰입니다.";
+  }
+  return fallbackMessage;
 };
 
 const resolveUnreadCountForAccept = (labAnchorId, { wasUnread }) => {
@@ -6183,6 +6192,15 @@ export async function acceptPracticeTransferProsthesisFollowUp(req, res) {
       });
     }
 
+    const followUpDenied = labWorkOperationDeniedMessage(
+      doc,
+      labAnchorId,
+      "작업을 시작한 기공소만 지르 작업을 시작할 수 있습니다.",
+    );
+    if (followUpDenied) {
+      return res.status(403).json({ success: false, message: followUpDenied });
+    }
+
     const gate = canLabStartProsthesisFollowUpWork(doc);
     if (!gate.ok) {
       return res.status(409).json({
@@ -8455,6 +8473,15 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
       });
     }
 
+    const acceptDenied = labWorkOperationDeniedMessage(
+      doc,
+      labAnchorId,
+      "작업을 시작한 기공소만 작업을 시작할 수 있습니다.",
+    );
+    if (acceptDenied) {
+      return res.status(403).json({ success: false, message: acceptDenied });
+    }
+
     const isAuto = isAutoMatchMode(doc);
     const subcontractClaim =
       isSubcontractPoolOpen(doc) &&
@@ -9079,11 +9106,13 @@ export async function markReceivedPracticeTransferComplete(req, res) {
       });
     }
 
-    if (!isLabPerformingOnTransfer(doc, labAnchorId)) {
-      return res.status(403).json({
-        success: false,
-        message: "작업을 시작한 기공소만 작업 완료할 수 있습니다.",
-      });
+    const completeDenied = labWorkOperationDeniedMessage(
+      doc,
+      labAnchorId,
+      "작업을 시작한 기공소만 작업 완료할 수 있습니다.",
+    );
+    if (completeDenied) {
+      return res.status(403).json({ success: false, message: completeDenied });
     }
 
     if (isAuto && !isAutoMatchClaimActive(doc)) {
@@ -9206,11 +9235,13 @@ export async function appendReceivedPracticeTransferResultFiles(req, res) {
       });
     }
 
-    if (!isLabPerformingOnTransfer(doc, labAnchorId)) {
-      return res.status(403).json({
-        success: false,
-        message: "작업을 시작한 기공소만 결과 파일을 올릴 수 있습니다.",
-      });
+    const resultDenied = labWorkOperationDeniedMessage(
+      doc,
+      labAnchorId,
+      "작업을 시작한 기공소만 결과 파일을 올릴 수 있습니다.",
+    );
+    if (resultDenied) {
+      return res.status(403).json({ success: false, message: resultDenied });
     }
 
     if (isAuto && !isAutoMatchClaimActive(doc)) {
@@ -10247,14 +10278,15 @@ export async function setPracticeTransferAbutmentShipYmd(req, res) {
       });
     }
 
-    if (
-      !isLabPerformingOnTransfer(doc, labAnchorId) &&
-      role !== "admin"
-    ) {
-      return res.status(403).json({
-        success: false,
-        message: "작업을 시작한 기공소만 어벗 출고일을 설정할 수 있습니다.",
-      });
+    if (role !== "admin") {
+      const shipDenied = labWorkOperationDeniedMessage(
+        doc,
+        labAnchorId,
+        "작업을 시작한 기공소만 어벗 출고일을 설정할 수 있습니다.",
+      );
+      if (shipDenied) {
+        return res.status(403).json({ success: false, message: shipDenied });
+      }
     }
 
     if (!hasCustomAbutmentToothWorks(doc.toothWorks)) {
@@ -10638,11 +10670,15 @@ export async function confirmPracticeTransferAbutmentDesign(req, res) {
       });
     }
 
-    if (!isLabPerformingOnTransfer(doc, labAnchorId) && role !== "admin") {
-      return res.status(403).json({
-        success: false,
-        message: "작업을 시작한 기공소만 어벗 디자인을 확인할 수 있습니다.",
-      });
+    if (role !== "admin") {
+      const confirmDenied = labWorkOperationDeniedMessage(
+        doc,
+        labAnchorId,
+        "작업을 시작한 기공소만 어벗 디자인을 확인할 수 있습니다.",
+      );
+      if (confirmDenied) {
+        return res.status(403).json({ success: false, message: confirmDenied });
+      }
     }
 
     if (!isAbutmentDesignReady(doc)) {
@@ -11050,11 +11086,13 @@ export async function markReceivedPracticeTransferRelease(req, res) {
       });
     }
 
-    if (!isLabPerformingOnTransfer(doc, labAnchorId)) {
-      return res.status(403).json({
-        success: false,
-        message: "작업을 시작한 기공소만 작업 취소할 수 있습니다.",
-      });
+    const releaseDenied = labWorkOperationDeniedMessage(
+      doc,
+      labAnchorId,
+      "작업을 시작한 기공소만 작업 취소할 수 있습니다.",
+    );
+    if (releaseDenied) {
+      return res.status(403).json({ success: false, message: releaseDenied });
     }
 
     const { pastReady, linkedRequestIds } =

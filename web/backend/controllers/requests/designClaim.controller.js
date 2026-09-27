@@ -10,6 +10,7 @@
 // - 2026-08-15: PTX 연동 건은 수락 기공소만 클레임. 디자인 파트너는 비PTX만.
 import { Types } from "mongoose";
 import Request from "../../models/request.model.js";
+import PracticeTransfer from "../../models/practiceTransfer.model.js";
 import SystemSettings from "../../models/systemSettings.model.js";
 import {
   clampDesignClaimHours,
@@ -71,7 +72,35 @@ export async function claimDesignRequest(req, res) {
         .json({ success: false, message: "의뢰를 찾을 수 없습니다." });
     }
 
-    const allowed = await canClaimOrHandoffDesignRequest(req.user, existingForAuth);
+    let designAccessOptions = {};
+    const relatedTransferId = existingForAuth?.partnerBilling
+      ?.relatedPracticeTransferId
+      ? String(existingForAuth.partnerBilling.relatedPracticeTransferId).trim()
+      : "";
+    if (relatedTransferId && Types.ObjectId.isValid(relatedTransferId)) {
+      const transfer = await PracticeTransfer.findById(relatedTransferId)
+        .select({
+          targetLabAnchorId: 1,
+          assigneeLabAnchorId: 1,
+          assigneeKind: 1,
+          "autoMatch.claimedAt": 1,
+        })
+        .lean();
+      if (transfer) {
+        designAccessOptions = {
+          transferTargetLabAnchorId: transfer.targetLabAnchorId,
+          assigneeLabAnchorId: transfer.assigneeLabAnchorId,
+          assigneeKind: transfer.assigneeKind,
+          autoMatch: transfer.autoMatch,
+        };
+      }
+    }
+
+    const allowed = await canClaimOrHandoffDesignRequest(
+      req.user,
+      existingForAuth,
+      designAccessOptions,
+    );
     if (!allowed) {
       return res.status(403).json({
         success: false,

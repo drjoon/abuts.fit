@@ -383,12 +383,16 @@ const seedPrcFieldsAfterHandoff = async (request) => {
   return false;
 };
 
-/** 원청 + 수행 기공소. 협력·하청은 assignee가 작업시작한다. */
+/** 디자인 작업 주체. 협력은 assignee만, 하청·자체는 원청도 허용. */
 const ptxDesignLabAnchors = (transferDoc, fallbackTarget = "") => ({
   targetLabAnchorId: String(
     transferDoc?.targetLabAnchorId || fallbackTarget || "",
   ).trim(),
   assigneeLabAnchorId: getAssigneeLabAnchorId(transferDoc),
+  assigneeKind: transferDoc?.assigneeKind,
+  autoMatch: transferDoc?.autoMatch,
+  targetLabName: transferDoc?.targetLabName,
+  matchingMode: transferDoc?.matchingMode,
 });
 
 /** 생산비·수취 기공소. 협력·하청은 수행 기공소, 자체 수행은 원청. */
@@ -717,6 +721,8 @@ export async function handoffDesignToProduction(req, res) {
         ? {
             transferTargetLabAnchorId,
             assigneeLabAnchorId: getAssigneeLabAnchorId(transferDocEarly),
+            assigneeKind: transferDocEarly?.assigneeKind,
+            autoMatch: transferDocEarly?.autoMatch,
           }
         : {},
     );
@@ -1570,6 +1576,10 @@ export async function cancelDesignHandoff(req, res) {
       .select({
         targetLabAnchorId: 1,
         assigneeLabAnchorId: 1,
+        assigneeKind: 1,
+        "autoMatch.claimedAt": 1,
+        targetLabName: 1,
+        matchingMode: 1,
         "production.designFiles": 1,
         "production.designReadyAt": 1,
         "production.confirmedAt": 1,

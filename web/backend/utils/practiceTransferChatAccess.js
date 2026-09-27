@@ -19,9 +19,10 @@ export const isSameObjectIdText = (a, b) => {
 };
 
 /**
- * 실무 기공소 구성원만 의뢰 채팅에 참여한다.
- * assignee가 있으면 그 기공소만. 없으면 원청(자체 수행).
- * 원청은 계약·매출 경유이지, 협력·하청 실무 채팅 당사자가 아니다.
+ * 의뢰 채팅 기공소 측.
+ * 수행 기공소(assignee)와 원청(target) 모두 참여한다.
+ * 협력은 작업은 수행 기공소만, 채팅은 원청도 고객 소통에 끼어든다.
+ * 하청·자체 수행은 원청이 작업도 개입할 수 있다(작업 권한은 별도).
  */
 export const canJoinPracticeTransferAsLabPeer = ({
   currentUserId,
@@ -42,8 +43,12 @@ export const canJoinPracticeTransferAsLabPeer = ({
   const assigneeLabAnchorId = String(
     transferDoc?.assigneeLabAnchorId || "",
   ).trim();
-  if (assigneeLabAnchorId && Types.ObjectId.isValid(assigneeLabAnchorId)) {
-    return userAnchorId === assigneeLabAnchorId;
+  if (
+    assigneeLabAnchorId &&
+    Types.ObjectId.isValid(assigneeLabAnchorId) &&
+    userAnchorId === assigneeLabAnchorId
+  ) {
+    return true;
   }
   if (!targetLabAnchorId || !Types.ObjectId.isValid(targetLabAnchorId)) {
     return false;

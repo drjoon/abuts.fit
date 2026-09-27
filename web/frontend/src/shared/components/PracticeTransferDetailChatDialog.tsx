@@ -608,6 +608,11 @@ type PracticeTransferDetailChatDialogProps = {
   releaseBusy?: boolean;
   onRelease?: () => void | Promise<void>;
   /**
+   * false면 원청이 협력 건을 볼 때 작업 버튼(작업시작·취소·업로드·AI)을 숨긴다.
+   * 채팅 입력은 유지한다.
+   */
+  operateLabWork?: boolean;
+  /**
    * 기공의뢰수신: 수락 후 작업 취소·디자인 확인 등.
    * 어벗 STL 업로드는 workFileDrop 안내 배너(클릭/드래그).
    * 함수면 `releaseAction`(작업취소)을 버튼 행 trailing에 넣을 수 있다.
@@ -810,6 +815,7 @@ export function PracticeTransferDetailChatDialog({
   orderedAt = null,
   releaseBusy = false,
   onRelease,
+  operateLabWork = true,
   remainingLabel = null,
   acceptedWorkActions = null,
   workFileDrop = null,
@@ -1180,7 +1186,11 @@ export function PracticeTransferDetailChatDialog({
   const renderProsthesisFollowUpLabStartButton = (opts?: {
     className?: string;
   }) => {
-    if (!prosthesisFollowUpWorkPending || !onAcceptProsthesisFollowUpWork) {
+    if (
+      !operateLabWork ||
+      !prosthesisFollowUpWorkPending ||
+      !onAcceptProsthesisFollowUpWork
+    ) {
       return null;
     }
     return (
@@ -2133,12 +2143,14 @@ export function PracticeTransferDetailChatDialog({
     ),
   );
   /** 최초 미수락: 채팅은 유지하고 상단에 수락 CTA */
-  const showAcceptBar = Boolean(onAccept) && !accepted && !workCanceled;
+  const showAcceptBar =
+    operateLabWork && Boolean(onAccept) && !accepted && !workCanceled;
   /** 작업취소 후 수락이 풀렸지만 채팅은 이어갈 때 */
   const showReacceptBar =
-    Boolean(onAccept) && !accepted && workCanceled;
+    operateLabWork && Boolean(onAccept) && !accepted && workCanceled;
     /** 수락 직후: 수락 버튼 자리에 작업취소(어벗 가공·도착일 차단 시 숨김) */
   const showReleaseBar =
+    operateLabWork &&
     Boolean(onRelease) &&
     accepted &&
     !workCanceled &&
@@ -2146,7 +2158,7 @@ export function PracticeTransferDetailChatDialog({
     !abutmentMachiningStarted &&
     !workCancelBlocked;
   const workFileDropActive = Boolean(
-    workFileDrop && !workFileDrop.disabled && !minimized,
+    operateLabWork && workFileDrop && !workFileDrop.disabled && !minimized,
   );
   const requestFileAttachActive = Boolean(onAttachRequestFiles) && !minimized;
   const chatFileDropActive = !inputDisabled && !minimized;
@@ -2369,7 +2381,7 @@ export function PracticeTransferDetailChatDialog({
     </Button>
   ) : null;
   const labAiDesignButton =
-    feeViewer === "lab" && labAiDesignAllowed ? (
+    operateLabWork && feeViewer === "lab" && labAiDesignAllowed ? (
       <LabProsthesisAiDesignButton
         toothWorks={chartToothWorks}
         files={files}
@@ -2552,8 +2564,9 @@ export function PracticeTransferDetailChatDialog({
       </div>
     );
   };
-  const resolvedAcceptedWorkActions =
-    typeof acceptedWorkActions === "function"
+  const resolvedAcceptedWorkActions = !operateLabWork
+    ? null
+    : typeof acceptedWorkActions === "function"
       ? acceptedWorkActions({ releaseAction: null })
       : acceptedWorkActions;
   const requestFilesShown = (files || []).filter(

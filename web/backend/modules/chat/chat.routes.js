@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-27: transfer-room — internalLab(원청)도 협력·하청 채팅 참여.
 // - 2026-09-07: partner-counterparts / partner-room — 의뢰건 없이 기공소↔치과 채팅.
 // - 2026-08-10: request-room — 디자인 파트너↔기공소 채팅(DesignPage).
 // related files:
@@ -53,7 +54,7 @@ router.get(
 // practice 전송(PracticeTransfer) 전용 채팅방 조회/생성
 router.get(
   "/practice/transfer-room/:transferId",
-  authorize(["practice", "requestor", "admin"]),
+  authorize(["practice", "requestor", "internalLab", "admin"]),
   chatController.getOrCreatePracticeTransferChatRoom,
 );
 

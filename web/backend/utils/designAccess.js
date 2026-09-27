@@ -12,6 +12,7 @@
 // - 2026-08-15: 기공의뢰(PTX) 연동 디자인+생산은 수락 기공소만 claim/handoff.
 import BusinessAnchor from "../models/businessAnchor.model.js";
 import PracticeTransfer from "../models/practiceTransfer.model.js";
+import { canLabOperatePracticeTransferWork } from "./practiceTransferAutoMatchCore.js";
 
 const DESIGN_ACCESS_CACHE_TTL_MS = 30 * 1000;
 const __designAccessCache = new Map();
@@ -94,10 +95,10 @@ const collectTransferDesignLabAnchorIds = (transferLabs) => {
 };
 
 /**
- * PTX 연동 디자인+생산: 수행 기공소만 디자인한다.
- * assignee가 있으면 그 기공소만. Request.businessAnchorId가 원청으로 남아 있어도
- * 원청은 통과시키지 않는다(계약·매출 주체일 뿐 실무 주체가 아님).
- * assignee가 없으면 원청(자체 수행) 또는 전달된 현재 수락 기공소.
+ * PTX 연동 디자인+생산.
+ * 협력: 수행 기공소(assignee)만. 원청은 작업하지 않는다.
+ * 하청·자체 수행: 원청도 디자인·핸드오프 가능(하청이 있어도 개입).
+ * labs 객체가 없으면 Request 소유 기공소 또는 전달된 id 목록.
  */
 export const isAcceptingLabForPtxDesignRequest = (
   user,
@@ -108,16 +109,39 @@ export const isAcceptingLabForPtxDesignRequest = (
   if (!isPtxLinkedDesignRequest(request)) return false;
   const myAnchor = normalizeAnchorId(user.businessAnchorId);
   if (!myAnchor) return false;
-  const assigneeFromLabs =
+  if (
     transferLabs &&
     typeof transferLabs === "object" &&
     !Array.isArray(transferLabs)
-      ? normalizeAnchorId(
-          transferLabs.assigneeLabAnchorId ||
-            transferLabs.performingLabAnchorId,
-        )
-      : "";
-  if (assigneeFromLabs) return myAnchor === assigneeFromLabs;
+  ) {
+    const targetLabAnchorId = normalizeAnchorId(
+      transferLabs.targetLabAnchorId || transferLabs.transferTargetLabAnchorId,
+    );
+    const assigneeLabAnchorId = normalizeAnchorId(
+      transferLabs.assigneeLabAnchorId,
+    );
+    const performingLabAnchorId = normalizeAnchorId(
+      transferLabs.performingLabAnchorId,
+    );
+    if (targetLabAnchorId || assigneeLabAnchorId || performingLabAnchorId) {
+      return canLabOperatePracticeTransferWork(
+        {
+          targetLabAnchorId: targetLabAnchorId || null,
+          assigneeLabAnchorId:
+            assigneeLabAnchorId ||
+            (performingLabAnchorId &&
+            performingLabAnchorId !== targetLabAnchorId
+              ? performingLabAnchorId
+              : null),
+          assigneeKind: transferLabs.assigneeKind,
+          autoMatch: transferLabs.autoMatch,
+          targetLabName: transferLabs.targetLabName,
+          matchingMode: transferLabs.matchingMode,
+        },
+        myAnchor,
+      );
+    }
+  }
   const ownerAnchor = normalizeAnchorId(request.businessAnchorId);
   if (ownerAnchor && myAnchor === ownerAnchor) return true;
   return collectTransferDesignLabAnchorIds(transferLabs).some(
@@ -153,6 +177,8 @@ export const canClaimOrHandoffDesignRequest = async (
       return isAcceptingLabForPtxDesignRequest(user, request, {
         targetLabAnchorId: options.transferTargetLabAnchorId,
         assigneeLabAnchorId: options.assigneeLabAnchorId,
+        assigneeKind: options.assigneeKind,
+        autoMatch: options.autoMatch,
       });
     }
     if (isAcceptingLabForPtxDesignRequest(user, request)) return true;
@@ -161,11 +187,22 @@ export const canClaimOrHandoffDesignRequest = async (
       : "";
     if (!transferId) return false;
     const transfer = await PracticeTransfer.findById(transferId)
-      .select({ targetLabAnchorId: 1, assigneeLabAnchorId: 1 })
+      .select({
+        targetLabAnchorId: 1,
+        assigneeLabAnchorId: 1,
+        assigneeKind: 1,
+        "autoMatch.claimedAt": 1,
+        targetLabName: 1,
+        matchingMode: 1,
+      })
       .lean();
     return isAcceptingLabForPtxDesignRequest(user, request, {
       targetLabAnchorId: transfer?.targetLabAnchorId,
       assigneeLabAnchorId: transfer?.assigneeLabAnchorId,
+      assigneeKind: transfer?.assigneeKind,
+      autoMatch: transfer?.autoMatch,
+      targetLabName: transfer?.targetLabName,
+      matchingMode: transfer?.matchingMode,
     });
   }
 

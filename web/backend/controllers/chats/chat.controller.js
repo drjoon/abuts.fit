@@ -521,6 +521,7 @@ const resolvePracticeTransferRoomAccess = async (req, room) => {
       practiceUserId: 1,
       practiceBusinessAnchorId: 1,
       targetLabAnchorId: 1,
+      assigneeLabAnchorId: 1,
       requestorDownloadedBy: 1,
       requestorReadBy: 1,
     })
@@ -1300,6 +1301,7 @@ export async function getOrCreatePracticeTransferChatRoom(req, res) {
         practiceUserId: 1,
         practiceBusinessAnchorId: 1,
         targetLabAnchorId: 1,
+        assigneeLabAnchorId: 1,
         targetLabName: 1,
         matchingMode: 1,
         status: 1,

@@ -121,4 +121,31 @@ describe("designAccess PTX lab designer helpers", () => {
       ),
     ).toBe(false);
   });
+
+  test("subcontract prime can handoff alongside the assignee", async () => {
+    const primeId = labUser.businessAnchorId;
+    const assigneeId = otherLab.businessAnchorId;
+    const subcontractRequest = {
+      ...ptxRequest,
+      businessAnchorId: primeId,
+    };
+    const labs = {
+      targetLabAnchorId: primeId,
+      assigneeLabAnchorId: assigneeId,
+      assigneeKind: "subcontract",
+    };
+    expect(
+      isAcceptingLabForPtxDesignRequest(labUser, subcontractRequest, labs),
+    ).toBe(true);
+    expect(
+      isAcceptingLabForPtxDesignRequest(otherLab, subcontractRequest, labs),
+    ).toBe(true);
+    expect(
+      await canClaimOrHandoffDesignRequest(labUser, subcontractRequest, {
+        transferTargetLabAnchorId: primeId,
+        assigneeLabAnchorId: assigneeId,
+        assigneeKind: "subcontract",
+      }),
+    ).toBe(true);
+  });
 });

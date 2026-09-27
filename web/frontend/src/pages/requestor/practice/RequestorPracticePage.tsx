@@ -1,4 +1,5 @@
 // related files:
+// - 2026-09-27: 원청 화면 협력 의뢰 — 작업 버튼 숨김, 채팅은 유지. 하청·자체는 작업+채팅.
 // - 2026-09-26: 보철 업로드는 치과 컨펌 없이 작업 완료. 학습 쌍은 서버가 남긴다.
 // - 2026-09-24: 「열기」미연결 시 설치 모달(zip·더블클릭 1회·이후 자동).
 // - 2026-09-24: 의뢰 파일「열기」— 설정 디자인 SW + 로컬 lab-cad-helper.
@@ -361,6 +362,7 @@ import {
   practiceTransferHasPendingLabCustomAbutment,
   practiceTransferLabReceiveUnreadBadgeCount,
   resolvePracticeLabReceiveWorkActionState,
+  viewerOperatesLabReceiveWork,
   resolvePracticeTransferAbutmentUploadOverdue,
   resolvePracticeTransferToothWorks,
   isPrePlatformPracticeRemake,
@@ -3628,6 +3630,7 @@ export function RequestorPracticeReceivePage({
   const handleAcceptProsthesisFollowUpWork = useCallback(async () => {
     const transfer = selectedTransfer;
     if (!transfer || !token || acceptProsthesisFollowUpWorkBusy) return;
+    if (!viewerOperatesLabReceiveWork(transfer, user?.role)) return;
     const transferId = String(transfer.transferId || "").trim();
     if (!transferId) return;
     const gate = canLabStartProsthesisFollowUpWork({
@@ -3721,6 +3724,7 @@ export function RequestorPracticeReceivePage({
     selectedTransfer,
     toast,
     token,
+    user?.role,
   ]);
 
   const mapApiResultFiles = useCallback(
@@ -5301,6 +5305,7 @@ export function RequestorPracticeReceivePage({
 
   const handleAcceptTransfer = useCallback(async () => {
     if (!selectedTransfer || acceptBusy || releaseBusy) return;
+    if (!viewerOperatesLabReceiveWork(selectedTransfer, user?.role)) return;
     if (isGuideTourDemoTransfer(selectedTransfer)) {
       toast({
         title: "가이드투어",
@@ -5327,6 +5332,7 @@ export function RequestorPracticeReceivePage({
     resolveTransferChatRoom,
     selectedTransfer,
     toast,
+    user?.role,
   ]);
 
   const handleConfirmLabRemakeCreate = useCallback(
@@ -5681,13 +5687,14 @@ export function RequestorPracticeReceivePage({
 
   const handleReleaseTransfer = useCallback(async () => {
     if (!selectedTransfer || releaseBusy || acceptBusy) return;
+    if (!viewerOperatesLabReceiveWork(selectedTransfer, user?.role)) return;
     setReleaseBusy(true);
     try {
       await markTransferRelease(selectedTransfer);
     } finally {
       setReleaseBusy(false);
     }
-  }, [acceptBusy, markTransferRelease, releaseBusy, selectedTransfer]);
+  }, [acceptBusy, markTransferRelease, releaseBusy, selectedTransfer, user?.role]);
 
   const pickDesignAbutmentFiles = useCallback((): Promise<File[]> => {
     return pickPracticeTransferFilesViaInput({
@@ -6946,6 +6953,7 @@ export function RequestorPracticeReceivePage({
       files: File[],
       intent: "auto" | "abutment" | "prosthetic" = "auto",
     ) => {
+      if (!viewerOperatesLabReceiveWork(transfer, user?.role)) return;
       const workState = resolvePracticeLabReceiveWorkActionState(
         transfer,
         implantCatalog,
@@ -6972,7 +6980,7 @@ export function RequestorPracticeReceivePage({
       }
       setDualAssign({ transfer, files });
     },
-    [beginCompleteWithFiles, beginDesignStlUpload, implantCatalog, toast],
+    [beginCompleteWithFiles, beginDesignStlUpload, implantCatalog, toast, user?.role],
   );
 
   const handleCardDropFiles = useCallback(
@@ -6984,6 +6992,7 @@ export function RequestorPracticeReceivePage({
 
   const dialogWorkFileDrop = useMemo(() => {
     if (!selectedTransfer) return null;
+    if (!viewerOperatesLabReceiveWork(selectedTransfer, user?.role)) return null;
     const workState = resolvePracticeLabReceiveWorkActionState(
       selectedTransfer,
       implantCatalog,
@@ -7030,6 +7039,7 @@ export function RequestorPracticeReceivePage({
     };
   }, [
     selectedTransfer,
+    user?.role,
     implantCatalog,
     cardActionBusyId,
     workUploadBusy,
@@ -9527,6 +9537,10 @@ export function RequestorPracticeReceivePage({
         orderedAt={selectedTransfer?.createdAt || null}
         releaseBusy={releaseBusy}
         onRelease={() => void handleReleaseTransfer()}
+        operateLabWork={viewerOperatesLabReceiveWork(
+          selectedTransfer,
+          user?.role,
+        )}
         workFileDrop={dialogWorkFileDrop}
         acceptedWorkActions={({ releaseAction }) => {
           if (!selectedTransfer) return releaseAction;

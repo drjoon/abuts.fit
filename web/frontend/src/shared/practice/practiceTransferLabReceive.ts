@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/components/practice/LabReceiveWorkUploadDialog.tsx
 // change-log:
+// - 2026-09-27: 협력 원청은 작업 CTA 숨김(viewerOperatesLabReceiveWork). 하청·자체는 원청도 작업.
 // - 2026-09-26: 보철 슬롯이 남으면 작업완료 전 디자인 파일 업로드(prosthetic|dual).
 // - 2026-09-16: 커스텀어벗 목록 — 후속(지르) 행 제외(임시치아 CA와 치아번호 중복 방지).
 // - 2026-09-12: 다치아 — 일부만 가공(pastReady)이어도 남은 STL 업로드 CTA 유지.
@@ -1007,6 +1008,18 @@ export type PracticeLabReceiveWorkActionState = {
   /** @deprecated 수동 작업완료 CTA 폐지 — 항상 false(도착일 경과 자동 완료) */
   showMarkCompleteWithoutFiles: boolean;
 };
+
+/**
+ * 원청(internalLab)이 협력 건을 볼 때 작업 CTA를 숨긴다. 채팅은 유지.
+ * 하청·자체 수행은 원청도 작업한다. 협력·하청 수행 기공소 화면은 그대로다.
+ */
+export function viewerOperatesLabReceiveWork(
+  transfer: { assigneeKind?: string | null } | null | undefined,
+  viewerRole: string | null | undefined,
+): boolean {
+  if (String(viewerRole || "").trim() !== "internalLab") return true;
+  return String(transfer?.assigneeKind || "").trim() !== "cooperation";
+}
 
 export function resolvePracticeLabReceiveWorkActionState(
   transfer: PracticeTransferLabReceiveItem | null | undefined,

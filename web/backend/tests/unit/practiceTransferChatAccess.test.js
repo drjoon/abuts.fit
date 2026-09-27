@@ -98,12 +98,13 @@ describe("practiceTransferChatAccess", () => {
         transferDoc: {
           ...transferDoc,
           assigneeLabAnchorId: "64a000000000000000000099",
+          assigneeKind: "subcontract",
         },
       }),
     ).toBe(true);
   });
 
-  test("협력·하청이 있으면 원청은 실무 채팅 당사자가 아님", () => {
+  test("협력·하청이 있어도 원청은 채팅에 참여한다", () => {
     expect(
       canJoinPracticeTransferAsLabPeer({
         currentUserId: labStaffId,
@@ -112,9 +113,22 @@ describe("practiceTransferChatAccess", () => {
         transferDoc: {
           ...transferDoc,
           assigneeLabAnchorId: "64a000000000000000000099",
+          assigneeKind: "cooperation",
         },
       }),
-    ).toBe(false);
+    ).toBe(true);
+    expect(
+      canJoinPracticeTransferAsLabPeer({
+        currentUserId: labStaffId,
+        currentUserRole: "internalLab",
+        currentUserBusinessAnchorId: labAnchorId,
+        transferDoc: {
+          ...transferDoc,
+          assigneeLabAnchorId: "64a000000000000000000099",
+          assigneeKind: "subcontract",
+        },
+      }),
+    ).toBe(true);
   });
 
   test("internalLab 원청 팀원은 자체 수행일 때 lab peer", () => {

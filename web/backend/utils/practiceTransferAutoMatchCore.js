@@ -336,11 +336,25 @@ export const resolvePracticeTransferSettlementParties = (transfer) => {
   };
 };
 
-/** 작업완료·거부 등: 수행 기공소(assignee 우선)만. 원청 팀은 prime도 허용할 때 별도 검사. */
+/** 기본 수행 기공소(assignee, 없으면 원청). 원청의 하청 개입은 아래 헬퍼. */
 export const isLabPerformingOnTransfer = (transfer, labAnchorId) => {
   const labId = String(labAnchorId || "").trim();
   if (!labId) return false;
   return resolvePerformingLabAnchorId(transfer) === labId;
+};
+
+/**
+ * 작업(작업시작·업로드·취소·완료·디자인) 가능 여부.
+ * 수행 기공소는 항상. 원청은 자체 수행·하청에서 개입 가능. 협력은 수행 기공소만.
+ * 채팅은 별도(`canJoinPracticeTransferAsLabPeer`) — 협력 원청도 참여한다.
+ */
+export const canLabOperatePracticeTransferWork = (transfer, labAnchorId) => {
+  const labId = String(labAnchorId || "").trim();
+  if (!labId) return false;
+  if (isLabPerformingOnTransfer(transfer, labId)) return true;
+  if (isCooperationAssignee(transfer)) return false;
+  const primeId = getPrimeLabAnchorId(transfer);
+  return Boolean(primeId) && primeId === labId;
 };
 
 /** 어벗츠 원청 팀만 하청 상대(치과·수행 기공소) 식별 정보를 본다. 협력은 공개. */
