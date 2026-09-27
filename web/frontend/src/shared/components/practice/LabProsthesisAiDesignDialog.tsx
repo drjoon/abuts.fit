@@ -127,10 +127,12 @@ import {
 import { ConnectorFocusView } from "@/shared/components/practice/ConnectorFocusView";
 import {
   DesignExportDialog,
+  type DesignExportBusy,
   type DesignExportRestoration,
   type DesignExportScan,
   type DesignExportSelection,
 } from "@/shared/components/practice/DesignExportDialog";
+import { MeshUnionError, meshUnionErrorMessage } from "@/shared/practice/meshUnion";
 import {
   OralScanOverlayViewer,
   type ConnectorSectionShot,
@@ -799,7 +801,7 @@ function LabProsthesisAiDesignDialog({
   const [connectorShot, setConnectorShot] = useState<ConnectorSectionShot | null>(null);
   const focusRowRef = useRef<ConnectorRow | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
-  const [exportBusy, setExportBusy] = useState(false);
+  const [exportBusy, setExportBusy] = useState<DesignExportBusy>(null);
   const [alignKind, setAlignKind] = useState<"auto" | "points" | "occlusion" | null>(null);
   const [occlusionArch, setOcclusionArch] = useState<"upper" | "lower">("lower");
   const [occlusionMode, setOcclusionMode] = useState<OralScanOcclusionAdjust["mode"]>("vertical");
@@ -1396,14 +1398,15 @@ function LabProsthesisAiDesignDialog({
     return out;
   }, [scans]);
 
-  const buildExportFiles = (selection: DesignExportSelection) =>
+  const buildExportFiles = async (selection: DesignExportSelection) =>
     (
-      viewerRef.current?.exportDesignStl({
+      (await viewerRef.current?.exportDesignStl({
         groups: selection.restorations
           .filter((row) => !row.id.startsWith(STONE_ROW_PREFIX))
           .map((row) => ({
             fileName: row.fileName,
             teeth: row.teeth,
+            union: row.id.startsWith("bridge:") ? { label: row.label } : undefined,
           })),
         stoneParts: selection.restorations
           .filter((row) => row.id.startsWith(STONE_ROW_PREFIX))
@@ -1413,13 +1416,35 @@ function LabProsthesisAiDesignDialog({
           })),
         scans: selection.scans.map((row) => ({ fileName: row.fileName, role: row.role })),
         camCoordinates: selection.camCoordinates,
-      }) ?? []
+      })) ?? []
     ).map((row) => new File([row.blob], row.fileName, { type: "model/stl" }));
 
-  const downloadExport = async (selection: DesignExportSelection) => {
-    setExportBusy(true);
+  /** 합집합이 실패하면 토스트를 띄우고 null. 겹친 메시로 대신 내보내지 않는다. */
+  const buildExportFilesOrWarn = async (selection: DesignExportSelection) => {
     try {
-      const files = buildExportFiles(selection);
+      return await buildExportFiles(selection);
+    } catch (error) {
+      if (!(error instanceof MeshUnionError)) throw error;
+      toast({
+        title: "브리지를 한 덩어리로 합치지 못했습니다.",
+        description: (
+          <>
+            {meshUnionErrorMessage(error)}
+            <br />
+            내보내기를 멈췄습니다.
+          </>
+        ),
+        variant: "destructive",
+      });
+      return null;
+    }
+  };
+
+  const downloadExport = async (selection: DesignExportSelection) => {
+    setExportBusy("download");
+    try {
+      const files = await buildExportFilesOrWarn(selection);
+      if (!files) return;
       if (files.length === 0) {
         toast({ title: "내보낼 메시가 없습니다.", variant: "destructive" });
         return;
@@ -1435,13 +1460,20 @@ function LabProsthesisAiDesignDialog({
       }
       setExportOpen(false);
     } finally {
-      setExportBusy(false);
+      setExportBusy(null);
     }
   };
 
-  const attachExport = (selection: DesignExportSelection) => {
+  const attachExport = async (selection: DesignExportSelection) => {
     if (!onAttachChatFile) return;
-    const files = buildExportFiles(selection);
+    setExportBusy("attach");
+    let files: File[] | null;
+    try {
+      files = await buildExportFilesOrWarn(selection);
+    } finally {
+      setExportBusy(null);
+    }
+    if (!files) return;
     if (files.length === 0) {
       toast({ title: "내보낼 메시가 없습니다.", variant: "destructive" });
       return;
@@ -4971,7 +5003,7 @@ function LabProsthesisAiDesignDialog({
           scans={exportScans}
           busy={exportBusy}
           onDownload={(selection) => void downloadExport(selection)}
-          onAttach={onAttachChatFile ? attachExport : null}
+          onAttach={onAttachChatFile ? (selection) => void attachExport(selection) : null}
         />
       </DialogContent>
     </Dialog>

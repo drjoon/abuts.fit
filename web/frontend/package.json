@@ -61,6 +61,7 @@
     "jsbarcode": "^3.11.6",
     "jszip": "^3.10.1",
     "lucide-react": "^0.462.0",
+    "manifold-3d": "^3.5.4",
     "monaco-editor": "0.50.0",
     "next": "^15.4.5",
     "next-auth": "^4.24.11",

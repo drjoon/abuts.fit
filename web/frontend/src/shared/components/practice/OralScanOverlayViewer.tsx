@@ -83,6 +83,7 @@ import {
   type ToothDesignEdit,
 } from "@/shared/practice/labProsthesisModify";
 import { encodeBinaryStl } from "@/shared/files/stlBinaryWrite";
+import { unionTriangleSoups } from "@/shared/practice/meshUnion";
 import {
   fdiToothDigits,
   insertionAxisKey,
@@ -245,8 +246,11 @@ export type OralScanOverlayHandle = {
   /**
    * 생성한 보철(크라운·폰틱·커넥터·훅)과 고른 스캔을 STL로 낸다.
    * CAM 좌표면 스캔 파일 좌표·단위 그대로, 아니면 보철 중심을 원점으로 mm로 낸다.
+   * union 그룹은 합집합 한 덩어리로 내고, 합칠 수 없으면 MeshUnionError로 거절한다.
    */
-  exportDesignStl: (input: DesignStlExportInput) => Array<{ fileName: string; blob: Blob }>;
+  exportDesignStl: (
+    input: DesignStlExportInput,
+  ) => Promise<Array<{ fileName: string; blob: Blob }>>;
   /**
    * 모델 설정으로 출력용 모델을 만든다. 파트는 뷰어가 들고 있다가 내보낸다.
    * 다이 절단 반지름은 마진 가장 바깥 반지름에 1.2mm를 더한다.
@@ -286,7 +290,12 @@ export type OralScanOverlayHandle = {
 
 export type DesignStlExportInput = {
   /** 파일 하나에 묶을 치아. 브리지는 스팬 전체. */
-  groups: ReadonlyArray<{ fileName: string; teeth: readonly string[] }>;
+  groups: ReadonlyArray<{
+    fileName: string;
+    teeth: readonly string[];
+    /** 조립된 브리지. 크라운·커넥터를 합집합으로 합친다. label은 실패 안내에 쓴다. */
+    union?: { label: string };
+  }>;
   scans: ReadonlyArray<{ fileName: string; role: WorkingScanMesh["role"] }>;
   /** 「모델 생성」으로 만든 파트. id는 StoneModelPart.id. */
   stoneParts?: ReadonlyArray<{ id: string; fileName: string }>;
@@ -1434,13 +1443,16 @@ function worldTriangles(meshes: readonly THREE.Mesh[]): Float32Array {
     const index = geometry.getIndex();
     const count = index ? index.count : pos.count;
     const out = new Float32Array(count * 3);
+    const mirrored = mesh.matrixWorld.determinant() < 0;
     for (let i = 0; i < count; i += 1) {
       point
         .fromBufferAttribute(pos, index ? index.getX(i) : i)
         .applyMatrix4(mesh.matrixWorld);
-      out[i * 3] = point.x;
-      out[i * 3 + 1] = point.y;
-      out[i * 3 + 2] = point.z;
+      const corner = i % 3;
+      const at = mirrored && corner > 0 ? i + (corner === 1 ? 1 : -1) : i;
+      out[at * 3] = point.x;
+      out[at * 3 + 1] = point.y;
+      out[at * 3 + 2] = point.z;
     }
     chunks.push(out);
     total += out.length;
@@ -5487,23 +5499,46 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       },
       buildStoneModel: (input) => buildStoneModelRef.current(input),
       clearStoneModel: () => clearStoneModelRef.current(true),
-      exportDesignStl: ({ groups, scans, stoneParts = [], camCoordinates }) => {
+      exportDesignStl: async ({ groups, scans, stoneParts = [], camCoordinates }) => {
         const scene = sceneRef.current;
         const group = groupRef.current;
         if (!scene || !group) return [];
         scene.updateMatrixWorld(true);
         const exported = new Set<EditHit["kind"]>(["crown", "connector", "hook"]);
-        const restorations = groups.map((row) => {
+        const collected = groups.map((row) => {
           const teeth = new Set(row.teeth);
-          const parts: THREE.Mesh[] = [];
+          const parts: Array<{ mesh: THREE.Mesh; hit: EditHit & { tooth: string } }> = [];
           editLayerRef.current?.traverse((child) => {
             const hit = child.userData.editHit as EditHit | undefined;
             if (!hit || !exported.has(hit.kind) || !("tooth" in hit)) return;
             if (!teeth.has(hit.tooth) || !child.visible) return;
-            if ((child as THREE.Mesh).isMesh) parts.push(child as THREE.Mesh);
+            if ((child as THREE.Mesh).isMesh) parts.push({ mesh: child as THREE.Mesh, hit });
           });
-          return { fileName: row.fileName, positions: worldTriangles(parts) };
+          return { row, parts };
         });
+        const restorations = await Promise.all(
+          collected.map(async ({ row, parts }) => {
+            if (!row.union) {
+              return {
+                fileName: row.fileName,
+                positions: worldTriangles(parts.map((part) => part.mesh)),
+              };
+            }
+            // 스크루 홀 크라운은 본체와 홀 벽이 합쳐져야 닫힌 입체가 된다.
+            const pieces = new Map<string, THREE.Mesh[]>();
+            for (const { mesh, hit } of parts) {
+              const key = hit.kind === "crown" ? `crown:${hit.tooth}` : mesh.uuid;
+              pieces.set(key, [...(pieces.get(key) ?? []), mesh]);
+            }
+            return {
+              fileName: row.fileName,
+              positions: await unionTriangleSoups(
+                [...pieces.values()].map((meshes) => worldTriangles(meshes)),
+                row.union.label,
+              ),
+            };
+          }),
+        );
         const scanRows = scans.map((row) => ({
           fileName: row.fileName,
           positions: worldTriangles(

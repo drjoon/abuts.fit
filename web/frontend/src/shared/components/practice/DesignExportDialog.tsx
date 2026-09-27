@@ -1,7 +1,7 @@
 // 기공소 AI 보철 — 내보낼 데이터 선택. 보철·스캔을 고르고 CAM 좌표 여부를 정한다.
 
 import { useEffect, useState } from "react";
-import { Download, Paperclip } from "lucide-react";
+import { Download, Loader2, Paperclip } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -29,6 +29,9 @@ export type DesignExportScan = {
   fileName: string;
 };
 
+/** 처리 중인 버튼. 브리지 합치기는 누른 뒤에만 한다. */
+export type DesignExportBusy = "download" | "attach" | null;
+
 export type DesignExportSelection = {
   restorations: DesignExportRestoration[];
   scans: DesignExportScan[];
@@ -40,7 +43,7 @@ type Props = {
   onOpenChange: (open: boolean) => void;
   restorations: DesignExportRestoration[];
   scans: DesignExportScan[];
-  busy: boolean;
+  busy: DesignExportBusy;
   onDownload: (selection: DesignExportSelection) => void;
   /** 없으면 채팅 첨부 버튼을 두지 않는다. */
   onAttach?: ((selection: DesignExportSelection) => void) | null;
@@ -168,21 +171,29 @@ export function DesignExportDialog({
               type="button"
               variant="outline"
               className="gap-1"
-              disabled={busy || !somePicked}
+              disabled={busy !== null || !somePicked}
               onClick={() => onAttach(selection())}
             >
-              <Paperclip className="h-4 w-4" />
-              채팅 첨부
+              {busy === "attach" ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Paperclip className="h-4 w-4" />
+              )}
+              {busy === "attach" ? "처리 중…" : "채팅 첨부"}
             </Button>
           ) : null}
           <Button
             type="button"
             className="gap-1"
-            disabled={busy || !somePicked}
+            disabled={busy !== null || !somePicked}
             onClick={() => onDownload(selection())}
           >
-            <Download className="h-4 w-4" />
-            다운로드
+            {busy === "download" ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4" />
+            )}
+            {busy === "download" ? "처리 중…" : "다운로드"}
           </Button>
         </div>
       </DialogContent>
