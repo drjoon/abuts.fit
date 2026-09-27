@@ -1,9 +1,10 @@
 // 기공소 AI 보철 — 마진·삽입·내면·형상·훅·컷백·홀·커넥터 조작.
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { TriangleAlert } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -56,6 +57,10 @@ export type ScanbodyControls = {
   onApply: () => void;
 };
 
+const DEFAULT_MARGIN_STEP = 0.1;
+const MARGIN_STEP_MIN = 0.01;
+const MARGIN_STEP_MAX = 0.5;
+
 const FIT_LEGEND = `linear-gradient(90deg, ${[-0.1, -0.05, 0, 0.05, 0.1]
   .map((mm) => {
     const [r, g, b] = fitDistanceRgb(mm);
@@ -80,7 +85,12 @@ type Props = {
   canMatchInsertion: boolean;
   holeNote: string;
   onRedetect: () => void;
+  /** 다시 검출 시작점을 찍는 중. */
+  redetectPicking: boolean;
   onClearMargin: () => void;
+  undercutShown: boolean;
+  canUndercut: boolean;
+  onUndercut: (on: boolean) => void;
   onMatchInsertion: () => void;
   onApplyInner: () => void;
   onRemoveHook: () => void;
@@ -344,7 +354,11 @@ export function LabProsthesisModifyPanel({
   canMatchInsertion,
   holeNote,
   onRedetect,
+  redetectPicking,
   onClearMargin,
+  undercutShown,
+  canUndercut,
+  onUndercut,
   onMatchInsertion,
   onApplyInner,
   onRemoveHook,
@@ -372,7 +386,11 @@ export function LabProsthesisModifyPanel({
   const taper = cavity ? cavityTaperSummary(edit.margin.cavity) : null;
   const issue = implant ? null : holeIssue(edit.hole);
   const marginWord = implant ? "EPL" : "마진";
-  const marginStep = implant ? 0.1 : 0.05;
+  const [stepDraft, setStepDraft] = useState(DEFAULT_MARGIN_STEP.toFixed(2));
+  const parsedStep = Number(stepDraft);
+  const marginStep = Number.isFinite(parsedStep)
+    ? Math.min(MARGIN_STEP_MAX, Math.max(MARGIN_STEP_MIN, Math.round(parsedStep * 100) / 100))
+    : DEFAULT_MARGIN_STEP;
   const tools = MODIFY_TOOLS.filter((item) => item.id !== "scanbody" || scanbody);
   const connectorRow =
     connectors.find((row) => row.from === connectorFrom) ?? connectors[0] ?? null;
@@ -553,24 +571,42 @@ export function LabProsthesisModifyPanel({
       {tool === "margin" && !edit.pontic.on ? (
         <div className="space-y-2">
           <div className="grid grid-cols-2 gap-1">
-            <Button
-              type="button"
-              size="sm"
-              variant={marginMode === "point" ? "default" : "outline"}
-              className="h-7 text-[11px]"
-              onClick={() => onMarginMode("point")}
-            >
-              점 편집
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={marginMode === "pen" ? "default" : "outline"}
-              className="h-7 text-[11px]"
-              onClick={() => onMarginMode("pen")}
-            >
-              펜
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={marginMode === "point" ? "default" : "outline"}
+                  className="h-7 text-[11px]"
+                  onClick={() => onMarginMode("point")}
+                >
+                  점 편집
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right" className="z-[520]">
+                점을 끌어 스캔 면 위로 옮깁니다.
+                <br />
+                선을 누르면 점을 더하고, 점을 우클릭하면 지웁니다.
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={marginMode === "pen" ? "default" : "outline"}
+                  className="h-7 text-[11px]"
+                  onClick={() => onMarginMode("pen")}
+                >
+                  펜
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right" className="z-[520]">
+                {marginWord}을 따라 끌면 그 구간을 다시 그립니다.
+                <br />
+                한 바퀴를 그리면 {marginWord} 전체를 바꿉니다.
+              </TooltipContent>
+            </Tooltip>
           </div>
           {implant && !edit.implant.aligned ? (
             <p className="text-[11px] leading-relaxed text-destructive">
@@ -594,6 +630,23 @@ export function LabProsthesisModifyPanel({
               aria-label={`${marginWord} 간격`}
             />
           </Row>
+          <div className="flex items-center justify-between gap-2 text-xs font-medium">
+            <span>조정</span>
+            <span className="flex items-center gap-1">
+              <Input
+                type="number"
+                min={MARGIN_STEP_MIN}
+                max={MARGIN_STEP_MAX}
+                step={0.01}
+                value={stepDraft}
+                onChange={(event) => setStepDraft(event.target.value)}
+                onBlur={() => setStepDraft(marginStep.toFixed(2))}
+                className="h-7 w-16 px-1.5 text-right text-[11px] tabular-nums"
+                aria-label={`${marginWord} 조정 간격`}
+              />
+              <span className="text-muted-foreground">mm</span>
+            </span>
+          </div>
           <div className="grid grid-cols-2 gap-1">
             <Button
               type="button"
@@ -601,9 +654,9 @@ export function LabProsthesisModifyPanel({
               variant="outline"
               className="h-7 text-[11px]"
               onClick={() => onEdit(adjustMarginOffset(edit, -marginStep))}
-              title={`${marginWord}을 안쪽으로 ${marginStep}mm 수축합니다.`}
+              title={`${marginWord} 전체를 안쪽으로 ${marginStep.toFixed(2)}mm 줄입니다.`}
             >
-              수축 -{marginStep}
+              수축
             </Button>
             <Button
               type="button"
@@ -611,45 +664,81 @@ export function LabProsthesisModifyPanel({
               variant="outline"
               className="h-7 text-[11px]"
               onClick={() => onEdit(adjustMarginOffset(edit, marginStep))}
-              title={`${marginWord}을 바깥쪽으로 ${marginStep}mm 확장합니다.`}
+              title={`${marginWord} 전체를 바깥쪽으로 ${marginStep.toFixed(2)}mm 넓힙니다.`}
             >
-              확장 +{marginStep}
+              확장
             </Button>
           </div>
           {implant ? null : (
-          <div className="flex items-center justify-between rounded-md border px-2 py-1.5 text-xs">
-            <span className="font-medium text-foreground">배면 투명</span>
-            <Switch
-              checked={edit.margin.showBack}
-              onCheckedChange={(checked) =>
-                onEdit({
-                  ...edit,
-                  margin: { ...edit.margin, showBack: checked },
-                })
-              }
-              aria-label="지대치 배면 투명"
-            />
-          </div>
+            <div className="space-y-1 rounded-md border px-2 py-1.5 text-xs">
+              <label className="flex items-center justify-between gap-3">
+                <span className="font-medium text-foreground">언더컷 표시</span>
+                <Switch
+                  checked={undercutShown}
+                  disabled={!canUndercut}
+                  onCheckedChange={onUndercut}
+                  aria-label="언더컷 표시"
+                />
+              </label>
+              <label className="flex items-center justify-between gap-3">
+                <span className="font-medium text-foreground">배면 투명</span>
+                <Switch
+                  checked={edit.margin.showBack}
+                  onCheckedChange={(checked) =>
+                    onEdit({
+                      ...edit,
+                      margin: { ...edit.margin, showBack: checked },
+                    })
+                  }
+                  aria-label="지대치 배면 투명"
+                />
+              </label>
+            </div>
           )}
           <div className="flex gap-1">
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="h-7 flex-1 text-[11px]"
-              onClick={onRedetect}
-            >
-              다시 검출
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="h-7 flex-1 text-[11px]"
-              onClick={onClearMargin}
-            >
-              {marginWord} 삭제
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={redetectPicking ? "default" : "outline"}
+                  className="h-7 flex-1 text-[11px]"
+                  aria-pressed={redetectPicking}
+                  onClick={onRedetect}
+                >
+                  {redetectPicking ? "시작점 찍는 중" : "다시 검출"}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right" className="z-[520]">
+                {cavity ? (
+                  "와동 테두리를 다시 잡습니다."
+                ) : (
+                  <>
+                    {marginWord} 위 시작점을 찍습니다.
+                    <br />
+                    그 자리부터 {marginWord}을 다시 검출합니다.
+                  </>
+                )}
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-7 flex-1 text-[11px]"
+                  onClick={onClearMargin}
+                >
+                  {marginWord} 삭제
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right" className="z-[520]">
+                {marginWord}을 지우고 새로 잡습니다.
+                <br />
+                시작점부터 점을 찍고, 시작점을 다시 누르면 닫힙니다.
+              </TooltipContent>
+            </Tooltip>
           </div>
           {cavity ? (
             <div className="space-y-1 rounded-md border px-2 py-1.5 text-[11px]">

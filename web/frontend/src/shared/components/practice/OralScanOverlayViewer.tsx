@@ -29,6 +29,7 @@
 // - 2026-09-27: 출력용 모델은 buildStoneModel로 만들어 들고 있다가 내보낸다. 보는 동안 스캔·다이는 가리고, 스캔 좌표가 바뀌면 버린다.
 // - 2026-09-27: 숨긴 치아는 다이와 작업물을 그리지 않는다. 다이 보기는 보이는 치아의 다이만.
 // - 2026-09-27: 삽입축을 잡으면 그 화면의 오른쪽·위·앞이 X·Y·Z가 되게 스캔을 돌린다.
+// - 2026-09-27: 마진 점·펜·새로 찍기는 스캔 면에 붙인다. 선택 치아 마진 점이 언더컷 면이면 빨갛게 칠하고 알린다.
 import {
   forwardRef,
   useEffect,
@@ -72,6 +73,7 @@ import {
 import {
   sculptStampWidth,
   type DesignGesture,
+  type MarginSample,
   type ModelSettings,
   type ProsthesisDesignEdit,
   type ToothDesignEdit,
@@ -107,6 +109,9 @@ import { cn } from "@/shared/ui/cn";
 export type OralScanViewPreset = "fit" | "occlusal" | "buccal" | "lingual";
 
 const EMPTY_TEETH: readonly string[] = [];
+
+/** 스캔 면 광선 검사는 무겁다. 끄는 동안 이 간격으로만 쏜다. */
+const SURFACE_PICK_MS = 24;
 
 /** 석고 다이 색. */
 const DIE_RGB = 0xe6d7ad;
@@ -346,6 +351,13 @@ type Props = {
   /** 이 임플란트 치아의 스캔바디 윗면 가장자리에 점 3개를 찍는다. */
   scanbodyPickTooth?: string | null;
   onScanbodyPicks?: (count: number) => void;
+  /** 이 치아의 마진 시작점을 스캔 위에서 한 번 찍는다. 그 자리부터 다시 검출한다. */
+  marginSeedPickTooth?: string | null;
+  onMarginSeedPick?: (tooth: string, point: { x: number; y: number; z: number }) => void;
+  /** 선택 치아 마진 점 중 언더컷 면에 놓인 점 수. 마진을 안 그리면 null, 0. */
+  onMarginUndercut?: (tooth: string | null, count: number) => void;
+  /** 지운 마진을 새로 찍는 중인 점 수. 닫거나 그만두면 0. */
+  onMarginTraceProgress?: (count: number) => void;
   className?: string;
 };
 
@@ -2460,6 +2472,10 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       onViewSettled,
       scanbodyPickTooth = null,
       onScanbodyPicks,
+      marginSeedPickTooth = null,
+      onMarginSeedPick,
+      onMarginUndercut,
+      onMarginTraceProgress,
       className,
     },
     ref,
@@ -2591,8 +2607,42 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   const scanbodyMarksRef = useRef<THREE.Group | null>(null);
   const onScanbodyPicksRef = useRef(onScanbodyPicks);
   onScanbodyPicksRef.current = onScanbodyPicks;
-  const nearbyScanRef = useRef(new Map<string, Float32Array>());
+  const nearbyScanRef = useRef(
+    new Map<string, { points: Float32Array; normals: Float32Array }>(),
+  );
   const scanbodyPickApiRef = useRef<(raycaster: THREE.Raycaster) => void>(() => {});
+  const marginSeedPickRef = useRef(marginSeedPickTooth);
+  marginSeedPickRef.current = marginSeedPickTooth;
+  const onMarginSeedPickRef = useRef(onMarginSeedPick);
+  onMarginSeedPickRef.current = onMarginSeedPick;
+  const onMarginUndercutRef = useRef(onMarginUndercut);
+  onMarginUndercutRef.current = onMarginUndercut;
+  const onMarginTraceProgressRef = useRef(onMarginTraceProgress);
+  onMarginTraceProgressRef.current = onMarginTraceProgress;
+  /** 마진을 지운 뒤 찍는 점(월드). 시작점을 다시 누르면 닫는다. */
+  const marginTraceRef = useRef<{ tooth: string | null; points: THREE.Vector3[] }>({
+    tooth: null,
+    points: [],
+  });
+  const marginSketchRef = useRef<THREE.Group | null>(null);
+  const marginTraceApiRef = useRef<{
+    active: () => string | null;
+    click: (raycaster: THREE.Raycaster) => void;
+    undo: () => void;
+    sync: () => void;
+  }>({ active: () => null, click: () => {}, undo: () => {}, sync: () => {} });
+  const scanSurfaceHitRef = useRef<
+    (raycaster: THREE.Raycaster, tooth: string) => THREE.Vector3 | null
+  >(() => null);
+  const marginSampleAtRef = useRef<
+    (tooth: string, point: THREE.Vector3) => MarginSample | null
+  >(() => null);
+  const drawMarginSketchRef = useRef<(points: THREE.Vector3[], closed: boolean) => void>(
+    () => {},
+  );
+  const marginUndercutFlagsRef = useRef<
+    (tooth: string, points: readonly THREE.Vector3[]) => boolean[]
+  >((_, points) => points.map(() => false));
   designEditRef.current = designEdit;
   onDesignGestureRef.current = onDesignGesture;
   onAlignProgressRef.current = onAlignProgress;
@@ -3024,7 +3074,14 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     raycaster.params.Line = { threshold: 0.6 };
     const ndc = new THREE.Vector2();
     type EditDrag =
-      | { kind: "margin"; tooth: string; index: number }
+      | { kind: "margin"; tooth: string; index: number; at: number }
+      | {
+          kind: "stroke";
+          tooth: string;
+          samples: MarginSample[];
+          points: THREE.Vector3[];
+          at: number;
+        }
       | { kind: "transform"; tooth: string; scale0: number; x0: number }
       | { kind: "hook"; tooth: string }
       | { kind: "hole"; tooth: string; tilt0: number; y0: number }
@@ -3140,6 +3197,37 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     const onEditPointerDown = (event: PointerEvent) => {
       if (!designEditRef.current) return;
       aim(event);
+      const spec = designEditRef.current;
+      const penTooth = spec.activeTooth;
+      const penEdit = penTooth ? spec.edits[penTooth] : null;
+      if (
+        penTooth &&
+        penEdit &&
+        spec.tool === "margin" &&
+        spec.marginMode === "pen" &&
+        spec.showMargin &&
+        event.button === 0 &&
+        !penEdit.margin.deleted &&
+        !penEdit.pontic.on &&
+        !marginSeedPickRef.current
+      ) {
+        const point = scanSurfaceHitRef.current(raycaster, penTooth);
+        const sample = point ? marginSampleAtRef.current(penTooth, point) : null;
+        if (point && sample) {
+          drag = {
+            kind: "stroke",
+            tooth: penTooth,
+            samples: [sample],
+            points: [point],
+            at: performance.now(),
+          };
+          drawMarginSketchRef.current([point], false);
+          event.preventDefault();
+          event.stopPropagation();
+          lastPointer = { x: event.clientX, y: event.clientY };
+          return;
+        }
+      }
       const hit = pickEdit();
       if (!hit) return;
       const tool = designEditRef.current.tool;
@@ -3152,7 +3240,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       } else if (hit.tag.kind === "margin" && event.button === 2) {
         send({ type: "margin-remove", tooth: hit.tag.tooth, index: hit.tag.index });
       } else if (hit.tag.kind === "margin" && event.button === 0 && tool === "margin") {
-        drag = { kind: "margin", tooth: hit.tag.tooth, index: hit.tag.index };
+        drag = { kind: "margin", tooth: hit.tag.tooth, index: hit.tag.index, at: 0 };
       } else if (hit.tag.kind === "margin-line" && event.button === 0 && tool === "margin") {
         const points = hit.marginPoints ?? [];
         let near = 0;
@@ -3164,13 +3252,14 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
             near = index;
           }
         });
-        const ratio = marginRatio(hit.tag.tooth, hit.point);
-        if (ratio == null) return;
+        const sample = marginSampleAtRef.current(hit.tag.tooth, hit.point);
+        if (!sample) return;
         send({
           type: "margin-insert",
           tooth: hit.tag.tooth,
           index: near + 1,
-          radius: ratio,
+          radius: sample.radius,
+          depth: sample.depth,
         });
       } else if (hit.tag.kind === "transform" && event.button === 0) {
         const scale0 =
@@ -3238,11 +3327,46 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       const send = onDesignGestureRef.current;
       if (!send) return;
       if (drag.kind === "margin") {
-        const placed = planePoint(drag.tooth);
-        if (!placed) return;
-        const ratio = marginRatio(drag.tooth, placed.point);
-        if (ratio == null) return;
-        send({ type: "margin", tooth: drag.tooth, index: drag.index, radius: ratio });
+        const now = performance.now();
+        if (now - drag.at < SURFACE_PICK_MS) return;
+        drag.at = now;
+        const onScan = scanSurfaceHitRef.current(raycaster, drag.tooth);
+        const sample = onScan ? marginSampleAtRef.current(drag.tooth, onScan) : null;
+        if (sample) {
+          send({
+            type: "margin",
+            tooth: drag.tooth,
+            index: drag.index,
+            radius: sample.radius,
+            depth: sample.depth,
+          });
+        } else {
+          const placed = planePoint(drag.tooth);
+          if (!placed) return;
+          const ratio = marginRatio(drag.tooth, placed.point);
+          if (ratio == null) return;
+          send({ type: "margin", tooth: drag.tooth, index: drag.index, radius: ratio });
+        }
+      } else if (drag.kind === "stroke") {
+        const now = performance.now();
+        if (now - drag.at < SURFACE_PICK_MS) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+        drag.at = now;
+        const point = scanSurfaceHitRef.current(raycaster, drag.tooth);
+        const last = drag.points[drag.points.length - 1];
+        const strokeTooth = drag.tooth;
+        const place = placementsRef.current.find((row) => row.toothNumber === strokeTooth);
+        if (point && last && place && point.distanceTo(last) > place.radius * 0.03) {
+          const sample = marginSampleAtRef.current(drag.tooth, point);
+          if (sample) {
+            drag.points.push(point);
+            drag.samples.push(sample);
+            drawMarginSketchRef.current(drag.points, false);
+          }
+        }
       } else if (drag.kind === "transform") {
         send({
           type: "transform",
@@ -3295,6 +3419,16 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         for (const entry of loadedRef.current) entry.align = null;
         setLoadVersion((value) => value + 1);
         if (aimed) onInsertionAxisAimedRef.current?.(aimed.toothNumbers);
+      }
+      if (drag.kind === "stroke") {
+        drawMarginSketchRef.current([], false);
+        if (drag.samples.length >= 2) {
+          onDesignGestureRef.current?.({
+            type: "margin-stroke",
+            tooth: drag.tooth,
+            samples: drag.samples,
+          });
+        }
       }
       drag = null;
       event.stopPropagation();
@@ -3349,6 +3483,33 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     renderer.domElement.addEventListener("pointerdown", onScanbodyPointerDown);
     renderer.domElement.addEventListener("pointerup", onScanbodyPointerUp);
 
+    let marginDown: { x: number; y: number; button: number } | null = null;
+    const onMarginPickDown = (event: PointerEvent) => {
+      if (!marginSeedPickRef.current && !marginTraceApiRef.current.active()) return;
+      if (event.button !== 0 && event.button !== 2) return;
+      marginDown = { x: event.clientX, y: event.clientY, button: event.button };
+    };
+    const onMarginPickUp = (event: PointerEvent) => {
+      const start = marginDown;
+      marginDown = null;
+      if (!start || start.button !== event.button) return;
+      if (Math.hypot(event.clientX - start.x, event.clientY - start.y) > 6) return;
+      aim(event);
+      const seedTooth = marginSeedPickRef.current;
+      if (seedTooth) {
+        if (event.button !== 0) return;
+        const point = scanSurfaceHitRef.current(raycaster, seedTooth);
+        if (point) {
+          onMarginSeedPickRef.current?.(seedTooth, { x: point.x, y: point.y, z: point.z });
+        }
+        return;
+      }
+      if (event.button === 2) marginTraceApiRef.current.undo();
+      else marginTraceApiRef.current.click(raycaster);
+    };
+    renderer.domElement.addEventListener("pointerdown", onMarginPickDown);
+    renderer.domElement.addEventListener("pointerup", onMarginPickUp);
+
     return () => {
       window.clearTimeout(viewTimerRef.current);
       window.cancelAnimationFrame(raf);
@@ -3362,6 +3523,8 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       renderer.domElement.removeEventListener("pointerup", onAlignPointerUp);
       renderer.domElement.removeEventListener("pointerdown", onScanbodyPointerDown);
       renderer.domElement.removeEventListener("pointerup", onScanbodyPointerUp);
+      renderer.domElement.removeEventListener("pointerdown", onMarginPickDown);
+      renderer.domElement.removeEventListener("pointerup", onMarginPickUp);
       controls.removeEventListener("start", cancelSnap);
       controls.removeEventListener("change", onControlChange);
       controls.dispose();
@@ -4193,6 +4356,8 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     turn(fitTargetRef.current);
     for (const point of scanbodyPickRef.current.points) turn(point);
     scanbodyMarksRef.current?.applyMatrix4(rot);
+    for (const point of marginTraceRef.current.points) turn(point);
+    marginSketchRef.current?.applyMatrix4(rot);
     dieLayerRef.current?.applyMatrix4(rot);
     dieCacheRef.current = new Map();
     nearbyScanRef.current.clear();
@@ -4905,27 +5070,228 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     const cacheKey = `${loadVersion}:${tooth}:${c.x.toFixed(3)},${c.y.toFixed(3)},${c.z.toFixed(3)}`;
     const cache = nearbyScanRef.current;
     const hit = cache.get(cacheKey);
-    if (hit) return { place, points: hit };
+    if (hit) return { place, ...hit };
     const unit = unitToMmRef.current > 0 ? unitToMmRef.current : 1;
     const reach = Math.max(place.radius * 1.5, 9 / unit);
     const reach2 = reach * reach;
     groupRef.current?.updateWorldMatrix(true, true);
     const out: number[] = [];
+    const outNormals: number[] = [];
     const point = new THREE.Vector3();
+    const normal = new THREE.Vector3();
+    const normalMatrix = new THREE.Matrix3();
     for (const entry of loadedRef.current) {
       if (entry.role !== place.arch) continue;
       const pos = entry.geometry.getAttribute("position");
       if (!pos) continue;
+      const nor = entry.geometry.getAttribute("normal");
+      normalMatrix.getNormalMatrix(entry.mesh.matrixWorld);
       for (let i = 0; i < pos.count; i += 1) {
         point.fromBufferAttribute(pos, i).applyMatrix4(entry.mesh.matrixWorld);
         if (point.distanceToSquared(c) > reach2) continue;
         out.push(point.x, point.y, point.z);
+        if (nor) {
+          normal.fromBufferAttribute(nor, i).applyMatrix3(normalMatrix).normalize();
+          outNormals.push(normal.x, normal.y, normal.z);
+        } else {
+          outNormals.push(0, 0, 0);
+        }
       }
     }
     if (cache.size > 32) cache.clear();
-    const points = new Float32Array(out);
-    cache.set(cacheKey, points);
-    return { place, points };
+    const row = { points: new Float32Array(out), normals: new Float32Array(outNormals) };
+    cache.set(cacheKey, row);
+    return { place, ...row };
+  };
+
+  /** 삽입축이 치아 쪽을 향한다. 언더컷 칠과 같은 축을 쓴다. */
+  const undercutDir = (tooth: string) => {
+    const place = placementsRef.current.find((row) => row.toothNumber === tooth);
+    if (!place) return null;
+    const axis = insertionAxesRef.current.find((row) => row.toothNumbers.includes(tooth));
+    if (axis) return axis.dir.clone().normalize();
+    return insertionForRole(place.arch, prepArch, frameRef.current, null)?.normalize() ?? null;
+  };
+
+  /** 마진 점마다 가장 가까운 스캔 면이 언더컷인지. 스캔이 멀면 false. */
+  const marginUndercutFlags = (tooth: string, points: readonly THREE.Vector3[]) => {
+    const near = nearbyScanPoints(tooth);
+    const dir = undercutDir(tooth);
+    if (!near || !dir || near.points.length === 0) return points.map(() => false);
+    const unit = unitToMmRef.current > 0 ? unitToMmRef.current : 1;
+    const limit2 = (0.5 / unit) ** 2;
+    const undercutLimit = lookRef.current.undercutLimit;
+    const data = near.points;
+    const normals = near.normals;
+    return points.map((v) => {
+      let best = Infinity;
+      let at = -1;
+      for (let i = 0; i < data.length; i += 3) {
+        const dx = data[i]! - v.x;
+        const dy = data[i + 1]! - v.y;
+        const dz = data[i + 2]! - v.z;
+        const d2 = dx * dx + dy * dy + dz * dz;
+        if (d2 < best) {
+          best = d2;
+          at = i;
+        }
+      }
+      if (at < 0 || best > limit2) return false;
+      const align = normals[at]! * dir.x + normals[at + 1]! * dir.y + normals[at + 2]! * dir.z;
+      return isUndercutAlignment(align, undercutLimit);
+    });
+  };
+  marginUndercutFlagsRef.current = marginUndercutFlags;
+
+  /** 이 치아 둘레의 지대치 악 스캔 면을 광선이 처음 만나는 점. */
+  scanSurfaceHitRef.current = (raycaster, tooth) => {
+    const place = placementsRef.current.find((row) => row.toothNumber === tooth);
+    if (!place) return null;
+    groupRef.current?.updateWorldMatrix(true, true);
+    const meshes = loadedRef.current
+      .filter((entry) => entry.mesh.visible && entry.role === place.arch)
+      .map((entry) => entry.mesh);
+    if (meshes.length === 0) return null;
+    const reach = place.radius * 2.2;
+    for (const hit of raycaster.intersectObjects(meshes, false)) {
+      if (hit.point.distanceTo(place.center) <= reach) return hit.point.clone();
+    }
+    return null;
+  };
+
+  /** 월드 점을 그 치아 마진 좌표(각도·기본 고리 비율·축 깊이)로. `marginWorldPoints`의 역. */
+  marginSampleAtRef.current = (tooth, point) => {
+    const place = placementsRef.current.find((row) => row.toothNumber === tooth);
+    const edit = designEditRef.current?.edits[tooth];
+    if (!place || !edit) return null;
+    const base = place.radius * 0.78;
+    if (base < 1e-6) return null;
+    const normal = insertionDirByTooth(insertionAxesRef.current).get(tooth)?.clone() ??
+      (frameRef.current?.up ?? new THREE.Vector3(0, 0, 1)).clone();
+    normal.normalize();
+    const hint = frameRef.current?.right ?? new THREE.Vector3(1, 0, 0);
+    const x = hint.clone().addScaledVector(normal, -hint.dot(normal));
+    if (x.lengthSq() < 1e-8) {
+      const fallback =
+        Math.abs(normal.z) > 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 0, 1);
+      x.crossVectors(normal, fallback);
+    }
+    x.normalize();
+    const z = new THREE.Vector3().crossVectors(x, normal).normalize();
+    const unit = unitToMmRef.current > 0 ? unitToMmRef.current : 1;
+    const local = point.clone().sub(place.center);
+    const depth = local.dot(normal);
+    const radial = Math.hypot(local.dot(x), local.dot(z));
+    return {
+      angle: Math.atan2(local.dot(z), local.dot(x)),
+      radius: (radial - edit.margin.offsetMm / unit) / base,
+      depth,
+    };
+  };
+
+  drawMarginSketchRef.current = (points, closed) => {
+    const scene = sceneRef.current;
+    const prev = marginSketchRef.current;
+    if (prev) {
+      scene?.remove(prev);
+      disposeObject3D(prev);
+      marginSketchRef.current = null;
+    }
+    if (!scene || points.length === 0) return;
+    const tooth = marginTraceRef.current.tooth ?? designEditRef.current?.activeTooth;
+    const place = placementsRef.current.find((row) => row.toothNumber === tooth);
+    const size = Math.max((place?.radius ?? 4) * 0.045, 0.15);
+    const group = new THREE.Group();
+    group.name = "margin-sketch";
+    const tracing = marginTraceRef.current.points.length > 0;
+    if (tracing) {
+      points.forEach((point, index) => {
+        const dot = new THREE.Mesh(
+          new THREE.SphereGeometry(index === 0 ? size * 1.6 : size, 10, 8),
+          new THREE.MeshBasicMaterial({
+            color: index === 0 ? 0xf59e0b : 0x14b8a6,
+            depthTest: false,
+          }),
+        );
+        dot.position.copy(point);
+        dot.renderOrder = 21;
+        group.add(dot);
+      });
+    }
+    if (points.length > 1) {
+      const geometry = new THREE.BufferGeometry().setFromPoints(points);
+      const material = new THREE.LineBasicMaterial({ color: 0x14b8a6, depthTest: false });
+      const line = closed ? new THREE.LineLoop(geometry, material) : new THREE.Line(geometry, material);
+      line.renderOrder = 20;
+      line.frustumCulled = false;
+      group.add(line);
+    }
+    scene.add(group);
+    marginSketchRef.current = group;
+  };
+
+  const marginTraceTooth = () => {
+    const spec = designEditRef.current;
+    const tooth = spec?.activeTooth;
+    if (!spec || !tooth || spec.tool !== "margin" || !spec.showMargin) return null;
+    if (marginSeedPickRef.current) return null;
+    const edit = spec.edits[tooth];
+    if (!edit || !edit.margin.deleted || edit.pontic.on) return null;
+    return tooth;
+  };
+  const resetMarginTrace = () => {
+    const trace = marginTraceRef.current;
+    const had = trace.points.length > 0;
+    trace.points = [];
+    drawMarginSketchRef.current([], false);
+    if (had) onMarginTraceProgressRef.current?.(0);
+  };
+  marginTraceApiRef.current = {
+    active: marginTraceTooth,
+    click: (raycaster) => {
+      const tooth = marginTraceTooth();
+      if (!tooth) return;
+      const trace = marginTraceRef.current;
+      if (trace.tooth !== tooth) {
+        resetMarginTrace();
+        trace.tooth = tooth;
+      }
+      const place = placementsRef.current.find((row) => row.toothNumber === tooth);
+      const first = trace.points[0];
+      if (
+        first &&
+        place &&
+        trace.points.length >= 3 &&
+        raycaster.ray.distanceToPoint(first) < place.radius * 0.12
+      ) {
+        const samples = trace.points.flatMap((point) => {
+          const sample = marginSampleAtRef.current(tooth, point);
+          return sample ? [sample] : [];
+        });
+        resetMarginTrace();
+        onDesignGestureRef.current?.({ type: "margin-trace", tooth, samples });
+        return;
+      }
+      const point = scanSurfaceHitRef.current(raycaster, tooth);
+      if (!point) return;
+      trace.points.push(point);
+      drawMarginSketchRef.current(trace.points, false);
+      onMarginTraceProgressRef.current?.(trace.points.length);
+    },
+    undo: () => {
+      const trace = marginTraceRef.current;
+      if (!marginTraceTooth() || trace.points.length === 0) return;
+      trace.points.pop();
+      drawMarginSketchRef.current(trace.points, false);
+      onMarginTraceProgressRef.current?.(trace.points.length);
+    },
+    sync: () => {
+      const tooth = marginTraceTooth();
+      const trace = marginTraceRef.current;
+      if (tooth && tooth === trace.tooth) return;
+      resetMarginTrace();
+      trace.tooth = tooth;
+    },
   };
 
   const toothAxisDir = (tooth: string) => {
@@ -5102,7 +5468,11 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       disposeObject3D(prev);
       editLayerRef.current = null;
     }
-    if (!designEdit) return;
+    marginTraceApiRef.current.sync();
+    if (!designEdit) {
+      onMarginUndercutRef.current?.(null, 0);
+      return;
+    }
     const hidden = hiddenKey ? hiddenKey.split(",") : [];
     const spec =
       hidden.length > 0
@@ -5119,6 +5489,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
             ),
           }
         : designEdit;
+    let undercut: { tooth: string | null; count: number } = { tooth: null, count: 0 };
     const layer = buildProsthesisEditLayer({
       placements: placementsRef.current,
       frame: frameRef.current,
@@ -5126,9 +5497,15 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       unitToMm: unitToMmRef.current,
       spec,
       probe: (tooth, points, normals) => scanDistanceProbeRef.current(tooth, points, normals),
+      marginUndercut: (tooth, points) => {
+        const flags = marginUndercutFlagsRef.current(tooth, points);
+        undercut = { tooth, count: flags.filter(Boolean).length };
+        return flags;
+      },
     });
     scene.add(layer);
     editLayerRef.current = layer;
+    onMarginUndercutRef.current?.(undercut.tooth, undercut.count);
   }, [designEdit, loadVersion, showInsertionAxis, hiddenKey]);
 
   const clearStoneModel = (notify: boolean) => {

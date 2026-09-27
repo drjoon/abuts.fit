@@ -226,6 +226,8 @@ export function buildProsthesisEditLayer(args: {
   unitToMm: number;
   spec: ProsthesisDesignEdit;
   probe?: ScanDistanceProbe | null;
+  /** 선택 크라운 치아의 마진 점마다 스캔 언더컷 면 위인지. */
+  marginUndercut?: ((tooth: string, points: readonly THREE.Vector3[]) => boolean[]) | null;
 }) {
   const root = new THREE.Group();
   root.name = "prosthesis-edit";
@@ -255,8 +257,12 @@ export function buildProsthesisEditLayer(args: {
         margin: edit.margin,
         unitToMm: unit,
       });
+      const onUndercut =
+        active && !cavityKind && !edit.implant.on
+          ? (args.marginUndercut?.(tooth, points) ?? [])
+          : [];
       points.forEach((local, index) => {
-        const issue = cavityTaperIssue(taper[index]);
+        const issue = onUndercut[index] ? "undercut" : cavityTaperIssue(taper[index]);
         const dot = new THREE.Mesh(
           new THREE.SphereGeometry(Math.max(place.radius * 0.045, 0.15), 10, 8),
           new THREE.MeshBasicMaterial({
