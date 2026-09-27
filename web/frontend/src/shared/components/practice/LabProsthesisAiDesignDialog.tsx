@@ -52,6 +52,8 @@
 // - 2026-09-27: 내보내기·이미지 저장·페인트·채팅 첨부는 치아 정보 아래 패널. 페인트를 그린 뒤 포인터 옆에 이미지 저장·채팅 첨부 뱃지를 두고, 다른 곳을 누르면 뱃지만 없앤다.
 // - 2026-09-27: 마진 수정. 점은 스캔 면을 따라 끌고, 펜은 그은 구간을 다시 그린다. 지우면 점을 찍어 닫고, 다시 검출은 찍은 시작점부터. 조정 간격·언더컷 토글, 언더컷을 지나면 경고.
 // - 2026-09-27: 수정 › 삽입 도구에 자동 추천. 언더컷 면 비율 전·후와 기울인 각도를 보여 준다.
+// - 2026-09-27: 위저드 말풍선은 버튼을 가려 없앤다. 삽입축을 안 잡은 보철이 있으면 작업영역 가운데에 자동·화면 각도 뱃지를 띄운다.
+// - 2026-09-27: 스캔을 열면 저장된 축이 없는 보철마다 삽입축을 자동으로 잡는다. 못 잡으면 교합면으로 보여 주고 뱃지에서 화면을 맞추라고 안내한다.
 import {
   useCallback,
   useEffect,
@@ -139,7 +141,6 @@ import {
   type ConnectorRow,
   type ScanbodyControls,
 } from "@/shared/components/practice/LabProsthesisModifyPanel";
-import { LabCoachmark } from "@/shared/components/practice/LabCoachmark";
 import { LabToothTypeCard } from "@/shared/components/practice/LabToothTypeCard";
 import { LabImplantLibraryPicker } from "@/shared/components/practice/LabImplantLibraryPicker";
 import {
@@ -747,6 +748,8 @@ function LabProsthesisAiDesignDialog({
     key: string;
     result: InsertionRecommendation | null;
   } | null>(null);
+  /** 스캔을 열 때 자동으로 못 잡은 보철 삽입축 키. */
+  const [axisMissed, setAxisMissed] = useState<string[]>([]);
   const [centerGuide, setCenterGuide] = useState<WorkSessionCenterGuide>("center");
   const viewTogglesRef = useRef<WorkSessionViewToggles>({
     insertion: false,
@@ -891,6 +894,7 @@ function LabProsthesisAiDesignDialog({
       setInsertionKeys([]);
       setInsertionShown(false);
       setInsertionPick(null);
+      setAxisMissed([]);
       setCenterGuide("center");
       restoreGhostVisibleRef.current = false;
       setModifyTool("margin");
@@ -2515,6 +2519,7 @@ function LabProsthesisAiDesignDialog({
   const insertionTaken = (toothNumbers: readonly string[]) => {
     const key = insertionAxisKey(toothNumbers);
     if (!key) return;
+    setAxisMissed((prev) => prev.filter((row) => row !== key));
     setInsertionKeys((prev) => (prev.includes(key) ? prev : [...prev, key]));
     setInsertionShown(true);
     applyAimedDetections(toothNumbers);
@@ -2592,38 +2597,38 @@ function LabProsthesisAiDesignDialog({
   const viewedWizardStep = wizardSteps[activeWizardIndex] ?? null;
   const viewedAxisKey =
     viewedWizardStep?.kind === "axis" ? insertionAxisKey(viewedWizardStep.span) : "";
+  /** 아직 삽입축을 안 잡은 보철. 작업영역 가운데 뱃지로 잡게 한다. */
+  const pendingAxisSpan =
+    viewedWizardStep?.kind === "axis" && viewedAxisKey && !insertionKeys.includes(viewedAxisKey)
+      ? viewedWizardStep.span
+      : null;
   const insertionKeysSeenRef = useRef(insertionKeys);
 
-  const goWizard = (index: number) => {
-    if (wizardSteps.length === 0) return;
-    const nextIndex = Math.max(0, Math.min(index, wizardSteps.length - 1));
-    setWizardIndex(nextIndex);
-    const step = wizardSteps[nextIndex];
-    if (!step || step.kind === "axis") return;
-    if (step.kind === "library" || step.kind === "scanbody") {
-      setSelectedTooth(step.tooth);
-      setPanelsHidden(false);
-      setToothInfoOpen(true);
-      if (step.kind === "scanbody" && designScopeRef.current) {
-        onStage("margin");
-        setModifyTool("scanbody");
-        setModifyPanelOpen(true);
+  /** 스캔을 열면 저장된 축이 없는 보철마다 자동 추천을 돌린다. 못 잡은 보철은 교합면으로 보여 준다. */
+  const detectMissingAxes = (savedKeys: readonly string[]) => {
+    const taken: string[] = [];
+    const missed: string[] = [];
+    for (const span of insertionWizardSpans) {
+      const key = insertionAxisKey(span);
+      if (!key || savedKeys.includes(key)) continue;
+      if (viewerRef.current?.recommendInsertion(span)) {
+        taken.push(key);
+        applyAimedDetections(span);
+      } else {
+        missed.push(key);
       }
-      return;
     }
-    if (step.kind === "margin" && designScopeRef.current) {
-      onStage("margin");
-      setModifyTool("margin");
-      return;
+    setAxisMissed(missed);
+    if (taken.length === 0 && missed.length === 0) return;
+    if (taken.length > 0) {
+      setInsertionKeys((prev) => [...new Set([...prev, ...taken])]);
+      setInsertionShown(true);
+      queueSaveWorkRef.current();
     }
-    if (
-      (step.kind === "design" || step.kind === "thickness") &&
-      scopeMakesCrown(designScopeRef.current)
-    ) {
-      onStage("design");
-      setModifyTool("refine");
-      if (step.kind === "thickness") setContactMap(false);
-    }
+    const lead =
+      insertionWizardSpans.find((span) => missed.includes(insertionAxisKey(span))) ??
+      insertionWizardSpans[0];
+    if (lead?.[0]) showTooth(lead[0]);
   };
 
   useEffect(() => {
@@ -3342,6 +3347,7 @@ function LabProsthesisAiDesignDialog({
                   const axes = saved?.insertionAxes ?? [];
                   if (axes.length > 0) viewerRef.current?.restoreInsertionAxes(axes);
                   if (saved?.camera) viewerRef.current?.restoreCamera(saved.camera);
+                  detectMissingAxes(axes.map((axis) => axis.key));
                 }
                 if (deformed) queueSaveWorkRef.current();
               }}
@@ -4552,21 +4558,47 @@ function LabProsthesisAiDesignDialog({
                 />
               }
             />
-            {!busy && entries.length > 0 && viewedWizardStep && !toothCardFor && !libraryPickerFor ? (
-              <LabCoachmark
-                container={workArea}
-                targets={coachTargets(viewedWizardStep)}
-                title={coachTitle(viewedWizardStep)}
-                body={coachBody(
-                  viewedWizardStep,
-                  designScope != null,
-                  Object.keys(cavityKinds).length > 0,
-                )}
-                canPrev={activeWizardIndex > 0}
-                canNext={activeWizardIndex < wizardSteps.length - 1}
-                onPrev={() => goWizard(activeWizardIndex - 1)}
-                onNext={() => goWizard(activeWizardIndex + 1)}
-              />
+            {!busy &&
+            entries.length > 0 &&
+            pendingAxisSpan &&
+            !toothCardFor &&
+            !libraryPickerFor ? (
+              <div className="absolute left-1/2 top-[calc(50%+4.5rem)] z-10 flex -translate-x-1/2 flex-col items-center gap-1">
+                <div className="flex items-center gap-1 rounded-full border bg-background/95 p-1 shadow-md">
+                  <span className="px-2 text-xs font-semibold tabular-nums">
+                    {pendingAxisSpan.length > 1
+                      ? `브리지 ${pendingAxisSpan[0]}-${pendingAxisSpan[pendingAxisSpan.length - 1]}`
+                      : `#${pendingAxisSpan[0]}`}
+                  </span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-7 rounded-full px-3 text-xs"
+                    onClick={() => recommendInsertion(pendingAxisSpan)}
+                  >
+                    삽입축 자동
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-7 rounded-full px-3 text-xs"
+                    onClick={() => rememberInsertion(pendingAxisSpan)}
+                  >
+                    화면 각도로
+                  </Button>
+                </div>
+                {axisMissed.includes(insertionAxisKey(pendingAxisSpan)) ||
+                (insertionPick?.key === insertionAxisKey(pendingAxisSpan) && !insertionPick.result) ? (
+                  <p className="rounded-md bg-destructive/90 px-2 py-1 text-center text-[11px] leading-relaxed text-white">
+                    삽입축을 자동으로 잡지 못했습니다.
+                    <br />
+                    {pendingAxisSpan.length > 1 ? "브리지" : `#${pendingAxisSpan[0]}`}의 중앙점을 교합면에서 보도록 화면을 돌려주세요.
+                    <br />
+                    맞춘 뒤 「화면 각도로」를 누르면 됩니다.
+                  </p>
+                ) : null}
+              </div>
             ) : null}
             {marginHint ? (
               <div
@@ -4653,111 +4685,6 @@ function LabProsthesisAiDesignDialog({
         />
       </DialogContent>
     </Dialog>
-  );
-}
-
-/** 말풍선이 가리킬 `data-coach` 대상. 앞에서부터 보이는 것을 쓴다. */
-function coachTargets(step: AlignWizardStep): string[] {
-  if (step.kind === "axis") return [`axis:${insertionAxisKey(step.span)}`];
-  if (step.kind === "library") return [`library:${step.tooth}`, "implant-library"];
-  if (step.kind === "scanbody") {
-    return ["scanbody-fit", "tool-scanbody", "scope", `library:${step.tooth}`];
-  }
-  if (step.kind === "margin") return ["margin-confirm", "stage-margin", "scope"];
-  if (step.kind === "thickness") return ["tool-refine", "stage-design"];
-  if (step.kind === "export") return ["export"];
-  return ["generate", "stage-design"];
-}
-
-function coachTitle(step: AlignWizardStep): string {
-  if (step.kind === "axis") return `1. 모델정렬 · ${step.page}/${step.pages}`;
-  if (step.kind === "library") return `임플란트 #${step.tooth} · 라이브러리`;
-  if (step.kind === "scanbody") return `임플란트 #${step.tooth} · 스캔바디`;
-  if (step.kind === "thickness") return "4. 두께 확인";
-  if (step.kind === "export") return "5. 내보내기";
-  return step.kind === "design" ? "3. 디자인" : "2. 마진";
-}
-
-/** `cavity`는 인레이·온레이가 있는 의뢰. 마진·디자인 안내를 와동 기준으로 바꾼다. */
-function coachBody(step: AlignWizardStep, hasScope: boolean, cavity: boolean) {
-  if (step.kind === "thickness") {
-    return (
-      <>
-        빨갛게 칠한 곳은 최소 두께보다 얇습니다.
-        <br />
-        형상에서 두께 보상을 켜거나 스컬프트로 채워주세요.
-      </>
-    );
-  }
-  if (step.kind === "export") {
-    return (
-      <>
-        디자인을 확인했으면 STL로 내보내주세요.
-        <br />
-        CAM 좌표를 켜면 스캔과 같은 자리에 놓입니다.
-      </>
-    );
-  }
-  if (step.kind === "margin" && cavity) {
-    return (
-      <>
-        인레이·온레이는 와동 테두리를 마진으로 잡았습니다.
-        <br />
-        빨간 점은 와동 벽이 삽입축과 평행하거나 언더컷인 곳입니다.
-      </>
-    );
-  }
-  if (step.kind === "design" && cavity) {
-    return (
-      <>
-        확인한 마진으로 디자인을 생성해주세요.
-        <br />
-        인레이는 와동만 채우고 윗면을 주변 교합면에 맞춥니다.
-      </>
-    );
-  }
-  if (step.kind === "axis") {
-    return (
-      <>
-        {step.span.length > 1
-          ? `브리지 ${step.span[0]}-${step.span[step.span.length - 1]}의 삽입축을 설정해주세요.`
-          : `#${step.span[0]}의 삽입축을 설정해주세요.`}
-        <br />
-        해당 치아를 교합면에서 바라보고 중점을 중앙선에 맞추면 됩니다.
-      </>
-    );
-  }
-  if (step.kind === "library") {
-    return (
-      <>
-        #{step.tooth} 임플란트 라이브러리를 고르세요.
-        <br />
-        의뢰 사양의 제조사를 먼저 펴 둡니다.
-      </>
-    );
-  }
-  if (step.kind === "scanbody") {
-    return hasScope ? (
-      <>
-        스캔바디에 라이브러리를 맞추세요.
-        <br />
-        어긋나면 점 3개 정렬이나 60° 회전을 씁니다.
-      </>
-    ) : (
-      <>
-        범위를 먼저 고르세요.
-        <br />
-        스캔바디 정렬은 마진 단계에서 합니다.
-      </>
-    );
-  }
-  if (step.kind === "design") return "확인한 마진으로 디자인을 생성해주세요.";
-  return (
-    <>
-      자동 검출된 마진을 확인해주세요.
-      <br />
-      임플란트는 EPL을 확인합니다.
-    </>
   );
 }
 
