@@ -56,6 +56,7 @@
 // - 2026-09-27: 스캔을 열면 저장된 축이 없는 보철마다 삽입축을 자동으로 잡는다. 못 잡으면 교합면으로 보여 주고 뱃지에서 화면을 맞추라고 안내한다.
 // - 2026-09-27: 내면 설정. 헤더 톱니 → 기공소 디자인 프리셋(크라운·인레이온레이·임플란트 열, 연결 치과). 치아 정보에서 생성 전 프리셋을 고르고, 내면 도구에서 복사·수정 뒤 적용한다. 예전 브라우저 치과 프리셋은 없앤다.
 // - 2026-09-28: 채팅 첨부를 누르면 AI 디자인을 닫고 채팅으로 돌아간다.
+// - 2026-09-28: 스캔 단계에 메시 편집(다듬기·구멍 메우기·조각). 편집 한 번이 실행 취소 한 칸이고, 바뀐 스캔은 작업 스캔으로 저장한다.
 // - 2026-09-28: 「전달」 패널은 버튼 글자 너비. 순서는 페인트, 이미지 저장, 채팅 첨부. 표시 색은 여섯 개이고 패널 너비 안에서 가운데 정렬한다.
 import {
   useCallback,
@@ -137,6 +138,7 @@ import {
   OralScanOverlayViewer,
   type ConnectorSectionShot,
   type OralScanConnectorChip,
+  type JawSnapshot,
   type OralScanOcclusionAdjust,
   type OralScanOverlayHandle,
   type OralScanOverlaySource,
@@ -261,6 +263,12 @@ import {
   type DesignPresetLibrary,
 } from "@/shared/practice/labDesignPresets";
 import { useLabDesignPresets } from "@/shared/practice/labDesignPresetApi";
+import {
+  DEFAULT_SCAN_MESH_EDIT,
+  type ScanMeshEdit,
+  type ScanMeshEditStatus,
+} from "@/shared/practice/scanMeshEdit";
+import { MeshEditSection } from "@/shared/components/practice/LabMeshEditSection";
 import { LabDesignPresetDialog } from "@/shared/components/practice/LabDesignPresetDialog";
 import {
   compareArch,
@@ -546,7 +554,7 @@ type WorkUndoSnap = {
   edits: Record<string, ToothDesignEdit>;
   generated: Record<string, boolean>;
   marginReview: Record<string, MarginReview>;
-  jaws: Array<{ id: string; positions: Float32Array }> | null;
+  jaws: JawSnapshot[] | null;
   archAligned: ArchAligned;
 };
 
@@ -809,6 +817,13 @@ function LabProsthesisAiDesignDialog({
   const [alignArch, setAlignArch] = useState<"upper" | "lower" | null>(null);
   const [alignPicks, setAlignPicks] = useState({ model: 0, bite: 0 });
   const [alignBusy, setAlignBusy] = useState(false);
+  const [meshEdit, setMeshEdit] = useState<ScanMeshEdit | null>(null);
+  const [meshEditStatus, setMeshEditStatus] = useState<ScanMeshEditStatus>({
+    selected: 0,
+    holes: 0,
+    selectedHoles: 0,
+  });
+  const meshEditBeforeSigRef = useRef("");
   const [archAligned, setArchAligned] = useState<ArchAligned>({
     upper: false,
     lower: false,
@@ -1638,9 +1653,10 @@ function LabProsthesisAiDesignDialog({
     return row?.label ?? null;
   })();
   const prepBackTransparent = Boolean(activeNumber && edits[activeNumber]?.margin.showBack);
+  const meshEditOn = meshEdit != null;
   const designEdit = useMemo(
     () =>
-      stage === "scan" && !marginShown
+      stage === "scan" && (!marginShown || meshEditOn)
         ? null
         : {
             tool: modifyTool,
@@ -1667,6 +1683,7 @@ function LabProsthesisAiDesignDialog({
       generated,
       marginMode,
       marginShown,
+      meshEditOn,
       modifyTool,
       prepBackTransparent,
       refineTab,
@@ -2552,6 +2569,64 @@ function LabProsthesisAiDesignDialog({
     queueSaveWorkRef.current();
   };
 
+  const onMeshEditPhase = (phase: "start" | "end") => {
+    if (phase === "start") {
+      meshEditBeforeSigRef.current = viewerRef.current?.changedScanSignature() ?? "";
+      pushJawCheckpoint();
+      return;
+    }
+    discardJawCheckpoint(meshEditBeforeSigRef.current);
+    queueSaveWorkRef.current();
+  };
+
+  const toggleMeshEdit = (on: boolean) => {
+    if (!on) {
+      setMeshEdit(null);
+      return;
+    }
+    setAlignKind(null);
+    setAlignArch(null);
+    setMeshEdit((prev) => prev ?? { ...DEFAULT_SCAN_MESH_EDIT });
+  };
+
+  const patchMeshEdit = (patch: Partial<ScanMeshEdit>) => {
+    setMeshEdit((prev) => (prev ? { ...prev, ...patch } : prev));
+  };
+
+  const applyMeshEdit = () => {
+    const result = viewerRef.current?.meshEditApply();
+    if (!result) return;
+    if (result.kind === "whole") {
+      toast({
+        title: "스캔을 모두 지울 수는 없습니다.",
+        description: "남길 부분을 선택에서 빼세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (result.kind === "filled" && result.failed > 0) {
+      toast({
+        title: `구멍 ${result.failed}개를 메우지 못했습니다.`,
+        description: (
+          <>
+            테두리가 꼬였거나 너무 깁니다.
+            <br />
+            주변을 다듬기로 정리한 뒤 다시 메우세요.
+          </>
+        ),
+        variant: "destructive",
+      });
+    }
+  };
+
+  useEffect(() => {
+    if (alignKind) setMeshEdit(null);
+  }, [alignKind]);
+
+  useEffect(() => {
+    if (stage !== "scan" || !open) setMeshEdit(null);
+  }, [open, stage]);
+
   const runAutoAlign = async () => {
     const before = viewerRef.current?.changedScanSignature() ?? "";
     pushJawCheckpoint();
@@ -2646,7 +2721,7 @@ function LabProsthesisAiDesignDialog({
       snap.edits = turnEdits(snap.edits);
       if (snap.jaws) {
         snap.jaws = snap.jaws.map((row) => ({
-          id: row.id,
+          ...row,
           positions: turn.jaw(row.id, row.positions),
         }));
       }
@@ -3519,6 +3594,17 @@ function LabProsthesisAiDesignDialog({
                 occlusionOn ? { arch: occlusionArch, mode: occlusionMode } : null
               }
               onOcclusionEdit={onOcclusionEdit}
+              meshEdit={stage === "scan" ? meshEdit : null}
+              onMeshEditStatus={(status) =>
+                setMeshEditStatus((prev) =>
+                  prev.selected > 0 === status.selected > 0 &&
+                  prev.holes === status.holes &&
+                  prev.selectedHoles === status.selectedHoles
+                    ? prev
+                    : status,
+                )
+              }
+              onMeshEdit={onMeshEditPhase}
               onAlignProgress={(picks) => {
                 setAlignPicks(picks);
                 if (picks.model >= 3 && picks.bite >= 3) {
@@ -4562,6 +4648,23 @@ function LabProsthesisAiDesignDialog({
                           </>
                         ) : null}
                       </section>
+                    ) : null}
+                    {stage === "scan" ? (
+                      <MeshEditSection
+                        edit={meshEdit}
+                        status={meshEditStatus}
+                        disabled={entries.length === 0 || alignBusy || busy}
+                        onToggle={toggleMeshEdit}
+                        onPatch={patchMeshEdit}
+                        onApply={applyMeshEdit}
+                        onInvert={() => viewerRef.current?.meshEditInvert()}
+                        onClear={() => viewerRef.current?.meshEditClear()}
+                        onSelectLoose={() => {
+                          if (viewerRef.current?.meshEditSelectLoose()) return;
+                          toast({ title: "떨어진 조각이 없습니다." });
+                        }}
+                        onPickAllHoles={(on) => viewerRef.current?.meshEditPickAllHoles(on)}
+                      />
                     ) : null}
                     {stage === "margin" || stage === "design" ? (
                       <LabProsthesisModifyPanel

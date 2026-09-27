@@ -108,7 +108,7 @@ function jacobiEigen(input: number[], n: number) {
 }
 
 /** 대응점 쌍의 최적 강체 변환(Horn 사원수). */
-function bestRigid(model: number[], target: number[]): RigidPose {
+export function bestRigid(model: number[], target: number[]): RigidPose {
   const count = model.length / 3;
   const mc: Vec3 = [0, 0, 0];
   const tc: Vec3 = [0, 0, 0];

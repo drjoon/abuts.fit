@@ -32,6 +32,7 @@
 // - 2026-09-27: 마진 점·펜·새로 찍기는 스캔 면에 붙인다. 선택 치아 마진 점이 언더컷 면이면 빨갛게 칠하고 알린다.
 // - 2026-09-27: 스캔바디·심플어벗 실제 형상을 ICP로 맞춘다(fitScanbodyMesh). 후보가 여럿이면 가장 잘 맞는 것.
 // - 2026-09-27: 화살표를 끄는 동안 언더컷을 바로 칠한다. 삽입축은 수동으로만 잡는다. 미리보기(preview)는 스캔을 돌리지 않고 축·언더컷만 화면을 따라온다.
+// - 2026-09-28: 메시 편집(다듬기·구멍 메우기·조각). 모양이 바뀐 스캔은 새 지오메트리로 갈고, 정점마다 파일 좌표를 들고 작업 DCM으로 저장한다.
 import {
   forwardRef,
   useEffect,
@@ -124,10 +125,21 @@ import {
   type ScanCloud,
 } from "@/shared/practice/crownAdapt";
 import {
+  bestRigid,
   meshExtent,
   registerScanbody,
   type ScanbodyMesh,
 } from "@/shared/practice/scanbodyRegistration";
+import {
+  weldVertices,
+  type ScanMeshEdit,
+  type ScanMeshEditStatus,
+} from "@/shared/practice/scanMeshEdit";
+import {
+  ScanMeshEditController,
+  type MeshEditApplyResult,
+  type ScanShapeEdit,
+} from "@/shared/components/practice/scanMeshEditController";
 import { cn } from "@/shared/ui/cn";
 
 export type OralScanViewPreset = "fit" | "occlusal" | "buccal" | "lingual";
@@ -221,12 +233,17 @@ export type OralScanOverlayHandle = {
   exportChangedScans: () => WorkingScanMesh[];
   /** 바뀐 스캔이 없으면 빈 문자열. 좌표 사본은 만들지 않는다. */
   changedScanSignature: () => string;
-  /** 상악·하악·바이트 정점. 실행 취소용이며 화면 배치는 넣지 않는다. */
-  captureJawPositions: () => Array<{ id: string; positions: Float32Array }>;
-  /** 저장해 둔 정점으로 되돌린다. 카메라는 그대로 둔다. */
-  restoreJawPositions: (
-    rows: ReadonlyArray<{ id: string; positions: Float32Array }>,
-  ) => void;
+  /** 상악·하악·바이트 정점과 메시 모양. 실행 취소용이며 화면 배치는 넣지 않는다. */
+  captureJawPositions: () => JawSnapshot[];
+  /** 저장해 둔 정점·메시 모양으로 되돌린다. 카메라는 그대로 둔다. */
+  restoreJawPositions: (rows: ReadonlyArray<JawSnapshot>) => void;
+  /** 메시 편집 — 다듬기는 고른 면을 지우고, 구멍 메우기는 고른 구멍을 메운다. */
+  meshEditApply: () => MeshEditApplyResult;
+  meshEditInvert: () => void;
+  meshEditClear: () => void;
+  /** 스캔마다 가장 큰 조각만 남기고 떨어진 조각을 고른다. 고른 게 없으면 false. */
+  meshEditSelectLoose: () => boolean;
+  meshEditPickAllHoles: (on: boolean) => void;
   /** 잡혀 있는 삽입축. 작업 문서에 넣는다. */
   exportInsertionAxes: () => WorkSessionAxis[];
   /** 저장했던 삽입축을 다시 켠다. */
@@ -324,6 +341,24 @@ export type WorkingScanMesh = {
   indices: Uint32Array;
   /** sRGB 0..255. 없으면 무색. */
   colors: Uint8Array | null;
+};
+
+/**
+ * 실행 취소로 되돌릴 스캔 메시 모양. 편집은 배열을 고치지 않고 새로 만들기만 하므로 참조로 들고 있다.
+ * fileCoords는 정점마다 연 파일 좌표(새로 만든 정점은 NaN). 편집하지 않았으면 null.
+ */
+export type ScanShapeSnapshot = {
+  index: THREE.BufferAttribute | null;
+  color: THREE.BufferAttribute | null;
+  uv: THREE.BufferAttribute | THREE.InterleavedBufferAttribute | null;
+  fileCoords: Float32Array | null;
+  filePositions: Float32Array;
+};
+
+export type JawSnapshot = {
+  id: string;
+  positions: Float32Array;
+  shape?: ScanShapeSnapshot;
 };
 
 export type OralScanToothBadge = {
@@ -433,6 +468,11 @@ type Props = {
   occlusionAdjust?: OralScanOcclusionAdjust | null;
   /** 수동 교합으로 정점을 바꾸기 직전(start)과 굽고 난 뒤(end). */
   onOcclusionEdit?: (phase: "start" | "end") => void;
+  /** 메시 편집. 켜면 보이는 상악·하악·바이트 스캔을 다듬고 메우고 조각한다. */
+  meshEdit?: ScanMeshEdit | null;
+  onMeshEditStatus?: (status: ScanMeshEditStatus) => void;
+  /** 메시 편집으로 스캔을 바꾸기 직전(start)과 바꾼 뒤(end). */
+  onMeshEdit?: (phase: "start" | "end") => void;
   /** 스캔을 화면에 올린 뒤. restore면 저장된 삽입축·카메라를 다시 깐다. */
   onMeshesReady?: (info: { deformed: boolean; restore: boolean }) => void;
   /** 돌리기·이동·줌·시점 전환이 멈추면. */
@@ -472,6 +512,13 @@ type LoadedMesh = {
   basePositions: Float32Array;
   /** 파일을 열었을 때의 좌표. 여기와 다르면 작업 DCM으로 저장한다. */
   filePositions: Float32Array;
+  /**
+   * 메시 편집 뒤 정점마다 연 파일 좌표(새로 만든 정점은 NaN). 있으면 항상 작업 DCM으로 저장한다.
+   * 파일 좌표로 되돌릴 때는 이 대응점으로 강체 맞춤을 해 편집한 모양을 그대로 옮긴다.
+   */
+  editedFileCoords: Float32Array | null;
+  /** 메시 편집·되돌리기마다 오른다. 표본 정점에 안 걸리는 조각 편집도 지문이 바뀌게 한다. */
+  meshRevision: number;
 };
 
 type SnapAnim = {
@@ -1106,7 +1153,7 @@ function transformPositions(src: Float32Array, matrix: THREE.Matrix4) {
 
 function applyCapturedPositions(entry: LoadedMesh, captured: Float32Array) {
   const pos = entry.geometry.getAttribute("position");
-  if (!pos || captured.length < pos.count * 3) return;
+  if (!pos || captured.length !== pos.count * 3) return;
   for (let i = 0; i < pos.count; i += 1) {
     pos.setXYZ(i, captured[i * 3] ?? 0, captured[i * 3 + 1] ?? 0, captured[i * 3 + 2] ?? 0);
   }
@@ -1118,10 +1165,48 @@ function applyCapturedPositions(entry: LoadedMesh, captured: Float32Array) {
   entry.analysisColor = null;
 }
 
+/** 편집한 메시를 대응점 강체 맞춤으로 파일 좌표에 둔다. 편집한 모양은 그대로 옮겨진다. */
+function restoreEditedFilePositions(entry: LoadedMesh, file: Float32Array) {
+  const pos = entry.geometry.getAttribute("position");
+  if (!pos || file.length !== pos.count * 3) return;
+  const step = Math.max(1, Math.floor(pos.count / 4000));
+  const model: number[] = [];
+  const target: number[] = [];
+  for (let i = 0; i < pos.count; i += step) {
+    const fx = file[i * 3]!;
+    if (!Number.isFinite(fx)) continue;
+    model.push(pos.getX(i), pos.getY(i), pos.getZ(i));
+    target.push(fx, file[i * 3 + 1]!, file[i * 3 + 2]!);
+  }
+  if (model.length < 9) return;
+  const { r, t } = bestRigid(model, target);
+  for (let i = 0; i < pos.count; i += 1) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const z = pos.getZ(i);
+    pos.setXYZ(
+      i,
+      r[0] * x + r[1] * y + r[2] * z + t[0],
+      r[3] * x + r[4] * y + r[5] * z + t[1],
+      r[6] * x + r[7] * y + r[8] * z + t[2],
+    );
+  }
+  pos.needsUpdate = true;
+  entry.geometry.computeVertexNormals();
+  entry.geometry.computeBoundingBox();
+  entry.dist = null;
+  entry.align = null;
+  entry.analysisColor = null;
+}
+
 function restoreFilePositions(entry: LoadedMesh) {
+  if (entry.editedFileCoords) {
+    restoreEditedFilePositions(entry, entry.editedFileCoords);
+    return;
+  }
   const pos = entry.geometry.getAttribute("position");
   const file = entry.filePositions;
-  if (!pos || file.length < pos.count * 3) return;
+  if (!pos || file.length !== pos.count * 3) return;
   for (let i = 0; i < pos.count; i += 1) {
     pos.setXYZ(i, file[i * 3] ?? 0, file[i * 3 + 1] ?? 0, file[i * 3 + 2] ?? 0);
   }
@@ -1133,6 +1218,68 @@ function restoreFilePositions(entry: LoadedMesh) {
   entry.analysisColor = null;
 }
 
+/** 메시 모양(토폴로지)을 새 BufferGeometry로 바꾼다. 옛 지오메트리는 GPU 버퍼째 버린다. */
+function swapScanGeometry(
+  entry: LoadedMesh,
+  next: {
+    positions: Float32Array;
+    index: THREE.BufferAttribute | null;
+    color: THREE.BufferAttribute | null;
+    uv: THREE.BufferAttribute | THREE.InterleavedBufferAttribute | null;
+  },
+) {
+  const prev = entry.geometry;
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(next.positions, 3));
+  if (next.index) geometry.setIndex(next.index);
+  if (next.color) geometry.setAttribute("color", next.color);
+  if (next.uv) geometry.setAttribute("uv", next.uv);
+  geometry.computeVertexNormals();
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  entry.mesh.geometry = geometry;
+  entry.geometry = geometry;
+  entry.scanColor = next.color;
+  entry.dist = null;
+  entry.align = null;
+  entry.analysisColor = null;
+  releaseSceneGeometry(prev);
+}
+
+function scanShapeOf(entry: LoadedMesh): ScanShapeSnapshot {
+  const index = entry.geometry.getIndex();
+  return {
+    index,
+    color: entry.scanColor,
+    uv: entry.geometry.getAttribute("uv") ?? null,
+    fileCoords: entry.editedFileCoords,
+    filePositions: entry.filePositions,
+  };
+}
+
+function readAttrTriples(attr: THREE.BufferAttribute | null) {
+  if (!attr) return null;
+  const out = new Float32Array(attr.count * 3);
+  for (let i = 0; i < attr.count; i += 1) {
+    out[i * 3] = attr.getX(i);
+    out[i * 3 + 1] = attr.getY(i);
+    out[i * 3 + 2] = attr.getZ(i);
+  }
+  return out;
+}
+
+function gatherRows(src: Float32Array | null, rows: ArrayLike<number>, size: number, fill = 0) {
+  if (!src) return null;
+  const out = new Float32Array(rows.length * size);
+  for (let i = 0; i < rows.length; i += 1) {
+    const from = rows[i]!;
+    for (let k = 0; k < size; k += 1) {
+      out[i * size + k] = from < 0 ? fill : (src[from * size + k] ?? fill);
+    }
+  }
+  return out;
+}
+
 function rememberPositions(entry: LoadedMesh) {
   entry.basePositions = captureBasePositions(entry.geometry);
 }
@@ -1141,7 +1288,7 @@ function positionsDiffer(
   pos: THREE.BufferAttribute | THREE.InterleavedBufferAttribute,
   file: Float32Array,
 ) {
-  if (file.length < pos.count * 3) return true;
+  if (file.length !== pos.count * 3) return true;
   for (let i = 0; i < pos.count; i += 1) {
     if (Math.abs(pos.getX(i) - (file[i * 3] ?? 0)) > 1e-4) return true;
     if (Math.abs(pos.getY(i) - (file[i * 3 + 1] ?? 0)) > 1e-4) return true;
@@ -1179,7 +1326,9 @@ function dirtyScanRoles(loaded: readonly LoadedMesh[]) {
   for (const entry of jawEntries(loaded)) {
     const pos = entry.geometry.getAttribute("position");
     if (!pos || pos.count === 0) continue;
-    if (positionsDiffer(pos, entry.filePositions)) dirty.add(entry.role);
+    if (entry.editedFileCoords || positionsDiffer(pos, entry.filePositions)) {
+      dirty.add(entry.role);
+    }
   }
   return dirty;
 }
@@ -1199,7 +1348,7 @@ function changedScanStamp(loaded: readonly LoadedMesh[]): string {
       acc = Math.imul(acc, 31) + Math.round(pos.getY(i) * 1000);
       acc = Math.imul(acc, 31) + Math.round(pos.getZ(i) * 1000);
     }
-    parts.push(`${entry.role}:${acc}`);
+    parts.push(`${entry.role}:${acc}:${entry.meshRevision}`);
   }
   return parts.join("|");
 }
@@ -1245,7 +1394,7 @@ function exportScanMeshes(
 function restoreBasePositions(entry: LoadedMesh) {
   const pos = entry.geometry.getAttribute("position");
   const base = entry.basePositions;
-  if (!pos || base.length < pos.count * 3) return;
+  if (!pos || base.length !== pos.count * 3) return;
   for (let i = 0; i < pos.count; i += 1) {
     pos.setXYZ(i, base[i * 3] ?? 0, base[i * 3 + 1] ?? 0, base[i * 3 + 2] ?? 0);
   }
@@ -2591,6 +2740,9 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       onAlignCancelled,
       occlusionAdjust = null,
       onOcclusionEdit,
+      meshEdit = null,
+      onMeshEditStatus,
+      onMeshEdit,
       onMeshesReady,
       onViewSettled,
       scanbodyPickTooth = null,
@@ -2736,6 +2888,24 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   occlusionRef.current = occlusionAdjust;
   const onOcclusionEditRef = useRef(onOcclusionEdit);
   onOcclusionEditRef.current = onOcclusionEdit;
+  const meshEditRef = useRef(meshEdit);
+  meshEditRef.current = meshEdit;
+  const onMeshEditStatusRef = useRef(onMeshEditStatus);
+  onMeshEditStatusRef.current = onMeshEditStatus;
+  const onMeshEditRef = useRef(onMeshEdit);
+  onMeshEditRef.current = onMeshEdit;
+  const meshEditCtlRef = useRef<ScanMeshEditController | null>(null);
+  const meshEditHostRef = useRef<{
+    replaceShape: (id: string, shape: ScanShapeEdit) => void;
+    ensureIndexed: (id: string) => void;
+    sculpted: (ids: readonly string[]) => void;
+    finish: () => void;
+  }>({
+    replaceShape: () => {},
+    ensureIndexed: () => {},
+    sculpted: () => {},
+    finish: () => {},
+  });
   /** 수동 교합에 들어왔을 때 정점. 원래대로와 교합 거리의 기준. */
   const occlusionBaseRef = useRef(new Map<string, Float32Array>());
   const occlusionLiveRef = useRef(false);
@@ -3956,7 +4126,32 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     renderer.domElement.addEventListener("pointerdown", onMarginPickDown);
     renderer.domElement.addEventListener("pointerup", onMarginPickUp);
 
+    const meshEditCtl = new ScanMeshEditController({
+      dom: renderer.domElement,
+      overlay: el,
+      camera: () => cameraRef.current,
+      targets: () =>
+        jawEntries(loadedRef.current).map((entry) => ({
+          id: entry.id,
+          mesh: entry.mesh,
+          scanColor: entry.scanColor,
+        })),
+      unitToMm: () => (unitToMmRef.current > 0 ? unitToMmRef.current : 1),
+      ensureIndexed: (id) => meshEditHostRef.current.ensureIndexed(id),
+      onStatus: (status) => onMeshEditStatusRef.current?.(status),
+      onBegin: () => onMeshEditRef.current?.("start"),
+      replaceShape: (id, shape) => meshEditHostRef.current.replaceShape(id, shape),
+      onSculpted: (ids) => {
+        meshEditHostRef.current.sculpted(ids);
+        meshEditHostRef.current.finish();
+      },
+    });
+    meshEditCtlRef.current = meshEditCtl;
+    meshEditCtl.setSpec(meshEditRef.current ?? null);
+
     return () => {
+      meshEditCtl.dispose();
+      meshEditCtlRef.current = null;
       window.clearTimeout(viewTimerRef.current);
       window.cancelAnimationFrame(raf);
       ro.disconnect();
@@ -4154,6 +4349,8 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
               analysisColor: null,
               basePositions: captureBasePositions(parsed.geometry),
               filePositions: captureBasePositions(parsed.geometry),
+              editedFileCoords: null,
+              meshRevision: 0,
             });
           } catch {
             failed.push(source.fileName);
@@ -4646,7 +4843,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       for (const entry of occlusionEntries(arch)) {
         const base = occlusionBaseRef.current.get(entry.id);
         const pos = entry.geometry.getAttribute("position");
-        if (!base || !pos || base.length < pos.count * 3) continue;
+        if (!base || !pos || base.length !== pos.count * 3) continue;
         const step = Math.max(1, Math.floor(pos.count / 2000));
         for (let i = 0; i < pos.count; i += step) {
           sum +=
@@ -4683,6 +4880,95 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     const shift = api.away(arch).multiplyScalar((mm - api.measureMm(arch)) / unit);
     return new THREE.Matrix4().makeTranslation(shift.x, shift.y, shift.z);
   };
+
+  meshEditHostRef.current = {
+    replaceShape: (id, shape) => {
+      const entry = loadedRef.current.find((row) => row.id === id);
+      if (!entry) return;
+      const oldFile = entry.editedFileCoords ?? entry.filePositions;
+      swapScanGeometry(entry, {
+        positions: shape.positions,
+        index: new THREE.BufferAttribute(shape.index, 1),
+        color: shape.color ? new THREE.BufferAttribute(shape.color, 3) : null,
+        uv: shape.uv ? new THREE.BufferAttribute(shape.uv, 2) : null,
+      });
+      entry.editedFileCoords = gatherRows(oldFile, shape.origin, 3, Number.NaN);
+      entry.basePositions = shape.positions.slice();
+      entry.meshRevision += 1;
+      occlusionBaseRef.current.delete(entry.id);
+    },
+    ensureIndexed: (id) => {
+      const entry = loadedRef.current.find((row) => row.id === id);
+      if (!entry) return;
+      const geometry = entry.geometry;
+      const positions = captureBasePositions(geometry);
+      const count = positions.length / 3;
+      const index = geometry.getIndex();
+      let rows: Uint32Array;
+      let nextIndex: Uint32Array;
+      if (index) {
+        rows = Uint32Array.from({ length: count }, (_, i) => i);
+        nextIndex = Uint32Array.from(index.array as ArrayLike<number>);
+      } else {
+        const unit = unitToMmRef.current > 0 ? unitToMmRef.current : 1;
+        const welded = weldVertices(positions, null, 1e-4 / unit);
+        rows = welded.rep;
+        nextIndex = welded.index;
+      }
+      const uv = geometry.getAttribute("uv");
+      const uvRows = uv
+        ? Float32Array.from({ length: uv.count * 2 }, (_, k) =>
+            k % 2 === 0 ? uv.getX(k >> 1) : uv.getY(k >> 1),
+          )
+        : null;
+      const color = gatherRows(readAttrTriples(entry.scanColor), rows, 3);
+      const nextUv = gatherRows(uvRows, rows, 2);
+      swapScanGeometry(entry, {
+        positions: gatherRows(positions, rows, 3)!,
+        index: new THREE.BufferAttribute(nextIndex, 1),
+        color: color ? new THREE.BufferAttribute(color, 3) : null,
+        uv: nextUv ? new THREE.BufferAttribute(nextUv, 2) : null,
+      });
+      entry.filePositions = gatherRows(entry.filePositions, rows, 3)!;
+      entry.basePositions = gatherRows(entry.basePositions, rows, 3)!;
+      entry.editedFileCoords = gatherRows(entry.editedFileCoords, rows, 3, Number.NaN);
+      occlusionBaseRef.current.delete(entry.id);
+      restyleRef.current();
+    },
+    sculpted: (ids) => {
+      for (const id of ids) {
+        const entry = loadedRef.current.find((row) => row.id === id);
+        if (!entry) continue;
+        if (!entry.editedFileCoords) entry.editedFileCoords = entry.filePositions;
+        entry.basePositions = captureBasePositions(entry.geometry);
+        entry.meshRevision += 1;
+        entry.dist = null;
+        entry.align = null;
+        entry.analysisColor = null;
+        occlusionBaseRef.current.delete(entry.id);
+      }
+    },
+    finish: () => {
+      syncBadgesRef.current();
+      setLoadVersion((value) => value + 1);
+      onMeshEditRef.current?.("end");
+    },
+  };
+
+  const meshEditKey = meshEdit ? JSON.stringify(meshEdit) : "";
+  useEffect(() => {
+    meshEditCtlRef.current?.setSpec(meshEditRef.current ?? null);
+  }, [meshEditKey]);
+
+  useEffect(() => {
+    meshEditCtlRef.current?.refresh();
+  }, [loadVersion]);
+
+  useEffect(() => {
+    if (!meshEditRef.current) return;
+    const timer = window.setTimeout(() => meshEditCtlRef.current?.refresh(), 0);
+    return () => window.clearTimeout(timer);
+  }, [visible, ghostOpacity]);
 
   const occlusionArchKey = occlusionAdjust?.arch ?? null;
   useEffect(() => {
@@ -5622,20 +5908,57 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         jawEntries(loadedRef.current).map((entry) => ({
           id: entry.id,
           positions: captureBasePositions(entry.geometry),
+          shape: scanShapeOf(entry),
         })),
       restoreJawPositions: (rows) => {
-        const byId = new Map(rows.map((row) => [row.id, row.positions]));
+        const byId = new Map(rows.map((row) => [row.id, row]));
         let changed = false;
         for (const entry of jawEntries(loadedRef.current)) {
           const snap = byId.get(entry.id);
           if (!snap) continue;
-          applyCapturedPositions(entry, snap);
+          const shape = snap.shape;
+          const count = entry.geometry.getAttribute("position")?.count ?? 0;
+          if (
+            shape &&
+            (shape.index !== entry.geometry.getIndex() || snap.positions.length !== count * 3)
+          ) {
+            swapScanGeometry(entry, {
+              positions: snap.positions.slice(),
+              index: shape.index,
+              color: shape.color,
+              uv: shape.uv,
+            });
+            entry.basePositions = snap.positions.slice();
+            occlusionBaseRef.current.delete(entry.id);
+          } else {
+            applyCapturedPositions(entry, snap.positions);
+          }
+          if (shape) {
+            if (shape.fileCoords || entry.editedFileCoords) entry.meshRevision += 1;
+            entry.editedFileCoords = shape.fileCoords;
+            entry.filePositions = shape.filePositions;
+          }
           changed = true;
         }
         if (!changed) return;
+        meshEditCtlRef.current?.refresh();
+        restyleRef.current();
         syncBadgesRef.current();
         setLoadVersion((value) => value + 1);
       },
+      meshEditApply: () => {
+        const ctl = meshEditCtlRef.current;
+        if (!ctl) return { kind: "empty" };
+        const result = ctl.apply();
+        if (result.kind === "trimmed" || (result.kind === "filled" && result.holes > 0)) {
+          meshEditHostRef.current.finish();
+        }
+        return result;
+      },
+      meshEditInvert: () => meshEditCtlRef.current?.invertSelection(),
+      meshEditClear: () => meshEditCtlRef.current?.clearAll(),
+      meshEditSelectLoose: () => meshEditCtlRef.current?.selectLoosePieces() ?? false,
+      meshEditPickAllHoles: (on) => meshEditCtlRef.current?.pickAllHoles(on),
       exportInsertionAxes: () =>
         insertionAxesRef.current.map((axis) => ({
           key: axis.key,
