@@ -11363,8 +11363,8 @@ export async function markReceivedPracticeTransferRelease(req, res) {
 }
 
 /**
- * 어벗츠 기공사업부: 지정 의뢰를 인증 기공소 하청 풀로 연다.
- * 거부하지 않는다. 어벗츠 자체 수행도 계속 가능.
+ * 어벗츠 기공사업부: 지정 의뢰를 인증·수가설정 기공소 하청 풀로 연다.
+ * 치과 별점 구간·1점은 보지 않는다. 어벗츠 자체 수행도 계속 가능.
  */
 export async function openSubcontractPracticeTransfer(req, res) {
   try {
@@ -11422,24 +11422,13 @@ export async function openSubcontractPracticeTransfer(req, res) {
       });
     }
 
-    const starBand = resolveAutoMatchEligibleStarBand({
-      minStars: doc.autoMatch?.minLabRating,
-      maxStars: doc.autoMatch?.maxLabRating,
-    });
-    const practiceLabRatings = await loadPracticeLabRatings(
-      doc.practiceAnchorId,
-    );
     const eligibleIds = await loadCertifiedSubcontractLabAnchorIds({
       excludeLabAnchorId: labAnchorId,
-      minStars: starBand.minStars,
-      maxStars: starBand.maxStars,
-      practiceLabRatings,
     });
     if (!eligibleIds.length) {
       return res.status(409).json({
         success: false,
-        message:
-          "설정 별점 구간에 해당하는 인증 협력 기공소가 없어 하청 풀을 열 수 없습니다.",
+        message: "인증 협력 기공소가 없어 하청 풀을 열 수 없습니다.",
       });
     }
 
@@ -11450,8 +11439,6 @@ export async function openSubcontractPracticeTransfer(req, res) {
         $set: {
           "autoMatch.subcontractPoolOpen": true,
           "autoMatch.eligibleLabAnchorIds": eligibleOids,
-          "autoMatch.minLabRating": starBand.minStars,
-          "autoMatch.maxLabRating": starBand.maxStars,
           "autoMatch.priorityUntil": now,
           "autoMatch.claimedAt": null,
         },
@@ -11462,8 +11449,6 @@ export async function openSubcontractPracticeTransfer(req, res) {
     }
     doc.autoMatch.subcontractPoolOpen = true;
     doc.autoMatch.eligibleLabAnchorIds = eligibleOids;
-    doc.autoMatch.minLabRating = starBand.minStars;
-    doc.autoMatch.maxLabRating = starBand.maxStars;
     doc.autoMatch.priorityUntil = now;
     doc.autoMatch.claimedAt = null;
     clearAutoMatchPriorityTimers(doc._id);

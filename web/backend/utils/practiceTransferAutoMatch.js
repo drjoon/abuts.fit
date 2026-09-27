@@ -456,16 +456,22 @@ export const buildAutoMatchClaimableFilter = (
   };
 };
 
-/** 어벗츠 하청 풀: 인증·수가설정 기공소(원청 internalLab 제외). 치과 별점 구간 안만. 우리치과 1점 제외. */
+/** 어벗츠 하청 풀: 인증·수가설정 기공소(원청 internalLab 제외). 치과 별점 구간·1점은 보지 않는다. */
 export async function loadCertifiedSubcontractLabAnchorIds({
   excludeLabAnchorId = null,
-  minStars,
-  maxStars,
-  practiceLabRatings = null,
 } = {}) {
   const exclude = String(excludeLabAnchorId || "").trim();
   const labs = await loadAutoMatchEligibleLabAnchors({
-    select: { _id: 1, businessType: 1, labFeeSchedule: 1 },
+    select: {
+      _id: 1,
+      status: 1,
+      businessType: 1,
+      requestorKind: 1,
+      requestorServices: 1,
+      requestorCapabilities: 1,
+      practiceTransferAutoMatchEnabled: 1,
+      labFeeSchedule: 1,
+    },
   });
   const ids = [];
   for (const lab of labs) {
@@ -474,12 +480,7 @@ export async function loadCertifiedSubcontractLabAnchorIds({
     if (!isLabFeeScheduleConfigured(lab.labFeeSchedule)) continue;
     ids.push(lab._id);
   }
-  return filterLabAnchorIdsByStarBand({
-    labAnchorIds: ids,
-    minStars,
-    maxStars,
-    practiceLabRatings,
-  });
+  return ids;
 }
 
 /** 지정·픽커 게이트: 검증 기공소(어벗츠 포함) 중 별점 구간 안. 인증 ON 불필요. */

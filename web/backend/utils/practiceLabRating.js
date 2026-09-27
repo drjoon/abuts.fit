@@ -16,9 +16,10 @@
 // - 2026-08-19: 신규 지정 의뢰는 평가만. 별점 배수는 레거시 자동매칭 청구용.
 // - 2026-08-19: 별점 기공비 배수 폐지(항상 ×1). 청구 할증은 기공소 치과별 labFeeMultiplier만.
 // - 2026-08-20: 치과 평가는 별점만. 자동매칭·별점 기공비 할인/할증 없음.
-// - 2026-08-20: 별점은 수행 기공소(하청 포함). 하한·상한은 지정·하청 수신 게이트.
+// - 2026-08-20: 별점은 수행 기공소. 하한·상한은 지정 수신 게이트.
+// - 2026-09-27: 원청 하청 풀은 별점 구간·우리치과 1점을 보지 않는다.
 // - 2026-08-16: scaleAutoMatchFeeToLabStars — 기공소 수신·수락 견적 별점 확정 단일가.
-// - 2026-08-23: 우리 치과 1점 → 검색 가능·주문 불가(지정·하청 수행 동일).
+// - 2026-08-23: 우리 치과 1점 → 검색 가능·지정 주문 불가.
 
 import { Types } from "mongoose";
 import BusinessAnchor from "../models/businessAnchor.model.js";
@@ -347,7 +348,7 @@ export function countRatedLabAnchors(ratings) {
 
 /**
  * 주문 치과가 해당 기공소에 현재 1점을 준 경우(유예·별점 구간과 무관).
- * 검색은 가능 · 지정/하청 주문·하청 풀 수신은 불가.
+ * 검색은 가능 · 지정 주문은 불가. 하청 풀 수신은 막지 않는다.
  */
 export function isLabBlockedByOwnOneStar({ ratings, labAnchorId } = {}) {
   const labId = String(labAnchorId || "").trim();
