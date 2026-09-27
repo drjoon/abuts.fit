@@ -39,6 +39,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/shared/ui/cn";
+import { WIDE_CLUSTER_SEPARATOR_CLASS } from "@/shared/ui/contentMeasuredChrome";
 import {
   PRACTICE_STATUS_FILTER_BADGE_CLASS,
   type PracticeCalendarStatusTone,
@@ -135,7 +136,10 @@ export function PracticeStatusFilterBadges({
                 type="button"
                 className={cn(
                   "relative shrink-0 rounded-full",
-                  withGap && (iconAtNarrow ? "ml-2 xl:ml-5" : "ml-5"),
+                  withGap &&
+                    (iconAtNarrow
+                      ? cn("ml-2 xl:ml-5", WIDE_CLUSTER_SEPARATOR_CLASS)
+                      : cn("ml-5", WIDE_CLUSTER_SEPARATOR_CLASS)),
                   !canNavigate && "cursor-default",
                 )}
                 onClick={() => {
@@ -201,7 +205,16 @@ export function PracticeStatusFilterBadges({
           </Tooltip>
         );
       })}
-      {trailing}
+      {trailing ? (
+        <span
+          className={cn(
+            "inline-flex shrink-0 items-center gap-1.5",
+            WIDE_CLUSTER_SEPARATOR_CLASS,
+          )}
+        >
+          {trailing}
+        </span>
+      ) : null}
     </div>
   );
 }

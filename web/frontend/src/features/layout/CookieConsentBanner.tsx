@@ -2,6 +2,7 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/pages/public/PrivacyPage.tsx
 // - web/frontend/src/pages/public/CookiesPage.tsx
+// - web/frontend/src/shared/ui/contentMeasuredChrome.ts
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -10,6 +11,7 @@ import {
   normalizeSidebarOpen,
 } from "@/shared/layout/sidebarOpen";
 import { cn } from "@/shared/ui/cn";
+import { CONTENT_MEASURED_CHROME_CLASS } from "@/shared/ui/contentMeasuredChrome";
 
 const STORAGE_KEY = "abutsfit:cookie-consent:v1";
 
@@ -57,27 +59,28 @@ export function CookieConsentBanner() {
     setVisible(false);
   };
 
+  // 넓은 모니터에서도 문구 가로폭(+안쪽 여백)만 쓰고, 사이드바·채팅을 뺀 영역 중앙에 둔다.
   return (
     <div
       className={cn(
-        "pointer-events-none fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-0 z-40 pl-3 sm:bottom-6 sm:pl-6",
-        reserveChat ? "pr-20 sm:pr-28" : "pr-3 sm:pr-6",
+        "pointer-events-none fixed bottom-[max(1rem,env(safe-area-inset-bottom))] z-40 flex justify-center px-3 sm:bottom-6 sm:px-6",
+        reserveChat ? "right-20 sm:right-28" : "right-3 sm:right-6",
         dockedSidebar
           ? sidebarOpen
-            ? "left-0 xl:left-60"
-            : "left-0 xl:left-24"
-          : "left-0",
+            ? "left-3 xl:left-[calc(15rem+0.75rem)]"
+            : "left-3 xl:left-[calc(6rem+0.75rem)]"
+          : "left-3",
       )}
     >
       <div
         role="dialog"
         aria-label="쿠키 사용 안내"
         className={cn(
-          "pointer-events-auto flex w-full flex-col gap-3 rounded-2xl bg-[#2c2c2c] px-5 py-4 text-white shadow-[0_8px_30px_rgba(0,0,0,0.35)] sm:flex-row sm:items-center sm:gap-6 sm:px-6",
-          dockedSidebar ? "max-w-none" : "mx-auto max-w-5xl",
+          CONTENT_MEASURED_CHROME_CLASS,
+          "pointer-events-auto flex flex-col gap-3 rounded-2xl bg-[#2c2c2c] px-5 py-4 text-white shadow-[0_8px_30px_rgba(0,0,0,0.35)] sm:flex-row sm:items-center sm:gap-5 sm:px-6",
         )}
       >
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0">
           <p className="text-[15px] font-medium leading-snug">
             우리는 귀하의 개인정보를 소중히 여깁니다.
           </p>

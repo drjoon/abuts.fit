@@ -33,6 +33,7 @@ Notes:
   - raw Tailwind 팔레트(`sky`/`teal`/`violet`/`purple`/`emerald`/`green`/`yellow`/`orange`/`rose`/`indigo`/`cyan` 등)로 의미 색을 새로 쓰지 말 것.
   - SSOT: `src/index.css`, `tailwind.config.ts`, `src/shared/ui/semanticStatus.ts`,
     `src/shared/ui/gigongAbutAccent.ts`, `src/shared/shipping/shippingMode.ts`
+- 안내 크롬 가로폭 · 넓은 화면 묶음 (강제): 쿠키 동의·헤더 alert·수가/도착일 안내는 뷰포트·`flex-1`로 늘리지 않는다. 가로는 `CONTENT_MEASURED_CHROME_CLASS` (`clamp` min 16rem, 문구+패딩, max 48rem). 쿠키만 사이드바·채팅을 뺀 영역 중앙. 2xl+ 툴바 뱃지·버튼은 의미 단위로 묶고 묶음 사이에만 간격(`WIDE_CLUSTER_ROW_CLASS`). 글자·버튼 크기는 그대로. SSOT: `src/shared/ui/contentMeasuredChrome.ts`, `.cursor/rules/content-measured-chrome.mdc`.
 - Tooltip (강제, 앱 전체):
   - 마우스 호버 툴팁은 **0.6초 지연** 후 표시 (`delayDuration={600}`).
   - 가로폭은 **내용에 맞춤** (`w-max`), 좌우 여백 대칭 (`px-3`). 기본 상한
@@ -60,8 +61,9 @@ Notes:
   - 통계(치과): `충전 − 소비 | 의뢰건수`.
   - 통계(기공소): `어벗츠로부터`=`정산 적립 | 의뢰건수`, `어벗츠로 의뢰`=`충전 − 소비 | 의뢰건수`.
   - 데모/실사용 `usageScope`·2줄 집계는 쓰지 않는다(단일 장부). 데모 모드는 뱃지·잔고 힌트만.
-  - SSOT: `src/shared/components/CreditLedgerModal.tsx`, `CreditStatisticsTab.tsx`,
-    `.cursor/rules/ui-summary-cards.mdc`.
+  - 가로폭은 작업영역을 나누지 않는다. `SETTLEMENT_STAT_CARD_WIDTH_CLASS`(16rem) + `SETTLEMENT_STAT_ROW_CLASS`(가운데 묶음). 기공소 지급·제조사·관리자·딜러·개발운영·내역·통계 공통.
+  - SSOT: `src/shared/settlement/settlementUi.tsx`, `CreditLedgerModal.tsx`,
+    `CreditStatisticsTab.tsx`, `.cursor/rules/ui-summary-cards.mdc`.
 - Requestor dashboard: 상단 카드 '의뢰/취소' -> '준비'로 변경. 취소 항목은 카드에서 제거(내부 DB는 유지). 상세 정책/모달의 '의뢰' 문구는 '준비'로 변경함.
 - 의뢰 취소 정책 SSOT: **준비 단계에서만** 취소 가능(불완전가공 판정 예외 유지). 레거시 '의뢰/CAM 단계 취소' 문구·판정 금지.
   - UI: `RequestorRecentRequestsCard` 취소 버튼/툴팁, `RequestorDashboardPage` 실패 토스트, `PricingPolicyDialog` 6절,

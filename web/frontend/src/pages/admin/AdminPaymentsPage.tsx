@@ -50,6 +50,8 @@ import {
   SettlementEquationOperator,
   SettlementPolicyDialog,
   SettlementPolicySection,
+  SETTLEMENT_STAT_CARD_WIDTH_CLASS,
+  SETTLEMENT_STAT_ROW_CLASS,
   SettlementStatCard,
 } from "@/shared/settlement/settlementUi";
 import { LabDirectPlatformFeeNotice } from "@/shared/settlement/LabDirectPlatformFeeNotice";
@@ -1019,10 +1021,11 @@ export default function AdminPaymentsPage({
             </SettlementPolicyDialog>
           </div>
         }
-        statsGridClassName="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3"
+        statsGridClassName={SETTLEMENT_STAT_ROW_CLASS}
         stats={
           <>
             <SettlementStatCard
+              className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}
               label="1. 스토어"
               value={dash ?? Number(store?.periodGrossInclusive || 0)}
               selected={selectedAxis === "store"}
@@ -1041,6 +1044,7 @@ export default function AdminPaymentsPage({
               }
             />
             <SettlementStatCard
+              className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}
               label="2. 커스텀어벗"
               value={dash ?? Number(customAbut?.periodPaidSpend || 0)}
               selected={selectedAxis === "customAbut"}
@@ -1072,6 +1076,7 @@ export default function AdminPaymentsPage({
               }
             />
             <SettlementStatCard
+              className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}
               label="3. 기공사업부"
               value={dash ?? Number(labRevenue || 0)}
               selected={selectedAxis === "labDivision"}

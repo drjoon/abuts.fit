@@ -75,6 +75,8 @@ import {
   SettlementPolicyDialog,
   SettlementPolicySection,
   SettlementSortIcon,
+  SETTLEMENT_STAT_CARD_WIDTH_CLASS,
+  SETTLEMENT_STAT_ROW_CLASS,
   SettlementStatCard,
   SettlementTableFrame,
 } from "@/shared/settlement/settlementUi";
@@ -874,11 +876,12 @@ export const ManufacturerPaymentPage = () => {
       title="정산 내역"
       subtitle=""
       fillHeight
-      statsGridClassName="grid grid-cols-1 gap-3 sm:grid-cols-2"
+      statsGridClassName={SETTLEMENT_STAT_ROW_CLASS}
       stats={
         <>
           <SettlementStatCard
             compact
+            className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}
             label="미정산"
             value={snapshotTotals.unsettledTotal}
             tone="primary"
@@ -897,6 +900,7 @@ export const ManufacturerPaymentPage = () => {
           />
           <SettlementStatCard
             compact
+            className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}
             label="전월 지급"
             value={prevMonthPayout.total}
             selected={tab === "payments"}

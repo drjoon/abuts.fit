@@ -9,6 +9,7 @@
  * - web/frontend/src/shared/practice/labReceivePendingWorkPriority.ts
  * - web/frontend/src/shared/hooks/useLabReceiveUnreadSound.ts
  * change-log:
+ * - 2026-09-28: 가로폭은 CONTENT_MEASURED_CHROME_CLASS. flex-1로 헤더를 채우지 않음.
  * - 2026-09-20: 메시지 칩 항상 표시·truncate — 헤더 남는 폭만큼 사용.
  * - 2026-09-20: xl 미만 — 칩 라벨 숨김(아이콘·건수·순회만).
  * - 2026-09-20: 1건 캐러셀 + 위/아래 순회·오른쪽 미처리 건수. 가로폭 확대.
@@ -33,6 +34,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/shared/ui/cn";
+import { CONTENT_MEASURED_CHROME_CLASS } from "@/shared/ui/contentMeasuredChrome";
 import {
   LAB_RECEIVE_SOUND_PREFS_CHANGED_EVENT,
   getLabReceiveSoundPrefs,
@@ -204,7 +206,8 @@ export function LabReceiveUnreadNotice({
   return (
     <div
       className={cn(
-        "flex min-w-0 items-center gap-1.5 rounded-lg border border-red-200/90 bg-red-50/90 px-2 py-1 text-sm text-red-950",
+        CONTENT_MEASURED_CHROME_CLASS,
+        "flex items-center gap-2 rounded-lg border border-red-200/90 bg-red-50/90 px-2.5 py-1 text-sm text-red-950",
         className,
       )}
       role="status"
@@ -215,7 +218,7 @@ export function LabReceiveUnreadNotice({
       {activeItem ? (
         <button
           type="button"
-          className="inline-flex min-w-0 flex-1 items-center gap-1 rounded-md border-[3px] border-double border-red-600 bg-white px-2 py-1 text-left text-[11px] leading-snug text-red-950 hover:bg-red-50"
+          className="inline-flex min-w-0 items-center gap-1.5 rounded-md border-[3px] border-double border-red-600 bg-white px-2 py-1 text-left text-[11px] leading-snug text-red-950 hover:bg-red-50"
           title={`${kindLabelFor(activeItem)} · ${activeItem.label}`}
           onClick={() => onSelectItem?.(activeItem.id)}
         >
@@ -235,7 +238,7 @@ export function LabReceiveUnreadNotice({
           ) : null}
         </button>
       ) : (
-        <span className="min-w-0 flex-1 truncate text-xs font-medium">
+        <span className="min-w-0 truncate text-xs font-medium">
           {ariaLabel}
         </span>
       )}

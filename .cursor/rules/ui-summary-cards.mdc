@@ -8,6 +8,7 @@ alwaysApply: false
 
 ## Policy
 
+- 정산·크레딧 **요약 카드** 가로는 `SETTLEMENT_STAT_CARD_WIDTH_CLASS`(16rem). 행은 `SETTLEMENT_STAT_ROW_CLASS`(가운데 묶음). `grid-cols-2`로 작업영역을 반으로 나누지 않는다. 기공소 지급·제조사·관리자·딜러·개발운영·내역·통계 공통.
 - 정산·크레딧 **요약 카드**(`SettlementStatCard` 등)는 **클릭 시 관련 상세 내역 모달**을 열어야 한다.
   - 통계 탭·장부 상단 카드 → `CreditLedgerModal` + `initialFilters` + `hideBalanceSummary` + `detailTitle`.
 - 카드 위·사이에 **수식·설명 문단**을 상시 노출하지 않는다.

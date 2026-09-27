@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-28: 내역·통계·지급은 작업영역 폭. 탭·충전 폼만 읽기 폭 유지.
 // - 2026-09-16: access 로딩 스켈레톤 탭 3|4(지급 포함). isLab에 user.requestorKind 힌트.
 // - 2026-09-16: 기공소·어벗츠기공소 — 충전 옆「지급」탭(LabSettlementPayoutTab). ?tab=settlement → payout.
 // - 2026-09-05: 가이드투어 — 정산 탭(내역·통계·충전·지급)별 data-guide-tour·활성 탭 강조.
@@ -181,7 +182,7 @@ export default function RequestorCreditsPage() {
         activeTab={activeTab}
         highlightTabKey={guideTourTarget ? activeTab : undefined}
         tabsMaxClassName="max-w-4xl"
-        contentMaxClassName="max-w-6xl"
+        contentMaxClassName="max-w-none"
         fillHeight
         tabsTrailing={<DemoModeBadge onExited={handleDemoExited} />}
         onTabChange={(next) => {

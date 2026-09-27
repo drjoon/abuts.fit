@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-28: 요약 카드는 14rem 묶음. 넓은 화면에서 표만 작업영역 폭.
 // - 2026-09-27: 원청 거래내역 — 지급한 협력·하청 기공소 이름.
 // - 2026-09-27: 지급 완료·적립 완료 옆 완료 뱃지 제거(원청·하청). 기공 지급 상세는 매출·하청 수수료·지급.
 // - 2026-09-27: 원청이 넘긴 완료 건은 한 줄. 금액란에 매출·지급을 같이 표시.
@@ -152,6 +153,8 @@ import {
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
 import type { ShippingMode } from "@/shared/shipping/shippingMode";
 import {
+  SETTLEMENT_STAT_CARD_WIDTH_CLASS,
+  SETTLEMENT_STAT_ROW_CLASS,
   SettlementEquationOperator,
   SettlementStatCard,
 } from "@/shared/settlement/settlementUi";
@@ -3192,9 +3195,9 @@ export const CreditLedgerModal = ({
               <div className="px-1 py-1.5 sm:px-1.5">
                 {/* padding은 overflow(scroll-x-bar-top) 바깥 — 카드 border/shadow 클리핑 방지 */}
                 <div className="scroll-x-bar-top">
-                  <div className="flex min-w-max items-stretch gap-1 p-1 sm:gap-1.5">
+                  <div className="mx-auto flex w-max max-w-full items-stretch gap-1.5 p-1 sm:gap-2">
                   <SettlementStatCard
-                    className="min-w-[9.5rem] flex-1 sm:min-w-[10.5rem]"
+                    className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}
                     label="현재 잔액"
                     value={currentBalanceTotal}
                     tone="primary"
@@ -3209,7 +3212,7 @@ export const CreditLedgerModal = ({
                   />
                   <SettlementEquationOperator symbol="=" />
                   <SettlementStatCard
-                    className="min-w-[9.5rem] flex-1 sm:min-w-[10.5rem]"
+                    className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}
                     label={periodChargeLabel}
                     value={periodPaidChargeTotal}
                     hint="안내"
@@ -3229,7 +3232,7 @@ export const CreditLedgerModal = ({
                     <>
                       <SettlementEquationOperator symbol="+" />
                       <SettlementStatCard
-                        className="min-w-[9.5rem] flex-1 sm:min-w-[10.5rem]"
+                        className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}
                         label="정산 적립"
                         value={periodSettlementEarnTotal}
                         hint="안내"
@@ -3252,7 +3255,7 @@ export const CreditLedgerModal = ({
                   ) : null}
                   <SettlementEquationOperator symbol="−" />
                   <SettlementStatCard
-                    className="min-w-[9.5rem] flex-1 sm:min-w-[10.5rem]"
+                    className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}
                     label="소비"
                     value={periodSpendTotal}
                     hint="안내"
@@ -3280,8 +3283,9 @@ export const CreditLedgerModal = ({
                 </div>
               </div>
             ) : (
-              <div className="grid grid-cols-1 gap-3 p-1.5 sm:grid-cols-2 xl:grid-cols-4">
+              <div className={SETTLEMENT_STAT_ROW_CLASS}>
                 <SettlementStatCard
+                  className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}
                   label="현재 잔액"
                   value={currentBalanceTotal}
                   tone="primary"
@@ -3295,6 +3299,7 @@ export const CreditLedgerModal = ({
                   }
                 />
                 <SettlementStatCard
+                  className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}
                   label="유료크레딧"
                   value={Number(currentBalanceSnapshot.paidCredit || 0)}
                   hint={CREDIT_PAID_BUCKET_HINT}
@@ -3311,6 +3316,7 @@ export const CreditLedgerModal = ({
                 />
                 {showResidualFreeBucket ? (
                   <SettlementStatCard
+                    className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}
                     label={freeBucketLabelCompact}
                     value={freeCreditTotal}
                     hint={freeBucketHint}
@@ -3328,6 +3334,7 @@ export const CreditLedgerModal = ({
                 ) : null}
                 {showSettlementCredit ? (
                   <SettlementStatCard
+                    className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}
                     label="기공크레딧"
                     value={settlementCreditTotal}
                     hint={CREDIT_SETTLEMENT_BUCKET_HINT}

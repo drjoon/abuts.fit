@@ -48,6 +48,8 @@ import {
 import {
   SettlementPolicyDialog,
   SettlementPolicySection,
+  SETTLEMENT_STAT_CARD_WIDTH_CLASS,
+  SETTLEMENT_STAT_ROW_CLASS,
   SettlementStatCard,
 } from "@/shared/settlement/settlementUi";
 
@@ -101,10 +103,11 @@ export function CommissionPaymentsPage({
     <DashboardShell
       title={title}
       subtitle=""
-      statsGridClassName="grid grid-cols-1 gap-3 md:grid-cols-3"
+      statsGridClassName={SETTLEMENT_STAT_ROW_CLASS}
       stats={
         <>
           <SettlementStatCard
+            className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}
             label="유료 미정산"
             value={payableInclusive}
             tone="primary"
@@ -123,6 +126,7 @@ export function CommissionPaymentsPage({
             }
           />
           <SettlementStatCard
+            className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}
             label="지급 합계"
             value={paidInclusive}
             selected={tab === "ledger"}
@@ -143,6 +147,7 @@ export function CommissionPaymentsPage({
             }
           />
           <SettlementStatCard
+            className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}
             label="무료 미정산"
             value={freeNet}
             hint="참고 · 지급 0"

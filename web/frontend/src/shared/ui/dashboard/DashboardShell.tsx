@@ -9,6 +9,7 @@
 // - 2026-08-17: fillHeight — 작업영역 높이를 채우고 본문만 남은 공간을 쓰게 함(이중 스크롤 방지).
 import type { ReactNode } from "react";
 import { cn } from "@/shared/ui/cn";
+import { SETTLEMENT_STAT_ROW_CLASS } from "@/shared/settlement/settlementUi";
 
 type DashboardShellProps = {
   title: string;
@@ -49,8 +50,7 @@ export const DashboardShell = ({
   // p-1: 선택 border/ring·shadow가 부모 overflow에 잘리지 않게. 호출부 p-* 가 있으면 twMerge로 유지.
   const effectiveStatsGridClassName = cn(
     "p-1",
-    statsGridClassName ||
-      "grid grid-cols-1 gap-2.5 sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-6",
+    statsGridClassName || SETTLEMENT_STAT_ROW_CLASS,
   );
 
   return (

@@ -115,6 +115,7 @@ import {
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
 import { cn } from "@/shared/ui/cn";
+import { WIDE_CLUSTER_ROW_CLASS } from "@/shared/ui/contentMeasuredChrome";
 import {
   LabReceiveRoleBadge,
   PracticeCalendarFinishedBadge,
@@ -1873,7 +1874,8 @@ export function PracticeRecentTransfersCalendar({
           ) : null}
             </div>
           ) : null}
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div className={WIDE_CLUSTER_ROW_CLASS}>
+            <div className="flex items-center gap-1.5">
             <button
               type="button"
               className="rounded-full"
@@ -1913,8 +1915,9 @@ export function PracticeRecentTransfersCalendar({
                 도착일
               </Badge>
             </button>
+            </div>
             <div
-              className="ml-4 hidden items-center rounded-md border border-slate-200 bg-white p-0.5 md:flex"
+              className="hidden items-center rounded-md border border-slate-200 bg-white p-0.5 md:flex"
               role="group"
               aria-label="보기 전환"
             >

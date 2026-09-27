@@ -1,6 +1,7 @@
 /**
  * 치과 기공의뢰 — 다음 도착일 미지정(도착일+1일~) 상단 안내.
  * 기공소 LabReceiveUnreadNotice와 같은 헤더 alert 패턴.
+ * 가로는 CONTENT_MEASURED_CHROME_CLASS (문구 + 여백, min/max).
  *
  * related files:
  * - web/frontend/src/shared/practice/practiceNextArrivalReminder.ts
@@ -9,6 +10,7 @@
  */
 import { AlertCircle } from "lucide-react";
 import { cn } from "@/shared/ui/cn";
+import { CONTENT_MEASURED_CHROME_CLASS } from "@/shared/ui/contentMeasuredChrome";
 
 export type PracticeNextArrivalOverdueNoticeItem = {
   id: string;
@@ -40,6 +42,7 @@ export function PracticeNextArrivalOverdueNotice({
   return (
     <div
       className={cn(
+        CONTENT_MEASURED_CHROME_CLASS,
         "flex shrink-0 flex-col gap-2 rounded-lg border border-amber-300/90 bg-amber-50/90 px-3 py-2 text-sm text-amber-950",
         className,
       )}
@@ -52,7 +55,9 @@ export function PracticeNextArrivalOverdueNotice({
           aria-hidden
         />
         <p className="min-w-0 font-medium leading-snug">
-          다음 도착일 미지정 {count}건이 있습니다. 도착일 다음 날부터 표시됩니다.
+          다음 도착일 미지정 {count}건이 있습니다.
+          <br />
+          도착일 다음 날부터 표시됩니다.
         </p>
       </div>
       {visibleItems.length > 0 ? (

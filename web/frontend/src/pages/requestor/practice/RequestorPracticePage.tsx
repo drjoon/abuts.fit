@@ -290,6 +290,7 @@ import {
 } from "@/shared/hooks/useBackgroundTempUpload";
 import { useS3FileDownload } from "@/shared/files/useS3FileDownload";
 import { cn } from "@/shared/ui/cn";
+import { WIDE_CLUSTER_ROW_CLASS } from "@/shared/ui/contentMeasuredChrome";
 import { mobileActionOverlayTopStyle, MOBILE_ACTION_CHROME_ATTR } from "@/shared/ui/mobileActionOverlay";
 import {
   LAB_RECEIVE_STATUS_BADGES,
@@ -8653,7 +8654,6 @@ export function RequestorPracticeReceivePage({
         if (!isMobile) jumpCalendarToTransferDate(transfer);
         selectTransferFromCalendar(transfer);
       }}
-      className="min-w-0 flex-1"
     />
   );
 
@@ -8702,10 +8702,10 @@ export function RequestorPracticeReceivePage({
       {labMobileStatusBadges}
     </div>
   ) : (
-    <div className="flex min-w-0 flex-nowrap items-center gap-1.5 overflow-x-auto">
+    <div className={WIDE_CLUSTER_ROW_CLASS}>
       {labUnreadNotice}
       <PracticeStatusFilterBadges
-        className="ml-auto shrink-0 flex-nowrap justify-end gap-1.5"
+        className="shrink-0 flex-nowrap justify-end gap-1.5"
         items={labStatusFilterBadgeItems}
         onUnreadNavigate={navigateNextUnreadForStatus}
         gapBeforeKeys={PRACTICE_RECENT_STATUS_BADGE_GAP_BEFORE_KEYS}

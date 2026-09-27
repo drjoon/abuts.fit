@@ -211,7 +211,7 @@ export function LabReceiveRoleFilterButtons({
   if (!items.length) return null;
   return (
     <div
-      className="mr-4 flex shrink-0 items-center gap-1"
+      className="mr-4 flex shrink-0 items-center gap-1.5"
       role="group"
       aria-label="협력·하청 표시"
     >

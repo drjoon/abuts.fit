@@ -1,0 +1,41 @@
+---
+description: Cookie banners and header alerts hug copy width (min/max), and wide toolbars cluster controls by meaning.
+globs: web/frontend/**/*.{tsx,ts}
+alwaysApply: true
+---
+
+# 안내 크롬 가로폭 · 넓은 화면 묶음 (강제)
+
+큰 모니터는 요소를 키우려고 쓰는 화면이 아니다. 글자·아이콘·버튼 크기를 올리지 않는다.
+
+## 안내 크롬
+
+쿠키 동의, 헤더 alert, 수가·도착일 안내처럼 **문장 하나와 액션**인 UI는 뷰포트·`flex-1`·`w-full`로 늘리지 않는다.
+
+가로 = `clamp(min, 문구 + 안쪽 여백, max)`.
+
+- 클래스: `CONTENT_MEASURED_CHROME_CLASS` (`src/shared/ui/contentMeasuredChrome.ts`)
+- min `16rem`, max `min(100%, 48rem)`, 그 사이는 `w-fit`
+- 플로팅(쿠키)만 사이드바·채팅 버튼을 뺀 영역에서 가운데. 헤더 alert는 왼쪽 흐름.
+- `flex-1` / `w-full` / `max-w-none` 를 이 크롬에 붙이지 않는다.
+
+## 넓은 화면 툴바 (2xl+)
+
+뱃지·아이콘·버튼은 의미 단위로 묶고, **묶음 사이**만 띄운다. 묶음 안은 `gap-1.5`~`gap-2`.
+
+- 행: `WIDE_CLUSTER_ROW_CLASS`
+- 같은 줄의 다음 묶음: `WIDE_CLUSTER_SEPARATOR_CLASS`
+
+예: 미처리 alert | 의뢰·작업시작 / 완료·취소 / 어벗 | 북마크·진행중
+
+## Do / Don't
+
+```tsx
+// ❌ BAD — 헤더 남은 폭을 alert가 먹음
+<LabReceiveUnreadNotice className="min-w-0 flex-1" />
+
+// ✅ GOOD
+<LabReceiveUnreadNotice className={CONTENT_MEASURED_CHROME_CLASS} />
+```
+
+SSOT: `web/frontend/src/shared/ui/contentMeasuredChrome.ts`, `web/frontend/rules.md`

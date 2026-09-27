@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/settlement/affiliateVat.ts
 // - web/backend/controllers/credits/credit.controller.js
 // change-log:
+// - 2026-09-28: 지급 표는 크레딧 작업영역 폭. 충전 폼만 읽기 폭.
 // - 2026-09-26: 정산규칙 — 수수료 제목·협력·하청 문장.
 // - 2026-09-24: 정산규칙 — 플랫폼 사용료 정책 2% · 이벤트 0% 복원.
 // - 2026-09-20: 정산규칙 — 하청 % · 작업시작 적립 시 공제 안내.
@@ -59,6 +60,8 @@ import {
   SettlementPolicyDialog,
   SettlementPolicySection,
   SettlementSortIcon,
+  SETTLEMENT_STAT_CARD_WIDTH_CLASS,
+  SETTLEMENT_STAT_ROW_CLASS,
   SettlementStatCard,
   SettlementTableFrame,
 } from "@/shared/settlement/settlementUi";
@@ -504,7 +507,7 @@ export const LabSettlementPayoutTab = () => {
   };
 
   return (
-    <div className="mx-auto flex h-full min-h-0 w-full max-w-4xl flex-col overflow-hidden">
+    <div className="mx-auto flex h-full min-h-0 w-full flex-col overflow-hidden">
       {bankbookRemindDialog}
       {!payoutReady ? (
         <div className="mx-3 mt-3 shrink-0 rounded-2xl border border-amber-200/80 bg-amber-50/90 px-3 py-2.5 sm:mx-3">
@@ -529,11 +532,12 @@ export const LabSettlementPayoutTab = () => {
         title="지급"
         subtitle=""
         fillHeight
-        statsGridClassName="grid grid-cols-1 gap-3 sm:grid-cols-2"
+        statsGridClassName={SETTLEMENT_STAT_ROW_CLASS}
         stats={
           <>
             <SettlementStatCard
               compact
+              className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}
               label="기공크레딧 잔액"
               value={settlementCredit}
               tone="primary"
@@ -555,6 +559,7 @@ export const LabSettlementPayoutTab = () => {
             />
             <SettlementStatCard
               compact
+              className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}
               label="기간 지급"
               value={snapshotTotals.payoutTotal}
               selected={view === "payouts"}

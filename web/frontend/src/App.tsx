@@ -39,6 +39,7 @@ import { getRoleDefaultDashboardPath } from "@/shared/navigation/lastDashboardPa
 // - web/frontend/src/pages/admin/AdminFinancePage.tsx
 // - web/frontend/src/pages/admin/AdminSettingsHubPage.tsx
 // change-log:
+// - 2026-09-28: 쿠키 동의 배너 — 문구 너비에 맞추고 가용 영역 중앙.
 // - 2026-09-26: 하단 쿠키 동의 배너 — 동의 후 localStorage로 재노출 생략.
 // - 2026-09-23: 관리자 설정 평탄 탭 — /settings·/partners 구 URL을 account|business|platform… 로 전달.
 // - 2026-09-21: 딜러·영업팀 사이드 IA 통일 — sales 라우트에 salesman, payments에 salesTeam.

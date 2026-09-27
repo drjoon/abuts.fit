@@ -30,6 +30,17 @@ import {
 import { cn } from "@/shared/ui/cn";
 import { formatWon } from "@/shared/settlement/affiliateVat";
 
+/**
+ * 요약 카드 한 장. 작업영역이 넓어도 이 폭을 넘기지 않는다.
+ * 2열·3열 그리드로 남은 칸을 채우지 말 것. 행은 SETTLEMENT_STAT_ROW_CLASS.
+ */
+export const SETTLEMENT_STAT_CARD_WIDTH_CLASS =
+  "w-full shrink-0 sm:w-[16rem]";
+
+/** 요약 카드 행. 가운데 묶음. 칸 비율로 늘리지 않는다. */
+export const SETTLEMENT_STAT_ROW_CLASS =
+  "mx-auto flex w-full max-w-full flex-wrap items-stretch justify-center gap-3";
+
 export type SettlementStatTone = "default" | "primary";
 export type SettlementSortDirection = "asc" | "desc";
 export type SettlementEquationSymbol = "=" | "+" | "−";

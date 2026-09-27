@@ -1,6 +1,7 @@
 /**
  * 기공의뢰수신 — 예약된 기공비·특별공급가 변경 안내.
  * 클릭 시 현재 수가 ↔ 예약 수가 세부 비교.
+ * 가로는 CONTENT_MEASURED_CHROME_CLASS. 컬럼 폭으로 늘리지 않는다.
  *
  * related files:
  * - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
@@ -27,6 +28,7 @@ import {
   type LabFeeItemUnit,
 } from "@/shared/practice/labFeeSchedule";
 import { cn } from "@/shared/ui/cn";
+import { CONTENT_MEASURED_CHROME_CLASS } from "@/shared/ui/contentMeasuredChrome";
 
 const DISMISS_STORAGE_PREFIX = "abutsfit:lab-fee-schedule-notice-dismissed:";
 
@@ -258,6 +260,7 @@ export function LabReceiveFeeScheduleNotice({
     <>
       <div
         className={cn(
+          CONTENT_MEASURED_CHROME_CLASS,
           "flex shrink-0 items-start gap-2 rounded-lg border border-amber-200/90 bg-amber-50/90 px-3 py-2 text-sm text-amber-950",
           className,
         )}
@@ -266,7 +269,7 @@ export function LabReceiveFeeScheduleNotice({
       >
         <button
           type="button"
-          className="flex min-w-0 flex-1 items-start gap-2 rounded-md text-left hover:bg-amber-100/70"
+          className="flex min-w-0 items-start gap-2 rounded-md text-left hover:bg-amber-100/70"
           onClick={() => setDetailOpen(true)}
         >
           <CalendarClock

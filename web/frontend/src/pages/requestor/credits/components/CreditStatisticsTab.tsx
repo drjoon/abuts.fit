@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-28: 요약 카드는 고정 폭 묶음. 차트는 작업영역 폭.
 // - 2026-09-26: 기공소 수신 구역 제목 — 어벗츠 하청 → 어벗츠로부터.
 // - 2026-09-20: 보철 유형별 부제 — 금액=견적 라인, 건수=의뢰(유형) 기준 안내.
 // - 2026-09-20: 유형별 막대 maxBarSize — 단일 유형이 차트 전체를 채우던 표시 수정.
@@ -63,6 +64,7 @@ import {
 } from "@/shared/ui/periodFilterValues";
 import { appendPeriodQueryParams } from "@/store/usePeriodStore";
 import {
+  SETTLEMENT_STAT_CARD_WIDTH_CLASS,
   SettlementEquationOperator,
   SettlementStatCard,
 } from "@/shared/settlement/settlementUi";
@@ -418,7 +420,7 @@ function SummaryCardsRow({
 }) {
   return (
     <div className="min-w-0 px-1 py-1.5 pb-2 sm:px-1.5">
-      <div className="flex flex-col items-stretch gap-2 p-1 md:min-w-max md:flex-row md:items-stretch md:gap-1.5">
+      <div className="mx-auto flex w-full max-w-full flex-col items-stretch gap-2 p-1 md:w-max md:flex-row md:items-stretch md:gap-2">
         {children}
       </div>
       <span className="sr-only">{cardCount}개 요약</span>
@@ -429,11 +431,11 @@ function SummaryCardsRow({
 function SummarySkeleton({ cardCount }: { cardCount: number }) {
   return (
     <div className="min-w-0 px-1 py-1.5 pb-2 sm:px-1.5">
-      <div className="flex flex-col items-stretch gap-2 p-1 md:min-w-max md:flex-row md:items-stretch md:gap-1">
+      <div className="mx-auto flex w-full max-w-full flex-col items-stretch gap-2 p-1 md:w-max md:flex-row md:items-stretch md:gap-2">
         {Array.from({ length: cardCount }).map((_, i) => (
           <div
             key={i}
-            className="min-h-[7.25rem] w-full min-w-0 animate-pulse rounded-2xl border border-border/60 bg-muted/30 md:min-w-[8.5rem] md:flex-1 lg:min-w-[10.5rem]"
+            className="min-h-[7.25rem] w-full shrink-0 animate-pulse rounded-2xl border border-border/60 bg-muted/30 sm:w-[16rem]"
           />
         ))}
       </div>
@@ -706,8 +708,7 @@ export function CreditStatisticsTab() {
     setDrillDown(next);
   };
 
-  const statCardClass =
-    "w-full min-w-0 md:min-w-[8.5rem] md:flex-1 lg:min-w-[10.5rem]";
+  const statCardClass = SETTLEMENT_STAT_CARD_WIDTH_CLASS;
 
   const abutsSpendTooltip = demoMode
     ? resolveCreditLedgerDemoPeriodSpendHint(isLab ? "lab" : "practice")

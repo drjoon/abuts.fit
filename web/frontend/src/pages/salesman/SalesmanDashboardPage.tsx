@@ -48,7 +48,11 @@ import {
   NoOrderAlertBanner,
   useNoOrderAlerts,
 } from "@/shared/noOrderAlerts";
-import { SettlementStatCard } from "@/shared/settlement/settlementUi";
+import {
+  SETTLEMENT_STAT_CARD_WIDTH_CLASS,
+  SETTLEMENT_STAT_ROW_CLASS,
+  SettlementStatCard,
+} from "@/shared/settlement/settlementUi";
 import { ProductCommissionLines } from "@/features/commission/ProductCommissionLines";
 import { cn } from "@/shared/ui/cn";
 import { formatKstYmdToKo, toKstYmd } from "@/shared/date/kst";
@@ -174,10 +178,10 @@ export const SalesmanDashboardPage = () => {
             <DealershipTermsCard />
           </div>
         }
-        statsGridClassName="grid grid-cols-1 gap-3 sm:grid-cols-3"
+        statsGridClassName={SETTLEMENT_STAT_ROW_CLASS}
         stats={
           <>
-            <div className="flex min-h-[7.25rem] flex-col rounded-2xl border-2 border-primary/60 bg-white p-4 shadow-sm">
+            <div className="flex min-h-[7.25rem] w-full shrink-0 flex-col rounded-2xl border-2 border-primary/60 bg-white p-4 shadow-sm sm:w-[20rem]">
               <div className="flex items-center justify-between gap-2">
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -225,6 +229,7 @@ export const SalesmanDashboardPage = () => {
             </div>
 
             <SettlementStatCard
+              className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}
               label="미정산 수수료"
               value={payableGross}
               tone="primary"
@@ -239,6 +244,7 @@ export const SalesmanDashboardPage = () => {
             />
 
             <SettlementStatCard
+              className={SETTLEMENT_STAT_CARD_WIDTH_CLASS}
               label="지급 완료 수수료"
               value={paidNet}
               onClick={() => openLedger("paid")}

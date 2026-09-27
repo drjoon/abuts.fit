@@ -214,6 +214,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { cn } from "@/shared/ui/cn";
+import { WIDE_CLUSTER_ROW_CLASS } from "@/shared/ui/contentMeasuredChrome";
 import { toKstYmd, ymdToKstDate } from "@/shared/date/kst";
 import { type ChatMessage } from "@/shared/hooks/useChatRooms";
 import {
@@ -2510,7 +2511,7 @@ export function PracticeTransferDetailChatDialog({
     releaseAction ||
     labAiDesignButton ? (
       <div
-        className="flex shrink-0 flex-nowrap items-center justify-end gap-1.5"
+        className="flex shrink-0 flex-nowrap items-center justify-end gap-2"
         data-no-drag
         {...(showAcceptBar ? { "data-guide-tour": "lab_accept" } : {})}
       >
@@ -2647,7 +2648,12 @@ export function PracticeTransferDetailChatDialog({
   const renderHeaderActionRow = () => {
     if (!headerActionButtons && !labBasketToolbar) return null;
     return (
-      <div className="flex min-w-0 flex-nowrap items-center gap-1.5 overflow-x-auto border-b bg-background px-5 py-1.5">
+      <div
+        className={cn(
+          WIDE_CLUSTER_ROW_CLASS,
+          "border-b bg-background px-5 py-1.5",
+        )}
+      >
         {labBasketToolbar}
         {headerActionButtons ? (
           <div className="ml-auto flex min-w-0 shrink-0 items-center justify-end">
