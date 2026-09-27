@@ -1,4 +1,7 @@
 // change-log:
+// - 2026-09-28: 다운로드를 헤더 채팅 첨부 오른쪽으로 옮김.
+// - 2026-09-28: 이미지 저장 버튼 제거. 다운로드와 겹친다.
+// - 2026-09-28: 헤더 버튼 순서 페인트·이미지 저장·채팅 첨부. 페인트 오른쪽 여백. 하단 닫기 제거.
 // - 2026-09-28: 프리뷰 대화상자를 뷰포트(96vw·94dvh)에 맞춤. 1280px·100rem 상한 제거.
 // - 2026-09-27: 이미지·3D 프리뷰 헤더에 이미지 저장·페인트·채팅 첨부. 가로·세로를 키움.
 // - 2026-09-26: 페인트로 표시한 뒤 채팅에 첨부.
@@ -29,7 +32,6 @@ import {
   ChevronRight,
   Download,
   Eraser,
-  ImageDown,
   Paperclip,
   Pencil,
 } from "lucide-react";
@@ -67,7 +69,6 @@ import { useToast } from "@/shared/hooks/use-toast";
 import {
   VIEW_PAINT_COLORS,
   ViewPaintSurface,
-  downloadBlobFile,
   paintNoteFileName,
   viewPaintColorLabel,
   type ViewPaintHandle,
@@ -105,23 +106,6 @@ export type ModelPreviewDialogProps = {
   /** 표시가 입혀진 현재 뷰를 채팅 첨부로 넘긴다. */
   onAttachChatFile?: (file: File) => void;
 };
-
-function pngFileNameFromModel(fileName: string): string {
-  const base = String(fileName || "")
-    .trim()
-    .replace(/\.[^.]+$/, "");
-  return `${base || "preview"}.png`;
-}
-
-function triggerPngDownload(dataUrl: string, fileName: string) {
-  const a = document.createElement("a");
-  a.href = dataUrl;
-  a.download = fileName;
-  a.rel = "noopener";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-}
 
 export function ModelPreviewDialog({
   open,
@@ -165,26 +149,12 @@ export function ModelPreviewDialog({
   const confirmText = String(confirmMessage || "").trim();
   const confirmCta = String(confirmLabel || "").trim();
   const showConfirm = Boolean(onConfirm && confirmCta);
-  const showFooter = !isImage || showConfirm;
+  const showFooter = showConfirm;
 
   const captureViewCanvas = () =>
     isImage
       ? imageRef.current?.captureCanvas() ?? null
       : viewerRef.current?.captureCanvas() ?? null;
-
-  const onSaveViewImage = () => {
-    const base = captureViewCanvas();
-    if (!base || !paintRef.current) {
-      const dataUrl = isImage ? null : viewerRef.current?.capturePngDataUrl();
-      if (!dataUrl) return;
-      triggerPngDownload(dataUrl, pngFileNameFromModel(fileName));
-      return;
-    }
-    void paintRef.current.compositePng(base).then((blob) => {
-      if (!blob) return;
-      downloadBlobFile(blob, pngFileNameFromModel(fileName));
-    });
-  };
 
   const attachPaintToChat = async () => {
     const base = captureViewCanvas();
@@ -225,8 +195,11 @@ export function ModelPreviewDialog({
     if (!onDownload) return null;
     const disabled = downloadBusy || loading || confirmBusy || !fileName;
     const label = downloadBusy ? "다운로드 중..." : "다운로드";
-    const className = cn("h-9", opts?.className);
-    const variant = opts?.variant || "secondary";
+    const className = cn(
+      "h-8 gap-1 px-2.5 [&_svg]:!size-3.5",
+      opts?.className,
+    );
+    const variant = opts?.variant || "outline";
 
     if (!isDcm) {
       return (
@@ -237,9 +210,10 @@ export function ModelPreviewDialog({
           className={className}
           onClick={() => void onDownload()}
           disabled={disabled}
+          aria-label={label}
         >
-          <Download className="mr-1.5 h-4 w-4" />
-          {label}
+          <Download />
+          <span className="hidden sm:inline">{label}</span>
         </Button>
       );
     }
@@ -253,10 +227,11 @@ export function ModelPreviewDialog({
             variant={variant}
             className={className}
             disabled={disabled}
+            aria-label={label}
           >
-            <Download className="mr-1.5 h-4 w-4" />
-            {label}
-            <ChevronDown className="ml-1 h-3.5 w-3.5 opacity-70" />
+            <Download />
+            <span className="hidden sm:inline">{label}</span>
+            <ChevronDown className="opacity-70" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="z-[460]">
@@ -302,14 +277,6 @@ export function ModelPreviewDialog({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [confirmBusy, loading, onNext, onPrev, open, showNav]);
-
-  const downloadOverlay =
-    onDownload && !loading
-      ? renderDownloadControl({
-          className: "absolute right-3 top-3 z-20 shadow-md",
-          variant: "secondary",
-        })
-      : null;
 
   const navButtons = showNav ? (
     <>
@@ -363,62 +330,51 @@ export function ModelPreviewDialog({
             ) : null}
           </DialogTitle>
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="h-8 gap-1 px-2.5 [&_svg]:!size-3.5"
-              disabled={!canAnnotate || confirmBusy}
-              onClick={onSaveViewImage}
-              title="현재 뷰를 PNG로 저장"
-              aria-label="이미지 저장"
-            >
-              <ImageDown />
-              <span className="hidden sm:inline">이미지 저장</span>
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={paintOn ? "default" : "outline"}
-              className="h-8 gap-1 px-2.5 [&_svg]:!size-3.5"
-              disabled={!canAnnotate || confirmBusy}
-              aria-pressed={paintOn}
-              aria-label="페인트"
-              onClick={() => setPaintOn((on) => !on)}
-              title="화면 위에 표시를 그립니다"
-            >
-              <Pencil />
-              <span className="hidden sm:inline">페인트</span>
-            </Button>
-            {paintOn
-              ? VIEW_PAINT_COLORS.map((swatch) => (
-                  <button
-                    key={swatch}
-                    type="button"
-                    className={cn(
-                      "h-5 w-5 rounded-full border border-black/10",
-                      paintColor === swatch && "ring-2 ring-primary ring-offset-1",
-                    )}
-                    style={{ backgroundColor: swatch }}
-                    aria-label={viewPaintColorLabel(swatch)}
-                    onClick={() => setPaintColor(swatch)}
-                  />
-                ))
-              : null}
-            {paintOn && paintInk ? (
+            <div className="mr-3 flex items-center gap-1.5">
               <Button
                 type="button"
                 size="sm"
-                variant="outline"
+                variant={paintOn ? "default" : "outline"}
                 className="h-8 gap-1 px-2.5 [&_svg]:!size-3.5"
-                title="표시 지우기"
-                aria-label="표시 지우기"
-                onClick={() => paintRef.current?.clear()}
+                disabled={!canAnnotate || confirmBusy}
+                aria-pressed={paintOn}
+                aria-label="페인트"
+                onClick={() => setPaintOn((on) => !on)}
+                title="화면 위에 표시를 그립니다"
               >
-                <Eraser />
-                <span className="hidden sm:inline">표시 지우기</span>
+                <Pencil />
+                <span className="hidden sm:inline">페인트</span>
               </Button>
-            ) : null}
+              {paintOn
+                ? VIEW_PAINT_COLORS.map((swatch) => (
+                    <button
+                      key={swatch}
+                      type="button"
+                      className={cn(
+                        "h-5 w-5 rounded-full border border-black/10",
+                        paintColor === swatch && "ring-2 ring-primary ring-offset-1",
+                      )}
+                      style={{ backgroundColor: swatch }}
+                      aria-label={viewPaintColorLabel(swatch)}
+                      onClick={() => setPaintColor(swatch)}
+                    />
+                  ))
+                : null}
+              {paintOn && paintInk ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8 gap-1 px-2.5 [&_svg]:!size-3.5"
+                  title="표시 지우기"
+                  aria-label="표시 지우기"
+                  onClick={() => paintRef.current?.clear()}
+                >
+                  <Eraser />
+                  <span className="hidden sm:inline">표시 지우기</span>
+                </Button>
+              ) : null}
+            </div>
             {onAttachChatFile ? (
               <Button
                 type="button"
@@ -433,6 +389,7 @@ export function ModelPreviewDialog({
                 <span className="hidden sm:inline">채팅 첨부</span>
               </Button>
             ) : null}
+            {renderDownloadControl()}
           </div>
           <DialogDescription className="sr-only">
             {isImage ? "이미지 미리보기" : "3D 모델 미리보기"}
@@ -454,7 +411,6 @@ export function ModelPreviewDialog({
 
             {isImage ? (
               <>
-                {downloadOverlay}
                 {imageUrl && !loading ? (
                   <ZoomableImagePreview
                     ref={imageRef}
@@ -506,22 +462,8 @@ export function ModelPreviewDialog({
         ) : null}
 
         {showFooter ? (
-          <DialogFooter className="shrink-0 gap-2 border-t bg-background px-4 py-3 sm:justify-between sm:px-5">
-            <Button
-              type="button"
-              variant="outline"
-              className="h-9"
-              disabled={confirmBusy}
-              onClick={() => onOpenChange(false)}
-            >
-              닫기
-            </Button>
+          <DialogFooter className="shrink-0 gap-2 border-t bg-background px-4 py-3 sm:justify-end sm:px-5">
             <div className="flex flex-wrap items-center justify-end gap-2">
-              {onDownload
-                ? renderDownloadControl({
-                    variant: showConfirm ? "outline" : "default",
-                  })
-                : null}
               {showConfirm ? (
                 <Button
                   type="button"
