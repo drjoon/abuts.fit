@@ -30,6 +30,7 @@ import { resolveEntryDashboardPath } from "@/shared/navigation/lastDashboardPath
 import { cn } from "@/shared/ui/cn";
 import {
   landingContent,
+  landingProse,
   landingHome,
   landingSectionY,
   landingSky,
@@ -205,7 +206,7 @@ function GlanceSection({ glance }: { glance: OfferGlance }) {
       className={cn("scroll-mt-20", SKY.band, landingSectionY.bandTight)}
     >
       <div className={landingContent}>
-        <div className="mx-auto max-w-2xl text-center">
+        <div className={cn(landingProse, "text-center")}>
           <SectionEyebrow>AT A GLANCE</SectionEyebrow>
           <h2 className={cn(TYPO.h2, "mt-2.5 break-keep", SKY.ink)}>
             {glance.title}
@@ -281,7 +282,7 @@ function GlossarySection({ glossary }: { glossary: OfferGlossary }) {
   return (
     <section className={cn("bg-white", landingSectionY.bandTight)}>
       <div className={landingContent}>
-        <div className="mx-auto max-w-2xl text-center">
+        <div className={cn(landingProse, "text-center")}>
           <SectionEyebrow>GLOSSARY</SectionEyebrow>
           <h2 className={cn(TYPO.h2, "mt-2.5 break-keep", SKY.ink)}>
             {glossary.title}
@@ -564,7 +565,9 @@ function NativeResolutionPhoto({
     if (!frame || imgs.length !== srcs.length) return;
     const dpr = window.devicePixelRatio || 1;
     const gap = Math.max(0, srcs.length - 1) * 40;
-    let height = Math.min(320, frame.clientHeight);
+    const widthCap =
+      window.innerWidth >= 1920 ? 520 : window.innerWidth >= 1600 ? 420 : 320;
+    let height = Math.min(widthCap, frame.clientHeight);
     for (const img of imgs) {
       height = Math.min(height, img.naturalHeight / dpr);
     }
@@ -829,14 +832,14 @@ function StoryRows({
                 {story.visual?.kind === "photo" ? (
                   <div
                     className={cn(
-                      "relative flex min-h-[18rem] items-center justify-center overflow-hidden bg-white px-5 py-7 sm:min-h-[20rem] sm:px-8 sm:py-9 lg:min-h-[22rem]",
+                      "relative flex min-h-[18rem] items-center justify-center overflow-hidden bg-white px-5 py-7 sm:min-h-[20rem] sm:px-8 sm:py-9 lg:min-h-[22rem] min-[1600px]:min-h-[28rem] min-[1920px]:min-h-[34rem]",
                       index % 2 === 1 && "lg:order-2",
                     )}
                   >
                     <img
                       src={`${story.visual.src}?v=4`}
                       alt={story.visual.alt}
-                      className="h-auto max-h-[17rem] w-full object-contain object-center sm:max-h-[19rem] lg:max-h-[21rem]"
+                      className="h-auto max-h-[17rem] w-full object-contain object-center sm:max-h-[19rem] lg:max-h-[21rem] min-[1600px]:max-h-[26rem] min-[1920px]:max-h-[32rem]"
                     />
                   </div>
                 ) : story.visual ? (
@@ -1078,7 +1081,7 @@ function KitsColor({
   return (
     <section className={cn("bg-white", landingSectionY.bandTight)}>
       <div className={landingContent}>
-        <div className="mx-auto max-w-2xl text-center">
+        <div className={cn(landingProse, "text-center")}>
           <SectionEyebrow>{clip.eyebrow}</SectionEyebrow>
           <h2 className={cn(TYPO.h2, "mt-2.5", SKY.ink)}>{clip.heading}</h2>
         </div>
@@ -1147,7 +1150,7 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
                   "flex w-full flex-col items-center gap-6 py-8 text-center sm:py-10 lg:flex-row lg:items-end lg:justify-center lg:gap-12",
                 )}
               >
-                <div className="max-w-lg text-center">
+                <div className="max-w-lg text-center min-[1920px]:max-w-xl">
                   <p className={cn(TYPO.eyebrow, "text-[#0b2a5c]/80")}>
                     {heroEyebrow}
                   </p>
@@ -1164,7 +1167,7 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
                     className="mt-3 text-[14px] leading-6 text-slate-700 sm:text-[15px]"
                   />
                 </div>
-                <div className="relative h-[min(46vh,22rem)] w-full shrink-0 lg:w-[26rem]">
+                <div className="relative h-[min(46vh,22rem)] w-full shrink-0 lg:w-[26rem] min-[1600px]:h-[min(52vh,28rem)] min-[1600px]:w-[34rem] min-[1920px]:h-[min(56vh,34rem)] min-[1920px]:w-[40rem]">
                   <MediaFrame
                     visual={heroVisual}
                     reduced={reduced}
@@ -1273,7 +1276,7 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
               ) : null}
             </div>
             <div className={cn("overflow-hidden", SKY.card)}>
-              <div className="h-[min(48vh,22rem)] w-full sm:h-[min(52vh,26rem)]">
+              <div className="h-[min(48vh,22rem)] w-full sm:h-[min(52vh,26rem)] min-[1600px]:h-[min(56vh,32rem)] min-[1920px]:h-[min(58vh,38rem)]">
                 <MediaFrame
                   visual={heroVisual}
                   reduced={reduced}
@@ -1297,7 +1300,7 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
           className={cn("scroll-mt-20 bg-white", landingSectionY.bandTight)}
         >
           <div className={landingContent}>
-            <div className="mx-auto max-w-2xl text-center">
+            <div className={cn(landingProse, "text-center")}>
               <SectionEyebrow>
                 {offer.slug === "simple-way" ? "THE SIMPLE WAY" : "OVERVIEW"}
               </SectionEyebrow>
@@ -1366,7 +1369,7 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
       {offer.specs ? (
         <section className={cn("bg-white", landingSectionY.bandTight)}>
           <div className={landingContent}>
-            <div className="mx-auto max-w-2xl text-center">
+            <div className={cn(landingProse, "text-center")}>
               <SectionEyebrow>SPECS</SectionEyebrow>
               <h2 className={cn(TYPO.h2, "mt-2.5", SKY.ink)}>간단히 보는 스펙</h2>
             </div>

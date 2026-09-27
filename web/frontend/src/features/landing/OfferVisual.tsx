@@ -211,7 +211,7 @@ export function OfferVisual({
                   ? "h-full max-h-[70%]"
                   : tile
                     ? "h-[min(46%,18rem)] sm:h-[min(52%,22rem)]"
-                    : "h-[min(52vh,22rem)] sm:h-[min(58vh,28rem)]",
+                    : "h-[min(52vh,22rem)] sm:h-[min(58vh,28rem)] min-[1920px]:h-[min(58vh,36rem)]",
               )}
             />
             {tile || fill ? null : (
@@ -238,7 +238,7 @@ export function OfferVisual({
         alt={visual.alt}
         className={cn(
           "w-full object-contain",
-          fill ? "h-full max-h-full" : "h-[min(62vh,32rem)]",
+          fill ? "h-full max-h-full" : "h-[min(62vh,32rem)] min-[1920px]:h-[min(62vh,40rem)]",
         )}
       />
     </div>

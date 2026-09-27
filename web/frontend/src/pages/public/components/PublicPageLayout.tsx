@@ -77,9 +77,17 @@ export const PublicPageLayout = ({
 
       <Navigation tone={tone} overlay={navOverlay} />
 
-      <main className={resolvedContentClass}>{children}</main>
-
-      <Footer tone={tone} />
+      {plain ? (
+        <div className="landing-scale">
+          <main className={resolvedContentClass}>{children}</main>
+          <Footer tone={tone} />
+        </div>
+      ) : (
+        <>
+          <main className={resolvedContentClass}>{children}</main>
+          <Footer tone={tone} />
+        </>
+      )}
     </div>
   );
 };

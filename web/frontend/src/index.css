@@ -660,3 +660,30 @@ body:has(.guide-tour-root) .guide-tour-nested-dialog-overlay {
   }
 }
 
+/*
+ * 공개 랜딩·오퍼·행사: 넓은 화면에서 본문 px 타이포를 키운다.
+ * 제목·이미지·본문 폭은 landingTheme 의 2xl / 1920px 단계.
+ * 대시보드·쿠키·채팅은 이 클래스 밖이라 크기가 유지된다.
+ */
+@media (min-width: 1600px) {
+  .landing-scale .text-\[11px\] { font-size: 14px !important; }
+  .landing-scale .text-\[12px\] { font-size: 15px !important; }
+  .landing-scale .text-\[13px\] { font-size: 17px !important; }
+  .landing-scale .text-\[14px\] { font-size: 18px !important; }
+  .landing-scale .text-\[15px\] { font-size: 19px !important; }
+  .landing-scale .sm\:text-\[15px\] { font-size: 19px !important; }
+  .landing-scale .sm\:text-base { font-size: 19px !important; }
+}
+
+@media (min-width: 1920px) {
+  .landing-scale .text-\[13px\] { font-size: 18px !important; }
+  .landing-scale .text-\[14px\] { font-size: 20px !important; }
+  .landing-scale .text-\[15px\] { font-size: 21px !important; }
+  .landing-scale .sm\:text-\[15px\] { font-size: 21px !important; }
+  .landing-scale .sm\:text-base { font-size: 21px !important; }
+  .landing-scale .h-10 { height: 3rem !important; }
+  .landing-scale .h-11 { height: 3.25rem !important; }
+  .landing-scale .w-10 { width: 3rem !important; }
+  .landing-scale .w-11 { width: 3.25rem !important; }
+}
+

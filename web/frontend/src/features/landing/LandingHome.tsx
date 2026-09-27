@@ -24,6 +24,7 @@ import {
   landingHomeFaq,
   landingHomeSteps,
   landingContent,
+  landingProse,
   landingSectionY,
   landingSky,
   landingTypo,
@@ -134,7 +135,7 @@ function WorkflowGallery() {
       <div className="lg:grid lg:grid-cols-[minmax(0,1.45fr)_minmax(17.5rem,22.5rem)]">
       <div
         className={cn(
-          "relative aspect-[16/10] overflow-hidden sm:aspect-[16/8] lg:aspect-auto lg:min-h-[24rem]",
+          "relative aspect-[16/10] overflow-hidden sm:aspect-[16/8] lg:aspect-auto lg:min-h-[24rem] min-[1600px]:min-h-[28rem] min-[1920px]:min-h-[34rem]",
           slide.id === "simple-way" ? "bg-white" : "bg-[#071937]",
         )}
         onPointerDown={(event) => {
@@ -293,7 +294,7 @@ export function LandingHome() {
         className={cn("scroll-mt-20 bg-white", landingSectionY.bandTight)}
       >
         <div className={landingContent}>
-          <div className="mx-auto max-w-2xl text-center">
+          <div className={cn(landingProse, "text-center")}>
             <SectionEyebrow>{landingHome.browseEyebrow}</SectionEyebrow>
             <h2 className={cn(TYPO.h2, "mt-2.5", SKY.ink)}>
               {landingHome.browseHeading}
@@ -311,7 +312,7 @@ export function LandingHome() {
         className={cn("scroll-mt-20", SKY.band, landingSectionY.bandTight)}
       >
         <div className={landingContent}>
-          <div className="mx-auto max-w-2xl text-center">
+          <div className={cn(landingProse, "text-center")}>
             <SectionEyebrow>{landingHome.stepsEyebrow}</SectionEyebrow>
             <h2 className={cn(TYPO.h2, "mt-2.5", SKY.ink)}>
               {landingHome.whyHeading}
@@ -323,7 +324,7 @@ export function LandingHome() {
             <img
               src="/landing/waveon/partnership.jpg"
               alt="치과·기공소 디지털 협업"
-              className="h-[12rem] w-full object-cover object-center sm:h-[16rem] lg:h-[18rem]"
+              className="h-[12rem] w-full object-cover object-center sm:h-[16rem] lg:h-[18rem] min-[1600px]:h-[22rem] min-[1920px]:h-[26rem]"
             />
             <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#071937]/45 via-sky-500/10 to-transparent" />
           </div>
@@ -365,10 +366,10 @@ export function LandingHome() {
 
       <LandingEventsSection />
 
-      {/* FAQ */}
+      {/* FAQ — 행사(흰) 다음 파란 밴드 */}
       <section
         id="faq"
-        className={cn("scroll-mt-20 bg-white", landingSectionY.bandTight)}
+        className={cn("scroll-mt-20", SKY.band, landingSectionY.bandTight)}
       >
         <div
           className={cn(
@@ -405,8 +406,8 @@ export function LandingHome() {
         </div>
       </section>
 
-      {/* CTA */}
-      <section id="contact" className={cn("scroll-mt-20", SKY.band)}>
+      {/* CTA — FAQ(파랑) 다음 흰 밴드 */}
+      <section id="contact" className={cn("scroll-mt-20 bg-white")}>
         <div
           className={cn(
             landingContent,

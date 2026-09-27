@@ -123,16 +123,21 @@ export const landingAudiences = [
   landingAudienceLab,
 ] as const;
 
-/** 랜딩·오퍼 본문. 넓은 화면에서는 가운데로 모은다. */
-export const landingContent = "mx-auto w-full max-w-6xl px-5 sm:px-8 lg:px-10";
+/** 랜딩·오퍼 본문. 넓은 화면은 더 넓게, 가운데 정렬은 유지. */
+export const landingContent =
+  "mx-auto w-full max-w-6xl px-5 sm:px-8 lg:px-10 2xl:max-w-7xl min-[1920px]:max-w-[100rem]";
+
+/** 섹션 인트로 문단 폭 */
+export const landingProse =
+  "mx-auto max-w-2xl min-[1920px]:max-w-3xl";
 
 /** 섹션 상하 여백 — 오퍼·홈 공통 */
 export const landingSectionY = {
-  band: "pt-16 pb-20 sm:pt-20 sm:pb-24",
-  bandTight: "pt-12 pb-16 sm:pt-16 sm:pb-20",
-  bandLoose: "pt-20 pb-24 sm:pt-24 sm:pb-28",
-  storyGap: "gap-16 sm:gap-24",
-  media: "h-[22rem] sm:h-[26rem] lg:h-[30rem]",
+  band: "pt-16 pb-20 sm:pt-20 sm:pb-24 min-[1920px]:pt-24 min-[1920px]:pb-28",
+  bandTight: "pt-12 pb-16 sm:pt-16 sm:pb-20 min-[1920px]:pt-20 min-[1920px]:pb-24",
+  bandLoose: "pt-20 pb-24 sm:pt-24 sm:pb-28 min-[1920px]:pt-28 min-[1920px]:pb-32",
+  storyGap: "gap-16 sm:gap-24 min-[1920px]:gap-28",
+  media: "h-[22rem] sm:h-[26rem] lg:h-[30rem] min-[1920px]:h-[36rem]",
   sceneMin: "min-h-[56vh] sm:min-h-[62vh]",
 } as const;
 
@@ -141,13 +146,13 @@ export const landingSectionY = {
  * 본문 15px대, h2 ~36–40px — LandingHome 과 동일.
  */
 export const landingTypo = {
-  eyebrow: "text-[11px] font-semibold tracking-[0.2em]",
-  h1: "text-[1.875rem] font-bold leading-tight tracking-tight sm:text-[2.5rem] lg:text-[3.25rem]",
-  h2: "break-keep text-[1.5rem] font-semibold leading-snug tracking-tight sm:text-[2rem] lg:text-[2.25rem]",
-  h3: "break-keep text-lg font-semibold tracking-tight sm:text-xl",
-  lead: "break-keep text-[14px] leading-6 text-slate-600 sm:text-[15px] sm:leading-6",
-  body: "break-keep text-[14px] leading-6 text-slate-600 sm:text-[15px] sm:leading-[1.65]",
-  link: "text-[14px] font-semibold sm:text-[15px]",
+  eyebrow: "text-[11px] font-semibold tracking-[0.2em] min-[1920px]:text-[13px]",
+  h1: "text-[1.875rem] font-bold leading-tight tracking-tight sm:text-[2.5rem] lg:text-[3.25rem] min-[1920px]:text-[4rem]",
+  h2: "break-keep text-[1.5rem] font-semibold leading-snug tracking-tight sm:text-[2rem] lg:text-[2.25rem] min-[1920px]:text-[3rem]",
+  h3: "break-keep text-lg font-semibold tracking-tight sm:text-xl min-[1920px]:text-2xl",
+  lead: "break-keep text-[14px] leading-6 text-slate-600 sm:text-[15px] sm:leading-6 min-[1920px]:text-lg min-[1920px]:leading-8",
+  body: "break-keep text-[14px] leading-6 text-slate-600 sm:text-[15px] sm:leading-[1.65] min-[1920px]:text-lg min-[1920px]:leading-8",
+  link: "text-[14px] font-semibold sm:text-[15px] min-[1920px]:text-lg",
 } as const;
 
 /** `/` · `/offer/*` 하늘색·카드·히어로 워시 SSOT */
