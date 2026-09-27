@@ -1,0 +1,58 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"type": "npm",
+			"script": "build",
+			"path": "rhino-server/web",
+			"group": "build",
+			"problemMatcher": [],
+			"label": "npm: build - rhino-server/web",
+			"detail": "tsc -b && vite build"
+		},
+		{
+			"type": "process",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"${workspaceFolder}/esprit-addin/ESPRIT2025AddinProject.csproj",
+				"/p:Configuration=Debug",
+				"/p:Platform=x86",
+				"/verbosity:minimal"
+			],
+			"group": "build",
+			"problemMatcher": "$msCompile",
+			"label": "dotnet: build - esprit-addin",
+			"detail": "Debug|x86"
+		},
+		{
+			"type": "process",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"${workspaceFolder}/bridge-server/HiLinkBridgeWebApi48.csproj",
+				"/p:Configuration=Debug",
+				"/p:Platform=x86",
+				"/verbosity:minimal"
+			],
+			"group": "build",
+			"problemMatcher": "$msCompile",
+			"label": "dotnet: build - bridge-server",
+			"detail": "Debug|x86"
+		},
+		{
+			"label": "build: pc1 (rhino + esprit + bridge)",
+			"dependsOn": [
+				"npm: build - rhino-server/web",
+				"dotnet: build - esprit-addin",
+				"dotnet: build - bridge-server"
+			],
+			"dependsOrder": "parallel",
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"problemMatcher": []
+		}
+	]
+}
