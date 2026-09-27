@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-28: 이미지 미리보기 대화상자를 뷰포트(96vw·92dvh)에 맞춤.
 // - 2026-08-31: 이미지 미리보기 ZoomableImagePreview(중앙 기준 줌·팬).
 // related files:
 // - web/frontend/rules.md
@@ -15,6 +16,8 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { ZoomableImagePreview } from "@/shared/components/ZoomableImagePreview";
+import { cn } from "@/shared/ui/cn";
+import { RESPONSIVE } from "@/shared/ui/responsive";
 
 interface Attachment {
   fileName: string;
@@ -85,21 +88,29 @@ export function MessageAttachment({
         </div>
 
         <Dialog open={imagePreviewOpen} onOpenChange={setImagePreviewOpen}>
-          <DialogContent className="sm:max-w-4xl">
-            <DialogHeader>
-              <DialogTitle className="flex items-center justify-between">
-                <span className="truncate mr-4">{attachment.fileName}</span>
+          <DialogContent
+            className={cn(
+              "gap-3 p-4 sm:p-4",
+              RESPONSIVE.dialogContentLightbox,
+            )}
+          >
+            <DialogHeader className="shrink-0 space-y-0 pr-8">
+              <DialogTitle className="flex items-center justify-between gap-3">
+                <span className="min-w-0 truncate">{attachment.fileName}</span>
                 <Button size="sm" variant="outline" onClick={handleDownload}>
                   <Download className="w-4 h-4 mr-2" />
                   다운로드
                 </Button>
               </DialogTitle>
             </DialogHeader>
-            <ZoomableImagePreview
-              src={attachment.s3Url}
-              alt={attachment.fileName}
-              className="rounded-lg bg-muted/40"
-            />
+            <div className="relative min-h-0 flex-1 overflow-hidden rounded-lg">
+              <ZoomableImagePreview
+                src={attachment.s3Url}
+                alt={attachment.fileName}
+                fill
+                className="rounded-lg bg-muted/40"
+              />
+            </div>
           </DialogContent>
         </Dialog>
       </>

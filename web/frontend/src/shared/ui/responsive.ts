@@ -16,6 +16,12 @@ export const RESPONSIVE = {
   dialogContentFull:
     "w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] sm:w-[96vw] sm:max-w-[96vw]",
   /**
+   * Image lightbox — width and height follow the viewport (no px/rem cap).
+   * Must set sm:max-w-* so Dialog's default sm:max-w-lg does not cap PC at 512px.
+   */
+  dialogContentLightbox:
+    "flex w-[96vw] max-w-[96vw] h-[92dvh] max-h-[92dvh] flex-col overflow-hidden sm:w-[96vw] sm:max-w-[96vw] sm:h-[92dvh] sm:max-h-[92dvh]",
+  /**
    * Worksheet PreviewModal — near-fullscreen on phone; wide on sm+.
    * Must set sm:max-w-* so Dialog's default sm:max-w-lg does not cap PC at 512px.
    */

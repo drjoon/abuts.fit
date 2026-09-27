@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-28: 이미지 미리보기 대화상자를 뷰포트(96vw·92dvh)에 맞춤.
 // - 2026-08-31: 이미지 미리보기 ZoomableImagePreview(중앙 기준 줌·팬).
 // related files:
 // - web/frontend/rules.md
@@ -17,6 +18,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/shared/ui/cn";
+import { RESPONSIVE } from "@/shared/ui/responsive";
 import type { BackgroundUploadItem } from "@/shared/hooks/useBackgroundTempUpload";
 import { isChatImageAttachment } from "@/features/chat/components/ChatMessageBubble";
 import { ZoomableImagePreview } from "@/shared/components/ZoomableImagePreview";
@@ -163,18 +165,24 @@ function PendingImageUploadTile({
 
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
         <DialogContent
-          className="z-[320] sm:max-w-4xl"
+          className={cn(
+            "z-[320] gap-3 p-4 sm:p-4",
+            RESPONSIVE.dialogContentLightbox,
+          )}
           overlayClassName="z-[310]"
         >
-          <DialogHeader>
+          <DialogHeader className="shrink-0 space-y-0 pr-8">
             <DialogTitle className="truncate pr-8">{item.file.name}</DialogTitle>
           </DialogHeader>
-          <ZoomableImagePreview
-            src={objectUrl}
-            alt={item.file.name}
-            className="rounded-lg bg-muted/40"
-          />
-          <p className="text-center text-xs text-muted-foreground">
+          <div className="relative min-h-0 flex-1 overflow-hidden rounded-lg">
+            <ZoomableImagePreview
+              src={objectUrl}
+              alt={item.file.name}
+              fill
+              className="rounded-lg bg-muted/40"
+            />
+          </div>
+          <p className="shrink-0 text-center text-xs text-muted-foreground">
             {formatFileSize(item.file.size)}
           </p>
         </DialogContent>

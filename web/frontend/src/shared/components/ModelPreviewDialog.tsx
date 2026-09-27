@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-28: 프리뷰 대화상자를 뷰포트(96vw·94dvh)에 맞춤. 1280px·100rem 상한 제거.
 // - 2026-09-27: 이미지·3D 프리뷰 헤더에 이미지 저장·페인트·채팅 첨부. 가로·세로를 키움.
 // - 2026-09-26: 페인트로 표시한 뒤 채팅에 첨부.
 // - 2026-09-23: 3D 프리뷰 — 다운로드 옆 「이미지 저장」(현재 뷰 PNG).
@@ -347,9 +348,8 @@ export function ModelPreviewDialog({
       <DialogContent
         // Above floating transfer (z-300/410) and guide-tour coach (z-440).
         className={cn(
-          "z-[450] flex h-[min(96dvh,1280px)] max-h-[96dvh] flex-col gap-0 overflow-hidden p-0 sm:h-[min(94dvh,1280px)] sm:max-h-[94dvh] sm:gap-0 sm:p-0",
+          "z-[450] flex h-[94dvh] max-h-[94dvh] flex-col gap-0 overflow-hidden p-0 sm:h-[94dvh] sm:max-h-[94dvh] sm:gap-0 sm:p-0",
           RESPONSIVE.dialogContentFull,
-          "sm:w-[min(96vw,100rem)] sm:max-w-[min(96vw,100rem)]",
         )}
         overlayClassName="z-[445]"
       >
