@@ -27,6 +27,14 @@ export type LabProsthesisAiTooth = {
   designable: boolean;
   /** 임플란트 크라운. 의뢰 사양이 없으면 빈 문자열 사양. */
   implant: LabProsthesisAiImplantSpec | null;
+  /** 의뢰 치아카드의 심플어벗 규격. 있으면 스캔바디 대신 이 템플릿을 스캔에 맞춘다. */
+  simpleAbutment: LabSimpleAbutmentSpec | null;
+};
+
+export type LabSimpleAbutmentSpec = {
+  kind: "심플어벗" | "심플밀링";
+  diameter: string;
+  height: string;
 };
 
 /** 작업영역 치아 유형. 의뢰 원본은 건드리지 않고 작업 문서에만 남긴다. */
@@ -125,6 +133,7 @@ export function applyToothOverrides(
       prosthesisType,
       designable: DESIGNABLE_TYPES.has(prosthesisType),
       implant: null,
+      simpleAbutment: null,
     };
   });
   return {
@@ -395,6 +404,9 @@ export function buildLabProsthesisAiPlan(input: {
     implantBrand?: string | null;
     implantFamily?: string | null;
     implantType?: string | null;
+    abutmentManufacturer?: string | null;
+    abutmentDiameter?: string | null;
+    abutmentHeight?: string | null;
   }> | null;
   files?: ReadonlyArray<{
     fileName?: string | null;
@@ -420,13 +432,25 @@ export function buildLabProsthesisAiPlan(input: {
             type: String(row?.implantType || "").trim(),
           }
         : null;
+    const abutmentKind = String(row?.abutmentManufacturer || "").trim();
+    const abutmentDiameter = String(row?.abutmentDiameter || "").trim();
+    const simpleAbutment: LabSimpleAbutmentSpec | null =
+      (abutmentKind === "심플어벗" || abutmentKind === "심플밀링") && abutmentDiameter
+        ? {
+            kind: abutmentKind,
+            diameter: abutmentDiameter,
+            height: String(row?.abutmentHeight || "").trim().toUpperCase(),
+          }
+        : null;
+    const designableImplant = implant && DESIGNABLE_TYPES.has(prosthesisType) ? implant : null;
     teeth.push({
       toothNumber,
       sourceToothNumber: toothNumber,
       prosthesisType,
       linkedTeeth,
       designable: DESIGNABLE_TYPES.has(prosthesisType),
-      implant: implant && DESIGNABLE_TYPES.has(prosthesisType) ? implant : null,
+      implant: designableImplant,
+      simpleAbutment: designableImplant ? simpleAbutment : null,
     });
   }
 

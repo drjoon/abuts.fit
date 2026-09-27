@@ -1,6 +1,7 @@
 // 기공소 AI 보철 — 마진·삽입·내면·형상·훅·컷백·홀·커넥터·폰틱 수정값.
 
 import { fdiToothDigits } from "@/shared/practice/toothArchOrder";
+import type { ScanbodyMesh } from "@/shared/practice/scanbodyRegistration";
 
 export const MARGIN_POINT_COUNT = 16;
 
@@ -432,6 +433,8 @@ export type ToothDesignEdit = {
     rotDeg: number;
     /** 맞춘 뒤 평균 거리(mm). */
     fitMm: number | null;
+    /** 맞춘 스캔바디·심플어벗 템플릿 형상(S3 키). 원기둥으로 맞췄으면 null. */
+    scanbodyKey: string | null;
     screwHole: boolean;
   };
   hook: {
@@ -489,6 +492,9 @@ export type DesignGesture =
       axis: [number, number, number];
       offset: [number, number, number];
       fitMm: number | null;
+      /** 실제 형상으로 맞추면 헥스 방향까지 나온다. */
+      rotDeg?: number;
+      scanbodyKey?: string | null;
     }
   | { type: "cutback-exclude"; tooth: string; angle: number }
   | { type: "transform"; tooth: string; scale: number }
@@ -516,7 +522,12 @@ export type ProsthesisDesignEdit = {
 
 export type ScanbodyShape = {
   radiusMm: number;
+  /** 플랫폼에서 윗면까지. 원기둥은 윗면에서 이만큼 내려 그린다. */
   heightMm: number;
+  /** 라이브러리·템플릿 실제 형상(mm, 플랫폼 원점·+Y 축). 없으면 원기둥. */
+  mesh?: ScanbodyMesh | null;
+  /** 심플어벗 템플릿이면 플랫폼에서 마진까지(mm). */
+  marginHeightMm?: number | null;
 };
 
 function ones(count: number) {
@@ -562,6 +573,7 @@ export function createToothDesignEdit(): ToothDesignEdit {
       offset: [0, 0, 0],
       rotDeg: 0,
       fitMm: null,
+      scanbodyKey: null,
       screwHole: false,
     },
     hook: { on: false, angle: 40, radiusMm: 0.45, lengthMm: 2.4 },
@@ -599,6 +611,8 @@ export function normalizeToothDesignEdit(raw: unknown): ToothDesignEdit {
       offset: vec3OrNull(implant.offset) ?? [0, 0, 0],
       rotDeg: Number(implant.rotDeg) || 0,
       fitMm: Number.isFinite(Number(implant.fitMm)) && implant.fitMm != null ? Number(implant.fitMm) : null,
+      scanbodyKey:
+        typeof implant.scanbodyKey === "string" && implant.scanbodyKey ? implant.scanbodyKey : null,
       screwHole: implant.screwHole === true,
     },
     pontic: {
@@ -1140,6 +1154,8 @@ export function reduceDesignGesture(
           axis: gesture.axis,
           offset: gesture.offset,
           fitMm: gesture.fitMm,
+          rotDeg: gesture.rotDeg ?? edit.implant.rotDeg,
+          scanbodyKey: gesture.scanbodyKey ?? null,
         },
       };
     case "smooth":

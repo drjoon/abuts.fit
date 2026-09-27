@@ -284,6 +284,7 @@ import rhinoRoutes from "./modules/rhino/rhino.routes.js";
 import bgRoutes from "./modules/bg/bg.routes.js";
 import clinicRoutes from "./modules/clinic/clinic.routes.js";
 import implantPresetRoutes from "./modules/implantPresets/implantPreset.routes.js";
+import scanbodyLibraryRoutes from "./modules/scanbodyLibraries/scanbodyLibrary.routes.js";
 
 import creditRoutes from "./modules/credits/credit.routes.js";
 import webhookRoutes from "./modules/webhooks/webhook.routes.js";
@@ -326,6 +327,7 @@ app.use("/api/bg", bgRoutes);
 
 app.use("/api/clinics", clinicRoutes);
 app.use("/api/implant-presets", implantPresetRoutes);
+app.use("/api/scanbody-libraries", scanbodyLibraryRoutes);
 
 app.use("/api/credits", creditRoutes);
 app.use("/api/store", storeRoutes);

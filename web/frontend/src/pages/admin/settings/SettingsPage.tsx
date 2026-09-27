@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-27: 「스캔바디」탭 — AI 디자인 공용 스캔바디 라이브러리(.dme)·심플어벗 템플릿.
 // - 2026-09-23: 플랫폼 탭 제거 → 재무「설정」(/dashboard/finance?tab=settings).
 // - 2026-09-23: 최상단을 계정·사업자·플랫폼·임직원·알림으로 평탄화. 사업영역 제거. 플랫폼은 사업자 오른쪽.
 // - 2026-08-13: 결제 탭 제거 — 내용은 플랫폼 설정(크레딧·커스텀어벗)에 유지.
@@ -18,14 +19,16 @@ import { AccountTab } from "@/features/settings/tabs/AccountTab";
 import { StaffTab } from "@/features/settings/tabs/StaffTab";
 import { NotificationsTab } from "@/features/settings/tabs/NotificationsTab";
 import { BusinessTab } from "@/shared/components/business/settings/BusinessTab";
-import { User, Users, Bell, Building2 } from "lucide-react";
+import { ScanbodyLibraryManager } from "@/shared/components/practice/ScanbodyLibraryManager";
+import { User, Users, Bell, Building2, Boxes } from "lucide-react";
 
-type TabKey = "account" | "business" | "staff" | "notifications";
+type TabKey = "account" | "business" | "staff" | "scanbody" | "notifications";
 
 const TOP_TABS: TabKey[] = [
   "account",
   "business",
   "staff",
+  "scanbody",
   "notifications",
 ];
 
@@ -70,6 +73,12 @@ export const AdminSettingsPage = ({
         label: "임직원",
         icon: Users,
         content: <StaffTab userData={user} businessTypeOverride="admin" />,
+      },
+      {
+        key: "scanbody",
+        label: "스캔바디",
+        icon: Boxes,
+        content: <ScanbodyLibraryManager />,
       },
       {
         key: "notifications",

@@ -13,6 +13,7 @@ import {
   type ConnectorShape,
   type PonticBase,
   type ProsthesisDesignEdit,
+  type ScanbodyShape,
   type ToothDesignEdit,
 } from "@/shared/practice/labProsthesisModify";
 import {
@@ -94,7 +95,7 @@ const TAPER_WIDE = 0xf59e0b;
 const HOOK = 0x64748b;
 const CUTBACK = 0xd6a37a;
 
-function basisQuaternion(normal: THREE.Vector3, rightHint: THREE.Vector3) {
+export function basisQuaternion(normal: THREE.Vector3, rightHint: THREE.Vector3) {
   const y = normal.clone().normalize();
   const x = rightHint.clone().addScaledVector(y, -rightHint.dot(y));
   if (x.lengthSq() < 1e-8) {
@@ -104,6 +105,28 @@ function basisQuaternion(normal: THREE.Vector3, rightHint: THREE.Vector3) {
   x.normalize();
   const z = new THREE.Vector3().crossVectors(x, y).normalize();
   return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z));
+}
+
+/** 스캔바디 형상. 윗면이 원점이고 플랫폼은 -heightMm. 실제 형상이 없으면 원기둥. */
+function scanbodyGeometry(shape: ScanbodyShape, unit: number): THREE.BufferGeometry {
+  const height = shape.heightMm / unit;
+  if (!shape.mesh) {
+    const radius = shape.radiusMm / unit;
+    const geometry = new THREE.CylinderGeometry(radius, radius, height, 36, 6, false);
+    geometry.translate(0, -height / 2, 0);
+    return geometry;
+  }
+  const src = shape.mesh.positions;
+  const positions = new Float32Array(src.length);
+  for (let i = 0; i < src.length; i += 3) {
+    positions[i] = src[i]! / unit;
+    positions[i + 1] = (src[i + 1]! - shape.heightMm) / unit;
+    positions[i + 2] = src[i + 2]! / unit;
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.setIndex(new THREE.BufferAttribute(shape.mesh.indices, 1));
+  return geometry;
 }
 
 /** 마진 점의 월드 좌표. 선과 다이가 같은 곡선을 쓴다. */
@@ -300,7 +323,7 @@ export function buildProsthesisEditLayer(args: {
 
     const shape = args.spec.scanbodies[tooth];
     const pose = edit.implant.on ? implantPose(place, normal, edit.implant) : null;
-    if (pose && shape && edit.implant.libraryId) {
+    if (pose && shape && (edit.implant.libraryId || shape.mesh)) {
       const radius = shape.radiusMm / unit;
       const height = shape.heightMm / unit;
       const spin = new THREE.Quaternion().setFromAxisAngle(
@@ -310,23 +333,24 @@ export function buildProsthesisEditLayer(args: {
       const bodyQuat = basisQuaternion(pose.axis, right).multiply(spin);
       const showBody = !generated && (args.spec.tool === "scanbody" || !edit.implant.aligned);
       if (showBody) {
-        const geometry = new THREE.CylinderGeometry(radius, radius, height, 36, 6, false);
-        geometry.translate(0, -height / 2, 0);
+        const geometry = scanbodyGeometry(shape, unit);
         const pos = geometry.getAttribute("position");
         geometry.computeVertexNormals();
         const nor = geometry.getAttribute("normal");
+        // 실제 형상은 꼭짓점이 많아 일부만 스캔 거리를 재고 이웃 번호에 같은 색을 쓴다.
+        const stride = Math.max(1, Math.ceil(pos.count / 600));
         const points: THREE.Vector3[] = [];
         const normals: THREE.Vector3[] = [];
         const toWorld = new THREE.Matrix4().compose(pose.top, bodyQuat, new THREE.Vector3(1, 1, 1));
         const rot = new THREE.Matrix3().setFromMatrix4(toWorld);
-        for (let i = 0; i < pos.count; i += 1) {
+        for (let i = 0; i < pos.count; i += stride) {
           points.push(new THREE.Vector3().fromBufferAttribute(pos, i).applyMatrix4(toWorld));
           normals.push(new THREE.Vector3().fromBufferAttribute(nor, i).applyMatrix3(rot).normalize());
         }
         const distances = args.probe?.(tooth, points, normals) ?? [];
         const colors = new Float32Array(pos.count * 3);
         for (let i = 0; i < pos.count; i += 1) {
-          const rgb = fitDistanceRgb(distances[i] ?? null);
+          const rgb = fitDistanceRgb(distances[Math.floor(i / stride)] ?? null);
           colors[i * 3] = rgb[0];
           colors[i * 3 + 1] = rgb[1];
           colors[i * 3 + 2] = rgb[2];
@@ -351,17 +375,30 @@ export function buildProsthesisEditLayer(args: {
         body.renderOrder = 6;
         tag(body, { kind: "scanbody", tooth });
         root.add(body);
-        const flat = new THREE.Mesh(
-          new THREE.BoxGeometry(radius * 0.5, height * 0.35, radius * 0.12),
-          new THREE.MeshBasicMaterial({ color: 0x0f766e, depthTest: false }),
+        if (!shape.mesh) {
+          const flat = new THREE.Mesh(
+            new THREE.BoxGeometry(radius * 0.5, height * 0.35, radius * 0.12),
+            new THREE.MeshBasicMaterial({ color: 0x0f766e, depthTest: false }),
+          );
+          flat.quaternion.copy(bodyQuat);
+          flat.position
+            .copy(pose.top)
+            .addScaledVector(pose.axis, -height * 0.2)
+            .add(new THREE.Vector3(0, 0, radius).applyQuaternion(bodyQuat));
+          flat.renderOrder = 13;
+          root.add(flat);
+        }
+      } else if (edit.implant.aligned && shape.mesh && shape.marginHeightMm != null) {
+        const geometry = scanbodyGeometry(shape, unit);
+        geometry.computeVertexNormals();
+        const abutment = new THREE.Mesh(
+          geometry,
+          new THREE.MeshStandardMaterial({ color: 0x9ca3af, roughness: 0.3, metalness: 0.6 }),
         );
-        flat.quaternion.copy(bodyQuat);
-        flat.position
-          .copy(pose.top)
-          .addScaledVector(pose.axis, -height * 0.2)
-          .add(new THREE.Vector3(0, 0, radius).applyQuaternion(bodyQuat));
-        flat.renderOrder = 13;
-        root.add(flat);
+        abutment.quaternion.copy(bodyQuat);
+        abutment.position.copy(pose.top);
+        abutment.renderOrder = 3;
+        root.add(abutment);
       } else if (edit.implant.aligned) {
         const baseHeight = Math.min(height * 0.5, 5 / unit);
         const tiBase = new THREE.Mesh(
