@@ -1,4 +1,5 @@
 // related files:
+// - 2026-09-27: 협력·하청 수신 — 목록·상세에 역할 뱃지(원청·수행 기공소 양쪽).
 // - 2026-09-27: 원청 화면 협력 의뢰 — 작업 버튼 숨김, 채팅은 유지. 하청·자체는 작업+채팅.
 // - 2026-09-26: 보철 업로드는 치과 컨펌 없이 작업 완료. 학습 쌍은 서버가 남긴다.
 // - 2026-09-24: 「열기」미연결 시 설치 모달(zip·더블클릭 1회·이후 자동).
@@ -451,8 +452,10 @@ import {
   type PracticeStatusFilterBadgeItem,
 } from "@/pages/practice/components/PracticeStatusFilterBadges";
 import {
+  LabReceiveRoleBadge,
   LabReceiveRoleFilterButtons,
   labReceiveRoleOfTransfer,
+  resolveLabReceiveRoleMarker,
   type LabReceiveRoleFilterKey,
 } from "@/pages/practice/components/LabReceiveRoleFilterButtons";
 import { RequestorAbutmentPageHeader } from "@/pages/requestor/new_request/components/RequestorAbutmentPageHeader";
@@ -2774,6 +2777,9 @@ export function RequestorPracticeReceivePage({
         ),
         hasCustomAbutment: Boolean(transfer.hasCustomAbutment),
         basketTag: normalizeLabBasketTag(transfer.labBasketTag) || null,
+        receiveRole: resolveLabReceiveRoleMarker(transfer, {
+          viewerIsPrime: viewerIsPrimeLab,
+        }),
       };
     });
     const expanded = expandPracticeCalendarChipsByArrivalDates(
@@ -2798,6 +2804,7 @@ export function RequestorPracticeReceivePage({
     labBasketTagRevision,
     sortedFilteredTransfers,
     transferChatUnreadCount,
+    viewerIsPrimeLab,
   ]);
 
   const selectedLabBasketTransferId = String(
@@ -3056,6 +3063,9 @@ export function RequestorPracticeReceivePage({
       colorKey,
       dotColor: dot?.color || undefined,
       dotStyle: dot?.style || undefined,
+      receiveRole: resolveLabReceiveRoleMarker(selectedTransfer, {
+        viewerIsPrime: viewerIsPrimeLab,
+      }),
     };
   }, [
     practiceColorDots,
@@ -8624,6 +8634,9 @@ export function RequestorPracticeReceivePage({
                       abutmentDeliveryInfo:
                         transfer.abutmentDeliveryInfo || null,
                     });
+                    const roleMarker = resolveLabReceiveRoleMarker(transfer, {
+                      viewerIsPrime: viewerIsPrimeLab,
+                    });
 
                     return (
                       <div
@@ -8662,6 +8675,13 @@ export function RequestorPracticeReceivePage({
                               >
                                 {statusLabel}
                               </Badge>
+                              {roleMarker ? (
+                                <LabReceiveRoleBadge
+                                  marker={roleMarker}
+                                  size="detail"
+                                  showPeer
+                                />
+                              ) : null}
                               {isPrePlatformPracticeRemake(transfer) ? (
                                 <Badge
                                   variant="outline"

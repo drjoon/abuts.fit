@@ -1,6 +1,8 @@
 /**
  * 어벗츠기공소 수신함 — 원청(직접 수행) · 협력 · 하청 표시/숨김.
  * 기본은 모두 표시. 클릭하면 해당 구분만 캘린더·목록에서 뺀다.
+ * 협력·하청 건은 목록·캘린더·상세에 역할 뱃지. 원청 직접 수행은 뱃지 없음.
+ * - 2026-09-27: 원청·하청 양쪽 목록·상세에 협력/하청 뱃지.
  */
 import { Badge } from "@/components/ui/badge";
 import {
@@ -30,17 +32,137 @@ export const LAB_RECEIVE_ROLE_FILTERS: ReadonlyArray<{
   {
     key: "subcontract",
     label: "하청",
-    hint: "하청으로 넘긴 의뢰입니다.",
+    hint: "하청 풀에 열었거나 하청으로 넘긴 의뢰입니다.",
   },
 ];
 
 export function labReceiveRoleOfTransfer(transfer: {
   assigneeKind?: string | null;
+  matchingMode?: string | null;
+  autoMatch?: {
+    openPool?: boolean | null;
+    subcontracted?: boolean | null;
+  } | null;
 }): LabReceiveRoleFilterKey {
   const kind = String(transfer.assigneeKind || "").trim();
   if (kind === "cooperation") return "cooperation";
-  if (kind === "subcontract") return "subcontract";
+  if (kind === "subcontract" || isOpenSubcontractPool(transfer)) return "subcontract";
   return "prime";
+}
+
+/** 수행 기공소 배정 전. 하청 풀만 연 상태. 레거시 자동매칭 공개 풀은 제외. */
+function isOpenSubcontractPool(transfer: {
+  assigneeKind?: string | null;
+  matchingMode?: string | null;
+  autoMatch?: {
+    openPool?: boolean | null;
+    subcontracted?: boolean | null;
+  } | null;
+}): boolean {
+  if (String(transfer.assigneeKind || "").trim() === "subcontract") return false;
+  if (transfer.autoMatch?.subcontracted) return false;
+  return (
+    Boolean(transfer.autoMatch?.openPool) &&
+    String(transfer.matchingMode || "").trim() !== "auto"
+  );
+}
+
+export type LabReceiveRoleMarker = {
+  role: "cooperation" | "subcontract";
+  label: "협력" | "하청";
+  /** 원청 화면=수행 기공소, 수행 기공소 화면=원청(어벗츠기공소) */
+  peer: string;
+  hint: string;
+};
+
+/** 목록·상세 뱃지. 원청이 직접 수행하는 건은 null. */
+export function resolveLabReceiveRoleMarker(
+  transfer: {
+    assigneeKind?: string | null;
+    assigneeLabName?: string | null;
+    targetLabName?: string | null;
+    matchingMode?: string | null;
+    autoMatch?: {
+      openPool?: boolean | null;
+      subcontracted?: boolean | null;
+    } | null;
+  },
+  opts: { viewerIsPrime: boolean },
+): LabReceiveRoleMarker | null {
+  const kind = String(transfer.assigneeKind || "").trim();
+  const poolOpen = isOpenSubcontractPool(transfer);
+  const roleKind =
+    kind === "cooperation" || kind === "subcontract"
+      ? kind
+      : poolOpen || transfer.autoMatch?.subcontracted
+        ? "subcontract"
+        : null;
+  if (!roleKind) return null;
+  const label = roleKind === "cooperation" ? "협력" : "하청";
+  const assignee = String(transfer.assigneeLabName || "").trim();
+  const prime = String(transfer.targetLabName || "").trim() || "어벗츠기공소";
+  if (opts.viewerIsPrime) {
+    return {
+      role: roleKind,
+      label,
+      peer: assignee,
+      hint:
+        roleKind === "subcontract"
+          ? poolOpen
+            ? "하청 풀에 연 의뢰입니다."
+            : assignee
+              ? `${assignee}에 하청으로 넘긴 의뢰입니다.`
+              : "하청으로 넘긴 의뢰입니다."
+          : assignee
+            ? `협력 기공소 ${assignee}가 수행하는 의뢰입니다.`
+            : "협력 기공소가 수행하는 의뢰입니다.",
+    };
+  }
+  return {
+    role: roleKind,
+    label,
+    peer: prime,
+    hint:
+      roleKind === "subcontract"
+        ? poolOpen
+          ? `${prime} 하청 풀에 들어온 의뢰입니다.`
+          : `${prime}에서 하청으로 받은 의뢰입니다.`
+        : `${prime} 협력으로 받은 의뢰입니다.`,
+  };
+}
+
+export function LabReceiveRoleBadge({
+  marker,
+  size = "row",
+  showPeer = false,
+  className,
+}: {
+  marker: LabReceiveRoleMarker;
+  size?: "chip" | "row" | "detail";
+  showPeer?: boolean;
+  className?: string;
+}) {
+  const text =
+    showPeer && marker.peer ? `${marker.label} · ${marker.peer}` : marker.label;
+  return (
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center rounded font-semibold leading-none",
+        showPeer ? "max-w-[14rem]" : "max-w-[4.5rem]",
+        size === "chip" && "mt-px h-3.5 px-1 text-[9px]",
+        size === "row" && "mt-px h-4 px-1 text-[10px]",
+        size === "detail" && "h-5 px-1.5 text-[11px]",
+        marker.role === "subcontract"
+          ? "bg-violet-100 text-violet-950 ring-1 ring-inset ring-violet-300"
+          : "bg-teal-100 text-teal-950 ring-1 ring-inset ring-teal-300",
+        className,
+      )}
+      title={marker.hint}
+      aria-label={marker.hint}
+    >
+      <span className="truncate">{text}</span>
+    </span>
+  );
 }
 
 type LabReceiveRoleFilterButtonsProps = {

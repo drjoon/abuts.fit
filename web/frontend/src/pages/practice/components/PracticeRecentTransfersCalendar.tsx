@@ -73,6 +73,7 @@
  * - 2026-09-08: 월 경계 스크롤 플리커 — fetch 후 커서/가시월 되튕김 방지.
  * - 2026-09-08: 목록 하단→다음달 자동 이동 제거. 캘린더 fetch 시 주 앵커로 스크롤 유지.
  * - 2026-09-08: 위로 스크롤 시 위쪽 패치 점프 — 조회창 밖 칩 캐시 + offsetTop 앵커 복원.
+ * - 2026-09-27: 협력·하청 건 — 목록·주간 칩에 역할 뱃지.
  */
 import {
   useEffect,
@@ -113,6 +114,10 @@ import {
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
 import { cn } from "@/shared/ui/cn";
+import {
+  LabReceiveRoleBadge,
+  type LabReceiveRoleMarker,
+} from "@/pages/practice/components/LabReceiveRoleFilterButtons";
 import {
   kstAddCivilDays,
   kstEndOfMonth,
@@ -194,6 +199,8 @@ export type PracticeCalendarChipItem = {
   hasCustomAbutment?: boolean;
   /** 기공소 바구니 번호표 (01–99). 없으면 미표시 */
   basketTag?: string | null;
+  /** 협력·하청. 원청 직접 수행은 없음 */
+  receiveRole?: LabReceiveRoleMarker | null;
 };
 
 /**
@@ -704,6 +711,9 @@ function PracticeCalendarChipHover({
           <p className="font-medium text-destructive">
             미확인(채팅) {unread > 99 ? "99+" : unread}
           </p>
+        ) : null}
+        {item.receiveRole ? (
+          <p className="font-medium text-foreground">{item.receiveRole.hint}</p>
         ) : null}
         {item.reviewHighlight ? (
           <p className="font-medium text-destructive">미처리(작업큐)</p>
@@ -2150,6 +2160,9 @@ export function PracticeRecentTransfersCalendar({
                                 onClick={() => selectListItem(item, ymd)}
                               >
                                 <span className="inline-flex max-w-full items-start gap-1">
+                                  {item.receiveRole ? (
+                                    <LabReceiveRoleBadge marker={item.receiveRole} />
+                                  ) : null}
                                   {item.basketTag ? (
                                     <span
                                       className="mt-px inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded bg-primary/10 px-1 text-[10px] font-semibold tabular-nums leading-none text-primary"
@@ -2410,6 +2423,12 @@ export function PracticeRecentTransfersCalendar({
                                 }}
                               >
                                 <span className="inline-flex max-w-full items-start gap-0.5">
+                                  {item.receiveRole ? (
+                                    <LabReceiveRoleBadge
+                                      marker={item.receiveRole}
+                                      size="chip"
+                                    />
+                                  ) : null}
                                   {item.basketTag ? (
                                     <span
                                       className="mt-px inline-flex h-3.5 min-w-3.5 shrink-0 items-center justify-center rounded bg-primary/15 px-0.5 text-[9px] font-semibold tabular-nums leading-none text-primary"

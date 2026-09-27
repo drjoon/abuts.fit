@@ -21,6 +21,7 @@
 // - web/frontend/src/shared/files/fileBlobCache.ts
 // - web/frontend/src/shared/files/s3ImageThumb.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-27: 협력·하청 헤더 뱃지 — 상대 기공소명.
 // - 2026-09-27: 채팅 AI 버튼 — 관리자가 인증 기공소로 켠 곳만.
 // - 2026-09-26: AI 보철 프리뷰 — 스캔 파일 키·로그인 토큰 전달.
 // - 2026-09-26: 노란 스캔 — 이미 고른 역할을 다시 눌러도 확정(노란 표시 해제).
@@ -275,6 +276,10 @@ import {
 } from "@/shared/files/useS3FileDownload";
 import { fetchS3BlobCached } from "@/shared/files/s3BlobCache";
 import { loadS3ImageThumbUrlsParallel } from "@/shared/files/s3ImageThumb";
+import {
+  LabReceiveRoleBadge,
+  type LabReceiveRoleMarker,
+} from "@/pages/practice/components/LabReceiveRoleFilterButtons";
 import { useToast } from "@/shared/hooks/use-toast";
 import {
   isPendingRoundBarAbutment,
@@ -451,6 +456,8 @@ export type PracticeTransferDialogCaseIdentity = {
   dotColor?: string | null;
   /** 채움 / 빈 원 / 이중 외곽선 */
   dotStyle?: CalendarLabDotStyle | null;
+  /** 협력·하청. 원청 직접 수행은 없음 */
+  receiveRole?: LabReceiveRoleMarker | null;
 };
 
 /** 의뢰·작업 파일 타일 썸네일 — 정사각 대비 세로 약 절반 */
@@ -2044,6 +2051,7 @@ export function PracticeTransferDetailChatDialog({
         colorKey: fromPropColorKey || undefined,
         dotColor: fromPropDotColor || undefined,
         dotStyle: fromPropDotStyle || undefined,
+        receiveRole: caseIdentity?.receiveRole || null,
       };
     }
     const practiceName = summaryItemValue(summaryItems, "치과");
@@ -3064,7 +3072,7 @@ export function PracticeTransferDetailChatDialog({
                 {caseIdentityStrip ? (
                   <>
                     <div className="flex min-w-0 items-center gap-1">
-                      <p className="flex min-w-0 flex-1 items-center gap-2 truncate text-sm font-semibold text-foreground">
+                      <p className="flex min-w-0 flex-1 items-center gap-1.5 text-sm font-semibold text-foreground">
                         {caseIdentityStrip.dotColor ||
                         caseIdentityStrip.colorKey ? (
                           <CalendarLabColorDot
@@ -3080,6 +3088,13 @@ export function PracticeTransferDetailChatDialog({
                         <span className="min-w-0 truncate">
                           {caseIdentityStrip.primary}
                         </span>
+                        {caseIdentityStrip.receiveRole ? (
+                          <LabReceiveRoleBadge
+                            marker={caseIdentityStrip.receiveRole}
+                            size="detail"
+                            showPeer
+                          />
+                        ) : null}
                       </p>
                       {identityChromeActions}
                     </div>
