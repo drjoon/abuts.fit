@@ -1,4 +1,4 @@
-/** 임시저장 자동 휴지통 — N일간 갱신 없으면 soft-delete */
+/** 임시저장 보관 — N일간 갱신 없으면 영구 삭제(휴지통 아님) */
 export const PRACTICE_TRANSFER_DRAFT_STALE_DAYS = 7;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -12,7 +12,8 @@ export function buildPracticeTransferDraftStaleCutoff(
 }
 
 /**
- * 활성 draft 중 updatedAt이 cutoff 이전인 건을 휴지통(deletedAt)으로 옮긴다.
+ * 활성 draft 중 updatedAt이 cutoff 이전인 건을 영구 삭제한다.
+ * 사용자가 휴지통으로 옮긴 건(`deletedAt`이 있는 문서)은 건드리지 않는다.
  * @returns {{ purgedIds: string[], purgedCount: number, purgedAt: Date | null }}
  */
 export async function purgeStalePracticeTransferDrafts({
@@ -39,13 +40,10 @@ export async function purgeStalePracticeTransferDrafts({
   }
 
   const purgedAt = now instanceof Date ? now : new Date(now);
-  await PracticeTransferDraft.updateMany(
-    {
-      _id: { $in: purgedIds },
-      deletedAt: null,
-    },
-    { $set: { deletedAt: purgedAt } },
-  );
+  await PracticeTransferDraft.deleteMany({
+    _id: { $in: purgedIds },
+    deletedAt: null,
+  });
 
   return {
     purgedIds,

@@ -69,6 +69,7 @@
  * - 2026-08-12: 「디자인 컨펌 생략」체크 UI 제거. 신규 의뢰는 항상 skipDesignConfirm=true.
  * - 2026-08-13: 커스텀어벗 설정 모달 기본=디자인+생산. 선택값은 practiceTransferSettings.defaultAbutmentProductMode.
  * - 2026-08-13: 기공의뢰 모달에서 디자인+생산 고정. 생산만 클릭은 어벗생산의뢰로 이동.
+ * - 2026-09-27: 임시저장 빈 목록 안내 — 7일 미수정 시 영구 삭제.
  * - 2026-08-12: 임시저장 목록 「전체삭제」— 활성 draft 전부 휴지통(확인 없음).
  * - 2026-08-13: 임시저장/동기화는 기공소·완성형 한글 환자명 둘 다 입력된 뒤에만 수행.
  * - 2026-08-20: 임시저장/동기화는 완성형 한글 환자명만 필수(기공소는 전송 시).
@@ -11132,8 +11133,9 @@ export const PracticeFileTransferPage = ({
                   <BookmarkPlus className="h-9 w-9 text-slate-300" />
                   <p className="text-sm font-medium text-slate-600">임시저장 없음</p>
                   <p className="max-w-sm text-xs leading-relaxed text-muted-foreground">
-                    완성형 한글 환자명을 입력하면 자동으로 저장됩니다. 7일간
-                    수정이 없으면 휴지통으로 옮겨집니다.
+                    완성형 한글 환자명을 입력하면 자동으로 저장됩니다.
+                    <br />
+                    7일간 수정이 없으면 영구 삭제됩니다.
                   </p>
                 </div>
               ) : (

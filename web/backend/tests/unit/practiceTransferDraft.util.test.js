@@ -14,17 +14,17 @@ describe("practiceTransferDraft.util", () => {
     expect(PRACTICE_TRANSFER_DRAFT_STALE_DAYS).toBe(7);
   });
 
-  it("purgeStalePracticeTransferDrafts moves stale active drafts to trash", async () => {
+  it("purgeStalePracticeTransferDrafts permanently deletes stale active drafts", async () => {
     const now = new Date("2026-09-08T00:00:00.000Z");
     const staleId = "507f1f77bcf86cd799439011";
-    const updateMany = jest.fn().mockResolvedValue({ modifiedCount: 1 });
+    const deleteMany = jest.fn().mockResolvedValue({ deletedCount: 1 });
     const PracticeTransferDraft = {
       find: jest.fn().mockReturnValue({
         select: jest.fn().mockReturnValue({
           lean: jest.fn().mockResolvedValue([{ _id: staleId }]),
         }),
       }),
-      updateMany,
+      deleteMany,
     };
 
     const result = await purgeStalePracticeTransferDrafts({
@@ -36,10 +36,11 @@ describe("practiceTransferDraft.util", () => {
 
     expect(result.purgedCount).toBe(1);
     expect(result.purgedIds).toEqual([staleId]);
-    expect(updateMany).toHaveBeenCalledWith(
-      { _id: { $in: [staleId] }, deletedAt: null },
-      { $set: { deletedAt: now } },
-    );
+    expect(result.purgedAt).toEqual(now);
+    expect(deleteMany).toHaveBeenCalledWith({
+      _id: { $in: [staleId] },
+      deletedAt: null,
+    });
     expect(PracticeTransferDraft.find).toHaveBeenCalledWith(
       expect.objectContaining({
         deletedAt: null,
@@ -55,7 +56,7 @@ describe("practiceTransferDraft.util", () => {
           lean: jest.fn().mockResolvedValue([]),
         }),
       }),
-      updateMany: jest.fn(),
+      deleteMany: jest.fn(),
     };
 
     const result = await purgeStalePracticeTransferDrafts({
@@ -64,6 +65,6 @@ describe("practiceTransferDraft.util", () => {
     });
 
     expect(result).toEqual({ purgedIds: [], purgedCount: 0, purgedAt: null });
-    expect(PracticeTransferDraft.updateMany).not.toHaveBeenCalled();
+    expect(PracticeTransferDraft.deleteMany).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,6 @@
 import { kstAddCivilDays, toKstYmd } from "@/shared/date/kst";
 
-/** 임시저장 자동 휴지통 — N일간 갱신 없으면 soft-delete (백엔드와 동일) */
+/** 임시저장 보관 — N일간 갱신 없으면 영구 삭제 (백엔드와 동일) */
 export const PRACTICE_TRANSFER_DRAFT_STALE_DAYS = 7;
 
 /** UI 깜빡임 — KST 기준 N일 이상 지난 임시저장 */

@@ -537,6 +537,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
       - 성공 시 `practice:transfer-updated` `action: drafts-cleared` fan-out
     - `GET /api/practice/transfers/drafts?trashed=1` → 휴지통 목록
     - `GET /api/practice/transfers/drafts?trashed=all` → `{ drafts, trashed }` 1쿼리(페이지 로드용)
+  - 활성 draft(`deletedAt: null`)는 `updatedAt` 기준 **7일**(`PRACTICE_TRANSFER_DRAFT_STALE_DAYS`) 지나면 목록 조회 때 **영구 삭제**한다. 휴지통으로 옮기지 않는다. 성공 시 `practice:transfer-updated` `action: drafts-stale-purged`. 사용자가 지운 건은 기존처럼 휴지통.
   - 활성 draft는 사용자당 **여러 건** 허용. `POST`에 `draftId`가 없으면 **항상 새 draft 생성**, 있으면 해당 건 갱신(join).
   - 기공의뢰 UI는 수동 「임시 저장」스냅샷을 제공하지 않는다. 작성본은 autosave로 같은 draft를 갱신한다.
   - 「새로 작성」은 화면만 비우고 서버 임시저장은 유지. 서버/휴지통 이동은 임시저장 카드 삭제로만 수행.
