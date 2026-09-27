@@ -2,7 +2,7 @@
  * 치과 기공의뢰 — 최근 전송 목록 매핑·그룹·필터 SSOT.
  * 상단 5뱃지: 의뢰 / 작업시작 / 완료 / 취소 / 어벗 (출고·리메이크·거절 뱃지 삭제).
  * 취소=작업취소+기공소 거절(거부)+휴지통(취소). 어벗=CA 디자인 업로드(+제조 출고 단계).
- * 수락=의뢰수락. 완료=치과도착일 경과 자동 작업완료(어벗 미업로드). 채팅 unread는 상태 뱃지별 합산.
+ * 수락=의뢰수락. 완료=`isPracticeRecentFinishedBadgeStatus`(작업완료·어벗 뱃지 아님). 채팅 unread는 상태 뱃지별 합산.
  * 자동매칭(공개 풀)은 공정상 의뢰 — 뱃지 집계·「의뢰」필터에 포함.
  * 기공소 수신은 거절·작업취소가 목록에서 빠져 취소/거절 뱃지 불필요 → 치과만 취소 포함 5뱃지.
  * 본문 건수: 의뢰·작업시작=전체. 완료·취소·어벗=미열람만(clearedIds 제외).
@@ -14,7 +14,7 @@
  * 2026-09-09: listUnreadTransfersForStatusFilter — 상태 뱃지 unread 순회용.
  * 2026-09-02: 거절 뱃지 제거·기공소 거절은 취소 집계. 어벗=CA designFiles.
  * 2026-09-02: 기공소 수신 상단은 의뢰·수락·완료·어벗 4뱃지(취소 제외).
- * 2026-09-02: 완료 뱃지 — 치과도착일 경과 자동 작업완료(어벗 STL 없음). 수락=의뢰수락만.
+ * 2026-09-27: 완료 판정은 isPracticeRecentFinishedBadgeStatus 하나.
  * 2026-09-02: 기공소 거절(`거부`)도 치과 휴지통 이동(canDelete) 허용.
  * related files:
  * - web/frontend/src/pages/practice/components/PracticeRecentTransfersAllModal.tsx
@@ -274,7 +274,7 @@ export type PracticeRecentStatusCounts = {
   sent: number;
   canceled: number;
   accepted: number;
-  /** 치과도착일 경과 자동 작업완료(어벗 STL 없음) */
+  /** 완료 뱃지. isPracticeRecentFinishedBadgeStatus — 작업완료이고 어벗 뱃지 아님 */
   finished: number;
   /** CA 어벗 디자인 업로드(+제조 출고 단계) */
   abutment: number;
@@ -306,17 +306,6 @@ export const isPracticeRecentStatusFilterDefault = (
   return PRACTICE_RECENT_DEFAULT_ON_STATUS_FILTERS.every((k) => selected.has(k));
 };
 
-/** 치과도착일 경과 자동 작업완료(어벗 STL 없음) → 「완료」뱃지 */
-export const isPracticeRecentFinishedBadgeStatus = (transfer: {
-  status?: unknown;
-  designFileCount?: unknown;
-  designFiles?: unknown;
-  designReadyAt?: unknown;
-}) => {
-  const status = String(transfer.status || "").trim();
-  return status === "작업완료" && !isPracticeRecentAbutmentBadgeStatus(transfer);
-};
-
 /** CA 어벗 디자인 업로드 또는 제조 출고 단계 → 「어벗」뱃지 */
 export const isPracticeRecentAbutmentBadgeStatus = (
   transfer: {
@@ -336,6 +325,22 @@ export const isPracticeRecentAbutmentBadgeStatus = (
   return false;
 };
 
+/**
+ * 「완료」뱃지 SSOT.
+ * 표시 단계가 작업완료(보철 업로드 또는 치과도착일 자동 완료)이고
+ * 어벗 뱃지(디자인 STL·designReadyAt·생산진행·포장.발송)가 아닐 때.
+ * 집계·필터·캘린더 톤·목록·채팅·번호표 점유는 이 결과만 쓴다.
+ */
+export const isPracticeRecentFinishedBadgeStatus = (transfer: {
+  status?: unknown;
+  designFileCount?: unknown;
+  designFiles?: unknown;
+  designReadyAt?: unknown;
+}) => {
+  const status = String(transfer.status || "").trim();
+  return status === "작업완료" && !isPracticeRecentAbutmentBadgeStatus(transfer);
+};
+
 export const practiceTransferMatchesStatusFilters = (
   transfer: {
     status?: unknown;
@@ -352,11 +357,7 @@ export const practiceTransferMatchesStatusFilters = (
 
   if (selected.has("취소") && isPracticeRecentCancelBadgeStatus(status)) return true;
   if (selected.has("작업완료") && isAbutment) return true;
-  if (
-    selected.has("도착완료") &&
-    status === "작업완료" &&
-    !isAbutment
-  ) {
+  if (selected.has("도착완료") && isPracticeRecentFinishedBadgeStatus(transfer)) {
     return true;
   }
   if (
@@ -468,7 +469,7 @@ export const PRACTICE_RECENT_STATUS_BADGES = [
     label: "완료",
     countKey: "finished",
     tooltip:
-      "치과도착일 경과 후 자동 작업완료(어벗 STL 없음). 한 번 열면 숫자에서 빠집니다 — 확인만 하면 되는 종료 건입니다.",
+      "작업완료(보철 업로드 또는 치과도착일 자동 완료)이고 어벗 디자인이 없는 건. 한 번 열면 숫자에서 빠집니다 — 확인만 하면 되는 종료 건입니다.",
   },
   {
     filter: "취소",
@@ -524,7 +525,7 @@ export const LAB_RECEIVE_STATUS_BADGES = [
     label: "완료",
     countKey: "finished",
     tooltip:
-      "치과도착일 경과 후 자동 작업완료(어벗 STL 없음). 한 번 열면 숫자에서 빠집니다 — 확인만 하면 되는 종료 건입니다.",
+      "작업완료(보철 업로드 또는 치과도착일 자동 완료)이고 어벗 디자인이 없는 건. 한 번 열면 숫자에서 빠집니다 — 확인만 하면 되는 종료 건입니다.",
   },
   {
     filter: "작업완료",
@@ -624,7 +625,7 @@ export const toStatusLabel = (manufacturerStage: unknown) => {
   return "발송완료";
 };
 
-/** 목록/카드 뱃지 라벨 — 상단 필터(의뢰·작업시작·완료·취소·어벗)와 동일 문구 */
+/** 목록/카드 뱃지 문구. 완료는 isPracticeRecentFinishedBadgeStatus만 사용 */
 export const toStatusBadgeLabel = (
   status: unknown,
   opts?: {

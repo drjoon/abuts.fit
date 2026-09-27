@@ -434,6 +434,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - `controllers/bg/bg.controller.js`
 - `requestCategory="rnd_sample"`(R&D 보관 원본)은 BG 자동 업데이트 대상에서 제외합니다.
 - practice 전송 상태 표준(치과/의뢰자 공통)은 `발송완료 | 취소 | 수신완료 | 의뢰수락 | 자동매칭 | 작업완료 | 생산진행`을 사용합니다.
+  - **완료 뱃지 SSOT** (`isPracticeTransferFinishedBadge`, FE `isPracticeRecentFinishedBadgeStatus`): 표시 단계가 `작업완료`(보철 업로드 또는 치과도착일 자동 완료)이고 어벗 뱃지(`isPracticeTransferAbutmentBadge` · 생산진행·포장.발송 또는 designFiles·designReadyAt)가 아닐 때. 집계·필터·목록·채팅·번호표 점유는 이 판정만 쓴다. 필터 문구는 의뢰·작업시작·완료·취소·어벗.
   - UI 라벨 SSOT: 내부 `의뢰수락` → 표시 **작업시작** (`.cursor/rules/work-start-not-accept.mdc`). CTA·뱃지·안내에 「수락」을 쓰지 않는다.
   - 읽음 판정 SSOT: `PracticeTransfer.requestorReadAt`
     - 자동매칭 공개 풀(`openPool`)은 `POST .../mark-read`가 no-op(`requestorReadAt` 미설정).

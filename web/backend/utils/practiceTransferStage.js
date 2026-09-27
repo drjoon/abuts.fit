@@ -9,7 +9,7 @@
 // - 2026-08-16: 자동매칭 재공개(openPool)는 작업취소보다 우선 → 「자동매칭」.
 // - 2026-08-18: 수락 전(의뢰) 내용 수정 게이트 canEditPracticeTransferContent.
 // - 2026-09-02: 기한만료 — arrivalDeadlineExpiredAt(수락·업로드 유지).
-// - 2026-08-29: 보철 디자인 업로드(완료)=작업완료. skip 자동 confirmedAt은 출고로 올리지 않음.
+// - 2026-09-27: 완료 뱃지 isPracticeTransferFinishedBadge. 작업완료이고 어벗 뱃지 아님. FE와 동일.
 // - 2026-08-29: 출고=연동 CA 포장.발송·택배. 디자인=어벗 designFiles 또는 보철 resultFiles.
 import {
   isAutoMatchMode,
@@ -98,7 +98,8 @@ export const practiceTransferHasDesignOrResultFiles = (transferDoc) => {
 /**
  * 기공의뢰 manufacturerStage SSOT (UI·대시보드 집계 공통).
  * - 출고(생산진행): 연동 CA 포장.발송·택배, 또는 치과 수동 생산진행(skipDesignConfirm=false)
- * - 디자인(작업완료): 어벗 designFiles 또는 보철 resultFiles 업로드(수락 후)
+ * - 작업완료: 어벗 designFiles 또는 보철 resultFiles 업로드(수락 후), 또는 도착일 자동 완료
+ * - UI 「완료」뱃지는 그중 어벗 뱃지가 없는 건(`isPracticeTransferFinishedBadge`)
  * @param {object} transferDoc
  * @param {{ viewerLabAnchorId?: string|null, abutmentDeliveryInfo?: object|null }} [options]
  */
@@ -182,6 +183,39 @@ export const resolvePracticeTransferManufacturerStage = (
   if (transferDoc?.requestorReadAt) return "수신완료";
   return "발송완료";
 };
+
+/**
+ * 「어벗」뱃지. FE `isPracticeRecentAbutmentBadgeStatus`와 같은 조건.
+ * 생산진행·포장.발송, 또는 어벗 designFiles / designReadyAt.
+ */
+export const isPracticeTransferAbutmentBadge = (transferDoc, stage) => {
+  const s = String(stage || "").trim();
+  if (s === "생산진행" || s === "포장.발송") return true;
+  const production =
+    transferDoc?.production && typeof transferDoc.production === "object"
+      ? transferDoc.production
+      : {};
+  const designFiles = Array.isArray(production.designFiles)
+    ? production.designFiles
+    : Array.isArray(transferDoc?.designFiles)
+      ? transferDoc.designFiles
+      : [];
+  const designN = Math.max(
+    designFiles.length,
+    Number(production.designFileCount || transferDoc?.designFileCount || 0) || 0,
+  );
+  return designN > 0 || Boolean(production.designReadyAt || transferDoc?.designReadyAt);
+};
+
+/**
+ * 「완료」뱃지 SSOT.
+ * 표시 단계가 작업완료(보철 업로드 또는 치과도착일 자동 완료)이고 어벗 뱃지가 아닐 때.
+ * FE `isPracticeRecentFinishedBadgeStatus`와 같은 조건.
+ * 호출부는 이미 계산한 표시 단계(`resolvePracticeTransferManufacturerStage`)를 넘긴다.
+ */
+export const isPracticeTransferFinishedBadge = (transferDoc, stage) =>
+  String(stage || "").trim() === "작업완료" &&
+  !isPracticeTransferAbutmentBadge(transferDoc, stage);
 
 /** 치과가 전송 내용을 수정할 수 있는 단계 — 의뢰(발송완료|수신완료|자동매칭). 수락·취소·거부 이후 불가. */
 export const canEditPracticeTransferContent = (

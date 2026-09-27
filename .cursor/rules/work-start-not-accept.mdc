@@ -10,8 +10,8 @@ alwaysApply: true
 ## UI 라벨 SSOT
 
 - 버튼·뱃지·안내·토스트·설정 카피: **작업시작** (not 수락 / 의뢰수락)
-- 상태 필터 뱃지: **의뢰 · 작업시작 · 디자인 · 출고 · 추적관리**
-- `toStatusBadgeLabel`: 내부 상태 `의뢰수락` → 표시 **작업시작**
+- 상태 필터 뱃지: **의뢰 · 작업시작 · 완료 · 취소 · 어벗**
+- `toStatusBadgeLabel`: 내부 상태 `의뢰수락` → 표시 **작업시작**. `작업완료`이면서 어벗 뱃지가 아니면 **완료** (`isPracticeRecentFinishedBadgeStatus`, `.cursor/rules/practice-finished-badge.mdc`)
 - 기공비·특별공급가 적용 시기: **작업시작 시점** 기준 (미시작 견적은 “지금 작업시작하면” 기준)
 
 ## Do

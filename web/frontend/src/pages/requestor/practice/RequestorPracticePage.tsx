@@ -1,4 +1,5 @@
 // related files:
+// - 2026-09-27: 채팅 「완료」뱃지. 판정은 isPracticeRecentFinishedBadgeStatus.
 // - 2026-09-27: 수신 필터 왼쪽 협력·하청. 신규 하청은 알림에서 확인 후 선착순 진행.
 // - 2026-09-27: 하청 수행 기공소는 원청과 같이 치과명·담당자·채팅명을 본다.
 // - 2026-09-27: 협력·하청 수신 — 목록·상세에 역할 뱃지(원청·수행 기공소 양쪽).
@@ -284,6 +285,7 @@ import {
   listBadgeNavigateTransfersForStatusFilter,
   practiceRecentStatusFilterClearsCountOnView,
   toStatusBadgeLabel,
+  isPracticeRecentFinishedBadgeStatus,
   type PracticeRecentStatusFilterKey,
   type PracticeRecentTransferItem,
 } from "@/shared/practice/practiceRecentTransferList";
@@ -3087,6 +3089,14 @@ export function RequestorPracticeReceivePage({
       receiveRole: resolveLabReceiveRoleMarker(selectedTransfer, {
         viewerIsPrime: viewerIsPrimeLab,
       }),
+      statusBadgeLabel: isPracticeRecentFinishedBadgeStatus({
+        status: getTransferDisplayStatus(selectedTransfer),
+        designFileCount: selectedTransfer.production?.designFileCount,
+        designFiles: selectedTransfer.production?.designFiles,
+        designReadyAt: selectedTransfer.production?.designReadyAt,
+      })
+        ? "완료"
+        : null,
     };
   }, [
     practiceColorDots,

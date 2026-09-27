@@ -2,6 +2,7 @@
 // - web/backend/utils/practiceTransferStage.js
 import {
   canEditPracticeTransferContent,
+  isPracticeTransferFinishedBadge,
   resolvePracticeTransferManufacturerStage,
 } from "../../utils/practiceTransferStage.js";
 
@@ -164,5 +165,41 @@ describe("practiceTransferStage pending-accept edit", () => {
       production: { designFiles: [] },
     };
     expect(resolvePracticeTransferManufacturerStage(doc)).toBe("기한만료");
+  });
+});
+
+describe("practiceTransfer finished badge", () => {
+  const accepted = {
+    status: "active",
+    matchingMode: "direct",
+    requestorDownloadedAt: new Date("2026-09-27T01:00:00.000Z"),
+    autoMatch: { completedAt: new Date("2026-09-27T02:00:00.000Z") },
+    resultFiles: [{ file: { s3Key: "prosthesis.stl", originalName: "a.stl" } }],
+  };
+
+  test("보철 업로드 작업완료는 완료", () => {
+    const stage = resolvePracticeTransferManufacturerStage(accepted);
+    expect(stage).toBe("작업완료");
+    expect(isPracticeTransferFinishedBadge(accepted, stage)).toBe(true);
+  });
+
+  test("어벗 디자인이 있으면 완료가 아니다", () => {
+    const doc = {
+      ...accepted,
+      production: { designFiles: [{ s3Key: "design.stl" }] },
+    };
+    const stage = resolvePracticeTransferManufacturerStage(doc);
+    expect(isPracticeTransferFinishedBadge(doc, stage)).toBe(false);
+  });
+
+  test("작업시작만 된 건은 완료가 아니다", () => {
+    const doc = {
+      status: "active",
+      matchingMode: "direct",
+      requestorDownloadedAt: new Date("2026-09-27T01:00:00.000Z"),
+    };
+    const stage = resolvePracticeTransferManufacturerStage(doc);
+    expect(stage).toBe("의뢰수락");
+    expect(isPracticeTransferFinishedBadge(doc, stage)).toBe(false);
   });
 });

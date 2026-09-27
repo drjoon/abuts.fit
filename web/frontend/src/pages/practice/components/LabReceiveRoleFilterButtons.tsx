@@ -3,6 +3,7 @@
  * 원청(직접 수행) 토글은 두지 않는다. 직접 수행 건은 항상 목록에 남긴다.
  * 기본은 협력·하청 모두 표시. 클릭하면 해당 구분만 캘린더·목록에서 뺀다.
  * 협력·하청 건은 목록·캘린더·상세에 역할 뱃지. 원청 직접 수행은 뱃지 없음.
+ * - 2026-09-27: 보철 업로드 작업완료 「완료」뱃지. 판정은 isPracticeRecentFinishedBadgeStatus.
  * - 2026-09-27: 상단 필터 왼쪽 협력·하청. 원청 토글 없음. 미배정 하청은 알림.
  * - 2026-09-27: 원청·하청 양쪽 목록·상세에 협력/하청 뱃지.
  */
@@ -131,6 +132,29 @@ export function resolveLabReceiveRoleMarker(
           : `${prime}에서 하청으로 받은 의뢰입니다.`
         : `${prime} 협력으로 받은 의뢰입니다.`,
   };
+}
+
+/** 목록·채팅 「완료」. 판정은 isPracticeRecentFinishedBadgeStatus. */
+export function PracticeCalendarFinishedBadge({
+  size = "row",
+}: {
+  size?: "chip" | "row" | "detail";
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center rounded font-semibold leading-none",
+        "bg-amber-200 text-amber-950 ring-1 ring-inset ring-amber-500/80",
+        size === "chip" && "mt-px h-3.5 px-1 text-[9px]",
+        size === "row" && "mt-px h-4 px-1 text-[10px]",
+        size === "detail" && "h-5 px-1.5 text-[11px]",
+      )}
+      title="보철을 올려 작업이 완료된 의뢰입니다."
+      aria-label="완료"
+    >
+      완료
+    </span>
+  );
 }
 
 export function LabReceiveRoleBadge({

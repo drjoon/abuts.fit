@@ -319,6 +319,8 @@ import {
   groupPracticeRecentRequests,
   isPracticeTransferActionNeededStatus,
   isPracticeTransferTrashStatus,
+  isPracticeRecentFinishedBadgeStatus,
+  toStatusBadgeLabel,
   mapMyPracticeTransferApiRows,
   mergeOpenPracticeTransferFromRequestRows,
   patchPracticeRecentRequestProsthesisFollowUp,
@@ -1225,7 +1227,7 @@ const toStatusLabel = (manufacturerStage: unknown) => {
   // 정확값 우선
   if (raw === "취소") return "취소";
   if (raw === "거부") return "거부";
-  // 기공소 작업취소 — 휴지통(취소)과 구분. 뱃지 표시는 toStatusBadgeLabel에서 「취소」
+  // 기공소 작업취소 — 휴지통(취소)과 구분. 완료·작업시작 문구는 toStatusBadgeLabel(isPracticeRecentFinishedBadgeStatus).
   if (raw === "작업취소") return "작업취소";
   if (raw === "발송완료") return "발송완료";
   if (raw === "수신완료") return "수신완료";
@@ -1245,38 +1247,6 @@ const toStatusLabel = (manufacturerStage: unknown) => {
   if (raw.includes("의뢰") || raw.includes("접수") || raw.includes("대기")) return "발송완료";
 
   return "발송완료";
-};
-
-/** 목록/카드 뱃지 라벨 — 상단 필터(의뢰·작업시작·완료·취소·어벗)와 동일 문구 */
-const toStatusBadgeLabel = (
-  status: unknown,
-  opts?: {
-    designFileCount?: unknown;
-    designFiles?: unknown;
-    designReadyAt?: unknown;
-  },
-) => {
-  const s = String(status || "").trim();
-  if (!s) return "-";
-  if (s === "발송완료" || s === "수신완료" || s === "자동매칭" || s === "하청대기") {
-    return "의뢰";
-  }
-  if (s === "거부" || s === "작업취소" || s === "취소") return "취소";
-  if (s === "기한만료") return "기한만료";
-  const designN = Math.max(
-    Number(opts?.designFileCount || 0) || 0,
-    Array.isArray(opts?.designFiles) ? opts.designFiles.length : 0,
-  );
-  if (
-    s === "생산진행" ||
-    s === "포장.발송" ||
-    ((s === "작업완료" || s === "의뢰수락") &&
-      (designN > 0 || Boolean(opts?.designReadyAt)))
-  ) {
-    return "어벗";
-  }
-  if (s === "의뢰수락" || s === "다운로드완료" || s === "작업완료") return "작업시작";
-  return s;
 };
 
 const formatChatTs = (value: unknown) => {
@@ -5331,6 +5301,9 @@ export const PracticeFileTransferPage = ({
       colorKey,
       dotColor: dot?.color || undefined,
       dotStyle: dot?.style || undefined,
+      statusBadgeLabel: isPracticeRecentFinishedBadgeStatus(selectedTransfer)
+        ? "완료"
+        : null,
     };
   }, [
     legendLabDots,
@@ -11337,7 +11310,11 @@ export const PracticeFileTransferPage = ({
                       transfer.transferId === PRACTICE_DRAFT_TRANSFER_ID;
                     const statusLabel = isDraftTrash
                       ? "임시저장"
-                      : toStatusBadgeLabel(transfer.status);
+                      : toStatusBadgeLabel(transfer.status, {
+                          designFileCount: transfer.designFileCount,
+                          designFiles: transfer.designFiles,
+                          designReadyAt: transfer.designReadyAt,
+                        });
 
                     return (
                       <div
@@ -11435,7 +11412,13 @@ export const PracticeFileTransferPage = ({
                           layout="comfortable"
                           createdAt={transfer.createdAt}
                           statusLabel={
-                            isDraftTrash ? "임시저장" : toStatusBadgeLabel(transfer.status)
+                            isDraftTrash
+                              ? "임시저장"
+                              : toStatusBadgeLabel(transfer.status, {
+                                  designFileCount: transfer.designFileCount,
+                                  designFiles: transfer.designFiles,
+                                  designReadyAt: transfer.designReadyAt,
+                                })
                           }
                           extraBadges={
                             isDraftTrash && transfer.practiceUserLabel ? (

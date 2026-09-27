@@ -8,6 +8,7 @@
  * 2026-08-16: 카드에 치아번호(11,21)만 — 보철 형태 등은 상세 모달.
  * 2026-08-16: 상태 뱃지를 시각과 같은 줄에 배치(행 높이 절약).
  * 2026-08-31: 환자명 옆에 치아번호(김덕수 11,21) — 별도 치아번호 행 제거.
+ * 완료 뱃지 색은 「완료」일 때 amber. 문구는 toStatusBadgeLabel → isPracticeRecentFinishedBadgeStatus.
  */
 import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
@@ -163,6 +164,9 @@ export function practiceTransferStatusBadgeClass(statusOrLabel: string) {
     return SEMANTIC_BADGE.primarySoft;
   }
   if (label === "의뢰" || label === "임시저장") return SEMANTIC_BADGE.neutral;
+  if (label === "완료") {
+    return "border-amber-500/90 bg-amber-200 text-amber-950";
+  }
   return SEMANTIC_BADGE.neutralOutline;
 }
 

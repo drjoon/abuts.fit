@@ -76,7 +76,7 @@ export function purgeLegacyLabBasketTagStorage(): void {
   }
 }
 
-/** 완료·취소가 아니면 번호표를 점유(진행 중). 완료 건 표시값은 유지하되 점유 제외. */
+/** 완료·취소가 아니면 번호표를 점유. 완료 해제는 isPracticeRecentFinishedBadgeStatus. */
 export function isLabBasketTagOccupyingTransfer(transfer: {
   status?: unknown;
   designFileCount?: unknown;

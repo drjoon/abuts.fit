@@ -7,6 +7,7 @@
  * - web/frontend/src/pages/practice/components/PracticeStatusFilterBadges.tsx
  * - web/frontend/src/shared/date/kst.ts
  * - web/frontend/src/shared/practice/labReceiveCalendarWeekGrid.ts
+ * - 2026-09-27: 완료 톤=isPracticeRecentFinishedBadgeStatus. 목록·주간 칩 「완료」뱃지.
  * - 2026-09-20: 기공소 바구니 번호표(basketTag) — 목록·주간 칩에 표시.
  * - 2026-08-28: 요일 헤더에 스크롤바 폭 패딩 동기화 + custom-scrollbar(빈 레일 열·railRef 제거).
  * - 2026-09-07: 오늘(KST) 포함 셀 클릭 → 신규 의뢰(도착일).
@@ -116,6 +117,7 @@ import {
 import { cn } from "@/shared/ui/cn";
 import {
   LabReceiveRoleBadge,
+  PracticeCalendarFinishedBadge,
   type LabReceiveRoleMarker,
 } from "@/pages/practice/components/LabReceiveRoleFilterButtons";
 import {
@@ -127,6 +129,10 @@ import {
   toKstYmd,
   toKstYmdLoose,
 } from "@/shared/date/kst";
+import {
+  isPracticeRecentAbutmentBadgeStatus,
+  isPracticeRecentFinishedBadgeStatus,
+} from "@/shared/practice/practiceRecentTransferList";
 import { DEFAULT_LAB_RECEIVE_CALENDAR_HIDDEN_WEEKDAYS } from "@/shared/practice/labReceiveCalendarHiddenWeekdays";
 import {
   LAB_RECEIVE_CALENDAR_WEEK_GRID_COLUMNS,
@@ -782,6 +788,7 @@ export const PRACTICE_STATUS_FILTER_BADGE_CLASS: Record<
   },
 };
 
+/** 칩 색. finished는 완료 뱃지 SSOT(isPracticeRecentFinishedBadgeStatus)와 같다. */
 export const resolvePracticeCalendarStatusTone = (
   status: unknown,
   opts?: {
@@ -790,18 +797,26 @@ export const resolvePracticeCalendarStatusTone = (
     designReadyAt?: unknown;
   },
 ): Exclude<PracticeCalendarStatusTone, "unread"> => {
+  const input = {
+    status,
+    designFileCount: opts?.designFileCount,
+    designFiles: opts?.designFiles,
+    designReadyAt: opts?.designReadyAt,
+  };
   const s = String(status || "").trim();
   if (s === "거부" || s === "취소" || s === "작업취소") return "canceled";
   if (s === "기한만료") return "accepted";
-  if (s === "생산진행" || s === "포장.발송") return "completed";
-  if (s === "작업완료") {
-    const designN = Math.max(
-      Number(opts?.designFileCount || 0) || 0,
-      Array.isArray(opts?.designFiles) ? opts.designFiles.length : 0,
-    );
-    if (designN > 0 || Boolean(opts?.designReadyAt)) return "completed";
-    return "finished";
+  // 의뢰 단계는 디자인 파일이 있어도 어벗으로 올리지 않는다. 라벨 SSOT와 같은 순서.
+  if (
+    s === "발송완료" ||
+    s === "수신완료" ||
+    s === "자동매칭" ||
+    s === "하청대기"
+  ) {
+    return "sent";
   }
+  if (isPracticeRecentFinishedBadgeStatus(input)) return "finished";
+  if (isPracticeRecentAbutmentBadgeStatus(input)) return "completed";
   if (s === "의뢰수락" || s === "다운로드완료") return "accepted";
   return "sent";
 };
@@ -2160,6 +2175,9 @@ export function PracticeRecentTransfersCalendar({
                                 onClick={() => selectListItem(item, ymd)}
                               >
                                 <span className="inline-flex max-w-full items-start gap-1">
+                                  {item.statusTone === "finished" ? (
+                                    <PracticeCalendarFinishedBadge />
+                                  ) : null}
                                   {item.receiveRole ? (
                                     <LabReceiveRoleBadge marker={item.receiveRole} />
                                   ) : null}
@@ -2423,6 +2441,9 @@ export function PracticeRecentTransfersCalendar({
                                 }}
                               >
                                 <span className="inline-flex max-w-full items-start gap-0.5">
+                                  {item.statusTone === "finished" ? (
+                                    <PracticeCalendarFinishedBadge size="chip" />
+                                  ) : null}
                                   {item.receiveRole ? (
                                     <LabReceiveRoleBadge
                                       marker={item.receiveRole}

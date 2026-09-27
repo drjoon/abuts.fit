@@ -4,6 +4,7 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/components/practice/LabReceiveWorkUploadDialog.tsx
 // change-log:
+// - 2026-09-27: 표시 단계 작업완료와 UI 완료 뱃지(isPracticeRecentFinishedBadgeStatus)를 주석으로 구분.
 // - 2026-09-27: 협력 원청은 작업 CTA 숨김(viewerOperatesLabReceiveWork). 하청·자체는 원청도 작업.
 // - 2026-09-26: 보철 슬롯이 남으면 작업완료 전 디자인 파일 업로드(prosthetic|dual).
 // - 2026-09-16: 커스텀어벗 목록 — 후속(지르) 행 제외(임시치아 CA와 치아번호 중복 방지).
@@ -356,7 +357,8 @@ export function getPracticeTransferLabReceiveDisplayStatus(
   ) {
     return "기한만료";
   }
-  // 보철 디자인 파일 업로드(완료) → 작업완료(UI「디자인」).
+  // 보철·어벗 파일 업로드(수락 후) → 표시 단계 작업완료.
+  // UI 「완료」뱃지는 isPracticeRecentFinishedBadgeStatus(어벗 뱃지면 제외).
   // skipDesignConfirm 자동 confirmedAt은 출고로 올리지 않음 — backend stage SSOT와 동일.
   // 연동 CA 포장.발송·택배면 출고(생산진행).
   const delivery = transfer.abutmentDeliveryInfo;

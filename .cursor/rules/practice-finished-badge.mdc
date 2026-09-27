@@ -1,0 +1,20 @@
+---
+description: 기공의뢰 「완료」뱃지는 작업완료이면서 어벗 뱃지가 아닐 때 하나
+alwaysApply: true
+---
+
+# 완료 뱃지 SSOT
+
+기공의뢰 목록·채팅·필터·건수·캘린더 색·번호표 점유의 **「완료」는 한 조건**이다.
+
+- 표시 단계가 `작업완료`다. 보철 업로드로 끝난 건과 치과도착일 경과 자동 완료가 모두 여기 들어간다.
+- 어벗 뱃지가 없다. 어벗은 생산진행·포장.발송, 또는 어벗 `designFiles`·`designReadyAt`이다.
+
+## 함수
+
+- 프론트: `isPracticeRecentFinishedBadgeStatus` (`practiceRecentTransferList.ts`)
+- 서버: `isPracticeTransferFinishedBadge` (`practiceTransferStage.js`) — 이미 계산한 표시 단계를 넘긴다
+
+집계·필터·`toStatusBadgeLabel`·캘린더 톤(`finished`)·목록·채팅 헤더·바구니 점유는 이 결과만 쓴다. 발신 화면에 완료를 작업시작으로 바꾸는 별도 라벨을 두지 않는다.
+
+상단 필터 문구: **의뢰 · 작업시작 · 완료 · 취소 · 어벗**.
