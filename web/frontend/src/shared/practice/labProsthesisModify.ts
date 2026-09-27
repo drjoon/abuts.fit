@@ -37,6 +37,15 @@ export const MODIFY_TOOLS = [
 
 export type ModifyTool = (typeof MODIFY_TOOLS)[number]["id"];
 
+/** 형상 도구 안의 단계. 변형 핸들은 변형, 스컬프트는 외면에서만 쓴다. */
+export type RefineTab = "transform" | "outer" | "adapt";
+
+export const REFINE_TABS: Array<{ id: RefineTab; label: string }> = [
+  { id: "transform", label: "변형" },
+  { id: "outer", label: "외면" },
+  { id: "adapt", label: "맞춤" },
+];
+
 export type MarginEditMode = "point" | "pen";
 
 export type EditBrush = "none" | "sculpt" | "erase" | "minus";
@@ -377,12 +386,38 @@ export type ToothDesignEdit = {
   inner: ToothInner;
   refine: {
     scale: number;
+    /** 변형 상자에서 끈 배율. x=가로, y=높이, z=세로. 크기(scale)에 곱한다. */
+    stretch: [number, number, number];
+    /** 치아 평면에서 옮긴 거리(mm). x=가로, y=세로. */
+    offsetMm: [number, number];
+    /** 삽입축 둘레 회전(°). */
+    rotateDeg: number;
     cusp: number;
     ridge: number;
+    /** -1~1. 협측·설측 교두를 낮추고 높인다. 방향은 치아마다 악궁에서 잰다. */
+    buccalCusp: number;
+    lingualCusp: number;
+    /** -1~1. 근심·원심 변연융선. 근심은 FDI 사분면 기준 정중선 쪽. */
+    mesialRidge: number;
+    distalRidge: number;
+    /** -1~1. 교합면 테이블을 좁히고 넓힌다. */
+    occlusalTable: number;
+    /** -1~1. 중심 구를 얕게·깊게. */
+    groove: number;
+    /** 대합까지 목표 간격(mm). 음수는 겹침. */
     occlusalClearanceMm: number;
+    /** 목표보다 가까운 면을 대합 스캔에 맞춰 깎는다. */
     occlusalTrim: boolean;
+    /** 목표보다 먼 면을 대합까지 늘려 닿게 한다. */
+    occlusalFit: boolean;
     proximalClearanceMm: number;
     proximalTrim: boolean;
+    proximalFit: boolean;
+    /** 삽입 경로에 걸리는 인접치 언더컷까지 깎는다. */
+    proximalBlockOut: boolean;
+    /** 폰틱 기저면·크라운 경부에서 치은 스캔까지(mm). 음수는 누름. 크라운은 마진 아래로 내리지 않는다. */
+    gingivalMm: number;
+    gingivalFit: boolean;
     smooth: number;
     minThicknessMm: number;
     compensate: boolean;
@@ -442,6 +477,8 @@ export type ToothDesignEdit = {
     shiftYMm: number;
     /** 이 치아와 다음 치아 사이 커넥터. 끄면 두 치아를 잇지 않는다. */
     linked: boolean;
+    /** 커넥터를 껐을 때 두 크라운 사이를 떼어 두는 디스크 간격(mm). 0이면 깎지 않는다. */
+    discMm: number;
     assembled: boolean;
   };
 };
@@ -481,11 +518,64 @@ export type DesignGesture =
       scanbodyKey?: string | null;
     }
   | { type: "cutback-exclude"; tooth: string; angle: number }
-  | { type: "transform"; tooth: string; scale: number }
+  | { type: "transform"; tooth: string; patch: Partial<RefineTransform> }
   | { type: "connector"; tooth: string; along: number };
+
+export type RefineTransform = Pick<
+  ToothDesignEdit["refine"],
+  "scale" | "stretch" | "offsetMm" | "rotateDeg"
+>;
+
+export const STRETCH_RANGE = { min: 0.6, max: 1.6 } as const;
+export const REFINE_OFFSET_LIMIT_MM = 3;
+export const CLEARANCE_RANGE_MM = { min: -0.1, max: 0.4 } as const;
+export const GINGIVAL_RANGE_MM = { min: -0.5, max: 1.5 } as const;
+export const DISC_RANGE_MM = { min: 0, max: 0.5 } as const;
+
+export function transformUntouched(refine: ToothDesignEdit["refine"]) {
+  return (
+    refine.stretch.every((value) => value === 1) &&
+    refine.offsetMm.every((value) => value === 0) &&
+    refine.rotateDeg === 0
+  );
+}
+
+export function resetRefineTransform(edit: ToothDesignEdit): ToothDesignEdit {
+  return {
+    ...edit,
+    refine: { ...edit.refine, scale: 1, stretch: [1, 1, 1], offsetMm: [0, 0], rotateDeg: 0 },
+  };
+}
+
+export function applyRefineTransform(
+  edit: ToothDesignEdit,
+  patch: Partial<RefineTransform>,
+): ToothDesignEdit {
+  const refine = { ...edit.refine };
+  if (patch.scale != null) refine.scale = clamp(patch.scale, 0.75, 1.35);
+  if (patch.stretch) {
+    refine.stretch = patch.stretch.map((value) =>
+      Math.round(clamp(value, STRETCH_RANGE.min, STRETCH_RANGE.max) * 1000) / 1000,
+    ) as [number, number, number];
+  }
+  if (patch.offsetMm) {
+    refine.offsetMm = patch.offsetMm.map((value) =>
+      Math.round(clamp(value, -REFINE_OFFSET_LIMIT_MM, REFINE_OFFSET_LIMIT_MM) * 1000) / 1000,
+    ) as [number, number];
+  }
+  if (patch.rotateDeg != null) {
+    let deg = patch.rotateDeg;
+    while (deg > 180) deg -= 360;
+    while (deg < -180) deg += 360;
+    refine.rotateDeg = Math.round(deg * 10) / 10;
+  }
+  return { ...edit, refine };
+}
 
 export type ProsthesisDesignEdit = {
   tool: ModifyTool;
+  /** 형상 도구 단계. 변형 핸들은 변형 단계에서만 그린다. */
+  refineTab?: RefineTab;
   marginMode: MarginEditMode;
   brush: EditBrush;
   edits: Record<string, ToothDesignEdit>;
@@ -583,12 +673,26 @@ export function createToothDesignEdit(): ToothDesignEdit {
     inner: defaultToothInner(),
     refine: {
       scale: 1,
+      stretch: [1, 1, 1],
+      offsetMm: [0, 0],
+      rotateDeg: 0,
       cusp: 0,
       ridge: 0,
+      buccalCusp: 0,
+      lingualCusp: 0,
+      mesialRidge: 0,
+      distalRidge: 0,
+      occlusalTable: 0,
+      groove: 0,
       occlusalClearanceMm: preset.occlusalClearanceMm,
       occlusalTrim: false,
+      occlusalFit: false,
       proximalClearanceMm: preset.proximalClearanceMm,
       proximalTrim: false,
+      proximalFit: false,
+      proximalBlockOut: true,
+      gingivalMm: 0,
+      gingivalFit: false,
       smooth: 0,
       minThicknessMm: preset.minThicknessMm,
       compensate: false,
@@ -622,6 +726,7 @@ export function createToothDesignEdit(): ToothDesignEdit {
       shiftXMm: 0,
       shiftYMm: 0,
       linked: true,
+      discMm: 0,
       assembled: false,
     },
   };
@@ -635,7 +740,14 @@ export function normalizeToothDesignEdit(raw: unknown): ToothDesignEdit {
   const pontic = (row.pontic ?? {}) as Partial<ToothDesignEdit["pontic"]>;
   const connector = (row.connector ?? {}) as Partial<ToothDesignEdit["connector"]>;
   const implant = (row.implant ?? {}) as Partial<ToothDesignEdit["implant"]>;
-  const refine = { ...base.refine, ...(row.refine ?? {}) };
+  const rawRefine = (row.refine ?? {}) as Partial<ToothDesignEdit["refine"]>;
+  const refine = {
+    ...base.refine,
+    ...rawRefine,
+    stretch: finiteTuple(rawRefine.stretch, 3, base.refine.stretch),
+    offsetMm: finiteTuple(rawRefine.offsetMm, 2, base.refine.offsetMm),
+    rotateDeg: Number(rawRefine.rotateDeg) || 0,
+  };
   return {
     ...base,
     ...row,
@@ -669,6 +781,7 @@ export function normalizeToothDesignEdit(raw: unknown): ToothDesignEdit {
       shiftXMm: Number(connector.shiftXMm) || 0,
       shiftYMm: Number(connector.shiftYMm) || 0,
       linked: connector.linked !== false,
+      discMm: clamp(Number(connector.discMm) || 0, DISC_RANGE_MM.min, DISC_RANGE_MM.max),
     },
   };
 }
@@ -711,6 +824,12 @@ export function clampHoleDir(dir: readonly number[]): [number, number, number] {
 export function holeTiltDeg(dir: readonly number[]) {
   const y = clamp(dir[1] ?? 1, -1, 1);
   return (Math.acos(y) * 180) / Math.PI;
+}
+
+function finiteTuple<T extends number[]>(value: unknown, length: number, fallback: T): T {
+  if (!Array.isArray(value) || value.length < length) return fallback.slice() as T;
+  const out = value.slice(0, length).map(Number);
+  return (out.every((n) => Number.isFinite(n)) ? out : fallback.slice()) as T;
 }
 
 function vec3OrNull(value: unknown): [number, number, number] | null {
@@ -1023,24 +1142,24 @@ export function insertMarginPoint(
   };
 }
 
-/** 외면 껍질 두께(mm). 보상은 최소 두께까지 올린다. */
-export function shellThicknessMm(edit: ToothDesignEdit) {
+/**
+ * 외면 껍질 두께(mm). 보상은 최소 두께까지 올린다.
+ * `measuredMm`는 뷰어가 대합·인접 깎기까지 정점마다 잰 가장 얇은 값이다. 없으면 수정값으로 추정한다.
+ */
+export function shellThicknessMm(edit: ToothDesignEdit, measuredMm?: number | null) {
+  if (measuredMm != null && Number.isFinite(measuredMm)) return measuredMm;
   const dent = edit.refine.sculpt.reduce(
     (max, stamp) => Math.max(max, -stamp.amount),
     0,
   );
-  let shell =
-    0.55 * edit.refine.scale -
-    dent * 0.25 -
-    (edit.refine.occlusalTrim ? edit.refine.occlusalClearanceMm * 0.35 : 0) -
-    innerGapMm(edit.inner) * 0.35;
+  let shell = 0.55 * edit.refine.scale - dent * 0.25 - innerGapMm(edit.inner) * 0.35;
   if (edit.cutback.on) shell -= edit.cutback.thicknessMm * 0.45;
   if (edit.refine.compensate) shell = Math.max(shell, edit.refine.minThicknessMm);
   return shell;
 }
 
-export function shellIsThin(edit: ToothDesignEdit) {
-  return shellThicknessMm(edit) + 1e-4 < edit.refine.minThicknessMm;
+export function shellIsThin(edit: ToothDesignEdit, measuredMm?: number | null) {
+  return shellThicknessMm(edit, measuredMm) + 1e-4 < edit.refine.minThicknessMm;
 }
 
 function wrapAngle(delta: number) {
@@ -1053,7 +1172,10 @@ function wrapAngle(delta: number) {
 /** 마진 실 높이를 교합 0~1로 옮길 때 보는 크라운 높이. */
 const CROWN_HEIGHT_MM = 7;
 
-/** 교합 0~1. 스컬프트·컷백·교합 절삭이 있는 자리만 더 얇다. 마진 실 띠는 마진 실 갭을 쓴다. */
+/**
+ * 교합 0~1. 스컬프트·컷백이 있는 자리만 더 얇다. 마진 실 띠는 마진 실 갭을 쓴다.
+ * 대합·인접 깎기는 여기서 빼지 않는다. 편집 레이어가 정점마다 깎은 깊이를 뺀다.
+ */
 export function localShellThicknessMm(
   edit: ToothDesignEdit,
   angle: number,
@@ -1073,10 +1195,6 @@ export function localShellThicknessMm(
       ? edit.inner.sealGapMm
       : innerGapMm(edit.inner);
   let shell = 0.55 * edit.refine.scale - dent * 0.25 - gap * 0.35;
-  if (edit.refine.occlusalTrim) {
-    const band = Math.min(1, Math.max(0, (occlusal01 - 0.55) / 0.45));
-    shell -= edit.refine.occlusalClearanceMm * 0.35 * band;
-  }
   if (edit.cutback.on) {
     const inRegion = edit.cutback.region === "full" || occlusal01 > 0.62;
     const excluded = edit.cutback.excluded.some(
@@ -1216,13 +1334,7 @@ export function reduceDesignGesture(
         },
       };
     case "transform":
-      return {
-        ...edit,
-        refine: {
-          ...edit.refine,
-          scale: clamp(gesture.scale, 0.75, 1.35),
-        },
-      };
+      return applyRefineTransform(edit, gesture.patch);
     case "connector":
       return {
         ...edit,

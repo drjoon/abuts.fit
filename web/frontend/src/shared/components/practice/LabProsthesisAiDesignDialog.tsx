@@ -135,6 +135,7 @@ import {
   OralScanOverlayViewer,
   type ConnectorSectionShot,
   type OralScanConnectorChip,
+  type OralScanOcclusionAdjust,
   type OralScanOverlayHandle,
   type OralScanOverlaySource,
   type OralScanToothBadge,
@@ -238,6 +239,7 @@ import {
   type ModelSettings,
   type ModifyTool,
   type ScanbodyShape,
+  type RefineTab,
   type SculptBrush,
   type ToothDesignEdit,
 } from "@/shared/practice/labProsthesisModify";
@@ -718,6 +720,11 @@ function LabProsthesisAiDesignDialog({
   const [caseNote, setCaseNote] = useState("");
   const [noteDraft, setNoteDraft] = useState<string | null>(null);
   const [sculptBrush, setSculptBrush] = useState<SculptBrush>(DEFAULT_SCULPT_BRUSH);
+  const [refineTab, setRefineTab] = useState<RefineTab>("transform");
+  /** 뷰어가 대합·인접 맞춤 뒤 잰 크라운별 가장 얇은 외면(mm). 맞춤이 없는 치아는 없다. */
+  const [crownShells, setCrownShells] = useState<Record<string, number>>({});
+  const crownShellsRef = useRef(crownShells);
+  crownShellsRef.current = crownShells;
   const [screwPathShown, setScrewPathShown] = useState(true);
   const [scanbodyPickTooth, setScanbodyPickTooth] = useState<string | null>(null);
   const [scanbodyPicks, setScanbodyPicks] = useState(0);
@@ -793,7 +800,10 @@ function LabProsthesisAiDesignDialog({
   const focusRowRef = useRef<ConnectorRow | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [exportBusy, setExportBusy] = useState(false);
-  const [alignKind, setAlignKind] = useState<"auto" | "manual" | null>(null);
+  const [alignKind, setAlignKind] = useState<"auto" | "points" | "occlusion" | null>(null);
+  const [occlusionArch, setOcclusionArch] = useState<"upper" | "lower">("lower");
+  const [occlusionMode, setOcclusionMode] = useState<OralScanOcclusionAdjust["mode"]>("vertical");
+  const [occlusionMm, setOcclusionMm] = useState(0);
   const [alignArch, setAlignArch] = useState<"upper" | "lower" | null>(null);
   const [alignPicks, setAlignPicks] = useState({ model: 0, bite: 0 });
   const [alignBusy, setAlignBusy] = useState(false);
@@ -805,6 +815,10 @@ function LabProsthesisAiDesignDialog({
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
   const viewerRef = useRef<OralScanOverlayHandle>(null);
+  useEffect(() => {
+    if (alignKind !== "occlusion") return;
+    setOcclusionMm(viewerRef.current?.occlusionVerticalMm() ?? 0);
+  }, [alignKind, occlusionArch]);
   const autoSaveRef = useRef(autoSave);
   autoSaveRef.current = autoSave;
   const editsRef = useRef(edits);
@@ -829,6 +843,7 @@ function LabProsthesisAiDesignDialog({
     closeTimer: 0,
   });
   const alignBeforeSigRef = useRef("");
+  const occlusionBeforeSigRef = useRef("");
   const saveLockRef = useRef(false);
   const closeAfterChatAttachRef = useRef<() => void>(() => {});
   const pendingDraftRolesRef = useRef<Set<WorkScanRole>>(new Set());
@@ -921,6 +936,8 @@ function LabProsthesisAiDesignDialog({
       setAlignArch(null);
       setAlignPicks({ model: 0, bite: 0 });
       setAlignBusy(false);
+      setOcclusionMode("vertical");
+      setOcclusionMm(0);
       setArchAligned({ upper: false, lower: false });
       pendingDraftRolesRef.current = new Set();
       lastDraftSigRef.current = "";
@@ -1595,6 +1612,7 @@ function LabProsthesisAiDesignDialog({
         ? null
         : {
             tool: modifyTool,
+            refineTab,
             marginMode,
             brush: editBrush,
             edits,
@@ -1619,6 +1637,7 @@ function LabProsthesisAiDesignDialog({
       marginShown,
       modifyTool,
       prepBackTransparent,
+      refineTab,
       scanbodies,
       screwPathShown,
       sculptBrush,
@@ -1762,6 +1781,7 @@ function LabProsthesisAiDesignDialog({
     if (snap.jaws) {
       viewerRef.current?.restoreJawPositions(snap.jaws);
       setArchAligned(snap.archAligned);
+      setOcclusionMm(viewerRef.current?.occlusionVerticalMm() ?? 0);
     }
   };
 
@@ -2275,7 +2295,10 @@ function LabProsthesisAiDesignDialog({
   };
 
   const toothIsThin = (number: string, edit: ToothDesignEdit | undefined) =>
-    Boolean(edit && designIsThin(edit, cavityKindsRef.current[number] ?? null));
+    Boolean(
+      edit &&
+        designIsThin(edit, cavityKindsRef.current[number] ?? null, crownShellsRef.current[number]),
+    );
 
   const runMarginDetect = (toothNumbers: readonly string[]) => {
     const targets = toothNumbers.filter((number) => {
@@ -2467,6 +2490,35 @@ function LabProsthesisAiDesignDialog({
   const hasLowerScan = scans.some((row) => row.role === "lower");
   const hasBiteScan = scans.some((row) => row.role === "bite");
   const canAlignModels = hasBiteScan && (hasUpperScan || hasLowerScan) && entries.length > 0;
+  const canAdjustOcclusion = hasUpperScan && hasLowerScan && entries.length > 0;
+  const occlusionOn = alignKind === "occlusion" && canAdjustOcclusion;
+
+  const startOcclusion = () => {
+    if (alignKind === "occlusion") {
+      setAlignKind(null);
+      return;
+    }
+    setAlignKind("occlusion");
+    setAlignArch(null);
+    setAlignPicks({ model: 0, bite: 0 });
+    setOcclusionArch(prepArch === "lower" ? "upper" : "lower");
+    setOcclusionMm(0);
+  };
+
+  const pickOcclusionArch = (arch: "upper" | "lower") => {
+    if (arch !== occlusionArch) setOcclusionArch(arch);
+  };
+
+  const onOcclusionEdit = (phase: "start" | "end") => {
+    if (phase === "start") {
+      occlusionBeforeSigRef.current = viewerRef.current?.changedScanSignature() ?? "";
+      pushJawCheckpoint();
+      return;
+    }
+    discardJawCheckpoint(occlusionBeforeSigRef.current);
+    setOcclusionMm(viewerRef.current?.occlusionVerticalMm() ?? 0);
+    queueSaveWorkRef.current();
+  };
 
   const runAutoAlign = async () => {
     const before = viewerRef.current?.changedScanSignature() ?? "";
@@ -3396,8 +3448,13 @@ function LabProsthesisAiDesignDialog({
                   JSON.stringify(prev) === JSON.stringify(issues) ? prev : issues,
                 )
               }
+              onCrownShells={(shells) =>
+                setCrownShells((prev) =>
+                  JSON.stringify(prev) === JSON.stringify(shells) ? prev : shells,
+                )
+              }
               onMarginTraceProgress={setMarginTracePoints}
-              contactMap={contactMap}
+              contactMap={contactMap || (occlusionOn && canContact)}
               undercutMap={paintUndercut}
               occlusalGapMm={occlusalGap}
               contactMode={contactMode}
@@ -3425,7 +3482,11 @@ function LabProsthesisAiDesignDialog({
               onDiesChange={setDieTeeth}
               showStoneModel={stage === "model"}
               onStoneModelChange={setStoneParts}
-              manualAlignArch={alignKind === "manual" ? alignArch : null}
+              manualAlignArch={alignKind === "points" ? alignArch : null}
+              occlusionAdjust={
+                occlusionOn ? { arch: occlusionArch, mode: occlusionMode } : null
+              }
+              onOcclusionEdit={onOcclusionEdit}
               onAlignProgress={(picks) => {
                 setAlignPicks(picks);
                 if (picks.model >= 3 && picks.bite >= 3) {
@@ -4194,7 +4255,7 @@ function LabProsthesisAiDesignDialog({
                     {stage === "scan" ? (
                       <section className="space-y-2">
                         <p className="text-xs font-semibold text-foreground">모델 정렬</p>
-                        <div className="grid grid-cols-2 gap-1">
+                        <div className="grid grid-cols-3 gap-1">
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <span className="flex min-w-0">
@@ -4220,21 +4281,21 @@ function LabProsthesisAiDesignDialog({
                                 <Button
                                   type="button"
                                   size="sm"
-                                  variant={alignKind === "manual" ? "default" : "outline"}
+                                  variant={alignKind === "points" ? "default" : "outline"}
                                   className="h-7 w-full px-2 text-[11px]"
                                   disabled={!canAlignModels || alignBusy}
                                   onClick={() => {
-                                    if (alignKind === "manual") {
+                                    if (alignKind === "points") {
                                       setAlignKind(null);
                                       setAlignArch(null);
                                       return;
                                     }
-                                    setAlignKind("manual");
+                                    setAlignKind("points");
                                     setAlignArch(null);
                                     setAlignPicks({ model: 0, bite: 0 });
                                   }}
                                 >
-                                  수동
+                                  반자동
                                 </Button>
                               </span>
                             </TooltipTrigger>
@@ -4242,7 +4303,134 @@ function LabProsthesisAiDesignDialog({
                               붙일 악을 고른 뒤 점 3개씩 찍습니다.
                             </TooltipContent>
                           </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="flex min-w-0">
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant={alignKind === "occlusion" ? "default" : "outline"}
+                                  className="h-7 w-full px-2 text-[11px]"
+                                  disabled={!canAdjustOcclusion || alignBusy}
+                                  onClick={startOcclusion}
+                                >
+                                  수동
+                                </Button>
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent side="right" className="z-[520]">
+                              바이트와 상관없이 상악이나 하악을 직접 옮깁니다.
+                              <br />
+                              상악·하악 스캔이 모두 있어야 합니다.
+                            </TooltipContent>
+                          </Tooltip>
                         </div>
+                        {occlusionOn ? (
+                          <div className="space-y-2">
+                            <div className="grid grid-cols-2 gap-1">
+                              {(["upper", "lower"] as const).map((arch) => (
+                                <Button
+                                  key={arch}
+                                  type="button"
+                                  size="sm"
+                                  variant={occlusionArch === arch ? "default" : "outline"}
+                                  className="h-7 w-full px-2 text-[11px]"
+                                  onClick={() => pickOcclusionArch(arch)}
+                                >
+                                  {arch === "upper" ? "상악 이동" : "하악 이동"}
+                                </Button>
+                              ))}
+                            </div>
+                            <div className="grid grid-cols-2 gap-1">
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="flex min-w-0">
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant={occlusionMode === "vertical" ? "default" : "outline"}
+                                      className="h-7 w-full px-2 text-[11px]"
+                                      onClick={() => setOcclusionMode("vertical")}
+                                    >
+                                      수직
+                                    </Button>
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent side="right" className="z-[520]">
+                                  교합 축 방향으로만 벌리거나 다뭅니다.
+                                </TooltipContent>
+                              </Tooltip>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="flex min-w-0">
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant={occlusionMode === "free" ? "default" : "outline"}
+                                      className="h-7 w-full px-2 text-[11px]"
+                                      onClick={() => setOcclusionMode("free")}
+                                    >
+                                      자유 이동
+                                    </Button>
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent side="right" className="z-[520]">
+                                  모델을 끌면 화면과 나란히 옮겨집니다.
+                                  <br />
+                                  Shift를 누르고 끌면 화면 안에서 돕니다.
+                                  <br />
+                                  Alt(⌥)를 누르고 끌면 기울어집니다.
+                                </TooltipContent>
+                              </Tooltip>
+                            </div>
+                            {occlusionMode === "vertical" ? (
+                              <div className="space-y-1.5">
+                                <div className="flex items-center justify-between text-xs font-medium">
+                                  <span>교합 거리</span>
+                                  <span className="tabular-nums text-muted-foreground">
+                                    {occlusionMm >= 0 ? "+" : ""}
+                                    {occlusionMm.toFixed(2)} mm
+                                  </span>
+                                </div>
+                                <Slider
+                                  min={-200}
+                                  max={200}
+                                  step={1}
+                                  value={[Math.max(-200, Math.min(200, Math.round(occlusionMm * 100)))]}
+                                  onValueChange={([value]) => {
+                                    const mm = (value ?? 0) / 100;
+                                    setOcclusionMm(mm);
+                                    viewerRef.current?.previewOcclusionVertical(mm);
+                                  }}
+                                  onValueCommit={([value]) => {
+                                    viewerRef.current?.commitOcclusionVertical((value ?? 0) / 100);
+                                  }}
+                                  aria-label="교합 거리"
+                                />
+                                <p className="text-[11px] leading-relaxed text-muted-foreground">
+                                  +는 벌리고 −는 다뭅니다.
+                                  <br />
+                                  수동에 들어온 위치가 0입니다.
+                                </p>
+                              </div>
+                            ) : (
+                              <p className="text-[11px] leading-relaxed text-muted-foreground">
+                                {occlusionArch === "upper" ? "상악" : "하악"}을 끌어 옮깁니다.
+                                <br />
+                                빈 곳을 끌면 화면이 돕니다.
+                              </p>
+                            )}
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-7 w-full px-2 text-[11px]"
+                              onClick={() => viewerRef.current?.resetOcclusion()}
+                            >
+                              원래대로
+                            </Button>
+                          </div>
+                        ) : null}
                         {alignBusy ? (
                           <Button
                             type="button"
@@ -4254,7 +4442,7 @@ function LabProsthesisAiDesignDialog({
                             취소
                           </Button>
                         ) : null}
-                        {alignKind === "manual" ? (
+                        {alignKind === "points" ? (
                           <>
                             <div className="grid grid-cols-2 gap-1">
                               <Tooltip>
@@ -4357,6 +4545,9 @@ function LabProsthesisAiDesignDialog({
                         }}
                         sculptBrush={sculptBrush}
                         onSculptBrush={setSculptBrush}
+                        refineTab={refineTab}
+                        onRefineTab={setRefineTab}
+                        crownShellMm={activeNumber ? (crownShells[activeNumber] ?? null) : null}
                         scanbody={scanbodyControls}
                         marginMode={marginMode}
                         onMarginMode={setMarginMode}
@@ -4556,6 +4747,7 @@ function LabProsthesisAiDesignDialog({
               </div>
             ) : null}
             <DesignViewerChrome
+              crownShells={crownShells}
               teeth={plan.teeth}
               cavityKinds={cavityKinds}
               activeTooth={activeTooth}
@@ -5177,8 +5369,11 @@ function DesignViewerChrome({
   onToggleScrewHole,
   actionPanel,
   cavityKinds,
+  crownShells,
 }: {
   cavityKinds: Record<string, CavityKind>;
+  /** 뷰어가 맞춘 크라운에서 잰 가장 얇은 외면(mm). */
+  crownShells: Record<string, number>;
   libraryLabel: (toothNumber: string) => string | null;
   onPickLibrary: (toothNumber: string) => void;
   onToggleScrewHole: (toothNumber: string, on: boolean) => void;
@@ -5301,7 +5496,9 @@ function DesignViewerChrome({
   const toothThin = (number: string) => {
     const edit = edits[number];
     return Boolean(
-      generated[number] === true && edit && designIsThin(edit, cavityKinds[number] ?? null),
+      generated[number] === true &&
+        edit &&
+        designIsThin(edit, cavityKinds[number] ?? null, crownShells[number]),
     );
   };
 

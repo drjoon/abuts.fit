@@ -28,9 +28,16 @@ export function cavityDepthMm(edit: ToothDesignEdit, kind: CavityKind) {
   return depth ?? DEFAULT_CAVITY_DEPTH_MM[kind];
 }
 
-/** 크라운은 껍질 두께, 인레이·온레이는 와동 단면 두께로 본다. */
-export function designIsThin(edit: ToothDesignEdit, kind: CavityKind | null) {
-  if (!kind || edit.pontic.on || edit.implant.on) return shellIsThin(edit);
+/**
+ * 크라운은 껍질 두께, 인레이·온레이는 와동 단면 두께로 본다.
+ * `measuredShellMm`는 뷰어가 깎은 크라운에서 잰 가장 얇은 값이다.
+ */
+export function designIsThin(
+  edit: ToothDesignEdit,
+  kind: CavityKind | null,
+  measuredShellMm?: number | null,
+) {
+  if (!kind || edit.pontic.on || edit.implant.on) return shellIsThin(edit, measuredShellMm);
   return cavityIsThin(edit, kind, cavityDepthMm(edit, kind));
 }
 

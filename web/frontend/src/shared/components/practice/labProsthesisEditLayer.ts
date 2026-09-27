@@ -1,7 +1,20 @@
 // 기공소 AI 보철 — 수정값을 치아 위에 그리는 레이어.
 
 import * as THREE from "three";
+import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
+import {
+  adaptCrownVertices,
+  type DiscPlane,
+  type GingivalAdapt,
+  type ScanColumns,
+  type ScanGrid,
+} from "@/shared/practice/crownAdapt";
+import { fdiToothDigits } from "@/shared/practice/toothArchOrder";
+import {
+  contactColorRgb,
+  type ContactPaintMode,
+} from "@/shared/practice/oralScanDesignAnalysis";
 import {
   connectorIsWeak,
   connectorOutline,
@@ -27,13 +40,55 @@ export type EditHit =
   | { kind: "margin"; tooth: string; index: number }
   | { kind: "margin-line"; tooth: string }
   | { kind: "crown"; tooth: string }
-  | { kind: "transform"; tooth: string }
+  | {
+      kind: "transform";
+      tooth: string;
+      handle: TransformHandle;
+      /** 모서리 핸들의 가로·세로 쪽. */
+      sx?: -1 | 1;
+      sz?: -1 | 1;
+    }
   | { kind: "hook"; tooth: string }
   | { kind: "hole"; tooth: string }
   | { kind: "hole-tip"; tooth: string; end: "top" | "bottom" }
   | { kind: "connector"; tooth: string }
   | { kind: "scanbody"; tooth: string }
   | { kind: "insertion"; key: string };
+
+export type TransformHandle = "corner" | "move" | "rotate" | "height";
+
+/** 변형 핸들이 끌 때 보는 크라운 상자. 월드 좌표. 핸들 `userData.transformBox`에 둔다. */
+export type TransformBox = {
+  center: THREE.Vector3;
+  normal: THREE.Vector3;
+  /** 돌린 크라운의 가로·세로 축. */
+  x: THREE.Vector3;
+  z: THREE.Vector3;
+  /** 돌리기 전 치아 축. 이동 거리는 이 축으로 잰다. */
+  frameX: THREE.Vector3;
+  frameZ: THREE.Vector3;
+  halfX: number;
+  halfZ: number;
+};
+
+/** 크라운 맞춤에 쓰는 스캔. 뷰어가 치아마다 모아 둔다. */
+export type CrownAdaptScan = {
+  opposing: ScanGrid | null;
+  adjacent: ScanGrid | null;
+  adjacentColumns: ScanColumns | null;
+  ridge: ScanColumns | null;
+  /** 마진 둘레 치은. 크라운 경부를 띄울 때 쓴다. */
+  gingiva: ScanColumns | null;
+};
+
+/** 맞춘 크라운 메시. 수정값·자세·스캔이 같으면 다시 맞추지 않는다. */
+export type CachedCrown = {
+  positions: Float32Array;
+  normals: Float32Array;
+  colors: Float32Array;
+  index: Uint32Array | null;
+  shellMm: number | null;
+};
 
 /** 점마다 가장 가까운 스캔 면까지의 부호 거리(mm). 바깥이 +. 스캔이 멀면 null. */
 export type ScanDistanceProbe = (
@@ -198,25 +253,144 @@ function paintSculpt(
   geometry.computeVertexNormals();
 }
 
-function paintThicknessColors(geometry: THREE.BufferGeometry, edit: ToothDesignEdit) {
+/** 로컬(단위 구) 정점의 외면 두께(mm). 대합·인접 깎기 전. */
+function baseShellMm(geometry: THREE.BufferGeometry, edit: ToothDesignEdit) {
   const pos = geometry.getAttribute("position");
-  if (!pos) return;
-  const colors = new Float32Array(pos.count * 3);
+  const out = new Float32Array(pos?.count ?? 0);
+  if (!pos) return out;
   const yMin = -0.19;
+  for (let i = 0; i < pos.count; i += 1) {
+    const angle = Math.atan2(pos.getZ(i), pos.getX(i));
+    const occlusal01 = Math.min(1, Math.max(0, (pos.getY(i) - yMin) / (1 - yMin)));
+    out[i] = localShellThicknessMm(edit, angle, occlusal01);
+  }
+  return out;
+}
+
+/** 교합면 폭과 구 깊이. 단위 구 로컬 좌표(y=교합)에서 민다. */
+function shapeOcclusal(geometry: THREE.BufferGeometry, edit: ToothDesignEdit) {
+  const table = edit.refine.occlusalTable;
+  const groove = edit.refine.groove;
+  if (table === 0 && groove === 0) return;
+  const pos = geometry.getAttribute("position");
   for (let i = 0; i < pos.count; i += 1) {
     const x = pos.getX(i);
     const y = pos.getY(i);
     const z = pos.getZ(i);
-    const angle = Math.atan2(z, x);
-    const occlusal01 = Math.min(1, Math.max(0, (y - yMin) / (1 - yMin)));
-    const thickness = localShellThicknessMm(edit, angle, occlusal01);
-    const alert = thicknessAlertRgb(edit, thickness);
-    const rgb = alert ?? CROWN_RGB;
-    colors[i * 3] = rgb[0];
-    colors[i * 3 + 1] = rgb[1];
-    colors[i * 3 + 2] = rgb[2];
+    const radial = Math.hypot(x, z);
+    const widen = 1 + 0.22 * table * THREE.MathUtils.smoothstep(y, 0.35, 0.8);
+    const fossa = 0.12 * groove * Math.exp(-((radial / 0.28) ** 2)) * Math.max(0, y);
+    pos.setXYZ(i, x * widen, y - fossa, z * widen);
   }
-  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+}
+
+/** 크라운 로컬 xz 평면의 협측·근심 단위 방향. 악궁을 모르면 null. */
+export type ToothAnatomyDirs = { bx: number; bz: number; mx: number; mz: number };
+
+/**
+ * 협측·설측 교두와 근심·원심 변연융선. 단위 구 로컬 좌표에서 교합 쪽 높이를 민다.
+ * 교두는 협설 가장자리를 근원심으로 길게, 변연융선은 근원심 가장자리를 협설로 길게 잡는다.
+ */
+function shapeAnatomy(
+  geometry: THREE.BufferGeometry,
+  edit: ToothDesignEdit,
+  dirs: ToothAnatomyDirs | null,
+) {
+  const { buccalCusp, lingualCusp, mesialRidge, distalRidge } = edit.refine;
+  if (!dirs || (!buccalCusp && !lingualCusp && !mesialRidge && !distalRidge)) return;
+  const pos = geometry.getAttribute("position");
+  for (let i = 0; i < pos.count; i += 1) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const z = pos.getZ(i);
+    const occlusal = THREE.MathUtils.smoothstep(y, 0.35, 0.75);
+    if (occlusal <= 0) continue;
+    const u = x * dirs.bx + z * dirs.bz;
+    const v = x * dirs.mx + z * dirs.mz;
+    const cusp = (at: number) => Math.exp(-((u - at) ** 2) / 0.06 - (v * v) / 0.18);
+    const ridge = (at: number) => Math.exp(-((v - at) ** 2) / 0.03 - (u * u) / 0.2);
+    const lift =
+      buccalCusp * cusp(0.45) +
+      lingualCusp * cusp(-0.45) +
+      mesialRidge * ridge(0.55) +
+      distalRidge * ridge(-0.55);
+    pos.setY(i, y + 0.1 * lift * occlusal);
+  }
+}
+
+function contralateralQuadrant(quadrant: number) {
+  return quadrant === 1 ? 2 : quadrant === 2 ? 1 : quadrant === 3 ? 4 : 3;
+}
+
+/**
+ * 치아의 협측·근심 방향(월드, 삽입축에 수직). 근심은 FDI 사분면 기준 정중선 쪽이다.
+ * 근심·원심 이웃 치아 자리로 악궁 접선을 잡고, 협측은 그 접선에서 악궁 바깥 쪽이다.
+ * 이웃이 없으면 치아 번호로 악궁 위 각도를 어림한다.
+ */
+export function toothArchDirs(args: {
+  tooth: string;
+  placements: readonly Place[];
+  frame: Frame | null;
+  normal: THREE.Vector3;
+}): { buccal: THREE.Vector3; mesial: THREE.Vector3 } | null {
+  const digits = fdiToothDigits(args.tooth);
+  if (!digits || !args.frame) return null;
+  const quadrant = Number(digits[0]);
+  const position = Number(digits[1]);
+  const side = quadrant === 1 || quadrant === 4 ? 1 : -1;
+  const phi = (Math.min(position, 8) / 8) * 1.45;
+  const { right, anterior } = args.frame;
+  const normal = args.normal;
+  const flat = (v: THREE.Vector3) => v.addScaledVector(normal, -v.dot(normal));
+  const guessBuccal = flat(
+    right.clone().multiplyScalar(side * Math.sin(phi)).addScaledVector(anterior, Math.cos(phi)),
+  );
+  const guessMesial = flat(
+    anterior.clone().multiplyScalar(Math.sin(phi)).addScaledVector(right, -side * Math.cos(phi)),
+  );
+  const byDigits = new Map(args.placements.map((row) => [fdiToothDigits(row.toothNumber), row]));
+  const self = byDigits.get(digits);
+  const mesialTooth = byDigits.get(
+    position > 1 ? `${quadrant}${position - 1}` : `${contralateralQuadrant(quadrant)}1`,
+  );
+  const distalTooth = position < 8 ? byDigits.get(`${quadrant}${position + 1}`) : undefined;
+  const tangent =
+    mesialTooth && distalTooth
+      ? mesialTooth.center.clone().sub(distalTooth.center)
+      : mesialTooth && self
+        ? mesialTooth.center.clone().sub(self.center)
+        : distalTooth && self
+          ? self.center.clone().sub(distalTooth.center)
+          : null;
+  if (tangent) flat(tangent);
+  let mesial: THREE.Vector3;
+  let buccal: THREE.Vector3;
+  if (tangent && tangent.lengthSq() > 1e-10) {
+    mesial = tangent.normalize();
+    if (mesial.dot(guessMesial) < 0) mesial.negate();
+    buccal = new THREE.Vector3().crossVectors(mesial, normal).normalize();
+    if (buccal.dot(guessBuccal) < 0) buccal.negate();
+  } else {
+    if (guessBuccal.lengthSq() < 1e-10) return null;
+    buccal = guessBuccal.normalize();
+    mesial = new THREE.Vector3().crossVectors(normal, buccal).normalize();
+    if (mesial.dot(guessMesial) < 0) mesial.negate();
+  }
+  return { buccal, mesial };
+}
+
+function localAnatomyDirs(
+  dirs: { buccal: THREE.Vector3; mesial: THREE.Vector3 } | null,
+  frameQuat: THREE.Quaternion,
+): ToothAnatomyDirs | null {
+  if (!dirs) return null;
+  const inverse = frameQuat.clone().invert();
+  const b = dirs.buccal.clone().applyQuaternion(inverse);
+  const m = dirs.mesial.clone().applyQuaternion(inverse);
+  const bl = Math.hypot(b.x, b.z);
+  const ml = Math.hypot(m.x, m.z);
+  if (bl < 1e-6 || ml < 1e-6) return null;
+  return { bx: b.x / bl, bz: b.z / bl, mx: m.x / ml, mz: m.z / ml };
 }
 
 /** 폰틱 기저면이 치조정 쪽으로 얼마나 내려오는지. 구의 극각 비율. */
@@ -232,18 +406,29 @@ function crownTheta(edit: ToothDesignEdit) {
   return edit.pontic.on ? PONTIC_BASE_THETA[edit.pontic.base] : 0.58;
 }
 
-/** 홀을 뚫는 크라운은 테두리가 매끈하도록 잘게 나눈다. */
-function makeCrownGeometry(edit: ToothDesignEdit, fine = false) {
+/**
+ * 로컬 단위 구 크라운. 색은 칠하지 않는다. 홀을 뚫는 크라운은 테두리가 매끈하도록 잘게 나눈다.
+ * 이음매 정점을 붙여 두어야 대합·인접 맞춤으로 밀어도 틈이 나지 않는다.
+ */
+function makeCrownGeometry(
+  edit: ToothDesignEdit,
+  fine = false,
+  anatomy: ToothAnatomyDirs | null = null,
+) {
   const theta = crownTheta(edit);
-  const geometry = new THREE.SphereGeometry(
+  const sphere = new THREE.SphereGeometry(
     1,
-    fine ? 96 : 28,
-    fine ? 56 : 16,
+    fine ? 96 : 48,
+    fine ? 56 : 28,
     0,
     Math.PI * 2,
     0,
     Math.PI * theta,
   );
+  sphere.deleteAttribute("uv");
+  sphere.deleteAttribute("normal");
+  const geometry = mergeVertices(sphere, 1e-6);
+  sphere.dispose();
   if (edit.pontic.on && edit.pontic.base === "conical") {
     const pos = geometry.getAttribute("position");
     for (let i = 0; i < pos.count; i += 1) {
@@ -254,12 +439,179 @@ function makeCrownGeometry(edit: ToothDesignEdit, fine = false) {
       pos.setZ(i, pos.getZ(i) * pinch);
     }
   }
+  shapeOcclusal(geometry, edit);
+  shapeAnatomy(geometry, edit, anatomy);
   paintSculpt(geometry, edit);
-  paintThicknessColors(geometry, edit);
   return geometry;
 }
 
+/**
+ * 크라운 경부 띠의 맞춤 세기와 마진 바닥. 세기는 열린 테두리에서 0으로 두어 마진 자리를 지키고,
+ * 테두리 바로 위 띠에서 가장 세다. 바닥은 정점 각도의 마진 점 높이를 이어 잰다.
+ */
+function cervicalBand(
+  local: THREE.BufferAttribute,
+  world: Float32Array,
+  normal: THREE.Vector3,
+  cervical: { center: THREE.Vector3; frameQuat: THREE.Quaternion },
+  edit: ToothDesignEdit,
+) {
+  const count = local.count;
+  const weight = new Float32Array(count);
+  const floor = new Float32Array(count);
+  const yBase = Math.cos(Math.PI * crownTheta(edit));
+  const inverse = cervical.frameQuat.clone().invert();
+  const depths = edit.margin.depths ?? [];
+  const n = Math.max(edit.margin.radii.length, 1);
+  const baseAlong = cervical.center.dot(normal);
+  const d = new THREE.Vector3();
+  for (let i = 0; i < count; i += 1) {
+    const y = local.getY(i);
+    weight[i] =
+      THREE.MathUtils.smoothstep(y, yBase, yBase + 0.1) *
+      (1 - THREE.MathUtils.smoothstep(y, yBase + 0.2, yBase + 0.45));
+    d.set(world[i * 3]!, world[i * 3 + 1]!, world[i * 3 + 2]!)
+      .sub(cervical.center)
+      .applyQuaternion(inverse);
+    let angle = Math.atan2(d.z, d.x);
+    if (angle < 0) angle += Math.PI * 2;
+    const at = (angle / (Math.PI * 2)) * n;
+    const i0 = Math.floor(at) % n;
+    const t = at - Math.floor(at);
+    const depth = (depths[i0] ?? 0) * (1 - t) + (depths[(i0 + 1) % n] ?? 0) * t;
+    floor[i] = baseAlong + depth;
+  }
+  return { weight, floor };
+}
+
+/**
+ * 크라운을 월드에 놓고 대합·인접·치은에 맞추고 디스크로 떼어 낸 뒤 다시 로컬로 돌린다.
+ * 두께·접촉 색을 칠한다. `shellMm`는 맞춤을 켠 치아에서 잰 가장 얇은 외면. 맞춤이 없으면
+ * null(수정값 추정을 쓴다). 크라운 경부 맞춤은 `cervical`(마진)이 있어야 하고 마진 아래로 내리지 않는다.
+ */
+function adaptCrownGeometry(args: {
+  geometry: THREE.BufferGeometry;
+  matrix: THREE.Matrix4;
+  normal: THREE.Vector3;
+  edit: ToothDesignEdit;
+  unit: number;
+  scan: () => CrownAdaptScan | null;
+  contactPaint: { gapMm: number; mode: ContactPaintMode } | null;
+  discs: DiscPlane[];
+  cervical: { center: THREE.Vector3; frameQuat: THREE.Quaternion } | null;
+}): { shellMm: number | null } {
+  const { geometry, edit, unit, contactPaint, discs } = args;
+  const pos = geometry.getAttribute("position") as THREE.BufferAttribute;
+  const count = pos.count;
+  const refine = edit.refine;
+  const base = baseShellMm(geometry, edit);
+  const cervical = !edit.pontic.on && refine.gingivalFit ? args.cervical : null;
+  const scanAdapting =
+    refine.occlusalTrim ||
+    refine.occlusalFit ||
+    refine.proximalTrim ||
+    refine.proximalFit ||
+    (edit.pontic.on && refine.gingivalFit) ||
+    cervical != null;
+  const adapting = scanAdapting || discs.length > 0;
+  let cutMm: Float32Array | null = null;
+  let contactMm: Float32Array | null = null;
+  const scan = scanAdapting || contactPaint ? args.scan() : null;
+  if (scan || discs.length > 0) {
+    geometry.computeVertexNormals();
+    const nor = geometry.getAttribute("normal");
+    const world = new Float32Array(count * 3);
+    const normals = new Float32Array(count * 3);
+    const normalMatrix = new THREE.Matrix3().getNormalMatrix(args.matrix);
+    const v = new THREE.Vector3();
+    for (let i = 0; i < count; i += 1) {
+      v.fromBufferAttribute(pos, i).applyMatrix4(args.matrix);
+      world[i * 3] = v.x;
+      world[i * 3 + 1] = v.y;
+      world[i * 3 + 2] = v.z;
+      v.fromBufferAttribute(nor, i).applyMatrix3(normalMatrix).normalize();
+      normals[i * 3] = v.x;
+      normals[i * 3 + 1] = v.y;
+      normals[i * 3 + 2] = v.z;
+    }
+    let allowCutMm: Float32Array | null = null;
+    if (refine.compensate && !edit.pontic.on) {
+      allowCutMm = new Float32Array(count);
+      for (let i = 0; i < count; i += 1) {
+        allowCutMm[i] = Math.max(0, base[i]! - refine.minThicknessMm);
+      }
+    }
+    let gingival: GingivalAdapt | null = null;
+    if (edit.pontic.on) {
+      gingival = { distanceMm: refine.gingivalMm, fit: refine.gingivalFit };
+    } else if (cervical && scan?.gingiva) {
+      gingival = {
+        distanceMm: refine.gingivalMm,
+        fit: true,
+        ...cervicalBand(pos, world, args.normal, cervical, edit),
+      };
+    }
+    const result = adaptCrownVertices({
+      positions: world,
+      normals,
+      axis: [args.normal.x, args.normal.y, args.normal.z],
+      unitToMm: unit,
+      opposing: scan?.opposing ?? null,
+      adjacent: scan?.adjacent ?? null,
+      adjacentColumns: scan?.adjacentColumns ?? null,
+      ridge: edit.pontic.on ? (scan?.ridge ?? null) : cervical ? (scan?.gingiva ?? null) : null,
+      occlusal: {
+        clearanceMm: refine.occlusalClearanceMm,
+        trim: refine.occlusalTrim,
+        fit: refine.occlusalFit,
+      },
+      proximal: {
+        clearanceMm: refine.proximalClearanceMm,
+        trim: refine.proximalTrim,
+        fit: refine.proximalFit,
+        blockOut: refine.proximalBlockOut,
+      },
+      gingival,
+      discs,
+      allowCutMm,
+    });
+    cutMm = result.cutMm;
+    contactMm = result.contactMm;
+    if (adapting) {
+      const inverse = args.matrix.clone().invert();
+      for (let i = 0; i < count; i += 1) {
+        v.set(world[i * 3]!, world[i * 3 + 1]!, world[i * 3 + 2]!).applyMatrix4(inverse);
+        pos.setXYZ(i, v.x, v.y, v.z);
+      }
+      pos.needsUpdate = true;
+    }
+  }
+  geometry.computeVertexNormals();
+
+  const colors = new Float32Array(count * 3);
+  let shellMm = Infinity;
+  for (let i = 0; i < count; i += 1) {
+    const thickness = base[i]! - Math.max(0, cutMm?.[i] ?? 0);
+    if (thickness < shellMm) shellMm = thickness;
+    const contact = contactMm?.[i];
+    const touching =
+      contactPaint && contact != null && Number.isFinite(contact)
+        ? contactColorRgb(contact, contactPaint.gapMm, contactPaint.mode)
+        : null;
+    const rgb =
+      touching ?? (edit.pontic.on ? null : thicknessAlertRgb(edit, thickness)) ?? CROWN_RGB;
+    colors[i * 3] = rgb[0];
+    colors[i * 3 + 1] = rgb[1];
+    colors[i * 3 + 2] = rgb[2];
+  }
+  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+  return {
+    shellMm: adapting && cutMm && !edit.pontic.on && Number.isFinite(shellMm) ? shellMm : null,
+  };
+}
+
 export type CrownPose = {
+  /** 변형 회전까지 넣은 크라운 자세. */
   quat: THREE.Quaternion;
   position: THREE.Vector3;
   radius: number;
@@ -268,34 +620,58 @@ export type CrownPose = {
   depth: number;
   /** 크라운 구의 극각 비율. 아래 열린 테두리 높이. */
   theta: number;
+  /** 변형 전 크라운 크기. 내면(지대치)은 이 크기를 쓴다. */
+  baseWidth: number;
+  baseHeight: number;
+  baseDepth: number;
 };
 
-/** 생성 크라운 자리. 레이어와 홀 검사가 같이 쓴다. */
+/**
+ * 생성 크라운 자리. 레이어와 홀 검사가 같이 쓴다.
+ * 변형(가로·높이·세로 배율, 치아 평면 이동, 삽입축 회전)을 넣는다. 대합·인접 맞춤은 정점에서 한다.
+ */
 export function crownPose(
   place: { center: THREE.Vector3; radius: number },
   normal: THREE.Vector3,
   right: THREE.Vector3,
   edit: ToothDesignEdit,
+  unitToMm = 1,
 ): CrownPose {
-  const quat = basisQuaternion(normal, right);
+  const unit = unitToMm > 0 ? unitToMm : 1;
+  const frame = basisQuaternion(normal, right);
+  const { stretch, offsetMm, rotateDeg } = edit.refine;
+  const quat = frame
+    .clone()
+    .multiply(
+      new THREE.Quaternion().setFromAxisAngle(
+        new THREE.Vector3(0, 1, 0),
+        (-rotateDeg * Math.PI) / 180,
+      ),
+    );
   const scale = crownScale(edit);
   const radius = place.radius * 0.86 * scale;
-  const height =
-    place.radius *
-    0.62 *
-    scale *
-    (1 + edit.refine.cusp * 0.14) *
-    (edit.refine.occlusalTrim ? Math.max(0.72, 1 - edit.refine.occlusalClearanceMm * 0.35) : 1);
-  const width =
-    radius *
-    (edit.refine.proximalTrim
-      ? Math.max(0.78, 1 - edit.refine.proximalClearanceMm * 0.55)
-      : 1);
-  const depth = radius * (1 + edit.refine.ridge * 0.12);
+  const baseHeight = place.radius * 0.62 * scale * (1 + edit.refine.cusp * 0.14);
+  const baseWidth = radius;
+  const baseDepth = radius * (1 + edit.refine.ridge * 0.12);
+  const height = baseHeight * stretch[1];
   const lift =
     edit.pontic.on && edit.pontic.base === "sanitary" ? height * 0.4 : height * 0.12;
-  const position = place.center.clone().addScaledVector(normal.clone().normalize(), lift);
-  return { quat, position, radius, width, height, depth, theta: crownTheta(edit) };
+  const position = place.center
+    .clone()
+    .addScaledVector(normal.clone().normalize(), lift)
+    .add(new THREE.Vector3(offsetMm[0] / unit, 0, offsetMm[1] / unit).applyQuaternion(frame));
+  return {
+    quat,
+    position,
+    radius,
+    width: baseWidth * stretch[0],
+    height,
+    depth: baseDepth * stretch[2],
+    theta: crownTheta(edit),
+    baseWidth,
+    baseHeight,
+    baseDepth,
+  };
 }
 
 export const HOLE_THROUGH_ISSUE = "홀이 보철 안쪽과 바깥쪽을 모두 지나야 합니다.";
@@ -365,17 +741,18 @@ export function screwHoleLine(args: {
   axis?: { origin: THREE.Vector3; dir: THREE.Vector3 } | null;
 }): ScrewHoleLine {
   const unit = args.unitToMm > 0 ? args.unitToMm : 1;
-  const pose = crownPose(args.place, args.normal, args.right, args.edit);
+  const pose = crownPose(args.place, args.normal, args.right, args.edit, unit);
+  const frame = basisQuaternion(args.normal, args.right);
   const origin = args.axis
     ? args.axis.origin.clone()
     : new THREE.Vector3(...args.edit.hole.point)
         .multiplyScalar(1 / unit)
-        .applyQuaternion(pose.quat)
+        .applyQuaternion(frame)
         .add(args.place.center);
   const dir = (
     args.axis
       ? args.axis.dir.clone()
-      : new THREE.Vector3(...args.edit.hole.dir).applyQuaternion(pose.quat)
+      : new THREE.Vector3(...args.edit.hole.dir).applyQuaternion(frame)
   ).normalize();
   const radius = args.edit.hole.radiusMm / unit;
   const cross = crownCrossing(crownToLocal(pose), pose.theta, origin, dir);
@@ -526,6 +903,140 @@ function screwHoleHandles(root: THREE.Group, tooth: string, line: ScrewHoleLine,
   }
 }
 
+const TRANSFORM_HANDLE = 0x0f766e;
+const TRANSFORM_ROTATE = 0xf59e0b;
+
+/**
+ * 변형 상자. 모서리는 크기(Shift면 가운데 기준 대칭), 위 공은 이동, 위 원뿔은 높이, 옆 공은 회전.
+ * 핸들마다 `userData.transformBox`에 상자를 둔다.
+ */
+function addTransformHandles(
+  root: THREE.Group,
+  args: {
+    tooth: string;
+    center: THREE.Vector3;
+    normal: THREE.Vector3;
+    quat: THREE.Quaternion;
+    frame: THREE.Quaternion;
+    width: number;
+    height: number;
+    depth: number;
+    size: number;
+  },
+) {
+  const box: TransformBox = {
+    center: args.center.clone(),
+    normal: args.normal.clone(),
+    x: new THREE.Vector3(1, 0, 0).applyQuaternion(args.quat),
+    z: new THREE.Vector3(0, 0, 1).applyQuaternion(args.quat),
+    frameX: new THREE.Vector3(1, 0, 0).applyQuaternion(args.frame),
+    frameZ: new THREE.Vector3(0, 0, 1).applyQuaternion(args.frame),
+    halfX: args.width,
+    halfZ: args.depth,
+  };
+  const corner = (sx: number, sz: number) =>
+    box.center.clone().addScaledVector(box.x, sx * box.halfX).addScaledVector(box.z, sz * box.halfZ);
+  const outline = new THREE.LineLoop(
+    new THREE.BufferGeometry().setFromPoints([
+      corner(-1, -1),
+      corner(1, -1),
+      corner(1, 1),
+      corner(-1, 1),
+    ]),
+    new THREE.LineBasicMaterial({ color: TRANSFORM_HANDLE, depthTest: false }),
+  );
+  outline.renderOrder = 13;
+  outline.frustumCulled = false;
+  root.add(outline);
+  const add = (mesh: THREE.Mesh, hit: EditHit) => {
+    mesh.renderOrder = 14;
+    mesh.userData.transformBox = box;
+    tag(mesh, hit);
+    root.add(mesh);
+  };
+  const cube = args.size * 0.1;
+  for (const sx of [-1, 1] as const) {
+    for (const sz of [-1, 1] as const) {
+      const handle = new THREE.Mesh(
+        new THREE.BoxGeometry(cube, cube, cube),
+        new THREE.MeshBasicMaterial({ color: TRANSFORM_HANDLE, depthTest: false }),
+      );
+      handle.quaternion.copy(args.quat);
+      handle.position.copy(corner(sx, sz));
+      add(handle, { kind: "transform", tooth: args.tooth, handle: "corner", sx, sz });
+    }
+  }
+  const top = box.center.clone().addScaledVector(box.normal, args.height);
+  const move = new THREE.Mesh(
+    new THREE.SphereGeometry(args.size * 0.08, 16, 12),
+    new THREE.MeshBasicMaterial({ color: TRANSFORM_HANDLE, depthTest: false }),
+  );
+  move.position.copy(top).addScaledVector(box.normal, args.size * 0.14);
+  add(move, { kind: "transform", tooth: args.tooth, handle: "move" });
+  const lift = new THREE.Mesh(
+    new THREE.ConeGeometry(args.size * 0.07, args.size * 0.18, 16),
+    new THREE.MeshBasicMaterial({ color: TRANSFORM_HANDLE, depthTest: false }),
+  );
+  lift.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), box.normal);
+  lift.position.copy(top).addScaledVector(box.normal, args.size * 0.42);
+  add(lift, { kind: "transform", tooth: args.tooth, handle: "height" });
+  const spin = new THREE.Mesh(
+    new THREE.SphereGeometry(args.size * 0.08, 16, 12),
+    new THREE.MeshBasicMaterial({ color: TRANSFORM_ROTATE, depthTest: false }),
+  );
+  spin.position.copy(box.center).addScaledVector(box.x, box.halfX + args.size * 0.35);
+  add(spin, { kind: "transform", tooth: args.tooth, handle: "rotate" });
+}
+
+/** 크라운 타원체가 방향 dir(단위, 월드)으로 중심에서 뻗는 거리. */
+function crownSupport(pose: CrownPose, dir: THREE.Vector3) {
+  const d = dir.clone().applyQuaternion(pose.quat.clone().invert());
+  return Math.hypot(pose.width * d.x, pose.height * d.y, pose.depth * d.z);
+}
+
+/**
+ * 커넥터를 끈 브리지 이음매의 디스크 평면. 두 크라운이 서로 뻗은 끝의 가운데에 평면을 두고,
+ * 양쪽을 간격 절반씩 물린다. 둘 다 생성된 치아만 깎는다.
+ */
+function discPlanes(args: {
+  spec: ProsthesisDesignEdit;
+  byTooth: Map<string, Place>;
+  right: THREE.Vector3;
+  toothNormal: (tooth: string) => THREE.Vector3;
+  unit: number;
+}) {
+  const out = new Map<string, DiscPlane[]>();
+  const push = (tooth: string, plane: DiscPlane) => {
+    const rows = out.get(tooth) ?? [];
+    rows.push(plane);
+    out.set(tooth, rows);
+  };
+  for (const link of args.spec.bridges) {
+    const fromEdit = args.spec.edits[link.from];
+    const toEdit = args.spec.edits[link.to];
+    if (!fromEdit || !toEdit || fromEdit.connector.linked) continue;
+    const gapMm = fromEdit.connector.discMm;
+    if (!(gapMm > 0)) continue;
+    if (args.spec.generated[link.from] !== true || args.spec.generated[link.to] !== true) continue;
+    if (args.spec.cavityKinds?.[link.from] || args.spec.cavityKinds?.[link.to]) continue;
+    const fromPlace = args.byTooth.get(link.from);
+    const toPlace = args.byTooth.get(link.to);
+    if (!fromPlace || !toPlace) continue;
+    const dir = toPlace.center.clone().sub(fromPlace.center);
+    if (dir.lengthSq() < 1e-10) continue;
+    dir.normalize();
+    const fromPose = crownPose(fromPlace, args.toothNormal(link.from), args.right, fromEdit, args.unit);
+    const toPose = crownPose(toPlace, args.toothNormal(link.to), args.right, toEdit, args.unit);
+    const fromEnd = fromPose.position.dot(dir) + crownSupport(fromPose, dir);
+    const toEnd = toPose.position.dot(dir) - crownSupport(toPose, dir);
+    const mid = (fromEnd + toEnd) / 2;
+    const half = gapMm / 2 / args.unit;
+    push(link.from, { normal: [dir.x, dir.y, dir.z], offset: mid - half });
+    push(link.to, { normal: [-dir.x, -dir.y, -dir.z], offset: -(mid + half) });
+  }
+  return out;
+}
+
 export function buildProsthesisEditLayer(args: {
   placements: Place[];
   frame: Frame | null;
@@ -537,6 +1048,14 @@ export function buildProsthesisEditLayer(args: {
   marginUndercut?: ((tooth: string, points: readonly THREE.Vector3[]) => boolean[]) | null;
   /** 홀을 켠 생성 치아마다 검사 결과. 통과면 null. */
   onHoleIssue?: ((tooth: string, issue: string | null) => void) | null;
+  /** 치아마다 대합·인접·치조정 스캔. 없으면 맞춤·접촉 색을 하지 않는다. */
+  adaptScan?: ((tooth: string) => CrownAdaptScan | null) | null;
+  /** 켜면 크라운도 스캔과 같은 접촉 색으로 칠한다. */
+  contactPaint?: { gapMm: number; mode: ContactPaintMode } | null;
+  /** 뷰어가 들고 있는 맞춤 캐시. 스캔이 바뀌면 뷰어가 비운다. */
+  adaptCache?: Map<string, CachedCrown> | null;
+  /** 생성 크라운마다 맞춘 뒤 가장 얇은 외면(mm). 맞춤이 없으면 null. */
+  onCrownShell?: ((tooth: string, mm: number | null) => void) | null;
 }) {
   const root = new THREE.Group();
   root.name = "prosthesis-edit";
@@ -544,13 +1063,17 @@ export function buildProsthesisEditLayer(args: {
   const up = args.frame?.up ?? new THREE.Vector3(0, 0, 1);
   const right = args.frame?.right ?? new THREE.Vector3(1, 0, 0);
   const byTooth = new Map(args.placements.map((row) => [row.toothNumber, row]));
+  const toothNormal = (tooth: string) => {
+    const normal = args.insertionByTooth.get(tooth)?.clone() ?? up.clone();
+    if (normal.lengthSq() < 1e-8) normal.copy(up);
+    return normal.normalize();
+  };
+  const discsByTooth = discPlanes({ ...args, byTooth, right, toothNormal, unit });
 
   for (const [tooth, edit] of Object.entries(args.spec.edits)) {
     const place = byTooth.get(tooth);
     if (!place) continue;
-    const normal = args.insertionByTooth.get(tooth)?.clone() ?? up.clone();
-    if (normal.lengthSq() < 1e-8) normal.copy(up);
-    normal.normalize();
+    const normal = toothNormal(tooth);
     const quat = basisQuaternion(normal, right);
     const active = args.spec.activeTooth === tooth;
     const generated = args.spec.generated[tooth] === true;
@@ -735,8 +1258,9 @@ export function buildProsthesisEditLayer(args: {
       continue;
     }
 
-    const crownAt = crownPose(place, normal, right, edit);
+    const crownAt = crownPose(place, normal, right, edit, unit);
     const { width, height, depth } = crownAt;
+    const crownQuat = crownAt.quat;
     const holeEditing = args.spec.tool === "hole" && active;
     const holeLine = edit.pontic.on
       ? null
@@ -760,10 +1284,61 @@ export function buildProsthesisEditLayer(args: {
       crownAt.quat,
       new THREE.Vector3(width, height, depth),
     );
+    const fine = Boolean(cutHole);
+    const discs = discsByTooth.get(tooth) ?? [];
+    const anatomy = localAnatomyDirs(
+      toothArchDirs({ tooth, placements: args.placements, frame: args.frame, normal }),
+      quat,
+    );
+    const cacheKey = args.adaptCache
+      ? JSON.stringify([
+          tooth,
+          fine,
+          edit,
+          crownMatrix.elements.map((n) => Math.round(n * 1e5)),
+          args.contactPaint ?? null,
+          discs.map((row) => [...row.normal, row.offset].map((n) => Math.round(n * 1e5))),
+          anatomy ? Object.values(anatomy).map((n) => Math.round(n * 1e4)) : null,
+        ])
+      : "";
+    let crownGeometry: THREE.BufferGeometry;
+    const cached = args.adaptCache?.get(cacheKey);
+    if (cached) {
+      crownGeometry = new THREE.BufferGeometry();
+      crownGeometry.setAttribute("position", new THREE.BufferAttribute(cached.positions.slice(), 3));
+      crownGeometry.setAttribute("normal", new THREE.BufferAttribute(cached.normals.slice(), 3));
+      crownGeometry.setAttribute("color", new THREE.BufferAttribute(cached.colors.slice(), 3));
+      if (cached.index) crownGeometry.setIndex(new THREE.BufferAttribute(cached.index.slice(), 1));
+      args.onCrownShell?.(tooth, cached.shellMm);
+    } else {
+      const shaped = makeCrownGeometry(edit, fine, anatomy);
+      const { shellMm } = adaptCrownGeometry({
+        geometry: shaped,
+        matrix: crownMatrix,
+        normal,
+        edit,
+        unit,
+        scan: () => args.adaptScan?.(tooth) ?? null,
+        contactPaint: args.contactPaint ?? null,
+        discs,
+        cervical: edit.margin.deleted ? null : { center: place.center, frameQuat: quat },
+      });
+      crownGeometry = cutHole ? cutScrewHole(shaped, crownMatrix, cutHole) : shaped;
+      args.onCrownShell?.(tooth, shellMm);
+      if (args.adaptCache) {
+        if (args.adaptCache.size > 64) args.adaptCache.clear();
+        const index = crownGeometry.getIndex();
+        args.adaptCache.set(cacheKey, {
+          positions: (crownGeometry.getAttribute("position").array as Float32Array).slice(),
+          normals: (crownGeometry.getAttribute("normal").array as Float32Array).slice(),
+          colors: (crownGeometry.getAttribute("color").array as Float32Array).slice(),
+          index: index ? Uint32Array.from(index.array as ArrayLike<number>) : null,
+          shellMm,
+        });
+      }
+    }
     const crown = new THREE.Mesh(
-      cutHole
-        ? cutScrewHole(makeCrownGeometry(edit, true), crownMatrix, cutHole)
-        : makeCrownGeometry(edit),
+      crownGeometry,
       new THREE.MeshStandardMaterial({
         color: 0xffffff,
         vertexColors: true,
@@ -807,6 +1382,10 @@ export function buildProsthesisEditLayer(args: {
     }
 
     if (args.spec.tool === "inner" && !edit.pontic.on) {
+      // 내면은 지대치에 붙으므로 변형 전 크기를 쓴다.
+      const width = crownAt.baseWidth;
+      const height = crownAt.baseHeight;
+      const depth = crownAt.baseDepth;
       const gap = innerGapMm(edit.inner) / unit;
       const sealGap = edit.inner.sealGapMm / unit;
       const sealHeight = Math.min(edit.inner.sealHeightMm / unit, height * 0.4);
@@ -855,7 +1434,7 @@ export function buildProsthesisEditLayer(args: {
 
     if (edit.cutback.on) {
       const shell = new THREE.Mesh(
-        makeCrownGeometry(edit),
+        makeCrownGeometry(edit, false, anatomy),
         new THREE.MeshStandardMaterial({
           color: CUTBACK,
           roughness: 0.55,
@@ -865,40 +1444,36 @@ export function buildProsthesisEditLayer(args: {
         }),
       );
       const pull = Math.min(0.22, edit.cutback.thicknessMm * 0.12);
-      shell.quaternion.copy(quat);
+      shell.quaternion.copy(crownQuat);
       shell.scale.set(width * (1 - pull), height * (edit.cutback.region === "full" ? 1 - pull : 0.62), depth * (1 - pull));
       shell.position.copy(crown.position).addScaledVector(normal, height * 0.08);
       shell.renderOrder = 5;
       root.add(shell);
     }
 
-    if (args.spec.tool === "refine" && active) {
-      for (const corner of [-1, 1]) {
-        for (const side of [-1, 1]) {
-          const handle = new THREE.Mesh(
-            new THREE.BoxGeometry(place.radius * 0.09, place.radius * 0.09, place.radius * 0.09),
-            new THREE.MeshBasicMaterial({ color: 0x0f766e, depthTest: false }),
-          );
-          handle.position
-            .copy(crown.position)
-            .addScaledVector(right.clone().addScaledVector(normal, -right.dot(normal)).normalize(), width * corner * 0.95);
-          const anterior = args.frame?.anterior ?? new THREE.Vector3(0, 1, 0);
-          handle.position.addScaledVector(
-            anterior.clone().addScaledVector(normal, -anterior.dot(normal)).normalize(),
-            depth * side * 0.85,
-          );
-          handle.renderOrder = 14;
-          tag(handle, { kind: "transform", tooth });
-          root.add(handle);
-        }
-      }
+    if (
+      args.spec.tool === "refine" &&
+      active &&
+      (args.spec.refineTab ?? "transform") === "transform"
+    ) {
+      addTransformHandles(root, {
+        tooth,
+        center: crown.position.clone(),
+        normal,
+        quat: crownQuat,
+        frame: quat,
+        width,
+        height,
+        depth,
+        size: place.radius,
+      });
     }
 
     if (edit.hook.on) {
       const angle = (edit.hook.angle * Math.PI) / 180;
       const outward = new THREE.Vector3(Math.cos(angle), 0.15, Math.sin(angle))
         .normalize()
-        .applyQuaternion(quat);
+        .applyQuaternion(crownQuat);
       const length = Math.max(edit.hook.lengthMm / unit, place.radius * 0.25);
       const hookRadius = Math.max(edit.hook.radiusMm / unit, place.radius * 0.04);
       const base = crown.position.clone().addScaledVector(outward, width * 0.72);

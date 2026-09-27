@@ -16,29 +16,26 @@ import {
 import {
   CONNECTOR_SHAPES,
   MODIFY_TOOLS,
-  PONTIC_BASES,
-  SCULPT_SHAPES,
   adjustMarginOffset,
   applyInnerParams,
   connectorAreaMm2,
   connectorIsWeak,
   connectorMinAreaMm2,
+  DISC_RANGE_MM,
   HOLE_RADIUS_MAX_MM,
   HOLE_RADIUS_MIN_MM,
   holeTiltDeg,
   innerParamsOf,
-  shellThicknessMm,
   type EditBrush,
   type MarginEditMode,
   type ModifyTool,
+  type RefineTab,
   type SculptBrush,
   type ToothDesignEdit,
 } from "@/shared/practice/labProsthesisModify";
 import {
   CAVITY_TAPER_RECOMMENDED,
-  cavityDepthMm,
   cavityTaperSummary,
-  cavityThicknessMm,
   designIsThin,
   type CavityKind,
 } from "@/shared/practice/labInlayDesign";
@@ -58,6 +55,7 @@ import {
   InnerNumberInput,
 } from "@/shared/components/practice/LabInnerParamFields";
 import { fitDistanceRgb } from "@/shared/components/practice/labProsthesisEditLayer";
+import { LabRefineControls } from "@/shared/components/practice/LabRefineControls";
 import { cn } from "@/shared/ui/cn";
 
 /** 임플란트 치아의 스캔바디 정렬. 없으면 스캔바디 도구를 두지 않는다. */
@@ -132,6 +130,11 @@ type Props = {
   sculptBrush: SculptBrush;
   onSculptBrush: (next: SculptBrush) => void;
   scanbody: ScanbodyControls | null;
+  /** 형상 도구 단계(변형·외면·맞춤). */
+  refineTab: RefineTab;
+  onRefineTab: (tab: RefineTab) => void;
+  /** 뷰어가 맞춘 이 크라운에서 잰 가장 얇은 외면. 맞춤이 없으면 null. */
+  crownShellMm: number | null;
 };
 
 export type ConnectorRow = {
@@ -292,9 +295,36 @@ function ConnectorControls({
           </Tooltip>
         </>
       ) : (
-        <p className="text-[11px] text-muted-foreground">
-          {row.from}번과 {row.to}번을 잇지 않습니다.
-        </p>
+        <>
+          <p className="text-[11px] text-muted-foreground">
+            {row.from}번과 {row.to}번을 잇지 않습니다.
+          </p>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div>
+                <Row
+                  label="디스크 간격"
+                  value={connector.discMm > 0 ? `${connector.discMm.toFixed(2)} mm` : "깎지 않음"}
+                >
+                  <Slider
+                    min={DISC_RANGE_MM.min * 100}
+                    max={DISC_RANGE_MM.max * 100}
+                    step={1}
+                    disabled={locked}
+                    value={[Math.round(connector.discMm * 100)]}
+                    onValueChange={([value]) => set({ discMm: (value ?? 0) / 100 })}
+                    aria-label={`${row.from}-${row.to} 디스크 간격`}
+                  />
+                </Row>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent side="right" className="z-[520]">
+              두 보철이 맞닿은 인접면을 이 간격만큼 떼어 깎습니다.
+              <br />
+              커넥터를 끈 자리에만 씁니다.
+            </TooltipContent>
+          </Tooltip>
+        </>
       )}
       <Tooltip>
         <TooltipTrigger asChild>
@@ -545,10 +575,13 @@ export function LabProsthesisModifyPanel({
   sculptBrush,
   onSculptBrush,
   scanbody,
+  refineTab,
+  onRefineTab,
+  crownShellMm,
 }: Props) {
   const implant = edit.implant.on;
   const cavity = implant || edit.pontic.on ? null : cavityKind;
-  const thin = designIsThin(edit, cavity);
+  const thin = designIsThin(edit, cavity, crownShellMm);
   const innerKind = innerKindOf(edit, cavity);
   const taper = cavity ? cavityTaperSummary(edit.margin.cavity) : null;
   const holeMessage = holeIssue || holeNote;
@@ -1001,277 +1034,20 @@ export function LabProsthesisModifyPanel({
       ) : null}
 
       {tool === "refine" ? (
-        <div className="space-y-2">
-          {edit.pontic.on ? (
-            <Row label="폰틱 기저면">
-              <div className="grid grid-cols-3 gap-1">
-                {PONTIC_BASES.map((base) => (
-                  <Tooltip key={base.id}>
-                    <TooltipTrigger asChild>
-                      <span className="flex min-w-0">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant={edit.pontic.base === base.id ? "default" : "outline"}
-                          className="h-7 w-full px-1 text-[11px]"
-                          onClick={() =>
-                            onEdit({ ...edit, pontic: { ...edit.pontic, base: base.id } })
-                          }
-                        >
-                          {base.label}
-                        </Button>
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent side="right" className="z-[520]">
-                      {base.hint}
-                    </TooltipContent>
-                  </Tooltip>
-                ))}
-              </div>
-            </Row>
-          ) : null}
-          <Row label="크기" value={edit.refine.scale.toFixed(2)}>
-            <Slider
-              min={75}
-              max={135}
-              step={1}
-              value={[Math.round(edit.refine.scale * 100)]}
-              onValueChange={([value]) =>
-                onEdit({
-                  ...edit,
-                  refine: { ...edit.refine, scale: (value ?? 100) / 100 },
-                })
-              }
-              aria-label="크기"
-            />
-          </Row>
-          <Row label="교두" value={edit.refine.cusp.toFixed(2)}>
-            <Slider
-              min={-100}
-              max={100}
-              step={5}
-              value={[Math.round(edit.refine.cusp * 100)]}
-              onValueChange={([value]) =>
-                onEdit({
-                  ...edit,
-                  refine: { ...edit.refine, cusp: (value ?? 0) / 100 },
-                })
-              }
-              aria-label="교두"
-            />
-          </Row>
-          <Row label="융선" value={edit.refine.ridge.toFixed(2)}>
-            <Slider
-              min={-100}
-              max={100}
-              step={5}
-              value={[Math.round(edit.refine.ridge * 100)]}
-              onValueChange={([value]) =>
-                onEdit({
-                  ...edit,
-                  refine: { ...edit.refine, ridge: (value ?? 0) / 100 },
-                })
-              }
-              aria-label="융선"
-            />
-          </Row>
-          <Row
-            label="교합 간격"
-            value={`${edit.refine.occlusalClearanceMm.toFixed(2)} mm`}
-          >
-            <Slider
-              min={0}
-              max={40}
-              step={1}
-              value={[Math.round(edit.refine.occlusalClearanceMm * 100)]}
-              onValueChange={([value]) =>
-                onEdit({
-                  ...edit,
-                  refine: {
-                    ...edit.refine,
-                    occlusalClearanceMm: (value ?? 10) / 100,
-                  },
-                })
-              }
-              aria-label="교합 간격"
-            />
-          </Row>
-          <label className="flex items-center justify-between gap-3 text-xs font-medium">
-            대합 깎기
-            <Switch
-              checked={edit.refine.occlusalTrim}
-              onCheckedChange={(occlusalTrim) =>
-                onEdit({ ...edit, refine: { ...edit.refine, occlusalTrim } })
-              }
-              aria-label="대합 깎기"
-              className="h-5 w-9 data-[state=checked]:bg-primary [&>span]:h-4 [&>span]:w-4 data-[state=checked]:[&>span]:translate-x-4"
-            />
-          </label>
-          <Row
-            label="인접 간격"
-            value={`${edit.refine.proximalClearanceMm.toFixed(2)} mm`}
-          >
-            <Slider
-              min={0}
-              max={40}
-              step={1}
-              value={[Math.round(edit.refine.proximalClearanceMm * 100)]}
-              onValueChange={([value]) =>
-                onEdit({
-                  ...edit,
-                  refine: {
-                    ...edit.refine,
-                    proximalClearanceMm: (value ?? 5) / 100,
-                  },
-                })
-              }
-              aria-label="인접 간격"
-            />
-          </Row>
-          <label className="flex items-center justify-between gap-3 text-xs font-medium">
-            인접 깎기
-            <Switch
-              checked={edit.refine.proximalTrim}
-              onCheckedChange={(proximalTrim) =>
-                onEdit({ ...edit, refine: { ...edit.refine, proximalTrim } })
-              }
-              aria-label="인접 깎기"
-              className="h-5 w-9 data-[state=checked]:bg-primary [&>span]:h-4 [&>span]:w-4 data-[state=checked]:[&>span]:translate-x-4"
-            />
-          </label>
-          <div className="grid grid-cols-2 gap-1">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="flex min-w-0">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={brush === "sculpt" ? "default" : "outline"}
-                    className="h-7 w-full px-1 text-[11px]"
-                    disabled={!generated}
-                    onClick={() => onBrush(brush === "sculpt" ? "none" : "sculpt")}
-                  >
-                    스컬프트
-                  </Button>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="right" className="z-[520]">
-                보철 면을 눌러 고칩니다.
-                <br />
-                오른쪽 클릭은 더하기와 빼기를 뒤집습니다.
-              </TooltipContent>
-            </Tooltip>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="h-7 px-1 text-[11px]"
-              disabled={!generated}
-              onClick={() =>
-                onEdit({
-                  ...edit,
-                  refine: {
-                    ...edit.refine,
-                    compensate: !edit.refine.compensate,
-                  },
-                })
-              }
-            >
-              {edit.refine.compensate ? "보상 켬" : "두께 보상"}
-            </Button>
-          </div>
-          {brush === "sculpt" ? (
-            <div className="space-y-2 rounded-md border px-2 py-2">
-              <div className="grid grid-cols-3 gap-1">
-                {SCULPT_SHAPES.map((shape) => (
-                  <Tooltip key={shape.id}>
-                    <TooltipTrigger asChild>
-                      <span className="flex min-w-0">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant={sculptBrush.shape === shape.id ? "default" : "outline"}
-                          className="h-7 w-full px-1 text-[11px]"
-                          onClick={() => onSculptBrush({ ...sculptBrush, shape: shape.id })}
-                        >
-                          {shape.label}
-                        </Button>
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent side="right" className="z-[520]">
-                      {shape.hint}
-                    </TooltipContent>
-                  </Tooltip>
-                ))}
-              </div>
-              <Row label="브러시 크기" value={`${sculptBrush.sizeMm.toFixed(2)} mm`}>
-                <Slider
-                  min={40}
-                  max={500}
-                  step={5}
-                  value={[Math.round(sculptBrush.sizeMm * 100)]}
-                  onValueChange={([value]) =>
-                    onSculptBrush({ ...sculptBrush, sizeMm: (value ?? 160) / 100 })
-                  }
-                  aria-label="브러시 크기"
-                />
-              </Row>
-              <Row label="강도" value={`${Math.round(sculptBrush.strength * 100)}%`}>
-                <Slider
-                  min={10}
-                  max={100}
-                  step={5}
-                  value={[Math.round(sculptBrush.strength * 100)]}
-                  onValueChange={([value]) =>
-                    onSculptBrush({ ...sculptBrush, strength: (value ?? 50) / 100 })
-                  }
-                  aria-label="강도"
-                />
-              </Row>
-              <label className="flex items-center justify-between gap-3 text-xs font-medium">
-                줌에 맞춰 크기 동기화
-                <Switch
-                  checked={sculptBrush.zoomSync}
-                  onCheckedChange={(zoomSync) => onSculptBrush({ ...sculptBrush, zoomSync })}
-                  aria-label="줌에 맞춰 브러시 크기 동기화"
-                  className="h-5 w-9 data-[state=checked]:bg-primary [&>span]:h-4 [&>span]:w-4 data-[state=checked]:[&>span]:translate-x-4"
-                />
-              </label>
-            </div>
-          ) : null}
-          <Row label="최소 두께" value={`${edit.refine.minThicknessMm.toFixed(2)} mm`}>
-            <Slider
-              min={30}
-              max={cavity ? 250 : 120}
-              step={5}
-              value={[Math.round(edit.refine.minThicknessMm * 100)]}
-              onValueChange={([value]) =>
-                onEdit({
-                  ...edit,
-                  inner: { ...edit.inner, presetId: null, presetName: "" },
-                  refine: {
-                    ...edit.refine,
-                    minThicknessMm: (value ?? 50) / 100,
-                  },
-                })
-              }
-              aria-label="최소 두께"
-            />
-          </Row>
-          <p
-            className={cn(
-              "text-[11px] font-medium",
-              thin && !edit.refine.compensate
-                ? "text-destructive"
-                : "text-foreground",
-            )}
-          >
-            {cavity
-              ? `와동 단면 ${cavityThicknessMm(edit, cavity, cavityDepthMm(edit, cavity)).toFixed(2)} mm`
-              : `외면 ${shellThicknessMm(edit).toFixed(2)} mm`}
-            {thin && !edit.refine.compensate ? " · 최소보다 얇음" : ""}
-          </p>
-        </div>
+        <LabRefineControls
+          edit={edit}
+          onEdit={onEdit}
+          generated={generated}
+          cavity={cavity}
+          thin={thin}
+          measuredShellMm={crownShellMm}
+          tab={refineTab}
+          onTab={onRefineTab}
+          brush={brush}
+          onBrush={onBrush}
+          sculptBrush={sculptBrush}
+          onSculptBrush={onSculptBrush}
+        />
       ) : null}
 
       {tool === "hook" ? (

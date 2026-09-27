@@ -74,6 +74,8 @@ import {
 } from "@/shared/practice/biteRegistration";
 import {
   sculptStampWidth,
+  STRETCH_RANGE,
+  type RefineTransform,
   type DesignGesture,
   type MarginSample,
   type ModelSettings,
@@ -107,9 +109,19 @@ import {
   type ScrewHoleLine,
   marginWorldPoints,
   readEditHit,
+  type CachedCrown,
+  type CrownAdaptScan,
   type EditHit,
   type ScanDistanceProbe,
+  type TransformBox,
+  type TransformHandle,
 } from "@/shared/components/practice/labProsthesisEditLayer";
+import {
+  createScanColumns,
+  createScanGrid,
+  downsampleCloud,
+  type ScanCloud,
+} from "@/shared/practice/crownAdapt";
 import {
   meshExtent,
   registerScanbody,
@@ -193,6 +205,14 @@ export type OralScanOverlayHandle = {
   cancelAlign: () => void;
   /** 수동 정렬에서 찍은 점을 지운다. */
   clearAlignPicks: () => void;
+  /** 수동 교합에 들어온 뒤 고른 악이 교합 축으로 벌어진 거리(mm). 다물면 음수. */
+  occlusionVerticalMm: () => number;
+  /** 교합 거리를 화면에서만 미리 옮긴다. 정점은 그대로다. */
+  previewOcclusionVertical: (mm: number) => void;
+  /** 교합 거리를 정점에 굽는다. */
+  commitOcclusionVertical: (mm: number) => void;
+  /** 수동 교합에 들어왔을 때 위치로 되돌린다. */
+  resetOcclusion: () => void;
   /**
    * 파일을 열었을 때와 좌표가 다른 스캔.
    * 같은 역할의 스캔은 같이 낸다. 화면 배치(좌우 분리)는 포함하지 않는다.
@@ -321,6 +341,12 @@ export type OralScanWorldTurn = {
   jaw: (id: string, positions: Float32Array) => Float32Array;
 };
 
+export type OralScanOcclusionAdjust = {
+  arch: "upper" | "lower";
+  /** vertical: 교합 축으로만. free: 끌어 옮기고, Shift는 화면 안 회전, Alt는 기울이기. */
+  mode: "vertical" | "free";
+};
+
 export type OralScanOverlaySource = {
   id: string;
   fileName: string;
@@ -394,6 +420,10 @@ type Props = {
   onAlignFailed?: () => void;
   /** 맞추는 중 취소. 점과 좌표는 그대로 둔다. */
   onAlignCancelled?: () => void;
+  /** 수동 교합. 이 악만 움직인다. 없으면 평소 뷰. */
+  occlusionAdjust?: OralScanOcclusionAdjust | null;
+  /** 수동 교합으로 정점을 바꾸기 직전(start)과 굽고 난 뒤(end). */
+  onOcclusionEdit?: (phase: "start" | "end") => void;
   /** 스캔을 화면에 올린 뒤. restore면 저장된 삽입축·카메라를 다시 깐다. */
   onMeshesReady?: (info: { deformed: boolean; restore: boolean }) => void;
   /** 돌리기·이동·줌·시점 전환이 멈추면. */
@@ -408,6 +438,8 @@ type Props = {
   onMarginUndercut?: (tooth: string | null, count: number) => void;
   /** 홀 검사에 걸린 치아와 이유. 레이어를 그릴 때마다 부른다. */
   onHoleIssues?: (issues: Record<string, string>) => void;
+  /** 대합·인접 맞춤을 켠 생성 크라운마다 가장 얇은 외면(mm). 레이어를 그릴 때마다 부른다. */
+  onCrownShells?: (shells: Record<string, number>) => void;
   /** 지운 마진을 새로 찍는 중인 점 수. 닫거나 그만두면 0. */
   onMarginTraceProgress?: (count: number) => void;
   className?: string;
@@ -2545,6 +2577,8 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       onAlignMerged,
       onAlignFailed,
       onAlignCancelled,
+      occlusionAdjust = null,
+      onOcclusionEdit,
       onMeshesReady,
       onViewSettled,
       scanbodyPickTooth = null,
@@ -2553,6 +2587,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       onMarginSeedPick,
       onMarginUndercut,
       onHoleIssues,
+      onCrownShells,
       onMarginTraceProgress,
       className,
     },
@@ -2685,6 +2720,23 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   });
   const alignAutoRef = useRef<() => Promise<boolean>>(async () => false);
   const clearPicksRef = useRef<() => void>(() => {});
+  const occlusionRef = useRef(occlusionAdjust);
+  occlusionRef.current = occlusionAdjust;
+  const onOcclusionEditRef = useRef(onOcclusionEdit);
+  onOcclusionEditRef.current = onOcclusionEdit;
+  /** 수동 교합에 들어왔을 때 정점. 원래대로와 교합 거리의 기준. */
+  const occlusionBaseRef = useRef(new Map<string, Float32Array>());
+  const occlusionLiveRef = useRef(false);
+  const occlusionApiRef = useRef<{
+    ensureBase: (arch: "upper" | "lower") => void;
+    begin: () => void;
+    preview: (arch: "upper" | "lower", matrix: THREE.Matrix4) => void;
+    bake: (arch: "upper" | "lower", matrix: THREE.Matrix4) => void;
+    pivot: (arch: "upper" | "lower") => THREE.Vector3 | null;
+    measureMm: (arch: "upper" | "lower") => number;
+    away: (arch: "upper" | "lower") => THREE.Vector3;
+    reset: (arch: "upper" | "lower") => void;
+  } | null>(null);
   const scanbodyPickRef = useRef<{ tooth: string | null; points: THREE.Vector3[] }>({
     tooth: null,
     points: [],
@@ -2704,6 +2756,14 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   onMarginUndercutRef.current = onMarginUndercut;
   const onHoleIssuesRef = useRef(onHoleIssues);
   onHoleIssuesRef.current = onHoleIssues;
+  const onCrownShellsRef = useRef(onCrownShells);
+  onCrownShellsRef.current = onCrownShells;
+  /** 치아별 대합·인접·치조정 스캔과 맞춘 크라운. 스캔을 다시 읽으면 비운다. */
+  const crownScanRef = useRef(new Map<string, CrownAdaptScan>());
+  const crownRawScanRef = useRef(
+    new Map<string, { own: ScanCloud; opposing: CrownAdaptScan["opposing"] }>(),
+  );
+  const crownAdaptCacheRef = useRef(new Map<string, CachedCrown>());
   const onMarginTraceProgressRef = useRef(onMarginTraceProgress);
   onMarginTraceProgressRef.current = onMarginTraceProgress;
   /** 마진을 지운 뒤 찍는 점(월드). 시작점을 다시 누르면 닫는다. */
@@ -3171,7 +3231,17 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
           points: THREE.Vector3[];
           at: number;
         }
-      | { kind: "transform"; tooth: string; scale0: number; x0: number }
+      | {
+          kind: "transform";
+          tooth: string;
+          handle: TransformHandle;
+          sx: number;
+          sz: number;
+          box: TransformBox;
+          start: THREE.Vector3;
+          y0: number;
+          refine0: RefineTransform;
+        }
       | { kind: "hook"; tooth: string }
       | { kind: "hole"; tooth: string }
       | { kind: "hole-tip"; tooth: string; end: "top" | "bottom" }
@@ -3233,6 +3303,20 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       return { place, normal, x, z };
     };
 
+    /** 크라운 로컬 각도. 변형으로 옮기고 돌린 크라운 중심·방향 기준이다. */
+    const crownAngle = (frame: NonNullable<ReturnType<typeof toothFrame>>, tooth: string, point: THREE.Vector3) => {
+      const refine = designEditRef.current?.edits[tooth]?.refine;
+      const unit = unitToMmRef.current > 0 ? unitToMmRef.current : 1;
+      const local = point.clone().sub(frame.place.center);
+      if (refine) {
+        local
+          .addScaledVector(frame.x, -refine.offsetMm[0] / unit)
+          .addScaledVector(frame.z, -refine.offsetMm[1] / unit);
+      }
+      const turn = ((refine?.rotateDeg ?? 0) * Math.PI) / 180;
+      return Math.atan2(local.dot(frame.z), local.dot(frame.x)) - turn;
+    };
+
     const planePoint = (tooth: string) => {
       const frame = toothFrame(tooth);
       if (!frame) return null;
@@ -3242,9 +3326,71 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       );
       const point = new THREE.Vector3();
       if (!raycaster.ray.intersectPlane(plane, point)) return null;
-      const local = point.clone().sub(frame.place.center);
-      const angle = Math.atan2(local.dot(frame.z), local.dot(frame.x));
-      return { ...frame, point, angle };
+      return { ...frame, point, angle: crownAngle(frame, tooth, point) };
+    };
+
+    /** 변형 상자 중심 높이의 치아 평면과 광선이 만나는 점. */
+    const boxPlanePoint = (box: TransformBox) => {
+      const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(box.normal, box.center);
+      const point = new THREE.Vector3();
+      return raycaster.ray.intersectPlane(plane, point) ? point : null;
+    };
+
+    const transformPatch = (
+      state: Extract<EditDrag, { kind: "transform" }>,
+      point: THREE.Vector3 | null,
+      clientY: number,
+      symmetric: boolean,
+    ): Partial<RefineTransform> | null => {
+      const { box, refine0 } = state;
+      const unit = unitToMmRef.current > 0 ? unitToMmRef.current : 1;
+      if (state.handle === "height") {
+        const [x, y, z] = refine0.stretch;
+        return { stretch: [x, y + (state.y0 - clientY) / 180, z] };
+      }
+      if (!point) return null;
+      const rel = point.clone().sub(box.center);
+      if (state.handle === "move") {
+        const delta = point.clone().sub(state.start);
+        return {
+          offsetMm: [
+            refine0.offsetMm[0] + delta.dot(box.frameX) * unit,
+            refine0.offsetMm[1] + delta.dot(box.frameZ) * unit,
+          ],
+        };
+      }
+      if (state.handle === "rotate") {
+        const from = state.start.clone().sub(box.center);
+        const a0 = Math.atan2(from.dot(box.frameZ), from.dot(box.frameX));
+        const a1 = Math.atan2(rel.dot(box.frameZ), rel.dot(box.frameX));
+        return { rotateDeg: refine0.rotateDeg + ((a1 - a0) * 180) / Math.PI };
+      }
+      const hx = state.sx * box.halfX;
+      const hz = state.sz * box.halfZ;
+      const px = rel.dot(box.x);
+      const pz = rel.dot(box.z);
+      const [s0x, s0y, s0z] = refine0.stretch;
+      if (symmetric) {
+        return { stretch: [s0x * (px / hx), s0y, s0z * (pz / hz)] };
+      }
+      // 반대 모서리를 붙잡고 늘린다. 상자 중심이 따라 움직인다.
+      const kx = (px + hx) / (2 * hx);
+      const kz = (pz + hz) / (2 * hz);
+      const stretch: [number, number, number] = [
+        THREE.MathUtils.clamp(s0x * kx, STRETCH_RANGE.min, STRETCH_RANGE.max),
+        s0y,
+        THREE.MathUtils.clamp(s0z * kz, STRETCH_RANGE.min, STRETCH_RANGE.max),
+      ];
+      const shiftX = hx * (stretch[0] / s0x - 1);
+      const shiftZ = hz * (stretch[2] / s0z - 1);
+      const shift = box.x.clone().multiplyScalar(shiftX).addScaledVector(box.z, shiftZ);
+      return {
+        stretch,
+        offsetMm: [
+          refine0.offsetMm[0] + shift.dot(box.frameX) * unit,
+          refine0.offsetMm[1] + shift.dot(box.frameZ) * unit,
+        ],
+      };
     };
 
     const pickEdit = () => {
@@ -3391,9 +3537,27 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
           depth: sample.depth,
         });
       } else if (hit.tag.kind === "transform" && event.button === 0) {
-        const scale0 =
-          designEditRef.current.edits[hit.tag.tooth]?.refine.scale ?? 1;
-        drag = { kind: "transform", tooth: hit.tag.tooth, scale0, x0: event.clientX };
+        const box = hit.object.userData.transformBox as TransformBox | undefined;
+        const refine = designEditRef.current.edits[hit.tag.tooth]?.refine;
+        if (!box || !refine) return;
+        const start = boxPlanePoint(box);
+        if (!start && hit.tag.handle !== "height") return;
+        drag = {
+          kind: "transform",
+          tooth: hit.tag.tooth,
+          handle: hit.tag.handle,
+          sx: hit.tag.sx ?? 1,
+          sz: hit.tag.sz ?? 1,
+          box,
+          start: start ?? box.center.clone(),
+          y0: event.clientY,
+          refine0: {
+            scale: refine.scale,
+            stretch: [...refine.stretch],
+            offsetMm: [...refine.offsetMm],
+            rotateDeg: refine.rotateDeg,
+          },
+        };
       } else if (hit.tag.kind === "hook" && (event.button === 2 || brush === "erase")) {
         send({ type: "hook-off", tooth: hit.tag.tooth });
       } else if (hit.tag.kind === "hook" && event.button === 0) {
@@ -3414,9 +3578,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       } else if (hit.tag.kind === "crown" && event.button === 0) {
         const frame = toothFrame(hit.tag.tooth);
         if (!frame) return;
-        const local = hit.point.clone().sub(frame.place.center);
-        const angle = Math.atan2(local.dot(frame.z), local.dot(frame.x));
-        const along = local.dot(frame.normal);
+        const angle = crownAngle(frame, hit.tag.tooth, hit.point);
         if (tool === "hook") {
           send({
             type: "hook-angle",
@@ -3500,11 +3662,13 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
           }
         }
       } else if (drag.kind === "transform") {
-        send({
-          type: "transform",
-          tooth: drag.tooth,
-          scale: drag.scale0 + (event.clientX - drag.x0) / 180,
-        });
+        const patch = transformPatch(
+          drag,
+          drag.handle === "height" ? null : boxPlanePoint(drag.box),
+          event.clientY,
+          event.shiftKey,
+        );
+        if (patch) send({ type: "transform", tooth: drag.tooth, patch });
       } else if (drag.kind === "hook") {
         const placed = planePoint(drag.tooth);
         if (!placed) return;
@@ -3630,6 +3794,113 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     renderer.domElement.addEventListener("pointerdown", onAlignPointerDown);
     renderer.domElement.addEventListener("pointerup", onAlignPointerUp);
 
+    let occlusionDrag: {
+      kind: "move" | "twist" | "tilt";
+      arch: "upper" | "lower";
+      pointerId: number;
+      last: { x: number; y: number };
+      pivot: THREE.Vector3;
+      matrix: THREE.Matrix4;
+    } | null = null;
+    /** 그룹 안 좌표로 쓰는 화면 축. */
+    const groupAxis = (column: number) => {
+      const axis = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, column).normalize();
+      const turn = groupRef.current?.getWorldQuaternion(new THREE.Quaternion());
+      if (turn) axis.applyQuaternion(turn.invert());
+      return axis;
+    };
+    const pivotOnScreen = (pivot: THREE.Vector3, rect: DOMRect) => {
+      const world = pivot.clone();
+      groupRef.current?.localToWorld(world);
+      world.project(camera);
+      return {
+        x: rect.left + ((world.x + 1) / 2) * rect.width,
+        y: rect.top + ((1 - world.y) / 2) * rect.height,
+      };
+    };
+    const onOcclusionDown = (event: PointerEvent) => {
+      const occ = occlusionRef.current;
+      const api = occlusionApiRef.current;
+      if (!occ || occ.mode !== "free" || event.button !== 0 || !api) return;
+      aim(event);
+      const meshes = loadedRef.current
+        .filter((entry) => entry.role === occ.arch && entry.mesh.visible)
+        .map((entry) => entry.mesh);
+      if (!raycaster.intersectObjects(meshes, false)[0]) return;
+      const pivot = api.pivot(occ.arch);
+      if (!pivot) return;
+      api.ensureBase(occ.arch);
+      api.begin();
+      occlusionDrag = {
+        kind: event.shiftKey ? "twist" : event.altKey ? "tilt" : "move",
+        arch: occ.arch,
+        pointerId: event.pointerId,
+        last: { x: event.clientX, y: event.clientY },
+        pivot,
+        matrix: new THREE.Matrix4(),
+      };
+      try {
+        renderer.domElement.setPointerCapture(event.pointerId);
+      } catch {
+        // noop
+      }
+      renderer.domElement.style.cursor = "grabbing";
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+    const onOcclusionMove = (event: PointerEvent) => {
+      const drag = occlusionDrag;
+      const api = occlusionApiRef.current;
+      if (!drag || !api || event.pointerId !== drag.pointerId) return;
+      const rect = renderer.domElement.getBoundingClientRect();
+      const height = Math.max(rect.height, 1);
+      const dx = event.clientX - drag.last.x;
+      const dy = event.clientY - drag.last.y;
+      const pivot = drag.pivot.clone().applyMatrix4(drag.matrix);
+      const around = (axis: THREE.Vector3, angle: number) =>
+        new THREE.Matrix4()
+          .makeTranslation(pivot.x, pivot.y, pivot.z)
+          .multiply(new THREE.Matrix4().makeRotationAxis(axis, angle))
+          .multiply(new THREE.Matrix4().makeTranslation(-pivot.x, -pivot.y, -pivot.z));
+      if (drag.kind === "move") {
+        const perPx = (camera.top - camera.bottom) / Math.max(camera.zoom, 1e-6) / height;
+        const shift = groupAxis(0)
+          .multiplyScalar(dx * perPx)
+          .addScaledVector(groupAxis(1), -dy * perPx);
+        drag.matrix.premultiply(new THREE.Matrix4().makeTranslation(shift.x, shift.y, shift.z));
+      } else if (drag.kind === "twist") {
+        const center = pivotOnScreen(pivot, rect);
+        const before = Math.atan2(-(drag.last.y - center.y), drag.last.x - center.x);
+        const after = Math.atan2(-(event.clientY - center.y), event.clientX - center.x);
+        drag.matrix.premultiply(around(groupAxis(2), after - before));
+      } else {
+        const perPx = Math.PI / height;
+        drag.matrix.premultiply(around(groupAxis(1), dx * perPx));
+        drag.matrix.premultiply(around(groupAxis(0), dy * perPx));
+      }
+      drag.last = { x: event.clientX, y: event.clientY };
+      api.preview(drag.arch, drag.matrix);
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+    const onOcclusionUp = (event: PointerEvent) => {
+      const drag = occlusionDrag;
+      if (!drag || event.pointerId !== drag.pointerId) return;
+      occlusionDrag = null;
+      try {
+        renderer.domElement.releasePointerCapture(event.pointerId);
+      } catch {
+        // noop
+      }
+      renderer.domElement.style.cursor = "";
+      occlusionApiRef.current?.bake(drag.arch, drag.matrix);
+      event.stopImmediatePropagation();
+    };
+    renderer.domElement.addEventListener("pointerdown", onOcclusionDown, true);
+    renderer.domElement.addEventListener("pointermove", onOcclusionMove, true);
+    renderer.domElement.addEventListener("pointerup", onOcclusionUp, true);
+    renderer.domElement.addEventListener("pointercancel", onOcclusionUp, true);
+
     let scanbodyDown: { x: number; y: number } | null = null;
     const onScanbodyPointerDown = (event: PointerEvent) => {
       if (!scanbodyPickRef.current.tooth || event.button !== 0) return;
@@ -3684,6 +3955,10 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       renderer.domElement.removeEventListener("contextmenu", onEditContext, true);
       renderer.domElement.removeEventListener("pointerdown", onAlignPointerDown);
       renderer.domElement.removeEventListener("pointerup", onAlignPointerUp);
+      renderer.domElement.removeEventListener("pointerdown", onOcclusionDown, true);
+      renderer.domElement.removeEventListener("pointermove", onOcclusionMove, true);
+      renderer.domElement.removeEventListener("pointerup", onOcclusionUp, true);
+      renderer.domElement.removeEventListener("pointercancel", onOcclusionUp, true);
       renderer.domElement.removeEventListener("pointerdown", onScanbodyPointerDown);
       renderer.domElement.removeEventListener("pointerup", onScanbodyPointerUp);
       renderer.domElement.removeEventListener("pointerdown", onMarginPickDown);
@@ -4288,6 +4563,131 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     }
     layoutSplitRef.current(next);
   }, [manualAlignArch]);
+
+  const occlusionEntries = (arch: "upper" | "lower") =>
+    loadedRef.current.filter((entry) => entry.role === arch);
+
+  const settleOcclusion = () => {
+    for (const entry of loadedRef.current) {
+      if (entry.role !== "upper" && entry.role !== "lower") continue;
+      entry.dist = null;
+      entry.align = null;
+      entry.analysisColor = null;
+    }
+    syncBadgesRef.current();
+    setLoadVersion((value) => value + 1);
+    occlusionLiveRef.current = false;
+    onOcclusionEditRef.current?.("end");
+  };
+
+  occlusionApiRef.current = {
+    ensureBase: (arch) => {
+      const base = occlusionBaseRef.current;
+      for (const entry of occlusionEntries(arch)) {
+        if (!base.has(entry.id)) base.set(entry.id, captureBasePositions(entry.geometry));
+      }
+    },
+    begin: () => {
+      if (occlusionLiveRef.current) return;
+      occlusionLiveRef.current = true;
+      onOcclusionEditRef.current?.("start");
+    },
+    preview: (arch, matrix) => {
+      const scale = new THREE.Vector3();
+      for (const entry of occlusionEntries(arch)) {
+        matrix.decompose(entry.mesh.position, entry.mesh.quaternion, scale);
+      }
+    },
+    bake: (arch, matrix) => {
+      const moved = !matrix.equals(new THREE.Matrix4());
+      for (const entry of occlusionEntries(arch)) {
+        entry.mesh.position.set(0, 0, 0);
+        entry.mesh.quaternion.identity();
+        if (!moved) continue;
+        entry.geometry.applyMatrix4(matrix);
+        entry.geometry.computeVertexNormals();
+        entry.geometry.computeBoundingBox();
+        entry.geometry.computeBoundingSphere();
+      }
+      settleOcclusion();
+    },
+    pivot: (arch) => {
+      const box = new THREE.Box3();
+      for (const entry of occlusionEntries(arch)) {
+        if (!entry.geometry.boundingBox) entry.geometry.computeBoundingBox();
+        const bounds = entry.geometry.boundingBox;
+        if (bounds && !bounds.isEmpty()) box.union(bounds);
+      }
+      return box.isEmpty() ? null : box.getCenter(new THREE.Vector3());
+    },
+    away: (arch) => {
+      const frame = frameRef.current ?? estimateDentalFrame(loadedRef.current);
+      const up = frame?.up.clone() ?? new THREE.Vector3(0, 0, 1);
+      if (up.lengthSq() < 1e-8) up.set(0, 0, 1);
+      up.normalize();
+      return arch === "lower" ? up.negate() : up;
+    },
+    measureMm: (arch) => {
+      const away = occlusionApiRef.current?.away(arch) ?? new THREE.Vector3(0, 0, 1);
+      let sum = 0;
+      let count = 0;
+      for (const entry of occlusionEntries(arch)) {
+        const base = occlusionBaseRef.current.get(entry.id);
+        const pos = entry.geometry.getAttribute("position");
+        if (!base || !pos || base.length < pos.count * 3) continue;
+        const step = Math.max(1, Math.floor(pos.count / 2000));
+        for (let i = 0; i < pos.count; i += step) {
+          sum +=
+            (pos.getX(i) - (base[i * 3] ?? 0)) * away.x +
+            (pos.getY(i) - (base[i * 3 + 1] ?? 0)) * away.y +
+            (pos.getZ(i) - (base[i * 3 + 2] ?? 0)) * away.z;
+          count += 1;
+        }
+      }
+      return count > 0 ? (sum / count) * unitToMmRef.current : 0;
+    },
+    reset: (arch) => {
+      const entries = occlusionEntries(arch).filter((entry) =>
+        occlusionBaseRef.current.has(entry.id),
+      );
+      if (entries.length === 0) return;
+      occlusionApiRef.current?.begin();
+      for (const entry of entries) {
+        const base = occlusionBaseRef.current.get(entry.id);
+        entry.mesh.position.set(0, 0, 0);
+        entry.mesh.quaternion.identity();
+        if (base) applyCapturedPositions(entry, base);
+        entry.geometry.computeBoundingSphere();
+      }
+      settleOcclusion();
+    },
+  };
+
+  const verticalShift = (arch: "upper" | "lower", mm: number) => {
+    const api = occlusionApiRef.current;
+    if (!api) return null;
+    api.ensureBase(arch);
+    const unit = unitToMmRef.current > 0 ? unitToMmRef.current : 1;
+    const shift = api.away(arch).multiplyScalar((mm - api.measureMm(arch)) / unit);
+    return new THREE.Matrix4().makeTranslation(shift.x, shift.y, shift.z);
+  };
+
+  const occlusionArchKey = occlusionAdjust?.arch ?? null;
+  useEffect(() => {
+    if (occlusionLiveRef.current) {
+      for (const entry of loadedRef.current) {
+        entry.mesh.position.set(0, 0, 0);
+        entry.mesh.quaternion.identity();
+      }
+      occlusionLiveRef.current = false;
+      onOcclusionEditRef.current?.("end");
+    }
+    if (!occlusionArchKey) {
+      occlusionBaseRef.current.clear();
+      return;
+    }
+    occlusionApiRef.current?.ensureBase(occlusionArchKey);
+  }, [occlusionArchKey]);
 
   useEffect(() => {
     const loaded = loadedRef.current;
@@ -5156,6 +5556,31 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       alignToBiteAuto: () => alignAutoRef.current(),
       cancelAlign: () => cancelAlignRef.current(),
       clearAlignPicks: () => clearPicksRef.current(),
+      occlusionVerticalMm: () => {
+        const arch = occlusionRef.current?.arch;
+        const api = occlusionApiRef.current;
+        if (!arch || !api) return 0;
+        api.ensureBase(arch);
+        return api.measureMm(arch);
+      },
+      previewOcclusionVertical: (mm) => {
+        const arch = occlusionRef.current?.arch;
+        const matrix = arch ? verticalShift(arch, mm) : null;
+        if (!arch || !matrix) return;
+        occlusionApiRef.current?.begin();
+        occlusionApiRef.current?.preview(arch, matrix);
+      },
+      commitOcclusionVertical: (mm) => {
+        const arch = occlusionRef.current?.arch;
+        const matrix = arch ? verticalShift(arch, mm) : null;
+        if (!arch || !matrix) return;
+        occlusionApiRef.current?.begin();
+        occlusionApiRef.current?.bake(arch, matrix);
+      },
+      resetOcclusion: () => {
+        const arch = occlusionRef.current?.arch;
+        if (arch) occlusionApiRef.current?.reset(arch);
+      },
       exportChangedScans: () => exportScanMeshes(loadedRef.current, null),
       changedScanSignature: () => changedScanStamp(loadedRef.current),
       captureJawPositions: () =>
@@ -5832,6 +6257,137 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   const scanDistanceProbeRef = useRef(scanDistanceProbe);
   scanDistanceProbeRef.current = scanDistanceProbe;
 
+  /** 스캔 정점·자세가 바뀌면 달라지는 값. 수동 교합으로 메시를 옮겨도 바뀐다. */
+  const scanSignature = () => {
+    groupRef.current?.updateWorldMatrix(true, true);
+    return loadedRef.current
+      .map((entry) => {
+        const pos = entry.geometry.getAttribute("position") as THREE.BufferAttribute | undefined;
+        const m = entry.mesh.matrixWorld.elements;
+        return `${entry.role}:${entry.geometry.uuid}:${pos?.version ?? 0}:${m.map((n) => n.toFixed(4)).join(",")}`;
+      })
+      .join("|");
+  };
+
+  /**
+   * 크라운 맞춤용 스캔. 대합은 반대 악, 인접은 지대치 악에서 마진 안(지대치)과 마진 아래(치은)를 뺀다.
+   * 치조정은 폰틱 발밑, 치은은 크라운 마진 둘레(지대치 밖, 인접치 아래). 법선은 바깥(교합 쪽)을 보게 악마다 뒤집는다.
+   */
+  const crownAdaptScan = (tooth: string, signature: string): CrownAdaptScan | null => {
+    const place = placementsRef.current.find((row) => row.toothNumber === tooth);
+    if (!place || (place.arch !== "upper" && place.arch !== "lower")) return null;
+    const unit = unitToMmRef.current > 0 ? unitToMmRef.current : 1;
+    const axis = toothAxisDir(tooth);
+    const margin = designEditRef.current?.edits[tooth]?.margin;
+    const c = place.center;
+    const rawKey = JSON.stringify([
+      signature,
+      tooth,
+      [c.x, c.y, c.z, axis.x, axis.y, axis.z].map((n) => n.toFixed(4)),
+    ]);
+    const key = JSON.stringify([
+      rawKey,
+      margin && !margin.deleted
+        ? [margin.radii.map((r) => r.toFixed(3)), (margin.depths ?? []).map((d) => d.toFixed(3)), margin.offsetMm]
+        : null,
+    ]);
+    const cache = crownScanRef.current;
+    const hit = cache.get(key);
+    if (hit) return hit;
+
+    const up = frameRef.current?.up ?? new THREE.Vector3(0, 0, 1);
+    const reach = Math.max(place.radius * 2.4, 12 / unit);
+    const reach2 = reach * reach;
+    const collect = (role: "upper" | "lower") => {
+      const points: number[] = [];
+      const normals: number[] = [];
+      const point = new THREE.Vector3();
+      const normal = new THREE.Vector3();
+      const normalMatrix = new THREE.Matrix3();
+      for (const entry of loadedRef.current) {
+        if (entry.role !== role) continue;
+        const pos = entry.geometry.getAttribute("position");
+        if (!pos) continue;
+        const nor = entry.geometry.getAttribute("normal");
+        normalMatrix.getNormalMatrix(entry.mesh.matrixWorld);
+        for (let i = 0; i < pos.count; i += 1) {
+          point.fromBufferAttribute(pos, i).applyMatrix4(entry.mesh.matrixWorld);
+          if (point.distanceToSquared(c) > reach2) continue;
+          points.push(point.x, point.y, point.z);
+          if (nor) normal.fromBufferAttribute(nor, i).applyMatrix3(normalMatrix).normalize();
+          else normal.set(0, 0, 0);
+          normals.push(normal.x, normal.y, normal.z);
+        }
+      }
+      const occlusal = role === "lower" ? up : up.clone().negate();
+      let facing = 0;
+      for (let i = 0; i < normals.length; i += 3) {
+        facing += normals[i]! * occlusal.x + normals[i + 1]! * occlusal.y + normals[i + 2]! * occlusal.z;
+      }
+      if (facing < 0) for (let i = 0; i < normals.length; i += 1) normals[i] = -normals[i]!;
+      return downsampleCloud(
+        { points: new Float32Array(points), normals: new Float32Array(normals) },
+        0.12 / unit,
+      );
+    };
+    const split = (cloud: ScanCloud, keep: (lateral: number, axial: number) => boolean): ScanCloud => {
+      const points: number[] = [];
+      const normals: number[] = [];
+      const d = new THREE.Vector3();
+      for (let i = 0; i < cloud.points.length; i += 3) {
+        d.set(cloud.points[i]! - c.x, cloud.points[i + 1]! - c.y, cloud.points[i + 2]! - c.z);
+        const axial = d.dot(axis);
+        const lateral = Math.sqrt(Math.max(0, d.lengthSq() - axial * axial));
+        if (!keep(lateral, axial)) continue;
+        points.push(cloud.points[i]!, cloud.points[i + 1]!, cloud.points[i + 2]!);
+        normals.push(cloud.normals[i]!, cloud.normals[i + 1]!, cloud.normals[i + 2]!);
+      }
+      return { points: new Float32Array(points), normals: new Float32Array(normals) };
+    };
+
+    const rawCache = crownRawScanRef.current;
+    let raw = rawCache.get(rawKey);
+    if (!raw) {
+      const opposingCloud = collect(place.arch === "upper" ? "lower" : "upper");
+      raw = { own: collect(place.arch), opposing: createScanGrid(opposingCloud, unit) };
+      if (rawCache.size > 16) rawCache.clear();
+      rawCache.set(rawKey, raw);
+    }
+    const own = raw.own;
+    const radii = margin && !margin.deleted && margin.radii.length > 0 ? margin.radii : null;
+    const prepRadius = radii
+      ? place.radius * 0.78 * Math.max(...radii) + (margin?.offsetMm ?? 0) / unit + 0.3 / unit
+      : place.radius * 0.9;
+    const marginTop = Math.max(0, ...(radii ? (margin?.depths ?? []) : []));
+    const adjacent = split(own, (lateral, axial) => lateral > prepRadius && axial > marginTop + 0.5 / unit);
+    const ridge = split(own, (lateral) => lateral < place.radius);
+    const gingiva = radii
+      ? split(
+          own,
+          (lateral, axial) =>
+            lateral > prepRadius &&
+            lateral < Math.max(place.radius * 1.15, prepRadius + 1 / unit) &&
+            axial <= marginTop + 0.5 / unit,
+        )
+      : null;
+    const axisTuple: [number, number, number] = [axis.x, axis.y, axis.z];
+    const row: CrownAdaptScan = {
+      opposing: raw.opposing,
+      adjacent: createScanGrid(adjacent, unit),
+      adjacentColumns: createScanColumns(adjacent, axisTuple, unit),
+      ridge: createScanColumns(ridge, axisTuple, unit),
+      gingiva: gingiva ? createScanColumns(gingiva, axisTuple, unit) : null,
+    };
+    if (cache.size > 16) cache.clear();
+    cache.set(key, row);
+    return row;
+  };
+  const crownAdaptScanRef = useRef(crownAdaptScan);
+  crownAdaptScanRef.current = crownAdaptScan;
+  const scanSignatureRef = useRef(scanSignature);
+  scanSignatureRef.current = scanSignature;
+  const lastScanSignatureRef = useRef("");
+
   useEffect(() => {
     scanbodyPickRef.current.tooth = scanbodyPickTooth;
     clearScanbodyMarksRef.current();
@@ -5850,6 +6406,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     if (!designEdit) {
       onMarginUndercutRef.current?.(null, 0);
       onHoleIssuesRef.current?.({});
+      onCrownShellsRef.current?.({});
       return;
     }
     const hidden = hiddenKey ? hiddenKey.split(",") : [];
@@ -5870,6 +6427,12 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         : designEdit;
     let undercut: { tooth: string | null; count: number } = { tooth: null, count: 0 };
     const holeIssues: Record<string, string> = {};
+    const crownShells: Record<string, number> = {};
+    const signature = scanSignatureRef.current();
+    if (signature !== lastScanSignatureRef.current) {
+      lastScanSignatureRef.current = signature;
+      crownAdaptCacheRef.current.clear();
+    }
     const layer = buildProsthesisEditLayer({
       placements: placementsRef.current,
       frame: frameRef.current,
@@ -5885,12 +6448,19 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       onHoleIssue: (tooth, issue) => {
         if (issue) holeIssues[tooth] = issue;
       },
+      adaptScan: (tooth) => crownAdaptScanRef.current(tooth, signature),
+      contactPaint: contactMap ? { gapMm: occlusalGapMm, mode: contactMode } : null,
+      adaptCache: crownAdaptCacheRef.current,
+      onCrownShell: (tooth, mm) => {
+        if (mm != null) crownShells[tooth] = Math.round(mm * 1000) / 1000;
+      },
     });
     scene.add(layer);
     editLayerRef.current = layer;
     onMarginUndercutRef.current?.(undercut.tooth, undercut.count);
     onHoleIssuesRef.current?.(holeIssues);
-  }, [designEdit, loadVersion, showInsertionAxis, hiddenKey]);
+    onCrownShellsRef.current?.(crownShells);
+  }, [designEdit, loadVersion, showInsertionAxis, hiddenKey, contactMap, occlusalGapMm, contactMode]);
 
   const clearStoneModel = (notify: boolean) => {
     const prev = stoneLayerRef.current;
