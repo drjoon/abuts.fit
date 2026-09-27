@@ -26,8 +26,9 @@
 // - 2026-09-27: 정중앙은 모눈까지. 2mm는 옅은 점선, 10mm는 더 진하고, 가운데는 더 굵다.
 // - 2026-09-27: 뷰를 줄이면 모델 배율은 처음 맞춘 그대로 두고 좌우를 자른다.
 // - 2026-09-27: 마진을 교합면에서 0.75mm 넓혀 삽입축으로 내려 다이를 자른다. 다이 보기는 다이가 있는 악 스캔을 숨긴다.
-// - 2026-09-27: 치아만 보기는 그 치아의 다이와 작업물만 그린다.
 // - 2026-09-27: 출력용 모델은 buildStoneModel로 만들어 들고 있다가 내보낸다. 보는 동안 스캔·다이는 가리고, 스캔 좌표가 바뀌면 버린다.
+// - 2026-09-27: 숨긴 치아는 다이와 작업물을 그리지 않는다. 다이 보기는 보이는 치아의 다이만.
+// - 2026-09-27: 삽입축을 잡으면 그 화면의 오른쪽·위·앞이 X·Y·Z가 되게 스캔을 돌린다.
 import {
   forwardRef,
   useEffect,
@@ -103,6 +104,8 @@ import {
 import { cn } from "@/shared/ui/cn";
 
 export type OralScanViewPreset = "fit" | "occlusal" | "buccal" | "lingual";
+
+const EMPTY_TEETH: readonly string[] = [];
 
 /** 석고 다이 색. */
 const DIE_RGB = 0xe6d7ad;
@@ -243,6 +246,13 @@ export type OralScanToothBadge = {
   active?: boolean;
 };
 
+export type OralScanWorldTurn = {
+  /** 원점을 지나는 회전. 방향·원점 기준 오프셋 모두에 쓴다. */
+  vector: (value: readonly [number, number, number]) => [number, number, number];
+  /** captureJawPositions로 받은 정점을 새 좌표로. */
+  jaw: (id: string, positions: Float32Array) => Float32Array;
+};
+
 export type OralScanOverlaySource = {
   id: string;
   fileName: string;
@@ -291,8 +301,13 @@ type Props = {
   dieMargins?: Readonly<Record<string, ToothDesignEdit["margin"]>> | null;
   /** 다이를 보이고, 다이가 있는 악 스캔은 숨긴다. */
   showDies?: boolean;
-  /** 이 치아들의 다이와 작업물만 보인다. 다이가 아직 없으면 스캔은 그대로 둔다. */
-  isolateTeeth?: readonly string[] | null;
+  /** 이 치아들의 다이와 작업물은 그리지 않는다. */
+  hiddenTeeth?: readonly string[];
+  /**
+   * 삽입축을 잡은 화면에 맞춰 월드를 돌렸을 때.
+   * 뷰어 밖에 둔 월드 벡터와 정점 사본을 같은 회전으로 옮긴다.
+   */
+  onWorldTurned?: (turn: OralScanWorldTurn) => void;
   /** 다이를 만든 치아가 바뀔 때. */
   onDiesChange?: (teeth: readonly string[]) => void;
   /** 만든 모델을 보이고, 원래 스캔과 다이는 가린다. */
@@ -951,6 +966,20 @@ function captureBasePositions(geometry: THREE.BufferGeometry) {
     out[i * 3] = pos.getX(i);
     out[i * 3 + 1] = pos.getY(i);
     out[i * 3 + 2] = pos.getZ(i);
+  }
+  return out;
+}
+
+function transformPositions(src: Float32Array, matrix: THREE.Matrix4) {
+  const e = matrix.elements;
+  const out = new Float32Array(src.length);
+  for (let i = 0; i + 2 < src.length; i += 3) {
+    const x = src[i] ?? 0;
+    const y = src[i + 1] ?? 0;
+    const z = src[i + 2] ?? 0;
+    out[i] = e[0]! * x + e[4]! * y + e[8]! * z + e[12]!;
+    out[i + 1] = e[1]! * x + e[5]! * y + e[9]! * z + e[13]!;
+    out[i + 2] = e[2]! * x + e[6]! * y + e[10]! * z + e[14]!;
   }
   return out;
 }
@@ -2402,7 +2431,8 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       onDesignGesture,
       dieMargins = null,
       showDies = false,
-      isolateTeeth = null,
+      hiddenTeeth = EMPTY_TEETH,
+      onWorldTurned,
       onDiesChange,
       showStoneModel = false,
       onStoneModelChange,
@@ -2487,9 +2517,11 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   dieMarginsRef.current = dieMargins;
   const onDiesChangeRef = useRef(onDiesChange);
   onDiesChangeRef.current = onDiesChange;
-  const isolateKey = (isolateTeeth ?? []).map((tooth) => fdiDigits(tooth)).filter(Boolean).join(",");
+  const hiddenKey = hiddenTeeth.map((tooth) => fdiDigits(tooth)).filter(Boolean).join(",");
+  const onWorldTurnedRef = useRef(onWorldTurned);
+  onWorldTurnedRef.current = onWorldTurned;
   const dieReadyKey = dieReady.map((row) => `${row.tooth}:${row.arch}`).join(",");
-  /** 다이 보기·치아만 보기에서 숨길 스캔. 수동 정렬 중에는 쓰지 않는다. */
+  /** 다이 보기에서 숨길 스캔. 수동 정렬 중에는 쓰지 않는다. */
   const stoneLayerRef = useRef<THREE.Group | null>(null);
   const stonePartsRef = useRef<StoneModelPart[]>([]);
   const [stoneVersion, setStoneVersion] = useState(0);
@@ -2499,17 +2531,13 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   const dieHideRef = useRef<(role: LabOralScanRole) => boolean>(() => false);
   dieHideRef.current = (role) => {
     if (stoneShown) return true;
-    const isolated = isolateKey ? isolateKey.split(",") : [];
-    if (isolated.length > 0 && dieReady.some((row) => isolated.includes(row.tooth))) {
-      return true;
-    }
     if (!showDies) return false;
     return dieReady.some((row) => row.arch === role);
   };
   const dieShownRef = useRef<(tooth: string) => boolean>(() => false);
   dieShownRef.current = (tooth) => {
-    if (manualAlignArch != null || stoneShown) return false;
-    return isolateKey ? isolateKey.split(",").includes(tooth) : showDies;
+    if (manualAlignArch != null || stoneShown || !showDies) return false;
+    return !(hiddenKey ? hiddenKey.split(",") : []).includes(tooth);
   };
   const manualRef = useRef<{
     arch: "upper" | "lower" | null;
@@ -4040,7 +4068,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     prepArch,
     manualAlignArch,
     showDies,
-    isolateKey,
+    hiddenKey,
     dieReadyKey,
     stoneShown,
     stoneVersion,
@@ -4089,6 +4117,89 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       frameCamera(frame.anterior.clone().negate(), up, true, true);
       return;
     }
+  };
+
+  /** 화면 오른쪽·위·앞(카메라 쪽)이 X·Y·Z가 되게 스캔과 월드 좌표를 원점 기준으로 돌린다. 화면은 그대로다. */
+  const turnWorldToViewRef = useRef<() => void>(() => {});
+  turnWorldToViewRef.current = () => {
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    if (!camera || !controls || loadedRef.current.length === 0) return;
+    camera.updateMatrixWorld(true);
+    const sx = new THREE.Vector3();
+    const sy = new THREE.Vector3();
+    const sz = new THREE.Vector3();
+    camera.matrixWorld.extractBasis(sx, sy, sz);
+    sx.normalize();
+    sy.normalize();
+    sz.normalize();
+    if (sx.x > 1 - 1e-6 && sy.y > 1 - 1e-6 && sz.z > 1 - 1e-6) return;
+    const rot = new THREE.Matrix4().makeBasis(sx, sy, sz).transpose();
+    const turn = (value: THREE.Vector3) => value.applyMatrix4(rot);
+
+    groupRef.current?.updateWorldMatrix(true, true);
+    const jawTurns = new Map<string, THREE.Matrix4>();
+    for (const entry of loadedRef.current) {
+      const world = entry.mesh.matrixWorld.clone();
+      const local = world.clone().invert().multiply(rot).multiply(world);
+      entry.geometry.applyMatrix4(local);
+      entry.geometry.computeBoundingBox();
+      entry.geometry.computeBoundingSphere();
+      entry.basePositions = transformPositions(entry.basePositions, local);
+      entry.align = null;
+      jawTurns.set(entry.id, local);
+    }
+
+    placementsRef.current = placementsRef.current.map((place) => ({
+      ...place,
+      center: turn(place.center.clone()),
+    }));
+    for (const axis of insertionAxesRef.current) {
+      turn(axis.dir);
+      turn(axis.origin);
+      turn(axis.view.position);
+      turn(axis.view.target);
+      turn(axis.view.up);
+    }
+    const frame = frameRef.current;
+    if (frame) {
+      turn(frame.up);
+      turn(frame.anterior);
+      turn(frame.right);
+    }
+    turn(HOME_DIR);
+    turn(HOME_UP);
+    const pose = initialPoseRef.current;
+    if (pose) {
+      turn(pose.dir);
+      turn(pose.up);
+      turn(pose.target);
+    }
+    turn(fitTargetRef.current);
+    for (const point of scanbodyPickRef.current.points) turn(point);
+    scanbodyMarksRef.current?.applyMatrix4(rot);
+    dieLayerRef.current?.applyMatrix4(rot);
+    dieCacheRef.current = new Map();
+    nearbyScanRef.current.clear();
+
+    snapRef.current = null;
+    turn(camera.position);
+    turn(camera.up);
+    turn(controls.target);
+    camera.lookAt(controls.target);
+    camera.updateProjectionMatrix();
+    controls.syncFromCamera();
+
+    onWorldTurnedRef.current?.({
+      vector: (value) => {
+        const out = new THREE.Vector3(value[0], value[1], value[2]).applyMatrix4(rot);
+        return [out.x, out.y, out.z];
+      },
+      jaw: (id, positions) => {
+        const local = jawTurns.get(id);
+        return local ? transformPositions(positions, local) : positions;
+      },
+    });
   };
 
   focusToothRef.current = (raw) => {
@@ -4645,6 +4756,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         });
         insertionAxesRef.current = kept;
         for (const entry of loadedRef.current) entry.align = null;
+        turnWorldToViewRef.current();
         syncInsertionMarkerRef.current();
         syncBadgesRef.current();
         onInsertionAxisChangeRef.current?.(kept.length > 0);
@@ -4948,19 +5060,19 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       editLayerRef.current = null;
     }
     if (!designEdit) return;
-    const isolated = isolateKey ? isolateKey.split(",") : [];
+    const hidden = hiddenKey ? hiddenKey.split(",") : [];
     const spec =
-      isolated.length > 0
+      hidden.length > 0
         ? {
             ...designEdit,
             edits: Object.fromEntries(
-              Object.entries(designEdit.edits).filter(([tooth]) =>
-                isolated.includes(fdiDigits(tooth)),
+              Object.entries(designEdit.edits).filter(
+                ([tooth]) => !hidden.includes(fdiDigits(tooth)),
               ),
             ),
             bridges: designEdit.bridges.filter(
               (link) =>
-                isolated.includes(fdiDigits(link.from)) && isolated.includes(fdiDigits(link.to)),
+                !hidden.includes(fdiDigits(link.from)) && !hidden.includes(fdiDigits(link.to)),
             ),
           }
         : designEdit;
@@ -4974,7 +5086,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     });
     scene.add(layer);
     editLayerRef.current = layer;
-  }, [designEdit, loadVersion, showInsertionAxis, isolateKey]);
+  }, [designEdit, loadVersion, showInsertionAxis, hiddenKey]);
 
   const clearStoneModel = (notify: boolean) => {
     const prev = stoneLayerRef.current;

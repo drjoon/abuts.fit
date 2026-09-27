@@ -45,7 +45,9 @@
 // - 2026-09-27: 위저드 카드의 삽입축 버튼은 없애고, 치아 정보의 해당 삽입축 버튼을 깜빡인다. 카드 좌우 화살표로 단계를 옮긴다.
 // - 2026-09-27: 헤더 치과·환자명 옆 `< # >`. #은 미완료 의뢰 건수, 화살표로 이전·다음 의뢰를 연다. 떠나는 의뢰는 닫기처럼 뒤에서 저장한다.
 // - 2026-09-27: 범위 모델까지면 「모델」 단계. 종류·받침 높이·다이 분리·간격을 고르고 buildStoneModel로 만든다. 모델을 보는 동안 스캔은 가린다.
-// - 2026-09-27: 마진을 잡으면 다이를 자동으로 만든다. 작업영역 위 다이 토글. 치아 정보에서 치아를 누르면 그 다이와 작업물만, 상악·하악을 누르면 그 악 모델 전부.
+// - 2026-09-27: 마진을 잡으면 다이를 자동으로 만든다. 작업영역 위 다이 토글.
+// - 2026-09-27: 치아 정보의 상악·하악·치아 번호 왼쪽 체크로 화면 표시를 고른다. 다이 토글은 체크한 치아의 다이만. 치아 번호는 그 교합면으로만 옮긴다.
+// - 2026-09-27: 오른쪽 아래 교합면·협측·설측·맞춤 버튼은 없앤다. 삽입축을 잡으면 그 화면으로 X·Y·Z를 다시 잡는다.
 import {
   useCallback,
   useEffect,
@@ -124,6 +126,7 @@ import {
   type ConnectorSectionShot,
   type OralScanOverlayHandle,
   type OralScanOverlaySource,
+  type OralScanWorldTurn,
   type StoneModelPartSummary,
 } from "@/shared/components/practice/OralScanOverlayViewer";
 import {
@@ -635,8 +638,8 @@ function LabProsthesisAiDesignDialog({
   const [marginShown, setMarginShown] = useState(false);
   const [dieShown, setDieShown] = useState(false);
   const [dieTeeth, setDieTeeth] = useState<readonly string[]>([]);
-  /** 치아 정보에서 누른 치아. 그 다이와 작업물만 보인다. */
-  const [isolatedTeeth, setIsolatedTeeth] = useState<string[] | null>(null);
+  /** 치아 정보에서 체크를 끈 치아. 다이와 작업물을 그리지 않는다. */
+  const [hiddenTeeth, setHiddenTeeth] = useState<string[]>([]);
   const [loadError, setLoadError] = useState("");
   const [progress, setProgress] = useState(0);
   const [fileState, setFileState] = useState<
@@ -788,7 +791,7 @@ function LabProsthesisAiDesignDialog({
       setMarginShown(false);
       setDieShown(false);
       setDieTeeth([]);
-      setIsolatedTeeth(null);
+      setHiddenTeeth([]);
       setLoadError("");
       setProgress(0);
       setFileState({});
@@ -2036,24 +2039,75 @@ function LabProsthesisAiDesignDialog({
     if (!restored) viewerRef.current?.focusTooth(toothNumber);
   };
 
-  /** 그 치아(브리지는 스팬)의 다이와 작업물만 남긴다. */
-  const isolateTooth = (toothNumber: string) => {
-    const span = planSpanMembers(plan.teeth, insertionSpanForTooth(plan.teeth, toothNumber));
-    setIsolatedTeeth(span.length > 0 ? span : [toothNumber]);
-    showTooth(toothNumber);
+  const setToothShown = (toothNumber: string, on: boolean) => {
+    setHiddenTeeth((prev) => {
+      const rest = prev.filter((number) => number !== toothNumber);
+      return on ? rest : [...rest, toothNumber];
+    });
   };
 
-  /** 치아만 보기를 풀고 그 악 모델을 전부 보인다. */
-  const showArch = (arch: "upper" | "lower") => {
-    setIsolatedTeeth(null);
-    setDieShown(false);
+  const archShown = (arch: "upper" | "lower") => {
+    const rows = scans.filter((scan) => scan.role === arch);
+    if (rows.length > 0) return rows.every((scan) => visible[scan.id] !== false);
+    return plan.teeth.some(
+      (tooth) =>
+        toothArchGroup(tooth.toothNumber) === arch && !hiddenTeeth.includes(tooth.toothNumber),
+    );
+  };
+
+  /** 그 악 스캔과 그 악 치아의 다이·작업물을 같이 켜고 끈다. */
+  const setArchShown = (arch: "upper" | "lower", on: boolean) => {
     setVisible((prev) => {
       const out = { ...prev };
       for (const scan of scans) {
-        if (scan.role === arch) out[scan.id] = true;
+        if (scan.role === arch) out[scan.id] = on;
       }
       return out;
     });
+    const archTeeth = plan.teeth
+      .filter((tooth) => toothArchGroup(tooth.toothNumber) === arch)
+      .map((tooth) => tooth.toothNumber);
+    setHiddenTeeth((prev) => {
+      const rest = prev.filter((number) => !archTeeth.includes(number));
+      return on ? rest : [...rest, ...archTeeth];
+    });
+  };
+
+  /** 월드가 돌면 편집·실행 취소에 든 월드 벡터와 정점을 같은 회전으로 옮긴다. */
+  const onWorldTurned = (turn: OralScanWorldTurn) => {
+    const turnEdits = (rows: Record<string, ToothDesignEdit>) => {
+      let changed = false;
+      const next: Record<string, ToothDesignEdit> = { ...rows };
+      for (const [number, edit] of Object.entries(rows)) {
+        const implant = edit.implant;
+        if (!implant.axis && implant.offset.every((value) => value === 0)) continue;
+        next[number] = {
+          ...edit,
+          implant: {
+            ...implant,
+            axis: implant.axis ? turn.vector(implant.axis) : null,
+            offset: turn.vector(implant.offset),
+          },
+        };
+        changed = true;
+      }
+      return changed ? next : rows;
+    };
+    const nextEdits = turnEdits(editsRef.current);
+    if (nextEdits !== editsRef.current) {
+      editsRef.current = nextEdits;
+      setEdits(nextEdits);
+    }
+    const book = historyRef.current;
+    for (const snap of [...book.past, ...book.future]) {
+      snap.edits = turnEdits(snap.edits);
+      if (snap.jaws) {
+        snap.jaws = snap.jaws.map((row) => ({
+          id: row.id,
+          positions: turn.jaw(row.id, row.positions),
+        }));
+      }
+    }
   };
 
   const applyColorDetections = (
@@ -2909,7 +2963,8 @@ function LabProsthesisAiDesignDialog({
               onDesignGesture={onDesignGesture}
               dieMargins={dieMargins}
               showDies={dieShown}
-              isolateTeeth={isolatedTeeth}
+              hiddenTeeth={hiddenTeeth}
+              onWorldTurned={onWorldTurned}
               onDiesChange={setDieTeeth}
               showStoneModel={stage === "model"}
               onStoneModelChange={setStoneParts}
@@ -3043,10 +3098,7 @@ function LabProsthesisAiDesignDialog({
                       aria-label="다이"
                       aria-pressed={dieShown}
                       disabled={dieTeeth.length === 0}
-                      onClick={() => {
-                        setIsolatedTeeth(null);
-                        setDieShown((on) => !on);
-                      }}
+                      onClick={() => setDieShown((on) => !on)}
                     >
                       <Cylinder />
                       {workWide ? <span>다이</span> : null}
@@ -3059,6 +3111,8 @@ function LabProsthesisAiDesignDialog({
                   ) : (
                     <>
                       마진을 0.75mm 넓혀 수직으로 자른 다이입니다.
+                      <br />
+                      치아 정보에서 체크한 치아의 다이만 보입니다.
                       <br />
                       다이가 있는 악 모델은 가립니다.
                     </>
@@ -4038,48 +4092,6 @@ function LabProsthesisAiDesignDialog({
             </div>
             </>
             ) : null}
-            <div className="absolute bottom-3 right-3 z-20 flex items-center gap-1 rounded-lg border bg-background/95 p-1 shadow-sm backdrop-blur">
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                className="h-7 px-2 text-[11px]"
-                onClick={() => viewerRef.current?.setView("occlusal")}
-                title="교합면 뷰 (상악/하악 교합면 수직 시선)"
-              >
-                교합면
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                className="h-7 px-2 text-[11px]"
-                onClick={() => viewerRef.current?.setView("buccal")}
-                title="협측 뷰 (바깥쪽 전면 시선)"
-              >
-                협측
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                className="h-7 px-2 text-[11px]"
-                onClick={() => viewerRef.current?.setView("lingual")}
-                title="설측 뷰 (안쪽 구개/설측 시선)"
-              >
-                설측
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                className="h-7 px-2 text-[11px]"
-                onClick={() => viewerRef.current?.setView("fit")}
-                title="화면 맞춤 (전체 모델을 화면 크기에 맞춤)"
-              >
-                맞춤
-              </Button>
-            </div>
             {focusShown && focusRow ? (
               <div className="pointer-events-none absolute left-1/2 top-16 z-10 -translate-x-1/2">
                 <ConnectorFocusView
@@ -4113,10 +4125,10 @@ function LabProsthesisAiDesignDialog({
               highlightInsertionKey={viewedAxisKey}
               canSetInsertion={entries.length > 0}
               onSelectTooth={showTooth}
-              isolatedTeeth={isolatedTeeth}
-              dieTeeth={dieTeeth}
-              onIsolateTooth={isolateTooth}
-              onShowArch={showArch}
+              hiddenTeeth={hiddenTeeth}
+              archShown={archShown}
+              onToggleTooth={setToothShown}
+              onToggleArch={setArchShown}
               onSetInsertion={rememberInsertion}
               onToggleInfo={() => setToothInfoOpen((open) => !open)}
               onConfirmMargin={confirmMargin}
@@ -4523,10 +4535,10 @@ function DesignViewerChrome({
   highlightInsertionKey,
   canSetInsertion,
   onSelectTooth,
-  isolatedTeeth,
-  dieTeeth,
-  onIsolateTooth,
-  onShowArch,
+  hiddenTeeth,
+  archShown,
+  onToggleTooth,
+  onToggleArch,
   onSetInsertion,
   onToggleInfo,
   onConfirmMargin,
@@ -4558,10 +4570,10 @@ function DesignViewerChrome({
   highlightInsertionKey: string;
   canSetInsertion: boolean;
   onSelectTooth: (toothNumber: string) => void;
-  isolatedTeeth: readonly string[] | null;
-  dieTeeth: readonly string[];
-  onIsolateTooth: (toothNumber: string) => void;
-  onShowArch: (arch: "upper" | "lower") => void;
+  hiddenTeeth: readonly string[];
+  archShown: (arch: "upper" | "lower") => boolean;
+  onToggleTooth: (toothNumber: string, on: boolean) => void;
+  onToggleArch: (arch: "upper" | "lower", on: boolean) => void;
   onSetInsertion: (toothNumbers: readonly string[]) => void;
   onToggleInfo: () => void;
   onConfirmMargin: (toothNumber: string) => void;
@@ -4593,29 +4605,35 @@ function DesignViewerChrome({
     return Boolean(spanKey && insertionKeys.includes(spanKey));
   };
 
+  const shownCheckbox = (tooth: LabProsthesisAiTooth) => (
+    <Checkbox
+      className="h-3.5 w-3.5 shrink-0"
+      checked={!hiddenTeeth.includes(tooth.toothNumber)}
+      onCheckedChange={(checked) => onToggleTooth(tooth.toothNumber, checked === true)}
+      aria-label={`#${tooth.toothNumber} 표시`}
+      title="이 치아의 다이와 작업물을 화면에 표시합니다"
+    />
+  );
+
   const nameButton = (tooth: LabProsthesisAiTooth, axisOn: boolean) => (
-    <button
-      type="button"
-      className={cn(
-        "w-fit shrink-0 whitespace-nowrap rounded-md px-1 py-0.5 text-left",
-        isolatedTeeth?.includes(tooth.toothNumber)
-          ? "bg-primary text-primary-foreground"
-          : activeTooth?.toothNumber === tooth.toothNumber
-            ? "bg-primary/10"
-            : "hover:bg-muted",
-      )}
-      title={
-        dieTeeth.includes(tooth.toothNumber)
-          ? "이 치아의 다이와 작업물만 봅니다"
-          : axisOn
+    <>
+      {shownCheckbox(tooth)}
+      <button
+        type="button"
+        className={cn(
+          "w-fit shrink-0 whitespace-nowrap rounded-md px-1 py-0.5 text-left",
+          activeTooth?.toothNumber === tooth.toothNumber ? "bg-primary/10" : "hover:bg-muted",
+        )}
+        title={
+          axisOn
             ? "삽입축을 잡았던 방향·각도·줌으로 봅니다"
             : "이 치아의 교합면을 봅니다"
-      }
-      aria-pressed={Boolean(isolatedTeeth?.includes(tooth.toothNumber))}
-      onClick={() => onIsolateTooth(tooth.toothNumber)}
-    >
-      <span className="font-semibold">#{tooth.toothNumber}</span>
-    </button>
+        }
+        onClick={() => onSelectTooth(tooth.toothNumber)}
+      >
+        <span className="font-semibold">#{tooth.toothNumber}</span>
+      </button>
+    </>
   );
 
   const insertionButton = (span: readonly string[], shared: boolean) => {
@@ -4979,7 +4997,7 @@ function DesignViewerChrome({
         {`@keyframes aiScanLine { 0% { transform: translateY(0); opacity: .25; } 50% { opacity: 1; } 100% { transform: translateY(58vh); opacity: .2; } }`}
       </style>
 
-      <div className="absolute right-3 top-3 z-10 flex max-h-[calc(100%-1.5rem)] w-fit max-w-[min(32rem,70vw)] flex-col items-end gap-1">
+      <div className="absolute right-3 top-3 z-10 flex max-h-[calc(100%-1.5rem)] w-fit max-w-[min(32rem,70vw)] flex-col items-end gap-1 overflow-y-auto">
         {panelsShown && teeth.length > 0 ? (
           <div className="mt-1 w-fit max-w-full overflow-hidden rounded-lg border bg-background/95 text-sm shadow-sm">
             <button
@@ -5005,14 +5023,20 @@ function DesignViewerChrome({
                         {group.label}
                       </p>
                     ) : (
-                      <button
-                        type="button"
-                        className="-mx-1 rounded-md px-1 py-0.5 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
-                        title={`${group.label} 모델을 전부 봅니다`}
-                        onClick={() => onShowArch(group.id as "upper" | "lower")}
+                      <label
+                        className="flex w-fit cursor-pointer items-center gap-1.5 py-0.5 text-xs font-medium text-muted-foreground hover:text-foreground"
+                        title={`${group.label} 모델과 치아를 화면에 표시합니다`}
                       >
+                        <Checkbox
+                          className="h-3.5 w-3.5"
+                          checked={archShown(group.id as "upper" | "lower")}
+                          onCheckedChange={(checked) =>
+                            onToggleArch(group.id as "upper" | "lower", checked === true)
+                          }
+                          aria-label={`${group.label} 표시`}
+                        />
                         {group.label}
-                      </button>
+                      </label>
                     )}
                     <ul className="ml-2 mt-1 border-l border-border pl-3">
                       {toothInfoBlocks(group.teeth, spans).map((block) => {
