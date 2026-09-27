@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-27: 원청 PTX 거래내역 — 지급한 협력·하청 기공소명(payoutLabName).
 // - 2026-09-23: PTX 거래내역 labName — 협력은「어벗츠 · 파트너」(원청 target만 쓰지 않음). 기공소는 치과명.
 // - 2026-09-20: CA 게이트 — 확정 정산·payout만 제외. 적립 보류 미러는 hold부터 노출.
 // - 2026-09-20: CA 게이트 — 치과 결제 보류·기간 소비는 유지. 기공소 적립/정산·payout만 제외.
@@ -80,6 +81,7 @@ import {
   aggregateRequestorPeriodLedgerSummary,
   listPendingLabSettlementLedgerRows,
   mergeLabLedgerRowsWithPending,
+  resolvePrimePayoutLabForLedger,
   parseCreditUsageScope,
   resolveCreditLedgerRequestorKind,
   shouldHideBlockedPracticeTransferLedgerRow,
@@ -874,6 +876,9 @@ export async function listMyCreditLedger(req, res) {
     }
     if (!prev.labBa && labBa) prev.labBa = labBa;
   }
+  const viewerLabAnchorId =
+    String(requestorKind || "").trim() === "lab" ? String(anchorObjectId) : "";
+
   for (const doc of transferDocs || []) {
     if (!doc?._id) continue;
     const id = String(doc._id);
@@ -912,11 +917,16 @@ export async function listMyCreditLedger(req, res) {
     );
     // 협력 redact는 이미「어벗츠 ·」. 레거시 target=파트너 실명도 동일 정규화.
     const labName = formatAbutsCooperationLabLabel(labIdentity.targetLabName);
+    const payoutLab = resolvePrimePayoutLabForLedger(doc, viewerLabAnchorId);
     practiceTransferIdById.set(id, String(doc.transferId || ""));
     practiceTransferMetaById.set(id, {
       patientName: memoPatient || filePatient,
       // 치과 거래내역: 협력「어벗츠 · 파트너」·하청은 원청만(실명 비공개)
       labName,
+      payoutLabName: payoutLab?.name || "",
+      payoutLabKind: payoutLab?.kind || "",
+      payoutLabAnchorId:
+        payoutLab && !payoutLab.name ? payoutLab.anchorId : "",
       practiceBusinessAnchorId: String(doc.practiceBusinessAnchorId || "").trim(),
       transferMemo: memo,
       practiceTransferCanceled,
@@ -985,6 +995,37 @@ export async function listMyCreditLedger(req, res) {
       : "";
   }
 
+  const missingPayoutLabIds = [
+    ...new Set(
+      [...practiceTransferMetaById.values()]
+        .map((m) => String(m?.payoutLabAnchorId || "").trim())
+        .filter((id) => mongoose.Types.ObjectId.isValid(id)),
+    ),
+  ];
+  if (missingPayoutLabIds.length) {
+    const payoutLabs = await BusinessAnchor.find({
+      _id: { $in: toObjectIds(missingPayoutLabIds) },
+    })
+      .select({ name: 1, companyName: 1 })
+      .lean();
+    const payoutLabNameByAnchorId = new Map();
+    for (const row of payoutLabs || []) {
+      if (!row?._id) continue;
+      payoutLabNameByAnchorId.set(
+        String(row._id),
+        String(row.companyName || row.name || "").trim(),
+      );
+    }
+    for (const meta of practiceTransferMetaById.values()) {
+      const anchorId = String(meta?.payoutLabAnchorId || "").trim();
+      if (!anchorId || meta.payoutLabName) continue;
+      meta.payoutLabName = payoutLabNameByAnchorId.get(anchorId) || "";
+    }
+  }
+  for (const meta of practiceTransferMetaById.values()) {
+    delete meta.payoutLabAnchorId;
+  }
+
   const freeReasonByGrantId = new Map();
   for (const grant of grants || []) {
     if (!grant?._id) continue;
@@ -1028,6 +1069,8 @@ export async function listMyCreditLedger(req, res) {
           : "",
         patientName: meta?.patientName || "",
         labName: meta?.labName || "",
+        payoutLabName: meta?.payoutLabName || "",
+        payoutLabKind: meta?.payoutLabKind || "",
         clinicName: meta?.practiceName || "",
         practiceName: meta?.practiceName || "",
         transferMemo: meta?.transferMemo || "",

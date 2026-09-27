@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-27: 원청 거래내역 — 지급한 협력·하청 기공소 이름.
 // - 2026-09-27: 지급 완료·적립 완료 옆 완료 뱃지 제거(원청·하청). 기공 지급 상세는 매출·하청 수수료·지급.
 // - 2026-09-27: 원청이 넘긴 완료 건은 한 줄. 금액란에 매출·지급을 같이 표시.
 // - 2026-09-27: 원청 장부 — 기공 매출·기공 지급을 분리. 지급 보류→지급 완료.
@@ -181,7 +182,7 @@ import {
   LAB_FEE_SHIPPING_ITEM_NAME,
 } from "@/shared/practice/labFeeSchedule";
 import { parsePracticeTransferMemoMeta } from "@/shared/practice/transferMemo";
-import { formatAbutsCooperationLabLabel } from "@/shared/practice/practiceLabRating";
+import { formatAbutsCooperationLabLabel, normalizePracticePartnerLabCoreName } from "@/shared/practice/practiceLabRating";
 import { compactRemakeSummaryLabel } from "@/features/chat/components/chatRemakeParts";
 import { formatKstYmdToKo } from "@/shared/date/kst";
 import {
@@ -300,6 +301,9 @@ type CreditLedgerItem = {
   balanceAfter?: number;
   patientName?: string;
   labName?: string;
+  /** 원청 장부: 지급한 협력·하청 기공소 */
+  payoutLabName?: string;
+  payoutLabKind?: string;
   /** 기공소 내역: 의뢰 치과명 */
   practiceName?: string;
   clinicName?: string;
@@ -1977,6 +1981,17 @@ const formatRequestIdSafe = (requestId?: string, seed?: string) => {
   return `${datePart}-${code}`;
 };
 
+const formatPrimePayoutLabLedgerLabel = (
+  kind?: string | null,
+  name?: string | null,
+) => {
+  const core = normalizePracticePartnerLabCoreName(name);
+  if (!core || core === "어벗츠기공소") return "";
+  const role =
+    kind === "subcontract" ? "하청" : kind === "cooperation" ? "협력" : "";
+  return role ? `${role} · ${core}` : core;
+};
+
 const renderTransactionDetail = ({
   item,
   safeRef,
@@ -2064,13 +2079,20 @@ const renderTransactionDetail = ({
 
   if (refType === "PRACTICE_TRANSFER") {
     // 치과: 협력·레거시 지정 모두「어벗츠 · 파트너」. 기공소: 의뢰 치과명.
+    // 원청이 넘긴 건은 지급한 협력·하청 기공소도 붙인다.
     const counterpartyName = isLabViewer
       ? String(item.practiceName || item.clinicName || "").trim() || "-"
       : formatAbutsCooperationLabLabel(item.labName) || "-";
     const patientName = String(item.patientName || "").trim() || "-";
+    const paidLab = isLabViewer
+      ? formatPrimePayoutLabLedgerLabel(item.payoutLabKind, item.payoutLabName)
+      : "";
     return (
-      <span className="pt-1 text-[11px] text-slate-700">
-        {counterpartyName} / {patientName}
+      <span className="inline-flex max-w-full flex-col items-center pt-1 text-[11px] leading-snug text-slate-700">
+        <span>
+          {counterpartyName} / {patientName}
+        </span>
+        {paidLab ? <span>{paidLab}</span> : null}
       </span>
     );
   }
@@ -2110,6 +2132,7 @@ type LedgerFeeQuoteDetail = {
   creditAbutmentHoldPending: boolean;
   patientName: string;
   labName: string;
+  payoutLabLabel: string;
   orderDate: string;
   arrivalDate: string;
   memo: string;
@@ -2253,6 +2276,13 @@ function PracticeTransferLedgerFeeDialog({
                 value={detail.labName}
               />
               <LedgerDetailMetaItem label="환자명" value={detail.patientName} />
+              {detail.payoutLabLabel ? (
+                <LedgerDetailMetaItem
+                  className="sm:col-span-2"
+                  label="지급 기공소"
+                  value={detail.payoutLabLabel}
+                />
+              ) : null}
               <LedgerDetailMetaItem
                 label="주문일"
                 value={
@@ -3620,6 +3650,12 @@ export const CreditLedgerModal = ({
                                   r.item.practiceName || r.item.clinicName || "",
                                 ).trim()
                               : formatAbutsCooperationLabLabel(r.item.labName),
+                            payoutLabLabel: isLabViewer
+                              ? formatPrimePayoutLabLedgerLabel(
+                                  r.item.payoutLabKind,
+                                  r.item.payoutLabName,
+                                )
+                              : "",
                             orderDate: String(memoMeta.orderDate || "").trim(),
                             arrivalDate: String(memoMeta.arrivalDate || "").trim(),
                             memo: String(memoMeta.memo || "").trim(),
@@ -3671,6 +3707,12 @@ export const CreditLedgerModal = ({
                                 r.item.practiceName || r.item.clinicName || "",
                               ).trim()
                             : formatAbutsCooperationLabLabel(r.item.labName),
+                          payoutLabLabel: isLabViewer
+                            ? formatPrimePayoutLabLedgerLabel(
+                                r.item.payoutLabKind,
+                                r.item.payoutLabName,
+                              )
+                            : "",
                           orderDate: String(memoMeta.orderDate || "").trim(),
                           arrivalDate: String(memoMeta.arrivalDate || "").trim(),
                           memo: String(memoMeta.memo || "").trim(),

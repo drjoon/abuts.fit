@@ -8,6 +8,7 @@
 // - web/backend/services/practiceTransferBilling.service.js
 // - web/backend/models/businessAnchor.model.js
 // - web/backend/services/requestCreditHold.service.js
+// - 2026-09-27: 원청 장부 거래내역 — 협력·하청으로 지급한 기공소명.
 // - 2026-09-27: 어벗츠 원청 — 매출·하청/협력 지급을 따로 집계. internalLab은 기공소 장부.
 // - 2026-09-20: 기간 소비 완료/보류 — PTX는 billing.settledAt(장부 결제상태와 동일). Request만 convertedAt.
 // - 2026-09-20: 기간 요약 — 기공소 적립 보류 합(totalSettlementEarnPendingSupply) 분리(확정 합·잔액 미포함).
@@ -42,10 +43,13 @@ import { practiceTransferNotDeletedMongoFilter } from "../../utils/practiceTrans
 import { resolvePracticeTransferFeeRate } from "../../services/creditRevenuePolicy.service.js";
 import { normalizeRequestorKind } from "../../utils/requestorCapabilities.js";
 import {
+  ASSIGNEE_KIND_COOPERATION,
+  ASSIGNEE_KIND_SUBCONTRACT,
   getAssigneeLabAnchorId,
   getPrimeLabAnchorId,
   isInternalLabBusinessType,
   isSubcontractFeeApplicable,
+  resolveAssigneeKind,
   resolvePerformingLabAnchorId,
 } from "../../utils/practiceTransferAutoMatchCore.js";
 import { isLabAiTrainingConsentAllowed } from "../../utils/practiceTransferAiTraining.js";
@@ -74,6 +78,29 @@ export function resolveCreditLedgerRequestorKind(anchor, fallbackKind) {
     normalizeRequestorKind(fallbackKind) ||
     null
   );
+}
+
+/**
+ * 원청이 협력·하청에 지급한 기공소. 자체 수행·수행 기공소 장부·치과 장부는 null.
+ * @returns {{ kind: "cooperation" | "subcontract", anchorId: string, name: string } | null}
+ */
+export function resolvePrimePayoutLabForLedger(transfer, viewerLabAnchorId) {
+  const viewerId = String(viewerLabAnchorId || "").trim();
+  if (!viewerId || !transfer) return null;
+  const primeId = getPrimeLabAnchorId(transfer);
+  const assigneeId = getAssigneeLabAnchorId(transfer);
+  if (!primeId || !assigneeId || primeId !== viewerId || assigneeId === primeId) {
+    return null;
+  }
+  const kind = resolveAssigneeKind(transfer);
+  if (kind !== ASSIGNEE_KIND_COOPERATION && kind !== ASSIGNEE_KIND_SUBCONTRACT) {
+    return null;
+  }
+  return {
+    kind,
+    anchorId: assigneeId,
+    name: String(transfer.assigneeLabName || "").trim(),
+  };
 }
 
 function primeForwardSplitSourceExpr(sourceField = "$meta.source") {
