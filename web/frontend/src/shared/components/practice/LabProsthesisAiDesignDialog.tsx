@@ -39,6 +39,7 @@
 // - 2026-09-27: 표시 패널은 파일명을 기본으로 숨긴다. 헤더에서 닫거나 숨긴 뒤 열면 직전 패널 열림을 되돌린다.
 // - 2026-09-27: 패널은 열기·닫기·숨김. 헤더 날짜는 도착일만.
 // - 2026-09-27: 브리지는 지대치·폰틱을 나누고, 커넥터마다 연결·모양·단면적을 고친다. 스팬 단위 생성·조립·분리.
+// - 2026-09-27: 모델정렬 위저드. 바이트 정렬·삽입축이 안 끝났으면 작업영역 아래에 하나씩 안내하고, 끝나면 마진·디자인 짧은 안내로 이어간다.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDownToLine,
@@ -405,11 +406,14 @@ export function LabProsthesisAiDesignButton({
 const AUTO_SAVE_PREF_KEY = "abuts.labProsthesis.autoSave";
 const UNDO_LIMIT = 30;
 
+type ArchAligned = { upper: boolean; lower: boolean };
+
 type WorkUndoSnap = {
   edits: Record<string, ToothDesignEdit>;
   generated: Record<string, boolean>;
   marginReview: Record<string, MarginReview>;
   jaws: Array<{ id: string; positions: Float32Array }> | null;
+  archAligned: ArchAligned;
 };
 
 type WorkUndoBook = {
@@ -427,6 +431,7 @@ function workDocumentSignature(document: WorkSessionDocument): string {
     marginReview: document.marginReview,
     designScope: document.designScope,
     insertionAxes: document.insertionAxes,
+    archAligned: document.archAligned,
     camera: document.camera,
     viewToggles: document.viewToggles,
   });
@@ -587,6 +592,10 @@ function LabProsthesisAiDesignDialog({
   const [alignArch, setAlignArch] = useState<"upper" | "lower" | null>(null);
   const [alignPicks, setAlignPicks] = useState({ model: 0, bite: 0 });
   const [alignBusy, setAlignBusy] = useState(false);
+  const [archAligned, setArchAligned] = useState<ArchAligned>({
+    upper: false,
+    lower: false,
+  });
   const [autoSave, setAutoSave] = useState(storedAutoSave);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
@@ -601,6 +610,8 @@ function LabProsthesisAiDesignDialog({
   marginReviewRef.current = marginReview;
   const designScopeRef = useRef(designScope);
   designScopeRef.current = designScope;
+  const archAlignedRef = useRef(archAligned);
+  archAlignedRef.current = archAligned;
   const historyRef = useRef<WorkUndoBook>({
     past: [],
     future: [],
@@ -683,6 +694,7 @@ function LabProsthesisAiDesignDialog({
       setAlignArch(null);
       setAlignPicks({ model: 0, bite: 0 });
       setAlignBusy(false);
+      setArchAligned({ upper: false, lower: false });
       pendingDraftRolesRef.current = new Set();
       lastDraftSigRef.current = "";
       lastDocSigRef.current = "";
@@ -761,12 +773,14 @@ function LabProsthesisAiDesignDialog({
             generatedRef.current = draft.document.generated;
             marginReviewRef.current = draft.document.marginReview;
             designScopeRef.current = draft.document.designScope;
+            archAlignedRef.current = draft.document.archAligned;
             sessionDocRef.current = draft.document;
             lastDocSigRef.current = workDocumentSignature(draft.document);
             setEdits(draft.document.edits);
             setGenerated(draft.document.generated);
             setMarginReview(draft.document.marginReview);
             setDesignScope(draft.document.designScope);
+            setArchAligned(draft.document.archAligned);
             if (draft.document.insertionAxes.length > 0) {
               setInsertionKeys(draft.document.insertionAxes.map((axis) => axis.key));
               setInsertionShown(true);
@@ -1203,13 +1217,17 @@ function LabProsthesisAiDesignDialog({
     generated: { ...generatedRef.current },
     marginReview: { ...marginReviewRef.current },
     jaws: withJaws ? (viewerRef.current?.captureJawPositions() ?? []) : null,
+    archAligned: { ...archAlignedRef.current },
   });
 
   const applySnap = (snap: WorkUndoSnap) => {
     setEdits(snap.edits);
     setGenerated(snap.generated);
     setMarginReview(snap.marginReview ?? {});
-    if (snap.jaws) viewerRef.current?.restoreJawPositions(snap.jaws);
+    if (snap.jaws) {
+      viewerRef.current?.restoreJawPositions(snap.jaws);
+      setArchAligned(snap.archAligned);
+    }
   };
 
   const finishDesignStroke = () => {
@@ -1543,6 +1561,10 @@ function LabProsthesisAiDesignDialog({
     setAlignBusy(false);
     setAlignKind(null);
     if (fitted === true) {
+      setArchAligned((prev) => ({
+        upper: prev.upper || hasUpperScan,
+        lower: prev.lower || hasLowerScan,
+      }));
       queueSaveWorkRef.current();
       runMarginDetect(marginToothNumbersRef.current);
     }
@@ -1595,6 +1617,48 @@ function LabProsthesisAiDesignDialog({
     queueSaveWorkRef.current();
   };
 
+  /** 모델정렬 위저드 — 바이트 정렬 다음 삽입축을 스팬 순서대로 하나씩 안내한다. */
+  const alignArchesNeeded = useMemo(() => {
+    if (!hasBiteScan) return [];
+    const list: Array<"upper" | "lower"> = [];
+    if (hasUpperScan) list.push("upper");
+    if (hasLowerScan) list.push("lower");
+    return list;
+  }, [hasBiteScan, hasUpperScan, hasLowerScan]);
+  const pendingAlignArches = alignArchesNeeded.filter((arch) => !archAligned[arch]);
+  const biteAligned = pendingAlignArches.length === 0;
+  const insertionWizardSpans = useMemo(
+    () => [...insertionSpansByOwner(plan.teeth).values()],
+    [plan.teeth],
+  );
+  const pendingInsertionSpans = useMemo(
+    () =>
+      insertionWizardSpans.filter((span) => {
+        const key = insertionAxisKey(span);
+        return !key || !insertionKeys.includes(key);
+      }),
+    [insertionWizardSpans, insertionKeys],
+  );
+  const pendingInsertionSpan = pendingInsertionSpans[0] ?? null;
+  const modelAligned = biteAligned && pendingInsertionSpan == null;
+  const alignWizardStep: "bite" | "axis" | null = !biteAligned
+    ? "bite"
+    : pendingInsertionSpan
+      ? "axis"
+      : null;
+  const pendingInsertionSpanKey = pendingInsertionSpan
+    ? insertionAxisKey(pendingInsertionSpan)
+    : "";
+
+  useEffect(() => {
+    if (busy || alignWizardStep !== "axis" || !pendingInsertionSpan) return;
+    const lead = pendingInsertionSpan[0];
+    if (!lead) return;
+    showTooth(lead);
+    setCenterGuide((mode) => (mode === "off" ? "center" : mode));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [alignWizardStep, pendingInsertionSpanKey, busy]);
+
   const enqueueDraft = useCallback((task: () => Promise<void>) => {
     const run = draftQueueRef.current.then(task, task);
     draftQueueRef.current = run.then(
@@ -1615,6 +1679,7 @@ function LabProsthesisAiDesignDialog({
       marginReview: marginReviewRef.current,
       designScope: designScopeRef.current,
       insertionAxes: axes,
+      archAligned: archAlignedRef.current,
       camera:
         viewerRef.current?.exportCamera() ??
         sessionDocRef.current?.camera ??
@@ -2222,10 +2287,11 @@ function LabProsthesisAiDesignDialog({
                   setAlignBusy(true);
                 }
               }}
-              onAlignMerged={() => {
+              onAlignMerged={(arch) => {
                 setAlignBusy(false);
                 setAlignArch(null);
                 setAlignPicks({ model: 0, bite: 0 });
+                setArchAligned((prev) => ({ ...prev, [arch]: true }));
                 queueSaveWorkRef.current();
                 runMarginDetect(marginToothNumbersRef.current);
               }}
@@ -3188,6 +3254,77 @@ function LabProsthesisAiDesignDialog({
                 queueSaveWorkRef.current();
               }}
             />
+            {!busy && entries.length > 0 ? (
+              <div className="pointer-events-none absolute inset-x-3 bottom-3 z-30 flex justify-center">
+                <div className="pointer-events-auto max-w-sm rounded-lg border bg-background/95 px-3.5 py-2.5 text-xs shadow-sm">
+                  {alignWizardStep === "bite" ? (
+                    <>
+                      <p className="font-semibold text-foreground">1. 모델정렬</p>
+                      <p className="mt-1 leading-relaxed text-muted-foreground">
+                        {pendingAlignArches.length === 2
+                          ? "상악·하악 스캔을 바이트에 맞춰주세요."
+                          : pendingAlignArches[0] === "upper"
+                            ? "상악 스캔을 바이트에 맞춰주세요."
+                            : "하악 스캔을 바이트에 맞춰주세요."}
+                        <br />
+                        아래 버튼을 누르면 자동으로 정렬합니다.
+                      </p>
+                      <div className="mt-2 flex items-center gap-1.5">
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-7 px-2 text-[11px]"
+                          disabled={!canAlignModels || alignBusy}
+                          onClick={() => void runAutoAlign()}
+                        >
+                          자동 정렬
+                        </Button>
+                        <span className="text-[11px] text-muted-foreground">
+                          수동 정렬은 좌하단 「단계」 패널에서 할 수 있습니다.
+                        </span>
+                      </div>
+                    </>
+                  ) : alignWizardStep === "axis" && pendingInsertionSpan ? (
+                    <>
+                      <p className="font-semibold text-foreground">
+                        1. 모델정렬 ·{" "}
+                        {insertionWizardSpans.length - pendingInsertionSpans.length + 1}/
+                        {insertionWizardSpans.length}
+                      </p>
+                      <p className="mt-1 leading-relaxed text-muted-foreground">
+                        {pendingInsertionSpan.length > 1
+                          ? `브리지 ${pendingInsertionSpan[0]}-${pendingInsertionSpan[pendingInsertionSpan.length - 1]}의 삽입축을 설정해주세요.`
+                          : `#${pendingInsertionSpan[0]}의 삽입축을 설정해주세요.`}
+                        <br />
+                        해당 치아를 교합면에서 바라보고 중점을 중앙선에 맞추면 됩니다.
+                      </p>
+                      <div className="mt-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-7 px-2 text-[11px]"
+                          disabled={entries.length === 0}
+                          onClick={() => rememberInsertion(pendingInsertionSpan)}
+                        >
+                          삽입축 설정
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <p className="font-semibold text-foreground">
+                        {stage === "design" ? "3. 디자인" : "2. 마진"}
+                      </p>
+                      <p className="mt-1 leading-relaxed text-muted-foreground">
+                        {stage === "design"
+                          ? "확인한 마진으로 디자인을 생성해주세요."
+                          : "자동 검출된 마진을 확인해주세요."}
+                      </p>
+                    </>
+                  )}
+                </div>
+              </div>
+            ) : null}
           </div>
         <DesignExportDialog
           open={exportOpen}

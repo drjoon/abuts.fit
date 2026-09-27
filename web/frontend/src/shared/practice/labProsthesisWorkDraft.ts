@@ -59,6 +59,9 @@ export type WorkSessionAxis = {
 /** 정중앙 토글. off → 가운데 점선 → 2mm·10mm 모눈. */
 export type WorkSessionCenterGuide = "off" | "center" | "grid";
 
+/** 상악·하악 스캔을 바이트에 맞춘 모델 정렬 여부. 스캔에 없는 악은 항상 완료로 본다. */
+export type WorkSessionArchAligned = { upper: boolean; lower: boolean };
+
 /** 작업영역 위 토글. 모달을 닫을 때 문서에 남긴다. */
 export type WorkSessionViewToggles = {
   insertion: boolean;
@@ -79,6 +82,7 @@ export type WorkSessionDocument = {
   /** 마진만 / 크라운까지. 고르기 전이면 null. */
   designScope: DesignScope | null;
   insertionAxes: WorkSessionAxis[];
+  archAligned: WorkSessionArchAligned;
   camera: WorkSessionView | null;
   viewToggles: WorkSessionViewToggles | null;
   savedAt: number;
@@ -88,6 +92,12 @@ export function parseCenterGuide(value: unknown): WorkSessionCenterGuide {
   const raw = String(value || "").trim();
   if (raw === "off" || raw === "center" || raw === "grid") return raw;
   return "center";
+}
+
+export function parseArchAligned(value: unknown): WorkSessionArchAligned {
+  if (!value || typeof value !== "object") return { upper: false, lower: false };
+  const row = value as Partial<WorkSessionArchAligned>;
+  return { upper: Boolean(row.upper), lower: Boolean(row.lower) };
 }
 
 export function parseViewToggles(value: unknown): WorkSessionViewToggles | null {
@@ -214,6 +224,7 @@ function documentOf(row: unknown): WorkSessionDocument | null {
     ),
     designScope: parseDesignScope((body as { designScope?: unknown }).designScope),
     insertionAxes,
+    archAligned: parseArchAligned((body as { archAligned?: unknown }).archAligned),
     camera: viewOf((body as { camera?: unknown }).camera),
     viewToggles: parseViewToggles(
       (body as { viewToggles?: unknown }).viewToggles,
