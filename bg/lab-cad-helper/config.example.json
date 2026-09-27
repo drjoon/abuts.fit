@@ -1,17 +1,22 @@
 {
   "port": 8010,
-  "allowOrigin": "*",
+  "allowOrigin": "",
   "sharedSecret": "",
+  "workFolder": "",
   "exePaths": {
     "3Shape": "",
     "ExoCAD": "",
     "custom": ""
   },
+  "managerPaths": {
+    "3Shape": "",
+    "ExoCAD": ""
+  },
   "notes": [
-    "기공소: 여기를_더블클릭_설치.cmd (Node 불필요).",
-    "exePaths가 비어 있으면 Program Files·실행 중 프로세스에서 자동 탐색합니다.",
-    "그래도 못 찾으면 디자인 프로그램을 켠 뒤 설치를 다시 실행하세요.",
-    "3Shape 예: C:\\\\Program Files\\\\3Shape\\\\Dental Desktop\\\\DentalDesktop.exe",
-    "ExoCAD 예: C:\\\\Program Files\\\\exocad\\\\DentalCAD\\\\DentalCADApp.exe"
+    "workFolder: 웹에서 처음 다운로드·작업열기 할 때 지정합니다. 예: \\\\DESKTOP-HAQNS44\\CAM-in",
+    "managerPaths가 비어 있으면 실행 중 프로세스 → Program Files 순서로 자동 탐색합니다.",
+    "3Shape 예: C:\\Program Files\\3Shape\\DentalManager\\DentalManager.exe",
+    "ExoCAD 예: C:\\exocad\\DentalDB\\bin\\DentalDB.exe",
+    "allowOrigin: 기본 허용(abuts.fit·localhost:5173) 외에 추가할 출처(쉼표 구분)."
   ]
 }

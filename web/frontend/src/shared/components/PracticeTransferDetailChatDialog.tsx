@@ -580,6 +580,8 @@ type PracticeTransferDetailChatDialogProps = {
   onDownloadAllFiles: (opts?: {
     dcmFormat?: DcmDownloadFormat;
   }) => void | Promise<void>;
+  /** 의뢰 파일 일괄 버튼 라벨. 기공소는 작업 폴더 저장이라 「다운로드」 */
+  downloadAllFilesLabel?: string;
   /**
    * 의뢰 3D를 설정 디자인 소프트웨어로 연다(로컬 CAD 헬퍼).
    * 미전달 시「작업열기」숨김. 작업시작 후에는 그 버튼 자리에도 둔다.
@@ -810,6 +812,7 @@ export function PracticeTransferDetailChatDialog({
   downloadingFileKeys = [],
   downloadProgressByKey = {},
   downloadAllBusy = false,
+  downloadAllFilesLabel = "전체 다운로드",
   downloadAllWorkFilesBusy = false,
   onDownloadAllWorkFiles,
   onDownloadAllFiles,
@@ -3371,7 +3374,7 @@ export function PracticeTransferDetailChatDialog({
                                 requestFilesDownloadLocked
                               }
                             >
-                              {downloadAllBusy ? "다운로드 중..." : "전체 다운로드"}
+                              {downloadAllBusy ? "다운로드 중..." : downloadAllFilesLabel}
                               <ChevronDown className="ml-1 h-3.5 w-3.5 opacity-70" />
                             </Button>
                           </DropdownMenuTrigger>
@@ -3405,7 +3408,7 @@ export function PracticeTransferDetailChatDialog({
                             requestFilesDownloadLocked
                           }
                         >
-                          {downloadAllBusy ? "다운로드 중..." : "전체 다운로드"}
+                          {downloadAllBusy ? "다운로드 중..." : downloadAllFilesLabel}
                         </Button>
                       )
                     ) : null}

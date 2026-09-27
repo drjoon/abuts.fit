@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-27: 헬퍼 v2 — 작업열기·다운로드 모두 작업 폴더(케이스 폴더)에 저장. saveToLabWorkFolder 추가.
 // - 2026-09-27: 열기 — 헬퍼 대기·파일 준비가 길면 onOpenPhase로 화면 상태.
 // - 2026-09-24: openInDesignSoftware — 로컬 CAD 헬퍼로 3D 모델 열기(3Shape/ExoCAD).
 // - 2026-09-20: downloadAsZip — 여러 S3 파일을 DEFLATE zip 하나로 저장.
@@ -38,8 +39,15 @@ import {
   dcmFormatForDesignSoftware,
   ensureLabCadHelperReady,
   LabCadHelperOpenError,
-  openFilesWithLabCadHelper,
+  openLabHelperSession,
+  readLabWorkFolder,
+  revealLabHelperSession,
+  sendFilesToLabHelper,
+  writeLabWorkFolder,
   writeLastConfirmedDesignSoftware,
+  type LabCadHelperSetupReason,
+  type LabCadOpenResult,
+  type LabWorkFolderResolver,
 } from "@/shared/files/labCadHelperClient";
 import {
   getModelExtLower,
@@ -135,6 +143,7 @@ export function useS3FileDownload(token?: string | null) {
   const [openInCadBusy, setOpenInCadBusy] = useState(false);
   const downloadZipBusyRef = useRef(false);
   const openInCadBusyRef = useRef(false);
+  const downloadAllBusyRef = useRef(false);
   const downloadingKeysRef = useRef<Set<string>>(new Set());
 
   const beginBusy = useCallback((busyKey: string) => {
@@ -289,21 +298,175 @@ export function useS3FileDownload(token?: string | null) {
   );
 
   /**
-   * 의뢰 3D 모델을 로컬 CAD 헬퍼로 연다.
-   * designSoftware: 설정값(3Shape/ExoCAD/커스텀). DCM은 SW에 맞춰 원본 또는 PLY.
-   * onNeedHelperSetup: 헬퍼 미설치·미실행 또는 exe 미발견 시 설치 안내.
-   * onOpenPhase: 연결 확인·파일 준비가 길 때 화면 상태. null이면 닫는다.
+   * 로컬 헬퍼로 파일을 작업 폴더(케이스 폴더)에 저장한 뒤 action을 실행한다.
+   * - 헬퍼 미설치·구버전 → onNeedHelperSetup
+   * - 작업 폴더: 로컬 저장값 → 헬퍼 설정값 → resolveWorkFolder(사용자 지정). 저장 성공 때마다 로컬 갱신.
+   */
+  const runLabHelperTransfer = useCallback(
+    async <T,>(opts: {
+      targets: S3DownloadTarget[];
+      dcmFormat?: DcmDownloadFormat;
+      caseFolder?: string;
+      resolveWorkFolder?: LabWorkFolderResolver;
+      onNeedHelperSetup?: (reason: LabCadHelperSetupReason) => void | Promise<void>;
+      onOpenPhase?: (phase: "connecting" | "preparing" | null) => void;
+      action: (session: { sessionId: string; folder: string }) => Promise<T>;
+    }): Promise<{ ok: true; value: T } | { ok: false }> => {
+      let prepareTimer: number | null = null;
+      let phase: "connecting" | "preparing" | null = null;
+      const setPhase = (next: "connecting" | "preparing" | null) => {
+        phase = next;
+        opts.onOpenPhase?.(next);
+      };
+      const needSetup = async (reason: LabCadHelperSetupReason) => {
+        setPhase(null);
+        if (opts.onNeedHelperSetup) {
+          await opts.onNeedHelperSetup(reason);
+          return;
+        }
+        toast({
+          title: "처음 한 번만 설치가 필요합니다",
+          description: "안내 창에서 설치 파일을 받아 실행해 주세요.",
+          variant: "destructive",
+        });
+      };
+      try {
+        const ready = await ensureLabCadHelperReady({
+          onWaiting: () => setPhase("connecting"),
+        });
+        if (ready.status === "need_setup") {
+          await needSetup("helper_missing");
+          return { ok: false };
+        }
+        if (ready.status === "need_update") {
+          await needSetup("helper_outdated");
+          return { ok: false };
+        }
+
+        const askWorkFolder = async (reason: "missing" | "not_found") => {
+          if (!opts.resolveWorkFolder) return "";
+          setPhase(null);
+          const picked = String(
+            (await opts.resolveWorkFolder({
+              reason,
+              helperWorkFolder: String(ready.health.workFolder || "").trim(),
+            })) || "",
+          ).trim();
+          return picked;
+        };
+
+        let workFolder = readLabWorkFolder();
+        if (!workFolder && ready.health.workFolderExists) {
+          workFolder = String(ready.health.workFolder || "").trim();
+        }
+        if (!workFolder && opts.resolveWorkFolder) {
+          workFolder = await askWorkFolder("missing");
+          if (!workFolder) return { ok: false };
+        }
+
+        if (phase === "connecting") {
+          setPhase("preparing");
+        } else {
+          prepareTimer = window.setTimeout(() => setPhase("preparing"), 400);
+        }
+
+        const prepared = await Promise.all(
+          opts.targets.map(async (file) => {
+            const fileName =
+              String(file.fileName || "download").trim() || "download";
+            const busyKey = String(file.busyKey || file.s3Key || "").trim();
+            beginBusy(busyKey);
+            try {
+              const blob = await loadCachedBlob(file);
+              const wantPly =
+                isDcmFileName(fileName) &&
+                (file.dcmFormat || opts.dcmFormat) === "ply";
+              if (wantPly) {
+                const plyBlob = await convertHpsDcmBufferToPlyBlob(
+                  await blob.arrayBuffer(),
+                );
+                return { fileName: replaceExtWithPly(fileName), blob: plyBlob };
+              }
+              return { fileName, blob };
+            } finally {
+              endBusy(busyKey);
+            }
+          }),
+        );
+
+        let session: { sessionId: string; folder: string };
+        try {
+          session = await sendFilesToLabHelper({
+            files: prepared,
+            workFolder,
+            caseFolder: opts.caseFolder,
+          });
+        } catch (err) {
+          if (
+            !(err instanceof LabCadHelperOpenError) ||
+            err.code !== "WORK_FOLDER_NOT_FOUND" ||
+            !opts.resolveWorkFolder
+          ) {
+            throw err;
+          }
+          writeLabWorkFolder("");
+          if (prepareTimer != null) window.clearTimeout(prepareTimer);
+          workFolder = await askWorkFolder("not_found");
+          if (!workFolder) return { ok: false };
+          setPhase("preparing");
+          session = await sendFilesToLabHelper({
+            files: prepared,
+            workFolder,
+            caseFolder: opts.caseFolder,
+          });
+        }
+        if (workFolder) writeLabWorkFolder(workFolder);
+        const value = await opts.action(session);
+        return { ok: true, value };
+      } catch (err) {
+        if ((err as { name?: string })?.name === "AbortError") return { ok: false };
+        if (
+          err instanceof LabCadHelperOpenError &&
+          err.code === "EXE_NOT_FOUND" &&
+          opts.onNeedHelperSetup
+        ) {
+          await needSetup("exe_not_found");
+          return { ok: false };
+        }
+        toast({
+          title: "작업 폴더 저장 실패",
+          description:
+            err instanceof Error
+              ? err.message
+              : "PC 연결 프로그램으로 파일을 보내는 중 오류가 발생했습니다.",
+          variant: "destructive",
+        });
+        return { ok: false };
+      } finally {
+        if (prepareTimer != null) window.clearTimeout(prepareTimer);
+        setPhase(null);
+      }
+    },
+    [beginBusy, endBusy, loadCachedBlob, toast],
+  );
+
+  /**
+   * 의뢰 3D 모델을 작업 폴더에 저장하고 설정 디자인 SW로 연다.
+   * 3Shape·exocad는 파일 인자 열기를 지원하지 않아 결과 guide로 가져오기 안내를 띄운다(onOpened).
+   * DCM은 SW에 맞춰 원본 또는 PLY.
    */
   const openInDesignSoftware = useCallback(
     async (opts: {
       files: S3DownloadTarget[];
       designSoftware: string;
-      onNeedHelperSetup?: (reason: "helper_missing" | "exe_not_found") => void | Promise<void>;
+      caseFolder?: string;
+      resolveWorkFolder?: LabWorkFolderResolver;
+      onNeedHelperSetup?: (reason: LabCadHelperSetupReason) => void | Promise<void>;
       onOpenPhase?: (phase: "connecting" | "preparing" | null) => void;
+      onOpened?: (result: LabCadOpenResult) => void;
     }) => {
       if (openInCadBusyRef.current) return;
       const designSoftware = String(opts.designSoftware || "").trim();
-      const dcmFormat = dcmFormatForDesignSoftware(designSoftware);
       const targets = (Array.isArray(opts.files) ? opts.files : []).filter(
         (file) => {
           const s3Key = String(file.s3Key || "").trim();
@@ -331,99 +494,86 @@ export function useS3FileDownload(token?: string | null) {
 
       openInCadBusyRef.current = true;
       setOpenInCadBusy(true);
-      let prepareTimer: number | null = null;
-      let phase: "connecting" | "preparing" | null = null;
-      const setPhase = (next: "connecting" | "preparing" | null) => {
-        phase = next;
-        opts.onOpenPhase?.(next);
-      };
       try {
-        const helperStatus = await ensureLabCadHelperReady({
-          onWaiting: () => setPhase("connecting"),
+        const res = await runLabHelperTransfer({
+          targets,
+          dcmFormat: dcmFormatForDesignSoftware(designSoftware),
+          caseFolder: opts.caseFolder,
+          resolveWorkFolder: opts.resolveWorkFolder,
+          onNeedHelperSetup: opts.onNeedHelperSetup,
+          onOpenPhase: opts.onOpenPhase,
+          action: (session) => openLabHelperSession(session.sessionId, designSoftware),
         });
-        if (helperStatus === "need_setup") {
-          setPhase(null);
-          if (opts.onNeedHelperSetup) {
-            await opts.onNeedHelperSetup("helper_missing");
-          } else {
-            toast({
-              title: "처음 한 번만 설치가 필요합니다",
-              description:
-                "「열기」안내에서 설치 파일을 받아 「여기를_더블클릭_설치」를 실행해 주세요.",
-              variant: "destructive",
-            });
-          }
-          return;
-        }
-
-        if (phase === "connecting") {
-          setPhase("preparing");
-        } else {
-          prepareTimer = window.setTimeout(() => setPhase("preparing"), 400);
-        }
-
-        const prepared = await Promise.all(
-          targets.map(async (file) => {
-            const fileName =
-              String(file.fileName || "model.stl").trim() || "model.stl";
-            const busyKey = String(file.busyKey || file.s3Key || "").trim();
-            beginBusy(busyKey);
-            try {
-              const blob = await loadCachedBlob(file);
-              if (isDcmFileName(fileName) && dcmFormat === "ply") {
-                const plyBlob = await convertHpsDcmBufferToPlyBlob(
-                  await blob.arrayBuffer(),
-                );
-                return {
-                  fileName: replaceExtWithPly(fileName),
-                  blob: plyBlob,
-                };
-              }
-              return { fileName, blob };
-            } finally {
-              endBusy(busyKey);
-            }
-          }),
-        );
-
-        const result = await openFilesWithLabCadHelper({
-          designSoftware,
-          files: prepared,
-        });
+        if (!res.ok) return;
         writeLastConfirmedDesignSoftware(designSoftware);
-        const swLabel = designSoftware || "기본 앱";
-        toast({
-          title: "디자인 소프트웨어로 열기",
-          description: result.hint
-            ? `${swLabel} · ${result.count}개. ${result.hint}`
-            : `${swLabel}에서 ${result.count}개 파일을 열었습니다.`,
-        });
-      } catch (err) {
-        if ((err as { name?: string })?.name === "AbortError") return;
-        if (
-          err instanceof LabCadHelperOpenError &&
-          err.code === "EXE_NOT_FOUND" &&
-          opts.onNeedHelperSetup
-        ) {
-          await opts.onNeedHelperSetup("exe_not_found");
+        if (opts.onOpened) {
+          opts.onOpened(res.value);
           return;
         }
         toast({
-          title: "열기 실패",
-          description:
-            err instanceof Error
-              ? err.message
-              : "디자인 소프트웨어로 여는 중 오류가 발생했습니다.",
-          variant: "destructive",
+          title: "작업 폴더에 저장했습니다",
+          description: res.value.folder,
         });
       } finally {
-        if (prepareTimer != null) window.clearTimeout(prepareTimer);
-        setPhase(null);
         openInCadBusyRef.current = false;
         setOpenInCadBusy(false);
       }
     },
-    [beginBusy, endBusy, loadCachedBlob, toast, token],
+    [runLabHelperTransfer, toast, token],
+  );
+
+  /** 의뢰 파일을 작업 폴더(케이스 폴더)에 저장하고 폴더를 연다. */
+  const saveToLabWorkFolder = useCallback(
+    async (opts: {
+      files: S3DownloadTarget[];
+      caseFolder?: string;
+      dcmFormat?: DcmDownloadFormat;
+      resolveWorkFolder?: LabWorkFolderResolver;
+      onNeedHelperSetup?: (reason: LabCadHelperSetupReason) => void | Promise<void>;
+      onOpenPhase?: (phase: "connecting" | "preparing" | null) => void;
+      onSaved?: (result: { folder: string; count: number }) => void;
+    }) => {
+      if (downloadAllBusyRef.current) return;
+      const targets = (Array.isArray(opts.files) ? opts.files : []).filter(
+        (file) => String(file.s3Key || "").trim(),
+      );
+      if (!targets.length) return;
+      if (!token) {
+        toast({
+          title: "다운로드 실패",
+          description: "로그인이 필요합니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (opts.dcmFormat) writeDcmDownloadFormat(opts.dcmFormat);
+      downloadAllBusyRef.current = true;
+      setDownloadAllBusy(true);
+      try {
+        const res = await runLabHelperTransfer({
+          targets,
+          dcmFormat: opts.dcmFormat || readDcmDownloadFormat(),
+          caseFolder: opts.caseFolder,
+          resolveWorkFolder: opts.resolveWorkFolder,
+          onNeedHelperSetup: opts.onNeedHelperSetup,
+          onOpenPhase: opts.onOpenPhase,
+          action: (session) => revealLabHelperSession(session.sessionId),
+        });
+        if (!res.ok) return;
+        if (opts.onSaved) {
+          opts.onSaved(res.value);
+          return;
+        }
+        toast({
+          title: "작업 폴더에 저장했습니다",
+          description: res.value.folder,
+        });
+      } finally {
+        downloadAllBusyRef.current = false;
+        setDownloadAllBusy(false);
+      }
+    },
+    [runLabHelperTransfer, toast, token],
   );
 
   const downloadAsZip = useCallback(
@@ -501,6 +651,7 @@ export function useS3FileDownload(token?: string | null) {
     downloadingKeysRef.current.clear();
     downloadZipBusyRef.current = false;
     openInCadBusyRef.current = false;
+    downloadAllBusyRef.current = false;
     setDownloadingKeys([]);
     setDownloadProgressByKey({});
     setDownloadAllBusy(false);
@@ -519,6 +670,7 @@ export function useS3FileDownload(token?: string | null) {
     downloadAll,
     downloadAsZip,
     openInDesignSoftware,
+    saveToLabWorkFolder,
     resetDownloads,
   };
 }

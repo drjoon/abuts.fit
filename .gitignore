@@ -43,3 +43,5 @@ __pycache__
 RnD/
 # lab CAD helper local paths
 bg/lab-cad-helper/config.json
+bg/lab-cad-helper/mac/dist/
+bg/lab-cad-helper/helper.log

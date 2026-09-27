@@ -1,4 +1,5 @@
 // related files:
+// - 2026-09-27: 의뢰 파일 「다운로드」·작업열기 — PC 작업 폴더의 「날짜_환자명」 폴더에 저장(헬퍼 v2). 작업 폴더 지정·열기 후 가져오기 안내.
 // - 2026-09-27: 채팅 「완료」뱃지. 판정은 isPracticeRecentFinishedBadgeStatus.
 // - 2026-09-27: 수신 필터 왼쪽 협력·하청. 신규 하청은 알림에서 확인 후 선착순 진행.
 // - 2026-09-27: 하청 수행 기공소는 원청과 같이 치과명·담당자·채팅명을 본다.
@@ -211,11 +212,26 @@ import {
   LabCadHelperSetupDialog,
   type LabCadOpenBusyStatus,
 } from "@/shared/components/LabCadHelperSetupDialog";
+import { ToastAction } from "@/components/ui/toast";
 import { LabCadOpenSoftwareConfirmDialog } from "@/shared/components/LabCadOpenSoftwareConfirmDialog";
 import {
+  LabCadOpenedGuideDialog,
+  shouldSkipLabCadOpenedGuide,
+} from "@/shared/components/LabCadOpenedGuideDialog";
+import {
+  LabWorkFolderDialog,
+  type LabWorkFolderDialogReason,
+} from "@/shared/components/LabWorkFolderDialog";
+import {
+  buildLabCaseFolderName,
+  detectLabHelperOs,
   needsDesignSoftwareOpenConfirm,
+  readLabWorkFolder,
   readLastConfirmedDesignSoftware,
   writeLastConfirmedDesignSoftware,
+  type LabCadHelperSetupReason,
+  type LabCadOpenResult,
+  type LabWorkFolderResolver,
 } from "@/shared/files/labCadHelperClient";
 import { RequestSettingsToolbar } from "@/features/requestSettings/RequestSettingsToolbar";
 import { useRequestorRequestSettings } from "@/features/requestSettings/useRequestorRequestSettings";
@@ -776,9 +792,18 @@ export function RequestorPracticeReceivePage({
   const [labCadOpenStatus, setLabCadOpenStatus] =
     useState<LabCadOpenBusyStatus | null>(null);
   const [labCadHelperSetupOpen, setLabCadHelperSetupOpen] = useState(false);
-  const [labCadHelperSetupVariant, setLabCadHelperSetupVariant] = useState<
-    "helper_missing" | "exe_not_found"
-  >("helper_missing");
+  const [labCadHelperSetupVariant, setLabCadHelperSetupVariant] =
+    useState<LabCadHelperSetupReason>("helper_missing");
+  const [labCadOpenedResult, setLabCadOpenedResult] =
+    useState<LabCadOpenResult | null>(null);
+  const [labWorkFolderDialog, setLabWorkFolderDialog] = useState<{
+    open: boolean;
+    reason: LabWorkFolderDialogReason;
+    initialPath: string;
+  }>({ open: false, reason: "missing", initialPath: "" });
+  const labWorkFolderResolveRef = useRef<null | ((path: string | null) => void)>(
+    null,
+  );
   const [labCadSoftwareConfirmOpen, setLabCadSoftwareConfirmOpen] =
     useState(false);
   const labCadOpenRetryRef = useRef<null | (() => void)>(null);
@@ -848,8 +873,8 @@ export function RequestorPracticeReceivePage({
     downloadAllBusy,
     openInCadBusy,
     downloadS3File,
-    downloadAll,
     openInDesignSoftware,
+    saveToLabWorkFolder,
     resetDownloads,
   } = useS3FileDownload(token);
 
@@ -7529,6 +7554,65 @@ export function RequestorPracticeReceivePage({
     [downloadS3File],
   );
 
+  const requestLabWorkFolder = useCallback<LabWorkFolderResolver>(
+    ({ reason, helperWorkFolder }) =>
+      new Promise<string | null>((resolve) => {
+        labWorkFolderResolveRef.current?.(null);
+        labWorkFolderResolveRef.current = resolve;
+        setLabWorkFolderDialog({
+          open: true,
+          reason,
+          initialPath: readLabWorkFolder() || helperWorkFolder,
+        });
+      }),
+    [],
+  );
+
+  const settleLabWorkFolder = useCallback((path: string | null) => {
+    const resolve = labWorkFolderResolveRef.current;
+    labWorkFolderResolveRef.current = null;
+    setLabWorkFolderDialog((prev) => ({ ...prev, open: false }));
+    if (resolve) {
+      resolve(path);
+    } else if (path) {
+      toast({ title: "작업 폴더를 바꿨습니다", description: path });
+    }
+  }, [toast]);
+
+  const openChangeLabWorkFolder = useCallback(() => {
+    labWorkFolderResolveRef.current = null;
+    setLabWorkFolderDialog({
+      open: true,
+      reason: "change",
+      initialPath: readLabWorkFolder(),
+    });
+  }, []);
+
+  const selectedTransferCaseFolder = useMemo(
+    () =>
+      buildLabCaseFolderName({
+        orderDate: selectedTransfer?.orderDate || selectedTransfer?.createdAt,
+        patientName: selectedTransferPatientName,
+        fallbackId: selectedTransfer?.transferId || selectedTransfer?._id,
+      }),
+    [
+      selectedTransfer?._id,
+      selectedTransfer?.createdAt,
+      selectedTransfer?.orderDate,
+      selectedTransfer?.transferId,
+      selectedTransferPatientName,
+    ],
+  );
+
+  const showLabHelperSetup = useCallback(
+    (reason: LabCadHelperSetupReason, retry: () => void) => {
+      labCadOpenRetryRef.current = retry;
+      setLabCadHelperSetupVariant(reason);
+      setLabCadHelperSetupOpen(true);
+    },
+    [],
+  );
+
   const handleDownloadAllFiles = useCallback(
     async (opts?: { dcmFormat?: import("@/shared/files/dcmDownloadFormat").DcmDownloadFormat }) => {
       const files = [
@@ -7540,16 +7624,42 @@ export function RequestorPracticeReceivePage({
           ? selectedTransfer.resultFiles
           : []),
       ];
-      await downloadAll(
-        files.map((file) => ({
+      await saveToLabWorkFolder({
+        files: files.map((file) => ({
           s3Key: String(file.s3Key || "").trim(),
           fileName: String(file.originalName || "download").trim() || "download",
           busyKey: String(file.s3Key || "").trim(),
-          dcmFormat: opts?.dcmFormat,
         })),
-      );
+        dcmFormat: opts?.dcmFormat,
+        caseFolder: selectedTransferCaseFolder,
+        resolveWorkFolder: requestLabWorkFolder,
+        onOpenPhase: (phase) => setLabCadOpenStatus(phase),
+        onNeedHelperSetup: (reason) =>
+          showLabHelperSetup(reason, () => {
+            void handleDownloadAllFiles(opts);
+          }),
+        onSaved: ({ folder, count }) => {
+          toast({
+            title: `작업 폴더에 ${count}개 저장했습니다`,
+            description: folder,
+            action: (
+              <ToastAction altText="작업 폴더 변경" onClick={openChangeLabWorkFolder}>
+                폴더 변경
+              </ToastAction>
+            ),
+          });
+        },
+      });
     },
-    [downloadAll, selectedTransfer],
+    [
+      openChangeLabWorkFolder,
+      requestLabWorkFolder,
+      saveToLabWorkFolder,
+      selectedTransfer,
+      selectedTransferCaseFolder,
+      showLabHelperSetup,
+      toast,
+    ],
   );
 
   const runOpenInDesignSoftware = useCallback(async () => {
@@ -7558,7 +7668,7 @@ export function RequestorPracticeReceivePage({
       openDesignSoftwareModal();
       toast({
         title: "디자인 소프트웨어를 먼저 설정해 주세요",
-        description: "설정 후 다시「열기」를 누르면 해당 소프트웨어로 파일을 엽니다.",
+        description: "설정 후 다시「작업열기」를 누르면 해당 소프트웨어로 엽니다.",
       });
       return;
     }
@@ -7572,20 +7682,35 @@ export function RequestorPracticeReceivePage({
         fileName: String(file.originalName || "model.stl").trim() || "model.stl",
         busyKey: String(file.s3Key || "").trim(),
       })),
+      caseFolder: selectedTransferCaseFolder,
+      resolveWorkFolder: requestLabWorkFolder,
       onOpenPhase: (phase) => setLabCadOpenStatus(phase),
-      onNeedHelperSetup: (reason) => {
-        labCadOpenRetryRef.current = () => {
+      onNeedHelperSetup: (reason) =>
+        showLabHelperSetup(reason, () => {
           void runOpenInDesignSoftware();
-        };
-        setLabCadHelperSetupVariant(reason);
-        setLabCadHelperSetupOpen(true);
+        }),
+      onOpened: (result) => {
+        if (shouldSkipLabCadOpenedGuide(result)) {
+          toast({
+            title:
+              result.guide === "exocad_project" || result.guide === "args"
+                ? `${sw}에서 열었습니다`
+                : "작업 폴더에 저장했습니다",
+            description: result.folder,
+          });
+          return;
+        }
+        setLabCadOpenedResult(result);
       },
     });
   }, [
     designSoftwareValue,
     openDesignSoftwareModal,
     openInDesignSoftware,
+    requestLabWorkFolder,
     selectedTransfer,
+    selectedTransferCaseFolder,
+    showLabHelperSetup,
     toast,
   ]);
 
@@ -8976,6 +9101,19 @@ export function RequestorPracticeReceivePage({
           retry?.();
         }}
       />
+      <LabWorkFolderDialog
+        open={labWorkFolderDialog.open}
+        reason={labWorkFolderDialog.reason}
+        initialPath={labWorkFolderDialog.initialPath}
+        onSubmit={(path) => settleLabWorkFolder(path)}
+        onCancel={() => settleLabWorkFolder(null)}
+      />
+      <LabCadOpenedGuideDialog
+        result={labCadOpenedResult}
+        isMac={detectLabHelperOs() === "mac"}
+        onClose={() => setLabCadOpenedResult(null)}
+        onChangeWorkFolder={openChangeLabWorkFolder}
+      />
       <LabCadOpenSoftwareConfirmDialog
         open={labCadSoftwareConfirmOpen}
         onOpenChange={setLabCadSoftwareConfirmOpen}
@@ -9604,6 +9742,7 @@ export function RequestorPracticeReceivePage({
         downloadAllBusy={downloadAllBusy}
         openInCadBusy={openInCadBusy}
         onOpenInDesignSoftware={() => void handleOpenInDesignSoftware()}
+        downloadAllFilesLabel="다운로드"
         onDownloadAllFiles={(opts) => void handleDownloadAllFiles(opts)}
         onDownloadTransferFile={(file, opts) =>
           void handleDownload(
