@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/settlement/affiliateVat.ts
 // - web/backend/controllers/credits/credit.controller.js
 // change-log:
+// - 2026-09-28: 통장 사본 안내 가로는 문구+여백. 카드는 가운데.
 // - 2026-09-28: 지급 표는 크레딧 작업영역 폭. 충전 폼만 읽기 폭.
 // - 2026-09-26: 정산규칙 — 수수료 제목·협력·하청 문장.
 // - 2026-09-24: 정산규칙 — 플랫폼 사용료 정책 2% · 이벤트 0% 복원.
@@ -79,6 +80,8 @@ import { useLabPayoutBankbookReminder } from "@/shared/settlement/useLabPayoutBa
 import { useLabTradingPartnerWindow } from "@/shared/lab/useLabTradingPartnerWindow";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/shared/ui/cn";
+import { CONTENT_MEASURED_CHROME_CLASS } from "@/shared/ui/contentMeasuredChrome";
 import {
   loadBusinessMeCached,
 } from "@/shared/components/business/settings/business/businessMeCache";
@@ -510,7 +513,12 @@ export const LabSettlementPayoutTab = () => {
     <div className="mx-auto flex h-full min-h-0 w-full flex-col overflow-hidden">
       {bankbookRemindDialog}
       {!payoutReady ? (
-        <div className="mx-3 mt-3 shrink-0 rounded-2xl border border-amber-200/80 bg-amber-50/90 px-3 py-2.5 sm:mx-3">
+        <div
+          className={cn(
+            CONTENT_MEASURED_CHROME_CLASS,
+            "mx-3 mt-3 shrink-0 self-center rounded-2xl border border-amber-200/80 bg-amber-50/90 px-3 py-2.5",
+          )}
+        >
           <p className="text-[13px] font-medium text-amber-950">
             통장 사본·입금 계좌가 필요합니다
           </p>
