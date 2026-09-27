@@ -11,6 +11,7 @@
 // - 2026-09-26: 투명 체크는 지대치 외 스캔을 20%로 비추고, 끄면 불투명하다. 처음에는 꺼져 있다.
 // - 2026-09-27: 언더컷과 교합 접촉 사이 마진.
 // - 2026-09-27: 삽입축·언더컷·마진·교합 접촉 범례는 각 토글 바로 아래.
+// - 2026-09-27: 마진을 확인한 뒤에만 생성한다. 범위·재료 프리셋·최소 두께 색.
 // - 2026-09-27: 정중앙은 버튼 줄 한가운데. 칼라는 교합 접촉, 투명 앞. 표시 쉐브론은 하나만.
 // - 2026-09-26: 치아 이름은 글자 너비. 삽입축은 파란 버튼. 치아를 누르면 잡은 카메라로.
 // - 2026-09-26: 작업영역 위 정중앙 버튼이 가로·세로 점선을 켠다.
@@ -144,14 +145,25 @@ import {
   type ContactPaintMode,
 } from "@/shared/practice/oralScanDesignAnalysis";
 import {
+  applyClinicMaterialPreset,
   applyDetectedMargin,
+  applyInnerPreset,
+  clinicKeyFromCasePrimary,
   createToothDesignEdit,
-  marginUntouched,
+  INNER_PRESETS,
+  materialSnapshot,
+  readClinicMaterialPreset,
   redetectMargin,
   reduceDesignGesture,
+  shellIsThin,
+  writeClinicMaterialPreset,
+  type ClinicMaterialPreset,
   type DesignGesture,
+  type DesignScope,
   type EditBrush,
+  type InnerPresetId,
   type MarginEditMode,
+  type MarginReview,
   type ModifyTool,
   type ToothDesignEdit,
 } from "@/shared/practice/labProsthesisModify";
@@ -200,6 +212,26 @@ function overlayLegend(colorClass: string, label: string) {
       <span className={cn("h-2 w-2 shrink-0 rounded-full", colorClass)} />
       {label}
     </span>
+  );
+}
+
+function thicknessOverlayLegend() {
+  return (
+    <div
+      className="pointer-events-none absolute left-1/2 top-full z-10 mt-1.5 w-44 -translate-x-1/2 text-[10px] text-foreground"
+      aria-label="최소 두께 미달"
+    >
+      <div className="flex justify-between whitespace-nowrap leading-none">
+        <span>미달</span>
+        <span>충족</span>
+      </div>
+      <div
+        className="mt-0.5 h-2 rounded-sm"
+        style={{
+          background: "linear-gradient(90deg, rgb(219 51 46), rgb(51 184 82))",
+        }}
+      />
+    </div>
   );
 }
 
@@ -357,6 +389,7 @@ const UNDO_LIMIT = 30;
 type WorkUndoSnap = {
   edits: Record<string, ToothDesignEdit>;
   generated: Record<string, boolean>;
+  marginReview: Record<string, MarginReview>;
   jaws: Array<{ id: string; positions: Float32Array }> | null;
 };
 
@@ -372,6 +405,8 @@ function workDocumentSignature(document: WorkSessionDocument): string {
   return JSON.stringify({
     edits: document.edits,
     generated: document.generated,
+    marginReview: document.marginReview,
+    designScope: document.designScope,
     insertionAxes: document.insertionAxes,
     camera: document.camera,
     viewToggles: document.viewToggles,
@@ -480,6 +515,9 @@ function LabProsthesisAiDesignDialog({
   const [contactMode, setContactMode] = useState<ContactPaintMode>("cut");
   const [selectedTooth, setSelectedTooth] = useState<string | null>(null);
   const [generated, setGenerated] = useState<Record<string, boolean>>({});
+  const [marginReview, setMarginReview] = useState<Record<string, MarginReview>>({});
+  const [designScope, setDesignScope] = useState<DesignScope | null>(null);
+  const [clinicPreset, setClinicPreset] = useState<ClinicMaterialPreset | null>(null);
   const [generating, setGenerating] = useState(false);
   const [genLabel, setGenLabel] = useState("");
   const [panelsHidden, setPanelsHidden] = useState(false);
@@ -534,6 +572,10 @@ function LabProsthesisAiDesignDialog({
   editsRef.current = edits;
   const generatedRef = useRef(generated);
   generatedRef.current = generated;
+  const marginReviewRef = useRef(marginReview);
+  marginReviewRef.current = marginReview;
+  const designScopeRef = useRef(designScope);
+  designScopeRef.current = designScope;
   const historyRef = useRef<WorkUndoBook>({
     past: [],
     future: [],
@@ -587,6 +629,9 @@ function LabProsthesisAiDesignDialog({
       setContactMode("cut");
       setSelectedTooth(null);
       setGenerated({});
+      setMarginReview({});
+      setDesignScope(null);
+      setClinicPreset(null);
       setGenerating(false);
       setGenLabel("");
       setToothInfoOpen(true);
@@ -689,10 +734,14 @@ function LabProsthesisAiDesignDialog({
           if (draft?.document) {
             editsRef.current = draft.document.edits;
             generatedRef.current = draft.document.generated;
+            marginReviewRef.current = draft.document.marginReview;
+            designScopeRef.current = draft.document.designScope;
             sessionDocRef.current = draft.document;
             lastDocSigRef.current = workDocumentSignature(draft.document);
             setEdits(draft.document.edits);
             setGenerated(draft.document.generated);
+            setMarginReview(draft.document.marginReview);
+            setDesignScope(draft.document.designScope);
             if (draft.document.insertionAxes.length > 0) {
               setInsertionKeys(draft.document.insertionAxes.map((axis) => axis.key));
               setInsertionShown(true);
@@ -958,7 +1007,7 @@ function LabProsthesisAiDesignDialog({
   const prepBackTransparent = Boolean(activeNumber && edits[activeNumber]?.margin.showBack);
   const designEdit = useMemo(
     () =>
-      stage === "scan"
+      stage === "scan" && !marginShown
         ? null
         : {
             tool: modifyTool,
@@ -1006,17 +1055,19 @@ function LabProsthesisAiDesignDialog({
   };
 
   const workSnapshotKey = () =>
-    `${JSON.stringify(editsRef.current)}\n${JSON.stringify(generatedRef.current)}`;
+    `${JSON.stringify(editsRef.current)}\n${JSON.stringify(generatedRef.current)}\n${JSON.stringify(marginReviewRef.current)}`;
 
   const takeSnap = (withJaws: boolean): WorkUndoSnap => ({
     edits: structuredClone(editsRef.current),
     generated: { ...generatedRef.current },
+    marginReview: { ...marginReviewRef.current },
     jaws: withJaws ? (viewerRef.current?.captureJawPositions() ?? []) : null,
   });
 
   const applySnap = (snap: WorkUndoSnap) => {
     setEdits(snap.edits);
     setGenerated(snap.generated);
+    setMarginReview(snap.marginReview ?? {});
     if (snap.jaws) viewerRef.current?.restoreJawPositions(snap.jaws);
   };
 
@@ -1040,8 +1091,8 @@ function LabProsthesisAiDesignDialog({
     }, 0);
   };
 
-  const beginEditUndo = () => {
-    if (alignBusy) return;
+  const beginEditUndo = (force = false) => {
+    if (alignBusy && !force) return;
     const book = historyRef.current;
     if (!book.stroke) {
       book.past.push(takeSnap(false));
@@ -1119,6 +1170,17 @@ function LabProsthesisAiDesignDialog({
     }
     setHoleNote("");
     beginEditUndo();
+    if (
+      gesture.type === "margin" ||
+      gesture.type === "margin-insert" ||
+      gesture.type === "margin-remove"
+    ) {
+      setMarginReview((prev) =>
+        prev[gesture.tooth] === "confirmed"
+          ? prev
+          : { ...prev, [gesture.tooth]: "confirmed" },
+      );
+    }
     setEdits((prev) => {
       const current = prev[gesture.tooth] ?? createToothDesignEdit();
       const next = reduceDesignGesture(current, gesture, marginMode === "pen");
@@ -1135,54 +1197,84 @@ function LabProsthesisAiDesignDialog({
     });
   };
 
+  const marginToothNumbersRef = useRef<string[]>([]);
+  marginToothNumbersRef.current = (
+    plan.designableTeeth.length > 0 ? plan.designableTeeth : prepTeeth
+  ).map((tooth) => tooth.toothNumber);
+  const clinicKey = clinicKeyFromCasePrimary(caseHeader?.primary);
+  useEffect(() => {
+    if (!open) return;
+    setClinicPreset(clinicKey ? readClinicMaterialPreset(clinicKey) : null);
+  }, [clinicKey, open]);
+
+  const runMarginDetect = (toothNumbers: readonly string[]) => {
+    const targets = toothNumbers.filter((number) => {
+      if (!number) return false;
+      const review = marginReviewRef.current[number];
+      if (review === "detected" || review === "confirmed") return false;
+      if (editsRef.current[number]?.margin.deleted) return false;
+      return true;
+    });
+    if (targets.length === 0) return;
+    const detected = new Map(
+      (viewerRef.current?.detectColorMargins(targets) ?? []).map((row) => [
+        row.tooth,
+        row,
+      ]),
+    );
+    beginEditUndo(true);
+    setEdits((prev) => {
+      const next = { ...prev };
+      for (const number of targets) {
+        const current = next[number] ?? createToothDesignEdit();
+        const hit = detected.get(number);
+        next[number] = hit
+          ? applyDetectedMargin(current, hit.radii, hit.depths)
+          : redetectMargin(current);
+      }
+      return next;
+    });
+    setMarginReview((prev) => {
+      const next = { ...prev };
+      for (const number of targets) next[number] = "detected";
+      return next;
+    });
+    setMarginShown(true);
+    queueSaveWorkRef.current();
+  };
+
   const runGenerate = async (toothNumbers: string[]) => {
+    if (designScopeRef.current !== "crown") return;
+    const targets = toothNumbers.filter(
+      (number) => number && marginReviewRef.current[number] === "confirmed",
+    );
+    if (targets.length === 0) return;
     const seq = genSeq.current + 1;
     genSeq.current = seq;
-    const targets = toothNumbers.filter(Boolean);
     setGenerating(true);
-    setMarginShown(true);
-    setStage("margin");
-    if (canUndercut) setUndercutMap(true);
-    setGenLabel("마진과 언더컷을 확인하는 중");
-    viewerRef.current?.setView("occlusal");
-    await wait(900);
-    if (genSeq.current !== seq) return;
     setStage("design");
-    if (canContact) setContactMap(true);
+    const willBeThin = targets.some((number) => {
+      const edit = editsRef.current[number];
+      return Boolean(edit && shellIsThin(edit));
+    });
+    if (willBeThin) setContactMap(false);
+    else if (canContact) setContactMap(true);
     setGenLabel(
-      canContact
-        ? "교합 접촉을 계산하는 중"
-        : "대합 스캔이 없어 언더컷만 표시합니다.",
+      willBeThin
+        ? "보철을 생성하는 중"
+        : canContact
+          ? "교합 접촉을 계산하는 중"
+          : "보철을 생성하는 중",
     );
     viewerRef.current?.setView("occlusal");
     await wait(900);
     if (genSeq.current !== seq) return;
     setGenerating(false);
     setGenLabel("");
-    if (targets.length === 0) return;
     beginEditUndo();
     setGenerated((prev) => {
       const next = { ...prev };
       for (const number of targets) next[number] = true;
-      return next;
-    });
-    setEdits((prev) => {
-      const next = { ...prev };
-      const detected = new Map(
-        (viewerRef.current?.detectColorMargins(targets) ?? []).map((row) => [
-          row.tooth,
-          row,
-        ]),
-      );
-      for (const number of targets) {
-        const current = next[number] ?? createToothDesignEdit();
-        const hit = detected.get(number);
-        if (hit && marginUntouched(current)) {
-          next[number] = applyDetectedMargin(current, hit.radii, hit.depths);
-        } else {
-          next[number] = marginUntouched(current) ? redetectMargin(current) : current;
-        }
-      }
       return next;
     });
     setModifyTool("refine");
@@ -1190,7 +1282,43 @@ function LabProsthesisAiDesignDialog({
     queueSaveWorkRef.current();
   };
 
+  const chooseScope = (next: DesignScope) => {
+    designScopeRef.current = next;
+    setDesignScope(next);
+    setStage("margin");
+    setMarginShown(true);
+    setModifyTool("margin");
+    setAlignKind(null);
+    setAlignArch(null);
+    if (canUndercut) setUndercutMap(true);
+    runMarginDetect(marginToothNumbersRef.current);
+    queueSaveWorkRef.current();
+  };
+
+  const confirmMargin = (toothNumber: string) => {
+    if (marginReviewRef.current[toothNumber] !== "detected") return;
+    if (editsRef.current[toothNumber]?.margin.deleted) return;
+    beginEditUndo();
+    setMarginReview((prev) => ({ ...prev, [toothNumber]: "confirmed" }));
+    queueSaveWorkRef.current();
+  };
+
+  const applyPresetToTooth = (toothNumber: string, presetId: InnerPresetId) => {
+    beginEditUndo();
+    setEdits((prev) => {
+      const current = prev[toothNumber] ?? createToothDesignEdit();
+      const next =
+        presetId === "clinic" && clinicPreset
+          ? applyClinicMaterialPreset(current, clinicPreset)
+          : applyInnerPreset(current, presetId);
+      return { ...prev, [toothNumber]: next };
+    });
+    queueSaveWorkRef.current();
+  };
+
   const onStage = (next: DesignStage) => {
+    if (next !== "scan" && !designScopeRef.current) return;
+    if (next === "design" && designScopeRef.current !== "crown") return;
     setStage(next);
     setMarginShown(next !== "scan");
     if (next !== "scan") {
@@ -1218,7 +1346,10 @@ function LabProsthesisAiDesignDialog({
     if (fitted !== true) discardJawCheckpoint(before);
     setAlignBusy(false);
     setAlignKind(null);
-    if (fitted === true) queueSaveWorkRef.current();
+    if (fitted === true) {
+      queueSaveWorkRef.current();
+      runMarginDetect(marginToothNumbersRef.current);
+    }
   };
 
   const showTooth = (toothNumber: string) => {
@@ -1233,13 +1364,25 @@ function LabProsthesisAiDesignDialog({
   const applyColorDetections = (
     detected: ReadonlyArray<{ tooth: string; radii: number[]; depths: number[] }>,
   ) => {
-    if (detected.length === 0) return;
+    const fresh = detected.filter((row) => {
+      if (marginReviewRef.current[row.tooth] === "confirmed") return false;
+      if (editsRef.current[row.tooth]?.margin.deleted) return false;
+      return true;
+    });
+    if (fresh.length === 0) return;
     beginEditUndo();
     setEdits((prev) => {
       const next = { ...prev };
-      for (const row of detected) {
+      for (const row of fresh) {
         const current = next[row.tooth] ?? createToothDesignEdit();
         next[row.tooth] = applyDetectedMargin(current, row.radii, row.depths);
+      }
+      return next;
+    });
+    setMarginReview((prev) => {
+      const next = { ...prev };
+      for (const row of fresh) {
+        if (next[row.tooth] !== "confirmed") next[row.tooth] = "detected";
       }
       return next;
     });
@@ -1273,6 +1416,8 @@ function LabProsthesisAiDesignDialog({
     return {
       edits: editsRef.current,
       generated: generatedRef.current,
+      marginReview: marginReviewRef.current,
+      designScope: designScopeRef.current,
       insertionAxes: axes,
       camera:
         viewerRef.current?.exportCamera() ??
@@ -1871,6 +2016,7 @@ function LabProsthesisAiDesignDialog({
                 setAlignArch(null);
                 setAlignPicks({ model: 0, bite: 0 });
                 queueSaveWorkRef.current();
+                runMarginDetect(marginToothNumbersRef.current);
               }}
               onAlignFailed={() => {
                 discardJawCheckpoint(alignBeforeSigRef.current);
@@ -2038,7 +2184,15 @@ function LabProsthesisAiDesignDialog({
                 <Palette />
                 {workWide ? <span>교합 접촉</span> : null}
               </Button>
-              {contactMap ? contactOverlayLegend() : null}
+              {contactMap
+                ? contactOverlayLegend()
+                : plan.teeth.some((tooth) => {
+                    if (generated[tooth.toothNumber] !== true) return false;
+                    const edit = edits[tooth.toothNumber];
+                    return Boolean(edit && shellIsThin(edit));
+                  })
+                  ? thicknessOverlayLegend()
+                  : null}
               </div>
               {hasGhost ? (
                 <Tooltip>
@@ -2269,6 +2423,34 @@ function LabProsthesisAiDesignDialog({
                 {modifyPanelOpen ? (
                   <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3.5 py-2.5">
                     <section className="space-y-2">
+                      <div className="space-y-1.5">
+                        <p className="text-xs font-semibold text-foreground">범위</p>
+                        <p className="text-[11px] leading-relaxed text-muted-foreground">
+                          마진만은 생성 없이 마진 수정에서 끝냅니다.
+                          <br />
+                          크라운까지는 마진을 확인한 뒤에 생성합니다.
+                        </p>
+                        <div className="grid grid-cols-2 gap-1">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={designScope === "margin" ? "default" : "outline"}
+                            className="h-7 px-2 text-[11px]"
+                            onClick={() => chooseScope("margin")}
+                          >
+                            마진만
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={designScope === "crown" ? "default" : "outline"}
+                            className="h-7 px-2 text-[11px]"
+                            onClick={() => chooseScope("crown")}
+                          >
+                            크라운까지
+                          </Button>
+                        </div>
+                      </div>
                       <div className="grid grid-cols-3 gap-1">
                         {DESIGN_STAGES.map((item) => (
                           <Button
@@ -2277,6 +2459,17 @@ function LabProsthesisAiDesignDialog({
                             size="sm"
                             variant={stage === item.id ? "default" : "outline"}
                             className="h-7 px-2 text-[11px]"
+                            disabled={
+                              (item.id !== "scan" && designScope == null) ||
+                              (item.id === "design" && designScope !== "crown")
+                            }
+                            title={
+                              item.id !== "scan" && designScope == null
+                                ? "범위를 먼저 고릅니다."
+                                : item.id === "design" && designScope !== "crown"
+                                  ? "마진만 진행 중입니다."
+                                  : undefined
+                            }
                             onClick={() => {
                               onStage(item.id);
                               if (item.id === "margin") setModifyTool("margin");
@@ -2458,6 +2651,22 @@ function LabProsthesisAiDesignDialog({
                         onEdit={(next) => {
                           if (!activeNumber) return;
                           beginEditUndo();
+                          const previous = edits[activeNumber] ?? createToothDesignEdit();
+                          if (next.margin.deleted && !previous.margin.deleted) {
+                            setMarginReview((prev) => ({
+                              ...prev,
+                              [activeNumber]: "none",
+                            }));
+                          } else if (
+                            !next.margin.deleted &&
+                            marginLineChanged(previous, next)
+                          ) {
+                            setMarginReview((prev) =>
+                              prev[activeNumber] === "confirmed"
+                                ? prev
+                                : { ...prev, [activeNumber]: "confirmed" },
+                            );
+                          }
                           setEdits((prev) => {
                             if (modifyTool !== "connector" || bridgeSpan.length < 2) {
                               return { ...prev, [activeNumber]: next };
@@ -2503,6 +2712,11 @@ function LabProsthesisAiDesignDialog({
                                   prev[activeNumber] ?? createToothDesignEdit(),
                                 ),
                           }));
+                          setMarginReview((prev) => ({
+                            ...prev,
+                            [activeNumber]: "detected",
+                          }));
+                          setMarginShown(true);
                           queueSaveWorkRef.current();
                         }}
                         onClearMargin={() => {
@@ -2515,6 +2729,10 @@ function LabProsthesisAiDesignDialog({
                               ...current,
                               margin: { ...current.margin, deleted: true },
                             },
+                          }));
+                          setMarginReview((prev) => ({
+                            ...prev,
+                            [activeNumber]: "none",
                           }));
                           queueSaveWorkRef.current();
                         }}
@@ -2551,6 +2769,32 @@ function LabProsthesisAiDesignDialog({
                               },
                             };
                           });
+                          queueSaveWorkRef.current();
+                        }}
+                        clinicLabel={clinicKey || null}
+                        clinicSaved={clinicPreset != null}
+                        onApplyClinic={() => {
+                          if (!activeNumber || !clinicPreset) return;
+                          applyPresetToTooth(activeNumber, "clinic");
+                        }}
+                        onSaveClinic={() => {
+                          if (!clinicKey || !activeNumber) return;
+                          const current = edits[activeNumber] ?? createToothDesignEdit();
+                          const preset: ClinicMaterialPreset = {
+                            clinicKey,
+                            label: clinicKey,
+                            ...materialSnapshot(current),
+                          };
+                          writeClinicMaterialPreset(preset);
+                          setClinicPreset(preset);
+                          beginEditUndo();
+                          setEdits((prev) => ({
+                            ...prev,
+                            [activeNumber]: {
+                              ...current,
+                              inner: { ...current.inner, preset: "clinic" },
+                            },
+                          }));
                           queueSaveWorkRef.current();
                         }}
                       />
@@ -2635,10 +2879,56 @@ function LabProsthesisAiDesignDialog({
             </div>
             </>
             ) : null}
+            <div className="absolute bottom-3 right-3 z-20 flex items-center gap-1 rounded-lg border bg-background/95 p-1 shadow-sm backdrop-blur">
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-7 px-2 text-[11px]"
+                onClick={() => viewerRef.current?.setView("occlusal")}
+                title="교합면 뷰 (상악/하악 교합면 수직 시선)"
+              >
+                교합면
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-7 px-2 text-[11px]"
+                onClick={() => viewerRef.current?.setView("buccal")}
+                title="협측 뷰 (바깥쪽 전면 시선)"
+              >
+                협측
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-7 px-2 text-[11px]"
+                onClick={() => viewerRef.current?.setView("lingual")}
+                title="설측 뷰 (안쪽 구개/설측 시선)"
+              >
+                설측
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-7 px-2 text-[11px]"
+                onClick={() => viewerRef.current?.setView("fit")}
+                title="화면 맞춤 (전체 모델을 화면 크기에 맞춤)"
+              >
+                맞춤
+              </Button>
+            </div>
             <DesignViewerChrome
               teeth={plan.teeth}
               activeTooth={activeTooth}
+              edits={edits}
               generated={generated}
+              marginReview={marginReview}
+              designScope={designScope}
+              clinicPreset={clinicPreset}
               generating={generating}
               genLabel={genLabel}
               panelsShown={panelsShown}
@@ -2648,6 +2938,8 @@ function LabProsthesisAiDesignDialog({
               onSelectTooth={showTooth}
               onSetInsertion={rememberInsertion}
               onToggleInfo={() => setToothInfoOpen((open) => !open)}
+              onConfirmMargin={confirmMargin}
+              onApplyPreset={applyPresetToTooth}
               onGenerateTooth={(toothNumber) => void runGenerate([toothNumber])}
               onClearTooth={(toothNumber) => {
                 beginEditUndo();
@@ -2778,10 +3070,26 @@ function toothInfoBlocks(
   return blocks;
 }
 
+function marginLineChanged(prev: ToothDesignEdit, next: ToothDesignEdit) {
+  if (prev.margin.offsetMm !== next.margin.offsetMm) return true;
+  if (prev.margin.radii.length !== next.margin.radii.length) return true;
+  if (prev.margin.radii.some((radius, index) => radius !== next.margin.radii[index])) {
+    return true;
+  }
+  const before = prev.margin.depths ?? [];
+  const after = next.margin.depths ?? [];
+  if (before.length !== after.length) return true;
+  return before.some((depth, index) => depth !== after[index]);
+}
+
 function DesignViewerChrome({
   teeth,
   activeTooth,
+  edits,
   generated,
+  marginReview,
+  designScope,
+  clinicPreset,
   generating,
   genLabel,
   panelsShown,
@@ -2791,12 +3099,18 @@ function DesignViewerChrome({
   onSelectTooth,
   onSetInsertion,
   onToggleInfo,
+  onConfirmMargin,
+  onApplyPreset,
   onGenerateTooth,
   onClearTooth,
 }: {
   teeth: LabProsthesisAiTooth[];
   activeTooth: LabProsthesisAiTooth | null;
+  edits: Record<string, ToothDesignEdit>;
   generated: Record<string, boolean>;
+  marginReview: Record<string, MarginReview>;
+  designScope: DesignScope | null;
+  clinicPreset: ClinicMaterialPreset | null;
   generating: boolean;
   genLabel: string;
   panelsShown: boolean;
@@ -2806,6 +3120,8 @@ function DesignViewerChrome({
   onSelectTooth: (toothNumber: string) => void;
   onSetInsertion: (toothNumbers: readonly string[]) => void;
   onToggleInfo: () => void;
+  onConfirmMargin: (toothNumber: string) => void;
+  onApplyPreset: (toothNumber: string, presetId: InnerPresetId) => void;
   onGenerateTooth: (toothNumber: string) => void;
   onClearTooth: (toothNumber: string) => void;
 }) {
@@ -2875,25 +3191,128 @@ function DesignViewerChrome({
     );
   };
 
-  const generateButton = (tooth: LabProsthesisAiTooth) =>
-    generated[tooth.toothNumber] === true ? (
-      <button
-        type="button"
-        className={cn(toothActionClass, "text-muted-foreground hover:bg-muted")}
-        onClick={() => onClearTooth(tooth.toothNumber)}
+  const toothEdit = (toothNumber: string) =>
+    edits[toothNumber] ?? createToothDesignEdit();
+
+  const statusBits = (tooth: LabProsthesisAiTooth) => {
+    const number = tooth.toothNumber;
+    const made = generated[number] === true;
+    const review = marginReview[number] ?? "none";
+    const edit = edits[number];
+    const thin = Boolean(made && edit && shellIsThin(edit));
+    const label = made
+      ? "생성됨"
+      : review === "detected" || review === "confirmed"
+        ? "검출됨"
+        : null;
+    return (
+      <>
+        {label ? (
+          <span className="shrink-0 text-[10px] font-medium text-muted-foreground">
+            {label}
+          </span>
+        ) : null}
+        {thin ? (
+          <button
+            type="button"
+            className="shrink-0 text-[10px] font-semibold text-destructive"
+            onClick={() => onSelectTooth(number)}
+          >
+            최소 두께
+          </button>
+        ) : null}
+      </>
+    );
+  };
+
+  const presetSelect = (tooth: LabProsthesisAiTooth) => {
+    if (designScope !== "crown" || generated[tooth.toothNumber] === true) return null;
+    if (!tooth.designable) return null;
+    const preset = toothEdit(tooth.toothNumber).inner.preset;
+    const value =
+      preset === "clinic" && clinicPreset
+        ? "clinic"
+        : INNER_PRESETS.some((row) => row.id === preset)
+          ? preset
+          : "zirconia";
+    return (
+      <select
+        className="h-7 max-w-[7.5rem] shrink-0 rounded-md border bg-background px-1 text-[11px]"
+        aria-label={`#${tooth.toothNumber} 재료`}
+        value={value}
+        onChange={(event) =>
+          onApplyPreset(tooth.toothNumber, event.target.value as InnerPresetId)
+        }
       >
-        삭제
-      </button>
-    ) : (
+        {INNER_PRESETS.filter((row) => row.id !== "custom").map((row) => (
+          <option key={row.id} value={row.id}>
+            {row.label}
+          </option>
+        ))}
+        {clinicPreset ? (
+          <option value="clinic">{clinicPreset.label}</option>
+        ) : null}
+        <option value="custom">직접 입력</option>
+      </select>
+    );
+  };
+
+  const generateButton = (tooth: LabProsthesisAiTooth) => {
+    if (designScope !== "crown") return null;
+    if (generated[tooth.toothNumber] === true) {
+      return (
+        <button
+          type="button"
+          className={cn(toothActionClass, "text-muted-foreground hover:bg-muted")}
+          onClick={() => onClearTooth(tooth.toothNumber)}
+        >
+          삭제
+        </button>
+      );
+    }
+    if (!tooth.designable) {
+      return (
+        <button
+          type="button"
+          className={cn(toothActionClass, "bg-primary text-primary-foreground")}
+          disabled
+        >
+          생성
+        </button>
+      );
+    }
+    const review = marginReview[tooth.toothNumber] ?? "none";
+    const deleted = toothEdit(tooth.toothNumber).margin.deleted;
+    if (review === "detected" && !deleted) {
+      return (
+        <button
+          type="button"
+          className={cn(toothActionClass, "bg-primary text-primary-foreground")}
+          onClick={() => onConfirmMargin(tooth.toothNumber)}
+        >
+          확인
+        </button>
+      );
+    }
+    const ready = review === "confirmed" && !deleted;
+    return (
       <button
         type="button"
         className={cn(toothActionClass, "bg-primary text-primary-foreground")}
-        disabled={generating || !tooth.designable}
+        disabled={generating || !ready}
+        title={ready ? undefined : "마진을 확인한 뒤에 생성합니다."}
         onClick={() => onGenerateTooth(tooth.toothNumber)}
       >
         생성
       </button>
     );
+  };
+
+  const thinTeeth = teeth.filter((tooth) => {
+    if (generated[tooth.toothNumber] !== true) return false;
+    const edit = edits[tooth.toothNumber];
+    return Boolean(edit && shellIsThin(edit));
+  });
 
   return (
     <>
@@ -2963,6 +3382,8 @@ function DesignViewerChrome({
                                           className="h-[3px] w-3 shrink-0 bg-primary"
                                         />
                                         {nameButton(tooth, axisOn)}
+                                        {statusBits(tooth)}
+                                        {presetSelect(tooth)}
                                         {generateButton(tooth)}
                                       </div>
                                     </div>
@@ -2982,6 +3403,8 @@ function DesignViewerChrome({
                           >
                             <div className="flex w-fit items-center gap-1.5 py-0.5">
                               {nameButton(tooth, axisOn)}
+                              {statusBits(tooth)}
+                              {presetSelect(tooth)}
                               {span.length > 0 ? insertionButton(span, false) : null}
                               {generateButton(tooth)}
                             </div>
@@ -2996,6 +3419,21 @@ function DesignViewerChrome({
           </div>
         ) : null}
       </div>
+
+      {thinTeeth.length > 0 ? (
+        <button
+          type="button"
+          className="absolute bottom-16 left-1/2 z-10 max-w-xs -translate-x-1/2 rounded-md bg-background/95 px-3 py-2 text-center text-xs font-medium text-foreground shadow-sm"
+          onClick={() => {
+            const tooth = thinTeeth[0];
+            if (tooth) onSelectTooth(tooth.toothNumber);
+          }}
+        >
+          디자인에 최소 두께 미달이 있습니다.
+          <br />
+          치아 정보에서 해당 치아를 확인하세요.
+        </button>
+      ) : null}
 
       {generating ? (
         <>

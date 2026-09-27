@@ -5,8 +5,9 @@ import * as THREE from "three";
 import {
   crownScale,
   holeIssue,
+  localShellThicknessMm,
   marginPointAngle,
-  shellIsThin,
+  thicknessAlertRgb,
   type ProsthesisDesignEdit,
   type ToothDesignEdit,
 } from "@/shared/practice/labProsthesisModify";
@@ -33,8 +34,7 @@ type Frame = {
   anterior: THREE.Vector3;
 };
 
-const CROWN = 0xf3efe8;
-const THIN = 0xe7a090;
+const CROWN_RGB: [number, number, number] = [243 / 255, 239 / 255, 232 / 255];
 const MARGIN = 0x14b8a6;
 const HOOK = 0x64748b;
 const CUTBACK = 0xd6a37a;
@@ -94,9 +94,31 @@ function paintSculpt(
   geometry.computeVertexNormals();
 }
 
+function paintThicknessColors(geometry: THREE.BufferGeometry, edit: ToothDesignEdit) {
+  const pos = geometry.getAttribute("position");
+  if (!pos) return;
+  const colors = new Float32Array(pos.count * 3);
+  const yMin = -0.19;
+  for (let i = 0; i < pos.count; i += 1) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const z = pos.getZ(i);
+    const angle = Math.atan2(z, x);
+    const occlusal01 = Math.min(1, Math.max(0, (y - yMin) / (1 - yMin)));
+    const thickness = localShellThicknessMm(edit, angle, occlusal01);
+    const alert = thicknessAlertRgb(edit, thickness);
+    const rgb = alert ?? CROWN_RGB;
+    colors[i * 3] = rgb[0];
+    colors[i * 3 + 1] = rgb[1];
+    colors[i * 3 + 2] = rgb[2];
+  }
+  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+}
+
 function makeCrownGeometry(edit: ToothDesignEdit) {
   const geometry = new THREE.SphereGeometry(1, 28, 16, 0, Math.PI * 2, 0, Math.PI * 0.58);
   paintSculpt(geometry, edit);
+  paintThicknessColors(geometry, edit);
   return geometry;
 }
 
@@ -187,7 +209,8 @@ export function buildProsthesisEditLayer(args: {
     const crown = new THREE.Mesh(
       makeCrownGeometry(edit),
       new THREE.MeshStandardMaterial({
-        color: shellIsThin(edit) && !edit.refine.compensate ? THIN : CROWN,
+        color: 0xffffff,
+        vertexColors: true,
         roughness: 0.45,
         metalness: 0.04,
         polygonOffset: true,

@@ -102,11 +102,14 @@ export type OralScanOverlayHandle = {
   setInsertionFromView: (toothNumbers: readonly string[]) => boolean;
   /**
    * 이 치아들의 스캔 칼라에서 마진을 고른다.
-   * 기본 원보다 넓은 고리를 삽입축으로 스캔 면에 붙여 본다. 색 경계가 없으면 빈 배열.
+   * 기본 원보다 넓은 고리를 삽입축으로 스캔 면에 붙여 본다. 색 경계 또는 기하 능선으로 검출한다.
    */
   detectColorMargins: (
     toothNumbers: readonly string[],
+    seedPoint?: { x: number; y: number; z: number } | null,
   ) => Array<{ tooth: string; radii: number[]; depths: number[] }>;
+  /** 모델을 분석하여 교합면 뷰로 화면을 정렬한다. */
+  alignModelToOcclusalView: () => boolean;
   /** 모달을 열었을 때의 교합면 카메라로 되돌린다. */
   resetHomeView: () => void;
   /** 파일 좌표에서 상악·하악을 바이트에 다시 맞춘다. 붙으면 true. */
@@ -570,17 +573,103 @@ function meanVec(points: Array<[number, number, number]>): THREE.Vector3 | null 
   return new THREE.Vector3(x / n, y / n, z / n);
 }
 
+function extractBoundaryVertices(geometry: THREE.BufferGeometry): Array<[number, number, number]> {
+  const pos = geometry.getAttribute("position");
+  if (!pos || pos.count === 0) return [];
+  const index = geometry.index;
+  const triCount = index ? Math.floor(index.count / 3) : Math.floor(pos.count / 3);
+  const edgeCount = new Map<string, number>();
+  for (let t = 0; t < triCount; t += 1) {
+    const a = index ? index.getX(t * 3) : t * 3;
+    const b = index ? index.getX(t * 3 + 1) : t * 3 + 1;
+    const c = index ? index.getX(t * 3 + 2) : t * 3 + 2;
+    const e1 = a < b ? `${a}_${b}` : `${b}_${a}`;
+    const e2 = b < c ? `${b}_${c}` : `${c}_${b}`;
+    const e3 = c < a ? `${c}_${a}` : `${a}_${c}`;
+    edgeCount.set(e1, (edgeCount.get(e1) ?? 0) + 1);
+    edgeCount.set(e2, (edgeCount.get(e2) ?? 0) + 1);
+    edgeCount.set(e3, (edgeCount.get(e3) ?? 0) + 1);
+  }
+  const pts: Array<[number, number, number]> = [];
+  const seen = new Set<number>();
+  for (const [key, count] of edgeCount.entries()) {
+    if (count === 1) {
+      const parts = key.split("_");
+      const u = Number(parts[0]);
+      const v = Number(parts[1]);
+      if (u !== undefined && !seen.has(u)) {
+        seen.add(u);
+        pts.push([pos.getX(u), pos.getY(u), pos.getZ(u)]);
+      }
+      if (v !== undefined && !seen.has(v)) {
+        seen.add(v);
+        pts.push([pos.getX(v), pos.getY(v), pos.getZ(v)]);
+      }
+    }
+  }
+  return pts;
+}
+
+function computeMeshNormalVoting(geometry: THREE.BufferGeometry): THREE.Vector3 {
+  const pos = geometry.getAttribute("position");
+  if (!pos || pos.count < 3) return new THREE.Vector3(0, 0, 1);
+  const index = geometry.index;
+  const triCount = index ? Math.floor(index.count / 3) : Math.floor(pos.count / 3);
+  const sumN = new THREE.Vector3();
+  const v1 = new THREE.Vector3();
+  const v2 = new THREE.Vector3();
+  const n = new THREE.Vector3();
+  for (let t = 0; t < triCount; t += 1) {
+    const ia = index ? index.getX(t * 3) : t * 3;
+    const ib = index ? index.getX(t * 3 + 1) : t * 3 + 1;
+    const ic = index ? index.getX(t * 3 + 2) : t * 3 + 2;
+    v1.set(
+      pos.getX(ib) - pos.getX(ia),
+      pos.getY(ib) - pos.getY(ia),
+      pos.getZ(ib) - pos.getZ(ia),
+    );
+    v2.set(
+      pos.getX(ic) - pos.getX(ia),
+      pos.getY(ic) - pos.getY(ia),
+      pos.getZ(ic) - pos.getZ(ia),
+    );
+    n.crossVectors(v1, v2);
+    sumN.add(n);
+  }
+  if (sumN.lengthSq() > 1e-6) sumN.normalize();
+  return sumN;
+}
+
 /** 상악·하악 중심 차이와 치열 형태로 교합 축을 잡는다. 메시 상대 위치는 바꾸지 않는다. */
 function estimateDentalFrame(loaded: LoadedMesh[]): DentalFrame | null {
   const upperPts: Array<[number, number, number]> = [];
   const lowerPts: Array<[number, number, number]> = [];
   const archPts: Array<[number, number, number]> = [];
+  let singleArchRole: "upper" | "lower" | null = null;
+  let singleMesh: LoadedMesh | null = null;
+
   for (const entry of loaded) {
     if (entry.role !== "upper" && entry.role !== "lower") continue;
     const pts = samplePositions(entry.geometry, 2500);
     archPts.push(...pts);
-    if (entry.role === "upper") upperPts.push(...pts);
-    else lowerPts.push(...pts);
+    if (entry.role === "upper") {
+      upperPts.push(...pts);
+      singleArchRole = "upper";
+      singleMesh = entry;
+    } else {
+      lowerPts.push(...pts);
+      singleArchRole = "lower";
+      singleMesh = entry;
+    }
+  }
+  // 역할이 아직 지정되지 않았거나 bite 외 스캔만 있는 경우 대비
+  if (archPts.length < 30) {
+    for (const entry of loaded) {
+      if (entry.role === "bite") continue;
+      const pts = samplePositions(entry.geometry, 2500);
+      archPts.push(...pts);
+      singleMesh = entry;
+    }
   }
   if (archPts.length < 30) return null;
 
@@ -588,9 +677,28 @@ function estimateDentalFrame(loaded: LoadedMesh[]): DentalFrame | null {
   const lowerC = meanVec(lowerPts);
   const mean = meanVec(archPts)!;
   let up = new THREE.Vector3();
-  if (upperC && lowerC) up.subVectors(upperC, lowerC);
+  if (upperC && lowerC && upperC.distanceTo(lowerC) > 2) {
+    up.subVectors(upperC, lowerC);
+  }
   if (up.lengthSq() < 1e-4) {
     up = smallestPcaAxis(archPts, mean);
+    // 단일 악궁일 때 경계선(치은 절제부) 및 표면 법선 투표로 up의 부호 결정
+    if (singleMesh) {
+      const bPts = extractBoundaryVertices(singleMesh.geometry);
+      let toCrown = new THREE.Vector3();
+      if (bPts.length >= 20) {
+        const bMean = meanVec(bPts)!;
+        toCrown.subVectors(mean, bMean);
+      }
+      if (toCrown.lengthSq() < 1e-4) {
+        toCrown = computeMeshNormalVoting(singleMesh.geometry);
+      }
+      if (toCrown.lengthSq() > 1e-4) {
+        // lower: 치관 방향이 +up (cranial). upper: 치관 방향이 -up.
+        const expectedUp = singleArchRole === "upper" ? toCrown.clone().negate() : toCrown.clone();
+        if (up.dot(expectedUp) < 0) up.negate();
+      }
+    }
   }
   if (up.lengthSq() < 1e-8) return null;
   up.normalize();
@@ -628,34 +736,45 @@ function estimateDentalFrame(loaded: LoadedMesh[]): DentalFrame | null {
     minor = new THREE.Vector2(ct, st);
   }
 
-  const minorScores = proj.map((p) => p.a * minor.x + p.b * minor.y);
-  const sorted = [...minorScores].sort((a, b) => a - b);
-  const loCut = sorted[Math.floor(sorted.length * 0.1)] ?? sorted[0] ?? 0;
-  const hiCut = sorted[Math.floor(sorted.length * 0.9)] ?? sorted[sorted.length - 1] ?? 0;
-  const spread = (side: "lo" | "hi") => {
-    let n = 0;
-    let sum = 0;
-    let sum2 = 0;
-    for (let i = 0; i < proj.length; i += 1) {
-      const score = minorScores[i] ?? 0;
-      if (side === "lo" ? score > loCut : score < hiCut) continue;
-      const majorScore = (proj[i]?.a ?? 0) * major.x + (proj[i]?.b ?? 0) * major.y;
-      sum += majorScore;
-      sum2 += majorScore * majorScore;
-      n += 1;
-    }
-    if (n < 2) return 0;
-    const avg = sum / n;
-    return sum2 / n - avg * avg;
+  const evalAxis = (axisVec: THREE.Vector2, perpVec: THREE.Vector2) => {
+    const scores = proj.map((p) => p.a * axisVec.x + p.b * axisVec.y);
+    const sorted = [...scores].sort((a, b) => a - b);
+    const loCut = sorted[Math.floor(sorted.length * 0.1)] ?? sorted[0] ?? 0;
+    const hiCut = sorted[Math.floor(sorted.length * 0.9)] ?? sorted[sorted.length - 1] ?? 0;
+    const spread = (side: "lo" | "hi") => {
+      let n = 0;
+      let sum = 0;
+      let sum2 = 0;
+      for (let i = 0; i < proj.length; i += 1) {
+        const score = scores[i] ?? 0;
+        if (side === "lo" ? score > loCut : score < hiCut) continue;
+        const perpScore = (proj[i]?.a ?? 0) * perpVec.x + (proj[i]?.b ?? 0) * perpVec.y;
+        sum += perpScore;
+        sum2 += perpScore * perpScore;
+        n += 1;
+      }
+      if (n < 2) return 0;
+      const avg = sum / n;
+      return sum2 / n - avg * avg;
+    };
+    const loSpread = spread("lo");
+    const hiSpread = spread("hi");
+    return { loSpread, hiSpread, contrast: Math.abs(hiSpread - loSpread) };
   };
-  const loSpread = spread("lo");
-  const hiSpread = spread("hi");
-  const minor3 = new THREE.Vector3()
-    .addScaledVector(axisA, minor.x)
-    .addScaledVector(axisB, minor.y)
+
+  const minorRes = evalAxis(minor, major);
+  const majorRes = evalAxis(major, minor);
+  const useMinor = minorRes.contrast >= majorRes.contrast;
+  const chosenRes = useMinor ? minorRes : majorRes;
+  const chosenAxis = useMinor ? minor : major;
+
+  const chosenAxis3 = new THREE.Vector3()
+    .addScaledVector(axisA, chosenAxis.x)
+    .addScaledVector(axisB, chosenAxis.y)
     .normalize();
+
   // 좌우로 벌어진 쪽이 구치(원심), 모아진 쪽이 전치(협측이 바라보는 방향).
-  const anterior = hiSpread < loSpread ? minor3 : minor3.negate();
+  const anterior = chosenRes.hiSpread < chosenRes.loSpread ? chosenAxis3 : chosenAxis3.negate();
   const right = new THREE.Vector3().crossVectors(anterior, up).normalize();
   if (right.lengthSq() < 1e-8) return null;
   return { up, anterior, right };
@@ -1196,7 +1315,8 @@ function collectProjectedMarginTriangles(
   for (const entry of entries) {
     const color = entry.scanColor;
     const pos = entry.geometry.getAttribute("position");
-    if (!color || !pos || color.count !== pos.count) continue;
+    if (!pos || pos.count === 0) continue;
+    const hasColor = color != null && color.count === pos.count;
     entry.mesh.updateWorldMatrix(true, false);
     const matrix = entry.mesh.matrixWorld;
     const fx = new Float32Array(pos.count);
@@ -1245,15 +1365,15 @@ function collectProjectedMarginTriangles(
         cx,
         cy,
         cz,
-        color.getX(ia),
-        color.getY(ia),
-        color.getZ(ia),
-        color.getX(ib),
-        color.getY(ib),
-        color.getZ(ib),
-        color.getX(ic),
-        color.getY(ic),
-        color.getZ(ic),
+        hasColor ? color.getX(ia) : 0.88,
+        hasColor ? color.getY(ia) : 0.84,
+        hasColor ? color.getZ(ia) : 0.78,
+        hasColor ? color.getX(ib) : 0.88,
+        hasColor ? color.getY(ib) : 0.84,
+        hasColor ? color.getZ(ib) : 0.78,
+        hasColor ? color.getX(ic) : 0.88,
+        hasColor ? color.getY(ic) : 0.84,
+        hasColor ? color.getZ(ic) : 0.78,
       );
     }
   }
@@ -3652,19 +3772,32 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
 
   setViewRef.current = (preset) => {
     const frame = frameRef.current;
-    if (preset === "fit" || !frame) {
-      frameCamera(HOME_DIR, HOME_UP, true, true);
+    const loaded = loadedRef.current;
+    if (preset === "fit" || !frame || loaded.length === 0) {
+      const camera = cameraRef.current;
+      const curDir = camera
+        ? camera.position.clone().sub(fitTargetRef.current).normalize()
+        : HOME_DIR;
+      const curUp = camera ? camera.up.clone() : HOME_UP;
+      frameCamera(curDir, curUp, true, true);
       return;
     }
+    const arch = pickCameraArch(prepArch, placementsRef.current, loaded) ?? "lower";
     if (preset === "occlusal") {
-      frameCamera(HOME_DIR, HOME_UP, true, true);
+      const pose = occlusalCamera(frame, arch);
+      frameCamera(pose.dir, pose.up, true, true);
       return;
     }
     if (preset === "buccal") {
-      frameCamera(frame.anterior, frame.up, true, true);
+      const up = arch === "upper" ? frame.up.clone().negate() : frame.up.clone();
+      frameCamera(frame.anterior, up, true, true);
       return;
     }
-    frameCamera(frame.anterior.clone().negate(), frame.up, true, true);
+    if (preset === "lingual") {
+      const up = arch === "upper" ? frame.up.clone().negate() : frame.up.clone();
+      frameCamera(frame.anterior.clone().negate(), up, true, true);
+      return;
+    }
   };
 
   focusToothRef.current = (raw) => {
@@ -4061,7 +4194,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         setLoadVersion((v) => v + 1);
         return true;
       },
-      detectColorMargins: (toothNumbers) => {
+      detectColorMargins: (toothNumbers, seedPoint = null) => {
         groupRef.current?.updateWorldMatrix(true, true);
         const right = frameRef.current?.right ?? new THREE.Vector3(1, 0, 0);
         const fallback = frameRef.current?.up ?? new THREE.Vector3(0, 0, 1);
@@ -4076,9 +4209,13 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
             row.toothNumbers.includes(tooth),
           );
           const normal = axis?.dir ?? fallback;
-          const entries = loaded.filter(
-            (entry) => entry.role === place.arch && entry.scanColor,
-          );
+          let entries = loaded.filter((entry) => entry.role === place.arch);
+          if (entries.length === 0) {
+            entries = loaded.filter((entry) => entry.role === "upper" || entry.role === "lower");
+          }
+          if (entries.length === 0) {
+            entries = loaded;
+          }
           if (entries.length === 0) continue;
           const triangles = collectProjectedMarginTriangles(
             entries,
@@ -4087,11 +4224,52 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
             right,
             place.radius,
           );
-          const line = detectProjectedColorMargin(triangles, place.radius);
+
+          let localSeed: { x: number; y: number; z: number } | null = null;
+          if (seedPoint) {
+            const axes = marginFrameAxes(normal, right);
+            const dx = seedPoint.x - place.center.x;
+            const dy = seedPoint.y - place.center.y;
+            const dz = seedPoint.z - place.center.z;
+            localSeed = {
+              x: dx * axes.x.x + dy * axes.x.y + dz * axes.x.z,
+              y: dx * axes.y.x + dy * axes.y.y + dz * axes.y.z,
+              z: dx * axes.z.x + dy * axes.z.y + dz * axes.z.z,
+            };
+          }
+
+          const line = detectProjectedColorMargin(
+            triangles,
+            place.radius,
+            COLOR_MARGIN_POINT_COUNT,
+            localSeed,
+          );
           if (!line) continue;
           out.push({ tooth: raw, radii: line.radii, depths: line.depths });
         }
         return out;
+      },
+      alignModelToOcclusalView: () => {
+        const loaded = loadedRef.current;
+        if (loaded.length === 0) return false;
+        const frame = estimateDentalFrame(loaded);
+        if (!frame) return false;
+        frameRef.current = frame;
+        const arch = pickCameraArch(prepArch, placementsRef.current, loaded) ?? "lower";
+        const pose = occlusalCamera(frame, arch);
+        const group = groupRef.current;
+        const groupPos = group ? group.position : new THREE.Vector3();
+        const shown = loaded.filter((entry) => visible[entry.id] !== false);
+        const meshes = shown.length > 0 ? shown : loaded;
+        const fit = measureMeshFit(meshes, groupPos, pose.dir, pose.up);
+        fitExtentRef.current = { halfW: fit.halfW, halfH: fit.halfH };
+        fitTargetRef.current.copy(fit.target);
+        fitRadiusRef.current = Math.max(fit.halfW, fit.halfH, 10);
+        applyFitFrustum();
+        frameCamera(pose.dir, pose.up, true, true);
+        syncBadgesRef.current();
+        scheduleViewSettledRef.current();
+        return true;
       },
     }),
     [],

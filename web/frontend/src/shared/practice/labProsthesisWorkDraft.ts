@@ -9,7 +9,13 @@ import {
   abutsWorkScanFileName,
   type WorkScanRole,
 } from "@/shared/practice/labProsthesisAiDesign";
-import type { ToothDesignEdit } from "@/shared/practice/labProsthesisModify";
+import {
+  parseDesignScope,
+  parseMarginReviewMap,
+  type DesignScope,
+  type MarginReview,
+  type ToothDesignEdit,
+} from "@/shared/practice/labProsthesisModify";
 
 const DB_NAME = "abuts-lab-prosthesis-work";
 const STORE = "drafts";
@@ -63,6 +69,10 @@ export type WorkSessionViewToggles = {
 export type WorkSessionDocument = {
   edits: Record<string, ToothDesignEdit>;
   generated: Record<string, boolean>;
+  /** 치아별 마진 검출·확인. 없으면 생성된 치아만 확인된 것으로 본다. */
+  marginReview: Record<string, MarginReview>;
+  /** 마진만 / 크라운까지. 고르기 전이면 null. */
+  designScope: DesignScope | null;
   insertionAxes: WorkSessionAxis[];
   camera: WorkSessionView | null;
   viewToggles: WorkSessionViewToggles | null;
@@ -188,6 +198,11 @@ function documentOf(row: unknown): WorkSessionDocument | null {
   return {
     edits,
     generated,
+    marginReview: parseMarginReviewMap(
+      (body as { marginReview?: unknown }).marginReview,
+      generated,
+    ),
+    designScope: parseDesignScope((body as { designScope?: unknown }).designScope),
     insertionAxes,
     camera: viewOf((body as { camera?: unknown }).camera),
     viewToggles: parseViewToggles(

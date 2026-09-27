@@ -14,6 +14,7 @@ import {
   CONNECTOR_SHAPES,
   INNER_PRESETS,
   MODIFY_TOOLS,
+  adjustMarginOffset,
   applyInnerPreset,
   holeIssue,
   shellIsThin,
@@ -44,6 +45,11 @@ type Props = {
   onMatchInsertion: () => void;
   onApplyInner: () => void;
   onRemoveHook: () => void;
+  /** 의뢰 발신자(치과). 없으면 치과 프리셋을 두지 않는다. */
+  clinicLabel: string | null;
+  clinicSaved: boolean;
+  onApplyClinic: () => void;
+  onSaveClinic: () => void;
 };
 
 function Row({
@@ -87,6 +93,10 @@ export function LabProsthesisModifyPanel({
   onMatchInsertion,
   onApplyInner,
   onRemoveHook,
+  clinicLabel,
+  clinicSaved,
+  onApplyClinic,
+  onSaveClinic,
 }: Props) {
   const thin = shellIsThin(edit);
   const issue = holeIssue(edit.hole);
@@ -170,6 +180,41 @@ export function LabProsthesisModifyPanel({
               aria-label="마진 간격"
             />
           </Row>
+          <div className="grid grid-cols-2 gap-1">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-7 text-[11px]"
+              onClick={() => onEdit(adjustMarginOffset(edit, -0.05))}
+              title="마진을 안쪽(교합면 방향)으로 0.05mm 수축합니다."
+            >
+              수축 -0.05
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-7 text-[11px]"
+              onClick={() => onEdit(adjustMarginOffset(edit, 0.05))}
+              title="마진을 바깥쪽(치은 방향)으로 0.05mm 확장합니다."
+            >
+              확장 +0.05
+            </Button>
+          </div>
+          <div className="flex items-center justify-between rounded-md border px-2 py-1.5 text-xs">
+            <span className="font-medium text-foreground">배면 투명</span>
+            <Switch
+              checked={edit.margin.showBack}
+              onCheckedChange={(checked) =>
+                onEdit({
+                  ...edit,
+                  margin: { ...edit.margin, showBack: checked },
+                })
+              }
+              aria-label="지대치 배면 투명"
+            />
+          </div>
           <div className="flex gap-1">
             <Button
               type="button"
@@ -220,7 +265,7 @@ export function LabProsthesisModifyPanel({
       {tool === "inner" ? (
         <div className="space-y-2">
           <div className="grid grid-cols-2 gap-1">
-            {INNER_PRESETS.map((preset) => (
+            {INNER_PRESETS.filter((preset) => preset.id !== "custom").map((preset) => (
               <Button
                 key={preset.id}
                 type="button"
@@ -232,7 +277,40 @@ export function LabProsthesisModifyPanel({
                 {preset.label}
               </Button>
             ))}
+            <Button
+              type="button"
+              size="sm"
+              variant={edit.inner.preset === "custom" ? "default" : "outline"}
+              className="h-7 px-1 text-[11px]"
+              onClick={() => onEdit(applyInnerPreset(edit, "custom"))}
+            >
+              직접 입력
+            </Button>
           </div>
+          {clinicLabel ? (
+            <div className="flex gap-1">
+              <Button
+                type="button"
+                size="sm"
+                variant={edit.inner.preset === "clinic" ? "default" : "outline"}
+                className="h-7 flex-1 px-1 text-[11px]"
+                disabled={!clinicSaved}
+                onClick={onApplyClinic}
+              >
+                {clinicLabel}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-7 px-2 text-[11px]"
+                title="이 치과의 시멘트 갭, 최소 두께, 교합 간격을 저장합니다."
+                onClick={onSaveClinic}
+              >
+                저장
+              </Button>
+            </div>
+          ) : null}
           <Row label="시멘트 갭" value={`${edit.inner.cementGapMm.toFixed(2)} mm`}>
             <Slider
               min={0}
@@ -373,6 +451,7 @@ export function LabProsthesisModifyPanel({
               onValueChange={([value]) =>
                 onEdit({
                   ...edit,
+                  inner: { ...edit.inner, preset: "custom" },
                   refine: {
                     ...edit.refine,
                     occlusalClearanceMm: (value ?? 10) / 100,
@@ -405,6 +484,7 @@ export function LabProsthesisModifyPanel({
               onValueChange={([value]) =>
                 onEdit({
                   ...edit,
+                  inner: { ...edit.inner, preset: "custom" },
                   refine: {
                     ...edit.refine,
                     proximalClearanceMm: (value ?? 5) / 100,
@@ -492,6 +572,7 @@ export function LabProsthesisModifyPanel({
               onValueChange={([value]) =>
                 onEdit({
                   ...edit,
+                  inner: { ...edit.inner, preset: "custom" },
                   refine: {
                     ...edit.refine,
                     minThicknessMm: (value ?? 50) / 100,

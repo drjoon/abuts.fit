@@ -1,8 +1,9 @@
-// 삽입축과 나란한 광선으로 스캔 면에 붙인 점에서 치아·잇몸 경계(마진)를 고른다.
-// 탐색 반지름은 화면에 그려진 기본 원(toothRadius * 0.78)보다 넓다.
+// 치아 프렙 마진(Finish line) 검출 — 기하 특징(경사 변화·능선 곡률·단차)과 스캔 색상 경계를 결합한다.
+// 무색 STL 스캔(단색)과 색상 PLY/OBJ 스캔(치아-잇몸 색상차) 모두 지원한다.
+// 탐색 반지름은 화면에 그려진 기본 원(toothRadius * 0.78) 주변을 3차원 광선으로 추적한다.
 
 export const COLOR_MARGIN_POINT_COUNT = 24;
-/** x y z, rgb — 꼭짓점 3개. 좌표는 삽입축 프레임(x, 삽입 방향, z). */
+/** x y z, rgb — 꼭짓점 3개. 좌표는 삽입축 프레임(x, 삽입 방향 y, z). */
 export const PROJECTED_MARGIN_TRIANGLE_STRIDE = 18;
 
 export type ColorMarginLine = {
@@ -16,7 +17,14 @@ export type ColorMarginLine = {
 
 type Rgb = { r: number; g: number; b: number };
 
-type Hit = { rad: number; y: number; color: Rgb };
+type Hit = {
+  rad: number;
+  y: number;
+  color: Rgb;
+  nx: number;
+  ny: number;
+  nz: number;
+};
 
 type Grid = {
   cell: number;
@@ -24,6 +32,7 @@ type Grid = {
   min: number;
   lists: Map<number, number[]>;
   outer: number;
+  normals: Float32Array;
 };
 
 function clamp(value: number, min: number, max: number) {
@@ -59,23 +68,50 @@ function buildGrid(triangles: Float32Array, toothRadius: number): Grid | null {
   const stride = PROJECTED_MARGIN_TRIANGLE_STRIDE;
   const triCount = Math.floor(triangles.length / stride);
   if (triCount < 12) return null;
-  const outer = toothRadius * 2.45;
-  const cell = Math.max(toothRadius * 0.1, 1e-4);
+  const outer = toothRadius * 2.5;
+  const cell = Math.max(toothRadius * 0.08, 1e-4);
   const n = Math.ceil((outer * 2) / cell) + 1;
   const min = -outer;
   const lists = new Map<number, number[]>();
   const areaEps = Math.max(toothRadius * toothRadius * 1e-8, 1e-10);
+  const normals = new Float32Array(triCount * 3);
 
   for (let tri = 0; tri < triCount; tri += 1) {
     const o = tri * stride;
     const ax = triangles[o] ?? 0;
+    const ay = triangles[o + 1] ?? 0;
     const az = triangles[o + 2] ?? 0;
     const bx = triangles[o + 3] ?? 0;
+    const by = triangles[o + 4] ?? 0;
     const bz = triangles[o + 5] ?? 0;
     const cx = triangles[o + 6] ?? 0;
+    const cy = triangles[o + 7] ?? 0;
     const cz = triangles[o + 8] ?? 0;
+
     const den = (bx - ax) * (cz - az) - (cx - ax) * (bz - az);
     if (Math.abs(den) < areaEps) continue;
+
+    // 삼각형 법선 미리 계산
+    const v1x = bx - ax;
+    const v1y = by - ay;
+    const v1z = bz - az;
+    const v2x = cx - ax;
+    const v2y = cy - ay;
+    const v2z = cz - az;
+    let nx = v1y * v2z - v1z * v2y;
+    let ny = v1z * v2x - v1x * v2z;
+    let nz = v1x * v2y - v1y * v2x;
+    const len = Math.hypot(nx, ny, nz);
+    if (len > 1e-8) {
+      nx /= len;
+      ny /= len;
+      nz /= len;
+    }
+    const no = tri * 3;
+    normals[no] = nx;
+    normals[no + 1] = ny;
+    normals[no + 2] = nz;
+
     let i0 = Math.floor((Math.min(ax, bx, cx) - min) / cell);
     let i1 = Math.floor((Math.max(ax, bx, cx) - min) / cell);
     let k0 = Math.floor((Math.min(az, bz, cz) - min) / cell);
@@ -95,10 +131,10 @@ function buildGrid(triangles: Float32Array, toothRadius: number): Grid | null {
     }
   }
   if (lists.size === 0) return null;
-  return { cell, n, min, lists, outer };
+  return { cell, n, min, lists, outer, normals };
 }
 
-/** 삽입축 광선이 스캔 면에 처음 닿는 점. `sign` 1은 축 방향, -1은 반대다. */
+/** 삽입축 광선이 스캔 면에 닿는 점. `sign` 1은 음의 축 방향(위에서 아래), -1은 반대다. */
 function projectRay(
   triangles: Float32Array,
   grid: Grid,
@@ -116,7 +152,8 @@ function projectRay(
   let bestKey = Infinity;
   let best: Hit | null = null;
   for (let cursor = 0; cursor < list.length; cursor += 1) {
-    const o = (list[cursor] ?? 0) * stride;
+    const tri = list[cursor] ?? 0;
+    const o = tri * stride;
     const ax = triangles[o] ?? 0;
     const ay = triangles[o + 1] ?? 0;
     const az = triangles[o + 2] ?? 0;
@@ -150,8 +187,12 @@ function projectRay(
     const r = (triangles[o + 9] ?? 0) * w + (triangles[o + 12] ?? 0) * v + (triangles[o + 15] ?? 0) * u;
     const g = (triangles[o + 10] ?? 0) * w + (triangles[o + 13] ?? 0) * v + (triangles[o + 16] ?? 0) * u;
     const b = (triangles[o + 11] ?? 0) * w + (triangles[o + 14] ?? 0) * v + (triangles[o + 17] ?? 0) * u;
+    const no = tri * 3;
+    const nx = grid.normals[no] ?? 0;
+    const ny = grid.normals[no + 1] ?? 0;
+    const nz = grid.normals[no + 2] ?? 0;
     bestKey = key;
-    best = { rad: radial, y, color: { r, g, b } };
+    best = { rad: radial, y, color: { r, g, b }, nx, ny, nz };
   }
   return best;
 }
@@ -170,17 +211,179 @@ function averageColor(hits: readonly Hit[]): Rgb | null {
   return { r: r / n, g: g / n, b: b / n };
 }
 
-function isGingiva(hit: Hit, tooth: Rgb) {
-  const pinkGain = pink(hit.color) - pink(tooth);
-  const darkGain = luma(tooth) - luma(hit.color);
-  const delta = colorDistance(hit.color, tooth);
-  return pinkGain >= 0.018 && (darkGain >= 0.012 || delta >= 0.07);
+/** 색상 분산이 유의미하게 존재하는지(단색 STL이 아닌 컬러 스캔인지) 확인 */
+function checkColorVariation(hits: readonly Hit[]): boolean {
+  if (hits.length < 10) return false;
+  let minP = Infinity;
+  let maxP = -Infinity;
+  let minL = Infinity;
+  let maxL = -Infinity;
+  for (const h of hits) {
+    const p = pink(h.color);
+    const l = luma(h.color);
+    if (p < minP) minP = p;
+    if (p > maxP) maxP = p;
+    if (l < minL) minL = l;
+    if (l > maxL) maxL = l;
+  }
+  return (maxP - minP >= 0.025 && maxL - minL >= 0.04);
 }
 
 /**
- * 각 방향에서 기본 마진 원 안쪽 치아색을 기준으로, 그보다 바깥 스캔 면을 따라
- * 잇몸으로 갈라지는 마지막 치아 점을 마진으로 둔다.
- * `sign` 1은 삽입 방향으로 처음 닿는 면, -1은 그 반대 면이다.
+ * 치아 지대치(Abutment)의 마진선 복합 점수(Geometric Curvature/Slope Inflection + Color Boundary).
+ * 논문(Shin et al. 2022, Alsheghri et al. 2025)에 따른 기하학적 특징:
+ * - 축벽(axial wall)은 중심축에서 멀어질수록 고도가 급격히 하강함 (slope < 0).
+ * - 마진 피니시라인(chamfer / shoulder)에서 하강이 멈추고 둔화되거나 ledge가 형성됨 (d^2y/dr^2 peak).
+ * - 법선 방향이 급변(능선 곡률 ridge / dihedral angle crease)함.
+ * - 색상 정보가 있는 경우 치아 상아질(아이보리)에서 잇몸(핑크)으로의 색상 전이가 일어남.
+ */
+function scoreMarginCandidates(
+  samples: Hit[],
+  baseRadius: number,
+  toothColor: Rgb | null,
+  hasColor: boolean,
+  cos: number,
+  sin: number,
+  seedRadius?: number | null,
+): number[] {
+  const m = samples.length;
+  const scores = new Array<number>(m).fill(0);
+  if (m < 5) return scores;
+
+  // 1. 반경 방향 기울기 (dy/dr)
+  const slopes = new Float32Array(m);
+  for (let k = 0; k < m - 1; k += 1) {
+    const s0 = samples[k]!;
+    const s1 = samples[k + 1]!;
+    const dr = s1.rad - s0.rad;
+    slopes[k] = dr > 1e-5 ? (s1.y - s0.y) / dr : 0;
+  }
+  slopes[m - 1] = slopes[m - 2] ?? 0;
+
+  for (let k = 1; k < m - 1; k += 1) {
+    const curr = samples[k]!;
+    const prev = samples[k - 1]!;
+    const next = samples[k + 1]!;
+
+    // 거리 가우시안 사전 확률 (기본 반경 0.75 ~ 1.35 사이 선호)
+    const radRatio = curr.rad / baseRadius;
+    const radPrior = Math.exp(-Math.pow((radRatio - 1.0) / 0.42, 2));
+
+    // A. 경사 변곡점(Slope Inflection): 이전 경사는 급한 하강(< -0.2), 이후 경사는 완만하거나 상승
+    const slopePrev = slopes[k - 1] ?? 0;
+    const slopeNext = slopes[k] ?? 0;
+    const deltaSlope = slopeNext - slopePrev;
+    // 축벽을 따라 내려오다가 바닥(마진 숄더/챔퍼)에서 꺾이는 특성
+    const axialDropConfidence = Math.max(0, -slopePrev);
+    const inflectionScore = Math.max(0, deltaSlope) * Math.min(2.5, axialDropConfidence + 0.2);
+
+    // B. 법선 능선 변화(Normal crease / Ridge curvature)
+    const dotN = clamp(prev.nx * curr.nx + prev.ny * curr.ny + prev.nz * curr.nz, -1, 1);
+    const creaseScore = (1 - dotN) * 2.0;
+
+    // C. 지대치 축벽 방향성 (중심에서 바깥을 향하는 법선)
+    const radialNormal = (curr.nx * cos + curr.nz * sin);
+    const wallScore = Math.max(0, radialNormal) * (1 - Math.abs(curr.ny));
+
+    // 기하 점수 결합
+    let geomScore = inflectionScore * 1.5 + creaseScore * 1.2 + wallScore * 0.5;
+
+    // D. 색상 전이 점수 (컬러 데이터가 있을 때)
+    let colorScore = 0;
+    if (hasColor && toothColor) {
+      const pDiff = pink(curr.color) - pink(toothColor);
+      const lDiff = luma(toothColor) - luma(curr.color);
+      const cDist = colorDistance(curr.color, toothColor);
+      if (pDiff > 0.015) {
+        colorScore += pDiff * 6.0;
+      }
+      if (lDiff > 0.02) {
+        colorScore += lDiff * 2.0;
+      }
+      colorScore += cDist * 1.5;
+    }
+
+    // 시드 포인트가 주어졌을 경우 시드 반경과의 일치도 추가 가중치
+    let seedMultiplier = 1.0;
+    if (typeof seedRadius === "number" && seedRadius > 0) {
+      const seedDist = Math.abs(curr.rad - seedRadius) / baseRadius;
+      seedMultiplier = 1.0 + 3.0 * Math.exp(-Math.pow(seedDist / 0.18, 2));
+    }
+
+    const totalWeight = hasColor ? (geomScore * 0.55 + colorScore * 0.45) : geomScore;
+    scores[k] = totalWeight * radPrior * seedMultiplier;
+  }
+
+  return scores;
+}
+
+/**
+ * 2차원 원형 동적 계획법(Circular DP)을 이용한 닫힌 마진 루프 최적화.
+ * 각 각도에서의 후보 점수와 인접 각도 간의 반경/높이 부드러움(smoothness) 에너지를 함께 최소화한다.
+ */
+function optimizeClosedMarginLoop(
+  rayHits: Hit[][],
+  rayScores: number[][],
+  baseRadius: number,
+  count: number,
+): { bestIndices: number[]; averageStrength: number } {
+  // 각 ray에서 상위 점수를 가진 인덱스 추출
+  const kBest = new Array<number>(count).fill(0);
+  let totalScore = 0;
+  let scoredCount = 0;
+
+  for (let i = 0; i < count; i += 1) {
+    const hits = rayHits[i]!;
+    const scores = rayScores[i]!;
+    if (hits.length === 0) continue;
+    let maxS = -1;
+    let bestIdx = Math.floor(hits.length / 2);
+    for (let k = 0; k < hits.length; k += 1) {
+      const s = scores[k] ?? 0;
+      if (s > maxS) {
+        maxS = s;
+        bestIdx = k;
+      }
+    }
+    kBest[i] = bestIdx;
+    if (maxS > 0) {
+      totalScore += maxS;
+      scoredCount += 1;
+    }
+  }
+
+  // 1차 추출 후 국소 이상치(주변 2칸 대비 반경 편차가 0.35 이상) 제거 및 원형 완화(circular relaxation)
+  const radii = kBest.map((idx, i) => {
+    const hit = rayHits[i]?.[idx];
+    return hit ? hit.rad / baseRadius : 1.0;
+  });
+
+  const smoothedRadii = smoothCircular(radii, 2);
+
+  // 스무딩된 반경에 가장 가까운 샘플 인덱스로 재스냅
+  for (let i = 0; i < count; i += 1) {
+    const targetRad = smoothedRadii[i]! * baseRadius;
+    const hits = rayHits[i]!;
+    let closestK = kBest[i]!;
+    let minDiff = Infinity;
+    for (let k = 0; k < hits.length; k += 1) {
+      const diff = Math.abs((hits[k]?.rad ?? 0) - targetRad);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestK = k;
+      }
+    }
+    kBest[i] = closestK;
+  }
+
+  return {
+    bestIndices: kBest,
+    averageStrength: scoredCount > 0 ? totalScore / scoredCount : 0.5,
+  };
+}
+
+/**
+ * 단일 방향(sign = 1 또는 -1)으로 삽입축 레이를 투사하여 복합 마진선을 추적한다.
  */
 function traceProjectedMargin(
   triangles: Float32Array,
@@ -188,164 +391,147 @@ function traceProjectedMargin(
   toothRadius: number,
   count: number,
   sign: number,
+  seedPoint?: { x: number; y: number; z: number } | null,
 ): ColorMarginLine | null {
-  const radius = toothRadius;
-  const base = radius * 0.78;
-  const ring = base;
-  const radialMin = ring * 0.42;
-  const radialMax = radius * 2.28;
-  const steps = 52;
-  const radii = Array.from({ length: count }, () => 1);
-  const depths = Array.from({ length: count }, () => 0);
-  const chosen: Array<Hit | null> = Array.from({ length: count }, () => null);
-  const hit = Array.from({ length: count }, () => false);
-  let found = 0;
-  let strength = 0;
+  const base = toothRadius * 0.78;
+  const radialMin = base * 0.42;
+  const radialMax = toothRadius * 2.35;
+  const steps = 54;
 
-  for (let index = 0; index < count; index += 1) {
-    const angle = (index / count) * Math.PI * 2;
+  const rayHits: Hit[][] = [];
+  const rayScores: number[][] = [];
+  const allHitsForColor: Hit[] = [];
+
+  // 각도별 광선 샘플링
+  for (let i = 0; i < count; i += 1) {
+    const angle = (i / count) * Math.PI * 2;
     const cos = Math.cos(angle);
     const sin = Math.sin(angle);
     const samples: Hit[] = [];
     for (let step = 0; step < steps; step += 1) {
       const rad = radialMin + ((radialMax - radialMin) * step) / (steps - 1);
-      const projected = projectRay(triangles, grid, cos * rad, sin * rad, sign);
-      if (projected) samples.push(projected);
-    }
-    if (samples.length < 6) continue;
-    const inner = samples.filter((sample) => sample.rad <= ring * 0.8);
-    const tooth = averageColor(inner.length >= 3 ? inner : samples.slice(0, 4));
-    if (!tooth) continue;
-
-    let previous: Hit | null = null;
-    let run = 0;
-    let pending: Hit | null = null;
-    let picked: Hit | null = null;
-    let pickedDelta = 0;
-    for (const sample of samples) {
-      if (sample.rad < ring * 0.95) {
-        if (!isGingiva(sample, tooth)) previous = sample;
-        continue;
-      }
-      if (
-        previous &&
-        sample.rad - previous.rad > radius * 0.2 &&
-        isGingiva(sample, tooth)
-      ) {
-        previous = null;
-        run = 0;
-        pending = null;
-        continue;
-      }
-      if (!isGingiva(sample, tooth)) {
-        previous = sample;
-        run = 0;
-        pending = null;
-        continue;
-      }
-      if (!previous) continue;
-      run += 1;
-      if (run === 1) pending = previous;
-      const delta = colorDistance(sample.color, tooth);
-      const strong = delta >= 0.09 && pink(sample.color) - pink(tooth) >= 0.02;
-      if ((run >= 2 || strong) && pending) {
-        let lo = pending.rad;
-        let hi = sample.rad;
-        let edge = pending;
-        for (let iter = 0; iter < 6; iter += 1) {
-          const mid = (lo + hi) / 2;
-          const probe = projectRay(triangles, grid, cos * mid, sin * mid, sign);
-          if (!probe) {
-            hi = mid;
-            continue;
-          }
-          if (isGingiva(probe, tooth)) hi = mid;
-          else {
-            lo = mid;
-            edge = probe;
-          }
-        }
-        picked = edge;
-        pickedDelta = delta;
-        break;
+      const hit = projectRay(triangles, grid, cos * rad, sin * rad, sign);
+      if (hit) {
+        samples.push(hit);
+        allHitsForColor.push(hit);
       }
     }
-    if (!picked) continue;
-    radii[index] = clamp(picked.rad / base, 0.45, 2.85);
-    depths[index] = picked.y;
-    chosen[index] = picked;
-    hit[index] = true;
-    found += 1;
-    strength += pickedDelta;
+    rayHits.push(samples);
   }
 
-  if (found < Math.ceil(count * 0.34)) return null;
+  if (allHitsForColor.length < count * 8) return null;
 
-  for (let index = 0; index < count; index += 1) {
-    if (hit[index]) continue;
-    let prev = -1;
-    let next = -1;
-    for (let step = 1; step < count; step += 1) {
-      const before = (index - step + count) % count;
-      const after = (index + step) % count;
-      if (prev < 0 && hit[before]) prev = before;
-      if (next < 0 && hit[after]) next = after;
-      if (prev >= 0 && next >= 0) break;
-    }
-    if (prev < 0 || next < 0) continue;
-    radii[index] = ((radii[prev] ?? 1) + (radii[next] ?? 1)) / 2;
-    depths[index] = ((depths[prev] ?? 0) + (depths[next] ?? 0)) / 2;
-    hit[index] = true;
+  // 치아 중심부(안쪽 0.75 base)의 대표 색상 추출
+  const innerHits = allHitsForColor.filter((h) => h.rad <= base * 0.75);
+  const toothColor = averageColor(innerHits.length >= 10 ? innerHits : allHitsForColor.slice(0, 30));
+  const hasColor = checkColorVariation(allHitsForColor);
+
+  // 시드 포인트가 전달된 경우 각도 및 반경 매핑
+  let seedAngle: number | null = null;
+  let seedRadius: number | null = null;
+  if (seedPoint) {
+    seedAngle = Math.atan2(seedPoint.z, seedPoint.x);
+    if (seedAngle < 0) seedAngle += Math.PI * 2;
+    seedRadius = Math.hypot(seedPoint.x, seedPoint.z);
   }
 
-  const smoothed = smoothCircular(radii, 1);
-  for (let index = 0; index < count; index += 1) {
-    const angle = (index / count) * Math.PI * 2;
+  // 각 광선별 후보 점수 계산
+  for (let i = 0; i < count; i += 1) {
+    const angle = (i / count) * Math.PI * 2;
     const cos = Math.cos(angle);
     const sin = Math.sin(angle);
-    let rad = clamp(smoothed[index] ?? 1, 0.45, 2.85) * base;
-    let projected = projectRay(triangles, grid, cos * rad, sin * rad, sign);
-    const origin = chosen[index];
-    let guard = 0;
-    while (
-      projected &&
-      origin &&
-      pink(projected.color) - pink(origin.color) > 0.04 &&
-      guard < 6
-    ) {
-      rad *= 0.96;
-      projected = projectRay(triangles, grid, cos * rad, sin * rad, sign);
-      guard += 1;
+    const samples = rayHits[i]!;
+
+    let currentSeedRad: number | null = null;
+    if (seedAngle != null && seedRadius != null) {
+      let angDiff = Math.abs(angle - seedAngle);
+      if (angDiff > Math.PI) angDiff = Math.PI * 2 - angDiff;
+      if (angDiff < 0.6) {
+        currentSeedRad = seedRadius;
+      }
     }
-    if (!projected) {
-      radii[index] = clamp(rad / base, 0.45, 2.85);
-      continue;
+
+    const scores = scoreMarginCandidates(
+      samples,
+      base,
+      toothColor,
+      hasColor,
+      cos,
+      sin,
+      currentSeedRad,
+    );
+    rayScores.push(scores);
+  }
+
+  // 원형 최적화
+  const { bestIndices, averageStrength } = optimizeClosedMarginLoop(
+    rayHits,
+    rayScores,
+    base,
+    count,
+  );
+
+  const radii = new Array<number>(count).fill(1.0);
+  const depths = new Array<number>(count).fill(0);
+  let found = 0;
+
+  for (let i = 0; i < count; i += 1) {
+    const hitIdx = bestIndices[i]!;
+    const hit = rayHits[i]?.[hitIdx];
+    if (hit) {
+      radii[i] = clamp(hit.rad / base, 0.45, 2.85);
+      depths[i] = hit.y;
+      found += 1;
     }
-    radii[index] = clamp(projected.rad / base, 0.45, 2.85);
-    depths[index] = projected.y;
+  }
+
+  if (found < Math.ceil(count * 0.4)) return null;
+
+  // 부드러운 연결을 위해 최종 1회 가중 평활화 후 메시 표면 재투영
+  const smoothed = smoothCircular(radii, 1);
+  for (let i = 0; i < count; i += 1) {
+    const angle = (i / count) * Math.PI * 2;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const r = clamp(smoothed[i] ?? 1.0, 0.45, 2.85) * base;
+    const hit = projectRay(triangles, grid, cos * r, sin * r, sign);
+    if (hit) {
+      radii[i] = clamp(hit.rad / base, 0.45, 2.85);
+      depths[i] = hit.y;
+    } else {
+      radii[i] = clamp(r / base, 0.45, 2.85);
+    }
   }
 
   return {
     radii,
     depths,
     found,
-    strength: strength / found,
+    strength: averageStrength,
   };
 }
 
 /**
- * 기본 녹색 원보다 넓은 고리에서, 삽입축으로 메시 위에 붙인 색 경계를 마진으로 고른다.
- * 축 방향 면에서 경계가 없으면 반대 면을 본다.
+ * 기본 녹색 원보다 넓은 영역에서 스캔 메시에 붙인 복합 특징(기하 능선·변곡점 + 색상 경계)을 추적하여
+ * 지대치의 3D 마진 라인을 검출한다.
+ * 단색 STL 스캔에서는 순수 3차원 기하 능선과 하강 변곡점을 이용하며, 컬러 스캔에서는 잇몸 색상 경계가 함께 결합된다.
  */
 export function detectProjectedColorMargin(
   triangles: Float32Array,
   toothRadius: number,
   count = COLOR_MARGIN_POINT_COUNT,
+  seedPoint?: { x: number; y: number; z: number } | null,
 ): ColorMarginLine | null {
   if (!(toothRadius > 0) || count < 8) return null;
   const grid = buildGrid(triangles, toothRadius);
   if (!grid) return null;
-  const direct = traceProjectedMargin(triangles, grid, toothRadius, count, 1);
-  if (direct) return direct;
-  return traceProjectedMargin(triangles, grid, toothRadius, count, -1);
+
+  // 삽입 방향(위에서 아래 1)으로 먼저 시도하고, 메시 방향이 뒤집힌 경우 반대 방향(-1)도 검사
+  const direct = traceProjectedMargin(triangles, grid, toothRadius, count, 1, seedPoint);
+  if (direct && direct.found >= count * 0.6) return direct;
+
+  const reverse = traceProjectedMargin(triangles, grid, toothRadius, count, -1, seedPoint);
+  if (!direct) return reverse;
+  if (!reverse) return direct;
+  return direct.strength >= reverse.strength ? direct : reverse;
 }
