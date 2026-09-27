@@ -17,10 +17,10 @@ logs
 .eb_setenv_*.sha
 
 *.zip
-# lab CAD helper install package (웹「설치 파일 받기」)
+# 기공소 연결 프로그램 설치 파일 (웹「설치 파일 받기」)
 !web/frontend/public/downloads/
-!web/frontend/public/downloads/lab-cad-helper/
-!web/frontend/public/downloads/lab-cad-helper/*.zip
+!web/frontend/public/downloads/lab-helper/
+!web/frontend/public/downloads/lab-helper/*.zip
 # backend test artifacts
 web/backend/coverage/
 web/backend/.nyc_output/

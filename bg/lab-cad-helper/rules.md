@@ -1,97 +1,90 @@
-# Lab CAD Helper Rules
+# Lab Helper (Windows · Mac) Rules
 
 루트 `rules.md`가 최종 기준입니다.
 
 ## 0) 문서 목적
 
-- 기공소 PC에 한 번 설치하면 계속 떠 있는 **로컬 헬퍼(127.0.0.1:8010)**. 웹(브라우저)이 사용자 PC와 상호작용하는 통로다.
-  - 의뢰 파일을 **작업 폴더**(환자 케이스를 모으는 폴더)에 저장
-  - 설정 디자인 SW(3Shape/exocad) 실행·앞으로 가져오기
-- OS별 설치본: Windows(PowerShell, 관리자 권한 불필요) · macOS(Swift 바이너리 + LaunchAgent).
-- **컴맹 UX SSOT**: 웹에서 zip 받기 → 설치 파일 **더블클릭 한 번** → 이후 자동(PC 시작·로그인 시 실행).
+- 기공소 PC의 **어벗츠 연결 프로그램 v3**(Windows·Mac). 웹이 PC 폴더에 파일을 풀어 두고 탐색기·Finder로 열 수 있게 하는 통로다.
+- 하는 일은 셋뿐이다: 작업 폴더 지정, 케이스 폴더 확인·저장, 케이스 폴더 열기.
+- **디자인 SW(3Shape·exocad)는 실행하지 않는다.** 두 SW 모두 명령줄 인자로 주문(케이스)을 등록할 수 없다(2026-09 조사). 기공소는 케이스 폴더에서 스캔을 가져온다.
+- Windows와 Mac은 **같은 HTTP API·같은 이름 규칙**을 쓴다. 한쪽을 바꾸면 다른 쪽도 바꾼다.
 
-## 1) 디자인 SW 열기 — 인자로 파일 열기는 안 된다
+## 1) 설치 UX (강제)
 
-조사 결과(2026-09) 두 SW 모두 **흩어진 스캔 파일(STL/PLY/DCM)을 명령줄 인자로 받아 디자인 케이스를 여는 기능이 없다.**
+- 웹 「작업열기」에서 연결 프로그램이 없으면 OS에 맞는 설치 파일을 **바로 받고** 안내 모달(`LabHelperInstallDialog`)을 띄운다. 모달은 연결될 때까지 기다렸다가 **자동으로 이어서 저장**한다.
+- 설치 파일을 열면 「설치할까요?」 한 번. 「예」·「설치」면 바로 설치·실행·연결 확인 → 완료 안내. 이미 설치돼 있으면 다시 설치(업데이트)·삭제.
+- **관리자 권한·암호 없음.** 사용자 폴더에만 쓴다. 이후 로그인할 때마다 화면 없이 켜진다.
+- 작업 폴더 안 파일은 설치·삭제 때 지우지 않는다. v2 헬퍼는 설치 때 정리하고 작업 폴더 설정만 옮겨 온다.
 
-| SW | 공식 동작 | 헬퍼 처리 (`guide`) |
-|----|-----------|---------------------|
-| 3Shape Dental System | 공개 CLI 없음. 외부 스캔은 Dental Manager › 주문 › **스캔 가져오기**. `DentalDesktop.exe <파일>`은 파일을 무시 | Dental Manager 실행(이미 떠 있으면 앞으로) + 케이스 폴더 열기 + **경로 클립보드 복사** → `3shape_import` |
-| exocad | `DentalCADApp.exe`는 DentalDB가 만든 **`.dentalProject`만** 인자로 연다 | `.dentalProject`가 있으면 바로 열기(`exocad_project`). 없으면 DentalDB + 폴더 + 경로 복사 → `exocad_import` |
-| 기타(custom) | — | `exePaths.custom`에 파일 인자(`args`) |
-| macOS | 3Shape·exocad 미지원 | 폴더만 Finder로(`folder_only`) |
+### Windows
 
-웹은 `guide`에 맞춰 3단계 안내(`LabCadOpenedGuideDialog`)를 띄운다: 새 주문 → 스캔 가져오기 → 주소 칸 Ctrl+V.
+- 배포물: exe 하나 `web/frontend/public/downloads/lab-helper/AbutsLabHelperSetup.exe`(받는 이름 `어벗츠연결_설치.exe`).
+- 설치 위치 `%LOCALAPPDATA%\Abuts\LabHelper`(`asInvoker`), HKCU만:
+  - `HKCU\...\Run\AbutsLabHelper` — 로그인 때마다 `--serve`
+  - `HKCU\Software\Classes\abuts-cad` — 꺼져 있으면 웹이 `abuts-cad://wake`로 깨운다(설치한 PC에서만)
+  - `HKCU\...\Uninstall\AbutsLabHelper` — 「앱 및 기능」에서 제거(`--uninstall`)
+- Windows 서비스(session 0)로 만들지 않는다. 관리자 설치가 필요하고, 사용자 화면에 탐색기·폴더 고르기 창을 띄울 수 없다.
+- 코드 서명 전: SmartScreen 「Windows의 PC 보호」 → 모달 안내 「추가 정보」 → 「실행」.
 
-프로그램 탐색 순서: `config.managerPaths`/`exePaths` → **실행 중 프로세스** → Program Files·C:\·D:\ 아래 `3Shape*`/`exocad*` 폴더.
-3Shape: `DentalManager.exe`(없으면 `DentalDesktop.exe`). exocad: `DentalCADApp.exe`, `DentalDB.exe`.
+### Mac
 
-## 2) 작업 폴더
+- 배포물: `web/frontend/public/downloads/lab-helper/AbutsLabHelper-mac.zip`(받는 이름 `어벗츠연결_설치_Mac.zip`) 안에 `어벗츠 연결.app`(유니버설, macOS 12+, `LSUIElement` — Dock에 안 보임).
+- 설치: 앱을 `~/Library/Application Support/Abuts/LabHelper/AbutsLabHelper.app`로 복사, quarantine 제거, LaunchAgent `~/Library/LaunchAgents/fit.abuts.labhelper.plist`(`RunAtLoad`, `KeepAlive.SuccessfulExit=false`, `--serve`) 등록. 비정상 종료면 launchd가 다시 띄운다.
+- 제거: 설치 파일을 다시 열어 「삭제」(또는 `--uninstall`).
+- 공증 전(Developer ID 없음): Gatekeeper 「확인할 수 없습니다」 → 모달 안내 「완료」 → 시스템 설정 › 개인정보 보호 및 보안 › 「그래도 열기」. **Apple Developer ID로 서명·공증하면 이 단계가 없어진다**(`mac/build.sh` 환경변수).
 
-- 웹 localStorage `abuts.labWorkFolder` + 헬퍼 `config.json.workFolder`. **저장 성공할 때마다 로컬 갱신.**
-- 우선순위: 로컬 저장값 → 헬퍼 설정값(폴더가 있을 때) → 없으면 `LabWorkFolderDialog`(폴더 고르기 창 또는 경로 붙여넣기, 예: `\\DESKTOP-HAQNS44\CAM-in`).
-- 저장 시 헬퍼가 폴더가 없다고 하면(`WORK_FOLDER_NOT_FOUND`) 로컬값을 지우고 다시 묻는다.
-- 케이스 폴더: `YYYYMMDD_치과명-환자명-치아번호`(주문일 KST, `buildLabCaseFolderName`, 예: `20260927_서울치과-이재민-47`). 빈 항목은 빠지고, 환자명이 없으면 `의뢰{ID 끝 6자리}`. 같은 이름 파일은 덮어쓴다.
-- **작업 폴더 안 파일은 헬퍼가 절대 지우지 않는다.** 세션 만료 정리는 temp 폴더만.
+## 2) 작업 폴더 · 케이스 폴더
 
-## 3) 기공소 사용자 흐름
+- 작업 폴더: 웹 localStorage `abuts.labWorkFolder` + 헬퍼 `config.json.workFolder`. 저장 성공 때마다 갱신.
+- 우선순위: 로컬 저장값 → 헬퍼 설정값(있을 때) → `LabWorkFolderDialog`(helper 모드: 폴더 고르기 창 또는 경로 붙여넣기, 예: `\\DESKTOP-HAQNS44\CAM-in`). 폴더가 사라졌으면(`WORK_FOLDER_NOT_FOUND`) 다시 묻는다.
+- 케이스 폴더: `YYYYMMDD_치과명-환자명-치아번호`(주문일 KST, `buildLabCaseFolderName`). 이름 정리 규칙은 웹 `dedupeLabCaseFiles`, Windows `SafeSegment`, Mac `safeSegment`가 같다.
+- **작업열기**: 이미 받은 파일(이름 + 원본 크기, PLY 변환본은 이름만)은 건너뛰고 없는 것만 받는다. 모두 있으면 받지 않고 폴더만 연다.
+- **다운로드**: 다시 받아 덮어쓴다.
+- 저장이 끝나면 탐색기·Finder로 케이스 폴더를 열고 앞으로 가져온다.
+- 쓰기는 `.abuts-part` 임시 파일 → 교체.
 
-1. 채팅창 「작업열기」 또는 의뢰 파일 「다운로드」
-2. 헬퍼 없음 → 설치 안내(OS별 zip). 구버전(v1) → 「연결 프로그램 업데이트」
-3. 작업 폴더 없음 → 작업 폴더 지정
-4. 파일을 케이스 폴더에 저장
-5. 다운로드: 폴더 열기 + 토스트(「폴더 변경」). 작업열기: SW 실행 + 가져오기 안내
-6. SW를 못 찾으면: 파일은 이미 저장됨 → SW를 켠 뒤 「다시 열기」(재설치 불필요, 실행 중 프로세스로 찾음)
+## 3) 웹 흐름 (`useS3FileDownload.saveToLabWorkFolder`)
 
-## 4) 배포 파일
+1. 연결 프로그램(v3)이 있으면 → 헬퍼로 저장 + 폴더 열기
+2. 없는 Windows·Mac(모든 브라우저) → 설치 안내 → 연결되면 1. Chrome·Edge는 처음 한 번 「로컬 네트워크 접근」 허용을 묻는다.
+   - 안내를 닫으면 Chrome·Edge는 브라우저 폴더 핸들로, Firefox·Safari는 zip으로 저장하고, 그 브라우저에서는 다시 묻지 않는다(`abuts.labHelperInstallDeclined`). 저장 알림 「폴더 자동 열기」로 언제든 설치. 연결되면 플래그를 지운다.
+3. 설치할 수 없는 기기(모바일·iPad·Linux) → Chrome·Edge 폴더 핸들, 그 외 zip
+- 진행률: `labSaveProgress`(원본 크기 가중 0~100) → 채팅 「작업열기」·「다운로드」 버튼 「저장 중 N%」 + 하단 막대
 
-| 파일 | 역할 |
-|------|------|
-| `여기를_더블클릭_설치.cmd` | ASCII 전용 런처 → `install.ps1` |
-| `install.ps1` | 예전 헬퍼 종료 → `%LOCALAPPDATA%\Abuts\LabCadHelper` 복사 → `abuts-cad://` 프로토콜·시작프로그램 → v2 연결 확인 |
-| `run-hidden.vbs` | 창 없이 ps1 실행·중복 방지 (ASCII 전용) |
-| `lab-cad-helper.ps1` | TcpListener HTTP API (관리자 URL 예약 불필요) |
-| `start.cmd` | 개발용 콘솔 실행 |
-| `mac/AbutsLabHelper.swift` · `mac/build.sh` | macOS 헬퍼(유니버설 바이너리) |
-| `mac/Abuts연결_설치.command` | LaunchAgent `fit.abuts.labhelper` 등록 |
-| `web/frontend/public/downloads/lab-cad-helper/AbutsCad연결_설치.zip` · `…_Mac.zip` | 웹 다운로드 SSOT |
+## 4) HTTP API (v3)
 
-zip 갱신:
-
-```bash
-bg/lab-cad-helper/mac/build.sh          # macOS 바이너리 (Xcode CLT)
-python3 bg/lab-cad-helper/pack-public-zip.py
-```
-
-### 인코딩 (강제)
-
-- `.ps1`은 **UTF-8 BOM**. PowerShell 5.1은 BOM이 없으면 한국어 Windows에서 CP949로 읽어 한글 문자열이 깨지고 파싱이 실패할 수 있다. `pack-public-zip.py`가 BOM·CRLF를 강제한다.
-- `.cmd`/`.vbs`는 **ASCII 전용**(cmd·wscript는 ANSI 코드페이지로 읽는다). 한글 안내는 `install.ps1`에서.
-
-## 5) HTTP API (v2)
-
-bind `127.0.0.1:8010` · CORS 허용 출처: `https://abuts.fit`, `https://www.abuts.fit`, `http://localhost:5173` (+ `config.allowOrigin` 쉼표 목록). 다른 출처는 401. `Access-Control-Allow-Private-Network: true`.
+bind `127.0.0.1:8010`(Windows TcpListener — HttpListener URL 예약은 관리자 권한 필요, Mac NWListener). 허용 출처: `https://abuts.fit`, `https://www.abuts.fit`, `http://localhost:5173`, `http://127.0.0.1:5173` (+ `config.allowOrigin` 쉼표 목록). 다른 `Origin`은 403. 응답에 `Access-Control-Allow-Private-Network: true`.
 
 | 메서드 | 경로 | 설명 |
 |--------|------|------|
-| GET | `/health` | `version`(2), `os`, `workFolder`, `workFolderExists` |
+| GET | `/health` | `version`(3), `os`(`windows`/`mac`), `workFolder`, `workFolderExists` |
 | GET/POST | `/work-folder` | 조회 / `{path}` 확인 후 저장 |
-| POST | `/work-folder/pick` | PC 폴더 고르기 창 |
-| POST | `/sessions` | `{workFolder, caseFolder}` → 케이스 폴더 (비우면 temp) |
-| PUT | `/sessions/:id/files/:name` | 파일 저장(최대 1GB) |
-| POST | `/sessions/:id/reveal` | 폴더 열기 |
-| POST | `/sessions/:id/open` | `{designSoftware}` → `guide`·`folder`·`clipboard` |
+| POST | `/work-folder/pick` | 폴더 고르기 창(브라우저 위) |
+| POST | `/cases/check` | `{workFolder, caseFolder, files:[{name,size}]}` → `folder`, `exists`, `missing` |
+| PUT | `/cases/file?workFolder&caseFolder&name` | 파일 저장(최대 4GB). 쿼리의 `+`는 공백 |
+| POST | `/cases/reveal` | `{workFolder, caseFolder}` → 탐색기·Finder로 열기 |
 | POST | `/shutdown` | 재설치용 종료 |
 
-## 6) FE SSOT
+## 5) 파일 · 빌드
 
-- `labCadHelperClient.ts` — `ensureLabCadHelperReady`(ready/need_setup/need_update), 작업 폴더, 세션
-- `useS3FileDownload` — `openInDesignSoftware`, `saveToLabWorkFolder`
-- `LabCadHelperSetupDialog` · `LabWorkFolderDialog` · `LabCadOpenedGuideDialog`
-- 수신: `RequestorPracticePage` (의뢰 파일 버튼 라벨 「다운로드」)
+| 파일 | 역할 |
+|------|------|
+| `win/Program.cs` | 진입: 설치(기본) / `--serve` / `--uninstall`. 설치 폴더에서 실행되면 serve |
+| `win/Installer.cs` | 동의·복사·레지스트리·v2 정리·연결 확인·제거 |
+| `win/HttpServer.cs` | HTTP·CORS·라우팅 |
+| `win/CaseFolder.cs` | 이름 정리·확인·쓰기 |
+| `win/WinShell.cs` | 탐색기 열기·앞으로, 폴더 고르기 창 |
+| `win/Config.cs` | `config.json`·`helper.log` |
+| `mac/AbutsLabHelper.swift` | Mac 전부(설치·LaunchAgent·HTTP·케이스 폴더·Finder·폴더 고르기) |
 
-## 7) 포맷
+```bash
+bg/lab-cad-helper/win/build.sh   # .NET SDK 8+ → AbutsLabHelperSetup.exe (.NET Framework 4.8, 약 30KB)
+bg/lab-cad-helper/mac/build.sh   # Xcode CLT → AbutsLabHelper-mac.zip (유니버설, 약 150KB)
+# Mac 서명·공증: MAC_SIGN_IDENTITY="Developer ID Application: …" MAC_NOTARY_PROFILE=… bg/lab-cad-helper/mac/build.sh
+```
 
-- 3Shape → DCM 원본
-- exocad·그외 → DCM은 PLY(칼라)
-- 다운로드는 DCM 원본/PLY 선택 유지
+- 버전을 올리면 Windows `Program.Version`·csproj `Version`·`app.manifest`, Mac `helperVersion`·`build.sh` Info.plist, 웹 `LAB_HELPER_MIN_VERSION`을 함께 바꾼다.
+
+## 6) 레거시
+
+- `lab-cad-helper.ps1`·`install.ps1`·`run-hidden.vbs`·`*.cmd`·`mac/Abuts연결_설치.command`는 v2 기록이다. 배포하지 않는다. v3 설치가 v2를 정리한다.

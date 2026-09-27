@@ -435,7 +435,7 @@
 - Bridge: `bg/pc1/bridge-server/rules.md`
 - LOT: `bg/pc2/lot-server/rules.md`
 - Pack: `bg/pc2/pack-server/rules.md`
-- Lab CAD Helper: `bg/lab-cad-helper/rules.md`
+- Lab Helper (Windows·Mac 연결 프로그램 v3): `bg/lab-cad-helper/rules.md`
 - WBL: `bg/pc3/wbls-server/rules.md`
 
 ### 4.5 상세 정책 참조 인덱스 (누락 방지)

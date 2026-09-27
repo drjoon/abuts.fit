@@ -11,11 +11,8 @@
 // - web/frontend/src/shared/hooks/useBackgroundTempUpload.ts
 // - web/frontend/src/shared/components/ModelPreviewDialog.tsx
 // - web/frontend/src/shared/files/modelPreviewFile.ts
-// - web/frontend/src/shared/files/labCadHelperClient.ts
+// - web/frontend/src/shared/files/labWorkFolder.ts
 // - web/frontend/src/shared/files/useS3FileDownload.ts
-// - bg/lab-cad-helper/start.cmd
-// - bg/lab-cad-helper/lab-cad-helper.ps1
-// - bg/lab-cad-helper/app.js
 // - web/frontend/src/shared/files/downloadWithProgress.ts
 // - web/frontend/src/shared/files/s3BlobCache.ts
 // - web/frontend/src/shared/files/fileBlobCache.ts
@@ -468,6 +465,35 @@ export type PracticeTransferDialogCaseIdentity = {
 };
 
 /** 의뢰·작업 파일 타일 썸네일 — 정사각 대비 세로 약 절반 */
+/** 버튼 아래쪽 진행 막대. percent가 null이면 그리지 않는다. */
+function ButtonProgressBar({
+  percent,
+  tone = "onOutline",
+}: {
+  percent: number | null | undefined;
+  tone?: "onPrimary" | "onOutline";
+}) {
+  if (percent == null) return null;
+  const width = Math.max(4, Math.min(100, percent));
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "pointer-events-none absolute inset-x-0 bottom-0 h-1",
+        tone === "onPrimary" ? "bg-white/25" : "bg-primary/15",
+      )}
+    >
+      <span
+        className={cn(
+          "block h-full transition-[width] duration-200 ease-out",
+          tone === "onPrimary" ? "bg-white" : "bg-primary",
+        )}
+        style={{ width: `${width}%` }}
+      />
+    </span>
+  );
+}
+
 const FILE_TILE_THUMB_ASPECT_CLASS = "aspect-[2/1]";
 
 type PracticeTransferDetailChatDialogProps = {
@@ -583,10 +609,14 @@ type PracticeTransferDetailChatDialogProps = {
   /** 의뢰 파일 일괄 버튼 라벨. 기공소는 작업 폴더 저장이라 「다운로드」 */
   downloadAllFilesLabel?: string;
   /**
-   * 의뢰 3D를 설정 디자인 소프트웨어로 연다(로컬 CAD 헬퍼).
+   * 의뢰 파일 전부를 작업 폴더 안 케이스 폴더에 저장한다.
    * 미전달 시「작업열기」숨김. 작업시작 후에는 그 버튼 자리에도 둔다.
    */
   openInCadBusy?: boolean;
+  /** 작업열기 저장 진행률 0~100. 저장 중이 아니면 null */
+  openWorkProgress?: number | null;
+  /** 의뢰 파일 「다운로드」 진행률 0~100 */
+  downloadAllProgress?: number | null;
   onOpenInDesignSoftware?: () => void | Promise<void>;
   onDownloadTransferFile: (
     file: PracticeTransferDialogFileItem,
@@ -817,6 +847,8 @@ export function PracticeTransferDetailChatDialog({
   onDownloadAllWorkFiles,
   onDownloadAllFiles,
   openInCadBusy = false,
+  openWorkProgress = null,
+  downloadAllProgress = null,
   onOpenInDesignSoftware,
   onDownloadTransferFile,
   acceptBusy = false,
@@ -2353,7 +2385,16 @@ export function PracticeTransferDetailChatDialog({
     downloadAllBusy ||
     downloadAllWorkFilesBusy ||
     requestFilesDownloadLocked;
-  const openWorkLabel = openInCadBusy ? "여는 중..." : "작업열기";
+  const openWorkLabel = openInCadBusy
+    ? openWorkProgress != null
+      ? `저장 중 ${openWorkProgress}%`
+      : "저장 중..."
+    : "작업열기";
+  const downloadAllLabel = downloadAllBusy
+    ? downloadAllProgress != null
+      ? `저장 중 ${downloadAllProgress}%`
+      : "저장 중..."
+    : downloadAllFilesLabel;
   /** 작업시작이 끝난 자리. 취소 후 다시 작업시작이 있는 동안은 두지 않는다. */
   const showOpenWorkInAcceptSlot =
     operateLabWork && accepted && !workCanceled && canOpenInDesignSoftware;
@@ -2365,8 +2406,10 @@ export function PracticeTransferDetailChatDialog({
         size="sm"
         onClick={() => void onOpenInDesignSoftware?.()}
         disabled={openWorkDisabled}
+        className={cn("relative overflow-hidden tabular-nums", openInCadBusy && "disabled:opacity-100")}
       >
         {openWorkLabel}
+        <ButtonProgressBar percent={openInCadBusy ? openWorkProgress : null} tone="onPrimary" />
       </Button>
     ) : null;
   const releaseAction =
@@ -3373,9 +3416,11 @@ export function PracticeTransferDetailChatDialog({
                                 openInCadBusy ||
                                 requestFilesDownloadLocked
                               }
+                              className={cn("relative overflow-hidden tabular-nums", downloadAllBusy && "disabled:opacity-100")}
                             >
-                              {downloadAllBusy ? "다운로드 중..." : downloadAllFilesLabel}
+                              {downloadAllLabel}
                               <ChevronDown className="ml-1 h-3.5 w-3.5 opacity-70" />
+                              <ButtonProgressBar percent={downloadAllBusy ? downloadAllProgress : null} />
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" className="z-[400]">
@@ -3407,8 +3452,10 @@ export function PracticeTransferDetailChatDialog({
                             openInCadBusy ||
                             requestFilesDownloadLocked
                           }
+                          className={cn("relative overflow-hidden tabular-nums", downloadAllBusy && "disabled:opacity-100")}
                         >
-                          {downloadAllBusy ? "다운로드 중..." : downloadAllFilesLabel}
+                          {downloadAllLabel}
+                          <ButtonProgressBar percent={downloadAllBusy ? downloadAllProgress : null} />
                         </Button>
                       )
                     ) : null}
