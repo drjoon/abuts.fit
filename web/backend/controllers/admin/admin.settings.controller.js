@@ -1605,7 +1605,7 @@ export async function updatePlatformFeeSettings(req, res) {
       ) {
         return res.status(400).json({
           success: false,
-          message: "지정 거래 수수료율은 0~100% 범위여야 합니다.",
+          message: "플랫폼 사용료율은 0~100% 범위여야 합니다.",
         });
       }
     }

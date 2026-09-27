@@ -84,7 +84,7 @@ export const PRACTICE_TRANSFER_LEDGER_LABELS = {
   holdShippingAbutment: "배송비 보류(기공소→어벗츠)",
   releaseLab: "기공비(치과→어벗츠)",
   releaseAbutment: "기공비(치과→어벗츠)",
-  /** 치과 직접 지정 협력 — 플랫폼 사용료 없음, 전액 이관 */
+  /** 치과 직접 지정 협력 — 플랫폼 사용료(정책 2%, 이벤트 중 0%) 공제 후 이관 */
   cooperationPurchase: "협력 기공비(어벗츠→기공소)",
   /** 어벗츠 지정 후 하청 — subcontractFeeRate */
   subcontractPurchase: "하청(매입) 기공비(어벗츠→기공소)",
@@ -6766,20 +6766,25 @@ export async function buildFeeQuotesForTransferDocs({
       : null;
     const kind = relationshipKindFromPartner(partner);
     const performerId = resolvePerformingLabAnchorId(doc);
+    const performerDoc = labDocById.get(performerId) || null;
     const previewConsent = resolveUnacceptedAiTrainingConsent(
       doc,
-      labDocById.get(performerId) || null,
+      performerDoc,
     );
     const previewConsentArg =
       previewConsent === true || previewConsent === false
         ? { aiTrainingConsent: previewConsent }
         : {};
+    const performerIsInternal =
+      doc?.billing?.internalPerformer === true ||
+      isInternalLabBusinessType(performerDoc);
     const feeRateApplied = resolvePracticeTransferFeeRateForViewer({
       matchingMode,
       payoutRates,
       subcontracted: isSubcontractFeeApplicable(doc),
       viewerIsPrimeContractor: isViewerPrimeContractor(doc, viewerLabId),
       billing: doc?.billing,
+      performerIsInternal,
       ...previewConsentArg,
     });
     const remakeFeeRateApplied = resolvePracticeTransferFeeRate({
@@ -6789,6 +6794,7 @@ export async function buildFeeQuotesForTransferDocs({
       subcontracted: isSubcontractFeeApplicable(doc),
       ...platformFeeArgsFromBilling(doc?.billing),
       ...previewConsentArg,
+      performerIsInternal,
     });
     const remakeSplit = splitPracticeTransferSettlement({
       labFeeTotal: remakeFees.labFeeTotal,

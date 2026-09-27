@@ -181,7 +181,7 @@ export const isCooperationAssignee = (transfer) =>
 export const isSubcontractAssignee = (transfer) =>
   resolveAssigneeKind(transfer) === ASSIGNEE_KIND_SUBCONTRACT;
 
-/** 하청 수수료(기본 10%) 적용 대상. 협력(0%)·자체 수행은 false. */
+/** 하청 수수료(기본 10%) 적용 대상. 협력·자체 수행은 false(플랫폼 사용료는 별도). */
 export const isSubcontractFeeApplicable = (transfer) =>
   isSubcontractAssignee(transfer);
 

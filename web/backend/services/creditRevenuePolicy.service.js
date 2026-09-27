@@ -5,6 +5,7 @@
 // - web/backend/scripts/db/migrate-legacy-creditledger-to-gl.js
 // - web/backend/scripts/db/rebalance-manufacturer-unit-price.js
 // change-log:
+// - 2026-09-27: 기공소 플랫폼 사용료 2% 복원(협력·하청 공통). 적용 off=이벤트 면제 0%. 어벗츠기공소 수행은 항상 면제. 학습 동의와 무관.
 // - 2026-09-24: 딜러십 — 신규 유치 요율(기본 20%)·예약 인하(15/10)·유치 시점 스탬프. 월 매출 누진 철회.
 // - 2026-09-24: 딜러십 영업 수수료 — 딜러 BA당 월 매출 누진 구간(기본 ≤5천만 20%/≤1억 15%/초과 10%).
 // - 2026-09-25: 하청 기본 수수료 5% → 10%.
@@ -907,15 +908,15 @@ export const WITHOUT_SALESMAN_RATES = resolveRatesWithoutSalesman(WITH_SALESMAN_
 export const DEFAULT_PLATFORM_FEE_RATE = 0.1;
 /** 어벗츠 원청을 타 기공소가 하청 수행할 때 공제율(기본 10%, 수행 기공소 90%). */
 export const DEFAULT_SUBCONTRACT_FEE_RATE = 0.1;
-/** 지정 기공소(direct/협력) 정책 요율 2%(적용 on일 때). */
+/** 기공소 플랫폼 사용료 정책 요율 2%(협력·하청 공통, 적용 on일 때). */
 export const DEFAULT_DIRECT_PLATFORM_FEE_RATE = 0.02;
 /** 직전 정책 요율(1%). 마이그레이션 참고용. */
 export const PREV_DEFAULT_DIRECT_PLATFORM_FEE_RATE = 0.01;
 /** 구 스키마 기본(off + 5%). 마이그레이션 참고용. */
 export const LEGACY_DEFAULT_DIRECT_PLATFORM_FEE_RATE = 0.05;
 /**
- * 레거시 이벤트 스위치. aiTrainingConsent 스냅샷이 없는 기존 의뢰만 읽는다.
- * false = 그 건은 실효 0%. 신규 지정·협력은 학습 이용 스냅샷으로 0% 또는 정책 2%.
+ * 플랫폼 사용료 적용 스위치. false = 이벤트 면제(실효 0%), 정책 요율은 저장값 유지.
+ * 작업시작 때 billing.feeRateApplied로 박히므로 스위치를 바꿔도 소급하지 않는다.
  */
 export const DEFAULT_DIRECT_PLATFORM_FEE_ENABLED = false;
 /** @deprecated 등록/미등록 2단계 폐지. 읽기 fallback 전용. */
@@ -935,7 +936,7 @@ export function resolvePlatformFeeRate(payoutRates) {
     : DEFAULT_PLATFORM_FEE_RATE;
 }
 
-/** 레거시 이벤트 스위치. 스냅샷 없는 기존 의뢰만. */
+/** 플랫폼 사용료 적용 여부. false = 이벤트 면제. */
 export function isDirectPlatformFeeEnabled(payoutRates) {
   return payoutRates?.directPlatformFeeEnabled === true;
 }
@@ -953,12 +954,26 @@ export function resolveDirectPlatformFeeRateConfigured(payoutRates) {
 }
 
 /**
- * 레거시 지정 거래 실효율. 스냅샷 없는 의뢰만.
- * 적용 off면 0, on이면 설정 요율.
+ * 플랫폼 사용료 실효율. 적용 off(이벤트)면 0, on이면 설정 요율.
  */
 export function resolveDirectPlatformFeeRate(payoutRates) {
   if (!isDirectPlatformFeeEnabled(payoutRates)) return 0;
   return resolveDirectPlatformFeeRateConfigured(payoutRates);
+}
+
+/** 수행 기공소 기준 플랫폼 사용료. 어벗츠기공소(internalLab) 수행은 항상 면제. */
+export function resolveLabPlatformFeeRate({
+  payoutRates,
+  performerIsInternal = false,
+} = {}) {
+  if (performerIsInternal) return 0;
+  return resolveDirectPlatformFeeRate(payoutRates);
+}
+
+function capFeeRate(rate) {
+  const n = Number(rate);
+  if (!Number.isFinite(n)) return 0;
+  return Math.min(1, Math.max(0, n));
 }
 
 /** billing.aiTrainingConsent 가 불리언으로 박혀 있으면 그 값. 없으면 undefined(레거시 이벤트). */
@@ -988,15 +1003,28 @@ export function snapshottedPracticeTransferFeeRate(billing) {
 
 /**
  * 기공의뢰 수수료율.
- * 플랫폼 사용료는 폐지(지정·협력·본부 수행 0). 학습 이용 동의는 요율에 반영하지 않는다.
- * 하청만 subcontractFeeRate(기본 10%). 이미 billing.feeRateApplied에 박힌 건은 호출부에서 유지한다.
+ * - 플랫폼 사용료: 정책 directPlatformFeeRate(기본 2%). 적용 off(이벤트)면 0.
+ *   어벗츠기공소 수행은 항상 0. 학습 이용 동의는 요율에 반영하지 않는다.
+ * - 협력: 플랫폼 사용료만.
+ * - 하청: subcontractFeeRate(기본 10%) + 플랫폼 사용료.
+ * - 레거시 자동매칭(하청 아님): 0.
+ * 이미 billing.feeRateApplied에 박힌 건은 호출부에서 유지한다.
  */
 export function resolvePracticeTransferFeeRate({
+  matchingMode,
   payoutRates,
   subcontracted = false,
+  performerIsInternal = false,
 } = {}) {
-  if (subcontracted) return resolveSubcontractFeeRate(payoutRates);
-  return 0;
+  const platform = resolveLabPlatformFeeRate({
+    payoutRates,
+    performerIsInternal,
+  });
+  if (subcontracted) {
+    return capFeeRate(resolveSubcontractFeeRate(payoutRates) + platform);
+  }
+  if (String(matchingMode || "").trim() === "auto") return 0;
+  return platform;
 }
 
 /**

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-27: 기공사업부 정산 규칙 — 플랫폼 사용료 2%(이벤트 면제 취소선)·어벗츠기공소 항상 면제.
 // - 2026-09-26: 기공사업부 정산 규칙 — 플랫폼 사용료·영업 수수료 안내.
 // - 2026-09-23: 제조사 월별=의뢰·배송 합산(마이그레이션 PAID fallback 오인 방지).
 // - 2026-09-23: 월별 내역에 유료 배송 열(제조사 periodPaidShipping*).
@@ -51,6 +52,7 @@ import {
   SettlementPolicySection,
   SettlementStatCard,
 } from "@/shared/settlement/settlementUi";
+import { LabDirectPlatformFeeNotice } from "@/shared/settlement/LabDirectPlatformFeeNotice";
 
 const HISTORY_MONTHS = 6;
 
@@ -194,6 +196,8 @@ type SettlementBusinessOverview = {
     subcontractFeeAmount?: number;
     subcontractFeeReleaseCount?: number;
     subcontractFeeRate?: number;
+    directPlatformFeeEnabled?: boolean;
+    directPlatformFeeRate?: number;
     periodRevenue?: number;
     plannedBizSupply?: number;
     plannedSalesTeamSupply?: number;
@@ -1002,11 +1006,14 @@ export default function AdminPaymentsPage({
                 <p>
                   배송비를 선차감한 뒤 기공사업부 · 영업팀 · 개발운영 · 어벗츠
                   비율로 분배합니다.
+                </p>
+                <p>
+                  <LabDirectPlatformFeeNotice feeRates={labDivision} />
                   <br />
-                  협력건은 수수료 없이 기공비 전액을 크레딧으로 적립합니다.
+                  어벗츠기공소 수행건은 항상 면제입니다.
                   <br />
-                  하청건은 {subcontractFeePct}% 영업 수수료를 제한 나머지를
-                  적립합니다.
+                  요율은 작업시작 시점에 고정되며, 이후 설정 변경은 소급하지
+                  않습니다.
                 </p>
               </SettlementPolicySection>
             </SettlementPolicyDialog>

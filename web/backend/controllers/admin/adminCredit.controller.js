@@ -3109,9 +3109,17 @@ export async function adminGetSettlementBusinessOverview(req, res) {
     const {
       resolvePlatformFeeRate,
       resolveSubcontractFeeRate,
+      isDirectPlatformFeeEnabled,
+      resolveDirectPlatformFeeRateConfigured,
     } = await import("../../services/creditRevenuePolicy.service.js");
     const platformFeeRate = resolvePlatformFeeRate(devopsAnchor?.payoutRates);
     const subcontractFeeRate = resolveSubcontractFeeRate(
+      devopsAnchor?.payoutRates,
+    );
+    const directPlatformFeeEnabled = isDirectPlatformFeeEnabled(
+      devopsAnchor?.payoutRates,
+    );
+    const directPlatformFeeRate = resolveDirectPlatformFeeRateConfigured(
       devopsAnchor?.payoutRates,
     );
 
@@ -3170,6 +3178,8 @@ export async function adminGetSettlementBusinessOverview(req, res) {
       subcontractFeeAmount,
       subcontractFeeReleaseCount,
       subcontractFeeRate,
+      directPlatformFeeEnabled,
+      directPlatformFeeRate,
       // 원청 매출 − 하청 매입 ≈ 자체수행분 + 하청 수수료 잔여
       periodRevenue: normalizeNumber(
         labSettlementEarn - subcontractPurchaseAmount,

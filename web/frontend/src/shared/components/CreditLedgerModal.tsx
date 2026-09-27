@@ -2177,7 +2177,7 @@ function PracticeTransferLedgerFeeDialog({
           ...(payoutFigures.fee > 0
             ? [
                 {
-                  label: `하청 수수료 ${formatFeeRatePct(
+                  label: `수수료 ${formatFeeRatePct(
                     payoutFigures.gross > 0
                       ? payoutFigures.fee / payoutFigures.gross
                       : 0,

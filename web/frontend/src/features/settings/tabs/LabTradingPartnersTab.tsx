@@ -233,14 +233,6 @@ export const LabTradingPartnersTab = () => {
   const remaining =
     windowInfo?.remainingDays == null ? null : Number(windowInfo.remainingDays);
   const windowDays = Number(windowInfo?.windowDays ?? 60);
-  const subcontractFeePct = Math.round(
-    Number(
-      windowInfo?.feeRates?.subcontractFeeRate ??
-        windowInfo?.feeRates?.platformFeeRate ??
-        windowInfo?.feeRates?.nonPartnerFeeRate ??
-        0.1,
-    ) * 100,
-  );
   const windowProgressPct =
     remaining == null || windowDays <= 0
       ? 0
@@ -268,7 +260,7 @@ export const LabTradingPartnersTab = () => {
             <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
             <p className="text-[13px] leading-relaxed text-muted-foreground">
               <LabDirectPlatformFeeNotice
-                subcontractRatePct={subcontractFeePct}
+                feeRates={windowInfo?.feeRates}
               />
               <br />
               거래 치과 소개는 아래에서 계속할 수 있습니다.

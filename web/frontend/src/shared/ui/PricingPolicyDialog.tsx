@@ -277,9 +277,6 @@ export const PricingPolicyDialog = ({
     0,
     Number(credit?.fmDentalMonthlyShippingFee ?? 0) || 0,
   );
-  const subcontractFeePct = Math.round(
-    Number(labFeeWindow?.feeRates?.subcontractFeeRate ?? 0.1) * 100,
-  );
   const token = useAuthStore((s) => s.token);
   const { toast } = useToast();
   const [fmState, setFmState] = useState<{
@@ -668,15 +665,21 @@ export const PricingPolicyDialog = ({
 
               {showLabFeeSection ? (
                 <>
-                  <PolicySection title='수수료'>
+                  <PolicySection title='플랫폼 사용료 · 하청 수수료'>
                     <p>
                       <LabDirectPlatformFeeNotice
-                        subcontractRatePct={subcontractFeePct}
+                        feeRates={labFeeWindow?.feeRates}
                       />
                       {isRequestorPreview ? (
                         <>
                           <br />
                           기공소 의뢰자에게 적용됩니다.
+                        </>
+                      ) : null}
+                      {isRequestorPreview || !isLab ? (
+                        <>
+                          <br />
+                          치과는 플랫폼 사용료가 없습니다.
                         </>
                       ) : null}
                     </p>

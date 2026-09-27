@@ -8,14 +8,21 @@ import {
   isDirectPlatformFeeEnabled,
   resolveDirectPlatformFeeRate,
   resolveDirectPlatformFeeRateConfigured,
+  resolveLabPlatformFeeRate,
   resolvePlatformFeeRate,
   resolvePracticeTransferFeeRate,
   resolvePracticeTransferFeeRateForViewer,
   snapshottedPracticeTransferFeeRate,
 } from "../../services/creditRevenuePolicy.service.js";
 
+const FEE_ON = { directPlatformFeeEnabled: true, directPlatformFeeRate: 0.02 };
+const FEE_EVENT = {
+  directPlatformFeeEnabled: false,
+  directPlatformFeeRate: 0.02,
+};
+
 describe("resolvePracticeTransferFeeRate", () => {
-  test("지정 거래 기본(미설정)은 이벤트 off·초기요율 2%(실효 0%)", () => {
+  test("기본(미설정)은 정책 2%·이벤트 면제(실효 0%)", () => {
     expect(
       resolvePracticeTransferFeeRate({
         matchingMode: "direct",
@@ -28,19 +35,13 @@ describe("resolvePracticeTransferFeeRate", () => {
     expect(resolveDirectPlatformFeeRateConfigured({})).toBe(0.02);
   });
 
-  test("저장된 요율은 그대로 유지(자동 승격 없음)·적용 off면 실효 0", () => {
+  test("저장된 요율은 그대로 유지(자동 승격 없음)·이벤트면 실효 0", () => {
     expect(
       resolveDirectPlatformFeeRateConfigured({
         directPlatformFeeEnabled: false,
         directPlatformFeeRate: 0.05,
       }),
     ).toBe(0.05);
-    expect(
-      resolveDirectPlatformFeeRateConfigured({
-        directPlatformFeeEnabled: false,
-        directPlatformFeeRate: 0.01,
-      }),
-    ).toBe(0.01);
     expect(
       resolveDirectPlatformFeeRateConfigured({
         directPlatformFeeEnabled: false,
@@ -53,71 +54,40 @@ describe("resolvePracticeTransferFeeRate", () => {
         directPlatformFeeRate: 0.05,
       }),
     ).toBe(0);
+    expect(resolveDirectPlatformFeeRate(FEE_ON)).toBe(0.02);
   });
 
-  test("지정 거래 명시적 off면 0(무료)", () => {
+  test("협력은 적용 on이면 플랫폼 사용료, 이벤트면 0", () => {
     expect(
       resolvePracticeTransferFeeRate({
         matchingMode: "direct",
-        payoutRates: {
-          platformFeeRate: 0.2,
-          directPlatformFeeEnabled: false,
-          directPlatformFeeRate: 0.03,
-        },
+        payoutRates: FEE_ON,
       }),
-    ).toBe(0);
-    expect(
-      isDirectPlatformFeeEnabled({
-        directPlatformFeeEnabled: false,
-        directPlatformFeeRate: 0.03,
-      }),
-    ).toBe(false);
-  });
-
-  test("지정 거래는 플랫폼 사용료를 매기지 않는다", () => {
+    ).toBe(0.02);
     expect(
       resolvePracticeTransferFeeRate({
         matchingMode: "direct",
-        payoutRates: {
-          platformFeeRate: 0.2,
-          directPlatformFeeEnabled: true,
-          directPlatformFeeRate: 0.05,
-        },
+        payoutRates: FEE_EVENT,
       }),
     ).toBe(0);
   });
 
-  test("하청이면 지정 on이어도 subcontractFeeRate", () => {
+  test("하청은 subcontractFeeRate + 플랫폼 사용료, 이벤트면 하청 요율만", () => {
+    expect(DEFAULT_SUBCONTRACT_FEE_RATE).toBe(0.1);
     expect(
       resolvePracticeTransferFeeRate({
         matchingMode: "direct",
         subcontracted: true,
-        payoutRates: {
-          platformFeeRate: 0.2,
-          subcontractFeeRate: 0.05,
-          directPlatformFeeEnabled: true,
-          directPlatformFeeRate: 0.02,
-        },
+        payoutRates: { ...FEE_ON, subcontractFeeRate: 0.1 },
       }),
-    ).toBe(0.05);
-  });
-
-  test("협력(subcontracted=false)은 지정 on이어도 0(direct off)·또는 direct rate", () => {
+    ).toBeCloseTo(0.12);
     expect(
       resolvePracticeTransferFeeRate({
-        matchingMode: "direct",
-        subcontracted: false,
-        payoutRates: {
-          subcontractFeeRate: 0.05,
-          directPlatformFeeEnabled: false,
-          directPlatformFeeRate: 0.02,
-        },
+        matchingMode: "auto",
+        subcontracted: true,
+        payoutRates: { ...FEE_EVENT, subcontractFeeRate: 0.1 },
       }),
-    ).toBe(0);
-  });
-
-  test("하청 수행은 subcontractFeeRate(기본 10%)", () => {
-    expect(DEFAULT_SUBCONTRACT_FEE_RATE).toBe(0.1);
+    ).toBe(0.1);
     expect(
       resolvePracticeTransferFeeRate({
         matchingMode: "auto",
@@ -125,22 +95,52 @@ describe("resolvePracticeTransferFeeRate", () => {
         payoutRates: {},
       }),
     ).toBe(0.1);
+  });
+
+  test("어벗츠기공소 수행은 적용 on이어도 항상 면제", () => {
+    expect(
+      resolveLabPlatformFeeRate({
+        payoutRates: FEE_ON,
+        performerIsInternal: true,
+      }),
+    ).toBe(0);
+    expect(
+      resolvePracticeTransferFeeRate({
+        matchingMode: "direct",
+        performerIsInternal: true,
+        payoutRates: FEE_ON,
+      }),
+    ).toBe(0);
+  });
+
+  test("학습 이용 동의는 요율에 반영하지 않는다", () => {
+    for (const aiTrainingConsent of [true, false, undefined]) {
+      expect(
+        resolvePracticeTransferFeeRate({
+          matchingMode: "direct",
+          aiTrainingConsent,
+          payoutRates: FEE_ON,
+        }),
+      ).toBe(0.02);
+    }
+  });
+
+  test("레거시 자동매칭(하청 아님)은 0", () => {
     expect(
       resolvePracticeTransferFeeRate({
         matchingMode: "auto",
-        subcontracted: true,
-        payoutRates: { subcontractFeeRate: 0.2, platformFeeRate: 0.1 },
+        payoutRates: FEE_ON,
       }),
-    ).toBe(0.2);
+    ).toBe(0);
   });
 
-  test("하청 후 원청 견적은 전액 수주(0), 하청은 subcontractFeeRate", () => {
+  test("하청 후 원청 견적은 전액 수주(0), 하청은 하청 요율+사용료", () => {
     expect(
       resolvePracticeTransferFeeRateForViewer({
         matchingMode: "auto",
         subcontracted: true,
         viewerIsPrimeContractor: true,
-        payoutRates: { subcontractFeeRate: 0.05 },
+        payoutRates: { ...FEE_ON, subcontractFeeRate: 0.05 },
       }),
     ).toBe(0);
     expect(
@@ -148,107 +148,26 @@ describe("resolvePracticeTransferFeeRate", () => {
         matchingMode: "auto",
         subcontracted: true,
         viewerIsPrimeContractor: false,
-        payoutRates: { subcontractFeeRate: 0.05 },
+        payoutRates: { ...FEE_ON, subcontractFeeRate: 0.05 },
       }),
-    ).toBe(0.05);
+    ).toBeCloseTo(0.07);
   });
 
-  test("지정·협력은 학습 동의와 무관하게 0", () => {
-    expect(
-      resolvePracticeTransferFeeRate({
-        matchingMode: "direct",
-        aiTrainingConsent: false,
-        payoutRates: { directPlatformFeeRate: 0.02 },
-      }),
-    ).toBe(0);
-    expect(
-      resolvePracticeTransferFeeRate({
-        matchingMode: "direct",
-        aiTrainingConsent: true,
-        payoutRates: { directPlatformFeeEnabled: true, directPlatformFeeRate: 0.02 },
-      }),
-    ).toBe(0);
-  });
-
-  test("하청은 학습 동의와 무관하게 하청 요율만", () => {
-    expect(
-      resolvePracticeTransferFeeRate({
-        matchingMode: "direct",
-        subcontracted: true,
-        aiTrainingConsent: false,
-        payoutRates: { subcontractFeeRate: 0.1, directPlatformFeeRate: 0.02 },
-      }),
-    ).toBe(0.1);
-    expect(
-      resolvePracticeTransferFeeRate({
-        matchingMode: "direct",
-        subcontracted: true,
-        aiTrainingConsent: true,
-        payoutRates: { subcontractFeeRate: 0.1, directPlatformFeeRate: 0.02 },
-      }),
-    ).toBe(0.1);
-  });
-
-  test("어벗츠기공본부는 항상 면제. 하청 본문이 아니면 0", () => {
-    expect(
-      resolvePracticeTransferFeeRate({
-        matchingMode: "direct",
-        performerIsInternal: true,
-        aiTrainingConsent: false,
-        payoutRates: { directPlatformFeeRate: 0.02 },
-      }),
-    ).toBe(0);
-  });
-
-  test("스냅샷 없는 기존 하청은 하청 요율만", () => {
-    expect(
-      resolvePracticeTransferFeeRate({
-        matchingMode: "auto",
-        subcontracted: true,
-        payoutRates: { subcontractFeeRate: 0.1, directPlatformFeeRate: 0.02 },
-      }),
-    ).toBe(0.1);
-  });
-
-  test("작업시작으로 박힌 요율은 견적 뷰어가 다시 계산하지 않는다", () => {
-    const billing = { billedAt: new Date(), feeRateApplied: 0.02 };
-    expect(snapshottedPracticeTransferFeeRate(billing)).toBe(0.02);
+  test("작업시작으로 박힌 요율은 스위치를 바꿔도 다시 계산하지 않는다", () => {
+    const billing = { billedAt: new Date(), feeRateApplied: 0 };
+    expect(snapshottedPracticeTransferFeeRate(billing)).toBe(0);
     expect(
       resolvePracticeTransferFeeRateForViewer({
         matchingMode: "direct",
         subcontracted: false,
         billing,
-        payoutRates: { directPlatformFeeRate: 0.02 },
+        payoutRates: FEE_ON,
       }),
-    ).toBe(0.02);
+    ).toBe(0);
   });
 
   test("platformFeeRate가 없으면 nonPartnerFeeRate로 fallback", () => {
     expect(resolvePlatformFeeRate({ nonPartnerFeeRate: 0.3 })).toBe(0.3);
     expect(resolvePlatformFeeRate({})).toBe(DEFAULT_PLATFORM_FEE_RATE);
-  });
-
-  test("설정 요율은 적용 off여도 유지되고 실효는 0", () => {
-    expect(
-      resolveDirectPlatformFeeRateConfigured({
-        directPlatformFeeEnabled: false,
-        directPlatformFeeRate: 0.08,
-      }),
-    ).toBe(0.08);
-    expect(resolveDirectPlatformFeeRateConfigured({})).toBe(
-      DEFAULT_DIRECT_PLATFORM_FEE_RATE,
-    );
-    expect(
-      resolveDirectPlatformFeeRate({
-        directPlatformFeeEnabled: false,
-        directPlatformFeeRate: 0.08,
-      }),
-    ).toBe(0);
-    expect(
-      resolveDirectPlatformFeeRate({
-        directPlatformFeeEnabled: true,
-        directPlatformFeeRate: 0.08,
-      }),
-    ).toBe(0.08);
   });
 });

@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/business/settings/PayoutAccountCard.tsx
 // - web/backend/jobs/monthlySettlementBatchWorker.js
 // change-log:
+// - 2026-09-27: 플랫폼 사용료 2% 복원. 이벤트 기간 면제(0%) 평문·resolveLabFeeDisplay.
 // - 2026-09-26: 수수료 평문 — 협력은 수수료 없이 전액, 하청은 영업 수수료를 제한 적립.
 // - 2026-09-26: 플랫폼 사용료·하청 영업 수수료 평문 안내를 정책 문장과 맞춤.
 // - 2026-09-24: 지정 수수료 기본 표시 2%. 이벤트 문구는 「2% → 0%」(취소선은 LabDirectPlatformFeeNotice).
@@ -131,14 +132,44 @@ export function resolveLabSubcontractSalesFeePct(ratePct?: number): number {
   return Math.max(0, Math.round(Number(ratePct)));
 }
 
-/** 하청 영업 수수료 안내(평문). UI는 LabDirectPlatformFeeNotice. */
+/** 관리자 설정(`payoutRates`)에서 온 기공소 수수료 표시값. */
+export type LabFeeRatesLike = {
+  subcontractFeeRate?: number;
+  directPlatformFeeEnabled?: boolean;
+  directPlatformFeeRate?: number;
+};
+
+/** 플랫폼 사용료 정책%·적용 여부(false=이벤트 면제)·하청 영업 수수료%. */
+export function resolveLabFeeDisplay(feeRates?: LabFeeRatesLike | null): {
+  platformPct: number;
+  platformEnabled: boolean;
+  subcontractPct: number;
+} {
+  const rate = feeRates?.directPlatformFeeRate;
+  const sub = feeRates?.subcontractFeeRate;
+  return {
+    platformPct: resolveLabDirectPlatformFeePct(
+      rate != null && Number.isFinite(Number(rate)) ? Number(rate) * 100 : undefined,
+    ),
+    platformEnabled: feeRates?.directPlatformFeeEnabled === true,
+    subcontractPct: resolveLabSubcontractSalesFeePct(
+      sub != null && Number.isFinite(Number(sub)) ? Number(sub) * 100 : undefined,
+    ),
+  };
+}
+
+/** 플랫폼 사용료·하청 영업 수수료 안내(평문). UI는 LabDirectPlatformFeeNotice. */
 export function formatLabDirectPlatformFeeNotice(opts?: {
-  /** @deprecated 플랫폼 사용료는 폐지 */
+  /** false·없음 = 이벤트 면제 */
+  enabled?: boolean;
   ratePct?: number;
   subcontractRatePct?: number;
 }): string {
+  const pct = resolveLabDirectPlatformFeePct(opts?.ratePct);
   const salesPct = resolveLabSubcontractSalesFeePct(opts?.subcontractRatePct);
-  return `협력건은 수수료 없이 기공비 전액을 크레딧으로 적립합니다. 하청건은 ${salesPct}% 영업 수수료를 제한 나머지를 적립합니다.`;
+  const rate =
+    opts?.enabled === true ? `${pct}%` : `${pct}%(이벤트 기간 면제, 0%)`;
+  return `기공소의 플랫폼 사용료는 매출액의 ${rate}입니다. 협력건과 하청건 모두 플랫폼 사용료를 차감하고 크레딧으로 적립합니다. 하청건은 ${salesPct}% 영업 수수료가 추가로 차감됩니다. 어벗츠기공소 수행건은 항상 면제입니다.`;
 }
 
 /** @deprecated UI는 LabDirectPlatformFeeNotice 사용. */

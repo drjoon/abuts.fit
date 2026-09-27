@@ -373,10 +373,10 @@ const businessAnchorSchema = new mongoose.Schema(
       salesmanRate: { type: Number, default: 0.3, min: 0, max: 1 },
       adminRate: { type: Number, default: 0.4, min: 0, max: 1 },
       // 기공의뢰 플랫폼 수수료율.
-      // - subcontractFeeRate: 어벗츠 원청을 타 기공소가 하청 수행할 때 (기본 10%)
+      // - subcontractFeeRate: 어벗츠 원청을 타 기공소가 하청 수행할 때 (기본 10%, 플랫폼 사용료 별도 가산)
       // - platformFeeRate: 레거시 매칭 성공 수수료 (경로 B 자체 수행은 0)
-      // - directPlatformFeeEnabled: 지정(direct/협력) 수수료 적용 on/off(기본 off=이벤트 0%)
-      // - directPlatformFeeRate: 정책 요율 (기본 2%, 추후 공지 후 on)
+      // - directPlatformFeeEnabled: 기공소 플랫폼 사용료 적용 on/off(기본 off=이벤트 면제 0%)
+      // - directPlatformFeeRate: 플랫폼 사용료 정책 요율 (기본 2%, 협력·하청 공통, 어벗츠기공소 수행은 항상 면제)
       platformFeeRate: { type: Number, default: 0.1, min: 0, max: 1 },
       subcontractFeeRate: { type: Number, default: 0.1, min: 0, max: 1 },
       directPlatformFeeEnabled: { type: Boolean, default: false },

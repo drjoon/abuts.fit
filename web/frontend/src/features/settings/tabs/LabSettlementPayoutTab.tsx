@@ -223,9 +223,6 @@ export const LabSettlementPayoutTab = () => {
     forceOnMount: true,
   });
   const { windowInfo: labFeeWindow } = useLabTradingPartnerWindow();
-  const subcontractFeePct = Math.round(
-    Number(labFeeWindow?.feeRates?.subcontractFeeRate ?? 0.1) * 100,
-  );
   const [payoutReady, setPayoutReady] = useState(true);
 
   const [view, setView] = useState<ViewMode>("all");
@@ -597,12 +594,12 @@ export const LabSettlementPayoutTab = () => {
                     </p>
                   </div>
                 </SettlementPolicySection>
-                <SettlementPolicySection title="수수료">
+                <SettlementPolicySection title="플랫폼 사용료 · 하청 수수료">
                   <div className="flex gap-2.5">
                     <Percent className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
                     <p>
                       <LabDirectPlatformFeeNotice
-                        subcontractRatePct={subcontractFeePct}
+                        feeRates={labFeeWindow?.feeRates}
                       />
                     </p>
                   </div>
