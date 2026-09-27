@@ -3345,7 +3345,10 @@ function LabProsthesisAiDesignDialog({
                 if (restore) {
                   const saved = sessionDocRef.current;
                   const axes = saved?.insertionAxes ?? [];
-                  if (axes.length > 0) viewerRef.current?.restoreInsertionAxes(axes);
+                  if (axes.length > 0) {
+                    viewerRef.current?.restoreInsertionAxes(axes);
+                    setInsertionKeys(axes.map((axis) => axis.key));
+                  }
                   if (saved?.camera) viewerRef.current?.restoreCamera(saved.camera);
                   detectMissingAxes(axes.map((axis) => axis.key));
                 }

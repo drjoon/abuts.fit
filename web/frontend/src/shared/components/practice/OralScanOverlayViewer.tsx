@@ -32,6 +32,7 @@
 // - 2026-09-27: 마진 점·펜·새로 찍기는 스캔 면에 붙인다. 선택 치아 마진 점이 언더컷 면이면 빨갛게 칠하고 알린다.
 // - 2026-09-27: 스캔바디·심플어벗 실제 형상을 ICP로 맞춘다(fitScanbodyMesh). 후보가 여럿이면 가장 잘 맞는 것.
 // - 2026-09-27: 삽입축 자동 추천. 마진 안 지대치 벽이 가장 덜 가려지는 방향을 잡고 화면을 그 축으로 돌린다. 화살표를 끄는 동안 언더컷을 바로 칠한다.
+// - 2026-09-27: 자동 추천은 기존 축이 아니라 악 교합 방향·추정 치아 중심에서 다시 찾는다. 잘못 잡은 축에 끌려가지 않는다.
 import {
   forwardRef,
   useEffect,
@@ -1491,7 +1492,10 @@ function alignPlacementsToPoint(
   for (const row of matched) centroid.add(row.center);
   centroid.multiplyScalar(1 / matched.length);
   const delta = point.clone().sub(centroid);
-  for (const row of matched) row.center.add(delta);
+  for (const row of matched) {
+    if (!row.estimated) row.estimated = row.center.clone();
+    row.center.add(delta);
+  }
   for (const tooth of wanted) {
     if (matched.some((row) => row.toothNumber === tooth)) continue;
     const parsed = parseFdi(tooth);
@@ -1853,6 +1857,8 @@ type ToothPlacement = {
   center: THREE.Vector3;
   radius: number;
   arch: "upper" | "lower";
+  /** 삽입축 접점으로 옮기기 전 추정 중심. 잘못 잡은 축이 자동 추천을 끌고 가지 않게 한다. */
+  estimated?: THREE.Vector3;
 };
 
 type ParsedScanCache = {
@@ -4423,6 +4429,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     placementsRef.current = placementsRef.current.map((place) => ({
       ...place,
       center: turn(place.center.clone()),
+      estimated: place.estimated ? turn(place.estimated.clone()) : undefined,
     }));
     for (const axis of insertionAxesRef.current) {
       turn(axis.dir);
@@ -4791,8 +4798,8 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     const existing = insertionAxesRef.current.find((row) => row.key === key);
     const frame = frameRef.current;
     const start =
-      existing?.dir.clone() ??
       insertionForRole(arch, lookRef.current.prepArch, frame) ??
+      existing?.dir.clone() ??
       viewCenterHit(camera, meshes).dir;
     if (start.lengthSq() < 1e-8) return null;
     start.normalize();
@@ -4821,8 +4828,8 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
             unitToMm: unit,
           })
         : [];
-      const top =
-        rayToothContact(place.center, start, place.radius, meshes) ?? place.center.clone();
+      const seed = margin ? place.center : (place.estimated ?? place.center);
+      const top = rayToothContact(seed, start, place.radius, meshes) ?? seed.clone();
       const ring = points.map((point) => {
         const d = point.clone().sub(top);
         return { x: d.dot(su), y: d.dot(sv), t: d.dot(start) };
