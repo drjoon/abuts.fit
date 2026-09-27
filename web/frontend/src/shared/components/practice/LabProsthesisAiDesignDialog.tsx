@@ -134,8 +134,10 @@ import {
 import {
   OralScanOverlayViewer,
   type ConnectorSectionShot,
+  type OralScanConnectorChip,
   type OralScanOverlayHandle,
   type OralScanOverlaySource,
+  type OralScanToothBadge,
   type OralScanWorldTurn,
   type StoneModelPartSummary,
 } from "@/shared/components/practice/OralScanOverlayViewer";
@@ -1321,6 +1323,47 @@ function LabProsthesisAiDesignDialog({
       ?.from ??
     spanConnectors[0]?.from ??
     null;
+  const viewerBadges: OralScanToothBadge[] = [];
+  const badgedSpans = new Set<string>();
+  for (const tooth of plan.teeth) {
+    const span = insertionSpanForTooth(plan.teeth, tooth.toothNumber);
+    if (span.length > 1 && spanAssembled(span, edits)) {
+      const ordered = sortByArch(planSpanMembers(plan.teeth, span));
+      const key = ordered.join(",");
+      if (badgedSpans.has(key)) continue;
+      badgedSpans.add(key);
+      viewerBadges.push({
+        toothNumber: ordered[Math.floor((ordered.length - 1) / 2)] ?? tooth.toothNumber,
+        label: `${ordered[0]}-${ordered[ordered.length - 1]}`,
+        active: activeNumber != null && ordered.includes(activeNumber),
+        span: ordered,
+      });
+      continue;
+    }
+    viewerBadges.push({
+      toothNumber: tooth.toothNumber,
+      label: labToothBadgeLabel(tooth),
+      active: activeTooth?.toothNumber === tooth.toothNumber,
+    });
+  }
+  const viewerConnectorChips: OralScanConnectorChip[] =
+    stage === "margin" || stage === "design"
+      ? bridges.flatMap((link) => {
+          const edit = edits[link.from];
+          if (!edit?.connector.linked || edit.connector.assembled) return [];
+          if (generated[link.from] !== true || generated[link.to] !== true) return [];
+          return [
+            {
+              ...link,
+              weak: connectorIsWeak(edit, [link.from, link.to]),
+              active:
+                modifyTool === "connector" &&
+                stage === "design" &&
+                activeConnectorFrom === link.from,
+            },
+          ];
+        })
+      : [];
   const exportRestorations = useMemo(
     () => designExportRestorations(plan.teeth, generated, edits),
     [edits, generated, plan.teeth],
@@ -3310,15 +3353,22 @@ function LabProsthesisAiDesignDialog({
               ghostOpacity={ghostOn ? GHOST_OPACITY_ON : 1}
               prepArch={prepArch}
               focusToothNumbers={focusToothNumbers}
-              toothBadges={plan.teeth.map((tooth) => ({
-                toothNumber: tooth.toothNumber,
-                label: labToothBadgeLabel(tooth),
-                active: activeTooth?.toothNumber === tooth.toothNumber,
-              }))}
+              toothBadges={viewerBadges}
               onSelectTooth={(toothNumber) => {
                 showTooth(toothNumber);
                 setLibraryPickerFor(null);
                 setToothCardFor(toothNumber);
+              }}
+              connectorChips={viewerConnectorChips}
+              onSelectConnector={(from) => {
+                showTooth(from);
+                setLibraryPickerFor(null);
+                setConnectorFrom(from);
+                setModifyTool("connector");
+                setEditBrush("none");
+                setHoleNote("");
+                setScanbodyPickTooth(null);
+                onStage("design");
               }}
               scanbodyPickTooth={scanbodyPickTooth}
               onScanbodyPicks={setScanbodyPicks}

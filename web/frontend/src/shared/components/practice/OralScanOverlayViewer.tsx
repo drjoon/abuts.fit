@@ -126,6 +126,9 @@ const UNDERCUT_DRAG_MS = 60;
 
 /** 석고 다이 색. */
 const DIE_RGB = 0xe6d7ad;
+/** CSS2D 버튼은 React 밖이라 lucide `Link2`를 문자열로 넣는다. */
+const LINK_ICON_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/></svg>';
 const STONE_PART_RGB: Record<StoneModelPart["kind"], number> = {
   arch: 0xd8c9a3,
   die: DIE_RGB,
@@ -295,6 +298,16 @@ export type OralScanToothBadge = {
   /** 배지 글자. 없으면 치아 번호. 임플란트는 `16i`. */
   label?: string;
   active?: boolean;
+  /** 조립된 브리지. 배지 하나를 이 치아들 가운데에 둔다. */
+  span?: readonly string[];
+};
+
+/** 조립 전 브리지의 치아 사이 커넥터. 누르면 커넥터 편집을 연다. */
+export type OralScanConnectorChip = {
+  from: string;
+  to: string;
+  weak?: boolean;
+  active?: boolean;
 };
 
 export type OralScanWorldTurn = {
@@ -325,6 +338,8 @@ type Props = {
   /** 교합면 3D 좌표에 붙는 치아번호. 모델을 돌리면 같이 움직인다. */
   toothBadges?: readonly OralScanToothBadge[];
   onSelectTooth?: (toothNumber: string) => void;
+  connectorChips?: readonly OralScanConnectorChip[];
+  onSelectConnector?: (from: string) => void;
   /** 대합까지 거리를 색으로 칠한다. */
   contactMap?: boolean;
   /** 삽입 방향 언더컷을 붉게 칠한다. */
@@ -2488,6 +2503,8 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       focusToothNumbers = [],
       toothBadges = [],
       onSelectTooth,
+      connectorChips = [],
+      onSelectConnector,
       contactMap = false,
       undercutMap = false,
       occlusalGapMm = 0.1,
@@ -2556,6 +2573,8 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   const focusTeethRef = useRef(focusToothNumbers);
   const badgesRef = useRef(toothBadges);
   const onSelectToothRef = useRef(onSelectTooth);
+  const connectorChipsRef = useRef(connectorChips);
+  const onSelectConnectorRef = useRef(onSelectConnector);
   const placementsRef = useRef<ToothPlacement[]>([]);
   const labelRendererRef = useRef<CSS2DRenderer | null>(null);
   const badgeLayerRef = useRef<THREE.Group | null>(null);
@@ -2749,6 +2768,8 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   focusTeethRef.current = focusToothNumbers;
   badgesRef.current = toothBadges;
   onSelectToothRef.current = onSelectTooth;
+  connectorChipsRef.current = connectorChips;
+  onSelectConnectorRef.current = onSelectConnector;
   onScanColorChangeRef.current = onScanColorChange;
   onInsertionAxisChangeRef.current = onInsertionAxisChange;
   onInsertionAxisAimedRef.current = onInsertionAxisAimed;
@@ -4568,11 +4589,23 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       }
     }
     if (!frame) return;
+    const placeOf = (tooth: string) =>
+      placementsRef.current.find((row) => row.toothNumber === fdiDigits(tooth));
     for (const badge of badgesRef.current) {
       const digits = fdiDigits(badge.toothNumber);
       if (!digits || used.has(digits)) continue;
-      const place = placementsRef.current.find((row) => row.toothNumber === digits);
+      const place = placeOf(digits);
       if (!place) continue;
+      const spanPlaces = (badge.span ?? []).flatMap((tooth) => {
+        const row = placeOf(tooth);
+        return row ? [row] : [];
+      });
+      const center =
+        spanPlaces.length > 1
+          ? spanPlaces
+              .reduce((sum, row) => sum.add(row.center), new THREE.Vector3())
+              .multiplyScalar(1 / spanPlaces.length)
+          : place.center;
       const pose = occlusalCamera(frame, place.arch);
       const lift = Math.max(place.radius * 0.2, fitRadiusRef.current * 0.008);
       const button = document.createElement("button");
@@ -4590,15 +4623,60 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         onSelectToothRef.current?.(badge.toothNumber);
       });
       const label = new CSS2DObject(button);
-      label.position.copy(place.center).addScaledVector(pose.dir, lift);
+      label.position.copy(center).addScaledVector(pose.dir, lift);
+      label.center.set(0.5, 0.5);
+      layer.add(label);
+    }
+    if (showInsertionRef.current) return;
+    for (const chip of connectorChipsRef.current) {
+      const from = placeOf(chip.from);
+      const to = placeOf(chip.to);
+      if (!from || !to) continue;
+      const pose = occlusalCamera(frame, from.arch);
+      const lift = Math.max(
+        Math.max(from.radius, to.radius) * 0.2,
+        fitRadiusRef.current * 0.008,
+      );
+      const button = document.createElement("button");
+      button.type = "button";
+      button.title = `${chip.from}-${chip.to} 커넥터`;
+      button.setAttribute("aria-label", `${chip.from}-${chip.to} 커넥터 편집`);
+      button.className = cn(
+        "pointer-events-auto flex h-5 w-5 items-center justify-center rounded-full border shadow-sm",
+        chip.active
+          ? "border-primary bg-primary text-primary-foreground"
+          : chip.weak
+            ? "border-destructive bg-background/95 text-destructive"
+            : "border-border bg-background/95 text-muted-foreground",
+      );
+      button.innerHTML = LINK_ICON_SVG;
+      button.addEventListener("pointerdown", (event) => {
+        event.stopPropagation();
+      });
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onSelectConnectorRef.current?.(chip.from);
+      });
+      const label = new CSS2DObject(button);
+      label.position
+        .copy(from.center)
+        .lerp(to.center, 0.5)
+        .addScaledVector(pose.dir, lift);
       label.center.set(0.5, 0.5);
       layer.add(label);
     }
   };
 
-  const badgeKey = toothBadges
-    .map((badge) => `${badge.toothNumber}:${badge.label ?? ""}:${badge.active ? 1 : 0}`)
-    .join("|");
+  const badgeKey = [
+    ...toothBadges.map(
+      (badge) =>
+        `${badge.toothNumber}:${badge.label ?? ""}:${badge.active ? 1 : 0}:${(badge.span ?? []).join(",")}`,
+    ),
+    ...connectorChips.map(
+      (chip) => `c${chip.from}-${chip.to}:${chip.weak ? 1 : 0}:${chip.active ? 1 : 0}`,
+    ),
+  ].join("|");
 
   useEffect(() => {
     syncBadgesRef.current();
