@@ -3,6 +3,7 @@
 // - web/backend/tests/unit/practiceTransferAutoMatchPriority.test.js
 //
 // 자동매칭 우선창·필터 순수 헬퍼 (Mongo 모델 import 없음).
+// - 2026-09-27: 하청·자동매칭 공개 풀은 수행 기공소가 없다. 첫 작업시작(클레임)은 작업 권한 대상이 아니다.
 // - 2026-09-27: 하청 수행 기공소는 원청과 같이 치과 실명·담당자를 본다. 미배정 풀은 비공개.
 // - 2026-09-24: 할증 labFeeMultiplier — 협력=수행 기공소, 하청·어벗츠 자체=원청(어벗츠).
 // - 2026-09-24: 수가표 — 협력=수행 기공소, 하청·어벗츠 자체=원청. 정산만 어벗츠 경유.
@@ -241,6 +242,14 @@ export const isSubcontractPoolOpen = (transfer) => {
   if (getAssigneeLabAnchorId(transfer)) return false;
   return Boolean(transfer?.autoMatch?.subcontractPoolOpen);
 };
+
+/**
+ * 아직 수행 기공소가 없는 공개 풀(자동매칭·하청).
+ * 적격 기공소의 첫 작업시작이 클레임이다.
+ * `canLabOperatePracticeTransferWork`는 배정 이후 업로드·완료·취소용이라 이 단계에 쓰면 안 된다.
+ */
+export const isPracticeTransferOpenClaimPool = (transfer, now = Date.now()) =>
+  isSubcontractPoolOpen(transfer) || isAutoMatchOpenPool(transfer, now);
 
 /** 하청 풀·하청 수행 청구는 원청(어벗츠) 수가표를 쓴다. */
 export const isSubcontractFeeScheduleContext = (transfer) =>

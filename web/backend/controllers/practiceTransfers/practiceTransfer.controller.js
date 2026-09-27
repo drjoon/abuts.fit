@@ -58,6 +58,7 @@ import {
   isAutoMatchMode,
   isAutoMatchOpenPool,
   isSubcontractPoolOpen,
+  isPracticeTransferOpenClaimPool,
   isAutoMatchPriorityActive,
   isAutoMatchPriorityLabAnchorId,
   isCooperationAssignee,
@@ -352,6 +353,7 @@ import { completePracticeTransferWork } from "../../services/practiceTransferCom
 // - 2026-08-21: confirm-production·lab design-confirm — 게이트 저장·응답 후 생산 시작(CAM) 비동기.
 // - 2026-08-21: 치과 어벗 디자인 컨펌 시 기공소 채팅 안내(design_confirmed).
 // - 2026-08-21: mark-release — past-ready 1회·rollback∥clear·잔액 sync는 응답 후.
+// - 2026-09-27: mark-accepted — 하청·자동매칭 공개 풀의 첫 작업시작은 수행 기공소 게이트를 타지 않는다.
 // - 2026-09-27: 협력 작업시작·취소·거부 채팅 — 어벗츠 협력 기공소 「수행 기공소」.
 // - 2026-09-12: 작업시작(work_accept) 채팅 시스템 메시지 복구. 비어벗은 도착일(포함) 이후 mark-release 거부.
 // - 2026-08-21: 채팅 시스템 메시지는 치과 대응이 필요할 때만(취소·거부·생산진행/디자인컨펌 요청). 수락·업로드는 남기지 않음. → 2026-09-12 작업시작 복구.
@@ -8474,11 +8476,14 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
       });
     }
 
-    const acceptDenied = labWorkOperationDeniedMessage(
-      doc,
-      labAnchorId,
-      "작업을 시작한 기공소만 작업을 시작할 수 있습니다.",
-    );
+    // 공개 풀은 수행 기공소가 아직 없다. 적격 기공소의 첫 작업시작이 클레임이다.
+    const acceptDenied = isPracticeTransferOpenClaimPool(doc, now.getTime())
+      ? null
+      : labWorkOperationDeniedMessage(
+          doc,
+          labAnchorId,
+          "작업을 시작한 기공소만 작업을 시작할 수 있습니다.",
+        );
     if (acceptDenied) {
       return res.status(403).json({ success: false, message: acceptDenied });
     }

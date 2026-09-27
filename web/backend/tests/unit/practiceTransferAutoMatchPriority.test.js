@@ -17,6 +17,8 @@ import {
   isSubcontractFeeScheduleContext,
   isSubcontractIdentityHiddenFromViewer,
   isSubcontractPoolOpen,
+  isPracticeTransferOpenClaimPool,
+  canLabOperatePracticeTransferWork,
   viewerSeesSubcontractPracticeIdentity,
   resolveFeeScheduleLabAnchorId,
   resolvePerformingLabAnchorId,
@@ -189,6 +191,19 @@ describe("practiceTransferAutoMatch priority (core)", () => {
     expect(isAutoMatchClaimActive(claimed, now)).toBe(true);
     expect(isAutoMatchOpenPool(claimed, now)).toBe(false);
     expect(isAutoMatchPriorityActive(claimed, now)).toBe(false);
+  });
+
+  test("하청 공개 풀은 수행 기공소가 없고, 타 기공소 작업시작 클레임 대상이다", () => {
+    const poolOpen = {
+      matchingMode: "direct",
+      status: "active",
+      targetLabAnchorId: OID_A,
+      targetLabName: "어벗츠기공소",
+      autoMatch: { subcontractPoolOpen: true },
+    };
+    expect(isPracticeTransferOpenClaimPool(poolOpen, now)).toBe(true);
+    expect(canLabOperatePracticeTransferWork(poolOpen, OID_A)).toBe(true);
+    expect(canLabOperatePracticeTransferWork(poolOpen, OID_B)).toBe(false);
   });
 
   test("하청 풀·수행 중에는 원청 수가표를 쓴다", () => {
