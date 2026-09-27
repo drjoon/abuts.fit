@@ -53,12 +53,12 @@ function PoolCaseSlide({
   ].filter(Boolean);
 
   return (
-    <div className="min-w-0 space-y-3">
+    <div className="space-y-3">
       {facts.length > 0 ? (
         <p className="text-sm font-medium text-slate-900">{facts.join(" · ")}</p>
       ) : null}
       {toothWorks.length > 0 ? (
-        <div className="[&_[role=note]]:justify-start [&_[role=note]]:border-transparent [&_[role=note]]:bg-transparent [&_[role=note]]:px-0">
+        <div className="w-0 min-w-full">
           <PracticeToothWorkChartReadOnly
             toothWorks={toothWorks}
             feeQuote={transfer.feeQuote || null}
@@ -213,7 +213,7 @@ export function LabReceiveSubcontractPoolAlert({
           ) : null
         }
         closeOnBackdrop
-        panelClassName="max-w-xl"
+        panelClassName="w-max min-w-[min(28rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)]"
         onCancel={() => {
           if (!busy) setOpen(false);
         }}

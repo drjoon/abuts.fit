@@ -24,6 +24,7 @@
 // - 2026-09-15: 후속 앵커 1행 스팬 — 체크박스는 원 row 치아만(빌려쓴 연결치 제외).
 // - 2026-09-15: 부분 후속(남은 임시치아) — 변경 기공비 라벨.
 // - 2026-09-15: 최종 기공비 — toothWorksForFinalProsthesisFeeQuote(followUp CA 스킵 우회).
+// - 2026-09-27: compact 보철 카드·견적을 가로 가운데. 넘치면 공통 가로 스크롤.
 // - 2026-09-02: byTooth가 연결치에 첫 행을 덮어 13-12-11 브리지에서 11 연결·스펙이 끊기던 버그 수정.
 import { useMemo, useState, useRef, useEffect, type PointerEvent as ReactPointerEvent } from "react";
 import { ArrowRight } from "lucide-react";
@@ -1035,6 +1036,7 @@ export const PracticeToothWorkChartReadOnly = ({
             </div>
           ) : null}
           <PracticeToothChartHorizontalScroll
+            align="center"
             className="min-w-0 w-full max-w-full flex-1"
             ariaLabel={`${archLabel || spanKey} 브리지 — 가로로 스크롤`}
           >
@@ -1358,6 +1360,7 @@ export const PracticeToothWorkChartReadOnly = ({
             rowTrack
           ) : (
             <PracticeToothChartHorizontalScroll
+              align="center"
               ariaLabel={`${decade.label} 치식 가로 스크롤`}
             >
               {rowTrack}
@@ -1397,7 +1400,9 @@ export const PracticeToothWorkChartReadOnly = ({
       feeStageFocusIndex={feeStageFocusIndex}
       showFinalFee={showFinalFee}
       className={
-        embedded ? "border-0 bg-transparent px-0 py-1 shadow-none" : undefined
+        embedded
+          ? "w-full justify-center border-0 bg-transparent px-0 py-1 shadow-none"
+          : "w-full justify-center"
       }
     />
   );
@@ -1415,7 +1420,9 @@ export const PracticeToothWorkChartReadOnly = ({
         feeStageFocusIndex={feeStageFocusIndex}
         showFinalFee={showFinalFee}
         className={
-          embedded ? "border-0 bg-transparent px-0 py-1 shadow-none" : undefined
+          embedded
+          ? "w-full justify-center border-0 bg-transparent px-0 py-1 shadow-none"
+          : "w-full justify-center"
         }
       />
       {renderMobileArchSection("하악", lowerSpanEntries)}
@@ -1442,7 +1449,11 @@ export const PracticeToothWorkChartReadOnly = ({
         feeStages={feeStages}
         feeStageFocusIndex={feeStageFocusIndex}
         showFinalFee={showFinalFee}
-        className={embedded ? "border-0 bg-transparent px-0 py-1 shadow-none" : undefined}
+        className={
+          embedded
+            ? "w-full justify-center border-0 bg-transparent px-0 py-1 shadow-none"
+            : "w-full justify-center"
+        }
       />
       {lowerEnlargeRow}
     </div>

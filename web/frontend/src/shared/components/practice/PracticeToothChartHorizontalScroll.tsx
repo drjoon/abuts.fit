@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/components/practice/PracticeToothWorkChartReadOnly.tsx
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/src/index.css (custom-scrollbar-x)
+// - 2026-09-27: align=center — 칸이 남으면 트랙을 가운데. 넘치면 그대로 가로 스크롤.
 // - 2026-09-02: w-max inline 트랙 + pr-4 + scroll-padding — 끝 치아까지 스크롤.
 import {
   useCallback,
@@ -16,12 +17,15 @@ type PracticeToothChartHorizontalScrollProps = {
   children: ReactNode;
   className?: string;
   ariaLabel?: string;
+  /** start: 왼쪽 정렬. center: 컨테이너보다 좁으면 가운데, 넘치면 가로 스크롤 */
+  align?: "start" | "center";
 };
 
 export function PracticeToothChartHorizontalScroll({
   children,
   className,
   ariaLabel,
+  align = "start",
 }: PracticeToothChartHorizontalScrollProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -56,7 +60,14 @@ export function PracticeToothChartHorizontalScroll({
         aria-label={ariaLabel}
         onScroll={updateScrollState}
       >
-        <div className="flex w-max max-w-none flex-nowrap pr-4">{children}</div>
+        <div
+          className={cn(
+            "flex w-max max-w-none flex-nowrap",
+            align === "center" ? "mx-auto px-4" : "pr-4",
+          )}
+        >
+          {children}
+        </div>
       </div>
       {canScrollLeft ? (
         <div
