@@ -17,7 +17,7 @@ export type ColorMarginLine = {
 
 type Rgb = { r: number; g: number; b: number };
 
-type Hit = {
+export type Hit = {
   rad: number;
   y: number;
   color: Rgb;
@@ -26,7 +26,7 @@ type Hit = {
   nz: number;
 };
 
-type Grid = {
+export type Grid = {
   cell: number;
   n: number;
   min: number;
@@ -64,7 +64,7 @@ function smoothCircular(values: number[], passes: number) {
   return current;
 }
 
-function buildGrid(triangles: Float32Array, toothRadius: number): Grid | null {
+export function buildGrid(triangles: Float32Array, toothRadius: number): Grid | null {
   const stride = PROJECTED_MARGIN_TRIANGLE_STRIDE;
   const triCount = Math.floor(triangles.length / stride);
   if (triCount < 12) return null;
@@ -135,7 +135,7 @@ function buildGrid(triangles: Float32Array, toothRadius: number): Grid | null {
 }
 
 /** 삽입축 광선이 스캔 면에 닿는 점. `sign` 1은 음의 축 방향(위에서 아래), -1은 반대다. */
-function projectRay(
+export function projectRay(
   triangles: Float32Array,
   grid: Grid,
   rx: number,

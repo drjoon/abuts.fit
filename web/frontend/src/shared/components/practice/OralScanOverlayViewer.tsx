@@ -87,6 +87,7 @@ import {
   detectProjectedColorMargin,
   PROJECTED_MARGIN_TRIANGLE_STRIDE,
 } from "@/shared/practice/detectColorMargin";
+import { detectCavityMargin } from "@/shared/practice/detectCavityMargin";
 import {
   buildMarginDie,
   buildStoneModel,
@@ -115,6 +116,15 @@ const STONE_PART_RGB: Record<StoneModelPart["kind"], number> = {
   post: 0x9ca3af,
 };
 
+export type CavityMarginHit = {
+  tooth: string;
+  radii: number[];
+  depths: number[];
+  taperDeg: number[];
+  depthMm: number;
+  openSides: number;
+};
+
 export type OralScanOverlayHandle = {
   setView: (preset: OralScanViewPreset) => void;
   /** 의뢰 치아 교합면을 화면 중앙에 다시 맞춘다. */
@@ -141,6 +151,11 @@ export type OralScanOverlayHandle = {
     toothNumbers: readonly string[],
     seedPoint?: { x: number; y: number; z: number } | null,
   ) => Array<{ tooth: string; radii: number[]; depths: number[] }>;
+  /**
+   * 인레이·온레이 와동 테두리를 마진으로 잡는다. 삽입축에서 교합면을 내려다본다.
+   * 와동이 없어 보이면 그 치아는 빠진다.
+   */
+  detectCavityMargins: (toothNumbers: readonly string[]) => CavityMarginHit[];
   /** 모델을 분석하여 교합면 뷰로 화면을 정렬한다. */
   alignModelToOcclusalView: () => boolean;
   /** 모달을 열었을 때의 교합면 카메라로 되돌린다. */
@@ -4390,6 +4405,33 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     frameCamera(pose.dir, pose.up, true, true);
   };
 
+  /** 치아 주변 스캔 삼각형을 그 치아 삽입축 프레임으로. 치아·스캔이 없으면 null. */
+  const toothMarginFrame = (raw: string) => {
+    const tooth = fdiDigits(raw);
+    if (!tooth) return null;
+    const place = placementsRef.current.find((row) => row.toothNumber === tooth);
+    if (!place || !(place.radius > 0)) return null;
+    const right = frameRef.current?.right ?? new THREE.Vector3(1, 0, 0);
+    const fallback = frameRef.current?.up ?? new THREE.Vector3(0, 0, 1);
+    const axis = insertionAxesRef.current.find((row) => row.toothNumbers.includes(tooth));
+    const normal = axis?.dir ?? fallback;
+    const loaded = loadedRef.current;
+    let entries = loaded.filter((entry) => entry.role === place.arch);
+    if (entries.length === 0) {
+      entries = loaded.filter((entry) => entry.role === "upper" || entry.role === "lower");
+    }
+    if (entries.length === 0) entries = loaded;
+    if (entries.length === 0) return null;
+    const triangles = collectProjectedMarginTriangles(
+      entries,
+      place.center,
+      normal,
+      right,
+      place.radius,
+    );
+    return { place, normal, right, triangles };
+  };
+
   useImperativeHandle(
     ref,
     () => ({
@@ -4765,34 +4807,11 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       },
       detectColorMargins: (toothNumbers, seedPoint = null) => {
         groupRef.current?.updateWorldMatrix(true, true);
-        const right = frameRef.current?.right ?? new THREE.Vector3(1, 0, 0);
-        const fallback = frameRef.current?.up ?? new THREE.Vector3(0, 0, 1);
-        const loaded = loadedRef.current;
         const out: Array<{ tooth: string; radii: number[]; depths: number[] }> = [];
         for (const raw of toothNumbers) {
-          const tooth = fdiDigits(raw);
-          if (!tooth) continue;
-          const place = placementsRef.current.find((row) => row.toothNumber === tooth);
-          if (!place || !(place.radius > 0)) continue;
-          const axis = insertionAxesRef.current.find((row) =>
-            row.toothNumbers.includes(tooth),
-          );
-          const normal = axis?.dir ?? fallback;
-          let entries = loaded.filter((entry) => entry.role === place.arch);
-          if (entries.length === 0) {
-            entries = loaded.filter((entry) => entry.role === "upper" || entry.role === "lower");
-          }
-          if (entries.length === 0) {
-            entries = loaded;
-          }
-          if (entries.length === 0) continue;
-          const triangles = collectProjectedMarginTriangles(
-            entries,
-            place.center,
-            normal,
-            right,
-            place.radius,
-          );
+          const frame = toothMarginFrame(raw);
+          if (!frame) continue;
+          const { place, normal, right, triangles } = frame;
 
           let localSeed: { x: number; y: number; z: number } | null = null;
           if (seedPoint) {
@@ -4815,6 +4834,30 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
           );
           if (!line) continue;
           out.push({ tooth: raw, radii: line.radii, depths: line.depths });
+        }
+        return out;
+      },
+      detectCavityMargins: (toothNumbers) => {
+        groupRef.current?.updateWorldMatrix(true, true);
+        const unit = unitToMmRef.current > 0 ? unitToMmRef.current : 1;
+        const out: CavityMarginHit[] = [];
+        for (const raw of toothNumbers) {
+          const frame = toothMarginFrame(raw);
+          if (!frame) continue;
+          const line = detectCavityMargin(
+            frame.triangles,
+            frame.place.radius,
+            COLOR_MARGIN_POINT_COUNT,
+          );
+          if (!line) continue;
+          out.push({
+            tooth: raw,
+            radii: line.radii,
+            depths: line.depths,
+            taperDeg: line.taperDeg,
+            depthMm: line.cavityDepth * unit,
+            openSides: line.openSides,
+          });
         }
         return out;
       },

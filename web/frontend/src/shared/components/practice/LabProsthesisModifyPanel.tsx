@@ -13,17 +13,14 @@ import {
 } from "@/components/ui/tooltip";
 import {
   CONNECTOR_SHAPES,
-  INNER_PRESETS,
   MODIFY_TOOLS,
   PONTIC_BASES,
   SCULPT_SHAPES,
   adjustMarginOffset,
-  applyInnerPreset,
   connectorAreaMm2,
   connectorIsWeak,
   connectorMinAreaMm2,
   holeIssue,
-  shellIsThin,
   shellThicknessMm,
   type EditBrush,
   type MarginEditMode,
@@ -31,6 +28,16 @@ import {
   type SculptBrush,
   type ToothDesignEdit,
 } from "@/shared/practice/labProsthesisModify";
+import {
+  applyPresetForKind,
+  CAVITY_TAPER_RECOMMENDED,
+  cavityDepthMm,
+  cavityTaperSummary,
+  cavityThicknessMm,
+  designIsThin,
+  innerPresetsFor,
+  type CavityKind,
+} from "@/shared/practice/labInlayDesign";
 import { fitDistanceRgb } from "@/shared/components/practice/labProsthesisEditLayer";
 import { cn } from "@/shared/ui/cn";
 
@@ -66,6 +73,8 @@ type Props = {
   edit: ToothDesignEdit;
   onEdit: (next: ToothDesignEdit) => void;
   toothLabel: string | null;
+  /** 인레이·온레이면 마진은 와동 테두리, 두께는 와동 단면으로 본다. */
+  cavityKind: CavityKind | null;
   generated: boolean;
   isBridge: boolean;
   canMatchInsertion: boolean;
@@ -329,6 +338,7 @@ export function LabProsthesisModifyPanel({
   edit,
   onEdit,
   toothLabel,
+  cavityKind,
   generated,
   isBridge,
   canMatchInsertion,
@@ -355,8 +365,11 @@ export function LabProsthesisModifyPanel({
   onSculptBrush,
   scanbody,
 }: Props) {
-  const thin = shellIsThin(edit);
   const implant = edit.implant.on;
+  const cavity = implant || edit.pontic.on ? null : cavityKind;
+  const thin = designIsThin(edit, cavity);
+  const presets = innerPresetsFor(cavity);
+  const taper = cavity ? cavityTaperSummary(edit.margin.cavity) : null;
   const issue = implant ? null : holeIssue(edit.hole);
   const marginWord = implant ? "EPL" : "마진";
   const marginStep = implant ? 0.1 : 0.05;
@@ -398,7 +411,7 @@ export function LabProsthesisModifyPanel({
               size="sm"
               variant={tool === item.id ? "default" : "outline"}
               className="h-7 px-1 text-[11px]"
-              data-coach={item.id === "scanbody" ? "tool-scanbody" : undefined}
+              data-coach={`tool-${item.id}`}
               onClick={() => onTool(item.id)}
             >
               {item.id === "margin" ? marginWord : item.label}
@@ -638,6 +651,33 @@ export function LabProsthesisModifyPanel({
               {marginWord} 삭제
             </Button>
           </div>
+          {cavity ? (
+            <div className="space-y-1 rounded-md border px-2 py-1.5 text-[11px]">
+              <div className="flex items-center justify-between font-medium text-foreground">
+                <span>와동 벽 테이퍼</span>
+                <span className="tabular-nums text-muted-foreground">
+                  {taper
+                    ? `${taper.minDeg.toFixed(0)}–${taper.maxDeg.toFixed(0)}°`
+                    : "검출 전"}
+                </span>
+              </div>
+              {taper && taper.undercut > 0 ? (
+                <p className="flex items-center gap-1 text-destructive">
+                  <span className="h-2 w-2 shrink-0 rounded-full bg-red-600" aria-hidden />
+                  빨간 점 {taper.undercut}곳은 벽이 삽입축과 평행하거나 언더컷입니다.
+                </p>
+              ) : null}
+              {taper && taper.wide > 0 ? (
+                <p className="flex items-center gap-1 text-amber-700">
+                  <span className="h-2 w-2 shrink-0 rounded-full bg-amber-500" aria-hidden />
+                  주황 점 {taper.wide}곳은 벽이 넓게 벌어져 유지력이 약합니다.
+                </p>
+              ) : null}
+              <p className="text-muted-foreground">
+                권장 {CAVITY_TAPER_RECOMMENDED}. 삽입축을 다시 잡으면 다시 잽니다.
+              </p>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -668,14 +708,15 @@ export function LabProsthesisModifyPanel({
       {tool === "inner" ? (
         <div className="space-y-2">
           <div className="grid grid-cols-2 gap-1">
-            {INNER_PRESETS.filter((preset) => preset.id !== "custom").map((preset) => (
+            {presets.filter((preset) => preset.id !== "custom").map((preset) => (
               <Button
                 key={preset.id}
                 type="button"
                 size="sm"
                 variant={edit.inner.preset === preset.id ? "default" : "outline"}
                 className="h-7 px-1 text-[11px]"
-                onClick={() => onEdit(applyInnerPreset(edit, preset.id))}
+                title={`최소 두께 ${preset.minThicknessMm.toFixed(1)} mm`}
+                onClick={() => onEdit(applyPresetForKind(edit, cavity, preset.id))}
               >
                 {preset.label}
               </Button>
@@ -685,7 +726,7 @@ export function LabProsthesisModifyPanel({
               size="sm"
               variant={edit.inner.preset === "custom" ? "default" : "outline"}
               className="h-7 px-1 text-[11px]"
-              onClick={() => onEdit(applyInnerPreset(edit, "custom"))}
+              onClick={() => onEdit(applyPresetForKind(edit, cavity, "custom"))}
             >
               직접 입력
             </Button>
@@ -1039,7 +1080,7 @@ export function LabProsthesisModifyPanel({
           <Row label="최소 두께" value={`${edit.refine.minThicknessMm.toFixed(2)} mm`}>
             <Slider
               min={30}
-              max={120}
+              max={cavity ? 250 : 120}
               step={5}
               value={[Math.round(edit.refine.minThicknessMm * 100)]}
               onValueChange={([value]) =>
@@ -1063,7 +1104,9 @@ export function LabProsthesisModifyPanel({
                 : "text-foreground",
             )}
           >
-            외면 {shellThicknessMm(edit).toFixed(2)} mm
+            {cavity
+              ? `와동 단면 ${cavityThicknessMm(edit, cavity, cavityDepthMm(edit, cavity)).toFixed(2)} mm`
+              : `외면 ${shellThicknessMm(edit).toFixed(2)} mm`}
             {thin && !edit.refine.compensate ? " · 최소보다 얇음" : ""}
           </p>
         </div>

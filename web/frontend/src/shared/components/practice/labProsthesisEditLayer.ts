@@ -15,6 +15,12 @@ import {
   type ProsthesisDesignEdit,
   type ToothDesignEdit,
 } from "@/shared/practice/labProsthesisModify";
+import {
+  cavityDepthMm,
+  cavityTaperIssue,
+  normalizeCavityInfo,
+} from "@/shared/practice/labInlayDesign";
+import { makeCavityRestorationGeometry } from "@/shared/components/practice/labInlayGeometry";
 
 export type EditHit =
   | { kind: "margin"; tooth: string; index: number }
@@ -83,6 +89,8 @@ type Frame = {
 
 const CROWN_RGB: [number, number, number] = [243 / 255, 239 / 255, 232 / 255];
 const MARGIN = 0x14b8a6;
+const TAPER_UNDERCUT = 0xdc2626;
+const TAPER_WIDE = 0xf59e0b;
 const HOOK = 0x64748b;
 const CUTBACK = 0xd6a37a;
 
@@ -235,6 +243,9 @@ export function buildProsthesisEditLayer(args: {
     const quat = basisQuaternion(normal, right);
     const active = args.spec.activeTooth === tooth;
     const generated = args.spec.generated[tooth] === true;
+    const cavityKind =
+      edit.pontic.on || edit.implant.on ? null : (args.spec.cavityKinds?.[tooth] ?? null);
+    const taper = cavityKind ? (normalizeCavityInfo(edit.margin.cavity)?.taperDeg ?? []) : [];
 
     if (args.spec.showMargin && !edit.margin.deleted && !edit.pontic.on) {
       const points = marginWorldPoints({
@@ -245,10 +256,18 @@ export function buildProsthesisEditLayer(args: {
         unitToMm: unit,
       });
       points.forEach((local, index) => {
+        const issue = cavityTaperIssue(taper[index]);
         const dot = new THREE.Mesh(
           new THREE.SphereGeometry(Math.max(place.radius * 0.045, 0.15), 10, 8),
           new THREE.MeshBasicMaterial({
-            color: active ? MARGIN : 0x94a3b8,
+            color:
+              issue === "undercut"
+                ? TAPER_UNDERCUT
+                : issue === "wide"
+                  ? TAPER_WIDE
+                  : active
+                    ? MARGIN
+                    : 0x94a3b8,
             depthTest: false,
           }),
         );
@@ -353,6 +372,39 @@ export function buildProsthesisEditLayer(args: {
     }
 
     if (!generated) continue;
+
+    if (cavityKind) {
+      const base = place.radius * 0.78;
+      const extra = edit.margin.offsetMm / unit;
+      const geometry = makeCavityRestorationGeometry({
+        edit,
+        kind: cavityKind,
+        depthMm: cavityDepthMm(edit, cavityKind),
+        unitToMm: unit,
+        radial: edit.margin.radii.map((ratio) => Math.max(base * ratio + extra, 0)),
+        axial: edit.margin.radii.map((_, index) => edit.margin.depths?.[index] ?? 0),
+      });
+      if (geometry) {
+        const inlay = new THREE.Mesh(
+          geometry,
+          new THREE.MeshStandardMaterial({
+            color: 0xffffff,
+            vertexColors: true,
+            roughness: 0.45,
+            metalness: 0.04,
+            polygonOffset: true,
+            polygonOffsetFactor: -2,
+            polygonOffsetUnits: -2,
+          }),
+        );
+        inlay.quaternion.copy(quat);
+        inlay.position.copy(place.center);
+        inlay.renderOrder = 4;
+        tag(inlay, { kind: "crown", tooth });
+        root.add(inlay);
+      }
+      continue;
+    }
 
     const scale = crownScale(edit);
     const radius = place.radius * 0.86 * scale;

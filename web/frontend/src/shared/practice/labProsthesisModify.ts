@@ -391,6 +391,13 @@ export type ToothDesignEdit = {
     offsetMm: number;
     showBack: boolean;
     deleted: boolean;
+    /** 인레이·온레이 와동 검출값. 크라운이거나 검출 전이면 없다. */
+    cavity?: {
+      depthMm: number;
+      /** 마진 점마다 와동 벽 발산각(°). 못 잰 자리는 NaN(저장하면 null). */
+      taperDeg: number[];
+      openSides: number;
+    } | null;
   };
   inner: {
     preset: InnerPresetId;
@@ -498,6 +505,8 @@ export type ProsthesisDesignEdit = {
   scanbodies: Record<string, ScanbodyShape>;
   /** 스크류홀을 켠 임플란트의 스크류 경로. */
   showScrewPath: boolean;
+  /** 인레이·온레이 치아. 없는 치아는 크라운으로 그린다. */
+  cavityKinds?: Record<string, "inlay" | "onlay">;
 };
 
 export type ScanbodyShape = {
@@ -645,6 +654,7 @@ export function redetectMargin(edit: ToothDesignEdit): ToothDesignEdit {
       depths: Array.from({ length: radii.length }, () => 0),
       offsetMm: 0,
       deleted: false,
+      cavity: null,
     },
   };
 }
@@ -686,6 +696,7 @@ export function applyDetectedMargin(
       depths: depths.slice(0, count),
       offsetMm: 0,
       deleted: false,
+      cavity: null,
     },
   };
 }
@@ -699,7 +710,7 @@ export function applyMarginRadius(
   const radii = edit.margin.radii.slice();
   const count = radii.length || MARGIN_POINT_COUNT;
   while (radii.length < count) radii.push(1);
-  const next = clamp(radius, 0.45, 2.85);
+  const next = clamp(radius, MARGIN_RATIO_MIN, 2.85);
   const paint = (slot: number, weight: number) => {
     const key = ((slot % count) + count) % count;
     const current = radii[key] ?? 1;
@@ -722,6 +733,18 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
+/** 인레이 와동은 기본 원 안쪽 깊이 들어온다. */
+const MARGIN_RATIO_MIN = 0.15;
+
+/** 마진 점을 넣고 빼면 점마다 잰 와동 벽 각도도 같이 옮긴다. */
+function spliceCavityTaper(
+  cavity: ToothDesignEdit["margin"]["cavity"],
+  edit: (taper: number[]) => number[],
+): ToothDesignEdit["margin"]["cavity"] {
+  if (!cavity) return cavity;
+  return { ...cavity, taperDeg: edit(cavity.taperDeg.slice()) };
+}
+
 export function removeMarginPoint(edit: ToothDesignEdit, index: number): ToothDesignEdit {
   if (edit.margin.radii.length <= 8) return edit;
   return {
@@ -730,6 +753,9 @@ export function removeMarginPoint(edit: ToothDesignEdit, index: number): ToothDe
       ...edit.margin,
       radii: edit.margin.radii.filter((_, slot) => slot !== index),
       depths: (edit.margin.depths ?? []).filter((_, slot) => slot !== index),
+      cavity: spliceCavityTaper(edit.margin.cavity, (taper) =>
+        taper.filter((_, slot) => slot !== index),
+      ),
     },
   };
 }
@@ -744,13 +770,17 @@ export function insertMarginPoint(
   const depths = (edit.margin.depths ?? []).slice();
   while (depths.length < radii.length) depths.push(0);
   const at = Math.min(radii.length, Math.max(0, index));
-  radii.splice(at, 0, clamp(radius, 0.45, 2.85));
+  radii.splice(at, 0, clamp(radius, MARGIN_RATIO_MIN, 2.85));
   const before = depths[at - 1] ?? depths[at] ?? 0;
   const after = depths[at] ?? before;
   depths.splice(at, 0, (before + after) / 2);
+  const cavity = spliceCavityTaper(edit.margin.cavity, (taper) => {
+    taper.splice(at, 0, NaN);
+    return taper;
+  });
   return {
     ...edit,
-    margin: { ...edit.margin, radii, depths, deleted: false },
+    margin: { ...edit.margin, radii, depths, cavity, deleted: false },
   };
 }
 
