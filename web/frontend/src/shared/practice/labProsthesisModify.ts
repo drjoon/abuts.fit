@@ -26,6 +26,50 @@ export type InnerPresetId = "zirconia" | "glass" | "pmma" | "print" | "clinic" |
 /** 디자인 시작 전 범위. 마진만이면 크라운을 만들지 않는다. */
 export type DesignScope = "margin" | "crown";
 
+/** 모델 범위에서 내보낼 모델. */
+export type ModelKind = "die" | "contact" | "bite";
+
+export function parseModelKind(value: unknown): ModelKind {
+  return value === "contact" || value === "bite" ? value : "die";
+}
+
+export type ModelSettings = {
+  kind: ModelKind;
+  /** 교합면에서 받침 바닥까지(mm). */
+  heightMm: number;
+  /** 지대치를 따로 빼는 다이. 다이만이면 항상 켠다. */
+  dieSplit: boolean;
+  /** 다이와 소켓 사이(mm). */
+  dieGapMm: number;
+};
+
+export const MODEL_HEIGHT_RANGE_MM = { min: 12, max: 30 } as const;
+export const MODEL_DIE_GAP_RANGE_MM = { min: 0, max: 0.2 } as const;
+
+export const DEFAULT_MODEL_SETTINGS: ModelSettings = {
+  kind: "contact",
+  heightMm: 20,
+  dieSplit: true,
+  dieGapMm: 0.05,
+};
+
+export function parseModelSettings(value: unknown): ModelSettings {
+  if (!value || typeof value !== "object") return { ...DEFAULT_MODEL_SETTINGS };
+  const row = value as Partial<ModelSettings>;
+  const height = Number(row.heightMm);
+  const gap = Number(row.dieGapMm);
+  return {
+    kind: row.kind == null ? DEFAULT_MODEL_SETTINGS.kind : parseModelKind(row.kind),
+    heightMm: Number.isFinite(height)
+      ? clamp(height, MODEL_HEIGHT_RANGE_MM.min, MODEL_HEIGHT_RANGE_MM.max)
+      : DEFAULT_MODEL_SETTINGS.heightMm,
+    dieSplit: row.dieSplit == null ? DEFAULT_MODEL_SETTINGS.dieSplit : Boolean(row.dieSplit),
+    dieGapMm: Number.isFinite(gap)
+      ? clamp(gap, MODEL_DIE_GAP_RANGE_MM.min, MODEL_DIE_GAP_RANGE_MM.max)
+      : DEFAULT_MODEL_SETTINGS.dieGapMm,
+  };
+}
+
 /** 마진 검토. 확인 전에는 생성을 열지 않는다. */
 export type MarginReview = "none" | "detected" | "confirmed";
 
