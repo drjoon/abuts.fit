@@ -8,12 +8,21 @@ import {
 } from "react";
 import { cn } from "@/shared/ui/cn";
 
-export const VIEW_PAINT_COLORS = ["#e11d48", "#f59e0b", "#2563eb", "#111827"] as const;
+export const VIEW_PAINT_COLORS = [
+  "#e11d48",
+  "#f59e0b",
+  "#16a34a",
+  "#2563eb",
+  "#9333ea",
+  "#111827",
+] as const;
 
 const PAINT_COLOR_LABEL: Record<(typeof VIEW_PAINT_COLORS)[number], string> = {
   "#e11d48": "빨강",
   "#f59e0b": "노랑",
+  "#16a34a": "초록",
   "#2563eb": "파랑",
+  "#9333ea": "보라",
   "#111827": "검정",
 };
 

@@ -49,12 +49,14 @@
 // - 2026-09-27: 치아 정보의 상악·하악·치아 번호 왼쪽 체크로 화면 표시를 고른다. 다이 토글은 체크한 치아의 다이만. 치아 번호는 그 교합면으로만 옮긴다.
 // - 2026-09-27: 오른쪽 아래 교합면·협측·설측·맞춤 버튼은 없앤다. 삽입축을 잡으면 그 화면으로 X·Y·Z를 다시 잡는다.
 // - 2026-09-27: 인레이·온레이는 와동 테두리를 마진으로 잡고, 와동만 채운 형상을 만든다. 와동 벽 테이퍼·언더컷, 전용 재료 숫자, 위저드 두께·내보내기 단계.
-// - 2026-09-27: 내보내기·이미지 저장·페인트·채팅 첨부는 치아 정보 아래 패널. 페인트를 그린 뒤 포인터 옆에 이미지 저장·채팅 첨부 뱃지를 두고, 다른 곳을 누르면 뱃지만 없앤다.
+// - 2026-09-27: 내보내기·이미지 저장·페인트·채팅 첨부는 치아 정보 아래. 페인트를 그린 뒤 포인터 옆에 이미지 저장·채팅 첨부 뱃지를 두고, 다른 곳을 누르면 뱃지만 없앤다.
 // - 2026-09-27: 마진 수정. 점은 스캔 면을 따라 끌고, 펜은 그은 구간을 다시 그린다. 지우면 점을 찍어 닫고, 다시 검출은 찍은 시작점부터. 조정 간격·언더컷 토글, 언더컷을 지나면 경고.
 // - 2026-09-27: 삽입축은 수동으로 잡는다. 「삽입축 설정」 → 화면을 멈출 때마다 미리보기 → 「삽입축 확정」. 확정 전에는 저장하지 않는다.
 // - 2026-09-27: 위저드 말풍선은 버튼을 가려 없앤다. 삽입축을 안 잡은 보철이 있으면 작업영역 가운데에 자동·화면 각도 뱃지를 띄운다.
 // - 2026-09-27: 스캔을 열면 저장된 축이 없는 보철마다 삽입축을 자동으로 잡는다. 못 잡으면 교합면으로 보여 주고 뱃지에서 화면을 맞추라고 안내한다.
 // - 2026-09-27: 내면 설정. 헤더 톱니 → 기공소 디자인 프리셋(크라운·인레이온레이·임플란트 열, 연결 치과). 치아 정보에서 생성 전 프리셋을 고르고, 내면 도구에서 복사·수정 뒤 적용한다. 예전 브라우저 치과 프리셋은 없앤다.
+// - 2026-09-28: 채팅 첨부를 누르면 AI 디자인을 닫고 채팅으로 돌아간다.
+// - 2026-09-28: 「전달」 패널은 버튼 글자 너비. 순서는 페인트, 이미지 저장, 채팅 첨부. 표시 색은 여섯 개이고 패널 너비 안에서 가운데 정렬한다.
 import {
   useCallback,
   useEffect,
@@ -825,6 +827,7 @@ function LabProsthesisAiDesignDialog({
   });
   const alignBeforeSigRef = useRef("");
   const saveLockRef = useRef(false);
+  const closeAfterChatAttachRef = useRef<() => void>(() => {});
   const pendingDraftRolesRef = useRef<Set<WorkScanRole>>(new Set());
   const lastDraftSigRef = useRef("");
   const lastDocSigRef = useRef("");
@@ -1390,10 +1393,11 @@ function LabProsthesisAiDesignDialog({
         <>
           STL {files.length}개가 대화 입력에 있습니다.
           <br />
-          디자인을 닫고 보내기를 누르면 상대에게 전달됩니다.
+          보내기를 누르면 상대에게 전달됩니다.
         </>
       ),
     });
+    closeAfterChatAttachRef.current();
   };
 
   const focusRow =
@@ -2998,6 +3002,7 @@ function LabProsthesisAiDesignDialog({
     if (saveLockRef.current) return;
     leaveCase(() => onOpenChange(false));
   };
+  closeAfterChatAttachRef.current = () => requestOpenChange(false);
 
   /** 이 의뢰 작업을 뒤에서 저장하고 떠난다. 닫기와 의뢰 이동이 같이 쓴다. */
   const leaveCase = (leave: () => void) => {
@@ -3114,10 +3119,11 @@ function LabProsthesisAiDesignDialog({
           <>
             표시가 입혀진 이미지가 대화 입력에 있습니다.
             <br />
-            디자인을 닫고 보내기를 누르면 상대에게 전달됩니다.
+            보내기를 누르면 상대에게 전달됩니다.
           </>
         ),
       });
+      closeAfterChatAttachRef.current();
     });
   };
 
@@ -4541,8 +4547,6 @@ function LabProsthesisAiDesignDialog({
               }}
               actionPanel={
                 <AiDesignViewActions
-                  exportDisabled={exportScans.length === 0 && exportRows.length === 0}
-                  onExport={() => setExportOpen(true)}
                   onSaveImage={saveViewImage}
                   paintOn={paintOn}
                   paintColor={paintColor}
@@ -4930,8 +4934,6 @@ function paintOfferBox(
 }
 
 function AiDesignViewActions({
-  exportDisabled,
-  onExport,
   onSaveImage,
   paintOn,
   paintColor,
@@ -4943,8 +4945,6 @@ function AiDesignViewActions({
   chatDisabled,
   onAttachChat,
 }: {
-  exportDisabled: boolean;
-  onExport: () => void;
   onSaveImage: () => void;
   paintOn: boolean;
   paintColor: string;
@@ -4956,91 +4956,116 @@ function AiDesignViewActions({
   chatDisabled: boolean;
   onAttachChat: () => void;
 }) {
-  const actionBtn = "h-8 justify-start gap-1.5 px-2.5 [&_svg]:!size-3.5";
+  const [open, setOpen] = useState(true);
+  const rowBtn = "h-8 w-full justify-center gap-1.5 px-2 text-xs [&_svg]:!size-3.5";
   return (
-    <div className="pointer-events-auto flex w-fit max-w-full shrink-0 flex-col items-stretch gap-1 rounded-lg border bg-background/95 p-1.5 shadow-sm">
-      <Button
+    <div className="pointer-events-auto w-max max-w-full shrink-0 overflow-hidden rounded-lg border bg-background/95 text-sm shadow-sm">
+      <button
         type="button"
-        size="sm"
-        className={actionBtn}
-        disabled={exportDisabled}
-        onClick={onExport}
-        data-coach="export"
-        title="보철과 스캔을 STL로 내보냅니다"
-        aria-label="내보내기"
+        className={cn(
+          "flex w-full items-center justify-between gap-3 px-3.5 py-2.5 text-left",
+          open && "border-b",
+        )}
+        onClick={() => setOpen((next) => !next)}
+        aria-expanded={open}
       >
-        <ArrowDownToLine />
-        내보내기
-      </Button>
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        className={actionBtn}
-        onClick={onSaveImage}
-        title="현재 뷰를 PNG로 저장"
-        aria-label="이미지 저장"
-      >
-        <ImageDown />
-        이미지 저장
-      </Button>
-      <div className="flex flex-wrap items-center gap-1">
-        <Button
-          type="button"
-          size="sm"
-          variant={paintOn ? "default" : "outline"}
-          className={actionBtn}
-          aria-pressed={paintOn}
-          aria-label="페인트"
-          onClick={onTogglePaint}
-          title="화면 위에 표시를 그립니다"
-        >
-          <Pencil />
-          페인트
-        </Button>
-        {paintOn
-          ? VIEW_PAINT_COLORS.map((swatch) => (
-              <button
-                key={swatch}
+        <span className="font-semibold text-foreground">전달</span>
+        <ChevronDown
+          className={cn(
+            "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
+            open ? "rotate-180" : "",
+          )}
+        />
+      </button>
+      {open ? (
+        <div className="space-y-1.5 px-3.5 py-2.5">
+          <div className="flex items-center gap-1.5">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className={cn(
+                rowBtn,
+                "min-w-0 flex-1",
+                paintOn &&
+                  "border-primary bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary",
+              )}
+              aria-pressed={paintOn}
+              aria-label="페인트"
+              onClick={onTogglePaint}
+              title="화면 위에 표시를 그립니다"
+            >
+              <Pencil />
+              페인트
+            </Button>
+            {paintOn && paintInk ? (
+              <Button
                 type="button"
-                className={cn(
-                  "h-5 w-5 rounded-full border border-black/10",
-                  paintColor === swatch && "ring-2 ring-primary ring-offset-1",
-                )}
-                style={{ backgroundColor: swatch }}
-                aria-label={viewPaintColorLabel(swatch)}
-                onClick={() => onPaintColor(swatch)}
-              />
-            ))
-          : null}
-        {paintOn && paintInk ? (
+                size="sm"
+                variant="outline"
+                className="h-8 shrink-0 gap-1 border-destructive-muted px-2 text-xs text-destructive hover:bg-destructive-soft hover:text-destructive [&_svg]:!size-3.5"
+                title="표시 지우기"
+                aria-label="표시 지우기"
+                onClick={onClearPaint}
+              >
+                <Eraser />
+                지우기
+              </Button>
+            ) : null}
+          </div>
+          {paintOn ? (
+            <div
+              className="grid w-0 min-w-full grid-cols-6 items-center justify-items-center px-2.5"
+              role="group"
+              aria-label="표시 색"
+            >
+              {VIEW_PAINT_COLORS.map((swatch) => {
+                const selected = paintColor === swatch;
+                return (
+                  <button
+                    key={swatch}
+                    type="button"
+                    className={cn(
+                      "aspect-square w-full max-w-6 rounded-full border border-black/15",
+                      selected && "ring-2 ring-primary ring-offset-1",
+                    )}
+                    style={{ backgroundColor: swatch }}
+                    aria-label={viewPaintColorLabel(swatch)}
+                    aria-pressed={selected}
+                    onClick={() => onPaintColor(swatch)}
+                  />
+                );
+              })}
+            </div>
+          ) : null}
           <Button
             type="button"
             size="sm"
             variant="outline"
-            className={actionBtn}
-            title="표시 지우기"
-            aria-label="표시 지우기"
-            onClick={onClearPaint}
+            className={rowBtn}
+            onClick={onSaveImage}
+            title="현재 뷰를 PNG로 저장"
+            aria-label="이미지 저장"
           >
-            <Eraser />
-            표시 지우기
+            <ImageDown />
+            이미지 저장
           </Button>
-        ) : null}
-      </div>
-      {showChat ? (
-        <Button
-          type="button"
-          size="sm"
-          className={actionBtn}
-          disabled={chatDisabled}
-          onClick={onAttachChat}
-          title="표시가 입혀진 이미지를 채팅에 첨부합니다"
-          aria-label="채팅 첨부"
-        >
-          <Paperclip />
-          채팅 첨부
-        </Button>
+          {showChat ? (
+            <Button
+              type="button"
+              size="sm"
+              variant={chatDisabled ? "outline" : "default"}
+              className={rowBtn}
+              disabled={chatDisabled}
+              onClick={onAttachChat}
+              title="표시가 입혀진 이미지를 채팅에 첨부합니다"
+              aria-label="채팅 첨부"
+            >
+              <Paperclip />
+              채팅 첨부
+            </Button>
+          ) : null}
+        </div>
       ) : null}
     </div>
   );
