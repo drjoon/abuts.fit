@@ -106,11 +106,6 @@ import {
   GUIDE_TOUR_DEMO_SIMPLE_ABUTMENT,
   toothWorkHasGuideTourCustomAbutment,
 } from "@/shared/guideTour/guideTourOralPrefill";
-import { AutoMatchMinLabRatingStars } from "@/shared/components/practice/AutoMatchMinLabRatingStars";
-import {
-  DEFAULT_AUTO_MATCH_MAX_LAB_RATING,
-  DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
-} from "@/shared/practice/practiceLabRating";
 import type { ImplantConnection } from "@/shared/practice/useImplantConnectionCatalog";
 import {
   ABUTMENT_PRODUCT_MODE,
@@ -770,7 +765,10 @@ export type PracticeTransferRequestIntakePanelProps = {
   showLabField?: boolean;
   showPatientField?: boolean;
   showDateFields?: boolean;
-  /** 어벗츠기공소 선택 시에만 별점 하한·상한 표시(하청 수신 게이트) */
+  /**
+   * @deprecated 별점 하한·상한 UI 제거. 치과는 하청 기공소를 고르지 않는다.
+   * 호출부 호환용으로만 남긴다.
+   */
   showAutoMatchMinLabRating?: boolean;
   /** false면 보철물 치식 섹션 숨김 (기본 true) */
   showProsthesisSection?: boolean;
@@ -910,11 +908,13 @@ export type PracticeTransferRequestIntakePanelProps = {
   onAutoMatchBudgetChange?: (
     next: PracticeTransferAutoMatchBudget | null,
   ) => void | Promise<void>;
-  /** 자동매칭 별점 하한(1~5). 기공비 배수 기준. */
+  /** @deprecated 별점 하한 UI 제거. 호출부 호환용. */
   autoMatchMinLabRating?: number;
+  /** @deprecated 별점 하한 UI 제거. 호출부 호환용. */
   onAutoMatchMinLabRatingChange?: (next: number) => void | Promise<void>;
-  /** 자동매칭 별점 상한(1~5). */
+  /** @deprecated 별점 상한 UI 제거. 호출부 호환용. */
   autoMatchMaxLabRating?: number;
+  /** @deprecated 별점 상한 UI 제거. 호출부 호환용. */
   onAutoMatchMaxLabRatingChange?: (next: number) => void | Promise<void>;
   /**
    * 가이드투어 시작 버튼 표시(보철물 라벨 옆).
@@ -953,7 +953,6 @@ export const PracticeTransferRequestIntakePanel = ({
   showLabField: showLabFieldProp,
   showPatientField: showPatientFieldProp,
   showDateFields: showDateFieldsProp,
-  showAutoMatchMinLabRating = true,
   showProsthesisSection = true,
   showMemoSection = true,
   variant = "card",
@@ -1039,10 +1038,6 @@ export const PracticeTransferRequestIntakePanel = ({
   skipJig: _skipJig = true,
   onSkipJigChange: _onSkipJigChange,
   rushProcessing = false,
-  autoMatchMinLabRating = DEFAULT_AUTO_MATCH_MIN_LAB_RATING,
-  onAutoMatchMinLabRatingChange,
-  autoMatchMaxLabRating = DEFAULT_AUTO_MATCH_MAX_LAB_RATING,
-  onAutoMatchMaxLabRatingChange,
   showInlineGuideTourButton = false,
   guideTourStartSignal = 0,
   guideTourExitSignal = 0,
@@ -3242,26 +3237,9 @@ export const PracticeTransferRequestIntakePanel = ({
       >
         {showLabField ? (
         <div className="space-y-2">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <Label className="text-sm">
-              협력 기공소 <span className="text-destructive">*</span>
-            </Label>
-            {showAutoMatchMinLabRating &&
-            (isPinnedAbutsRecentLab(selectedLab) ||
-              isAutoMatchLab(selectedLab)) ? (
-              <AutoMatchMinLabRatingStars
-                minValue={autoMatchMinLabRating}
-                maxValue={autoMatchMaxLabRating}
-                onMinChange={onAutoMatchMinLabRatingChange}
-                onMaxChange={onAutoMatchMaxLabRatingChange}
-              />
-            ) : null}
-          </div>
-          <p className="text-xs text-muted-foreground leading-snug">
-            계약·결제는 어벗츠기공소입니다.
-            <br />
-            아래에서 작업할 협력 기공소를 고를 수 있습니다.
-          </p>
+          <Label className="text-sm">
+            기공소 <span className="text-destructive">*</span>
+          </Label>
           {/*
             modal: Dialog RemoveScroll이 포털된 Popover 휠/터치를 막지 않게
             (스크롤바 드래그만 되고 터치·트랙패드가 안 되는 증상).
@@ -3283,7 +3261,7 @@ export const PracticeTransferRequestIntakePanel = ({
                     ? isAutoMatchLab(selectedLab)
                       ? ABUTS_PINNED_LAB_NAME
                       : getBusinessLabel(selectedLab)
-                    : "협력 기공소 선택"}
+                    : "기공소 선택"}
                 </span>
                 <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
               </Button>
@@ -3306,7 +3284,7 @@ export const PracticeTransferRequestIntakePanel = ({
             >
               <Command>
                 <CommandInput
-                  placeholder="협력 기공소 검색"
+                  placeholder="기공소 검색"
                   value={labSearch}
                   onValueChange={(v) => {
                     setLabSearch(v);
