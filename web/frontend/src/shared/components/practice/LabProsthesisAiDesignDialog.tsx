@@ -54,6 +54,7 @@
 // - 2026-09-27: 삽입축은 수동으로 잡는다. 「삽입축 설정」 → 화면을 멈출 때마다 미리보기 → 「삽입축 확정」. 확정 전에는 저장하지 않는다.
 // - 2026-09-27: 위저드 말풍선은 버튼을 가려 없앤다. 삽입축을 안 잡은 보철이 있으면 작업영역 가운데에 자동·화면 각도 뱃지를 띄운다.
 // - 2026-09-27: 스캔을 열면 저장된 축이 없는 보철마다 삽입축을 자동으로 잡는다. 못 잡으면 교합면으로 보여 주고 뱃지에서 화면을 맞추라고 안내한다.
+// - 2026-09-27: 내면 설정. 헤더 톱니 → 기공소 디자인 프리셋(크라운·인레이온레이·임플란트 열, 연결 치과). 치아 정보에서 생성 전 프리셋을 고르고, 내면 도구에서 복사·수정 뒤 적용한다. 예전 브라우저 치과 프리셋은 없앤다.
 import {
   useCallback,
   useEffect,
@@ -79,6 +80,7 @@ import {
   Paperclip,
   Redo2,
   Eraser,
+  Settings2,
   Undo2,
   Palette,
   Sparkles,
@@ -208,7 +210,8 @@ import {
   type ContactPaintMode,
 } from "@/shared/practice/oralScanDesignAnalysis";
 import {
-  applyClinicMaterialPreset,
+  alignPresetToKind,
+  applyDesignPreset,
   applyDetectedMargin,
   applyMarginTrace,
   clinicKeyFromCasePrimary,
@@ -221,16 +224,11 @@ import {
   MODEL_HEIGHT_RANGE_MM,
   MODEL_KINDS,
   scopeMakesCrown,
-  materialSnapshot,
-  readClinicMaterialPreset,
   redetectMargin,
   reduceDesignGesture,
-  writeClinicMaterialPreset,
-  type ClinicMaterialPreset,
   type DesignGesture,
   type DesignScope,
   type EditBrush,
-  type InnerPresetId,
   type MarginEditMode,
   type MarginReview,
   type ModelSettings,
@@ -240,17 +238,22 @@ import {
   type ToothDesignEdit,
 } from "@/shared/practice/labProsthesisModify";
 import {
-  alignPresetToKind,
   applyDetectedCavity,
-  applyPresetForKind,
   CAVITY_TAPER_RECOMMENDED,
   cavityKindOf,
   cavityTaperSummary,
   defaultCavityMargin,
   designIsThin,
-  innerPresetsFor,
   type CavityKind,
 } from "@/shared/practice/labInlayDesign";
+import {
+  casePresetId,
+  findDesignPreset,
+  innerKindOf,
+  type DesignPresetLibrary,
+} from "@/shared/practice/labDesignPresets";
+import { useLabDesignPresets } from "@/shared/practice/labDesignPresetApi";
+import { LabDesignPresetDialog } from "@/shared/components/practice/LabDesignPresetDialog";
 import {
   compareArch,
   fdiToothDigits,
@@ -718,7 +721,9 @@ function LabProsthesisAiDesignDialog({
   const [libraryPickerFor, setLibraryPickerFor] = useState<string | null>(null);
   const [implantFavorites, setImplantFavorites] = useState<string[]>(readImplantFavorites);
   const [workArea, setWorkArea] = useState<HTMLDivElement | null>(null);
-  const [clinicPreset, setClinicPreset] = useState<ClinicMaterialPreset | null>(null);
+  const { library: designLibrary, save: saveDesignLibrary } = useLabDesignPresets(open);
+  /** 디자인 프리셋 창. 열 때 고를 프리셋. */
+  const [presetDialog, setPresetDialog] = useState<{ presetId: string | null } | null>(null);
   const [generating, setGenerating] = useState(false);
   const [genLabel, setGenLabel] = useState("");
   const [panelsHidden, setPanelsHidden] = useState(false);
@@ -880,7 +885,7 @@ function LabProsthesisAiDesignDialog({
       setScanbodyPicks(0);
       setToothCardFor(null);
       setLibraryPickerFor(null);
-      setClinicPreset(null);
+      setPresetDialog(null);
       setGenerating(false);
       setGenLabel("");
       setToothInfoOpen(true);
@@ -2156,15 +2161,25 @@ function LabProsthesisAiDesignDialog({
     plan.designableTeeth.length > 0 ? plan.designableTeeth : prepTeeth
   ).map((tooth) => tooth.toothNumber);
   const clinicKey = clinicKeyFromCasePrimary(caseHeader?.primary);
-  useEffect(() => {
-    if (!open) return;
-    setClinicPreset(clinicKey ? readClinicMaterialPreset(clinicKey) : null);
-  }, [clinicKey, open]);
+  const caseDefaultPresetId = casePresetId(designLibrary, clinicKey);
+  const designLibraryRef = useRef(designLibrary);
+  designLibraryRef.current = designLibrary;
+  const caseDefaultPresetIdRef = useRef(caseDefaultPresetId);
+  caseDefaultPresetIdRef.current = caseDefaultPresetId;
+
+  /** 의뢰 기본 프리셋을 아직 안 건 치아는 걸고, 유형이 바뀐 치아는 같은 프리셋의 그 열로 맞춘다. */
+  const seedInnerPreset = (edit: ToothDesignEdit, cavityKind: CavityKind | null) =>
+    alignPresetToKind(
+      edit,
+      innerKindOf(edit, cavityKind),
+      designLibraryRef.current,
+      caseDefaultPresetIdRef.current,
+    );
 
   /**
    * 인레이·온레이는 와동 테두리, 나머지는 색·기하 마진을 잡는다.
    * 반환 함수는 치아 하나의 수정값을 고친다. 못 찾으면 `fallback`일 때 기본 고리, 아니면 null.
-   * 유형이 바뀐 치아는 고른 재료 숫자도 그 유형 값으로 맞춘다.
+   * 내면 프리셋도 그 치아 유형 열로 맞춘다.
    */
   const detectMargins = (toothNumbers: readonly string[]) => {
     const kinds = cavityKindsRef.current;
@@ -2188,7 +2203,7 @@ function LabProsthesisAiDesignDialog({
       fallback: boolean,
     ): ToothDesignEdit | null => {
       const kind = kinds[number] ?? null;
-      const seeded = alignPresetToKind(current, kind);
+      const seeded = seedInnerPreset(current, kind);
       if (kind) {
         const hit = cavityHits.get(number);
         if (hit) return applyDetectedCavity(seeded, hit);
@@ -2268,6 +2283,14 @@ function LabProsthesisAiDesignDialog({
     setGenerating(false);
     setGenLabel("");
     beginEditUndo();
+    setEdits((prev) => {
+      const next = { ...prev };
+      for (const number of targets) {
+        const current = next[number] ?? createToothDesignEdit();
+        next[number] = seedInnerPreset(current, cavityKindsRef.current[number] ?? null);
+      }
+      return next;
+    });
     setGenerated((prev) => {
       const next = { ...prev };
       for (const number of targets) next[number] = true;
@@ -2321,7 +2344,7 @@ function LabProsthesisAiDesignDialog({
     setMarginSeedPick(null);
     beginEditUndo();
     setEdits((prev) => {
-      const current = alignPresetToKind(prev[toothNumber] ?? createToothDesignEdit(), null);
+      const current = seedInnerPreset(prev[toothNumber] ?? createToothDesignEdit(), null);
       return { ...prev, [toothNumber]: applyDetectedMargin(current, hit.radii, hit.depths) };
     });
     setMarginReview((prev) => ({ ...prev, [toothNumber]: "detected" }));
@@ -2354,15 +2377,14 @@ function LabProsthesisAiDesignDialog({
     queueSaveWorkRef.current();
   };
 
-  const applyPresetToTooth = (toothNumber: string, presetId: InnerPresetId) => {
+  const applyPresetToTooth = (toothNumber: string, presetId: string) => {
+    const preset = findDesignPreset(designLibraryRef.current, presetId);
+    if (!preset) return;
     beginEditUndo();
     setEdits((prev) => {
       const current = prev[toothNumber] ?? createToothDesignEdit();
-      const next =
-        presetId === "clinic" && clinicPreset
-          ? applyClinicMaterialPreset(current, clinicPreset)
-          : applyPresetForKind(current, cavityKindsRef.current[toothNumber] ?? null, presetId);
-      return { ...prev, [toothNumber]: next };
+      const kind = innerKindOf(current, cavityKindsRef.current[toothNumber] ?? null);
+      return { ...prev, [toothNumber]: applyDesignPreset(current, preset, kind) };
     });
     queueSaveWorkRef.current();
   };
@@ -3258,6 +3280,17 @@ function LabProsthesisAiDesignDialog({
               aria-label="다시 실행"
             >
               <Redo2 className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 w-8 px-0"
+              onClick={() => setPresetDialog({ presetId: null })}
+              title="디자인 프리셋"
+              aria-label="디자인 프리셋"
+            >
+              <Settings2 className="h-3.5 w-3.5" />
             </Button>
           </div>
         </DialogHeader>
@@ -4329,21 +4362,6 @@ function LabProsthesisAiDesignDialog({
                           startAiming(bridgeSpan);
                           setModifyTool("insertion");
                         }}
-                        onApplyInner={() => {
-                          if (!activeNumber) return;
-                          beginEditUndo();
-                          setEdits((prev) => {
-                            const current = prev[activeNumber] ?? createToothDesignEdit();
-                            return {
-                              ...prev,
-                              [activeNumber]: {
-                                ...current,
-                                inner: { ...current.inner, applied: true },
-                              },
-                            };
-                          });
-                          queueSaveWorkRef.current();
-                        }}
                         onRemoveHook={() => {
                           if (!activeNumber) return;
                           beginEditUndo();
@@ -4359,32 +4377,8 @@ function LabProsthesisAiDesignDialog({
                           });
                           queueSaveWorkRef.current();
                         }}
-                        clinicLabel={clinicKey || null}
-                        clinicSaved={clinicPreset != null}
-                        onApplyClinic={() => {
-                          if (!activeNumber || !clinicPreset) return;
-                          applyPresetToTooth(activeNumber, "clinic");
-                        }}
-                        onSaveClinic={() => {
-                          if (!clinicKey || !activeNumber) return;
-                          const current = edits[activeNumber] ?? createToothDesignEdit();
-                          const preset: ClinicMaterialPreset = {
-                            clinicKey,
-                            label: clinicKey,
-                            ...materialSnapshot(current),
-                          };
-                          writeClinicMaterialPreset(preset);
-                          setClinicPreset(preset);
-                          beginEditUndo();
-                          setEdits((prev) => ({
-                            ...prev,
-                            [activeNumber]: {
-                              ...current,
-                              inner: { ...current.inner, preset: "clinic" },
-                            },
-                          }));
-                          queueSaveWorkRef.current();
-                        }}
+                        designPresets={designLibrary.presets}
+                        onOpenPresets={(presetId) => setPresetDialog({ presetId })}
                       />
                     ) : null}
                     {stage === "design" ? (
@@ -4492,7 +4486,8 @@ function LabProsthesisAiDesignDialog({
               generated={generated}
               marginReview={marginReview}
               designScope={designScope}
-              clinicPreset={clinicPreset}
+              designLibrary={designLibrary}
+              caseDefaultPresetId={caseDefaultPresetId}
               generating={generating}
               genLabel={genLabel}
               panelsShown={panelsShown}
@@ -4692,6 +4687,16 @@ function LabProsthesisAiDesignDialog({
                 })()
               : null}
           </div>
+        <LabDesignPresetDialog
+          open={presetDialog != null}
+          onOpenChange={(next) => {
+            if (!next) setPresetDialog(null);
+          }}
+          library={designLibrary}
+          onSave={saveDesignLibrary}
+          clinicName={clinicKey || null}
+          initialPresetId={presetDialog?.presetId ?? null}
+        />
         <DesignExportDialog
           open={exportOpen}
           onOpenChange={setExportOpen}
@@ -5048,7 +5053,8 @@ function DesignViewerChrome({
   generated,
   marginReview,
   designScope,
-  clinicPreset,
+  designLibrary,
+  caseDefaultPresetId,
   generating,
   genLabel,
   panelsShown,
@@ -5086,7 +5092,9 @@ function DesignViewerChrome({
   generated: Record<string, boolean>;
   marginReview: Record<string, MarginReview>;
   designScope: DesignScope | null;
-  clinicPreset: ClinicMaterialPreset | null;
+  designLibrary: DesignPresetLibrary;
+  /** 치과에 연결된 프리셋, 없으면 기공소 기본 프리셋. */
+  caseDefaultPresetId: string;
   generating: boolean;
   genLabel: string;
   panelsShown: boolean;
@@ -5102,7 +5110,7 @@ function DesignViewerChrome({
   onSetInsertion: (toothNumbers: readonly string[]) => void;
   onToggleInfo: () => void;
   onConfirmMargin: (toothNumber: string) => void;
-  onApplyPreset: (toothNumber: string, presetId: InnerPresetId) => void;
+  onApplyPreset: (toothNumber: string, presetId: string) => void;
   onGenerateTooth: (toothNumber: string) => void;
   onGenerateSpan: (span: readonly string[]) => void;
   onAssembleSpan: (span: readonly string[], assembled: boolean) => void;
@@ -5253,7 +5261,10 @@ function DesignViewerChrome({
     );
   };
 
-  /** 브리지는 스팬 전체에 같은 재료를 건다. 커넥터 최소 면적도 이 재료를 따른다. */
+  /**
+   * 생성 전 디자인 프리셋. 치아 유형에 맞는 열(크라운·인레이온레이·임플란트)을 복사한다.
+   * 브리지는 스팬 전체에 같은 프리셋을 건다. 커넥터 최소 면적도 그 재료를 따른다.
+   */
   const presetSelect = (members: readonly LabProsthesisAiTooth[], label: string) => {
     if (!scopeMakesCrown(designScope)) return null;
     const open = members.filter(
@@ -5261,33 +5272,30 @@ function DesignViewerChrome({
     );
     const lead = open[0];
     if (!lead) return null;
-    const presets = innerPresetsFor(cavityKinds[lead.toothNumber] ?? null);
-    const preset = toothEdit(lead.toothNumber).inner.preset;
-    const value =
-      preset === "clinic" && clinicPreset
-        ? "clinic"
-        : presets.some((row) => row.id === preset)
-          ? preset
-          : "zirconia";
+    const inner = toothEdit(lead.toothNumber).inner;
+    const value = inner.presetId === "" ? caseDefaultPresetId : (inner.presetId ?? "custom");
+    const listed = designLibrary.presets.some((row) => row.id === value);
     return (
       <select
-        className="h-7 max-w-[7.5rem] shrink-0 rounded-md border bg-background px-1 text-[11px]"
-        aria-label={`${label} 재료`}
+        className="h-7 max-w-[9rem] shrink-0 rounded-md border bg-background px-1 text-[11px]"
+        aria-label={`${label} 디자인 프리셋`}
+        title="내면 파라미터 프리셋"
         value={value}
         onChange={(event) => {
-          const next = event.target.value as InnerPresetId;
+          const next = event.target.value;
           for (const tooth of open) onApplyPreset(tooth.toothNumber, next);
         }}
       >
-        {presets.filter((row) => row.id !== "custom").map((row) => (
+        {designLibrary.presets.map((row) => (
           <option key={row.id} value={row.id}>
-            {row.label}
+            {row.name}
           </option>
         ))}
-        {clinicPreset ? (
-          <option value="clinic">{clinicPreset.label}</option>
+        {!listed ? (
+          <option value={value} disabled>
+            {value === "custom" ? "직접 조정" : inner.presetName || "지운 프리셋"}
+          </option>
         ) : null}
-        <option value="custom">직접 입력</option>
       </select>
     );
   };

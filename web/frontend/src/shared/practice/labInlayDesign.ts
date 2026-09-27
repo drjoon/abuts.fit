@@ -1,11 +1,9 @@
-// 기공소 AI 보철 — 인레이·온레이 와동 단면, 두께, 재료 프리셋, 와동 벽 테이퍼.
+// 기공소 AI 보철 — 인레이·온레이 와동 단면, 두께, 와동 벽 테이퍼.
+// 내면 숫자는 디자인 프리셋의 인레이·온레이 열이다(labDesignPresets.ts).
 
 import {
-  applyInnerPreset,
-  INNER_PRESETS,
+  innerGapMm,
   shellIsThin,
-  type InnerPreset,
-  type InnerPresetId,
   type ToothDesignEdit,
 } from "@/shared/practice/labProsthesisModify";
 
@@ -82,146 +80,6 @@ export const CAVITY_TAPER_UNDERCUT_DEG = 2;
 export const CAVITY_TAPER_WIDE_DEG = 15;
 export const CAVITY_TAPER_RECOMMENDED = "6–10°";
 
-type MaterialNumbers = Omit<InnerPreset, "id" | "label">;
-
-/** 인레이·온레이 재료별 값. 크라운보다 최소 두께가 두껍다. */
-const CAVITY_PRESETS: Record<
-  CavityKind,
-  Partial<Record<Exclude<InnerPresetId, "clinic" | "custom">, MaterialNumbers>>
-> = {
-  inlay: {
-    zirconia: {
-      cementGapMm: 0.06,
-      spacerMm: 0.04,
-      marginTaperMm: 0.02,
-      minThicknessMm: 1.0,
-      occlusalClearanceMm: 0.1,
-      proximalClearanceMm: 0.05,
-    },
-    glass: {
-      cementGapMm: 0.08,
-      spacerMm: 0.05,
-      marginTaperMm: 0.05,
-      minThicknessMm: 1.5,
-      occlusalClearanceMm: 0.1,
-      proximalClearanceMm: 0.05,
-    },
-    pmma: {
-      cementGapMm: 0.1,
-      spacerMm: 0.05,
-      marginTaperMm: 0,
-      minThicknessMm: 1.5,
-      occlusalClearanceMm: 0.15,
-      proximalClearanceMm: 0.08,
-    },
-    print: {
-      cementGapMm: 0.1,
-      spacerMm: 0.06,
-      marginTaperMm: 0.03,
-      minThicknessMm: 1.2,
-      occlusalClearanceMm: 0.12,
-      proximalClearanceMm: 0.06,
-    },
-  },
-  onlay: {
-    zirconia: {
-      cementGapMm: 0.06,
-      spacerMm: 0.05,
-      marginTaperMm: 0.02,
-      minThicknessMm: 1.2,
-      occlusalClearanceMm: 0.1,
-      proximalClearanceMm: 0.05,
-    },
-    glass: {
-      cementGapMm: 0.08,
-      spacerMm: 0.05,
-      marginTaperMm: 0.05,
-      minThicknessMm: 1.8,
-      occlusalClearanceMm: 0.1,
-      proximalClearanceMm: 0.05,
-    },
-    pmma: {
-      cementGapMm: 0.1,
-      spacerMm: 0.06,
-      marginTaperMm: 0,
-      minThicknessMm: 1.8,
-      occlusalClearanceMm: 0.15,
-      proximalClearanceMm: 0.08,
-    },
-    print: {
-      cementGapMm: 0.1,
-      spacerMm: 0.06,
-      marginTaperMm: 0.03,
-      minThicknessMm: 1.5,
-      occlusalClearanceMm: 0.12,
-      proximalClearanceMm: 0.06,
-    },
-  },
-};
-
-/** 보철 형태에 맞춘 재료 목록. 크라운은 기본 목록 그대로다. */
-export function innerPresetsFor(kind: CavityKind | null): InnerPreset[] {
-  if (!kind) return INNER_PRESETS;
-  return INNER_PRESETS.map((row) => {
-    const numbers = CAVITY_PRESETS[kind][row.id as keyof (typeof CAVITY_PRESETS)[CavityKind]];
-    return numbers ? { ...row, ...numbers } : row;
-  });
-}
-
-/** 재료를 고르면 이 숫자를 치아에 고정한다. 직접 입력·치과 프리셋은 숫자를 건드리지 않는다. */
-export function applyCavityPreset(
-  edit: ToothDesignEdit,
-  kind: CavityKind,
-  presetId: InnerPresetId,
-): ToothDesignEdit {
-  if (presetId === "custom" || presetId === "clinic") {
-    return { ...edit, inner: { ...edit.inner, preset: presetId, applied: false } };
-  }
-  const preset =
-    innerPresetsFor(kind).find((row) => row.id === presetId) ?? innerPresetsFor(kind)[0]!;
-  return {
-    ...edit,
-    inner: {
-      ...edit.inner,
-      preset: preset.id,
-      cementGapMm: preset.cementGapMm,
-      spacerMm: preset.spacerMm,
-      marginTaperMm: preset.marginTaperMm,
-      applied: false,
-    },
-    refine: {
-      ...edit.refine,
-      minThicknessMm: preset.minThicknessMm,
-      occlusalClearanceMm: preset.occlusalClearanceMm,
-      proximalClearanceMm: preset.proximalClearanceMm,
-    },
-  };
-}
-
-/** 크라운이면 기본 재료, 인레이·온레이면 와동 재료 숫자로 고른다. */
-export function applyPresetForKind(
-  edit: ToothDesignEdit,
-  kind: CavityKind | null,
-  presetId: InnerPresetId,
-): ToothDesignEdit {
-  return kind ? applyCavityPreset(edit, kind, presetId) : applyInnerPreset(edit, presetId);
-}
-
-/**
- * 치아 유형이 바뀌면 고른 재료는 두고 숫자만 그 유형 값으로 맞춘다.
- * 직접 입력·치과 프리셋은 숫자를 건드리지 않는다.
- */
-export function alignPresetToKind(
-  edit: ToothDesignEdit,
-  kind: CavityKind | null,
-): ToothDesignEdit {
-  const id = edit.inner.preset;
-  if (id === "custom" || id === "clinic") return edit;
-  const preset = innerPresetsFor(kind).find((row) => row.id === id);
-  if (!preset || preset.minThicknessMm === edit.refine.minThicknessMm) return edit;
-  return applyPresetForKind(edit, kind, id);
-}
-
 /** 검출 전 기본 고리. 높이는 치아 중심 평면이다. */
 export function defaultCavityMargin(
   edit: ToothDesignEdit,
@@ -269,7 +127,8 @@ export function cavityProfileMm(
   if (u <= 1e-6) return { top: 0, bottom: 0 };
   const depth = Math.max(0.3, depthMm);
   const wall = smoothstep(u / WALL_BAND);
-  const gap = edit.inner.cementGapMm + edit.inner.spacerMm * 0.35;
+  const seal = edit.inner.sealGapMm;
+  const gap = seal + (innerGapMm(edit.inner) - seal) * wall;
   const bottom = -depth * wall + gap * wall;
 
   const cusp = kind === "onlay" ? 0.22 : 0.1;

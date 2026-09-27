@@ -7,6 +7,7 @@ import {
   connectorOutline,
   crownScale,
   holeIssue,
+  innerGapMm,
   localShellThicknessMm,
   marginPointAngle,
   thicknessAlertRgb,
@@ -94,6 +95,9 @@ const TAPER_UNDERCUT = 0xdc2626;
 const TAPER_WIDE = 0xf59e0b;
 const HOOK = 0x64748b;
 const CUTBACK = 0xd6a37a;
+/** 프리셋 그림과 같은 색. 시멘트 갭 하늘, 마진 실 노랑. */
+const INNER_GAP = 0x7dd3fc;
+const INNER_SEAL = 0xfacc15;
 
 export function basisQuaternion(normal: THREE.Vector3, rightHint: THREE.Vector3) {
   const y = normal.clone().normalize();
@@ -484,12 +488,14 @@ export function buildProsthesisEditLayer(args: {
     tag(crown, { kind: "crown", tooth });
     root.add(crown);
 
-    if (edit.inner.applied && !edit.pontic.on) {
-      const gap = (edit.inner.cementGapMm + edit.inner.spacerMm * 0.35) / unit;
+    if (args.spec.tool === "inner" && !edit.pontic.on) {
+      const gap = innerGapMm(edit.inner) / unit;
+      const sealGap = edit.inner.sealGapMm / unit;
+      const sealHeight = Math.min(edit.inner.sealHeightMm / unit, height * 0.4);
       const inner = new THREE.Mesh(
         new THREE.SphereGeometry(1, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.42),
         new THREE.MeshStandardMaterial({
-          color: 0xc9bfb2,
+          color: INNER_GAP,
           roughness: 0.7,
           transparent: true,
           opacity: 0.55,
@@ -499,12 +505,34 @@ export function buildProsthesisEditLayer(args: {
       inner.quaternion.copy(quat);
       inner.scale.set(
         Math.max(width - gap, width * 0.7),
-        Math.max(height * 0.55 - edit.inner.marginTaperMm / unit, height * 0.28),
+        Math.max(height * 0.55 - sealHeight * 0.5, height * 0.28),
         Math.max(depth - gap, depth * 0.7),
       );
-      inner.position.copy(place.center);
+      inner.position.copy(place.center).addScaledVector(normal, sealHeight * 0.5);
       inner.renderOrder = 3;
       root.add(inner);
+      if (sealHeight > 1e-6) {
+        const seal = new THREE.Mesh(
+          new THREE.CylinderGeometry(1, 1, 1, 32, 1, true),
+          new THREE.MeshStandardMaterial({
+            color: INNER_SEAL,
+            roughness: 0.6,
+            transparent: true,
+            opacity: 0.6,
+            depthWrite: false,
+            side: THREE.DoubleSide,
+          }),
+        );
+        seal.quaternion.copy(quat);
+        seal.scale.set(
+          Math.max(width - sealGap, width * 0.7) * 0.97,
+          sealHeight,
+          Math.max(depth - sealGap, depth * 0.7) * 0.97,
+        );
+        seal.position.copy(place.center).addScaledVector(normal, sealHeight * 0.5);
+        seal.renderOrder = 3;
+        root.add(seal);
+      }
     }
 
     if (edit.cutback.on) {

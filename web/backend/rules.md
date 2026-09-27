@@ -145,6 +145,11 @@
   - 우편함: 신속 건 포함 시 주간 묶음 요일 제한 무시. 미발송 배지 요일은 가장 빠른 `estimatedShipYmd`(모달 출고일과 동일). YMD 없을 때만 `weeklyBatchDays` 폴백 (`shipping.controller.js` / frontend `shippingDay.helpers.ts`)
   - 대시보드 토글: `PATCH /my/shipping-mode` → `shipping.Requestor.controller.js` `updateMyShippingMode`
 
+### 기공소 디자인 프리셋 (AI 디자인 내면)
+
+- `GET|PUT /api/lab-design-presets` — 기공소(`assertLabAnchor`·`internalLab`)만. BA `labDesignPresets { presets[], defaultId, updatedAt }`. PUT은 목록 전체를 덮어쓴다(최대 40개).
+- 항목 형태·범위는 `utils/labDesignPresets.js` `normalizeLabDesignPresets`가 정리한다(프론트 `labDesignPresets.ts` `INNER_FIELDS`와 같은 범위). 비었으면 `presets: null` → 프론트 기본 프리셋. 기본 값의 SSOT는 프론트다.
+
 ### 스캔바디 라이브러리 업로드 (보안)
 
 - 흐름: `POST /api/scanbody-libraries/uploads` → 크기가 고정된 presigned POST(`scanbody-library/quarantine/<id>.bin`) → `POST .../uploads/:id/complete` → GuardDuty 태그 확인 → 워커 해석 → `ScanbodyLibrary` 병합. 상태는 `ScanbodyLibraryUpload`(uploading·scanning·processing·done·rejected·failed). 오늘(KST) 용량·건수 추정이 $1을 넘으면 새 업로드를 받지 않는다(`SCAN_DAILY_USD`).

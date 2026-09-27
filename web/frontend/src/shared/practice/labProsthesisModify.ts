@@ -1,7 +1,20 @@
 // 기공소 AI 보철 — 마진·삽입·내면·형상·훅·컷백·홀·커넥터·폰틱 수정값.
+// 내면은 기공소 디자인 프리셋(labDesignPresets.ts) 열을 복사한 숫자다.
 
 import { fdiToothDigits } from "@/shared/practice/toothArchOrder";
 import type { ScanbodyMesh } from "@/shared/practice/scanbodyRegistration";
+import {
+  defaultInnerParams,
+  findDesignPreset,
+  INNER_KINDS,
+  MATERIAL_OUTER,
+  normalizeInnerParams,
+  type DesignPreset,
+  type DesignPresetLibrary,
+  type InnerKind,
+  type InnerMaterial,
+  type InnerParams,
+} from "@/shared/practice/labDesignPresets";
 
 export const MARGIN_POINT_COUNT = 16;
 
@@ -58,8 +71,6 @@ export function sculptStampWidth(sizeMm: number, zoom = 1) {
   const size = clamp(sizeMm, 0.4, 5) / Math.max(zoom, 0.2);
   return SCULPT_BASE_WIDTH * (size / DEFAULT_SCULPT_BRUSH.sizeMm) ** 2;
 }
-
-export type InnerPresetId = "zirconia" | "glass" | "pmma" | "print" | "clinic" | "custom";
 
 /** 디자인 시작 전 범위. 마진만이면 크라운을 만들지 않는다. 모델은 크라운에 모델 출력을 더한다. */
 export type DesignScope = "margin" | "crown" | "model";
@@ -125,83 +136,19 @@ export type ConnectorShape = "inverted" | "round" | "triangle" | "proximal";
 
 export type CutbackRegion = "partial" | "full";
 
-export type InnerPreset = {
-  id: InnerPresetId;
-  label: string;
-  cementGapMm: number;
-  spacerMm: number;
-  marginTaperMm: number;
-  minThicknessMm: number;
-  occlusalClearanceMm: number;
-  proximalClearanceMm: number;
+/**
+ * 치아 내면. 프리셋 열의 숫자를 복사해 두고, 이후 라이브러리가 바뀌어도 케이스는 그대로다.
+ * 최소 두께는 형상과 같이 쓰므로 `refine.minThicknessMm`에 둔다.
+ */
+export type ToothInner = Omit<InnerParams, "minThicknessMm"> & {
+  /** 복사해 온 프리셋. ""=의뢰 기본 프리셋을 아직 걸지 않았다, null=직접 고쳤다. */
+  presetId: string | null;
+  presetName: string;
+  /** 복사한 열. 치아 유형이 바뀌면 같은 프리셋의 그 유형 열로 다시 맞춘다. */
+  kind: InnerKind;
+  /** 삽입축 기준 언더컷을 메워 내면이 걸리지 않게 한다. */
+  blockOut: boolean;
 };
-
-export const INNER_PRESETS: InnerPreset[] = [
-  {
-    id: "zirconia",
-    label: "지르코니아 밀링",
-    cementGapMm: 0.05,
-    spacerMm: 0.08,
-    marginTaperMm: 0.02,
-    minThicknessMm: 0.5,
-    occlusalClearanceMm: 0.1,
-    proximalClearanceMm: 0.05,
-  },
-  {
-    id: "glass",
-    label: "글라스 세라믹",
-    cementGapMm: 0.08,
-    spacerMm: 0.04,
-    marginTaperMm: 0.1,
-    minThicknessMm: 0.8,
-    occlusalClearanceMm: 0.1,
-    proximalClearanceMm: 0.05,
-  },
-  {
-    id: "pmma",
-    label: "임시치 PMMA",
-    cementGapMm: 0.12,
-    spacerMm: 0.06,
-    marginTaperMm: 0,
-    minThicknessMm: 0.8,
-    occlusalClearanceMm: 0.15,
-    proximalClearanceMm: 0.08,
-  },
-  {
-    id: "print",
-    label: "3D 프린트",
-    cementGapMm: 0.1,
-    spacerMm: 0.08,
-    marginTaperMm: 0.04,
-    minThicknessMm: 0.6,
-    occlusalClearanceMm: 0.12,
-    proximalClearanceMm: 0.06,
-  },
-  {
-    id: "custom",
-    label: "직접 입력",
-    cementGapMm: 0.05,
-    spacerMm: 0.08,
-    marginTaperMm: 0.02,
-    minThicknessMm: 0.5,
-    occlusalClearanceMm: 0.1,
-    proximalClearanceMm: 0.05,
-  },
-];
-
-/** 내장 목록에 없는 치과 프리셋. 케이스에는 숫자만 남긴다. */
-export type ClinicMaterialPreset = {
-  clinicKey: string;
-  label: string;
-  cementGapMm: number;
-  spacerMm: number;
-  marginTaperMm: number;
-  minThicknessMm: number;
-  occlusalClearanceMm: number;
-  proximalClearanceMm: number;
-};
-
-const CLINIC_PRESET_STORAGE = "abuts.labProsthesis.clinicPresets";
 
 /** 의뢰 헤더 `치과 · 환자`의 앞부분. */
 export function clinicKeyFromCasePrimary(primary: string | null | undefined): string {
@@ -230,55 +177,79 @@ export function parseMarginReviewMap(
   return out;
 }
 
-export function materialSnapshot(
-  edit: ToothDesignEdit,
-): Omit<ClinicMaterialPreset, "clinicKey" | "label"> {
+/** 치아에 걸린 내면 값을 프리셋 열 모양으로. */
+export function innerParamsOf(edit: ToothDesignEdit): InnerParams {
+  const { inner } = edit;
   return {
-    cementGapMm: edit.inner.cementGapMm,
-    spacerMm: edit.inner.spacerMm,
-    marginTaperMm: edit.inner.marginTaperMm,
+    method: inner.method,
+    material: inner.material,
+    toolRadiusMm: inner.toolRadiusMm,
     minThicknessMm: edit.refine.minThicknessMm,
-    occlusalClearanceMm: edit.refine.occlusalClearanceMm,
-    proximalClearanceMm: edit.refine.proximalClearanceMm,
+    cementGapMm: inner.cementGapMm,
+    extraGapMm: inner.extraGapMm,
+    sealGapMm: inner.sealGapMm,
+    sealHeightMm: inner.sealHeightMm,
+    marginWidthMm: inner.marginWidthMm,
+    marginAngleDeg: inner.marginAngleDeg,
   };
 }
 
-export function readClinicMaterialPreset(clinicKey: string): ClinicMaterialPreset | null {
-  const key = String(clinicKey || "").trim();
-  if (!key || typeof window === "undefined") return null;
-  try {
-    const raw = window.localStorage.getItem(CLINIC_PRESET_STORAGE);
-    if (!raw) return null;
-    const all = JSON.parse(raw) as Record<string, ClinicMaterialPreset>;
-    const row = all?.[key];
-    if (!row || !Number.isFinite(Number(row.minThicknessMm))) return null;
-    return {
-      clinicKey: key,
-      label: String(row.label || key),
-      cementGapMm: Number(row.cementGapMm) || 0,
-      spacerMm: Number(row.spacerMm) || 0,
-      marginTaperMm: Number(row.marginTaperMm) || 0,
-      minThicknessMm: Number(row.minThicknessMm),
-      occlusalClearanceMm: Number(row.occlusalClearanceMm) || 0,
-      proximalClearanceMm: Number(row.proximalClearanceMm) || 0,
-    };
-  } catch {
-    return null;
-  }
+/**
+ * 내면 값을 치아에 건다. 재료가 바뀌면 교합·인접 간격도 그 재료 값으로 맞춘다.
+ * `source`가 없으면 직접 고친 값이다.
+ */
+export function applyInnerParams(
+  edit: ToothDesignEdit,
+  params: InnerParams,
+  kind: InnerKind,
+  source: Pick<DesignPreset, "id" | "name"> | null,
+  blockOut = edit.inner.blockOut,
+): ToothDesignEdit {
+  const { minThicknessMm, ...inner } = params;
+  const outer =
+    source || params.material !== edit.inner.material ? MATERIAL_OUTER[params.material] : null;
+  return {
+    ...edit,
+    inner: {
+      ...inner,
+      presetId: source?.id ?? null,
+      presetName: source?.name ?? "",
+      kind,
+      blockOut,
+    },
+    refine: { ...edit.refine, minThicknessMm, ...(outer ?? {}) },
+  };
 }
 
-export function writeClinicMaterialPreset(preset: ClinicMaterialPreset) {
-  const key = String(preset.clinicKey || "").trim();
-  if (!key || typeof window === "undefined") return;
-  let all: Record<string, ClinicMaterialPreset> = {};
-  try {
-    const raw = window.localStorage.getItem(CLINIC_PRESET_STORAGE);
-    if (raw) all = JSON.parse(raw) as Record<string, ClinicMaterialPreset>;
-  } catch {
-    all = {};
-  }
-  all[key] = { ...preset, clinicKey: key };
-  window.localStorage.setItem(CLINIC_PRESET_STORAGE, JSON.stringify(all));
+export function applyDesignPreset(
+  edit: ToothDesignEdit,
+  preset: DesignPreset,
+  kind: InnerKind,
+): ToothDesignEdit {
+  return applyInnerParams(edit, preset[kind], kind, preset);
+}
+
+/**
+ * 의뢰 기본 프리셋을 아직 안 걸었으면 걸고, 치아 유형이 바뀌었으면 같은 프리셋의 그 열로 맞춘다.
+ * 직접 고친 치아와 목록에서 지워진 프리셋은 숫자를 그대로 둔다.
+ */
+export function alignPresetToKind(
+  edit: ToothDesignEdit,
+  kind: InnerKind,
+  library: DesignPresetLibrary,
+  caseDefaultId: string,
+): ToothDesignEdit {
+  const { presetId } = edit.inner;
+  if (presetId === null) return edit;
+  if (presetId !== "" && edit.inner.kind === kind) return edit;
+  const preset = findDesignPreset(library, presetId || caseDefaultId);
+  if (!preset) return edit;
+  return applyDesignPreset(edit, preset, kind);
+}
+
+/** 내면 전체 간격(mm). 마진 실 띠 위에서 쓴다. */
+export function innerGapMm(inner: ToothInner) {
+  return inner.cementGapMm + inner.extraGapMm * 0.5;
 }
 
 export const CONNECTOR_SHAPES: Array<{ id: ConnectorShape; label: string }> = [
@@ -338,13 +309,11 @@ const CONNECTOR_AREA_FACTOR: Record<ConnectorShape, number> = {
 };
 
 /** 재료별 커넥터 최소 단면적(mm²). 전치부·구치부. */
-const CONNECTOR_MIN_AREA: Record<InnerPresetId, { anterior: number; posterior: number }> = {
+const CONNECTOR_MIN_AREA: Record<InnerMaterial, { anterior: number; posterior: number }> = {
   zirconia: { anterior: 7, posterior: 9 },
   glass: { anterior: 12, posterior: 16 },
   pmma: { anterior: 10, posterior: 12 },
-  print: { anterior: 10, posterior: 12 },
-  clinic: { anterior: 7, posterior: 9 },
-  custom: { anterior: 7, posterior: 9 },
+  resin: { anterior: 10, posterior: 12 },
 };
 
 /** 단면 이동 한계(mm). 치아 밖으로 빠지지 않게 한다. */
@@ -360,10 +329,10 @@ export function connectorAreaMm2(connector: ToothDesignEdit["connector"]) {
 
 /** 전치부(1~3번)가 하나라도 있으면 전치부 기준. */
 export function connectorMinAreaMm2(
-  preset: InnerPresetId,
+  material: InnerMaterial,
   toothNumbers: readonly string[],
 ) {
-  const row = CONNECTOR_MIN_AREA[preset] ?? CONNECTOR_MIN_AREA.zirconia;
+  const row = CONNECTOR_MIN_AREA[material] ?? CONNECTOR_MIN_AREA.zirconia;
   const anterior = toothNumbers.some((tooth) => /^[1-4][1-3]$/.test(fdiToothDigits(tooth)));
   return anterior ? row.anterior : row.posterior;
 }
@@ -375,7 +344,7 @@ export function connectorIsWeak(
   if (!edit.connector.linked) return false;
   return (
     connectorAreaMm2(edit.connector) + 1e-4 <
-    connectorMinAreaMm2(edit.inner.preset, toothNumbers)
+    connectorMinAreaMm2(edit.inner.material, toothNumbers)
   );
 }
 
@@ -400,13 +369,7 @@ export type ToothDesignEdit = {
       openSides: number;
     } | null;
   };
-  inner: {
-    preset: InnerPresetId;
-    cementGapMm: number;
-    spacerMm: number;
-    marginTaperMm: number;
-    applied: boolean;
-  };
+  inner: ToothInner;
   refine: {
     scale: number;
     cusp: number;
@@ -534,8 +497,59 @@ function ones(count: number) {
   return Array.from({ length: count }, () => 1);
 }
 
+function withoutMinThickness(params: InnerParams): Omit<InnerParams, "minThicknessMm"> {
+  const out: Partial<InnerParams> = { ...params };
+  delete out.minThicknessMm;
+  return out as Omit<InnerParams, "minThicknessMm">;
+}
+
+function defaultToothInner(): ToothInner {
+  return {
+    ...withoutMinThickness(defaultInnerParams("crown")),
+    presetId: "",
+    presetName: "",
+    kind: "crown",
+    blockOut: true,
+  };
+}
+
+/** 예전 초안은 재료 id·스페이서였다. 숫자는 두고 직접 고친 값으로 본다. */
+function normalizeToothInner(raw: unknown, minThicknessMm: number): ToothInner {
+  const base = defaultToothInner();
+  if (!raw || typeof raw !== "object") return base;
+  const row = raw as Record<string, unknown>;
+  if (typeof row.preset === "string" && !("presetId" in row)) {
+    const print = row.preset === "print";
+    const material: InnerMaterial =
+      print ? "resin" : row.preset === "glass" || row.preset === "pmma" ? row.preset : "zirconia";
+    const cement = Number(row.cementGapMm);
+    const spacer = Number(row.spacerMm);
+    return {
+      ...base,
+      method: print ? "print" : "milling",
+      material,
+      toolRadiusMm: print ? 0 : base.toolRadiusMm,
+      cementGapMm: Number.isFinite(cement) ? cement : base.cementGapMm,
+      extraGapMm: Number.isFinite(spacer) ? spacer : base.extraGapMm,
+      presetId: null,
+    };
+  }
+  const params = withoutMinThickness(
+    normalizeInnerParams({ ...row, minThicknessMm }, { ...base, minThicknessMm }),
+  );
+  const presetId =
+    row.presetId === null ? null : typeof row.presetId === "string" ? row.presetId : "";
+  return {
+    ...params,
+    presetId,
+    presetName: typeof row.presetName === "string" ? row.presetName : "",
+    kind: INNER_KINDS.some((item) => item.id === row.kind) ? (row.kind as InnerKind) : "crown",
+    blockOut: row.blockOut !== false,
+  };
+}
+
 export function createToothDesignEdit(): ToothDesignEdit {
-  const preset = INNER_PRESETS[0]!;
+  const preset = { ...defaultInnerParams("crown"), ...MATERIAL_OUTER.zirconia };
   return {
     pontic: { on: false, base: "modifiedRidgeLap" },
     margin: {
@@ -545,13 +559,7 @@ export function createToothDesignEdit(): ToothDesignEdit {
       showBack: false,
       deleted: false,
     },
-    inner: {
-      preset: preset.id,
-      cementGapMm: preset.cementGapMm,
-      spacerMm: preset.spacerMm,
-      marginTaperMm: preset.marginTaperMm,
-      applied: false,
-    },
+    inner: defaultToothInner(),
     refine: {
       scale: 1,
       cusp: 0,
@@ -600,6 +608,7 @@ export function normalizeToothDesignEdit(raw: unknown): ToothDesignEdit {
   const pontic = (row.pontic ?? {}) as Partial<ToothDesignEdit["pontic"]>;
   const connector = (row.connector ?? {}) as Partial<ToothDesignEdit["connector"]>;
   const implant = (row.implant ?? {}) as Partial<ToothDesignEdit["implant"]>;
+  const refine = { ...base.refine, ...(row.refine ?? {}) };
   return {
     ...base,
     ...row,
@@ -622,8 +631,8 @@ export function normalizeToothDesignEdit(raw: unknown): ToothDesignEdit {
         : base.pontic.base,
     },
     margin: { ...base.margin, ...(row.margin ?? {}) },
-    inner: { ...base.inner, ...(row.inner ?? {}) },
-    refine: { ...base.refine, ...(row.refine ?? {}) },
+    inner: normalizeToothInner(row.inner, refine.minThicknessMm),
+    refine,
     hook: { ...base.hook, ...(row.hook ?? {}) },
     cutback: { ...base.cutback, ...(row.cutback ?? {}) },
     hole: { ...base.hole, ...(row.hole ?? {}) },
@@ -947,49 +956,6 @@ export function insertMarginPoint(
   };
 }
 
-function applyMaterialNumbers(
-  edit: ToothDesignEdit,
-  presetId: InnerPresetId,
-  numbers: Omit<ClinicMaterialPreset, "clinicKey" | "label">,
-): ToothDesignEdit {
-  return {
-    ...edit,
-    inner: {
-      ...edit.inner,
-      preset: presetId,
-      cementGapMm: numbers.cementGapMm,
-      spacerMm: numbers.spacerMm,
-      marginTaperMm: numbers.marginTaperMm,
-      applied: false,
-    },
-    refine: {
-      ...edit.refine,
-      minThicknessMm: numbers.minThicknessMm,
-      occlusalClearanceMm: numbers.occlusalClearanceMm,
-      proximalClearanceMm: numbers.proximalClearanceMm,
-    },
-  };
-}
-
-export function applyInnerPreset(
-  edit: ToothDesignEdit,
-  presetId: InnerPresetId,
-): ToothDesignEdit {
-  if (presetId === "custom" || presetId === "clinic") {
-    return { ...edit, inner: { ...edit.inner, preset: presetId, applied: false } };
-  }
-  const preset = INNER_PRESETS.find((row) => row.id === presetId) ?? INNER_PRESETS[0]!;
-  return applyMaterialNumbers(edit, preset.id, preset);
-}
-
-/** 치과 프리셋 숫자를 이 치아에 고정한다. 이후 라이브러리가 바뀌어도 케이스는 그대로다. */
-export function applyClinicMaterialPreset(
-  edit: ToothDesignEdit,
-  preset: ClinicMaterialPreset,
-): ToothDesignEdit {
-  return applyMaterialNumbers(edit, "clinic", preset);
-}
-
 /** 외면 껍질 두께(mm). 보상은 최소 두께까지 올린다. */
 export function shellThicknessMm(edit: ToothDesignEdit) {
   const dent = edit.refine.sculpt.reduce(
@@ -1000,7 +966,7 @@ export function shellThicknessMm(edit: ToothDesignEdit) {
     0.55 * edit.refine.scale -
     dent * 0.25 -
     (edit.refine.occlusalTrim ? edit.refine.occlusalClearanceMm * 0.35 : 0) -
-    edit.inner.cementGapMm * 0.35;
+    innerGapMm(edit.inner) * 0.35;
   if (edit.cutback.on) shell -= edit.cutback.thicknessMm * 0.45;
   if (edit.refine.compensate) shell = Math.max(shell, edit.refine.minThicknessMm);
   return shell;
@@ -1017,7 +983,10 @@ function wrapAngle(delta: number) {
   return next;
 }
 
-/** 교합 0~1. 스컬프트·컷백·교합 절삭이 있는 자리만 더 얇다. */
+/** 마진 실 높이를 교합 0~1로 옮길 때 보는 크라운 높이. */
+const CROWN_HEIGHT_MM = 7;
+
+/** 교합 0~1. 스컬프트·컷백·교합 절삭이 있는 자리만 더 얇다. 마진 실 띠는 마진 실 갭을 쓴다. */
 export function localShellThicknessMm(
   edit: ToothDesignEdit,
   angle: number,
@@ -1032,8 +1001,11 @@ export function localShellThicknessMm(
     if (stamp.amount < 0) dent += -stamp.amount * influence;
   }
   dent *= damp;
-  let shell =
-    0.55 * edit.refine.scale - dent * 0.25 - edit.inner.cementGapMm * 0.35;
+  const gap =
+    occlusal01 < edit.inner.sealHeightMm / CROWN_HEIGHT_MM
+      ? edit.inner.sealGapMm
+      : innerGapMm(edit.inner);
+  let shell = 0.55 * edit.refine.scale - dent * 0.25 - gap * 0.35;
   if (edit.refine.occlusalTrim) {
     const band = Math.min(1, Math.max(0, (occlusal01 - 0.55) / 0.45));
     shell -= edit.refine.occlusalClearanceMm * 0.35 * band;

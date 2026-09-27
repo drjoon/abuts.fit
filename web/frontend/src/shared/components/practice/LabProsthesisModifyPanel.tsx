@@ -1,9 +1,10 @@
 // 기공소 AI 보철 — 마진·삽입·내면·형상·훅·컷백·홀·커넥터 조작.
 
-import { useState, type ReactNode } from "react";
+import { Fragment, useState, type ReactNode } from "react";
 import { TriangleAlert } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
@@ -18,10 +19,12 @@ import {
   PONTIC_BASES,
   SCULPT_SHAPES,
   adjustMarginOffset,
+  applyInnerParams,
   connectorAreaMm2,
   connectorIsWeak,
   connectorMinAreaMm2,
   holeIssue,
+  innerParamsOf,
   shellThicknessMm,
   type EditBrush,
   type MarginEditMode,
@@ -30,15 +33,28 @@ import {
   type ToothDesignEdit,
 } from "@/shared/practice/labProsthesisModify";
 import {
-  applyPresetForKind,
   CAVITY_TAPER_RECOMMENDED,
   cavityDepthMm,
   cavityTaperSummary,
   cavityThicknessMm,
   designIsThin,
-  innerPresetsFor,
   type CavityKind,
 } from "@/shared/practice/labInlayDesign";
+import {
+  INNER_FIELDS,
+  INNER_KINDS,
+  INNER_METHODS,
+  innerKindOf,
+  withMethod,
+  type DesignPreset,
+  type InnerKind,
+  type InnerParams,
+} from "@/shared/practice/labDesignPresets";
+import {
+  HintLines,
+  InnerMaterialSelect,
+  InnerNumberInput,
+} from "@/shared/components/practice/LabInnerParamFields";
 import { fitDistanceRgb } from "@/shared/components/practice/labProsthesisEditLayer";
 import { cn } from "@/shared/ui/cn";
 
@@ -92,13 +108,10 @@ type Props = {
   canUndercut: boolean;
   onUndercut: (on: boolean) => void;
   onMatchInsertion: () => void;
-  onApplyInner: () => void;
   onRemoveHook: () => void;
-  /** 의뢰 발신자(치과). 없으면 치과 프리셋을 두지 않는다. */
-  clinicLabel: string | null;
-  clinicSaved: boolean;
-  onApplyClinic: () => void;
-  onSaveClinic: () => void;
+  /** 기공소 디자인 프리셋. 내면 도구에서 복사한다. */
+  designPresets: DesignPreset[];
+  onOpenPresets: (presetId: string | null) => void;
   /** 이 브리지 스팬의 커넥터. 설정은 앞 치아(from) 수정값에 둔다. */
   connectors: ConnectorRow[];
   connectorFrom: string | null;
@@ -145,7 +158,7 @@ function ConnectorControls({
 }) {
   const connector = row.edit.connector;
   const area = connectorAreaMm2(connector);
-  const minArea = connectorMinAreaMm2(row.edit.inner.preset, [row.from, row.to]);
+  const minArea = connectorMinAreaMm2(row.edit.inner.material, [row.from, row.to]);
   const weak = connectorIsWeak(row.edit, [row.from, row.to]);
   const locked = assembled;
   const set = (patch: Partial<ToothDesignEdit["connector"]>) =>
@@ -316,6 +329,156 @@ function ConnectorControls({
   );
 }
 
+/**
+ * 내면 도구. 값은 이 패널 안에서만 고치고 「적용」을 눌러야 치아에 건다.
+ * 프리셋에서 복사하면 그 프리셋의 이 치아 유형 열을 가져온다.
+ */
+function InnerControls({
+  edit,
+  kind,
+  generated,
+  presets,
+  onEdit,
+  onOpenPresets,
+}: {
+  edit: ToothDesignEdit;
+  kind: InnerKind;
+  generated: boolean;
+  presets: DesignPreset[];
+  onEdit: (next: ToothDesignEdit) => void;
+  onOpenPresets: (presetId: string | null) => void;
+}) {
+  const committed = innerParamsOf(edit);
+  const [draft, setDraft] = useState<InnerParams>(committed);
+  const [blockOut, setBlockOut] = useState(edit.inner.blockOut);
+  const [source, setSource] = useState<DesignPreset | null>(
+    () => presets.find((row) => row.id === edit.inner.presetId) ?? null,
+  );
+  const dirty =
+    JSON.stringify(draft) !== JSON.stringify(committed) ||
+    blockOut !== edit.inner.blockOut ||
+    (source?.id ?? null) !== (edit.inner.presetId || null);
+  const kindLabel = INNER_KINDS.find((row) => row.id === kind)?.label ?? "";
+  const set = (patch: Partial<InnerParams>) => {
+    setDraft((prev) => ({ ...prev, ...patch }));
+    setSource(null);
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-2 text-[11px]">
+        <span className="text-muted-foreground">{kindLabel} 열</span>
+        <button
+          type="button"
+          className="font-medium text-primary hover:underline"
+          onClick={() => onOpenPresets(source?.id ?? edit.inner.presetId ?? null)}
+        >
+          프리셋 관리
+        </button>
+      </div>
+      <select
+        className="h-7 w-full rounded-md border bg-background px-1 text-[11px]"
+        aria-label="프리셋에서 복사"
+        value={source?.id ?? ""}
+        onChange={(event) => {
+          const preset = presets.find((row) => row.id === event.target.value);
+          if (!preset) return;
+          setDraft({ ...preset[kind] });
+          setSource(preset);
+        }}
+      >
+        <option value="" disabled>
+          {edit.inner.presetId === null || dirty ? "직접 조정" : "프리셋에서 복사"}
+        </option>
+        {presets.map((row) => (
+          <option key={row.id} value={row.id}>
+            {row.name}
+          </option>
+        ))}
+      </select>
+      <Row label="가공 방식">
+        <div className="grid grid-cols-2 gap-1">
+          {INNER_METHODS.map((method) => (
+            <Button
+              key={method.id}
+              type="button"
+              size="sm"
+              variant={draft.method === method.id ? "default" : "outline"}
+              className="h-7 px-1 text-[11px]"
+              onClick={() => {
+                setDraft((prev) => withMethod(prev, method.id));
+                setSource(null);
+              }}
+            >
+              {method.label}
+            </Button>
+          ))}
+        </div>
+      </Row>
+      <div className="grid grid-cols-[minmax(0,1fr)_6.5rem] items-center gap-x-2 gap-y-1.5">
+        <span className="text-xs font-medium">재료</span>
+        <InnerMaterialSelect
+          label="재료"
+          method={draft.method}
+          value={draft.material}
+          onChange={(material) => set({ material })}
+        />
+        {INNER_FIELDS.map((field) => (
+          <Fragment key={field.key}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="w-fit cursor-help text-xs font-medium">{field.label}</span>
+              </TooltipTrigger>
+              <TooltipContent side="right" className="z-[520] max-w-72">
+                <HintLines text={field.hint} />
+              </TooltipContent>
+            </Tooltip>
+            <InnerNumberInput
+              field={field}
+              label={field.label}
+              value={draft[field.key]}
+              disabled={field.key === "toolRadiusMm" && draft.method === "print"}
+              onChange={(value) => set({ [field.key]: value })}
+            />
+          </Fragment>
+        ))}
+      </div>
+      <label className="flex items-center gap-2 text-xs font-medium">
+        <Checkbox
+          className="h-3.5 w-3.5"
+          checked={blockOut}
+          onCheckedChange={(checked) => setBlockOut(checked === true)}
+          aria-label="블록아웃"
+        />
+        블록아웃
+      </label>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="flex min-w-0">
+            <Button
+              type="button"
+              size="sm"
+              className="h-7 w-full text-[11px]"
+              disabled={!dirty}
+              onClick={() => {
+                const same = source && JSON.stringify(source[kind]) === JSON.stringify(draft);
+                onEdit(applyInnerParams(edit, draft, kind, same ? source : null, blockOut));
+              }}
+            >
+              적용
+            </Button>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="right" className="z-[520]">
+          {generated
+            ? "생성한 보철 내면을 이 값으로 다시 만듭니다."
+            : "생성할 때 이 값을 씁니다."}
+        </TooltipContent>
+      </Tooltip>
+    </div>
+  );
+}
+
 function Row({
   label,
   value,
@@ -360,12 +523,9 @@ export function LabProsthesisModifyPanel({
   canUndercut,
   onUndercut,
   onMatchInsertion,
-  onApplyInner,
   onRemoveHook,
-  clinicLabel,
-  clinicSaved,
-  onApplyClinic,
-  onSaveClinic,
+  designPresets,
+  onOpenPresets,
   connectors,
   connectorFrom,
   onConnectorFrom,
@@ -382,7 +542,7 @@ export function LabProsthesisModifyPanel({
   const implant = edit.implant.on;
   const cavity = implant || edit.pontic.on ? null : cavityKind;
   const thin = designIsThin(edit, cavity);
-  const presets = innerPresetsFor(cavity);
+  const innerKind = innerKindOf(edit, cavity);
   const taper = cavity ? cavityTaperSummary(edit.margin.cavity) : null;
   const issue = implant ? null : holeIssue(edit.hole);
   const marginWord = implant ? "EPL" : "마진";
@@ -801,134 +961,19 @@ export function LabProsthesisModifyPanel({
       ) : null}
 
       {tool === "inner" ? (
-        <div className="space-y-2">
-          <div className="grid grid-cols-2 gap-1">
-            {presets.filter((preset) => preset.id !== "custom").map((preset) => (
-              <Button
-                key={preset.id}
-                type="button"
-                size="sm"
-                variant={edit.inner.preset === preset.id ? "default" : "outline"}
-                className="h-7 px-1 text-[11px]"
-                title={`최소 두께 ${preset.minThicknessMm.toFixed(1)} mm`}
-                onClick={() => onEdit(applyPresetForKind(edit, cavity, preset.id))}
-              >
-                {preset.label}
-              </Button>
-            ))}
-            <Button
-              type="button"
-              size="sm"
-              variant={edit.inner.preset === "custom" ? "default" : "outline"}
-              className="h-7 px-1 text-[11px]"
-              onClick={() => onEdit(applyPresetForKind(edit, cavity, "custom"))}
-            >
-              직접 입력
-            </Button>
-          </div>
-          {clinicLabel ? (
-            <div className="flex gap-1">
-              <Button
-                type="button"
-                size="sm"
-                variant={edit.inner.preset === "clinic" ? "default" : "outline"}
-                className="h-7 flex-1 px-1 text-[11px]"
-                disabled={!clinicSaved}
-                onClick={onApplyClinic}
-              >
-                {clinicLabel}
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="h-7 px-2 text-[11px]"
-                title="이 치과의 시멘트 갭, 최소 두께, 교합 간격을 저장합니다."
-                onClick={onSaveClinic}
-              >
-                저장
-              </Button>
-            </div>
-          ) : null}
-          <Row label="시멘트 갭" value={`${edit.inner.cementGapMm.toFixed(2)} mm`}>
-            <Slider
-              min={0}
-              max={20}
-              step={1}
-              value={[Math.round(edit.inner.cementGapMm * 100)]}
-              onValueChange={([value]) =>
-                onEdit({
-                  ...edit,
-                  inner: {
-                    ...edit.inner,
-                    preset: "custom",
-                    cementGapMm: (value ?? 5) / 100,
-                    applied: false,
-                  },
-                })
-              }
-              aria-label="시멘트 갭"
-            />
-          </Row>
-          <Row label="스페이서" value={`${edit.inner.spacerMm.toFixed(2)} mm`}>
-            <Slider
-              min={0}
-              max={20}
-              step={1}
-              value={[Math.round(edit.inner.spacerMm * 100)]}
-              onValueChange={([value]) =>
-                onEdit({
-                  ...edit,
-                  inner: {
-                    ...edit.inner,
-                    preset: "custom",
-                    spacerMm: (value ?? 8) / 100,
-                    applied: false,
-                  },
-                })
-              }
-              aria-label="스페이서"
-            />
-          </Row>
-          <Row label="마진 테이퍼" value={`${edit.inner.marginTaperMm.toFixed(2)} mm`}>
-            <Slider
-              min={0}
-              max={20}
-              step={1}
-              value={[Math.round(edit.inner.marginTaperMm * 100)]}
-              onValueChange={([value]) =>
-                onEdit({
-                  ...edit,
-                  inner: {
-                    ...edit.inner,
-                    preset: "custom",
-                    marginTaperMm: (value ?? 0) / 100,
-                    applied: false,
-                  },
-                })
-              }
-              aria-label="마진 테이퍼"
-            />
-          </Row>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="flex min-w-0">
-                <Button
-                  type="button"
-                  size="sm"
-                  className="h-7 w-full text-[11px]"
-                  disabled={!generated}
-                  onClick={onApplyInner}
-                >
-                  {edit.inner.applied ? "내면 적용됨" : "내면 적용"}
-                </Button>
-              </span>
-            </TooltipTrigger>
-            <TooltipContent side="right" className="z-[520]">
-              생성한 보철 내면에 갭을 적용합니다.
-            </TooltipContent>
-          </Tooltip>
-        </div>
+        edit.pontic.on ? (
+          <p className="text-[11px] text-muted-foreground">폰틱은 내면이 없습니다.</p>
+        ) : (
+          <InnerControls
+            key={`${toothLabel ?? ""}\0${innerKind}\0${JSON.stringify(edit.inner)}\0${edit.refine.minThicknessMm}`}
+            edit={edit}
+            kind={innerKind}
+            generated={generated}
+            presets={designPresets}
+            onEdit={onEdit}
+            onOpenPresets={onOpenPresets}
+          />
+        )
       ) : null}
 
       {tool === "refine" ? (
@@ -1018,7 +1063,6 @@ export function LabProsthesisModifyPanel({
               onValueChange={([value]) =>
                 onEdit({
                   ...edit,
-                  inner: { ...edit.inner, preset: "custom" },
                   refine: {
                     ...edit.refine,
                     occlusalClearanceMm: (value ?? 10) / 100,
@@ -1051,7 +1095,6 @@ export function LabProsthesisModifyPanel({
               onValueChange={([value]) =>
                 onEdit({
                   ...edit,
-                  inner: { ...edit.inner, preset: "custom" },
                   refine: {
                     ...edit.refine,
                     proximalClearanceMm: (value ?? 5) / 100,
@@ -1181,7 +1224,7 @@ export function LabProsthesisModifyPanel({
               onValueChange={([value]) =>
                 onEdit({
                   ...edit,
-                  inner: { ...edit.inner, preset: "custom" },
+                  inner: { ...edit.inner, presetId: null, presetName: "" },
                   refine: {
                     ...edit.refine,
                     minThicknessMm: (value ?? 50) / 100,

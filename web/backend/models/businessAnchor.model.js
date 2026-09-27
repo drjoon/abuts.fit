@@ -649,6 +649,13 @@ const businessAnchorSchema = new mongoose.Schema(
         default: null,
       },
     },
+    // 기공소 AI 디자인 프리셋(내면 파라미터). lab only. 항목 형태는 utils/labDesignPresets.js가 정리한다.
+    // related: web/backend/controllers/labDesignPresets/labDesignPreset.controller.js
+    labDesignPresets: {
+      presets: { type: [mongoose.Schema.Types.Mixed], default: undefined },
+      defaultId: { type: String, default: "" },
+      updatedAt: { type: Date, default: null },
+    },
     // 기공소→치과별 기공수가 할증(배수). 현재값 + history(변경·1x 해제 이력).
     // as-of: 의뢰 createdAt 기준 당시 배수. 이후 변경분은 다음 건부터.
     // related: web/backend/utils/labFeeSchedule.js (resolveLabPracticeFeeMultiplierAsOf)
