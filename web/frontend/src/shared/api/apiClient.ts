@@ -33,6 +33,13 @@ export interface ApiRequestOptions extends RequestInit {
    * 방금 변이한 목록을 다시 읽을 때 사용합니다.
    */
   skipCache?: boolean;
+  /**
+   * GET 캐시 TTL(ms) 오버라이드. 기본 1초는 여러 컴포넌트가 동시에 마운트되며
+   * 각자 같은 GET을 호출하는 부트스트랩 구간(수 초)을 못 덮는다.
+   * 잘 안 바뀌는 카탈로그성 응답(예: 기공비 수가표)에 한해 길게 잡는다.
+   * PUT 저장 후 응답으로 로컬 state를 갱신하고 재-GET하지 않는 화면에서만 안전하다.
+   */
+  cacheTtlMs?: number;
 }
 
 export function invalidateApiGetCache(pathSubstring: string) {
@@ -63,6 +70,7 @@ export async function apiFetch<T = any>(
     jsonBody,
     headers,
     skipCache = false,
+    cacheTtlMs = SHORT_CACHE_TTL_MS,
     body: rawBody,
     ...rest
   } = options;
@@ -126,7 +134,7 @@ export async function apiFetch<T = any>(
   const now = Date.now();
   if (method === "GET" && !skipCache) {
     const cached = SHORT_CACHE.get(requestKey);
-    if (cached && now - cached.ts <= SHORT_CACHE_TTL_MS) {
+    if (cached && now - cached.ts <= cacheTtlMs) {
       return cached.value as ApiResponse<T>;
     }
   }

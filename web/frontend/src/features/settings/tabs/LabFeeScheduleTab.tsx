@@ -56,6 +56,7 @@ import {
   formatFreeRemakeYearsLabel,
   labFeeItemMatchesNeedName,
   isCustomAbutmentLabFeeLineType,
+  LAB_FEE_SCHEDULE_GET_CACHE_TTL_MS,
   type LabFeeItem,
   type LabFeeItemUnit,
   type LabFeeSchedule,
@@ -327,6 +328,7 @@ export const LabFeeScheduleTab = () => {
         path: "/api/lab-trading-partners/fee-schedule",
         method: "GET",
         token,
+        cacheTtlMs: LAB_FEE_SCHEDULE_GET_CACHE_TTL_MS,
       });
       if (!res.ok) {
         toast({

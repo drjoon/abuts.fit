@@ -140,8 +140,12 @@ export const CacheKeys = {
   // 배송 리드타임 (자주 변경되지 않음)
   deliveryLeadDays: () => "delivery:lead-days",
 
-  // 어벗츠 기공수가 카탈로그(자동매칭 예산). 관리자 저장 시 invalidate
+  // 어벗츠 기공수가 카탈로그(자동매칭 예산, enabled 항목만). 관리자 저장 시 invalidate
   abutsLabFeeCatalog: () => "abuts:lab-fee-catalog",
+
+  // 어벗츠 기공수가 원본 스케줄(pendingReview 포함). loadAbutsLabFeeSchedule SSOT.
+  // 기공소 fee-schedule/special-supply-prices 조회 핫패스 — 관리자 저장 시 invalidate
+  abutsLabFeeSchedule: () => "abuts:lab-fee-schedule",
 
   // 직경별 통계 (사용자별, 5분 캐시)
   diameterStats: (userId, role) => `stats:diameter:${role}:${userId}`,

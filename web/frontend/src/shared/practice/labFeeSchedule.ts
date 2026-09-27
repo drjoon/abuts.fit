@@ -84,6 +84,16 @@ const formatToothNumbersForFeeLine = (teeth: readonly string[]) => {
 };
 
 /** 기공수가 할증 배수. 1=없음, 최대 5, 소수 둘째 자리. */
+/**
+ * 성능개선: /api/lab-trading-partners/fee-schedule·special-supply-prices GET용
+ * apiFetch 캐시 TTL. 기본 1초는 여러 컴포넌트(설정 탭 여러 개·배지·알림)가 같은
+ * 페이지 부트스트랩(수 초) 동안 각자 마운트되며 중복 호출하는 걸 못 막는다.
+ * 서버도 이제 이 응답을 60초 캐시하므로, 클라이언트도 그 안에서 여유를 둔다.
+ * 이 값을 쓰는 화면은 PUT 저장 응답으로 로컬 state를 갱신하고 재-GET하지
+ * 않는다 — 재-GET이 필요하면 apiFetch({ skipCache: true })로 우회한다.
+ */
+export const LAB_FEE_SCHEDULE_GET_CACHE_TTL_MS = 5000;
+
 export const normalizeLabFeeMultiplier = (value: unknown): number => {
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 1) return 1;

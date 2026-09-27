@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, Outlet, useNavigate, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -931,17 +931,28 @@ export const DashboardLayout = () => {
     }
   }, [canFetchRequestorPracticeUnread, token]);
 
+  // 성능개선(로그 폭탄 원인): 이 콜백이 자신이 set하는 상태(creditBalance 등)와
+  // user 전체 객체를 의존성으로 가지면, fetch 성공 시 값이 바뀔 때마다 콜백 identity가
+  // 새로 생성되어 아래 마운트 effect가 재실행 → 다시 fetch → (실제 잔액이 변동 중이면)
+  // 값이 또 바뀌어 재귀적으로 반복된다. user는 setLastDashboardPath/setSidebarOpen 등
+  // 다른 필드 변경만으로도 매번 새 객체 참조가 되므로 더 자주 재생성된다.
+  // → 상태값 대신 ref로 "이미 로드했는지"를 추적하고, user는 안정적인 원시값만 구독한다.
+  const creditBalanceLoadedForRef = useRef<string | null>(null);
+  const userId = user?.id;
+  const userRole = user?.role;
+  const userBusinessAnchorId = user?.businessAnchorId;
+
   const fetchCreditBalance = useCallback(async () => {
     if (!token) return;
-    if (!user) return;
-    if (isPracticeUser || (user.role !== "requestor" && user.role !== "internalLab")) {
+    if (!userId) return;
+    if (isPracticeUser || (userRole !== "requestor" && userRole !== "internalLab")) {
       setCreditBalance(null);
       setPaidCredit(null);
       setFreeRequestCredit(null);
       setFreeShippingCredit(null);
       return;
     }
-    if (!user.businessAnchorId) {
+    if (!userBusinessAnchorId) {
       setCreditBalance(null);
       setPaidCredit(null);
       setFreeRequestCredit(null);
@@ -949,12 +960,8 @@ export const DashboardLayout = () => {
       return;
     }
 
-    const shouldShowLoading =
-      creditBalance === null &&
-      paidCredit === null &&
-      freeRequestCredit === null &&
-      freeShippingCredit === null &&
-      settlementCredit === null;
+    const loadedKey = `${token}:${userBusinessAnchorId}`;
+    const shouldShowLoading = creditBalanceLoadedForRef.current !== loadedKey;
 
     if (shouldShowLoading) {
       setLoadingCreditBalance(true);
@@ -985,6 +992,7 @@ export const DashboardLayout = () => {
           data?.balance ??
           paid + freeReq + freeShip + settlement,
       );
+      creditBalanceLoadedForRef.current = loadedKey;
       setCreditBalance(spendable);
       setPaidCredit(paid);
       setFreeRequestCredit(freeReq);
@@ -1001,16 +1009,7 @@ export const DashboardLayout = () => {
         setLoadingCreditBalance(false);
       }
     }
-  }, [
-    creditBalance,
-    freeRequestCredit,
-    freeShippingCredit,
-    isPracticeUser,
-    paidCredit,
-    settlementCredit,
-    token,
-    user,
-  ]);
+  }, [isPracticeUser, token, userBusinessAnchorId, userId, userRole]);
 
   useEffect(() => {
     fetchCreditBalance();

@@ -54,7 +54,10 @@ import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { invalidatePracticeTransferQuoteContextCache } from "@/shared/practice/usePracticeTransferFeeQuote";
 import { cn } from "@/shared/ui/cn";
-import type { LabFeeItem } from "@/shared/practice/labFeeSchedule";
+import {
+  LAB_FEE_SCHEDULE_GET_CACHE_TTL_MS,
+  type LabFeeItem,
+} from "@/shared/practice/labFeeSchedule";
 import {
   LabFeeApplyTimingDialog,
   formatLabFeeApplyYmdShort,
@@ -531,6 +534,7 @@ export function LabPracticeSpecialSupplySection({
         path: "/api/lab-trading-partners/special-supply-prices",
         method: "GET",
         token,
+        cacheTtlMs: LAB_FEE_SCHEDULE_GET_CACHE_TTL_MS,
       });
       if (!res.ok) {
         toast({

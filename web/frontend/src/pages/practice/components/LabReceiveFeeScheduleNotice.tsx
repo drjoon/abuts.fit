@@ -22,6 +22,7 @@ import {
 import {
   LAB_FEE_ITEM_UNIT_LABELS,
   normalizeLabFeeItems,
+  LAB_FEE_SCHEDULE_GET_CACHE_TTL_MS,
   type LabFeeItem,
   type LabFeeItemUnit,
 } from "@/shared/practice/labFeeSchedule";
@@ -148,6 +149,7 @@ export function LabReceiveFeeScheduleNotice({
           path: "/api/lab-trading-partners/fee-schedule",
           method: "GET",
           token,
+          cacheTtlMs: LAB_FEE_SCHEDULE_GET_CACHE_TTL_MS,
         }),
         request<{
           data?: {
@@ -160,6 +162,7 @@ export function LabReceiveFeeScheduleNotice({
           path: "/api/lab-trading-partners/special-supply-prices",
           method: "GET",
           token,
+          cacheTtlMs: LAB_FEE_SCHEDULE_GET_CACHE_TTL_MS,
         }),
       ]);
 

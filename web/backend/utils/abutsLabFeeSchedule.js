@@ -126,7 +126,12 @@ export function normalizeAbutsLabFeeSchedule(raw) {
   };
 }
 
-export async function loadAbutsLabFeeSchedule() {
+/**
+ * 성능개선: fee-schedule·special-supply-prices 등 기공소 설정 조회 핫패스에서
+ * 매 요청마다 SystemSettings를 재조회하던 것을 메모리 캐시로 대체.
+ * 관리자 저장(saveAbutsLabFeeSchedule) 시 즉시 invalidate.
+ */
+async function loadAbutsLabFeeScheduleUncached() {
   const doc = await SystemSettings.findOne({ key: "global" })
     .select({ abutsLabFeeSchedule: 1 })
     .lean();
@@ -141,6 +146,17 @@ export async function loadAbutsLabFeeSchedule() {
     };
   }
   return normalizeAbutsLabFeeSchedule(doc.abutsLabFeeSchedule);
+}
+
+export async function loadAbutsLabFeeSchedule() {
+  const { default: cache, CacheKeys, CacheTTL } = await import(
+    "./cache.utils.js"
+  );
+  return cache.getOrSet(
+    CacheKeys.abutsLabFeeSchedule(),
+    loadAbutsLabFeeScheduleUncached,
+    CacheTTL.MEDIUM,
+  );
 }
 
 export async function saveAbutsLabFeeSchedule(rawItems) {
@@ -163,6 +179,7 @@ export async function saveAbutsLabFeeSchedule(rawItems) {
   try {
     const { default: cache, CacheKeys } = await import("./cache.utils.js");
     cache.delete(CacheKeys.abutsLabFeeCatalog());
+    cache.delete(CacheKeys.abutsLabFeeSchedule());
   } catch {
     // ignore cache miss wiring
   }

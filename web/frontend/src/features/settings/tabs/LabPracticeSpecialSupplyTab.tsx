@@ -12,6 +12,7 @@ import { SettingsCardSkeleton } from "@/features/components/SettingsSkeletons";
 import { LabPracticeSpecialSupplySection } from "@/features/settings/LabPracticeSpecialSupplySection";
 import {
   normalizeLabFeeItems,
+  LAB_FEE_SCHEDULE_GET_CACHE_TTL_MS,
   type LabFeeItem,
   type LabFeeSchedule,
 } from "@/shared/practice/labFeeSchedule";
@@ -38,6 +39,7 @@ export const LabPracticeSpecialSupplyTab = () => {
         path: "/api/lab-trading-partners/fee-schedule",
         method: "GET",
         token,
+        cacheTtlMs: LAB_FEE_SCHEDULE_GET_CACHE_TTL_MS,
       });
       if (!res.ok) {
         toast({

@@ -21,7 +21,10 @@ import {
 } from "@/components/ui/alert-dialog";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
-import { normalizeFreeRemakeYears } from "@/shared/practice/labFeeSchedule";
+import {
+  normalizeFreeRemakeYears,
+  LAB_FEE_SCHEDULE_GET_CACHE_TTL_MS,
+} from "@/shared/practice/labFeeSchedule";
 
 export const LAB_FEE_SETTINGS_PATH = "/dashboard/settings?tab=lab-fees&setup=1";
 export const LAB_FEE_SETTINGS_FROM_ACCEPT_PATH = `${LAB_FEE_SETTINGS_PATH}&from=accept`;
@@ -214,6 +217,7 @@ export const LabFeeSetupPrompt = ({
       path: "/api/lab-trading-partners/fee-schedule",
       method: "GET",
       token,
+      cacheTtlMs: LAB_FEE_SCHEDULE_GET_CACHE_TTL_MS,
     }).then((res) => {
       if (cancelled) return;
       if (!res.ok) return;
