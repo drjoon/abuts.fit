@@ -10,13 +10,134 @@ export type LabProsthesisAiScan = {
   role: LabOralScanRole;
 };
 
+export type LabProsthesisAiImplantSpec = {
+  manufacturer: string;
+  brand: string;
+  family: string;
+  type: string;
+};
+
 export type LabProsthesisAiTooth = {
   toothNumber: string;
+  /** 의뢰 치식 번호. 작업영역에서 번호를 바꿔도 이 값으로 되찾는다. */
+  sourceToothNumber: string;
   prosthesisType: string;
   /** 연결된 브리지 치아. 자기 번호는 제외 */
   linkedTeeth: string[];
   designable: boolean;
+  /** 임플란트 크라운. 의뢰 사양이 없으면 빈 문자열 사양. */
+  implant: LabProsthesisAiImplantSpec | null;
 };
+
+/** 작업영역 치아 유형. 의뢰 원본은 건드리지 않고 작업 문서에만 남긴다. */
+export type LabToothKind =
+  | "crown"
+  | "implant"
+  | "inlay"
+  | "onlay"
+  | "pontic"
+  | "natural"
+  | "missing";
+
+export const LAB_TOOTH_KINDS: Array<{ id: LabToothKind; label: string }> = [
+  { id: "crown", label: "크라운" },
+  { id: "implant", label: "임플란트" },
+  { id: "inlay", label: "인레이" },
+  { id: "onlay", label: "온레이" },
+  { id: "pontic", label: "폰틱" },
+  { id: "natural", label: "자연치" },
+  { id: "missing", label: "결손" },
+];
+
+export type LabToothOverride = {
+  toothNumber?: string;
+  kind?: LabToothKind;
+};
+
+export function labToothKindOf(tooth: LabProsthesisAiTooth): LabToothKind {
+  if (tooth.implant) return "implant";
+  if (tooth.prosthesisType === "인레이") return "inlay";
+  if (tooth.prosthesisType === "온레이") return "onlay";
+  if (tooth.prosthesisType === "자연치") return "natural";
+  if (tooth.prosthesisType === "결손") return "missing";
+  return "crown";
+}
+
+export function parseToothOverrides(value: unknown): Record<string, LabToothOverride> {
+  const out: Record<string, LabToothOverride> = {};
+  if (!value || typeof value !== "object" || Array.isArray(value)) return out;
+  const kinds = new Set(LAB_TOOTH_KINDS.map((row) => row.id));
+  for (const [source, raw] of Object.entries(value as Record<string, unknown>)) {
+    if (!raw || typeof raw !== "object") continue;
+    const row = raw as LabToothOverride;
+    const toothNumber = /^[1-4][1-8]$/.test(String(row.toothNumber || ""))
+      ? String(row.toothNumber)
+      : undefined;
+    const kind = kinds.has(row.kind as LabToothKind) ? row.kind : undefined;
+    if (toothNumber || kind) out[source] = { toothNumber, kind };
+  }
+  return out;
+}
+
+const KIND_PROSTHESIS_TYPE: Record<Exclude<LabToothKind, "implant" | "pontic">, string> = {
+  crown: "크라운",
+  inlay: "인레이",
+  onlay: "온레이",
+  natural: "자연치",
+  missing: "결손",
+};
+
+/** 작업 문서의 치아 번호·유형을 계획에 입힌다. 폰틱은 수정값(pontic)에서 켠다. */
+export function applyToothOverrides(
+  plan: LabProsthesisAiPlan,
+  overrides: Readonly<Record<string, LabToothOverride>>,
+): LabProsthesisAiPlan {
+  if (Object.keys(overrides).length === 0) return plan;
+  const renamed = new Map<string, string>();
+  for (const tooth of plan.teeth) {
+    const next = overrides[tooth.sourceToothNumber]?.toothNumber;
+    if (next && next !== tooth.toothNumber) renamed.set(tooth.toothNumber, next);
+  }
+  const rename = (number: string) => renamed.get(number) ?? number;
+  const teeth = plan.teeth.map((tooth) => {
+    const override = overrides[tooth.sourceToothNumber];
+    const toothNumber = rename(tooth.toothNumber);
+    const linkedTeeth = tooth.linkedTeeth.map(rename).filter((n) => n !== toothNumber);
+    const kind = override?.kind;
+    if (!kind || kind === "pontic") return { ...tooth, toothNumber, linkedTeeth };
+    if (kind === "implant") {
+      const prosthesisType = tooth.prosthesisType === "브리지" ? "브리지" : "크라운";
+      return {
+        ...tooth,
+        toothNumber,
+        linkedTeeth,
+        prosthesisType,
+        designable: true,
+        implant: tooth.implant ?? { manufacturer: "", brand: "", family: "", type: "" },
+      };
+    }
+    const bridged = tooth.prosthesisType === "브리지" && (kind === "crown");
+    const prosthesisType = bridged ? "브리지" : KIND_PROSTHESIS_TYPE[kind];
+    return {
+      ...tooth,
+      toothNumber,
+      linkedTeeth,
+      prosthesisType,
+      designable: DESIGNABLE_TYPES.has(prosthesisType),
+      implant: null,
+    };
+  });
+  return {
+    ...plan,
+    teeth,
+    designableTeeth: teeth.filter((row) => row.designable),
+  };
+}
+
+/** 작업영역 번호 배지. 임플란트는 `16i`. */
+export function labToothBadgeLabel(tooth: LabProsthesisAiTooth): string {
+  return tooth.implant ? `${tooth.toothNumber}i` : tooth.toothNumber;
+}
 
 export type LabProsthesisAiPlan = {
   teeth: LabProsthesisAiTooth[];
@@ -269,6 +390,11 @@ export function buildLabProsthesisAiPlan(input: {
     toothNumber?: string | null;
     prosthesisType?: string | null;
     bridgeLinkedTeeth?: readonly string[] | null;
+    customAbutment?: boolean | null;
+    implantManufacturer?: string | null;
+    implantBrand?: string | null;
+    implantFamily?: string | null;
+    implantType?: string | null;
   }> | null;
   files?: ReadonlyArray<{
     fileName?: string | null;
@@ -284,11 +410,23 @@ export function buildLabProsthesisAiPlan(input: {
     const linkedTeeth = (row?.bridgeLinkedTeeth || [])
       .map((n) => normalizeToothNumber(n))
       .filter((n) => n && n !== toothNumber);
+    const manufacturer = String(row?.implantManufacturer || "").trim();
+    const implant =
+      row?.customAbutment === true || manufacturer
+        ? {
+            manufacturer,
+            brand: String(row?.implantBrand || "").trim(),
+            family: String(row?.implantFamily || "").trim(),
+            type: String(row?.implantType || "").trim(),
+          }
+        : null;
     teeth.push({
       toothNumber,
+      sourceToothNumber: toothNumber,
       prosthesisType,
       linkedTeeth,
       designable: DESIGNABLE_TYPES.has(prosthesisType),
+      implant: implant && DESIGNABLE_TYPES.has(prosthesisType) ? implant : null,
     });
   }
 
@@ -361,7 +499,7 @@ export function initialLabOralScanVisible(
 }
 
 export function formatProsthesisAiToothLabel(tooth: LabProsthesisAiTooth): string {
-  const base = `#${tooth.toothNumber} ${tooth.prosthesisType}`;
+  const base = `#${tooth.toothNumber} ${tooth.implant ? "임플란트 " : ""}${tooth.prosthesisType}`;
   if (tooth.prosthesisType !== "브리지" || tooth.linkedTeeth.length === 0) {
     return base;
   }

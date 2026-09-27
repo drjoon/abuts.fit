@@ -117,7 +117,20 @@ import {
 import {
   LabProsthesisModifyPanel,
   type ConnectorRow,
+  type ScanbodyControls,
 } from "@/shared/components/practice/LabProsthesisModifyPanel";
+import { LabCoachmark } from "@/shared/components/practice/LabCoachmark";
+import { LabToothTypeCard } from "@/shared/components/practice/LabToothTypeCard";
+import { LabImplantLibraryPicker } from "@/shared/components/practice/LabImplantLibraryPicker";
+import {
+  buildImplantLibraries,
+  matchImplantLibrary,
+  readImplantFavorites,
+  scanbodyShapeOf,
+  writeImplantFavorites,
+  type ImplantLibrary,
+} from "@/shared/practice/implantLibrary";
+import { useImplantConnectionCatalog } from "@/shared/practice/useImplantConnectionCatalog";
 import {
   VIEW_PAINT_COLORS,
   ViewPaintSurface,
@@ -136,8 +149,13 @@ import {
   prepArchFromProsthesisTeeth,
   resolveOralScanRole,
   formatProsthesisAiToothLabel,
+  applyToothOverrides,
+  labToothBadgeLabel,
+  labToothKindOf,
   type LabOralScanRole,
   type LabProsthesisAiTooth,
+  type LabToothKind,
+  type LabToothOverride,
   type WorkScanRole,
 } from "@/shared/practice/labProsthesisAiDesign";
 import {
@@ -167,7 +185,10 @@ import {
   clinicKeyFromCasePrimary,
   connectorIsWeak,
   createToothDesignEdit,
+  DEFAULT_SCULPT_BRUSH,
   INNER_PRESETS,
+  MODEL_KINDS,
+  scopeMakesCrown,
   materialSnapshot,
   readClinicMaterialPreset,
   redetectMargin,
@@ -181,7 +202,10 @@ import {
   type InnerPresetId,
   type MarginEditMode,
   type MarginReview,
+  type ModelKind,
   type ModifyTool,
+  type ScanbodyShape,
+  type SculptBrush,
   type ToothDesignEdit,
 } from "@/shared/practice/labProsthesisModify";
 import {
@@ -294,6 +318,11 @@ type LabProsthesisAiDesignButtonProps = {
     toothNumber?: string | null;
     prosthesisType?: string | null;
     bridgeLinkedTeeth?: readonly string[] | null;
+    customAbutment?: boolean | null;
+    implantManufacturer?: string | null;
+    implantBrand?: string | null;
+    implantFamily?: string | null;
+    implantType?: string | null;
   }> | null;
   files?: ReadonlyArray<AiDesignFile> | null;
   authToken?: string | null;
@@ -342,6 +371,8 @@ type DesignStage = "scan" | "margin" | "design";
 
 type AlignWizardStep =
   | { kind: "axis"; span: string[]; page: number; pages: number }
+  | { kind: "library"; tooth: string }
+  | { kind: "scanbody"; tooth: string }
   | { kind: "margin" }
   | { kind: "design" };
 
@@ -438,6 +469,9 @@ function workDocumentSignature(document: WorkSessionDocument): string {
     generated: document.generated,
     marginReview: document.marginReview,
     designScope: document.designScope,
+    modelKind: document.modelKind,
+    note: document.note,
+    toothOverrides: document.toothOverrides,
     insertionAxes: document.insertionAxes,
     archAligned: document.archAligned,
     camera: document.camera,
@@ -485,9 +519,23 @@ function LabProsthesisAiDesignDialog({
     () => [...(files || []), ...(workScanFiles || [])],
     [files, workScanFiles],
   );
-  const plan = useMemo(
+  const [toothOverrides, setToothOverrides] = useState<Record<string, LabToothOverride>>({});
+  const toothOverridesRef = useRef(toothOverrides);
+  toothOverridesRef.current = toothOverrides;
+  const basePlan = useMemo(
     () => buildLabProsthesisAiPlan({ toothWorks, files: listedScanFiles }),
     [listedScanFiles, toothWorks],
+  );
+  const plan = useMemo(
+    () => applyToothOverrides(basePlan, toothOverrides),
+    [basePlan, toothOverrides],
+  );
+  const { connections: implantConnections } = useImplantConnectionCatalog(
+    open && plan.teeth.some((tooth) => tooth.implant) ? (authToken ?? null) : null,
+  );
+  const implantLibraries = useMemo(
+    () => buildImplantLibraries(implantConnections),
+    [implantConnections],
   );
   const filesRef = useRef(listedScanFiles);
   filesRef.current = listedScanFiles;
@@ -549,6 +597,17 @@ function LabProsthesisAiDesignDialog({
   const [generated, setGenerated] = useState<Record<string, boolean>>({});
   const [marginReview, setMarginReview] = useState<Record<string, MarginReview>>({});
   const [designScope, setDesignScope] = useState<DesignScope | null>(null);
+  const [modelKind, setModelKind] = useState<ModelKind>("die");
+  const [caseNote, setCaseNote] = useState("");
+  const [noteDraft, setNoteDraft] = useState<string | null>(null);
+  const [sculptBrush, setSculptBrush] = useState<SculptBrush>(DEFAULT_SCULPT_BRUSH);
+  const [screwPathShown, setScrewPathShown] = useState(true);
+  const [scanbodyPickTooth, setScanbodyPickTooth] = useState<string | null>(null);
+  const [scanbodyPicks, setScanbodyPicks] = useState(0);
+  const [toothCardFor, setToothCardFor] = useState<string | null>(null);
+  const [libraryPickerFor, setLibraryPickerFor] = useState<string | null>(null);
+  const [implantFavorites, setImplantFavorites] = useState<string[]>(readImplantFavorites);
+  const [workArea, setWorkArea] = useState<HTMLDivElement | null>(null);
   const [clinicPreset, setClinicPreset] = useState<ClinicMaterialPreset | null>(null);
   const [generating, setGenerating] = useState(false);
   const [genLabel, setGenLabel] = useState("");
@@ -618,6 +677,10 @@ function LabProsthesisAiDesignDialog({
   marginReviewRef.current = marginReview;
   const designScopeRef = useRef(designScope);
   designScopeRef.current = designScope;
+  const modelKindRef = useRef(modelKind);
+  modelKindRef.current = modelKind;
+  const caseNoteRef = useRef(caseNote);
+  caseNoteRef.current = caseNote;
   const archAlignedRef = useRef(archAligned);
   archAlignedRef.current = archAligned;
   const historyRef = useRef<WorkUndoBook>({
@@ -643,6 +706,7 @@ function LabProsthesisAiDesignDialog({
   const bindWorkArea = useCallback((node: HTMLDivElement | null) => {
     workObserveRef.current?.disconnect();
     workObserveRef.current = null;
+    setWorkArea(node);
     if (!node) return;
     const sync = () => {
       setWorkWide(node.clientWidth >= 720);
@@ -675,6 +739,14 @@ function LabProsthesisAiDesignDialog({
       setGenerated({});
       setMarginReview({});
       setDesignScope(null);
+      setModelKind("die");
+      setCaseNote("");
+      setNoteDraft(null);
+      setToothOverrides({});
+      setScanbodyPickTooth(null);
+      setScanbodyPicks(0);
+      setToothCardFor(null);
+      setLibraryPickerFor(null);
       setClinicPreset(null);
       setGenerating(false);
       setGenLabel("");
@@ -781,6 +853,9 @@ function LabProsthesisAiDesignDialog({
             generatedRef.current = draft.document.generated;
             marginReviewRef.current = draft.document.marginReview;
             designScopeRef.current = draft.document.designScope;
+            modelKindRef.current = draft.document.modelKind;
+            caseNoteRef.current = draft.document.note;
+            toothOverridesRef.current = draft.document.toothOverrides;
             archAlignedRef.current = draft.document.archAligned;
             sessionDocRef.current = draft.document;
             lastDocSigRef.current = workDocumentSignature(draft.document);
@@ -788,6 +863,9 @@ function LabProsthesisAiDesignDialog({
             setGenerated(draft.document.generated);
             setMarginReview(draft.document.marginReview);
             setDesignScope(draft.document.designScope);
+            setModelKind(draft.document.modelKind);
+            setCaseNote(draft.document.note);
+            setToothOverrides(draft.document.toothOverrides);
             setArchAligned(draft.document.archAligned);
             if (draft.document.insertionAxes.length > 0) {
               setInsertionKeys(draft.document.insertionAxes.map((axis) => axis.key));
@@ -1056,10 +1134,22 @@ function LabProsthesisAiDesignDialog({
       ?.from ??
     spanConnectors[0]?.from ??
     null;
-  const exportRestorations = useMemo(
-    () => designExportRestorations(plan.teeth, generated, edits),
-    [edits, generated, plan.teeth],
-  );
+  const exportRestorations = useMemo(() => {
+    const rows = designExportRestorations(plan.teeth, generated, edits);
+    if (designScope !== "model") return rows;
+    const kind = MODEL_KINDS.find((row) => row.id === modelKind) ?? MODEL_KINDS[0]!;
+    const prepNumbers = plan.teeth
+      .filter((tooth) => tooth.designable && !edits[tooth.toothNumber]?.pontic.on)
+      .map((tooth) => tooth.toothNumber);
+    rows.push({
+      id: `model:${kind.id}`,
+      label: kind.label,
+      fileName: `${kind.label}.stl`,
+      teeth: prepNumbers,
+      blocked: prepNumbers.length === 0 ? "지대치 없음" : null,
+    });
+    return rows;
+  }, [designScope, edits, generated, modelKind, plan.teeth]);
   const exportScans = useMemo(() => {
     const out: DesignExportScan[] = [];
     for (const role of ["upper", "lower", "bite"] as const) {
@@ -1073,10 +1163,19 @@ function LabProsthesisAiDesignDialog({
   const buildExportFiles = (selection: DesignExportSelection) =>
     (
       viewerRef.current?.exportDesignStl({
-        groups: selection.restorations.map((row) => ({
-          fileName: row.fileName,
-          teeth: row.teeth,
-        })),
+        groups: selection.restorations
+          .filter((row) => !row.id.startsWith("model:"))
+          .map((row) => ({
+            fileName: row.fileName,
+            teeth: row.teeth,
+          })),
+        models: selection.restorations
+          .filter((row) => row.id.startsWith("model:"))
+          .map((row) => ({
+            fileName: row.fileName,
+            kind: row.id.slice("model:".length) as ModelKind,
+            teeth: row.teeth,
+          })),
         scans: selection.scans.map((row) => ({ fileName: row.fileName, role: row.role })),
         camCoordinates: selection.camCoordinates,
       }) ?? []
@@ -1167,6 +1266,27 @@ function LabProsthesisAiDesignDialog({
     }, 120);
     return () => window.clearTimeout(timer);
   }, [focusShotKey]);
+  const libraryById = useMemo(
+    () => new Map(implantLibraries.map((row) => [row.id, row])),
+    [implantLibraries],
+  );
+  const scanbodies = useMemo(() => {
+    const out: Record<string, ScanbodyShape> = {};
+    for (const tooth of plan.teeth) {
+      if (!tooth.implant) continue;
+      const id = edits[tooth.toothNumber]?.implant.libraryId;
+      out[tooth.toothNumber] = scanbodyShapeOf(id ? (libraryById.get(id) ?? null) : null);
+    }
+    return out;
+  }, [edits, libraryById, plan.teeth]);
+  const screwPathAvailable = plan.teeth.some((tooth) => {
+    const implant = edits[tooth.toothNumber]?.implant;
+    return Boolean(implant?.on && implant.screwHole && generated[tooth.toothNumber] === true);
+  });
+  const activeImplant = activeNumber && activeTooth?.implant ? (edits[activeNumber]?.implant ?? null) : null;
+  const activeLibrary = activeImplant?.libraryId
+    ? (libraryById.get(activeImplant.libraryId) ?? null)
+    : null;
   const prepBackTransparent = Boolean(activeNumber && edits[activeNumber]?.margin.showBack);
   const designEdit = useMemo(
     () =>
@@ -1182,6 +1302,9 @@ function LabProsthesisAiDesignDialog({
             bridges,
             prepBackTransparent,
             showMargin: marginShown,
+            sculptBrush,
+            scanbodies,
+            showScrewPath: screwPathShown,
           },
     [
       activeNumber,
@@ -1193,6 +1316,9 @@ function LabProsthesisAiDesignDialog({
       marginShown,
       modifyTool,
       prepBackTransparent,
+      scanbodies,
+      screwPathShown,
+      sculptBrush,
       stage,
     ],
   );
@@ -1203,13 +1329,27 @@ function LabProsthesisAiDesignDialog({
       let changed = false;
       const next = { ...prev };
       for (const tooth of plan.teeth) {
-        if (next[tooth.toothNumber]) continue;
-        next[tooth.toothNumber] = createToothDesignEdit();
+        const current = next[tooth.toothNumber] ?? createToothDesignEdit();
+        const on = tooth.implant != null;
+        const libraryId =
+          current.implant.libraryId ??
+          (on ? (matchImplantLibrary(implantLibraries, tooth.implant)?.id ?? null) : null);
+        if (
+          next[tooth.toothNumber] &&
+          current.implant.on === on &&
+          current.implant.libraryId === libraryId
+        ) {
+          continue;
+        }
+        next[tooth.toothNumber] = {
+          ...current,
+          implant: { ...current.implant, on, libraryId },
+        };
         changed = true;
       }
       return changed ? next : prev;
     });
-  }, [open, plan.teeth, stage]);
+  }, [implantLibraries, open, plan.teeth, stage]);
 
   const publishHistory = () => {
     const book = historyRef.current;
@@ -1352,6 +1492,11 @@ function LabProsthesisAiDesignDialog({
       setConnectorFrom(gesture.tooth);
       if (editsRef.current[gesture.tooth]?.connector.assembled) return;
     }
+    if (gesture.type === "scanbody-fit") {
+      setScanbodyPickTooth(null);
+      setMarginReview((prev) => ({ ...prev, [gesture.tooth]: "none" }));
+      queueSaveWorkRef.current();
+    }
     setEdits((prev) => {
       const current = prev[gesture.tooth] ?? createToothDesignEdit();
       const next = reduceDesignGesture(current, gesture, marginMode === "pen");
@@ -1368,6 +1513,164 @@ function LabProsthesisAiDesignDialog({
     });
     queueSaveWorkRef.current();
   };
+
+  const patchImplant = (
+    toothNumber: string,
+    patch: Partial<ToothDesignEdit["implant"]>,
+    options: { resetReview?: boolean } = {},
+  ) => {
+    beginEditUndo();
+    setEdits((prev) => {
+      const base = prev[toothNumber] ?? createToothDesignEdit();
+      return { ...prev, [toothNumber]: { ...base, implant: { ...base.implant, ...patch } } };
+    });
+    if (options.resetReview) {
+      setMarginReview((prev) => ({ ...prev, [toothNumber]: "none" }));
+      setGenerated((prev) => ({ ...prev, [toothNumber]: false }));
+    }
+    queueSaveWorkRef.current();
+  };
+
+  const pickImplantLibrary = (toothNumber: string, library: ImplantLibrary) => {
+    patchImplant(
+      toothNumber,
+      { libraryId: library.id, aligned: false, axis: null, offset: [0, 0, 0], fitMm: null },
+      { resetReview: true },
+    );
+    setLibraryPickerFor(null);
+  };
+
+  const toggleImplantFavorite = (id: string) => {
+    setImplantFavorites((prev) => {
+      const next = prev.includes(id) ? prev.filter((row) => row !== id) : [...prev, id];
+      writeImplantFavorites(next);
+      return next;
+    });
+  };
+
+  const fitScanbodyAuto = (toothNumber: string) => {
+    const shape = scanbodies[toothNumber];
+    if (!shape) return;
+    setScanbodyPickTooth(null);
+    const fit = viewerRef.current?.fitScanbody(toothNumber, shape.radiusMm) ?? null;
+    if (!fit) {
+      toast({
+        title: "스캔바디를 찾지 못했습니다.",
+        description: (
+          <>
+            치아 교합면을 화면 가운데에 두고 삽입축을 잡은 뒤 다시 누르세요.
+            <br />
+            그래도 안 되면 점 3개 정렬을 쓰세요.
+          </>
+        ),
+        variant: "destructive",
+      });
+      return;
+    }
+    onDesignGesture({ type: "scanbody-fit", tooth: toothNumber, ...fit });
+    queueSaveWorkRef.current();
+  };
+
+  const resetScanbody = (toothNumber: string) => {
+    setScanbodyPickTooth(null);
+    patchImplant(
+      toothNumber,
+      { aligned: false, axis: null, offset: [0, 0, 0], fitMm: null, rotDeg: 0 },
+      { resetReview: true },
+    );
+  };
+
+  const applyScanbody = (toothNumber: string) => {
+    setScanbodyPickTooth(null);
+    setModifyTool("margin");
+    setMarginShown(true);
+    runMarginDetect([toothNumber]);
+  };
+
+  const toothKindNow = (tooth: LabProsthesisAiTooth): LabToothKind =>
+    edits[tooth.toothNumber]?.pontic.on ? "pontic" : labToothKindOf(tooth);
+
+  const applyToothType = (tooth: LabProsthesisAiTooth, number: string, kind: LabToothKind) => {
+    const oldNumber = tooth.toothNumber;
+    const kindChanged = kind !== toothKindNow(tooth);
+    const move = <T,>(record: Record<string, T>): Record<string, T> => {
+      if (number === oldNumber || !(oldNumber in record)) return { ...record };
+      const out = { ...record };
+      out[number] = out[oldNumber]!;
+      delete out[oldNumber];
+      return out;
+    };
+    beginEditUndo(true);
+    const nextEdits = move(editsRef.current);
+    const current = nextEdits[number] ?? createToothDesignEdit();
+    nextEdits[number] = {
+      ...current,
+      pontic: { ...current.pontic, on: kind === "pontic" },
+      implant: kindChanged
+        ? { ...createToothDesignEdit().implant, on: kind === "implant" }
+        : current.implant,
+    };
+    const nextGenerated = move(generatedRef.current);
+    const nextReview = move(marginReviewRef.current);
+    if (kindChanged) {
+      nextGenerated[number] = false;
+      nextReview[number] = "none";
+    }
+    const source = tooth.sourceToothNumber;
+    const baseTooth = basePlan.teeth.find((row) => row.sourceToothNumber === source);
+    const baseKind = baseTooth ? labToothKindOf(baseTooth) : "crown";
+    const override: LabToothOverride = {
+      toothNumber: number !== source ? number : undefined,
+      kind: kind !== baseKind && kind !== "pontic" ? kind : undefined,
+    };
+    const nextOverrides = { ...toothOverridesRef.current };
+    if (override.toothNumber || override.kind) nextOverrides[source] = override;
+    else delete nextOverrides[source];
+    editsRef.current = nextEdits;
+    generatedRef.current = nextGenerated;
+    marginReviewRef.current = nextReview;
+    toothOverridesRef.current = nextOverrides;
+    setEdits(nextEdits);
+    setGenerated(nextGenerated);
+    setMarginReview(nextReview);
+    setToothOverrides(nextOverrides);
+    setSelectedTooth(number);
+    setToothCardFor(null);
+    queueSaveWorkRef.current();
+    if (
+      kindChanged &&
+      stage !== "scan" &&
+      (kind === "crown" || kind === "inlay" || kind === "onlay")
+    ) {
+      runMarginDetect([number]);
+    }
+  };
+
+  const scanbodyControls: ScanbodyControls | null =
+    activeNumber && activeImplant
+      ? {
+          libraryLabel: activeLibrary
+            ? `${activeLibrary.manufacturer} ${activeLibrary.label}`.trim()
+            : null,
+          aligned: activeImplant.aligned,
+          fitMm: activeImplant.fitMm,
+          picking: scanbodyPickTooth === activeNumber,
+          picks: scanbodyPicks,
+          onPickLibrary: () => {
+            setToothCardFor(null);
+            setLibraryPickerFor(activeNumber);
+          },
+          onAutoFit: () => fitScanbodyAuto(activeNumber),
+          onRotate: (delta) =>
+            patchImplant(activeNumber, { rotDeg: activeImplant.rotDeg + delta }),
+          onTogglePick: () => {
+            setScanbodyPicks(0);
+            setScanbodyPickTooth((prev) => (prev === activeNumber ? null : activeNumber));
+          },
+          onReset: () => resetScanbody(activeNumber),
+          onApply: () => applyScanbody(activeNumber),
+        }
+      : null;
 
   /** 조립·분리는 스팬 전체에 같이 건다. */
   const setSpanAssembled = (span: readonly string[], assembled: boolean) => {
@@ -1415,6 +1718,10 @@ function LabProsthesisAiDesignDialog({
     queueSaveWorkRef.current();
   };
 
+  const implantNumbersRef = useRef<Set<string>>(new Set());
+  implantNumbersRef.current = new Set(
+    plan.teeth.filter((tooth) => tooth.implant).map((tooth) => tooth.toothNumber),
+  );
   const marginToothNumbersRef = useRef<string[]>([]);
   marginToothNumbersRef.current = (
     plan.designableTeeth.length > 0 ? plan.designableTeeth : prepTeeth
@@ -1432,6 +1739,13 @@ function LabProsthesisAiDesignDialog({
       if (review === "detected" || review === "confirmed") return false;
       if (editsRef.current[number]?.margin.deleted) return false;
       if (editsRef.current[number]?.pontic.on) return false;
+      const implantEdit = editsRef.current[number]?.implant;
+      if (
+        (implantNumbersRef.current.has(number) || implantEdit?.on) &&
+        !implantEdit?.aligned
+      ) {
+        return false;
+      }
       return true;
     });
     if (targets.length === 0) return;
@@ -1463,13 +1777,14 @@ function LabProsthesisAiDesignDialog({
   };
 
   const runGenerate = async (toothNumbers: string[]) => {
-    if (designScopeRef.current !== "crown") return;
-    const targets = toothNumbers.filter(
-      (number) =>
-        number &&
-        (editsRef.current[number]?.pontic.on === true ||
-          marginReviewRef.current[number] === "confirmed"),
-    );
+    if (!scopeMakesCrown(designScopeRef.current)) return;
+    const targets = toothNumbers.filter((number) => {
+      if (!number) return false;
+      const edit = editsRef.current[number];
+      if (edit?.pontic.on === true) return true;
+      if (edit?.implant.on && !(edit.implant.libraryId && edit.implant.aligned)) return false;
+      return marginReviewRef.current[number] === "confirmed";
+    });
     if (targets.length === 0) return;
     const seq = genSeq.current + 1;
     genSeq.current = seq;
@@ -1520,6 +1835,8 @@ function LabProsthesisAiDesignDialog({
   const confirmMargin = (toothNumber: string) => {
     if (marginReviewRef.current[toothNumber] !== "detected") return;
     if (editsRef.current[toothNumber]?.margin.deleted) return;
+    const implant = editsRef.current[toothNumber]?.implant;
+    if (implant?.on && !implant.aligned) return;
     beginEditUndo();
     setMarginReview((prev) => ({ ...prev, [toothNumber]: "confirmed" }));
     queueSaveWorkRef.current();
@@ -1540,7 +1857,7 @@ function LabProsthesisAiDesignDialog({
 
   const onStage = (next: DesignStage) => {
     if (next !== "scan" && !designScopeRef.current) return;
-    if (next === "design" && designScopeRef.current !== "crown") return;
+    if (next === "design" && !scopeMakesCrown(designScopeRef.current)) return;
     setStage(next);
     setMarginShown(next !== "scan");
     if (next !== "scan") {
@@ -1638,16 +1955,30 @@ function LabProsthesisAiDesignDialog({
       page: index + 1,
       pages,
     }));
+    for (const tooth of plan.teeth) {
+      if (!tooth.implant) continue;
+      steps.push({ kind: "library", tooth: tooth.toothNumber });
+      steps.push({ kind: "scanbody", tooth: tooth.toothNumber });
+    }
     steps.push({ kind: "margin" });
     if (designScope !== "margin") steps.push({ kind: "design" });
     return steps;
-  }, [designScope, insertionWizardSpans]);
-  const suggestedWizardIndex = useMemo(() => {
-    const pending = wizardSteps.findIndex((step) => {
-      if (step.kind !== "axis") return false;
+  }, [designScope, insertionWizardSpans, plan.teeth]);
+  const wizardStepDone = (step: AlignWizardStep) => {
+    if (step.kind === "axis") {
       const key = insertionAxisKey(step.span);
-      return !key || !insertionKeys.includes(key);
-    });
+      return Boolean(key && insertionKeys.includes(key));
+    }
+    if (step.kind === "library") return Boolean(edits[step.tooth]?.implant.libraryId);
+    if (step.kind === "scanbody") return edits[step.tooth]?.implant.aligned === true;
+    return false;
+  };
+  const suggestedWizardIndex = useMemo(() => {
+    const pending = wizardSteps.findIndex(
+      (step) =>
+        (step.kind === "axis" || step.kind === "library" || step.kind === "scanbody") &&
+        !wizardStepDone(step),
+    );
     if (pending >= 0) return pending;
     if (stage === "design") {
       const designAt = wizardSteps.findIndex((step) => step.kind === "design");
@@ -1655,7 +1986,8 @@ function LabProsthesisAiDesignDialog({
     }
     const marginAt = wizardSteps.findIndex((step) => step.kind === "margin");
     return marginAt >= 0 ? marginAt : 0;
-  }, [insertionKeys, stage, wizardSteps]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [edits, insertionKeys, stage, wizardSteps]);
   const [wizardIndex, setWizardIndex] = useState<number | null>(null);
   const activeWizardIndex =
     wizardSteps.length === 0
@@ -1672,12 +2004,23 @@ function LabProsthesisAiDesignDialog({
     setWizardIndex(nextIndex);
     const step = wizardSteps[nextIndex];
     if (!step || step.kind === "axis") return;
+    if (step.kind === "library" || step.kind === "scanbody") {
+      setSelectedTooth(step.tooth);
+      setPanelsHidden(false);
+      setToothInfoOpen(true);
+      if (step.kind === "scanbody" && designScopeRef.current) {
+        onStage("margin");
+        setModifyTool("scanbody");
+        setModifyPanelOpen(true);
+      }
+      return;
+    }
     if (step.kind === "margin" && designScopeRef.current) {
       onStage("margin");
       setModifyTool("margin");
       return;
     }
-    if (step.kind === "design" && designScopeRef.current === "crown") {
+    if (step.kind === "design" && scopeMakesCrown(designScopeRef.current)) {
       onStage("design");
       setModifyTool("refine");
     }
@@ -1709,6 +2052,14 @@ function LabProsthesisAiDesignDialog({
   }, [insertionKeys, wizardIndex, wizardSteps]);
 
   useEffect(() => {
+    if (wizardIndex == null) return;
+    const step = wizardSteps[wizardIndex];
+    if (!step || (step.kind !== "library" && step.kind !== "scanbody")) return;
+    if (wizardStepDone(step)) setWizardIndex(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [edits, wizardIndex, wizardSteps]);
+
+  useEffect(() => {
     if (busy || !viewedAxisKey || viewedWizardStep?.kind !== "axis") return;
     const lead = viewedWizardStep.span[0];
     if (!lead) return;
@@ -1738,6 +2089,9 @@ function LabProsthesisAiDesignDialog({
       generated: generatedRef.current,
       marginReview: marginReviewRef.current,
       designScope: designScopeRef.current,
+      modelKind: modelKindRef.current,
+      note: caseNoteRef.current,
+      toothOverrides: toothOverridesRef.current,
       insertionAxes: axes,
       archAligned: archAlignedRef.current,
       camera:
@@ -2313,9 +2667,16 @@ function LabProsthesisAiDesignDialog({
               focusToothNumbers={focusToothNumbers}
               toothBadges={plan.teeth.map((tooth) => ({
                 toothNumber: tooth.toothNumber,
+                label: labToothBadgeLabel(tooth),
                 active: activeTooth?.toothNumber === tooth.toothNumber,
               }))}
-              onSelectTooth={showTooth}
+              onSelectTooth={(toothNumber) => {
+                showTooth(toothNumber);
+                setLibraryPickerFor(null);
+                setToothCardFor(toothNumber);
+              }}
+              scanbodyPickTooth={scanbodyPickTooth}
+              onScanbodyPicks={setScanbodyPicks}
               contactMap={contactMap}
               undercutMap={paintUndercut}
               occlusalGapMm={occlusalGap}
@@ -2728,6 +3089,17 @@ function LabProsthesisAiDesignDialog({
                         })}
                       </ul>
                     )}
+                    {screwPathAvailable ? (
+                      <label className="flex min-w-0 items-center gap-2 rounded px-0.5">
+                        <Checkbox
+                          checked={screwPathShown}
+                          onCheckedChange={(checked) => setScrewPathShown(checked === true)}
+                          aria-label="스크류 경로 표시"
+                        />
+                        <span className="h-2 w-2 shrink-0 rounded-full bg-amber-500" />
+                        <span className="text-[11px] font-semibold text-primary">스크류 경로</span>
+                      </label>
+                    ) : null}
                     {busy ? <Progress value={progress} className="h-1.5" /> : null}
                     {loadError ? (
                       <p className="text-xs leading-relaxed text-destructive">
@@ -2736,6 +3108,67 @@ function LabProsthesisAiDesignDialog({
                     ) : null}
                   </div>
                 ) : null}
+              </div>
+              <div className="mt-2 w-64 overflow-hidden rounded-lg border bg-background/95 text-sm shadow-sm">
+                <div className="flex items-center justify-between px-2.5 py-2">
+                  <span className="font-semibold text-foreground">메모</span>
+                  {noteDraft == null ? (
+                    <button
+                      type="button"
+                      className="text-xs font-medium text-primary hover:underline"
+                      onClick={() => setNoteDraft(caseNote)}
+                    >
+                      편집
+                    </button>
+                  ) : null}
+                </div>
+                <div className="border-t px-2.5 py-2">
+                  {noteDraft != null ? (
+                    <div className="space-y-1.5">
+                      <textarea
+                        autoFocus
+                        className="h-24 w-full resize-none rounded-md border bg-background px-2 py-1.5 text-xs outline-none focus:ring-1 focus:ring-primary"
+                        maxLength={2000}
+                        value={noteDraft}
+                        placeholder="이 케이스에서 기억할 내용을 적습니다."
+                        onChange={(event) => setNoteDraft(event.target.value)}
+                      />
+                      <div className="flex justify-end gap-1">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-7 px-2 text-[11px]"
+                          onClick={() => setNoteDraft(null)}
+                        >
+                          취소
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-7 px-2 text-[11px]"
+                          onClick={() => {
+                            const next = noteDraft.trim();
+                            caseNoteRef.current = next;
+                            setCaseNote(next);
+                            setNoteDraft(null);
+                            queueSaveWorkRef.current();
+                          }}
+                        >
+                          저장
+                        </Button>
+                      </div>
+                    </div>
+                  ) : caseNote ? (
+                    <p className="max-h-24 overflow-y-auto whitespace-pre-wrap break-words text-xs text-foreground">
+                      {caseNote}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      편집을 눌러 메모를 남깁니다.
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
             <div className="absolute bottom-3 left-3 z-20 flex max-h-[min(36rem,62vh)] w-[min(20rem,36vw)] flex-col">
@@ -2766,27 +3199,81 @@ function LabProsthesisAiDesignDialog({
                           마진만은 생성 없이 마진 수정에서 끝냅니다.
                           <br />
                           크라운까지는 마진을 확인한 뒤에 생성합니다.
+                          <br />
+                          모델까지는 크라운에 확인용 모델을 더해 냅니다.
                         </p>
-                        <div className="grid grid-cols-2 gap-1">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant={designScope === "margin" ? "default" : "outline"}
-                            className="h-7 px-2 text-[11px]"
-                            onClick={() => chooseScope("margin")}
-                          >
-                            마진만
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant={designScope === "crown" ? "default" : "outline"}
-                            className="h-7 px-2 text-[11px]"
-                            onClick={() => chooseScope("crown")}
-                          >
-                            크라운까지
-                          </Button>
+                        <div className="relative grid grid-cols-3 pt-1" data-coach="scope">
+                          <span
+                            aria-hidden
+                            className="absolute left-[16.6%] right-[16.6%] top-[0.95rem] h-px bg-border"
+                          />
+                          {(
+                            [
+                              { id: "margin", label: "마진만" },
+                              { id: "crown", label: "크라운까지" },
+                              { id: "model", label: "모델까지" },
+                            ] as const
+                          ).map((item, index) => {
+                            const order = { margin: 0, crown: 1, model: 2 } as const;
+                            const reached =
+                              designScope != null && order[designScope] >= index;
+                            return (
+                              <button
+                                key={item.id}
+                                type="button"
+                                className="relative flex flex-col items-center gap-1"
+                                aria-pressed={designScope === item.id}
+                                onClick={() => chooseScope(item.id)}
+                              >
+                                <span
+                                  className={cn(
+                                    "flex h-5 w-5 items-center justify-center rounded-full border-2 bg-background",
+                                    reached ? "border-primary bg-primary" : "border-muted-foreground/40",
+                                  )}
+                                >
+                                  {reached ? (
+                                    <span className="h-1.5 w-1.5 rounded-full bg-primary-foreground" />
+                                  ) : null}
+                                </span>
+                                <span
+                                  className={cn(
+                                    "text-[11px]",
+                                    designScope === item.id
+                                      ? "font-semibold text-primary"
+                                      : "text-muted-foreground",
+                                  )}
+                                >
+                                  {item.label}
+                                </span>
+                              </button>
+                            );
+                          })}
                         </div>
+                        {designScope === "model" ? (
+                          <div className="space-y-1 pt-1">
+                            <p className="text-xs font-semibold text-foreground">모델 종류</p>
+                            {MODEL_KINDS.map((kind) => (
+                              <label
+                                key={kind.id}
+                                className="flex cursor-pointer items-center gap-2 text-[11px]"
+                                title={kind.hint}
+                              >
+                                <input
+                                  type="radio"
+                                  name="lab-model-kind"
+                                  className="h-3.5 w-3.5 accent-primary"
+                                  checked={modelKind === kind.id}
+                                  onChange={() => {
+                                    modelKindRef.current = kind.id;
+                                    setModelKind(kind.id);
+                                    queueSaveWorkRef.current();
+                                  }}
+                                />
+                                {kind.label}
+                              </label>
+                            ))}
+                          </div>
+                        ) : null}
                       </div>
                       <div className="grid grid-cols-3 gap-1">
                         {DESIGN_STAGES.map((item) => (
@@ -2796,14 +3283,15 @@ function LabProsthesisAiDesignDialog({
                             size="sm"
                             variant={stage === item.id ? "default" : "outline"}
                             className="h-7 px-2 text-[11px]"
+                            data-coach={`stage-${item.id}`}
                             disabled={
                               (item.id !== "scan" && designScope == null) ||
-                              (item.id === "design" && designScope !== "crown")
+                              (item.id === "design" && !scopeMakesCrown(designScope))
                             }
                             title={
                               item.id !== "scan" && designScope == null
                                 ? "범위를 먼저 고릅니다."
-                                : item.id === "design" && designScope !== "crown"
+                                : item.id === "design" && !scopeMakesCrown(designScope)
                                   ? "마진만 진행 중입니다."
                                   : undefined
                             }
@@ -2977,9 +3465,14 @@ function LabProsthesisAiDesignDialog({
                           setModifyTool(next);
                           setEditBrush("none");
                           setHoleNote("");
-                          if (next === "margin" || next === "insertion") onStage("margin");
-                          else onStage("design");
+                          if (next !== "scanbody") setScanbodyPickTooth(null);
+                          if (next === "margin" || next === "insertion" || next === "scanbody") {
+                            onStage("margin");
+                          } else onStage("design");
                         }}
+                        sculptBrush={sculptBrush}
+                        onSculptBrush={setSculptBrush}
+                        scanbody={scanbodyControls}
                         marginMode={marginMode}
                         onMarginMode={setMarginMode}
                         brush={editBrush}
@@ -3295,6 +3788,17 @@ function LabProsthesisAiDesignDialog({
               onGenerateSpan={(span) => void runGenerate([...span])}
               onAssembleSpan={setSpanAssembled}
               onTogglePontic={togglePontic}
+              libraryLabel={(toothNumber) => {
+                const id = edits[toothNumber]?.implant.libraryId;
+                const library = id ? libraryById.get(id) : null;
+                return library ? library.label || library.manufacturer : null;
+              }}
+              onPickLibrary={(toothNumber) => {
+                setSelectedTooth(toothNumber);
+                setToothCardFor(null);
+                setLibraryPickerFor(toothNumber);
+              }}
+              onToggleScrewHole={(toothNumber, on) => patchImplant(toothNumber, { screwHole: on })}
               onClearTooth={(toothNumber) => {
                 beginEditUndo();
                 setGenerated((prev) => ({ ...prev, [toothNumber]: false }));
@@ -3315,59 +3819,79 @@ function LabProsthesisAiDesignDialog({
                 queueSaveWorkRef.current();
               }}
             />
-            {!busy && entries.length > 0 && viewedWizardStep ? (
-              <div className="pointer-events-none absolute inset-x-3 bottom-3 z-30 flex items-center justify-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  className="pointer-events-auto h-8 w-8 shrink-0 rounded-full bg-background/95 shadow-sm"
-                  aria-label="이전 단계"
-                  disabled={activeWizardIndex <= 0}
-                  onClick={() => goWizard(activeWizardIndex - 1)}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                <div className="pointer-events-auto w-max max-w-full break-keep rounded-lg border bg-background/95 px-3.5 py-2.5 text-xs shadow-sm">
-                  {viewedWizardStep.kind === "axis" ? (
-                    <>
-                      <p className="font-semibold text-foreground">
-                        1. 모델정렬 · {viewedWizardStep.page}/{viewedWizardStep.pages}
-                      </p>
-                      <p className="mt-1 leading-relaxed text-muted-foreground">
-                        {viewedWizardStep.span.length > 1
-                          ? `브리지 ${viewedWizardStep.span[0]}-${viewedWizardStep.span[viewedWizardStep.span.length - 1]}의 삽입축을 설정해주세요.`
-                          : `#${viewedWizardStep.span[0]}의 삽입축을 설정해주세요.`}
-                        <br />
-                        해당 치아를 교합면에서 바라보고 중점을 중앙선에 맞추면 됩니다.
-                      </p>
-                    </>
-                  ) : (
-                    <>
-                      <p className="font-semibold text-foreground">
-                        {viewedWizardStep.kind === "design" ? "3. 디자인" : "2. 마진"}
-                      </p>
-                      <p className="mt-1 leading-relaxed text-muted-foreground">
-                        {viewedWizardStep.kind === "design"
-                          ? "확인한 마진으로 디자인을 생성해주세요."
-                          : "자동 검출된 마진을 확인해주세요."}
-                      </p>
-                    </>
-                  )}
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  className="pointer-events-auto h-8 w-8 shrink-0 rounded-full bg-background/95 shadow-sm"
-                  aria-label="다음 단계"
-                  disabled={activeWizardIndex >= wizardSteps.length - 1}
-                  onClick={() => goWizard(activeWizardIndex + 1)}
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
+            {!busy && entries.length > 0 && viewedWizardStep && !toothCardFor && !libraryPickerFor ? (
+              <LabCoachmark
+                container={workArea}
+                targets={coachTargets(viewedWizardStep)}
+                title={coachTitle(viewedWizardStep)}
+                body={coachBody(viewedWizardStep, designScope != null)}
+                canPrev={activeWizardIndex > 0}
+                canNext={activeWizardIndex < wizardSteps.length - 1}
+                onPrev={() => goWizard(activeWizardIndex - 1)}
+                onNext={() => goWizard(activeWizardIndex + 1)}
+              />
+            ) : null}
+            {stage !== "scan" && modifyTool === "scanbody" && activeTooth?.implant && activeImplant ? (
+              <div className="pointer-events-none absolute bottom-14 left-1/2 z-10 -translate-x-1/2 rounded-md bg-slate-700/85 px-3 py-2 text-[11px] text-white shadow-sm">
+                <p className="font-semibold">선택한 임플란트 라이브러리</p>
+                <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
+                  <dt className="text-white/70">임플란트</dt>
+                  <dd>
+                    {activeLibrary
+                      ? `${activeLibrary.manufacturer} ${activeLibrary.brand}`.trim()
+                      : "미선택"}
+                  </dd>
+                  <dt className="text-white/70">타입</dt>
+                  <dd>{activeLibrary?.family || "-"}</dd>
+                  <dt className="text-white/70">서브타입</dt>
+                  <dd>{activeLibrary?.type || "-"}</dd>
+                </dl>
               </div>
             ) : null}
+            {toothCardFor
+              ? (() => {
+                  const tooth = plan.teeth.find((row) => row.toothNumber === toothCardFor);
+                  if (!tooth) return null;
+                  return (
+                    <div className="absolute bottom-14 right-3 z-40">
+                      <LabToothTypeCard
+                        toothNumber={tooth.toothNumber}
+                        kind={toothKindNow(tooth)}
+                        canPontic={insertionSpanForTooth(plan.teeth, tooth.toothNumber).length > 1}
+                        takenNumbers={
+                          new Set(
+                            plan.teeth
+                              .filter((row) => row.toothNumber !== tooth.toothNumber)
+                              .map((row) => row.toothNumber),
+                          )
+                        }
+                        onApply={(number, kind) => applyToothType(tooth, number, kind)}
+                        onClose={() => setToothCardFor(null)}
+                      />
+                    </div>
+                  );
+                })()
+              : null}
+            {libraryPickerFor
+              ? (() => {
+                  const tooth = plan.teeth.find((row) => row.toothNumber === libraryPickerFor);
+                  if (!tooth?.implant) return null;
+                  return (
+                    <div className="absolute bottom-14 right-3 z-40">
+                      <LabImplantLibraryPicker
+                        toothNumber={tooth.toothNumber}
+                        libraries={implantLibraries}
+                        favorites={implantFavorites}
+                        value={edits[tooth.toothNumber]?.implant.libraryId ?? null}
+                        defaultManufacturer={tooth.implant.manufacturer}
+                        onPick={(library) => pickImplantLibrary(tooth.toothNumber, library)}
+                        onToggleFavorite={toggleImplantFavorite}
+                        onClose={() => setLibraryPickerFor(null)}
+                      />
+                    </div>
+                  );
+                })()
+              : null}
           </div>
         <DesignExportDialog
           open={exportOpen}
@@ -3380,6 +3904,70 @@ function LabProsthesisAiDesignDialog({
         />
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** 말풍선이 가리킬 `data-coach` 대상. 앞에서부터 보이는 것을 쓴다. */
+function coachTargets(step: AlignWizardStep): string[] {
+  if (step.kind === "axis") return [`axis:${insertionAxisKey(step.span)}`];
+  if (step.kind === "library") return [`library:${step.tooth}`, "implant-library"];
+  if (step.kind === "scanbody") {
+    return ["scanbody-fit", "tool-scanbody", "scope", `library:${step.tooth}`];
+  }
+  if (step.kind === "margin") return ["margin-confirm", "stage-margin", "scope"];
+  return ["generate", "stage-design"];
+}
+
+function coachTitle(step: AlignWizardStep): string {
+  if (step.kind === "axis") return `1. 모델정렬 · ${step.page}/${step.pages}`;
+  if (step.kind === "library") return `임플란트 #${step.tooth} · 라이브러리`;
+  if (step.kind === "scanbody") return `임플란트 #${step.tooth} · 스캔바디`;
+  return step.kind === "design" ? "3. 디자인" : "2. 마진";
+}
+
+function coachBody(step: AlignWizardStep, hasScope: boolean) {
+  if (step.kind === "axis") {
+    return (
+      <>
+        {step.span.length > 1
+          ? `브리지 ${step.span[0]}-${step.span[step.span.length - 1]}의 삽입축을 설정해주세요.`
+          : `#${step.span[0]}의 삽입축을 설정해주세요.`}
+        <br />
+        해당 치아를 교합면에서 바라보고 중점을 중앙선에 맞추면 됩니다.
+      </>
+    );
+  }
+  if (step.kind === "library") {
+    return (
+      <>
+        #{step.tooth} 임플란트 라이브러리를 고르세요.
+        <br />
+        의뢰 사양의 제조사를 먼저 펴 둡니다.
+      </>
+    );
+  }
+  if (step.kind === "scanbody") {
+    return hasScope ? (
+      <>
+        스캔바디에 라이브러리를 맞추세요.
+        <br />
+        어긋나면 점 3개 정렬이나 60° 회전을 씁니다.
+      </>
+    ) : (
+      <>
+        범위를 먼저 고르세요.
+        <br />
+        스캔바디 정렬은 마진 단계에서 합니다.
+      </>
+    );
+  }
+  if (step.kind === "design") return "확인한 마진으로 디자인을 생성해주세요.";
+  return (
+    <>
+      자동 검출된 마진을 확인해주세요.
+      <br />
+      임플란트는 EPL을 확인합니다.
+    </>
   );
 }
 
@@ -3607,7 +4195,13 @@ function DesignViewerChrome({
   onAssembleSpan,
   onTogglePontic,
   onClearTooth,
+  libraryLabel,
+  onPickLibrary,
+  onToggleScrewHole,
 }: {
+  libraryLabel: (toothNumber: string) => string | null;
+  onPickLibrary: (toothNumber: string) => void;
+  onToggleScrewHole: (toothNumber: string, on: boolean) => void;
   teeth: LabProsthesisAiTooth[];
   activeTooth: LabProsthesisAiTooth | null;
   edits: Record<string, ToothDesignEdit>;
@@ -3694,6 +4288,7 @@ function DesignViewerChrome({
         }
         aria-label={shared ? "브리지 삽입축" : "삽입축"}
         aria-pressed={axisOn}
+        data-coach={spanKey ? `axis:${spanKey}` : undefined}
         disabled={!canSetInsertion}
         onClick={() => onSetInsertion(span)}
       >
@@ -3740,7 +4335,7 @@ function DesignViewerChrome({
 
   /** 브리지는 스팬 전체에 같은 재료를 건다. 커넥터 최소 면적도 이 재료를 따른다. */
   const presetSelect = (members: readonly LabProsthesisAiTooth[], label: string) => {
-    if (designScope !== "crown") return null;
+    if (!scopeMakesCrown(designScope)) return null;
     const open = members.filter(
       (tooth) => tooth.designable && generated[tooth.toothNumber] !== true,
     );
@@ -3777,7 +4372,7 @@ function DesignViewerChrome({
   };
 
   const generateButton = (tooth: LabProsthesisAiTooth) => {
-    if (designScope !== "crown") return null;
+    if (!scopeMakesCrown(designScope)) return null;
     if (generated[tooth.toothNumber] === true) {
       return (
         <button
@@ -3814,28 +4409,81 @@ function DesignViewerChrome({
     }
     const review = marginReview[tooth.toothNumber] ?? "none";
     const deleted = toothEdit(tooth.toothNumber).margin.deleted;
-    if (review === "detected" && !deleted) {
+    const implant = tooth.implant ? toothEdit(tooth.toothNumber).implant : null;
+    const implantBlock = implant
+      ? !implant.libraryId
+        ? "임플란트 라이브러리를 먼저 고릅니다."
+        : !implant.aligned
+          ? "스캔바디를 먼저 맞춥니다."
+          : null
+      : null;
+    if (review === "detected" && !deleted && !implantBlock) {
       return (
         <button
           type="button"
           className={cn(toothActionClass, "bg-primary text-primary-foreground")}
+          data-coach="margin-confirm"
           onClick={() => onConfirmMargin(tooth.toothNumber)}
         >
           확인
         </button>
       );
     }
-    const ready = review === "confirmed" && !deleted;
+    const ready = review === "confirmed" && !deleted && !implantBlock;
     return (
       <button
         type="button"
         className={cn(toothActionClass, "bg-primary text-primary-foreground")}
         disabled={generating || !ready}
-        title={ready ? undefined : "마진을 확인한 뒤에 생성합니다."}
+        data-coach={ready ? "generate" : undefined}
+        title={
+          ready
+            ? undefined
+            : (implantBlock ?? `${implant ? "EPL" : "마진"}을 확인한 뒤에 생성합니다.`)
+        }
         onClick={() => onGenerateTooth(tooth.toothNumber)}
       >
         생성
       </button>
+    );
+  };
+
+  const implantBits = (tooth: LabProsthesisAiTooth) => {
+    if (!tooth.implant) return null;
+    const implant = toothEdit(tooth.toothNumber).implant;
+    const label = libraryLabel(tooth.toothNumber);
+    return (
+      <>
+        <button
+          type="button"
+          className={cn(
+            "inline-flex h-6 max-w-[9rem] shrink-0 items-center gap-1 rounded-full border px-2 text-[10px] font-medium leading-none",
+            label
+              ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-700"
+              : "border-destructive/50 bg-destructive/10 text-destructive",
+          )}
+          title={label ?? "임플란트 라이브러리를 고릅니다."}
+          data-coach={`library:${tooth.toothNumber}`}
+          onClick={() => onPickLibrary(tooth.toothNumber)}
+        >
+          <span className="truncate">{label ?? "라이브러리"}</span>
+          <span className="shrink-0">{label ? "선택됨" : "미선택"}</span>
+        </button>
+        {implant.aligned ? (
+          <span className="shrink-0 text-[10px] font-medium text-muted-foreground">정렬됨</span>
+        ) : null}
+        {scopeMakesCrown(designScope) ? (
+          <label className="flex shrink-0 items-center gap-1 text-[10px] font-medium text-foreground">
+            <Checkbox
+              className="h-3.5 w-3.5"
+              checked={implant.screwHole}
+              onCheckedChange={(checked) => onToggleScrewHole(tooth.toothNumber, checked === true)}
+              aria-label={`#${tooth.toothNumber} 스크류홀`}
+            />
+            스크류홀
+          </label>
+        ) : null}
+      </>
     );
   };
 
@@ -3888,6 +4536,7 @@ function DesignViewerChrome({
     const spanReady = pending.every((tooth) => {
       const edit = toothEdit(tooth.toothNumber);
       if (edit.pontic.on) return true;
+      if (tooth.implant && !(edit.implant.libraryId && edit.implant.aligned)) return false;
       return (
         tooth.designable &&
         !edit.margin.deleted &&
@@ -3924,7 +4573,7 @@ function DesignViewerChrome({
           </button>
         ) : null}
         {presetSelect(members, label)}
-        {designScope === "crown" && !allMade ? (
+        {scopeMakesCrown(designScope) && !allMade ? (
           <button
             type="button"
             className={cn(toothActionClass, "bg-primary text-primary-foreground")}
@@ -4046,6 +4695,7 @@ function DesignViewerChrome({
                                         {nameButton(tooth, axisOn)}
                                         {roleButton(tooth, block.span)}
                                         {statusBits(tooth)}
+                                        {implantBits(tooth)}
                                         {generateButton(tooth)}
                                       </div>
                                     </div>
@@ -4066,6 +4716,7 @@ function DesignViewerChrome({
                             <div className="flex w-fit items-center gap-1.5 py-0.5">
                               {nameButton(tooth, axisOn)}
                               {statusBits(tooth)}
+                              {implantBits(tooth)}
                               {presetSelect([tooth], `#${tooth.toothNumber}`)}
                               {span.length > 0 ? insertionButton(span, false) : null}
                               {generateButton(tooth)}

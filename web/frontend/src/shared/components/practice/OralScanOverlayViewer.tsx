@@ -65,10 +65,12 @@ import {
   mergeArchToBiteByPoints,
   registerJawsToBite,
 } from "@/shared/practice/biteRegistration";
-import type {
-  DesignGesture,
-  ProsthesisDesignEdit,
-  ToothDesignEdit,
+import {
+  sculptStampWidth,
+  type DesignGesture,
+  type ModelKind,
+  type ProsthesisDesignEdit,
+  type ToothDesignEdit,
 } from "@/shared/practice/labProsthesisModify";
 import { encodeBinaryStl } from "@/shared/files/stlBinaryWrite";
 import {
@@ -86,6 +88,7 @@ import {
   connectorFrame,
   readEditHit,
   type EditHit,
+  type ScanDistanceProbe,
 } from "@/shared/components/practice/labProsthesisEditLayer";
 import { cn } from "@/shared/ui/cn";
 
@@ -161,12 +164,24 @@ export type OralScanOverlayHandle = {
    * CAM 좌표면 스캔 파일 좌표·단위 그대로, 아니면 보철 중심을 원점으로 mm로 낸다.
    */
   exportDesignStl: (input: DesignStlExportInput) => Array<{ fileName: string; blob: Blob }>;
+  /**
+   * 라이브러리 스캔바디를 스캔에 맞춘다. 윗면 중심과 축을 스캔 면에서 찾는다.
+   * 치아 위치나 주변 스캔이 없으면 null.
+   */
+  fitScanbody: (
+    toothNumber: string,
+    radiusMm: number,
+  ) => { axis: [number, number, number]; offset: [number, number, number]; fitMm: number | null } | null;
+  /** 찍어 둔 스캔바디 점을 지운다. */
+  clearScanbodyPicks: () => void;
 };
 
 export type DesignStlExportInput = {
   /** 파일 하나에 묶을 치아. 브리지는 스팬 전체. */
   groups: ReadonlyArray<{ fileName: string; teeth: readonly string[] }>;
   scans: ReadonlyArray<{ fileName: string; role: WorkingScanMesh["role"] }>;
+  /** 다이·접촉 확인·교합 확인 모델. 치아는 지대치. */
+  models?: ReadonlyArray<{ fileName: string; kind: ModelKind; teeth: readonly string[] }>;
   camCoordinates: boolean;
 };
 
@@ -192,6 +207,8 @@ export type WorkingScanMesh = {
 
 export type OralScanToothBadge = {
   toothNumber: string;
+  /** 배지 글자. 없으면 치아 번호. 임플란트는 `16i`. */
+  label?: string;
   active?: boolean;
 };
 
@@ -253,6 +270,9 @@ type Props = {
   onMeshesReady?: (info: { deformed: boolean; restore: boolean }) => void;
   /** 돌리기·이동·줌·시점 전환이 멈추면. */
   onViewSettled?: () => void;
+  /** 이 임플란트 치아의 스캔바디 윗면 가장자리에 점 3개를 찍는다. */
+  scanbodyPickTooth?: string | null;
+  onScanbodyPicks?: (count: number) => void;
   className?: string;
 };
 
@@ -2303,6 +2323,8 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       onAlignCancelled,
       onMeshesReady,
       onViewSettled,
+      scanbodyPickTooth = null,
+      onScanbodyPicks,
       className,
     },
     ref,
@@ -2396,6 +2418,15 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   });
   const alignAutoRef = useRef<() => Promise<boolean>>(async () => false);
   const clearPicksRef = useRef<() => void>(() => {});
+  const scanbodyPickRef = useRef<{ tooth: string | null; points: THREE.Vector3[] }>({
+    tooth: null,
+    points: [],
+  });
+  const scanbodyMarksRef = useRef<THREE.Group | null>(null);
+  const onScanbodyPicksRef = useRef(onScanbodyPicks);
+  onScanbodyPicksRef.current = onScanbodyPicks;
+  const nearbyScanRef = useRef(new Map<string, Float32Array>());
+  const scanbodyPickApiRef = useRef<(raycaster: THREE.Raycaster) => void>(() => {});
   designEditRef.current = designEdit;
   onDesignGestureRef.current = onDesignGesture;
   onAlignProgressRef.current = onAlignProgress;
@@ -2912,6 +2943,31 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       return (radial - offset) / base;
     };
 
+    const sculptAt = (tooth: string, angle: number, invert: boolean) => {
+      const send = onDesignGestureRef.current;
+      const brush = designEditRef.current?.sculptBrush;
+      if (!send || !brush) return;
+      const width = sculptStampWidth(brush.sizeMm, brush.zoomSync ? camera.zoom : 1);
+      const amount = 0.84 * brush.strength;
+      if (brush.shape === "smooth") {
+        send({ type: "smooth", tooth });
+        return;
+      }
+      if (brush.shape === "flatten") {
+        send({ type: "flatten", tooth, angle, width, strength: brush.strength });
+        return;
+      }
+      const sign = brush.shape === "remove" ? -1 : 1;
+      const wide = brush.shape === "inflate" ? 2.4 : 1;
+      send({
+        type: "sculpt",
+        tooth,
+        angle,
+        amount: (invert ? -sign : sign) * amount * (brush.shape === "inflate" ? 0.6 : 1),
+        width: width * wide,
+      });
+    };
+
     const onEditPointerDown = (event: PointerEvent) => {
       if (!designEditRef.current) return;
       aim(event);
@@ -2975,6 +3031,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
             angle: ((angle * 180) / Math.PI + 360) % 360,
           });
         } else if (tool === "hole") {
+          if (designEditRef.current.edits[hit.tag.tooth]?.implant.on) return;
           if (along < frame.place.radius * 0.08) {
             send({ type: "hole-reject", tooth: hit.tag.tooth });
           } else {
@@ -2987,7 +3044,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         } else if (tool === "cutback" && brush === "minus") {
           send({ type: "cutback-exclude", tooth: hit.tag.tooth, angle });
         } else if (tool === "refine" && brush === "sculpt") {
-          send({ type: "sculpt", tooth: hit.tag.tooth, angle, amount: 0.42 });
+          sculptAt(hit.tag.tooth, angle, false);
         } else if (tool === "refine" && brush === "erase") {
           send({ type: "smooth", tooth: hit.tag.tooth });
         } else {
@@ -2996,7 +3053,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       } else if (hit.tag.kind === "crown" && event.button === 2 && tool === "refine") {
         const placed = planePoint(hit.tag.tooth);
         if (!placed) return;
-        send({ type: "sculpt", tooth: hit.tag.tooth, angle: placed.angle, amount: -0.42 });
+        sculptAt(hit.tag.tooth, placed.angle, true);
       } else {
         return;
       }
@@ -3107,6 +3164,22 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     renderer.domElement.addEventListener("pointerdown", onAlignPointerDown);
     renderer.domElement.addEventListener("pointerup", onAlignPointerUp);
 
+    let scanbodyDown: { x: number; y: number } | null = null;
+    const onScanbodyPointerDown = (event: PointerEvent) => {
+      if (!scanbodyPickRef.current.tooth || event.button !== 0) return;
+      scanbodyDown = { x: event.clientX, y: event.clientY };
+    };
+    const onScanbodyPointerUp = (event: PointerEvent) => {
+      const start = scanbodyDown;
+      scanbodyDown = null;
+      if (!start || !scanbodyPickRef.current.tooth || event.button !== 0) return;
+      if (Math.hypot(event.clientX - start.x, event.clientY - start.y) > 6) return;
+      aim(event);
+      scanbodyPickApiRef.current(raycaster);
+    };
+    renderer.domElement.addEventListener("pointerdown", onScanbodyPointerDown);
+    renderer.domElement.addEventListener("pointerup", onScanbodyPointerUp);
+
     return () => {
       window.clearTimeout(viewTimerRef.current);
       window.cancelAnimationFrame(raf);
@@ -3118,6 +3191,8 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       renderer.domElement.removeEventListener("contextmenu", onEditContext, true);
       renderer.domElement.removeEventListener("pointerdown", onAlignPointerDown);
       renderer.domElement.removeEventListener("pointerup", onAlignPointerUp);
+      renderer.domElement.removeEventListener("pointerdown", onScanbodyPointerDown);
+      renderer.domElement.removeEventListener("pointerup", onScanbodyPointerUp);
       controls.removeEventListener("start", cancelSnap);
       controls.removeEventListener("change", onControlChange);
       controls.dispose();
@@ -3942,7 +4017,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       button.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
-        onSelectToothRef.current?.(button.textContent ?? "");
+        onSelectToothRef.current?.(button.dataset.tooth ?? button.textContent ?? "");
       });
       parent.appendChild(button);
     };
@@ -3956,7 +4031,8 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         wrap.className = "pointer-events-auto flex items-center justify-center";
         for (const badge of rows) {
           const button = document.createElement("button");
-          button.textContent = badge.toothNumber;
+          button.textContent = badge.label ?? badge.toothNumber;
+          button.dataset.tooth = badge.toothNumber;
           button.className = badge.active
             ? "rounded-full bg-primary px-1.5 py-0.5 text-[11px] font-semibold leading-none text-primary-foreground"
             : "rounded-full bg-background/95 px-1.5 py-0.5 text-[11px] font-semibold leading-none text-foreground shadow-sm";
@@ -3985,7 +4061,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       const pose = occlusalCamera(frame, place.arch);
       const lift = Math.max(place.radius * 0.2, fitRadiusRef.current * 0.008);
       const button = document.createElement("button");
-      button.textContent = badge.toothNumber;
+      button.textContent = badge.label ?? badge.toothNumber;
       button.className = badge.active
         ? "pointer-events-auto rounded-md bg-primary px-2 py-1 text-xs font-semibold text-primary-foreground shadow-sm"
         : "pointer-events-auto rounded-md border border-border bg-background/95 px-2 py-1 text-xs font-semibold text-foreground shadow-sm";
@@ -4006,7 +4082,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   };
 
   const badgeKey = toothBadges
-    .map((badge) => `${badge.toothNumber}:${badge.active ? 1 : 0}`)
+    .map((badge) => `${badge.toothNumber}:${badge.label ?? ""}:${badge.active ? 1 : 0}`)
     .join("|");
 
   useEffect(() => {
@@ -4162,7 +4238,12 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         if (out.length === 0) return null;
         return { halfMm: half * unit, sides: out };
       },
-      exportDesignStl: ({ groups, scans, camCoordinates }) => {
+      fitScanbody: (toothNumber, radiusMm) => fitScanbodyRef.current(toothNumber, radiusMm),
+      clearScanbodyPicks: () => {
+        clearScanbodyMarksRef.current();
+        onScanbodyPicksRef.current?.(0);
+      },
+      exportDesignStl: ({ groups, scans, models = [], camCoordinates }) => {
         const scene = sceneRef.current;
         const group = groupRef.current;
         if (!scene || !group) return [];
@@ -4187,6 +4268,36 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
               .map((entry) => entry.mesh),
           ),
         }));
+        const modelRows = models.map((row) => {
+          const places = row.teeth
+            .map((tooth) => placementsRef.current.find((place) => place.toothNumber === tooth))
+            .filter((place): place is ToothPlacement => place != null);
+          const arches = new Set(places.map((place) => place.arch));
+          const roles =
+            row.kind === "bite"
+              ? new Set<LabOralScanRole>(["upper", "lower"])
+              : new Set<LabOralScanRole>(arches);
+          const all = worldTriangles(
+            loadedRef.current.filter((entry) => roles.has(entry.role)).map((entry) => entry.mesh),
+          );
+          if (row.kind !== "die") return { fileName: row.fileName, positions: all };
+          const kept: number[] = [];
+          for (let i = 0; i + 8 < all.length; i += 9) {
+            const cx = (all[i]! + all[i + 3]! + all[i + 6]!) / 3;
+            const cy = (all[i + 1]! + all[i + 4]! + all[i + 7]!) / 3;
+            const cz = (all[i + 2]! + all[i + 5]! + all[i + 8]!) / 3;
+            const inside = places.some((place) => {
+              const dx = cx - place.center.x;
+              const dy = cy - place.center.y;
+              const dz = cz - place.center.z;
+              const reach = place.radius * 1.25;
+              return dx * dx + dy * dy + dz * dz <= reach * reach;
+            });
+            if (!inside) continue;
+            for (let k = 0; k < 9; k += 1) kept.push(all[i + k]!);
+          }
+          return { fileName: row.fileName, positions: new Float32Array(kept) };
+        });
         const origin = new THREE.Vector3();
         let scale = 1;
         if (camCoordinates) {
@@ -4195,7 +4306,9 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
           scale = unitToMmRef.current > 0 ? unitToMmRef.current : 1;
           const pool = restorations.some((row) => row.positions.length > 0)
             ? restorations
-            : scanRows;
+            : scanRows.some((row) => row.positions.length > 0)
+              ? scanRows
+              : modelRows;
           let count = 0;
           for (const row of pool) {
             for (let i = 0; i < row.positions.length; i += 3) {
@@ -4208,7 +4321,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
           if (count > 0) origin.multiplyScalar(1 / count);
         }
         const files: Array<{ fileName: string; blob: Blob }> = [];
-        for (const row of [...restorations, ...scanRows]) {
+        for (const row of [...restorations, ...scanRows, ...modelRows]) {
           if (row.positions.length === 0) continue;
           const out = row.positions;
           for (let i = 0; i < out.length; i += 3) {
@@ -4508,6 +4621,202 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   };
   saveImageRef.current = onSaveImage;
 
+  /** 치아 추정 중심 주변의 지대치 악 스캔 정점(월드). 로드·배치가 같으면 다시 모으지 않는다. */
+  const nearbyScanPoints = (tooth: string) => {
+    const place = placementsRef.current.find((row) => row.toothNumber === tooth);
+    if (!place) return null;
+    const c = place.center;
+    const cacheKey = `${loadVersion}:${tooth}:${c.x.toFixed(3)},${c.y.toFixed(3)},${c.z.toFixed(3)}`;
+    const cache = nearbyScanRef.current;
+    const hit = cache.get(cacheKey);
+    if (hit) return { place, points: hit };
+    const unit = unitToMmRef.current > 0 ? unitToMmRef.current : 1;
+    const reach = Math.max(place.radius * 1.5, 9 / unit);
+    const reach2 = reach * reach;
+    groupRef.current?.updateWorldMatrix(true, true);
+    const out: number[] = [];
+    const point = new THREE.Vector3();
+    for (const entry of loadedRef.current) {
+      if (entry.role !== place.arch) continue;
+      const pos = entry.geometry.getAttribute("position");
+      if (!pos) continue;
+      for (let i = 0; i < pos.count; i += 1) {
+        point.fromBufferAttribute(pos, i).applyMatrix4(entry.mesh.matrixWorld);
+        if (point.distanceToSquared(c) > reach2) continue;
+        out.push(point.x, point.y, point.z);
+      }
+    }
+    if (cache.size > 32) cache.clear();
+    const points = new Float32Array(out);
+    cache.set(cacheKey, points);
+    return { place, points };
+  };
+
+  const toothAxisDir = (tooth: string) => {
+    const axis = insertionAxesRef.current.find((row) => row.toothNumbers.includes(tooth));
+    return (axis?.dir ?? frameRef.current?.up ?? new THREE.Vector3(0, 0, 1)).clone().normalize();
+  };
+
+  const scanDistanceProbe: ScanDistanceProbe = (tooth, points, normals) => {
+    const near = nearbyScanPoints(tooth);
+    if (!near || near.points.length === 0) return points.map(() => null);
+    const unit = unitToMmRef.current > 0 ? unitToMmRef.current : 1;
+    const limit = 0.35 / unit;
+    const limit2 = limit * limit;
+    const data = near.points;
+    return points.map((v, index) => {
+      let best = Infinity;
+      let bx = 0;
+      let by = 0;
+      let bz = 0;
+      for (let i = 0; i < data.length; i += 3) {
+        const dx = data[i]! - v.x;
+        const dy = data[i + 1]! - v.y;
+        const dz = data[i + 2]! - v.z;
+        const d2 = dx * dx + dy * dy + dz * dz;
+        if (d2 < best) {
+          best = d2;
+          bx = dx;
+          by = dy;
+          bz = dz;
+        }
+      }
+      if (best > limit2) return null;
+      const n = normals[index];
+      const sign = n && bx * n.x + by * n.y + bz * n.z < 0 ? -1 : 1;
+      return sign * Math.sqrt(best) * unit;
+    });
+  };
+
+  const fitScanbodyOnScan = (tooth: string, radiusMm: number) => {
+    const near = nearbyScanPoints(tooth);
+    if (!near || near.points.length < 90) return null;
+    const unit = unitToMmRef.current > 0 ? unitToMmRef.current : 1;
+    const n = toothAxisDir(tooth);
+    const r = radiusMm / unit;
+    const data = near.points;
+    const center = near.place.center.clone();
+    const d = new THREE.Vector3();
+    const flat = new THREE.Vector3();
+    let top = 0;
+    let fitMm: number | null = null;
+    for (let iter = 0; iter < 5; iter += 1) {
+      const alongs: number[] = [];
+      for (let i = 0; i < data.length; i += 3) {
+        d.set(data[i]! - center.x, data[i + 1]! - center.y, data[i + 2]! - center.z);
+        const a = d.dot(n);
+        flat.copy(d).addScaledVector(n, -a);
+        if (flat.length() < r * 1.8) alongs.push(a);
+      }
+      if (alongs.length < 24) return null;
+      alongs.sort((x, y) => x - y);
+      top = alongs[Math.floor(0.97 * (alongs.length - 1))]!;
+      const shift = new THREE.Vector3();
+      let count = 0;
+      let deviation = 0;
+      for (let i = 0; i < data.length; i += 3) {
+        d.set(data[i]! - center.x, data[i + 1]! - center.y, data[i + 2]! - center.z);
+        const a = d.dot(n);
+        if (a > top - 0.5 / unit || a < top - 6 / unit) continue;
+        flat.copy(d).addScaledVector(n, -a);
+        const radial = flat.length();
+        if (radial > r * 1.8) continue;
+        shift.add(flat);
+        deviation += Math.abs(radial - r);
+        count += 1;
+      }
+      if (count < 12) break;
+      center.addScaledVector(shift, 1 / count);
+      fitMm = (deviation / count) * unit;
+    }
+    const topPoint = center.clone().addScaledVector(n, top);
+    const offset = topPoint.sub(near.place.center);
+    return {
+      axis: [n.x, n.y, n.z] as [number, number, number],
+      offset: [offset.x, offset.y, offset.z] as [number, number, number],
+      fitMm: fitMm == null ? null : Math.round(fitMm * 1000) / 1000,
+    };
+  };
+
+  const clearScanbodyMarks = () => {
+    const marks = scanbodyMarksRef.current;
+    if (marks) {
+      sceneRef.current?.remove(marks);
+      disposeObject3D(marks);
+    }
+    scanbodyMarksRef.current = null;
+    scanbodyPickRef.current.points = [];
+  };
+
+  scanbodyPickApiRef.current = (raycaster) => {
+    const tooth = scanbodyPickRef.current.tooth;
+    const scene = sceneRef.current;
+    if (!tooth || !scene) return;
+    const place = placementsRef.current.find((row) => row.toothNumber === tooth);
+    if (!place) return;
+    groupRef.current?.updateWorldMatrix(true, true);
+    const meshes = loadedRef.current
+      .filter((entry) => entry.mesh.visible && entry.role === place.arch)
+      .map((entry) => entry.mesh);
+    const hit = raycaster.intersectObjects(meshes, false)[0];
+    if (!hit) return;
+    const points = scanbodyPickRef.current.points;
+    points.push(hit.point.clone());
+    if (!scanbodyMarksRef.current) {
+      scanbodyMarksRef.current = new THREE.Group();
+      scene.add(scanbodyMarksRef.current);
+    }
+    const mark = new THREE.Mesh(
+      new THREE.SphereGeometry(Math.max(place.radius * 0.05, 0.15), 12, 10),
+      new THREE.MeshBasicMaterial({ color: 0xef4444, depthTest: false }),
+    );
+    mark.position.copy(hit.point);
+    mark.renderOrder = 20;
+    scanbodyMarksRef.current.add(mark);
+    onScanbodyPicksRef.current?.(points.length);
+    if (points.length < 3) return;
+    const [a, b, c] = points as [THREE.Vector3, THREE.Vector3, THREE.Vector3];
+    const ab = b.clone().sub(a);
+    const ac = c.clone().sub(a);
+    const normal = new THREE.Vector3().crossVectors(ab, ac);
+    const n2 = normal.lengthSq();
+    clearScanbodyMarks();
+    onScanbodyPicksRef.current?.(0);
+    if (n2 < 1e-10) return;
+    const center = a
+      .clone()
+      .add(
+        new THREE.Vector3()
+          .crossVectors(normal, ab)
+          .multiplyScalar(ac.lengthSq())
+          .add(new THREE.Vector3().crossVectors(ac, normal).multiplyScalar(ab.lengthSq()))
+          .multiplyScalar(1 / (2 * n2)),
+      );
+    const axis = normal.normalize();
+    if (axis.dot(toothAxisDir(tooth)) < 0) axis.negate();
+    const unit = unitToMmRef.current > 0 ? unitToMmRef.current : 1;
+    const radiusMm = designEditRef.current?.scanbodies[tooth]?.radiusMm ?? 2.4;
+    const offset = center.clone().sub(place.center);
+    onDesignGestureRef.current?.({
+      type: "scanbody-fit",
+      tooth,
+      axis: [axis.x, axis.y, axis.z],
+      offset: [offset.x, offset.y, offset.z],
+      fitMm: Math.round(Math.abs(center.distanceTo(a) * unit - radiusMm) * 1000) / 1000,
+    });
+  };
+  const fitScanbodyRef = useRef(fitScanbodyOnScan);
+  fitScanbodyRef.current = fitScanbodyOnScan;
+  const clearScanbodyMarksRef = useRef(clearScanbodyMarks);
+  clearScanbodyMarksRef.current = clearScanbodyMarks;
+  const scanDistanceProbeRef = useRef(scanDistanceProbe);
+  scanDistanceProbeRef.current = scanDistanceProbe;
+
+  useEffect(() => {
+    scanbodyPickRef.current.tooth = scanbodyPickTooth;
+    clearScanbodyMarksRef.current();
+  }, [scanbodyPickTooth]);
+
   useEffect(() => {
     const scene = sceneRef.current;
     if (!scene) return;
@@ -4524,6 +4833,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       insertionByTooth: insertionDirByTooth(insertionAxesRef.current),
       unitToMm: unitToMmRef.current,
       spec: designEdit,
+      probe: (tooth, points, normals) => scanDistanceProbeRef.current(tooth, points, normals),
     });
     scene.add(layer);
     editLayerRef.current = layer;

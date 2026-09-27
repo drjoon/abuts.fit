@@ -7,14 +7,18 @@
 import { encodeHpsCaDcm, type HpsCaMesh } from "@/shared/files/hpsDcmWrite";
 import {
   abutsWorkScanFileName,
+  parseToothOverrides,
+  type LabToothOverride,
   type WorkScanRole,
 } from "@/shared/practice/labProsthesisAiDesign";
 import {
   normalizeToothDesignEdits,
   parseDesignScope,
   parseMarginReviewMap,
+  parseModelKind,
   type DesignScope,
   type MarginReview,
+  type ModelKind,
   type ToothDesignEdit,
 } from "@/shared/practice/labProsthesisModify";
 import {
@@ -79,8 +83,14 @@ export type WorkSessionDocument = {
   generated: Record<string, boolean>;
   /** 치아별 마진 검출·확인. 없으면 생성된 치아만 확인된 것으로 본다. */
   marginReview: Record<string, MarginReview>;
-  /** 마진만 / 크라운까지. 고르기 전이면 null. */
+  /** 마진만 / 크라운까지 / 모델까지. 고르기 전이면 null. */
   designScope: DesignScope | null;
+  /** 모델까지일 때 낼 모델. */
+  modelKind: ModelKind;
+  /** 케이스 메모. */
+  note: string;
+  /** 의뢰 치식 번호 → 작업영역에서 바꾼 번호·유형. */
+  toothOverrides: Record<string, LabToothOverride>;
   insertionAxes: WorkSessionAxis[];
   archAligned: WorkSessionArchAligned;
   camera: WorkSessionView | null;
@@ -223,6 +233,11 @@ function documentOf(row: unknown): WorkSessionDocument | null {
       generated,
     ),
     designScope: parseDesignScope((body as { designScope?: unknown }).designScope),
+    modelKind: parseModelKind((body as { modelKind?: unknown }).modelKind),
+    note: String((body as { note?: unknown }).note ?? "").slice(0, 2000),
+    toothOverrides: parseToothOverrides(
+      (body as { toothOverrides?: unknown }).toothOverrides,
+    ),
     insertionAxes,
     archAligned: parseArchAligned((body as { archAligned?: unknown }).archAligned),
     camera: viewOf((body as { camera?: unknown }).camera),

@@ -5,6 +5,7 @@ import { fdiToothDigits } from "@/shared/practice/toothArchOrder";
 export const MARGIN_POINT_COUNT = 16;
 
 export const MODIFY_TOOLS = [
+  { id: "scanbody", label: "스캔바디" },
   { id: "margin", label: "마진" },
   { id: "insertion", label: "삽입" },
   { id: "inner", label: "내면" },
@@ -21,13 +22,59 @@ export type MarginEditMode = "point" | "pen";
 
 export type EditBrush = "none" | "sculpt" | "erase" | "minus";
 
+/** 스컬프트 브러시 모양. 오른쪽 클릭은 더하기·빼기를 뒤집는다. */
+export type SculptShape = "add" | "remove" | "smooth" | "flatten" | "inflate";
+
+export const SCULPT_SHAPES: Array<{ id: SculptShape; label: string; hint: string }> = [
+  { id: "add", label: "더하기", hint: "누른 자리를 덧댑니다." },
+  { id: "remove", label: "빼기", hint: "누른 자리를 깎습니다." },
+  { id: "smooth", label: "매끈", hint: "형태를 완만하게 합니다." },
+  { id: "flatten", label: "평탄", hint: "누른 자리의 굴곡을 폅니다." },
+  { id: "inflate", label: "부풀리기", hint: "넓게 부풀립니다." },
+];
+
+export type SculptBrush = {
+  shape: SculptShape;
+  /** 브러시 지름(mm). */
+  sizeMm: number;
+  /** 0.1~1. */
+  strength: number;
+  /** 켜면 확대할수록 화면에서 같은 크기로 보이게 줄인다. */
+  zoomSync: boolean;
+};
+
+export const DEFAULT_SCULPT_BRUSH: SculptBrush = {
+  shape: "add",
+  sizeMm: 1.6,
+  strength: 0.5,
+  zoomSync: false,
+};
+
+/** 기본 브러시(1.6mm)의 각도 분산. 예전 도장은 이 값으로 본다. */
+const SCULPT_BASE_WIDTH = 0.09;
+
+export function sculptStampWidth(sizeMm: number, zoom = 1) {
+  const size = clamp(sizeMm, 0.4, 5) / Math.max(zoom, 0.2);
+  return SCULPT_BASE_WIDTH * (size / DEFAULT_SCULPT_BRUSH.sizeMm) ** 2;
+}
+
 export type InnerPresetId = "zirconia" | "glass" | "pmma" | "print" | "clinic" | "custom";
 
-/** 디자인 시작 전 범위. 마진만이면 크라운을 만들지 않는다. */
-export type DesignScope = "margin" | "crown";
+/** 디자인 시작 전 범위. 마진만이면 크라운을 만들지 않는다. 모델은 크라운에 모델 출력을 더한다. */
+export type DesignScope = "margin" | "crown" | "model";
+
+export function scopeMakesCrown(scope: DesignScope | null | undefined) {
+  return scope === "crown" || scope === "model";
+}
 
 /** 모델 범위에서 내보낼 모델. */
 export type ModelKind = "die" | "contact" | "bite";
+
+export const MODEL_KINDS: Array<{ id: ModelKind; label: string; hint: string }> = [
+  { id: "die", label: "다이만", hint: "지대치 주변만 잘라 냅니다." },
+  { id: "contact", label: "접촉 확인 모델", hint: "지대치가 있는 악 전체를 냅니다." },
+  { id: "bite", label: "교합 확인 모델", hint: "상악과 하악을 한 파일로 냅니다." },
+];
 
 export function parseModelKind(value: unknown): ModelKind {
   return value === "contact" || value === "bite" ? value : "die";
@@ -163,7 +210,7 @@ export function clinicKeyFromCasePrimary(primary: string | null | undefined): st
 }
 
 export function parseDesignScope(value: unknown): DesignScope | null {
-  return value === "margin" || value === "crown" ? value : null;
+  return value === "margin" || value === "crown" || value === "model" ? value : null;
 }
 
 export function parseMarginReviewMap(
@@ -363,7 +410,22 @@ export type ToothDesignEdit = {
     smooth: number;
     minThicknessMm: number;
     compensate: boolean;
-    sculpt: Array<{ angle: number; amount: number }>;
+    /** width는 각도 분산. 없으면 기본 브러시. */
+    sculpt: Array<{ angle: number; amount: number; width?: number }>;
+  };
+  /** 임플란트 크라운. 마진 대신 EPL, 지대치 대신 스캔바디를 쓴다. */
+  implant: {
+    on: boolean;
+    /** `implantLibraryId`. 고르기 전이면 null. */
+    libraryId: string | null;
+    /** 라이브러리를 스캔바디에 맞춘 결과. 월드 좌표, 치아 추정 중심 기준. */
+    aligned: boolean;
+    axis: [number, number, number] | null;
+    offset: [number, number, number];
+    rotDeg: number;
+    /** 맞춘 뒤 평균 거리(mm). */
+    fitMm: number | null;
+    screwHole: boolean;
   };
   hook: {
     on: boolean;
@@ -406,8 +468,16 @@ export type DesignGesture =
   | { type: "hole-angle"; tooth: string; angle: number }
   | { type: "hole-tilt"; tooth: string; tilt: number }
   | { type: "hole-reject"; tooth: string }
-  | { type: "sculpt"; tooth: string; angle: number; amount: number }
+  | { type: "sculpt"; tooth: string; angle: number; amount: number; width?: number }
   | { type: "smooth"; tooth: string }
+  | { type: "flatten"; tooth: string; angle: number; width: number; strength: number }
+  | {
+      type: "scanbody-fit";
+      tooth: string;
+      axis: [number, number, number];
+      offset: [number, number, number];
+      fitMm: number | null;
+    }
   | { type: "cutback-exclude"; tooth: string; angle: number }
   | { type: "transform"; tooth: string; scale: number }
   | { type: "connector"; tooth: string; along: number };
@@ -423,6 +493,16 @@ export type ProsthesisDesignEdit = {
   prepBackTransparent: boolean;
   /** 마진 선. 끄면 점과 고리를 그리지 않는다. */
   showMargin: boolean;
+  sculptBrush: SculptBrush;
+  /** 임플란트 치아별 스캔바디 라이브러리 치수(mm). */
+  scanbodies: Record<string, ScanbodyShape>;
+  /** 스크류홀을 켠 임플란트의 스크류 경로. */
+  showScrewPath: boolean;
+};
+
+export type ScanbodyShape = {
+  radiusMm: number;
+  heightMm: number;
 };
 
 function ones(count: number) {
@@ -460,6 +540,16 @@ export function createToothDesignEdit(): ToothDesignEdit {
       compensate: false,
       sculpt: [],
     },
+    implant: {
+      on: false,
+      libraryId: null,
+      aligned: false,
+      axis: null,
+      offset: [0, 0, 0],
+      rotDeg: 0,
+      fitMm: null,
+      screwHole: false,
+    },
     hook: { on: false, angle: 40, radiusMm: 0.45, lengthMm: 2.4 },
     cutback: { on: false, region: "partial", thicknessMm: 0.4, excluded: [] },
     hole: { on: false, angle: 0, tiltDeg: 8, radiusMm: 1 },
@@ -483,9 +573,20 @@ export function normalizeToothDesignEdit(raw: unknown): ToothDesignEdit {
   const row = raw as Partial<ToothDesignEdit>;
   const pontic = (row.pontic ?? {}) as Partial<ToothDesignEdit["pontic"]>;
   const connector = (row.connector ?? {}) as Partial<ToothDesignEdit["connector"]>;
+  const implant = (row.implant ?? {}) as Partial<ToothDesignEdit["implant"]>;
   return {
     ...base,
     ...row,
+    implant: {
+      on: implant.on === true,
+      libraryId: typeof implant.libraryId === "string" && implant.libraryId ? implant.libraryId : null,
+      aligned: implant.aligned === true,
+      axis: vec3OrNull(implant.axis),
+      offset: vec3OrNull(implant.offset) ?? [0, 0, 0],
+      rotDeg: Number(implant.rotDeg) || 0,
+      fitMm: Number.isFinite(Number(implant.fitMm)) && implant.fitMm != null ? Number(implant.fitMm) : null,
+      screwHole: implant.screwHole === true,
+    },
     pontic: {
       on: pontic.on === true,
       base: PONTIC_BASES.some((item) => item.id === pontic.base)
@@ -506,6 +607,12 @@ export function normalizeToothDesignEdit(raw: unknown): ToothDesignEdit {
       linked: connector.linked !== false,
     },
   };
+}
+
+function vec3OrNull(value: unknown): [number, number, number] | null {
+  if (!Array.isArray(value) || value.length < 3) return null;
+  const out = [Number(value[0]), Number(value[1]), Number(value[2])] as [number, number, number];
+  return out.every((n) => Number.isFinite(n)) ? out : null;
 }
 
 export function normalizeToothDesignEdits(raw: unknown): Record<string, ToothDesignEdit> {
@@ -726,7 +833,9 @@ export function localShellThicknessMm(
   const damp = 1 - edit.refine.smooth;
   let dent = 0;
   for (const stamp of edit.refine.sculpt) {
-    const influence = Math.exp(-(wrapAngle(angle - stamp.angle) ** 2) / 0.09);
+    const influence = Math.exp(
+      -(wrapAngle(angle - stamp.angle) ** 2) / (stamp.width ?? SCULPT_BASE_WIDTH),
+    );
     if (stamp.amount < 0) dent += -stamp.amount * influence;
   }
   dent *= damp;
@@ -817,12 +926,39 @@ export function reduceDesignGesture(
         },
       };
     case "sculpt": {
-      const sculpt = [
-        ...edit.refine.sculpt,
-        { angle: gesture.angle, amount: gesture.amount },
-      ].slice(-14);
+      const stamp =
+        gesture.width != null
+          ? { angle: gesture.angle, amount: gesture.amount, width: gesture.width }
+          : { angle: gesture.angle, amount: gesture.amount };
+      const sculpt = [...edit.refine.sculpt, stamp].slice(-24);
       return { ...edit, refine: { ...edit.refine, sculpt } };
     }
+    case "flatten": {
+      const keep = 1 - clamp(gesture.strength, 0.1, 1) * 0.8;
+      return {
+        ...edit,
+        refine: {
+          ...edit.refine,
+          sculpt: edit.refine.sculpt.map((stamp) => {
+            const near = Math.exp(
+              -(wrapAngle(stamp.angle - gesture.angle) ** 2) / Math.max(gesture.width, 1e-3),
+            );
+            return { ...stamp, amount: stamp.amount * (1 - near * (1 - keep)) };
+          }),
+        },
+      };
+    }
+    case "scanbody-fit":
+      return {
+        ...edit,
+        implant: {
+          ...edit.implant,
+          aligned: true,
+          axis: gesture.axis,
+          offset: gesture.offset,
+          fitMm: gesture.fitMm,
+        },
+      };
     case "smooth":
       return {
         ...edit,

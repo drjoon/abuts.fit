@@ -16,6 +16,7 @@ import {
   INNER_PRESETS,
   MODIFY_TOOLS,
   PONTIC_BASES,
+  SCULPT_SHAPES,
   adjustMarginOffset,
   applyInnerPreset,
   connectorAreaMm2,
@@ -27,9 +28,33 @@ import {
   type EditBrush,
   type MarginEditMode,
   type ModifyTool,
+  type SculptBrush,
   type ToothDesignEdit,
 } from "@/shared/practice/labProsthesisModify";
+import { fitDistanceRgb } from "@/shared/components/practice/labProsthesisEditLayer";
 import { cn } from "@/shared/ui/cn";
+
+/** 임플란트 치아의 스캔바디 정렬. 없으면 스캔바디 도구를 두지 않는다. */
+export type ScanbodyControls = {
+  libraryLabel: string | null;
+  aligned: boolean;
+  fitMm: number | null;
+  picking: boolean;
+  picks: number;
+  onPickLibrary: () => void;
+  onAutoFit: () => void;
+  onRotate: (deltaDeg: number) => void;
+  onTogglePick: () => void;
+  onReset: () => void;
+  onApply: () => void;
+};
+
+const FIT_LEGEND = `linear-gradient(90deg, ${[-0.1, -0.05, 0, 0.05, 0.1]
+  .map((mm) => {
+    const [r, g, b] = fitDistanceRgb(mm);
+    return `rgb(${Math.round(r * 255)} ${Math.round(g * 255)} ${Math.round(b * 255)})`;
+  })
+  .join(", ")})`;
 
 type Props = {
   tool: ModifyTool;
@@ -67,6 +92,9 @@ type Props = {
   /** 커넥터 단면 보기(양쪽 인접면). */
   focusView: boolean;
   onFocusView: (on: boolean) => void;
+  sculptBrush: SculptBrush;
+  onSculptBrush: (next: SculptBrush) => void;
+  scanbody: ScanbodyControls | null;
 };
 
 export type ConnectorRow = {
@@ -323,9 +351,16 @@ export function LabProsthesisModifyPanel({
   onAssemble,
   focusView,
   onFocusView,
+  sculptBrush,
+  onSculptBrush,
+  scanbody,
 }: Props) {
   const thin = shellIsThin(edit);
-  const issue = holeIssue(edit.hole);
+  const implant = edit.implant.on;
+  const issue = implant ? null : holeIssue(edit.hole);
+  const marginWord = implant ? "EPL" : "마진";
+  const marginStep = implant ? 0.1 : 0.05;
+  const tools = MODIFY_TOOLS.filter((item) => item.id !== "scanbody" || scanbody);
   const connectorRow =
     connectors.find((row) => row.from === connectorFrom) ?? connectors[0] ?? null;
 
@@ -336,7 +371,7 @@ export function LabProsthesisModifyPanel({
         <p className="text-[11px] text-muted-foreground">{toothLabel}</p>
       ) : null}
       <div className="grid grid-cols-4 gap-1">
-        {MODIFY_TOOLS.map((item) =>
+        {tools.map((item) =>
           item.id === "connector" && !isBridge ? (
             <Tooltip key={item.id}>
               <TooltipTrigger asChild>
@@ -363,13 +398,136 @@ export function LabProsthesisModifyPanel({
               size="sm"
               variant={tool === item.id ? "default" : "outline"}
               className="h-7 px-1 text-[11px]"
+              data-coach={item.id === "scanbody" ? "tool-scanbody" : undefined}
               onClick={() => onTool(item.id)}
             >
-              {item.label}
+              {item.id === "margin" ? marginWord : item.label}
             </Button>
           ),
         )}
       </div>
+
+      {tool === "scanbody" && scanbody ? (
+        <div className="space-y-2">
+          <Row label="라이브러리">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-7 w-full justify-start truncate px-2 text-[11px]"
+              data-coach="implant-library"
+              onClick={scanbody.onPickLibrary}
+            >
+              {scanbody.libraryLabel ?? "라이브러리 고르기"}
+            </Button>
+          </Row>
+          <div className="space-y-1">
+            <div
+              className="h-2 rounded-sm"
+              style={{ background: FIT_LEGEND }}
+              aria-label="스캔바디 거리 -0.1mm부터 +0.1mm"
+            />
+            <div className="flex justify-between text-[10px] tabular-nums text-muted-foreground">
+              <span>-0.1</span>
+              <span>0</span>
+              <span>+0.1</span>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-1">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="flex min-w-0">
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-7 w-full text-[11px]"
+                    disabled={!scanbody.libraryLabel}
+                    data-coach="scanbody-fit"
+                    onClick={scanbody.onAutoFit}
+                  >
+                    자동 맞춤
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="right" className="z-[520]">
+                스캔바디 윗면과 옆면을 찾아 라이브러리를 맞춥니다.
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="flex min-w-0">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={scanbody.picking ? "default" : "outline"}
+                    className="h-7 w-full text-[11px]"
+                    disabled={!scanbody.libraryLabel}
+                    onClick={scanbody.onTogglePick}
+                  >
+                    {scanbody.picking ? `점 ${scanbody.picks}/3` : "점 3개 정렬"}
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="right" className="z-[520]">
+                스캔바디 윗면 가장자리를 세 곳 찍습니다.
+                <br />
+                세 점이 지나는 원으로 축과 중심을 잡습니다.
+              </TooltipContent>
+            </Tooltip>
+          </div>
+          <Row label="회전" value={`${Math.round(((edit.implant.rotDeg % 360) + 360) % 360)}°`}>
+            <div className="grid grid-cols-2 gap-1">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-7 text-[11px]"
+                disabled={!scanbody.libraryLabel}
+                onClick={() => scanbody.onRotate(-60)}
+              >
+                -60°
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-7 text-[11px]"
+                disabled={!scanbody.libraryLabel}
+                onClick={() => scanbody.onRotate(60)}
+              >
+                +60°
+              </Button>
+            </div>
+          </Row>
+          {scanbody.aligned ? (
+            <p className="text-[11px] font-medium text-foreground">
+              평균 거리 {scanbody.fitMm == null ? "-" : `${scanbody.fitMm.toFixed(3)} mm`}
+            </p>
+          ) : null}
+          <div className="grid grid-cols-2 gap-1">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-7 text-[11px]"
+              disabled={!scanbody.aligned}
+              onClick={scanbody.onReset}
+            >
+              초기화
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              className="h-7 text-[11px]"
+              disabled={!scanbody.aligned}
+              data-coach="scanbody-apply"
+              onClick={scanbody.onApply}
+            >
+              적용
+            </Button>
+          </div>
+        </div>
+      ) : null}
 
       {tool === "margin" && edit.pontic.on ? (
         <p className="text-[11px] leading-relaxed text-muted-foreground">
@@ -401,7 +559,14 @@ export function LabProsthesisModifyPanel({
               펜
             </Button>
           </div>
-          <Row label="마진 간격" value={`${edit.margin.offsetMm.toFixed(2)} mm`}>
+          {implant && !edit.implant.aligned ? (
+            <p className="text-[11px] leading-relaxed text-destructive">
+              스캔바디를 먼저 맞춥니다.
+              <br />
+              EPL은 맞춘 인터페이스 둘레에서 잡습니다.
+            </p>
+          ) : null}
+          <Row label={`${marginWord} 간격`} value={`${edit.margin.offsetMm.toFixed(2)} mm`}>
             <Slider
               min={-40}
               max={60}
@@ -413,7 +578,7 @@ export function LabProsthesisModifyPanel({
                   margin: { ...edit.margin, offsetMm: (value ?? 0) / 100, deleted: false },
                 })
               }
-              aria-label="마진 간격"
+              aria-label={`${marginWord} 간격`}
             />
           </Row>
           <div className="grid grid-cols-2 gap-1">
@@ -422,22 +587,23 @@ export function LabProsthesisModifyPanel({
               size="sm"
               variant="outline"
               className="h-7 text-[11px]"
-              onClick={() => onEdit(adjustMarginOffset(edit, -0.05))}
-              title="마진을 안쪽(교합면 방향)으로 0.05mm 수축합니다."
+              onClick={() => onEdit(adjustMarginOffset(edit, -marginStep))}
+              title={`${marginWord}을 안쪽으로 ${marginStep}mm 수축합니다.`}
             >
-              수축 -0.05
+              수축 -{marginStep}
             </Button>
             <Button
               type="button"
               size="sm"
               variant="outline"
               className="h-7 text-[11px]"
-              onClick={() => onEdit(adjustMarginOffset(edit, 0.05))}
-              title="마진을 바깥쪽(치은 방향)으로 0.05mm 확장합니다."
+              onClick={() => onEdit(adjustMarginOffset(edit, marginStep))}
+              title={`${marginWord}을 바깥쪽으로 ${marginStep}mm 확장합니다.`}
             >
-              확장 +0.05
+              확장 +{marginStep}
             </Button>
           </div>
+          {implant ? null : (
           <div className="flex items-center justify-between rounded-md border px-2 py-1.5 text-xs">
             <span className="font-medium text-foreground">배면 투명</span>
             <Switch
@@ -451,6 +617,7 @@ export function LabProsthesisModifyPanel({
               aria-label="지대치 배면 투명"
             />
           </div>
+          )}
           <div className="flex gap-1">
             <Button
               type="button"
@@ -468,7 +635,7 @@ export function LabProsthesisModifyPanel({
               className="h-7 flex-1 text-[11px]"
               onClick={onClearMargin}
             >
-              마진 삭제
+              {marginWord} 삭제
             </Button>
           </div>
         </div>
@@ -769,7 +936,7 @@ export function LabProsthesisModifyPanel({
               className="h-5 w-9 data-[state=checked]:bg-primary [&>span]:h-4 [&>span]:w-4 data-[state=checked]:[&>span]:translate-x-4"
             />
           </label>
-          <div className="grid grid-cols-3 gap-1">
+          <div className="grid grid-cols-2 gap-1">
             <Tooltip>
               <TooltipTrigger asChild>
                 <span className="flex min-w-0">
@@ -786,26 +953,9 @@ export function LabProsthesisModifyPanel({
                 </span>
               </TooltipTrigger>
               <TooltipContent side="right" className="z-[520]">
-                왼쪽은 덧대고 오른쪽은 깎습니다.
-              </TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="flex min-w-0">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={brush === "erase" ? "default" : "outline"}
-                    className="h-7 w-full px-1 text-[11px]"
-                    disabled={!generated}
-                    onClick={() => onBrush(brush === "erase" ? "none" : "erase")}
-                  >
-                    매끈
-                  </Button>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="right" className="z-[520]">
-                형태를 완만하게 합니다.
+                보철 면을 눌러 고칩니다.
+                <br />
+                오른쪽 클릭은 더하기와 빼기를 뒤집습니다.
               </TooltipContent>
             </Tooltip>
             <Button
@@ -827,6 +977,65 @@ export function LabProsthesisModifyPanel({
               {edit.refine.compensate ? "보상 켬" : "두께 보상"}
             </Button>
           </div>
+          {brush === "sculpt" ? (
+            <div className="space-y-2 rounded-md border px-2 py-2">
+              <div className="grid grid-cols-3 gap-1">
+                {SCULPT_SHAPES.map((shape) => (
+                  <Tooltip key={shape.id}>
+                    <TooltipTrigger asChild>
+                      <span className="flex min-w-0">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={sculptBrush.shape === shape.id ? "default" : "outline"}
+                          className="h-7 w-full px-1 text-[11px]"
+                          onClick={() => onSculptBrush({ ...sculptBrush, shape: shape.id })}
+                        >
+                          {shape.label}
+                        </Button>
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="right" className="z-[520]">
+                      {shape.hint}
+                    </TooltipContent>
+                  </Tooltip>
+                ))}
+              </div>
+              <Row label="브러시 크기" value={`${sculptBrush.sizeMm.toFixed(2)} mm`}>
+                <Slider
+                  min={40}
+                  max={500}
+                  step={5}
+                  value={[Math.round(sculptBrush.sizeMm * 100)]}
+                  onValueChange={([value]) =>
+                    onSculptBrush({ ...sculptBrush, sizeMm: (value ?? 160) / 100 })
+                  }
+                  aria-label="브러시 크기"
+                />
+              </Row>
+              <Row label="강도" value={`${Math.round(sculptBrush.strength * 100)}%`}>
+                <Slider
+                  min={10}
+                  max={100}
+                  step={5}
+                  value={[Math.round(sculptBrush.strength * 100)]}
+                  onValueChange={([value]) =>
+                    onSculptBrush({ ...sculptBrush, strength: (value ?? 50) / 100 })
+                  }
+                  aria-label="강도"
+                />
+              </Row>
+              <label className="flex items-center justify-between gap-3 text-xs font-medium">
+                줌에 맞춰 크기 동기화
+                <Switch
+                  checked={sculptBrush.zoomSync}
+                  onCheckedChange={(zoomSync) => onSculptBrush({ ...sculptBrush, zoomSync })}
+                  aria-label="줌에 맞춰 브러시 크기 동기화"
+                  className="h-5 w-9 data-[state=checked]:bg-primary [&>span]:h-4 [&>span]:w-4 data-[state=checked]:[&>span]:translate-x-4"
+                />
+              </label>
+            </div>
+          ) : null}
           <Row label="최소 두께" value={`${edit.refine.minThicknessMm.toFixed(2)} mm`}>
             <Slider
               min={30}
@@ -1064,7 +1273,28 @@ export function LabProsthesisModifyPanel({
         </div>
       ) : null}
 
-      {tool === "hole" ? (
+      {tool === "hole" && implant ? (
+        <div className="space-y-2">
+          <label className="flex items-center justify-between gap-3 text-xs font-medium">
+            스크류홀
+            <Switch
+              checked={edit.implant.screwHole}
+              onCheckedChange={(screwHole) =>
+                onEdit({ ...edit, implant: { ...edit.implant, screwHole } })
+              }
+              aria-label="스크류홀"
+              className="h-5 w-9 data-[state=checked]:bg-primary [&>span]:h-4 [&>span]:w-4 data-[state=checked]:[&>span]:translate-x-4"
+            />
+          </label>
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
+            스캔바디에 맞춘 임플란트 축을 따라 뚫습니다.
+            <br />
+            표시 목록에서 스크류 경로를 켜고 끕니다.
+          </p>
+        </div>
+      ) : null}
+
+      {tool === "hole" && !implant ? (
         <div className="space-y-2">
           <Tooltip>
             <TooltipTrigger asChild>
