@@ -38,45 +38,38 @@ function PoolCaseSlide({
   const clinic = String(transfer.practice?.businessName || "").trim() || "-";
   const patient = resolvePracticeTransferListPatientName(transfer) || "-";
   const teeth = resolvePracticeTransferListToothNumbers(transfer);
-  const patientLine =
-    formatPracticeTransferListPatientWithTeeth(patient, teeth) || patient;
   const arrival = latestYmd(transfer.arrivalDates, transfer.arrivalDate);
   const toothWorks = resolvePracticeTransferToothWorks(transfer);
   const fileCount = Number(transfer.fileCount || 0);
+  const patientLine =
+    toothWorks.length > 0
+      ? patient
+      : formatPracticeTransferListPatientWithTeeth(patient, teeth) || patient;
+  const facts = [
+    clinic !== "-" ? clinic : "",
+    patientLine && patientLine !== "-" ? patientLine : "",
+    arrival ? `도착 ${arrival}` : "",
+    fileCount > 0 ? `파일 ${fileCount}개` : "",
+  ].filter(Boolean);
 
   return (
     <div className="min-w-0 space-y-3">
-      <dl className="space-y-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
-        <div className="flex gap-2">
-          <dt className="w-12 shrink-0 text-slate-500">치과</dt>
-          <dd className="min-w-0 font-medium text-slate-900">{clinic}</dd>
-        </div>
-        <div className="flex gap-2">
-          <dt className="w-12 shrink-0 text-slate-500">환자</dt>
-          <dd className="min-w-0 font-medium text-slate-900">{patientLine}</dd>
-        </div>
-        <div className="flex gap-2">
-          <dt className="w-12 shrink-0 text-slate-500">도착</dt>
-          <dd className="min-w-0 text-slate-900">{arrival || "-"}</dd>
-        </div>
-        {fileCount > 0 ? (
-          <div className="flex gap-2">
-            <dt className="w-12 shrink-0 text-slate-500">파일</dt>
-            <dd className="min-w-0 text-slate-900">{fileCount}개</dd>
-          </div>
-        ) : null}
-      </dl>
+      {facts.length > 0 ? (
+        <p className="text-sm font-medium text-slate-900">{facts.join(" · ")}</p>
+      ) : null}
       {toothWorks.length > 0 ? (
-        <PracticeToothWorkChartReadOnly
-          toothWorks={toothWorks}
-          feeQuote={transfer.feeQuote || null}
-          feeViewer="lab"
-          skipJig={Boolean(transfer.production?.skipJig)}
-          showHeader
-          embedded
-          enlargeOverlayClassName="z-[350]"
-          enlargeDialogClassName="z-[360]"
-        />
+        <div className="[&_[role=note]]:justify-start [&_[role=note]]:border-transparent [&_[role=note]]:bg-transparent [&_[role=note]]:px-0">
+          <PracticeToothWorkChartReadOnly
+            toothWorks={toothWorks}
+            feeQuote={transfer.feeQuote || null}
+            feeViewer="lab"
+            skipJig={Boolean(transfer.production?.skipJig)}
+            showHeader
+            embedded
+            enlargeOverlayClassName="z-[350]"
+            enlargeDialogClassName="z-[360]"
+          />
+        </div>
       ) : (
         <p className="text-sm text-slate-500">보철 정보가 없습니다.</p>
       )}
@@ -179,9 +172,48 @@ export function LabReceiveSubcontractPoolAlert({
         cancelLabel="닫기"
         confirmTone="primary"
         busy={busy}
+        dense
         showCloseButton
+        showCancel={false}
+        footerLeading={
+          rows.length > 1 ? (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                aria-label="이전 하청"
+                disabled={!canPrev || busy}
+                className={cn(
+                  "inline-flex h-8 w-8 items-center justify-center rounded-full",
+                  canPrev && !busy
+                    ? "bg-primary-strong text-white hover:bg-primary"
+                    : "cursor-not-allowed bg-primary-soft text-primary/40",
+                )}
+                onClick={() => go(-1)}
+              >
+                <ChevronLeft className="h-4 w-4" aria-hidden />
+              </button>
+              <p className="min-w-10 text-center text-xs font-medium tabular-nums text-slate-500">
+                {index + 1} / {rows.length}
+              </p>
+              <button
+                type="button"
+                aria-label="다음 하청"
+                disabled={!canNext || busy}
+                className={cn(
+                  "inline-flex h-8 w-8 items-center justify-center rounded-full",
+                  canNext && !busy
+                    ? "bg-primary-strong text-white hover:bg-primary"
+                    : "cursor-not-allowed bg-primary-soft text-primary/40",
+                )}
+                onClick={() => go(1)}
+              >
+                <ChevronRight className="h-4 w-4" aria-hidden />
+              </button>
+            </div>
+          ) : null
+        }
         closeOnBackdrop
-        panelClassName="max-w-4xl"
+        panelClassName="max-w-xl"
         onCancel={() => {
           if (!busy) setOpen(false);
         }}
@@ -199,49 +231,8 @@ export function LabReceiveSubcontractPoolAlert({
             });
         }}
         description={
-          <div className="space-y-3 text-left">
-            <p>
-              원청이 넘긴 하청 의뢰입니다.
-              <br />
-              선착순이라 다른 기공소가 먼저 시작하면 진행되지 않습니다.
-            </p>
-            {rows.length > 1 ? (
-              <div className="flex items-center justify-between gap-2">
-                <button
-                  type="button"
-                  aria-label="이전 하청"
-                  disabled={!canPrev || busy}
-                  className={cn(
-                    "inline-flex h-8 items-center gap-1 rounded-full border px-2.5 text-xs font-semibold",
-                    canPrev && !busy
-                      ? "border-slate-300 bg-white text-slate-800 hover:bg-slate-50"
-                      : "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-300",
-                  )}
-                  onClick={() => go(-1)}
-                >
-                  <ChevronLeft className="h-4 w-4" aria-hidden />
-                  이전
-                </button>
-                <p className="text-xs font-medium tabular-nums text-slate-500">
-                  {index + 1} / {rows.length}
-                </p>
-                <button
-                  type="button"
-                  aria-label="다음 하청"
-                  disabled={!canNext || busy}
-                  className={cn(
-                    "inline-flex h-8 items-center gap-1 rounded-full border px-2.5 text-xs font-semibold",
-                    canNext && !busy
-                      ? "border-slate-300 bg-white text-slate-800 hover:bg-slate-50"
-                      : "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-300",
-                  )}
-                  onClick={() => go(1)}
-                >
-                  다음
-                  <ChevronRight className="h-4 w-4" aria-hidden />
-                </button>
-              </div>
-            ) : null}
+          <div className="space-y-3 text-left text-sm">
+            <p>선착순이라 다른 기공소가 먼저 시작하면 사라집니다.</p>
             <div className="overflow-hidden">
               <div
                 key={transferKey(selected)}

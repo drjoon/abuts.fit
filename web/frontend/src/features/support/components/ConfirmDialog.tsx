@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-27: showCancel · footerLeading — 닫기 생략, 푸터 왼쪽에 부가 조작.
 // - 2026-09-12: z-[320]/[321] — Popover/Tooltip(z-400)이 위에 오도록(플로팅 패널 z-300 위).
 // - 2026-09-12: title — ReactNode 허용(제목+도움말 아이콘).
 // - 2026-09-10: showCloseButton · closeOnBackdrop · dense 옵션.
@@ -32,6 +33,10 @@ interface ConfirmDialogProps {
   confirmDisabled?: boolean;
   /** 헤더 오른쪽 X 닫기 */
   showCloseButton?: boolean;
+  /** false면 확인 버튼 왼쪽의 취소/닫기를 숨긴다 */
+  showCancel?: boolean;
+  /** 푸터 왼쪽. 확인 버튼은 오른쪽에 둔다 */
+  footerLeading?: ReactNode;
   /** 딤드 영역 클릭 시 onCancel */
   closeOnBackdrop?: boolean;
   /** 패딩·제목·본문 여백 축소(리메이크 청구 등) */
@@ -51,6 +56,8 @@ export const ConfirmDialog = ({
   busy = false,
   confirmDisabled = false,
   showCloseButton = false,
+  showCancel = true,
+  footerLeading = null,
   closeOnBackdrop = false,
   dense = false,
   onConfirm,
@@ -138,19 +145,28 @@ export const ConfirmDialog = ({
             {description}
           </div>
         )}
-        <div className="flex justify-end gap-3">
-          <button
-            type="button"
-            disabled={busy}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (busy) return;
-              onCancel();
-            }}
-            className="px-4 py-2 rounded-lg bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {cancelLabel}
-          </button>
+        <div
+          className={cn(
+            "flex items-center gap-3",
+            footerLeading ? "justify-between" : "justify-end",
+          )}
+        >
+          {footerLeading ? <div className="min-w-0">{footerLeading}</div> : null}
+          <div className="flex shrink-0 justify-end gap-3">
+          {showCancel ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (busy) return;
+                onCancel();
+              }}
+              className="px-4 py-2 rounded-lg bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {cancelLabel}
+            </button>
+          ) : null}
           <button
             type="button"
             ref={confirmRef}
@@ -164,6 +180,7 @@ export const ConfirmDialog = ({
           >
             {busy ? "처리 중..." : confirmLabel}
           </button>
+          </div>
         </div>
       </div>
     </div>,
