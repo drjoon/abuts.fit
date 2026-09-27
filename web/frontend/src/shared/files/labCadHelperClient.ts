@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-27: ensureReady — 미응답 시 바로 onWaiting, 깨우기 대기는 1.2초.
 // - 2026-09-24: 설치 zip·프로토콜 wake·ensureReady — 컴맹용 최초 1회 안내.
 // - 2026-09-24: 기공소 로컬 CAD 헬퍼(127.0.0.1:8010) 클라이언트 — 세션·업로드·open.
 // related files:
@@ -107,22 +108,40 @@ export function wakeLabCadHelperViaProtocol() {
   }
 }
 
+/** 첫 health가 실패하면 바로 알리고, 설치본이 깨어날 시간만 남긴다. */
+const HELPER_FIRST_PING_MS = 400;
+const HELPER_WAKE_WAIT_MS = 1200;
+
 /**
  * 헬퍼가 떠 있는지 확인. 없으면 프로토콜로 깨운 뒤 잠깐 폴링.
  * need_setup → 웹 설치 안내 모달.
+ * timeoutMs는 첫 ping을 포함한 전체 예산. 생략 시 약 1.6초.
+ * onWaiting은 첫 ping 실패 직후 한 번 — 화면은 여기서 「연결 확인 중」을 띄운다.
  */
 export async function ensureLabCadHelperReady(opts?: {
   timeoutMs?: number;
   skipWake?: boolean;
+  onWaiting?: () => void;
 }): Promise<"ready" | "need_setup"> {
-  if (await tryPingLabCadHelper()) return "ready";
+  const budget =
+    opts?.timeoutMs != null
+      ? Math.max(400, Number(opts.timeoutMs) || 0)
+      : HELPER_FIRST_PING_MS + HELPER_WAKE_WAIT_MS;
+  const started = Date.now();
+  const deadline = started + budget;
+  const firstBudget = Math.min(HELPER_FIRST_PING_MS, budget);
+  if (firstBudget > 0 && (await tryPingLabCadHelper(firstBudget))) return "ready";
+  opts?.onWaiting?.();
   if (!opts?.skipWake) {
     wakeLabCadHelperViaProtocol();
   }
-  const deadline = Date.now() + Math.max(1500, Number(opts?.timeoutMs) || 4500);
   while (Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, 350));
-    if (await tryPingLabCadHelper(600)) return "ready";
+    const sleepMs = Math.min(200, deadline - Date.now());
+    if (sleepMs <= 0) break;
+    await new Promise((r) => setTimeout(r, sleepMs));
+    const pingBudget = Math.min(250, deadline - Date.now());
+    if (pingBudget <= 0) break;
+    if (await tryPingLabCadHelper(pingBudget)) return "ready";
   }
   return "need_setup";
 }

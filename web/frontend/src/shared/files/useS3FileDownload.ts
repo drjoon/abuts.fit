@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-27: 열기 — 헬퍼 대기·파일 준비가 길면 onOpenPhase로 화면 상태.
 // - 2026-09-24: openInDesignSoftware — 로컬 CAD 헬퍼로 3D 모델 열기(3Shape/ExoCAD).
 // - 2026-09-20: downloadAsZip — 여러 S3 파일을 DEFLATE zip 하나로 저장.
 // - 2026-09-10: DCM 다운로드 시 PLY(칼라) 클라이언트 변환 옵션.
@@ -291,12 +292,14 @@ export function useS3FileDownload(token?: string | null) {
    * 의뢰 3D 모델을 로컬 CAD 헬퍼로 연다.
    * designSoftware: 설정값(3Shape/ExoCAD/커스텀). DCM은 SW에 맞춰 원본 또는 PLY.
    * onNeedHelperSetup: 헬퍼 미설치·미실행 또는 exe 미발견 시 설치 안내.
+   * onOpenPhase: 연결 확인·파일 준비가 길 때 화면 상태. null이면 닫는다.
    */
   const openInDesignSoftware = useCallback(
     async (opts: {
       files: S3DownloadTarget[];
       designSoftware: string;
       onNeedHelperSetup?: (reason: "helper_missing" | "exe_not_found") => void | Promise<void>;
+      onOpenPhase?: (phase: "connecting" | "preparing" | null) => void;
     }) => {
       if (openInCadBusyRef.current) return;
       const designSoftware = String(opts.designSoftware || "").trim();
@@ -328,9 +331,18 @@ export function useS3FileDownload(token?: string | null) {
 
       openInCadBusyRef.current = true;
       setOpenInCadBusy(true);
+      let prepareTimer: number | null = null;
+      let phase: "connecting" | "preparing" | null = null;
+      const setPhase = (next: "connecting" | "preparing" | null) => {
+        phase = next;
+        opts.onOpenPhase?.(next);
+      };
       try {
-        const helperStatus = await ensureLabCadHelperReady({ timeoutMs: 4500 });
+        const helperStatus = await ensureLabCadHelperReady({
+          onWaiting: () => setPhase("connecting"),
+        });
         if (helperStatus === "need_setup") {
+          setPhase(null);
           if (opts.onNeedHelperSetup) {
             await opts.onNeedHelperSetup("helper_missing");
           } else {
@@ -342,6 +354,12 @@ export function useS3FileDownload(token?: string | null) {
             });
           }
           return;
+        }
+
+        if (phase === "connecting") {
+          setPhase("preparing");
+        } else {
+          prepareTimer = window.setTimeout(() => setPhase("preparing"), 400);
         }
 
         const prepared = await Promise.all(
@@ -399,6 +417,8 @@ export function useS3FileDownload(token?: string | null) {
           variant: "destructive",
         });
       } finally {
+        if (prepareTimer != null) window.clearTimeout(prepareTimer);
+        setPhase(null);
         openInCadBusyRef.current = false;
         setOpenInCadBusy(false);
       }

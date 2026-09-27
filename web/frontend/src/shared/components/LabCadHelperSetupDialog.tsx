@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-27: busyStatus — 연결 확인·파일 준비 중 화면.
 // - 2026-09-24: variant=exe_not_found — 디자인 SW 실행 후 재설치 안내.
 // - 2026-09-24: 연결 확인 버튼에 5→1초 카운트다운 표시.
 // - 2026-09-24: 「설치 완료 — 열기」primary·연결 확인 5초.
@@ -9,6 +10,7 @@
 // - web/frontend/public/downloads/lab-cad-helper/
 // - bg/lab-cad-helper/여기를_더블클릭_설치.cmd
 import { Button } from "@/components/ui/button";
+import { Loader2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -29,6 +31,9 @@ const CHECK_TIMEOUT_SEC = 5;
 
 export type LabCadHelperSetupVariant = "helper_missing" | "exe_not_found";
 
+/** 열기가 바로 끝나지 않을 때 설치 안내 대신 보여주는 진행 상태 */
+export type LabCadOpenBusyStatus = "connecting" | "preparing";
+
 type LabCadHelperSetupDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -37,6 +42,8 @@ type LabCadHelperSetupDialogProps = {
   variant?: LabCadHelperSetupVariant;
   /** exe 미발견 안내에 표시할 SW 이름 */
   designSoftwareLabel?: string;
+  /** 연결 확인·파일 준비. 있으면 설치 단계 대신 진행 문구만 보여 준다. */
+  busyStatus?: LabCadOpenBusyStatus | null;
 };
 
 export function LabCadHelperSetupDialog({
@@ -45,6 +52,7 @@ export function LabCadHelperSetupDialog({
   onConnected,
   variant = "helper_missing",
   designSoftwareLabel = "",
+  busyStatus = null,
 }: LabCadHelperSetupDialogProps) {
   const { toast } = useToast();
   const [checking, setChecking] = useState(false);
@@ -121,9 +129,62 @@ export function LabCadHelperSetupDialog({
     }
   };
 
+  const busyCopy =
+    busyStatus === "preparing"
+      ? {
+          title: "파일 준비 중",
+          body: (
+            <>
+              파일을 받아 디자인 프로그램으로 열고 있습니다.
+              <br />
+              잠시만 기다려 주세요.
+            </>
+          ),
+        }
+      : {
+          title: "연결 확인 중",
+          body: (
+            <>
+              PC의 디자인 연결을 확인하고 있습니다.
+              <br />
+              잠시만 기다려 주세요.
+            </>
+          ),
+        };
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="z-[320] max-w-sm gap-0 p-0 sm:rounded-lg">
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next && busyStatus) return;
+        onOpenChange(next);
+      }}
+    >
+      <DialogContent
+        className="z-[320] max-w-sm gap-0 p-0 sm:rounded-lg"
+        hideClose={Boolean(busyStatus)}
+        onPointerDownOutside={(event) => {
+          if (busyStatus) event.preventDefault();
+        }}
+        onEscapeKeyDown={(event) => {
+          if (busyStatus) event.preventDefault();
+        }}
+      >
+        {busyStatus ? (
+          <div className="flex items-start gap-3 px-5 py-5">
+            <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
+            <div className="space-y-1">
+              <p className="text-base font-semibold text-foreground">
+                {busyCopy.title}
+              </p>
+              <p className="text-sm leading-relaxed text-muted-foreground">
+                {busyCopy.body}
+              </p>
+            </div>
+          </div>
+        ) : null}
+        {busyStatus ? null : (
+        <>
         <DialogHeader className="space-y-1.5 border-b px-5 py-4 text-left">
           <DialogTitle className="text-base">
             {isExeMissing ? `${swLabel} 경로를 찾지 못했습니다` : "처음 한 번만 설치"}
@@ -199,6 +260,8 @@ export function LabCadHelperSetupDialog({
             닫기
           </Button>
         </DialogFooter>
+        </>
+        )}
       </DialogContent>
     </Dialog>
   );

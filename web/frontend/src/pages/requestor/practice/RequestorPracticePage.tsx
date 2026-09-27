@@ -207,7 +207,10 @@ import { ChevronRight, Search, X } from "lucide-react";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
 import { DesignSoftwareSettingsDialog } from "@/features/requestSettings/DesignSoftwareSettingsDialog";
-import { LabCadHelperSetupDialog } from "@/shared/components/LabCadHelperSetupDialog";
+import {
+  LabCadHelperSetupDialog,
+  type LabCadOpenBusyStatus,
+} from "@/shared/components/LabCadHelperSetupDialog";
 import { LabCadOpenSoftwareConfirmDialog } from "@/shared/components/LabCadOpenSoftwareConfirmDialog";
 import {
   needsDesignSoftwareOpenConfirm,
@@ -770,6 +773,8 @@ export function RequestorPracticeReceivePage({
   const designSettingsGateTransferRef = useRef<ReceivedPracticeTransfer | null>(
     null,
   );
+  const [labCadOpenStatus, setLabCadOpenStatus] =
+    useState<LabCadOpenBusyStatus | null>(null);
   const [labCadHelperSetupOpen, setLabCadHelperSetupOpen] = useState(false);
   const [labCadHelperSetupVariant, setLabCadHelperSetupVariant] = useState<
     "helper_missing" | "exe_not_found"
@@ -7538,6 +7543,7 @@ export function RequestorPracticeReceivePage({
         fileName: String(file.originalName || "model.stl").trim() || "model.stl",
         busyKey: String(file.s3Key || "").trim(),
       })),
+      onOpenPhase: (phase) => setLabCadOpenStatus(phase),
       onNeedHelperSetup: (reason) => {
         labCadOpenRetryRef.current = () => {
           void runOpenInDesignSoftware();
@@ -8926,10 +8932,12 @@ export function RequestorPracticeReceivePage({
         forceRequired={requestSettingsForceRequired}
       />
       <LabCadHelperSetupDialog
-        open={labCadHelperSetupOpen}
+        open={labCadHelperSetupOpen || labCadOpenStatus != null}
+        busyStatus={labCadHelperSetupOpen ? null : labCadOpenStatus}
         variant={labCadHelperSetupVariant}
         designSoftwareLabel={String(designSoftwareValue || "").trim()}
         onOpenChange={(next) => {
+          if (!next && labCadOpenStatus && !labCadHelperSetupOpen) return;
           setLabCadHelperSetupOpen(next);
           if (!next) labCadOpenRetryRef.current = null;
         }}

@@ -255,6 +255,7 @@ frontend/node_modules
 backend/node_modules
 **/node_modules/**
 *.zip
+!frontend/dist/downloads/**/*.zip
 .DS_Store
 *.env
 *.env.*
