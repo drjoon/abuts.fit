@@ -1,5 +1,6 @@
 // 작업 스캔(상악·하악·바이트)을 한 모델로 연다. 파일 좌표 그대로 겹치고 악별로 켜고 끈다.
 // change-log:
+// - 2026-09-28: 다운로드는 파일 목록을 한 번에 넘긴다. 채팅 상세가 케이스 폴더에 저장한다.
 // - 2026-09-28: 채팅 첨부 후 프리뷰를 닫지 않는다. 여러 장을 붙일 수 있게 토스트만 띄운다.
 // - 2026-09-28: 의뢰 파일 프리뷰와 같은 헤더. 페인트·채팅 첨부·다운로드(악별·전체)와 칼라 매핑.
 // related files:
@@ -68,8 +69,8 @@ export function WorkScanModelPreviewDialog<T extends WorkScanModelFile>({
   files: readonly T[];
   authToken?: string | null;
   title?: string;
-  /** 원본 파일 하나를 받는다. 「전체」는 순서대로 부른다. */
-  onDownload?: (file: T) => void | Promise<void>;
+  /** 고른 악 하나, 또는 「전체」면 모든 파일을 한 번에 넘긴다. */
+  onDownload?: (files: T[]) => void | Promise<void>;
   downloadBusy?: boolean;
   /** 표시가 입혀진 현재 뷰를 채팅 첨부로 넘긴다. */
   onAttachChatFile?: (file: File) => void;
@@ -156,11 +157,6 @@ export function WorkScanModelPreviewDialog<T extends WorkScanModelFile>({
       : 100;
   const canAnnotate = layers.length > 0;
 
-  const downloadAll = async () => {
-    if (!onDownload) return;
-    for (const part of parts) await onDownload(part.file);
-  };
-
   const renderDownloadControl = () => {
     if (!onDownload || parts.length === 0) return null;
     const label = downloadBusy ? "다운로드 중..." : "다운로드";
@@ -172,7 +168,7 @@ export function WorkScanModelPreviewDialog<T extends WorkScanModelFile>({
         className={PREVIEW_HEADER_BUTTON_CLASS}
         disabled={downloadBusy}
         aria-label={label}
-        onClick={parts.length === 1 ? () => void onDownload(parts[0].file) : undefined}
+        onClick={parts.length === 1 ? () => void onDownload([parts[0].file]) : undefined}
       >
         <Download />
         <span className="hidden sm:inline">{label}</span>
@@ -185,7 +181,7 @@ export function WorkScanModelPreviewDialog<T extends WorkScanModelFile>({
         <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="z-[460]">
           {parts.map((part) => (
-            <DropdownMenuItem key={part.key} onClick={() => void onDownload(part.file)}>
+            <DropdownMenuItem key={part.key} onClick={() => void onDownload([part.file])}>
               <span className="font-medium">{part.label}</span>
               <span className="ml-2 max-w-[14rem] truncate text-xs text-muted-foreground">
                 {part.file.fileName}
@@ -193,7 +189,7 @@ export function WorkScanModelPreviewDialog<T extends WorkScanModelFile>({
             </DropdownMenuItem>
           ))}
           <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={() => void downloadAll()}>
+          <DropdownMenuItem onClick={() => void onDownload(parts.map((part) => part.file))}>
             전체 ({parts.length}개)
           </DropdownMenuItem>
         </DropdownMenuContent>

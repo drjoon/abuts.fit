@@ -27,6 +27,7 @@
  * - web/frontend/src/shared/practice/openPracticeTransferChat.ts
  * - web/frontend/src/shared/components/practice/PracticeLabRatingControl.tsx
  * - web/frontend/src/shared/practice/practiceLabRating.ts
+ * - 2026-09-28: 프리뷰 다운로드(의뢰 파일·작업 스캔)도 「폴더 열기」와 같은 케이스 폴더에 받는다.
  * - 2026-09-28: 의뢰·작업 파일 다운로드를 기공소처럼 「폴더 열기」+톱니(DCM 포맷)로. 작업 파일 zip 버튼 제거.
  * - 2026-09-26: 기공소 전송은 3D 스캔(DCM·PLY·STL·OBJ) 필수. 이미지·빈 첨부는 전송 버튼 비활성.
  * - 2026-09-23: 채팅 헤더 — `기공소 · 환자명 · 원장명`(치식·슬래시 제거).
@@ -6351,6 +6352,38 @@ export const PracticeFileTransferPage = ({
     ],
   );
 
+  /** 프리뷰 「다운로드」: 고른 파일만 같은 케이스 폴더에 다시 받는다. */
+  const handleSaveFilesToCaseFolder = useCallback(
+    async (
+      files: Array<{ s3Key?: string | null; fileName?: string | null; size?: number | null }>,
+      opts?: { dcmFormat?: DcmDownloadFormat },
+    ) => {
+      if (!files.length || !selectedTransferCaseFolder) return;
+      await saveToLabWorkFolder({
+        files: files.map((file) => ({
+          s3Key: String(file.s3Key || "").trim(),
+          fileName: String(file.fileName || "첨부파일").trim() || "첨부파일",
+          busyKey: String(file.s3Key || "").trim(),
+          size: Number(file.size || 0),
+        })),
+        dcmFormat: opts?.dcmFormat,
+        busy: "download",
+        reuseSaved: false,
+        caseFolder: selectedTransferCaseFolder,
+        resolveWorkFolder: requestWorkFolder,
+        onNeedHelperInstall: requestHelperInstall,
+        onSaved: toastWorkFolderSaved,
+      });
+    },
+    [
+      requestHelperInstall,
+      requestWorkFolder,
+      saveToLabWorkFolder,
+      selectedTransferCaseFolder,
+      toastWorkFolderSaved,
+    ],
+  );
+
   const handleConfirmProduction = useCallback(async () => {
     if (!authToken || !selectedTransfer || productionConfirmBusy) return;
     const transferId = String(selectedTransfer.transferId || "").trim();
@@ -11762,6 +11795,9 @@ export const PracticeFileTransferPage = ({
               },
               opts,
             )
+          }
+          onSaveFilesToCaseFolder={(picked, opts) =>
+            handleSaveFilesToCaseFolder(picked, opts)
           }
           chatLoading={chatLoading || chatMessagesLoading}
           chatError={String(chatError || chatMessagesError || "")}

@@ -1,4 +1,5 @@
 // related files:
+// - 2026-09-28: 프리뷰 다운로드(의뢰 파일·작업 스캔)도 「폴더 열기」와 같은 케이스 폴더에 받는다.
 // - 2026-09-27: 작업열기 — Windows 연결 프로그램(v3)이 있으면 케이스 폴더에 풀어 저장 후 폴더 열기, 이미 받았으면 폴더만. 진행률 표시.
 //   없으면 Chrome·Edge 폴더 저장 → 그 외 Windows는 설치 안내(설치 파일 자동 받기·연결되면 이어서 저장).
 // - 2026-09-27: 작업열기·다운로드 — 헬퍼 설치 없이 작업 폴더 안 케이스 폴더에 모든 파일 저장(Chrome·Edge). 그 외 브라우저는 케이스 폴더 이름 zip.
@@ -7673,6 +7674,38 @@ export function RequestorPracticeReceivePage({
     ],
   );
 
+  /** 프리뷰 「다운로드」: 고른 파일만 같은 케이스 폴더에 다시 받는다. */
+  const saveFilesToCaseFolder = useCallback(
+    async (
+      files: Array<{ s3Key?: string | null; fileName?: string | null; size?: number | null }>,
+      opts?: { dcmFormat?: DcmDownloadFormat },
+    ) => {
+      if (!files.length) return;
+      await saveToLabWorkFolder({
+        files: files.map((file) => ({
+          s3Key: String(file.s3Key || "").trim(),
+          fileName: String(file.fileName || "download").trim() || "download",
+          busyKey: String(file.s3Key || "").trim(),
+          size: Number(file.size || 0),
+        })),
+        dcmFormat: opts?.dcmFormat,
+        busy: "download",
+        reuseSaved: false,
+        caseFolder: selectedTransferCaseFolder,
+        resolveWorkFolder: requestLabWorkFolder,
+        onNeedHelperInstall: requestLabHelperInstall,
+        onSaved: toastLabWorkFolderSaved,
+      });
+    },
+    [
+      requestLabHelperInstall,
+      requestLabWorkFolder,
+      saveToLabWorkFolder,
+      selectedTransferCaseFolder,
+      toastLabWorkFolderSaved,
+    ],
+  );
+
   /** 「다운로드」는 다시 받는다(같은 이름은 덮어씀). */
   const handleDownloadAllFiles = useCallback(
     (opts?: { dcmFormat?: DcmDownloadFormat }) =>
@@ -9692,6 +9725,9 @@ export function RequestorPracticeReceivePage({
             },
             opts,
           )
+        }
+        onSaveFilesToCaseFolder={(picked, opts) =>
+          saveFilesToCaseFolder(picked, opts)
         }
         acceptBusy={acceptBusy}
         accepted={Boolean(
