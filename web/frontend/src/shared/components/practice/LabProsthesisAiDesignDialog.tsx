@@ -56,6 +56,7 @@
 // - 2026-09-27: 스캔을 열면 저장된 축이 없는 보철마다 삽입축을 자동으로 잡는다. 못 잡으면 교합면으로 보여 주고 뱃지에서 화면을 맞추라고 안내한다.
 // - 2026-09-27: 내면 설정. 헤더 톱니 → 기공소 디자인 프리셋(크라운·인레이온레이·임플란트 열, 연결 치과). 치아 정보에서 생성 전 프리셋을 고르고, 내면 도구에서 복사·수정 뒤 적용한다. 예전 브라우저 치과 프리셋은 없앤다.
 // - 2026-09-28: 채팅 첨부를 누르면 AI 디자인을 닫고 채팅으로 돌아간다.
+// - 2026-09-28: 헤더 설정(톱니)에 확대율(기본 120%)과 디자인 프리셋 목록. 프리셋을 누르면 프리셋 창을 연다.
 // - 2026-09-28: 스캔 단계에 메시 편집(다듬기·구멍 메우기·조각). 편집 한 번이 실행 취소 한 칸이고, 바뀐 스캔은 작업 스캔으로 저장한다.
 // - 2026-09-28: 「전달」 패널은 버튼 글자 너비. 순서는 페인트, 이미지 저장, 채팅 첨부. 표시 색은 여섯 개이고 패널 너비 안에서 가운데 정렬한다.
 import {
@@ -83,7 +84,7 @@ import {
   Paperclip,
   Redo2,
   Eraser,
-  Settings2,
+  Settings,
   Undo2,
   Palette,
   Sparkles,
@@ -99,6 +100,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Progress } from "@/components/ui/progress";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
@@ -546,6 +548,9 @@ export function LabProsthesisAiDesignButton({
 }
 
 const AUTO_SAVE_PREF_KEY = "abuts.labProsthesis.autoSave";
+const TEXT_ZOOM_PREF_KEY = "abuts.labProsthesis.textZoom";
+const TEXT_ZOOM_OPTIONS = [1, 1.1, 1.2, 1.35, 1.5, 1.75] as const;
+const TEXT_ZOOM_DEFAULT = 1.2;
 const UNDO_LIMIT = 30;
 
 type ArchAligned = { upper: boolean; lower: boolean };
@@ -599,6 +604,15 @@ function storedAutoSave() {
     return window.localStorage.getItem(AUTO_SAVE_PREF_KEY) !== "0";
   } catch {
     return true;
+  }
+}
+
+function storedTextZoom() {
+  try {
+    const value = Number(window.localStorage.getItem(TEXT_ZOOM_PREF_KEY));
+    return (TEXT_ZOOM_OPTIONS as readonly number[]).includes(value) ? value : TEXT_ZOOM_DEFAULT;
+  } catch {
+    return TEXT_ZOOM_DEFAULT;
   }
 }
 
@@ -829,6 +843,16 @@ function LabProsthesisAiDesignDialog({
     lower: false,
   });
   const [autoSave, setAutoSave] = useState(storedAutoSave);
+  const [textZoom, setTextZoom] = useState(storedTextZoom);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const root = document.documentElement;
+    root.style.setProperty("--ui-text-zoom", String(textZoom));
+    return () => {
+      root.style.removeProperty("--ui-text-zoom");
+    };
+  }, [open, textZoom]);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
   const viewerRef = useRef<OralScanOverlayHandle>(null);
@@ -3501,17 +3525,83 @@ function LabProsthesisAiDesignDialog({
             >
               <Redo2 className="h-3.5 w-3.5" />
             </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="h-8 w-8 px-0"
-              onClick={() => setPresetDialog({ presetId: null })}
-              title="디자인 프리셋"
-              aria-label="디자인 프리셋"
-            >
-              <Settings2 className="h-3.5 w-3.5" />
-            </Button>
+            <Popover open={settingsOpen} onOpenChange={setSettingsOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8 w-8 px-0"
+                  title="설정"
+                  aria-label="설정"
+                >
+                  <Settings className="h-3.5 w-3.5" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="z-[520] w-auto space-y-3 p-3">
+                <section>
+                  <div className="mb-2 text-xs font-semibold text-foreground">확대율</div>
+                  <div className="flex items-center gap-1">
+                    {TEXT_ZOOM_OPTIONS.map((zoom) => (
+                      <Button
+                        key={zoom}
+                        type="button"
+                        size="sm"
+                        variant={textZoom === zoom ? "default" : "outline"}
+                        className="h-7 px-2 text-xs tabular-nums"
+                        aria-pressed={textZoom === zoom}
+                        onClick={() => {
+                          setTextZoom(zoom);
+                          try {
+                            window.localStorage.setItem(TEXT_ZOOM_PREF_KEY, String(zoom));
+                          } catch {
+                            /* 확대율은 이 탭에서만 유지한다. */
+                          }
+                        }}
+                      >
+                        {Math.round(zoom * 100)}%
+                      </Button>
+                    ))}
+                  </div>
+                </section>
+                <section className="border-t pt-3">
+                  <div className="mb-1.5 flex items-center justify-between gap-2">
+                    <span className="text-xs font-semibold text-foreground">디자인 프리셋</span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-6 px-2 text-xs"
+                      onClick={() => {
+                        setSettingsOpen(false);
+                        setPresetDialog({ presetId: null });
+                      }}
+                    >
+                      관리
+                    </Button>
+                  </div>
+                  <ul className="max-h-48 space-y-0.5 overflow-y-auto">
+                    {designLibrary.presets.map((preset) => (
+                      <li key={preset.id}>
+                        <button
+                          type="button"
+                          className="flex w-full items-center justify-between gap-3 rounded px-1.5 py-1 text-left text-xs hover:bg-muted"
+                          onClick={() => {
+                            setSettingsOpen(false);
+                            setPresetDialog({ presetId: preset.id });
+                          }}
+                        >
+                          <span className="truncate text-foreground">{preset.name}</span>
+                          <span className="shrink-0 text-muted-foreground">
+                            {preset.id === designLibrary.defaultId ? "기본" : preset.clinicName}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              </PopoverContent>
+            </Popover>
           </div>
         </DialogHeader>
 

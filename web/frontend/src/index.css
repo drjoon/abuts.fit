@@ -339,29 +339,32 @@ All colors MUST be HSL.
  * 임의 px 글자는 아래 규칙이 --ui-scale 을 곱한다.
  * 랜딩·오퍼(.landing-scale)는 landingTheme 자체 단계가 있어 제외한다(이중 확대 방지).
  * 브레이크포인트(2xl 등)는 px 미디어쿼리라 이 스케일과 무관하다.
+ * --ui-text-zoom 은 화면별 글꼴 확대율(AI 디자인 설정)이다. 그 화면이 열려 있는 동안만 html 에 인라인으로 둔다.
  */
 :root {
-  --ui-scale: 1;
+  --ui-text-zoom: 1;
+  --ui-scale: var(--ui-text-zoom);
+  font-size: calc(16px * var(--ui-text-zoom));
 }
 
 @media (min-width: 1600px) {
   html:not(:has(.landing-scale)) {
-    --ui-scale: 1.0625;
-    font-size: 17px;
+    --ui-scale: calc(1.0625 * var(--ui-text-zoom));
+    font-size: calc(17px * var(--ui-text-zoom));
   }
 }
 
 @media (min-width: 1920px) {
   html:not(:has(.landing-scale)) {
-    --ui-scale: 1.125;
-    font-size: 18px;
+    --ui-scale: calc(1.125 * var(--ui-text-zoom));
+    font-size: calc(18px * var(--ui-text-zoom));
   }
 }
 
 @media (min-width: 2560px) {
   html:not(:has(.landing-scale)) {
-    --ui-scale: 1.25;
-    font-size: 20px;
+    --ui-scale: calc(1.25 * var(--ui-text-zoom));
+    font-size: calc(20px * var(--ui-text-zoom));
   }
 }
 
