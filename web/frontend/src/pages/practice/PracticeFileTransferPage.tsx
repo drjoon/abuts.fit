@@ -27,6 +27,7 @@
  * - web/frontend/src/shared/practice/openPracticeTransferChat.ts
  * - web/frontend/src/shared/components/practice/PracticeLabRatingControl.tsx
  * - web/frontend/src/shared/practice/practiceLabRating.ts
+ * - 2026-09-28: 의뢰·작업 파일 다운로드를 기공소처럼 「폴더 열기」+톱니(DCM 포맷)로. 작업 파일 zip 버튼 제거.
  * - 2026-09-26: 기공소 전송은 3D 스캔(DCM·PLY·STL·OBJ) 필수. 이미지·빈 첨부는 전송 버튼 비활성.
  * - 2026-09-23: 채팅 헤더 — `기공소 · 환자명 · 원장명`(치식·슬래시 제거).
  * - 2026-09-21: 신규의뢰 헤더 — 원장님 성함 드롭다운(BA doctorNames 추가·수정·삭제).
@@ -218,6 +219,9 @@ import {
   useBackgroundTempUpload,
 } from "@/shared/hooks/useBackgroundTempUpload";
 import { useS3FileDownload, buildS3ProxyDownloadUrl } from "@/shared/files/useS3FileDownload";
+import { useLabWorkFolderSave } from "@/shared/files/useLabWorkFolderSave";
+import { buildLabCaseFolderName } from "@/shared/files/labWorkFolder";
+import type { DcmDownloadFormat } from "@/shared/files/dcmDownloadFormat";
 import { fetchS3BlobCached } from "@/shared/files/s3BlobCache";
 import { type TempUploadedFile } from "@/shared/hooks/useS3TempUpload";
 import {
@@ -1399,12 +1403,18 @@ export const PracticeFileTransferPage = ({
     downloadingKeys,
     downloadProgressByKey,
     downloadAllBusy,
-    downloadZipBusy,
+    openInCadBusy,
+    labSaveProgress,
     downloadS3File,
-    downloadAll,
-    downloadAsZip,
+    saveToLabWorkFolder,
     resetDownloads,
   } = useS3FileDownload(authToken);
+  const {
+    requestWorkFolder,
+    requestHelperInstall,
+    toastSaved: toastWorkFolderSaved,
+    dialogs: workFolderDialogs,
+  } = useLabWorkFolderSave({ counterpartLabel: "기공소명" });
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteTargetTransfer, setDeleteTargetTransfer] = useState<RecentTransferItem | null>(null);
   const [deletingTransfer, setDeletingTransfer] = useState(false);
@@ -6288,50 +6298,58 @@ export const PracticeFileTransferPage = ({
     [downloadS3File],
   );
 
-  const handleDownloadAllTransferFiles = useCallback(
-    async (opts?: {
-      dcmFormat?: import("@/shared/files/dcmDownloadFormat").DcmDownloadFormat;
-    }) => {
+  const selectedTransferCaseFolder = useMemo(
+    () =>
+      selectedTransfer
+        ? buildLabCaseFolderName({
+            orderDate: selectedTransfer.orderDate,
+            practiceName: resolvePracticeTransferLabDisplayLabel({
+              targetLab: selectedTransfer.targetLab,
+              handledByCertifiedPartner: selectedTransfer.handledByCertifiedPartner,
+              assigneeKind: selectedTransfer.assigneeKind,
+              assigneeLabName: selectedTransfer.assigneeLabName,
+            }),
+            patientName: selectedTransferDetailModel?.patientName,
+            toothNumbers: resolvePracticeTransferListToothNumbers(selectedTransfer),
+            fallbackId: selectedTransfer.transferId || selectedTransfer.id,
+          })
+        : "",
+    [selectedTransfer, selectedTransferDetailModel?.patientName],
+  );
+
+  /**
+   * 의뢰·작업 스캔·디자인·보철 파일을 작업 폴더 안 케이스 폴더에 저장한다.
+   * 「폴더 열기」는 이미 받은 파일은 건너뛰고 폴더만 연다.
+   */
+  const handleOpenWork = useCallback(
+    async (opts?: { dcmFormat?: DcmDownloadFormat; reuseSaved?: boolean }) => {
       const files = selectedTransferDetailModel?.downloadAllFiles || [];
-      await downloadAll(
-        files.map((file) => ({
+      if (!files.length || !selectedTransferCaseFolder) return;
+      await saveToLabWorkFolder({
+        files: files.map((file) => ({
           s3Key: String(file.s3Key || "").trim(),
           fileName: String(file.fileName || "첨부파일").trim() || "첨부파일",
           busyKey: String(file.s3Key || "").trim(),
-          dcmFormat: opts?.dcmFormat,
+          size: Number(file.size || 0),
         })),
-      );
+        dcmFormat: opts?.dcmFormat,
+        busy: opts?.reuseSaved === false ? "download" : "open",
+        reuseSaved: opts?.reuseSaved !== false,
+        caseFolder: selectedTransferCaseFolder,
+        resolveWorkFolder: requestWorkFolder,
+        onNeedHelperInstall: requestHelperInstall,
+        onSaved: toastWorkFolderSaved,
+      });
     },
-    [downloadAll, selectedTransferDetailModel],
+    [
+      requestHelperInstall,
+      requestWorkFolder,
+      saveToLabWorkFolder,
+      selectedTransferCaseFolder,
+      selectedTransferDetailModel,
+      toastWorkFolderSaved,
+    ],
   );
-
-  const handleDownloadAllWorkFiles = useCallback(async () => {
-    const model = selectedTransferDetailModel;
-    if (!model) return;
-    const toTarget = (file: { s3Key?: string; fileName?: string }) => ({
-      s3Key: String(file.s3Key || "").trim(),
-      fileName: String(file.fileName || "file").trim() || "file",
-      busyKey: String(file.s3Key || "").trim(),
-    });
-    const patient = String(model.patientName || "").trim();
-    await downloadAsZip({
-      zipFileName: patient ? `${patient}_작업파일` : "작업파일",
-      groups: [
-        {
-          folder: "작업 스캔",
-          files: (model.workScanFiles || []).map(toTarget),
-        },
-        {
-          folder: "어벗 디자인",
-          files: (model.designFiles || []).map(toTarget),
-        },
-        {
-          folder: "보철물",
-          files: (model.resultFiles || []).map(toTarget),
-        },
-      ],
-    });
-  }, [downloadAsZip, selectedTransferDetailModel]);
 
   const handleConfirmProduction = useCallback(async () => {
     if (!authToken || !selectedTransfer || productionConfirmBusy) return;
@@ -11469,6 +11487,7 @@ export const PracticeFileTransferPage = ({
           </DialogContent>
         </Dialog>
 
+        {workFolderDialogs}
 
         {(() => {
           const detailDialog = (
@@ -11727,9 +11746,13 @@ export const PracticeFileTransferPage = ({
           downloadingFileKeys={downloadingKeys}
           downloadProgressByKey={downloadProgressByKey}
           downloadAllBusy={downloadAllBusy}
-          downloadAllWorkFilesBusy={downloadZipBusy}
-          onDownloadAllWorkFiles={() => void handleDownloadAllWorkFiles()}
-          onDownloadAllFiles={(opts) => void handleDownloadAllTransferFiles(opts)}
+          openInCadBusy={openInCadBusy}
+          openWorkProgress={openInCadBusy ? labSaveProgress : null}
+          downloadAllProgress={downloadAllBusy ? labSaveProgress : null}
+          onOpenInDesignSoftware={(opts) => void handleOpenWork(opts)}
+          onDownloadAllFiles={(opts) =>
+            void handleOpenWork({ ...opts, reuseSaved: false })
+          }
           onDownloadTransferFile={(file, opts) =>
             void handleDownloadTransferFile(
               {

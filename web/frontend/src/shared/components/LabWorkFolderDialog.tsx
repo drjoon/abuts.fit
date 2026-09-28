@@ -37,6 +37,8 @@ type LabWorkFolderDialogProps = {
   open: boolean;
   reason: LabWorkFolderDialogReason;
   mode: LabWorkFolderMode;
+  /** 케이스 폴더 이름의 상대방 자리. 기공소=치과명, 치과=기공소명 */
+  counterpartLabel?: string;
   onSubmit: (pick: LabWorkFolderPick) => void;
   onCancel: () => void;
 };
@@ -45,6 +47,7 @@ export function LabWorkFolderDialog({
   open,
   reason,
   mode,
+  counterpartLabel = "치과명",
   onSubmit,
   onCancel,
 }: LabWorkFolderDialogProps) {
@@ -247,7 +250,7 @@ export function LabWorkFolderDialog({
                   <br />
                 </>
               ) : null}
-              케이스마다 「날짜_치과명-환자명-치아번호」 폴더가 생깁니다.
+              케이스마다 「날짜_{counterpartLabel}-환자명-치아번호」 폴더가 생깁니다.
             </p>
           )}
         </div>

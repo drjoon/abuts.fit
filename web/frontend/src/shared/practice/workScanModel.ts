@@ -40,6 +40,7 @@ export function workScanModelParts(files: readonly WorkScanModelFile[]) {
     return {
       key: String(file.s3Key).trim(),
       file,
+      role,
       label: (counts.get(role) ?? 0) > 1 ? `${base} ${nth}` : base,
     };
   });

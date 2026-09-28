@@ -54,7 +54,15 @@ export function WorkScanModelPreviewDialog({
   useEffect(() => {
     if (!open || !authToken) return;
     const ac = new AbortController();
-    setHidden({});
+    // 처음엔 상악·하악만 켠다. 바이트는 헤더에서 켠다.
+    const hasJaw = parts.some((part) => part.role !== "bite");
+    setHidden(
+      hasJaw
+        ? Object.fromEntries(
+            parts.filter((part) => part.role === "bite").map((part) => [part.key, true]),
+          )
+        : {},
+    );
     setLoads(
       Object.fromEntries(parts.map((part) => [part.key, { status: "loading", progress: 0 }])),
     );

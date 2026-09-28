@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/share/CaseShareViewer.tsx
 // - web/frontend/src/shared/files/modelPreviewFile.ts
 // - web/frontend/src/shared/three/screenSpaceOrbitControls.ts
+// - 2026-09-28: 화면 맞춤은 보이는 메시의 꼭짓점을 화면에 투영해 가로·세로에 꽉 차게 맞춘다.
 // - 2026-09-28: 케이스 공유 뷰어 — 디자인·스캔 여러 메시를 파일 좌표 그대로 겹치고 레이어별로 켜고 끈다.
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import * as THREE from "three";
@@ -36,6 +37,8 @@ type CaseLayerViewerProps = {
 
 const VIEWER_BACKGROUND = 0xe6e9ec;
 const CAMERA_FOV = 30;
+/** 화면 맞춤 여백. 1이면 가장자리에 딱 붙는다. */
+const FIT_MARGIN = 1.04;
 
 function designMaterial(tone: CaseLayerTone): THREE.MeshStandardMaterial {
   if (tone === "abutment") {
@@ -77,22 +80,61 @@ export const CaseLayerViewer = forwardRef<CaseLayerViewerHandle, CaseLayerViewer
       const targets = visible.length > 0 ? visible : meshes;
       if (targets.length === 0) return;
 
-      const box = new THREE.Box3();
-      for (const mesh of targets) box.expandByObject(mesh);
-      const sphere = box.getBoundingSphere(new THREE.Sphere());
-      const radius = Math.max(sphere.radius, 1e-3);
-      const distance = (radius / Math.sin(THREE.MathUtils.degToRad(CAMERA_FOV / 2))) * 1.1;
-
       const dir = camera.position.clone().sub(controls.target);
       if (dir.lengthSq() < 1e-9) dir.set(0, 0, 1);
       dir.normalize();
 
-      controls.target.copy(sphere.center);
-      camera.position.copy(sphere.center).addScaledVector(dir, distance);
+      // 보는 방향 그대로 화면 가로·세로에 맞춘다. 구 대신 실제 꼭짓점을 투영해 여백을 줄인다.
+      const box = new THREE.Box3();
+      for (const mesh of targets) box.expandByObject(mesh);
+      const boxCenter = box.getCenter(new THREE.Vector3());
+      camera.position.copy(boxCenter).add(dir);
+      camera.lookAt(boxCenter);
+      camera.updateMatrixWorld();
+      const toView = new THREE.Matrix4()
+        .makeRotationFromQuaternion(camera.quaternion)
+        .invert();
+      const min = new THREE.Vector3(Infinity, Infinity, Infinity);
+      const max = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
+      const point = new THREE.Vector3();
+      const points: THREE.Vector3[] = [];
+      for (const mesh of targets) {
+        mesh.updateMatrixWorld();
+        const pos = mesh.geometry.getAttribute("position");
+        if (!pos) continue;
+        const stride = Math.max(1, Math.floor(pos.count / 60000));
+        for (let i = 0; i < pos.count; i += stride) {
+          point
+            .fromBufferAttribute(pos, i)
+            .applyMatrix4(mesh.matrixWorld)
+            .sub(boxCenter)
+            .applyMatrix4(toView);
+          min.min(point);
+          max.max(point);
+          points.push(point.clone());
+        }
+      }
+      if (points.length === 0) return;
+
+      // 화면 평면(x·y) 중심으로 옮긴다. z는 카메라 쪽이 +.
+      const mid = new THREE.Vector3((min.x + max.x) / 2, (min.y + max.y) / 2, 0);
+      const tanV = Math.tan(THREE.MathUtils.degToRad(CAMERA_FOV / 2));
+      const tanH = tanV * Math.max(camera.aspect, 1e-3);
+      let distance = 1e-3;
+      for (const p of points) {
+        const dx = Math.abs(p.x - mid.x);
+        const dy = Math.abs(p.y - mid.y);
+        distance = Math.max(distance, p.z + dx / tanH, p.z + dy / tanV);
+      }
+      distance *= FIT_MARGIN;
+
+      const center = mid.applyQuaternion(camera.quaternion).add(boxCenter);
+      controls.target.copy(center);
+      camera.position.copy(center).addScaledVector(dir, distance);
       camera.near = Math.max(distance / 200, 0.01);
       camera.far = distance * 200;
       camera.updateProjectionMatrix();
-      camera.lookAt(sphere.center);
+      camera.lookAt(center);
       controls.syncFromCamera();
     };
 

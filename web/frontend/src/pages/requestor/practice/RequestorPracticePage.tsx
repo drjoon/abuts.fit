@@ -211,23 +211,11 @@ import { ChevronRight, Search, X } from "lucide-react";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
 import { DesignSoftwareSettingsDialog } from "@/features/requestSettings/DesignSoftwareSettingsDialog";
-import { ToastAction } from "@/components/ui/toast";
-import {
-  LabWorkFolderDialog,
-  type LabWorkFolderDialogReason,
-} from "@/shared/components/LabWorkFolderDialog";
-import { LabHelperInstallDialog } from "@/shared/components/LabHelperInstallDialog";
 import {
   buildLabCaseFolderName,
   dcmFormatForDesignSoftware,
 } from "@/shared/files/labWorkFolder";
-import { supportsLabHelper } from "@/shared/files/labHelperClient";
-import type {
-  LabWorkFolderMode,
-  LabWorkFolderPick,
-  LabWorkFolderResolver,
-  LabWorkFolderSaveResult,
-} from "@/shared/files/useS3FileDownload";
+import { useLabWorkFolderSave } from "@/shared/files/useLabWorkFolderSave";
 import type { DcmDownloadFormat } from "@/shared/files/dcmDownloadFormat";
 import { RequestSettingsToolbar } from "@/features/requestSettings/RequestSettingsToolbar";
 import { useRequestorRequestSettings } from "@/features/requestSettings/useRequestorRequestSettings";
@@ -786,17 +774,12 @@ export function RequestorPracticeReceivePage({
   const designSettingsGateTransferRef = useRef<ReceivedPracticeTransfer | null>(
     null,
   );
-  const [labWorkFolderDialog, setLabWorkFolderDialog] = useState<{
-    open: boolean;
-    reason: LabWorkFolderDialogReason;
-    mode: LabWorkFolderMode;
-  }>({ open: false, reason: "missing", mode: "browser" });
-  const labWorkFolderResolveRef = useRef<
-    null | ((pick: LabWorkFolderPick | null) => void)
-  >(null);
-  const [labHelperInstallOpen, setLabHelperInstallOpen] = useState(false);
-  const labHelperInstallResolveRef = useRef<null | ((connected: boolean) => void)>(null);
-  const lastLabWorkFolderModeRef = useRef<LabWorkFolderMode>("browser");
+  const {
+    requestWorkFolder: requestLabWorkFolder,
+    requestHelperInstall: requestLabHelperInstall,
+    toastSaved: toastLabWorkFolderSaved,
+    dialogs: labWorkFolderDialogs,
+  } = useLabWorkFolderSave();
   const beginDesignUploadWithFilesRef = useRef<
     (
       transfer: ReceivedPracticeTransfer,
@@ -7566,59 +7549,6 @@ export function RequestorPracticeReceivePage({
     [downloadS3File],
   );
 
-  const requestLabWorkFolder = useCallback<LabWorkFolderResolver>(
-    ({ reason, mode }) =>
-      new Promise<LabWorkFolderPick | null>((resolve) => {
-        labWorkFolderResolveRef.current?.(null);
-        labWorkFolderResolveRef.current = resolve;
-        setLabWorkFolderDialog({ open: true, reason, mode });
-      }),
-    [],
-  );
-
-  const settleLabWorkFolder = useCallback(
-    (pick: LabWorkFolderPick | null) => {
-      const resolve = labWorkFolderResolveRef.current;
-      labWorkFolderResolveRef.current = null;
-      setLabWorkFolderDialog((prev) => ({ ...prev, open: false }));
-      if (resolve) {
-        resolve(pick);
-      } else if (pick) {
-        toast({
-          title: "작업 폴더를 바꿨습니다",
-          description: pick.kind === "helper" ? pick.path : pick.handle.name,
-        });
-      }
-    },
-    [toast],
-  );
-
-  const openChangeLabWorkFolder = useCallback(() => {
-    labWorkFolderResolveRef.current = null;
-    setLabWorkFolderDialog({
-      open: true,
-      reason: "change",
-      mode: lastLabWorkFolderModeRef.current,
-    });
-  }, []);
-
-  const requestLabHelperInstall = useCallback(
-    () =>
-      new Promise<boolean>((resolve) => {
-        labHelperInstallResolveRef.current?.(false);
-        labHelperInstallResolveRef.current = resolve;
-        setLabHelperInstallOpen(true);
-      }),
-    [],
-  );
-
-  const settleLabHelperInstall = useCallback((connected: boolean) => {
-    const resolve = labHelperInstallResolveRef.current;
-    labHelperInstallResolveRef.current = null;
-    setLabHelperInstallOpen(false);
-    resolve?.(connected);
-  }, []);
-
   const selectedTransferCaseFolder = useMemo(
     () =>
       buildLabCaseFolderName({
@@ -7631,55 +7561,6 @@ export function RequestorPracticeReceivePage({
         fallbackId: selectedTransfer?.transferId || selectedTransfer?._id,
       }),
     [selectedTransfer, selectedTransferPatientName],
-  );
-
-  const toastLabWorkFolderSaved = useCallback(
-    ({ mode, folder, count, revealed }: LabWorkFolderSaveResult) => {
-      if (mode !== "zip") {
-        lastLabWorkFolderModeRef.current = mode === "helper" ? "helper" : "browser";
-      }
-      const installAction = supportsLabHelper() ? (
-        <ToastAction altText="폴더 자동 열기" onClick={() => void requestLabHelperInstall()}>
-          폴더 자동 열기
-        </ToastAction>
-      ) : undefined;
-      if (mode === "zip") {
-        toast({
-          title: `${count}개 파일을 zip으로 받았습니다`,
-          description: (
-            <>
-              {folder}
-              <br />
-              작업 폴더에 풀면 케이스 폴더가 생깁니다.
-              <br />
-              「폴더 자동 열기」를 설치하면 풀지 않고 바로 저장합니다.
-            </>
-          ),
-          action: installAction,
-        });
-        return;
-      }
-      const title =
-        count === 0
-          ? revealed
-            ? "이미 받은 케이스입니다. 폴더를 열었습니다"
-            : "이미 받은 케이스입니다"
-          : revealed
-            ? `작업 폴더에 ${count}개 저장하고 폴더를 열었습니다`
-            : `작업 폴더에 ${count}개 저장했습니다`;
-      toast({
-        title,
-        description: folder,
-        action: mode === "folder" && installAction ? (
-          installAction
-        ) : (
-          <ToastAction altText="작업 폴더 변경" onClick={openChangeLabWorkFolder}>
-            폴더 변경
-          </ToastAction>
-        ),
-      });
-    },
-    [openChangeLabWorkFolder, requestLabHelperInstall, toast],
   );
 
   /** 의뢰·디자인·보철 파일 전부를 작업 폴더 안 케이스 폴더에 저장(작업열기·다운로드 공통). */
@@ -9100,17 +8981,7 @@ export function RequestorPracticeReceivePage({
         }}
         forceRequired={requestSettingsForceRequired}
       />
-      <LabWorkFolderDialog
-        open={labWorkFolderDialog.open}
-        reason={labWorkFolderDialog.reason}
-        mode={labWorkFolderDialog.mode}
-        onSubmit={(pick) => settleLabWorkFolder(pick)}
-        onCancel={() => settleLabWorkFolder(null)}
-      />
-      <LabHelperInstallDialog
-        open={labHelperInstallOpen}
-        onResolved={settleLabHelperInstall}
-      />
+      {labWorkFolderDialogs}
       <RequestorAbutmentPageHeader
         variant="policyInProgress"
         hideInProgressTrigger
