@@ -32,6 +32,7 @@ import {
   markReceivedPracticeTransferRelease,
   markReceivedPracticeTransferReject,
   openSubcontractPracticeTransfer,
+  closeSubcontractPracticeTransfer,
   markReceivedPracticeTransferDownloaded,
   confirmPracticeTransferAbutmentDesign,
   confirmPracticeTransferProduction,
@@ -458,6 +459,13 @@ router.post(
   authenticate,
   receiveAuth,
   openSubcontractPracticeTransfer,
+);
+
+router.post(
+  "/:transferId/close-subcontract",
+  authenticate,
+  receiveAuth,
+  closeSubcontractPracticeTransfer,
 );
 
 router.post(

@@ -160,6 +160,8 @@ export type PracticeTransferLabReceiveItem = {
     priorityActive?: boolean;
     priorityLabForMe?: boolean;
     canOpenSubcontract?: boolean;
+    /** 원청이 하청 풀을 열어 둔 상태. 원청의 작업시작 버튼을 숨긴다. */
+    subcontractPoolOpenByMe?: boolean;
     subcontracted?: boolean;
   } | null;
   hasCustomAbutment?: boolean;

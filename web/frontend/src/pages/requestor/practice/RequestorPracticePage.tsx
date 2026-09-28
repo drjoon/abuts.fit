@@ -998,6 +998,7 @@ export function RequestorPracticeReceivePage({
   const [ptxCaCreditConfirmOpen, setPtxCaCreditConfirmOpen] = useState(false);
   const [ptxCaCreditConfirmMessage, setPtxCaCreditConfirmMessage] = useState("");
   const [openSubcontractBusy, setOpenSubcontractBusy] = useState(false);
+  const [closeSubcontractBusy, setCloseSubcontractBusy] = useState(false);
   const [releaseBusy, setReleaseBusy] = useState(false);
   const [cardActionBusyId, setCardActionBusyId] = useState<string>("");
   const cardActionBusyIdRef = useRef<string>("");
@@ -1285,6 +1286,7 @@ export function RequestorPracticeReceivePage({
               priorityActive: Boolean(autoMatchRaw.priorityActive),
               priorityLabForMe: Boolean(autoMatchRaw.priorityLabForMe),
               canOpenSubcontract: Boolean(autoMatchRaw.canOpenSubcontract),
+              subcontractPoolOpenByMe: Boolean(autoMatchRaw.subcontractPoolOpenByMe),
               subcontracted: Boolean(autoMatchRaw.subcontracted),
             }
           : null;
@@ -2085,6 +2087,7 @@ export function RequestorPracticeReceivePage({
           action === "auto-match-released" ||
           action === "accept-released" ||
           action === "auto-match-claimed" ||
+          action === "subcontract-pool-closed" ||
           action === "completed"
         ) {
           if (action === "auto-match-released" || action === "accept-released") {
@@ -5335,6 +5338,7 @@ export function RequestorPracticeReceivePage({
             claimActive: false,
             priorityActive: false,
             canOpenSubcontract: false,
+            subcontractPoolOpenByMe: true,
             priorityUntil:
               autoMatchRaw?.priorityUntil != null
                 ? String(autoMatchRaw.priorityUntil)
@@ -5794,6 +5798,70 @@ export function RequestorPracticeReceivePage({
     openSubcontractBusy,
     releaseBusy,
     selectedTransfer,
+  ]);
+
+  const handleCloseSubcontract = useCallback(async () => {
+    const transfer = selectedTransfer;
+    if (!transfer || !token || closeSubcontractBusy) return;
+    setCloseSubcontractBusy(true);
+    try {
+      const [res] = await Promise.all([
+        apiFetch<unknown>({
+          path: `/api/practice/transfers/${encodeURIComponent(transfer.transferId)}/close-subcontract`,
+          method: "POST",
+          token,
+        }),
+        new Promise<void>((resolve) => {
+          window.setTimeout(resolve, ACTION_UI_MIN_MS);
+        }),
+      ]);
+      const body =
+        res.data && typeof res.data === "object"
+          ? (res.data as Record<string, unknown>)
+          : {};
+      if (!res.ok) {
+        toast({
+          title: "하청 취소 실패",
+          description: String(body.message || "하청 취소 중 오류가 발생했습니다."),
+          variant: "destructive",
+        });
+        void loadCalendarTransfers({ silent: true });
+        return;
+      }
+      const data =
+        body.data && typeof body.data === "object"
+          ? (body.data as Record<string, unknown>)
+          : {};
+      const nextStage = String(data.manufacturerStage || "").trim();
+      applyAcceptedLocalPatch(transfer, {
+        ...(nextStage ? { manufacturerStage: nextStage } : {}),
+        autoMatch: {
+          ...(transfer.autoMatch || {}),
+          openPool: false,
+          claimActive: false,
+          canOpenSubcontract: true,
+          subcontractPoolOpenByMe: false,
+        },
+      });
+      void loadCalendarTransfers({ silent: true });
+      toast({ title: "하청 취소", description: "하청 공개를 닫았습니다." });
+    } catch {
+      toast({
+        title: "하청 취소 실패",
+        description: "하청 취소 요청 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setCloseSubcontractBusy(false);
+    }
+  }, [
+    ACTION_UI_MIN_MS,
+    applyAcceptedLocalPatch,
+    closeSubcontractBusy,
+    loadCalendarTransfers,
+    selectedTransfer,
+    toast,
+    token,
   ]);
 
   const handleReleaseTransfer = useCallback(async () => {
@@ -9659,9 +9727,17 @@ export function RequestorPracticeReceivePage({
         onAccept={
           selectedTransfer?.labRejected ||
           selectedTransfer?.manufacturerStage === "거부" ||
-          selectedTransfer?.autoMatch?.declinedByMe
+          selectedTransfer?.autoMatch?.declinedByMe ||
+          selectedTransfer?.autoMatch?.subcontractPoolOpenByMe
             ? undefined
             : () => void handleAcceptTransfer()
+        }
+        closeSubcontractBusy={closeSubcontractBusy}
+        onCloseSubcontract={
+          String(user?.role || "").trim() === "internalLab" &&
+          selectedTransfer?.autoMatch?.subcontractPoolOpenByMe
+            ? () => void handleCloseSubcontract()
+            : undefined
         }
         openSubcontractBusy={openSubcontractBusy}
         onOpenSubcontract={

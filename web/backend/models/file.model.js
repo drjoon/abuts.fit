@@ -53,6 +53,9 @@ const fileSchema = new mongoose.Schema(
   }
 );
 
+// S3 키 조회(다운로드 권한·temp 업로드 정리)
+fileSchema.index({ key: 1 });
+
 const File = mongoose.model("File", fileSchema);
 
 export default File;

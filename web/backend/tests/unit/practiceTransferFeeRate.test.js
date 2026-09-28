@@ -12,8 +12,46 @@ import {
   resolvePlatformFeeRate,
   resolvePracticeTransferFeeRate,
   resolvePracticeTransferFeeRateForViewer,
+  resolvePracticeTransferPlatformFeeRate,
   snapshottedPracticeTransferFeeRate,
+  snapshottedPracticeTransferPlatformFeeRate,
 } from "../../services/creditRevenuePolicy.service.js";
+
+describe("resolvePracticeTransferPlatformFeeRate (차감 중 플랫폼 사용료 몫)", () => {
+  const ON = { directPlatformFeeEnabled: true, directPlatformFeeRate: 0.02 };
+  test("협력: 합계 요율과 사용료 몫이 같다", () => {
+    const args = { matchingMode: "direct", payoutRates: ON };
+    expect(resolvePracticeTransferPlatformFeeRate(args)).toBe(0.02);
+    expect(resolvePracticeTransferFeeRate(args)).toBe(0.02);
+  });
+  test("하청: 합계 12% 중 사용료는 2%, 나머지 10%는 원청 몫", () => {
+    const args = { matchingMode: "direct", payoutRates: ON, subcontracted: true };
+    expect(resolvePracticeTransferFeeRate(args)).toBeCloseTo(0.12);
+    expect(resolvePracticeTransferPlatformFeeRate(args)).toBe(0.02);
+  });
+  test("면제 기간·어벗츠기공사업부 수행은 사용료 0", () => {
+    expect(
+      resolvePracticeTransferPlatformFeeRate({
+        matchingMode: "direct",
+        payoutRates: { directPlatformFeeEnabled: false, directPlatformFeeRate: 0.02 },
+        subcontracted: true,
+      }),
+    ).toBe(0);
+    expect(
+      resolvePracticeTransferPlatformFeeRate({
+        matchingMode: "direct",
+        payoutRates: ON,
+        performerIsInternal: true,
+      }),
+    ).toBe(0);
+  });
+  test("스냅샷: billedAt과 값이 있을 때만", () => {
+    expect(snapshottedPracticeTransferPlatformFeeRate({ billedAt: null, platformFeeRateApplied: 0.02 })).toBe(null);
+    expect(snapshottedPracticeTransferPlatformFeeRate({ billedAt: new Date() })).toBe(null);
+    expect(snapshottedPracticeTransferPlatformFeeRate({ billedAt: new Date(), platformFeeRateApplied: 0 })).toBe(0);
+    expect(snapshottedPracticeTransferPlatformFeeRate({ billedAt: new Date(), platformFeeRateApplied: 0.02 })).toBe(0.02);
+  });
+});
 
 const FEE_ON = { directPlatformFeeEnabled: true, directPlatformFeeRate: 0.02 };
 const FEE_EVENT = {

@@ -494,7 +494,19 @@ export const canOpenPracticeTransferSubcontract = (
   if (getAssigneeLabAnchorId(transfer)) return false;
   if (isPracticeTransferSubcontracted(transfer)) return false;
   if (isSubcontractPoolOpen(transfer)) return false;
+  // 원청이 이미 작업시작(과금·요율 스냅샷)했으면 하청으로 넘기지 않는다.
+  if (transfer?.requestorDownloadedAt || transfer?.billing?.billedAt) return false;
   return true;
+};
+
+/**
+ * 원청이 하청 풀을 열어 둔 상태(아직 클레임 없음)를 원청이 보고 있다.
+ * 원청은 작업시작과 하청 중 하나만 한다. 풀을 열면 원청의 작업시작은 막힌다.
+ */
+export const isPrimeSubcontractPoolOpen = (transfer, viewerLabAnchorId) => {
+  const viewerId = String(viewerLabAnchorId || "").trim();
+  if (!viewerId || viewerId !== getPrimeLabAnchorId(transfer)) return false;
+  return isSubcontractPoolOpen(transfer) && !getAssigneeLabAnchorId(transfer);
 };
 
 /** 우선창 중이면 priority lab만 공개 풀 노출·클레임 가능. */
@@ -626,6 +638,7 @@ export const toAutoMatchApiFieldsCore = (transfer, viewerLabAnchorId = null) => 
       priorityActive,
       priorityLabForMe,
       canOpenSubcontract,
+      subcontractPoolOpenByMe: isPrimeSubcontractPoolOpen(transfer, viewerId),
       subcontracted: isSubcontractAssignee(transfer),
       assigneeKind: resolveAssigneeKind(transfer),
     },

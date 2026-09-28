@@ -7,6 +7,7 @@ import {
   parseStl,
   writeBinaryStl,
 } from "../../utils/screwHoleFill.js";
+import { fillUpperScrewHoleInWorker } from "../../utils/screwHoleFill.service.js";
 
 const SEG = 64;
 const R_OUT = 3;
@@ -74,5 +75,15 @@ describe("fillUpperScrewHole", () => {
     expect(second.ok).toBe(true);
     expect(second.stats.removedPatchTriangles).toBe(SEG);
     expect(Buffer.compare(first.buffer, second.buffer)).toBe(0);
+  });
+
+  it("gives the same bytes when run in a worker", async () => {
+    const input = buildTubeWithDetachedDisk();
+    const direct = fillUpperScrewHole(input);
+    const viaWorker = await fillUpperScrewHoleInWorker(input);
+    expect(viaWorker.ok).toBe(true);
+    expect(viaWorker.stats).toEqual(direct.stats);
+    expect(Buffer.compare(viaWorker.buffer, direct.buffer)).toBe(0);
+    expect(input.length).toBeGreaterThan(0);
   });
 });

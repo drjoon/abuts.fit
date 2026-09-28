@@ -5,18 +5,20 @@
 import request from "supertest";
 import app from "../../app";
 import User from "../../models/user.model";
-import { hashPassword } from "../../utils/auth.util";
+import SignupVerification from "../../models/signupVerification.model";
 
 describe("인증 API 테스트", () => {
   // 테스트용 사용자 데이터
   const testUser = {
     name: "테스트 사용자",
     email: "test@example.com",
-    password: "password123",
+    // 가입·비밀번호 변경은 10자 이상 + 특수문자 규칙을 따른다.
+    password: "password123!",
     phoneNumber: "010-1234-5678",
     business: "테스트 회사",
     role: "requestor",
   };
+  const newStrongPassword = "newpassword123!";
 
   let authToken;
 
@@ -26,7 +28,8 @@ describe("인증 API 테스트", () => {
     await User.deleteMany({});
 
     // 테스트 사용자 생성 (평문 비밀번호 전달, 스키마 미들웨어에서 해싱)
-    await User.create(testUser);
+    // 로그인은 active + approvedAt(승인 완료) 계정만 허용한다.
+    await User.create({ ...testUser, active: true, approvedAt: new Date() });
   });
 
   // 회원가입 테스트
@@ -35,11 +38,19 @@ describe("인증 API 테스트", () => {
       const newUser = {
         name: "신규 사용자",
         email: "new@example.com",
-        password: "newpassword123",
+        password: newStrongPassword,
         phoneNumber: "010-9876-5432",
         business: "신규 회사",
         role: "requestor",
       };
+
+      // 가입 전 이메일 인증 완료 상태가 필요하다.
+      await SignupVerification.create({
+        purpose: "signup",
+        channel: "email",
+        target: newUser.email,
+        verifiedAt: new Date(),
+      });
 
       const response = await request(app)
         .post("/api/auth/register")
@@ -52,6 +63,11 @@ describe("인증 API 테스트", () => {
       expect(response.body.data).toHaveProperty("user");
       expect(response.body.data.user.email).toBe(newUser.email);
       expect(response.body.data.user).not.toHaveProperty("password");
+
+      const verification = await SignupVerification.findOne({
+        target: newUser.email,
+      }).lean();
+      expect(verification.consumedAt).toBeTruthy();
     });
 
     it("이미 존재하는 이메일로 등록 시 실패", async () => {
@@ -195,7 +211,7 @@ describe("인증 API 테스트", () => {
         .set("Authorization", `Bearer ${token}`)
         .send({
           currentPassword: testUser.password,
-          newPassword: "newpassword123",
+          newPassword: newStrongPassword,
         })
         .expect(200);
 
@@ -207,7 +223,7 @@ describe("인증 API 테스트", () => {
         .post("/api/auth/login")
         .send({
           email: testUser.email,
-          password: "newpassword123",
+          password: newStrongPassword,
         })
         .expect(200);
 
@@ -230,7 +246,7 @@ describe("인증 API 테스트", () => {
         .set("Authorization", `Bearer ${token}`)
         .send({
           currentPassword: "wrongpassword",
-          newPassword: "newpassword123",
+          newPassword: newStrongPassword,
         })
         .expect(400);
 

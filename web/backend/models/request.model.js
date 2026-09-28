@@ -1432,6 +1432,10 @@ requestSchema.index({
   createdAt: -1,
 });
 
+// S3 프록시 다운로드 권한 조회(canUserAccessS3Key) — s3Key exact match
+requestSchema.index({ "caseInfos.file.s3Key": 1 }, { sparse: true });
+requestSchema.index({ "caseInfos.files.s3Key": 1 }, { sparse: true });
+
 // 의뢰 모델 생성
 const Request = mongoose.model("Request", requestSchema);
 

@@ -1,6 +1,7 @@
 // 스캔바디 라이브러리(3Shape .dme · exocad)·심플어벗 템플릿 API와 AI 디자인용 선택 규칙.
 // 같은 사양이 여러 곳에 있으면 기공소 자체 등록 → 어벗츠 공용(승격 포함) 순으로 쓴다.
 // 라이브러리 업로드: 묶음 → presigned PUT(S3 격리) → complete → 서버가 악성코드 검사·해석 → 폴링.
+// 템플릿 업로드: 축·치수 계산 → presigned POST(S3 보류) → complete → 관리자 검토 → 검사·해석 → templates에 등록.
 // related files:
 // - web/backend/controllers/scanbodyLibraries/scanbodyLibrary.controller.js
 // - web/frontend/src/shared/files/scanbodyLibraryBundle.ts
@@ -92,12 +93,72 @@ export type AbutmentTemplateRow = {
   updatedAt: string;
 };
 
+/** 템플릿 업로드: 보류 → 관리자 검토 → 검사 → 해석. done이 되기 전에는 templates에 없고 AI 디자인에 쓰지 않는다. */
+export type AbutmentTemplateUploadStatus =
+  | "uploading"
+  | "pending_review"
+  | "scanning"
+  | "processing"
+  | "done"
+  | "rejected"
+  | "failed";
+
+export type AbutmentTemplateUploadRow = {
+  id: string;
+  fileName: string;
+  size: number;
+  status: AbutmentTemplateUploadStatus;
+  scanStatus: string;
+  message: string;
+  kind: SimpleAbutmentKind | "";
+  diameter: string;
+  height: string;
+  templateId: string | null;
+  createdAt: string;
+  reviewedAt: string | null;
+  finishedAt: string | null;
+};
+
+/** 관리자 검토 화면 행. */
+export type AbutmentTemplateReviewRow = AbutmentTemplateUploadRow & {
+  uploader: {
+    userId: string | null;
+    name: string;
+    email: string;
+    businessAnchorId: string | null;
+    businessName: string;
+  };
+  autoApproved: boolean;
+  reviewReason: string;
+  markedMalicious: boolean;
+};
+
+export type UploadBlockRow = {
+  id: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  businessAnchorId: string | null;
+  businessName: string;
+  reason: string;
+  source: "guardduty" | "admin";
+  uploadKind: string;
+  fileName: string;
+  createdByName: string;
+  createdAt: string;
+};
+
+export const isTemplateUploadActive = (status: AbutmentTemplateUploadStatus) =>
+  status === "scanning" || status === "processing";
+
 export type ScanbodyCatalog = {
   libraries: ScanbodyLibraryRow[];
   templates: AbutmentTemplateRow[];
+  /** 내 템플릿 업로드 중 검토·검사 중이거나 최근에 거절·실패한 것. */
+  templateUploads: AbutmentTemplateUploadRow[];
 };
 
-const EMPTY: ScanbodyCatalog = { libraries: [], templates: [] };
+const EMPTY: ScanbodyCatalog = { libraries: [], templates: [], templateUploads: [] };
 
 async function fail(res: { data: unknown }, fallback: string): Promise<never> {
   const message = (res.data as { message?: unknown } | null)?.message;
@@ -119,7 +180,8 @@ export function useScanbodyCatalog(enabled = true) {
     void apiFetch<{ data: ScanbodyCatalog }>({ path: BASE, cacheTtlMs: 30_000 })
       .then((res) => {
         if (cancelled || !res.ok) return;
-        setCatalog(res.data?.data ?? EMPTY);
+        const data = res.data?.data;
+        setCatalog(data ? { ...EMPTY, ...data, templateUploads: data.templateUploads ?? [] } : EMPTY);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -250,32 +312,100 @@ export function parseTemplateFileName(name: string): { diameter: string; height:
   return { diameter: m[1]!, height: (m[2] ?? "").toUpperCase() };
 }
 
+/**
+ * 템플릿 .dcm: 축·치수는 브라우저가 계산해 보내고, 원본은 presigned POST로 S3 보류 경로에 올린다.
+ * 기공소 업로드는 관리자 검토(pending_review)를 기다린다. 관리자 업로드는 바로 검사로 간다.
+ */
 export async function uploadAbutmentTemplate(
   file: File,
   spec: { kind: SimpleAbutmentKind; diameter: string; height: string },
-): Promise<AbutmentTemplateRow> {
+  onProgress: (ratio: number) => void = () => undefined,
+): Promise<AbutmentTemplateUploadRow> {
   const mesh = await parseHpsDcmMeshData(await file.arrayBuffer());
   const frame = computeAbutmentTemplateFrame(mesh);
-  const form = new FormData();
-  form.append(
-    "meta",
-    JSON.stringify({
-      ...spec,
-      frame: { origin: frame.origin, axis: frame.axis, ref: frame.ref },
-      marginHeightMm: frame.marginHeightMm,
-      maxDiameterMm: frame.maxDiameterMm,
-      heightMm: frame.heightMm,
-    }),
-  );
-  form.append("file", file, file.name);
-  const res = await apiFetch<{ data: AbutmentTemplateRow }>({
-    path: `${BASE}/templates`,
+  const created = await apiFetch<{
+    data: { upload: AbutmentTemplateUploadRow; uploadUrl: string; fields: Record<string, string> };
+  }>({
+    path: `${BASE}/templates/uploads`,
     method: "POST",
-    body: form,
+    jsonBody: {
+      fileName: file.name,
+      size: file.size,
+      meta: {
+        ...spec,
+        frame: { origin: frame.origin, axis: frame.axis, ref: frame.ref },
+        marginHeightMm: frame.marginHeightMm,
+        maxDiameterMm: frame.maxDiameterMm,
+        heightMm: frame.heightMm,
+      },
+    },
   });
-  if (!res.ok || !res.data?.data) return fail(res, "템플릿을 올리지 못했습니다.");
+  if (!created.ok || !created.data?.data) return fail(created, "템플릿을 올리지 못했습니다.");
+  const { upload, uploadUrl, fields } = created.data.data;
+  await postToS3(uploadUrl, fields, file, onProgress);
+  const done = await apiFetch<{ data: AbutmentTemplateUploadRow }>({
+    path: `${BASE}/templates/uploads/${upload.id}/complete`,
+    method: "POST",
+  });
+  if (!done.ok || !done.data?.data) return fail(done, "템플릿 업로드를 마치지 못했습니다.");
   invalidateApiGetCache(BASE);
+  return done.data.data;
+}
+
+export async function fetchTemplateUploads(ids: readonly string[]): Promise<AbutmentTemplateUploadRow[]> {
+  const query = ids.length > 0 ? `?ids=${ids.map(encodeURIComponent).join(",")}` : "";
+  const res = await apiFetch<{ data: AbutmentTemplateUploadRow[] }>({
+    path: `${BASE}/templates/uploads${query}`,
+    skipCache: true,
+  });
+  if (!res.ok) return fail(res, "템플릿 업로드 상태를 받지 못했습니다.");
+  return res.data?.data ?? [];
+}
+
+/** 관리자: 검토 대기·진행 중·최근 결정한 템플릿 업로드. */
+export async function fetchTemplateReviews(ids: readonly string[] = []): Promise<AbutmentTemplateReviewRow[]> {
+  const query = ids.length > 0 ? `?ids=${ids.map(encodeURIComponent).join(",")}` : "";
+  const res = await apiFetch<{ data: AbutmentTemplateReviewRow[] }>({
+    path: `${BASE}/templates/reviews${query}`,
+    skipCache: true,
+  });
+  if (!res.ok) return fail(res, "검토 목록을 받지 못했습니다.");
+  return res.data?.data ?? [];
+}
+
+/** 관리자 「열어 보기」: 악성코드 검사 후 해석·등록한다. */
+export async function approveTemplateUpload(id: string): Promise<AbutmentTemplateReviewRow> {
+  const res = await apiFetch<{ data: AbutmentTemplateReviewRow }>({
+    path: `${BASE}/templates/uploads/${id}/approve`,
+    method: "POST",
+  });
+  if (!res.ok || !res.data?.data) return fail(res, "검사를 시작하지 못했습니다.");
   return res.data.data;
+}
+
+/** 관리자 「폐기」: 열지 않고 지운다. malicious면 올린 사용자를 차단한다. */
+export async function rejectTemplateUpload(
+  id: string,
+  body: { reason: string; malicious: boolean },
+): Promise<AbutmentTemplateReviewRow> {
+  const res = await apiFetch<{ data: AbutmentTemplateReviewRow }>({
+    path: `${BASE}/templates/uploads/${id}/reject`,
+    method: "POST",
+    jsonBody: body,
+  });
+  if (!res.ok || !res.data?.data) return fail(res, "폐기하지 못했습니다.");
+  return res.data.data;
+}
+
+export async function fetchUploadBlocklist(): Promise<UploadBlockRow[]> {
+  const res = await apiFetch<{ data: UploadBlockRow[] }>({ path: `${BASE}/blocklist`, skipCache: true });
+  if (!res.ok) return fail(res, "차단 목록을 받지 못했습니다.");
+  return res.data?.data ?? [];
+}
+
+export async function unblockUploader(id: string) {
+  const res = await apiFetch({ path: `${BASE}/blocklist/${id}`, method: "DELETE" });
+  if (!res.ok) return fail(res, "차단을 풀지 못했습니다.");
 }
 
 export async function deleteAbutmentTemplate(id: string) {

@@ -18,18 +18,19 @@ function scanOf(row) {
   return { role: stored.scanRole, s3Key, fileName };
 }
 
-/** 계정 값이 없거나 아직 답을 안 했으면 허용(스위치 기본 on). 저장한 false만 거부. */
-export function isLabAiTrainingConsentAllowed(consent) {
-  if (consent?.allowed !== false) return true;
-  return !consent?.confirmedAt && !consent?.updatedAt;
+/**
+ * 학습 이용 동의는 약관으로 받는다. 기공소가 따로 고르지 않는다.
+ * 예전 계정의 aiTrainingConsent 값은 읽지 않는다. 작업시작 스냅샷은 항상 true.
+ */
+export function isLabAiTrainingConsentAllowed() {
+  return true;
 }
 
 /**
- * 작업시작 전 견적·적립 보류는 수행 기공소의 현재 동의.
- * 작업시작 이후는 billing.aiTrainingConsent.
- * 동의 변경 시 미완료 의뢰는 그 스냅샷을 이번 건부터 다시 맞춘다.
+ * 작업시작 이후는 박힌 billing.aiTrainingConsent(예전 건의 false는 그대로 존중).
+ * 작업시작 전은 약관 동의라 true.
  */
-export function resolveUnacceptedAiTrainingConsent(transfer, performer) {
+export function resolveUnacceptedAiTrainingConsent(transfer) {
   const started = Boolean(
     transfer?.requestorDownloadedAt || transfer?.requestorAcceptedAt,
   );
@@ -37,18 +38,13 @@ export function resolveUnacceptedAiTrainingConsent(transfer, performer) {
     const raw = transfer?.billing?.aiTrainingConsent;
     return raw === true || raw === false ? raw : undefined;
   }
-  if (isInternalLabBusinessType(performer)) return true;
-  if (!performer) {
-    const raw = transfer?.billing?.aiTrainingConsent;
-    return raw === true || raw === false ? raw : undefined;
-  }
-  return isLabAiTrainingConsentAllowed(performer.aiTrainingConsent);
+  return true;
 }
 
 /**
  * 학습 묶음에 넣을지.
- * 어벗츠기공본부는 항상 포함. 그 외는 생성·작업시작 때 박힌 동의만.
- * 스냅샷이 없으면(예전 의뢰) 넣지 않는다.
+ * 어벗츠기공본부는 항상 포함. 그 외는 작업시작 때 박힌 값(약관 동의 이후 true).
+ * 스냅샷이 없는 예전 의뢰와, 예전 정책에서 거부해 false로 박힌 건은 넣지 않는다.
  */
 
 export function shouldIncludeInAiTraining(doc, performer) {

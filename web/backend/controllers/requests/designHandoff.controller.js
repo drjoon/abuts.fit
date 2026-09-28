@@ -1218,10 +1218,11 @@ export async function handoffDesignToProduction(req, res) {
           }
 
           // 병렬 handoff: priorCount는 DB 재조회. 실패해도 형제 치아만 정리(전체 clear 금지).
+          // 이미 미러된 경우 이 문서로 완료 판정(협력·보철 업로드 여부·남은 어벗)을 하므로 파일 목록만 뺀다.
           const freshBeforeMirror = await PracticeTransfer.findById(
             relatedTransferId,
           )
-            .select({ "production.designFiles": 1 })
+            .select({ files: 0, trashedFiles: 0, resultFiles: 0 })
             .lean();
           const priorDesignCount = Array.isArray(
             freshBeforeMirror?.production?.designFiles,

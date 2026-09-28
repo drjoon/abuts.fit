@@ -3962,11 +3962,13 @@ async function emitCanceledRequestSideEffects({
 export async function updateRequestStatus(req, res) {
   try {
     const requestId = req.params.id;
-    const { manufacturerStage } = req.body;
+    // 레거시 `의뢰`는 준비 단계 SSOT `준비`로 받는다.
+    const rawStage = String(req.body?.manufacturerStage || "").trim();
+    const manufacturerStage = rawStage === "의뢰" ? "준비" : rawStage;
 
     // 상태 유효성 검사 (SSOT 라벨)
     const validStages = [
-      "의뢰",
+      "준비",
       "CAM",
       "가공",
       "세척.패킹",
@@ -4010,6 +4012,14 @@ export async function updateRequestStatus(req, res) {
       return res.status(403).json({
         success: false,
         message: "이 의뢰의 상태를 변경할 권한이 없습니다.",
+      });
+    }
+
+    // 의뢰자는 취소만 한다. 그 밖의 단계 변경(복구·공정 이동)은 관리자만.
+    if (manufacturerStage !== "취소" && !isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: "관리자만 공정 단계를 바꿀 수 있습니다.",
       });
     }
 

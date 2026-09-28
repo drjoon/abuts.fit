@@ -2,7 +2,7 @@
 // 1) 브라우저가 크기가 고정된 presigned POST로 원본을 S3 격리 경로에 올린다. API 서버를 거치지 않는다.
 //    오늘(KST) 검사 추정이 $1을 넘으면 여기서 막는다.
 // 2) GuardDuty Malware Protection for S3가 검사해 GuardDutyMalwareScanStatus 태그를 붙인다.
-//    NO_THREATS_FOUND만 연다. 위협·검사 불가는 거절하고 원본을 지운다.
+//    NO_THREATS_FOUND만 연다. 위협·검사 불가는 거절하고 원본을 지운다. 위협이면 올린 사용자를 차단 목록에 넣는다.
 // 3) 워커 스레드가 압축을 제한 안에서 풀고 형상을 새로 만든다(scanbodyLibraryImport.service.js).
 // 4) 형상은 해시 키(gzip)로 저장하고, 같은 소유자·시스템 이름의 라이브러리에 합친다.
 // 검사 대기는 서버 타이머와 브라우저 폴링(GET) 둘 다 진행시킨다. 처리 시작은 상태 전환으로 한 번만 잡는다.
@@ -10,6 +10,8 @@
 // related files:
 // - web/backend/models/scanbodyLibraryUpload.model.js
 // - web/backend/services/scanbodyLibraryImport.worker.js
+// - web/backend/services/abutmentTemplateUpload.service.js (같은 검사 예산·차단 목록)
+// - web/backend/services/uploadBlocklist.service.js
 // - web/backend/controllers/scanbodyLibraries/scanbodyLibrary.controller.js
 import crypto from "crypto";
 import { gzipSync } from "zlib";
@@ -17,7 +19,9 @@ import { Worker } from "worker_threads";
 import { Types } from "mongoose";
 import ScanbodyLibrary from "../models/scanbodyLibrary.model.js";
 import ScanbodyLibraryUpload from "../models/scanbodyLibraryUpload.model.js";
+import AbutmentTemplateUpload from "../models/abutmentTemplateUpload.model.js";
 import { ApiError } from "../utils/ApiError.js";
+import { blockUploader } from "./uploadBlocklist.service.js";
 import {
   deleteFileFromS3,
   getObjectBufferFromS3,
@@ -45,7 +49,7 @@ const SCAN_USD_PER_1000 = 0.3;
 const POST_SLACK_BYTES = 16 * 1024;
 const RESERVATION_MS = 20 * 60 * 1000;
 const TERMINAL = new Set(["done", "rejected", "failed"]);
-const SCAN_REJECT_MESSAGE = {
+export const SCAN_REJECT_MESSAGE = {
   THREATS_FOUND: "악성코드가 발견되어 거절했습니다. 원본은 지웠습니다.",
   UNSUPPORTED: "악성코드 검사를 할 수 없는 파일입니다. 암호가 걸렸거나 너무 큰 압축 파일이면 풀어서 나눠 올려 주세요.",
   ACCESS_DENIED: "악성코드 검사를 마치지 못했습니다. 관리자에게 알려 주세요.",
@@ -119,8 +123,19 @@ async function settleStaleReservations() {
   }
 }
 
-async function assertDailyScanBudget(declaredSize) {
+/** 심플어벗 템플릿은 관리자가 열어 볼 때(격리 경로 복사) 검사 비용이 든다. */
+async function templateScanUsage() {
+  const [row] = await AbutmentTemplateUpload.aggregate([
+    { $match: { scanStartedAt: { $gte: kstDayStart() } } },
+    { $group: { _id: null, bytes: { $sum: "$size" }, count: { $sum: 1 } } },
+  ]);
+  return { bytes: row?.bytes || 0, count: row?.count || 0 };
+}
+
+/** 오늘(KST) 라이브러리·템플릿 검사 추정 + 이번 건이 $1을 넘으면 429. */
+export async function assertDailyScanBudget(declaredSize) {
   await settleStaleReservations();
+  const templates = await templateScanUsage();
   const [used] = await ScanbodyLibraryUpload.aggregate([
     { $match: { createdAt: { $gte: kstDayStart() } } },
     {
@@ -137,7 +152,10 @@ async function assertDailyScanBudget(declaredSize) {
     },
     { $group: { _id: null, bytes: { $sum: "$bytes" }, count: { $sum: "$hit" } } },
   ]);
-  const next = scanCostUsd((used?.bytes || 0) + declaredSize, (used?.count || 0) + 1);
+  const next = scanCostUsd(
+    (used?.bytes || 0) + templates.bytes + declaredSize,
+    (used?.count || 0) + templates.count + 1,
+  );
   if (next > SCAN_DAILY_USD) {
     throw new ApiError(429, "오늘 악성코드 검사 한도(하루 $1)에 도달했습니다. 내일 다시 올려 주세요.");
   }
@@ -237,6 +255,17 @@ export async function advanceScanbodyUpload(jobOrId) {
           jobId: String(job._id),
           ownerAnchorId: job.ownerAnchorId ? String(job.ownerAnchorId) : null,
           uploadedBy: String(job.uploadedBy),
+        });
+        void blockUploader({
+          userId: job.uploadedBy,
+          businessAnchorId: job.ownerAnchorId,
+          reason: "GuardDuty가 스캔바디 라이브러리 업로드에서 악성코드를 찾았습니다.",
+          source: "guardduty",
+          uploadKind: "library",
+          uploadId: job._id,
+          fileName: job.fileName,
+        }).catch((error) => {
+          console.error("[scanbody-upload] blocklist failed", { jobId: String(job._id), error: error?.message });
         });
       }
       return finish(

@@ -3,8 +3,10 @@
 // - web/backend/app.js
 // - web/backend/server.js
 export default {
-  testEnvironment: 'node',
+  testEnvironment: './tests/jestMongoEnvironment.js',
   verbose: true,
+  globalSetup: './tests/globalSetup.js',
+  globalTeardown: './tests/globalTeardown.js',
   setupFilesAfterEnv: ['./tests/setup.js'],
   testMatch: ['**/__tests__/**/*.js', '**/?(*.)+(spec|test).js'],
   // Backend package is native ESM. Keep import/export (and import.meta) intact

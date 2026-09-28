@@ -18,7 +18,10 @@ import {
   buildAiTrainingRecord,
   shouldIncludeInAiTraining,
 } from "../utils/practiceTransferAiTraining.js";
-import { queueWorkScanAutoAlign } from "./workScanAutoAlign.service.js";
+import {
+  dropStaleWorkScanAutoAlign,
+  queueWorkScanAutoAlign,
+} from "./workScanAutoAlign.service.js";
 
 const MAX_BYTES = 60 * 1024 * 1024;
 
@@ -93,9 +96,17 @@ async function writePracticeAiTraining(id) {
   await PracticeTransfer.updateOne({ _id: id }, { $set: { aiTraining: record } });
 }
 
-/** 의뢰 파일이 바뀐 뒤 호출한다. 작업 스캔 자동 정렬도 대기열에 넣는다. */
-export function schedulePracticeScanAlignment(transferMongoId) {
-  queueWorkScanAutoAlign(transferMongoId);
+/**
+ * 의뢰 파일이 바뀐 뒤 호출한다.
+ * newUpload: 새 스캔 업로드 직후 → 작업 스캔 자동 정렬을 한 번 대기열에 넣는다.
+ * scanSetChanged: 역할 변경 등 → 예전 자동 작업 스캔만 비운다(재계산 없음).
+ */
+export function schedulePracticeScanAlignment(
+  transferMongoId,
+  { newUpload = false, scanSetChanged = false } = {},
+) {
+  if (newUpload) queueWorkScanAutoAlign(transferMongoId);
+  else if (scanSetChanged) dropStaleWorkScanAutoAlign(transferMongoId);
   enqueueScanJob(transferMongoId, async (id) => {
     await computeScanAlignment(id);
     await writePracticeAiTraining(id);

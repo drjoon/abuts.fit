@@ -11,6 +11,7 @@ import {
   isAutoMatchPriorityActive,
   isAutoMatchPriorityLabAnchorId,
   isInternalLabBusinessType,
+  isPracticeTransferLabReceiverRole,
   collectSubcontractDirectBlockedLabIds,
   isLabIdBlockedAsDirectPracticeTarget,
   isPracticeTransferSubcontracted,
@@ -155,6 +156,23 @@ describe("practiceTransferAutoMatch priority (core)", () => {
     expect(canOpenPracticeTransferSubcontract(direct, OID_B, now)).toBe(false);
   });
 
+  test("원청이 작업시작한 뒤에는 하청 전환 불가", () => {
+    const started = {
+      matchingMode: "direct",
+      status: "active",
+      targetLabAnchorId: OID_A,
+      targetLabName: "어벗츠기공소",
+      requestorDownloadedAt: new Date(now),
+    };
+    expect(canOpenPracticeTransferSubcontract(started, OID_A, now)).toBe(false);
+    const billed = {
+      ...started,
+      requestorDownloadedAt: null,
+      billing: { billedAt: new Date(now) },
+    };
+    expect(canOpenPracticeTransferSubcontract(billed, OID_A, now)).toBe(false);
+  });
+
   test("타 기공소 지정 의뢰는 하청 전환 불가", () => {
     const otherLab = {
       matchingMode: "direct",
@@ -218,6 +236,7 @@ describe("practiceTransferAutoMatch priority (core)", () => {
       status: "active",
       targetLabAnchorId: OID_A,
       assigneeLabAnchorId: OID_B,
+      assigneeKind: "subcontract",
     };
     expect(isSubcontractFeeScheduleContext(poolOpen)).toBe(true);
     expect(isSubcontractFeeScheduleContext(subcontracted)).toBe(true);

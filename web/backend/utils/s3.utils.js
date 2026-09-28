@@ -23,7 +23,7 @@ import multer from "multer";
 import { extname } from "path";
 import { randomBytes } from "crypto";
 import { createGunzip, gunzipSync } from "zlib";
-import { PassThrough } from "stream";
+import { pipeline } from "stream";
 import { shouldBlockExternalCall } from "./rateGuard.js";
 
 const getBucket = () => process.env.AWS_S3_BUCKET_NAME || "abuts-fit";
@@ -237,9 +237,9 @@ export const getObjectStreamFromS3 = async (key) => {
   // gzip으로 올린 3D 모델은 다운로드 시 원본 바이트로 풀어 CAD 호환을 유지한다.
   if (rawBody && contentEncoding === "gzip") {
     const gunzip = createGunzip();
-    const pass = new PassThrough();
-    rawBody.pipe(gunzip).pipe(pass);
-    body = pass;
+    // pipeline이 rawBody·gunzip 오류를 gunzip으로 넘기고 소켓을 닫는다. 오류는 소비자가 받는다.
+    pipeline(rawBody, gunzip, () => {});
+    body = gunzip;
     contentLength = 0;
   }
 
@@ -579,3 +579,22 @@ export {
 };
 
 export { getDownloadSignedUrl as getSignedUrl };
+
+/** 같은 버킷 안에서 객체를 복사한다(5GB 이하). 원본 태그는 가져가지 않는다(REPLACE, 태그 없음). */
+export const copyObjectInS3 = async (sourceKey, destKey) => {
+  const { CopyObjectCommand } = await import("@aws-sdk/client-s3");
+  const Bucket = getBucket();
+  const source = String(sourceKey || "")
+    .split("/")
+    .map(encodeURIComponent)
+    .join("/");
+  await getS3Client().send(
+    new CopyObjectCommand({
+      Bucket,
+      Key: destKey,
+      CopySource: `${Bucket}/${source}`,
+      TaggingDirective: "REPLACE",
+    }),
+  );
+  return { key: destKey };
+};

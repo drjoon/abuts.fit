@@ -54,15 +54,6 @@ router.post(
   fileController.abortTempMultipartUpload,
 );
 
-// 전체 파일 목록 조회 (관리자) 또는 의뢰 ID로 필터링
-router.get("/", authenticate, fileController.getFiles);
-
-// 내 파일 목록 조회
-router.get("/my", authenticate, fileController.getMyFiles);
-
-// 특정 의뢰의 파일 목록 조회
-router.get("/request/:requestId", authenticate, fileController.getRequestFiles);
-
 // 파일 다운로드 URL 생성
 router.get(
   "/:id/download-url",

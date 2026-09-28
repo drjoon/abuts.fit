@@ -52,7 +52,8 @@ function testFilter() {
   assert.ok(f.$or.length >= 2);
 }
 
-testIsCompleted();
-testUnmachinable();
-testFilter();
-console.log("healStuckCompletedMachining.service.test.js ok");
+describe("healStuckCompletedMachining.service", () => {
+  test("isRequestMachiningWorkCompleted", testIsCompleted);
+  test("isRequestUnmachinableJudged", testUnmachinable);
+  test("buildStuckCompletedMachiningFilter", testFilter);
+});

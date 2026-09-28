@@ -7,6 +7,7 @@
 import { Types } from "mongoose";
 import User from "../../models/user.model.js";
 import Request from "../../models/request.model.js";
+import { updateRequestStatus as updateManufacturerStage } from "../requests/common.requests.controller.js";
 
 export async function getAllRequests(req, res) {
   try {
@@ -15,7 +16,8 @@ export async function getAllRequests(req, res) {
     const skip = (page - 1) * limit;
 
     const filter = {};
-    if (req.query.status) filter.status = req.query.status;
+    if (req.query.status) filter.manufacturerStage = req.query.status;
+    if (req.query.manufacturerStage) filter.manufacturerStage = req.query.manufacturerStage;
     if (req.query.requestorId) {
       const requestorId = String(req.query.requestorId || "").trim();
       if (!Types.ObjectId.isValid(requestorId)) {
@@ -98,63 +100,25 @@ export async function getRequestById(req, res) {
   }
 }
 
+/** 예전 관리자 상태 라벨 → manufacturerStage. */
+const LEGACY_ADMIN_STATUS_TO_STAGE = {
+  준비: "준비",
+  가공: "가공",
+  발송: "포장.발송",
+  완료: "추적관리",
+  취소: "취소",
+};
+
+/**
+ * PATCH /api/admin/requests/:id/status
+ * 공정 단계 변경은 `PATCH /api/requests/:id/status`(크레딧·취소 부수효과 포함) 하나로 처리한다.
+ * 예전 body `{ status }`도 받아 manufacturerStage로 바꿔 넘긴다.
+ */
 export async function updateRequestStatus(req, res) {
-  try {
-    const requestId = req.params.id;
-    const { status, statusNote } = req.body;
-    if (!Types.ObjectId.isValid(requestId)) {
-      return res
-        .status(400)
-        .json({ success: false, message: "유효하지 않은 의뢰 ID입니다." });
-    }
-
-    const validStatuses = ["준비", "가공", "발송", "완료", "취소"];
-    if (!validStatuses.includes(status)) {
-      return res
-        .status(400)
-        .json({ success: false, message: "유효하지 않은 상태입니다." });
-    }
-
-    const request = await Request.findById(requestId);
-    if (!request) {
-      return res
-        .status(404)
-        .json({ success: false, message: "의뢰를 찾을 수 없습니다." });
-    }
-
-    const statusHistory = {
-      status,
-      note: statusNote || "",
-      updatedBy: req.user.id,
-      updatedAt: new Date(),
-    };
-
-    const updatedRequest = await Request.findByIdAndUpdate(
-      requestId,
-      {
-        status,
-        $push: { statusHistory },
-      },
-      { new: true },
-    )
-      .populate("requestor", "name email business")
-      .populate("caManufacturer", "name email business");
-
-    const result = updatedRequest.toObject();
-    if (!result.statusHistory) result.statusHistory = [];
-
-    res.status(200).json({
-      success: true,
-      message: "의뢰 상태가 성공적으로 변경되었습니다.",
-      data: result,
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "의뢰 상태 변경 중 오류가 발생했습니다.",
-      error: error.message,
-    });
-  }
+  const raw = String(req.body?.manufacturerStage || req.body?.status || "").trim();
+  const manufacturerStage = LEGACY_ADMIN_STATUS_TO_STAGE[raw] || raw;
+  req.body = { ...(req.body || {}), manufacturerStage };
+  return updateManufacturerStage(req, res);
 }
 
 export async function assignManufacturer(req, res) {

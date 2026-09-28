@@ -39,7 +39,7 @@ import {
   resolveFilledStlFile,
 } from "../../utils/filledStlFile.js";
 import { resolveDesignAccessForUser } from "../../utils/designAccess.js";
-import { fillUpperScrewHole } from "../../utils/screwHoleFill.js";
+import { fillUpperScrewHoleInWorker } from "../../utils/screwHoleFill.service.js";
 import {
   applyCuffBlendToFilledStl,
   emitCuffProposalUpdated,
@@ -547,9 +547,9 @@ export async function fillFilledStlHoleByRequestId(req, res) {
     }
 
     const source = await s3Utils.getObjectBufferFromS3(s3Key);
-    const result = fillUpperScrewHole(source);
+    const result = await fillUpperScrewHoleInWorker(source);
     if (!result.ok) {
-      throw new ApiError(422, result.reason || "스크류홀을 메우지 못했습니다.");
+      throw new ApiError(result.busy ? 503 : 422, result.reason || "스크류홀을 메우지 못했습니다.");
     }
 
     await putObjectToS3(s3Key, result.buffer, {

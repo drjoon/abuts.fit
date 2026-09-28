@@ -15,6 +15,7 @@
 import SystemSettings from "../../models/systemSettings.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { Types } from "mongoose";
+import { updateManufacturerMaxLeadDays } from "../businesses/leadTime.controller.js";
 import {
   DEFAULT_DELIVERY_ETA_LEAD_DAYS,
   getDeliveryEtaLeadDays,
@@ -251,28 +252,19 @@ export async function updateSystemSettings(req, res) {
       }
     });
 
-    const currentLeadDays = await getDeliveryEtaLeadDays();
-    const mergedLeadDays = {
-      ...currentLeadDays,
-      ...nextLeadDays,
-    };
-
-    const updatedDoc = await SystemSettings.findOneAndUpdate(
-      { key: "global" },
-      {
-        $setOnInsert: { key: "global" },
-        ...(rawLeadDays
-          ? { $set: { deliveryEtaLeadDays: mergedLeadDays } }
-          : {}),
-      },
-      { new: true, upsert: true, setDefaultsOnInsert: true },
-    ).lean();
+    // 조회(getDeliveryEtaLeadDays)와 같은 원본 = 제조사 리드타임의 최대 영업일.
+    if (Object.keys(nextLeadDays).length > 0) {
+      const saved = await updateManufacturerMaxLeadDays(nextLeadDays);
+      if (!saved) {
+        return res.status(409).json({
+          success: false,
+          message: "제조사 사업자가 없어 배송 리드타임을 저장할 수 없습니다.",
+        });
+      }
+    }
 
     const updatedSettings = {
-      deliveryEtaLeadDays: {
-        ...DEFAULT_DELIVERY_ETA_LEAD_DAYS,
-        ...(updatedDoc?.deliveryEtaLeadDays || {}),
-      },
+      deliveryEtaLeadDays: await getDeliveryEtaLeadDays(),
     };
 
     res.status(200).json({

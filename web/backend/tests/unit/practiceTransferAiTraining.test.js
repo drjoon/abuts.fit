@@ -119,44 +119,29 @@ describe("buildAiTrainingRecord", () => {
 });
 
 describe("isLabAiTrainingConsentAllowed", () => {
-  test("없으면 허용이고, false만 거부한다", () => {
+  test("약관 동의라 기공소 계정 값과 관계없이 허용한다", () => {
     expect(isLabAiTrainingConsentAllowed(undefined)).toBe(true);
-    expect(isLabAiTrainingConsentAllowed({})).toBe(true);
-    expect(isLabAiTrainingConsentAllowed({ allowed: true })).toBe(true);
-    expect(isLabAiTrainingConsentAllowed({ allowed: false })).toBe(true);
-    expect(
-      isLabAiTrainingConsentAllowed({
-        allowed: false,
-        updatedAt: new Date(),
-      }),
-    ).toBe(false);
+    expect(isLabAiTrainingConsentAllowed({ allowed: false, updatedAt: new Date() })).toBe(true);
   });
 });
 
 describe("resolveUnacceptedAiTrainingConsent", () => {
-  test("작업시작 전에는 현재 동의를 쓰고, 이후에는 스냅샷을 쓴다", () => {
-    const declined = { allowed: false, confirmedAt: new Date() };
+  test("작업시작 전에는 true, 이후에는 박힌 스냅샷을 쓴다", () => {
     expect(
-      resolveUnacceptedAiTrainingConsent(
-        { billing: { aiTrainingConsent: false } },
-        { aiTrainingConsent: { allowed: true, confirmedAt: new Date() } },
-      ),
+      resolveUnacceptedAiTrainingConsent({ billing: { aiTrainingConsent: false } }),
     ).toBe(true);
     expect(
-      resolveUnacceptedAiTrainingConsent(
-        {
-          requestorDownloadedAt: new Date(),
-          billing: { aiTrainingConsent: false },
-        },
-        { aiTrainingConsent: { allowed: true, confirmedAt: new Date() } },
-      ),
+      resolveUnacceptedAiTrainingConsent({
+        requestorDownloadedAt: new Date(),
+        billing: { aiTrainingConsent: false },
+      }),
     ).toBe(false);
     expect(
-      resolveUnacceptedAiTrainingConsent(
-        { billing: { aiTrainingConsent: false } },
-        { aiTrainingConsent: declined },
-      ),
-    ).toBe(false);
+      resolveUnacceptedAiTrainingConsent({
+        requestorDownloadedAt: new Date(),
+        billing: { aiTrainingConsent: true },
+      }),
+    ).toBe(true);
   });
 });
 

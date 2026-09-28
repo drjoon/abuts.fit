@@ -51,11 +51,20 @@ function decodeFaces(data, faceCount, vertexCount) {
   fail(`면 데이터를 읽지 못했습니다. (${lastError?.message || "unknown"})`);
 }
 
-function decodeFacesWithMode(data, faceCount, vertexCount, mode) {
+/**
+ * 경계 모서리 고리를 배열 대신 이중 연결 리스트로 둔다(splice면 면 수의 제곱).
+ * 고리 순서·커서 이동은 예전 배열 구현과 같다(tests/unit/scanbodyGeometry.test.js가 비교).
+ */
+export function decodeFacesWithMode(data, faceCount, vertexCount, mode) {
   const faces = new Uint32Array(faceCount * 3);
   let n = 0;
-  let edges = [];
-  let cur = 0;
+  // 모서리 노드: 시작 S, 끝 E, 고리 다음 NX·이전 PV. restart 때 비운다.
+  let S = [];
+  let E = [];
+  let NX = [];
+  let PV = [];
+  let len = 0;
+  let cur = -1;
   let ptr = 0;
   let pos = 0;
 
@@ -83,29 +92,65 @@ function decodeFacesWithMode(data, faceCount, vertexCount, mode) {
     return v;
   };
   const idx = () => (mode === 32 ? u32() : u16());
+  const node = (s, e) => {
+    S.push(s);
+    E.push(e);
+    NX.push(-1);
+    PV.push(-1);
+    return S.length - 1;
+  };
+  const link = (a, b) => {
+    NX[a] = b;
+    PV[b] = a;
+  };
   const restart = (a, b, c) => {
     push(a, b, c);
-    edges = [
-      { s: a, e: b },
-      { s: b, e: c },
-      { s: c, e: a },
-    ];
-    cur = 0;
+    S = [];
+    E = [];
+    NX = [];
+    PV = [];
+    const x = node(a, b);
+    const y = node(b, c);
+    const z = node(c, a);
+    link(x, y);
+    link(y, z);
+    link(z, x);
+    len = 3;
+    cur = x;
   };
   const extend = (v) => {
-    if (edges.length === 0) throw new Error("no edge");
-    const ce = edges[cur];
-    push(v, ce.e, ce.s);
-    edges.splice(cur, 1, { s: ce.s, e: v }, { s: v, e: ce.e });
-    cur = (cur + 2) % edges.length;
+    if (len === 0) throw new Error("no edge");
+    const cs = S[cur];
+    const ceEnd = E[cur];
+    push(v, ceEnd, cs);
+    const a = node(cs, v);
+    const b = node(v, ceEnd);
+    if (len === 1) {
+      link(a, b);
+      link(b, a);
+      cur = a;
+    } else {
+      const next = NX[cur];
+      link(PV[cur], a);
+      link(a, b);
+      link(b, next);
+      cur = next;
+    }
+    len += 1;
   };
-  const joinAt = (a, b, edge) => {
-    const high = Math.max(a, b);
-    const low = Math.min(a, b);
-    edges.splice(high, 1);
-    edges.splice(low, 1);
-    edges.splice(low, 0, edge);
-    cur = (low + 1) % edges.length;
+  /** 고리에서 이웃한 first → second 두 모서리를 (s, e) 하나로 바꾸고 그 다음으로 간다. */
+  const joinPair = (first, second, s, e) => {
+    const x = node(s, e);
+    if (len === 2) {
+      link(x, x);
+      cur = x;
+    } else {
+      const next = NX[second];
+      link(PV[first], x);
+      link(x, next);
+      cur = next;
+    }
+    len -= 1;
   };
 
   while (pos < data.length) {
@@ -116,26 +161,22 @@ function decodeFacesWithMode(data, faceCount, vertexCount, mode) {
         extend(ptr++);
         break;
       case 1: {
-        if (edges.length < 2) throw new Error("prev");
-        const prev = (cur - 1 + edges.length) % edges.length;
-        const pe = edges[prev];
-        const ce = edges[cur];
-        push(ce.s, pe.s, ce.e);
-        joinAt(cur, prev, { s: pe.s, e: ce.e });
+        if (len < 2) throw new Error("prev");
+        const prev = PV[cur];
+        push(S[cur], S[prev], E[cur]);
+        joinPair(prev, cur, S[prev], E[cur]);
         break;
       }
       case 2: {
-        if (edges.length < 2) throw new Error("next");
-        const next = (cur + 1) % edges.length;
-        const ce = edges[cur];
-        const ne = edges[next];
-        push(ce.s, ne.e, ce.e);
-        joinAt(cur, next, { s: ce.s, e: ne.e });
+        if (len < 2) throw new Error("next");
+        const next = NX[cur];
+        push(S[cur], E[next], E[cur]);
+        joinPair(cur, next, S[cur], E[next]);
         break;
       }
       case 3:
-        if (edges.length === 0) throw new Error("skip");
-        cur = (cur + 1) % edges.length;
+        if (len === 0) throw new Error("skip");
+        cur = NX[cur];
         break;
       case 4:
         restart(ptr, ptr + 1, ptr + 2);
@@ -154,28 +195,25 @@ function decodeFacesWithMode(data, faceCount, vertexCount, mode) {
         extend(u32());
         break;
       case 9: {
-        if (edges.length === 0) throw new Error("remove");
-        const len = edges.length;
-        const prev = (cur - 1 + len) % len;
-        const pe = edges[prev];
-        const ce = edges[cur];
-        if (pe.s === ce.e && len > 2) {
-          const high = Math.max(cur, prev);
-          const low = Math.min(cur, prev);
-          edges.splice(high, 1);
-          edges.splice(low, 1);
-          if (edges.length > 0) {
-            const np = (low - 1 + edges.length) % edges.length;
-            const nc = low % edges.length;
-            edges[np].e = edges[nc].s;
-            cur = nc;
-          } else {
-            cur = 0;
-          }
+        if (len === 0) throw new Error("remove");
+        const prev = PV[cur];
+        if (S[prev] === E[cur] && len > 2) {
+          const np = PV[prev];
+          const nc = NX[cur];
+          link(np, nc);
+          E[np] = S[nc];
+          cur = nc;
+          len -= 2;
         } else {
-          pe.e = ce.e;
-          edges.splice(cur, 1);
-          cur = edges.length ? cur % edges.length : 0;
+          E[prev] = E[cur];
+          if (len === 1) {
+            cur = -1;
+          } else {
+            const next = NX[cur];
+            link(prev, next);
+            cur = next;
+          }
+          len -= 1;
         }
         break;
       }

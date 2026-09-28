@@ -81,18 +81,6 @@ router.post(
 );
 
 router.post(
-  "/me/ai-training-consent",
-  authorize(["requestor", "internalLab", "admin"]),
-  businessController.setMyAiTrainingConsent,
-);
-
-router.post(
-  "/me/ai-training-first-work-start",
-  authorize(["requestor", "internalLab", "admin"]),
-  businessController.markMyAiTrainingFirstWorkStart,
-);
-
-router.post(
   "/me/exit-demo",
   authorize(["requestor", "practice"]),
   businessController.exitMyDemoMode,

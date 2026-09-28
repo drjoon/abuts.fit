@@ -1058,6 +1058,7 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
             uploadedAt: now,
           });
         // 커넥션 상단~커프 하단 이음부 G2 보정 후 같은 키에 덮어쓴다. DB·소켓보다 먼저 끝내야 프론트가 보정 전 STL을 캐시하지 않는다.
+        // 메시 worker 슬롯 대기는 CUFF_BLEND_AUTO_QUEUE_TIMEOUT_MS(기본 15초)로 끊고, 넘으면 보정 없이 failed(「커프 확인」)로 등록한다.
         const cuff = await applyAutoCuffBlendSafely({
           s3Key: s3Info?.s3Key,
           caseInfos: request?.caseInfos,

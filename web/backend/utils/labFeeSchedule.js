@@ -8,7 +8,8 @@
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
 // - web/backend/utils/roundBarAbutment.js
 // - web/frontend/src/features/settings/tabs/LabFeeScheduleTab.tsx
-// - 2026-09-11: 치과↔기공소 리메이크비 무료(LAB_FEE_REMAKE_FREE). CA 리메이크 기본가 0.
+// - 2026-09-28: 임시치아 스팬 어벗 합산은 임시치아 행만(같은 치아 커스텀어벗 행 이중 합산 제거). 스팬 안 레거시 Pontic 브리지 수가 별도 청구 제거.
+// - 2026-09-28: 치아당 CA 1회 — 보철+CA가 있는 치아의 단독 커스텀어벗 행은 과금·필요 수가·CA 건수에서 제외.// - 2026-09-11: 치과↔기공소 리메이크비 무료(LAB_FEE_REMAKE_FREE). CA 리메이크 기본가 0.
 // - 2026-09-09: PTX 리메이크 — CA 기본 제외 헬퍼. remake+CA 포함 시 기공소 CA 리메이크 수가 합산(어벗츠 retail은 제외).
 // - 2026-08-26: 미도입(요청중·도입중)도 기공소 커스텀어벗 수가를 합산(0원이면 미도입·수락 시 기공수가 포워드).
 // - 2026-08-25: 단독「커스텀어벗」은 심플이어도 지그제외 수가 대상. 크라운+심플만 수가 제외.
@@ -407,6 +408,7 @@ export function labFeeItemNamesNeededForToothWorks(toothWorks) {
     return toToothDecadeSortNumber(toothA) - toToothDecadeSortNumber(toothB);
   });
   const absorbed = absorbedNonTempTeethInTempSpans(rows);
+  const prosthesisCaTeeth = teethWithProsthesisCustomAbutment(rows);
   const names = [];
   const seen = new Set();
   for (const row of orderedRows) {
@@ -414,6 +416,12 @@ export function labFeeItemNamesNeededForToothWorks(toothWorks) {
     if (toothNumber && !/^[1-4][1-8]$/.test(toothNumber)) continue;
     if (absorbed.has(toothNumber)) continue;
     const prosthesisType = row?.prosthesisType || row?.type;
+    if (
+      isCustomAbutmentProsthesisType(prosthesisType) &&
+      prosthesisCaTeeth.has(toothNumber)
+    ) {
+      continue;
+    }
     const simple = isSimpleAbutmentModeForFee(row);
     const name = labFeeItemNameForProsthesisType(prosthesisType);
     if (
@@ -1312,8 +1320,10 @@ export function buildRemakeToothWorksFromSelectedParts(
 }
 
 export function countCustomAbutmentWorks(toothWorks) {
-  return (Array.isArray(toothWorks) ? toothWorks : []).filter((row) =>
-    isCustomAbutmentWork(row),
+  return pickCustomAbutmentRowPerTooth(
+    (Array.isArray(toothWorks) ? toothWorks : []).filter((row) =>
+      isCustomAbutmentWork(row),
+    ),
   ).length;
 }
 
@@ -1354,6 +1364,48 @@ export function isSimpleAbutmentModeForFee(row) {
   return SIMPLE_ABUTMENT_KINDS.has(
     String(row?.abutmentManufacturer || row?.manufacturer || "").trim(),
   );
+}
+
+/**
+ * 보철(크라운·브리지·임시치아)+CA가 걸린 치아. 후속 행은 원 입력이 아니라 제외.
+ * 같은 치아의 단독「커스텀어벗」행은 이 치아의 CA와 같은 어벗이다(치아당 CA 1회).
+ */
+export function teethWithProsthesisCustomAbutment(toothWorks) {
+  const teeth = new Set();
+  for (const row of Array.isArray(toothWorks) ? toothWorks : []) {
+    const tooth = String(row?.toothNumber || row?.tooth || "").trim();
+    if (!/^[1-4][1-8]$/.test(tooth)) continue;
+    if (isFollowUpProsthesisPhase(row)) continue;
+    const prosthesisType = String(row?.prosthesisType || row?.type || "").trim();
+    if (isCustomAbutmentProsthesisType(prosthesisType)) continue;
+    if (!isCustomAbutmentWork(row) || isSimpleAbutmentModeForFee(row)) continue;
+    teeth.add(tooth);
+  }
+  return teeth;
+}
+
+/**
+ * 치아당 CA 행 1개. 보철+CA(원 입력) > 단독 커스텀어벗 > 후속 행 순으로 고른다.
+ * @param {Array<object>} rows CA 행 목록(호출부에서 CA 여부를 이미 거른 행)
+ */
+export function pickCustomAbutmentRowPerTooth(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  const rank = (row) => {
+    if (isFollowUpProsthesisPhase(row)) return 2;
+    const type = String(row?.prosthesisType || row?.type || "").trim();
+    return isCustomAbutmentProsthesisType(type) ? 1 : 0;
+  };
+  const best = new Map();
+  for (const row of list) {
+    const tooth = String(row?.toothNumber || row?.tooth || "").trim();
+    if (!tooth) continue;
+    const prev = best.get(tooth);
+    if (!prev || rank(row) < rank(prev)) best.set(tooth, row);
+  }
+  return list.filter((row) => {
+    const tooth = String(row?.toothNumber || row?.tooth || "").trim();
+    return !tooth || best.get(tooth) === row;
+  });
 }
 
 /** @deprecated pending 판별은 IMPLANT_ADD_REQUEST_OPTION / implantAddRequest 사용 */
@@ -2417,8 +2469,17 @@ export function computePracticeTransferRetailFees({
   let abutmentQuotePending = false;
   let abutmentQty = 0;
   const bridgeTeethBilled = new Set();
+  const prosthesisCaTeeth = teethWithProsthesisCustomAbutment(rows);
+  const caTeethBilled = new Set();
+  const noAbutmentSplit = () => ({
+    abuts: 0,
+    lab: 0,
+    pending: false,
+    quote: false,
+    feeName: "",
+  });
 
-  const abutmentSplitForRow = (row) => {
+  const rawAbutmentSplitForRow = (row) => {
     if (
       skipAllAbutment ||
       isFollowUpProsthesisPhase(row) ||
@@ -2450,6 +2511,17 @@ export function computePracticeTransferRetailFees({
       quote: kind === "round_bar" && lab === 0,
       feeName,
     };
+  };
+  // 치아당 CA 1회 — 먼저 잡힌 치아는 다른 행에서 다시 합산하지 않는다.
+  const abutmentSplitForRow = (row) => {
+    const split = rawAbutmentSplitForRow(row);
+    if (split.abuts <= 0 && split.lab <= 0 && !split.pending && !split.quote) {
+      return split;
+    }
+    const tooth = String(row?.toothNumber || row?.tooth || "").trim();
+    if (tooth && caTeethBilled.has(tooth)) return noAbutmentSplit();
+    if (tooth) caTeethBilled.add(tooth);
+    return split;
   };
   const addAbutment = (split) => {
     if (split.abuts > 0 || split.quote) {
@@ -2499,6 +2571,8 @@ export function computePracticeTransferRetailFees({
     }
 
     if (isCustomAbutmentProsthesisType(prosthesisType)) {
+      // 같은 치아 보철+CA가 있으면 그 지그포함 CA 한 번만(단독 행은 중복 입력).
+      if (prosthesisCaTeeth.has(toothNumber)) continue;
       if (useRemake) {
         if (isSimpleAbutmentModeForFee(row)) continue;
         const remakeFee = resolveLabAbutmentUnitPrice(items, true, false);
@@ -2676,6 +2750,8 @@ export function computePracticeTransferRetailFees({
         for (const row of rows) {
           const tooth = String(row?.toothNumber || row?.tooth || "").trim();
           if (!group.teeth.includes(tooth)) continue;
+          // 같은 치아의 커스텀어벗·브리지 행은 위 행 루프에서 이미 어벗을 합산했다.
+          if (!isRemovableTempProsthesisType(feeRowType(row))) continue;
           const split = abutmentSplitForRow(row);
           addAbutment(split);
           if (
@@ -2941,6 +3017,15 @@ function absorbedNonTempTeethInTempSpans(allRows) {
   const absorbed = new Set();
   for (const group of listTempBridgeFeeGroups(rows)) {
     for (const tooth of group.teeth) {
+      // 레거시 Pontic은 임시치아 세트 칸으로만 센다(브리지 수가 별도 청구 금지).
+      const ownRows = rows.filter((row) => feeRowTooth(row) === tooth);
+      if (
+        ownRows.length > 0 &&
+        ownRows.every((row) => isPonticProsthesisType(feeRowType(row)))
+      ) {
+        absorbed.add(tooth);
+        continue;
+      }
       const hasPrimaryFinal = finalRows.some((row) => feeRowTooth(row) === tooth);
       if (hasPrimaryFinal) continue;
       const coveredElsewhere = finalRows.some(

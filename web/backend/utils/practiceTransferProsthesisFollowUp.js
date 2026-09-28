@@ -12,6 +12,8 @@
 // - 2026-09-01: 임시치아 배송 후 동일 건에 크라운/브리지 후속 추가(어벗 재청구 없음).
 // - 2026-09-21: 보철 종류 변경 리메이크(인레이→크라운 등) — 임시치아→지르와 동일, 단계 최고가만 청구.
 // - 2026-09-23: 주문 변경 — 동일 종류라도 어벗·쉐이드·임플란트 스펙 차이면 허용.
+// - 2026-09-28: buildToothWorkDisplayByTooth — FE와 같이 후속 스팬 연결치는 원 행이 있어도 후속 형태.
+// - 2026-09-28: 차트 CA·스펙은 원 입력만(9/22 후속 CA 우선 철회). 치아별 후속 행이 겹쳐도 원 행 기준.
 import { isPracticeTransferDeletedStatus } from "./practiceTransferStage.js";
 
 const TEMP_TYPES = new Set(["임시치아", "가철성임시치아"]);
@@ -428,21 +430,21 @@ export const mergeToothWorkRowsForChartDisplay = (rows) => {
   const base = bases.length > 0 ? bases[bases.length - 1] : null;
 
   if (followUp && base) {
-    const preferFollowUpCa = Boolean(followUp.customAbutment);
+    // CA·스펙은 원 입력(임시치아 등)만 — 후속 행 CA는 스팬 첫 치아에서 복사된 값이라 쓰지 않는다.
     const merged = {
       ...followUp,
       toothNumber: String(base.toothNumber || followUp.toothNumber || "").trim(),
     };
     for (const key of DISPLAY_ABUTMENT_SPEC_KEYS) {
       if (key === "customAbutment") {
-        merged.customAbutment =
-          preferFollowUpCa || Boolean(base.customAbutment);
+        merged.customAbutment = Boolean(base.customAbutment);
         continue;
       }
-      if (preferFollowUpCa) continue;
       const value = base[key];
       if (value != null && String(value).trim() !== "") {
         merged[key] = value;
+      } else {
+        delete merged[key];
       }
     }
     return merged;
@@ -468,13 +470,23 @@ export const buildToothWorkDisplayByTooth = (toothWorks) => {
     if (merged) map.set(tooth, { ...merged, toothNumber: tooth });
   }
 
+  // 후속 스팬 연결치는 원 임시치아 행이 있어도 후속 형태(브리지/크라운)로 맞춘다.
+  // (앵커만 브리지·연결치는 임시치아로 남는 표시 섞임 방지)
+  // CA·스펙은 그 치아의 원 행과 합친다(앞서 합친 후속 결과와 합치면 원 입력이 사라진다).
   for (const row of Array.isArray(toothWorks) ? toothWorks : []) {
-    const linked = Array.isArray(row?.bridgeLinkedTeeth)
-      ? row.bridgeLinkedTeeth.map((t) => String(t || "").trim()).filter(Boolean)
-      : [];
-    for (const tooth of linked) {
-      if (!/^[1-4][1-8]$/.test(tooth) || map.has(tooth)) continue;
+    if (
+      !isFollowUpProsthesisPhase(row) ||
+      !isFinalProsthesisType(row?.prosthesisType)
+    ) {
+      continue;
+    }
+    for (const tooth of linkedTeethOf(row)) {
+      if (!/^[1-4][1-8]$/.test(tooth)) continue;
+      const ownBaseRows = (ownByTooth.get(tooth) || []).filter(
+        (candidate) => !isFollowUpProsthesisPhase(candidate),
+      );
       const borrowed = mergeToothWorkRowsForChartDisplay([
+        ...ownBaseRows,
         { ...row, toothNumber: tooth },
       ]);
       if (borrowed) map.set(tooth, { ...borrowed, toothNumber: tooth });

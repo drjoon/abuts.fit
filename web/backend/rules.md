@@ -80,7 +80,7 @@
 - **비 3Shape**: STL/PLY/OBJ 등 현행처럼 웹앱에 업로드해 기공의뢰와 함께 전송.
 - **UI**: Communicate/TRIOS 전용 안내 탭·배너·문구 없음.
 - **작업 스캔 자동 정렬**: 의뢰 상악·하악·바이트가 모두 있으면 `jobs/workScanAutoAlignWorker.js`가 AI 디자인 모델 정렬(바이트 맞춤 + 교합 원점)을 돌려 `production.labWorkScanFiles`에 작업 DCM 3역할을 넣는다. 치과·기공소 모두 작업 파일로 보고, AI 디자인은 이 좌표에서 시작한다.
-  - 대기열: 의뢰 파일이 바뀌는 경로(`schedulePracticeScanAlignment`·휴지통/복원·작업시작 첨부)에서 `queueWorkScanAutoAlign`. 기동 시 상태 없는 기존 의뢰를 백필. 상태는 `production.workScanAutoAlign`.
+  - 대기열: **새 스캔 업로드 직후 한 번만** `queueWorkScanAutoAlign`(생성·리메이크·파일 추가 `schedulePracticeScanAlignment(id, { newUpload: true })`, 작업시작 첨부). 기존 의뢰는 백필하지 않는다. AI 디자인이 열 때 브라우저에서 맞춘다. 휴지통·복원·역할 변경은 재계산 없이 `dropStaleWorkScanAutoAlign`으로 예전 자동 작업 스캔만 비운다. 워커는 `source: "upload"` 대기만 맡고, 건 사이 `WORK_SCAN_AUTO_ALIGN_COOLDOWN_MS`(기본 5초) 쉰다. 워커 힙 기본 1024MB. 상태는 `production.workScanAutoAlign`.
   - 기공소가 직접 저장한 작업 스캔(잡이 넣은 `fileKeys` 밖의 키)이 있으면 덮지 않는다(`skipped`/`lab-work`).
   - 계산 코드는 프론트 `shared/practice/workScanAutoAlign.ts`의 Node 번들 `vendor/workScanAutoAlign/workScanAutoAlign.mjs`(생성물). 정렬·파서 코드를 바꾸면 `npm --prefix ../frontend run build:work-scan-align`으로 다시 만든다(`npm run build`·`eb.sh`도 만든다). 끄기: `WORK_SCAN_AUTO_ALIGN_WORKER_ENABLED=false`.
 
@@ -161,6 +161,16 @@
 - 해석은 `worker_threads`(수십 MB면 CPU 수 초). 원본 바이트는 저장하지 않고, 검증한 좌표로 새로 만든 STL만 둔다. 병합은 `optimisticConcurrency` + 재시도.
 - 배포 전: 버킷 격리 prefix에 GuardDuty Malware Protection for S3를 켜고, 서버 IAM에 `s3:GetObjectTagging`을 준다. 켜기 전에는 `SCANBODY_MALWARE_SCAN=off`로만 테스트한다.
 - SSOT: `services/scanbodyLibraryUpload.service.js`, `services/scanbodyLibraryImport.service.js`, `utils/safeUnzip.js`, `utils/scanbodyGeometry.js`.
+
+### 심플어벗 템플릿 업로드 (관리자 검토 · 차단 목록)
+
+- API 서버는 템플릿 .dcm을 받지도 열지도 않는다. 브라우저가 축·치수(`meta`)를 계산해 `POST /api/scanbody-libraries/templates/uploads { fileName, size, meta }`로 보내고, 원본은 presigned POST로 `scanbody-library/hold/<id>.bin`에 올린 뒤 `.../complete`를 부른다. 이때 상태는 `pending_review`다.
+- 관리자가 `POST .../templates/uploads/:id/approve`(열어 보기)를 누르면 `scanbody-library/quarantine/<id>.bin`로 복사하고 보류본은 지운다. 그 뒤는 라이브러리와 같다. GuardDuty 태그가 `NO_THREATS_FOUND`여야 하고, 워커(`abutmentTemplateImport.worker.js`, 60초·메모리 한도)가 해석한다. 결과는 `scanbody-library/<hash>.stl`(gzip)과 `AbutmentTemplate` upsert다. `.../reject { reason, malicious }`(폐기)는 열지 않고 보류본을 지운다.
+- 상태(`AbutmentTemplateUpload`): uploading → pending_review → scanning → processing → done, 거절이면 rejected, 시간 초과·오류면 failed. 관리자가 올린 건은 격리 경로로 바로 올라가 검토를 건너뛴다(`autoApproved`). 검토가 30일 안 되면 failed로 바꾸고 보류본을 지운다.
+- 검사 예산(`assertDailyScanBudget`)은 라이브러리와 합산한다. 템플릿은 검사를 시작한 날(`scanStartedAt`) 기준이다. 사용자당 시간당 30건, 기공소당 검토 대기 40건까지 받는다.
+- `GET /api/scanbody-libraries`의 `templates`에는 done만 들어간다. 진행 중인 건은 `templateUploads`에만 있고, AI 디자인은 형상을 받지 않는다.
+- 차단 목록(`UploadBlocklist`): GuardDuty `THREATS_FOUND`(라이브러리·템플릿)이나 관리자 악성 폐기가 나오면 올린 사용자를 넣는다. 그 사용자나 같은 사업자는 라이브러리·템플릿 업로드 생성에서 403을 받는다. 관리자 API는 `GET /blocklist`, `DELETE /blocklist/:id`(해제, 기록은 `active=false`로 남김)다.
+- 인프라: GuardDuty Malware Protection은 `scanbody-library/quarantine/` prefix만 보호해야 한다. `hold/`까지 보호하면 검토 전에 검사 비용이 든다. 버킷 전체를 보호해도 안 된다. 서버 IAM에는 CopyObject(`hold/` GetObject, `quarantine/` PutObject·PutObjectTagging)와 `s3:GetObjectTagging` 권한이 있어야 한다.
 
 ### 어벗 STL JS 파이프라인 (Rhino 대체 · 섀도 모드)
 
@@ -322,7 +332,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - 기공소 기존 거래처 · 기공정산크레딧 SSOT:
   - `LabTradingPartner`: lab 창 시작일=`max(pricingBaseDate, 2026-08-11)`부터 30일간 발급된 초대는 검증 완료 시 `status=active`(소개 치과). 30일 경과 후에도 초대 발급은 계속 허용하되(`invitedAfterWindow=true`), 검증 완료 시 `status=referred`로 승격된다. 플랫폼 수수료는 등록 여부와 무관하다.
   - 초대 링크 → 치과 가입 → 사업자 `verified` 시 `status=active|referred`(발급 시점의 `invitedAfterWindow`로 결정). API: `/api/lab-trading-partners`
-  - 기공비: `BusinessAnchor.labFeeSchedule`(crown/bridge/inlay/pontic + items). **마스터 `active`(기본 off)가 켜져야 설정 완료.** 수가 디폴트는 기본값·항목 on. 꺼져 있으면 청구 0원(로그인 시 설정 탭 유도). **지정 의뢰 `mark-accepted`는 마스터 On + 해당 보철 제공 항목 수가 필수** — 항목 Off·0원이면 `409` `reason=lab_fee_unconfigured`(+`missingFeeNames`, 기공비 설정 탭에서 해당 카드 하이라이트). 치과 UI는 `견적 0만원` 대신 기공비 미설정. PTX CA는 기공소 수가이므로 해당 항목 Off·0원이면 수락 차단(`missingFeeNames`). 임시치아는 설정 카드 두 장(이름 모두 「임시치아」, 3치 이하·6치 이하)으로 분리하고, 의뢰서 「임시치아」 청구 시 치아 수 구간으로 합산. 유지장치는 연결 스팬당 1세트(같은 악궁이어도 `+`로 끊기면 별도 세트, 연결 정보 없는 레거시는 악궁당 1세트). **PTX 커스텀어벗 치과 청구:** 단독=기공소 `커스텀어벗(지그제외)`(기본 3만), 크라운·브리지·임시치아 등 보철+어벗=기공소 `커스텀어벗(지그포함)`(기본 4만). 레거시 항목명「커스텀어벗」은 지그포함으로 승격. 어벗츠 플랫폼 단가(생산 1.5만·디자인+생산 2.5만, `creditSettings.membership*`)는 **기공소→어벗츠 Request**. **크라운·브리지·임시치아에 어벗을 붙이면 기공수가 + 지그포함 수가.** 유지장치에 남은 커스텀 플래그는 어벗 과금하지 않는다. 브리지 스팬의 `작업X`는 보철이 아니므로 기공비·어벗 단가에서 제외. **기공소가 카탈로그에 없는 신규 항목을 저장하면** `SystemSettings.abutsLabFeeSchedule`에 **Off·`pendingReview`**로 동기화하고 `abuts-lab-fee:pending-items`로 관리자에게 알린다(관리자「어벗츠 수가」에서 검증 후 On=적용).
+  - 기공비: `BusinessAnchor.labFeeSchedule`(crown/bridge/inlay/pontic + items). **마스터 `active`(기본 off)가 켜져야 설정 완료.** 수가 디폴트는 기본값·항목 on. 꺼져 있으면 청구 0원(로그인 시 설정 탭 유도). **지정 의뢰 `mark-accepted`는 마스터 On + 해당 보철 제공 항목 수가 필수** — 항목 Off·0원이면 `409` `reason=lab_fee_unconfigured`(+`missingFeeNames`, 기공비 설정 탭에서 해당 카드 하이라이트). 치과 UI는 `견적 0만원` 대신 기공비 미설정. PTX CA는 기공소 수가이므로 해당 항목 Off·0원이면 수락 차단(`missingFeeNames`). 임시치아는 설정 카드 두 장(이름 모두 「임시치아」, 3치 이하·6치 이하)으로 분리하고, 의뢰서 「임시치아」 청구 시 치아 수 구간으로 합산. 유지장치는 연결 스팬당 1세트(같은 악궁이어도 `+`로 끊기면 별도 세트, 연결 정보 없는 레거시는 악궁당 1세트). **PTX 커스텀어벗 치과 청구:** 단독=기공소 `커스텀어벗(지그제외)`(기본 3만), 크라운·브리지·임시치아 등 보철+어벗=기공소 `커스텀어벗(지그포함)`(기본 4만). 레거시 항목명「커스텀어벗」은 지그포함으로 승격. 어벗츠 플랫폼 단가(생산 1.5만·디자인+생산 2.5만, `creditSettings.membership*`)는 **기공소→어벗츠 Request**. **크라운·브리지·임시치아에 어벗을 붙이면 기공수가 + 지그포함 수가.** 유지장치에 남은 커스텀 플래그는 어벗 과금하지 않는다. **CA는 치아당 1회**: 같은 치아에 보철+CA(임시치아·크라운·브리지)와 단독「커스텀어벗」행이 함께 있으면 보철 쪽 지그포함 1회만 청구(견적·보류·청구 공통 `computePracticeTransferRetailFees`, 필요 수가 `missingLabFeeItemNames`, CA 건수 `countCustomAbutmentWorks`, 어벗츠 CA Request `listCustomAbutmentToothWorks`=`pickCustomAbutmentRowPerTooth`). 임시치아 스팬 어벗은 임시치아 행에서만 합산하고, 스팬 안 레거시 Pontic은 세트 칸으로만 센다(브리지 별도 청구 금지). **후속 보철(followUp) CA**: 과금·차트 표시 모두 **원 입력(임시치아 등) 행**의 CA·스펙만 쓴다. 후속 행 `customAbutment`는 스팬 첫 치아에서 복사된 값이라 무시(`mergeToothWorkRowsForChartDisplay`/`buildToothWorkDisplayByTooth`, FE `prosthesisFollowUp.ts` 미러). **견적 라인 치아번호**: 줄 사이는 번대 순 10→20→30→40번대(`sortPracticeTransferFeeLines`, 같은 번대는 임시치아→보철→커스텀어벗 줄). 한 줄 안(임시치아 세트 등)은 **차트 순**(상악 18→11·21→28, 하악 48→41·31→38 — 예: `33,34`, `46,45,44`), 악궁 16치 전부면 `상악`/`하악` 축약(`formatToothNumbersForFeeLine`, FE `transferMemo.formatToothNumbersForFeeLine` 동일). 브리지 스팬의 `작업X`는 보철이 아니므로 기공비·어벗 단가에서 제외. **기공소가 카탈로그에 없는 신규 항목을 저장하면** `SystemSettings.abutsLabFeeSchedule`에 **Off·`pendingReview`**로 동기화하고 `abuts-lab-fee:pending-items`로 관리자에게 알린다(관리자「어벗츠 수가」에서 검증 후 On=적용).
   - **PTX 협력/하청 수가·할증 vs 정산(강제):**
     - **협력**(`assigneeKind=cooperation`): 수가표·할증=**수행 기공소**. 견적·보류·청구는 치과↔지정 기공소와 동일.
     - **하청**(`assigneeKind=subcontract`)·어벗츠 자체: 수가표·할증=**원청 어벗츠**.
@@ -335,6 +345,10 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - **신규 작성 동일건 감지(`GET /api/practice/transfers/check-similar`)**: 환자명+치아(overlap)·감지 창 기본 **30년**(=`FREE_REMAKE_YEARS_MAX`). lean·견적 없음. 매치에 `freeRemakeYears`·`withinRemakePricingWindow`(기공소 설정 기준). 리메이크면 `POST /`에 `isRemake`+`remakeSourceTransferMongoId`로 원의뢰 연결·기공소 「리메이크」표시.
     - **자동 매칭 성공**(`matchingMode=auto`): 플랫폼 수수료 **0**(레거시 `platformFeeRate` 저장값과 무관).
     - **지정·협력**: 플랫폼 사용료 `directPlatformFeeRate`(기본 **2%**). 적용 off(`directPlatformFeeEnabled=false`, 기본)=이벤트 면제 0%. **하청**은 `subcontractFeeRate`(기본 10%) + 사용료. **어벗츠기공본부 수행은 항상 면제**(`billing.internalPerformer` 또는 수행 기공소 `businessType=internalLab`). 학습 이용 동의는 요율에 반영하지 않는다. 요율은 작업시작·클레임 때 `billing.feeRateApplied`로 박히고 이후 스위치·요율 변경은 소급하지 않는다. SSOT `resolveLabPlatformFeeRate` / `resolvePracticeTransferFeeRate`. **어벗츠기공본부는 항상 학습에 포함.**
+    - **학습 이용 동의:** 약관으로 받는다. 기공소별 허용 스위치·첫 작업시작 확인은 없다(`/me/ai-training-*` API 제거). 작업시작 스냅샷 `billing.aiTrainingConsent`는 항상 true. 예전 정책에서 false로 박힌 건과 스냅샷 없는 예전 의뢰만 학습에서 뺀다(`practiceTransferAiTraining.js`). 보철 업로드 요구는 치과 설정(`requireLabProsthesisUpload`)이 SSOT이고 협력 건에만 적용, 어벗츠 자체·하청은 항상 필수.
+    - **하청 취소:** 원청은 작업시작 또는 하청 중 하나만. 풀을 연 뒤 아무도 가져가지 않았으면 `POST /:transferId/close-subcontract`로 닫고 작업시작·하청 전환이 다시 보인다(조건부 갱신, 풀 기공소 수신함에 `subcontract-pool-closed`).
+    - **정산 분리:** 크레딧은 치과→어벗츠기공소(→협력·하청 기공소). 원청이 매입금을 넘길 때 차감액(`feeRateApplied`) 중 **플랫폼 사용료 몫**(`billing.platformFeeRateApplied`, 작업시작·클레임 때 스냅샷, `resolvePracticeTransferPlatformFeeRate`)은 `PRACTICE_TRANSFER_LAB_PLATFORM_FEE` 매출로, **하청 수수료 몫**만 원청 `LAB_SETTLEMENT_CREDIT`에 남긴다(`resolvePlatformUsageFee`). 협력=차감 전부가 사용료. 스냅샷 없는 예전 하청 건은 전부 원청 몫.
+    - **하청 풀 경합:** 원청 직접 작업시작은 과금 전에 `requestorDownloadedAt: null` 조건부로 선점하고, 하청 클레임도 같은 조건을 건다. 원청이 작업시작한 뒤에는 하청 풀을 열 수 없다(`canOpenPracticeTransferSubcontract`). 하청 클레임 과금 실패는 치과 보류를 풀지 않고 클레임만 되돌려 풀을 다시 연다.
     - 걷힌 수수료 금액의 잔여 분배: 제조사는 하청 고정단가 경로와 분리. 수수료 잔액은 딜러사·개발운영사·어벗츠 상대비율로 재분배(루트 `rules.md` §2.3).
     - 자동 매칭 식별 정보: 레거시 `matchingMode=auto` 건만 마스킹 유지. **신규 의뢰 수가·할증:** 협력=수행 기공소, 하청·어벗츠 자체=원청. 정산만 어벗츠 경유. 치과 평가=별점만(기공비 할인/할증 없음, 수행 기공소·하청 포함). 하한·상한 설정으로 지정 수신 게이트. 원청 하청 풀은 별점으로 거르지 않는다. 기공소「치과 평가」=할증. 자동매칭 신규 작성·별점 기공비 배수는 쓰지 않음.
   - `isTradingPartner`(boolean)는 `active` 관계에서만 true. 거래처(`active`)만 커스텀어벗 생산의뢰 시 기공소 **유료/무료크레딧**에서 생산단가 강제 차감(치과 재차감 금지); `referred`/그 외는 기존처럼 청구 총액에 생산원가가 포함된 것으로 보고 별도 차감 없음.
@@ -433,6 +447,10 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 하위호환 입력: 레거시 `0`/`30`, `헥스40도회전`/`헥스10도회전`/`헥스X도회전` → `STL모델+`
   - 미지원/빈값은 request-meta 응답 및 저장 로직에서 즉시 오류로 처리합니다.
 - `manufacturerStage` request 단계 SSOT는 `준비` 단일값입니다. (`의뢰`, `request` 저장/비교 금지)
+- 공정 단계 변경 SSOT: `PATCH /api/requests/:id/status` `{ manufacturerStage }`. 의뢰자는 `취소`만, 그 밖의 단계(복구 `준비` 등)는 관리자만. 레거시 입력 `의뢰`는 `준비`로 받는다. `PATCH /api/admin/requests/:id/status`는 예전 `{ status }`(준비·가공·발송→포장.발송·완료→추적관리·취소)를 바꿔 같은 핸들러로 넘긴다.
+- 배송 리드타임 SSOT는 제조사 `shippingPolicy.leadTimes`. `PUT /api/admin/settings` `deliveryEtaLeadDays`는 조회와 같은 제조사 문서의 `maxBusinessDays`를 바꾼다(`updateManufacturerMaxLeadDays`). `SystemSettings.deliveryEtaLeadDays`는 쓰지 않는다.
+- 파일 목록 API(`GET /api/files`, `/my`, `/request/:id`)는 사용처가 없어 제거했다.
+- 제조의뢰 제출(`POST /api/requests/from-draft`): 잔액 사전검사(402) → insert 트랜잭션 → **크레딧 보류(`holdRequestCreditsOnSubmit`)를 응답 전에** 끝낸다. 보류 실패면 방금 만든 의뢰를 `취소`로 남기고 402(잔액 경합)/500으로 응답한다. 201 뒤 조용한 자동 취소는 없다. Rhino 트리거·알림·헥스 샘플·대시보드 갱신은 보류 성공 뒤(대시보드·샘플은 응답 후).
 - 의뢰 취소 정책 SSOT: `PATCH /api/requests/:id/status`로 `manufacturerStage=취소` 시
   정규화 단계가 `request`(준비)인 경우만 허용. 불완전가공(`rnd.unmachinableAt`)은 예외로 취소 가능.
   - 레거시 문구/판정(`의뢰 또는 CAM 단계`) 사용 금지.
@@ -854,6 +872,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - Jest DB 안전(강제): `tests/setup.js`는 **로컬 Mongo만** 연결/wipe 한다.
       `MONGODB_URI_TEST`가 Atlas(`mongodb+srv` / `mongodb.net`)이면 연결 전에 실패하고 `deleteMany`를 실행하지 않는다.
       가드 SSOT: `tests/mongoSafety.js`. 공유 `abuts_fit_test`에 export 후 jest 실행 금지.
+    - 통합 테스트: `npm run test:integration`(`JEST_MEMORY_MONGO=true`)이 `tests/globalSetup.js`로 일회용 로컬 replica set(`mongodb-memory-server-core`)을 띄우고 끝나면 정리한다. 셸의 Atlas URI는 무시한다. `tests/setup.js`는 app import 전에 env 파일 로드를 막고 Mongo URI 키 4개를 Jest URI로 고정하며, 연결이 열린 뒤 접속 host 전체가 로컬인지 확인하고서만 비운다. 파일마다 연결은 `tests/jestMongoEnvironment.js`가 닫는다(`--forceExit` 불필요).
     - requests 유실 원인(2026-08-07): Jest `tests/setup.js`의 `afterEach/afterAll clearCollections()`가
       `mongoose.connection.collections`에 등록된 모델에 `deleteMany({})`를 수행함.
       `export MONGODB_URI_TEST=<Atlas abuts_fit_test>` 후

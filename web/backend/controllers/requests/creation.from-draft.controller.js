@@ -8,6 +8,7 @@
 // - web/frontend/src/pages/requestor/new_request/hooks/useNewRequestSubmitV2.ts
 // - web/backend/rules.md
 // change-log:
+// - 2026-09-28: credit hold를 201 전으로. 실패 시 취소하고 402/500 한 번으로 응답(201 뒤 조용한 취소 없음).
 // - 2026-09-09: 리메이크 월 무료 쿼터 응답(remakeQuota) 제거. 과금은 computePriceForRequest 고정 1만원.
 // - 2026-08-21: 잔액 사전검사 후 insert만 txn. credit hold·stage-changed는 201 finish·스냅샷 이후.
 // - 2026-08-21: 헥스 확인 샘플 생성·대시보드 refresh를 201 finish 이후로 미룸(제출 응답 단축).
@@ -227,6 +228,35 @@ const generateRequestIdBatch = (count) => {
  *
  * @route POST /api/requests/from-draft
  */
+/** 크레딧 보류가 실패한 방금 만든 의뢰를 취소로 남긴다(감사 기록 유지). */
+async function cancelRequestsAfterHoldFailure(requests, actorUserId) {
+  const ids = (Array.isArray(requests) ? requests : [])
+    .map((row) => row?._id)
+    .filter(Boolean);
+  if (ids.length === 0) return;
+  try {
+    await Request.updateMany(
+      { _id: { $in: ids } },
+      {
+        $set: { manufacturerStage: "취소" },
+        $push: {
+          statusHistory: {
+            status: "취소",
+            note: "크레딧 보류 실패로 접수하지 않음",
+            updatedBy: actorUserId || null,
+            updatedAt: new Date(),
+          },
+        },
+      },
+    );
+  } catch (cancelErr) {
+    console.error(
+      "[createRequestsFromDraft] cancel after hold failure failed",
+      cancelErr?.message || cancelErr,
+    );
+  }
+}
+
 export async function createRequestsFromDraft(req, res) {
   try {
     const startTime = Date.now();
@@ -1221,7 +1251,7 @@ export async function createRequestsFromDraft(req, res) {
       });
     }
 
-    // 크레딧 보류는 201 응답 이후. 부족분은 생성 전에 막아 402 UX 유지.
+    // 부족분은 생성 전에 막아 402. 실제 보류는 insert 직후·응답 전(동시 제출 경합도 402로 응답).
     let creditBalanceForHold = null;
     if (!isPracticeRoutingSubmission && preparedCasesForCreate.length > 0) {
       creditBalanceForHold = await getBusinessCreditBalanceBreakdown({
@@ -1762,10 +1792,45 @@ export async function createRequestsFromDraft(req, res) {
         deferredCreditHoldContext = {
           requests: [...createdRequests],
           actorUserId: req.user?._id || null,
-          shippingFee: shippingFeePerBox,
-          seedBalance: creditBalanceForHold,
-          devopsAnchorId: devopsAnchorIdPrefetch,
         };
+        // 크레딧 보류는 응답 전에 끝낸다. 성공/실패를 응답 한 번으로 정확히 알린다.
+        // (동시 제출로 사전검사 뒤 잔액이 모자라면 여기서 402)
+        const holdT0 = Date.now();
+        try {
+          await holdRequestCreditsOnSubmit({
+            requests: createdRequests,
+            actorUserId: req.user?._id || null,
+            session: null,
+            shippingFee: shippingFeePerBox,
+            seedBalance: creditBalanceForHold,
+            devopsAnchorId: devopsAnchorIdPrefetch,
+          });
+          console.log("[createRequestsFromDraft] credit hold done", {
+            t: Date.now() - startTime,
+            dt: Date.now() - holdT0,
+            created: createdRequests.length,
+          });
+        } catch (holdErr) {
+          console.error(
+            "[createRequestsFromDraft] credit hold failed",
+            holdErr?.message || holdErr,
+          );
+          await cancelRequestsAfterHoldFailure(createdRequests, req.user?._id || null);
+          const holdStatus = Number(holdErr?.statusCode || 0) === 402 ? 402 : 500;
+          return res.status(holdStatus).json({
+            success: false,
+            message:
+              holdStatus === 402
+                ? "크레딧이 부족해 의뢰를 접수하지 않았습니다. 크레딧을 충전한 뒤 다시 시도해주세요."
+                : "크레딧 보류에 실패해 의뢰를 접수하지 않았습니다. 잠시 후 다시 시도해주세요.",
+            data: {
+              reason: holdStatus === 402 ? "insufficient_credit" : "credit_hold_failed",
+              canceledRequestIds: createdRequests
+                .map((row) => String(row?.requestId || "").trim())
+                .filter(Boolean),
+            },
+          });
+        }
       }
 
       // 헥스 확인용 복사샘플·credit hold·대시보드 refresh는 201 finish 이후.
@@ -1956,86 +2021,27 @@ export async function createRequestsFromDraft(req, res) {
       res.once("finish", () => {
         void (async () => {
           const requestIdsForRefresh = [...refreshRequestIds];
-          let holdOk = true;
+          // 보류는 응답 전에 끝났다. 여기까지 왔으면 성공.
+          const holdOk = true;
 
-          if (holdCtx?.requests?.length) {
-            const holdT0 = Date.now();
+          if (holdCtx?.requests?.length && refreshAnchorId) {
             try {
-              await holdRequestCreditsOnSubmit({
-                requests: holdCtx.requests,
-                actorUserId: holdCtx.actorUserId,
-                session: null,
-                shippingFee: holdCtx.shippingFee,
-                seedBalance: holdCtx.seedBalance,
-                devopsAnchorId: holdCtx.devopsAnchorId,
-              });
-              console.log("[createRequestsFromDraft] credit hold done", {
-                t: Date.now() - startTime,
-                dt: Date.now() - holdT0,
-                created: holdCtx.requests.length,
-              });
-              if (refreshAnchorId) {
-                try {
-                  const { emitCreditBalanceUpdatedToBusiness } = await import(
-                    "../../utils/creditRealtime.js"
-                  );
-                  void emitCreditBalanceUpdatedToBusiness({
-                    businessAnchorId: refreshAnchorId,
-                    balanceDelta: 0,
-                    reason: "request_submit_hold",
-                    refId: holdCtx.requests[0]?._id || null,
-                    forceEmit: true,
-                  });
-                } catch {
-                  // best-effort
-                }
-              }
-            } catch (holdErr) {
-              holdOk = false;
-              console.error(
-                "[createRequestsFromDraft] credit hold failed after create",
-                holdErr?.message || holdErr,
+              const { emitCreditBalanceUpdatedToBusiness } = await import(
+                "../../utils/creditRealtime.js"
               );
-              try {
-                const ids = holdCtx.requests
-                  .map((row) => row?._id)
-                  .filter(Boolean);
-                if (ids.length > 0) {
-                  await Request.updateMany(
-                    { _id: { $in: ids } },
-                    {
-                      $set: {
-                        manufacturerStage: "취소",
-                      },
-                      $push: {
-                        statusHistory: {
-                          status: "취소",
-                          note: "크레딧 보류 실패로 자동 취소",
-                          updatedBy: holdCtx.actorUserId || null,
-                          updatedAt: new Date(),
-                        },
-                      },
-                    },
-                  );
-                  console.warn(
-                    "[createRequestsFromDraft] cancelled requests after hold failure",
-                    {
-                      count: ids.length,
-                      requestIds: holdCtx.requests.map((r) => r.requestId),
-                    },
-                  );
-                }
-              } catch (cancelErr) {
-                console.error(
-                  "[createRequestsFromDraft] cancel after hold failure failed",
-                  cancelErr?.message || cancelErr,
-                );
-              }
+              void emitCreditBalanceUpdatedToBusiness({
+                businessAnchorId: refreshAnchorId,
+                balanceDelta: 0,
+                reason: "request_submit_hold",
+                refId: holdCtx.requests[0]?._id || null,
+                forceEmit: true,
+              });
+            } catch {
+              // best-effort
             }
           }
 
-          // hold 실패로 취소했으면 헥스 샘플·대시보드만 갱신(샘플은 스킵)
-          if (holdOk && hexCtx?.sourceRequests?.length) {
+          if (hexCtx?.sourceRequests?.length) {
             try {
               const verificationClones =
                 await maybeCreateHexVerificationSampleForFirstOrder(hexCtx);

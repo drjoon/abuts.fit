@@ -8,7 +8,6 @@
 //
 // filled STL을 S3에서 읽어 커프 이음부를 고치고 같은 키에 덮어쓴다.
 // 결과는 caseInfos.cuffBlend에 남긴다(status: applied | manual-review | spec-pending | failed).
-import { Worker } from "worker_threads";
 import Request from "../../models/request.model.js";
 import { emitAppEventToRoles, emitAppEventToUser } from "../../socket.js";
 import { getObjectBufferFromS3, putObjectToS3 } from "../../utils/s3.utils.js";
@@ -16,6 +15,7 @@ import { resolveFilledStlFile } from "../../utils/filledStlFile.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "../requestSnapshotTriggers.service.js";
 import { CUFF_BLEND_VERSION } from "./cuffBlend.js";
 import { resolveCuffConnectionSpec } from "./cuffConnectionSpecs.js";
+import { MeshWorkerQueueTimeoutError, MeshWorkerTimeoutError, runMeshWorker } from "./workerSlots.js";
 
 const WORKER_URL = new URL("./cuffBlend.worker.js", import.meta.url);
 const TIMEOUT_MS = Number(process.env.CUFF_BLEND_TIMEOUT_MS || 30 * 1000);
@@ -24,32 +24,45 @@ export function isCuffBlendAutoEnabled() {
   return String(process.env.CUFF_BLEND_AUTO_DISABLED || "").trim() !== "true";
 }
 
-/** @param {"auto"|"redesign"} mode */
-export function runCuffBlendInWorker(buffer, mode, options) {
-  return new Promise((resolve) => {
-    const input = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength).slice();
-    const worker = new Worker(WORKER_URL, {
-      workerData: { input, mode, options },
-      transferList: [input.buffer],
+/** register-file 안 auto 보정이 메시 worker 슬롯을 기다리는 한도. 넘으면 보정을 건너뛰고 등록은 계속한다. */
+const AUTO_QUEUE_TIMEOUT_MS = Number(process.env.CUFF_BLEND_AUTO_QUEUE_TIMEOUT_MS || 15 * 1000);
+/** Re·제안 수락처럼 버튼이 기다리는 경로의 슬롯 대기 한도. */
+const INTERACTIVE_QUEUE_TIMEOUT_MS = Number(process.env.CUFF_BLEND_QUEUE_TIMEOUT_MS || 30 * 1000);
+
+/**
+ * timeout은 메시 worker 슬롯을 얻은 뒤부터 센다(workerSlots.js).
+ * @param {"auto"|"redesign"|"propose"} mode
+ * @param {{ queueTimeoutMs?: number }} [run]
+ */
+export async function runCuffBlendInWorker(buffer, mode, options, { queueTimeoutMs = 0 } = {}) {
+  try {
+    const msg = await runMeshWorker(WORKER_URL, {
+      label: `cuff-blend:${mode}`,
+      timeoutMs: TIMEOUT_MS,
+      queueTimeoutMs,
+      buildWorkerData: () => {
+        const input = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength).slice();
+        return { workerData: { input, mode, options }, transferList: [input.buffer] };
+      },
     });
-    const timer = setTimeout(() => {
-      void worker.terminate();
-      resolve({ ok: false, status: "failed", reason: `커프 보정 시간 초과(${TIMEOUT_MS}ms)` });
-    }, TIMEOUT_MS);
-    worker.once("message", (msg) => {
-      clearTimeout(timer);
-      void worker.terminate();
-      const result = msg?.result || { ok: false, status: "failed", reason: "커프 보정 결과가 없습니다." };
-      if (msg?.output) {
-        result.buffer = Buffer.from(msg.output.buffer, msg.output.byteOffset, msg.output.byteLength);
-      }
-      resolve(result);
-    });
-    worker.once("error", (error) => {
-      clearTimeout(timer);
-      resolve({ ok: false, status: "failed", reason: String(error?.message || error) });
-    });
-  });
+    const result = msg?.result || { ok: false, status: "failed", reason: "커프 보정 결과가 없습니다." };
+    if (msg?.output) {
+      result.buffer = Buffer.from(msg.output.buffer, msg.output.byteOffset, msg.output.byteLength);
+    }
+    return result;
+  } catch (error) {
+    if (error instanceof MeshWorkerTimeoutError) {
+      return { ok: false, status: "failed", reason: `커프 보정 시간 초과(${TIMEOUT_MS}ms)` };
+    }
+    if (error instanceof MeshWorkerQueueTimeoutError) {
+      return {
+        ok: false,
+        status: "failed",
+        reason: `커프 보정 대기 초과(${queueTimeoutMs}ms) — 다른 메시 작업이 진행 중이라 건너뜀`,
+      };
+    }
+    return { ok: false, status: "failed", reason: String(error?.message || error) };
+  }
 }
 
 function toPlain(caseInfos) {
@@ -74,10 +87,15 @@ function buildRecord({ mode, result, specKey, s3Key }) {
 }
 
 /**
- * @param {{ s3Key: string, caseInfos: object, mode?: "auto"|"redesign" }} args
+ * @param {{ s3Key: string, caseInfos: object, mode?: "auto"|"redesign", queueTimeoutMs?: number }} args
  * @returns {Promise<{ ok: boolean, status: string, reason: string|null, record: object, fileSize: number|null, detail: object }>}
  */
-export async function applyCuffBlendToFilledStl({ s3Key, caseInfos, mode = "auto" }) {
+export async function applyCuffBlendToFilledStl({
+  s3Key,
+  caseInfos,
+  mode = "auto",
+  queueTimeoutMs = INTERACTIVE_QUEUE_TIMEOUT_MS,
+}) {
   const ci = toPlain(caseInfos);
   const { key, spec } = resolveCuffConnectionSpec(ci);
   const finishLine = ci.finishLine || null;
@@ -90,7 +108,7 @@ export async function applyCuffBlendToFilledStl({ s3Key, caseInfos, mode = "auto
     };
   } else {
     const source = await getObjectBufferFromS3(s3Key);
-    result = await runCuffBlendInWorker(source, mode, { spec, specKey: key, finishLine });
+    result = await runCuffBlendInWorker(source, mode, { spec, specKey: key, finishLine }, { queueTimeoutMs });
   }
   let fileSize = null;
   if (result.ok && result.buffer) {
@@ -188,12 +206,20 @@ export async function proposeCuffRedesignForRequest(requestMongoId) {
   return cuffProposal;
 }
 
-/** register-file(2-filled) 안에서 호출한다. 실패해도 등록은 계속되도록 예외를 삼킨다. */
+/**
+ * register-file(2-filled) 안에서 호출한다. 실패해도 등록은 계속되도록 예외를 삼킨다.
+ * 메시 worker 슬롯을 AUTO_QUEUE_TIMEOUT_MS 안에 못 얻으면 보정을 건너뛰고 failed(「커프 확인」)로 남긴다.
+ */
 export async function applyAutoCuffBlendSafely({ s3Key, caseInfos, finishLine }) {
   if (!isCuffBlendAutoEnabled() || !s3Key) return null;
   const ci = { ...toPlain(caseInfos), ...(finishLine ? { finishLine } : {}) };
   try {
-    const out = await applyCuffBlendToFilledStl({ s3Key, caseInfos: ci, mode: "auto" });
+    const out = await applyCuffBlendToFilledStl({
+      s3Key,
+      caseInfos: ci,
+      mode: "auto",
+      queueTimeoutMs: AUTO_QUEUE_TIMEOUT_MS,
+    });
     console.log("[cuff-blend] auto", { s3Key, status: out.status, reason: out.reason, ...out.detail });
     return out;
   } catch (error) {

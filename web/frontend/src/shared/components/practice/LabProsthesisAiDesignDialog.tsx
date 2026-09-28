@@ -2133,11 +2133,20 @@ function LabProsthesisAiDesignDialog({
     }
     const simple = plan.teeth.find((row) => row.toothNumber === toothNumber)?.simpleAbutment;
     if (entry?.missingTemplate && simple) {
+      // 올렸지만 관리자 검토·검사 중인 템플릿은 아직 쓸 수 없다(형상을 받지 않는다).
+      const reviewing = scanbodyCatalog.templateUploads.some(
+        (row) =>
+          row.kind === simple.kind &&
+          Number(row.diameter) === Number(simple.diameter) &&
+          (row.status === "pending_review" || row.status === "scanning" || row.status === "processing"),
+      );
       toast({
-        title: "맞는 심플어벗 템플릿이 없습니다.",
+        title: reviewing ? "심플어벗 템플릿이 관리자 검토 대기 중입니다." : "맞는 심플어벗 템플릿이 없습니다.",
         description: (
           <>
-            설정 → 스캔바디에서 {simple.kind} 직경 {simple.diameter} 템플릿을 등록하세요.
+            {reviewing
+              ? `${simple.kind} 직경 ${simple.diameter} 템플릿은 검토·검사가 끝나야 씁니다.`
+              : `설정 → 스캔바디에서 ${simple.kind} 직경 ${simple.diameter} 템플릿을 등록하세요.`}
             <br />
             지금은 원기둥으로 맞춥니다.
           </>

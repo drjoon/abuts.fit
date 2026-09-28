@@ -7,6 +7,7 @@ import mongoose from "mongoose";
 import app from "../../app";
 import User from "../../models/user.model";
 import Request from "../../models/request.model";
+import BusinessAnchor from "../../models/businessAnchor.model";
 import { hashPassword } from "../../utils/auth.util";
 import { generateToken } from "../../utils/jwt.util";
 import ActivityLog from "../../models/activityLog.model";
@@ -248,17 +249,28 @@ describe("관리자 API 테스트", () => {
       );
     });
 
-    it("상태별 필터링 조회 성공", async () => {
+    // Request 스키마에는 최상위 status가 없다(단계 SSOT는 manufacturerStage).
+    // 지원되는 필터인 requestorId로 검증한다.
+    it("의뢰자별 필터링 조회 성공", async () => {
       const response = await request(app)
         .get("/api/admin/requests")
-        .query({ status: "의뢰접수" })
+        .query({ requestorId: userId.toString() })
         .set("Authorization", `Bearer ${adminToken}`)
         .expect(200);
 
       // 응답 검증
       expect(response.body.success).toBe(true);
       expect(response.body.data.requests).toHaveLength(1);
-      expect(response.body.data.requests[0].status).toBe("의뢰접수");
+      expect(response.body.data.requests[0].requestor._id.toString()).toBe(
+        userId.toString(),
+      );
+
+      const other = await request(app)
+        .get("/api/admin/requests")
+        .query({ requestorId: adminId.toString() })
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      expect(other.body.data.requests).toHaveLength(0);
     });
   });
 
@@ -277,31 +289,50 @@ describe("관리자 API 테스트", () => {
     });
   });
 
-  // 의뢰 상태 변경 테스트
+  // 의뢰 상태 변경 테스트 — 공정 단계(manufacturerStage)를 저장한다
   describe("PATCH /api/admin/requests/:id/status", () => {
-    it("관리자 권한으로 의뢰 상태 변경 성공", async () => {
-      const statusUpdate = {
-        status: "진행중",
-        statusNote: "관리자가 상태를 변경했습니다.",
-      };
-
+    it("관리자 예전 라벨 status를 manufacturerStage로 저장한다", async () => {
       const response = await request(app)
         .patch(`/api/admin/requests/${testRequestId}/status`)
         .set("Authorization", `Bearer ${adminToken}`)
-        .send(statusUpdate)
+        .send({ status: "가공" })
         .expect(200);
 
-      // 응답 검증
       expect(response.body.success).toBe(true);
-      expect(response.body.data.status).toBe(statusUpdate.status);
-      expect(response.body.data).toHaveProperty("statusHistory");
-      expect(response.body.data.statusHistory).toHaveLength(1);
-      expect(response.body.data.statusHistory[0].status).toBe(
-        statusUpdate.status,
-      );
-      expect(response.body.data.statusHistory[0].note).toBe(
-        statusUpdate.statusNote,
-      );
+      expect(response.body.data.manufacturerStage).toBe("가공");
+      const saved = await Request.findById(testRequestId).lean();
+      expect(saved.manufacturerStage).toBe("가공");
+    });
+
+    it("관리자가 준비로 복구할 수 있다(PATCH /api/requests/:id/status)", async () => {
+      await Request.updateOne({ _id: testRequestId }, { $set: { manufacturerStage: "가공" } });
+      await request(app)
+        .patch(`/api/requests/${testRequestId}/status`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ manufacturerStage: "준비" })
+        .expect(200);
+      const saved = await Request.findById(testRequestId).lean();
+      expect(saved.manufacturerStage).toBe("준비");
+    });
+
+    it("의뢰자는 취소 외 단계로 바꿀 수 없다", async () => {
+      await request(app)
+        .patch(`/api/requests/${testRequestId}/status`)
+        .set("Authorization", `Bearer ${userToken}`)
+        .send({ manufacturerStage: "추적관리" })
+        .expect(403);
+      const saved = await Request.findById(testRequestId).lean();
+      expect(saved.manufacturerStage).not.toBe("추적관리");
+    });
+
+    it("허용되지 않은 상태로 변경 시 실패", async () => {
+      const response = await request(app)
+        .patch(`/api/admin/requests/${testRequestId}/status`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ status: "진행중" })
+        .expect(400);
+
+      expect(response.body.success).toBe(false);
     });
   });
 
@@ -328,7 +359,7 @@ describe("관리자 API 테스트", () => {
 
       // 응답 검증
       expect(response.body.success).toBe(true);
-      expect(response.body.data.manufacturer.toString()).toBe(
+      expect(response.body.data.caManufacturer.toString()).toBe(
         manufacturer._id.toString(),
       );
     });
@@ -364,34 +395,46 @@ describe("관리자 API 테스트", () => {
     });
   });
 
-  // 시스템 설정 업데이트 테스트
+  // 시스템 설정 업데이트 테스트 — 저장한 리드타임을 조회가 그대로 읽는다
   describe("PUT /api/admin/settings", () => {
-    it("관리자 권한으로 시스템 설정 업데이트 성공", async () => {
-      const settingsUpdate = {
-        maintenance: {
-          enabled: true,
-          message: "시스템 점검 중입니다.",
+    it("저장한 배송 리드타임을 GET이 돌려준다", async () => {
+      await BusinessAnchor.collection.insertOne({
+        name: "테스트 제조사",
+        businessType: "manufacturer",
+        shippingPolicy: {
+          leadTimes: { d6: { minBusinessDays: 2, maxBusinessDays: 5 } },
+          updatedAt: new Date(),
         },
-        notifications: {
-          emailEnabled: true,
-          pushEnabled: true,
-        },
-      };
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
 
       const response = await request(app)
         .put("/api/admin/settings")
         .set("Authorization", `Bearer ${adminToken}`)
-        .send(settingsUpdate)
+        .send({ deliveryEtaLeadDays: { d6: 3, d8: 4 } })
         .expect(200);
+      expect(response.body.data.deliveryEtaLeadDays.d6).toBe(3);
+      expect(response.body.data.deliveryEtaLeadDays.d8).toBe(4);
 
-      // 응답 검증
-      expect(response.body.success).toBe(true);
-      expect(response.body.data.maintenance.enabled).toBe(
-        settingsUpdate.maintenance.enabled,
-      );
-      expect(response.body.data.maintenance.message).toBe(
-        settingsUpdate.maintenance.message,
-      );
+      const read = await request(app)
+        .get("/api/admin/settings")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      expect(read.body.data.settings.deliveryEtaLeadDays.d6).toBe(3);
+      expect(read.body.data.settings.deliveryEtaLeadDays.d8).toBe(4);
+
+      const anchor = await BusinessAnchor.findOne({ businessType: "manufacturer" }).lean();
+      // 최대를 최소보다 작게 줄이면 최소도 같이 내려간다.
+      expect(anchor.shippingPolicy.leadTimes.d6).toEqual({ minBusinessDays: 2, maxBusinessDays: 3 });
+    });
+
+    it("제조사 사업자가 없으면 409", async () => {
+      await request(app)
+        .put("/api/admin/settings")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .send({ deliveryEtaLeadDays: { d6: 3 } })
+        .expect(409);
     });
   });
 

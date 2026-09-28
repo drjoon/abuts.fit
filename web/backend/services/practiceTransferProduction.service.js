@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-09-28: CA Request 대상은 치아당 1행(임시치아+CA와 단독 커스텀어벗 중복 입력 시 생산·과금 1회).
 // - 2026-09-27: PTX CA 주문 기공소 = 수행 기공소(assignee). 원청 잔액으로 생산 hold 하지 않음.
 // - 2026-09-12: PTX→어벗츠 리메이크 — CA 재업로드 forceRemakePricing(1만). 미매칭 시 정가 생산 견적.
 // - 2026-09-26: 기공의뢰 생성·수정 전송은 3D 스캔(DCM/PLY/STL/OBJ) 필수. 이미지·빈 첨부는 거부.
@@ -128,7 +129,11 @@ import {
   PRACTICE_ABUTMENT_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS,
   resolveEffectiveAbutmentShipYmd,
 } from "../utils/practiceTransferArrivalDates.js";
-import { isPendingRoundBarAbutment, isSimpleAbutmentModeForFee } from "../utils/labFeeSchedule.js";
+import {
+  isPendingRoundBarAbutment,
+  isSimpleAbutmentModeForFee,
+  pickCustomAbutmentRowPerTooth,
+} from "../utils/labFeeSchedule.js";
 import { emitAppEventToRoles, emitAppEventToUser } from "../socket.js";
 import {
   resolvePracticeUserIdsByAnchor,
@@ -151,10 +156,12 @@ const hasCustomAbutmentToothWorks = (toothWorks) =>
  * 환봉·제조사 추가요청(요청중)·심플어벗(치과 재고)은 지정 기공소/재고로 처리.
  */
 const listCustomAbutmentToothWorks = (toothWorks, implantFavorites = null) =>
-  (Array.isArray(toothWorks) ? toothWorks : []).filter(
-    (row) =>
-      isCustomAbutmentToothWorkRow(row) &&
-      !isPendingRoundBarAbutment(row, implantFavorites),
+  pickCustomAbutmentRowPerTooth(
+    (Array.isArray(toothWorks) ? toothWorks : []).filter(
+      (row) =>
+        isCustomAbutmentToothWorkRow(row) &&
+        !isPendingRoundBarAbutment(row, implantFavorites),
+    ),
   );
 
 const parseUploadedAt = (value) => {

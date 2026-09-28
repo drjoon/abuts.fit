@@ -48,9 +48,23 @@ describe("practiceTransfer arrival auto-complete eligibility", () => {
     expect(
       resolvePracticeTransferCurrentArrivalYmd({
         arrivalDates: ["2026-08-20", "2026-09-05"],
-        transferMemo: "[치과도착일: 2026-08-20]",
+        transferMemo: "[치과도착일: 2026-09-05]",
       }),
     ).toBe("2026-09-05");
+    expect(
+      resolvePracticeTransferCurrentArrivalYmd({
+        arrivalDates: ["2026-08-20", "2026-09-05"],
+      }),
+    ).toBe("2026-09-05");
+  });
+
+  it("memo arrival tag wins when it disagrees with arrivalDates tail", () => {
+    expect(
+      resolvePracticeTransferCurrentArrivalYmd({
+        arrivalDates: ["2026-08-20", "2026-09-05"],
+        transferMemo: "[치과도착일: 2026-08-20]",
+      }),
+    ).toBe("2026-08-20");
   });
 
   it("does not auto-complete on arrival day; does after it passes", () => {

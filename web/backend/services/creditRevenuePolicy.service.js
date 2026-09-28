@@ -1028,6 +1028,30 @@ export function resolvePracticeTransferFeeRate({
 }
 
 /**
+ * 기공의뢰 수수료율 중 플랫폼 사용료 몫(하청 수수료 제외). 규칙은 resolvePracticeTransferFeeRate와 같다.
+ * 사용료는 매출(플랫폼 수수료 저널), 하청 수수료는 원청 정산에 남는다.
+ */
+export function resolvePracticeTransferPlatformFeeRate({
+  matchingMode,
+  payoutRates,
+  subcontracted = false,
+  performerIsInternal = false,
+} = {}) {
+  const platform = resolveLabPlatformFeeRate({ payoutRates, performerIsInternal });
+  if (subcontracted) return platform;
+  if (String(matchingMode || "").trim() === "auto") return 0;
+  return platform;
+}
+
+/** 작업시작으로 박힌 플랫폼 사용료율. 없으면 null(스냅샷 전 또는 예전 건). */
+export function snapshottedPracticeTransferPlatformFeeRate(billing) {
+  if (!billing?.billedAt || billing.platformFeeRateApplied == null) return null;
+  const n = Number(billing.platformFeeRateApplied);
+  if (!Number.isFinite(n)) return null;
+  return Math.min(1, Math.max(0, n));
+}
+
+/**
  * 견적 표시용 수수료율.
  * 원청(어벗츠 기공사업부)이 하청을 준 뒤 자기 화면을 보면 전액 수주이므로 0.
  * 작업시작으로 박힌 billing.feeRateApplied가 있으면 그 값을 쓴다.

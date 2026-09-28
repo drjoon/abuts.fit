@@ -3,15 +3,16 @@
 // - web/backend/server.js
 /**
  * 의뢰 상악·하악·바이트 자동 모델 정렬 대기열을 하나씩 비운다.
- * 켜질 때 상태가 없는 기존 의뢰를 모두 대기열에 넣는다. 새 의뢰 파일은 바로 깨운다.
+ * 새 의뢰 스캔이 올라온 직후 대기열에 들어온 것만 처리한다. 기존 의뢰는 백필하지 않는다.
+ * 건 사이에 쉬어 API 인스턴스의 CPU를 계속 잡지 않는다.
  */
 import {
-  backfillWorkScanAutoAlignQueue,
   runNextWorkScanAutoAlign,
   setWorkScanAutoAlignWake,
 } from "../services/workScanAutoAlign.service.js";
 
 const IDLE_MS = Number(process.env.WORK_SCAN_AUTO_ALIGN_IDLE_MS || 30 * 1000);
+const COOLDOWN_MS = Number(process.env.WORK_SCAN_AUTO_ALIGN_COOLDOWN_MS || 5 * 1000);
 
 let started = false;
 let running = false;
@@ -34,7 +35,7 @@ async function loop() {
     console.error("[workScanAutoAlign] failed", error?.message || error);
   } finally {
     running = false;
-    schedule(idle ? IDLE_MS : 0);
+    schedule(idle ? IDLE_MS : COOLDOWN_MS);
   }
 }
 
@@ -46,12 +47,5 @@ export function startWorkScanAutoAlignWorker() {
   setWorkScanAutoAlignWake(() => {
     if (!running) schedule(0);
   });
-  void backfillWorkScanAutoAlignQueue()
-    .then((count) => {
-      if (count) console.log("[workScanAutoAlign] backfill queued", count);
-    })
-    .catch((error) => {
-      console.error("[workScanAutoAlign] backfill failed", error?.message || error);
-    })
-    .finally(() => schedule(0));
+  schedule(0);
 }

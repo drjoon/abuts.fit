@@ -8,6 +8,7 @@
     "start": "cross-env TZ=Asia/Seoul node server.js",
     "dev": "cross-env TZ=Asia/Seoul ENV_FILE=local.env nodemon server.js",
     "test": "cross-env TZ=Asia/Seoul NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules jest --detectOpenHandles",
+    "test:integration": "cross-env TZ=Asia/Seoul NODE_ENV=test JEST_MEMORY_MONGO=true NODE_OPTIONS=--experimental-vm-modules jest --coverage=false --runInBand tests/integration",
     "test:watch": "cross-env TZ=Asia/Seoul NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules jest --watch",
     "test:coverage": "cross-env TZ=Asia/Seoul NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules jest --coverage",
     "db:reset": "cross-env TZ=Asia/Seoul ENV_FILE=local.env node scripts/db/reset.js",
@@ -83,6 +84,7 @@
     "cross-env": "^10.0.0",
     "esbuild": "^0.21.5",
     "jest": "^30.0.5",
+    "mongodb-memory-server-core": "^10.4.3",
     "nodemon": "^3.1.14",
     "supertest": "^7.1.4"
   }

@@ -2,13 +2,17 @@
 // - web/backend/rules.md
 // - web/backend/app.js
 // - web/backend/server.js
+// - web/backend/controllers/files/file.controller.js
+import { jest } from "@jest/globals";
 import request from "supertest";
 import mongoose from "mongoose";
+import os from "os";
 import path from "path";
 import fs from "fs";
 import app from "../../app";
 import User from "../../models/user.model";
 import File from "../../models/file.model";
+import s3Utils from "../../utils/s3.utils";
 import { hashPassword } from "../../utils/auth.util";
 import { generateToken } from "../../utils/jwt.util";
 
@@ -38,6 +42,24 @@ describe("파일 업로드 API 테스트", () => {
   let requestorId, adminId;
   let testFilePath;
   let testFileId;
+  let requestId;
+
+  // 실제 S3로 나가지 않도록 업로드·서명 URL만 대체한다.
+  beforeEach(() => {
+    jest
+      .spyOn(s3Utils, "uploadFileToS3")
+      .mockImplementation(async (_buffer, key) => ({
+        key,
+        location: `https://example.com/${key}`,
+      }));
+    jest
+      .spyOn(s3Utils, "getSignedUrl")
+      .mockImplementation(async (key) => `https://example.com/signed/${key}`);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
 
   // 각 테스트 전에 테스트 데이터 생성
   beforeEach(async () => {
@@ -62,31 +84,13 @@ describe("파일 업로드 API 테스트", () => {
     adminId = admin._id;
     adminToken = generateToken(admin);
 
-    // 테스트 파일 생성
-    testFilePath = path.join(__dirname, "../fixtures/test-file.txt");
-    // 테스트 파일이 없으면 생성
-    if (!fs.existsSync(path.dirname(testFilePath))) {
-      fs.mkdirSync(path.dirname(testFilePath), { recursive: true });
-    }
+    // 업로드용 로컬 파일
+    testFilePath = path.join(
+      os.tmpdir(),
+      `abuts-jest-${process.pid}-test-file.txt`,
+    );
     fs.writeFileSync(testFilePath, "This is a test file for upload testing.");
 
-    // 테스트 파일 데이터베이스 항목은 의뢰 생성 후 생성할 예정
-    testFileId = null; // 나중에 설정할 것임
-  });
-
-  // 테스트 후 정리
-  afterEach(() => {
-    // 테스트 파일 삭제
-    if (fs.existsSync(testFilePath)) {
-      fs.unlinkSync(testFilePath);
-    }
-  });
-
-  // 테스트용 의뢰 ID 생성
-  let requestId;
-
-  // 각 테스트 전에 테스트 의뢰 생성
-  beforeEach(async () => {
     // 테스트 의뢰 생성
     const testRequest = await mongoose.model("Request").create({
       requestId: `REQ-${Date.now()}-TEST`,
@@ -98,6 +102,26 @@ describe("파일 업로드 API 테스트", () => {
       implantSpec: "NobelActive 4.3x11.5mm",
     });
     requestId = testRequest._id;
+
+    // 조회·삭제·다운로드 테스트용 기존 파일
+    const testFile = await File.create({
+      originalName: "existing-test-file.txt",
+      mimetype: "text/plain",
+      size: 100,
+      key: "test-key",
+      location: "https://example.com/test-file.txt",
+      uploadedBy: requestorId,
+      relatedRequest: requestId,
+      fileType: "document",
+    });
+    testFileId = testFile._id;
+  });
+
+  // 테스트 후 정리
+  afterEach(() => {
+    if (testFilePath && fs.existsSync(testFilePath)) {
+      fs.unlinkSync(testFilePath);
+    }
   });
 
   // 파일 업로드 테스트
@@ -106,9 +130,9 @@ describe("파일 업로드 API 테스트", () => {
       const response = await request(app)
         .post("/api/files/upload")
         .set("Authorization", `Bearer ${requestorToken}`)
-        .field("requestId", requestId.toString())
+        .field("relatedRequest", requestId.toString())
         .field("fileType", "document")
-        .attach("file", testFilePath)
+        .attach("file", testFilePath, "test-file.txt")
         .expect(201);
 
       // 응답 검증
@@ -121,14 +145,13 @@ describe("파일 업로드 API 테스트", () => {
       expect(response.body.data.relatedRequest.toString()).toBe(
         requestId.toString(),
       );
+      expect(s3Utils.uploadFileToS3).toHaveBeenCalledTimes(1);
     });
 
     it("인증 없이 파일 업로드 시 실패", async () => {
-      const requestId = new mongoose.Types.ObjectId();
-
       const response = await request(app)
         .post("/api/files/upload")
-        .field("requestId", requestId.toString())
+        .field("relatedRequest", requestId.toString())
         .field("fileType", "document")
         .attach("file", testFilePath)
         .expect(401);
@@ -138,17 +161,15 @@ describe("파일 업로드 API 테스트", () => {
     });
 
     it("파일 없이 요청 시 실패", async () => {
-      const requestId = new mongoose.Types.ObjectId();
-
       const response = await request(app)
         .post("/api/files/upload")
         .set("Authorization", `Bearer ${requestorToken}`)
-        .field("requestId", requestId.toString())
+        .field("relatedRequest", requestId.toString())
         .field("fileType", "document")
         .expect(400);
 
-      // 응답 검증
-      expect(response.body.success).toBe(false);
+      // 응답 검증 (전역 에러 핸들러는 { message }만 내려준다)
+      expect(response.body.message).toBe("File is required");
     });
 
     it("요청 ID 없이 파일 업로드 시 실패", async () => {
@@ -160,94 +181,18 @@ describe("파일 업로드 API 테스트", () => {
         .expect(400);
 
       // 응답 검증
-      expect(response.body.success).toBe(false);
+      expect(response.body.message).toBe("Related request ID is required");
+      expect(s3Utils.uploadFileToS3).not.toHaveBeenCalled();
     });
   });
 
-  // 파일 목록 조회 테스트
-  describe("GET /api/files", () => {
-    it("관리자가 전체 파일 목록을 조회할 수 있다", async () => {
+  it("목록 API(GET /api/files, /my, /request/:id)는 제거되었다", async () => {
+    for (const path of ["/api/files/my", `/api/files/request/${requestId}`]) {
       const response = await request(app)
-        .get("/api/files")
-        .set("Authorization", `Bearer ${adminToken}`)
-        .expect(200);
-      expect(response.body.success).toBe(true);
-      expect(response.body.data.files.length).toBeGreaterThanOrEqual(1);
-    });
-
-    it("일반 사용자는 내 파일 목록만 조회할 수 있다", async () => {
-      const response = await request(app)
-        .get("/api/files/my")
-        .set("Authorization", `Bearer ${requestorToken}`)
-        .expect(200);
-      expect(response.body.success).toBe(true);
-      expect(response.body.data.files.length).toBeGreaterThanOrEqual(1);
-    });
-
-    it("의뢰별 파일 목록을 조회할 수 있다", async () => {
-      const response = await request(app)
-        .get(`/api/files/request/${requestId}`)
-        .set("Authorization", `Bearer ${requestorToken}`)
-        .expect(200);
-      expect(response.body.success).toBe(true);
-      expect(response.body.data.files.length).toBeGreaterThanOrEqual(1);
-    });
-
-    // 테스트 파일 생성
-    beforeEach(async () => {
-      // 테스트 파일 데이터베이스 항목 생성
-      const testFile = await File.create({
-        originalName: "existing-test-file.txt",
-        mimetype: "text/plain",
-        size: 100,
-        key: "test-key",
-        location: "https://example.com/test-file.txt",
-        uploadedBy: requestorId,
-        relatedRequest: requestId, // 생성된 의뢰 ID 사용
-        fileType: "document",
-      });
-      testFileId = testFile._id;
-    });
-
-    it("요청 ID로 파일 목록 조회 성공", async () => {
-      const response = await request(app)
-        .get("/api/files")
-        .query({ requestId: requestId.toString() })
-        .set("Authorization", `Bearer ${requestorToken}`)
-        .expect(200);
-
-      // 응답 검증
-      expect(response.body.success).toBe(true);
-      expect(response.body.data).toHaveProperty("files");
-      expect(response.body.data).toHaveProperty("pagination");
-      expect(response.body.data.files).toHaveLength(1);
-      expect(response.body.data.files[0].originalName).toBe(
-        "existing-test-file.txt",
-      );
-    });
-
-    it("관리자가 모든 파일 조회 성공", async () => {
-      const response = await request(app)
-        .get("/api/files")
-        .set("Authorization", `Bearer ${adminToken}`)
-        .expect(200);
-
-      // 응답 검증
-      expect(response.body.success).toBe(true);
-      expect(response.body.data.files).toHaveLength(1);
-    });
-
-    it("페이지네이션 적용 조회 성공", async () => {
-      const response = await request(app)
-        .get("/api/files")
-        .query({ page: 1, limit: 10 })
-        .set("Authorization", `Bearer ${adminToken}`)
-        .expect(200);
-
-      // 응답 검증
-      expect(response.body.success).toBe(true);
-      expect(response.body.data.pagination.page).toBe(1);
-    });
+        .get(path)
+        .set("Authorization", `Bearer ${adminToken}`);
+      expect(response.status).not.toBe(200);
+    }
   });
 
   // 파일 상세 조회 테스트
@@ -272,7 +217,7 @@ describe("파일 업로드 API 테스트", () => {
         .expect(404);
 
       // 응답 검증
-      expect(response.body.success).toBe(false);
+      expect(response.body.message).toBe("File not found");
     });
   });
 
@@ -319,6 +264,7 @@ describe("파일 업로드 API 테스트", () => {
 
       // 응답 검증
       expect(response.body.success).toBe(false);
+      expect(await File.findById(testFileId)).not.toBeNull();
     });
   });
 
@@ -332,8 +278,9 @@ describe("파일 업로드 API 테스트", () => {
 
       // 응답 검증
       expect(response.body.success).toBe(true);
-      expect(response.body.data).toHaveProperty("downloadUrl");
-      expect(typeof response.body.data.downloadUrl).toBe("string");
+      expect(response.body.data.url).toBe(
+        "https://example.com/signed/test-key",
+      );
     });
 
     it("존재하지 않는 파일의 다운로드 URL 요청 시 실패", async () => {
@@ -344,7 +291,7 @@ describe("파일 업로드 API 테스트", () => {
         .expect(404);
 
       // 응답 검증
-      expect(response.body.success).toBe(false);
+      expect(response.body.message).toBe("File not found");
     });
   });
 });

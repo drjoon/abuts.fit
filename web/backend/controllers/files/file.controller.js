@@ -1,6 +1,7 @@
 // change-log:
 // - 2026-09-26: 임시 업로드 presign·파트 URL·multer S3 업로드를 파일 단위로 동시에 처리.
-//   다운로드 권한 조회(File/Transfer/Request/Chat)도 겹쳐서 시작하고 판정은 기존 순서.
+//   다운로드 권한 조회는 File·사업자 → Transfer → Request → Chat 순으로 허용 시 바로 멈춘다.
+//   S3 프록시 다운로드는 pipeline으로 보내 오류·클라이언트 중단 시 S3 body를 닫는다.
 // - 2026-09-24: PracticeTransfer S3 ACL — 수행 기공소(assigneeLabAnchorId)도 허용(협력·하청).
 // - 2026-08-16: PracticeTransfer ACL — designFiles/resultFiles s3Key도 허용(구강스캔 lock은 files만).
 // - 2026-08-15: 기공소 CA — 어벗츠 디자인 전 PracticeTransfer 구강스캔 S3 다운로드 차단.
@@ -27,6 +28,7 @@ import ChatRoom from "../../models/chatRoom.model.js";
 import Chat from "../../models/chat.model.js";
 import PracticeTransfer from "../../models/practiceTransfer.model.js";
 import s3Utils from "../../utils/s3.utils.js";
+import { pipeStreamToResponse } from "../../utils/pipeStreamToResponse.js";
 import { asyncHandler } from "../../utils/asyncHandler.js";
 import { ApiResponse } from "../../utils/ApiResponse.js";
 import { ApiError } from "../../utils/ApiError.js";
@@ -492,148 +494,6 @@ export const uploadFile = asyncHandler(async (req, res) => {
     .json(new ApiResponse(201, newFile, "File uploaded successfully"));
 });
 
-export const getFiles = asyncHandler(async (req, res) => {
-  const {
-    page = 1,
-    limit = 10,
-    sort = "createdAt",
-    order = "desc",
-    relatedRequest,
-    fileType,
-  } = req.query;
-
-  const query = {};
-
-  // Only admins can view all files. Other users can only see their own.
-  if (req.user.role !== "admin") {
-    query.uploadedBy = req.user._id;
-  }
-
-  if (relatedRequest) {
-    if (!mongoose.Types.ObjectId.isValid(relatedRequest)) {
-      throw new ApiError(400, "Invalid related request ID");
-    }
-    query.relatedRequest = relatedRequest;
-  }
-
-  if (fileType) {
-    query.fileType = fileType;
-  }
-
-  const options = {
-    page: parseInt(page, 10),
-    limit: parseInt(limit, 10),
-    sort: { [sort]: order === "desc" ? -1 : 1 },
-    populate: { path: "uploadedBy", select: "-password" },
-    lean: true,
-  };
-
-  const result = await File.paginate(query, options);
-
-  const responseData = {
-    files: result.docs,
-    pagination: {
-      totalFiles: result.totalDocs,
-      totalPages: result.totalPages,
-      page: result.page,
-      limit: result.limit,
-    },
-  };
-
-  return res
-    .status(200)
-    .json(new ApiResponse(200, responseData, "Files retrieved successfully"));
-});
-
-// 내 파일 목록 조회
-export const getMyFiles = asyncHandler(async (req, res) => {
-  // getFiles와 동일하지만 현재 사용자 기준으로만 조회
-  const {
-    page = 1,
-    limit = 10,
-    sort = "createdAt",
-    order = "desc",
-    fileType,
-  } = req.query;
-
-  const query = { uploadedBy: req.user._id };
-
-  if (fileType) {
-    query.fileType = fileType;
-  }
-
-  const options = {
-    page: parseInt(page, 10),
-    limit: parseInt(limit, 10),
-    sort: { [sort]: order === "desc" ? -1 : 1 },
-    populate: { path: "uploadedBy", select: "-password" },
-    lean: true,
-  };
-
-  const result = await File.paginate(query, options);
-
-  const responseData = {
-    files: result.docs,
-    pagination: {
-      totalFiles: result.totalDocs,
-      totalPages: result.totalPages,
-      page: result.page,
-      limit: result.limit,
-    },
-  };
-
-  return res
-    .status(200)
-    .json(new ApiResponse(200, responseData, "Files retrieved successfully"));
-});
-
-// 특정 의뢰의 파일 목록 조회
-export const getRequestFiles = asyncHandler(async (req, res) => {
-  const { requestId } = req.params;
-
-  if (!mongoose.Types.ObjectId.isValid(requestId)) {
-    throw new ApiError(400, "Invalid request ID");
-  }
-
-  const {
-    page = 1,
-    limit = 10,
-    sort = "createdAt",
-    order = "desc",
-    fileType,
-  } = req.query;
-
-  const query = { relatedRequest: requestId };
-
-  if (fileType) {
-    query.fileType = fileType;
-  }
-
-  const options = {
-    page: parseInt(page, 10),
-    limit: parseInt(limit, 10),
-    sort: { [sort]: order === "desc" ? -1 : 1 },
-    populate: { path: "uploadedBy", select: "-password" },
-    lean: true,
-  };
-
-  const result = await File.paginate(query, options);
-
-  const responseData = {
-    files: result.docs,
-    pagination: {
-      totalFiles: result.totalDocs,
-      totalPages: result.totalPages,
-      page: result.page,
-      limit: result.limit,
-    },
-  };
-
-  return res
-    .status(200)
-    .json(new ApiResponse(200, responseData, "Files retrieved successfully"));
-});
-
 export const getFileById = asyncHandler(async (req, res) => {
   const { id } = req.params;
   if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -757,17 +617,34 @@ const canUserAccessS3Key = async (req, key) => {
     return true;
   }
 
-  // 독립 조회는 바로 겹쳐서 시작한다. 판정 순서는 그대로다.
-  const fileP = File.findOne({ key }).populate("uploadedBy", "_id").exec();
+  // 판정 순서대로 단계별 조회하고 허용되면 바로 멈춘다(다운로드·썸네일마다 불리는 경로).
+  // 1단계 File·사업자등록증은 인덱스 단건 조회라 함께 띄운다.
+  const fileP = File.findOne({ key }).select({ uploadedBy: 1 }).lean().exec();
   const orgP = req.user?.businessAnchorId
     ? import("../../models/businessAnchor.model.js").then((mod) =>
         mod.default
           .findById(req.user.businessAnchorId)
           .select("businessLicense")
+          .lean()
           .exec(),
       )
     : Promise.resolve(null);
-  const practiceTransferP = PracticeTransfer.findOne({
+  void orgP.catch(() => null);
+
+  const file = await fileP;
+  if (file && String(file.uploadedBy || "") === String(req.user._id)) {
+    return true;
+  }
+
+  const org = await orgP;
+  if (org?.businessLicense?.s3Key === key) {
+    return true;
+  }
+
+  // PracticeTransfer 파일 접근 허용
+  // - practice 전송자(작성자)
+  // - 원청(targetLab) · 수행 기공소(assigneeLab, 협력·하청) — CA면 어벗츠 디자인 도착 후만 구강스캔(files만)
+  const practiceTransfer = await PracticeTransfer.findOne({
     $or: [
       { "files.file.s3Key": key },
       { "production.designFiles.file.s3Key": key },
@@ -786,45 +663,6 @@ const canUserAccessS3Key = async (req, key) => {
     })
     .lean()
     .exec();
-  const requestP = Request.findOne({
-    $or: [
-      { "caseInfos.file.s3Key": key },
-      { "caseInfos.files.s3Key": key },
-    ],
-  })
-    .select({
-      businessAnchorId: 1,
-      requestor: 1,
-      "caseInfos.productMode": 1,
-    })
-    .lean()
-    .exec();
-  const chatP = Chat.findOne({
-    isDeleted: false,
-    "attachments.s3Key": key,
-  })
-    .select({ roomId: 1 })
-    .lean()
-    .exec();
-
-  for (const pending of [fileP, orgP, practiceTransferP, requestP, chatP]) {
-    void Promise.resolve(pending).catch(() => null);
-  }
-
-  const file = await fileP;
-  if (file && file.uploadedBy?._id.toString() === req.user._id.toString()) {
-    return true;
-  }
-
-  const org = await orgP;
-  if (org?.businessLicense?.s3Key === key) {
-    return true;
-  }
-
-  // PracticeTransfer 파일 접근 허용
-  // - practice 전송자(작성자)
-  // - 원청(targetLab) · 수행 기공소(assigneeLab, 협력·하청) — CA면 어벗츠 디자인 도착 후만 구강스캔(files만)
-  const practiceTransfer = await practiceTransferP;
 
   if (practiceTransfer) {
     const currentUserId = String(req.user?._id || "").trim();
@@ -864,7 +702,19 @@ const canUserAccessS3Key = async (req, key) => {
 
   // Request caseInfos 파일 (원본 STL / 추가 첨부)
   // - 의뢰 소유 사업자 / 제조사·관리자 / 디자인 파트너
-  const requestWithFile = await requestP;
+  const requestWithFile = await Request.findOne({
+    $or: [
+      { "caseInfos.file.s3Key": key },
+      { "caseInfos.files.s3Key": key },
+    ],
+  })
+    .select({
+      businessAnchorId: 1,
+      requestor: 1,
+      "caseInfos.productMode": 1,
+    })
+    .lean()
+    .exec();
 
   if (requestWithFile) {
     const role = String(req.user?.role || "").trim();
@@ -895,7 +745,13 @@ const canUserAccessS3Key = async (req, key) => {
 
   // 채팅 첨부파일 접근 허용
   // - 첨부가 포함된 채팅방 참여자라면 다운로드 허용
-  const chatMsg = await chatP;
+  const chatMsg = await Chat.findOne({
+    isDeleted: false,
+    "attachments.s3Key": key,
+  })
+    .select({ roomId: 1 })
+    .lean()
+    .exec();
 
   if (chatMsg?.roomId) {
     const room = await ChatRoom.findById(chatMsg.roomId)
@@ -1036,14 +892,5 @@ export const downloadS3FileProxy = asyncHandler(async (req, res) => {
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
 
-  body.on?.("error", () => {
-    if (!res.headersSent) {
-      res.status(500).end();
-      return;
-    }
-    res.end();
-  });
-
-  body.pipe(res);
-  return;
+  await pipeStreamToResponse(body, res, { label: "files.s3Proxy", key });
 });

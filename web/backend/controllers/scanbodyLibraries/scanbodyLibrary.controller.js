@@ -1,31 +1,33 @@
 // 기공소 AI 디자인 — 스캔바디 라이브러리·심플어벗 템플릿 등록과 조회.
 // 관리자가 올리면 공용(ownerAnchorId=null), 기공소가 올리면 그 기공소 것. 관리자가 검토해 isPublic으로 승격한다.
 // 라이브러리 업로드는 S3 격리 → GuardDuty 검사 → 서버 해석·형상 재생성(scanbodyLibraryUpload.service.js).
-// 템플릿 .dcm도 원본을 저장하지 않고 좌표·면으로 새로 만든 STL만 둔다.
+// 템플릿 .dcm은 S3 보류 → 관리자 검토(열어 보기·폐기) → 격리·검사 → 워커 해석(abutmentTemplateUpload.service.js).
+// 원본은 저장하지 않고 좌표·면으로 새로 만든 STL만 둔다. 악성 업로더는 차단 목록(uploadBlocklist)으로 막는다.
 // related files:
 // - web/backend/models/scanbodyLibrary.model.js
 // - web/backend/models/scanbodyLibraryUpload.model.js
 // - web/backend/models/abutmentTemplate.model.js
+// - web/backend/models/abutmentTemplateUpload.model.js
+// - web/backend/models/uploadBlocklist.model.js
 // - web/backend/services/scanbodyLibraryUpload.service.js
+// - web/backend/services/abutmentTemplateUpload.service.js
+// - web/backend/services/uploadBlocklist.service.js
 // - web/backend/modules/scanbodyLibraries/scanbodyLibrary.routes.js
 // - web/frontend/src/shared/practice/scanbodyLibraryApi.ts
-import { gzipSync } from "zlib";
+import { pipeline } from "stream";
 import { Types } from "mongoose";
 import ScanbodyLibrary from "../../models/scanbodyLibrary.model.js";
 import ScanbodyLibraryUpload from "../../models/scanbodyLibraryUpload.model.js";
-import AbutmentTemplate, { ABUTMENT_TEMPLATE_KINDS } from "../../models/abutmentTemplate.model.js";
+import AbutmentTemplate from "../../models/abutmentTemplate.model.js";
+import AbutmentTemplateUpload from "../../models/abutmentTemplateUpload.model.js";
+import UploadBlocklist from "../../models/uploadBlocklist.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
+import User from "../../models/user.model.js";
 import { asyncHandler } from "../../utils/asyncHandler.js";
 import { ApiError } from "../../utils/ApiError.js";
 import { ApiResponse } from "../../utils/ApiResponse.js";
 import { assertLabAnchor } from "../../utils/labTradingPartner.util.js";
-import {
-  ScanbodyInputError,
-  canonicalStlHash,
-  encodeCanonicalStl,
-  trianglesFromHps,
-} from "../../utils/scanbodyGeometry.js";
-import { getObjectStreamFromS3, objectExistsInS3, putObjectToS3 } from "../../utils/s3.utils.js";
+import { getObjectStreamFromS3 } from "../../utils/s3.utils.js";
 import {
   SCANBODY_S3_PREFIX,
   advanceScanbodyUpload,
@@ -33,6 +35,17 @@ import {
   createScanbodyUpload,
   uploadView,
 } from "../../services/scanbodyLibraryUpload.service.js";
+import {
+  advanceTemplateUpload,
+  approveTemplateUpload,
+  completeTemplateUpload,
+  createTemplateUpload,
+  rejectTemplateUpload,
+  sweepStaleTemplateUploads,
+  templateReviewViews,
+  templateUploadView,
+} from "../../services/abutmentTemplateUpload.service.js";
+import { assertUploaderNotBlocked } from "../../services/uploadBlocklist.service.js";
 
 const isAdmin = (req) => req.user?.role === "admin";
 
@@ -40,13 +53,12 @@ function text(value, max = 200) {
   return String(value ?? "").trim().slice(0, max);
 }
 
-function parseJsonField(raw, label) {
-  if (raw && typeof raw === "object") return raw;
-  try {
-    return JSON.parse(String(raw || ""));
-  } catch {
-    throw new ApiError(400, `${label} 정보가 올바르지 않습니다.`);
-  }
+function assertAdmin(req) {
+  if (!isAdmin(req)) throw new ApiError(403, "관리자만 할 수 있습니다.");
+}
+
+function assertNotBlocked(req) {
+  return assertUploaderNotBlocked({ userId: req.user?._id, businessAnchorId: req.user?.businessAnchorId });
 }
 
 function viewerAnchorId(req) {
@@ -158,21 +170,48 @@ function templateView(req, doc, names = new Map()) {
 // GET /api/scanbody-libraries
 export const listScanbodyLibraries = asyncHandler(async (req, res) => {
   const filter = visibleFilter(req);
-  const [libraries, templates] = await Promise.all([
+  const [libraries, templates, templateUploads] = await Promise.all([
     ScanbodyLibrary.find(filter).sort({ systemName: 1 }).lean(),
     AbutmentTemplate.find(filter).sort({ kind: 1, diameter: 1, height: 1 }).lean(),
+    listOwnTemplateUploads(req),
   ]);
   const names = await ownerNames(req, [...libraries, ...templates]);
   return res.status(200).json(
     new ApiResponse(200, {
       libraries: libraries.map((doc) => libraryView(req, doc, names)),
+      // 등록이 끝난 템플릿만. 검토·검사 중인 건은 templateUploads로만 보이고 AI 디자인에 쓰지 않는다.
       templates: templates.map((doc) => templateView(req, doc, names)),
+      templateUploads,
     }),
   );
 });
 
 function ownerFilter(ownerAnchorId) {
   return ownerAnchorId ? { ownerAnchorId } : { ownerAnchorId: null };
+}
+
+const TEMPLATE_UPLOAD_RECENT_MS = 14 * 24 * 3600 * 1000;
+
+/** 내 기공소(관리자는 공용) 템플릿 업로드 중 끝나지 않았거나 최근에 끝난 것. 등록된 건은 템플릿 목록에 있다. */
+async function listOwnTemplateUploads(req, ids = []) {
+  const anchorId = viewerAnchorId(req);
+  if (!isAdmin(req) && !anchorId) return [];
+  const ownerAnchorId = isAdmin(req) ? null : new Types.ObjectId(anchorId);
+  await sweepStaleTemplateUploads();
+  const filter = {
+    ...ownerFilter(ownerAnchorId),
+    ...(ids.length > 0
+      ? { _id: { $in: ids } }
+      : {
+          $or: [
+            { status: { $in: ["pending_review", "scanning", "processing"] } },
+            { status: { $in: ["rejected", "failed"] }, finishedAt: { $gte: new Date(Date.now() - TEMPLATE_UPLOAD_RECENT_MS) } },
+          ],
+        }),
+  };
+  const jobs = await AbutmentTemplateUpload.find(filter).sort({ createdAt: -1 }).limit(50).lean();
+  const advanced = await Promise.all(jobs.map((job) => advanceTemplateUpload(job)));
+  return advanced.filter(Boolean).map((job) => templateUploadView(job));
 }
 
 async function findOwnUpload(req) {
@@ -187,6 +226,7 @@ async function findOwnUpload(req) {
 // POST /api/scanbody-libraries/uploads  { fileName, size }
 export const createLibraryUpload = asyncHandler(async (req, res) => {
   const { ownerAnchorId } = await resolveOwner(req);
+  await assertNotBlocked(req);
   const { job, uploadUrl, fields } = await createScanbodyUpload({
     ownerAnchorId,
     userId: req.user._id,
@@ -254,69 +294,146 @@ export const deleteScanbodyLibrary = asyncHandler(async (req, res) => {
   return res.status(200).json(new ApiResponse(200, { id: String(doc._id) }));
 });
 
-function vec3(value) {
-  if (!Array.isArray(value) || value.length !== 3) return null;
-  const out = value.map(Number);
-  return out.every(Number.isFinite) ? out : null;
+function parseIds(raw, max = 50) {
+  return String(raw || "")
+    .split(",")
+    .map((id) => id.trim())
+    .filter((id) => Types.ObjectId.isValid(id))
+    .slice(0, max);
 }
 
-function positive(value) {
-  const n = Number(value);
-  return Number.isFinite(n) && n > 0 ? Math.round(n * 1000) / 1000 : 0;
-}
-
-/** 템플릿 .dcm → 새로 만든 STL(스캐너 좌표 그대로). */
-async function storeTemplateGeometry(buffer) {
-  let stl;
-  try {
-    stl = encodeCanonicalStl(trianglesFromHps(buffer), { maxAbsMm: 2000 });
-  } catch (error) {
-    if (error instanceof ScanbodyInputError) throw new ApiError(400, error.message);
-    throw error;
-  }
-  const hash = canonicalStlHash(stl);
-  const s3Key = `${SCANBODY_S3_PREFIX}/${hash}.stl`;
-  if (!(await objectExistsInS3(s3Key))) {
-    await putObjectToS3(s3Key, gzipSync(stl), { contentType: "model/stl", contentEncoding: "gzip" });
-  }
-  return { hash, s3Key, size: stl.length };
-}
-
-// POST /api/scanbody-libraries/templates (multipart: meta, file)
-export const upsertAbutmentTemplate = asyncHandler(async (req, res) => {
+async function findOwnTemplateUpload(req) {
+  const id = String(req.params.uploadId || "");
+  if (!Types.ObjectId.isValid(id)) throw new ApiError(404, "업로드를 찾을 수 없습니다.");
   const { ownerAnchorId } = await resolveOwner(req);
-  const meta = parseJsonField(req.body?.meta, "템플릿");
-  const kind = text(meta?.kind);
-  const diameter = text(meta?.diameter, 10);
-  const height = text(meta?.height, 10).toUpperCase();
-  if (!ABUTMENT_TEMPLATE_KINDS.includes(kind)) throw new ApiError(400, "심플어벗 종류가 올바르지 않습니다.");
-  if (!/^\d+(\.\d+)?$/.test(diameter)) throw new ApiError(400, "직경이 올바르지 않습니다.");
-  const frame = {
-    origin: vec3(meta?.frame?.origin),
-    axis: vec3(meta?.frame?.axis),
-    ref: vec3(meta?.frame?.ref),
-  };
-  if (!frame.origin || !frame.axis || !frame.ref) throw new ApiError(400, "템플릿 축 정보가 없습니다.");
-  const file = req.file;
-  if (!file) throw new ApiError(400, "템플릿 형상 파일이 없습니다.");
+  const job = await AbutmentTemplateUpload.findOne({ _id: id, ...ownerFilter(ownerAnchorId) }).lean();
+  if (!job) throw new ApiError(404, "업로드를 찾을 수 없습니다.");
+  return job;
+}
 
-  const geometry = await storeTemplateGeometry(file.buffer);
-  const doc = await AbutmentTemplate.findOneAndUpdate(
-    { ownerAnchorId, kind, diameter, height },
-    {
-      $set: {
-        fileName: text(file.originalname, 200),
-        ...geometry,
-        frame,
-        marginHeightMm: positive(meta?.marginHeightMm),
-        maxDiameterMm: positive(meta?.maxDiameterMm),
-        heightMm: positive(meta?.heightMm),
-        uploadedBy: req.user?._id ?? null,
-      },
-    },
-    { upsert: true, new: true, setDefaultsOnInsert: true },
+// POST /api/scanbody-libraries/templates/uploads  { fileName, size, meta }
+// 원본은 브라우저가 presigned POST로 S3 보류 경로에 올린다. 서버는 열지 않는다.
+export const createTemplateUploadHandler = asyncHandler(async (req, res) => {
+  const { ownerAnchorId } = await resolveOwner(req);
+  await assertNotBlocked(req);
+  const anchorId = viewerAnchorId(req);
+  const { job, uploadUrl, fields } = await createTemplateUpload({
+    ownerAnchorId,
+    userId: req.user._id,
+    uploaderAnchorId: anchorId ? new Types.ObjectId(anchorId) : null,
+    isAdmin: isAdmin(req),
+    fileName: req.body?.fileName,
+    size: req.body?.size,
+    meta: req.body?.meta,
+  });
+  return res.status(201).json(new ApiResponse(201, { upload: templateUploadView(job), uploadUrl, fields }));
+});
+
+// POST /api/scanbody-libraries/templates/uploads/:uploadId/complete
+export const completeTemplateUploadHandler = asyncHandler(async (req, res) => {
+  const job = await completeTemplateUpload(await findOwnTemplateUpload(req));
+  return res.status(200).json(new ApiResponse(200, templateUploadView(job)));
+});
+
+// GET /api/scanbody-libraries/templates/uploads?ids=a,b
+export const listTemplateUploadsHandler = asyncHandler(async (req, res) => {
+  await resolveOwner(req);
+  const rows = await listOwnTemplateUploads(req, parseIds(req.query?.ids));
+  return res.status(200).json(new ApiResponse(200, rows));
+});
+
+// GET /api/scanbody-libraries/templates/reviews?ids=a,b — 관리자 검토 대기열(+진행 중·최근 결정)
+export const listTemplateReviews = asyncHandler(async (req, res) => {
+  assertAdmin(req);
+  await sweepStaleTemplateUploads();
+  const ids = parseIds(req.query?.ids, 100);
+  const filter =
+    ids.length > 0
+      ? { _id: { $in: ids } }
+      : {
+          autoApproved: false,
+          $or: [
+            { status: { $in: ["pending_review", "scanning", "processing"] } },
+            { reviewedAt: { $gte: new Date(Date.now() - 3 * 24 * 3600 * 1000) } },
+          ],
+        };
+  const jobs = await AbutmentTemplateUpload.find(filter).sort({ createdAt: 1 }).limit(200).lean();
+  const advanced = (await Promise.all(jobs.map((job) => advanceTemplateUpload(job)))).filter(Boolean);
+  return res.status(200).json(new ApiResponse(200, await templateReviewViews(advanced)));
+});
+
+// POST /api/scanbody-libraries/templates/uploads/:uploadId/approve — 「열어 보기」: 검사·해석 시작
+export const approveTemplateUploadHandler = asyncHandler(async (req, res) => {
+  assertAdmin(req);
+  const id = String(req.params.uploadId || "");
+  if (!Types.ObjectId.isValid(id)) throw new ApiError(404, "업로드를 찾을 수 없습니다.");
+  const job = await approveTemplateUpload(id, req.user._id);
+  const [row] = await templateReviewViews([job]);
+  return res.status(200).json(new ApiResponse(200, row));
+});
+
+// POST /api/scanbody-libraries/templates/uploads/:uploadId/reject  { reason, malicious } — 「폐기」
+export const rejectTemplateUploadHandler = asyncHandler(async (req, res) => {
+  assertAdmin(req);
+  const id = String(req.params.uploadId || "");
+  if (!Types.ObjectId.isValid(id)) throw new ApiError(404, "업로드를 찾을 수 없습니다.");
+  const job = await rejectTemplateUpload(id, {
+    adminId: req.user._id,
+    reason: req.body?.reason,
+    malicious: req.body?.malicious === true,
+  });
+  const [row] = await templateReviewViews([job]);
+  return res.status(200).json(new ApiResponse(200, row));
+});
+
+// GET /api/scanbody-libraries/blocklist — 관리자: 활성 차단 목록
+export const listUploadBlocklist = asyncHandler(async (req, res) => {
+  assertAdmin(req);
+  const rows = await UploadBlocklist.find({ active: true }).sort({ createdAt: -1 }).limit(200).lean();
+  const userIds = [...new Set(rows.flatMap((row) => [row.userId, row.createdBy]).filter(Boolean).map(String))];
+  const anchorIds = [...new Set(rows.map((row) => row.businessAnchorId).filter(Boolean).map(String))];
+  const [users, anchors] = await Promise.all([
+    userIds.length ? User.find({ _id: { $in: userIds } }).select({ name: 1, email: 1 }).lean() : [],
+    anchorIds.length ? BusinessAnchor.find({ _id: { $in: anchorIds } }).select({ name: 1 }).lean() : [],
+  ]);
+  const userById = new Map(users.map((row) => [String(row._id), row]));
+  const anchorName = new Map(anchors.map((row) => [String(row._id), String(row.name || "")]));
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      rows.map((row) => {
+        const user = userById.get(String(row.userId));
+        return {
+          id: String(row._id),
+          userId: String(row.userId),
+          userName: String(user?.name || ""),
+          userEmail: String(user?.email || ""),
+          businessAnchorId: row.businessAnchorId ? String(row.businessAnchorId) : null,
+          businessName: row.businessAnchorId ? (anchorName.get(String(row.businessAnchorId)) ?? "") : "",
+          reason: row.reason || "",
+          source: row.source,
+          uploadKind: row.uploadKind || "",
+          fileName: row.fileName || "",
+          createdByName: row.createdBy ? String(userById.get(String(row.createdBy))?.name || "") : "",
+          createdAt: row.createdAt,
+        };
+      }),
+    ),
+  );
+});
+
+// DELETE /api/scanbody-libraries/blocklist/:id — 관리자: 차단 해제(기록은 남긴다)
+export const unblockUploader = asyncHandler(async (req, res) => {
+  assertAdmin(req);
+  const id = String(req.params.id || "");
+  if (!Types.ObjectId.isValid(id)) throw new ApiError(404, "차단 항목을 찾을 수 없습니다.");
+  const row = await UploadBlocklist.findOneAndUpdate(
+    { _id: id, active: true },
+    { $set: { active: false, unblockedBy: req.user._id, unblockedAt: new Date() } },
+    { new: true },
   ).lean();
-  return res.status(200).json(new ApiResponse(200, templateView(req, doc)));
+  if (!row) throw new ApiError(404, "차단 항목을 찾을 수 없습니다.");
+  return res.status(200).json(new ApiResponse(200, { id: String(row._id) }));
 });
 
 // DELETE /api/scanbody-libraries/templates/:id
@@ -348,5 +465,9 @@ export const downloadScanbodyGeometry = asyncHandler(async (req, res) => {
   // 해시 키라 내용이 바뀌지 않는다.
   res.setHeader("Cache-Control", "private, max-age=31536000, immutable");
   if (contentLength > 0) res.setHeader("Content-Length", String(contentLength));
-  body.pipe(res);
+  // pipeline이 S3·gunzip 오류와 클라이언트 중단 때 양쪽 스트림을 닫는다(S3 소켓을 남기지 않는다).
+  pipeline(body, res, (error) => {
+    if (!error || error.code === "ERR_STREAM_PREMATURE_CLOSE") return;
+    console.error("[scanbody-library] geometry stream failed", { key, error: error?.message });
+  });
 });

@@ -323,6 +323,11 @@ const practiceTransferSchema = new mongoose.Schema(
       },
       feeRateApplied: { type: Number, default: 0 },
       /**
+       * feeRateApplied 중 플랫폼 사용료 몫(매출). 나머지는 하청 수수료로 원청 정산에 남는다.
+       * 작업시작·클레임 때 같이 박는다. 없으면 예전 건.
+       */
+      platformFeeRateApplied: { type: Number },
+      /**
        * 수행 기공소의 학습 이용 허용. 생성 또는 하청 작업시작 때 스냅샷.
        * 없으면 레거시 이벤트. 어벗츠기공본부는 true.
        */
@@ -363,6 +368,11 @@ const practiceTransferSchema = new mongoose.Schema(
       settledAt: { type: Date, default: null },
       labSettledAt: { type: Date, default: null },
       abutmentSettledAt: { type: Date, default: null },
+      /**
+       * 운영자가 게이트(STL·보철 업로드)를 건너뛰고 정산한 기록. { at, reason, note }.
+       * 사용자 메모(transferMemo)와 분리한다.
+       */
+      manualSettlement: { type: mongoose.Schema.Types.Mixed, default: undefined },
       isRemake: { type: Boolean, default: false },
       // 자동매칭 기공비 스냅샷 — v4 고정수가(stars/feeMultiplier/items min=max) 또는 레거시 밴드
       autoMatchBudget: {
@@ -651,6 +661,11 @@ practiceTransferSchema.index({
   assigneeLabAnchorId: 1,
   labBasketTag: 1,
 });
+// S3 프록시 다운로드 권한 조회($or 4경로 exact match, multikey)
+practiceTransferSchema.index({ "files.file.s3Key": 1 });
+practiceTransferSchema.index({ "production.designFiles.file.s3Key": 1 }, { sparse: true });
+practiceTransferSchema.index({ "production.labWorkScanFiles.file.s3Key": 1 }, { sparse: true });
+practiceTransferSchema.index({ "resultFiles.file.s3Key": 1 }, { sparse: true });
 // 작업 스캔 자동 정렬 잡 대기열
 practiceTransferSchema.index(
   {

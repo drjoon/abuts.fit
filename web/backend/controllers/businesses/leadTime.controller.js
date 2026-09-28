@@ -58,6 +58,45 @@ export async function getManufacturerLeadTimes(req, res) {
 }
 
 /**
+ * 관리자 설정 저장: 조회(getManufacturerLeadTimesUtil)와 같은 제조사 문서의 최대 영업일만 바꾼다.
+ * 최소가 최대보다 크면 최소를 최대로 내린다. 캐시는 비운다.
+ * @param {{ d6?: number, d8?: number, d10?: number, d12?: number }} maxByKey
+ */
+export async function updateManufacturerMaxLeadDays(maxByKey) {
+  const findLatest = (filter) =>
+    BusinessAnchor.findOne({ businessType: "manufacturer", ...filter })
+      .sort({ "shippingPolicy.updatedAt": -1, updatedAt: -1 })
+      .select({ "shippingPolicy.leadTimes": 1 })
+      .lean();
+  const manufacturer =
+    (await findLatest({ "shippingPolicy.leadTimes": { $exists: true } })) ||
+    (await findLatest({}));
+  if (!manufacturer) return false;
+  const current = mergeLeadTimes(manufacturer.shippingPolicy?.leadTimes);
+  const next = { ...current };
+  for (const key of ["d6", "d8", "d10", "d12"]) {
+    const raw = Number(maxByKey?.[key]);
+    if (!Number.isFinite(raw)) continue;
+    const max = Math.max(1, Math.floor(raw));
+    next[key] = {
+      minBusinessDays: Math.min(current[key].minBusinessDays, max),
+      maxBusinessDays: max,
+    };
+  }
+  await BusinessAnchor.updateOne(
+    { _id: manufacturer._id },
+    {
+      $set: {
+        "shippingPolicy.leadTimes": next,
+        "shippingPolicy.updatedAt": new Date(),
+      },
+    },
+  );
+  leadTimesCache = { at: 0, value: null };
+  return true;
+}
+
+/**
  * 백엔드 내부 유틸: 제조사 리드타임을 조회하여 반환
  * @returns {Promise<Object>} { d6: {min, max}, d8: {min, max}, ... }
  */

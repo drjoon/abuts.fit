@@ -28,8 +28,6 @@ import {
   setMyAutoMatchParticipation,
   getMyFmDentalShipping,
   setMyFmDentalShipping,
-  setMyAiTrainingConsent,
-  markMyAiTrainingFirstWorkStart,
   verifyMyPayoutAccount,
 } from "./business.update.controller.js";
 import {
@@ -56,7 +54,7 @@ import {
   isSyntheticPracticeBusinessNumber,
 } from "./requestorOrgAnchor.util.js";
 import { isAbutsLabCertificationCertified } from "../../utils/abutsLabCertification.js";
-export { updateMyBusiness, getMyAutoMatchParticipation, setMyAutoMatchParticipation, getMyFmDentalShipping, setMyFmDentalShipping, setMyAiTrainingConsent, markMyAiTrainingFirstWorkStart, verifyMyPayoutAccount };
+export { updateMyBusiness, getMyAutoMatchParticipation, setMyAutoMatchParticipation, getMyFmDentalShipping, setMyFmDentalShipping, verifyMyPayoutAccount };
 
 export async function checkBusinessNumberDuplicate(req, res) {
   try {

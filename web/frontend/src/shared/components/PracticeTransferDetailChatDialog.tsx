@@ -649,6 +649,14 @@ type PracticeTransferDetailChatDialogProps = {
     file: PracticeTransferDialogFileItem,
     opts?: { dcmFormat?: DcmDownloadFormat },
   ) => void | Promise<void>;
+  /**
+   * 프리뷰 「다운로드」. 고른 파일만 「폴더 열기」와 같은 케이스 폴더에 다시 받는다.
+   * 미전달 시 브라우저 다운로드(onDownloadTransferFile).
+   */
+  onSaveFilesToCaseFolder?: (
+    files: PracticeTransferDialogFileItem[],
+    opts?: { dcmFormat?: DcmDownloadFormat },
+  ) => void | Promise<void>;
   /** 기공소 의뢰수락 (수신 페이지에서만 전달). 미수락이면 채팅 상단 CTA */
   acceptBusy?: boolean;
   accepted?: boolean;
@@ -674,6 +682,9 @@ type PracticeTransferDetailChatDialogProps = {
   /** 어벗츠 우선창을 끊고 하청 풀을 즉시 연다 */
   openSubcontractBusy?: boolean;
   onOpenSubcontract?: () => void | Promise<void>;
+  /** 원청이 연 하청 풀을 닫는다. 전달되면 작업시작 버튼 대신 이 버튼만 보인다. */
+  closeSubcontractBusy?: boolean;
+  onCloseSubcontract?: () => void | Promise<void>;
   /** 수락 바 짧은 작업기간 표시용 */
   orderDate?: string | null;
   arrivalDate?: string | null;
@@ -891,6 +902,8 @@ export function PracticeTransferDetailChatDialog({
   onReject: _onReject,
   openSubcontractBusy = false,
   onOpenSubcontract,
+  closeSubcontractBusy = false,
+  onCloseSubcontract,
   orderDate = null,
   arrivalDate = null,
   orderedAt = null,
@@ -2232,7 +2245,10 @@ export function PracticeTransferDetailChatDialog({
   );
   /** 최초 미수락: 채팅은 유지하고 상단에 수락 CTA */
   const showAcceptBar =
-    operateLabWork && Boolean(onAccept) && !accepted && !workCanceled;
+    operateLabWork &&
+    (Boolean(onAccept) || Boolean(onCloseSubcontract)) &&
+    !accepted &&
+    !workCanceled;
   /** 작업취소 후 수락이 풀렸지만 채팅은 이어갈 때 */
   const showReacceptBar =
     operateLabWork && Boolean(onAccept) && !accepted && workCanceled;
@@ -2518,7 +2534,18 @@ export function PracticeTransferDetailChatDialog({
         </Tooltip>
       </TooltipProvider>
     ) : null;
-  const acceptBarPrimaryActions = showAcceptBar ? (
+  // 원청은 작업시작과 하청 중 하나만 한다. 하청 풀을 열어 두면 작업시작 대신 「하청 취소」만 둔다.
+  const acceptBarPrimaryActions = showAcceptBar && onCloseSubcontract ? (
+    <Button
+      type="button"
+      size="sm"
+      variant="secondary"
+      onClick={() => void onCloseSubcontract()}
+      disabled={closeSubcontractBusy}
+    >
+      {closeSubcontractBusy ? "취소 중..." : "하청 취소"}
+    </Button>
+  ) : showAcceptBar ? (
     <>
       {onOpenSubcontract ? (
         <Button

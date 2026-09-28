@@ -1,6 +1,7 @@
 // 스캔바디 라이브러리(3Shape .dme · exocad)·심플어벗 템플릿 등록. 관리자=어벗츠 공용, 기공소=자체 추가 등록.
 // 라이브러리는 S3 격리 → 악성코드 검사 → 서버 해석 순으로 등록되고, 진행 상태를 폴링해 보여 준다.
 // 기공소 라이브러리는 그 기공소만 쓰고, 관리자가 검토해 공용으로 올리거나 내린다.
+// 기공소 템플릿 .dcm은 S3 보류 → 관리자 검토(열어 보기·폐기) → 검사·해석 뒤에만 등록된다. 관리자는 차단 목록도 여기서 본다.
 // AI 디자인은 의뢰의 임플란트 사양·심플어벗 규격으로 여기서 자동으로 고른다.
 // related files:
 // - web/frontend/src/shared/practice/scanbodyLibraryApi.ts
@@ -22,21 +23,32 @@ import {
   readImplantFavorites,
   writeImplantFavorites,
 } from "@/shared/practice/implantLibrary";
+import { formatKstDateTimeToKo } from "@/shared/date/kst";
 import {
+  approveTemplateUpload,
   deleteAbutmentTemplate,
   deleteScanbodyLibrary,
   fetchScanbodyUploads,
+  fetchTemplateReviews,
+  fetchTemplateUploads,
+  fetchUploadBlocklist,
+  isTemplateUploadActive,
   isUploadFinished,
   parseTemplateFileName,
+  rejectTemplateUpload,
   setScanbodyLibraryPublic,
+  unblockUploader,
   updateScanbodyKit,
   uploadAbutmentTemplate,
   uploadScanbodyBundle,
   useScanbodyCatalog,
+  type AbutmentTemplateReviewRow,
   type AbutmentTemplateRow,
+  type AbutmentTemplateUploadRow,
   type LibraryScope,
   type ScanbodyLibraryRow,
   type ScanbodyUploadRow,
+  type UploadBlockRow,
 } from "@/shared/practice/scanbodyLibraryApi";
 import { SIMPLE_ABUTMENT_KINDS, type SimpleAbutmentKind } from "@/shared/practice/transferMemo";
 import { useImplantConnectionCatalog } from "@/shared/practice/useImplantConnectionCatalog";
@@ -93,6 +105,318 @@ function uploadTone(item: UploadItem) {
   if (status === "done") return "text-emerald-700";
   if (status === "rejected" || status === "failed") return "text-destructive";
   return "text-muted-foreground";
+}
+
+function templateUploadStatusText(row: AbutmentTemplateUploadRow) {
+  switch (row.status) {
+    case "uploading":
+      return "올리는 중";
+    case "pending_review":
+      return "관리자 검토 대기";
+    case "scanning":
+      return "악성코드 검사 중";
+    case "processing":
+      return "형상 검증·등록 중";
+    case "done":
+      return "등록 완료";
+    case "rejected":
+      return `거절 · ${row.message}`;
+    default:
+      return `실패 · ${row.message}`;
+  }
+}
+
+function templateUploadTone(row: AbutmentTemplateUploadRow) {
+  if (row.status === "done") return "text-emerald-700";
+  if (row.status === "rejected" || row.status === "failed") return "text-destructive";
+  if (row.status === "pending_review") return "text-amber-700";
+  return "text-muted-foreground";
+}
+
+const formatMb = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+
+/** 진행 중(검사·해석) 업로드를 3초마다 다시 받는다. 끝나면 onFinished. */
+function usePollActive<T extends { id: string; status: AbutmentTemplateUploadRow["status"] }>(
+  rows: readonly T[],
+  fetchRows: (ids: string[]) => Promise<T[]>,
+  onRows: (rows: T[]) => void,
+  onFinished: () => void,
+) {
+  const activeIds = rows
+    .filter((row) => isTemplateUploadActive(row.status))
+    .map((row) => row.id)
+    .join(",");
+  const latest = useRef({ fetchRows, onRows, onFinished });
+  latest.current = { fetchRows, onRows, onFinished };
+  useEffect(() => {
+    if (!activeIds) return;
+    const timer = window.setInterval(() => {
+      void latest.current
+        .fetchRows(activeIds.split(","))
+        .then((next) => {
+          latest.current.onRows(next);
+          if (next.some((row) => row.status === "done")) latest.current.onFinished();
+        })
+        .catch(() => undefined);
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [activeIds]);
+}
+
+/** 관리자: 기공소가 올린 심플어벗 템플릿 검토. 열어 보기 = 검사·해석, 폐기 = 열지 않고 삭제. */
+function AdminTemplateReviewCard({ onRegistered }: { onRegistered: () => void }) {
+  const { toast } = useToast();
+  const [rows, setRows] = useState<AbutmentTemplateReviewRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [rejecting, setRejecting] = useState<{ id: string; reason: string; malicious: boolean } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchTemplateReviews()
+      .then((next) => {
+        if (!cancelled) setRows(next);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const replace = (row: AbutmentTemplateReviewRow) =>
+    setRows((prev) => prev.map((item) => (item.id === row.id ? row : item)));
+
+  usePollActive(
+    rows,
+    (ids) => fetchTemplateReviews(ids),
+    (next) => next.forEach(replace),
+    onRegistered,
+  );
+
+  const approve = async (row: AbutmentTemplateReviewRow) => {
+    setBusyId(row.id);
+    replace({ ...row, status: "scanning" });
+    try {
+      const next = await approveTemplateUpload(row.id);
+      replace(next);
+      if (next.status === "done") onRegistered();
+    } catch (error) {
+      replace(row);
+      toast({
+        title: "검사를 시작하지 못했습니다.",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "destructive",
+      });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const reject = async () => {
+    if (!rejecting) return;
+    const row = rows.find((item) => item.id === rejecting.id);
+    if (!row) return;
+    const body = { reason: rejecting.reason.trim(), malicious: rejecting.malicious };
+    setBusyId(row.id);
+    setRejecting(null);
+    replace({ ...row, status: "rejected", message: "관리자가 폐기했습니다." });
+    try {
+      replace(await rejectTemplateUpload(row.id, body));
+    } catch (error) {
+      replace(row);
+      toast({
+        title: "폐기하지 못했습니다.",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "destructive",
+      });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const pending = rows.filter((row) => row.status === "pending_review").length;
+
+  return (
+    <Card>
+      <CardHeader className="space-y-0">
+        <CardTitle className="text-base">심플어벗 템플릿 검토 {pending > 0 ? `(${pending})` : ""}</CardTitle>
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+          기공소가 올린 .dcm은 아직 열지 않은 상태로 보관 중입니다.
+          <br />
+          열어 보기를 누르면 악성코드 검사를 거쳐 형상을 확인하고 등록합니다.
+          <br />
+          폐기하면 원본을 바로 지웁니다.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-1.5">
+        {loading && rows.length === 0 ? (
+          <p className="text-xs text-muted-foreground">불러오는 중입니다.</p>
+        ) : rows.length === 0 ? (
+          <p className="text-xs text-muted-foreground">검토할 템플릿이 없습니다.</p>
+        ) : (
+          rows.map((row) => (
+            <div key={row.id} className="rounded-md border px-2.5 py-2 text-xs">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="truncate font-medium">
+                    {row.fileName}
+                    <span className="ml-1.5 font-normal text-muted-foreground">
+                      {formatMb(row.size)} · {row.kind} {row.diameter}
+                      {row.height}
+                    </span>
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">
+                    {row.uploader.businessName || "사업자 없음"} · {row.uploader.name || "이름 없음"}
+                    {row.uploader.email ? ` (${row.uploader.email})` : ""} · {formatKstDateTimeToKo(row.createdAt)}
+                  </p>
+                </div>
+                {row.status === "pending_review" ? (
+                  <div className="flex shrink-0 items-center gap-1">
+                    <Button
+                      size="sm"
+                      className="h-7 px-2 text-[11px]"
+                      disabled={busyId === row.id}
+                      onClick={() => void approve(row)}
+                    >
+                      열어 보기
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 px-2 text-[11px] text-destructive"
+                      disabled={busyId === row.id}
+                      onClick={() =>
+                        setRejecting(rejecting?.id === row.id ? null : { id: row.id, reason: "", malicious: false })
+                      }
+                    >
+                      폐기
+                    </Button>
+                  </div>
+                ) : (
+                  <span className={cn("shrink-0 text-[11px]", templateUploadTone(row))}>
+                    {templateUploadStatusText(row)}
+                    {row.markedMalicious ? " · 업로더 차단" : ""}
+                  </span>
+                )}
+              </div>
+              {rejecting?.id === row.id ? (
+                <div className="mt-2 flex flex-wrap items-center gap-2 rounded bg-muted/40 p-2">
+                  <Input
+                    value={rejecting.reason}
+                    onChange={(event) => setRejecting({ ...rejecting, reason: event.target.value })}
+                    placeholder="폐기 사유(선택)"
+                    maxLength={300}
+                    className="h-7 min-w-[12rem] flex-1 text-xs"
+                  />
+                  <label className="flex items-center gap-1 text-[11px]">
+                    <input
+                      type="checkbox"
+                      checked={rejecting.malicious}
+                      onChange={(event) => setRejecting({ ...rejecting, malicious: event.target.checked })}
+                    />
+                    악성으로 표시(올린 사용자 업로드 차단)
+                  </label>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    className="h-7 px-2 text-[11px]"
+                    onClick={() => void reject()}
+                  >
+                    폐기 확인
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+          ))
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/** 관리자: 악성 파일 업로드로 막힌 사용자. GuardDuty 위협·관리자 악성 폐기에서 추가된다. */
+function AdminUploadBlocklistCard() {
+  const { toast } = useToast();
+  const [rows, setRows] = useState<UploadBlockRow[]>([]);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchUploadBlocklist()
+      .then((next) => {
+        if (!cancelled) setRows(next);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) setLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const unblock = async (row: UploadBlockRow) => {
+    if (!window.confirm(`${row.userName || row.userEmail || "이 사용자"}의 업로드 차단을 풀까요?`)) return;
+    setRows((prev) => prev.filter((item) => item.id !== row.id));
+    try {
+      await unblockUploader(row.id);
+    } catch (error) {
+      setRows((prev) => [row, ...prev]);
+      toast({
+        title: "차단을 풀지 못했습니다.",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "destructive",
+      });
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader className="space-y-0">
+        <CardTitle className="text-base">업로드 차단 목록</CardTitle>
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+          악성코드가 발견됐거나 관리자가 악성으로 폐기한 파일을 올린 사용자입니다.
+          <br />
+          이 사용자와 같은 사업자는 스캔바디 라이브러리·템플릿을 올릴 수 없습니다.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-1.5">
+        {!loaded ? (
+          <p className="text-xs text-muted-foreground">불러오는 중입니다.</p>
+        ) : rows.length === 0 ? (
+          <p className="text-xs text-muted-foreground">차단된 사용자가 없습니다.</p>
+        ) : (
+          rows.map((row) => (
+            <div key={row.id} className="flex items-start justify-between gap-2 rounded-md border px-2.5 py-2 text-xs">
+              <div className="min-w-0">
+                <p className="truncate font-medium">
+                  {row.userName || "이름 없음"}
+                  {row.userEmail ? ` (${row.userEmail})` : ""}
+                  {row.businessName ? ` · ${row.businessName}` : ""}
+                </p>
+                <p className="mt-0.5 text-[11px] text-muted-foreground">
+                  {row.source === "guardduty" ? "GuardDuty" : `관리자${row.createdByName ? ` ${row.createdByName}` : ""}`}
+                  {row.fileName ? ` · ${row.fileName}` : ""} · {formatKstDateTimeToKo(row.createdAt)}
+                  {row.reason ? ` · ${row.reason}` : ""}
+                </p>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 shrink-0 px-2 text-[11px]"
+                onClick={() => void unblock(row)}
+              >
+                차단 해제
+              </Button>
+            </div>
+          ))
+        )}
+      </CardContent>
+    </Card>
+  );
 }
 
 export function ScanbodyLibraryManager() {
@@ -230,11 +554,21 @@ export function ScanbodyLibraryManager() {
       ...prev,
       templates: [...prev.templates.filter((t) => t.id !== row.id), row],
     }));
+  const replaceTemplateUploads = (rows: AbutmentTemplateUploadRow[]) =>
+    setCatalog((prev) => {
+      const byId = new Map(rows.map((row) => [row.id, row]));
+      const kept = prev.templateUploads.map((row) => byId.get(row.id) ?? row);
+      const added = rows.filter((row) => !prev.templateUploads.some((item) => item.id === row.id));
+      return { ...prev, templateUploads: [...added, ...kept] };
+    });
+
+  usePollActive(catalog.templateUploads, fetchTemplateUploads, replaceTemplateUploads, reload);
 
   const onTemplateFiles = async (files: File[]) => {
     if (files.length === 0) return;
     setBusy("template");
     const failed: string[] = [];
+    let queued = 0;
     for (const file of files) {
       const spec = parseTemplateFileName(file.name);
       if (!spec) {
@@ -242,12 +576,27 @@ export function ScanbodyLibraryManager() {
         continue;
       }
       try {
-        replaceTemplate(await uploadAbutmentTemplate(file, { kind: templateKind, ...spec }));
+        const row = await uploadAbutmentTemplate(file, { kind: templateKind, ...spec });
+        replaceTemplateUploads([row]);
+        if (row.status === "done") reload();
+        else if (row.status === "pending_review") queued += 1;
       } catch (error) {
         failed.push(`${file.name}: ${error instanceof Error ? error.message : "실패"}`);
       }
     }
     setBusy(null);
+    if (queued > 0) {
+      toast({
+        title: `템플릿 ${queued}개를 올렸습니다.`,
+        description: (
+          <>
+            관리자 검토와 악성코드 검사가 끝나면 등록됩니다.
+            <br />
+            그 전에는 AI 디자인에 쓰지 않습니다.
+          </>
+        ),
+      });
+    }
     if (failed.length > 0) {
       toast({
         title: "일부 템플릿을 올리지 못했습니다.",
@@ -652,6 +1001,12 @@ export function ScanbodyLibraryManager() {
               3Shape 스캐너로 찍은 심플어벗 .dcm 파일을 올립니다.
               <br />
               파일 이름 6M은 직경 6, 높이 M으로 읽고, 의뢰의 종류·직경으로 자동으로 고릅니다.
+              {isAdmin ? null : (
+                <>
+                  <br />
+                  관리자 검토와 악성코드 검사를 거친 뒤 등록됩니다.
+                </>
+              )}
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
@@ -694,6 +1049,24 @@ export function ScanbodyLibraryManager() {
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
+          {catalog.templateUploads.length > 0 ? (
+            <ul className="space-y-1.5 rounded-lg border bg-muted/30 p-2.5">
+              {catalog.templateUploads.map((row) => (
+                <li key={row.id} className="flex items-center justify-between gap-2 text-xs">
+                  <span className="truncate font-medium">
+                    {row.fileName}
+                    <span className="ml-1.5 font-normal text-muted-foreground">
+                      {row.kind} {row.diameter}
+                      {row.height}
+                    </span>
+                  </span>
+                  <span className={cn("shrink-0 text-[11px]", templateUploadTone(row))}>
+                    {templateUploadStatusText(row)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
           {templatesByKind.map(({ kind, rows }) => (
             <div key={kind}>
               <p className="mb-1 text-xs font-semibold">{kind}</p>
@@ -749,6 +1122,13 @@ export function ScanbodyLibraryManager() {
           ))}
         </CardContent>
       </Card>
+
+      {isAdmin ? (
+        <>
+          <AdminTemplateReviewCard onRegistered={reload} />
+          <AdminUploadBlocklistCard />
+        </>
+      ) : null}
     </div>
   );
 }

@@ -157,84 +157,6 @@ describe("사용자 API 테스트", () => {
     });
   });
 
-  // 제조사 목록 조회 테스트
-  describe("GET /api/users/manufacturers", () => {
-    it("의뢰자 권한으로 제조사 목록 조회 성공", async () => {
-      const response = await request(app)
-        .get("/api/users/manufacturers")
-        .set("Authorization", `Bearer ${userToken}`)
-        .expect(200);
-
-      // 응답 검증
-      expect(response.body.success).toBe(true);
-      expect(response.body.data).toHaveProperty("manufacturers");
-      expect(response.body.data).toHaveProperty("pagination");
-      expect(response.body.data.manufacturers).toHaveLength(1);
-      expect(response.body.data.manufacturers[0].email).toBe(
-        testManufacturer.email,
-      );
-    });
-
-    it("관리자 권한으로 제조사 목록 조회 성공", async () => {
-      const response = await request(app)
-        .get("/api/users/manufacturers")
-        .set("Authorization", `Bearer ${adminToken}`)
-        .expect(200);
-
-      // 응답 검증
-      expect(response.body.success).toBe(true);
-      expect(response.body.data.manufacturers).toHaveLength(1);
-    });
-
-    it("제조사 권한으로 접근 시 실패", async () => {
-      const response = await request(app)
-        .get("/api/users/manufacturers")
-        .set("Authorization", `Bearer ${manufacturerToken}`)
-        .expect(403);
-
-      // 응답 검증
-      expect(response.body.success).toBe(false);
-    });
-  });
-
-  // 의뢰자 목록 조회 테스트
-  describe("GET /api/users/requestors", () => {
-    it("제조사 권한으로 의뢰자 목록 조회 성공", async () => {
-      const response = await request(app)
-        .get("/api/users/requestors")
-        .set("Authorization", `Bearer ${manufacturerToken}`)
-        .expect(200);
-
-      // 응답 검증
-      expect(response.body.success).toBe(true);
-      expect(response.body.data).toHaveProperty("requestors");
-      expect(response.body.data).toHaveProperty("pagination");
-      expect(response.body.data.requestors).toHaveLength(1);
-      expect(response.body.data.requestors[0].email).toBe(testUser.email);
-    });
-
-    it("관리자 권한으로 의뢰자 목록 조회 성공", async () => {
-      const response = await request(app)
-        .get("/api/users/requestors")
-        .set("Authorization", `Bearer ${adminToken}`)
-        .expect(200);
-
-      // 응답 검증
-      expect(response.body.success).toBe(true);
-      expect(response.body.data.requestors).toHaveLength(1);
-    });
-
-    it("의뢰자 권한으로 접근 시 실패", async () => {
-      const response = await request(app)
-        .get("/api/users/requestors")
-        .set("Authorization", `Bearer ${userToken}`)
-        .expect(403);
-
-      // 응답 검증
-      expect(response.body.success).toBe(false);
-    });
-  });
-
   // 알림 설정 조회 테스트
   describe("GET /api/users/notification-settings", () => {
     it("알림 설정 조회 성공", async () => {
@@ -299,53 +221,19 @@ describe("사용자 API 테스트", () => {
     });
   });
 
-  // 사용자 통계 조회 테스트
-  describe("GET /api/users/stats", () => {
-    it("의뢰자 통계 조회 성공", async () => {
-      const response = await request(app)
-        .get("/api/users/stats")
-        .set("Authorization", `Bearer ${userToken}`)
-        .expect(200);
-
-      // 응답 검증
-      expect(response.body.success).toBe(true);
-      expect(response.body.data).toHaveProperty("requestor");
-    });
-
-    it("제조사 통계 조회 성공", async () => {
-      const response = await request(app)
-        .get("/api/users/stats")
-        .set("Authorization", `Bearer ${manufacturerToken}`)
-        .expect(200);
-
-      // 응답 검증
-      expect(response.body.success).toBe(true);
-      expect(response.body.data).toHaveProperty("manufacturer");
-    });
-
-    it("관리자 통계 조회 성공", async () => {
-      const response = await request(app)
-        .get("/api/users/stats")
+  // 제조사·의뢰자 목록, 통계, 활동 로그 API는 미사용으로 제거됐다
+  // (commit 24fd9fc17 「백엔드 미사용 코드 제거」).
+  describe("제거된 /api/users 엔드포인트", () => {
+    it.each([
+      "/api/users/manufacturers",
+      "/api/users/requestors",
+      "/api/users/stats",
+      "/api/users/activity-logs",
+    ])("%s 는 404", async (url) => {
+      await request(app)
+        .get(url)
         .set("Authorization", `Bearer ${adminToken}`)
-        .expect(200);
-
-      // 응답 검증
-      expect(response.body.success).toBe(true);
-    });
-  });
-
-  // 사용자 활동 로그 조회 테스트
-  describe("GET /api/users/activity-logs", () => {
-    it("활동 로그 조회 성공", async () => {
-      const response = await request(app)
-        .get("/api/users/activity-logs")
-        .set("Authorization", `Bearer ${userToken}`)
-        .expect(200);
-
-      // 응답 검증
-      expect(response.body.success).toBe(true);
-      expect(response.body.data).toHaveProperty("logs");
-      expect(response.body.data).toHaveProperty("pagination");
+        .expect(404);
     });
   });
 });

@@ -16,6 +16,7 @@ import PracticeTransferShareLink, {
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import User from "../../models/user.model.js";
 import s3Utils from "../../utils/s3.utils.js";
+import { pipeStreamToResponse } from "../../utils/pipeStreamToResponse.js";
 import {
   PRACTICE_TRANSFER_CASE_VIEW_SELECT,
   buildPracticeTransferCaseView,
@@ -454,14 +455,10 @@ export async function streamPublicCaseShareFile(req, res) {
     if (eTag) res.setHeader("ETag", eTag);
     res.setHeader("Cache-Control", "private, no-store");
     res.setHeader("X-Robots-Tag", "noindex");
-    body.on?.("error", () => {
-      if (!res.headersSent) {
-        res.status(500).end();
-        return;
-      }
-      res.end();
+    await pipeStreamToResponse(body, res, {
+      label: "practiceTransferShare",
+      key: target.s3Key,
     });
-    body.pipe(res);
   } catch (error) {
     console.error("[practiceTransferShare] streamPublicCaseShareFile", error);
     if (!res.headersSent) {

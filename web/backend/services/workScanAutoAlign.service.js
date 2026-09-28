@@ -29,7 +29,10 @@ const MAX_ATTEMPTS = 3;
 const WORKER_TIMEOUT_MS = Number(
   process.env.WORK_SCAN_AUTO_ALIGN_TIMEOUT_MS || 10 * 60 * 1000,
 );
-const WORKER_HEAP_MB = Number(process.env.WORK_SCAN_AUTO_ALIGN_HEAP_MB || 2048);
+// 메시 버퍼는 힙 밖이라 실제 사용량은 이보다 크다. 웹 인스턴스 RAM 안에 들게 잡는다.
+const WORKER_HEAP_MB = Number(process.env.WORK_SCAN_AUTO_ALIGN_HEAP_MB || 1024);
+/** 새 파일 업로드로 들어온 대기만 처리한다. 예전 백필로 쌓인 pending은 맡지 않는다. */
+const QUEUE_SOURCE = "upload";
 const QUIET = { timestamps: false };
 
 let onQueued = null;
@@ -39,7 +42,10 @@ export function setWorkScanAutoAlignWake(fn) {
   onQueued = typeof fn === "function" ? fn : null;
 }
 
-/** 의뢰 파일이 바뀐 뒤 호출한다. 응답은 기다리지 않는다. */
+/**
+ * 의뢰 스캔을 새로 올린 직후에만 호출한다. 응답은 기다리지 않는다.
+ * 기존 의뢰는 대기열에 넣지 않는다. AI 디자인이 열 때 브라우저에서 맞춘다.
+ */
 export function queueWorkScanAutoAlign(transferMongoId) {
   const id = String(transferMongoId || "").trim();
   if (!id) return;
@@ -48,6 +54,7 @@ export function queueWorkScanAutoAlign(transferMongoId) {
     {
       $set: {
         [`${STATE}.status`]: "pending",
+        [`${STATE}.source`]: QUEUE_SOURCE,
         [`${STATE}.queuedAt`]: new Date(),
         [`${STATE}.attempts`]: 0,
       },
@@ -60,22 +67,53 @@ export function queueWorkScanAutoAlign(transferMongoId) {
     });
 }
 
-/** 상태가 없는 기존 의뢰를 모두 대기열에 넣는다. 여러 인스턴스가 같이 돌려도 한 번만 들어간다. */
-export async function backfillWorkScanAutoAlignQueue() {
-  const result = await PracticeTransfer.updateMany(
-    {
-      status: "active",
-      "files.0": { $exists: true },
-      [STATE]: { $exists: false },
-    },
-    {
-      $set: {
-        [STATE]: { status: "pending", queuedAt: new Date(), attempts: 0 },
+/**
+ * 휴지통·복원으로 의뢰 스캔 묶음이 바뀌면, 예전 스캔으로 만든 자동 작업 스캔만 비운다.
+ * 다시 계산하지 않는다. 기공소가 저장한 작업 스캔은 건드리지 않는다.
+ */
+export function dropStaleWorkScanAutoAlign(transferMongoId) {
+  const id = String(transferMongoId || "").trim();
+  if (!id) return;
+  void (async () => {
+    const doc = await PracticeTransfer.findById(id)
+      .select({
+        transferId: 1,
+        files: 1,
+        practiceUserId: 1,
+        practiceBusinessAnchorId: 1,
+        targetLabAnchorId: 1,
+        assigneeLabAnchorId: 1,
+        "production.labWorkScanFiles": 1,
+        [STATE]: 1,
+      })
+      .lean();
+    const state = doc?.production?.workScanAutoAlign;
+    const autoKeys = Array.isArray(state?.fileKeys) ? state.fileKeys : [];
+    if (!doc || state?.status !== "done" || autoKeys.length === 0) return;
+    const existing = Array.isArray(doc.production?.labWorkScanFiles)
+      ? doc.production.labWorkScanFiles
+      : [];
+    const autoSet = new Set(autoKeys);
+    if (existing.some((row) => !autoSet.has(fileKey(row)))) return;
+    const sourceKey = workScanAlignSourceKey(collectWorkScanAlignSources(doc.files));
+    if (state.sourceKey === sourceKey) return;
+    const result = await PracticeTransfer.updateOne(
+      { _id: doc._id, [`${STATE}.status`]: "done", [`${STATE}.sourceKey`]: state.sourceKey },
+      {
+        $set: {
+          "production.labWorkScanFiles": [],
+          [`${STATE}.status`]: "stale",
+          [`${STATE}.sourceKey`]: sourceKey,
+          [`${STATE}.fileKeys`]: [],
+          [`${STATE}.finishedAt`]: new Date(),
+        },
       },
-    },
-    QUIET,
-  );
-  return Number(result?.modifiedCount || 0);
+      QUIET,
+    );
+    if (Number(result?.modifiedCount || 0) > 0) await emitWorkScanFilesChanged(doc, []);
+  })().catch((error) => {
+    console.warn("[work-scan-auto-align] drop stale failed", id, error?.message || error);
+  });
 }
 
 const fileName = (row) => String(row?.file?.originalName || "").trim();
@@ -197,9 +235,10 @@ async function claimNext() {
   const doc = await PracticeTransfer.findOneAndUpdate(
     {
       $or: [
-        { [`${STATE}.status`]: "pending" },
+        { [`${STATE}.status`]: "pending", [`${STATE}.source`]: QUEUE_SOURCE },
         {
           [`${STATE}.status`]: "running",
+          [`${STATE}.source`]: QUEUE_SOURCE,
           [`${STATE}.leaseUntil`]: { $lt: now },
           [`${STATE}.attempts`]: { $lt: MAX_ATTEMPTS },
         },
@@ -295,8 +334,11 @@ async function processClaimed({ doc, runId }) {
       sources.map(async (row) => {
         const buffer = await getObjectBufferFromS3(row.s3Key);
         if (!buffer?.length) throw new Error(`스캔을 읽지 못했습니다: ${row.fileName}`);
-        const bytes = new Uint8Array(buffer.length);
-        bytes.set(buffer);
+        // 버퍼가 ArrayBuffer 전체를 쓰면 복사 없이 워커로 넘긴다. 풀 조각이면 넘길 수 없어 복사한다.
+        const ownsBuffer = buffer.byteOffset === 0 && buffer.byteLength === buffer.buffer.byteLength;
+        const bytes = ownsBuffer
+          ? new Uint8Array(buffer.buffer, 0, buffer.byteLength)
+          : Uint8Array.from(buffer);
         return { role: row.role, fileName: row.fileName, bytes };
       }),
     );

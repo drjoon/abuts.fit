@@ -114,6 +114,9 @@ chatSchema.index({ roomId: 1, sender: 1, "readBy.userId": 1 });
 // 삭제되지 않은 메시지 조회를 위한 인덱스
 chatSchema.index({ roomId: 1, isDeleted: 1, createdAt: -1 });
 
+// S3 프록시 다운로드 권한 조회 — 첨부 s3Key exact match (첨부 없는 메시지는 제외)
+chatSchema.index({ "attachments.s3Key": 1 }, { sparse: true });
+
 // 메시지 전송 후 채팅방 lastMessageAt 업데이트
 chatSchema.post("save", async function (doc) {
   const ChatRoom = mongoose.model("ChatRoom");
