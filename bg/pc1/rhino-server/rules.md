@@ -71,7 +71,7 @@ Windows Update 등으로 재부팅되면 Rhino/ESPRIT/브리지는 수동 실행
   - 크라운 주축으로 Z를 기울이거나, 직경 이진탐색이 교합면 개구의 허위 3.35mm를 고르면 원점이 헥스로 내려간다.
   - `align_stl_coordinate.py`는 bbox 최장축이 이미 Z이면 주축 회전을 건너뛰고, 직경 매칭에 원형성 점수를 쓴다.
 - **스크류홀 패치가 채널 안 시트에 붙는 경우(2026-09-28):**
-  - `fill_screwholes.py`는 지름 2.5mm 탐사 원을 -Z로 투사한다. 채널이 그보다 넓으면(예: 2.56mm) 원이 채널로 떨어져 스크류 시트 턱에 원판이 붙고, 상부 개구는 열린 채 남는다.
+  - `fill_screwholes.py`는 탐사 원을 -Z로 투사한다. 예전 2.5mm 원은 채널이 그보다 넓으면(예: 2.56mm) 채널로 떨어져 스크류 시트 턱에 원판이 붙고, 상부 개구는 열린 채 남았다. 지금은 `PROBE_DIAMETER=2.9`, `MAX_DIAMETER=3.2`.
   - 프리뷰 모달 `HF` 버튼 → `POST /api/requests/by-request/:requestId/stl-file/fill-hole`이 서버에서 채널 벽 상단 림에 캡을 붙이고 같은 S3 키에 덮어쓴다. 떨어진 Rhino 패치는 제거하고, HF 패치(STL attribute `0x4846`)는 재실행 시 교체한다.
   - 관련 파일: `web/backend/utils/screwHoleFill.js`, `web/backend/controllers/requests/common.files.controller.js`
 - **원격 PC 실행 경로 주의(2026-07-08):**
