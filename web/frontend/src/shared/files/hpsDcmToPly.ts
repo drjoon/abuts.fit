@@ -72,12 +72,60 @@ export function meshDataToPlyBlob(mesh: HpsDcmMeshData): Blob {
   });
 }
 
-export function replaceExtWithPly(fileName: string): string {
+/** Mesh data → binary STL blob (면 법선 계산, 칼라 없음). */
+export function meshDataToStlBlob(mesh: HpsDcmMeshData): Blob {
+  const p = mesh.positions;
+  const idx = mesh.indices;
+  const faceCount = idx.length / 3;
+  const body = new ArrayBuffer(84 + faceCount * 50);
+  const view = new DataView(body);
+  const header = new TextEncoder().encode("abuts.fit hps-dcm");
+  new Uint8Array(body, 0, 80).set(header.subarray(0, 80));
+  view.setUint32(80, faceCount, true);
+  let offset = 84;
+  for (let f = 0; f < faceCount; f += 1) {
+    const a = idx[f * 3]! * 3;
+    const b = idx[f * 3 + 1]! * 3;
+    const c = idx[f * 3 + 2]! * 3;
+    const ux = p[b]! - p[a]!;
+    const uy = p[b + 1]! - p[a + 1]!;
+    const uz = p[b + 2]! - p[a + 2]!;
+    const vx = p[c]! - p[a]!;
+    const vy = p[c + 1]! - p[a + 1]!;
+    const vz = p[c + 2]! - p[a + 2]!;
+    let nx = uy * vz - uz * vy;
+    let ny = uz * vx - ux * vz;
+    let nz = ux * vy - uy * vx;
+    const len = Math.hypot(nx, ny, nz) || 1;
+    nx /= len;
+    ny /= len;
+    nz /= len;
+    view.setFloat32(offset, nx, true);
+    view.setFloat32(offset + 4, ny, true);
+    view.setFloat32(offset + 8, nz, true);
+    offset += 12;
+    for (const v of [a, b, c]) {
+      view.setFloat32(offset, p[v]!, true);
+      view.setFloat32(offset + 4, p[v + 1]!, true);
+      view.setFloat32(offset + 8, p[v + 2]!, true);
+      offset += 12;
+    }
+    view.setUint16(offset, 0, true);
+    offset += 2;
+  }
+  return new Blob([body], { type: "application/octet-stream" });
+}
+
+export function replaceExt(fileName: string, ext: string): string {
   const raw = String(fileName || "").trim() || "model.dcm";
   const base = raw.split("/").pop() || raw;
   const dot = base.lastIndexOf(".");
-  if (dot > 0) return `${base.slice(0, dot)}.ply`;
-  return `${base}.ply`;
+  if (dot > 0) return `${base.slice(0, dot)}.${ext}`;
+  return `${base}.${ext}`;
+}
+
+export function replaceExtWithPly(fileName: string): string {
+  return replaceExt(fileName, "ply");
 }
 
 /** 3Shape HPS DCM ArrayBuffer → colored binary PLY. */
@@ -86,4 +134,13 @@ export async function convertHpsDcmBufferToPlyBlob(
 ): Promise<Blob> {
   const mesh = await parseHpsDcmMeshData(buffer);
   return meshDataToPlyBlob(mesh);
+}
+
+/** 3Shape HPS DCM ArrayBuffer → PLY 또는 STL */
+export async function convertHpsDcmBuffer(
+  buffer: ArrayBuffer,
+  format: "ply" | "stl",
+): Promise<Blob> {
+  const mesh = await parseHpsDcmMeshData(buffer);
+  return format === "stl" ? meshDataToStlBlob(mesh) : meshDataToPlyBlob(mesh);
 }

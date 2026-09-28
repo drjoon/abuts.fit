@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-28: DCM → STL 변환 저장(PLY와 같은 경로).
 // - 2026-09-27: Mac도 연결 프로그램 흐름(설치 안내·저장·Finder로 열기). 안내를 닫으면 브라우저 저장 또는 zip.
 // - 2026-09-27: saveToLabWorkFolder — Windows 연결 프로그램(v3)이 있으면 케이스 폴더에 풀어서 저장하고 탐색기로 연다.
 //   reuseSaved면 이미 받은 파일은 건너뛰고 폴더만 연다. 없으면 Chrome·Edge 폴더 저장 → Windows는 설치 안내 → zip.
@@ -34,10 +35,7 @@ import {
   writeDcmDownloadFormat,
   type DcmDownloadFormat,
 } from "@/shared/files/dcmDownloadFormat";
-import {
-  convertHpsDcmBufferToPlyBlob,
-  replaceExtWithPly,
-} from "@/shared/files/hpsDcmToPly";
+import { convertHpsDcmBuffer, replaceExt } from "@/shared/files/hpsDcmToPly";
 import {
   clearLabWorkFolderHandle,
   dedupeLabCaseFiles,
@@ -255,15 +253,16 @@ export function useS3FileDownload(token?: string | null) {
 
       try {
         const blob = await loadCachedBlob(file);
-        const wantPly =
-          isDcmFileName(fileName) &&
-          (file.dcmFormat || readDcmDownloadFormat()) === "ply";
-        if (wantPly) {
-          writeDcmDownloadFormat("ply");
-          const plyBlob = await convertHpsDcmBufferToPlyBlob(
+        const want = isDcmFileName(fileName)
+          ? file.dcmFormat || readDcmDownloadFormat()
+          : "dcm";
+        if (want === "ply" || want === "stl") {
+          writeDcmDownloadFormat(want);
+          const converted = await convertHpsDcmBuffer(
             await blob.arrayBuffer(),
+            want,
           );
-          saveBlobAsDownload(plyBlob, replaceExtWithPly(fileName));
+          saveBlobAsDownload(converted, replaceExt(fileName, want));
         } else {
           if (isDcmFileName(fileName) && file.dcmFormat === "dcm") {
             writeDcmDownloadFormat("dcm");
@@ -385,12 +384,13 @@ export function useS3FileDownload(token?: string | null) {
       const planned = dedupeLabCaseFiles(
         targets.map((file) => {
           const original = String(file.fileName || "download").trim() || "download";
-          const toPly = isDcmFileName(original) && (file.dcmFormat || dcmFormat) === "ply";
+          const want = isDcmFileName(original) ? file.dcmFormat || dcmFormat : "dcm";
+          const convertTo = want === "ply" || want === "stl" ? want : null;
           return {
             target: file,
-            toPly,
-            fileName: toPly ? replaceExtWithPly(original) : original,
-            size: toPly ? 0 : Math.max(0, Number(file.size) || 0),
+            convertTo,
+            fileName: convertTo ? replaceExt(original, convertTo) : original,
+            size: convertTo ? 0 : Math.max(0, Number(file.size) || 0),
           };
         }),
       );
@@ -420,8 +420,8 @@ export function useS3FileDownload(token?: string | null) {
                   report();
                 },
               });
-              if (row.toPly) {
-                blob = await convertHpsDcmBufferToPlyBlob(await blob.arrayBuffer());
+              if (row.convertTo) {
+                blob = await convertHpsDcmBuffer(await blob.arrayBuffer(), row.convertTo);
               }
               await write(row, blob);
               percents[i] = 100;

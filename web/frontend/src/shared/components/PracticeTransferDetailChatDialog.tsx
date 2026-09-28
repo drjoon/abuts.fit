@@ -18,6 +18,9 @@
 // - web/frontend/src/shared/files/fileBlobCache.ts
 // - web/frontend/src/shared/files/s3ImageThumb.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-28: 상단 헤더의 폴더 열기·톱니 제거. 의뢰 파일 섹션에만 둔다.
+// - 2026-09-28: 「폴더 열기」는 일반 버튼. 옆 톱니에서 DCM 받을 포맷(DCM·PLY·STL)을 고르고 저장.
+// - 2026-09-28: 작업시작 자리가 작업취소로 바뀐다. 작업열기·다운로드를 「폴더 열기」 하나로(DCM이면 원본·PLY 선택, 받은 파일은 건너뛰고 폴더만).
 // - 2026-09-27: 작업시작 후 그 자리에 파란 「작업열기」. 의뢰 파일 열기도 같은 버튼.
 // - 2026-09-27: 채팅 「완료」뱃지. 판정은 isPracticeRecentFinishedBadgeStatus.
 // - 2026-09-27: 협력·하청 헤더 뱃지 — 상대가 어벗츠기공소면 이름 생략.
@@ -173,7 +176,9 @@ import {
   ArrowUp,
   ChevronDown,
   FileIcon,
+  FolderOpen,
   RotateCcw,
+  Settings,
   Trash2,
   UploadCloud,
   X,
@@ -199,6 +204,9 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -267,7 +275,10 @@ import {
   siblingTextureS3Key,
 } from "@/shared/files/modelPreviewFile";
 import {
+  DCM_DOWNLOAD_FORMAT_OPTIONS,
   isDcmFileName,
+  readStoredDcmDownloadFormat,
+  writeDcmDownloadFormat,
   type DcmDownloadFormat,
 } from "@/shared/files/dcmDownloadFormat";
 import {
@@ -618,7 +629,11 @@ type PracticeTransferDetailChatDialogProps = {
   openWorkProgress?: number | null;
   /** 의뢰 파일 「다운로드」 진행률 0~100 */
   downloadAllProgress?: number | null;
-  onOpenInDesignSoftware?: () => void | Promise<void>;
+  onOpenInDesignSoftware?: (opts?: {
+    dcmFormat?: DcmDownloadFormat;
+  }) => void | Promise<void>;
+  /** 「폴더 열기」 DCM 포맷을 고른 적 없을 때 기본값(디자인 SW 기준) */
+  defaultDcmFormat?: DcmDownloadFormat;
   onDownloadTransferFile: (
     file: PracticeTransferDialogFileItem,
     opts?: { dcmFormat?: DcmDownloadFormat },
@@ -851,6 +866,7 @@ export function PracticeTransferDetailChatDialog({
   openWorkProgress = null,
   downloadAllProgress = null,
   onOpenInDesignSoftware,
+  defaultDcmFormat,
   onDownloadTransferFile,
   acceptBusy = false,
   accepted = false,
@@ -2376,11 +2392,18 @@ export function PracticeTransferDetailChatDialog({
     : remainingLabel
       ? `다시 작업시작 [${remainingLabel}]`
       : "다시 작업시작";
-  const releaseButtonLabel = releaseBusy ? "취소 중..." : "작업 취소";
+  const releaseButtonLabel = releaseBusy ? "취소 중..." : "작업취소";
   const acceptDisabled = acceptBusy || oralScanBlocksAccept;
   const canOpenInDesignSoftware =
     Boolean(onOpenInDesignSoftware) &&
-    files.some((file) => isModelPreviewExt(getModelExtLower(file.fileName)));
+    (files.length > 0 ||
+      (designFiles?.length ?? 0) > 0 ||
+      (resultFiles?.length ?? 0) > 0);
+  const [storedDcmFormat, setStoredDcmFormat] = useState(
+    readStoredDcmDownloadFormat,
+  );
+  const openWorkDcmFormat: DcmDownloadFormat =
+    storedDcmFormat || defaultDcmFormat || "dcm";
   const openWorkDisabled =
     openInCadBusy ||
     downloadAllBusy ||
@@ -2390,29 +2413,73 @@ export function PracticeTransferDetailChatDialog({
     ? openWorkProgress != null
       ? `저장 중 ${openWorkProgress}%`
       : "저장 중..."
-    : "작업열기";
+    : "폴더 열기";
   const downloadAllLabel = downloadAllBusy
     ? downloadAllProgress != null
       ? `저장 중 ${downloadAllProgress}%`
       : "저장 중..."
     : downloadAllFilesLabel;
-  /** 작업시작이 끝난 자리. 취소 후 다시 작업시작이 있는 동안은 두지 않는다. */
-  const showOpenWorkInAcceptSlot =
-    operateLabWork && accepted && !workCanceled && canOpenInDesignSoftware;
-  const openWorkButton = (slot: "header" | "files") =>
-    canOpenInDesignSoftware ? (
-      <Button
-        key={slot === "header" ? "open-work-header" : undefined}
-        type="button"
-        size="sm"
-        onClick={() => void onOpenInDesignSoftware?.()}
-        disabled={openWorkDisabled}
-        className={cn("relative overflow-hidden tabular-nums", openInCadBusy && "disabled:opacity-100")}
-      >
-        {openWorkLabel}
-        <ButtonProgressBar percent={openInCadBusy ? openWorkProgress : null} tone="onPrimary" />
-      </Button>
-    ) : null;
+  /** 케이스 폴더에 받고 연다. 이미 받은 파일은 건너뛰고 폴더만 연다. DCM은 톱니에서 고른 포맷으로. */
+  const renderOpenWorkButton = () => {
+    if (!canOpenInDesignSoftware) return null;
+    return (
+      <div className="flex shrink-0 items-center gap-1">
+        <Button
+          type="button"
+          size="sm"
+          onClick={() =>
+            void onOpenInDesignSoftware?.({ dcmFormat: openWorkDcmFormat })
+          }
+          disabled={openWorkDisabled}
+          className={cn(
+            "relative h-8 overflow-hidden tabular-nums",
+            openInCadBusy && "disabled:opacity-100",
+          )}
+        >
+          <FolderOpen className="mr-1.5 h-3.5 w-3.5" />
+          {openWorkLabel}
+          <ButtonProgressBar
+            percent={openInCadBusy ? openWorkProgress : null}
+            tone="onPrimary"
+          />
+        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 w-8 p-0"
+              disabled={openInCadBusy}
+              aria-label="다운로드 파일 포맷"
+              title={`DCM 받을 포맷: ${openWorkDcmFormat.toUpperCase()}`}
+            >
+              <Settings className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="z-[400] min-w-[10rem]">
+            <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+              DCM 받을 포맷
+            </DropdownMenuLabel>
+            <DropdownMenuRadioGroup
+              value={openWorkDcmFormat}
+              onValueChange={(value) => {
+                const next = value as DcmDownloadFormat;
+                writeDcmDownloadFormat(next);
+                setStoredDcmFormat(next);
+              }}
+            >
+              {DCM_DOWNLOAD_FORMAT_OPTIONS.map((opt) => (
+                <DropdownMenuRadioItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    );
+  };
   const releaseAction =
     showReleaseBar && onRelease ? (
       <TooltipProvider>
@@ -2422,7 +2489,7 @@ export function PracticeTransferDetailChatDialog({
               type="button"
               size="sm"
               variant="outline"
-              className="h-8 border-destructive-muted text-destructive hover:bg-destructive-soft hover:text-destructive"
+              className="h-8 min-w-[5.5rem] border-destructive-muted text-destructive hover:bg-destructive-soft hover:text-destructive"
               onClick={() => void onRelease()}
               disabled={releaseBusy}
             >
@@ -2452,6 +2519,7 @@ export function PracticeTransferDetailChatDialog({
         type="button"
         size="sm"
         className={cn(
+          "h-8 min-w-[5.5rem]",
           guideTourPulseAcceptActions && "practice-tooth-guide-pulse",
         )}
         onClick={() => void onAccept?.()}
@@ -2507,7 +2575,6 @@ export function PracticeTransferDetailChatDialog({
   const labIdentityDateRowActions =
     acceptBarPrimaryActions ||
     reacceptBarPrimaryAction ||
-    showOpenWorkInAcceptSlot ||
     releaseAction ||
     labAiDesignButton ? (
       <div
@@ -2517,7 +2584,6 @@ export function PracticeTransferDetailChatDialog({
       >
         {acceptBarPrimaryActions}
         {reacceptBarPrimaryAction}
-        {showOpenWorkInAcceptSlot ? openWorkButton("header") : null}
         {releaseAction}
         {labAiDesignButton}
       </div>
@@ -3407,8 +3473,9 @@ export function PracticeTransferDetailChatDialog({
                     </span>
                   </h3>
                   <div className="flex shrink-0 items-center gap-1.5">
-                    {openWorkButton("files")}
-                    {requestFilesShown.length > 0 ? (
+                    {canOpenInDesignSoftware ? (
+                      renderOpenWorkButton()
+                    ) : requestFilesShown.length > 0 ? (
                       files.some((f) => isDcmFileName(f.fileName)) ? (
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
@@ -3430,20 +3497,16 @@ export function PracticeTransferDetailChatDialog({
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" className="z-[400]">
-                            <DropdownMenuItem
-                              onClick={() =>
-                                void onDownloadAllFiles({ dcmFormat: "dcm" })
-                              }
-                            >
-                              DCM 원본
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() =>
-                                void onDownloadAllFiles({ dcmFormat: "ply" })
-                              }
-                            >
-                              PLY (칼라)
-                            </DropdownMenuItem>
+                            {DCM_DOWNLOAD_FORMAT_OPTIONS.map((opt) => (
+                              <DropdownMenuItem
+                                key={opt.value}
+                                onClick={() =>
+                                  void onDownloadAllFiles({ dcmFormat: opt.value })
+                                }
+                              >
+                                {opt.label}
+                              </DropdownMenuItem>
+                            ))}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       ) : (

@@ -62,6 +62,7 @@ import { Progress } from "@/components/ui/progress";
 import { cn } from "@/shared/ui/cn";
 import { RESPONSIVE } from "@/shared/ui/responsive";
 import {
+  DCM_DOWNLOAD_FORMAT_OPTIONS,
   isDcmFileName,
   type DcmDownloadFormat,
 } from "@/shared/files/dcmDownloadFormat";
@@ -235,16 +236,14 @@ export function ModelPreviewDialog({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="z-[460]">
-          <DropdownMenuItem
-            onClick={() => void onDownload({ dcmFormat: "dcm" })}
-          >
-            DCM 원본
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            onClick={() => void onDownload({ dcmFormat: "ply" })}
-          >
-            PLY (칼라)
-          </DropdownMenuItem>
+          {DCM_DOWNLOAD_FORMAT_OPTIONS.map((opt) => (
+            <DropdownMenuItem
+              key={opt.value}
+              onClick={() => void onDownload({ dcmFormat: opt.value })}
+            >
+              {opt.label}
+            </DropdownMenuItem>
+          ))}
         </DropdownMenuContent>
       </DropdownMenu>
     );

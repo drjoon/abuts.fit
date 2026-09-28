@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-28: 안내 단순화 — 3단계 한 줄씩, 누를 버튼은 칩으로. 예시 그림·부연 문단 제거. 다시 받기는 1단계 옆.
 // - 2026-09-27: Mac 설치 — 단계별 안내(경고 창 「완료」 → 시스템 설정 「그래도 열기」 → 암호 → 설치), 예시 그림, 시스템 설정 바로 열기.
 // - 2026-09-27: Mac 설치본(.app zip)·Gatekeeper 「그래도 열기」 안내.
 // - 2026-09-27: Windows 연결 프로그램 설치 안내 — 열리면 설치 파일을 바로 받고, 실행해 「예」를 누르면
@@ -12,7 +13,6 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -23,8 +23,8 @@ import {
   type LabHelperInstaller,
 } from "@/shared/files/labHelperClient";
 import { cn } from "@/shared/ui/cn";
-import { CheckCircle2, Download, Loader2, Settings } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CheckCircle2, FolderOpen, Loader2, Settings } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 type LabHelperInstallDialogProps = {
   open: boolean;
@@ -45,118 +45,24 @@ function startInstallerDownload(installer: LabHelperInstaller) {
 /** macOS 13+ 「개인정보 보호 및 보안」. 브라우저가 「시스템 설정을 열까요?」를 한 번 묻는다. */
 const MAC_PRIVACY_SETTINGS_URL = "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension";
 
-function StepBadge({ n }: { n: number }) {
+/** 화면에서 눌러야 할 버튼 이름 */
+function Key({ children }: { children: ReactNode }) {
   return (
-    <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-semibold text-primary-foreground">
-      {n}
+    <span className="mx-0.5 inline-flex items-center rounded border bg-background px-1.5 py-px text-[12px] font-semibold text-foreground shadow-sm">
+      {children}
     </span>
   );
 }
 
-/** macOS 창을 흉내 낸 예시 그림. 누를 버튼만 강조한다. */
-function MacMockWindow({
-  title,
-  body,
-  buttons,
-}: {
-  title: string;
-  body: string;
-  buttons: Array<{ label: string; primary?: boolean; muted?: boolean }>;
-}) {
+function Step({ n, children, aside }: { n: number; children: ReactNode; aside?: ReactNode }) {
   return (
-    <div className="mt-2 rounded-lg border bg-background p-3 shadow-sm">
-      <div className="mb-2 flex gap-1">
-        <span className="h-2 w-2 rounded-full bg-red-400" />
-        <span className="h-2 w-2 rounded-full bg-amber-400" />
-        <span className="h-2 w-2 rounded-full bg-emerald-400" />
-      </div>
-      <p className="text-[12px] font-semibold text-foreground">{title}</p>
-      <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{body}</p>
-      <div className="mt-2 flex justify-end gap-1.5">
-        {buttons.map((b) => (
-          <span
-            key={b.label}
-            className={cn(
-              "rounded-md px-2.5 py-1 text-[11px]",
-              b.primary
-                ? "bg-primary font-semibold text-primary-foreground ring-2 ring-primary/40 ring-offset-1"
-                : "border bg-muted/50 text-muted-foreground",
-              b.muted && "line-through opacity-60",
-            )}
-          >
-            {b.label}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function MacInstallSteps({ fileName }: { fileName: string }) {
-  return (
-    <ol className="space-y-4">
-      <li className="flex gap-2.5">
-        <StepBadge n={1} />
-        <div>
-          <p className="font-medium">받은 파일을 열어 「어벗츠 연결」을 더블클릭하세요.</p>
-          <p className="text-[12px] text-muted-foreground">
-            다운로드 폴더의 <b>{fileName}</b>을 더블클릭하면 앱이 나옵니다.
-            <br />
-            Safari는 자동으로 풀어 줍니다.
-          </p>
-        </div>
-      </li>
-      <li className="flex gap-2.5">
-        <StepBadge n={2} />
-        <div className="min-w-0 flex-1">
-          <p className="font-medium">경고 창이 뜨면 「완료」를 누르세요.</p>
-          <p className="text-[12px] text-muted-foreground">
-            Apple 공증 전이라 처음 한 번 뜹니다.
-            <br />
-            「휴지통으로 이동」은 누르지 마세요.
-          </p>
-          <MacMockWindow
-            title="'어벗츠 연결'을(를) 열 수 없음"
-            body="Apple은 '어벗츠 연결'에 악성 코드가 없음을 확인할 수 없습니다."
-            buttons={[{ label: "휴지통으로 이동", muted: true }, { label: "완료", primary: true }]}
-          />
-        </div>
-      </li>
-      <li className="flex gap-2.5">
-        <StepBadge n={3} />
-        <div className="min-w-0 flex-1">
-          <p className="font-medium">시스템 설정에서 「그래도 열기」를 누르세요.</p>
-          <p className="text-[12px] text-muted-foreground">
-            아래 버튼으로 「개인정보 보호 및 보안」을 연 뒤 맨 아래로 내리세요.
-            <br />
-            2번을 먼저 해야 이 버튼이 보입니다.
-          </p>
-          <Button asChild size="sm" variant="outline" className="mt-2">
-            <a href={MAC_PRIVACY_SETTINGS_URL}>
-              <Settings className="mr-1.5 h-4 w-4" />
-              시스템 설정 열기
-            </a>
-          </Button>
-          <MacMockWindow
-            title="개인정보 보호 및 보안"
-            body="'어벗츠 연결'이(가) 확인된 개발자가 아니므로 사용이 차단되었습니다."
-            buttons={[{ label: "그래도 열기", primary: true }]}
-          />
-        </div>
-      </li>
-      <li className="flex gap-2.5">
-        <StepBadge n={4} />
-        <div>
-          <p className="font-medium">Mac 암호(또는 Touch ID)를 넣고 「열기」 → 「설치」를 누르세요.</p>
-          <p className="text-[12px] text-muted-foreground">
-            설치가 끝나면 이 창이 저절로 이어서 저장합니다.
-          </p>
-        </div>
-      </li>
-      <li className="rounded-md bg-muted/50 px-3 py-2 text-[12px] text-muted-foreground">
-        macOS 14 이하: 앱을 Control 키와 함께 클릭 → 「열기」 → 「열기」를 누르면 됩니다.
-      </li>
-    </ol>
+    <li className="flex min-h-9 items-center gap-3">
+      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
+        {n}
+      </span>
+      <span className="min-w-0 flex-1 leading-relaxed">{children}</span>
+      {aside}
+    </li>
   );
 }
 
@@ -186,6 +92,16 @@ export function LabHelperInstallDialog({ open, onResolved }: LabHelperInstallDia
 
   const close = useCallback(() => onResolvedRef.current(false), []);
 
+  const redownload = (
+    <button
+      type="button"
+      className="shrink-0 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+      onClick={() => startInstallerDownload(installer)}
+    >
+      다시 받기
+    </button>
+  );
+
   return (
     <Dialog
       open={open}
@@ -193,60 +109,88 @@ export function LabHelperInstallDialog({ open, onResolved }: LabHelperInstallDia
         if (!next) close();
       }}
     >
-      <DialogContent
-        className={cn(
-          "z-[320] gap-0 p-0 sm:rounded-lg",
-          isMac ? "max-h-[90vh] max-w-lg overflow-y-auto" : "max-w-md",
-        )}
-      >
-        <DialogHeader className="space-y-1.5 border-b px-5 py-4 text-left">
-          <DialogTitle className="text-base">연결 프로그램을 설치해 주세요</DialogTitle>
-          <DialogDescription className="text-sm leading-relaxed text-muted-foreground">
-            처음 한 번만 설치하면 됩니다.
-            <br />
-            이후에는 파일을 작업 폴더에 풀어 두고 폴더를 바로 열어 줍니다.
+      <DialogContent className="z-[320] max-w-sm gap-0 p-0 sm:rounded-lg">
+        <DialogHeader className="space-y-1 px-5 pb-3 pt-5 text-left">
+          <DialogTitle className="flex items-center gap-2 text-base">
+            <FolderOpen className="h-5 w-5 text-primary" />
+            폴더 열기 프로그램 설치
+          </DialogTitle>
+          <DialogDescription className="text-[13px]">
+            처음 한 번만 하면 됩니다.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-3 px-5 py-4 text-sm leading-relaxed">
+        <ol className="space-y-1.5 px-5 pb-4 text-sm">
           {isMac ? (
-            <MacInstallSteps fileName={installer.fileName} />
+            <>
+              <Step n={1} aside={redownload}>
+                받은 파일 열고 <b>어벗츠 연결</b> 더블클릭
+              </Step>
+              <Step n={2}>
+                경고 창에서 <Key>완료</Key>
+              </Step>
+              <Step
+                n={3}
+                aside={
+                  <Button asChild size="sm" variant="outline" className="h-7 shrink-0 px-2 text-xs">
+                    <a href={MAC_PRIVACY_SETTINGS_URL}>
+                      <Settings className="mr-1 h-3.5 w-3.5" />
+                      설정 열기
+                    </a>
+                  </Button>
+                }
+              >
+                맨 아래 <Key>그래도 열기</Key> → 암호
+              </Step>
+            </>
           ) : (
-            <p>
-              받은 <b>{installer.fileName}</b>을 실행하고 「예」를 누르세요.
-              <br />
-              「Windows의 PC 보호」 창이 뜨면 「추가 정보」 → 「실행」을 누르세요.
-            </p>
+            <>
+              <Step n={1} aside={redownload}>
+                받은 설치 파일 실행
+              </Step>
+              <Step n={2}>
+                <Key>예</Key> 누르기
+              </Step>
+            </>
           )}
-          <p className="text-[12px] text-muted-foreground">
-            설치 후에는 화면에 보이지 않게 켜져 있습니다.
-            <br />
-            브라우저가 로컬 네트워크 접근을 물으면 「허용」을 눌러 주세요.
-          </p>
-          <div className="flex items-center gap-2 rounded-md bg-muted/60 px-3 py-2 text-[13px]">
-            {connected ? (
-              <>
-                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                연결됐습니다. 이어서 저장합니다.
-              </>
-            ) : (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                설치를 기다리는 중…
-              </>
-            )}
-          </div>
-        </div>
+          <Step n={isMac ? 4 : 3}>
+            브라우저가 물으면 <Key>허용</Key>
+          </Step>
+        </ol>
 
-        <DialogFooter className="gap-2 border-t px-5 py-3 sm:justify-between">
-          <Button type="button" variant="outline" size="sm" onClick={() => startInstallerDownload(installer)}>
-            <Download className="mr-1.5 h-4 w-4" />
-            설치 파일 다시 받기
-          </Button>
-          <Button type="button" variant="ghost" size="sm" onClick={close}>
-            닫기
-          </Button>
-        </DialogFooter>
+        <p className="-mt-2 px-5 pb-4 text-xs text-muted-foreground">
+          {isMac ? (
+            <>
+              macOS 14 이하: 앱을 Control+클릭 → <Key>열기</Key>
+            </>
+          ) : (
+            <>
+              파란 경고 창이 뜨면 <Key>추가 정보</Key> → <Key>실행</Key>
+            </>
+          )}
+        </p>
+
+        <div
+          className={cn(
+            "flex items-center gap-2.5 border-t px-5 py-3 text-[13px]",
+            connected ? "bg-emerald-50 text-emerald-800" : "bg-muted/50 text-muted-foreground",
+          )}
+        >
+          {connected ? (
+            <>
+              <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+              연결됐습니다. 이어서 저장합니다.
+            </>
+          ) : (
+            <>
+              <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+              <span className="min-w-0 flex-1">설치되면 자동으로 이어집니다</span>
+              <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={close}>
+                나중에
+              </Button>
+            </>
+          )}
+        </div>
       </DialogContent>
     </Dialog>
   );

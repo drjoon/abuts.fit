@@ -7714,17 +7714,21 @@ export function RequestorPracticeReceivePage({
   );
 
   /**
-   * 「작업열기」는 이미 받은 케이스면 받지 않고 폴더만 연다.
-   * DCM은 설정 디자인 SW에 맞춘다(3Shape=원본, 그 외=PLY). 미설정이면 마지막 선택.
+   * 「폴더 열기」는 이미 받은 파일은 받지 않고 폴더만 연다.
+   * DCM 종류를 안 고르면 설정 디자인 SW에 맞춘다(3Shape=원본, 그 외=PLY). 미설정이면 마지막 선택.
    */
-  const handleOpenWork = useCallback(() => {
-    const sw = String(designSoftwareValue || "").trim();
-    return saveSelectedTransferToWorkFolder({
-      dcmFormat: sw ? dcmFormatForDesignSoftware(sw) : undefined,
-      busy: "open",
-      reuseSaved: true,
-    });
-  }, [designSoftwareValue, saveSelectedTransferToWorkFolder]);
+  const handleOpenWork = useCallback(
+    (opts?: { dcmFormat?: DcmDownloadFormat }) => {
+      const sw = String(designSoftwareValue || "").trim();
+      return saveSelectedTransferToWorkFolder({
+        dcmFormat:
+          opts?.dcmFormat || (sw ? dcmFormatForDesignSoftware(sw) : undefined),
+        busy: "open",
+        reuseSaved: true,
+      });
+    },
+    [designSoftwareValue, saveSelectedTransferToWorkFolder],
+  );
 
   const handleDownloadChatAttachment = useCallback(
     async (attachment: {
@@ -9701,7 +9705,12 @@ export function RequestorPracticeReceivePage({
         openInCadBusy={openInCadBusy}
         openWorkProgress={openInCadBusy ? labSaveProgress : null}
         downloadAllProgress={downloadAllBusy ? labSaveProgress : null}
-        onOpenInDesignSoftware={() => void handleOpenWork()}
+        onOpenInDesignSoftware={(opts) => void handleOpenWork(opts)}
+        defaultDcmFormat={
+          String(designSoftwareValue || "").trim()
+            ? dcmFormatForDesignSoftware(String(designSoftwareValue))
+            : undefined
+        }
         downloadAllFilesLabel="다운로드"
         onDownloadAllFiles={(opts) => void handleDownloadAllFiles(opts)}
         onDownloadTransferFile={(file, opts) =>
