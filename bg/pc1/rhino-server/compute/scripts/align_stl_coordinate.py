@@ -3,6 +3,7 @@
 # - bg/pc1/rhino-server/rules.md
 # - bg/pc1/rhino-server/compute/scripts/process_abutment_stl.py
 # - web/backend/controllers/bg/bg.controller.js
+# - web/backend/services/abutmentStl/align.js (JS 이식, 섀도 비교)
 """
 STL 좌표계 자동 정렬 스크립트 (Rhino 내부 실행/라이브러리 공용)
 

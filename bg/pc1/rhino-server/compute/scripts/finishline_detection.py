@@ -3,6 +3,7 @@
 # - bg/pc1/rhino-server/compute/scripts/process_abutment_stl.py
 # - bg/pc1/rhino-server/compute/scripts/align_stl_coordinate.py
 # - web/backend/controllers/bg/bg.controller.js
+# - web/backend/services/abutmentStl/finishline.js (JS 이식, 섀도 비교)
 from __future__ import annotations
 import math
 import os

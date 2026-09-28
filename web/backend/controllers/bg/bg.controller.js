@@ -59,6 +59,7 @@ import {
   resolveFilledStlFile,
 } from "../../utils/filledStlFile.js";
 import { copyFilledStlToHexVerificationSamples } from "../../services/hexVerificationSample.service.js";
+import { enqueueAbutmentStlShadow } from "../../services/abutmentStl/shadow.service.js";
 import {
   applyAutoCuffBlendSafely,
   isCuffBlendAutoEnabled,
@@ -1339,6 +1340,9 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
   const targetRequest = updatedRequest || request;
 
   if (isCallbackSuccess && callbackStep === "2-filled" && updatedRequest) {
+    void enqueueAbutmentStlShadow(updatedRequest).catch((error) => {
+      console.warn("[BG-Callback] abutment STL shadow enqueue failed", error?.message || error);
+    });
     if (isCuffBlendAutoEnabled() && isCuffProposalEligible(updatedRequest)) {
       void proposeCuffRedesignForRequest(updatedRequest._id).catch((error) => {
         console.warn("[BG-Callback] cuff proposal failed", error?.message || error);

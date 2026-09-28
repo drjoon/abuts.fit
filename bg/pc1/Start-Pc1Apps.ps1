@@ -11,6 +11,7 @@
 #   2) rhino-server (:8000)
 #   3) ESPRIT + add-in (:8001) — splash/license OK is manual
 #   4) bridge-server (:8002)
+#   5) abutment STL shadow worker (node, BelowNormal): bg/pc1/abutment-stl-shadow/shadow-worker.cmd
 param(
   [int]$DelaySeconds = 45,
   [int]$RhinoReadyTimeoutSec = 180,
@@ -456,6 +457,35 @@ function Start-BridgeServer {
   Write-Log "bridge-server :8002 not open yet (check urlacl / local.env / exe console)" "WARN"
 }
 
+function Start-AbutmentStlShadowWorker {
+  $running = Get-CimInstance Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.CommandLine -like "*shadow-remote-worker.js*" }
+  if ($running) {
+    Write-Log "abutment STL shadow worker already running (pid=$($running[0].ProcessId))"
+    return
+  }
+  $cmd = Join-Path $Pc1Root "abutment-stl-shadow\shadow-worker.cmd"
+  $dist = Join-Path $Pc1Root "abutment-stl-shadow\dist"
+  if (-not (Test-Path $cmd)) {
+    Write-Log "Missing $cmd" "WARN"
+    return
+  }
+  if (-not (Test-Path (Join-Path $dist "shadow-remote-worker.js"))) {
+    Write-Log "shadow worker skipped: abutment-stl-shadow\dist\shadow-remote-worker.js not copied yet" "WARN"
+    return
+  }
+  if (-not (Test-Path (Join-Path $Pc1Root "rhino-server\compute\local.env"))) {
+    Write-Log "shadow worker skipped: rhino-server\compute\local.env missing (BACKEND_BASE, RHINO_SHARED_SECRET)" "WARN"
+    return
+  }
+  Write-Log "Starting abutment STL shadow worker (BelowNormal)"
+  if (-not $WhatIf) {
+    $p = Start-Process -FilePath "cmd.exe" -ArgumentList @("/c", "`"$cmd`"") -WorkingDirectory (Split-Path $cmd -Parent) -WindowStyle Minimized -PassThru
+    # Keep Rhino/ESPRIT first; child node.exe inherits BelowNormal.
+    try { $p.PriorityClass = "BelowNormal" } catch { Write-Log "priority set failed: $($_.Exception.Message)" "WARN" }
+  }
+}
+
 Write-Log "=== PC1 autostart begin (Pc1Root=$Pc1Root) ==="
 if (-not (Test-Pc1RootCandidate -Path $Pc1Root)) {
   Write-Log "Pc1Root does not look like bg/pc1 (missing rhino/esprit/bridge). Run from bg\pc1 after pull." "ERROR"
@@ -478,6 +508,8 @@ Start-Sleep -Seconds 5
 Start-EspritApp
 Start-Sleep -Seconds 3
 Start-BridgeServer
+Start-Sleep -Seconds 2
+Start-AbutmentStlShadowWorker
 
 Write-Log "Port check: 8000=$(Test-TcpPortOpen -Port 8000) 8001=$(Test-TcpPortOpen -Port 8001) 8002=$(Test-TcpPortOpen -Port 8002)"
 Write-Log "=== PC1 autostart end ==="

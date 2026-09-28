@@ -4,6 +4,7 @@
 // - web/backend/server.js
 import { Router } from "express";
 import * as bgController from "../../controllers/bg/bg.controller.js";
+import * as abutmentStlShadowController from "../../controllers/bg/abutmentStlShadow.controller.js";
 import { handlePackingCapture } from "../../controllers/ai/lotCapture.controller.js";
 import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
 import {
@@ -50,6 +51,18 @@ router.post(
   requireBridgeIpAllowlist,
   requireBgWorkerSecret,
   bgController.registerFinishLine,
+);
+router.post(
+  "/abutment-stl-shadow/claim",
+  requireBridgeIpAllowlist,
+  requireBgWorkerSecret,
+  abutmentStlShadowController.claimAbutmentStlShadowJob,
+);
+router.post(
+  "/abutment-stl-shadow/:runId/complete",
+  requireBridgeIpAllowlist,
+  requireBgWorkerSecret,
+  abutmentStlShadowController.completeAbutmentStlShadowJob,
 );
 router.post(
   "/presign-upload",

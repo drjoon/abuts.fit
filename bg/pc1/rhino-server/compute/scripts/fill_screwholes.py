@@ -3,6 +3,7 @@
 # - bg/pc1/rhino-server/compute/scripts/process_abutment_stl.py
 # - bg/pc1/rhino-server/compute/scripts/align_stl_coordinate.py
 # - web/backend/controllers/bg/bg.controller.js
+# - web/backend/services/abutmentStl/fillScrewholes.js (JS 이식, 섀도 비교)
 # -*- coding: utf-8 -*-
 """
 fill_screwholes.py (axis/cylinder based)

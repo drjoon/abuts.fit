@@ -162,6 +162,16 @@
 - 배포 전: 버킷 격리 prefix에 GuardDuty Malware Protection for S3를 켜고, 서버 IAM에 `s3:GetObjectTagging`을 준다. 켜기 전에는 `SCANBODY_MALWARE_SCAN=off`로만 테스트한다.
 - SSOT: `services/scanbodyLibraryUpload.service.js`, `services/scanbodyLibraryImport.service.js`, `utils/safeUnzip.js`, `utils/scanbodyGeometry.js`.
 
+### 어벗 STL JS 파이프라인 (Rhino 대체 · 섀도 모드)
+
+- Rhino `process_abutment_stl.py`(1-stl → 2-filled)의 JS 이식. 순서: import → align → finishline → 스크류홀 패치 → 직경 → fill_steps → export → stl-metadata. 동작 SSOT는 아직 Rhino 스크립트다. 원본 스크립트를 고치면 같은 이름의 JS 모듈도 같이 고친다.
+- Rhino STL import는 22.5°로 용접한다. crease edge가 unwelded이고 피니시라인 edge 전략은 이 조각 경계를 쓴다(`RHINO_STL_WELD_ANGLE_DEG`, `Mesh.unweldedByAngle`). Rhino `ExtractMeshEdges(Unwelded)`는 조각 경계(naked)까지 돌려준다.
+- 정렬 채점이 원통 구간에서 거의 동점이면 부동소수점 잡음으로 Rhino와 0.05~0.1mm Z가 갈릴 수 있다. 리포트에서는 "Z 이동만 다름"으로 따로 센다.
+- 섀도 모드: `ABUTMENT_STL_SHADOW_ENABLED=true`면 `registerProcessedFile`(2-filled 성공)이 응답 후 `AbutmentStlShadowRun`에 넣고(`void`), `ABUTMENT_STL_SHADOW_WORKER=true`인 프로세스의 `jobs/abutmentStlShadowWorker.js`가 `worker_threads`로 돌려 비교만 저장한다. 웹 EB(t4g.small, 버스트 CPU·NetworkOut 스케일)는 WORKER=false로 두고 계산은 PC1의 `scripts/abutment-stl-js/shadow-remote-worker.js`(`bg/pc1/abutment-stl-shadow/shadow-worker.cmd`, BelowNormal)가 맡는다. PC1은 **백엔드만** 호출한다: `POST /api/bg/abutment-stl-shadow/claim`(presigned GET·PUT URL 포함) → 계산 → `POST .../:runId/complete`. 인증은 rhino-server와 같은 IP 허용목록 + `X-Bridge-Secret`. PC1에 Atlas·AWS 자격증명을 두지 않는다. PC1은 git·npm이 없어 `build-pc1-shadow-package.mjs`(esbuild 단일 번들, 비밀값 없음)로 만든 `dist/`를 폴더째 복사한다. 의뢰 문서·S3 2-filled는 건드리지 않는다. `ABUTMENT_STL_SHADOW_UPLOAD=true`면 JS STL을 `requests/<id>/2-filled-js-shadow/`에 남긴다.
+- 합격선은 코드에 두지 않는다. 리포트(`scripts/abutment-stl-js/shadow-report.js`, 골든은 `fetch-golden.js` → `compare-golden.js`)를 사람이 보고 전환을 정한다. Rhino도 피니시라인 오검출이 있으니 "다름"은 검토 대상이다.
+- `services/abutmentStl/stlMetadata.js`는 `bg/pc1/rhino-server/stl-metadata/index.js` 계산부 사본이다(three@0.160).
+- SSOT: `services/abutmentStl/{pipeline,align,finishline,fillScrewholes,fillSteps,meshCore,evaluate,shadow.service}.js`
+
 ### 커프 이음부 G2 보정 · Re(커프 재디자인)
 
 - 기공소 디자인과 제조사 커넥션이 만나는 곳의 단차·꺾임을 서버에서 고친다. Rhino `fill_steps.py`(원점 근처 수직 불량)와 별개다.

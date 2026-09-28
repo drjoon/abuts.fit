@@ -2,6 +2,7 @@
 # - bg/pc1/rhino-server/rules.md
 # - bg/pc1/rhino-server/compute/scripts/align_stl_coordinate.py
 # - web/backend/controllers/bg/bg.controller.js
+# - web/backend/services/abutmentStl/pipeline.js (JS 이식, 섀도 비교)
 import importlib
 import os
 import sys

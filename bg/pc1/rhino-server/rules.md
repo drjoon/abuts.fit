@@ -86,6 +86,17 @@ Windows Update 등으로 재부팅되면 Rhino/ESPRIT/브리지는 수동 실행
 관련 파일:
 - `bg/pc1/rhino-server/compute/scripts/process_abutment_stl.py`
 
+## 2.1 백엔드 JS 이식 (섀도 모드)
+
+- `compute/scripts/*.py`의 파이프라인은 `web/backend/services/abutmentStl/`에 JS로 이식돼 섀도 모드로 비교 중이다. 스크립트 상수·순서·채점식을 바꾸면 대응 JS 모듈(`align.js`, `finishline.js`, `fillScrewholes.js`, `fillSteps.js`)도 같이 바꾼다. 안 바꾸면 섀도 리포트에 "다름"으로 쌓인다.
+- `stl-metadata/index.js` 계산부를 고치면 `web/backend/services/abutmentStl/stlMetadata.js`도 같이 고친다.
+- 섀도 계산은 웹 EB가 아니라 PC1에서 돈다(EB는 대기열 적재만, `ABUTMENT_STL_SHADOW_WORKER=false`). `Start-Pc1Apps.ps1`가 마지막에 `abutment-stl-shadow\shadow-worker.cmd`를 BelowNormal 우선순위로 띄우고, 죽으면 30초 뒤 다시 뜬다. 로그: `bg/pc1/logs/abutment-stl-shadow.log`
+- 워커는 백엔드 `/api/bg/abutment-stl-shadow/*`만 호출한다(Atlas·AWS 직접 접속 없음). 설정은 `rhino-server\compute\local.env`의 `BACKEND_BASE`·`RHINO_SHARED_SECRET`을 그대로 쓴다. PC1 IP는 rhino-server와 같은 `BRIDGE_ALLOWLIST_IPS`로 허용된다.
+- PC1(Windows 11)에는 git·npm이 없다. 개발 PC에서 `cd web/backend && node scripts/abutment-stl-js/build-pc1-shadow-package.mjs`로 단일 번들(`bg/pc1/abutment-stl-shadow/dist/`, `node_modules`·비밀값 없음)을 만들고, `abutment-stl-shadow\` 폴더와 `Start-Pc1Apps.ps1`을 PC1 루트(`rhino-server`가 있는 폴더)에 파일 복사한다. 필요한 것은 PATH의 `node.exe`(18+)뿐이다. `dist`가 없으면 자동 기동은 경고만 남기고 건너뛴다.
+- 코드를 고치면 번들을 다시 만들어 `dist\`를 통째로 덮어쓰고 PC1 워커(cmd 창)를 재시작한다.
+- `.ps1`·`.cmd`는 ASCII로 둔다(Windows PowerShell 5.1은 BOM 없는 UTF-8을 ANSI로 읽는다).
+- 관련 파일: `web/backend/rules.md` (어벗 STL JS 파이프라인), `bg/pc1/abutment-stl-shadow/shadow-worker.cmd`
+
 ## 3. 정리 원칙
 
 - 전체 정책은 루트 `rules.md`에서 관리합니다.

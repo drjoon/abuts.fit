@@ -1,51 +1,14 @@
 // related files:
-// - bg/pc1/rhino-server/rules.md
-// - bg/pc1/rhino-server/compute/scripts/process_abutment_stl.py
-// - bg/pc1/rhino-server/compute/scripts/align_stl_coordinate.py
-// - web/backend/controllers/bg/bg.controller.js
-// - web/backend/services/abutmentStl/stlMetadata.js (계산부 사본)
-/**
- * STL 메타데이터 계산 서비스
- * Three.js를 사용하여 STL 파일의 메타데이터(직경, 길이, 각도 등)를 계산
- *
- * Usage: node index.js <stl-file-path> [finish-line-points-json]
- */
-
-import * as fs from "fs";
-import * as THREE from "three";
+// - bg/pc1/rhino-server/stl-metadata/index.js (원본, 동작 SSOT — 계산부 사본)
+// - web/backend/services/abutmentStl/pipeline.js
+//
+// stl-metadata/index.js의 계산부를 모듈로 옮긴 사본이다. CLI·파일 읽기만 버퍼 입력으로 바꿨다.
+// 원본 계산을 고치면 이 파일도 같이 고친다.
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
-process.env.TZ = "Asia/Seoul";
+let debugLog = () => {};
 
-// CLI 인자 파싱
-const args = process.argv.slice(2);
-if (args.length < 1) {
-  console.error(
-    "Usage: node index.js <stl-file-path> [finish-line-points-json]",
-  );
-  process.exit(1);
-}
-
-const stlFilePath = args[0];
-const finishLinePointsJson = args[1] || null;
-
-// 파일 존재 확인
-if (!fs.existsSync(stlFilePath)) {
-  console.error(`File not found: ${stlFilePath}`);
-  process.exit(1);
-}
-
-// Finish line points 파싱
-let finishLinePoints = null;
-if (finishLinePointsJson) {
-  try {
-    finishLinePoints = JSON.parse(finishLinePointsJson);
-  } catch (e) {
-    console.error("Invalid finish line points JSON:", e.message);
-    process.exit(1);
-  }
-}
 
 /**
  * STL 모델의 좌표계 검증
@@ -91,19 +54,19 @@ function validateCoordinateSystem(geometry) {
     },
   };
 
-  console.error(
+  debugLog(
     `[coordValidation] xyDiameter=${xyMaxDiameter.toFixed(2)}mm centerOffset=${centerOffset.toFixed(2)}mm`,
   );
-  console.error(
+  debugLog(
     `[coordValidation] Ranges: X=${xRange.toFixed(2)} Y=${yRange.toFixed(2)} Z=${zRange.toFixed(2)}`,
   );
-  console.error(
+  debugLog(
     `[coordValidation] Center: (${xCenter.toFixed(2)}, ${yCenter.toFixed(2)})`,
   );
 
   // 검증 1: XY 직경이 15mm 초과 → 좌표계 문제
   if (xyMaxDiameter > 15.0) {
-    console.error(
+    debugLog(
       `[coordValidation] ERROR: XY diameter exceeds 15mm (${xyMaxDiameter.toFixed(2)}mm)`,
     );
     return {
@@ -115,7 +78,7 @@ function validateCoordinateSystem(geometry) {
 
   // 검증 2: 중심이 원점에서 10mm 이상 벗어남 → 경고
   if (centerOffset > 10.0) {
-    console.error(
+    debugLog(
       `[coordValidation] WARNING: Center offset from origin is ${centerOffset.toFixed(2)}mm`,
     );
     return {
@@ -125,7 +88,7 @@ function validateCoordinateSystem(geometry) {
     };
   }
 
-  console.error(`[coordValidation] PASS: Coordinate system is valid`);
+  debugLog(`[coordValidation] PASS: Coordinate system is valid`);
   return {
     valid: true,
     error: null,
@@ -136,11 +99,12 @@ function validateCoordinateSystem(geometry) {
 /**
  * STL 메타데이터 계산 (프론트 로직 포팅)
  */
-async function calculateStlMetadata(filePath, finishLinePoints) {
-  const buffer = fs.readFileSync(filePath);
+async function calculateStlMetadata(buffer, finishLinePoints) {
   const loader = new STLLoader();
 
-  let geometry = loader.parse(buffer.buffer);
+  let geometry = loader.parse(
+    buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength),
+  );
   geometry = mergeVertices(geometry, 1e-5);
   geometry.computeBoundingBox();
   geometry.computeVertexNormals();
@@ -209,7 +173,7 @@ async function calculateStlMetadata(filePath, finishLinePoints) {
   const connectionDiameter =
     connectionMaxR > 0 ? connectionMaxR * 2 : maxDiameter;
 
-  console.error(
+  debugLog(
     `[connectionDiameter] Z=0: maxR=${connectionMaxR.toFixed(6)}mm, d=${connectionDiameter.toFixed(6)}mm (${pointCount} edge points)`,
   );
 
@@ -793,7 +757,7 @@ function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox) {
     };
   }
 
-  console.error(
+  debugLog(
     `[frontPoint] candidates strict=${strictCandidates.length} relaxed=${relaxedCandidates.length} guides=${guideAnglesDeg.length} purpleGuides=${purpleGuideAngles.length} hits=${directionIntersections.length} hits20=${fallback20Hits.length} hits36=${fallback36Hits.length} lineBand=${lineBand.toFixed(3)} outerMinTight=${outerMinTight.toFixed(3)} outerMinRelaxed=${outerMinRelaxed.toFixed(3)} strictProjMin=${strictProjMin.toFixed(3)}`,
   );
 
@@ -867,19 +831,16 @@ function pickLotEngravingSiteFromGuides(directions, opts = {}) {
   };
 }
 
-// 메인 실행
-(async () => {
+/**
+ * @param {Buffer} buffer filled STL
+ * @param {number[][]|null} finishLinePoints
+ * @param {{ log?: (msg: string) => void }} [options]
+ */
+export async function calculateStlMetadataFromBuffer(buffer, finishLinePoints, { log } = {}) {
+  debugLog = log || (() => {});
   try {
-    const metadata = await calculateStlMetadata(stlFilePath, finishLinePoints);
-
-    // 버전 확인용 주석 (Python 로그에서 확인 가능)
-    // VERSION: 2026-06-30-v10-frontpoint-min-z-refactor
-
-    // JSON 출력 (표준 출력)
-    console.log(JSON.stringify(metadata, null, 2));
-    process.exit(0);
-  } catch (error) {
-    console.error("Error calculating STL metadata:", error.message);
-    process.exit(1);
+    return await calculateStlMetadata(buffer, finishLinePoints);
+  } finally {
+    debugLog = () => {};
   }
-})();
+}
