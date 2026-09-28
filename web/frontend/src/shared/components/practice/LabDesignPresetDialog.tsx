@@ -173,15 +173,15 @@ export function LabDesignPresetDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="z-[500] flex max-h-[92vh] w-[min(96vw,64rem)] max-w-none flex-col gap-0 p-0"
+        className="z-[500] flex h-[min(92vh,40rem)] w-[min(96vw,64rem)] max-w-none flex-col gap-0 overflow-hidden p-0 sm:w-[min(96vw,64rem)] sm:max-w-none sm:p-0"
         overlayClassName="z-[500]"
       >
-        <DialogHeader className="shrink-0 border-b px-5 py-3 text-left">
+        <DialogHeader className="shrink-0 border-b py-3 pl-5 pr-12 text-left">
           <DialogTitle className="text-base">디자인 프리셋</DialogTitle>
         </DialogHeader>
         <div className="flex min-h-0 flex-1">
-          <aside className="flex w-52 shrink-0 flex-col border-r">
-            <div className="flex items-center justify-between px-3 py-2">
+          <aside className="flex w-56 shrink-0 flex-col border-r bg-muted/30">
+            <div className="flex items-center justify-between gap-2 px-3 pb-1.5 pt-3">
               <span className="text-xs font-semibold text-foreground">프리셋 목록</span>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -189,49 +189,57 @@ export function LabDesignPresetDialog({
                     type="button"
                     size="sm"
                     variant="outline"
-                    className="h-7 w-7 px-0"
+                    className="h-7 gap-1 bg-background px-2 text-xs"
                     aria-label="프리셋 복제"
                     disabled={!selected}
                     onClick={duplicate}
                   >
                     <Copy className="h-3.5 w-3.5" />
+                    복제
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="right" className="z-[520]">
+                <TooltipContent side="bottom" className="z-[520]">
                   고른 프리셋을 복제해 새 프리셋을 만듭니다.
                 </TooltipContent>
               </Tooltip>
             </div>
-            <ol className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-              {draft.presets.map((row, index) => (
-                <li key={row.id}>
-                  <button
-                    type="button"
-                    className={cn(
-                      "flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left text-xs",
-                      row.id === selected?.id ? "bg-primary/10 text-primary" : "hover:bg-muted",
-                    )}
-                    onClick={() => setSelectedId(row.id)}
-                  >
-                    <span className="w-4 shrink-0 tabular-nums text-muted-foreground">
-                      {index + 1}
-                    </span>
-                    <span className="min-w-0 flex-1">
+            <ol className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-2">
+              {draft.presets.map((row, index) => {
+                const active = row.id === selected?.id;
+                return (
+                  <li key={row.id}>
+                    <button
+                      type="button"
+                      className={cn(
+                        "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs",
+                        active
+                          ? "bg-background text-primary shadow-sm ring-1 ring-primary/30"
+                          : "hover:bg-background/70",
+                      )}
+                      onClick={() => setSelectedId(row.id)}
+                    >
+                      <span className="w-4 shrink-0 text-center tabular-nums text-muted-foreground">
+                        {index + 1}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-medium">
+                          {row.name || "이름 없음"}
+                        </span>
+                        {row.clinicName ? (
+                          <span className="block truncate text-[10px] text-muted-foreground">
+                            {row.clinicName}
+                          </span>
+                        ) : null}
+                      </span>
                       {row.id === draft.defaultId ? (
-                        <span className="block text-[10px] font-semibold text-muted-foreground">
+                        <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
                           기본
                         </span>
                       ) : null}
-                      <span className="block truncate font-medium">{row.name || "이름 없음"}</span>
-                      {row.clinicName ? (
-                        <span className="block truncate text-[10px] text-muted-foreground">
-                          {row.clinicName}
-                        </span>
-                      ) : null}
-                    </span>
-                  </button>
-                </li>
-              ))}
+                    </button>
+                  </li>
+                );
+              })}
             </ol>
           </aside>
 
@@ -375,16 +383,26 @@ export function LabDesignPresetDialog({
             </section>
           ) : null}
 
-          <aside className="hidden w-60 shrink-0 border-l px-4 py-4 md:block">
+          <aside className="hidden w-60 shrink-0 overflow-y-auto border-l px-4 py-4 md:block">
+            <p className="mb-2 text-xs font-semibold text-foreground">
+              {focus ? INNER_FIELDS.find((row) => row.key === focus)?.label : "내면 단면"}
+            </p>
             <InnerParamsDiagram focus={focus} />
-            {focus ? (
-              <p className="mt-2 text-[11px] text-muted-foreground">
+            <p className="mt-2 text-[11px] text-muted-foreground">
+              {focus ? (
                 <HintLines text={INNER_FIELDS.find((row) => row.key === focus)?.hint ?? ""} />
-              </p>
-            ) : null}
+              ) : (
+                "숫자칸을 누르면 그 자리를 그림에 표시합니다."
+              )}
+            </p>
           </aside>
         </div>
-        <div className="flex shrink-0 justify-end gap-2 border-t px-5 py-3">
+        <div className="flex shrink-0 items-center justify-end gap-2 border-t px-5 py-3">
+          {dirty ? (
+            <span className="mr-auto text-xs text-muted-foreground">
+              적용하지 않은 변경이 있습니다.
+            </span>
+          ) : null}
           <Button
             type="button"
             variant="outline"

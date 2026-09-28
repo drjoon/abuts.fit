@@ -57,6 +57,7 @@
 // - 2026-09-27: 내면 설정. 헤더 톱니 → 기공소 디자인 프리셋(크라운·인레이온레이·임플란트 열, 연결 치과). 치아 정보에서 생성 전 프리셋을 고르고, 내면 도구에서 복사·수정 뒤 적용한다. 예전 브라우저 치과 프리셋은 없앤다.
 // - 2026-09-28: 채팅 첨부를 누르면 AI 디자인을 닫고 채팅으로 돌아간다.
 // - 2026-09-28: 헤더 설정(톱니)에 확대율(기본 120%)과 디자인 프리셋 목록. 프리셋을 누르면 프리셋 창을 연다.
+// - 2026-09-28: 헤더 자동 저장 스위치를 설정(톱니) 팝오버 맨 위로 옮긴다.
 // - 2026-09-28: 스캔 단계에 메시 편집(다듬기·구멍 메우기·조각). 편집 한 번이 실행 취소 한 칸이고, 바뀐 스캔은 작업 스캔으로 저장한다.
 // - 2026-09-28: 「전달」 패널은 버튼 글자 너비. 순서는 페인트, 이미지 저장, 채팅 첨부. 표시 색은 여섯 개이고 패널 너비 안에서 가운데 정렬한다.
 import {
@@ -3480,27 +3481,6 @@ function LabProsthesisAiDesignDialog({
             {headerWide ? <span>{panelAction}</span> : null}
           </Button>
           <div className="flex shrink-0 items-center justify-end gap-1.5 pr-8">
-            <label
-              className="mr-0.5 flex items-center gap-2 whitespace-nowrap text-xs font-medium text-foreground"
-              title="자동 저장"
-            >
-              {headerWide ? <span>자동 저장</span> : null}
-              <Switch
-                checked={autoSave}
-                onCheckedChange={(on) => {
-                  setAutoSave(on);
-                  autoSaveRef.current = on;
-                  try {
-                    window.localStorage.setItem(AUTO_SAVE_PREF_KEY, on ? "1" : "0");
-                  } catch {
-                    /* 저장 설정은 이 탭에서만 유지한다. */
-                  }
-                  if (!on) window.clearTimeout(draftTimerRef.current);
-                }}
-                aria-label="자동 저장"
-                className="h-5 w-9 data-[state=checked]:bg-primary [&>span]:h-4 [&>span]:w-4 data-[state=checked]:[&>span]:translate-x-4"
-              />
-            </label>
             <Button
               type="button"
               size="sm"
@@ -3539,7 +3519,25 @@ function LabProsthesisAiDesignDialog({
                 </Button>
               </PopoverTrigger>
               <PopoverContent align="end" className="z-[520] w-auto space-y-3 p-3">
-                <section>
+                <label className="flex items-center justify-between gap-4 whitespace-nowrap">
+                  <span className="text-xs font-semibold text-foreground">자동 저장</span>
+                  <Switch
+                    checked={autoSave}
+                    onCheckedChange={(on) => {
+                      setAutoSave(on);
+                      autoSaveRef.current = on;
+                      try {
+                        window.localStorage.setItem(AUTO_SAVE_PREF_KEY, on ? "1" : "0");
+                      } catch {
+                        /* 저장 설정은 이 탭에서만 유지한다. */
+                      }
+                      if (!on) window.clearTimeout(draftTimerRef.current);
+                    }}
+                    aria-label="자동 저장"
+                    className="h-5 w-9 data-[state=checked]:bg-primary [&>span]:h-4 [&>span]:w-4 data-[state=checked]:[&>span]:translate-x-4"
+                  />
+                </label>
+                <section className="border-t pt-3">
                   <div className="mb-2 text-xs font-semibold text-foreground">확대율</div>
                   <div className="flex items-center gap-1">
                     {TEXT_ZOOM_OPTIONS.map((zoom) => (
