@@ -68,6 +68,10 @@ import {
 } from "@/shared/shipping/hanjinTrackingLabel";
 import type { PeriodFilterValue } from "@/shared/ui/PeriodFilter";
 import { cn } from "@/shared/ui/cn";
+import {
+  DASHBOARD_FULL_BLEED_GUTTER_CLASS,
+  DASHBOARD_FULL_BLEED_HEADER_ROW_CLASS,
+} from "@/shared/ui/dashboardChrome";
 import { apiFetch } from "@/shared/api/apiClient";
 import { type ChatRoom } from "@/shared/hooks/useChatRooms";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
@@ -879,7 +883,12 @@ export function PracticeRecentTransfersAllModal({
         "shrink-0 border-b bg-white/95 text-left backdrop-blur supports-[backdrop-filter]:bg-white/80",
         isMobile
           ? cn("space-y-0 px-4 pb-4 pt-4", !isPage && "pr-14")
-          : cn("px-6 py-3", !isPage && "pr-[4.25rem]"),
+          : isPage
+            ? cn(
+                DASHBOARD_FULL_BLEED_HEADER_ROW_CLASS,
+                DASHBOARD_FULL_BLEED_GUTTER_CLASS,
+              )
+            : "px-6 py-3 pr-[4.25rem]",
       )}
     >
       {isMobile ? (
@@ -951,7 +960,11 @@ export function PracticeRecentTransfersAllModal({
         <div
           className={cn(
             "flex min-h-0 flex-1 flex-col overflow-hidden",
-            isMobile ? "bg-slate-50/80 px-3 py-3" : isPage ? "px-3 py-2 sm:px-4" : "px-6 py-3",
+            isMobile
+              ? "bg-slate-50/80 px-3 py-3"
+              : isPage
+                ? cn(DASHBOARD_FULL_BLEED_GUTTER_CLASS, "pt-2")
+                : "px-6 py-3",
           )}
         >
           {loading ? (

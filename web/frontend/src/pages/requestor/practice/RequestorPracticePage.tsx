@@ -280,6 +280,10 @@ import {
 import { useS3FileDownload } from "@/shared/files/useS3FileDownload";
 import { cn } from "@/shared/ui/cn";
 import { WIDE_CLUSTER_ROW_CLASS } from "@/shared/ui/contentMeasuredChrome";
+import {
+  DASHBOARD_FULL_BLEED_GUTTER_CLASS,
+  DASHBOARD_FULL_BLEED_HEADER_ROW_CLASS,
+} from "@/shared/ui/dashboardChrome";
 import { mobileActionOverlayTopStyle, MOBILE_ACTION_CHROME_ATTR } from "@/shared/ui/mobileActionOverlay";
 import {
   LAB_RECEIVE_STATUS_BADGES,
@@ -9039,7 +9043,10 @@ export function RequestorPracticeReceivePage({
 
   return (
     <div
-      className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden px-3 sm:px-4"
+      className={cn(
+        "flex h-full min-h-0 min-w-0 flex-col overflow-hidden",
+        DASHBOARD_FULL_BLEED_GUTTER_CLASS,
+      )}
       data-guide-tour="lab_receive_workspace"
     >
       {showMobileActionChrome
@@ -9309,14 +9316,16 @@ export function RequestorPracticeReceivePage({
         ) : null}
 
         {showTransfers ? (
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden pt-1">
-            <div className="shrink-0 space-y-3 pb-3 pr-1">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <div className="shrink-0 pr-1">
               {roleSwitcher ? (
-                <div className="flex flex-wrap items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3 pt-2">
                   {roleSwitcher}
                 </div>
               ) : null}
-              {transferSearchAndBadges}
+              <div className={DASHBOARD_FULL_BLEED_HEADER_ROW_CLASS}>
+                {transferSearchAndBadges}
+              </div>
             </div>
             <div
               className={cn(

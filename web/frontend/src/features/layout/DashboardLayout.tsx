@@ -15,6 +15,16 @@ import {
   normalizeSidebarOpen,
 } from "@/shared/layout/sidebarOpen";
 import { cn } from "@/shared/ui/cn";
+import {
+  DASHBOARD_FULL_BLEED_GUTTER_CLASS,
+  DASHBOARD_FULL_BLEED_HEADER_ROW_CLASS,
+  DASHBOARD_FULL_BLEED_PAD_CLASS,
+  DASHBOARD_SIDEBAR_BRAND_CLASS,
+  DASHBOARD_SIDEBAR_TOGGLE_TOP_CLASS,
+  DASHBOARD_TOPBAR_CLASS,
+  DASHBOARD_WORK_INNER_PAD_CLASS,
+  DASHBOARD_WORK_OUTER_PAD_CLASS,
+} from "@/shared/ui/dashboardChrome";
 
 // - 2026-09-26: 작업 스캔 저장 소켓은 읽지 않음 배지를 다시 조회하지 않는다.
 // - 2026-09-26: 기공소 기공의뢰 하위 — 어벗츠 하청 → 어벗츠로부터.
@@ -1758,16 +1768,16 @@ export const DashboardLayout = () => {
               : "-translate-x-full xl:relative xl:translate-x-0",
           )}
         >
-          <div className="p-4 lg:p-6 border-b border-border">
+          <div className={DASHBOARD_SIDEBAR_BRAND_CLASS}>
             <Link
               to="/"
               aria-label="랜딩 메인으로 이동"
-              className="flex min-w-0 items-center rounded-md transition hover:opacity-90"
+              className="flex min-w-0 flex-1 items-center rounded-md transition hover:opacity-90"
             >
               <AbutsLogo
                 showWordmark={!sidebarCollapsed}
                 className="flex-1 min-w-0"
-                iconClassName="h-9 w-9 lg:h-12 lg:w-12 flex-shrink-0"
+                iconClassName="h-9 w-9 lg:h-10 lg:w-10 flex-shrink-0"
                 wordmarkClassName="text-lg lg:text-xl whitespace-nowrap"
                 variant="light"
               />
@@ -1778,7 +1788,10 @@ export const DashboardLayout = () => {
             type="button"
             aria-label={sidebarOpen ? "사이드 메뉴 접기" : "사이드 메뉴 펼치기"}
             onClick={() => persistSidebarOpen(!sidebarOpen)}
-            className="hidden xl:flex items-center justify-center absolute top-20 -right-4 z-10 w-8 h-8 rounded-full bg-card border border-border shadow-sm hover:bg-muted/60 hover:border-muted-foreground/40 transition-colors"
+            className={cn(
+              "hidden xl:flex items-center justify-center absolute -right-4 z-10 w-8 h-8 rounded-full bg-card border border-border shadow-sm hover:bg-muted/60 hover:border-muted-foreground/40 transition-colors",
+              DASHBOARD_SIDEBAR_TOGGLE_TOP_CLASS,
+            )}
           >
             {sidebarOpen ? (
               <PanelLeft className="w-4 h-4" />
@@ -1902,7 +1915,12 @@ export const DashboardLayout = () => {
         </aside>
 
         <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden xl:ml-0">
-          <div className="relative flex shrink-0 items-center border-b border-border bg-background/95 px-3 py-2.5 backdrop-blur supports-[backdrop-filter]:bg-background/60 xl:hidden">
+          <div
+            className={cn(
+              "relative flex shrink-0 items-center border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 xl:hidden",
+              DASHBOARD_TOPBAR_CLASS,
+            )}
+          >
             <Button
               type="button"
               variant="ghost"
@@ -1920,7 +1938,7 @@ export const DashboardLayout = () => {
                 className="pointer-events-auto rounded-md transition hover:opacity-90"
               >
                 <AbutsLogo
-                  iconClassName="h-8 w-8"
+                  iconClassName="h-7 w-7"
                   wordmarkClassName="text-sm font-bold"
                   variant="light"
                 />
@@ -1930,7 +1948,13 @@ export const DashboardLayout = () => {
 
           {user.role === "admin" &&
             !location.pathname.startsWith("/dashboard/settings") && (
-              <div className="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-4 py-2">
+              <div
+                className={cn(
+                  "sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60",
+                  DASHBOARD_FULL_BLEED_HEADER_ROW_CLASS,
+                  DASHBOARD_FULL_BLEED_GUTTER_CLASS,
+                )}
+              >
                 <AdminPeriodDateFilter
                   period={period}
                   onPeriodChange={setPeriod}
@@ -1945,7 +1969,13 @@ export const DashboardLayout = () => {
             <div className="flex flex-col h-full">
               {(isManufacturer && isEquipmentRoute) || isWorksheetRoute ? (
                 <div className="sticky top-0 z-10 border-b border-border bg-background/80">
-                  <div className="flex flex-col gap-2.5 px-3 py-3 sm:px-4 sm:py-2.5">
+                  <div
+                    className={cn(
+                      "gap-2.5",
+                      DASHBOARD_FULL_BLEED_HEADER_ROW_CLASS,
+                      DASHBOARD_FULL_BLEED_GUTTER_CLASS,
+                    )}
+                  >
                     {isManufacturer && isEquipmentRoute && (
                       <div className="flex gap-2">
                         <Button
@@ -2158,7 +2188,7 @@ export const DashboardLayout = () => {
                     // 모바일: 카드 바깥 여백으로 가장자리 스크롤·터치 제스처 공간 확보
                     isLabReceiveWorkArea || isPracticeOralScanWorkArea
                       ? "p-0"
-                      : "p-3.5 sm:p-4 lg:p-6",
+                      : DASHBOARD_WORK_OUTER_PAD_CLASS,
                   )}
                 >
                   <main
@@ -2188,8 +2218,8 @@ export const DashboardLayout = () => {
                             ? "flex min-h-0 flex-1 flex-col"
                             : "min-h-full",
                           isLabReceiveWorkArea || isPracticeOralScanWorkArea
-                            ? "p-3 sm:p-4"
-                            : "px-4 pb-8 pt-5 sm:px-6 sm:pb-12 sm:pt-6",
+                            ? DASHBOARD_FULL_BLEED_PAD_CLASS
+                            : DASHBOARD_WORK_INNER_PAD_CLASS,
                         )}
                       >
                         <Outlet

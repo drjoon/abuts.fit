@@ -339,7 +339,8 @@ All colors MUST be HSL.
  * 임의 px 글자는 아래 규칙이 --ui-scale 을 곱한다.
  * 랜딩·오퍼(.landing-scale)는 landingTheme 자체 단계가 있어 제외한다(이중 확대 방지).
  * 브레이크포인트(2xl 등)는 px 미디어쿼리라 이 스케일과 무관하다.
- * --ui-text-zoom 은 화면별 글꼴 확대율(AI 디자인 설정)이다. 그 화면이 열려 있는 동안만 html 에 인라인으로 둔다.
+ * --ui-text-zoom 은 앱 전체 글꼴 확대율(Alt+− / Alt+= / Alt+0, src/shared/ui/uiTextZoom.ts)이다.
+ * 화면별 확대율(AI 디자인 설정)은 그 화면이 열려 있는 동안만 덮고, 닫히면 전역 값으로 되돌린다.
  */
 :root {
   --ui-text-zoom: 1;

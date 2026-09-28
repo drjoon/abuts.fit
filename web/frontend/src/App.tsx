@@ -1,5 +1,6 @@
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
+import { UiTextZoomShortcuts } from "@/shared/ui/UiTextZoomShortcuts";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AppLayout } from "@/features/layout/AppLayout";
@@ -561,6 +562,7 @@ const App = () => {
           <ScrollToTop />
           <Toaster />
           <Sonner />
+          <UiTextZoomShortcuts />
           <AppLayout>
             <Suspense fallback={<LoadingScreen />}>
               <Routes>

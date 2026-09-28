@@ -3,6 +3,7 @@
 // - web/frontend/src/pages/admin/AdminMembersPage.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // change-log:
+// - 2026-09-29: 셸 바깥 padding 제거 — 여백은 DashboardLayout(`dashboardChrome.ts`) 한 곳에서만.
 // - 2026-09-06: 페이지 제목/설명 헤더 제거(사이드·탭만으로 맥락).
 // - 2026-09-06: 관리자 허브용 Sales 패턴 셸·세그먼트 탭·스플릿.
 import type { LucideIcon } from "lucide-react";
@@ -30,8 +31,8 @@ export function AdminPageShell({
       className={cn(
         "mx-auto w-full space-y-4",
         flush
-          ? "p-0 pb-4 sm:space-y-5 sm:pb-6 lg:space-y-6"
-          : "p-3 pb-24 sm:space-y-5 sm:p-4 sm:pb-10 md:p-5 lg:space-y-6 lg:p-6 lg:pb-12",
+          ? "p-0 pb-4 sm:space-y-5 sm:pb-6"
+          : "p-0 sm:space-y-5",
         wide === false ? "max-w-3xl" : "max-w-7xl",
         className,
       )}

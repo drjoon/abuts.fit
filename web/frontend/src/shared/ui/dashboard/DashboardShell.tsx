@@ -4,6 +4,7 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/manufacturer/payments/PaymentsPage.tsx
 // change-log:
+// - 2026-09-29: 바깥 p-3 제거 — 여백은 DashboardLayout(`dashboardChrome.ts`) 한 곳에서만.
 // - 2026-09-20: 요약 카드 그리드 p-1 — 선택 border/ring·shadow 클리핑 여유.
 // - 2026-09-20: 요약 카드 그리드에 p-0.5 — 선택 border/ring이 overflow에 잘리지 않게(전 role).
 // - 2026-08-17: fillHeight — 작업영역 높이를 채우고 본문만 남은 공간을 쓰게 함(이중 스크롤 방지).
@@ -57,8 +58,8 @@ export const DashboardShell = ({
     <div
       className={
         fillHeight
-          ? "box-border flex h-full min-h-0 flex-1 flex-col gap-3 overflow-hidden p-3"
-          : "space-y-3 p-3"
+          ? "box-border flex h-full min-h-0 flex-1 flex-col gap-3 overflow-hidden"
+          : "space-y-3"
       }
     >
       {/* <div>

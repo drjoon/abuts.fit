@@ -1,0 +1,38 @@
+---
+description: 대시보드 크롬 높이·작업영역 여백 SSOT (전 역할 공통)
+globs: web/frontend/src/**/*.tsx
+alwaysApply: false
+---
+
+# 대시보드 크롬 높이 · 작업영역 여백 (강제)
+
+치과·기공소·제조사·관리자·영업팀·딜러·개발운영 **모든 대시보드 페이지 공통**이다.
+
+## 높이
+
+- 사이드바 로고 줄: `h-16`(4rem). 접기 버튼은 그 경계선 위 가운데(`top-12`).
+- xl 미만 상단바(햄버거·로고): `h-12`.
+- 전폭 작업영역 첫 줄(상태 뱃지·액션), 관리자 기간 바, 제조사 작업 바: `DASHBOARD_FULL_BLEED_HEADER_ROW_CLASS`. xl은 `min-h-16`이라 사이드바 경계선과 같은 높이, xl 미만은 `min-h-14`.
+- 넓은 화면은 루트 `font-size`만 커진다. 모두 rem이라 경계선이 같이 맞는다. `2xl:h-*` 같은 개별 확대 금지.
+
+## 여백
+
+- 여백은 `DashboardLayout` **한 곳에서만** 준다.
+ - 카드형: `DASHBOARD_WORK_OUTER_PAD_CLASS` + `DASHBOARD_WORK_INNER_PAD_CLASS`
+ - 전폭(기공의뢰 발신·수신): `DASHBOARD_FULL_BLEED_PAD_CLASS`(하단만). 좌우는 페이지가 `DASHBOARD_FULL_BLEED_GUTTER_CLASS`로 준다.
+- 페이지 셸(`AdminPageShell`, `DashboardShell`, `SalesPageShell`)과 페이지 루트는 바깥 `p-*` / `px-*` / `pt-*`를 더하지 않는다.
+- 전폭 페이지는 헤더·툴바·본문이 같은 gutter를 써서 좌우 끝선을 맞춘다.
+
+## Do / Don't
+
+```tsx
+// ❌ BAD — 레이아웃 여백 위에 페이지가 또 여백(이중·삼중)
+<div className="p-3 sm:p-4 lg:p-6">…</div>
+<header className="px-6 py-3">…</header>   // 본문은 px-4 → 끝선 어긋남
+
+// ✅ GOOD
+<header className={cn(DASHBOARD_FULL_BLEED_HEADER_ROW_CLASS, DASHBOARD_FULL_BLEED_GUTTER_CLASS)}>…</header>
+<div className={DASHBOARD_FULL_BLEED_GUTTER_CLASS}>…</div>
+```
+
+SSOT: `web/frontend/src/shared/ui/dashboardChrome.ts`, `web/frontend/rules.md`

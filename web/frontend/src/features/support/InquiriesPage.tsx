@@ -431,7 +431,7 @@ export const InquiriesPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-subtle p-2 sm:p-4">
+    <div className="min-w-0">
       <div className="mx-auto max-w-4xl space-y-4">
         {/* 헤더 배너 */}
         <Card className="app-glass-card app-glass-card--lg border-primary-muted bg-gradient-to-br from-white via-white to-primary-soft/60">

@@ -111,6 +111,13 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/shared/ui/cn";
+import {
+  announceUiTextZoom,
+  applyStoredUiTextZoom,
+  applyUiTextZoom,
+  resolveUiTextZoomShortcut,
+  stepZoom,
+} from "@/shared/ui/uiTextZoom";
 import { apiFetch } from "@/shared/api/apiClient";
 import { setFileBlob } from "@/shared/files/fileBlobCache";
 import {
@@ -848,12 +855,31 @@ function LabProsthesisAiDesignDialog({
   const [settingsOpen, setSettingsOpen] = useState(false);
   useEffect(() => {
     if (!open) return;
-    const root = document.documentElement;
-    root.style.setProperty("--ui-text-zoom", String(textZoom));
+    applyUiTextZoom(textZoom);
     return () => {
-      root.style.removeProperty("--ui-text-zoom");
+      applyStoredUiTextZoom();
     };
   }, [open, textZoom]);
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      const shortcut = resolveUiTextZoomShortcut(e);
+      if (!shortcut) return;
+      e.preventDefault();
+      setTextZoom((current) => {
+        const next = stepZoom(TEXT_ZOOM_OPTIONS, current, shortcut, TEXT_ZOOM_DEFAULT);
+        try {
+          window.localStorage.setItem(TEXT_ZOOM_PREF_KEY, String(next));
+        } catch {
+          /* 확대율은 이 탭에서만 유지한다. */
+        }
+        announceUiTextZoom(next);
+        return next;
+      });
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [open]);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
   const viewerRef = useRef<OralScanOverlayHandle>(null);

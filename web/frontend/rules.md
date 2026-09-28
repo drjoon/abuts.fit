@@ -34,6 +34,8 @@ Notes:
   - SSOT: `src/index.css`, `tailwind.config.ts`, `src/shared/ui/semanticStatus.ts`,
     `src/shared/ui/gigongAbutAccent.ts`, `src/shared/shipping/shippingMode.ts`
 - 안내 크롬 가로폭 · 넓은 화면 묶음 (강제): 쿠키 동의·헤더 alert·수가/도착일 안내는 뷰포트·`flex-1`로 늘리지 않는다. 가로는 `CONTENT_MEASURED_CHROME_CLASS` (`clamp` min 16rem, 문구+패딩, max 48rem). 쿠키만 사이드바·채팅을 뺀 영역 중앙. 2xl+ 툴바 뱃지·버튼은 의미 단위로 묶고 묶음 사이에만 간격(`WIDE_CLUSTER_ROW_CLASS`). 글자·버튼을 컴포넌트별로 키우지 않는다. 넓은 화면 확대는 `src/index.css` 루트 `font-size`·`--ui-scale`(1600px 17px · 1920px 18px · 2560px 20px) 한 곳에서만 하고, 랜딩·오퍼(`.landing-scale`)는 `landingTheme` 자체 단계라 제외. SSOT: `src/shared/ui/contentMeasuredChrome.ts`, `.cursor/rules/content-measured-chrome.mdc`.
+- 대시보드 크롬 높이 · 작업영역 여백 (강제, 전 역할): 사이드바 로고 줄 `h-16`(4rem), xl 미만 상단바 `h-12`. 전폭 작업영역(기공의뢰 발신·수신)·관리자 기간 바·제조사 작업 바의 첫 줄은 `DASHBOARD_FULL_BLEED_HEADER_ROW_CLASS`(xl `min-h-16`)로 사이드바 경계선과 맞춘다. 여백은 `DashboardLayout` 한 곳에서만(`DASHBOARD_WORK_OUTER_PAD_CLASS`·`DASHBOARD_WORK_INNER_PAD_CLASS`·`DASHBOARD_FULL_BLEED_*`). 페이지 셸(`AdminPageShell`·`DashboardShell`·`SalesPageShell`)과 페이지 루트는 바깥 `p-*`를 더하지 않는다. 전폭 페이지는 헤더·툴바·본문이 같은 `DASHBOARD_FULL_BLEED_GUTTER_CLASS`를 써서 좌우 끝선을 맞춘다. SSOT: `src/shared/ui/dashboardChrome.ts`, `.cursor/rules/dashboard-chrome.mdc`.
+- 글꼴 확대 단축키 (앱 전체): Alt+− 축소 · Alt+=(Alt++) 확대 · Alt+0 기본(80~175%). html 인라인 `--ui-text-zoom`만 바꾸고 localStorage에 저장한다. 판별은 `KeyboardEvent.code`(Mac Alt 특수문자 회피). 화면별 확대율(AI 디자인)은 열려 있는 동안 capture 단계에서 먼저 처리하고 닫히면 `applyStoredUiTextZoom()`으로 복원한다. `--ui-text-zoom`을 `removeProperty`로 지우지 말 것. SSOT: `src/shared/ui/uiTextZoom.ts`, `src/shared/ui/UiTextZoomShortcuts.tsx`.
 - Tooltip (강제, 앱 전체):
   - 마우스 호버 툴팁은 **0.6초 지연** 후 표시 (`delayDuration={600}`).
   - 가로폭은 **내용에 맞춤** (`w-max`), 좌우 여백 대칭 (`px-3`). 기본 상한
