@@ -14,9 +14,25 @@ const UI_TEXT_ZOOM_PREF_KEY = "abuts.uiTextZoom";
 
 export type UiTextZoomShortcut = "in" | "out" | "reset";
 
+/** 입력 중에는 Alt+키가 문자 입력(Mac 대시 –, Windows Alt+숫자패드 코드)이라 가로채지 않는다. */
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  if (target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) {
+    return true;
+  }
+  if (target instanceof HTMLInputElement) {
+    return !["button", "checkbox", "radio", "range", "reset", "submit", "file", "color"].includes(
+      target.type,
+    );
+  }
+  return false;
+}
+
 /** Mac은 Alt+키가 특수문자를 내므로 `key` 대신 물리 키(`code`)로 판별한다. */
 export function resolveUiTextZoomShortcut(e: KeyboardEvent): UiTextZoomShortcut | null {
   if (!e.altKey || e.ctrlKey || e.metaKey) return null;
+  if (isEditableTarget(e.target)) return null;
   switch (e.code) {
     case "Equal":
     case "NumpadAdd":

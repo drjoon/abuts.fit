@@ -1,4 +1,5 @@
 // related files:
+// - 2026-09-29: 작업시작 클릭 시 보철 업로드 요구 건은 적립 조건 확인 모달(다시 보지 않기).
 // - 2026-09-28: 프리뷰 다운로드(의뢰 파일·작업 스캔)도 「폴더 열기」와 같은 케이스 폴더에 받는다.
 // - 2026-09-27: 작업열기 — Windows 연결 프로그램(v3)이 있으면 케이스 폴더에 풀어 저장 후 폴더 열기, 이미 받았으면 폴더만. 진행률 표시.
 //   없으면 Chrome·Edge 폴더 저장 → 그 외 Windows는 설치 안내(설치 파일 자동 받기·연결되면 이어서 저장).
@@ -998,6 +999,10 @@ export function RequestorPracticeReceivePage({
     "detail" | "chat" | undefined
   >(undefined);
   const [acceptBusy, setAcceptBusy] = useState(false);
+  const [workStartUploadNoticeOpen, setWorkStartUploadNoticeOpen] =
+    useState(false);
+  const [workStartUploadNoticeHide, setWorkStartUploadNoticeHide] =
+    useState(false);
   const [acceptProsthesisFollowUpWorkBusy, setAcceptProsthesisFollowUpWorkBusy] =
     useState(false);
   const [ptxCaCreditConfirmOpen, setPtxCaCreditConfirmOpen] = useState(false);
@@ -5423,16 +5428,8 @@ export function RequestorPracticeReceivePage({
     [prefetchMessages, rooms, token],
   );
 
-  const handleAcceptTransfer = useCallback(async () => {
+  const runAcceptTransfer = useCallback(async () => {
     if (!selectedTransfer || acceptBusy || releaseBusy) return;
-    if (!viewerOperatesLabReceiveWork(selectedTransfer, user?.role)) return;
-    if (isGuideTourDemoTransfer(selectedTransfer)) {
-      toast({
-        title: "가이드투어",
-        description: "데모 의뢰입니다. 「다음」으로 진행하세요.",
-      });
-      return;
-    }
     setAcceptBusy(true);
     try {
       const ok = await markTransferAccepted(selectedTransfer);
@@ -5451,8 +5448,76 @@ export function RequestorPracticeReceivePage({
     releaseBusy,
     resolveTransferChatRoom,
     selectedTransfer,
+  ]);
+
+  const workStartUploadNoticeHiddenKey = user?.id
+    ? `abuts:lab-work-start-upload-notice-hidden:${user.id}`
+    : "";
+
+  const handleAcceptTransfer = useCallback(async () => {
+    if (!selectedTransfer || acceptBusy || releaseBusy) return;
+    if (!viewerOperatesLabReceiveWork(selectedTransfer, user?.role)) return;
+    if (isGuideTourDemoTransfer(selectedTransfer)) {
+      toast({
+        title: "가이드투어",
+        description: "데모 의뢰입니다. 「다음」으로 진행하세요.",
+      });
+      return;
+    }
+    // markTransferAccepted가 no-op으로 끝나는 이미 시작한 건·설정 게이트 건은 안내하지 않는다.
+    const startsWork =
+      isUnclaimedSubcontractPoolTransfer(selectedTransfer) ||
+      (selectedTransfer.matchingMode === "auto" &&
+        Boolean(selectedTransfer.autoMatch?.openPool)) ||
+      !(
+        selectedTransfer.isAccepted ||
+        selectedTransfer.isDownloaded ||
+        selectedTransfer.requestorDownloadedAt
+      );
+    let hidden = false;
+    try {
+      hidden =
+        Boolean(workStartUploadNoticeHiddenKey) &&
+        localStorage.getItem(workStartUploadNoticeHiddenKey) === "1";
+    } catch {
+      // ignore
+    }
+    if (
+      settingsReady &&
+      startsWork &&
+      selectedTransfer.requireLabProsthesisUpload !== false &&
+      !hidden
+    ) {
+      setWorkStartUploadNoticeHide(false);
+      setWorkStartUploadNoticeOpen(true);
+      return;
+    }
+    await runAcceptTransfer();
+  }, [
+    acceptBusy,
+    releaseBusy,
+    runAcceptTransfer,
+    selectedTransfer,
+    settingsReady,
     toast,
     user?.role,
+    workStartUploadNoticeHiddenKey,
+  ]);
+
+  const handleConfirmWorkStartUploadNotice = useCallback(() => {
+    if (workStartUploadNoticeHide && workStartUploadNoticeHiddenKey) {
+      try {
+        localStorage.setItem(workStartUploadNoticeHiddenKey, "1");
+      } catch {
+        // ignore
+      }
+    }
+    setWorkStartUploadNoticeOpen(false);
+    void runAcceptTransfer();
+  }, [
+    runAcceptTransfer,
+    workStartUploadNoticeHiddenKey,
+    workStartUploadNoticeHide,
   ]);
 
   const handleConfirmLabRemakeCreate = useCallback(
@@ -10109,6 +10174,41 @@ export function RequestorPracticeReceivePage({
         }}
         request={abutmentRequestDetail}
         stackAboveFloating
+      />
+      <ConfirmDialog
+        open={workStartUploadNoticeOpen}
+        title="작업시작"
+        panelClassName="max-w-lg"
+        description={
+          <div className="space-y-3 leading-relaxed">
+            <p>
+              이 의뢰는 작업 완료 후 반드시 디자인 파일을 업로드해야 합니다.
+              <br />
+              <span className="font-semibold text-slate-900">
+                업로드되어야 기공비가 결제됩니다.
+              </span>
+            </p>
+            {selectedTransfer?.hasCustomAbutment ? (
+              <p>커스텀어벗은 어벗 디자인 파일(STL)도 업로드해야 합니다.</p>
+            ) : null}
+          </div>
+        }
+        footerLeading={
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-600">
+            <input
+              type="checkbox"
+              className="h-4 w-4"
+              checked={workStartUploadNoticeHide}
+              onChange={(e) => setWorkStartUploadNoticeHide(e.target.checked)}
+            />
+            다시 보지 않기
+          </label>
+        }
+        confirmLabel="작업시작"
+        cancelLabel="닫기"
+        confirmTone="primary"
+        onConfirm={handleConfirmWorkStartUploadNotice}
+        onCancel={() => setWorkStartUploadNoticeOpen(false)}
       />
       <ConfirmDialog
         open={ptxCaCreditConfirmOpen}
