@@ -1241,6 +1241,10 @@ export const mergeOpenPracticeTransferFromRequestRows = (
     (acc, row) => mergeFileItemsByS3Key(acc, row.designFiles),
     [],
   );
+  const mergedWorkScanFiles = openRows.reduce<PracticeRecentTransferFileItem[]>(
+    (acc, row) => mergeFileItemsByS3Key(acc, row.workScanFiles),
+    [],
+  );
   const nextDesignFileCount = Math.max(
     ...openRows.map((row) => Number(row.designFileCount || 0)),
     mergedDesignFiles.length,
@@ -1266,6 +1270,7 @@ export const mergeOpenPracticeTransferFromRequestRows = (
     trashedFiles: mergedTrashedFiles,
     resultFiles: mergedResultFiles,
     designFiles: mergedDesignFiles,
+    workScanFiles: mergedWorkScanFiles,
     designFileCount: nextDesignFileCount,
     designReadyAt:
       openRows.find((r) => r.designReadyAt)?.designReadyAt || prev.designReadyAt || null,
@@ -1518,6 +1523,7 @@ export const groupPracticeRecentRequests = (
         trashedFiles: Array.isArray(req.trashedFiles) ? [...req.trashedFiles] : [],
         resultFiles: Array.isArray(req.resultFiles) ? [...req.resultFiles] : [],
         designFiles: Array.isArray(req.designFiles) ? [...req.designFiles] : [],
+        workScanFiles: Array.isArray(req.workScanFiles) ? [...req.workScanFiles] : [],
         hasCustomAbutment: Boolean(req.hasCustomAbutment),
         productionConfirmedAt: req.productionConfirmedAt || null,
         abutmentDeliveryInfo: req.abutmentDeliveryInfo || null,
@@ -1657,6 +1663,9 @@ export const groupPracticeRecentRequests = (
     }
     if (Array.isArray(req.designFiles) && req.designFiles.length > 0) {
       existing.designFiles = mergeFileItemsByS3Key(existing.designFiles, req.designFiles);
+    }
+    if (Array.isArray(req.workScanFiles) && req.workScanFiles.length > 0) {
+      existing.workScanFiles = mergeFileItemsByS3Key(existing.workScanFiles, req.workScanFiles);
     }
     if (req.hasCustomAbutment) existing.hasCustomAbutment = true;
     if (req.abutmentDeliveryInfo) {
