@@ -333,60 +333,92 @@ All colors MUST be HSL.
   background: hsl(var(--primary) / 0.6);
 }
 
+/*
+ * 넓은 화면 UI 스케일 (대시보드·공개 페이지·모달 공통).
+ * Tailwind 크기는 rem 이라 루트 font-size 하나로 글자·버튼·아이콘·여백·max-w 가 같이 커진다.
+ * 임의 px 글자는 아래 규칙이 --ui-scale 을 곱한다.
+ * 랜딩·오퍼(.landing-scale)는 landingTheme 자체 단계가 있어 제외한다(이중 확대 방지).
+ * 브레이크포인트(2xl 등)는 px 미디어쿼리라 이 스케일과 무관하다.
+ */
+:root {
+  --ui-scale: 1;
+}
+
+@media (min-width: 1600px) {
+  html:not(:has(.landing-scale)) {
+    --ui-scale: 1.0625;
+    font-size: 17px;
+  }
+}
+
+@media (min-width: 1920px) {
+  html:not(:has(.landing-scale)) {
+    --ui-scale: 1.125;
+    font-size: 18px;
+  }
+}
+
+@media (min-width: 2560px) {
+  html:not(:has(.landing-scale)) {
+    --ui-scale: 1.25;
+    font-size: 20px;
+  }
+}
+
 /* 작은 임의(px) 폰트 가독성: Tailwind text-xs/sm 스케일 상향과 맞춤 */
 .text-\[9px\] {
-  font-size: 11px !important;
+  font-size: calc(11px * var(--ui-scale)) !important;
 }
 
 .text-\[10px\] {
-  font-size: 12px !important;
+  font-size: calc(12px * var(--ui-scale)) !important;
 }
 
 .text-\[11px\] {
-  font-size: 13px !important;
+  font-size: calc(13px * var(--ui-scale)) !important;
 }
 
 .text-\[12px\] {
-  font-size: 14px !important;
+  font-size: calc(14px * var(--ui-scale)) !important;
 }
 
 .text-\[13px\] {
-  font-size: 15px !important;
+  font-size: calc(15px * var(--ui-scale)) !important;
 }
 
 .text-\[14px\] {
-  font-size: 16px !important;
+  font-size: calc(16px * var(--ui-scale)) !important;
 }
 
 .text-\[15px\] {
-  font-size: 17px !important;
+  font-size: calc(17px * var(--ui-scale)) !important;
 }
 
 @media (min-width: 640px) {
   .sm\:text-\[10px\] {
-    font-size: 12px !important;
+    font-size: calc(12px * var(--ui-scale)) !important;
   }
 
   .sm\:text-\[11px\] {
-    font-size: 13px !important;
+    font-size: calc(13px * var(--ui-scale)) !important;
   }
 
   .sm\:text-\[12px\] {
-    font-size: 14px !important;
+    font-size: calc(14px * var(--ui-scale)) !important;
   }
 }
 
 @media (min-width: 768px) {
   .md\:text-\[10px\] {
-    font-size: 12px !important;
+    font-size: calc(12px * var(--ui-scale)) !important;
   }
 
   .md\:text-\[11px\] {
-    font-size: 13px !important;
+    font-size: calc(13px * var(--ui-scale)) !important;
   }
 
   .md\:text-\[12px\] {
-    font-size: 14px !important;
+    font-size: calc(14px * var(--ui-scale)) !important;
   }
 }
 
@@ -663,7 +695,7 @@ body:has(.guide-tour-root) .guide-tour-nested-dialog-overlay {
 /*
  * 공개 랜딩·오퍼·행사: 넓은 화면에서 본문 px 타이포를 키운다.
  * 제목·이미지·본문 폭은 landingTheme 의 2xl / 1920px 단계.
- * 대시보드·쿠키·채팅은 이 클래스 밖이라 크기가 유지된다.
+ * 이 클래스가 있는 문서는 루트 --ui-scale 확대에서 빠진다(이중 확대 방지).
  */
 @media (min-width: 1600px) {
   .landing-scale .text-\[11px\] { font-size: 14px !important; }

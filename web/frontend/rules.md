@@ -33,7 +33,7 @@ Notes:
   - raw Tailwind 팔레트(`sky`/`teal`/`violet`/`purple`/`emerald`/`green`/`yellow`/`orange`/`rose`/`indigo`/`cyan` 등)로 의미 색을 새로 쓰지 말 것.
   - SSOT: `src/index.css`, `tailwind.config.ts`, `src/shared/ui/semanticStatus.ts`,
     `src/shared/ui/gigongAbutAccent.ts`, `src/shared/shipping/shippingMode.ts`
-- 안내 크롬 가로폭 · 넓은 화면 묶음 (강제): 쿠키 동의·헤더 alert·수가/도착일 안내는 뷰포트·`flex-1`로 늘리지 않는다. 가로는 `CONTENT_MEASURED_CHROME_CLASS` (`clamp` min 16rem, 문구+패딩, max 48rem). 쿠키만 사이드바·채팅을 뺀 영역 중앙. 2xl+ 툴바 뱃지·버튼은 의미 단위로 묶고 묶음 사이에만 간격(`WIDE_CLUSTER_ROW_CLASS`). 글자·버튼 크기는 그대로. SSOT: `src/shared/ui/contentMeasuredChrome.ts`, `.cursor/rules/content-measured-chrome.mdc`.
+- 안내 크롬 가로폭 · 넓은 화면 묶음 (강제): 쿠키 동의·헤더 alert·수가/도착일 안내는 뷰포트·`flex-1`로 늘리지 않는다. 가로는 `CONTENT_MEASURED_CHROME_CLASS` (`clamp` min 16rem, 문구+패딩, max 48rem). 쿠키만 사이드바·채팅을 뺀 영역 중앙. 2xl+ 툴바 뱃지·버튼은 의미 단위로 묶고 묶음 사이에만 간격(`WIDE_CLUSTER_ROW_CLASS`). 글자·버튼을 컴포넌트별로 키우지 않는다. 넓은 화면 확대는 `src/index.css` 루트 `font-size`·`--ui-scale`(1600px 17px · 1920px 18px · 2560px 20px) 한 곳에서만 하고, 랜딩·오퍼(`.landing-scale`)는 `landingTheme` 자체 단계라 제외. SSOT: `src/shared/ui/contentMeasuredChrome.ts`, `.cursor/rules/content-measured-chrome.mdc`.
 - Tooltip (강제, 앱 전체):
   - 마우스 호버 툴팁은 **0.6초 지연** 후 표시 (`delayDuration={600}`).
   - 가로폭은 **내용에 맞춤** (`w-max`), 좌우 여백 대칭 (`px-3`). 기본 상한
