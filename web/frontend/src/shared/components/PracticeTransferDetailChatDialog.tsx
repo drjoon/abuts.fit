@@ -18,6 +18,7 @@
 // - web/frontend/src/shared/files/fileBlobCache.ts
 // - web/frontend/src/shared/files/s3ImageThumb.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-28: 환자·치아번호 줄 오른쪽에 케이스 공유(플랫폼 내·외부 링크) 버튼.
 // - 2026-09-28: 상단 헤더의 폴더 열기·톱니 제거. 의뢰 파일 섹션에만 둔다.
 // - 2026-09-28: 「폴더 열기」는 일반 버튼. 옆 톱니에서 DCM 받을 포맷(DCM·PLY·STL)을 고르고 저장.
 // - 2026-09-28: 작업시작 자리가 작업취소로 바뀐다. 작업열기·다운로드를 「폴더 열기」 하나로(DCM이면 원본·PLY 선택, 받은 파일은 건너뛰고 폴더만).
@@ -319,6 +320,7 @@ import {
   normalizeLabBasketTag,
 } from "@/shared/components/practice/LabBasketTagToolbar";
 import { LAB_RECEIVE_ABUTMENT_UPLOAD_HINT } from "@/shared/components/practice/PracticeLabReceiveWorkActionsBar";
+import { PracticeTransferShareButton } from "@/shared/share/PracticeTransferShareDialog";
 import {
   getPracticeTransferFileExtension,
   isPracticeTransferModelFileName,
@@ -579,6 +581,8 @@ type PracticeTransferDetailChatDialogProps = {
   /** 기공소가 의뢰 스캔 역할을 고친다 */
   onChangeRequestScanRole?: (
     file: PracticeTransferDialogFileItem,
+  /** 케이스 공유(플랫폼 내·외부 링크). PracticeTransfer._id 또는 transferId. 없으면 버튼 숨김 */
+  shareTransferKey?: string | null;
     role: import("@/shared/practice/labProsthesisAiDesign").LabOralScanRole,
   ) => void;
   /** 의뢰 파일 휴지통 */
@@ -842,6 +846,7 @@ export function PracticeTransferDetailChatDialog({
   trashedFiles = [],
   oralScanAttachMode = null,
   requestFilesDownloadLocked = false,
+  shareTransferKey = null,
   requestFilesDownloadLockedReason = ORAL_SCAN_DOWNLOAD_LOCKED_UNTIL_ABUTS_DESIGN,
   workFilesLabel = "작업 파일",
   workScanFilesLabel = "작업 스캔",
@@ -2177,6 +2182,9 @@ export function PracticeTransferDetailChatDialog({
     printPracticeTransferDetail({
       title,
       summaryItems,
+      {shareTransferKey ? (
+        <PracticeTransferShareButton transferKey={shareTransferKey} />
+      ) : null}
       toothWorks: printToothWorks,
       memo,
       basketTag: labBasketTag,

@@ -823,7 +823,10 @@ export const NewChatWidget = () => {
     window.setTimeout(() => filterInputRef.current?.focus(), 50);
   };
 
-  if (!isAuthenticated || !user || user.role === "admin") {
+  const onCaseViewerPage =
+    location.pathname.startsWith("/share/case/") ||
+    location.pathname.startsWith("/cases/");
+  if (!isAuthenticated || !user || user.role === "admin" || onCaseViewerPage) {
     return null;
   }
 

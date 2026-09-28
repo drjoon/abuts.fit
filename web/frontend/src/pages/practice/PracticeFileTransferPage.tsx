@@ -11488,6 +11488,9 @@ export const PracticeFileTransferPage = ({
           conversationTitle="기공소와의 소통"
           authToken={authToken}
           caseIdentity={selectedTransferCaseIdentity}
+          shareTransferKey={
+            String(selectedTransfer?.transferMongoIds?.[0] || "").trim() || null
+          }
           onEditRequest={
             selectedTransfer &&
             canEditPracticeTransferByStatus(selectedTransfer.status)

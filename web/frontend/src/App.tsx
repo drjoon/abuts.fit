@@ -165,6 +165,10 @@ const ContactPage = lazy(() =>
 );
 const EventsPage = lazy(() => import("./pages/public/EventsPage"));
 const EventApplyPage = lazy(() => import("./pages/public/EventApplyPage"));
+const CaseSharePage = lazy(() => import("./pages/public/CaseSharePage"));
+const PracticeTransferCaseViewPage = lazy(
+  () => import("./pages/practice/PracticeTransferCaseViewPage"),
+);
 const AdminEventsPage = lazy(() => import("./pages/admin/AdminEventsPage"));
 const OAuthCallbackPage = lazy(() =>
   import("./features/auth/OAuthCallbackPage").then((m) => ({
@@ -242,6 +246,14 @@ const queryClient = new QueryClient();
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { isAuthenticated } = useAuthStore();
   return isAuthenticated ? <>{children}</> : <Navigate to="/login" replace />;
+};
+
+const SharedCaseProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+  const { isAuthenticated } = useAuthStore();
+  const location = useLocation();
+  if (isAuthenticated) return <>{children}</>;
+  const next = encodeURIComponent(location.pathname);
+  return <Navigate to={`/login?next=${next}`} replace />;
 };
 
 /** 알 수 없는 /dashboard/* → 역할 기본 대시보드 */
@@ -574,6 +586,15 @@ const App = () => {
                 <Route path="/contact" element={<ContactPage />} />
                 <Route path="/events" element={<EventsPage />} />
                 <Route path="/events/:slug" element={<EventApplyPage />} />
+                <Route path="/share/case/:token" element={<CaseSharePage />} />
+                <Route
+                  path="/cases/:transferKey"
+                  element={
+                    <SharedCaseProtectedRoute>
+                      <PracticeTransferCaseViewPage />
+                    </SharedCaseProtectedRoute>
+                  }
+                />
                 <Route path="/terms" element={<TermsPage />} />
                 <Route path="/privacy" element={<PrivacyPage />} />
                 <Route path="/security" element={<SecurityPage />} />

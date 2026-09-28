@@ -20,8 +20,17 @@ type DevAccount = {
   password: string;
 };
 
+/** 공유받은 케이스 링크(/cases/…, /share/case/…)만 로그인 뒤 되돌린다. */
+const resolveSharedCaseNextPath = (): string | null => {
+  const next = new URLSearchParams(window.location.search).get("next") || "";
+  return /^\/(cases|share\/case)\/[A-Za-z0-9_-]+$/.test(next) ? next : null;
+};
+
 const resolvePostLoginPath = () => {
-  return resolveEntryDashboardPath(useAuthStore.getState().user);
+  return (
+    resolveSharedCaseNextPath() ||
+    resolveEntryDashboardPath(useAuthStore.getState().user)
+  );
 };
 
 const isDev = import.meta.env.DEV;

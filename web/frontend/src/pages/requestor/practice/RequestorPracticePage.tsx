@@ -9622,6 +9622,11 @@ export function RequestorPracticeReceivePage({
           if (Array.isArray(data.files)) {
             patchReceivedRequestFiles(
               transferId,
+        shareTransferKey={
+          String(selectedTransfer?._id || "").trim() ||
+          String(selectedTransfer?.transferId || "").trim() ||
+          null
+        }
               mapApiReceivedRequestFiles(data.files, mongoId),
               mapApiReceivedRequestFiles(data.trashedFiles, mongoId),
             );

@@ -74,8 +74,16 @@ import {
   listPracticeTransferBookmarks,
   removePracticeTransferBookmark,
 } from "../../controllers/practiceTransfers/practiceTransferBookmark.controller.js";
+import {
+  createPracticeTransferShareLink,
+  deletePracticeTransferShareLink,
+  getPracticeTransferCaseView,
+  listPracticeTransferShareLinks,
+  updatePracticeTransferShareLink,
+} from "../../controllers/practiceTransfers/practiceTransferShare.controller.js";
 
 const router = express.Router();
+const caseShareAuth = authorize(["practice", "requestor", "internalLab", "admin"]);
 
 const sendAuth = authorizePracticeTransferSend({
   subRoles: ["owner", "staff"],
@@ -327,6 +335,38 @@ router.delete(
   authenticate,
   authorize(["practice", "requestor", "internalLab", "admin"]),
   removePracticeTransferBookmark,
+);
+
+// 케이스 3D 공유 — 참여자(치과·원청·협력·하청) 판정은 컨트롤러에서 의뢰 단위로 한다.
+router.get(
+  "/:transferId/case-view",
+  authenticate,
+  caseShareAuth,
+  getPracticeTransferCaseView,
+);
+router.get(
+  "/:transferId/share-links",
+  authenticate,
+  caseShareAuth,
+  listPracticeTransferShareLinks,
+);
+router.post(
+  "/:transferId/share-links",
+  authenticate,
+  caseShareAuth,
+  createPracticeTransferShareLink,
+);
+router.patch(
+  "/:transferId/share-links/:token",
+  authenticate,
+  caseShareAuth,
+  updatePracticeTransferShareLink,
+);
+router.delete(
+  "/:transferId/share-links/:token",
+  authenticate,
+  caseShareAuth,
+  deletePracticeTransferShareLink,
 );
 
 router.post(
