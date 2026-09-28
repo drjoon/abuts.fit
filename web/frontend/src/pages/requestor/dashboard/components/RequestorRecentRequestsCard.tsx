@@ -184,6 +184,10 @@ const resolveStageLabel = (
   return null;
 };
 
+const hasPendingCuffProposal = (item: RecentRequestCardItem | null) =>
+  (item?.caseInfos as { cuffProposal?: { status?: string } } | undefined)?.cuffProposal?.status ===
+  "proposed";
+
 const isUnmachinableRequest = (item: RecentRequestCardItem | null) =>
   Boolean(item?.rnd?.unmachinableAt);
 
@@ -700,6 +704,34 @@ export const RequestorRecentRequestsCard = ({
     void run();
   }, [open, selectedRequestId, token]);
 
+  // 커프 형상 제안이 생기거나 처리되면 목록 뱃지·열린 상세를 갱신한다.
+  useAppEventListener({
+    enabled: Boolean(token),
+    eventTypes: ["request:cuff-proposal-updated"],
+    shouldHandle: (evt) => {
+      const payload =
+        evt?.data && typeof evt.data === "object"
+          ? (evt.data as Record<string, unknown>)
+          : {};
+      const eventOrgId = String(payload.requestorBusinessAnchorId || "").trim();
+      const myOrgId = String(user?.businessAnchorId || "").trim();
+      return Boolean(eventOrgId && myOrgId && eventOrgId === myOrgId);
+    },
+    onMatch: (evt) => {
+      void Promise.resolve(onRefresh());
+      const payload = (evt?.data || {}) as Record<string, unknown>;
+      const eventRequestMongoId = String(payload.requestMongoId || "").trim();
+      if (!open || !selectedRequestId || eventRequestMongoId !== selectedRequestId) return;
+      void apiFetch<ApiEnvelope<RecentRequestCardItem>>({
+        path: `/api/requests/${selectedRequestId}`,
+        method: "GET",
+        token,
+      }).then((res) => {
+        if (res.ok && res.data?.success) setDetail(res.data.data);
+      });
+    },
+  });
+
   useAppEventListener({
     enabled: Boolean(open && selectedRequestId && token),
     eventTypes: ["request:hex-rotation-updated"],
@@ -925,6 +957,15 @@ export const RequestorRecentRequestsCard = ({
                         가입 테스트
                       </Badge>
                     )}
+                    {hasPendingCuffProposal(item) && (
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] h-5 px-1.5 border-primary-muted bg-primary-soft text-primary-strong"
+                        title="커프 형상 수정 제안이 있습니다. 눌러서 확인하세요."
+                      >
+                        형상 제안
+                      </Badge>
+                    )}
                   </div>
                   <div className="text-[11px] text-slate-600 truncate">
                     {renderRecentRequestSummaryLine(item)}
@@ -1085,6 +1126,10 @@ export const RequestorRecentRequestsCard = ({
           }
         }}
         request={detail || selectedSummary}
+        onRequestChanged={(updated) => {
+          setDetail(updated as RecentRequestCardItem);
+          void Promise.resolve(onRefresh());
+        }}
         footer={
           isCancelableRequest(detail || selectedSummary) ? (
             <div className="flex justify-end">

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-28: FL 바로 왼쪽 Re(커프 재디자인) — 70°보다 누운 커프를 피니시라인-0.2mm~커넥션 상단 G2 곡선(70° 이내)으로. 커프 확인 건은 빨간 강조.
 // - 2026-09-28: FL 왼쪽 HF(Hole Filling) — 서버에서 filled STL 상부 스크류홀을 메우고 STL 재로드.
 // - 2026-09-23: FL 반자동(시드 1클릭 전둘레) + 수동 ridge 스냅·모드 토글.
 // - 2026-09-17: FL 수동 UX — 한 번 클릭 픽·중간점 FL 스냅 해제·저장/실행취소 바·스냅 완화.
@@ -105,6 +106,7 @@ import {
   resolvePracticeDirectShippingContact,
 } from "../utils/request";
 import { isFinishLineDefective } from "../utils/finishLineQuality";
+import { isCuffBlendManualReview, resolveCuffBlend } from "../utils/cuffBlendStatus";
 import { resolveImplantConnectionSpec } from "@/utils/implantConnectionSpec";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
@@ -613,6 +615,7 @@ export const PreviewModal = ({
   const { toast } = useToast();
   const [regenerating, setRegenerating] = useState(false);
   const [holeFilling, setHoleFilling] = useState(false);
+  const [cuffRedesigning, setCuffRedesigning] = useState(false);
   const [unmachinableEditorOpen, setUnmachinableEditorOpen] = useState(false);
   const [unmachinableReasonDraft, setUnmachinableReasonDraft] = useState("");
   const [unmachinableSaving, setUnmachinableSaving] = useState(false);
@@ -1293,6 +1296,8 @@ export const PreviewModal = ({
   const isFinishLineMinZRisky =
     Number.isFinite(finishLineMinZ) && Number(finishLineMinZ) < 1;
   const isFinishLineCaptureBad = isFinishLineDefective(finishLinePoints);
+  const activeCuffBlend = resolveCuffBlend(activeReq?.caseInfos);
+  const isCuffManualReviewActive = isCuffBlendManualReview(activeCuffBlend);
   const isUnmachinable = Boolean((activeReq as any)?.rnd?.unmachinableAt);
   const shouldShowUnmachinableWarning = isFinishLineMinZRisky && !isUnmachinable;
   const requestorContinueAt = String(
@@ -1698,6 +1703,7 @@ export const PreviewModal = ({
   const canFillHole = canGuideFinishLine && hasCamFile;
   const holeFillBusy =
     holeFilling ||
+    cuffRedesigning ||
     regenerating ||
     isUploading ||
     guidedFinishLineSubmitting ||
@@ -1769,6 +1775,96 @@ export const PreviewModal = ({
         </TooltipTrigger>
         <TooltipContent side="bottom">
           Hole Filling — 상부 스크류홀 메우기
+        </TooltipContent>
+      </Tooltip>
+    ) : null;
+
+  const onRedesignCuff = async () => {
+    if (!canFillHole || holeFillBusy || !token) return;
+    const requestId = String(activeReq?.requestId || "").trim();
+    if (!requestId) return;
+    setCuffRedesigning(true);
+    try {
+      const res = await fetch(
+        `/api/requests/by-request/${encodeURIComponent(requestId)}/stl-file/redesign-cuff`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+      const body: any = await res.json().catch(() => ({}));
+      if (!res.ok || body?.success === false) {
+        throw new Error(body?.message || "커프 재디자인에 실패했습니다.");
+      }
+      await invalidateRequestPreviewCaches({
+        camS3Key: resolveFilledStlFile(activeReq?.caseInfos)?.s3Key,
+        requestMongoId: String(activeReq?._id || "").trim(),
+        requestId,
+      });
+      await onRefreshPreview?.(activeReq, { forceRefresh: true, silent: true });
+      const maxAngle = Number(body?.data?.detail?.maxAngleDeg);
+      toast({
+        title: "커프 재디자인",
+        description: (
+          <>
+            피니시라인 아래 커프를 부드러운 곡면으로 바꿨습니다
+            {Number.isFinite(maxAngle) ? ` (최대 ${Math.round(maxAngle)}°)` : ""}.
+            {body?.data?.ncStale ? (
+              <>
+                <br />
+                NC는 이전 filled.stl 기준이라 재생성이 필요합니다.
+              </>
+            ) : null}
+          </>
+        ),
+      });
+    } catch (err: any) {
+      toast({
+        title: "커프 재디자인 안 함",
+        description: err?.message || "커프 재디자인에 실패했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setCuffRedesigning(false);
+    }
+  };
+
+  const renderCuffRedesignButton = () =>
+    canFillHole ? (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[11px] font-bold transition ${
+              isCuffManualReviewActive
+                ? "border-destructive/80 bg-destructive-soft text-destructive hover:bg-destructive/15 ring-2 ring-destructive/30"
+                : "border-primary-muted bg-primary-soft text-primary-strong hover:bg-primary-soft"
+            } ${holeFillBusy ? "opacity-60 cursor-not-allowed" : ""}`}
+            disabled={holeFillBusy}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              void onRedesignCuff();
+            }}
+            aria-label="커프 형상 재디자인"
+          >
+            {cuffRedesigning ? <Loader2 className="h-4 w-4 animate-spin" /> : "Re"}
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">
+          {isCuffManualReviewActive ? (
+            <>
+              커프 확인 — {activeCuffBlend?.reason || "자동 보정을 건너뛰었습니다."}
+              <br />
+              Re로 커프 형상을 재디자인합니다.
+            </>
+          ) : (
+            <>
+              Redesign — 70°보다 누운 커프를 부드러운 곡면으로 재디자인
+              <br />
+              기공소 디자인을 바꾸는 작업입니다.
+            </>
+          )}
         </TooltipContent>
       </Tooltip>
     ) : null;
@@ -3640,6 +3736,7 @@ export const PreviewModal = ({
                     <div className="flex items-center gap-2">
                       <TooltipProvider>
                         {renderHoleFillButton()}
+                        {renderCuffRedesignButton()}
                         {canGuideFinishLine && (
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -4058,6 +4155,7 @@ export const PreviewModal = ({
                         {!isCamStage && (
                           <TooltipProvider>
                             {renderHoleFillButton()}
+                            {renderCuffRedesignButton()}
                             {canGuideFinishLine && (
                               <Tooltip>
                                 <TooltipTrigger asChild>

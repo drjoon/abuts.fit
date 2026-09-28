@@ -1,0 +1,38 @@
+---
+description: 커프 이음부 G2 보정·Re 재디자인과 커넥션 테이퍼 스펙표(spec-pending 처리)
+globs: web/backend/services/abutmentStl/cuff*.js,web/backend/scripts/abutment-stl-js/measure-cuff-connection.js,web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/cuffBlendStatus.ts,bg/pc1/rhino-server/compute/scripts/fill_steps.py
+alwaysApply: false
+---
+
+# 커넥션 테이퍼 스펙 · 커프 이음부 보정
+
+제조사 커넥션(11° 원뿔)과 기공소 커프 사이 이음새만 서버에서 다시 만든다. 커넥션과 피니시라인 아래 0.2mm 위는 건드리지 않는다.
+
+## 스펙 SSOT
+
+- `web/backend/services/abutmentStl/cuffConnectionSpecs.js` `CUFF_CONNECTION_SPECS`
+- 키 = 입력된 `implantManufacturer|implantBrand|implantFamily`(영숫자만, 대문자). STL 형상으로 브랜드를 추정하지 않는다.
+- 값 = `originDiameter`(자체검사 `diameterRef`) + `taperHeightMm`(원점 위 11° 원뿔 끝 높이 = Z_a). 모든 브랜드 11°.
+- 테이퍼 시작 직경이나 원점 무관 높이로 스펙을 잡지 않는다.
+- 같은 커넥션이면 별칭(`aliases`)으로 묶는다. 예: DENTIUM Implantium·Superline2 = SuperLine(사용자 확인). 기공소가 원뿔을 스펙보다 길게 그리는 브랜드는 `labExtendsTaper: true`.
+
+## spec-pending이 뜨면 (준비 카드 빨간 테두리 +「개발팀 확인 필요」)
+
+1. `cd web/backend && ENV_FILE=local.env NODE_ENV=test node scripts/abutment-stl-js/measure-cuff-connection.js --pending`
+2. 같은 키에서 턱 있는 샘플(`stepAboveTopMm>0.015`) 3건 이상의 `taperTopZ`가 ±0.03mm로 모이면 `CUFF_CONNECTION_SPECS`에 추가하고, 파일 상단 「스펙 미등록」 목록에서 뺀다. 혼재하면 더 모은다.
+3. 해당 의뢰는 filled STL 재생성(또는 Re)으로 다시 보정된다.
+
+## Do / Don't
+
+```js
+// ❌ BAD — 샘플 1~2건이나 형상 혼재 브랜드를 추정값으로 등록
+{ key: "DENTIS|SQ|REGULAR", originDiameter: 3.35, taperHeightMm: 0.21 }
+
+// ✅ GOOD — 비워 두고 spec-pending으로 개발팀 확인, 측정 스크립트로 모인 값만 등록
+{ key: "OSSTEM|TS3|REGULAR", aliases: ["OSSTEM|TS|REGULAR"], originDiameter: 3.35, taperHeightMm: 0.2, samples: 13 }
+```
+
+- Re(70°보다 누운 접시형 커프 → 피니시라인-0.2mm~Z_a G2 곡선, 70° 이내)는 기공소 디자인 변경이다. 자동 적용하지 않는다. 의뢰자에게는 2-filled 등록 뒤 제안(`caseInfos.cuffProposal`)으로 묻고, 제조사는 프리뷰 `Re` 버튼으로 바꾼다.
+- Rhino `fill_steps.py`(원점 근처 수직 불량)와 섞지 않는다.
+
+SSOT: `web/backend/rules.md` 「커프 이음부 G2 보정 · Re」, `web/frontend/rules.md` 「커프 확인 · Re」

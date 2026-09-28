@@ -3,6 +3,7 @@
 # - bg/pc1/rhino-server/compute/scripts/process_abutment_stl.py
 # - bg/pc1/rhino-server/compute/scripts/align_stl_coordinate.py
 # - web/backend/controllers/bg/bg.controller.js
+# - web/backend/services/abutmentStl/cuffBlend.js (그 위 커넥션 상단~커프 하단 단차 G2 보정 — 백엔드)
 """
 커스텀 어벗먼트 STL의 Z=0 부근 형상을 판별하고,
 수직 구간이면 상/하 경계에 XY 평면(PlaneSurface) 2개를 생성.

@@ -466,6 +466,22 @@ router.patch(
   requestController.confirmAllRndUnmachinableByRequestor,
 );
 
+// 의뢰자: 커프 형상 제안(70° 접시형 커프 재디자인) 수락/거절
+router.post(
+  "/:id/cuff-proposal/accept",
+  authenticate,
+  authorize(["requestor"], { subRoles: ["owner", "staff"] }),
+  requestController.acceptCuffProposalByRequestor,
+);
+router.post(
+  "/:id/cuff-proposal/decline",
+  authenticate,
+  authorize(["requestor"], { subRoles: ["owner", "staff"] }),
+  requestController.declineCuffProposalByRequestor,
+);
+// 의뢰자(본인 사업자)·제조사·관리자: filled STL(커프 보정 반영본) 서명 URL
+router.get("/:id/filled-file-url", authenticate, requestController.getFilledFileUrl);
+
 // 의뢰자/관리자: 불완전가공 단건 계속 진행 처리(불완전가공 해제)
 router.patch(
   "/:id/rnd-unmachinable/continue",
@@ -706,6 +722,13 @@ router.post(
   authenticate,
   authorizeManufacturerOrDesignPartner(),
   requestController.fillFilledStlHoleByRequestId,
+);
+// 제조사/관리자: 70°보다 누운 접시형 커프를 G2 곡면으로 재디자인(Re, 서버에서 처리)
+router.post(
+  "/by-request/:requestId/stl-file/redesign-cuff",
+  authenticate,
+  authorizeManufacturerOrDesignPartner(),
+  requestController.redesignFilledStlCuffByRequestId,
 );
 router.get(
   "/:id/nc-file-url",

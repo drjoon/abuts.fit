@@ -408,6 +408,15 @@ Notes:
   - 컨텐츠 영역 중복 검색 바(`WorksheetStageSearchInput`)는 워크시트 공정 페이지에서 사용하지 않습니다.
   - `WorksheetStageSearchInput`은 모달 등 독립 검색 UI(예: SelfInspectionReportModal)에서만 재사용합니다.
 
+- 제조사 워크시트 커프 확인 · Re(커프 재디자인):
+  - `caseInfos.cuffBlend.status`(서버 auto 보정 결과)를 `utils/cuffBlendStatus.ts`로만 판정합니다. 준비·가공 전(`request`/`cam`) 카드에서만 표시합니다.
+  - `manual-review`/`failed`: FL 불량과 같은 링 + 썸네일 위「커프 확인」뱃지(사유는 title). 프리뷰 `Re` 버튼이 빨간 강조.
+  - `spec-pending`: 카드 빨간 테두리 +「개발팀 확인 필요 — 커넥션 스펙 미등록」문구. 개발팀이 `web/backend/services/abutmentStl/cuffConnectionSpecs.js`를 채운다(`.cursor/rules/cuff-connection-spec.mdc`).
+  - 프리뷰 `Re`는 FL 바로 왼쪽(HF · Re · FL). 70°보다 누운 커프를 피니시라인-0.2mm ~ 커넥션 상단 G2 곡선(70° 이내)으로 바꾸는 기공소 디자인 변경이라 자동 실행하지 않습니다. 실패 사유(납작하지 않음·높이 부족 등)는 토스트로 보여 줍니다.
+  - 의뢰자가 결정을 기다리는 제안(`cuffProposal.status=proposed`)은 카드「형상 제안중」.
+- 의뢰자 커프 형상 수정 제안:
+  - `RequestDetailDialog` 상단 `CuffProposalPanel`(옆모습 곡선 SVG: 회색=현재, 파랑=제안, 커넥션 상단·피니시라인-0.2mm 점선) + 바꾸기/그대로 두기. 최근 의뢰 카드에「형상 제안」뱃지, `request:cuff-proposal-updated`로 갱신.
+  - 바꾸면(accepted, 제조사 Re면 applied-by-manufacturer) 상세 프리뷰가 원본 대신 수정된 모델(`filled-file-url`, `useRequestOriginalStlPreview` source=filled)을 보여 줍니다.
 - 제조사 워크시트 `request`(준비) 탭 필터 SSOT:
   - 카드 목록 필터는 `deriveStageForFilter` 결과 `준비`를 기준으로 판정합니다.
   - request 탭 API 조회는 `manufacturerStageIn=준비` 단일값만 전달합니다.

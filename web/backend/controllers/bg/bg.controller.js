@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-09-28: 2-filled 등록 직전 커프 이음부 G2 보정(cuffBlend) → 같은 S3 키 덮어쓰기 + caseInfos.cuffBlend.
+//   응답 뒤 70° 접시형 커프면 의뢰자 제안(caseInfos.cuffProposal) 생성. 새 filled 등록 시 이전 제안 $unset.
 // - 2026-09-18: request-meta lotEngravingSite — guides로 산출(r=2 폴백 과절삭·T0909 파손 방지).
 // - 2026-09-11: late NC/CNC 콜백이 세척.패킹 이후 단계를 가공으로 회귀시키지 않음.
 // - 2026-09-11: pending-stl — manufacturerStage=준비만(가공 이후 백로그 재기동 복구 제외).
@@ -57,6 +59,12 @@ import {
   resolveFilledStlFile,
 } from "../../utils/filledStlFile.js";
 import { copyFilledStlToHexVerificationSamples } from "../../services/hexVerificationSample.service.js";
+import {
+  applyAutoCuffBlendSafely,
+  isCuffBlendAutoEnabled,
+  isCuffProposalEligible,
+  proposeCuffRedesignForRequest,
+} from "../../services/abutmentStl/cuffBlend.service.js";
 import {
   resolvePrcFileNames,
   resolveConnectionTargetDiameter,
@@ -1048,6 +1056,16 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
             originalName: resolvedOriginalName,
             uploadedAt: now,
           });
+        // 커넥션 상단~커프 하단 이음부 G2 보정 후 같은 키에 덮어쓴다. DB·소켓보다 먼저 끝내야 프론트가 보정 전 STL을 캐시하지 않는다.
+        const cuff = await applyAutoCuffBlendSafely({
+          s3Key: s3Info?.s3Key,
+          caseInfos: request?.caseInfos,
+          finishLine: metadataUpdates["caseInfos.finishLine"] || null,
+        });
+        if (cuff) {
+          updateData["caseInfos.cuffBlend"] = cuff.record;
+          if (cuff.fileSize) filledMeta.fileSize = cuff.fileSize;
+        }
         Object.assign(updateData, mongoSetFilledStlFile(filledMeta));
         // 준비 탭「라이노 작업중」— 생성 완료 시 GENERATING 해제
         updateData["productionSchedule.stlPreload"] = {
@@ -1301,8 +1319,12 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
   }
 
   const mongoUpdate = { $set: updateData };
+  if (isCallbackSuccess && callbackStep === "2-filled") {
+    // 새 filled는 이전 제안 곡선과 맞지 않는다. 응답 뒤 다시 분석한다.
+    mongoUpdate.$unset = { "caseInfos.cuffProposal": 1 };
+  }
   if (shouldClearNcOnFilled) {
-    mongoUpdate.$unset = { "caseInfos.ncFile": 1 };
+    mongoUpdate.$unset = { ...(mongoUpdate.$unset || {}), "caseInfos.ncFile": 1 };
     console.log(
       `[BG-Callback] Clearing NC after filled STL regeneration request=${request.requestId} previousNcS3Key=${previousNcS3Key}`,
     );
@@ -1315,6 +1337,14 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
   );
 
   const targetRequest = updatedRequest || request;
+
+  if (isCallbackSuccess && callbackStep === "2-filled" && updatedRequest) {
+    if (isCuffBlendAutoEnabled() && isCuffProposalEligible(updatedRequest)) {
+      void proposeCuffRedesignForRequest(updatedRequest._id).catch((error) => {
+        console.warn("[BG-Callback] cuff proposal failed", error?.message || error);
+      });
+    }
+  }
 
   // SSOT 타이밍 정책:
   // - 의뢰 크레딧 차감: CAM 승인(가공 진입)

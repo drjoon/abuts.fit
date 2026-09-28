@@ -1,6 +1,7 @@
-import { type ReactNode } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 
 // change-log:
+// - 2026-09-28: 커프 형상 수정 제안(caseInfos.cuffProposal) — 옆모습 곡선 비교 + 바꾸기/그대로 두기. 바꾸면 프리뷰가 수정된 모델(filled).
 // - 2026-09-03: stackAboveFloating — 기공의뢰수신 플로팅(z-300) 위에 의뢰 상세.
 // - 2026-08-21: 기공의뢰(PTX) 연동 CA에 «기공의뢰» 뱃지.
 // - 2026-08-21: 의뢰 상세에 아노다이징(ON/OFF) 행 표시(caseInfos.anodizingEnabled).
@@ -46,6 +47,10 @@ import {
 } from "@/hooks/useSystemSettings";
 import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
 import { useRequestOriginalStlPreview } from "@/features/requests/hooks/useRequestOriginalStlPreview";
+import {
+  CuffProposalPanel,
+  type CuffProposal,
+} from "@/features/requests/components/CuffProposalPanel";
 
 export type RequestDetailDialogToothWork = {
   toothNumber?: string | null;
@@ -79,6 +84,9 @@ export type RequestDetailDialogCaseInfos = {
     originalName?: string | null;
     fileName?: string | null;
   } | null;
+  stlFile?: { uploadedAt?: string | null } | null;
+  camFile?: { uploadedAt?: string | null } | null;
+  cuffProposal?: CuffProposal | null;
 };
 
 export type RequestDetailDialogRequest = {
@@ -150,7 +158,11 @@ type RequestDetailDialogProps = {
   dismissLocked?: boolean;
   /** 기공의뢰수신 플로팅 패널(z-300)보다 위에 표시 */
   stackAboveFloating?: boolean;
+  /** 커프 형상 제안 수락/거절 등으로 서버 문서가 바뀌었을 때 */
+  onRequestChanged?: (request: RequestDetailDialogRequest) => void;
 };
+
+const MODIFIED_PROPOSAL_STATUSES = new Set(["accepted", "applied-by-manufacturer"]);
 
 const formatTimestamp = (value?: string) => {
   if (!value) return "-";
@@ -272,17 +284,29 @@ export const RequestDetailDialog = ({
   footer,
   dismissLocked = false,
   stackAboveFloating = false,
+  onRequestChanged,
 }: RequestDetailDialogProps) => {
   const stackZ = stackAboveFloating ? "z-[320]" : "z-[110]";
   const { data: systemSettings } = useSystemSettings();
   const requestMongoId = String(request?._id || request?.id || "").trim();
   const canLoadPreview = /^[a-fA-F0-9]{24}$/.test(requestMongoId);
+  const [decidedRequest, setDecidedRequest] = useState<RequestDetailDialogRequest | null>(null);
+  useEffect(() => {
+    setDecidedRequest(null);
+  }, [requestMongoId, open]);
+  const liveCaseInfos = decidedRequest?.caseInfos || request?.caseInfos;
+  const cuffProposal = liveCaseInfos?.cuffProposal || null;
+  const showModifiedModel = MODIFIED_PROPOSAL_STATUSES.has(String(cuffProposal?.status || ""));
   const { previewFile, previewLoading, previewError } =
     useRequestOriginalStlPreview({
       open,
       requestMongoId,
       requestIdLabel: request?.requestId,
       fileMeta: request?.caseInfos?.file,
+      source: showModifiedModel ? "filled" : "original",
+      versionKey: showModifiedModel
+        ? String(liveCaseInfos?.stlFile?.uploadedAt || liveCaseInfos?.camFile?.uploadedAt || cuffProposal?.decidedAt || "")
+        : null,
     });
   const expressFeeSetting =
     systemSettings?.creditSettings?.expressFee ??
@@ -438,6 +462,18 @@ export const RequestDetailDialog = ({
         </DialogHeader>
         <DialogDescription asChild>
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 pt-5 pb-8 text-sm text-foreground">
+            {cuffProposal?.status === "proposed" && canLoadPreview ? (
+              <CuffProposalPanel
+                requestMongoId={requestMongoId}
+                proposal={cuffProposal}
+                onDecided={(updated) => {
+                  if (!updated) return;
+                  setDecidedRequest(updated);
+                  onRequestChanged?.(updated);
+                }}
+              />
+            ) : null}
+
             {isUnmachinable && (
               <div className="space-y-1 rounded-xl border border-accent-muted bg-accent-soft/80 px-4 py-3">
                 <div className="text-sm font-semibold tracking-tight text-accent-strong">불완전가공 판정</div>
@@ -457,10 +493,18 @@ export const RequestDetailDialog = ({
                   </div>
                 )}
                 {canLoadPreview ? (
-                  <div className="min-h-[240px] overflow-hidden rounded-xl border border-slate-200 bg-white">
+                  <div className="relative min-h-[240px] overflow-hidden rounded-xl border border-slate-200 bg-white">
+                    {showModifiedModel ? (
+                      <Badge
+                        variant="outline"
+                        className="absolute left-2 top-2 z-10 border-primary-muted bg-primary-soft text-[11px] text-primary-strong"
+                      >
+                        커프 수정된 모델
+                      </Badge>
+                    ) : null}
                     {previewLoading ? (
                       <div className="flex min-h-[240px] items-center justify-center text-sm text-slate-500">
-                        원본 STL 불러오는 중...
+                        {showModifiedModel ? "수정된 모델 불러오는 중..." : "원본 STL 불러오는 중..."}
                       </div>
                     ) : previewFile ? (
                       <StlPreviewViewer

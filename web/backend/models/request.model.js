@@ -578,6 +578,43 @@ const requestSchema = new mongoose.Schema(
           default: Date.now,
         },
       },
+      // 커넥션 상단~커프 하단 이음부 보정 결과(auto) / Re 재디자인 결과
+      // related: web/backend/services/abutmentStl/cuffBlend.service.js
+      // - status: applied | manual-review(준비 카드「커프 확인」) | spec-pending(빨간 테두리·개발팀 확인) | failed
+      cuffBlend: {
+        version: String,
+        mode: { type: String, enum: ["auto", "redesign"] },
+        status: String,
+        reason: String,
+        specKey: String,
+        matchedSpecKey: String,
+        zA: Number,
+        zB: Number,
+        maxAngleDeg: Number,
+        s3Key: String,
+        updatedAt: Date,
+      },
+      // 의뢰자에게 제안하는 커프 재디자인(70°보다 누운 접시형 커프). 2-filled 등록 후 백그라운드 분석.
+      // - status: proposed(의뢰자 결정 대기) | accepted(의뢰자가 바꿈) | declined | applied-by-manufacturer(제조사 Re)
+      // - curve: 가장 누운 방향의 옆모습 [r, z] 곡선(before=현재, after=제안)
+      cuffProposal: {
+        status: String,
+        reason: String,
+        s3Key: String,
+        createdAt: Date,
+        decidedAt: Date,
+        decidedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+        maxCuffAngleDegBefore: Number,
+        maxAngleDegAfter: Number,
+        curve: {
+          angleDeg: Number,
+          zA: Number,
+          zTop: Number,
+          finishLineZ: Number,
+          before: { type: [[Number]], default: undefined },
+          after: { type: [[Number]], default: undefined },
+        },
+      },
     },
     // 제조 공정 단계 SSOT
     // 의뢰 출처 구분 (내부 샘플/테스트용 의뢰 식별)

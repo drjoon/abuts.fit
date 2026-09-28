@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-28: source="filled" — 커프 형상 제안 수락 후 수정된 모델(filled-file-url). versionKey로 캐시 구분.
 // - 2026-08-19: 의뢰 상세 모달 왼쪽 원본 STL 프리뷰 로더.
 // related files:
 // - web/frontend/src/features/requests/components/RequestDetailDialog.tsx
@@ -25,6 +26,10 @@ type Args = {
   requestMongoId?: string | null;
   requestIdLabel?: string | null;
   fileMeta?: FileMeta;
+  /** original=의뢰자가 올린 원본, filled=서버 보정·재디자인 반영본 */
+  source?: "original" | "filled";
+  /** filled는 같은 키에 덮어쓰므로 업로드 시각 등으로 캐시를 나눈다 */
+  versionKey?: string | null;
 };
 
 export function useRequestOriginalStlPreview({
@@ -32,6 +37,8 @@ export function useRequestOriginalStlPreview({
   requestMongoId,
   requestIdLabel,
   fileMeta,
+  source = "original",
+  versionKey = null,
 }: Args) {
   const { token } = useAuthStore();
   const [previewFile, setPreviewFile] = useState<File | null>(null);
@@ -52,7 +59,7 @@ export function useRequestOriginalStlPreview({
     setPreviewLoading(true);
     setPreviewError(null);
 
-    const fallbackName = `${String(requestIdLabel || mongoId).trim() || mongoId}-original.stl`;
+    const fallbackName = `${String(requestIdLabel || mongoId).trim() || mongoId}-${source}.stl`;
     const resolveFileName = (apiFileName?: unknown) =>
       modelFileBasename(
         apiFileName ||
@@ -65,7 +72,8 @@ export function useRequestOriginalStlPreview({
 
     const load = async () => {
       try {
-        const cacheKey = `stl:request-detail:${mongoId}:original-file-url`;
+        const endpoint = source === "filled" ? "filled-file-url" : "original-file-url";
+        const cacheKey = `stl:request-detail:${mongoId}:${endpoint}${versionKey ? `:${versionKey}` : ""}`;
         const cached = await getFileBlob(cacheKey);
         if (cached && !cancelled) {
           setPreviewFile(fileFromModelBlob(cached, resolveFileName()));
@@ -74,7 +82,7 @@ export function useRequestOriginalStlPreview({
         }
 
         const originalFileRes = await fetch(
-          `/api/requests/${encodeURIComponent(mongoId)}/original-file-url`,
+          `/api/requests/${encodeURIComponent(mongoId)}/${endpoint}`,
           {
             method: "GET",
             headers: { Authorization: `Bearer ${token}` },
@@ -131,6 +139,8 @@ export function useRequestOriginalStlPreview({
     fileMeta?.filePath,
     fileMeta?.originalName,
     fileMeta?.fileName,
+    source,
+    versionKey,
   ]);
 
   return { previewFile, previewLoading, previewError };

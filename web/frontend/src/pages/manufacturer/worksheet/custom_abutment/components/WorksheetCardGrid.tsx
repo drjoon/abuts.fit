@@ -1,6 +1,7 @@
 // change-log:
 // - 2026-09-17: 공정 탭과 중복되는 단계 뱃지 숨김. 세척·패킹(이후) NC 뱃지 숨김(가공 이후 당연).
 // - 2026-09-17: 의뢰카드 썸네일을 absolute→flex 본문으로 — 좌우 px-3 대칭·환자폭↑.
+// - 2026-09-28: 커프 이음부 보정 — 안전검사 실패「커프 확인」뱃지, 커넥션 스펙 미등록은 빨간 테두리+개발팀 확인 문구(준비·가공 전).
 // - 2026-09-17: 의뢰카드 CardContent p-6 잔존 제거(p-0+px-3) — 좌여백=썸네일 right-3.
 // - 2026-09-17: 세척·패킹에도 FL 썸네일. 스크류 뱃지 nowrap·레일 폭 가변으로 1줄 유지.
 // - 2026-09-17: 의뢰카드 본문 pr — 썸네일 세로스택에 맞춰 축소(환자/임플란트 가로폭↑·카드 높이↓).
@@ -73,6 +74,12 @@ import {
   isHexVerificationSampleRequest,
 } from "../utils/hexRotation";
 import { isFinishLineDefective } from "../utils/finishLineQuality";
+import {
+  isCuffBlendManualReview,
+  isCuffProposalPending,
+  isCuffSpecPending,
+  resolveCuffBlend,
+} from "../utils/cuffBlendStatus";
 import { RequestInfoSummary } from "./RequestInfoSummary";
 import { FilledStlCardThumbnail } from "./FilledStlCardThumbnail";
 import { resolveShippingMode } from "@/shared/shipping/shippingMode";
@@ -326,6 +333,14 @@ export const WorksheetCardGrid = ({
         const isFinishLineCaptureBad = isFinishLineDefective(
           (caseInfos as any)?.finishLine?.points,
         );
+        const cuffBlend = resolveCuffBlend(caseInfos);
+        const isPreMachiningTab = tabStage === "request" || tabStage === "cam";
+        const isCuffManualReview =
+          isPreMachiningTab && isCuffBlendManualReview(cuffBlend);
+        const isCuffSpecPendingCard =
+          isPreMachiningTab && isCuffSpecPending(cuffBlend);
+        const isCuffProposalWaiting =
+          isPreMachiningTab && isCuffProposalPending(caseInfos);
         const isUnmachinableSample = Boolean(
           (request as any)?.rnd?.unmachinableAt,
         );
@@ -802,11 +817,14 @@ export const WorksheetCardGrid = ({
                               ? "border-accent border-2"
                               : "border-slate-200"
             } ${
-              isFinishLineMinZRisky ||
-              isUnmachinableSample ||
-              isFinishLineCaptureBad
-                ? "border-accent-muted ring-2 ring-accent-muted/80"
-                : ""
+              isCuffSpecPendingCard
+                ? "!border-destructive border-2 ring-2 ring-destructive/40"
+                : isFinishLineMinZRisky ||
+                    isUnmachinableSample ||
+                    isFinishLineCaptureBad ||
+                    isCuffManualReview
+                  ? "border-accent-muted ring-2 ring-accent-muted/80"
+                  : ""
             } ${onToggleSelected && !rhinoWorkPending ? "cursor-pointer" : ""} ${
               isPackingDropTarget ? "transition-shadow hover:shadow-md" : ""
             }`}
@@ -1268,6 +1286,17 @@ export const WorksheetCardGrid = ({
                   }
                 />
 
+                {isCuffSpecPendingCard && (
+                  <div className="mt-2 p-2 bg-destructive-soft border border-destructive rounded-lg text-xs text-destructive flex flex-col gap-1">
+                    <div className="font-bold">개발팀 확인 필요 — 커넥션 스펙 미등록</div>
+                    <div>
+                      {cuffBlend?.specKey || "임플란트"} 커넥션 스펙이 없어 커프 이음부를 보정하지 않았습니다.
+                      <br />
+                      개발팀이 스펙을 등록하고 코드를 리팩터링해야 합니다.
+                    </div>
+                  </div>
+                )}
+
                 {/* 백그라운드 작업 실패 시 안내 메시지 */}
                 {((isCamStage &&
                   request.caseInfos?.reviewByStage?.cam?.status ===
@@ -1297,6 +1326,24 @@ export const WorksheetCardGrid = ({
                             title="피니시라인이 어깨를 따라가지 않습니다. 프리뷰에서 FL로 수정하세요."
                           >
                             FL 확인
+                          </Badge>
+                        ) : null}
+                        {isCuffManualReview && !rhinoWorkPending ? (
+                          <Badge
+                            variant="outline"
+                            className="h-5 max-w-full truncate text-[10px] px-1.5 py-0 font-semibold leading-none border border-destructive/70 bg-destructive-soft text-destructive flex items-center"
+                            title={`커프 이음부 자동 보정을 건너뛰었습니다. ${cuffBlend?.reason || ""} 프리뷰에서 형상을 확인하세요.`}
+                          >
+                            커프 확인
+                          </Badge>
+                        ) : null}
+                        {isCuffProposalWaiting && !rhinoWorkPending ? (
+                          <Badge
+                            variant="outline"
+                            className="h-5 max-w-full truncate text-[10px] px-1.5 py-0 font-semibold leading-none border border-primary-muted bg-primary-soft text-primary-strong flex items-center"
+                            title="의뢰자에게 커프 형상 수정을 제안했습니다. 의뢰자가 바꾸면 filled STL이 갱신됩니다."
+                          >
+                            형상 제안중
                           </Badge>
                         ) : null}
                         <button

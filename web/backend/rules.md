@@ -162,6 +162,21 @@
 - 배포 전: 버킷 격리 prefix에 GuardDuty Malware Protection for S3를 켜고, 서버 IAM에 `s3:GetObjectTagging`을 준다. 켜기 전에는 `SCANBODY_MALWARE_SCAN=off`로만 테스트한다.
 - SSOT: `services/scanbodyLibraryUpload.service.js`, `services/scanbodyLibraryImport.service.js`, `utils/safeUnzip.js`, `utils/scanbodyGeometry.js`.
 
+### 커프 이음부 G2 보정 · Re(커프 재디자인)
+
+- 기공소 디자인과 제조사 커넥션이 만나는 곳의 단차·꺾임을 서버에서 고친다. Rhino `fill_steps.py`(원점 근처 수직 불량)와 별개다.
+- 보호 영역: 제조사 커넥션(Z_a 아래)과 피니시라인 `min_z`-0.2mm 위는 정점 하나도 옮기지 않는다. 그 사이만 잘라 다시 만든다.
+- Z_a = 커넥션 스펙표 `taperHeightMm`(원점 기준, 11° 원뿔 끝). 원점 = 브랜드 원점 직경(자체검사 `diameterRef`). 원뿔이 스펙보다 먼저 끝나면 원뿔이 끝난 곳에서 잇는다. 매칭은 입력된 임플란트 스펙 기준이고, 형상이 다른 등록 스펙의 테이퍼 끝 직경과 맞으면 그 스펙으로 처리하고 경고만 남긴다.
+- auto: `registerProcessedFile`(2-filled 성공)에서 DB 갱신·소켓 **전에** `applyAutoCuffBlendSafely`로 보정하고 같은 S3 키에 덮어쓴다(프론트가 보정 전 STL을 캐시하지 않게). worker_threads, 건당 0.1~0.2초. 실패해도 등록은 계속된다. 끄기: `CUFF_BLEND_AUTO_DISABLED=true`.
+  - 단차가 끝나고 곡률 |r''|≤4/mm가 되는 가장 낮은 Z_b까지 5차 Hermite(값·기울기·곡률)로 잇는다.
+- Re(재디자인): 70°보다 누운(접시형) 커프가 있을 때만 피니시라인-0.2mm ~ Z_a를 5차 Hermite(아래 원뿔 G2, 위는 기공소 곡면 기울기·곡률, 70° 넘으면 70°로)로 바꾼다. 결과도 70°보다 눕지 않아야 한다. 기공소 디자인 변경이라 자동 적용하지 않는다.
+  - 제조사: `POST /api/requests/by-request/:requestId/stl-file/redesign-cuff`(프리뷰 Re).
+  - 의뢰자: 2-filled 등록 응답 뒤 `proposeCuffRedesignForRequest`가 준비 단계·의뢰자 업로드 커스텀어벗만 분석해 `caseInfos.cuffProposal`(가장 누운 방향 옆모습 곡선 before/after)을 남기고 `request:cuff-proposal-updated`로 알린다. 수락 `POST /:id/cuff-proposal/accept`(준비만, filled 재디자인 + 기존 NC $unset), 거절 `.../decline`. 의뢰자 프리뷰는 수락 뒤 `GET /:id/filled-file-url`. 새 filled 등록 시 이전 제안은 $unset, 제조사 Re가 먼저면 `applied-by-manufacturer`.
+- 결과 `caseInfos.cuffBlend.status`: `applied` | `manual-review`(안전검사 실패 → 준비 카드「커프 확인」, Re로 처리) | `spec-pending`(스펙 미등록·형상 불일치 → 빨간 테두리 +「개발팀 확인 필요」) | `failed`.
+- **spec-pending이 뜨면**: `node scripts/abutment-stl-js/measure-cuff-connection.js --pending`으로 테이퍼 끝 높이를 재고, `services/abutmentStl/cuffConnectionSpecs.js` `CUFF_CONNECTION_SPECS`에 추가한 뒤 파일 상단 미등록 목록에서 뺀다. 턱 있는 샘플 3건 이상이 ±0.03mm로 모일 때만 등록한다.
+- 보정 곡면 삼각형 attribute는 `0x4342`. HF 패치(`0x4846`)는 유지된다.
+- SSOT: `services/abutmentStl/{cuffConnectionSpecs,cuffBlend,cuffBlend.service}.js`, `tests/unit/cuffBlend.test.js`, `.cursor/rules/cuff-connection-spec.mdc`
+
 ### 디자인 파트너 클레임·마감
 
 - 접근: `BusinessAnchor.designAccessEnabled` (`/api/devops/design-access`). 제조사 큐 엔드포인트는
