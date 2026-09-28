@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/settlement/affiliateVat.ts
 // - web/backend/controllers/credits/credit.controller.js
 // change-log:
+// - 2026-09-28: 정산규칙 — 보철 적립은 작업시작이 아니라 디자인 파일 업로드(작업완료) 시.
 // - 2026-09-28: 통장 사본 안내 가로는 문구+여백. 카드는 가운데.
 // - 2026-09-28: 지급 표는 크레딧 작업영역 폭. 충전 폼만 읽기 폭.
 // - 2026-09-26: 정산규칙 — 수수료 제목·협력·하청 문장.
@@ -597,13 +598,24 @@ export const LabSettlementPayoutTab = () => {
                   <div className="flex gap-2.5">
                     <HandCoins className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
                     <p>
-                      보철은 작업시작 시{" "}
+                      보철은 디자인 파일을 올려 작업완료되면{" "}
                       <span className="font-semibold text-slate-900">
                         기공크레딧
                       </span>
-                      으로 적립됩니다. {LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE}{" "}
+                      으로 적립됩니다.
+                      <br />
+                      업로드 전에는 적립 보류로만 보이고 정산·지급에서
+                      빠집니다.
+                      <br />
+                      치과가 보철 작업물을 받지 않는 건은 업로드 없이
+                      작업시작(커스텀어벗은 STL 업로드) 시 적립됩니다.
+                      <br />
+                      {LAB_CUSTOM_ABUTMENT_SETTLEMENT_NOTICE}
+                      <br />
                       치과 무료 크레딧 결제분도 동일하며 비용은 플랫폼이
-                      부담합니다. 취소·롤백 시 해당 적립은 삭제됩니다.
+                      부담합니다.
+                      <br />
+                      취소·롤백 시 해당 적립은 삭제됩니다.
                     </p>
                   </div>
                 </SettlementPolicySection>

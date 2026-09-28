@@ -11,6 +11,8 @@
 // - web/backend/models/ledgerLine.model.js
 // - web/frontend/src/shared/practice/labFeeSchedule.ts
 // - web/frontend/src/shared/components/practice/PracticeTransferFeeEstimate.tsx
+// - 2026-09-28: 보류 0원(HOLD 저널 없음) 건은 no_hold 대신 zero_lab_fee — settledAt 누락으로 결제 보류가 남던 문제.
+// - 2026-09-28: releasePracticeTransferLabShare skipSettlementGate(운영자 수동 정산 스크립트 전용).
 // - 2026-09-26: 학습 동의 변경 — 미완료 의뢰는 이번 건부터 플랫폼 수수료를 다시 맞춘다.
 // - 2026-09-20: lab/remake/follow-up 플랫폼 수수료 pushRevenueLines에 creditSettings 전달(2% 적립 크래시 수정).
 // - 2026-09-20: 작업시작 시 hold 저널 생성 실패면 billed 처리 금지(heldAt만 남는 정산 누락 방지).
@@ -3000,7 +3002,7 @@ function machiningSpendGlKey(requestId) {
   return requestMachiningSpendGlKey(requestId);
 }
 
-async function readPracticeToLabSettlementBlock(
+export async function readPracticeToLabSettlementBlock(
   transfer,
   { session = null, extraPaidRequestId = null } = {},
 ) {
@@ -3009,15 +3011,25 @@ async function readPracticeToLabSettlementBlock(
     practiceTransferNeedsMoreAbutmentDesigns,
   } = await import("./practiceTransferProduction.service.js");
   const works = Array.isArray(transfer?.toothWorks) ? transfer.toothWorks : [];
+  const [{ isLabProsthesisUploadRequired }, { listPendingProstheticSlots }] =
+    await Promise.all([
+      import("../utils/practiceProsthesisUploadRequirement.js"),
+      import("../utils/practiceTransferProstheticSlots.js"),
+    ]);
+  const uploadRequired = isLabProsthesisUploadRequired(transfer);
+  // 업로드를 안 하면 지급도 없다 — 기공소가 보철 디자인을 올리게 하는 강제력.
+  if (
+    uploadRequired &&
+    listPendingProstheticSlots(works, transfer?.resultFiles).length > 0
+  ) {
+    return "awaiting_prosthesis_upload";
+  }
   const customAbutmentCount = listCustomAbutmentToothWorks(works).length;
   if (customAbutmentCount <= 0) return null;
   if (practiceTransferNeedsMoreAbutmentDesigns(transfer)) {
     return "awaiting_abutment_design_stl";
   }
-  const { isLabProsthesisUploadRequired } = await import(
-    "../utils/practiceProsthesisUploadRequirement.js"
-  );
-  if (!isLabProsthesisUploadRequired(transfer)) return null;
+  if (!uploadRequired) return null;
 
   const awaitShare = awaitsAbutmentShareRelease(transfer);
   if (awaitShare) {
@@ -3329,6 +3341,7 @@ export async function settlePracticeToLabShareIfReady({
   actorUserId = null,
   session = null,
   extraPaidRequestId = null,
+  skipSettlementGate = false,
 } = {}) {
   const PracticeTransfer = (await import("../models/practiceTransfer.model.js"))
     .default;
@@ -3350,6 +3363,7 @@ export async function settlePracticeToLabShareIfReady({
     actorUserId,
     session,
     extraPaidRequestId,
+    skipSettlementGate,
   });
   if (!shouldPersistLabShareSettlement(releaseResult)) return releaseResult;
 
@@ -3459,6 +3473,7 @@ export async function settlePracticeToLabShareIfReady({
  * 어벗츠 원청: gross→internalLab, 하청·협력 매입→assignee, 잔여(수수료)는 원청 잔액.
  * 레거시 외부 직접 지정: performing lab에 전액(수수료 정책 그대로).
  * 커스텀어벗은 디자인 STL + 생산비 지급 전에는 released=false.
+ * skipSettlementGate: 운영자 수동 정산 스크립트 전용. API 경로에서 쓰지 말 것.
  */
 export async function releasePracticeTransferLabShare({
   transfer,
@@ -3466,6 +3481,7 @@ export async function releasePracticeTransferLabShare({
   actorUserId = null,
   session: outerSession = null,
   extraPaidRequestId = null,
+  skipSettlementGate = false,
 }) {
   const transferId = transfer?._id;
   const practiceAnchorId = transfer?.practiceBusinessAnchorId;
@@ -3534,10 +3550,6 @@ export async function releasePracticeTransferLabShare({
       journalId: legacySpend.journalId,
     };
   }
-  if (!holds.any) {
-    return { released: false, reason: "no_hold" };
-  }
-
   const { fees, feeRateApplied } = computed;
   const labFeeTotal = Math.max(
     0,
@@ -3550,7 +3562,12 @@ export async function releasePracticeTransferLabShare({
       ),
     ),
   );
-  if (labFeeTotal <= 0) {
+  const heldLabTotal = Math.max(
+    0,
+    Math.round(Number(transfer?.billing?.heldLabTotal || 0)),
+  );
+  // 보류 0원 건은 HOLD 저널이 없다. no_hold로 끝내면 settledAt이 영영 안 찍힌다.
+  if (labFeeTotal <= 0 && (holds.any || heldLabTotal <= 0)) {
     return {
       released: false,
       reason: "zero_lab_fee",
@@ -3560,11 +3577,16 @@ export async function releasePracticeTransferLabShare({
       labSettlementAmount: 0,
     };
   }
+  if (!holds.any) {
+    return { released: false, reason: "no_hold" };
+  }
 
-  const settlementBlock = await readPracticeToLabSettlementBlock(transfer, {
-    session: outerSession,
-    extraPaidRequestId,
-  });
+  const settlementBlock = skipSettlementGate
+    ? null
+    : await readPracticeToLabSettlementBlock(transfer, {
+        session: outerSession,
+        extraPaidRequestId,
+      });
   if (settlementBlock) {
     return {
       released: false,

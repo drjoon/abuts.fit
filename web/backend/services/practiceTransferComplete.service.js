@@ -3,6 +3,7 @@
 // - web/backend/jobs/practiceTransferArrivalAutoCompleteWorker.js
 // - web/backend/utils/practiceTransferArrivalDates.js
 // change-log:
+// - 2026-09-28: 작업완료 정산을 settlePracticeToLabShareIfReady로(보철 업로드 게이트·이연 후속 정산 포함).
 // - 2026-09-26: 치과 컨펌 없이 보철 업로드=작업완료. 학습 쌍 준비는 응답 뒤.
 // - 2026-09-26: 보철 슬롯이 남으면 작업완료 거절. 파일에 prosthesisType을 남긴다.
 // - 2026-09-02: 작업완료 수동 CTA 폐지. 치과도착일 경과(당일 제외) 시 자동 완료. CA 미업로드는 기한만료.
@@ -11,7 +12,7 @@ import PracticeTransfer from "../models/practiceTransfer.model.js";
 import User from "../models/user.model.js";
 import { emitAppEventToUser } from "../socket.js";
 import {
-  releasePracticeTransferLabShare,
+  settlePracticeToLabShareIfReady,
   chargePracticeTransferLabShipping,
 } from "./practiceTransferBilling.service.js";
 import {
@@ -218,14 +219,15 @@ export async function completePracticeTransferWork({
 
   // 치과 컨펌은 없다. 단계는 작업완료(디자인)에 두고, 출고로 올리지 않는다.
   const skipDesignConfirm = true;
+  // 정산 게이트가 이번 업로드 파일로 보철 슬롯을 판정해야 한다. 실패 시 save 전에 반환하므로 저장되지 않는다.
+  doc.resultFiles = resultFilesForSave;
   let releaseResult = null;
   if (doc.billing?.labSettledAt) {
     releaseResult = { released: false, reason: "already_settled" };
   } else {
     try {
-      releaseResult = await releasePracticeTransferLabShare({
+      releaseResult = await settlePracticeToLabShareIfReady({
         transfer: doc,
-        toothWorks: Array.isArray(doc.toothWorks) ? doc.toothWorks : [],
         actorUserId,
       });
       if (
@@ -323,7 +325,6 @@ export async function completePracticeTransferWork({
     };
   }
 
-  doc.resultFiles = resultFilesForSave;
   doc.autoMatch = {
     ...(doc.autoMatch && typeof doc.autoMatch === "object" ? doc.autoMatch : {}),
     completedAt: now,
