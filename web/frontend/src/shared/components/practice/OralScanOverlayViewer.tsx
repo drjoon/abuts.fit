@@ -46,6 +46,11 @@ import { CSS2DObject, CSS2DRenderer } from "three/examples/jsm/renderers/CSS2DRe
 import type { WorkSessionCenterGuide } from "@/shared/practice/labProsthesisWorkDraft";
 import { ScreenSpaceOrbitControls } from "@/shared/three/screenSpaceOrbitControls";
 import {
+  disposeBackFaceShell,
+  syncBackFaceShell,
+  syncBackFaceShellGeometry,
+} from "@/shared/three/backFaceShell";
+import {
   applyScanColorToneMapping,
   createModelPreviewMaterial,
   isScanColorPreview,
@@ -955,6 +960,7 @@ function swapScanGeometry(
   geometry.computeBoundingSphere();
   entry.mesh.geometry = geometry;
   entry.geometry = geometry;
+  syncBackFaceShellGeometry(entry.mesh);
   entry.scanColor = next.color;
   entry.dist = null;
   entry.align = null;
@@ -2858,6 +2864,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         mat.opacity = 1;
         mat.depthWrite = true;
       }
+      syncBackFaceShell(entry.mesh);
       entry.mesh.visible =
         !hiddenByAlign &&
         !ghostOff &&
@@ -3831,6 +3838,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       controls.dispose();
       for (const entry of loadedRef.current) {
         group.remove(entry.mesh);
+        disposeBackFaceShell(entry.mesh);
         releaseSceneGeometry(entry.geometry);
         releaseSceneTexture(entry.texture);
         const prev = entry.mesh.material;
@@ -3937,6 +3945,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     const clearGroup = () => {
       for (const entry of loadedRef.current) {
         group.remove(entry.mesh);
+        disposeBackFaceShell(entry.mesh);
         releaseSceneGeometry(entry.geometry);
         releaseSceneTexture(entry.texture);
         const prev = entry.mesh.material;

@@ -12,6 +12,7 @@ import {
   isScanColorPreview,
   parseModelPreview,
 } from "@/shared/files/modelPreviewFile";
+import { disposeBackFaceShell, syncBackFaceShell } from "@/shared/three/backFaceShell";
 import { ScreenSpaceOrbitControls } from "@/shared/three/screenSpaceOrbitControls";
 import { cn } from "@/shared/ui/cn";
 
@@ -208,6 +209,7 @@ export const CaseLayerViewer = forwardRef<CaseLayerViewerHandle, CaseLayerViewer
         observer.disconnect();
         controls.dispose();
         for (const mesh of meshes.values()) {
+          disposeBackFaceShell(mesh);
           mesh.geometry.dispose();
           const mat = mesh.material as THREE.MeshStandardMaterial;
           mat.map?.dispose();
@@ -233,6 +235,7 @@ export const CaseLayerViewer = forwardRef<CaseLayerViewerHandle, CaseLayerViewer
       for (const [id, mesh] of meshes) {
         if (wanted.has(id)) continue;
         scene.remove(mesh);
+        disposeBackFaceShell(mesh);
         mesh.geometry.dispose();
         (mesh.material as THREE.Material).dispose();
         meshes.delete(id);
@@ -262,13 +265,16 @@ export const CaseLayerViewer = forwardRef<CaseLayerViewerHandle, CaseLayerViewer
             }
             const mesh = new THREE.Mesh(geometry, material);
             mesh.renderOrder = layer.tone === "scan" ? 0 : 1;
+            syncBackFaceShell(mesh);
             if (!sceneRef.current) {
+              disposeBackFaceShell(mesh);
               geometry.dispose();
               material.dispose();
               return;
             }
             const latest = layersRef.current.find((l) => l.id === layer.id);
             if (!latest) {
+              disposeBackFaceShell(mesh);
               geometry.dispose();
               material.dispose();
               return;
