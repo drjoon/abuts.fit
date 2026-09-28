@@ -18,6 +18,7 @@
 // - web/frontend/src/shared/files/fileBlobCache.ts
 // - web/frontend/src/shared/files/s3ImageThumb.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-29: 작업 파일 섹션에도 「폴더 열기」(기공소만, onOpenWorkFilesFolder). 치과는 작업 파일을 받지 않는다.
 // - 2026-09-28: 환자·치아번호 줄 오른쪽에 케이스 공유(플랫폼 내·외부 링크) 버튼.
 // - 2026-09-28: 상단 헤더의 폴더 열기·톱니 제거. 의뢰 파일 섹션에만 둔다.
 // - 2026-09-28: 「폴더 열기」는 일반 버튼. 옆 톱니에서 DCM 받을 포맷(DCM·PLY·STL)을 고르고 저장.
@@ -630,6 +631,13 @@ type PracticeTransferDetailChatDialogProps = {
   /** 작업 파일(어벗 디자인·보철물) zip 전체 다운로드 */
   downloadAllWorkFilesBusy?: boolean;
   onDownloadAllWorkFiles?: () => void | Promise<void>;
+  /**
+   * 작업 파일(작업 스캔·어벗 디자인·보철물)을 케이스 폴더에 받고 연다. 기공소만 전달한다.
+   * 치과는 작업 파일을 내려받지 않는다.
+   */
+  onOpenWorkFilesFolder?: (opts?: {
+    dcmFormat?: DcmDownloadFormat;
+  }) => void | Promise<void>;
   onDownloadAllFiles: (opts?: {
     dcmFormat?: DcmDownloadFormat;
   }) => void | Promise<void>;
@@ -889,6 +897,7 @@ export function PracticeTransferDetailChatDialog({
   downloadAllFilesLabel = "전체 다운로드",
   downloadAllWorkFilesBusy = false,
   onDownloadAllWorkFiles,
+  onOpenWorkFilesFolder,
   onDownloadAllFiles,
   openInCadBusy = false,
   openWorkProgress = null,
@@ -2464,11 +2473,17 @@ export function PracticeTransferDetailChatDialog({
     downloadAllBusy ||
     downloadAllWorkFilesBusy ||
     requestFilesDownloadLocked;
-  const openWorkLabel = openInCadBusy
-    ? openWorkProgress != null
-      ? `저장 중 ${openWorkProgress}%`
-      : "저장 중..."
-    : "폴더 열기";
+  /** 「폴더 열기」는 의뢰 파일·작업 파일 두 곳에 있고 저장 busy를 같이 쓴다. 누른 쪽에만 진행률을 보인다. */
+  const [openFolderSource, setOpenFolderSource] = useState<"request" | "work">(
+    "request",
+  );
+  const openFolderLabelFor = (source: "request" | "work") =>
+    openInCadBusy && openFolderSource === source
+      ? openWorkProgress != null
+        ? `저장 중 ${openWorkProgress}%`
+        : "저장 중..."
+      : "폴더 열기";
+  const openWorkLabel = openFolderLabelFor("request");
   const downloadAllLabel = downloadAllBusy
     ? downloadAllProgress != null
       ? `저장 중 ${downloadAllProgress}%`
@@ -2482,19 +2497,26 @@ export function PracticeTransferDetailChatDialog({
         <Button
           type="button"
           size="sm"
-          onClick={() =>
-            void onOpenInDesignSoftware?.({ dcmFormat: openWorkDcmFormat })
-          }
+          onClick={() => {
+            setOpenFolderSource("request");
+            void onOpenInDesignSoftware?.({ dcmFormat: openWorkDcmFormat });
+          }}
           disabled={openWorkDisabled}
           className={cn(
             "relative h-8 overflow-hidden tabular-nums",
-            openInCadBusy && "disabled:opacity-100",
+            openInCadBusy &&
+              openFolderSource === "request" &&
+              "disabled:opacity-100",
           )}
         >
           <FolderOpen className="mr-1.5 h-3.5 w-3.5" />
           {openWorkLabel}
           <ButtonProgressBar
-            percent={openInCadBusy ? openWorkProgress : null}
+            percent={
+              openInCadBusy && openFolderSource === "request"
+                ? openWorkProgress
+                : null
+            }
             tone="onPrimary"
           />
         </Button>
@@ -2533,6 +2555,32 @@ export function PracticeTransferDetailChatDialog({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+    );
+  };
+  const renderOpenWorkFilesButton = () => {
+    if (!onOpenWorkFilesFolder) return null;
+    const busyHere = openInCadBusy && openFolderSource === "work";
+    return (
+      <Button
+        type="button"
+        size="sm"
+        onClick={() => {
+          setOpenFolderSource("work");
+          void onOpenWorkFilesFolder({ dcmFormat: openWorkDcmFormat });
+        }}
+        disabled={openInCadBusy || downloadAllBusy || downloadAllWorkFilesBusy}
+        className={cn(
+          "relative h-8 shrink-0 overflow-hidden tabular-nums",
+          busyHere && "disabled:opacity-100",
+        )}
+      >
+        <FolderOpen className="mr-1.5 h-3.5 w-3.5" />
+        {openFolderLabelFor("work")}
+        <ButtonProgressBar
+          percent={busyHere ? openWorkProgress : null}
+          tone="onPrimary"
+        />
+      </Button>
     );
   };
   const releaseAction =
@@ -3749,7 +3797,9 @@ export function PracticeTransferDetailChatDialog({
                     <h3 className="text-[13px] font-semibold text-foreground">
                       {workFilesLabel}
                     </h3>
-                    {onDownloadAllWorkFiles ? (
+                    {onOpenWorkFilesFolder ? (
+                      renderOpenWorkFilesButton()
+                    ) : onDownloadAllWorkFiles ? (
                       <Button
                         type="button"
                         variant="outline"

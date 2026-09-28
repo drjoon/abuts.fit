@@ -1,5 +1,6 @@
 // related files:
 // - 2026-09-29: 작업시작 클릭 시 보철 업로드 요구 건은 적립 조건 확인 모달(다시 보지 않기).
+// - 2026-09-29: 작업 파일 「폴더 열기」 — 작업 스캔·어벗 디자인·보철물을 같은 케이스 폴더에 받고 연다.
 // - 2026-09-28: 프리뷰 다운로드(의뢰 파일·작업 스캔)도 「폴더 열기」와 같은 케이스 폴더에 받는다.
 // - 2026-09-27: 작업열기 — Windows 연결 프로그램(v3)이 있으면 케이스 폴더에 풀어 저장 후 폴더 열기, 이미 받았으면 폴더만. 진행률 표시.
 //   없으면 Chrome·Edge 폴더 저장 → 그 외 Windows는 설치 안내(설치 파일 자동 받기·연결되면 이어서 저장).
@@ -241,6 +242,7 @@ import {
 import { LabReceiveDualRoleAssignDialog } from "@/shared/components/practice/LabReceiveDualRoleAssignDialog";
 import {
   filenameScanRoleFields,
+  isAbutsWorkScanFileName,
   type LabOralScanRole,
 } from "@/shared/practice/labProsthesisAiDesign";
 import { parseWorkScanAlignment } from "@/shared/practice/workScanAlignment";
@@ -7809,6 +7811,53 @@ export function RequestorPracticeReceivePage({
     [designSoftwareValue, saveSelectedTransferToWorkFolder],
   );
 
+  /** 작업 파일(작업 스캔·어벗 디자인·보철물)만 같은 케이스 폴더에 받고 연다. 이미 받은 파일은 건너뛴다. */
+  const handleOpenWorkFilesFolder = useCallback(
+    async (opts?: { dcmFormat?: DcmDownloadFormat }) => {
+      const production = selectedTransfer?.production;
+      const files = [
+        ...(Array.isArray(production?.labWorkScanFiles)
+          ? production.labWorkScanFiles
+          : []),
+        ...(Array.isArray(selectedTransfer?.files)
+          ? selectedTransfer.files.filter((file) =>
+              isAbutsWorkScanFileName(file.originalName),
+            )
+          : []),
+        ...(Array.isArray(production?.designFiles) ? production.designFiles : []),
+        ...(Array.isArray(selectedTransfer?.resultFiles)
+          ? selectedTransfer.resultFiles
+          : []),
+      ];
+      const sw = String(designSoftwareValue || "").trim();
+      await saveToLabWorkFolder({
+        files: files.map((file) => ({
+          s3Key: String(file.s3Key || "").trim(),
+          fileName: String(file.originalName || "download").trim() || "download",
+          busyKey: String(file.s3Key || "").trim(),
+          size: Number(file.size || 0),
+        })),
+        dcmFormat:
+          opts?.dcmFormat || (sw ? dcmFormatForDesignSoftware(sw) : undefined),
+        busy: "open",
+        reuseSaved: true,
+        caseFolder: selectedTransferCaseFolder,
+        resolveWorkFolder: requestLabWorkFolder,
+        onNeedHelperInstall: requestLabHelperInstall,
+        onSaved: toastLabWorkFolderSaved,
+      });
+    },
+    [
+      designSoftwareValue,
+      requestLabHelperInstall,
+      requestLabWorkFolder,
+      saveToLabWorkFolder,
+      selectedTransfer,
+      selectedTransferCaseFolder,
+      toastLabWorkFolderSaved,
+    ],
+  );
+
   const handleDownloadChatAttachment = useCallback(
     async (attachment: {
       fileId?: string;
@@ -9787,6 +9836,7 @@ export function RequestorPracticeReceivePage({
         openWorkProgress={openInCadBusy ? labSaveProgress : null}
         downloadAllProgress={downloadAllBusy ? labSaveProgress : null}
         onOpenInDesignSoftware={(opts) => void handleOpenWork(opts)}
+        onOpenWorkFilesFolder={(opts) => void handleOpenWorkFilesFolder(opts)}
         defaultDcmFormat={
           String(designSoftwareValue || "").trim()
             ? dcmFormatForDesignSoftware(String(designSoftwareValue))
