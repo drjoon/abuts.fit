@@ -59,6 +59,7 @@ import {
   restorePracticeTransferRequestFilesApi,
   appendReceivedPracticeTransferRequestFiles,
   appendReceivedPracticeTransferWorkScanFiles,
+  setReceivedPracticeTransferWorkScanEditing,
   setReceivedPracticeTransferScanRole,
   removeReceivedPracticeTransferRequestFiles,
   restoreReceivedPracticeTransferRequestFiles,
@@ -214,6 +215,13 @@ router.post(
   authenticate,
   receiveAuth,
   appendReceivedPracticeTransferWorkScanFiles,
+);
+
+router.post(
+  "/received/:transferId/work-scan-editing",
+  authenticate,
+  receiveAuth,
+  setReceivedPracticeTransferWorkScanEditing,
 );
 
 router.post(

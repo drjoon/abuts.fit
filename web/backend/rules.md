@@ -82,6 +82,8 @@
 - **작업 스캔 자동 정렬**: 의뢰 상악·하악·바이트가 모두 있으면 `jobs/workScanAutoAlignWorker.js`가 AI 디자인 모델 정렬(바이트 맞춤 + 교합 원점)을 돌려 `production.labWorkScanFiles`에 작업 DCM 3역할을 넣는다. 치과·기공소 모두 작업 파일로 보고, AI 디자인은 이 좌표에서 시작한다.
   - 대기열: **새 스캔 업로드 직후 한 번만** `queueWorkScanAutoAlign`(생성·리메이크·파일 추가 `schedulePracticeScanAlignment(id, { newUpload: true })`, 작업시작 첨부). 기존 의뢰는 백필하지 않는다. AI 디자인이 열 때 브라우저에서 맞춘다. 휴지통·복원·역할 변경은 재계산 없이 `dropStaleWorkScanAutoAlign`으로 예전 자동 작업 스캔만 비운다. 워커는 `source: "upload"` 대기만 맡고, 건 사이 `WORK_SCAN_AUTO_ALIGN_COOLDOWN_MS`(기본 5초) 쉰다. 워커 힙 기본 1024MB. 상태는 `production.workScanAutoAlign`.
   - 기공소가 직접 저장한 작업 스캔(잡이 넣은 `fileKeys` 밖의 키)이 있으면 덮지 않는다(`skipped`/`lab-work`).
+  - **모델 정렬 공유**: 정렬은 업로드 직후 이 잡만 한다(프리뷰 수동 정렬 없음). 정렬 여부는 `production.workScanAlignment`(`upper`·`lower`·`source` auto|ai-design·`fileKeys`) 하나다. `fileKeys`가 지금 `labWorkScanFiles` 키 집합과 같을 때만 유효(`utils/workScanAlignment.js`). 자동 잡(done)과 AI 디자인 `work-scan-files`(`archAligned`)가 쓰고, 둘 다 `work-scan-auto-aligned` 소켓으로 목록·정렬 기록을 보낸다. AI 디자인은 유효한 기록이 있으면 정렬 완료로 연다.
+  - **덮어쓰기 금지**: AI 디자인이 열려 있으면 `production.workScanEditing`(1분 갱신, TTL 3분)이 살아 있고, 그동안 자동 잡은 작업 스캔을 바꾸지 않는다(`skipped`/`lab-editing`, 저장 직전에도 다시 확인). AI 디자인은 자동 정렬 스캔보다 올리지 못한 로컬 초안을 우선한다.
   - 계산 코드는 프론트 `shared/practice/workScanAutoAlign.ts`의 Node 번들 `vendor/workScanAutoAlign/workScanAutoAlign.mjs`(생성물). 정렬·파서 코드를 바꾸면 `npm --prefix ../frontend run build:work-scan-align`으로 다시 만든다(`npm run build`·`eb.sh`도 만든다). 끄기: `WORK_SCAN_AUTO_ALIGN_WORKER_ENABLED=false`.
 
 - 신속 배송(`express`) 복원 메모:

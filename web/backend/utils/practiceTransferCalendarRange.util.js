@@ -195,6 +195,7 @@ export const PRACTICE_TRANSFER_CALENDAR_LIST_SELECT = {
   "production.skipJig": 1,
   "production.designFiles": 1,
   "production.labWorkScanFiles": 1,
+  "production.workScanAlignment": 1,
   "production.caDesignUploadCountByTooth": 1,
   "production.designReadyAt": 1,
   "production.labDesignConfirmedAt": 1,

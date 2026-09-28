@@ -255,8 +255,17 @@ import {
 } from "../../services/oralScanPair.service.js";
 import {
   dropStaleWorkScanAutoAlign,
+  emitWorkScanFilesChanged,
   queueWorkScanAutoAlign,
 } from "../../services/workScanAutoAlign.service.js";
+import {
+  buildWorkScanAlignment,
+  toWorkScanAlignmentApi,
+} from "../../utils/workScanAlignment.js";
+import {
+  PRACTICE_TRANSFER_CASE_VIEW_SELECT,
+  buildTransferLookupFilter,
+} from "../../utils/practiceTransferCaseView.js";
 import {
   normalizeOralScanRole,
   resolveStoredScanRole,
@@ -1009,6 +1018,7 @@ const toProductionApiFields = (production, { abutmentPastReady, abutmentPastRead
         ? new Date(item.uploadedAt).toISOString()
         : null,
     })),
+    workScanAlignment: toWorkScanAlignmentApi(p),
     labDesignConfirmedAt: p.labDesignConfirmedAt || null,
     practiceDesignConfirmedAt: p.practiceDesignConfirmedAt || null,
     abutmentProductionStartedAt: p.abutmentProductionStartedAt || null,
@@ -9853,7 +9863,21 @@ export async function appendReceivedPracticeTransferWorkScanFiles(req, res) {
     const kept = previous.filter(
       (row) => !savedRoles.has(String(row?.scanRole || "").trim()),
     );
-    doc.set("production.labWorkScanFiles", [...kept, ...nextIncoming]);
+    const nextWorkScans = [...kept, ...nextIncoming];
+    doc.set("production.labWorkScanFiles", nextWorkScans);
+    // AI 디자인의 모델 정렬 상태를 저장한 작업 스캔 전체에 남긴다. 없으면 예전 기록은 키가 달라 무효가 된다.
+    const archAligned = req.body?.archAligned;
+    const alignment =
+      archAligned && typeof archAligned === "object"
+        ? buildWorkScanAlignment({
+            upper: archAligned.upper,
+            lower: archAligned.lower,
+            source: "ai-design",
+            alignedBy: req.user?._id,
+            rows: nextWorkScans,
+          })
+        : null;
+    if (alignment) doc.set("production.workScanAlignment", alignment);
 
     const requestFiles = normalizeResultFiles(doc.files);
     const withoutRequestWorkScans = requestFiles.filter((row) => {
@@ -9893,11 +9917,63 @@ export async function appendReceivedPracticeTransferWorkScanFiles(req, res) {
         error?.message || error,
       );
     });
+    void emitWorkScanFilesChanged(
+      doc,
+      normalizeResultFiles(doc.production?.labWorkScanFiles),
+      doc.production?.workScanAlignment || null,
+    ).catch((error) => {
+      console.error("[work-scan-files] work scan emit failed", error?.message || error);
+    });
     return;
   } catch (error) {
     return res.status(500).json({
       success: false,
       message: "작업 스캔 저장 중 오류가 발생했습니다.",
+      error: error?.message,
+    });
+  }
+}
+
+/**
+ * 기공소 — AI 디자인이 열려 있음을 알린다. 열 때·1분마다 active=true, 닫고 저장한 뒤 false.
+ * 표시가 살아 있는 동안 자동 정렬 잡이 작업 스캔을 바꾸지 않는다.
+ * related: POST /api/practice/transfers/received/:transferId/work-scan-editing
+ */
+export async function setReceivedPracticeTransferWorkScanEditing(req, res) {
+  try {
+    const labAnchorId = String(req.user?.businessAnchorId || "").trim();
+    const filter = buildTransferLookupFilter(req.params?.transferId);
+    if (!filter || !labAnchorId) {
+      return res.status(400).json({ success: false, message: "의뢰 ID가 필요합니다." });
+    }
+    const doc = await PracticeTransfer.findOne(filter)
+      .select({ ...PRACTICE_TRANSFER_CASE_VIEW_SELECT, autoMatch: 1, "production.workScanEditing": 1 })
+      .lean();
+    if (!doc) {
+      return res.status(404).json({ success: false, message: "의뢰를 찾을 수 없습니다." });
+    }
+    if (!canLabOperatePracticeTransferWork(doc, labAnchorId)) {
+      return res.status(200).json({ success: true, data: { editing: false } });
+    }
+    const userId = req.user?._id;
+    if (req.body?.active === false) {
+      await PracticeTransfer.updateOne(
+        { _id: doc._id, "production.workScanEditing.userId": userId },
+        { $unset: { "production.workScanEditing": "" } },
+        { timestamps: false },
+      );
+      return res.status(200).json({ success: true, data: { editing: false } });
+    }
+    await PracticeTransfer.updateOne(
+      { _id: doc._id },
+      { $set: { "production.workScanEditing": { userId, labAnchorId, at: new Date() } } },
+      { timestamps: false },
+    );
+    return res.status(200).json({ success: true, data: { editing: true } });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "작업 중 표시를 남기지 못했습니다.",
       error: error?.message,
     });
   }

@@ -29,6 +29,7 @@ import {
   practiceAbutmentProgressValueClassName,
 } from "@/shared/shipping/hanjinTrackingLabel";
 import { resolvePracticeTransferLabDisplayLabel } from "@/shared/practice/practiceLabRating";
+import type { WorkScanAlignment } from "@/shared/practice/workScanAlignment";
 import {
   currentStageOfPlan,
   nextStageOfPlan,
@@ -153,6 +154,7 @@ export type PracticeSenderTransferDetailModel = {
   trashedFiles: PracticeTransferDialogFileItem[];
   designFiles: PracticeTransferDialogFileItem[];
   workScanFiles: PracticeTransferDialogFileItem[];
+  workScanAlignment: WorkScanAlignment | null;
   resultFiles: PracticeTransferDialogFileItem[];
   skipJig: boolean;
   labAnchorId: string | null;
@@ -320,6 +322,7 @@ export function buildPracticeSenderTransferDetailModel(
     trashedFiles: toDialogFiles(transfer.trashedFiles, "trash"),
     designFiles: toDialogFiles(transfer.designFiles, "design"),
     workScanFiles: toDialogFiles(transfer.workScanFiles, "work-scan"),
+    workScanAlignment: transfer.workScanAlignment ?? null,
     resultFiles: toDialogFiles(transfer.resultFiles, "result"),
     skipJig: Boolean(transfer.skipJig),
     labAnchorId: transfer.targetLabAnchorId || null,

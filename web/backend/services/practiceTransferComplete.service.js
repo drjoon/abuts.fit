@@ -39,6 +39,7 @@ import {
 import { expirePracticeTransfersPastArrivalDeadline } from "./practiceTransferArrivalExpire.service.js";
 import { getTodayYmdInKst } from "../utils/krBusinessDays.js";
 import { schedulePracticeAiTrainingPrep } from "./oralScanPair.service.js";
+import { toWorkScanAlignmentApi } from "../utils/workScanAlignment.js";
 import {
   attachProsthesisTypeToResultFiles,
   listPendingProstheticSlots,
@@ -88,6 +89,7 @@ function toProductionApiFields(production) {
         ? new Date(item.uploadedAt).toISOString()
         : null,
     })),
+    workScanAlignment: toWorkScanAlignmentApi(p),
     labDesignConfirmedAt: p.labDesignConfirmedAt || null,
     practiceDesignConfirmedAt: p.practiceDesignConfirmedAt || null,
     abutmentProductionStartedAt: p.abutmentProductionStartedAt || null,

@@ -63,6 +63,7 @@ import {
   isSimpleAbutmentModeForFee,
 } from "@/shared/practice/labFeeSchedule";
 import { isFollowUpProsthesisPhase } from "@/shared/practice/prosthesisFollowUp";
+import type { WorkScanAlignment } from "@/shared/practice/workScanAlignment";
 import {
   enrichToothWorksPendingFromCatalog,
   type RoundBarCatalogRow,
@@ -175,6 +176,8 @@ export type PracticeTransferLabReceiveItem = {
     designFiles?: PracticeTransferLabReceiveFile[];
     /** AI 작업 스캔. 채팅 작업 파일. 단계 판정에 쓰지 않는다. */
     labWorkScanFiles?: PracticeTransferLabReceiveFile[];
+    /** 지금 작업 스캔의 모델 정렬 기록. 작업 스캔이 바뀌면 서버가 null로 내린다. */
+    workScanAlignment?: WorkScanAlignment | null;
     labDesignConfirmedAt?: string | null;
     practiceDesignConfirmedAt?: string | null;
     abutmentProductionStartedAt?: string | null;

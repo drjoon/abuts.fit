@@ -268,6 +268,7 @@ import {
 } from "@/shared/practice/oralScanRequirement";
 import { ModelPreviewDialog, type ModelPreviewKind } from "@/shared/components/ModelPreviewDialog";
 import { WorkScanModelPreviewDialog } from "@/shared/components/WorkScanModelPreviewDialog";
+import type { WorkScanAlignment } from "@/shared/practice/workScanAlignment";
 import {
   workScanModelParts,
   workScanModelTitle,
@@ -608,6 +609,8 @@ type PracticeTransferDetailChatDialogProps = {
   /** AI 작업 스캔. 작업 파일 맨 위. */
   workScanFilesLabel?: string;
   workScanFiles?: PracticeTransferDialogFileItem[];
+  /** 지금 작업 스캔의 모델 정렬 기록(production.workScanAlignment). AI 디자인이 정렬 완료로 연다. */
+  workScanAlignment?: WorkScanAlignment | null;
   designFilesLabel?: string;
   designFiles?: PracticeTransferDialogFileItem[];
   /** 보철물(작업완료 결과). 있을 때만 표시 */
@@ -870,6 +873,7 @@ export function PracticeTransferDetailChatDialog({
   workFilesLabel = "작업 파일",
   workScanFilesLabel = "작업 스캔",
   workScanFiles = [],
+  workScanAlignment = null,
   designFilesLabel = "어벗 디자인",
   designFiles = [],
   resultFilesLabel = "보철물",
@@ -2177,6 +2181,23 @@ export function PracticeTransferDetailChatDialog({
     };
   }, [caseIdentity, orderDate, summaryItems]);
   const identityDateLabel = String(caseIdentityStrip?.secondary || "").trim();
+  const previewCaseInfo = caseIdentityStrip ? (
+    <p className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+      {caseIdentityStrip.dotColor || caseIdentityStrip.colorKey ? (
+        <CalendarLabColorDot
+          color={
+            caseIdentityStrip.dotColor ||
+            calendarGroupDotColor(caseIdentityStrip.colorKey || "-")
+          }
+          style={caseIdentityStrip.dotStyle || "filled"}
+        />
+      ) : null}
+      <span className="min-w-0 truncate">
+        <span className="font-medium text-foreground">{caseIdentityStrip.primary}</span>
+        {identityDateLabel ? ` · ${identityDateLabel}` : ""}
+      </span>
+    </p>
+  ) : null;
   const chartToothWorks = useMemo(
     () => (Array.isArray(toothWorks) ? toothWorks : []),
     [toothWorks],
@@ -2598,6 +2619,7 @@ export function PracticeTransferDetailChatDialog({
           s3Key: file.s3Key,
           uploadedAt: file.uploadedAt,
         }))}
+        workScanAlignment={workScanAlignment}
         onWorkingScansPersisted={onWorkingScansPersisted}
         onAttachChatFile={
           onAttachChatFiles ? (file) => onAttachChatFiles([file]) : undefined
@@ -4106,6 +4128,7 @@ export function PracticeTransferDetailChatDialog({
           : undefined
       }
       onAttachChatFile={onAttachChatFiles ? (file) => onAttachChatFiles([file]) : undefined}
+      caseInfo={previewCaseInfo}
     />
   );
   const workScanModelPreview = (
@@ -4115,6 +4138,7 @@ export function PracticeTransferDetailChatDialog({
       files={workScanFileList}
       authToken={authToken}
       title={workScanFilesLabel}
+      caseInfo={previewCaseInfo}
       downloadBusy={workScanDownloadBusy}
       onDownload={async (picked) => {
         if (onSaveFilesToCaseFolder) {

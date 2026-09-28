@@ -1,5 +1,6 @@
 // 작업 스캔(상악·하악·바이트)을 한 모델로 연다. 파일 좌표 그대로 겹치고 악별로 켜고 끈다.
 // change-log:
+// - 2026-09-29: 제목 아래 케이스 정보(caseInfo) — 채팅 헤더와 같은 점·치과/기공소·환자·치아·날짜.
 // - 2026-09-28: 다운로드는 파일 목록을 한 번에 넘긴다. 채팅 상세가 케이스 폴더에 저장한다.
 // - 2026-09-28: 채팅 첨부 후 프리뷰를 닫지 않는다. 여러 장을 붙일 수 있게 토스트만 띄운다.
 // - 2026-09-28: 의뢰 파일 프리뷰와 같은 헤더. 페인트·채팅 첨부·다운로드(악별·전체)와 칼라 매핑.
@@ -9,7 +10,7 @@
 // - web/frontend/src/shared/components/PreviewAnnotateActions.tsx
 // - web/frontend/src/shared/share/CaseLayerViewer.tsx
 // - web/backend/services/workScanAutoAlign.service.js
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronDown, Download, Eye, EyeOff, Loader2, Maximize2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -60,6 +61,7 @@ export function WorkScanModelPreviewDialog<T extends WorkScanModelFile>({
   files,
   authToken,
   title,
+  caseInfo,
   onDownload,
   downloadBusy = false,
   onAttachChatFile,
@@ -69,6 +71,8 @@ export function WorkScanModelPreviewDialog<T extends WorkScanModelFile>({
   files: readonly T[];
   authToken?: string | null;
   title?: string;
+  /** 제목 아래 한 줄. 어느 의뢰의 스캔인지(치과·기공소·환자·치아·날짜). */
+  caseInfo?: ReactNode;
   /** 고른 악 하나, 또는 「전체」면 모든 파일을 한 번에 넘긴다. */
   onDownload?: (files: T[]) => void | Promise<void>;
   downloadBusy?: boolean;
@@ -208,12 +212,15 @@ export function WorkScanModelPreviewDialog<T extends WorkScanModelFile>({
         onInteractOutside={keepOpenOnToastInteract}
       >
         <DialogHeader className="shrink-0 flex-row flex-wrap items-center justify-between gap-2 space-y-0 border-b bg-muted/50 py-2 pl-4 pr-14 text-left sm:pl-5 sm:pr-14">
-          <DialogTitle className="min-w-0 flex-1 truncate text-left text-sm font-medium sm:text-base">
-            {heading}
-            <span className="ml-2 text-xs font-normal text-muted-foreground sm:text-sm">
-              {workScanModelTitle(files)}
-            </span>
-          </DialogTitle>
+          <div className="min-w-0 flex-1">
+            <DialogTitle className="truncate text-left text-sm font-medium sm:text-base">
+              {heading}
+              <span className="ml-2 text-xs font-normal text-muted-foreground sm:text-sm">
+                {workScanModelTitle(files)}
+              </span>
+            </DialogTitle>
+            {caseInfo ? <div className="mt-0.5 min-w-0">{caseInfo}</div> : null}
+          </div>
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
             <div className="mr-3 flex items-center gap-1.5">
               {parts.map((part) => {

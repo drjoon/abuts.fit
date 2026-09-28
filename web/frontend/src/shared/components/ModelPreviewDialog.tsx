@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-29: 제목 아래 케이스 정보(caseInfo) — 채팅 헤더와 같은 점·치과/기공소·환자·치아·날짜.
 // - 2026-09-28: 채팅 첨부 후 프리뷰를 닫지 않는다. 여러 장을 붙일 수 있게 토스트만 띄운다.
 // - 2026-09-28: 페인트·채팅 첨부·칼라 매핑은 PreviewAnnotateActions 공용(작업 스캔 프리뷰와 같음). 3D는 「화면 맞춤」.
 // - 2026-09-28: 다운로드를 헤더 채팅 첨부 오른쪽으로 옮김.
@@ -29,7 +30,7 @@
 // - web/frontend/src/shared/files/dcmDownloadFormat.ts
 // - web/frontend/src/shared/components/PreviewAnnotateActions.tsx
 // - web/frontend/src/shared/components/WorkScanModelPreviewDialog.tsx
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ChevronDown,
   ChevronLeft,
@@ -108,6 +109,8 @@ export type ModelPreviewDialogProps = {
   onConfirm?: () => void | Promise<void>;
   /** 표시가 입혀진 현재 뷰를 채팅 첨부로 넘긴다. */
   onAttachChatFile?: (file: File) => void;
+  /** 제목 아래 한 줄. 어느 의뢰의 파일인지(치과·기공소·환자·치아·날짜). */
+  caseInfo?: ReactNode;
 };
 
 export function ModelPreviewDialog({
@@ -131,6 +134,7 @@ export function ModelPreviewDialog({
   confirmBusy = false,
   onConfirm,
   onAttachChatFile,
+  caseInfo,
 }: ModelPreviewDialogProps) {
   const isImage = kind === "image";
   const isDcm = isDcmFileName(fileName);
@@ -283,14 +287,17 @@ export function ModelPreviewDialog({
         onInteractOutside={keepOpenOnToastInteract}
       >
         <DialogHeader className="shrink-0 flex-row flex-wrap items-center justify-between gap-2 space-y-0 border-b bg-muted/50 py-2 pl-4 pr-14 text-left sm:pl-5 sm:pr-14">
-          <DialogTitle className="min-w-0 flex-1 truncate text-left text-sm font-medium sm:text-base">
-            {title}
-            {indexLabel ? (
-              <span className="ml-2 text-xs font-normal text-muted-foreground sm:text-sm">
-                {indexLabel}
-              </span>
-            ) : null}
-          </DialogTitle>
+          <div className="min-w-0 flex-1">
+            <DialogTitle className="truncate text-left text-sm font-medium sm:text-base">
+              {title}
+              {indexLabel ? (
+                <span className="ml-2 text-xs font-normal text-muted-foreground sm:text-sm">
+                  {indexLabel}
+                </span>
+              ) : null}
+            </DialogTitle>
+            {caseInfo ? <div className="mt-0.5 min-w-0">{caseInfo}</div> : null}
+          </div>
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
             <PreviewPaintControls paint={paint} disabled={!canAnnotate || confirmBusy} />
             {onAttachChatFile ? (

@@ -1,4 +1,7 @@
 // 기공소 채팅 헤더 — 작업시작 오른쪽 AI.
+// - 2026-09-29: 모델 정렬 공유 — 서버 정렬 기록(workScanAlignment)으로 정렬 완료를 열고, 저장 때 archAligned를 남긴다.
+//   열려 있는 동안 작업 중 표시를 보내 자동 정렬 잡이 작업 스캔을 바꾸지 못하게 한다.
+//   자동 정렬 잡이 만든 스캔보다 올리지 못한 초안이 이긴다.
 // - 2026-09-26: 헤더 의뢰 정보는 한 줄.
 // - 2026-09-26: 스캔·마진·디자인 단계, 언더컷·교합 접촉, 치아별 생성.
 // - 2026-09-26: 언더컷·교합은 헤더 중앙. 치아 정보는 설측 아래 트리. 스캔 파일은 세션 캐시.
@@ -208,6 +211,10 @@ import {
   type WorkScanRole,
 } from "@/shared/practice/labProsthesisAiDesign";
 import {
+  isMachineWorkScanAlignment,
+  type WorkScanAlignment,
+} from "@/shared/practice/workScanAlignment";
+import {
   assignNewerDraftFiles,
   dropWorkDraftRoles,
   newerDraftRoles,
@@ -298,6 +305,7 @@ export type WorkingScansPersisted = {
   files?: unknown;
   trashedFiles?: unknown;
   workScanFiles?: unknown;
+  workScanAlignment?: unknown;
 };
 
 type LabProsthesisAiCaseHeader = {
@@ -413,6 +421,8 @@ type LabProsthesisAiDesignButtonProps = {
   transferId?: string | null;
   /** 채팅 작업 파일의 작업 스캔. 의뢰 파일보다 나중이면 이걸 연다. */
   workScanFiles?: ReadonlyArray<AiDesignFile> | null;
+  /** 작업 스캔의 모델 정렬 기록. 자동 정렬 잡이나 다른 PC에서 맞춘 스캔이면 정렬 완료로 연다. */
+  workScanAlignment?: WorkScanAlignment | null;
   onWorkingScansPersisted?: (data: WorkingScansPersisted) => void;
   /** 표시가 입혀진 현재 뷰를 채팅 첨부로 넘긴다. */
   onAttachChatFile?: (file: File) => void;
@@ -505,6 +515,7 @@ export function LabProsthesisAiDesignButton({
   authToken,
   transferId,
   workScanFiles,
+  workScanAlignment,
   onWorkingScansPersisted,
   onAttachChatFile,
   caseHeader,
@@ -546,6 +557,7 @@ export function LabProsthesisAiDesignButton({
         authToken={authToken}
         transferId={transferId}
         workScanFiles={workScanFiles}
+        workScanAlignment={workScanAlignment}
         onWorkingScansPersisted={onWorkingScansPersisted}
         onAttachChatFile={onAttachChatFile}
         caseHeader={caseHeader}
@@ -632,6 +644,7 @@ function LabProsthesisAiDesignDialog({
   authToken,
   transferId,
   workScanFiles,
+  workScanAlignment,
   onWorkingScansPersisted,
   onAttachChatFile,
   caseHeader,
@@ -679,6 +692,19 @@ function LabProsthesisAiDesignDialog({
   const [scanbodyMeshes, setScanbodyMeshes] = useState<Record<string, ScanbodyMesh>>({});
   const filesRef = useRef(listedScanFiles);
   filesRef.current = listedScanFiles;
+  const workScanAlignmentRef = useRef(workScanAlignment ?? null);
+  workScanAlignmentRef.current = workScanAlignment ?? null;
+  /**
+   * 초안과 비교할 서버 작업 스캔 시각. 자동 정렬 잡이 만든 스캔은 기공소 작업이 아니라
+   * 올리지 못한 초안이 있으면 초안이 이긴다(기계 정렬이 기공소 작업을 덮지 않게).
+   */
+  const serverWorkScanAt = useCallback(
+    () =>
+      isMachineWorkScanAlignment(workScanAlignmentRef.current)
+        ? new Map<WorkScanRole, number>()
+        : newestWorkScanUploadedAtMs(filesRef.current || []),
+    [],
+  );
 
   const meshSources = useMemo(
     () => collectMeshSources(listedScanFiles),
@@ -1073,11 +1099,7 @@ function LabProsthesisAiDesignDialog({
         try {
           const draft = await readWorkDraft(caseId);
           if (ac.signal.aborted) return;
-          const assigned = assignNewerDraftFiles(
-            sources,
-            draft,
-            newestWorkScanUploadedAtMs(filesRef.current || []),
-          );
+          const assigned = assignNewerDraftFiles(sources, draft, serverWorkScanAt());
           localFiles = assigned.byId;
           pendingDraftRolesRef.current = new Set(assigned.roles);
           if (draft?.document) {
@@ -1121,6 +1143,16 @@ function LabProsthesisAiDesignDialog({
         }
       }
       if (ac.signal.aborted) return;
+      // 자동 정렬 잡이나 다른 PC에서 맞춘 작업 스캔이면 정렬 완료로 연다.
+      const serverAligned = workScanAlignmentRef.current;
+      if (serverAligned) {
+        const next = {
+          upper: archAlignedRef.current.upper || serverAligned.upper,
+          lower: archAlignedRef.current.lower || serverAligned.lower,
+        };
+        archAlignedRef.current = next;
+        setArchAligned(next);
+      }
 
       const companions: File[] = [];
       const wantsTexture = sources.some((row) =>
@@ -1237,7 +1269,7 @@ function LabProsthesisAiDesignDialog({
     return () => {
       ac.abort();
     };
-  }, [authToken, imageKey, meshKey, open, prepArch, transferId]);
+  }, [authToken, imageKey, meshKey, open, prepArch, serverWorkScanAt, transferId]);
 
   const scans = useMemo(() => {
     const byId = new Map(meshSources.map((row) => [row.id, row]));
@@ -3064,6 +3096,17 @@ function LabProsthesisAiDesignDialog({
     };
   }, [flushWorkDraft, open]);
 
+  // 창이 열려 있는 동안 서버에 작업 중 표시를 남긴다. 해제는 닫고 저장을 마친 뒤(persistWorkingScans).
+  useEffect(() => {
+    const id = String(transferId || "").trim();
+    if (!open || !id || !authToken) return;
+    void sendWorkScanEditing(id, authToken, true);
+    const timer = window.setInterval(() => {
+      void sendWorkScanEditing(id, authToken, true);
+    }, WORK_SCAN_EDITING_BEAT_MS);
+    return () => window.clearInterval(timer);
+  }, [authToken, open, transferId]);
+
   const persistWorkingScans = useCallback(async (snapshot: WorkCloseSnapshot) => {
     const { id, token, dirty, document, pendingRoles, serverAt } = snapshot;
     try {
@@ -3155,6 +3198,7 @@ function LabProsthesisAiDesignDialog({
                 scanRoleSetBy: row.scanRoleSetBy,
                 file: row.file,
               })),
+              archAligned: document.archAligned,
             },
           });
           if (!appended.ok) {
@@ -3186,6 +3230,7 @@ function LabProsthesisAiDesignDialog({
             files: data.files,
             trashedFiles: data.trashedFiles,
             workScanFiles: production.labWorkScanFiles,
+            workScanAlignment: production.workScanAlignment,
           });
           const labels = [...savedRoles].map((role) => oralScanRoleLabel(role));
           toast({
@@ -3212,6 +3257,7 @@ function LabProsthesisAiDesignDialog({
       });
     } finally {
       saveLockRef.current = false;
+      void sendWorkScanEditing(id, token, false);
     }
   }, [enqueueDraft, onWorkingScansPersisted, toast, uploadFiles]);
 
@@ -3284,6 +3330,7 @@ function LabProsthesisAiDesignDialog({
     const id = String(transferId || "").trim();
     if (!autoSaveRef.current || alignBusy || !id || !authToken) {
       if (alignBusy) suspendDraftRef.current = true;
+      if (id && authToken) void sendWorkScanEditing(id, authToken, false);
       leave();
       return;
     }
@@ -3293,7 +3340,7 @@ function LabProsthesisAiDesignDialog({
       dirty: viewerRef.current?.exportChangedScans() ?? [],
       document: currentWorkDocument(),
       pendingRoles: [...pendingDraftRolesRef.current],
-      serverAt: newestWorkScanUploadedAtMs(filesRef.current || []),
+      serverAt: serverWorkScanAt(),
     };
     suspendDraftRef.current = true;
     saveLockRef.current = true;
@@ -6374,6 +6421,19 @@ function apiMessage(raw: unknown): string {
   const body =
     raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
   return String(body.message || "").trim();
+}
+
+/** 서버 표시 TTL(3분)보다 짧게 갱신한다. */
+const WORK_SCAN_EDITING_BEAT_MS = 60 * 1000;
+
+/** 작업 중 표시. 실패해도 작업은 막지 않는다(TTL로 풀린다). */
+function sendWorkScanEditing(transferId: string, token: string, active: boolean) {
+  return apiFetch({
+    path: `/api/practice/transfers/received/${encodeURIComponent(transferId)}/work-scan-editing`,
+    method: "POST",
+    token,
+    jsonBody: { active },
+  }).catch(() => null);
 }
 
 function collectImageSources(

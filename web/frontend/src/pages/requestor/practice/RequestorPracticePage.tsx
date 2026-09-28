@@ -243,6 +243,7 @@ import {
   filenameScanRoleFields,
   type LabOralScanRole,
 } from "@/shared/practice/labProsthesisAiDesign";
+import { parseWorkScanAlignment } from "@/shared/practice/workScanAlignment";
 import { useImplantConnectionCatalog } from "@/shared/practice/useImplantConnectionCatalog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -359,6 +360,7 @@ import {
   parsePracticeTransferMemoMeta as parsePracticeTransferMemoMetaShared,
   parseToothWorks,
   serializeToothWorks,
+  formatToothNumbersForCard,
   type ToothWorkSelection,
 } from "@/shared/practice/transferMemo";
 import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
@@ -1362,6 +1364,7 @@ export function RequestorPracticeReceivePage({
                     })
                     .filter(Boolean) as ReceivedPracticeFile[]
                 : [],
+              workScanAlignment: parseWorkScanAlignment(productionRaw.workScanAlignment),
               labDesignConfirmedAt: productionRaw.labDesignConfirmedAt
                 ? String(productionRaw.labDesignConfirmedAt)
                 : null,
@@ -2014,6 +2017,7 @@ export function RequestorPracticeReceivePage({
                       rawWorkScans,
                       String(row._id || ""),
                     ),
+                    workScanAlignment: parseWorkScanAlignment(payload.workScanAlignment),
                   },
                 }
               : row;
@@ -3130,7 +3134,8 @@ export function RequestorPracticeReceivePage({
         selectedTransfer.arrivalDate ||
         "",
     ).trim();
-    const identityParts = [clinic, patient, doctor].filter(Boolean);
+    const teeth = formatToothNumbersForCard(selectedTransferToothWorks);
+    const identityParts = [clinic, patient, doctor, teeth].filter(Boolean);
     if (!identityParts.length && !transferId) return null;
     const identity = identityParts.length
       ? identityParts.join(" · ")
@@ -3170,6 +3175,7 @@ export function RequestorPracticeReceivePage({
     selectedTransfer,
     selectedTransferDoctorName,
     selectedTransferPatientName,
+    selectedTransferToothWorks,
   ]);
   const markTransferRead = useCallback(
     async (transfer: ReceivedPracticeTransfer) => {
@@ -9713,6 +9719,7 @@ export function RequestorPracticeReceivePage({
                   production: {
                     ...(row.production || {}),
                     labWorkScanFiles: workScanFiles,
+                    workScanAlignment: parseWorkScanAlignment(data.workScanAlignment),
                   },
                 }
               : row;
@@ -9763,6 +9770,7 @@ export function RequestorPracticeReceivePage({
             uploadedAt: file.uploadedAt || null,
           })) satisfies PracticeTransferDialogFileItem[]
         }
+        workScanAlignment={selectedTransfer?.production?.workScanAlignment ?? null}
         resultFilesLabel="보철물"
         resultFiles={
           (selectedTransfer?.resultFiles || []).map((file) => ({

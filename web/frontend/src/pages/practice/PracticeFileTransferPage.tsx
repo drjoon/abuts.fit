@@ -428,6 +428,7 @@ import {
       type PracticeImplantFavorite,
       type SimpleSpecOptionCatalog,
       type ToothWorkSelection as SharedToothWorkSelection,
+      formatToothNumbersForCard,
 } from "@/shared/practice/transferMemo";
 import {
   parsePracticeTransferFeeQuote,
@@ -5261,9 +5262,9 @@ export const PracticeFileTransferPage = ({
 
   const selectedTransferCaseIdentity = useMemo(() => {
     if (!selectedTransfer || !selectedTransferDetailModel) return null;
-    // 기공소명은 색 점으로만 구분 — 제목 텍스트에는 환자·원장만
     const patient = String(selectedTransferDetailModel.patientName || "").trim();
     const doctor = String(selectedTransferDetailModel.doctorName || "").trim();
+    const teeth = formatToothNumbersForCard(selectedTransferDetailModel.toothWorks || []);
     const transferId = String(
       selectedTransfer.transferId || selectedTransfer.id || "",
     ).trim();
@@ -5276,7 +5277,16 @@ export const PracticeFileTransferPage = ({
         "",
     ).trim();
     const arrival = String(selectedTransfer.arrivalDate || "").trim();
-    const identityParts = [patient, doctor].filter(Boolean);
+    const labLabel = resolvePracticeTransferLabDisplayLabel({
+      targetLab: selectedTransfer.targetLab,
+      handledByCertifiedPartner: selectedTransfer.handledByCertifiedPartner,
+      assigneeKind: selectedTransfer.assigneeKind,
+      assigneeLabName: selectedTransfer.assigneeLabName,
+    });
+    // 기공소 · 환자 · 원장 · 치아번호. 점은 목록과 같은 기공소 색.
+    const identityParts = [String(labLabel || "").trim(), patient, doctor, teeth].filter(
+      Boolean,
+    );
     if (!identityParts.length && !transferId) return null;
     const identity = identityParts.length
       ? identityParts.join(" · ")
@@ -5285,12 +5295,6 @@ export const PracticeFileTransferPage = ({
       order ? `주문 ${order}` : "",
       arrival ? `도착 ${arrival}` : "",
     ].filter(Boolean);
-    const labLabel = resolvePracticeTransferLabDisplayLabel({
-      targetLab: selectedTransfer.targetLab,
-      handledByCertifiedPartner: selectedTransfer.handledByCertifiedPartner,
-      assigneeKind: selectedTransfer.assigneeKind,
-      assigneeLabName: selectedTransfer.assigneeLabName,
-    });
     const colorKey = resolvePracticeTransferLabColorKey({
       assigneeKind: selectedTransfer.assigneeKind,
       assigneeLabAnchorId: selectedTransfer.assigneeLabAnchorId,
@@ -11762,6 +11766,7 @@ export const PracticeFileTransferPage = ({
           designFilesLabel="어벗 디자인"
           designFiles={selectedTransferDetailModel?.designFiles || []}
           workScanFiles={selectedTransferDetailModel?.workScanFiles || []}
+          workScanAlignment={selectedTransferDetailModel?.workScanAlignment ?? null}
           resultFilesLabel="보철물"
           resultFiles={selectedTransferDetailModel?.resultFiles || []}
           showProductionConfirm={Boolean(

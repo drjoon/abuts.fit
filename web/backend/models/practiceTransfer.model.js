@@ -261,6 +261,17 @@ const practiceTransferSchema = new mongoose.Schema(
        */
       workScanAutoAlign: { type: mongoose.Schema.Types.Mixed, default: undefined },
       /**
+       * 작업 스캔 모델 정렬(바이트 맞춤) 여부. 업로드 직후 자동 잡·AI 디자인 저장이 쓴다.
+       * { upper, lower, source: auto|ai-design, alignedAt, alignedBy, fileKeys }.
+       * fileKeys가 지금 labWorkScanFiles 키 집합과 같을 때만 유효하다(utils/workScanAlignment.js).
+       */
+      workScanAlignment: { type: mongoose.Schema.Types.Mixed, default: undefined },
+      /**
+       * 기공소 AI 디자인이 열려 있는 동안의 표시. { userId, labAnchorId, at }.
+       * at이 TTL 안이면 자동 정렬 잡이 작업 스캔을 바꾸지 않는다.
+       */
+      workScanEditing: { type: mongoose.Schema.Types.Mixed, default: undefined },
+      /**
        * 치아별 CA STL 업로드 횟수. cancel로 designFiles를 비워도 유지.
        * 2회차부터 리메이크(치과 CA 리메이크비 + 기공소→어벗츠 1만) 적용.
        */

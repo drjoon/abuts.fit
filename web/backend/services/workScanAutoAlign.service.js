@@ -1,7 +1,9 @@
 // 의뢰 상악·하악·바이트가 모두 올라오면 AI 디자인 모델 정렬(바이트에 악궁 맞춤 + 교합 원점)을
 // 백그라운드로 돌려 작업 스캔(production.labWorkScanFiles)에 넣는다. 치과·기공소 모두 작업 파일로 본다.
-// 기공소가 직접 저장한 작업 스캔이 있으면 덮지 않는다.
+// 기공소가 직접 저장한 작업 스캔이 있거나 AI 디자인을 열어 두었으면 덮지 않는다.
+// 결과는 production.workScanAlignment(source auto)로도 남겨 AI 디자인이 정렬 완료로 연다.
 // related files:
+// - web/backend/utils/workScanAlignment.js
 // - web/backend/jobs/workScanAutoAlignWorker.js
 // - web/backend/services/workScanAutoAlign.worker.js
 // - web/backend/services/oralScanPair.service.js
@@ -19,6 +21,12 @@ import {
   resolveStoredScanRole,
 } from "../utils/oralScanRole.js";
 import { getObjectBufferFromS3, putObjectToS3 } from "../utils/s3.utils.js";
+import {
+  WORK_SCAN_EDITING_TTL_MS,
+  buildWorkScanAlignment,
+  isWorkScanEditingActive,
+  toWorkScanAlignmentApi,
+} from "../utils/workScanAlignment.js";
 
 const STATE = "production.workScanAutoAlign";
 const JAW_ROLES = ["upper", "lower", "bite"];
@@ -199,7 +207,19 @@ function toWorkScanApiFiles(rows) {
   }));
 }
 
-async function emitWorkScanFilesChanged(doc, rows) {
+/** AI 디자인이 열려 있지 않을 때만 맞는 조건. 작업 스캔을 바꾸는 쓰기에 붙인다. */
+export function workScanNotEditingFilter(now = Date.now()) {
+  return {
+    $or: [
+      { "production.workScanEditing.at": { $exists: false } },
+      { "production.workScanEditing.at": null },
+      { "production.workScanEditing.at": { $lt: new Date(now - WORK_SCAN_EDITING_TTL_MS) } },
+    ],
+  };
+}
+
+/** 치과·원청·수행 기공소에 작업 스캔 목록과 정렬 메타데이터를 보낸다. */
+export async function emitWorkScanFilesChanged(doc, rows, alignment = null) {
   const payload = {
     action: "work-scan-auto-aligned",
     transferId: String(doc.transferId || "").trim(),
@@ -207,6 +227,10 @@ async function emitWorkScanFilesChanged(doc, rows) {
     targetLabAnchorId: String(doc.targetLabAnchorId || "").trim() || null,
     practiceUserId: String(doc.practiceUserId || "").trim() || null,
     workScanFiles: toWorkScanApiFiles(rows),
+    workScanAlignment: toWorkScanAlignmentApi({
+      labWorkScanFiles: rows,
+      workScanAlignment: alignment,
+    }),
   };
   const labAnchorIds = [
     ...new Set(
@@ -265,6 +289,7 @@ async function claimNext() {
         targetLabAnchorId: 1,
         assigneeLabAnchorId: 1,
         "production.labWorkScanFiles": 1,
+        "production.workScanEditing": 1,
         [STATE]: 1,
       },
       ...QUIET,
@@ -284,7 +309,7 @@ async function processClaimed({ doc, runId }) {
   const sources = collectWorkScanAlignSources(doc.files);
   const sourceKey = workScanAlignSourceKey(sources);
 
-  const finish = async (fields, rows = null) => {
+  const finish = async (fields, rows = null, alignment = null) => {
     const set = {
       [`${STATE}.finishedAt`]: new Date(),
       [`${STATE}.leaseUntil`]: null,
@@ -293,14 +318,20 @@ async function processClaimed({ doc, runId }) {
     };
     for (const [key, value] of Object.entries(fields)) set[`${STATE}.${key}`] = value;
     if (rows) set["production.labWorkScanFiles"] = rows;
+    if (rows && alignment) set["production.workScanAlignment"] = alignment;
+    const filter = { _id: id, [`${STATE}.status`]: "running", [`${STATE}.runId`]: runId };
+    // 정렬하는 동안 기공소가 AI 디자인을 열었으면 작업 스캔을 바꾸지 않는다.
     const result = await PracticeTransfer.updateOne(
-      { _id: id, [`${STATE}.status`]: "running", [`${STATE}.runId`]: runId },
+      rows ? { ...filter, ...workScanNotEditingFilter() } : filter,
       { $set: set },
       QUIET,
     );
     const applied = Number(result?.modifiedCount || 0) > 0;
+    if (!applied && rows) {
+      return finish({ status: "skipped", reason: "lab-editing", sourceKey, fileKeys: [] });
+    }
     if (applied && rows) {
-      void emitWorkScanFilesChanged(doc, rows).catch((error) => {
+      void emitWorkScanFilesChanged(doc, rows, alignment).catch((error) => {
         console.warn("[work-scan-auto-align] emit failed", String(id), error?.message || error);
       });
     }
@@ -315,6 +346,9 @@ async function processClaimed({ doc, runId }) {
   }
   if (labSaved) {
     return finish({ status: "skipped", reason: "lab-work", sourceKey });
+  }
+  if (isWorkScanEditingActive(doc.production)) {
+    return finish({ status: "skipped", reason: "lab-editing", sourceKey });
   }
   if (!hasAllWorkScanRoles(sources)) {
     return finish({ status: "incomplete", sourceKey, fileKeys: [] }, staleAutoRows);
@@ -388,6 +422,13 @@ async function processClaimed({ doc, runId }) {
         ms,
       },
       rows,
+      buildWorkScanAlignment({
+        upper: true,
+        lower: true,
+        source: "auto",
+        rows,
+        at: uploadedAt,
+      }),
     );
   } catch (error) {
     const message = String(error?.message || error).slice(0, 500);

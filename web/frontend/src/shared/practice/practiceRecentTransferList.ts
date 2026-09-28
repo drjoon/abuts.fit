@@ -24,6 +24,10 @@
  * - web/frontend/src/store/usePeriodStore.ts
  */
 import { type ChatRoom } from "@/shared/hooks/useChatRooms";
+import {
+  parseWorkScanAlignment,
+  type WorkScanAlignment,
+} from "@/shared/practice/workScanAlignment";
 import type { PeriodFilterValue } from "@/shared/ui/PeriodFilter";
 import { periodToRange } from "@/store/usePeriodStore";
 import { toKstYmd, toKstYmdLoose } from "@/shared/date/kst";
@@ -102,6 +106,8 @@ export type PracticeRecentRequestItem = {
   designFiles?: PracticeRecentTransferFileItem[];
   /** AI 작업 스캔. 채팅 작업 파일. */
   workScanFiles?: PracticeRecentTransferFileItem[];
+  /** 지금 작업 스캔의 모델 정렬 기록. */
+  workScanAlignment?: WorkScanAlignment | null;
   hasCustomAbutment?: boolean;
   productionConfirmedAt?: string | null;
   /** 연동 커스텀어벗 Request 한진 배송 요약 */
@@ -191,6 +197,8 @@ export type PracticeRecentTransferItem = {
   resultFiles?: PracticeRecentTransferFileItem[];
   designFiles?: PracticeRecentTransferFileItem[];
   workScanFiles?: PracticeRecentTransferFileItem[];
+  /** 의뢰가 하나일 때만. 여러 의뢰를 묶으면 작업 스캔 목록이 합쳐져 null. */
+  workScanAlignment?: WorkScanAlignment | null;
   hasCustomAbutment?: boolean;
   productionConfirmedAt?: string | null;
   /** 연동 커스텀어벗 Request 한진 배송 요약 */
@@ -962,6 +970,7 @@ export const mapMyPracticeTransferApiRows = (
         resultFiles,
         designFiles,
         workScanFiles,
+        workScanAlignment: parseWorkScanAlignment(productionRaw?.workScanAlignment),
         hasCustomAbutment: Boolean(r.hasCustomAbutment),
         productionConfirmedAt: productionRaw?.confirmedAt
           ? String(productionRaw.confirmedAt)
@@ -1271,6 +1280,7 @@ export const mergeOpenPracticeTransferFromRequestRows = (
     resultFiles: mergedResultFiles,
     designFiles: mergedDesignFiles,
     workScanFiles: mergedWorkScanFiles,
+    workScanAlignment: openRows.length === 1 ? (openRows[0]!.workScanAlignment ?? null) : null,
     designFileCount: nextDesignFileCount,
     designReadyAt:
       openRows.find((r) => r.designReadyAt)?.designReadyAt || prev.designReadyAt || null,
@@ -1524,6 +1534,7 @@ export const groupPracticeRecentRequests = (
         resultFiles: Array.isArray(req.resultFiles) ? [...req.resultFiles] : [],
         designFiles: Array.isArray(req.designFiles) ? [...req.designFiles] : [],
         workScanFiles: Array.isArray(req.workScanFiles) ? [...req.workScanFiles] : [],
+        workScanAlignment: req.workScanAlignment ?? null,
         hasCustomAbutment: Boolean(req.hasCustomAbutment),
         productionConfirmedAt: req.productionConfirmedAt || null,
         abutmentDeliveryInfo: req.abutmentDeliveryInfo || null,
@@ -1666,6 +1677,7 @@ export const groupPracticeRecentRequests = (
     }
     if (Array.isArray(req.workScanFiles) && req.workScanFiles.length > 0) {
       existing.workScanFiles = mergeFileItemsByS3Key(existing.workScanFiles, req.workScanFiles);
+      existing.workScanAlignment = null;
     }
     if (req.hasCustomAbutment) existing.hasCustomAbutment = true;
     if (req.abutmentDeliveryInfo) {
