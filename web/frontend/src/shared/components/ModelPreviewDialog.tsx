@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-09-28: 채팅 첨부 후 프리뷰를 닫지 않는다. 여러 장을 붙일 수 있게 토스트만 띄운다.
+// - 2026-09-28: 페인트·채팅 첨부·칼라 매핑은 PreviewAnnotateActions 공용(작업 스캔 프리뷰와 같음). 3D는 「화면 맞춤」.
 // - 2026-09-28: 다운로드를 헤더 채팅 첨부 오른쪽으로 옮김.
 // - 2026-09-28: 이미지 저장 버튼 제거. 다운로드와 겹친다.
 // - 2026-09-28: 헤더 버튼 순서 페인트·이미지 저장·채팅 첨부. 페인트 오른쪽 여백. 하단 닫기 제거.
@@ -25,15 +27,15 @@
 // - web/frontend/src/features/chat/components/NewChatWidget.tsx
 // - web/frontend/src/shared/files/modelPreviewFile.ts
 // - web/frontend/src/shared/files/dcmDownloadFormat.ts
+// - web/frontend/src/shared/components/PreviewAnnotateActions.tsx
+// - web/frontend/src/shared/components/WorkScanModelPreviewDialog.tsx
 import { useEffect, useRef, useState } from "react";
 import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   Download,
-  Eraser,
-  Paperclip,
-  Pencil,
+  Maximize2,
 } from "lucide-react";
 import {
   StlPreviewViewer,
@@ -66,14 +68,14 @@ import {
   isDcmFileName,
   type DcmDownloadFormat,
 } from "@/shared/files/dcmDownloadFormat";
-import { useToast } from "@/shared/hooks/use-toast";
 import {
-  VIEW_PAINT_COLORS,
-  ViewPaintSurface,
-  paintNoteFileName,
-  viewPaintColorLabel,
-  type ViewPaintHandle,
-} from "@/shared/components/practice/ViewPaintSurface";
+  PREVIEW_HEADER_BUTTON_CLASS,
+  keepOpenOnToastInteract,
+  PreviewChatAttachButton,
+  PreviewPaintControls,
+  PreviewPaintLayer,
+  usePreviewPaint,
+} from "@/shared/components/PreviewAnnotateActions";
 
 export type ModelPreviewKind = "model" | "image";
 
@@ -130,7 +132,6 @@ export function ModelPreviewDialog({
   onConfirm,
   onAttachChatFile,
 }: ModelPreviewDialogProps) {
-  const { toast } = useToast();
   const isImage = kind === "image";
   const isDcm = isDcmFileName(fileName);
   const title =
@@ -139,12 +140,8 @@ export function ModelPreviewDialog({
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const viewerRef = useRef<StlPreviewViewerHandle | null>(null);
   const imageRef = useRef<ZoomableImagePreviewHandle | null>(null);
-  const paintRef = useRef<ViewPaintHandle | null>(null);
-  const [paintOn, setPaintOn] = useState(false);
-  const [paintColor, setPaintColor] = useState<string>(VIEW_PAINT_COLORS[0]);
-  const [paintInk, setPaintInk] = useState(false);
+  const paint = usePreviewPaint({ open, resetKey: fileName });
   const canAnnotate = (isImage ? Boolean(imageUrl) : Boolean(file)) && !loading;
-  const canAttachPaint = Boolean(onAttachChatFile) && canAnnotate && paintInk;
   const showNav = previewCount > 1 && previewIndex >= 0;
   const indexLabel = showNav ? `${previewIndex + 1} / ${previewCount}` : "";
   const confirmText = String(confirmMessage || "").trim();
@@ -157,38 +154,6 @@ export function ModelPreviewDialog({
       ? imageRef.current?.captureCanvas() ?? null
       : viewerRef.current?.captureCanvas() ?? null;
 
-  const attachPaintToChat = async () => {
-    const base = captureViewCanvas();
-    const blob = base ? await paintRef.current?.compositePng(base) : null;
-    if (!blob || !onAttachChatFile) return;
-    onAttachChatFile(
-      new File([blob], paintNoteFileName(fileName), { type: "image/png" }),
-    );
-    toast({
-      title: "채팅에 첨부했습니다.",
-      description: (
-        <>
-          표시가 입혀진 이미지가 대화 입력에 있습니다.
-          <br />
-          미리보기를 닫고 보내기를 누르면 상대에게 전달됩니다.
-        </>
-      ),
-    });
-    onOpenChange(false);
-  };
-
-  useEffect(() => {
-    if (open) return;
-    setPaintOn(false);
-    setPaintInk(false);
-    paintRef.current?.clear();
-  }, [open]);
-
-  useEffect(() => {
-    setPaintOn(false);
-    setPaintInk(false);
-  }, [fileName]);
-
   const renderDownloadControl = (opts?: {
     className?: string;
     variant?: "default" | "secondary" | "outline";
@@ -196,10 +161,7 @@ export function ModelPreviewDialog({
     if (!onDownload) return null;
     const disabled = downloadBusy || loading || confirmBusy || !fileName;
     const label = downloadBusy ? "다운로드 중..." : "다운로드";
-    const className = cn(
-      "h-8 gap-1 px-2.5 [&_svg]:!size-3.5",
-      opts?.className,
-    );
+    const className = cn(PREVIEW_HEADER_BUTTON_CLASS, opts?.className);
     const variant = opts?.variant || "outline";
 
     if (!isDcm) {
@@ -318,6 +280,7 @@ export function ModelPreviewDialog({
           RESPONSIVE.dialogContentFull,
         )}
         overlayClassName="z-[445]"
+        onInteractOutside={keepOpenOnToastInteract}
       >
         <DialogHeader className="shrink-0 flex-row flex-wrap items-center justify-between gap-2 space-y-0 border-b bg-muted/50 py-2 pl-4 pr-14 text-left sm:pl-5 sm:pr-14">
           <DialogTitle className="min-w-0 flex-1 truncate text-left text-sm font-medium sm:text-base">
@@ -329,64 +292,15 @@ export function ModelPreviewDialog({
             ) : null}
           </DialogTitle>
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
-            <div className="mr-3 flex items-center gap-1.5">
-              <Button
-                type="button"
-                size="sm"
-                variant={paintOn ? "default" : "outline"}
-                className="h-8 gap-1 px-2.5 [&_svg]:!size-3.5"
-                disabled={!canAnnotate || confirmBusy}
-                aria-pressed={paintOn}
-                aria-label="페인트"
-                onClick={() => setPaintOn((on) => !on)}
-                title="화면 위에 표시를 그립니다"
-              >
-                <Pencil />
-                <span className="hidden sm:inline">페인트</span>
-              </Button>
-              {paintOn
-                ? VIEW_PAINT_COLORS.map((swatch) => (
-                    <button
-                      key={swatch}
-                      type="button"
-                      className={cn(
-                        "h-5 w-5 rounded-full border border-black/10",
-                        paintColor === swatch && "ring-2 ring-primary ring-offset-1",
-                      )}
-                      style={{ backgroundColor: swatch }}
-                      aria-label={viewPaintColorLabel(swatch)}
-                      onClick={() => setPaintColor(swatch)}
-                    />
-                  ))
-                : null}
-              {paintOn && paintInk ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="h-8 gap-1 px-2.5 [&_svg]:!size-3.5"
-                  title="표시 지우기"
-                  aria-label="표시 지우기"
-                  onClick={() => paintRef.current?.clear()}
-                >
-                  <Eraser />
-                  <span className="hidden sm:inline">표시 지우기</span>
-                </Button>
-              ) : null}
-            </div>
+            <PreviewPaintControls paint={paint} disabled={!canAnnotate || confirmBusy} />
             {onAttachChatFile ? (
-              <Button
-                type="button"
-                size="sm"
-                className="h-8 gap-1 px-2.5 [&_svg]:!size-3.5"
-                disabled={!canAttachPaint || confirmBusy}
-                onClick={() => void attachPaintToChat()}
-                title="표시가 입혀진 이미지를 채팅에 첨부합니다"
-                aria-label="채팅 첨부"
-              >
-                <Paperclip />
-                <span className="hidden sm:inline">채팅 첨부</span>
-              </Button>
+              <PreviewChatAttachButton
+                paint={paint}
+                disabled={!canAnnotate || confirmBusy}
+                captureCanvas={captureViewCanvas}
+                fileName={fileName}
+                onAttachChatFile={onAttachChatFile}
+              />
             ) : null}
             {renderDownloadControl()}
           </div>
@@ -434,21 +348,23 @@ export function ModelPreviewDialog({
                   showGrid={false}
                   className="absolute inset-0 h-full min-h-0 w-full"
                 />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  className="absolute bottom-4 left-4 z-20 h-8 gap-1.5 bg-white/90 shadow-sm"
+                  onClick={() => viewerRef.current?.fitToView()}
+                >
+                  <Maximize2 className="h-3.5 w-3.5" />
+                  화면 맞춤
+                </Button>
               </>
             ) : !loading ? (
               <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
                 미리볼 파일이 없습니다.
               </div>
             ) : null}
-            {canAnnotate ? (
-              <ViewPaintSurface
-                key={fileName}
-                ref={paintRef}
-                enabled={paintOn}
-                color={paintColor}
-                onInkChange={setPaintInk}
-              />
-            ) : null}
+            {canAnnotate ? <PreviewPaintLayer paint={paint} surfaceKey={fileName} /> : null}
           </div>
         </div>
 

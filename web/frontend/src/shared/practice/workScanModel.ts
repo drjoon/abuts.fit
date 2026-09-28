@@ -22,7 +22,7 @@ function roleRank(file: WorkScanModelFile) {
 }
 
 /** 상악·하악·바이트 순. 같은 역할이 둘이면 뒤에 번호를 붙인다. */
-export function workScanModelParts(files: readonly WorkScanModelFile[]) {
+export function workScanModelParts<T extends WorkScanModelFile>(files: readonly T[]) {
   const sorted = [...files]
     .filter((file) => String(file.s3Key || "").trim())
     .sort((a, b) => roleRank(a) - roleRank(b) || a.fileName.localeCompare(b.fileName));

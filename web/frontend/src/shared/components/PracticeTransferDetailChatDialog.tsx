@@ -30,6 +30,7 @@
 // - 2026-09-26: 노란 스캔 — 이미 고른 역할을 다시 눌러도 확정(노란 표시 해제).
 // - 2026-09-26: 기공소 채팅 — 스캔 역할은 파일명 구분. 애매한 파일만 노란 표시로 확정.
 // - 2026-09-26: 기공소 헤더 — AI는 작업시작 오른쪽. 할증 뱃지는 상단 별 위 `1.1x`.
+// - 2026-09-28: 작업 스캔 프리뷰에도 페인트·채팅 첨부·다운로드. 의뢰 파일 프리뷰와 같은 헤더.
 // - 2026-09-28: 작업 스캔(상악·하악·바이트)은 타일 하나로 두고, 누르면 한 모델로 겹쳐 연다.
 // - 2026-09-26: 작업 스캔은 의뢰 파일 아래 작업 파일에 둔다.
 // - 2026-09-24: 의뢰 파일「열기」— 설정 디자인 SW(3Shape/ExoCAD)로 로컬 CAD 헬퍼 경유.
@@ -2767,6 +2768,11 @@ export function PracticeTransferDetailChatDialog({
     }
     return out;
   })();
+  const workScanDownloadBusy =
+    downloadAllBusy ||
+    downloadAllWorkFilesBusy ||
+    openInCadBusy ||
+    workScanFileList.some((file) => downloadingFileKeys.includes(s3DownloadBusyKey(file)));
   const designFileList = Array.isArray(designFiles) ? designFiles : [];
   const resultFileList = Array.isArray(resultFiles) ? resultFiles : [];
   const showWorkFilesSection =
@@ -4080,6 +4086,9 @@ export function PracticeTransferDetailChatDialog({
       files={workScanFileList}
       authToken={authToken}
       title={workScanFilesLabel}
+      downloadBusy={workScanDownloadBusy}
+      onDownload={(file) => onDownloadTransferFile(file)}
+      onAttachChatFile={onAttachChatFiles ? (file) => onAttachChatFiles([file]) : undefined}
     />
   );
 

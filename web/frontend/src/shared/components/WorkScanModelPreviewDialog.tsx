@@ -1,10 +1,15 @@
 // 작업 스캔(상악·하악·바이트)을 한 모델로 연다. 파일 좌표 그대로 겹치고 악별로 켜고 끈다.
+// change-log:
+// - 2026-09-28: 채팅 첨부 후 프리뷰를 닫지 않는다. 여러 장을 붙일 수 있게 토스트만 띄운다.
+// - 2026-09-28: 의뢰 파일 프리뷰와 같은 헤더. 페인트·채팅 첨부·다운로드(악별·전체)와 칼라 매핑.
 // related files:
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
+// - web/frontend/src/shared/components/ModelPreviewDialog.tsx
+// - web/frontend/src/shared/components/PreviewAnnotateActions.tsx
 // - web/frontend/src/shared/share/CaseLayerViewer.tsx
 // - web/backend/services/workScanAutoAlign.service.js
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Eye, EyeOff, Loader2, Maximize2 } from "lucide-react";
+import { ChevronDown, Download, Eye, EyeOff, Loader2, Maximize2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -14,7 +19,23 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Progress } from "@/components/ui/progress";
+import {
+  PREVIEW_HEADER_BUTTON_CLASS,
+  keepOpenOnToastInteract,
+  PreviewChatAttachButton,
+  PreviewColorMappingToggle,
+  PreviewPaintControls,
+  PreviewPaintLayer,
+  usePreviewPaint,
+} from "@/shared/components/PreviewAnnotateActions";
 import { fetchS3BlobCached } from "@/shared/files/s3BlobCache";
 import { buildS3ProxyDownloadUrl } from "@/shared/files/useS3FileDownload";
 import {
@@ -32,28 +53,40 @@ import { RESPONSIVE } from "@/shared/ui/responsive";
 
 type LoadState = { status: "loading"; progress: number } | { status: "ready"; file: File } | { status: "error"; message: string };
 
-export function WorkScanModelPreviewDialog({
+export function WorkScanModelPreviewDialog<T extends WorkScanModelFile>({
   open,
   onOpenChange,
   files,
   authToken,
   title,
+  onDownload,
+  downloadBusy = false,
+  onAttachChatFile,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  files: readonly WorkScanModelFile[];
+  files: readonly T[];
   authToken?: string | null;
   title?: string;
+  /** 원본 파일 하나를 받는다. 「전체」는 순서대로 부른다. */
+  onDownload?: (file: T) => void | Promise<void>;
+  downloadBusy?: boolean;
+  /** 표시가 입혀진 현재 뷰를 채팅 첨부로 넘긴다. */
+  onAttachChatFile?: (file: File) => void;
 }) {
   const parts = useMemo(() => workScanModelParts(files), [files]);
   const partsKey = parts.map((part) => part.key).join("|");
   const viewerRef = useRef<CaseLayerViewerHandle | null>(null);
   const [loads, setLoads] = useState<Record<string, LoadState>>({});
   const [hidden, setHidden] = useState<Record<string, boolean>>({});
+  const [colorMapping, setColorMapping] = useState(true);
+  const paint = usePreviewPaint({ open, resetKey: partsKey });
+  const heading = title || "작업 모델";
 
   useEffect(() => {
     if (!open || !authToken) return;
     const ac = new AbortController();
+    setColorMapping(true);
     // 처음엔 상악·하악만 켠다. 바이트는 헤더에서 켠다.
     const hasJaw = parts.some((part) => part.role !== "bite");
     setHidden(
@@ -121,6 +154,52 @@ export function WorkScanModelPreviewDialog({
           return sum + (state?.status === "loading" ? state.progress : 0);
         }, 0) / loading.length
       : 100;
+  const canAnnotate = layers.length > 0;
+
+  const downloadAll = async () => {
+    if (!onDownload) return;
+    for (const part of parts) await onDownload(part.file);
+  };
+
+  const renderDownloadControl = () => {
+    if (!onDownload || parts.length === 0) return null;
+    const label = downloadBusy ? "다운로드 중..." : "다운로드";
+    const trigger = (
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        className={PREVIEW_HEADER_BUTTON_CLASS}
+        disabled={downloadBusy}
+        aria-label={label}
+        onClick={parts.length === 1 ? () => void onDownload(parts[0].file) : undefined}
+      >
+        <Download />
+        <span className="hidden sm:inline">{label}</span>
+        {parts.length > 1 ? <ChevronDown className="opacity-70" /> : null}
+      </Button>
+    );
+    if (parts.length === 1) return trigger;
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="z-[460]">
+          {parts.map((part) => (
+            <DropdownMenuItem key={part.key} onClick={() => void onDownload(part.file)}>
+              <span className="font-medium">{part.label}</span>
+              <span className="ml-2 max-w-[14rem] truncate text-xs text-muted-foreground">
+                {part.file.fileName}
+              </span>
+            </DropdownMenuItem>
+          ))}
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={() => void downloadAll()}>
+            전체 ({parts.length}개)
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -130,57 +209,76 @@ export function WorkScanModelPreviewDialog({
           RESPONSIVE.dialogContentFull,
         )}
         overlayClassName="z-[445]"
+        onInteractOutside={keepOpenOnToastInteract}
       >
         <DialogHeader className="shrink-0 flex-row flex-wrap items-center justify-between gap-2 space-y-0 border-b bg-muted/50 py-2 pl-4 pr-14 text-left sm:pl-5 sm:pr-14">
           <DialogTitle className="min-w-0 flex-1 truncate text-left text-sm font-medium sm:text-base">
-            {title || "작업 모델"}
+            {heading}
             <span className="ml-2 text-xs font-normal text-muted-foreground sm:text-sm">
               {workScanModelTitle(files)}
             </span>
           </DialogTitle>
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
-            {parts.map((part) => {
-              const state = loads[part.key];
-              const shown = !hidden[part.key];
-              return (
-                <Button
-                  key={part.key}
-                  type="button"
-                  size="sm"
-                  variant={shown ? "default" : "outline"}
-                  className="h-8 gap-1 px-2.5 [&_svg]:!size-3.5"
-                  disabled={state?.status !== "ready"}
-                  title={
-                    state?.status === "error"
-                      ? state.message
-                      : shown
-                        ? `${part.label} 숨기기`
-                        : `${part.label} 보기`
-                  }
-                  onClick={() =>
-                    setHidden((prev) => ({ ...prev, [part.key]: !prev[part.key] }))
-                  }
-                >
-                  {state?.status === "loading" ? (
-                    <Loader2 className="animate-spin" />
-                  ) : shown ? (
-                    <Eye />
-                  ) : (
-                    <EyeOff />
-                  )}
-                  {part.label}
-                </Button>
-              );
-            })}
+            <div className="mr-3 flex items-center gap-1.5">
+              {parts.map((part) => {
+                const state = loads[part.key];
+                const shown = !hidden[part.key];
+                return (
+                  <Button
+                    key={part.key}
+                    type="button"
+                    size="sm"
+                    variant={shown ? "default" : "outline"}
+                    className={PREVIEW_HEADER_BUTTON_CLASS}
+                    disabled={state?.status !== "ready"}
+                    title={
+                      state?.status === "error"
+                        ? state.message
+                        : shown
+                          ? `${part.label} 숨기기`
+                          : `${part.label} 보기`
+                    }
+                    onClick={() =>
+                      setHidden((prev) => ({ ...prev, [part.key]: !prev[part.key] }))
+                    }
+                  >
+                    {state?.status === "loading" ? (
+                      <Loader2 className="animate-spin" />
+                    ) : shown ? (
+                      <Eye />
+                    ) : (
+                      <EyeOff />
+                    )}
+                    {part.label}
+                  </Button>
+                );
+              })}
+            </div>
+            <PreviewPaintControls paint={paint} disabled={!canAnnotate} />
+            {onAttachChatFile ? (
+              <PreviewChatAttachButton
+                paint={paint}
+                disabled={!canAnnotate}
+                captureCanvas={() => viewerRef.current?.captureCanvas() ?? null}
+                fileName={heading}
+                onAttachChatFile={onAttachChatFile}
+              />
+            ) : null}
+            {renderDownloadControl()}
           </div>
           <DialogDescription className="sr-only">
             상악·하악·바이트 작업 스캔을 같은 좌표로 겹쳐 봅니다.
           </DialogDescription>
         </DialogHeader>
         <div className="relative min-h-0 flex-1">
-          {open ? <CaseLayerViewer ref={viewerRef} layers={layers} /> : null}
+          {open ? (
+            <CaseLayerViewer ref={viewerRef} layers={layers} colorMapping={colorMapping} />
+          ) : null}
+          {layers.length > 0 ? (
+            <PreviewColorMappingToggle checked={colorMapping} onCheckedChange={setColorMapping} />
+          ) : null}
           {loading.length > 0 ? (
-            <div className="pointer-events-none absolute left-1/2 top-4 w-56 -translate-x-1/2 rounded-md bg-black/55 px-3 py-2 text-xs text-white">
+            <div className="pointer-events-none absolute left-1/2 top-4 z-20 w-56 -translate-x-1/2 rounded-md bg-black/55 px-3 py-2 text-xs text-white">
               <p className="flex items-center gap-2">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 스캔 {loading.length}개 불러오는 중
@@ -188,11 +286,12 @@ export function WorkScanModelPreviewDialog({
               <Progress value={progress} className="mt-1.5 h-1" />
             </div>
           ) : null}
+          {canAnnotate ? <PreviewPaintLayer paint={paint} surfaceKey={partsKey} /> : null}
           <Button
             type="button"
             size="sm"
             variant="secondary"
-            className="absolute bottom-4 left-4 h-8 gap-1.5 bg-white/90 shadow-sm"
+            className="absolute bottom-4 left-4 z-20 h-8 gap-1.5 bg-white/90 shadow-sm"
             onClick={() => viewerRef.current?.fitToView()}
           >
             <Maximize2 className="h-3.5 w-3.5" />

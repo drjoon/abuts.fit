@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-28: fitToView — 프리뷰의 「화면 맞춤」. 칼라 매핑 토글은 PreviewColorMappingToggle 공용.
 // - 2026-09-23: FL 반자동/수동 — ridge 스냅·호버 고스트·시드 1클릭 전둘레 추적.
 // - 2026-09-17: 수동 픽 — 더블클릭→드래그 없는 한 번 클릭(오빗과 구분). crosshair 커서.
 // - 2026-09-17: FL max/min_z — points prop 우선(수동 보정 override 즉시 반영).
@@ -50,7 +51,7 @@ import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { cn } from "@/shared/ui/cn";
-import { Switch } from "@/components/ui/switch";
+import { PreviewColorMappingToggle } from "@/shared/components/PreviewAnnotateActions";
 import {
   createModelPreviewMaterial,
   isScanColorPreview,
@@ -129,6 +130,8 @@ export type StlPreviewViewerHandle = {
   capturePngDataUrl: () => string | null;
   /** 표시를 겹치기 위한 현재 프레임 캔버스. */
   captureCanvas: () => HTMLCanvasElement | null;
+  /** 처음 열 때의 방향·크기로 되돌린다. */
+  fitToView: () => void;
 };
 
 export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
@@ -231,6 +234,7 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
   const [hasScanColor, setHasScanColor] = useState(false);
   const [colorMappingEnabled, setColorMappingEnabled] = useState(true);
   const previewTextureRef = useRef<THREE.Texture | null>(null);
+  const applyCameraFitRef = useRef<(() => void) | null>(null);
   const hasScanColorRef = useRef(false);
   const colorMappingEnabledRef = useRef(true);
   colorMappingEnabledRef.current = colorMappingEnabled;
@@ -260,6 +264,7 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
         renderer.render(scene, camera);
         return renderer.domElement;
       },
+      fitToView: () => applyCameraFitRef.current?.(),
     }),
     [],
   );
@@ -2360,6 +2365,7 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
           controls.syncFromCamera();
           controls.update();
         };
+        applyCameraFitRef.current = applyCameraFit;
 
         updateSize();
         applyCameraFit();
@@ -2923,18 +2929,10 @@ export const StlPreviewViewer = forwardRef<StlPreviewViewerHandle, Props>(
     >
       <div ref={containerRef} className="absolute inset-0 h-full w-full" />
       {showColorMappingToggle && hasScanColor && !error ? (
-        <label
-          className="absolute left-3 top-3 z-20 flex cursor-pointer items-center gap-2 rounded-md border border-slate-200 bg-white/95 px-2.5 py-1.5 text-[11px] font-medium text-slate-800 shadow-sm sm:text-xs"
-          title="스캔 칼라(텍스처·버텍스 컬러) 표시"
-        >
-          <Switch
-            checked={colorMappingEnabled}
-            onCheckedChange={setColorMappingEnabled}
-            className="h-5 w-9 data-[state=checked]:bg-primary [&>span]:h-4 [&>span]:w-4 data-[state=checked]:[&>span]:translate-x-4"
-            aria-label="칼라 매핑"
-          />
-          칼라 매핑
-        </label>
+        <PreviewColorMappingToggle
+          checked={colorMappingEnabled}
+          onCheckedChange={setColorMappingEnabled}
+        />
       ) : null}
       {shouldBlockSceneForMetadata && (
         <div className="absolute inset-0 flex items-center justify-center rounded-md bg-white/70 text-sm text-slate-500">

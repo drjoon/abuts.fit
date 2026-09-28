@@ -2,6 +2,7 @@
 // - web/frontend/src/shared/share/CaseShareViewer.tsx
 // - web/frontend/src/shared/files/modelPreviewFile.ts
 // - web/frontend/src/shared/three/screenSpaceOrbitControls.ts
+// - 2026-09-28: captureCanvas(페인트 합성)·colorMapping(스캔 칼라 끄기). 의뢰 파일 프리뷰와 같은 기능.
 // - 2026-09-28: 화면 맞춤은 보이는 메시의 꼭짓점을 화면에 투영해 가로·세로에 꽉 차게 맞춘다.
 // - 2026-09-28: 케이스 공유 뷰어 — 디자인·스캔 여러 메시를 파일 좌표 그대로 겹치고 레이어별로 켜고 끈다.
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
@@ -28,13 +29,41 @@ export type CaseLayerModel = {
 
 export type CaseLayerViewerHandle = {
   fitToView: () => void;
+  /** 표시를 겹치기 위한 현재 프레임 캔버스. */
+  captureCanvas: () => HTMLCanvasElement | null;
 };
 
 type CaseLayerViewerProps = {
   layers: CaseLayerModel[];
+  /** false면 스캔 레이어의 칼라·텍스처를 끄고 기본 틴트로 그린다. */
+  colorMapping?: boolean;
   onLayerError?: (id: string, message: string) => void;
   className?: string;
 };
+
+const TEXTURE_KEY = "previewTexture";
+
+function scanTexture(mesh: THREE.Mesh): THREE.Texture | null {
+  return (mesh.userData[TEXTURE_KEY] as THREE.Texture | undefined) ?? null;
+}
+
+function disposeLayerMesh(mesh: THREE.Mesh) {
+  disposeBackFaceShell(mesh);
+  mesh.geometry.dispose();
+  const mat = mesh.material as THREE.MeshStandardMaterial;
+  if (mat.map && mat.map !== scanTexture(mesh)) mat.map.dispose();
+  scanTexture(mesh)?.dispose();
+  mat.dispose();
+}
+
+function applyScanRendering(renderer: THREE.WebGLRenderer, colorMapping: boolean) {
+  if (colorMapping) {
+    applyScanColorToneMapping(renderer);
+    return;
+  }
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1;
+}
 
 const VIEWER_BACKGROUND = 0xe6e9ec;
 const CAMERA_FOV = 30;
@@ -57,7 +86,7 @@ function designMaterial(tone: CaseLayerTone): THREE.MeshStandardMaterial {
 }
 
 export const CaseLayerViewer = forwardRef<CaseLayerViewerHandle, CaseLayerViewerProps>(
-  function CaseLayerViewer({ layers, onLayerError, className }, ref) {
+  function CaseLayerViewer({ layers, colorMapping = true, onLayerError, className }, ref) {
     const containerRef = useRef<HTMLDivElement | null>(null);
     const sceneRef = useRef<THREE.Scene | null>(null);
     const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
@@ -71,6 +100,8 @@ export const CaseLayerViewer = forwardRef<CaseLayerViewerHandle, CaseLayerViewer
     layersRef.current = layers;
     const onLayerErrorRef = useRef(onLayerError);
     onLayerErrorRef.current = onLayerError;
+    const colorMappingRef = useRef(colorMapping);
+    colorMappingRef.current = colorMapping;
 
     const fitToView = () => {
       const camera = cameraRef.current;
@@ -139,7 +170,16 @@ export const CaseLayerViewer = forwardRef<CaseLayerViewerHandle, CaseLayerViewer
       controls.syncFromCamera();
     };
 
-    useImperativeHandle(ref, () => ({ fitToView }));
+    const captureCanvas = () => {
+      const renderer = rendererRef.current;
+      const scene = sceneRef.current;
+      const camera = cameraRef.current;
+      if (!renderer || !scene || !camera) return null;
+      renderer.render(scene, camera);
+      return renderer.domElement;
+    };
+
+    useImperativeHandle(ref, () => ({ fitToView, captureCanvas }));
 
     useEffect(() => {
       const container = containerRef.current;
@@ -208,13 +248,7 @@ export const CaseLayerViewer = forwardRef<CaseLayerViewerHandle, CaseLayerViewer
         cancelAnimationFrame(raf);
         observer.disconnect();
         controls.dispose();
-        for (const mesh of meshes.values()) {
-          disposeBackFaceShell(mesh);
-          mesh.geometry.dispose();
-          const mat = mesh.material as THREE.MeshStandardMaterial;
-          mat.map?.dispose();
-          mat.dispose();
-        }
+        for (const mesh of meshes.values()) disposeLayerMesh(mesh);
         meshes.clear();
         renderer.dispose();
         renderer.domElement.remove();
@@ -235,9 +269,7 @@ export const CaseLayerViewer = forwardRef<CaseLayerViewerHandle, CaseLayerViewer
       for (const [id, mesh] of meshes) {
         if (wanted.has(id)) continue;
         scene.remove(mesh);
-        disposeBackFaceShell(mesh);
-        mesh.geometry.dispose();
-        (mesh.material as THREE.Material).dispose();
+        disposeLayerMesh(mesh);
         meshes.delete(id);
       }
 
@@ -258,25 +290,24 @@ export const CaseLayerViewer = forwardRef<CaseLayerViewerHandle, CaseLayerViewer
             if (!geometry.getAttribute("normal")) geometry.computeVertexNormals();
             const material =
               layer.tone === "scan"
-                ? createModelPreviewMaterial(geometry, parsed.texture)
+                ? createModelPreviewMaterial(geometry, parsed.texture, {
+                    colorMapping: colorMappingRef.current,
+                  })
                 : designMaterial(layer.tone);
             if (layer.tone === "scan" && isScanColorPreview(geometry, parsed.texture)) {
-              applyScanColorToneMapping(renderer);
+              applyScanRendering(renderer, colorMappingRef.current);
             }
             const mesh = new THREE.Mesh(geometry, material);
+            if (layer.tone === "scan") mesh.userData[TEXTURE_KEY] = parsed.texture;
             mesh.renderOrder = layer.tone === "scan" ? 0 : 1;
             syncBackFaceShell(mesh);
             if (!sceneRef.current) {
-              disposeBackFaceShell(mesh);
-              geometry.dispose();
-              material.dispose();
+              disposeLayerMesh(mesh);
               return;
             }
             const latest = layersRef.current.find((l) => l.id === layer.id);
             if (!latest) {
-              disposeBackFaceShell(mesh);
-              geometry.dispose();
-              material.dispose();
+              disposeLayerMesh(mesh);
               return;
             }
             mesh.visible = latest.visible;
@@ -294,6 +325,23 @@ export const CaseLayerViewer = forwardRef<CaseLayerViewerHandle, CaseLayerViewer
         })();
       }
     }, [layers]);
+
+    useEffect(() => {
+      const renderer = rendererRef.current;
+      if (!renderer) return;
+      let scanColor = false;
+      for (const [id, mesh] of meshesRef.current) {
+        if (layersRef.current.find((l) => l.id === id)?.tone !== "scan") continue;
+        const texture = scanTexture(mesh);
+        if (!isScanColorPreview(mesh.geometry, texture)) continue;
+        scanColor = true;
+        const prev = mesh.material as THREE.Material;
+        mesh.material = createModelPreviewMaterial(mesh.geometry, texture, { colorMapping });
+        prev.dispose();
+        syncBackFaceShell(mesh);
+      }
+      if (scanColor) applyScanRendering(renderer, colorMapping);
+    }, [colorMapping]);
 
     return (
       <div
