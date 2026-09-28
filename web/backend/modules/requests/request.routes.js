@@ -700,6 +700,13 @@ router.post(
   authorizeManufacturerOrDesignPartner(),
   requestController.cancelFilledStlRegenerationByRequestId,
 );
+// 제조사/관리자: filled STL 상부 스크류홀 메우기(HF, Rhino 대신 서버에서 처리)
+router.post(
+  "/by-request/:requestId/stl-file/fill-hole",
+  authenticate,
+  authorizeManufacturerOrDesignPartner(),
+  requestController.fillFilledStlHoleByRequestId,
+);
 router.get(
   "/:id/nc-file-url",
   authenticate,

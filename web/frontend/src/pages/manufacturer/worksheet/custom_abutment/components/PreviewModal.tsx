@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-28: FL 왼쪽 HF(Hole Filling) — 서버에서 filled STL 상부 스크류홀을 메우고 STL 재로드.
 // - 2026-09-23: FL 반자동(시드 1클릭 전둘레) + 수동 ridge 스냅·모드 토글.
 // - 2026-09-17: FL 수동 UX — 한 번 클릭 픽·중간점 FL 스냅 해제·저장/실행취소 바·스냅 완화.
 // - 2026-09-17: Rhino FL points 불량 검출 → 「피니시라인 불량」뱃지·수동처리 안내(FL 강조).
@@ -62,7 +63,7 @@
 // - web/backend/controllers/rhino/rhino.controller.js
 // - web/backend/modules/rhino/rhino.routes.js
 import { useCallback, useEffect, useRef, useState } from "react";
-import { RefreshCw } from "lucide-react";
+import { Loader2, RefreshCw } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -611,6 +612,7 @@ export const PreviewModal = ({
   const { token } = useAuthStore();
   const { toast } = useToast();
   const [regenerating, setRegenerating] = useState(false);
+  const [holeFilling, setHoleFilling] = useState(false);
   const [unmachinableEditorOpen, setUnmachinableEditorOpen] = useState(false);
   const [unmachinableReasonDraft, setUnmachinableReasonDraft] = useState("");
   const [unmachinableSaving, setUnmachinableSaving] = useState(false);
@@ -1692,6 +1694,84 @@ export const PreviewModal = ({
       setRegenerating(false);
     }
   };
+
+  const canFillHole = canGuideFinishLine && hasCamFile;
+  const holeFillBusy =
+    holeFilling ||
+    regenerating ||
+    isUploading ||
+    guidedFinishLineSubmitting ||
+    guidedFrontPointSubmitting;
+
+  const onFillHole = async () => {
+    if (!canFillHole || holeFillBusy || !token) return;
+    const requestId = String(activeReq?.requestId || "").trim();
+    if (!requestId) return;
+    setHoleFilling(true);
+    try {
+      const res = await fetch(
+        `/api/requests/by-request/${encodeURIComponent(requestId)}/stl-file/fill-hole`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+      const body: any = await res.json().catch(() => ({}));
+      if (!res.ok || body?.success === false) {
+        throw new Error(body?.message || "스크류홀 메우기에 실패했습니다.");
+      }
+      await invalidateRequestPreviewCaches({
+        camS3Key: resolveFilledStlFile(activeReq?.caseInfos)?.s3Key,
+        requestMongoId: String(activeReq?._id || "").trim(),
+        requestId,
+      });
+      await onRefreshPreview?.(activeReq, { forceRefresh: true, silent: true });
+      toast({
+        title: "스크류홀 메움",
+        description: body?.data?.ncStale ? (
+          <>
+            filled.stl 상부 스크류홀을 메웠습니다.
+            <br />
+            NC는 이전 filled.stl 기준이라 재생성이 필요합니다.
+          </>
+        ) : (
+          "filled.stl 상부 스크류홀을 메웠습니다."
+        ),
+      });
+    } catch (err: any) {
+      toast({
+        title: "스크류홀 메우기 실패",
+        description: err?.message || "스크류홀 메우기에 실패했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setHoleFilling(false);
+    }
+  };
+
+  const renderHoleFillButton = () =>
+    canFillHole ? (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[11px] font-bold transition border-primary-muted bg-primary-soft text-primary-strong hover:bg-primary-soft ${holeFillBusy ? "opacity-60 cursor-not-allowed" : ""}`}
+            disabled={holeFillBusy}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              void onFillHole();
+            }}
+            aria-label="Hole Filling"
+          >
+            {holeFilling ? <Loader2 className="h-4 w-4 animate-spin" /> : "HF"}
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">
+          Hole Filling — 상부 스크류홀 메우기
+        </TooltipContent>
+      </Tooltip>
+    ) : null;
 
   const accept = isStageFileStage
     ? ".png,.jpg,.jpeg,.webp,.bmp"
@@ -3559,6 +3639,7 @@ export const PreviewModal = ({
                   {isCamStage && (
                     <div className="flex items-center gap-2">
                       <TooltipProvider>
+                        {renderHoleFillButton()}
                         {canGuideFinishLine && (
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -3976,6 +4057,7 @@ export const PreviewModal = ({
                       <>
                         {!isCamStage && (
                           <TooltipProvider>
+                            {renderHoleFillButton()}
                             {canGuideFinishLine && (
                               <Tooltip>
                                 <TooltipTrigger asChild>

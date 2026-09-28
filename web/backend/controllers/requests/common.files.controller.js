@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-28: HF(Hole Filling) — filled STL 상부 스크류홀을 서버에서 메워 같은 S3 키에 덮어쓴다.
 // - 2026-09-03: Filled STL 생성 중단(cancel-regeneration) — stlPreload CANCELLED·준비 탭 블러 해제.
 // - 2026-08-18: CAM 파일 삭제 롤백 시 로트번호(value)는 유지(준비 단계 발급 SSOT).
 // - 2026-08-17: CAM 롤백(준비) 시 우편함 해제.
@@ -25,6 +26,7 @@ import {
 } from "./utils.js";
 import s3Utils, {
   getSignedUrl as getSignedUrlForS3Key,
+  putObjectToS3,
 } from "../../utils/s3.utils.js";
 import { emitAppEventToRoles } from "../../socket.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
@@ -35,6 +37,7 @@ import {
   resolveFilledStlFile,
 } from "../../utils/filledStlFile.js";
 import { resolveDesignAccessForUser } from "../../utils/designAccess.js";
+import { fillUpperScrewHole } from "../../utils/screwHoleFill.js";
 
 export async function getStlFileUrl(req, res) {
   return getCamFileUrl(req, res);
@@ -513,6 +516,68 @@ export async function cancelFilledStlRegenerationByRequestId(req, res) {
     return res.status(status).json({
       success: false,
       message: error?.message || "라이노 작업 중단에 실패했습니다.",
+    });
+  }
+}
+
+export async function fillFilledStlHoleByRequestId(req, res) {
+  try {
+    const requestId = String(req.params?.requestId || "").trim();
+    if (!requestId) {
+      throw new ApiError(400, "requestId가 필요합니다.");
+    }
+
+    const request = await Request.findOne({ requestId })
+      .select({ requestId: 1, manufacturerStage: 1, caseInfos: 1 })
+      .lean();
+    if (!request) {
+      throw new ApiError(404, "의뢰를 찾을 수 없습니다.");
+    }
+
+    const filled = resolveFilledStlFile(request.caseInfos);
+    const s3Key = String(filled?.s3Key || "").trim();
+    if (!s3Key) {
+      throw new ApiError(404, "filled STL이 없습니다.");
+    }
+
+    const source = await s3Utils.getObjectBufferFromS3(s3Key);
+    const result = fillUpperScrewHole(source);
+    if (!result.ok) {
+      throw new ApiError(422, result.reason || "스크류홀을 메우지 못했습니다.");
+    }
+
+    await putObjectToS3(s3Key, result.buffer, {
+      contentType: "application/sla",
+    });
+
+    const now = new Date();
+    const $set = { "caseInfos.stlMetadataUpdatedAt": now };
+    for (const field of ["stlFile", "camFile"]) {
+      if (String(request.caseInfos?.[field]?.s3Key || "").trim() !== s3Key) {
+        continue;
+      }
+      $set[`caseInfos.${field}.fileSize`] = result.buffer.length;
+      $set[`caseInfos.${field}.uploadedAt`] = now;
+    }
+    await Request.updateOne({ _id: request._id }, { $set });
+
+    console.log("[fill-hole] done", { requestId, s3Key, ...result.stats });
+
+    return res.status(200).json({
+      success: true,
+      message: "스크류홀을 메웠습니다.",
+      data: {
+        requestId,
+        s3Key,
+        stats: result.stats,
+        ncStale: Boolean(String(request.caseInfos?.ncFile?.s3Key || "").trim()),
+      },
+    });
+  } catch (error) {
+    const status = Number(error?.statusCode || 500);
+    return res.status(status).json({
+      success: false,
+      message: error?.message || "스크류홀 메우기에 실패했습니다.",
     });
   }
 }
