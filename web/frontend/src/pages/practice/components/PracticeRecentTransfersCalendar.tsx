@@ -1371,9 +1371,12 @@ export function PracticeRecentTransfersCalendar({
     return agendaDays[0]?.ymd || preferred;
   };
 
-  const scrollListToYmd = (ymd: string, behavior: ScrollBehavior = "auto") => {
+  const scrollListToYmd = (
+    ymd: string,
+    behavior: ScrollBehavior = "auto",
+  ): boolean => {
     const el = listScrollRef.current;
-    if (!el || !ymd) return;
+    if (!el || !ymd) return false;
     const targetMonth = kstStartOfMonth(ymd) || ymd;
     let target = dayElsRef.current.get(ymd) || null;
     if (!target) {
@@ -1399,7 +1402,7 @@ export function PracticeRecentTransfersCalendar({
         (fallbackYmd && dayElsRef.current.get(fallbackYmd)) ||
         null;
     }
-    if (!target) return;
+    if (!target) return false;
     skipScrollSyncRef.current = true;
     const nextTop =
       el.scrollTop +
@@ -1408,6 +1411,7 @@ export function PracticeRecentTransfersCalendar({
     window.setTimeout(() => {
       skipScrollSyncRef.current = false;
     }, 120);
+    return true;
   };
 
   const scrollToYmd = (ymd: string, behavior: ScrollBehavior = "auto") => {
@@ -1543,11 +1547,12 @@ export function PracticeRecentTransfersCalendar({
         }
       }
 
-      listForceAlignRef.current = false;
-      listRestoreYmdRef.current = null;
       const alignYmd = resolveListAlignYmd(preferred);
+      // 플래그는 실제 스크롤 뒤에만 소비 — 연속 렌더로 rAF가 취소되면 다음 실행에서 재시도.
       const id = window.requestAnimationFrame(() => {
-        scrollListToYmd(alignYmd, "auto");
+        if (!scrollListToYmd(alignYmd, "auto")) return;
+        listForceAlignRef.current = false;
+        listRestoreYmdRef.current = null;
         window.setTimeout(() => {
           listPinCursorRef.current = false;
         }, 480);
@@ -1556,9 +1561,9 @@ export function PracticeRecentTransfersCalendar({
     }
     if (listRestoreYmdRef.current) {
       const anchor = listRestoreYmdRef.current;
-      listRestoreYmdRef.current = null;
       const id = window.requestAnimationFrame(() => {
-        scrollListToYmd(resolveListAlignYmd(anchor), "auto");
+        if (!scrollListToYmd(resolveListAlignYmd(anchor), "auto")) return;
+        listRestoreYmdRef.current = null;
         window.setTimeout(() => {
           listPinCursorRef.current = false;
         }, 480);
