@@ -11,6 +11,7 @@
 // - web/backend/jobs/practiceTransferArrivalAutoCompleteWorker.js
 // - web/backend/jobs/demoModeExpiryWorker.js
 // - web/backend/jobs/dailyReferralOwnershipResetWorker.js
+// - web/backend/jobs/workScanAutoAlignWorker.js
 import { createServer } from "http";
 import mongoose from "mongoose";
 import "./bootstrap/env.js";
@@ -32,6 +33,7 @@ import { startFmDentalShippingBillingWorker } from "./jobs/fmDentalShippingBilli
 import { startPracticeTransferArrivalAutoCompleteWorker } from "./jobs/practiceTransferArrivalAutoCompleteWorker.js";
 import { startDemoModeExpiryWorker } from "./jobs/demoModeExpiryWorker.js";
 import { startDailyReferralOwnershipResetWorker } from "./jobs/dailyReferralOwnershipResetWorker.js";
+import { startWorkScanAutoAlignWorker } from "./jobs/workScanAutoAlignWorker.js";
 import { startReviewApprovalWorker } from "./services/reviewApprovalQueue.service.js";
 import { startHanjinTrackingAutoSyncWorker } from "./controllers/requests/shipping.TrackingPoller.js";
 import { seedCoreShared } from "./scripts/db/_core.shared.js";
@@ -153,6 +155,7 @@ dbReady
     startPracticeTransferArrivalAutoCompleteWorker();
     startDemoModeExpiryWorker();
     startDailyReferralOwnershipResetWorker();
+    startWorkScanAutoAlignWorker();
 
     // 의뢰/CAM 단계 승인 직렬 큐 워커 시작
     // 작업자 연속 승인 시 BG 앱(rhino, esprit, bridge, lot, pack, wbls) 과부하 방지

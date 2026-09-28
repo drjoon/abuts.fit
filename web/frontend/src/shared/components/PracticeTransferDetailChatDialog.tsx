@@ -30,6 +30,7 @@
 // - 2026-09-26: 노란 스캔 — 이미 고른 역할을 다시 눌러도 확정(노란 표시 해제).
 // - 2026-09-26: 기공소 채팅 — 스캔 역할은 파일명 구분. 애매한 파일만 노란 표시로 확정.
 // - 2026-09-26: 기공소 헤더 — AI는 작업시작 오른쪽. 할증 뱃지는 상단 별 위 `1.1x`.
+// - 2026-09-28: 작업 스캔(상악·하악·바이트)은 타일 하나로 두고, 누르면 한 모델로 겹쳐 연다.
 // - 2026-09-26: 작업 스캔은 의뢰 파일 아래 작업 파일에 둔다.
 // - 2026-09-24: 의뢰 파일「열기」— 설정 디자인 SW(3Shape/ExoCAD)로 로컬 CAD 헬퍼 경유.
 // - 2026-09-24: 할증 툴팁 — 협력=수행 기공소, 하청·어벗츠 지정=어벗츠기공소.
@@ -264,6 +265,11 @@ import {
   ORAL_SCAN_REQUIRED_FROM_PRACTICE,
 } from "@/shared/practice/oralScanRequirement";
 import { ModelPreviewDialog, type ModelPreviewKind } from "@/shared/components/ModelPreviewDialog";
+import { WorkScanModelPreviewDialog } from "@/shared/components/WorkScanModelPreviewDialog";
+import {
+  workScanModelParts,
+  workScanModelTitle,
+} from "@/shared/practice/workScanModel";
 import { useGuideTour } from "@/shared/guideTour/GuideTourProvider";
 import { StlPreviewThumbnail } from "@/features/requests/components/StlPreviewThumbnail";
 import {
@@ -314,13 +320,13 @@ import {
   resolveOralScanRole,
 } from "@/shared/practice/labProsthesisAiDesign";
 import { LabPendingAbutmentGuide } from "@/shared/components/practice/LabPendingAbutmentGuide";
+import { PracticeTransferShareButton } from "@/shared/share/PracticeTransferShareDialog";
 import { useAbutsLabCertified } from "@/shared/practice/useAbutsLabCertified";
 import {
   LabBasketTagToolbar,
   normalizeLabBasketTag,
 } from "@/shared/components/practice/LabBasketTagToolbar";
 import { LAB_RECEIVE_ABUTMENT_UPLOAD_HINT } from "@/shared/components/practice/PracticeLabReceiveWorkActionsBar";
-import { PracticeTransferShareButton } from "@/shared/share/PracticeTransferShareDialog";
 import {
   getPracticeTransferFileExtension,
   isPracticeTransferModelFileName,
@@ -575,14 +581,14 @@ type PracticeTransferDetailChatDialogProps = {
   files: PracticeTransferDialogFileItem[];
   /** 기공소 AI가 작업 DCM을 붙일 수신 의뢰 */
   transferId?: string | null;
+  /** 케이스 공유(플랫폼 내·외부 링크). PracticeTransfer._id 또는 transferId. 없으면 버튼 숨김 */
+  shareTransferKey?: string | null;
   /** AI 디자인 헤더의 미완료 의뢰 이동 */
   labAiCaseNav?: LabProsthesisAiCaseNav | null;
   onWorkingScansPersisted?: (data: WorkingScansPersisted) => void;
   /** 기공소가 의뢰 스캔 역할을 고친다 */
   onChangeRequestScanRole?: (
     file: PracticeTransferDialogFileItem,
-  /** 케이스 공유(플랫폼 내·외부 링크). PracticeTransfer._id 또는 transferId. 없으면 버튼 숨김 */
-  shareTransferKey?: string | null;
     role: import("@/shared/practice/labProsthesisAiDesign").LabOralScanRole,
   ) => void;
   /** 의뢰 파일 휴지통 */
@@ -840,13 +846,13 @@ export function PracticeTransferDetailChatDialog({
   filesLabel,
   files,
   transferId = null,
+  shareTransferKey = null,
   labAiCaseNav = null,
   onWorkingScansPersisted,
   onChangeRequestScanRole,
   trashedFiles = [],
   oralScanAttachMode = null,
   requestFilesDownloadLocked = false,
-  shareTransferKey = null,
   requestFilesDownloadLockedReason = ORAL_SCAN_DOWNLOAD_LOCKED_UNTIL_ABUTS_DESIGN,
   workFilesLabel = "작업 파일",
   workScanFilesLabel = "작업 스캔",
@@ -988,6 +994,7 @@ export function PracticeTransferDetailChatDialog({
   const [rearrivalOpen, setRearrivalOpen] = useState(false);
   const [rearrivalDraft, setRearrivalDraft] = useState<Date | undefined>(undefined);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [workModelOpen, setWorkModelOpen] = useState(false);
   const [scrollEdge, setScrollEdge] = useState<"top" | "bottom" | "middle">("top");
   const scrollBodyRef = useRef<HTMLDivElement | null>(null);
   const didInitialScrollRef = useRef(false);
@@ -1731,15 +1738,15 @@ export function PracticeTransferDetailChatDialog({
         const kind = resolvePreviewKind(file.fileName);
         if (!kind) continue;
         if (!String(file.s3Key || "").trim()) continue;
+        if (isAbutsWorkScanFileName(file.fileName)) continue;
         out.push({ file, kind });
       }
     };
     append(Array.isArray(files) ? files : [], requestFilesDownloadLocked);
-    append(Array.isArray(workScanFiles) ? workScanFiles : [], false);
     append(Array.isArray(designFiles) ? designFiles : [], false);
     append(Array.isArray(resultFiles) ? resultFiles : [], false);
     return out;
-  }, [designFiles, files, requestFilesDownloadLocked, resultFiles, workScanFiles]);
+  }, [designFiles, files, requestFilesDownloadLocked, resultFiles]);
 
   const previewIndex = useMemo(() => {
     if (!previewMeta) return -1;
@@ -2175,6 +2182,9 @@ export function PracticeTransferDetailChatDialog({
   const identityChromeActions = (
     <div className="flex shrink-0 items-center gap-0.5" data-no-drag>
       {composerToolbarExtra}
+      {shareTransferKey ? (
+        <PracticeTransferShareButton transferKey={shareTransferKey} />
+      ) : null}
       <ChatSoundGlobalToggle />
     </div>
   );
@@ -2182,9 +2192,6 @@ export function PracticeTransferDetailChatDialog({
     printPracticeTransferDetail({
       title,
       summaryItems,
-      {shareTransferKey ? (
-        <PracticeTransferShareButton transferKey={shareTransferKey} />
-      ) : null}
       toothWorks: printToothWorks,
       memo,
       basketTag: labBasketTag,
@@ -2978,6 +2985,58 @@ export function PracticeTransferDetailChatDialog({
     );
   };
 
+  /** 작업 스캔은 상악·하악·바이트가 한 모델이다. 타일 하나로 보이고 한꺼번에 연다. */
+  const renderWorkScanModelTile = (list: PracticeTransferDialogFileItem[]) => {
+    const thumbs = workScanModelParts(list)
+      .map((part) => modelThumbFiles[part.key])
+      .filter((file): file is File => Boolean(file));
+    const [thumbFirst, ...thumbRest] = thumbs;
+    const thumbReady = thumbs.length === list.length;
+    const name = workScanModelTitle(list);
+    return (
+      <div className="relative min-w-0 overflow-hidden rounded-md border bg-slate-50">
+        <button
+          type="button"
+          onClick={() => setWorkModelOpen(true)}
+          disabled={!authToken}
+          title="클릭하여 상악·하악·바이트를 함께 3D 미리보기"
+          className="flex w-full flex-col items-stretch text-left disabled:opacity-60 disabled:pointer-events-none"
+        >
+          <div
+            className={cn(
+              "relative w-full overflow-hidden bg-slate-100",
+              FILE_TILE_THUMB_ASPECT_CLASS,
+            )}
+          >
+            <span className="absolute left-1 top-1 z-10 rounded bg-primary px-1.5 py-0.5 text-[10px] font-semibold text-primary-foreground">
+              작업
+            </span>
+            {thumbReady && thumbFirst ? (
+              <StlPreviewThumbnail
+                file={thumbFirst}
+                extraFiles={thumbRest}
+                className="pointer-events-none"
+              />
+            ) : (
+              <div className="flex h-full w-full flex-col items-center justify-center gap-0.5 px-1 text-slate-500">
+                <Box className="h-5 w-5 shrink-0" aria-hidden />
+                <span className="max-w-full truncate text-[10px] font-semibold tracking-wide text-slate-600">
+                  DCM
+                </span>
+              </div>
+            )}
+          </div>
+          <p
+            className="truncate px-1.5 py-1.5 text-center text-[11px] font-medium text-slate-800"
+            title={list.map((file) => file.fileName).join(", ")}
+          >
+            {name}
+          </p>
+        </button>
+      </div>
+    );
+  };
+
   const renderPendingRequestFileTile = (item: BackgroundUploadItem) => {
     const isMesh = isModelPreviewExt(getModelExtLower(item.file.name));
     const typeLabel = fileTypeLabel(item.file.name);
@@ -3651,13 +3710,10 @@ export function PracticeTransferDetailChatDialog({
                   {workScanFileList.length > 0 ? (
                     <div className="space-y-1.5">
                       <p className="text-[13px] text-muted-foreground">
-                        {workScanFilesLabel}{" "}
-                        <span>({workScanFileList.length}개)</span>
+                        {workScanFilesLabel}
                       </p>
                       <div className="grid grid-cols-4 gap-2">
-                        {workScanFileList.map((file, idx) =>
-                          renderFileTile(file, idx, "work-scan"),
-                        )}
+                        {renderWorkScanModelTile(workScanFileList)}
                       </div>
                     </div>
                   ) : null}
@@ -4017,6 +4073,15 @@ export function PracticeTransferDetailChatDialog({
       onAttachChatFile={onAttachChatFiles ? (file) => onAttachChatFiles([file]) : undefined}
     />
   );
+  const workScanModelPreview = (
+    <WorkScanModelPreviewDialog
+      open={workModelOpen}
+      onOpenChange={setWorkModelOpen}
+      files={workScanFileList}
+      authToken={authToken}
+      title={workScanFilesLabel}
+    />
+  );
 
   const pendingImageCount = pendingImageFiles?.length || 0;
   const imageAttachChoiceDialog = (
@@ -4084,6 +4149,7 @@ export function PracticeTransferDetailChatDialog({
             </p>
           </div>
           {modelPreview}
+          {workScanModelPreview}
           {imageAttachChoiceDialog}
         </>
       );
@@ -4101,6 +4167,7 @@ export function PracticeTransferDetailChatDialog({
           {panelBody}
         </div>
         {modelPreview}
+        {workScanModelPreview}
         {imageAttachChoiceDialog}
       </>
     );
@@ -4149,6 +4216,7 @@ export function PracticeTransferDetailChatDialog({
       </DialogContent>
     </Dialog>
     {modelPreview}
+    {workScanModelPreview}
     {imageAttachChoiceDialog}
     </>
   );

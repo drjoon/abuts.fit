@@ -2004,6 +2004,28 @@ export function RequestorPracticeReceivePage({
           setLabBasketTagRevision((n) => n + 1);
           return;
         }
+        if (action === "work-scan-auto-aligned") {
+          if (!Array.isArray(payload.workScanFiles)) return;
+          const rawWorkScans = payload.workScanFiles;
+          const patchWorkScans = (
+            row: ReceivedPracticeTransfer,
+          ): ReceivedPracticeTransfer =>
+            row.transferId === transferId
+              ? {
+                  ...row,
+                  production: {
+                    ...(row.production || {}),
+                    labWorkScanFiles: mapApiReceivedRequestFiles(
+                      rawWorkScans,
+                      String(row._id || ""),
+                    ),
+                  },
+                }
+              : row;
+          setTransfers((prev) => prev.map(patchWorkScans));
+          setSelectedTransfer((prev) => (prev ? patchWorkScans(prev) : prev));
+          return;
+        }
         if (isProsthesisFollowUpRealtimeAction(action)) {
           const patchFollowUp = (
             row: ReceivedPracticeTransfer,
@@ -9600,6 +9622,11 @@ export function RequestorPracticeReceivePage({
         }
         filesLabel="의뢰 파일"
         transferId={String(selectedTransfer?.transferId || "").trim()}
+        shareTransferKey={
+          String(selectedTransfer?._id || "").trim() ||
+          String(selectedTransfer?.transferId || "").trim() ||
+          null
+        }
         labAiCaseNav={
           labAiOpenCases.length > 0
             ? {
@@ -9622,11 +9649,6 @@ export function RequestorPracticeReceivePage({
           if (Array.isArray(data.files)) {
             patchReceivedRequestFiles(
               transferId,
-        shareTransferKey={
-          String(selectedTransfer?._id || "").trim() ||
-          String(selectedTransfer?.transferId || "").trim() ||
-          null
-        }
               mapApiReceivedRequestFiles(data.files, mongoId),
               mapApiReceivedRequestFiles(data.trashedFiles, mongoId),
             );

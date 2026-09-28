@@ -79,6 +79,10 @@
 - **기공의뢰서**: 치식·메모·수가·매칭 등은 어벗츠 기공의뢰(PracticeTransfer)로 작성.
 - **비 3Shape**: STL/PLY/OBJ 등 현행처럼 웹앱에 업로드해 기공의뢰와 함께 전송.
 - **UI**: Communicate/TRIOS 전용 안내 탭·배너·문구 없음.
+- **작업 스캔 자동 정렬**: 의뢰 상악·하악·바이트가 모두 있으면 `jobs/workScanAutoAlignWorker.js`가 AI 디자인 모델 정렬(바이트 맞춤 + 교합 원점)을 돌려 `production.labWorkScanFiles`에 작업 DCM 3역할을 넣는다. 치과·기공소 모두 작업 파일로 보고, AI 디자인은 이 좌표에서 시작한다.
+  - 대기열: 의뢰 파일이 바뀌는 경로(`schedulePracticeScanAlignment`·휴지통/복원·작업시작 첨부)에서 `queueWorkScanAutoAlign`. 기동 시 상태 없는 기존 의뢰를 백필. 상태는 `production.workScanAutoAlign`.
+  - 기공소가 직접 저장한 작업 스캔(잡이 넣은 `fileKeys` 밖의 키)이 있으면 덮지 않는다(`skipped`/`lab-work`).
+  - 계산 코드는 프론트 `shared/practice/workScanAutoAlign.ts`의 Node 번들 `vendor/workScanAutoAlign/workScanAutoAlign.mjs`(생성물). 정렬·파서 코드를 바꾸면 `npm --prefix ../frontend run build:work-scan-align`으로 다시 만든다(`npm run build`·`eb.sh`도 만든다). 끄기: `WORK_SCAN_AUTO_ALIGN_WORKER_ENABLED=false`.
 
 - 신속 배송(`express`) 복원 메모:
   - Draft/Request `shippingMode` 필드를 다시 저장합니다. (`models/draftRequest.model.js`, `models/request.model.js`)

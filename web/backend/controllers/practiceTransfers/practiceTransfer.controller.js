@@ -253,6 +253,7 @@ import {
   schedulePracticeProsthesisMargin,
   schedulePracticeScanAlignment,
 } from "../../services/oralScanPair.service.js";
+import { queueWorkScanAutoAlign } from "../../services/workScanAutoAlign.service.js";
 import {
   normalizeOralScanRole,
   resolveStoredScanRole,
@@ -8516,6 +8517,7 @@ export async function markReceivedPracticeTransferAccepted(req, res) {
           { _id: doc._id },
           { $set: { files: resolvedScan.files } },
         );
+        queueWorkScanAutoAlign(doc._id);
       }
     } catch (scanErr) {
       const status = Number(scanErr?.statusCode || 409);
@@ -9542,6 +9544,7 @@ export async function removePracticeTransferRequestFiles(req, res) {
       });
     }
     await doc.save();
+    queueWorkScanAutoAlign(doc._id);
 
     const payload = await emitRequestFilesUpdated({
       doc,
@@ -9626,6 +9629,7 @@ export async function restorePracticeTransferRequestFilesApi(req, res) {
       });
     }
     await doc.save();
+    queueWorkScanAutoAlign(doc._id);
 
     const payload = await emitRequestFilesUpdated({
       doc,
@@ -10100,6 +10104,7 @@ export async function removeReceivedPracticeTransferRequestFiles(req, res) {
       });
     }
     await doc.save();
+    queueWorkScanAutoAlign(doc._id);
 
     const payload = await emitRequestFilesUpdated({
       doc,
@@ -10187,6 +10192,7 @@ export async function restoreReceivedPracticeTransferRequestFiles(req, res) {
       });
     }
     await doc.save();
+    queueWorkScanAutoAlign(doc._id);
 
     const payload = await emitRequestFilesUpdated({
       doc,

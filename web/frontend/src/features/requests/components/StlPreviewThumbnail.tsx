@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-28: extraFiles — 상악·하악·바이트처럼 여러 메시를 파일 좌표 그대로 한 장에 담는다.
 // - 2026-09-24: 스캔 칼라 — 핑크/화이트 보정 + 흰 배경.
 // - 2026-09-23: 스캔 칼라 피니시라인 가독성 — parseModelPreview 콘트라스트 + NoToneMapping.
 // - 2026-09-17: finishLinePoints — 준비 카드용 filled STL 썸네일에 FL(빨간 튜브) 오버레이.
@@ -31,6 +32,8 @@ type Props = {
   companionFiles?: File[] | null;
   /** filled STL 피니시라인(xyz). 있으면 빨간 튜브로 오버레이. */
   finishLinePoints?: number[][] | null;
+  /** 같은 좌표계의 메시를 함께 그린다(작업 스캔 상악·하악·바이트). */
+  extraFiles?: File[] | null;
   className?: string;
 };
 
@@ -195,6 +198,7 @@ export function StlPreviewThumbnail({
   textureFile = null,
   companionFiles = null,
   finishLinePoints = null,
+  extraFiles = null,
   className,
 }: Props) {
   const [thumbUrl, setThumbUrl] = useState<string | null>(null);
@@ -203,6 +207,7 @@ export function StlPreviewThumbnail({
   const textureKey = fileIdentityKey(textureFile);
   const companionKey = companionFilesIdentityKey(companionFiles);
   const finishLineKey = finishLineIdentityKey(finishLinePoints);
+  const extraKey = companionFilesIdentityKey(extraFiles);
   const shownCaptureKeyRef = useRef("");
 
   useEffect(() => {
@@ -214,10 +219,17 @@ export function StlPreviewThumbnail({
     let previewTexture: THREE.Texture | null = null;
     let scene: THREE.Scene | null = null;
     let renderer: THREE.WebGLRenderer | null = null;
+    const extraMeshes: THREE.Mesh[] = [];
 
     const release = () => {
       if (released) return;
       released = true;
+      for (const extra of extraMeshes) {
+        scene?.remove(extra);
+        extra.geometry.dispose();
+        (extra.material as THREE.Material).dispose();
+      }
+      extraMeshes.length = 0;
       if (finishLineMesh && scene) {
         scene.remove(finishLineMesh);
         finishLineMesh.geometry?.dispose();
@@ -238,7 +250,7 @@ export function StlPreviewThumbnail({
     };
 
     setFailed(false);
-    const captureKey = `${fileKey}|${finishLineKey}`;
+    const captureKey = `${fileKey}|${finishLineKey}|${extraKey}`;
     // 모델/FL이 바뀐 경우에만 placeholder. companion/texture 갱신은 이전 PNG 유지.
     if (
       shownCaptureKeyRef.current &&
@@ -308,6 +320,25 @@ export function StlPreviewThumbnail({
         mesh = new THREE.Mesh(geometry, material);
         scene?.add(mesh);
 
+        const bounds = geometry.boundingBox?.clone() ?? new THREE.Box3();
+        for (const extraFile of extraFiles || []) {
+          const extra = await parseModelPreview(extraFile);
+          if (cancelled || released) {
+            extra.texture?.dispose?.();
+            extra.geometry.dispose();
+            return;
+          }
+          extra.geometry.computeBoundingBox();
+          if (!extra.geometry.getAttribute("normal")) extra.geometry.computeVertexNormals();
+          const extraMesh = new THREE.Mesh(
+            extra.geometry,
+            createModelPreviewMaterial(extra.geometry, extra.texture),
+          );
+          extraMeshes.push(extraMesh);
+          scene?.add(extraMesh);
+          if (extra.geometry.boundingBox) bounds.union(extra.geometry.boundingBox);
+        }
+
         try {
           finishLineMesh = addFinishLineOverlay(
             scene!,
@@ -318,8 +349,8 @@ export function StlPreviewThumbnail({
           finishLineMesh = null;
         }
 
-        if (geometry.boundingBox) {
-          fitOrthographicCameraToGeometry(camera, geometry.boundingBox);
+        if (!bounds.isEmpty()) {
+          fitOrthographicCameraToGeometry(camera, bounds);
         }
         renderer?.render(scene!, camera);
 
@@ -340,7 +371,7 @@ export function StlPreviewThumbnail({
     };
     // file/texture/companion/FL 객체 참조가 매 렌더 바뀌어도 identity key가 같으면 재캡처하지 않는다.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- identity keys are SSOT
-  }, [companionKey, fileKey, finishLineKey, textureKey]);
+  }, [companionKey, extraKey, fileKey, finishLineKey, textureKey]);
 
   if (failed) {
     return (

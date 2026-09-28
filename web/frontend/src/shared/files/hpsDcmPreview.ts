@@ -632,7 +632,22 @@ function parseVertexColorBytes(
   return null;
 }
 
-async function decodeJpegRgb(
+export type HpsJpegDecoder = (
+  jpegBytes: Uint8Array,
+) => Promise<{ width: number; height: number; rgba: Uint8ClampedArray }>;
+
+let jpegDecoder: HpsJpegDecoder = decodeJpegRgbInBrowser;
+
+/** 브라우저 밖(백엔드 작업 스캔 정렬)에서는 canvas 대신 이 디코더로 텍스처를 푼다. */
+export function setHpsJpegDecoder(decoder: HpsJpegDecoder) {
+  jpegDecoder = decoder;
+}
+
+function decodeJpegRgb(jpegBytes: Uint8Array) {
+  return jpegDecoder(jpegBytes);
+}
+
+async function decodeJpegRgbInBrowser(
   jpegBytes: Uint8Array,
 ): Promise<{ width: number; height: number; rgba: Uint8ClampedArray }> {
   const copy = new Uint8Array(jpegBytes.byteLength);

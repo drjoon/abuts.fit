@@ -255,6 +255,12 @@ const practiceTransferSchema = new mongoose.Schema(
         default: [],
       },
       /**
+       * 의뢰 상악·하악·바이트 자동 모델 정렬 잡.
+       * status pending|running|done|incomplete|skipped|failed.
+       * sourceKey=맞춘 의뢰 파일, fileKeys=잡이 넣은 작업 스캔 s3Key, moved=바이트 맞춤이 좌표를 바꿨는지.
+       */
+      workScanAutoAlign: { type: mongoose.Schema.Types.Mixed, default: undefined },
+      /**
        * 치아별 CA STL 업로드 횟수. cancel로 designFiles를 비워도 유지.
        * 2회차부터 리메이크(치과 CA 리메이크비 + 기공소→어벗츠 1만) 적용.
        */
@@ -645,6 +651,14 @@ practiceTransferSchema.index({
   assigneeLabAnchorId: 1,
   labBasketTag: 1,
 });
+// 작업 스캔 자동 정렬 잡 대기열
+practiceTransferSchema.index(
+  {
+    "production.workScanAutoAlign.status": 1,
+    "production.workScanAutoAlign.queuedAt": -1,
+  },
+  { sparse: true },
+);
 
 const PracticeTransfer = mongoose.model("PracticeTransfer", practiceTransferSchema);
 
