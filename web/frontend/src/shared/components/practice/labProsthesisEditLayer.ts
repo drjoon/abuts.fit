@@ -66,7 +66,7 @@ export type EditHit =
       sx?: -1 | 1;
       sz?: -1 | 1;
     }
-  | { kind: "hook"; tooth: string }
+  | { kind: "hook"; tooth: string; index: number }
   | { kind: "hole"; tooth: string }
   | { kind: "hole-tip"; tooth: string; end: "top" | "bottom" }
   | { kind: "connector"; tooth: string }
@@ -171,7 +171,8 @@ const CROWN_RGB: [number, number, number] = [243 / 255, 239 / 255, 232 / 255];
 const MARGIN = 0x14b8a6;
 const TAPER_UNDERCUT = 0xdc2626;
 const TAPER_WIDE = 0xf59e0b;
-const HOOK = 0x64748b;
+/** 훅 도구에서 잡을 수 있는 훅을 살짝 띄워 보인다. */
+const HOOK_EDIT_GLOW = 0x0ea5e9;
 const CUTBACK = 0xd6a37a;
 /** 프리셋 그림과 같은 색. 시멘트 갭 하늘, 마진 실 노랑. */
 const INNER_GAP = 0x7dd3fc;
@@ -236,6 +237,47 @@ export function marginWorldPoints(args: {
 function tag(mesh: THREE.Object3D, hit: EditHit) {
   mesh.userData.editHit = hit;
   mesh.frustumCulled = false;
+}
+
+/**
+ * 크라운 외면 점에서 법선으로 나온 둥근 끝 원기둥. 밑은 외면 안으로 묻어
+ * 스컬프트·맞춤으로 면이 조금 움직여도 떠 보이지 않게 한다. 바깥 끝까지가 길이다.
+ */
+function addHooks(
+  root: THREE.Group,
+  args: {
+    tooth: string;
+    hook: ToothDesignEdit["hook"];
+    crownMatrix: THREE.Matrix4;
+    unit: number;
+    editing: boolean;
+  },
+) {
+  const radius = args.hook.radiusMm / args.unit;
+  const length = args.hook.lengthMm / args.unit;
+  const embed = radius * 0.6;
+  const shaft = Math.max(length + embed - radius, radius * 0.2);
+  const toNormal = new THREE.Matrix3().getNormalMatrix(args.crownMatrix);
+  const yAxis = new THREE.Vector3(0, 1, 0);
+  args.hook.hooks.forEach((hook, index) => {
+    const base = new THREE.Vector3(...hook.point).applyMatrix4(args.crownMatrix);
+    const dir = new THREE.Vector3(...hook.normal).applyMatrix3(toNormal).normalize();
+    const mesh = new THREE.Mesh(
+      new THREE.CapsuleGeometry(radius, shaft, 6, 20),
+      new THREE.MeshStandardMaterial({
+        color: new THREE.Color(...CROWN_RGB),
+        roughness: 0.45,
+        metalness: 0.04,
+        emissive: args.editing ? HOOK_EDIT_GLOW : 0x000000,
+        emissiveIntensity: args.editing ? 0.18 : 0,
+      }),
+    );
+    mesh.quaternion.setFromUnitVectors(yAxis, dir);
+    mesh.position.copy(base).addScaledVector(dir, (shaft + radius * 2) / 2 - radius - embed);
+    mesh.renderOrder = 5;
+    tag(mesh, { kind: "hook", tooth: args.tooth, index });
+    root.add(mesh);
+  });
 }
 
 function paintSculpt(
@@ -1686,7 +1728,8 @@ export function buildProsthesisEditLayer(args: {
       ? JSON.stringify([
           tooth,
           fine,
-          edit,
+          // 훅은 크라운 형상을 바꾸지 않아 끄는 동안 맞춤을 다시 하지 않는다.
+          { ...edit, hook: null },
           crownMatrix.elements.map((n) => Math.round(n * 1e5)),
           args.contactPaint ?? null,
           discs.map((row) => [...row.normal, row.offset].map((n) => Math.round(n * 1e5))),
@@ -1797,6 +1840,7 @@ export function buildProsthesisEditLayer(args: {
     crown.scale.set(width, height, depth);
     crown.position.copy(crownAt.position);
     crown.renderOrder = 4;
+    crown.userData.crownBody = true;
     tag(crown, { kind: "crown", tooth });
     root.add(crown);
     const wallGeometry = cutHole ? screwHoleWall(cutHole, crownAt) : null;
@@ -1909,29 +1953,14 @@ export function buildProsthesisEditLayer(args: {
       });
     }
 
-    if (edit.hook.on) {
-      const angle = (edit.hook.angle * Math.PI) / 180;
-      const outward = new THREE.Vector3(Math.cos(angle), 0.15, Math.sin(angle))
-        .normalize()
-        .applyQuaternion(crownQuat);
-      const length = Math.max(edit.hook.lengthMm / unit, place.radius * 0.25);
-      const hookRadius = Math.max(edit.hook.radiusMm / unit, place.radius * 0.04);
-      const base = crown.position.clone().addScaledVector(outward, width * 0.72);
-      const tip = base.clone().addScaledVector(outward, length);
-      const shaft = new THREE.Mesh(
-        new THREE.CylinderGeometry(hookRadius, hookRadius, length, 12),
-        new THREE.MeshStandardMaterial({ color: HOOK, roughness: 0.4 }),
-      );
-      shaft.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), outward);
-      shaft.position.copy(base).addScaledVector(outward, length / 2);
-      tag(shaft, { kind: "hook", tooth });
-      const knob = new THREE.Mesh(
-        new THREE.SphereGeometry(hookRadius * 1.35, 12, 10),
-        new THREE.MeshStandardMaterial({ color: HOOK, roughness: 0.35 }),
-      );
-      knob.position.copy(tip);
-      tag(knob, { kind: "hook", tooth });
-      root.add(shaft, knob);
+    if (edit.hook.hooks.length > 0) {
+      addHooks(root, {
+        tooth,
+        hook: edit.hook,
+        crownMatrix,
+        unit,
+        editing: args.spec.tool === "hook" && active,
+      });
     }
 
     if (pose && holeLine && edit.implant.screwHole) {

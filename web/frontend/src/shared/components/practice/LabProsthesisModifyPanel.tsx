@@ -24,6 +24,9 @@ import {
   DISC_RANGE_MM,
   HOLE_RADIUS_MAX_MM,
   HOLE_RADIUS_MIN_MM,
+  HOOK_LENGTH_RANGE_MM,
+  HOOK_MAX_COUNT,
+  HOOK_RADIUS_RANGE_MM,
   holeTiltDeg,
   innerParamsOf,
   type EditBrush,
@@ -1168,49 +1171,36 @@ export function LabProsthesisModifyPanel({
         />
       ) : null}
 
-      {tool === "hook" ? (
+      {tool === "hook" && cavity ? (
+        <p className="text-[11px] leading-relaxed text-muted-foreground">
+          인레이·온레이에는 훅을 붙이지 않습니다.
+        </p>
+      ) : null}
+
+      {tool === "hook" && !cavity ? (
         <div className="space-y-2">
-          <div className="flex gap-1">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="flex min-w-0 flex-1">
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="h-7 w-full text-[11px]"
-                    disabled={!generated}
-                    onClick={() =>
-                      onEdit({ ...edit, hook: { ...edit.hook, on: true } })
-                    }
-                  >
-                    훅 놓기
-                  </Button>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="right" className="z-[520]">
-                보철을 누르면 그 자리에 훅이 붙습니다.
-              </TooltipContent>
-            </Tooltip>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="h-7 flex-1 text-[11px]"
-              onClick={onRemoveHook}
-            >
-              제거
-            </Button>
-          </div>
+          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[11px]">
+            {[
+              ["추가", "보철 외면 클릭"],
+              ["삭제", "오른쪽 클릭"],
+              ["이동", "훅 끌기"],
+            ].map(([key, value]) => (
+              <Fragment key={key}>
+                <dt className="font-medium">{key}</dt>
+                <dd className="text-muted-foreground">{value}</dd>
+              </Fragment>
+            ))}
+          </dl>
           <Row label="반지름" value={`${edit.hook.radiusMm.toFixed(2)} mm`}>
             <Slider
-              min={20}
-              max={90}
-              step={2}
+              min={HOOK_RADIUS_RANGE_MM.min * 100}
+              max={HOOK_RADIUS_RANGE_MM.max * 100}
+              step={5}
               value={[Math.round(edit.hook.radiusMm * 100)]}
               onValueChange={([value]) =>
                 onEdit({
                   ...edit,
-                  hook: { ...edit.hook, radiusMm: (value ?? 45) / 100 },
+                  hook: { ...edit.hook, radiusMm: (value ?? 80) / 100 },
                 })
               }
               aria-label="훅 반지름"
@@ -1218,52 +1208,45 @@ export function LabProsthesisModifyPanel({
           </Row>
           <Row label="길이" value={`${edit.hook.lengthMm.toFixed(1)} mm`}>
             <Slider
-              min={8}
-              max={50}
+              min={HOOK_LENGTH_RANGE_MM.min * 10}
+              max={HOOK_LENGTH_RANGE_MM.max * 10}
               step={1}
               value={[Math.round(edit.hook.lengthMm * 10)]}
               onValueChange={([value]) =>
                 onEdit({
                   ...edit,
-                  hook: { ...edit.hook, lengthMm: (value ?? 24) / 10 },
+                  hook: { ...edit.hook, lengthMm: (value ?? 18) / 10 },
                 })
               }
               aria-label="훅 길이"
             />
           </Row>
-          <Row label="위치" value={`${Math.round(edit.hook.angle)}°`}>
-            <Slider
-              min={0}
-              max={360}
-              step={2}
-              value={[edit.hook.angle]}
-              onValueChange={([value]) =>
-                onEdit({
-                  ...edit,
-                  hook: { ...edit.hook, on: true, angle: value ?? 0 },
-                })
-              }
-              aria-label="훅 위치"
-            />
-          </Row>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="flex min-w-0">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={brush === "erase" ? "default" : "outline"}
-                  className="h-7 w-full text-[11px]"
-                  onClick={() => onBrush(brush === "erase" ? "none" : "erase")}
-                >
-                  지우개
-                </Button>
-              </span>
-            </TooltipTrigger>
-            <TooltipContent side="right" className="z-[520]">
-              훅을 없앱니다.
-            </TooltipContent>
-          </Tooltip>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] tabular-nums text-muted-foreground">
+              훅 {edit.hook.hooks.length} / {HOOK_MAX_COUNT}
+            </span>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-7 px-2 text-[11px]"
+              disabled={edit.hook.hooks.length === 0}
+              onClick={onRemoveHook}
+            >
+              모두 지우기
+            </Button>
+          </div>
+          {!generated ? (
+            <p className="text-[11px] leading-relaxed text-muted-foreground">
+              크라운을 생성한 뒤 훅을 붙입니다.
+            </p>
+          ) : edit.hook.hooks.length === 0 ? (
+            <p className="text-[11px] leading-relaxed text-muted-foreground">
+              시적 때 잡을 자리를 누르면 훅이 붙습니다.
+              <br />
+              훅은 보철과 한 파일로 내보냅니다.
+            </p>
+          ) : null}
         </div>
       ) : null}
 

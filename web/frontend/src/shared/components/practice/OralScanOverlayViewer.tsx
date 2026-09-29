@@ -98,6 +98,7 @@ import {
   STRETCH_RANGE,
   type RefineTransform,
   type DesignGesture,
+  type DesignHook,
   type MarginSample,
   type ModelSettings,
   type ProsthesisDesignEdit,
@@ -3204,7 +3205,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
           y0: number;
           refine0: RefineTransform;
         }
-      | { kind: "hook"; tooth: string }
+      | { kind: "hook"; tooth: string; index: number }
       | { kind: "hole"; tooth: string }
       | { kind: "hole-tip"; tooth: string; end: "top" | "bottom" }
       | { kind: "connector"; tooth: string; along0: number; x0: number }
@@ -3377,19 +3378,56 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
               point: handle.point.clone(),
               marginPoints: undefined,
               object: handle.object,
+              face: null,
             };
           }
         }
       }
+      const hookTool = designEditRef.current?.tool === "hook";
       for (const hit of hits) {
         const tag = readEditHit(hit.object);
         if (!tag) continue;
+        // 다른 도구에서는 훅을 지나 크라운 면을 잡는다(스컬프트 오른쪽 클릭이 훅을 지우지 않게).
+        if (tag.kind === "hook" && !hookTool) continue;
         const marginPoints = hit.object.userData.marginPoints as
           | THREE.Vector3[]
           | undefined;
-        return { tag, point: hit.point.clone(), marginPoints };
+        return {
+          tag,
+          point: hit.point.clone(),
+          marginPoints,
+          object: hit.object,
+          face: hit.face ?? null,
+        };
       }
       return null;
+    };
+
+    /** 크라운 외면 로컬 점·면 법선. 내면·홀 벽·인레이는 훅을 받지 않는다. */
+    const hookOnCrown = (
+      object: THREE.Object3D,
+      point: THREE.Vector3,
+      face: THREE.Face | null | undefined,
+    ): DesignHook | null => {
+      if (!object.userData.crownBody || !face || face.materialIndex > 0) return null;
+      const local = object.worldToLocal(point.clone());
+      const normal = face.normal.clone().normalize();
+      if (![local.x, local.y, local.z, normal.x, normal.y, normal.z].every(Number.isFinite)) {
+        return null;
+      }
+      return { point: [local.x, local.y, local.z], normal: [normal.x, normal.y, normal.z] };
+    };
+
+    const crownHookAt = (tooth: string): DesignHook | null => {
+      const bodies: THREE.Object3D[] = [];
+      editLayerRef.current?.traverse((child) => {
+        const hit = child.userData.editHit as EditHit | undefined;
+        if (child.userData.crownBody && hit?.kind === "crown" && hit.tooth === tooth) {
+          bodies.push(child);
+        }
+      });
+      const hit = raycaster.intersectObjects(bodies, false)[0];
+      return hit ? hookOnCrown(hit.object, hit.point, hit.face) : null;
     };
 
     const marginRatio = (tooth: string, point: THREE.Vector3) => {
@@ -3520,10 +3558,10 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
             rotateDeg: refine.rotateDeg,
           },
         };
-      } else if (hit.tag.kind === "hook" && (event.button === 2 || brush === "erase")) {
-        send({ type: "hook-off", tooth: hit.tag.tooth });
+      } else if (hit.tag.kind === "hook" && event.button === 2) {
+        send({ type: "hook-remove", tooth: hit.tag.tooth, index: hit.tag.index });
       } else if (hit.tag.kind === "hook" && event.button === 0) {
-        drag = { kind: "hook", tooth: hit.tag.tooth };
+        drag = { kind: "hook", tooth: hit.tag.tooth, index: hit.tag.index };
       } else if (
         (hit.tag.kind === "hole" || hit.tag.kind === "hole-tip") &&
         (event.button === 2 || brush === "erase")
@@ -3542,11 +3580,9 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         if (!frame) return;
         const angle = crownAngle(frame, hit.tag.tooth, hit.point);
         if (tool === "hook") {
-          send({
-            type: "hook-angle",
-            tooth: hit.tag.tooth,
-            angle: ((angle * 180) / Math.PI + 360) % 360,
-          });
+          const hook = hookOnCrown(hit.object, hit.point, hit.face);
+          if (!hook) return;
+          send({ type: "hook-add", tooth: hit.tag.tooth, hook });
         } else if (tool === "hole") {
           const target = holeTargetRef.current(hit.tag.tooth);
           if (!target || target.edit.implant.on || target.edit.pontic.on) return;
@@ -3632,13 +3668,8 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         );
         if (patch) send({ type: "transform", tooth: drag.tooth, patch });
       } else if (drag.kind === "hook") {
-        const placed = planePoint(drag.tooth);
-        if (!placed) return;
-        send({
-          type: "hook-angle",
-          tooth: drag.tooth,
-          angle: ((placed.angle * 180) / Math.PI + 360) % 360,
-        });
+        const hook = crownHookAt(drag.tooth);
+        if (hook) send({ type: "hook-move", tooth: drag.tooth, index: drag.index, hook });
       } else if (drag.kind === "hole") {
         const target = holeTargetRef.current(drag.tooth);
         if (!target) return;

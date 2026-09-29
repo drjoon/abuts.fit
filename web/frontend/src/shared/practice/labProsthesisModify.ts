@@ -23,6 +23,13 @@ export const HOLE_RADIUS_MIN_MM = 0.5;
 export const HOLE_RADIUS_MAX_MM = 2.5;
 export const HOLE_RADIUS_DEFAULT_MM = 1.25;
 
+/** 시적 때 잡는 훅(mm). Dentbird와 같은 기본값. */
+export const HOOK_RADIUS_RANGE_MM = { min: 0.3, max: 1.5 } as const;
+export const HOOK_LENGTH_RANGE_MM = { min: 0.5, max: 4 } as const;
+export const HOOK_RADIUS_DEFAULT_MM = 0.8;
+export const HOOK_LENGTH_DEFAULT_MM = 1.8;
+export const HOOK_MAX_COUNT = 6;
+
 export const MODIFY_TOOLS = [
   { id: "scanbody", label: "스캔바디" },
   { id: "margin", label: "마진" },
@@ -451,9 +458,9 @@ export type ToothDesignEdit = {
     orderOverride: boolean;
     screwHole: boolean;
   };
+  /** 반지름·길이는 치아의 모든 훅에 같이 쓴다. */
   hook: {
-    on: boolean;
-    angle: number;
+    hooks: DesignHook[];
     radiusMm: number;
     lengthMm: number;
   };
@@ -494,6 +501,16 @@ export type ToothDesignEdit = {
   };
 };
 
+/**
+ * 크라운 외면에 붙인 훅. 좌표는 크라운 메시 로컬(변형 배율 전 단위 공간)이라
+ * 크라운을 옮기고 돌리고 늘려도 같은 자리에 붙어 있다.
+ */
+export type DesignHook = {
+  point: [number, number, number];
+  /** 그 자리 외면 법선(메시 로컬). */
+  normal: [number, number, number];
+};
+
 /** 치아 프레임의 마진 표본. radius는 기본 고리 비율, depth는 삽입축 방향 기하 단위. */
 export type MarginSample = { angle: number; radius: number; depth: number };
 
@@ -503,8 +520,9 @@ export type DesignGesture =
   | { type: "margin-trace"; tooth: string; samples: MarginSample[] }
   | { type: "margin-insert"; tooth: string; index: number; radius: number; depth?: number }
   | { type: "margin-remove"; tooth: string; index: number }
-  | { type: "hook-angle"; tooth: string; angle: number }
-  | { type: "hook-off"; tooth: string }
+  | { type: "hook-add"; tooth: string; hook: DesignHook }
+  | { type: "hook-move"; tooth: string; index: number; hook: DesignHook }
+  | { type: "hook-remove"; tooth: string; index: number }
   | {
       type: "hole-place";
       tooth: string;
@@ -723,7 +741,7 @@ export function createToothDesignEdit(): ToothDesignEdit {
       orderOverride: false,
       screwHole: false,
     },
-    hook: { on: false, angle: 40, radiusMm: 0.45, lengthMm: 2.4 },
+    hook: { hooks: [], radiusMm: HOOK_RADIUS_DEFAULT_MM, lengthMm: HOOK_LENGTH_DEFAULT_MM },
     cutback: { on: false, region: "partial", thicknessMm: 0.4, excluded: [] },
     hole: {
       on: false,
@@ -787,7 +805,7 @@ export function normalizeToothDesignEdit(raw: unknown): ToothDesignEdit {
     margin: { ...base.margin, ...(row.margin ?? {}) },
     inner: normalizeToothInner(row.inner, refine.minThicknessMm),
     refine,
-    hook: { ...base.hook, ...(row.hook ?? {}) },
+    hook: normalizeHook(row.hook, base.hook),
     cutback: { ...base.cutback, ...(row.cutback ?? {}) },
     hole: normalizeHole(row.hole, base.hole),
     connector: {
@@ -798,6 +816,43 @@ export function normalizeToothDesignEdit(raw: unknown): ToothDesignEdit {
       linked: connector.linked !== false,
       discMm: clamp(Number(connector.discMm) || 0, DISC_RANGE_MM.min, DISC_RANGE_MM.max),
     },
+  };
+}
+
+function unitVec3(value: unknown): [number, number, number] | null {
+  const v = vec3OrNull(value);
+  if (!v) return null;
+  const length = Math.hypot(v[0], v[1], v[2]);
+  return length < 1e-9 ? null : [v[0] / length, v[1] / length, v[2] / length];
+}
+
+/** 예전 훅은 크라운 옆 각도 하나였다. 켜져 있었으면 그 방향 외면에 하나를 붙인다. */
+function normalizeHook(raw: unknown, base: ToothDesignEdit["hook"]): ToothDesignEdit["hook"] {
+  if (!raw || typeof raw !== "object") return { ...base, hooks: [] };
+  const row = raw as Record<string, unknown>;
+  const radius = Number(row.radiusMm);
+  const length = Number(row.lengthMm);
+  let hooks: DesignHook[] = [];
+  if (Array.isArray(row.hooks)) {
+    hooks = row.hooks.flatMap((item) => {
+      const hook = (item ?? {}) as Record<string, unknown>;
+      const point = vec3OrNull(hook.point);
+      const normal = unitVec3(hook.normal);
+      return point && normal ? [{ point, normal }] : [];
+    });
+  } else if (row.on === true) {
+    const angle = ((Number(row.angle) || 0) * Math.PI) / 180;
+    const dir = unitVec3([Math.cos(angle), 0.15, Math.sin(angle)])!;
+    hooks = [{ point: dir, normal: dir }];
+  }
+  return {
+    hooks: hooks.slice(0, HOOK_MAX_COUNT),
+    radiusMm: Number.isFinite(radius)
+      ? clamp(radius, HOOK_RADIUS_RANGE_MM.min, HOOK_RADIUS_RANGE_MM.max)
+      : base.radiusMm,
+    lengthMm: Number.isFinite(length)
+      ? clamp(length, HOOK_LENGTH_RANGE_MM.min, HOOK_LENGTH_RANGE_MM.max)
+      : base.lengthMm,
   };
 }
 
@@ -1265,13 +1320,26 @@ export function reduceDesignGesture(
       return insertMarginPoint(edit, gesture.index, gesture.radius, gesture.depth);
     case "margin-remove":
       return removeMarginPoint(edit, gesture.index);
-    case "hook-angle":
+    case "hook-add":
+      if (edit.hook.hooks.length >= HOOK_MAX_COUNT) return edit;
+      return { ...edit, hook: { ...edit.hook, hooks: [...edit.hook.hooks, gesture.hook] } };
+    case "hook-move":
+      if (!edit.hook.hooks[gesture.index]) return edit;
       return {
         ...edit,
-        hook: { ...edit.hook, on: true, angle: gesture.angle },
+        hook: {
+          ...edit.hook,
+          hooks: edit.hook.hooks.map((hook, index) => (index === gesture.index ? gesture.hook : hook)),
+        },
       };
-    case "hook-off":
-      return { ...edit, hook: { ...edit.hook, on: false } };
+    case "hook-remove":
+      return {
+        ...edit,
+        hook: {
+          ...edit.hook,
+          hooks: edit.hook.hooks.filter((_, index) => index !== gesture.index),
+        },
+      };
     case "hole-place":
       return {
         ...edit,

@@ -4745,7 +4745,7 @@ function LabProsthesisAiDesignDialog({
                               ...prev,
                               [activeNumber]: {
                                 ...current,
-                                hook: { ...current.hook, on: false },
+                                hook: { ...current.hook, hooks: [] },
                               },
                             };
                           });
