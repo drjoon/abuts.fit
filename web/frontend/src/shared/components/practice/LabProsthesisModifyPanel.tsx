@@ -54,7 +54,10 @@ import {
   InnerMaterialSelect,
   InnerNumberInput,
 } from "@/shared/components/practice/LabInnerParamFields";
-import { fitDistanceRgb } from "@/shared/components/practice/labProsthesisEditLayer";
+import {
+  fitDistanceRgb,
+  type CrownIntaglioInfo,
+} from "@/shared/components/practice/labProsthesisEditLayer";
 import { LabRefineControls } from "@/shared/components/practice/LabRefineControls";
 import { cn } from "@/shared/ui/cn";
 
@@ -135,6 +138,10 @@ type Props = {
   onRefineTab: (tab: RefineTab) => void;
   /** 뷰어가 맞춘 이 크라운에서 잰 가장 얇은 외면. 맞춤이 없으면 null. */
   crownShellMm: number | null;
+  /** 뷰어가 지대치 스캔에서 이 크라운 내면을 만든 결과. 아직 없으면 null. */
+  intaglio: CrownIntaglioInfo | null;
+  /** 칼라맵의 내면 간격 모드를 연다. */
+  onViewFit: () => void;
 };
 
 export type ConnectorRow = {
@@ -375,6 +382,8 @@ function InnerControls({
   presets,
   onEdit,
   onOpenPresets,
+  intaglio,
+  onViewFit,
 }: {
   edit: ToothDesignEdit;
   kind: InnerKind;
@@ -382,6 +391,8 @@ function InnerControls({
   presets: DesignPreset[];
   onEdit: (next: ToothDesignEdit) => void;
   onOpenPresets: (presetId: string | null) => void;
+  intaglio: CrownIntaglioInfo | null;
+  onViewFit: () => void;
 }) {
   const committed = innerParamsOf(edit);
   const [draft, setDraft] = useState<InnerParams>(committed);
@@ -487,6 +498,33 @@ function InnerControls({
         />
         블록아웃
       </label>
+      <div className="space-y-1.5 rounded-md border p-2">
+        <label className="flex items-center gap-2 text-xs font-medium">
+          <Checkbox
+            className="h-3.5 w-3.5"
+            checked={edit.inner.intaglio}
+            onCheckedChange={(checked) =>
+              onEdit({ ...edit, inner: { ...edit.inner, intaglio: checked === true } })
+            }
+            aria-label="지대치에서 내면 생성"
+          />
+          지대치에서 내면 생성
+        </label>
+        <p className="text-[11px] leading-snug text-muted-foreground">
+          <IntaglioStatus edit={edit} generated={generated} info={intaglio} />
+        </p>
+        {intaglio?.status === "ok" ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-7 w-full text-[11px]"
+            onClick={onViewFit}
+          >
+            내면 간격 보기
+          </Button>
+        ) : null}
+      </div>
       <Tooltip>
         <TooltipTrigger asChild>
           <span className="flex min-w-0">
@@ -511,6 +549,82 @@ function InnerControls({
         </TooltipContent>
       </Tooltip>
     </div>
+  );
+}
+
+/** 내면 생성 상태 안내. 문장마다 줄을 나눈다. */
+function IntaglioStatus({
+  edit,
+  generated,
+  info,
+}: {
+  edit: ToothDesignEdit;
+  generated: boolean;
+  info: CrownIntaglioInfo | null;
+}) {
+  if (!edit.inner.intaglio) {
+    return (
+      <>
+        끄면 외면만 그립니다.
+        <br />
+        위 숫자는 생성 크기 검토에만 씁니다.
+      </>
+    );
+  }
+  if (!generated || !info) {
+    return (
+      <>
+        보철을 생성하면 지대치 스캔에서 내면을 만듭니다.
+        <br />
+        위 간격·마진 두께가 그대로 들어갑니다.
+      </>
+    );
+  }
+  if (info.status === "ok") {
+    return (
+      <>
+        내면을 만들었습니다.
+        <br />
+        외면과 이어 내보내기에 함께 들어갑니다.
+        {info.minThicknessMm != null ? (
+          <>
+            <br />
+            가장 얇은 곳 {info.minThicknessMm.toFixed(2)}mm.
+          </>
+        ) : null}
+        {info.maxGapErrorMm != null && info.maxGapErrorMm > 0.15 ? (
+          <>
+            <br />
+            스캔 잡음·구멍으로 설계 간격에서 최대 {info.maxGapErrorMm.toFixed(2)}mm 벗어난 곳이 있습니다.
+          </>
+        ) : null}
+      </>
+    );
+  }
+  if (info.status === "sparse") {
+    return (
+      <>
+        지대치 스캔이 없거나 성겨 내면을 만들지 못했습니다.
+        <br />
+        외면만 그립니다.
+      </>
+    );
+  }
+  if (info.status === "margin") {
+    return (
+      <>
+        마진이 모자라 내면을 만들지 못했습니다.
+        <br />
+        마진을 먼저 잡아 주세요.
+      </>
+    );
+  }
+  return (
+    <>
+      이 보철은 내면 메시를 만들지 않습니다.
+      <br />
+      폰틱·임플란트·스크류홀 크라운은 외면만 그립니다.
+    </>
   );
 }
 
@@ -578,6 +692,8 @@ export function LabProsthesisModifyPanel({
   refineTab,
   onRefineTab,
   crownShellMm,
+  intaglio,
+  onViewFit,
 }: Props) {
   const implant = edit.implant.on;
   const cavity = implant || edit.pontic.on ? null : cavityKind;
@@ -1029,6 +1145,8 @@ export function LabProsthesisModifyPanel({
             presets={designPresets}
             onEdit={onEdit}
             onOpenPresets={onOpenPresets}
+            intaglio={intaglio}
+            onViewFit={onViewFit}
           />
         )
       ) : null}

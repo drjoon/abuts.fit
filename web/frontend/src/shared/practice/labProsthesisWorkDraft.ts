@@ -22,6 +22,7 @@ import {
   type ModelSettings,
   type ToothDesignEdit,
 } from "@/shared/practice/labProsthesisModify";
+import { parseColorMapState, type ColorMapState } from "@/shared/practice/labColorMap";
 import { parseMillingDocument, type MillingDocument } from "@/shared/practice/labMilling";
 import {
   insertionAxisKey,
@@ -79,6 +80,8 @@ export type WorkSessionViewToggles = {
   ghost: boolean;
   /** 마진으로 자른 다이를 지대치 악 대신 보인다. */
   die: boolean;
+  /** 칼라맵. 예전 초안에는 없다. */
+  colorMap?: ColorMapState;
 };
 
 /** 스캔 좌표 외에 마진·생성·삽입축·카메라·화면 토글. 창을 다시 열면 이 문서를 복원한다. */
@@ -128,6 +131,7 @@ export function parseViewToggles(value: unknown): WorkSessionViewToggles | null 
     contact: Boolean(row.contact),
     ghost: Boolean(row.ghost),
     die: Boolean(row.die),
+    colorMap: row.colorMap == null ? undefined : parseColorMapState(row.colorMap),
   };
 }
 

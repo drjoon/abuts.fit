@@ -72,6 +72,10 @@ export type CrownAdaptResult = {
   cutMm: Float32Array;
   /** 맞춘 뒤 대합·인접 중 가까운 쪽까지 거리(mm). 1mm 안에 없으면 NaN. */
   contactMm: Float32Array;
+  /** 맞춘 뒤 대합 면까지 부호 거리(mm). 겹치면 음수. 1mm 안에 없으면 NaN. */
+  opposingMm: Float32Array;
+  /** 맞춘 뒤 인접 면까지 부호 거리(mm). 겹치면 음수. 1mm 안에 없으면 NaN. */
+  adjacentMm: Float32Array;
 };
 
 /** 닿게 늘릴 때 보는 거리(mm). 이보다 먼 면은 그대로 둔다. */
@@ -238,6 +242,21 @@ function signedTo(cloud: ScanCloud, index: number, x: number, y: number, z: numb
   const side = dx * nx + dy * ny + dz * nz;
   const signed = Math.abs(side) > 0.5 * dist ? side : side < 0 ? -dist : dist;
   return { dist, signed, nx, ny, nz, dx, dy, dz };
+}
+
+/** 점에서 스캔 면까지 부호 거리(mm). 스캔 바깥이 +. maxDistMm 안에 면이 없으면 NaN. */
+export function signedDistanceMm(
+  grid: ScanGrid,
+  x: number,
+  y: number,
+  z: number,
+  maxDistMm: number,
+  unitToMm: number,
+): number {
+  const unit = unitToMm > 0 ? unitToMm : 1;
+  const j = nearestInGrid(grid, x, y, z, maxDistMm / unit);
+  if (j < 0) return Number.NaN;
+  return signedTo(grid.cloud, j, x, y, z).signed * unit;
 }
 
 /** 블록아웃 그림자 밖으로 나갈 때 보는 인접치 옆 거리(mm). 이보다 깊은 언더컷은 한 번에 못 뺀다. */
@@ -483,21 +502,29 @@ export function adaptCrownVertices(input: CrownAdaptInput): CrownAdaptResult {
     }
   }
 
+  const opposingMm = new Float32Array(count).fill(Number.NaN);
+  const adjacentMm = new Float32Array(count).fill(Number.NaN);
   const probe = CONTACT_PROBE_MM / unit;
   for (let i = 0; i < count; i += 1) {
     const x = pos[i * 3]!;
     const y = pos[i * 3 + 1]!;
     const z = pos[i * 3 + 2]!;
     let best = Number.NaN;
-    for (const grid of [input.opposing, input.adjacent]) {
+    const grids: Array<[ScanGrid | null, Float32Array]> = [
+      [input.opposing, opposingMm],
+      [input.adjacent, adjacentMm],
+    ];
+    for (const [grid, signedOut] of grids) {
       if (!grid) continue;
       const j = nearestInGrid(grid, x, y, z, probe);
       if (j < 0) continue;
-      const mm = Math.max(0, signedTo(grid.cloud, j, x, y, z).signed) * unit;
+      const signed = signedTo(grid.cloud, j, x, y, z).signed * unit;
+      signedOut[i] = signed;
+      const mm = Math.max(0, signed);
       if (!(mm >= best)) best = mm;
     }
     contactMm[i] = best;
   }
 
-  return { cutMm, contactMm };
+  return { cutMm, contactMm, opposingMm, adjacentMm };
 }

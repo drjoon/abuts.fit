@@ -5,11 +5,29 @@ import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
 import {
   adaptCrownVertices,
+  signedDistanceMm,
   type DiscPlane,
   type GingivalAdapt,
+  type ScanCloud,
   type ScanColumns,
   type ScanGrid,
 } from "@/shared/practice/crownAdapt";
+import {
+  buildIntaglio,
+  IntaglioProbe,
+  marginStripIndex,
+  orientIntaglioIndex,
+  raiseOuterToThickness,
+  type IntaglioFailure,
+  type IntaglioMesh,
+} from "@/shared/practice/crownIntaglio";
+import {
+  colorMapRgb,
+  emptyColorMapValues,
+  paintColorMap,
+  type ColorMapState,
+  type ColorMapValues,
+} from "@/shared/practice/labColorMap";
 import { fdiToothDigits } from "@/shared/practice/toothArchOrder";
 import {
   contactColorRgb,
@@ -79,7 +97,24 @@ export type CrownAdaptScan = {
   ridge: ScanColumns | null;
   /** 마진 둘레 치은. 크라운 경부를 띄울 때 쓴다. */
   gingiva: ScanColumns | null;
+  /** 마진 안쪽 지대치 악 스캔 점. 내면을 만들 때 쓴다. 마진이 없으면 null. */
+  prep: ScanCloud | null;
+  /** `prep` 격자. 내면과 지대치 사이 간격을 잴 때 쓴다. */
+  prepGrid: ScanGrid | null;
 };
+
+/** 크라운 내면 계산 결과. */
+export type CrownIntaglioInfo = {
+  /** ok=내면을 만들었다, off=끔·해당 없음, sparse=지대치 스캔이 성겨 못 만든다, margin=마진이 모자라다. */
+  status: "ok" | "off" | IntaglioFailure;
+  /** ok일 때 외면과 내면 사이 가장 얇은 곳(mm). 테두리는 뺀다. */
+  minThicknessMm?: number;
+  /** ok일 때 설계 간격에서 가장 크게 벗어난 곳(mm, 절댓값). 스캔 구멍·잡음이 원인이다. */
+  maxGapErrorMm?: number;
+};
+
+/** 내면 정점이 지대치에서 이보다 멀면 간격을 재지 않는다(mm). */
+const FIT_PROBE_MM = 0.8;
 
 /** 맞춘 크라운 메시. 수정값·자세·스캔이 같으면 다시 맞추지 않는다. */
 export type CachedCrown = {
@@ -88,6 +123,11 @@ export type CachedCrown = {
   colors: Float32Array;
   index: Uint32Array | null;
   shellMm: number | null;
+  /** 외면(0)과 내면(1)을 나눈 머티리얼 조각. 내면이 없으면 빈 배열. */
+  groups: Array<{ start: number; count: number; materialIndex: number }>;
+  /** 정점마다 잰 칼라맵 값. 칼라맵을 켜지 않았으면 null. */
+  values: ColorMapValues | null;
+  intaglio: CrownIntaglioInfo;
 };
 
 /** 점마다 가장 가까운 스캔 면까지의 부호 거리(mm). 바깥이 +. 스캔이 멀면 null. */
@@ -97,26 +137,9 @@ export type ScanDistanceProbe = (
   normals: readonly THREE.Vector3[],
 ) => Array<number | null>;
 
-/** -0.1 빨강 → 0 초록 → +0.1 파랑. Dentbird 색 막대와 같은 순서. */
+/** -0.1 빨강 → 0 초록 → +0.1 파랑. 칼라맵과 같은 색 막대(`colorMapRgb`). */
 export function fitDistanceRgb(mm: number | null): [number, number, number] {
-  if (mm == null) return [0.78, 0.8, 0.83];
-  const t = Math.min(1, Math.max(0, (mm + 0.1) / 0.2));
-  const stops: Array<[number, [number, number, number]]> = [
-    [0, [0.86, 0.15, 0.15]],
-    [0.25, [0.96, 0.78, 0.18]],
-    [0.5, [0.2, 0.78, 0.35]],
-    [0.75, [0.16, 0.74, 0.86]],
-    [1, [0.15, 0.3, 0.86]],
-  ];
-  for (let index = 1; index < stops.length; index += 1) {
-    const [t1, c1] = stops[index]!;
-    const [t0, c0] = stops[index - 1]!;
-    if (t <= t1) {
-      const u = (t - t0) / Math.max(t1 - t0, 1e-6);
-      return [c0[0] + (c1[0] - c0[0]) * u, c0[1] + (c1[1] - c0[1]) * u, c0[2] + (c1[2] - c0[2]) * u];
-    }
-  }
-  return stops[stops.length - 1]![1];
+  return colorMapRgb(mm, 0.1) ?? [0.78, 0.8, 0.83];
 }
 
 /** 임플란트 축과 스캔바디 윗면 중심. 맞추기 전이면 치아 추정 중심과 삽입축. */
@@ -406,6 +429,44 @@ function crownTheta(edit: ToothDesignEdit) {
   return edit.pontic.on ? PONTIC_BASE_THETA[edit.pontic.base] : 0.58;
 }
 
+/** 크라운 열린 테두리 정점과 외면 삼각형이 그 테두리를 도는 방향. `adaptCrownGeometry`가 내면을 이을 때 쓴다. */
+type CrownRim = {
+  /** 로컬 방위각(atan2(z,x)) 오름차순 정점 번호. */
+  order: number[];
+  /** 외면 삼각형이 테두리 변을 order[j] → order[j+1]로 쓰는가. */
+  forward: boolean;
+};
+
+function recordCrownRim(geometry: THREE.BufferGeometry, theta: number) {
+  const pos = geometry.getAttribute("position") as THREE.BufferAttribute;
+  const index = geometry.getIndex();
+  if (!index) return;
+  const yBase = Math.cos(Math.PI * theta);
+  const rim: Array<{ i: number; angle: number }> = [];
+  for (let i = 0; i < pos.count; i += 1) {
+    if (Math.abs(pos.getY(i) - yBase) < 1e-5) {
+      rim.push({ i, angle: Math.atan2(pos.getZ(i), pos.getX(i)) });
+    }
+  }
+  if (rim.length < 12) return;
+  rim.sort((a, b) => a.angle - b.angle);
+  const order = rim.map((row) => row.i);
+  const a = order[0]!;
+  const b = order[1]!;
+  let forward: boolean | null = null;
+  const tri = index.array;
+  for (let t = 0; t < tri.length && forward == null; t += 3) {
+    const corner = [tri[t]!, tri[t + 1]!, tri[t + 2]!];
+    if (!corner.includes(a) || !corner.includes(b)) continue;
+    for (let c = 0; c < 3; c += 1) {
+      if (corner[c] === a && corner[(c + 1) % 3] === b) forward = true;
+      else if (corner[c] === b && corner[(c + 1) % 3] === a) forward = false;
+    }
+  }
+  if (forward == null) return;
+  geometry.userData.rim = { order, forward } satisfies CrownRim;
+}
+
 /**
  * 로컬 단위 구 크라운. 색은 칠하지 않는다. 홀을 뚫는 크라운은 테두리가 매끈하도록 잘게 나눈다.
  * 이음매 정점을 붙여 두어야 대합·인접 맞춤으로 밀어도 틈이 나지 않는다.
@@ -429,6 +490,7 @@ function makeCrownGeometry(
   sphere.deleteAttribute("normal");
   const geometry = mergeVertices(sphere, 1e-6);
   sphere.dispose();
+  recordCrownRim(geometry, theta);
   if (edit.pontic.on && edit.pontic.base === "conical") {
     const pos = geometry.getAttribute("position");
     for (let i = 0; i < pos.count; i += 1) {
@@ -485,9 +547,72 @@ function cervicalBand(
 }
 
 /**
+ * 크라운 테두리가 마진 높이에 오도록 아래쪽을 축 방향으로 옮긴다. 테두리에서 0.55까지 서서히 줄여
+ * 위쪽 형태는 그대로 둔다. 테두리가 마진 아래에 놓인 채로 내면과 이으면 접히기 때문이다.
+ */
+function alignCrownToMargin(args: {
+  world: Float32Array;
+  pos: THREE.BufferAttribute;
+  rimOrder: number[];
+  azimuths: number[];
+  center: THREE.Vector3;
+  axis: THREE.Vector3;
+  xDir: THREE.Vector3;
+  zDir: THREE.Vector3;
+  depths: number[];
+}) {
+  const { world, pos, rimOrder, azimuths, center, axis, xDir, zDir, depths } = args;
+  const n = azimuths.length;
+  const tau = Math.PI * 2;
+  const axial = (i: number) =>
+    (world[i * 3]! - center.x) * axis.x +
+    (world[i * 3 + 1]! - center.y) * axis.y +
+    (world[i * 3 + 2]! - center.z) * axis.z;
+  const rimAxial = rimOrder.map(axial);
+  const floorAt = (phi: number) => {
+    const m = depths.length;
+    let u = (((phi % tau) + tau) % tau) / tau * m;
+    const i0 = Math.floor(u) % m;
+    u -= Math.floor(u);
+    return (depths[i0] ?? 0) * (1 - u) + (depths[(i0 + 1) % m] ?? 0) * u;
+  };
+  const shiftAt = (phi: number) => {
+    const delta = (((phi - azimuths[0]!) % tau) + tau) % tau;
+    let j = 0;
+    while (j + 1 < n && azimuths[j + 1]! - azimuths[0]! <= delta) j += 1;
+    const a0 = azimuths[j]! - azimuths[0]!;
+    const a1 = (j + 1 < n ? azimuths[j + 1]! - azimuths[0]! : tau);
+    const t = a1 > a0 ? (delta - a0) / (a1 - a0) : 0;
+    const rimHere = rimAxial[j]! * (1 - t) + rimAxial[(j + 1) % n]! * t;
+    return floorAt(phi) - rimHere;
+  };
+  const yBase = pos.getY(rimOrder[0]!);
+  for (let i = 0; i < pos.count; i += 1) {
+    const dx = world[i * 3]! - center.x;
+    const dy = world[i * 3 + 1]! - center.y;
+    const dz = world[i * 3 + 2]! - center.z;
+    const phi = Math.atan2(dx * zDir.x + dy * zDir.y + dz * zDir.z, dx * xDir.x + dy * xDir.y + dz * xDir.z);
+    const t = Math.min(1, Math.max(0, (pos.getY(i) - yBase) / Math.max(1 - yBase, 1e-6)));
+    const weight = 1 - THREE.MathUtils.smoothstep(t, 0, 0.55);
+    if (weight <= 0) continue;
+    const shift = shiftAt(phi) * weight;
+    world[i * 3] += axis.x * shift;
+    world[i * 3 + 1] += axis.y * shift;
+    world[i * 3 + 2] += axis.z * shift;
+  }
+}
+
+/** 내면 색. 외면보다 조금 어둡게 두어 안쪽 면임을 알아보게 한다. */
+const INTAGLIO_RGB: [number, number, number] = [0.86, 0.82, 0.76];
+
+/**
  * 크라운을 월드에 놓고 대합·인접·치은에 맞추고 디스크로 떼어 낸 뒤 다시 로컬로 돌린다.
  * 두께·접촉 색을 칠한다. `shellMm`는 맞춤을 켠 치아에서 잰 가장 얇은 외면. 맞춤이 없으면
  * null(수정값 추정을 쓴다). 크라운 경부 맞춤은 `cervical`(마진)이 있어야 하고 마진 아래로 내리지 않는다.
+ *
+ * `intaglio`를 켜고 지대치 스캔·마진이 있으면 지대치에서 실제 내면 메시를 만들어 외면에 이어 붙인다.
+ * 그때 외면은 내면에서 최소 두께 밖으로 밀리고, `shellMm`·두께 색은 그 내면에서 잰 실제 두께다.
+ * 결과 지오메트리는 `[외면 + 테두리 띠]`(그룹 0)와 `[내면]`(그룹 1)로 나뉜다.
  */
 function adaptCrownGeometry(args: {
   geometry: THREE.BufferGeometry;
@@ -499,13 +624,33 @@ function adaptCrownGeometry(args: {
   contactPaint: { gapMm: number; mode: ContactPaintMode } | null;
   discs: DiscPlane[];
   cervical: { center: THREE.Vector3; frameQuat: THREE.Quaternion } | null;
-}): { shellMm: number | null } {
+  /** 마진 바깥 반지름·높이(월드 단위). 내면을 만들 때 쓴다. */
+  marginRing: { radii: number[]; depths: number[] } | null;
+  /** 내면 메시를 만들어도 되는 크라운인가(폰틱·임플란트·홀 크라운은 false). */
+  intaglio: boolean;
+  /** 칼라맵 값을 재는가. */
+  needValues: boolean;
+}): {
+  shellMm: number | null;
+  values: ColorMapValues | null;
+  intaglio: CrownIntaglioInfo;
+  groups: CachedCrown["groups"];
+} {
   const { geometry, edit, unit, contactPaint, discs } = args;
   const pos = geometry.getAttribute("position") as THREE.BufferAttribute;
   const count = pos.count;
   const refine = edit.refine;
   const base = baseShellMm(geometry, edit);
   const cervical = !edit.pontic.on && refine.gingivalFit ? args.cervical : null;
+  const rim = geometry.userData.rim as CrownRim | undefined;
+  const wantIntaglio = Boolean(
+    args.intaglio &&
+      edit.inner.intaglio &&
+      !edit.pontic.on &&
+      rim &&
+      args.marginRing &&
+      args.cervical,
+  );
   const scanAdapting =
     refine.occlusalTrim ||
     refine.occlusalFit ||
@@ -516,29 +661,141 @@ function adaptCrownGeometry(args: {
   const adapting = scanAdapting || discs.length > 0;
   let cutMm: Float32Array | null = null;
   let contactMm: Float32Array | null = null;
-  const scan = scanAdapting || contactPaint ? args.scan() : null;
+  let opposingMm: Float32Array | null = null;
+  let adjacentMm: Float32Array | null = null;
+  let mesh: IntaglioMesh | null = null;
+  let probe: IntaglioProbe | null = null;
+  let realThickness: Float32Array | null = null;
+  let intaglioInfo: CrownIntaglioInfo = { status: "off" };
+  let azimuths: number[] = [];
+  const scan =
+    scanAdapting || contactPaint || args.needValues || wantIntaglio ? args.scan() : null;
+  const inverse = args.matrix.clone().invert();
+  const v = new THREE.Vector3();
   if (scan || discs.length > 0) {
-    geometry.computeVertexNormals();
-    const nor = geometry.getAttribute("normal");
     const world = new Float32Array(count * 3);
     const normals = new Float32Array(count * 3);
     const normalMatrix = new THREE.Matrix3().getNormalMatrix(args.matrix);
-    const v = new THREE.Vector3();
-    for (let i = 0; i < count; i += 1) {
-      v.fromBufferAttribute(pos, i).applyMatrix4(args.matrix);
-      world[i * 3] = v.x;
-      world[i * 3 + 1] = v.y;
-      world[i * 3 + 2] = v.z;
-      v.fromBufferAttribute(nor, i).applyMatrix3(normalMatrix).normalize();
-      normals[i * 3] = v.x;
-      normals[i * 3 + 1] = v.y;
-      normals[i * 3 + 2] = v.z;
+    const readWorld = () => {
+      for (let i = 0; i < count; i += 1) {
+        v.fromBufferAttribute(pos, i).applyMatrix4(args.matrix);
+        world[i * 3] = v.x;
+        world[i * 3 + 1] = v.y;
+        world[i * 3 + 2] = v.z;
+      }
+    };
+    const readNormals = () => {
+      geometry.computeVertexNormals();
+      const nor = geometry.getAttribute("normal");
+      for (let i = 0; i < count; i += 1) {
+        v.fromBufferAttribute(nor, i).applyMatrix3(normalMatrix).normalize();
+        normals[i * 3] = v.x;
+        normals[i * 3 + 1] = v.y;
+        normals[i * 3 + 2] = v.z;
+      }
+    };
+    const writeWorld = () => {
+      for (let i = 0; i < count; i += 1) {
+        v.set(world[i * 3]!, world[i * 3 + 1]!, world[i * 3 + 2]!).applyMatrix4(inverse);
+        pos.setXYZ(i, v.x, v.y, v.z);
+      }
+      pos.needsUpdate = true;
+    };
+    const measureThickness = (skip: Uint8Array | null) => {
+      const out = new Float32Array(count).fill(Number.NaN);
+      for (let i = 0; i < count; i += 1) {
+        if (skip?.[i]) continue;
+        out[i] = probe!.closest(world[i * 3]!, world[i * 3 + 1]!, world[i * 3 + 2]!).signedMm;
+      }
+      return out;
+    };
+    readWorld();
+    readNormals();
+
+    let rimSkip: Uint8Array | null = null;
+    const frame = args.cervical;
+    const ring = args.marginRing;
+    if (wantIntaglio && rim && frame && ring) {
+      if (!scan?.prep) {
+        intaglioInfo = { status: "sparse" };
+      } else {
+        const xDir = new THREE.Vector3(1, 0, 0).applyQuaternion(frame.frameQuat);
+        const zDir = new THREE.Vector3(0, 0, 1).applyQuaternion(frame.frameQuat);
+        const c = frame.center;
+        const firstAt = (index: number) => {
+          v.set(world[index * 3]! - c.x, world[index * 3 + 1]! - c.y, world[index * 3 + 2]! - c.z);
+          return Math.atan2(v.dot(zDir), v.dot(xDir));
+        };
+        // 크라운 테두리 정점과 같은 방위각에 내면 열을 둔다. 순서가 뒤엉키면 만들지 않는다.
+        const first = firstAt(rim.order[0]!);
+        let ordered = true;
+        let previous = 0;
+        azimuths = rim.order.map((vertex, j) => {
+          let delta = firstAt(vertex) - first;
+          delta -= Math.floor(delta / (Math.PI * 2)) * Math.PI * 2;
+          if (j > 0 && delta <= previous) ordered = false;
+          previous = delta;
+          return first + delta;
+        });
+        if (!ordered) {
+          intaglioInfo = { status: "margin" };
+        } else {
+          const built = buildIntaglio({
+            cloud: scan.prep,
+            center: [c.x, c.y, c.z],
+            axis: [args.normal.x, args.normal.y, args.normal.z],
+            xDir: [xDir.x, xDir.y, xDir.z],
+            zDir: [zDir.x, zDir.y, zDir.z],
+            marginRadii: ring.radii,
+            marginDepths: ring.depths,
+            azimuths,
+            unitToMm: unit,
+            params: {
+              cementGapMm: edit.inner.cementGapMm,
+              extraGapMm: edit.inner.extraGapMm,
+              sealGapMm: edit.inner.sealGapMm,
+              sealHeightMm: edit.inner.sealHeightMm,
+              toolRadiusMm: edit.inner.toolRadiusMm,
+              marginWidthMm: edit.inner.marginWidthMm,
+            },
+          });
+          if ("reason" in built) {
+            intaglioInfo = { status: built.reason };
+          } else {
+            mesh = built.mesh;
+            probe = new IntaglioProbe(mesh, unit);
+            rimSkip = new Uint8Array(count);
+            for (const vertex of rim.order) rimSkip[vertex] = 1;
+            alignCrownToMargin({
+              world,
+              pos,
+              rimOrder: rim.order,
+              azimuths,
+              center: c,
+              axis: args.normal,
+              xDir,
+              zDir,
+              depths: ring.depths,
+            });
+            // 외면이 내면에서 최소 두께 밖에 있도록 먼저 민다. 이후 맞춤은 이 두께에서 깎는다.
+            raiseOuterToThickness(world, rimSkip, probe, refine.minThicknessMm, unit);
+            writeWorld();
+            readNormals();
+            realThickness = measureThickness(rimSkip);
+          }
+        }
+      }
     }
+
     let allowCutMm: Float32Array | null = null;
     if (refine.compensate && !edit.pontic.on) {
       allowCutMm = new Float32Array(count);
       for (let i = 0; i < count; i += 1) {
-        allowCutMm[i] = Math.max(0, base[i]! - refine.minThicknessMm);
+        const shell = realThickness?.[i];
+        allowCutMm[i] = Math.max(
+          0,
+          (shell != null && Number.isFinite(shell) ? shell : base[i]!) - refine.minThicknessMm,
+        );
       }
     }
     let gingival: GingivalAdapt | null = null;
@@ -577,36 +834,166 @@ function adaptCrownGeometry(args: {
     });
     cutMm = result.cutMm;
     contactMm = result.contactMm;
-    if (adapting) {
-      const inverse = args.matrix.clone().invert();
-      for (let i = 0; i < count; i += 1) {
-        v.set(world[i * 3]!, world[i * 3 + 1]!, world[i * 3 + 2]!).applyMatrix4(inverse);
-        pos.setXYZ(i, v.x, v.y, v.z);
+    opposingMm = result.opposingMm;
+    adjacentMm = result.adjacentMm;
+    if (mesh && probe && rim && rimSkip) {
+      // 테두리는 맞춤에서 빼 내면 마진 끝에서 바깥으로 마진 두께만큼 둔다.
+      const outward = new THREE.Vector3();
+      const width = edit.inner.marginWidthMm / unit;
+      const xDir = new THREE.Vector3(1, 0, 0).applyQuaternion(args.cervical!.frameQuat);
+      const zDir = new THREE.Vector3(0, 0, 1).applyQuaternion(args.cervical!.frameQuat);
+      for (let j = 0; j < rim.order.length; j += 1) {
+        const at = mesh.rim[j]! * 3;
+        outward
+          .copy(xDir)
+          .multiplyScalar(Math.cos(azimuths[j]!))
+          .addScaledVector(zDir, Math.sin(azimuths[j]!));
+        const vertex = rim.order[j]!;
+        world[vertex * 3] = mesh.positions[at]! + outward.x * width;
+        world[vertex * 3 + 1] = mesh.positions[at + 1]! + outward.y * width;
+        world[vertex * 3 + 2] = mesh.positions[at + 2]! + outward.z * width;
       }
-      pos.needsUpdate = true;
+      writeWorld();
+      realThickness = measureThickness(rimSkip);
+    } else if (adapting) {
+      writeWorld();
+    }
+    if (mesh && realThickness) {
+      let min = Infinity;
+      for (const t of realThickness) if (Number.isFinite(t) && t < min) min = t;
+      intaglioInfo = { status: "ok", minThicknessMm: Number.isFinite(min) ? min : undefined };
+    }
+  }
+
+  if (wantIntaglio && !mesh && intaglioInfo.status === "off") intaglioInfo = { status: "sparse" };
+  const thicknessAt = (i: number) => {
+    const real = realThickness?.[i];
+    if (real != null) return real;
+    return realThickness ? Number.NaN : base[i]! - Math.max(0, cutMm?.[i] ?? 0);
+  };
+
+  // 내면 정점과 테두리 띠를 외면 뒤에 붙인다.
+  let total = count;
+  let groups: CachedCrown["groups"] = [];
+  let fitValues: Float32Array | null = null;
+  if (mesh && rim && scan) {
+    const meshCount = mesh.positions.length / 3;
+    total = count + meshCount;
+    const outPos = new Float32Array(total * 3);
+    outPos.set(pos.array as Float32Array);
+    for (let k = 0; k < meshCount; k += 1) {
+      v.set(mesh.positions[k * 3]!, mesh.positions[k * 3 + 1]!, mesh.positions[k * 3 + 2]!)
+        .applyMatrix4(inverse);
+      outPos[(count + k) * 3] = v.x;
+      outPos[(count + k) * 3 + 1] = v.y;
+      outPos[(count + k) * 3 + 2] = v.z;
+    }
+    const domeIndex = geometry.getIndex()!.array;
+    const inside = orientIntaglioIndex(mesh.index, rim.forward);
+    const innerRim = Array.from(mesh.rim, (vertex) => vertex + count);
+    const strip = marginStripIndex(rim.order, innerRim, rim.forward);
+    const outerLength = domeIndex.length + strip.length;
+    const index = new Uint32Array(outerLength + inside.length);
+    index.set(domeIndex as ArrayLike<number>, 0);
+    index.set(strip, domeIndex.length);
+    for (let t = 0; t < inside.length; t += 1) index[outerLength + t] = inside[t]! + count;
+    geometry.setAttribute("position", new THREE.BufferAttribute(outPos, 3));
+    geometry.deleteAttribute("normal");
+    geometry.setIndex(new THREE.BufferAttribute(index, 1));
+    geometry.clearGroups();
+    groups = [
+      { start: 0, count: outerLength, materialIndex: 0 },
+      { start: outerLength, count: inside.length, materialIndex: 1 },
+    ];
+    for (const group of groups) geometry.addGroup(group.start, group.count, group.materialIndex);
+    if (scan.prepGrid) {
+      fitValues = new Float32Array(meshCount).fill(Number.NaN);
+      let worst = 0;
+      for (let k = 0; k < meshCount; k += 1) {
+        const gap = signedDistanceMm(
+          scan.prepGrid,
+          mesh.positions[k * 3]!,
+          mesh.positions[k * 3 + 1]!,
+          mesh.positions[k * 3 + 2]!,
+          FIT_PROBE_MM,
+          unit,
+        );
+        fitValues[k] = gap;
+        if (Number.isFinite(gap)) worst = Math.max(worst, Math.abs(gap - mesh.designedGapMm[k]!));
+      }
+      intaglioInfo = { ...intaglioInfo, maxGapErrorMm: worst };
     }
   }
   geometry.computeVertexNormals();
 
-  const colors = new Float32Array(count * 3);
+  const colors = new Float32Array(total * 3);
   let shellMm = Infinity;
   for (let i = 0; i < count; i += 1) {
-    const thickness = base[i]! - Math.max(0, cutMm?.[i] ?? 0);
-    if (thickness < shellMm) shellMm = thickness;
+    const thickness = thicknessAt(i);
+    if (Number.isFinite(thickness) && thickness < shellMm) shellMm = thickness;
     const contact = contactMm?.[i];
     const touching =
       contactPaint && contact != null && Number.isFinite(contact)
         ? contactColorRgb(contact, contactPaint.gapMm, contactPaint.mode)
         : null;
     const rgb =
-      touching ?? (edit.pontic.on ? null : thicknessAlertRgb(edit, thickness)) ?? CROWN_RGB;
+      touching ??
+      (edit.pontic.on || !Number.isFinite(thickness) ? null : thicknessAlertRgb(edit, thickness)) ??
+      CROWN_RGB;
     colors[i * 3] = rgb[0];
     colors[i * 3 + 1] = rgb[1];
     colors[i * 3 + 2] = rgb[2];
   }
+  for (let i = count; i < total; i += 1) {
+    colors[i * 3] = INTAGLIO_RGB[0];
+    colors[i * 3 + 1] = INTAGLIO_RGB[1];
+    colors[i * 3 + 2] = INTAGLIO_RGB[2];
+  }
   geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+
+  let values: ColorMapValues | null = null;
+  if (args.needValues) {
+    values = emptyColorMapValues(total);
+    for (let i = 0; i < count; i += 1) {
+      // 간섭: 대합·인접 중 목표에서 더 모자란 쪽.
+      const opposing = opposingMm?.[i];
+      const adjacent = adjacentMm?.[i];
+      let bestGap = Infinity;
+      if (opposing != null && Number.isFinite(opposing)) {
+        bestGap = opposing - refine.occlusalClearanceMm;
+        values.contact.value[i] = opposing;
+        values.contact.ref[i] = refine.occlusalClearanceMm;
+      }
+      if (adjacent != null && Number.isFinite(adjacent)) {
+        if (adjacent - refine.proximalClearanceMm < bestGap) {
+          values.contact.value[i] = adjacent;
+          values.contact.ref[i] = refine.proximalClearanceMm;
+        }
+      }
+      const thickness = thicknessAt(i);
+      if (Number.isFinite(thickness)) {
+        values.thickness.value[i] = thickness;
+        values.thickness.ref[i] = refine.minThicknessMm;
+      }
+    }
+    if (fitValues && mesh) {
+      for (let k = 0; k < fitValues.length; k += 1) {
+        values.fit.value[count + k] = fitValues[k]!;
+        values.fit.ref[count + k] = mesh.designedGapMm[k]!;
+      }
+    }
+  }
   return {
-    shellMm: adapting && cutMm && !edit.pontic.on && Number.isFinite(shellMm) ? shellMm : null,
+    shellMm: realThickness
+      ? Number.isFinite(shellMm)
+        ? shellMm
+        : null
+      : adapting && cutMm && !edit.pontic.on && Number.isFinite(shellMm)
+        ? shellMm
+        : null,
+    values,
+    intaglio: intaglioInfo,
+    groups,
   };
 }
 
@@ -1056,6 +1443,10 @@ export function buildProsthesisEditLayer(args: {
   adaptCache?: Map<string, CachedCrown> | null;
   /** 생성 크라운마다 맞춘 뒤 가장 얇은 외면(mm). 맞춤이 없으면 null. */
   onCrownShell?: ((tooth: string, mm: number | null) => void) | null;
+  /** 켜면 크라운을 칼라맵(간섭·두께·내면 간격)으로 칠한다. 값은 정점마다 재서 지오메트리에 둔다. */
+  colorMap?: ColorMapState | null;
+  /** 생성 크라운마다 내면 메시를 만들었는지와 결과. */
+  onIntaglio?: ((tooth: string, info: CrownIntaglioInfo) => void) | null;
 }) {
   const root = new THREE.Group();
   root.name = "prosthesis-edit";
@@ -1290,6 +1681,7 @@ export function buildProsthesisEditLayer(args: {
       toothArchDirs({ tooth, placements: args.placements, frame: args.frame, normal }),
       quat,
     );
+    const colorMap = args.colorMap?.on ? args.colorMap : null;
     const cacheKey = args.adaptCache
       ? JSON.stringify([
           tooth,
@@ -1299,9 +1691,15 @@ export function buildProsthesisEditLayer(args: {
           args.contactPaint ?? null,
           discs.map((row) => [...row.normal, row.offset].map((n) => Math.round(n * 1e5))),
           anatomy ? Object.values(anatomy).map((n) => Math.round(n * 1e4)) : null,
+          place.radius,
+          place.center.toArray().map((n) => Math.round(n * 1e4)),
+          colorMap != null,
         ])
       : "";
     let crownGeometry: THREE.BufferGeometry;
+    let crownGroups: CachedCrown["groups"];
+    let crownValues: ColorMapValues | null;
+    let crownIntaglio: CrownIntaglioInfo;
     const cached = args.adaptCache?.get(cacheKey);
     if (cached) {
       crownGeometry = new THREE.BufferGeometry();
@@ -1309,10 +1707,17 @@ export function buildProsthesisEditLayer(args: {
       crownGeometry.setAttribute("normal", new THREE.BufferAttribute(cached.normals.slice(), 3));
       crownGeometry.setAttribute("color", new THREE.BufferAttribute(cached.colors.slice(), 3));
       if (cached.index) crownGeometry.setIndex(new THREE.BufferAttribute(cached.index.slice(), 1));
+      for (const group of cached.groups) {
+        crownGeometry.addGroup(group.start, group.count, group.materialIndex);
+      }
+      crownGroups = cached.groups;
+      crownValues = cached.values;
+      crownIntaglio = cached.intaglio;
       args.onCrownShell?.(tooth, cached.shellMm);
     } else {
       const shaped = makeCrownGeometry(edit, fine, anatomy);
-      const { shellMm } = adaptCrownGeometry({
+      const marginRatio = place.radius * 0.78;
+      const adapted = adaptCrownGeometry({
         geometry: shaped,
         matrix: crownMatrix,
         normal,
@@ -1322,8 +1727,20 @@ export function buildProsthesisEditLayer(args: {
         contactPaint: args.contactPaint ?? null,
         discs,
         cervical: edit.margin.deleted ? null : { center: place.center, frameQuat: quat },
+        marginRing: edit.margin.deleted
+          ? null
+          : {
+              radii: edit.margin.radii.map((ratio) => marginRatio * ratio + edit.margin.offsetMm / unit),
+              depths: edit.margin.radii.map((_, index) => edit.margin.depths?.[index] ?? 0),
+            },
+        intaglio: !cutHole && !edit.implant.on,
+        needValues: colorMap != null,
       });
+      const { shellMm } = adapted;
       crownGeometry = cutHole ? cutScrewHole(shaped, crownMatrix, cutHole) : shaped;
+      crownGroups = adapted.groups;
+      crownValues = adapted.values;
+      crownIntaglio = adapted.intaglio;
       args.onCrownShell?.(tooth, shellMm);
       if (args.adaptCache) {
         if (args.adaptCache.size > 64) args.adaptCache.clear();
@@ -1334,11 +1751,25 @@ export function buildProsthesisEditLayer(args: {
           colors: (crownGeometry.getAttribute("color").array as Float32Array).slice(),
           index: index ? Uint32Array.from(index.array as ArrayLike<number>) : null,
           shellMm,
+          groups: crownGroups,
+          values: crownValues,
+          intaglio: crownIntaglio,
         });
       }
     }
-    const crown = new THREE.Mesh(
-      crownGeometry,
+    args.onIntaglio?.(tooth, crownIntaglio);
+    const hasIntaglio = crownGroups.length > 1;
+    if (colorMap && crownValues) {
+      paintColorMap(
+        crownGeometry.getAttribute("color").array as Float32Array,
+        crownValues,
+        colorMap.mode,
+        colorMap.half[colorMap.mode],
+      );
+      crownGeometry.getAttribute("color").needsUpdate = true;
+      crownGeometry.userData.colorMap = { values: crownValues, mode: colorMap.mode };
+    }
+    const crownMaterial = () =>
       new THREE.MeshStandardMaterial({
         color: 0xffffff,
         vertexColors: true,
@@ -1351,7 +1782,16 @@ export function buildProsthesisEditLayer(args: {
         transparent: holeEditing,
         opacity: holeEditing ? 0.62 : 1,
         depthWrite: !holeEditing,
-      }),
+      });
+    // 내면 간격을 볼 때는 외면을 숨겨 안쪽 면을 보인다. 안 보여도 내보내기에는 그대로 들어간다.
+    const outerMaterial = crownMaterial();
+    const innerMaterial = crownMaterial();
+    const seeFit = colorMap?.mode === "fit" && hasIntaglio;
+    outerMaterial.visible = !seeFit;
+    innerMaterial.side = THREE.DoubleSide;
+    const crown = new THREE.Mesh(
+      crownGeometry,
+      hasIntaglio ? [outerMaterial, innerMaterial] : outerMaterial,
     );
     crown.quaternion.copy(crownAt.quat);
     crown.scale.set(width, height, depth);

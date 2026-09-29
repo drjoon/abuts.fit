@@ -67,6 +67,12 @@ import type {
   WorkSessionView,
 } from "@/shared/practice/labProsthesisWorkDraft";
 import {
+  colorMapRgb,
+  formatColorMapMm,
+  type ColorMapState,
+  type ColorMapValues,
+} from "@/shared/practice/labColorMap";
+import {
   contactColorRgb,
   createScanPointIndex,
   geometryUnitsToMm,
@@ -126,6 +132,7 @@ import {
   readEditHit,
   type CachedCrown,
   type CrownAdaptScan,
+  type CrownIntaglioInfo,
   type EditHit,
   type ScanDistanceProbe,
   type TransformBox,
@@ -447,6 +454,13 @@ type Props = {
   /** 교합 간격 목표(mm). */
   occlusalGapMm?: number;
   contactMode?: ContactPaintMode;
+  /**
+   * 칼라맵. 켜면 크라운을 간섭·두께·내면 간격으로 칠하고 마우스 자리 값을 mm로 보인다.
+   * 간섭 모드면 스캔도 같은 범위로 칠한다(`contactMap`은 따로 켠다).
+   */
+  colorMap?: ColorMapState | null;
+  /** 생성 크라운마다 지대치에서 내면을 만들었는지. 치아 번호 → 결과. */
+  onIntaglio?: (info: Record<string, CrownIntaglioInfo>) => void;
   /** 법선·삽입축 내적. 이 값보다 크면 언더컷. */
   undercutLimit?: number;
   busy?: boolean;
@@ -1151,6 +1165,8 @@ type AnalysisLook = {
   undercutMap: boolean;
   occlusalGapMm: number;
   contactMode: ContactPaintMode;
+  /** 칼라맵 간섭 모드일 때 스캔 색 범위 절반(mm). 아니면 null. */
+  colorMapHalfMm: number | null;
   undercutLimit: number;
 };
 
@@ -1188,11 +1204,13 @@ function paintAnalysisColors(
       g = UNDERCUT_RGB[1];
       b = UNDERCUT_RGB[2];
     } else if (showContact && entry.dist) {
-      const painted = contactColorRgb(
-        (entry.dist[i] ?? Infinity) * unitToMm,
-        look.occlusalGapMm,
-        look.contactMode,
-      );
+      const distMm = (entry.dist[i] ?? Infinity) * unitToMm;
+      const painted =
+        look.colorMapHalfMm != null
+          ? distMm - look.occlusalGapMm > look.colorMapHalfMm
+            ? null
+            : colorMapRgb(distMm - look.occlusalGapMm, look.colorMapHalfMm)
+          : contactColorRgb(distMm, look.occlusalGapMm, look.contactMode);
       if (painted) {
         r = painted[0];
         g = painted[1];
@@ -2396,6 +2414,8 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       undercutMap = false,
       occlusalGapMm = 0.1,
       contactMode = "cut",
+      colorMap = null,
+      onIntaglio,
       undercutLimit = 0.2,
       busy = false,
       busyLabel = "",
@@ -2453,6 +2473,13 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   const fitFrameRef = useRef<FitFrame>({ width: 0, height: 0, frustumH: 0 });
   const fitTargetRef = useRef(new THREE.Vector3());
   const snapRef = useRef<SnapAnim | null>(null);
+  const colorMapHalfMm =
+    colorMap?.on && colorMap.mode === "contact" ? colorMap.half.contact : null;
+  const colorMapKey = colorMap ? JSON.stringify(colorMap) : "";
+  const colorMapRef = useRef(colorMap);
+  colorMapRef.current = colorMap;
+  const onIntaglioRef = useRef(onIntaglio);
+  onIntaglioRef.current = onIntaglio;
   const lookRef = useRef({
     colorMapping,
     ghostOpacity,
@@ -2461,6 +2488,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     undercutMap,
     occlusalGapMm,
     contactMode,
+    colorMapHalfMm,
     undercutLimit,
     prepBackTransparent: Boolean(designEdit?.prepBackTransparent),
   });
@@ -2769,6 +2797,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     undercutMap,
     occlusalGapMm,
     contactMode,
+    colorMapHalfMm,
     undercutLimit,
     prepBackTransparent: Boolean(designEdit?.prepBackTransparent),
   };
@@ -3706,6 +3735,76 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     renderer.domElement.addEventListener("pointercancel", endEditDrag, true);
     renderer.domElement.addEventListener("contextmenu", onEditContext, true);
 
+    // 칼라맵 마우스 값. 크라운 위에서 가장 가까운 정점의 mm 값을 커서 옆에 띄운다.
+    const probeLabel = document.createElement("div");
+    probeLabel.style.cssText =
+      "position:absolute;pointer-events:none;display:none;z-index:6;padding:0.125rem 0.4rem;" +
+      "border-radius:0.25rem;background:rgba(15,23,42,0.88);color:#fff;font-size:0.75rem;" +
+      "font-variant-numeric:tabular-nums;white-space:nowrap;";
+    el.appendChild(probeLabel);
+    const probeRay = new THREE.Raycaster();
+    const probeNdc = new THREE.Vector2();
+    const probeLocal = new THREE.Vector3();
+    let probeRaf = 0;
+    let probeEvent: PointerEvent | null = null;
+    const hideProbe = () => {
+      if (probeLabel.style.display !== "none") probeLabel.style.display = "none";
+    };
+    const runProbe = () => {
+      probeRaf = 0;
+      const event = probeEvent;
+      const layer = editLayerRef.current;
+      const colorMapNow = colorMapRef.current;
+      if (!event || !layer || !colorMapNow?.on) return hideProbe();
+      const rect = renderer.domElement.getBoundingClientRect();
+      probeNdc.set(
+        ((event.clientX - rect.left) / Math.max(rect.width, 1)) * 2 - 1,
+        -((event.clientY - rect.top) / Math.max(rect.height, 1)) * 2 + 1,
+      );
+      probeRay.setFromCamera(probeNdc, camera);
+      const meshes: THREE.Mesh[] = [];
+      layer.traverse((child) => {
+        const mesh = child as THREE.Mesh;
+        if (mesh.isMesh && mesh.visible && mesh.geometry?.userData.colorMap) meshes.push(mesh);
+      });
+      let text: string | null = null;
+      for (const hit of probeRay.intersectObjects(meshes, false)) {
+        const mesh = hit.object as THREE.Mesh;
+        const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        if (!materials[hit.face?.materialIndex ?? 0]?.visible || !hit.face) continue;
+        const values = (mesh.geometry.userData.colorMap as { values: ColorMapValues }).values;
+        const { value } = values[colorMapNow.mode];
+        const pos = mesh.geometry.getAttribute("position");
+        mesh.worldToLocal(probeLocal.copy(hit.point));
+        let best = Infinity;
+        for (const vertex of [hit.face.a, hit.face.b, hit.face.c]) {
+          const at = value[vertex];
+          if (at == null || !Number.isFinite(at)) continue;
+          const dx = pos.getX(vertex) - probeLocal.x;
+          const dy = pos.getY(vertex) - probeLocal.y;
+          const dz = pos.getZ(vertex) - probeLocal.z;
+          const d2 = dx * dx + dy * dy + dz * dz;
+          if (d2 < best) {
+            best = d2;
+            text = `${formatColorMapMm(Math.round(at * 100) / 100)}mm`;
+          }
+        }
+        break;
+      }
+      if (!text) return hideProbe();
+      probeLabel.textContent = text;
+      probeLabel.style.left = `${event.clientX - rect.left + 14}px`;
+      probeLabel.style.top = `${event.clientY - rect.top + 14}px`;
+      probeLabel.style.display = "block";
+    };
+    const onProbeMove = (event: PointerEvent) => {
+      if (!colorMapRef.current?.on) return hideProbe();
+      probeEvent = event;
+      if (!probeRaf) probeRaf = window.requestAnimationFrame(runProbe);
+    };
+    renderer.domElement.addEventListener("pointermove", onProbeMove);
+    renderer.domElement.addEventListener("pointerleave", hideProbe);
+
     let alignDown: { x: number; y: number } | null = null;
     const onAlignPointerDown = (event: PointerEvent) => {
       if (!manualRef.current.arch || manualRef.current.merging || event.button !== 0) {
@@ -3908,6 +4007,10 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       renderer.domElement.removeEventListener("pointerup", endEditDrag, true);
       renderer.domElement.removeEventListener("pointercancel", endEditDrag, true);
       renderer.domElement.removeEventListener("contextmenu", onEditContext, true);
+      renderer.domElement.removeEventListener("pointermove", onProbeMove);
+      renderer.domElement.removeEventListener("pointerleave", hideProbe);
+      window.cancelAnimationFrame(probeRaf);
+      probeLabel.remove();
       renderer.domElement.removeEventListener("pointerdown", onAlignPointerDown);
       renderer.domElement.removeEventListener("pointerup", onAlignPointerUp);
       renderer.domElement.removeEventListener("pointerdown", onOcclusionDown, true);
@@ -4903,6 +5006,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     undercutMap,
     occlusalGapMm,
     contactMode,
+    colorMapHalfMm,
     undercutLimit,
     designEdit?.prepBackTransparent,
     loadVersion,
@@ -6540,7 +6644,11 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         )
       : null;
     const axisTuple: [number, number, number] = [axis.x, axis.y, axis.z];
+    // 지대치 = 마진 안쪽. 내면은 이 점들에서 만든다. 마진 바깥 점은 내면 쪽에서 다시 거른다.
+    const prep = radii ? split(own, (lateral) => lateral <= prepRadius) : null;
     const row: CrownAdaptScan = {
+      prep: prep && prep.points.length >= 300 ? prep : null,
+      prepGrid: prep && prep.points.length >= 300 ? createScanGrid(prep, unit) : null,
       opposing: raw.opposing,
       adjacent: createScanGrid(adjacent, unit),
       adjacentColumns: createScanColumns(adjacent, axisTuple, unit),
@@ -6576,6 +6684,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       onMarginUndercutRef.current?.(null, 0);
       onHoleIssuesRef.current?.({});
       onCrownShellsRef.current?.({});
+      onIntaglioRef.current?.({});
       return;
     }
     const hidden = hiddenKey ? hiddenKey.split(",") : [];
@@ -6597,6 +6706,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     let undercut: { tooth: string | null; count: number } = { tooth: null, count: 0 };
     const holeIssues: Record<string, string> = {};
     const crownShells: Record<string, number> = {};
+    const intaglios: Record<string, CrownIntaglioInfo> = {};
     const signature = scanSignatureRef.current();
     if (signature !== lastScanSignatureRef.current) {
       lastScanSignatureRef.current = signature;
@@ -6623,13 +6733,27 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       onCrownShell: (tooth, mm) => {
         if (mm != null) crownShells[tooth] = Math.round(mm * 1000) / 1000;
       },
+      colorMap: colorMapRef.current,
+      onIntaglio: (tooth, info) => {
+        intaglios[tooth] = info;
+      },
     });
     scene.add(layer);
     editLayerRef.current = layer;
     onMarginUndercutRef.current?.(undercut.tooth, undercut.count);
     onHoleIssuesRef.current?.(holeIssues);
     onCrownShellsRef.current?.(crownShells);
-  }, [designEdit, loadVersion, showInsertionAxis, hiddenKey, contactMap, occlusalGapMm, contactMode]);
+    onIntaglioRef.current?.(intaglios);
+  }, [
+    designEdit,
+    loadVersion,
+    showInsertionAxis,
+    hiddenKey,
+    contactMap,
+    occlusalGapMm,
+    contactMode,
+    colorMapKey,
+  ]);
 
   const clearStoneModel = (notify: boolean) => {
     const prev = stoneLayerRef.current;

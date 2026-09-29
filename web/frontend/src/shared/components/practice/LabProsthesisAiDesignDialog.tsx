@@ -66,6 +66,8 @@
 // - 2026-09-29: 「전달」 패널 제거. 헤더 설정 왼쪽 페인트 아이콘을 켜면 작업영역 아래에 도구 막대(펜·화살표·사각형·원·점·글자, 색·굵기, 되돌리기·지우기, 이미지 저장·채팅 첨부).
 // - 2026-09-29: 헤더 패널 닫기·열기는 오른쪽 설정 옆 아이콘만. 헤더 실행 취소·다시 실행 버튼 제거(단축키는 유지).
 // - 2026-09-29: 「밀링」 단계. 생성한 보철을 98.5mm 디스크에 배치하고 핀·소결 배율과 함께 디스크 좌표 STL로 낸다(LabMillingStage).
+// - 2026-09-29: 칼라맵. 작업영역 위 「칼라맵」 토글 아래 범위 막대에서 간섭(대합·인접)·두께·내면 간격을 고르고 범위(±0.1~1mm)를 바꾼다. 마우스 자리 값은 mm. 기존 「칼라」는 「스캔색」.
+//   크라운 내면은 지대치 스캔에서 실제 메시로 만들어 외면·STL에 붙인다(내면 도구의 「지대치에서 내면 생성」).
 import {
   useCallback,
   useEffect,
@@ -83,6 +85,7 @@ import {
   ChevronRight,
   Cylinder,
   Paintbrush,
+  Rainbow,
   PanelLeftClose,
   PanelLeftDashed,
   PanelLeftOpen,
@@ -95,6 +98,9 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { LabColorMapBar } from "@/shared/components/practice/LabColorMapBar";
+import type { CrownIntaglioInfo } from "@/shared/components/practice/labProsthesisEditLayer";
+import { DEFAULT_COLOR_MAP, type ColorMapState } from "@/shared/practice/labColorMap";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
@@ -768,6 +774,9 @@ function LabProsthesisAiDesignDialog({
   const [undercutMap, setUndercutMap] = useState(false);
   const [occlusalGap, setOcclusalGap] = useState(0.1);
   const [contactMode, setContactMode] = useState<ContactPaintMode>("cut");
+  const [colorMap, setColorMap] = useState<ColorMapState>(DEFAULT_COLOR_MAP);
+  /** 뷰어가 크라운마다 지대치에서 내면을 만든 결과. */
+  const [intaglios, setIntaglios] = useState<Record<string, CrownIntaglioInfo>>({});
   const [selectedTooth, setSelectedTooth] = useState<string | null>(null);
   const [generated, setGenerated] = useState<Record<string, boolean>>({});
   const [marginReview, setMarginReview] = useState<Record<string, MarginReview>>({});
@@ -984,6 +993,8 @@ function LabProsthesisAiDesignDialog({
       setUndercutMap(false);
       setOcclusalGap(0.1);
       setContactMode("cut");
+      setColorMap(DEFAULT_COLOR_MAP);
+      setIntaglios({});
       setSelectedTooth(null);
       setGenerated({});
       setMarginReview({});
@@ -1132,6 +1143,7 @@ function LabProsthesisAiDesignDialog({
               setCenterGuide(toggles.center);
               setColorMapping(toggles.color);
               setContactMap(toggles.contact);
+              if (toggles.colorMap) setColorMap(toggles.colorMap);
               setGhostOn(toggles.ghost);
               setDieShown(toggles.die);
               restoreGhostVisibleRef.current = toggles.ghost;
@@ -1359,6 +1371,7 @@ function LabProsthesisAiDesignDialog({
     contact: contactMap,
     ghost: ghostOn,
     die: dieShown,
+    colorMap,
   };
   useEffect(() => {
     if (!restoreGhostVisibleRef.current || !ghostOn || scans.length === 0) return;
@@ -3698,7 +3711,17 @@ function LabProsthesisAiDesignDialog({
                 )
               }
               onMarginTraceProgress={setMarginTracePoints}
-              contactMap={contactMap || (occlusionOn && canContact)}
+              contactMap={
+                contactMap ||
+                (occlusionOn && canContact) ||
+                (colorMap.on && colorMap.mode === "contact" && canContact)
+              }
+              colorMap={colorMap.on ? colorMap : null}
+              onIntaglio={(info) =>
+                setIntaglios((prev) =>
+                  JSON.stringify(prev) === JSON.stringify(info) ? prev : info,
+                )
+              }
               undercutMap={paintUndercut}
               occlusalGapMm={occlusalGap}
               contactMode={contactMode}
@@ -3953,13 +3976,13 @@ function LabProsthesisAiDesignDialog({
                   size="sm"
                   variant={colorMapping ? "default" : "outline"}
                   className={viewToolBtn}
-                  title="스캔 칼라"
-                  aria-label="칼라"
+                  title="스캔 원본 색"
+                  aria-label="스캔색"
                   aria-pressed={colorMapping}
                   onClick={() => setColorMapping((on) => !on)}
                 >
                   <Paintbrush />
-                  {workWide ? <span>칼라</span> : null}
+                  {workWide ? <span>스캔색</span> : null}
                 </Button>
               ) : null}
               <div className="relative flex justify-center">
@@ -3981,7 +4004,7 @@ function LabProsthesisAiDesignDialog({
                 <Palette />
                 {workWide ? <span>교합 접촉</span> : null}
               </Button>
-              {contactMap
+              {colorMap.on ? null : contactMap
                 ? contactOverlayLegend()
                 : plan.teeth.some(
                       (tooth) =>
@@ -3990,6 +4013,41 @@ function LabProsthesisAiDesignDialog({
                     )
                   ? thicknessOverlayLegend()
                   : null}
+              </div>
+              <div className="relative flex justify-center">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={colorMap.on ? "default" : "outline"}
+                  className={viewToolBtn}
+                  title="칼라맵"
+                  aria-label="칼라맵"
+                  aria-pressed={colorMap.on}
+                  onClick={() => {
+                    if (colorMap.on) {
+                      setColorMap((prev) => ({ ...prev, on: false }));
+                      return;
+                    }
+                    const anyIntaglio = Object.values(intaglios).some((row) => row.status === "ok");
+                    let mode = colorMap.mode;
+                    if (mode === "fit" && !anyIntaglio) mode = "contact";
+                    if (mode === "contact" && !canContact) mode = "thickness";
+                    setColorMap({ ...colorMap, on: true, mode });
+                    setMarginShown(true);
+                    setStage("design");
+                  }}
+                >
+                  <Rainbow />
+                  {workWide ? <span>칼라맵</span> : null}
+                </Button>
+                {colorMap.on ? (
+                  <LabColorMapBar
+                    state={colorMap}
+                    onChange={setColorMap}
+                    canContact={canContact}
+                    hasIntaglio={Object.values(intaglios).some((row) => row.status === "ok")}
+                  />
+                ) : null}
               </div>
               {hasGhost ? (
                 <Tooltip>
@@ -4808,6 +4866,11 @@ function LabProsthesisAiDesignDialog({
                         refineTab={refineTab}
                         onRefineTab={setRefineTab}
                         crownShellMm={activeNumber ? (crownShells[activeNumber] ?? null) : null}
+                        intaglio={activeNumber ? (intaglios[activeNumber] ?? null) : null}
+                        onViewFit={() => {
+                          setColorMap((prev) => ({ ...prev, on: true, mode: "fit" }));
+                          setMarginShown(true);
+                        }}
                         scanbody={scanbodyControls}
                         marginMode={marginMode}
                         onMarginMode={setMarginMode}
