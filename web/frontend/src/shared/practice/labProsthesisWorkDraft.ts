@@ -127,6 +127,11 @@ export type WorkSessionDocument = {
   toothOverrides: Record<string, LabToothOverride>;
   insertionAxes: WorkSessionAxis[];
   archAligned: WorkSessionArchAligned;
+  /**
+   * 1이면 스캔 바이트의 역할이 파일명과 같다.
+   * 없으면 치관으로 역할을 바꾸던 초안이라 메시는 열지 않는다.
+   */
+  jawFileBind?: 1;
   camera: WorkSessionView | null;
   viewToggles: WorkSessionViewToggles | null;
   savedAt: number;
@@ -278,6 +283,7 @@ function documentOf(row: unknown): WorkSessionDocument | null {
     ),
     insertionAxes,
     archAligned: parseArchAligned((body as { archAligned?: unknown }).archAligned),
+    jawFileBind: (body as { jawFileBind?: unknown }).jawFileBind === 1 ? 1 : undefined,
     camera: viewOf((body as { camera?: unknown }).camera),
     viewToggles: parseViewToggles(
       (body as { viewToggles?: unknown }).viewToggles,

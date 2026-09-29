@@ -13,7 +13,7 @@
 // - 2026-09-26: 처음 카메라는 지대치 교합면과 인접치 하나씩. 그 자세를 초기 뷰로 둔다.
 // - 2026-09-26: 열릴 때 화면 중심은 모델 중심이다. 삽입축은 사용자가 맞춘 화면 중앙으로 잡는다.
 // - 2026-09-26: 양악이면 악궁 사이가 교합면이고, 한쪽만 있으면 바운딩박스에서 아이보리색 치아가 몰린 축에 수직으로 본다.
-// - 2026-09-30: 위쪽은 상악 중심. 치관 방향이 라벨과 반대면 역할을 맞추고, 이미 맞춘 작업 스캔은 다시 붙이지 않는다.
+// - 2026-09-30: 위쪽은 상악 중심. 역할은 파일 그대로 둔다. 치관으로 상·하악을 맞바꾸지 않는다.
 // - 2026-09-26: 삽입축을 잡으면 치아·잇몸 색이 갈라지는 곳을 마진으로 잡는다.
 // - 2026-09-26: 마진은 기본 원보다 바깥을, 삽입축으로 스캔 면에 붙여 잡는다.
 // - 2026-09-26: 바이트와 상·하악이 어긋나면 바이트에 맞춰 움직이고, 교합면 중심에 원점을 둔다.
@@ -88,7 +88,6 @@ import {
 } from "@/shared/practice/biteRegistration";
 import {
   estimateDentalFrame,
-  jawsLookSwapped,
   meanVec,
   reseatOcclusalOrigin,
   samplePositions,
@@ -468,8 +467,6 @@ type Props = {
   busy?: boolean;
   busyLabel?: string;
   onScanColorChange?: (hasScanColor: boolean) => void;
-  /** 치관 방향이 라벨과 반대면 id별 역할을 맞춘다. 좌표는 그대로다. */
-  onCorrectScanRoles?: (roles: Record<string, LabOralScanRole>) => void;
   /** 삽입축 화살표가 켜지거나 꺼질 때. */
   onInsertionAxisChange?: (active: boolean) => void;
   /** 삽입축 방향을 손보고 손을 뗐을 때. 그 치아 번호. */
@@ -2426,7 +2423,6 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       busy = false,
       busyLabel = "",
       onScanColorChange,
-      onCorrectScanRoles,
       onInsertionAxisChange,
       onInsertionAxisAimed,
       showInsertionAxis = false,
@@ -2519,7 +2515,6 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   >(() => false);
   const syncBadgesRef = useRef<() => void>(() => {});
   const onScanColorChangeRef = useRef(onScanColorChange);
-  const onCorrectScanRolesRef = useRef(onCorrectScanRoles);
   const onInsertionAxisChangeRef = useRef(onInsertionAxisChange);
   const onInsertionAxisAimedRef = useRef(onInsertionAxisAimed);
   const showInsertionRef = useRef(showInsertionAxis);
@@ -2816,7 +2811,6 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   connectorChipsRef.current = connectorChips;
   onSelectConnectorRef.current = onSelectConnector;
   onScanColorChangeRef.current = onScanColorChange;
-  onCorrectScanRolesRef.current = onCorrectScanRoles;
   onInsertionAxisChangeRef.current = onInsertionAxisChange;
   onInsertionAxisAimedRef.current = onInsertionAxisAimed;
   showInsertionRef.current = showInsertionAxis;
@@ -4233,21 +4227,6 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       for (const entry of loaded) {
         const nextRole = latestRoles.get(entry.id);
         if (nextRole) entry.role = nextRole;
-      }
-      if (jawsLookSwapped(loaded)) {
-        const corrected: Record<string, LabOralScanRole> = {};
-        for (const entry of loaded) {
-          if (entry.role === "upper") entry.role = "lower";
-          else if (entry.role === "lower") entry.role = "upper";
-          if (
-            entry.role === "upper" ||
-            entry.role === "lower" ||
-            entry.role === "bite"
-          ) {
-            corrected[entry.id] = entry.role;
-          }
-        }
-        onCorrectScanRolesRef.current?.(corrected);
       }
       const storedWork = jawsAlreadyStored(itemsRef.current);
       let seated = false;

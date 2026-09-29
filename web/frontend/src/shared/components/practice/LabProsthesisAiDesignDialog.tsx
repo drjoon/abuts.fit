@@ -80,7 +80,7 @@
 // - 2026-09-30: 헤더 창닫기 X는 크고 빨간 버튼.
 // - 2026-09-30: 가이드 기본은 모눈종이. 저장값이 있으면 그 토글을 그대로 연다.
 // - 2026-09-30: 임플란트·스캔바디는 치과 의뢰를 먼저 쓴다. 의뢰와 다르게 바꾸면 확인 뒤에만 반영한다.
-// - 2026-09-30: 상악·하악은 열 때마다 뒤집히지 않는다. 치관이 라벨과 반대면 좌표는 두고 역할만 맞춘다.
+// - 2026-09-30: 상악·하악 표시는 파일명 역할 그대로다. 치관으로 역할을 바꾸거나 그 초안 메시를 다시 열지 않는다.
 import {
   createContext,
   useCallback,
@@ -1145,7 +1145,10 @@ function LabProsthesisAiDesignDialog({
         try {
           const draft = await readWorkDraft(caseId);
           if (ac.signal.aborted) return;
-          const assigned = assignNewerDraftFiles(sources, draft, serverWorkScanAt());
+          const assigned =
+            draft?.document?.jawFileBind === 1
+              ? assignNewerDraftFiles(sources, draft, serverWorkScanAt())
+              : { byId: new Map<string, File>(), roles: [] as WorkScanRole[] };
           localFiles = assigned.byId;
           pendingDraftRolesRef.current = new Set(assigned.roles);
           if (draft?.document) {
@@ -3189,6 +3192,7 @@ function LabProsthesisAiDesignDialog({
       toothOverrides: toothOverridesRef.current,
       insertionAxes: axes,
       archAligned: archAlignedRef.current,
+      jawFileBind: 1,
       camera:
         viewerRef.current?.exportCamera() ??
         sessionDocRef.current?.camera ??
@@ -3871,18 +3875,6 @@ function LabProsthesisAiDesignDialog({
               busy={busy}
               busyLabel={busy ? `스캔을 불러오는 중 ${progress}%` : ""}
               onScanColorChange={setHasScanColor}
-              onCorrectScanRoles={(roles) => {
-                setRoleOverride((prev) => {
-                  const next = { ...prev };
-                  for (const [id, role] of Object.entries(roles)) {
-                    if (role !== "upper" && role !== "lower" && role !== "bite") continue;
-                    const original = meshSources.find((row) => row.id === id)?.role;
-                    if (original === role) delete next[id];
-                    else next[id] = role;
-                  }
-                  return next;
-                });
-              }}
               onInsertionAxisChange={(active) => {
                 if (active) return;
                 setInsertionKeys([]);

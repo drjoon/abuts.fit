@@ -1,6 +1,7 @@
 // 상악·하악 스캔의 교합 축(위·앞·오른쪽)을 잡고, 교합면 중심을 원점으로 옮긴다.
 // 뷰어와 백엔드 작업 스캔 자동 정렬이 같이 쓴다. three 외에 브라우저 API를 쓰지 않는다.
 // - 2026-09-30: 양악이면 위는 항상 상악 중심 쪽. 로드 순서·마지막 악 하나로 부호를 뒤집지 않는다.
+// - 2026-09-30: 파일 역할은 바꾸지 않는다. 치관 방향으로 상·하악을 맞바꾸면 체크박스가 다른 메시를 연다.
 // related files:
 // - web/frontend/src/shared/components/practice/OralScanOverlayViewer.tsx
 // - web/frontend/src/shared/practice/workScanAutoAlign.ts
@@ -133,32 +134,6 @@ function crownDirection(mesh: FrameMesh): THREE.Vector3 | null {
   return toCrown.normalize();
 }
 
-/**
- * 파일 라벨이 치관 방향과 반대다.
- * 상악 치관은 하악 쪽으로, 하악 치관은 상악 쪽으로 난다.
- * 둘 다 그 반대면 라벨이 바뀐 것이다. 한쪽만 애매하면 그대로 둔다.
- */
-export function jawsLookSwapped(loaded: readonly FrameMesh[]): boolean {
-  const upper = loaded.find((entry) => entry.role === "upper");
-  const lower = loaded.find((entry) => entry.role === "lower");
-  if (!upper || !lower) return false;
-  const upperPts = samplePositions(upper.geometry, 2500);
-  const lowerPts = samplePositions(lower.geometry, 2500);
-  const upperC = meanVec(upperPts);
-  const lowerC = meanVec(lowerPts);
-  const all = [...upperPts, ...lowerPts];
-  const mean = meanVec(all);
-  if (!upperC || !lowerC || !mean) return false;
-  const towardUpper = upperC.clone().sub(lowerC);
-  const gapMm = towardUpper.length() * spanUnitsToMm(all, mean);
-  if (gapMm < 3 || towardUpper.lengthSq() < 1e-8) return false;
-  towardUpper.normalize();
-  const upperCrown = crownDirection(upper);
-  const lowerCrown = crownDirection(lower);
-  if (!upperCrown || !lowerCrown) return false;
-  return upperCrown.dot(towardUpper) > 0.25 && lowerCrown.dot(towardUpper) < -0.25;
-}
-
 /** 상악·하악 중심 차이와 치열 형태로 교합 축을 잡는다. 메시 상대 위치는 바꾸지 않는다. */
 export function estimateDentalFrame(loaded: readonly FrameMesh[]): DentalFrame | null {
   const upperPts: Array<[number, number, number]> = [];
@@ -166,6 +141,7 @@ export function estimateDentalFrame(loaded: readonly FrameMesh[]): DentalFrame |
   const archPts: Array<[number, number, number]> = [];
   let upperMesh: FrameMesh | null = null;
   let lowerMesh: FrameMesh | null = null;
+  let singleMesh: FrameMesh | null = null;
 
   for (const entry of loaded) {
     if (entry.role !== "upper" && entry.role !== "lower") continue;
@@ -205,7 +181,7 @@ export function estimateDentalFrame(loaded: readonly FrameMesh[]): DentalFrame |
     if (both && upperC && lowerC && upperC.distanceToSquared(lowerC) > 1e-8) {
       if (up.dot(upperC.clone().sub(lowerC)) < 0) up.negate();
     } else {
-      const single = upperMesh ?? lowerMesh;
+      const single = upperMesh ?? lowerMesh ?? singleMesh;
       const crown = single ? crownDirection(single) : null;
       if (crown) {
         // lower: 치관 방향이 +up (cranial). upper: 치관 방향이 -up.
