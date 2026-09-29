@@ -63,6 +63,8 @@
 // - 2026-09-28: 헤더 자동 저장 스위치를 설정(톱니) 팝오버 맨 위로 옮긴다.
 // - 2026-09-28: 스캔 단계에 메시 편집(다듬기·구멍 메우기·조각). 편집 한 번이 실행 취소 한 칸이고, 바뀐 스캔은 작업 스캔으로 저장한다.
 // - 2026-09-28: 「전달」 패널은 버튼 글자 너비. 순서는 페인트, 이미지 저장, 채팅 첨부. 표시 색은 여섯 개이고 패널 너비 안에서 가운데 정렬한다.
+// - 2026-09-29: 「전달」 패널 제거. 헤더 설정 왼쪽 페인트 아이콘을 켜면 작업영역 아래에 도구 막대(펜·화살표·사각형·원·점·글자, 색·굵기, 되돌리기·지우기, 이미지 저장·채팅 첨부).
+// - 2026-09-29: 헤더 패널 닫기·열기는 오른쪽 설정 옆 아이콘만. 헤더 실행 취소·다시 실행 버튼 제거(단축키는 유지).
 import {
   useCallback,
   useEffect,
@@ -79,17 +81,12 @@ import {
   ChevronLeft,
   ChevronRight,
   Cylinder,
-  ImageDown,
   Paintbrush,
   PanelLeftClose,
   PanelLeftDashed,
   PanelLeftOpen,
   Pencil,
-  Paperclip,
-  Redo2,
-  Eraser,
   Settings,
-  Undo2,
   Palette,
   Sparkles,
   Spline,
@@ -184,13 +181,15 @@ import {
 } from "@/shared/practice/scanbodyLibraryApi";
 import { meshExtent, type ScanbodyMesh } from "@/shared/practice/scanbodyRegistration";
 import {
-  VIEW_PAINT_COLORS,
   ViewPaintSurface,
   downloadBlobFile,
   paintNoteFileName,
-  viewPaintColorLabel,
-  type ViewPaintHandle,
 } from "@/shared/components/practice/ViewPaintSurface";
+import {
+  ViewPaintToolbar,
+  useViewPaint,
+  viewPaintSurfaceProps,
+} from "@/shared/components/practice/ViewPaintToolbar";
 import {
   buildLabProsthesisAiPlan,
   isOralScanMeshName,
@@ -742,13 +741,7 @@ function LabProsthesisAiDesignDialog({
   const [entries, setEntries] = useState<OralScanOverlaySource[]>([]);
   const [visible, setVisible] = useState<Record<string, boolean>>({});
   const [colorMapping, setColorMapping] = useState(true);
-  const paintRef = useRef<ViewPaintHandle | null>(null);
-  const [paintOn, setPaintOn] = useState(false);
-  const [paintColor, setPaintColor] = useState<string>(VIEW_PAINT_COLORS[0]);
-  const [paintInk, setPaintInk] = useState(false);
-  /** 한 획을 떼면 그 포인터 옆에 두는 저장·첨부 뱃지. 작업영역 기준 좌표. */
-  const [paintOffer, setPaintOffer] = useState<{ x: number; y: number } | null>(null);
-  const paintOfferRef = useRef<HTMLDivElement | null>(null);
+  const paint = useViewPaint({ open, resetKey: String(transferId || "") });
   const [hasScanColor, setHasScanColor] = useState(false);
   const [ghostOn, setGhostOn] = useState(false);
   const [marginShown, setMarginShown] = useState(false);
@@ -789,7 +782,6 @@ function LabProsthesisAiDesignDialog({
   const [toothCardFor, setToothCardFor] = useState<string | null>(null);
   const [libraryPickerFor, setLibraryPickerFor] = useState<string | null>(null);
   const [implantFavorites, setImplantFavorites] = useState<string[]>(readImplantFavorites);
-  const [workArea, setWorkArea] = useState<HTMLDivElement | null>(null);
   const { library: designLibrary, save: saveDesignLibrary } = useLabDesignPresets(open);
   /** 디자인 프리셋 창. 열 때 고를 프리셋. */
   const [presetDialog, setPresetDialog] = useState<{ presetId: string | null } | null>(null);
@@ -811,9 +803,6 @@ function LabProsthesisAiDesignDialog({
   const [dropScanId, setDropScanId] = useState<string | null>(null);
   const [workWide, setWorkWide] = useState(
     () => typeof window !== "undefined" && window.innerWidth >= 720,
-  );
-  const [headerWide, setHeaderWide] = useState(
-    () => typeof window !== "undefined" && window.innerWidth >= 1280,
   );
   const [insertionKeys, setInsertionKeys] = useState<string[]>([]);
   const [insertionShown, setInsertionShown] = useState(false);
@@ -909,8 +898,6 @@ function LabProsthesisAiDesignDialog({
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [open]);
-  const [canUndo, setCanUndo] = useState(false);
-  const [canRedo, setCanRedo] = useState(false);
   const viewerRef = useRef<OralScanOverlayHandle>(null);
   useEffect(() => {
     if (alignKind !== "occlusion") return;
@@ -957,12 +944,8 @@ function LabProsthesisAiDesignDialog({
   const bindWorkArea = useCallback((node: HTMLDivElement | null) => {
     workObserveRef.current?.disconnect();
     workObserveRef.current = null;
-    setWorkArea(node);
     if (!node) return;
-    const sync = () => {
-      setWorkWide(node.clientWidth >= 720);
-      setHeaderWide(node.clientWidth >= 1280);
-    };
+    const sync = () => setWorkWide(node.clientWidth >= 720);
     sync();
     const observer = new ResizeObserver(sync);
     observer.observe(node);
@@ -1049,8 +1032,6 @@ function LabProsthesisAiDesignDialog({
       historyRef.current.stroke = false;
       historyRef.current.strokeKey = "";
       historyRef.current.closeTimer = 0;
-      setCanUndo(false);
-      setCanRedo(false);
       genSeq.current += 1;
       return;
     }
@@ -1892,12 +1873,6 @@ function LabProsthesisAiDesignDialog({
     });
   }, [implantLibraries, open, plan.teeth, scanbodyCatalog.templates, stage]);
 
-  const publishHistory = () => {
-    const book = historyRef.current;
-    setCanUndo(book.past.length > 0);
-    setCanRedo(book.future.length > 0);
-  };
-
   const workSnapshotKey = () =>
     `${JSON.stringify(editsRef.current)}\n${JSON.stringify(generatedRef.current)}\n${JSON.stringify(marginReviewRef.current)}`;
 
@@ -1936,7 +1911,6 @@ function LabProsthesisAiDesignDialog({
       const last = current.past[current.past.length - 1];
       if (!last || last.jaws) return;
       current.past.pop();
-      publishHistory();
     }, 0);
   };
 
@@ -1949,7 +1923,6 @@ function LabProsthesisAiDesignDialog({
       book.future = [];
       book.stroke = true;
       book.strokeKey = workSnapshotKey();
-      publishHistory();
     }
     window.clearTimeout(book.closeTimer);
     book.closeTimer = window.setTimeout(finishDesignStroke, 400);
@@ -1967,7 +1940,6 @@ function LabProsthesisAiDesignDialog({
     book.past.push(takeSnap(true));
     if (book.past.length > UNDO_LIMIT) book.past.shift();
     book.future = [];
-    publishHistory();
   };
 
   const discardJawCheckpoint = (beforeSig: string) => {
@@ -1977,7 +1949,6 @@ function LabProsthesisAiDesignDialog({
     const sig = viewerRef.current?.changedScanSignature() ?? "";
     if (sig !== beforeSig) return;
     book.past.pop();
-    publishHistory();
   };
 
   const undoWork = () => {
@@ -1992,7 +1963,6 @@ function LabProsthesisAiDesignDialog({
     book.future.push(takeSnap(snap.jaws != null));
     if (book.future.length > UNDO_LIMIT) book.future.shift();
     applySnap(snap);
-    publishHistory();
     queueSaveWorkRef.current();
   };
 
@@ -2008,7 +1978,6 @@ function LabProsthesisAiDesignDialog({
     book.past.push(takeSnap(snap.jaws != null));
     if (book.past.length > UNDO_LIMIT) book.past.shift();
     applySnap(snap);
-    publishHistory();
     queueSaveWorkRef.current();
   };
 
@@ -3302,21 +3271,6 @@ function LabProsthesisAiDesignDialog({
     };
   }, [open]);
 
-  useEffect(() => {
-    if (!paintOn) setPaintOffer(null);
-  }, [paintOn]);
-
-  useEffect(() => {
-    if (!paintOffer) return;
-    const dismiss = (event: PointerEvent) => {
-      const node = paintOfferRef.current;
-      if (node && event.target instanceof Node && node.contains(event.target)) return;
-      setPaintOffer(null);
-    };
-    document.addEventListener("pointerdown", dismiss, true);
-    return () => document.removeEventListener("pointerdown", dismiss, true);
-  }, [paintOffer]);
-
   const requestOpenChange = (next: boolean) => {
     if (next) {
       onOpenChange(true);
@@ -3413,24 +3367,23 @@ function LabProsthesisAiDesignDialog({
   };
 
   const saveViewImage = () => {
-    setPaintOffer(null);
     const base = viewerRef.current?.captureCanvas();
-    if (!base || !paintRef.current?.hasInk()) {
+    if (!base || !paint.paintRef.current?.hasInk()) {
       viewerRef.current?.saveImage();
       return;
     }
-    void paintRef.current.compositePng(base).then((blob) => {
+    void paint.paintRef.current.compositePng(base).then((blob) => {
       if (!blob) return;
       downloadBlobFile(blob, paintNoteFileName("작업"));
     });
   };
 
   const attachPaintToChat = () => {
-    setPaintOffer(null);
-    if (!onAttachChatFile) return;
+    const surface = paint.paintRef.current;
+    if (!onAttachChatFile || !surface) return;
     const base = viewerRef.current?.captureCanvas();
     if (!base) return;
-    void paintRef.current?.compositePng(base).then((blob) => {
+    void surface.compositePng(base).then((blob) => {
       if (!blob) return;
       onAttachChatFile(
         new File([blob], paintNoteFileName("작업"), {
@@ -3441,7 +3394,7 @@ function LabProsthesisAiDesignDialog({
         title: "채팅에 첨부했습니다.",
         description: (
           <>
-            표시가 입혀진 이미지가 대화 입력에 있습니다.
+            현재 화면 이미지가 대화 입력에 있습니다.
             <br />
             보내기를 누르면 상대에게 전달됩니다.
           </>
@@ -3450,16 +3403,6 @@ function LabProsthesisAiDesignDialog({
       closeAfterChatAttachRef.current();
     });
   };
-
-  const paintOfferStyle = (() => {
-    if (!paintOffer || !workArea) return null;
-    return paintOfferBox(
-      paintOffer,
-      workArea.clientWidth,
-      workArea.clientHeight,
-      onAttachChatFile ? 188 : 96,
-    );
-  })();
 
   return (
     <Dialog open={open} onOpenChange={requestOpenChange}>
@@ -3544,51 +3487,38 @@ function LabProsthesisAiDesignDialog({
               </div>
             ) : null}
           </div>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className={cn(
-              "absolute left-1/2 top-1/2 z-10 h-8 -translate-x-1/2 -translate-y-1/2 [&_svg]:!size-3.5",
-              headerWide ? "gap-1 px-2.5" : "w-8 px-0",
-            )}
-            aria-label={panelAction}
-            title={panelAction}
-            onClick={cyclePanelLayout}
-          >
-            {panelLayout === "open" ? (
-              <PanelLeftClose />
-            ) : panelLayout === "closed" ? (
-              <PanelLeftDashed />
-            ) : (
-              <PanelLeftOpen />
-            )}
-            {headerWide ? <span>{panelAction}</span> : null}
-          </Button>
           <div className="flex shrink-0 items-center justify-end gap-1.5 pr-8">
             <Button
               type="button"
               size="sm"
               variant="outline"
-              className="h-8 w-8 px-0"
-              disabled={!canUndo || alignLocked}
-              onClick={undoWork}
-              title="실행 취소"
-              aria-label="실행 취소"
+              className="h-8 w-8 px-0 [&_svg]:!size-3.5"
+              aria-label={panelAction}
+              title={panelAction}
+              onClick={cyclePanelLayout}
             >
-              <Undo2 className="h-3.5 w-3.5" />
+              {panelLayout === "open" ? (
+                <PanelLeftClose />
+              ) : panelLayout === "closed" ? (
+                <PanelLeftDashed />
+              ) : (
+                <PanelLeftOpen />
+              )}
             </Button>
             <Button
               type="button"
               size="sm"
-              variant="outline"
-              className="h-8 w-8 px-0"
-              disabled={!canRedo || alignLocked}
-              onClick={redoWork}
-              title="다시 실행"
-              aria-label="다시 실행"
+              variant={paint.paintOn ? "default" : "outline"}
+              className="relative h-8 w-8 px-0 [&_svg]:!size-3.5"
+              aria-pressed={paint.paintOn}
+              aria-label="페인트"
+              title="페인트 — 화면에 표시를 그려 이미지 저장·채팅 첨부"
+              onClick={() => paint.setPaintOn((on) => !on)}
             >
-              <Redo2 className="h-3.5 w-3.5" />
+              <Pencil />
+              {!paint.paintOn && paint.count > 0 ? (
+                <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-primary ring-2 ring-white" />
+              ) : null}
             </Button>
             <Popover open={settingsOpen} onOpenChange={setSettingsOpen}>
               <PopoverTrigger asChild>
@@ -3827,43 +3757,14 @@ function LabProsthesisAiDesignDialog({
               }}
               className="absolute inset-0"
             />
-            <ViewPaintSurface
-              ref={paintRef}
-              enabled={paintOn}
-              color={paintColor}
-              onInkChange={setPaintInk}
-              onStrokeEnd={(point) => {
-                const area = workArea;
-                if (!area) return;
-                const rect = area.getBoundingClientRect();
-                setPaintOffer({
-                  x: point.clientX - rect.left,
-                  y: point.clientY - rect.top,
-                });
-              }}
-            />
-            {paintOfferStyle ? (
-              <div
-                ref={paintOfferRef}
-                className="absolute z-20 flex items-center gap-1"
-                style={paintOfferStyle}
-              >
-                <button
-                  type="button"
-                  className="rounded-full border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground shadow-md hover:bg-muted"
-                  onClick={saveViewImage}
-                >
-                  이미지 저장
-                </button>
-                {onAttachChatFile ? (
-                  <button
-                    type="button"
-                    className="rounded-full bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground shadow-md hover:bg-primary/90"
-                    onClick={attachPaintToChat}
-                  >
-                    채팅 첨부
-                  </button>
-                ) : null}
+            <ViewPaintSurface {...viewPaintSurfaceProps(paint)} />
+            {paint.paintOn ? (
+              <div className="pointer-events-none absolute inset-x-0 bottom-4 z-30 flex justify-center">
+                <ViewPaintToolbar
+                  paint={paint}
+                  onSaveImage={saveViewImage}
+                  onAttachChat={onAttachChatFile ? attachPaintToChat : undefined}
+                />
               </div>
             ) : null}
             <div className="pointer-events-none absolute left-1/2 top-3 z-10 flex w-max max-w-[calc(100%-2rem)] -translate-x-1/2 flex-col items-center gap-1.5">
@@ -5117,23 +5018,6 @@ function LabProsthesisAiDesignDialog({
                 }
                 queueSaveWorkRef.current();
               }}
-              actionPanel={
-                <AiDesignViewActions
-                  onSaveImage={saveViewImage}
-                  paintOn={paintOn}
-                  paintColor={paintColor}
-                  paintInk={paintInk}
-                  onTogglePaint={() => setPaintOn((on) => !on)}
-                  onPaintColor={setPaintColor}
-                  onClearPaint={() => {
-                    paintRef.current?.clear();
-                    setPaintOffer(null);
-                  }}
-                  showChat={Boolean(onAttachChatFile)}
-                  chatDisabled={!paintInk}
-                  onAttachChat={attachPaintToChat}
-                />
-              }
             />
             {!busy &&
             entries.length > 0 &&
@@ -5189,7 +5073,7 @@ function LabProsthesisAiDesignDialog({
                 ) : null}
               </div>
             ) : null}
-            {marginHint ? (
+            {marginHint && !paint.paintOn ? (
               <div
                 className={cn(
                   "pointer-events-none absolute bottom-4 left-1/2 z-10 -translate-x-1/2 rounded-md px-3 py-2 text-center text-[11px] leading-relaxed shadow-sm",
@@ -5486,163 +5370,6 @@ function marginLineChanged(prev: ToothDesignEdit, next: ToothDesignEdit) {
   return before.some((depth, index) => depth !== after[index]);
 }
 
-/** 그린 점 옆에 뱃지가 들어가도록 화면 안으로 민다. */
-function paintOfferBox(
-  point: { x: number; y: number },
-  areaWidth: number,
-  areaHeight: number,
-  boxWidth: number,
-) {
-  const pad = 8;
-  const boxHeight = 32;
-  let left = point.x + 14;
-  let top = point.y - boxHeight / 2;
-  if (left + boxWidth > areaWidth - pad) left = point.x - 14 - boxWidth;
-  const maxLeft = Math.max(pad, areaWidth - boxWidth - pad);
-  const maxTop = Math.max(pad, areaHeight - boxHeight - pad);
-  left = Math.min(Math.max(pad, left), maxLeft);
-  top = Math.min(Math.max(pad, top), maxTop);
-  return { left, top };
-}
-
-function AiDesignViewActions({
-  onSaveImage,
-  paintOn,
-  paintColor,
-  paintInk,
-  onTogglePaint,
-  onPaintColor,
-  onClearPaint,
-  showChat,
-  chatDisabled,
-  onAttachChat,
-}: {
-  onSaveImage: () => void;
-  paintOn: boolean;
-  paintColor: string;
-  paintInk: boolean;
-  onTogglePaint: () => void;
-  onPaintColor: (color: string) => void;
-  onClearPaint: () => void;
-  showChat: boolean;
-  chatDisabled: boolean;
-  onAttachChat: () => void;
-}) {
-  const [open, setOpen] = useState(true);
-  const rowBtn = "h-8 w-full justify-center gap-1.5 px-2 text-xs [&_svg]:!size-3.5";
-  return (
-    <div className="pointer-events-auto w-max max-w-full shrink-0 overflow-hidden rounded-lg border bg-background/95 text-sm shadow-sm">
-      <button
-        type="button"
-        className={cn(
-          "flex w-full items-center justify-between gap-3 px-3.5 py-2.5 text-left",
-          open && "border-b",
-        )}
-        onClick={() => setOpen((next) => !next)}
-        aria-expanded={open}
-      >
-        <span className="font-semibold text-foreground">전달</span>
-        <ChevronDown
-          className={cn(
-            "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
-            open ? "rotate-180" : "",
-          )}
-        />
-      </button>
-      {open ? (
-        <div className="space-y-1.5 px-3.5 py-2.5">
-          <div className="flex items-center gap-1.5">
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className={cn(
-                rowBtn,
-                "min-w-0 flex-1",
-                paintOn &&
-                  "border-primary bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary",
-              )}
-              aria-pressed={paintOn}
-              aria-label="페인트"
-              onClick={onTogglePaint}
-              title="화면 위에 표시를 그립니다"
-            >
-              <Pencil />
-              페인트
-            </Button>
-            {paintOn && paintInk ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="h-8 shrink-0 gap-1 border-destructive-muted px-2 text-xs text-destructive hover:bg-destructive-soft hover:text-destructive [&_svg]:!size-3.5"
-                title="표시 지우기"
-                aria-label="표시 지우기"
-                onClick={onClearPaint}
-              >
-                <Eraser />
-                지우기
-              </Button>
-            ) : null}
-          </div>
-          {paintOn ? (
-            <div
-              className="grid w-0 min-w-full grid-cols-6 items-center justify-items-center px-2.5"
-              role="group"
-              aria-label="표시 색"
-            >
-              {VIEW_PAINT_COLORS.map((swatch) => {
-                const selected = paintColor === swatch;
-                return (
-                  <button
-                    key={swatch}
-                    type="button"
-                    className={cn(
-                      "aspect-square w-full max-w-6 rounded-full border border-black/15",
-                      selected && "ring-2 ring-primary ring-offset-1",
-                    )}
-                    style={{ backgroundColor: swatch }}
-                    aria-label={viewPaintColorLabel(swatch)}
-                    aria-pressed={selected}
-                    onClick={() => onPaintColor(swatch)}
-                  />
-                );
-              })}
-            </div>
-          ) : null}
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className={rowBtn}
-            onClick={onSaveImage}
-            title="현재 뷰를 PNG로 저장"
-            aria-label="이미지 저장"
-          >
-            <ImageDown />
-            이미지 저장
-          </Button>
-          {showChat ? (
-            <Button
-              type="button"
-              size="sm"
-              variant={chatDisabled ? "outline" : "default"}
-              className={rowBtn}
-              disabled={chatDisabled}
-              onClick={onAttachChat}
-              title="표시가 입혀진 이미지를 채팅에 첨부합니다"
-              aria-label="채팅 첨부"
-            >
-              <Paperclip />
-              채팅 첨부
-            </Button>
-          ) : null}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 function DesignViewerChrome({
   teeth,
   activeTooth,
@@ -5676,7 +5403,6 @@ function DesignViewerChrome({
   libraryLabel,
   onPickLibrary,
   onToggleScrewHole,
-  actionPanel,
   cavityKinds,
   crownShells,
 }: {
@@ -5716,7 +5442,6 @@ function DesignViewerChrome({
   onAssembleSpan: (span: readonly string[], assembled: boolean) => void;
   onTogglePontic: (toothNumber: string) => void;
   onClearTooth: (toothNumber: string) => void;
-  actionPanel?: ReactNode;
 }) {
   const archGroups = (
     [
@@ -6276,7 +6001,6 @@ function DesignViewerChrome({
             ) : null}
           </div>
         ) : null}
-        {actionPanel}
       </div>
 
       {thinTeeth.length > 0 || undercutTeeth.length > 0 || unassembledSpan ? (

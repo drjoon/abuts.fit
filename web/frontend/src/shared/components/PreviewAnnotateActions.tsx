@@ -1,22 +1,27 @@
-// 3D·이미지 프리뷰 공통 헤더 기능. 페인트, 채팅 첨부, 칼라 매핑.
+// 3D·이미지 프리뷰 공통 헤더 기능. 페인트, 칼라 매핑.
 // 의뢰 파일 프리뷰와 작업 스캔 프리뷰가 같은 모양·동작을 쓴다.
+// - 2026-09-29: 페인트를 켜면 뷰 위에 도구 막대(도형·글자·되돌리기, 이미지 저장·채팅 첨부). 헤더에는 페인트 토글만.
 // related files:
 // - web/frontend/src/shared/components/ModelPreviewDialog.tsx
 // - web/frontend/src/shared/components/WorkScanModelPreviewDialog.tsx
 // - web/frontend/src/shared/components/practice/ViewPaintSurface.tsx
+// - web/frontend/src/shared/components/practice/ViewPaintToolbar.tsx
 // - web/frontend/src/features/requests/components/StlPreviewViewer.tsx
-import { useEffect, useRef, useState } from "react";
-import { Eraser, Paperclip, Pencil } from "lucide-react";
+import { Pencil } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import {
-  VIEW_PAINT_COLORS,
   ViewPaintSurface,
+  downloadBlobFile,
   paintNoteFileName,
-  viewPaintColorLabel,
-  type ViewPaintHandle,
 } from "@/shared/components/practice/ViewPaintSurface";
+import {
+  ViewPaintToolbar,
+  useViewPaint,
+  viewPaintSurfaceProps,
+  type ViewPaintState,
+} from "@/shared/components/practice/ViewPaintToolbar";
 import { useToast } from "@/shared/hooks/use-toast";
 import { cn } from "@/shared/ui/cn";
 
@@ -30,29 +35,9 @@ export function keepOpenOnToastInteract(event: { target: EventTarget | null; pre
   }
 }
 
-/** 닫히면 표시를 지우고, `resetKey`가 바뀌면 페인트를 끈다. */
-export function usePreviewPaint({ open, resetKey }: { open: boolean; resetKey: string }) {
-  const paintRef = useRef<ViewPaintHandle | null>(null);
-  const [paintOn, setPaintOn] = useState(false);
-  const [paintColor, setPaintColor] = useState<string>(VIEW_PAINT_COLORS[0]);
-  const [paintInk, setPaintInk] = useState(false);
+export const usePreviewPaint = useViewPaint;
 
-  useEffect(() => {
-    if (open) return;
-    setPaintOn(false);
-    setPaintInk(false);
-    paintRef.current?.clear();
-  }, [open]);
-
-  useEffect(() => {
-    setPaintOn(false);
-    setPaintInk(false);
-  }, [resetKey]);
-
-  return { paintRef, paintOn, setPaintOn, paintColor, setPaintColor, paintInk, setPaintInk };
-}
-
-export type PreviewPaintState = ReturnType<typeof usePreviewPaint>;
+export type PreviewPaintState = ViewPaintState;
 
 export function PreviewPaintControls({
   paint,
@@ -61,112 +46,71 @@ export function PreviewPaintControls({
   paint: PreviewPaintState;
   disabled?: boolean;
 }) {
-  const { paintRef, paintOn, setPaintOn, paintColor, setPaintColor, paintInk } = paint;
+  const { paintOn, setPaintOn } = paint;
   return (
-    <div className="mr-3 flex items-center gap-1.5">
-      <Button
-        type="button"
-        size="sm"
-        variant={paintOn ? "default" : "outline"}
-        className={PREVIEW_HEADER_BUTTON_CLASS}
-        disabled={disabled}
-        aria-pressed={paintOn}
-        aria-label="페인트"
-        onClick={() => setPaintOn((on) => !on)}
-        title="화면 위에 표시를 그립니다"
-      >
-        <Pencil />
-        <span className="hidden sm:inline">페인트</span>
-      </Button>
-      {paintOn
-        ? VIEW_PAINT_COLORS.map((swatch) => (
-            <button
-              key={swatch}
-              type="button"
-              className={cn(
-                "h-5 w-5 rounded-full border border-black/10",
-                paintColor === swatch && "ring-2 ring-primary ring-offset-1",
-              )}
-              style={{ backgroundColor: swatch }}
-              aria-label={viewPaintColorLabel(swatch)}
-              onClick={() => setPaintColor(swatch)}
-            />
-          ))
-        : null}
-      {paintOn && paintInk ? (
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          className={PREVIEW_HEADER_BUTTON_CLASS}
-          title="표시 지우기"
-          aria-label="표시 지우기"
-          onClick={() => paintRef.current?.clear()}
-        >
-          <Eraser />
-          <span className="hidden sm:inline">표시 지우기</span>
-        </Button>
-      ) : null}
-    </div>
+    <Button
+      type="button"
+      size="sm"
+      variant={paintOn ? "default" : "outline"}
+      className={cn(PREVIEW_HEADER_BUTTON_CLASS, "mr-3")}
+      disabled={disabled}
+      aria-pressed={paintOn}
+      aria-label="페인트"
+      onClick={() => setPaintOn((on) => !on)}
+      title="화면 위에 표시를 그립니다"
+    >
+      <Pencil />
+      <span className="hidden sm:inline">페인트</span>
+    </Button>
   );
 }
 
 /**
- * 현재 뷰에 표시를 겹친 PNG를 채팅 입력에 넣는다. 표시가 없으면 누를 수 없다.
+ * 표시 레이어와 도구 막대. 채팅 첨부는 현재 뷰에 표시를 겹친 PNG를 입력에 넣는다.
  * 여러 장을 연달아 붙일 수 있게 프리뷰는 열어 둔다.
  */
-export function PreviewChatAttachButton({
+export function PreviewPaintLayer({
   paint,
-  disabled,
+  surfaceKey,
   captureCanvas,
   fileName,
   onAttachChatFile,
 }: {
   paint: PreviewPaintState;
-  disabled?: boolean;
+  surfaceKey: string;
   captureCanvas: () => HTMLCanvasElement | null;
   fileName: string;
-  onAttachChatFile: (file: File) => void;
+  onAttachChatFile?: (file: File) => void;
 }) {
   const { toast } = useToast();
-  const attach = async () => {
+  const composite = async () => {
     const base = captureCanvas();
-    const blob = base ? await paint.paintRef.current?.compositePng(base) : null;
+    return base ? ((await paint.paintRef.current?.compositePng(base)) ?? null) : null;
+  };
+  const saveImage = async () => {
+    const blob = await composite();
+    if (blob) downloadBlobFile(blob, paintNoteFileName(fileName));
+  };
+  const attach = async () => {
+    if (!onAttachChatFile) return;
+    const blob = await composite();
     if (!blob) return;
     onAttachChatFile(new File([blob], paintNoteFileName(fileName), { type: "image/png" }));
     toast({ title: "채팅 첨부되었습니다", duration: 2000 });
   };
   return (
-    <Button
-      type="button"
-      size="sm"
-      className={PREVIEW_HEADER_BUTTON_CLASS}
-      disabled={disabled || !paint.paintInk}
-      onClick={() => void attach()}
-      title="표시가 입혀진 이미지를 채팅에 첨부합니다"
-      aria-label="채팅 첨부"
-    >
-      <Paperclip />
-      <span className="hidden sm:inline">채팅 첨부</span>
-    </Button>
-  );
-}
-
-export function PreviewPaintLayer({
-  paint,
-  surfaceKey,
-}: {
-  paint: PreviewPaintState;
-  surfaceKey: string;
-}) {
-  return (
-    <ViewPaintSurface
-      key={surfaceKey}
-      ref={paint.paintRef}
-      enabled={paint.paintOn}
-      color={paint.paintColor}
-      onInkChange={paint.setPaintInk}
-    />
+    <>
+      <ViewPaintSurface key={surfaceKey} {...viewPaintSurfaceProps(paint)} />
+      {paint.paintOn ? (
+        <div className="pointer-events-none absolute inset-x-0 top-3 z-30 flex justify-center">
+          <ViewPaintToolbar
+            paint={paint}
+            onSaveImage={() => void saveImage()}
+            onAttachChat={onAttachChatFile ? () => void attach() : undefined}
+          />
+        </div>
+      ) : null}
+    </>
   );
 }
 

@@ -1,5 +1,6 @@
 // 작업 스캔(상악·하악·바이트)을 한 모델로 연다. 파일 좌표 그대로 겹치고 악별로 켜고 끈다.
 // change-log:
+// - 2026-09-29: 채팅 첨부는 페인트 도구 막대 안으로. 헤더에는 악 토글·페인트·다운로드만.
 // - 2026-09-29: 제목 아래 케이스 정보(caseInfo) — 채팅 헤더와 같은 점·치과/기공소·환자·치아·날짜.
 // - 2026-09-28: 다운로드는 파일 목록을 한 번에 넘긴다. 채팅 상세가 케이스 폴더에 저장한다.
 // - 2026-09-28: 채팅 첨부 후 프리뷰를 닫지 않는다. 여러 장을 붙일 수 있게 토스트만 띄운다.
@@ -32,7 +33,6 @@ import { Progress } from "@/components/ui/progress";
 import {
   PREVIEW_HEADER_BUTTON_CLASS,
   keepOpenOnToastInteract,
-  PreviewChatAttachButton,
   PreviewColorMappingToggle,
   PreviewPaintControls,
   PreviewPaintLayer,
@@ -258,15 +258,6 @@ export function WorkScanModelPreviewDialog<T extends WorkScanModelFile>({
               })}
             </div>
             <PreviewPaintControls paint={paint} disabled={!canAnnotate} />
-            {onAttachChatFile ? (
-              <PreviewChatAttachButton
-                paint={paint}
-                disabled={!canAnnotate}
-                captureCanvas={() => viewerRef.current?.captureCanvas() ?? null}
-                fileName={heading}
-                onAttachChatFile={onAttachChatFile}
-              />
-            ) : null}
             {renderDownloadControl()}
           </div>
           <DialogDescription className="sr-only">
@@ -289,7 +280,15 @@ export function WorkScanModelPreviewDialog<T extends WorkScanModelFile>({
               <Progress value={progress} className="mt-1.5 h-1" />
             </div>
           ) : null}
-          {canAnnotate ? <PreviewPaintLayer paint={paint} surfaceKey={partsKey} /> : null}
+          {canAnnotate ? (
+            <PreviewPaintLayer
+              paint={paint}
+              surfaceKey={partsKey}
+              captureCanvas={() => viewerRef.current?.captureCanvas() ?? null}
+              fileName={heading}
+              onAttachChatFile={onAttachChatFile}
+            />
+          ) : null}
           <Button
             type="button"
             size="sm"

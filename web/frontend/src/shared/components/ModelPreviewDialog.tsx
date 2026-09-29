@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-29: 채팅 첨부는 페인트 도구 막대 안으로. 헤더에는 페인트·다운로드만.
 // - 2026-09-29: 제목 아래 케이스 정보(caseInfo) — 채팅 헤더와 같은 점·치과/기공소·환자·치아·날짜.
 // - 2026-09-28: 채팅 첨부 후 프리뷰를 닫지 않는다. 여러 장을 붙일 수 있게 토스트만 띄운다.
 // - 2026-09-28: 페인트·채팅 첨부·칼라 매핑은 PreviewAnnotateActions 공용(작업 스캔 프리뷰와 같음). 3D는 「화면 맞춤」.
@@ -72,7 +73,6 @@ import {
 import {
   PREVIEW_HEADER_BUTTON_CLASS,
   keepOpenOnToastInteract,
-  PreviewChatAttachButton,
   PreviewPaintControls,
   PreviewPaintLayer,
   usePreviewPaint,
@@ -300,15 +300,6 @@ export function ModelPreviewDialog({
           </div>
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
             <PreviewPaintControls paint={paint} disabled={!canAnnotate || confirmBusy} />
-            {onAttachChatFile ? (
-              <PreviewChatAttachButton
-                paint={paint}
-                disabled={!canAnnotate || confirmBusy}
-                captureCanvas={captureViewCanvas}
-                fileName={fileName}
-                onAttachChatFile={onAttachChatFile}
-              />
-            ) : null}
             {renderDownloadControl()}
           </div>
           <DialogDescription className="sr-only">
@@ -371,7 +362,15 @@ export function ModelPreviewDialog({
                 미리볼 파일이 없습니다.
               </div>
             ) : null}
-            {canAnnotate ? <PreviewPaintLayer paint={paint} surfaceKey={fileName} /> : null}
+            {canAnnotate ? (
+              <PreviewPaintLayer
+                paint={paint}
+                surfaceKey={fileName}
+                captureCanvas={captureViewCanvas}
+                fileName={fileName}
+                onAttachChatFile={onAttachChatFile}
+              />
+            ) : null}
           </div>
         </div>
 
