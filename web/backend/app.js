@@ -186,7 +186,11 @@ app.use(
           "https://www.openstreetmap.org",
           "https://www.youtube.com",
           "https://www.youtube-nocookie.com",
+          // Windows 연결 프로그램 깨우기(abuts-cad://wake)
+          "abuts-cad:",
         ],
+        // 켜 두면 연결 프로그램 요청(http://127.0.0.1:8010)을 https로 바꿔 실패한다.
+        "upgrade-insecure-requests": null,
         // S3 업로드/다운로드 허용
         "default-src": [
           "'self'",
@@ -208,6 +212,8 @@ app.use(
           "https://*.daumcdn.net",
           "https://*.kakaocdn.net",
           "https://www.youtube.com",
+          // 폴더 열기 연결 프로그램(bg/lab-cad-helper). 없으면 운영에서만 연결이 막힌다.
+          "http://127.0.0.1:8010",
           ...(process.env.NODE_ENV === "development"
             ? ["http://localhost:8080", "ws://localhost:8080"]
             : []),
