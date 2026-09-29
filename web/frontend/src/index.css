@@ -879,26 +879,14 @@ body:has(.guide-tour-root) .guide-tour-nested-dialog-overlay {
   to { transform: translate3d(-3.5rem, -2.5rem, 0) scale(0.92); }
 }
 
-/* TOP-DOWN 가이드 라인 — 히어로를 가로로 천천히 오간다 */
-.sw-guide-line {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 1px;
-  background: linear-gradient(
-    to bottom,
-    transparent,
-    rgba(37, 99, 235, 0.55) 30%,
-    rgba(56, 189, 248, 0.55) 70%,
-    transparent
-  );
-  animation: sw-guide 11s ease-in-out infinite alternate;
+/* 황도면 — 정면 원을 눕혀 비스듬히 본다. rotateZ는 rotateX 뒤에 적용된다. */
+.sw-ecliptic-scene {
+  perspective: 1100px;
 }
 
-@keyframes sw-guide {
-  from { transform: translateX(6vw); }
-  to { transform: translateX(94vw); }
+.sw-ecliptic {
+  transform: rotateZ(-16deg) rotateX(63deg);
+  transform-origin: center center;
 }
 
 .sw-ring-spin { animation: sw-spin 46s linear infinite; }
@@ -929,7 +917,6 @@ body:has(.guide-tour-root) .guide-tour-nested-dialog-overlay {
 
 @media (prefers-reduced-motion: reduce) {
   .sw-orb,
-  .sw-guide-line,
   .sw-ring-spin,
   .sw-ring-spin-rev,
   .lab-live-dot {
