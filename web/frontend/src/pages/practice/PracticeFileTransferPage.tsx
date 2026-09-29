@@ -27,6 +27,7 @@
  * - web/frontend/src/shared/practice/openPracticeTransferChat.ts
  * - web/frontend/src/shared/components/practice/PracticeLabRatingControl.tsx
  * - web/frontend/src/shared/practice/practiceLabRating.ts
+ * - 2026-09-29: 채팅 「폴더 열기」DCM 기본값 — 계정 디자인SW(3Shape=DCM, ExoCAD·그외=PLY).
  * - 2026-09-28: 프리뷰 다운로드(의뢰 파일·작업 스캔)도 「폴더 열기」와 같은 케이스 폴더에 받는다.
  * - 2026-09-28: 의뢰·작업 파일 다운로드를 기공소처럼 「폴더 열기」+톱니(DCM 포맷)로. 작업 파일 zip 버튼 제거.
  * - 2026-09-29: 기공소 전송의 3D 스캔은 선택. 러버인상(석고모델)은 파일 없이 전송.
@@ -223,8 +224,12 @@ import {
 } from "@/shared/hooks/useBackgroundTempUpload";
 import { useS3FileDownload, buildS3ProxyDownloadUrl } from "@/shared/files/useS3FileDownload";
 import { useLabWorkFolderSave } from "@/shared/files/useLabWorkFolderSave";
-import { buildLabCaseFolderName } from "@/shared/files/labWorkFolder";
+import {
+  buildLabCaseFolderName,
+  dcmFormatForDesignSoftware,
+} from "@/shared/files/labWorkFolder";
 import type { DcmDownloadFormat } from "@/shared/files/dcmDownloadFormat";
+import { useAccountDesignSoftware } from "@/shared/files/useAccountDesignSoftware";
 import { fetchS3BlobCached } from "@/shared/files/s3BlobCache";
 import { type TempUploadedFile } from "@/shared/hooks/useS3TempUpload";
 import { partitionDetailAttachFiles, PRACTICE_TRANSFER_IMAGE_EXTENSIONS } from "@/shared/practice/practiceTransferAccept";
@@ -1323,6 +1328,7 @@ export const PracticeFileTransferPage = ({
   const { toast } = useToast();
   const authToken = useAuthStore((s) => s.token);
   const authUser = useAuthStore((s) => s.user);
+  const accountDesignSoftware = useAccountDesignSoftware();
   const [requestSubmitting, setRequestSubmitting] = useState(false);
   const requestSubmittingRef = useRef(false);
   const [skipJig, setSkipJig] = useState(true);
@@ -6323,11 +6329,13 @@ export const PracticeFileTransferPage = ({
   /**
    * 의뢰·작업 스캔·디자인·보철 파일을 작업 폴더 안 케이스 폴더에 저장한다.
    * 「폴더 열기」는 이미 받은 파일은 건너뛰고 폴더만 연다.
+   * DCM 종류를 안 고르면 계정 디자인 SW에 맞춘다(3Shape=원본, ExoCAD·그외=PLY).
    */
   const handleOpenWork = useCallback(
     async (opts?: { dcmFormat?: DcmDownloadFormat; reuseSaved?: boolean }) => {
       const files = selectedTransferDetailModel?.downloadAllFiles || [];
       if (!files.length || !selectedTransferCaseFolder) return;
+      const sw = String(accountDesignSoftware || "").trim();
       await saveToLabWorkFolder({
         files: files.map((file) => ({
           s3Key: String(file.s3Key || "").trim(),
@@ -6335,7 +6343,8 @@ export const PracticeFileTransferPage = ({
           busyKey: String(file.s3Key || "").trim(),
           size: Number(file.size || 0),
         })),
-        dcmFormat: opts?.dcmFormat,
+        dcmFormat:
+          opts?.dcmFormat || (sw ? dcmFormatForDesignSoftware(sw) : undefined),
         busy: opts?.reuseSaved === false ? "download" : "open",
         reuseSaved: opts?.reuseSaved !== false,
         caseFolder: selectedTransferCaseFolder,
@@ -6345,6 +6354,7 @@ export const PracticeFileTransferPage = ({
       });
     },
     [
+      accountDesignSoftware,
       requestHelperInstall,
       requestWorkFolder,
       saveToLabWorkFolder,
@@ -11758,6 +11768,11 @@ export const PracticeFileTransferPage = ({
           openWorkProgress={openInCadBusy ? labSaveProgress : null}
           downloadAllProgress={downloadAllBusy ? labSaveProgress : null}
           onOpenInDesignSoftware={(opts) => void handleOpenWork(opts)}
+          defaultDcmFormat={
+            String(accountDesignSoftware || "").trim()
+              ? dcmFormatForDesignSoftware(String(accountDesignSoftware))
+              : undefined
+          }
           onDownloadAllFiles={(opts) =>
             void handleOpenWork({ ...opts, reuseSaved: false })
           }
