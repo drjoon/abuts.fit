@@ -1,11 +1,8 @@
-// 스캔 메시 뒷면을 반투명하게 겹쳐 그린다. 반대 악 안쪽에서 볼 때 대합치 교두가 얼마나 튀어나왔는지 보인다.
+// 스캔 메시 뒷면을 앞면과 같은 재질로 불투명하게 겹쳐 그린다.
 // related files:
 // - web/frontend/src/shared/share/CaseLayerViewer.tsx
 // - web/frontend/src/shared/components/practice/OralScanOverlayViewer.tsx
 import * as THREE from "three";
-
-/** 뒷면 불투명도. 앞면은 그대로 불투명하다. */
-export const BACK_FACE_OPACITY = 0.9;
 
 const SHELL_KEY = "backFaceShell";
 
@@ -30,7 +27,7 @@ export function disposeBackFaceShell(mesh: THREE.Mesh) {
 }
 
 /**
- * 앞면은 `mesh.material`(FrontSide), 뒷면은 같은 지오메트리의 반투명 복제본으로 그린다.
+ * 앞면은 `mesh.material`(FrontSide), 뒷면은 같은 지오메트리의 불투명 복제본으로 그린다.
  * 재질·지오메트리를 바꾼 뒤마다 다시 부른다.
  * 이미 반투명한 재질(고스트 등)은 셸 없이 원래 `side`를 둔다.
  */
@@ -43,9 +40,9 @@ export function syncBackFaceShell(mesh: THREE.Mesh) {
   base.side = THREE.FrontSide;
   const back = base.clone();
   back.side = THREE.BackSide;
-  back.transparent = true;
-  back.opacity = BACK_FACE_OPACITY;
-  back.depthWrite = false;
+  back.transparent = false;
+  back.opacity = 1;
+  back.depthWrite = true;
 
   const shell = findShell(mesh);
   if (shell) {
