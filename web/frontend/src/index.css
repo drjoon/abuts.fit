@@ -696,6 +696,144 @@ body:has(.guide-tour-root) .guide-tour-nested-dialog-overlay {
   }
 }
 
+/* ── 랜딩 이펙트: 히어로 순차 등장 · 스크롤 리빌 · 스포트라이트 카드 · 버튼 샤인 ── */
+@keyframes landing-rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
+.landing-rise {
+  opacity: 0;
+  animation: landing-rise 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
+  animation-delay: var(--rise-delay, 0ms);
+}
+
+.landing-reveal {
+  opacity: 0;
+  transform: translateY(1.5rem);
+  transition:
+    opacity 0.7s cubic-bezier(0.2, 0.7, 0.2, 1),
+    transform 0.7s cubic-bezier(0.2, 0.7, 0.2, 1);
+  transition-delay: var(--reveal-delay, 0ms);
+}
+
+.landing-reveal.is-in {
+  opacity: 1;
+  transform: none;
+}
+
+.landing-spot {
+  position: relative;
+  isolation: isolate;
+  transition:
+    transform 0.3s ease,
+    box-shadow 0.3s ease,
+    border-color 0.3s ease;
+}
+
+.landing-spot::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  background: radial-gradient(
+    16rem circle at var(--mx, 50%) var(--my, 50%),
+    rgba(56, 189, 248, 0.2),
+    transparent 65%
+  );
+}
+
+@media (hover: hover) {
+  .landing-spot:hover {
+    transform: translateY(-3px);
+    border-color: rgba(56, 189, 248, 0.55);
+    box-shadow: 0 16px 40px rgba(37, 99, 235, 0.14);
+  }
+
+  .landing-spot:hover::before {
+    opacity: 1;
+  }
+}
+
+.landing-btn {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  transition:
+    transform 0.25s ease,
+    box-shadow 0.25s ease,
+    background-color 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.landing-btn::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(
+    110deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.5) 50%,
+    transparent 70%
+  );
+  transform: translateX(-130%);
+}
+
+@media (hover: hover) {
+  .landing-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 28px rgba(56, 189, 248, 0.35);
+  }
+
+  .landing-btn:hover::after {
+    transform: translateX(130%);
+    transition: transform 0.8s ease;
+  }
+}
+
+.landing-btn:active {
+  transform: translateY(0) scale(0.98);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-rise {
+    opacity: 1;
+    animation: none;
+  }
+
+  .landing-reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+
+  .landing-spot:hover {
+    transform: none;
+  }
+
+  .landing-btn:hover {
+    transform: none;
+  }
+
+  .landing-btn:hover::after {
+    transition: none;
+  }
+}
+
 /*
  * 공개 랜딩·오퍼·행사: 넓은 화면에서 본문 px 타이포를 키운다.
  * 제목·이미지·본문 폭은 landingTheme 의 2xl / 1920px 단계.
