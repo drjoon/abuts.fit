@@ -25,6 +25,7 @@ const OfferPage = () => {
     <PublicPageLayout
       tone="light"
       plain
+      footerSurface={offer.lab ? "sky" : "white"}
       contentClassName="relative z-10 w-full max-w-none px-0 py-0"
     >
       <LandingOfferPage offer={offer} />

@@ -834,6 +834,251 @@ body:has(.guide-tour-root) .guide-tour-nested-dialog-overlay {
   }
 }
 
+/* ── 히어로별 고유 이펙트: 심플웨이(sw-*) · 기공서비스(lab-hero-*). 랜딩은 파티클 워드. ── */
+.sw-hero-grid {
+  background-image:
+    linear-gradient(to right, rgba(37, 99, 235, 0.09) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(37, 99, 235, 0.09) 1px, transparent 1px);
+  background-size: 44px 44px;
+  -webkit-mask-image: radial-gradient(ellipse at 68% 50%, #000 12%, transparent 72%);
+  mask-image: radial-gradient(ellipse at 68% 50%, #000 12%, transparent 72%);
+}
+
+.sw-parallax {
+  transform: translate3d(calc(var(--px, 0) * 12px), calc(var(--py, 0) * 9px), 0);
+  will-change: transform;
+}
+
+.sw-parallax-back {
+  transform: translate3d(calc(var(--px, 0) * -20px), calc(var(--py, 0) * -14px), 0);
+  will-change: transform;
+}
+
+.sw-orb {
+  position: absolute;
+  width: 20rem;
+  height: 20rem;
+  border-radius: 9999px;
+  filter: blur(70px);
+  opacity: 0.22;
+}
+
+.sw-orb-1 { left: 6%; top: 8%; animation: sw-orb-a 16s ease-in-out infinite alternate; }
+.sw-orb-2 { left: 34%; top: 58%; animation: sw-orb-b 19s ease-in-out infinite alternate; }
+.sw-orb-3 { left: 56%; top: -6%; animation: sw-orb-a 22s ease-in-out infinite alternate-reverse; }
+.sw-orb-4 { right: 4%; top: 40%; animation: sw-orb-b 17s ease-in-out infinite alternate; }
+.sw-orb-5 { right: 26%; bottom: -10%; animation: sw-orb-a 20s ease-in-out infinite alternate; }
+
+@keyframes sw-orb-a {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to { transform: translate3d(4rem, 3rem, 0) scale(1.18); }
+}
+
+@keyframes sw-orb-b {
+  from { transform: translate3d(0, 0, 0) scale(1.1); }
+  to { transform: translate3d(-3.5rem, -2.5rem, 0) scale(0.92); }
+}
+
+/* TOP-DOWN 가이드 라인 — 히어로를 가로로 천천히 오간다 */
+.sw-guide-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 1px;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    rgba(37, 99, 235, 0.55) 30%,
+    rgba(56, 189, 248, 0.55) 70%,
+    transparent
+  );
+  animation: sw-guide 11s ease-in-out infinite alternate;
+}
+
+@keyframes sw-guide {
+  from { transform: translateX(6vw); }
+  to { transform: translateX(94vw); }
+}
+
+.sw-ring-spin { animation: sw-spin 46s linear infinite; }
+.sw-ring-spin-rev { animation: sw-spin 60s linear infinite reverse; border-style: dashed; }
+
+@keyframes sw-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* 기공서비스 히어로 — 블루프린트 격자와 상태 뱃지 점 */
+.lab-hero-grid {
+  background-image:
+    linear-gradient(to right, rgba(125, 211, 252, 0.07) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(125, 211, 252, 0.07) 1px, transparent 1px);
+  background-size: 56px 56px;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 60%);
+  mask-image: linear-gradient(90deg, transparent 0%, #000 60%);
+}
+
+.lab-live-dot {
+  animation: lab-live 1.6s ease-in-out infinite;
+}
+
+@keyframes lab-live {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(125, 211, 252, 0.6); }
+  50% { opacity: 0.55; box-shadow: 0 0 0 6px rgba(125, 211, 252, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sw-orb,
+  .sw-guide-line,
+  .sw-ring-spin,
+  .sw-ring-spin-rev,
+  .lab-live-dot {
+    animation: none;
+  }
+
+  .sw-parallax,
+  .sw-parallax-back {
+    transform: none;
+  }
+}
+
+/* ── 기공서비스 오퍼(/offer/lab): AI 스캔 라인 · 단계 글로우 · 플로우 라인 · 크레딧 허브 링 ── */
+@keyframes lab-scan-sweep {
+  0% {
+    top: 0;
+    opacity: 0;
+  }
+  8%,
+  92% {
+    opacity: 0.9;
+  }
+  100% {
+    top: 100%;
+    opacity: 0;
+  }
+}
+
+.lab-scan-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  z-index: 0;
+  height: 2px;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(56, 189, 248, 0.85),
+    transparent
+  );
+  box-shadow: 0 0 24px 6px rgba(56, 189, 248, 0.35);
+  animation: lab-scan-sweep 7s linear infinite;
+}
+
+/* 단계 카드가 2초 간격으로 차례로 빛난다(6단계 = 12초 순환) */
+@keyframes lab-step-glow {
+  0%,
+  22%,
+  100% {
+    border-color: rgba(255, 255, 255, 0.12);
+    box-shadow: none;
+  }
+  4%,
+  16% {
+    border-color: rgba(56, 189, 248, 0.65);
+    box-shadow:
+      0 0 0 1px rgba(56, 189, 248, 0.35),
+      0 0 32px rgba(56, 189, 248, 0.22);
+  }
+}
+
+.lab-step-glow {
+  animation: lab-step-glow 12s ease-in-out infinite;
+  animation-delay: calc(var(--i, 0) * 2s);
+}
+
+/* 리빌 래퍼가 `.is-in` 이 되면 연결선이 차오르고 점이 순서대로 켜진다 */
+.lab-flow-fill-x {
+  width: 0;
+  transition: width 1.6s cubic-bezier(0.2, 0.7, 0.2, 1) 0.35s;
+}
+
+.lab-flow-fill-y {
+  height: 0;
+  transition: height 1.6s cubic-bezier(0.2, 0.7, 0.2, 1) 0.35s;
+}
+
+.is-in .lab-flow-fill-x {
+  width: 100%;
+}
+
+.is-in .lab-flow-fill-y {
+  height: 100%;
+}
+
+.lab-flow-dot {
+  transition:
+    background-color 0.4s ease,
+    color 0.4s ease,
+    border-color 0.4s ease,
+    box-shadow 0.4s ease;
+  transition-delay: calc(var(--i, 0) * 260ms + 350ms);
+}
+
+.is-in .lab-flow-dot {
+  background-color: #2563eb;
+  color: #fff;
+  border-color: #2563eb;
+  box-shadow: 0 8px 22px rgba(37, 99, 235, 0.28);
+}
+
+@keyframes lab-hub-ring {
+  0% {
+    transform: scale(0.85);
+    opacity: 0.55;
+  }
+  100% {
+    transform: scale(1.9);
+    opacity: 0;
+  }
+}
+
+.lab-hub-ring {
+  animation: lab-hub-ring 3.2s ease-out infinite;
+  animation-delay: calc(var(--i, 0) * 1.05s);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lab-scan-line,
+  .lab-step-glow,
+  .lab-hub-ring {
+    animation: none;
+  }
+
+  .lab-scan-line,
+  .lab-hub-ring {
+    display: none;
+  }
+
+  .lab-flow-fill-x {
+    width: 100%;
+    transition: none;
+  }
+
+  .lab-flow-fill-y {
+    height: 100%;
+    transition: none;
+  }
+
+  .lab-flow-dot {
+    transition: none;
+    background-color: #2563eb;
+    color: #fff;
+    border-color: #2563eb;
+  }
+}
+
 /*
  * 공개 랜딩·오퍼·행사: 넓은 화면에서 본문 px 타이포를 키운다.
  * 제목·이미지·본문 폭은 landingTheme 의 2xl / 1920px 단계.

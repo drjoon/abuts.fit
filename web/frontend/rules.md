@@ -114,6 +114,8 @@ Notes:
   - 카드/타이포 SSOT: `PUBLIC_CARD_CLASS` · `PUBLIC_PAGE_EYEBROW` · `PUBLIC_PAGE_TITLE` · `PUBLIC_PAGE_SUBTITLE`
   - 카피 SSOT: `src/features/landing/landingTheme.ts` · `landingOffers.ts`
   - `LandingHome` · `LandingOfferPage` · `LandingPracticeWorkspacePreview` · `Footer`
+  - **히어로 이펙트는 페이지마다 다르다**: 랜딩=파티클 워드, 심플웨이=블루프린트 격자·직경 색 오로라·가이드 라인·포인터 시차·궤도 링(`SimpleWayHeroFx.tsx`, css `sw-*`), 기공서비스=3D 스캔 점군(`LabScanField.tsx`). 새 중요 페이지도 기존 히어로 효과를 복제하지 않는다. `prefers-reduced-motion`이면 정지.
+  - **기공서비스(`/offer/lab`)**: 히어로는 왼쪽 카피 + 오른쪽 3D 스캔 점군 캔버스(`hero: "brand"`, `LabOfferHero`+`LabScanField`). 장점 4(AI 디자인·하나의 크레딧·플랫폼·커스텀어벗 연동) → AI 디자인(다크 밴드) → 커스텀어벗 플로우 → 크레딧 허브 → 스토리 → 용어 → FAQ → 흰 CTA 밴드. 전용 카피 SSOT=`labOfferContent.ts`(`offer.lab`), 컴포넌트=`LabOfferSections.tsx`, 이펙트 CSS=`index.css` `lab-*`. 본문 섹션은 랜딩과 같은 `LandingReveal`·`LandingSpotlightCard`·`LandingMagnetic`·`LandingParticleField`(AI 밴드 먼지)를 쓴다. 금액은 적지 않는다. 크레딧 카피는 「거래 선수금」·선불페이 아님·사용분 월합 계산서(면세/과세 분리)·미사용 잔액 환불(`creditPrepaidCopy.ts`와 일치)이며, 「미리 충전하는 방식이 아닙니다」류 옛 문구는 쓰지 않는다.
   - 영업 피치 패널: `PlatformPitchPanel` + `platformPitchBlocks` (영업팀/딜러 — 공개 `/`에는 없음)
 - 공용 타입(역할 SSOT)
   - `src/shared/types/role.ts`

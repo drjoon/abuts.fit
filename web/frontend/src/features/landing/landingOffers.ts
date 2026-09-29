@@ -1,4 +1,9 @@
+// change-log:
+// - 2026-09-29: 기공서비스(lab) 오퍼를 AI 디자인 · 하나의 크레딧 · 플랫폼 · 커스텀어벗 연동 중심으로 재구성.
+//   히어로는 `brand`(랜딩과 같은 파티클 히어로), 전용 섹션 카피는 `labOfferContent.ts`.
 // related files:
+// - web/frontend/src/features/landing/labOfferContent.ts
+// - web/frontend/src/features/landing/LabOfferSections.tsx
 // - web/frontend/src/features/landing/LandingHome.tsx
 // - web/frontend/src/features/landing/LandingOfferPage.tsx
 // - web/frontend/src/features/landing/landingAssets.ts
@@ -9,14 +14,9 @@
   // 정가(판매가·배송비)는 심플웨이 제품 + 커스텀어벗(런칭/정상). 스토어 SSOT: storeCatalog.ts
   // · STORE_SHIPPING_FEE_INCLUSIVE 3,500 · 10만원↑무료. 기공서비스 본문은 금액을 적지 않는다.
 import {
-  LANDING_CAD_PREVIEW,
   LANDING_CASE_ABUTMENT,
-  LANDING_CUSTOM_ABUTMENT,
-  LANDING_CUSTOM_TRACKING,
   LANDING_PLATFORM_BOARD,
-  LANDING_PLATFORM_LEDGER,
   LANDING_PLATFORM_REQUEST,
-  LANDING_PLATFORM_STATS,
   LANDING_SW_CATALOG_ASSEMBLY,
   LANDING_SW_CUSTOM_ASSEMBLY,
   LANDING_SW_FLOW_DEFAULT_ROW_ID,
@@ -24,6 +24,7 @@ import {
   LANDING_WAVEON_PARTNERSHIP,
   LANDING_WAVEON_WORKFLOW,
 } from "./landingAssets";
+import { LAB_OFFER_EXTRAS, type LabOfferExtras } from "./labOfferContent";
 
 export type OfferVisual =
   | { kind: "blank"; caption: string }
@@ -160,7 +161,7 @@ export type LandingOffer = {
   line: string;
   lead: string;
   /** video=유튜브/키트 영상 · photo=풀블리드 스틸 · tile=텍스트+미디어 */
-  hero: "video" | "photo" | "tile";
+  hero: "video" | "photo" | "tile" | "brand";
   /** YouTube 히어로(짧은 루프). hero==="video" 일 때. */
   youtube?: {
     id: string;
@@ -208,6 +209,8 @@ export type LandingOffer = {
     note?: string[];
   }>;
   glossary?: OfferGlossary;
+  /** 기공서비스 전용 섹션(장점·AI 디자인·커스텀어벗·크레딧·FAQ). `hero: "brand"` 와 함께 쓴다. */
+  lab?: LabOfferExtras;
   faq?: Array<{ q: string; a: string | string[] }>;
 };
 
@@ -390,76 +393,37 @@ export const landingOffers: LandingOffer[] = [
   {
     slug: "lab",
     navLabel: "기공서비스",
-    punch: "디자인에서 생산까지",
+    punch: "AI 디자인부터 커스텀어벗 납품까지",
     heroEyebrow: "LAB SERVICE",
-    heroTitle: "디자인에서 생산까지",
-    heroBody: [
-      "의뢰·기공 협업·애크로덴트 납품을 한 흐름으로.",
-      "스캔부터 커스텀어벗 생산까지 같은 플랫폼에서 이어집니다.",
-    ],
-    line: "의뢰부터 배송까지 어벗츠가 한 흐름으로 처리합니다.",
+    heroTitle: "AI 디자인부터 커스텀어벗 납품까지",
+    heroBody: LAB_OFFER_EXTRAS.hero.body,
+    line: "의뢰 한 번으로 디자인·생산·배송·결제까지 이어집니다.",
     lead: "스캔을 올리면, 보철과 맞춤 어벗까지 한 번에.",
-    hero: "tile",
+    hero: "brand",
     tile: WAVEON_PARTNERSHIP_TILE,
-    pageVisual: {
-      kind: "slideshow",
-      shots: [
-        { src: LANDING_WAVEON_PARTNERSHIP, alt: "치과·기공소 디지털 협업" },
-        { src: LANDING_CUSTOM_ABUTMENT, alt: "커스텀 어벗 실물" },
-        { src: LANDING_CAD_PREVIEW, alt: "커스텀 어벗 CAD" },
-        { src: LANDING_PLATFORM_STATS, alt: "정산 통계" },
-      ],
-    },
     cta: { kind: "start", label: "의뢰하기" },
-    glance: {
-      title: "기공서비스, 이 흐름만 알면 됩니다.",
-      lead: [
-        "스캔만 올리면 디자인·가공·배송까지 어벗츠가 처리합니다.",
-        "핵심만 짧게 정리했습니다.",
-      ],
-      items: [
-        {
-          label: "무엇인가",
-          title: "스캔만 올리면 보철·맞춤 어벗까지",
-          body: "디자인, 맞춤 어벗 가공, 크라운·브리지 제작, 배송을 어벗츠가 온라인으로 한 번에 처리하는 기공 서비스입니다.",
-        },
-        {
-          label: "어떻게",
-          title: "의뢰 → 제작 → 배송, 화면에서",
-          body: "치과가 온라인으로 의뢰하면 어벗츠 기공실이 제작하고, 맞춤 어벗과 보철을 함께 치과로 보냅니다.",
-        },
-        {
-          label: "기대효과",
-          title: "전화·메일 없이 상태를 한눈에",
-          body: "진행 상황과 도착일이 화면에 남고, 결제는 실제로 사용한 만큼 매월 말에 정산됩니다.",
-        },
-      ],
-      summary: "한 줄 요약 — 스캔만 올리면 디자인·가공·배송까지 한 번에",
-    },
-    highlights: [
-      { icon: "request", label: "플랫폼", line: "치과가 온라인으로 의뢰합니다." },
-      { icon: "lab", label: "기공실", line: "어벗츠가 직접 운영합니다." },
-      { icon: "crown", label: "보철", line: "크라운과 브리지를 만듭니다." },
-      { icon: "cnc", label: "맞춤 어벗", line: "환자 맞춤으로 깎아 보냅니다." },
-      { icon: "start", label: "작업시작", line: "기공실이 받으면 시작합니다." },
-      { icon: "ship", label: "배송", line: "치과까지 무료로 보냅니다." },
-    ],
-    scene: {
-      title: "디자인이 곧 가공.",
-      line: "올리는 순간 CNC 가공이 시작됩니다.",
-      visual: {
-        kind: "photo",
-        src: LANDING_CUSTOM_ABUTMENT,
-        alt: "커스텀 어벗 실물",
-      },
-    },
+    lab: LAB_OFFER_EXTRAS,
     stories: [
       {
-        name: "어벗츠 플랫폼.",
-        line: "치과 · 기공소.",
+        name: "‘어디까지 됐지?’를 묻지 않아도.",
+        line: "상태와 대화가 한곳에.",
         body: [
-          "치과와 기공소가 온라인으로 보철을 의뢰하고 진행 상황을 함께 봅니다.",
-          "커스텀어벗 제작도 같은 화면에서 이어집니다.",
+          "접수부터 디자인, 출고까지 같은 화면에 남습니다.",
+          "도착일이 보이고, 문의는 그 의뢰서 옆에서 바로 합니다.",
+          "3D 스캔이 없어도 의뢰할 수 있습니다.",
+        ],
+        visual: {
+          kind: "photo",
+          src: LANDING_PLATFORM_REQUEST,
+          alt: "‘어디까지 됐지?’를 묻지 않아도.",
+        },
+      },
+      {
+        name: "거래하던 기공소와 그대로.",
+        line: "지정하면 그 기공소의 수가로.",
+        body: [
+          "의뢰할 때 기공소를 지정하면 그 기공소의 수가로 진행됩니다.",
+          "지정하지 않으면 어벗츠 기공실이 직접 하거나 제휴 기공소가 맡습니다.",
         ],
         visual: {
           kind: "photo",
@@ -476,66 +440,14 @@ export const landingOffers: LandingOffer[] = [
         ],
         visual: ABUTMENT_VISUAL,
       },
-      {
-        name: "맞춤 어벗이 도착하면.",
-        line: "보철과 함께 치과로.",
-        body: [
-          "맞춤 어벗이 기공실에 도착하면 그 위에 보철을 이어 만듭니다.",
-          "따로 챙겨 보낼 필요 없이 치과로 한 번에 나갑니다.",
-        ],
-        visual: {
-          kind: "photo",
-          src: LANDING_CAD_PREVIEW,
-          alt: "맞춤 어벗이 도착하면.",
-        },
-      },
-      {
-        name: "손으로 맞추는 대신, 시스템으로.",
-        line: "누가 해도 비슷한 결과.",
-        body: [
-          "스캔과 디자인이 올라오면 가공이 바로 시작됩니다.",
-          "같은 기준으로 깎기 때문에 결과가 매번 비슷하고, 진행 상황도 화면에서 따라갈 수 있습니다.",
-        ],
-        visual: {
-          kind: "photo",
-          src: LANDING_CUSTOM_TRACKING,
-          alt: "손으로 맞추는 대신, 시스템으로.",
-        },
-      },
-      {
-        name: "‘어디까지 됐지?’를 묻지 않아도.",
-        line: "상태와 대화가 한곳에.",
-        body: [
-          "접수부터 디자인, 출고까지 같은 화면에 남습니다.",
-          "도착일이 보이고, 문의는 그 의뢰서 옆에서 바로 합니다.",
-        ],
-        visual: {
-          kind: "photo",
-          src: LANDING_PLATFORM_REQUEST,
-          alt: "‘어디까지 됐지?’를 묻지 않아도.",
-        },
-      },
-      {
-        name: "쓴 만큼, 월말에.",
-        line: "실제 사용량으로 정산합니다.",
-        body: [
-          "미리 충전하는 방식이 아닙니다.",
-          "실제로 쓴 만큼만 매월 말에 정산됩니다.",
-        ],
-        visual: {
-          kind: "photo",
-          src: LANDING_PLATFORM_LEDGER,
-          alt: "쓴 만큼, 월말에.",
-        },
-      },
     ],
     glossary: {
       title: "헷갈리는 용어, 한 줄로 정리.",
       lead: "기공 의뢰에서 자주 나오는 용어만 짧게 풀어 두었습니다.",
       items: [
         {
-          term: "어벗츠 플랫폼",
-          line: "치과와 기공소가 온라인으로 의뢰·소통하는 공간이에요.",
+          term: "AI 디자인",
+          line: "의뢰서 값으로 정렬·삽입축·마진·스캔바디를 자동으로 잡는 디자인 도구예요.",
         },
         {
           term: "커스텀어벗",
@@ -546,45 +458,19 @@ export const landingOffers: LandingOffer[] = [
           line: "어벗츠가 직접 운영하는 기공소예요.",
         },
         {
-          term: "크레딧 정산",
-          line: "충전이 아니라 쓴 만큼 매월 정산되는 방식이에요.",
+          term: "크레딧(거래 선수금)",
+          line: "기공·커스텀어벗·스토어를 함께 결제하는 예치금이에요. 선불페이가 아니에요.",
+        },
+        {
+          term: "지정 기공소",
+          line: "치과가 의뢰할 때 직접 고른 기공소예요. 그 기공소의 수가로 진행돼요.",
         },
         {
           term: "애크로덴트",
           line: "어벗츠 제품을 만드는 제조사예요.",
         },
-        {
-          term: "심플어벗",
-          line: "심플웨이에서 쓰는 규격 어벗이에요.",
-        },
       ],
     },
-    faq: [
-      {
-        q: "기공서비스는 한마디로 뭔가요?",
-        a: "스캔만 올리면 디자인·맞춤 어벗 가공·보철 제작·배송까지 어벗츠가 온라인으로 처리하는 기공 서비스입니다.",
-      },
-      {
-        q: "무엇을 맡길 수 있나요?",
-        a: "크라운·브리지 보철과 맞춤 어벗 가공입니다. 심플어벗을 고른 뒤나, 맞춤 어벗이 도착한 뒤 같은 흐름으로 이어집니다.",
-      },
-      {
-        q: "진행 상황은 어떻게 보나요?",
-        a: "접수부터 디자인, 출고까지 같은 화면에 남습니다. 도착일이 보이고, 문의는 그 의뢰서 옆에서 바로 합니다.",
-      },
-      {
-        q: "비용은 어떻게 내나요?",
-        a: "미리 충전하는 방식이 아닙니다. 실제로 쓴 만큼만 매월 말에 정산됩니다.",
-      },
-      {
-        q: "심플웨이와는 어떻게 이어지나요?",
-        a: "잇몸을 스캔하고 어벗 규격을 고르면, 보철이 같은 의뢰로 넘어옵니다.",
-      },
-      {
-        q: "커스텀어벗은 어떻게 만드나요?",
-        a: "스캔과 디자인이 올라오면 CNC 가공이 바로 시작됩니다. 완성된 맞춤 어벗이 기공실에 도착하면 보철과 함께 치과로 나갑니다.",
-      },
-    ],
   },
 ];
 

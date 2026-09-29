@@ -1,4 +1,8 @@
+// change-log:
+// - 2026-09-29: 심플웨이 히어로는 블루프린트 격자·직경 색 오로라·시차 링(SimpleWayHeroFx), 기공서비스는 스캔 점군(LabScanField) — 랜딩 파티클과 겹치지 않게.
+// - 2026-09-29: 기공서비스(`offer.lab`)는 전용 섹션(LabOfferSections)을 히어로 직후에 끼우고 FAQ·흰 CTA 밴드로 마무리.
 // related files:
+// - web/frontend/src/features/landing/LabOfferSections.tsx
 // - web/frontend/src/pages/public/OfferPage.tsx
 // - web/frontend/src/features/landing/landingOffers.ts
 // - web/frontend/src/features/landing/OfferVisual.tsx
@@ -46,14 +50,22 @@ import {
   landingTypo,
 } from "./landingTheme";
 import { LANDING_HERO_POSTER, LANDING_HERO_VIDEO } from "./landingAssets";
+import {
+  LabAdvantagesSection,
+  LabAiDesignSection,
+  LabCreditSection,
+  LabFaqSection,
+  LabOfferHero,
+  LabPipelineSection,
+} from "./LabOfferSections";
 import { LandingMagnetic } from "./LandingMagnetic";
-import { LandingParticleField } from "./LandingParticleField";
 import { LandingReveal } from "./LandingReveal";
 import { LandingScrollCue } from "./LandingScrollCue";
 import { LandingScrollProgress } from "./LandingScrollProgress";
 import { LandingSectionRail } from "./LandingSectionRail";
 import { LandingSpotlightCard } from "./LandingSpotlightCard";
 import { OfferVisual } from "./OfferVisual";
+import { SimpleWayHeroFx, SimpleWayRings } from "./SimpleWayHeroFx";
 import {
   type LandingOffer,
   type SpecSwatch,
@@ -1174,13 +1186,25 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
     <div className="bg-white text-slate-900">
       <LandingScrollProgress />
       <LandingSectionRail />
-      {fullBleedHero ? (
+      {offer.hero === "brand" && offer.lab ? (
+        <LabOfferHero
+          hero={offer.lab.hero}
+          eyebrow={heroEyebrow}
+          startLabel={offer.cta?.label ?? landingHome.ctaStart}
+          consultLabel={landingHome.ctaConsult}
+          onStart={() => {
+            if (offer.cta) onBuy(offer.cta);
+            else goStart();
+          }}
+          onConsult={() => navigate("/contact")}
+        />
+      ) : fullBleedHero ? (
         <section data-rail-label="시작" className="bg-white">
           {/* fixed 헤더(h-14/sm:h-16) 아래부터 히어로 */}
           <div className="h-14 sm:h-16" aria-hidden />
           {offer.hero === "photo" ? (
-            <div className="relative flex min-h-[78svh] items-center pb-16 sm:min-h-[82svh]">
-              <LandingParticleField tone="onLight" />
+            <div className="relative flex min-h-[78svh] items-center overflow-hidden pb-16 sm:min-h-[82svh]">
+              <SimpleWayHeroFx />
               <div
                 className={cn(
                   landingContent,
@@ -1222,23 +1246,26 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
                   className="landing-rise relative h-[min(46vh,22rem)] w-full shrink-0 lg:w-[26rem] min-[1600px]:h-[min(52vh,28rem)] min-[1600px]:w-[34rem] min-[1920px]:h-[min(56vh,34rem)] min-[1920px]:w-[40rem]"
                   style={{ "--rise-delay": "300ms" } as CSSProperties}
                 >
-                  <MediaFrame
-                    visual={heroVisual}
-                    reduced={reduced}
-                    drift={false}
-                    native
-                    companionSrc={
-                      offer.heroCompanion?.kind === "photo"
-                        ? offer.heroCompanion.src
-                        : undefined
-                    }
-                    companionAlt={
-                      offer.heroCompanion?.kind === "photo"
-                        ? offer.heroCompanion.alt
-                        : undefined
-                    }
-                    className="absolute inset-0 h-full"
-                  />
+                  <div className="sw-parallax absolute inset-0">
+                    <SimpleWayRings />
+                    <MediaFrame
+                      visual={heroVisual}
+                      reduced={reduced}
+                      drift={false}
+                      native
+                      companionSrc={
+                        offer.heroCompanion?.kind === "photo"
+                          ? offer.heroCompanion.src
+                          : undefined
+                      }
+                      companionAlt={
+                        offer.heroCompanion?.kind === "photo"
+                          ? offer.heroCompanion.alt
+                          : undefined
+                      }
+                      className="absolute inset-0 h-full"
+                    />
+                  </div>
                 </div>
               </div>
               <LandingScrollCue tone="onLight" />
@@ -1341,6 +1368,15 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
           </div>
         </section>
       )}
+
+      {offer.lab ? (
+        <>
+          <LabAdvantagesSection advantages={offer.lab.advantages} />
+          <LabAiDesignSection ai={offer.lab.ai} />
+          <LabPipelineSection pipeline={offer.lab.pipeline} />
+          <LabCreditSection credit={offer.lab.credit} />
+        </>
+      ) : null}
 
       {offer.glance ? <GlanceSection glance={offer.glance} /> : null}
       {offer.guides ? <StoryRows stories={offer.guides} railLabel="가이드" /> : null}
@@ -1491,11 +1527,12 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
       ) : null}
 
       {offer.glossary ? <GlossarySection glossary={offer.glossary} /> : null}
+      {offer.lab ? <LabFaqSection faq={offer.lab.faq} /> : null}
 
       <section
         id="contact"
         data-rail-label="시작하기"
-        className={cn("scroll-mt-20", SKY.band)}
+        className={cn("scroll-mt-20", offer.lab ? "bg-white" : SKY.band)}
       >
         <div
           className={cn(
@@ -1504,12 +1541,14 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
           )}
         >
           <LandingReveal className="max-w-lg">
-            <SectionEyebrow>START SIMPLE WAY</SectionEyebrow>
+            <SectionEyebrow>
+              {offer.lab?.closing.eyebrow ?? "START SIMPLE WAY"}
+            </SectionEyebrow>
             <h2 className={cn(TYPO.h2, "mt-2.5", SKY.ink)}>
-              {landingHome.ctaBandTitle}
+              {offer.lab?.closing.title ?? landingHome.ctaBandTitle}
             </h2>
             <Lines
-              lines={[...landingHome.ctaBandBody]}
+              lines={offer.lab?.closing.body ?? [...landingHome.ctaBandBody]}
               className={cn("mt-3", TYPO.lead)}
             />
           </LandingReveal>
