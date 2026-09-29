@@ -84,14 +84,6 @@ export function LandingHero({
             </span>
           ))}
         </h1>
-        <p
-          className="landing-rise mt-4 max-w-xl break-keep text-[14px] leading-6 text-white/90 sm:mt-5 sm:text-[15px] sm:leading-6"
-          style={rise(650)}
-        >
-          {landingHome.heroBody}
-          <br />
-          {landingHome.heroSupport}
-        </p>
 
         <div
           className="landing-rise mt-7 flex w-full flex-col items-center justify-center gap-2.5 sm:mt-8 sm:w-auto sm:flex-row sm:gap-3"
