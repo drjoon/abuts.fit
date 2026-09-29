@@ -18,6 +18,7 @@
 // - web/frontend/src/shared/files/fileBlobCache.ts
 // - web/frontend/src/shared/files/s3ImageThumb.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-29: 채팅 헤더 — 커스텀어벗 배송 한 줄(한진 현황만).
 // - 2026-09-29: 작업 파일 섹션에도 「폴더 열기」(기공소만, onOpenWorkFilesFolder). 치과는 작업 파일을 받지 않는다.
 // - 2026-09-28: 환자·치아번호 줄 오른쪽에 케이스 공유(플랫폼 내·외부 링크) 버튼.
 // - 2026-09-28: 상단 헤더의 폴더 열기·톱니 제거. 의뢰 파일 섹션에만 둔다.
@@ -229,6 +230,10 @@ import {
 import { cn } from "@/shared/ui/cn";
 import { WIDE_CLUSTER_ROW_CLASS } from "@/shared/ui/contentMeasuredChrome";
 import { toKstYmd, ymdToKstDate } from "@/shared/date/kst";
+import {
+  formatCustomAbutmentShippingChatLine,
+  PRACTICE_ABUTMENT_PROGRESS_FIELD_LABEL,
+} from "@/shared/shipping/hanjinTrackingLabel";
 import { type ChatMessage } from "@/shared/hooks/useChatRooms";
 import {
   ChatSoundGlobalToggle,
@@ -2190,6 +2195,9 @@ export function PracticeTransferDetailChatDialog({
     };
   }, [caseIdentity, orderDate, summaryItems]);
   const identityDateLabel = String(caseIdentityStrip?.secondary || "").trim();
+  const customAbutmentShippingLine = formatCustomAbutmentShippingChatLine(
+    summaryItemValue(summaryItems, PRACTICE_ABUTMENT_PROGRESS_FIELD_LABEL),
+  );
   const previewCaseInfo = caseIdentityStrip ? (
     <p className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
       {caseIdentityStrip.dotColor || caseIdentityStrip.colorKey ? (
@@ -2826,6 +2834,17 @@ export function PracticeTransferDetailChatDialog({
       </div>
     );
   };
+  const renderCustomAbutmentShippingLine = () => {
+    if (!customAbutmentShippingLine) return null;
+    return (
+      <p
+        className="mt-0.5 truncate text-xs text-muted-foreground"
+        title={customAbutmentShippingLine}
+      >
+        {customAbutmentShippingLine}
+      </p>
+    );
+  };
   const renderHeaderActionRow = () => {
     if (!headerActionButtons && !labBasketToolbar) return null;
     return (
@@ -3434,6 +3453,7 @@ export function PracticeTransferDetailChatDialog({
                       {identityChromeActions}
                     </div>
                     {renderIdentityDateRow("mt-0.5")}
+                    {renderCustomAbutmentShippingLine()}
                   </>
                 ) : (
                   <>
@@ -3444,6 +3464,7 @@ export function PracticeTransferDetailChatDialog({
                       {identityChromeActions}
                     </div>
                     {renderIdentityDateRow("mt-0.5")}
+                    {renderCustomAbutmentShippingLine()}
                   </>
                 )}
               </div>

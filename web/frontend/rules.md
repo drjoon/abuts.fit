@@ -20,6 +20,7 @@
 - 최근 변경 목록 파일: `web/frontend/modified_prep_stage_changes_2026-08-03.txt` (작업 공정 변경 이력, 프론트 표시 레벨)
 
 Notes:
+- 커스텀어벗 배송: 사이드바 메뉴는 두지 않는다. 기공의뢰 케이스 채팅 헤더에 `커스텀어벗 배송: {한진 현황}` 한 줄(예: HUB 도착). 생산 전·준비·가공 단계는 이 줄에 넣지 않는다.
 - Requestor workspace header: 기간 필터는 치과 `어벗디자인으로`·기공소 `어벗생산의뢰`(`/dashboard/new-request`) 상단. 헤더 버튼: `[정책 안내]` · `[진행중 x건]` · `[출고예정 x건]` · `[완료 내역 x건]` · `[불완전 가공 x건]` (x=기간 건수). 치과·기공소·어벗츠기공소는 대시보드 메뉴를 두지 않음(치과 `/dashboard` → 구강스캔, 기공소 → 기공의뢰수신, 제출 후 어벗생산/어벗디자인). 보유 크레딧·충전은 사이드바 `크레딧`(`/dashboard/credits`) — 내역/충전 탭, 충전 CTA=`?tab=charge`. 설정 결제 탭은 제거(구 `?tab=payment` → 크레딧 충전 리다이렉트). 설정 의뢰 탭도 제거 — 디자인소프트웨어·아노다이징은 어벗의뢰(`/dashboard/new-request`) 좌측 상단 버튼. 치과 설정 「구독」탭·헤더 `[구독]`은 제거(구 `?tab=subscription` → 계정). 아노다이징: 의뢰자 계정 기본값(`User.requestSettings.anodizingEnabled` / API `requestorAnodizingEnabled`) → **신규 업로드에만** `caseInfos.anodizingEnabled` 주입(이미 첨부된 카드·디자인소프트웨어와 동일하게 미변경). 사업체 `requestSettings.anodizingEnabled`는 레거시/미설정 폴백(기본 ON).
 - Semantic color palette (강제, 앱 전체):
   - 의미 축 4 + 서비스 1만 사용. 같은 축 안 차이는 soft/muted/DEFAULT/strong 밝기만.

@@ -4,6 +4,7 @@
 // - web/frontend/src/shared/practice/practiceSenderTransferDetailModel.ts
 // - web/frontend/src/types/request.ts
 // change-log:
+// - 2026-09-29: 케이스 채팅 한 줄 — 커스텀어벗 배송: {한진 현황}. 생산 공정 단계는 제외.
 // - 2026-08-29: 기공의뢰 CA — 제목「어벗 진행상황」, 제조 공정(준비·가공·세척·패킹 등) 그대로 표시(생산 중 합침 제거).
 // - 2026-08-21: 한진 운송중 뱃지 라벨(예: 여수 SUB 도착) SSOT. 기공의뢰 CA 배송 단계 문구 포함.
 // - 2026-09-01: 캘린더 칩용 getPracticeAbutmentDeliveryChipLabel 제거 — 칩은 기공소/환자·치식만.
@@ -196,6 +197,19 @@ export const practiceAbutmentProgressValueClassName = (
   if (tone === "done") return "text-emerald-700";
   if (tone === "pending") return "text-slate-600";
   return "text-amber-800";
+};
+
+/**
+ * 케이스 채팅 헤더용. 택배 현황만.
+ * 예: "커스텀어벗 배송: Mega-Hub HUB 출발"
+ */
+export const formatCustomAbutmentShippingChatLine = (
+  progressLabel: string | null | undefined,
+): string | null => {
+  const value = String(progressLabel || "").trim();
+  if (!value) return null;
+  if (getPracticeAbutmentProgressTone(value) === "pending") return null;
+  return `커스텀어벗 배송: ${value}`;
 };
 
 export const practiceAbutmentProgressBadgeClassName = (
