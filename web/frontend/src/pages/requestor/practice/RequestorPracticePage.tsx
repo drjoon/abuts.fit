@@ -378,6 +378,7 @@ import {
   listPracticeTransferAbutsCustomAbutmentToothWorks,
   listPracticeTransferPendingProstheticSlots,
   listPracticeTransferUploadedAbutmentTeeth,
+  normalizeAbutmentToothStagesFromApi,
   practiceTransferAbutmentMachiningStarted,
   practiceTransferWorkCancelBlockedByArrival,
   practiceTransferHasCustomAbutment,
@@ -1388,6 +1389,10 @@ export function RequestorPracticeReceivePage({
                     .map((t) => String(t || "").trim())
                     .filter(Boolean)
                 : [],
+              abutmentToothStages:
+                normalizeAbutmentToothStagesFromApi(
+                  productionRaw.abutmentToothStages,
+                ) || [],
               confirmedAt: productionRaw.confirmedAt
                 ? String(productionRaw.confirmedAt)
                 : null,
@@ -1590,6 +1595,7 @@ export function RequestorPracticeReceivePage({
         abutmentProductionStartedAt: null,
         abutmentPastReady: false,
         abutmentPastReadyTeeth: [],
+        abutmentToothStages: [],
         confirmedAt: null,
       };
       const clearedAutoMatch = transfer.autoMatch
@@ -1761,6 +1767,11 @@ export function RequestorPracticeReceivePage({
             server.production.abutmentPastReadyTeeth.length > 0
               ? server.production.abutmentPastReadyTeeth
               : local.production?.abutmentPastReadyTeeth || [],
+          abutmentToothStages:
+            Array.isArray(server.production?.abutmentToothStages) &&
+            server.production.abutmentToothStages.length > 0
+              ? server.production.abutmentToothStages
+              : local.production?.abutmentToothStages || [],
         },
       };
     },
@@ -2316,6 +2327,52 @@ export function RequestorPracticeReceivePage({
               prev && prev.transferId === transferId ? patchShip(prev) : prev,
             );
           }
+          if (hasUnreadCount) {
+            emitUnreadBadgeRefresh(unreadCount);
+          }
+          return;
+        }
+        if (action === "abutment-stage-changed") {
+          const productionRawFromRealtime =
+            payload.production && typeof payload.production === "object"
+              ? (payload.production as Record<string, unknown>)
+              : null;
+          const toothStages = normalizeAbutmentToothStagesFromApi(
+            productionRawFromRealtime?.abutmentToothStages,
+          );
+          const pastReadyTeethRaw =
+            productionRawFromRealtime?.abutmentPastReadyTeeth;
+          const patchStages = (
+            row: ReceivedPracticeTransfer,
+          ): ReceivedPracticeTransfer => ({
+            ...row,
+            production: {
+              ...(row.production || {}),
+              ...(toothStages ? { abutmentToothStages: toothStages } : {}),
+              ...(Array.isArray(pastReadyTeethRaw)
+                ? {
+                    abutmentPastReadyTeeth: pastReadyTeethRaw
+                      .map((t) => String(t || "").trim())
+                      .filter(Boolean),
+                  }
+                : {}),
+              ...(productionRawFromRealtime?.abutmentPastReady != null
+                ? {
+                    abutmentPastReady: Boolean(
+                      productionRawFromRealtime.abutmentPastReady,
+                    ),
+                  }
+                : {}),
+            },
+          });
+          setTransfers((prev) =>
+            prev.map((row) =>
+              row.transferId === transferId ? patchStages(row) : row,
+            ),
+          );
+          setSelectedTransfer((prev) =>
+            prev && prev.transferId === transferId ? patchStages(prev) : prev,
+          );
           if (hasUnreadCount) {
             emitUnreadBadgeRefresh(unreadCount);
           }
@@ -3298,10 +3355,14 @@ export function RequestorPracticeReceivePage({
             .map((t) => String(t || "").trim())
             .filter(Boolean)
         : prev?.abutmentPastReadyTeeth;
+      const toothStages = normalizeAbutmentToothStagesFromApi(
+        productionRaw?.abutmentToothStages,
+      );
       return {
         ...(prev || {}),
         shippingMode,
         relatedRequestIds,
+        ...(toothStages ? { abutmentToothStages: toothStages } : {}),
         ...(productionRaw?.abutmentPastReady != null
           ? { abutmentPastReady: Boolean(productionRaw.abutmentPastReady) }
           : {}),
@@ -3348,6 +3409,12 @@ export function RequestorPracticeReceivePage({
               ? true
               : Boolean(prev?.abutmentPastReady),
         abutmentPastReadyTeeth: pastReadyTeeth,
+        abutmentToothStages:
+          normalizeAbutmentToothStagesFromApi(
+            productionRaw?.abutmentToothStages,
+          ) ||
+          prev?.abutmentToothStages ||
+          [],
         abutmentProductionStartedAt: productionRaw?.abutmentProductionStartedAt
           ? String(productionRaw.abutmentProductionStartedAt)
           : prev?.abutmentProductionStartedAt || new Date().toISOString(),
@@ -4087,6 +4154,12 @@ export function RequestorPracticeReceivePage({
                 .map((t) => String(t || "").trim())
                 .filter(Boolean)
             : transfer.production?.abutmentPastReadyTeeth || [],
+          abutmentToothStages:
+            normalizeAbutmentToothStagesFromApi(
+              productionRawFromRes?.abutmentToothStages,
+            ) ||
+            transfer.production?.abutmentToothStages ||
+            [],
           confirmedAt: autoConfirmedAt,
           relatedRequestIds: Array.isArray(productionRawFromRes?.relatedRequestIds)
             ? productionRawFromRes.relatedRequestIds.map((id) => String(id))
@@ -6618,6 +6691,7 @@ export function RequestorPracticeReceivePage({
               abutmentProductionStartedAt: null,
               abutmentPastReady: false,
               abutmentPastReadyTeeth: [],
+              abutmentToothStages: [],
             },
           };
         };

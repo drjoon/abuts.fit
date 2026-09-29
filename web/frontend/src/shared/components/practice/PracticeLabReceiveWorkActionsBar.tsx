@@ -46,6 +46,7 @@ import {
   listPracticeTransferCustomAbutmentToothWorks,
   listPracticeTransferPastReadyAbutmentTeeth,
   listPracticeTransferUploadedAbutmentTeeth,
+  mapPracticeTransferAbutmentToothStages,
   resolvePracticeLabReceiveWorkActionState,
   resolvePracticeTransferAbutmentUploadOverdue,
   type PracticeTransferLabReceiveItem,
@@ -270,6 +271,7 @@ export function PracticeLabReceiveWorkActionsBar({
         catalog,
       )}
       pastReadyAbutmentTeeth={pastReadyTeeth}
+      abutmentToothStages={mapPracticeTransferAbutmentToothStages(transfer)}
       abutsTrailing={abutsTrailing}
     />
   ) : null;

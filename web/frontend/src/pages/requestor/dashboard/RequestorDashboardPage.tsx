@@ -942,7 +942,10 @@ export const RequestorDashboardPage = () => {
         type === "practice:transfer-created" ||
         type === "practice:transfer-updated"
       ) {
-        return true;
+        const action = String(
+          (evt?.data as { action?: unknown } | undefined)?.action || "",
+        ).trim();
+        return action !== "abutment-stage-changed";
       }
 
       const myOrgId = normalizeEventId(user?.businessAnchorId);

@@ -529,6 +529,9 @@ export function PracticeRecentTransfersAllModal({
         evt?.data && typeof evt.data === "object"
           ? (evt.data as Record<string, unknown>)
           : {};
+      if (String(payload.action || "").trim() === "abutment-stage-changed") {
+        return;
+      }
       const prosthesisPatch = prosthesisFollowUpPatchFromRealtimePayload(payload);
       if (prosthesisPatch) {
         setCalendarRequests((prev) =>

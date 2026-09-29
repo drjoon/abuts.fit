@@ -64,7 +64,7 @@ export function CookieConsentBanner() {
     <div
       className={cn(
         "pointer-events-none fixed bottom-[max(1rem,env(safe-area-inset-bottom))] z-40 flex justify-center px-3 sm:bottom-6 sm:px-6",
-        reserveChat ? "right-20 sm:right-28" : "right-3 sm:right-6",
+        reserveChat ? "right-20 sm:right-[11rem]" : "right-3 sm:right-6",
         dockedSidebar
           ? sidebarOpen
             ? "left-3 xl:left-[calc(15rem+0.75rem)]"

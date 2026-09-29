@@ -8,6 +8,7 @@
 // - web/backend/controllers/chats/chat.controller.js
 // - web/backend/utils/partnerChat.util.js
 // change-log:
+// - 2026-09-29: FAB 라벨「문의하기」(sm+ 알약형) — 문제 발생 시 문의 경로 노출.
 // - 2026-09-07: 채팅 알림음 메뉴(이 채팅/전체) + 열람 중 스킵 등록.
 // - 2026-09-07: 파트너 DM unread — chat:message-created 실시간 배지 반영.
 // - 2026-09-07: 채팅 의뢰ID 클릭 → 작업현황(채팅) 열기.
@@ -983,12 +984,16 @@ export const NewChatWidget = () => {
         {!isOpen ? (
           <Button
             size="lg"
-            className="relative rounded-full h-12 w-12 sm:h-14 sm:w-14 shadow-elegant animate-pulse-glow"
+            className="relative h-12 w-12 gap-2 rounded-full px-0 shadow-elegant animate-pulse-glow sm:h-12 sm:w-auto sm:px-5"
             variant="hero"
             onClick={() => setIsOpen(true)}
-            aria-label="채팅 열기"
+            aria-label="문의하기"
+            title="어벗츠 고객지원·거래처 채팅"
           >
-            <MessageSquare className="h-5 w-5 sm:h-6 sm:w-6" />
+            <MessageSquare className="h-5 w-5 shrink-0" />
+            <span className="hidden text-sm font-semibold sm:inline">
+              문의하기
+            </span>
             {totalUnread > 0 && (
               <span className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground text-[10px] leading-none rounded-full h-5 min-w-5 px-1 flex items-center justify-center">
                 {totalUnread > 99 ? "99+" : totalUnread}

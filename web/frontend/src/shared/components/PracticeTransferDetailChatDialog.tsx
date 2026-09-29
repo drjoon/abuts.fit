@@ -77,6 +77,7 @@
 // - 2026-09-11: 채팅 min-height에 식별·기공소 메모/평가 크롬 높이 합산.
 // - 2026-09-11: 의뢰 라벨·치식 제거, 파일 내부 스크롤 폐지, 진행 영역 viewport 높이.
 // - 2026-09-11: 의뢰 핵심/상세 정보 제거 — 주문일은 상단 도착일 옆에 표시.
+// - 2026-09-29: headerActionLeading — 헤더 액션 줄 왼쪽 슬롯(치과 커스텀어벗 공정).
 // - 2026-09-11: 의뢰/진행 탭 제거 — 단일 스크롤(의뢰↑·진행↓), 점프 버튼, 채팅 유무로 초기 위치.
 // - 2026-09-11: 어벗 가공 시작 시 「작업 취소」CTA 숨김(카드와 동일). 클릭 판정만 의존하지 않음.
 // - 2026-09-10: chatHeaderAction — 탭 행 → 환자/도착일 식별 스트립 오른쪽.
@@ -549,6 +550,8 @@ type PracticeTransferDetailChatDialogProps = {
   caseIdentity?: PracticeTransferDialogCaseIdentity | null;
   /** 의뢰 요약 아래·진행 상단 공통 — 예: 어벗 업로드 지연, 미가입 초대 */
   summaryBanner?: ReactNode;
+  /** 헤더 액션 줄(지르 보철 등) 왼쪽 — 예: 치과 커스텀어벗 공정 */
+  headerActionLeading?: ReactNode;
   /**
    * 기공소 작업시작 바 왼쪽 안내(예: 플랫폼 가입 이전 리메이크 확인).
    * 어벗/구강스캔 안내와 함께 표시된다.
@@ -856,6 +859,7 @@ export function PracticeTransferDetailChatDialog({
   composerToolbarExtra = null,
   caseIdentity = null,
   summaryBanner = null,
+  headerActionLeading = null,
   acceptBarHint = null,
   summaryItems,
   memo,
@@ -2846,7 +2850,9 @@ export function PracticeTransferDetailChatDialog({
     );
   };
   const renderHeaderActionRow = () => {
-    if (!headerActionButtons && !labBasketToolbar) return null;
+    if (!headerActionButtons && !labBasketToolbar && !headerActionLeading) {
+      return null;
+    }
     return (
       <div
         className={cn(
@@ -2855,6 +2861,9 @@ export function PracticeTransferDetailChatDialog({
         )}
       >
         {labBasketToolbar}
+        {headerActionLeading ? (
+          <div className="min-w-0">{headerActionLeading}</div>
+        ) : null}
         {headerActionButtons ? (
           <div className="ml-auto flex min-w-0 shrink-0 items-center justify-end">
             {headerActionButtons}

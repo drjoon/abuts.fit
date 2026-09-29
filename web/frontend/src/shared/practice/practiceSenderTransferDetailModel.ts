@@ -7,6 +7,7 @@
  * 2026-08-21: 작업취소·휴지통 상태에서는 디자인 컨펌 CTA 숨김.
  * 2026-08-29: 요약 필드「어벗 진행상황」— 제조 공정 라벨 표시.
  * 2026-09-07: 기공의뢰 단계 — 현재·다음 공정 표시(틀니 등).
+ * 2026-09-29: abutmentStageLabel — 커스텀어벗 치아별 제조사 공정.
  * 2026-09-23: 채팅 헤더용 doctorName 노출(환자명 옆).
  * 2026-09-07: 기공의뢰 단계 줄바꿈 구분(한 줄 장문 가독성).
  */
@@ -16,6 +17,7 @@ import type {
 } from "@/shared/practice/practiceRecentTransferList";
 import {
   parsePracticeTransferMemoMeta as parsePracticeTransferMemoMetaShared,
+  toToothMemoSortNumber,
   type ToothWorkSelection,
 } from "@/shared/practice/transferMemo";
 import type {
@@ -164,8 +166,24 @@ export type PracticeSenderTransferDetailModel = {
   patientName: string;
   /** 신규의뢰에서 선택한 원장님 성함(없으면 빈 문자열) */
   doctorName: string;
+  /** 커스텀어벗 치아별 제조사 공정 `44(세척.패킹), 43(준비)` — 없으면 null */
+  abutmentStageLabel: string | null;
   downloadAllFiles: PracticeRecentTransferFileItem[];
 };
+
+function buildAbutmentStageLabel(
+  stages: PracticeRecentTransferItem["abutmentToothStages"],
+): string | null {
+  if (!Array.isArray(stages) || stages.length === 0) return null;
+  return stages
+    .slice()
+    .sort(
+      (a, b) =>
+        toToothMemoSortNumber(a.tooth) - toToothMemoSortNumber(b.tooth),
+    )
+    .map((row) => `${row.tooth}(${row.stage})`)
+    .join(", ");
+}
 
 export function buildPracticeSenderTransferDetailModel(
   transfer: PracticeRecentTransferItem | null,
@@ -333,6 +351,9 @@ export function buildPracticeSenderTransferDetailModel(
     productionConfirmButtonLabel: isDesignConfirm ? "어벗 디자인 컨펌" : "생산 진행",
     patientName,
     doctorName,
+    abutmentStageLabel: transfer.hasCustomAbutment
+      ? buildAbutmentStageLabel(transfer.abutmentToothStages)
+      : null,
     downloadAllFiles: [
       ...(Array.isArray(transfer.files) ? transfer.files : []),
       ...(Array.isArray(transfer.workScanFiles) ? transfer.workScanFiles : []),

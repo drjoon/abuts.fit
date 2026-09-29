@@ -278,6 +278,8 @@ export const LAB_PENDING_ABUTMENT_TOOTH_TOOLTIP_READY =
 /** 치아 단위 — 가공(리메이크) */
 export const LAB_PENDING_ABUTMENT_TOOTH_TOOLTIP_PAST_READY =
   "제조사가 가공(준비 이후)에 들어갔습니다.\n취소는 할 수 없고, 클릭하면 리메이크로 이 치아를 재제작할 수 있습니다.";
+/** 치아 뒤 공정 — 아직 STL 없음 */
+export const LAB_PENDING_ABUTMENT_UPLOAD_WAITING_STAGE = "업로드 대기";
 /** 호버 툴팁 — 미제공 + 어벗츠 대상(업로드 전) */
 export const LAB_PENDING_ABUTMENT_TOOLTIP_MIXED =
   "어벗츠 미제공 치아는 기공소에서 자체 제작하고,\n어벗츠 대상만 STL을 올려 생산 의뢰하세요.";

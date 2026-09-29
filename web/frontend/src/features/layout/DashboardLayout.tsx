@@ -1048,7 +1048,13 @@ export const DashboardLayout = () => {
           ? (evt.data as Record<string, unknown>)
           : {};
       const action = String(payload.action || "").trim();
-      if (action === "work-scan-files-saved" || action === "work-scan-auto-aligned") return;
+      if (
+        action === "work-scan-files-saved" ||
+        action === "work-scan-auto-aligned" ||
+        action === "abutment-stage-changed"
+      ) {
+        return;
+      }
       const unreadCount = Number(payload.unreadCount);
       if (Number.isFinite(unreadCount) && unreadCount >= 0) {
         setRequestorPracticeUnreadCount(unreadCount);

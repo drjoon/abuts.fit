@@ -8137,6 +8137,36 @@ export const PracticeFileTransferPage = ({
         return;
       }
 
+      if (action === "abutment-stage-changed") {
+        const eventTransferId = String(payload.transferId || "").trim();
+        const productionRaw =
+          payload.production && typeof payload.production === "object"
+            ? (payload.production as Record<string, unknown>)
+            : null;
+        if (!eventTransferId || !Array.isArray(productionRaw?.abutmentToothStages)) {
+          return;
+        }
+        const stages = (productionRaw.abutmentToothStages as unknown[])
+          .map((row) => ({
+            tooth: String((row as { tooth?: unknown })?.tooth || "").trim(),
+            stage: String((row as { stage?: unknown })?.stage || "").trim(),
+          }))
+          .filter((row) => row.tooth && row.stage);
+        setRecentRequests((prev) =>
+          prev.map((row) =>
+            String(row.transferId || "").trim() === eventTransferId
+              ? { ...row, abutmentToothStages: stages }
+              : row,
+          ),
+        );
+        setSelectedTransfer((prev) =>
+          prev && String(prev.transferId || "").trim() === eventTransferId
+            ? { ...prev, abutmentToothStages: stages }
+            : prev,
+        );
+        return;
+      }
+
       const prosthesisPatch = prosthesisFollowUpPatchFromRealtimePayload(payload);
       if (prosthesisPatch) {
         applyProsthesisFollowUpToRecentRequests(prosthesisPatch);
@@ -11725,6 +11755,17 @@ export const PracticeFileTransferPage = ({
           }
           summaryItems={selectedTransferDetailModel?.summaryItems || []}
           summaryBanner={null}
+          headerActionLeading={
+            selectedTransferDetailModel?.abutmentStageLabel ? (
+              <p className="truncate text-xs leading-snug text-amber-800 dark:text-amber-200">
+                <span className="font-medium">커스텀어벗 공정</span>
+                {" — "}
+                <span className="font-medium">
+                  {selectedTransferDetailModel.abutmentStageLabel}
+                </span>
+              </p>
+            ) : null
+          }
           memo={selectedTransferDetailModel?.memo || "-"}
           toothWorks={selectedTransferDetailModel?.toothWorks || []}
           toothWorksKey={

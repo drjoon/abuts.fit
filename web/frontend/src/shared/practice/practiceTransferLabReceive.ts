@@ -6,6 +6,7 @@
 // change-log:
 // - 2026-09-27: 표시 단계 작업완료와 UI 완료 뱃지(isPracticeRecentFinishedBadgeStatus)를 주석으로 구분.
 // - 2026-09-27: 협력 원청은 작업 CTA 숨김(viewerOperatesLabReceiveWork). 하청·자체는 원청도 작업.
+// - 2026-09-29: abutmentToothStages — 치아별 제조사 공정(채팅 안내 `43(준비), 44(세척.패킹)`).
 // - 2026-09-26: 보철 슬롯이 남으면 작업완료 전 디자인 파일 업로드(prosthetic|dual).
 // - 2026-09-16: 커스텀어벗 목록 — 후속(지르) 행 제외(임시치아 CA와 치아번호 중복 방지).
 // - 2026-09-12: 다치아 — 일부만 가공(pastReady)이어도 남은 STL 업로드 CTA 유지.
@@ -102,6 +103,11 @@ export type PracticeTransferRemakeCharge = {
   chargeIndex?: number;
 };
 
+export type PracticeTransferAbutmentToothStage = {
+  tooth: string;
+  stage: string;
+};
+
 export type PracticeTransferLabReceiveItem = {
   _id: string;
   transferId: string;
@@ -187,6 +193,8 @@ export type PracticeTransferLabReceiveItem = {
     abutmentPastReady?: boolean;
     /** 가공(준비 이후)에 들어간 치아번호 — 기공소 치아별 표시·리메이크 */
     abutmentPastReadyTeeth?: string[];
+    /** 연동 CA Request 치아별 제조사 공정 */
+    abutmentToothStages?: PracticeTransferAbutmentToothStage[];
     confirmedAt?: string | null;
     relatedRequestIds?: string[];
   } | null;
@@ -600,6 +608,33 @@ export function listPracticeTransferPastReadyAbutmentTeeth(
     out.push(tooth);
   }
   return out;
+}
+
+/** 치아번호 → 제조사 공정(준비·가공·세척.패킹·포장.발송·추적관리) */
+export function mapPracticeTransferAbutmentToothStages(
+  transfer: PracticeTransferLabReceiveItem | null | undefined,
+): Map<string, string> {
+  const map = new Map<string, string>();
+  const raw = transfer?.production?.abutmentToothStages;
+  if (!Array.isArray(raw)) return map;
+  for (const row of raw) {
+    const tooth = String(row?.tooth || "").trim();
+    const stage = String(row?.stage || "").trim();
+    if (tooth && stage && !map.has(tooth)) map.set(tooth, stage);
+  }
+  return map;
+}
+
+export function normalizeAbutmentToothStagesFromApi(
+  raw: unknown,
+): PracticeTransferAbutmentToothStage[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  return raw
+    .map((row) => ({
+      tooth: String((row as { tooth?: unknown })?.tooth || "").trim(),
+      stage: String((row as { stage?: unknown })?.stage || "").trim(),
+    }))
+    .filter((row) => row.tooth && row.stage);
 }
 
 /** 도착일 도래(당일 포함). 비어벗 작업취소 차단용. */

@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/components/practice/PracticeLabReceiveWorkActionsBar.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 // change-log:
+// - 2026-09-29: 어벗츠 생산의뢰 치아 뒤 제조사 공정 `43(준비), 44(세척.패킹)` · 미업로드 `(업로드 대기)`.
 // - 2026-09-16: 후속(지르) 행은 안내 치아번호에서 제외(임시치아 CA 중복 방지).
 // - 2026-09-12: 가공 치아 호박색·클릭=리메이크 · (전체리메이크). 툴팁 문장 줄바꿈.
 // - 2026-09-12: 준비 단계 — 치아번호 클릭=개별 취소 · (전체취소). 상태 문구 비표시.
@@ -44,6 +45,7 @@ import {
   LAB_PENDING_ABUTMENT_TOOLTIP_SELF_ONLY,
   LAB_PENDING_ABUTMENT_TOOTH_TOOLTIP_PAST_READY,
   LAB_PENDING_ABUTMENT_TOOTH_TOOLTIP_READY,
+  LAB_PENDING_ABUTMENT_UPLOAD_WAITING_STAGE,
 } from "@/shared/practice/roundBarAbutment";
 import {
   isPendingRoundBarAbutment,
@@ -88,6 +90,8 @@ export type LabPendingAbutmentGuideProps = {
   pastReadyAbutmentTeeth?: Iterable<string> | null;
   /** 어벗츠 생산의뢰 줄 맨 오른쪽(출고일 버튼 · [업로드 대기] 배지) */
   abutsTrailing?: ReactNode;
+  /** 치아별 제조사 공정 — 번호 뒤 `(준비)`·`(세척.패킹)` */
+  abutmentToothStages?: Map<string, string> | null;
   className?: string;
 };
 
@@ -169,10 +173,13 @@ function ToothNumberDetail({
   cancelBusy,
   onToothCancel,
   onToothRemake,
+  toothStages,
 }: {
   rows: ToothWorkSelection[];
   struckTeeth?: Set<string>;
   pastReadyTeeth?: Set<string>;
+  /** 있으면 치아 뒤에 `(준비)` · 미업로드는 `(업로드 대기)` */
+  toothStages?: Map<string, string> | null;
   allowCancel?: boolean;
   allowRemake?: boolean;
   cancelBusy?: boolean;
@@ -198,6 +205,18 @@ function ToothNumberDetail({
           uploaded &&
           !pastReady &&
           typeof onToothCancel === "function";
+        // 업로드 직후 등 공정 조회 전이면 업로드·가공 여부로 채운다.
+        const stageLabel = toothStages
+          ? toothStages.get(tooth) ||
+            (pastReady
+              ? "가공"
+              : uploaded
+                ? "준비"
+                : LAB_PENDING_ABUTMENT_UPLOAD_WAITING_STAGE)
+          : "";
+        const stageSuffix = stageLabel ? (
+          <span className="font-normal">({stageLabel})</span>
+        ) : null;
         return (
           <Fragment key={`${tooth}-${index}`}>
             {index > 0 ? ", " : null}
@@ -281,6 +300,7 @@ function ToothNumberDetail({
                 {tooth}
               </span>
             )}
+            {stageSuffix}
           </Fragment>
         );
       })}
@@ -364,6 +384,7 @@ export function LabPendingAbutmentGuide({
   uploadedAbutmentTeeth = null,
   pastReadyAbutmentTeeth = null,
   abutsTrailing = null,
+  abutmentToothStages = null,
   className,
 }: LabPendingAbutmentGuideProps) {
   const pendingRows = listPendingRows(toothWorks);
@@ -460,6 +481,7 @@ export function LabPendingAbutmentGuide({
           cancelBusy={abutsCancelBusy}
           onToothCancel={onAbutsToothCancelClick}
           onToothRemake={onAbutsToothRemakeClick}
+          toothStages={abutmentToothStages}
         />
       }
       suffix={cancelAllSuffix}

@@ -310,6 +310,8 @@ import { completePracticeTransferWork } from "../../services/practiceTransferCom
 // - 2026-09-12: GET /my toVirtualRequestRows — files[]·trashedFiles(의뢰 파일 휴지통) 포함.
 // - 2026-09-12: request-files — uploadBatchId·uploadedAt 웨이브 스탬프(시점별 클러스터).
 // - 2026-09-12: request-files append/remove — 상세 패널 드롭·클립으로 의뢰 파일(3D·이미지) 추가·삭제.
+// - 2026-09-29: remake — 협력·하청 원의뢰의 수행 기공소(assignee)·수가 앵커를 리메이크에 승계.
+// - 2026-09-29: GET /received — abutmentToothStages(치아별 제조사 공정) enrich.
 // - 2026-09-12: GET /received 캘린더도 abutmentPastReadyTeeth enrich(리프레시 후 준비 취소선 오표시 방지).
 // - 2026-09-12: abutment-ship-ymd — pastReady 객체 truthy 버그(항상 409) 수정. 도착−n(최소 2·기본 3).
 // - 2026-09-12: abutment-ship-ymd — 도착−n(최소 2달력일). 기본 −3. CA 스케줄은 응답 후.
@@ -971,7 +973,10 @@ const extractTransferMemoFromMessage = (message) => {
     .trim();
 };
 
-const toProductionApiFields = (production, { abutmentPastReady, abutmentPastReadyTeeth } = {}) => {
+const toProductionApiFields = (
+  production,
+  { abutmentPastReady, abutmentPastReadyTeeth, abutmentToothStages } = {},
+) => {
   const p = production && typeof production === "object" ? production : {};
   const designFiles = normalizeResultFiles(p.designFiles);
   // 목록 등에서 라이브 pastReady를 넘기면 sticky startedAt보다 우선(가공→준비 복귀).
@@ -1033,6 +1038,17 @@ const toProductionApiFields = (production, { abutmentPastReady, abutmentPastRead
     abutmentPastReady: pastReady,
     /** 가공(준비 이후)에 들어간 치아번호 — 기공소 치아별 표시·리메이크 */
     abutmentPastReadyTeeth: pastReadyTeeth,
+    // 연동 Request를 조회한 응답에만 싣는다. 없으면 FE가 이전 값을 유지.
+    ...(Array.isArray(abutmentToothStages)
+      ? {
+          abutmentToothStages: abutmentToothStages
+            .map((row) => ({
+              tooth: String(row?.tooth || "").trim(),
+              stage: String(row?.stage || "").trim(),
+            }))
+            .filter((row) => row.tooth && row.stage),
+        }
+      : {}),
     confirmedAt: p.confirmedAt || null,
     relatedRequestIds: Array.isArray(p.relatedRequestIds)
       ? p.relatedRequestIds.map((id) => String(id))
@@ -6849,7 +6865,11 @@ export async function remakePracticeTransfers(req, res) {
     const labIdsForRemake = [
       ...new Set(
         sources
-          .map((row) => String(row?.targetLabAnchorId || "").trim())
+          .map((row) =>
+            String(
+              resolveFeeScheduleLabAnchorId(row) || row?.targetLabAnchorId || "",
+            ).trim(),
+          )
           .filter((id) => Types.ObjectId.isValid(id)),
       ),
     ];
@@ -6893,6 +6913,20 @@ export async function remakePracticeTransfers(req, res) {
         });
         continue;
       }
+
+      // 협력·하청 원의뢰는 같은 수행 기공소로 리메이크(원청만 남기면 수행 기공소가 수신함에서 잃는다).
+      const assigneeLabAnchorId = source.assigneeLabAnchorId || null;
+      const assigneeKind = assigneeLabAnchorId
+        ? resolveAssigneeKind(source)
+        : null;
+      const assigneeFields = {
+        targetLabAnchorId,
+        assigneeLabAnchorId,
+        assigneeKind,
+        matchingMode: "direct",
+      };
+      const feeLabAnchorId =
+        resolveFeeScheduleLabAnchorId(assigneeFields) || targetLabAnchorId;
 
       const practiceAnchorId =
         source.practiceBusinessAnchorId ||
@@ -6951,7 +6985,7 @@ export async function remakePracticeTransfers(req, res) {
       const remakePricing = isWithinLabFreeRemakeWindow(
         source.createdAt ||
           (Array.isArray(source.orderDates) ? source.orderDates[0] : null),
-        freeRemakeYearsByLabId.get(String(targetLabAnchorId)),
+        freeRemakeYearsByLabId.get(String(feeLabAnchorId)),
       );
 
       try {
@@ -6981,10 +7015,15 @@ export async function remakePracticeTransfers(req, res) {
 
       const feeQuote = await buildPracticeTransferQuote({
         practiceAnchorId,
-        labAnchorId: targetLabAnchorId,
+        labAnchorId: feeLabAnchorId,
+        labFeeMultiplierLabAnchorId:
+          resolveLabFeeMultiplierLabAnchorId(assigneeFields),
         toothWorks,
         remake: remakePricing,
         matchingMode: "direct",
+        subcontracted: assigneeKind === "subcontract",
+        consentLabAnchorId:
+          assigneeKind === "subcontract" ? assigneeLabAnchorId : null,
       });
 
       const transferId = `PTX-${Date.now().toString(36).toUpperCase()}${created.length
@@ -7022,6 +7061,11 @@ export async function remakePracticeTransfers(req, res) {
         practiceBusinessAnchorId: practiceAnchorId,
         targetLabAnchorId,
         targetLabName: String(source.targetLabName || "").trim(),
+        assigneeLabAnchorId,
+        assigneeLabName: assigneeLabAnchorId
+          ? String(source.assigneeLabName || "").trim()
+          : "",
+        assigneeKind,
         matchingMode: "direct",
         transferMemo: remakeMemo,
         arrivalDates: remakeArrivalDates,
@@ -7093,11 +7137,21 @@ export async function remakePracticeTransfers(req, res) {
         payload: realtimePayload,
         extraUserIds: [req.user?._id, source.practiceUserId].filter(Boolean),
       });
-      await emitPracticeTransferEventToRequestorUsers({
-        targetLabAnchorId,
-        type: "practice:transfer-created",
-        payload: realtimePayload,
-      });
+      await Promise.all(
+        [
+          ...new Set(
+            [targetLabAnchorId, assigneeLabAnchorId]
+              .map((id) => String(id || "").trim())
+              .filter(Boolean),
+          ),
+        ].map((labId) =>
+          emitPracticeTransferEventToRequestorUsers({
+            targetLabAnchorId: labId,
+            type: "practice:transfer-created",
+            payload: realtimePayload,
+          }),
+        ),
+      );
 
       const feeTotal = Math.max(
         0,
@@ -7249,15 +7303,31 @@ export async function getMyPracticeTransfers(req, res) {
       !calendarRange &&
       Boolean(practiceAnchorForRatings) &&
       Types.ObjectId.isValid(practiceAnchorForRatings);
-    const [quotesById, abutmentDeliveryById, ownPracticeDoc] = await Promise.all([
-      calendarRange ? new Map() : buildFeeQuotesForTransferDocs({ docs }),
-      mapAbutmentDeliveryByTransferDocs(docs),
-      loadOwnRatings
-        ? BusinessAnchor.findById(practiceAnchorForRatings)
-            .select({ practiceLabRatings: 1 })
-            .lean()
-        : null,
-    ]);
+    const [quotesById, abutmentDeliveryById, ownPracticeDoc, abutmentStagesById] =
+      await Promise.all([
+        calendarRange ? new Map() : buildFeeQuotesForTransferDocs({ docs }),
+        mapAbutmentDeliveryByTransferDocs(docs),
+        loadOwnRatings
+          ? BusinessAnchor.findById(practiceAnchorForRatings)
+              .select({ practiceLabRatings: 1 })
+              .lean()
+          : null,
+        mapAbutmentPastReadyByTransferDocs(
+          docs.filter((doc) => hasCustomAbutmentToothWorks(doc?.toothWorks)),
+        ),
+      ]);
+    // 치과 상세 — 커스텀어벗 치아별 제조사 공정(기공소 채팅과 동일)
+    const withAbutmentToothStages = (row, doc) => {
+      const info = abutmentStagesById.get(String(doc?._id || ""));
+      if (!info) return row;
+      return {
+        ...row,
+        production: {
+          ...(row.production || {}),
+          abutmentToothStages: info.toothStages || [],
+        },
+      };
+    };
 
     let practiceRatings = [];
     if (!calendarRange) {
@@ -7299,7 +7369,7 @@ export async function getMyPracticeTransfers(req, res) {
               { abutmentDeliveryInfo },
             );
             return toOwnedListRequestRows(doc).map((row) => ({
-              ...row,
+              ...withAbutmentToothStages(row, doc),
               manufacturerStage,
               feeQuote,
               labRating,
@@ -7337,7 +7407,7 @@ export async function getMyPracticeTransfers(req, res) {
         abutmentDeliveryInfo,
       });
       return toOwnedListRequestRows(doc).map((row) => ({
-        ...row,
+        ...withAbutmentToothStages(row, doc),
         manufacturerStage,
         feeQuote,
         labRating,
@@ -8174,6 +8244,7 @@ export async function getReceivedPracticeTransfers(req, res) {
             ? {
                 abutmentPastReady: Boolean(pastReadyInfo.pastReady),
                 abutmentPastReadyTeeth: pastReadyInfo.pastReadyTeeth || [],
+                abutmentToothStages: pastReadyInfo.toothStages || [],
               }
             : {},
         ),

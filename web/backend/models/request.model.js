@@ -1436,6 +1436,95 @@ requestSchema.index({
 requestSchema.index({ "caseInfos.file.s3Key": 1 }, { sparse: true });
 requestSchema.index({ "caseInfos.files.s3Key": 1 }, { sparse: true });
 
+// PTX 연동 CA 단계 변경 → 기공소 채팅 치아별 공정 실시간 반영(응답 경로 밖, 실패는 로그).
+// 단계 쓰기가 여러 컨트롤러·워커에 흩어져 있어 모델 훅에서 모은다. bulkWrite는 대상 아님.
+const schedulePtxAbutmentStageRealtime = (transferIds) => {
+  const ids = [
+    ...new Set(
+      (Array.isArray(transferIds) ? transferIds : [])
+        .map((id) => String(id || "").trim())
+        .filter(Boolean),
+    ),
+  ];
+  if (!ids.length) return;
+  void import("../services/practiceTransferProduction.service.js")
+    .then(({ scheduleAbutmentStageRealtimeForTransfer }) => {
+      for (const id of ids) scheduleAbutmentStageRealtimeForTransfer(id);
+    })
+    .catch((err) => {
+      console.warn("[request.model] PTX stage realtime failed", err?.message || err);
+    });
+};
+
+const updateTouchesManufacturerStage = (update) => {
+  if (!update || typeof update !== "object") return false;
+  if (Array.isArray(update)) return true; // aggregation pipeline — 보수적으로 처리
+  if ("manufacturerStage" in update) return true;
+  return ["$set", "$unset", "$setOnInsert"].some(
+    (op) =>
+      update[op] &&
+      typeof update[op] === "object" &&
+      "manufacturerStage" in update[op],
+  );
+};
+
+requestSchema.pre("save", function (next) {
+  this.$locals.ptxStageChanged =
+    !this.isNew && this.isModified("manufacturerStage");
+  next();
+});
+
+requestSchema.post("save", function (doc) {
+  if (!doc?.$locals?.ptxStageChanged) return;
+  const transferId = doc?.partnerBilling?.relatedPracticeTransferId;
+  if (transferId) schedulePtxAbutmentStageRealtime([transferId]);
+});
+
+requestSchema.pre(
+  ["findOneAndUpdate", "updateOne", "updateMany"],
+  function (next) {
+    this._ptxStageTouched = updateTouchesManufacturerStage(this.getUpdate());
+    next();
+  },
+);
+
+requestSchema.post(
+  ["findOneAndUpdate", "updateOne", "updateMany"],
+  function (result) {
+    if (!this._ptxStageTouched) return;
+    const docTransferId = result?.partnerBilling?.relatedPracticeTransferId;
+    if (docTransferId) {
+      schedulePtxAbutmentStageRealtime([docTransferId]);
+      return;
+    }
+    // updateOne/Many는 문서가 없다. 건 단위 필터만 재조회(이전 단계 조건은 이미 바뀌었으니 뺀다).
+    const rawFilter = this.getFilter() || {};
+    const filter = {};
+    if (rawFilter._id != null) filter._id = rawFilter._id;
+    if (rawFilter.requestId != null) filter.requestId = rawFilter.requestId;
+    if (Object.keys(filter).length === 0) return;
+    const Model = this.model;
+    void Model.find({
+      ...filter,
+      "partnerBilling.relatedPracticeTransferId": { $ne: null },
+    })
+      .select({ "partnerBilling.relatedPracticeTransferId": 1 })
+      .limit(200)
+      .lean()
+      .then((rows) =>
+        schedulePtxAbutmentStageRealtime(
+          rows.map((row) => row?.partnerBilling?.relatedPracticeTransferId),
+        ),
+      )
+      .catch((err) => {
+        console.warn(
+          "[request.model] PTX stage lookup failed",
+          err?.message || err,
+        );
+      });
+  },
+);
+
 // 의뢰 모델 생성
 const Request = mongoose.model("Request", requestSchema);
 

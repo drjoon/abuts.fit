@@ -6,6 +6,7 @@
  * 자동매칭(공개 풀)은 공정상 의뢰 — 뱃지 집계·「의뢰」필터에 포함.
  * 기공소 수신은 거절·작업취소가 목록에서 빠져 취소/거절 뱃지 불필요 → 치과만 취소 포함 5뱃지.
  * 본문 건수: 의뢰·작업시작=전체. 완료·취소·어벗=미열람만(clearedIds 제외).
+ * 2026-09-29: abutmentToothStages — 치과 상세 커스텀어벗 치아별 제조사 공정.
  * 2026-09-25: 배지 간격 의뢰·작업시작 | 완료·취소 | 어벗 (취소|어벗 사이 여백).
  * 2026-09-15: 후속 보철 반영 시 feeQuote.lines 비움 — 확정 total과 낡은 라인 합(임시치아) 불일치 방지.
  * 2026-09-12: 치과 /my trashedFiles 병합 — 활성 files와 겹치면 휴지통에서 제거.
@@ -138,6 +139,7 @@ export type PracticeRecentRequestItem = {
   designFileCount?: number;
   practiceDesignConfirmedAt?: string | null;
   labDesignConfirmedAt?: string | null;
+  abutmentToothStages?: { tooth: string; stage: string }[];
   feeQuote?: PracticeTransferFeeQuote | null;
   remakeFeeQuote?: PracticeTransferFeeQuote | null;
   remakeFeeQuoteWithCustomAbutment?: PracticeTransferFeeQuote | null;
@@ -229,6 +231,8 @@ export type PracticeRecentTransferItem = {
   designFileCount?: number;
   practiceDesignConfirmedAt?: string | null;
   labDesignConfirmedAt?: string | null;
+  /** 커스텀어벗 치아별 제조사 공정(준비·가공·세척.패킹·포장.발송·추적관리) */
+  abutmentToothStages?: { tooth: string; stage: string }[];
   transferMemo: string;
   rawTransferMemo?: string;
   /** 목록 카드·검색용 FDI 치아번호(예: ["11","21"]) */
@@ -994,6 +998,14 @@ export const mapMyPracticeTransferApiRows = (
         labDesignConfirmedAt: productionRaw?.labDesignConfirmedAt
           ? String(productionRaw.labDesignConfirmedAt)
           : null,
+        abutmentToothStages: Array.isArray(productionRaw?.abutmentToothStages)
+          ? (productionRaw.abutmentToothStages as unknown[])
+              .map((row) => ({
+                tooth: String((row as { tooth?: unknown })?.tooth || "").trim(),
+                stage: String((row as { stage?: unknown })?.stage || "").trim(),
+              }))
+              .filter((row) => row.tooth && row.stage)
+          : [],
         feeQuote: parsePracticeTransferFeeQuote(r.feeQuote),
         remakeFeeQuote: parsePracticeTransferFeeQuote(
           (r.feeQuote && typeof r.feeQuote === "object"
@@ -1292,6 +1304,11 @@ export const mergeOpenPracticeTransferFromRequestRows = (
       openRows.find((r) => r.labDesignConfirmedAt)?.labDesignConfirmedAt ||
       prev.labDesignConfirmedAt ||
       null,
+    abutmentToothStages:
+      openRows.find((r) => (r.abutmentToothStages || []).length > 0)
+        ?.abutmentToothStages ||
+      prev.abutmentToothStages ||
+      [],
     productionConfirmedAt:
       openRows.find((r) => r.productionConfirmedAt)?.productionConfirmedAt ||
       prev.productionConfirmedAt ||
@@ -1547,6 +1564,7 @@ export const groupPracticeRecentRequests = (
         ),
         practiceDesignConfirmedAt: req.practiceDesignConfirmedAt || null,
         labDesignConfirmedAt: req.labDesignConfirmedAt || null,
+        abutmentToothStages: req.abutmentToothStages || [],
         transferMemo: req.transferMemo,
         rawTransferMemo: req.rawTransferMemo,
         toothNumbers: toothNumbersFromSet(toothNumberSet),
@@ -1721,6 +1739,9 @@ export const groupPracticeRecentRequests = (
     }
     if (req.labDesignConfirmedAt) {
       existing.labDesignConfirmedAt = req.labDesignConfirmedAt;
+    }
+    if ((req.abutmentToothStages || []).length > 0) {
+      existing.abutmentToothStages = req.abutmentToothStages;
     }
     // 수락·청구 후 확정 feeQuote가 오면 예산 구간 견적을 덮어쓴다.
     if (req.feeQuote) {

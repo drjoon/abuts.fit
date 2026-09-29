@@ -461,4 +461,41 @@ describe("abutment pastReady work-cancel guard", () => {
       pastReadyTeeth: ["12"],
     });
   });
+
+  test("listAbutmentToothStagesFromRows — 치아별 제조사 공정", async () => {
+    const { listAbutmentToothStagesFromRows } = await import(
+      "../../services/practiceTransferProduction.service.js"
+    );
+
+    expect(
+      listAbutmentToothStagesFromRows([
+        { manufacturerStage: "세척.패킹", caseInfos: { tooth: "44" } },
+        { manufacturerStage: "준비", caseInfos: { tooth: "43" } },
+        { manufacturerStage: "취소", caseInfos: { tooth: "45" } },
+        {
+          manufacturerStage: "가공",
+          caseInfos: { tooth: "46", hexVerificationSample: true },
+        },
+      ]),
+    ).toEqual([
+      { tooth: "43", stage: "준비" },
+      { tooth: "44", stage: "세척.패킹" },
+    ]);
+
+    // 준비 + CAM 시작 = 가공 · 리메이크로 같은 치아 2건이면 덜 진행된 건
+    expect(
+      listAbutmentToothStagesFromRows([
+        {
+          manufacturerStage: "준비",
+          productionSchedule: { actualCamStart: new Date() },
+          caseInfos: { tooth: "11" },
+        },
+        { manufacturerStage: "추적관리", caseInfos: { tooth: "21" } },
+        { manufacturerStage: "준비", caseInfos: { tooth: "21" } },
+      ]),
+    ).toEqual([
+      { tooth: "11", stage: "가공" },
+      { tooth: "21", stage: "준비" },
+    ]);
+  });
 });

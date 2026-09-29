@@ -5,6 +5,7 @@
 // - web/backend/models/request.model.js
 // - web/frontend/src/shared/practice/transferMemo.ts
 // change-log:
+// - 2026-09-29: abutmentToothStages — 연동 CA Request 치아별 제조사 공정(기공소 채팅 `43(준비), 44(세척.패킹)`).
 // - 2026-09-28: CA Request 대상은 치아당 1행(임시치아+CA와 단독 커스텀어벗 중복 입력 시 생산·과금 1회).
 // - 2026-09-27: PTX CA 주문 기공소 = 수행 기공소(assignee). 원청 잔액으로 생산 hold 하지 않음.
 // - 2026-09-12: PTX→어벗츠 리메이크 — CA 재업로드 forceRemakePricing(1만). 미매칭 시 정가 생산 견적.
@@ -126,6 +127,7 @@ import { recomputeBulkShippingSnapshotForBusinessAnchorId } from "./bulkShipping
 import { releaseRequestCreditHoldsOnCancel } from "./requestCreditHold.service.js";
 import { updateReviewStatusByStage } from "../controllers/requests/common.review.controller.js";
 import { prevKoreanBusinessDayYmd } from "../utils/krBusinessDays.js";
+import { normalizeMonitoringStageLabel } from "./requestStageStats.service.js";
 import {
   normalizeAbutmentShipBeforeArrivalBusinessDays,
   PRACTICE_ABUTMENT_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS,
@@ -1681,6 +1683,49 @@ export function listAbutmentPastReadyTeethFromRows(rows = []) {
   return teeth;
 }
 
+const ABUTMENT_TOOTH_STAGE_ORDER = [
+  "준비",
+  "CAM",
+  "가공",
+  "세척.패킹",
+  "포장.발송",
+  "추적관리",
+];
+
+const toToothSortNumber = (tooth) => {
+  const n = Number.parseInt(String(tooth || ""), 10);
+  return Number.isFinite(n) ? n : Number.MAX_SAFE_INTEGER;
+};
+
+/**
+ * 연동 CA Request 행 → 치아별 제조사 공정 `[{ tooth, stage }]`(순수).
+ * 취소·hex 샘플 제외. 같은 치아가 여러 건(리메이크)이면 덜 진행된 건이 현재 작업.
+ */
+export function listAbutmentToothStagesFromRows(rows = []) {
+  const byTooth = new Map();
+  for (const row of Array.isArray(rows) ? rows : []) {
+    if (row?.caseInfos?.hexVerificationSample === true) continue;
+    const tooth = String(row?.caseInfos?.tooth || "").trim();
+    if (!tooth) continue;
+    let stage = normalizeMonitoringStageLabel(row?.manufacturerStage);
+    if (stage === "취소") continue;
+    if (stage === "준비" && row?.productionSchedule?.actualCamStart) {
+      stage = "가공";
+    }
+    const prev = byTooth.get(tooth);
+    if (
+      !prev ||
+      ABUTMENT_TOOTH_STAGE_ORDER.indexOf(stage) <
+        ABUTMENT_TOOTH_STAGE_ORDER.indexOf(prev)
+    ) {
+      byTooth.set(tooth, stage);
+    }
+  }
+  return [...byTooth.entries()]
+    .map(([tooth, stage]) => ({ tooth, stage }))
+    .sort((a, b) => toToothSortNumber(a.tooth) - toToothSortNumber(b.tooth));
+}
+
 /**
  * sticky + 연동 Request 행으로 작업취소 차단 여부 판정(순수).
  * @returns {{ pastReady: boolean, shouldClearSticky: boolean, pastReadyTeeth: string[] }}
@@ -1794,7 +1839,12 @@ export async function resolveRelatedAbutmentPastReady(transferDoc, options = {})
       transferDoc._id,
     );
   }
-  return { pastReady, pastReadyTeeth, linkedRequestIds };
+  return {
+    pastReady,
+    pastReadyTeeth,
+    toothStages: listAbutmentToothStagesFromRows(rows),
+    linkedRequestIds,
+  };
 }
 
 export async function hasRelatedAbutmentPastReady(transferDoc) {
@@ -1910,6 +1960,7 @@ export async function mapAbutmentPastReadyByTransferDocs(docs) {
       pastReadyTeeth: Array.isArray(resolved.pastReadyTeeth)
         ? resolved.pastReadyTeeth
         : [],
+      toothStages: listAbutmentToothStagesFromRows(rows),
     });
   }
 
@@ -2227,30 +2278,35 @@ export async function markPracticeTransferAbutmentMachiningStarted(
   return { updated };
 }
 
+const ABUTMENT_REALTIME_TRANSFER_SELECT = {
+  transferId: 1,
+  targetLabAnchorId: 1,
+  assigneeLabAnchorId: 1,
+  practiceBusinessAnchorId: 1,
+  practiceUserId: 1,
+  production: 1,
+  updatedAt: 1,
+};
+
 async function emitPracticeTransferAbutmentMachiningStartedRealtime({
   transferMongoId,
   requestDoc,
   at = new Date(),
 }) {
   const transfer = await PracticeTransfer.findById(transferMongoId)
-    .select({
-      transferId: 1,
-      targetLabAnchorId: 1,
-      practiceBusinessAnchorId: 1,
-      practiceUserId: 1,
-      production: 1,
-      updatedAt: 1,
-    })
+    .select(ABUTMENT_REALTIME_TRANSFER_SELECT)
     .lean();
   if (!transfer) return;
 
-  const { pastReady, pastReadyTeeth } = await resolveRelatedAbutmentPastReady(
-    transfer,
-    { skipStickyHeal: true },
-  );
+  const { pastReady, pastReadyTeeth, toothStages } =
+    await resolveRelatedAbutmentPastReady(transfer, { skipStickyHeal: true });
   const tooth = String(requestDoc?.caseInfos?.tooth || "").trim();
   const teeth = Array.isArray(pastReadyTeeth) ? [...pastReadyTeeth] : [];
   if (tooth && !teeth.includes(tooth)) teeth.push(tooth);
+  const stages = Array.isArray(toothStages) ? [...toothStages] : [];
+  if (tooth && !stages.some((row) => row.tooth === tooth)) {
+    stages.push({ tooth, stage: "가공" });
+  }
 
   const production = transfer.production || {};
   const designFiles = Array.isArray(production.designFiles)
@@ -2266,6 +2322,7 @@ async function emitPracticeTransferAbutmentMachiningStartedRealtime({
     production: {
       abutmentPastReady: Boolean(pastReady) || teeth.length > 0,
       abutmentPastReadyTeeth: teeth,
+      abutmentToothStages: stages,
       abutmentProductionStartedAt:
         production.abutmentProductionStartedAt || at,
       designReadyAt: production.designReadyAt || null,
@@ -2277,16 +2334,28 @@ async function emitPracticeTransferAbutmentMachiningStartedRealtime({
     updatedAt: transfer.updatedAt || at,
   };
 
-  const labAnchorId = resolvePerformingLabAnchorId(transfer);
+  await emitAbutmentRealtimeToTransferParties(transfer, payload);
+}
+
+/** 수행 기공소 + 원청(하청·협력 채팅 참여) + 치과 */
+async function emitAbutmentRealtimeToTransferParties(transfer, payload) {
+  const labAnchorIds = [
+    ...new Set(
+      [
+        resolvePerformingLabAnchorId(transfer),
+        String(transfer.targetLabAnchorId || "").trim(),
+      ].filter(Boolean),
+    ),
+  ];
   const practiceAnchorId = String(
     transfer.practiceBusinessAnchorId || "",
   ).trim();
-  const [labUserIds, practiceUserIds] = await Promise.all([
-    labAnchorId ? resolveRequestorUserIdsByAnchor(labAnchorId) : [],
+  const [labUserIdLists, practiceUserIds] = await Promise.all([
+    Promise.all(labAnchorIds.map((id) => resolveRequestorUserIdsByAnchor(id))),
     practiceAnchorId ? resolvePracticeUserIdsByAnchor(practiceAnchorId) : [],
   ]);
   const userIdSet = new Set([
-    ...labUserIds,
+    ...labUserIdLists.flat(),
     ...practiceUserIds,
     String(transfer.practiceUserId || "").trim(),
   ]);
@@ -2294,6 +2363,54 @@ async function emitPracticeTransferAbutmentMachiningStartedRealtime({
     if (!userId) continue;
     emitAppEventToUser(userId, "practice:transfer-updated", payload);
   }
+}
+
+/** 연동 CA Request 단계 변경 → 치아별 공정 push. 같은 전송의 연속 변경은 한 번에 묶는다. */
+const ABUTMENT_STAGE_REALTIME_DEBOUNCE_MS = 800;
+const abutmentStageRealtimeTimers = new Map();
+
+export function scheduleAbutmentStageRealtimeForTransfer(transferMongoId) {
+  const id = String(transferMongoId || "").trim();
+  if (!id || !Types.ObjectId.isValid(id)) return;
+  const prev = abutmentStageRealtimeTimers.get(id);
+  if (prev) clearTimeout(prev);
+  const timer = setTimeout(() => {
+    abutmentStageRealtimeTimers.delete(id);
+    void emitPracticeTransferAbutmentStageChangedRealtime(id).catch((err) => {
+      console.warn(
+        "[scheduleAbutmentStageRealtimeForTransfer] emit failed",
+        err?.message || err,
+      );
+    });
+  }, ABUTMENT_STAGE_REALTIME_DEBOUNCE_MS);
+  timer.unref?.();
+  abutmentStageRealtimeTimers.set(id, timer);
+}
+
+async function emitPracticeTransferAbutmentStageChangedRealtime(
+  transferMongoId,
+) {
+  const transfer = await PracticeTransfer.findById(transferMongoId)
+    .select(ABUTMENT_REALTIME_TRANSFER_SELECT)
+    .lean();
+  if (!transfer) return;
+  const { pastReady, pastReadyTeeth, toothStages } =
+    await resolveRelatedAbutmentPastReady(transfer, { skipStickyHeal: true });
+  await emitAbutmentRealtimeToTransferParties(transfer, {
+    action: "abutment-stage-changed",
+    transferId: String(transfer.transferId || "").trim(),
+    transferMongoId: String(transfer._id || "").trim(),
+    targetLabAnchorId: String(transfer.targetLabAnchorId || "").trim() || null,
+    practiceUserId: String(transfer.practiceUserId || "").trim() || null,
+    production: {
+      abutmentPastReady: Boolean(pastReady),
+      abutmentPastReadyTeeth: Array.isArray(pastReadyTeeth)
+        ? pastReadyTeeth
+        : [],
+      abutmentToothStages: Array.isArray(toothStages) ? toothStages : [],
+    },
+    updatedAt: transfer.updatedAt || new Date(),
+  });
 }
 
 export async function clearPracticeTransferAbutmentMachiningStartedByTransferId(
