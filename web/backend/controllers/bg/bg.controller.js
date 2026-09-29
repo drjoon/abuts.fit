@@ -226,7 +226,6 @@ async function removeRequestAutoJobsFromBridgeSnapshot({
 const REMOTE_BASE_BY_STEP = {
   "2-filled": process.env.RHINO_COMPUTE_BASE_URL,
   "3-nc": process.env.ESPRIT_ADDIN_BASE_URL,
-  cnc: process.env.BRIDGE_BASE || process.env.BRIDGE_NODE_URL,
 };
 
 async function resolveConnectionL2FromCaseInfos(caseInfos) {
@@ -851,7 +850,10 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
 
   // 2. S3 업로드 (성공 시에만, 로컬 스토리지에서 읽어서)
   let s3Info = null;
-  if (status === "success") {
+  // cnc/cnc-preload는 3-nc에서 이미 S3에 올린 NC를 브리지가 통지만 한다. 브리지에는 /files 라우트가 없다.
+  const isBridgeNotifyStep =
+    sourceStep === "cnc" || sourceStep === "cnc-preload";
+  if (status === "success" && !isBridgeNotifyStep) {
     const resolvedOriginalName = originalFileName || fileName;
     const canonicalBgFilePath =
       sourceStep === "3-nc" && String(fileName || "").trim()
@@ -1181,7 +1183,9 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
         break;
 
       case "cnc":
-        updateData["productionSchedule.actualMachiningStart"] = now;
+        if (!request?.productionSchedule?.actualMachiningStart) {
+          updateData["productionSchedule.actualMachiningStart"] = now;
+        }
         updateData["productionSchedule.ncPreload"] = {
           status: "READY",
           machineId: metadata?.machineId

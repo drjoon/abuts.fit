@@ -3,6 +3,7 @@
 // - web/backend/controllers/cnc/machiningBridge.js
 // - web/backend/controllers/cnc/production.js
 // change-log:
+// - 2026-09-29: 가공 완료 시 register-file(sourceStep=cnc) 통지를 뺀다. 완료 신호는 machining/complete 하나.
 // - 2026-08-30: RUNNING 자동중단은 PowerOff/Alarm 만. Stop·통신실패 추정 중단은 오탐 위험으로 제거. 사용자 중단은 AbortForUserStop.
 // - 2026-08-30: RUNNING 중 Hi-Link MachineStatusType(PowerOff/Stop/Alarm)·통신 끊김을 감시해 비상정지 등에서 가공중으로 고착되지 않게 한다.
 // - 2026-08-18: 가공마다 storage/{requestId}_{HHmmss}.nc 로 아카이브하고, CNC 전송은 O4000.nc 임시 파일을 사용한다.
@@ -85,40 +86,8 @@ try
 {
 var backend = GetBackendBase();
 if (string.IsNullOrEmpty(backend)) return;
-// register-file(sourceStep=cnc)는 BG 산출물 bookkeeping / 이벤트 적재용 보조 통지다.
-// request stage 전이와 생산 큐 진행의 canonical 완료 신호는 아래 machining/complete 콜백이며,
-// backend는 그 콜백을 기준으로만 상태 전이와 후속 자동 진행을 판단해야 한다.
-try
-{
-    var url = backend + "/bg/register-file";
-    var canonical = string.IsNullOrWhiteSpace(job?.originalFileName)
-    ? job?.fileName
-    : job.originalFileName;
-    var payload = new
-    {
-    sourceStep = "cnc",
-    fileName = job?.fileName,
-    originalFileName = canonical,
-    requestId = job?.requestId,
-    status = "success",
-    metadata = new { machineId = machineId }
-    };
-    var json = Newtonsoft.Json.JsonConvert.SerializeObject(payload);
-    using (var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, url))
-    {
-    AddAuthHeader(req);
-    AddSecretHeader(req);
-    req.Content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json");
-    using (var resp = await Http.SendAsync(req))
-    {
-        _ = await resp.Content.ReadAsStringAsync();
-    }
-    }
-}
-catch (Exception regEx)
-{
-    Console.WriteLine("[CncMachining] register-file notify failed machine={0} err={1}", machineId, regEx.Message);
-}
+// 완료는 machining/complete 한 번만 보낸다. register-file(sourceStep=cnc)은 backend에서 가공 시작으로 처리돼
+// actualMachiningStart·manufacturerStage(가공)를 완료 시점에 되돌린다.
 // CNC machining completed notify (bridge -> backend)
 try
 {
