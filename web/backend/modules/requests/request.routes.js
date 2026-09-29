@@ -550,10 +550,10 @@ router.patch(
 );
 
 router.patch(
-  "/:id/wide-split-override",
+  "/:id/safe-split-override",
   authenticate,
   authorizeManufacturerOrDesignPartner(),
-  requestController.updateRequestWideSplitOverride,
+  requestController.updateRequestSafeSplitOverride,
 );
 
 router.patch(

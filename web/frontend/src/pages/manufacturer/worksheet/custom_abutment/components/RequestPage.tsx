@@ -1852,7 +1852,7 @@ export const RequestPage = ({
   const [anodizingSavingMap, setAnodizingSavingMap] = useState<
     Record<string, boolean>
   >({});
-  const [wideSplitSavingMap, setWideSplitSavingMap] = useState<
+  const [safeSplitSavingMap, setSafeSplitSavingMap] = useState<
     Record<string, boolean>
   >({});
   const [lotEngravingTargetSavingMap, setLotEngravingTargetSavingMap] =
@@ -2130,7 +2130,7 @@ export const RequestPage = ({
     [anodizingSavingMap, pageState, toast, token],
   );
 
-  const handleSaveWideSplitEnabledOverride = useCallback(
+  const handleSaveSafeSplitEnabledOverride = useCallback(
     async (req: ManufacturerRequest, nextValue: boolean) => {
       if (!req?._id) return;
       const requestMongoId = String(req._id || "").trim();
@@ -2146,14 +2146,14 @@ export const RequestPage = ({
         return;
       }
 
-      if (wideSplitSavingMap[requestMongoId]) return;
+      if (safeSplitSavingMap[requestMongoId]) return;
 
       const prevValue =
-        typeof req.caseInfos?.wideSplitEnabled === "boolean"
-          ? req.caseInfos.wideSplitEnabled
+        typeof req.caseInfos?.safeSplitEnabled === "boolean"
+          ? req.caseInfos.safeSplitEnabled
           : null;
 
-      setWideSplitSavingMap((prev) => ({ ...prev, [requestMongoId]: true }));
+      setSafeSplitSavingMap((prev) => ({ ...prev, [requestMongoId]: true }));
       pageState.setRequests((prev) =>
         prev.map((item) => {
           if (String(item?._id || "").trim() !== requestMongoId) return item;
@@ -2161,7 +2161,7 @@ export const RequestPage = ({
             ...item,
             caseInfos: {
               ...(item.caseInfos || {}),
-              wideSplitEnabled: nextValue,
+              safeSplitEnabled: nextValue,
             },
           };
         }),
@@ -2169,14 +2169,14 @@ export const RequestPage = ({
 
       try {
         const res = await fetch(
-          `/api/requests/${req._id}/wide-split-override`,
+          `/api/requests/${req._id}/safe-split-override`,
           {
             method: "PATCH",
             headers: {
               Authorization: `Bearer ${token}`,
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({ wideSplitEnabled: nextValue }),
+            body: JSON.stringify({ safeSplitEnabled: nextValue }),
           },
         );
         const data = await res.json().catch(() => ({}));
@@ -2185,8 +2185,8 @@ export const RequestPage = ({
         }
 
         const savedValue =
-          typeof data?.data?.wideSplitEnabled === "boolean"
-            ? Boolean(data.data.wideSplitEnabled)
+          typeof data?.data?.safeSplitEnabled === "boolean"
+            ? Boolean(data.data.safeSplitEnabled)
             : nextValue;
 
         pageState.setRequests((prev) =>
@@ -2196,7 +2196,7 @@ export const RequestPage = ({
               ...item,
               caseInfos: {
                 ...(item.caseInfos || {}),
-                wideSplitEnabled: savedValue,
+                safeSplitEnabled: savedValue,
               },
             };
           }),
@@ -2207,9 +2207,9 @@ export const RequestPage = ({
             if (String(item?._id || "").trim() !== requestMongoId) return item;
             const nextCaseInfos = { ...(item.caseInfos || {}) };
             if (typeof prevValue === "boolean") {
-              nextCaseInfos.wideSplitEnabled = prevValue;
+              nextCaseInfos.safeSplitEnabled = prevValue;
             } else {
-              delete nextCaseInfos.wideSplitEnabled;
+              delete nextCaseInfos.safeSplitEnabled;
             }
             return {
               ...item,
@@ -2224,10 +2224,10 @@ export const RequestPage = ({
         });
         throw e;
       } finally {
-        setWideSplitSavingMap((prev) => ({ ...prev, [requestMongoId]: false }));
+        setSafeSplitSavingMap((prev) => ({ ...prev, [requestMongoId]: false }));
       }
     },
-    [pageState, toast, token, wideSplitSavingMap],
+    [pageState, toast, token, safeSplitSavingMap],
   );
 
   const handleSaveLotEngravingTargetOverride = useCallback(
@@ -3382,7 +3382,7 @@ export const RequestPage = ({
           onRestoreUnmachinable={handleRestoreUnmachinable}
           onSaveManufacturerHexRotation={handleSaveManufacturerHexRotation}
           onSaveAnodizingEnabledOverride={handleSaveAnodizingEnabledOverride}
-          onSaveWideSplitEnabledOverride={handleSaveWideSplitEnabledOverride}
+          onSaveSafeSplitEnabledOverride={handleSaveSafeSplitEnabledOverride}
           onSaveLotEngravingTargetOverride={
             handleSaveLotEngravingTargetOverride
           }

@@ -558,7 +558,7 @@ type PreviewModalProps = {
     req: ManufacturerRequest,
     value: boolean,
   ) => Promise<void>;
-  onSaveWideSplitEnabledOverride?: (
+  onSaveSafeSplitEnabledOverride?: (
     req: ManufacturerRequest,
     value: boolean,
   ) => Promise<void>;
@@ -605,7 +605,7 @@ export const PreviewModal = ({
   onRestoreUnmachinable,
   onSaveManufacturerHexRotation,
   onSaveAnodizingEnabledOverride,
-  onSaveWideSplitEnabledOverride,
+  onSaveSafeSplitEnabledOverride,
   onSaveLotEngravingTargetOverride,
   onOpenNextRequest,
   setSearchParams,
@@ -667,8 +667,8 @@ export const PreviewModal = ({
   const [manufacturerHexRotationDraft, setManufacturerHexRotationDraft] =
     useState<ManufacturerHexRotationDraftMode>("");
   const [anodizingEnabledDraft, setAnodizingEnabledDraft] = useState<boolean>(true);
-  const [wideSplitEnabledDraft, setWideSplitEnabledDraft] = useState<boolean>(true);
-  const [wideSplitSaving, setWideSplitSaving] = useState(false);
+  const [safeSplitEnabledDraft, setSafeSplitEnabledDraft] = useState<boolean>(false);
+  const [safeSplitSaving, setSafeSplitSaving] = useState(false);
   const [lotEngravingTargetDraft, setLotEngravingTargetDraft] = useState<
     "hex" | "post"
   >("hex");
@@ -935,12 +935,7 @@ export const PreviewModal = ({
       setAnodizingEnabledDraft(true);
     }
 
-    const caseWideSplit = (req as any)?.caseInfos?.wideSplitEnabled;
-    if (typeof caseWideSplit === "boolean") {
-      setWideSplitEnabledDraft(caseWideSplit);
-    } else {
-      setWideSplitEnabledDraft(true);
-    }
+    setSafeSplitEnabledDraft((req as any)?.caseInfos?.safeSplitEnabled === true);
 
     // 2026-09-18: 포스트면 각인 포기 → 항상 hex (추후 Connection PRC).
     // const caseLotTarget = (req as any)?.caseInfos?.lotEngravingTarget;
@@ -2599,12 +2594,12 @@ export const PreviewModal = ({
     }
   };
 
-  const handleToggleWideSplitEnabled = async (checked: boolean) => {
+  const handleToggleSafeSplitEnabled = async (checked: boolean) => {
     const prepStages = new Set(["준비", "의뢰", "CAM", "request", "cam"]);
     const mfgStage = String(activeReq?.manufacturerStage || "").trim();
     if (
-      !onSaveWideSplitEnabledOverride ||
-      wideSplitSaving ||
+      !onSaveSafeSplitEnabledOverride ||
+      safeSplitSaving ||
       approveBusy ||
       !(currentReviewStageKey === "request" || currentReviewStageKey === "cam") ||
       !prepStages.has(mfgStage)
@@ -2612,13 +2607,13 @@ export const PreviewModal = ({
       return;
     }
 
-    const prev = wideSplitEnabledDraft;
-    setWideSplitEnabledDraft(checked);
-    setWideSplitSaving(true);
+    const prev = safeSplitEnabledDraft;
+    setSafeSplitEnabledDraft(checked);
+    setSafeSplitSaving(true);
     try {
-      await onSaveWideSplitEnabledOverride(activeReq, checked);
+      await onSaveSafeSplitEnabledOverride(activeReq, checked);
     } catch (error) {
-      setWideSplitEnabledDraft(prev);
+      setSafeSplitEnabledDraft(prev);
       toast({
         title: "Wide Split 저장 실패",
         description:
@@ -2628,7 +2623,7 @@ export const PreviewModal = ({
         variant: "destructive",
       });
     } finally {
-      setWideSplitSaving(false);
+      setSafeSplitSaving(false);
     }
   };
 
@@ -2715,9 +2710,9 @@ export const PreviewModal = ({
   const manufacturerStageLabel = String(activeReq?.manufacturerStage || "").trim();
   const canOverrideAnodizing =
     currentReviewStageKey === "request" || currentReviewStageKey === "cam";
-  const canOverrideWideSplit =
+  const canOverrideSafeSplit =
     canOverrideAnodizing && prepManufacturerStages.has(manufacturerStageLabel);
-  const canPersistLotEngravingTarget = canOverrideWideSplit;
+  const canPersistLotEngravingTarget = canOverrideSafeSplit;
   // STL 미리보기용 포스트면 토글은 단계와 무관 (저장만 준비 단계)
   const canToggleLotEngravingTarget =
     Boolean(lotSerialCode) && !approveBusy && !lotEngravingTargetSaving;
@@ -2979,29 +2974,29 @@ export const PreviewModal = ({
               */}
               <label
                 className={`inline-flex items-center gap-1.5 rounded-md border px-1.5 py-1 text-[11px] font-semibold ${
-                  canOverrideWideSplit && !approveBusy && !wideSplitSaving
+                  canOverrideSafeSplit && !approveBusy && !safeSplitSaving
                     ? "border-slate-200 bg-white text-slate-700"
                     : "border-slate-200 bg-slate-100 text-slate-400"
                 }`}
-                title="Splitline_2>5mm일 때 Front/Middle 분할 가공. 준비 단계에서만 변경 가능."
+                title="피니시라인 하단에서 한 번 더 끊어 Front·Middle·Back 3구간으로 가공(가이드부시 쪽을 굵게 남겨 떨림 방지). 준비 단계에서만 변경 가능."
               >
                 <input
                   type="checkbox"
                   className="h-3.5 w-3.5 rounded border-slate-300"
-                  checked={Boolean(wideSplitEnabledDraft)}
+                  checked={Boolean(safeSplitEnabledDraft)}
                   disabled={
-                    !canOverrideWideSplit ||
+                    !canOverrideSafeSplit ||
                     approveBusy ||
-                    wideSplitSaving ||
-                    !onSaveWideSplitEnabledOverride
+                    safeSplitSaving ||
+                    !onSaveSafeSplitEnabledOverride
                   }
                   onChange={(e) => {
-                    void handleToggleWideSplitEnabled(Boolean(e.target.checked));
+                    void handleToggleSafeSplitEnabled(Boolean(e.target.checked));
                   }}
                 />
                 <span className="whitespace-nowrap">Wide Split</span>
                 <span className="text-[10px] font-semibold text-slate-500">
-                  {wideSplitEnabledDraft ? "O" : "X"}
+                  {safeSplitEnabledDraft ? "O" : "X"}
                 </span>
               </label>
               <label
@@ -3244,7 +3239,6 @@ export const PreviewModal = ({
                           hexDraft: manufacturerHexRotationDraft,
                           saveHex: onSaveManufacturerHexRotation,
                           saveAnodizing: onSaveAnodizingEnabledOverride,
-                          saveWideSplit: onSaveWideSplitEnabledOverride,
                         });
                         if (!persisted.ok) {
                           toast({

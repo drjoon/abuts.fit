@@ -264,7 +264,6 @@ type HexCaseInfos = {
   hexVerificationSample?: boolean | null;
   hexVerificationSampleManufacturer?: unknown;
   anodizingEnabled?: boolean | null;
-  wideSplitEnabled?: boolean | null;
 } | null | undefined;
 
 export const isHexVerificationSampleRequest = (
@@ -393,13 +392,6 @@ export const resolvePrepAnodizingToPersist = (
   return true;
 };
 
-export const resolvePrepWideSplitToPersist = (
-  req: HexRequestLike,
-): boolean | null => {
-  if (typeof req?.caseInfos?.wideSplitEnabled === "boolean") return null;
-  return true;
-};
-
 export const PREP_HEX_SAVE_MISSING_HANDLER =
   "헥스 회전 저장 핸들러가 없어 승인할 수 없습니다.";
 export const PREP_HEX_MISSING_MODE =
@@ -415,7 +407,6 @@ export async function persistPrepApprovalSettings(opts: {
     mode: ManufacturerHexRotationMode,
   ) => Promise<void>;
   saveAnodizing?: (req: HexRequestLike, next: boolean) => Promise<void>;
-  saveWideSplit?: (req: HexRequestLike, next: boolean) => Promise<void>;
 }): Promise<{ ok: true } | { ok: false; title: string; description: string }> {
   const hexPlan = resolvePrepHexModeToPersist(opts.req, opts.hexDraft);
   if ("missing" in hexPlan && hexPlan.missing) {
@@ -443,11 +434,6 @@ export async function persistPrepApprovalSettings(opts: {
   const anodizingToPersist = resolvePrepAnodizingToPersist(opts.req);
   if (anodizingToPersist !== null && opts.saveAnodizing) {
     await opts.saveAnodizing(opts.req, anodizingToPersist);
-  }
-
-  const wideSplitToPersist = resolvePrepWideSplitToPersist(opts.req);
-  if (wideSplitToPersist !== null && opts.saveWideSplit) {
-    await opts.saveWideSplit(opts.req, wideSplitToPersist);
   }
 
   return { ok: true };

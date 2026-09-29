@@ -95,11 +95,10 @@ namespace DentalAddin
                 ValidateBeforeOperation("CustomCycle", Array.Empty<string>(), Array.Empty<string>());
                 CustomCycle();
 
-                // 3-stage 순서(요청 반영):
-                // Front:  Turn -> Rough -> Front Face
-                // Middle (Splitline_2>5mm): Turn -> Rough
-                // Back:   Turn -> Rough
-                // Finish: deep=Front/Back 분할, none=All 단일
+                // 순서:
+                // Front: Turn -> Rough -> Front Face -> Front_Finish
+                // Back:  Turn -> Rough -> Back_Finish
+                // Wide Split(safe split) ON: Back 대신 Middle(Turn/Rough/Finish) -> Back(Turn/Rough/Finish)
                 NcJobCancellation.ThrowIfCurrentCancelled("OperationSeq.before-FRONT");
                 using (DentalLogger.Measure("OperationSeq.FRONT_TurnRough"))
                 {
@@ -115,20 +114,8 @@ namespace DentalAddin
                     FrontFaceMill();
                 }
 
-                if (TryGetThreeStageSplitConfig(out _, out double splitline2ForMiddle, out _, out _)
-                    && IsWideSplitline2(splitline2ForMiddle))
-                {
-                    NcJobCancellation.ThrowIfCurrentCancelled("OperationSeq.before-MIDDLE");
-                    using (DentalLogger.Measure("OperationSeq.MIDDLE_TurnRough"))
-                    {
-                        ExecuteTwoPhaseTurning("MIDDLE");
-                        NcJobCancellation.ThrowIfCurrentCancelled("OperationSeq.after-MIDDLE_Turn");
-                        ExecuteTwoPhaseRough("MIDDLE");
-                    }
-                }
-
                 // 요청 반영:
-                // Finish_Front는 Front Face와 Back_Turn 사이에 생성한다.
+                // Front_Finish는 Front Face와 Back_Turn(safe split: Middle_Turn) 사이에 생성한다.
                 Environment.SetEnvironmentVariable("ABUTS_SKIP_FRONTFACE_IN_FREEFORM", "1");
                 try
                 {
@@ -156,6 +143,28 @@ namespace DentalAddin
                         ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), RequiredFinishFreeFormFeatures());
                         FreeFormMill();
                         TryNormalizeCompositeFinishOrderAfterFreeForm();
+                    }
+
+                    // Safe split(Wide Split 토글): 위 BACK 구간은 Middle_Turn/Middle_Rough/Middle_Finish로 표시되고 FL 하단(Xk)에서 끝난다.
+                    // 부시쪽 목(커프~헥스 너머)은 여기 BACK2 구간(Back_Turn/Back_Rough/Back_Finish)에서 마지막에 깎는다.
+                    if (TryResolveSafeSplitBackZoneX("OperationSeq", out _))
+                    {
+                        NcJobCancellation.ThrowIfCurrentCancelled("OperationSeq.before-BACK2");
+                        using (DentalLogger.Measure("OperationSeq.BACK2_TurnRough"))
+                        {
+                            ExecuteTwoPhaseTurning("BACK2");
+                            NcJobCancellation.ThrowIfCurrentCancelled("OperationSeq.after-BACK2_Turn");
+                            ExecuteTwoPhaseRough("BACK2");
+                        }
+
+                        NcJobCancellation.ThrowIfCurrentCancelled("OperationSeq.before-FINISH_BACK2");
+                        Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", "B2_PHASE");
+                        using (DentalLogger.Measure("OperationSeq.FINISH_BACK2"))
+                        {
+                            ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), RequiredFinishFreeFormFeatures());
+                            FreeFormMill();
+                            TryNormalizeCompositeFinishOrderAfterFreeForm();
+                        }
                     }
                 }
                 finally
@@ -459,13 +468,11 @@ namespace DentalAddin
         private static void ExecuteTwoPhaseTurning(string region)
         {
             NcJobCancellation.ThrowIfCurrentCancelled($"ExecuteTwoPhaseTurning({region})");
-            if (string.Equals(region, "MIDDLE", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(region, "BACK2", StringComparison.OrdinalIgnoreCase)
+                && !TryResolveSafeSplitBackZoneX("ExecuteTwoPhaseTurning", out _))
             {
-                if (!TryGetThreeStageSplitConfig(out _, out double splitline2, out _, out _) || !IsWideSplitline2(splitline2))
-                {
-                    DentalLogger.Log("ExecuteTwoPhaseTurning(MIDDLE) - MIDDLE region 요청 무시(splitline_2<=5mm)");
-                    return;
-                }
+                DentalLogger.Log("ExecuteTwoPhaseTurning(BACK2) - safe split 비활성, 요청 무시");
+                return;
             }
 
             Environment.SetEnvironmentVariable(AppConfig.TwoPhaseTurningRegionEnv, region);
@@ -520,6 +527,9 @@ namespace DentalAddin
                 {
                     return;
                 }
+                string upperTag = (tag ?? string.Empty).Trim().ToUpperInvariant();
+                bool safeSplitNames = upperTag.EndsWith("_BACK", StringComparison.Ordinal)
+                    && TryResolveSafeSplitBackZoneX("TagNewOperations", out _);
                 int end = Document.Operations.Count;
                 for (int i = Math.Max(1, startCount + 1); i <= end; i++)
                 {
@@ -553,16 +563,17 @@ namespace DentalAddin
                         baseName = baseName.Trim();
                     }
 
+                    // Safe split 표시명: region BACK → Middle_*, BACK2 → Back_*.
                     string newName;
                     switch ((tag ?? string.Empty).Trim().ToUpperInvariant())
                     {
                         case "TURN_FRONT": newName = "Front_Turn"; break;
                         case "ROUGH_FRONT": newName = "Front_Rough"; break;
                         case "FRONT_FACE": newName = "Front_Face"; break;
-                        case "TURN_MIDDLE": newName = "Middle_Turn"; break;
-                        case "ROUGH_MIDDLE": newName = "Middle_Rough"; break;
-                        case "TURN_BACK": newName = "Back_Turn"; break;
-                        case "ROUGH_BACK": newName = "Back_Rough"; break;
+                        case "TURN_BACK": newName = safeSplitNames ? "Middle_Turn" : "Back_Turn"; break;
+                        case "ROUGH_BACK": newName = safeSplitNames ? "Middle_Rough" : "Back_Rough"; break;
+                        case "TURN_BACK2": newName = "Back_Turn"; break;
+                        case "ROUGH_BACK2": newName = "Back_Rough"; break;
                         default:
                             if (baseName.IndexOf(tag, StringComparison.OrdinalIgnoreCase) >= 0)
                             {
@@ -743,8 +754,8 @@ namespace DentalAddin
             List<TechLatheContour1> phaseTurningTechs = turningTechs;
             List<TechLatheContour1> phaseReverseTechs = reverseTechs;
             if (string.Equals(twoPhaseRegion, "FRONT", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(twoPhaseRegion, "MIDDLE", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(twoPhaseRegion, "BACK", StringComparison.OrdinalIgnoreCase))
+                string.Equals(twoPhaseRegion, "BACK", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(twoPhaseRegion, "BACK2", StringComparison.OrdinalIgnoreCase))
             {
                 phaseReverseTechs = new List<TechLatheContour1>();
                 DentalLogger.Log($"TurningOp - region={twoPhaseRegion}, 정방향 turning 전용으로 실행");
@@ -935,10 +946,9 @@ namespace DentalAddin
 
         private static IEnumerable<int> GetTurningTargetIndices(FeatureChain[] chains, string region)
         {
-            // FRONT/MIDDLE: 대표 체인 1개만 사용
+            // FRONT: 대표 체인 1개만 사용
             if (!string.IsNullOrWhiteSpace(region)
-                && (string.Equals(region, "FRONT", StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(region, "MIDDLE", StringComparison.OrdinalIgnoreCase)))
+                && string.Equals(region, "FRONT", StringComparison.OrdinalIgnoreCase))
             {
                 foreach (int preferred in new[] { 15, 2, 1 })
                 {
@@ -959,7 +969,8 @@ namespace DentalAddin
             // - 이후 소재 직경 +2mm마다 1가닥 추가
             //   예) D8 -> 1, D10 -> 2, D12 -> 3
             if (!string.IsNullOrWhiteSpace(region)
-                && string.Equals(region, "BACK", StringComparison.OrdinalIgnoreCase))
+                && (string.Equals(region, "BACK", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(region, "BACK2", StringComparison.OrdinalIgnoreCase)))
             {
                 List<int> availablePreferred = new List<int>();
                 foreach (int preferred in new[] { 15, 2, 1 })
@@ -1083,14 +1094,14 @@ namespace DentalAddin
                     return;
                 }
 
-                // 요청사항: Front/Middle는 정방향 공구(T02), Back는 백터닝 공구(T05) 우선
+                // 요청사항: Front는 정방향 공구(T02), Back(safe split Middle/Back 포함)은 백터닝 공구(T05) 우선
                 int targetToolNumber;
-                if (string.Equals(region, "FRONT", StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(region, "MIDDLE", StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(region, "FRONT", StringComparison.OrdinalIgnoreCase))
                 {
                     targetToolNumber = 2;
                 }
-                else if (string.Equals(region, "BACK", StringComparison.OrdinalIgnoreCase))
+                else if (string.Equals(region, "BACK", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(region, "BACK2", StringComparison.OrdinalIgnoreCase))
                 {
                     targetToolNumber = 5;
                 }
@@ -1571,11 +1582,11 @@ namespace DentalAddin
             return false;
         }
 
-        // 3-stage turning 분할 준비: region(FRONT/MIDDLE/BACK)에 맞는 X 구간을 계산한다.
+        // turning 분할 준비: region(FRONT/BACK/BACK2)에 맞는 X 구간을 계산한다.
         // 기준:
         // - Splitline_1 = FrontPointX
         // - Splitline_2 = SharedFinishSplitX (midpoint 금지)
-        // - Splitline_2>5mm: Front(Turn/Rough/Face) + Middle(Turn/Rough), Front 끝=Front_Face end
+        // - safe split ON: BACK = Middle_Turn, BACK2 = Back_Turn
         private static bool TryPrepareTurningRegionRange(string region, out double rangeMinX, out double rangeMaxX)
         {
             rangeMinX = 0.0;
@@ -1588,29 +1599,26 @@ namespace DentalAddin
                     return false;
                 }
 
-                bool wideSplit = IsWideSplitline2(splitline2);
                 string normalized = (region ?? string.Empty).Trim().ToUpperInvariant();
                 switch (normalized)
                 {
                     case "FRONT":
                         rangeMinX = xMin;
-                        if (wideSplit && TryResolveFrontFaceEndX(out double frontFaceEndX))
-                        {
-                            rangeMaxX = Math.Min(xMax, frontFaceEndX + FrontTurnEndPastBoundaryMm);
-                        }
-                        else
-                        {
-                            rangeMaxX = Math.Min(xMax, splitline2 + FrontTurnEndPastBoundaryMm);
-                        }
+                        rangeMaxX = Math.Min(xMax, splitline2 + FrontTurnEndPastBoundaryMm);
                         break;
-                    case "MIDDLE":
-                        if (!wideSplit || !TryResolveFrontFaceEndX(out double middleStartX))
+                    case "BACK" when TryResolveSafeSplitBackZoneX("TurningOp BACK", out double safeZoneEndX):
+                        // Safe split(Middle_Turn): Middle_Rough 끝(Xk)보다 2.5 더 깎고 퇴출. 헥스 너머 연장·45도 퇴출은 BACK2(Back_Turn)로 미룬다.
+                        rangeMinX = Clamp(MoveSTL_Module.FrontPointX, xMin + 1e-6, xMax - 1e-6);
+                        rangeMaxX = safeZoneEndX + SafeSplitTurnPastRoughMm;
+                        break;
+                    case "BACK2":
+                        if (!TryResolveSafeSplitBackZoneX("TurningOp BACK2", out double safeZoneStartX))
                         {
-                            DentalLogger.Log("TurningOp 3-Stage - MIDDLE region 거부(splitline_2<=5mm 또는 Front_Face end 계산 실패)");
+                            DentalLogger.Log("TurningOp 3-Stage - BACK2 region 거부(safe split 비활성)");
                             return false;
                         }
-                        rangeMinX = Clamp(middleStartX, xMin + 1e-6, xMax - 1e-6);
-                        rangeMaxX = Math.Min(xMax, splitline2 + FrontTurnEndPastBoundaryMm);
+                        rangeMinX = Clamp(safeZoneStartX, xMin + 1e-6, xMax - 1e-6);
+                        rangeMaxX = xMax + ResolveBackTurnExitAllowance();
                         break;
                     case "BACK":
                         // 요청사항 반영(2026-07-01):
@@ -1621,18 +1629,7 @@ namespace DentalAddin
                         //    - 범위를 xMax로 자르면 퇴출부가 클리핑되어 수평+45 형상이 사라질 수 있다.
                         //    - 따라서 xMax + exitAllowance까지 허용해 기존 퇴출 형상을 보존한다.
                         rangeMinX = Clamp(MoveSTL_Module.FrontPointX, xMin + 1e-6, xMax - 1e-6);
-
-                        double backTurningExtend = ResolveBackTurningExtendForBackTurnRange();
-                        double exitAllowance = Math.Max(0.5, Math.Abs(backTurningExtend) + Math.Abs(BackTurn));
-                        double chamferTan = Math.Abs(Math.Tan(Math.PI * Chamfer / 180.0));
-                        if (Math.Abs(Chamfer - 90.0) > 0.001 && chamferTan > 1e-6)
-                        {
-                            double topY = Document?.LatheMachineSetup?.BarDiameter / 2.0 ?? 0.0;
-                            double rise = Math.Max(0.0, topY - LowerY);
-                            exitAllowance += rise / chamferTan;
-                        }
-
-                        rangeMaxX = xMax + exitAllowance;
+                        rangeMaxX = xMax + ResolveBackTurnExitAllowance();
                         break;
                     default:
                         DentalLogger.Log($"TurningOp 3-Stage - 미지원 region='{region}'");
@@ -1645,12 +1642,8 @@ namespace DentalAddin
                     return false;
                 }
 
-                DentalLogger.Log($"TurningOp 3-Stage - region={region}, range=[{rangeMinX:0.###},{rangeMaxX:0.###}], split1={splitline1:0.###}, split2={splitline2:0.###}, wide={wideSplit}" +
-                    (normalized == "FRONT"
-                        ? $", Front_Turn끝={(wideSplit ? "Front_Face end" : "Splitline_2")}+{FrontTurnEndPastBoundaryMm:0.###}"
-                        : normalized == "MIDDLE"
-                            ? $", Middle_Turn:[Front_Face end~Splitline_2+{FrontTurnEndPastBoundaryMm:0.###}]"
-                            : string.Empty));
+                DentalLogger.Log($"TurningOp 3-Stage - region={region}, range=[{rangeMinX:0.###},{rangeMaxX:0.###}], split1={splitline1:0.###}, split2={splitline2:0.###}" +
+                    (normalized == "FRONT" ? $", Front_Turn끝=Splitline_2+{FrontTurnEndPastBoundaryMm:0.###}" : string.Empty));
                 return true;
             }
             catch (Exception ex)
@@ -1658,6 +1651,21 @@ namespace DentalAddin
                 DentalLogger.Log($"TurningOp 3-Stage - 구간 준비 실패(region={region}): {ex.GetType().Name}:{ex.Message}");
                 return false;
             }
+        }
+
+        // Back_Turn 끝 형상(수평 extension + 45도 퇴출)이 클리핑되지 않도록 xMax 뒤에 더하는 여유
+        private static double ResolveBackTurnExitAllowance()
+        {
+            double backTurningExtend = ResolveBackTurningExtendForBackTurnRange();
+            double exitAllowance = Math.Max(0.5, Math.Abs(backTurningExtend) + Math.Abs(BackTurn));
+            double chamferTan = Math.Abs(Math.Tan(Math.PI * Chamfer / 180.0));
+            if (Math.Abs(Chamfer - 90.0) > 0.001 && chamferTan > 1e-6)
+            {
+                double topY = Document?.LatheMachineSetup?.BarDiameter / 2.0 ?? 0.0;
+                double rise = Math.Max(0.0, topY - LowerY);
+                exitAllowance += rise / chamferTan;
+            }
+            return exitAllowance;
         }
 
         private static double ResolveBackTurningExtendForBackTurnRange()

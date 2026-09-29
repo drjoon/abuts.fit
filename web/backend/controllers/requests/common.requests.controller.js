@@ -3312,18 +3312,19 @@ export const updateRequestAnodizingOverride = asyncHandler(async (req, res) => {
   });
 });
 
-export const updateRequestWideSplitOverride = asyncHandler(async (req, res) => {
+// PreviewModal「Wide Split」= caseInfos.safeSplitEnabled (Front/Middle/Back 3구간, 기본 OFF).
+export const updateRequestSafeSplitOverride = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const hasWideSplitEnabled = Object.prototype.hasOwnProperty.call(
+  const hasSafeSplitEnabled = Object.prototype.hasOwnProperty.call(
     req.body || {},
-    "wideSplitEnabled",
+    "safeSplitEnabled",
   );
-  const wideSplitEnabled = req.body?.wideSplitEnabled;
+  const safeSplitEnabled = req.body?.safeSplitEnabled;
 
-  if (!hasWideSplitEnabled || typeof wideSplitEnabled !== "boolean") {
+  if (!hasSafeSplitEnabled || typeof safeSplitEnabled !== "boolean") {
     return res.status(400).json({
       success: false,
-      message: "wideSplitEnabled(boolean) 값이 필요합니다.",
+      message: "safeSplitEnabled(boolean) 값이 필요합니다.",
     });
   }
 
@@ -3356,7 +3357,7 @@ export const updateRequestWideSplitOverride = asyncHandler(async (req, res) => {
     }
   }
 
-  // 정책: wide split override는 준비 단계(준비/CAM)에서만 허용한다.
+  // 정책: Wide Split override는 준비 단계(준비/CAM)에서만 허용한다.
   const currentManufacturerStage = String(request?.manufacturerStage || "").trim();
   const editableStages = new Set([
     "준비",
@@ -3373,32 +3374,28 @@ export const updateRequestWideSplitOverride = asyncHandler(async (req, res) => {
     });
   }
 
-  request.set("caseInfos.wideSplitEnabled", wideSplitEnabled);
+  request.set("caseInfos.safeSplitEnabled", safeSplitEnabled);
   await request.save();
 
   const requestorBusinessAnchorId = String(request.businessAnchorId || "").trim();
-  if (requestorBusinessAnchorId) {
-    try {
-      await triggerDashboardSummaryRefreshForAnchorId(
-        requestorBusinessAnchorId,
-        "request-wide-split-updated",
-      );
-    } catch (refreshError) {
-      console.warn("[request-wide-split] dashboard refresh trigger failed", {
-        requestId: request.requestId,
-        error: refreshError?.message,
-      });
-    }
-  }
+
+  res.status(200).json({
+    success: true,
+    data: {
+      requestId: request.requestId,
+      manufacturerStage: request.manufacturerStage,
+      safeSplitEnabled,
+    },
+  });
 
   emitAppEventToRoles(
     REQUEST_HEX_ROTATION_EVENT_ROLES,
-    "request:wide-split-updated",
+    "request:safe-split-updated",
     {
       requestId: request.requestId,
       requestMongoId: String(request._id || "").trim() || null,
       requestorBusinessAnchorId: requestorBusinessAnchorId || null,
-      wideSplitEnabled,
+      safeSplitEnabled,
       request: {
         _id: request._id,
         requestId: request.requestId,
@@ -3407,20 +3404,23 @@ export const updateRequestWideSplitOverride = asyncHandler(async (req, res) => {
         requestorBusinessAnchorId: requestorBusinessAnchorId || null,
         caseInfos: {
           ...(request.caseInfos || {}),
-          wideSplitEnabled,
+          safeSplitEnabled,
         },
       },
     },
   );
 
-  return res.status(200).json({
-    success: true,
-    data: {
-      requestId: request.requestId,
-      manufacturerStage: request.manufacturerStage,
-      wideSplitEnabled,
-    },
-  });
+  if (requestorBusinessAnchorId) {
+    void triggerDashboardSummaryRefreshForAnchorId(
+      requestorBusinessAnchorId,
+      "request-safe-split-updated",
+    ).catch((refreshError) => {
+      console.warn("[request-safe-split] dashboard refresh trigger failed", {
+        requestId: request.requestId,
+        error: refreshError?.message,
+      });
+    });
+  }
 });
 
 export const updateRequestLotEngravingTargetOverride = asyncHandler(

@@ -79,7 +79,8 @@ export interface RequestCaseInfos {
   connectionDiameter?: number;
   workType?: string;
   anodizingEnabled?: boolean;
-  wideSplitEnabled?: boolean;
+  /** PreviewModal「Wide Split」: Back/Back2 분할 가공(떨림 방지). 기본 OFF. 준비 단계에서만 변경. */
+  safeSplitEnabled?: boolean;
   /** 로트 각인 위치: hex(기본) | post(포스트 측면). 준비 단계에서만 변경. */
   lotEngravingTarget?: "hex" | "post";
   requestorHexRotation?: "STL모델대로" | "헥스30도회전";

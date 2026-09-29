@@ -199,10 +199,10 @@ const requestSchema = new mongoose.Schema(
         type: Boolean,
         default: true,
       },
-      // Splitline_2>5mm Front/Middle 분할(wide split). 기본 ON. 준비 단계에서만 변경.
-      wideSplitEnabled: {
+      // PreviewModal「Wide Split」: 피니시라인 하단에서 끊어 Front/Middle/Back 3구간 가공(떨림 방지). 기본 OFF. 준비 단계에서만 변경.
+      safeSplitEnabled: {
         type: Boolean,
-        default: true,
+        default: false,
       },
       // 유지홈(retentionGroove) 옵션 — 현재 UI 정책은 없음/있음(2단계).
       // legacy shallow 데이터는 none으로 정규화해 사용한다.

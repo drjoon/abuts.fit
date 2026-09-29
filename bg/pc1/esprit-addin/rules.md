@@ -57,24 +57,19 @@
 ### 4.1 공정 구조 SSOT (3-Stage)
 
 - 기존 A/B 2분할 공정을 Front/Back 2-way로 고정한다.
-  - Front: `Turn -> Rough -> Front Face`
-  - Back: `Turn -> Rough`
-  - **`Splitline_2 > 5mm`일 때만** Middle: `Turn -> Rough` 추가
-    - Front: `Front_Face` end 기준 (Turn/Rough/Face 구간)
-    - Middle: `Front_Face` end ~ 기존 Front 끝(`Splitline_2`, Turn은 `+2.5mm`)
-  - `Splitline_2 <= 5mm`이면 Middle 미생성 (Front+Back로 커버)
-- Finish 정책:
-  - `retentionGroove=deep` → `Finish_Front`, `Finish_Back`
-  - `retentionGroove=none` 및 `ALL_PHASE` → `Finish_All` 단일 패스
+  - Front: `Turn -> Rough -> Front Face -> Finish`
+  - Back: `Turn -> Rough -> Finish`
+  - Wide Split(safe split) ON: Back 대신 Middle(`Turn -> Rough -> Finish`) → Back(`Turn -> Rough -> Finish`) (§4.3.0)
+  - 구 `Splitline_2 > 5mm` Front/Middle 분할(`caseInfos.wideSplitEnabled`, `ABUTS_WIDE_SPLIT_ENABLE`)은 2026-09-29 제거.
+- Finish 정책: 항상 `Front_Finish` + `Back_Finish` 2단 (`All_Finish` 단일 패스 미사용)
 
 ### 4.2 라벨명 SSOT
 
-- Turning/Rough/Face 라벨은 아래 이름으로 고정한다.
-  - `Front_Turn`, `Front_Rough`, `Front_Face`
-  - `Back_Turn`, `Back_Rough`
-  - `Splitline_2 > 5mm`일 때: `Middle_Turn`, `Middle_Rough`
-- Finish 라벨은 모드별로 아래 이름만 사용한다.
-  - `Finish_All` 또는 `Finish_Front`, `Finish_Back`
+- 모든 라벨은 `{구간}_{공정}` 형식으로 통일한다.
+  - `Front_Turn`, `Front_Rough`, `Front_Face`, `Front_Finish`
+  - Wide Split ON: `Middle_Turn`, `Middle_Rough`, `Middle_Finish`
+  - `Back_Turn`, `Back_Rough`, `Back_Finish`
+- 내부 토큰은 `FINISH_FRONT` / `FINISH_MIDDLE` / `FINISH_BACK`. 정규화는 레거시 `Finish_Front`/`Finish_Back` 표기도 인식한다.
 
 ### 4.3 Split 기준 SSOT
 
@@ -86,15 +81,22 @@
   - Finish: **Front 끝 = `Splitline_2`**, **Back 시작 = `Splitline_2` − 1피치**
     - 피치 SSOT: 백엔드 `retentionGroove` (`none`→`0.12`, `deep`→`0.20`) via `ABUTS_RETENTION_GROOVE`
     - `ABUTS_COMPOSITE_STEP_INCREMENT_A` **미사용**. none/deep 미수신 시 NC 중단 + 프론트 토스트
-  - Turn: **`Front_Turn` 끝**
-    - `Splitline_2 <= 5mm`: `Splitline_2 + 2.5mm` (Back 방향 X+)
-    - `Splitline_2 > 5mm`: `Front_Face` end + 2.5mm
+  - Turn: **`Front_Turn` 끝 = `Splitline_2 + 2.5mm`** (Back 방향 X+)
     - 구현: `MainModuleOperations.TryPrepareTurningRegionRange` (`FRONT` → `rangeMaxX`)
-  - **`Splitline_2 > 5mm` wide split** (`ABUTS_WIDE_SPLIT_ENABLE`, request-meta `caseInfos.wideSplitEnabled`, 미수신/null→기본 ON)
-    - `Front_Rough` 끝 = `Front_Face` end
-    - `Middle_Turn`: `Front_Face` end ~ `Splitline_2 + 2.5mm`
-    - `Middle_Rough`: `Front_Face` end ~ `Splitline_2` (인접 겹침: 시작 = Face end − roughRadius)
-- `Splitline_2 <= 5mm`이면 Middle 미생성
+
+### 4.3.0 Safe split — PreviewModal「Wide Split」(2026-09-29, 실험·기본 OFF)
+
+- 토글: `caseInfos.safeSplitEnabled` → request-meta → `ABUTS_SAFE_SPLIT_ENABLE`. 미수신=OFF.
+- 목적: Back_Turn(헥스 너머 LowerY 연장)·Back_Rough가 부시쪽 목을 먼저 얇게 만들어 Finish 크로스가 떨리는(wobble) 것 방지.
+- 경계 `Xk = (BackPointX - FL min_z) + 0.5` (마진 띠는 Middle_Finish 한 번에, seam은 커프).
+- 순서: `Front_Turn → Front_Rough → Front_Face → Front_Finish → Middle_Turn → Middle_Rough → Middle_Finish → Back_Turn → Back_Rough → Back_Finish → Connection`
+  - 내부 region 코드는 Middle=`BACK`, Back=`BACK2`(T05·레이어·경계 로직 공유). 표시명만 바뀐다.
+  - Middle_Finish·Middle_Rough 끝 `Xk` (D4 반경이 D1.2를 덮으므로 같은 끝 OK), Middle_Turn 끝 `Xk+2.5` (D4 반경 2.0+칩)
+  - Back_Turn `[Xk ~ xMax+exit]`, Back_Rough `[Xk-roughR ~ BackPointX]`(경계 `RoughBoundryBack2`), Back_Finish `[Xk-1피치 ~ BackPointX]`(`B2_PHASE`)
+- Middle_Turn 끝(`Xk+2.5`)은 **클램프하지 않는다**. 줄이면 D4 러프가 원소재를 물고, Xk를 당기면 seam이 마진으로 들어간다.
+- 포기 조건(기존 단일 Back 유지): FL min_z 없음, `Xk < Splitline_2+1.5`, Middle_Turn 끝 > `BackPointX+1.5` (= 치은 파트 FL min_z < 1.5mm). 로그 `SafeSplit[...]`.
+- 원칙: Turn은 Rough 끝보다 D4 반경+칩(2.5) 이상 더 깎는다. Rough와 Finish(D1.2)는 같은 끝이어도 된다.
+- 구현: `MainModuleComposite.TryResolveSafeSplitBackZoneX`, `MainModuleOperations.OperationSeq`/`TryPrepareTurningRegionRange(BACK/BACK2)`/`TagNewOperations`.
 
 ### 4.3.1 SharedFinishSplit / Splitline_2 SSOT (검색 키워드: `SharedFinishSplitX`, `finishlineTop-1mm`, `X=-Z`, `GetRoughAdjacentOverlapMm`, `GetFinishAdjacentOverlapMm`, `ABUTS_RETENTION_GROOVE`)
 

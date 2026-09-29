@@ -1063,7 +1063,7 @@ export const MachiningQueueBoard = ({
     [token, camPreviewFiles],
   );
 
-  const handleSaveWideSplitEnabledOverrideFromCamPreview = useCallback(
+  const handleSaveSafeSplitEnabledOverrideFromCamPreview = useCallback(
     async (req: ManufacturerRequest, nextValue: boolean) => {
       if (!token) return;
 
@@ -1087,9 +1087,9 @@ export const MachiningQueueBoard = ({
       }
 
       const prevValue =
-        typeof (camPreviewFiles?.request as any)?.caseInfos?.wideSplitEnabled ===
+        typeof (camPreviewFiles?.request as any)?.caseInfos?.safeSplitEnabled ===
         "boolean"
-          ? Boolean((camPreviewFiles.request as any).caseInfos.wideSplitEnabled)
+          ? Boolean((camPreviewFiles.request as any).caseInfos.safeSplitEnabled)
           : null;
 
       setCamPreviewFiles((prev) => {
@@ -1102,7 +1102,7 @@ export const MachiningQueueBoard = ({
             _id: requestMongoId,
             caseInfos: {
               ...(currentReq.caseInfos || {}),
-              wideSplitEnabled: nextValue,
+              safeSplitEnabled: nextValue,
             },
           },
         };
@@ -1110,14 +1110,14 @@ export const MachiningQueueBoard = ({
 
       try {
         const res = await fetch(
-          `/api/requests/${encodeURIComponent(requestMongoId)}/wide-split-override`,
+          `/api/requests/${encodeURIComponent(requestMongoId)}/safe-split-override`,
           {
             method: "PATCH",
             headers: {
               Authorization: `Bearer ${token}`,
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({ wideSplitEnabled: nextValue }),
+            body: JSON.stringify({ safeSplitEnabled: nextValue }),
           },
         );
         const body = await res.json().catch(() => ({}));
@@ -1129,11 +1129,11 @@ export const MachiningQueueBoard = ({
         }
 
         const savedValue =
-          typeof (body as { data?: { wideSplitEnabled?: unknown } })?.data
-            ?.wideSplitEnabled === "boolean"
+          typeof (body as { data?: { safeSplitEnabled?: unknown } })?.data
+            ?.safeSplitEnabled === "boolean"
             ? Boolean(
-                (body as { data?: { wideSplitEnabled?: boolean } }).data
-                  ?.wideSplitEnabled,
+                (body as { data?: { safeSplitEnabled?: boolean } }).data
+                  ?.safeSplitEnabled,
               )
             : nextValue;
 
@@ -1147,7 +1147,7 @@ export const MachiningQueueBoard = ({
               _id: requestMongoId,
               caseInfos: {
                 ...(currentReq.caseInfos || {}),
-                wideSplitEnabled: savedValue,
+                safeSplitEnabled: savedValue,
               },
             },
           };
@@ -1161,9 +1161,9 @@ export const MachiningQueueBoard = ({
             unknown
           >;
           if (typeof prevValue === "boolean") {
-            nextCaseInfos.wideSplitEnabled = prevValue;
+            nextCaseInfos.safeSplitEnabled = prevValue;
           } else {
-            delete nextCaseInfos.wideSplitEnabled;
+            delete nextCaseInfos.safeSplitEnabled;
           }
           return {
             ...prev,
@@ -2641,8 +2641,8 @@ export const MachiningQueueBoard = ({
         onSaveAnodizingEnabledOverride={
           handleSaveAnodizingEnabledOverrideFromCamPreview
         }
-        onSaveWideSplitEnabledOverride={
-          handleSaveWideSplitEnabledOverrideFromCamPreview
+        onSaveSafeSplitEnabledOverride={
+          handleSaveSafeSplitEnabledOverrideFromCamPreview
         }
         onSaveLotEngravingTargetOverride={
           handleSaveLotEngravingTargetOverrideFromCamPreview
