@@ -43,7 +43,8 @@ export function buildImplantLibraries(
 ): ImplantLibrary[] {
   const out = new Map<string, ImplantLibrary>();
   for (const row of connections) {
-    const manufacturer = part(row.displayManufacturer) || part(row.manufacturer);
+    // 대소문자만 다른 표기(Megagen·MEGAGEN)는 대문자 하나로 모은다.
+    const manufacturer = (part(row.manufacturer) || part(row.displayManufacturer)).toUpperCase();
     if (!manufacturer) continue;
     const brand = part(row.displayBrand) || part(row.brand);
     const family = part(row.displayFamily) || part(row.family);
@@ -68,32 +69,36 @@ export function buildImplantLibraries(
   );
 }
 
-/** 의뢰 사양과 가장 많이 맞는 라이브러리. 제조사가 다르면 고르지 않는다. */
+function sameField(orderValue: string, libraryValue: string) {
+  const want = key(orderValue);
+  const have = key(libraryValue);
+  if (!want) return true;
+  if (want === have) return true;
+  // 의뢰가 Hex이고 카탈로그가 HEX 2.5처럼 뒤에 규격이 붙으면 같은 항목으로 본다.
+  return have === want || have.startsWith(`${want} `);
+}
+
+/** 의뢰에 적힌 항목이 라이브러리와 같은지. 비어 있는 의뢰 항목은 비교하지 않는다. */
+export function implantLibraryFollowsOrder(
+  library: Pick<ImplantLibrary, "manufacturer" | "brand" | "family" | "type">,
+  spec: LabProsthesisAiImplantSpec | null,
+): boolean {
+  if (!spec?.manufacturer) return false;
+  if (key(library.manufacturer) !== key(spec.manufacturer)) return false;
+  if (!sameField(spec.brand, library.brand)) return false;
+  if (!sameField(spec.family, library.family)) return false;
+  if (!sameField(spec.type, library.type)) return false;
+  return true;
+}
+
+/** 의뢰 사양과 적힌 항목이 모두 맞는 라이브러리. 여럿이거나 없으면 고르지 않는다. */
 export function matchImplantLibrary(
   libraries: readonly ImplantLibrary[],
   spec: LabProsthesisAiImplantSpec | null,
 ): ImplantLibrary | null {
-  if (!spec || !spec.manufacturer) return null;
-  const want = {
-    manufacturer: key(spec.manufacturer),
-    brand: key(spec.brand),
-    family: key(spec.family),
-    type: key(spec.type),
-  };
-  let best: ImplantLibrary | null = null;
-  let bestScore = 0;
-  for (const row of libraries) {
-    if (key(row.manufacturer) !== want.manufacturer) continue;
-    let score = 1;
-    if (want.brand && key(row.brand) === want.brand) score += 4;
-    if (want.family && key(row.family) === want.family) score += 2;
-    if (want.type && key(row.type) === want.type) score += 1;
-    if (score > bestScore) {
-      best = row;
-      bestScore = score;
-    }
-  }
-  return best;
+  if (!spec?.manufacturer) return null;
+  const hits = libraries.filter((row) => implantLibraryFollowsOrder(row, spec));
+  return hits.length === 1 ? hits[0] : null;
 }
 
 /** 스캔바디는 연결부보다 조금 굵은 원기둥으로 본다. 연결부를 모르면 표준 4.8mm. */

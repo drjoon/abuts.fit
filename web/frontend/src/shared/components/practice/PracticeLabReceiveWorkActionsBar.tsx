@@ -395,7 +395,6 @@ export function PracticeLabReceiveWorkActionsBar({
   const abutmentLeading = showAbutmentLeading ? abutmentLeadingActions : null;
 
   const cancelCluster =
-    abutmentLeading ||
     abutmentUploadButton ||
     prostheticUploadButton ||
     (shipInActionRow ? abutmentShipButton : null) ||
@@ -403,7 +402,6 @@ export function PracticeLabReceiveWorkActionsBar({
     pastReadyRemakeButton ||
     hasEffectiveTrailing ? (
       <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1.5">
-        {abutmentLeading}
         {abutmentUploadButton}
         {prostheticUploadButton}
         {shipInActionRow ? abutmentShipButton : null}
@@ -416,6 +414,7 @@ export function PracticeLabReceiveWorkActionsBar({
 
   const renderActionRow = (primary: ReactNode) => (
     <div className="flex w-full min-w-0 flex-wrap items-center gap-1.5">
+      {abutmentLeading}
       <div className="flex min-w-0 flex-wrap items-center gap-1.5 md:flex-nowrap">
         {primary}
       </div>
@@ -476,7 +475,7 @@ export function PracticeLabReceiveWorkActionsBar({
     <div className={cn("w-full min-w-0 space-y-1.5", className)}>
       {standaloneOverdue}
       {pendingLabGuide}
-      {cancelCluster ?? stickyOrTrailing}
+      {abutmentLeading || cancelCluster ? renderActionRow(null) : stickyOrTrailing}
     </div>
   );
 }

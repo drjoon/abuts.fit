@@ -1,6 +1,6 @@
 // 기공소 AI 보철 — 임플란트 라이브러리 선택. 제조사 → 시스템, 검색·즐겨찾기.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, Star, X } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,10 @@ type Props = {
   value: string | null;
   /** 의뢰 사양의 제조사. 처음 열 때 이 제조사를 편다. */
   defaultManufacturer: string;
+  /** 치과 의뢰 한 줄. 있으면 목록 위에 보여 준다. */
+  orderLabel?: string;
+  /** 의뢰와 같은 라이브러리. 목록에 의뢰로 표시한다. */
+  orderLibraryId?: string | null;
   onPick: (library: ImplantLibrary) => void;
   onToggleFavorite: (id: string) => void;
   onClose: () => void;
@@ -27,21 +31,34 @@ export function LabImplantLibraryPicker({
   favorites,
   value,
   defaultManufacturer,
+  orderLabel = "",
+  orderLibraryId = null,
   onPick,
   onToggleFavorite,
   onClose,
 }: Props) {
   const current = libraries.find((row) => row.id === value) ?? null;
   const manufacturers = useMemo(
-    () => [...new Set(libraries.map((row) => row.manufacturer))],
+    () =>
+      [...new Set(libraries.map((row) => row.manufacturer.trim().toUpperCase()))].sort((a, b) =>
+        a.localeCompare(b),
+      ),
     [libraries],
   );
   const [mode, setMode] = useState<Mode>("company");
-  const [manufacturer, setManufacturer] = useState(() => {
-    if (current) return current.manufacturer;
+  const [manufacturer, setManufacturer] = useState("");
+  const choseManufacturer = useRef(false);
+  useEffect(() => {
+    if (current) {
+      setManufacturer(current.manufacturer.trim().toUpperCase());
+      return;
+    }
+    if (choseManufacturer.current) return;
     const want = defaultManufacturer.trim().toLowerCase();
-    return manufacturers.find((row) => row.toLowerCase() === want) ?? "";
-  });
+    if (!want) return;
+    const match = manufacturers.find((row) => row.toLowerCase() === want);
+    if (match) setManufacturer(match);
+  }, [current, defaultManufacturer, manufacturers]);
   const [query, setQuery] = useState("");
   const favoriteSet = new Set(favorites);
 
@@ -57,7 +74,9 @@ export function LabImplantLibraryPicker({
         })
         .slice(0, 60);
     }
-    return manufacturer ? libraries.filter((row) => row.manufacturer === manufacturer) : [];
+    return manufacturer
+      ? libraries.filter((row) => row.manufacturer.trim().toUpperCase() === manufacturer)
+      : [];
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [favorites, libraries, manufacturer, mode, query]);
 
@@ -88,6 +107,11 @@ export function LabImplantLibraryPicker({
           <X className="h-4 w-4" />
         </button>
       </div>
+      {orderLabel ? (
+        <p className="mb-2 text-[11px] leading-relaxed text-muted-foreground">
+          치과 의뢰: {orderLabel}
+        </p>
+      ) : null}
       <div className="flex gap-1">
         {tab("company", "제조사", <span className="h-3.5 w-3.5 rounded-full border" />)}
         {tab("search", "검색", <Search className="h-3.5 w-3.5" />)}
@@ -99,7 +123,10 @@ export function LabImplantLibraryPicker({
             className="h-8 w-full rounded-md border bg-background px-2 text-xs"
             aria-label="제조사"
             value={manufacturer}
-            onChange={(event) => setManufacturer(event.target.value)}
+            onChange={(event) => {
+              choseManufacturer.current = true;
+              setManufacturer(event.target.value);
+            }}
           >
             <option value="">제조사</option>
             {manufacturers.map((row) => (
@@ -146,6 +173,16 @@ export function LabImplantLibraryPicker({
                     <span className="block truncate text-[10px] opacity-80">{row.manufacturer}</span>
                   ) : null}
                   <span className="block truncate">{row.label || row.manufacturer}</span>
+                  {row.id === orderLibraryId ? (
+                    <span
+                      className={cn(
+                        "mt-0.5 block text-[10px] font-semibold",
+                        row.id === value ? "text-primary-foreground" : "text-emerald-700",
+                      )}
+                    >
+                      의뢰
+                    </span>
+                  ) : null}
                 </button>
                 <button
                   type="button"

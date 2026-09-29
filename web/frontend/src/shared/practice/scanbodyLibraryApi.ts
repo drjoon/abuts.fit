@@ -507,6 +507,27 @@ export function scanbodyCandidatesFor(
   return out;
 }
 
+/** 의뢰 스캔바디 이름·직경·높이가 한 형상에만 맞으면 그 키. 애매하면 고르지 않는다. */
+export function matchOrderedScanbody(
+  rows: readonly { key: string; label: string }[],
+  spec: { manufacturer: string; diameter: string; height: string } | null,
+): string | null {
+  if (!spec) return null;
+  const name = spec.manufacturer.trim().toLowerCase();
+  const diameter = spec.diameter.trim().toLowerCase().replace(",", ".");
+  const height = spec.height.trim().toLowerCase();
+  if (!name && !diameter && !height) return null;
+  if (name === "심플어벗" || name === "심플밀링" || name === "심플힐링") return null;
+  const hits = rows.filter((row) => {
+    const text = row.label.toLowerCase().replace(/,/g, ".");
+    if (name && !text.includes(name)) return false;
+    if (diameter && !text.includes(diameter)) return false;
+    if (height && !text.includes(height)) return false;
+    return true;
+  });
+  return hits.length === 1 ? hits[0].key : null;
+}
+
 /** 의뢰 심플어벗 규격(종류·직경)에 맞는 템플릿. 높이가 같으면 먼저, 자체 등록이 먼저. */
 export function abutmentTemplateFor(
   templates: readonly AbutmentTemplateRow[],

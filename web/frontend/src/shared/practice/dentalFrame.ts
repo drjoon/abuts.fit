@@ -1,5 +1,6 @@
 // 상악·하악 스캔의 교합 축(위·앞·오른쪽)을 잡고, 교합면 중심을 원점으로 옮긴다.
 // 뷰어와 백엔드 작업 스캔 자동 정렬이 같이 쓴다. three 외에 브라우저 API를 쓰지 않는다.
+// - 2026-09-30: 양악이면 위는 항상 상악 중심 쪽. 로드 순서·마지막 악 하나로 부호를 뒤집지 않는다.
 // related files:
 // - web/frontend/src/shared/components/practice/OralScanOverlayViewer.tsx
 // - web/frontend/src/shared/practice/workScanAutoAlign.ts
@@ -105,13 +106,66 @@ function computeMeshNormalVoting(geometry: THREE.BufferGeometry): THREE.Vector3 
   return sumN;
 }
 
+/** 치열 반지름이 수 m면 mm로 올리고, 수 μm면 mm로 내린다. 구강 스캔은 보통 mm. */
+function spanUnitsToMm(points: Array<[number, number, number]>, mean: THREE.Vector3) {
+  let radius = 0;
+  for (const p of points) {
+    radius = Math.max(radius, Math.hypot(p[0] - mean.x, p[1] - mean.y, p[2] - mean.z));
+  }
+  if (radius > 0 && radius < 5) return 1000;
+  if (radius > 400) return 0.001;
+  return 1;
+}
+
+/** 경계(잘린 잇몸)에서 질량 중심 쪽. 교합면(치관)을 가리킨다. */
+function crownDirection(mesh: FrameMesh): THREE.Vector3 | null {
+  const pts = samplePositions(mesh.geometry, 2500);
+  const mean = meanVec(pts);
+  if (!mean) return null;
+  const border = extractBoundaryVertices(mesh.geometry);
+  let toCrown = new THREE.Vector3();
+  if (border.length >= 20) {
+    const borderMean = meanVec(border);
+    if (borderMean) toCrown.subVectors(mean, borderMean);
+  }
+  if (toCrown.lengthSq() < 1e-4) toCrown = computeMeshNormalVoting(mesh.geometry);
+  if (toCrown.lengthSq() < 1e-4) return null;
+  return toCrown.normalize();
+}
+
+/**
+ * 파일 라벨이 치관 방향과 반대다.
+ * 상악 치관은 하악 쪽으로, 하악 치관은 상악 쪽으로 난다.
+ * 둘 다 그 반대면 라벨이 바뀐 것이다. 한쪽만 애매하면 그대로 둔다.
+ */
+export function jawsLookSwapped(loaded: readonly FrameMesh[]): boolean {
+  const upper = loaded.find((entry) => entry.role === "upper");
+  const lower = loaded.find((entry) => entry.role === "lower");
+  if (!upper || !lower) return false;
+  const upperPts = samplePositions(upper.geometry, 2500);
+  const lowerPts = samplePositions(lower.geometry, 2500);
+  const upperC = meanVec(upperPts);
+  const lowerC = meanVec(lowerPts);
+  const all = [...upperPts, ...lowerPts];
+  const mean = meanVec(all);
+  if (!upperC || !lowerC || !mean) return false;
+  const towardUpper = upperC.clone().sub(lowerC);
+  const gapMm = towardUpper.length() * spanUnitsToMm(all, mean);
+  if (gapMm < 3 || towardUpper.lengthSq() < 1e-8) return false;
+  towardUpper.normalize();
+  const upperCrown = crownDirection(upper);
+  const lowerCrown = crownDirection(lower);
+  if (!upperCrown || !lowerCrown) return false;
+  return upperCrown.dot(towardUpper) > 0.25 && lowerCrown.dot(towardUpper) < -0.25;
+}
+
 /** 상악·하악 중심 차이와 치열 형태로 교합 축을 잡는다. 메시 상대 위치는 바꾸지 않는다. */
 export function estimateDentalFrame(loaded: readonly FrameMesh[]): DentalFrame | null {
   const upperPts: Array<[number, number, number]> = [];
   const lowerPts: Array<[number, number, number]> = [];
   const archPts: Array<[number, number, number]> = [];
-  let singleArchRole: "upper" | "lower" | null = null;
-  let singleMesh: FrameMesh | null = null;
+  let upperMesh: FrameMesh | null = null;
+  let lowerMesh: FrameMesh | null = null;
 
   for (const entry of loaded) {
     if (entry.role !== "upper" && entry.role !== "lower") continue;
@@ -119,12 +173,10 @@ export function estimateDentalFrame(loaded: readonly FrameMesh[]): DentalFrame |
     archPts.push(...pts);
     if (entry.role === "upper") {
       upperPts.push(...pts);
-      singleArchRole = "upper";
-      singleMesh = entry;
+      upperMesh = entry;
     } else {
       lowerPts.push(...pts);
-      singleArchRole = "lower";
-      singleMesh = entry;
+      lowerMesh = entry;
     }
   }
   // 역할이 아직 지정되지 않았거나 bite 외 스캔만 있는 경우 대비
@@ -141,26 +193,23 @@ export function estimateDentalFrame(loaded: readonly FrameMesh[]): DentalFrame |
   const upperC = meanVec(upperPts);
   const lowerC = meanVec(lowerPts);
   const mean = meanVec(archPts)!;
+  const both = upperPts.length >= 30 && lowerPts.length >= 30;
+  const toMm = spanUnitsToMm(archPts, mean);
   let up = new THREE.Vector3();
-  if (upperC && lowerC && upperC.distanceTo(lowerC) > 2) {
-    up.subVectors(upperC, lowerC);
+  if (both && upperC && lowerC) {
+    const delta = upperC.clone().sub(lowerC);
+    if (delta.length() * toMm >= 3) up.copy(delta);
   }
   if (up.lengthSq() < 1e-4) {
     up = smallestPcaAxis(archPts, mean);
-    // 단일 악궁일 때 경계선(치은 절제부) 및 표면 법선 투표로 up의 부호 결정
-    if (singleMesh) {
-      const bPts = extractBoundaryVertices(singleMesh.geometry);
-      let toCrown = new THREE.Vector3();
-      if (bPts.length >= 20) {
-        const bMean = meanVec(bPts)!;
-        toCrown.subVectors(mean, bMean);
-      }
-      if (toCrown.lengthSq() < 1e-4) {
-        toCrown = computeMeshNormalVoting(singleMesh.geometry);
-      }
-      if (toCrown.lengthSq() > 1e-4) {
+    if (both && upperC && lowerC && upperC.distanceToSquared(lowerC) > 1e-8) {
+      if (up.dot(upperC.clone().sub(lowerC)) < 0) up.negate();
+    } else {
+      const single = upperMesh ?? lowerMesh;
+      const crown = single ? crownDirection(single) : null;
+      if (crown) {
         // lower: 치관 방향이 +up (cranial). upper: 치관 방향이 -up.
-        const expectedUp = singleArchRole === "upper" ? toCrown.clone().negate() : toCrown.clone();
+        const expectedUp = upperMesh && !lowerMesh ? crown.clone().negate() : crown;
         if (up.dot(expectedUp) < 0) up.negate();
       }
     }

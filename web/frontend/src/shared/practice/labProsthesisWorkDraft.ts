@@ -63,11 +63,34 @@ export type WorkSessionAxis = {
   view: WorkSessionView;
 };
 
-/** 정중앙 토글. off → 가운데 점선 → 2mm·10mm 모눈. */
+/** 정중앙 토글. off → 가운데 점선 → 2mm·10mm 모눈. 값이 없으면 모눈. */
 export type WorkSessionCenterGuide = "off" | "center" | "grid";
 
 /** 상악·하악 스캔을 바이트에 맞춘 모델 정렬 여부. 스캔에 없는 악은 항상 완료로 본다. */
 export type WorkSessionArchAligned = { upper: boolean; lower: boolean };
+
+/** AI 디자인 채팅 한 줄. */
+export type AiDesignChatTurn = {
+  role: "user" | "assistant";
+  text: string;
+};
+
+export function parseAiDesignChat(value: unknown): AiDesignChatTurn[] {
+  if (!Array.isArray(value)) return [];
+  const out: AiDesignChatTurn[] = [];
+  for (const row of value) {
+    if (!row || typeof row !== "object") continue;
+    const role = (row as { role?: unknown }).role;
+    if (role !== "user" && role !== "assistant") continue;
+    const text = String((row as { text?: unknown }).text ?? "")
+      .trim()
+      .slice(0, 2000);
+    if (!text) continue;
+    out.push({ role, text });
+    if (out.length >= 40) break;
+  }
+  return out;
+}
 
 /** 작업영역 위 토글. 모달을 닫을 때 문서에 남긴다. */
 export type WorkSessionViewToggles = {
@@ -90,14 +113,16 @@ export type WorkSessionDocument = {
   generated: Record<string, boolean>;
   /** 치아별 마진 검출·확인. 없으면 생성된 치아만 확인된 것으로 본다. */
   marginReview: Record<string, MarginReview>;
-  /** 마진만 / 크라운까지 / 모델까지. 고르기 전이면 null. */
+  /** 예전 범위. 화면에서는 단계를 막지 않는다. */
   designScope: DesignScope | null;
-  /** 모델까지일 때 낼 모델의 종류·받침 높이·다이 분리·간격. */
+  /** 모델 단계의 종류·받침 높이·다이 분리·간격. */
   modelSettings: ModelSettings;
   /** 밀링 디스크 설정과 보철 배치. */
   milling: MillingDocument;
-  /** 케이스 메모. */
+  /** 케이스 메모. 화면 패널은 없다. */
   note: string;
+  /** AI 디자인 채팅. */
+  aiChat: AiDesignChatTurn[];
   /** 의뢰 치식 번호 → 작업영역에서 바꾼 번호·유형. */
   toothOverrides: Record<string, LabToothOverride>;
   insertionAxes: WorkSessionAxis[];
@@ -110,7 +135,7 @@ export type WorkSessionDocument = {
 export function parseCenterGuide(value: unknown): WorkSessionCenterGuide {
   const raw = String(value || "").trim();
   if (raw === "off" || raw === "center" || raw === "grid") return raw;
-  return "center";
+  return "grid";
 }
 
 export function parseArchAligned(value: unknown): WorkSessionArchAligned {
@@ -247,6 +272,7 @@ function documentOf(row: unknown): WorkSessionDocument | null {
     modelSettings: modelSettingsOf(body),
     milling: parseMillingDocument((body as { milling?: unknown }).milling),
     note: String((body as { note?: unknown }).note ?? "").slice(0, 2000),
+    aiChat: parseAiDesignChat((body as { aiChat?: unknown }).aiChat),
     toothOverrides: parseToothOverrides(
       (body as { toothOverrides?: unknown }).toothOverrides,
     ),

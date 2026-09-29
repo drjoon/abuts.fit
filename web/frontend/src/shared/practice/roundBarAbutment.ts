@@ -245,7 +245,7 @@ export const ROUND_BAR_GUIDE_LINES = [
  * 표시: `{라벨} — {치아번호}` (LabPendingAbutmentGuide, 예: `11, 21`)
  */
 export const LAB_PENDING_ABUTMENT_SELF_PROCESS_LABEL = "기공소 자체 처리";
-export const LAB_PENDING_ABUTMENT_ABUTS_ORDER_LABEL = "어벗츠 생산의뢰";
+export const LAB_PENDING_ABUTMENT_ABUTS_ORDER_LABEL = "어벗츠생산";
 /** STL 업로드 후 — 이미 제조사 큐에 등록됨 */
 export const LAB_PENDING_ABUTMENT_ABUTS_ORDERED_LABEL = "어벗츠 생산의뢰 완료";
 /** 제조사 준비 — 전체 생산 취소 */

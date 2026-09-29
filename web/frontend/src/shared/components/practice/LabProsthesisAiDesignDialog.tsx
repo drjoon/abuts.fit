@@ -68,35 +68,72 @@
 // - 2026-09-29: 「밀링」 단계. 생성한 보철을 98.5mm 디스크에 배치하고 핀·소결 배율과 함께 디스크 좌표 STL로 낸다(LabMillingStage).
 // - 2026-09-29: 칼라맵. 작업영역 위 「칼라맵」 토글 아래 범위 막대에서 간섭(대합·인접)·두께·내면 간격을 고르고 범위(±0.1~1mm)를 바꾼다. 마우스 자리 값은 mm. 기존 「칼라」는 「스캔색」.
 //   크라운 내면은 지대치 스캔에서 실제 메시로 만들어 외면·STL에 붙인다(내면 도구의 「지대치에서 내면 생성」).
+// - 2026-09-29: 표시는 치아 정보 안. 파일명은 툴팁. 메모 패널은 제거. 왼쪽은 AI 채팅. 범위(마진만·크라운까지·모델까지)는 없애고 단계만 연다.
+// - 2026-09-29: 스캔 묶음은 없애고 상악·바이트·하악 줄에 파일명을 붙인다. 끌어 역할을 맞바꾼다. 브리지 연결선은 치아 가운데에서 잇는다.
+// - 2026-09-30: 단계는 왼쪽 위(내용이 길어도 작업영역 높이까지). 치아 정보는 오른쪽 위, AI 채팅은 오른쪽 아래. 제목을 끌면 옮기고, 놓으면 가까운 가장자리에 여백을 두고 붙는다.
+// - 2026-09-30: AI 채팅 내용 영역을 조금 키운다. 빈 화면과 입력 안내 문구는 「AI에게 디자인 명령해주세요」.
+// - 2026-09-30: 치아 정보 가로는 내용만큼. 임플란트 제조사는 대문자 하나로 모으고, 처음 선택은 치과가 지정한 제조사.
+// - 2026-09-30: 확대율은 헤더 패널 닫기 왼쪽의 퍼센트. 설정에서는 뺀다.
+// - 2026-09-30: 작업영역 위 레전드 제거. 점 색은 버튼 아이콘. 투명 버튼 제거. 스캔색은 원본 색과 파란색을 오간다.
+// - 2026-09-30: 확대율은 100~175, 200~300, 50~90 세 줄. 치아 정보 프리셋은 「 - 」 앞을 빼고, 악 색은 체크박스. 브리지 삽입축과 연결선 사이에 여백.
+// - 2026-09-30: 확대율 팝오버는 50%부터 차례로 같은 너비 다섯 칸씩 세 줄.
+// - 2026-09-30: 헤더 창닫기 X는 크고 빨간 버튼.
+// - 2026-09-30: 가이드 기본은 모눈종이. 저장값이 있으면 그 토글을 그대로 연다.
+// - 2026-09-30: 임플란트·스캔바디는 치과 의뢰를 먼저 쓴다. 의뢰와 다르게 바꾸면 확인 뒤에만 반영한다.
+// - 2026-09-30: 상악·하악은 열 때마다 뒤집히지 않는다. 치관이 라벨과 반대면 좌표는 두고 역할만 맞춘다.
 import {
+  createContext,
   useCallback,
+  useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
+  type DragEvent as ReactDragEvent,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
+  type RefObject,
 } from "react";
 import {
   ArrowDownToLine,
-  Blend,
+  Check,
+  CircleDot,
   Crosshair,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   Cylinder,
+  Library,
+  Link2,
+  MessageSquare,
   Paintbrush,
-  Rainbow,
   PanelLeftClose,
   PanelLeftDashed,
   PanelLeftOpen,
   Pencil,
+  Rainbow,
+  Send,
   Settings,
   Palette,
   Sparkles,
   Spline,
+  Trash2,
   TriangleAlert,
+  Unlink,
 } from "lucide-react";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { LabColorMapBar } from "@/shared/components/practice/LabColorMapBar";
 import type { CrownIntaglioInfo } from "@/shared/components/practice/labProsthesisEditLayer";
@@ -172,6 +209,7 @@ import { LabToothTypeCard } from "@/shared/components/practice/LabToothTypeCard"
 import { LabImplantLibraryPicker } from "@/shared/components/practice/LabImplantLibraryPicker";
 import {
   buildImplantLibraries,
+  implantLibraryFollowsOrder,
   matchImplantLibrary,
   readImplantFavorites,
   scanbodyShapeOf,
@@ -183,6 +221,7 @@ import {
   abutmentTemplateFor,
   loadScanbodyGeometry,
   loadTemplateModel,
+  matchOrderedScanbody,
   scanbodyCandidatesFor,
   useScanbodyCatalog,
 } from "@/shared/practice/scanbodyLibraryApi";
@@ -230,6 +269,7 @@ import {
   writeWorkSession,
   parseViewToggles,
   writeWorkSessionDocument,
+  type AiDesignChatTurn,
   type WorkDraftMesh,
   type WorkSessionAxis,
   type WorkSessionCenterGuide,
@@ -237,7 +277,6 @@ import {
   type WorkSessionViewToggles,
 } from "@/shared/practice/labProsthesisWorkDraft";
 import {
-  contactMapGradientCss,
   undercutLimitFromRange,
   type ContactPaintMode,
 } from "@/shared/practice/oralScanDesignAnalysis";
@@ -255,7 +294,6 @@ import {
   MODEL_DIE_GAP_RANGE_MM,
   MODEL_HEIGHT_RANGE_MM,
   MODEL_KINDS,
-  scopeMakesCrown,
   redetectMargin,
   reduceDesignGesture,
   type DesignGesture,
@@ -338,68 +376,18 @@ export type LabProsthesisAiCaseNav = {
 /** 열기=본문, 닫기=제목만, 숨김=패널 없음. 버튼은 다음 동작. */
 type PanelLayout = "open" | "closed" | "hidden";
 
-/** 헤더로 접기 전에 기억해 두는 패널 본문. 파일명은 기본 숨김. */
+/** 헤더로 접기 전에 기억해 두는 패널 본문. */
 type PanelOpenMemory = {
-  scanList: boolean;
-  scanNames: boolean;
+  chat: boolean;
   modify: boolean;
   toothInfo: boolean;
 };
 
 const defaultPanelOpenMemory = (): PanelOpenMemory => ({
-  scanList: true,
-  scanNames: false,
+  chat: true,
   modify: true,
   toothInfo: true,
 });
-
-function overlayLegend(colorClass: string, label: string) {
-  return (
-    <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-1.5 flex -translate-x-1/2 items-center gap-1 whitespace-nowrap text-[10px] text-foreground">
-      <span className={cn("h-2 w-2 shrink-0 rounded-full", colorClass)} />
-      {label}
-    </span>
-  );
-}
-
-function thicknessOverlayLegend() {
-  return (
-    <div
-      className="pointer-events-none absolute left-1/2 top-full z-10 mt-1.5 w-44 -translate-x-1/2 text-[10px] text-foreground"
-      aria-label="최소 두께 미달"
-    >
-      <div className="flex justify-between whitespace-nowrap leading-none">
-        <span>미달</span>
-        <span>충족</span>
-      </div>
-      <div
-        className="mt-0.5 h-2 rounded-sm"
-        style={{
-          background: "linear-gradient(90deg, rgb(219 51 46), rgb(51 184 82))",
-        }}
-      />
-    </div>
-  );
-}
-
-function contactOverlayLegend() {
-  return (
-    <div
-      className="pointer-events-none absolute left-1/2 top-full z-10 mt-1.5 w-44 -translate-x-1/2 text-[10px] text-foreground"
-      aria-label="교합 거리 -0.5mm부터 +0.5mm"
-    >
-      <div className="flex justify-between whitespace-nowrap tabular-nums leading-none">
-        <span>-0.5mm</span>
-        <span>0.0</span>
-        <span>+0.5mm</span>
-      </div>
-      <div
-        className="mt-0.5 h-2 rounded-sm"
-        style={{ background: contactMapGradientCss() }}
-      />
-    </div>
-  );
-}
 
 function panelLayoutAction(layout: PanelLayout): string {
   if (layout === "open") return "패널 닫기";
@@ -461,12 +449,18 @@ const GHOST_OPACITY_ON = 0.2;
 const SCANBODY_FIT_WARN_MM = 0.1;
 /** 같은 세션에서 다시 열면 IndexedDB·네트워크 대신 이 파일을 쓴다. */
 const sessionScanFileCache = new Map<string, File>();
-const ROLE_DOT: Record<LabOralScanRole, string> = {
-  upper: "bg-blue-500",
-  lower: "bg-amber-500",
-  bite: "bg-teal-500",
-  other: "bg-slate-400",
+const ROLE_CHECK: Record<LabOralScanRole, string> = {
+  upper: "border-blue-500 data-[state=checked]:border-blue-500 data-[state=checked]:bg-blue-500 data-[state=checked]:text-white",
+  lower: "border-amber-500 data-[state=checked]:border-amber-500 data-[state=checked]:bg-amber-500 data-[state=checked]:text-white",
+  bite: "border-teal-500 data-[state=checked]:border-teal-500 data-[state=checked]:bg-teal-500 data-[state=checked]:text-white",
+  other: "border-slate-400 data-[state=checked]:border-slate-400 data-[state=checked]:bg-slate-400 data-[state=checked]:text-white",
 };
+
+/** 프리셋 이름 「기본 - 3D 프린트」는 뒤 내용만 보여 준다. */
+function presetDisplayName(name: string) {
+  const cut = name.indexOf(" - ");
+  return cut >= 0 ? name.slice(cut + 3) : name;
+}
 
 type WorkCloseSnapshot = {
   id: string;
@@ -582,7 +576,13 @@ export function LabProsthesisAiDesignButton({
 
 const AUTO_SAVE_PREF_KEY = "abuts.labProsthesis.autoSave";
 const TEXT_ZOOM_PREF_KEY = "abuts.labProsthesis.textZoom";
-const TEXT_ZOOM_OPTIONS = [1, 1.1, 1.2, 1.35, 1.5, 1.75] as const;
+/** 작은 배율부터 한 줄에 다섯. 칸 너비는 그리드가 맞춘다. */
+const TEXT_ZOOM_ROWS = [
+  [0.5, 0.6, 0.7, 0.8, 0.9],
+  [1, 1.1, 1.2, 1.5, 1.75],
+  [2, 2.25, 2.5, 2.75, 3],
+] as const;
+const TEXT_ZOOM_OPTIONS = [...TEXT_ZOOM_ROWS.flat()].sort((a, b) => a - b);
 const TEXT_ZOOM_DEFAULT = 1.2;
 const UNDO_LIMIT = 30;
 
@@ -613,6 +613,7 @@ function workDocumentSignature(document: WorkSessionDocument): string {
     modelSettings: document.modelSettings,
     milling: document.milling,
     note: document.note,
+    aiChat: document.aiChat,
     toothOverrides: document.toothOverrides,
     insertionAxes: document.insertionAxes,
     archAligned: document.archAligned,
@@ -625,6 +626,20 @@ function nextCenterGuide(mode: WorkSessionCenterGuide): WorkSessionCenterGuide {
   if (mode === "off") return "center";
   if (mode === "center") return "grid";
   return "off";
+}
+
+function orderSpecLines(tooth: LabProsthesisAiTooth) {
+  const implant = tooth.implant
+    ? [tooth.implant.manufacturer, tooth.implant.brand, tooth.implant.family, tooth.implant.type]
+        .filter(Boolean)
+        .join(" / ")
+    : "";
+  const scanbody = tooth.scanbodyOrder
+    ? [tooth.scanbodyOrder.manufacturer, tooth.scanbodyOrder.diameter, tooth.scanbodyOrder.height]
+        .filter(Boolean)
+        .join(" / ")
+    : "";
+  return { implant, scanbody };
 }
 
 function centerGuideLabel(mode: WorkSessionCenterGuide): string {
@@ -644,7 +659,11 @@ function storedAutoSave() {
 function storedTextZoom() {
   try {
     const value = Number(window.localStorage.getItem(TEXT_ZOOM_PREF_KEY));
-    return (TEXT_ZOOM_OPTIONS as readonly number[]).includes(value) ? value : TEXT_ZOOM_DEFAULT;
+    if (!Number.isFinite(value)) return TEXT_ZOOM_DEFAULT;
+    if ((TEXT_ZOOM_OPTIONS as readonly number[]).includes(value)) return value;
+    return TEXT_ZOOM_OPTIONS.reduce((best, step) =>
+      Math.abs(step - value) < Math.abs(best - value) ? step : best,
+    );
   } catch {
     return TEXT_ZOOM_DEFAULT;
   }
@@ -757,7 +776,7 @@ function LabProsthesisAiDesignDialog({
   const [visible, setVisible] = useState<Record<string, boolean>>({});
   const [colorMapping, setColorMapping] = useState(true);
   const paint = useViewPaint({ open, resetKey: String(transferId || "") });
-  const [hasScanColor, setHasScanColor] = useState(false);
+  const [, setHasScanColor] = useState(false);
   const [ghostOn, setGhostOn] = useState(false);
   const [marginShown, setMarginShown] = useState(false);
   const [dieShown, setDieShown] = useState(false);
@@ -788,7 +807,9 @@ function LabProsthesisAiDesignDialog({
   /** 모델을 만들 때의 설정·마진. 달라지면 다시 만들라고 알린다. */
   const [stoneBuiltSig, setStoneBuiltSig] = useState("");
   const [caseNote, setCaseNote] = useState("");
-  const [noteDraft, setNoteDraft] = useState<string | null>(null);
+  const [aiChat, setAiChat] = useState<AiDesignChatTurn[]>([]);
+  const [chatDraft, setChatDraft] = useState("");
+  const [chatOpen, setChatOpen] = useState(true);
   const [sculptBrush, setSculptBrush] = useState<SculptBrush>(DEFAULT_SCULPT_BRUSH);
   const [refineTab, setRefineTab] = useState<RefineTab>("transform");
   /** 뷰어가 대합·인접 맞춤 뒤 잰 크라운별 가장 얇은 외면(mm). 맞춤이 없는 치아는 없다. */
@@ -812,8 +833,6 @@ function LabProsthesisAiDesignDialog({
     Record<string, AssignableScanRole>
   >({});
   const [scanOrder, setScanOrder] = useState<string[]>([]);
-  const [scanListOpen, setScanListOpen] = useState(true);
-  const [scanNamesOpen, setScanNamesOpen] = useState(false);
   const [modifyPanelOpen, setModifyPanelOpen] = useState(true);
   const panelOpenMemoryRef = useRef<PanelOpenMemory>(defaultPanelOpenMemory());
   /** 헤더 「패널 닫기」가 본문을 접은 직후. 그 false 값으로 기억을 덮지 않는다. */
@@ -835,12 +854,12 @@ function LabProsthesisAiDesignDialog({
   } | null>(null);
   const aimingRef = useRef(aiming);
   aimingRef.current = aiming;
-  const [centerGuide, setCenterGuide] = useState<WorkSessionCenterGuide>("center");
+  const [centerGuide, setCenterGuide] = useState<WorkSessionCenterGuide>("grid");
   const viewTogglesRef = useRef<WorkSessionViewToggles>({
     insertion: false,
     undercut: false,
     margin: false,
-    center: "center",
+    center: "grid",
     color: true,
     contact: false,
     ghost: false,
@@ -858,6 +877,12 @@ function LabProsthesisAiDesignDialog({
   });
   const [editBrush, setEditBrush] = useState<EditBrush>("none");
   const [edits, setEdits] = useState<Record<string, ToothDesignEdit>>({});
+  /** 작업 초안을 읽은 뒤 1. 그 전에 의뢰 라이브러리를 덮지 않는다. */
+  const [workDocStamp, setWorkDocStamp] = useState(0);
+  const [libraryConfirm, setLibraryConfirm] = useState<{
+    toothNumber: string;
+    library: ImplantLibrary;
+  } | null>(null);
   const [holeNote, setHoleNote] = useState("");
   const [holeIssues, setHoleIssues] = useState<Record<string, string>>({});
   const [connectorFrom, setConnectorFrom] = useState<string | null>(null);
@@ -890,6 +915,7 @@ function LabProsthesisAiDesignDialog({
   const [autoSave, setAutoSave] = useState(storedAutoSave);
   const [textZoom, setTextZoom] = useState(storedTextZoom);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [zoomOpen, setZoomOpen] = useState(false);
   useEffect(() => {
     if (!open) return;
     applyUiTextZoom(textZoom);
@@ -938,6 +964,8 @@ function LabProsthesisAiDesignDialog({
   millingDocRef.current = millingDoc;
   const caseNoteRef = useRef(caseNote);
   caseNoteRef.current = caseNote;
+  const aiChatRef = useRef(aiChat);
+  aiChatRef.current = aiChat;
   const archAlignedRef = useRef(archAligned);
   archAlignedRef.current = archAligned;
   const historyRef = useRef<WorkUndoBook>({
@@ -962,7 +990,13 @@ function LabProsthesisAiDesignDialog({
   const { toast } = useToast();
   const { uploadFiles } = useS3TempUpload({ token: authToken });
   const workObserveRef = useRef<ResizeObserver | null>(null);
+  const workAreaRef = useRef<HTMLDivElement | null>(null);
+  const [panelPose, setPanelPose] = useState<Partial<Record<DesignPanelId, PanelPose>>>({});
+  const movePanel = useCallback((id: DesignPanelId, pose: PanelPose) => {
+    setPanelPose((prev) => ({ ...prev, [id]: pose }));
+  }, []);
   const bindWorkArea = useCallback((node: HTMLDivElement | null) => {
+    workAreaRef.current = node;
     workObserveRef.current?.disconnect();
     workObserveRef.current = null;
     if (!node) return;
@@ -986,6 +1020,8 @@ function LabProsthesisAiDesignDialog({
       setDieTeeth([]);
       setHiddenTeeth([]);
       setLoadError("");
+      setWorkDocStamp(0);
+      setLibraryConfirm(null);
       setProgress(0);
       setFileState({});
       setStage("scan");
@@ -1004,7 +1040,10 @@ function LabProsthesisAiDesignDialog({
       setStoneParts([]);
       setStoneBuiltSig("");
       setCaseNote("");
-      setNoteDraft(null);
+      setAiChat([]);
+      setChatDraft("");
+      setChatOpen(true);
+      setPanelPose({});
       setToothOverrides({});
       setScanbodyPickTooth(null);
       setScanbodyPicks(0);
@@ -1017,8 +1056,6 @@ function LabProsthesisAiDesignDialog({
       setPanelsHidden(false);
       setRoleOverride({});
       setScanOrder([]);
-      setScanListOpen(true);
-      setScanNamesOpen(false);
       setModifyPanelOpen(true);
       panelOpenMemoryRef.current = defaultPanelOpenMemory();
       panelHeaderFoldedRef.current = false;
@@ -1027,7 +1064,7 @@ function LabProsthesisAiDesignDialog({
       setInsertionKeys([]);
       setInsertionShown(false);
       setAiming(null);
-      setCenterGuide("center");
+      setCenterGuide("grid");
       restoreGhostVisibleRef.current = false;
       setModifyTool("margin");
       setMarginMode("point");
@@ -1069,6 +1106,7 @@ function LabProsthesisAiDesignDialog({
       setEntries([]);
       setLoadError("");
       setProgress(0);
+      setWorkDocStamp((n) => (n === 0 ? 1 : n));
       return () => {
         ac.abort();
       };
@@ -1118,6 +1156,7 @@ function LabProsthesisAiDesignDialog({
             modelSettingsRef.current = draft.document.modelSettings;
             millingDocRef.current = draft.document.milling;
             caseNoteRef.current = draft.document.note;
+            aiChatRef.current = draft.document.aiChat;
             toothOverridesRef.current = draft.document.toothOverrides;
             archAlignedRef.current = draft.document.archAligned;
             sessionDocRef.current = draft.document;
@@ -1129,6 +1168,7 @@ function LabProsthesisAiDesignDialog({
             setModelSettings(draft.document.modelSettings);
             setMillingDoc(draft.document.milling);
             setCaseNote(draft.document.note);
+            setAiChat(draft.document.aiChat);
             setToothOverrides(draft.document.toothOverrides);
             setArchAligned(draft.document.archAligned);
             if (draft.document.insertionAxes.length > 0) {
@@ -1154,7 +1194,7 @@ function LabProsthesisAiDesignDialog({
         }
       }
       if (ac.signal.aborted) return;
-      // 자동 정렬 잡이나 다른 PC에서 맞춘 작업 스캔이면 정렬 완료로 연다.
+      setWorkDocStamp((n) => n + 1);
       const serverAligned = workScanAlignmentRef.current;
       if (serverAligned) {
         const next = {
@@ -1305,12 +1345,10 @@ function LabProsthesisAiDesignDialog({
   );
 
   const busy = scans.some((row) => fileState[row.id] === "loading");
-  const hasGhost = scans.some((row) => isOpposingOrBite(row.role, prepArch));
   const scanShown = (row: MeshSource) =>
     row.id in visible
       ? visible[row.id] !== false
       : initialLabOralScanVisible(row.role, prepArch);
-  const allShown = scans.length > 0 && scans.every(scanShown);
   const swapScans = (sourceId: string, targetId: string) => {
     if (!sourceId || !targetId || sourceId === targetId) return;
     const originalRole = (id: string) =>
@@ -1338,11 +1376,6 @@ function LabProsthesisAiDesignDialog({
       next[to] = sourceId;
       return next;
     });
-  };
-
-  const toggleAllShown = () => {
-    const next = !allShown;
-    setVisible(Object.fromEntries(scans.map((row) => [row.id, next])));
   };
 
   const canUndercut = prepArch != null;
@@ -1671,6 +1704,7 @@ function LabProsthesisAiDesignDialog({
       string,
       {
         missingTemplate: boolean;
+        orderedKey: string | null;
         rows: Array<{
           key: string;
           label: string;
@@ -1681,10 +1715,14 @@ function LabProsthesisAiDesignDialog({
     > = {};
     for (const tooth of plan.teeth) {
       if (!tooth.implant) continue;
-      if (tooth.simpleAbutment) {
+      const libraryId = edits[tooth.toothNumber]?.implant.libraryId ?? null;
+      const orderOverride = edits[tooth.toothNumber]?.implant.orderOverride === true;
+      const useTemplate = Boolean(tooth.simpleAbutment) && (!orderOverride || libraryId?.startsWith("template:"));
+      if (useTemplate) {
         const template = abutmentTemplateFor(scanbodyCatalog.templates, tooth.simpleAbutment);
         out[tooth.toothNumber] = {
           missingTemplate: !template,
+          orderedKey: template ? `template:${template.id}` : null,
           rows: template
             ? [
                 {
@@ -1698,15 +1736,25 @@ function LabProsthesisAiDesignDialog({
         };
         continue;
       }
-      const libraryId = edits[tooth.toothNumber]?.implant.libraryId ?? null;
+      const linked = scanbodyCandidatesFor(scanbodyCatalog.libraries, libraryId);
+      const rows = linked.map((row) => ({
+        key: row.s3Key,
+        label: `${row.kitName} · ${row.name}`,
+        marginHeightMm: null as number | null,
+        load: () => loadScanbodyGeometry(row.s3Key),
+      }));
       out[tooth.toothNumber] = {
         missingTemplate: false,
-        rows: scanbodyCandidatesFor(scanbodyCatalog.libraries, libraryId).map((row) => ({
-          key: row.s3Key,
-          label: `${row.kitName} · ${row.name}`,
-          marginHeightMm: null,
-          load: () => loadScanbodyGeometry(row.s3Key),
-        })),
+        orderedKey: orderOverride
+          ? null
+          : matchOrderedScanbody(
+              linked.map((row) => ({
+                key: row.s3Key,
+                label: `${row.kitName} ${row.name} ${row.systemName}`,
+              })),
+              tooth.scanbodyOrder,
+            ),
+        rows,
       };
     }
     return out;
@@ -1831,29 +1879,16 @@ function LabProsthesisAiDesignDialog({
         ? "스캔을 불러온 뒤에 만듭니다."
         : null;
   const exportRows = useMemo(() => {
-    if (designScope !== "model") return exportRestorations;
-    const kind =
-      MODEL_KINDS.find((row) => row.id === modelSettings.kind) ?? MODEL_KINDS[0]!;
-    const models: DesignExportRestoration[] =
-      stoneParts.length > 0
-        ? stoneParts.map((part) => ({
-            id: `${STONE_ROW_PREFIX}${part.id}`,
-            label: part.label,
-            fileName: part.fileName,
-            teeth: [],
-            blocked: stoneStale ? "다시 생성 필요" : null,
-          }))
-        : [
-            {
-              id: `${STONE_ROW_PREFIX}none`,
-              label: kind.label,
-              fileName: `${kind.label}.stl`,
-              teeth: [],
-              blocked: "모델 생성 전",
-            },
-          ];
+    if (stoneParts.length === 0) return exportRestorations;
+    const models: DesignExportRestoration[] = stoneParts.map((part) => ({
+      id: `${STONE_ROW_PREFIX}${part.id}`,
+      label: part.label,
+      fileName: part.fileName,
+      teeth: [],
+      blocked: stoneStale ? "다시 생성 필요" : null,
+    }));
     return [...exportRestorations, ...models];
-  }, [designScope, exportRestorations, modelSettings.kind, stoneParts, stoneStale]);
+  }, [exportRestorations, stoneParts, stoneStale]);
 
   const patchModelSettings = (patch: Partial<ModelSettings>) => {
     const next = { ...modelSettingsRef.current, ...patch };
@@ -1885,38 +1920,103 @@ function LabProsthesisAiDesignDialog({
   };
 
   useEffect(() => {
-    if (!open || stage === "scan" || plan.teeth.length === 0) return;
+    if (!open || workDocStamp === 0 || plan.teeth.length === 0) return;
     setEdits((prev) => {
       let changed = false;
       const next = { ...prev };
       for (const tooth of plan.teeth) {
         const current = next[tooth.toothNumber] ?? createToothDesignEdit();
         const on = tooth.implant != null;
-        const template = on
-          ? abutmentTemplateFor(scanbodyCatalog.templates, tooth.simpleAbutment)
-          : null;
-        const libraryId =
-          current.implant.libraryId ??
-          (on
-            ? (matchImplantLibrary(implantLibraries, tooth.implant)?.id ??
-              (template ? `template:${template.id}` : null))
-            : null);
+        if (!on) {
+          if (next[tooth.toothNumber] && current.implant.on === false) continue;
+          next[tooth.toothNumber] = { ...current, implant: { ...current.implant, on: false } };
+          changed = true;
+          continue;
+        }
+        if (current.implant.orderOverride) {
+          if (current.implant.on) continue;
+          next[tooth.toothNumber] = { ...current, implant: { ...current.implant, on: true } };
+          changed = true;
+          continue;
+        }
+        const template = abutmentTemplateFor(scanbodyCatalog.templates, tooth.simpleAbutment);
+        const catalogsReady = tooth.simpleAbutment
+          ? scanbodyCatalog.templates.length > 0
+          : implantLibraries.length > 0;
+        if (!catalogsReady) {
+          if (current.implant.on) continue;
+          next[tooth.toothNumber] = { ...current, implant: { ...current.implant, on: true } };
+          changed = true;
+          continue;
+        }
+        const libraryId = template
+          ? `template:${template.id}`
+          : (matchImplantLibrary(implantLibraries, tooth.implant)?.id ?? null);
+        const kept =
+          !libraryId &&
+          current.implant.libraryId &&
+          implantLibraryFollowsOrder(
+            libraryById.get(current.implant.libraryId) ?? {
+              manufacturer: "",
+              brand: "",
+              family: "",
+              type: "",
+            },
+            tooth.implant,
+          );
+        const nextLibraryId = kept ? current.implant.libraryId : libraryId;
+        const linked = scanbodyCandidatesFor(scanbodyCatalog.libraries, nextLibraryId).map((row) => ({
+          key: row.s3Key,
+          label: `${row.kitName} ${row.name} ${row.systemName}`,
+        }));
+        const orderedKey = template
+          ? `template:${template.id}`
+          : matchOrderedScanbody(linked, tooth.scanbodyOrder);
+        const libraryChanged = current.implant.libraryId !== nextLibraryId;
+        const scanbodyKey =
+          libraryChanged
+            ? orderedKey
+            : orderedKey && !current.implant.aligned && current.implant.scanbodyKey !== orderedKey
+              ? orderedKey
+              : current.implant.scanbodyKey;
         if (
-          next[tooth.toothNumber] &&
-          current.implant.on === on &&
-          current.implant.libraryId === libraryId
+          current.implant.on &&
+          current.implant.libraryId === nextLibraryId &&
+          current.implant.scanbodyKey === scanbodyKey
         ) {
           continue;
         }
         next[tooth.toothNumber] = {
           ...current,
-          implant: { ...current.implant, on, libraryId },
+          implant: {
+            ...current.implant,
+            on: true,
+            libraryId: nextLibraryId,
+            scanbodyKey,
+            ...(libraryChanged
+              ? {
+                  aligned: false,
+                  axis: null,
+                  offset: [0, 0, 0] as [number, number, number],
+                  fitMm: null,
+                  rotDeg: 0,
+                }
+              : {}),
+          },
         };
         changed = true;
       }
       return changed ? next : prev;
     });
-  }, [implantLibraries, open, plan.teeth, scanbodyCatalog.templates, stage]);
+  }, [
+    implantLibraries,
+    libraryById,
+    open,
+    plan.teeth,
+    scanbodyCatalog.libraries,
+    scanbodyCatalog.templates,
+    workDocStamp,
+  ]);
 
   const workSnapshotKey = () =>
     `${JSON.stringify(editsRef.current)}\n${JSON.stringify(generatedRef.current)}\n${JSON.stringify(marginReviewRef.current)}`;
@@ -2120,7 +2220,11 @@ function LabProsthesisAiDesignDialog({
     queueSaveWorkRef.current();
   };
 
-  const pickImplantLibrary = (toothNumber: string, library: ImplantLibrary) => {
+  const applyImplantLibrary = (
+    toothNumber: string,
+    library: ImplantLibrary,
+    orderOverride: boolean,
+  ) => {
     patchImplant(
       toothNumber,
       {
@@ -2129,11 +2233,42 @@ function LabProsthesisAiDesignDialog({
         axis: null,
         offset: [0, 0, 0],
         fitMm: null,
+        rotDeg: 0,
         scanbodyKey: null,
+        orderOverride,
       },
       { resetReview: true },
     );
     setLibraryPickerFor(null);
+    setLibraryConfirm(null);
+  };
+
+  const pickImplantLibrary = (toothNumber: string, library: ImplantLibrary) => {
+    const tooth = plan.teeth.find((row) => row.toothNumber === toothNumber);
+    const template = tooth
+      ? abutmentTemplateFor(scanbodyCatalog.templates, tooth.simpleAbutment)
+      : null;
+    const orderId = template
+      ? `template:${template.id}`
+      : tooth
+        ? matchImplantLibrary(implantLibraries, tooth.implant)?.id ?? null
+        : null;
+    const follows =
+      library.id === orderId ||
+      (tooth?.implant
+        ? implantLibraryFollowsOrder(library, tooth.implant) && !tooth.simpleAbutment
+        : false);
+    const specified = Boolean(
+      tooth?.simpleAbutment ||
+        tooth?.implant?.manufacturer ||
+        tooth?.implant?.brand ||
+        tooth?.scanbodyOrder?.manufacturer,
+    );
+    if (specified && !follows) {
+      setLibraryConfirm({ toothNumber, library });
+      return;
+    }
+    applyImplantLibrary(toothNumber, library, false);
   };
 
   const toggleImplantFavorite = (id: string) => {
@@ -2161,7 +2296,10 @@ function LabProsthesisAiDesignDialog({
         variant: "destructive",
       });
     const entry = scanbodyCandidates[toothNumber];
-    const rows = entry?.rows ?? [];
+    const preferred = entry?.orderedKey;
+    const rows = preferred
+      ? (entry?.rows ?? []).filter((row) => row.key === preferred)
+      : (entry?.rows ?? []);
     const loaded = rows.flatMap((row) => {
       const mesh = scanbodyMeshes[row.key];
       return mesh ? [{ key: row.key, mesh }] : [];
@@ -2494,7 +2632,6 @@ function LabProsthesisAiDesignDialog({
   };
 
   const runGenerate = async (toothNumbers: string[]) => {
-    if (!scopeMakesCrown(designScopeRef.current)) return;
     const targets = toothNumbers.filter((number) => {
       if (!number) return false;
       const edit = editsRef.current[number];
@@ -2541,16 +2678,13 @@ function LabProsthesisAiDesignDialog({
     queueSaveWorkRef.current();
   };
 
-  const chooseScope = (next: DesignScope) => {
-    designScopeRef.current = next;
-    setDesignScope(next);
-    setStage("margin");
-    setMarginShown(true);
-    setModifyTool("margin");
-    setAlignKind(null);
-    setAlignArch(null);
-    if (canUndercut) setUndercutMap(true);
-    runMarginDetect(marginToothNumbersRef.current);
+  const sendAiChat = () => {
+    const text = chatDraft.trim().slice(0, 2000);
+    if (!text) return;
+    const next = [...aiChatRef.current, { role: "user" as const, text }].slice(-40);
+    aiChatRef.current = next;
+    setAiChat(next);
+    setChatDraft("");
     queueSaveWorkRef.current();
   };
 
@@ -2630,16 +2764,13 @@ function LabProsthesisAiDesignDialog({
   };
 
   const onStage = (next: DesignStage) => {
-    if (next !== "scan" && !designScopeRef.current) return;
-    if (next === "design" && !scopeMakesCrown(designScopeRef.current)) return;
-    if (next === "model" && designScopeRef.current !== "model") return;
-    if (next === "milling" && !scopeMakesCrown(designScopeRef.current)) return;
     setStage(next);
     setMarginShown(next === "margin" || next === "design");
     if (next !== "scan") {
       setAlignKind(null);
       setAlignArch(null);
     }
+    if (next === "margin") runMarginDetect(marginToothNumbersRef.current);
     if (next === "scan" || next === "model" || next === "milling") return;
     if (canUndercut) setUndercutMap(true);
     if (next === "design" && canContact) setContactMap(true);
@@ -2932,12 +3063,12 @@ function LabProsthesisAiDesignDialog({
       steps.push({ kind: "scanbody", tooth: tooth.toothNumber });
     }
     steps.push({ kind: "margin" });
-    if (designScope !== "margin") steps.push({ kind: "design" });
-    if (designScope !== "margin" && plan.teeth.some((tooth) => cavityKindOf(tooth))) {
+    steps.push({ kind: "design" });
+    if (plan.teeth.some((tooth) => cavityKindOf(tooth))) {
       steps.push({ kind: "thickness" }, { kind: "export" });
     }
     return steps;
-  }, [designScope, insertionWizardSpans, plan.teeth]);
+  }, [insertionWizardSpans, plan.teeth]);
   const wizardStepDone = (step: AlignWizardStep) => {
     if (step.kind === "axis") {
       const key = insertionAxisKey(step.span);
@@ -3054,6 +3185,7 @@ function LabProsthesisAiDesignDialog({
       modelSettings: modelSettingsRef.current,
       milling: millingDocRef.current,
       note: caseNoteRef.current,
+      aiChat: aiChatRef.current,
       toothOverrides: toothOverridesRef.current,
       insertionAxes: axes,
       archAligned: archAlignedRef.current,
@@ -3366,7 +3498,7 @@ function LabProsthesisAiDesignDialog({
 
   const panelLayout: PanelLayout = panelsHidden
     ? "hidden"
-    : scanListOpen || modifyPanelOpen || toothInfoOpen
+    : chatOpen || modifyPanelOpen || toothInfoOpen
       ? "open"
       : "closed";
   const panelsShown = panelLayout !== "hidden";
@@ -3375,13 +3507,12 @@ function LabProsthesisAiDesignDialog({
     open &&
     !panelsHidden &&
     (panelHeaderFoldedRef.current
-      ? scanListOpen || modifyPanelOpen || toothInfoOpen
+      ? chatOpen || modifyPanelOpen || toothInfoOpen
       : true)
   ) {
     if (panelHeaderFoldedRef.current) panelHeaderFoldedRef.current = false;
     panelOpenMemoryRef.current = {
-      scanList: scanListOpen,
-      scanNames: scanNamesOpen,
+      chat: chatOpen,
       modify: modifyPanelOpen,
       toothInfo: toothInfoOpen,
     };
@@ -3389,13 +3520,12 @@ function LabProsthesisAiDesignDialog({
   const cyclePanelLayout = () => {
     if (panelLayout === "open") {
       panelOpenMemoryRef.current = {
-        scanList: scanListOpen,
-        scanNames: scanNamesOpen,
+        chat: chatOpen,
         modify: modifyPanelOpen,
         toothInfo: toothInfoOpen,
       };
       panelHeaderFoldedRef.current = true;
-      setScanListOpen(false);
+      setChatOpen(false);
       setModifyPanelOpen(false);
       setToothInfoOpen(false);
       return;
@@ -3407,8 +3537,7 @@ function LabProsthesisAiDesignDialog({
     const remembered = panelOpenMemoryRef.current;
     panelHeaderFoldedRef.current = false;
     setPanelsHidden(false);
-    setScanListOpen(remembered.scanList);
-    setScanNamesOpen(remembered.scanNames);
+    setChatOpen(remembered.chat);
     setModifyPanelOpen(remembered.modify);
     setToothInfoOpen(remembered.toothInfo);
   };
@@ -3460,8 +3589,8 @@ function LabProsthesisAiDesignDialog({
           "duration-0 data-[state=open]:animate-none data-[state=closed]:animate-none",
         )}
         overlayClassName="z-[475]"
-        closeClassName="right-3 top-3 z-20"
-        closeIconClassName="h-5 w-5"
+        closeClassName="right-2 top-2 z-20 flex h-10 w-10 items-center justify-center rounded-md bg-destructive text-destructive-foreground opacity-100 shadow-sm hover:bg-destructive/90 hover:opacity-100"
+        closeIconClassName="h-7 w-7"
         onInteractOutside={(event) => {
           const target = event.target;
           if (
@@ -3534,7 +3663,45 @@ function LabProsthesisAiDesignDialog({
               </div>
             ) : null}
           </div>
-          <div className="flex shrink-0 items-center justify-end gap-1.5 pr-8">
+          <div className="flex shrink-0 items-center justify-end gap-1.5 pr-12">
+            <Popover open={zoomOpen} onOpenChange={setZoomOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8 px-2 text-xs tabular-nums"
+                  title="확대율"
+                  aria-label={`확대율 ${Math.round(textZoom * 100)}%`}
+                >
+                  {Math.round(textZoom * 100)}%
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="z-[520] w-[17.5rem] p-2">
+                <div className="grid grid-cols-5 gap-1">
+                  {TEXT_ZOOM_ROWS.flat().map((zoom) => (
+                    <Button
+                      key={zoom}
+                      type="button"
+                      size="sm"
+                      variant={textZoom === zoom ? "default" : "outline"}
+                      className="h-8 w-full whitespace-nowrap px-0 text-xs tabular-nums"
+                      aria-pressed={textZoom === zoom}
+                      onClick={() => {
+                        setTextZoom(zoom);
+                        try {
+                          window.localStorage.setItem(TEXT_ZOOM_PREF_KEY, String(zoom));
+                        } catch {
+                          /* 확대율은 이 탭에서만 유지한다. */
+                        }
+                      }}
+                    >
+                      {Math.round(zoom * 100)}%
+                    </Button>
+                  ))}
+                </div>
+              </PopoverContent>
+            </Popover>
             <Button
               type="button"
               size="sm"
@@ -3600,31 +3767,6 @@ function LabProsthesisAiDesignDialog({
                   />
                 </label>
                 <section className="border-t pt-3">
-                  <div className="mb-2 text-xs font-semibold text-foreground">확대율</div>
-                  <div className="flex items-center gap-1">
-                    {TEXT_ZOOM_OPTIONS.map((zoom) => (
-                      <Button
-                        key={zoom}
-                        type="button"
-                        size="sm"
-                        variant={textZoom === zoom ? "default" : "outline"}
-                        className="h-7 px-2 text-xs tabular-nums"
-                        aria-pressed={textZoom === zoom}
-                        onClick={() => {
-                          setTextZoom(zoom);
-                          try {
-                            window.localStorage.setItem(TEXT_ZOOM_PREF_KEY, String(zoom));
-                          } catch {
-                            /* 확대율은 이 탭에서만 유지한다. */
-                          }
-                        }}
-                      >
-                        {Math.round(zoom * 100)}%
-                      </Button>
-                    ))}
-                  </div>
-                </section>
-                <section className="border-t pt-3">
                   <div className="mb-1.5 flex items-center justify-between gap-2">
                     <span className="text-xs font-semibold text-foreground">디자인 프리셋</span>
                     <Button
@@ -3651,7 +3793,7 @@ function LabProsthesisAiDesignDialog({
                             setPresetDialog({ presetId: preset.id });
                           }}
                         >
-                          <span className="truncate text-foreground">{preset.name}</span>
+                          <span className="truncate text-foreground">{presetDisplayName(preset.name)}</span>
                           <span className="shrink-0 text-muted-foreground">
                             {preset.id === designLibrary.defaultId ? "기본" : preset.clinicName}
                           </span>
@@ -3729,6 +3871,18 @@ function LabProsthesisAiDesignDialog({
               busy={busy}
               busyLabel={busy ? `스캔을 불러오는 중 ${progress}%` : ""}
               onScanColorChange={setHasScanColor}
+              onCorrectScanRoles={(roles) => {
+                setRoleOverride((prev) => {
+                  const next = { ...prev };
+                  for (const [id, role] of Object.entries(roles)) {
+                    if (role !== "upper" && role !== "lower" && role !== "bite") continue;
+                    const original = meshSources.find((row) => row.id === id)?.role;
+                    if (original === role) delete next[id];
+                    else next[id] = role;
+                  }
+                  return next;
+                });
+              }}
               onInsertionAxisChange={(active) => {
                 if (active) return;
                 setInsertionKeys([]);
@@ -3835,14 +3989,13 @@ function LabProsthesisAiDesignDialog({
             >
               <div className="pointer-events-auto relative flex items-center justify-center">
               <div className="absolute right-full mr-5 flex items-center gap-1">
-              <div className={cn("relative flex justify-center", insertionShown && "min-w-12")}>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
                     type="button"
                     size="sm"
                     variant={insertionShown ? "default" : "outline"}
-                    className={viewToolBtn}
+                    className={cn(viewToolBtn, "[&_svg]:!text-amber-500")}
                     title="삽입축"
                     aria-label="삽입축"
                     aria-pressed={insertionShown}
@@ -3856,14 +4009,11 @@ function LabProsthesisAiDesignDialog({
                   잡은 삽입축을 치아 위에 표시합니다.
                 </TooltipContent>
               </Tooltip>
-              {insertionShown ? overlayLegend("bg-amber-500", "삽입축") : null}
-              </div>
-              <div className={cn("relative flex justify-center", paintUndercut && "min-w-12")}>
               <Button
                 type="button"
                 size="sm"
                 variant={paintUndercut ? "default" : "outline"}
-                className={viewToolBtn}
+                className={cn(viewToolBtn, "[&_svg]:!text-red-700")}
                 title={canUndercut ? "언더컷" : "주문 치아의 악을 알 수 없습니다"}
                 aria-label="언더컷"
                 aria-pressed={paintUndercut}
@@ -3876,14 +4026,11 @@ function LabProsthesisAiDesignDialog({
                 <TriangleAlert />
                 {workWide ? <span>언더컷</span> : null}
               </Button>
-              {paintUndercut ? overlayLegend("bg-red-700", "언더컷") : null}
-              </div>
-              <div className={cn("relative flex justify-center", marginShown && "min-w-12")}>
               <Button
                 type="button"
                 size="sm"
                 variant={marginShown ? "default" : "outline"}
-                className={viewToolBtn}
+                className={cn(viewToolBtn, "[&_svg]:!text-teal-500")}
                 title="마진"
                 aria-label="마진"
                 aria-pressed={marginShown}
@@ -3901,9 +4048,6 @@ function LabProsthesisAiDesignDialog({
                 <Spline />
                 {workWide ? <span>마진</span> : null}
               </Button>
-              {marginShown ? overlayLegend("bg-teal-500", "마진") : null}
-              </div>
-              <div className={cn("relative flex justify-center", dieShown && "min-w-12")}>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <span className="flex">
@@ -3911,7 +4055,7 @@ function LabProsthesisAiDesignDialog({
                       type="button"
                       size="sm"
                       variant={dieShown ? "default" : "outline"}
-                      className={viewToolBtn}
+                      className={cn(viewToolBtn, "[&_svg]:!text-[#e6d7ad]")}
                       aria-label="다이"
                       aria-pressed={dieShown}
                       disabled={dieTeeth.length === 0}
@@ -3936,8 +4080,6 @@ function LabProsthesisAiDesignDialog({
                   )}
                 </TooltipContent>
               </Tooltip>
-              {dieShown ? overlayLegend("bg-[#e6d7ad]", "다이") : null}
-              </div>
               </div>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -3970,13 +4112,13 @@ function LabProsthesisAiDesignDialog({
                 </TooltipContent>
               </Tooltip>
               <div className="absolute left-full ml-5 flex items-center gap-1">
-              {hasScanColor ? (
+              {scans.length > 0 ? (
                 <Button
                   type="button"
                   size="sm"
                   variant={colorMapping ? "default" : "outline"}
                   className={viewToolBtn}
-                  title="스캔 원본 색"
+                  title={colorMapping ? "스캔 색을 끄고 파란색으로 봅니다" : "스캔 원본 색으로 봅니다"}
                   aria-label="스캔색"
                   aria-pressed={colorMapping}
                   onClick={() => setColorMapping((on) => !on)}
@@ -3985,7 +4127,6 @@ function LabProsthesisAiDesignDialog({
                   {workWide ? <span>스캔색</span> : null}
                 </Button>
               ) : null}
-              <div className="relative flex justify-center">
               <Button
                 type="button"
                 size="sm"
@@ -4004,16 +4145,6 @@ function LabProsthesisAiDesignDialog({
                 <Palette />
                 {workWide ? <span>교합 접촉</span> : null}
               </Button>
-              {colorMap.on ? null : contactMap
-                ? contactOverlayLegend()
-                : plan.teeth.some(
-                      (tooth) =>
-                        generated[tooth.toothNumber] === true &&
-                        toothIsThin(tooth.toothNumber, edits[tooth.toothNumber]),
-                    )
-                  ? thicknessOverlayLegend()
-                  : null}
-              </div>
               <div className="relative flex justify-center">
                 <Button
                   type="button"
@@ -4049,369 +4180,45 @@ function LabProsthesisAiDesignDialog({
                   />
                 ) : null}
               </div>
-              {hasGhost ? (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant={ghostOn ? "default" : "outline"}
-                      className={viewToolBtn}
-                      aria-label="투명"
-                      aria-pressed={ghostOn}
-                      onClick={() => {
-                        const next = !ghostOn;
-                        setGhostOn(next);
-                        setVisible((prev) => {
-                          const out = { ...prev };
-                          for (const scan of scans) {
-                            if (!isOpposingOrBite(scan.role, prepArch)) continue;
-                            out[scan.id] = next;
-                          }
-                          return out;
-                        });
-                      }}
-                    >
-                      <Blend />
-                      {workWide ? <span>투명</span> : null}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" className="z-[520]">
-                    대합치와 바이트를 20%로 비춥니다.
-                  </TooltipContent>
-                </Tooltip>
-              ) : null}
               </div>
               </div>
             </div>
             {panelsShown ? (
             <>
-            <div
-              className={cn(
-                "absolute left-3 top-3 z-10 max-h-[calc(100%-5.5rem)]",
-                stage === "milling" && "hidden",
-              )}
+            <SnapFrame
+              boundsRef={workAreaRef}
+              pose={panelPose.chat ?? null}
+              onPose={(pose) => movePanel("chat", pose)}
+              anchorClass="bottom-3 right-3"
+              className="pointer-events-none flex w-[min(18rem,calc(100%-1.5rem))] flex-col"
             >
-              <div
-                className={cn(
-                  "flex min-h-0 max-h-[min(18rem,34vh)] flex-col overflow-hidden rounded-lg border bg-background/95 text-sm shadow-sm",
-                  scanListOpen && scanNamesOpen ? "w-80" : "w-max",
-                )}
-              >
-                <div className="flex shrink-0 items-center gap-1.5 px-2.5 py-2">
-                  <Checkbox
-                    checked={allShown}
-                    disabled={scans.length === 0}
-                    onCheckedChange={() => toggleAllShown()}
-                    aria-label="표시 전체 선택"
-                  />
-                  <button
-                    type="button"
-                    className="text-left"
-                    onClick={() => setScanListOpen((open) => !open)}
-                    aria-expanded={scanListOpen}
-                  >
-                    <span className="font-semibold text-foreground">표시</span>
-                  </button>
-                  <div className="ml-auto flex items-center">
-                    {scanNamesOpen ? (
-                      <button
-                        type="button"
-                        className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-                        aria-label="파일명 숨기기"
-                        onClick={() => {
-                          setScanNamesOpen(false);
-                          setScanListOpen(true);
-                        }}
-                      >
-                        <ChevronLeft className="h-4 w-4" />
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-                        aria-label="파일명 표시"
-                        onClick={() => {
-                          setScanNamesOpen(true);
-                          setScanListOpen(true);
-                        }}
-                      >
-                        <ChevronRight className="h-4 w-4" />
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-                      aria-label="표시 목록"
-                      aria-expanded={scanListOpen}
-                      onClick={() => setScanListOpen((open) => !open)}
-                    >
-                      <ChevronDown
-                        className={cn(
-                          "h-4 w-4 transition-transform",
-                          scanListOpen ? "rotate-180" : "",
-                        )}
-                      />
-                    </button>
-                  </div>
-                </div>
-                {scanListOpen ? (
-                  <div className="min-h-0 flex-1 space-y-2 overflow-y-auto border-t px-3.5 py-2.5">
-                    {scans.length === 0 ? (
-                      <p className="text-xs leading-relaxed text-muted-foreground">
-                        상악·하악·바이트 스캔이 없습니다.
-                      </p>
-                    ) : (
-                      <ul className="space-y-1.5">
-                        {scans.map((scan) => {
-                          const state = fileState[scan.id];
-                          return (
-                            <li
-                              key={scan.id}
-                              className={cn(
-                                "flex min-w-0 items-center gap-2 rounded px-0.5",
-                                dropScanId === scan.id &&
-                                  dragScanId &&
-                                  dragScanId !== scan.id &&
-                                  "bg-primary/10 ring-1 ring-primary",
-                              )}
-                              onDragOver={(event) => {
-                                if (dragScanId === scan.id) return;
-                                event.preventDefault();
-                                event.dataTransfer.dropEffect = "move";
-                                setDropScanId((prev) =>
-                                  prev === scan.id ? prev : scan.id,
-                                );
-                              }}
-                              onDragLeave={(event) => {
-                                const next = event.relatedTarget;
-                                if (
-                                  next instanceof Node &&
-                                  event.currentTarget.contains(next)
-                                ) {
-                                  return;
-                                }
-                                setDropScanId((prev) =>
-                                  prev === scan.id ? null : prev,
-                                );
-                              }}
-                              onDrop={(event) => {
-                                event.preventDefault();
-                                const id = event.dataTransfer.getData("text/plain");
-                                setDropScanId(null);
-                                setDragScanId(null);
-                                if (id) swapScans(id, scan.id);
-                              }}
-                            >
-                              <Checkbox
-                                checked={scanShown(scan)}
-                                disabled={state === "loading" || state === "error"}
-                                onCheckedChange={(checked) => {
-                                  setVisible((prev) => ({
-                                    ...prev,
-                                    [scan.id]: checked === true,
-                                  }));
-                                }}
-                                aria-label={`${oralScanRoleLabel(scan.role)} 표시`}
-                              />
-                              <span
-                                className={cn(
-                                  "h-2 w-2 shrink-0 rounded-full",
-                                  ROLE_DOT[scan.role],
-                                )}
-                              />
-                              <span className="inline-flex h-5 w-12 shrink-0 items-center justify-center text-[11px] font-semibold text-primary">
-                                {oralScanRoleLabel(scan.role)}
-                              </span>
-                              {scanNamesOpen ? (
-                                <span
-                                  draggable
-                                  title="끌어 다른 파일이나 상악·하악·바이트 위에 놓으면 서로 바뀝니다"
-                                  className="min-w-0 flex-1 cursor-grab truncate text-xs text-foreground active:cursor-grabbing"
-                                  onDragStart={(event) => {
-                                    event.dataTransfer.setData("text/plain", scan.id);
-                                    event.dataTransfer.effectAllowed = "move";
-                                    setDragScanId(scan.id);
-                                  }}
-                                  onDragEnd={() => {
-                                    setDragScanId(null);
-                                    setDropScanId(null);
-                                  }}
-                                >
-                                  {scan.fileName}
-                                </span>
-                              ) : null}
-                              {scanNamesOpen && state === "error" ? (
-                                <span className="shrink-0 text-[10px] text-destructive">
-                                  실패
-                                </span>
-                              ) : null}
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    )}
-                    {screwPathAvailable ? (
-                      <label className="flex min-w-0 items-center gap-2 rounded px-0.5">
-                        <Checkbox
-                          checked={screwPathShown}
-                          onCheckedChange={(checked) => setScrewPathShown(checked === true)}
-                          aria-label="스크류 경로 표시"
-                        />
-                        <span className="h-2 w-2 shrink-0 rounded-full bg-amber-500" />
-                        <span className="text-[11px] font-semibold text-primary">스크류 경로</span>
-                      </label>
-                    ) : null}
-                    {busy ? <Progress value={progress} className="h-1.5" /> : null}
-                    {loadError ? (
-                      <p className="text-xs leading-relaxed text-destructive">
-                        {loadError}
-                      </p>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-              <div className="mt-2 w-64 overflow-hidden rounded-lg border bg-background/95 text-sm shadow-sm">
-                <div className="flex items-center justify-between px-2.5 py-2">
-                  <span className="font-semibold text-foreground">메모</span>
-                  {noteDraft == null ? (
-                    <button
-                      type="button"
-                      className="text-xs font-medium text-primary hover:underline"
-                      onClick={() => setNoteDraft(caseNote)}
-                    >
-                      편집
-                    </button>
-                  ) : null}
-                </div>
-                <div className="border-t px-2.5 py-2">
-                  {noteDraft != null ? (
-                    <div className="space-y-1.5">
-                      <textarea
-                        autoFocus
-                        className="h-24 w-full resize-none rounded-md border bg-background px-2 py-1.5 text-xs outline-none focus:ring-1 focus:ring-primary"
-                        maxLength={2000}
-                        value={noteDraft}
-                        placeholder="이 케이스에서 기억할 내용을 적습니다."
-                        onChange={(event) => setNoteDraft(event.target.value)}
-                      />
-                      <div className="flex justify-end gap-1">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="h-7 px-2 text-[11px]"
-                          onClick={() => setNoteDraft(null)}
-                        >
-                          취소
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          className="h-7 px-2 text-[11px]"
-                          onClick={() => {
-                            const next = noteDraft.trim();
-                            caseNoteRef.current = next;
-                            setCaseNote(next);
-                            setNoteDraft(null);
-                            queueSaveWorkRef.current();
-                          }}
-                        >
-                          저장
-                        </Button>
-                      </div>
-                    </div>
-                  ) : caseNote ? (
-                    <p className="max-h-24 overflow-y-auto whitespace-pre-wrap break-words text-xs text-foreground">
-                      {caseNote}
-                    </p>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">
-                      편집을 눌러 메모를 남깁니다.
-                    </p>
-                  )}
-                </div>
-              </div>
-            </div>
-            <div className="absolute bottom-3 left-3 z-20 flex max-h-[min(36rem,62vh)] w-[min(20rem,36vw)] flex-col">
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border bg-background/95 text-sm shadow-sm">
-                <button
-                  type="button"
-                  className={cn(
-                    "flex w-full shrink-0 items-center justify-between gap-3 px-3.5 py-2.5 text-left",
-                    modifyPanelOpen && "border-b",
-                  )}
-                  onClick={() => setModifyPanelOpen((open) => !open)}
-                  aria-expanded={modifyPanelOpen}
+              <AiDesignChatPanel
+                open={chatOpen}
+                draft={chatDraft}
+                turns={aiChat}
+                onToggle={() => setChatOpen((open) => !open)}
+                onDraft={setChatDraft}
+                onSend={sendAiChat}
+              />
+            </SnapFrame>
+            <SnapFrame
+              boundsRef={workAreaRef}
+              pose={panelPose.stage ?? null}
+              onPose={(pose) => movePanel("stage", pose)}
+              anchorClass="left-3 top-3"
+              className="pointer-events-none flex h-auto max-h-[calc(100%-1.5rem)] w-[min(18rem,calc(100%-1.5rem))] flex-col overflow-hidden"
+            >
+              <div className="pointer-events-auto flex max-h-full min-h-0 flex-col overflow-hidden rounded-lg border bg-background/95 text-sm shadow-sm">
+                <DraggablePanelHeader
+                  open={modifyPanelOpen}
+                  onToggle={() => setModifyPanelOpen((open) => !open)}
+                  className={cn("shrink-0 gap-3 px-3.5 py-2.5", modifyPanelOpen && "border-b")}
                 >
                   <span className="font-semibold text-foreground">단계</span>
-                  <ChevronDown
-                    className={cn(
-                      "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
-                      modifyPanelOpen ? "rotate-180" : "",
-                    )}
-                  />
-                </button>
+                </DraggablePanelHeader>
                 {modifyPanelOpen ? (
-                  <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3.5 py-2.5">
+                  <div className="min-h-0 space-y-3 overflow-y-auto px-3.5 py-2.5">
                     <section className="space-y-2">
-                      <div className="space-y-1.5">
-                        <p className="text-xs font-semibold text-foreground">범위</p>
-                        <p className="text-[11px] leading-relaxed text-muted-foreground">
-                          마진만은 생성 없이 마진 수정에서 끝냅니다.
-                          <br />
-                          크라운까지는 마진을 확인한 뒤에 생성합니다.
-                          <br />
-                          모델까지는 크라운에 확인용 모델을 더해 냅니다.
-                        </p>
-                        <div className="relative grid grid-cols-3 pt-1" data-coach="scope">
-                          <span
-                            aria-hidden
-                            className="absolute left-[16.6%] right-[16.6%] top-[0.95rem] h-px bg-border"
-                          />
-                          {(
-                            [
-                              { id: "margin", label: "마진만" },
-                              { id: "crown", label: "크라운까지" },
-                              { id: "model", label: "모델까지" },
-                            ] as const
-                          ).map((item, index) => {
-                            const order = { margin: 0, crown: 1, model: 2 } as const;
-                            const reached =
-                              designScope != null && order[designScope] >= index;
-                            return (
-                              <button
-                                key={item.id}
-                                type="button"
-                                className="relative flex flex-col items-center gap-1"
-                                aria-pressed={designScope === item.id}
-                                onClick={() => chooseScope(item.id)}
-                              >
-                                <span
-                                  className={cn(
-                                    "flex h-5 w-5 items-center justify-center rounded-full border-2 bg-background",
-                                    reached ? "border-primary bg-primary" : "border-muted-foreground/40",
-                                  )}
-                                >
-                                  {reached ? (
-                                    <span className="h-1.5 w-1.5 rounded-full bg-primary-foreground" />
-                                  ) : null}
-                                </span>
-                                <span
-                                  className={cn(
-                                    "text-[11px]",
-                                    designScope === item.id
-                                      ? "font-semibold text-primary"
-                                      : "text-muted-foreground",
-                                  )}
-                                >
-                                  {item.label}
-                                </span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
                       <div className="grid grid-cols-5 gap-1">
                         {DESIGN_STAGES.map((item) => (
                           <Button
@@ -4421,22 +4228,6 @@ function LabProsthesisAiDesignDialog({
                             variant={stage === item.id ? "default" : "outline"}
                             className="h-7 px-1 text-[11px]"
                             data-coach={`stage-${item.id}`}
-                            disabled={
-                              (item.id !== "scan" && designScope == null) ||
-                              ((item.id === "design" || item.id === "milling") &&
-                                !scopeMakesCrown(designScope)) ||
-                              (item.id === "model" && designScope !== "model")
-                            }
-                            title={
-                              item.id !== "scan" && designScope == null
-                                ? "범위를 먼저 고릅니다."
-                                : (item.id === "design" || item.id === "milling") &&
-                                    !scopeMakesCrown(designScope)
-                                  ? "마진만 진행 중입니다."
-                                  : item.id === "model" && designScope !== "model"
-                                    ? "범위를 모델까지로 고르면 엽니다."
-                                    : undefined
-                            }
                             onClick={() => {
                               onStage(item.id);
                               if (item.id === "margin") setModifyTool("margin");
@@ -5049,7 +4840,7 @@ function LabProsthesisAiDesignDialog({
                   </div>
                 ) : null}
               </div>
-            </div>
+            </SnapFrame>
             </>
             ) : null}
             {focusShown && focusRow ? (
@@ -5078,7 +4869,6 @@ function LabProsthesisAiDesignDialog({
               edits={edits}
               generated={generated}
               marginReview={marginReview}
-              designScope={designScope}
               designLibrary={designLibrary}
               caseDefaultPresetId={caseDefaultPresetId}
               generating={generating}
@@ -5112,6 +4902,29 @@ function LabProsthesisAiDesignDialog({
                 setToothCardFor(null);
                 setLibraryPickerFor(toothNumber);
               }}
+              scans={scans}
+              scanShown={scanShown}
+              fileState={fileState}
+              onToggleScan={(id, on) => setVisible((prev) => ({ ...prev, [id]: on }))}
+              dragScanId={dragScanId}
+              dropScanId={dropScanId}
+              onScanDragStart={setDragScanId}
+              onScanDragEnd={() => {
+                setDragScanId(null);
+                setDropScanId(null);
+              }}
+              onScanDragOver={(id) => setDropScanId((prev) => (prev === id ? prev : id))}
+              onScanDragLeave={(id) => setDropScanId((prev) => (prev === id ? null : prev))}
+              onScanDrop={swapScans}
+              screwPathAvailable={screwPathAvailable}
+              screwPathShown={screwPathShown}
+              onToggleScrewPath={setScrewPathShown}
+              scanBusy={busy}
+              scanProgress={progress}
+              scanLoadError={loadError}
+              workAreaRef={workAreaRef}
+              toothPose={panelPose.tooth ?? null}
+              onToothPose={(pose) => movePanel("tooth", pose)}
               onToggleScrewHole={(toothNumber, on) => patchImplant(toothNumber, { screwHole: on })}
               onClearTooth={(toothNumber) => {
                 beginEditUndo();
@@ -5246,6 +5059,7 @@ function LabProsthesisAiDesignDialog({
               ? (() => {
                   const tooth = plan.teeth.find((row) => row.toothNumber === libraryPickerFor);
                   if (!tooth?.implant) return null;
+                  const spec = orderSpecLines(tooth);
                   return (
                     <div className="absolute bottom-14 right-3 z-40">
                       <LabImplantLibraryPicker
@@ -5254,6 +5068,12 @@ function LabProsthesisAiDesignDialog({
                         favorites={implantFavorites}
                         value={edits[tooth.toothNumber]?.implant.libraryId ?? null}
                         defaultManufacturer={tooth.implant.manufacturer}
+                        orderLabel={[spec.implant, spec.scanbody].filter(Boolean).join(" · ")}
+                        orderLibraryId={
+                          tooth.simpleAbutment
+                            ? null
+                            : (matchImplantLibrary(implantLibraries, tooth.implant)?.id ?? null)
+                        }
                         onPick={(library) => pickImplantLibrary(tooth.toothNumber, library)}
                         onToggleFavorite={toggleImplantFavorite}
                         onClose={() => setLibraryPickerFor(null)}
@@ -5282,6 +5102,56 @@ function LabProsthesisAiDesignDialog({
           onDownload={(selection) => void downloadExport(selection)}
           onAttach={onAttachChatFile ? (selection) => void attachExport(selection) : null}
         />
+        {libraryConfirm
+          ? (() => {
+              const tooth = plan.teeth.find((row) => row.toothNumber === libraryConfirm.toothNumber);
+              const spec = tooth ? orderSpecLines(tooth) : { implant: "", scanbody: "" };
+              const orderText = [spec.implant, spec.scanbody].filter(Boolean).join(" · ") || "지정 없음";
+              const nextText = `${libraryConfirm.library.manufacturer} ${libraryConfirm.library.label}`.trim();
+              return (
+                <AlertDialog
+                  open
+                  onOpenChange={(next) => {
+                    if (!next) setLibraryConfirm(null);
+                  }}
+                >
+                  <AlertDialogContent overlayClassName="z-[560]" className="z-[561]">
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>치과 의뢰와 다릅니다</AlertDialogTitle>
+                      <AlertDialogDescription asChild>
+                        <div>
+                          치과 의뢰와 다른 임플란트·스캔바디입니다.
+                          <br />
+                          바꾸면 의뢰 내용과 달라집니다.
+                          <br />
+                          그래도 변경할까요?
+                          <br />
+                          <br />
+                          의뢰: {orderText}
+                          <br />
+                          선택: {nextText}
+                        </div>
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>취소</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={() =>
+                          applyImplantLibrary(
+                            libraryConfirm.toothNumber,
+                            libraryConfirm.library,
+                            true,
+                          )
+                        }
+                      >
+                        변경
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              );
+            })()
+          : null}
       </DialogContent>
     </Dialog>
   );
@@ -5486,13 +5356,323 @@ function marginLineChanged(prev: ToothDesignEdit, next: ToothDesignEdit) {
   return before.some((depth, index) => depth !== after[index]);
 }
 
+/** 작업영역 안에서 패널이 붙는 자리. 숫자는 가장자리에 붙지 않은 픽셀. */
+type PanelAxis = "start" | "end" | number;
+type PanelPose = { x: PanelAxis; y: PanelAxis };
+type DesignPanelId = "tooth" | "stage" | "chat";
+
+function panelMetrics() {
+  const root = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+  return { edge: 0.75 * root, snap: 4 * root };
+}
+
+function axisPx(axis: PanelAxis, span: number, size: number, edge: number) {
+  const max = Math.max(edge, span - size - edge);
+  if (axis === "start") return edge;
+  if (axis === "end") return max;
+  return Math.min(Math.max(axis, edge), max);
+}
+
+function snapAxis(px: number, span: number, size: number, edge: number, snap: number): PanelAxis {
+  const max = Math.max(edge, span - size - edge);
+  const next = Math.min(Math.max(px, edge), max);
+  if (next - edge <= snap) return "start";
+  if (max - next <= snap) return "end";
+  return next;
+}
+
+type PanelDragBind = {
+  onPointerDown: (event: ReactPointerEvent<HTMLElement>) => void;
+  onPointerMove: (event: ReactPointerEvent<HTMLElement>) => void;
+  onPointerUp: (event: ReactPointerEvent<HTMLElement>) => void;
+  onPointerCancel: (event: ReactPointerEvent<HTMLElement>) => void;
+  onClick: (event: ReactMouseEvent, action: () => void) => void;
+};
+
+const PanelDragContext = createContext<PanelDragBind | null>(null);
+
+function SnapFrame({
+  boundsRef,
+  pose,
+  onPose,
+  anchorClass,
+  className,
+  children,
+}: {
+  boundsRef: RefObject<HTMLElement | null>;
+  pose: PanelPose | null;
+  onPose: (pose: PanelPose) => void;
+  anchorClass: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<null | {
+    ox: number;
+    oy: number;
+    moved: boolean;
+    x: number;
+    y: number;
+  }>(null);
+  const skipClickRef = useRef(false);
+  const [dragging, setDragging] = useState(false);
+  const [box, setBox] = useState<{ left: number; top: number } | null>(null);
+  const onPoseRef = useRef(onPose);
+  onPoseRef.current = onPose;
+
+  useLayoutEffect(() => {
+    if (!pose) {
+      setBox(null);
+      return;
+    }
+    if (dragging) return;
+    const bounds = boundsRef.current;
+    const panel = panelRef.current;
+    if (!bounds || !panel) return;
+    const apply = () => {
+      const { edge } = panelMetrics();
+      const area = bounds.getBoundingClientRect();
+      const left = axisPx(pose.x, area.width, panel.offsetWidth, edge);
+      const top = axisPx(pose.y, area.height, panel.offsetHeight, edge);
+      setBox((prev) => (prev && prev.left === left && prev.top === top ? prev : { left, top }));
+    };
+    apply();
+    const observer = new ResizeObserver(apply);
+    observer.observe(bounds);
+    observer.observe(panel);
+    return () => observer.disconnect();
+  }, [boundsRef, dragging, pose]);
+
+  const bind = useMemo<PanelDragBind>(() => {
+    const finish = (event: ReactPointerEvent<HTMLElement>) => {
+      const drag = dragRef.current;
+      dragRef.current = null;
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+      if (!drag?.moved) {
+        setDragging(false);
+        return;
+      }
+      skipClickRef.current = true;
+      const bounds = boundsRef.current?.getBoundingClientRect();
+      const panel = panelRef.current?.getBoundingClientRect();
+      setDragging(false);
+      if (!bounds || !panel) return;
+      const { edge, snap } = panelMetrics();
+      const next = {
+        x: snapAxis(drag.x, bounds.width, panel.width, edge, snap),
+        y: snapAxis(drag.y, bounds.height, panel.height, edge, snap),
+      };
+      requestAnimationFrame(() => onPoseRef.current(next));
+    };
+    return {
+      onPointerDown(event) {
+        if (event.button !== 0) return;
+        const bounds = boundsRef.current?.getBoundingClientRect();
+        const panel = panelRef.current?.getBoundingClientRect();
+        if (!bounds || !panel) return;
+        dragRef.current = {
+          ox: event.clientX - panel.left,
+          oy: event.clientY - panel.top,
+          moved: false,
+          x: panel.left - bounds.left,
+          y: panel.top - bounds.top,
+        };
+        event.currentTarget.setPointerCapture(event.pointerId);
+      },
+      onPointerMove(event) {
+        const drag = dragRef.current;
+        const boundsEl = boundsRef.current;
+        const panelEl = panelRef.current;
+        if (!drag || !boundsEl || !panelEl) return;
+        const bounds = boundsEl.getBoundingClientRect();
+        const rawX = event.clientX - drag.ox - bounds.left;
+        const rawY = event.clientY - drag.oy - bounds.top;
+        if (!drag.moved && Math.hypot(rawX - drag.x, rawY - drag.y) < 4) return;
+        const { edge } = panelMetrics();
+        const width = panelEl.offsetWidth;
+        const height = panelEl.offsetHeight;
+        const x = Math.min(Math.max(rawX, edge - width + 40), bounds.width - 40);
+        const y = Math.min(Math.max(rawY, edge - height + 28), bounds.height - 28);
+        drag.moved = true;
+        drag.x = x;
+        drag.y = y;
+        setDragging(true);
+        setBox({ left: x, top: y });
+      },
+      onPointerUp: finish,
+      onPointerCancel: finish,
+      onClick(event, action) {
+        if (skipClickRef.current) {
+          skipClickRef.current = false;
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+        action();
+      },
+    };
+  }, [boundsRef]);
+
+  return (
+    <div
+      ref={panelRef}
+      className={cn(
+        "absolute z-20 max-h-[calc(100%-1.5rem)]",
+        dragging && "z-30",
+        !box && anchorClass,
+        box && !dragging && "transition-[left,top] duration-200 ease-out",
+        className,
+      )}
+      style={box ? { left: box.left, top: box.top, right: "auto", bottom: "auto" } : undefined}
+    >
+      <PanelDragContext.Provider value={bind}>{children}</PanelDragContext.Provider>
+    </div>
+  );
+}
+
+function DraggablePanelHeader({
+  open,
+  onToggle,
+  className,
+  children,
+}: {
+  open: boolean;
+  onToggle: () => void;
+  className?: string;
+  children: ReactNode;
+}) {
+  const drag = useContext(PanelDragContext);
+  return (
+    <button
+      type="button"
+      className={cn(
+        "flex w-full cursor-grab touch-none select-none items-center justify-between gap-2 text-left active:cursor-grabbing",
+        className,
+      )}
+      aria-expanded={open}
+      title="끌어 옮기면 가장자리에 붙습니다"
+      onPointerDown={drag?.onPointerDown}
+      onPointerMove={drag?.onPointerMove}
+      onPointerUp={drag?.onPointerUp}
+      onPointerCancel={drag?.onPointerCancel}
+      onClick={(event) => {
+        if (!drag) {
+          onToggle();
+          return;
+        }
+        drag.onClick(event, onToggle);
+      }}
+    >
+      <span className="min-w-0 flex-1">{children}</span>
+      <ChevronDown
+        className={cn(
+          "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
+          open ? "rotate-180" : "",
+        )}
+      />
+    </button>
+  );
+}
+
+function AiDesignChatPanel({
+  open,
+  draft,
+  turns,
+  onToggle,
+  onDraft,
+  onSend,
+}: {
+  open: boolean;
+  draft: string;
+  turns: readonly AiDesignChatTurn[];
+  onToggle: () => void;
+  onDraft: (value: string) => void;
+  onSend: () => void;
+}) {
+  const endRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    endRef.current?.scrollIntoView({ block: "end" });
+  }, [open, turns.length]);
+  return (
+    <div className="pointer-events-auto flex w-full flex-col overflow-hidden rounded-lg border bg-background/95 text-sm shadow-sm">
+      <DraggablePanelHeader
+        open={open}
+        onToggle={onToggle}
+        className={cn("shrink-0 px-2.5 py-2", open && "border-b")}
+      >
+        <span className="inline-flex items-center gap-1.5 font-semibold text-foreground">
+          <MessageSquare className="h-4 w-4" />
+          AI
+        </span>
+      </DraggablePanelHeader>
+      {open ? (
+        <>
+          <div className="max-h-[11rem] min-h-[9rem] space-y-2 overflow-y-auto px-2.5 py-2">
+            {turns.length === 0 ? (
+              <p className="text-xs text-muted-foreground">AI에게 디자인 명령해주세요.</p>
+            ) : (
+              turns.map((turn, index) => (
+                <p
+                  key={`${turn.role}-${index}`}
+                  className={cn(
+                    "whitespace-pre-wrap break-words rounded-md px-2 py-1.5 text-xs text-foreground",
+                    turn.role === "user" ? "ml-4 bg-primary/10" : "mr-4 bg-muted",
+                  )}
+                >
+                  {turn.text}
+                </p>
+              ))
+            )}
+            <div ref={endRef} />
+          </div>
+          <form
+            className="flex items-end gap-1 border-t p-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              onSend();
+            }}
+          >
+            <textarea
+              className="max-h-24 min-h-8 flex-1 resize-none rounded-md border bg-background px-2 py-1.5 text-xs outline-none focus:ring-1 focus:ring-primary"
+              rows={1}
+              maxLength={2000}
+              value={draft}
+              placeholder="AI에게 디자인 명령해주세요."
+              aria-label="AI에게 디자인 명령해주세요."
+              onChange={(event) => onDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.nativeEvent.isComposing || event.key !== "Enter" || event.shiftKey) {
+                  return;
+                }
+                event.preventDefault();
+                onSend();
+              }}
+            />
+            <Button
+              type="submit"
+              size="sm"
+              className="h-8 w-8 shrink-0 px-0"
+              aria-label="보내기"
+              disabled={!draft.trim()}
+            >
+              <Send className="h-3.5 w-3.5" />
+            </Button>
+          </form>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 function DesignViewerChrome({
   teeth,
   activeTooth,
   edits,
   generated,
   marginReview,
-  designScope,
   designLibrary,
   caseDefaultPresetId,
   generating,
@@ -5516,6 +5696,26 @@ function DesignViewerChrome({
   onAssembleSpan,
   onTogglePontic,
   onClearTooth,
+  scans,
+  scanShown,
+  fileState,
+  onToggleScan,
+  dragScanId,
+  dropScanId,
+  onScanDragStart,
+  onScanDragEnd,
+  onScanDragOver,
+  onScanDragLeave,
+  onScanDrop,
+  screwPathAvailable,
+  screwPathShown,
+  onToggleScrewPath,
+  scanBusy,
+  scanProgress,
+  scanLoadError,
+  workAreaRef,
+  toothPose,
+  onToothPose,
   libraryLabel,
   onPickLibrary,
   onToggleScrewHole,
@@ -5533,7 +5733,6 @@ function DesignViewerChrome({
   edits: Record<string, ToothDesignEdit>;
   generated: Record<string, boolean>;
   marginReview: Record<string, MarginReview>;
-  designScope: DesignScope | null;
   designLibrary: DesignPresetLibrary;
   /** 치과에 연결된 프리셋, 없으면 기공소 기본 프리셋. */
   caseDefaultPresetId: string;
@@ -5558,22 +5757,31 @@ function DesignViewerChrome({
   onAssembleSpan: (span: readonly string[], assembled: boolean) => void;
   onTogglePontic: (toothNumber: string) => void;
   onClearTooth: (toothNumber: string) => void;
+  scans: readonly MeshSource[];
+  scanShown: (row: MeshSource) => boolean;
+  fileState: Record<string, "loading" | "ready" | "error">;
+  onToggleScan: (id: string, on: boolean) => void;
+  dragScanId: string | null;
+  dropScanId: string | null;
+  onScanDragStart: (id: string) => void;
+  onScanDragEnd: () => void;
+  onScanDragOver: (id: string) => void;
+  onScanDragLeave: (id: string) => void;
+  onScanDrop: (sourceId: string, targetId: string) => void;
+  screwPathAvailable: boolean;
+  screwPathShown: boolean;
+  onToggleScrewPath: (on: boolean) => void;
+  scanBusy: boolean;
+  scanProgress: number;
+  scanLoadError: string;
+  workAreaRef: RefObject<HTMLElement | null>;
+  toothPose: PanelPose | null;
+  onToothPose: (pose: PanelPose) => void;
 }) {
-  const archGroups = (
-    [
-      { id: "upper" as const, label: "상악" },
-      { id: "lower" as const, label: "하악" },
-      { id: "other" as const, label: "기타" },
-    ] as const
-  )
-    .map((group) => ({
-      ...group,
-      teeth: teeth.filter((tooth) => toothArchGroup(tooth.toothNumber) === group.id),
-    }))
-    .filter((group) => group.teeth.length > 0);
   const spans = insertionSpansByOwner(teeth);
   const toothActionClass =
-    "inline-flex h-7 shrink-0 items-center justify-center rounded-md px-2 text-xs font-medium leading-none disabled:opacity-50";
+    "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md disabled:opacity-50";
+  const iconClass = "h-3.5 w-3.5";
 
   const axisState = (span: readonly string[]) => {
     const spanKey = insertionAxisKey(span);
@@ -5635,7 +5843,7 @@ function DesignViewerChrome({
         disabled={!canSetInsertion}
         onClick={() => onSetInsertion(span)}
       >
-        삽입축
+        <Crosshair className={iconClass} />
       </button>
     );
   };
@@ -5667,7 +5875,7 @@ function DesignViewerChrome({
     const edit = edits[number];
     const thin = toothThin(number);
     const undercut = toothUndercut(number);
-    const label = made
+    const statusTitle = made
       ? "생성됨"
       : edit?.pontic.on
         ? null
@@ -5676,28 +5884,31 @@ function DesignViewerChrome({
           : null;
     return (
       <>
-        {label ? (
-          <span className="shrink-0 text-[10px] font-medium text-muted-foreground">
-            {label}
+        {statusTitle ? (
+          <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center text-muted-foreground" title={statusTitle}>
+            {made ? <Sparkles className={iconClass} /> : <Check className={iconClass} />}
           </span>
         ) : null}
         {thin ? (
           <button
             type="button"
-            className="shrink-0 text-[10px] font-semibold text-destructive"
+            className="inline-flex h-6 w-6 shrink-0 items-center justify-center text-destructive"
+            title="최소 두께 미달"
+            aria-label="최소 두께"
             onClick={() => onSelectTooth(number)}
           >
-            최소 두께
+            <TriangleAlert className={iconClass} />
           </button>
         ) : null}
         {undercut > 0 ? (
           <button
             type="button"
-            className="shrink-0 text-[10px] font-semibold text-destructive"
+            className="inline-flex h-6 w-6 shrink-0 items-center justify-center text-destructive"
             title={`와동 벽 ${undercut}곳이 삽입축과 평행하거나 언더컷입니다. 권장 테이퍼 ${CAVITY_TAPER_RECOMMENDED}`}
+            aria-label="언더컷"
             onClick={() => onSelectTooth(number)}
           >
-            언더컷
+            <TriangleAlert className={iconClass} />
           </button>
         ) : null}
       </>
@@ -5709,7 +5920,6 @@ function DesignViewerChrome({
    * 브리지는 스팬 전체에 같은 프리셋을 건다. 커넥터 최소 면적도 그 재료를 따른다.
    */
   const presetSelect = (members: readonly LabProsthesisAiTooth[], label: string) => {
-    if (!scopeMakesCrown(designScope)) return null;
     const open = members.filter(
       (tooth) => tooth.designable && generated[tooth.toothNumber] !== true,
     );
@@ -5720,7 +5930,7 @@ function DesignViewerChrome({
     const listed = designLibrary.presets.some((row) => row.id === value);
     return (
       <select
-        className="h-7 max-w-[9rem] shrink-0 rounded-md border bg-background px-1 text-[11px]"
+        className="h-6 w-auto max-w-full shrink-0 rounded-md border bg-background px-1 text-[10px]"
         aria-label={`${label} 디자인 프리셋`}
         title="내면 파라미터 프리셋"
         value={value}
@@ -5731,12 +5941,12 @@ function DesignViewerChrome({
       >
         {designLibrary.presets.map((row) => (
           <option key={row.id} value={row.id}>
-            {row.name}
+            {presetDisplayName(row.name)}
           </option>
         ))}
         {!listed ? (
           <option value={value} disabled>
-            {value === "custom" ? "직접 조정" : inner.presetName || "지운 프리셋"}
+            {value === "custom" ? "직접 조정" : presetDisplayName(inner.presetName || "지운 프리셋")}
           </option>
         ) : null}
       </select>
@@ -5744,15 +5954,16 @@ function DesignViewerChrome({
   };
 
   const generateButton = (tooth: LabProsthesisAiTooth) => {
-    if (!scopeMakesCrown(designScope)) return null;
     if (generated[tooth.toothNumber] === true) {
       return (
         <button
           type="button"
           className={cn(toothActionClass, "text-muted-foreground hover:bg-muted")}
+          title="생성한 보철을 지웁니다"
+          aria-label="삭제"
           onClick={() => onClearTooth(tooth.toothNumber)}
         >
-          삭제
+          <Trash2 className={iconClass} />
         </button>
       );
     }
@@ -5761,9 +5972,11 @@ function DesignViewerChrome({
         <button
           type="button"
           className={cn(toothActionClass, "bg-primary text-primary-foreground")}
+          title="생성"
+          aria-label="생성"
           disabled
         >
-          생성
+          <Sparkles className={iconClass} />
         </button>
       );
     }
@@ -5772,10 +5985,12 @@ function DesignViewerChrome({
         <button
           type="button"
           className={cn(toothActionClass, "bg-primary text-primary-foreground")}
+          title="생성"
+          aria-label="생성"
           disabled={generating}
           onClick={() => onGenerateTooth(tooth.toothNumber)}
         >
-          생성
+          <Sparkles className={iconClass} />
         </button>
       );
     }
@@ -5794,10 +6009,12 @@ function DesignViewerChrome({
         <button
           type="button"
           className={cn(toothActionClass, "bg-primary text-primary-foreground")}
+          title="마진을 확인합니다"
+          aria-label="마진 확인"
           data-coach="margin-confirm"
           onClick={() => onConfirmMargin(tooth.toothNumber)}
         >
-          확인
+          <Check className={iconClass} />
         </button>
       );
     }
@@ -5810,12 +6027,13 @@ function DesignViewerChrome({
         data-coach={ready ? "generate" : undefined}
         title={
           ready
-            ? undefined
+            ? "생성"
             : (implantBlock ?? `${implant ? "EPL" : "마진"}을 확인한 뒤에 생성합니다.`)
         }
+        aria-label="생성"
         onClick={() => onGenerateTooth(tooth.toothNumber)}
       >
-        생성
+        <Sparkles className={iconClass} />
       </button>
     );
   };
@@ -5824,37 +6042,42 @@ function DesignViewerChrome({
     if (!tooth.implant) return null;
     const implant = toothEdit(tooth.toothNumber).implant;
     const label = libraryLabel(tooth.toothNumber);
+    const spec = orderSpecLines(tooth);
+    const orderText = [spec.implant, spec.scanbody].filter(Boolean).join(" · ");
     return (
       <>
         <button
           type="button"
           className={cn(
-            "inline-flex h-6 max-w-[9rem] shrink-0 items-center gap-1 rounded-full border px-2 text-[10px] font-medium leading-none",
+            toothActionClass,
+            "border",
             label
               ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-700"
               : "border-destructive/50 bg-destructive/10 text-destructive",
           )}
-          title={label ?? "임플란트 라이브러리를 고릅니다."}
+          title={label ?? (orderText ? `치과 의뢰: ${orderText}` : "임플란트 라이브러리를 고릅니다.")}
+          aria-label={label ?? "라이브러리"}
           data-coach={`library:${tooth.toothNumber}`}
           onClick={() => onPickLibrary(tooth.toothNumber)}
         >
-          <span className="truncate">{label ?? "라이브러리"}</span>
-          <span className="shrink-0">{label ? "선택됨" : "미선택"}</span>
+          <Library className={iconClass} />
         </button>
         {implant.aligned ? (
-          <span className="shrink-0 text-[10px] font-medium text-muted-foreground">정렬됨</span>
+          <span
+            className="inline-flex h-6 w-6 shrink-0 items-center justify-center text-muted-foreground"
+            title="정렬됨"
+          >
+            <Check className={iconClass} />
+          </span>
         ) : null}
-        {scopeMakesCrown(designScope) ? (
-          <label className="flex shrink-0 items-center gap-1 text-[10px] font-medium text-foreground">
-            <Checkbox
-              className="h-3.5 w-3.5"
-              checked={implant.screwHole}
-              onCheckedChange={(checked) => onToggleScrewHole(tooth.toothNumber, checked === true)}
-              aria-label={`#${tooth.toothNumber} 스크류홀`}
-            />
-            스크류홀
-          </label>
-        ) : null}
+        <span title="스크류홀">
+          <Checkbox
+            className="h-3.5 w-3.5"
+            checked={implant.screwHole}
+            onCheckedChange={(checked) => onToggleScrewHole(tooth.toothNumber, checked === true)}
+            aria-label={`#${tooth.toothNumber} 스크류홀`}
+          />
+        </span>
       </>
     );
   };
@@ -5872,7 +6095,8 @@ function DesignViewerChrome({
       <button
         type="button"
         className={cn(
-          "inline-flex h-6 shrink-0 items-center rounded-full border px-2 text-[10px] font-medium leading-none disabled:opacity-50",
+          toothActionClass,
+          "border",
           pontic
             ? "border-violet-500/50 bg-violet-500/10 text-violet-700"
             : "border-sky-500/50 bg-sky-500/10 text-sky-700",
@@ -5885,17 +6109,18 @@ function DesignViewerChrome({
               ? "지대치로 바꾸면 마진을 다시 검출합니다."
               : "폰틱은 마진 없이 기저면으로 치조정에 얹습니다."
         }
+        aria-label={pontic ? "폰틱" : "지대치"}
         aria-pressed={pontic}
         onClick={() => onTogglePontic(tooth.toothNumber)}
       >
-        {pontic ? "폰틱" : "지대치"}
+        {pontic ? <Spline className={iconClass} /> : <CircleDot className={iconClass} />}
       </button>
     );
   };
 
   const bridgeHeader = (span: readonly string[], members: LabProsthesisAiTooth[]) => {
     const ordered = sortByArch(span);
-    const label = `브리지 ${ordered[0]}-${ordered[ordered.length - 1]}`;
+    const label = `${ordered[0]}-${ordered[ordered.length - 1]}`;
     const allMade = members.every((tooth) => generated[tooth.toothNumber] === true);
     const assembled = spanAssembled(span, edits);
     const weak = links.some(
@@ -5916,44 +6141,46 @@ function DesignViewerChrome({
       );
     });
     return (
-      <div className="mb-1 flex items-center gap-1.5">
-        <span className="whitespace-nowrap text-xs font-semibold text-foreground">
+      <div className="mb-1 flex flex-wrap items-center gap-1">
+        <span className="whitespace-nowrap text-xs font-semibold text-foreground" title="브리지">
           {label}
         </span>
         {allMade ? (
           assembled ? (
-            <span className="shrink-0 text-[10px] font-medium text-emerald-600">
-              조립됨
+            <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center text-primary" title="조립됨">
+              <Link2 className={iconClass} />
             </span>
           ) : (
-            <span className="inline-flex shrink-0 items-center gap-0.5 text-[10px] font-medium text-amber-600">
-              <TriangleAlert className="h-3 w-3" />
-              조립 전
+            <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center text-accent-foreground" title="조립 전">
+              <TriangleAlert className={iconClass} />
             </span>
           )
         ) : null}
         {allMade && weak ? (
           <button
             type="button"
-            className="shrink-0 text-[10px] font-semibold text-destructive"
+            className="inline-flex h-6 w-6 shrink-0 items-center justify-center text-destructive"
+            title="커넥터 약함"
+            aria-label="커넥터 약함"
             onClick={() => {
               const lead = members[0];
               if (lead) onSelectTooth(lead.toothNumber);
             }}
           >
-            커넥터 약함
+            <TriangleAlert className={iconClass} />
           </button>
         ) : null}
-        {presetSelect(members, label)}
-        {scopeMakesCrown(designScope) && !allMade ? (
+        {presetSelect(members, `브리지 ${label}`)}
+        {!allMade ? (
           <button
             type="button"
             className={cn(toothActionClass, "bg-primary text-primary-foreground")}
             disabled={generating || !spanReady}
-            title={spanReady ? undefined : "지대치 마진을 모두 확인한 뒤 생성합니다."}
+            title={spanReady ? "브리지 생성" : "지대치 마진을 모두 확인한 뒤 생성합니다."}
+            aria-label="브리지 생성"
             onClick={() => onGenerateSpan(pending.map((tooth) => tooth.toothNumber))}
           >
-            브리지 생성
+            <Sparkles className={iconClass} />
           </button>
         ) : null}
         {allMade ? (
@@ -5970,9 +6197,10 @@ function DesignViewerChrome({
                 ? "크라운이나 커넥터를 고치려면 분리합니다."
                 : "커넥터로 브리지를 한 덩어리로 잇습니다."
             }
+            aria-label={assembled ? "분리" : "조립"}
             onClick={() => onAssembleSpan(span, !assembled)}
           >
-            {assembled ? "분리" : "조립"}
+            {assembled ? <Unlink className={iconClass} /> : <Link2 className={iconClass} />}
           </button>
         ) : null}
       </div>
@@ -5981,6 +6209,68 @@ function DesignViewerChrome({
 
   const thinTeeth = teeth.filter((tooth) => toothThin(tooth.toothNumber));
   const undercutTeeth = teeth.filter((tooth) => toothUndercut(tooth.toothNumber) > 0);
+
+  const filesFor = (role: MeshSource["role"]) => scans.filter((scan) => scan.role === role);
+
+  const scanFileLabel = (scan: MeshSource) => {
+    const failed = fileState[scan.id] === "error";
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span
+            data-scan-id={scan.id}
+            draggable
+            className="min-w-0 max-w-[9rem] cursor-grab truncate text-[11px] text-muted-foreground active:cursor-grabbing"
+            onDragStart={(event) => {
+              event.dataTransfer.setData("text/plain", scan.id);
+              event.dataTransfer.effectAllowed = "move";
+              onScanDragStart(scan.id);
+            }}
+            onDragEnd={onScanDragEnd}
+          >
+            {failed ? (
+              <TriangleAlert className="mr-0.5 inline h-3 w-3 text-destructive" />
+            ) : null}
+            {scan.fileName}
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="left" className="z-[520]">
+          {scan.fileName}
+          <br />
+          끌어 다른 악이나 바이트 위에 놓으면 역할을 맞바꿉니다.
+        </TooltipContent>
+      </Tooltip>
+    );
+  };
+
+  const jawDrop = (files: readonly MeshSource[]) => {
+    const targetOf = (event: { target: EventTarget | null }) => {
+      const node = event.target instanceof Element ? event.target : null;
+      return node?.closest("[data-scan-id]")?.getAttribute("data-scan-id") || files[0]?.id || "";
+    };
+    return {
+      onDragOver: (event: ReactDragEvent<HTMLElement>) => {
+        if (!dragScanId || files.some((scan) => scan.id === dragScanId)) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        const target = targetOf(event);
+        if (target) onScanDragOver(target);
+      },
+      onDragLeave: (event: ReactDragEvent<HTMLElement>) => {
+        const next = event.relatedTarget;
+        if (next instanceof Node && event.currentTarget.contains(next)) return;
+        const target = files.find((scan) => scan.id === dropScanId)?.id;
+        if (target) onScanDragLeave(target);
+      },
+      onDrop: (event: ReactDragEvent<HTMLElement>) => {
+        event.preventDefault();
+        const sourceId = event.dataTransfer.getData("text/plain");
+        const target = targetOf(event);
+        onScanDragEnd();
+        if (sourceId && target) onScanDrop(sourceId, target);
+      },
+    };
+  };
 
   const unassembledSpan = [...spans.values()].find((span) => {
     const rows = teeth.filter((tooth) => span.includes(tooth.toothNumber));
@@ -5998,99 +6288,159 @@ function DesignViewerChrome({
         {`@keyframes aiScanLine { 0% { transform: translateY(0); opacity: .25; } 50% { opacity: 1; } 100% { transform: translateY(58vh); opacity: .2; } }`}
       </style>
 
-      <div className="absolute right-3 top-3 z-10 flex max-h-[calc(100%-1.5rem)] w-fit max-w-[min(32rem,70vw)] flex-col items-end gap-1 overflow-y-auto">
-        {panelsShown && teeth.length > 0 ? (
-          <div className="mt-1 w-fit max-w-full overflow-hidden rounded-lg border bg-background/95 text-sm shadow-sm">
-            <button
-              type="button"
-              className="flex w-full items-center justify-between gap-3 px-3.5 py-2.5 text-left"
-              onClick={onToggleInfo}
-              aria-expanded={toothInfoOpen}
+      <SnapFrame
+        boundsRef={workAreaRef}
+        pose={toothPose}
+        onPose={onToothPose}
+        anchorClass="right-3 top-3"
+        className="pointer-events-none flex w-fit max-h-[calc(100%-18rem)] max-w-[min(20rem,calc(100%-1.5rem))] flex-col overflow-hidden"
+      >
+        {panelsShown ? (
+          <div className="pointer-events-auto mt-1 flex max-h-full min-h-0 w-max max-w-full flex-col overflow-hidden rounded-lg border bg-background/95 text-sm shadow-sm">
+            <DraggablePanelHeader
+              open={toothInfoOpen}
+              onToggle={onToggleInfo}
+              className="px-2.5 py-2"
             >
               <span className="font-semibold text-foreground">치아 정보</span>
-              <ChevronDown
-                className={cn(
-                  "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
-                  toothInfoOpen ? "rotate-180" : "",
-                )}
-              />
-            </button>
+            </DraggablePanelHeader>
             {toothInfoOpen ? (
-              <div className="max-h-[min(24rem,52vh)] overflow-y-auto border-t px-3.5 py-2.5">
-                {archGroups.map((group) => (
-                  <div key={group.id} className="mb-2.5 last:mb-0">
-                    {group.id === "other" ? (
-                      <p className="text-xs font-medium text-muted-foreground">
-                        {group.label}
-                      </p>
-                    ) : (
-                      <label
-                        className="flex w-fit cursor-pointer items-center gap-1.5 py-0.5 text-xs font-medium text-muted-foreground hover:text-foreground"
-                        title={`${group.label} 모델과 치아를 화면에 표시합니다`}
+              <div className="min-h-0 overflow-y-auto border-t px-2 py-2">
+                {(
+                  [
+                    { id: "upper" as const, label: "상악" },
+                    { id: "bite" as const, label: "바이트" },
+                    { id: "lower" as const, label: "하악" },
+                  ] as const
+                ).map((row) => {
+                  const files = filesFor(row.id);
+                  const rowTeeth =
+                    row.id === "bite"
+                      ? []
+                      : teeth.filter((tooth) => toothArchGroup(tooth.toothNumber) === row.id);
+                  if (files.length === 0 && rowTeeth.length === 0) return null;
+                  const shown =
+                    row.id === "bite"
+                      ? files.length > 0 && files.every(scanShown)
+                      : archShown(row.id);
+                  const blocked =
+                    files.length > 0 &&
+                    files.every((scan) => {
+                      const state = fileState[scan.id];
+                      return state === "loading" || state === "error";
+                    });
+                  const dropping =
+                    Boolean(dragScanId) &&
+                    files.some((scan) => scan.id === dropScanId) &&
+                    !files.some((scan) => scan.id === dragScanId);
+                  return (
+                    <div key={row.id} className="mb-2.5 last:mb-0">
+                      <div
+                        className={cn(
+                          "flex min-w-0 flex-wrap items-center gap-1 rounded py-0.5",
+                          dropping && "bg-primary/10 ring-1 ring-primary",
+                        )}
+                        {...jawDrop(files)}
                       >
                         <Checkbox
-                          className="h-3.5 w-3.5"
-                          checked={archShown(group.id as "upper" | "lower")}
-                          onCheckedChange={(checked) =>
-                            onToggleArch(group.id as "upper" | "lower", checked === true)
-                          }
-                          aria-label={`${group.label} 표시`}
+                          className={cn("h-3.5 w-3.5", ROLE_CHECK[row.id])}
+                          checked={shown}
+                          disabled={blocked}
+                          onCheckedChange={(checked) => {
+                            if (row.id === "bite") {
+                              const on = checked === true;
+                              for (const scan of files) onToggleScan(scan.id, on);
+                              return;
+                            }
+                            onToggleArch(row.id, checked === true);
+                          }}
+                          aria-label={`${row.label} 표시`}
                         />
-                        {group.label}
-                      </label>
-                    )}
-                    <ul className="ml-2 mt-1 border-l border-border pl-3">
-                      {toothInfoBlocks(group.teeth, spans).map((block) => {
-                        if (block.kind === "bridge") {
-                          const axisOn = axisState(block.span);
-                          const members = block.members;
-                          const last = members.length - 1;
-                          return (
-                            <li
-                              key={`bridge-${block.span.join("-")}`}
-                              className="py-1"
-                            >
-                              {bridgeHeader(block.span, members)}
-                              <div className="flex items-center gap-2">
-                                {insertionButton(block.span, true)}
-                                <div className="flex flex-col gap-1">
-                                  {members.map((tooth, index) => (
-                                    <div
-                                      key={tooth.toothNumber}
-                                      className="flex items-stretch"
-                                    >
-                                      <div className="relative w-[3px] shrink-0">
-                                        {index > 0 ? (
-                                          <span
-                                            aria-hidden
-                                            className="absolute inset-x-0 top-0 h-1/2 bg-primary"
-                                          />
-                                        ) : null}
-                                        {index < last ? (
-                                          <span
-                                            aria-hidden
-                                            className="absolute inset-x-0 top-1/2 h-[calc(50%+0.25rem)] bg-primary"
-                                          />
-                                        ) : null}
-                                      </div>
-                                      <div className="flex items-center gap-1.5">
+                        <span className="shrink-0 text-xs font-medium text-foreground">{row.label}</span>
+                        {files.map((scan) => (
+                          <span key={scan.id} className="flex min-w-0 items-center">
+                            {scanFileLabel(scan)}
+                          </span>
+                        ))}
+                      </div>
+                      {rowTeeth.length > 0 ? (
+                        <ul className="ml-1.5 mt-1 border-l border-border pl-2">
+                          {toothInfoBlocks(rowTeeth, spans).map((block) => {
+                            if (block.kind === "bridge") {
+                              const axisOn = axisState(block.span);
+                              const members = block.members;
+                              return (
+                                <li key={`bridge-${block.span.join("-")}`} className="py-1">
+                                  {bridgeHeader(block.span, members)}
+                                  <div className="flex items-stretch gap-2">
+                                    <div className="flex w-6 shrink-0 items-center justify-center">
+                                      {insertionButton(block.span, true)}
+                                    </div>
+                                    <div className="relative min-w-0">
+                                      {members.length > 1 ? (
                                         <span
                                           aria-hidden
-                                          className="h-[3px] w-3 shrink-0 bg-primary"
+                                          className="absolute bottom-[0.875rem] left-0 top-[0.875rem] w-[3px] bg-primary"
                                         />
-                                        {nameButton(tooth, axisOn)}
-                                        {roleButton(tooth, block.span)}
-                                        {statusBits(tooth)}
-                                        {implantBits(tooth)}
-                                        {generateButton(tooth)}
+                                      ) : null}
+                                      <div className="flex flex-col">
+                                        {members.map((tooth) => (
+                                          <div
+                                            key={tooth.toothNumber}
+                                            className="flex h-7 items-center"
+                                          >
+                                            <span
+                                              aria-hidden
+                                              className="h-[3px] w-3 shrink-0 bg-primary"
+                                            />
+                                            <div className="flex min-w-0 items-center gap-1 pl-1">
+                                              {nameButton(tooth, axisOn)}
+                                              {roleButton(tooth, block.span)}
+                                              {statusBits(tooth)}
+                                              {implantBits(tooth)}
+                                              {generateButton(tooth)}
+                                            </div>
+                                          </div>
+                                        ))}
                                       </div>
                                     </div>
-                                  ))}
+                                  </div>
+                                </li>
+                              );
+                            }
+                            const tooth = block.tooth;
+                            const span = insertionSpanForTooth(teeth, tooth.toothNumber);
+                            const axisOn = axisState(span);
+                            return (
+                              <li
+                                key={`${tooth.toothNumber}-${tooth.prosthesisType}`}
+                                className="py-1"
+                              >
+                                <div className="flex flex-wrap items-center gap-1 py-0.5">
+                                  {nameButton(tooth, axisOn)}
+                                  {statusBits(tooth)}
+                                  {implantBits(tooth)}
+                                  {presetSelect([tooth], `#${tooth.toothNumber}`)}
+                                  {span.length > 0 ? insertionButton(span, false) : null}
+                                  {generateButton(tooth)}
                                 </div>
-                              </div>
-                            </li>
-                          );
-                        }
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      ) : null}
+                    </div>
+                  );
+                })}
+                {teeth.some((tooth) => toothArchGroup(tooth.toothNumber) === "other") ? (
+                  <div className="mb-2.5 last:mb-0">
+                    <p className="text-xs font-medium text-muted-foreground">기타</p>
+                    <ul className="ml-1.5 mt-1 border-l border-border pl-2">
+                      {toothInfoBlocks(
+                        teeth.filter((tooth) => toothArchGroup(tooth.toothNumber) === "other"),
+                        spans,
+                      ).map((block) => {
+                        if (block.kind !== "single") return null;
                         const tooth = block.tooth;
                         const span = insertionSpanForTooth(teeth, tooth.toothNumber);
                         const axisOn = axisState(span);
@@ -6099,7 +6449,7 @@ function DesignViewerChrome({
                             key={`${tooth.toothNumber}-${tooth.prosthesisType}`}
                             className="py-1"
                           >
-                            <div className="flex w-fit items-center gap-1.5 py-0.5">
+                            <div className="flex flex-wrap items-center gap-1 py-0.5">
                               {nameButton(tooth, axisOn)}
                               {statusBits(tooth)}
                               {implantBits(tooth)}
@@ -6112,12 +6462,27 @@ function DesignViewerChrome({
                       })}
                     </ul>
                   </div>
-                ))}
+                ) : null}
+                {screwPathAvailable ? (
+                  <label className="mt-1 flex items-center gap-1" title="스크류 경로">
+                    <Checkbox
+                      className="h-3.5 w-3.5 border-amber-500 data-[state=checked]:border-amber-500 data-[state=checked]:bg-amber-500 data-[state=checked]:text-white"
+                      checked={screwPathShown}
+                      onCheckedChange={(checked) => onToggleScrewPath(checked === true)}
+                      aria-label="스크류 경로 표시"
+                    />
+                    <span className="text-[11px] font-semibold text-primary">스크류</span>
+                  </label>
+                ) : null}
+                {scanBusy ? <Progress value={scanProgress} className="mt-1 h-1.5" /> : null}
+                {scanLoadError ? (
+                  <p className="mt-1 text-[11px] leading-relaxed text-destructive">{scanLoadError}</p>
+                ) : null}
               </div>
             ) : null}
           </div>
         ) : null}
-      </div>
+      </SnapFrame>
 
       {thinTeeth.length > 0 || undercutTeeth.length > 0 || unassembledSpan ? (
         <div className="absolute bottom-16 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-1.5">

@@ -29,6 +29,8 @@ export type LabProsthesisAiTooth = {
   implant: LabProsthesisAiImplantSpec | null;
   /** 의뢰 치아카드의 심플어벗 규격. 있으면 스캔바디 대신 이 템플릿을 스캔에 맞춘다. */
   simpleAbutment: LabSimpleAbutmentSpec | null;
+  /** 의뢰한 스캔바디·심플어벗 규격. 제조사·직경·높이. */
+  scanbodyOrder: { manufacturer: string; diameter: string; height: string } | null;
 };
 
 export type LabSimpleAbutmentSpec = {
@@ -134,6 +136,7 @@ export function applyToothOverrides(
       designable: DESIGNABLE_TYPES.has(prosthesisType),
       implant: null,
       simpleAbutment: null,
+      scanbodyOrder: null,
     };
   });
   return {
@@ -434,15 +437,20 @@ export function buildLabProsthesisAiPlan(input: {
         : null;
     const abutmentKind = String(row?.abutmentManufacturer || "").trim();
     const abutmentDiameter = String(row?.abutmentDiameter || "").trim();
+    const abutmentHeight = String(row?.abutmentHeight || "").trim();
     const simpleAbutment: LabSimpleAbutmentSpec | null =
       (abutmentKind === "심플어벗" || abutmentKind === "심플밀링") && abutmentDiameter
         ? {
             kind: abutmentKind,
             diameter: abutmentDiameter,
-            height: String(row?.abutmentHeight || "").trim().toUpperCase(),
+            height: abutmentHeight.toUpperCase(),
           }
         : null;
     const designableImplant = implant && DESIGNABLE_TYPES.has(prosthesisType) ? implant : null;
+    const scanbodyOrder =
+      designableImplant && (abutmentKind || abutmentDiameter || abutmentHeight)
+        ? { manufacturer: abutmentKind, diameter: abutmentDiameter, height: abutmentHeight }
+        : null;
     teeth.push({
       toothNumber,
       sourceToothNumber: toothNumber,
@@ -451,6 +459,7 @@ export function buildLabProsthesisAiPlan(input: {
       designable: DESIGNABLE_TYPES.has(prosthesisType),
       implant: designableImplant,
       simpleAbutment: designableImplant ? simpleAbutment : null,
+      scanbodyOrder,
     });
   }
 

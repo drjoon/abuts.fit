@@ -10087,7 +10087,7 @@ export function RequestorPracticeReceivePage({
                   anodizingEnabled={anodizingEnabled}
                   anodizingSaving={anodizingSaving}
                   onToggleAnodizing={handleToggleAnodizing}
-                  shortLabels
+                  menu
                 />
               }
               stickyTrailingActions={labZirStartButton}

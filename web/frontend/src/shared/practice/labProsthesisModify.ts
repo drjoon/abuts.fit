@@ -86,7 +86,10 @@ export function sculptStampWidth(sizeMm: number, zoom = 1) {
   return SCULPT_BASE_WIDTH * (size / DEFAULT_SCULPT_BRUSH.sizeMm) ** 2;
 }
 
-/** 디자인 시작 전 범위. 마진만이면 크라운을 만들지 않는다. 모델은 크라운에 모델 출력을 더한다. */
+/**
+ * 예전 화면의 범위. 지금은 고르지 않는다.
+ * 스캔·마진·디자인·모델·밀링 단계가 어디까지 할지를 정하고, 크라운은 마진 확인 뒤에 만든다.
+ */
 export type DesignScope = "margin" | "crown" | "model";
 
 export function scopeMakesCrown(scope: DesignScope | null | undefined) {
@@ -444,6 +447,8 @@ export type ToothDesignEdit = {
     fitMm: number | null;
     /** 맞춘 스캔바디·심플어벗 템플릿 형상(S3 키). 원기둥으로 맞췄으면 null. */
     scanbodyKey: string | null;
+    /** 기공소가 치과 의뢰와 다른 라이브러리로 바꾸겠다고 확인했다. */
+    orderOverride: boolean;
     screwHole: boolean;
   };
   hook: {
@@ -715,6 +720,7 @@ export function createToothDesignEdit(): ToothDesignEdit {
       rotDeg: 0,
       fitMm: null,
       scanbodyKey: null,
+      orderOverride: false,
       screwHole: false,
     },
     hook: { on: false, angle: 40, radiusMm: 0.45, lengthMm: 2.4 },
@@ -769,6 +775,7 @@ export function normalizeToothDesignEdit(raw: unknown): ToothDesignEdit {
       fitMm: Number.isFinite(Number(implant.fitMm)) && implant.fitMm != null ? Number(implant.fitMm) : null,
       scanbodyKey:
         typeof implant.scanbodyKey === "string" && implant.scanbodyKey ? implant.scanbodyKey : null,
+      orderOverride: implant.orderOverride === true,
       screwHole: implant.screwHole === true,
     },
     pontic: {
