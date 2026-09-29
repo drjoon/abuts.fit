@@ -618,7 +618,7 @@ function NativeResolutionPhoto({
   return (
     <div
       ref={frameRef}
-      className="absolute inset-0 flex items-end justify-center gap-8 bg-white"
+      className="absolute inset-0 flex items-end justify-center gap-8"
     >
       {srcs.map((src, index) => (
         <figure
@@ -674,7 +674,7 @@ function MediaFrame({
     <div
       className={cn(
         "relative h-full w-full overflow-hidden",
-        native ? "bg-white" : "bg-[#e8f2ff]",
+        native ? "bg-transparent" : "bg-[#e8f2ff]",
         className,
       )}
     >
