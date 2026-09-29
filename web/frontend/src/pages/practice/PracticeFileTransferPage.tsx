@@ -27,6 +27,7 @@
  * - web/frontend/src/shared/practice/openPracticeTransferChat.ts
  * - web/frontend/src/shared/components/practice/PracticeLabRatingControl.tsx
  * - web/frontend/src/shared/practice/practiceLabRating.ts
+ * - 2026-09-29: 다음 도착일 「주문 변경」확인 문구를 짧게.
  * - 2026-09-29: 채팅 「폴더 열기」DCM 기본값 — 계정 디자인SW(3Shape=DCM, ExoCAD·그외=PLY).
  * - 2026-09-28: 프리뷰 다운로드(의뢰 파일·작업 스캔)도 「폴더 열기」와 같은 케이스 폴더에 받는다.
  * - 2026-09-28: 의뢰·작업 파일 다운로드를 기공소처럼 「폴더 열기」+톱니(DCM 포맷)로. 작업 파일 zip 버튼 제거.
@@ -11935,12 +11936,9 @@ export const PracticeFileTransferPage = ({
           description={
             prosthesisFollowUpEligibility.followUpKind === "typeChange" ? (
               <>
-                예: 인레이→크라운, 간접어벗→직접어벗, 쉐이드·임플란트 변경
-                등 주문을 바꿉니다. 기공비는 모든 단계 중 가장 비싼 금액만
-                청구합니다.
+                변경하면 기공비는 단계 중 가장 비싼 금액만 청구합니다.
                 <br />
-                아니오: 현재 보철로 계속합니다(다음 도착일만 반영, 추가 과금
-                없음).
+                그대로 두면 다음 도착일만 바뀝니다.
               </>
             ) : (
               <>
