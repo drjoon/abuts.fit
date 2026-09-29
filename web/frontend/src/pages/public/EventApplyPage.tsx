@@ -62,6 +62,12 @@ import {
   peekPostOnboardingReturn,
 } from "@/shared/navigation/postOnboardingReturn";
 import { LandingSkyWash } from "@/features/landing/LandingSkyWash";
+import { LandingMagnetic } from "@/features/landing/LandingMagnetic";
+import { LandingParticleField } from "@/features/landing/LandingParticleField";
+import { LandingReveal } from "@/features/landing/LandingReveal";
+import { LandingScrollProgress } from "@/features/landing/LandingScrollProgress";
+import { LandingSectionRail } from "@/features/landing/LandingSectionRail";
+import { LandingSpotlightCard } from "@/features/landing/LandingSpotlightCard";
 
 const emptyPlace = (): EventPlaceFields => emptyEventApplyDealer();
 
@@ -120,10 +126,14 @@ function SimplewayHero({
   signupHref: string;
 }) {
   return (
-    <section className="relative overflow-hidden border-b border-slate-200/80">
+    <section
+      data-rail-label="시작"
+      className="relative overflow-hidden border-b border-slate-200/80"
+    >
       <LandingSkyWash />
+      <LandingParticleField tone="onLight" />
 
-      <div className="relative mx-auto flex min-h-[72vh] max-w-5xl flex-col justify-center px-4 pb-16 pt-20 sm:px-6 sm:pb-20 sm:pt-24 lg:px-8">
+      <div className="relative z-10 mx-auto flex min-h-[72vh] max-w-5xl flex-col justify-center px-4 pb-16 pt-20 sm:px-6 sm:pb-20 sm:pt-24 lg:px-8">
         <Link
           to="/#events"
           className="mb-8 inline-flex w-fit items-center gap-1 text-sm text-slate-500 transition-colors hover:text-slate-800"
@@ -149,13 +159,15 @@ function SimplewayHero({
         <div className="animate-in fade-in slide-in-from-bottom-3 fill-mode-both mt-8 flex flex-wrap items-center gap-3 duration-700 delay-300">
           {showSignupCta ? (
             canApply ? (
-              <Button
-                asChild
-                size="lg"
-                className="h-12 rounded-full bg-[#2563eb] px-7 text-base font-semibold text-white shadow-[0_12px_32px_rgba(37,99,235,0.28)] hover:bg-[#1d4ed8]"
-              >
-                <Link to={signupHref}>회원가입 후 신청하기</Link>
-              </Button>
+              <LandingMagnetic>
+                <Button
+                  asChild
+                  size="lg"
+                  className="landing-btn h-12 rounded-full bg-[#2563eb] px-7 text-base font-semibold text-white shadow-[0_12px_32px_rgba(37,99,235,0.28)] hover:bg-[#1d4ed8]"
+                >
+                  <Link to={signupHref}>회원가입 후 신청하기</Link>
+                </Button>
+              </LandingMagnetic>
             ) : (
               <Button
                 type="button"
@@ -167,16 +179,18 @@ function SimplewayHero({
               </Button>
             )
           ) : (
-            <Button
-              type="button"
-              size="lg"
-              className="h-12 rounded-full bg-[#2563eb] px-7 text-base font-semibold text-white shadow-[0_12px_32px_rgba(37,99,235,0.28)] hover:bg-[#1d4ed8]"
-              onClick={scrollToApply}
-              disabled={!canApply}
-            >
-              {canApply ? "출시 행사 신청하기" : "신청 마감"}
-              {canApply ? <ArrowDown className="ml-2 h-4 w-4" /> : null}
-            </Button>
+            <LandingMagnetic>
+              <Button
+                type="button"
+                size="lg"
+                className="landing-btn h-12 rounded-full bg-[#2563eb] px-7 text-base font-semibold text-white shadow-[0_12px_32px_rgba(37,99,235,0.28)] hover:bg-[#1d4ed8]"
+                onClick={scrollToApply}
+                disabled={!canApply}
+              >
+                {canApply ? "출시 행사 신청하기" : "신청 마감"}
+                {canApply ? <ArrowDown className="ml-2 h-4 w-4" /> : null}
+              </Button>
+            </LandingMagnetic>
           )}
         </div>
       </div>
@@ -186,9 +200,12 @@ function SimplewayHero({
 
 function KitSection() {
   return (
-    <section className="border-b border-slate-100 bg-white py-16 sm:py-20">
+    <section
+      data-rail-label="제품"
+      className="border-b border-slate-100 bg-white py-16 sm:py-20"
+    >
       <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
-        <div className="flex items-end justify-between gap-4">
+        <LandingReveal className="flex items-end justify-between gap-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-700">
               Product lineup
@@ -198,41 +215,38 @@ function KitSection() {
             </h2>
           </div>
           <Package className="hidden h-8 w-8 text-sky-500/80 sm:block" />
-        </div>
+        </LandingReveal>
 
         <ul className="mt-10 grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,4fr)_minmax(0,2fr)_minmax(0,2fr)_minmax(0,2fr)]">
           {SIMPLEWAY_SAMPLE_KIT.map((item, i) => (
-            <li
-              key={item.id}
-              className={cn(
-                "group relative overflow-hidden rounded-3xl border border-slate-200/90 bg-gradient-to-b from-white to-[#f4f7fb] p-6 transition-transform duration-500 hover:-translate-y-1",
-                "animate-in fade-in slide-in-from-bottom-4 fill-mode-both",
-              )}
-              style={{ animationDelay: `${120 + i * 80}ms` }}
-            >
-              <div className="absolute -right-6 -top-6 h-24 w-24 rounded-full bg-sky-100/60 blur-2xl transition-opacity group-hover:opacity-100" />
-              <div className="relative">
-                <span className="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-sky-50 text-sky-700 ring-1 ring-sky-100">
-                  <Gift className="h-4 w-4" />
-                </span>
-                <h3
-                  className={cn(
-                    "mt-5 font-semibold text-slate-900",
-                    i === 0
-                      ? "text-lg md:whitespace-nowrap"
-                      : "text-lg break-keep md:text-base md:whitespace-nowrap",
-                  )}
-                >
-                  {item.name}
-                </h3>
-                {item.spec ? (
-                  <p className="mt-1 text-sm font-medium tabular-nums text-sky-700">
-                    {item.spec}
+            <LandingReveal as="li" key={item.id} delay={i * 90}>
+              <LandingSpotlightCard className="group relative h-full overflow-hidden rounded-3xl border border-slate-200/90 bg-gradient-to-b from-white to-[#f4f7fb] p-6">
+                <div className="absolute -right-6 -top-6 h-24 w-24 rounded-full bg-sky-100/60 blur-2xl transition-opacity group-hover:opacity-100" />
+                <div className="relative">
+                  <span className="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-sky-50 text-sky-700 ring-1 ring-sky-100">
+                    <Gift className="h-4 w-4" />
+                  </span>
+                  <h3
+                    className={cn(
+                      "mt-5 font-semibold text-slate-900",
+                      i === 0
+                        ? "text-lg md:whitespace-nowrap"
+                        : "text-lg break-keep md:text-base md:whitespace-nowrap",
+                    )}
+                  >
+                    {item.name}
+                  </h3>
+                  {item.spec ? (
+                    <p className="mt-1 text-sm font-medium tabular-nums text-sky-700">
+                      {item.spec}
+                    </p>
+                  ) : null}
+                  <p className="mt-3 break-keep text-sm text-slate-500">
+                    {item.note}
                   </p>
-                ) : null}
-                <p className="mt-3 break-keep text-sm text-slate-500">{item.note}</p>
-              </div>
-            </li>
+                </div>
+              </LandingSpotlightCard>
+            </LandingReveal>
           ))}
         </ul>
       </div>
@@ -242,20 +256,23 @@ function KitSection() {
 
 function ExtrasSection() {
   return (
-    <section className="border-b border-slate-100 bg-white py-16 sm:py-20">
+    <section
+      data-rail-label="디지털 지원"
+      className="border-b border-sky-100 bg-[#eef6ff] py-16 sm:py-20"
+    >
       <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
-        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-700">
-          Also included
-        </p>
-        <h2 className="mt-2 max-w-xl text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
-          함께 소개하는 디지털 지원
-        </h2>
+        <LandingReveal>
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-700">
+            Also included
+          </p>
+          <h2 className="mt-2 max-w-xl text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+            함께 소개하는 디지털 지원
+          </h2>
+        </LandingReveal>
         <div className="mt-10 grid gap-4 md:grid-cols-2">
-          {SIMPLEWAY_SAMPLE_EXTRAS.map((extra) => (
-            <article
-              key={extra.id}
-              className="flex gap-4 rounded-[1.75rem] border border-slate-200/90 bg-gradient-to-br from-[#0b2a5c] to-[#163a72] p-6 text-white sm:p-7"
-            >
+          {SIMPLEWAY_SAMPLE_EXTRAS.map((extra, index) => (
+            <LandingReveal key={extra.id} delay={index * 120}>
+            <LandingSpotlightCard className="flex h-full gap-4 rounded-[1.75rem] border border-slate-200/90 bg-gradient-to-br from-[#0b2a5c] to-[#163a72] p-6 text-white sm:p-7">
               <span className="mt-0.5 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/10 ring-1 ring-white/15">
                 {extra.id === "abuts-platform" ? (
                   <LayoutGrid className="h-5 w-5" />
@@ -279,7 +296,8 @@ function ExtrasSection() {
                   ))}
                 </p>
               </div>
-            </article>
+            </LandingSpotlightCard>
+            </LandingReveal>
           ))}
         </div>
       </div>
@@ -576,8 +594,11 @@ export default function EventApplyPage() {
     <PublicPageLayout
       plain
       navOverlay
+      footerSurface={isSimpleway ? "sky" : "white"}
       contentClassName="relative z-10 w-full space-y-0 px-0 pb-0 pt-0"
     >
+      <LandingScrollProgress />
+      <LandingSectionRail />
       {isSimpleway ? (
         <>
           <SimplewayHero
@@ -615,10 +636,16 @@ export default function EventApplyPage() {
 
       <section
         id="event-apply"
-        className="scroll-mt-24 border-t border-slate-200 bg-[#f7f9fc] py-14 sm:py-20"
+        data-rail-label="신청"
+        className={cn(
+          "scroll-mt-24 border-t py-14 sm:py-20",
+          isSimpleway
+            ? "border-slate-200 bg-white"
+            : "border-sky-100 bg-[#eef6ff]",
+        )}
       >
         <div className="mx-auto max-w-2xl px-4 sm:px-6">
-          <div className="mb-8 space-y-2">
+          <LandingReveal className="mb-8 space-y-2">
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-700">
               Apply
             </p>
@@ -630,18 +657,20 @@ export default function EventApplyPage() {
                 ? "영업 담당자가 방문해 제품·사용 방법을 안내합니다."
                 : "회원가입 후 치과 정보를 등록하면 바로 신청할 수 있습니다."}
             </p>
-          </div>
+          </LandingReveal>
 
           {!isAuthenticated || !practiceUser ? (
             <div className="flex justify-center py-2">
               {canApply ? (
-                <Button
-                  asChild
-                  className="h-12 rounded-full bg-[#2563eb] px-8 text-base font-semibold hover:bg-[#1d4ed8]"
-                  size="lg"
-                >
-                  <Link to={signupHref}>회원가입 후 신청하기</Link>
-                </Button>
+                <LandingMagnetic>
+                  <Button
+                    asChild
+                    className="landing-btn h-12 rounded-full bg-[#2563eb] px-8 text-base font-semibold hover:bg-[#1d4ed8]"
+                    size="lg"
+                  >
+                    <Link to={signupHref}>회원가입 후 신청하기</Link>
+                  </Button>
+                </LandingMagnetic>
               ) : (
                 <Button
                   type="button"
@@ -787,7 +816,7 @@ export default function EventApplyPage() {
 
               <Button
                 type="submit"
-                className="h-12 w-full rounded-full bg-[#2563eb] text-base font-semibold hover:bg-[#1d4ed8]"
+                className="landing-btn h-12 w-full rounded-full bg-[#2563eb] text-base font-semibold hover:bg-[#1d4ed8]"
                 size="lg"
                 disabled={submitting || !canApply || usesOralScan == null}
               >

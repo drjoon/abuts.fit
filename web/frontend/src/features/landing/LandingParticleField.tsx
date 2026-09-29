@@ -38,18 +38,27 @@ const MOUSE_RADIUS = 110;
 const FONT_FAMILY =
   '"Pretendard Variable", Pretendard, system-ui, -apple-system, "Apple SD Gothic Neo", sans-serif';
 
-const COLOR_STOPS: Array<[number, [number, number, number]]> = [
+type ColorStops = Array<[number, [number, number, number]]>;
+
+/** 어두운 배경: 왼쪽 흰색 → 오른쪽 하늘색. */
+const COLOR_STOPS_ON_DARK: ColorStops = [
   [0, [255, 255, 255]],
   [0.55, [186, 230, 253]],
   [1, [56, 189, 248]],
 ];
 
-/** 왼쪽 흰색 → 오른쪽 하늘색 그라디언트. */
-function gradientColor(t: number): string {
+/** 밝은 배경: 왼쪽 네이비 → 오른쪽 하늘색. */
+const COLOR_STOPS_ON_LIGHT: ColorStops = [
+  [0, [11, 42, 92]],
+  [0.55, [37, 99, 235]],
+  [1, [56, 189, 248]],
+];
+
+function gradientColor(t: number, stops: ColorStops): string {
   const clamped = Math.min(1, Math.max(0, t));
-  for (let i = 1; i < COLOR_STOPS.length; i += 1) {
-    const [t1, c1] = COLOR_STOPS[i];
-    const [t0, c0] = COLOR_STOPS[i - 1];
+  for (let i = 1; i < stops.length; i += 1) {
+    const [t1, c1] = stops[i];
+    const [t0, c0] = stops[i - 1];
     if (clamped <= t1) {
       const k = (clamped - t0) / (t1 - t0 || 1);
       const r = Math.round(c0[0] + (c1[0] - c0[0]) * k);
@@ -111,6 +120,8 @@ function sampleText(text: string, width: number, height: number): TextPoint[] {
 /**
  * 히어로 파티클 캔버스.
  * - `anchorRef` 영역에 `text` 를 파티클로 그린다(진입 시 모여들고, 마우스가 밀어내고, 스크롤하면 흩어진다).
+ *   둘 중 하나라도 없으면 글자 없이 먼지 입자·커서 글로우만 그린다(서브페이지 히어로).
+ * - `tone`: onDark(어두운 사진 위 · 가산 합성) / onLight(흰·하늘색 배경 위 · 파랑 계열).
  * - 배경에 떠다니는 먼지 입자와 커서 글로우.
  * - 부모 요소에 `--hero-p`(0~1 스크롤 진행)를 써서 히어로 콘텐츠 페이드에 공유한다.
  * - `prefers-reduced-motion` 이면 정지 프레임 한 장만 그린다.
@@ -118,9 +129,11 @@ function sampleText(text: string, width: number, height: number): TextPoint[] {
 export function LandingParticleField({
   anchorRef,
   text,
+  tone = "onDark",
 }: {
-  anchorRef: RefObject<HTMLElement | null>;
-  text: string;
+  anchorRef?: RefObject<HTMLElement | null>;
+  text?: string;
+  tone?: "onDark" | "onLight";
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -131,6 +144,12 @@ export function LandingParticleField({
     if (!canvas || !parent || !ctx) return undefined;
 
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const light = tone === "onLight";
+    const stops = light ? COLOR_STOPS_ON_LIGHT : COLOR_STOPS_ON_DARK;
+    const blend: GlobalCompositeOperation = light ? "source-over" : "lighter";
+    const dustColors = light
+      ? ["rgb(37,99,235)", "rgb(56,189,248)"]
+      : ["rgb(255,255,255)", "rgb(125,211,252)"];
 
     let w = 0;
     let h = 0;
@@ -156,9 +175,9 @@ export function LandingParticleField({
       canvas.height = Math.round(h * dpr);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-      const anchor = anchorRef.current;
+      const anchor = anchorRef?.current;
       particles = [];
-      if (anchor) {
+      if (anchor && text) {
         const ar = anchor.getBoundingClientRect();
         const ax = ar.left - rect.left;
         const ay = ar.top - rect.top;
@@ -181,7 +200,7 @@ export function LandingParticleField({
             alpha: 0.6 + Math.random() * 0.4,
             phase: Math.random() * Math.PI * 2,
             speed: 0.8 + Math.random() * 1.6,
-            color: gradientColor(pt.t),
+            color: gradientColor(pt.t, stops),
           };
         });
       }
@@ -195,13 +214,13 @@ export function LandingParticleField({
         r: 0.8 + Math.random() * 1.4,
         phase: Math.random() * Math.PI * 2,
         alpha: 0.15 + Math.random() * 0.35,
-        color: Math.random() < 0.35 ? "rgb(125,211,252)" : "rgb(255,255,255)",
+        color: dustColors[Math.random() < 0.35 ? 1 : 0],
       }));
     };
 
     const drawStatic = () => {
       ctx.clearRect(0, 0, w, h);
-      ctx.globalCompositeOperation = "lighter";
+      ctx.globalCompositeOperation = blend;
       for (const p of particles) {
         ctx.globalAlpha = p.alpha;
         ctx.fillStyle = p.color;
@@ -225,7 +244,7 @@ export function LandingParticleField({
       const k60 = dt * 60;
 
       ctx.clearRect(0, 0, w, h);
-      ctx.globalCompositeOperation = "lighter";
+      ctx.globalCompositeOperation = blend;
 
       // 커서 글로우
       mouse.glow += ((mouse.active ? 1 : 0) - mouse.glow) * Math.min(1, dt * 6);
@@ -233,7 +252,7 @@ export function LandingParticleField({
       mouse.gy += (mouse.y - mouse.gy) * Math.min(1, dt * 10);
       if (mouse.glow > 0.01) {
         const grad = ctx.createRadialGradient(mouse.gx, mouse.gy, 0, mouse.gx, mouse.gy, 220);
-        grad.addColorStop(0, `rgba(56,189,248,${0.2 * mouse.glow})`);
+        grad.addColorStop(0, `rgba(56,189,248,${(light ? 0.18 : 0.2) * mouse.glow})`);
         grad.addColorStop(1, "rgba(56,189,248,0)");
         ctx.globalAlpha = 1;
         ctx.fillStyle = grad;
@@ -391,7 +410,7 @@ export function LandingParticleField({
       document.removeEventListener("visibilitychange", onVisibility);
       parent.style.removeProperty("--hero-p");
     };
-  }, [anchorRef, text]);
+  }, [anchorRef, text, tone]);
 
   return (
     <canvas

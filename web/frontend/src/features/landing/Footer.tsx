@@ -28,6 +28,8 @@ import { AbutsLogo } from "@/components/branding/AbutsLogo";
 
 type FooterProps = {
   tone?: "dark" | "light";
+  /** light 톤 배경. 직전 섹션이 흰색이면 sky(하늘색), 하늘색이면 white — 섹터별로 번갈아 간다. */
+  surface?: "white" | "sky";
 };
 
 type FooterLink = { label: string; href: string };
@@ -92,8 +94,9 @@ function FooterLinkGroup({
   );
 }
 
-export const Footer = ({ tone = "dark" }: FooterProps) => {
+export const Footer = ({ tone = "dark", surface = "white" }: FooterProps) => {
   const isLight = tone === "light";
+  const sky = isLight && surface === "sky";
   const { pathname } = useLocation();
   const landing = pathname === "/" || pathname.startsWith("/offer/");
 
@@ -118,11 +121,13 @@ export const Footer = ({ tone = "dark" }: FooterProps) => {
       className={cn(
         "relative mt-0 border-t backdrop-blur-3xl",
         isLight
-          ? "border-slate-200 bg-white text-slate-900"
+          ? sky
+            ? "border-sky-100 bg-[#eef6ff] text-slate-900"
+            : "border-slate-200 bg-white text-slate-900"
           : "border-white/10 bg-[#030711]/90 text-white",
       )}
     >
-      <div className="pointer-events-none absolute inset-0">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div
           className={cn(
             "absolute -top-24 right-[-120px] h-[22rem] w-[22rem] rounded-full blur-[160px]",

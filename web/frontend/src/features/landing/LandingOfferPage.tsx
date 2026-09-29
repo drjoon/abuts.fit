@@ -3,7 +3,16 @@
 // - web/frontend/src/features/landing/landingOffers.ts
 // - web/frontend/src/features/landing/OfferVisual.tsx
 // - web/frontend/src/features/landing/LandingHome.tsx
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type MouseEvent,
+} from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowRight,
@@ -37,7 +46,13 @@ import {
   landingTypo,
 } from "./landingTheme";
 import { LANDING_HERO_POSTER, LANDING_HERO_VIDEO } from "./landingAssets";
+import { LandingMagnetic } from "./LandingMagnetic";
+import { LandingParticleField } from "./LandingParticleField";
+import { LandingReveal } from "./LandingReveal";
 import { LandingScrollCue } from "./LandingScrollCue";
+import { LandingScrollProgress } from "./LandingScrollProgress";
+import { LandingSectionRail } from "./LandingSectionRail";
+import { LandingSpotlightCard } from "./LandingSpotlightCard";
 import { OfferVisual } from "./OfferVisual";
 import {
   type LandingOffer,
@@ -203,10 +218,11 @@ function GlanceSection({ glance }: { glance: OfferGlance }) {
   return (
     <section
       id="after-hero"
+      data-rail-label="한눈에"
       className={cn("scroll-mt-20", SKY.band, landingSectionY.bandTight)}
     >
       <div className={landingContent}>
-        <div className={cn(landingProse, "text-center")}>
+        <LandingReveal className={cn(landingProse, "text-center")}>
           <SectionEyebrow>AT A GLANCE</SectionEyebrow>
           <h2 className={cn(TYPO.h2, "mt-2.5 break-keep", SKY.ink)}>
             {glance.title}
@@ -214,7 +230,7 @@ function GlanceSection({ glance }: { glance: OfferGlance }) {
           {glance.lead.length ? (
             <Lines lines={glance.lead} className={cn("mt-2.5", TYPO.lead)} />
           ) : null}
-        </div>
+        </LandingReveal>
         <ul
           className={cn(
             "mt-8 grid gap-3 sm:mt-10 lg:gap-4",
@@ -226,9 +242,9 @@ function GlanceSection({ glance }: { glance: OfferGlance }) {
           {glance.items.map((item, index) => {
             const Icon = GLANCE_ICONS[index] ?? HelpCircle;
             return (
-              <li
-                key={item.label}
-                className={cn(SKY.card, "bg-white px-4 py-5 sm:px-5 sm:py-6")}
+              <LandingReveal as="li" key={item.label} delay={index * 90}>
+              <LandingSpotlightCard
+                className={cn(SKY.card, "h-full bg-white px-4 py-5 sm:px-5 sm:py-6")}
               >
                 <span
                   className={cn(
@@ -254,12 +270,14 @@ function GlanceSection({ glance }: { glance: OfferGlance }) {
                 ) : (
                   <p className={cn("mt-2", TYPO.body)}>{item.body}</p>
                 )}
-              </li>
+              </LandingSpotlightCard>
+              </LandingReveal>
             );
           })}
         </ul>
         {glance.summary ? (
-          <div
+          <LandingReveal
+            delay={120}
             className={cn(
               "mt-4 flex items-start gap-3 rounded-2xl border border-sky-100 bg-white/80 px-4 py-4 sm:mt-5 sm:items-center sm:px-5",
             )}
@@ -271,7 +289,7 @@ function GlanceSection({ glance }: { glance: OfferGlance }) {
             <p className={cn("text-[14px] font-semibold tracking-tight", SKY.ink)}>
               {glance.summary}
             </p>
-          </div>
+          </LandingReveal>
         ) : null}
       </div>
     </section>
@@ -280,20 +298,23 @@ function GlanceSection({ glance }: { glance: OfferGlance }) {
 
 function GlossarySection({ glossary }: { glossary: OfferGlossary }) {
   return (
-    <section className={cn("bg-white", landingSectionY.bandTight)}>
+    <section
+      data-rail-label="용어"
+      className={cn("bg-white", landingSectionY.bandTight)}
+    >
       <div className={landingContent}>
-        <div className={cn(landingProse, "text-center")}>
+        <LandingReveal className={cn(landingProse, "text-center")}>
           <SectionEyebrow>GLOSSARY</SectionEyebrow>
           <h2 className={cn(TYPO.h2, "mt-2.5 break-keep", SKY.ink)}>
             {glossary.title}
           </h2>
           <p className={cn("mt-2.5", TYPO.lead)}>{glossary.lead}</p>
-        </div>
+        </LandingReveal>
         <ul className="mt-8 grid gap-3 sm:mt-10 sm:grid-cols-2 lg:grid-cols-3 lg:gap-4">
-          {glossary.items.map((item) => (
-            <li
-              key={item.term}
-              className={cn(SKY.card, "px-4 py-5 sm:px-5 sm:py-6")}
+          {glossary.items.map((item, index) => (
+            <LandingReveal as="li" key={item.term} delay={(index % 3) * 90}>
+            <LandingSpotlightCard
+              className={cn(SKY.card, "h-full px-4 py-5 sm:px-5 sm:py-6")}
             >
               <div className="flex items-start gap-3">
                 <span
@@ -316,7 +337,8 @@ function GlossarySection({ glossary }: { glossary: OfferGlossary }) {
                   <p className={cn("mt-1.5", TYPO.body)}>{item.line}</p>
                 </div>
               </div>
-            </li>
+            </LandingSpotlightCard>
+            </LandingReveal>
           ))}
         </ul>
       </div>
@@ -725,14 +747,13 @@ function ProductCards({
   return (
     <section
       id="products"
+      data-rail-label="제품"
       className={cn("scroll-mt-20", SKY.band, landingSectionY.bandTight)}
     >
       <div className={cn(landingContent, "grid gap-4 md:grid-cols-2 sm:gap-5")}>
-        {products.map((product) => (
-          <article
-            key={product.name}
-            className={cn("flex flex-col overflow-hidden", SKY.card)}
-          >
+        {products.map((product, index) => (
+          <LandingReveal key={product.name} delay={index * 100} className="flex">
+          <article className={cn("flex w-full flex-col overflow-hidden", SKY.card)}>
             <div className="relative min-h-[12.5rem] overflow-hidden bg-[#e8f2ff] sm:min-h-[16rem]">
               <OfferVisual visual={product.visual} fill className="h-full min-h-0" />
               <div className="pointer-events-none absolute inset-0 bg-gradient-to-tr from-sky-500/10 via-transparent to-blue-500/10" />
@@ -749,6 +770,7 @@ function ProductCards({
               </ul>
             </div>
           </article>
+          </LandingReveal>
         ))}
       </div>
     </section>
@@ -757,21 +779,24 @@ function ProductCards({
 
 function StoryRows({
   stories,
+  railLabel = "스토리",
 }: {
   stories: NonNullable<LandingOffer["stories"]>;
+  railLabel?: string;
 }) {
   return (
-    <section className={cn("bg-white pb-4 pt-12 sm:pb-5 sm:pt-16")}>
+    <section
+      data-rail-label={railLabel}
+      className={cn("bg-white pb-4 pt-12 sm:pb-5 sm:pt-16")}
+    >
       <div className={landingContent}>
         <div className="flex flex-col gap-10 sm:gap-14">
           {stories.map((story, index) => {
             const full = story.layout === "full";
             if (full) {
               return (
-                <article
-                  key={story.name}
-                  className={cn("overflow-hidden", SKY.card)}
-                >
+                <LandingReveal key={story.name}>
+                <article className={cn("overflow-hidden", SKY.card)}>
                   {story.visual?.kind === "photo" ? (
                     <div className="bg-white px-3 pt-3 sm:px-5 sm:pt-5">
                       <img
@@ -818,12 +843,13 @@ function StoryRows({
                     ) : null}
                   </div>
                 </article>
+                </LandingReveal>
               );
             }
 
             return (
+              <LandingReveal key={story.name}>
               <article
-                key={story.name}
                 className={cn(
                   "grid items-center gap-0 overflow-hidden lg:grid-cols-2",
                   SKY.card,
@@ -891,6 +917,7 @@ function StoryRows({
                   ) : null}
                 </div>
               </article>
+              </LandingReveal>
             );
           })}
         </div>
@@ -1000,7 +1027,10 @@ function FlowChartSection({ chart }: { chart: NonNullable<LandingOffer["flowChar
   };
 
   return (
-    <section className={cn(SKY.band, landingSectionY.bandTight, "[overflow-anchor:none]")}>
+    <section
+      data-rail-label="플로우 차트"
+      className={cn(SKY.band, landingSectionY.bandTight, "[overflow-anchor:none]")}
+    >
       <div className={landingContent}>
         <article className="[overflow-anchor:none]">
           <div className="px-5 pt-8 sm:px-8 sm:pt-10">
@@ -1079,13 +1109,17 @@ function KitsColor({
   reduced: boolean;
 }) {
   return (
-    <section className={cn("bg-white", landingSectionY.bandTight)}>
+    <section
+      data-rail-label="소개 영상"
+      className={cn("bg-white", landingSectionY.bandTight)}
+    >
       <div className={landingContent}>
-        <div className={cn(landingProse, "text-center")}>
+        <LandingReveal className={cn(landingProse, "text-center")}>
           <SectionEyebrow>{clip.eyebrow}</SectionEyebrow>
           <h2 className={cn(TYPO.h2, "mt-2.5", SKY.ink)}>{clip.heading}</h2>
-        </div>
-        <div
+        </LandingReveal>
+        <LandingReveal
+          delay={120}
           className={cn(
             "relative mt-8 aspect-video overflow-hidden sm:mt-10",
             SKY.card,
@@ -1099,7 +1133,7 @@ function KitsColor({
             fit="frame"
             reduced={reduced}
           />
-        </div>
+        </LandingReveal>
       </div>
     </section>
   );
@@ -1138,36 +1172,56 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
 
   return (
     <div className="bg-white text-slate-900">
+      <LandingScrollProgress />
+      <LandingSectionRail />
       {fullBleedHero ? (
-        <section className="bg-white">
+        <section data-rail-label="시작" className="bg-white">
           {/* fixed 헤더(h-14/sm:h-16) 아래부터 히어로 */}
           <div className="h-14 sm:h-16" aria-hidden />
           {offer.hero === "photo" ? (
             <div className="relative flex min-h-[78svh] items-center pb-16 sm:min-h-[82svh]">
+              <LandingParticleField tone="onLight" />
               <div
                 className={cn(
                   landingContent,
-                  "flex w-full flex-col items-center gap-6 py-8 text-center sm:py-10 lg:flex-row lg:items-end lg:justify-center lg:gap-12",
+                  "relative z-10 flex w-full flex-col items-center gap-6 py-8 text-center sm:py-10 lg:flex-row lg:items-end lg:justify-center lg:gap-12",
                 )}
               >
                 <div className="max-w-lg text-center min-[1920px]:max-w-xl">
-                  <p className={cn(TYPO.eyebrow, "text-[#0b2a5c]/80")}>
+                  <p
+                    className={cn(TYPO.eyebrow, "landing-rise text-[#0b2a5c]/80")}
+                    style={{ "--rise-delay": "0ms" } as CSSProperties}
+                  >
                     {heroEyebrow}
                   </p>
-                  <h1 className={cn(TYPO.h1, "mt-2 text-[#0b2a5c]")}>
+                  <h1
+                    className={cn(TYPO.h1, "landing-rise mt-2 text-[#0b2a5c]")}
+                    style={{ "--rise-delay": "150ms" } as CSSProperties}
+                  >
                     {offer.heroTitle}
                   </h1>
                   {offer.heroLead ? (
-                    <p className="mt-3 break-keep text-[15px] font-medium leading-6 text-[#0b2a5c]/90 sm:text-[16px] sm:leading-7">
+                    <p
+                      className="landing-rise mt-3 break-keep text-[15px] font-medium leading-6 text-[#0b2a5c]/90 sm:text-[16px] sm:leading-7"
+                      style={{ "--rise-delay": "300ms" } as CSSProperties}
+                    >
                       {offer.heroLead}
                     </p>
                   ) : null}
-                  <Lines
-                    lines={heroLines}
-                    className="mt-3 text-[14px] leading-6 text-slate-700 sm:text-[15px]"
-                  />
+                  <div
+                    className="landing-rise"
+                    style={{ "--rise-delay": "450ms" } as CSSProperties}
+                  >
+                    <Lines
+                      lines={heroLines}
+                      className="mt-3 text-[14px] leading-6 text-slate-700 sm:text-[15px]"
+                    />
+                  </div>
                 </div>
-                <div className="relative h-[min(46vh,22rem)] w-full shrink-0 lg:w-[26rem] min-[1600px]:h-[min(52vh,28rem)] min-[1600px]:w-[34rem] min-[1920px]:h-[min(56vh,34rem)] min-[1920px]:w-[40rem]">
+                <div
+                  className="landing-rise relative h-[min(46vh,22rem)] w-full shrink-0 lg:w-[26rem] min-[1600px]:h-[min(52vh,28rem)] min-[1600px]:w-[34rem] min-[1920px]:h-[min(56vh,34rem)] min-[1920px]:w-[40rem]"
+                  style={{ "--rise-delay": "300ms" } as CSSProperties}
+                >
                   <MediaFrame
                     visual={heroVisual}
                     reduced={reduced}
@@ -1289,7 +1343,7 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
       )}
 
       {offer.glance ? <GlanceSection glance={offer.glance} /> : null}
-      {offer.guides ? <StoryRows stories={offer.guides} /> : null}
+      {offer.guides ? <StoryRows stories={offer.guides} railLabel="가이드" /> : null}
       {offer.kitsClip ? (
         <KitsColor clip={offer.kitsClip} reduced={reduced} />
       ) : null}
@@ -1297,23 +1351,24 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
       {offer.highlights ? (
         <section
           id="offer-content"
+          data-rail-label="개요"
           className={cn("scroll-mt-20 bg-white", landingSectionY.bandTight)}
         >
           <div className={landingContent}>
-            <div className={cn(landingProse, "text-center")}>
+            <LandingReveal className={cn(landingProse, "text-center")}>
               <SectionEyebrow>
                 {offer.slug === "simple-way" ? "THE SIMPLE WAY" : "OVERVIEW"}
               </SectionEyebrow>
               <h2 className={cn(TYPO.h2, "mt-2.5", SKY.ink)}>{offer.lead}</h2>
               <p className={cn("mt-2.5", TYPO.lead)}>{offer.line}</p>
-            </div>
+            </LandingReveal>
             <ol className="mt-8 grid gap-3 sm:mt-10 sm:grid-cols-2 lg:grid-cols-3 lg:gap-4">
               {offer.highlights.slice(0, 6).map((item, index) => {
                 const Icon = ICONS[item.icon];
                 return (
-                  <li
-                    key={item.label}
-                    className={cn(SKY.card, "px-4 py-5 sm:px-5 sm:py-6")}
+                  <LandingReveal as="li" key={item.label} delay={(index % 3) * 90}>
+                  <LandingSpotlightCard
+                    className={cn(SKY.card, "h-full px-4 py-5 sm:px-5 sm:py-6")}
                   >
                     <div className="flex items-center gap-3">
                       <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#eef6ff] text-[#2563eb]">
@@ -1332,7 +1387,8 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
                       {item.label}
                     </h3>
                     <p className={cn("mt-1.5", TYPO.body)}>{item.line}</p>
-                  </li>
+                  </LandingSpotlightCard>
+                  </LandingReveal>
                 );
               })}
             </ol>
@@ -1341,7 +1397,10 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
       ) : null}
 
       {offer.scene ? (
-        <section className={cn("relative overflow-hidden bg-[#071937]", landingSectionY.bandTight)}>
+        <section
+          data-rail-label="가이드"
+          className={cn("relative overflow-hidden bg-[#071937]", landingSectionY.bandTight)}
+        >
           <div className="absolute inset-0 opacity-50">
             <MediaFrame visual={offer.scene.visual} reduced={reduced} />
           </div>
@@ -1367,15 +1426,22 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
       {offer.flowChart ? <FlowChartSection chart={offer.flowChart} /> : null}
 
       {offer.specs ? (
-        <section className={cn("bg-white", landingSectionY.bandTight)}>
+        <section
+          data-rail-label="스펙"
+          className={cn("bg-white", landingSectionY.bandTight)}
+        >
           <div className={landingContent}>
-            <div className={cn(landingProse, "text-center")}>
+            <LandingReveal className={cn(landingProse, "text-center")}>
               <SectionEyebrow>SPECS</SectionEyebrow>
               <h2 className={cn(TYPO.h2, "mt-2.5", SKY.ink)}>간단히 보는 스펙</h2>
-            </div>
+            </LandingReveal>
             <dl className="mt-8 grid gap-3 sm:mt-10 sm:grid-cols-2 lg:grid-cols-4 lg:gap-4">
-              {offer.specs.map((spec) => (
-                <div key={spec.label} className={cn(SKY.card, "px-4 py-5 text-center sm:px-5")}>
+              {offer.specs.map((spec, index) => (
+                <LandingReveal
+                  key={spec.label}
+                  delay={(index % 4) * 80}
+                  className={cn(SKY.card, "px-4 py-5 text-center sm:px-5")}
+                >
                   <dt className={cn("text-[13px] font-semibold", SKY.accent)}>
                     {spec.label}
                   </dt>
@@ -1417,7 +1483,7 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
                       ))}
                     </p>
                   ) : null}
-                </div>
+                </LandingReveal>
               ))}
             </dl>
           </div>
@@ -1426,14 +1492,18 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
 
       {offer.glossary ? <GlossarySection glossary={offer.glossary} /> : null}
 
-      <section id="contact" className={cn("scroll-mt-20", SKY.band)}>
+      <section
+        id="contact"
+        data-rail-label="시작하기"
+        className={cn("scroll-mt-20", SKY.band)}
+      >
         <div
           className={cn(
             landingContent,
             "flex flex-col items-start py-12 sm:py-14 lg:flex-row lg:items-end lg:justify-between lg:gap-8",
           )}
         >
-          <div className="max-w-lg">
+          <LandingReveal className="max-w-lg">
             <SectionEyebrow>START SIMPLE WAY</SectionEyebrow>
             <h2 className={cn(TYPO.h2, "mt-2.5", SKY.ink)}>
               {landingHome.ctaBandTitle}
@@ -1442,27 +1512,37 @@ export function LandingOfferPage({ offer }: { offer: LandingOffer }) {
               lines={[...landingHome.ctaBandBody]}
               className={cn("mt-3", TYPO.lead)}
             />
-          </div>
-          <div className="mt-6 flex flex-wrap gap-2.5 lg:mt-0">
-            <Button
-              type="button"
-              className={cn("h-10 shrink-0 px-6 text-[14px] font-semibold", SKY.pill)}
-              onClick={goStart}
-            >
-              {landingHome.ctaStart}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              className={cn(
-                "h-10 shrink-0 px-6 text-[14px] font-semibold",
-                SKY.pillGhost,
-              )}
-              onClick={() => navigate("/contact")}
-            >
-              {landingHome.ctaConsult}
-            </Button>
-          </div>
+          </LandingReveal>
+          <LandingReveal
+            delay={150}
+            className="mt-6 flex flex-wrap gap-2.5 lg:mt-0"
+          >
+            <LandingMagnetic>
+              <Button
+                type="button"
+                className={cn(
+                  "landing-btn h-10 shrink-0 px-6 text-[14px] font-semibold",
+                  SKY.pill,
+                )}
+                onClick={goStart}
+              >
+                {landingHome.ctaStart}
+              </Button>
+            </LandingMagnetic>
+            <LandingMagnetic>
+              <Button
+                type="button"
+                variant="outline"
+                className={cn(
+                  "landing-btn h-10 shrink-0 px-6 text-[14px] font-semibold",
+                  SKY.pillGhost,
+                )}
+                onClick={() => navigate("/contact")}
+              >
+                {landingHome.ctaConsult}
+              </Button>
+            </LandingMagnetic>
+          </LandingReveal>
         </div>
       </section>
     </div>

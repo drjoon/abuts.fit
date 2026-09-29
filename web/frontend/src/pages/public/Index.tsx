@@ -12,6 +12,7 @@ const Index = () => {
     <PublicPageLayout
       tone="light"
       plain
+      footerSurface="sky"
       contentClassName="relative z-10 w-full max-w-none px-0 pb-0 pt-14 sm:pt-16"
     >
       <LandingHome />

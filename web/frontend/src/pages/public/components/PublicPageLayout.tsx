@@ -27,6 +27,8 @@ interface PublicPageLayoutProps {
   navOverlay?: boolean;
   /** 장식 배경 없이 흰 캔버스. 서브 오퍼(스크린샷 히어로) */
   plain?: boolean;
+  /** 푸터 배경. 마지막 섹션이 흰색이면 sky, 하늘색이면 white(기본). */
+  footerSurface?: "white" | "sky";
 }
 
 const DEFAULT_CONTENT_CLASS =
@@ -38,6 +40,7 @@ export const PublicPageLayout = ({
   tone = "light",
   navOverlay = false,
   plain = false,
+  footerSurface = "white",
 }: PublicPageLayoutProps) => {
   const resolvedContentClass = contentClassName ?? DEFAULT_CONTENT_CLASS;
   const isLight = tone === "light";
@@ -80,12 +83,12 @@ export const PublicPageLayout = ({
       {plain ? (
         <div className="landing-scale">
           <main className={resolvedContentClass}>{children}</main>
-          <Footer tone={tone} />
+          <Footer tone={tone} surface={footerSurface} />
         </div>
       ) : (
         <>
           <main className={resolvedContentClass}>{children}</main>
-          <Footer tone={tone} />
+          <Footer tone={tone} surface={footerSurface} />
         </>
       )}
     </div>
