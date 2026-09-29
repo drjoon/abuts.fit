@@ -1,13 +1,16 @@
-// 구강 스캔 메시 편집 — 다듬기(고른 면 지우기)·구멍 메우기·조각. three 없이 색인 메시로 계산한다.
+// 구강 스캔 메시 편집 — 다듬기(고른 면 지우기)·구멍 메우기·조각·가상 발치. three 없이 색인 메시로 계산한다.
 // - 2026-09-28: 디자인 전에 스캔 파편·구멍·거친 면을 정리한다. 결과는 작업 스캔으로 저장한다.
+// - 2026-09-30: 가상 발치. 뺄 치아를 지우고 발치와를 잇몸 곡면으로 메운다(virtualExtraction.ts).
 // related files:
 // - web/frontend/src/shared/components/practice/OralScanOverlayViewer.tsx
 // - web/frontend/src/shared/components/practice/LabProsthesisAiDesignDialog.tsx
 
-export type MeshEditTab = "trim" | "fill" | "sculpt";
+export type MeshEditTab = "trim" | "fill" | "sculpt" | "extract";
 export type TrimTool = "brush" | "lasso" | "piece";
 export type SelectMode = "add" | "remove";
 export type SculptTool = "add" | "remove" | "smooth" | "flatten";
+/** 가상 발치: 치아를 눌러 고르거나, 브러시로 경계를 고친다. */
+export type ExtractTool = "pick" | "brush";
 
 export type ScanMeshEdit = {
   tab: MeshEditTab;
@@ -20,6 +23,17 @@ export type ScanMeshEdit = {
   sculptBrushMm: number;
   /** 0–1 */
   strength: number;
+  extractTool: ExtractTool;
+  /** 발치 경계 브러시 지름(mm). */
+  extractBrushMm: number;
+};
+
+export type ExtractToothStatus = {
+  key: string;
+  label: string;
+  active: boolean;
+  /** 경계가 또렷하지 않아 넓게 잡혔을 수 있다. */
+  weak: boolean;
 };
 
 export type ScanMeshEditStatus = {
@@ -28,7 +42,26 @@ export type ScanMeshEditStatus = {
   /** 메울 수 있는 구멍 수. 스캔 바깥 테두리는 뺀다. */
   holes: number;
   selectedHoles: number;
+  /** 가상 발치로 고른 치아. */
+  teeth: ExtractToothStatus[];
+  /** 치아 경계를 찾는 중. */
+  finding: boolean;
 };
+
+export const EMPTY_SCAN_MESH_EDIT_STATUS: ScanMeshEditStatus = {
+  selected: 0,
+  holes: 0,
+  selectedHoles: 0,
+  teeth: [],
+  finding: false,
+};
+
+export type ExtractAction =
+  | { kind: "activate"; key: string }
+  | { kind: "remove"; key: string }
+  | { kind: "grow" }
+  | { kind: "shrink" }
+  | { kind: "restore" };
 
 export const DEFAULT_SCAN_MESH_EDIT: ScanMeshEdit = {
   tab: "trim",
@@ -38,7 +71,28 @@ export const DEFAULT_SCAN_MESH_EDIT: ScanMeshEdit = {
   sculptTool: "smooth",
   sculptBrushMm: 2,
   strength: 0.35,
+  extractTool: "pick",
+  extractBrushMm: 1.5,
 };
+
+export function sameScanMeshEditStatus(a: ScanMeshEditStatus, b: ScanMeshEditStatus) {
+  return (
+    a.selected > 0 === b.selected > 0 &&
+    a.holes === b.holes &&
+    a.selectedHoles === b.selectedHoles &&
+    a.finding === b.finding &&
+    a.teeth.length === b.teeth.length &&
+    a.teeth.every((row, i) => {
+      const other = b.teeth[i]!;
+      return (
+        row.key === other.key &&
+        row.label === other.label &&
+        row.active === other.active &&
+        row.weak === other.weak
+      );
+    })
+  );
+}
 
 export const MESH_EDIT_BRUSH_RANGE_MM = { min: 0.5, max: 10 } as const;
 

@@ -326,6 +326,8 @@ import {
 import { useLabDesignPresets } from "@/shared/practice/labDesignPresetApi";
 import {
   DEFAULT_SCAN_MESH_EDIT,
+  EMPTY_SCAN_MESH_EDIT_STATUS,
+  sameScanMeshEditStatus,
   type ScanMeshEdit,
   type ScanMeshEditStatus,
 } from "@/shared/practice/scanMeshEdit";
@@ -902,11 +904,9 @@ function LabProsthesisAiDesignDialog({
   const [viewerAligning, setViewerAligning] = useState(false);
   const alignLocked = alignBusy || viewerAligning;
   const [meshEdit, setMeshEdit] = useState<ScanMeshEdit | null>(null);
-  const [meshEditStatus, setMeshEditStatus] = useState<ScanMeshEditStatus>({
-    selected: 0,
-    holes: 0,
-    selectedHoles: 0,
-  });
+  const [meshEditStatus, setMeshEditStatus] = useState<ScanMeshEditStatus>(
+    EMPTY_SCAN_MESH_EDIT_STATUS,
+  );
   const meshEditBeforeSigRef = useRef("");
   const [archAligned, setArchAligned] = useState<ArchAligned>({
     upper: false,
@@ -2848,6 +2848,27 @@ function LabProsthesisAiDesignDialog({
       });
       return;
     }
+    if (result.kind === "extractFailed") {
+      toast({
+        title: "발치 자리를 메우지 못했습니다.",
+        description:
+          result.reason === "edge" ? (
+            <>
+              치아 경계가 스캔 가장자리에 닿았습니다.
+              <br />
+              경계 브러시로 가장자리 쪽을 빼고 다시 적용하세요.
+            </>
+          ) : (
+            <>
+              경계가 꼬였거나 너무 깁니다.
+              <br />
+              경계를 좁히거나 브러시로 다듬은 뒤 다시 적용하세요.
+            </>
+          ),
+        variant: "destructive",
+      });
+      return;
+    }
     if (result.kind === "filled" && result.failed > 0) {
       toast({
         title: `구멍 ${result.failed}개를 메우지 못했습니다.`,
@@ -2866,6 +2887,14 @@ function LabProsthesisAiDesignDialog({
   useEffect(() => {
     if (alignKind) setMeshEdit(null);
   }, [alignKind]);
+
+  const noExtractTeeth = meshEditStatus.teeth.length === 0;
+  useEffect(() => {
+    if (!noExtractTeeth) return;
+    setMeshEdit((prev) =>
+      prev?.tab === "extract" && prev.extractTool === "brush" ? { ...prev, extractTool: "pick" } : prev,
+    );
+  }, [noExtractTeeth]);
 
   useEffect(() => {
     if (stage !== "scan" || !open) setMeshEdit(null);
@@ -3903,11 +3932,7 @@ function LabProsthesisAiDesignDialog({
               meshEdit={stage === "scan" ? meshEdit : null}
               onMeshEditStatus={(status) =>
                 setMeshEditStatus((prev) =>
-                  prev.selected > 0 === status.selected > 0 &&
-                  prev.holes === status.holes &&
-                  prev.selectedHoles === status.selectedHoles
-                    ? prev
-                    : status,
+                  sameScanMeshEditStatus(prev, status) ? prev : status,
                 )
               }
               onMeshEdit={onMeshEditPhase}
@@ -4630,6 +4655,7 @@ function LabProsthesisAiDesignDialog({
                           toast({ title: "떨어진 조각이 없습니다." });
                         }}
                         onPickAllHoles={(on) => viewerRef.current?.meshEditPickAllHoles(on)}
+                        onExtract={(action) => viewerRef.current?.meshEditExtract(action)}
                       />
                     ) : null}
                     {stage === "margin" || stage === "design" ? (

@@ -154,6 +154,7 @@ import {
 } from "@/shared/practice/scanbodyRegistration";
 import {
   weldVertices,
+  type ExtractAction,
   type ScanMeshEdit,
   type ScanMeshEditStatus,
 } from "@/shared/practice/scanMeshEdit";
@@ -259,8 +260,10 @@ export type OralScanOverlayHandle = {
   captureJawPositions: () => JawSnapshot[];
   /** 저장해 둔 정점·메시 모양으로 되돌린다. 카메라는 그대로 둔다. */
   restoreJawPositions: (rows: ReadonlyArray<JawSnapshot>) => void;
-  /** 메시 편집 — 다듬기는 고른 면을 지우고, 구멍 메우기는 고른 구멍을 메운다. */
+  /** 메시 편집 — 다듬기는 고른 면을 지우고, 구멍 메우기는 고른 구멍을 메운다. 발치는 치아를 지우고 발치와를 메운다. */
   meshEditApply: () => MeshEditApplyResult;
+  /** 가상 발치로 고른 치아를 고르거나 빼고, 경계를 넓히거나 좁힌다. */
+  meshEditExtract: (action: ExtractAction) => void;
   meshEditInvert: () => void;
   meshEditClear: () => void;
   /** 스캔마다 가장 큰 조각만 남기고 떨어진 조각을 고른다. 고른 게 없으면 false. */
@@ -5905,11 +5908,16 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         const ctl = meshEditCtlRef.current;
         if (!ctl) return { kind: "empty" };
         const result = ctl.apply();
-        if (result.kind === "trimmed" || (result.kind === "filled" && result.holes > 0)) {
+        if (
+          result.kind === "trimmed" ||
+          result.kind === "extracted" ||
+          (result.kind === "filled" && result.holes > 0)
+        ) {
           meshEditHostRef.current.finish();
         }
         return result;
       },
+      meshEditExtract: (action) => meshEditCtlRef.current?.extract(action),
       meshEditInvert: () => meshEditCtlRef.current?.invertSelection(),
       meshEditClear: () => meshEditCtlRef.current?.clearAll(),
       meshEditSelectLoose: () => meshEditCtlRef.current?.selectLoosePieces() ?? false,

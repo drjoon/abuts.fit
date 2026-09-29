@@ -1,8 +1,10 @@
 // AI 디자인 스캔 단계 — 메시 편집 포인터·선택·오버레이.
 // - 2026-09-28: 다듬기는 브러시·올가미·조각으로 고르고 적용하면 지운다. 구멍은 테두리를 눌러 고르고 메운다. 조각은 끄는 동안 정점을 옮긴다.
 // - 2026-09-28: 빈 곳을 끌면 화면이 돈다. 올가미만 왼쪽 끌기를 쓴다.
+// - 2026-09-30: 가상 발치. 치아를 누르면 경계를 찾고, 브러시·넓히기·좁히기로 고친 뒤 적용하면 지우고 발치와를 메운다.
 // related files:
 // - web/frontend/src/shared/practice/scanMeshEdit.ts
+// - web/frontend/src/shared/practice/virtualExtraction.ts
 // - web/frontend/src/shared/components/practice/OralScanOverlayViewer.tsx
 import * as THREE from "three";
 
@@ -17,10 +19,22 @@ import {
   verticesInBrush,
   vertexComponents,
   type BoundaryLoop,
+  type ExtractAction,
+  type ExtractToothStatus,
   type MeshTopology,
   type ScanMeshEdit,
   type ScanMeshEditStatus,
 } from "@/shared/practice/scanMeshEdit";
+import {
+  closeMask,
+  growToothField,
+  maskComponentCount,
+  maskRim,
+  maskTouchesMeshBoundary,
+  segmentTooth,
+  toothBorderSegments,
+  type ToothSegment,
+} from "@/shared/practice/virtualExtraction";
 
 export type MeshEditTarget = {
   id: string;
@@ -41,8 +55,19 @@ export type ScanShapeEdit = {
 export type MeshEditApplyResult =
   | { kind: "trimmed"; scans: number }
   | { kind: "filled"; holes: number; failed: number }
+  | { kind: "extracted"; teeth: number }
+  /** edge: 경계가 스캔 가장자리에 닿음. fill: 발치와를 메우지 못함. 스캔은 그대로다. */
+  | { kind: "extractFailed"; reason: "edge" | "fill" }
   | { kind: "empty" }
   | { kind: "whole" };
+
+type ExtractTooth = {
+  key: string;
+  serial: number;
+  seg: ToothSegment;
+  /** 처음 찾은 경계. 되돌리기에 쓴다. */
+  auto: Float32Array;
+};
 
 type Host = {
   dom: HTMLCanvasElement;
@@ -73,8 +98,18 @@ type EntryState = {
   pickedLoops: Set<number>;
   overlay: THREE.Mesh | null;
   loopLines: THREE.Group | null;
+  teeth: ExtractTooth[];
+  toothOverlay: THREE.Mesh | null;
+  toothLines: THREE.Group | null;
 };
 
+const TOOTH_RGB = 0x38bdf8;
+const TOOTH_LINE_RGB = 0x22d3ee;
+const TOOTH_ACTIVE_LINE_RGB = 0x0369a1;
+/** 적용 때 경계를 이만큼 넓혔다 좁혀 톱니와 치아 사이 띠를 없앤다. */
+const EXTRACT_CLOSE_MM = 0.4;
+/** 넓히기·좁히기 한 번. */
+const EXTRACT_GROW_MM = 0.3;
 const SELECT_RGB = 0x22d3ee;
 const LOOP_RGB = 0xf97316;
 const LOOP_PICKED_RGB = 0x0891b2;
@@ -123,6 +158,82 @@ function gather(src: Float32Array | null, keep: ArrayLike<number>, size: number)
   return out;
 }
 
+/** 고리마다 fillHole로 메워 새 정점·삼각형을 붙인다. 색·UV도 같이 늘린다. */
+function appendHoleFills(args: {
+  positions: Float32Array;
+  color: Float32Array | null;
+  uv: Float32Array | null;
+  index: Uint32Array;
+  loops: readonly BoundaryLoop[];
+}) {
+  const { positions, color, uv, index, loops } = args;
+  const dims = 3 + (color ? 3 : 0) + (uv ? 2 : 0);
+  const baseCount = positions.length / 3;
+  const addPos: number[] = [];
+  const addColor: number[] = [];
+  const addUv: number[] = [];
+  const addTris: number[] = [];
+  let filled = 0;
+  let failed = 0;
+  for (const loop of loops) {
+    const n = loop.verts.length;
+    const data = new Float32Array(n * dims);
+    for (let i = 0; i < n; i += 1) {
+      const v = loop.verts[i]!;
+      let o = i * dims;
+      data[o++] = positions[v * 3]!;
+      data[o++] = positions[v * 3 + 1]!;
+      data[o++] = positions[v * 3 + 2]!;
+      if (color) {
+        data[o++] = color[v * 3]!;
+        data[o++] = color[v * 3 + 1]!;
+        data[o++] = color[v * 3 + 2]!;
+      }
+      if (uv) {
+        data[o++] = uv[v * 2]!;
+        data[o++] = uv[v * 2 + 1]!;
+      }
+    }
+    const patch = fillHole(data, dims);
+    if (!patch) {
+      failed += 1;
+      continue;
+    }
+    const first = baseCount + addPos.length / 3;
+    const added = patch.verts.length / dims;
+    for (let i = 0; i < added; i += 1) {
+      let o = i * dims;
+      addPos.push(patch.verts[o++]!, patch.verts[o++]!, patch.verts[o++]!);
+      if (color) addColor.push(patch.verts[o++]!, patch.verts[o++]!, patch.verts[o++]!);
+      if (uv) addUv.push(patch.verts[o++]!, patch.verts[o++]!);
+    }
+    for (const ref of patch.tris) {
+      addTris.push(ref < n ? loop.verts[ref]! : first + (ref - n));
+    }
+    filled += 1;
+  }
+  const total = baseCount + addPos.length / 3;
+  const nextPos = new Float32Array(total * 3);
+  nextPos.set(positions);
+  nextPos.set(addPos, baseCount * 3);
+  const nextIndex = new Uint32Array(index.length + addTris.length);
+  nextIndex.set(index);
+  nextIndex.set(addTris, index.length);
+  let nextColor: Float32Array | null = null;
+  if (color) {
+    nextColor = new Float32Array(total * 3);
+    nextColor.set(color.subarray(0, baseCount * 3));
+    nextColor.set(addColor, baseCount * 3);
+  }
+  let nextUv: Float32Array | null = null;
+  if (uv) {
+    nextUv = new Float32Array(total * 2);
+    nextUv.set(uv.subarray(0, baseCount * 2));
+    nextUv.set(addUv, baseCount * 2);
+  }
+  return { positions: nextPos, index: nextIndex, color: nextColor, uv: nextUv, filled, failed };
+}
+
 export class ScanMeshEditController {
   private spec: ScanMeshEdit | null = null;
   private readonly states = new Map<string, EntryState>();
@@ -142,8 +253,18 @@ export class ScanMeshEditController {
     pending: PointerEvent | null;
   } | null = null;
   private flushTimer = 0;
+  private toothSerial = 0;
+  private activeTooth: string | null = null;
+  private findTimer = 0;
+  private readonly findNote: HTMLDivElement;
 
   constructor(private readonly host: Host) {
+    const note = document.createElement("div");
+    note.textContent = "경계를 찾는 중…";
+    note.style.cssText =
+      "position:absolute;left:0;top:0;display:none;pointer-events:none;z-index:7;transform:translate(-50%,-140%);padding:2px 8px;border-radius:6px;font-size:11px;color:#fff;background:rgba(3,105,161,0.9);white-space:nowrap;";
+    host.overlay.appendChild(note);
+    this.findNote = note;
     const ring = document.createElement("div");
     ring.style.cssText =
       "position:absolute;left:0;top:0;display:none;pointer-events:none;z-index:6;border-radius:9999px;border:1.5px solid rgb(8 145 178);background:rgba(34,211,238,0.08);transform:translate(-50%,-50%);";
@@ -179,9 +300,11 @@ export class ScanMeshEditController {
     dom.removeEventListener("pointercancel", this.onUp, true);
     dom.removeEventListener("pointerleave", this.onLeave);
     window.clearTimeout(this.flushTimer);
+    window.clearTimeout(this.findTimer);
     for (const id of [...this.states.keys()]) this.dropState(id);
     this.ring.remove();
     this.lassoSvg.remove();
+    this.findNote.remove();
   }
 
   setSpec(next: ScanMeshEdit | null) {
@@ -189,13 +312,18 @@ export class ScanMeshEditController {
     this.spec = next;
     if (!next) {
       this.cancelGestures();
+      this.cancelFind();
       for (const id of [...this.states.keys()]) this.dropState(id);
       this.ring.style.display = "none";
       this.emit();
       return;
     }
     if (prev && prev.tab !== next.tab) {
-      for (const state of this.states.values()) this.clearSelection(state);
+      this.cancelFind();
+      for (const state of this.states.values()) {
+        this.clearSelection(state);
+        this.clearTeeth(state);
+      }
     }
     if (next.tab !== "fill") {
       for (const state of this.states.values()) this.removeLoopLines(state);
@@ -210,6 +338,7 @@ export class ScanMeshEditController {
     }
     if (next.tab === "trim" && next.trimTool !== "brush") this.ring.style.display = "none";
     if (next.tab === "fill") this.ring.style.display = "none";
+    if (next.tab === "extract" && next.extractTool !== "brush") this.ring.style.display = "none";
     this.emit();
   }
 
@@ -262,9 +391,44 @@ export class ScanMeshEditController {
   clearAll() {
     for (const state of this.states.values()) {
       this.clearSelection(state);
+      this.clearTeeth(state);
       state.pickedLoops.clear();
       this.syncLoopLines(state);
     }
+    this.emit();
+  }
+
+  extract(action: ExtractAction) {
+    if (action.kind === "activate") {
+      this.activeTooth = action.key;
+      for (const state of this.states.values()) this.syncTeeth(state);
+      this.emit();
+      return;
+    }
+    if (action.kind === "remove") {
+      for (const state of this.states.values()) {
+        const at = state.teeth.findIndex((row) => row.key === action.key);
+        if (at < 0) continue;
+        state.teeth.splice(at, 1);
+        this.syncTeeth(state);
+      }
+      if (this.activeTooth === action.key) this.activeTooth = null;
+      this.emit();
+      return;
+    }
+    const found = this.findActiveTooth();
+    if (!found) return;
+    const { state, tooth } = found;
+    if (action.kind === "restore") {
+      tooth.seg.field.set(tooth.auto);
+    } else {
+      const rings = Math.max(
+        1,
+        Math.round(EXTRACT_GROW_MM / Math.max(this.host.unitToMm(), 1e-9) / Math.max(tooth.seg.edge, 1e-9)),
+      );
+      growToothField(state.topo, tooth.seg, rings, action.kind === "grow");
+    }
+    this.syncTeeth(state);
     this.emit();
   }
 
@@ -310,7 +474,66 @@ export class ScanMeshEditController {
     if (!spec) return { kind: "empty" };
     if (spec.tab === "trim") return this.applyTrim();
     if (spec.tab === "fill") return this.applyFill();
+    if (spec.tab === "extract") return this.applyExtract();
     return { kind: "empty" };
+  }
+
+  private applyExtract(): MeshEditApplyResult {
+    const jobs: Array<{ target: MeshEditTarget; state: EntryState }> = [];
+    for (const target of this.visibleTargets()) {
+      const state = this.states.get(target.id);
+      if (state && state.teeth.length > 0) jobs.push({ target, state });
+    }
+    if (jobs.length === 0) return { kind: "empty" };
+    const unit = Math.max(this.host.unitToMm(), 1e-9);
+    const shapes: Array<{ id: string; shape: ScanShapeEdit }> = [];
+    let teeth = 0;
+    for (const { target, state } of jobs) {
+      const mask = this.teethMask(state);
+      const edge =
+        state.teeth.reduce((sum, row) => sum + row.seg.edge, 0) / Math.max(state.teeth.length, 1);
+      closeMask(state.topo, mask, Math.max(1, Math.round(EXTRACT_CLOSE_MM / unit / Math.max(edge, 1e-9))));
+      if (maskTouchesMeshBoundary(state.topo, mask)) return { kind: "extractFailed", reason: "edge" };
+      const sockets = maskComponentCount(state.topo, mask);
+      const rim = maskRim(state.topo, mask);
+      const cut = trimSelected(state.topo, mask);
+      if (!cut) continue;
+      if (cut.index.length === 0) return { kind: "whole" };
+      const positions = gather(state.position.array as Float32Array, cut.keep, 3)!;
+      const color = gather(readTriple(target.scanColor), cut.keep, 3);
+      const uv = gather(readPair(state.geometry.getAttribute("uv")), cut.keep, 2);
+      const topo = buildTopology(cut.index, cut.keep.length);
+      const loops = holeLoops(topo, positions, vertexComponents(topo).comp).filter((loop) => {
+        let onRim = 0;
+        for (const v of loop.verts) if (rim[cut.keep[v]!]) onRim += 1;
+        return onRim * 2 >= loop.verts.length;
+      });
+      if (loops.length < sockets) return { kind: "extractFailed", reason: "fill" };
+      const patched = appendHoleFills({ positions, color, uv, index: cut.index, loops });
+      if (patched.failed > 0) return { kind: "extractFailed", reason: "fill" };
+      const origin = new Int32Array(patched.positions.length / 3).fill(-1);
+      origin.set(cut.keep);
+      shapes.push({
+        id: target.id,
+        shape: {
+          positions: patched.positions,
+          index: patched.index,
+          color: patched.color,
+          uv: patched.uv,
+          origin,
+        },
+      });
+      teeth += state.teeth.length;
+    }
+    if (shapes.length === 0) return { kind: "empty" };
+    this.host.onBegin();
+    for (const { id, shape } of shapes) {
+      this.dropState(id);
+      this.host.replaceShape(id, shape);
+    }
+    this.activeTooth = null;
+    this.emit();
+    return { kind: "extracted", teeth };
   }
 
   private applyTrim(): MeshEditApplyResult {
@@ -357,79 +580,34 @@ export class ScanMeshEditController {
     for (const target of this.visibleTargets()) {
       const state = this.states.get(target.id);
       if (!state || state.pickedLoops.size === 0 || !state.loops) continue;
-      const positions = state.position.array as Float32Array;
-      const color = readTriple(target.scanColor);
-      const uv = readPair(state.geometry.getAttribute("uv"));
-      const dims = 3 + (color ? 3 : 0) + (uv ? 2 : 0);
-      const baseCount = state.position.count;
-      const addPos: number[] = [];
-      const addColor: number[] = [];
-      const addUv: number[] = [];
-      const addTris: number[] = [];
+      const loops: BoundaryLoop[] = [];
       for (const at of state.pickedLoops) {
         const loop = state.loops[at];
-        if (!loop) continue;
-        const n = loop.verts.length;
-        const data = new Float32Array(n * dims);
-        for (let i = 0; i < n; i += 1) {
-          const v = loop.verts[i]!;
-          let o = i * dims;
-          data[o++] = positions[v * 3]!;
-          data[o++] = positions[v * 3 + 1]!;
-          data[o++] = positions[v * 3 + 2]!;
-          if (color) {
-            data[o++] = color[v * 3]!;
-            data[o++] = color[v * 3 + 1]!;
-            data[o++] = color[v * 3 + 2]!;
-          }
-          if (uv) {
-            data[o++] = uv[v * 2]!;
-            data[o++] = uv[v * 2 + 1]!;
-          }
-        }
-        const patch = fillHole(data, dims);
-        if (!patch) {
-          failed += 1;
-          continue;
-        }
-        const first = baseCount + addPos.length / 3;
-        const added = patch.verts.length / dims;
-        for (let i = 0; i < added; i += 1) {
-          let o = i * dims;
-          addPos.push(patch.verts[o++]!, patch.verts[o++]!, patch.verts[o++]!);
-          if (color) addColor.push(patch.verts[o++]!, patch.verts[o++]!, patch.verts[o++]!);
-          if (uv) addUv.push(patch.verts[o++]!, patch.verts[o++]!);
-        }
-        for (const ref of patch.tris) {
-          addTris.push(ref < n ? loop.verts[ref]! : first + (ref - n));
-        }
-        filled += 1;
+        if (loop) loops.push(loop);
       }
-      if (addTris.length === 0) continue;
-      const total = baseCount + addPos.length / 3;
-      const nextPos = new Float32Array(total * 3);
-      nextPos.set(positions.subarray(0, baseCount * 3));
-      nextPos.set(addPos, baseCount * 3);
-      const nextIndex = new Uint32Array(state.topo.index.length + addTris.length);
-      nextIndex.set(state.topo.index);
-      nextIndex.set(addTris, state.topo.index.length);
-      let nextColor: Float32Array | null = null;
-      if (color) {
-        nextColor = new Float32Array(total * 3);
-        nextColor.set(color);
-        nextColor.set(addColor, baseCount * 3);
-      }
-      let nextUv: Float32Array | null = null;
-      if (uv) {
-        nextUv = new Float32Array(total * 2);
-        nextUv.set(uv);
-        nextUv.set(addUv, baseCount * 2);
-      }
+      const baseCount = state.position.count;
+      const patched = appendHoleFills({
+        positions: (state.position.array as Float32Array).subarray(0, baseCount * 3),
+        color: readTriple(target.scanColor),
+        uv: readPair(state.geometry.getAttribute("uv")),
+        index: state.topo.index,
+        loops,
+      });
+      filled += patched.filled;
+      failed += patched.failed;
+      if (patched.filled === 0) continue;
+      const total = patched.positions.length / 3;
       const origin = new Int32Array(total).fill(-1);
       for (let i = 0; i < baseCount; i += 1) origin[i] = i;
       shapes.push({
         id: target.id,
-        shape: { positions: nextPos, index: nextIndex, color: nextColor, uv: nextUv, origin },
+        shape: {
+          positions: patched.positions,
+          index: patched.index,
+          color: patched.color,
+          uv: patched.uv,
+          origin,
+        },
       });
     }
     if (shapes.length === 0) return failed > 0 ? { kind: "filled", holes: 0, failed } : { kind: "empty" };
@@ -465,14 +643,177 @@ export class ScanMeshEditController {
     let selected = 0;
     let holes = 0;
     let selectedHoles = 0;
+    const all: ExtractTooth[] = [];
     for (const target of this.visibleTargets()) {
       const state = this.states.get(target.id);
       if (!state) continue;
       selected += state.selectedCount;
       holes += state.loops?.length ?? 0;
       selectedHoles += state.pickedLoops.size;
+      all.push(...state.teeth);
     }
-    this.host.onStatus({ selected, holes, selectedHoles });
+    all.sort((a, b) => a.serial - b.serial);
+    if (all.length === 0) this.toothSerial = 0;
+    if (!all.some((row) => row.key === this.activeTooth)) {
+      const next = all[all.length - 1]?.key ?? null;
+      if (next !== this.activeTooth) {
+        this.activeTooth = next;
+        for (const state of this.states.values()) this.syncTeeth(state);
+      }
+    }
+    const teeth: ExtractToothStatus[] = all.map((row) => ({
+      key: row.key,
+      label: `#${row.serial}`,
+      active: row.key === this.activeTooth,
+      weak: row.seg.weak,
+    }));
+    this.host.onStatus({
+      selected,
+      holes,
+      selectedHoles,
+      teeth,
+      finding: this.findTimer !== 0,
+    });
+  }
+
+  private cancelFind() {
+    if (this.findTimer) window.clearTimeout(this.findTimer);
+    this.findTimer = 0;
+    this.findNote.style.display = "none";
+  }
+
+  private clearTeeth(state: EntryState) {
+    if (state.teeth.length === 0) return;
+    state.teeth = [];
+    this.syncTeeth(state);
+  }
+
+  private findActiveTooth() {
+    for (const state of this.states.values()) {
+      const tooth = state.teeth.find((row) => row.key === this.activeTooth);
+      if (tooth) return { state, tooth };
+    }
+    return null;
+  }
+
+  private toothAt(state: EntryState, v: number) {
+    return (
+      state.teeth.find((row) => {
+        const j = row.seg.local[v]!;
+        return j >= 0 && row.seg.field[j]! >= 0.5;
+      }) ?? null
+    );
+  }
+
+  private teethMask(state: EntryState) {
+    const mask = new Uint8Array(state.topo.vertexCount);
+    for (const tooth of state.teeth) {
+      const { patch, field } = tooth.seg;
+      for (let i = 0; i < patch.length; i += 1) if (field[i]! >= 0.5) mask[patch[i]!] = 1;
+    }
+    return mask;
+  }
+
+  private removeToothVisuals(state: EntryState) {
+    if (state.toothOverlay) {
+      state.mesh.remove(state.toothOverlay);
+      disposeTree(state.toothOverlay);
+      state.toothOverlay.geometry.dispose();
+      state.toothOverlay = null;
+    }
+    if (state.toothLines) {
+      state.mesh.remove(state.toothLines);
+      disposeTree(state.toothLines);
+      state.toothLines = null;
+    }
+  }
+
+  /** 고른 치아를 옅게 칠하고 경계선을 그린다. 고친 치아는 진한 선이다. */
+  private syncTeeth(state: EntryState) {
+    if (this.spec?.tab !== "extract" || state.teeth.length === 0) {
+      this.removeToothVisuals(state);
+      return;
+    }
+    const index = state.topo.index;
+    if (!state.toothOverlay) {
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute("position", state.position);
+      geometry.setIndex(new THREE.BufferAttribute(new Uint32Array(index.length), 1));
+      const mesh = new THREE.Mesh(
+        geometry,
+        new THREE.MeshBasicMaterial({
+          color: TOOTH_RGB,
+          transparent: true,
+          opacity: 0.32,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+          polygonOffset: true,
+          polygonOffsetFactor: -2,
+          polygonOffsetUnits: -2,
+          toneMapped: false,
+        }),
+      );
+      mesh.userData.sharedGeometry = true;
+      mesh.userData.meshEditOverlay = true;
+      mesh.renderOrder = 5;
+      mesh.frustumCulled = false;
+      mesh.raycast = () => {};
+      state.mesh.add(mesh);
+      state.toothOverlay = mesh;
+    }
+    const mask = this.teethMask(state);
+    const attr = state.toothOverlay.geometry.getIndex()!;
+    const out = attr.array as Uint32Array;
+    const drawn = new Uint8Array(index.length / 3);
+    let count = 0;
+    for (const tooth of state.teeth) {
+      for (const t of tooth.seg.tris) {
+        if (drawn[t]) continue;
+        const a = index[t * 3]!;
+        const b = index[t * 3 + 1]!;
+        const c = index[t * 3 + 2]!;
+        if (!mask[a] || !mask[b] || !mask[c]) continue;
+        drawn[t] = 1;
+        out[count] = a;
+        out[count + 1] = b;
+        out[count + 2] = c;
+        count += 3;
+      }
+    }
+    attr.needsUpdate = true;
+    state.toothOverlay.geometry.setDrawRange(0, count);
+
+    if (state.toothLines) {
+      state.mesh.remove(state.toothLines);
+      disposeTree(state.toothLines);
+    }
+    const positions = state.position.array as Float32Array;
+    const group = new THREE.Group();
+    group.userData.meshEditLoops = true;
+    for (const tooth of state.teeth) {
+      const active = tooth.key === this.activeTooth;
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute(
+        "position",
+        new THREE.BufferAttribute(toothBorderSegments(state.topo, positions, tooth.seg), 3),
+      );
+      const line = new THREE.LineSegments(
+        geometry,
+        new THREE.LineBasicMaterial({
+          color: active ? TOOTH_ACTIVE_LINE_RGB : TOOTH_LINE_RGB,
+          depthTest: false,
+          transparent: true,
+          opacity: active ? 1 : 0.8,
+          toneMapped: false,
+        }),
+      );
+      line.renderOrder = active ? 8 : 7;
+      line.frustumCulled = false;
+      line.raycast = () => {};
+      group.add(line);
+    }
+    state.mesh.add(group);
+    state.toothLines = group;
   }
 
   private scheduleEmit() {
@@ -488,6 +829,7 @@ export class ScanMeshEditController {
     if (!state) return;
     this.removeOverlay(state);
     this.removeLoopLines(state);
+    this.removeToothVisuals(state);
     this.states.delete(id);
   }
 
@@ -534,6 +876,9 @@ export class ScanMeshEditController {
       pickedLoops: new Set(),
       overlay: null,
       loopLines: null,
+      teeth: [],
+      toothOverlay: null,
+      toothLines: null,
     };
     this.states.set(target.id, state);
     return state;
@@ -712,14 +1057,23 @@ export class ScanMeshEditController {
   private brushRadius() {
     const spec = this.spec;
     if (!spec) return 0;
-    const mm = spec.tab === "sculpt" ? spec.sculptBrushMm : spec.trimBrushMm;
+    const mm =
+      spec.tab === "sculpt"
+        ? spec.sculptBrushMm
+        : spec.tab === "extract"
+          ? spec.extractBrushMm
+          : spec.trimBrushMm;
     return mm / 2 / Math.max(this.host.unitToMm(), 1e-9);
   }
 
   private usesRing() {
     const spec = this.spec;
     if (!spec) return false;
-    return spec.tab === "sculpt" || (spec.tab === "trim" && spec.trimTool === "brush");
+    return (
+      spec.tab === "sculpt" ||
+      (spec.tab === "trim" && spec.trimTool === "brush") ||
+      (spec.tab === "extract" && spec.extractTool === "brush")
+    );
   }
 
   private moveRing(event: PointerEvent) {
@@ -754,9 +1108,113 @@ export class ScanMeshEditController {
     }
   }
 
+  /** 누른 치아의 경계를 찾는다. 계산 전에 안내를 한 번 그리도록 잠깐 미룬다. */
+  private pickTooth(event: PointerEvent) {
+    if (this.findTimer) return;
+    const found = this.hitTargets(event);
+    if (!found?.hit.face) return;
+    const target = found.target;
+    const state = this.stateOf(target);
+    if (!state) return;
+    const local = target.mesh.worldToLocal(found.hit.point.clone());
+    const positions = state.position.array as Float32Array;
+    const face = found.hit.face;
+    let seed = face.a;
+    let best = Infinity;
+    for (const v of [face.a, face.b, face.c]) {
+      const d = Math.hypot(
+        positions[v * 3]! - local.x,
+        positions[v * 3 + 1]! - local.y,
+        positions[v * 3 + 2]! - local.z,
+      );
+      if (d < best) {
+        best = d;
+        seed = v;
+      }
+    }
+    const existing = this.toothAt(state, seed);
+    if (existing) {
+      this.extract({ kind: "activate", key: existing.key });
+      return;
+    }
+    const overlayRect = this.host.overlay.getBoundingClientRect();
+    this.findNote.style.left = `${event.clientX - overlayRect.left}px`;
+    this.findNote.style.top = `${event.clientY - overlayRect.top}px`;
+    this.findNote.style.display = "block";
+    this.findTimer = window.setTimeout(() => {
+      this.findTimer = 0;
+      this.findNote.style.display = "none";
+      if (this.spec?.tab !== "extract" || this.states.get(target.id) !== state) {
+        this.emit();
+        return;
+      }
+      const seg = segmentTooth({
+        topo: state.topo,
+        positions: state.position.array as Float32Array,
+        color: readTriple(target.scanColor),
+        seed,
+        unitToMm: this.host.unitToMm(),
+        blocked: (v) => this.toothAt(state, v) != null,
+      });
+      if (seg) {
+        this.toothSerial += 1;
+        const key = `${target.id}:${this.toothSerial}`;
+        state.teeth.push({ key, serial: this.toothSerial, seg, auto: seg.field.slice() });
+        this.activeTooth = key;
+        for (const row of this.states.values()) this.syncTeeth(row);
+      }
+      this.emit();
+    }, 30);
+    this.emit();
+  }
+
+  private paintTooth(event: PointerEvent) {
+    const spec = this.spec;
+    const found = this.hitTargets(event);
+    if (!spec || !found) return;
+    const state = this.stateOf(found.target);
+    const tooth = state?.teeth.find((row) => row.key === this.activeTooth);
+    if (!state || !tooth) return;
+    const local = found.target.mesh.worldToLocal(found.hit.point.clone());
+    const facing = found.hit.face!.normal;
+    const normals = state.geometry.getAttribute("normal") as THREE.BufferAttribute | undefined;
+    const positions = state.position.array as Float32Array;
+    const radius = this.brushRadius();
+    const picked = verticesInBrush(
+      positions,
+      normals?.array instanceof Float32Array ? normals.array : null,
+      [local.x, local.y, local.z],
+      [facing.x, facing.y, facing.z],
+      radius,
+    );
+    const { field } = tooth.seg;
+    const r2 = radius * radius;
+    let changed = false;
+    for (const v of picked) {
+      const j = tooth.seg.local[v]!;
+      if (j < 0) continue;
+      const dx = positions[v * 3]! - local.x;
+      const dy = positions[v * 3 + 1]! - local.y;
+      const dz = positions[v * 3 + 2]! - local.z;
+      const t = Math.max(0, 1 - (dx * dx + dy * dy + dz * dz) / r2);
+      const next =
+        spec.selectMode === "add"
+          ? Math.max(field[j]!, 0.5 + 0.5 * t * t)
+          : Math.min(field[j]!, 0.5 - 0.01 - 0.49 * t * t);
+      if (next === field[j]) continue;
+      field[j] = next;
+      changed = true;
+    }
+    if (changed) this.syncTeeth(state);
+  }
+
   private paintAt(event: PointerEvent) {
     const spec = this.spec;
     if (!spec) return;
+    if (spec.tab === "extract") {
+      this.paintTooth(event);
+      return;
+    }
     const found = this.hitTargets(event);
     if (!found) return;
     const state = this.stateOf(found.target);
@@ -970,8 +1428,13 @@ export class ScanMeshEditController {
       this.grab(event);
       return;
     }
-    if (spec.tab === "trim" && spec.trimTool === "brush") {
-      if (!this.hitTargets(event)) return;
+    const extractBrush = spec.tab === "extract" && spec.extractTool === "brush";
+    if ((spec.tab === "trim" && spec.trimTool === "brush") || extractBrush) {
+      const found = this.hitTargets(event);
+      if (!found) return;
+      if (extractBrush && !this.states.get(found.target.id)?.teeth.some((row) => row.key === this.activeTooth)) {
+        return;
+      }
       this.paint = { pointerId: event.pointerId, at: performance.now(), pending: null };
       this.grab(event);
       this.paintAt(event);
@@ -1078,6 +1541,7 @@ export class ScanMeshEditController {
     if (Math.hypot(event.clientX - start.x, event.clientY - start.y) > CLICK_SLOP_PX) return;
     if (spec.tab === "trim" && spec.trimTool === "piece") this.selectPiece(event);
     else if (spec.tab === "fill") this.pickLoop(event);
+    else if (spec.tab === "extract" && spec.extractTool === "pick") this.pickTooth(event);
   };
 
   private readonly onLeave = () => {

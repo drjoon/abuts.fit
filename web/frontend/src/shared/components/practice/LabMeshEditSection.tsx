@@ -1,16 +1,20 @@
-// 기공소 AI 보철 — 스캔 단계 메시 편집. 다듬기·구멍 메우기·조각.
+// 기공소 AI 보철 — 스캔 단계 메시 편집. 다듬기·구멍 메우기·조각·가상 발치.
 // - 2026-09-28: 디자인 전에 스캔을 정리한다. 보이는 스캔만 편집하고, 바뀐 스캔은 작업 스캔으로 저장한다.
+// - 2026-09-30: 발치 탭. 치아를 눌러 고르고 경계를 고친 뒤 적용하면 지우고 발치와를 메운다.
 
 import type { ReactNode } from "react";
+import { X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { cn } from "@/shared/ui/cn";
 import {
   MESH_EDIT_BRUSH_RANGE_MM,
   SCULPT_TOOLS,
   TRIM_TOOLS,
+  type ExtractAction,
   type MeshEditTab,
   type ScanMeshEdit,
   type ScanMeshEditStatus,
@@ -50,6 +54,17 @@ const TABS: ReadonlyArray<{ id: MeshEditTab; label: string; tip: ReactNode }> = 
         인접치 주변 거친 면이나 파편을 손봅니다.
         <br />
         손을 떼면 바로 반영됩니다.
+      </>
+    ),
+  },
+  {
+    id: "extract",
+    label: "발치",
+    tip: (
+      <>
+        뺄 치아를 스캔에서 지웁니다.
+        <br />
+        발치 자리는 주변 잇몸 곡면에 맞춰 메웁니다.
       </>
     ),
   },
@@ -152,6 +167,7 @@ export function MeshEditSection({
   onClear,
   onSelectLoose,
   onPickAllHoles,
+  onExtract,
 }: {
   edit: ScanMeshEdit | null;
   status: ScanMeshEditStatus;
@@ -163,8 +179,10 @@ export function MeshEditSection({
   onClear: () => void;
   onSelectLoose: () => void;
   onPickAllHoles: (on: boolean) => void;
+  onExtract: (action: ExtractAction) => void;
 }) {
   const hasSelection = status.selected > 0;
+  const activeTooth = status.teeth.find((row) => row.active) ?? null;
   return (
     <section className="space-y-2" data-coach="mesh-edit">
       <Tooltip>
@@ -188,7 +206,7 @@ export function MeshEditSection({
       </Tooltip>
       {edit ? (
         <div className="space-y-2.5">
-          <div className="grid grid-cols-3 gap-1">
+          <div className="grid grid-cols-4 gap-1">
             {TABS.map((tab) => (
               <TipButton
                 key={tab.id}
@@ -336,6 +354,131 @@ export function MeshEditSection({
                 <br />
                 빈 곳을 끌면 화면이 돕니다.
               </p>
+            </div>
+          ) : null}
+
+          {edit.tab === "extract" ? (
+            <div className="space-y-2">
+              <div className="grid grid-cols-2 gap-1">
+                <TipButton
+                  active={edit.extractTool === "pick"}
+                  tip="스캔에서 뺄 치아를 누릅니다. 경계는 자동으로 찾습니다."
+                  onClick={() => onPatch({ extractTool: "pick" })}
+                >
+                  치아 고르기
+                </TipButton>
+                <TipButton
+                  active={edit.extractTool === "brush"}
+                  disabled={!activeTooth}
+                  tip="고른 치아의 경계를 칠해서 넓히거나 줄입니다."
+                  onClick={() => onPatch({ extractTool: "brush" })}
+                >
+                  경계 브러시
+                </TipButton>
+              </div>
+
+              {status.teeth.length > 0 ? (
+                <div className="flex flex-wrap gap-1">
+                  {status.teeth.map((tooth) => (
+                    <span
+                      key={tooth.key}
+                      className={cn(
+                        "inline-flex h-6 items-center gap-0.5 rounded-full border pl-2 pr-1 text-[11px] font-medium",
+                        tooth.active
+                          ? "border-sky-700 bg-sky-50 text-sky-800"
+                          : "border-border text-muted-foreground",
+                      )}
+                    >
+                      <button
+                        type="button"
+                        className="tabular-nums"
+                        onClick={() => onExtract({ kind: "activate", key: tooth.key })}
+                      >
+                        {tooth.label}
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-full p-0.5 hover:bg-muted"
+                        aria-label={`${tooth.label} 빼기`}
+                        onClick={() => onExtract({ kind: "remove", key: tooth.key })}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+
+              <p className="text-[11px] leading-relaxed text-muted-foreground">
+                {status.finding ? (
+                  "치아 경계를 찾는 중입니다."
+                ) : status.teeth.length === 0 ? (
+                  <>
+                    스캔에서 뺄 치아를 누르세요.
+                    <br />
+                    여러 개를 고를 수 있습니다.
+                  </>
+                ) : activeTooth?.weak ? (
+                  <>
+                    {activeTooth.label} 경계가 흐려 넓게 잡혔을 수 있습니다.
+                    <br />
+                    경계 브러시로 잇몸 쪽을 빼세요.
+                  </>
+                ) : (
+                  <>
+                    파란 선이 발치 경계입니다.
+                    <br />
+                    맞지 않으면 넓히기·좁히기나 경계 브러시로 고치세요.
+                  </>
+                )}
+              </p>
+
+              {edit.extractTool === "brush" && activeTooth ? (
+                <>
+                  <div className="grid grid-cols-2 gap-1">
+                    <TipButton
+                      active={edit.selectMode === "add"}
+                      tip="칠한 곳을 치아에 넣습니다."
+                      onClick={() => onPatch({ selectMode: "add" })}
+                    >
+                      더하기
+                    </TipButton>
+                    <TipButton
+                      active={edit.selectMode === "remove"}
+                      tip="칠한 곳을 치아에서 뺍니다."
+                      onClick={() => onPatch({ selectMode: "remove" })}
+                    >
+                      빼기
+                    </TipButton>
+                  </div>
+                  <BrushSlider
+                    label="브러시 크기"
+                    value={edit.extractBrushMm}
+                    onChange={(mm) => onPatch({ extractBrushMm: mm })}
+                  />
+                </>
+              ) : null}
+
+              <div className="grid grid-cols-3 gap-1">
+                <SmallButton disabled={!activeTooth} onClick={() => onExtract({ kind: "grow" })}>
+                  넓히기
+                </SmallButton>
+                <SmallButton disabled={!activeTooth} onClick={() => onExtract({ kind: "shrink" })}>
+                  좁히기
+                </SmallButton>
+                <SmallButton disabled={!activeTooth} onClick={() => onExtract({ kind: "restore" })}>
+                  되돌리기
+                </SmallButton>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                className="h-8 w-full text-xs"
+                disabled={status.teeth.length === 0 || status.finding}
+                onClick={onApply}
+              >
+                발치 적용
+              </Button>
             </div>
           ) : null}
         </div>
