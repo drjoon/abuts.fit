@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-09-29: Chrome 「로컬 네트워크 액세스」 권한 창이 떠 있으면 답할 때까지 기다린다
+//   (0.5초에 끊으면 설치돼 있어도 없는 것으로 보여 설치 안내·브라우저 저장만 반복).
 // - 2026-09-27: Mac 연결 프로그램 v3 — Windows와 같은 API. OS별 설치본(Windows exe, Mac .app zip).
 // - 2026-09-27: Windows 연결 프로그램 v3 클라이언트 — 작업 폴더, 케이스 폴더 확인·저장·열기.
 //   설치본은 exe 하나(동의 한 번, 관리자 권한 없음). 로그인 때마다 창 없이 127.0.0.1:8010에서 대기.
@@ -97,6 +99,32 @@ export class LabHelperError extends Error {
   }
 }
 
+export type LabHelperNetworkPermission = "granted" | "prompt" | "denied" | "unknown";
+
+/** Chrome·Edge 「로컬 네트워크 액세스」 권한. 이름이 버전마다 달라 차례로 묻는다. */
+export async function readLabHelperNetworkPermission(): Promise<LabHelperNetworkPermission> {
+  const permissions = typeof navigator !== "undefined" ? navigator.permissions : undefined;
+  if (!permissions?.query) return "unknown";
+  for (const name of ["loopback-network", "local-network-access", "local-network"]) {
+    try {
+      const status = await permissions.query({ name } as unknown as PermissionDescriptor);
+      return status.state;
+    } catch {
+      // 모르는 이름
+    }
+  }
+  return "unknown";
+}
+
+/** 권한 창이 떠 있는 동안 요청을 끊으면 연결 프로그램이 없는 것으로 보인다. */
+const PERMISSION_PROMPT_WAIT_MS = 60_000;
+
+async function pingTimeout(timeoutMs: number): Promise<number> {
+  return (await readLabHelperNetworkPermission()) === "prompt"
+    ? PERMISSION_PROMPT_WAIT_MS
+    : timeoutMs;
+}
+
 async function pingOnce(timeoutMs: number): Promise<LabHelperHealth | null> {
   const ac = new AbortController();
   const timer = window.setTimeout(() => ac.abort(), timeoutMs);
@@ -136,8 +164,9 @@ function wakeLabHelper() {
 export async function findLabHelper(): Promise<LabHelperHealth | null> {
   const os = labHelperOs();
   if (!os) return null;
-  const first = await pingOnce(500);
-  if (first || os !== "windows" || readStorage(INSTALLED_KEY) !== "1") return first;
+  const installed = readStorage(INSTALLED_KEY) === "1";
+  const first = await pingOnce(installed ? await pingTimeout(500) : 500);
+  if (first || os !== "windows" || !installed) return first;
   wakeLabHelper();
   const deadline = Date.now() + 1800;
   while (Date.now() < deadline) {
@@ -148,10 +177,16 @@ export async function findLabHelper(): Promise<LabHelperHealth | null> {
   return null;
 }
 
+/** 한 번만 확인한다. 권한 창이 떠 있으면 답할 때까지 기다린다. */
+export async function probeLabHelper(): Promise<LabHelperHealth | null> {
+  if (!labHelperOs()) return null;
+  return pingOnce(await pingTimeout(600));
+}
+
 /** 설치 안내 창이 열려 있는 동안 연결될 때까지 기다린다. */
 export async function waitForLabHelper(signal: AbortSignal): Promise<LabHelperHealth | null> {
   while (!signal.aborted) {
-    const health = await pingOnce(600);
+    const health = await pingOnce(await pingTimeout(600));
     if (health) return health;
     await new Promise((r) => setTimeout(r, 1000));
   }

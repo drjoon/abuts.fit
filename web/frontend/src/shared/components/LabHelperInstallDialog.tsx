@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-09-29: 열면 먼저 연결 확인 — 이미 떠 있으면 설치 파일을 다시 받지 않고 바로 이어간다.
+//   Chrome 「로컬 네트워크 액세스」를 막았으면 허용 안내를 보인다.
 // - 2026-09-28: 안내 단순화 — 3단계 한 줄씩, 누를 버튼은 칩으로. 예시 그림·부연 문단 제거. 다시 받기는 1단계 옆.
 // - 2026-09-27: Mac 설치 — 단계별 안내(경고 창 「완료」 → 시스템 설정 「그래도 열기」 → 암호 → 설치), 예시 그림, 시스템 설정 바로 열기.
 // - 2026-09-27: Mac 설치본(.app zip)·Gatekeeper 「그래도 열기」 안내.
@@ -19,6 +21,8 @@ import {
 import {
   labHelperInstaller,
   labHelperOs,
+  probeLabHelper,
+  readLabHelperNetworkPermission,
   waitForLabHelper,
   type LabHelperInstaller,
 } from "@/shared/files/labHelperClient";
@@ -70,20 +74,29 @@ export function LabHelperInstallDialog({ open, onResolved }: LabHelperInstallDia
   const isMac = useMemo(() => labHelperOs() === "mac", []);
   const installer = useMemo(() => labHelperInstaller(isMac ? "mac" : "windows"), [isMac]);
   const [connected, setConnected] = useState(false);
+  const [blocked, setBlocked] = useState(false);
   const onResolvedRef = useRef(onResolved);
   onResolvedRef.current = onResolved;
 
   useEffect(() => {
     if (!open) return;
     setConnected(false);
-    startInstallerDownload(installer);
+    setBlocked(false);
     const ac = new AbortController();
     let timer = 0;
-    void waitForLabHelper(ac.signal).then((health) => {
-      if (!health || ac.signal.aborted) return;
+    const done = () => {
       setConnected(true);
       timer = window.setTimeout(() => onResolvedRef.current(true), 600);
-    });
+    };
+    void (async () => {
+      const already = await probeLabHelper();
+      if (ac.signal.aborted) return;
+      if (already) return done();
+      if ((await readLabHelperNetworkPermission()) === "denied") setBlocked(true);
+      else startInstallerDownload(installer);
+      const health = await waitForLabHelper(ac.signal);
+      if (health && !ac.signal.aborted) done();
+    })();
     return () => {
       ac.abort();
       window.clearTimeout(timer);
@@ -120,6 +133,16 @@ export function LabHelperInstallDialog({ open, onResolved }: LabHelperInstallDia
           </DialogDescription>
         </DialogHeader>
 
+        {blocked ? (
+          <p className="mx-5 mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] leading-relaxed text-amber-900">
+            브라우저가 폴더 열기 프로그램 연결을 막고 있습니다.
+            <br />
+            주소창 왼쪽 아이콘 → <Key>로컬 네트워크 액세스</Key> 허용
+            <br />
+            이미 설치했다면 허용만 하면 이어집니다.
+          </p>
+        ) : null}
+
         <ol className="space-y-1.5 px-5 pb-4 text-sm">
           {isMac ? (
             <>
@@ -129,17 +152,13 @@ export function LabHelperInstallDialog({ open, onResolved }: LabHelperInstallDia
               <Step n={2}>
                 경고 창에서 <Key>완료</Key>
               </Step>
-              <Step
-                n={3}
-                aside={
-                  <Button asChild size="sm" variant="outline" className="h-7 shrink-0 px-2 text-xs">
-                    <a href={MAC_PRIVACY_SETTINGS_URL}>
-                      <Settings className="mr-1 h-3.5 w-3.5" />
-                      설정 열기
-                    </a>
-                  </Button>
-                }
-              >
+              <Step n={3}>
+                <Button asChild size="sm" variant="outline" className="mr-1.5 h-7 px-2 align-middle text-xs">
+                  <a href={MAC_PRIVACY_SETTINGS_URL}>
+                    <Settings className="mr-1 h-3.5 w-3.5" />
+                    설정 열기
+                  </a>
+                </Button>
                 맨 아래 <Key>그래도 열기</Key> → 암호
               </Step>
             </>
