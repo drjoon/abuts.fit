@@ -340,7 +340,9 @@ import { completePracticeTransferWork } from "../../services/practiceTransferCom
 // - 2026-08-21: trash/empty — billing rollback 병렬 + 잔액 sync/emit·기공소 unread emit 1회/병렬.
 // - 2026-08-16: 어벗 가공(준비 아님)이면 mark-release 거부·목록 abutmentPastReady.
 // - 2026-09-27: list drafts — 7일 미갱신 임시저장은 휴지통이 아닌 영구 삭제.
-// - 2026-09-26: 생성·수정 전송은 3D 스캔(DCM/PLY/STL/OBJ) 필수. 이미지·빈 첨부는 거부.
+// - 2026-09-29: 생성·수정 전송의 3D 스캔은 선택. 러버인상(석고모델)은 파일 없이 통과.
+//   다시 필수로 바꾸려면 사용자 경고·재확인. (.cursor/rules/practice-oral-scan-optional.mdc)
+// - 2026-09-26: (해제) 생성·수정 전송은 3D 스캔(DCM/PLY/STL/OBJ) 필수. 이미지·빈 첨부는 거부.
 // - 2026-08-19: 생성 시 구강스캔은 선택(어벗츠기공소/자동매칭 포함).
 // - 2026-08-15: 구강스캔 — 자동매칭 CA는 치과 필수, 지정은 수락 시 기공소 업로드 허용.
 // - 2026-08-19: 경로 B — 어벗츠 원청 고정·하청 assignee·30분 우선창·하청 전환.
@@ -3361,6 +3363,7 @@ export async function createPracticeTransfer(req, res) {
     }
 
     try {
+      // 3D 스캔은 선택(러버인상·석고모델). assert는 통과만 한다. 필수로 되돌리려면 사용자 재확인.
       assertOralScanFilesForCreate({
         matchingMode,
         toothWorks: toothWorksRaw,
@@ -4097,6 +4100,7 @@ export async function updatePracticeTransferContent(req, res) {
     }
 
     try {
+      // 3D 스캔은 선택(러버인상·석고모델). assert는 통과만 한다. 필수로 되돌리려면 사용자 재확인.
       assertOralScanFilesForCreate({
         matchingMode,
         toothWorks: toothWorksRaw,

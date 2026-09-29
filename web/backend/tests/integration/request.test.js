@@ -640,15 +640,27 @@ describe("기공의뢰(PracticeTransfer) API", () => {
       ).toBe(0);
     });
 
-    it("3D 스캔 파일이 없으면 400(oral_scan_required)", async () => {
+    it("3D 스캔 없이 사진만 있어도 전송된다(러버인상)", async () => {
       const body = buildTransferBody();
       body.caseInfos[0].file.originalName = "photo.jpg";
-      const res = await request(app)
-        .post("/api/practice/transfers")
-        .set(bearer(practice.token))
-        .send(body)
-        .expect(400);
-      expect(res.body.reason).toBe("oral_scan_required");
+      const res = await createTransfer(body);
+      expect(res.status).toBe(201);
+      const doc = await PracticeTransfer.findOne({
+        transferId: body.transferId,
+      }).lean();
+      expect(doc.files).toHaveLength(1);
+      expect(doc.files[0].file.originalName).toBe("photo.jpg");
+    });
+
+    it("첨부 없이도 전송된다(러버인상·석고모델)", async () => {
+      const body = buildTransferBody();
+      delete body.caseInfos[0].file;
+      const res = await createTransfer(body);
+      expect(res.status).toBe(201);
+      const doc = await PracticeTransfer.findOne({
+        transferId: body.transferId,
+      }).lean();
+      expect(doc.files || []).toHaveLength(0);
     });
 
     it("기공소(lab) 계정은 발신할 수 없고, 치과 계정은 수신함을 볼 수 없다(403)", async () => {

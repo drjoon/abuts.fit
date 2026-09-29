@@ -311,6 +311,7 @@
   - **발신**: `requestor` + `practice` (의뢰 발신자)
   - **수신**: `requestor` + `lab` (의뢰 수신자)
   - 제출은 Request 생성 경유 금지. 저장 SSOT: `PracticeTransfer`
+  - **3D 스캔은 선택**. 첨부가 없거나 사진만 있어도 기공소로 전송된다. 러버인상(석고모델)도 이 경로를 쓴다. 다시 필수로 바꾸려면 사용자에게 경고하고 재확인한 뒤에만. SSOT: `.cursor/rules/practice-oral-scan-optional.mdc`
   - **완료 뱃지** (`isPracticeRecentFinishedBadgeStatus` · 서버 `isPracticeTransferFinishedBadge`): 표시 단계 `작업완료`(보철 업로드 또는 치과도착일 자동 완료)이고 어벗 뱃지가 없을 때. 어벗은 생산진행·포장.발송 또는 designFiles·designReadyAt. 집계·필터·목록·채팅·번호표는 이 판정만. 필터 문구는 의뢰·작업시작·완료·취소·어벗.
 - 환봉방식 커스텀어벗: 치과 프리셋 편집 제조사 선택 마지막「제조사 추가 요청」→ 제조사·브랜드·패밀리 입력, 타입 `헥스(사이즈 미정)` 고정. 요청 시 관리자 문의 자동 접수 + 프리셋 일단 저장. 관리자 플랫폼 설정에서 도입 체크 시 해당 치과 프리셋 정식 채택(되돌리기 가능). 가격 안내는 별도 고지. 프리셋 편집 패밀리 선택은 Regular / Mini / Narrow / Small Narrow +「패밀리 추가」. 기공의뢰 기공비 툴팁 컬럼 순서: 기공소 기공물 / 기공소 어벗 / 어벗츠 어벗. **PTX CA(환봉 요청중·도입·CNC) 치과 청구는 기공소 `커스텀어벗` 수가.** 어벗츠 플랫폼 단가(생산 1.5만·디자인+생산 2.5만)는 **기공소→어벗츠 Request**.
 - SSOT API:

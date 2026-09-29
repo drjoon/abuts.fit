@@ -172,6 +172,8 @@ Notes:
   - `src/shared/components/practice/PracticeTransferFileDropTarget.tsx`
   - `src/shared/practice/practiceRecentTransferList.ts`
   - `src/shared/practice/practiceTransferAccept.ts`
+  - `src/shared/practice/oralScanRequirement.ts` — 신규의뢰 3D 스캔은 선택. 러버인상(석고모델)은 파일 없이 전송. 다시 필수로 바꾸려면 사용자 재확인(`.cursor/rules/practice-oral-scan-optional.mdc`).
+  - `src/shared/practice/OralScanOptionalAttachmentNote.tsx`
   - `src/shared/files/extractDroppedFiles.ts`
   - `src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx`
     - 보철물 치식: 치아만 마키 → 각각 크라운. 드래그 경로가 `+`를 지나거나 `+` 클릭 → 브리지. 형태 글자 클릭 → 인레이→크라운→커스텀어벗→임시치아 / 브리지↔Pontic↔작업X↔유지장치↔임시치아. 유지장치는 브리지 계열(2치 이상 연결 필수). 임시치아는 1치부터 n치(단독·연결). 연결 스팬에서 유지장치·임시치아는 한쪽 변경 시 연결된 치아 전체가 같은 형태. `+`로 이을 때 한쪽이 임시치아이면 스팬 전체를 임시치아로 맞춘다. 유지장치에서 브리지 등으로 돌아오면 클릭하지 않은 치아는 진입 직전 내용을 복원. 임시치아에서 브리지 등으로 나오면 클릭한 치아만 바꾸고 옆 칸은 임시치아를 유지. 작업X는 칸에 X 표시, 기공비·크레딧 미소비. 크라운·브리지·임시치아 아래 `어벗` 체크박스(체크 시 설정 모달, 해제 시 규격 삭제). full 16치 한 줄은 카드 `min-w-[3.5rem]`·브리지 + 슬롯(미연결 `w-2`, 연결 `w-1.5`)으로 어벗 라벨이 잘리지 않게. 커스텀어벗 칸·어벗 체크 후는 「설정」없이 `생산만`/`디자인+생산` 클릭으로 설정 모달. **기공의뢰(practice/dropzone)** 모달은 디자인+생산 고정, 생산만 클릭=`/dashboard/new-request`(어벗생산의뢰). **어벗생산의뢰** 모달은 생산만 고정, 디자인+생산 클릭=치과 `구강스캔으로`(`/dashboard/practice-transfers?mode=send`)·기공소 `어벗츠로부터`. 모달 하단 좌측 `프리셋 편집`(primary), 우측 취소/확인. 프리셋 목록은 4개까지 표시·초과 시 스크롤. 임플란트·스캔바디 프리셋이 모두 없으면 설정 모달과 함께 프리셋 편집을 연다. 임플란트·스캔바디 프리셋을 각각 한 번 고르면 확인과 같이 저장·닫힘. 취소·오버레이=열기 전 값 복원. 호버 툴팁: `CNC커스텀어벗 - 어벗츠 자체 제공` + 플랫폼 고시 단가 + `배송비 별도, 박스당 과금, 부가세 없음`. 모달 기본·계정 초기값=`design_custom_abutment`(디자인+생산). 한 번 바꾸면 `practiceTransferSettings.defaultAbutmentProductMode`에 저장하고 다음 모달 초기값으로 사용. 커스텀어벗은 기공소 수가가 아니라 어벗츠 단가. 전체해제·크게보기. 신규의뢰·기공의뢰서(practice/dropzone) 공통.

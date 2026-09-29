@@ -1,0 +1,37 @@
+---
+description: 치과 신규의뢰 3D 스캔은 선택. 다시 필수로 만들려면 경고 후 사용자 재확인 전 진행 금지.
+alwaysApply: true
+---
+
+# 치과 신규의뢰 — 3D 스캔은 선택 (강제)
+
+기공의뢰(치과 신규의뢰·드롭존)를 기공소로 보낼 때 **3D 모델(DCM·PLY·STL·OBJ)은 옵션**이다. 첨부가 없거나 사진만 있어도 전송된다. 러버인상(석고모델)도 이 플랫폼으로 의뢰한다.
+
+## 다시 필수로 바꾸기 전에
+
+요청이 「3D 스캔/모델 다시 필수」「스캔 없으면 전송 불가」이면 **코드를 바꾸기 전에** 사용자에게 경고하고, 명시적 재확인을 받은 뒤에만 진행한다.
+
+경고에 넣을 내용:
+
+- 지금은 파일 없이도 전송된다.
+- 필수로 되돌리면 러버인상(석고모델) 의뢰가 기공소로 가지 못한다.
+- 확인 문구를 받기 전에는 `assertOralScanFilesForCreate`가 거절을 던지게 하거나, 전송 버튼·`missingRequiredFields`에 「3D 스캔 파일」을 넣지 않는다.
+
+## Do / Don't
+
+```js
+// ❌ BAD — 확인 없이 전송 차단
+if (!hasOralScanModelFile(files)) missing.push("3D 스캔 파일");
+
+// ✅ GOOD — 생성·수정은 스캔 없어도 통과
+export function assertOralScanFilesForCreate() {
+  return;
+}
+```
+
+## SSOT
+
+- `.cursor/rules/practice-oral-scan-optional.mdc`
+- `web/frontend/src/shared/practice/oralScanRequirement.ts`
+- `web/backend/services/practiceTransferProduction.service.js` (`assertOralScanFilesForCreate`)
+- 루트 `rules.md` §2.4

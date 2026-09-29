@@ -77,6 +77,7 @@
 
 - **3Shape/TRIOS**: 스캔 데이터는 Communicate로 치과→지정 기공소(어벗츠기공소 포함) 직송. 어벗츠는 중간 플랫폼으로 스캔을 받지 않음.
 - **기공의뢰서**: 치식·메모·수가·매칭 등은 어벗츠 기공의뢰(PracticeTransfer)로 작성.
+- **3D 스캔은 선택**: 생성·수정(`assertOralScanFilesForCreate`)은 DCM/PLY/STL/OBJ가 없어도 통과한다. 첨부가 없거나 사진만 있는 러버인상(석고모델)도 전송된다. 다시 필수로 바꾸려면 사용자 경고와 재확인 전 `oral_scan_required` 거절을 넣지 않는다. SSOT: `.cursor/rules/practice-oral-scan-optional.mdc`
 - **비 3Shape**: STL/PLY/OBJ 등 현행처럼 웹앱에 업로드해 기공의뢰와 함께 전송.
 - **UI**: Communicate/TRIOS 전용 안내 탭·배너·문구 없음.
 - **작업 스캔 자동 정렬**: 의뢰 상악·하악·바이트가 모두 있으면 `jobs/workScanAutoAlignWorker.js`가 AI 디자인 모델 정렬(바이트 맞춤 + 교합 원점)을 돌려 `production.labWorkScanFiles`에 작업 DCM 3역할을 넣는다. 치과·기공소 모두 작업 파일로 보고, AI 디자인은 이 좌표에서 시작한다.

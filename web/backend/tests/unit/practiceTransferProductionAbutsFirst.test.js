@@ -4,6 +4,7 @@
 import {
   PTX_CA_SHIP_BEFORE_ARRIVAL_BUSINESS_DAYS,
   assertOralScanFilesForCreate,
+  hasOralScanModelFile,
   canStartAbutmentProduction,
   hasCustomAbutmentToothWorks,
   isAbutmentDesignReady,
@@ -284,48 +285,41 @@ describe("oral scan requirement for CA accept/create", () => {
     file: { originalName: "scan.stl", s3Key: "scan-key", size: 100 },
   };
 
-  test("assertOralScanFilesForCreate — requires a 3D scan file", () => {
-    const reject = (files) => {
-      try {
+  test("assertOralScanFilesForCreate — 3D scan is optional (rubber impression)", () => {
+    const cases = [
+      [],
+      [{ file: { originalName: "shade.jpg", s3Key: "photo", size: 10 } }],
+      [{ file: { originalName: "scan.stl", s3Key: "scan-key", size: 100 } }],
+    ];
+    for (const files of cases) {
+      expect(() =>
         assertOralScanFilesForCreate({
           matchingMode: "direct",
           toothWorks: caTooth,
           files,
-        });
-        return null;
-      } catch (err) {
-        return err;
-      }
-    };
-
-    const empty = reject([]);
-    expect(empty).toBeInstanceOf(Error);
-    expect(empty.message).toMatch(/DCM, PLY, STL, OBJ/);
-    expect(empty.statusCode).toBe(400);
-    expect(empty.code).toBe("oral_scan_required");
-
-    const photoOnly = reject([
-      { file: { originalName: "shade.jpg", s3Key: "photo", size: 10 } },
-    ]);
-    expect(photoOnly).toBeInstanceOf(Error);
-    expect(photoOnly.code).toBe("oral_scan_required");
-
+        }),
+      ).not.toThrow();
+    }
     expect(() =>
       assertOralScanFilesForCreate({
         matchingMode: "auto",
         toothWorks: [{ customAbutment: false, toothNumber: "21" }],
         files: [],
       }),
-    ).toThrow(/DCM, PLY, STL, OBJ/);
+    ).not.toThrow();
 
+    expect(hasOralScanModelFile([])).toBe(false);
+    expect(
+      hasOralScanModelFile([
+        { file: { originalName: "shade.jpg", s3Key: "photo", size: 10 } },
+      ]),
+    ).toBe(false);
     for (const name of ["scan.stl", "scan.ply", "scan.obj", "scan.DCM"]) {
-      expect(() =>
-        assertOralScanFilesForCreate({
-          matchingMode: "direct",
-          toothWorks: caTooth,
-          files: [{ file: { originalName: name, s3Key: "scan-key", size: 100 } }],
-        }),
-      ).not.toThrow();
+      expect(
+        hasOralScanModelFile([
+          { file: { originalName: name, s3Key: "scan-key", size: 100 } },
+        ]),
+      ).toBe(true);
     }
   });
 

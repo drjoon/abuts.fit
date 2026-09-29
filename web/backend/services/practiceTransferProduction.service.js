@@ -8,7 +8,9 @@
 // - 2026-09-28: CA Request 대상은 치아당 1행(임시치아+CA와 단독 커스텀어벗 중복 입력 시 생산·과금 1회).
 // - 2026-09-27: PTX CA 주문 기공소 = 수행 기공소(assignee). 원청 잔액으로 생산 hold 하지 않음.
 // - 2026-09-12: PTX→어벗츠 리메이크 — CA 재업로드 forceRemakePricing(1만). 미매칭 시 정가 생산 견적.
-// - 2026-09-26: 기공의뢰 생성·수정 전송은 3D 스캔(DCM/PLY/STL/OBJ) 필수. 이미지·빈 첨부는 거부.
+// - 2026-09-29: 기공의뢰 생성·수정의 3D 스캔은 선택. 러버인상(석고모델)은 파일 없이 전송.
+//   다시 필수로 바꾸려면 사용자 경고·재확인 전 throw 금지. (.cursor/rules/practice-oral-scan-optional.mdc)
+// - 2026-09-26: (해제) 기공의뢰 생성·수정 전송은 3D 스캔(DCM/PLY/STL/OBJ) 필수. 이미지·빈 첨부는 거부.
 // - 2026-09-26: 같은 파일명·용량의 의뢰 스캔은 1벌만 유지(재업로드 중복·확인 배지 방지).
 // - 2026-09-12: normalizeResultFiles — uploadBatchId·uploadedAt 보존. stampPracticeTransferFileBatch.
 // - 2026-09-12: 가공 진입 — abutmentPastReadyTeeth + 기공소 practice:transfer-updated(abutment-production-started).
@@ -401,9 +403,14 @@ const oralScanFileExt = (name) => {
   return raw.slice(idx);
 };
 
-/** 기공의뢰 전송 — 3D 스캔(DCM·PLY·STL·OBJ)이 없으면 생성·수정 거부 */
+/**
+ * @deprecated 2026-09-29 생성·수정 전송에서 3D 스캔은 선택.
+ * 러버인상(석고모델)은 파일이 없어도 기공소로 간다.
+ * 이 문구로 거절을 되살리지 않는다. 필수로 되돌리려면 사용자 재확인.
+ * SSOT: .cursor/rules/practice-oral-scan-optional.mdc
+ */
 export const ORAL_SCAN_REQUIRED_TO_SEND =
-  "DCM, PLY, STL, OBJ 중 하나 이상을 첨부해야 기공소로 전송할 수 있습니다.";
+  "러버인상(석고모델)은 파일 없이 기공소로 보낼 수 있습니다.";
 
 export function hasOralScanModelFile(files) {
   const list = Array.isArray(files) ? files : [];
@@ -453,13 +460,15 @@ export function resolveOralScanFilesForAccept({
   return { files: incoming, attachedByLab: true };
 }
 
-/** 생성·수정 전송은 3D 스캔 필수. 사진만 있거나 첨부가 없으면 거부. */
-export function assertOralScanFilesForCreate({ files } = {}) {
-  if (hasOralScanModelFile(files)) return;
-  const err = new Error(ORAL_SCAN_REQUIRED_TO_SEND);
-  err.statusCode = 400;
-  err.code = "oral_scan_required";
-  throw err;
+/**
+ * 생성·수정 전송의 3D 스캔 가드. 현재는 통과만 한다.
+ * 첨부가 없거나 사진만 있어도 러버인상(석고모델) 의뢰로 보낸다.
+ * `hasOralScanModelFile`로 거절을 던지지 않는다.
+ * 다시 필수로 만들려면 사용자에게 경고하고 재확인한 뒤에만 throw.
+ * SSOT: .cursor/rules/practice-oral-scan-optional.mdc
+ */
+export function assertOralScanFilesForCreate(_params = {}) {
+  return;
 }
 
 const parsePatientNameFromMemo = (memo) => {

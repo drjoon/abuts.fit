@@ -1,4 +1,6 @@
-// - 2026-09-26: 기공의뢰 전송은 3D 스캔(DCM·PLY·STL·OBJ) 필수. 이미지·빈 첨부는 전송 불가.
+// - 2026-09-29: 기공의뢰 전송의 3D 스캔은 선택. 러버인상(석고모델)은 파일 없이 전송.
+//   다시 필수로 바꾸려면 사용자에게 경고하고 재확인한 뒤에만. (.cursor/rules/practice-oral-scan-optional.mdc)
+// - 2026-09-26: (해제) 기공의뢰 전송은 3D 스캔(DCM·PLY·STL·OBJ) 필수였음. 이미지·빈 첨부는 전송 불가.
 // - 2026-08-21: 수락·어벗 업로드 — 구강스캔 선택(자동매칭 포함). CA Request는 스캔 없이 생성.
 // - 2026-08-19: 치과 전송 시 구강스캔은 선택(어벗츠기공소 포함).
 // - 2026-08-15: 수락 기공소 CA 디자인 — 기공소 구강스캔 업로드 UI 제거. 지정은 스캔 없이 수락.
@@ -8,9 +10,18 @@
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 
-/** 기공의뢰 전송 — 3D 스캔(DCM·PLY·STL·OBJ)이 없으면 생성·수정 거부 */
-export const ORAL_SCAN_REQUIRED_TO_SEND =
-  "DCM, PLY, STL, OBJ 중 하나 이상을 첨부해야 기공소로 전송할 수 있습니다.";
+/**
+ * 기공의뢰 전송 첨부 안내. 3D 스캔은 선택이므로 이 문구로 전송을 막지 않는다.
+ * 다시 필수로 되돌리려면 `.cursor/rules/practice-oral-scan-optional.mdc` — 경고 후 재확인.
+ */
+export const ORAL_SCAN_OPTIONAL_NOTE_PRIMARY =
+  "3D 스캔(DCM·PLY·STL·OBJ)은 선택입니다.";
+
+export const ORAL_SCAN_OPTIONAL_NOTE_SECONDARY =
+  "러버인상(석고모델)은 파일 없이 기공소로 보낼 수 있습니다.";
+
+/** @deprecated 2026-09-29 전송 필수는 해제. 차단 문구로 쓰지 않는다. */
+export const ORAL_SCAN_REQUIRED_TO_SEND = ORAL_SCAN_OPTIONAL_NOTE_SECONDARY;
 
 /** @deprecated 생성 시 구강스캔은 선택이었던 문구. 레거시 토스트 문구 */
 export const ORAL_SCAN_REQUIRED_FOR_AUTO_MATCH_CREATE =
