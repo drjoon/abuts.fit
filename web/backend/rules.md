@@ -84,6 +84,8 @@
   - 기공소가 직접 저장한 작업 스캔(잡이 넣은 `fileKeys` 밖의 키)이 있으면 덮지 않는다(`skipped`/`lab-work`).
   - **모델 정렬 공유**: 정렬은 업로드 직후 이 잡만 한다(프리뷰 수동 정렬 없음). 정렬 여부는 `production.workScanAlignment`(`upper`·`lower`·`source` auto|ai-design·`fileKeys`) 하나다. `fileKeys`가 지금 `labWorkScanFiles` 키 집합과 같을 때만 유효(`utils/workScanAlignment.js`). 자동 잡(done)과 AI 디자인 `work-scan-files`(`archAligned`)가 쓰고, 둘 다 `work-scan-auto-aligned` 소켓으로 목록·정렬 기록을 보낸다. AI 디자인은 유효한 기록이 있으면 정렬 완료로 연다.
   - **덮어쓰기 금지**: AI 디자인이 열려 있으면 `production.workScanEditing`(1분 갱신, TTL 3분)이 살아 있고, 그동안 자동 잡은 작업 스캔을 바꾸지 않는다(`skipped`/`lab-editing`, 저장 직전에도 다시 확인). AI 디자인은 자동 정렬 스캔보다 올리지 못한 로컬 초안을 우선한다.
+  - 바이트 맞춤(`biteRegistration.ts`): 스캐너가 악궁마다 좌표를 따로 내면 한 악궁은 제자리에서 이미 맞는다. 그 악궁도 붙은 것으로 보고 자국을 바이트에서 뺀 뒤 반대 악궁을 찾는다. 못 붙은 악궁은 다른 악궁이 새로 붙을 때마다 다시 찾고, `sweepPoses`면 축 방향 168자세 × 격자 위치까지 본다(악궁 하나에 1~2초, 자동 잡·AI 디자인 모두 켬). 바이트가 한쪽 협측뿐이면 악궁을 돌려 반대쪽 치아를 대도 맞아 보이므로, 반대 악궁이 붙어 있으면 교합 관계(전치 방향·교합면 평행·중심 거리)가 맞는 자세만 받는다. 두 악궁이 다 있는데 옮긴 한쪽만 붙으면 확인할 수 없어 옮기지 않는다. `moved`는 좌표를 실제로 옮긴 경우만 true.
+  - AI 디자인은 찾는 과정을 메시 변환으로 보여 주고(`onPose`), 도는 동안 `onAligningChange`로 편집·저장·실행취소·의뢰 이동을 잠근다. 「중단」하면 멈춘 순간 자세를 보여 주고 「이 자세 유지 / 원래대로」를 고르게 한다. 기하는 끝나거나 유지를 고를 때만 바뀐다.
   - 계산 코드는 프론트 `shared/practice/workScanAutoAlign.ts`의 Node 번들 `vendor/workScanAutoAlign/workScanAutoAlign.mjs`(생성물). 정렬·파서 코드를 바꾸면 `npm --prefix ../frontend run build:work-scan-align`으로 다시 만든다(`npm run build`·`eb.sh`도 만든다). 끄기: `WORK_SCAN_AUTO_ALIGN_WORKER_ENABLED=false`.
 
 - 신속 배송(`express`) 복원 메모:

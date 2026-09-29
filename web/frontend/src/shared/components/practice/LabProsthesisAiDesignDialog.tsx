@@ -865,6 +865,9 @@ function LabProsthesisAiDesignDialog({
   const [alignArch, setAlignArch] = useState<"upper" | "lower" | null>(null);
   const [alignPicks, setAlignPicks] = useState({ model: 0, bite: 0 });
   const [alignBusy, setAlignBusy] = useState(false);
+  /** 뷰어가 스스로 바이트에 맞추는 중(불러올 때·역할 변경). 자동 버튼과 같이 편집·저장을 막는다. */
+  const [viewerAligning, setViewerAligning] = useState(false);
+  const alignLocked = alignBusy || viewerAligning;
   const [meshEdit, setMeshEdit] = useState<ScanMeshEdit | null>(null);
   const [meshEditStatus, setMeshEditStatus] = useState<ScanMeshEditStatus>({
     selected: 0,
@@ -1938,7 +1941,7 @@ function LabProsthesisAiDesignDialog({
   };
 
   const beginEditUndo = (force = false) => {
-    if (alignBusy && !force) return;
+    if (alignLocked && !force) return;
     const book = historyRef.current;
     if (!book.stroke) {
       book.past.push(takeSnap(false));
@@ -1978,7 +1981,7 @@ function LabProsthesisAiDesignDialog({
   };
 
   const undoWork = () => {
-    if (alignBusy) return;
+    if (alignLocked) return;
     const book = historyRef.current;
     window.clearTimeout(book.closeTimer);
     book.closeTimer = 0;
@@ -1994,7 +1997,7 @@ function LabProsthesisAiDesignDialog({
   };
 
   const redoWork = () => {
-    if (alignBusy) return;
+    if (alignLocked) return;
     const book = historyRef.current;
     window.clearTimeout(book.closeTimer);
     book.closeTimer = 0;
@@ -3328,8 +3331,8 @@ function LabProsthesisAiDesignDialog({
   const leaveCase = (leave: () => void) => {
     window.clearTimeout(draftTimerRef.current);
     const id = String(transferId || "").trim();
-    if (!autoSaveRef.current || alignBusy || !id || !authToken) {
-      if (alignBusy) suspendDraftRef.current = true;
+    if (!autoSaveRef.current || alignLocked || !id || !authToken) {
+      if (alignLocked) suspendDraftRef.current = true;
       if (id && authToken) void sendWorkScanEditing(id, authToken, false);
       leave();
       return;
@@ -3353,7 +3356,7 @@ function LabProsthesisAiDesignDialog({
   const canMoveCase =
     caseNav != null && caseNav.count > (caseNav.position != null ? 1 : 0);
   const moveCase = (step: -1 | 1) => {
-    if (!caseNav || !canMoveCase || saveLockRef.current || alignBusy) return;
+    if (!caseNav || !canMoveCase || saveLockRef.current || alignLocked) return;
     leaveCase(() => {
       markAiReopen();
       caseNav.onMove(step);
@@ -3496,7 +3499,7 @@ function LabProsthesisAiDesignDialog({
                       size="sm"
                       variant="outline"
                       className="h-7 w-7 px-0 [&_svg]:!size-3.5"
-                      disabled={!canMoveCase || alignBusy}
+                      disabled={!canMoveCase || alignLocked}
                       onClick={() => moveCase(-1)}
                       title="이전 미완료 의뢰"
                       aria-label="이전 미완료 의뢰"
@@ -3518,7 +3521,7 @@ function LabProsthesisAiDesignDialog({
                       size="sm"
                       variant="outline"
                       className="h-7 w-7 px-0 [&_svg]:!size-3.5"
-                      disabled={!canMoveCase || alignBusy}
+                      disabled={!canMoveCase || alignLocked}
                       onClick={() => moveCase(1)}
                       title="다음 미완료 의뢰"
                       aria-label="다음 미완료 의뢰"
@@ -3568,7 +3571,7 @@ function LabProsthesisAiDesignDialog({
               size="sm"
               variant="outline"
               className="h-8 w-8 px-0"
-              disabled={!canUndo || alignBusy}
+              disabled={!canUndo || alignLocked}
               onClick={undoWork}
               title="실행 취소"
               aria-label="실행 취소"
@@ -3580,7 +3583,7 @@ function LabProsthesisAiDesignDialog({
               size="sm"
               variant="outline"
               className="h-8 w-8 px-0"
-              disabled={!canRedo || alignBusy}
+              disabled={!canRedo || alignLocked}
               onClick={redoWork}
               title="다시 실행"
               aria-label="다시 실행"
@@ -3801,6 +3804,7 @@ function LabProsthesisAiDesignDialog({
                 discardJawCheckpoint(alignBeforeSigRef.current);
                 setAlignBusy(false);
               }}
+              onAligningChange={setViewerAligning}
               onViewSettled={() => {
                 const current = aimingRef.current;
                 if (current) {
@@ -4552,7 +4556,7 @@ function LabProsthesisAiDesignDialog({
                                   size="sm"
                                   variant={alignBusy ? "default" : "outline"}
                                   className="h-7 w-full px-2 text-[11px]"
-                                  disabled={!canAlignModels || alignBusy}
+                                  disabled={!canAlignModels || alignLocked}
                                   onClick={() => void runAutoAlign()}
                                 >
                                   자동
@@ -4571,7 +4575,7 @@ function LabProsthesisAiDesignDialog({
                                   size="sm"
                                   variant={alignKind === "points" ? "default" : "outline"}
                                   className="h-7 w-full px-2 text-[11px]"
-                                  disabled={!canAlignModels || alignBusy}
+                                  disabled={!canAlignModels || alignLocked}
                                   onClick={() => {
                                     if (alignKind === "points") {
                                       setAlignKind(null);
@@ -4599,7 +4603,7 @@ function LabProsthesisAiDesignDialog({
                                   size="sm"
                                   variant={alignKind === "occlusion" ? "default" : "outline"}
                                   className="h-7 w-full px-2 text-[11px]"
-                                  disabled={!canAdjustOcclusion || alignBusy}
+                                  disabled={!canAdjustOcclusion || alignLocked}
                                   onClick={startOcclusion}
                                 >
                                   수동
@@ -4719,7 +4723,7 @@ function LabProsthesisAiDesignDialog({
                             </Button>
                           </div>
                         ) : null}
-                        {alignBusy ? (
+                        {alignLocked ? (
                           <Button
                             type="button"
                             size="sm"
@@ -4727,7 +4731,7 @@ function LabProsthesisAiDesignDialog({
                             className="h-7 w-full px-2 text-[11px]"
                             onClick={() => viewerRef.current?.cancelAlign()}
                           >
-                            취소
+                            중단
                           </Button>
                         ) : null}
                         {alignKind === "points" ? (
@@ -4741,7 +4745,7 @@ function LabProsthesisAiDesignDialog({
                                       size="sm"
                                       variant={alignArch === "upper" ? "default" : "outline"}
                                       className="h-7 w-full px-2 text-[11px]"
-                                      disabled={!hasUpperScan || alignBusy}
+                                      disabled={!hasUpperScan || alignLocked}
                                       onClick={() => {
                                         if (alignArch === "upper") {
                                           viewerRef.current?.clearAlignPicks();
@@ -4770,7 +4774,7 @@ function LabProsthesisAiDesignDialog({
                                       size="sm"
                                       variant={alignArch === "lower" ? "default" : "outline"}
                                       className="h-7 w-full px-2 text-[11px]"
-                                      disabled={!hasLowerScan || alignBusy}
+                                      disabled={!hasLowerScan || alignLocked}
                                       onClick={() => {
                                         if (alignArch === "lower") {
                                           viewerRef.current?.clearAlignPicks();
@@ -4803,7 +4807,7 @@ function LabProsthesisAiDesignDialog({
                                   variant="outline"
                                   className="h-7 w-full px-2 text-[11px]"
                                   disabled={
-                                    alignBusy ||
+                                    alignLocked ||
                                     (alignPicks.model === 0 && alignPicks.bite === 0)
                                   }
                                   onClick={() => {
@@ -4823,7 +4827,7 @@ function LabProsthesisAiDesignDialog({
                       <MeshEditSection
                         edit={meshEdit}
                         status={meshEditStatus}
-                        disabled={entries.length === 0 || alignBusy || busy}
+                        disabled={entries.length === 0 || alignLocked || busy}
                         onToggle={toggleMeshEdit}
                         onPatch={patchMeshEdit}
                         onApply={applyMeshEdit}

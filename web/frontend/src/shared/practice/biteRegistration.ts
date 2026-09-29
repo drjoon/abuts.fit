@@ -2,7 +2,12 @@
 // 점 3개는 한 평면이라 세 번째 축이 비는데, 그 축을 0으로 두면 악궁이 평평해진다.
 // 바이트는 치아 일부만 겹치고 위·아래가 한 메시에 있다.
 // 어긋남이 크면 점쌍 특징(Drost PPF)으로 처음 자세를 잡고, 겹치는 면만 trimmed ICP로 다듬는다.
+// 스캐너가 악궁마다 좌표를 따로 내면 한쪽은 제자리에서 이미 맞는다. 그 자국을 빼야 반대 악궁이 자기 자국을 찾는다.
+// 그래도 못 붙으면(sweepPoses) 축 방향 168자세 × 격자 위치에서 다시 찾는다. 반대 악궁이 붙어 있으면
+// 교합 관계가 맞는 자세만 받고, 두 악궁이 다 있는데 옮긴 한쪽만 붙으면 확인할 수 없어 두지 않는다.
+// 찾는 중인 자세는 onPose로 내보내 화면이 움직임을 보여 주고, 멈추면 그 순간 자세를 partial로 돌려준다.
 import * as THREE from "three";
+import { archPlanAxes } from "@/shared/practice/dentalFrame";
 
 type Cloud = {
   xyz: Float32Array;
@@ -14,6 +19,12 @@ type Rigid = {
   r: number[][];
   t: [number, number, number];
 };
+
+/**
+ * 최근접 조회용 격자 칸(mm). 최근접은 칸 크기와 무관하게 정확하다.
+ * 바이트 점이 성겨 칸이 작으면 넓은 반경(12~14mm)에서 빈 칸을 수천 개 뒤진다.
+ */
+const FIT_GRID_MM = 2.4;
 
 function mmToUnits(mm: number, unitToMm: number) {
   return mm / (unitToMm > 0 ? unitToMm : 1);
@@ -29,7 +40,17 @@ function yieldFrame() {
   });
 }
 
-type AlignOptions = { cancelled?: () => boolean };
+type AlignOptions = {
+  cancelled?: () => boolean;
+  /** 못 붙은 악궁을 여러 자세에서 다시 찾는다. 악궁 하나에 1~2초 더 걸린다. */
+  sweepPoses?: boolean;
+  /** 찾는 중인 자세. matrix는 호출 시점 기하 좌표 기준이고, 화면은 메시 변환으로만 보여 준다. */
+  onPose?: (geometry: THREE.BufferGeometry, matrix: THREE.Matrix4) => void;
+};
+
+type PoseSink = (matrix: THREE.Matrix4) => void;
+/** 이 자세(matrix)가 반대 악궁과 교합 관계가 맞는지. 없으면 모두 받는다. */
+type PoseCheck = (matrix: THREE.Matrix4) => boolean;
 
 class BiteAlignCancelled extends Error {
   constructor() {
@@ -736,7 +757,7 @@ function overlapFitness(
     }
   }
   if (dists.length === 0) return { mean: limit, inliers: 0, coverage: 0, sideMean: limit };
-  const sourceGrid = buildGrid(source, mmToUnits(1.1, unitToMm));
+  const sourceGrid = buildGrid(source, mmToUnits(2, unitToMm));
   let covered = 0;
   const step = Math.max(1, Math.floor(target.count / 500));
   const targetDists: number[] = [];
@@ -844,16 +865,21 @@ async function refineToTarget(
   source: Cloud,
   target: Cloud,
   unitToMm: number,
-  tightStart = false,
+  tightStart: boolean | "screen" = false,
   options?: AlignOptions,
+  report?: (total: THREE.Matrix4) => void,
 ) {
   const total = new THREE.Matrix4();
-  const cell = mmToUnits(1.1, unitToMm);
+  const cell = mmToUnits(FIT_GRID_MM, unitToMm);
   const grid = buildGrid(target, cell);
   orientNormals(source, target, grid, unitToMm);
-  const gates = tightStart
-    ? [4.5, 3, 2, 1.3, 0.8, 0.5]
-    : [12, 8, 5, 3.5, 2.4, 1.6, 1.1, 0.75, 0.55];
+  // screen: 격자 후보를 빨리 거른다. 넓은 반경은 빈 격자를 많이 뒤져 느리다.
+  const gates =
+    tightStart === "screen"
+      ? [8, 5, 3.2, 2, 1.3]
+      : tightStart
+        ? [4.5, 3, 2, 1.3, 0.8, 0.5]
+        : [12, 8, 5, 3.5, 2.4, 1.6, 1.1, 0.75, 0.55];
   for (let iter = 0; iter < gates.length; iter += 1) {
     const gap = checkpoint(options);
     if (gap) await gap;
@@ -870,6 +896,7 @@ async function refineToTarget(
     if (move > mmToUnits(18, unitToMm)) continue;
     applyRigid(source, rigid);
     compose(total, rigid);
+    report?.(total);
   }
   return total;
 }
@@ -1095,7 +1122,7 @@ function poseTightness(model: Cloud, scene: Cloud, rigid: Rigid, unitToMm: numbe
   const moved = cloneCloud(model);
   applyRigid(moved, rigid);
   const tight = mmToUnits(4, unitToMm);
-  const grid = buildGrid(moved, mmToUnits(1.1, unitToMm));
+  const grid = buildGrid(moved, mmToUnits(2, unitToMm));
   const step = Math.max(1, Math.floor(scene.count / 420));
   const dists: number[] = [];
   let covered = 0;
@@ -1339,6 +1366,10 @@ function excludeMatched(target: Cloud, aligned: Cloud, unitToMm: number): Cloud 
 }
 
 type ArchFit = {
+  /** 처음 맞출 때 쓴 바이트 점 수. 다른 악궁 자국이 더 빠졌는지 본다. */
+  targetCount: number;
+  /** 원래 정점 표본. 교합 관계 확인에 matrix를 씌워 쓴다. */
+  plan: Array<[number, number, number]>;
   geometry: THREE.BufferGeometry;
   role: string;
   matrix: THREE.Matrix4;
@@ -1362,11 +1393,16 @@ async function alignArch(
   target: Cloud,
   unitToMm: number,
   options?: AlignOptions,
+  emit?: PoseSink,
+  accept?: PoseCheck,
 ) {
-  const grid = buildGrid(target, mmToUnits(1.2, unitToMm));
+  const ok = (matrix: THREE.Matrix4) => !accept || accept(matrix);
+  const grid = buildGrid(target, mmToUnits(FIT_GRID_MM, unitToMm));
   const before = overlapFitness(source, target, grid, unitToMm);
-  const already = seatedFit(before, unitToMm) && before.sideMean <= mmToUnits(0.32, unitToMm);
+  const inPlace = seatedFit(before, unitToMm) && ok(new THREE.Matrix4());
+  const already = inPlace && before.sideMean <= mmToUnits(0.32, unitToMm);
   if (already) {
+    emit?.(new THREE.Matrix4());
     return {
       matrix: new THREE.Matrix4(),
       before: before.mean,
@@ -1378,18 +1414,19 @@ async function alignArch(
     };
   }
   const local = cloneCloud(source);
-  const localMatrix = await refineToTarget(local, target, unitToMm, false, options);
+  const localMatrix = await refineToTarget(local, target, unitToMm, false, options, emit);
   const localFit = overlapFitness(
     local,
     target,
-    buildGrid(target, mmToUnits(1.2, unitToMm)),
+    buildGrid(target, mmToUnits(FIT_GRID_MM, unitToMm)),
     unitToMm,
   );
-  let bestCloud = local;
-  let bestMatrix = localMatrix;
-  let bestFit = localFit;
+  const localOk = ok(localMatrix);
+  let bestCloud = localOk ? local : source;
+  let bestMatrix = localOk ? localMatrix : new THREE.Matrix4();
+  let bestFit = localOk ? localFit : before;
   // 가까운 ICP로 이미 붙었으면 전역 점쌍 탐색은 하지 않는다.
-  const deepEnough = seatedFit(localFit, unitToMm);
+  const deepEnough = localOk && seatedFit(localFit, unitToMm);
   if (!deepEnough) {
     const pose = await globalPose(source, target, unitToMm, options);
     if (pose) {
@@ -1397,18 +1434,27 @@ async function alignArch(
       applyRigid(globalCloud, pose);
       let matrix = new THREE.Matrix4();
       compose(matrix, pose);
+      emit?.(matrix);
       const coarse = overlapFitness(
         globalCloud,
         target,
-        buildGrid(target, mmToUnits(1.2, unitToMm)),
+        buildGrid(target, mmToUnits(FIT_GRID_MM, unitToMm)),
         unitToMm,
       );
-      const refined = await refineToTarget(globalCloud, target, unitToMm, true, options);
+      const poseMatrix = matrix.clone();
+      const refined = await refineToTarget(
+        globalCloud,
+        target,
+        unitToMm,
+        true,
+        options,
+        emit && ((total) => emit(total.clone().multiply(poseMatrix))),
+      );
       matrix.premultiply(refined);
       let fit = overlapFitness(
         globalCloud,
         target,
-        buildGrid(target, mmToUnits(1.2, unitToMm)),
+        buildGrid(target, mmToUnits(FIT_GRID_MM, unitToMm)),
         unitToMm,
       );
       if (coarse.sideMean + mmToUnits(0.05, unitToMm) < fit.sideMean) {
@@ -1420,8 +1466,9 @@ async function alignArch(
         fit = coarse;
       }
       if (
-        fit.coverage > bestFit.coverage + 0.05 ||
-        (fit.coverage >= bestFit.coverage - 0.02 && fit.sideMean < bestFit.sideMean)
+        ok(matrix) &&
+        (fit.coverage > bestFit.coverage + 0.05 ||
+          (fit.coverage >= bestFit.coverage - 0.02 && fit.sideMean < bestFit.sideMean))
       ) {
         bestCloud = globalCloud;
         bestMatrix = matrix;
@@ -1432,17 +1479,20 @@ async function alignArch(
   const improved =
     bestFit.coverage > before.coverage + 0.08 ||
     bestFit.sideMean + mmToUnits(0.15, unitToMm) < before.sideMean;
-  if (!seatedFit(bestFit, unitToMm) || !improved) {
+  if (!seatedFit(bestFit, unitToMm) || !improved || !ok(bestMatrix)) {
+    emit?.(new THREE.Matrix4());
+    // 제자리에서 이미 붙어 있으면 그 자국을 바이트에서 빼야 반대 악궁이 자기 자국을 찾는다.
     return {
       matrix: new THREE.Matrix4(),
       before: before.mean,
       after: before.mean,
       inliers: before.inliers,
       cloud: source,
-      seated: false,
+      seated: inPlace,
       side: before.sideMean,
     };
   }
+  emit?.(bestMatrix);
   return {
     matrix: bestMatrix,
     before: before.mean,
@@ -1454,6 +1504,328 @@ async function alignArch(
   };
 }
 
+
+/** 교합 관계 확인용 정점 표본. 복셀 표본은 면을 고르게 덮어 교합면 추정이 흔들린다. 기준값도 정점 표본으로 쟀다. */
+function planSample(geometry: THREE.BufferGeometry, cap: number) {
+  const pos = geometry.getAttribute("position");
+  const out: Array<[number, number, number]> = [];
+  if (!pos) return out;
+  for (const i of strideIds(pos.count, cap)) out.push([pos.getX(i), pos.getY(i), pos.getZ(i)]);
+  return out;
+}
+
+function planAxes(points: Array<[number, number, number]>, matrix: THREE.Matrix4) {
+  const e = matrix.elements;
+  const moved = points.map(
+    ([x, y, z]) =>
+      [
+        (e[0] ?? 1) * x + (e[4] ?? 0) * y + (e[8] ?? 0) * z + (e[12] ?? 0),
+        (e[1] ?? 0) * x + (e[5] ?? 1) * y + (e[9] ?? 0) * z + (e[13] ?? 0),
+        (e[2] ?? 0) * x + (e[6] ?? 0) * y + (e[10] ?? 1) * z + (e[14] ?? 0),
+      ] as [number, number, number],
+  );
+  return archPlanAxes(moved);
+}
+
+/**
+ * 바이트가 한쪽 협측 조각이면, 악궁을 돌려 반대쪽 치아를 그 자국에 대도 비슷하게 맞는다.
+ * 그런 자세는 반대 악궁과 전치 방향·교합면이 어긋나거나 중심이 멀어 여기서 거른다.
+ * 맞물린 상악·하악은 전치가 같은 쪽, 교합면이 거의 평행, 중심 사이 10~15mm 안팎이다.
+ */
+function occlusionPairOk(
+  a: ReturnType<typeof archPlanAxes>,
+  b: ReturnType<typeof archPlanAxes>,
+  unitToMm: number,
+) {
+  const fa = a;
+  const fb = b;
+  if (!fa || !fb) return true;
+  const dist = fa.center.distanceTo(fb.center) * unitToMm;
+  return (
+    fa.anterior.dot(fb.anterior) >= 0.6 &&
+    Math.abs(fa.up.dot(fb.up)) >= 0.85 &&
+    dist >= 8 &&
+    dist <= 18
+  );
+}
+
+/** 부호 붙은 축 순열 중 행렬식 +1인 24개. 스캐너가 악궁을 뒤집거나 돌려 낸 자세를 덮는다. */
+const AXIS_ROTATIONS: number[][][] = (() => {
+  const out: number[][][] = [];
+  const perms = [
+    [0, 1, 2],
+    [0, 2, 1],
+    [1, 0, 2],
+    [1, 2, 0],
+    [2, 0, 1],
+    [2, 1, 0],
+  ];
+  for (const perm of perms) {
+    for (let signs = 0; signs < 8; signs += 1) {
+      const m = [
+        [0, 0, 0],
+        [0, 0, 0],
+        [0, 0, 0],
+      ];
+      for (let row = 0; row < 3; row += 1) {
+        m[row]![perm[row]!] = signs & (1 << row) ? -1 : 1;
+      }
+      if (det33(m) > 0) out.push(m);
+    }
+  }
+  return out;
+})();
+
+/** 축 자세 사이가 최대 60° 넘게 벌어져 ICP가 못 따라간다. 각 축으로 ±36°를 더 본다. */
+const SWEEP_ROTATIONS: number[][][] = (() => {
+  const tilt = (Math.PI / 180) * 36;
+  const offsets = [
+    [0, 0, 0],
+    [tilt, 0, 0],
+    [-tilt, 0, 0],
+    [0, tilt, 0],
+    [0, -tilt, 0],
+    [0, 0, tilt],
+    [0, 0, -tilt],
+  ].map(([x, y, z]) => rodrigues(x ?? 0, y ?? 0, z ?? 0));
+  const out: number[][][] = [];
+  for (const offset of offsets) {
+    for (const rot of AXIS_ROTATIONS) out.push(mul33(offset, rot));
+  }
+  return out;
+})();
+
+type PoseSeed = { rigid: Rigid; score: number; shift: [number, number, number] };
+
+function rigidFromMatrix(matrix: THREE.Matrix4): Rigid {
+  const e = matrix.elements;
+  return {
+    r: [
+      [e[0] ?? 1, e[4] ?? 0, e[8] ?? 0],
+      [e[1] ?? 0, e[5] ?? 1, e[9] ?? 0],
+      [e[2] ?? 0, e[6] ?? 0, e[10] ?? 1],
+    ],
+    t: [e[12] ?? 0, e[13] ?? 0, e[14] ?? 0],
+  };
+}
+
+function subsampleCloud(cloud: Cloud, cap: number): Cloud {
+  const ids = strideIds(cloud.count, cap);
+  const xyz = new Float32Array(ids.length * 3);
+  const nrm = new Float32Array(ids.length * 3);
+  ids.forEach((index, row) => {
+    for (let k = 0; k < 3; k += 1) {
+      xyz[row * 3 + k] = cloud.xyz[index * 3 + k] ?? 0;
+      nrm[row * 3 + k] = cloud.nrm[index * 3 + k] ?? 0;
+    }
+  });
+  return { xyz, nrm, count: ids.length };
+}
+
+/**
+ * 돌린 악궁을 바이트 위 격자 위치마다 놓아 보고, 바이트 점이 가장 많이 닿는 자리를 고른다.
+ * 점유는 조밀한 배열이라 위치 하나가 표본 수만큼의 배열 조회다. 가까운 자리는 하나만 남긴다.
+ */
+function translationSeeds(
+  source: Cloud,
+  rot: number[][],
+  center: [number, number, number],
+  samples: Float32Array,
+  sampleNormals: Float32Array,
+  unitToMm: number,
+  keep: number,
+): PoseSeed[] {
+  const cell = mmToUnits(1.8, unitToMm);
+  const step = mmToUnits(4, unitToMm);
+  const moved = new Float32Array(source.count * 3);
+  const turned = new Float32Array(source.count * 3);
+  const sMin = [Infinity, Infinity, Infinity];
+  const sMax = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < source.count; i += 1) {
+    const px = (source.xyz[i * 3] ?? 0) - center[0];
+    const py = (source.xyz[i * 3 + 1] ?? 0) - center[1];
+    const pz = (source.xyz[i * 3 + 2] ?? 0) - center[2];
+    for (let row = 0; row < 3; row += 1) {
+      const r = rot[row]!;
+      const v = (r[0] ?? 0) * px + (r[1] ?? 0) * py + (r[2] ?? 0) * pz;
+      moved[i * 3 + row] = v;
+      turned[i * 3 + row] =
+        (r[0] ?? 0) * (source.nrm[i * 3] ?? 0) +
+        (r[1] ?? 0) * (source.nrm[i * 3 + 1] ?? 0) +
+        (r[2] ?? 0) * (source.nrm[i * 3 + 2] ?? 0);
+      if (v < sMin[row]!) sMin[row] = v;
+      if (v > sMax[row]!) sMax[row] = v;
+    }
+  }
+  const nx = Math.ceil((sMax[0]! - sMin[0]!) / cell) + 3;
+  const ny = Math.ceil((sMax[1]! - sMin[1]!) / cell) + 3;
+  const nz = Math.ceil((sMax[2]! - sMin[2]!) / cell) + 3;
+  // 칸마다 그 근처 악궁 면의 법선. 위치만 겹치고 면 방향이 다른 자리는 점수를 주지 않는다.
+  const occ = new Uint8Array(nx * ny * nz);
+  const occN = new Float32Array(nx * ny * nz * 3);
+  for (let i = 0; i < source.count; i += 1) {
+    const ix = Math.floor((moved[i * 3]! - sMin[0]!) / cell) + 1;
+    const iy = Math.floor((moved[i * 3 + 1]! - sMin[1]!) / cell) + 1;
+    const iz = Math.floor((moved[i * 3 + 2]! - sMin[2]!) / cell) + 1;
+    for (let dz = -1; dz <= 1; dz += 1) {
+      for (let dy = -1; dy <= 1; dy += 1) {
+        for (let dx = -1; dx <= 1; dx += 1) {
+          const at = ((iz + dz) * ny + (iy + dy)) * nx + ix + dx;
+          occ[at] = 1;
+          occN[at * 3] = turned[i * 3]!;
+          occN[at * 3 + 1] = turned[i * 3 + 1]!;
+          occN[at * 3 + 2] = turned[i * 3 + 2]!;
+        }
+      }
+    }
+  }
+  const n = samples.length / 3;
+  const tMin = [Infinity, Infinity, Infinity];
+  const tMax = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < n; i += 1) {
+    for (let k = 0; k < 3; k += 1) {
+      const v = samples[i * 3 + k]!;
+      if (v < tMin[k]!) tMin[k] = v;
+      if (v > tMax[k]!) tMax[k] = v;
+    }
+  }
+  const lo = [0, 1, 2].map((k) => tMin[k]! - sMax[k]!);
+  const hi = [0, 1, 2].map((k) => tMax[k]! - sMin[k]!);
+  const floor = Math.max(6, Math.floor(n * 0.12));
+  const found: Array<{ t: [number, number, number]; score: number }> = [];
+  for (let tx = lo[0]!; tx <= hi[0]!; tx += step) {
+    for (let ty = lo[1]!; ty <= hi[1]!; ty += step) {
+      for (let tz = lo[2]!; tz <= hi[2]!; tz += step) {
+        let score = 0;
+        for (let i = 0; i < n; i += 1) {
+          const ix = Math.floor((samples[i * 3]! - tx - sMin[0]!) / cell) + 1;
+          if (ix < 0 || ix >= nx) continue;
+          const iy = Math.floor((samples[i * 3 + 1]! - ty - sMin[1]!) / cell) + 1;
+          if (iy < 0 || iy >= ny) continue;
+          const iz = Math.floor((samples[i * 3 + 2]! - tz - sMin[2]!) / cell) + 1;
+          if (iz < 0 || iz >= nz) continue;
+          const at = (iz * ny + iy) * nx + ix;
+          if (!occ[at]) continue;
+          const dot =
+            occN[at * 3]! * sampleNormals[i * 3]! +
+            occN[at * 3 + 1]! * sampleNormals[i * 3 + 1]! +
+            occN[at * 3 + 2]! * sampleNormals[i * 3 + 2]!;
+          if (Math.abs(dot) > 0.55) score += 1;
+        }
+        if (score >= floor) found.push({ t: [tx, ty, tz], score });
+      }
+    }
+  }
+  found.sort((a, b) => b.score - a.score);
+  const apart = mmToUnits(7, unitToMm);
+  const seeds: PoseSeed[] = [];
+  for (const row of found) {
+    if (seeds.length >= keep) break;
+    const near = seeds.some(
+      ({ shift }) =>
+        Math.hypot(shift[0] - row.t[0], shift[1] - row.t[1], shift[2] - row.t[2]) < apart,
+    );
+    if (near) continue;
+    const t = [0, 1, 2].map((k) => {
+      const r = rot[k]!;
+      return row.t[k]! - ((r[0] ?? 0) * center[0] + (r[1] ?? 0) * center[1] + (r[2] ?? 0) * center[2]);
+    }) as [number, number, number];
+    seeds.push({ rigid: { r: rot, t }, score: row.score, shift: row.t });
+  }
+  return seeds;
+}
+
+type SweepHit = { cloud: Cloud; matrix: THREE.Matrix4; fit: Fitness };
+
+/**
+ * 가까운 ICP·점쌍 탐색이 못 붙인 악궁을 축 방향 24자세에서 다시 찾는다.
+ * 후보는 줄인 점으로 빠르게 거르고, 나은 몇 개만 전체 점으로 다듬는다.
+ */
+async function sweepArchPoses(
+  source: Cloud,
+  target: Cloud,
+  unitToMm: number,
+  options?: AlignOptions,
+  emit?: PoseSink,
+  accept?: PoseCheck,
+): Promise<SweepHit | null> {
+  if (source.count < 80 || target.count < 80) return null;
+  const center = cloudCentroid(source);
+  const grid = buildGrid(target, mmToUnits(FIT_GRID_MM, unitToMm));
+  const sampleIds = strideIds(target.count, 110);
+  const samples = new Float32Array(sampleIds.length * 3);
+  const sampleNormals = new Float32Array(sampleIds.length * 3);
+  sampleIds.forEach((index, row) => {
+    for (let k = 0; k < 3; k += 1) {
+      samples[row * 3 + k] = target.xyz[index * 3 + k] ?? 0;
+      sampleNormals[row * 3 + k] = target.nrm[index * 3 + k] ?? 0;
+    }
+  });
+  const coarse = subsampleCloud(source, 500);
+  const seeds: PoseSeed[] = [];
+  for (const rot of SWEEP_ROTATIONS) {
+    const gap = checkpoint(options);
+    if (gap) await gap;
+    seeds.push(...translationSeeds(coarse, rot, center, samples, sampleNormals, unitToMm, 1));
+  }
+  seeds.sort((a, b) => b.score - a.score);
+
+  const screened: Array<{ matrix: THREE.Matrix4; fit: Fitness }> = [];
+  const ok = (matrix: THREE.Matrix4) => !accept || accept(matrix);
+  for (const seed of seeds.slice(0, 20)) {
+    const cloud = cloneCloud(coarse);
+    applyRigid(cloud, seed.rigid);
+    const matrix = new THREE.Matrix4();
+    compose(matrix, seed.rigid);
+    emit?.(matrix);
+    const start = matrix.clone();
+    matrix.premultiply(
+      await refineToTarget(
+        cloud,
+        target,
+        unitToMm,
+        "screen",
+        options,
+        emit && ((total) => emit(total.clone().multiply(start))),
+      ),
+    );
+    if (!ok(matrix)) continue;
+    screened.push({ matrix, fit: overlapFitness(cloud, target, grid, unitToMm) });
+  }
+  // 가까운 면 거리(mm)가 작고 덮는 비율이 클수록 앞. 비율 0.1이 0.4mm만큼이다.
+  const rank = (fit: Fitness) => fit.sideMean * unitToMm - fit.coverage * 4;
+  screened.sort((a, b) => rank(a.fit) - rank(b.fit));
+
+  let best: SweepHit | null = null;
+  for (const row of screened.slice(0, 2)) {
+    const cloud = cloneCloud(source);
+    applyRigid(cloud, rigidFromMatrix(row.matrix));
+    const matrix = row.matrix.clone();
+    emit?.(matrix);
+    const start = matrix.clone();
+    matrix.premultiply(
+      await refineToTarget(
+        cloud,
+        target,
+        unitToMm,
+        true,
+        options,
+        emit && ((total) => emit(total.clone().multiply(start))),
+      ),
+    );
+    const fit = overlapFitness(cloud, target, grid, unitToMm);
+    if (!seatedFit(fit, unitToMm) || !ok(matrix)) continue;
+    if (
+      !best ||
+      fit.coverage > best.fit.coverage + 0.03 ||
+      (fit.coverage >= best.fit.coverage - 0.01 && fit.sideMean < best.fit.sideMean)
+    ) {
+      best = { cloud, matrix, fit };
+    }
+  }
+  emit?.(best ? best.matrix : new THREE.Matrix4());
+  return best;
+}
 
 function mergeGeometries(geometries: THREE.BufferGeometry[]) {
   const xyz: number[] = [];
@@ -1500,38 +1872,102 @@ export async function registerJawsToBite(
   entries: Array<{ role: string; geometry: THREE.BufferGeometry }>,
   options?: AlignOptions,
 ): Promise<boolean> {
+  return (await registerJawsToBiteResult(entries, options)).seated;
+}
+
+export type BiteFitPose = { geometry: THREE.BufferGeometry; matrix: THREE.Matrix4 };
+
+/**
+ * seated: 한 악궁이라도 바이트에 붙었다(제자리 포함). moved: 좌표를 실제로 옮겼다.
+ * stopped: cancelled로 멈췄다. 기하는 그대로이고, partial은 멈춘 순간 보이던 악궁 자세다.
+ */
+export type BiteFitResult = {
+  seated: boolean;
+  moved: boolean;
+  stopped: boolean;
+  partial: BiteFitPose[];
+};
+
+export async function registerJawsToBiteResult(
+  entries: Array<{ role: string; geometry: THREE.BufferGeometry }>,
+  options?: AlignOptions,
+): Promise<BiteFitResult> {
+  const fitted: ArchFit[] = [];
+  // 멈춘 순간 화면에 보이던 자세. 붙은 악궁은 최종 자세, 찾던 악궁은 마지막 후보다.
+  const shown = new Map<THREE.BufferGeometry, THREE.Matrix4>();
+  const onPose = options?.onPose;
+  const tracked: AlignOptions = {
+    ...options,
+    onPose: (geometry, matrix) => {
+      shown.set(geometry, matrix.clone());
+      onPose?.(geometry, matrix);
+    },
+  };
   try {
-    return await registerJawsToBiteWork(entries, options);
+    return await registerJawsToBiteWork(entries, fitted, tracked);
   } catch (error) {
-    if (error instanceof BiteAlignCancelled) return false;
-    throw error;
+    if (!(error instanceof BiteAlignCancelled)) throw error;
+    const identity = new THREE.Matrix4();
+    return {
+      seated: false,
+      moved: false,
+      stopped: true,
+      partial: [...shown]
+        .filter(([, matrix]) => !matrix.equals(identity))
+        .map(([geometry, matrix]) => ({ geometry, matrix })),
+    };
+  }
+}
+
+/** 멈춘 뒤 「이 자세 유지」를 고르면 partial 자세를 기하에 쓴다. */
+export function applyBiteFitPoses(poses: readonly BiteFitPose[]) {
+  for (const pose of poses) {
+    pose.geometry.applyMatrix4(pose.matrix);
+    pose.geometry.computeVertexNormals();
+    pose.geometry.computeBoundingBox();
+    pose.geometry.computeBoundingSphere();
   }
 }
 
 async function registerJawsToBiteWork(
   entries: Array<{ role: string; geometry: THREE.BufferGeometry }>,
+  fitted: ArchFit[],
   options?: AlignOptions,
-): Promise<boolean> {
+): Promise<BiteFitResult> {
+  const none: BiteFitResult = { seated: false, moved: false, stopped: false, partial: [] };
   const bite = entries.filter((entry) => entry.role === "bite");
   const arches = entries.filter(
     (entry) => entry.role === "upper" || entry.role === "lower",
   );
-  if (bite.length === 0 || arches.length === 0) return false;
+  if (bite.length === 0 || arches.length === 0) return none;
   for (const entry of entries) {
     if (!entry.geometry.getAttribute("normal")) entry.geometry.computeVertexNormals();
   }
   resetYieldClock();
   await pause(options);
   const biteCloud = mergeGeometries(bite.map((entry) => entry.geometry));
-  if (biteCloud.count < 80) return false;
+  if (biteCloud.count < 80) return none;
   const unitToMm = geometryUnits(biteCloud, arches.map((entry) => entry.geometry));
+  const sinkFor = (geometry: THREE.BufferGeometry): PoseSink | undefined => {
+    const onPose = options?.onPose;
+    return onPose ? (matrix) => onPose(geometry, matrix) : undefined;
+  };
   const order = [...arches].sort((a, b) => {
     const af = roughGap(a.geometry, biteCloud, unitToMm);
     const bf = roughGap(b.geometry, biteCloud, unitToMm);
     return af - bf;
   });
+  const acceptFor =
+    (self: ArchFit | null, plan: Array<[number, number, number]>): PoseCheck =>
+    (matrix) => {
+      const others = fitted.filter((other) => other !== self && other.seated);
+      if (others.length === 0) return true;
+      const mine = planAxes(plan, matrix);
+      return others.every((other) =>
+        occlusionPairOk(mine, planAxes(other.plan, other.matrix), unitToMm),
+      );
+    };
   let target = biteCloud;
-  const fitted: ArchFit[] = [];
   for (const entry of order) {
     await pause(options);
     const source = sampleGeometry(entry.geometry, mmToUnits(0.95, unitToMm), 2400);
@@ -1542,8 +1978,18 @@ async function registerJawsToBiteWork(
       const ratio = radius / biteRadius;
       if (ratio > 8 || ratio < 0.05) continue;
     }
-    const aligned = await alignArch(source, target, unitToMm, options);
+      const plan = planSample(entry.geometry, 1500);
+    const aligned = await alignArch(
+      source,
+      target,
+      unitToMm,
+      options,
+      sinkFor(entry.geometry),
+      acceptFor(null, plan),
+    );
     fitted.push({
+      targetCount: target.count,
+      plan,
       geometry: entry.geometry,
       role: entry.role,
       matrix: aligned.matrix,
@@ -1559,42 +2005,201 @@ async function registerJawsToBiteWork(
       target = excludeMatched(target, aligned.cloud, unitToMm);
     }
   }
-  const upperRow = fitted.find((row) => row.role === "upper" && row.seated);
-  const lowerRow = fitted.find((row) => row.role === "lower" && row.seated);
-  if (upperRow && lowerRow) {
-    const near = mmToUnits(1.2, unitToMm);
-    const upperOnBite = cropNear(upperRow.aligned, biteCloud, near);
-    const lowerOnBite = cropNear(lowerRow.aligned, biteCloud, near);
-    const uc = cloudCentroid(upperOnBite);
-    const lc = cloudCentroid(lowerOnBite);
-    const gap = Math.hypot(uc[0] - lc[0], uc[1] - lc[1], uc[2] - lc[2]);
-    if (gap < mmToUnits(4, unitToMm)) {
-      const drop = upperRow.side > lowerRow.side + mmToUnits(0.05, unitToMm) ? upperRow : lowerRow;
-      const keep = drop === upperRow ? lowerRow : upperRow;
-      const remain = excludeMatched(biteCloud, keep.aligned, unitToMm);
-      const again = await alignArch(drop.original, remain, unitToMm, options);
-      const againOnBite = cropNear(again.cloud, biteCloud, near);
-      const keepOnBite = cropNear(keep.aligned, biteCloud, near);
-      const ac = cloudCentroid(againOnBite);
-      const kc = cloudCentroid(keepOnBite);
-      const againGap = Math.hypot(ac[0] - kc[0], ac[1] - kc[1], ac[2] - kc[2]);
-      if (again.seated && againOnBite.count > 30 && againGap >= mmToUnits(4, unitToMm)) {
-        drop.matrix.copy(again.matrix);
-        drop.aligned = again.cloud;
-        drop.side = again.side;
-        drop.after = again.after;
-        drop.inliers = again.inliers;
-        drop.seated = true;
+  const near = mmToUnits(1.2, unitToMm);
+  const onBiteCenter = (cloud: Cloud) => cloudCentroid(cropNear(cloud, biteCloud, near));
+  const apart = (a: Cloud, b: Cloud) => {
+    const ac = onBiteCenter(a);
+    const bc = onBiteCenter(b);
+    return Math.hypot(ac[0] - bc[0], ac[1] - bc[1], ac[2] - bc[2]) >= mmToUnits(4, unitToMm);
+  };
+  // 못 붙은 악궁은 나중에 붙은 악궁 자국까지 뺀 바이트로 다시 찾는다. 새로 붙으면 나머지를 또 본다.
+  const remainFor = (row: ArchFit) => {
+    let remain = biteCloud;
+    for (const other of fitted) {
+      if (other !== row && other.seated) remain = excludeMatched(remain, other.aligned, unitToMm);
+    }
+    return remain;
+  };
+  const seat = (row: ArchFit, cloud: Cloud, matrix: THREE.Matrix4, fit: Fitness) => {
+    row.matrix.copy(matrix);
+    row.aligned = cloud;
+    row.after = fit.mean;
+    row.inliers = fit.inliers;
+    row.side = fit.sideMean;
+    row.seated = true;
+    sinkFor(row.geometry)?.(row.matrix);
+  };
+  const swept = new Set<ArchFit>();
+  for (;;) {
+    let progress = false;
+    for (const row of fitted) {
+      if (row.seated) continue;
+      const remain = remainFor(row);
+      if (remain.count >= row.targetCount) continue;
+      row.targetCount = remain.count;
+      const again = await alignArch(
+        row.original,
+        remain,
+        unitToMm,
+        options,
+        sinkFor(row.geometry),
+        acceptFor(row, row.plan),
+      );
+      if (!again.seated) continue;
+      seat(row, again.cloud, again.matrix, {
+        mean: again.after,
+        inliers: again.inliers,
+        coverage: 0,
+        sideMean: again.side,
+      });
+      progress = true;
+    }
+    if (progress) continue;
+    if (!options?.sweepPoses) break;
+    const pending = fitted.filter((row) => !row.seated && !swept.has(row));
+    if (pending.length === 0) break;
+    // 둘 다 못 붙었으면 같은 바이트에서 같이 찾는다. 반대 악궁 자국을 먼저 가져가지 않게 더 잘 맞는 쪽을 먼저 붙인다.
+    const contest = fitted.every((row) => !row.seated) ? pending : pending.slice(0, 1);
+    const hits: Array<{ row: ArchFit; hit: SweepHit }> = [];
+    for (const row of contest) {
+      const hit = await sweepArchPoses(
+        row.original,
+        remainFor(row),
+        unitToMm,
+        options,
+        sinkFor(row.geometry),
+        acceptFor(row, row.plan),
+      );
+      if (hit) hits.push({ row, hit });
+    }
+    if (hits.length === 0) {
+      for (const row of contest) swept.add(row);
+      continue;
+    }
+    const rank = (fit: Fitness) => fit.sideMean * unitToMm - fit.coverage * 4;
+    hits.sort((a, b) => rank(a.hit.fit) - rank(b.hit.fit));
+    const winner = hits[0]!;
+    swept.add(winner.row);
+    seat(winner.row, winner.hit.cloud, winner.hit.matrix, winner.hit.fit);
+    for (const { row, hit } of hits.slice(1)) {
+      if (
+        apart(hit.cloud, winner.hit.cloud) &&
+        occlusionPairOk(
+          planAxes(row.plan, hit.matrix),
+          planAxes(winner.row.plan, winner.hit.matrix),
+          unitToMm,
+        )
+      ) {
+        swept.add(row);
+        seat(row, hit.cloud, hit.matrix, hit.fit);
       } else {
-        drop.matrix.identity();
+        sinkFor(row.geometry)?.(new THREE.Matrix4());
       }
     }
+    for (const row of contest) {
+      if (!hits.some((entry) => entry.row === row)) swept.add(row);
+    }
+  }
+  // 옮겨 붙인 악궁이 틀린 자리면 반대 악궁이 교합 관계를 못 맞춰 끝까지 못 붙는다. 순서를 바꿔 한 번 더 본다.
+  const identity = new THREE.Matrix4();
+  const movedSeated = fitted.filter((row) => row.seated && !row.matrix.equals(identity));
+  const unseated = fitted.filter((row) => !row.seated);
+  if (options?.sweepPoses && movedSeated.length === 1 && unseated.length === 1) {
+    const first = unseated[0]!;
+    const second = movedSeated[0]!;
+    const saved = { ...second, matrix: second.matrix.clone() };
+    const unseat = (row: ArchFit) => {
+      row.seated = false;
+      row.matrix.identity();
+      row.aligned = row.original;
+      sinkFor(row.geometry)?.(row.matrix);
+    };
+    const trySeat = async (row: ArchFit) => {
+      const remain = remainFor(row);
+      const again = await alignArch(
+        row.original,
+        remain,
+        unitToMm,
+        options,
+        sinkFor(row.geometry),
+        acceptFor(row, row.plan),
+      );
+      if (again.seated) {
+        seat(row, again.cloud, again.matrix, {
+          mean: again.after,
+          inliers: again.inliers,
+          coverage: 0,
+          sideMean: again.side,
+        });
+        return true;
+      }
+      const hit = await sweepArchPoses(
+        row.original,
+        remain,
+        unitToMm,
+        options,
+        sinkFor(row.geometry),
+        acceptFor(row, row.plan),
+      );
+      if (hit) seat(row, hit.cloud, hit.matrix, hit.fit);
+      return Boolean(hit);
+    };
+    unseat(second);
+    if (!((await trySeat(first)) && (await trySeat(second)))) {
+      unseat(first);
+      Object.assign(second, saved);
+      sinkFor(second.geometry)?.(second.matrix);
+    }
+  }
+  const upperRow = fitted.find((row) => row.role === "upper" && row.seated);
+  const lowerRow = fitted.find((row) => row.role === "lower" && row.seated);
+  if (upperRow && lowerRow && !apart(upperRow.aligned, lowerRow.aligned)) {
+    const drop = upperRow.side > lowerRow.side + mmToUnits(0.05, unitToMm) ? upperRow : lowerRow;
+    const keep = drop === upperRow ? lowerRow : upperRow;
+    const remain = excludeMatched(biteCloud, keep.aligned, unitToMm);
+    const again = await alignArch(
+      drop.original,
+      remain,
+      unitToMm,
+      options,
+      sinkFor(drop.geometry),
+      acceptFor(drop, drop.plan),
+    );
+    if (
+      again.seated &&
+      cropNear(again.cloud, biteCloud, near).count > 30 &&
+      apart(again.cloud, keep.aligned)
+    ) {
+      drop.matrix.copy(again.matrix);
+      drop.aligned = again.cloud;
+      drop.side = again.side;
+      drop.after = again.after;
+      drop.inliers = again.inliers;
+      drop.seated = true;
+    } else {
+      drop.matrix.identity();
+      drop.aligned = drop.original;
+      drop.seated = false;
+    }
+    sinkFor(drop.geometry)?.(drop.matrix);
+  }
+  // 두 악궁이 다 있는데 옮긴 쪽만 붙으면 교합 관계로 확인할 수 없다. 돌려 댄 틀린 자리일 수 있어 두지 않는다.
+  const hasBoth = ["upper", "lower"].every((role) => fitted.some((row) => row.role === role));
+  const confirmed = fitted.filter((row) => row.seated);
+  if (hasBoth && confirmed.length === 1 && !confirmed[0]!.matrix.equals(identity)) {
+    const lone = confirmed[0]!;
+    lone.seated = false;
+    lone.matrix.identity();
+    lone.aligned = lone.original;
+    sinkFor(lone.geometry)?.(lone.matrix);
   }
   await pause(options);
   let seated = false;
+  let moved = false;
   for (const row of fitted) {
     if (row.seated) seated = true;
     if (row.matrix.equals(new THREE.Matrix4())) continue;
+    moved = true;
     row.geometry.applyMatrix4(row.matrix);
     row.geometry.computeVertexNormals();
     row.geometry.computeBoundingBox();
@@ -1605,7 +2210,7 @@ async function registerJawsToBiteWork(
       inliers: row.inliers,
     });
   }
-  return seated;
+  return { seated, moved, stopped: false, partial: [] };
 }
 
 function geometryUnits(bite: Cloud, arches: THREE.BufferGeometry[]) {

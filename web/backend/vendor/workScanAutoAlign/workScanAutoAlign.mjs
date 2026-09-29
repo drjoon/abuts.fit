@@ -15179,6 +15179,325 @@ function oralScanRoleLabel(role) {
   if (role === "bite") return "바이트";
   return "그 외";
 }
+function samplePositions(geometry, cap) {
+  const pos = geometry.getAttribute("position");
+  const out2 = [];
+  if (!pos || pos.count === 0) return out2;
+  const stride = Math.max(1, Math.floor(pos.count / cap));
+  for (let i = 0; i < pos.count; i += stride) {
+    out2.push([pos.getX(i), pos.getY(i), pos.getZ(i)]);
+  }
+  return out2;
+}
+function meanVec(points) {
+  if (points.length === 0) return null;
+  let x = 0;
+  let y = 0;
+  let z = 0;
+  for (const p of points) {
+    x += p[0];
+    y += p[1];
+    z += p[2];
+  }
+  const n2 = points.length;
+  return new Vector3(x / n2, y / n2, z / n2);
+}
+function extractBoundaryVertices(geometry) {
+  const pos = geometry.getAttribute("position");
+  if (!pos || pos.count === 0) return [];
+  const index2 = geometry.index;
+  const triCount = index2 ? Math.floor(index2.count / 3) : Math.floor(pos.count / 3);
+  const edgeCount = /* @__PURE__ */ new Map();
+  for (let t2 = 0; t2 < triCount; t2 += 1) {
+    const a2 = index2 ? index2.getX(t2 * 3) : t2 * 3;
+    const b2 = index2 ? index2.getX(t2 * 3 + 1) : t2 * 3 + 1;
+    const c2 = index2 ? index2.getX(t2 * 3 + 2) : t2 * 3 + 2;
+    const e1 = a2 < b2 ? `${a2}_${b2}` : `${b2}_${a2}`;
+    const e2 = b2 < c2 ? `${b2}_${c2}` : `${c2}_${b2}`;
+    const e3 = c2 < a2 ? `${c2}_${a2}` : `${a2}_${c2}`;
+    edgeCount.set(e1, (edgeCount.get(e1) ?? 0) + 1);
+    edgeCount.set(e2, (edgeCount.get(e2) ?? 0) + 1);
+    edgeCount.set(e3, (edgeCount.get(e3) ?? 0) + 1);
+  }
+  const pts = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const [key, count] of edgeCount.entries()) {
+    if (count === 1) {
+      const parts = key.split("_");
+      const u2 = Number(parts[0]);
+      const v = Number(parts[1]);
+      if (u2 !== void 0 && !seen.has(u2)) {
+        seen.add(u2);
+        pts.push([pos.getX(u2), pos.getY(u2), pos.getZ(u2)]);
+      }
+      if (v !== void 0 && !seen.has(v)) {
+        seen.add(v);
+        pts.push([pos.getX(v), pos.getY(v), pos.getZ(v)]);
+      }
+    }
+  }
+  return pts;
+}
+function computeMeshNormalVoting(geometry) {
+  const pos = geometry.getAttribute("position");
+  if (!pos || pos.count < 3) return new Vector3(0, 0, 1);
+  const index2 = geometry.index;
+  const triCount = index2 ? Math.floor(index2.count / 3) : Math.floor(pos.count / 3);
+  const sumN = new Vector3();
+  const v1 = new Vector3();
+  const v2 = new Vector3();
+  const n2 = new Vector3();
+  for (let t2 = 0; t2 < triCount; t2 += 1) {
+    const ia = index2 ? index2.getX(t2 * 3) : t2 * 3;
+    const ib = index2 ? index2.getX(t2 * 3 + 1) : t2 * 3 + 1;
+    const ic = index2 ? index2.getX(t2 * 3 + 2) : t2 * 3 + 2;
+    v1.set(
+      pos.getX(ib) - pos.getX(ia),
+      pos.getY(ib) - pos.getY(ia),
+      pos.getZ(ib) - pos.getZ(ia)
+    );
+    v2.set(
+      pos.getX(ic) - pos.getX(ia),
+      pos.getY(ic) - pos.getY(ia),
+      pos.getZ(ic) - pos.getZ(ia)
+    );
+    n2.crossVectors(v1, v2);
+    sumN.add(n2);
+  }
+  if (sumN.lengthSq() > 1e-6) sumN.normalize();
+  return sumN;
+}
+function estimateDentalFrame(loaded) {
+  const upperPts = [];
+  const lowerPts = [];
+  const archPts = [];
+  let singleArchRole = null;
+  let singleMesh = null;
+  for (const entry of loaded) {
+    if (entry.role !== "upper" && entry.role !== "lower") continue;
+    const pts = samplePositions(entry.geometry, 2500);
+    archPts.push(...pts);
+    if (entry.role === "upper") {
+      upperPts.push(...pts);
+      singleArchRole = "upper";
+      singleMesh = entry;
+    } else {
+      lowerPts.push(...pts);
+      singleArchRole = "lower";
+      singleMesh = entry;
+    }
+  }
+  if (archPts.length < 30) {
+    for (const entry of loaded) {
+      if (entry.role === "bite") continue;
+      const pts = samplePositions(entry.geometry, 2500);
+      archPts.push(...pts);
+      singleMesh = entry;
+    }
+  }
+  if (archPts.length < 30) return null;
+  const upperC = meanVec(upperPts);
+  const lowerC = meanVec(lowerPts);
+  const mean = meanVec(archPts);
+  let up = new Vector3();
+  if (upperC && lowerC && upperC.distanceTo(lowerC) > 2) {
+    up.subVectors(upperC, lowerC);
+  }
+  if (up.lengthSq() < 1e-4) {
+    up = smallestPcaAxis(archPts, mean);
+    if (singleMesh) {
+      const bPts = extractBoundaryVertices(singleMesh.geometry);
+      let toCrown = new Vector3();
+      if (bPts.length >= 20) {
+        const bMean = meanVec(bPts);
+        toCrown.subVectors(mean, bMean);
+      }
+      if (toCrown.lengthSq() < 1e-4) {
+        toCrown = computeMeshNormalVoting(singleMesh.geometry);
+      }
+      if (toCrown.lengthSq() > 1e-4) {
+        const expectedUp = singleArchRole === "upper" ? toCrown.clone().negate() : toCrown.clone();
+        if (up.dot(expectedUp) < 0) up.negate();
+      }
+    }
+  }
+  if (up.lengthSq() < 1e-8) return null;
+  up.normalize();
+  const anterior = anteriorAxis(archPts, mean, up);
+  const right = new Vector3().crossVectors(anterior, up).normalize();
+  if (right.lengthSq() < 1e-8) return null;
+  return { up, anterior, right };
+}
+function anteriorAxis(archPts, mean, up) {
+  const tangent = Math.abs(up.z) < 0.9 ? new Vector3(0, 0, 1) : new Vector3(1, 0, 0);
+  const axisA = new Vector3().crossVectors(up, tangent).normalize();
+  const axisB = new Vector3().crossVectors(up, axisA).normalize();
+  let cxx = 0;
+  let cxy = 0;
+  let cyy = 0;
+  const proj = [];
+  for (const p of archPts) {
+    const dx = p[0] - mean.x;
+    const dy = p[1] - mean.y;
+    const dz = p[2] - mean.z;
+    const a2 = dx * axisA.x + dy * axisA.y + dz * axisA.z;
+    const b2 = dx * axisB.x + dy * axisB.y + dz * axisB.z;
+    proj.push({ a: a2, b: b2 });
+    cxx += a2 * a2;
+    cxy += a2 * b2;
+    cyy += b2 * b2;
+  }
+  const theta = 0.5 * Math.atan2(2 * cxy, cxx - cyy);
+  const ct = Math.cos(theta);
+  const st = Math.sin(theta);
+  const lAlong = cxx * ct * ct + 2 * cxy * ct * st + cyy * st * st;
+  const lAcross = cxx * st * st - 2 * cxy * ct * st + cyy * ct * ct;
+  let major = new Vector2(ct, st);
+  let minor = new Vector2(-st, ct);
+  if (lAcross > lAlong) {
+    major = new Vector2(-st, ct);
+    minor = new Vector2(ct, st);
+  }
+  const evalAxis = (axisVec, perpVec) => {
+    const scores = proj.map((p) => p.a * axisVec.x + p.b * axisVec.y);
+    const sorted = [...scores].sort((a2, b2) => a2 - b2);
+    const loCut = sorted[Math.floor(sorted.length * 0.1)] ?? sorted[0] ?? 0;
+    const hiCut = sorted[Math.floor(sorted.length * 0.9)] ?? sorted[sorted.length - 1] ?? 0;
+    const spread = (side) => {
+      let n2 = 0;
+      let sum = 0;
+      let sum2 = 0;
+      for (let i = 0; i < proj.length; i += 1) {
+        const score = scores[i] ?? 0;
+        if (side === "lo" ? score > loCut : score < hiCut) continue;
+        const perpScore = (proj[i]?.a ?? 0) * perpVec.x + (proj[i]?.b ?? 0) * perpVec.y;
+        sum += perpScore;
+        sum2 += perpScore * perpScore;
+        n2 += 1;
+      }
+      if (n2 < 2) return 0;
+      const avg = sum / n2;
+      return sum2 / n2 - avg * avg;
+    };
+    const loSpread = spread("lo");
+    const hiSpread = spread("hi");
+    return { loSpread, hiSpread, contrast: Math.abs(hiSpread - loSpread) };
+  };
+  const minorRes = evalAxis(minor, major);
+  const majorRes = evalAxis(major, minor);
+  const useMinor = minorRes.contrast >= majorRes.contrast;
+  const chosenRes = useMinor ? minorRes : majorRes;
+  const chosenAxis = useMinor ? minor : major;
+  const chosenAxis3 = new Vector3().addScaledVector(axisA, chosenAxis.x).addScaledVector(axisB, chosenAxis.y).normalize();
+  return chosenRes.hiSpread < chosenRes.loSpread ? chosenAxis3 : chosenAxis3.negate();
+}
+function archPlanAxes(points) {
+  if (points.length < 30) return null;
+  const mean = meanVec(points);
+  const up = smallestPcaAxis(points, mean);
+  if (up.lengthSq() < 1e-8) return null;
+  up.normalize();
+  return { up, anterior: anteriorAxis(points, mean, up), center: mean };
+}
+function smallestPcaAxis(points, mean) {
+  let xx = 0;
+  let yy = 0;
+  let zz = 0;
+  let xy = 0;
+  let xz = 0;
+  let yz = 0;
+  for (const p of points) {
+    const x = p[0] - mean.x;
+    const y = p[1] - mean.y;
+    const z = p[2] - mean.z;
+    xx += x * x;
+    yy += y * y;
+    zz += z * z;
+    xy += x * y;
+    xz += x * z;
+    yz += y * z;
+  }
+  const axes = [
+    new Vector3(1, 0, 0),
+    new Vector3(0, 1, 0),
+    new Vector3(0, 0, 1)
+  ];
+  const vars = [xx, yy, zz];
+  let best = 0;
+  if ((vars[1] ?? 0) < (vars[best] ?? 0)) best = 1;
+  if ((vars[2] ?? 0) < (vars[best] ?? 0)) best = 2;
+  const axis = axes[best] ?? new Vector3(0, 0, 1);
+  if (xy * xy + xz * xz + yz * yz > 1) {
+    const candidates = [
+      new Vector3(yy + zz, -xy, -xz),
+      new Vector3(-xy, xx + zz, -yz),
+      new Vector3(-xz, -yz, xx + yy)
+    ];
+    let pick = candidates[0];
+    let score = Infinity;
+    for (const c2 of candidates) {
+      if (c2.lengthSq() < 1e-8) continue;
+      const v = xx * c2.x * c2.x + yy * c2.y * c2.y + zz * c2.z * c2.z + 2 * xy * c2.x * c2.y + 2 * xz * c2.x * c2.z + 2 * yz * c2.y * c2.z;
+      if (v < score) {
+        score = v;
+        pick = c2;
+      }
+    }
+    if (pick.lengthSq() > 1e-8) return pick.normalize();
+  }
+  return axis;
+}
+function reseatOcclusalOrigin(loaded, frame) {
+  const upperPts = [];
+  const lowerPts = [];
+  const archPts = [];
+  for (const entry of loaded) {
+    if (entry.role !== "upper" && entry.role !== "lower") continue;
+    const pts = samplePositions(entry.geometry, 1800);
+    archPts.push(...pts);
+    if (entry.role === "upper") upperPts.push(...pts);
+    else lowerPts.push(...pts);
+  }
+  const mean = meanVec(archPts);
+  if (!mean) return;
+  const upperC = meanVec(upperPts);
+  const lowerC = meanVec(lowerPts);
+  const mid = upperC && lowerC ? upperC.clone().add(lowerC).multiplyScalar(0.5) : mean;
+  const up = frame.up.clone().normalize();
+  const shift = (mean.x - mid.x) * up.x + (mean.y - mid.y) * up.y + (mean.z - mid.z) * up.z;
+  const origin = new Vector3(
+    mean.x - up.x * shift,
+    mean.y - up.y * shift,
+    mean.z - up.z * shift
+  );
+  const { right, anterior } = frame;
+  if (Math.abs(right.dot(anterior)) > 0.02 || Math.abs(right.dot(up)) > 0.02 || Math.abs(anterior.dot(up)) > 0.02 || Math.abs(right.length() - 1) > 0.02 || Math.abs(anterior.length() - 1) > 0.02 || Math.abs(up.length() - 1) > 0.02) {
+    return;
+  }
+  const matrix = new Matrix4().set(
+    right.x,
+    right.y,
+    right.z,
+    -right.dot(origin),
+    anterior.x,
+    anterior.y,
+    anterior.z,
+    -anterior.dot(origin),
+    up.x,
+    up.y,
+    up.z,
+    -up.dot(origin),
+    0,
+    0,
+    0,
+    1
+  );
+  for (const entry of loaded) {
+    entry.geometry.applyMatrix4(matrix);
+    entry.geometry.computeBoundingBox();
+  }
+}
+const FIT_GRID_MM = 2.4;
 function mmToUnits(mm, unitToMm) {
   return mm / (unitToMm > 0 ? unitToMm : 1);
 }
@@ -15202,12 +15521,15 @@ function resetYieldClock() {
   nextYieldAt = 0;
 }
 async function pause(options) {
+  if (options?.cancelled?.()) throw new BiteAlignCancelled();
   await yieldFrame();
   nextYieldAt = performance.now() + 48;
+  if (options?.cancelled?.()) throw new BiteAlignCancelled();
 }
 function checkpoint(options) {
+  if (options?.cancelled?.()) throw new BiteAlignCancelled();
   if (performance.now() < nextYieldAt) return;
-  return pause();
+  return pause(options);
 }
 function cloudRadius(cloud) {
   let cx = 0;
@@ -15791,7 +16113,7 @@ function overlapFitness(source, target, grid, unitToMm) {
     }
   }
   if (dists.length === 0) return { mean: limit, inliers: 0, coverage: 0, sideMean: limit };
-  const sourceGrid = buildGrid(source, mmToUnits(1.1, unitToMm));
+  const sourceGrid = buildGrid(source, mmToUnits(2, unitToMm));
   let covered = 0;
   const step = Math.max(1, Math.floor(target.count / 500));
   const targetDists = [];
@@ -15879,14 +16201,14 @@ function collectPairs(source, target, grid, gate, normalMin, keepFraction) {
   );
   return found.slice(0, keep);
 }
-async function refineToTarget(source, target, unitToMm, tightStart = false, options) {
+async function refineToTarget(source, target, unitToMm, tightStart = false, options, report) {
   const total = new Matrix4();
-  const cell = mmToUnits(1.1, unitToMm);
+  const cell = mmToUnits(FIT_GRID_MM, unitToMm);
   const grid = buildGrid(target, cell);
   orientNormals(source, target, grid, unitToMm);
-  const gates = tightStart ? [4.5, 3, 2, 1.3, 0.8, 0.5] : [12, 8, 5, 3.5, 2.4, 1.6, 1.1, 0.75, 0.55];
+  const gates = tightStart === "screen" ? [8, 5, 3.2, 2, 1.3] : tightStart ? [4.5, 3, 2, 1.3, 0.8, 0.5] : [12, 8, 5, 3.5, 2.4, 1.6, 1.1, 0.75, 0.55];
   for (let iter = 0; iter < gates.length; iter += 1) {
-    const gap = checkpoint();
+    const gap = checkpoint(options);
     if (gap) await gap;
     const gate = mmToUnits(gates[iter] ?? 1, unitToMm);
     const pairs = collectPairs(source, target, grid, gate, iter < 4 ? 0.15 : 0.45, 0.22);
@@ -15899,6 +16221,7 @@ async function refineToTarget(source, target, unitToMm, tightStart = false, opti
     if (move > mmToUnits(18, unitToMm)) continue;
     applyRigid(source, rigid);
     compose(total, rigid);
+    report?.(total);
   }
   return total;
 }
@@ -16020,7 +16343,7 @@ async function buildPpfHash(model, ids, minD, maxD, distStep, options) {
   const hash = /* @__PURE__ */ new Map();
   const rots = [];
   for (const ref of ids) {
-    const gap = checkpoint();
+    const gap = checkpoint(options);
     if (gap) await gap;
     const rot = rotationToX(
       model.nrm[ref * 3] ?? 0,
@@ -16083,7 +16406,7 @@ function poseTightness(model, scene, rigid, unitToMm) {
   const moved = cloneCloud(model);
   applyRigid(moved, rigid);
   const tight = mmToUnits(4, unitToMm);
-  const grid = buildGrid(moved, mmToUnits(1.1, unitToMm));
+  const grid = buildGrid(moved, mmToUnits(2, unitToMm));
   const step = Math.max(1, Math.floor(scene.count / 420));
   const dists = [];
   let covered = 0;
@@ -16145,14 +16468,14 @@ async function ppfSearch(model, scene, unitToMm, options) {
   const distStep = mmToUnits(2.4, unitToMm);
   const modelIds = strideIds(model.count, 900);
   const sceneIds = strideIds(scene.count, 220);
-  const { hash, rots } = await buildPpfHash(model, modelIds, minD, maxD, distStep);
+  const { hash, rots } = await buildPpfHash(model, modelIds, minD, maxD, distStep, options);
   const sceneGrid = buildGrid(scene, Math.max(maxD / 5, 1e-4));
   const votes = new Int32Array(model.count * PPF_ALPHA_BINS);
   const clustered = /* @__PURE__ */ new Map();
   const clusterStep = Math.max(mmToUnits(3.5, unitToMm), 1e-4);
   const centroid = cloudCentroid(model);
   for (const ref of sceneIds) {
-    const gap = checkpoint();
+    const gap = checkpoint(options);
     if (gap) await gap;
     votes.fill(0);
     const mates = sceneGrid.band(
@@ -16239,7 +16562,7 @@ async function ppfSearch(model, scene, unitToMm, options) {
   let best = null;
   let bestSide = mmToUnits(1.15, unitToMm);
   for (const row of ranked) {
-    const gap = checkpoint();
+    const gap = checkpoint(options);
     if (gap) await gap;
     const quality = poseTightness(model, scene, row.rigid, unitToMm);
     if (quality.cover < 0.1) continue;
@@ -16251,12 +16574,12 @@ async function ppfSearch(model, scene, unitToMm, options) {
   return best;
 }
 async function globalPose(source, target, unitToMm, options) {
-  const first = await ppfSearch(source, target, unitToMm);
+  const first = await ppfSearch(source, target, unitToMm, options);
   const firstQ = first ? poseTightness(source, target, first, unitToMm) : null;
   if (first && firstQ && firstQ.side <= mmToUnits(0.8, unitToMm) && firstQ.cover >= 0.14) {
     return first;
   }
-  const flipped = await ppfSearch(flipCloudNormals(source), target, unitToMm);
+  const flipped = await ppfSearch(flipCloudNormals(source), target, unitToMm, options);
   if (!flipped) return first;
   const flippedQ = poseTightness(source, target, flipped, unitToMm);
   if (!firstQ || flippedQ.side < firstQ.side) return flipped;
@@ -16299,11 +16622,14 @@ function excludeMatched(target, aligned, unitToMm) {
 function seatedFit(fit, unitToMm) {
   return fit.sideMean <= mmToUnits(0.72, unitToMm) && fit.coverage >= 0.05;
 }
-async function alignArch(source, target, unitToMm, options) {
-  const grid = buildGrid(target, mmToUnits(1.2, unitToMm));
+async function alignArch(source, target, unitToMm, options, emit, accept) {
+  const ok = (matrix) => !accept || accept(matrix);
+  const grid = buildGrid(target, mmToUnits(FIT_GRID_MM, unitToMm));
   const before = overlapFitness(source, target, grid, unitToMm);
-  const already = seatedFit(before, unitToMm) && before.sideMean <= mmToUnits(0.32, unitToMm);
+  const inPlace = seatedFit(before, unitToMm) && ok(new Matrix4());
+  const already = inPlace && before.sideMean <= mmToUnits(0.32, unitToMm);
   if (already) {
+    emit?.(new Matrix4());
     return {
       matrix: new Matrix4(),
       before: before.mean,
@@ -16315,36 +16641,46 @@ async function alignArch(source, target, unitToMm, options) {
     };
   }
   const local = cloneCloud(source);
-  const localMatrix = await refineToTarget(local, target, unitToMm, false);
+  const localMatrix = await refineToTarget(local, target, unitToMm, false, options, emit);
   const localFit = overlapFitness(
     local,
     target,
-    buildGrid(target, mmToUnits(1.2, unitToMm)),
+    buildGrid(target, mmToUnits(FIT_GRID_MM, unitToMm)),
     unitToMm
   );
-  let bestCloud = local;
-  let bestMatrix = localMatrix;
-  let bestFit = localFit;
-  const deepEnough = seatedFit(localFit, unitToMm);
+  const localOk = ok(localMatrix);
+  let bestCloud = localOk ? local : source;
+  let bestMatrix = localOk ? localMatrix : new Matrix4();
+  let bestFit = localOk ? localFit : before;
+  const deepEnough = localOk && seatedFit(localFit, unitToMm);
   if (!deepEnough) {
-    const pose = await globalPose(source, target, unitToMm);
+    const pose = await globalPose(source, target, unitToMm, options);
     if (pose) {
       let globalCloud = cloneCloud(source);
       applyRigid(globalCloud, pose);
       let matrix = new Matrix4();
       compose(matrix, pose);
+      emit?.(matrix);
       const coarse = overlapFitness(
         globalCloud,
         target,
-        buildGrid(target, mmToUnits(1.2, unitToMm)),
+        buildGrid(target, mmToUnits(FIT_GRID_MM, unitToMm)),
         unitToMm
       );
-      const refined = await refineToTarget(globalCloud, target, unitToMm, true);
+      const poseMatrix = matrix.clone();
+      const refined = await refineToTarget(
+        globalCloud,
+        target,
+        unitToMm,
+        true,
+        options,
+        emit && ((total) => emit(total.clone().multiply(poseMatrix)))
+      );
       matrix.premultiply(refined);
       let fit = overlapFitness(
         globalCloud,
         target,
-        buildGrid(target, mmToUnits(1.2, unitToMm)),
+        buildGrid(target, mmToUnits(FIT_GRID_MM, unitToMm)),
         unitToMm
       );
       if (coarse.sideMean + mmToUnits(0.05, unitToMm) < fit.sideMean) {
@@ -16355,7 +16691,7 @@ async function alignArch(source, target, unitToMm, options) {
         compose(matrix, pose);
         fit = coarse;
       }
-      if (fit.coverage > bestFit.coverage + 0.05 || fit.coverage >= bestFit.coverage - 0.02 && fit.sideMean < bestFit.sideMean) {
+      if (ok(matrix) && (fit.coverage > bestFit.coverage + 0.05 || fit.coverage >= bestFit.coverage - 0.02 && fit.sideMean < bestFit.sideMean)) {
         bestCloud = globalCloud;
         bestMatrix = matrix;
         bestFit = fit;
@@ -16363,17 +16699,19 @@ async function alignArch(source, target, unitToMm, options) {
     }
   }
   const improved = bestFit.coverage > before.coverage + 0.08 || bestFit.sideMean + mmToUnits(0.15, unitToMm) < before.sideMean;
-  if (!seatedFit(bestFit, unitToMm) || !improved) {
+  if (!seatedFit(bestFit, unitToMm) || !improved || !ok(bestMatrix)) {
+    emit?.(new Matrix4());
     return {
       matrix: new Matrix4(),
       before: before.mean,
       after: before.mean,
       inliers: before.inliers,
       cloud: source,
-      seated: false,
+      seated: inPlace,
       side: before.sideMean
     };
   }
+  emit?.(bestMatrix);
   return {
     matrix: bestMatrix,
     before: before.mean,
@@ -16383,6 +16721,259 @@ async function alignArch(source, target, unitToMm, options) {
     seated: true,
     side: bestFit.sideMean
   };
+}
+function planSample(geometry, cap) {
+  const pos = geometry.getAttribute("position");
+  const out2 = [];
+  if (!pos) return out2;
+  for (const i of strideIds(pos.count, cap)) out2.push([pos.getX(i), pos.getY(i), pos.getZ(i)]);
+  return out2;
+}
+function planAxes(points, matrix) {
+  const e2 = matrix.elements;
+  const moved = points.map(
+    ([x, y, z]) => [
+      (e2[0] ?? 1) * x + (e2[4] ?? 0) * y + (e2[8] ?? 0) * z + (e2[12] ?? 0),
+      (e2[1] ?? 0) * x + (e2[5] ?? 1) * y + (e2[9] ?? 0) * z + (e2[13] ?? 0),
+      (e2[2] ?? 0) * x + (e2[6] ?? 0) * y + (e2[10] ?? 1) * z + (e2[14] ?? 0)
+    ]
+  );
+  return archPlanAxes(moved);
+}
+function occlusionPairOk(a2, b2, unitToMm) {
+  const fa = a2;
+  const fb = b2;
+  if (!fa || !fb) return true;
+  const dist = fa.center.distanceTo(fb.center) * unitToMm;
+  return fa.anterior.dot(fb.anterior) >= 0.6 && Math.abs(fa.up.dot(fb.up)) >= 0.85 && dist >= 8 && dist <= 18;
+}
+const AXIS_ROTATIONS = (() => {
+  const out2 = [];
+  const perms = [
+    [0, 1, 2],
+    [0, 2, 1],
+    [1, 0, 2],
+    [1, 2, 0],
+    [2, 0, 1],
+    [2, 1, 0]
+  ];
+  for (const perm of perms) {
+    for (let signs = 0; signs < 8; signs += 1) {
+      const m = [
+        [0, 0, 0],
+        [0, 0, 0],
+        [0, 0, 0]
+      ];
+      for (let row = 0; row < 3; row += 1) {
+        m[row][perm[row]] = signs & 1 << row ? -1 : 1;
+      }
+      if (det33(m) > 0) out2.push(m);
+    }
+  }
+  return out2;
+})();
+const SWEEP_ROTATIONS = (() => {
+  const tilt = Math.PI / 180 * 36;
+  const offsets = [
+    [0, 0, 0],
+    [tilt, 0, 0],
+    [-tilt, 0, 0],
+    [0, tilt, 0],
+    [0, -tilt, 0],
+    [0, 0, tilt],
+    [0, 0, -tilt]
+  ].map(([x, y, z]) => rodrigues(x ?? 0, y ?? 0, z ?? 0));
+  const out2 = [];
+  for (const offset of offsets) {
+    for (const rot of AXIS_ROTATIONS) out2.push(mul33(offset, rot));
+  }
+  return out2;
+})();
+function rigidFromMatrix(matrix) {
+  const e2 = matrix.elements;
+  return {
+    r: [
+      [e2[0] ?? 1, e2[4] ?? 0, e2[8] ?? 0],
+      [e2[1] ?? 0, e2[5] ?? 1, e2[9] ?? 0],
+      [e2[2] ?? 0, e2[6] ?? 0, e2[10] ?? 1]
+    ],
+    t: [e2[12] ?? 0, e2[13] ?? 0, e2[14] ?? 0]
+  };
+}
+function subsampleCloud(cloud, cap) {
+  const ids = strideIds(cloud.count, cap);
+  const xyz = new Float32Array(ids.length * 3);
+  const nrm = new Float32Array(ids.length * 3);
+  ids.forEach((index2, row) => {
+    for (let k = 0; k < 3; k += 1) {
+      xyz[row * 3 + k] = cloud.xyz[index2 * 3 + k] ?? 0;
+      nrm[row * 3 + k] = cloud.nrm[index2 * 3 + k] ?? 0;
+    }
+  });
+  return { xyz, nrm, count: ids.length };
+}
+function translationSeeds(source, rot, center, samples, sampleNormals, unitToMm, keep) {
+  const cell = mmToUnits(1.8, unitToMm);
+  const step = mmToUnits(4, unitToMm);
+  const moved = new Float32Array(source.count * 3);
+  const turned = new Float32Array(source.count * 3);
+  const sMin = [Infinity, Infinity, Infinity];
+  const sMax = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < source.count; i += 1) {
+    const px = (source.xyz[i * 3] ?? 0) - center[0];
+    const py = (source.xyz[i * 3 + 1] ?? 0) - center[1];
+    const pz = (source.xyz[i * 3 + 2] ?? 0) - center[2];
+    for (let row = 0; row < 3; row += 1) {
+      const r2 = rot[row];
+      const v = (r2[0] ?? 0) * px + (r2[1] ?? 0) * py + (r2[2] ?? 0) * pz;
+      moved[i * 3 + row] = v;
+      turned[i * 3 + row] = (r2[0] ?? 0) * (source.nrm[i * 3] ?? 0) + (r2[1] ?? 0) * (source.nrm[i * 3 + 1] ?? 0) + (r2[2] ?? 0) * (source.nrm[i * 3 + 2] ?? 0);
+      if (v < sMin[row]) sMin[row] = v;
+      if (v > sMax[row]) sMax[row] = v;
+    }
+  }
+  const nx = Math.ceil((sMax[0] - sMin[0]) / cell) + 3;
+  const ny = Math.ceil((sMax[1] - sMin[1]) / cell) + 3;
+  const nz = Math.ceil((sMax[2] - sMin[2]) / cell) + 3;
+  const occ = new Uint8Array(nx * ny * nz);
+  const occN = new Float32Array(nx * ny * nz * 3);
+  for (let i = 0; i < source.count; i += 1) {
+    const ix = Math.floor((moved[i * 3] - sMin[0]) / cell) + 1;
+    const iy = Math.floor((moved[i * 3 + 1] - sMin[1]) / cell) + 1;
+    const iz = Math.floor((moved[i * 3 + 2] - sMin[2]) / cell) + 1;
+    for (let dz = -1; dz <= 1; dz += 1) {
+      for (let dy = -1; dy <= 1; dy += 1) {
+        for (let dx = -1; dx <= 1; dx += 1) {
+          const at = ((iz + dz) * ny + (iy + dy)) * nx + ix + dx;
+          occ[at] = 1;
+          occN[at * 3] = turned[i * 3];
+          occN[at * 3 + 1] = turned[i * 3 + 1];
+          occN[at * 3 + 2] = turned[i * 3 + 2];
+        }
+      }
+    }
+  }
+  const n2 = samples.length / 3;
+  const tMin = [Infinity, Infinity, Infinity];
+  const tMax = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < n2; i += 1) {
+    for (let k = 0; k < 3; k += 1) {
+      const v = samples[i * 3 + k];
+      if (v < tMin[k]) tMin[k] = v;
+      if (v > tMax[k]) tMax[k] = v;
+    }
+  }
+  const lo = [0, 1, 2].map((k) => tMin[k] - sMax[k]);
+  const hi = [0, 1, 2].map((k) => tMax[k] - sMin[k]);
+  const floor = Math.max(6, Math.floor(n2 * 0.12));
+  const found = [];
+  for (let tx = lo[0]; tx <= hi[0]; tx += step) {
+    for (let ty = lo[1]; ty <= hi[1]; ty += step) {
+      for (let tz = lo[2]; tz <= hi[2]; tz += step) {
+        let score = 0;
+        for (let i = 0; i < n2; i += 1) {
+          const ix = Math.floor((samples[i * 3] - tx - sMin[0]) / cell) + 1;
+          if (ix < 0 || ix >= nx) continue;
+          const iy = Math.floor((samples[i * 3 + 1] - ty - sMin[1]) / cell) + 1;
+          if (iy < 0 || iy >= ny) continue;
+          const iz = Math.floor((samples[i * 3 + 2] - tz - sMin[2]) / cell) + 1;
+          if (iz < 0 || iz >= nz) continue;
+          const at = (iz * ny + iy) * nx + ix;
+          if (!occ[at]) continue;
+          const dot = occN[at * 3] * sampleNormals[i * 3] + occN[at * 3 + 1] * sampleNormals[i * 3 + 1] + occN[at * 3 + 2] * sampleNormals[i * 3 + 2];
+          if (Math.abs(dot) > 0.55) score += 1;
+        }
+        if (score >= floor) found.push({ t: [tx, ty, tz], score });
+      }
+    }
+  }
+  found.sort((a2, b2) => b2.score - a2.score);
+  const apart = mmToUnits(7, unitToMm);
+  const seeds = [];
+  for (const row of found) {
+    if (seeds.length >= keep) break;
+    const near = seeds.some(
+      ({ shift }) => Math.hypot(shift[0] - row.t[0], shift[1] - row.t[1], shift[2] - row.t[2]) < apart
+    );
+    if (near) continue;
+    const t2 = [0, 1, 2].map((k) => {
+      const r2 = rot[k];
+      return row.t[k] - ((r2[0] ?? 0) * center[0] + (r2[1] ?? 0) * center[1] + (r2[2] ?? 0) * center[2]);
+    });
+    seeds.push({ rigid: { r: rot, t: t2 }, score: row.score, shift: row.t });
+  }
+  return seeds;
+}
+async function sweepArchPoses(source, target, unitToMm, options, emit, accept) {
+  if (source.count < 80 || target.count < 80) return null;
+  const center = cloudCentroid(source);
+  const grid = buildGrid(target, mmToUnits(FIT_GRID_MM, unitToMm));
+  const sampleIds = strideIds(target.count, 110);
+  const samples = new Float32Array(sampleIds.length * 3);
+  const sampleNormals = new Float32Array(sampleIds.length * 3);
+  sampleIds.forEach((index2, row) => {
+    for (let k = 0; k < 3; k += 1) {
+      samples[row * 3 + k] = target.xyz[index2 * 3 + k] ?? 0;
+      sampleNormals[row * 3 + k] = target.nrm[index2 * 3 + k] ?? 0;
+    }
+  });
+  const coarse = subsampleCloud(source, 500);
+  const seeds = [];
+  for (const rot of SWEEP_ROTATIONS) {
+    const gap = checkpoint(options);
+    if (gap) await gap;
+    seeds.push(...translationSeeds(coarse, rot, center, samples, sampleNormals, unitToMm, 1));
+  }
+  seeds.sort((a2, b2) => b2.score - a2.score);
+  const screened = [];
+  const ok = (matrix) => !accept || accept(matrix);
+  for (const seed of seeds.slice(0, 20)) {
+    const cloud = cloneCloud(coarse);
+    applyRigid(cloud, seed.rigid);
+    const matrix = new Matrix4();
+    compose(matrix, seed.rigid);
+    emit?.(matrix);
+    const start = matrix.clone();
+    matrix.premultiply(
+      await refineToTarget(
+        cloud,
+        target,
+        unitToMm,
+        "screen",
+        options,
+        emit && ((total) => emit(total.clone().multiply(start)))
+      )
+    );
+    if (!ok(matrix)) continue;
+    screened.push({ matrix, fit: overlapFitness(cloud, target, grid, unitToMm) });
+  }
+  const rank2 = (fit) => fit.sideMean * unitToMm - fit.coverage * 4;
+  screened.sort((a2, b2) => rank2(a2.fit) - rank2(b2.fit));
+  let best = null;
+  for (const row of screened.slice(0, 2)) {
+    const cloud = cloneCloud(source);
+    applyRigid(cloud, rigidFromMatrix(row.matrix));
+    const matrix = row.matrix.clone();
+    emit?.(matrix);
+    const start = matrix.clone();
+    matrix.premultiply(
+      await refineToTarget(
+        cloud,
+        target,
+        unitToMm,
+        true,
+        options,
+        emit && ((total) => emit(total.clone().multiply(start)))
+      )
+    );
+    const fit = overlapFitness(cloud, target, grid, unitToMm);
+    if (!seatedFit(fit, unitToMm) || !ok(matrix)) continue;
+    if (!best || fit.coverage > best.fit.coverage + 0.03 || fit.coverage >= best.fit.coverage - 0.01 && fit.sideMean < best.fit.sideMean) {
+      best = { cloud, matrix, fit };
+    }
+  }
+  emit?.(best ? best.matrix : new Matrix4());
+  return best;
 }
 function mergeGeometries(geometries) {
   const xyz = [];
@@ -16419,37 +17010,65 @@ function cropNear(cloud, ref, thresh) {
   }
   return { xyz: Float32Array.from(xyz), nrm: Float32Array.from(nrm), count: xyz.length / 3 };
 }
-async function registerJawsToBite(entries, options) {
+async function registerJawsToBiteResult(entries, options) {
+  const fitted = [];
+  const shown = /* @__PURE__ */ new Map();
+  const onPose = options?.onPose;
+  const tracked = {
+    ...options,
+    onPose: (geometry, matrix) => {
+      shown.set(geometry, matrix.clone());
+      onPose?.(geometry, matrix);
+    }
+  };
   try {
-    return await registerJawsToBiteWork(entries, options);
+    return await registerJawsToBiteWork(entries, fitted, tracked);
   } catch (error2) {
-    if (error2 instanceof BiteAlignCancelled) return false;
-    throw error2;
+    if (!(error2 instanceof BiteAlignCancelled)) throw error2;
+    const identity = new Matrix4();
+    return {
+      seated: false,
+      moved: false,
+      stopped: true,
+      partial: [...shown].filter(([, matrix]) => !matrix.equals(identity)).map(([geometry, matrix]) => ({ geometry, matrix }))
+    };
   }
 }
-async function registerJawsToBiteWork(entries, options) {
+async function registerJawsToBiteWork(entries, fitted, options) {
+  const none = { seated: false, moved: false, stopped: false, partial: [] };
   const bite = entries.filter((entry) => entry.role === "bite");
   const arches = entries.filter(
     (entry) => entry.role === "upper" || entry.role === "lower"
   );
-  if (bite.length === 0 || arches.length === 0) return false;
+  if (bite.length === 0 || arches.length === 0) return none;
   for (const entry of entries) {
     if (!entry.geometry.getAttribute("normal")) entry.geometry.computeVertexNormals();
   }
   resetYieldClock();
-  await pause();
+  await pause(options);
   const biteCloud = mergeGeometries(bite.map((entry) => entry.geometry));
-  if (biteCloud.count < 80) return false;
+  if (biteCloud.count < 80) return none;
   const unitToMm = geometryUnits(biteCloud, arches.map((entry) => entry.geometry));
+  const sinkFor = (geometry) => {
+    const onPose = options?.onPose;
+    return onPose ? (matrix) => onPose(geometry, matrix) : void 0;
+  };
   const order = [...arches].sort((a2, b2) => {
     const af = roughGap(a2.geometry, biteCloud, unitToMm);
     const bf = roughGap(b2.geometry, biteCloud, unitToMm);
     return af - bf;
   });
+  const acceptFor = (self2, plan) => (matrix) => {
+    const others = fitted.filter((other) => other !== self2 && other.seated);
+    if (others.length === 0) return true;
+    const mine = planAxes(plan, matrix);
+    return others.every(
+      (other) => occlusionPairOk(mine, planAxes(other.plan, other.matrix), unitToMm)
+    );
+  };
   let target = biteCloud;
-  const fitted = [];
   for (const entry of order) {
-    await pause();
+    await pause(options);
     const source = sampleGeometry(entry.geometry, mmToUnits(0.95, unitToMm), 2400);
     if (source.count < 80) continue;
     const radius = cloudRadius(source);
@@ -16458,8 +17077,18 @@ async function registerJawsToBiteWork(entries, options) {
       const ratio = radius / biteRadius;
       if (ratio > 8 || ratio < 0.05) continue;
     }
-    const aligned = await alignArch(source, target, unitToMm);
+    const plan = planSample(entry.geometry, 1500);
+    const aligned = await alignArch(
+      source,
+      target,
+      unitToMm,
+      options,
+      sinkFor(entry.geometry),
+      acceptFor(null, plan)
+    );
     fitted.push({
+      targetCount: target.count,
+      plan,
       geometry: entry.geometry,
       role: entry.role,
       matrix: aligned.matrix,
@@ -16475,42 +17104,190 @@ async function registerJawsToBiteWork(entries, options) {
       target = excludeMatched(target, aligned.cloud, unitToMm);
     }
   }
-  const upperRow = fitted.find((row) => row.role === "upper" && row.seated);
-  const lowerRow = fitted.find((row) => row.role === "lower" && row.seated);
-  if (upperRow && lowerRow) {
-    const near = mmToUnits(1.2, unitToMm);
-    const upperOnBite = cropNear(upperRow.aligned, biteCloud, near);
-    const lowerOnBite = cropNear(lowerRow.aligned, biteCloud, near);
-    const uc = cloudCentroid(upperOnBite);
-    const lc = cloudCentroid(lowerOnBite);
-    const gap = Math.hypot(uc[0] - lc[0], uc[1] - lc[1], uc[2] - lc[2]);
-    if (gap < mmToUnits(4, unitToMm)) {
-      const drop = upperRow.side > lowerRow.side + mmToUnits(0.05, unitToMm) ? upperRow : lowerRow;
-      const keep = drop === upperRow ? lowerRow : upperRow;
-      const remain = excludeMatched(biteCloud, keep.aligned, unitToMm);
-      const again = await alignArch(drop.original, remain, unitToMm);
-      const againOnBite = cropNear(again.cloud, biteCloud, near);
-      const keepOnBite = cropNear(keep.aligned, biteCloud, near);
-      const ac = cloudCentroid(againOnBite);
-      const kc = cloudCentroid(keepOnBite);
-      const againGap = Math.hypot(ac[0] - kc[0], ac[1] - kc[1], ac[2] - kc[2]);
-      if (again.seated && againOnBite.count > 30 && againGap >= mmToUnits(4, unitToMm)) {
-        drop.matrix.copy(again.matrix);
-        drop.aligned = again.cloud;
-        drop.side = again.side;
-        drop.after = again.after;
-        drop.inliers = again.inliers;
-        drop.seated = true;
+  const near = mmToUnits(1.2, unitToMm);
+  const onBiteCenter = (cloud) => cloudCentroid(cropNear(cloud, biteCloud, near));
+  const apart = (a2, b2) => {
+    const ac = onBiteCenter(a2);
+    const bc = onBiteCenter(b2);
+    return Math.hypot(ac[0] - bc[0], ac[1] - bc[1], ac[2] - bc[2]) >= mmToUnits(4, unitToMm);
+  };
+  const remainFor = (row) => {
+    let remain = biteCloud;
+    for (const other of fitted) {
+      if (other !== row && other.seated) remain = excludeMatched(remain, other.aligned, unitToMm);
+    }
+    return remain;
+  };
+  const seat = (row, cloud, matrix, fit) => {
+    row.matrix.copy(matrix);
+    row.aligned = cloud;
+    row.after = fit.mean;
+    row.inliers = fit.inliers;
+    row.side = fit.sideMean;
+    row.seated = true;
+    sinkFor(row.geometry)?.(row.matrix);
+  };
+  const swept = /* @__PURE__ */ new Set();
+  for (; ; ) {
+    let progress = false;
+    for (const row of fitted) {
+      if (row.seated) continue;
+      const remain = remainFor(row);
+      if (remain.count >= row.targetCount) continue;
+      row.targetCount = remain.count;
+      const again = await alignArch(
+        row.original,
+        remain,
+        unitToMm,
+        options,
+        sinkFor(row.geometry),
+        acceptFor(row, row.plan)
+      );
+      if (!again.seated) continue;
+      seat(row, again.cloud, again.matrix, {
+        mean: again.after,
+        inliers: again.inliers,
+        coverage: 0,
+        sideMean: again.side
+      });
+      progress = true;
+    }
+    if (progress) continue;
+    if (!options?.sweepPoses) break;
+    const pending = fitted.filter((row) => !row.seated && !swept.has(row));
+    if (pending.length === 0) break;
+    const contest = fitted.every((row) => !row.seated) ? pending : pending.slice(0, 1);
+    const hits = [];
+    for (const row of contest) {
+      const hit = await sweepArchPoses(
+        row.original,
+        remainFor(row),
+        unitToMm,
+        options,
+        sinkFor(row.geometry),
+        acceptFor(row, row.plan)
+      );
+      if (hit) hits.push({ row, hit });
+    }
+    if (hits.length === 0) {
+      for (const row of contest) swept.add(row);
+      continue;
+    }
+    const rank2 = (fit) => fit.sideMean * unitToMm - fit.coverage * 4;
+    hits.sort((a2, b2) => rank2(a2.hit.fit) - rank2(b2.hit.fit));
+    const winner = hits[0];
+    swept.add(winner.row);
+    seat(winner.row, winner.hit.cloud, winner.hit.matrix, winner.hit.fit);
+    for (const { row, hit } of hits.slice(1)) {
+      if (apart(hit.cloud, winner.hit.cloud) && occlusionPairOk(
+        planAxes(row.plan, hit.matrix),
+        planAxes(winner.row.plan, winner.hit.matrix),
+        unitToMm
+      )) {
+        swept.add(row);
+        seat(row, hit.cloud, hit.matrix, hit.fit);
       } else {
-        drop.matrix.identity();
+        sinkFor(row.geometry)?.(new Matrix4());
       }
     }
+    for (const row of contest) {
+      if (!hits.some((entry) => entry.row === row)) swept.add(row);
+    }
   }
-  await pause();
+  const identity = new Matrix4();
+  const movedSeated = fitted.filter((row) => row.seated && !row.matrix.equals(identity));
+  const unseated = fitted.filter((row) => !row.seated);
+  if (options?.sweepPoses && movedSeated.length === 1 && unseated.length === 1) {
+    const first = unseated[0];
+    const second = movedSeated[0];
+    const saved = { ...second, matrix: second.matrix.clone() };
+    const unseat = (row) => {
+      row.seated = false;
+      row.matrix.identity();
+      row.aligned = row.original;
+      sinkFor(row.geometry)?.(row.matrix);
+    };
+    const trySeat = async (row) => {
+      const remain = remainFor(row);
+      const again = await alignArch(
+        row.original,
+        remain,
+        unitToMm,
+        options,
+        sinkFor(row.geometry),
+        acceptFor(row, row.plan)
+      );
+      if (again.seated) {
+        seat(row, again.cloud, again.matrix, {
+          mean: again.after,
+          inliers: again.inliers,
+          coverage: 0,
+          sideMean: again.side
+        });
+        return true;
+      }
+      const hit = await sweepArchPoses(
+        row.original,
+        remain,
+        unitToMm,
+        options,
+        sinkFor(row.geometry),
+        acceptFor(row, row.plan)
+      );
+      if (hit) seat(row, hit.cloud, hit.matrix, hit.fit);
+      return Boolean(hit);
+    };
+    unseat(second);
+    if (!(await trySeat(first) && await trySeat(second))) {
+      unseat(first);
+      Object.assign(second, saved);
+      sinkFor(second.geometry)?.(second.matrix);
+    }
+  }
+  const upperRow = fitted.find((row) => row.role === "upper" && row.seated);
+  const lowerRow = fitted.find((row) => row.role === "lower" && row.seated);
+  if (upperRow && lowerRow && !apart(upperRow.aligned, lowerRow.aligned)) {
+    const drop = upperRow.side > lowerRow.side + mmToUnits(0.05, unitToMm) ? upperRow : lowerRow;
+    const keep = drop === upperRow ? lowerRow : upperRow;
+    const remain = excludeMatched(biteCloud, keep.aligned, unitToMm);
+    const again = await alignArch(
+      drop.original,
+      remain,
+      unitToMm,
+      options,
+      sinkFor(drop.geometry),
+      acceptFor(drop, drop.plan)
+    );
+    if (again.seated && cropNear(again.cloud, biteCloud, near).count > 30 && apart(again.cloud, keep.aligned)) {
+      drop.matrix.copy(again.matrix);
+      drop.aligned = again.cloud;
+      drop.side = again.side;
+      drop.after = again.after;
+      drop.inliers = again.inliers;
+      drop.seated = true;
+    } else {
+      drop.matrix.identity();
+      drop.aligned = drop.original;
+      drop.seated = false;
+    }
+    sinkFor(drop.geometry)?.(drop.matrix);
+  }
+  const hasBoth = ["upper", "lower"].every((role) => fitted.some((row) => row.role === role));
+  const confirmed = fitted.filter((row) => row.seated);
+  if (hasBoth && confirmed.length === 1 && !confirmed[0].matrix.equals(identity)) {
+    const lone = confirmed[0];
+    lone.seated = false;
+    lone.matrix.identity();
+    lone.aligned = lone.original;
+    sinkFor(lone.geometry)?.(lone.matrix);
+  }
+  await pause(options);
   let seated = false;
+  let moved = false;
   for (const row of fitted) {
     if (row.seated) seated = true;
     if (row.matrix.equals(new Matrix4())) continue;
+    moved = true;
     row.geometry.applyMatrix4(row.matrix);
     row.geometry.computeVertexNormals();
     row.geometry.computeBoundingBox();
@@ -16521,7 +17298,7 @@ async function registerJawsToBiteWork(entries, options) {
       inliers: row.inliers
     });
   }
-  return seated;
+  return { seated, moved, stopped: false, partial: [] };
 }
 function geometryUnits(bite, arches) {
   let radius = cloudRadius(bite);
@@ -16537,313 +17314,6 @@ function roughGap(geometry, target, unitToMm) {
   const source = sampleGeometry(geometry, mmToUnits(1.4, unitToMm), 600);
   const grid = buildGrid(target, mmToUnits(1.4, unitToMm));
   return overlapFitness(source, target, grid, unitToMm).mean;
-}
-function samplePositions(geometry, cap) {
-  const pos = geometry.getAttribute("position");
-  const out2 = [];
-  if (!pos || pos.count === 0) return out2;
-  const stride = Math.max(1, Math.floor(pos.count / cap));
-  for (let i = 0; i < pos.count; i += stride) {
-    out2.push([pos.getX(i), pos.getY(i), pos.getZ(i)]);
-  }
-  return out2;
-}
-function meanVec(points) {
-  if (points.length === 0) return null;
-  let x = 0;
-  let y = 0;
-  let z = 0;
-  for (const p of points) {
-    x += p[0];
-    y += p[1];
-    z += p[2];
-  }
-  const n2 = points.length;
-  return new Vector3(x / n2, y / n2, z / n2);
-}
-function extractBoundaryVertices(geometry) {
-  const pos = geometry.getAttribute("position");
-  if (!pos || pos.count === 0) return [];
-  const index2 = geometry.index;
-  const triCount = index2 ? Math.floor(index2.count / 3) : Math.floor(pos.count / 3);
-  const edgeCount = /* @__PURE__ */ new Map();
-  for (let t2 = 0; t2 < triCount; t2 += 1) {
-    const a2 = index2 ? index2.getX(t2 * 3) : t2 * 3;
-    const b2 = index2 ? index2.getX(t2 * 3 + 1) : t2 * 3 + 1;
-    const c2 = index2 ? index2.getX(t2 * 3 + 2) : t2 * 3 + 2;
-    const e1 = a2 < b2 ? `${a2}_${b2}` : `${b2}_${a2}`;
-    const e2 = b2 < c2 ? `${b2}_${c2}` : `${c2}_${b2}`;
-    const e3 = c2 < a2 ? `${c2}_${a2}` : `${a2}_${c2}`;
-    edgeCount.set(e1, (edgeCount.get(e1) ?? 0) + 1);
-    edgeCount.set(e2, (edgeCount.get(e2) ?? 0) + 1);
-    edgeCount.set(e3, (edgeCount.get(e3) ?? 0) + 1);
-  }
-  const pts = [];
-  const seen = /* @__PURE__ */ new Set();
-  for (const [key, count] of edgeCount.entries()) {
-    if (count === 1) {
-      const parts = key.split("_");
-      const u2 = Number(parts[0]);
-      const v = Number(parts[1]);
-      if (u2 !== void 0 && !seen.has(u2)) {
-        seen.add(u2);
-        pts.push([pos.getX(u2), pos.getY(u2), pos.getZ(u2)]);
-      }
-      if (v !== void 0 && !seen.has(v)) {
-        seen.add(v);
-        pts.push([pos.getX(v), pos.getY(v), pos.getZ(v)]);
-      }
-    }
-  }
-  return pts;
-}
-function computeMeshNormalVoting(geometry) {
-  const pos = geometry.getAttribute("position");
-  if (!pos || pos.count < 3) return new Vector3(0, 0, 1);
-  const index2 = geometry.index;
-  const triCount = index2 ? Math.floor(index2.count / 3) : Math.floor(pos.count / 3);
-  const sumN = new Vector3();
-  const v1 = new Vector3();
-  const v2 = new Vector3();
-  const n2 = new Vector3();
-  for (let t2 = 0; t2 < triCount; t2 += 1) {
-    const ia = index2 ? index2.getX(t2 * 3) : t2 * 3;
-    const ib = index2 ? index2.getX(t2 * 3 + 1) : t2 * 3 + 1;
-    const ic = index2 ? index2.getX(t2 * 3 + 2) : t2 * 3 + 2;
-    v1.set(
-      pos.getX(ib) - pos.getX(ia),
-      pos.getY(ib) - pos.getY(ia),
-      pos.getZ(ib) - pos.getZ(ia)
-    );
-    v2.set(
-      pos.getX(ic) - pos.getX(ia),
-      pos.getY(ic) - pos.getY(ia),
-      pos.getZ(ic) - pos.getZ(ia)
-    );
-    n2.crossVectors(v1, v2);
-    sumN.add(n2);
-  }
-  if (sumN.lengthSq() > 1e-6) sumN.normalize();
-  return sumN;
-}
-function estimateDentalFrame(loaded) {
-  const upperPts = [];
-  const lowerPts = [];
-  const archPts = [];
-  let singleArchRole = null;
-  let singleMesh = null;
-  for (const entry of loaded) {
-    if (entry.role !== "upper" && entry.role !== "lower") continue;
-    const pts = samplePositions(entry.geometry, 2500);
-    archPts.push(...pts);
-    if (entry.role === "upper") {
-      upperPts.push(...pts);
-      singleArchRole = "upper";
-      singleMesh = entry;
-    } else {
-      lowerPts.push(...pts);
-      singleArchRole = "lower";
-      singleMesh = entry;
-    }
-  }
-  if (archPts.length < 30) {
-    for (const entry of loaded) {
-      if (entry.role === "bite") continue;
-      const pts = samplePositions(entry.geometry, 2500);
-      archPts.push(...pts);
-      singleMesh = entry;
-    }
-  }
-  if (archPts.length < 30) return null;
-  const upperC = meanVec(upperPts);
-  const lowerC = meanVec(lowerPts);
-  const mean = meanVec(archPts);
-  let up = new Vector3();
-  if (upperC && lowerC && upperC.distanceTo(lowerC) > 2) {
-    up.subVectors(upperC, lowerC);
-  }
-  if (up.lengthSq() < 1e-4) {
-    up = smallestPcaAxis(archPts, mean);
-    if (singleMesh) {
-      const bPts = extractBoundaryVertices(singleMesh.geometry);
-      let toCrown = new Vector3();
-      if (bPts.length >= 20) {
-        const bMean = meanVec(bPts);
-        toCrown.subVectors(mean, bMean);
-      }
-      if (toCrown.lengthSq() < 1e-4) {
-        toCrown = computeMeshNormalVoting(singleMesh.geometry);
-      }
-      if (toCrown.lengthSq() > 1e-4) {
-        const expectedUp = singleArchRole === "upper" ? toCrown.clone().negate() : toCrown.clone();
-        if (up.dot(expectedUp) < 0) up.negate();
-      }
-    }
-  }
-  if (up.lengthSq() < 1e-8) return null;
-  up.normalize();
-  const tangent = Math.abs(up.z) < 0.9 ? new Vector3(0, 0, 1) : new Vector3(1, 0, 0);
-  const axisA = new Vector3().crossVectors(up, tangent).normalize();
-  const axisB = new Vector3().crossVectors(up, axisA).normalize();
-  let cxx = 0;
-  let cxy = 0;
-  let cyy = 0;
-  const proj = [];
-  for (const p of archPts) {
-    const dx = p[0] - mean.x;
-    const dy = p[1] - mean.y;
-    const dz = p[2] - mean.z;
-    const a2 = dx * axisA.x + dy * axisA.y + dz * axisA.z;
-    const b2 = dx * axisB.x + dy * axisB.y + dz * axisB.z;
-    proj.push({ a: a2, b: b2 });
-    cxx += a2 * a2;
-    cxy += a2 * b2;
-    cyy += b2 * b2;
-  }
-  const theta = 0.5 * Math.atan2(2 * cxy, cxx - cyy);
-  const ct = Math.cos(theta);
-  const st = Math.sin(theta);
-  const lAlong = cxx * ct * ct + 2 * cxy * ct * st + cyy * st * st;
-  const lAcross = cxx * st * st - 2 * cxy * ct * st + cyy * ct * ct;
-  let major = new Vector2(ct, st);
-  let minor = new Vector2(-st, ct);
-  if (lAcross > lAlong) {
-    major = new Vector2(-st, ct);
-    minor = new Vector2(ct, st);
-  }
-  const evalAxis = (axisVec, perpVec) => {
-    const scores = proj.map((p) => p.a * axisVec.x + p.b * axisVec.y);
-    const sorted = [...scores].sort((a2, b2) => a2 - b2);
-    const loCut = sorted[Math.floor(sorted.length * 0.1)] ?? sorted[0] ?? 0;
-    const hiCut = sorted[Math.floor(sorted.length * 0.9)] ?? sorted[sorted.length - 1] ?? 0;
-    const spread = (side) => {
-      let n2 = 0;
-      let sum = 0;
-      let sum2 = 0;
-      for (let i = 0; i < proj.length; i += 1) {
-        const score = scores[i] ?? 0;
-        if (side === "lo" ? score > loCut : score < hiCut) continue;
-        const perpScore = (proj[i]?.a ?? 0) * perpVec.x + (proj[i]?.b ?? 0) * perpVec.y;
-        sum += perpScore;
-        sum2 += perpScore * perpScore;
-        n2 += 1;
-      }
-      if (n2 < 2) return 0;
-      const avg = sum / n2;
-      return sum2 / n2 - avg * avg;
-    };
-    const loSpread = spread("lo");
-    const hiSpread = spread("hi");
-    return { loSpread, hiSpread, contrast: Math.abs(hiSpread - loSpread) };
-  };
-  const minorRes = evalAxis(minor, major);
-  const majorRes = evalAxis(major, minor);
-  const useMinor = minorRes.contrast >= majorRes.contrast;
-  const chosenRes = useMinor ? minorRes : majorRes;
-  const chosenAxis = useMinor ? minor : major;
-  const chosenAxis3 = new Vector3().addScaledVector(axisA, chosenAxis.x).addScaledVector(axisB, chosenAxis.y).normalize();
-  const anterior = chosenRes.hiSpread < chosenRes.loSpread ? chosenAxis3 : chosenAxis3.negate();
-  const right = new Vector3().crossVectors(anterior, up).normalize();
-  if (right.lengthSq() < 1e-8) return null;
-  return { up, anterior, right };
-}
-function smallestPcaAxis(points, mean) {
-  let xx = 0;
-  let yy = 0;
-  let zz = 0;
-  let xy = 0;
-  let xz = 0;
-  let yz = 0;
-  for (const p of points) {
-    const x = p[0] - mean.x;
-    const y = p[1] - mean.y;
-    const z = p[2] - mean.z;
-    xx += x * x;
-    yy += y * y;
-    zz += z * z;
-    xy += x * y;
-    xz += x * z;
-    yz += y * z;
-  }
-  const axes = [
-    new Vector3(1, 0, 0),
-    new Vector3(0, 1, 0),
-    new Vector3(0, 0, 1)
-  ];
-  const vars = [xx, yy, zz];
-  let best = 0;
-  if ((vars[1] ?? 0) < (vars[best] ?? 0)) best = 1;
-  if ((vars[2] ?? 0) < (vars[best] ?? 0)) best = 2;
-  const axis = axes[best] ?? new Vector3(0, 0, 1);
-  if (xy * xy + xz * xz + yz * yz > 1) {
-    const candidates = [
-      new Vector3(yy + zz, -xy, -xz),
-      new Vector3(-xy, xx + zz, -yz),
-      new Vector3(-xz, -yz, xx + yy)
-    ];
-    let pick = candidates[0];
-    let score = Infinity;
-    for (const c2 of candidates) {
-      if (c2.lengthSq() < 1e-8) continue;
-      const v = xx * c2.x * c2.x + yy * c2.y * c2.y + zz * c2.z * c2.z + 2 * xy * c2.x * c2.y + 2 * xz * c2.x * c2.z + 2 * yz * c2.y * c2.z;
-      if (v < score) {
-        score = v;
-        pick = c2;
-      }
-    }
-    if (pick.lengthSq() > 1e-8) return pick.normalize();
-  }
-  return axis;
-}
-function reseatOcclusalOrigin(loaded, frame) {
-  const upperPts = [];
-  const lowerPts = [];
-  const archPts = [];
-  for (const entry of loaded) {
-    if (entry.role !== "upper" && entry.role !== "lower") continue;
-    const pts = samplePositions(entry.geometry, 1800);
-    archPts.push(...pts);
-    if (entry.role === "upper") upperPts.push(...pts);
-    else lowerPts.push(...pts);
-  }
-  const mean = meanVec(archPts);
-  if (!mean) return;
-  const upperC = meanVec(upperPts);
-  const lowerC = meanVec(lowerPts);
-  const mid = upperC && lowerC ? upperC.clone().add(lowerC).multiplyScalar(0.5) : mean;
-  const up = frame.up.clone().normalize();
-  const shift = (mean.x - mid.x) * up.x + (mean.y - mid.y) * up.y + (mean.z - mid.z) * up.z;
-  const origin = new Vector3(
-    mean.x - up.x * shift,
-    mean.y - up.y * shift,
-    mean.z - up.z * shift
-  );
-  const { right, anterior } = frame;
-  if (Math.abs(right.dot(anterior)) > 0.02 || Math.abs(right.dot(up)) > 0.02 || Math.abs(anterior.dot(up)) > 0.02 || Math.abs(right.length() - 1) > 0.02 || Math.abs(anterior.length() - 1) > 0.02 || Math.abs(up.length() - 1) > 0.02) {
-    return;
-  }
-  const matrix = new Matrix4().set(
-    right.x,
-    right.y,
-    right.z,
-    -right.dot(origin),
-    anterior.x,
-    anterior.y,
-    anterior.z,
-    -anterior.dot(origin),
-    up.x,
-    up.y,
-    up.z,
-    -up.dot(origin),
-    0,
-    0,
-    0,
-    1
-  );
-  for (const entry of loaded) {
-    entry.geometry.applyMatrix4(matrix);
-    entry.geometry.computeBoundingBox();
-  }
 }
 const ROLE_ORDER = ["upper", "lower", "bite"];
 function exportMesh(geometry) {
@@ -16881,7 +17351,7 @@ async function alignWorkScansToBite(inputs) {
     if (!geometry.getAttribute("normal")) geometry.computeVertexNormals();
     entries.push({ role: input.role, geometry });
   }
-  const moved = await registerJawsToBite(entries);
+  const { moved } = await registerJawsToBiteResult(entries, { sweepPoses: true });
   const frame = estimateDentalFrame(entries);
   if (frame) reseatOcclusalOrigin(entries, frame);
   const files = [];

@@ -168,6 +168,18 @@ export function estimateDentalFrame(loaded: readonly FrameMesh[]): DentalFrame |
   if (up.lengthSq() < 1e-8) return null;
   up.normalize();
 
+  const anterior = anteriorAxis(archPts, mean, up);
+  const right = new THREE.Vector3().crossVectors(anterior, up).normalize();
+  if (right.lengthSq() < 1e-8) return null;
+  return { up, anterior, right };
+}
+
+/** 교합면 안에서 전치 쪽. 좌우로 벌어진 쪽이 구치다. up 부호와 무관하게 같은 쪽을 가리킨다. */
+function anteriorAxis(
+  archPts: Array<[number, number, number]>,
+  mean: THREE.Vector3,
+  up: THREE.Vector3,
+): THREE.Vector3 {
   const tangent = Math.abs(up.z) < 0.9
     ? new THREE.Vector3(0, 0, 1)
     : new THREE.Vector3(1, 0, 0);
@@ -239,11 +251,22 @@ export function estimateDentalFrame(loaded: readonly FrameMesh[]): DentalFrame |
     .normalize();
 
   // 좌우로 벌어진 쪽이 구치(원심), 모아진 쪽이 전치(협측이 바라보는 방향).
-  const anterior = chosenRes.hiSpread < chosenRes.loSpread ? chosenAxis3 : chosenAxis3.negate();
-  const right = new THREE.Vector3().crossVectors(anterior, up).normalize();
-  if (right.lengthSq() < 1e-8) return null;
-  return { up, anterior, right };
+  return chosenRes.hiSpread < chosenRes.loSpread ? chosenAxis3 : chosenAxis3.negate();
 }
+
+/**
+ * 악궁 하나의 교합면 법선(부호 없음)과 전치 쪽. 바이트 맞춤이 상악·하악 자세가 서로 맞는지 볼 때 쓴다.
+ * 경계선으로 법선 부호를 정하지 않아 가볍다.
+ */
+export function archPlanAxes(points: Array<[number, number, number]>) {
+  if (points.length < 30) return null;
+  const mean = meanVec(points)!;
+  const up = smallestPcaAxis(points, mean);
+  if (up.lengthSq() < 1e-8) return null;
+  up.normalize();
+  return { up, anterior: anteriorAxis(points, mean, up), center: mean };
+}
+
 
 function smallestPcaAxis(
   points: Array<[number, number, number]>,

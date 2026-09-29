@@ -13,7 +13,7 @@ import {
   abutsWorkScanFileName,
   type WorkScanRole,
 } from "@/shared/practice/labProsthesisAiDesign";
-import { registerJawsToBite } from "@/shared/practice/biteRegistration";
+import { registerJawsToBiteResult } from "@/shared/practice/biteRegistration";
 import {
   estimateDentalFrame,
   reseatOcclusalOrigin,
@@ -82,7 +82,7 @@ export async function alignWorkScansToBite(
     entries.push({ role: input.role, geometry });
   }
 
-  const moved = await registerJawsToBite(entries);
+  const { moved } = await registerJawsToBiteResult(entries, { sweepPoses: true });
   const frame = estimateDentalFrame(entries);
   if (frame) reseatOcclusalOrigin(entries, frame);
 

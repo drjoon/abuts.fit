@@ -75,8 +75,9 @@ import {
   type ContactPaintMode,
 } from "@/shared/practice/oralScanDesignAnalysis";
 import {
+  applyBiteFitPoses,
   mergeArchToBiteByPoints,
-  registerJawsToBite,
+  registerJawsToBiteResult,
 } from "@/shared/practice/biteRegistration";
 import {
   estimateDentalFrame,
@@ -476,6 +477,8 @@ type Props = {
   onAlignFailed?: () => void;
   /** 맞추는 중 취소. 점과 좌표는 그대로 둔다. */
   onAlignCancelled?: () => void;
+  /** 바이트 맞춤(불러올 때·역할 변경·자동·반자동)이 도는 동안 true. 부모는 이동안 편집·저장을 막는다. */
+  onAligningChange?: (aligning: boolean) => void;
   /** 수동 교합. 이 악만 움직인다. 없으면 평소 뷰. */
   occlusionAdjust?: OralScanOcclusionAdjust | null;
   /** 수동 교합으로 정점을 바꾸기 직전(start)과 굽고 난 뒤(end). */
@@ -566,6 +569,8 @@ type SavedCameraView = {
   top: number;
   bottom: number;
 };
+
+const alignPoseScale = new THREE.Vector3();
 
 const ROLE_COLOR: Record<LabOralScanRole, number> = {
   upper: 0x3b82f6,
@@ -2400,6 +2405,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       onAlignMerged,
       onAlignFailed,
       onAlignCancelled,
+      onAligningChange,
       occlusionAdjust = null,
       onOcclusionEdit,
       meshEdit = null,
@@ -2640,6 +2646,8 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   onAlignMergedRef.current = onAlignMerged;
   onAlignFailedRef.current = onAlignFailed;
   onAlignCancelledRef.current = onAlignCancelled;
+  const onAligningChangeRef = useRef(onAligningChange);
+  onAligningChangeRef.current = onAligningChange;
   onMeshesReadyRef.current = onMeshesReady;
   onViewSettledRef.current = onViewSettled;
   const scheduleViewSettledRef = useRef(() => {});
@@ -2657,6 +2665,9 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   const [loadVersion, setLoadVersion] = useState(0);
   const [analyzing, setAnalyzing] = useState(false);
   const [aligning, setAligning] = useState(false);
+  useEffect(() => {
+    onAligningChangeRef.current?.(aligning);
+  }, [aligning]);
   const alignEpochRef = useRef(0);
   const alignCancelGenRef = useRef(0);
   const cancelAlignRef = useRef<() => void>(() => {});
@@ -2665,8 +2676,20 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
   };
   const layoutGenRef = useRef(0);
 
+  /** 중단 후 「이 자세 유지 / 원래대로」를 기다리는 중. */
+  const [alignStopAsk, setAlignStopAsk] = useState(false);
+  const alignChoiceRef = useRef<((keep: boolean) => void) | null>(null);
+  const resolveAlignChoice = (keep: boolean) => {
+    const resolve = alignChoiceRef.current;
+    alignChoiceRef.current = null;
+    setAlignStopAsk(false);
+    resolve?.(keep);
+  };
+  useEffect(() => () => alignChoiceRef.current?.(false), []);
+
   type AlignJob = { epoch: number; cancelGen: number };
   const startAlignJob = (): AlignJob => {
+    if (alignChoiceRef.current) resolveAlignChoice(false);
     const epoch = (alignEpochRef.current += 1);
     return { epoch, cancelGen: alignCancelGenRef.current };
   };
@@ -2674,6 +2697,55 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     alignEpochRef.current !== job.epoch || alignCancelGenRef.current !== job.cancelGen;
   const alignUserStopped = (job: AlignJob) =>
     alignEpochRef.current === job.epoch && alignCancelGenRef.current !== job.cancelGen;
+
+  /** 찾는 중인 자세는 메시 변환으로만 보여 준다. 기하는 끝나거나 「유지」를 고를 때만 바뀐다. */
+  const showAlignPose = (
+    loaded: readonly LoadedMesh[],
+    geometry: THREE.BufferGeometry,
+    matrix: THREE.Matrix4,
+  ) => {
+    const entry = loaded.find((row) => row.geometry === geometry);
+    if (!entry) return;
+    matrix.decompose(entry.mesh.position, entry.mesh.quaternion, alignPoseScale);
+    entry.mesh.scale.set(1, 1, 1);
+  };
+  const clearAlignPoses = (loaded: readonly LoadedMesh[]) => {
+    for (const entry of loaded) {
+      entry.mesh.position.set(0, 0, 0);
+      entry.mesh.quaternion.identity();
+    }
+  };
+
+  type BiteAlignOutcome = { seated: boolean; stop: null | "keep" | "revert" };
+  /**
+   * 바이트 맞춤을 화면에 보이며 돌린다. 사용자가 중단하면 멈춘 순간 자세를 보여 주고
+   * 유지할지 되돌릴지 묻는다. 되돌리면 기하는 그대로다.
+   */
+  const runBiteAlign = async (
+    loaded: LoadedMesh[],
+    job: AlignJob,
+    dead: () => boolean,
+  ): Promise<BiteAlignOutcome> => {
+    const result = await registerJawsToBiteResult(loaded, {
+      sweepPoses: true,
+      cancelled: () => dead() || alignStopped(job),
+      onPose: (geometry, matrix) => showAlignPose(loaded, geometry, matrix),
+    });
+    clearAlignPoses(loaded);
+    if (!result.stopped) return { seated: result.seated, stop: null };
+    if (dead() || !alignUserStopped(job) || result.partial.length === 0) {
+      return { seated: false, stop: "revert" };
+    }
+    for (const pose of result.partial) showAlignPose(loaded, pose.geometry, pose.matrix);
+    const keep = await new Promise<boolean>((resolve) => {
+      alignChoiceRef.current = resolve;
+      setAlignStopAsk(true);
+    });
+    clearAlignPoses(loaded);
+    if (!keep || dead()) return { seated: false, stop: "revert" };
+    applyBiteFitPoses(result.partial);
+    return { seated: true, stop: "keep" };
+  };
   const placeLoadedRef = useRef<(reseated: boolean) => void>(() => {});
 
   lookRef.current = {
@@ -4043,22 +4115,50 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       } else {
         setAligning(true);
         const job = startAlignJob();
-        try {
-          await registerJawsToBite(loaded, {
-            cancelled: () =>
-              cancelled || gen !== layoutGenRef.current || alignStopped(job),
+        // 맞추는 과정을 보이도록 역할 색으로 먼저 올린다. loadedRef는 끝난 뒤에 넘긴다.
+        for (const entry of loaded) {
+          const mat = createModelPreviewMaterial(entry.geometry, entry.texture, {
+            colorMapping: false,
           });
+          mat.side = THREE.DoubleSide;
+          mat.color.set(ROLE_COLOR[entry.role]);
+          const prev = entry.mesh.material;
+          for (const old of Array.isArray(prev) ? prev : [prev]) old.dispose();
+          entry.mesh.material = mat;
+          group.add(entry.mesh);
+        }
+        group.position.set(0, 0, 0);
+        const box = new THREE.Box3().setFromObject(group);
+        if (!box.isEmpty()) {
+          group.position.sub(box.getCenter(new THREE.Vector3()));
+          fitRadiusRef.current = Math.max(box.getBoundingSphere(new THREE.Sphere()).radius, 1);
+          const fit = measureMeshFit(loaded, group.position, HOME_DIR, HOME_UP);
+          fitExtentRef.current = { halfW: fit.halfW, halfH: fit.halfH };
+          fitTargetRef.current.copy(fit.target);
+          applyFitFrustum();
+          frameCamera(HOME_DIR, HOME_UP, false);
+        }
+        let outcome: BiteAlignOutcome | null = null;
+        try {
+          outcome = await runBiteAlign(
+            loaded,
+            job,
+            () => cancelled || gen !== layoutGenRef.current,
+          );
         } catch (error) {
           console.info("[oral-scan] bite-fit failed", error);
         }
         if (cancelled || gen !== layoutGenRef.current) {
           for (const entry of loaded) {
+            group.remove(entry.mesh);
+            const mat = entry.mesh.material;
+            for (const old of Array.isArray(mat) ? mat : [mat]) old.dispose();
             releaseSceneGeometry(entry.geometry);
             releaseSceneTexture(entry.texture);
           }
           return;
         }
-        const userStopped = alignUserStopped(job);
+        const userStopped = outcome?.stop === "revert";
         const frame = userStopped ? null : estimateDentalFrame(loaded);
         if (frame) reseatOcclusalOrigin(loaded, frame);
         seated = Boolean(frame);
@@ -4356,13 +4456,17 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       restoreFilePositions(entry);
     }
     setAligning(true);
+    placeLoadedRef.current(false);
     let ok = false;
     try {
-      ok = await registerJawsToBite(loaded, {
-        cancelled: () => alignStopped(job),
-      });
+      const outcome = await runBiteAlign(
+        loaded,
+        job,
+        () => alignEpochRef.current !== job.epoch,
+      );
+      ok = outcome.seated;
       if (alignEpochRef.current !== job.epoch) return false;
-      if (alignUserStopped(job)) {
+      if (outcome.stop === "revert") {
         loaded.forEach((entry, index) => {
           const snap = before[index];
           if (snap) applyCapturedPositions(entry, snap);
@@ -4673,11 +4777,9 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     setAligning(true);
     void (async () => {
       try {
-        await registerJawsToBite(loaded, {
-          cancelled: () => gen !== layoutGenRef.current || alignStopped(job),
-        });
+        const outcome = await runBiteAlign(loaded, job, () => gen !== layoutGenRef.current);
         if (gen !== layoutGenRef.current || alignEpochRef.current !== job.epoch) return;
-        const userStopped = alignUserStopped(job);
+        const userStopped = outcome.stop === "revert";
         const seated = estimateDentalFrame(loaded);
         if (seated && !userStopped) reseatOcclusalOrigin(loaded, seated);
         if (manualRef.current.arch) layoutSplitRef.current(manualRef.current.arch);
@@ -6695,15 +6797,34 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         </p>
       ) : null}
 
-      {aligning && items.length > 0 ? (
+      {aligning && alignStopAsk && items.length > 0 ? (
+        <div className="absolute bottom-3 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-md bg-background/95 px-3 py-1.5 text-xs text-foreground shadow-sm">
+          <span>중단했습니다. 지금 보이는 자세를 유지할까요?</span>
+          <button
+            type="button"
+            className="rounded border border-primary bg-primary px-2 py-0.5 text-[11px] font-medium text-primary-foreground hover:bg-primary/90"
+            onClick={() => resolveAlignChoice(true)}
+          >
+            이 자세 유지
+          </button>
+          <button
+            type="button"
+            className="rounded border border-border bg-background px-2 py-0.5 text-[11px] font-medium text-foreground hover:bg-muted"
+            onClick={() => resolveAlignChoice(false)}
+          >
+            원래대로
+          </button>
+        </div>
+      ) : aligning && items.length > 0 ? (
         <div className="absolute bottom-3 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-md bg-background/90 px-3 py-1.5 text-xs text-muted-foreground shadow-sm">
-          <span>바이트에 맞추는 중</span>
+          <span className="size-2 animate-pulse rounded-full bg-primary" aria-hidden />
+          <span>바이트에 맞는 위치를 찾는 중</span>
           <button
             type="button"
             className="rounded border border-border bg-background px-2 py-0.5 text-[11px] font-medium text-foreground hover:bg-muted"
             onClick={() => cancelAlignRef.current()}
           >
-            취소
+            중단
           </button>
         </div>
       ) : analyzing && items.length > 0 ? (
