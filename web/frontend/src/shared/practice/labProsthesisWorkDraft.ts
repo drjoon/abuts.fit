@@ -22,6 +22,7 @@ import {
   type ModelSettings,
   type ToothDesignEdit,
 } from "@/shared/practice/labProsthesisModify";
+import { parseMillingDocument, type MillingDocument } from "@/shared/practice/labMilling";
 import {
   insertionAxisKey,
   insertionAxisTeeth,
@@ -90,6 +91,8 @@ export type WorkSessionDocument = {
   designScope: DesignScope | null;
   /** 모델까지일 때 낼 모델의 종류·받침 높이·다이 분리·간격. */
   modelSettings: ModelSettings;
+  /** 밀링 디스크 설정과 보철 배치. */
+  milling: MillingDocument;
   /** 케이스 메모. */
   note: string;
   /** 의뢰 치식 번호 → 작업영역에서 바꾼 번호·유형. */
@@ -238,6 +241,7 @@ function documentOf(row: unknown): WorkSessionDocument | null {
     ),
     designScope: parseDesignScope((body as { designScope?: unknown }).designScope),
     modelSettings: modelSettingsOf(body),
+    milling: parseMillingDocument((body as { milling?: unknown }).milling),
     note: String((body as { note?: unknown }).note ?? "").slice(0, 2000),
     toothOverrides: parseToothOverrides(
       (body as { toothOverrides?: unknown }).toothOverrides,

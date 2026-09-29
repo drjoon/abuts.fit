@@ -65,6 +65,7 @@
 // - 2026-09-28: 「전달」 패널은 버튼 글자 너비. 순서는 페인트, 이미지 저장, 채팅 첨부. 표시 색은 여섯 개이고 패널 너비 안에서 가운데 정렬한다.
 // - 2026-09-29: 「전달」 패널 제거. 헤더 설정 왼쪽 페인트 아이콘을 켜면 작업영역 아래에 도구 막대(펜·화살표·사각형·원·점·글자, 색·굵기, 되돌리기·지우기, 이미지 저장·채팅 첨부).
 // - 2026-09-29: 헤더 패널 닫기·열기는 오른쪽 설정 옆 아이콘만. 헤더 실행 취소·다시 실행 버튼 제거(단축키는 유지).
+// - 2026-09-29: 「밀링」 단계. 생성한 보철을 98.5mm 디스크에 배치하고 핀·소결 배율과 함께 디스크 좌표 STL로 낸다(LabMillingStage).
 import {
   useCallback,
   useEffect,
@@ -285,6 +286,12 @@ import {
   type ScanMeshEditStatus,
 } from "@/shared/practice/scanMeshEdit";
 import { MeshEditSection } from "@/shared/components/practice/LabMeshEditSection";
+import {
+  LabMillingDiscView,
+  LabMillingPanel,
+  useLabMilling,
+} from "@/shared/components/practice/LabMillingStage";
+import { EMPTY_MILLING_DOCUMENT, type MillingDocument } from "@/shared/practice/labMilling";
 import { LabDesignPresetDialog } from "@/shared/components/practice/LabDesignPresetDialog";
 import {
   compareArch,
@@ -464,7 +471,7 @@ type WorkCloseSnapshot = {
   serverAt: ReadonlyMap<WorkScanRole, number>;
 };
 
-type DesignStage = "scan" | "margin" | "design" | "model";
+type DesignStage = "scan" | "margin" | "design" | "model" | "milling";
 
 type AlignWizardStep =
   | { kind: "axis"; span: string[]; page: number; pages: number }
@@ -489,6 +496,7 @@ const DESIGN_STAGES: Array<{ id: DesignStage; label: string }> = [
   { id: "margin", label: "마진" },
   { id: "design", label: "디자인" },
   { id: "model", label: "모델" },
+  { id: "milling", label: "밀링" },
 ];
 
 /** 다른 의뢰로 넘어간 직후. 버튼이 새로 그려져도 AI 창을 다시 연다. */
@@ -597,6 +605,7 @@ function workDocumentSignature(document: WorkSessionDocument): string {
     marginReview: document.marginReview,
     designScope: document.designScope,
     modelSettings: document.modelSettings,
+    milling: document.milling,
     note: document.note,
     toothOverrides: document.toothOverrides,
     insertionAxes: document.insertionAxes,
@@ -764,6 +773,7 @@ function LabProsthesisAiDesignDialog({
   const [marginReview, setMarginReview] = useState<Record<string, MarginReview>>({});
   const [designScope, setDesignScope] = useState<DesignScope | null>(null);
   const [modelSettings, setModelSettings] = useState<ModelSettings>(DEFAULT_MODEL_SETTINGS);
+  const [millingDoc, setMillingDoc] = useState<MillingDocument>(EMPTY_MILLING_DOCUMENT);
   /** 「모델 생성」으로 만든 파트. 스캔이 움직이면 뷰어가 비운다. */
   const [stoneParts, setStoneParts] = useState<StoneModelPartSummary[]>([]);
   /** 모델을 만들 때의 설정·마진. 달라지면 다시 만들라고 알린다. */
@@ -915,6 +925,8 @@ function LabProsthesisAiDesignDialog({
   designScopeRef.current = designScope;
   const modelSettingsRef = useRef(modelSettings);
   modelSettingsRef.current = modelSettings;
+  const millingDocRef = useRef(millingDoc);
+  millingDocRef.current = millingDoc;
   const caseNoteRef = useRef(caseNote);
   caseNoteRef.current = caseNote;
   const archAlignedRef = useRef(archAligned);
@@ -977,6 +989,7 @@ function LabProsthesisAiDesignDialog({
       setMarginReview({});
       setDesignScope(null);
       setModelSettings(DEFAULT_MODEL_SETTINGS);
+      setMillingDoc(EMPTY_MILLING_DOCUMENT);
       setStoneParts([]);
       setStoneBuiltSig("");
       setCaseNote("");
@@ -1092,6 +1105,7 @@ function LabProsthesisAiDesignDialog({
             marginReviewRef.current = draft.document.marginReview;
             designScopeRef.current = draft.document.designScope;
             modelSettingsRef.current = draft.document.modelSettings;
+            millingDocRef.current = draft.document.milling;
             caseNoteRef.current = draft.document.note;
             toothOverridesRef.current = draft.document.toothOverrides;
             archAlignedRef.current = draft.document.archAligned;
@@ -1102,6 +1116,7 @@ function LabProsthesisAiDesignDialog({
             setMarginReview(draft.document.marginReview);
             setDesignScope(draft.document.designScope);
             setModelSettings(draft.document.modelSettings);
+            setMillingDoc(draft.document.milling);
             setCaseNote(draft.document.note);
             setToothOverrides(draft.document.toothOverrides);
             setArchAligned(draft.document.archAligned);
@@ -1574,6 +1589,23 @@ function LabProsthesisAiDesignDialog({
     });
     closeAfterChatAttachRef.current();
   };
+
+  const onMillingDocChange = useCallback((next: MillingDocument) => {
+    millingDocRef.current = next;
+    setMillingDoc(next);
+    queueSaveWorkRef.current();
+  }, []);
+  const milling = useLabMilling({
+    active: open && stage === "milling",
+    rows: exportRestorations,
+    edits,
+    viewerRef,
+    doc: millingDoc,
+    onDocChange: onMillingDocChange,
+    baseName: exportBaseName(caseHeader?.primary).replace(/_디자인$/, ""),
+    onAttachChatFile,
+    onAttached: () => closeAfterChatAttachRef.current(),
+  });
 
   const focusRow =
     spanConnectors.find((row) => row.from === activeConnectorFrom) ?? null;
@@ -2588,13 +2620,14 @@ function LabProsthesisAiDesignDialog({
     if (next !== "scan" && !designScopeRef.current) return;
     if (next === "design" && !scopeMakesCrown(designScopeRef.current)) return;
     if (next === "model" && designScopeRef.current !== "model") return;
+    if (next === "milling" && !scopeMakesCrown(designScopeRef.current)) return;
     setStage(next);
     setMarginShown(next === "margin" || next === "design");
     if (next !== "scan") {
       setAlignKind(null);
       setAlignArch(null);
     }
-    if (next === "scan" || next === "model") return;
+    if (next === "scan" || next === "model" || next === "milling") return;
     if (canUndercut) setUndercutMap(true);
     if (next === "design" && canContact) setContactMap(true);
   };
@@ -3006,6 +3039,7 @@ function LabProsthesisAiDesignDialog({
       marginReview: marginReviewRef.current,
       designScope: designScopeRef.current,
       modelSettings: modelSettingsRef.current,
+      milling: millingDocRef.current,
       note: caseNoteRef.current,
       toothOverrides: toothOverridesRef.current,
       insertionAxes: axes,
@@ -3757,6 +3791,9 @@ function LabProsthesisAiDesignDialog({
               }}
               className="absolute inset-0"
             />
+            {stage === "milling" ? (
+              <LabMillingDiscView milling={milling} className="absolute inset-0 z-[5]" />
+            ) : null}
             <ViewPaintSurface {...viewPaintSurfaceProps(paint)} />
             {paint.paintOn ? (
               <div className="pointer-events-none absolute inset-x-0 bottom-4 z-30 flex justify-center">
@@ -3767,7 +3804,12 @@ function LabProsthesisAiDesignDialog({
                 />
               </div>
             ) : null}
-            <div className="pointer-events-none absolute left-1/2 top-3 z-10 flex w-max max-w-[calc(100%-2rem)] -translate-x-1/2 flex-col items-center gap-1.5">
+            <div
+              className={cn(
+                "pointer-events-none absolute left-1/2 top-3 z-10 flex w-max max-w-[calc(100%-2rem)] -translate-x-1/2 flex-col items-center gap-1.5",
+                stage === "milling" && "hidden",
+              )}
+            >
               <div className="pointer-events-auto relative flex items-center justify-center">
               <div className="absolute right-full mr-5 flex items-center gap-1">
               <div className={cn("relative flex justify-center", insertionShown && "min-w-12")}>
@@ -3986,7 +4028,12 @@ function LabProsthesisAiDesignDialog({
             </div>
             {panelsShown ? (
             <>
-            <div className="absolute left-3 top-3 z-10 max-h-[calc(100%-5.5rem)]">
+            <div
+              className={cn(
+                "absolute left-3 top-3 z-10 max-h-[calc(100%-5.5rem)]",
+                stage === "milling" && "hidden",
+              )}
+            >
               <div
                 className={cn(
                   "flex min-h-0 max-h-[min(18rem,34vh)] flex-col overflow-hidden rounded-lg border bg-background/95 text-sm shadow-sm",
@@ -4307,24 +4354,26 @@ function LabProsthesisAiDesignDialog({
                           })}
                         </div>
                       </div>
-                      <div className="grid grid-cols-4 gap-1">
+                      <div className="grid grid-cols-5 gap-1">
                         {DESIGN_STAGES.map((item) => (
                           <Button
                             key={item.id}
                             type="button"
                             size="sm"
                             variant={stage === item.id ? "default" : "outline"}
-                            className="h-7 px-2 text-[11px]"
+                            className="h-7 px-1 text-[11px]"
                             data-coach={`stage-${item.id}`}
                             disabled={
                               (item.id !== "scan" && designScope == null) ||
-                              (item.id === "design" && !scopeMakesCrown(designScope)) ||
+                              ((item.id === "design" || item.id === "milling") &&
+                                !scopeMakesCrown(designScope)) ||
                               (item.id === "model" && designScope !== "model")
                             }
                             title={
                               item.id !== "scan" && designScope == null
                                 ? "범위를 먼저 고릅니다."
-                                : item.id === "design" && !scopeMakesCrown(designScope)
+                                : (item.id === "design" || item.id === "milling") &&
+                                    !scopeMakesCrown(designScope)
                                   ? "마진만 진행 중입니다."
                                   : item.id === "model" && designScope !== "model"
                                     ? "범위를 모델까지로 고르면 엽니다."
@@ -4445,6 +4494,7 @@ function LabProsthesisAiDesignDialog({
                         ) : null}
                       </section>
                     ) : null}
+                    {stage === "milling" ? <LabMillingPanel milling={milling} /> : null}
                     {stage === "scan" ? (
                       <section className="space-y-2">
                         <p className="text-xs font-semibold text-foreground">모델 정렬</p>
@@ -4956,6 +5006,7 @@ function LabProsthesisAiDesignDialog({
                 />
               </div>
             ) : null}
+            {stage !== "milling" ? (
             <DesignViewerChrome
               crownShells={crownShells}
               teeth={plan.teeth}
@@ -5019,7 +5070,9 @@ function LabProsthesisAiDesignDialog({
                 queueSaveWorkRef.current();
               }}
             />
+            ) : null}
             {!busy &&
+            stage !== "milling" &&
             entries.length > 0 &&
             axisBadgeSpan &&
             !toothCardFor &&
@@ -5073,7 +5126,7 @@ function LabProsthesisAiDesignDialog({
                 ) : null}
               </div>
             ) : null}
-            {marginHint && !paint.paintOn ? (
+            {marginHint && !paint.paintOn && stage !== "milling" ? (
               <div
                 className={cn(
                   "pointer-events-none absolute bottom-4 left-1/2 z-10 -translate-x-1/2 rounded-md px-3 py-2 text-center text-[11px] leading-relaxed shadow-sm",

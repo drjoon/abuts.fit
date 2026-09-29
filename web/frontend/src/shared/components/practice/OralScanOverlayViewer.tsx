@@ -282,6 +282,13 @@ export type OralScanOverlayHandle = {
     input: DesignStlExportInput,
   ) => Promise<Array<{ fileName: string; blob: Blob }>>;
   /**
+   * 밀링 배치용 보철. 그룹 위치를 원점으로 mm 삼각형을 낸다.
+   * axis는 그 보철 삽입축(교합 방향)이고, 잡지 않았으면 null.
+   */
+  restorationSolids: (
+    groups: DesignStlExportInput["groups"],
+  ) => Promise<RestorationSolid[]>;
+  /**
    * 모델 설정으로 출력용 모델을 만든다. 파트는 뷰어가 들고 있다가 내보낸다.
    * 다이 절단 반지름은 마진 가장 바깥 반지름에 1.2mm를 더한다.
    */
@@ -330,6 +337,12 @@ export type DesignStlExportInput = {
   /** 「모델 생성」으로 만든 파트. id는 StoneModelPart.id. */
   stoneParts?: ReadonlyArray<{ id: string; fileName: string }>;
   camCoordinates: boolean;
+};
+
+export type RestorationSolid = {
+  fileName: string;
+  positions: Float32Array;
+  axis: [number, number, number] | null;
 };
 
 export type StoneModelPartSummary = Omit<StoneModelPart, "positions"> & {
@@ -5439,6 +5452,45 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
     return true;
   };
 
+  /** 보이는 보철 조각을 그룹별 월드 삼각형으로 모은다. union 그룹은 합집합. 행렬은 미리 갱신해 둔다. */
+  const collectRestorations = (groups: DesignStlExportInput["groups"]) => {
+    const exported = new Set<EditHit["kind"]>(["crown", "connector", "hook"]);
+    const collected = groups.map((row) => {
+      const teeth = new Set(row.teeth);
+      const parts: Array<{ mesh: THREE.Mesh; hit: EditHit & { tooth: string } }> = [];
+      editLayerRef.current?.traverse((child) => {
+        const hit = child.userData.editHit as EditHit | undefined;
+        if (!hit || !exported.has(hit.kind) || !("tooth" in hit)) return;
+        if (!teeth.has(hit.tooth) || !child.visible) return;
+        if ((child as THREE.Mesh).isMesh) parts.push({ mesh: child as THREE.Mesh, hit });
+      });
+      return { row, parts };
+    });
+    return Promise.all(
+      collected.map(async ({ row, parts }) => {
+        if (!row.union) {
+          return {
+            fileName: row.fileName,
+            positions: worldTriangles(parts.map((part) => part.mesh)),
+          };
+        }
+        // 스크루 홀 크라운은 본체와 홀 벽이 합쳐져야 닫힌 입체가 된다.
+        const pieces = new Map<string, THREE.Mesh[]>();
+        for (const { mesh, hit } of parts) {
+          const key = hit.kind === "crown" ? `crown:${hit.tooth}` : mesh.uuid;
+          pieces.set(key, [...(pieces.get(key) ?? []), mesh]);
+        }
+        return {
+          fileName: row.fileName,
+          positions: await unionTriangleSoups(
+            [...pieces.values()].map((meshes) => worldTriangles(meshes)),
+            row.union.label,
+          ),
+        };
+      }),
+    );
+  };
+
   useImperativeHandle(
     ref,
     () => ({
@@ -5557,41 +5609,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
         const group = groupRef.current;
         if (!scene || !group) return [];
         scene.updateMatrixWorld(true);
-        const exported = new Set<EditHit["kind"]>(["crown", "connector", "hook"]);
-        const collected = groups.map((row) => {
-          const teeth = new Set(row.teeth);
-          const parts: Array<{ mesh: THREE.Mesh; hit: EditHit & { tooth: string } }> = [];
-          editLayerRef.current?.traverse((child) => {
-            const hit = child.userData.editHit as EditHit | undefined;
-            if (!hit || !exported.has(hit.kind) || !("tooth" in hit)) return;
-            if (!teeth.has(hit.tooth) || !child.visible) return;
-            if ((child as THREE.Mesh).isMesh) parts.push({ mesh: child as THREE.Mesh, hit });
-          });
-          return { row, parts };
-        });
-        const restorations = await Promise.all(
-          collected.map(async ({ row, parts }) => {
-            if (!row.union) {
-              return {
-                fileName: row.fileName,
-                positions: worldTriangles(parts.map((part) => part.mesh)),
-              };
-            }
-            // 스크루 홀 크라운은 본체와 홀 벽이 합쳐져야 닫힌 입체가 된다.
-            const pieces = new Map<string, THREE.Mesh[]>();
-            for (const { mesh, hit } of parts) {
-              const key = hit.kind === "crown" ? `crown:${hit.tooth}` : mesh.uuid;
-              pieces.set(key, [...(pieces.get(key) ?? []), mesh]);
-            }
-            return {
-              fileName: row.fileName,
-              positions: await unionTriangleSoups(
-                [...pieces.values()].map((meshes) => worldTriangles(meshes)),
-                row.union.label,
-              ),
-            };
-          }),
-        );
+        const restorations = await collectRestorations(groups);
         const scanRows = scans.map((row) => ({
           fileName: row.fileName,
           positions: worldTriangles(
@@ -5639,6 +5657,32 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
           files.push({ fileName: row.fileName, blob: encodeBinaryStl(out) });
         }
         return files;
+      },
+      restorationSolids: async (groups) => {
+        const scene = sceneRef.current;
+        const group = groupRef.current;
+        if (!scene || !group) return [];
+        scene.updateMatrixWorld(true);
+        const rows = await collectRestorations(groups);
+        const scale = unitToMmRef.current > 0 ? unitToMmRef.current : 1;
+        const origin = group.position;
+        const dirs = insertionDirByTooth(insertionAxesRef.current);
+        return rows.map((row, index) => {
+          const out = row.positions;
+          for (let i = 0; i < out.length; i += 3) {
+            out[i] = (out[i]! - origin.x) * scale;
+            out[i + 1] = (out[i + 1]! - origin.y) * scale;
+            out[i + 2] = (out[i + 2]! - origin.z) * scale;
+          }
+          const dir = groups[index]!.teeth
+            .map((tooth) => dirs.get(tooth))
+            .find(Boolean);
+          return {
+            fileName: row.fileName,
+            positions: out,
+            axis: dir ? [dir.x, dir.y, dir.z] : null,
+          };
+        });
       },
       resetHomeView: () => resetHomeRef.current(),
       alignToBiteAuto: () => alignAutoRef.current(),
