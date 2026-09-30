@@ -4805,7 +4805,7 @@ function LabProsthesisAiDesignDialog({
                         tool={modifyTool}
                         onTool={(next) => {
                           setModifyTool(next);
-                          setEditBrush("none");
+                          setEditBrush(next === "cutback" ? "plus" : "none");
                           setHoleNote("");
                           if (next !== "scanbody") setScanbodyPickTooth(null);
                           if (next === "margin" || next === "insertion" || next === "scanbody") {

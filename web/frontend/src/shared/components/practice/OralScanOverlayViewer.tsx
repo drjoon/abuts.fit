@@ -3213,6 +3213,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
           refine0: RefineTransform;
         }
       | { kind: "hook"; tooth: string; index: number }
+      | { kind: "cutback"; tooth: string; add: boolean; last: THREE.Vector3 }
       | { kind: "hole"; tooth: string }
       | { kind: "hole-tip"; tooth: string; end: "top" | "bottom" }
       | { kind: "connector"; tooth: string; along0: number; x0: number }
@@ -3436,7 +3437,7 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       return { point: [local.x, local.y, local.z], normal: [normal.x, normal.y, normal.z] };
     };
 
-    const crownHookAt = (tooth: string): DesignHook | null => {
+    const crownSurfaceAt = (tooth: string) => {
       const bodies: THREE.Object3D[] = [];
       editLayerRef.current?.traverse((child) => {
         const hit = child.userData.editHit as EditHit | undefined;
@@ -3444,7 +3445,11 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
           bodies.push(child);
         }
       });
-      const hit = raycaster.intersectObjects(bodies, false)[0];
+      return raycaster.intersectObjects(bodies, false)[0] ?? null;
+    };
+
+    const crownHookAt = (tooth: string): DesignHook | null => {
+      const hit = crownSurfaceAt(tooth);
       return hit ? hookOnCrown(hit.object, hit.point, hit.face) : null;
     };
 
@@ -3623,8 +3628,12 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
           const issue = target.line({ point, dir }).issue;
           if (issue) send({ type: "hole-reject", tooth: hit.tag.tooth, reason: issue });
           else send({ type: "hole-place", tooth: hit.tag.tooth, point, dir });
-        } else if (tool === "cutback" && brush === "minus") {
-          send({ type: "cutback-exclude", tooth: hit.tag.tooth, angle });
+        } else if (tool === "cutback" && (brush === "plus" || brush === "minus")) {
+          const at = hookOnCrown(hit.object, hit.point, hit.face);
+          if (!at) return;
+          const add = brush === "plus";
+          send({ type: "cutback-paint", tooth: hit.tag.tooth, point: at.point, add });
+          drag = { kind: "cutback", tooth: hit.tag.tooth, add, last: hit.point.clone() };
         } else if (tool === "refine" && brush === "sculpt") {
           sculptAt(hit.tag.tooth, angle, false);
         } else if (tool === "refine" && brush === "erase") {
@@ -3706,6 +3715,16 @@ export const OralScanOverlayViewer = forwardRef<OralScanOverlayHandle, Props>(
       } else if (drag.kind === "hook") {
         const hook = crownHookAt(drag.tooth);
         if (hook) send({ type: "hook-move", tooth: drag.tooth, index: drag.index, hook });
+      } else if (drag.kind === "cutback") {
+        const hit = crownSurfaceAt(drag.tooth);
+        const at = hit ? hookOnCrown(hit.object, hit.point, hit.face) : null;
+        const brushMm = designEditRef.current?.edits[drag.tooth]?.cutback.brushMm ?? 3;
+        const unit = unitToMmRef.current > 0 ? unitToMmRef.current : 1;
+        // 브러시 지름의 1/5마다 한 번 찍어 저장 기록을 줄인다.
+        if (hit && at && hit.point.distanceTo(drag.last) * unit >= brushMm * 0.2) {
+          drag.last = hit.point.clone();
+          send({ type: "cutback-paint", tooth: drag.tooth, point: at.point, add: drag.add });
+        }
       } else if (drag.kind === "hole") {
         const target = holeTargetRef.current(drag.tooth);
         if (!target) return;

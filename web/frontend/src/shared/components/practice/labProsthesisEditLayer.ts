@@ -52,6 +52,7 @@ import {
   cavityTaperIssue,
   normalizeCavityInfo,
 } from "@/shared/practice/labInlayDesign";
+import { cutbackMask } from "@/shared/practice/labCutback";
 import { makeCavityRestorationGeometry } from "@/shared/components/practice/labInlayGeometry";
 
 export type EditHit =
@@ -128,6 +129,8 @@ export type CachedCrown = {
   /** 정점마다 잰 칼라맵 값. 칼라맵을 켜지 않았으면 null. */
   values: ColorMapValues | null;
   intaglio: CrownIntaglioInfo;
+  /** 앞쪽 외면 정점 수. 뒤는 내면이다. */
+  outerCount: number;
 };
 
 /** 점마다 가장 가까운 스캔 면까지의 부호 거리(mm). 바깥이 +. 스캔이 멀면 null. */
@@ -173,7 +176,8 @@ const TAPER_UNDERCUT = 0xdc2626;
 const TAPER_WIDE = 0xf59e0b;
 /** 훅 도구에서 잡을 수 있는 훅을 살짝 띄워 보인다. */
 const HOOK_EDIT_GLOW = 0x0ea5e9;
-const CUTBACK = 0xd6a37a;
+/** 컷백 선택 영역. 마진 선과 같은 청록 계열. */
+const CUTBACK_SELECT_RGB: [number, number, number] = [0.16, 0.86, 0.78];
 /** 프리셋 그림과 같은 색. 시멘트 갭 하늘, 마진 실 노랑. */
 const INNER_GAP = 0x7dd3fc;
 const INNER_SEAL = 0xfacc15;
@@ -301,18 +305,7 @@ function paintSculpt(
       bump += stamp.amount * Math.exp(-(delta * delta) / (stamp.width ?? 0.09));
     }
     bump *= damp;
-    let shrink = 0;
-    if (edit.cutback.on) {
-      const top = edit.cutback.region === "partial" ? y > 0.15 : true;
-      const excluded = edit.cutback.excluded.some((slot) => {
-        let delta = angle - slot;
-        while (delta > Math.PI) delta -= Math.PI * 2;
-        while (delta < -Math.PI) delta += Math.PI * 2;
-        return Math.abs(delta) < 0.42;
-      });
-      if (top && !excluded) shrink = Math.min(0.28, edit.cutback.thicknessMm * 0.16);
-    }
-    const pull = bump * 0.28 - shrink;
+    const pull = bump * 0.28;
     pos.setXYZ(i, x + (x / radial) * pull, y, z + (z / radial) * pull);
   }
   geometry.computeVertexNormals();
@@ -644,6 +637,98 @@ function alignCrownToMargin(args: {
   }
 }
 
+/** 크라운 로컬 앞쪽 `count`개 정점의 컷백 선택(0~1). */
+function crownCutbackMask(
+  geometry: THREE.BufferGeometry,
+  count: number,
+  matrix: THREE.Matrix4,
+  edit: ToothDesignEdit,
+  unit: number,
+  anatomy: ToothAnatomyDirs | null,
+) {
+  const column = new THREE.Vector3();
+  const axisMm = [0, 1, 2].map(
+    (k) => column.setFromMatrixColumn(matrix, k).length() * unit,
+  ) as [number, number, number];
+  return cutbackMask({
+    positions: geometry.getAttribute("position").array as ArrayLike<number>,
+    count,
+    cutback: edit.cutback,
+    axisMm,
+    rimY: Math.cos(Math.PI * crownTheta(edit)),
+    buccal: anatomy ? { x: anatomy.bx, z: anatomy.bz } : null,
+  });
+}
+
+/**
+ * 컷백 선택 영역을 외면 법선 안쪽으로 깊이만큼 민다. 정점마다 깎은 mm를 돌려준다.
+ * `thickness`(지대치 내면에서 잰 두께)가 있고 최소 두께 유지를 켰으면 그 밑으로는 깎지 않는다.
+ */
+function carveCutback(args: {
+  geometry: THREE.BufferGeometry;
+  matrix: THREE.Matrix4;
+  edit: ToothDesignEdit;
+  unit: number;
+  anatomy: ToothAnatomyDirs | null;
+  thickness: Float32Array | null;
+  skip: readonly number[];
+}): Float32Array | null {
+  const { geometry, matrix, edit, unit } = args;
+  const pos = geometry.getAttribute("position") as THREE.BufferAttribute;
+  const count = pos.count;
+  const mask = crownCutbackMask(geometry, count, matrix, edit, unit, args.anatomy);
+  for (const vertex of args.skip) mask[vertex] = 0;
+  geometry.computeVertexNormals();
+  const nor = geometry.getAttribute("normal");
+  const normalMatrix = new THREE.Matrix3().getNormalMatrix(matrix);
+  const inverse = matrix.clone().invert();
+  const floor = edit.cutback.preserveMinThickness ? edit.refine.minThicknessMm : null;
+  const cut = new Float32Array(count);
+  const p = new THREE.Vector3();
+  const n = new THREE.Vector3();
+  let any = false;
+  for (let i = 0; i < count; i += 1) {
+    let depth = edit.cutback.depthMm * mask[i]!;
+    const shell = args.thickness?.[i];
+    if (floor != null && shell != null && Number.isFinite(shell)) {
+      depth = Math.min(depth, Math.max(0, shell - floor));
+    }
+    if (depth <= 1e-4) continue;
+    p.fromBufferAttribute(pos, i).applyMatrix4(matrix);
+    n.fromBufferAttribute(nor, i).applyMatrix3(normalMatrix).normalize();
+    p.addScaledVector(n, -depth / unit).applyMatrix4(inverse);
+    pos.setXYZ(i, p.x, p.y, p.z);
+    cut[i] = depth;
+    any = true;
+  }
+  pos.needsUpdate = true;
+  return any ? cut : null;
+}
+
+/** 고르는 중인 컷백 영역을 외면 색에 섞어 칠한다. */
+function paintCutbackSelection(
+  geometry: THREE.BufferGeometry,
+  outerCount: number,
+  matrix: THREE.Matrix4,
+  edit: ToothDesignEdit,
+  unit: number,
+  anatomy: ToothAnatomyDirs | null,
+) {
+  const color = geometry.getAttribute("color") as THREE.BufferAttribute | undefined;
+  if (!color) return;
+  const count = Math.min(outerCount, color.count);
+  const mask = crownCutbackMask(geometry, count, matrix, edit, unit, anatomy);
+  const rgb = color.array as Float32Array;
+  for (let i = 0; i < count; i += 1) {
+    const m = mask[i]!;
+    if (m <= 0) continue;
+    for (let c = 0; c < 3; c += 1) {
+      rgb[i * 3 + c] = rgb[i * 3 + c]! * (1 - m) + CUTBACK_SELECT_RGB[c]! * m;
+    }
+  }
+  color.needsUpdate = true;
+}
+
 /** 내면 색. 외면보다 조금 어둡게 두어 안쪽 면임을 알아보게 한다. */
 const INTAGLIO_RGB: [number, number, number] = [0.86, 0.82, 0.76];
 
@@ -672,11 +757,14 @@ function adaptCrownGeometry(args: {
   intaglio: boolean;
   /** 칼라맵 값을 재는가. */
   needValues: boolean;
+  /** 컷백 부분 프리셋이 순면을 찾을 때 쓴다. */
+  anatomy: ToothAnatomyDirs | null;
 }): {
   shellMm: number | null;
   values: ColorMapValues | null;
   intaglio: CrownIntaglioInfo;
   groups: CachedCrown["groups"];
+  outerCount: number;
 } {
   const { geometry, edit, unit, contactPaint, discs } = args;
   const pos = geometry.getAttribute("position") as THREE.BufferAttribute;
@@ -908,10 +996,33 @@ function adaptCrownGeometry(args: {
   }
 
   if (wantIntaglio && !mesh && intaglioInfo.status === "off") intaglioInfo = { status: "sparse" };
+
+  // 맞춘 외면에서 컷백한다. 대합·인접 맞춤이 컷백 면을 다시 밀지 않는다.
+  const cutbackMm = edit.cutback.applied
+    ? carveCutback({
+        geometry,
+        matrix: args.matrix,
+        edit,
+        unit,
+        anatomy: args.anatomy,
+        thickness: realThickness,
+        skip: rim?.order ?? [],
+      })
+    : null;
+  if (cutbackMm && realThickness) {
+    for (let i = 0; i < count; i += 1) realThickness[i] = realThickness[i]! - cutbackMm[i]!;
+    let min = Infinity;
+    for (const t of realThickness) if (Number.isFinite(t) && t < min) min = t;
+    if (intaglioInfo.status === "ok") {
+      intaglioInfo = { ...intaglioInfo, minThicknessMm: Number.isFinite(min) ? min : undefined };
+    }
+  }
   const thicknessAt = (i: number) => {
     const real = realThickness?.[i];
     if (real != null) return real;
-    return realThickness ? Number.NaN : base[i]! - Math.max(0, cutMm?.[i] ?? 0);
+    return realThickness
+      ? Number.NaN
+      : base[i]! - Math.max(0, cutMm?.[i] ?? 0) - (cutbackMm?.[i] ?? 0);
   };
 
   // 내면 정점과 테두리 띠를 외면 뒤에 붙인다.
@@ -1036,6 +1147,7 @@ function adaptCrownGeometry(args: {
     values,
     intaglio: intaglioInfo,
     groups,
+    outerCount: count,
   };
 }
 
@@ -1728,8 +1840,12 @@ export function buildProsthesisEditLayer(args: {
       ? JSON.stringify([
           tooth,
           fine,
-          // 훅은 크라운 형상을 바꾸지 않아 끄는 동안 맞춤을 다시 하지 않는다.
-          { ...edit, hook: null },
+          // 훅과 깎기 전 컷백 선택은 크라운 형상을 바꾸지 않아 맞춤을 다시 하지 않는다.
+          {
+            ...edit,
+            hook: null,
+            cutback: edit.cutback.applied ? { ...edit.cutback, brushMm: 0 } : null,
+          },
           crownMatrix.elements.map((n) => Math.round(n * 1e5)),
           args.contactPaint ?? null,
           discs.map((row) => [...row.normal, row.offset].map((n) => Math.round(n * 1e5))),
@@ -1743,6 +1859,7 @@ export function buildProsthesisEditLayer(args: {
     let crownGroups: CachedCrown["groups"];
     let crownValues: ColorMapValues | null;
     let crownIntaglio: CrownIntaglioInfo;
+    let crownOuterCount: number;
     const cached = args.adaptCache?.get(cacheKey);
     if (cached) {
       crownGeometry = new THREE.BufferGeometry();
@@ -1756,6 +1873,7 @@ export function buildProsthesisEditLayer(args: {
       crownGroups = cached.groups;
       crownValues = cached.values;
       crownIntaglio = cached.intaglio;
+      crownOuterCount = cached.outerCount;
       args.onCrownShell?.(tooth, cached.shellMm);
     } else {
       const shaped = makeCrownGeometry(edit, fine, anatomy);
@@ -1778,12 +1896,16 @@ export function buildProsthesisEditLayer(args: {
             },
         intaglio: !cutHole && !edit.implant.on,
         needValues: colorMap != null,
+        anatomy,
       });
       const { shellMm } = adapted;
       crownGeometry = cutHole ? cutScrewHole(shaped, crownMatrix, cutHole) : shaped;
       crownGroups = adapted.groups;
       crownValues = adapted.values;
       crownIntaglio = adapted.intaglio;
+      crownOuterCount = cutHole
+        ? crownGeometry.getAttribute("position").count
+        : adapted.outerCount;
       args.onCrownShell?.(tooth, shellMm);
       if (args.adaptCache) {
         if (args.adaptCache.size > 64) args.adaptCache.clear();
@@ -1797,6 +1919,7 @@ export function buildProsthesisEditLayer(args: {
           groups: crownGroups,
           values: crownValues,
           intaglio: crownIntaglio,
+          outerCount: crownOuterCount,
         });
       }
     }
@@ -1811,6 +1934,9 @@ export function buildProsthesisEditLayer(args: {
       );
       crownGeometry.getAttribute("color").needsUpdate = true;
       crownGeometry.userData.colorMap = { values: crownValues, mode: colorMap.mode };
+    }
+    if (args.spec.tool === "cutback" && active && !edit.cutback.applied) {
+      paintCutbackSelection(crownGeometry, crownOuterCount, crownMatrix, edit, unit, anatomy);
     }
     const crownMaterial = () =>
       new THREE.MeshStandardMaterial({
@@ -1914,25 +2040,6 @@ export function buildProsthesisEditLayer(args: {
         seal.renderOrder = 3;
         root.add(seal);
       }
-    }
-
-    if (edit.cutback.on) {
-      const shell = new THREE.Mesh(
-        makeCrownGeometry(edit, false, anatomy),
-        new THREE.MeshStandardMaterial({
-          color: CUTBACK,
-          roughness: 0.55,
-          transparent: true,
-          opacity: 0.72,
-          depthWrite: false,
-        }),
-      );
-      const pull = Math.min(0.22, edit.cutback.thicknessMm * 0.12);
-      shell.quaternion.copy(crownQuat);
-      shell.scale.set(width * (1 - pull), height * (edit.cutback.region === "full" ? 1 - pull : 0.62), depth * (1 - pull));
-      shell.position.copy(crown.position).addScaledVector(normal, height * 0.08);
-      shell.renderOrder = 5;
-      root.add(shell);
     }
 
     if (

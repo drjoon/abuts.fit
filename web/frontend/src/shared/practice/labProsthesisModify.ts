@@ -55,7 +55,8 @@ export const REFINE_TABS: Array<{ id: RefineTab; label: string }> = [
 
 export type MarginEditMode = "point" | "pen";
 
-export type EditBrush = "none" | "sculpt" | "erase" | "minus";
+/** plus·minus는 컷백 선택 브러시. */
+export type EditBrush = "none" | "sculpt" | "erase" | "plus" | "minus";
 
 /** 스컬프트 브러시 모양. 오른쪽 클릭은 더하기·빼기를 뒤집는다. */
 export type SculptShape = "add" | "remove" | "smooth" | "flatten" | "inflate";
@@ -158,7 +159,26 @@ export type MarginReview = "none" | "detected" | "confirmed";
 
 export type ConnectorShape = "inverted" | "round" | "triangle" | "proximal";
 
-export type CutbackRegion = "partial" | "full";
+/** 컷백 선택 시작점. 부분은 절단연·순면 쪽, 전체는 마진 띠를 뺀 외면. */
+export type CutbackPreset = "none" | "partial" | "full";
+
+/**
+ * 컷백 선택을 쌓는 순서. 점은 크라운 메시 로컬(훅과 같은 공간)이라
+ * 크라운을 옮기고 늘려도 같은 자리에 붙어 있다. 반전은 그때까지 쌓은 선택을 뒤집는다.
+ */
+export type CutbackOp =
+  | { kind: "add" | "remove"; point: [number, number, number]; radiusMm: number }
+  | { kind: "invert" };
+
+export const CUTBACK_DEPTH_RANGE_MM = { min: 0.1, max: 2 } as const;
+export const CUTBACK_DEPTH_DEFAULT_MM = 0.5;
+export const CUTBACK_BRUSH_RANGE_MM = { min: 1, max: 8 } as const;
+export const CUTBACK_BRUSH_DEFAULT_MM = 3;
+const CUTBACK_OP_MAX = 400;
+
+export function cutbackHasSelection(cutback: ToothDesignEdit["cutback"]) {
+  return cutback.preset !== "none" || cutback.ops.some((op) => op.kind !== "remove");
+}
 
 /**
  * 치아 내면. 프리셋 열의 숫자를 복사해 두고, 이후 라이브러리가 바뀌어도 케이스는 그대로다.
@@ -465,10 +485,15 @@ export type ToothDesignEdit = {
     lengthMm: number;
   };
   cutback: {
-    on: boolean;
-    region: CutbackRegion;
-    thicknessMm: number;
-    excluded: number[];
+    /** 선택 영역을 깊이만큼 깎았다. 끄면 선택만 칠해 보인다. */
+    applied: boolean;
+    preset: CutbackPreset;
+    ops: CutbackOp[];
+    depthMm: number;
+    /** 지대치 내면에서 잰 두께가 최소 두께 밑으로 내려가지 않게 깊이를 줄인다. */
+    preserveMinThickness: boolean;
+    /** 선택 브러시 지름. */
+    brushMm: number;
   };
   /**
    * 스크류홀. 좌표는 치아 프레임(치아 추정 중심 원점, +Y 삽입축) mm.
@@ -546,7 +571,7 @@ export type DesignGesture =
       rotDeg?: number;
       scanbodyKey?: string | null;
     }
-  | { type: "cutback-exclude"; tooth: string; angle: number }
+  | { type: "cutback-paint"; tooth: string; point: [number, number, number]; add: boolean }
   | { type: "transform"; tooth: string; patch: Partial<RefineTransform> }
   | { type: "connector"; tooth: string; along: number };
 
@@ -742,7 +767,14 @@ export function createToothDesignEdit(): ToothDesignEdit {
       screwHole: false,
     },
     hook: { hooks: [], radiusMm: HOOK_RADIUS_DEFAULT_MM, lengthMm: HOOK_LENGTH_DEFAULT_MM },
-    cutback: { on: false, region: "partial", thicknessMm: 0.4, excluded: [] },
+    cutback: {
+      applied: false,
+      preset: "none",
+      ops: [],
+      depthMm: CUTBACK_DEPTH_DEFAULT_MM,
+      preserveMinThickness: true,
+      brushMm: CUTBACK_BRUSH_DEFAULT_MM,
+    },
     hole: {
       on: false,
       applied: false,
@@ -806,7 +838,7 @@ export function normalizeToothDesignEdit(raw: unknown): ToothDesignEdit {
     inner: normalizeToothInner(row.inner, refine.minThicknessMm),
     refine,
     hook: normalizeHook(row.hook, base.hook),
-    cutback: { ...base.cutback, ...(row.cutback ?? {}) },
+    cutback: normalizeCutback(row.cutback, base.cutback),
     hole: normalizeHole(row.hole, base.hole),
     connector: {
       ...base.connector,
@@ -854,6 +886,82 @@ function normalizeHook(raw: unknown, base: ToothDesignEdit["hook"]): ToothDesign
       ? clamp(length, HOOK_LENGTH_RANGE_MM.min, HOOK_LENGTH_RANGE_MM.max)
       : base.lengthMm,
   };
+}
+
+function parseCutbackOp(raw: unknown): CutbackOp | null {
+  if (!raw || typeof raw !== "object") return null;
+  const row = raw as Record<string, unknown>;
+  if (row.kind === "invert") return { kind: "invert" };
+  if (row.kind !== "add" && row.kind !== "remove") return null;
+  const point = vec3OrNull(row.point);
+  const radius = Number(row.radiusMm);
+  if (!point || !Number.isFinite(radius) || radius <= 0) return null;
+  return { kind: row.kind, point, radiusMm: radius };
+}
+
+/**
+ * 예전 컷백은 부분·전체 영역, 두께, 제외한 방위각이었다. 켜져 있었으면
+ * 그 영역을 프리셋으로, 제외 각도를 크라운 옆면 빼기 브러시로 옮겨 깎은 채로 둔다.
+ */
+function normalizeCutback(
+  raw: unknown,
+  base: ToothDesignEdit["cutback"],
+): ToothDesignEdit["cutback"] {
+  if (!raw || typeof raw !== "object") return { ...base, ops: [] };
+  const row = raw as Record<string, unknown>;
+  const depthOf = (value: unknown) => {
+    const n = Number(value);
+    return Number.isFinite(n)
+      ? clamp(n, CUTBACK_DEPTH_RANGE_MM.min, CUTBACK_DEPTH_RANGE_MM.max)
+      : base.depthMm;
+  };
+  if (!("preset" in row) && !("ops" in row)) {
+    if (row.on !== true) return { ...base, ops: [] };
+    const excluded = Array.isArray(row.excluded) ? row.excluded.map(Number) : [];
+    return {
+      ...base,
+      applied: true,
+      preset: row.region === "full" ? "full" : "partial",
+      ops: excluded
+        .filter(Number.isFinite)
+        .map((angle) => ({
+          kind: "remove" as const,
+          point: [Math.cos(angle) * 0.95, 0.45, Math.sin(angle) * 0.95] as [number, number, number],
+          radiusMm: 2,
+        })),
+      depthMm: depthOf(row.thicknessMm),
+    };
+  }
+  const brush = Number(row.brushMm);
+  return {
+    applied: row.applied === true,
+    preset: row.preset === "partial" || row.preset === "full" ? row.preset : "none",
+    ops: Array.isArray(row.ops)
+      ? row.ops.flatMap((op) => parseCutbackOp(op) ?? []).slice(-CUTBACK_OP_MAX)
+      : [],
+    depthMm: depthOf(row.depthMm),
+    preserveMinThickness: row.preserveMinThickness !== false,
+    brushMm: Number.isFinite(brush)
+      ? clamp(brush, CUTBACK_BRUSH_RANGE_MM.min, CUTBACK_BRUSH_RANGE_MM.max)
+      : base.brushMm,
+  };
+}
+
+/** 선택을 바꾸면 깎은 결과는 풀고 선택부터 다시 보인다. */
+export function editCutbackSelection(
+  edit: ToothDesignEdit,
+  patch: Partial<Pick<ToothDesignEdit["cutback"], "preset" | "ops">>,
+): ToothDesignEdit {
+  return { ...edit, cutback: { ...edit.cutback, ...patch, applied: false } };
+}
+
+/** 반전을 두 번 누르면 쌓지 않고 앞 반전을 지운다. */
+export function invertCutbackSelection(edit: ToothDesignEdit): ToothDesignEdit {
+  const ops = edit.cutback.ops;
+  const last = ops[ops.length - 1];
+  return editCutbackSelection(edit, {
+    ops: last?.kind === "invert" ? ops.slice(0, -1) : [...ops, { kind: "invert" }],
+  });
 }
 
 /** 예전 홀은 크라운 중심을 지나는 각도·기울기였다. 켜져 있었으면 중심 삽입축으로 뚫는다. */
@@ -1223,7 +1331,7 @@ export function shellThicknessMm(edit: ToothDesignEdit, measuredMm?: number | nu
     0,
   );
   let shell = 0.55 * edit.refine.scale - dent * 0.25 - innerGapMm(edit.inner) * 0.35;
-  if (edit.cutback.on) shell -= edit.cutback.thicknessMm * 0.45;
+  if (edit.cutback.applied) shell -= edit.cutback.depthMm * 0.45;
   if (edit.refine.compensate) shell = Math.max(shell, edit.refine.minThicknessMm);
   return shell;
 }
@@ -1243,8 +1351,8 @@ function wrapAngle(delta: number) {
 const CROWN_HEIGHT_MM = 7;
 
 /**
- * 교합 0~1. 스컬프트·컷백이 있는 자리만 더 얇다. 마진 실 띠는 마진 실 갭을 쓴다.
- * 대합·인접 깎기는 여기서 빼지 않는다. 편집 레이어가 정점마다 깎은 깊이를 뺀다.
+ * 교합 0~1. 스컬프트가 있는 자리만 더 얇다. 마진 실 띠는 마진 실 갭을 쓴다.
+ * 대합·인접 깎기와 컷백은 여기서 빼지 않는다. 편집 레이어가 정점마다 깎은 깊이를 뺀다.
  */
 export function localShellThicknessMm(
   edit: ToothDesignEdit,
@@ -1265,13 +1373,6 @@ export function localShellThicknessMm(
       ? edit.inner.sealGapMm
       : innerGapMm(edit.inner);
   let shell = 0.55 * edit.refine.scale - dent * 0.25 - gap * 0.35;
-  if (edit.cutback.on) {
-    const inRegion = edit.cutback.region === "full" || occlusal01 > 0.62;
-    const excluded = edit.cutback.excluded.some(
-      (slot) => Math.abs(wrapAngle(angle - slot)) < 0.42,
-    );
-    if (inRegion && !excluded) shell -= edit.cutback.thicknessMm * 0.45;
-  }
   if (edit.refine.compensate) shell = Math.max(shell, edit.refine.minThicknessMm);
   return shell;
 }
@@ -1407,15 +1508,16 @@ export function reduceDesignGesture(
           })),
         },
       };
-    case "cutback-exclude":
-      return {
-        ...edit,
-        cutback: {
-          ...edit.cutback,
-          on: true,
-          excluded: [...edit.cutback.excluded, gesture.angle].slice(-10),
-        },
+    case "cutback-paint": {
+      const op: CutbackOp = {
+        kind: gesture.add ? "add" : "remove",
+        point: gesture.point.map((n) => Math.round(n * 1e4) / 1e4) as [number, number, number],
+        radiusMm: edit.cutback.brushMm / 2,
       };
+      return editCutbackSelection(edit, {
+        ops: [...edit.cutback.ops, op].slice(-CUTBACK_OP_MAX),
+      });
+    }
     case "transform":
       return applyRefineTransform(edit, gesture.patch);
     case "connector":

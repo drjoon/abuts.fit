@@ -15,9 +15,14 @@ import {
 } from "@/components/ui/tooltip";
 import {
   CONNECTOR_SHAPES,
+  CUTBACK_BRUSH_RANGE_MM,
+  CUTBACK_DEPTH_RANGE_MM,
   MODIFY_TOOLS,
   adjustMarginOffset,
   applyInnerParams,
+  cutbackHasSelection,
+  editCutbackSelection,
+  invertCutbackSelection,
   connectorAreaMm2,
   connectorIsWeak,
   connectorMinAreaMm2,
@@ -628,6 +633,215 @@ function IntaglioStatus({
       <br />
       폰틱·임플란트·스크류홀 크라운은 외면만 그립니다.
     </>
+  );
+}
+
+function ToolButton({
+  active,
+  disabled,
+  hint,
+  onClick,
+  children,
+}: {
+  active?: boolean;
+  disabled?: boolean;
+  hint: ReactNode;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="flex min-w-0">
+          <Button
+            type="button"
+            size="sm"
+            variant={active ? "default" : "outline"}
+            className="h-7 w-full px-1 text-[11px]"
+            disabled={disabled}
+            onClick={onClick}
+          >
+            {children}
+          </Button>
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="right" className="z-[520]">
+        {hint}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+/**
+ * 컷백. 프리셋으로 영역을 잡고 브러시로 더하고 뺀 뒤 적용하면 그 영역을 깊이만큼 깎는다.
+ * 깎은 면은 형상 › 외면 스컬프트로 다듬는다.
+ */
+function CutbackControls({
+  edit,
+  onEdit,
+  brush,
+  onBrush,
+  generated,
+  intaglio,
+  onRefineSurface,
+}: {
+  edit: ToothDesignEdit;
+  onEdit: (next: ToothDesignEdit) => void;
+  brush: EditBrush;
+  onBrush: (brush: EditBrush) => void;
+  generated: boolean;
+  intaglio: CrownIntaglioInfo | null;
+  onRefineSurface: () => void;
+}) {
+  const { cutback } = edit;
+  const selected = cutbackHasSelection(cutback);
+  const set = (patch: Partial<ToothDesignEdit["cutback"]>) =>
+    onEdit({ ...edit, cutback: { ...cutback, ...patch } });
+
+  if (!generated) {
+    return (
+      <p className="text-[11px] leading-relaxed text-muted-foreground">
+        크라운을 생성한 뒤 컷백합니다.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <p className="text-[11px] text-muted-foreground">컷백할 영역을 고릅니다.</p>
+      <Row label="프리셋">
+        <div className="grid grid-cols-2 gap-1">
+          <ToolButton
+            active={cutback.preset === "partial"}
+            hint="절단연과 순면 쪽을 고릅니다."
+            onClick={() => onEdit(editCutbackSelection(edit, { preset: "partial", ops: [] }))}
+          >
+            부분
+          </ToolButton>
+          <ToolButton
+            active={cutback.preset === "full"}
+            hint="마진 띠를 뺀 외면 전체를 고릅니다."
+            onClick={() => onEdit(editCutbackSelection(edit, { preset: "full", ops: [] }))}
+          >
+            전체
+          </ToolButton>
+        </div>
+      </Row>
+      <Row label="브러시">
+        <div className="grid grid-cols-2 gap-1">
+          <ToolButton
+            active={brush === "plus"}
+            hint="칠한 자리를 선택에 넣습니다."
+            onClick={() => onBrush(brush === "plus" ? "none" : "plus")}
+          >
+            더하기
+          </ToolButton>
+          <ToolButton
+            active={brush === "minus"}
+            hint="칠한 자리를 선택에서 뺍니다."
+            onClick={() => onBrush(brush === "minus" ? "none" : "minus")}
+          >
+            빼기
+          </ToolButton>
+        </div>
+      </Row>
+      <Row label="브러시 크기" value={`${cutback.brushMm.toFixed(1)} mm`}>
+        <Slider
+          min={CUTBACK_BRUSH_RANGE_MM.min * 10}
+          max={CUTBACK_BRUSH_RANGE_MM.max * 10}
+          step={1}
+          value={[Math.round(cutback.brushMm * 10)]}
+          onValueChange={([value]) => set({ brushMm: (value ?? 30) / 10 })}
+          aria-label="컷백 브러시 크기"
+        />
+      </Row>
+      <Row label="선택 영역">
+        <div className="grid grid-cols-2 gap-1">
+          <ToolButton
+            hint={
+              <>
+                고른 곳과 고르지 않은 곳을 바꿉니다.
+                <br />
+                마진 띠는 바꿔도 깎지 않습니다.
+              </>
+            }
+            onClick={() => onEdit(invertCutbackSelection(edit))}
+          >
+            반전
+          </ToolButton>
+          <ToolButton
+            disabled={!selected}
+            hint="선택을 모두 지웁니다."
+            onClick={() => onEdit(editCutbackSelection(edit, { preset: "none", ops: [] }))}
+          >
+            지우기
+          </ToolButton>
+        </div>
+      </Row>
+      <Row label="깎는 깊이" value={`${cutback.depthMm.toFixed(2)} mm`}>
+        <Slider
+          min={CUTBACK_DEPTH_RANGE_MM.min * 100}
+          max={CUTBACK_DEPTH_RANGE_MM.max * 100}
+          step={5}
+          value={[Math.round(cutback.depthMm * 100)]}
+          onValueChange={([value]) => set({ depthMm: (value ?? 50) / 100 })}
+          aria-label="컷백 깊이"
+        />
+      </Row>
+      <label className="flex items-center gap-2 text-xs font-medium">
+        <Checkbox
+          className="h-3.5 w-3.5"
+          checked={cutback.preserveMinThickness}
+          onCheckedChange={(checked) => set({ preserveMinThickness: checked === true })}
+          aria-label="최소 두께 유지"
+        />
+        최소 두께 유지 ({edit.refine.minThicknessMm.toFixed(2)} mm)
+      </label>
+      {cutback.preserveMinThickness && intaglio?.status !== "ok" ? (
+        <p className="text-[11px] leading-snug text-amber-700">
+          지대치 내면이 없어 두께를 재지 못합니다.
+          <br />
+          깊이만큼 그대로 깎습니다.
+        </p>
+      ) : null}
+      {cutback.applied ? (
+        <div className="space-y-1.5">
+          <div className="grid grid-cols-2 gap-1">
+            <ToolButton hint="깎기 전 선택으로 돌아갑니다." onClick={() => set({ applied: false })}>
+              되돌리기
+            </ToolButton>
+            <ToolButton
+              active
+              hint={
+                <>
+                  형상 › 외면 스컬프트로 엽니다.
+                  <br />
+                  깎은 면의 경계와 굴곡을 다듬습니다.
+                </>
+              }
+              onClick={onRefineSurface}
+            >
+              면 다듬기
+            </ToolButton>
+          </div>
+          <p className="text-[11px] leading-snug text-muted-foreground">
+            선택을 고치면 깎은 면이 풀리고 선택부터 다시 보입니다.
+          </p>
+        </div>
+      ) : (
+        <ToolButton
+          active
+          disabled={!selected}
+          hint={selected ? "선택 영역을 깊이만큼 깎습니다." : "프리셋이나 더하기 브러시로 영역을 먼저 고릅니다."}
+          onClick={() => {
+            set({ applied: true });
+            onBrush("none");
+          }}
+        >
+          적용
+        </ToolButton>
+      )}
+    </div>
   );
 }
 
@@ -1250,109 +1464,26 @@ export function LabProsthesisModifyPanel({
         </div>
       ) : null}
 
-      {tool === "cutback" ? (
-        <div className="space-y-2">
-          <div className="grid grid-cols-2 gap-1">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="flex min-w-0">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={edit.cutback.region === "partial" ? "default" : "outline"}
-                    className="h-7 w-full text-[11px]"
-                    onClick={() =>
-                      onEdit({
-                        ...edit,
-                        cutback: { ...edit.cutback, region: "partial", on: true },
-                      })
-                    }
-                  >
-                    부분
-                  </Button>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="right" className="z-[520]">
-                교합면만 얇게 합니다.
-              </TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="flex min-w-0">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={edit.cutback.region === "full" ? "default" : "outline"}
-                    className="h-7 w-full text-[11px]"
-                    onClick={() =>
-                      onEdit({
-                        ...edit,
-                        cutback: { ...edit.cutback, region: "full", on: true },
-                      })
-                    }
-                  >
-                    전체
-                  </Button>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="right" className="z-[520]">
-                외면 전체를 얇게 합니다.
-              </TooltipContent>
-            </Tooltip>
-          </div>
-          <Row label="컷백 두께" value={`${edit.cutback.thicknessMm.toFixed(2)} mm`}>
-            <Slider
-              min={10}
-              max={80}
-              step={2}
-              value={[Math.round(edit.cutback.thicknessMm * 100)]}
-              onValueChange={([value]) =>
-                onEdit({
-                  ...edit,
-                  cutback: {
-                    ...edit.cutback,
-                    on: true,
-                    thicknessMm: (value ?? 40) / 100,
-                  },
-                })
-              }
-              aria-label="컷백 두께"
-            />
-          </Row>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="flex min-w-0">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={brush === "minus" ? "default" : "outline"}
-                  className="h-7 w-full text-[11px]"
-                  disabled={!generated}
-                  onClick={() => onBrush(brush === "minus" ? "none" : "minus")}
-                >
-                  제외 브러시
-                </Button>
-              </span>
-            </TooltipTrigger>
-            <TooltipContent side="right" className="z-[520]">
-              누른 자리는 컷백에서 뺍니다.
-            </TooltipContent>
-          </Tooltip>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="h-7 w-full text-[11px]"
-            onClick={() =>
-              onEdit({
-                ...edit,
-                cutback: { ...edit.cutback, on: false, excluded: [] },
-              })
-            }
-          >
-            컷백 끄기
-          </Button>
-        </div>
+      {tool === "cutback" && cavity ? (
+        <p className="text-[11px] leading-relaxed text-muted-foreground">
+          인레이·온레이에는 컷백하지 않습니다.
+        </p>
+      ) : null}
+
+      {tool === "cutback" && !cavity ? (
+        <CutbackControls
+          edit={edit}
+          onEdit={onEdit}
+          brush={brush}
+          onBrush={onBrush}
+          generated={generated}
+          intaglio={intaglio}
+          onRefineSurface={() => {
+            onTool("refine");
+            onRefineTab("outer");
+            onBrush("sculpt");
+          }}
+        />
       ) : null}
 
       {tool === "hole" && implant ? (
