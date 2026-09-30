@@ -16,6 +16,10 @@
 // - web/frontend/src/pages/requestor/credits/RequestorCreditsPage.tsx
 import { type ReactNode } from "react";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
+import {
+  DashboardNoticeAlert,
+  DASHBOARD_NOTICE_HEADER_CLASS,
+} from "@/shared/notices/DashboardNoticeAlert";
 
 export type RequestorWorkspaceHeaderProps = {
   /** 제공 시에만 기간 필터 표시 */
@@ -36,16 +40,20 @@ export const RequestorWorkspaceHeader = ({
     typeof period !== "undefined" && typeof onPeriodChange === "function";
 
   return (
-    <div className={className ?? "flex flex-wrap items-center gap-2 w-full"}>
+    <div className={className ?? "flex w-full min-w-0 flex-nowrap items-center gap-2"}>
       {showPeriodFilter && (
         <PeriodFilter
           value={period}
           onChange={onPeriodChange}
           useStoreCustomRange={false}
+          className="shrink-0"
         />
       )}
-
-      {children}
+      <DashboardNoticeAlert
+        placement="inline"
+        className={DASHBOARD_NOTICE_HEADER_CLASS}
+      />
+      <div className="flex shrink-0 flex-wrap items-center gap-2">{children}</div>
     </div>
   );
 };

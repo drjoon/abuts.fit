@@ -7,6 +7,10 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, ClipboardList, Plus } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
+import {
+  DashboardNoticeAlert,
+  DASHBOARD_NOTICE_HEADER_CLASS,
+} from "@/shared/notices/DashboardNoticeAlert";
 import { useToast } from "@/shared/hooks/use-toast";
 import { cn } from "@/shared/ui/cn";
 import {
@@ -238,8 +242,12 @@ export default function SalesRequirementsPage() {
               { value: "done", label: `완료 · ${doneCount}` },
             ]}
           />
+          <DashboardNoticeAlert
+            placement="inline"
+            className={DASHBOARD_NOTICE_HEADER_CLASS}
+          />
           {canCreate ? (
-            <div className="ml-auto shrink-0">
+            <div className="shrink-0">
               <Button
                 size="sm"
                 className="h-8 gap-1"

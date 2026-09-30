@@ -74,7 +74,10 @@ import {
   DASHBOARD_FULL_BLEED_HEADER_ROW_CLASS,
 } from "@/shared/ui/dashboardChrome";
 import { apiFetch } from "@/shared/api/apiClient";
-import { DashboardNoticeAlert } from "@/shared/notices/DashboardNoticeAlert";
+import {
+  DashboardNoticeAlert,
+  DASHBOARD_NOTICE_HEADER_CLASS,
+} from "@/shared/notices/DashboardNoticeAlert";
 import { type ChatRoom } from "@/shared/hooks/useChatRooms";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 import { useIsMobile } from "@/shared/hooks/use-mobile";
@@ -903,14 +906,19 @@ export function PracticeRecentTransfersAllModal({
           ) : (
             <DialogTitle className="sr-only">{mobileTitle}</DialogTitle>
           )}
-          {headerActions ? (
-            <div className="flex w-full flex-wrap items-center justify-center gap-1.5">
-              {headerActions}
-            </div>
-          ) : null}
           {statusBadges ? (
             <div className="flex w-full flex-wrap items-center justify-center gap-1.5">
               {statusBadges}
+            </div>
+          ) : null}
+          {isPage ? (
+            <div className="flex w-full justify-center">
+              <DashboardNoticeAlert placement="inline" />
+            </div>
+          ) : null}
+          {headerActions ? (
+            <div className="flex w-full flex-wrap items-center justify-center gap-1.5">
+              {headerActions}
             </div>
           ) : null}
           <div className="relative mx-auto w-2/3">
@@ -945,18 +953,25 @@ export function PracticeRecentTransfersAllModal({
               {headerTitle}
             </DialogTitle>
           )}
-          <div className="flex min-w-0 w-full flex-wrap items-center justify-start gap-1.5 md:flex-1 md:flex-nowrap md:justify-center md:overflow-x-auto sm:gap-2">
-            {statusBadges}
-          </div>
-          {headerActions ? (
-            <div
-              className="group/hdr-actions flex w-full flex-wrap items-center justify-center gap-1.5 md:w-auto md:shrink-0 md:flex-nowrap sm:gap-2"
-              data-wide={headerActionsWide ? "true" : "false"}
-            >
-              {headerActions}
+          <div className="flex min-w-0 w-full flex-nowrap items-center gap-2 md:flex-1">
+            <div className="flex shrink-0 flex-nowrap items-center gap-1.5 overflow-x-auto sm:gap-2">
+              {statusBadges}
             </div>
-          ) : null}
-          {isPage ? <DashboardNoticeAlert placement="inline" /> : null}
+            {isPage ? (
+              <DashboardNoticeAlert
+                placement="inline"
+                className={DASHBOARD_NOTICE_HEADER_CLASS}
+              />
+            ) : null}
+            {headerActions ? (
+              <div
+                className="group/hdr-actions ml-auto flex shrink-0 flex-nowrap items-center gap-1.5 sm:gap-2"
+                data-wide={headerActionsWide ? "true" : "false"}
+              >
+                {headerActions}
+              </div>
+            ) : null}
+          </div>
         </div>
       )}
     </div>

@@ -284,7 +284,10 @@ import {
 } from "@/shared/hooks/useBackgroundTempUpload";
 import { useS3FileDownload } from "@/shared/files/useS3FileDownload";
 import { cn } from "@/shared/ui/cn";
-import { DashboardNoticeAlert } from "@/shared/notices/DashboardNoticeAlert";
+import {
+  DashboardNoticeAlert,
+  DASHBOARD_NOTICE_HEADER_CLASS,
+} from "@/shared/notices/DashboardNoticeAlert";
 import { WIDE_CLUSTER_ROW_CLASS } from "@/shared/ui/contentMeasuredChrome";
 import {
   DASHBOARD_FULL_BLEED_GUTTER_CLASS,
@@ -8904,7 +8907,10 @@ export function RequestorPracticeReceivePage({
     <div className="flex flex-col items-center gap-2">
       <div className="flex max-w-full flex-nowrap items-center justify-center gap-1.5">
         {labUnreadNotice}
-        <DashboardNoticeAlert placement="inline" />
+        <DashboardNoticeAlert
+          placement="inline"
+          className={DASHBOARD_NOTICE_HEADER_CLASS}
+        />
       </div>
       <div className="flex flex-nowrap items-center justify-center gap-1.5">
         {labMobileHeaderActionButtons}
@@ -8917,7 +8923,7 @@ export function RequestorPracticeReceivePage({
       {labUnreadNotice}
       <DashboardNoticeAlert
         placement="inline"
-        className="min-w-0 max-w-none flex-1 shrink 2xl:max-w-none"
+        className={DASHBOARD_NOTICE_HEADER_CLASS}
       />
       <PracticeStatusFilterBadges
         className="shrink-0 flex-nowrap justify-end gap-1.5"
@@ -9498,12 +9504,15 @@ export function RequestorPracticeReceivePage({
       <div className="flex min-h-0 flex-1 flex-col gap-3">
         {showDesignQueue && !showTransfers ? (
           <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
-            <div className="flex flex-nowrap items-center justify-end gap-3">
-              <DashboardNoticeAlert placement="inline" />
+            <div className="flex flex-nowrap items-center gap-3">
               <PeriodFilter
                 value={period}
                 onChange={setPeriod}
                 className="shrink-0"
+              />
+              <DashboardNoticeAlert
+                placement="inline"
+                className={DASHBOARD_NOTICE_HEADER_CLASS}
               />
               <RequestSettingsToolbar
                 designSoftwareLabel={String(designSoftwareValue || "").trim()}

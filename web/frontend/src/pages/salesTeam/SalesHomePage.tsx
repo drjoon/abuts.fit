@@ -44,6 +44,10 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/shared/ui/cn";
 import {
+  DashboardNoticeAlert,
+  DASHBOARD_NOTICE_HEADER_CLASS,
+} from "@/shared/notices/DashboardNoticeAlert";
+import {
   clampVisitHmAfterNow,
   defaultVisitHm,
   formatDayLabel,
@@ -798,20 +802,7 @@ export default function SalesHomePage() {
             countsByYmd={countsByYmd}
             onVisibleMonthChange={setCalendarMonthYmd}
           />
-          <div className="ml-auto shrink-0 sm:order-last sm:ml-0">
-            <Button
-              size="sm"
-              className="h-8 shrink-0"
-              onClick={() => {
-                setTime(defaultVisitHm(ymd, today));
-                setSuggestAnchorYmd(ymd);
-                setShowForm(true);
-              }}
-            >
-              일정 추가
-            </Button>
-          </div>
-          <div className="flex w-full flex-wrap items-center justify-center gap-1 text-xs sm:w-auto sm:min-w-0 sm:flex-1 sm:flex-nowrap sm:gap-1.5 sm:text-sm">
+          <div className="flex w-full flex-wrap items-center justify-center gap-1 text-xs sm:w-auto sm:min-w-0 sm:flex-nowrap sm:gap-1.5 sm:text-sm">
             <StatusChip
               label="예정"
               value={String(plannedCount)}
@@ -834,6 +825,23 @@ export default function SalesHomePage() {
               pressed={reportOpen}
               onClick={() => setReportOpen(true)}
             />
+          </div>
+          <DashboardNoticeAlert
+            placement="inline"
+            className={DASHBOARD_NOTICE_HEADER_CLASS}
+          />
+          <div className="shrink-0">
+            <Button
+              size="sm"
+              className="h-8 shrink-0"
+              onClick={() => {
+                setTime(defaultVisitHm(ymd, today));
+                setSuggestAnchorYmd(ymd);
+                setShowForm(true);
+              }}
+            >
+              일정 추가
+            </Button>
           </div>
         </div>
       </SalesToolbar>

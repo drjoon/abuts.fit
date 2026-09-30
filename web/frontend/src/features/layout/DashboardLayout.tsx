@@ -15,7 +15,12 @@ import {
   normalizeSidebarOpen,
 } from "@/shared/layout/sidebarOpen";
 import { cn } from "@/shared/ui/cn";
-import { DashboardNoticeAlert } from "@/shared/notices/DashboardNoticeAlert";
+import {
+  DashboardNoticeAlert,
+  DashboardNoticeFallback,
+  DashboardNoticeHostProvider,
+  DASHBOARD_NOTICE_HEADER_CLASS,
+} from "@/shared/notices/DashboardNoticeAlert";
 import {
   DASHBOARD_FULL_BLEED_GUTTER_CLASS,
   DASHBOARD_FULL_BLEED_HEADER_ROW_CLASS,
@@ -27,7 +32,7 @@ import {
   DASHBOARD_WORK_OUTER_PAD_CLASS,
 } from "@/shared/ui/dashboardChrome";
 
-// - 2026-09-30: 전폭 기공의뢰가 아닌 대시보드는 공지를 작업영역 위에 겹침.
+// - 2026-09-30: 공지는 헤더의 필터와 버튼 사이. 자리가 없으면 작업영역 상단 줄.
 // - 2026-09-26: 작업 스캔 저장 소켓은 읽지 않음 배지를 다시 조회하지 않는다.
 // - 2026-09-26: 기공소 기공의뢰 하위 — 어벗츠 하청 → 어벗츠로부터.
 // - 2026-09-25: 로그인 셸 로고(사이드·모바일 헤더) 클릭 시 랜딩 `/`.
@@ -1974,10 +1979,9 @@ export const DashboardLayout = () => {
               </div>
             )}
           <div className="flex-1 min-h-0 bg-gradient-to-br from-gray-50 to-primary-soft">
+            <DashboardNoticeHostProvider>
             <div className="relative flex h-full flex-col">
-              {isLabReceiveWorkArea || isPracticeOralScanWorkArea ? null : (
-                <DashboardNoticeAlert className="right-3 top-2 lg:right-4" />
-              )}
+              <DashboardNoticeFallback />
               {(isManufacturer && isEquipmentRoute) || isWorksheetRoute ? (
                 <div className="sticky top-0 z-10 border-b border-border bg-background/80">
                   <div
@@ -1988,7 +1992,8 @@ export const DashboardLayout = () => {
                     )}
                   >
                     {isManufacturer && isEquipmentRoute && (
-                      <div className="flex gap-2">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <div className="flex shrink-0 gap-2">
                         <Button
                           variant={
                             location.pathname.startsWith("/dashboard/cnc")
@@ -2011,6 +2016,11 @@ export const DashboardLayout = () => {
                         >
                           프린터
                         </Button>
+                        </div>
+                        <DashboardNoticeAlert
+                          placement="inline"
+                          className={DASHBOARD_NOTICE_HEADER_CLASS}
+                        />
                       </div>
                     )}
 
@@ -2019,6 +2029,10 @@ export const DashboardLayout = () => {
                         <div className="flex gap-2 flex-shrink-0">
                           <PeriodFilter value={period} onChange={setPeriod} />
                         </div>
+                        <DashboardNoticeAlert
+                          placement="inline"
+                          className={DASHBOARD_NOTICE_HEADER_CLASS}
+                        />
 
                         {(worksheetType === "cnc" ||
                           worksheetType === "custom_abutment") && (
@@ -2257,6 +2271,7 @@ export const DashboardLayout = () => {
                 </div>
               </div>
             </div>
+            </DashboardNoticeHostProvider>
           </div>
         </main>
       </div>

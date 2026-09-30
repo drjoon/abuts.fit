@@ -7,6 +7,10 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Building2, MapPin, Phone, Search, UserRound } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
+import {
+  DashboardNoticeAlert,
+  DASHBOARD_NOTICE_HEADER_CLASS,
+} from "@/shared/notices/DashboardNoticeAlert";
 import { useToast } from "@/shared/hooks/use-toast";
 import {
   AlertDialog,
@@ -401,7 +405,11 @@ export default function SalesAccountsPage() {
               <SelectItem value="joined">가입</SelectItem>
             </SelectContent>
           </Select>
-          <div className="ml-auto shrink-0">
+          <DashboardNoticeAlert
+            placement="inline"
+            className={DASHBOARD_NOTICE_HEADER_CLASS}
+          />
+          <div className="shrink-0">
             <Button size="sm" className="h-8" onClick={openCreate}>
               거래처 추가
             </Button>

@@ -55,6 +55,10 @@ import {
 } from "@/shared/settlement/settlementUi";
 import { ProductCommissionLines } from "@/features/commission/ProductCommissionLines";
 import { cn } from "@/shared/ui/cn";
+import {
+  DashboardNoticeAlert,
+  DASHBOARD_NOTICE_HEADER_CLASS,
+} from "@/shared/notices/DashboardNoticeAlert";
 import { formatKstYmdToKo, toKstYmd } from "@/shared/date/kst";
 
 export const SalesmanDashboardPage = () => {
@@ -141,14 +145,19 @@ export const SalesmanDashboardPage = () => {
         subtitle=""
         headerRight={
           <div className="flex w-full flex-col gap-3">
-            <div className="flex w-full flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+            <div className="flex w-full min-w-0 flex-nowrap items-center gap-2">
               <PeriodFilter
                 value={period}
                 onChange={setPeriod}
                 presets={SETTLEMENT_PERIOD_PRESETS}
                 useStoreCustomRange={false}
+                className="shrink-0"
               />
-              <div className="flex flex-wrap items-center gap-2">
+              <DashboardNoticeAlert
+                placement="inline"
+                className={DASHBOARD_NOTICE_HEADER_CLASS}
+              />
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
                 <Button asChild size="sm" variant="outline" className="h-8">
                   <Link to="/#pitch">
                     <Layers className="mr-1.5 h-3.5 w-3.5" />

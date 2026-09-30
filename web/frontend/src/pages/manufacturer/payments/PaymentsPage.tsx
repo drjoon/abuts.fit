@@ -36,6 +36,10 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
 import {
+  DashboardNoticeAlert,
+  DASHBOARD_NOTICE_HEADER_CLASS,
+} from "@/shared/notices/DashboardNoticeAlert";
+import {
   isSettlementPeriodValue,
   SETTLEMENT_DEFAULT_PERIOD,
   SETTLEMENT_PERIOD_PRESETS,
@@ -928,6 +932,11 @@ export const ManufacturerPaymentPage = () => {
                 value={settlementPeriod}
                 onChange={setPeriod}
                 presets={SETTLEMENT_PERIOD_PRESETS}
+                className="shrink-0"
+              />
+              <DashboardNoticeAlert
+                placement="inline"
+                className={DASHBOARD_NOTICE_HEADER_CLASS}
               />
               <Input
                 value={q}

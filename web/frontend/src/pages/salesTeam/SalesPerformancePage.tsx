@@ -37,6 +37,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/shared/ui/cn";
+import {
+  DashboardNoticeAlert,
+  DASHBOARD_NOTICE_HEADER_CLASS,
+} from "@/shared/notices/DashboardNoticeAlert";
 import { KIND_LABEL, salesTeamApi, visitAccountName } from "./salesTeamApi";
 import {
   SalesEmptyState,
@@ -115,7 +119,7 @@ export default function SalesPerformancePage() {
   return (
     <SalesPageShell wide>
       <SalesToolbar className="w-full">
-        <div className="ml-auto shrink-0">
+        <div className="flex w-full min-w-0 flex-nowrap items-center gap-2">
           <Select value={period} onValueChange={setPeriod}>
             <SelectTrigger className="h-8 w-[7.5rem]">
               <SelectValue />
@@ -127,6 +131,10 @@ export default function SalesPerformancePage() {
               <SelectItem value="thisMonth">이번 달</SelectItem>
             </SelectContent>
           </Select>
+          <DashboardNoticeAlert
+            placement="inline"
+            className={DASHBOARD_NOTICE_HEADER_CLASS}
+          />
         </div>
       </SalesToolbar>
 

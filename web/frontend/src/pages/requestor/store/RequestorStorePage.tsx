@@ -20,6 +20,10 @@ import {
 import { StoreProductCard } from "@/pages/requestor/store/StoreProductCard";
 import { useStoreCartStore } from "@/store/useStoreCartStore";
 import { STORE_PRICE_TAX_NOTE } from "@/shared/tax/invoiceLabels";
+import {
+  DashboardNoticeAlert,
+  DASHBOARD_NOTICE_HEADER_CLASS,
+} from "@/shared/notices/DashboardNoticeAlert";
 import { useStorePackagePricing, applyStoreCatalogPrices } from "@/shared/store/useStorePackagePricing";
 
 const abutment = STORE_CATEGORIES.find((c) => c.id === "abutment")!;
@@ -87,8 +91,8 @@ export default function RequestorStorePage() {
   return (
     <div className="custom-scrollbar workspace-nested-scroll h-full min-h-0 overflow-auto" data-guide-tour="store_workspace">
       <div className="mx-auto w-full max-w-6xl space-y-6 sm:space-y-8">
-        <header className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-2">
+        <header className="flex flex-nowrap items-center gap-2">
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
             <h1 className="text-lg font-semibold tracking-tight">스토어</h1>
             <Badge variant="outline" className="text-[11px] font-normal">
               {STORE_PRICE_TAX_NOTE}
@@ -101,7 +105,11 @@ export default function RequestorStorePage() {
               </span>
             )}
           </div>
-          <div className="flex flex-wrap gap-2">
+          <DashboardNoticeAlert
+            placement="inline"
+            className={DASHBOARD_NOTICE_HEADER_CLASS}
+          />
+          <div className="flex shrink-0 flex-wrap gap-2">
             <Button variant="outline" size="sm" asChild>
               <Link to="/dashboard/store/orders">주문 내역</Link>
             </Button>
