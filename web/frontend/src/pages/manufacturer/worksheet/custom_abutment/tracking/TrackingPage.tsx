@@ -302,10 +302,6 @@ export const TrackingInquiryPage = () => {
     if (isRndSampleRequest(req)) {
       return false;
     }
-    if (req.rnd?.unmachinableAt) {
-      return false;
-    }
-
     const stage = deriveStageForFilter(req);
     if (stage === "추적관리") return true;
     if (stage !== "포장.발송") return false;
@@ -341,7 +337,6 @@ export const TrackingInquiryPage = () => {
       url.searchParams.set("includeTotal", "0");
       url.searchParams.set("includeDelivery", "1");
       url.searchParams.set("rndDone", "0");
-      url.searchParams.set("rndUnmachinable", "0");
       // backend tracking worksheet 캐시 키 분기용(발송 방식 SSOT를 shippingWorkflow.manualDeliveryMethods로 통일)
       url.searchParams.set("trackingProjectionV", "6");
       const res = await fetch(url.pathname + url.search, {

@@ -55,6 +55,8 @@ import {
   triggerDashboardSummaryRefreshForAnchorId,
 } from "../../services/requestSnapshotTriggers.service.js";
 import { getAssignedLikeDashboardSummary } from "../../services/requestDashboardStats.service.js";
+import { UNMACHINABLE_SHIP_CONTINUE_STAGES } from "../../services/unmachinableShipPath.js";
+import { getSignedUrl } from "../../utils/s3.utils.js";
 import {
   emptyPracticeTransferDashboardStats,
   getPracticeTransferDashboardStats,
@@ -270,7 +272,6 @@ const loadLiveRequestorInProgressStageCounts = async ({
       $match: {
         businessAnchorId: new Types.ObjectId(anchorId),
         ...buildDateFilter(period),
-        ...buildRequestorVisibleRequestGuard(),
         manufacturerStage: {
           $in: [
             "준비",
@@ -284,7 +285,15 @@ const loadLiveRequestorInProgressStageCounts = async ({
             "shipping",
           ],
         },
-        "rnd.unmachinableAt": null,
+        $and: [
+          buildRequestorVisibleRequestGuard(),
+          {
+            $or: [
+              { "rnd.unmachinableAt": null },
+              { manufacturerStage: { $in: UNMACHINABLE_SHIP_CONTINUE_STAGES } },
+            ],
+          },
+        ],
       },
     },
     {
@@ -411,6 +420,33 @@ export async function getAssignedDashboardSummary(req, res) {
       message: "제조사 대시보드 요약 조회 중 오류가 발생했습니다.",
     });
   }
+}
+
+async function signUnmachinableLabPhotos(photos) {
+  const list = Array.isArray(photos) ? photos : [];
+  const signed = [];
+  for (const photo of list) {
+    const s3Key = String(photo?.s3Key || "").trim();
+    const kind = photo?.kind === "painted" ? "painted" : "photo";
+    const fileName = String(photo?.fileName || "").trim();
+    if (!s3Key && !photo?.s3Url) continue;
+    let viewUrl = "";
+    if (s3Key) {
+      try {
+        viewUrl = await getSignedUrl(s3Key, 900);
+      } catch (error) {
+        console.warn("[unmachinable] photo sign failed", {
+          message: error?.message || String(error),
+        });
+      }
+    }
+    signed.push({
+      kind,
+      fileName,
+      viewUrl: viewUrl || String(photo?.s3Url || ""),
+    });
+  }
+  return signed;
 }
 
 /**
@@ -548,34 +584,41 @@ export async function getUnmachinableOverview(req, res) {
       confirmedCount: 0,
     };
 
-    const items = (Array.isArray(rows) ? rows : []).map((row) => {
-      const potentialAt = row?.rnd?.unmachinablePotentialAt || null;
-      const judgedAt = row?.rnd?.unmachinableAt || null;
-      const confirmedAt = row?.rnd?.unmachinableConfirmedAt || null;
-      const detailCode = confirmedAt
-        ? "confirmed"
-        : judgedAt
-          ? "judged"
-          : potentialAt
-            ? "potential"
-            : "none";
-      return {
-        _id: row._id,
-        requestId: row.requestId,
-        title: row.title || "",
-        manufacturerStage: row.manufacturerStage,
-        createdAt: row.createdAt || null,
-        caseInfos: row.caseInfos || {},
-        rnd: {
-          ...(row.rnd || {}),
-          unmachinablePotentialAt: potentialAt,
-          unmachinableAt: judgedAt,
-          unmachinableConfirmedAt: confirmedAt,
-          unmachinableReason: String(row?.rnd?.unmachinableReason || ""),
-        },
-        unmachinableDetailCode: detailCode,
-      };
-    });
+    const items = await Promise.all(
+      (Array.isArray(rows) ? rows : []).map(async (row) => {
+        const potentialAt = row?.rnd?.unmachinablePotentialAt || null;
+        const judgedAt = row?.rnd?.unmachinableAt || null;
+        const confirmedAt = row?.rnd?.unmachinableConfirmedAt || null;
+        const detailCode = confirmedAt
+          ? "confirmed"
+          : judgedAt
+            ? "judged"
+            : potentialAt
+              ? "potential"
+              : "none";
+        const labPhotos = await signUnmachinableLabPhotos(
+          row?.rnd?.unmachinableLabPhotos,
+        );
+        return {
+          _id: row._id,
+          requestId: row.requestId,
+          title: row.title || "",
+          manufacturerStage: row.manufacturerStage,
+          createdAt: row.createdAt || null,
+          caseInfos: row.caseInfos || {},
+          rnd: {
+            ...(row.rnd || {}),
+            unmachinablePotentialAt: potentialAt,
+            unmachinableAt: judgedAt,
+            unmachinableConfirmedAt: confirmedAt,
+            unmachinableReason: String(row?.rnd?.unmachinableReason || ""),
+            unmachinableLabMessage: String(row?.rnd?.unmachinableLabMessage || ""),
+            unmachinableLabPhotos: labPhotos,
+          },
+          unmachinableDetailCode: detailCode,
+        };
+      }),
+    );
 
     return res.status(200).json({
       success: true,
@@ -1133,7 +1176,14 @@ export async function getMyDashboardSummary(req, res) {
           ...dateFilter,
           manufacturerStage: { $ne: "취소" },
           source: { $ne: "manufacturer_sample" },
-          "rnd.unmachinableAt": null,
+          $and: [
+            {
+              $or: [
+                { "rnd.unmachinableAt": null },
+                { manufacturerStage: { $in: UNMACHINABLE_SHIP_CONTINUE_STAGES } },
+              ],
+            },
+          ],
         };
 
         const [
@@ -1616,7 +1666,10 @@ export async function getDashboardRiskSummary(req, res) {
       manufacturerStage: { $ne: "취소" },
       "caseInfos.implantBrand": { $exists: true, $ne: "" },
       source: { $ne: "manufacturer_sample" },
-      "rnd.unmachinableAt": null,
+      $or: [
+        { "rnd.unmachinableAt": null },
+        { manufacturerStage: { $in: UNMACHINABLE_SHIP_CONTINUE_STAGES } },
+      ],
     };
 
     const role = String(req.user?.role || "");

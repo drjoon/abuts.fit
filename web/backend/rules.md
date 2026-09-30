@@ -702,11 +702,12 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - 요청자 목록(`getMyRequests`)에서는 `requestCategory!="order"` 의뢰를 제외해 의뢰자에게 노출하지 않습니다.
   - 구현: `controllers/requests/common.requests.controller.js`
 - 불완전가공 `continue` 처리 SSOT:
-  - `PATCH /api/requests/:id/rnd-unmachinable/continue`는 불완전가공 상태를 해제하면서
+  - 가공 이전 판정의 `PATCH /api/requests/:id/rnd-unmachinable/continue`는 불완전가공 상태를 해제하면서
     `rnd.requestorContinueAt/by/message`를 함께 기록합니다.
+  - 세척.패킹 이후 판정은 같은 API가 확인만 남기고 `unmachinableAt`·사진·메시지를 유지합니다. 출고 단계는 바꾸지 않습니다.
   - 제조사가 다시 불완전가공 판정할 때(`PATCH /api/requests/:id/rnd-unmachinable`)는
     위 `requestorContinue*` 필드를 초기화합니다.
-  - 불완전가공 판정으로 CAM 복귀가 일어나도, 크레딧 차감 이력은 유지합니다(삭제/환불 금지).
+  - 불완전가공 판정으로 가공 복귀가 일어나도, 크레딧 차감 이력은 유지합니다(삭제/환불 금지).
   - 관련 파일:
     - `controllers/requests/common.requests.controller.js`
     - `models/request.model.js`

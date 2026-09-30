@@ -377,6 +377,39 @@ export const RequestorUnmachinableHost = ({ period, count }: Props) => {
     detail?.rnd?.unmachinableReason || item?.rnd?.unmachinableReason || "",
   ).trim();
   const reasonItems = splitUnmachinableReasons(reason);
+  const fromStage = String(
+    item?.rnd?.unmachinableFromStage ||
+      detail?.rnd?.unmachinableFromStage ||
+      detail?.manufacturerStage ||
+      item?.manufacturerStage ||
+      "",
+  ).trim();
+  const noticeKeepsShipping = [
+    "세척.패킹",
+    "포장.발송",
+    "shipping",
+    "추적관리",
+    "tracking",
+  ].includes(fromStage);
+  const labMessage = String(
+    item?.rnd?.unmachinableLabMessage || detail?.rnd?.unmachinableLabMessage || "",
+  ).trim();
+  const labPhotos = (
+    Array.isArray(item?.rnd?.unmachinableLabPhotos)
+      ? item.rnd.unmachinableLabPhotos
+      : Array.isArray(detail?.rnd?.unmachinableLabPhotos)
+        ? detail.rnd.unmachinableLabPhotos
+        : []
+  )
+    .map((photo: { kind?: string; viewUrl?: string; s3Url?: string; fileName?: string }) => ({
+      kind: photo?.kind === "painted" ? "painted" : "photo",
+      url: String(photo?.viewUrl || photo?.s3Url || "").trim(),
+      fileName: String(photo?.fileName || "").trim(),
+    }))
+    .filter((photo: { url: string }) => Boolean(photo.url))
+    .sort((a: { kind: string }, b: { kind: string }) =>
+      a.kind === b.kind ? 0 : a.kind === "painted" ? -1 : 1,
+    );
   const implantManufacturer =
     String(ci?.implantManufacturer || detail?.implantManufacturer || "").trim() || "-";
   const implantBrand =
@@ -439,8 +472,19 @@ export const RequestorUnmachinableHost = ({ period, count }: Props) => {
               불완전 가공 안내
             </DialogTitle>
             <DialogDescription className="text-sm text-slate-500">
-              제조사에서 불완전 가공으로 판정한 의뢰입니다. 취소 또는 계속
-              진행을 선택해 주세요.
+              {noticeKeepsShipping ? (
+                <>
+                  제조사에서 불완전 가공으로 안내한 의뢰입니다.
+                  <br />
+                  사진과 메시지를 확인해 주세요. 출고는 이어서 진행됩니다.
+                </>
+              ) : (
+                <>
+                  제조사에서 불완전 가공으로 판정한 의뢰입니다.
+                  <br />
+                  취소 또는 계속 진행을 선택해 주세요.
+                </>
+              )}
             </DialogDescription>
           </DialogHeader>
 
@@ -499,6 +543,35 @@ export const RequestorUnmachinableHost = ({ period, count }: Props) => {
                       }
                     />
                   </section>
+
+                  {labPhotos.length || labMessage ? (
+                    <section className="space-y-2 rounded-xl border border-accent-muted bg-white px-4 py-3.5">
+                      <h3 className="text-sm font-semibold tracking-tight text-accent-strong">
+                        제조사 안내
+                      </h3>
+                      {labMessage ? (
+                        <p className="whitespace-pre-wrap text-sm leading-6 text-slate-800">
+                          {labMessage}
+                        </p>
+                      ) : null}
+                      {labPhotos.length ? (
+                        <div className="grid grid-cols-1 gap-2">
+                          {labPhotos.map((photo: { kind: string; url: string; fileName: string }, index: number) => (
+                            <img
+                              key={`${photo.kind}-${index}`}
+                              src={photo.url}
+                              alt={
+                                photo.kind === "painted"
+                                  ? "문제 부위를 표시한 사진"
+                                  : photo.fileName || "불완전가공 사진"
+                              }
+                              className="max-h-64 w-full rounded-lg border border-slate-200 object-contain"
+                            />
+                          ))}
+                        </div>
+                      ) : null}
+                    </section>
+                  ) : null}
 
                   <section className="rounded-xl border border-accent-muted bg-accent-soft/80 px-4 py-3.5">
                     <h3 className="text-sm font-semibold tracking-tight text-accent-strong">

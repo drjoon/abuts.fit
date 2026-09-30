@@ -90,14 +90,37 @@ async function evaluatePendingShipOutcomes({ todayYmd }) {
   const filter = {
     manufacturerStage: { $ne: "취소" },
     source: { $ne: "manufacturer_sample" },
-    "rnd.unmachinableAt": null,
-    $or: [
-      { "timeline.shipOutcome.status": { $exists: false } },
-      { "timeline.shipOutcome.status": null },
-      { "timeline.shipOutcome.status": "pending" },
-      { "timeline.shipOutcome.status": { $nin: ["on_time", "late"] } },
-    ],
     $and: [
+      {
+        $or: [
+          { "rnd.unmachinableAt": null },
+          {
+            manufacturerStage: {
+              $in: [
+                "세척.패킹",
+                "포장.발송",
+                "shipping",
+                "delivery",
+                "배송대기",
+                "배송중",
+                "발송",
+                "추적관리",
+                "tracking",
+                "완료",
+                "배송완료",
+              ],
+            },
+          },
+        ],
+      },
+      {
+        $or: [
+          { "timeline.shipOutcome.status": { $exists: false } },
+          { "timeline.shipOutcome.status": null },
+          { "timeline.shipOutcome.status": "pending" },
+          { "timeline.shipOutcome.status": { $nin: ["on_time", "late"] } },
+        ],
+      },
       {
         $or: [
           {

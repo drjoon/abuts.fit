@@ -13,6 +13,8 @@ import {
 import { useOutletContext, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/useAuthStore";
+import { useS3TempUpload } from "@/shared/hooks/useS3TempUpload";
+import type { UnmachinableLabNoticePayload } from "../../components/UnmachinableLabNoticeFields";
 import { useToast } from "@/shared/hooks/use-toast";
 import { generateModelNumber } from "@/utils/modelNumber";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
@@ -147,8 +149,6 @@ export const PackingPageContent = ({
     requests,
     setRequests,
     isLoading,
-    hideRequestFromList,
-    restoreHiddenRequest,
     fetchRequestsList,
     fetchRequests,
     filteredAndSorted,
@@ -226,13 +226,13 @@ export const PackingPageContent = ({
     packLabelDesignDots,
     fetchPrinters,
   } = usePackingPrintSettings({ token });
+  const { uploadFiles } = useS3TempUpload({ token });
 
   const matchesCurrentPage = useCallback(
     (req: ManufacturerRequest) => {
       const isDoneRndSample = isRndSampleRequest(req);
-      const isUnmachinable = Boolean(req.rnd?.unmachinableAt);
-      // 패킹 탭은 작업용 샘플(doneAt=null)만 노출한다.
-      if (isDoneRndSample || isUnmachinable) return false;
+      // 불완전가공이어도 세척.패킹에 남겨 출고를 이어 간다.
+      if (isDoneRndSample) return false;
       if (showCompleted) {
         return shouldShowRequestInIncludeCompleted(req, currentStageOrder);
       }
@@ -600,15 +600,25 @@ export const PackingPageContent = ({
   );
 
   const handleMarkUnmachinable = useCallback(
-    async (req: ManufacturerRequest, reasonRaw: string) => {
+    async (
+      req: ManufacturerRequest,
+      reasonRaw: string,
+      notice?: UnmachinableLabNoticePayload,
+    ) => {
       if (!req?._id) return;
       const reason = String(reasonRaw || "").slice(0, 500).trim();
       if (!reason) {
         throw new Error("불완전가공 사유를 입력해주세요.");
       }
+      const labMessage = String(notice?.message || "").trim();
+      if (!labMessage) {
+        throw new Error("기공소에 전달할 메시지를 입력해주세요.");
+      }
+      if (!notice?.files?.length) {
+        throw new Error("문제 부위 사진을 올려 주세요.");
+      }
 
       const requestMongoId = String(req._id || "").trim();
-      hideRequestFromList(req);
       const prevAt = req.rnd?.unmachinableAt || null;
       const prevReason = String(req.rnd?.unmachinableReason || "");
       const prevFromStage = String(req.rnd?.unmachinableFromStage || "") || null;
@@ -631,6 +641,22 @@ export const PackingPageContent = ({
       );
 
       try {
+        const uploaded = await uploadFiles(notice.files.map((item) => item.file));
+        if (!uploaded.length || uploaded.some((item) => !item?.key || !item?.location)) {
+          throw new Error("사진 업로드에 실패했습니다.");
+        }
+        const labPhotos = notice.files.map((item, index) => {
+          const file = uploaded[index];
+          return {
+            kind: item.kind,
+            fileName: file?.originalName || item.file.name,
+            fileType: file?.mimetype || item.file.type,
+            fileSize: file?.size || item.file.size,
+            s3Key: file?.key || "",
+            s3Url: file?.location || "",
+          };
+        });
+
         const res = await fetch(`/api/requests/${req._id}/rnd-unmachinable`, {
           method: "PATCH",
           headers: {
@@ -640,6 +666,8 @@ export const PackingPageContent = ({
           body: JSON.stringify({
             unmachinable: true,
             reason,
+            labMessage,
+            labPhotos,
           }),
         });
         const data = await res.json().catch(() => ({}));
@@ -648,14 +676,9 @@ export const PackingPageContent = ({
         }
 
         toast({
-          title: "불완전가공 처리 완료",
-          description: `의뢰 ${req.requestId}가 불완전가공 탭으로 이동되었습니다.`
+          title: "불완전가공을 기록했습니다",
+          description: `의뢰 ${req.requestId}는 R&D 불완전가공에 남고, 세척.패킹에서 출고를 이어갑니다.`,
         });
-
-        // 현재 탭 목록에서 해당 의뢰만 즉시 제거해 잔상을 방지한다.
-        setRequests((prev) =>
-          prev.filter((item) => String(item?._id || "").trim() !== requestMongoId),
-        );
 
         void queryClient.invalidateQueries({
           queryKey: ["worksheet-assigned-summary"],
@@ -665,7 +688,6 @@ export const PackingPageContent = ({
           type: "active",
         });
       } catch (e: any) {
-        restoreHiddenRequest(req);
         setRequests((prev) =>
           prev.map((item) => {
             if (String(item?._id || "").trim() !== requestMongoId) return item;
@@ -690,7 +712,7 @@ export const PackingPageContent = ({
         throw e;
       }
     },
-    [hideRequestFromList, queryClient, restoreHiddenRequest, setRequests, toast, token],
+    [queryClient, setRequests, toast, token, uploadFiles],
   );
 
   const handleTogglePackingRequest = useCallback((req: ManufacturerRequest) => {
@@ -915,9 +937,7 @@ export const PackingPageContent = ({
       const latestFilteredAndSorted = latestList
         .filter((req) => {
           const isDoneRndSample = isRndSampleRequest(req);
-          const isUnmachinable = Boolean(req.rnd?.unmachinableAt);
-          // next 미리보기도 패킹 탭 노출 기준(doneAt=null)과 동일하게 맞춘다.
-          if (isDoneRndSample || isUnmachinable) return false;
+          if (isDoneRndSample) return false;
           if (showCompleted) {
             return shouldShowRequestInIncludeCompleted(req, currentStageOrder);
           }

@@ -14,6 +14,7 @@
 import Request from "../models/request.model.js";
 import ShippingPackage from "../models/shippingPackage.model.js";
 import { getTodayYmdInKst } from "../utils/krBusinessDays.js";
+import { UNMACHINABLE_SHIP_CONTINUE_STAGES } from "./unmachinableShipPath.js";
 
 function buildHasMeaningfulValueExpr(fieldPath) {
   return {
@@ -114,7 +115,17 @@ export function buildDashboardNormalizedStageExpr() {
         $switch: {
           branches: [
             {
-              case: buildHasMeaningfulValueExpr("$rnd.unmachinableAt"),
+              // 세척.패킹 이후 판정은 출고 단계를 유지하고, R&D 건수는 unmachinableAt으로 따로 센다.
+              case: {
+                $and: [
+                  buildHasMeaningfulValueExpr("$rnd.unmachinableAt"),
+                  {
+                    $not: [
+                      { $in: ["$$stage", UNMACHINABLE_SHIP_CONTINUE_STAGES] },
+                    ],
+                  },
+                ],
+              },
               then: "unmachinable",
             },
             {
@@ -262,11 +273,20 @@ export async function getTrackingWorksheetDashboardCounts({
           $in: ["추적관리", "tracking", "포장.발송", "shipping"],
         },
         requestCategory: { $ne: "rnd_sample" },
-        $or: [
-          { source: { $ne: "manufacturer_sample" } },
-          { "rnd.doneAt": null },
+        $and: [
+          {
+            $or: [
+              { source: { $ne: "manufacturer_sample" } },
+              { "rnd.doneAt": null },
+            ],
+          },
+          {
+            $or: [
+              { "rnd.unmachinableAt": { $in: [null, ""] } },
+              { manufacturerStage: { $in: UNMACHINABLE_SHIP_CONTINUE_STAGES } },
+            ],
+          },
         ],
-        "rnd.unmachinableAt": { $in: [null, ""] },
       },
     },
     {
@@ -507,7 +527,7 @@ export async function getAssignedLikeDashboardSummary({
                 $cond: [
                   {
                     $and: [
-                      { $eq: ["$normalizedStage", "unmachinable"] },
+                      buildHasMeaningfulValueExpr("$rnd.unmachinableAt"),
                       { $ne: ["$manufacturerStage", "취소"] },
                     ],
                   },

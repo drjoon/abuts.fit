@@ -123,9 +123,8 @@ export const usePackingWorksheetData = ({
           url.searchParams.set("view", "worksheet");
           url.searchParams.set("includeTotal", append ? "0" : "1");
           // 패킹 탭은 작업용 샘플(doneAt=null)만 처리한다.
+          // 불완전가공 판정도 출고를 위해 이 탭에 남긴다.
           url.searchParams.set("rndDone", "0");
-          // 불완전가공 건은 unmachinable 탭 전용
-          url.searchParams.set("rndUnmachinable", "0");
           if (stageFilterForTab.length === 1) {
             url.searchParams.set("manufacturerStage", stageFilterForTab[0]);
           } else {
@@ -270,7 +269,6 @@ export const usePackingWorksheetData = ({
         bulkUrl.searchParams.set("view", "worksheet");
         bulkUrl.searchParams.set("includeTotal", "0");
         bulkUrl.searchParams.set("rndDone", "0");
-        bulkUrl.searchParams.set("rndUnmachinable", "0");
         for (const stage of stageFilterForTab) {
           bulkUrl.searchParams.append("manufacturerStageIn", stage);
         }
@@ -307,7 +305,6 @@ export const usePackingWorksheetData = ({
           url.searchParams.set("view", "worksheet");
           url.searchParams.set("includeTotal", "0");
           url.searchParams.set("rndDone", "0");
-          url.searchParams.set("rndUnmachinable", "0");
           for (const stage of stageFilterForTab) {
             url.searchParams.append("manufacturerStageIn", stage);
           }
@@ -398,15 +395,12 @@ export const usePackingWorksheetData = ({
   const filteredBase = useMemo(() => {
     const isDoneRndSample = (req: ManufacturerRequest) =>
       isRndSampleRequest(req);
-    const isUnmachinable = (req: ManufacturerRequest) =>
-      Boolean(req.rnd?.unmachinableAt);
 
     if (showCompleted) {
       return requests.filter(
         (req) =>
           !isHiddenRequest(req) &&
           !isDoneRndSample(req) &&
-          !isUnmachinable(req) &&
           shouldShowRequestInIncludeCompleted(req, currentStageOrder),
       );
     }
@@ -414,7 +408,6 @@ export const usePackingWorksheetData = ({
       (req) =>
         !isHiddenRequest(req) &&
         !isDoneRndSample(req) &&
-        !isUnmachinable(req) &&
         deriveStageForFilter(req) === "세척.패킹",
     );
   }, [currentStageOrder, isHiddenRequest, requests, showCompleted]);

@@ -691,6 +691,29 @@ const requestSchema = new mongoose.Schema(
         type: String,
         default: "",
       },
+      // 세척.패킹 이후 판정: 사진·페인트·메시지를 기공소(의뢰자)에 전달한다.
+      unmachinableLabMessage: {
+        type: String,
+        default: "",
+      },
+      unmachinableLabPhotos: {
+        type: [
+          {
+            kind: {
+              type: String,
+              enum: ["photo", "painted"],
+              default: "photo",
+            },
+            fileName: { type: String, default: "" },
+            fileType: { type: String, default: "" },
+            fileSize: { type: Number, default: 0 },
+            s3Key: { type: String, default: "" },
+            s3Url: { type: String, default: "" },
+            uploadedAt: { type: Date, default: null },
+          },
+        ],
+        default: [],
+      },
       // 의뢰자가 불완전가공 상태에서 "계속 진행"을 선택한 이력
       requestorContinueAt: {
         type: Date,

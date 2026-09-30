@@ -78,6 +78,11 @@ import {
 } from "./utils.js";
 import { computeShippingPriority } from "./shippingPriority.utils.js";
 import { getAllProductionQueues } from "../cnc/shared.js";
+import {
+  keepsUnmachinableOnShipPath,
+  normalizeUnmachinableLabMessage,
+  normalizeUnmachinableLabPhotos,
+} from "../../services/unmachinableShipPath.js";
 import s3Utils, {
   deleteFileFromS3,
   getSignedUrl as getSignedUrlForS3Key,
@@ -1603,6 +1608,8 @@ export async function getAllRequests(req, res) {
       "rnd.unmachinableConfirmedAt",
       "rnd.unmachinableFromStage",
       "rnd.unmachinableReason",
+      "rnd.unmachinableLabMessage",
+      "rnd.unmachinableLabPhotos",
       "rnd.requestorContinueAt",
       "rnd.requestorContinueBy",
       "rnd.requestorContinueMessage",
@@ -1679,6 +1686,8 @@ export async function getAllRequests(req, res) {
       "rnd.unmachinableConfirmedAt",
       "rnd.unmachinableFromStage",
       "rnd.unmachinableReason",
+      "rnd.unmachinableLabMessage",
+      "rnd.unmachinableLabPhotos",
       "rnd.requestorContinueAt",
       "rnd.requestorContinueBy",
       "rnd.requestorContinueMessage",
@@ -1742,6 +1751,8 @@ export async function getAllRequests(req, res) {
       "rnd.unmachinableConfirmedAt",
       "rnd.unmachinableFromStage",
       "rnd.unmachinableReason",
+      "rnd.unmachinableLabMessage",
+      "rnd.unmachinableLabPhotos",
       "rnd.requestorContinueAt",
       "rnd.requestorContinueBy",
       "rnd.requestorContinueMessage",
@@ -2702,6 +2713,12 @@ export const updateRndUnmachinableStatus = asyncHandler(async (req, res) => {
   const reason = String(req.body?.reason || "")
     .slice(0, 500)
     .trim();
+  const labMessage = normalizeUnmachinableLabMessage(
+    req.body?.labMessage ?? req.body?.noticeMessage,
+  );
+  const labPhotos = normalizeUnmachinableLabPhotos(
+    req.body?.labPhotos ?? req.body?.noticePhotos,
+  );
 
   if (!mongoose.Types.ObjectId.isValid(id)) {
     return res.status(400).json({
@@ -2744,8 +2761,10 @@ export const updateRndUnmachinableStatus = asyncHandler(async (req, res) => {
       const currentStageLower = currentStage.toLowerCase();
       const now = new Date();
       const wasUnmachinable = Boolean(requestInTx?.rnd?.unmachinableAt);
+      const keepOnShipPath = keepsUnmachinableOnShipPath(currentStage);
 
-      // 불완전가공(RnD unmachinable) 신규 판정 시, 가공 이후 단계 의뢰는 CAM으로 복귀한다.
+      // 세척.패킹 이후 판정은 단계를 유지하고 출고를 이어 간다.
+      // 그 이전(가공 등)만 가공 단계로 되돌린다.
       // 중요 정책:
       // - 불완전가공은 샘플이 아니다(유상 order 흐름의 품질 판정).
       // - 이미 CAM 승인으로 발생한 REQUEST_SPEND_COMMIT 차감은 유지한다.
@@ -2762,7 +2781,16 @@ export const updateRndUnmachinableStatus = asyncHandler(async (req, res) => {
         currentStageLower === "shipping" ||
         currentStageLower === "tracking";
 
-      if (unmachinable && !wasUnmachinable && isPostCamStage) {
+      if (unmachinable && currentStage === "세척.패킹") {
+        if (!labMessage) {
+          throw new ApiError(400, "기공소에 전달할 메시지를 입력해주세요.");
+        }
+        if (!labPhotos.length) {
+          throw new ApiError(400, "문제 부위 사진을 올려 주세요.");
+        }
+      }
+
+      if (unmachinable && !wasUnmachinable && isPostCamStage && !keepOnShipPath) {
         bumpRollbackCount(requestInTx, "cam");
         // 작업 공정 변경: CAM은 더 이상 사용하지 않으므로 가공 단계로 바로 복귀한다.
         applyStatusMapping(requestInTx, "가공");
@@ -2791,6 +2819,8 @@ export const updateRndUnmachinableStatus = asyncHandler(async (req, res) => {
           ? currentStage || null
           : String(requestInTx.rnd?.unmachinableFromStage || "").trim() || null,
         unmachinableReason: unmachinable ? reason : "",
+        unmachinableLabMessage: unmachinable ? labMessage : "",
+        unmachinableLabPhotos: unmachinable ? labPhotos : [],
         // 재판정 시 과거 의뢰자 "계속 진행" 이력은 초기화한다.
         requestorContinueAt: null,
         requestorContinueBy: null,
@@ -2843,6 +2873,7 @@ export const updateRndUnmachinableStatus = asyncHandler(async (req, res) => {
           unmachinableAt: request.rnd?.unmachinableAt || null,
           unmachinableConfirmedAt: request.rnd?.unmachinableConfirmedAt || null,
           unmachinableReason: String(request.rnd?.unmachinableReason || ""),
+          unmachinableLabMessage: String(request.rnd?.unmachinableLabMessage || ""),
           unmachinableFromStage:
             String(request.rnd?.unmachinableFromStage || "") || null,
           requestorContinueAt: request.rnd?.requestorContinueAt || null,
@@ -2864,6 +2895,8 @@ export const updateRndUnmachinableStatus = asyncHandler(async (req, res) => {
       unmachinableAt: request.rnd?.unmachinableAt || null,
       unmachinableConfirmedAt: request.rnd?.unmachinableConfirmedAt || null,
       unmachinableReason: String(request.rnd?.unmachinableReason || ""),
+      unmachinableLabMessage: String(request.rnd?.unmachinableLabMessage || ""),
+      keptOnShipPath: keepsUnmachinableOnShipPath(request.manufacturerStage),
     },
   });
 });
@@ -2920,20 +2953,37 @@ export const continueRndUnmachinableByRequestor = asyncHandler(
         ? `의뢰자 요청: 문제 가능성을 인지하고 계속 가공 진행 요청 (불완전가공 사유: ${previousReason})`
         : "의뢰자 요청: 문제 가능성을 인지하고 계속 가공 진행 요청";
 
-    request.rnd = {
-      ...(request.rnd || {}),
-      // 의뢰자 진행 선택 시 불완전가공 상태를 해제해 제조사 워크시트/대시보드에서 즉시 제외한다.
-      unmachinablePotentialAt: null,
-      unmachinablePotentialBy: null,
-      unmachinableAt: null,
-      unmachinableBy: null,
-      unmachinableConfirmedAt: request.rnd?.unmachinableConfirmedAt || now,
-      unmachinableConfirmedBy: request.rnd?.unmachinableConfirmedBy || req.user._id,
-      unmachinableReason: "",
-      requestorContinueAt: now,
-      requestorContinueBy: req.user._id,
-      requestorContinueMessage,
-    };
+    const keepShipRecord =
+      keepsUnmachinableOnShipPath(request.rnd?.unmachinableFromStage) ||
+      keepsUnmachinableOnShipPath(request.manufacturerStage);
+
+    request.rnd = keepShipRecord
+      ? {
+          ...(request.rnd || {}),
+          // 세척.패킹 이후 판정은 R&D 기록과 출고를 유지하고, 확인만 남긴다.
+          unmachinableConfirmedAt: request.rnd?.unmachinableConfirmedAt || now,
+          unmachinableConfirmedBy:
+            request.rnd?.unmachinableConfirmedBy || req.user._id,
+          requestorContinueAt: now,
+          requestorContinueBy: req.user._id,
+          requestorContinueMessage,
+        }
+      : {
+          ...(request.rnd || {}),
+          // 가공 이전 판정은 상태를 해제해 가공 큐로 되돌린다.
+          unmachinablePotentialAt: null,
+          unmachinablePotentialBy: null,
+          unmachinableAt: null,
+          unmachinableBy: null,
+          unmachinableConfirmedAt: request.rnd?.unmachinableConfirmedAt || now,
+          unmachinableConfirmedBy: request.rnd?.unmachinableConfirmedBy || req.user._id,
+          unmachinableReason: "",
+          unmachinableLabMessage: "",
+          unmachinableLabPhotos: [],
+          requestorContinueAt: now,
+          requestorContinueBy: req.user._id,
+          requestorContinueMessage,
+        };
     await request.save();
 
     const requestorBusinessAnchorId = String(request.businessAnchorId || "").trim();
@@ -2958,9 +3008,9 @@ export const continueRndUnmachinableByRequestor = asyncHandler(
         requestId: request.requestId,
         requestMongoId: String(request._id || "").trim() || null,
         requestorBusinessAnchorId: requestorBusinessAnchorId || null,
-        unmachinable: false,
+        unmachinable: Boolean(request.rnd?.unmachinableAt),
         detailCode: resolveUnmachinableDetailCode(request),
-        reason: "",
+        reason: String(request.rnd?.unmachinableReason || ""),
         request: {
           _id: request._id,
           requestId: request.requestId,

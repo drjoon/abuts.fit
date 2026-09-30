@@ -388,8 +388,15 @@ export const RequestPage = ({
           } else {
             // 일반 공정 탭은 작업용 샘플(doneAt=null)만 처리한다.
             // R&D 보관 샘플(doneAt!=null)은 R&D 탭 전용.
+            // 세척.패킹 이후는 불완전가공이어도 출고 목록에 남긴다.
             url.searchParams.set("rndDone", "0");
-            url.searchParams.set("rndUnmachinable", "0");
+            if (
+              tabStage !== "packing" &&
+              tabStage !== "shipping" &&
+              tabStage !== "tracking"
+            ) {
+              url.searchParams.set("rndUnmachinable", "0");
+            }
           }
           url.searchParams.set("includeTotal", append ? "0" : "1");
           if (tabStage === "shipping" || tabStage === "tracking") {
@@ -939,7 +946,12 @@ export const RequestPage = ({
       }
       // 일반 공정 탭은 작업용 샘플(doneAt=null)만 처리하고,
       // R&D 보관 샘플(doneAt!=null)은 제외한다.
-      if (isDoneRndSample || isUnmachinable) {
+      // 세척.패킹·포장.발송·추적관리는 불완전가공이어도 출고를 이어 간다.
+      const keepsUnmachinableOnTab =
+        tabStage === "packing" ||
+        tabStage === "shipping" ||
+        tabStage === "tracking";
+      if (isDoneRndSample || (isUnmachinable && !keepsUnmachinableOnTab)) {
         return false;
       }
 

@@ -368,6 +368,13 @@ export interface RequestBase {
     unmachinableAt?: string | null;
     unmachinableFromStage?: string | null;
     unmachinableReason?: string | null;
+    unmachinableLabMessage?: string | null;
+    unmachinableLabPhotos?: Array<{
+      kind?: "photo" | "painted" | string;
+      fileName?: string | null;
+      viewUrl?: string | null;
+      s3Url?: string | null;
+    }> | null;
     // related files:
     // - web/backend/controllers/requests/common.requests.controller.js
     // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx

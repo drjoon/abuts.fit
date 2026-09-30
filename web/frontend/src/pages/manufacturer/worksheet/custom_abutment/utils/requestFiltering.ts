@@ -157,6 +157,9 @@ export function shouldShowRequestInIncludeCompleted(
   return true;
 }
 
+const keepsUnmachinableWhileShipping = (tabStage: string) =>
+  tabStage === "packing" || tabStage === "shipping" || tabStage === "tracking";
+
 // Filter requests by stage and completion status
 export function filterRequestsByStage(
   requests: ManufacturerRequest[],
@@ -209,7 +212,9 @@ export function filterRequestsByStage(
       // R&D 보관 샘플(doneAt!=null)만 일반 공정 탭에서 제외.
       // 작업용 샘플(헥스 확인용 등, doneAt=null)은 정식 의뢰와 같이 포장.발송·추적관리까지 노출.
       if (isDoneRndSample(req)) return false;
-      if (isUnmachinable(req)) return false;
+      if (isUnmachinable(req) && !keepsUnmachinableWhileShipping(normalizedTabStage)) {
+        return false;
+      }
       if (normalizedTabStage === "shipping" && isPrePickupShippingVisible(req))
         return true;
       return shouldShowRequestInIncludeCompleted(req, currentStageOrder);
@@ -220,7 +225,9 @@ export function filterRequestsByStage(
     if (!passExternalFilter(req)) return false;
     // 작업용 샘플(doneAt=null)은 의뢰~추적관리 전 탭에 포함. R&D 보관만 제외.
     if (isDoneRndSample(req)) return false;
-    if (isUnmachinable(req)) return false;
+    if (isUnmachinable(req) && !keepsUnmachinableWhileShipping(normalizedTabStage)) {
+      return false;
+    }
 
     const stage = deriveStageForFilter(req);
     if (normalizedTabStage === "request") {

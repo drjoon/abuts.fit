@@ -17,6 +17,7 @@ import { resolveLeadDaysWithSameDayCutoff } from "../controllers/requests/produc
 import { resolveEffectiveShippingMode } from "../controllers/requests/shippingPriority.utils.js";
 import { resolveQuotedPriceWithExtras } from "../controllers/requests/designPrice.utils.js";
 import { loadCreditSettingsDefaults } from "../utils/creditSettingsDefaults.js";
+import { UNMACHINABLE_SHIP_CONTINUE_STAGES } from "./unmachinableShipPath.js";
 
 /**
  * GET /api/requests/my 의 buildNonSampleRequestGuard 와 동일.
@@ -183,7 +184,24 @@ const recomputeSingleRequestorDashboardSummarySnapshot = async ({
                     branches: [
                       {
                         case: {
-                          $ne: [{ $ifNull: ["$rnd.unmachinableAt", null] }, null],
+                          $and: [
+                            {
+                              $ne: [
+                                { $ifNull: ["$rnd.unmachinableAt", null] },
+                                null,
+                              ],
+                            },
+                            {
+                              $not: [
+                                {
+                                  $in: [
+                                    "$$stage",
+                                    UNMACHINABLE_SHIP_CONTINUE_STAGES,
+                                  ],
+                                },
+                              ],
+                            },
+                          ],
                         },
                         then: "unmachinable",
                       },
@@ -270,7 +288,18 @@ const recomputeSingleRequestorDashboardSummarySnapshot = async ({
             },
             unmachinableCount: {
               $sum: {
-                $cond: [{ $eq: ["$normalizedStage", "unmachinable"] }, 1, 0],
+                $cond: [
+                  {
+                    $and: [
+                      {
+                        $ne: [{ $ifNull: ["$rnd.unmachinableAt", null] }, null],
+                      },
+                      { $ne: ["$manufacturerStage", "취소"] },
+                    ],
+                  },
+                  1,
+                  0,
+                ],
               },
             },
             unmachinablePendingConfirmCount: {

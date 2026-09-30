@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-30: 세척.패킹 불완전가공 — 사진·페인트·메시지를 기공소에 전달하고 출고는 유지.
 // - 2026-09-30: Wide Split 기본값 ON. caseInfos.safeSplitEnabled가 false일 때만 꺼짐.
 // - 2026-09-28: FL 바로 왼쪽 Re(커프 재디자인) — 70°보다 누운 커프를 피니시라인-0.2mm~커넥션 상단 G2 곡선(70° 이내)으로. 커프 확인 건은 빨간 강조.
 // - 2026-09-28: FL 왼쪽 HF(Hole Filling) — 서버에서 filled STL 상부 스크류홀을 메우고 STL 재로드.
@@ -112,6 +113,11 @@ import { resolveImplantConnectionSpec } from "@/utils/implantConnectionSpec";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { RequestInfoSummary } from "./RequestInfoSummary";
+import {
+  UnmachinableLabNoticeFields,
+  type UnmachinableLabNoticeHandle,
+  type UnmachinableLabNoticePayload,
+} from "./UnmachinableLabNoticeFields";
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
 import { resolveShippingMode } from "@/shared/shipping/shippingMode";
 import {
@@ -549,6 +555,7 @@ type PreviewModalProps = {
   onMarkUnmachinable?: (
     req: ManufacturerRequest,
     reason: string,
+    notice?: UnmachinableLabNoticePayload,
   ) => Promise<void>;
   onRestoreUnmachinable?: (req: ManufacturerRequest) => Promise<void>;
   onSaveManufacturerHexRotation?: (
@@ -618,6 +625,7 @@ export const PreviewModal = ({
   const [holeFilling, setHoleFilling] = useState(false);
   const [cuffRedesigning, setCuffRedesigning] = useState(false);
   const [unmachinableEditorOpen, setUnmachinableEditorOpen] = useState(false);
+  const labNoticeRef = useRef<UnmachinableLabNoticeHandle>(null);
   const [unmachinableReasonDraft, setUnmachinableReasonDraft] = useState("");
   const [unmachinableSaving, setUnmachinableSaving] = useState(false);
   const [customReasonLibrary, setCustomReasonLibrary] = useState<string[]>(
@@ -2543,10 +2551,23 @@ export const PreviewModal = ({
     }
 
     const reason = normalizedReasons.join(" / ");
+    let notice: UnmachinableLabNoticePayload | undefined;
+    if (currentReviewStageKey === "packing") {
+      const built = await labNoticeRef.current?.build();
+      if (!built?.ok) {
+        toast({
+          title: "전달 내용 필요",
+          description: built?.message || "사진과 메시지를 입력해 주세요.",
+          variant: "destructive",
+        });
+        return;
+      }
+      notice = built.payload;
+    }
 
     setUnmachinableSaving(true);
     try {
-      await onMarkUnmachinable(activeReq, reason);
+      await onMarkUnmachinable(activeReq, reason, notice);
       normalizedReasons.forEach((item) => addCustomReasonToLibrary(item));
       setUnmachinableEditorOpen(false);
       onOpenChange(false);
@@ -3401,6 +3422,12 @@ export const PreviewModal = ({
           {unmachinableEditorOpen && (
             <div className="shrink-0 rounded-lg border border-accent-muted bg-accent-soft/70 p-2 space-y-2 max-h-[34vh] overflow-y-auto">
               <div className="text-xs font-semibold text-accent-strong">불완전가공 사유 입력</div>
+              {currentReviewStageKey === "packing" ? (
+                <UnmachinableLabNoticeFields
+                  ref={labNoticeRef}
+                  resetKey={String(activeReq?._id || "")}
+                />
+              ) : null}
 
               <div className="space-y-1.5 rounded-md border border-accent-muted bg-white/80 p-1.5">
                 {customReasonLibrary.map((reason, idx) => {
@@ -3569,7 +3596,11 @@ export const PreviewModal = ({
                   disabled={unmachinableSaving}
                   onClick={() => void handleSubmitUnmachinable()}
                 >
-                  {unmachinableSaving ? "처리 중..." : "확인"}
+                  {unmachinableSaving
+                    ? "처리 중..."
+                    : currentReviewStageKey === "packing"
+                      ? "기공소에 전달"
+                      : "확인"}
                 </Button>
               </div>
             </div>
