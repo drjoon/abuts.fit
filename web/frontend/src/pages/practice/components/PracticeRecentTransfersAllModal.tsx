@@ -144,6 +144,7 @@ import {
   type PracticeCalendarDateKey,
 } from "@/pages/practice/components/PracticeRecentTransfersCalendar";
 import {
+  collectCertainLinkedOrderYmds,
   collectProsthesisFollowUpArrivalYmds,
   resolveProsthesisFollowUpFocusIndex,
 } from "@/shared/practice/prosthesisFollowUp";
@@ -633,18 +634,16 @@ export function PracticeRecentTransfersAllModal({
         arrivalDate: transfer.arrivalDate,
         prosthesisFollowUps: transfer.prosthesisFollowUps,
       });
-      const linkedOrderDates = [
-        ...new Set(
-          (Array.isArray(transfer.orderDates) && transfer.orderDates.length > 0
+      const linkedOrderDates = collectCertainLinkedOrderYmds({
+        orderDates:
+          Array.isArray(transfer.orderDates) && transfer.orderDates.length > 0
             ? transfer.orderDates
             : transfer.orderDate
               ? [transfer.orderDate]
-              : []
-          )
-            .map((d) => String(d || "").trim())
-            .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)),
-        ),
-      ].sort();
+              : [],
+        orderDate: transfer.orderDate,
+        prosthesisFollowUps: transfer.prosthesisFollowUps,
+      });
       const chatUnread = Math.max(0, Number(transfer.unreadCount || 0));
       return {
         id: `${transfer.id}:${transfer.transferId}`,

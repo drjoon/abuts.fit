@@ -17,6 +17,7 @@
 // - 2026-09-22: 종류 변경만 있는 건 — 「확정 보철」카드 숨김(채팅 후속 카드와 중복 방지).
 // - 2026-09-23: 주문 변경 — 동일 종류라도 어벗·쉐이드·임플란트 스펙 차이면 허용.
 // - 2026-09-28: 차트 CA·스펙은 원 입력만(9/22 후속 CA 우선 철회). 치아별 후속 행이 겹쳐도 원 행 기준.
+// - 2026-09-30: 연결 도착·주문일 — 재도착만 여러 번이면 처음·끝만. 후속 채팅이 있는 중간일은 유지.
 import {
   type ToothWorkSelection,
   ABUTMENT_PRODUCT_MODE_SHORT_LABEL,
@@ -773,27 +774,131 @@ const activeFollowUpRecordsSorted = (
       (a, b) => Number(a.followUpIndex || 0) - Number(b.followUpIndex || 0),
     );
 
-/** 원 도착일 후보 — arrivalDates에 빠진 previousArrivalYmd 복원용 */
+const LINKED_YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+const pushUniqueLinkedYmd = (out: string[], raw: unknown) => {
+  const ymd = String(raw || "").trim();
+  if (!LINKED_YMD_RE.test(ymd) || out.includes(ymd)) return;
+  out.push(ymd);
+};
+
+const followUpLinkedYmd = (
+  row: ProsthesisFollowUpRecord,
+  kind: "arrival" | "order",
+  which: "current" | "previous",
+) =>
+  String(
+    kind === "order"
+      ? which === "current"
+        ? row?.orderYmd
+        : row?.previousOrderYmd
+      : which === "current"
+        ? row?.arrivalYmd
+        : row?.previousArrivalYmd,
+  ).trim();
+
+/**
+ * 캘린더 연결 도착일·주문일.
+ * 같은 후속에서 날짜만 바꿔 버린 이전값, 취소한 후속 날짜는 뺀다.
+ * 다른 채팅(후속 보철) 없이 재도착만 여러 번이면 처음과 끝만 남긴다.
+ * 현재일은 배열 끝.
+ */
+export const collectCertainLinkedYmds = (input: {
+  dates?: readonly string[] | null;
+  currentYmd?: string | null;
+  prosthesisFollowUps?: ReadonlyArray<ProsthesisFollowUpRecord> | null;
+  kind: "arrival" | "order";
+}): string[] => {
+  const out: string[] = [];
+  for (const ymd of Array.isArray(input.dates) ? input.dates : []) {
+    pushUniqueLinkedYmd(out, ymd);
+  }
+  pushUniqueLinkedYmd(out, input.currentYmd);
+
+  const rows = Array.isArray(input.prosthesisFollowUps)
+    ? input.prosthesisFollowUps
+    : [];
+  const active = activeFollowUpRecordsSorted(rows);
+  const canceled = rows.filter((row) => String(row?.canceledAt || "").trim());
+  const original = out[0] || "";
+  const current = (() => {
+    const explicit = String(input.currentYmd || "").trim();
+    if (LINKED_YMD_RE.test(explicit)) return explicit;
+    return out[out.length - 1] || "";
+  })();
+  const activeCurrent = new Set<string>();
+  for (const row of active) {
+    const next = followUpLinkedYmd(row, input.kind, "current");
+    if (LINKED_YMD_RE.test(next)) {
+      activeCurrent.add(next);
+      pushUniqueLinkedYmd(out, next);
+    }
+  }
+
+  const drop = new Set<string>();
+  const markReplaced = (prev: string) => {
+    if (!LINKED_YMD_RE.test(prev)) return;
+    if (prev === original || prev === current) return;
+    if (activeCurrent.has(prev)) return;
+    drop.add(prev);
+  };
+  for (const row of active) {
+    const prev = followUpLinkedYmd(row, input.kind, "previous");
+    const next = followUpLinkedYmd(row, input.kind, "current");
+    if (!LINKED_YMD_RE.test(prev) || !LINKED_YMD_RE.test(next) || prev === next) {
+      continue;
+    }
+    markReplaced(prev);
+  }
+  for (const row of canceled) {
+    markReplaced(followUpLinkedYmd(row, input.kind, "current"));
+    markReplaced(followUpLinkedYmd(row, input.kind, "previous"));
+  }
+
+  const kept = out.filter((ymd) => !drop.has(ymd));
+  if (!current || kept.length <= 1) return kept;
+  const rest = kept.filter((ymd) => ymd !== current).sort();
+  const ordered = [...rest, current];
+  if (ordered.length <= 2) return ordered;
+  const first = ordered[0];
+  const last = ordered[ordered.length - 1];
+  const anchoredMiddle = ordered.filter(
+    (ymd, index) =>
+      index > 0 &&
+      index < ordered.length - 1 &&
+      activeCurrent.has(ymd),
+  );
+  if (anchoredMiddle.length === 0) {
+    return first === last ? [first] : [first, last];
+  }
+  return [first, ...anchoredMiddle, last];
+};
+
+/** 연결 도착일 — 확정된 원 도착·후속·현재일만 */
 export const collectProsthesisFollowUpArrivalYmds = (input: {
   arrivalDates?: string[] | null;
   arrivalDate?: string | null;
   prosthesisFollowUps?: ReadonlyArray<ProsthesisFollowUpRecord> | null;
-}) => {
-  const out: string[] = [];
-  const push = (raw: unknown) => {
-    const ymd = String(raw || "").trim();
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd) || out.includes(ymd)) return;
-    out.push(ymd);
-  };
-  const records = activeFollowUpRecordsSorted(input.prosthesisFollowUps);
-  if (records[0]?.previousArrivalYmd) push(records[0].previousArrivalYmd);
-  for (const ymd of Array.isArray(input.arrivalDates) ? input.arrivalDates : []) {
-    push(ymd);
-  }
-  push(input.arrivalDate);
-  for (const row of records) push(row.arrivalYmd);
-  return out;
-};
+}) =>
+  collectCertainLinkedYmds({
+    dates: input.arrivalDates,
+    currentYmd: input.arrivalDate,
+    prosthesisFollowUps: input.prosthesisFollowUps,
+    kind: "arrival",
+  });
+
+/** 연결 주문일 — 같은 후속에서 바꾼 이전 주문일은 제외 */
+export const collectCertainLinkedOrderYmds = (input: {
+  orderDates?: string[] | null;
+  orderDate?: string | null;
+  prosthesisFollowUps?: ReadonlyArray<ProsthesisFollowUpRecord> | null;
+}) =>
+  collectCertainLinkedYmds({
+    dates: input.orderDates,
+    currentYmd: input.orderDate,
+    prosthesisFollowUps: input.prosthesisFollowUps,
+    kind: "order",
+  });
 
 /**
  * 칩 도착일·후속 인덱스로 표시 단계 결정.

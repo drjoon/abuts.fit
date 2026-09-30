@@ -468,6 +468,7 @@ import {
 import {
   canAppendProsthesisFollowUp,
   canLabStartProsthesisFollowUpWork,
+  collectCertainLinkedOrderYmds,
   collectProsthesisFollowUpArrivalYmds,
   resolveProsthesisFollowUpFocusIndex,
 } from "@/shared/practice/prosthesisFollowUp";
@@ -1841,7 +1842,33 @@ export function RequestorPracticeReceivePage({
               String(row._id || "").trim() === key,
           );
           if (!next) return prev;
-          return mergeTransferPreserveOptimisticDesigns(prev, next);
+          const merged = mergeTransferPreserveOptimisticDesigns(prev, next);
+          const keepArrival = String(prev.arrivalDate || "").trim();
+          const keepOrder = String(prev.orderDate || "").trim();
+          const serverArrival = String(next.arrivalDate || "").trim();
+          const serverOrder = String(next.orderDate || "").trim();
+          const arrivalList = Array.isArray(next.arrivalDates)
+            ? next.arrivalDates.map((d) => String(d || "").trim())
+            : [];
+          const orderList = Array.isArray(next.orderDates)
+            ? next.orderDates.map((d) => String(d || "").trim())
+            : [];
+          return {
+            ...merged,
+            ...(keepArrival &&
+            keepArrival !== serverArrival &&
+            arrivalList.includes(keepArrival)
+              ? {
+                  arrivalDate: keepArrival,
+                  focusFollowUpIndex: prev.focusFollowUpIndex,
+                }
+              : {}),
+            ...(keepOrder &&
+            keepOrder !== serverOrder &&
+            orderList.includes(keepOrder)
+              ? { orderDate: keepOrder }
+              : {}),
+          };
         });
 
         emitUnreadBadgeRefresh(parsed.unreadCount);
@@ -2866,18 +2893,16 @@ export function RequestorPracticeReceivePage({
         arrivalDate: transfer.arrivalDate,
         prosthesisFollowUps: transfer.prosthesisFollowUps,
       });
-      const linkedOrderDates = [
-        ...new Set(
-          (Array.isArray(transfer.orderDates) && transfer.orderDates.length > 0
+      const linkedOrderDates = collectCertainLinkedOrderYmds({
+        orderDates:
+          Array.isArray(transfer.orderDates) && transfer.orderDates.length > 0
             ? transfer.orderDates
             : transfer.orderDate
               ? [transfer.orderDate]
-              : []
-          )
-            .map((d) => String(d || "").trim())
-            .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)),
-        ),
-      ].sort();
+              : [],
+        orderDate: transfer.orderDate,
+        prosthesisFollowUps: transfer.prosthesisFollowUps,
+      });
       return {
         id: transferId,
         orderDate: transfer.orderDate || transfer.createdAt,
@@ -3182,22 +3207,24 @@ export function RequestorPracticeReceivePage({
       resolvePracticeTransferListPatientName(selectedTransfer);
     const doctor = selectedTransferDoctorName;
     const transferId = String(selectedTransfer.transferId || "").trim();
-    const order = String(
-      (Array.isArray(selectedTransfer.orderDates) &&
-        selectedTransfer.orderDates[
-          selectedTransfer.orderDates.length - 1
-        ]) ||
-        selectedTransfer.orderDate ||
-        "",
-    ).trim();
-    const arrival = String(
-      (Array.isArray(selectedTransfer.arrivalDates) &&
-        selectedTransfer.arrivalDates[
-          selectedTransfer.arrivalDates.length - 1
-        ]) ||
-        selectedTransfer.arrivalDate ||
-        "",
-    ).trim();
+    const certainOrders = collectCertainLinkedOrderYmds({
+      orderDates: selectedTransfer.orderDates,
+      orderDate: selectedTransfer.orderDate,
+      prosthesisFollowUps: selectedTransfer.prosthesisFollowUps,
+    });
+    const certainArrivals = collectProsthesisFollowUpArrivalYmds({
+      arrivalDates: selectedTransfer.arrivalDates,
+      arrivalDate: selectedTransfer.arrivalDate,
+      prosthesisFollowUps: selectedTransfer.prosthesisFollowUps,
+    });
+    const focusedOrder = String(selectedTransfer.orderDate || "").trim();
+    const focusedArrival = String(selectedTransfer.arrivalDate || "").trim();
+    const order = certainOrders.includes(focusedOrder)
+      ? focusedOrder
+      : certainOrders[certainOrders.length - 1] || focusedOrder;
+    const arrival = certainArrivals.includes(focusedArrival)
+      ? focusedArrival
+      : certainArrivals[certainArrivals.length - 1] || focusedArrival;
     const teeth = formatToothNumbersForCard(selectedTransferToothWorks);
     const identityParts = [clinic, patient, doctor, teeth].filter(Boolean);
     if (!identityParts.length && !transferId) return null;
@@ -8645,6 +8672,68 @@ export function RequestorPracticeReceivePage({
     [guideTourLabCalendarStep, openTransferDialog, platformGuideTour],
   );
 
+  const openLinkedYmdFromChat = useCallback(
+    (ymdRaw: string) => {
+      const ymd = String(ymdRaw || "").trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd) || !selectedTransfer) return;
+      const arrivals = collectProsthesisFollowUpArrivalYmds({
+        arrivalDates: selectedTransfer.arrivalDates,
+        arrivalDate: selectedTransfer.arrivalDate,
+        prosthesisFollowUps: selectedTransfer.prosthesisFollowUps,
+      });
+      const orders = collectCertainLinkedOrderYmds({
+        orderDates: selectedTransfer.orderDates,
+        orderDate: selectedTransfer.orderDate,
+        prosthesisFollowUps: selectedTransfer.prosthesisFollowUps,
+      });
+      const asOrder =
+        orders.includes(ymd) &&
+        (!arrivals.includes(ymd) || calendarDateKey === "orderDate");
+      const focusFollowUpIndex = resolveProsthesisFollowUpFocusIndex({
+        arrivalYmd: asOrder ? selectedTransfer.arrivalDate : ymd,
+        prosthesisFollowUps: selectedTransfer.prosthesisFollowUps,
+      });
+      const prosthesisStageKey =
+        focusFollowUpIndex != null && focusFollowUpIndex < 0
+          ? "temp"
+          : focusFollowUpIndex != null
+            ? `zirconia-${focusFollowUpIndex}`
+            : null;
+      const next = {
+        ...selectedTransfer,
+        ...(asOrder ? { orderDate: ymd } : { arrivalDate: ymd }),
+        focusFollowUpIndex,
+      };
+      if (dialogOpen) {
+        setSelectedTransfer(next);
+      } else {
+        selectTransferFromCalendar(next, {
+          arrivalDate: next.arrivalDate,
+          orderDate: next.orderDate,
+          focusFollowUpIndex,
+          prosthesisStageKey,
+        });
+      }
+      const itemId = String(next.transferId || next._id || "").trim();
+      const chipId =
+        (asOrder ? orders : arrivals).length > 1
+          ? `${itemId}:${asOrder ? "ord" : "arr"}:${ymd}`
+          : itemId;
+      handleCursorChange(ymd);
+      setAlignEpoch((n) => n + 1);
+      setBadgeFocusItemId(chipId || null);
+      setBadgeFocusItemYmd(ymd);
+      setBadgeFocusEpoch((n) => n + 1);
+    },
+    [
+      calendarDateKey,
+      dialogOpen,
+      handleCursorChange,
+      selectTransferFromCalendar,
+      selectedTransfer,
+    ],
+  );
+
   const unreadNavigateLastIdRef = useRef<Record<string, string>>({});
 
   const navigateNextUnreadForStatus = useCallback(
@@ -9179,6 +9268,39 @@ export function RequestorPracticeReceivePage({
                 if (transfer) {
                   const chipArrival = String(item.arrivalDate || "").trim();
                   const chipOrder = String(item.orderDate || "").trim();
+                  const focusFollowUpIndex =
+                    item.focusFollowUpIndex != null &&
+                    Number.isFinite(Number(item.focusFollowUpIndex))
+                      ? Math.floor(Number(item.focusFollowUpIndex))
+                      : resolveProsthesisFollowUpFocusIndex({
+                          arrivalYmd: chipArrival || transfer.arrivalDate,
+                          focusFollowUpIndex: item.focusFollowUpIndex,
+                          prosthesisFollowUps: transfer.prosthesisFollowUps,
+                        });
+                  const openId = String(
+                    selectedTransfer?.transferId || selectedTransfer?._id || "",
+                  ).trim();
+                  const nextId = String(
+                    transfer.transferId || transfer._id || "",
+                  ).trim();
+                  if (dialogOpen && openId && openId === nextId && selectedTransfer) {
+                    setSelectedTransfer({
+                      ...selectedTransfer,
+                      ...(chipArrival ? { arrivalDate: chipArrival } : {}),
+                      ...(chipOrder ? { orderDate: chipOrder } : {}),
+                      focusFollowUpIndex,
+                    });
+                    const focusYmd = String(ctx.ymd || chipArrival || chipOrder || "").trim();
+                    if (/^\d{4}-\d{2}-\d{2}$/.test(focusYmd)) {
+                      const focusSuffix = calendarDateKey === "orderDate" ? "ord" : "arr";
+                      handleCursorChange(focusYmd);
+                      setAlignEpoch((n) => n + 1);
+                      setBadgeFocusItemId(`${nextId}:${focusSuffix}:${focusYmd}`);
+                      setBadgeFocusItemYmd(focusYmd);
+                      setBadgeFocusEpoch((n) => n + 1);
+                    }
+                    return;
+                  }
                   selectTransferFromCalendar(transfer, {
                     preferredDockSide:
                       viewMode === "list"
@@ -9189,15 +9311,7 @@ export function RequestorPracticeReceivePage({
                           ),
                     arrivalDate: chipArrival || null,
                     orderDate: chipOrder || null,
-                    focusFollowUpIndex:
-                      item.focusFollowUpIndex != null &&
-                      Number.isFinite(Number(item.focusFollowUpIndex))
-                        ? Math.floor(Number(item.focusFollowUpIndex))
-                        : resolveProsthesisFollowUpFocusIndex({
-                            arrivalYmd: chipArrival || transfer.arrivalDate,
-                            focusFollowUpIndex: item.focusFollowUpIndex,
-                            prosthesisFollowUps: transfer.prosthesisFollowUps,
-                          }),
+                    focusFollowUpIndex,
                     prosthesisStageKey:
                       String(item.prosthesisStageKey || "").trim() ||
                       (item.focusFollowUpIndex != null &&
@@ -9706,6 +9820,7 @@ export function RequestorPracticeReceivePage({
             arrivalDate: selectedTransfer?.arrivalDate || "",
             orderDates: selectedTransfer?.orderDates,
             arrivalDates: selectedTransfer?.arrivalDates,
+            prosthesisFollowUps: selectedTransfer?.prosthesisFollowUps,
           }),
           ...(selectedTransferWorkPeriodSummary
             ? [selectedTransferWorkPeriodSummary]
@@ -9791,6 +9906,7 @@ export function RequestorPracticeReceivePage({
         onCancelRemakeCharge={(chargeIndex) => {
           setRemakeChargeCancelConfirm({ chargeIndex });
         }}
+        onSelectLinkedYmd={openLinkedYmdFromChat}
         remakeChargeCancelBusy={remakeChargeCancelBusy}
         skipJig={Boolean(selectedTransfer?.production?.skipJig)}
         feeViewer="lab"

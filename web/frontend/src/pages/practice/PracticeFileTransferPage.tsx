@@ -282,7 +282,14 @@ import {
   PracticeTransferDetailChatDialog,
 } from "@/shared/components/PracticeTransferDetailChatDialog";
 import { PracticeProsthesisFollowUpDialog } from "@/shared/components/practice/PracticeProsthesisFollowUpDialog";
-import { canAppendProsthesisFollowUp, canManagePendingProsthesisFollowUp, getLatestPendingProsthesisFollowUp } from "@/shared/practice/prosthesisFollowUp";
+import {
+  canAppendProsthesisFollowUp,
+  canManagePendingProsthesisFollowUp,
+  collectCertainLinkedOrderYmds,
+  collectProsthesisFollowUpArrivalYmds,
+  getLatestPendingProsthesisFollowUp,
+  resolveProsthesisFollowUpFocusIndex,
+} from "@/shared/practice/prosthesisFollowUp";
 import { PracticeLabRatingControl } from "@/shared/components/practice/PracticeLabRatingControl";
 import { PracticeTransferBookmarkControl } from "@/shared/components/practice/PracticeTransferBookmarkControl";
 import { PracticeTransferBookmarkNavigateButton } from "@/shared/components/practice/PracticeTransferBookmarkNavigateButton";
@@ -5274,15 +5281,24 @@ export const PracticeFileTransferPage = ({
     const transferId = String(
       selectedTransfer.transferId || selectedTransfer.id || "",
     ).trim();
-    const order = String(
-      (Array.isArray(selectedTransfer.orderDates) &&
-        selectedTransfer.orderDates[
-          selectedTransfer.orderDates.length - 1
-        ]) ||
-        selectedTransfer.orderDate ||
-        "",
-    ).trim();
-    const arrival = String(selectedTransfer.arrivalDate || "").trim();
+    const certainOrders = collectCertainLinkedOrderYmds({
+      orderDates: selectedTransfer.orderDates,
+      orderDate: selectedTransfer.orderDate,
+      prosthesisFollowUps: selectedTransfer.prosthesisFollowUps,
+    });
+    const certainArrivals = collectProsthesisFollowUpArrivalYmds({
+      arrivalDates: selectedTransfer.arrivalDates,
+      arrivalDate: selectedTransfer.arrivalDate,
+      prosthesisFollowUps: selectedTransfer.prosthesisFollowUps,
+    });
+    const focusedOrder = String(selectedTransfer.orderDate || "").trim();
+    const focusedArrival = String(selectedTransfer.arrivalDate || "").trim();
+    const order = certainOrders.includes(focusedOrder)
+      ? focusedOrder
+      : certainOrders[certainOrders.length - 1] || focusedOrder;
+    const arrival = certainArrivals.includes(focusedArrival)
+      ? focusedArrival
+      : certainArrivals[certainArrivals.length - 1] || focusedArrival;
     const labLabel = resolvePracticeTransferLabDisplayLabel({
       targetLab: selectedTransfer.targetLab,
       handledByCertifiedPartner: selectedTransfer.handledByCertifiedPartner,
@@ -5332,6 +5348,42 @@ export const PracticeFileTransferPage = ({
     selectedTransfer,
     selectedTransferDetailModel,
   ]);
+
+  const openLinkedYmdFromChat = useCallback(
+    (ymdRaw: string) => {
+      const ymd = String(ymdRaw || "").trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd) || !selectedTransfer) return;
+      const arrivals = collectProsthesisFollowUpArrivalYmds({
+        arrivalDates: selectedTransfer.arrivalDates,
+        arrivalDate: selectedTransfer.arrivalDate,
+        prosthesisFollowUps: selectedTransfer.prosthesisFollowUps,
+      });
+      const orders = collectCertainLinkedOrderYmds({
+        orderDates: selectedTransfer.orderDates,
+        orderDate: selectedTransfer.orderDate,
+        prosthesisFollowUps: selectedTransfer.prosthesisFollowUps,
+      });
+      const asOrder =
+        orders.includes(ymd) && !arrivals.includes(ymd);
+      const focusFollowUpIndex = resolveProsthesisFollowUpFocusIndex({
+        arrivalYmd: asOrder ? selectedTransfer.arrivalDate : ymd,
+        prosthesisFollowUps: selectedTransfer.prosthesisFollowUps,
+      });
+      setSelectedTransfer({
+        ...selectedTransfer,
+        ...(asOrder ? { orderDate: ymd } : { arrivalDate: ymd }),
+        focusFollowUpIndex,
+        prosthesisStageKey:
+          focusFollowUpIndex != null && focusFollowUpIndex < 0
+            ? "temp"
+            : focusFollowUpIndex != null
+              ? `zirconia-${focusFollowUpIndex}`
+              : selectedTransfer.prosthesisStageKey ?? null,
+      });
+      setTransferDialogOpen(true);
+    },
+    [selectedTransfer],
+  );
 
   const prosthesisFollowUpEligibility = useMemo(() => {
     if (!selectedTransfer) {
@@ -10585,6 +10637,18 @@ export const PracticeFileTransferPage = ({
           onSelectFutureDay={openComposeForArrival}
           calendarRefreshNonce={calendarRefreshNonce}
           onSelectTransfer={(transfer, options) => {
+            const openId = String(selectedTransfer?.transferId || selectedTransfer?.id || "").trim();
+            const nextId = String(transfer.transferId || transfer.id || "").trim();
+            if (transferDialogOpen && openId && openId === nextId && selectedTransfer) {
+              setSelectedTransfer({
+                ...selectedTransfer,
+                arrivalDate: transfer.arrivalDate || selectedTransfer.arrivalDate,
+                orderDate: transfer.orderDate || selectedTransfer.orderDate,
+                focusFollowUpIndex: transfer.focusFollowUpIndex,
+                prosthesisStageKey: transfer.prosthesisStageKey ?? null,
+              });
+              return;
+            }
             void handleOpenTransferDialog(transfer, {
               returnToAllModal: true,
               ...(options && "preferredDockSide" in options
@@ -11556,6 +11620,7 @@ export const PracticeFileTransferPage = ({
           conversationTitle="기공소와의 소통"
           authToken={authToken}
           caseIdentity={selectedTransferCaseIdentity}
+          onSelectLinkedYmd={openLinkedYmdFromChat}
           shareTransferKey={
             String(selectedTransfer?.transferMongoIds?.[0] || "").trim() || null
           }

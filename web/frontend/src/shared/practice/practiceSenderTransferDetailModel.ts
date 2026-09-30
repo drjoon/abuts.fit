@@ -33,6 +33,11 @@ import {
 import { resolvePracticeTransferLabDisplayLabel } from "@/shared/practice/practiceLabRating";
 import type { WorkScanAlignment } from "@/shared/practice/workScanAlignment";
 import {
+  collectCertainLinkedOrderYmds,
+  collectProsthesisFollowUpArrivalYmds,
+  type ProsthesisFollowUpRecord,
+} from "@/shared/practice/prosthesisFollowUp";
+import {
   currentStageOfPlan,
   nextStageOfPlan,
   normalizeLabRequestStagePlans,
@@ -63,13 +68,20 @@ export function buildPracticeTransferDateSummaryItems(
   transfer: Pick<
     PracticeRecentTransferItem,
     "orderDate" | "arrivalDate" | "orderDates" | "arrivalDates"
-  >,
+  > & {
+    prosthesisFollowUps?: ReadonlyArray<ProsthesisFollowUpRecord> | null;
+  },
 ): PracticeTransferDialogSummaryItem[] {
-  const orderDates = normalizeYmdList(transfer.orderDates, transfer.orderDate);
-  const arrivalDates = normalizeYmdList(
-    transfer.arrivalDates,
-    transfer.arrivalDate,
-  );
+  const orderDates = collectCertainLinkedOrderYmds({
+    orderDates: normalizeYmdList(transfer.orderDates, transfer.orderDate),
+    orderDate: transfer.orderDate,
+    prosthesisFollowUps: transfer.prosthesisFollowUps,
+  });
+  const arrivalDates = collectProsthesisFollowUpArrivalYmds({
+    arrivalDates: normalizeYmdList(transfer.arrivalDates, transfer.arrivalDate),
+    arrivalDate: transfer.arrivalDate,
+    prosthesisFollowUps: transfer.prosthesisFollowUps,
+  });
   const hasReorder =
     orderDates.length > 1 || arrivalDates.length > 1;
   if (!hasReorder) {
@@ -198,11 +210,16 @@ export function buildPracticeSenderTransferDetailModel(
   const doctorName = String(parsed.doctorName || "").trim();
   // 상세 좌 메모: 메타 태그 원본에서 자유 입력 메모만 (환자명·보철물 요약 제외)
   const displayMemo = String(parsed.memo || "").trim() || "-";
-  const orderDates = normalizeYmdList(transfer.orderDates, transfer.orderDate);
-  const arrivalDates = normalizeYmdList(
-    transfer.arrivalDates,
-    transfer.arrivalDate,
-  );
+  const orderDates = collectCertainLinkedOrderYmds({
+    orderDates: normalizeYmdList(transfer.orderDates, transfer.orderDate),
+    orderDate: transfer.orderDate,
+    prosthesisFollowUps: transfer.prosthesisFollowUps,
+  });
+  const arrivalDates = collectProsthesisFollowUpArrivalYmds({
+    arrivalDates: normalizeYmdList(transfer.arrivalDates, transfer.arrivalDate),
+    arrivalDate: transfer.arrivalDate,
+    prosthesisFollowUps: transfer.prosthesisFollowUps,
+  });
   const hasReorder = orderDates.length > 1 || arrivalDates.length > 1;
   const currentOrderYmd = hasReorder
     ? orderDates.length > 1

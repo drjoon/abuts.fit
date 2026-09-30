@@ -111,6 +111,8 @@ type ChatMessageBubbleProps = {
   practiceTransferProsthesisFeeStages?: import("@/shared/practice/prosthesisFollowUp").ProsthesisFeeStageRecord[] | null;
   /** 기공소 — 리메이크 청구 카드 「청구 취소」 */
   onCancelRemakeCharge?: (chargeIndex: number | null) => void;
+  /** 재도착·연결 날짜 클릭 → 해당 의뢰를 채팅에 연다 */
+  onSelectLinkedYmd?: (ymd: string) => void;
   remakeChargeCancelBusy?: boolean;
   activeRemakeChargeIndexes?: ReadonlySet<number> | null;
   /** 3D 프리뷰에서 그린 표시를 채팅 첨부로 넘긴다. */
@@ -361,6 +363,7 @@ export function ChatMessageBubble({
   practiceTransferFeeQuote = null,
   practiceTransferProsthesisFeeStages = null,
   onCancelRemakeCharge,
+  onSelectLinkedYmd,
   remakeChargeCancelBusy = false,
   activeRemakeChargeIndexes = null,
 }: ChatMessageBubbleProps) {
@@ -729,6 +732,7 @@ export function ChatMessageBubble({
       transferProsthesisFollowUps: practiceTransferProsthesisFollowUps,
       transferProsthesisFeeStages: practiceTransferProsthesisFeeStages,
       onCancelRemakeCharge,
+      onSelectLinkedYmd,
       remakeChargeCancelBusy,
       activeRemakeChargeIndexes,
     });

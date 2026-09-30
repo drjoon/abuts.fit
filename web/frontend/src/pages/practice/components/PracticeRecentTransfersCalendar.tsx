@@ -7,6 +7,7 @@
  * - web/frontend/src/pages/practice/components/PracticeStatusFilterBadges.tsx
  * - web/frontend/src/shared/date/kst.ts
  * - web/frontend/src/shared/practice/labReceiveCalendarWeekGrid.ts
+ * - 2026-09-30: 연결 화살표 클릭 → 연결된 날짜의 의뢰를 채팅에 연다.
  * - 2026-09-30: 2xl 미만 — 주문일·도착일·캘린더·목록은 아이콘만.
  * - 2026-09-27: 완료 톤=isPracticeRecentFinishedBadgeStatus. 목록·주간 칩 「완료」뱃지.
  * - 2026-09-20: 기공소 바구니 번호표(basketTag) — 목록·주간 칩에 표시.
@@ -731,7 +732,11 @@ function PracticeCalendarChipHover({
           <p className="font-medium text-amber-800">{overdueTooltip}</p>
         ) : null}
         {item.isPriorArrival ? (
-          <p className="text-muted-foreground">이전 일정(연결) · 클릭 시 같은 의뢰</p>
+          <p className="text-muted-foreground">
+            이전 일정(연결).
+            <br />
+            화살표를 누르면 연결된 의뢰가 채팅에 열립니다.
+          </p>
         ) : null}
       </HoverCardContent>
     </HoverCard>
@@ -1694,6 +1699,81 @@ export function PracticeRecentTransfersCalendar({
     });
   };
 
+  const openLinkedCase = (
+    item: PracticeCalendarChipItem,
+    ctx: {
+      ymd: string;
+      dow: number;
+      visibleColumnIndex: number;
+      visibleColumnCount: number;
+    },
+  ) => {
+    const raw =
+      dateKey === "orderDate" ? item.linkedOrderDates : item.linkedArrivalDates;
+    const chain = Array.isArray(raw)
+      ? raw
+          .map((d) => String(d || "").trim())
+          .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
+      : [];
+    const target =
+      chain.length < 2
+        ? ""
+        : item.isPriorArrival
+          ? chain[chain.length - 1]
+          : chain[chain.length - 2];
+    const ymd = target || ctx.ymd;
+    const next = target
+      ? {
+          ...item,
+          ...(dateKey === "orderDate"
+            ? { orderDate: target }
+            : { arrivalDate: target }),
+          isPriorArrival: target !== chain[chain.length - 1],
+          // 칩에 붙어 있던 최신 단계 포커스를 버리고, 연결일 기준으로 다시 정한다.
+          focusFollowUpIndex: null,
+          prosthesisStageKey: null,
+        }
+      : item;
+    onSelectItem(next, {
+      ...ctx,
+      ymd,
+      dow: kstYmdWeekday(ymd) ?? ctx.dow,
+    });
+  };
+
+  const renderLinkArrow = (
+    item: PracticeCalendarChipItem,
+    ctx: {
+      ymd: string;
+      dow: number;
+      visibleColumnIndex: number;
+      visibleColumnCount: number;
+    },
+    size: "list" | "chip",
+  ) => {
+    const chain =
+      dateKey === "orderDate" ? item.linkedOrderDates : item.linkedArrivalDates;
+    const hasLinkedChain = Array.isArray(chain) && chain.length > 1;
+    if (!hasLinkedChain) return null;
+    return (
+      <button
+        type="button"
+        className={cn(
+          "mt-0.5 inline-flex shrink-0 items-center justify-center rounded text-primary hover:bg-primary/10",
+          size === "chip" ? "h-4 w-4 text-[11px]" : "h-5 w-5 text-[13px]",
+        )}
+        aria-label="연결된 의뢰를 채팅에 열기"
+        title="연결된 의뢰를 채팅에 열기"
+        onClick={(e) => {
+          e.stopPropagation();
+          openLinkedCase(item, ctx);
+        }}
+      >
+        {item.isPriorArrival ? "↗" : "↙"}
+      </button>
+    );
+  };
+
   const handleSideDaySelect = (ymd: string) => {
     const monthStart = kstStartOfMonth(ymd) || ymd;
     // 내일 이후만 도착일 신규 의뢰(오늘은 목록 이동)
@@ -2119,16 +2199,6 @@ export function PracticeRecentTransfersCalendar({
                               : item.abutmentUploadOverdue;
                           const unreadLabel =
                             unreadCount > 99 ? "99+" : String(unreadCount);
-                          const hasLinkedChain =
-                            (Array.isArray(item.linkedOrderDates) &&
-                              item.linkedOrderDates.length > 1) ||
-                            (Array.isArray(item.linkedArrivalDates) &&
-                              item.linkedArrivalDates.length > 1);
-                          const linkPrefix = item.isPriorArrival
-                            ? "↗ "
-                            : hasLinkedChain
-                              ? "↙ "
-                              : "";
                           const overdueTooltip = uploadOverdue
                             ? getPracticeAbutmentUploadOverdueTooltip(
                                 uploadOverdue,
@@ -2181,6 +2251,12 @@ export function PracticeRecentTransfersCalendar({
                                   <Hexagon className="h-3.5 w-3.5" aria-hidden />
                                 </span>
                               ) : null}
+                              {renderLinkArrow(item, {
+                                ymd,
+                                dow: kstYmdWeekday(ymd) ?? 0,
+                                visibleColumnIndex: 0,
+                                visibleColumnCount: 1,
+                              }, "list")}
                               <button
                                 type="button"
                                 className="min-w-0 flex-1 text-left text-[13px] leading-snug text-slate-900"
@@ -2208,7 +2284,6 @@ export function PracticeRecentTransfersCalendar({
                                     overdueTooltip={overdueTooltip}
                                   >
                                     <span className="inline-block w-fit max-w-full line-clamp-2 break-all">
-                                      {linkPrefix}
                                       {item.line}
                                     </span>
                                   </PracticeCalendarChipHover>
@@ -2368,17 +2443,6 @@ export function PracticeRecentTransfersCalendar({
                             : item.abutmentUploadOverdue;
                           const unreadLabel =
                             unreadCount > 99 ? "99+" : String(unreadCount);
-                          const hasLinkedChain =
-                            (Array.isArray(item.linkedOrderDates) &&
-                              item.linkedOrderDates.length > 1) ||
-                            (Array.isArray(item.linkedArrivalDates) &&
-                              item.linkedArrivalDates.length > 1);
-                          /** 이전 일자=보냄(↗) · 최종 일자=받음(↙) */
-                          const linkPrefix = item.isPriorArrival
-                            ? "↗ "
-                            : hasLinkedChain
-                              ? "↙ "
-                              : "";
                           const overdueTooltip = uploadOverdue
                             ? getPracticeAbutmentUploadOverdueTooltip(
                                 uploadOverdue,
@@ -2439,6 +2503,16 @@ export function PracticeRecentTransfersCalendar({
                                   <Hexagon className="h-3 w-3" aria-hidden />
                                 </span>
                               ) : null}
+                              {renderLinkArrow(
+                                item,
+                                {
+                                  ymd: day.ymd,
+                                  dow: day.dow,
+                                  visibleColumnIndex,
+                                  visibleColumnCount: colCount,
+                                },
+                                "chip",
+                              )}
                               <button
                                 type="button"
                                 className="min-w-0 flex-1 px-1 py-0.5 text-left text-[10px] leading-snug"
@@ -2477,7 +2551,6 @@ export function PracticeRecentTransfersCalendar({
                                     overdueTooltip={overdueTooltip}
                                   >
                                     <span className="inline-block w-fit max-w-full line-clamp-2 break-all">
-                                      {linkPrefix}
                                       {item.line}
                                     </span>
                                   </PracticeCalendarChipHover>

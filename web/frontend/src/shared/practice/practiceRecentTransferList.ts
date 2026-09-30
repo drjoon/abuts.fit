@@ -6,6 +6,7 @@
  * 자동매칭(공개 풀)은 공정상 의뢰 — 뱃지 집계·「의뢰」필터에 포함.
  * 기공소 수신은 거절·작업취소가 목록에서 빠져 취소/거절 뱃지 불필요 → 치과만 취소 포함 5뱃지.
  * 본문 건수: 의뢰·작업시작=전체. 완료·취소·어벗=미열람만(clearedIds 제외).
+ * 2026-09-30: 열린 채팅의 연결 도착·주문일은 목록 재조회가 최신일로 덮지 않는다.
  * 2026-09-29: abutmentToothStages — 치과 상세 커스텀어벗 치아별 제조사 공정.
  * 2026-09-25: 배지 간격 의뢰·작업시작 | 완료·취소 | 어벗 (취소|어벗 사이 여백).
  * 2026-09-15: 후속 보철 반영 시 feeQuote.lines 비움 — 확정 total과 낡은 라인 합(임시치아) 불일치 방지.
@@ -1272,15 +1273,35 @@ export const mergeOpenPracticeTransferFromRequestRows = (
   );
   const nextFee = openRow.feeQuote;
   const keepBilled = prev.feeQuote?.billed && (!nextFee || !nextFee.billed);
+  const orderList = (
+    Array.isArray(openRow.orderDates) && openRow.orderDates.length > 0
+      ? openRow.orderDates
+      : prev.orderDates || []
+  ).map((d) => String(d || "").trim());
+  const arrivalList = (
+    Array.isArray(openRow.arrivalDates) && openRow.arrivalDates.length > 0
+      ? openRow.arrivalDates
+      : prev.arrivalDates || []
+  ).map((d) => String(d || "").trim());
+  const prevOrder = String(prev.orderDate || "").trim();
+  const prevArrival = String(prev.arrivalDate || "").trim();
+  const rowOrder = String(openRow.orderDate || "").trim();
+  const rowArrival = String(openRow.arrivalDate || "").trim();
   return {
     ...prev,
     status: openRow.status || prev.status,
-    orderDate: openRow.orderDate || prev.orderDate,
+    orderDate:
+      prevOrder && prevOrder !== rowOrder && orderList.includes(prevOrder)
+        ? prevOrder
+        : openRow.orderDate || prev.orderDate,
     orderDates:
       Array.isArray(openRow.orderDates) && openRow.orderDates.length > 0
         ? [...openRow.orderDates]
         : prev.orderDates,
-    arrivalDate: openRow.arrivalDate || prev.arrivalDate,
+    arrivalDate:
+      prevArrival && prevArrival !== rowArrival && arrivalList.includes(prevArrival)
+        ? prevArrival
+        : openRow.arrivalDate || prev.arrivalDate,
     arrivalDates:
       Array.isArray(openRow.arrivalDates) && openRow.arrivalDates.length > 0
         ? [...openRow.arrivalDates]

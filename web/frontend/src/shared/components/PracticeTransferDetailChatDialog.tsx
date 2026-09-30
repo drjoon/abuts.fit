@@ -359,6 +359,10 @@ import {
 } from "@/shared/files/extractDroppedFiles";
 import { printPracticeTransferDetail } from "@/shared/practice/practiceTransferDetailPrint";
 import {
+  keepLatestConsecutiveArrivalAppends,
+  PracticeTransferLinkedYmdText,
+} from "@/shared/practice/practiceTransferSystemChatMessage";
+import {
   baseToothWorksForDetailChart,
   listCompletedFollowUpToothWorks,
   shouldShowConfirmedFollowUpProsthesis,
@@ -830,6 +834,8 @@ type PracticeTransferDetailChatDialogProps = {
   prosthesisFollowUpWorkPending?: boolean;
   /** 기공소 — 리메이크 청구 채팅 카드 「청구 취소」 */
   onCancelRemakeCharge?: (chargeIndex: number | null) => void;
+  /** 채팅의 재도착일·헤더 날짜 클릭 → 그 날짜의 의뢰를 채팅에 연다 */
+  onSelectLinkedYmd?: (ymd: string) => void;
   remakeChargeCancelBusy?: boolean;
   /** 치과: 수락 전·작업취소 건을 휴지통으로 */
   onCancelRequest?: () => void;
@@ -1004,6 +1010,7 @@ export function PracticeTransferDetailChatDialog({
   acceptProsthesisFollowUpWorkBusy = false,
   prosthesisFollowUpWorkPending = false,
   onCancelRemakeCharge,
+  onSelectLinkedYmd,
   remakeChargeCancelBusy = false,
   onCancelRequest,
   cancelRequestDisabled = false,
@@ -1123,19 +1130,24 @@ export function PracticeTransferDetailChatDialog({
       setScrollEdge("top");
       return;
     }
-    // inline 등 open 유지한 채 의뢰 전환 시 초기 스크롤 다시 적용
+    if (minimized || chatLoading) return;
+
+    // 연결일만 바꿀 때는 이미 열린 채팅을 맨 아래(최신)로 되돌리지 않는다.
+    let switchedWhileLoaded = false;
     if (scrollIdentity && scrollIdentity !== scrollIdentityRef.current) {
+      switchedWhileLoaded =
+        scrollIdentityRef.current !== "" && chatMessages.length > 0;
       scrollIdentityRef.current = scrollIdentity;
       didInitialScrollRef.current = false;
       openedWithoutMessagesRef.current = false;
     }
-    if (minimized || chatLoading) return;
 
     const preferStageDetailTop =
       feeStageFocusIndex != null &&
       Number.isFinite(Number(feeStageFocusIndex));
-    const preferBottom =
-      resolvedInitialPanelTab === "chat"
+    const preferBottom = switchedWhileLoaded
+      ? false
+      : resolvedInitialPanelTab === "chat"
         ? true
         : resolvedInitialPanelTab === "detail" || preferStageDetailTop
           ? false
@@ -1171,8 +1183,13 @@ export function PracticeTransferDetailChatDialog({
     applyScrollPosition,
   ]);
 
+  const pinnedStageFocusRef = useRef<number | null | undefined>(undefined);
   useEffect(() => {
     if (!open || minimized || !didInitialScrollRef.current) return;
+    if (pinnedStageFocusRef.current !== feeStageFocusIndex) {
+      pinnedStageFocusRef.current = feeStageFocusIndex ?? null;
+      return;
+    }
     if (scrollEdge !== "bottom") return;
     // 메시지 없으면 하단 고정하지 않음(보철물·의뢰 상단 유지)
     if (chatMessages.length === 0) return;
@@ -1182,8 +1199,12 @@ export function PracticeTransferDetailChatDialog({
       el.scrollTop = el.scrollHeight;
     });
     return () => cancelAnimationFrame(id);
-  }, [open, minimized, scrollEdge, chatMessages.length]);
+  }, [open, minimized, scrollEdge, chatMessages.length, feeStageFocusIndex]);
 
+  const visibleChatMessages = useMemo(
+    () => keepLatestConsecutiveArrivalAppends(chatMessages),
+    [chatMessages],
+  );
   const resolvedChatRoomId = useMemo(() => {
     const fromProp = String(chatRoomId || "").trim();
     if (fromProp) return fromProp;
@@ -2842,7 +2863,10 @@ export function PracticeTransferDetailChatDialog({
       <div className={cn("flex min-w-0 items-center gap-2", className)}>
         {identityDateLabel ? (
           <span className="min-w-0 flex-1 truncate text-xs tabular-nums text-muted-foreground">
-            {identityDateLabel}
+            <PracticeTransferLinkedYmdText
+              text={identityDateLabel}
+              onSelectYmd={onSelectLinkedYmd}
+            />
           </span>
         ) : (
           <span className="min-w-0 flex-1" aria-hidden />
@@ -3969,7 +3993,7 @@ export function PracticeTransferDetailChatDialog({
                         </div>
                       ) : null}
 
-                      {chatMessages.map((message) => {
+                      {visibleChatMessages.map((message) => {
                         const senderId = String(
                           message.sender?._id || "",
                         ).trim();
@@ -4010,6 +4034,7 @@ export function PracticeTransferDetailChatDialog({
                               prosthesisFeeStages
                             }
                             onCancelRemakeCharge={onCancelRemakeCharge}
+                            onSelectLinkedYmd={onSelectLinkedYmd}
                             remakeChargeCancelBusy={remakeChargeCancelBusy}
                             activeRemakeChargeIndexes={activeRemakeChargeIndexes}
                             downloadingFileKeys={downloadingFileKeys}

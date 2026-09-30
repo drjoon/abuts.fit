@@ -9,6 +9,7 @@
 // - 2026-09-15: 후속 채팅 견적 — 해당 지르 단계 포커스·스냅샷. 최종 바는 숨김(부분 후속).
 // - 2026-09-23: UI 라벨 — 보철 종류 변경→주문 변경(채팅 제목·레거시 content 감지 유지).
 // - 2026-09-22: 종류 변경 채팅 제목. 확정 보철은 임시치아→지르만(종류 변경 중복 카드 방지).
+// - 2026-09-30: 재주문(재도착)을 연속으로 넣으면 채팅에는 마지막 변경만 표시.
 // - 2026-09-27: 협력 작업시작 채팅 — 저장된 「어벗츠기공소」를 수행 기공소 실명으로 표시.
 import { cn } from "@/shared/ui/cn";
 import { PracticeToothWorkChartReadOnly } from "@/shared/components/practice/PracticeToothWorkChartReadOnly";
@@ -288,6 +289,145 @@ const deriveSourceToothWorkBySpanKeyFromTransfer = (
   return map.size > 0 ? map : null;
 };
 
+/** 채팅·헤더의 날짜를 눌러 그 의뢰를 연다 */
+export function PracticeTransferLinkedYmdText({
+  text,
+  onSelectYmd,
+}: {
+  text: string;
+  onSelectYmd?: (ymd: string) => void;
+}) {
+  const value = String(text || "");
+  if (!onSelectYmd || !/\d{4}-\d{2}-\d{2}/.test(value)) {
+    return <>{value}</>;
+  }
+  const parts = value.split(/(\d{4}-\d{2}-\d{2})/g);
+  return (
+    <>
+      {parts.map((part, index) =>
+        /^\d{4}-\d{2}-\d{2}$/.test(part) ? (
+          <button
+            key={`${part}-${index}`}
+            type="button"
+            className="rounded-sm underline decoration-dotted underline-offset-2 hover:text-foreground"
+            data-no-drag
+            onClick={(event) => {
+              event.stopPropagation();
+              onSelectYmd(part);
+            }}
+          >
+            {part}
+          </button>
+        ) : (
+          <span key={`t-${index}`}>{part}</span>
+        ),
+      )}
+    </>
+  );
+}
+
+const ARRIVAL_APPENDED_EVENT = "practice_transfer_arrival_appended";
+const YMD_OR_DASH = String.raw`(\d{4}-\d{2}-\d{2}|-)`;
+const DATE_ARROW = String.raw`\s*→\s*`;
+
+type ArrivalDateSpan = { from: string; to: string };
+
+const parseArrivalAppendContent = (
+  content: string,
+): { order: ArrivalDateSpan | null; arrival: ArrivalDateSpan | null; rest: string[] } => {
+  const text = formatArrivalAppendedChatContent(content);
+  const orderPattern = new RegExp(`^주문일 ${YMD_OR_DASH}${DATE_ARROW}${YMD_OR_DASH}$`);
+  const arrivalLabeledPattern = new RegExp(
+    `^치과도착일 ${YMD_OR_DASH}${DATE_ARROW}${YMD_OR_DASH}$`,
+  );
+  const arrivalBarePattern = new RegExp(`^${YMD_OR_DASH}${DATE_ARROW}${YMD_OR_DASH}$`);
+  let order: ArrivalDateSpan | null = null;
+  let arrival: ArrivalDateSpan | null = null;
+  const rest: string[] = [];
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    const orderMatch = trimmed.match(orderPattern);
+    const labeledMatch = trimmed.match(arrivalLabeledPattern);
+    const bareMatch = trimmed.match(arrivalBarePattern);
+    if (orderMatch) {
+      order = { from: orderMatch[1] || "", to: orderMatch[2] || "" };
+    } else if (labeledMatch) {
+      arrival = { from: labeledMatch[1] || "", to: labeledMatch[2] || "" };
+    } else if (bareMatch) {
+      arrival = { from: bareMatch[1] || "", to: bareMatch[2] || "" };
+    } else if (trimmed && trimmed !== "재도착 반영" && trimmed !== "치과도착일 변경") {
+      rest.push(trimmed);
+    }
+  }
+  return { order, arrival, rest };
+};
+
+/** 처음과 마지막이 같으면 null. 화면에서 그 연속 변경을 전부 뺀다. */
+const composeCollapsedArrivalAppend = (
+  run: ReadonlyArray<{ content?: string | null }>,
+): string | null => {
+  const parsed = run.map((message) =>
+    parseArrivalAppendContent(String(message.content || "")),
+  );
+  const firstOrder = parsed.find((row) => row.order)?.order ?? null;
+  const lastOrder = [...parsed].reverse().find((row) => row.order)?.order ?? null;
+  const firstArrival = parsed.find((row) => row.arrival)?.arrival ?? null;
+  const lastArrival = [...parsed].reverse().find((row) => row.arrival)?.arrival ?? null;
+  const orderFrom = firstOrder?.from || "";
+  const orderTo = lastOrder?.to || "";
+  const arrivalFrom = firstArrival?.from || "";
+  const arrivalTo = lastArrival?.to || "";
+  const rest = parsed[parsed.length - 1]?.rest ?? [];
+  const orderChanged = Boolean(orderFrom && orderTo && orderFrom !== orderTo);
+  const arrivalChanged = Boolean(arrivalFrom && arrivalTo && arrivalFrom !== arrivalTo);
+  if (!orderChanged && !arrivalChanged) return null;
+  const lines = orderChanged
+    ? [
+        "재도착 반영",
+        `주문일 ${orderFrom} → ${orderTo}`,
+        ...(arrivalChanged ? [`치과도착일 ${arrivalFrom} → ${arrivalTo}`] : []),
+      ]
+    : ["치과도착일 변경", `${arrivalFrom} → ${arrivalTo}`];
+  return [...lines, ...rest].join("\n");
+};
+
+/**
+ * 다른 채팅 없이 재주문(재도착)을 여러 번 넣으면 한 장으로 묶는다.
+ * 화살표 왼쪽은 첫 변경의 원래 날짜, 오른쪽은 마지막 변경의 날짜다.
+ * 그 결과가 처음과 같으면 변경 카드는 모두 빼 화면에서 숨긴다.
+ * 저장 메시지는 그대로 둔다.
+ */
+export function keepLatestConsecutiveArrivalAppends<
+  T extends { systemEvent?: string | null; content?: string | null },
+>(messages: readonly T[]): T[] {
+  if (messages.length < 2) return messages.slice();
+  const out: T[] = [];
+  let run: T[] = [];
+  const flush = () => {
+    if (run.length === 0) return;
+    if (run.length === 1) {
+      out.push(run[0]!);
+    } else {
+      const content = composeCollapsedArrivalAppend(run);
+      if (content) {
+        const last = run[run.length - 1]!;
+        out.push({ ...last, content });
+      }
+    }
+    run = [];
+  };
+  for (const message of messages) {
+    if (String(message?.systemEvent || "").trim() === ARRIVAL_APPENDED_EVENT) {
+      run.push(message);
+      continue;
+    }
+    flush();
+    out.push(message);
+  }
+  flush();
+  return out;
+}
+
 /** 레거시 한 줄 재도착 텍스트 → 줄바꿈 본문 */
 export const formatArrivalAppendedChatContent = (content: string): string => {
   const text = String(content || "").trim();
@@ -321,6 +461,8 @@ type PracticeTransferSystemChatBodyProps = {
   transferProsthesisFeeStages?: import("@/shared/practice/prosthesisFollowUp").ProsthesisFeeStageRecord[] | null;
   /** 기공소 — 리메이크 청구 취소 */
   onCancelRemakeCharge?: (chargeIndex: number | null) => void;
+  /** 재도착·연결 날짜 클릭 → 해당 의뢰를 채팅에 연다 */
+  onSelectLinkedYmd?: (ymd: string) => void;
   remakeChargeCancelBusy?: boolean;
   /** 아직 유효한 remakeCharges chargeIndex 목록(취소 버튼 노출) */
   activeRemakeChargeIndexes?: ReadonlySet<number> | null;
@@ -337,6 +479,7 @@ export function PracticeTransferSystemChatBody({
   transferProsthesisFollowUps = null,
   transferProsthesisFeeStages = null,
   onCancelRemakeCharge = undefined,
+  onSelectLinkedYmd,
   remakeChargeCancelBusy = false,
   activeRemakeChargeIndexes = null,
 }: PracticeTransferSystemChatBodyProps): JSX.Element | null {
@@ -485,7 +628,13 @@ export function PracticeTransferSystemChatBody({
           >
             <p className="font-medium leading-snug">{followUpChatTitle}</p>
             {arrivalYmd ? (
-              <p className="mt-1 leading-snug">치과도착일 {arrivalYmd}</p>
+              <p className="mt-1 leading-snug">
+                치과도착일{" "}
+                <PracticeTransferLinkedYmdText
+                  text={arrivalYmd}
+                  onSelectYmd={onSelectLinkedYmd}
+                />
+              </p>
             ) : null}
           </div>
         </div>
@@ -537,7 +686,10 @@ export function PracticeTransferSystemChatBody({
           )}
         >
           <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] leading-snug">
-            {formatted}
+            <PracticeTransferLinkedYmdText
+              text={formatted}
+              onSelectYmd={onSelectLinkedYmd}
+            />
           </p>
           <p className={cn("mt-0.5 opacity-70", compact ? "text-[10px]" : "text-[11px]")}>
             {formatTime(message.createdAt)}
@@ -694,7 +846,15 @@ export function PracticeTransferSystemChatBody({
           ) : null}
           {displayFeeTotal > 0 || arrivalYmd ? (
             <p className="mt-1 text-[11px] opacity-80">
-              {arrivalYmd ? `도착 ${arrivalYmd}` : null}
+              {arrivalYmd ? (
+                <>
+                  도착{" "}
+                  <PracticeTransferLinkedYmdText
+                    text={arrivalYmd}
+                    onSelectYmd={onSelectLinkedYmd}
+                  />
+                </>
+              ) : null}
               {arrivalYmd && displayFeeTotal > 0 ? " · " : null}
               {displayFeeTotal > 0
                 ? `리메이크비 ${displayFeeTotal.toLocaleString("ko-KR")}원`
