@@ -1,19 +1,40 @@
 // related files:
 // - web/backend/services/opsMonthlyReport.service.js
 // - web/backend/tests/unit/opsMonthlyReport.test.js
-// 메이븐(을)이 소유·운영하고 어벗츠(갑)가 전속 사용하는 플랫폼의 월간 운영 증빙.
-// 금액은 운영·유지보수 약정만 담는다. 개발 수수료는 이 문서에 넣지 않는다.
+// 플랫폼 전속 사용 및 서버 운영 계약 (2026-09-01 ~ 2027-08-31).
+// 월 운영비는 제6조 서버 운영 대가. 전속 사용·기능 업데이트는 제7조 사용료.
+// 개발 투입 공수는 제5조 제4항. 커밋 간격으로 추정한다.
 
 export const OPS_CONTRACT = {
   clientName: "어벗츠 주식회사",
   clientRole: "갑",
   providerName: "메이븐 주식회사",
   providerRole: "을",
-  termYears: 2,
-  renewable: true,
-  /** 부가세 포함 월 운영비 (원) */
+  termStartYmd: "2026-09-01",
+  termEndYmd: "2027-08-31",
+  termYears: 1,
+  autoRenewYears: 1,
+  nonRenewalNoticeMonths: 3,
+  /** 부가세 포함 월 운영비 (원). 제6조. */
   monthlyFeeInclusive: 5_500_000,
-  scope: "플랫폼 운영·유지보수",
+  /** 최초 계약기간 운영비 합계 (부가세 포함, 원) */
+  firstTermFeeInclusive: 66_000_000,
+  paymentCount: 12,
+  firstPaymentYmd: "2026-09-30",
+  lastPaymentYmd: "2027-08-31",
+  scope: "서버 운영",
+  /** 제7조. 요율은 정산 기준금액 대비, 산정액에 부가세가 포함된 금액. */
+  usageFees: [
+    { item: "스토어(기성품)", ratePercent: 10 },
+    { item: "커스텀 어벗먼트", ratePercent: 5 },
+    { item: "기공 서비스(기공사업부)", ratePercent: 10 },
+  ],
+};
+
+/** 같은 작성자의 커밋 간격이 이 값 이하면 한 작업. 각 작업의 첫 커밋 앞에 준비 시간을 더한다. */
+export const DEV_EFFORT_RULE = {
+  sessionGapMinutes: 120,
+  leadMinutes: 30,
 };
 
 const LOGIN_SUCCESS = new Set(["USER_LOGGED_IN", "LOGIN_SUCCESS"]);
@@ -111,7 +132,148 @@ export function buildDailyRows(bounds, accessByYmd, transferByYmd) {
   }));
 }
 
+function kstYmdFromInstant(date) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
+function isMachineEmail(email) {
+  const host = String(email || "").split("@")[1] || "";
+  return !email || host === "localhost" || host.endsWith(".local");
+}
+
+function nameToken(name) {
+  return String(name || "").trim().toLowerCase().split(/\s+/)[0] || "";
+}
+
+/**
+ * 같은 작성자(이메일)의 커밋을 시간순으로 묶어 투입 시간을 추정한다.
+ * 기기 로컬 메일(*.local)은 이름이 같은 작성자에 합친다.
+ * 간격이 sessionGapMinutes 이하면 한 작업.
+ * 작업 시간 = 마지막 커밋 − 첫 커밋 + leadMinutes.
+ * 커밋이 하나인 작업은 leadMinutes.
+ * 자정을 넘기면 마지막 커밋의 KST 날짜에 넣는다.
+ * @param {{ name?: string, email?: string, at: string|Date, subject?: string }[]} commits
+ */
+export function estimateDevEffort(commits, rule = DEV_EFFORT_RULE) {
+  const gapMs = Number(rule.sessionGapMinutes) * 60 * 1000;
+  const leadMinutes = Number(rule.leadMinutes) || 0;
+  const byAuthor = new Map();
+
+  for (const raw of commits || []) {
+    const at = new Date(raw?.at);
+    if (Number.isNaN(at.getTime())) continue;
+    const email = String(raw.email || "").trim().toLowerCase();
+    const name = String(raw.name || "").trim() || email || "작성자 미상";
+    const key = email || name;
+    if (!byAuthor.has(key)) {
+      byAuthor.set(key, { name, email, machine: isMachineEmail(email), commits: [] });
+    }
+    const bucket = byAuthor.get(key);
+    if (name.length > bucket.name.length) bucket.name = name;
+    const subject = String(raw.subject || "").split("\n")[0].trim();
+    bucket.commits.push({ at, subject });
+  }
+
+  const authors = [];
+  const dayMap = new Map();
+  const buckets = [...byAuthor.values()];
+  const people = buckets.filter((bucket) => !bucket.machine);
+  for (const machine of buckets.filter((bucket) => bucket.machine)) {
+    const token = nameToken(machine.name);
+    const host = people.find((bucket) => nameToken(bucket.name) === token);
+    if (host) host.commits.push(...machine.commits);
+    else people.push(machine);
+  }
+
+  for (const bucket of people) {
+    bucket.commits.sort((a, b) => a.at - b.at);
+    let sessions = 0;
+    let minutes = 0;
+    let index = 0;
+    const list = bucket.commits;
+    while (index < list.length) {
+      let end = list[index];
+      const subjects = [];
+      let next = index;
+      while (next < list.length) {
+        if (next > index && list[next].at - list[next - 1].at > gapMs) break;
+        end = list[next];
+        if (list[next].subject) subjects.push(list[next].subject);
+        next += 1;
+      }
+      sessions += 1;
+      const spanMinutes = (end.at.getTime() - list[index].at.getTime()) / 60000;
+      const sessionMinutes = Math.round(spanMinutes + leadMinutes);
+      minutes += sessionMinutes;
+      const ymd = kstYmdFromInstant(end.at);
+      if (!dayMap.has(ymd)) {
+        dayMap.set(ymd, { ymd, minutes: 0, commits: 0, subjects: [] });
+      }
+      const day = dayMap.get(ymd);
+      day.minutes += sessionMinutes;
+      day.commits += next - index;
+      for (const subject of subjects) {
+        if (!day.subjects.includes(subject)) day.subjects.push(subject);
+      }
+      index = next;
+    }
+    authors.push({
+      name: bucket.name,
+      commits: list.length,
+      sessions,
+      minutes,
+    });
+  }
+
+  authors.sort(
+    (a, b) => b.minutes - a.minutes || a.name.localeCompare(b.name, "ko"),
+  );
+  const days = [...dayMap.values()]
+    .sort((a, b) => a.ymd.localeCompare(b.ymd))
+    .map((day) => ({ ...day, minutes: Math.round(day.minutes) }));
+
+  return {
+    sessionGapMinutes: Number(rule.sessionGapMinutes),
+    leadMinutes,
+    commits: authors.reduce((sum, row) => sum + row.commits, 0),
+    sessions: authors.reduce((sum, row) => sum + row.sessions, 0),
+    minutes: authors.reduce((sum, row) => sum + row.minutes, 0),
+    authors,
+    days,
+  };
+}
+
+export function parseGitLogRecords(text) {
+  return String(text || "")
+    .split("\u001e")
+    .map((record) => record.trim())
+    .filter(Boolean)
+    .map((record) => {
+      const [name, email, at, subject] = record.split("\u001f");
+      return { name, email, at, subject };
+    })
+    .filter((row) => row.at);
+}
+
+export function emptyDevEffort(rule = DEV_EFFORT_RULE) {
+  return estimateDevEffort([], rule);
+}
+
 export function buildWorkSummary(stats) {
+  const dev = stats.development;
+  const devLines = !dev?.available
+    ? ["이 달의 커밋 기록을 읽지 못해 투입 시간을 계산하지 못했습니다."]
+    : dev.commits === 0
+      ? ["이 달에 개발 커밋이 없습니다."]
+      : [
+          `커밋 ${dev.commits}건을 ${dev.sessions}개 작업으로 묶었습니다.`,
+          `추정 투입 시간은 ${formatEffortMinutes(dev.minutes)}입니다.`,
+        ];
   return [
     {
       category: "모니터링",
@@ -143,9 +305,13 @@ export function buildWorkSummary(stats) {
     {
       category: "유지보수",
       lines: [
-        `관리자 변경 기록은 ${stats.adminActions}건입니다.`,
+        `관리자 권한·작업 기록은 ${stats.adminActions}건입니다.`,
         `파일 저장 기록은 ${stats.filesUploaded}건입니다.`,
       ],
+    },
+    {
+      category: "개발",
+      lines: devLines,
     },
     {
       category: "안내 발송",
@@ -154,6 +320,13 @@ export function buildWorkSummary(stats) {
       ],
     },
   ];
+}
+
+export function formatEffortMinutes(minutes) {
+  const total = Math.max(0, Math.round(Number(minutes) || 0));
+  const hours = Math.floor(total / 60);
+  const remain = total % 60;
+  return `${hours}시간 ${remain}분`;
 }
 
 export function viewerParty(role) {
@@ -200,6 +373,7 @@ export function assembleOpsMonthlyReport({ bounds, now, stats }) {
     filesUploaded: stats.filesUploaded,
     mailSent: stats.mailSent,
     smsSent: stats.smsSent,
+    development: stats.development,
   });
 
   return {
@@ -211,12 +385,20 @@ export function assembleOpsMonthlyReport({ bounds, now, stats }) {
       providerName: OPS_CONTRACT.providerName,
       providerRole: OPS_CONTRACT.providerRole,
       exclusiveUse: true,
+      termStartYmd: OPS_CONTRACT.termStartYmd,
+      termEndYmd: OPS_CONTRACT.termEndYmd,
       termYears: OPS_CONTRACT.termYears,
-      renewable: OPS_CONTRACT.renewable,
+      autoRenewYears: OPS_CONTRACT.autoRenewYears,
+      nonRenewalNoticeMonths: OPS_CONTRACT.nonRenewalNoticeMonths,
       scope: OPS_CONTRACT.scope,
       monthlyFeeInclusive: fee.inclusive,
       monthlyFeeSupply: fee.supply,
       monthlyFeeVat: fee.vat,
+      firstTermFeeInclusive: OPS_CONTRACT.firstTermFeeInclusive,
+      paymentCount: OPS_CONTRACT.paymentCount,
+      firstPaymentYmd: OPS_CONTRACT.firstPaymentYmd,
+      lastPaymentYmd: OPS_CONTRACT.lastPaymentYmd,
+      usageFees: OPS_CONTRACT.usageFees,
     },
     period: {
       month: bounds.month,
@@ -255,5 +437,6 @@ export function assembleOpsMonthlyReport({ bounds, now, stats }) {
     },
     work,
     daily,
+    development: stats.development || emptyDevEffort(),
   };
 }

@@ -4,7 +4,10 @@ import {
   OPS_CONTRACT,
   assembleOpsMonthlyReport,
   buildWorkSummary,
+  estimateDevEffort,
+  formatEffortMinutes,
   kstMonthBounds,
+  parseGitLogRecords,
   splitVatInclusive,
   summarizeActivity,
   viewerParty,
@@ -17,8 +20,16 @@ describe("ops monthly report contract", () => {
       supply: 5_000_000,
       vat: 500_000,
     });
-    expect(OPS_CONTRACT.termYears).toBe(2);
-    expect(OPS_CONTRACT.renewable).toBe(true);
+    expect(OPS_CONTRACT.termYears).toBe(1);
+    expect(OPS_CONTRACT.termStartYmd).toBe("2026-09-01");
+    expect(OPS_CONTRACT.termEndYmd).toBe("2027-08-31");
+    expect(OPS_CONTRACT.autoRenewYears).toBe(1);
+    expect(OPS_CONTRACT.nonRenewalNoticeMonths).toBe(3);
+    expect(OPS_CONTRACT.firstTermFeeInclusive).toBe(66_000_000);
+    expect(OPS_CONTRACT.paymentCount).toBe(12);
+    expect(OPS_CONTRACT.usageFees.map((row) => row.ratePercent)).toEqual([
+      10, 5, 10,
+    ]);
   });
 
   test("조회 주체는 갑 어벗츠 또는 을 메이븐이다", () => {
@@ -127,6 +138,95 @@ describe("activity fold", () => {
       filesUploaded: 0,
       mailSent: 0,
       smsSent: 0,
+      development: {
+        available: true,
+        commits: 0,
+        sessions: 0,
+        minutes: 0,
+      },
     })[1].lines[0]).toContain("성공 1건");
+  });
+});
+
+describe("dev effort from commits", () => {
+  test("2시간 이내 커밋은 한 작업이고 앞에 30분을 더한다", () => {
+    const effort = estimateDevEffort([
+      {
+        name: "Joonho",
+        email: "a@b.c",
+        at: "2026-09-03T01:00:00.000Z",
+        subject: "하나",
+      },
+      {
+        name: "Joonho",
+        email: "a@b.c",
+        at: "2026-09-03T02:00:00.000Z",
+        subject: "둘",
+      },
+      {
+        name: "Joonho",
+        email: "A@b.c",
+        at: "2026-09-03T05:00:00.000Z",
+        subject: "셋",
+      },
+    ]);
+    expect(effort.commits).toBe(3);
+    expect(effort.sessions).toBe(2);
+    expect(effort.minutes).toBe(120);
+    expect(effort.authors).toHaveLength(1);
+    expect(effort.days).toEqual([
+      {
+        ymd: "2026-09-03",
+        minutes: 120,
+        commits: 3,
+        subjects: ["하나", "둘", "셋"],
+      },
+    ]);
+    expect(formatEffortMinutes(120)).toBe("2시간 0분");
+  });
+
+  test("기기 로컬 메일은 이름이 같은 작성자에 합친다", () => {
+    const effort = estimateDevEffort([
+      {
+        name: "Joonho",
+        email: "drjoon@gmail.com",
+        at: "2026-09-03T01:00:00.000Z",
+        subject: "본",
+      },
+      {
+        name: "Joonho Lee",
+        email: "joonholee@MacBook-Air.local",
+        at: "2026-09-03T01:20:00.000Z",
+        subject: "로컬",
+      },
+    ]);
+    expect(effort.authors).toHaveLength(1);
+    expect(effort.authors[0].name).toBe("Joonho");
+    expect(effort.authors[0].commits).toBe(2);
+    expect(effort.sessions).toBe(1);
+    expect(effort.minutes).toBe(50);
+  });
+
+  test("간격이 2시간을 넘으면 작업을 나눈다", () => {
+    const effort = estimateDevEffort([
+      { name: "A", email: "a@b.c", at: "2026-09-01T00:00:00.000Z", subject: "앞" },
+      { name: "A", email: "a@b.c", at: "2026-09-01T02:00:01.000Z", subject: "뒤" },
+    ]);
+    expect(effort.sessions).toBe(2);
+    expect(effort.minutes).toBe(60);
+  });
+
+  test("git log 레코드를 커밋으로 읽는다", () => {
+    const rows = parseGitLogRecords(
+      "Joonho\u001fa@b.c\u001f2026-09-03T01:00:00+09:00\u001f제목\u001e",
+    );
+    expect(rows).toEqual([
+      {
+        name: "Joonho",
+        email: "a@b.c",
+        at: "2026-09-03T01:00:00+09:00",
+        subject: "제목",
+      },
+    ]);
   });
 });
