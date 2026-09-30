@@ -84,9 +84,9 @@
   - Turn: **`Front_Turn` 끝 = `Splitline_2 + 2.5mm`** (Back 방향 X+)
     - 구현: `MainModuleOperations.TryPrepareTurningRegionRange` (`FRONT` → `rangeMaxX`)
 
-### 4.3.0 Safe split — PreviewModal「Wide Split」(2026-09-29, 실험·기본 OFF)
+### 4.3.0 Safe split — PreviewModal「Wide Split」(2026-09-30, 기본 ON)
 
-- 토글: `caseInfos.safeSplitEnabled` → request-meta → `ABUTS_SAFE_SPLIT_ENABLE`. 미수신=OFF.
+- 토글: `caseInfos.safeSplitEnabled` → request-meta → `ABUTS_SAFE_SPLIT_ENABLE`. 미수신=ON. `false`만 OFF.
 - 목적: Back_Turn(헥스 너머 LowerY 연장)·Back_Rough가 부시쪽 목을 먼저 얇게 만들어 Finish 크로스가 떨리는(wobble) 것 방지.
 - 경계 `Xk = (BackPointX - FL min_z) + 0.5` (마진 띠는 Middle_Finish 한 번에, seam은 커프).
 - 순서: `Front_Turn → Front_Rough → Front_Face → Front_Finish → Middle_Turn → Middle_Rough → Middle_Finish → Back_Turn → Back_Rough → Back_Finish → Connection`

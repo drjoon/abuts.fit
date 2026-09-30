@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-30: Wide Split 기본값 ON. caseInfos.safeSplitEnabled가 false일 때만 꺼짐.
 // - 2026-09-28: FL 바로 왼쪽 Re(커프 재디자인) — 70°보다 누운 커프를 피니시라인-0.2mm~커넥션 상단 G2 곡선(70° 이내)으로. 커프 확인 건은 빨간 강조.
 // - 2026-09-28: FL 왼쪽 HF(Hole Filling) — 서버에서 filled STL 상부 스크류홀을 메우고 STL 재로드.
 // - 2026-09-23: FL 반자동(시드 1클릭 전둘레) + 수동 ridge 스냅·모드 토글.
@@ -667,7 +668,7 @@ export const PreviewModal = ({
   const [manufacturerHexRotationDraft, setManufacturerHexRotationDraft] =
     useState<ManufacturerHexRotationDraftMode>("");
   const [anodizingEnabledDraft, setAnodizingEnabledDraft] = useState<boolean>(true);
-  const [safeSplitEnabledDraft, setSafeSplitEnabledDraft] = useState<boolean>(false);
+  const [safeSplitEnabledDraft, setSafeSplitEnabledDraft] = useState<boolean>(true);
   const [safeSplitSaving, setSafeSplitSaving] = useState(false);
   const [lotEngravingTargetDraft, setLotEngravingTargetDraft] = useState<
     "hex" | "post"
@@ -935,7 +936,7 @@ export const PreviewModal = ({
       setAnodizingEnabledDraft(true);
     }
 
-    setSafeSplitEnabledDraft((req as any)?.caseInfos?.safeSplitEnabled === true);
+    setSafeSplitEnabledDraft((req as any)?.caseInfos?.safeSplitEnabled !== false);
 
     // 2026-09-18: 포스트면 각인 포기 → 항상 hex (추후 Connection PRC).
     // const caseLotTarget = (req as any)?.caseInfos?.lotEngravingTarget;

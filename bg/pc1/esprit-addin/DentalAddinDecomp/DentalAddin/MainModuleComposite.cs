@@ -1741,7 +1741,7 @@ namespace DentalAddin
 
         private const double FrontTurnEndPastBoundaryMm = 2.5;
 
-        // ── Safe split (PreviewModal「Wide Split」, request-meta caseInfos.safeSplitEnabled, 미수신→OFF) ──
+        // ── Safe split (PreviewModal「Wide Split」, request-meta caseInfos.safeSplitEnabled, 미수신→ON) ──
         // 문제: Back_Turn이 BackPointX 너머 TurningExtend까지 LowerY(가장 가는 반경)로 수평 연장하고
         //       Back_Rough도 BackPointX까지 먼저 깎아, Back_Finish(D1.2 크로스)가 가이드부시에서 먼 tip쪽을
         //       깎을 때 부시쪽 목이 이미 얇아 떨린다(wobble).

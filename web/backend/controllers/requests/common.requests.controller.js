@@ -3312,7 +3312,7 @@ export const updateRequestAnodizingOverride = asyncHandler(async (req, res) => {
   });
 });
 
-// PreviewModal「Wide Split」= caseInfos.safeSplitEnabled (Front/Middle/Back 3구간, 기본 OFF).
+// PreviewModal「Wide Split」= caseInfos.safeSplitEnabled (Front/Middle/Back 3구간, 기본 ON).
 export const updateRequestSafeSplitOverride = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const hasSafeSplitEnabled = Object.prototype.hasOwnProperty.call(

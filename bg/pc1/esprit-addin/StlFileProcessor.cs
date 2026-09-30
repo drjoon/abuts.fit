@@ -321,7 +321,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         _backendRetentionGroove = RequireBackendRetentionGrooveOrThrow(
                             requestMeta.retentionGroove,
                             requestId);
-                        bool safeSplitEnabled = requestMeta.safeSplitEnabled ?? false;
+                        bool safeSplitEnabled = requestMeta.safeSplitEnabled ?? true;
                         Environment.SetEnvironmentVariable(
                             "ABUTS_SAFE_SPLIT_ENABLE",
                             safeSplitEnabled ? "1" : "0");
