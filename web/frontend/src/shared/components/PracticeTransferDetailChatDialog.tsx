@@ -18,6 +18,7 @@
 // - web/frontend/src/shared/files/fileBlobCache.ts
 // - web/frontend/src/shared/files/s3ImageThumb.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-09-30: 파일 목록 갱신만으로 모델·썸네일 다운로드를 끊지 않는다.
 // - 2026-09-29: 채팅 헤더 — 커스텀어벗 배송 한 줄(한진 현황만).
 // - 2026-09-29: 작업 파일 섹션에도 「폴더 열기」(기공소만, onOpenWorkFilesFolder). 치과는 작업 파일을 받지 않는다.
 // - 2026-09-28: 환자·치아번호 줄 오른쪽에 케이스 공유(플랫폼 내·외부 링크) 버튼.
@@ -1539,6 +1540,11 @@ export function PracticeTransferDetailChatDialog({
     return out;
   }, [designFiles, files, requestFilesDownloadLocked, resultFiles, workScanFiles]);
 
+  const collectImageThumbFilesRef = useRef(collectImageThumbFiles);
+  collectImageThumbFilesRef.current = collectImageThumbFiles;
+  const collectModelThumbFilesRef = useRef(collectModelThumbFiles);
+  collectModelThumbFilesRef.current = collectModelThumbFiles;
+
   const fileImageThumbKey = useMemo(() => {
     if (!open) return "";
     return collectImageThumbFiles()
@@ -1591,7 +1597,7 @@ export function PracticeTransferDetailChatDialog({
 
   useEffect(() => {
     if (!open || !fileImageThumbKey || !authToken) return;
-    const imageFiles = collectImageThumbFiles();
+    const imageFiles = collectImageThumbFilesRef.current();
     if (!imageFiles.length) {
       if (Object.keys(fileThumbUrlsRef.current).length > 0) revokeFileThumbs();
       return;
@@ -1658,17 +1664,11 @@ export function PracticeTransferDetailChatDialog({
       cancelled = true;
       ac.abort();
     };
-  }, [
-    authToken,
-    collectImageThumbFiles,
-    fileImageThumbKey,
-    open,
-    revokeFileThumbs,
-  ]);
+  }, [authToken, fileImageThumbKey, open, revokeFileThumbs]);
 
   useEffect(() => {
     if (!open || !fileModelThumbKey || !authToken) return;
-    const modelFiles = collectModelThumbFiles();
+    const modelFiles = collectModelThumbFilesRef.current();
     if (!modelFiles.length) {
       if (Object.keys(modelThumbFilesRef.current).length > 0) clearModelThumbs();
       return;
@@ -1729,18 +1729,12 @@ export function PracticeTransferDetailChatDialog({
       cancelled = true;
       ac.abort();
     };
-  }, [
-    authToken,
-    clearModelThumbs,
-    collectModelThumbFiles,
-    fileModelThumbKey,
-    open,
-  ]);
+  }, [authToken, clearModelThumbs, fileModelThumbKey, open]);
 
   // 3D 타일 텍스처용 — 모델 파일이 있을 때만 원본 이미지를 백그라운드 로드
   useEffect(() => {
     if (!open || !fileModelThumbKey || !fileImageThumbKey || !authToken) return;
-    const imageFiles = collectImageThumbFiles();
+    const imageFiles = collectImageThumbFilesRef.current();
     const missing = imageFiles.filter((file) => {
       const s3Key = String(file.s3Key || "").trim();
       return s3Key && !imageThumbFilesRef.current[s3Key];
@@ -1779,13 +1773,7 @@ export function PracticeTransferDetailChatDialog({
       cancelled = true;
       ac.abort();
     };
-  }, [
-    authToken,
-    collectImageThumbFiles,
-    fileImageThumbKey,
-    fileModelThumbKey,
-    open,
-  ]);
+  }, [authToken, fileImageThumbKey, fileModelThumbKey, open]);
 
   const previewableFiles = useMemo(() => {
     const out: Array<{

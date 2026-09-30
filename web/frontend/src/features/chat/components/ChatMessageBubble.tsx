@@ -10,6 +10,7 @@
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
 // - web/frontend/src/shared/files/modelPreviewFile.ts
 // change-log:
+// - 2026-09-30: 첨부 키 순서가 바뀌어도 썸네일 다운로드를 다시 시작하지 않는다.
 // - 2026-09-07: `[의뢰ID:…]` 클릭 → 작업현황(채팅) 열기·환자이름 표시.
 // - 2026-08-13: 채팅 첨부 다운로드 중 프로그레스바.
 // - 2026-08-27: 이미지 첨부 썸네일 + ModelPreviewDialog 미리보기(의뢰상세와 동일).
@@ -412,6 +413,7 @@ export function ChatMessageBubble({
         .filter((file) => resolveChatPreviewKind(file) === "image")
         .map((file) => String(file.s3Key || "").trim())
         .filter(Boolean)
+        .sort()
         .join("|"),
     [previewableAttachments],
   );
@@ -422,6 +424,7 @@ export function ChatMessageBubble({
         .filter((file) => resolveChatPreviewKind(file) === "model")
         .map((file) => String(file.s3Key || "").trim())
         .filter(Boolean)
+        .sort()
         .join("|"),
     [previewableAttachments],
   );

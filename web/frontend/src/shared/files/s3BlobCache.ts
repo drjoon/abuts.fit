@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-09-30: 같은 S3 키 동시 요청은 하나. 끊김은 대기자가 없을 때만 다음 턴에 취소.
 // - 2026-09-13: IndexedDB ~10GB LRU(fileBlobCache) — 메시 선다운로드·재방문 히트.
 // - 2026-09-05: guide-tour/* — public 정적 샘플 fetch(실 PLY). 실패 시 placeholder.
 // - 2026-09-05: guide-tour/demo S3키 — 네트워크 없이 placeholder blob(403 방지).
@@ -37,9 +38,122 @@ export type FetchS3BlobCachedOptions = {
   signal?: AbortSignal;
 };
 
+type ProgressFn = (percent: number) => void;
+
+type InflightEntry = {
+  promise: Promise<Blob>;
+  abort: AbortController;
+  waiters: number;
+  abortTimer: ReturnType<typeof setTimeout> | null;
+  listeners: Set<ProgressFn>;
+};
+
+/** 같은 키의 진행 중 다운로드. 채팅 타일·작업 스캔·프리뷰가 같은 DCM을 같이 받는다. */
+const inflightByKey = new Map<string, InflightEntry>();
+
+function abortError(): DOMException {
+  return new DOMException("Aborted", "AbortError");
+}
+
+function retainWaiter(entry: InflightEntry) {
+  entry.waiters += 1;
+  if (entry.abortTimer) {
+    clearTimeout(entry.abortTimer);
+    entry.abortTimer = null;
+  }
+}
+
+/**
+ * 마지막 대기자가 빠져도 같은 턴의 재구독(목록 갱신·Strict Mode)을 본다.
+ * 다음 턴까지 새 대기자가 없으면 그때 S3 스트림을 끊는다.
+ */
+function releaseWaiter(entry: InflightEntry, cacheKey: string, fromAbort: boolean) {
+  entry.waiters = Math.max(0, entry.waiters - 1);
+  if (!fromAbort || entry.waiters > 0 || entry.abortTimer) return;
+  entry.abortTimer = setTimeout(() => {
+    entry.abortTimer = null;
+    if (entry.waiters > 0) return;
+    if (inflightByKey.get(cacheKey) !== entry) return;
+    inflightByKey.delete(cacheKey);
+    entry.abort.abort();
+  }, 0);
+}
+
+function joinInflight(
+  entry: InflightEntry,
+  cacheKey: string,
+  signal: AbortSignal | undefined,
+  onProgress: ProgressFn | undefined,
+): Promise<Blob> {
+  if (signal?.aborted) return Promise.reject(abortError());
+  retainWaiter(entry);
+  if (onProgress) entry.listeners.add(onProgress);
+
+  let settled = false;
+  const detach = (fromAbort: boolean) => {
+    if (settled) return;
+    settled = true;
+    if (onProgress) entry.listeners.delete(onProgress);
+    signal?.removeEventListener("abort", onAbort);
+    releaseWaiter(entry, cacheKey, fromAbort);
+  };
+  const onAbort = () => detach(true);
+  signal?.addEventListener("abort", onAbort);
+
+  return entry.promise.then(
+    (blob) => {
+      detach(false);
+      if (signal?.aborted) throw abortError();
+      return blob;
+    },
+    (err: unknown) => {
+      detach(false);
+      throw err;
+    },
+  );
+}
+
+function startInflight(
+  cacheKey: string,
+  options: FetchS3BlobCachedOptions,
+  s3Key: string,
+  fileName: string,
+): InflightEntry {
+  const abort = new AbortController();
+  const listeners = new Set<ProgressFn>();
+  const entry: InflightEntry = {
+    promise: Promise.resolve(new Blob()),
+    abort,
+    waiters: 0,
+    abortTimer: null,
+    listeners,
+  };
+  entry.promise = fetchBlobWithProgress({
+    url: options.buildUrl(s3Key, fileName),
+    token: options.token,
+    signal: abort.signal,
+    onProgress: (percent) => {
+      for (const listener of listeners) listener(percent);
+    },
+  })
+    .then(async (blob) => {
+      try {
+        await setFileBlob(cacheKey, blob);
+      } catch {
+        // ignore cache write errors
+      }
+      return blob;
+    })
+    .finally(() => {
+      if (inflightByKey.get(cacheKey) === entry) inflightByKey.delete(cacheKey);
+    });
+  inflightByKey.set(cacheKey, entry);
+  return entry;
+}
+
 /**
  * IndexedDB(`s3:{key}`) → 없으면 S3 프록시 fetch 후 캐시 저장.
- * 캐시 히트 시 progress 100만 보고한다.
+ * 같은 키의 동시 요청은 네트워크를 한 번만 쓴다. 캐시 히트 시 progress 100만 보고한다.
  */
 export async function fetchS3BlobCached(
   options: FetchS3BlobCachedOptions,
@@ -73,24 +187,16 @@ export async function fetchS3BlobCached(
   }
 
   const cacheKey = s3FileBlobCacheKey(s3Key, options.thumbWidth);
-  const cached = await getFileBlob(cacheKey);
-  if (cached) {
-    options.onProgress?.(100);
-    return cached;
+  let entry = inflightByKey.get(cacheKey);
+  if (!entry) {
+    const cached = await getFileBlob(cacheKey);
+    if (cached) {
+      options.onProgress?.(100);
+      return cached;
+    }
+    if (options.signal?.aborted) throw abortError();
+    entry = inflightByKey.get(cacheKey) ?? startInflight(cacheKey, options, s3Key, fileName);
   }
 
-  const blob = await fetchBlobWithProgress({
-    url: options.buildUrl(s3Key, fileName),
-    token: options.token,
-    signal: options.signal,
-    onProgress: options.onProgress,
-  });
-
-  try {
-    await setFileBlob(cacheKey, blob);
-  } catch {
-    // ignore cache write errors
-  }
-
-  return blob;
+  return joinInflight(entry, cacheKey, options.signal, options.onProgress);
 }

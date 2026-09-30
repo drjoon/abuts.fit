@@ -10,12 +10,8 @@ const isClientAbort = (err) =>
 export const pipeStreamToResponse = (body, res, { label = "stream", key = "" } = {}) =>
   new Promise((resolve) => {
     pipeline(body, res, (err) => {
-      if (err) {
-        if (isClientAbort(err)) {
-          console.warn(`[${label}] client aborted`, { key, code: err?.code });
-        } else {
-          console.error(`[${label}] pipe failed`, { key, error: err?.message || String(err) });
-        }
+      if (err && !isClientAbort(err)) {
+        console.error(`[${label}] pipe failed`, { key, error: err?.message || String(err) });
       }
       resolve();
     });
