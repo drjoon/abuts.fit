@@ -18,6 +18,7 @@
 // - web/frontend/src/shared/files/fileBlobCache.ts
 // - web/frontend/src/shared/files/s3ImageThumb.ts
 // - web/frontend/src/features/requests/components/StlPreviewThumbnail.tsx
+// - 2026-10-01: 어벗츠기공소 채팅 헤더 AI 버튼 — 협력·하청·자체 수행 모두 표시.
 // - 2026-09-30: 파일 목록 갱신만으로 모델·썸네일 다운로드를 끊지 않는다.
 // - 2026-09-29: 채팅 헤더 — 커스텀어벗 배송 한 줄(한진 현황만).
 // - 2026-09-29: 작업 파일 섹션에도 「폴더 열기」(기공소만, onOpenWorkFilesFolder). 치과는 작업 파일을 받지 않는다.
@@ -334,6 +335,7 @@ import {
 import { LabPendingAbutmentGuide } from "@/shared/components/practice/LabPendingAbutmentGuide";
 import { PracticeTransferShareButton } from "@/shared/share/PracticeTransferShareDialog";
 import { useAbutsLabCertified } from "@/shared/practice/useAbutsLabCertified";
+import { useAuthStore } from "@/store/useAuthStore";
 import {
   LabBasketTagToolbar,
   normalizeLabBasketTag,
@@ -720,7 +722,8 @@ type PracticeTransferDetailChatDialogProps = {
   releaseBusy?: boolean;
   onRelease?: () => void | Promise<void>;
   /**
-   * false면 원청이 협력 건을 볼 때 작업 버튼(작업시작·취소·업로드·AI)을 숨긴다.
+   * false면 원청이 협력 건을 볼 때 작업 버튼(작업시작·취소·업로드)을 숨긴다.
+   * AI 디자인은 어벗츠기공소(internalLab)면 케이스와 상관없이 헤더에 둔다.
    * 채팅 입력은 유지한다.
    */
   operateLabWork?: boolean;
@@ -1021,7 +1024,12 @@ export function PracticeTransferDetailChatDialog({
   preferredDockNonce = 0,
 }: PracticeTransferDetailChatDialogProps) {
   const { toast } = useToast();
-  const labAiDesignAllowed = useAbutsLabCertified(feeViewer === "lab");
+  const viewerRole = useAuthStore((s) => s.user?.role);
+  const internalLabAiDesign =
+    feeViewer === "lab" && String(viewerRole || "").trim() === "internalLab";
+  const labAiDesignAllowed = useAbutsLabCertified(
+    feeViewer === "lab" && !internalLabAiDesign,
+  );
   const isMobile = useIsMobile();
   const isInline = variant === "inline";
   const platformGuideTour = useGuideTour();
@@ -2686,7 +2694,8 @@ export function PracticeTransferDetailChatDialog({
         onReorderAttachedChatFiles(files.map((file) => toTempUploadFileKey(file)))
     : undefined;
   const labAiDesignButton =
-    operateLabWork && feeViewer === "lab" && labAiDesignAllowed ? (
+    internalLabAiDesign ||
+    (operateLabWork && feeViewer === "lab" && labAiDesignAllowed) ? (
       <LabProsthesisAiDesignButton
         toothWorks={chartToothWorks}
         files={files}

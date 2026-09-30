@@ -81,6 +81,7 @@ import {
   resolveLabFeeMultiplierLabAnchorId,
   resolvePerformingLabAnchorId,
   canLabOperatePracticeTransferWork,
+  canLabUsePracticeTransferAiDesign,
   isPracticeTransferSubcontracted,
   assertLabAllowedAsDirectPracticeTarget,
   loadSubcontractDirectBlockedLabAnchorIds,
@@ -9898,11 +9899,13 @@ export async function appendReceivedPracticeTransferWorkScanFiles(req, res) {
         message: "삭제된 기공의뢰에는 파일을 추가할 수 없습니다.",
       });
     }
-    const workScanDenied = labWorkOperationDeniedMessage(
-      doc,
-      labAnchorId,
-      "작업을 시작한 기공소만 작업 스캔을 저장할 수 있습니다.",
-    );
+    const workScanDenied = canLabUsePracticeTransferAiDesign(doc, labAnchorId)
+      ? null
+      : labWorkOperationDeniedMessage(
+          doc,
+          labAnchorId,
+          "작업을 시작한 기공소만 작업 스캔을 저장할 수 있습니다.",
+        );
     if (workScanDenied) {
       return res.status(403).json({ success: false, message: workScanDenied });
     }
@@ -10027,7 +10030,7 @@ export async function setReceivedPracticeTransferWorkScanEditing(req, res) {
     if (!doc) {
       return res.status(404).json({ success: false, message: "의뢰를 찾을 수 없습니다." });
     }
-    if (!canLabOperatePracticeTransferWork(doc, labAnchorId)) {
+    if (!canLabUsePracticeTransferAiDesign(doc, labAnchorId)) {
       return res.status(200).json({ success: true, data: { editing: false } });
     }
     const userId = req.user?._id;

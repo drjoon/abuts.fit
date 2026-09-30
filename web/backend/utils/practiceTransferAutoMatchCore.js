@@ -3,6 +3,7 @@
 // - web/backend/tests/unit/practiceTransferAutoMatchPriority.test.js
 //
 // 자동매칭 우선창·필터 순수 헬퍼 (Mongo 모델 import 없음).
+// - 2026-10-01: AI 디자인(작업 스캔)은 협력 원청(어벗츠기공소)도 연다. 작업시작·취소·업로드는 수행만.
 // - 2026-09-27: 하청·자동매칭 공개 풀은 수행 기공소가 없다. 첫 작업시작(클레임)은 작업 권한 대상이 아니다.
 // - 2026-09-27: 하청 수행 기공소는 원청과 같이 치과 실명·담당자를 본다. 미배정 풀은 비공개.
 // - 2026-09-24: 할증 labFeeMultiplier — 협력=수행 기공소, 하청·어벗츠 자체=원청(어벗츠).
@@ -365,6 +366,18 @@ export const canLabOperatePracticeTransferWork = (transfer, labAnchorId) => {
   if (isCooperationAssignee(transfer)) return false;
   const primeId = getPrimeLabAnchorId(transfer);
   return Boolean(primeId) && primeId === labId;
+};
+
+/**
+ * AI 디자인 작업 스캔 저장·작업 중 표시.
+ * 작업을 하는 기공소와, 협력 건의 원청(어벗츠기공소)도 연다.
+ * 작업시작·업로드·취소·완료는 `canLabOperatePracticeTransferWork`.
+ */
+export const canLabUsePracticeTransferAiDesign = (transfer, labAnchorId) => {
+  if (canLabOperatePracticeTransferWork(transfer, labAnchorId)) return true;
+  const labId = String(labAnchorId || "").trim();
+  const primeId = getPrimeLabAnchorId(transfer);
+  return Boolean(labId && primeId && primeId === labId);
 };
 
 /**

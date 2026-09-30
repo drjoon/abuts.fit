@@ -6,6 +6,7 @@ import {
   ASSIGNEE_KIND_SUBCONTRACT,
   isAbutsPrimePracticeTransfer,
   canLabOperatePracticeTransferWork,
+  canLabUsePracticeTransferAiDesign,
   isLabPerformingOnTransfer,
   resolveFeeScheduleLabAnchorId,
   resolveLabFeeMultiplierLabAnchorId,
@@ -54,6 +55,9 @@ describe("resolvePracticeTransferSettlementParties", () => {
     expect(canLabOperatePracticeTransferWork(transfer, ASSIGNEE)).toBe(true);
     expect(canLabOperatePracticeTransferWork(transfer, PRIME)).toBe(false);
     expect(canLabOperatePracticeTransferWork(transfer, OTHER)).toBe(false);
+    expect(canLabUsePracticeTransferAiDesign(transfer, ASSIGNEE)).toBe(true);
+    expect(canLabUsePracticeTransferAiDesign(transfer, PRIME)).toBe(true);
+    expect(canLabUsePracticeTransferAiDesign(transfer, OTHER)).toBe(false);
   });
 
   test("어벗츠 자체 수행: gross→prime, 매입 없음, 수가·할증=원청", () => {
