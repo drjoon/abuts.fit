@@ -37,7 +37,7 @@
  * - 2026-08-28: 모바일 — 검색을 상태뱃지(리메이크) 오른쪽 같은 줄로 옮겨 헤더 줄 수 축소.
  * - 2026-08-28: 검색↔신규의뢰 안내 위치 교환 — 안내=헤더, 검색=캘린더 툴바.
  * - 2026-09-07: 오늘(KST) 포함 셀 클릭 → 신규 의뢰(도착일).
- * - 2026-09-30: 페이지형 기공의뢰 공지는 헤더 줄에 겹쳐 높이를 늘리지 않음.
+ * - 2026-09-30: 2xl 미만 상태 뱃지는 아이콘+숫자만(기공의뢰수신과 동일).
  * - 2026-09-07: 헤더 「도착일 클릭 신규의뢰」안내 문구 제거.
  * - 2026-09-07: 다단계 다음 도착일 미지정(+1일~) 헤더 alert(기공소 미확인 바와 동일 패턴).
  * - 2026-08-31: calendarRefreshNonce — 전송 직후 소켓 없이도 캘린더 구간 재조회.
@@ -253,9 +253,6 @@ export function PracticeRecentTransfersAllModal({
   const open = isPage ? true : Boolean(openProp);
   const isMobile = useIsMobile();
   const forceCloseRef = useRef(false);
-  /** PC 헤더 폭이 충분할 때 액션 버튼 라벨 표시(사이드바 등 실제 가용 폭 기준) */
-  const headerRowRef = useRef<HTMLDivElement | null>(null);
-  const [headerActionsWide, setHeaderActionsWide] = useState(true);
   const storedCalendarDateKey = useAuthStore(
     (s) => s.user?.labReceiveCalendarDateKey,
   );
@@ -313,22 +310,6 @@ export function PracticeRecentTransfersAllModal({
   useEffect(() => {
     migratePracticeStatusBadgeClearedFromLegacyLocalStorage();
   }, []);
-
-  /** 헤더 가용 폭 — 좁으면 액션 아이콘만, 충분하면 라벨(.practice-header-actions-wide) */
-  useEffect(() => {
-    if (isMobile || !open) return;
-    const el = headerRowRef.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
-    const HEADER_ACTIONS_WIDE_MIN_PX = 1040;
-    const apply = () => {
-      const next = el.clientWidth >= HEADER_ACTIONS_WIDE_MIN_PX;
-      setHeaderActionsWide((prev) => (prev === next ? prev : next));
-    };
-    apply();
-    const ro = new ResizeObserver(apply);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [isMobile, open]);
 
   const handleCursorChange = useCallback((ymd: string) => {
     setCursorYmd(ymd);
@@ -878,6 +859,7 @@ export function PracticeRecentTransfersAllModal({
       onUnreadNavigate={navigateNextUnreadForStatus}
       gapBeforeKeys={PRACTICE_RECENT_STATUS_BADGE_GAP_BEFORE_KEYS}
       compact={isMobile}
+      iconAtNarrow
       className={isMobile ? "contents" : "flex-nowrap"}
     />
   );
@@ -942,10 +924,7 @@ export function PracticeRecentTransfersAllModal({
           </div>
         </div>
       ) : (
-        <div
-          ref={headerRowRef}
-          className="flex flex-col gap-2 md:flex-row md:flex-nowrap md:items-center md:gap-2 lg:gap-3"
-        >
+        <div className="flex flex-col gap-2 md:flex-row md:flex-nowrap md:items-center md:gap-2 lg:gap-3">
           {isPage ? (
             <h1 className="sr-only">{headerTitle}</h1>
           ) : (
@@ -964,10 +943,7 @@ export function PracticeRecentTransfersAllModal({
               />
             ) : null}
             {headerActions ? (
-              <div
-                className="group/hdr-actions ml-auto flex shrink-0 flex-nowrap items-center gap-1.5 sm:gap-2"
-                data-wide={headerActionsWide ? "true" : "false"}
-              >
+              <div className="ml-auto flex shrink-0 flex-nowrap items-center gap-1.5 sm:gap-2">
                 {headerActions}
               </div>
             ) : null}

@@ -6,6 +6,7 @@
  * - 상단: 기간필터 + 요약(좌 2x2) + 최근 의뢰(우)
  * - 하단: 스캔 전송 섹션이 남은 영역을 채움
  * - 최근 전송 카드 클릭 시 의뢰 정보 + 기공소 채팅 모달 제공
+ * - 2026-09-30: 2xl 미만 헤더 — 상태 뱃지와 북마크·신규주문·리메이크·임시저장·휴지통은 아이콘(+숫자).
  *
  * related files:
  * - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
@@ -9701,9 +9702,9 @@ export const PracticeFileTransferPage = ({
           count > 0 && "border-sky-300 bg-sky-50/90",
         )
       : cn(
-          "h-9 shrink-0 gap-1 px-2 group-data-[wide=true]/hdr-actions:gap-1.5 group-data-[wide=true]/hdr-actions:px-3",
+          "h-9 shrink-0 gap-1 px-2 2xl:gap-1.5 2xl:px-3",
           count === 0 &&
-            "w-9 px-0 group-data-[wide=true]/hdr-actions:w-auto group-data-[wide=true]/hdr-actions:px-3",
+            "w-9 px-0 2xl:w-auto 2xl:px-3",
           count > 0 && "border-sky-300 bg-sky-50/80",
         );
     return (
@@ -9719,7 +9720,7 @@ export const PracticeFileTransferPage = ({
         }}
         buttonClassName={className}
         showLabel={!mobile}
-        labelClassName="hidden group-data-[wide=true]/hdr-actions:inline"
+        labelClassName="hidden 2xl:inline"
         withTooltip={!mobile}
       />
     );
@@ -9885,7 +9886,7 @@ export const PracticeFileTransferPage = ({
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-9 w-9 shrink-0 gap-1.5 px-0 group-data-[wide=true]/hdr-actions:w-auto group-data-[wide=true]/hdr-actions:px-3"
+                className="h-9 w-9 shrink-0 gap-1.5 px-0 2xl:w-auto 2xl:px-3"
                 aria-label="신규주문"
                 onClick={() =>
                   void handleStartNewTransfer({
@@ -9895,7 +9896,7 @@ export const PracticeFileTransferPage = ({
                 }
               >
                 <Plus className="h-4 w-4 shrink-0" />
-                <span className="hidden group-data-[wide=true]/hdr-actions:inline">
+                <span className="hidden 2xl:inline">
                   신규주문
                 </span>
               </Button>
@@ -9910,7 +9911,7 @@ export const PracticeFileTransferPage = ({
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-9 w-9 shrink-0 gap-1.5 px-0 group-data-[wide=true]/hdr-actions:w-auto group-data-[wide=true]/hdr-actions:px-3"
+                className="h-9 w-9 shrink-0 gap-1.5 px-0 2xl:w-auto 2xl:px-3"
                 aria-label="리메이크"
                 onClick={() => {
                   dismissPracticeOverlaysForAction("remake");
@@ -9922,7 +9923,7 @@ export const PracticeFileTransferPage = ({
                   : {})}
               >
                 <Repeat className="h-4 w-4 shrink-0" />
-                <span className="hidden group-data-[wide=true]/hdr-actions:inline">
+                <span className="hidden 2xl:inline">
                   리메이크
                 </span>
               </Button>
@@ -9938,9 +9939,9 @@ export const PracticeFileTransferPage = ({
                 variant="outline"
                 size="sm"
                 className={cn(
-                  "h-9 shrink-0 gap-1 px-2 group-data-[wide=true]/hdr-actions:gap-1.5 group-data-[wide=true]/hdr-actions:px-3",
+                  "h-9 shrink-0 gap-1 px-2 2xl:gap-1.5 2xl:px-3",
                   draftGroupedTransfers.length === 0 &&
-                    "w-9 px-0 group-data-[wide=true]/hdr-actions:w-auto group-data-[wide=true]/hdr-actions:px-3",
+                    "w-9 px-0 2xl:w-auto 2xl:px-3",
                   draftGroupedTransfers.length > 0 && "border-amber-300 bg-amber-50/80",
                   practiceTransferDraftStaleAttentionClassName(hasStaleDrafts),
                 )}
@@ -9955,7 +9956,7 @@ export const PracticeFileTransferPage = ({
                 }}
               >
                 <BookmarkPlus className="h-4 w-4 shrink-0" />
-                <span className="hidden group-data-[wide=true]/hdr-actions:inline">
+                <span className="hidden 2xl:inline">
                   임시저장
                 </span>
                 {draftGroupedTransfers.length > 0 ? (
@@ -9982,9 +9983,9 @@ export const PracticeFileTransferPage = ({
                 variant="outline"
                 size="sm"
                 className={cn(
-                  "h-9 shrink-0 gap-1 px-2 group-data-[wide=true]/hdr-actions:gap-1.5 group-data-[wide=true]/hdr-actions:px-3",
+                  "h-9 shrink-0 gap-1 px-2 2xl:gap-1.5 2xl:px-3",
                   trashGroupedTransfers.length === 0 &&
-                    "w-9 px-0 group-data-[wide=true]/hdr-actions:w-auto group-data-[wide=true]/hdr-actions:px-3",
+                    "w-9 px-0 2xl:w-auto 2xl:px-3",
                 )}
                 aria-label={
                   trashGroupedTransfers.length > 0
@@ -9998,7 +9999,7 @@ export const PracticeFileTransferPage = ({
                 }}
               >
                 <Trash2 className="h-4 w-4 shrink-0" />
-                <span className="hidden group-data-[wide=true]/hdr-actions:inline">
+                <span className="hidden 2xl:inline">
                   휴지통
                 </span>
                 {trashGroupedTransfers.length > 0 ? (
