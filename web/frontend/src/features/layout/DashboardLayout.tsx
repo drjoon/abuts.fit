@@ -368,6 +368,7 @@ const sidebarItems = {
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
   devops: [
+    { icon: FileText, label: "운영보고서", href: "/dashboard/ops-report" },
     {
       icon: ClipboardList,
       label: "고객 요구사항",
@@ -404,6 +405,7 @@ const sidebarItems = {
   ],
   admin: [
     { icon: LayoutDashboard, label: "홈", href: "/dashboard" },
+    { icon: FileText, label: "운영보고서", href: "/dashboard/ops-report" },
     { icon: Users, label: "회원", href: "/dashboard/members" },
     { icon: FileText, label: "의뢰", href: "/dashboard/monitoring" },
     { icon: Store, label: "스토어", href: "/dashboard/store-admin" },
@@ -495,6 +497,7 @@ const adminSidebarSections: DashboardSidebarSection[] = [
     title: "운영",
     items: [
       { icon: LayoutDashboard, label: "홈", href: "/dashboard" },
+      { icon: FileText, label: "운영보고서", href: "/dashboard/ops-report" },
       { icon: Users, label: "회원", href: "/dashboard/members" },
       { icon: FileText, label: "의뢰", href: "/dashboard/monitoring" },
       { icon: Store, label: "스토어", href: "/dashboard/store-admin" },
@@ -1960,7 +1963,8 @@ export const DashboardLayout = () => {
           </div>
 
           {user.role === "admin" &&
-            !location.pathname.startsWith("/dashboard/settings") && (
+            !location.pathname.startsWith("/dashboard/settings") &&
+            !location.pathname.startsWith("/dashboard/ops-report") && (
               <div
                 className={cn(
                   "sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60",

@@ -108,6 +108,9 @@ const AdminSupportHubPage = lazy(
 );
 const AdminChannelsPage = lazy(() => import("./pages/admin/AdminChannelsPage"));
 const AdminFinancePage = lazy(() => import("./pages/admin/AdminFinancePage"));
+const OpsMonthlyReportPage = lazy(
+  () => import("./pages/admin/ops/OpsMonthlyReportPage"),
+);
 const AdminSettingsHubPage = lazy(
   () => import("./pages/admin/AdminSettingsHubPage"),
 );
@@ -929,6 +932,14 @@ const App = () => {
                     element={
                       <RoleProtectedRoute roles={["admin"]}>
                         <AdminFinancePage />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="ops-report"
+                    element={
+                      <RoleProtectedRoute roles={["admin", "devops"]}>
+                        <OpsMonthlyReportPage />
                       </RoleProtectedRoute>
                     }
                   />
