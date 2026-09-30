@@ -31,7 +31,7 @@ import type { DashboardNotice } from "./dashboardNotice";
 
 /** 헤더 줄에서 필터와 액션 버튼 사이 남는 폭. 기공소 수신과 같다. */
 export const DASHBOARD_NOTICE_HEADER_CLASS =
-  "min-w-0 max-w-none flex-1 shrink 2xl:max-w-none";
+  "min-w-[6rem] max-w-none flex-1 shrink overflow-hidden 2xl:max-w-none";
 
 const NoticeClaimContext = createContext<(() => () => void) | null>(null);
 const NoticeHostedContext = createContext(false);

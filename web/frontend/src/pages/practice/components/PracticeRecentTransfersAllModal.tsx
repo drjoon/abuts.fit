@@ -37,7 +37,7 @@
  * - 2026-08-28: 모바일 — 검색을 상태뱃지(리메이크) 오른쪽 같은 줄로 옮겨 헤더 줄 수 축소.
  * - 2026-08-28: 검색↔신규의뢰 안내 위치 교환 — 안내=헤더, 검색=캘린더 툴바.
  * - 2026-09-07: 오늘(KST) 포함 셀 클릭 → 신규 의뢰(도착일).
- * - 2026-09-30: 2xl 미만 상태 뱃지는 아이콘+숫자만(기공의뢰수신과 동일).
+ * - 2026-09-30: 헤더가 문구+공지를 같이 못 담으면 뱃지·버튼은 아이콘. 공지는 그 사이 폭에서 줄임.
  * - 2026-09-07: 헤더 「도착일 클릭 신규의뢰」안내 문구 제거.
  * - 2026-09-07: 다단계 다음 도착일 미지정(+1일~) 헤더 alert(기공소 미확인 바와 동일 패턴).
  * - 2026-08-31: calendarRefreshNonce — 전송 직후 소켓 없이도 캘린더 구간 재조회.
@@ -253,6 +253,10 @@ export function PracticeRecentTransfersAllModal({
   const open = isPage ? true : Boolean(openProp);
   const isMobile = useIsMobile();
   const forceCloseRef = useRef(false);
+  const headerRowRef = useRef<HTMLDivElement | null>(null);
+  /** 뷰포트 2xl은 사이드바를 빼면 공지가 잘린다. 헤더 줄이 문구를 담을 때만 라벨. */
+  const [headerLabelsWide, setHeaderLabelsWide] = useState(false);
+  const headerLabelsBlockedBelowRef = useRef(0);
   const storedCalendarDateKey = useAuthStore(
     (s) => s.user?.labReceiveCalendarDateKey,
   );
@@ -310,6 +314,32 @@ export function PracticeRecentTransfersAllModal({
   useEffect(() => {
     migratePracticeStatusBadgeClearedFromLegacyLocalStorage();
   }, []);
+
+  useEffect(() => {
+    if (isMobile || !open) return;
+    const el = headerRowRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const HEADER_LABELS_MIN_PX = 1600;
+    const apply = () => {
+      const width = el.clientWidth;
+      if (headerLabelsWide && el.scrollWidth > width + 8) {
+        headerLabelsBlockedBelowRef.current = Math.max(
+          headerLabelsBlockedBelowRef.current,
+          width + 1,
+        );
+        setHeaderLabelsWide(false);
+        return;
+      }
+      const next =
+        width >=
+        Math.max(HEADER_LABELS_MIN_PX, headerLabelsBlockedBelowRef.current);
+      setHeaderLabelsWide((prev) => (prev === next ? prev : next));
+    };
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [isMobile, open, headerLabelsWide]);
 
   const handleCursorChange = useCallback((ymd: string) => {
     setCursorYmd(ymd);
@@ -859,7 +889,8 @@ export function PracticeRecentTransfersAllModal({
       onUnreadNavigate={navigateNextUnreadForStatus}
       gapBeforeKeys={PRACTICE_RECENT_STATUS_BADGE_GAP_BEFORE_KEYS}
       compact={isMobile}
-      iconAtNarrow
+      labelsWhenHeaderWide={!isMobile}
+      iconAtNarrow={isMobile}
       className={isMobile ? "contents" : "flex-nowrap"}
     />
   );
@@ -932,7 +963,11 @@ export function PracticeRecentTransfersAllModal({
               {headerTitle}
             </DialogTitle>
           )}
-          <div className="flex min-w-0 w-full flex-nowrap items-center gap-2 md:flex-1">
+          <div
+            ref={headerRowRef}
+            data-wide={headerLabelsWide ? "true" : "false"}
+            className="group/practice-hdr flex min-w-0 w-full flex-nowrap items-center gap-2 overflow-hidden md:flex-1"
+          >
             <div className="flex shrink-0 flex-nowrap items-center gap-1.5 overflow-x-auto sm:gap-2">
               {statusBadges}
             </div>

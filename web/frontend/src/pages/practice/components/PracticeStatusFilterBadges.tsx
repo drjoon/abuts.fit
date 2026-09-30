@@ -85,6 +85,11 @@ type PracticeStatusFilterBadgesProps = {
    * 기공의뢰수신처럼 가로가 좁을 때 한 줄 유지.
    */
   iconAtNarrow?: boolean;
+  /**
+   * true면 뷰포트 2xl 대신 헤더 줄의 data-wide.
+   * 조상 group/practice-hdr 가 넓을 때만 문구를 보여 공지 자리를 남긴다.
+   */
+  labelsWhenHeaderWide?: boolean;
   className?: string;
 };
 
@@ -97,8 +102,15 @@ export function PracticeStatusFilterBadges({
   hideNestedUnread = false,
   compact = false,
   iconAtNarrow = false,
+  labelsWhenHeaderWide = false,
   className,
 }: PracticeStatusFilterBadgesProps) {
+  const showIcons = iconAtNarrow || labelsWhenHeaderWide;
+  const labelHiddenClass = labelsWhenHeaderWide
+    ? "hidden group-data-[wide=true]/practice-hdr:inline"
+    : iconAtNarrow
+      ? "hidden 2xl:inline"
+      : "";
   const gapKeySet = new Set(gapBeforeKeys || []);
   return (
     <div
@@ -137,8 +149,13 @@ export function PracticeStatusFilterBadges({
                 className={cn(
                   "relative shrink-0 rounded-full",
                   withGap &&
-                    (iconAtNarrow
-                      ? cn("ml-2 2xl:ml-5", WIDE_CLUSTER_SEPARATOR_CLASS)
+                    (showIcons
+                      ? cn(
+                          labelsWhenHeaderWide
+                            ? "ml-2 group-data-[wide=true]/practice-hdr:ml-5"
+                            : "ml-2 2xl:ml-5",
+                          WIDE_CLUSTER_SEPARATOR_CLASS,
+                        )
                       : cn("ml-5", WIDE_CLUSTER_SEPARATOR_CLASS)),
                   !canNavigate && "cursor-default",
                 )}
@@ -155,10 +172,14 @@ export function PracticeStatusFilterBadges({
                     "whitespace-nowrap",
                     canNavigate ? "cursor-pointer" : "cursor-default opacity-50",
                     compact && "h-8 text-xs",
-                    iconAtNarrow
+                    showIcons
                       ? compact
-                        ? "gap-1 px-2 2xl:px-2.5"
-                        : "gap-1 px-2 2xl:px-3"
+                        ? labelsWhenHeaderWide
+                          ? "gap-1 px-2 group-data-[wide=true]/practice-hdr:px-2.5"
+                          : "gap-1 px-2 2xl:px-2.5"
+                        : labelsWhenHeaderWide
+                          ? "gap-1 px-2 group-data-[wide=true]/practice-hdr:px-3"
+                          : "gap-1 px-2 2xl:px-3"
                       : compact
                         ? "px-2.5"
                         : null,
@@ -166,14 +187,10 @@ export function PracticeStatusFilterBadges({
                   )}
                 >
                   <span className="inline-flex items-center gap-1">
-                    {iconAtNarrow ? (
+                    {showIcons ? (
                       <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden />
                     ) : null}
-                    <span
-                      className={cn(
-                        iconAtNarrow && "hidden 2xl:inline",
-                      )}
-                    >
+                    <span className={cn(labelHiddenClass)}>
                       {item.label}
                       {countSuffix ? " " : ""}
                     </span>
@@ -181,7 +198,7 @@ export function PracticeStatusFilterBadges({
                       {queueCount}
                       {countSuffix ? (
                         <span
-                          className={cn(iconAtNarrow && "hidden 2xl:inline")}
+                          className={cn(labelHiddenClass)}
                         >
                           {countSuffix}
                         </span>
