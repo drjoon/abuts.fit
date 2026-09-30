@@ -865,18 +865,6 @@ export function ScanbodyAlignSection({
       {toothLabel ? (
         <p className="text-[11px] text-muted-foreground">{toothLabel}</p>
       ) : null}
-      <Row label="라이브러리">
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          className="h-7 w-full justify-start truncate px-2 text-[11px]"
-          data-coach="implant-library"
-          onClick={scanbody.onPickLibrary}
-        >
-          {scanbody.libraryLabel ?? "라이브러리 고르기"}
-        </Button>
-      </Row>
       <div className="space-y-1">
         <div
           className="h-2 rounded-sm"
